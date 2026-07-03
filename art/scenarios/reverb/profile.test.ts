@@ -6,7 +6,7 @@
 // dry/wet mix. Single audio input; output 0 = `audio`.
 //
 // Category: TIME-DOMAIN FX WITH A TAIL, driven by the canonical TRANSIENT
-// stimulus (drivers.toneBurst — the cocoadelay precedent): a short C4-saw hit
+// stimulus (drivers.toneBurst — the tape-echo FX precedent): a short C4-saw hit
 // (0.1 s) then SILENCE out to 1.5 s. During the hit the dry+wet output rings
 // up; after the input goes silent the reverb TAIL is the whole story — decaying
 // energy while the input is zero, the defining property of a reverb.

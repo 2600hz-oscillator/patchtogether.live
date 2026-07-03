@@ -11,7 +11,7 @@
 //     (the engine normals R←L).
 //   * skip if the sibling target input is already occupied (no overwrite).
 //   * naming-agnostic — resolved via stereoPairs tuples, not name patterns
-//     (rings odd/even, cocoadelay inL/inR, charlottes-echos L/R).
+//     (rings odd/even, cofefve inL/inR, charlottes-echos L/R).
 //
 // These drive the REAL redesigned "patch to" commit path (open the source
 // menu → drill OUTPUT → jack-click the source output ROW (carry) → "patch
@@ -86,15 +86,15 @@ async function cascadePatch(
 }
 
 test.describe('stereo L/R auto-wire', () => {
-  test('stereo source L → stereo target L auto-wires R too (rings odd/even → cocoadelay inL/inR)', async ({ page }) => {
+  test('stereo source L → stereo target L auto-wires R too (rings odd/even → cofefve inL/inR)', async ({ page }) => {
     await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [
       { id: 'rings', type: 'rings', position: { x: 80, y: 100 } },
-      { id: 'coco', type: 'cocoadelay', position: { x: 760, y: 100 } },
+      { id: 'coco', type: 'cofefve', position: { x: 760, y: 100 } },
     ]);
 
-    // Patch the L side only: rings.odd → cocoadelay.inL.
+    // Patch the L side only: rings.odd → cofefve.inL.
     await cascadePatch(page, { nodeId: 'rings', portId: 'odd' }, { nodeId: 'coco', portId: 'inL' });
 
     // BOTH edges must materialize from the single action.
@@ -111,9 +111,9 @@ test.describe('stereo L/R auto-wire', () => {
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [
       { id: 'rings', type: 'rings', position: { x: 80, y: 100 } },
-      { id: 'coco', type: 'cocoadelay', position: { x: 760, y: 100 } },
+      { id: 'coco', type: 'cofefve', position: { x: 760, y: 100 } },
     ]);
-    // Pre-occupy cocoadelay.inR with a manual edge from a different source port.
+    // Pre-occupy cofefve.inR with a manual edge from a different source port.
     await page.evaluate(() => {
       const w = window as unknown as {
         __patch: { edges: Record<string, unknown> };
@@ -130,7 +130,7 @@ test.describe('stereo L/R auto-wire', () => {
       });
     });
 
-    // Now patch rings.odd → cocoadelay.inL. inR is occupied → no NEW auto-wire.
+    // Now patch rings.odd → cofefve.inL. inR is occupied → no NEW auto-wire.
     await cascadePatch(page, { nodeId: 'rings', portId: 'odd' }, { nodeId: 'coco', portId: 'inL' });
 
     await expect
@@ -149,7 +149,7 @@ test.describe('stereo L/R auto-wire', () => {
     // analogVco's `saw` is a mono audio output (no stereoPairs) → no auto-wire.
     await spawnPatch(page, [
       { id: 'vco', type: 'analogVco', position: { x: 80, y: 100 } },
-      { id: 'coco', type: 'cocoadelay', position: { x: 760, y: 100 } },
+      { id: 'coco', type: 'cofefve', position: { x: 760, y: 100 } },
     ]);
 
     await cascadePatch(page, { nodeId: 'vco', portId: 'saw' }, { nodeId: 'coco', portId: 'inL' });

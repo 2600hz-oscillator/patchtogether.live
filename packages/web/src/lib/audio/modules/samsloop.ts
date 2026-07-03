@@ -855,7 +855,7 @@ export const samsloopDef: AudioModuleDef = {
     { id: 'rate_cv',    type: 'cv', paramTarget: 'rate', cvScale: { mode: 'linear' } },
     // Stereo record inputs — patched audio is captured + quantized +
     // downsampled into node.data.sample on STOP. `audio_r_in` normalizes
-    // to `audio_l_in` when unpatched (same rule as stereovca / cocoadelay
+    // to `audio_l_in` when unpatched (same rule as stereovca / cofefve
     // — see the per-input `inputs[i]?.[0] === undefined` test in the
     // tap worklet processor). Mono → stereo record without a second
     // cable.

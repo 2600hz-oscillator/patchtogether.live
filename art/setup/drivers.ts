@@ -129,7 +129,7 @@ export interface ToneBurstOptions extends VcoTestSignalOptions {
 }
 
 /** A short vcoTestSignal burst at t = 0 followed by silence — the canonical
- *  TRANSIENT driver for FX with an echo/decay tail (the cocoadelay batch-2
+ *  TRANSIENT driver for FX with an echo/decay tail (the cofefve batch-2
  *  precedent: dry hit, then the ringing tail IS the profile). */
 export function toneBurst(opts: ToneBurstOptions): Float32Array {
   const sr = opts.sampleRate ?? SAMPLE_RATE;

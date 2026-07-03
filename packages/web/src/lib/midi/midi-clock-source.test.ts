@@ -6,7 +6,7 @@
 // MIDI devices" permission prompt on page load / on spawning a non-MIDI
 // module. Root cause was createMidiClockSource() calling
 // navigator.requestMIDIAccess() during CONSTRUCTION — so the first
-// getMidiClockSource() consumer (e.g. COCOA DELAY spawned on its default
+// getMidiClockSource() consumer (e.g. COFEFVE DELAY spawned on its default
 // System clock) prompted, even though the user never chose MIDI.
 //
 // The contract now:
@@ -15,7 +15,7 @@
 //     prompts.
 //   * The FIRST getBpm()/getBeatPeriodS() read is the on-demand trigger and
 //     fires requestMIDIAccess exactly once; subsequent reads do not re-prompt.
-//   * COCOA DELAY's sync bridge only READS the MIDI tempo when the user has
+//   * COFEFVE DELAY's sync bridge only READS the MIDI tempo when the user has
 //     selected MIDI as the clock source — System never touches Web MIDI.
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -23,7 +23,7 @@ import {
   createMidiClockSource,
   __resetMidiClockSourceForTests,
 } from './midi-clock-source';
-import { resolveSyncPeriodS } from '../audio/modules/cocoadelay';
+import { resolveSyncPeriodS } from '../audio/modules/cofefve';
 import type { MidiAccessLike } from '../audio/modules/midi-cv-buddy';
 
 /** A minimal MIDIAccess-like that resolves with no inputs. */
@@ -151,10 +151,10 @@ describe('MIDI clock source: requestMIDIAccess is strictly on-demand', () => {
   });
 });
 
-describe('COCOA DELAY sync bridge: only the MIDI clock-source touches Web MIDI', () => {
+describe('COFEFVE DELAY sync bridge: only the MIDI clock-source touches Web MIDI', () => {
   // The factory itself needs a real AudioContext + worklet (covered by e2e),
   // but the load-bearing logic is "read the MIDI tempo only when MIDI is the
-  // chosen clockSource". That gate is what keeps a default-System COCOA DELAY
+  // chosen clockSource". That gate is what keeps a default-System COFEFVE DELAY
   // spawn from prompting. We assert the gate directly against the clock source.
   const CLOCK_SOURCE_SYSTEM = 0;
   const CLOCK_SOURCE_MIDI = 1;
@@ -165,7 +165,7 @@ describe('COCOA DELAY sync bridge: only the MIDI clock-source touches Web MIDI',
       const src = createMidiClockSource({ now: () => 1000 });
       const nodes = { tl: { type: 'timelorde', params: { bpm: 120 } } };
 
-      // Mirror cocoadelay.pushSyncPeriod's gate: read MIDI ONLY for MIDI src.
+      // Mirror cofefve.pushSyncPeriod's gate: read MIDI ONLY for MIDI src.
       const clockSource: number = CLOCK_SOURCE_SYSTEM;
       const midiBeatPeriodS =
         clockSource === CLOCK_SOURCE_MIDI ? src.getBeatPeriodS() : null;

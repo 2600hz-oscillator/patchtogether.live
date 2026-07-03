@@ -24,10 +24,13 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'lfo',
   'sequencer',
   'fader',
-  'cocoadelay',
+  // COFEFVE DELAY — own-code analog delay (replaced the retired COCOA DELAY,
+  // whose STRICT slot it inherits). Convention card (CofefveCard); kept OFF
+  // INTERACTIVE_DOC_MODULES for parity with the module it replaced.
+  'cofefve',
   // Batch 1 — foundational modules (2026-06-25): the bread-and-butter audio
   // chain — oscillator, amplifier, mixer, noise source, filter — each now
-  // carrying authored co-located docs. (lfo + cocoadelay, the batch's other two
+  // carrying authored co-located docs. (lfo + cofefve, the batch's other two
   // members, were already promoted in the pilot above.)
   'analogVco',
   'vca',
@@ -75,8 +78,8 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // (VC band-pass / notch), the 905 spring reverb, the 907A and 914 fixed
   // filter banks (graphic-EQ-style spectral shapers), and the 923 noise +
   // filter utility. Every one of these is a `card:`-override module (its card
-  // name doesn't match the conventional `<type>Card`), so — like cocoadelay —
-  // they stay OFF the INTERACTIVE_DOC_MODULES allowlist (the doc route's
+  // name doesn't match the conventional `<type>Card`), so — as an
+  // override-card set — they stay OFF the INTERACTIVE_DOC_MODULES allowlist (the doc route's
   // defLite can't resolve an override card → static face fallback). Documented
   // (STRICT) without being live-card-interactive.
   'moog902',

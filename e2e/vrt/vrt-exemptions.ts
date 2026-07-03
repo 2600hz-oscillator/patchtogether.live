@@ -1046,12 +1046,12 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // the darwin baseline is re-captured here. The linux baseline is pending a
   // `task vrt:update` run on linux CI (this dev machine is darwin-only).
   'linux/lfo',
-  // COCOA DELAY (Cocoa Delay GPL-3.0 port): darwin baseline captured on this
-  // machine (static knob/fader/dropdown card — no canvas/animation, so it's
-  // deterministic). The linux baseline is pending a `task vrt:update` run on
-  // linux CI (sub-pixel text AA differs across platforms); darwin is the
-  // regression gate here.
-  'linux/cocoadelay',
+  // COFEFVE DELAY (own-code analog delay, replaced COCOA DELAY): darwin
+  // baseline captured on this machine (static knob/fader/dropdown card — no
+  // canvas/animation, so it's deterministic). The linux baseline is pending a
+  // `task vrt:update` run on linux CI (sub-pixel text AA differs across
+  // platforms); darwin is the regression gate here.
+  'linux/cofefve',
   // RESOFILTER (Resonarium MultiFilter port): darwin baseline captured on this
   // machine (static knob card — no canvas/animation, deterministic). Linux
   // baseline pending a `task vrt:update` run on linux CI (sub-pixel AA differs

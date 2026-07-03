@@ -98,7 +98,7 @@ export const installMidiMockScript = `
   };
 
   // Track how many times requestMIDIAccess is called so tests can assert the
-  // on-demand contract (e.g. spawning a default-System COCOADELAY must NOT
+  // on-demand contract (e.g. spawning a default-System COFEFVE must NOT
   // request access; only an explicit MIDI action / tempo read does).
   let accessCalls = 0;
   // eslint-disable-next-line no-unused-vars

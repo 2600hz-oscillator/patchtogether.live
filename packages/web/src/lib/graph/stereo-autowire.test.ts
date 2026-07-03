@@ -21,8 +21,8 @@ const clouds: StereoDef = {
   stereoPairs: [['in_l', 'in_r'], ['out_l', 'out_r']],
 };
 
-// cocoadelay — inL/inR + outL/outR.
-const cocoadelay: StereoDef = {
+// cofefve — inL/inR + outL/outR.
+const cofefve: StereoDef = {
   inputs: [audio('inL'), audio('inR'), { id: 'clock', type: 'gate' }],
   outputs: [audio('outL'), audio('outR')],
   stereoPairs: [['inL', 'inR'], ['outL', 'outR']],
@@ -81,7 +81,7 @@ describe('findStereoSibling', () => {
     expect(findStereoSibling(rings, 'even')).toBe('odd');
     expect(findStereoSibling(aquatank, 'mix_l')).toBe('mix_r');
     expect(findStereoSibling(charlottesEchos, 'L')).toBe('R');
-    expect(findStereoSibling(cocoadelay, 'inL')).toBe('inR');
+    expect(findStereoSibling(cofefve, 'inL')).toBe('inR');
   });
 
   it('returns null for a non-paired port', () => {
@@ -96,14 +96,14 @@ describe('findStereoSibling', () => {
 });
 
 describe('planStereoAutowire', () => {
-  it('plans the sibling edge for stereo source → stereo target (clouds out_l → cocoadelay inL)', () => {
-    // clouds.out_l → cocoadelay.inL just committed. Expect out_r → inR planned.
+  it('plans the sibling edge for stereo source → stereo target (clouds out_l → cofefve inL)', () => {
+    // clouds.out_l → cofefve.inL just committed. Expect out_r → inR planned.
     const plan = planStereoAutowire({
       fromPortId: 'out_l',
       fromDef: clouds,
       toNodeId: 'coco1',
       toPortId: 'inL',
-      toDef: cocoadelay,
+      toDef: cofefve,
       edges: { e1: edge('e1', ['cl1', 'out_l'], ['coco1', 'inL']) },
     });
     expect(plan).toEqual({
@@ -114,26 +114,26 @@ describe('planStereoAutowire', () => {
     });
   });
 
-  it('plans from the R side too (clouds out_r → cocoadelay inR ⇒ out_l → inL)', () => {
+  it('plans from the R side too (clouds out_r → cofefve inR ⇒ out_l → inL)', () => {
     const plan = planStereoAutowire({
       fromPortId: 'out_r',
       fromDef: clouds,
       toNodeId: 'coco1',
       toPortId: 'inR',
-      toDef: cocoadelay,
+      toDef: cofefve,
       edges: { e1: edge('e1', ['cl1', 'out_r'], ['coco1', 'inR']) },
     });
     expect(plan?.siblingFromPortId).toBe('out_l');
     expect(plan?.siblingToPortId).toBe('inL');
   });
 
-  it('is naming-agnostic across the source/target pair (rings odd/even → cocoadelay inL/inR)', () => {
+  it('is naming-agnostic across the source/target pair (rings odd/even → cofefve inL/inR)', () => {
     const plan = planStereoAutowire({
       fromPortId: 'odd',
       fromDef: rings,
       toNodeId: 'coco1',
       toPortId: 'inL',
-      toDef: cocoadelay,
+      toDef: cofefve,
       edges: { e1: edge('e1', ['r1', 'odd'], ['coco1', 'inL']) },
     });
     expect(plan?.siblingFromPortId).toBe('even');
@@ -155,39 +155,39 @@ describe('planStereoAutowire', () => {
   });
 
   it('returns null for a MONO source into a stereo target (engine normals R←L)', () => {
-    // monoOsc.out → cocoadelay.inL — source has no matching pair.
+    // monoOsc.out → cofefve.inL — source has no matching pair.
     const plan = planStereoAutowire({
       fromPortId: 'out',
       fromDef: monoOsc,
       toNodeId: 'coco1',
       toPortId: 'inL',
-      toDef: cocoadelay,
+      toDef: cofefve,
       edges: { e1: edge('e1', ['osc1', 'out'], ['coco1', 'inL']) },
     });
     expect(plan).toBeNull();
   });
 
   it('returns null when the target port is not a stereo-pair member', () => {
-    // clouds.out_l → cocoadelay.clock (not paired).
+    // clouds.out_l → cofefve.clock (not paired).
     const plan = planStereoAutowire({
       fromPortId: 'out_l',
       fromDef: clouds,
       toNodeId: 'coco1',
       toPortId: 'clock',
-      toDef: cocoadelay,
+      toDef: cofefve,
       edges: {},
     });
     expect(plan).toBeNull();
   });
 
   it('skips when the sibling TARGET input is already occupied (does not overwrite)', () => {
-    // clouds.out_l → cocoadelay.inL, but inR already has a cable from elsewhere.
+    // clouds.out_l → cofefve.inL, but inR already has a cable from elsewhere.
     const plan = planStereoAutowire({
       fromPortId: 'out_l',
       fromDef: clouds,
       toNodeId: 'coco1',
       toPortId: 'inL',
-      toDef: cocoadelay,
+      toDef: cofefve,
       edges: {
         e1: edge('e1', ['cl1', 'out_l'], ['coco1', 'inL']),
         eOcc: edge('eOcc', ['other', 'out'], ['coco1', 'inR']),
@@ -203,7 +203,7 @@ describe('planStereoAutowire', () => {
       fromDef: clouds,
       toNodeId: 'coco1',
       toPortId: 'inL',
-      toDef: cocoadelay,
+      toDef: cofefve,
       edges: { e1: edge('e1', ['cl1', 'out_l'], ['coco1', 'inL']) },
     });
     expect(plan).not.toBeNull();

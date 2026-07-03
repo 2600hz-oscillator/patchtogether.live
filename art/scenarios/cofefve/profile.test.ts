@@ -1,37 +1,33 @@
-// art/scenarios/cocoadelay/profile.test.ts
+// art/scenarios/cofefve/profile.test.ts
 //
-// AUDIO PROFILE for COCOA DELAY (backfill batch 2 — spec §4.1/§4.3,
-// .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md), through the
-// shared capture harness (art/setup/capture.ts + drivers.ts).
+// AUDIO PROFILE for COFEFVE DELAY (the own-code analog delay replacing COCOA
+// DELAY), through the shared capture harness (art/setup/capture.ts +
+// drivers.ts).
 //
-// Category: FX / PROCESSOR with a FEEDBACK TAIL — so per spec §4.1 the
-// render is ≥1.0 s (1.6 s here) and the driver is a short transient: a
-// 60 ms C4 saw burst at t=0 (the moog905 batch-1 burst precedent), then
-// silence, so the 200 ms echo train decaying at feedback 0.5 is what the
-// gallery waveform/spectrogram shows — dry hit, then echoes marching off.
+// Category: FX / PROCESSOR with a FEEDBACK TAIL — so the render is ≥1.0 s
+// (1.6 s here) and the driver is a short transient: a 60 ms C4 saw burst at
+// t=0, then silence, so the ~200 ms echo train decaying at feedback 0.5 is
+// what the gallery waveform/spectrogram shows — dry hit, then echoes marching
+// off.
 //
 // Patch: the worklet's SHIPPING DEFAULTS, taken directly from the captured
-// class's own parameterDescriptors table (delayTime 0.2 s, feedback 0.5,
-// wet 0.5, dry 1, drift 0.001, tempo sync off, …) — no hand-copied
-// constants to drift.
+// class's own parameterDescriptors table (delayTime 0.2 s, feedback 0.5, wet
+// 0.5, dry 1, drift 0.001, tempo sync off, …) — no hand-copied constants to
+// drift.
 //
-// Rendering path: the REAL worklet processor class (the bluebox batch-1
-// pattern). cocoadelay.ts + cocoadelay-core.ts are self-contained pure
-// math: the DRIFT modulation runs on the core's own fixed-seed Xorshift
-// (the Cocoa Delay original's PRNG — deterministic by construction, never
-// Math.random), so we capture the class via the registerProcessor shim and
-// pump process() in 128-sample blocks. Zero mirror, zero drift: this IS
-// the shipping DSP, including the in-loop filters, stateful drive and
-// ducking follower.
+// Rendering path: the REAL worklet processor class. cofefve.ts +
+// lib/analog-delay-core.ts are self-contained pure math: the FLUTTER/DRIFT
+// modulation runs on the core's own fixed-seed xorshift (deterministic by
+// construction, never Math.random), so we capture the class via the
+// registerProcessor shim and pump process() in 128-sample blocks. Zero mirror,
+// zero drift: this IS the shipping DSP.
 //
-// SIGNATURE output (owner decision §6b.2): ONE baseline `out`. With this
-// mono driver and the default patch (stereoOffset 0, pan 0, static pan
-// mode) the worklet's outL/outR are provably identical — asserted below —
-// so one profile covers both ports (bus-duplicate rule, spec §4.1).
+// SIGNATURE output: ONE baseline `out`. With this mono driver and the default
+// patch (stereoOffset 0, pan 0, static pan mode) the worklet's outL/outR are
+// provably identical — asserted below — so one profile covers both ports.
 //
-// The .sha pins BOTH the worklet entry and the shared core (the same file
-// CHARLOTTE'S ECHOS chains ×4) so a change in either forces an intentional
-// `task art:update`.
+// The .sha pins BOTH the worklet entry and the shared own-code core so a change
+// in either forces an intentional `task art:update`.
 
 import { describe, expect, it } from 'vitest';
 import { dspSourceSha, pinAll, SAMPLE_RATE } from '../../setup/capture';
@@ -67,9 +63,9 @@ async function loadProcessor(): Promise<ProcCtor> {
   g.registerProcessor = (_n, ctor) => {
     registered = ctor;
   };
-  await import('../../../packages/dsp/src/cocoadelay');
+  await import('../../../packages/dsp/src/cofefve');
   g.registerProcessor = prev;
-  if (!registered) throw new Error('cocoadelay.ts did not registerProcessor()');
+  if (!registered) throw new Error('cofefve.ts did not registerProcessor()');
   capturedProc = registered;
   return capturedProc;
 }
@@ -79,10 +75,8 @@ async function loadProcessor(): Promise<ProcCtor> {
 async function renderProfile(): Promise<Record<string, Float32Array>> {
   const Proc = await loadProcessor();
   const proc = new Proc();
-  // Shipping defaults, straight from the descriptor table (single-element
-  // arrays = the k-rate/"constant this block" AudioParam shape).
   const descriptors = Proc.parameterDescriptors;
-  if (!descriptors) throw new Error('cocoadelay: no parameterDescriptors');
+  if (!descriptors) throw new Error('cofefve: no parameterDescriptors');
   const params: Record<string, Float32Array> = {};
   for (const d of descriptors) params[d.name] = new Float32Array([d.defaultValue]);
 
@@ -100,8 +94,8 @@ async function renderProfile(): Promise<Record<string, Float32Array>> {
     const len = Math.min(BLOCK, n - start);
     blockL.fill(0);
     blockR.fill(0);
-    // inputs[0] = audio L; the worklet mirrors it onto R when the stereo
-    // input is unpatched (inR ?? inputs[0]), and the clock gate is unpatched.
+    // inputs[0] = audio L; the worklet normals R to L when unpatched, and the
+    // clock gate is unpatched.
     proc.process(
       [[input.subarray(start, start + len)]],
       [[blockL.subarray(0, len)], [blockR.subarray(0, len)]],
@@ -111,8 +105,8 @@ async function renderProfile(): Promise<Record<string, Float32Array>> {
     outR.set(blockR.subarray(0, len), start);
   }
 
-  // Bus-duplicate proof for the SIGNATURE single-out decision: with the
-  // mono driver + default patch, L and R must be the SAME signal.
+  // Bus-duplicate proof for the SIGNATURE single-out decision: with the mono
+  // driver + default patch, L and R must be the SAME signal.
   for (let i = 0; i < n; i++) {
     if (outL[i]! !== outR[i]!) throw new Error(`outL/outR diverge at sample ${i}`);
   }
@@ -125,28 +119,28 @@ function rms(b: Float32Array, s = 0, e = b.length): number {
   return Math.sqrt(x / Math.max(1, e - s));
 }
 
-describe('ART cocoadelay / audio profile (60 ms saw burst → 200 ms echo train, default patch)', () => {
+describe('ART cofefve / audio profile (60 ms saw burst → 200 ms echo train, default patch)', () => {
   it('renders the dry burst, discrete decaying echoes and silence between them', async () => {
     const out = (await renderProfile()).out!;
     expect(out.length).toBe(Math.round(SR * DURATION_S));
     expect(out.every(Number.isFinite)).toBe(true);
     // The dry burst dominates the first 60 ms (dryVolume 1).
     expect(rms(out, 0, Math.round(BURST_S * SR))).toBeGreaterThan(0.1);
-    // A DISCRETE echo: energy in the first-echo window (~0.2 s, wet 0.5)
-    // clearly beats the near-silent gap between burst and echo…
+    // A DISCRETE echo: energy in the first-echo window (~0.2 s, wet 0.5) clearly
+    // beats the near-silent gap between burst and echo…
     const gap = rms(out, Math.round(0.1 * SR), Math.round(0.18 * SR));
     const echo1 = rms(out, Math.round(0.19 * SR), Math.round(0.28 * SR));
     expect(echo1).toBeGreaterThan(gap * 3);
     expect(echo1).toBeGreaterThan(0.01);
-    // …and the train DECAYS (feedback 0.5 < 1): the tail end is far below
-    // the first echo.
+    // …and the train DECAYS (feedback 0.5 < 1): the tail end is far below the
+    // first echo.
     const late = rms(out, Math.round(1.35 * SR), Math.round(1.55 * SR));
     expect(late).toBeLessThan(echo1 * 0.5);
     let peak = 0;
     for (const v of out) peak = Math.max(peak, Math.abs(v));
     expect(peak).toBeLessThan(2);
     // Deterministic re-render is bit-identical (fresh processor instance;
-    // DRIFT runs on the core's fixed-seed Xorshift, never Math.random).
+    // FLUTTER runs on the core's fixed-seed xorshift, never Math.random).
     const again = (await renderProfile()).out!;
     let diff = 0;
     for (let i = 0; i < out.length; i++) diff = Math.max(diff, Math.abs(out[i]! - again[i]!));
@@ -154,7 +148,7 @@ describe('ART cocoadelay / audio profile (60 ms saw burst → 200 ms echo train,
   });
 
   it('pins the out profile baseline (SHA-gated, RMS tier B)', async () => {
-    const srcSha = await dspSourceSha('cocoadelay.ts', 'cocoadelay-core.ts');
-    await pinAll('cocoadelay', srcSha, await renderProfile());
+    const srcSha = await dspSourceSha('cofefve.ts', 'lib/analog-delay-core.ts');
+    await pinAll('cofefve', srcSha, await renderProfile());
   });
 });

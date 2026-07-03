@@ -1,9 +1,13 @@
 // packages/dsp/src/cocoadelay-core.ts
 //
-// Shared per-instance DSP core for Cocoa Delay. The AudioWorklet processor
-// (cocoadelay.ts) wraps ONE core; CHARLOTTE'S ECHOS (charlottes-echos.ts)
-// chains FOUR cores in series. Keeping the math here means both stay
-// bit-identical — a CHARLOTTE stage IS a COCOA DELAY.
+// TODO: delete once charlottes-echos migrates to analog-delay-core (owner-reviewed PR).
+// This GPL-lineage core is retained ONLY because charlottes-echos.ts still
+// chains it; the standalone COCOA DELAY module has been replaced by the
+// clean-room own-code COFEFVE DELAY (lib/analog-delay-core.ts + ../cofefve.ts).
+//
+// Shared per-instance DSP core for Cocoa Delay. The CHARLOTTE'S ECHOS worklet
+// (charlottes-echos.ts) chains FOUR cores in series. Keeping the math here
+// means the chained stages stay bit-identical.
 //
 // Clean-room TypeScript translation of Tilde Murray's Cocoa Delay (GPL-3.0,
 // see ../cocoa-delay). Every block — DELAY (Hermite tape read), LFO + DRIFT

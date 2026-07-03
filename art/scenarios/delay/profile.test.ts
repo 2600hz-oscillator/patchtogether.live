@@ -7,7 +7,7 @@
 //
 // Category: TIME-BASED FX with a decaying tail — the canonical TRANSIENT
 // driver (a short tone BURST at t=0, then silence) so the profile IS the
-// ringing echo train, not a steady tone (the cocoadelay batch-2 precedent).
+// ringing echo train, not a steady tone (the cofefve batch-2 precedent).
 // A 40 ms C4-saw burst hits a 150 ms delay at 0.6 feedback / 0.5 mix, so the
 // output is: the dry hit, then a first echo at 150 ms and successive echoes
 // every 150 ms, each 0.6× the last — the module's defining behavior.

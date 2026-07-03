@@ -1,6 +1,6 @@
 <script lang="ts">
   // SidecarCard — stereo sidechain ducker card. Standard fader card
-  // pattern (mirrors ResofilterCard / CocoaDelayCard). 9 knobs in two
+  // pattern (mirrors ResofilterCard / CofefveCard). 9 knobs in two
   // rows: threshold/ratio/knee/makeup on the top row, attack/release/
   // envMag/inputLevel/sc_hpf on the bottom row. PatchPanel surfaces the 7
   // inputs (audio L/R, sc L/R, threshold_cv, env_mag_cv, input_level_cv) +

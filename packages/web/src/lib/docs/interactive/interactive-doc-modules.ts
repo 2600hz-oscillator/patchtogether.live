@@ -26,14 +26,14 @@ export const INTERACTIVE_DOC_MODULES: ReadonlySet<string> = new Set<string>([
   'noise',
   'filter',
   'lfo',
-  // NOTE — cocoadelay is documented (STRICT_DOCS) but intentionally NOT here.
-  // Its def carries a `card: 'CocoaDelayCard'` override (the conventional
-  // `cocoadelay → CocoadelayCard` name doesn't match the file), and the doc
-  // route's prerender-safe `defLite` (routes/docs/modules/[id]/+page.server.ts)
-  // does NOT plumb `card` through — so buildNodeTypes can't resolve its card and
-  // the live virtual module never mounts. It correctly falls back to the static
-  // doc view. Plumbing `card` into the manifest + defLite is a separate infra
-  // follow-up; until then any override-card module stays off this allowlist.
+  // NOTE — cofefve (COFEFVE DELAY, the own-code replacement for the retired
+  // Cocoa Delay module) is documented (STRICT_DOCS) but intentionally NOT here. Its
+  // card IS a convention card (CofefveCard, pure Knob/Fader/select + PatchPanel)
+  // so the doc route COULD mount it live, but for parity with the module it
+  // replaced (which stayed static) it is kept off this allowlist and uses the
+  // static doc face. Promoting it to the live virtual-module doc view is a
+  // straightforward follow-up (add it here + a PROBES row in
+  // docs-virtual-module.spec.ts).
   // Batch 2 (2026-06-25): macrooscillator's card is a pure PatchPanel + six
   // Faders + a derived label — no onMount/effect, no canvas/rAF, no Web MIDI or
   // file input — so it mounts cleanly in the doc sandbox. The other batch-2
