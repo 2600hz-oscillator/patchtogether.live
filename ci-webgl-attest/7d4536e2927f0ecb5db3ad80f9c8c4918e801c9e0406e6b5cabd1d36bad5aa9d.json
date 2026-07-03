@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "c30d59671c1292a02434da0f91e498daaea49871441c013f76badb54bebd0800",
-  "attestedAt": "2026-07-01T16:34:40.545Z",
+  "webglContentHash": "7d4536e2927f0ecb5db3ad80f9c8c4918e801c9e0406e6b5cabd1d36bad5aa9d",
+  "attestedAt": "2026-07-03T05:30:19.693Z",
   "attestedBy": "tmayshark@gmail.com",
-  "gitHeadAtAttest": "4d00d51010c90598313a93275e04faa79f3a4429",
+  "gitHeadAtAttest": "838e575038b344284b5b0e5419190a456665b8eb",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "host": "2600hzs-MBP.home.local",
@@ -12,25 +12,19 @@
   "suites": {
     "A-heavy": {
       "specFiles": 45,
-      "passed": 137,
+      "passed": 138,
       "failed": 0,
       "flaky": 0,
-      "skipped": 2,
+      "skipped": 1,
       "flakyDetails": []
     },
     "A-serial": {
       "specFiles": 2,
-      "passed": 3,
+      "passed": 4,
       "failed": 0,
-      "flaky": 1,
+      "flaky": 0,
       "skipped": 0,
-      "flakyDetails": [
-        {
-          "test": "WAVECEL.scope_out -> OUTPUT renders a structured, frame-stable waveform trace",
-          "file": "wavecel-video-outs.spec.ts",
-          "firstError": "Error: frozen scope output is frame-stable (mean 16.562 vs 15.642) |  | expect(received).toBeLessThan(expected) | "
-        }
-      ]
+      "flakyDetails": []
     },
     "B-leakers": {
       "specFiles": 4,
@@ -49,5 +43,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 144
+  "durationSec": 129
 }
