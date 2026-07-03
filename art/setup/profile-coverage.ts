@@ -48,7 +48,11 @@ export const ART_EXCLUDED: Readonly<Record<string, string>> = {
  * (chowkick, adsr) profiled in the same PR → 101 committed entries.
  * Batch 1 (#1001) −6 → 95; batch 2 (#1002) −6 → 89; batch 3 (#1005) −6 → 83;
  * batch 4 −8 → 75; batch 5 −8 → 67 (noise, scaler, polarizer, depolarizer,
- * negativity, illogic, delay, veils).
+ * negativity, illogic, delay, veils); batch 6 −8 → 59 — the tier-crossing
+ * batch: a FAUST-IN-NODE harness (art/setup/faust-offline.ts) makes compiled
+ * Faust `.dsp` modules ART-profilable (vca, filter, mixer, reverb, destroy,
+ * mixmstrs) alongside the last easy TS ones (stereovca worklet, scope
+ * offline-def).
  *
  * RULES (enforced by audio-profile-gate.test.ts):
  *   - a module that gains a baseline MUST be removed from this list;
@@ -67,12 +71,10 @@ export const ART_BACKLOG: readonly string[] = [
   'clipplayer',
   'clouds',
   'cloudseed',
-  'destroy',
   'drummergirl',
   'drumseqz',
   'dx7',
   'elements',
-  'filter',
   'foxy',
   'grids',
   'helm',
@@ -83,8 +85,6 @@ export const ART_BACKLOG: readonly string[] = [
   'macseq',
   'marbles',
   'meowbox',
-  'mixer',
-  'mixmstrs',
   'moog902',
   'moog903a',
   'moog912',
@@ -104,22 +104,18 @@ export const ART_BACKLOG: readonly string[] = [
   'polyhelm',
   'polyseqz',
   'rasterize',
-  'reverb',
   'rings',
   'riotgirls',
   'samsloop',
-  'scope',
   'score',
   'sequencer',
   'shimmershine',
   'stages',
-  'stereovca',
   'swolevco',
   'symbiote',
   'tides2',
   'timelorde',
   'twotracks',
-  'vca',
   'warps',
   'warrenspectrum',
   'wavecel',
@@ -130,4 +126,4 @@ export const ART_BACKLOG: readonly string[] = [
 
 /** The ratchet cap. Lower it (to ART_BACKLOG.length) every time a batch
  *  removes entries; the gate fails if the list ever grows past it. */
-export const ART_BACKLOG_MAX = 67;
+export const ART_BACKLOG_MAX = 59;
