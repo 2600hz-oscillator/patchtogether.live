@@ -441,7 +441,7 @@ describe('MIDI CC → set() → reconciler → live() readback (set/live consist
 // ---------------- NOTE learn flow (gates + buttons) ----------------
 
 describe('NOTE learn flow (capture next NOTE + drive a gate/button)', () => {
-  const MOD = 'hydrogen-1';
+  const MOD = 'drumseqz-1';
   const PARAM = 'isPlaying';
 
   it('first NOTE-ON after beginNoteLearn becomes the binding (kind=note)', async () => {

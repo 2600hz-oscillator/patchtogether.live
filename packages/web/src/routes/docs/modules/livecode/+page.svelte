@@ -33,22 +33,22 @@
   );
 
   // Worked example: the sidechain ducker the user requested. VCO →
-  // VCA; ADSR's INVERTED envelope drives the VCA cv; the kick drum
-  // (HYDROGEN trig0) fires the ADSR. Every kick → quick volume dip
-  // on the VCO — classic sidechain shape.
-  const SIDECHAIN_JS = `// Sidechain ducker — VCO plays through VCA; kick fires an ADSR
-// whose INVERTED envelope (env_inv) modulates the VCA's cv, ducking
-// the VCO in time with the kick.
+  // VCA; ADSR's INVERTED envelope drives the VCA cv; the drum
+  // sequencer (DRUMSEQZ gate1) fires the ADSR. Every beat → quick
+  // volume dip on the VCO — classic sidechain shape.
+  const SIDECHAIN_JS = `// Sidechain ducker — VCO plays through VCA; a drum-sequencer gate
+// fires an ADSR whose INVERTED envelope (env_inv) modulates the
+// VCA's cv, ducking the VCO in time with the beat.
 
 spawn('analogVco', 'lead');
 spawn('vca', 'duck');
 spawn('adsr', 'ducker');
-spawn('hydrogen', 'drums');
+spawn('drumseqz', 'drums');
 spawn('audioOut', 'mainout');
 
 patch('lead.sine',       'duck.audio');
 patch('ducker.env_inv',  'duck.cv');
-patch('drums.trig0',     'ducker.gate');
+patch('drums.gate1',     'ducker.gate');
 patch('duck.audio',      'mainout.L');
 patch('duck.audio',      'mainout.R');
 
@@ -63,7 +63,8 @@ set('ducker', 'release', 0.05);
 set('duck', 'base',     0);
 set('duck', 'cvAmount', 1);
 
-// 120 BPM kick on every beat.
+// 120 BPM; toggle a hit on track 1 then run the sequencer so gate1
+// fires on the beat.
 set('drums', 'bpm',       120);
 set('drums', 'isPlaying', 1);`;
 
@@ -308,7 +309,7 @@ clocked('1/16', () => {
 </p>
 <pre><code>{COMPLEX_CHAIN_JS}</code></pre>
 
-<h3>Minimal sidechain — VCO + VCA + ADSR.env_inv + HYDROGEN kick</h3>
+<h3>Minimal sidechain — VCO + VCA + ADSR.env_inv + DRUMSEQZ gate</h3>
 <p>
   The classic sidechain ducker, wired from a single script. The
   inverted ADSR envelope (<code>env_inv</code>, available on every ADSR)

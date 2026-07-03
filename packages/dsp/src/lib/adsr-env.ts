@@ -6,15 +6,15 @@
 // entries under src/*.ts must NOT top-level-export — see the
 // dsp-worklet-no-top-level-export rule).
 //
-// The state machine + `tick` body are a VERBATIM copy of helm.ts's Envelope
+// The state machine + `tick` body are a VERBATIM copy of the Helm synth's Envelope
 // (mopo/envelope.cpp algorithm port: linear attack ramp, single-pole-exp
-// decay/release, times in SECONDS, sustain 0..1). helm.ts and
-// pentemelodica-dsp.ts are NOT migrated onto this lib — they are shipped +
-// baselined and stay byte-identical with their own `value = 0` envelopes.
+// decay/release, times in SECONDS, sustain 0..1). pentemelodica-dsp.ts is
+// NOT migrated onto this lib — it is shipped + baselined and stays
+// byte-identical with its own `value = 0` envelope.
 //
-// What's NEW here vs helm's Envelope: the trigger is split into two methods.
-//   * triggerHard(on) — the VERBATIM helm behavior (rising edge resets value
-//     to 0). Kept so a future opt-in migration of helm/pentemelodica onto this
+// What's NEW here vs the Helm synth's Envelope: the trigger is split into two methods.
+//   * triggerHard(on) — the VERBATIM Helm-synth behavior (rising edge resets value
+//     to 0). Kept so a future opt-in migration of pentemelodica onto this
 //     lib stays bit-identical.
 //   * triggerSoft(on) — a CLICK-SAFE retrigger that attacks from the CURRENT
 //     value (no value=0). The attack RATE is unchanged — `tick` always ramps
@@ -35,8 +35,8 @@ export class Envelope {
   state: EnvState = EnvState.Idle;
   value = 0;
 
-  /** VERBATIM helm behavior — rising edge HARD-resets the value to 0; falling
-   *  edge → Release. For helm/pentemelodica parity (opt-in; the 3 new modules
+  /** VERBATIM Helm-synth behavior — rising edge HARD-resets the value to 0; falling
+   *  edge → Release. For Helm-synth / pentemelodica parity (opt-in; the 3 new modules
    *  use triggerSoft instead). */
   triggerHard(on: boolean): void {
     if (on) {
@@ -61,7 +61,7 @@ export class Envelope {
   }
 
   /** Advance one sample. attack/decay/release are in SECONDS, sustain 0..1.
-   *  Body copied verbatim from helm.ts:251-282. */
+   *  Body copied verbatim from the Helm synth's envelope.cpp. */
   tick(attack: number, decay: number, sustain: number, release: number, sr: number): number {
     if (this.state === EnvState.Attack) {
       const a = Math.max(1e-6, attack);

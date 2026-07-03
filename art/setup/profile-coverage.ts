@@ -52,7 +52,8 @@ export const ART_EXCLUDED: Readonly<Record<string, string>> = {
  * batch: a FAUST-IN-NODE harness (art/setup/faust-offline.ts) makes compiled
  * Faust `.dsp` modules ART-profilable (vca, filter, mixer, reverb, destroy,
  * mixmstrs) alongside the last easy TS ones (stereovca worklet, scope
- * offline-def).
+ * offline-def). Deleting the helm/polyhelm/hydrogen modules removed those
+ * 3 backlog ids −3 → 56.
  *
  * RULES (enforced by audio-profile-gate.test.ts):
  *   - a module that gains a baseline MUST be removed from this list;
@@ -77,8 +78,6 @@ export const ART_BACKLOG: readonly string[] = [
   'elements',
   'foxy',
   'grids',
-  'helm',
-  'hydrogen',
   'kria',
   'lfo',
   'macrooscillator',
@@ -101,7 +100,6 @@ export const ART_BACKLOG: readonly string[] = [
   'numpadPlus',
   'peaks',
   'pentemelodica',
-  'polyhelm',
   'polyseqz',
   'rasterize',
   'rings',
@@ -126,4 +124,4 @@ export const ART_BACKLOG: readonly string[] = [
 
 /** The ratchet cap. Lower it (to ART_BACKLOG.length) every time a batch
  *  removes entries; the gate fails if the list ever grows past it. */
-export const ART_BACKLOG_MAX = 59;
+export const ART_BACKLOG_MAX = 56;

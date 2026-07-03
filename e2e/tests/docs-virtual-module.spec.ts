@@ -540,7 +540,7 @@ const PROBES: Probe[] = [
   // interactive; this proves the live card mounts cleanly and a control hover
   // updates the pane. The CV→param dual-context check runs on each (cloudseed
   // late_cv→late_out, symbiote rate_cv→rate). The STATIC siblings (foxy /
-  // twotracks / hypercube / synesthesia / warrenspectrum / polyhelm / mixmstrs /
+  // twotracks / hypercube / synesthesia / warrenspectrum / mixmstrs /
   // bluebox) have no live-card probe — see interactive-doc-modules.ts. ---
   {
     id: 'cloudseed',
@@ -558,26 +558,17 @@ const PROBES: Probe[] = [
     cvPort: 'rate_cv', // CV (paramTarget=rate) → master clock rate
     modulates: /modulates/i,
   },
-  // --- Batch 14 — FINAL audio batch (2026-06-26). The two CONVENTION-card
-  // members that mount cleanly in the engine-less doc sandbox are interactive:
-  // riotgirls (pure Knob + PatchPanel) and hydrogen (transport buttons + step
-  // grid + per-voice Knobs + PatchPanel; its currentStep poll no-ops with a null
-  // engine). Both prove the live card mounts + a control hover updates the pane.
-  // The CV→param dual-context step is SKIPPED for them (cvPort: '') — both cards
-  // are very wide (riotgirls 1100px, hydrogen 660px+) so the doc-sandbox <main>
-  // overlaps the patch-trigger, making the patch-panel drill-in flaky; the
-  // control-hover demo is the interactive value here (same posture as the
-  // sequencer/vca/mixer probes that also skip the CV step). The STATIC siblings
-  // (frogger / modtris / pong / skifree / samsloop / spectrograph / wavesculpt)
-  // have no live-card probe — see interactive-doc-modules.ts. ---
-  {
-    id: 'hydrogen',
-    heading: /hydrogen/i,
-    controlParam: 'bpm',
-    controlDescIncludes: /tempo|bpm/i,
-    cvPort: '', // wide card — patch-panel drill-in is flaky in the doc sandbox
-    modulates: /./,
-  },
+  // --- Batch 14 — FINAL audio batch (2026-06-26). The one CONVENTION-card
+  // member that mounts cleanly in the engine-less doc sandbox is interactive:
+  // riotgirls (pure Knob + PatchPanel). It proves the live card mounts + a
+  // control hover updates the pane. The CV→param dual-context step is SKIPPED
+  // for it (cvPort: '') — the card is very wide (riotgirls 1100px) so the
+  // doc-sandbox <main> overlaps the patch-trigger, making the patch-panel
+  // drill-in flaky; the control-hover demo is the interactive value here (same
+  // posture as the sequencer/vca/mixer probes that also skip the CV step). The
+  // STATIC siblings (frogger / modtris / pong / skifree / samsloop /
+  // spectrograph / wavesculpt) have no live-card probe — see
+  // interactive-doc-modules.ts. ---
   {
     id: 'riotgirls',
     heading: /riotgirls/i,

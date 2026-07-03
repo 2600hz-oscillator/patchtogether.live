@@ -25,7 +25,7 @@
 //       lean on the module's internal RNG / clock to produce edges.
 //
 //   * Step-sequencers needing pre-toggled steps (SEQUENCER, SCORE,
-//     DRUMSEQZ, POLYSEQZ, MACSEQ, HYDROGEN):
+//     DRUMSEQZ, POLYSEQZ, MACSEQ):
 //       Seed node.data.steps (or .tracks) with on=true entries and set
 //       isPlaying=1. The internal scheduler picks them up.
 //
@@ -69,7 +69,7 @@ export interface PerPortDriver {
    *  `pos_x: 0.7` (joystick), `running: 1` (timelorde). */
   params?: Record<string, number>;
   /** Initial `node.data` written into the SUT node. Used to seed
-   *  sequencer steps, hydrogen tracks, etc. */
+   *  sequencer steps, drum-machine tracks, etc. */
   data?: Record<string, unknown>;
   /** Extra upstream-source nodes + edges to drive an input the SUT
    *  needs. Spec adds these to the SUT-and-sink graph. */
@@ -434,26 +434,6 @@ const DRIVERS: Record<string, PerPortDriver> = {
     ] },
     note: 'WRITESEQ: 4 steps on + isPlaying=1; pitch/gate/clock pulse',
   },
-  hydrogen: {
-    // Toggle every cell on track 0 (BD) so the kick fires on every step.
-    params: { isPlaying: 1, bpm: 240, gain: 1 },
-    data: {
-      tracks: (() => {
-        // 16 instruments × 16 steps; instruments 0 (kick) and 1 (snare)
-        // both fire on every step.
-        const ON = { on: true };
-        const OFF = { on: false };
-        return Array.from({ length: 16 }, (_, i) => {
-          const cells = i < 2
-            ? Array.from({ length: 16 }, () => ON)
-            : Array.from({ length: 16 }, () => OFF);
-          return cells;
-        });
-      })(),
-    },
-    note: 'HYDROGEN: enable kick+snare on every step + isPlaying=1; out_l/out_r emit',
-  },
-
   // ───── Pure CV/gate utilities ─────
   // Driving with BUGGLES.smooth into in1/in2 makes sum/diff/att1/att2
   // emit signal; AND/NAND/OR/NOT need binary inputs (use SEQUENCER.gate).

@@ -9,7 +9,7 @@
 // Regression history:
 //   * Patch-to cascade hid gate→cv / pitch→cv / cv→gate / cv→pitch
 //     candidates even though the engine routes them at runtime — added
-//     CV_FAMILY interchange to canConnect (Hydrogen-PR-feedback bundle).
+//     CV_FAMILY interchange to canConnect (an early PR-feedback bundle).
 //   * polyPitchGate ↔ pitch / gate / cv: the engine's resolveConnection
 //     interposes a splitter / merger; this test set asserts the UI gate
 //     mirrors that permissiveness.

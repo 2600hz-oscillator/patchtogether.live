@@ -51,15 +51,8 @@ const SKIP_OUTPUT_ALIVE: Record<string, string> = {
   sticky: 'meta-domain; no audio path',
   // LIVECODE — text-DSL editor; no audio path.
   livecode: 'text-DSL; no audio path',
-  // HELM — MIDI-driven; pitch_cv/gate are fallbacks but reliable
-  // alive-check needs the per-spec MIDI mock. Covered by helm.spec.ts.
-  helm: 'MIDI-driven; covered by helm.spec.ts',
   // SAMSLOOP — needs a loaded sample to sound. Covered by samsloop.spec.ts.
   samsloop: 'needs uploaded sample; covered by samsloop.spec.ts',
-  // HYDROGEN — pattern grid needs cells toggled on before any voice
-  // fires. Covered by the dedicated hydrogen E2E (when it lands; for
-  // now, the spawn check is enough).
-  hydrogen: 'pattern grid needs cells toggled; covered by hydrogen.spec.ts (pending)',
   // MIDI-CV-BUDDY / MIDICLOCK — depend on connected MIDI device.
   midiCvBuddy: 'requires MIDI device; covered by midi-cv-buddy.spec.ts',
   midiclock: 'requires MIDI device; covered by midiclock.spec.ts',

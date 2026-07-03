@@ -19,7 +19,7 @@
 //     ./resofilter-dsp (a Cytomic/Zavalishin TPT state-variable filter). The
 //     MODE morph blends its {lp,bp,hp} taps (+ notch = x - bp) into a
 //     continuous LP→BP→HP→Notch dial. No QBRT-style ping / edge gate.
-//   * Envelope          — a verbatim copy of helm's Envelope (linear attack,
+//   * Envelope          — a verbatim copy of the Helm synth's Envelope (linear attack,
 //     single-pole-exp decay/release, seconds-based, gate-edge triggered).
 //
 // The full per-render pipeline is:
@@ -67,7 +67,7 @@ export type { AdsrParams };
 export const PENTE_VOICES = 5;
 
 // ----------------------------------------------------------------------------
-// Envelope — copied verbatim from packages/dsp/src/helm.ts (mopo/envelope.cpp
+// Envelope — copied verbatim from the Helm synth (mopo/envelope.cpp
 // algorithm port): linear attack ramp, single-pole exponential decay/release,
 // times in SECONDS, sustain 0..1, gate edge via trigger(on).
 // ----------------------------------------------------------------------------
