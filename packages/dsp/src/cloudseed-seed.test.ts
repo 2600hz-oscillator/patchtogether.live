@@ -35,11 +35,15 @@ beforeAll(async () => {
     registerProcessor?: (n: string, c: ProcCtor) => void;
   };
   g.sampleRate = SR;
-  if (typeof g.AudioWorkletProcessor === 'undefined') {
-    g.AudioWorkletProcessor = class {
-      port = { onmessage: null as unknown, postMessage: (): void => {} };
-    };
-  }
+  // ALWAYS install our port-having stub base (not `if undefined`): the dsp
+  // suite runs single-fork, so another worklet test may have already installed
+  // a PORT-LESS AudioWorkletProcessor stub. cloudseed's ctor sets
+  // `this.port.onmessage`, so it needs a base with a `port` — overwrite
+  // unconditionally, else CI (different test order than local) crashes with
+  // "Cannot set properties of undefined (setting 'onmessage')".
+  g.AudioWorkletProcessor = class {
+    port = { onmessage: null as unknown, postMessage: (): void => {} };
+  };
   g.registerProcessor = (_n, ctor) => {
     capturedProc = ctor;
   };
