@@ -19,7 +19,11 @@ import { test, expect, type Page } from '@playwright/test';
 test.describe.configure({ mode: 'parallel' });
 
 async function boot(page: Page): Promise<void> {
-  await page.goto('/');
+  // The overflow-prone topbar (the .actions cluster with load-example + auth)
+  // is the CANVAS topbar in Canvas.svelte, which lives on /rack since the
+  // landing-page move (#995) — `/` is now the static landing with no
+  // load-example dropdown.
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await page.locator('header.topbar').waitFor({ state: 'visible', timeout: 10_000 });
   // Boot settles the "Load example…" select from the transient "Loading…"
