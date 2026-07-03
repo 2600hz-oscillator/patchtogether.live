@@ -108,6 +108,102 @@ async function settleFrozenCanvas(page: Page, testid: string): Promise<void> {
     .toBeGreaterThan(0);
 }
 
+/** Inject a deterministic bright-HALF <video> through the REAL CAMERA DOM-video
+ *  upload path (UNPACK_FLIP_Y_WEBGL=true) and make it WIN the CameraInputCard's
+ *  attach race, then settle the OUTPUT present blit on the injected (frozen,
+ *  deterministic) content.
+ *
+ *  THE RACE (root cause of the flaky/locally-failing camera tests): the
+ *  CameraInputCard's onMount runs a setInterval that attaches the card's OWN
+ *  (empty, readyState=0) <video> element to engine node 'cam' until the attach
+ *  sticks (`read('cam','hasVideoElement')===true`), then clears the interval. If
+ *  the test attaches the injected element FIRST, that self-attach CLOBBERS it —
+ *  the empty element samples to CAMERA's idle navy pattern → top=0/bottom=0 → the
+ *  orientation guard reads black and fails. In this default (chromium) project NO
+ *  camera permission is granted, so the card never runs requestStream(); the
+ *  setInterval's single self-attach is therefore the ONLY clobber. (This is why
+ *  the test passed on CI — where the card attaches before the test — yet failed
+ *  locally with a real webcam device enumerated, where the test attaches first
+ *  and the card then clobbers it.)
+ *
+ *  THE FIX (test-only reorder, no card/engine change): (1) ready the injected
+ *  element WITHOUT attaching it; (2) WAIT until the card has finished its
+ *  self-attach — `hasVideoElement===true`, which (since we have not attached
+ *  yet) can only be the card's own element, and the interval clears in the SAME
+ *  synchronous tick, so nothing re-clobbers afterward; (3) attach the injected
+ *  source so it wins PERMANENTLY; (4) drive frozen engine frames + settle the
+ *  present blit on the injected content. Removes the timing dependency entirely.
+ *  The element still flows through the FLIP_Y=true DOM-video upload path (NOT the
+ *  __camerainputTestFrame FLIP_Y=false seam), so the orientation guard stays
+ *  fully valid. */
+async function injectCameraSourceAndSettle(page: Page, brightHalf: 'top' | 'bottom'): Promise<void> {
+  await page.evaluate(async (half) => {
+    const w = globalThis as unknown as {
+      __engine?: () => {
+        getDomain: (d: string) => {
+          attachExternalSource: (id: string, k: string, el: HTMLElement | null) => void;
+          read: (id: string, key: string) => unknown;
+        };
+      } | null;
+    };
+    const cv = document.createElement('canvas');
+    cv.width = 320; cv.height = 240;
+    const c = cv.getContext('2d')!;
+    const paint = () => {
+      c.fillStyle = '#141414'; c.fillRect(0, 0, 320, 240);
+      // Top-left origin: 'top' paints y=0..120 (the TOP half), 'bottom' paints
+      // y=120..240 (the BOTTOM half). Static every frame → frame-deterministic.
+      c.fillStyle = '#ffffff';
+      if (half === 'top') c.fillRect(0, 0, 320, 120);
+      else c.fillRect(0, 120, 320, 120);
+      requestAnimationFrame(paint);
+    };
+    paint();
+    const stream = (cv as HTMLCanvasElement).captureStream(30);
+    const vid = document.createElement('video');
+    vid.muted = true; vid.playsInline = true; vid.autoplay = true;
+    vid.srcObject = stream;
+    document.body.appendChild(vid);
+    await vid.play().catch(() => { /* autoplay fallback */ });
+    // DETERMINISTIC readyState wait — event-driven, on the element being
+    // sampleable (readyState>=2 && videoWidth>0), NOT a fixed budget.
+    await new Promise<void>((res) => {
+      const check = () => { if (vid.readyState >= 2 && vid.videoWidth > 0) res(); else requestAnimationFrame(check); };
+      check();
+    });
+    // Keep a reference so GC doesn't reclaim the element/stream mid-test.
+    (globalThis as unknown as { __orientVid?: HTMLVideoElement }).__orientVid = vid;
+
+    const ve = w.__engine?.()?.getDomain('video');
+    if (!ve) throw new Error('no video engine');
+
+    // WAIT for the CameraInputCard's onMount self-attach to land + its interval
+    // to clear — event-driven, bounded so a genuine failure is loud not a hang.
+    // Since we have NOT attached yet, hasVideoElement===true can only be the
+    // card's own (empty) element; the card clears its interval in the same tick.
+    await new Promise<void>((res, rej) => {
+      const t0 = performance.now();
+      const check = () => {
+        if (ve.read('cam', 'hasVideoElement') === true) { res(); return; }
+        if (performance.now() - t0 > 10_000) {
+          rej(new Error('cameraInput card never self-attached (hasVideoElement stayed false)'));
+          return;
+        }
+        requestAnimationFrame(check);
+      };
+      check();
+    });
+    // NOW attach the injected source so it wins the race permanently.
+    ve.attachExternalSource('cam', 'video', vid);
+  }, brightHalf);
+
+  // Drive frozen engine frames so CAMERA's upload + OUTPUT FBO reflect the
+  // now-winning injected source, then settle the present blit on rendered state.
+  const delta = await stepEngineFrames(page, FIXED_STEPS);
+  expect(delta, 'engine advanced exactly the fixed frame count (loop paused)').toBe(FIXED_STEPS);
+  await settleFrozenCanvas(page, 'video-out-canvas');
+}
+
 /** Read a card canvas and return, per displayed row band, the count and
  *  mean horizontal spread of bright pixels. A triangle pointing UP (apex
  *  in the top band) has fewer bright pixels + narrower spread up top and
@@ -272,10 +368,11 @@ test.describe('video orientation — SHAPES triangle reference', () => {
     // DRS: the injected band is a STATIC bright-top fill (no time
     // animation), and CAMERA's upload path uses no time uniform, so under
     // the frozen+paused engine the OUTPUT FBO is deterministic once the
-    // <video> is attached + sampleable. We keep the deterministic
-    // readyState wait (an event-driven wait on the element actually being
-    // sampleable — NOT a wall-clock budget), then drive frozen steps +
-    // settle the present blit on rendered state.
+    // <video> is attached + sampleable. injectCameraSourceAndSettle attaches
+    // the injected element AFTER the CameraInputCard's onMount self-attach
+    // lands (so the injected source wins the race — see its doc), keeps the
+    // deterministic readyState wait, then drives frozen steps + settles the
+    // present blit on rendered state.
     await setupFrozen(page);
     await spawnPatch(page,
       [
@@ -284,43 +381,7 @@ test.describe('video orientation — SHAPES triangle reference', () => {
       ],
       [{ id: 'e1', from: { nodeId: 'cam', portId: 'out' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'video', targetType: 'video' }],
     );
-    await page.evaluate(async () => {
-      const w = globalThis as unknown as {
-        __engine?: () => { getDomain: (d: string) => { attachExternalSource: (id: string, k: string, el: HTMLElement | null) => void } } | null;
-      };
-      const cv = document.createElement('canvas');
-      cv.width = 320; cv.height = 240;
-      const c = cv.getContext('2d')!;
-      const paint = () => {
-        c.fillStyle = '#141414'; c.fillRect(0, 0, 320, 240);
-        // Top-left origin: y=0..120 is the TOP half. Paint it bright.
-        c.fillStyle = '#ffffff'; c.fillRect(0, 0, 320, 120);
-        requestAnimationFrame(paint);
-      };
-      paint();
-      const stream = (cv as HTMLCanvasElement).captureStream(30);
-      const vid = document.createElement('video');
-      vid.muted = true; vid.playsInline = true; vid.autoplay = true;
-      vid.srcObject = stream;
-      document.body.appendChild(vid);
-      await vid.play().catch(() => { /* autoplay fallback */ });
-      // DETERMINISTIC readyState wait — event-driven, on the element being
-      // sampleable (readyState>=2 && videoWidth>0), NOT a fixed budget.
-      await new Promise<void>((res) => {
-        const check = () => { if (vid.readyState >= 2 && vid.videoWidth > 0) res(); else requestAnimationFrame(check); };
-        check();
-      });
-      const ve = w.__engine?.()?.getDomain('video');
-      if (!ve) throw new Error('no video engine');
-      ve.attachExternalSource('cam', 'video', vid);
-      // Keep a reference so GC doesn't reclaim the element/stream mid-test.
-      (globalThis as unknown as { __orientVid?: HTMLVideoElement }).__orientVid = vid;
-    });
-    // Drive frozen engine frames so CAMERA's upload + OUTPUT FBO settle, then
-    // settle the present blit on rendered state.
-    const delta = await stepEngineFrames(page, FIXED_STEPS);
-    expect(delta, 'engine advanced exactly the fixed frame count (loop paused)').toBe(FIXED_STEPS);
-    await settleFrozenCanvas(page, 'video-out-canvas');
+    await injectCameraSourceAndSettle(page, 'top');
     const rc = await analyzeTriangleOrientation(page, 'video-out-canvas');
     await page.screenshot({ path: 'test-results/orient-6-camera-output.png' });
     expect(rc.topBright, `CAMERA->OUTPUT bright-top should dominate (top=${rc.topBright} bottom=${rc.bottomBright})`)
@@ -485,40 +546,10 @@ test.describe('video orientation — parametrized transform/keyer lock', () => {
       ],
       [{ id: 'e1', from: { nodeId: 'cam', portId: 'out' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'video', targetType: 'video' }],
     );
-    await page.evaluate(async () => {
-      const w = globalThis as unknown as {
-        __engine?: () => { getDomain: (d: string) => { attachExternalSource: (id: string, k: string, el: HTMLElement | null) => void } } | null;
-      };
-      const cv = document.createElement('canvas');
-      cv.width = 320; cv.height = 240;
-      const c = cv.getContext('2d')!;
-      const paint = () => {
-        c.fillStyle = '#141414'; c.fillRect(0, 0, 320, 240);
-        // Top-left origin: y=120..240 is the BOTTOM half. Paint it bright.
-        c.fillStyle = '#ffffff'; c.fillRect(0, 120, 320, 120);
-        requestAnimationFrame(paint);
-      };
-      paint();
-      const stream = (cv as HTMLCanvasElement).captureStream(30);
-      const vid = document.createElement('video');
-      vid.muted = true; vid.playsInline = true; vid.autoplay = true;
-      vid.srcObject = stream;
-      document.body.appendChild(vid);
-      await vid.play().catch(() => { /* autoplay fallback */ });
-      // DETERMINISTIC readyState wait — event-driven, on the element being
-      // sampleable (readyState>=2 && videoWidth>0), NOT a fixed budget.
-      await new Promise<void>((res) => {
-        const check = () => { if (vid.readyState >= 2 && vid.videoWidth > 0) res(); else requestAnimationFrame(check); };
-        check();
-      });
-      const ve = w.__engine?.()?.getDomain('video');
-      if (!ve) throw new Error('no video engine');
-      ve.attachExternalSource('cam', 'video', vid);
-      (globalThis as unknown as { __orientVid2?: HTMLVideoElement }).__orientVid2 = vid;
-    });
-    const delta = await stepEngineFrames(page, FIXED_STEPS);
-    expect(delta, 'engine advanced exactly the fixed frame count (loop paused)').toBe(FIXED_STEPS);
-    await settleFrozenCanvas(page, 'video-out-canvas');
+    // Same real-CAMERA upload path as test 6, but the injected band is the
+    // vertical MIRROR (bright BOTTOM half). injectCameraSourceAndSettle wins the
+    // card's attach race + settles on the frozen injected content.
+    await injectCameraSourceAndSettle(page, 'bottom');
     const r = await analyzeTriangleOrientation(page, 'video-out-canvas');
     await page.screenshot({ path: 'test-results/orient-guard-bottom.png' });
     expect(r.bottomBright, `bright-BOTTOM source must read bottom-dominant (top=${r.topBright} bottom=${r.bottomBright}) — else the lock is vacuous`)
