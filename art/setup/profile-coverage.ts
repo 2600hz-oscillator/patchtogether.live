@@ -46,7 +46,8 @@ export const ART_EXCLUDED: Readonly<Record<string, string>> = {
  * Seeded 2026-07-01 from the live registry (126 audio defs − 7 already
  * covered − 16 structural exclusions = 103), minus the 2 Phase-0 pilots
  * (chowkick, adsr) profiled in the same PR → 101 committed entries.
- * Batch 1 (#1001) −6 → 95; batch 2 (#1002) −6 → 89; batch 3 −6 → 83.
+ * Batch 1 (#1001) −6 → 95; batch 2 (#1002) −6 → 89; batch 3 (#1005) −6 → 83;
+ * batch 4 −8 → 75.
  *
  * RULES (enforced by audio-profile-gate.test.ts):
  *   - a module that gains a baseline MUST be removed from this list;
@@ -57,14 +58,11 @@ export const ART_EXCLUDED: Readonly<Record<string, string>> = {
  * ART_BACKLOG_MAX to the new length. NEVER raise ART_BACKLOG_MAX.
  */
 export const ART_BACKLOG: readonly string[] = [
-  'analogLogicMaths',
   'aquaTank',
   'atlantisCatalyst',
-  'attenumix',
   'buggles',
   'callsine',
   'cartesian',
-  'charlottesEchos',
   'clipplayer',
   'clouds',
   'cloudseed',
@@ -76,7 +74,6 @@ export const ART_BACKLOG: readonly string[] = [
   'dx7',
   'elements',
   'filter',
-  'fourplexer',
   'foxy',
   'grids',
   'helm',
@@ -97,14 +94,12 @@ export const ART_BACKLOG: readonly string[] = [
   'moog921b',
   'moog923',
   'moog956',
-  'moog960',
   'moog961',
   'moog984',
   'moog992',
   'moog993',
   'moog994',
   'moog995',
-  'moogCp3',
   'negativity',
   'noise',
   'numpadPlus',
@@ -123,7 +118,6 @@ export const ART_BACKLOG: readonly string[] = [
   'score',
   'sequencer',
   'shimmershine',
-  'slewSwitch',
   'stages',
   'stereovca',
   'swolevco',
@@ -131,7 +125,6 @@ export const ART_BACKLOG: readonly string[] = [
   'tides2',
   'timelorde',
   'twotracks',
-  'unityscalemathematik',
   'vca',
   'veils',
   'warps',
@@ -144,4 +137,4 @@ export const ART_BACKLOG: readonly string[] = [
 
 /** The ratchet cap. Lower it (to ART_BACKLOG.length) every time a batch
  *  removes entries; the gate fails if the list ever grows past it. */
-export const ART_BACKLOG_MAX = 83;
+export const ART_BACKLOG_MAX = 75;
