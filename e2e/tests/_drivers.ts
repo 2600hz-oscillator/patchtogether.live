@@ -19,7 +19,7 @@
 // upstream, and uses the module's defaults. ~60 / 74 modules work
 // with the default; the override list below is for the ~14 that
 // don't — most need a gate to fire (drum voices, MACROOSCILLATOR's
-// trig input) or a pitch to sound (dx7, helm, macrooscillator).
+// trig input) or a pitch to sound (dx7, macrooscillator).
 //
 // Adding a new module: usually no entry needed (default driver fits).
 // When the per-module.spec.ts output-alive check fails for a new
@@ -124,24 +124,6 @@ const OVERRIDES: Record<string, ModuleDriver> = {
     gatePort: 'gate',
     pitchPort: 'pitch_cv',
     params: { algorithm: 5, voiceCount: 1, level: 0.7, transpose: 0 },
-  },
-  // HYDROGEN's per-instrument trigs need driving; default driver covers spawn.
-  // Output-alive is asserted via the dedicated hydrogen.spec.ts.
-  hydrogen:     { outputPort: 'out_l' },
-  // HELM is MIDI-driven primarily; pitch_cv + gate are fallbacks.
-  // Output-alive is covered by helm.spec.ts; per-module stamper does spawn only.
-  helm:         { outputPort: 'out_l' },
-  // POLYHELM — HELM + a poly-bus input. Unlike HELM (which is SKIP_SPAWN), this
-  // module is in the per-port sweep, so the outputs-emit dim needs it to sound:
-  // drive the mono pitch_cv + gate fallback (SEQUENCER → those ports) to play a
-  // single voice, exactly like DX7. The headline `poly` input's signal-flow is
-  // covered by the inputs-accept dim (SEQUENCER.pitch → polyhelm.poly) + the
-  // engine/ART poly→voices tests.
-  polyhelm: {
-    outputPort: 'out_l',
-    gatePort: 'gate',
-    pitchPort: 'pitch_cv',
-    params: { voiceCount: 1 },
   },
   // ────────── Drum voices — gate-only triggered. ──────────
   drummergirl:  { outputPort: 'audio', gatePort: 'gate' },

@@ -83,21 +83,6 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   moog921b: ['freq_bus', 'width_bus'],
   // dx7.pitch_cv: V/oct (audio-rate), not a knob param.
   dx7: ['pitch_cv'],
-  // helm.{pitch_cv,gate,midi_in,seq_reset}: pitch_cv = V/oct fallback
-  // (audio-rate); gate = trigger fallback; midi_in = visual-only
-  // placeholder (the actual MIDI flows through the Web MIDI API, not
-  // through a cable, so this port never carries audio data); seq_reset =
-  // gate trigger that snaps the step pointer back to -1 (next gate →
-  // step 0). All four are stuck-without-paramTarget by design — same
-  // shape as dx7's fallback inputs.
-  helm: ['pitch_cv', 'gate', 'midi_in', 'seq_reset'],
-  // polyhelm.{pitch_cv,gate,midi_in,seq_reset}: same fallback/visual ports as
-  // HELM (POLYHELM = HELM + a poly bus). pitch_cv = V/oct fallback; gate =
-  // trigger fallback; midi_in = visual-only Web-MIDI placeholder; seq_reset =
-  // step-pointer reset gate. The `poly` input is polyPitchGate (not cv), so it
-  // isn't in this cv-passthrough list. All four cv/gate ports are stuck-without-
-  // paramTarget by design — identical shape to HELM's fallback inputs.
-  polyhelm: ['pitch_cv', 'gate', 'midi_in', 'seq_reset'],
   // illogic in1..in4: passthrough attenuverter inputs (the module IS the attenuverter).
   illogic: ['in1', 'in2', 'in3', 'in4'],
   // unityscalemathematik u_in / a_in / b_in: signal inputs that the module
@@ -217,8 +202,8 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // The gate1..gate4 advance inputs are `gate`-typed and so aren't checked.
   fourplexer: ['in1', 'in2', 'in3', 'in4'],
   // CHOWKICK pitch_cv: 1V/oct pitch CV consumed directly by the worklet —
-  // freq *= 2^pitch_cv applied per-sample. Same shape as dx7.pitch_cv and
-  // helm.pitch_cv: a V/oct fallback input with no paramTarget (a freq
+  // freq *= 2^pitch_cv applied per-sample. Same shape as dx7.pitch_cv:
+  // a V/oct fallback input with no paramTarget (a freq
   // AudioParam additive cvScale would NOT be 1V/oct, so we route the
   // pitch CV as its own audio-rate node input + apply the octave map
   // inside the per-sample DSP).

@@ -134,7 +134,7 @@ describe('listExposableControls', () => {
   });
 
   it('renders 0/1 discrete params as buttons (toggle UX), not knobs', () => {
-    // hydrogen has 16 instrument 'mute{i}' / 'solo{i}' params, all discrete 0..1.
+    // A drum module can carry discrete 0..1 'mute' / 'solo' params.
     const lookup: ControlDefLookup = () => ({
       exposableControls: [],
       params: [

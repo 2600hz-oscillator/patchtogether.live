@@ -44,7 +44,7 @@ describe('atlantisCatalystDef shape', () => {
     expect(atlantisCatalystDef.outputs.find((o) => o.id === 'scene_idx')?.type).toBe('cv');
   });
 
-  it('declares the HYDROGEN-style transport CV row (play/queue1..4)', () => {
+  it('declares the transport CV row (play/queue1..4)', () => {
     const inputs = atlantisCatalystDef.inputs.map((p) => p.id);
     for (const k of ['play_cv', 'queue1_cv', 'queue2_cv', 'queue3_cv', 'queue4_cv']) {
       expect(inputs, `missing transport input ${k}`).toContain(k);

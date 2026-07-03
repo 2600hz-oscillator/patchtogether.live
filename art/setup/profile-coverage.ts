@@ -48,7 +48,8 @@ export const ART_EXCLUDED: Readonly<Record<string, string>> = {
  * (chowkick, adsr) profiled in the same PR → 101 committed entries.
  * Batch 1 (#1001) −6 → 95; batch 2 (#1002) −6 → 89; batch 3 (#1005) −6 → 83;
  * batch 4 −8 → 75; batch 5 −8 → 67 (noise, scaler, polarizer, depolarizer,
- * negativity, illogic, delay, veils).
+ * negativity, illogic, delay, veils). Deleting the helm/polyhelm/hydrogen
+ * modules removed those 3 backlog ids −3 → 64.
  *
  * RULES (enforced by audio-profile-gate.test.ts):
  *   - a module that gains a baseline MUST be removed from this list;
@@ -75,8 +76,6 @@ export const ART_BACKLOG: readonly string[] = [
   'filter',
   'foxy',
   'grids',
-  'helm',
-  'hydrogen',
   'kria',
   'lfo',
   'macrooscillator',
@@ -101,7 +100,6 @@ export const ART_BACKLOG: readonly string[] = [
   'numpadPlus',
   'peaks',
   'pentemelodica',
-  'polyhelm',
   'polyseqz',
   'rasterize',
   'reverb',
@@ -130,4 +128,4 @@ export const ART_BACKLOG: readonly string[] = [
 
 /** The ratchet cap. Lower it (to ART_BACKLOG.length) every time a batch
  *  removes entries; the gate fails if the list ever grows past it. */
-export const ART_BACKLOG_MAX = 67;
+export const ART_BACKLOG_MAX = 64;

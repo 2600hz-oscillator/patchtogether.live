@@ -286,8 +286,8 @@
               <!-- A sub whose name matches its top renders flat — items
                    live directly under the top-level row, no sub-category
                    indirection. Used by Hybrid (one sub named Hybrid) and
-                   by Ports (mixed: Ports/Ports renders flat with helm,
-                   hydrogen, cloudseed; Ports/Mutable renders as a
+                   by Ports (mixed: Ports/Ports renders flat with dx7,
+                   cloudseed; Ports/Mutable renders as a
                    labelled sub-expander below them). -->
               {@const flat = sub.name === g.top}
               {#if flat}

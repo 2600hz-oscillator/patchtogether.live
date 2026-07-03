@@ -7,7 +7,7 @@
 // 8 correlated band-limited random-walk CV outputs (drift1..drift8) plus a
 // scene_pulse gate that fires when the brain transitions to a new
 // attractor, plus a scene_idx CV for downstream sequencing. Inputs include
-// a manual `nudge` gate, a `freeze` latch, and the HYDROGEN-style transport
+// a manual `nudge` gate, a `freeze` latch, and the transport
 // CV row (play_cv + scene1..4_cv) for explicit scene jumps / slot recall.
 //
 // "Catalyst-controller" idea per the Atlantis-patch plan: a single
@@ -213,7 +213,7 @@ export const atlantisCatalystDef: AudioModuleDef = {
     { id: 'nudge',  type: 'gate' },
     { id: 'freeze', type: 'gate' },
     { id: 'seed_cv', type: 'cv' },
-    // HYDROGEN-style transport-CV row (scene jumps from external triggers).
+    // Transport-CV row (scene jumps from external triggers).
     // Map queue1..queue4 onto scene1..scene4 for caller clarity, but reuse
     // the same port ids the engine knows about.
     ...TRANSPORT_CV_PORT_DEFS,

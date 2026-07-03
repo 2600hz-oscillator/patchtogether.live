@@ -83,7 +83,7 @@ async function measureVcoAt(
   await page.waitForLoadState('networkidle');
 
   // Sequencer → VCO.pitch → Scope. SCOPE's snapshot.ch1 mirrors the live
-  // audio (post-cable) — same pattern used by hydrogen-kits/scope tests.
+  // audio (post-cable) — same pattern used by the scope tests.
   await spawnPatch(
     page,
     [

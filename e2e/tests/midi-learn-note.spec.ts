@@ -8,20 +8,19 @@
 // gate high / button press; NOTE-off → gate low / release (momentary).
 //
 // Coverage (behavior-first, definite states — not mere visibility):
-//   1. Right-click a HYDROGEN gate INPUT row ("PLAY" transport CV) → "MIDI
-//      assign" → inject a NOTE → the binding MATERIALIZES (persisted localStorage
-//      record kind:'note', keyed nodeId:portId) + the row shows its bound dot.
-//      (HYDROGEN's transport-CV gate declares no paramTarget, so per the decided
-//      defaults this is the documented no-op-injection case — the BINDING still
-//      materializes; the param-driving chain is proven on the button below.)
-//   2. Right-click the HYDROGEN PLAY BUTTON → "MIDI assign" → inject NOTE-on →
+//   1. Right-click an ADSR gate INPUT row → "MIDI assign" → inject a NOTE →
+//      the binding MATERIALIZES (persisted localStorage record kind:'note',
+//      keyed nodeId:portId) + the row shows its bound dot. (ADSR's `gate`
+//      input auto-groups to a top-level row and reacts on the injected note;
+//      the param-driving chain is proven on the button below.)
+//   2. Right-click the DRUMSEQZ PLAY BUTTON → "MIDI assign" → inject NOTE-on →
 //      isPlaying TOGGLES on (a REAL, observable param reaction); inject NOTE-on
 //      again → toggles back off. "Forget" drops the binding (notes stop driving).
 //
 // SIMULATED MIDI: window.__midiTestInjectNote(ch,note,vel) installs an in-memory
 // fake MIDIAccess + pushes a NOTE on/off (vel 0 = off) through the same dispatch
 // path real hardware uses. Runtime-conscious: pure DOM + injected MIDI, one
-// lightweight audio card (HYDROGEN) — no DOOM/video/relay.
+// lightweight audio card (DRUMSEQZ) — no DOOM/video/relay.
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from './_helpers';
@@ -84,16 +83,16 @@ async function injectNote(page: Page, channel: number, note: number, velocity: n
   );
 }
 
-async function bootHydrogen(page: Page): Promise<void> {
+async function bootDrumseqz(page: Page): Promise<void> {
   await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await page.evaluate(() => window.localStorage.removeItem('pt.midi-bindings.v1'));
   await spawnPatch(
     page,
-    [{ id: 'hy-1', type: 'hydrogen', position: { x: 120, y: 120 }, domain: 'audio', params: { isPlaying: 0 } }],
+    [{ id: 'ds-1', type: 'drumseqz', position: { x: 120, y: 120 }, domain: 'audio', params: { isPlaying: 0 } }],
     [],
   );
-  await expect(page.locator('.svelte-flow__node-hydrogen')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node-drumseqz')).toHaveCount(1);
 }
 
 test('MIDI assign: a gate INPUT row binds a NOTE (binding materializes + bound state)', async ({ page }) => {
@@ -159,19 +158,19 @@ test('MIDI assign: a gate INPUT row binds a NOTE (binding materializes + bound s
   expect(errors, `page errors: ${errors.join('; ')}`).toEqual([]);
 });
 
-test('MIDI assign: a card BUTTON (HYDROGEN PLAY) binds a NOTE that TOGGLES the param', async ({ page }) => {
+test('MIDI assign: a card BUTTON (DRUMSEQZ PLAY) binds a NOTE that TOGGLES the param', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
 
-  await bootHydrogen(page);
-  const card = page.locator('.svelte-flow__node-hydrogen');
+  await bootDrumseqz(page);
+  const card = page.locator('.svelte-flow__node-drumseqz');
   await installSimMidi(page);
 
   // The PLAY button is wrapped by MidiAssignButton; the inner button carries
-  // data-testid="hydrogen-play". Right-click the wrapper (the button surface).
-  const playBtn = card.locator('[data-testid="hydrogen-play"]');
+  // data-testid="drumseqz-play-<nodeId>". Right-click the wrapper (the button surface).
+  const playBtn = card.locator('[data-testid="drumseqz-play-ds-1"]');
   await expect(playBtn).toHaveCount(1);
-  expect(await readParam(page, 'hy-1', 'isPlaying')).toBe(0);
+  expect(await readParam(page, 'ds-1', 'isPlaying')).toBe(0);
 
   await playBtn.click({ button: 'right' });
   const menu = page.locator('[data-testid="control-context-menu"]');
@@ -181,23 +180,23 @@ test('MIDI assign: a card BUTTON (HYDROGEN PLAY) binds a NOTE that TOGGLES the p
 
   // Inject NOTE-on → the bound toggle fires once → isPlaying flips to 1.
   await injectNote(page, 0, 60, 110);
-  await expect.poll(() => readParam(page, 'hy-1', 'isPlaying')).toBe(1);
+  await expect.poll(() => readParam(page, 'ds-1', 'isPlaying')).toBe(1);
   // The button shows its bound badge.
-  await expect(card.locator('[data-testid="hydrogen-play"]').locator('xpath=ancestor::*[contains(@class,"midi-assign-button")]').locator('.midi-badge')).toContainText('NOTE 60');
+  await expect(card.locator('[data-testid="drumseqz-play-ds-1"]').locator('xpath=ancestor::*[contains(@class,"midi-assign-button")]').locator('.midi-badge')).toContainText('NOTE 60');
 
   // A NOTE-off does NOT re-toggle (toggle fires on the press edge only).
   await injectNote(page, 0, 60, 0);
   await page.waitForTimeout(30);
-  expect(await readParam(page, 'hy-1', 'isPlaying')).toBe(1);
+  expect(await readParam(page, 'ds-1', 'isPlaying')).toBe(1);
 
   // A second NOTE-on toggles back off.
   await injectNote(page, 0, 60, 110);
-  await expect.poll(() => readParam(page, 'hy-1', 'isPlaying')).toBe(0);
+  await expect.poll(() => readParam(page, 'ds-1', 'isPlaying')).toBe(0);
 
   // A NOTE on a DIFFERENT note must NOT toggle.
   await injectNote(page, 0, 61, 110);
   await page.waitForTimeout(40);
-  expect(await readParam(page, 'hy-1', 'isPlaying')).toBe(0);
+  expect(await readParam(page, 'ds-1', 'isPlaying')).toBe(0);
 
   // Forget the binding → subsequent NOTE-ons no longer drive the toggle.
   await playBtn.click({ button: 'right' });
@@ -206,7 +205,7 @@ test('MIDI assign: a card BUTTON (HYDROGEN PLAY) binds a NOTE that TOGGLES the p
   await expect(menu).toBeHidden();
   await injectNote(page, 0, 60, 110);
   await page.waitForTimeout(40);
-  expect(await readParam(page, 'hy-1', 'isPlaying')).toBe(0);
+  expect(await readParam(page, 'ds-1', 'isPlaying')).toBe(0);
 
   expect(errors, `page errors: ${errors.join('; ')}`).toEqual([]);
 });

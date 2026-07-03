@@ -106,7 +106,7 @@ function projectPort(p: {
 /**
  * Snapshot every registered module def's I/O surface. Modules whose
  * `inputs` are computed via a builder function (e.g. RIOTGIRLS,
- * MIXMSTRS, HYDROGEN) work transparently — by the time they're
+ * MIXMSTRS) work transparently — by the time they're
  * registered, the computed array is already attached to the def.
  *
  * Includes audio-, video-, and meta-domain modules. The per-domain

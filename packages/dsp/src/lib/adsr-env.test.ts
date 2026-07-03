@@ -6,7 +6,7 @@
 //      sample-to-sample discontinuity, AND the attack RATE is 1/(sr·attack) from
 //      any start value (rate is preserved, only duration is value-dependent —
 //      CRITIQUE C5).
-//   3. triggerHard resets to 0 (helm-parity path stays covered).
+//   3. triggerHard resets to 0 (Helm-synth-parity path stays covered).
 //   4. Continuous-read: sweeping sustain during a held note tracks live (NOT
 //      latched).
 
@@ -103,14 +103,14 @@ describe('adsr-env / soft retrigger (CRITIQUE C5)', () => {
   });
 });
 
-describe('adsr-env / triggerHard (helm-parity)', () => {
+describe('adsr-env / triggerHard (Helm-synth-parity)', () => {
   it('triggerHard(true) resets value to 0', () => {
     const e = new Envelope();
     e.triggerSoft(true);
     for (let i = 0; i < SR * 0.5; i++) e.tick(0.005, 0.1, 0.7, 0.2, SR);
     expect(e.value).toBeGreaterThan(0.5);
     e.triggerHard(true);
-    // Hard trigger zeroes the value (verbatim helm behavior).
+    // Hard trigger zeroes the value (verbatim Helm-synth behavior).
     expect(e.value).toBe(0);
     expect(e.state).toBe(EnvState.Attack);
   });
