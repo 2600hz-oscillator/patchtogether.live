@@ -72,8 +72,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   gatemaiden: { size: '1u', hp: 1 }, // 199×200px
   graphicEq: { size: '2u', hp: 2 }, // 360×360px — Winamp-style VU-meter video output
   grids: { size: '3u', hp: 2 }, // 463×320px
-  helm: { size: '3u', hp: 4 }, // 536×720px
-  hydrogen: { size: '4u', hp: 4 }, // 687×660px
   hypercube: { size: '3u', hp: 4 }, // 540×720px — 2-col (viewport left, controls right)
   illogic: { size: '1u', hp: 2 }, // 154×240px
   joystick: { size: '2u', hp: 2 }, // 234×220px
@@ -121,7 +119,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   peaks: { size: '3u', hp: 2 }, // 197×320px  [LOCKED]
   pentemelodica: { size: '3u', hp: 7 }, // 462×1180px
   polarizer: { size: '1u', hp: 1 }, // 160×150px (tiny 1-in/1-out unipolar→bipolar CV util)
-  polyhelm: { size: '3u', hp: 4 }, // 536×720px
   polyseqz: { size: '2u', hp: 3 }, // 321×540px
   pong: { size: '2u', hp: 2 }, // 304×240px
   qbrt: { size: '1u', hp: 2 }, // 152×280px

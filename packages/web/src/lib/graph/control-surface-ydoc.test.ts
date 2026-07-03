@@ -73,10 +73,10 @@ describe('control surface — real Y.Doc binding mutators', () => {
   it('stamps controlType:button for a button binding; knobs stay lean (no controlType)', () => {
     makeSurface();
     addBindingToSurface(SID, 'adsr-1', 'attack');                 // knob (default)
-    addBindingToSurface(SID, 'hydrogen-1', 'play', 'button');     // button
+    addBindingToSurface(SID, 'drumseqz-1', 'play', 'button');     // button
     const data = readSurfaceData(patch.nodes[SID]);
     const knob = data.bindings?.find((b) => b.moduleId === 'adsr-1');
-    const button = data.bindings?.find((b) => b.moduleId === 'hydrogen-1');
+    const button = data.bindings?.find((b) => b.moduleId === 'drumseqz-1');
     expect(knob?.controlType).toBeUndefined(); // absent === knob, back-compat
     expect(button?.controlType).toBe('button');
     // Adding a button after a knob must not throw (the in-place append discipline).

@@ -327,7 +327,7 @@ export const numpadPlusDef: AudioModuleDef = {
       l4_pitch: "Layer 4's pitch CV (V/oct): its current step's note, or a live-held key when layer 4 is active.",
       l4_gate: "Layer 4's gate: high on a lit step or held key, low otherwise.",
       poly:
-        "The ACTIVE layer's notes as a POLY cable (up to 5 voices, each with its own pitch CV + gate): in poly mode this carries the held/recorded chord, otherwise the single current note. Patch into a poly-aware voice (POLYHELM / any module with a poly input) so every voice sounds; a mono pitch input automatically receives just the lowest (root) note.",
+        "The ACTIVE layer's notes as a POLY cable (up to 5 voices, each with its own pitch CV + gate): in poly mode this carries the held/recorded chord, otherwise the single current note. Patch into a poly-aware voice (DX7 / CUBE / any module with a poly input) so every voice sounds; a mono pitch input automatically receives just the lowest (root) note.",
     },
     controls: {
       bpm: "Internal tempo in beats per minute (each step is a 16th note), used only when nothing is patched into CLOCK IN.",

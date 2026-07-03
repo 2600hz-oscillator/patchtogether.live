@@ -2039,7 +2039,7 @@
   // ---- PatchPanel port descriptors ----
   //
   // The card has 37 handles (28 inputs + 9 outputs) — well past the legible
-  // inline threshold. Per the canonical PatchPanel pattern used by Hydrogen,
+  // inline threshold. Per the canonical PatchPanel pattern used by
   // RIOTGIRLS, MIXMSTRS, Pong et al., we collapse them under a corner
   // trigger. Inputs are split into FOUR per-player sections (P1..P4 × 7
   // gates); outputs ride on the first section so PatchPanel's sectioned-
@@ -2125,7 +2125,7 @@
   </header>
 
   <!-- All 37 handles (28 inputs + 9 outputs) live under the canonical
-       PatchPanel corner trigger — matches Hydrogen / RIOTGIRLS / MIXMSTRS /
+       PatchPanel corner trigger — matches RIOTGIRLS / MIXMSTRS /
        Pong / 70-odd other cards. Inputs are split per-player (P1..P4) with
        the local viewer's section labeled " (you)"; outputs render in the
        single right column. The previous inline #353 slot-emphasis CSS

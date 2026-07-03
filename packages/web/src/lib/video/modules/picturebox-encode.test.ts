@@ -11,7 +11,29 @@ import {
   computeZoomFitCrop,
   bytesToBase64,
   base64ToBytes,
+  countGifFrames,
+  isAnimatedGif,
+  GIF_MIME,
+  MAX_GIF_BYTES,
 } from './picturebox-encode';
+
+/** Build a syntactically-valid GIF89a byte stream with `numFrames` image
+ *  descriptors (each preceded by a Graphic Control Extension), optionally with a
+ *  Global Colour Table — exercising every block the frame counter must skip. */
+function buildGif(numFrames: number, withGct = false): Uint8Array {
+  const b: number[] = [];
+  b.push(0x47, 0x49, 0x46, 0x38, 0x39, 0x61); // "GIF89a"
+  const packed = withGct ? 0x80 : 0x00; // GCT flag; size bits 0 → 2 entries
+  b.push(0x0a, 0x00, 0x0a, 0x00, packed, 0x00, 0x00); // Logical Screen Descriptor (10×10)
+  if (withGct) for (let i = 0; i < 3 * 2; i++) b.push(0x00); // 2-entry global colour table
+  for (let f = 0; f < numFrames; f++) {
+    b.push(0x21, 0xf9, 0x04, 0x00, 0x0a, 0x00, 0x00, 0x00); // Graphic Control Ext (delay 10)
+    b.push(0x2c, 0x00, 0x00, 0x00, 0x00, 0x0a, 0x00, 0x0a, 0x00, 0x00); // Image Descriptor
+    b.push(0x02, 0x01, 0x44, 0x00); // LZW min code size + one data sub-block + terminator
+  }
+  b.push(0x3b); // trailer
+  return new Uint8Array(b);
+}
 
 describe('picturebox-encode — TARGET dimensions', () => {
   it('matches the engine resolution (1024 x 768, 4:3)', () => {
@@ -105,5 +127,47 @@ describe('picturebox-encode — base64 round-trip', () => {
     const empty = new Uint8Array(0);
     expect(bytesToBase64(empty)).toBe('');
     expect(base64ToBytes('').length).toBe(0);
+  });
+});
+
+describe('picturebox-encode — countGifFrames / isAnimatedGif', () => {
+  it('counts a single-frame gif as 1 (still → NOT animated)', () => {
+    const g = buildGif(1);
+    expect(countGifFrames(g)).toBe(1);
+    expect(isAnimatedGif(g)).toBe(false);
+  });
+
+  it('counts a multi-frame gif and flags it animated', () => {
+    expect(countGifFrames(buildGif(2))).toBe(2);
+    expect(countGifFrames(buildGif(5))).toBe(5);
+    expect(isAnimatedGif(buildGif(2))).toBe(true);
+    expect(isAnimatedGif(buildGif(4))).toBe(true);
+  });
+
+  it('skips a Global Colour Table without miscounting', () => {
+    expect(countGifFrames(buildGif(3, /* withGct */ true))).toBe(3);
+    expect(isAnimatedGif(buildGif(3, true))).toBe(true);
+  });
+
+  it('returns 0 for non-GIF bytes (a JPEG SOI, PNG magic, empty)', () => {
+    expect(countGifFrames(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]))).toBe(0);
+    expect(countGifFrames(new Uint8Array([0x89, 0x50, 0x4e, 0x47]))).toBe(0);
+    expect(countGifFrames(new Uint8Array(0))).toBe(0);
+    expect(isAnimatedGif(new Uint8Array([0xff, 0xd8]))).toBe(false);
+  });
+
+  it('is defensive on a truncated gif (never throws; counts what it can)', () => {
+    const full = buildGif(3);
+    const truncated = full.subarray(0, full.length - 10); // chop mid-last-frame
+    expect(() => countGifFrames(truncated)).not.toThrow();
+    expect(countGifFrames(truncated)).toBeGreaterThanOrEqual(2);
+  });
+
+  it('exposes the sync constants (gif mime + a bounded size cap)', () => {
+    expect(GIF_MIME).toBe('image/gif');
+    expect(MAX_GIF_BYTES).toBeGreaterThan(0);
+    // Sanity: the cap is generous enough for a real animated gif but bounded so
+    // one payload can't hammer the relay (well under an unreasonable 10MB).
+    expect(MAX_GIF_BYTES).toBeLessThanOrEqual(10_000_000);
   });
 });

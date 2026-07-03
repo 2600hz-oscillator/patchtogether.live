@@ -17,8 +17,10 @@
   import { setNodeParam } from '$lib/graph/mutate';
   import { pictureboxDef, type PictureboxHandleExtras } from '$lib/video/modules/picturebox';
   import {
-    downscaleAndEncode,
+    encodePickedFile,
     base64ToImageBitmap,
+    decodeAnimatedGif,
+    GIF_MIME,
     TARGET_W,
     TARGET_H,
   } from '$lib/video/modules/picturebox-encode';
@@ -46,7 +48,14 @@
   let imageName = $derived<string | null>(
     (node?.data as { imageName?: string | null } | undefined)?.imageName ?? null,
   );
+  let imageMime = $derived<string>(
+    (node?.data as { imageMime?: string } | undefined)?.imageMime ?? 'image/jpeg',
+  );
   let hasImage = $derived(imageBytes !== null && imageBytes.length > 0);
+  // Animated gif → the card preview (a data: URL <img>) animates natively; a
+  // still shows a static frame. Guarded on hasImage so an empty card (the VRT
+  // baseline state) renders no preview.
+  let isGif = $derived(imageMime === GIF_MIME);
 
   // v3: 7-slot asset arrays (synced base64 JPEGs + parallel filenames). The
   // DISPLAYED slot is local render state computed from the gate stream — NOT
@@ -57,6 +66,12 @@
   );
   let assetNames = $derived<(string | null)[]>(
     (node?.data as { assetNames?: (string | null)[] } | undefined)?.assetNames
+      ?? new Array(ASSET_SLOTS).fill(null),
+  );
+  // v4: per-slot MIME (parallel to assets). Absent ⇒ all-jpeg (v3 nodes only
+  // ever stored JPEGs), so a missing entry decodes down the static path.
+  let assetMimes = $derived<(string | null)[]>(
+    (node?.data as { assetMimes?: (string | null)[] } | undefined)?.assetMimes
       ?? new Array(ASSET_SLOTS).fill(null),
   );
 
@@ -150,10 +165,29 @@
     }
     if (bytes === null) {
       extras.setImage(null);
+      extras.setAnimatedImage(null);
       extras.setFilename(null);
       return;
     }
+    // Read the MIME fresh off node.data (a remote write during the retry window
+    // should win, same as `bytes`).
+    const mime = (node?.data as { imageMime?: string } | undefined)?.imageMime ?? 'image/jpeg';
     try {
+      if (mime === GIF_MIME) {
+        // Animated gif: decode all frames (WebCodecs) and let the module step
+        // them on the engine clock. Where ImageDecoder is unavailable, fall back
+        // to a static first frame — no error, just no motion.
+        const gifFrames = await decodeAnimatedGif(bytes, mime);
+        if (gifFrames && gifFrames.length > 1) {
+          extras.setAnimatedImage(gifFrames);
+          extras.setFilename(imageName);
+          return;
+        }
+        const firstFrame = await base64ToImageBitmap(bytes, mime);
+        extras.setImage(firstFrame);
+        extras.setFilename(imageName);
+        return;
+      }
       const bitmap = await base64ToImageBitmap(bytes);
       extras.setImage(bitmap);
       extras.setFilename(imageName);
@@ -180,24 +214,29 @@
   let slotRetryTimer: ReturnType<typeof setTimeout> | null = null;
   $effect(() => {
     const snapshot = assets.slice(0, ASSET_SLOTS);
+    const mimeSnapshot = assetMimes.slice(0, ASSET_SLOTS);
     void node?.id;
     if (slotRetryTimer) { clearTimeout(slotRetryTimer); slotRetryTimer = null; }
-    void applySlotsToEngine(snapshot, 0);
+    void applySlotsToEngine(snapshot, mimeSnapshot, 0);
   });
   $effect(() => () => {
     if (slotRetryTimer) { clearTimeout(slotRetryTimer); slotRetryTimer = null; }
   });
 
-  async function applySlotsToEngine(snapshot: (string | null)[], attempt: number): Promise<void> {
+  async function applySlotsToEngine(
+    snapshot: (string | null)[],
+    mimeSnapshot: (string | null)[],
+    attempt: number,
+  ): Promise<void> {
     const extras = getExtras();
     if (!extras || !extras.setAssetAtSlot) {
       if (attempt >= 50) return;
       slotRetryTimer = setTimeout(() => {
         slotRetryTimer = null;
-        const latest =
-          ((node?.data as { assets?: (string | null)[] } | undefined)?.assets
-            ?? new Array(ASSET_SLOTS).fill(null)).slice(0, ASSET_SLOTS);
-        void applySlotsToEngine(latest, attempt + 1);
+        const d = node?.data as { assets?: (string | null)[]; assetMimes?: (string | null)[] } | undefined;
+        const latest = (d?.assets ?? new Array(ASSET_SLOTS).fill(null)).slice(0, ASSET_SLOTS);
+        const latestMimes = (d?.assetMimes ?? new Array(ASSET_SLOTS).fill(null)).slice(0, ASSET_SLOTS);
+        void applySlotsToEngine(latest, latestMimes, attempt + 1);
       }, 100);
       return;
     }
@@ -209,9 +248,19 @@
         extras.setAssetAtSlot(i, null);
         continue;
       }
+      const mime = mimeSnapshot[i] ?? 'image/jpeg';
       try {
-        const bitmap = await base64ToImageBitmap(bytes);
-        extras.setAssetAtSlot(i, bitmap);
+        if (mime === GIF_MIME) {
+          const gifFrames = await decodeAnimatedGif(bytes, mime);
+          if (gifFrames && gifFrames.length > 1) {
+            extras.setAnimatedAtSlot(i, gifFrames);
+            continue;
+          }
+          // Degrade: static first frame.
+          extras.setAssetAtSlot(i, await base64ToImageBitmap(bytes, mime));
+          continue;
+        }
+        extras.setAssetAtSlot(i, await base64ToImageBitmap(bytes));
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.warn(`[picturebox] slot ${i} decode failed:`, msg);
@@ -263,7 +312,10 @@
     slotLoading[slot] = true;
     error = null;
     try {
-      const base64 = await downscaleAndEncode(file);
+      const enc = await encodePickedFile(file);
+      if (enc.fellBack === 'gif-too-large') {
+        error = `gif too large — showing first frame only`;
+      }
       ydoc.transact(() => {
         const target = patch.nodes[id];
         if (!target) return;
@@ -273,7 +325,7 @@
           ? (d.assets as (string | null)[]).slice(0, ASSET_SLOTS)
           : new Array(ASSET_SLOTS).fill(null);
         while (arr.length < ASSET_SLOTS) arr.push(null);
-        arr[slot] = base64;
+        arr[slot] = enc.base64;
         d.assets = arr;
         const names = Array.isArray(d.assetNames)
           ? (d.assetNames as (string | null)[]).slice(0, ASSET_SLOTS)
@@ -281,6 +333,12 @@
         while (names.length < ASSET_SLOTS) names.push(null);
         names[slot] = file.name;
         d.assetNames = names;
+        const mimes = Array.isArray(d.assetMimes)
+          ? (d.assetMimes as (string | null)[]).slice(0, ASSET_SLOTS)
+          : new Array(ASSET_SLOTS).fill(null);
+        while (mimes.length < ASSET_SLOTS) mimes.push(null);
+        mimes[slot] = enc.mime;
+        d.assetMimes = mimes;
       }, LOCAL_ORIGIN);
       // The $effect pre-uploads the new slot bytes to the engine on the next
       // microtask (same path as a remote peer's update).
@@ -310,6 +368,12 @@
       while (names.length < ASSET_SLOTS) names.push(null);
       names[slot] = null;
       d.assetNames = names;
+      const mimes = Array.isArray(d.assetMimes)
+        ? (d.assetMimes as (string | null)[]).slice(0, ASSET_SLOTS)
+        : new Array(ASSET_SLOTS).fill(null);
+      while (mimes.length < ASSET_SLOTS) mimes.push(null);
+      mimes[slot] = null;
+      d.assetMimes = mimes;
     }, LOCAL_ORIGIN);
   }
 
@@ -325,19 +389,22 @@
     loading = true;
     error = null;
     try {
-      // Downscale + encode (640x480 zoom-fit-crop, JPEG q=0.85). This
-      // is the workhorse: ~100ms for a typical photo, much faster for
-      // small images. Off the main thread inside createImageBitmap +
-      // OffscreenCanvas.
-      const base64 = await downscaleAndEncode(file);
-      // Single transact so peers see one update with both bytes + name.
+      // Encode for sync: an animated gif within the size cap is preserved
+      // byte-for-byte (mime 'image/gif' → the render path animates it); anything
+      // else is downscaled + JPEG-encoded (the workhorse still path). Off the
+      // main thread inside createImageBitmap + OffscreenCanvas.
+      const enc = await encodePickedFile(file);
+      if (enc.fellBack === 'gif-too-large') {
+        error = `gif too large — showing first frame only`;
+      }
+      // Single transact so peers see one update with bytes + mime + name.
       ydoc.transact(() => {
         const target = patch.nodes[id];
         if (!target) return;
         if (!target.data) target.data = {};
         const d = target.data as Record<string, unknown>;
-        d.imageBytes = base64;
-        d.imageMime = 'image/jpeg';
+        d.imageBytes = enc.base64;
+        d.imageMime = enc.mime;
         d.imageName = file.name;
       }, LOCAL_ORIGIN);
       // The $effect above will pick up the new bytes and apply them to
@@ -384,12 +451,24 @@
       <input type="file" accept="image/*" onchange={onFileChange} data-testid="picturebox-file-input" />
       <span>{loading ? 'Loading...' : 'Choose image...'}</span>
     </label>
+    {#if hasImage}
+      <!-- Card preview. A gif data: URL animates natively in the <img> (a cheap
+           preview independent of the GL render); a still shows one frame. Hidden
+           on an empty card so the VRT baseline is unaffected. -->
+      <img
+        class="preview"
+        src={`data:${imageMime};base64,${imageBytes}`}
+        alt={imageName ?? 'loaded image'}
+        data-testid="picturebox-preview"
+        data-animated={isGif}
+      />
+    {/if}
     {#if imageName}
       <div class="filename" title={imageName} data-testid="picturebox-filename">{imageName}</div>
     {/if}
     {#if hasImage}
       <div class="sync-hint" data-testid="picturebox-synced">
-        synced ({TARGET_W}×{TARGET_H})
+        {isGif ? 'gif' : `synced (${TARGET_W}×${TARGET_H})`}
       </div>
     {/if}
     {#if error}
@@ -472,6 +551,16 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .preview {
+    display: block;
+    margin: 6px auto 0;
+    max-width: 100%;
+    max-height: 56px;
+    border-radius: 2px;
+    object-fit: contain;
+    background: #000;
+    image-rendering: auto;
   }
   .sync-hint {
     margin-top: 2px;

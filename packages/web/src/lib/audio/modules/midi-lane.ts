@@ -21,7 +21,7 @@
 //   idle for any real device). Instead it is a LIGHT, instantiable
 //   per-lane bus: drop one per instrument, multi-timbral = drop several.
 //   It is the spiritual successor of MIDI-CV-BUDDY (whose note logic it
-//   reuses verbatim) but channel-aware (multi-select, like HELM), with a
+//   reuses verbatim) but channel-aware (multi-select), with a
 //   CC tap bank and a by-note gate built in.
 //
 // WHAT'S DIFFERENT FROM MIDI-CV-BUDDY:
@@ -37,7 +37,7 @@
 //     ports. Defaults to GM kick (MIDI 36).
 //   * A polyphonic output (poly, a 10-channel polyPitchGate via
 //     createPolySender) that ALWAYS carries the held chord — wire it to a poly
-//     synth (POLYHELM / DX7 / CUBE) and it just plays, no mode toggle needed.
+//     synth (DX7 / CUBE) and it just plays, no mode toggle needed.
 //     The `mode` setting governs only the MONO outputs (pitch_cv/gate):
 //     collapse-the-chord-to-one-winner ('mono') vs. leave-them-quiet ('poly').
 //
@@ -60,8 +60,8 @@
 //   small lookahead so values land at the start of the next audio block.
 //   We reuse the pure, tested helpers from midi-cv-buddy (parseNoteEvent /
 //   parsePitchBend / pickWinner / velocityToCv / bendToVOct / pushHeld /
-//   removeHeld / SCHED_LOOKAHEAD_S / DEFAULT_BEND_SEMITONES) and the
-//   HELM-style multi-channel Set filter (expandChannelSet pattern,
+//   removeHeld / SCHED_LOOKAHEAD_S / DEFAULT_BEND_SEMITONES) plus
+//   a multi-channel Set filter (expandChannelSet pattern,
 //   re-implemented locally so the module is self-contained + testable).
 //
 // PERMISSION UX: like MIDI-CV-BUDDY, we DON'T request Web MIDI on mount.
@@ -119,7 +119,7 @@ import {
 // ---------------- Pure helpers (testable) ----------------
 
 /** Returns a Set of channels (0-indexed, 0..15) selected; null = all.
- *  Mirrors HELM's `expandChannelSet` so a lane can collect a subset of
+ *  An `expandChannelSet` helper so a lane can collect a subset of
  *  channels — the bass track + any CC automation on the same channel
  *  group, say. Invalid entries are dropped. An empty array collapses to
  *  an empty Set (matches nothing) — distinct from null (matches all). */
@@ -273,7 +273,7 @@ export const midiLaneDef: AudioModuleDef = {
     { id: 'cc_b',        type: 'cv' },
     { id: 'note_gate',   type: 'gate' },
     // Polyphonic chord output. Always declared AND always live: it carries the
-    // held chord in BOTH modes, so wiring it to a poly synth (POLYHELM / DX7 /
+    // held chord in BOTH modes, so wiring it to a poly synth (DX7 /
     // CUBE / cartesian) plays straight away. `mode` only affects the MONO
     // outputs above. (#674: poly used to be silent in the default mono mode.)
     { id: 'poly',        type: 'polyPitchGate' },
@@ -298,7 +298,7 @@ export const midiLaneDef: AudioModuleDef = {
       note_gate:
         "A gate that fires when the SPECIFIC MIDI note number selected on the card arrives on this lane's channel(s) (defaults to GM kick, MIDI 36). It generalizes the per-device drum-router pattern (e.g. the Programm's ch10 by-note triggers) through one configurable port — patch it into a drum voice's strike or any trigger input.",
       poly:
-        "A polyphonic pitch+gate bus (up to 10 voices) that ALWAYS carries the full held chord, in both 'mono' and 'poly' modes. Wire it to a poly-aware voice — POLYHELM, DX7, CUBE, or a module with a poly input — and the chord plays straight away with no mode toggle. This is the real polyphonic source chain: MIDI LANE.poly → poly synth produces audible chords (it does not need the mono outputs).",
+        "A polyphonic pitch+gate bus (up to 10 voices) that ALWAYS carries the full held chord, in both 'mono' and 'poly' modes. Wire it to a poly-aware voice — DX7, CUBE, or a module with a poly input — and the chord plays straight away with no mode toggle. This is the real polyphonic source chain: MIDI LANE.poly → poly synth produces audible chords (it does not need the mono outputs).",
     },
     controls: {},
   },
@@ -426,7 +426,7 @@ export const midiLaneDef: AudioModuleDef = {
      *  (gates stay high until release).
      *
      *  ALWAYS driven, in BOTH modes. The `poly` port is a distinct, always-
-     *  present output: a user who wires it to a poly synth (POLYHELM / DX7 /
+     *  present output: a user who wires it to a poly synth (DX7 /
      *  CUBE) expects "wire poly → hear notes" to work straight away, without
      *  first hunting down a MONO→POLY toggle that is itself hidden until MIDI
      *  is connected. Driving it unconditionally is harmless to the MONO outputs
@@ -435,7 +435,7 @@ export const midiLaneDef: AudioModuleDef = {
      *  (pitch_cv/gate: collapse-to-winner vs. silent) — NOT whether the POLY
      *  port carries signal. (Was: poly only ran in mode='poly', so a freshly-
      *  dropped lane left in its default MONO mode fed silent gates to the poly
-     *  synth — the "POLYHELM produces no audio" bug, #674.) */
+     *  synth — the "poly synth produces no audio" bug, #674.) */
     function applyPoly(eventTime: number): void {
       const lanes = buildPolyLanes(heldStack, currentBendVOct);
       poly.scheduleStep(eventTime, lanes, 0);
