@@ -89,6 +89,14 @@ function randomBufferGenerate(seed: number, count: number): Float32Array {
   return out;
 }
 
+// Mod-phase randomization hook. Production leaves this null (each instance
+// gets unique chorus phasing via Math.random()); ART/test rendering injects
+// a seed through processorOptions so the whole reverb is byte-deterministic.
+// Module-level but construction-scoped: every ModulatedAllpass/ModulatedDelay
+// is built eagerly inside ReverbController's constructor, and the processor
+// clears the hook immediately after.
+let modPhaseRng: (() => number) | null = null;
+
 function randomBufferGenerateCrossSeed(
   seed: number,
   count: number,
@@ -408,7 +416,7 @@ class ModulatedAllpass {
   modulationEnabled = true;
 
   constructor() {
-    this.modPhase = 0.01 + 0.98 * Math.random();
+    this.modPhase = 0.01 + 0.98 * (modPhaseRng ? modPhaseRng() : Math.random());
     this.update();
   }
 
@@ -513,7 +521,7 @@ class ModulatedDelay {
   constructor(maxSamples: number) {
     this.bufSize = Math.max(64, maxSamples);
     this.delayBuffer = new Float32Array(this.bufSize);
-    this.modPhase = 0.01 + 0.98 * Math.random();
+    this.modPhase = 0.01 + 0.98 * (modPhaseRng ? modPhaseRng() : Math.random());
     this.update();
   }
 
@@ -1367,10 +1375,22 @@ class CloudseedProcessor extends AudioWorkletProcessor {
     }));
   }
 
-  reverb = new ReverbController(sampleRate);
+  reverb: ReverbController;
 
-  constructor() {
+  constructor(options?: { processorOptions?: { seed?: number } }) {
     super();
+    // Deterministic-render seam: a numeric processorOptions.seed makes the
+    // two mod-phase inits (the only unseeded state — everything else already
+    // flows from Param.Seed/CrossSeed through LcgRandom) reproducible, so
+    // ART can profile this module. No seed → Math.random(), the shipped
+    // behavior, untouched.
+    const seed = options?.processorOptions?.seed;
+    if (typeof seed === 'number') {
+      const rng = new LcgRandom(seed);
+      modPhaseRng = () => rng.nextUInt() / 4294967295;
+    }
+    this.reverb = new ReverbController(sampleRate);
+    modPhaseRng = null;
     // Initialize with sane defaults so the reverb is audible out of the
     // box. The host's module-def setParam path also fires on factory init
     // to set the user's saved values; this just ensures no NaN/zero out.
