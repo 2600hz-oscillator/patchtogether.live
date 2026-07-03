@@ -37,8 +37,8 @@ export const INTERACTIVE_DOC_MODULES: ReadonlySet<string> = new Set<string>([
   // Batch 2 (2026-06-25): macrooscillator's card is a pure PatchPanel + six
   // Faders + a derived label — no onMount/effect, no canvas/rAF, no Web MIDI or
   // file input — so it mounts cleanly in the doc sandbox. The other batch-2
-  // voices stay STATIC: their cards run rAF/WebGL render loops (cube, wavecel),
-  // a Web-MIDI settings panel (helm), or a file-upload picker (dx7, wavecel),
+  // voices stay STATIC: their cards run rAF/WebGL render loops (cube, wavecel)
+  // or a file-upload picker (dx7, wavecel),
   // any of which can misbehave in the engine-less doc sandbox — face fallback is
   // the safe default.
   'macrooscillator',
@@ -172,23 +172,19 @@ export const INTERACTIVE_DOC_MODULES: ReadonlySet<string> = new Set<string>([
   // late_out and symbiote rate_cv→rate exercise the CV→param dual context). The
   // STATIC siblings stay off this list: foxy/twotracks/synesthesia/warrenspectrum
   // run a 2D-canvas render in the card, hypercube renders WebGL + has a file
-  // picker, polyhelm mounts a Web-MIDI gear panel, and bluebox has no
+  // picker, and bluebox has no
   // control-<paramId> Knob/Fader to hover (its keys are press-and-hold buttons)
   // — see strict-docs.ts.
   'cloudseed',
   'symbiote',
-  // Batch 14 — FINAL audio batch (2026-06-26): only the two CONVENTION-card
-  // members that mount cleanly in the engine-less doc sandbox go here. riotgirls
+  // Batch 14 — FINAL audio batch (2026-06-26): the one CONVENTION-card
+  // member that mounts cleanly in the engine-less doc sandbox goes here. riotgirls
   // is a pure Knob + PatchPanel card (no onMount/$effect, no canvas/rAF/WebGL,
-  // no file input). hydrogen is transport buttons + the 16×16 step grid +
-  // per-voice Knobs + PatchPanel; its only side effect is a setInterval poll of
-  // engine.read('currentStep'), which no-ops in the doc sandbox (the engine is
-  // null), so it mounts cleanly. Verified live by docs-virtual-module.spec.ts
-  // (riotgirls v1_volume→v1_volume and hydrogen cv_vol_0→vol0 exercise the
+  // no file input); a control hover updates the pane. Verified live by
+  // docs-virtual-module.spec.ts (riotgirls v1_volume→v1_volume exercises the
   // CV→param dual context). The STATIC siblings stay off this list: the four
   // games (frogger/modtris/pong/skifree) + spectrograph run a 2D-canvas rAF
   // render loop, samsloop adds a waveform canvas + file-upload + mic record, and
   // wavesculpt renders WebGL2 + has a per-osc .wav picker — see strict-docs.ts.
-  'hydrogen',
   'riotgirls',
 ]);

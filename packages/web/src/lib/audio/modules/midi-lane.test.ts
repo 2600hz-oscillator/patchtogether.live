@@ -481,12 +481,12 @@ describe('midiLaneDef.factory — MIDI demux → ConstantSourceNode automation',
   });
 
   it('REGRESSION (#674): the POLY port carries the chord in DEFAULT MONO mode too', async () => {
-    // The "POLYHELM produces no audio" bug: a user wires MIDI LANE.poly → a
+    // The "poly synth produces no audio" bug: a user wires MIDI LANE.poly → a
     // poly synth and plays notes, but the lane is in its DEFAULT mono mode, so
     // the poly bus fed silent gates → the synth never received a note-on. The
     // fix makes the dedicated POLY port ALWAYS live (mode only governs the MONO
     // outputs). This is the unit-level guard; the live worklet chain is covered
-    // by e2e/tests/polyhelm-poly-chain.spec.ts.
+    // by e2e/tests/adsr-poly-midilane.spec.ts.
     const { input, ctx, handle } = await setupConnected(); // no data → DEFAULT mono mode
     try {
       const gateSrc = handle.outputs.get('gate')!.node as unknown as FakeConstantSourceNode;

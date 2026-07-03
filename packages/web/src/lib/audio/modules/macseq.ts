@@ -375,7 +375,7 @@ export const macseqDef: AudioModuleDef = {
     // External clock rising-edge detection via the shared WINDOWED counter
     // ($lib/audio/edge-detect). It owns the elapsed-samples window math so a
     // 2048-sample AnalyserNode ring can't re-present the same edge on two
-    // consecutive ~25 ms ticks (the NUMPAD+/HYDROGEN double-advance class), and
+    // consecutive ~25 ms ticks (the NUMPAD+ double-advance class), and
     // so this per-module clock scan can't drift from the canonical one.
     const CLOCK_THRESHOLD = 0.5;
     const clockCounter = createEdgeCounter({

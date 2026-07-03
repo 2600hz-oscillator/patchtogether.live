@@ -19,6 +19,15 @@
 // `assets = [imageBytes ?? null, null, …]` so a v2 single-image node becomes
 // a slot-1-only 7-slot node.
 //
+// schemaVersion bumped to 4 (animated-gif PR): adds `data.assetMimes` — a
+// length-7 array of per-slot MIMEs ('image/jpeg' | 'image/gif' | null) parallel
+// to `assets`, plus the single-image `imageMime` may now be 'image/gif'. An
+// animated gif is stored BYTE-FOR-BYTE (not JPEG-flattened) so every frame
+// survives the sync; the card decodes it (WebCodecs ImageDecoder) into per-frame
+// bitmaps and the module steps them on the engine clock (gif-frames.ts). Absent
+// `assetMimes` (v3 nodes) reads as all-JPEG — correct, since v3 only stored
+// JPEGs. See gif-frames.ts (pure scheduler) + picturebox-encode.ts (decode).
+//
 // Limits (see lib/multiplayer/picturebox-limits.ts): 2 PICTUREBOX per
 // user, 8 per workspace. The 8/workspace cap is mirrored as
 // `maxInstances` so the palette greys out the picker at the cap; the
@@ -50,6 +59,7 @@
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
 import { ASSET_SLOTS } from '$lib/video/asset-select';
+import { frameIndexAtTime, type DecodedGifFrame } from './gif-frames';
 
 const FRAG_SRC = `#version 300 es
 precision highp float;
@@ -114,21 +124,33 @@ export interface PictureboxHandleExtras {
   selectSlot: (i: number) => boolean;
   /** The currently-active slot index (0..6). */
   activeSlot: () => number;
+  // --- Animated GIF ---------------------------------------------------------
+  /** Install decoded animated-gif frames (bitmap + per-frame duration) into the
+   *  ACTIVE slot, or `null` to clear its animation. The module advances the
+   *  frames on the engine clock and OWNS the bitmaps (closes them on
+   *  replace/clear/dispose). Mirrors setImage (active slot). */
+  setAnimatedImage: (frames: DecodedGifFrame[] | null) => void;
+  /** Install animated-gif frames into slot `i` (0..6), or `null` to clear.
+   *  Mirrors setAssetAtSlot (specific slot). */
+  setAnimatedAtSlot: (i: number, frames: DecodedGifFrame[] | null) => void;
 }
 
-/** Persisted shape on `node.data` for PICTUREBOX nodes (schemaVersion 3). */
+/** Persisted shape on `node.data` for PICTUREBOX nodes (schemaVersion 4). */
 export interface PictureboxData {
-  /** base64-encoded JPEG q=85 bytes, downscaled to 640x480 zoom-fit-crop.
-   *  null when no image has been loaded yet. This is the CURRENTLY-DISPLAYED
-   *  image (back-compat with v2; single-image render path unchanged). */
+  /** base64-encoded image bytes for the CURRENTLY-DISPLAYED image. Usually a
+   *  JPEG q=85 downscaled to the engine res (zoom-fit-crop); for an ANIMATED
+   *  gif within the size cap it is the ORIGINAL, byte-preserved gif (so every
+   *  frame survives the sync) — `imageMime` distinguishes them. null when no
+   *  image has been loaded yet. Back-compat with v2 (single-image render path
+   *  unchanged). */
   imageBytes: string | null;
-  /** MIME of the encoded bytes. Reserved for future codec switching;
-   *  always 'image/jpeg' in this version. */
+  /** MIME of `imageBytes`: 'image/jpeg' (still) or 'image/gif' (animated,
+   *  byte-preserved → the card decodes + animates it). */
   imageMime: string;
   /** Human-friendly source filename, surfaced in the card UI. */
   imageName: string | null;
-  /** v3: 7-slot asset array. Each entry is a base64 JPEG (encoded via the
-   *  SAME downscaleAndEncode pipeline) or null for an empty slot. A clip
+  /** v3: 7-slot asset array. Each entry is a base64 image (JPEG still, or an
+   *  original animated gif — see `assetMimes`) or null for an empty slot. A clip
    *  player's note/gate output selects which slot is shown (see
    *  asset-select.ts). Synced (small base64); the DISPLAYED selection is
    *  local render state, never written here per gate event. */
@@ -136,6 +158,11 @@ export interface PictureboxData {
   /** v3: per-slot source filenames (parallel to `assets`), surfaced in the
    *  "Load multiple…" panel. */
   assetNames?: (string | null)[];
+  /** v4: per-slot MIME (parallel to `assets`) — 'image/jpeg' | 'image/gif' |
+   *  null (empty). Lets the card pick the animate-vs-static decode path per
+   *  slot. Absent on v3 nodes ⇒ every loaded slot is treated as a JPEG still
+   *  (correct: v3 only ever stored JPEGs). */
+  assetMimes?: (string | null)[];
   /** User id of whoever spawned this node (Canvas writes this on spawn).
    *  Used by the per-user cap. Pre-this-PR nodes have no creatorId; they
    *  count toward the workspace total but not toward any user's cap. */
@@ -154,7 +181,7 @@ export const pictureboxDef: VideoModuleDef = {
   domain: 'video',
   label: 'picturebox',
   category: 'sources',
-  schemaVersion: 3,
+  schemaVersion: 4,
   // Workspace cap (8 per rack). Mirrored from
   // lib/multiplayer/picturebox-limits.ts → PICTUREBOX_LIMITS.perWorkspace.
   // The palette uses this to grey out the option once the cap is hit;
@@ -189,10 +216,11 @@ export const pictureboxDef: VideoModuleDef = {
   ],
 
   // v1 had no imageBytes/imageMime/imageName/creatorId fields. v2 adds
-  // them. v3 adds `assets` (7-slot array) + `assetNames`. The migration
-  // fills defaults so the card's reactive reads find well-defined values,
-  // and seeds slot 1 from the legacy single image so a v2 node keeps showing
-  // its picture (now as slot 1 of 7).
+  // them. v3 adds `assets` (7-slot array) + `assetNames`. v4 adds `assetMimes`
+  // (per-slot MIME, for the animated-gif decode path). The migration fills
+  // defaults so the card's reactive reads find well-defined values, and seeds
+  // slot 1 from the legacy single image so a v2 node keeps showing its picture
+  // (now as slot 1 of 7).
   migrate(data, fromVersion) {
     const d = (data as Partial<PictureboxData> | null | undefined) ?? {};
     let out: Partial<PictureboxData> = { ...d };
@@ -219,12 +247,28 @@ export const pictureboxDef: VideoModuleDef = {
         out.assetNames = names;
       }
     }
+    if (fromVersion < 4) {
+      // Seed per-slot MIMEs parallel to `assets`. A v3 slot only ever held a
+      // JPEG, so seed loaded slots to imageMime (usually 'image/jpeg') and
+      // leave empty slots null. Absent on read is ALSO treated as jpeg, so this
+      // is belt-and-suspenders — but materialising it keeps the shape uniform.
+      if (!Array.isArray(out.assetMimes)) {
+        const assets = Array.isArray(out.assets)
+          ? out.assets
+          : new Array(ASSET_SLOTS).fill(null);
+        const mimes: (string | null)[] = new Array(ASSET_SLOTS).fill(null);
+        for (let i = 0; i < ASSET_SLOTS; i++) {
+          if (assets[i] != null) mimes[i] = out.imageMime ?? DATA_DEFAULTS.imageMime;
+        }
+        out.assetMimes = mimes;
+      }
+    }
     return out;
   },
 
   // docs-hash-ignore:start
   docs: {
-    explanation: "An image/still source for the video graph. You pick an image file in the card (\"Choose image...\"); it is zoom-fit-cropped to the engine resolution (1024x768, 4:3), JPEG-encoded (q=0.85), and synced across rack-mates so every peer sees the same picture. The fragment shader samples that texture and multiplies its RGB by Gain (idle = a dark teal fill so an empty card reads as alive, not broken). Beyond the single image, picturebox holds a 7-slot asset bank: right-click the card to open the \"Load multiple…\" panel and load one image per slot, labelled by the C-major scale degrees C D E F G A B (slots 1-7). Patch a clip player's note/pitch + gate into asset_pitch / asset_gate and each gate edge switches the displayed slot by pitch class (octave-independent; a black key is ignored). Use it as a still backdrop, an album-art frame, or a note-triggered image sampler feeding downstream video benders.",
+    explanation: "An image source for the video graph. You pick an image file in the card (\"Choose image...\"); a still is zoom-fit-cropped to the engine resolution (1024x768, 4:3), JPEG-encoded (q=0.85), and synced across rack-mates so every peer sees the same picture. An ANIMATED gif is kept byte-for-byte (not flattened) and PLAYS — its frames are decoded (WebCodecs ImageDecoder) and stepped on the engine clock, looping with the gif's own per-frame delays; the card preview animates too. Where ImageDecoder is unavailable it falls back to the first frame, and a gif over the sync size cap is stored as a first-frame still (the card hints why). The fragment shader samples the current frame's texture and multiplies its RGB by Gain (idle = a dark teal fill so an empty card reads as alive, not broken). Beyond the single image, picturebox holds a 7-slot asset bank: right-click the card to open the \"Load multiple…\" panel and load one image (or gif) per slot, labelled by the C-major scale degrees C D E F G A B (slots 1-7). Patch a clip player's note/pitch + gate into asset_pitch / asset_gate and each gate edge switches the displayed slot by pitch class (octave-independent; a black key is ignored). Use it as a still backdrop, an animated-gif loop, an album-art frame, or a note-triggered image sampler feeding downstream video benders.",
     inputs: {
       gain: "CV in that modulates Gain (output brightness/RGB multiply); displaces the Gain fader, linear, summed at the param target.",
       asset_pitch: "Pitch (V/oct) in carrying the raw slot-select value; read on each asset_gate rising edge and mapped by pitch class to one of the 7 C-major slots (C..B). No CV scaling — passed through raw.",
@@ -279,6 +323,52 @@ export const pictureboxDef: VideoModuleDef = {
 
     const params: PictureboxParams = { ...DEFAULTS, ...(node.params as Partial<PictureboxParams>) };
 
+    // --- Animated-GIF playback state (one per slot) --------------------------
+    // A slot holding an animated gif keeps its decoded frames resident (as
+    // ImageBitmaps the module OWNS + closes) plus a play clock. draw() advances
+    // the ACTIVE slot's animation on the engine clock (ctx.time) and re-uploads
+    // the current frame into the slot texture only when the frame index changes.
+    interface SlotAnim {
+      frames: DecodedGifFrame[];
+      /** Per-frame durations (ms), parallel to frames — the scheduler input. */
+      durations: number[];
+      /** Engine-clock second at which this slot's playback (re)started; null
+       *  ⇒ seed it on the next draw (so t=0 is the first frame we display). */
+      startTime: number | null;
+      /** Last frame index uploaded to the slot texture (avoids redundant
+       *  texImage2D every draw). */
+      lastIndex: number;
+    }
+    const slotAnim: (SlotAnim | null)[] = new Array(ASSET_SLOTS).fill(null);
+
+    /** Close an ImageBitmap if it supports it (real bitmaps do; test stubs may
+     *  not) — frees the decoded frame's backing store. */
+    function closeBitmap(b: ImageBitmap): void {
+      const c = (b as { close?: () => void }).close;
+      if (typeof c === 'function') {
+        try { c.call(b); } catch { /* already closed */ }
+      }
+    }
+
+    /** Drop a slot's animation, closing every frame bitmap (no leak). */
+    function clearSlotAnim(i: number): void {
+      const a = slotAnim[i];
+      if (!a) return;
+      for (const f of a.frames) closeBitmap(f.bitmap);
+      slotAnim[i] = null;
+    }
+
+    /** Upload a bitmap into a slot texture (RGBA, Y-flipped right-side-up). The
+     *  low-level path shared by the static + animated upload seams. */
+    function glUpload(tex: WebGLTexture, bitmap: ImageBitmap | HTMLImageElement): void {
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      // Image data is RGBA; flip Y so the image renders right-side-up
+      // (texImage2D defaults to bottom-up texel layout).
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bitmap);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    }
+
     /** True iff the active slot currently holds an uploaded image (drives the
      *  card's data-has-image + the shader's idle-vs-image branch). */
     function hasActiveImage(): boolean {
@@ -287,16 +377,30 @@ export const pictureboxDef: VideoModuleDef = {
 
     function uploadToSlot(i: number, bitmap: ImageBitmap | HTMLImageElement | null): void {
       if (i < 0 || i >= ASSET_SLOTS) return;
+      // A new STATIC image replaces any animation this slot was playing.
+      clearSlotAnim(i);
       if (!bitmap) {
         slotLoaded[i] = false;
         return;
       }
-      gl.bindTexture(gl.TEXTURE_2D, slotTextures[i]!);
-      // Image data is RGBA; flip Y so the image renders right-side-up
-      // (texImage2D defaults to bottom-up texel layout).
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bitmap);
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      glUpload(slotTextures[i]!, bitmap);
+      slotLoaded[i] = true;
+    }
+
+    /** Install (or clear) an animated gif in a slot. Closes any prior frames
+     *  first, uploads frame 0 immediately so the slot shows content before the
+     *  scheduler runs, and marks the slot loaded. */
+    function setAnimatedFrames(i: number, frames: DecodedGifFrame[] | null): void {
+      if (i < 0 || i >= ASSET_SLOTS) return;
+      clearSlotAnim(i);
+      if (!frames || frames.length === 0) return;
+      slotAnim[i] = {
+        frames,
+        durations: frames.map((f) => f.durationMs),
+        startTime: null,
+        lastIndex: 0,
+      };
+      glUpload(slotTextures[i]!, frames[0]!.bitmap);
       slotLoaded[i] = true;
     }
 
@@ -311,6 +415,15 @@ export const pictureboxDef: VideoModuleDef = {
       if (i < 0 || i >= ASSET_SLOTS) return false;
       if (!slotLoaded[i]) return false;
       activeSlot = i;
+      // Restart the newly-active slot's animation from frame 0 so a slot switch
+      // "stops old / starts new" cleanly (the old slot's clock simply stops
+      // being advanced by draw()).
+      const a = slotAnim[i];
+      if (a) {
+        a.startTime = null;
+        a.lastIndex = 0;
+        glUpload(slotTextures[i]!, a.frames[0]!.bitmap);
+      }
       return true;
     }
 
@@ -319,6 +432,20 @@ export const pictureboxDef: VideoModuleDef = {
       texture,
       draw(frame) {
         const g = frame.gl;
+        // Advance the ACTIVE slot's gif animation (if any) BEFORE sampling its
+        // texture: pick the frame for the elapsed engine time (looping) and
+        // re-upload only on a frame change. A single-frame "animation" never
+        // gets here (frames.length > 1 guard) so a still gif costs nothing.
+        const anim = slotAnim[activeSlot];
+        if (anim && anim.frames.length > 1) {
+          if (anim.startTime == null) anim.startTime = frame.time;
+          const elapsedMs = Math.max(0, (frame.time - anim.startTime) * 1000);
+          const idx = frameIndexAtTime(anim.durations, elapsedMs);
+          if (idx !== anim.lastIndex) {
+            glUpload(slotTextures[activeSlot]!, anim.frames[idx]!.bitmap);
+            anim.lastIndex = idx;
+          }
+        }
         g.bindFramebuffer(g.FRAMEBUFFER, fbo);
         g.viewport(0, 0, ctx.res.width, ctx.res.height);
         g.useProgram(program);
@@ -333,6 +460,9 @@ export const pictureboxDef: VideoModuleDef = {
         g.bindFramebuffer(g.FRAMEBUFFER, null);
       },
       dispose() {
+        // Close every resident gif frame bitmap (all slots) so we never leak
+        // decoded frames on module teardown.
+        for (let i = 0; i < ASSET_SLOTS; i++) clearSlotAnim(i);
         gl.deleteFramebuffer(fbo);
         gl.deleteTexture(texture);
         for (const tex of slotTextures) gl.deleteTexture(tex);
@@ -353,6 +483,9 @@ export const pictureboxDef: VideoModuleDef = {
         if (key === 'hasImage') return hasActiveImage();
         if (key === 'filename') return filename;
         if (key === 'activeSlot') return activeSlot;
+        // Current animated-gif frame index of the ACTIVE slot (or -1 when the
+        // active slot isn't animating). Test/observability hook.
+        if (key === 'activeAnimFrame') return slotAnim[activeSlot]?.lastIndex ?? -1;
         if (key === 'extras') {
           const extras: PictureboxHandleExtras = {
             setImage,
@@ -362,6 +495,8 @@ export const pictureboxDef: VideoModuleDef = {
             slotHasAsset: (i) => i >= 0 && i < ASSET_SLOTS && slotLoaded[i] === true,
             selectSlot,
             activeSlot: () => activeSlot,
+            setAnimatedImage: (frames) => setAnimatedFrames(activeSlot, frames),
+            setAnimatedAtSlot: setAnimatedFrames,
           };
           return extras;
         }

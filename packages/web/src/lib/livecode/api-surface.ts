@@ -47,7 +47,7 @@ export interface ApiNamespaceSpec {
 }
 
 /** One built-in identifier — typically a per-module-id at runtime
- *  (analogVco1, hydrogen1 …). Not statically known so completions.ts
+ *  (analogVco1, drumseqz1 …). Not statically known so completions.ts
  *  augments the list dynamically from the live patch graph. The static
  *  table just describes the SHAPE every module proxy carries. */
 export interface ApiModuleProxyShape {
@@ -105,7 +105,7 @@ export const LIVECODE_API: ApiEntry[] = [
     category: 'rack',
     signature: "setData('module', 'key', value)",
     summary:
-      'Write an arbitrary JSON value to node.data[key]. Use for sequencer step arrays, hydrogen drum patterns, and other non-numeric module state — numeric knobs use set() instead.',
+      'Write an arbitrary JSON value to node.data[key]. Use for sequencer step arrays, drum-machine patterns, and other non-numeric module state — numeric knobs use set() instead.',
     example: `setData('seq', 'steps', [\n  { on: true, pitch: 60 },\n  { on: true, pitch: 64 },\n  { on: false }, { on: false },\n]);`,
   },
 
