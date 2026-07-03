@@ -4,7 +4,7 @@
 // NEW FILE by design: the shared _helpers.ts/_drivers.ts are in the attest
 // hash bases and must not grow mobile-only code.
 
-import type { Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 
 /** The per-spec mobile emulation the /m specs use (spec §7): iPhone-ish
  *  viewport + touch. Per-spec `test.use(...)`, NEVER a new project in
@@ -19,6 +19,71 @@ interface NodeLike {
   id: string;
   type: string;
   domain: string;
+}
+
+/** Audibility floor at AUDIO OUT's terminal tap (silent chain = 0 fails it). */
+export const AUDIBLE_RMS = 0.01;
+
+/** Boot /m/synth to the FIRST BLEEP scene and wait for audible RMS. Returns
+ *  the collected pageerror list so a test can assert it stayed empty. */
+export async function bootFirstBleep(page: Page): Promise<string[]> {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto('/m/synth');
+  await page.waitForLoadState('networkidle');
+  await page.getByTestId('m-first-bleep').tap();
+  await expect(page.getByTestId('m-tabbar')).toBeVisible({ timeout: 20_000 });
+  await expect
+    .poll(() => readOutputRms(page), { timeout: 60_000, message: 'FIRST BLEEP is audible' })
+    .toBeGreaterThan(AUDIBLE_RMS);
+  return errors;
+}
+
+/** Boot /m/synth to the EMPTY RACK scene (timelorde+mixmstrs+audioOut). */
+export async function bootEmptyRack(page: Page): Promise<string[]> {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto('/m/synth');
+  await page.waitForLoadState('networkidle');
+  await page.getByTestId('m-empty-rack').tap();
+  await expect(page.getByTestId('m-tabbar')).toBeVisible({ timeout: 20_000 });
+  return errors;
+}
+
+/** Read a live param of the FIRST node of `type` (undefined if absent). */
+export async function nodeParam(page: Page, type: string, param: string): Promise<number | undefined> {
+  return await page.evaluate(
+    ([t, p]) => {
+      const w = globalThis as unknown as {
+        __patch?: { nodes: Record<string, { type: string; params: Record<string, number> } | undefined> };
+      };
+      const n = Object.values(w.__patch?.nodes ?? {}).find((x) => x?.type === t);
+      return n?.params?.[p];
+    },
+    [type, param],
+  );
+}
+
+/** All live edges as {sourceNode,sourcePort,targetNode,targetPort} tuples. */
+export async function readEdges(
+  page: Page,
+): Promise<{ st: string; sp: string; tt: string; tp: string }[]> {
+  return await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __patch?: {
+        nodes: Record<string, { id: string; type: string } | undefined>;
+        edges: Record<string, { source: { nodeId: string; portId: string }; target: { nodeId: string; portId: string } } | undefined>;
+      };
+    };
+    const nodes = w.__patch?.nodes ?? {};
+    const typeOf = (id: string) => nodes[id]?.type ?? id;
+    const out: { st: string; sp: string; tt: string; tp: string }[] = [];
+    for (const e of Object.values(w.__patch?.edges ?? {})) {
+      if (!e) continue;
+      out.push({ st: typeOf(e.source.nodeId), sp: e.source.portId, tt: typeOf(e.target.nodeId), tp: e.target.portId });
+    }
+    return out;
+  });
 }
 
 /** Find the first node of `type` in the live patch via the __patch hook. */

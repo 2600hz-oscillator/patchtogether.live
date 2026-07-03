@@ -56,9 +56,9 @@
     </div>
 
     <h4>eq</h4>
-    <HSlider label="low" value={readParamValue(node, pid('low'))} min={-12} max={12} defaultValue={0} centerDetent format={dB} onchange={write(pid('low'))} />
-    <HSlider label="mid" value={readParamValue(node, pid('mid'))} min={-12} max={12} defaultValue={0} centerDetent format={dB} onchange={write(pid('mid'))} />
-    <HSlider label="high" value={readParamValue(node, pid('high'))} min={-12} max={12} defaultValue={0} centerDetent format={dB} onchange={write(pid('high'))} />
+    <HSlider label="low" value={readParamValue(node, pid('low'))} min={-12} max={12} defaultValue={0} centerDetent format={dB} onchange={write(pid('low'))} testid="m-detail-low" />
+    <HSlider label="mid" value={readParamValue(node, pid('mid'))} min={-12} max={12} defaultValue={0} centerDetent format={dB} onchange={write(pid('mid'))} testid="m-detail-mid" />
+    <HSlider label="high" value={readParamValue(node, pid('high'))} min={-12} max={12} defaultValue={0} centerDetent format={dB} onchange={write(pid('high'))} testid="m-detail-high" />
 
     <h4>comp</h4>
     <HSlider
@@ -70,24 +70,25 @@
       onchange={write(`comp${ch}`)}
       testid="m-detail-comp"
     />
-    <button class="advanced-toggle" onclick={() => (advanced = !advanced)}>
+    <button class="advanced-toggle" onclick={() => (advanced = !advanced)} data-testid="m-detail-advanced">
       advanced {advanced ? '▴' : '▾'}
     </button>
     {#if advanced}
-      <HSlider label="thresh" value={readParamValue(node, pid('thresh'))} min={-36} max={0} defaultValue={-12} format={dB} onchange={write(pid('thresh'))} />
-      <HSlider label="ratio" value={readParamValue(node, pid('ratio'))} min={1} max={10} defaultValue={2} format={(v) => `${v.toFixed(1)}:1`} onchange={write(pid('ratio'))} />
+      <HSlider label="thresh" value={readParamValue(node, pid('thresh'))} min={-36} max={0} defaultValue={-12} format={dB} onchange={write(pid('thresh'))} testid="m-detail-thresh" />
+      <HSlider label="ratio" value={readParamValue(node, pid('ratio'))} min={1} max={10} defaultValue={2} format={(v) => `${v.toFixed(1)}:1`} onchange={write(pid('ratio'))} testid="m-detail-ratio" />
       <button
         class="enable"
         class:on={compEnabled}
         onclick={() => setNodeParam(node.id, pid('compEnable'), compEnabled ? 0 : 1)}
+        data-testid="m-detail-comp-enable"
       >
         comp enable: {compEnabled ? 'ON' : 'OFF'}
       </button>
     {/if}
 
     <h4>sends</h4>
-    <HSlider label="send 1" value={readParamValue(node, pid('send1'))} min={0} max={1} defaultValue={0} onchange={write(pid('send1'))} />
-    <HSlider label="send 2" value={readParamValue(node, pid('send2'))} min={0} max={1} defaultValue={0} onchange={write(pid('send2'))} />
+    <HSlider label="send 1" value={readParamValue(node, pid('send1'))} min={0} max={1} defaultValue={0} onchange={write(pid('send1'))} testid="m-detail-send1" />
+    <HSlider label="send 2" value={readParamValue(node, pid('send2'))} min={0} max={1} defaultValue={0} onchange={write(pid('send2'))} testid="m-detail-send2" />
   </div>
 </div>
 
