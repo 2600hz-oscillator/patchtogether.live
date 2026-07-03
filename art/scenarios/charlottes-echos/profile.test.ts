@@ -11,25 +11,27 @@
 // multi-stage tail IS the profile.
 //
 // Patch: delay 0.15 s (a 2 s window can't show the default 0.4 s × 4-stage
-// cascade), pitchUp 0.08 — the module's SIGNATURE ascending-shimmer: each
-// of the four chained Cocoa stages reads its tape at (1.08)^k varispeed, so
-// EVERYTHING reaching the output is pitched up by at least
-// 1.08·1.08²·1.08³ ≈ ×1.587 (stages 1–3 in series; stage 0 reads at unity)
-// and later repeats climb further. feedback 0.5 / decay 0.2 / mix 0.5 stay
-// at shipping defaults.
+// cascade), pitchUp 0.08 — the module's SIGNATURE ascending-shimmer: stage k's
+// wet output is transposed up by (1.08)^k by the own-code VarispeedShifter on
+// the forward cascade path, so content traversing stages 1–3 in series is
+// pitched up by at least 1.08·1.08²·1.08³ ≈ ×1.587 (stage 0 is unity) and
+// later repeats stay pitched up. feedback 0.5 / decay 0.2 / mix 0.5 stay at
+// shipping defaults.
 //
 // Rendering path: the REAL worklet processor class via the shared shim
-// loader — charlottes-echos.ts chains four CocoaDelayCore engines
-// (cocoadelay-core.ts) with FIXED per-stage seeds (1..4) and drift/LFO
-// wobble disabled in this build, so the render is deterministic by
-// construction (the cocoadelay batch-2 finding, ×4).
+// loader — charlottes-echos.ts chains four AnalogDelayCore engines
+// (lib/analog-delay-core.ts — the GPL-free own-code core that also powers
+// COFEFVE) with FIXED per-stage seeds, wow/flutter disabled, plus the
+// deterministic (RNG-free) VarispeedShifter, so the render is deterministic by
+// construction.
 //
 // SIGNATURE output (owner decision §6b.2): ONE baseline `L`. With the mono
 // driver and this patch (stereoOffset 0, pan 0) the chain is left/right
 // symmetric — L ≡ R is asserted below, so one profile covers both ports
 // (bus-duplicate rule, spec §4.1).
 //
-// The .sha pins BOTH the worklet entry and the shared Cocoa core.
+// The .sha pins the worklet entry AND the shared cores it renders through
+// (analog-delay-core + varispeed-shifter).
 
 import { describe, expect, it } from 'vitest';
 import { dspSourceSha, pinAll, SAMPLE_RATE } from '../../setup/capture';
@@ -131,7 +133,8 @@ describe("ART charlottes-echos / audio profile (60 ms saw burst → ascending 4-
     expect(peak).toBeLessThan(1.5);
 
     // Deterministic re-render is bit-identical (fresh processor; all four
-    // Cocoa stages run fixed seeds, no Math.random anywhere in the path).
+    // analog stages run fixed seeds and the varispeed shifter is RNG-free, so
+    // there is no Math.random anywhere in the path).
     const again = (await renderProfile()).L!;
     let diff = 0;
     for (let i = 0; i < n; i++) diff = Math.max(diff, Math.abs(out[i]! - again[i]!));
@@ -139,7 +142,11 @@ describe("ART charlottes-echos / audio profile (60 ms saw burst → ascending 4-
   });
 
   it('pins the L profile baseline (SHA-gated, RMS tier B)', async () => {
-    const srcSha = await dspSourceSha('charlottes-echos.ts', 'cocoadelay-core.ts');
+    const srcSha = await dspSourceSha(
+      'charlottes-echos.ts',
+      'lib/analog-delay-core.ts',
+      'lib/varispeed-shifter.ts',
+    );
     const bufs = await renderProfile();
     await pinAll('charlottes-echos', srcSha, { L: bufs.L! });
   });
