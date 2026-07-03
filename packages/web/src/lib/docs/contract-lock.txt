@@ -2234,7 +2234,7 @@ pentemelodica param v5_tune -36..36 linear default=0 unit=st
 pentemelodica param v5_wave 0..1 linear default=0
 pentemelodica param wetdry 0..1 linear default=1
 pentemelodica stereo out_l+out_r
-picturebox meta domain=video schema=3 maxInstances=8
+picturebox meta domain=video schema=4 maxInstances=8
 picturebox in asset_gate gate param=asset_gate
 picturebox in asset_pitch pitch param=asset_pitch
 picturebox in gain cv param=gain cvScale=linear
