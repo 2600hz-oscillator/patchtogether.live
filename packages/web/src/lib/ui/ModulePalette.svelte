@@ -1,6 +1,6 @@
 <script lang="ts">
-  // Searchable popup palette for adding modules. Right-click the canvas (or
-  // click the topbar's + Add module) to open. Type to filter; click to spawn.
+  // Searchable popup palette for adding modules. Right-click an empty spot
+  // on the canvas to open. Type to filter; click to spawn.
   //
   // Layout:
   //  - When the search box is EMPTY, render a 2-level nested menu:

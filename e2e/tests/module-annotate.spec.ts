@@ -13,12 +13,13 @@
 // the same card, the same patch panel, just an extra personal hover lens.
 
 import { test, expect } from '@playwright/test';
+import { openModulePalette } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
 /** Spawn one module by type via the Add-module palette search. */
 async function spawnModule(page: import('@playwright/test').Page, type: string, label: string) {
-  await page.getByRole('button', { name: '+ Add module' }).click();
+  await openModulePalette(page);
   await expect(page.locator('.module-palette')).toBeVisible();
   await page.keyboard.type(label);
   await page.getByTestId(`palette-item-${type}`).click();

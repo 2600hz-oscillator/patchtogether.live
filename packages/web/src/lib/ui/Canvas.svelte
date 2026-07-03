@@ -2386,15 +2386,6 @@
     paletteOpen = true;
   }
 
-  /** Topbar button → open palette near top-left, spawn at canvas origin-ish. */
-  function openPaletteFromButton() {
-    palettePos = { x: 80, y: 60 };
-    spawnFlowPos = flowApi
-      ? flowApi.screenToFlowPosition({ x: 200, y: 200 })
-      : { x: 200, y: 200 };
-    paletteOpen = true;
-  }
-
   // ---------------- Node right-click context menu ----------------
 
   let ctxMenuOpen = $state(false);
@@ -4986,8 +4977,11 @@
         title="Load a .set file — repopulates all five preset slots + restores the MIDI mapping"
       >Load Set</button>
     </div>
+    <!-- No "+ Add module" button here: the module palette opens by
+         right-clicking an empty spot on the canvas pane (onPaneContextMenu),
+         which also anchors the spawn at the click point. The button was
+         removed so the topbar fits narrow (1024px) viewports. -->
     <div class="actions">
-      <button onclick={openPaletteFromButton}>+ Add module</button>
       <!-- "Load example…" is an ACTION menu, not a persistent value: each
            option spawns/loads its example exactly as the old standalone
            buttons did, then onExampleChosen() resets the value back to the
@@ -5428,26 +5422,42 @@
   }
   .topbar {
     display: flex;
+    /* DYNAMIC overflow guard (owner report: at narrow widths the row of
+       topbar controls ran past the viewport and pushed the rightmost
+       control — the Sign in / account link at the end of .actions — clean
+       off the header; at 1280 it sat ~80px past the edge). flex-wrap lets
+       a whole CLUSTER (the .actions div) flow to a second row instead, so
+       every control stays inside the viewport at any width ≥ 1024px
+       (guarded by the topbar-1024 e2e at 1024/1280/1920).
+
+       VRT note: the wrap makes the topbar TALLER below ~1450px, including
+       the 1280×720 VRT viewport, which moves the canvas origin. Per-card
+       baselines (vrt.spec, the strict gate) are insulated from that:
+       SvelteFlow nodes are transform-positioned (own composited layer,
+       whole-pixel snapped), so a card's element screenshot doesn't change
+       with the pane offset — verified by running the FULL vrt lane against
+       the committed baselines with this wrap in place. Only the
+       topbar/landing-page scenes (which frame the header itself) were
+       re-captured. */
+    flex-wrap: wrap;
     align-items: baseline;
-    gap: 1rem;
+    gap: 0.5rem 1rem;
     padding: 0.8rem 1.25rem;
     border-bottom: 1px solid #1f242c;
   }
-  /* Never let the topbar's flex row squeeze its controls. The preset-slot bar
-     pushed the total control width past the 1280px viewport; the default
-     flex-shrink:1 then compressed each control below its content width, and the
-     ones with `white-space: normal` (the theme-picker dropdown + the aspect /
-     Electra buttons, which live in CHILD components and so can't be reached by
-     a `.topbar button` rule scoped to this file) wrapped to two lines. That
-     ~doubled the row height, grew the topbar by a non-integer amount, and
-     shifted the SvelteFlow canvas + every card down to a fractional Y —
-     rastering all text-heavy module cards ±1px on CI (the documented VRT
-     1px-layout-rounding flake). Pinning every direct child to flex-shrink:0
-     keeps each control at its natural single-line height, so the topbar (and
-     the canvas origin) stays exactly what it was before the bar existed and the
-     per-card baselines still match with no regeneration. The row may extend a
-     few px past the viewport edge — harmless on a fixed-height header, and far
-     better than a vertical wrap that moves the canvas. */
+  /* Never let the topbar's flex row squeeze the controls THEMSELVES. Under the
+     default flex-shrink:1 a tight row compressed each control below its
+     content width, and the ones with `white-space: normal` (the theme-picker
+     dropdown + the aspect / Electra buttons, which live in CHILD components
+     and so can't be reached by a `.topbar button` rule scoped to this file)
+     wrapped their label to two lines. That ~doubled the row height, grew the
+     topbar by a non-integer amount, and shifted the SvelteFlow canvas + every
+     card down to a fractional Y — rastering all text-heavy module cards ±1px
+     on CI (the documented VRT 1px-layout-rounding flake). Pinning children to
+     flex-shrink:0 keeps each control at its natural single-line size; when a
+     row gets tight the flex-wrap above moves whole controls to the next row
+     instead of compressing them. (.actions below deliberately overrides this
+     for ITSELF — it wraps internally, so shrinking it is safe.) */
   .topbar > * {
     flex-shrink: 0;
   }
@@ -5472,7 +5482,32 @@
   .topbar .actions {
     margin-left: auto;
     display: flex;
+    /* The cluster wraps INTERNALLY: whole controls flow to the next row
+       (each keeps its natural size via the .actions > * rule below), and
+       rows stay right-anchored so the auth control hugs the right edge. */
+    flex-wrap: wrap;
+    justify-content: flex-end;
     gap: 0.4rem;
+    /* Override .topbar > * flex-shrink:0 for the cluster itself: letting it
+       shrink below its one-line content width is safe (it wraps instead of
+       compressing) and guarantees it can never push past the viewport even
+       if it ends up alone on a row narrower than its content. min-width:0
+       lets flexbox actually take it below the content width. */
+    flex-shrink: 1;
+    min-width: 0;
+  }
+  .topbar .actions > * {
+    flex-shrink: 0;
+  }
+  /* The two wide selects may give up a handful of px before the cluster
+     wraps — a native select clips its label without changing height, so a
+     slight squeeze is invisible while it saves a whole extra row on
+     in-between viewport widths. Floored so they never collapse into an
+     unusable sliver. (Higher specificity than the .actions > * pin above.) */
+  .topbar select.load-example,
+  .topbar select.raw-json {
+    flex-shrink: 1;
+    min-width: 6.5rem;
   }
   .topbar button {
     background: #2a2f3a;

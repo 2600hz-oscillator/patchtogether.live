@@ -30,7 +30,7 @@
 // safe. Gated on the engine reaching 'ready' + e2e hooks (skips on prod-preview).
 
 import { test, expect } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, openModulePalette } from './_helpers';
 
 const BLOOD_ID = 'blood-kb';
 
@@ -74,10 +74,10 @@ async function spawnBloodReady(page: import('@playwright/test').Page): Promise<b
   return ready;
 }
 
-test('control: +Add-module palette receives typing with NO blood present', async ({ page }) => {
+test('control: Add-module palette receives typing with NO blood present', async ({ page }) => {
   await page.goto('/rack');
   await page.waitForLoadState('networkidle');
-  await page.getByRole('button', { name: '+ Add module' }).click();
+  await openModulePalette(page);
   const inp = page.locator('.module-palette input').first();
   await inp.waitFor({ state: 'visible', timeout: 5_000 });
   await inp.pressSequentially('scope');
@@ -101,7 +101,7 @@ test('BLOOD: focused card forwards keys; capture releases when card unfocused', 
   expect(calls).toContain('Enter');
 
   // #2 (BloodCard part): once a non-card input holds focus, BLOOD claims nothing.
-  await page.getByRole('button', { name: '+ Add module' }).click();
+  await openModulePalette(page);
   await page.locator('.module-palette input').first().waitFor({ state: 'visible', timeout: 5_000 });
   await page.evaluate(
     () => ((globalThis as unknown as { __bloodKbCalls?: string[] }).__bloodKbCalls = []),
@@ -158,11 +158,11 @@ test('BLOOD selected but unfocused: arrows still claimed (module does not slide)
   expect(calls, 'arrows must reach the game even when selected-but-unfocused').toContain('ArrowRight');
 });
 
-test('BLOOD running: +Add-module palette still receives typing', async ({ page }) => {
+test('BLOOD running: Add-module palette still receives typing', async ({ page }) => {
   const ready = await spawnBloodReady(page);
   test.skip(!ready, 'engine not ready');
   await page.getByTestId('blood-card').click();
-  await page.getByRole('button', { name: '+ Add module' }).click();
+  await openModulePalette(page);
   const inp = page.locator('.module-palette input').first();
   await inp.waitFor({ state: 'visible', timeout: 5_000 });
   await inp.pressSequentially('scope');

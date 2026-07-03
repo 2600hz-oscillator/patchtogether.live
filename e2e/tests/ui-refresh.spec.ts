@@ -7,6 +7,7 @@
 // state across tests.
 
 import { test, expect } from '@playwright/test';
+import { openModulePalette } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -132,7 +133,7 @@ test.describe('Undo / redo', () => {
 
     // Spawn through Canvas.svelte's spawnFromPalette path so the edit
     // lands on the LOCAL_ORIGIN-tracked undo stack.
-    await page.getByRole('button', { name: '+ Add module' }).click();
+    await openModulePalette(page);
     await expect(page.locator('.module-palette')).toBeVisible();
     await page.keyboard.type('Reverb');
     await page.getByRole('button', { name: 'reverb', exact: true }).click();

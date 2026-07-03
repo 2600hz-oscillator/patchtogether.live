@@ -1,16 +1,19 @@
 // e2e/tests/palette.spec.ts
 //
-// Module-add palette: opens via topbar button + right-click on canvas pane,
-// filters by search, spawns the chosen module type into the patch graph.
+// Module-add palette: opens via right-click on an empty spot of the canvas
+// pane (the production entry point — the topbar "+ Add module" button was
+// removed by the 1024px topbar-overflow fix), filters by search, spawns the
+// chosen module type into the patch graph.
 
 import { test, expect } from '@playwright/test';
+import { openModulePalette } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('palette: + Add module button opens palette and spawns the chosen module', async ({ page }) => {
+test('palette: pane right-click opens palette and spawns the chosen module', async ({ page }) => {
   await page.goto('/rack');
   await page.waitForLoadState('networkidle');
-  await page.getByRole('button', { name: '+ Add module' }).click();
+  await openModulePalette(page);
   await expect(page.locator('.module-palette')).toBeVisible();
   // The palette has the search field focused — type to filter.
   await page.keyboard.type('Reverb');
@@ -22,7 +25,7 @@ test('palette: + Add module button opens palette and spawns the chosen module', 
 test('palette: Escape closes without spawning', async ({ page }) => {
   await page.goto('/rack');
   await page.waitForLoadState('networkidle');
-  await page.getByRole('button', { name: '+ Add module' }).click();
+  await openModulePalette(page);
   await expect(page.locator('.module-palette')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.locator('.module-palette')).not.toBeVisible();
@@ -32,7 +35,7 @@ test('palette: Escape closes without spawning', async ({ page }) => {
 test('palette: Enter picks the first filtered match', async ({ page }) => {
   await page.goto('/rack');
   await page.waitForLoadState('networkidle');
-  await page.getByRole('button', { name: '+ Add module' }).click();
+  await openModulePalette(page);
   // Scope is alphabetically first among Sc-prefix modules (Scope, Score), so
   // "Scop" uniquely matches Scope.
   await page.keyboard.type('Scop');

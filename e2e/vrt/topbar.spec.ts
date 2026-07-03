@@ -2,9 +2,10 @@
 //
 // Visual-regression baseline for the app TOPBAR — the brand heading
 // ("patchtogether v<version>") plus the full button layout: the preset-slot bar
-// (5 numbered slots + Save Set / Load Set) and the actions cluster (+ Add
-// module, Load example…, Clear, Export/Load Perf (.zip), Raw JSON, aspect /
-// skin / Electra, Sign in).
+// (5 numbered slots + Save Set / Load Set) and the actions cluster (Load
+// example…, Clear, Export/Load Perf (.zip), Raw JSON, aspect / skin / Electra,
+// Sign in). The module palette opens via canvas right-click, not a topbar
+// button (removed by the 1024px topbar-overflow fix).
 //
 // The VERSION TEXT is MASKED — its `[data-testid="app-version"]` box is filled
 // with magenta in BOTH baseline and actual before the diff — so a version bump
@@ -57,7 +58,9 @@ test.describe('VRT: topbar heading + button layout', () => {
     // (not stable run-to-run) — the documented VRT text-metric flake. See
     // e2e/vrt/_fonts.ts for the full root-cause writeup.
     await pinVrtFonts(page);
-    await page.goto('/');
+    // The overflow-fixed topbar is the CANVAS topbar (Canvas.svelte), on /rack
+    // since the landing move (#995); `/` is the static landing (no load-example).
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await awaitVrtFonts(page);
 

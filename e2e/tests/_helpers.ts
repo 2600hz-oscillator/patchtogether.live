@@ -175,6 +175,90 @@ export async function spawnPatch(
   throw lastErr ?? new Error('spawnPatch: exhausted retries with no error captured');
 }
 
+// ---------------- Module palette (right-click) helper ----------------
+
+/**
+ * Open the module-add palette by RIGHT-CLICKING an empty spot on the canvas
+ * pane — the production entry point (the topbar "+ Add module" button was
+ * removed by the 1024px topbar-overflow fix; `onPaneContextMenu` in
+ * Canvas.svelte is the flow that remains, and it anchors the spawn at the
+ * click point via `screenToFlowPosition`).
+ *
+ * Robustness:
+ *  - Pass `position` (viewport/client coords) to right-click exactly there —
+ *    the caller guarantees it's empty pane (spawn-anchor assertions need a
+ *    known coordinate).
+ *  - Otherwise the helper scans a coarse grid over the pane's bounding box
+ *    and picks the first point whose topmost element is the pane itself —
+ *    NOT a module card or cable. Right-clicking a node opens the node
+ *    context menu instead of the palette, and palette-spawned modules land
+ *    AT the click point, so a fixed coordinate would break on the second
+ *    open in the same test.
+ *  - The (right-click → palette visible) pair is retried via toPass so a
+ *    pre-paint click on a cold renderer can't strand the test.
+ *
+ * Returns the client coords that were right-clicked (the spawn anchor).
+ */
+export async function openModulePalette(
+  page: Page,
+  opts: { position?: { x: number; y: number } } = {},
+): Promise<{ x: number; y: number }> {
+  const pane = page.locator('.svelte-flow__pane');
+  await pane.waitFor({ state: 'visible', timeout: 10_000 });
+
+  let point = opts.position ?? null;
+  if (!point) {
+    const box = await pane.boundingBox();
+    if (!box) throw new Error('openModulePalette: pane has no bounding box');
+    const scan = (b: { x: number; y: number; width: number; height: number }) => {
+      // Inset from the pane edges so candidates clear the corner overlays
+      // (zoom Controls bottom-left, feedback bug bottom-right).
+      const inset = 56;
+      for (let y = b.y + inset; y <= b.y + b.height - inset; y += 90) {
+        for (let x = b.x + inset; x <= b.x + b.width - inset; x += 110) {
+          const el = document.elementFromPoint(x, y);
+          if (
+            el &&
+            el.closest('.svelte-flow__pane') &&
+            !el.closest('.svelte-flow__node') &&
+            !el.closest('.svelte-flow__edge')
+          ) {
+            return { x, y };
+          }
+        }
+      }
+      return null;
+    };
+    // A crowded canvas (cards spawn AT the click point, so repeated opens
+    // fill the pane) can leave no empty candidate — zoom OUT (wheel over the
+    // pane centre; SvelteFlow zoomOnScroll) so the cards shrink and empty
+    // pane reappears, then rescan. Bounded so a genuinely broken canvas
+    // still fails loudly.
+    for (let attempt = 0; attempt < 4 && !point; attempt++) {
+      if (attempt > 0) {
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.mouse.wheel(0, 400);
+        await page.waitForTimeout(200); // d3-zoom transform settle
+      }
+      point = await page.evaluate(scan, box as { x: number; y: number; width: number; height: number });
+    }
+    if (!point) {
+      throw new Error('openModulePalette: no empty pane spot found to right-click (after zoom-out rescans)');
+    }
+  }
+
+  const palette = page.locator('.module-palette');
+  const p = point;
+  await expect(
+    async () => {
+      await page.mouse.click(p.x, p.y, { button: 'right' });
+      await expect(palette).toBeVisible({ timeout: 3_000 });
+    },
+    `module palette should open on pane right-click at (${p.x}, ${p.y})`,
+  ).toPass({ timeout: 15_000 });
+  return point;
+}
+
 // ---------------- TOYBOX collapsible-section helpers ----------------
 //
 // TOYBOX's COMBINE GRAPH + CV/MOD sections default OPEN in the wide 3-column

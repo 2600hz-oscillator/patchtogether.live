@@ -4,10 +4,10 @@
 // (moved off `/` in the landing-page overhaul; `/` is now the static
 // landing). `/dashboard` redirects to /sign-in for anon users, so a
 // signed-out "dashboard" shot would just be the sign-in page. The
-// canvas-empty shot catches topbar / SkinSwitcher / "+ Add module" /
-// bottombar chrome regressions, which is the actual user-visible signed-
-// out surface. The baseline name stays `landing-empty` (the canvas chrome
-// is route-independent, so the darwin pixels are unchanged by the move).
+// canvas-empty shot catches topbar / SkinSwitcher / bottombar chrome
+// regressions, which is the actual user-visible signed-out surface. The
+// baseline name stays `landing-empty` (the canvas chrome is route-
+// independent, so the darwin pixels are unchanged by the move).
 //
 // Same per-platform layout as the other VRT specs (see vrt.config.ts
 // snapshotPathTemplate). Linux baseline pending — exempted on first land
@@ -43,7 +43,7 @@ test.describe.configure({ mode: 'default' });
 
 test('landing-empty: public canvas with no modules', async ({ page }) => {
   skipIfNoBaseline(test, 'landing-empty');
-  // Pin the topbar chrome text (h1 / "+ Add module" / "Load example…" +
+  // Pin the topbar chrome text (h1 / "Load example…" +
   // "Raw JSON" dropdowns / Clear / Export·Load Perf / skin switcher) to the
   // bundled Inter face
   // BEFORE first paint — same deterministic-font fix #598 applied to the
