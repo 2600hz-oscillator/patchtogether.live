@@ -66,7 +66,7 @@ describe('ART scaler / audio profile (quiet C4 saw boosted ×2.5 past its own pe
       inPeak = Math.max(inPeak, Math.abs(input[i]!));
       outPeak = Math.max(outPeak, Math.abs(out[i]!));
     }
-    expect(inPeak).toBeLessThanOrEqual(IN_AMP);
+    expect(inPeak).toBeLessThanOrEqual(IN_AMP + 1e-6); // f32 rounding of 0.3
     expect(outPeak).toBeGreaterThan(inPeak * 2);
     expect(outPeak).toBeLessThanOrEqual(IN_AMP * AMOUNT + 1e-6);
 
