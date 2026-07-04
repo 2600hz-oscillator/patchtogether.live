@@ -7,9 +7,11 @@
 // feedback ratios that smear into endless tails. The "destructive" name
 // captures the intent — this is the delay you reach for when you want
 // the wet path to colour and degrade the source, not stay clean. DSP is
-// a TS AudioWorklet (packages/dsp/src/charlottes-echos.ts). Internally
-// this is the audio sibling of VDELAY in the video domain and is the
-// effect 4× COCOA DELAYs would approximate if stacked in serial.
+// a TS AudioWorklet (packages/dsp/src/charlottes-echos.ts) built from four
+// clean-room AnalogDelayCore stages (the GPL-free own-code core that also
+// powers COFEFVE) plus an own-code varispeed shifter for the pitch-up.
+// Internally this is the audio sibling of VDELAY in the video domain and is
+// the effect 4× COFEFVE analog delays would approximate if stacked in serial.
 //
 // Inputs:
 //   L (audio): left-channel signal.
@@ -63,7 +65,7 @@ export const charlottesEchosDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A destructive multi-head stereo delay — a four-stage cascade of echoes that colour and degrade the source rather than repeating it cleanly. Each of the four stages tap the delayed signal in turn; FEEDBACK is fed to every stage so repeats compound across the chain into smeared, endless tails, DECAY progressively tapers each later stage's level and adds in-loop high-frequency loss for a darkening, dub-like decay, and PITCHUP shifts each stage up by a fixed ratio so the cascaded echoes climb in pitch — the classic ascending-shimmer effect. It is the audio sibling of the video-domain VDELAY, and roughly the sound of four COCOA DELAYs stacked in serial. Reach for it when you want the wet path to abuse the signal.",
+      "A destructive multi-head stereo delay — a four-stage cascade of echoes that colour and degrade the source rather than repeating it cleanly. Each of the four stages tap the delayed signal in turn; FEEDBACK is fed to every stage so repeats compound across the chain into smeared, endless tails, DECAY progressively tapers each later stage's level and adds in-loop drive and high-frequency loss for a darkening, dub-like decay, and PITCHUP shifts each stage up by a compounding ratio so the cascaded echoes climb in pitch — the classic ascending-shimmer effect. It is the audio sibling of the video-domain VDELAY, and roughly the sound of four COFEFVE analog delays stacked in serial. Reach for it when you want the wet path to abuse the signal.",
     inputs: {
       L: 'Left-channel input feeding the multi-head delay cascade.',
       R: 'Right-channel input feeding the cascade.',
@@ -76,8 +78,8 @@ export const charlottesEchosDef: AudioModuleDef = {
     controls: {
       delay: 'Base tap time in seconds, log-scaled 1 ms..1.5 s — the spacing of the first echo (the cascade stages derive from it). Summed with the DELAY CV input.',
       feedback: 'Feedback amount fed to EVERY stage (0..1). Because it compounds across the four-stage chain, even moderate settings build long tails and high settings smear into near-infinite, self-sustaining echoes.',
-      decay: "Per-tap colour-decay (0..1): progressively tapers each later stage's wet level and adds high-frequency loss inside the loop, so the repeats darken and degrade as they fade — the 'destructive', dub-delay character.",
-      pitchUp: 'Per-stage upward pitch shift (0..0.2). At 0 the echoes repeat at pitch; above 0 each successive stage is shifted up by a compounding ratio so the cascaded echoes climb in pitch — the signature ascending shimmer. Uses the same interpolation as the delay reads, so pitchUp=0 patches are bit-for-bit unchanged.',
+      decay: "Per-tap colour-decay (0..1): progressively tapers each later stage's wet level and adds in-loop tanh drive plus high-frequency loss, so the repeats darken and degrade as they fade — the 'destructive', dub-delay character.",
+      pitchUp: 'Per-stage upward pitch shift (0..0.2). At 0 the internal varispeed grain shifter is bypassed entirely and the echoes repeat at pitch; above 0 each successive stage is transposed up by a compounding ratio so the cascaded echoes climb in pitch — the signature ascending shimmer.',
       mix: 'Dry / wet balance (0..1): 0 is the clean input, 1 is the cascade only, between crossfades the two.',
     },
   },
