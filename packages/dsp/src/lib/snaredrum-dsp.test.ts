@@ -300,3 +300,143 @@ describe('snaredrum: drumroll continuity (the load-bearing property)', () => {
     expect(onsets(fast)).toBeGreaterThan(onsets(slow) * 1.5);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// PARAM SENSITIVITY — the real guard against a knob going DEAD.
+//
+// For every user-facing knob, render its MIN vs MAX (single TRIGGER for hit
+// params; a held GATE for roll params) over the pure core and assert a MINIMUM
+// normalized audible-feature delta (rel-RMS / a cheap hi/lo centroid proxy /
+// stereo side-energy). Any future edit that lets a param stop moving the sound
+// drops its delta toward 0 and FAILS CI. Thresholds sit BELOW each fixed param's
+// measured post-fix delta but ABOVE noise. This is what un-deadens crack /
+// crack_tone / head_decay / tone / body_decay / pitch_amt / pitch_time / spread.
+// (adversarial review §5)
+describe('snaredrum: param sensitivity (a dead param FAILS CI)', () => {
+  const SR = 48000;
+
+  // Render `secs` seconds: single rising trigger edge for hit params; a held
+  // gate for roll params.
+  function render(overrides: Partial<SnaredrumParams>, mode: 'hit' | 'roll', secs = 2) {
+    const s = makeSnaredrumState();
+    const p = P(overrides);
+    const n = Math.floor(SR * secs);
+    const L = new Float32Array(n);
+    const R = new Float32Array(n);
+    const out = new Float32Array(2);
+    for (let i = 0; i < n; i++) {
+      const trig = mode === 'hit' ? (i === 0 ? 1 : 0) : 0; // one rising edge
+      const gate = mode === 'roll' ? 1 : 0; // held for the roll
+      snaredrumStepStereo(trig, gate, 0, p, SR, s, out);
+      L[i] = out[0]!;
+      R[i] = out[1]!;
+    }
+    return { L, R };
+  }
+
+  // Cheap, deterministic, FFT-free features. Each is measured over the FULL
+  // buffer AND over an ATTACK window (0–25 ms: transient/attack params like
+  // crack, crack_tone, pitch_time) AND a DECAY-TAIL window (50–350 ms: length
+  // params like body_decay) — so whatever a knob actually moves surfaces in at
+  // least one view and a dead knob (delta≈0 everywhere) fails the gate.
+  const rmsWin = (x: Float32Array, s: number, e: number): number => {
+    let a = 0;
+    const hi = Math.min(e, x.length);
+    for (let i = s; i < hi; i++) a += x[i]! * x[i]!;
+    return Math.sqrt(a / Math.max(1, hi - s));
+  };
+  const centroidWin = (x: Float32Array, s: number, e: number): number => {
+    // 1-pole hi/lo energy ratio — a monotone spectral-centroid stand-in.
+    let lo = 0;
+    let hi = 0;
+    let prev = s > 0 ? x[s - 1]! : 0;
+    const end = Math.min(e, x.length);
+    for (let i = s; i < end; i++) {
+      const h = x[i]! - prev;
+      prev = x[i]!;
+      hi += h * h;
+      lo += x[i]! * x[i]!;
+    }
+    return hi / (lo + 1e-12);
+  };
+  const sideEnergy = (l: Float32Array, r: Float32Array): number => {
+    let s = 0;
+    for (let i = 0; i < l.length; i++) {
+      const d = (l[i]! - r[i]!) * 0.5;
+      s += d * d;
+    }
+    return Math.sqrt(s / l.length);
+  };
+  const rel = (x: number, y: number): number => Math.abs(x - y) / (Math.max(Math.abs(x), Math.abs(y)) + 1e-9);
+  const featDelta = (
+    a: { L: Float32Array; R: Float32Array },
+    b: { L: Float32Array; R: Float32Array },
+  ): number => {
+    const n = a.L.length;
+    const atk = Math.floor(0.025 * SR); // 0..25 ms — attack / transient
+    const t0 = Math.floor(0.05 * SR);
+    const t1 = Math.floor(0.35 * SR); // 50..350 ms — decay tail
+    return Math.max(
+      rel(rmsWin(a.L, 0, n), rmsWin(b.L, 0, n)),
+      rel(centroidWin(a.L, 0, n), centroidWin(b.L, 0, n)),
+      rel(sideEnergy(a.L, a.R), sideEnergy(b.L, b.R)),
+      rel(rmsWin(a.L, 0, atk), rmsWin(b.L, 0, atk)),
+      rel(centroidWin(a.L, 0, atk), centroidWin(b.L, 0, atk)),
+      rel(rmsWin(a.L, t0, t1), rmsWin(b.L, t0, t1)),
+    );
+  };
+
+  // [id, min, max, mode, minDelta, ctx?] — the min normalized feature delta the
+  // knob must clear. `ctx` is an optional patch context: two knobs (pitch_time,
+  // crack_tone) only shape a sound the DEFAULT patch keeps small (a shallow pit /
+  // a soft tick), so they're guarded in the context they actually operate in (a
+  // deep pitch drop / a loud crack) — the guard then asserts their real audible
+  // FUNCTION, not a wire-masked nudge. Thresholds sit BELOW each param's measured
+  // post-fix delta and WELL ABOVE the ~0 a dead knob produces (a dead knob makes
+  // min≡max → delta 0), so any param going dead trips the gate. All renders are
+  // deterministic, so these are exact, flake-free numbers.
+  const CASES: Array<
+    [keyof SnaredrumParams, number, number, 'hit' | 'roll', number, Partial<SnaredrumParams>?]
+  > = [
+    ['tune', 90, 400, 'hit', 0.05],
+    ['tone', 0, 1, 'hit', 0.08],
+    ['damping', 0, 1, 'hit', 0.08],
+    ['headDecay', 30, 600, 'hit', 0.08],
+    ['bodyDecay', 20, 300, 'hit', 0.04],
+    ['pitchAmt', 0, 12, 'hit', 0.05],
+    ['pitchTime', 3, 80, 'hit', 0.05, { pitchAmt: 12 }], // guard the pit's settle at full depth
+    ['wire', 0, 1, 'hit', 0.2],
+    ['wireTone', 1500, 9000, 'hit', 0.08],
+    ['wireDecay', 40, 700, 'hit', 0.2],
+    ['crack', 0, 1, 'hit', 0.05],
+    ['crackTone', 800, 7000, 'hit', 0.03, { crack: 1 }], // guard the tick's tone at full level
+    ['damp', 0, 1, 'hit', 0.1],
+    ['rollSpeed', 0, 1, 'roll', 0.1],
+    ['bounce', 0, 1, 'roll', 0.08],
+    ['humanize', 0, 1, 'roll', 0.025],
+    ['spread', 0, 1, 'roll', 0.06], // guards the WEAK-5 wire-bed pan fix
+    ['drive', 0, 1, 'hit', 0.15],
+    ['ceiling', 0, 1, 'hit', 0.1],
+    ['width', 0, 1, 'hit', 0.1],
+    ['level', -24, 12, 'hit', 0.3],
+  ];
+
+  for (const [id, lo, hi, mode, minDelta, ctx] of CASES) {
+    it(`${id} moves the sound from min→max (${mode})`, () => {
+      const a = render({ ...ctx, [id]: lo } as Partial<SnaredrumParams>, mode);
+      const b = render({ ...ctx, [id]: hi } as Partial<SnaredrumParams>, mode);
+      // Determinism: the same overrides render byte-identically (seeded core).
+      expect(render({ ...ctx, [id]: lo } as Partial<SnaredrumParams>, mode).L).toEqual(a.L);
+      expect(featDelta(a, b)).toBeGreaterThan(minDelta);
+    });
+  }
+
+  // `hard` is EXCLUDED from the min-delta sweep (it is a character switch that is
+  // a no-op at drive=0 by design — asserting it there would encode the
+  // combination-dead behavior). Guard it with drive UP instead.
+  it('hard toggles the character when drive is up (0.5)', () => {
+    const soft = render({ drive: 0.5, hard: 0 }, 'hit');
+    const harsh = render({ drive: 0.5, hard: 1 }, 'hit');
+    expect(featDelta(soft, harsh)).toBeGreaterThan(0.05);
+  });
+});
