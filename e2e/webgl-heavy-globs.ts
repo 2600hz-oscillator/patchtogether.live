@@ -70,6 +70,12 @@ export const WEBGL_HEAVY_GLOBS = [
   // contention (shard-1 red). Same GPU-bound class as the mixers above — isolate
   // it in the serialized e2e-video lane.
   '**/colourofmagic.spec.ts', // 8-FBO colorspace processor — heavy WebGL evaluate
+  // SOURCERY: 2-input region shape-match recolor. The bespoke spec wires two
+  // real video sources → SOURCERY → readPixels()es the output FBO (non-black +
+  // structured + param response). Full-res dependent-texelFetch fill; keep it
+  // off the sharded matrix so it never co-tenants a SwiftShader shard.
+  // e2e/webgl-heavy-globs.ts is in the WebGL hash basis → re-attested.
+  '**/sourcery.spec.ts', // 2-input region-transplant recolor — heavy WebGL pixel read
   // picturebox-gif (#1016 boy-scout): unlike picturebox-limits/picturebox-sync
   // (re-binned OUT for doing NO pixel work — see the EXCLUDE note below), the
   // GIF spec's `ANIMATES` test samples the video output's LUMA OVER TIME to

@@ -2905,6 +2905,18 @@ snes9x param cv_up 0..1 linear default=0
 snes9x param cv_x 0..1 linear default=0
 snes9x param cv_y 0..1 linear default=0
 snes9x param fillMode 0..1 discrete default=0
+sourcery meta domain=video schema=1
+sourcery in a video
+sourcery in b video
+sourcery in colorSkew cv param=colorSkew cvScale=linear
+sourcery in rotate cv param=rotate cvScale=linear
+sourcery in thresholdA cv param=thresholdA cvScale=linear
+sourcery in thresholdB cv param=thresholdB cvScale=linear
+sourcery out out video
+sourcery param colorSkew 0..1 linear default=0.5
+sourcery param rotate 0..1 linear default=0.5
+sourcery param thresholdA 0..1 linear default=0.2
+sourcery param thresholdB 0..1 linear default=0.2
 spectrograph meta domain=audio schema=1
 spectrograph in in audio
 spectrograph out bw mono-video

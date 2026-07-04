@@ -336,6 +336,8 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // COLOUR OF MAGIC (2026-07-03): multi-colorspace processor (RGB / YDbDr /
   // HSV·HSL + palette REPLACE + per-channel mono overrides).
   'colourofmagic',
+  // SOURCERY (2026-07-04): 2-input region shape-match recolor processor.
+  'sourcery',
   // Video batch 6 (2026-06-26): plasma/ramp/spirograph generators + fractals + scoreboard.
   'acidwarp',
   'shapedramps',

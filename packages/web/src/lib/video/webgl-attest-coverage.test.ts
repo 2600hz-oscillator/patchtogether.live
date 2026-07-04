@@ -118,7 +118,12 @@ const FROM_TEST_ROOT = resolve(__dirname, '../../../../..');
 // where it flaked under SwiftShader contention). Both INTENTIONALLY join the heavy
 // lane; e2e/webgl-heavy-globs.ts is in the hash basis, so this moved the WebGL hash
 // (re-attested). 47 → 49.
-const EXPECTED_HEAVY_SPEC_COUNT = 49;
+// SOURCERY (2026-07-04): +sourcery.spec.ts (2-input region shape-match recolor —
+// the bespoke spec wires two real video sources and readPixels()es the output FBO
+// for non-black/structured/param-response). Full-res dependent-texelFetch fill →
+// isolated in the serialized heavy lane; e2e/webgl-heavy-globs.ts is in the hash
+// basis, so this moved the WebGL hash (re-attested). 49 → 50.
+const EXPECTED_HEAVY_SPEC_COUNT = 50;
 
 describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
   const basis = resolveWebglBasis();
