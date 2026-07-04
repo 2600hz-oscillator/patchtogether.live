@@ -156,6 +156,13 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // covered by onetonine.test.ts + the bespoke onetonine e2e.
   onetonine: [{ selector: 'canvas' }],
   shapegen: [{ selector: 'canvas' }],
+  // SOURCERY — 2-input region shape-match recolor. The card carries a live
+  // on-card preview canvas (blitOutputToDrawingBuffer off the engine clock,
+  // black when nothing is patched) and v1 segmentation is source-dependent +
+  // shimmers frame-to-frame, so the canvas region is non-deterministic; mask it
+  // and gate on the deterministic card chrome. Correctness is covered by the
+  // pure core (sourcery-core.test.ts) + the bespoke e2e (sourcery.spec.ts).
+  sourcery: [{ selector: 'canvas' }],
   // MANDLEBLOT — Mandelbrot fractal with time-driven hue cycle. The
   // shader's colour mode mixes mu + uTime + log(uZoom) into the hue, so
   // every frame is a different colour even at zero motion. Mask the
@@ -270,6 +277,14 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // preview if the module is promoted into MODULES before the seed
   // path is finished.
   shapegen: 'VRT baseline pending; first-slice PR — unit + e2e provide coverage. Capture darwin/linux baselines once the __shapegenVrtSeed deterministic scene path is wired.',
+  // SOURCERY — 2-input region shape-match recolor. v1 output is
+  // source-dependent (needs A + B patched) AND shimmers/boils frame-to-frame
+  // (per-frame-independent segmentation), so a solo-spawn VRT canvas is
+  // non-deterministic. Real coverage lives in the pure core
+  // (sourcery-core.test.ts — CCL/moments/Hu/match/rel→uvB/hue-skew, 37 cases)
+  // + the bespoke e2e (sourcery.spec.ts — real 2-source chain, non-black +
+  // structured + param-response). Promote once a deterministic seed path exists.
+  sourcery: 'VRT baseline pending; v1 segmentation is source-dependent + shimmers frame-to-frame, so the solo-spawn canvas is non-deterministic. Coverage = sourcery-core.test.ts (CCL/moments/Hu/match/rel→uvB/hue-skew) + e2e/tests/sourcery.spec.ts (real 2-source chain, non-black + structured + param response). Capture darwin/linux baselines once a deterministic seed path is wired.',
   // SCOREBOARD — first-slice PR ships the module + draw helper + factory
   // gate tests + e2e (gate→counter advance, RESET, wrap-at-10000). The
   // VRT scene path is wired (window.__scoreboardVrtSeed → counter at

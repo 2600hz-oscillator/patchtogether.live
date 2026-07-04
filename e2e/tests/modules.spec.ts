@@ -81,7 +81,7 @@ const SKIP_RENDER: Record<string, string> = {
 // mandleblot, already heavy here) whose first-paint shader compile on CI's
 // SwiftShader software renderer overruns the default 30s test budget — give it
 // the same heavy headroom (structural assertions unchanged).
-const HEAVY_RENDER = new Set(['b3ntb0x', 'mandleblot', 'mandelbulb', 'twotracks', 'colourofmagic']);
+const HEAVY_RENDER = new Set(['b3ntb0x', 'mandleblot', 'mandelbulb', 'twotracks', 'colourofmagic', 'sourcery']);
 const HEAVY_MOUNT_TIMEOUT = 30_000;
 const HEAVY_TEST_TIMEOUT = 90_000;
 
