@@ -333,6 +333,11 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'peakstate',
   'textmarquee',
   'ruttetra',
+  // COLOUR OF MAGIC (2026-07-03): multi-colorspace processor (RGB / YDbDr /
+  // HSV·HSL + palette REPLACE + per-channel mono overrides).
+  'colourofmagic',
+  // SOURCERY (2026-07-04): 2-input region shape-match recolor processor.
+  'sourcery',
   // Video batch 6 (2026-06-26): plasma/ramp/spirograph generators + fractals + scoreboard.
   'acidwarp',
   'shapedramps',
@@ -375,4 +380,9 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // hard-switch drive, translate exciter, glue dynamics, M/S width — build
   // plan .myrobots/plans/kick-drum-voice-2026-07-01.md). Ships documented.
   'kickdrum',
+  // SNARE DRUM (2026-07-04): the deep stereo snare voice + polyphonic two-hand
+  // drumroll (head modal bank / body noise / shared re-excitable wire bed /
+  // crack, hard-switch drive, M/S width + two-hand pan — design
+  // .myrobots/snare-drum-module-design.md). Ships documented.
+  'snaredrum',
 ]);

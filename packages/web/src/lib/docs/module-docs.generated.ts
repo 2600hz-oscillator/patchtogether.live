@@ -891,6 +891,105 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "tintR": "Red component of the tint color (fader labeled R). 0 removes red entirely; 1 lets the brightest input pixels reach full red. Defaults to 1."
     }
   },
+  "colourofmagic": {
+    "explanation": "COLOUR OF MAGIC is a multi-colorspace video processor. It takes ONE video input and runs it through FIVE parallel colorspace blocks at once — RGB, YDbDr (the SECAM broadcast luma+chroma space), HSV-or-HSL, YIQ (the NTSC composite space), and YCbCr BT.601 STUDIO-SWING (the broadcast-legal 16–235 / 16–240 quantization) — each block encoding the picture into that space, adjusting each component, then decoding back to RGB. Every block has, per channel: a BIAS knob (additive offset, identity at 0) that also sums any CV patched into its cv input; a MONO OVERRIDE input that REPLACES that channel's value with an incoming grayscale/video stream (bias still adds on top, so a patched key can still be offset); and an OVER/CLAMP toggle that decides what happens out of range — CLAMP clips to 0..1 (a legal, safe clip) while OVER wraps it around (fract(), the LZX chroma-wrap look where over-driven values fold back through the spectrum). Chroma components ride on a 0.5 pedestal (YDbDr Db/Dr, YIQ I/Q) or the authentic 128/255 = 0.502 pedestal (studio-swing Cb/Cr) so a bias pushes the colour-difference axes symmetrically; HUE always wraps regardless of the toggle. The third block switches between HSV and HSL with the HSL toggle. YIQ rotates the colour-difference plane onto the orange↔cyan flesh-tone (I) and green↔magenta (Q) axes — one I bias is a whole teal-&-orange grade. Studio-swing compresses into the legal window and decode expands it ~1.16×, so a bias CRUSHES super-black/white the way a proc-amp / legalizer does. TWENTY-TWO outputs run in parallel: pass (the untouched source); rgb / ydbdr / hsvhsl / yiq / ycc (each block's colorized picture); and per-block grayscale channel taps — r / g / b / luma (RGB), ydb_y/db/dr (YDbDr), hsv_h/s/v (HSV·HSL), yiq_y/i/q (YIQ), ycc_y/cb/cr (studio-swing). The mono taps emit the adjusted packed channel as grayscale — a mono I tap is a ready-made skin/warmth key; a hue tap has a hard black↔white seam at hue 0≡1 (the correct grayscale image of a circular quantity). The RGB block additionally has a palette REPLACE mode: three colour swatches remap the adjusted R/G/B channels to chosen output colours (a duotone/tritone recolour) before the rgb output; picking a swatch auto-enables REPLACE and the swatches default to a non-identity teal/orange/violet so the recolour is immediately visible. With no input patched all outputs are opaque black. Only the outputs you PATCH downstream (plus the one you PREVIEW on the card) are actually rendered each frame, so the many taps stay cheap. Patch a source into IN, choose which output to preview on the card, and use the block knobs / channel overrides / palette to recolour, split, or key the picture.",
+    "inputs": {
+      "hsv_h_cv": "CV that modulates the HSV/HSL block's hue bias (linear -180..180 degrees; hue always wraps).",
+      "hsv_h_in": "Mono override for HUE (0..1, wraps): replaces the hue angle before the degree bias.",
+      "hsv_s_cv": "CV that modulates the HSV/HSL block's saturation bias (linear -1..1 offset).",
+      "hsv_s_in": "Mono override for SATURATION (0..1): replaces saturation pre-offset.",
+      "hsv_v_cv": "CV that modulates the HSV/HSL block's value/lightness bias (linear -1..1 offset).",
+      "hsv_v_in": "Mono override for VALUE (HSV) / LIGHTNESS (HSL), 0..1: replaces it pre-offset.",
+      "in": "The source picture. All three blocks read it in parallel. With nothing patched here every output is opaque black.",
+      "rgb_b_cv": "CV that modulates the RGB block's b bias (linear -1..1 offset on blue).",
+      "rgb_b_in": "Mono override for the RGB blue channel (replaces blue pre-offset). Accepts keys/mono-video/video/image.",
+      "rgb_g_cv": "CV that modulates the RGB block's g bias (linear -1..1 offset on green).",
+      "rgb_g_in": "Mono override for the RGB green channel (replaces green pre-offset). Accepts keys/mono-video/video/image.",
+      "rgb_r_cv": "CV that modulates the RGB block's r bias (linear -1..1 additive offset on the red channel).",
+      "rgb_r_in": "Mono override for the RGB red channel: when patched, its value REPLACES red before the bias/CV offset and OVER/CLAMP. Accepts a keys/mono-video stream (a full video/image lands legally and is read as its red).",
+      "ycc_cb_cv": "CV that modulates the studio-swing Cb (blue-yellow legal chroma) bias (linear -1..1).",
+      "ycc_cb_in": "Mono override for the studio-swing Cb chroma channel, encoded 0..1 (0.502 = neutral).",
+      "ycc_cr_cv": "CV that modulates the studio-swing Cr (red-cyan legal chroma) bias (linear -1..1).",
+      "ycc_cr_in": "Mono override for the studio-swing Cr chroma channel, encoded 0..1 (0.502 = neutral).",
+      "ycc_y_cv": "CV that modulates the studio-swing Y' (studio luma) bias (linear -1..1; decode amplifies it ~1.16×).",
+      "ycc_y_in": "Mono override for the studio-swing luma (Y') channel, encoded 0..1 (blacks ~0.063, whites ~0.922).",
+      "ydb_db_cv": "CV that modulates the YDbDr Db (blue-yellow chroma) bias (linear -1..1 in packed space).",
+      "ydb_db_in": "Mono override for the YDbDr Db chroma channel, packed 0..1 (0.5 = neutral).",
+      "ydb_dr_cv": "CV that modulates the YDbDr Dr (red-cyan chroma) bias (linear -1..1 in packed space).",
+      "ydb_dr_in": "Mono override for the YDbDr Dr chroma channel, packed 0..1 (0.5 = neutral).",
+      "ydb_y_cv": "CV that modulates the YDbDr block's y (luma) bias (linear -1..1 offset in the packed 0..1 space).",
+      "ydb_y_in": "Mono override for the YDbDr luma (Y) channel, packed 0..1 (replaces Y pre-offset).",
+      "yiq_i_cv": "CV that modulates the YIQ I (orange↔cyan flesh-tone) bias (linear -1..1 in packed space).",
+      "yiq_i_in": "Mono override for the YIQ I chroma channel, packed 0..1 (0.5 = neutral; a warmth/skin key).",
+      "yiq_q_cv": "CV that modulates the YIQ Q (green↔magenta) bias (linear -1..1 in packed space).",
+      "yiq_q_in": "Mono override for the YIQ Q chroma channel, packed 0..1 (0.5 = neutral).",
+      "yiq_y_cv": "CV that modulates the YIQ block's Y (luma) bias (linear -1..1 offset in packed 0..1 space).",
+      "yiq_y_in": "Mono override for the YIQ luma (Y) channel, packed 0..1 (replaces Y pre-offset)."
+    },
+    "outputs": {
+      "b": "Mono-video: the B channel of the ADJUSTED RGB block as grayscale.",
+      "g": "Mono-video: the G channel of the ADJUSTED RGB block as grayscale.",
+      "hsv_h": "Mono-video: the adjusted HUE as grayscale (0..1, circular — a hard black↔white seam at 0≡1 is correct, not a defect).",
+      "hsv_s": "Mono-video: the adjusted SATURATION as grayscale (0..1).",
+      "hsv_v": "Mono-video: the adjusted VALUE (HSV) / LIGHTNESS (HSL) as grayscale (0..1).",
+      "hsvhsl": "The HSV or HSL block's colorized output (per the HSL toggle): adjusted hue/sat/value(lightness) decoded to RGB.",
+      "luma": "Mono-video: Rec.601 luma (0.299R+0.587G+0.114B) of the ADJUSTED RGB block, grayscale.",
+      "pass": "The source video, UNMODIFIED — independent of all three blocks. Opaque black when IN is unpatched.",
+      "r": "Mono-video: the R channel of the ADJUSTED RGB block as grayscale (before the palette remap).",
+      "rgb": "The RGB block's colorized output: per-channel adjusted red/green/blue, then the optional palette REPLACE remap.",
+      "ycc": "The studio-swing block's colorized output: adjusted Y'/Cb/Cr expanded + decoded to RGB (the broadcast-legal crush look).",
+      "ycc_cb": "Mono-video: the adjusted studio-swing Cb (blue-yellow legal chroma) as grayscale (0.502 = neutral).",
+      "ycc_cr": "Mono-video: the adjusted studio-swing Cr (red-cyan legal chroma) as grayscale (0.502 = neutral).",
+      "ycc_y": "Mono-video: the adjusted studio-swing luma (Y') as grayscale (studio range — blacks ~0.063, whites ~0.922).",
+      "ydb_db": "Mono-video: the adjusted YDbDr Db (blue-yellow) chroma as grayscale (0.5 = neutral).",
+      "ydb_dr": "Mono-video: the adjusted YDbDr Dr (red-cyan) chroma as grayscale (0.5 = neutral).",
+      "ydb_y": "Mono-video: the adjusted YDbDr luma (Y) channel as grayscale (packed 0..1).",
+      "ydbdr": "The YDbDr block's colorized output: adjusted Y/Db/Dr decoded back to RGB (the SECAM look).",
+      "yiq": "The YIQ block's colorized output: adjusted Y/I/Q decoded back to RGB (the NTSC composite look).",
+      "yiq_i": "Mono-video: the adjusted YIQ I (orange↔cyan flesh-tone) chroma as grayscale — a ready-made warmth/skin key (0.5 = neutral).",
+      "yiq_q": "Mono-video: the adjusted YIQ Q (green↔magenta) chroma as grayscale (0.5 = neutral).",
+      "yiq_y": "Mono-video: the adjusted YIQ luma (Y) channel as grayscale (same Rec.601 luma as `luma`)."
+    },
+    "controls": {
+      "bias_b": "b: additive offset on the RGB blue channel, -1 to 1 (default 0). Sums with rgb_b_cv.",
+      "bias_db": "db: additive offset on the YDbDr Db (blue-yellow) chroma, -1 to 1 (default 0), around the 0.5 pedestal. Sums with ydb_db_cv.",
+      "bias_dr": "dr: additive offset on the YDbDr Dr (red-cyan) chroma, -1 to 1 (default 0), around the 0.5 pedestal. Sums with ydb_dr_cv.",
+      "bias_g": "g: additive offset on the RGB green channel, -1 to 1 (default 0). Sums with rgb_g_cv.",
+      "bias_h": "h: hue rotation for the HSV/HSL block, -180 to 180 degrees (default 0). Hue always wraps. Sums with hsv_h_cv.",
+      "bias_r": "r: additive offset on the RGB red channel, -1 to 1 (default 0 = no change). Sums with the rgb_r_cv input.",
+      "bias_s": "s: additive offset on saturation, -1 to 1 (default 0). Sums with hsv_s_cv.",
+      "bias_v": "v: additive offset on value (HSV) or lightness (HSL), -1 to 1 (default 0). Sums with hsv_v_cv.",
+      "bias_y": "y: additive offset on the YDbDr luma channel (packed 0..1 space), -1 to 1 (default 0). Sums with ydb_y_cv.",
+      "bias_ycc_cb": "cb: additive offset on the studio-swing Cb (blue-yellow legal chroma), -1 to 1 (default 0), around the 0.502 pedestal. Sums with ycc_cb_cv.",
+      "bias_ycc_cr": "cr: additive offset on the studio-swing Cr (red-cyan legal chroma), -1 to 1 (default 0), around the 0.502 pedestal. Sums with ycc_cr_cv.",
+      "bias_ycc_y": "y: additive offset on the studio-swing luma (Y'), -1 to 1 (default 0). Decode expands studio→full range, so the offset is AMPLIFIED ~1.16× (the broadcast crush). Sums with ycc_y_cv.",
+      "bias_yiq_i": "i: additive offset on the YIQ I (orange↔cyan flesh-tone) chroma, -1 to 1 (default 0), around the 0.5 pedestal — one nudge is a whole teal-&-orange grade. Sums with yiq_i_cv.",
+      "bias_yiq_q": "q: additive offset on the YIQ Q (green↔magenta) chroma, -1 to 1 (default 0), around the 0.5 pedestal. Sums with yiq_q_cv.",
+      "bias_yiq_y": "y: additive offset on the YIQ luma channel (packed 0..1 space), -1 to 1 (default 0). Sums with yiq_y_cv.",
+      "freeze": "freeze: hidden determinism toggle — at 1 the renderer holds its last rendered frame (no redraw) for stable VRT capture. Default 0; no card control.",
+      "mode_hsl": "hsl: selects the third block's colorspace — HSV (0, default) or HSL (1). Affects the hsvhsl output + the v channel's meaning (value vs lightness).",
+      "over_b": "b wrap: overflow mode for the RGB blue channel (CLAMP default / WRAP).",
+      "over_db": "db wrap: overflow mode for the YDbDr Db chroma (CLAMP default / WRAP).",
+      "over_dr": "dr wrap: overflow mode for the YDbDr Dr chroma (CLAMP default / WRAP).",
+      "over_g": "g wrap: overflow mode for the RGB green channel (CLAMP default / WRAP).",
+      "over_h": "h wrap: ADVISORY only — hue ALWAYS wraps regardless of this toggle. Declared for UI symmetry with the other channels; disabled on the card.",
+      "over_r": "r wrap: overflow for the RGB red channel — CLAMP (0, default) clips out-of-range to 0..1; WRAP (1) folds it around via fract().",
+      "over_s": "s wrap: overflow mode for saturation (CLAMP default / WRAP).",
+      "over_v": "v wrap: overflow mode for value/lightness (CLAMP default / WRAP).",
+      "over_y": "y wrap: overflow mode for the YDbDr luma channel (CLAMP default / WRAP).",
+      "over_ycc_cb": "cb wrap: overflow mode for the studio-swing Cb chroma (CLAMP default / WRAP — the illegal-chroma fold).",
+      "over_ycc_cr": "cr wrap: overflow mode for the studio-swing Cr chroma (CLAMP default / WRAP — the illegal-chroma fold).",
+      "over_ycc_y": "y wrap: overflow mode for the studio-swing luma (CLAMP clips at the legal boundary — a legalizer; WRAP folds super-white through black).",
+      "over_yiq_i": "i wrap: overflow mode for the YIQ I chroma (CLAMP default / WRAP — WRAP on the narrow-band chroma is the NTSC chroma-crawl fold).",
+      "over_yiq_q": "q wrap: overflow mode for the YIQ Q chroma (CLAMP default / WRAP).",
+      "over_yiq_y": "y wrap: overflow mode for the YIQ luma channel (CLAMP default / WRAP).",
+      "pal_b": "pal b: the palette colour the RGB blue channel maps to under REPLACE (packed 0xRRGGBB, default violet). Set via the card's colour picker.",
+      "pal_g": "pal g: the palette colour the RGB green channel maps to under REPLACE (packed 0xRRGGBB, default teal). Set via the card's colour picker.",
+      "pal_r": "pal r: the palette colour the RGB red channel maps to under REPLACE (packed 0xRRGGBB, default orange). Set via the card's colour picker (which auto-enables REPLACE).",
+      "preview": "preview: which of the 22 outputs the on-card preview canvas shows (discrete 0..21: 0 pass, 1 rgb, 2 ydbdr, 3 hsvhsl, 4 r, 5 g, 6 b, 7 luma, 8 ydb_y, 9 ydb_db, 10 ydb_dr, 11 hsv_h, 12 hsv_s, 13 hsv_v, 14 yiq, 15 yiq_y, 16 yiq_i, 17 yiq_q, 18 ycc, 19 ycc_y, 20 ycc_cb, 21 ycc_cr). Default 1 (rgb). The previewed output is always rendered even when unpatched; other outputs render only when patched downstream.",
+      "replace": "replace: turns the RGB palette REPLACE mode on (1) or off (0, default). When on, the adjusted R/G/B channels are recomposed from the three picked palette colours (duotone/tritone). Picking any swatch auto-enables it, and the swatches default to a non-identity teal/orange/violet, so it visibly recolours the rgb out as soon as it is on."
+    }
+  },
   "cube": {
     "explanation": "A 3D wavetable-terrain oscillator. CUBE stacks THREE e352-style wavetables — FLOOR, WALL, and CEILING (each chosen from a factory table, a baked preset, or a loaded .wav) — into a solid 3D scalar field, then plays the heightmap of an arbitrary flat plane sliced through that field as its waveform. You aim the slicing plane with one height knob (Y) and three rotation knobs (Rot X / Y / Z); as the plane tilts and rises it carves a different surface contour, so sweeping those knobs (or their CV inputs) morphs the timbre continuously. MORPH cross-fades the floor↔ceiling layers, CONNECT (with CONNECT STRENGTH) bulges the field's interior, CRUSH bit-reduces the read-out waveform while SPACE CRUSH voxelizes and SPACE DIFFUSE warps the 3D lookup coordinates, and FOLD is a west-coast wavefolder on the output — together they sculpt the slice from clean to mangled. It is a pitched V/oct oscillator with a stereo ±5% SPREAD (the L and R taps read slightly offset planes for width) and an internal per-voice A/D/S/R envelope that, riding a BASE volume floor, shapes amplitude once a note arrives on the poly bus or the TRIG gate; with nothing patched there it free-runs as a continuous drone. A live WebGL 3D render of the cube, the cut plane, the slice cross-section, and the output waveform is shown on the card and can be sent out the VIDEO port; the screen can be switched off to save GPU when you only want sound.",
     "inputs": {
@@ -3887,6 +3986,45 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "xfadeTime": "The equal-power crossfade time applied to the SWITCHED output when the selection changes, log 0.001..2 s (default 0.05 s). Short = a tight switch, long = a slow morph between the two channels' values."
     }
   },
+  "snaredrum": {
+    "explanation": "A deep, flexible stereo SNARE VOICE — the mate to KICK DRUM — with a true polyphonic two-hand DRUMROLL. Instead of a single oscillator, it layers four decoupled acoustic generators the way a real snare works: a HEAD modal bank tuned to inharmonic Bessel-zero ratios (the pitchless membrane 'thunk', with a short downward pitch-drop at the strike — the snare 'pit'), a band-passed noise BODY around the head (the drum's noisy tone; the TONE knob crossfades HEAD↔BODY), the SNARE-WIRE buzz — the defining timbre — modeled as bright HP-tunable noise on a shared re-excitable bed that breathes with the head and rings out between strokes, and a short CRACK stick-contact transient. It has TWO strike inputs into the one synth: TRIGGER fires a single hit per rising edge, and GATE runs the drumroll. The roll is genuinely polyphonic — two alternating hands 180° out of phase, each stroke allocating its own voice from a pool while the shared wire bed sustains the sizzle, so overlapping decaying tails superpose into a continuous roll (NOT a pulsed one-shot retrigger). ROLL SPEED sets the rate (4–24 strokes/hand, plus roll_speed_cv at 1V/oct), BOUNCE morphs the roll type from a machine-gun single-stroke roll through the classic double/open roll to a dense multi-bounce buzz/press roll (a coefficient-of-restitution bounce train), and HUMANIZE adds seeded timing/velocity/detune jitter for a live feel. The summed pool + bed run one shared bus: a DRIVE saturator with a single HARD character switch (clean-warm vs aggressive), a per-channel true-peak CEILING soft-clip so it can sit hot, and a stereo stage where SPREAD pans the two hands and WIDTH decorrelates only the bright wire sizzle — head and body stay centered so a mono fold-down never thins (width=0 AND spread=0 → dead-centre mono). ACCENT sets per-hit intensity, PITCH CV tracks 1V/oct, and CHOKE mutes the tail while held. Strike it from any trigger/gate/clock/sequencer source.",
+    "inputs": {
+      "accent_in": "Per-hit intensity CV (0..1), sampled at each strike (trigger and every roll stroke). Higher accent lands a hotter hit — it scales the strike velocity and, like KICK's accent macro, lifts drive and level so the accented stroke leans into the ceiling. Patch an LFO or velocity lane for dynamics.",
+      "choke_in": "Choke group input (level-sensitive gate): WHILE the level is high the output is damped toward silence through a short ~30 ms ramp (a hand on the head), and on the falling edge it releases and recovers — both edges matter. Hold it high to duck the snare's ring/roll; it does not fire hits.",
+      "gate_in": "The DRUMROLL: WHILE this level is high, the internal two-hand roll engine generates a continuous roll at ROLL SPEED — two alternating hands whose overlapping strokes (and, in buzz mode, multi-bounce trains) keep the snare re-excited faster than it decays. The rising edge resets the roll to a repeatable phase; on the falling edge scheduling stops and the in-flight voices + wire bed ring out naturally. Hold a long gate here (a sequencer gate with a long gate length, a held clock, an LFO pulse) for a snare roll.",
+      "pitch_cv": "1V/oct pitch input: transposes the whole voice — head modes and body together — as a true frequency multiplier (tune × 2^volts), so a snare line can track a melody or be tuned per step.",
+      "roll_speed_cv": "Roll-rate CV — a 1V/oct multiply on ROLL SPEED (+1 V doubles the strokes/second, −1 V halves it), so you can crescendo a roll from a control source or sequence its density.",
+      "trigger_in": "The STRIKE: each rising edge fires exactly ONE snare hit — the voice is allocated from the pool, its envelopes retrigger, and accent is sampled at that instant. How long the signal stays high doesn't matter; it's a trigger, not a hold. Patch a sequencer gate, drum-seq lane, or clock here for individual hits."
+    },
+    "outputs": {
+      "audio_l": "Left output of the stereo voice. The head and body of a single (centered) hit are identical on both sides — only SPREAD (the two-hand pan) and WIDTH (the decorrelated wire sizzle) put content on the sides — so a mono fold-down never phase-cancels. Patch L alone for a mono snare; the pair auto-pairs when the target accepts it.",
+      "audio_r": "Right output — the other half of the stereo pair. Carries the same centered head/body as the left; the two-hand roll and the bright wire band differ from L when SPREAD / WIDTH are up."
+    },
+    "controls": {
+      "body_decay": "BODY: the noise-body decay to −60 dB (20–300 ms, log) — the length of the drum's noisy tone. Scaled shorter by Global Damp.",
+      "bounce": "ROLL type: 0 = a single-stroke roll (one stroke per hand-beat, granular), ~0.2–0.4 = the classic double/open roll (a primary stroke + a softer rebound), → 1 = a dense multi-bounce buzz / press roll (a bouncing-ball train of up to 6 sub-strokes with geometric decay). Slower hands automatically add more bounces to fill the gap.",
+      "ceiling": "OUTPUT: soft-knee true-peak clip (0–1) that bounds each channel — lets you run Level hot into the rack safely. Lower = earlier, more audible clipping; higher = cleaner headroom.",
+      "crack": "CRACK: level of the short stick-contact transient (0–1) — the leading-edge tick the ear locks onto. More = a harder, snappier attack.",
+      "crack_tone": "CRACK: band-pass center of the stick transient (800–7000 Hz, log) — dark knock at the bottom, bright snap at the top.",
+      "damp": "GLOBAL DAMP: scales the head, body, and wire decays DOWN together (0 = full length, 1 = heavily muted) — a single 'towel on the drum' choke without touching the tuning.",
+      "damping": "HEAD: mode Q / ring character (0 = open and ringy, 1 = tight and muted). Independent of Head Dec: this shapes how resonant the membrane rings, that shapes how long the amplitude lasts.",
+      "drive": "DRIVE: saturation on the summed bus (0–1) — adds harmonics and perceived loudness at the same peak level. Character set by HARD; oversampled so it stays clean.",
+      "hard": "DRIVE character switch: OFF = clean-warm tanh saturation (smooth, the shipping default); ON = an aggressive wavefold + asymmetric shaper (harder, gated/distorted snares). One switch instead of a mode menu.",
+      "head_decay": "HEAD: the modal ring's decay to −60 dB (30–600 ms, log). Short = a dry tick; long = a ringing, resonant head. Scaled shorter by Global Damp.",
+      "humanize": "ROLL: seeded (deterministic) timing, velocity, and per-hand detune jitter (0 = machine-perfect, 1 = loose and human). Adds the constantly-shifting sizzle of a real roll without ever using wall-clock randomness.",
+      "level": "OUTPUT: output level in dB (−24..+12). The +12 dB makeup headroom is deliberate — the ceiling stage keeps a hot setting true-peak-safe.",
+      "pitch_amt": "HEAD: depth of the downward pitch-drop at the strike, in semitones (0–12) — the snare 'pit'. 0 = static pitch; higher = a more pronounced pitched-down attack.",
+      "pitch_time": "HEAD: how fast the pitch-drop settles (3–80 ms, log). Short = a quick chirp; long = an audible falling attack.",
+      "roll_speed": "ROLL: strokes per hand while GATE is held (0 → 4 Hz, 1 → 24 Hz, exponential; composite two-hand rate ≈ 2×). Below ~15–20 Hz composite the individual strokes are audible (a machine-gun/open roll); above it they fuse into a roar. Modulated by roll_speed_cv (1V/oct).",
+      "spread": "STEREO: two-hand pan + per-hand detune (0 = mono/centered, 1 = hard L/R hands). The left hand pans left, the right pans right, each striking a slightly different spot (small membrane detune) — a genuine stereo roll image, not a decorrelation trick. At 0 the voice is dead-centre.",
+      "tone": "Crossfade between the HEAD modal bank (0 = pure membrane thunk) and the BODY noise (1 = noisy/tonal). Mid values blend the two — the everyday snare balance.",
+      "tune": "HEAD: the snare's fundamental pitch (90–400 Hz, log). The inharmonic modes track it at their Bessel ratios, and the body noise centers on it. Low = deep/fat snare, high = tight/piccolo. Tracks pitch_cv at 1V/oct.",
+      "width": "STEREO: M/S width of the decorrelated wire SIZZLE only (0–1). Head and body stay centered/mono-safe; width spreads just the bright wire band. 0 = a mono wire (combine with Spread=0 for a fully mono voice).",
+      "wire": "WIRE: snare-wire buzz amount (0–1) — the defining sizzle. It sets both the wire level AND how hard every strike re-excites the shared wire bed, so it's the master of the roll's continuous sustain. 0 = a wireless tom-like drum.",
+      "wire_decay": "WIRE: the wire bed's decay to −60 dB (40–700 ms, log) — the sustain of the buzz between strokes. This is what makes a roll continuous: set longer than the stroke interval and the bed never returns to silence mid-roll. Scaled shorter by Global Damp.",
+      "wire_tone": "WIRE: the high-pass corner of the wire noise (1500–9000 Hz, log). Lower = a darker, fuller rattle; higher = a bright, papery sizzle that sits on top of the mix."
+    }
+  },
   "snes9x": {
     "explanation": "A Super Nintendo emulator turned into a patchable video+audio module. It runs the snes9x2005 (CAT SFC) libretro core compiled to WASM, rendering the SNES screen (locked 256×224/239, 4:3) to the video out and 32 kHz stereo to audio_l/audio_r. The ROM is user-provided and gitignored: if /roms/snes9x/game.sfc isn't autoloaded the card shows a LOAD A ROM dropzone/file-picker (drop or click a .sfc/.smc — it stays local in your browser). Beyond the picture and sound, it reads the live SNES WRAM each frame to emit game-event CV/GATE: for Super Mario World it pulses on kills and deaths, holds a CV for the current world, and turns clock_in into a clock multiplied by (world+level). Drive it by wiring a GAMEPAD module's gate outputs straight into the 12 SNES button inputs (du→up, a→a, …) plus a clock into clock_in. Single-instance per rack (the WASM core is heavy). DOM-only affordances with no patch port: the ROM dropzone/file picker, and a right-click \"see output definition for CV/GATES\" panel that explains every game-event output for the loaded ROM; the card's OUTPUT FIT toggle sets the fillMode param (letterbox vs fill). Non-SMW ROMs still boot and show video/audio but the game-event outputs stay inert.",
     "inputs": {
@@ -3932,6 +4070,26 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "cv_x": "X (0..1, linear). Synthetic gate param backing the x input; its level sets whether the SNES X button is held.",
       "cv_y": "Y (0..1, linear). Synthetic gate param backing the y input; its level sets whether the SNES Y button is held.",
       "fillMode": "Fill (0..1, discrete). Output fit mode: 0 = letterbox/pillarbox (default, aspect-preserving), 1 = fill/cover-crop. Driven by the card's OUTPUT FIT toggle; only matters when the output aspect isn't 4:3."
+    }
+  },
+  "sourcery": {
+    "explanation": "sourcery is a two-input region-transplant recolorizer: it edge-detects video A (top) and video B (bottom), carves each edge map into bounded regions (the connected non-edge areas walled off by the detected edges), then for every region in A finds the B region most similar in SHAPE (angles + geometry) first and SIZE second, and paints A's region with B's colors placed at the SAME relative position inside the shape (a corner of A samples the matching corner of B). A B shape may be matched by many A regions (reuse is fine) and EVERY part of the A frame maps to some region (tiny/culled regions and the walls are absorbed into their nearest surviving region, so the output never has holes — the whole-screen background becomes one giant region filled by some B shape). Two global controls move all the transferred color: SKEW rotates the hue of every filled pixel, ROT rotates the sampling frame inside each region. The result is a shifting stained-glass / photomosaic where A's edge structure is the cell boundaries and each cell is a warped fragment of B chosen by shape similarity: as B moves the fills shimmer with B's live color, as A moves the boundaries flow with A's structure. Region boundaries are intentionally BLOCKY (segmentation runs at a coarse 128x96 grid, nearest-upscaled) while the colors are full-res sharp (B is sampled at engine resolution). For real-time performance the shape/segmentation stage is amortized (recomputed every few frames) while the color fill sampling live B runs every frame; on live noisy video at low threshold the regions shimmer/boil frame-to-frame (a disclosed v1 limitation). Usage: patch a structural source into A and a colorful source into B, raise ThrA/ThrB until A's cells and B's shapes read cleanly (higher = fewer, bolder regions), then twist SKEW to tint and ROT to swirl the transplanted color; with nothing in B the module passes A through (hue-skewed).",
+    "inputs": {
+      "a": "Video input A (top) — its edge map defines the CELL BOUNDARIES: each connected non-edge area becomes a region that gets painted. With nothing patched here the output is black. A's structure flows the cell layout live.",
+      "b": "Video input B (bottom) — its edge map is segmented into candidate SHAPES and its live full-res color is the paint. Each A region samples the B region matched to it (by shape then size) at the same relative position. With nothing patched in B the module passes A through (hue-skewed only).",
+      "colorSkew": "CV input that modulates Skew — rotates the hue of every transferred pixel. Linear-scaled into 0..1 (0.5 = no shift).",
+      "rotate": "CV input that modulates Rot — rotates the sampling frame inside each region, swirling the transplanted color. Linear-scaled into 0..1 (0.5 = no rotation).",
+      "thresholdA": "CV input that modulates ThrA — the edge gradient trigger for A's segmentation. Raising it keeps only the strongest contours (fewer, larger A cells); lowering it lets faint gradients wall off more, smaller cells. Linear-scaled into 0..1.",
+      "thresholdB": "CV input that modulates ThrB — the edge gradient trigger for B's segmentation (the pool of candidate shapes A matches against). Linear-scaled into 0..1."
+    },
+    "outputs": {
+      "out": "The recolored video frame: A's edge-bounded cells each painted with the relative-position colors of their shape-matched B region, globally hue-skewed. A normal downstream video texture."
+    },
+    "controls": {
+      "colorSkew": "Skew (0..1, default 0.5 = identity): global hue rotation of every transferred color, mapped bipolarly to +/-180 degrees (0.5 = no shift, 0 = -180, 1 = +180). Saturation and value pass through untouched.",
+      "rotate": "Rot (0..1, default 0.5 = no rotation): rotates the intra-region sampling frame, mapped bipolarly to +/-pi radians, so the color content swirls within each cell while the cell boundaries stay put.",
+      "thresholdA": "ThrA (0..1, default 0.2): the normalised Sobel gradient magnitude at or above which an A pixel is a wall. 0 floods the frame with walls (many tiny cells); 1 keeps almost nothing (one big cell); 0.2 catches salient contours without low-contrast noise. Applied at segmentation time, so under amortization a twist shows on the next recompute.",
+      "thresholdB": "ThrB (0..1, default 0.2): the same edge trigger for B's segmentation — sets how finely B is broken into candidate shapes for the match. Higher = fewer, bolder B shapes."
     }
   },
   "spectrograph": {

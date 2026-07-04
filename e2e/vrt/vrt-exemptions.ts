@@ -156,6 +156,13 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // covered by onetonine.test.ts + the bespoke onetonine e2e.
   onetonine: [{ selector: 'canvas' }],
   shapegen: [{ selector: 'canvas' }],
+  // SOURCERY — 2-input region shape-match recolor. The card carries a live
+  // on-card preview canvas (blitOutputToDrawingBuffer off the engine clock,
+  // black when nothing is patched) and v1 segmentation is source-dependent +
+  // shimmers frame-to-frame, so the canvas region is non-deterministic; mask it
+  // and gate on the deterministic card chrome. Correctness is covered by the
+  // pure core (sourcery-core.test.ts) + the bespoke e2e (sourcery.spec.ts).
+  sourcery: [{ selector: 'canvas' }],
   // MANDLEBLOT — Mandelbrot fractal with time-driven hue cycle. The
   // shader's colour mode mixes mu + uTime + log(uZoom) into the hue, so
   // every frame is a different colour even at zero motion. Mask the
@@ -182,6 +189,15 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // weight-model + composite correctness is covered by the unit suite
   // (quadralogical.test.ts) + the dedicated e2e (quadralogical.spec.ts).
   quadralogical: [{ selector: 'canvas' }],
+  // COLOUR OF MAGIC — multi-colorspace processor. The solo-spawn card carries a
+  // live on-card preview canvas (blitOutputToDrawingBuffer off the engine clock,
+  // black when nothing is patched), so the standard solo VRT is non-deterministic;
+  // mask it and gate on the deterministic chrome (preview pill row + the three
+  // RGB/YDbDr/HSV block columns of knobs + OVER/CLAMP pills + REPLACE/HSL toggles
+  // + palette swatches + handle rows). The deterministic per-block composite VRT
+  // (recolorization / mono-override clobber / palette remap) lives in
+  // vrt-colourofmagic.spec.ts.
+  colourofmagic: [{ selector: 'canvas' }],
   // ANALOG VCO — now carries a live single-cycle waveform scope at the top of
   // the card (off an AnalyserNode on the morph output). The trace is animated
   // + device-/timing-dependent, so mask the canvas; the deterministic chrome
@@ -261,6 +277,14 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // preview if the module is promoted into MODULES before the seed
   // path is finished.
   shapegen: 'VRT baseline pending; first-slice PR — unit + e2e provide coverage. Capture darwin/linux baselines once the __shapegenVrtSeed deterministic scene path is wired.',
+  // SOURCERY — 2-input region shape-match recolor. v1 output is
+  // source-dependent (needs A + B patched) AND shimmers/boils frame-to-frame
+  // (per-frame-independent segmentation), so a solo-spawn VRT canvas is
+  // non-deterministic. Real coverage lives in the pure core
+  // (sourcery-core.test.ts — CCL/moments/Hu/match/rel→uvB/hue-skew, 37 cases)
+  // + the bespoke e2e (sourcery.spec.ts — real 2-source chain, non-black +
+  // structured + param-response). Promote once a deterministic seed path exists.
+  sourcery: 'VRT baseline pending; v1 segmentation is source-dependent + shimmers frame-to-frame, so the solo-spawn canvas is non-deterministic. Coverage = sourcery-core.test.ts (CCL/moments/Hu/match/rel→uvB/hue-skew) + e2e/tests/sourcery.spec.ts (real 2-source chain, non-black + structured + param response). Capture darwin/linux baselines once a deterministic seed path is wired.',
   // SCOREBOARD — first-slice PR ships the module + draw helper + factory
   // gate tests + e2e (gate→counter advance, RESET, wrap-at-10000). The
   // VRT scene path is wired (window.__scoreboardVrtSeed → counter at
@@ -607,6 +631,16 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // composite + all 8 blend2 branches + normalling) + e2e/tests/quadralogical
   // .spec.ts (corner dominance + per-edge distinctness + independence + freeze).
   quadralogical: 'SOLO-spawn VRT exempt (live MIX preview canvas with nothing patched). The deterministic per-edge composite VRT is vrt-quadralogical.spec.ts (8 effect baselines, darwin captured; linux via EXEMPT_BASELINE_PAIRS). Unit (weight model + edge composite + all 8 blends) + e2e (corner dominance + per-edge distinctness/independence) provide coverage.',
+  // COLOUR OF MAGIC — multi-colorspace processor. SOLO-spawn VRT exempt (live
+  // preview canvas; nothing patched renders black). The deterministic per-block
+  // composite VRT is vrt-colourofmagic.spec.ts (6 scenes: pass / rgb / ydbdr /
+  // hsv recolorization + mono-override channel clobber + palette CMY remap,
+  // clock-pinned structured source, darwin captured; linux via
+  // EXEMPT_BASELINE_PAIRS). Unit (colourofmagic-colorspace.test.ts — every
+  // colorspace + adj/over-clamp + hue-rotation + palette path) + e2e
+  // (colourofmagic.spec.ts — all 8 outs emit, recolorization, mono-override
+  // clobber, over/clamp) provide coverage.
+  colourofmagic: 'SOLO-spawn VRT exempt (live preview canvas; nothing patched is black). The deterministic per-block composite VRT is vrt-colourofmagic.spec.ts (6 scenes: pass/rgb/ydbdr/hsv recolorization + mono-override channel clobber + palette CMY remap, darwin captured; linux via EXEMPT_BASELINE_PAIRS). Unit (colourofmagic-colorspace.test.ts) + e2e (colourofmagic.spec.ts) provide coverage.',
   // MAPPY — multi-surface manual projection mapper (v1). The SOLO-spawn card
   // carries a LIVE composite preview canvas + an SVG corner-drag overlay whose
   // handles only appear for CONNECTED inputs, so a SOLO (nothing-patched) VRT
@@ -1248,6 +1282,21 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/edge-luma',
   'linux/edge-diff',
   'linux/edge-iris',
+  // COLOUR OF MAGIC per-block composite VRT (vrt-colourofmagic.spec.ts): darwin
+  // baselines captured locally (clock-pinned structured source → frozen frame).
+  // WebGL colorspace decode math differs sub-thresholdly across GPU drivers, so
+  // the linux baselines are pending a `vrt-update.yml` workflow_dispatch on
+  // linux CI; the darwin captures are the regression gate here. Functional
+  // coverage = colourofmagic-colorspace.test.ts + e2e/tests/colourofmagic.spec.ts.
+  'linux/com-pass',
+  'linux/com-rgb',
+  'linux/com-ydbdr',
+  'linux/com-hsv',
+  'linux/com-yiq',
+  'linux/com-ycc',
+  'linux/com-yiq-i-tap',
+  'linux/com-override',
+  'linux/com-palette',
   // OUTPUT aspect 16:9 preview card (vrt-aspect-16x9.spec.ts): darwin baseline
   // captured locally; linux pending a `vrt-update.yml` workflow_dispatch on
   // linux CI. WebGL blit/AA differs sub-thresholdly across GPU drivers. The
@@ -1291,4 +1340,18 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // e2e/tests/kickdrum.spec.ts (SEQUENCER → trigger_in → AUDIOOUT, audible
   // RMS + sub-dominant spectrum).
   'linux/kickdrum',
+  // SNARE DRUM (2026-07-04): darwin baseline captured locally (the wide 3u
+  // banded snare-voice card is deterministic chrome — HEAD·BODY·WIRE /
+  // CRACK·ROLL·DRIVE / STEREO·OUT fader bands + the HARD toggle over the
+  // PatchPanel TRIG/ROLL/SPD/ACC/V-OCT/CHOKE → OUT L/R drill-down, NO
+  // canvas/animation); linux baseline pending a `vrt-update.yml`
+  // workflow_dispatch on the PR branch (the darwin-first new-module pattern,
+  // same as KICK DRUM above). Functional coverage: the pure cores
+  // packages/dsp/src/lib/snaredrum-dsp.test.ts + snare-roll-dsp.test.ts +
+  // snaredrum.test.ts (def contract + worklet roll/choke/accent/stereo) + the
+  // ART audio profile (art/scenarios/snaredrum/profile.test.ts) + the
+  // per-module-per-port sweep + the bespoke real-source-chain
+  // e2e/tests/snaredrum-roll.spec.ts (SEQUENCER → trigger_in single hit AND
+  // held gate_in → sustained two-hand roll, audible stereo RMS on both L/R).
+  'linux/snaredrum',
 ]);

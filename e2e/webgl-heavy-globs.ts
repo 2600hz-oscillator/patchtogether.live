@@ -63,6 +63,28 @@ export const WEBGL_HEAVY_GLOBS = [
   // e2e-video lane, not the sharded matrix.
   '**/4plexvid.spec.ts', // 4×4 video router — heavy WebGL screenshot
   '**/quadralogical.spec.ts', // 4-input video mixer — heavy WebGL evaluate
+  // COLOUR OF MAGIC (#1016): 8-FBO multi-colorspace processor — the bespoke
+  // spec patches Lines→module and readPixels()es all 8 output textures. Proven
+  // correct under SwiftShader in isolation (4 tests, ~2-4s each), but at 1024×768
+  // it co-tenanted a sharded SwiftShader shard and blew its 120s budget under
+  // contention (shard-1 red). Same GPU-bound class as the mixers above — isolate
+  // it in the serialized e2e-video lane.
+  '**/colourofmagic.spec.ts', // 8-FBO colorspace processor — heavy WebGL evaluate
+  // SOURCERY: 2-input region shape-match recolor. The bespoke spec wires two
+  // real video sources → SOURCERY → readPixels()es the output FBO (non-black +
+  // structured + param response). Full-res dependent-texelFetch fill; keep it
+  // off the sharded matrix so it never co-tenants a SwiftShader shard.
+  // e2e/webgl-heavy-globs.ts is in the WebGL hash basis → re-attested.
+  '**/sourcery.spec.ts', // 2-input region-transplant recolor — heavy WebGL pixel read
+  // picturebox-gif (#1016 boy-scout): unlike picturebox-limits/picturebox-sync
+  // (re-binned OUT for doing NO pixel work — see the EXCLUDE note below), the
+  // GIF spec's `ANIMATES` test samples the video output's LUMA OVER TIME to
+  // prove the animated frames advance — a GPU-timing-sensitive pixel read.
+  // Mis-binned into the sharded matrix by #1010 (the broad `picturebox-*` glob
+  // was already dropped), it co-tenanted a SwiftShader shard and read a
+  // non-advancing (min=max=1.0) frame under contention → false red (passes in
+  // isolation ~2.8s). Isolate the whole file in the serialized lane.
+  '**/picturebox-gif.spec.ts', // animated-gif luma-over-time — heavy WebGL pixel read
   // (mandleblot.spec.ts was deleted — its waitForTimeout pixel gate was fully
   //  redundant with the deterministic mandleblot-render-smoke.spec.ts, which the
   //  `**/*-render-smoke.spec.ts` glob below already enrolls in this heavy lane.)

@@ -164,6 +164,24 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // non-black/structured render: freeze + fixed delta + synthetic audio) + the
   // contract-lock / docs-lint / modules-card-map unit gates.
   milkdrop:       'self-animating multi-pass visualizer (animated-video variance class, cf. bentbox/b3ntb0x): the out luma-variance jitter floor swamps any per-input delta; covered by milkdrop-render-smoke.spec.ts + unit gates',
+  // COLOUR OF MAGIC — a PARALLEL multi-block colorspace processor: three blocks
+  // (RGB / YDbDr / HSV·HSL) run independently on the source and feed SEPARATE
+  // outputs (pass / rgb / ydbdr / hsvhsl + r/g/b/luma mono taps). This sweep
+  // observes only the module's FIRST video output — `pass`, which is the
+  // UNTOUCHED source passthrough (outMode 0), structurally INDEPENDENT of all 18
+  // block CV/override inputs (only `in` feeds it). So 18 of 19 inputs can never
+  // perturb the observed output, and the coarse video-variance fingerprint the
+  // sweep reads off `pass` is dominated by the animated ACIDWARP context's own
+  // per-frame jitter (a different input reads Δ=0 each run — hsv_h_cv, hsv_v_cv,
+  // … — the animated-video variance class, cf. milkdrop/backdraft). No single
+  // observed output can respond to all inputs by design. Whole-module exempt.
+  // Real PER-BLOCK, per-input coverage: colourofmagic-colorspace.test.ts (every
+  // colorspace + adj/over-clamp + hue-rotation + palette path, known values) +
+  // colourofmagic.spec.ts (real LINES→CHROMA→module chain: all 8 outs emit,
+  // bias_r reddens the rgb out, a Db bias moves the ydbdr blue-yellow axis, a
+  // mono override CLOBBERS its channel, OVER vs CLAMP differ) + the docs/
+  // contract-lock/modules-card-map unit gates.
+  colourofmagic:  'parallel multi-block colorspace processor — the sweep observes only the first video output `pass` (untouched source passthrough, independent of all 18 block CV/override inputs; each block feeds a SEPARATE output), and its video-variance fingerprint is dominated by the animated ACIDWARP context jitter (a random input reads Δ=0 each run, animated-video variance class cf. milkdrop); real per-block per-input coverage in colourofmagic-colorspace.test.ts + colourofmagic.spec.ts (all 8 outs emit, recolorization, mono-override channel clobber, over/clamp)',
   // SPIROGRAPHS — a line-GENERATOR that draws up to 3 hypotrochoid curves. Its
   // 30 geometry CV inputs (s1/s2/s3 × R / r / pen / inside / rotation / scale /
   // X / Y / thickness / chroma) RESHAPE the drawn curve, but reshaping a thin
@@ -869,6 +887,16 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   'pentemelodica.fm3': 'audio-rate FM/PM jack — only modulates a SOUNDING (gated) voice; no concurrent gate in the behavioral harness → no delta (correct). Covered by pentemelodica-dsp.test.ts + the per-port emit sweep.',
   'pentemelodica.fm4': 'audio-rate FM/PM jack — only modulates a SOUNDING (gated) voice; no concurrent gate in the behavioral harness → no delta (correct). Covered by pentemelodica-dsp.test.ts + the per-port emit sweep.',
   'pentemelodica.fm5': 'audio-rate FM/PM jack — only modulates a SOUNDING (gated) voice; no concurrent gate in the behavioral harness → no delta (correct). Covered by pentemelodica-dsp.test.ts + the per-port emit sweep.',
+  // ── SNARE DRUM roll_speed_cv. It ONLY modulates the two-hand DRUMROLL rate,
+  //    which requires gate_in to be HELD HIGH — but the behavioral sweep drives
+  //    the SUT off the _drivers.ts gatePort (trigger_in single strikes, NO
+  //    roll), so roll_speed_cv modulates a roll that isn't running → no delta
+  //    (correct, same class as pentemelodica.fmN modulating a gated-off voice).
+  //    trigger_in / gate_in / accent_in / pitch_cv / choke_in ARE exercised
+  //    here. The rate map (roll_speed_cv +1V doubles the rate) is unit-proven in
+  //    snare-roll-dsp.test.ts, and ROLL-SPEED density is asserted in the real
+  //    chain (snaredrum-roll.spec.ts: faster roll → higher inter-stroke floor).
+  'snaredrum.roll_speed_cv': 'CV only modulates the drumroll rate, which needs gate_in held high; the behavioral sweep drives trigger_in single strikes (no roll) → no delta (correct, cf. pentemelodica.fmN). Rate map unit-proven in snare-roll-dsp.test.ts; density asserted in snaredrum-roll.spec.ts.',
 
   // ── CUBE / WAVECEL per-voice ADSR ports (poly + trigger). The behavioral
   //    sweep drives ONE input at a time against an idle, ungated control. CUBE /
@@ -1519,7 +1547,7 @@ test('RATCHET: behavioral exemption lists only shrink', () => {
   expect(
     Object.keys(BEHAVIORAL_SWEEP_EXEMPT).length,
     'BEHAVIORAL_SWEEP_EXEMPT grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(168); // +1 tempest.rim (claw occupies ~1/16 lanes; sliding it doesn't move global frame-variance — video-variance class; claw motion unit-proven in tempest.test.ts + render-smoke); +1 textmarquee.posY (vertical text translation keeps covered pixel-area/frame-variance unchanged → near-threshold flake, video-variance class; posX/scrollX stay gated; covered by textmarquee-layout.test.ts + render-smoke); +1 moog962.shift (advancing the seq-switch selector across UNPATCHED in1..in3 gives Δμrms 0.004 inside the ±0.089 out-noise floor → near-threshold flake; in1/in2/in3 stay gated; covered by moog962.test.ts); +1 lines.phase (phase scroll translates the line bands but preserves frame-variance, Δμvar 2.36 vs ±63.7 → near-threshold flake, video-variance class; orient/amp/thickness stay gated; covered by lines-render-smoke.spec.ts); +1 moog911.esus_cv (sustain-level CV only shapes the held-sustain phase; short retriggering window is attack/release-dominated, Δμrms 0.003 inside ±0.105 → near-threshold flake; t1/t2/t3/gate stay gated; covered by moog911.test.ts); +1 textmarquee.scrollY (vertical scroll of the horizontal band keeps frame-variance ≈ constant, Δμvar 1.45–2.08 → near-threshold flake, same geometry as posY; posX/scrollX stay gated; covered by textmarquee-layout.test.ts); +1 moog921b.freq_bus (1V/oct pitch bus responds — perturbed cent jitters ±24Hz — but a symmetric sweep collapses the mean-cent metric to Δμcent 3–10Hz → metric-mismatch flake, not dead CV; width_bus/fine/range stay gated; covered by moog921b.test.ts); +1 elements.pos_cv (pickup POSITION is a subtle spectral colour below the centroid/cent threshold under the dominant struck tone, Δμrms 0.000/Δcent 19Hz vs ±101Hz on a near-silent resonator → near-threshold flake, same subtle-spectral class as elements bow/blow CVs; other 9 inputs stay gated; covered by elements.test.ts)
+  ).toBeLessThanOrEqual(169); // +1 snaredrum.roll_speed_cv (CV only modulates the drumroll rate, which needs gate_in held high; the sweep drives trigger_in single strikes → no roll → no delta, cf. pentemelodica.fmN; rate map unit-proven in snare-roll-dsp.test.ts, density asserted in snaredrum-roll.spec.ts); +1 tempest.rim (claw occupies ~1/16 lanes; sliding it doesn't move global frame-variance — video-variance class; claw motion unit-proven in tempest.test.ts + render-smoke); +1 textmarquee.posY (vertical text translation keeps covered pixel-area/frame-variance unchanged → near-threshold flake, video-variance class; posX/scrollX stay gated; covered by textmarquee-layout.test.ts + render-smoke); +1 moog962.shift (advancing the seq-switch selector across UNPATCHED in1..in3 gives Δμrms 0.004 inside the ±0.089 out-noise floor → near-threshold flake; in1/in2/in3 stay gated; covered by moog962.test.ts); +1 lines.phase (phase scroll translates the line bands but preserves frame-variance, Δμvar 2.36 vs ±63.7 → near-threshold flake, video-variance class; orient/amp/thickness stay gated; covered by lines-render-smoke.spec.ts); +1 moog911.esus_cv (sustain-level CV only shapes the held-sustain phase; short retriggering window is attack/release-dominated, Δμrms 0.003 inside ±0.105 → near-threshold flake; t1/t2/t3/gate stay gated; covered by moog911.test.ts); +1 textmarquee.scrollY (vertical scroll of the horizontal band keeps frame-variance ≈ constant, Δμvar 1.45–2.08 → near-threshold flake, same geometry as posY; posX/scrollX stay gated; covered by textmarquee-layout.test.ts); +1 moog921b.freq_bus (1V/oct pitch bus responds — perturbed cent jitters ±24Hz — but a symmetric sweep collapses the mean-cent metric to Δμcent 3–10Hz → metric-mismatch flake, not dead CV; width_bus/fine/range stay gated; covered by moog921b.test.ts); +1 elements.pos_cv (pickup POSITION is a subtle spectral colour below the centroid/cent threshold under the dominant struck tone, Δμrms 0.000/Δcent 19Hz vs ±101Hz on a near-silent resonator → near-threshold flake, same subtle-spectral class as elements bow/blow CVs; other 9 inputs stay gated; covered by elements.test.ts)
 });
 
 // TODO(behavioral-coverage, systemic fix — tracks the header note + the

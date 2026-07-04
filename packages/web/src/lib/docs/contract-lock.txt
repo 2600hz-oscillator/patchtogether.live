@@ -674,6 +674,97 @@ colorizer out out video
 colorizer param tintB 0..1 linear default=0.7
 colorizer param tintG 0..1 linear default=0.4
 colorizer param tintR 0..1 linear default=1
+colourofmagic meta domain=video schema=1
+colourofmagic in hsv_h_cv cv param=bias_h cvScale=linear
+colourofmagic in hsv_h_in mono-video accepts=image,keys,video
+colourofmagic in hsv_s_cv cv param=bias_s cvScale=linear
+colourofmagic in hsv_s_in mono-video accepts=image,keys,video
+colourofmagic in hsv_v_cv cv param=bias_v cvScale=linear
+colourofmagic in hsv_v_in mono-video accepts=image,keys,video
+colourofmagic in in video
+colourofmagic in rgb_b_cv cv param=bias_b cvScale=linear
+colourofmagic in rgb_b_in mono-video accepts=image,keys,video
+colourofmagic in rgb_g_cv cv param=bias_g cvScale=linear
+colourofmagic in rgb_g_in mono-video accepts=image,keys,video
+colourofmagic in rgb_r_cv cv param=bias_r cvScale=linear
+colourofmagic in rgb_r_in mono-video accepts=image,keys,video
+colourofmagic in ycc_cb_cv cv param=bias_ycc_cb cvScale=linear
+colourofmagic in ycc_cb_in mono-video accepts=image,keys,video
+colourofmagic in ycc_cr_cv cv param=bias_ycc_cr cvScale=linear
+colourofmagic in ycc_cr_in mono-video accepts=image,keys,video
+colourofmagic in ycc_y_cv cv param=bias_ycc_y cvScale=linear
+colourofmagic in ycc_y_in mono-video accepts=image,keys,video
+colourofmagic in ydb_db_cv cv param=bias_db cvScale=linear
+colourofmagic in ydb_db_in mono-video accepts=image,keys,video
+colourofmagic in ydb_dr_cv cv param=bias_dr cvScale=linear
+colourofmagic in ydb_dr_in mono-video accepts=image,keys,video
+colourofmagic in ydb_y_cv cv param=bias_y cvScale=linear
+colourofmagic in ydb_y_in mono-video accepts=image,keys,video
+colourofmagic in yiq_i_cv cv param=bias_yiq_i cvScale=linear
+colourofmagic in yiq_i_in mono-video accepts=image,keys,video
+colourofmagic in yiq_q_cv cv param=bias_yiq_q cvScale=linear
+colourofmagic in yiq_q_in mono-video accepts=image,keys,video
+colourofmagic in yiq_y_cv cv param=bias_yiq_y cvScale=linear
+colourofmagic in yiq_y_in mono-video accepts=image,keys,video
+colourofmagic out b mono-video
+colourofmagic out g mono-video
+colourofmagic out hsv_h mono-video
+colourofmagic out hsv_s mono-video
+colourofmagic out hsv_v mono-video
+colourofmagic out hsvhsl video
+colourofmagic out luma mono-video
+colourofmagic out pass video
+colourofmagic out r mono-video
+colourofmagic out rgb video
+colourofmagic out ycc video
+colourofmagic out ycc_cb mono-video
+colourofmagic out ycc_cr mono-video
+colourofmagic out ycc_y mono-video
+colourofmagic out ydb_db mono-video
+colourofmagic out ydb_dr mono-video
+colourofmagic out ydb_y mono-video
+colourofmagic out ydbdr video
+colourofmagic out yiq video
+colourofmagic out yiq_i mono-video
+colourofmagic out yiq_q mono-video
+colourofmagic out yiq_y mono-video
+colourofmagic param bias_b -1..1 linear default=0
+colourofmagic param bias_db -1..1 linear default=0
+colourofmagic param bias_dr -1..1 linear default=0
+colourofmagic param bias_g -1..1 linear default=0
+colourofmagic param bias_h -180..180 linear default=0 unit=deg
+colourofmagic param bias_r -1..1 linear default=0
+colourofmagic param bias_s -1..1 linear default=0
+colourofmagic param bias_v -1..1 linear default=0
+colourofmagic param bias_y -1..1 linear default=0
+colourofmagic param bias_ycc_cb -1..1 linear default=0
+colourofmagic param bias_ycc_cr -1..1 linear default=0
+colourofmagic param bias_ycc_y -1..1 linear default=0
+colourofmagic param bias_yiq_i -1..1 linear default=0
+colourofmagic param bias_yiq_q -1..1 linear default=0
+colourofmagic param bias_yiq_y -1..1 linear default=0
+colourofmagic param freeze 0..1 discrete default=0
+colourofmagic param mode_hsl 0..1 discrete default=0
+colourofmagic param over_b 0..1 discrete default=0
+colourofmagic param over_db 0..1 discrete default=0
+colourofmagic param over_dr 0..1 discrete default=0
+colourofmagic param over_g 0..1 discrete default=0
+colourofmagic param over_h 0..1 discrete default=0
+colourofmagic param over_r 0..1 discrete default=0
+colourofmagic param over_s 0..1 discrete default=0
+colourofmagic param over_v 0..1 discrete default=0
+colourofmagic param over_y 0..1 discrete default=0
+colourofmagic param over_ycc_cb 0..1 discrete default=0
+colourofmagic param over_ycc_cr 0..1 discrete default=0
+colourofmagic param over_ycc_y 0..1 discrete default=0
+colourofmagic param over_yiq_i 0..1 discrete default=0
+colourofmagic param over_yiq_q 0..1 discrete default=0
+colourofmagic param over_yiq_y 0..1 discrete default=0
+colourofmagic param pal_b 0..16777215 discrete default=8011007
+colourofmagic param pal_g 0..16777215 discrete default=57536
+colourofmagic param pal_r 0..16777215 discrete default=16738816
+colourofmagic param preview 0..21 discrete default=1
+colourofmagic param replace 0..1 discrete default=0
 controlSurface meta domain=meta schema=1
 cube meta domain=audio schema=1
 cube in connect cv param=connect cvScale=linear
@@ -2781,6 +2872,38 @@ slewSwitch param slew2 0.001..5 log default=0.5 unit=s
 slewSwitch param slew3 0.001..5 log default=0.5 unit=s
 slewSwitch param slew4 0.001..5 log default=0.5 unit=s
 slewSwitch param xfadeTime 0.001..2 log default=0.05 unit=s
+snaredrum meta domain=audio schema=1
+snaredrum in accent_in cv
+snaredrum in choke_in gate edge=gate
+snaredrum in gate_in gate edge=gate
+snaredrum in pitch_cv cv
+snaredrum in roll_speed_cv cv
+snaredrum in trigger_in gate edge=trigger
+snaredrum out audio_l audio
+snaredrum out audio_r audio
+snaredrum param body_decay 20..300 log default=110 unit=ms
+snaredrum param bounce 0..1 linear default=0.35
+snaredrum param ceiling 0..1 linear default=0.5
+snaredrum param crack 0..1 linear default=0.4
+snaredrum param crack_tone 800..7000 log default=3200 unit=Hz
+snaredrum param damp 0..1 linear default=0.2
+snaredrum param damping 0..1 linear default=0.4
+snaredrum param drive 0..1 linear default=0.2
+snaredrum param hard 0..1 discrete default=0
+snaredrum param head_decay 30..600 log default=180 unit=ms
+snaredrum param humanize 0..1 linear default=0.2
+snaredrum param level -24..12 linear default=0 unit=dB
+snaredrum param pitch_amt 0..12 linear default=3 unit=st
+snaredrum param pitch_time 3..80 log default=18 unit=ms
+snaredrum param roll_speed 0..1 linear default=0.5
+snaredrum param spread 0..1 linear default=0.5
+snaredrum param tone 0..1 linear default=0.5
+snaredrum param tune 90..400 log default=180 unit=Hz
+snaredrum param width 0..1 linear default=0.4
+snaredrum param wire 0..1 linear default=0.7
+snaredrum param wire_decay 40..700 log default=260 unit=ms
+snaredrum param wire_tone 1500..9000 log default=4500 unit=Hz
+snaredrum stereo audio_l+audio_r
 snes9x meta domain=video schema=1 maxInstances=1
 snes9x in a gate param=cv_a
 snes9x in b gate param=cv_b
@@ -2820,6 +2943,18 @@ snes9x param cv_up 0..1 linear default=0
 snes9x param cv_x 0..1 linear default=0
 snes9x param cv_y 0..1 linear default=0
 snes9x param fillMode 0..1 discrete default=0
+sourcery meta domain=video schema=1
+sourcery in a video
+sourcery in b video
+sourcery in colorSkew cv param=colorSkew cvScale=linear
+sourcery in rotate cv param=rotate cvScale=linear
+sourcery in thresholdA cv param=thresholdA cvScale=linear
+sourcery in thresholdB cv param=thresholdB cvScale=linear
+sourcery out out video
+sourcery param colorSkew 0..1 linear default=0.5
+sourcery param rotate 0..1 linear default=0.5
+sourcery param thresholdA 0..1 linear default=0.2
+sourcery param thresholdB 0..1 linear default=0.2
 spectrograph meta domain=audio schema=1
 spectrograph in in audio
 spectrograph out bw mono-video

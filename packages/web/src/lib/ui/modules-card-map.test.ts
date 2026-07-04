@@ -37,7 +37,7 @@ const EXPECTED_NODE_TYPES = [
   'atlantisCatalyst', 'attenumix', 'audioIn', 'audioOut', 'backdraft', 'bentbox',
   'blood', 'bluebox', 'buggles', 'callsine', 'cameraInput', 'cartesian',
   'charlottesEchos', 'chowkick', 'chroma', 'chromakey', 'clipplayer', 'clockedRunner', 'clouds',
-  'cloudseed', 'cofefve', 'colorizer', 'cube', 'delay', 'depolarizer', 'destroy', 'destructor',
+  'cloudseed', 'cofefve', 'colorizer', 'colourofmagic', 'cube', 'delay', 'depolarizer', 'destroy', 'destructor',
   'doom', 'drummergirl', 'drumseqz', 'dx7', 'elements', 'fader', 'feedback', 'filter',
   'featurecv',
   'fourplexer', 'foxy', 'freezeframe', 'frogger', 'gamepad', 'gatemaiden', 'gibribbon', 'graphicEq', 'grids', 'group',
@@ -49,14 +49,29 @@ const EXPECTED_NODE_TYPES = [
   'noise', 'numpadPlus', 'onetonine', 'painter', 'peaks', 'peakstate', 'peertube', 'picturebox', 'polyseqz', 'pong',
   'polarizer', 'qbert', 'qbrt', 'rasterize', 'reshaper', 'resofilter', 'reverb', 'ringback', 'rings',
   'riotgirls', 'ruttetra', 'sampleHold', 'samsloop', 'scope', 'score', 'scoreboard',
-  'scaler', 'sequencer', 'shapedramps', 'shapegen', 'shapes', 'shimmershine', 'sidecar', 'spectrograph',
-  'skifree', 'slewSwitch', 'snes9x', 'stages', 'stereovca', 'sticky',
+  'scaler', 'sequencer', 'shapedramps', 'shapegen', 'shapes', 'shimmershine', 'sidecar', 'sourcery', 'spectrograph',
+  'skifree', 'slewSwitch', 'snaredrum', 'snes9x', 'stages', 'stereovca', 'sticky',
   'swolevco', 'symbiote', 'synesthesia', 'tempest', 'tides2', 'timelorde', 'treeohvox', 'tvLibrarian',
   'launchpadControlLeft',
   'unityscalemathematik', 'vca', 'vdelay', 'veils', 'vfpgaRunner', 'videoMixer', 'videoOut',
   'videobox', 'videovarispeed', 'warps', 'warrenspectrum', 'wavecel', 'wavesculpt',
   'twotracks', 'wavetableVco', 'writeseq', 'textmarquee', 'tiler', 'spirographs',
   'milkdrop',
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
