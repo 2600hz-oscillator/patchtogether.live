@@ -61,6 +61,16 @@
     { bias: 'bias_s', over: 'over_s', label: 's' },
     { bias: 'bias_v', over: 'over_v', label: 'v' },
   ];
+  const YIQ_CH: Chan[] = [
+    { bias: 'bias_yiq_y', over: 'over_yiq_y', label: 'y' },
+    { bias: 'bias_yiq_i', over: 'over_yiq_i', label: 'i' },
+    { bias: 'bias_yiq_q', over: 'over_yiq_q', label: 'q' },
+  ];
+  const YCC_CH: Chan[] = [
+    { bias: 'bias_ycc_y', over: 'over_ycc_y', label: 'y' },
+    { bias: 'bias_ycc_cb', over: 'over_ycc_cb', label: 'cb' },
+    { bias: 'bias_ycc_cr', over: 'over_ycc_cr', label: 'cr' },
+  ];
 
   function toggleOver(pid: string): void {
     setNodeParam(id, pid, pget(pid) >= 0.5 ? 0 : 1);
@@ -93,10 +103,18 @@
     const g = parseInt(hex.slice(3, 5), 16) / 255;
     const b = parseInt(hex.slice(5, 7), 16) / 255;
     setNodeParam(id, pid, packColor01(r, g, b));
+    // Discoverability nudge: picking a swatch auto-enables REPLACE so the recolour
+    // is immediately visible on the rgb out (REPLACE defaults off + is easy to miss).
+    if (!replaceOn) setNodeParam(id, 'replace', 1);
   }
 
-  // ── preview select (8 outputs) ──
-  const PREVIEW_LABELS = ['PASS', 'RGB', 'YDbDr', 'HSV', 'R', 'G', 'B', 'LUMA'];
+  // ── preview select (22 outputs; index === uOutMode === preview value) ──
+  const PREVIEW_LABELS = [
+    'PASS', 'RGB', 'YDbDr', 'HSV', 'R', 'G', 'B', 'LUMA',
+    'dY', 'Db', 'Dr', 'H', 'S', 'V',
+    'YIQ', 'iY', 'I', 'Q',
+    'YCC', 'cY', 'Cb', 'Cr',
+  ];
   let previewSel = $derived(Math.round(pget('preview')));
   function selectPreview(n: number): void {
     setNodeParam(id, 'preview', n);
@@ -184,16 +202,52 @@
       ] as PortDescriptor[],
     },
     {
+      label: 'YIQ',
+      inputs: [
+        { id: 'yiq_y_cv', label: 'Y CV', cable: 'cv' },
+        { id: 'yiq_y_in', label: 'Y OVR', cable: 'mono-video' },
+        { id: 'yiq_i_cv', label: 'I CV', cable: 'cv' },
+        { id: 'yiq_i_in', label: 'I OVR', cable: 'mono-video' },
+        { id: 'yiq_q_cv', label: 'Q CV', cable: 'cv' },
+        { id: 'yiq_q_in', label: 'Q OVR', cable: 'mono-video' },
+      ] as PortDescriptor[],
+    },
+    {
+      label: 'YCbCr',
+      inputs: [
+        { id: 'ycc_y_cv', label: 'Y CV', cable: 'cv' },
+        { id: 'ycc_y_in', label: 'Y OVR', cable: 'mono-video' },
+        { id: 'ycc_cb_cv', label: 'Cb CV', cable: 'cv' },
+        { id: 'ycc_cb_in', label: 'Cb OVR', cable: 'mono-video' },
+        { id: 'ycc_cr_cv', label: 'Cr CV', cable: 'cv' },
+        { id: 'ycc_cr_in', label: 'Cr OVR', cable: 'mono-video' },
+      ] as PortDescriptor[],
+    },
+    {
       label: 'OUT',
       outputs: [
         { id: 'pass', label: 'PASS', cable: 'video' },
         { id: 'rgb', label: 'RGB', cable: 'video' },
         { id: 'ydbdr', label: 'YDbDr', cable: 'video' },
         { id: 'hsvhsl', label: 'HSV/HSL', cable: 'video' },
+        { id: 'yiq', label: 'YIQ', cable: 'video' },
+        { id: 'ycc', label: 'YCbCr', cable: 'video' },
         { id: 'r', label: 'R', cable: 'mono-video' },
         { id: 'g', label: 'G', cable: 'mono-video' },
         { id: 'b', label: 'B', cable: 'mono-video' },
         { id: 'luma', label: 'LUMA', cable: 'mono-video' },
+        { id: 'ydb_y', label: 'Y (YDbDr)', cable: 'mono-video' },
+        { id: 'ydb_db', label: 'Db', cable: 'mono-video' },
+        { id: 'ydb_dr', label: 'Dr', cable: 'mono-video' },
+        { id: 'hsv_h', label: 'H', cable: 'mono-video' },
+        { id: 'hsv_s', label: 'S', cable: 'mono-video' },
+        { id: 'hsv_v', label: 'V', cable: 'mono-video' },
+        { id: 'yiq_y', label: 'Y (YIQ)', cable: 'mono-video' },
+        { id: 'yiq_i', label: 'I', cable: 'mono-video' },
+        { id: 'yiq_q', label: 'Q', cable: 'mono-video' },
+        { id: 'ycc_y', label: 'Y (YCbCr)', cable: 'mono-video' },
+        { id: 'ycc_cb', label: 'Cb', cable: 'mono-video' },
+        { id: 'ycc_cr', label: 'Cr', cable: 'mono-video' },
       ] as PortDescriptor[],
     },
   ];
@@ -262,7 +316,7 @@
                 type="button"
                 class="over-pill"
                 class:wrap={pget(ch.over) >= 0.5}
-                data-testid={`colourofmagic-over-${ch.label}`}
+                data-testid={`colourofmagic-over-${ch.over}`}
                 onclick={() => toggleOver(ch.over)}
                 title="Overflow: CLAMP (clip) vs WRAP (fract)"
               >{overLabel(ch.over)}</button>
@@ -311,7 +365,7 @@
                 type="button"
                 class="over-pill"
                 class:wrap={pget(ch.over) >= 0.5}
-                data-testid={`colourofmagic-over-${ch.label}`}
+                data-testid={`colourofmagic-over-${ch.over}`}
                 onclick={() => toggleOver(ch.over)}
                 title="Overflow: CLAMP (clip) vs WRAP (fract)"
               >{overLabel(ch.over)}</button>
@@ -351,7 +405,7 @@
               {#if ch.advisory}
                 <span
                   class="over-pill advisory"
-                  data-testid={`colourofmagic-over-${ch.label}`}
+                  data-testid={`colourofmagic-over-${ch.over}`}
                   title="Hue always wraps — the wrap toggle is advisory here"
                 >WRAP</span>
               {:else}
@@ -359,11 +413,76 @@
                   type="button"
                   class="over-pill"
                   class:wrap={pget(ch.over) >= 0.5}
-                  data-testid={`colourofmagic-over-${ch.label}`}
+                  data-testid={`colourofmagic-over-${ch.over}`}
                   onclick={() => toggleOver(ch.over)}
                   title="Overflow: CLAMP (clip) vs WRAP (fract)"
                 >{overLabel(ch.over)}</button>
               {/if}
+            </div>
+          {/each}
+        </div>
+
+        <!-- YIQ (NTSC composite) -->
+        <div class="block" data-testid="colourofmagic-block-yiq">
+          <div class="block-head">
+            <span class="block-name">YIQ</span>
+          </div>
+          {#each YIQ_CH as ch (ch.bias)}
+            {@const r = paramRange(ch.bias)}
+            <div class="chan">
+              <Knob
+                value={pget(ch.bias)}
+                min={r.min}
+                max={r.max}
+                defaultValue={defaultFor(ch.bias)}
+                label={ch.label}
+                curve="linear"
+                onchange={set(ch.bias)}
+                readLive={live(ch.bias)}
+                moduleId={id}
+                paramId={ch.bias}
+              />
+              <button
+                type="button"
+                class="over-pill"
+                class:wrap={pget(ch.over) >= 0.5}
+                data-testid={`colourofmagic-over-${ch.over}`}
+                onclick={() => toggleOver(ch.over)}
+                title="Overflow: CLAMP (clip) vs WRAP (fract)"
+              >{overLabel(ch.over)}</button>
+            </div>
+          {/each}
+        </div>
+
+        <!-- YCbCr studio-swing (broadcast-legal) -->
+        <div class="block" data-testid="colourofmagic-block-ycc">
+          <div class="block-head">
+            <span class="block-name">YCbCr</span>
+            <span class="block-sub" title="16–235 / 16–240 broadcast-legal — bias crushes super-black/white">legal</span>
+          </div>
+          {#each YCC_CH as ch (ch.bias)}
+            {@const r = paramRange(ch.bias)}
+            <div class="chan">
+              <Knob
+                value={pget(ch.bias)}
+                min={r.min}
+                max={r.max}
+                defaultValue={defaultFor(ch.bias)}
+                label={ch.label}
+                curve="linear"
+                onchange={set(ch.bias)}
+                readLive={live(ch.bias)}
+                moduleId={id}
+                paramId={ch.bias}
+              />
+              <button
+                type="button"
+                class="over-pill"
+                class:wrap={pget(ch.over) >= 0.5}
+                data-testid={`colourofmagic-over-${ch.over}`}
+                onclick={() => toggleOver(ch.over)}
+                title="Overflow: CLAMP (clip) vs WRAP (fract)"
+              >{overLabel(ch.over)}</button>
             </div>
           {/each}
         </div>
@@ -373,7 +492,7 @@
 </div>
 
 <style>
-  .colourofmagic-card { width: 500px; }
+  .colourofmagic-card { width: 840px; }
   .stripe {
     position: absolute;
     top: 0; left: 0; right: 0;
@@ -426,7 +545,7 @@
   }
   .blocks {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 8px;
   }
   .block {
@@ -454,6 +573,13 @@
     color: var(--text);
     font-family: ui-monospace, monospace;
     font-weight: 600;
+  }
+  .block-sub {
+    font-size: 0.48rem;
+    letter-spacing: 0.04em;
+    color: var(--text-dim, #9aa);
+    font-family: ui-monospace, monospace;
+    text-transform: uppercase;
   }
   .mode-toggle {
     background: #1a1f29;

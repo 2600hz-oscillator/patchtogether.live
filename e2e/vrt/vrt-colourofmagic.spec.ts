@@ -44,6 +44,12 @@ const SCENES: Scene[] = [
   { id: 'com-ydbdr', params: { preview: 2, bias_db: 0.45 } },
   // HSV: rotate hue + lift saturation.
   { id: 'com-hsv', params: { preview: 3, bias_h: 140, bias_s: 0.3 } },
+  // YIQ (NTSC composite): warm the flesh-tone I axis (orange↔cyan).
+  { id: 'com-yiq', params: { preview: 14, bias_yiq_i: 0.35 } },
+  // YCbCr studio-swing: lift the legal-range luma (the broadcast crush block).
+  { id: 'com-ycc', params: { preview: 18, bias_ycc_y: 0.3 } },
+  // YIQ I mono tap: the grayscale orange↔cyan flesh/warmth key.
+  { id: 'com-yiq-i-tap', params: { preview: 16 } },
   // Mono override clobbers the GREEN channel with a crossing (vertical) grating.
   { id: 'com-override', params: { preview: 1 }, override: true },
   // Palette REPLACE: remap R/G/B → cyan / magenta / yellow.
