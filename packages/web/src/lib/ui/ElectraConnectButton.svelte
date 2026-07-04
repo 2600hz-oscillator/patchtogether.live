@@ -1,7 +1,9 @@
 <script lang="ts">
-  // ElectraConnectButton — the gated "Auto-configure Electra One" affordance.
+  // ElectraConnectButton — the gated "Send to Electra" affordance.
   //
-  // Lives in the rackspace bar alongside the other device/session actions. Like
+  // Lives ON the ELECTRA CONTROL card (ElectraControlCard.svelte) — the send
+  // action belongs to the module, so a rack WITHOUT an ElectraControl has no
+  // send button (it was moved off the global topbar). Like
   // the MIDI-CV-BUDDY "Connect MIDI…" button, it does NOT request MIDI access on
   // mount — clicking it is the explicit, on-demand action that triggers the
   // (sysex-capable) permission prompt + the full automagic flow:
@@ -60,10 +62,11 @@
 </script>
 
 <button
-  class="electra-btn"
+  class="electra-btn nodrag"
   type="button"
   data-testid="electra-connect-button"
   onclick={onClick}
+  onpointerdown={(e) => e.stopPropagation()}
   disabled={status === 'connecting'}
   title="Generate a 3-page Electra One preset (Control Surface / MixMaster / System) from this rack and push it to a connected Electra. Asks for MIDI access on first click."
 >
@@ -74,7 +77,7 @@
   {:else if status === 'no-device'}
     No MIDI
   {:else}
-    Electra One
+    Send to Electra
   {/if}
 </button>
 

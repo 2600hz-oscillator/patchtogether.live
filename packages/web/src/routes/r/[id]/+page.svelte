@@ -524,9 +524,9 @@
         </span>
       {/if}
       <span class="bar-spacer"></span>
-      <!-- Electra One affordance now lives in Canvas's topbar so it appears on
-           EVERY rack (incl. the anonymous `/` scratch canvas), not just saved
-           rackspaces. -->
+      <!-- The "Send to Electra" affordance lives ON the ELECTRA CONTROL card
+           (ElectraControlCard.svelte) — added per-rack via the module, not a
+           global bar button. -->
       {#if !data.isAnon}
         {#if !carlSession}
           <button

@@ -177,7 +177,6 @@
   import AspectToggle from '$lib/ui/AspectToggle.svelte';
   import { videoAspectStore } from '$lib/ui/video-aspect-store.svelte';
   import { audioLatencyStore, type AudioLatencyMode } from '$lib/ui/audio-latency-store.svelte';
-  import ElectraConnectButton from '$lib/ui/ElectraConnectButton.svelte';
   import FlowBridge, { type FlowBridgeApi, type InternalFlowNode } from '$lib/ui/FlowBridge.svelte';
   import CadillacOverlay from '$lib/ui/CadillacOverlay.svelte';
   import PickupCable from '$lib/ui/PickupCable.svelte';
@@ -5036,11 +5035,9 @@
       </select>
       <AspectToggle />
       <SkinSwitcher />
-      <!-- Electra One on EVERY rack (incl. the anonymous `/` scratch canvas) —
-           the flow only needs the patch store + active engine, both present on
-           any Canvas mount, so it isn't tied to a named rackspace. Gated /
-           on-demand (asks for MIDI on first click). -->
-      <ElectraConnectButton />
+      <!-- The "Send to Electra" button now lives ON the ELECTRA CONTROL card
+           (ElectraControlCard.svelte), not the topbar — a rack without an
+           ElectraControl module intentionally has no send button. -->
       {#if headerSignedIn}
         <a
           class="account-link"

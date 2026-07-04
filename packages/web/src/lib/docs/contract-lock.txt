@@ -1024,7 +1024,7 @@ edges in threshold cv param=threshold cvScale=linear
 edges out out mono-video
 edges param thickness 1..8 linear default=2 unit=px
 edges param threshold 0..1 linear default=0.2
-electraControl meta domain=meta schema=1
+electraControl meta domain=meta schema=1 maxInstances=1
 elements meta domain=audio schema=1
 elements in blowlvl_cv cv param=blowLevel cvScale=linear
 elements in blowmeta_cv cv param=blowMeta cvScale=linear

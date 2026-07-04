@@ -24,6 +24,11 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import ModuleTitle from './ModuleTitle.svelte';
+  // "Send to Electra" — the flash/auto-configure action lives ON this card (it
+  // was moved off the global topbar). Reuses the exact ElectraConnectButton
+  // logic (identify → generate preset → push + Lua → import CC map). Placement
+  // mirrors LaunchpadControlCard's on-card connect button.
+  import ElectraConnectButton from '$lib/ui/ElectraConnectButton.svelte';
   import { patch, ydoc } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import { useEngine } from '$lib/audio/engine-context';
@@ -186,6 +191,11 @@
 <div class="mod-card electra-control-card" data-testid="electra-control-card" data-node-id={id}>
   <div class="ec-titlebar">
     <ModuleTitle {id} {data} defaultLabel="ELECTRA CONTROL" inline={true} />
+    <!-- On-card "Send to Electra": generates the 3-page preset from the whole
+         rack + pushes it to a connected Electra One. Reuses the shared button. -->
+    <div class="ec-actions">
+      <ElectraConnectButton />
+    </div>
   </div>
 
   <div class="ec-grid" data-testid="electra-control-grid">
@@ -284,6 +294,14 @@
     justify-content: space-between;
     gap: 8px;
     margin-bottom: 6px;
+  }
+  /* On-card action cluster (the "Send to Electra" button), right-aligned in the
+     titlebar — mirrors LaunchpadControlCard's on-card connect affordance. */
+  .ec-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
   }
   .ec-grid {
     display: flex;
