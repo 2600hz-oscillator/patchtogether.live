@@ -42,7 +42,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   clipplayer: { size: '3u', hp: 2 }, // 8×8 launch grid + piano-roll note editor + transport
   clouds: { size: '2u', hp: 2 }, // 201×340px
   cloudseed: { size: '3u', hp: 4 }, // 427×680px
-  colourofmagic: { size: '3u', hp: 3 }, // ~500px — 3 block columns (RGB/YDbDr/HSV·HSL) + preview
+  colourofmagic: { size: '3u', hp: 5 }, // ~840px — 5 block columns (RGB/YDbDr/HSV·HSL/YIQ/YCbCr) + preview
   cofefve: { size: '2u', hp: 4 }, // 283×620px
   cube: { size: '3u', hp: 4 }, // 540×720px — 2-col (viewport+sources left, controls right)
   delay: { size: '1u', hp: 1 }, // 152×200px

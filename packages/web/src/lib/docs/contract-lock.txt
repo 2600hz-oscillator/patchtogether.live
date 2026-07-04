@@ -688,20 +688,46 @@ colourofmagic in rgb_g_cv cv param=bias_g cvScale=linear
 colourofmagic in rgb_g_in mono-video accepts=image,keys,video
 colourofmagic in rgb_r_cv cv param=bias_r cvScale=linear
 colourofmagic in rgb_r_in mono-video accepts=image,keys,video
+colourofmagic in ycc_cb_cv cv param=bias_ycc_cb cvScale=linear
+colourofmagic in ycc_cb_in mono-video accepts=image,keys,video
+colourofmagic in ycc_cr_cv cv param=bias_ycc_cr cvScale=linear
+colourofmagic in ycc_cr_in mono-video accepts=image,keys,video
+colourofmagic in ycc_y_cv cv param=bias_ycc_y cvScale=linear
+colourofmagic in ycc_y_in mono-video accepts=image,keys,video
 colourofmagic in ydb_db_cv cv param=bias_db cvScale=linear
 colourofmagic in ydb_db_in mono-video accepts=image,keys,video
 colourofmagic in ydb_dr_cv cv param=bias_dr cvScale=linear
 colourofmagic in ydb_dr_in mono-video accepts=image,keys,video
 colourofmagic in ydb_y_cv cv param=bias_y cvScale=linear
 colourofmagic in ydb_y_in mono-video accepts=image,keys,video
+colourofmagic in yiq_i_cv cv param=bias_yiq_i cvScale=linear
+colourofmagic in yiq_i_in mono-video accepts=image,keys,video
+colourofmagic in yiq_q_cv cv param=bias_yiq_q cvScale=linear
+colourofmagic in yiq_q_in mono-video accepts=image,keys,video
+colourofmagic in yiq_y_cv cv param=bias_yiq_y cvScale=linear
+colourofmagic in yiq_y_in mono-video accepts=image,keys,video
 colourofmagic out b mono-video
 colourofmagic out g mono-video
+colourofmagic out hsv_h mono-video
+colourofmagic out hsv_s mono-video
+colourofmagic out hsv_v mono-video
 colourofmagic out hsvhsl video
 colourofmagic out luma mono-video
 colourofmagic out pass video
 colourofmagic out r mono-video
 colourofmagic out rgb video
+colourofmagic out ycc video
+colourofmagic out ycc_cb mono-video
+colourofmagic out ycc_cr mono-video
+colourofmagic out ycc_y mono-video
+colourofmagic out ydb_db mono-video
+colourofmagic out ydb_dr mono-video
+colourofmagic out ydb_y mono-video
 colourofmagic out ydbdr video
+colourofmagic out yiq video
+colourofmagic out yiq_i mono-video
+colourofmagic out yiq_q mono-video
+colourofmagic out yiq_y mono-video
 colourofmagic param bias_b -1..1 linear default=0
 colourofmagic param bias_db -1..1 linear default=0
 colourofmagic param bias_dr -1..1 linear default=0
@@ -711,6 +737,12 @@ colourofmagic param bias_r -1..1 linear default=0
 colourofmagic param bias_s -1..1 linear default=0
 colourofmagic param bias_v -1..1 linear default=0
 colourofmagic param bias_y -1..1 linear default=0
+colourofmagic param bias_ycc_cb -1..1 linear default=0
+colourofmagic param bias_ycc_cr -1..1 linear default=0
+colourofmagic param bias_ycc_y -1..1 linear default=0
+colourofmagic param bias_yiq_i -1..1 linear default=0
+colourofmagic param bias_yiq_q -1..1 linear default=0
+colourofmagic param bias_yiq_y -1..1 linear default=0
 colourofmagic param freeze 0..1 discrete default=0
 colourofmagic param mode_hsl 0..1 discrete default=0
 colourofmagic param over_b 0..1 discrete default=0
@@ -722,10 +754,16 @@ colourofmagic param over_r 0..1 discrete default=0
 colourofmagic param over_s 0..1 discrete default=0
 colourofmagic param over_v 0..1 discrete default=0
 colourofmagic param over_y 0..1 discrete default=0
-colourofmagic param pal_b 0..16777215 discrete default=255
-colourofmagic param pal_g 0..16777215 discrete default=65280
-colourofmagic param pal_r 0..16777215 discrete default=16711680
-colourofmagic param preview 0..7 discrete default=1
+colourofmagic param over_ycc_cb 0..1 discrete default=0
+colourofmagic param over_ycc_cr 0..1 discrete default=0
+colourofmagic param over_ycc_y 0..1 discrete default=0
+colourofmagic param over_yiq_i 0..1 discrete default=0
+colourofmagic param over_yiq_q 0..1 discrete default=0
+colourofmagic param over_yiq_y 0..1 discrete default=0
+colourofmagic param pal_b 0..16777215 discrete default=8011007
+colourofmagic param pal_g 0..16777215 discrete default=57536
+colourofmagic param pal_r 0..16777215 discrete default=16738816
+colourofmagic param preview 0..21 discrete default=1
 colourofmagic param replace 0..1 discrete default=0
 controlSurface meta domain=meta schema=1
 cube meta domain=audio schema=1

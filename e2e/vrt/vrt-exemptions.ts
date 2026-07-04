@@ -1292,6 +1292,9 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/com-rgb',
   'linux/com-ydbdr',
   'linux/com-hsv',
+  'linux/com-yiq',
+  'linux/com-ycc',
+  'linux/com-yiq-i-tap',
   'linux/com-override',
   'linux/com-palette',
   // OUTPUT aspect 16:9 preview card (vrt-aspect-16x9.spec.ts): darwin baseline
