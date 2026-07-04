@@ -60,8 +60,22 @@ const INIT_EXCITE = [1.0, 0.75, 0.7, 0.6] as const;
 /** Per-mode Q-loss multiplier — the (0,1) fundamental pair is heavily damped. */
 const MODE_Q_MULT = [2.4, 2.2, 1.0, 0.9] as const;
 
-/** Fixed crack-transient length (ms to −60 dB) — the stick-contact tick. */
-const CRACK_LEN_MS = 8;
+/** Fixed crack-transient length (ms to −60 dB) — a short, crisp stick-contact
+ *  tick (shortened 8 → 6 ms so it reads as a tick that pokes through the onset,
+ *  not a mid pad; adversarial review DEAD-2). */
+const CRACK_LEN_MS = 6;
+/** Crack output gain — the transient is summed OUTSIDE the VOICE_NORM trim (and
+ *  given its own weight) so the stick tick sits ABOVE the head onset instead of
+ *  being normalized into inaudibility (adversarial review DEAD-2). */
+const CRACK_GAIN = 5.0;
+/** How much high-passed body noise is mixed alongside the resonant body band so
+ *  `body_decay` reads BROADBAND, not only in the wire-masked sub-500 Hz region
+ *  (adversarial review WEAK-2). */
+const BODY_BRIGHT = 0.4;
+/** Wire-bed stereo-placement slew time (ms): `spread` pans the LOUD wire bed
+ *  toward the striking hand — fast enough to read per-stroke, slow enough to
+ *  stay click-free (adversarial review WEAK-5). */
+const BED_PAN_SLEW_MS = 5;
 /** Deterministic per-strike noise seed base (reseeded, per-voice-index-varied). */
 const NOISE_SEED_BASE = 0x2f6e15c3;
 /** Whole-voice output trim so a default single hit sits ~0.6 pre-ceiling. */
@@ -285,7 +299,16 @@ export function snareVoiceStep(v: SnareVoice, p: SnaredrumParams, sr: number): n
 
   // ── HEAD: self-ringing modal bank (freq tracks the live pitch DROP). ──
   let headSum = 0;
-  const qBase = 0.05 + damping * 0.45;
+  // `head_decay` must lengthen the actual RING, not just the amp env: at the
+  // shipped q the SVFs self-terminate in ~15 ms and the amp env has nothing to
+  // sustain. Here q is the DAMPING coefficient (bhp = −low − q·band, so a LOWER
+  // q = higher resonance = LONGER ring — consistent with the `damping` knob:
+  // damping=1→muted→high q). So a LONGER head_decay REDUCES q, letting the modes
+  // ring long enough that the amp env (head_decay) becomes the real decay
+  // control; `damping` keeps its full relative range at every length (DEAD-1).
+  const ringMs = clamp(p.headDecay, 30, 600) * (1 - 0.6 * damp);
+  const ringReduce = 0.92 * (ringMs / 600); // 0..0.92 LESS damping from head_decay
+  const qBase = (0.05 + damping * 0.45) * (1 - ringReduce);
   for (let k = 0; k < NHEAD; k++) {
     const fc = snareHeadFreqHz(p.tune, p.pitchCv, v.headPitchEnv, p.pitchAmt, v.tuneMul, k);
     const f = svfF(fc, sr);
@@ -307,7 +330,10 @@ export function snareVoiceStep(v: SnareVoice, p: SnaredrumParams, sr: number): n
   // ── BODY: band-passed seeded noise around the head fundamental. ──
   v.bodyRng = xorshift32(v.bodyRng);
   const bnz = (v.bodyRng / 0xffffffff) * 2 - 1;
-  const bodyFc = clamp(p.tune, 90, 400) * Math.pow(2, p.pitchCv) * v.tuneMul;
+  // The pitch-DROP bends the BODY center too (not just the head modes) so the
+  // pitch envelope chirps the whole voice, not a quiet fraction of it (WEAK-3).
+  const bodyDrop = Math.pow(2, (clamp(p.pitchAmt, 0, 12) / 12) * clamp(v.headPitchEnv, 0, 1));
+  const bodyFc = clamp(p.tune, 90, 400) * Math.pow(2, p.pitchCv) * v.tuneMul * bodyDrop;
   const fb = svfF(bodyFc, sr);
   const qb = 0.4;
   const bhp = bnz - v.bodyLow - qb * v.bodyBand;
@@ -315,7 +341,10 @@ export function snareVoiceStep(v: SnareVoice, p: SnaredrumParams, sr: number): n
   v.bodyLow += fb * v.bodyBand;
   if (Math.abs(v.bodyBand) < FLUSH) v.bodyBand = 0;
   if (Math.abs(v.bodyLow) < FLUSH) v.bodyLow = 0;
-  const body = v.bodyBand * v.bodyAmp;
+  // Widen the body's audible footprint: blend a little high-passed noise (bhp)
+  // with the resonant band so `body_decay` reads BROADBAND — above the wire
+  // floor — instead of only in the sub-500 Hz band the wire masks (WEAK-2).
+  const body = (v.bodyBand + BODY_BRIGHT * bhp) * v.bodyAmp;
 
   // ── CRACK: short band-passed seeded noise transient. ──
   v.crackRng = xorshift32(v.crackRng);
@@ -342,7 +371,11 @@ export function snareVoiceStep(v: SnareVoice, p: SnaredrumParams, sr: number): n
   // ── tone crossfade + velocity. ──
   const toneMix = clamp(p.tone, 0, 1);
   const headV = head * VOICE_NORM * v.vel;
-  const out = (head * toneMix + body * (1 - toneMix) + crack * clamp(p.crack, 0, 1)) * VOICE_NORM * v.vel;
+  // CRACK is summed OUTSIDE the VOICE_NORM trim (which tames the sustained
+  // head/body layers) with its own gain, so the stick tick pokes through the
+  // onset instead of being decorrelation-cancelled + normalized away (DEAD-2).
+  const crackOut = crack * clamp(p.crack, 0, 1) * CRACK_GAIN;
+  const out = (head * toneMix + body * (1 - toneMix)) * VOICE_NORM * v.vel + crackOut * v.vel;
   v.headOut = headV;
   v.energy += (Math.abs(out) - v.energy) * ENERGY_COEF;
   if (v.energy < FLUSH) v.energy = 0;
@@ -372,6 +405,11 @@ export interface SnaredrumState {
   hardFn: (x: number) => number;
   // Trigger edge.
   trigPrev: number;
+  // Slewed stereo PLACEMENT of the loud wire bed — `spread` routes here (WIDTH
+  // stays the decorrelation control). Centered on a trigger hit, ±spread on each
+  // roll stroke so the sizzle ping-pongs with the sticking hand (WEAK-5).
+  bedPan: number;
+  bedPanTarget: number;
 }
 
 export function makeSnaredrumState(): SnaredrumState {
@@ -391,6 +429,8 @@ export function makeSnaredrumState(): SnaredrumState {
     softFn: (x) => x,
     hardFn: (x) => x,
     trigPrev: 0,
+    bedPan: 0,
+    bedPanTarget: 0,
   };
   // CLEAN (hard=0): tanh soft-clip @2× — warm sizzle. Pre-gain 1..4.
   s.softFn = (x) => Math.tanh((1 + 3 * s.driveAmt) * x);
@@ -439,6 +479,7 @@ export function snaredrumStepStereo(
     const idx = allocateVoice(s.voices, MAX_VOICES);
     strikeVoice(s.voices[idx]!, vel, 1, 0, NOISE_SEED_BASE);
     exciteBed(s, wireAmt, vel);
+    s.bedPanTarget = 0; // a single hit is centered
   }
 
   // ── 2. ROLL: the two-hand engine drives strikes + bed re-excitation. ──
@@ -451,6 +492,7 @@ export function snaredrumStepStereo(
   for (let f = 0; f < fired; f++) {
     const vel = clamp(s.roll.firedVel[f]! * (1 + ACCENT_VEL * acc), 0, 1);
     exciteBed(s, wireAmt, vel); // ALWAYS re-excite the bed (continuity)
+    s.bedPanTarget = s.roll.firedPan[f]!; // sizzle ping-pongs with the hand (±spread)
     if (s.roll.firedAlloc[f]) {
       const idx = allocateVoice(s.voices, MAX_VOICES);
       strikeVoice(s.voices[idx]!, vel, s.roll.firedDetune[f]!, s.roll.firedPan[f]!, NOISE_SEED_BASE);
@@ -480,9 +522,16 @@ export function snaredrumStepStereo(
       v.active = false;
     }
   }
+  // `tone` re-scoped as a centered VOICE↔BED spectral tilt so it scales the
+  // DOMINANT component (not a masked fraction). At tone=0.5 both gains are 1 →
+  // baseline-identical; tone→1 lifts the tonal voice over the bright wire bed
+  // (fat/tonal), tone→0 lifts the bed (bright sizzle) (WEAK-1).
+  const t = clamp(p.tone, 0, 1);
+  const voiceG = 1 + 0.8 * (t - 0.5); // 0.6 .. 1.4
+  const bedG = 1 - 0.8 * (t - 0.5); //   1.4 .. 0.6
   const norm = 1 / Math.sqrt(Math.max(1, nact));
-  let mid = poolMid * norm;
-  const sidePool = poolSide * norm;
+  let mid = poolMid * norm * voiceG;
+  const sidePool = poolSide * norm * voiceG;
 
   // ── 4. shared wire bed: decorrelated HP'd noise, gain = wire·(bed + contact).
   // The rectifier only SCALES zero-mean noise → adds no output DC. ──
@@ -499,9 +548,19 @@ export function snaredrumStepStereo(
   s.bedEnv *= decayCoeff(clamp(p.wireDecay, 40, 700) * (1 - 0.6 * clamp(p.damp, 0, 1)), sr);
   if (s.bedEnv < FLUSH) s.bedEnv = 0;
 
-  // wire MID (mono-safe: added equally to both channels) + wire SIDE (× width).
-  mid += 0.5 * (wireL + wireR);
-  const side = sidePool + 0.5 * (wireL - wireR) * clamp(p.width, 0, 1);
+  // Slew the wire bed's stereo placement toward the current sticking hand
+  // (`spread`), ~5 ms so it reads per-stroke but stays click-free (WEAK-5).
+  const panCoef = 1 - Math.exp(-1 / Math.max(1, (BED_PAN_SLEW_MS / 1000) * sr));
+  s.bedPan += (s.bedPanTarget - s.bedPan) * panCoef;
+  if (Math.abs(s.bedPan) < FLUSH) s.bedPan = 0;
+
+  // wire MID (mono-safe: added equally to both channels), tilted by `tone`;
+  // wire SIDE = width-decorrelation + the spread-panned placement, also tilted
+  // by `tone`. The pool side keeps its own `voiceG` tilt (no double-count).
+  const wireMono = 0.5 * (wireL + wireR);
+  mid += wireMono * bedG;
+  const wireSide = (0.5 * (wireL - wireR) * clamp(p.width, 0, 1) + wireMono * s.bedPan) * bedG;
+  const side = sidePool + wireSide;
 
   // ── 5. shared bus: oversampled drive (gated behind drive>0) → DC block →
   // level → per-channel true-peak ceiling. ──
