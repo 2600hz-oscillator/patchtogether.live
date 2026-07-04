@@ -132,6 +132,11 @@ const OVERRIDES: Record<string, ModuleDriver> = {
   // it. Gate-only (accent/pitch/choke are optional CV). Silent with no strike,
   // so the sequencer gate train is required for the outputs-emit dim.
   kickdrum:     { outputPort: 'audio_l', gatePort: 'trigger_in' },
+  // SNARE DRUM — deep stereo snare voice + two-hand drumroll; trigger_in
+  // (edge:'trigger') strikes a single hit (gate_in runs the roll). Silent with
+  // no strike, so the sequencer gate train into trigger_in is required for the
+  // outputs-emit + behavioral dims. audio_l is the signature output.
+  snaredrum:    { outputPort: 'audio_l', gatePort: 'trigger_in' },
   // RIOTGIRLS drives the 4-voice DRUMMERGIRL + WT-VCO bank; trig1 fires voice 1.
   riotgirls:    { outputPort: 'outL',  gatePort: 'trig1' },
   // CHOWKICK — ChowKick (chowdsp) kick drum; gate_in rising edge fires the

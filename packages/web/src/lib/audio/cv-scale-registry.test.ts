@@ -215,6 +215,14 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // trigger edge inside the worklet (a latch input, not a knob modulator —
   // no paramTarget), so cvScale doesn't apply.
   kickdrum: ['pitch_cv', 'accent_in'],
+  // SNARE DRUM pitch_cv / accent_in / roll_speed_cv: all consumed DIRECTLY by
+  // the worklet as its own audio-rate node inputs, not AudioParams — pitch_cv is
+  // V/oct (tune × 2^pitch_cv per-sample; an additive AudioParam cvScale would
+  // NOT be 1V/oct), accent_in is a raw 0..1 value SAMPLED at each strike (a latch
+  // input, no paramTarget), and roll_speed_cv is a 1V/oct multiply on the roll
+  // rate consumed per-sample inside the roll engine. Same shape as
+  // kickdrum.pitch_cv / accent_in and dx7/chowkick.pitch_cv.
+  snaredrum: ['pitch_cv', 'accent_in', 'roll_speed_cv'],
   // CUBE pitch: V/oct input consumed directly by the worklet as its own
   // audio-rate node input (freq = C4·2^(pitch + tune/12 + fine/1200), applied
   // per-sample). No paramTarget — same V/oct-fallback shape as dx7.pitch_cv /
