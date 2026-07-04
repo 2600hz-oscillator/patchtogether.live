@@ -297,7 +297,11 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // batch 2) — deterministic beige-faceplate cards, captured on linux CI.
       // 75→76 for KICK DRUM (2026-07-02, deliberate darwin-first new module —
       // linux baseline pending the vrt-update.yml dispatch on the PR branch).
-    ).toBeLessThanOrEqual(76);
+      // 76→81 for COLOUR OF MAGIC (2026-07-03, deliberate darwin-first new
+      // module — 6 per-block composite VRT scenes com-pass/rgb/ydbdr/hsv/
+      // override/palette; linux baselines pending the vrt-update.yml dispatch
+      // on the PR branch).
+    ).toBeLessThanOrEqual(81);
   });
 });
 

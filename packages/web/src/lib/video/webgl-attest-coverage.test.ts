@@ -111,7 +111,14 @@ const FROM_TEST_ROOT = resolve(__dirname, '../../../../..');
 // +1 milkdrop-render-smoke.spec.ts (butterchurn visualizer) both join via the
 // `**/*-render-smoke.spec.ts` DRS glob — deterministic non-black/structured
 // pixel gates. 45 → 47.
-const EXPECTED_HEAVY_SPEC_COUNT = 47;
+// COLOUR OF MAGIC (#1016): +colourofmagic.spec.ts (8-FBO colorspace processor —
+// the bespoke spec readPixels()es all 8 output textures) and +picturebox-gif.spec.ts
+// (its ANIMATES test samples the output LUMA OVER TIME to prove animated frames
+// advance — a GPU-timing pixel read that #1010 mis-binned into the sharded matrix,
+// where it flaked under SwiftShader contention). Both INTENTIONALLY join the heavy
+// lane; e2e/webgl-heavy-globs.ts is in the hash basis, so this moved the WebGL hash
+// (re-attested). 47 → 49.
+const EXPECTED_HEAVY_SPEC_COUNT = 49;
 
 describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
   const basis = resolveWebglBasis();

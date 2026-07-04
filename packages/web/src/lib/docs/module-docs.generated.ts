@@ -891,6 +891,67 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "tintR": "Red component of the tint color (fader labeled R). 0 removes red entirely; 1 lets the brightest input pixels reach full red. Defaults to 1."
     }
   },
+  "colourofmagic": {
+    "explanation": "COLOUR OF MAGIC is a multi-colorspace video processor. It takes ONE video input and runs it through THREE parallel colorspace blocks at once — RGB, YDbDr (the SECAM broadcast luma+chroma space), and HSV-or-HSL — each block encoding the picture into that space, adjusting each component, then decoding back to RGB. Every block has, per channel: a BIAS knob (additive offset, identity at 0) that also sums any CV patched into its cv input; a MONO OVERRIDE input that REPLACES that channel's value with an incoming grayscale/video stream (bias still adds on top, so a patched key can still be offset); and an OVER/CLAMP toggle that decides what happens out of range — CLAMP clips to 0..1 (a legal, safe clip) while OVER wraps it around (fract(), the LZX chroma-wrap look where over-driven values fold back through the spectrum). Chroma components (YDbDr Db/Dr) ride on a 0.5 pedestal so a bias pushes the blue-yellow / red-cyan axes symmetrically; HUE always wraps regardless of the toggle. The third block switches between HSV and HSL with the HSL toggle. EIGHT outputs run in parallel: pass (the untouched source), rgb / ydbdr / hsvhsl (each block's colorized picture), and r / g / b / luma (mono taps of the ADJUSTED RGB block — the individual channels and their Rec.601 luma). The RGB block additionally has a palette REPLACE mode: three colour swatches remap the adjusted R/G/B channels to chosen output colours (a duotone/tritone recolour) before the rgb output — at the default pure-red/green/blue picks it is a passthrough, so turning REPLACE on changes nothing until you pick new colours. With no input patched all outputs are opaque black. Patch a source into IN, choose which output to preview on the card, and use the block knobs / channel overrides / palette to recolour, split, or key the picture.",
+    "inputs": {
+      "hsv_h_cv": "CV that modulates the HSV/HSL block's hue bias (linear -180..180 degrees; hue always wraps).",
+      "hsv_h_in": "Mono override for HUE (0..1, wraps): replaces the hue angle before the degree bias.",
+      "hsv_s_cv": "CV that modulates the HSV/HSL block's saturation bias (linear -1..1 offset).",
+      "hsv_s_in": "Mono override for SATURATION (0..1): replaces saturation pre-offset.",
+      "hsv_v_cv": "CV that modulates the HSV/HSL block's value/lightness bias (linear -1..1 offset).",
+      "hsv_v_in": "Mono override for VALUE (HSV) / LIGHTNESS (HSL), 0..1: replaces it pre-offset.",
+      "in": "The source picture. All three blocks read it in parallel. With nothing patched here every output is opaque black.",
+      "rgb_b_cv": "CV that modulates the RGB block's b bias (linear -1..1 offset on blue).",
+      "rgb_b_in": "Mono override for the RGB blue channel (replaces blue pre-offset). Accepts keys/mono-video/video/image.",
+      "rgb_g_cv": "CV that modulates the RGB block's g bias (linear -1..1 offset on green).",
+      "rgb_g_in": "Mono override for the RGB green channel (replaces green pre-offset). Accepts keys/mono-video/video/image.",
+      "rgb_r_cv": "CV that modulates the RGB block's r bias (linear -1..1 additive offset on the red channel).",
+      "rgb_r_in": "Mono override for the RGB red channel: when patched, its value REPLACES red before the bias/CV offset and OVER/CLAMP. Accepts a keys/mono-video stream (a full video/image lands legally and is read as its red).",
+      "ydb_db_cv": "CV that modulates the YDbDr Db (blue-yellow chroma) bias (linear -1..1 in packed space).",
+      "ydb_db_in": "Mono override for the YDbDr Db chroma channel, packed 0..1 (0.5 = neutral).",
+      "ydb_dr_cv": "CV that modulates the YDbDr Dr (red-cyan chroma) bias (linear -1..1 in packed space).",
+      "ydb_dr_in": "Mono override for the YDbDr Dr chroma channel, packed 0..1 (0.5 = neutral).",
+      "ydb_y_cv": "CV that modulates the YDbDr block's y (luma) bias (linear -1..1 offset in the packed 0..1 space).",
+      "ydb_y_in": "Mono override for the YDbDr luma (Y) channel, packed 0..1 (replaces Y pre-offset)."
+    },
+    "outputs": {
+      "b": "Mono-video: the B channel of the ADJUSTED RGB block as grayscale.",
+      "g": "Mono-video: the G channel of the ADJUSTED RGB block as grayscale.",
+      "hsvhsl": "The HSV or HSL block's colorized output (per the HSL toggle): adjusted hue/sat/value(lightness) decoded to RGB.",
+      "luma": "Mono-video: Rec.601 luma (0.299R+0.587G+0.114B) of the ADJUSTED RGB block, grayscale.",
+      "pass": "The source video, UNMODIFIED — independent of all three blocks. Opaque black when IN is unpatched.",
+      "r": "Mono-video: the R channel of the ADJUSTED RGB block as grayscale (before the palette remap).",
+      "rgb": "The RGB block's colorized output: per-channel adjusted red/green/blue, then the optional palette REPLACE remap.",
+      "ydbdr": "The YDbDr block's colorized output: adjusted Y/Db/Dr decoded back to RGB (the SECAM look)."
+    },
+    "controls": {
+      "bias_b": "b: additive offset on the RGB blue channel, -1 to 1 (default 0). Sums with rgb_b_cv.",
+      "bias_db": "db: additive offset on the YDbDr Db (blue-yellow) chroma, -1 to 1 (default 0), around the 0.5 pedestal. Sums with ydb_db_cv.",
+      "bias_dr": "dr: additive offset on the YDbDr Dr (red-cyan) chroma, -1 to 1 (default 0), around the 0.5 pedestal. Sums with ydb_dr_cv.",
+      "bias_g": "g: additive offset on the RGB green channel, -1 to 1 (default 0). Sums with rgb_g_cv.",
+      "bias_h": "h: hue rotation for the HSV/HSL block, -180 to 180 degrees (default 0). Hue always wraps. Sums with hsv_h_cv.",
+      "bias_r": "r: additive offset on the RGB red channel, -1 to 1 (default 0 = no change). Sums with the rgb_r_cv input.",
+      "bias_s": "s: additive offset on saturation, -1 to 1 (default 0). Sums with hsv_s_cv.",
+      "bias_v": "v: additive offset on value (HSV) or lightness (HSL), -1 to 1 (default 0). Sums with hsv_v_cv.",
+      "bias_y": "y: additive offset on the YDbDr luma channel (packed 0..1 space), -1 to 1 (default 0). Sums with ydb_y_cv.",
+      "freeze": "freeze: hidden determinism toggle — at 1 the renderer holds its last rendered frame (no redraw) for stable VRT capture. Default 0; no card control.",
+      "mode_hsl": "hsl: selects the third block's colorspace — HSV (0, default) or HSL (1). Affects the hsvhsl output + the v channel's meaning (value vs lightness).",
+      "over_b": "b wrap: overflow mode for the RGB blue channel (CLAMP default / WRAP).",
+      "over_db": "db wrap: overflow mode for the YDbDr Db chroma (CLAMP default / WRAP).",
+      "over_dr": "dr wrap: overflow mode for the YDbDr Dr chroma (CLAMP default / WRAP).",
+      "over_g": "g wrap: overflow mode for the RGB green channel (CLAMP default / WRAP).",
+      "over_h": "h wrap: ADVISORY only — hue ALWAYS wraps regardless of this toggle. Declared for UI symmetry with the other channels; disabled on the card.",
+      "over_r": "r wrap: overflow for the RGB red channel — CLAMP (0, default) clips out-of-range to 0..1; WRAP (1) folds it around via fract().",
+      "over_s": "s wrap: overflow mode for saturation (CLAMP default / WRAP).",
+      "over_v": "v wrap: overflow mode for value/lightness (CLAMP default / WRAP).",
+      "over_y": "y wrap: overflow mode for the YDbDr luma channel (CLAMP default / WRAP).",
+      "pal_b": "pal b: the palette colour the RGB blue channel maps to under REPLACE (packed 0xRRGGBB, default pure blue). Set via the card's colour picker.",
+      "pal_g": "pal g: the palette colour the RGB green channel maps to under REPLACE (packed 0xRRGGBB, default pure green). Set via the card's colour picker.",
+      "pal_r": "pal r: the palette colour the RGB red channel maps to under REPLACE (packed 0xRRGGBB, default pure red). Set via the card's colour picker.",
+      "preview": "preview: which of the 8 outputs the on-card preview canvas shows (discrete 0..7: 0 pass, 1 rgb, 2 ydbdr, 3 hsvhsl, 4 r, 5 g, 6 b, 7 luma). Default 1 (rgb). Does not affect the output ports.",
+      "replace": "replace: turns the RGB palette REPLACE mode on (1) or off (0, default). When on, the adjusted R/G/B channels are recomposed from the three picked palette colours (duotone/tritone). At the default pure-R/G/B picks this is a passthrough."
+    }
+  },
   "cube": {
     "explanation": "A 3D wavetable-terrain oscillator. CUBE stacks THREE e352-style wavetables — FLOOR, WALL, and CEILING (each chosen from a factory table, a baked preset, or a loaded .wav) — into a solid 3D scalar field, then plays the heightmap of an arbitrary flat plane sliced through that field as its waveform. You aim the slicing plane with one height knob (Y) and three rotation knobs (Rot X / Y / Z); as the plane tilts and rises it carves a different surface contour, so sweeping those knobs (or their CV inputs) morphs the timbre continuously. MORPH cross-fades the floor↔ceiling layers, CONNECT (with CONNECT STRENGTH) bulges the field's interior, CRUSH bit-reduces the read-out waveform while SPACE CRUSH voxelizes and SPACE DIFFUSE warps the 3D lookup coordinates, and FOLD is a west-coast wavefolder on the output — together they sculpt the slice from clean to mangled. It is a pitched V/oct oscillator with a stereo ±5% SPREAD (the L and R taps read slightly offset planes for width) and an internal per-voice A/D/S/R envelope that, riding a BASE volume floor, shapes amplitude once a note arrives on the poly bus or the TRIG gate; with nothing patched there it free-runs as a continuous drone. A live WebGL 3D render of the cube, the cut plane, the slice cross-section, and the output waveform is shown on the card and can be sent out the VIDEO port; the screen can be switched off to save GPU when you only want sound.",
     "inputs": {
