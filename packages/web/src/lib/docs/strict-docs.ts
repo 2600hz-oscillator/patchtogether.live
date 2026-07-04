@@ -333,6 +333,9 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'peakstate',
   'textmarquee',
   'ruttetra',
+  // COLOUR OF MAGIC (2026-07-03): multi-colorspace processor (RGB / YDbDr /
+  // HSV·HSL + palette REPLACE + per-channel mono overrides).
+  'colourofmagic',
   // Video batch 6 (2026-06-26): plasma/ramp/spirograph generators + fractals + scoreboard.
   'acidwarp',
   'shapedramps',

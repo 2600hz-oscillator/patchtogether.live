@@ -164,6 +164,24 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // non-black/structured render: freeze + fixed delta + synthetic audio) + the
   // contract-lock / docs-lint / modules-card-map unit gates.
   milkdrop:       'self-animating multi-pass visualizer (animated-video variance class, cf. bentbox/b3ntb0x): the out luma-variance jitter floor swamps any per-input delta; covered by milkdrop-render-smoke.spec.ts + unit gates',
+  // COLOUR OF MAGIC — a PARALLEL multi-block colorspace processor: three blocks
+  // (RGB / YDbDr / HSV·HSL) run independently on the source and feed SEPARATE
+  // outputs (pass / rgb / ydbdr / hsvhsl + r/g/b/luma mono taps). This sweep
+  // observes only the module's FIRST video output — `pass`, which is the
+  // UNTOUCHED source passthrough (outMode 0), structurally INDEPENDENT of all 18
+  // block CV/override inputs (only `in` feeds it). So 18 of 19 inputs can never
+  // perturb the observed output, and the coarse video-variance fingerprint the
+  // sweep reads off `pass` is dominated by the animated ACIDWARP context's own
+  // per-frame jitter (a different input reads Δ=0 each run — hsv_h_cv, hsv_v_cv,
+  // … — the animated-video variance class, cf. milkdrop/backdraft). No single
+  // observed output can respond to all inputs by design. Whole-module exempt.
+  // Real PER-BLOCK, per-input coverage: colourofmagic-colorspace.test.ts (every
+  // colorspace + adj/over-clamp + hue-rotation + palette path, known values) +
+  // colourofmagic.spec.ts (real LINES→CHROMA→module chain: all 8 outs emit,
+  // bias_r reddens the rgb out, a Db bias moves the ydbdr blue-yellow axis, a
+  // mono override CLOBBERS its channel, OVER vs CLAMP differ) + the docs/
+  // contract-lock/modules-card-map unit gates.
+  colourofmagic:  'parallel multi-block colorspace processor — the sweep observes only the first video output `pass` (untouched source passthrough, independent of all 18 block CV/override inputs; each block feeds a SEPARATE output), and its video-variance fingerprint is dominated by the animated ACIDWARP context jitter (a random input reads Δ=0 each run, animated-video variance class cf. milkdrop); real per-block per-input coverage in colourofmagic-colorspace.test.ts + colourofmagic.spec.ts (all 8 outs emit, recolorization, mono-override channel clobber, over/clamp)',
   // SPIROGRAPHS — a line-GENERATOR that draws up to 3 hypotrochoid curves. Its
   // 30 geometry CV inputs (s1/s2/s3 × R / r / pen / inside / rotation / scale /
   // X / Y / thickness / chroma) RESHAPE the drawn curve, but reshaping a thin

@@ -182,6 +182,15 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // weight-model + composite correctness is covered by the unit suite
   // (quadralogical.test.ts) + the dedicated e2e (quadralogical.spec.ts).
   quadralogical: [{ selector: 'canvas' }],
+  // COLOUR OF MAGIC — multi-colorspace processor. The solo-spawn card carries a
+  // live on-card preview canvas (blitOutputToDrawingBuffer off the engine clock,
+  // black when nothing is patched), so the standard solo VRT is non-deterministic;
+  // mask it and gate on the deterministic chrome (preview pill row + the three
+  // RGB/YDbDr/HSV block columns of knobs + OVER/CLAMP pills + REPLACE/HSL toggles
+  // + palette swatches + handle rows). The deterministic per-block composite VRT
+  // (recolorization / mono-override clobber / palette remap) lives in
+  // vrt-colourofmagic.spec.ts.
+  colourofmagic: [{ selector: 'canvas' }],
   // ANALOG VCO — now carries a live single-cycle waveform scope at the top of
   // the card (off an AnalyserNode on the morph output). The trace is animated
   // + device-/timing-dependent, so mask the canvas; the deterministic chrome
@@ -607,6 +616,16 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // composite + all 8 blend2 branches + normalling) + e2e/tests/quadralogical
   // .spec.ts (corner dominance + per-edge distinctness + independence + freeze).
   quadralogical: 'SOLO-spawn VRT exempt (live MIX preview canvas with nothing patched). The deterministic per-edge composite VRT is vrt-quadralogical.spec.ts (8 effect baselines, darwin captured; linux via EXEMPT_BASELINE_PAIRS). Unit (weight model + edge composite + all 8 blends) + e2e (corner dominance + per-edge distinctness/independence) provide coverage.',
+  // COLOUR OF MAGIC — multi-colorspace processor. SOLO-spawn VRT exempt (live
+  // preview canvas; nothing patched renders black). The deterministic per-block
+  // composite VRT is vrt-colourofmagic.spec.ts (6 scenes: pass / rgb / ydbdr /
+  // hsv recolorization + mono-override channel clobber + palette CMY remap,
+  // clock-pinned structured source, darwin captured; linux via
+  // EXEMPT_BASELINE_PAIRS). Unit (colourofmagic-colorspace.test.ts — every
+  // colorspace + adj/over-clamp + hue-rotation + palette path) + e2e
+  // (colourofmagic.spec.ts — all 8 outs emit, recolorization, mono-override
+  // clobber, over/clamp) provide coverage.
+  colourofmagic: 'SOLO-spawn VRT exempt (live preview canvas; nothing patched is black). The deterministic per-block composite VRT is vrt-colourofmagic.spec.ts (6 scenes: pass/rgb/ydbdr/hsv recolorization + mono-override channel clobber + palette CMY remap, darwin captured; linux via EXEMPT_BASELINE_PAIRS). Unit (colourofmagic-colorspace.test.ts) + e2e (colourofmagic.spec.ts) provide coverage.',
   // MAPPY — multi-surface manual projection mapper (v1). The SOLO-spawn card
   // carries a LIVE composite preview canvas + an SVG corner-drag overlay whose
   // handles only appear for CONNECTED inputs, so a SOLO (nothing-patched) VRT
@@ -1248,6 +1267,18 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/edge-luma',
   'linux/edge-diff',
   'linux/edge-iris',
+  // COLOUR OF MAGIC per-block composite VRT (vrt-colourofmagic.spec.ts): darwin
+  // baselines captured locally (clock-pinned structured source → frozen frame).
+  // WebGL colorspace decode math differs sub-thresholdly across GPU drivers, so
+  // the linux baselines are pending a `vrt-update.yml` workflow_dispatch on
+  // linux CI; the darwin captures are the regression gate here. Functional
+  // coverage = colourofmagic-colorspace.test.ts + e2e/tests/colourofmagic.spec.ts.
+  'linux/com-pass',
+  'linux/com-rgb',
+  'linux/com-ydbdr',
+  'linux/com-hsv',
+  'linux/com-override',
+  'linux/com-palette',
   // OUTPUT aspect 16:9 preview card (vrt-aspect-16x9.spec.ts): darwin baseline
   // captured locally; linux pending a `vrt-update.yml` workflow_dispatch on
   // linux CI. WebGL blit/AA differs sub-thresholdly across GPU drivers. The
