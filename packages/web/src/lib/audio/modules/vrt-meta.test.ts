@@ -301,7 +301,10 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // module — 6 per-block composite VRT scenes com-pass/rgb/ydbdr/hsv/
       // override/palette; linux baselines pending the vrt-update.yml dispatch
       // on the PR branch).
-    ).toBeLessThanOrEqual(81);
+      // 81→82 for SNARE DRUM (2026-07-04, deliberate darwin-first new module —
+      // the wide 3u banded snare-voice card; linux baseline pending the
+      // vrt-update.yml dispatch on the PR branch).
+    ).toBeLessThanOrEqual(82);
   });
 });
 

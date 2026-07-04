@@ -1322,4 +1322,18 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // e2e/tests/kickdrum.spec.ts (SEQUENCER → trigger_in → AUDIOOUT, audible
   // RMS + sub-dominant spectrum).
   'linux/kickdrum',
+  // SNARE DRUM (2026-07-04): darwin baseline captured locally (the wide 3u
+  // banded snare-voice card is deterministic chrome — HEAD·BODY·WIRE /
+  // CRACK·ROLL·DRIVE / STEREO·OUT fader bands + the HARD toggle over the
+  // PatchPanel TRIG/ROLL/SPD/ACC/V-OCT/CHOKE → OUT L/R drill-down, NO
+  // canvas/animation); linux baseline pending a `vrt-update.yml`
+  // workflow_dispatch on the PR branch (the darwin-first new-module pattern,
+  // same as KICK DRUM above). Functional coverage: the pure cores
+  // packages/dsp/src/lib/snaredrum-dsp.test.ts + snare-roll-dsp.test.ts +
+  // snaredrum.test.ts (def contract + worklet roll/choke/accent/stereo) + the
+  // ART audio profile (art/scenarios/snaredrum/profile.test.ts) + the
+  // per-module-per-port sweep + the bespoke real-source-chain
+  // e2e/tests/snaredrum-roll.spec.ts (SEQUENCER → trigger_in single hit AND
+  // held gate_in → sustained two-hand roll, audible stereo RMS on both L/R).
+  'linux/snaredrum',
 ]);

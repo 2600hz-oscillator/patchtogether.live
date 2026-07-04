@@ -2834,6 +2834,38 @@ slewSwitch param slew2 0.001..5 log default=0.5 unit=s
 slewSwitch param slew3 0.001..5 log default=0.5 unit=s
 slewSwitch param slew4 0.001..5 log default=0.5 unit=s
 slewSwitch param xfadeTime 0.001..2 log default=0.05 unit=s
+snaredrum meta domain=audio schema=1
+snaredrum in accent_in cv
+snaredrum in choke_in gate edge=gate
+snaredrum in gate_in gate edge=gate
+snaredrum in pitch_cv cv
+snaredrum in roll_speed_cv cv
+snaredrum in trigger_in gate edge=trigger
+snaredrum out audio_l audio
+snaredrum out audio_r audio
+snaredrum param body_decay 20..300 log default=110 unit=ms
+snaredrum param bounce 0..1 linear default=0.35
+snaredrum param ceiling 0..1 linear default=0.5
+snaredrum param crack 0..1 linear default=0.4
+snaredrum param crack_tone 800..7000 log default=3200 unit=Hz
+snaredrum param damp 0..1 linear default=0.2
+snaredrum param damping 0..1 linear default=0.4
+snaredrum param drive 0..1 linear default=0.2
+snaredrum param hard 0..1 discrete default=0
+snaredrum param head_decay 30..600 log default=180 unit=ms
+snaredrum param humanize 0..1 linear default=0.2
+snaredrum param level -24..12 linear default=0 unit=dB
+snaredrum param pitch_amt 0..12 linear default=3 unit=st
+snaredrum param pitch_time 3..80 log default=18 unit=ms
+snaredrum param roll_speed 0..1 linear default=0.5
+snaredrum param spread 0..1 linear default=0.5
+snaredrum param tone 0..1 linear default=0.5
+snaredrum param tune 90..400 log default=180 unit=Hz
+snaredrum param width 0..1 linear default=0.4
+snaredrum param wire 0..1 linear default=0.7
+snaredrum param wire_decay 40..700 log default=260 unit=ms
+snaredrum param wire_tone 1500..9000 log default=4500 unit=Hz
+snaredrum stereo audio_l+audio_r
 snes9x meta domain=video schema=1 maxInstances=1
 snes9x in a gate param=cv_a
 snes9x in b gate param=cv_b
