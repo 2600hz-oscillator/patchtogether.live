@@ -49,7 +49,7 @@ const EXPECTED_NODE_TYPES = [
   'noise', 'numpadPlus', 'onetonine', 'painter', 'peaks', 'peakstate', 'peertube', 'picturebox', 'polyseqz', 'pong',
   'polarizer', 'qbert', 'qbrt', 'rasterize', 'reshaper', 'resofilter', 'reverb', 'ringback', 'rings',
   'riotgirls', 'ruttetra', 'sampleHold', 'samsloop', 'scope', 'score', 'scoreboard',
-  'scaler', 'sequencer', 'shapedramps', 'shapegen', 'shapes', 'shimmershine', 'sidecar', 'spectrograph',
+  'scaler', 'sequencer', 'shapedramps', 'shapegen', 'shapes', 'shimmershine', 'sidecar', 'sourcery', 'spectrograph',
   'skifree', 'slewSwitch', 'snes9x', 'stages', 'stereovca', 'sticky',
   'swolevco', 'symbiote', 'synesthesia', 'tempest', 'tides2', 'timelorde', 'treeohvox', 'tvLibrarian',
   'launchpadControlLeft',
@@ -57,6 +57,11 @@ const EXPECTED_NODE_TYPES = [
   'videobox', 'videovarispeed', 'warps', 'warrenspectrum', 'wavecel', 'wavesculpt',
   'twotracks', 'wavetableVco', 'writeseq', 'textmarquee', 'tiler', 'spirographs',
   'milkdrop',
+
+
+
+
+
 
 
 
