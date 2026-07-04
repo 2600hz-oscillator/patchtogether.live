@@ -141,6 +141,21 @@ export interface VideoFrameContext {
    * go dark.
    */
   isOutputConnected?(thisNodeId: string): boolean;
+  /**
+   * Optional: the SET of this node's output PORT ids that drive at least one
+   * downstream consumer (intra-domain video edges + cross-domain video→texture
+   * bridges). The per-PORT refinement of `isOutputConnected`, for MULTI-OUTPUT
+   * modules that want to skip rendering the FBOs nobody reads.
+   *
+   * COLOUR OF MAGIC has 22 output FBOs; rendering all of them every frame is a
+   * ~2.5× SwiftShader cost. It renders only the ports in this set PLUS the one
+   * it previews, keeping steady-state cost near a single-output module's.
+   *
+   * Modules MUST treat an ABSENT helper (older engine builds / test mocks) as
+   * "connectivity unknown → render everything", so they never wrongly go dark.
+   * The returned set is engine-owned + read-only — callers must not mutate it.
+   */
+  connectedOutputPorts?(thisNodeId: string): ReadonlySet<string>;
 }
 
 export interface VideoNodeHandle {
@@ -994,6 +1009,7 @@ export class VideoEngine implements DomainEngine {
       getMouse: (thisNodeId) => this.mouseState.get(thisNodeId) ?? [0, 0, 0, 0],
       getInputTexture: (thisNodeId, inputId) => this.lookupInput(thisNodeId, inputId),
       isOutputConnected: (thisNodeId) => this.isOutputConnected(thisNodeId),
+      connectedOutputPorts: (thisNodeId) => this.connectedOutputPorts(thisNodeId),
     };
     for (const id of this.topoOrder) {
       const handle = this.nodes.get(id);
@@ -1471,6 +1487,24 @@ void main() {
       if (b.sourceNodeId === thisNodeId) return true;
     }
     return false;
+  }
+
+  /**
+   * The set of `thisNodeId`'s output PORT ids that drive ≥1 downstream consumer
+   * (per-port refinement of isOutputConnected — see VideoFrameContext). Cheap
+   * O(edges + bridges); called once per frame by multi-output modules that skip
+   * unrendered FBOs (COLOUR OF MAGIC). A fresh set each call so the caller can
+   * never corrupt engine state.
+   */
+  private connectedOutputPorts(thisNodeId: string): ReadonlySet<string> {
+    const ports = new Set<string>();
+    for (const e of this.edges.values()) {
+      if (e.source.nodeId === thisNodeId) ports.add(e.source.portId);
+    }
+    for (const b of this.videoTextureBridges.values()) {
+      if (b.sourceNodeId === thisNodeId) ports.add(b.sourcePortId);
+    }
+    return ports;
   }
 
   // -------- Shared GL helpers exposed to module factories --------

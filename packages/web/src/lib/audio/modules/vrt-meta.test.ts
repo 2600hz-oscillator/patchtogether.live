@@ -301,7 +301,11 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // module — 6 per-block composite VRT scenes com-pass/rgb/ydbdr/hsv/
       // override/palette; linux baselines pending the vrt-update.yml dispatch
       // on the PR branch).
-    ).toBeLessThanOrEqual(81);
+      // 81→84 for the COLOUR OF MAGIC colorspace expansion (2026-07-04,
+      // deliberate darwin-first — +3 new scenes com-yiq/com-ycc/com-yiq-i-tap
+      // for the YIQ + YCbCr studio-swing blocks + a mono tap; linux baselines
+      // pending the vrt-update.yml dispatch on the PR branch).
+    ).toBeLessThanOrEqual(84);
   });
 });
 

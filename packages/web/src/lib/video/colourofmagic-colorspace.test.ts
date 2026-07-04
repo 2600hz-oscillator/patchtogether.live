@@ -11,6 +11,12 @@ import {
   ydbdr2rgb,
   packYdbdr,
   unpackYdbdr,
+  rgb2yiq,
+  yiq2rgb,
+  packYiq,
+  unpackYiq,
+  rgb2yccSs,
+  yccSs2rgb,
   rgb2hsv,
   hsv2rgb,
   rgb2hsl,
@@ -23,7 +29,13 @@ import {
   applyPalette,
   rgbBlock,
   ydbdrBlock,
+  ydbdrChannels,
   hsvBlock,
+  hsvChannels,
+  yiqBlock,
+  yiqChannels,
+  yccSsBlock,
+  yccSsChannels,
   outputFor,
   type Vec3,
   type BlockParams,
@@ -52,15 +64,21 @@ function identityParams(over: Partial<BlockParams> = {}): BlockParams {
     biasR: 0, biasG: 0, biasB: 0,
     biasY: 0, biasDb: 0, biasDr: 0,
     biasH: 0, biasS: 0, biasV: 0,
+    biasYiqY: 0, biasYiqI: 0, biasYiqQ: 0,
+    biasYccY: 0, biasYccCb: 0, biasYccCr: 0,
     overR: false, overG: false, overB: false,
     overY: false, overDb: false, overDr: false,
     overS: false, overV: false,
+    overYiqY: false, overYiqI: false, overYiqQ: false,
+    overYccY: false, overYccCb: false, overYccCr: false,
     hsl: false,
     replace: false,
     palR: [1, 0, 0], palG: [0, 1, 0], palB: [0, 0, 1],
     monoR: null, monoG: null, monoB: null,
     monoY: null, monoDb: null, monoDr: null,
     monoH: null, monoS: null, monoV: null,
+    monoYiqY: null, monoYiqI: null, monoYiqQ: null,
+    monoYccY: null, monoYccCb: null, monoYccCr: null,
     ...over,
   };
 }
@@ -208,6 +226,122 @@ describe('COLOUR OF MAGIC — palette REPLACE', () => {
     p.monoR = 1; // force R channel to 1 via override, G/B = 0 for a black src
     const out = rgbBlock([0, 0, 0], p);
     nearVec(out, [0, 1, 1]); // overridden R=1 → cyan
+  });
+});
+
+describe('COLOUR OF MAGIC — YIQ (NTSC composite)', () => {
+  it('white → Y=1, I=Q=0 (packed 1, 0.5, 0.5)', () => {
+    nearVec(rgb2yiq([1, 1, 1]), [1, 0, 0]);
+    nearVec(packYiq(rgb2yiq([1, 1, 1])), [1, 0.5, 0.5]);
+  });
+  it('pure red → I ≈ +0.5959 (flesh/warmth axis extreme), packs ≈ 1.0', () => {
+    const [y, i, q] = rgb2yiq([1, 0, 0]);
+    near(y, 0.299);
+    near(i, 0.5959);
+    near(q, 0.2115);
+    near(packYiq([y, i, q])[1], 1.0, 2e-4); // I fills 0..1: 0.5959*0.8391+0.5
+  });
+  it('grey → I=Q neutral (0.5 pedestal)', () => {
+    nearVec(packYiq(rgb2yiq([0.5, 0.5, 0.5])), [0.5, 0.5, 0.5], 1e-6);
+  });
+  it('pack/unpack is an inverse within epsilon (truncated reciprocals)', () => {
+    nearVec(unpackYiq(packYiq([0.5, 0.4, -0.3])), [0.5, 0.4, -0.3], 2e-4);
+  });
+  it('yiq2rgb inverts rgb2yiq across the cube (no packing)', () => {
+    for (const c of CUBE) nearVec(yiq2rgb(rgb2yiq(c)), c, 1e-3);
+  });
+  it('full RGB→YIQ→pack→unpack→RGB round-trips across the cube (tol 1e-3)', () => {
+    // Research verified worst 2.0e-4; the tolerance is the spec-mandated 1e-3.
+    for (const c of CUBE) nearVec(yiqBlock(c, identityParams()), c, 1e-3);
+  });
+  it('I bias warms the picture (moves the orange↔cyan axis; grey no longer neutral)', () => {
+    const p = identityParams();
+    const grey: Vec3 = [0.5, 0.5, 0.5];
+    nearVec(yiqBlock(grey, p), grey, 1e-3); // identity
+    p.biasYiqI = 0.2; // push toward orange/warm
+    const shifted = yiqBlock(grey, p);
+    expect(Math.abs(shifted[0] - shifted[2]), 'R and B diverge on the warmth axis').toBeGreaterThan(0.05);
+  });
+});
+
+describe('COLOUR OF MAGIC — YCbCr studio-swing (broadcast-legal)', () => {
+  it('white luma ≈ 0.922 (235/255 headroom cap), chroma neutral 0.502', () => {
+    const [y, cb, cr] = rgb2yccSs([1, 1, 1]);
+    near(y, 235 / 255, 1e-4);
+    near(cb, 128 / 255, 1e-4);
+    near(cr, 128 / 255, 1e-4);
+  });
+  it('black luma ≈ 0.063 (16/255 footroom floor)', () => {
+    near(rgb2yccSs([0, 0, 0])[0], 16 / 255, 1e-4);
+  });
+  it('neutral chroma pedestal is 128/255 = 0.502 (NOT 0.5)', () => {
+    const [, cb, cr] = rgb2yccSs([0.5, 0.5, 0.5]);
+    near(cb, 0.5019607, 1e-6);
+    near(cr, 0.5019607, 1e-6);
+  });
+  it('yccSs2rgb inverts rgb2yccSs across the cube (tol 1e-4, verified 5.8e-7)', () => {
+    for (const c of CUBE) nearVec(yccSs2rgb(rgb2yccSs(c)), c, 1e-4);
+  });
+  it('full studio-swing block round-trips across the cube (tol 1e-4)', () => {
+    for (const c of CUBE) nearVec(yccSsBlock(c, identityParams()), c, 1e-4);
+  });
+  it('the ~1.16× legal-range CRUSH: a luma bias is AMPLIFIED on decode', () => {
+    const p = identityParams();
+    const grey: Vec3 = [0.5, 0.5, 0.5];
+    const base = yccSsBlock(grey, p);
+    p.biasYccY = 0.1; // +0.1 in the compressed legal space
+    const crushed = yccSsBlock(grey, p);
+    // decode expands ×255/219 ≈ 1.164, so the luma lifts by MORE than the bias.
+    const lift = crushed[0] - base[0];
+    expect(lift, 'studio→full expand amplifies the bias (>0.1)').toBeGreaterThan(0.11);
+    near(lift, 0.1 * (255 / 219), 1e-3);
+  });
+});
+
+describe('COLOUR OF MAGIC — mono channel taps (adjusted packed channel)', () => {
+  const p = identityParams();
+  it('YDbDr taps: Y of white = 1; Db/Dr of white = 0.5 (pedestal)', () => {
+    nearVec(outputFor(8, [1, 1, 1], p), [1, 1, 1], 1e-4);
+    nearVec(outputFor(9, [1, 1, 1], p), [0.5, 0.5, 0.5], 1e-4);
+    nearVec(outputFor(10, [1, 1, 1], p), [0.5, 0.5, 0.5], 1e-4);
+  });
+  it('HSV taps: H of pure red ≈ 0; S of grey ≈ 0; V of grey = level', () => {
+    nearVec(outputFor(11, [1, 0, 0], p), [0, 0, 0], 1e-4); // hue 0 (red also ≡1 at the wrap seam)
+    near(outputFor(12, [0.5, 0.5, 0.5], p)[0], 0, 1e-4); // saturation of grey
+    near(outputFor(13, [0.5, 0.5, 0.5], p)[0], 0.5, 1e-4); // value = level
+  });
+  it('YIQ taps: Y of white = 1; I of pure red ≈ 1.0; I/Q of grey = 0.5', () => {
+    near(outputFor(15, [1, 1, 1], p)[0], 1, 1e-4);
+    near(outputFor(16, [1, 0, 0], p)[0], 1, 2e-4); // I flesh-axis extreme
+    near(outputFor(16, [0.5, 0.5, 0.5], p)[0], 0.5, 1e-6);
+    near(outputFor(17, [0.5, 0.5, 0.5], p)[0], 0.5, 1e-6);
+  });
+  it('YCC taps: Y of white ≈ 0.922; Cb/Cr of grey = 0.502', () => {
+    near(outputFor(19, [1, 1, 1], p)[0], 235 / 255, 1e-4);
+    near(outputFor(20, [0.5, 0.5, 0.5], p)[0], 128 / 255, 1e-4);
+    near(outputFor(21, [0.5, 0.5, 0.5], p)[0], 128 / 255, 1e-4);
+  });
+  it('every tap is grayscale (R=G=B)', () => {
+    const c: Vec3 = [0.3, 0.6, 0.8];
+    for (const mode of [8, 9, 10, 11, 12, 13, 15, 16, 17, 19, 20, 21]) {
+      const [r, g, b] = outputFor(mode, c, p);
+      near(r, g, 1e-9);
+      near(g, b, 1e-9);
+    }
+  });
+  it('a mono override CLOBBERS the tapped channel (bias adds after)', () => {
+    const clob = identityParams({ monoYiqI: 0.75 });
+    near(outputFor(16, [0.5, 0.5, 0.5], clob)[0], 0.75, 1e-9); // I tap driven by the override
+  });
+});
+
+describe('COLOUR OF MAGIC — new-block colour outs (identity → source)', () => {
+  it('mode 14 yiq / mode 18 ycc are ≈ source at identity (round-trip)', () => {
+    const p = identityParams();
+    for (const c of CUBE) {
+      nearVec(outputFor(14, c, p), c, 1e-3);
+      nearVec(outputFor(18, c, p), c, 1e-4);
+    }
   });
 });
 

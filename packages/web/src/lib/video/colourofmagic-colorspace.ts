@@ -58,6 +58,75 @@ export function unpackYdbdr(n: Vec3): Vec3 {
   return [n[0], (n[1] - 0.5) * 2.66667, (n[2] - 0.5) * 2.66667];
 }
 
+// ─────────────────────────── YIQ (NTSC composite) ───────────────────────────
+//
+// The 1953 FCC / Rec.601 YIQ matrix. Its I/Q axes are the YDbDr B−Y / R−Y plane
+// ROTATED ~33° onto the orange↔cyan flesh-tone line (I) and green↔magenta (Q) —
+// a genuinely new chroma axis, not a rescale of the SECAM block. Constants copied
+// VERBATIM into the GLSL rgb2yiq / yiq2rgb (never re-derived). I/Q ride a 0.5
+// pedestal; pack scales fill 0..1 (K_I = 0.5/0.5959 = 0.8391, K_Q = 0.5/0.5227 =
+// 0.9566), unpack uses the reciprocals so pack∘unpack == identity within epsilon
+// (the same truncated-reciprocal idiom YDbDr uses with 0.375 / 2.66667).
+
+export function rgb2yiq(c: Vec3): Vec3 {
+  return [
+    c[0] * 0.299 + c[1] * 0.587 + c[2] * 0.114, // Y  Rec.601 luma
+    c[0] * 0.5959 + c[1] * -0.2746 + c[2] * -0.3213, // I  orange<->cyan (flesh)
+    c[0] * 0.2115 + c[1] * -0.5227 + c[2] * 0.3112, // Q  green<->magenta
+  ];
+}
+
+/** y = (Y, I, Q). Exact FCC inverse. */
+export function yiq2rgb(y: Vec3): Vec3 {
+  return [
+    y[0] + 0.9563 * y[1] + 0.621 * y[2],
+    y[0] - 0.2721 * y[1] - 0.6474 * y[2],
+    y[0] - 1.107 * y[1] + 1.7046 * y[2],
+  ];
+}
+
+export function packYiq(y: Vec3): Vec3 {
+  return [y[0], y[1] * 0.8391 + 0.5, y[2] * 0.9566 + 0.5];
+}
+export function unpackYiq(n: Vec3): Vec3 {
+  return [n[0], (n[1] - 0.5) * (1.0 / 0.8391), (n[2] - 0.5) * (1.0 / 0.9566)];
+}
+
+// ─────────────────────────── YCbCr BT.601 STUDIO-SWING ───────────────────────────
+//
+// Broadcast-legal levels: encode COMPRESSES the picture into the 16..235 luma /
+// 16..240 chroma legal window (footroom below, headroom above), decode EXPANDS
+// studio→full-range (×255/219 luma, ×255/224 chroma) so every bias is amplified
+// ~1.16× — the hard broadcast CRUSH — and over-drive CLAMPs at the illegal
+// boundary (a legalizer) or WRAPs super-white through black (the over-legal fold).
+// The pack IS the encode (levels baked in); there is no separate pack fn. Chroma
+// neutral is 128/255 = 0.502 — the authentic 8-bit digital chroma zero, NOT
+// exactly 0.5 (self-consistent; do not "fix" it). Constants copied verbatim into
+// the GLSL rgb2ycc_ss / ycc_ss2rgb.
+
+export function rgb2yccSs(c: Vec3): Vec3 {
+  const Yf = c[0] * 0.299 + c[1] * 0.587 + c[2] * 0.114; // full-range luma 0..1
+  const Pb = c[0] * -0.168736 + c[1] * -0.331264 + c[2] * 0.5; // +/-0.5
+  const Pr = c[0] * 0.5 + c[1] * -0.418688 + c[2] * -0.081312; // +/-0.5
+  return [
+    16.0 / 255.0 + (219.0 / 255.0) * Yf, // luma -> footroom/headroom
+    128.0 / 255.0 + (224.0 / 255.0) * Pb, // Cb -> 16..240, pedestal 0.502
+    128.0 / 255.0 + (224.0 / 255.0) * Pr, // Cr
+  ];
+}
+
+/** s = encoded studio-swing [Y, Cb, Cr] in 0..1. Expand + inverse BT.601. */
+export function yccSs2rgb(s: Vec3): Vec3 {
+  const y = (s[0] - 16.0 / 255.0) * (255.0 / 219.0); // expand: the ~1.16x crush
+  const cb = (s[1] - 128.0 / 255.0) * (255.0 / 224.0); // -> +/-0.5 (illegal > +/-0.5)
+  const cr = (s[2] - 128.0 / 255.0) * (255.0 / 224.0);
+  return [
+    y + 1.402 * cr,
+    y - 0.344136 * cb - 0.714136 * cr,
+    y + 1.772 * cb,
+  ];
+}
+
 // ─────────────────────────── HSV (branchless) ───────────────────────────
 //
 // The Sam Hocevar branchless form; a 1:1 mirror of the GLSL (K-vector +
@@ -192,9 +261,15 @@ export interface BlockParams {
   biasY: number; biasDb: number; biasDr: number;
   /** Hue bias in DEGREES (÷360 in adjHue). */
   biasH: number; biasS: number; biasV: number;
+  /** YIQ block bias (packed 0..1 space; I/Q on the 0.5 pedestal). */
+  biasYiqY: number; biasYiqI: number; biasYiqQ: number;
+  /** YCbCr studio-swing block bias (encoded legal-range space). */
+  biasYccY: number; biasYccCb: number; biasYccCr: number;
   overR: boolean; overG: boolean; overB: boolean;
   overY: boolean; overDb: boolean; overDr: boolean;
   overS: boolean; overV: boolean; // hue always wraps (no overH)
+  overYiqY: boolean; overYiqI: boolean; overYiqQ: boolean;
+  overYccY: boolean; overYccCb: boolean; overYccCr: boolean;
   /** false = HSV, true = HSL. */
   hsl: boolean;
   /** RGB palette REPLACE on/off + the three picked colours (0..1 RGB). */
@@ -204,6 +279,8 @@ export interface BlockParams {
   monoR: number | null; monoG: number | null; monoB: number | null;
   monoY: number | null; monoDb: number | null; monoDr: number | null;
   monoH: number | null; monoS: number | null; monoV: number | null;
+  monoYiqY: number | null; monoYiqI: number | null; monoYiqQ: number | null;
+  monoYccY: number | null; monoYccCb: number | null; monoYccCr: number | null;
 }
 
 /** The RAW adjusted RGB channel SCALARS (feeds the mono r/g/b/luma outs). */
@@ -230,33 +307,86 @@ export function rgbBlock(src: Vec3, p: BlockParams): Vec3 {
   return applyPalette(rgbChannels(src, p), p);
 }
 
-export function ydbdrBlock(src: Vec3, p: BlockParams): Vec3 {
+/** The RAW adjusted PACKED YDbDr channel SCALARS (feeds the ydb_y/db/dr taps). */
+export function ydbdrChannels(src: Vec3, p: BlockParams): Vec3 {
   const n = packYdbdr(rgb2ydbdr(src));
-  const a: Vec3 = [
+  return [
     adj(n[0], p.biasY, p.overY, p.monoY),
     adj(n[1], p.biasDb, p.overDb, p.monoDb),
     adj(n[2], p.biasDr, p.overDr, p.monoDr),
   ];
-  return ydbdr2rgb(unpackYdbdr(a));
 }
 
-export function hsvBlock(src: Vec3, p: BlockParams): Vec3 {
+export function ydbdrBlock(src: Vec3, p: BlockParams): Vec3 {
+  return ydbdr2rgb(unpackYdbdr(ydbdrChannels(src, p)));
+}
+
+/** The RAW adjusted HSV/HSL channel SCALARS (feeds the hsv_h/s/v taps). The hue
+ *  tap has a hard black↔white seam at 0≡1 — the correct grayscale image of a
+ *  CIRCULAR quantity, not a defect (treat it as circular downstream). */
+export function hsvChannels(src: Vec3, p: BlockParams): Vec3 {
   const h = p.hsl ? rgb2hsl(src) : rgb2hsv(src);
-  const a: Vec3 = [
+  return [
     adjHue(h[0], p.biasH, p.monoH),
     adj(h[1], p.biasS, p.overS, p.monoS),
     adj(h[2], p.biasV, p.overV, p.monoV),
   ];
+}
+
+export function hsvBlock(src: Vec3, p: BlockParams): Vec3 {
+  const a = hsvChannels(src, p);
   return p.hsl ? hsl2rgb(a) : hsv2rgb(a);
 }
 
-/** Drive the uOutMode dispatch: 0 pass, 1 rgb(+palette), 2 ydbdr, 3 hsv/hsl,
- *  4/5/6 mono r/g/b (raw adjusted channel), 7 luma of the adjusted channels.
- *  Palette REPLACE affects ONLY the rgb colour out (mode 1). */
+/** The RAW adjusted PACKED YIQ channel SCALARS (feeds the yiq_y/i/q taps). */
+export function yiqChannels(src: Vec3, p: BlockParams): Vec3 {
+  const n = packYiq(rgb2yiq(src));
+  return [
+    adj(n[0], p.biasYiqY, p.overYiqY, p.monoYiqY),
+    adj(n[1], p.biasYiqI, p.overYiqI, p.monoYiqI),
+    adj(n[2], p.biasYiqQ, p.overYiqQ, p.monoYiqQ),
+  ];
+}
+
+export function yiqBlock(src: Vec3, p: BlockParams): Vec3 {
+  return yiq2rgb(unpackYiq(yiqChannels(src, p)));
+}
+
+/** The RAW adjusted ENCODED studio-swing channel SCALARS (feeds ycc_y/cb/cr).
+ *  The encode's legal-range levels are baked in (no separate pack). */
+export function yccSsChannels(src: Vec3, p: BlockParams): Vec3 {
+  const n = rgb2yccSs(src);
+  return [
+    adj(n[0], p.biasYccY, p.overYccY, p.monoYccY),
+    adj(n[1], p.biasYccCb, p.overYccCb, p.monoYccCb),
+    adj(n[2], p.biasYccCr, p.overYccCr, p.monoYccCr),
+  ];
+}
+
+export function yccSsBlock(src: Vec3, p: BlockParams): Vec3 {
+  return yccSs2rgb(yccSsChannels(src, p));
+}
+
+/** Drive the uOutMode dispatch:
+ *   0 pass, 1 rgb(+palette), 2 ydbdr, 3 hsv/hsl,
+ *   4/5/6 mono r/g/b (raw adjusted channel), 7 luma of the adjusted channels,
+ *   8/9/10 ydbdr y/db/dr taps, 11/12/13 hsv h/s/v taps,
+ *   14 yiq colour, 15/16/17 yiq y/i/q taps,
+ *   18 ycc studio-swing colour, 19/20/21 ycc y/cb/cr taps.
+ *  Palette REPLACE affects ONLY the rgb colour out (mode 1). The mono taps
+ *  emit the adjusted PACKED channel as grayscale (vec3(v)) — no decode. */
 export function outputFor(mode: number, src: Vec3, p: BlockParams): Vec3 {
   if (mode === 0) return src;
   if (mode === 2) return ydbdrBlock(src, p);
   if (mode === 3) return hsvBlock(src, p);
+  if (mode === 14) return yiqBlock(src, p);
+  if (mode === 18) return yccSsBlock(src, p);
+  // Grayscale channel taps: emit the adjusted PACKED channel (no decode).
+  if (mode >= 8 && mode <= 10) { const v = ydbdrChannels(src, p)[mode - 8]!; return [v, v, v]; }
+  if (mode >= 11 && mode <= 13) { const v = hsvChannels(src, p)[mode - 11]!; return [v, v, v]; }
+  if (mode >= 15 && mode <= 17) { const v = yiqChannels(src, p)[mode - 15]!; return [v, v, v]; }
+  if (mode >= 19 && mode <= 21) { const v = yccSsChannels(src, p)[mode - 19]!; return [v, v, v]; }
+  // RGB family: 1 rgb(+palette), 4/5/6 mono r/g/b, 7 luma.
   const a = rgbChannels(src, p);
   if (mode === 1) return applyPalette(a, p);
   if (mode === 4) return [a[0], a[0], a[0]];
