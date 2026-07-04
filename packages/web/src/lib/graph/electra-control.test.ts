@@ -204,6 +204,17 @@ describe('electraControlDef: meta def shape', () => {
     expect(electraControlDef.params).toEqual([]);
     expect(electraControlDef.palette).toEqual({ top: 'Hybrid', sub: 'Hybrid' });
   });
+
+  it('is a SINGLETON (maxInstances 1) but stays DELETABLE (no undeletable)', () => {
+    // Max ONE ElectraControl per rack — the card owns the whole-rack "Send to
+    // Electra" flash, so a second surface is redundant. Unlike TIMELORDE it is
+    // NOT undeletable, so a merge-duplicate is auto-covered by the deterministic
+    // singleton cleanup (see singleton-cleanup-registry.test.ts).
+    expect(electraControlDef.maxInstances).toBe(1);
+    expect(
+      (electraControlDef as { undeletable?: boolean }).undeletable,
+    ).toBeUndefined();
+  });
 });
 
 // ───── real-Y.Doc slot mutators ─────

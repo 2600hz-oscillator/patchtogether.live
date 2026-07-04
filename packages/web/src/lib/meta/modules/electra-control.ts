@@ -67,5 +67,12 @@ export const electraControlDef: MetaModuleDef = {
   inputs: [],
   outputs: [],
   params: [],
+  // SINGLETON — exactly one ElectraControl per rack. The card owns the "Send to
+  // Electra" action, which generates ONE 3-page preset from the whole rack, so a
+  // second surface would be redundant + ambiguous. Enforced at three layers
+  // (palette filter, Canvas spawn guard, engine.addNode defensive check). It
+  // stays DELETABLE (no `undeletable`), unlike TIMELORDE — a deletable singleton
+  // is auto-covered by the deterministic post-merge singleton cleanup.
+  maxInstances: 1,
   schemaVersion: 1,
 };

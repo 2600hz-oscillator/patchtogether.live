@@ -16,9 +16,14 @@
 // (electra-control.test.ts → generatePreset over the fixed slots places each at
 // the right (controlSetId, potId, bounds) + clamps the custom name) — physical
 // flash can't run in CI.
+//
+// A SECOND test covers the two module-level changes: (a) the "Send to Electra"
+// action now renders ON the card (moved off the global topbar), and (b) the
+// module is a SINGLETON (maxInstances 1) — a second one is blocked, asserted via
+// the real palette (the at-cap def is filtered out).
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, openModulePalette } from './_helpers';
 
 interface PatchNode {
   id: string;
@@ -51,6 +56,12 @@ test('send a control to a fixed (row, knob) slot → grid renders it, label pers
 
   const card = page.locator('[data-testid="electra-control-card"][data-node-id="ec-1"]');
   await expect(card).toBeVisible();
+
+  // The "Send to Electra" action lives ON the card now (moved off the topbar).
+  // It renders inside THIS card and shows its idle label (no MIDI on mount).
+  const sendBtn = card.locator('[data-testid="electra-connect-button"]');
+  await expect(sendBtn).toBeVisible();
+  await expect(sendBtn).toHaveText(/Send to Electra/);
 
   // The fixed 36-slot grid is always present, grouped into 3 banks.
   await expect(card.locator('[data-testid="electra-control-bank-TOP"]')).toBeVisible();
@@ -129,4 +140,29 @@ test('send a control to a fixed (row, knob) slot → grid renders it, label pers
   // Only the Row6→6 binding remains; the (row2, knob2) cell is empty again.
   await expect.poll(async () => Object.keys((await readSlots(page, 'ec-1')) ?? {})).toEqual(['35']);
   await expect(card.locator('[data-testid="electra-control-slot-2-2"]')).toHaveAttribute('data-filled', 'false');
+});
+
+test('SINGLETON: a second ElectraControl is blocked — the palette hides it at the cap', async ({ page }) => {
+  // Spawn ONE ElectraControl, then drive the REAL palette (right-click pane →
+  // search) to prove `maxInstances: 1` blocks a second: the palette entry is
+  // filtered out (first-line UI enforcement), and the node count stays at 1.
+  await page.goto('/rack');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(page, [
+    { id: 'ec-1', type: 'electraControl', position: { x: 700, y: 60 }, domain: 'meta' },
+  ]);
+  await expect(page.locator('[data-testid="electra-control-card"][data-node-id="ec-1"]')).toBeVisible();
+  await expect(page.locator('.svelte-flow__node-electraControl')).toHaveCount(1);
+
+  // Open the palette and search for it — the at-cap def is dropped by the
+  // maxInstances filter (ModulePalette), so the pickable item is absent.
+  await openModulePalette(page);
+  await page.keyboard.type('electra');
+  await expect(page.locator('[data-testid="palette-item-electraControl"]')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await page.locator('.module-palette').waitFor({ state: 'detached' });
+
+  // Still exactly one — the palette filter is the user's protection and the
+  // spawn guard / engine.addNode are the safety nets behind it.
+  await expect(page.locator('.svelte-flow__node-electraControl')).toHaveCount(1);
 });
