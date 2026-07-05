@@ -19,7 +19,6 @@ import {
   parseEnvelope,
   serializeEnvelope,
   loadEnvelopeIntoStore,
-  migrateEdgeEndpoints,
   sanitizeFilename,
   ENVELOPE_VERSION,
   DEFAULT_FILENAME,
@@ -532,70 +531,6 @@ describe('persistence: DOOM transient-field stripping', () => {
   });
 });
 
-// ---------------- circles → outlines legacy-type alias ----------------
-//
-// The video module formerly named CIRCLES was renamed OUTLINES (#699) when the
-// SHAPE/ROTATION rework landed. Unlike the ruttetra case, the id was NOT reused
-// for a different module — it's a pure rename. A node saved before the rename
-// (localStorage / a live collab Y.Doc / a hand-exported .json) still carries
-// `type: 'circles'`. The loader's canonicalizeVideoType() rewrites it to
-// `outlines` so (a) getAnyDomainDef resolves a def — the node isn't dropped to a
-// placeholder — AND (b) the node lands in the live store with the CURRENT type
-// so SvelteFlow's type-keyed nodeTypes map renders OutlinesCard (not the default
-// placeholder card) and a re-save persists the canonical id. This pins that the
-// rename never silently drops a user's existing CIRCLES node.
-
-describe('persistence: circles → outlines legacy-type rename', () => {
-  // Stub the real OUTLINES def (factory never called — only type/schemaVersion
-  // are read). We don't import the video modules barrel (it pulls shader ?url
-  // imports that only resolve under the SvelteKit vite plugin).
-  const outlinesStub: VideoModuleDef = {
-    type: 'outlines',
-    domain: 'video',
-    label: 'outlines',
-    category: 'sources',
-    schemaVersion: 1,
-    inputs: [],
-    outputs: [{ id: 'combine', type: 'video' }],
-    params: [],
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    factory: throwingFactory as any,
-  };
-
-  beforeAll(() => {
-    registerVideoModule(outlinesStub);
-  });
-
-  /** Hand-build an envelope carrying a single legacy `circles` node. */
-  function circlesEnvelope() {
-    const src = freshPatch();
-    src.ydoc.transact(() => {
-      src.store.nodes['cn'] = {
-        id: 'cn',
-        type: 'circles',
-        domain: 'video',
-        position: { x: 10, y: 20 },
-        params: { d: 0.4, rate: 0.5 },
-      };
-    });
-    return makeEnvelope(src.ydoc);
-  }
-
-  it('loads a saved CIRCLES node as OUTLINES (not dropped to a placeholder)', () => {
-    const env = circlesEnvelope();
-    const dest = freshPatch();
-    const result = loadEnvelopeIntoStore(env, dest.ydoc, dest.store);
-    // The node survives — NOT in diagnostics as an unknown type.
-    expect(result.nodesLoaded).toBe(1);
-    expect(result.diagnostics).toEqual([]);
-    // And it's stored with the CURRENT type so the type-keyed card map renders it.
-    expect(dest.store.nodes['cn']).toBeDefined();
-    expect(dest.store.nodes['cn']!.type).toBe('outlines');
-    // Params ride along unchanged (pure rename — no param migration).
-    expect(dest.store.nodes['cn']!.params).toMatchObject({ d: 0.4, rate: 0.5 });
-  });
-});
-
 // ---------------- Asset-bytes round-trip ----------------
 //
 // Regression net for the rackspace-persistence audit (see
@@ -899,108 +834,6 @@ describe('persistence: sanitizeFilename', () => {
   it('preserves spaces and unicode in the middle of the name', () => {
     expect(sanitizeFilename('my cool patch')).toBe('my cool patch.imp.json');
     expect(sanitizeFilename('café')).toBe('café.imp.json');
-  });
-});
-
-// ---------------- Edge-port migration (#353 DOOM per-slot ports) ----------------
-//
-// loadEnvelopeIntoStore rewrites edge endpoint portIds via the endpoint node's
-// module-def `migrateEdgePortId` hook when the saved version is behind the def.
-// DOOM uses this to rewrite legacy bare cv-gate ports (`up`/…) to the p1 group
-// (`p1_up`/…) when the single shared input set became four per-slot groups.
-
-/** A video def that renames bare cv-gate ports → p1_<id> for saves below v2. */
-const doomLikeDefV2: VideoModuleDef = {
-  type: 'doomLike',
-  domain: 'video',
-  label: 'DoomLike',
-  category: 'sources',
-  schemaVersion: 2,
-  inputs: [{ id: 'p1_up', type: 'cv', paramTarget: 'cv_p1_up' }],
-  outputs: [{ id: 'out', type: 'video' }],
-  params: [],
-  migrateEdgePortId(portId) {
-    return portId === 'up' ? 'p1_up' : null;
-  },
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  factory: throwingFactory as any,
-};
-
-/** A CV source (LFO-like) feeding DOOM's `cv` gate inputs. The real cable into a
- * DOOM cv input is cv→cv (canConnect rejects audio→cv), so the source port is
- * declared `cv` — otherwise the Phase-4d import validator would (correctly) drop
- * the edge as an incompatible cable type. */
-const cvLfoDef: AudioModuleDef = {
-  type: 'cvLfo',
-  domain: 'audio',
-  label: 'CV LFO',
-  category: 'sources',
-  schemaVersion: 1,
-  inputs: [],
-  outputs: [{ id: 'sine', type: 'cv' }],
-  params: [],
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  factory: throwingFactory as any,
-};
-
-describe('migrateEdgeEndpoints — DOOM per-slot port migration (#353)', () => {
-  beforeAll(() => {
-    registerVideoModule(doomLikeDefV2);
-    registerModule(cvLfoDef);
-  });
-
-  const nodes: Record<string, ModuleNode> = {
-    doom: { id: 'doom', type: 'doomLike', position: { x: 0, y: 0 }, params: {} } as ModuleNode,
-    lfo: { id: 'lfo', type: 'cvLfo', position: { x: 0, y: 0 }, params: {} } as ModuleNode,
-  };
-  const baseEdge: Edge = {
-    id: 'e1',
-    source: { nodeId: 'lfo', portId: 'sine' },
-    target: { nodeId: 'doom', portId: 'up' },
-    sourceType: 'cv',
-    targetType: 'cv',
-  };
-
-  it('rewrites a legacy bare cv-gate target → p1_<id> when saved below v2', () => {
-    const migrated = migrateEdgeEndpoints(baseEdge, nodes, { doomLike: 1 });
-    expect(migrated.target.portId).toBe('p1_up');
-    expect(migrated.source.portId).toBe('sine'); // source (lfo) untouched
-    expect(migrated.id).toBe('e1');
-  });
-
-  it('leaves the edge unchanged when the saved version is already current', () => {
-    const migrated = migrateEdgeEndpoints(baseEdge, nodes, { doomLike: 2 });
-    expect(migrated).toBe(baseEdge); // same reference (no rewrite)
-  });
-
-  it('leaves non-migrating ports untouched (out/audio)', () => {
-    const e: Edge = { ...baseEdge, target: { nodeId: 'doom', portId: 'out' } };
-    const migrated = migrateEdgeEndpoints(e, nodes, { doomLike: 1 });
-    expect(migrated.target.portId).toBe('out');
-  });
-
-  it('end-to-end: a saved v1 patch with an LFO→DOOM `up` edge loads onto p1_up', () => {
-    // Build a v1 save: a doomLike node + an analogVco + an edge into bare `up`.
-    const src = freshPatch();
-    src.ydoc.transact(() => {
-      src.store.nodes['doom'] = { id: 'doom', type: 'doomLike', position: { x: 0, y: 0 }, params: {} } as ModuleNode;
-      src.store.nodes['lfo'] = { id: 'lfo', type: 'cvLfo', position: { x: 0, y: 0 }, params: {} } as ModuleNode;
-      src.store.edges['e1'] = {
-        id: 'e1',
-        source: { nodeId: 'lfo', portId: 'sine' },
-        target: { nodeId: 'doom', portId: 'up' },
-        sourceType: 'cv',
-        targetType: 'cv',
-      } as Edge;
-    });
-    const env = makeEnvelope(src.ydoc);
-    // Force the recorded doomLike schema to the OLD version (a real v1 save).
-    env.moduleSchemas['doomLike'] = 1;
-
-    const dest = freshPatch();
-    const result = loadEnvelopeIntoStore(parseEnvelope(serializeEnvelope(env)), dest.ydoc, dest.store);
-    expect(result.edgesLoaded).toBe(1);
-    expect(dest.store.edges['e1']!.target.portId).toBe('p1_up');
   });
 });
 

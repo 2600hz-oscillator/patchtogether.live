@@ -21,7 +21,6 @@ import {
 import {
   getVideoModuleDef,
   listVideoModuleDefs,
-  canonicalizeVideoType,
 } from '$lib/video/module-registry';
 import { getMetaModuleDef, listMetaModuleDefs } from '$lib/meta/module-registry';
 import type { ModuleNode, Edge } from './types';
@@ -38,10 +37,6 @@ import { validateEdge, type ResolveDef } from './validate-edge';
 interface AnyDomainDef {
   schemaVersion: number;
   migrate?: (data: unknown, fromVersion: number) => unknown;
-  /** Optional load-time edge-port rename keyed on the saved module version.
-   *  Returns a rewritten portId, or null to leave it unchanged. See
-   *  VideoModuleDef.migrateEdgePortId (DOOM's per-slot port migration, #353). */
-  migrateEdgePortId?: (portId: string, fromVersion: number) => string | null;
 }
 
 function getAnyDomainDef(type: string): AnyDomainDef | undefined {
@@ -350,38 +345,6 @@ export function writeVideoAspectToDoc(ydoc: Y.Doc, aspect: '4:3' | '16:9', origi
 }
 
 /**
- * Rewrite an edge's source/target portIds via the endpoint nodes' module-def
- * `migrateEdgePortId` hook, when the saved version is behind the current def.
- * Returns the edge unchanged when no endpoint migrates. Pure (returns a new
- * object only when something actually changed). Exported for unit tests.
- */
-export function migrateEdgeEndpoints(
-  edge: Edge,
-  nodes: Record<string, ModuleNode>,
-  moduleSchemas: Record<string, number>,
-): Edge {
-  const rewrite = (end: { nodeId: string; portId: string }): string => {
-    const node = nodes[end.nodeId];
-    if (!node) return end.portId;
-    const def = getAnyDomainDef(node.type);
-    if (!def?.migrateEdgePortId) return end.portId;
-    const from = moduleSchemas[node.type] ?? 1;
-    if (from >= def.schemaVersion) return end.portId;
-    return def.migrateEdgePortId(end.portId, from) ?? end.portId;
-  };
-  const newSourcePort = rewrite(edge.source);
-  const newTargetPort = rewrite(edge.target);
-  if (newSourcePort === edge.source.portId && newTargetPort === edge.target.portId) {
-    return edge;
-  }
-  return {
-    ...edge,
-    source: { ...edge.source, portId: newSourcePort },
-    target: { ...edge.target, portId: newTargetPort },
-  };
-}
-
-/**
  * Apply an envelope to the live patch + ydoc, replacing whatever's currently
  * loaded. Atomic: wrapped in a single transact so subscribers see one update.
  *
@@ -415,23 +378,6 @@ export function loadEnvelopeIntoStore(
   const diagnostics: LoadDiagnostic[] = [];
   const migratedNodes: Record<string, ModuleNode> = {};
   for (const [id, node] of Object.entries(loadedNodes)) {
-    // ---- LEGACY VIDEO TYPE ALIAS: circles → outlines (and any future
-    //      renamed video module) ----
-    //
-    // OUTLINES was named CIRCLES until the SHAPE/ROTATION rework (#699). Nodes
-    // saved before the rename (localStorage / a live collab Y.Doc / a hand-
-    // exported .json) still carry `type: 'circles'`. canonicalizeVideoType()
-    // rewrites the node's type to the current registry id IN PLACE so it (a)
-    // resolves a def (else it'd drop to a placeholder), AND (b) renders the
-    // right card — SvelteFlow's nodeTypes map is keyed strictly on the current
-    // def.type, so a node left as `circles` would render with the default
-    // placeholder card even though getVideoModuleDef('circles') resolves the
-    // def via the alias. Re-saving then persists the canonical `outlines` type.
-    {
-      const canonical = canonicalizeVideoType(node.type);
-      if (canonical !== node.type) (node as { type: string }).type = canonical;
-    }
-
     // Look up across both per-domain registries — video modules
     // (PICTUREBOX, CAMERA, LINES, ...) live in the video registry and
     // would otherwise be silently dropped on load. See
@@ -504,13 +450,6 @@ export function loadEnvelopeIntoStore(
         });
         continue;
       }
-      // EDGE-PORT MIGRATION: when an endpoint's node is a type whose saved
-      // schemaVersion is behind the current def AND that def declares an
-      // edge-port migration, rewrite the portId. This keeps CV cables wired to
-      // DOOM's old bare gate ports (`up`/…) driving the p1 group (`p1_up`/…)
-      // after the single shared input set became four per-slot groups (#353).
-      const migrated = migrateEdgeEndpoints(edge, migratedNodes, envelope.moduleSchemas);
-
       // STRUCTURAL VALIDATION (Phase 4d): the missing-node check above only
       // catches a dangling endpoint. An aged or hand-edited import can still
       // carry a structurally-malformed edge whose nodes BOTH exist — a stale
@@ -521,17 +460,17 @@ export function loadEnvelopeIntoStore(
       // ordered after it) AND, in multiuser, syncs the poison to every peer.
       // Drop the one bad edge HERE — exactly like the missing-node branch above
       // — so a malformed import can never reach (and wedge) the reconciler.
-      const validation = validateEdge(migrated, survivingNodes, resolveDefForValidation);
+      const validation = validateEdge(edge, survivingNodes, resolveDefForValidation);
       if (!validation.ok) {
         diagnostics.push({
-          nodeId: migrated.id,
+          nodeId: edge.id,
           type: 'edge',
           reason: `invalid edge dropped: ${validation.reason ?? 'failed structural validation'}`,
         });
         continue;
       }
 
-      livePatch.edges[migrated.id] = migrated;
+      livePatch.edges[edge.id] = edge;
     }
   });
 
