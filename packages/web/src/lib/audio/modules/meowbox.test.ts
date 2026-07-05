@@ -24,13 +24,11 @@ describe('meowboxDef: module-def shape', () => {
     expect(meowboxDef.category).toBe('sources');
   });
 
-  it('schema is at v2 (post V/oct fix)', () => {
-    // v1 declared `pitch` as a 'cv' input with paramTarget; v2 makes it a
-    // true 'pitch' (V/oct audio-rate) input. The persisted-data shape did
-    // not change (no params/data renamed), so saves load unchanged — but
-    // we bump the version anyway to record the behavioral fix and to
-    // enable a future migrate() if needed.
-    expect(meowboxDef.schemaVersion).toBe(2);
+  it('schemaVersion is 1 (no load-time migration)', () => {
+    // The `pitch` input port type changed from 'cv' to a true 'pitch' (V/oct
+    // audio-rate) input, but the persisted-data shape did not change (no
+    // params/data renamed), so saves load unchanged with no migrate callback.
+    expect(meowboxDef.schemaVersion).toBe(1);
   });
 
   it('declares 5 input ports: gate, pitch, morph, decay, level', () => {

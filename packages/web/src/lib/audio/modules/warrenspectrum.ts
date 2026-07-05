@@ -82,7 +82,7 @@ export const warrenspectrumDef: AudioModuleDef = {
   // global_ping gate input.
   label: 'warrenspectrum',
   category: 'effects',
-  schemaVersion: 2,
+  schemaVersion: 1,
   stereoPairs: [
     ['in_l', 'in_r'],
     ['out_l', 'out_r'],

@@ -92,27 +92,10 @@ const DEFAULTS: LumaParams = {
   bias: 0.0,
 };
 
+// Legacy mask param ids are ignored by construction: the factory rebuilds params
+// from DEFAULTS filtered through PARAM_IDS (below), so any stray old key never
+// reaches the shader. No load-time migration is needed.
 const PARAM_IDS: ReadonlySet<string> = new Set(Object.keys(DEFAULTS));
-const LEGACY_PARAM_IDS = new Set(['threshold', 'softness', 'invert']);
-
-/**
- * Migrate older LUMA params. v1 stored mask-extraction shape; v2 stores
- * processor shape. Since the OLD semantics were broken (a single-input
- * "luma keyer" makes no sense — there's no background to composite into),
- * we drop the legacy mask params on load. Already-present v2 keys are
- * preserved.
- */
-export function migrateLuma(data: unknown, fromVersion: number): unknown {
-  if (!data || typeof data !== 'object') return data;
-  if (fromVersion >= 2) return data;
-  const obj = data as Record<string, unknown>;
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(obj)) {
-    if (LEGACY_PARAM_IDS.has(k)) continue;
-    out[k] = v;
-  }
-  return out;
-}
 
 export const lumaDef: VideoModuleDef = {
   type: 'luma',
@@ -120,8 +103,7 @@ export const lumaDef: VideoModuleDef = {
   domain: 'video',
   label: 'luma',
   category: 'effects',
-  schemaVersion: 2,
-  migrate: migrateLuma,
+  schemaVersion: 1,
   inputs: [
     { id: 'in',              type: 'video' },
     { id: 'gamma',           type: 'cv', paramTarget: 'gamma', cvScale: { mode: 'linear' } },

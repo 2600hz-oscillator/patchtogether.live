@@ -1,17 +1,16 @@
 // packages/web/src/lib/video/modules/chroma.test.ts
 //
-// CHROMA module-def + migration tests. Pure (no GL).
+// CHROMA module-def tests. Pure (no GL).
 //
 // CHROMA was historically a confused single-input "key-mask" module
-// (CHROMAKEY now owns that role properly with FG + BG). v3 restores
-// CHROMA to its name's actual meaning: a 1-input hue-shifter / colorizer
-// with saturation + RGB tint mix.
+// (CHROMAKEY now owns that role properly with FG + BG). It is now a 1-input
+// hue-shifter / colorizer with saturation + RGB tint mix.
 
 import { describe, it, expect } from 'vitest';
-import { chromaDef, migrateChroma } from './chroma';
+import { chromaDef } from './chroma';
 
 describe('chromaDef shape', () => {
-  it('declares the v3 processor param set (hue/saturation/tintR/G/B/tintMix)', () => {
+  it('declares the processor param set (hue/saturation/tintR/G/B/tintMix)', () => {
     const ids = chromaDef.params.map((p) => p.id).sort();
     expect(ids).toEqual(['hue', 'saturation', 'tintB', 'tintG', 'tintMix', 'tintR']);
   });
@@ -54,48 +53,12 @@ describe('chromaDef shape', () => {
     expect(mix?.defaultValue).toBe(0);
   });
 
-  it('schemaVersion is 3 (post-rework)', () => {
-    expect(chromaDef.schemaVersion).toBe(3);
+  it('schemaVersion is 1 (no load-time migration)', () => {
+    expect(chromaDef.schemaVersion).toBe(1);
   });
 
   it('output is a single full video stream (not a mask)', () => {
     expect(chromaDef.outputs.map((o) => o.id)).toEqual(['out']);
     expect(chromaDef.outputs[0]!.type).toBe('video');
-  });
-});
-
-describe('migrateChroma (v1/v2 mask -> v3 processor reset)', () => {
-  it('drops legacy keyR/keyG/keyB/threshold/softness/invert from v1', () => {
-    const v1 = { keyR: 0, keyG: 1, keyB: 0, tolerance: 0.4, softness: 0.15, invert: 1 };
-    const out = migrateChroma(v1, 1) as Record<string, unknown>;
-    for (const legacy of ['keyR', 'keyG', 'keyB', 'tolerance', 'softness', 'invert']) {
-      expect(legacy in out, `legacy ${legacy} dropped`).toBe(false);
-    }
-  });
-
-  it('drops legacy threshold from v2', () => {
-    const v2 = { keyR: 0, keyG: 1, keyB: 0, threshold: 0.4, softness: 0.15, invert: 0 };
-    const out = migrateChroma(v2, 2) as Record<string, unknown>;
-    expect('threshold' in out).toBe(false);
-    expect('keyR' in out).toBe(false);
-  });
-
-  it('preserves unrelated forward-compat keys', () => {
-    const v1 = { keyR: 0, future_field: 'preserved' };
-    const out = migrateChroma(v1, 1) as Record<string, unknown>;
-    expect(out.future_field).toBe('preserved');
-    expect('keyR' in out).toBe(false);
-  });
-
-  it('passes through v3 data unchanged (idempotent)', () => {
-    const v3 = { hue: 90, saturation: 1.2, tintR: 0.3, tintG: 0.7, tintB: 0.1, tintMix: 0.4 };
-    const out = migrateChroma(v3, 3);
-    expect(out).toBe(v3);
-  });
-
-  it('returns input unchanged for null / non-object', () => {
-    expect(migrateChroma(null, 1)).toBe(null);
-    expect(migrateChroma(undefined, 1)).toBe(undefined);
-    expect(migrateChroma(42, 1)).toBe(42);
   });
 });
