@@ -327,7 +327,6 @@ export const toyboxDef: VideoModuleDef = {
   label: 'toybox',
   category: 'sources',
   schemaVersion: TOYBOX_SCHEMA_VERSION,
-  migrate: migrateToyboxData,
   // Fix E Phase 2 — TOYBOX's pure-GL layers (shader/gen/frag/obj) run in the
   // render worker when the flag is on. The worker-side createToyboxWorkerHandle
   // receives serialized node.data snapshots via MsgToyboxSync (sent by
@@ -2303,70 +2302,6 @@ export const toyboxDef: VideoModuleDef = {
     };
   },
 };
-
-/**
- * Migrate saved TOYBOX data forward.
- *
- *  v1 → v2: v1 declared 8 generic input ports (cv1..cv8); v2 reduced the pool to
- *    6. A saved patch may carry cvRoutes for the now-dropped cv7/cv8 — strip them
- *    so they don't linger (their setParam writes are already harmless no-ops, but
- *    a dangling route would show nothing in the 6-row UI). Edges wired to cv7/cv8
- *    are tolerated by the engine (setParam to an unknown port no-ops); we don't
- *    rewrite them (no sensible remap target), so they simply stop doing anything.
- *
- *  v2 → v3: the chromakey combine OP changed from a single `key` channel-select
- *    scalar (0 = R, 0.33 = G, 0.66 = B) to an HSV key COLOUR (keyR/keyG/keyB
- *    floats). Translate any saved combine chromakey node's `key` into the
- *    matching primary RGB and drop the stale `key`. Also strips any chromakey
- *    cvRoute that targeted the now-removed `key` param (its setParam would be a
- *    no-op, but a dangling route would show nothing valid in the param dropdown).
- *
- * Pure: returns the (possibly mutated) data object.
- */
-export function migrateToyboxData(data: unknown, fromVersion: number): unknown {
-  if (fromVersion >= 4 || !data || typeof data !== 'object') return data;
-  const d = data as {
-    cvRoutes?: Record<string, { param?: string } | null>;
-    combine?: { nodes?: Array<{ kind?: string; params?: Record<string, number> }> };
-  };
-  if (fromVersion < 2 && d.cvRoutes && typeof d.cvRoutes === 'object') {
-    for (const key of Object.keys(d.cvRoutes)) {
-      if (!isCvPortId(key)) delete d.cvRoutes[key]; // drops cv7 / cv8 / anything stale
-    }
-  }
-  // v2 → v3: chromakey `key` scalar → keyR/keyG/keyB colour.
-  if (fromVersion < 3 && d.combine && Array.isArray(d.combine.nodes)) {
-    for (const n of d.combine.nodes) {
-      if (n?.kind !== 'chromakey' || !n.params || typeof n.params !== 'object') continue;
-      const p = n.params;
-      if (typeof p.key === 'number') {
-        // Map the old channel-select scalar to a primary RGB key colour.
-        const [r, g, b] = p.key < 0.25 ? [1, 0, 0] : p.key < 0.58 ? [0, 1, 0] : [0, 0, 1];
-        if (typeof p.keyR !== 'number') p.keyR = r;
-        if (typeof p.keyG !== 'number') p.keyG = g;
-        if (typeof p.keyB !== 'number') p.keyB = b;
-        delete p.key;
-      }
-    }
-  }
-  // v2 → v3: drop any chromakey cvRoute that pointed at the removed `key` param.
-  if (fromVersion < 3 && d.cvRoutes && typeof d.cvRoutes === 'object') {
-    for (const port of Object.keys(d.cvRoutes)) {
-      const route = d.cvRoutes[port];
-      if (route && route.param === 'key') d.cvRoutes[port] = null;
-    }
-  }
-  // v3 → v4: feedback gained an `intensity` (wet/dry mix) param. Backfill the
-  // schema default on existing feedback nodes so old saves load with a sensible
-  // half-wet mix rather than 0 (which would read as a pure dry pass-through).
-  if (fromVersion < 4 && d.combine && Array.isArray(d.combine.nodes)) {
-    for (const n of d.combine.nodes) {
-      if (n?.kind !== 'feedback' || !n.params || typeof n.params !== 'object') continue;
-      if (typeof n.params.intensity !== 'number') n.params.intensity = 0.5;
-    }
-  }
-  return data;
-}
 
 // ---------------- GLSL program compile helpers (raw, not the fullscreen
 //                  fragment path — the OBJ pass needs its own vertex shader) -

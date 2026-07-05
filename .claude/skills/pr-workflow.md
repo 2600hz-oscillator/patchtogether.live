@@ -58,6 +58,15 @@ per-port lists — see `module-development`) will conflict after a merge. The pl
 **NEVER use `gh pr update-branch`** to do step 3 — see the silent-drop hazard
 below. Always merge `main` in locally and diff.
 
+## Pipeline depth — keep 2 PRs in CI + 1 staged locally
+
+Do not strictly serialize (open one PR, wait ~25 min for CI, then start the next) — that idles both CI and local build capacity. Because **strict-up-to-date is OFF** (see above), open PRs do not invalidate each other, so run a **3-stage pipeline**: up to **2 PRs open in CI at once**, plus a **third block built + committed locally**, ready to open the instant one of the two open PRs merges. As a PR merges, promote: open the staged local block as the new 2nd PR and start building the next block locally.
+
+- **Independent work** (different modules/areas, no shared-file overlap): branch each block from `main`; the two open PRs run CI in parallel; the third is a committed local branch. On each merge, run `task pr:conflict-sweep` for shared-list collisions.
+- **Dependent / sequential work** (block N+1 builds on N AND they touch the same GENERATED files — `contract-lock.txt` / `module-docs.generated.ts` — or both re-attest the WebGL hash): **STACK** them — N+1's branch bases on N's branch, so its CI runs against the stacked base and the generated files + attest compose with no conflict. When N merges to `main`: (1) retarget N+1's base to `main` (`gh pr edit <N+1> --base main`) — a stacked PR's base is its PARENT branch, so merging it while base=parent lands it on the parent (shows MERGED but never reaches `main`); always retarget to `main` first and verify with `git grep` on `origin/main`, never trust `state=MERGED`; (2) `git fetch && git merge origin/main`, resolve, push, merge on green; (3) promote the staged block N+2 to an open PR and start N+3 locally. Do NOT arm auto-merge on a still-stacked PR (base != main).
+
+Cap the pipeline at **2 open + 1 local** — more in flight multiplies the shared-file/attest rebase overhead. Every PR still gets its own final-commit green; never merge on red.
+
 ## The `gh pr update-branch` silent-drop pattern
 
 **Important — bit us hard, repeatedly.** When you `gh pr update-branch` on a PR
