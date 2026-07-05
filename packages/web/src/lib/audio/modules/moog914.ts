@@ -50,7 +50,6 @@ export const moog914Def: AudioModuleDef = {
   domain: 'audio',
   label: '914 extended fixed filter bank',
   category: 'filters',
-  schemaVersion: 1,
 
   inputs: [
     // The signal to shape. Plain audio passthrough into the fan node.

@@ -54,7 +54,6 @@ export const kriaDef: AudioModuleDef = {
   domain: 'audio',
   label: 'kria',
   category: 'modulation',
-  schemaVersion: 1,
   // Big card: 4 track rows × 16 steps + page/track selectors. 3u tile.
   size: '3u',
   hp: 4,

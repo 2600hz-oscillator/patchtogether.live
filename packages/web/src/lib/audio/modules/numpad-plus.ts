@@ -278,7 +278,6 @@ export const numpadPlusDef: AudioModuleDef = {
   domain: 'audio',
   label: 'numpad+',
   category: 'sources',
-  schemaVersion: 1,
 
   inputs: [
     { id: 'clock', type: 'gate' },

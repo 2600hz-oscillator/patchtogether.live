@@ -135,7 +135,6 @@ export const hypercubeDef: AudioModuleDef = {
   // hypercube.ts into the WebGL content-hash basis + is cross-checked against
   // the card's getContext('webgl2') by the §12 coverage guard.
   rendersWebGL: true,
-  schemaVersion: 1,
 
   inputs: [
     { id: 'pitch', type: 'cv' },

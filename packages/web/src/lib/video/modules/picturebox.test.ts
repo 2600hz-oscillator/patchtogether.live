@@ -13,17 +13,9 @@ import type { ModuleNode } from '$lib/graph/types';
 import { ASSET_SLOTS, ASSET_SLOT_NOTES, slotForVOct } from '$lib/video/asset-select';
 import { midiToVOct } from '$lib/audio/note-entry';
 
-describe('PICTUREBOX def — schema v4', () => {
-  it('reports schemaVersion 4', () => {
-    expect(pictureboxDef.schemaVersion).toBe(4);
-  });
-
+describe('PICTUREBOX def', () => {
   it('declares maxInstances = 8 (workspace cap mirror)', () => {
     expect(pictureboxDef.maxInstances).toBe(8);
-  });
-
-  it('has no migrate() (old-patch migrate logic removed — cleanup 2/5)', () => {
-    expect(pictureboxDef.migrate).toBeUndefined();
   });
 });
 

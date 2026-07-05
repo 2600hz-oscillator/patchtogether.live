@@ -86,7 +86,6 @@ export const lumakeyDef: VideoModuleDef = {
   domain: 'video',
   label: 'lumakey',
   category: 'effects',
-  schemaVersion: 1,
   inputs: [
     { id: 'fg',        type: 'video' },
     { id: 'bg',        type: 'video' },

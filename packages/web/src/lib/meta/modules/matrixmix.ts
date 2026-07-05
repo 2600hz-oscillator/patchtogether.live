@@ -42,5 +42,4 @@ export const matrixmixDef: MetaModuleDef = {
   inputs: [],
   outputs: [],
   params: [],
-  schemaVersion: 1,
 };

@@ -188,7 +188,6 @@ export const symbioteDef: AudioModuleDef = {
   domain: 'audio',
   label: 'symbiote',
   category: 'sources',
-  schemaVersion: 1,
   ossAttribution: { author: 'Émilie Gillet' },
 
   inputs: [

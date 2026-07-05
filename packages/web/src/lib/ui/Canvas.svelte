@@ -88,7 +88,7 @@
     // Validate via parseEnvelope when a raw object is passed; if already typed,
     // pass through.
     let validated: PatchEnvelope;
-    if (typeof env === 'object' && env !== null && (env as PatchEnvelope).envelopeVersion === 1) {
+    if (typeof env === 'object' && env !== null && typeof (env as PatchEnvelope).envelopeVersion === 'number') {
       validated = env as PatchEnvelope;
     } else {
       validated = parseEnvelope(JSON.stringify(env));

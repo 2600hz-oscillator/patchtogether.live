@@ -105,7 +105,6 @@ export const cartesianDef: AudioModuleDef = {
   // v4: PR-34 — per-cell optional `chord: 'mono' | 'maj' | 'min'` for Stage-1
   //     polyphony. Pitch output port type changed to `polyPitchGate`.
   //     Backward-compat resolved by engine.addEdge → resolveConnection().
-  schemaVersion: 4,
 
   inputs: [
     { id: 'clock', type: 'gate' },

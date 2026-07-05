@@ -80,7 +80,6 @@ import {
   isStatefulKind,
   isMeltStateKind,
   opHistoryDepth,
-  TOYBOX_SCHEMA_VERSION,
   combineExtraFor,
   exquisiteUniforms,
   makeDefaultCombineGraph,
@@ -326,7 +325,6 @@ export const toyboxDef: VideoModuleDef = {
   domain: 'video',
   label: 'toybox',
   category: 'sources',
-  schemaVersion: TOYBOX_SCHEMA_VERSION,
   // Fix E Phase 2 — TOYBOX's pure-GL layers (shader/gen/frag/obj) run in the
   // render worker when the flag is on. The worker-side createToyboxWorkerHandle
   // receives serialized node.data snapshots via MsgToyboxSync (sent by

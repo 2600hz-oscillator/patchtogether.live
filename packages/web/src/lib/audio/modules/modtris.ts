@@ -65,7 +65,6 @@ export const modtrisDef: AudioModuleDef = {
   domain: 'audio',
   label: 'modtris',
   category: 'games',
-  schemaVersion: 1,
   vizPassthrough: true,
 
   inputs: [

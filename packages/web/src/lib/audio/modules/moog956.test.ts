@@ -56,7 +56,6 @@ describe('moog956Def: module def shape', () => {
     expect(moog956Def.type).toBe('moog956');
     expect(moog956Def.label).toBe('956 ribbon');
     expect(moog956Def.category).toBe('utility');
-    expect(moog956Def.schemaVersion).toBe(1);
   });
 
   it('lives in the Moog System 35/55 Clones palette bucket and uses the Moog956Card', () => {

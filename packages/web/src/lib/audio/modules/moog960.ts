@@ -107,7 +107,6 @@ export const moog960Def: AudioModuleDef = {
   // Matches the existing `sequencer` module's category (no dedicated
   // 'sequencers' category exists in the registry).
   category: 'modulation',
-  schemaVersion: 1,
 
   inputs: [
     // External clock: rising edge advances one column. Unpatched → internal

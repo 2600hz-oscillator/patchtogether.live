@@ -859,7 +859,6 @@ export const macrooscillatorDef: AudioModuleDef = {
   domain: 'audio',
   label: 'macrooscillator',
   category: 'sources',
-  schemaVersion: 1,
   ossAttribution: { author: 'Émilie Gillet' },
 
   inputs: [

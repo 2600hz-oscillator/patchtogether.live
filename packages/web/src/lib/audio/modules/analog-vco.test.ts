@@ -123,10 +123,4 @@ describe('analogVcoDef: module def shape', () => {
     }
   });
 
-  it('schemaVersion=5 with no migrate() (old-patch migrate logic removed — cleanup 2/5)', () => {
-    expect(analogVcoDef.schemaVersion).toBe(5);
-    // Per-module old-patch migrate() bodies were dropped; a fresh save stamps
-    // the current version so no migrate ever fires for new patches.
-    expect(analogVcoDef.migrate).toBeUndefined();
-  });
 });

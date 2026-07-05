@@ -56,7 +56,6 @@ export const joystickDef: AudioModuleDef = {
   domain: 'audio',
   label: 'joystick',
   category: 'utility',
-  schemaVersion: 1,
 
   // No inputs — pure manual / future-MIDI-mappable control.
   inputs: [],

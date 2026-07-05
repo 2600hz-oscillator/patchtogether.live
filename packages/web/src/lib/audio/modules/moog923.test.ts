@@ -25,7 +25,6 @@ describe('moog923Def: module def shape', () => {
     expect(moog923Def.type).toBe('moog923');
     expect(moog923Def.label).toBe('923 filters / noise source');
     expect(moog923Def.category).toBe('filter');
-    expect(moog923Def.schemaVersion).toBe(1);
   });
 
   it('lives in the Moog System 35/55 Clones palette bucket and uses the Moog923Card', () => {

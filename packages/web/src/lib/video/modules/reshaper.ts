@@ -128,7 +128,6 @@ export const reshaperDef: VideoModuleDef = {
   domain: 'video',
   label: 'reshaper',
   category: 'output',
-  schemaVersion: 1,
   inputs: [
     // Coordinate fields. mono-video so SHAPEDRAMPS h_*/v_* outputs
     // patch in cleanly without an upcast detour.

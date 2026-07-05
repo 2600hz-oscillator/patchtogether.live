@@ -61,7 +61,6 @@ export const moog907aDef: AudioModuleDef = {
   domain: 'audio',
   label: '907a fixed filter bank',
   category: 'filters',
-  schemaVersion: 1,
 
   inputs: [
     // The signal to shape. Plain audio passthrough into the fan node.

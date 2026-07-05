@@ -70,7 +70,6 @@ const baseDef: AudioModuleDef = {
   domain: 'audio',
   label: 'lfo',
   category: 'modulation',
-  schemaVersion: 1,
 
   inputs: [
     { id: 'clock', type: 'gate' },

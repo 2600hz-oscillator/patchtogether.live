@@ -276,7 +276,6 @@ export const ringsDef: AudioModuleDef = {
   domain: 'audio',
   label: 'rings',
   category: 'sources',
-  schemaVersion: 1,
   stereoPairs: [
     ['odd', 'even'],
   ],

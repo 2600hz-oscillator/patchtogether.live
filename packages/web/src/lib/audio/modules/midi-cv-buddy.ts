@@ -312,7 +312,6 @@ export const midiCvBuddyDef: AudioModuleDef = {
   domain: 'audio',
   label: 'midi-cv-buddy',
   category: 'sources',
-  schemaVersion: 1,
 
   // No audio inputs — MIDI source is external (the device).
   inputs: [],

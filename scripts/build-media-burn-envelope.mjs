@@ -56,14 +56,6 @@ const xR = BASE_X + COLS * CARD_W; // 1100
 const cadillacX = xR + CADILLAC_SPEED * SECONDS_UNTIL_HIT; // 1400
 const cadillacY = BASE_Y + (ROWS * CARD_H) / 2 - 47; // center on middle row; -47 = CAR_H/2
 
-// -- Picturebox schemaVersion (mirrors packages/web/src/lib/video/modules/picturebox.ts).
-//    Current def is v4; the tile data shape (imageBytes-only) matches a fresh
-//    v4 "choose image" node, so re-exporting at the current stamp needs no
-//    data transform. (Per-module old-patch migrate() was dropped in cleanup 2/5.)
-const PICTUREBOX_SCHEMA_VERSION = 4;
-// -- Cadillac schemaVersion.
-const CADILLAC_SCHEMA_VERSION = 1;
-
 // -- JPEG-encode each tile so the runtime's base64ToImageBitmap (which
 //    Blob-wraps with image/jpeg) decodes them. PNG tiles get re-encoded
 //    here.
@@ -138,16 +130,11 @@ ydoc.transact(() => {
   };
 });
 
-// 3) Envelope. moduleSchemas only needs the types the patch actually
-//    uses; loadEnvelopeIntoStore falls back to schemaVersion 1 for any
-//    type it doesn't find here.
+// 3) Envelope (v2 lean format: no per-module moduleSchemas — the migration
+//    substrate was collapsed; a patch is just topology + authored values).
 const envelope = {
-  envelopeVersion: 1,
+  envelopeVersion: 2,
   savedAt: new Date().toISOString(),
-  moduleSchemas: {
-    picturebox: PICTUREBOX_SCHEMA_VERSION,
-    cadillac: CADILLAC_SCHEMA_VERSION,
-  },
   update: Buffer.from(Y.encodeStateAsUpdate(ydoc)).toString('base64'),
 };
 

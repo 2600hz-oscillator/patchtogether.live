@@ -18,8 +18,6 @@
 // top of the knob value. clock input is an external clock (rising edges
 // advance one pattern step); when unpatched the internal tempo drives.
 //
-// schemaVersion: 1 — brand-new module, no migration.
-//
 // Inputs:
 //   clock (gate): external clock; rising edges advance one step. Unpatched = internal tempo.
 //   reset (gate): rising edge resets the pattern step index to 0.
@@ -79,7 +77,6 @@ export const gridsDef: AudioModuleDef = {
   domain: 'audio',
   label: 'grids',
   category: 'modulation',
-  schemaVersion: 1,
   ossAttribution: { author: 'Émilie Gillet' },
 
   inputs: [

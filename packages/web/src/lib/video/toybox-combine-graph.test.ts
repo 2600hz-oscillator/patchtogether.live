@@ -23,7 +23,6 @@ import {
   isMeltStateKind,
   propagateFreshness,
   videoLayerFresh,
-  TOYBOX_SCHEMA_VERSION,
   opHistoryDepth,
   combineExtraFor,
   opParamVal,
@@ -499,12 +498,6 @@ describe('isMeltStateKind (audit C1 — alpha-as-state ring clear)', () => {
     for (const k of ['datamosh', 'flowsmear', 'framedelay', 'channeldesync', 'feedback', 'fade']) {
       expect(isMeltStateKind(k)).toBe(false);
     }
-  });
-});
-
-describe('TOYBOX_SCHEMA_VERSION', () => {
-  it('is the current schema version (4) — the single source of truth', () => {
-    expect(TOYBOX_SCHEMA_VERSION).toBe(4);
   });
 });
 

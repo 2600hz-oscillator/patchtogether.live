@@ -18,7 +18,6 @@ describe('videoboxDef — module def shape', () => {
     expect(videoboxDef.domain).toBe('video');
     expect(videoboxDef.label).toBe('videobox');
     expect(videoboxDef.category).toBe('sources');
-    expect(videoboxDef.schemaVersion).toBe(1);
   });
 
   it('declares a single play_trigger gate input that routes through a synthetic param', () => {

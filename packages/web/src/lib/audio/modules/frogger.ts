@@ -79,7 +79,6 @@ export const froggerDef: AudioModuleDef = {
   domain: 'audio',
   label: 'frogger',
   category: 'games',
-  schemaVersion: 1,
   vizPassthrough: true,
   ossAttribution: { author: 'Adrian Eyre (frogger, MIT)' },
 

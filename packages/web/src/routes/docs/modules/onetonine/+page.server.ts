@@ -14,7 +14,6 @@ export const load: PageServerLoad = () => {
     type: oneToNineDef.type,
     label: oneToNineDef.label,
     category: oneToNineDef.category,
-    schemaVersion: oneToNineDef.schemaVersion,
     inputs: oneToNineDef.inputs.map((p) => ({ id: p.id, type: p.type })),
     outputs: oneToNineDef.outputs.map((p) => ({ id: p.id, type: p.type })),
     params: oneToNineDef.params.map((p) => ({

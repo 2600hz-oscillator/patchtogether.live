@@ -253,7 +253,6 @@ export const spirographsDef: VideoModuleDef = {
   domain: 'video',
   label: 'spirographs',
   category: 'sources',
-  schemaVersion: 1,
   inputs: INPUTS,
   outputs: [
     { id: 'out', type: 'video' },           // full-colour composite (canonical)

@@ -56,7 +56,6 @@ export const noiseDef: AudioModuleDef = {
   domain: 'audio',
   label: 'noise',
   category: 'sources',
-  schemaVersion: 1,
 
   inputs: [],
   outputs: [

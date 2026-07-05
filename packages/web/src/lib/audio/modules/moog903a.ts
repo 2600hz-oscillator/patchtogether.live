@@ -44,7 +44,6 @@ export const moog903aDef: AudioModuleDef = {
   domain: 'audio',
   label: '903a random signal generator',
   category: 'sources',
-  schemaVersion: 1,
 
   inputs: [],
   outputs: [

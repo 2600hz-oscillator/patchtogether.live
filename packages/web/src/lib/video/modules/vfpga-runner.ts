@@ -130,7 +130,6 @@ export const vfpgaRunnerDef: VideoModuleDef = {
   domain: 'video',
   label: 'vfpga-runner',
   category: 'sources',
-  schemaVersion: 1,
   // Every catalog VFPGA is pure-GL with a DOM-free factory → eligible for the
   // off-main-thread render worker (flag-gated; default OFF → byte-identical).
   renderLocus: 'worker',

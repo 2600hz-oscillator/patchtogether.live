@@ -24,7 +24,6 @@ export const gatemaidenDef: AudioModuleDef = {
   domain: 'audio',
   label: 'gatemaiden',
   category: 'utility',
-  schemaVersion: 1,
   inputs: [
     // Generic CV input: accepts a gate OR a trigger and derives both outputs.
     // Declared `edge: 'gate'` because it READS the input level (for the gate

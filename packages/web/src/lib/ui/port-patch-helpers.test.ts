@@ -20,7 +20,6 @@ const lfoDef: AudioModuleDef = {
   domain: 'audio',
   label: 'LFO',
   category: 'modulation',
-  schemaVersion: 1,
   inputs: [
     { id: 'clock', type: 'gate' },
     { id: 'rate', type: 'cv' },
@@ -42,7 +41,6 @@ const filterDef: AudioModuleDef = {
   domain: 'audio',
   label: 'Filter',
   category: 'filters',
-  schemaVersion: 1,
   inputs: [
     { id: 'audio', type: 'audio' },
     { id: 'cutoff', type: 'cv' },
@@ -58,7 +56,6 @@ const audioOutDef: AudioModuleDef = {
   domain: 'audio',
   label: 'Audio Out',
   category: 'output',
-  schemaVersion: 1,
   inputs: [
     { id: 'L', type: 'audio' },
     { id: 'R', type: 'audio' },
@@ -74,7 +71,6 @@ const linesDef: AudioModuleDef = {
   domain: 'audio',
   label: 'LINES',
   category: 'sources',
-  schemaVersion: 1,
   inputs: [
     { id: 'fm', type: 'mono-video' },
     { id: 'orient', type: 'cv' },
@@ -240,7 +236,6 @@ const sequencerDef: AudioModuleDef = {
   domain: 'audio',
   label: 'Sequencer',
   category: 'sources',
-  schemaVersion: 1,
   inputs: [{ id: 'clock', type: 'gate' }],
   outputs: [
     { id: 'clock', type: 'gate' },
@@ -256,7 +251,6 @@ const adsrDef: AudioModuleDef = {
   domain: 'audio',
   label: 'ADSR',
   category: 'modulation',
-  schemaVersion: 1,
   inputs: [
     { id: 'gate', type: 'gate' },
     { id: 'attack', type: 'cv' },
@@ -277,7 +271,6 @@ const analogVcoDef: AudioModuleDef = {
   domain: 'audio',
   label: 'Analog VCO',
   category: 'sources',
-  schemaVersion: 1,
   inputs: [
     { id: 'pitch_cv', type: 'pitch' },
     { id: 'fm', type: 'audio' },

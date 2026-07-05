@@ -415,7 +415,6 @@ export const mappyDef: VideoModuleDef = {
   domain: 'video',
   label: 'mappy',
   category: 'utilities',
-  schemaVersion: 1,
   inputs: [
     { id: 'in1', type: 'video' },
     { id: 'in2', type: 'video' },

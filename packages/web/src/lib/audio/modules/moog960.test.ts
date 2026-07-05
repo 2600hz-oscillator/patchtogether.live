@@ -25,7 +25,6 @@ describe('moog960Def: module def shape', () => {
     expect(moog960Def.type).toBe('moog960');
     expect(moog960Def.label).toBe('960 sequencer');
     expect(moog960Def.category).toBe('modulation');
-    expect(moog960Def.schemaVersion).toBe(1);
   });
 
   it('lives in the Moog System 35/55 Clones palette bucket and uses the Moog960Card', () => {

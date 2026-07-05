@@ -53,7 +53,6 @@ const gamepadStub: AudioModuleDef = {
   domain: 'audio',
   label: 'Gamepad',
   category: 'sources',
-  schemaVersion: 1,
   inputs: [],
   outputs: [
     { id: 'lx', type: 'cv' },

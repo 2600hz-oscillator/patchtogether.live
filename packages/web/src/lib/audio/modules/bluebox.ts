@@ -103,7 +103,6 @@ export const blueboxDef: AudioModuleDef = {
   // it lives in the "VCOs" sub-bucket alongside the other gate-triggered
   // pitched voices (drummergirl, meowbox, dx7).
   category: 'sources',
-  schemaVersion: 1,
 
   inputs: BLUEBOX_BUTTON_NAMES.map((name) => ({
     id: buttonGateId(name),

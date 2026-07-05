@@ -63,12 +63,10 @@ export interface AudioModuleDef {
   inputs: PortDef[];
   outputs: PortDef[];
   params: readonly ParamDef[];
-  schemaVersion: number;
   /** Rack HEIGHT tier ('1u' | '3u') — see ModuleDef.size. */
   size?: RackSize;
   /** Width in 1u square tiles (default 1) — see ModuleDef.hp. */
   hp?: number;
-  migrate?: (data: unknown, fromVersion: number) => unknown;
   /**
    * Hard cap on simultaneous instances per rackspace. Singleton modules
    * (e.g. master mixer, master clock) set this to 1; omitted/undefined =

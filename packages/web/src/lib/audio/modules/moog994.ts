@@ -37,7 +37,6 @@ export const moog994Def: AudioModuleDef = {
   domain: 'audio',
   label: '994 mult',
   category: 'utilities',
-  schemaVersion: 1,
 
   inputs: [
     { id: 'a_in', type: 'audio' },

@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "e84af45ad3c5dadec9afca4f0271c03967c541bb20c271d9f799ac801a40b018",
-  "attestedAt": "2026-07-05T18:34:48.700Z",
+  "webglContentHash": "2fa1e16928adc38807ea985eba4de1ebde64583fc51b8173d58eb963e449a5e4",
+  "attestedAt": "2026-07-05T21:55:03.470Z",
   "attestedBy": "tmayshark@gmail.com",
-  "gitHeadAtAttest": "c1233e913224d27bbdefc5427bb5104bc88c147a",
+  "gitHeadAtAttest": "1bdc20f3c56d709ffcc204387946ad718b5a5463",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "host": "2600hzs-MBP.home.local",
@@ -12,11 +12,17 @@
   "suites": {
     "A-heavy": {
       "specFiles": 48,
-      "passed": 150,
+      "passed": 149,
       "failed": 0,
-      "flaky": 0,
+      "flaky": 1,
       "skipped": 1,
-      "flakyDetails": []
+      "flakyDetails": [
+        {
+          "test": "renders non-black, EVOLVES across frames, differs between modes + the INTENSITY knob moves it",
+          "file": "toybox-feedback.spec.ts",
+          "firstError": "Error: the feedback output evolves across frames (the ping-pong is live) |  | expect(received).toBeGreaterThan(expected) | "
+        }
+      ]
     },
     "A-serial": {
       "specFiles": 2,
@@ -43,5 +49,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 132
+  "durationSec": 160
 }

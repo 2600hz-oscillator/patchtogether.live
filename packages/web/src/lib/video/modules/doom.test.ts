@@ -138,9 +138,6 @@ describe('doomDef — module def shape', () => {
     expect(paramIds).not.toContain('running');
   });
 
-  it('schemaVersion is 2 (#353 per-player input groups)', () => {
-    expect(doomDef.schemaVersion).toBe(2);
-  });
 });
 
 // ---------------- Factory: audio-bridge contract ----------------

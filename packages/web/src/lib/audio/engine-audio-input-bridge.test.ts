@@ -65,7 +65,6 @@ const AUDIO_SRC_DEF: AudioModuleDef = {
   domain: 'audio',
   label: 'AudioSrc',
   category: 'sources',
-  schemaVersion: 1,
   inputs: [],
   outputs: [{ id: 'out', type: 'audio' }],
   params: [],

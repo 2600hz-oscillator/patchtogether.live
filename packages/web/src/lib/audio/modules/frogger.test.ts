@@ -14,7 +14,6 @@ describe('froggerDef — registry shape', () => {
     expect(froggerDef.domain).toBe('audio');
     expect(froggerDef.label).toBe('frogger');
     expect(froggerDef.category).toBe('games');
-    expect(froggerDef.schemaVersion).toBe(1);
     expect(froggerDef.vizPassthrough).toBe(true);
     expect(froggerDef.ossAttribution?.author).toMatch(/Adrian Eyre/i);
   });

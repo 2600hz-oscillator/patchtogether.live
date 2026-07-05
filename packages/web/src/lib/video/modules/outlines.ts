@@ -174,7 +174,6 @@ export const outlinesDef: VideoModuleDef = {
   domain: 'video',
   label: 'outlines',
   category: 'sources',
-  schemaVersion: 1,
   inputs: [
     // A gate event spawns a new shape. The CV-bridge routes the gate sample
     // into setParam(cv_gate, value); a rising-edge detector spawns one shape.

@@ -45,7 +45,6 @@ export const audioOutDef: AudioModuleDef = {
   domain: 'audio',
   label: 'audio out',
   category: 'output',
-  schemaVersion: 1,
 
   inputs: [
     { id: 'L', type: 'audio' },

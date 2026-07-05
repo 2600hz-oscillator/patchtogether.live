@@ -42,7 +42,6 @@ export const treeohvoxDef: AudioModuleDef = {
   domain: 'audio',
   label: 'tree.oh.vox',
   category: 'sources',
-  schemaVersion: 1,
   ossAttribution: { author: 'Robin Schmidt (Open303, MIT)' },
 
   inputs: [

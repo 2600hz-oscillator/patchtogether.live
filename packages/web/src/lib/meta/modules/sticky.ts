@@ -19,5 +19,4 @@ export const stickyDef: MetaModuleDef = {
   inputs: [],
   outputs: [],
   params: [],
-  schemaVersion: 1,
 };

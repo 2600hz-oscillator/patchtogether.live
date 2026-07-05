@@ -156,7 +156,6 @@ export const vdelayDef: VideoModuleDef = {
   domain: 'video',
   label: 'vdelay',
   category: 'effects',
-  schemaVersion: 1,
   inputs: [
     { id: 'in',          type: 'video' },
     { id: 'time_cv',     type: 'cv', paramTarget: 'delayTime', cvScale: { mode: 'linear' } },

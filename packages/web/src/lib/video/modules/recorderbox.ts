@@ -151,7 +151,6 @@ export const recorderboxDef: VideoModuleDef = {
   domain: 'video',
   label: 'recorderbox',
   category: 'output',
-  schemaVersion: 1,
   inputs: [
     { id: 'in', type: 'video' },
     { id: 'audio_l', type: 'audio' },

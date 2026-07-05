@@ -57,7 +57,6 @@ export const painterDef: VideoModuleDef = {
   domain: 'video',
   label: 'painter',
   category: 'sources',
-  schemaVersion: 1,
   inputs: [],
   outputs: [
     { id: 'out', type: 'video' },

@@ -103,7 +103,6 @@ export const linesDef: VideoModuleDef = {
   domain: 'video',
   label: 'lines',
   category: 'sources',
-  schemaVersion: 1,
   inputs: [
     { id: 'fm', type: 'mono-video' },
     // Per-param CV inputs. The cross-domain CV bridge in PatchEngine

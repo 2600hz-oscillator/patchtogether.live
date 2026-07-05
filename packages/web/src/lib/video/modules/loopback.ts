@@ -137,7 +137,6 @@ export const loopbackDef: VideoModuleDef = {
   domain: 'video',
   label: 'loopback',
   category: 'sources',
-  schemaVersion: 1,
   inputs: [],
   outputs: [
     { id: 'out', type: 'video' },

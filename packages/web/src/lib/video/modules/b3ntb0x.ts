@@ -734,7 +734,6 @@ export const b3ntb0xDef: VideoModuleDef = {
   domain: 'video',
   label: 'b3ntb0x',
   category: 'output',
-  schemaVersion: 1,
   inputs: [
     { id: 'in',              type: 'video' },
     { id: 'enhance_cv',      type: 'cv', paramTarget: 'enhance',      cvScale: { mode: 'linear' } },

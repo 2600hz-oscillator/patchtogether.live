@@ -28,7 +28,6 @@ describe('scoreboardDef — module def shape', () => {
     expect(scoreboardDef.domain).toBe('video');
     expect(scoreboardDef.label).toBe('scoreboard');
     expect(scoreboardDef.category).toBe('utilities');
-    expect(scoreboardDef.schemaVersion).toBe(1);
   });
 
   it('declares 2 cv-gate inputs (SCORE + RESET) routed through paramTargets', () => {

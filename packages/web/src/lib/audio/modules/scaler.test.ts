@@ -27,7 +27,6 @@ describe('scalerDef: module def shape', () => {
     expect(scalerDef.label).toBe(scalerDef.label.toLowerCase());
     expect(scalerDef.category).toBe('utilities');
     expect(scalerDef.domain).toBe('audio');
-    expect(scalerDef.schemaVersion).toBe(1);
   });
 
   it('exposes a single `in` audio input that also accepts the CV family', () => {

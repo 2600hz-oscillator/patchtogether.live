@@ -245,7 +245,6 @@ export const edgesDef: VideoModuleDef = {
   domain: 'video',
   label: 'edges',
   category: 'effects',
-  schemaVersion: 1,
   inputs: [
     { id: 'in', type: 'video' },
     // Per-param CV inputs — port id == param id (the cross-domain CV bridge

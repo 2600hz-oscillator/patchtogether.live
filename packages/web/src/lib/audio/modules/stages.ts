@@ -152,7 +152,6 @@ export const stagesDef: AudioModuleDef = {
   domain: 'audio',
   label: 'stages',
   category: 'modulation',
-  schemaVersion: 1,
   ossAttribution: { author: 'Émilie Gillet' },
   // Inputs are written out as a literal array (6 GATE inputs + 1 global
   // TRIG + 12 CV inputs) so the docs/module-manifest.ts regex parser can

@@ -91,7 +91,6 @@ export const analogLogicMathsDef: AudioModuleDef = {
   domain: 'audio',
   label: 'analoglogicmaths',
   category: 'utilities',
-  schemaVersion: 1,
 
   inputs: [
     { id: 'a',       type: 'cv' },

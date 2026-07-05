@@ -27,7 +27,6 @@ describe('moog921VcoDef: module def shape', () => {
     expect(moog921VcoDef.type).toBe('moog921Vco');
     expect(moog921VcoDef.label).toBe('921 vco');
     expect(moog921VcoDef.category).toBe('sources');
-    expect(moog921VcoDef.schemaVersion).toBe(1);
   });
 
   it('exposes the 921 inputs: pitch, lin_fm, sync, width_cv + octave/tune/linFmAmount/level CV', () => {

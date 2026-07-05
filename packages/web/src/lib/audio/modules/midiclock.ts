@@ -143,7 +143,6 @@ export const midiclockDef: AudioModuleDef = {
   domain: 'audio',
   label: 'midiclock',
   category: 'sources',
-  schemaVersion: 1,
 
   inputs: [],
   outputs: [

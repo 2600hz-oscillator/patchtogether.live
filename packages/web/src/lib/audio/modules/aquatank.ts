@@ -35,7 +35,6 @@ export const aquaTankDef: AudioModuleDef = {
   domain: 'audio',
   label: 'aquatank',
   category: 'effects',
-  schemaVersion: 1,
   inputs: [
     { id: 'in1',     type: 'audio' },
     { id: 'in2',     type: 'audio' },

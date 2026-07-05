@@ -35,6 +35,5 @@ export const cadillacDef: MetaModuleDef = {
   inputs: [],
   outputs: [],
   params: [],
-  schemaVersion: 1,
   maxInstances: 1,
 };

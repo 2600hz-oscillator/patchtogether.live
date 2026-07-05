@@ -37,7 +37,6 @@ describe('RECORDERBOX — module def shape', () => {
     expect(def.domain).toBe('video');
     expect(def.label).toBe('recorderbox');
     expect(def.category).toBe('output');
-    expect(def.schemaVersion).toBe(1);
   });
 
   it('input surface: in (video) + audio_l (audio) + audio_r (audio)', () => {

@@ -99,7 +99,6 @@ export const spectrographDef: AudioModuleDef = {
   domain: 'audio',
   label: 'spectrograph',
   category: 'hybrid',
-  schemaVersion: 1,
 
   inputs: [{ id: 'in', type: 'audio' }],
   outputs: [

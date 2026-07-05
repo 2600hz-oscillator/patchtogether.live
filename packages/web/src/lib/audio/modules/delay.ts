@@ -54,7 +54,6 @@ export const delayDef: AudioModuleDef = {
   domain: 'audio',
   label: 'delay',
   category: 'effects',
-  schemaVersion: 1,
   inputs: [
     { id: 'audio', type: 'audio' },
     { id: 'time',  type: 'cv', paramTarget: 'time', cvScale: { mode: 'linear' } },

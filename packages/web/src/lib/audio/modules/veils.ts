@@ -122,7 +122,6 @@ export const veilsDef: AudioModuleDef = {
   domain: 'audio',
   label: 'veils',
   category: 'utilities',
-  schemaVersion: 1,
 
   inputs: [
     { id: 'in1', type: 'audio' },

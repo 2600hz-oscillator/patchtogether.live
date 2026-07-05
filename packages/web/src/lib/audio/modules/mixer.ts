@@ -34,7 +34,6 @@ export const mixerDef: AudioModuleDef = {
   domain: 'audio',
   label: 'mixer',
   category: 'utilities',
-  schemaVersion: 1,
   inputs: [
     { id: 'in1', type: 'audio' },
     { id: 'in2', type: 'audio' },

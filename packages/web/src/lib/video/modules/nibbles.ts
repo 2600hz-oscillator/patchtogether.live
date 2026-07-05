@@ -153,7 +153,6 @@ export const nibblesDef: VideoModuleDef = {
   domain: 'video',
   label: 'nibbles',
   category: 'sources',
-  schemaVersion: 1,
   inputs: [],
   outputs: [
     { id: 'out',        type: 'video' },

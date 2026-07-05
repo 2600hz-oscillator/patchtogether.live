@@ -180,7 +180,6 @@ export const cameraInputDef: VideoModuleDef = {
   domain: 'video',
   label: 'camera',
   category: 'sources',
-  schemaVersion: 1,
   inputs: [
     // CV input for gain modulation. paramTarget == port id keeps the
     // docs manifest in sync; the cross-domain CV bridge looks up the

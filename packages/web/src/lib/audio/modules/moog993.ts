@@ -38,7 +38,6 @@ export const moog993Def: AudioModuleDef = {
   domain: 'audio',
   label: '993 trig',
   category: 'modulation',
-  schemaVersion: 1,
 
   inputs: [
     { id: 'trig_from1', type: 'gate' },

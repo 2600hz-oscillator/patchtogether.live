@@ -13,14 +13,13 @@
 // sequencer's steps).
 //
 // WHY IT PROVES THE REMOVALS ARE NEW-PATCH-SAFE (the hard constraint):
-// makeEnvelope stamps moduleSchemas[type] = def.schemaVersion, so on load
-// fromVersion === def.schemaVersion and the version-gated migrate dispatch
-// (persistence.ts:470, `fromVersion < def.schemaVersion && def.migrate`) NEVER
-// fires for a fresh save. Deleting a migrate body OR resetting a schemaVersion
-// is therefore a no-op for new patches BY CONSTRUCTION. This golden pins that: it
-// registers the REAL defs whose migrate/version THIS PR removes (audio-out,
-// chroma, luma) and asserts the fresh round-trip is byte-stable, so it stays
-// GREEN both BEFORE and AFTER the removals.
+// cleanup 5/5 collapsed the whole `schemaVersion` / `moduleSchemas` migration
+// substrate (envelope v2 = lean write, tolerant read). A fresh save now stamps a
+// lean v2 envelope with NO per-module version map at all, and the load path runs
+// no migration — so topology + authored/sequenced values are the ONLY thing a
+// round-trip can carry. This golden registers real defs (audio-out, chroma, luma)
+// plus stubs, and asserts the fresh save is a lean v2 envelope AND the round-trip
+// is structurally byte-stable, so it stays GREEN across the whole cleanup.
 //
 // Uses a REAL syncedStore + Y.Doc + persistence path — never a mock (see the
 // [[yjs-save-load-real-ydoc]] discipline: never rebuild+reassign a live Y map).
@@ -42,8 +41,8 @@ import { chromaDef } from '$lib/video/modules/chroma';
 import { lumaDef } from '$lib/video/modules/luma';
 import type { ModuleNode, Edge } from './types';
 
-// The persistence layer only reads schemaVersion + ports + migrate from a def;
-// it never runs the factory. A throwing stub catches accidental invocation.
+// The persistence layer only reads the registered TYPE + ports from a def; it
+// never runs the factory. A throwing stub catches accidental invocation.
 const throwingFactory = (): never => {
   throw new Error('factory must not run in a persistence round-trip test');
 };
@@ -54,7 +53,6 @@ const lfoStub: AudioModuleDef = {
   domain: 'audio',
   label: 'golden lfo',
   category: 'modulation',
-  schemaVersion: 1,
   inputs: [],
   outputs: [{ id: 'cv', type: 'cv' }],
   params: [{ id: 'rate', label: 'Rate', defaultValue: 1, min: 0, max: 20, curve: 'linear' }],
@@ -68,7 +66,6 @@ const vcoStub: AudioModuleDef = {
   domain: 'audio',
   label: 'golden vco',
   category: 'sources',
-  schemaVersion: 1,
   inputs: [{ id: 'pitch', type: 'pitch' }],
   outputs: [{ id: 'out', type: 'audio' }],
   params: [{ id: 'tune', label: 'Tune', defaultValue: 0, min: -36, max: 36, curve: 'linear' }],
@@ -82,7 +79,6 @@ const seqStub: AudioModuleDef = {
   domain: 'audio',
   label: 'golden seq',
   category: 'sequencers',
-  schemaVersion: 1,
   inputs: [{ id: 'clock', type: 'gate' }],
   outputs: [
     { id: 'pitch', type: 'pitch' },
@@ -155,20 +151,19 @@ beforeAll(() => {
 });
 
 describe('schema-cleanup golden: a fresh patch round-trips identically', () => {
-  it('a fresh save stamps every registered type at its CURRENT schemaVersion', () => {
+  it('a fresh save is a LEAN v2 envelope — no per-module moduleSchemas map', () => {
     const src = freshPatch();
     src.ydoc.transact(() => {
       for (const n of NODES) src.store.nodes[n.id] = clone(n);
     });
     const env = makeEnvelope(src.ydoc);
     expect(env.envelopeVersion).toBe(ENVELOPE_VERSION);
-    // The migrate dispatch keys off (fromVersion < def.schemaVersion). A fresh
-    // save records fromVersion === def.schemaVersion for EVERY type, so no
-    // migrate can ever fire on reload — this is what makes deleting a migrate
-    // body / resetting a schemaVersion a provable no-op for new patches.
-    expect(env.moduleSchemas['audioOut']).toBe(audioOutDef.schemaVersion);
-    expect(env.moduleSchemas['chroma']).toBe(chromaDef.schemaVersion);
-    expect(env.moduleSchemas['luma']).toBe(lumaDef.schemaVersion);
+    expect(ENVELOPE_VERSION).toBe(2);
+    // The migration substrate was collapsed: a fresh save carries only savedAt +
+    // the Yjs update, never a per-module version map. Nothing on load can reshape
+    // the recovered node.data, so authored/sequenced values are all that survive.
+    expect('moduleSchemas' in env).toBe(false);
+    expect(JSON.parse(serializeEnvelope(env))).not.toHaveProperty('moduleSchemas');
   });
 
   it('save → JSON → load returns topology + edges + AUTHORED/SEQUENCED params unchanged', () => {
@@ -209,9 +204,19 @@ describe('schema-cleanup golden: a fresh patch round-trips identically', () => {
       expect(loaded!.targetType).toBe(e.targetType);
     }
 
-    // Re-saving the loaded patch is a FIXPOINT: the same moduleSchemas map (so a
-    // removed migrate / reset version can't perturb the recorded versions).
+    // Re-saving the loaded patch is a FIXPOINT: still a lean v2 envelope, and it
+    // reloads into the same topology (no per-module version to perturb).
     const reEnv = makeEnvelope(dst.ydoc);
-    expect(reEnv.moduleSchemas).toEqual(makeEnvelope(src.ydoc).moduleSchemas);
+    expect(reEnv.envelopeVersion).toBe(ENVELOPE_VERSION);
+    expect('moduleSchemas' in reEnv).toBe(false);
+    const dst2 = freshPatch();
+    const reResult = loadEnvelopeIntoStore(
+      parseEnvelope(serializeEnvelope(reEnv)),
+      dst2.ydoc,
+      dst2.store,
+    );
+    expect(reResult.diagnostics).toEqual([]);
+    expect(reResult.nodesLoaded).toBe(NODES.length);
+    expect(reResult.edgesLoaded).toBe(EDGES.length);
   });
 });

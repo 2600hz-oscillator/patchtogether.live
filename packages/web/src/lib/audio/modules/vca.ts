@@ -37,7 +37,6 @@ export const vcaDef: AudioModuleDef = {
   domain: 'audio',
   label: 'vca',
   category: 'utilities',
-  schemaVersion: 1,
   inputs: [
     { id: 'audio', type: 'audio' },
     { id: 'cv', type: 'cv' },

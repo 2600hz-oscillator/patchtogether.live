@@ -441,7 +441,6 @@ export const bentboxDef: VideoModuleDef = {
   domain: 'video',
   label: 'bentbox',
   category: 'output',
-  schemaVersion: 1,
   inputs: [
     { id: 'in',                   type: 'video' },
     { id: 'hsync_drift_cv',       type: 'cv', paramTarget: 'hsync_drift',        cvScale: { mode: 'linear' } },

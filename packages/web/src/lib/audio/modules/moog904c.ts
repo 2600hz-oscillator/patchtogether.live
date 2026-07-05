@@ -47,7 +47,6 @@ export const moog904cDef: AudioModuleDef = {
   domain: 'audio',
   label: '904c voltage controlled filter coupler',
   category: 'filters',
-  schemaVersion: 1,
 
   inputs: [
     { id: 'audio', type: 'audio' },

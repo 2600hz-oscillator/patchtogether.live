@@ -4,46 +4,34 @@
 //
 // Wire format = a JSON envelope wrapping a base64-encoded Yjs update. The Yjs
 // update is the source of truth: applying it to a fresh Y.Doc reconstructs the
-// patch graph exactly. The envelope adds the metadata needed for forward-
-// compatible loading: schemaVersion per module type at save time (so we can
-// run migrations on load), savedAt, and an envelopeVersion gate.
+// patch graph exactly. The envelope adds a `savedAt` timestamp and an
+// `envelopeVersion` gate.
 //
-// This format survives Phase 4 (the wire format remains Yjs) and survives
-// module evolution via D19's per-module migrations.
+// Format policy is NIMBLE WRITE, TOLERANT READ: a new save stamps the current
+// ENVELOPE_VERSION and a lean payload; `parseEnvelope` accepts that version AND
+// any older one (rejecting only a FUTURE envelope). The per-module
+// `schemaVersion` / `moduleSchemas` migration substrate was collapsed in the
+// schema cleanup (envelope v2) — a patch now stores TOPOLOGY + authored /
+// sequenced values only, and is never reshaped on load.
 
 import * as Y from 'yjs';
 import { syncedStore, getYjsDoc } from '@syncedstore/core';
 import { getNodePosition, type XY } from '$lib/multiplayer/layouts';
-import {
-  getModuleDef as getAudioModuleDef,
-  listModuleDefs as listAudioModuleDefs,
-} from '$lib/audio/module-registry';
-import {
-  getVideoModuleDef,
-  listVideoModuleDefs,
-} from '$lib/video/module-registry';
-import { getMetaModuleDef, listMetaModuleDefs } from '$lib/meta/module-registry';
+import { getModuleDef as getAudioModuleDef } from '$lib/audio/module-registry';
+import { getVideoModuleDef } from '$lib/video/module-registry';
+import { getMetaModuleDef } from '$lib/meta/module-registry';
 import type { ModuleNode, Edge } from './types';
 import { validateEdge, type ResolveDef } from './validate-edge';
 
-/** Per-module-type schemaVersion + migrate, abstracted across the two
- *  per-domain registries so the persistence layer doesn't have to know
- *  which one a given type lives in. Returns undefined when the type is
- *  unknown to either registry (used to flag dropped nodes on load).
- *
- *  Both AudioModuleDef and VideoModuleDef carry `schemaVersion: number`
- *  and an optional `migrate(data, fromVersion) => unknown`, so the structural
- *  type below is satisfied by either. */
-interface AnyDomainDef {
-  schemaVersion: number;
-  migrate?: (data: unknown, fromVersion: number) => unknown;
-}
-
-function getAnyDomainDef(type: string): AnyDomainDef | undefined {
-  // Audio-first because most types are audio; the lookup is a simple Map
-  // get either way so order is purely cosmetic. Meta is checked last
-  // (only STICKY today, but the registry is open-ended).
-  return getAudioModuleDef(type) ?? getVideoModuleDef(type) ?? getMetaModuleDef(type);
+/** Is `type` registered in ANY per-domain registry? The persistence loader only
+ *  needs to know whether a saved node's type still resolves to a def — an
+ *  unknown type is dropped (flagged as a load diagnostic). It no longer reads
+ *  any per-module version/migrate metadata: the `schemaVersion` / `moduleSchemas`
+ *  migration substrate was collapsed in the schema cleanup. */
+function isKnownModuleType(type: string): boolean {
+  return Boolean(
+    getAudioModuleDef(type) ?? getVideoModuleDef(type) ?? getMetaModuleDef(type),
+  );
 }
 
 /** SyncedStore-shaped patch — keys map to their value or undefined (post-delete).
@@ -54,8 +42,11 @@ export type LivePatch = {
   edges: Record<string, Edge | undefined>;
 };
 
-/** Bumped when the envelope format itself changes (not when modules change). */
-export const ENVELOPE_VERSION = 1 as const;
+/** Bumped when the envelope format itself changes (not when modules change).
+ *  v2 = the deliberate lean-format marker: the `moduleSchemas` map + per-module
+ *  migration substrate were dropped. `parseEnvelope` still ACCEPTS v1 (tolerant
+ *  read); new saves stamp v2. */
+export const ENVELOPE_VERSION = 2 as const;
 
 /** Transient runtime / lobby fields that live on a module's `node.data` ONLY
  * so they ride the Yjs sync (every peer agrees on the host's lobby state), but
@@ -91,8 +82,6 @@ function stripTransientDataFields(type: string, data: unknown): void {
 export interface PatchEnvelope {
   envelopeVersion: typeof ENVELOPE_VERSION;
   savedAt: string; // ISO 8601
-  /** schemaVersion per module type at save time. Drives load-side migration. */
-  moduleSchemas: Record<string, number>;
   /** base64-encoded Y.encodeStateAsUpdate(ydoc). */
   update: string;
 }
@@ -153,23 +142,9 @@ function base64ToBytes(b64: string): Uint8Array {
  * anything. Does not trigger I/O — caller decides what to do with the result.
  */
 export function makeEnvelope(ydoc: Y.Doc): PatchEnvelope {
-  const moduleSchemas: Record<string, number> = {};
-  // Both domain registries contribute their schemaVersions; load-time
-  // migration looks up by type id (which is unique across both registries
-  // because a `type` is the union over both modules' StandardModuleType).
-  for (const def of listAudioModuleDefs()) {
-    moduleSchemas[def.type] = def.schemaVersion;
-  }
-  for (const def of listVideoModuleDefs()) {
-    moduleSchemas[def.type] = def.schemaVersion;
-  }
-  for (const def of listMetaModuleDefs()) {
-    moduleSchemas[def.type] = def.schemaVersion;
-  }
   return {
     envelopeVersion: ENVELOPE_VERSION,
     savedAt: new Date().toISOString(),
-    moduleSchemas,
     update: bytesToBase64(Y.encodeStateAsUpdate(ydoc)),
   };
 }
@@ -277,16 +252,18 @@ export function parseEnvelope(json: string): PatchEnvelope {
     throw new EnvelopeParseError('envelope is not an object');
   }
   const env = raw as Record<string, unknown>;
-  if (env.envelopeVersion !== ENVELOPE_VERSION) {
+  // Tolerant read (forward-compat): accept THIS version and any OLDER one —
+  // reject only a FUTURE envelope we can't understand. An old v1 envelope still
+  // loads: it carried a `moduleSchemas` map that drove per-module migration, but
+  // that substrate was collapsed, so a legacy `moduleSchemas` field (if present)
+  // is simply ignored. Its topology + authored/sequenced values load intact.
+  if (typeof env.envelopeVersion !== 'number' || env.envelopeVersion > ENVELOPE_VERSION) {
     throw new EnvelopeParseError(
-      `unsupported envelopeVersion ${String(env.envelopeVersion)} (expected ${ENVELOPE_VERSION})`,
+      `unsupported envelopeVersion ${String(env.envelopeVersion)} (expected <= ${ENVELOPE_VERSION})`,
     );
   }
   if (typeof env.savedAt !== 'string') {
     throw new EnvelopeParseError('missing or invalid savedAt');
-  }
-  if (!env.moduleSchemas || typeof env.moduleSchemas !== 'object') {
-    throw new EnvelopeParseError('missing or invalid moduleSchemas');
   }
   if (typeof env.update !== 'string') {
     throw new EnvelopeParseError('missing or invalid update (expected base64 string)');
@@ -296,8 +273,8 @@ export function parseEnvelope(json: string): PatchEnvelope {
 
 // ---------------- Load ----------------
 
-/** A node that couldn't migrate or whose module type is no longer registered.
- * Rendered as a placeholder error card on the canvas (Phase 1: log + skip). */
+/** A node whose module type is no longer registered, or an edge that failed
+ * structural validation. Rendered as a placeholder / logged + skipped. */
 export interface LoadDiagnostic {
   nodeId: string;
   type: string;
@@ -309,7 +286,7 @@ export interface LoadResult {
   nodesLoaded: number;
   /** Number of edges successfully loaded. */
   edgesLoaded: number;
-  /** Per-node migration / unknown-type diagnostics. */
+  /** Per-node unknown-type + per-edge validation diagnostics. */
   diagnostics: LoadDiagnostic[];
   /**
    * The persisted OUTPUT aspect ('4:3' | '16:9') from the envelope's `settings`
@@ -349,11 +326,11 @@ export function writeVideoAspectToDoc(ydoc: Y.Doc, aspect: '4:3' | '16:9', origi
  * loaded. Atomic: wrapped in a single transact so subscribers see one update.
  *
  * Strategy: decode the envelope's update into a temp Y.Doc, read its state out
- * as plain objects, run per-module migrations on `node.data` based on
- * `moduleSchemas`, then atomically clear the live store and re-add migrated
- * entries. We don't `Y.applyUpdate` directly onto the live doc because Yjs's
- * CRDT merge semantics conflict with "load = replace": tombstones from the
- * cleared state would block re-insertion of identical struct IDs.
+ * as plain objects, strip any transient session fields, then atomically clear
+ * the live store and re-add the entries. We don't `Y.applyUpdate` directly onto
+ * the live doc because Yjs's CRDT merge semantics conflict with "load =
+ * replace": tombstones from the cleared state would block re-insertion of
+ * identical struct IDs.
  */
 export function loadEnvelopeIntoStore(
   envelope: PatchEnvelope,
@@ -374,16 +351,15 @@ export function loadEnvelopeIntoStore(
   // saved after the aspect switch shipped.
   const loadedVideoAspect = readVideoAspectFromDoc(tempYdoc);
 
-  // 2. Run per-node migrations.
+  // 2. Resolve each node's type + strip transient session fields.
   const diagnostics: LoadDiagnostic[] = [];
-  const migratedNodes: Record<string, ModuleNode> = {};
+  const keptNodes: Record<string, ModuleNode> = {};
   for (const [id, node] of Object.entries(loadedNodes)) {
     // Look up across both per-domain registries — video modules
     // (PICTUREBOX, CAMERA, LINES, ...) live in the video registry and
     // would otherwise be silently dropped on load. See
     // .myrobots/plans/rackspace-persistence.md (Phase A audit).
-    const def = getAnyDomainDef(node.type);
-    if (!def) {
+    if (!isKnownModuleType(node.type)) {
       diagnostics.push({
         nodeId: id,
         type: String(node.type),
@@ -391,41 +367,24 @@ export function loadEnvelopeIntoStore(
       });
       continue; // Phase 1: skip. Future: insert placeholder error node.
     }
-    const fromVersion = envelope.moduleSchemas[node.type] ?? 1;
-    let migratedData = node.data;
-    if (fromVersion < def.schemaVersion && def.migrate) {
-      try {
-        migratedData = def.migrate(node.data, fromVersion) as
-          | Record<string, unknown>
-          | undefined;
-      } catch (e) {
-        diagnostics.push({
-          nodeId: id,
-          type: String(node.type),
-          reason: `migration ${fromVersion}→${def.schemaVersion} failed: ${(e as Error).message}`,
-        });
-        continue;
-      }
-    }
     // Strip transient / session-state fields that persisted into the envelope
     // (e.g. DOOM's mpMode lobby gate — see TRANSIENT_DATA_FIELDS_BY_TYPE). The
-    // toJSON() above severed Yjs proxies, so `migratedData` is a plain object
-    // we own and can safely mutate. Run AFTER migration so a per-module
-    // migrate() that touches transient fields still sees them in the input.
-    stripTransientDataFields(node.type, migratedData);
-    migratedNodes[id] = { ...node, data: migratedData };
+    // toJSON() above severed Yjs proxies, so `node.data` is a plain object we
+    // own and can safely mutate.
+    stripTransientDataFields(node.type, node.data);
+    keptNodes[id] = node;
   }
 
   // Def lookup the edge validator needs (declared input/output ports). This is
-  // the SAME chain the rest of persistence uses (getAnyDomainDef), but typed to
-  // the validator's narrow ValidatorDef view (it only reads `inputs`/`outputs`,
+  // the SAME registry chain the rest of persistence uses, but typed to the
+  // validator's narrow ValidatorDef view (it only reads `inputs`/`outputs`,
   // which every real AudioModuleDef / VideoModuleDef / MetaModuleDef carries).
   // GROUP! nodes have no module def — validateEdge resolves their exposed ports
   // via resolveExposedPort, so a missing def for `group` is expected, not a bug.
   const resolveDefForValidation: ResolveDef = (type) =>
     getAudioModuleDef(type) ?? getVideoModuleDef(type) ?? getMetaModuleDef(type);
-  // validateEdge takes a node ARRAY; snapshot the surviving (migrated) nodes once.
-  const survivingNodes = Object.values(migratedNodes);
+  // validateEdge takes a node ARRAY; snapshot the surviving nodes once.
+  const survivingNodes = Object.values(keptNodes);
 
   // 3. Atomically swap the live store.
   liveYdoc.transact(() => {
@@ -437,12 +396,12 @@ export function loadEnvelopeIntoStore(
     }
     for (const id of Object.keys(livePatch.edges)) delete livePatch.edges[id];
     for (const id of Object.keys(livePatch.nodes)) delete livePatch.nodes[id];
-    for (const node of Object.values(migratedNodes)) {
+    for (const node of Object.values(keptNodes)) {
       livePatch.nodes[node.id] = node;
     }
     for (const edge of Object.values(loadedEdges)) {
       // Drop edges referencing dropped nodes (e.g. unknown module types).
-      if (!migratedNodes[edge.source.nodeId] || !migratedNodes[edge.target.nodeId]) {
+      if (!keptNodes[edge.source.nodeId] || !keptNodes[edge.target.nodeId]) {
         diagnostics.push({
           nodeId: edge.id,
           type: 'edge',
@@ -475,7 +434,7 @@ export function loadEnvelopeIntoStore(
   });
 
   return {
-    nodesLoaded: Object.keys(migratedNodes).length,
+    nodesLoaded: Object.keys(keptNodes).length,
     edgesLoaded: Object.keys(loadedEdges).length - diagnostics.filter((d) => d.type === 'edge').length,
     diagnostics,
     videoAspect: loadedVideoAspect,

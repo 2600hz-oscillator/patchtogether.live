@@ -106,7 +106,6 @@ export const scoreboardDef: VideoModuleDef = {
   domain: 'video',
   label: 'scoreboard',
   category: 'utilities',
-  schemaVersion: 1,
   inputs: [
     // Two cv-typed gate inputs. paramTarget routes incoming CV through
     // the audio→video CV bridge into our setParam, where the edge

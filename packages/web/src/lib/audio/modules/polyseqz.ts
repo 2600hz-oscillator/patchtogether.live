@@ -149,7 +149,6 @@ export const polyseqzDef: AudioModuleDef = {
   domain: 'audio',
   label: 'polyseqz',
   category: 'modulation',
-  schemaVersion: 1,
 
   inputs: [
     // External clock (optional). When patched, advances on rising edges.

@@ -40,7 +40,6 @@ describe('moog911aDef — module def shape', () => {
     expect(moog911aDef.type).toBe('moog911a');
     expect(moog911aDef.label).toBe('911a trig delay');
     expect(moog911aDef.category).toBe('modulation');
-    expect(moog911aDef.schemaVersion).toBe(1);
     expect(moog911aDef.domain).toBe('audio');
   });
 

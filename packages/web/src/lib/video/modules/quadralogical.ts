@@ -661,7 +661,6 @@ export const quadralogicalDef: VideoModuleDef = {
   domain: 'video',
   label: 'quadralogical',
   category: 'utilities',
-  schemaVersion: 1,
   inputs: [
     { id: 'in1', type: 'video' },
     { id: 'in2', type: 'video' },

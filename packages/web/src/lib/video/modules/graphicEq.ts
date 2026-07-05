@@ -117,7 +117,6 @@ export const graphicEqDef: VideoModuleDef = {
   domain: 'video',
   label: 'graphic eq',
   category: 'output',
-  schemaVersion: 1,
   inputs: [
     // STEREO audio in. `audio`-typed inputs on a VIDEO module — the cross-domain
     // audio→video bridge connects the upstream source straight into the

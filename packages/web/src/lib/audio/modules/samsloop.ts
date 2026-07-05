@@ -848,7 +848,6 @@ export const samsloopDef: AudioModuleDef = {
   domain: 'audio',
   label: 'samsloop',
   category: 'sources',
-  schemaVersion: 1,
 
   inputs: [
     { id: 'trig',       type: 'gate' },

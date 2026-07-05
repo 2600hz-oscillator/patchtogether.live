@@ -112,7 +112,6 @@ export const audioInDef: AudioModuleDef = {
   domain: 'audio',
   label: 'audio in',
   category: 'sources',
-  schemaVersion: 1,
 
   // NOT singleton — users may want multiple AUDIO IN cards on different
   // physical inputs (mic + line-in + USB interface). The card-side

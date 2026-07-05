@@ -80,7 +80,6 @@ export const mixerVideoDef: VideoModuleDef = {
   domain: 'video',
   label: 'v-mixer',
   category: 'utilities',
-  schemaVersion: 1,
   inputs: [
     { id: 'in1', type: 'video' },
     { id: 'in2', type: 'video' },

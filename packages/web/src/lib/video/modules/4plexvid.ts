@@ -107,7 +107,6 @@ export const fourPlexVidDef: VideoModuleDef = {
   domain: 'video',
   label: '4plexvid',
   category: 'utilities',
-  schemaVersion: 1,
   inputs: [
     { id: 'in1', type: 'video' },
     { id: 'in2', type: 'video' },

@@ -117,7 +117,6 @@ export const shapesDef: VideoModuleDef = {
   domain: 'video',
   label: 'shapes',
   category: 'sources',
-  schemaVersion: 1,
   inputs: [
     // Per-param CV inputs. Mirrors LINES (PR-65): port id == param id so
     // the cross-domain CV bridge in PatchEngine routes audio-side cv

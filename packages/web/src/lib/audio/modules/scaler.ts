@@ -51,7 +51,6 @@ export const scalerDef: AudioModuleDef = {
   domain: 'audio',
   label: 'scaler',
   category: 'utilities',
-  schemaVersion: 1,
 
   inputs: [
     // The signal to scale. `audio`-typed but widened to the CV family so a

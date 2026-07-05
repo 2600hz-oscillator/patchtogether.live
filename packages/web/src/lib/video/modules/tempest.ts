@@ -192,7 +192,6 @@ export const tempestDef: VideoModuleDef = {
   domain: 'video',
   label: 'tempest',
   category: 'output',
-  schemaVersion: 1,
   inputs: [
     // Claw rim position as CV (the rotary-spinner control → a gamepad joystick
     // axis). port id == param id so the cross-domain CV bridge routes to setParam.

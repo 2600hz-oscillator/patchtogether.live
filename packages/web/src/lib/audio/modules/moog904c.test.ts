@@ -37,7 +37,6 @@ describe('moog904cDef: module def shape', () => {
     expect(moog904cDef.type).toBe('moog904c');
     expect(moog904cDef.label).toBe('904c voltage controlled filter coupler');
     expect(moog904cDef.category).toBe('filters');
-    expect(moog904cDef.schemaVersion).toBe(1);
     expect(moog904cDef.domain).toBe('audio');
   });
 

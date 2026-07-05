@@ -39,7 +39,7 @@ import { resolveExposedPort } from './group-projection';
 
 /**
  * Minimal def shape the validator needs: a module's declared input + output
- * ports. The full ModuleDef carries far more (params, schemaVersion, card
+ * ports. The full ModuleDef carries far more (params, card
  * metadata); validation only reads the port lists, so we accept this narrow
  * structural view. Any AudioModuleDef / VideoModuleDef / MetaModuleDef is
  * assignable to it.

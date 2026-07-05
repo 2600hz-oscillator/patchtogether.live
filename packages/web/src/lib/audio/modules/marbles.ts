@@ -163,7 +163,6 @@ export const marblesDef: AudioModuleDef = {
   domain: 'audio',
   label: 'marbles',
   category: 'sources',
-  schemaVersion: 1,
   ossAttribution: { author: 'Émilie Gillet' },
 
   inputs: [

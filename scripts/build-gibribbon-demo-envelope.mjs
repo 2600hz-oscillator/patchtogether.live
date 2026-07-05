@@ -52,13 +52,6 @@ const OUT_PATH = resolve(
   'packages/web/src/lib/ui/example-patches/gibribbon-demo.imp.json',
 );
 
-// ── Pinned schemaVersions (mirror the module sources). ──────────────────────
-const TIMELORDE_SCHEMA_VERSION = 2; // timelorde.ts
-const MACSEQ_SCHEMA_VERSION = 1; // macseq.ts
-const MACROOSCILLATOR_SCHEMA_VERSION = 1; // macrooscillator.ts
-const SYNESTHESIA_SCHEMA_VERSION = 1; // synesthesia.ts
-const GIBRIBBON_SCHEMA_VERSION = 1; // gibribbon.ts
-
 // ── MACROOSCILLATOR model indices (mirror MODEL_NAMES in macseq.ts). ────────
 const MODEL = {
   VA: 0,
@@ -309,17 +302,11 @@ function edge(id, srcNode, srcPort, dstNode, dstPort, sourceType, targetType) {
   };
 }
 
-// ── Envelope. moduleSchemas advertises the 5 types in the patch. ────────────
+// ── Envelope (v2 lean format: no per-module moduleSchemas — the migration
+//    substrate was collapsed; a patch is just topology + authored values). ──
 const envelope = {
-  envelopeVersion: 1,
+  envelopeVersion: 2,
   savedAt: new Date().toISOString(),
-  moduleSchemas: {
-    timelorde: TIMELORDE_SCHEMA_VERSION,
-    macseq: MACSEQ_SCHEMA_VERSION,
-    macrooscillator: MACROOSCILLATOR_SCHEMA_VERSION,
-    synesthesia: SYNESTHESIA_SCHEMA_VERSION,
-    gibribbon: GIBRIBBON_SCHEMA_VERSION,
-  },
   update: Buffer.from(Y.encodeStateAsUpdate(ydoc)).toString('base64'),
 };
 

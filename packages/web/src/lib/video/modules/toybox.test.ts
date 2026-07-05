@@ -59,14 +59,6 @@ describe('toyboxDef shape', () => {
     expect(toyboxDef.params).toEqual([]);
   });
 
-  it('is schemaVersion 4 with NO migrate hook (schema cleanup removed it)', () => {
-    // The per-module old-patch migrate() machinery was dropped (schema cleanup):
-    // schemaVersion stays 4 as a documentary marker, but there is no migrate fn,
-    // so an old sub-v4 save now loads with current defaults (owner-accepted
-    // break). New-patch behavior is unchanged (a fresh node saves at v4).
-    expect(toyboxDef.schemaVersion).toBe(4);
-    expect(toyboxDef.migrate).toBeUndefined();
-  });
 });
 
 // ---------------------------------------------------------------------------

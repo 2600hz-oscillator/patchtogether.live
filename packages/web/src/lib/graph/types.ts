@@ -439,8 +439,6 @@ export interface ModuleDef {
   inputs: PortDef[];
   outputs: PortDef[];
   params: ParamSchema;
-  /** Bumped when params or data shape changes (D19). */
-  schemaVersion: number;
   /**
    * Rack sizing (Phase-1 rack standardization). HEIGHT tier — every module is
    * either '1u' (one square grid tile tall) or '3u' (three tiles tall). WIDTH
@@ -452,8 +450,6 @@ export interface ModuleDef {
   size?: RackSize;
   /** Width in 1u square tiles (default 1). See `size`. */
   hp?: number;
-  /** Migrate older saved data forward to the current schemaVersion. */
-  migrate?: (data: unknown, fromVersion: number) => unknown;
   /**
    * Module-grouping Phase 3A: when set, this module renders an on-card
    * visualization (typically a <canvas>) that can be portaled into the

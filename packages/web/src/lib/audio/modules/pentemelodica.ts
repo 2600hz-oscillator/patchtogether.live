@@ -149,7 +149,6 @@ export const pentemelodicaDef: AudioModuleDef = {
   domain: 'audio',
   label: 'pentemelodica',
   category: 'sources',
-  schemaVersion: 1,
   stereoPairs: [['out_l', 'out_r']],
 
   inputs: [

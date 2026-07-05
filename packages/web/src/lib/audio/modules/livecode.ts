@@ -23,7 +23,6 @@ export const livecodeDef: AudioModuleDef = {
   domain: 'audio',
   label: 'livecode',
   category: 'utilities',
-  schemaVersion: 1,
 
   // No I/O. The card body holds the editor + run button + output log.
   // The io-spec-consistency e2e test allows zero-port modules.

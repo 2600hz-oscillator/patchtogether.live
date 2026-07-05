@@ -24,7 +24,6 @@ describe('moog995Def: module def shape', () => {
     expect(moog995Def.label).toBe('995 atten');
     expect(moog995Def.category).toBe('utilities');
     expect(moog995Def.domain).toBe('audio');
-    expect(moog995Def.schemaVersion).toBe(1);
   });
 
   it('is filed under the Moog System 35/55 Clones palette bucket', () => {

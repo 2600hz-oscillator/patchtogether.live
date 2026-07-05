@@ -252,7 +252,6 @@ export const ruttetraDef: VideoModuleDef = {
   // coord-remap (now RESHAPER, schemaVersion 1). Patches saved before the
   // rename recorded `ruttetra: 1`; the persistence loader remaps those to
   // `reshaper` so old saves keep their look. See graph/persistence.ts.
-  schemaVersion: 2,
   inputs: [
     // Single source video. Polymorphic 'video' so mono-video / image /
     // keys upcast in via the engine's implicit upcasts. (No X/Y

@@ -180,7 +180,6 @@ describe('both modules register with the correct type ids', () => {
   it('reshaper = coord-remap (schemaVersion 1)', () => {
     const def = getVideoModuleDef('reshaper');
     expect(def?.label).toBe('reshaper');
-    expect(def?.schemaVersion).toBe(1);
     // RESHAPER keeps the X/Y mono-video coordinate-field inputs.
     expect(def?.inputs.find((p) => p.id === 'x')?.type).toBe('mono-video');
   });
@@ -190,7 +189,6 @@ describe('both modules register with the correct type ids', () => {
     // type id stays 'ruttetra' (patches/registry key unchanged); the DISPLAY
     // label was renamed to 'xyz' (shallow app-facing rename — see ruttetra.ts).
     expect(def?.label).toBe('xyz');
-    expect(def?.schemaVersion).toBe(2);
     expect(def?.inputs.find((p) => p.id === 'z')?.type).toBe('video');
   });
 });
@@ -201,9 +199,8 @@ describe('persisted ruttetra load-time type (v1→reshaper remap removed in clea
     return { ydoc: getYjsDoc(store), patch: store as unknown as LivePatch };
   }
 
-  // Hand-build an envelope whose moduleSchemas pretends ruttetra was saved
-  // at schemaVersion 1 (the OLD coord-remap), containing one ruttetra node.
-  function oldRuttetraEnvelope(savedVersion: number) {
+  // Hand-build an envelope containing one ruttetra node.
+  function ruttetraEnvelope() {
     const store = syncedStore<{ nodes: Record<string, ModuleNode>; edges: Record<string, Edge> }>({ nodes: {}, edges: {} });
     const ydoc = getYjsDoc(store);
     ydoc.transact(() => {
@@ -216,28 +213,20 @@ describe('persisted ruttetra load-time type (v1→reshaper remap removed in clea
         data: {},
       } as ModuleNode;
     });
-    const env = makeEnvelope(ydoc);
-    env.moduleSchemas = { ...env.moduleSchemas, ruttetra: savedVersion };
-    return env;
+    return makeEnvelope(ydoc);
   }
 
-  it('a v1-saved ruttetra node loads as ruttetra (the old→reshaper remap was removed)', () => {
+  it('a saved ruttetra node loads as ruttetra (no version-gated remap)', () => {
     // The load-time ruttetra(v1)→reshaper remap was dropped in schema-cleanup
-    // 4/5, so a pre-rename save now loads as today's RUTTETRA scope (no rewrite)
-    // — identical to the v2 case below. A pre-rename coord-remap patch showing
-    // the new look is the accepted one-time break.
+    // 4/5, and the whole schemaVersion/moduleSchemas substrate collapsed in 5/5.
+    // Load is now version-agnostic: ANY saved ruttetra node opens as today's
+    // RUTTETRA scope (no rewrite). A pre-rename coord-remap patch showing the new
+    // look is the accepted one-time break.
     const { ydoc, patch } = liveStore();
-    const res = loadEnvelopeIntoStore(oldRuttetraEnvelope(1), ydoc, patch);
+    const res = loadEnvelopeIntoStore(ruttetraEnvelope(), ydoc, patch);
     expect(res.nodesLoaded).toBe(1);
     expect(patch.nodes['n1']?.type).toBe('ruttetra');
     // Params still pass through the loader unchanged.
     expect(patch.nodes['n1']?.params.xDisp).toBe(0.4);
-  });
-
-  it('leaves a ruttetra node saved at v2 as the new RUTTETRA', () => {
-    const { ydoc, patch } = liveStore();
-    const res = loadEnvelopeIntoStore(oldRuttetraEnvelope(2), ydoc, patch);
-    expect(res.nodesLoaded).toBe(1);
-    expect(patch.nodes['n1']?.type).toBe('ruttetra');
   });
 });

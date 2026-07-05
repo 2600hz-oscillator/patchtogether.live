@@ -162,7 +162,6 @@ export const swolevcoDef: AudioModuleDef = {
   domain: 'audio',
   label: 'swolevco',
   category: 'sources',
-  schemaVersion: 1,
   inputs: [
     { id: 'pitch',     type: 'pitch' },
     { id: 'mod_pitch', type: 'pitch' },

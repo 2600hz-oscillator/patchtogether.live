@@ -19,9 +19,8 @@ import {
 import type { PatchEnvelope } from './persistence';
 
 const envelope: PatchEnvelope = {
-  envelopeVersion: 1,
+  envelopeVersion: 2,
   savedAt: '2026-05-27T00:00:00.000Z',
-  moduleSchemas: {},
   update: 'AAAA',
 };
 

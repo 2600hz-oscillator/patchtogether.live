@@ -424,7 +424,6 @@ export const cloudseedDef: AudioModuleDef = {
   domain: 'audio',
   label: 'cloudseed',
   category: 'effects',
-  schemaVersion: 1,
   stereoPairs: [['in_l', 'in_r'], ['out_l', 'out_r']],
   ossAttribution: { author: 'Ghost Note Audio' },
 

@@ -53,7 +53,6 @@ export const depolarizerDef: AudioModuleDef = {
   domain: 'audio',
   label: 'depolarizer',
   category: 'utilities',
-  schemaVersion: 1,
 
   inputs: [
     // The bipolar (−1..+1) CV to depolarize. CV-typed (CV math, not audio).

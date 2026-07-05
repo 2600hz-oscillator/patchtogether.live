@@ -92,7 +92,6 @@ export const cofefveDelayDef: AudioModuleDef = {
   domain: 'audio',
   label: 'cofefve delay',
   category: 'effects',
-  schemaVersion: 1,
   stereoPairs: [['inL', 'inR'], ['outL', 'outR']],
 
   inputs: [

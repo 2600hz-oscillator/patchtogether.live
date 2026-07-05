@@ -6,8 +6,6 @@
 // clock + CV module riding the shared scheduler-clock (the macseq.ts base)
 // with the record semantics lifted from numpad-plus.ts.
 //
-// schemaVersion: 1 — brand new module, no migration.
-//
 // ────────── IO ──────────
 //
 // Inputs (declaration order — load-bearing for the gate-edge handling +
@@ -230,7 +228,6 @@ export const writeseqDef: AudioModuleDef = {
   domain: 'audio',
   label: 'writeseq',
   category: 'modulation',
-  schemaVersion: 1,
 
   inputs: [
     // Pitch CV in (sampled on gate edges while recording; passed through

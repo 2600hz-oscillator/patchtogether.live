@@ -89,7 +89,6 @@ export const faderDef: VideoModuleDef = {
   domain: 'video',
   label: 'fader',
   category: 'utilities',
-  schemaVersion: 1,
   inputs: [
     { id: 'in_a',   type: 'video' },
     { id: 'in_b',   type: 'video' },

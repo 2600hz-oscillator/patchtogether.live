@@ -56,7 +56,6 @@ export const moog902Def: AudioModuleDef = {
   domain: 'audio',
   label: '902 vca',
   category: 'utilities',
-  schemaVersion: 1,
 
   inputs: [
     { id: 'audio', type: 'audio' },

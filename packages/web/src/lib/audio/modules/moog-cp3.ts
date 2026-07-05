@@ -53,7 +53,6 @@ export const moogCp3Def: AudioModuleDef = {
   domain: 'audio',
   label: 'cp3 mixer',
   category: 'utilities',
-  schemaVersion: 1,
 
   inputs: [
     { id: 'in1',  type: 'audio' },

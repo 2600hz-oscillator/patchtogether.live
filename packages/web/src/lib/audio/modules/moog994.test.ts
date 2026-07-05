@@ -23,7 +23,6 @@ describe('moog994Def: module def shape', () => {
     expect(moog994Def.type).toBe('moog994');
     expect(moog994Def.label).toBe('994 mult');
     expect(moog994Def.category).toBe('utilities');
-    expect(moog994Def.schemaVersion).toBe(1);
   });
 
   it('classifies under the Moog System 35/55 Clones palette bucket', () => {

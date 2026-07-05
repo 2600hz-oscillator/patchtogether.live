@@ -22,7 +22,6 @@ describe('moog993Def: module def shape', () => {
     expect(moog993Def.type).toBe('moog993');
     expect(moog993Def.label).toBe('993 trig');
     expect(moog993Def.category).toBe('modulation');
-    expect(moog993Def.schemaVersion).toBe(1);
     expect(moog993Def.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
   });
 

@@ -115,7 +115,6 @@ export const sequencerDef: AudioModuleDef = {
   //     unchanged. The pitch output port type changed from 'pitch' to
   //     'polyPitchGate'; the engine's resolveConnection() routes lane 0 to
   //     mono pitch sinks so existing patches keep working.
-  schemaVersion: 4,
   // Rack: 3u tall (step grid + transport + quicksave), 3 tiles wide (540px).
   size: '3u',
   hp: 3,

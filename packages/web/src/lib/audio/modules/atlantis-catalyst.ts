@@ -208,7 +208,6 @@ export const atlantisCatalystDef: AudioModuleDef = {
   domain: 'audio',
   label: 'scenechange',
   category: 'modulation',
-  schemaVersion: 1,
   inputs: [
     { id: 'nudge',  type: 'gate' },
     { id: 'freeze', type: 'gate' },

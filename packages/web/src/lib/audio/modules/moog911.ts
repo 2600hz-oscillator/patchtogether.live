@@ -49,7 +49,6 @@ export const moog911Def: AudioModuleDef = {
   domain: 'audio',
   label: '911 eg',
   category: 'modulation',
-  schemaVersion: 1,
 
   inputs: [
     { id: 'gate', type: 'gate' },

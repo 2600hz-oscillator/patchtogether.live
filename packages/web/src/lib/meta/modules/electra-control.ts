@@ -74,5 +74,4 @@ export const electraControlDef: MetaModuleDef = {
   // stays DELETABLE (no `undeletable`), unlike TIMELORDE — a deletable singleton
   // is auto-covered by the deterministic post-merge singleton cleanup.
   maxInstances: 1,
-  schemaVersion: 1,
 };

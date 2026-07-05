@@ -14,7 +14,6 @@ describe('mandleblotDef shape', () => {
     expect(mandleblotDef.type).toBe('mandleblot');
     expect(mandleblotDef.domain).toBe('video');
     expect(mandleblotDef.category).toBe('video-effects');
-    expect(mandleblotDef.schemaVersion).toBe(1);
   });
 
   it('declares two outputs — mono_out (mono-video) + color_out (video)', () => {

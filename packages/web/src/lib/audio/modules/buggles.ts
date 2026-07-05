@@ -146,7 +146,6 @@ export const bugglesDef: AudioModuleDef = {
   domain: 'audio',
   label: 'buggles',
   category: 'modulation',
-  schemaVersion: 1,
 
   inputs: [
     // No paramTarget — these are sampled into the JS shadow each woggle

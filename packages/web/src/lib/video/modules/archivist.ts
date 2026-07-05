@@ -159,7 +159,6 @@ export const archivistDef: VideoModuleDef = {
   domain: 'video',
   label: 'archivist',
   category: 'sources',
-  schemaVersion: 1,
   inputs: [
     // Rising edge toggles play/pause (mirrors VIDEOBOX's synthetic-param path).
     { id: 'play_trigger', type: 'gate', paramTarget: 'cv_play_trigger', edge: 'gate' },

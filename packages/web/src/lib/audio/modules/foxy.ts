@@ -250,7 +250,6 @@ export const foxyDef: AudioModuleDef = {
   domain: 'audio',
   label: 'foxy',
   category: 'sources',
-  schemaVersion: 1,
   // WAVECEL's stereo pair carries through unchanged.
   stereoPairs: [['out_l', 'out_r']],
 

@@ -47,7 +47,6 @@ export const moog921aDef: AudioModuleDef = {
   domain: 'audio',
   label: '921a driver',
   category: 'modulation',
-  schemaVersion: 1,
 
   inputs: [
     // freq_cv + width_cv are audio-rate summing CONTROL INPUTS (the worklet

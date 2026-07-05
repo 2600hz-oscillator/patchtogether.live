@@ -74,7 +74,6 @@ export const videoOutDef: VideoModuleDef = {
   domain: 'video',
   label: 'output',
   category: 'output',
-  schemaVersion: 1,
   inputs: [
     { id: 'in', type: 'video' },
   ],

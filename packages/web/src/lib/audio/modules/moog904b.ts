@@ -41,7 +41,6 @@ export const moog904bDef: AudioModuleDef = {
   domain: 'audio',
   label: '904b vcf',
   category: 'filters',
-  schemaVersion: 1,
 
   inputs: [
     { id: 'audio', type: 'audio' },

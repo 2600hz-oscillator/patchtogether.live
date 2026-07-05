@@ -123,7 +123,6 @@ export const bloodDef: VideoModuleDef = {
   domain: 'video',
   label: 'blood',
   category: 'sources',
-  schemaVersion: 1,
   // ONE BLOOD node per rack (mirrors DOOM's one-shared-node model).
   maxInstances: 1,
   // Owner-only: like DOOM, only the rack owner may add it.

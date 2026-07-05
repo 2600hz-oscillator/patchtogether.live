@@ -30,7 +30,6 @@ describe('moog962Def: module def shape', () => {
     expect(moog962Def.type).toBe('moog962');
     expect(moog962Def.label).toBe('962 seq switch');
     expect(moog962Def.category).toBe('utilities');
-    expect(moog962Def.schemaVersion).toBe(1);
     expect(moog962Def.domain).toBe('audio');
   });
 

@@ -8,7 +8,7 @@
 //
 // Kept separate from the audio + video registries because those carry
 // engine-factory shape; meta defs share only the palette/persistence
-// surface (label, category, schemaVersion, optional migrate).
+// surface (label, category, ports).
 
 import type { ModuleType, PortDef, ParamDef, Domain, RackSize } from '$lib/graph/types';
 import type { PaletteCategory } from '$lib/audio/module-registry';
@@ -24,13 +24,11 @@ export interface MetaModuleDef {
   inputs: PortDef[];
   outputs: PortDef[];
   params: readonly ParamDef[];
-  schemaVersion: number;
   /** Rack HEIGHT tier ('1u' | '3u') — a def-declared size WINS over the bulk
    *  RACK_SIZE_DEFAULTS map (see Canvas.svelte rackSizeByType). */
   size?: RackSize;
   /** Width in 1u square tiles (default 1) — see ModuleDef.hp. */
   hp?: number;
-  migrate?: (data: unknown, fromVersion: number) => unknown;
   maxInstances?: number;
   /** Mirror of AudioModuleDef.undeletable — no meta module sets this
    *  today; field present so Canvas's union-typed defLookup can read

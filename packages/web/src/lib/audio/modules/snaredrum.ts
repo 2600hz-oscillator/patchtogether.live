@@ -37,7 +37,6 @@ export const snaredrumDef: AudioModuleDef = {
   domain: 'audio',
   label: 'snare drum',
   category: 'sources',
-  schemaVersion: 1,
   // A WIDE 3u card (banded layout, ~22 controls), mate to KICK DRUM.
   size: '3u',
   hp: 2,

@@ -18,7 +18,6 @@ describe('tvLibrarianDef — module def shape', () => {
     // Hard standard: module labels MUST be lowercase (card CSS uppercases).
     expect(tvLibrarianDef.label).toBe(tvLibrarianDef.label.toLowerCase());
     expect(tvLibrarianDef.category).toBe('sources');
-    expect(tvLibrarianDef.schemaVersion).toBe(1);
   });
 
   it('is discoverable through the video registry (glob auto-registration)', () => {

@@ -26,7 +26,6 @@ describe('moog904bDef: module def shape', () => {
     expect(moog904bDef.type).toBe('moog904b');
     expect(moog904bDef.label).toBe('904b vcf');
     expect(moog904bDef.category).toBe('filters');
-    expect(moog904bDef.schemaVersion).toBe(1);
   });
 
   it('is categorized under Moog System 35/55 Clones and uses the Moog904bVcfCard', () => {

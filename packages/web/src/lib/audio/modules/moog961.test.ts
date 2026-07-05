@@ -141,7 +141,6 @@ describe('moog961Def — module def shape', () => {
     expect(moog961Def.type).toBe('moog961');
     expect(moog961Def.label).toBe('961 interface');
     expect(moog961Def.category).toBe('utilities');
-    expect(moog961Def.schemaVersion).toBe(1);
   });
 
   it('lives in the Moog System 35/55 Clones palette bucket and uses the Moog961Card', () => {

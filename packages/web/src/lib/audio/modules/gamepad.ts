@@ -953,7 +953,6 @@ export const gamepadDef: AudioModuleDef = {
   domain: 'audio',
   label: 'gamepad',
   category: 'utility',
-  schemaVersion: 1,
   inputs: [],
   // Inlined as literal array (not derived from OUTPUT_DEFS via .map)
   // so the docs manifest extractor in module-manifest.ts can read

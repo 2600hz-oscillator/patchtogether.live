@@ -27,7 +27,6 @@ describe('CAMERA — module def shape', () => {
     expect(def.domain).toBe('video');
     expect(def.label).toBe('camera');
     expect(def.category).toBe('sources');
-    expect(def.schemaVersion).toBe(1);
   });
 
   it('input port surface: a CV gain input + a level-sensitive mirror gate', () => {

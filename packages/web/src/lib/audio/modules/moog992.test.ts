@@ -24,7 +24,6 @@ describe('moog992Def: module def shape', () => {
     expect(moog992Def.type).toBe('moog992');
     expect(moog992Def.label).toBe('992 control voltage panel');
     expect(moog992Def.category).toBe('modulation');
-    expect(moog992Def.schemaVersion).toBe(1);
   });
 
   it('lives in the Moog System 35/55 Clones palette bucket and uses the Moog992Card', () => {

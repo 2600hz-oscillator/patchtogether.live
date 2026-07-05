@@ -24,8 +24,6 @@ export interface VideoModuleDef {
   inputs: PortDef[];
   outputs: PortDef[];
   params: readonly ParamDef[];
-  schemaVersion: number;
-  migrate?: (data: unknown, fromVersion: number) => unknown;
   // docs-hash-ignore:start
   /** Living-docs: co-located AUTHORED prose. See ModuleDocs (audio side). */
   docs?: ModuleDocs;

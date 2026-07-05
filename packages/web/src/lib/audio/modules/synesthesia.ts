@@ -110,7 +110,6 @@ export const synesthesiaDef: AudioModuleDef = {
   domain: 'audio',
   label: 'synesthesia',
   category: 'hybrid',
-  schemaVersion: 1,
 
   inputs: [
     { id: 'a_in', type: 'audio' },

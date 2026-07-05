@@ -88,7 +88,6 @@ export const timelordeDef: AudioModuleDef = {
   domain: 'audio',
   label: 'timelorde',
   category: 'modulation',
-  schemaVersion: 1,
   maxInstances: 1,
   // TIMELORDE is the rack's system clock — every sequencer + LIVECODE's
   // clocked() function ride on it. Can't be deleted; if a rack is opened

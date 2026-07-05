@@ -40,7 +40,6 @@ const GATE_TARGET_DEF: AudioModuleDef = {
   domain: 'audio',
   label: 'gateinputtest',
   category: 'utility',
-  schemaVersion: 1,
   inputs: [
     // A gate input that DOES route to a param (mirrors a play_cv → isPlaying).
     { id: 'play_cv', type: 'gate', paramTarget: 'isPlaying' },

@@ -258,7 +258,6 @@ export const cloudsDef: AudioModuleDef = {
   domain: 'audio',
   label: 'clouds',
   category: 'effects',
-  schemaVersion: 1,
   stereoPairs: [['in_l', 'in_r'], ['out_l', 'out_r']],
   ossAttribution: { author: 'Émilie Gillet' },
 

@@ -50,7 +50,6 @@ export const polarizerDef: AudioModuleDef = {
   domain: 'audio',
   label: 'polarizer',
   category: 'utilities',
-  schemaVersion: 1,
 
   inputs: [
     // The unipolar (0..1) CV to polarize. CV-typed (this is CV math, not audio).

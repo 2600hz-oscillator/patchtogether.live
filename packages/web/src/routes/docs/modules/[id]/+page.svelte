@@ -68,9 +68,6 @@
   </h1>
   <div class="sub">
     <code>{mod.type}</code> · {mod.category}
-    {#if mod.schemaVersion !== undefined}
-      · schema v{mod.schemaVersion}
-    {/if}
   </div>
 </section>
 

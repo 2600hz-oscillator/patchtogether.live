@@ -175,7 +175,6 @@ export const pictureboxDef: VideoModuleDef = {
   domain: 'video',
   label: 'picturebox',
   category: 'sources',
-  schemaVersion: 4,
   // Workspace cap (8 per rack). Mirrored from
   // lib/multiplayer/picturebox-limits.ts → PICTUREBOX_LIMITS.perWorkspace.
   // The palette uses this to grey out the option once the cap is hit;

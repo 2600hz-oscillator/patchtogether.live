@@ -106,7 +106,6 @@ export const scoreDef: AudioModuleDef = {
   domain: 'audio',
   label: 'score',
   category: 'modulation',
-  schemaVersion: 2,
   inputs: [
     { id: 'clock', type: 'gate' },
     // CV scaling per .myrobots/plans/cv-range-standard.md (mirrors ADSR's

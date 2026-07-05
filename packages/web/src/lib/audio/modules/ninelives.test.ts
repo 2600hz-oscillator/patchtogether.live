@@ -25,7 +25,6 @@ describe('ninelivesDef: module def shape', () => {
     expect(ninelivesDef.label).toBe(ninelivesDef.label.toLowerCase()); // lowercase-label guard
     expect(ninelivesDef.domain).toBe('audio');
     expect(ninelivesDef.category).toBe('modulation');
-    expect(ninelivesDef.schemaVersion).toBe(1);
     expect(ninelivesDef.palette).toEqual({ top: 'Audio modules', sub: 'Utility' });
   });
 

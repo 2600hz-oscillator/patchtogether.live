@@ -84,7 +84,6 @@ export interface ManifestModule {
   label: string;
   category: string;
   description: string;
-  schemaVersion?: number;
   maxInstances?: number;
   inputs: ManifestPort[];
   outputs: ManifestPort[];
@@ -1260,7 +1259,6 @@ interface RawModule {
   type?: string;
   label?: string;
   category?: string;
-  schemaVersion?: number;
   maxInstances?: number;
   inputs: ManifestPort[];
   outputs: ManifestPort[];
@@ -1328,7 +1326,6 @@ function readModule(file: string, rawSrc: string): RawModule | null {
     type: grabStr('type'),
     label: grabStr('label'),
     category: grabStr('category'),
-    schemaVersion: grabNum('schemaVersion'),
     maxInstances: grabNum('maxInstances'),
     inputs: parsePortList(extractArray(src, 'inputs')),
     outputs: parsePortList(extractArray(src, 'outputs')),
@@ -1532,7 +1529,6 @@ export function buildModuleManifest(
       type,
       label: m.label,
       category: m.category,
-      schemaVersion: m.schemaVersion,
       maxInstances: m.maxInstances,
       description: describeModule(type),
       inputs: m.inputs.map((p) => ({ ...p, note: describePort(type, p.id, p) })),

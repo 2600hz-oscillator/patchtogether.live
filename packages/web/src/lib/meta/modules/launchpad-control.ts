@@ -39,5 +39,4 @@ export const launchpadControlDef: MetaModuleDef = {
   inputs: [],
   outputs: [],
   params: [],
-  schemaVersion: 1,
 };

@@ -3,15 +3,11 @@
 // Unit coverage for the GLITCHES GET RICHES demo fixture + its loader.
 //
 // What this test guards:
-//   1. The shipped JSON envelope still matches the documented
-//      PatchEnvelope shape (envelopeVersion 1, savedAt, moduleSchemas,
-//      update). If anyone replaces glitches.imp.json with a malformed
+//   1. The shipped JSON envelope still matches the documented lean v2
+//      PatchEnvelope shape (envelopeVersion 2, savedAt, update — NO
+//      moduleSchemas). If anyone replaces glitches.imp.json with a malformed
 //      blob this fails CI before the e2e even runs.
-//   2. The envelope's moduleSchemas advertises the modules the GLITCHES
-//      patch actually uses (picturebox + lfo + score-adjacent voices).
-//      This is the regression net for "someone re-exported the patch
-//      from a build that dropped a module."
-//   3. `loadGlitches` returns a LoadResult against a fresh fake store
+//   2. `loadGlitches` returns a LoadResult against a fresh fake store
 //      and the resulting store contains a picturebox node with the
 //      bundled image bytes attached.
 //
@@ -33,8 +29,8 @@ const throwingFactory = (): never => {
 };
 
 /** Minimal picturebox def — just enough for loadEnvelopeIntoStore to
- *  accept the envelope's picturebox node (it reads schemaVersion +
- *  optional migrate, never calls factory). The real def lives in
+ *  accept the envelope's picturebox node (it reads the registered type +
+ *  ports, never calls factory). The real def lives in
  *  $lib/video/modules/picturebox.ts; we stub here to avoid pulling in
  *  the WebGL2 surface (which doesn't resolve outside SvelteKit). */
 const stubPictureboxDef: VideoModuleDef = {
@@ -42,7 +38,6 @@ const stubPictureboxDef: VideoModuleDef = {
   domain: 'video',
   label: 'PICTUREBOX',
   category: 'sources',
-  schemaVersion: 2,
   inputs: [{ id: 'gain', type: 'cv', paramTarget: 'gain' }],
   outputs: [{ id: 'out', type: 'image' }],
   params: [{ id: 'gain', label: 'Gain', defaultValue: 1, min: 0, max: 2, curve: 'linear' }],
@@ -61,7 +56,6 @@ function makeStubAudio(type: string): AudioModuleDef {
     domain: 'audio',
     label: type.toUpperCase(),
     category: 'sources',
-    schemaVersion: 1,
     inputs: [],
     outputs: [],
     params: [],
@@ -103,32 +97,17 @@ describe('glitches: envelope shape', () => {
     expect(GLITCHES_ENVELOPE_RAW).not.toBeNull();
   });
 
-  it('parses into a PatchEnvelope (version 1, moduleSchemas + update present)', () => {
+  it('parses into a lean v2 PatchEnvelope (no moduleSchemas; savedAt + update present)', () => {
     const env = getGlitchesEnvelope();
     expect(env.envelopeVersion).toBe(ENVELOPE_VERSION);
+    expect(ENVELOPE_VERSION).toBe(2);
     expect(typeof env.savedAt).toBe('string');
     expect(new Date(env.savedAt).getTime()).toBeGreaterThan(0);
-    expect(env.moduleSchemas).toBeTypeOf('object');
+    expect('moduleSchemas' in env).toBe(false);
     expect(typeof env.update).toBe('string');
     expect(env.update.length).toBeGreaterThan(0);
     // Base64 alphabet.
     expect(env.update).toMatch(/^[A-Za-z0-9+/=]+$/);
-  });
-
-  it('moduleSchemas advertises picturebox + lfo + score-adjacent modules', () => {
-    const env = getGlitchesEnvelope();
-    // Spec asked for picturebox, doom, gamepad, lfo, score. The actual
-    // envelope captured by the user contains picturebox + lfo + score-
-    // adjacent voices (drumseqz, macseq, etc.) but NOT doom/gamepad —
-    // the patch is video-glitch flavoured rather than game-flavoured.
-    // Assert the subset that actually ships so this test stays honest
-    // about the fixture content. Update this list if the fixture is
-    // re-exported with a different module mix.
-    expect(env.moduleSchemas).toHaveProperty('picturebox');
-    expect(env.moduleSchemas).toHaveProperty('lfo');
-    expect(env.moduleSchemas).toHaveProperty('score');
-    // Sanity: the envelope is for a real rackspace with many modules.
-    expect(Object.keys(env.moduleSchemas).length).toBeGreaterThan(10);
   });
 
   it('re-validates through parseEnvelope cleanly (idempotent shape check)', () => {

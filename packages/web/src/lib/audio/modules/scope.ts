@@ -58,7 +58,6 @@ export const scopeDef: AudioModuleDef = {
   domain: 'audio',
   label: 'scope',
   category: 'utilities',
-  schemaVersion: 1,
   // Module-grouping Phase 3B: SCOPE's on-card 2D canvas is hoisted into
   // the parent GroupCard's body when SCOPE is collapsed inside a group.
   // The card's <canvas data-viz-passthrough> element is portaled (i.e.

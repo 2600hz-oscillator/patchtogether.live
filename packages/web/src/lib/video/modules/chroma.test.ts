@@ -53,10 +53,6 @@ describe('chromaDef shape', () => {
     expect(mix?.defaultValue).toBe(0);
   });
 
-  it('schemaVersion is 1 (no load-time migration)', () => {
-    expect(chromaDef.schemaVersion).toBe(1);
-  });
-
   it('output is a single full video stream (not a mask)', () => {
     expect(chromaDef.outputs.map((o) => o.id)).toEqual(['out']);
     expect(chromaDef.outputs[0]!.type).toBe('video');

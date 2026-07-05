@@ -15,7 +15,6 @@ describe('peakstateDef shape', () => {
     expect(peakstateDef.type).toBe('peakstate');
     expect(peakstateDef.domain).toBe('video');
     expect(peakstateDef.category).toBe('sources');
-    expect(peakstateDef.schemaVersion).toBe(1);
   });
 
   it('declares the three documented video outputs with correct types', () => {

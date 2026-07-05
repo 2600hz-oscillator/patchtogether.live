@@ -48,7 +48,6 @@ export const qbrtDef: AudioModuleDef = {
   // `pingDecay` (added with the vactrol-style ping path rework) is backfilled
   // from its factory default on load, so no migration callback (or version
   // bump) is needed.
-  schemaVersion: 1,
   inputs: [
     { id: 'L',         type: 'audio' },
     { id: 'R',         type: 'audio' },
