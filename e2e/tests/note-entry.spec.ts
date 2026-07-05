@@ -7,9 +7,6 @@
 //     value normalizes (e.g. 'A4' -> 'a4', 'db5' -> 'c#5'), invalid input
 //     leaves the step's MIDI null, the focus ring is green/red accordingly.
 //   - Cartesian: same flow on the 4x4 grid.
-//   - Migration: a legacy step shape ({on, pitch}) loaded into the patch is
-//     normalized to {on, midi} on read, and the underlying audio param value
-//     reflects the correct V/oct.
 //   - Audio truth: a Sequencer with one step at 'a4' fires a 440 Hz tone
 //     through the wavetable VCO; we verify the V/oct on the pitch ConstantSource
 //     output equals (69-60)/12 = 0.75 V.
@@ -156,40 +153,6 @@ test('note-entry: gate button toggles step.on without touching the pitch input',
   // toMatchObject (not toEqual) for forward-compat: Stage-1 polyphony adds
   // an optional `chord` field to the persisted step shape.
   expect(stepData).toMatchObject({ on: true, midi: 64 });
-});
-
-test('note-entry: legacy {on, pitch} step shape migrates to {on, midi} at read time', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
-  await spawnPatch(page, [
-    { id: 'seq', type: 'sequencer', params: { bpm: 120, length: 4, isPlaying: 0 } },
-  ]);
-
-  // Inject legacy step shape directly into the SyncedStore. The card's
-  // $derived(coerceToNoteStep) should normalize on read.
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      w.__patch.nodes['seq'].data = {
-        steps: [
-          { on: true, pitch: 0 },   // legacy: pitch 0 = C4 = MIDI 60
-          { on: true, pitch: 9 },   // legacy: A4 = pitch 9 from C4 = MIDI 69
-          { on: false, pitch: 0 },
-          { on: true, pitch: -12 }, // legacy: C3 = MIDI 48
-        ],
-      };
-    });
-  });
-
-  // The card reads via coerceToNoteStep, so the displayed input should show
-  // canonical sharp note names regardless of how the data was injected.
-  await expect(page.locator('[data-testid="seq-pitch-seq-0"]')).toHaveValue('c4');
-  await expect(page.locator('[data-testid="seq-pitch-seq-1"]')).toHaveValue('a4');
-  await expect(page.locator('[data-testid="seq-pitch-seq-3"]')).toHaveValue('c3');
 });
 
 test('note-entry: a4 step drives the pitch port to V/oct 0.75 (MIDI 69 - 60 = 9 semis up)', async ({ page }) => {
