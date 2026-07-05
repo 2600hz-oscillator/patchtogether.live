@@ -147,11 +147,8 @@ export interface NoteStep {
 }
 
 /**
- * Read either a v1 ({on, pitch: <semitones-from-C4>}) or v2
- * ({on, midi: int|null}) step shape and return canonical v2 NoteStep.
- *
- * v1 -> v2 mapping: midi = C4_MIDI + pitch, clamped to [MIN_MIDI, MAX_MIDI].
- * Out-of-clamp values become null. on flag preserved.
+ * Read a {on, midi: int|null} step shape and return a canonical NoteStep.
+ * A midi outside [MIN_MIDI, MAX_MIDI] becomes null. on flag preserved.
  */
 export function coerceToNoteStep(raw: unknown): NoteStep {
   if (!raw || typeof raw !== 'object') return { on: false, midi: null };
@@ -172,7 +169,8 @@ export function coerceToNoteStep(raw: unknown): NoteStep {
   return step;
 }
 
-/** Resolve the canonical `midi` field from a v2 (`midi`) or v1 (`pitch`) step. */
+/** Resolve the canonical `midi` field from a v2 (`midi`) step. Fresh text /
+ *  keyboard note entry always writes `midi`, so that is the only shape read. */
 function coerceMidiField(r: Record<string, unknown>): number | null {
   if ('midi' in r) {
     const m = r.midi;
@@ -182,33 +180,5 @@ function coerceMidiField(r: Record<string, unknown>): number | null {
     }
     return null;
   }
-  // Legacy: pitch (semitones from C4). Snap to MIDI int and clamp.
-  if ('pitch' in r) {
-    const p = r.pitch;
-    if (typeof p === 'number' && Number.isFinite(p)) {
-      const candidate = C4_MIDI + Math.round(p);
-      return candidate >= MIN_MIDI && candidate <= MAX_MIDI ? candidate : null;
-    }
-  }
   return null;
-}
-
-/** Migrate a v1 sequencer/cartesian data block ({steps|cells: [{on, pitch}]})
- *  to v2 ({steps|cells: [{on, midi}]}). Returns a new object; never mutates.
- *  If the source object lacks the expected array key, the result lacks it too. */
-export function migrateStepArrayV1ToV2(
-  data: unknown,
-  arrayKey: 'steps' | 'cells',
-): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  if (data && typeof data === 'object') {
-    Object.assign(out, data as Record<string, unknown>);
-  }
-  const arr = out[arrayKey];
-  if (!Array.isArray(arr)) return out;
-  out[arrayKey] = arr.map((s) => {
-    const ns = coerceToNoteStep(s);
-    return { on: ns.on, midi: ns.midi };
-  });
-  return out;
 }

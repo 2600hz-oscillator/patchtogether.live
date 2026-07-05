@@ -55,7 +55,6 @@ import {
   TICKS_PER_BAR,
   dynamicAt,
   emptyScoreData,
-  migrateScoreV1ToV2,
   tickWidth,
   tieChainFrom,
   tieRoleFor,
@@ -108,10 +107,6 @@ export const scoreDef: AudioModuleDef = {
   label: 'score',
   category: 'modulation',
   schemaVersion: 2,
-  migrate(data, fromVersion) {
-    if (fromVersion < 2) return migrateScoreV1ToV2(data);
-    return data;
-  },
   inputs: [
     { id: 'clock', type: 'gate' },
     // CV scaling per .myrobots/plans/cv-range-standard.md (mirrors ADSR's

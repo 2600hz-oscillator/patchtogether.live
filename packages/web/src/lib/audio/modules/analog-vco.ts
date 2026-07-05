@@ -62,29 +62,6 @@ export const analogVcoDef: AudioModuleDef = {
   label: 'analog vco',
   category: 'sources',
   schemaVersion: 5,
-  migrate(data, fromVersion) {
-    const d = (data ?? {}) as { params?: Record<string, number> };
-    const params = { ...(d.params ?? {}) };
-    if (fromVersion < 2) {
-      // v1 → v2: pmAmount param added. Seed with default 0 if missing so the
-      // legacy DSP-less behavior (no PM) is preserved for v1 saved patches.
-      if (params.pmAmount === undefined) params.pmAmount = 0;
-    }
-    // v2 → v3: fmAmount / pmAmount widened from [0..1] to [-1..+1]. Existing
-    // values are already in [0..1] which is a legal subset of [-1..+1] — the
-    // user's stored value lands at the same audible position with new
-    // headroom below zero. No param transform required.
-    if (fromVersion < 4) {
-      // v3 → v4: `shape` morph param + `morph` output port added. Seed shape
-      // at its default 0 (= saw) so existing patches' four fixed taps are
-      // unchanged and the new morph output, if wired, starts as a bare saw.
-      if (params.shape === undefined) params.shape = 0;
-    }
-    // v4 → v5: `sync` input + `sync` output ports added (hard sync). No params
-    // change — these are pure I/O ports. Unwired `sync` input means the VCO
-    // output is byte-identical to v4, so legacy patches are unaffected.
-    return { ...d, params };
-  },
   inputs: [
     { id: 'pitch', type: 'pitch' },
     { id: 'fm',    type: 'audio' },

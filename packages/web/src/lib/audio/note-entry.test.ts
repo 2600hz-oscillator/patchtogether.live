@@ -11,10 +11,8 @@ import {
   vOctToMidi,
   midiToHz,
   coerceToNoteStep,
-  migrateStepArrayV1ToV2,
   MIN_MIDI,
   MAX_MIDI,
-  C4_MIDI,
   C3_MIDI,
 } from './note-entry';
 import { defaultSteps } from './modules/sequencer';
@@ -170,7 +168,7 @@ describe('midiToHz: equal-tempered (A4 = 440Hz)', () => {
   });
 });
 
-describe('coerceToNoteStep: legacy + new shape interop', () => {
+describe('coerceToNoteStep: canonical {on, midi} shape', () => {
   it('passes through new shape with valid midi', () => {
     expect(coerceToNoteStep({ on: true, midi: 69 })).toEqual({ on: true, midi: 69 });
     expect(coerceToNoteStep({ on: false, midi: 33 })).toEqual({ on: false, midi: 33 });
@@ -183,20 +181,6 @@ describe('coerceToNoteStep: legacy + new shape interop', () => {
   it('clamps out-of-range midi to null', () => {
     expect(coerceToNoteStep({ on: true, midi: 0 })).toEqual({ on: true, midi: null });
     expect(coerceToNoteStep({ on: true, midi: 200 })).toEqual({ on: true, midi: null });
-  });
-
-  it('migrates legacy {pitch: <semitones from C4>} to midi', () => {
-    expect(coerceToNoteStep({ on: true, pitch: 0 })).toEqual({ on: true, midi: C4_MIDI });
-    expect(coerceToNoteStep({ on: true, pitch: 7 })).toEqual({ on: true, midi: C4_MIDI + 7 });
-    expect(coerceToNoteStep({ on: false, pitch: -12 })).toEqual({ on: false, midi: C4_MIDI - 12 });
-  });
-
-  it('clamps legacy pitches that fall outside the new range to null', () => {
-    // Post-rework range is [12, 108]. pitch from C4=60.
-    // pitch -49 from C4 = MIDI 11, below MIN_MIDI=12
-    expect(coerceToNoteStep({ on: true, pitch: -49 })).toEqual({ on: true, midi: null });
-    // pitch +49 from C4 = MIDI 109, above MAX_MIDI=108
-    expect(coerceToNoteStep({ on: true, pitch: 49 })).toEqual({ on: true, midi: null });
   });
 
   it('handles missing fields safely', () => {
@@ -249,44 +233,7 @@ describe('default seed pitch is C3 for new modules', () => {
     }
   });
 
-  it('coerceToNoteStep preserves explicit C3 (48) on legacy reads', () => {
+  it('coerceToNoteStep preserves explicit C3 (48)', () => {
     expect(coerceToNoteStep({ on: true, midi: C3_MIDI })).toEqual({ on: true, midi: 48 });
-    expect(coerceToNoteStep({ on: false, pitch: -12 })).toEqual({ on: false, midi: 48 });
-  });
-});
-
-describe('migrateStepArrayV1ToV2', () => {
-  it('migrates a sequencer steps array', () => {
-    const v1 = {
-      steps: [
-        { on: true, pitch: 0 },
-        { on: true, pitch: 7 },
-        { on: false, pitch: 0 },
-        { on: true, pitch: 12 },
-      ],
-    };
-    const v2 = migrateStepArrayV1ToV2(v1, 'steps') as { steps: Array<{ on: boolean; midi: number | null }> };
-    expect(v2.steps[0]).toEqual({ on: true, midi: 60 });
-    expect(v2.steps[1]).toEqual({ on: true, midi: 67 });
-    expect(v2.steps[2]).toEqual({ on: false, midi: 60 });
-    expect(v2.steps[3]).toEqual({ on: true, midi: 72 });
-  });
-
-  it('migrates a cartesian cells array', () => {
-    const v1 = { cells: [{ on: true, pitch: -12 }, { on: false, pitch: 5 }] };
-    const v2 = migrateStepArrayV1ToV2(v1, 'cells') as { cells: Array<{ on: boolean; midi: number | null }> };
-    expect(v2.cells[0]).toEqual({ on: true, midi: 48 });
-    expect(v2.cells[1]).toEqual({ on: false, midi: 65 });
-  });
-
-  it('preserves other top-level fields', () => {
-    const v1 = { steps: [], extra: 'keep' };
-    const v2 = migrateStepArrayV1ToV2(v1, 'steps') as Record<string, unknown>;
-    expect(v2.extra).toBe('keep');
-  });
-
-  it('handles missing array safely', () => {
-    expect(migrateStepArrayV1ToV2({}, 'steps')).toEqual({});
-    expect(migrateStepArrayV1ToV2(undefined, 'steps')).toEqual({});
   });
 });

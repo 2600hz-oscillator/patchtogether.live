@@ -123,22 +123,10 @@ describe('analogVcoDef: module def shape', () => {
     }
   });
 
-  it('schemaVersion=5 (v1→v2 pmAmount; v2→v3 bipolar widen; v3→v4 shape morph param; v4→v5 sync I/O)', () => {
+  it('schemaVersion=5 with no migrate() (old-patch migrate logic removed — cleanup 2/5)', () => {
     expect(analogVcoDef.schemaVersion).toBe(5);
-    expect(analogVcoDef.migrate).toBeDefined();
-    // v1 → v4 seeds BOTH the missing pmAmount AND the new shape param at default 0.
-    const migrated = analogVcoDef.migrate!({ params: { tune: 0 } }, 1) as { params: Record<string, number> };
-    expect(migrated.params.pmAmount).toBe(0);
-    expect(migrated.params.shape).toBe(0);
-    expect(migrated.params.tune).toBe(0);
-    // v2 → v4: bipolar widen is a no-op (old [0..1] ⊂ [-1..+1]); shape seeded at 0.
-    const v2 = analogVcoDef.migrate!({ params: { fmAmount: 0.5, pmAmount: 0.25 } }, 2) as { params: Record<string, number> };
-    expect(v2.params.fmAmount).toBe(0.5);
-    expect(v2.params.pmAmount).toBe(0.25);
-    expect(v2.params.shape).toBe(0);
-    // v3 → v4: only the shape param is added.
-    const v3 = analogVcoDef.migrate!({ params: { tune: 12, shape: undefined as unknown as number } }, 3) as { params: Record<string, number> };
-    expect(v3.params.tune).toBe(12);
-    expect(v3.params.shape).toBe(0);
+    // Per-module old-patch migrate() bodies were dropped; a fresh save stamps
+    // the current version so no migrate ever fires for new patches.
+    expect(analogVcoDef.migrate).toBeUndefined();
   });
 });
