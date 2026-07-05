@@ -58,6 +58,11 @@
     get min() { return min; },
     get max() { return max; },
     get onchange() { return onchange; },
+    // Streaming CC: track the tick at full message rate LOCALLY while the
+    // store commit is coalesced (mirrors the drag path's synchronous
+    // liveValue update). The $effects below gate on midi.ccActive so the
+    // tick never snaps back to a not-yet-committed store value mid-stream.
+    onTransient: (v) => { if (!dragging) liveValue = v; },
   });
 
   let ctxOpen = $state(false);
@@ -89,7 +94,10 @@
   let currentValue = $derived(value);
 
   $effect(() => {
-    if (dragging) return;
+    // midi.ccActive mirrors the `dragging` guard: while a CC stream drives
+    // this knob, liveValue comes from the per-message onTransient hook — the
+    // store lags by design (coalesced commits) and must not yank the tick.
+    if (dragging || midi.ccActive) return;
     if (!readLive) {
       liveValue = currentValue;
       return;
@@ -108,7 +116,7 @@
   });
 
   $effect(() => {
-    if (!dragging && !readLive) liveValue = currentValue;
+    if (!dragging && !readLive && !midi.ccActive) liveValue = currentValue;
   });
 
   // rAF-coalesced commit pump — see Fader.svelte for the full rationale.

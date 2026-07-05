@@ -3,7 +3,7 @@
 // prove that two patches with identical end-states produce identical
 // engine call sequences regardless of insertion order.
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { syncedStore, getYjsDoc } from '@syncedstore/core';
 import { PatchEngine, type DomainEngine } from './engine';
 import { attachReconciler } from './reconciler';
@@ -299,5 +299,145 @@ describe('reconciler — determinism (B3)', () => {
       'removeNode x',
       'removeNode y',
     ]);
+  });
+});
+
+// ── data-clone hardening (the MIDI-CC render-starvation fix) ────────────────
+//
+// Step 5 used to run `appliedNodes.set(id, snapshotNode(node))` for EVERY
+// node on EVERY pass, where snapshotNode JSON round-trips node.data — so a
+// toybox holding base64 image layers was deep-cloned per param write on ANY
+// module (the rank-1 amplifier of the CC-storm cascade). The reconciler now
+// keeps the existing clone unless the node is NEW or its data IDENTITY
+// changed (the snapshot leaks the live SyncedStore proxy, whose identity is
+// stable per node). These tests pin: (a) param-only writes trigger ZERO data
+// re-serialization, (b) diff semantics survive — repeated writes to the same
+// param still emit one setParam each, and (c) a wholesale data replacement
+// re-clones so a later structural read of prev stays coherent.
+describe('reconciler — no per-pass data deep-clone (CC-storm hardening)', () => {
+  let A: ReturnType<typeof freshPatch>;
+  let busA: ReturnType<typeof createSnapshotBus>;
+  let recA: RecordingEngine;
+  let handleA: ReturnType<typeof attachReconciler>;
+
+  beforeEach(() => {
+    A = freshPatch();
+    busA = createSnapshotBus({ patch: A.patch as never, ydoc: A.ydoc });
+    const peA = makePatchEngine();
+    recA = peA.rec;
+    handleA = attachReconciler(peA.pe, { bus: busA });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** Count JSON.stringify invocations whose payload contains our marker —
+   *  i.e. serializations of THIS node's data blob (snapshotNode's clone).
+   *  Restores the spy FIRST so the containment probe below doesn't feed the
+   *  very mock it is counting. */
+  function countDataSerializations(
+    spy: { mock: { calls: unknown[][] }; mockRestore: () => void },
+    marker: string,
+  ): number {
+    const calls = spy.mock.calls.slice();
+    spy.mockRestore();
+    return calls.filter((c) => {
+      try {
+        return JSON.stringify(c[0])?.includes(marker) ?? false;
+      } catch {
+        return false;
+      }
+    }).length;
+  }
+
+  it('param-only writes do NOT re-serialize node.data (one setParam, zero clones)', async () => {
+    const marker = 'cc-storm-data-marker';
+    A.ydoc.transact(() => {
+      A.patch.nodes['tb'] = {
+        ...n('tb'),
+        data: { blob: marker, layers: [{ kind: 'gen', params: { a: 1 } }] },
+      };
+    });
+    await flushMicrotasks();
+    await handleA.reconcile(); // initial add — clones once, that's fine
+
+    const spy = vi.spyOn(JSON, 'stringify');
+    recA.ops.length = 0;
+
+    // A burst of param writes (what a coalesced CC stream lands as).
+    for (const v of [0.1, 0.2, 0.3]) {
+      A.ydoc.transact(() => {
+        A.patch.nodes['tb']!.params['mix'] = v;
+      });
+      await flushMicrotasks();
+      await handleA.reconcile();
+    }
+
+    // Diff semantics intact: each write emitted exactly one setParam…
+    expect(recA.ops).toEqual([
+      'setParam tb.mix=0.1',
+      'setParam tb.mix=0.2',
+      'setParam tb.mix=0.3',
+    ]);
+    // …and an IDENTICAL re-write emits nothing (prev.params was refreshed).
+    A.ydoc.transact(() => {
+      A.patch.nodes['tb']!.params['mix'] = 0.3;
+    });
+    await flushMicrotasks();
+    await handleA.reconcile();
+    expect(recA.ops).toHaveLength(3);
+
+    // The bomb is defused: ZERO serializations of the data blob across all
+    // four param-only passes (pre-fix this was one full JSON round-trip of
+    // every node's data per pass).
+    expect(countDataSerializations(spy, marker)).toBe(0);
+  });
+
+  it('a wholesale node.data replacement DOES re-clone (identity change)', async () => {
+    const marker = 'cc-storm-replaced-marker';
+    A.ydoc.transact(() => {
+      A.patch.nodes['tb'] = { ...n('tb'), data: { blob: 'original' } };
+    });
+    await flushMicrotasks();
+    await handleA.reconcile();
+
+    const spy = vi.spyOn(JSON, 'stringify');
+    A.ydoc.transact(() => {
+      A.patch.nodes['tb']!.data = { blob: marker };
+    });
+    await flushMicrotasks();
+    await handleA.reconcile();
+
+    expect(countDataSerializations(spy, marker)).toBeGreaterThanOrEqual(1);
+  });
+
+  it('remove after param-only writes still hands removeNode a coherent node', async () => {
+    A.ydoc.transact(() => {
+      A.patch.nodes['tb'] = { ...n('tb'), data: { blob: 'x' } };
+    });
+    await flushMicrotasks();
+    await handleA.reconcile();
+    A.ydoc.transact(() => {
+      A.patch.nodes['tb']!.params['mix'] = 0.7;
+    });
+    await flushMicrotasks();
+    await handleA.reconcile();
+    recA.ops.length = 0;
+
+    A.ydoc.transact(() => {
+      delete A.patch.nodes['tb'];
+    });
+    await flushMicrotasks();
+    await handleA.reconcile();
+    expect(recA.ops).toEqual(['removeNode tb']);
+
+    // And re-adding the same id re-clones fresh (no stale applied entry).
+    A.ydoc.transact(() => {
+      A.patch.nodes['tb'] = { ...n('tb'), data: { blob: 'y' } };
+    });
+    await flushMicrotasks();
+    await handleA.reconcile();
+    expect(recA.ops).toContain('addNode tb');
   });
 });

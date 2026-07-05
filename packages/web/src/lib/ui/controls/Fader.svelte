@@ -96,6 +96,11 @@
     get min() { return min; },
     get max() { return max; },
     get onchange() { return onchange; },
+    // Streaming CC: move the thumb at full message rate LOCALLY while the
+    // store commit is coalesced (mirrors the drag path's synchronous
+    // liveValue update). The $effects below gate on midi.ccActive so the
+    // thumb never snaps back to a not-yet-committed store value mid-stream.
+    onTransient: (v) => { if (!dragging) liveValue = v; },
   });
 
   // Context menu state.
@@ -136,7 +141,11 @@
   let raf: number | null = null;
   let currentValue = $derived(value);
   $effect(() => {
-    if (dragging) return;
+    // midi.ccActive mirrors the `dragging` guard: while a CC stream drives
+    // this fader, liveValue comes from the per-message onTransient hook —
+    // the store lags by design (coalesced commits) and must not yank the
+    // thumb.
+    if (dragging || midi.ccActive) return;
     if (!readLive) {
       liveValue = currentValue;
       return;
@@ -157,7 +166,7 @@
   // When the user-set value changes externally and we're not dragging and there's
   // no readLive, snap liveValue to it.
   $effect(() => {
-    if (!dragging && !readLive) liveValue = currentValue;
+    if (!dragging && !readLive && !midi.ccActive) liveValue = currentValue;
   });
 
   // rAF-coalesced commit pump. During a drag, pointermove fires at

@@ -71,6 +71,7 @@ import {
   type ToyboxObjMaterial,
 } from '$lib/video/toybox-content';
 import { buildProjectorViewProj, projectorFromMaterial } from '$lib/video/toybox-projective';
+import { resolveToyboxParam } from '$lib/video/toybox-control-params';
 import { createVideoFrameUploader } from '$lib/video/video-frame-upload';
 import { createVideoAudioKeepAlive, type VideoAudioKeepAlive } from '$lib/video/video-audio-keepalive';
 import {
@@ -1193,6 +1194,35 @@ export const toyboxDef: VideoModuleDef = {
     }
 
     /**
+     * TRANSIENT knob/CC param push (the MIDI-CC render-starvation fix).
+     *
+     * TOYBOX layer/material/combine params have no reconciler push path
+     * (they live in node.data, and the reconciler diffs node.params only) —
+     * the render pulls them per frame via liveLayers()/liveCombineRaw(). So
+     * a streaming CC on a toybox knob used to be visible ONLY through the
+     * per-message store write, which is exactly the write storm the CC
+     * coalescer removes. This accepts the SAME paramIds the card's knobs
+     * pass to MIDI-learn / control surfaces ('layer:<i>:<param>',
+     * 'combine:<op>:<param>', and the legacy bare material ids) and applies
+     * them to the RENDER-LOCAL clone — mirroring applyCvRoute, never the
+     * Y.Doc (the #719 invariant). The durable value lands via the coalesced
+     * settle commit (setLayerMaterialField / the surface adapter), whose
+     * store write flips the liveLayers/liveCombine change key and re-syncs
+     * the clone to the committed state — so the reconciler/store re-apply of
+     * the same value after settle is idempotent with what was pushed here.
+     *
+     * PERF: reuses the CURRENT clones without re-keying — liveLayers()'s
+     * change-key stringify is too heavy to run per CC message when image
+     * layers carry base64 bytes; draw() re-keys once per frame anyway.
+     */
+    function applyTransientParam(paramId: string, value: number): void {
+      const layers = cachedLayers ?? liveLayers();
+      const combine = cachedCombine ?? liveCombineRaw();
+      const r = resolveToyboxParam({ data: { layers, combine } }, paramId);
+      r?.set(value);
+    }
+
+    /**
      * Record the latest audio time-domain window for a port (for the scope's
      * raw-waveform overlay). Called by the engine's audio cv-bridge only; cv/gate
      * bridges never call it (the runtime.wave stays null → no overlay).
@@ -2271,10 +2301,16 @@ export const toyboxDef: VideoModuleDef = {
       setParam(portId, value) {
         // A generic modulation input (cv1..cv6) → fold the signal, resolve its
         // route + apply the per-input scale/offset into the addressed live
-        // layer/combine param. Any other portId is ignored (TOYBOX has no
-        // numeric engine params — content / material / combine all live in
-        // node.data).
-        if (isCvPortId(portId)) applyCvRoute(portId, value);
+        // layer/combine param.
+        if (isCvPortId(portId)) {
+          applyCvRoute(portId, value);
+          return;
+        }
+        // Any other id: a TRANSIENT knob/CC push against the render-local
+        // clone ('layer:<i>:<param>' / 'combine:<op>:<param>' / bare
+        // material ids — the same ids MIDI-learn + control surfaces key on).
+        // Unresolvable ids are ignored, as before.
+        applyTransientParam(portId, value);
       },
       // The engine's AUDIO cv-bridge hands us the latest time-domain window for
       // a modulation input so the card's scope can draw a raw-waveform overlay
