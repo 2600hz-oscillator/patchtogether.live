@@ -148,6 +148,10 @@ const MODELS: Array<{ id: string; matcap: number; time: number }> = [
   // cylinder/cone/torus-knot) are covered by primitives.test.ts (non-degenerate
   // + unit normals + makePrimitive dispatch); per-asset VRT would bloat.
   { id: 'icosahedron', matcap: 0, time: 1.0 }, // CHROME (builtin primitive)
+  // A CC0 bird OBJ (the flighty hero mesh) — proves the added bird meshes parse
+  // + render as recognizable lit geometry through the OBJ pass. spin=0 + no flap
+  // field → a fully deterministic static pose (this MODELS path sets no flap).
+  { id: 'bird-ernest', matcap: 1, time: 1.0 }, // CLAY
 ];
 
 /** Point TOYBOX layer 0 at an OBJ model with a fixed pose + matcap, freeze
@@ -569,6 +573,11 @@ const PRESETS: Array<{ id: string; time: number }> = [
   { id: 'worley-bloom',    time: 2.0 },
   { id: 'textured-sphere', time: 2.0 }, // Phase-6 texmap showcase
   { id: 'reactor-field',   time: 3.0 },
+  // The FLIGHTY hero: a CC0 bird flapping over the animated flighty-sky GEN.
+  // time chosen at a clear mid-flap phase (wings raised, not the flat sin=0
+  // frame) so the frozen baseline actually proves the procedural wing-flap —
+  // both the sky (iTime) and the flap (uTime) read the SAME freeze-aware time.
+  { id: 'flighty',         time: 2.36 },
 ];
 
 /** Load a bundled preset via the debug hook, freeze iTime, wait until the

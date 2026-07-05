@@ -446,6 +446,28 @@ export interface ToyboxObjMaterial {
   /** PROJECTIVE mode: projector vertical field-of-view (radians). Wider = the
    *  image spreads over more of the mesh. Defaults to the render FOV. */
   projFov?: number;
+
+  // ---- Wing-flap (procedural vertex deform; the flighty bird) ----
+  /** Wing-flap gate: 0/undefined = OFF (existing OBJ layers unchanged), 1 = flap.
+   *  When on, verts past the hinge along the wingspan axis beat up/down as a sine
+   *  of the freeze-aware engine time (deterministic under VRT). */
+  flap?: number;
+  /** Max wingtip deflection (radians) — how far the tips swing. Default 0.6. */
+  flapAmount?: number;
+  /** Angular rate (rad/sec) of the flap sine — the wing-beat speed. Default 6.0. */
+  flapRate?: number;
+  /** Normalized half-width (0..1) of the rigid body: verts within it don't move
+   *  (a true hinge — C0 at the shoulder, max deflection at the tip). Default 0.25. */
+  flapHinge?: number;
+  /** Unit model axis the wingspan runs along (default 1,0,0 = X). Absorbs per-mesh
+   *  wing-axis variance from glb→obj without a code change. */
+  wingAxisX?: number;
+  wingAxisY?: number;
+  wingAxisZ?: number;
+  /** Fore-aft horizontal hinge axis the wings rotate about (default 0,0,1 = Z). */
+  hingeAxisX?: number;
+  hingeAxisY?: number;
+  hingeAxisZ?: number;
 }
 
 /** Number of procedural matcap styles the OBJ shader provides. */

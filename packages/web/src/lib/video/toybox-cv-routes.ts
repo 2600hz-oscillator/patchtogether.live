@@ -162,6 +162,9 @@ export const MATERIAL_PARAMS: readonly ToyboxMaterialParamDef[] = [
   { field: 'tintR', id: 'material:tintR', label: 'TINT R', min: 0, max: 1 },
   { field: 'tintG', id: 'material:tintG', label: 'TINT G', min: 0, max: 1 },
   { field: 'tintB', id: 'material:tintB', label: 'TINT B', min: 0, max: 1 },
+  // Wing-flap (the flighty bird): depth + rate of the procedural wing-beat.
+  { field: 'flapAmount', id: 'material:flapAmount', label: 'FLAP AMT', min: 0, max: 1.5 },
+  { field: 'flapRate', id: 'material:flapRate', label: 'FLAP RATE', min: 0, max: 12 },
 ];
 
 /** The 'material:' prefix marks an OBJ-material CV target param id. */

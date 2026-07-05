@@ -308,7 +308,12 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // 84→85 for SNARE DRUM (2026-07-04, deliberate darwin-first new module —
       // the wide 3u banded snare-voice card; linux baseline pending the
       // vrt-update.yml dispatch on the PR branch).
-    ).toBeLessThanOrEqual(85);
+      // 85→87 for TOYBOX birds + FLIGHTY (2026-07-04, deliberate darwin-first —
+      // +2 toybox VRT scenes preset-flighty (the CC0 bird flapping over the
+      // animated flighty-sky GEN) + obj-bird-ernest (the bird OBJ per-model
+      // baseline); linux baselines pending the vrt-update.yml dispatch, same
+      // darwin-first precedent as every other linux/toybox-* pair).
+    ).toBeLessThanOrEqual(87);
   });
 });
 

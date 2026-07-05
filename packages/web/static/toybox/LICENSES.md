@@ -22,6 +22,7 @@ this repository's licensing.
 | `shaders/hex-grid.frag.glsl` | MIT | Original — public hex-lattice nearest-cell construction (Red Blob Games / IQ hex tutorials) | https://www.redblobgames.com/grids/hexagons/ |
 | `shaders/truchet.frag.glsl` | MIT | Original — classic Truchet (Smith) tile construction (per-cell coin-flip quarter arcs) | https://en.wikipedia.org/wiki/Truchet_tiles |
 | `shaders/star-field.frag.glsl` | MIT | Original — standard layered hashed-grid parallax starfield | (this project) |
+| `shaders/flighty-sky.frag.glsl` | MIT | Original — daytime sky backdrop for the FLIGHTY preset (vertical azure→haze gradient + sun disc/halo + two domain-warped fBm cloud layers drifting on iTime); standard value-noise/fBm formulation only | (this project) |
 | `shaders/reaction-diffusion-still.frag.glsl` | MIT | Original — analytic RD-look (domain-warped value noise thresholded to labyrinth stripes) | (this project) |
 | `shaders/frag-iq-palette-map.frag.glsl` | MIT | Iñigo Quílez — cosine palette (luma → palette recolour of iChannel0) | https://iquilezles.org/articles/palettes/ |
 | `shaders/frag-kaleido.frag.glsl` | MIT | Original — standard polar-fold kaleidoscope remap of iChannel0 | (this project) |
@@ -122,6 +123,13 @@ entire OBJ layer has zero copied-asset license surface.
 | `models/chess-pawn.obj` (chess pawn prop) | CC0-1.0 | drummyfish — "32 Low Poly Models"; file header: "by drummyfish, released under CC0 1.0, public domain" | https://opengameart.org/content/32-low-poly-models |
 | `models/banana.obj` (low-poly banana) | CC0-1.0 | drummyfish — "32 Low Poly Models"; file header: "by drummyfish, released under CC0 1.0, public domain" | https://opengameart.org/content/32-low-poly-models |
 | `models/snowman.obj` (low-poly snowman) | CC0-1.0 | drummyfish — "32 Low Poly Models"; file header: "by drummyfish, released under CC0 1.0, public domain" | https://opengameart.org/content/32-low-poly-models |
+| `models/bird-ernest.obj` (songbird, spread wings — flighty hero) | CC0-1.0 | Quaternius (CC0) via poly.pizza (creator "Quaternius", inline "Licence":"CC0 1.0") | https://poly.pizza/m/gYYC0gYMnw |
+| `models/pigeon.obj` (pigeon) | CC0-1.0 | Quaternius (CC0) via poly.pizza | https://poly.pizza/m/9NGlBTpDEr |
+| `models/armabee.obj` (winged bee-bird) | CC0-1.0 | Quaternius (CC0) via poly.pizza | https://poly.pizza/m/42djT5zJnx |
+| `models/armabee-evolved.obj` (winged bee-bird, large) | CC0-1.0 | Quaternius (CC0) via poly.pizza | https://poly.pizza/m/GcttdvsqsQ |
+| `models/chick.obj` (baby chicken) | CC0-1.0 | Quaternius (CC0) via poly.pizza | https://poly.pizza/m/LH96IMq0rE |
+| `models/chicken.obj` (chicken) | CC0-1.0 | Quaternius (CC0) via poly.pizza | https://poly.pizza/m/Z3RCoCYss4 |
+| `models/bat.obj` (bat, winged flyer) | CC0-1.0 | Quaternius (CC0) via poly.pizza | https://poly.pizza/m/hNO9XvjlKa |
 
 Built-in primitives (no asset file) — procedurally generated, this project's
 own code (`packages/web/src/lib/video/primitives.ts`), ZERO copied-asset
