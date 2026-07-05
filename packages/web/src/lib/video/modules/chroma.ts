@@ -135,35 +135,10 @@ const DEFAULTS: ChromaParams = {
   tintMix: 0,
 };
 
+// Legacy key-mask param ids are ignored by construction: the factory rebuilds
+// params from DEFAULTS filtered through PARAM_IDS (below), so any stray old key
+// never reaches the shader. No load-time migration is needed.
 const PARAM_IDS: ReadonlySet<string> = new Set(Object.keys(DEFAULTS));
-const LEGACY_PARAM_IDS = new Set([
-  'keyR', 'keyG', 'keyB', 'threshold', 'softness', 'invert', 'tolerance',
-]);
-
-/**
- * Migrate older CHROMA params. v1/v2 stored key-mask shape; v3 stores
- * hue-shift / colorize shape. Since the OLD semantics were broken (a
- * single-input "keyer" makes no sense — there's no background to
- * composite into), we accept a behavior reset on load: drop the legacy
- * key-mask params, keep the empty object so DEFAULTS spread fills in. Any
- * already-present v3 param values are preserved.
- *
- * Pure helper so unit tests can pin behavior without instantiating GL.
- */
-export function migrateChroma(data: unknown, fromVersion: number): unknown {
-  if (!data || typeof data !== 'object') return data;
-  if (fromVersion >= 3) return data;
-  const obj = data as Record<string, unknown>;
-  const out: Record<string, unknown> = {};
-  // Keep any keys that aren't legacy mask params and aren't recognized
-  // (forward-compat for unknown extras). Strip legacy mask params; the
-  // factory's DEFAULTS spread fills in v3 defaults for anything missing.
-  for (const [k, v] of Object.entries(obj)) {
-    if (LEGACY_PARAM_IDS.has(k)) continue;
-    out[k] = v;
-  }
-  return out;
-}
 
 export const chromaDef: VideoModuleDef = {
   type: 'chroma',
@@ -171,8 +146,7 @@ export const chromaDef: VideoModuleDef = {
   domain: 'video',
   label: 'chroma',
   category: 'effects',
-  schemaVersion: 3,
-  migrate: migrateChroma,
+  schemaVersion: 1,
   inputs: [
     { id: 'in',         type: 'video' },
     { id: 'hue',        type: 'cv', paramTarget: 'hue', cvScale: { mode: 'linear' } },

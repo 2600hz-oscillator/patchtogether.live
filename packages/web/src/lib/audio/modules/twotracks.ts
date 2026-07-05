@@ -165,7 +165,7 @@ export const twotracksDef: AudioModuleDef = {
   palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
   category: 'effects',
-  schemaVersion: 6,
+  schemaVersion: 1,
 
   inputs: [
     // Reel A

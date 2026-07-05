@@ -168,7 +168,7 @@ audioIn meta domain=audio schema=1
 audioIn out audio_l_out audio
 audioIn out audio_r_out audio
 audioIn param gain 0..2 linear default=1 unit=gain
-audioOut meta domain=audio schema=2
+audioOut meta domain=audio schema=1
 audioOut in L audio
 audioOut in R audio
 audioOut param master 0..1 linear default=0.7 unit=gain
@@ -477,7 +477,7 @@ chowkick param sustain 0..1 linear default=0
 chowkick param tight 0..1 linear default=0.6
 chowkick param tone 50..4000 log default=3200 unit=Hz
 chowkick param width 0.1..50 log default=0.5 unit=ms
-chroma meta domain=video schema=3
+chroma meta domain=video schema=1
 chroma in hue cv param=hue cvScale=linear
 chroma in in video
 chroma in saturation cv param=saturation cvScale=linear
@@ -952,7 +952,7 @@ doom param cv_p4_right 0..1 linear default=0
 doom param cv_p4_space 0..1 linear default=0
 doom param cv_p4_up 0..1 linear default=0
 doom param fillMode 0..1 discrete default=0
-drummergirl meta domain=audio schema=2
+drummergirl meta domain=audio schema=1
 drummergirl in decay cv param=decay cvScale=log
 drummergirl in gate gate
 drummergirl in pitch cv param=pitch cvScale=linear
@@ -1441,7 +1441,7 @@ loopback meta domain=video schema=1 maxInstances=2
 loopback out out video
 loopback param crop 0..1 discrete default=1
 loopback param gain 0..2 linear default=1
-luma meta domain=video schema=2
+luma meta domain=video schema=1
 luma in bias cv param=bias cvScale=linear
 luma in contrast cv param=contrast cvScale=linear
 luma in gamma cv param=gamma cvScale=linear
@@ -1591,7 +1591,7 @@ marbles param x_bias 0..1 linear default=0.5
 marbles param x_deja_vu 0..1 linear default=0
 marbles param x_length 1..16 discrete default=8
 matrixMix meta domain=meta schema=1
-meowbox meta domain=audio schema=2
+meowbox meta domain=audio schema=1
 meowbox in decay cv param=decay cvScale=log
 meowbox in gate gate
 meowbox in level cv param=level cvScale=linear
@@ -2163,7 +2163,7 @@ noise out brown audio
 noise out pink audio
 noise out white audio
 noise param level 0..1 linear default=0.5
-numpadPlus meta domain=audio schema=2
+numpadPlus meta domain=audio schema=1
 numpadPlus in clock gate
 numpadPlus in layer cv
 numpadPlus out l1_gate gate
@@ -2380,7 +2380,7 @@ qbert param cv_coin_in 0..1 linear default=0
 qbert param cv_joy_x -1..1 linear default=0
 qbert param cv_joy_y -1..1 linear default=0
 qbert param cv_start_in 0..1 linear default=0
-qbrt meta domain=audio schema=2
+qbrt meta domain=audio schema=1
 qbrt in cutoff cv param=cutoff cvScale=log
 qbrt in L audio
 qbrt in mode cv param=mode cvScale=discrete
@@ -3253,7 +3253,7 @@ tiler in in video
 tiler in tile_cv cv param=tile cvScale=discrete
 tiler out out video
 tiler param tile 0..5 discrete default=0
-timelorde meta domain=audio schema=2 maxInstances=1 undeletable
+timelorde meta domain=audio schema=1 maxInstances=1 undeletable
 timelorde in clock gate
 timelorde in gate gate edge=gate
 timelorde in start_in gate
@@ -3322,7 +3322,7 @@ tvLibrarian out video video
 tvLibrarian param cv_next 0..1 linear default=0
 tvLibrarian param cv_random 0..1 linear default=0
 tvLibrarian param gain 0..2 linear default=1
-twotracks meta domain=audio schema=6
+twotracks meta domain=audio schema=1
 twotracks in audio_l_in_a audio
 twotracks in audio_l_in_b audio
 twotracks in audio_r_in_a audio
@@ -3518,7 +3518,7 @@ warps param level_1 0..1 linear default=1
 warps param level_2 0..1 linear default=1
 warps param note -60..60 linear default=0 unit=st
 warps param timbre 0..1 linear default=0.5
-warrenspectrum meta domain=audio schema=2
+warrenspectrum meta domain=audio schema=1
 warrenspectrum in band1_in audio
 warrenspectrum in band2_in audio
 warrenspectrum in band3_in audio
@@ -3607,7 +3607,7 @@ wavecel family wavecel-preset-select kind=other prefix=wavecel-preset-select
 wavecel family wavecel-source-select kind=other prefix=wavecel-source-select
 wavecel family wavecel-viz-toggle kind=other prefix=wavecel-viz-toggle
 wavecel family wavecel-wav-input kind=other prefix=wavecel-wav-input
-wavesculpt meta domain=audio schema=2
+wavesculpt meta domain=audio schema=1
 wavesculpt in alpha_in video
 wavesculpt in gate1 gate
 wavesculpt in gate2 gate

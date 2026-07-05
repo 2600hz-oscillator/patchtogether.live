@@ -45,7 +45,7 @@ export const audioOutDef: AudioModuleDef = {
   domain: 'audio',
   label: 'audio out',
   category: 'output',
-  schemaVersion: 2, // bumped: previously had a single 'audio' input
+  schemaVersion: 1,
 
   inputs: [
     { id: 'L', type: 'audio' },
@@ -77,16 +77,6 @@ export const audioOutDef: AudioModuleDef = {
       master:
         "Master output level applied to both channels before the limiter, 0 (silence) to 1 (unity), default 0.7. It sets your overall loudness; the limiter downstream is a transparent ceiling, so use this for the actual mix level rather than relying on the limiter to hold things back.",
     },
-  },
-
-  /**
-   * Migrate a v1 Audio Out node (single 'audio' input) to v2 (L+R). Edges that
-   * targeted the old 'audio' port get rewritten to 'L' (mono → left). Callers
-   * are expected to handle the edge migration; the data shape itself is
-   * unchanged so this is a no-op at the node level.
-   */
-  migrate(data, _fromVersion) {
-    return data;
   },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {

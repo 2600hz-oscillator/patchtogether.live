@@ -1,14 +1,13 @@
 // packages/web/src/lib/video/modules/luma.test.ts
 //
-// LUMA module-def + migration tests. Pure (no GL).
+// LUMA module-def tests. Pure (no GL).
 //
 // LUMA was historically a confused single-input "luma-key mask" module
-// (LUMAKEY now owns that role properly with FG + BG). v2 restores LUMA
-// to a 1-input luminance-domain processor: gamma / contrast / posterize /
-// bias.
+// (LUMAKEY now owns that role properly with FG + BG). It is now a 1-input
+// luminance-domain processor: gamma / contrast / posterize / bias.
 
 import { describe, it, expect } from 'vitest';
-import { lumaDef, migrateLuma } from './luma';
+import { lumaDef } from './luma';
 
 describe('lumaDef shape', () => {
   it('declares gamma / contrast / posterizeLevels / bias params', () => {
@@ -63,41 +62,12 @@ describe('lumaDef shape', () => {
     expect(b?.defaultValue).toBe(0);
   });
 
-  it('schemaVersion is 2 (post-rework)', () => {
-    expect(lumaDef.schemaVersion).toBe(2);
+  it('schemaVersion is 1 (no load-time migration)', () => {
+    expect(lumaDef.schemaVersion).toBe(1);
   });
 
   it('output is a single full video stream (not a mask)', () => {
     expect(lumaDef.outputs.map((o) => o.id)).toEqual(['out']);
     expect(lumaDef.outputs[0]!.type).toBe('video');
-  });
-});
-
-describe('migrateLuma (v1 mask -> v2 processor reset)', () => {
-  it('drops legacy threshold / softness / invert from v1', () => {
-    const v1 = { threshold: 0.4, softness: 0.15, invert: 1 };
-    const out = migrateLuma(v1, 1) as Record<string, unknown>;
-    for (const legacy of ['threshold', 'softness', 'invert']) {
-      expect(legacy in out, `legacy ${legacy} dropped`).toBe(false);
-    }
-  });
-
-  it('preserves unrelated forward-compat keys', () => {
-    const v1 = { threshold: 0.4, future_field: 'preserved' };
-    const out = migrateLuma(v1, 1) as Record<string, unknown>;
-    expect(out.future_field).toBe('preserved');
-    expect('threshold' in out).toBe(false);
-  });
-
-  it('passes through v2 data unchanged (idempotent)', () => {
-    const v2 = { gamma: 1.5, contrast: 1.2, posterizeLevels: 8, bias: 0.1 };
-    const out = migrateLuma(v2, 2);
-    expect(out).toBe(v2);
-  });
-
-  it('returns input unchanged for null / non-object', () => {
-    expect(migrateLuma(null, 1)).toBe(null);
-    expect(migrateLuma(undefined, 1)).toBe(undefined);
-    expect(migrateLuma(42, 1)).toBe(42);
   });
 });

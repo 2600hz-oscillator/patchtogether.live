@@ -50,8 +50,8 @@ describe('wavesculpt v2: module-def shape', () => {
     expect(wavesculptDef.category).toBe('sources');
   });
 
-  it('schemaVersion bumped to 2 for the wavetable engine refactor', () => {
-    expect(wavesculptDef.schemaVersion).toBe(2);
+  it('schemaVersion is 1 (no load-time migration)', () => {
+    expect(wavesculptDef.schemaVersion).toBe(1);
   });
 
   it('declares gate + pitch_cv for each of 4 oscillators', () => {

@@ -60,10 +60,10 @@ export const meowboxDef: AudioModuleDef = {
   domain: 'audio',
   label: 'meowbox',
   category: 'sources',
-  // v2: `pitch` input port type changed from 'cv' (semis-as-AudioParam) to
-  //     'pitch' (V/oct audio-rate); DSP gained an audio-rate `pitch` channel.
-  //     No persisted-data shape change — the migrate() callback is a no-op.
-  schemaVersion: 2,
+  // The `pitch` input port type changed from 'cv' (semis-as-AudioParam) to
+  // 'pitch' (V/oct audio-rate); no persisted-data shape change, so no migration
+  // callback (or version bump) is needed.
+  schemaVersion: 1,
   inputs: [
     { id: 'gate',  type: 'gate' },
     // `pitch` is a true 1V/octave audio-rate input (PR fix/meowbox-voct):

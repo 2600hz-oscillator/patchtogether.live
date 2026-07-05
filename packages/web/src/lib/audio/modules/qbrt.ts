@@ -45,10 +45,10 @@ export const qbrtDef: AudioModuleDef = {
   domain: 'audio',
   label: 'qbrt',
   category: 'filters',
-  // v2: added `pingDecay` param + reworked the ping path to vactrol-style
-  // (Q boost + click excitation). Loading a v1 save populates pingDecay
-  // from default — no migration callback needed.
-  schemaVersion: 2,
+  // `pingDecay` (added with the vactrol-style ping path rework) is backfilled
+  // from its factory default on load, so no migration callback (or version
+  // bump) is needed.
+  schemaVersion: 1,
   inputs: [
     { id: 'L',         type: 'audio' },
     { id: 'R',         type: 'audio' },
