@@ -670,8 +670,14 @@ export const quadralogicalDef: VideoModuleDef = {
     // Per the PR #264 convention every CV input declares paramTarget == its
     // own id, so the cross-domain bridge + docs manifest stay in sync and the
     // cv-paramtarget-invariant unit gate passes.
-    { id: 'pos_x',          type: 'cv', paramTarget: 'pos_x',          cvScale: { mode: 'linear' } },
-    { id: 'pos_y',          type: 'cv', paramTarget: 'pos_y',          cvScale: { mode: 'linear' } },
+    // pos_x / pos_y are ABSOLUTE joystick POSITION, not a bias — a patched cable
+    // IS the position, so it must track the input directly. `center: 'default'`
+    // centres the CV sweep on the param default (0), IGNORING any stored value,
+    // so a stale saved pad position (a moment-in-time drag captured in the patch)
+    // can never apply a permanent offset to a cable-driven X/Y. Heals patches
+    // saved before this fix (see cv-bridge-map.ts).
+    { id: 'pos_x',          type: 'cv', paramTarget: 'pos_x',          cvScale: { mode: 'linear', center: 'default' } },
+    { id: 'pos_y',          type: 'cv', paramTarget: 'pos_y',          cvScale: { mode: 'linear', center: 'default' } },
     { id: 'diamond_margin', type: 'cv', paramTarget: 'diamond_margin', cvScale: { mode: 'linear' } },
     { id: 'blend_sharp',    type: 'cv', paramTarget: 'blend_sharp',    cvScale: { mode: 'linear' } },
     // Per-edge effect CV — each edge's primary (amount) + secondary (param)

@@ -226,6 +226,21 @@ export interface CvScaleHint {
   mode: 'linear' | 'log' | 'discrete' | 'passthrough';
   /** Per-param modulation depth. 1.0 = full natural-range sweep. */
   depth?: number;
+  /**
+   * Where the CV sweep is CENTRED — i.e. the value cv=0 maps to.
+   *   - `'param'` (default, omitted): the param's CURRENT stored value (the
+   *     "knob"). This is the bias-knob metaphor — you set a base and an LFO
+   *     wobbles AROUND it (camera zoom, a mix bias, etc.). Existing behavior.
+   *   - `'default'`: the param's `defaultValue`, IGNORING any stored value.
+   *     Use for ABSOLUTE-POSITION params where a patched cable should track the
+   *     input DIRECTLY (a joystick's X/Y): a cabled value is the position, not a
+   *     bias on top of one. This makes "patched ⇒ matches input" hold and stops
+   *     a stale saved position (a moment-in-time pad drag captured in the patch)
+   *     from applying a permanent offset to a cable-driven value. Honoured by
+   *     BOTH cross-domain scaling paths — `cv-scale.ts` (audio) and
+   *     `cv-bridge-map.ts` (video). See QUADRALOGICAL pos_x/pos_y.
+   */
+  center?: 'param' | 'default';
 }
 
 export interface PortDef {

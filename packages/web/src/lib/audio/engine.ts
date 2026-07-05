@@ -396,9 +396,14 @@ export class AudioEngine implements DomainEngine {
         // set runtime value — making the LUT bake on the wrong centre. The
         // JS-side cache sidesteps that race. Hot-rebuild on subsequent knob
         // changes is left to a follow-up; cf. attachCvScale notes.
-        const liveKnob = this.knobValues.get(
-          this.knobKey(edge.target.nodeId, scaleInfo.paramDef.id),
-        ) ?? scaleInfo.paramDef.defaultValue;
+        // `center: 'default'` (absolute-position params) IGNORES any stored/live
+        // knob so a cabled input tracks the source directly — a stale saved base
+        // can't offset it. Otherwise centre the sweep on the live knob (bias).
+        const liveKnob = scaleInfo.hint.center === 'default'
+          ? scaleInfo.paramDef.defaultValue
+          : (this.knobValues.get(
+              this.knobKey(edge.target.nodeId, scaleInfo.paramDef.id),
+            ) ?? scaleInfo.paramDef.defaultValue);
         const chain = attachCvScale(this.ctx, scaleInfo.paramDef, scaleInfo.hint, liveKnob);
         // source → scaler input; scaler output → param + tap.
         sout.node.connect(chain.input, sout.output);
