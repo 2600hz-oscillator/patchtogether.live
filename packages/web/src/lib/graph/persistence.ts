@@ -415,26 +415,6 @@ export function loadEnvelopeIntoStore(
   const diagnostics: LoadDiagnostic[] = [];
   const migratedNodes: Record<string, ModuleNode> = {};
   for (const [id, node] of Object.entries(loadedNodes)) {
-    // ---- BREAKING-CHANGE TYPE REMAP: ruttetra → reshaper ----
-    //
-    // The type id `ruttetra` originally belonged to a fragment-shader
-    // coordinate-REMAP effect (schemaVersion 1). That module was renamed
-    // to RESHAPER, and a NEW, behaviourally-different module — the
-    // authentic forward-scatter Rutt-Etra scope — took over the
-    // `ruttetra` type id (registered at schemaVersion 2).
-    //
-    // Persisted patches saved BEFORE the rename recorded their `ruttetra`
-    // nodes with the old schemaVersion (1) in the envelope's
-    // moduleSchemas. Loading them as the new RUTTETRA would silently swap
-    // the look. We detect the old saves by their recorded schemaVersion
-    // (< 2) and remap the node's `type` to `reshaper` so the original
-    // coord-remap behaviour is preserved. Saves recorded at >= 2 (or with
-    // no recorded version, which only happens for freshly-created nodes
-    // in the current build) are left as the new RUTTETRA.
-    if (node.type === 'ruttetra' && (envelope.moduleSchemas['ruttetra'] ?? 1) < 2) {
-      (node as { type: string }).type = 'reshaper';
-    }
-
     // ---- LEGACY VIDEO TYPE ALIAS: circles → outlines (and any future
     //      renamed video module) ----
     //
