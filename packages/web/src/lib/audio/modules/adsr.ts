@@ -44,7 +44,6 @@ export const adsrDef: AudioModuleDef = {
   domain: 'audio',
   label: 'adsr',
   category: 'modulation',
-  schemaVersion: 1,
   inputs: [
     { id: 'gate',    type: 'gate' },
     // CV inputs route to the corresponding AudioParam, with engine-level

@@ -75,7 +75,6 @@ function registerSingletonDef(type: string, rec: SpawnRecorder): void {
     domain: 'audio',
     label: type,
     category: 'utilities',
-    schemaVersion: 1,
     inputs: [],
     outputs: [{ id: 'out', type: 'audio' }],
     params: [],

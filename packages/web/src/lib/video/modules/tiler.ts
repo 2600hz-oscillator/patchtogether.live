@@ -214,7 +214,6 @@ export const tilerDef: VideoModuleDef = {
   domain: 'video',
   label: 'tiler',
   category: 'effects',
-  schemaVersion: 1,
   inputs: [
     { id: 'in', type: 'video' },
     // TILE CV — DISCRETE cvScale so the CV snaps to the index steps and sums

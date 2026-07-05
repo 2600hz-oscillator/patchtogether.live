@@ -67,7 +67,6 @@ const CV_GATE_SOURCE_DEF: AudioModuleDef = {
   domain: 'audio',
   label: 'CVGateSrc',
   category: 'sources',
-  schemaVersion: 1,
   inputs: [],
   outputs: [
     { id: 'cvOut', type: 'cv' },

@@ -29,7 +29,6 @@ describe('moog921aDef: module def shape', () => {
     expect(moog921aDef.type).toBe('moog921a');
     expect(moog921aDef.label).toBe('921a driver');
     expect(moog921aDef.category).toBe('modulation');
-    expect(moog921aDef.schemaVersion).toBe(1);
   });
 
   it('is categorized under Moog System 35/55 Clones', () => {

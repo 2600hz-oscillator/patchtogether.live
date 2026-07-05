@@ -18,7 +18,6 @@ describe('LOOPBACK — module def shape', () => {
     expect(def.domain).toBe('video');
     expect(def.label).toBe('loopback');
     expect(def.category).toBe('sources');
-    expect(def.schemaVersion).toBe(1);
   });
 
   it('has ZERO inputs (a pure source)', () => {

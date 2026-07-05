@@ -42,7 +42,6 @@ export const moog961Def: AudioModuleDef = {
   domain: 'audio',
   label: '961 interface',
   category: 'utilities',
-  schemaVersion: 1,
 
   inputs: [
     { id: 'audio_in', type: 'audio' },

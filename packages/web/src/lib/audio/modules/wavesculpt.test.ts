@@ -50,10 +50,6 @@ describe('wavesculpt v2: module-def shape', () => {
     expect(wavesculptDef.category).toBe('sources');
   });
 
-  it('schemaVersion is 1 (no load-time migration)', () => {
-    expect(wavesculptDef.schemaVersion).toBe(1);
-  });
-
   it('declares gate + pitch_cv for each of 4 oscillators', () => {
     const inIds = wavesculptDef.inputs.map((p) => p.id);
     for (let i = 1; i <= 4; i++) {

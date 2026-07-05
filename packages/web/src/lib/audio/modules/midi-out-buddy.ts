@@ -228,7 +228,6 @@ export const midiOutBuddyDef: AudioModuleDef = {
   domain: 'audio',
   label: 'midi cv buddy out',
   category: 'output',
-  schemaVersion: 1,
 
   // CV/gate inputs (audio-rate, tapped by analysers). No outputs — this is a
   // terminal MIDI sink (emits MIDI to external gear, not audio into the graph).

@@ -48,7 +48,6 @@ export const chowkickDef: AudioModuleDef = {
   domain: 'audio',
   label: 'chowkick',
   category: 'sources',
-  schemaVersion: 1,
   ossAttribution: {
     author: 'ChowKick by Jatin Chowdhury / chowdsp, BSD-3-Clause',
   },

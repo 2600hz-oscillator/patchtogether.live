@@ -151,7 +151,6 @@ export const snes9xDef: VideoModuleDef = {
   // "games" category — same value the SM64 audio def uses. The palette
   // bucketing in module-categories.ts places it in the games group.
   category: 'games',
-  schemaVersion: 1,
   // Single-instance per rack: the WASM core + its 64 MB linear memory are
   // heavy; a second card would double the footprint with no shared benefit.
   // Same maxInstances:1 rationale as DOOM / SM64.

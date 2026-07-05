@@ -48,7 +48,6 @@ export const ringbackDef: AudioModuleDef = {
   palette: { top: 'Audio modules', sub: 'Effects' },
   domain: 'audio',
   category: 'effects',
-  schemaVersion: 1,
 
   inputs: [
     { id: 'in_l', type: 'audio' },

@@ -37,7 +37,6 @@ describe('shapegenDef — module shape', () => {
     expect(shapegenDef.type).toBe('shapegen');
     expect(shapegenDef.domain).toBe('video');
     expect(shapegenDef.label).toBe('shapegen');
-    expect(shapegenDef.schemaVersion).toBe(1);
   });
 
   it('declares 3 video inputs + 1 gate input (raster_a / raster_b / raster_c + clock_in)', () => {

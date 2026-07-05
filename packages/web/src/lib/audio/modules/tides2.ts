@@ -145,7 +145,6 @@ export const tides2Def: AudioModuleDef = {
   domain: 'audio',
   label: 'tides2',
   category: 'modulation',
-  schemaVersion: 1,
   ossAttribution: { author: 'Émilie Gillet' },
   inputs: [
     // V/oct pitch — audio-rate node input; the worklet maps ±1 → ±5 octaves

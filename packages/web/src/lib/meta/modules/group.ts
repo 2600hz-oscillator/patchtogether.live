@@ -29,7 +29,6 @@ export const groupDef: MetaModuleDef = {
   inputs: [],
   outputs: [],
   params: [],
-  schemaVersion: 1,
 };
 
 export interface MakeGroupArgs {

@@ -205,7 +205,6 @@ describe('writeseqDef shape', () => {
   it('is a schemaVersion-1 audio module with a palette + exposesSequence', () => {
     expect(writeseqDef.type).toBe('writeseq');
     expect(writeseqDef.domain).toBe('audio');
-    expect(writeseqDef.schemaVersion).toBe(1);
     expect(writeseqDef.palette).toBeTruthy();
     expect(writeseqDef.palette?.top).toBe('Audio modules');
     expect(writeseqDef.exposesSequence).toBe(true);

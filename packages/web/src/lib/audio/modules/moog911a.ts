@@ -45,7 +45,6 @@ export const moog911aDef: AudioModuleDef = {
   domain: 'audio',
   label: '911a trig delay',
   category: 'modulation',
-  schemaVersion: 1,
 
   inputs: [
     // Gate triggers — rising-edge detected in the worklet (PASSTHROUGH, not a

@@ -128,7 +128,6 @@ export const qbertDef: VideoModuleDef = {
   domain: 'video',
   label: 'qbert',
   category: 'sources',
-  schemaVersion: 1,
   inputs: [
     { id: 'coin_in',  type: 'gate' as const, paramTarget: 'cv_coin_in'  },
     { id: 'start_in', type: 'gate' as const, paramTarget: 'cv_start_in' },

@@ -79,7 +79,6 @@ describe('moog912Def: module def shape', () => {
     expect(moog912Def.type).toBe('moog912');
     expect(moog912Def.label).toBe('912 envelope follower');
     expect(moog912Def.category).toBe('modulation');
-    expect(moog912Def.schemaVersion).toBe(1);
   });
 
   it('lives in the Moog System 35/55 Clones palette bucket and uses the Moog912Card', () => {

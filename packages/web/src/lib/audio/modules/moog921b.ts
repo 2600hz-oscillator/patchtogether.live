@@ -48,7 +48,6 @@ export const moog921bDef: AudioModuleDef = {
   domain: 'audio',
   label: '921b osc',
   category: 'sources',
-  schemaVersion: 1,
 
   inputs: [
     // freq_bus + width_bus are audio-rate CONTROL INPUTS from the 921A (the

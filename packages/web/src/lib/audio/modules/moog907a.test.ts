@@ -36,7 +36,6 @@ describe('moog907aDef: module def shape', () => {
     expect(moog907aDef.type).toBe('moog907a');
     expect(moog907aDef.label).toBe('907a fixed filter bank');
     expect(moog907aDef.category).toBe('filters');
-    expect(moog907aDef.schemaVersion).toBe(1);
   });
 
   it('lives in the Moog System 35/55 Clones palette bucket and uses the Moog907aCard', () => {

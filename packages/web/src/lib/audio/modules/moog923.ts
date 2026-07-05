@@ -66,7 +66,6 @@ export const moog923Def: AudioModuleDef = {
   domain: 'audio',
   label: '923 filters / noise source',
   category: 'filter',
-  schemaVersion: 1,
 
   inputs: [
     // The external signal fed through the LP + HP filter section.

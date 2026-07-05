@@ -523,7 +523,6 @@ export const callsineDef: AudioModuleDef = {
   // module-categories.ts (we put it in Hybrid → Hybrid because it also
   // exposes a freeze-gated audio source. See module-categories.ts.).
   category: 'effects',
-  schemaVersion: 1,
   ossAttribution: { author: 'callsine contributors (Warren\'s Spectrum)' },
 
   inputs: [

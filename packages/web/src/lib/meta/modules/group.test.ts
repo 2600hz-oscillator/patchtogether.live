@@ -13,7 +13,6 @@ describe('groupDef', () => {
     expect(groupDef.inputs).toEqual([]);
     expect(groupDef.outputs).toEqual([]);
     expect(groupDef.params).toEqual([]);
-    expect(groupDef.schemaVersion).toBeGreaterThanOrEqual(1);
   });
 });
 

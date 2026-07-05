@@ -29,7 +29,6 @@ describe('polarizerDef: module def shape', () => {
     expect(polarizerDef.label).toBe(polarizerDef.label.toLowerCase());
     expect(polarizerDef.category).toBe('utilities');
     expect(polarizerDef.domain).toBe('audio');
-    expect(polarizerDef.schemaVersion).toBe(1);
   });
 
   it('lands in the Utilities palette (Audio modules → Utility)', () => {

@@ -148,7 +148,6 @@ export const shapegenDef: VideoModuleDef = {
   domain: 'video',
   label: 'shapegen',
   category: 'video-effects',
-  schemaVersion: 1,
   inputs: [
     { id: 'raster_a', type: 'video' },
     { id: 'raster_b', type: 'video' },

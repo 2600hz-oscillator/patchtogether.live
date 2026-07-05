@@ -19,7 +19,7 @@
 
 <section class="hero">
   <h1>one to nine</h1>
-  <div class="sub"><code>{data.type}</code> · {data.category} · schema v{data.schemaVersion}</div>
+  <div class="sub"><code>{data.type}</code> · {data.category}</div>
 </section>
 
 <p>

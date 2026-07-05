@@ -31,7 +31,7 @@ import {
 import { setNodePosition } from '$lib/multiplayer/layouts';
 import type { ModuleNode, Edge } from './types';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
-import { registerModule, getModuleDef } from '$lib/audio/module-registry';
+import { registerModule } from '$lib/audio/module-registry';
 import {
   registerVideoModule,
   type VideoModuleDef,
@@ -40,7 +40,7 @@ import {
 // ---------------- Test fixtures ----------------
 
 /** A factory stub that throws if anyone actually calls it. The persistence
- * layer only reads schemaVersion + migrate from the def; it never calls
+ * layer only reads the registered TYPE + ports from the def; it never calls
  * factory. Wiring a throwing stub catches accidental factory invocation. */
 const throwingFactory = (): never => {
   throw new Error('factory should not be called from persistence tests');
@@ -53,7 +53,6 @@ const testVcoDef: AudioModuleDef = {
   domain: 'audio',
   label: 'Analog VCO',
   category: 'sources',
-  schemaVersion: 1,
   inputs: [{ id: 'pitch', type: 'pitch' }],
   outputs: [{ id: 'sine', type: 'audio' }],
   params: [
@@ -69,7 +68,6 @@ const testOutDef: AudioModuleDef = {
   domain: 'audio',
   label: 'Audio Out',
   category: 'output',
-  schemaVersion: 1,
   inputs: [
     { id: 'L', type: 'audio' },
     { id: 'R', type: 'audio' },
@@ -80,17 +78,6 @@ const testOutDef: AudioModuleDef = {
   ],
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   factory: throwingFactory as any,
-};
-
-/** A second-version VCO def used by the migration test. */
-const testVcoDefV2: AudioModuleDef = {
-  ...testVcoDef,
-  schemaVersion: 2,
-  migrate(data, fromVersion) {
-    if (fromVersion >= 2) return data;
-    // Pretend v2 added a `wave` field defaulting to 'sine'.
-    return { ...(data as object | undefined ?? {}), wave: 'sine' };
-  },
 };
 
 /** Build a fresh syncedstore + ydoc + LivePatch triple for each test. */
@@ -106,8 +93,8 @@ function freshPatch() {
 // ---------------- Tests ----------------
 
 beforeAll(() => {
-  // Register the minimal defs so loadEnvelopeIntoStore's per-node migration
-  // step can find them. We deliberately don't import the real
+  // Register the minimal defs so loadEnvelopeIntoStore resolves them as known
+  // types (an unknown type is dropped). We deliberately don't import the real
   // $lib/audio/modules barrel here — those modules import WASM via Vite's
   // `?url` loader, which only resolves under SvelteKit's vite plugin.
   registerModule(testVcoDef);
@@ -130,7 +117,8 @@ describe('persistence: round-trip', () => {
     expect(env.envelopeVersion).toBe(ENVELOPE_VERSION);
     expect(typeof env.savedAt).toBe('string');
     expect(new Date(env.savedAt).getTime()).toBeGreaterThan(0);
-    expect(env.moduleSchemas['analogVco']).toBe(getModuleDef('analogVco')!.schemaVersion);
+    // Lean v2 envelope: no per-module version map (substrate collapsed).
+    expect('moduleSchemas' in env).toBe(false);
     expect(env.update).toMatch(/^[A-Za-z0-9+/=]+$/);
     expect(env.update.length).toBeGreaterThan(0);
   });
@@ -244,36 +232,71 @@ describe('persistence: round-trip', () => {
     expect(dest.store.nodes['fresh']!.type).toBe('analogVco');
   });
 
-  it('runs per-module migrations when saved schemaVersion is older', () => {
-    // Save under v1.
+  it('TOLERANT READ: an OLD v1 envelope (with a legacy moduleSchemas map) STILL loads', () => {
+    // The key adversarial guard for the substrate collapse: a real old save must
+    // still open. Build a patch, snapshot its Yjs update, then hand-wrap it in a
+    // LEGACY v1 envelope exactly as an old build wrote — envelopeVersion 1 + the
+    // per-module `moduleSchemas` map that cleanup 5/5 dropped. The `update`
+    // payload format is unchanged across v1→v2 (only the JSON wrapper lost the
+    // version map), so this is a faithful old-save fixture.
     const src = freshPatch();
     src.ydoc.transact(() => {
       src.store.nodes['vco'] = {
         id: 'vco',
         type: 'analogVco',
         domain: 'audio',
-        position: { x: 0, y: 0 },
-        params: { tune: 0, fine: 0 },
-        // No `wave` field — that's the v1 shape.
+        position: { x: 12, y: 34 },
+        params: { tune: 5, fine: 9 },
+        data: { note: 'kept' },
+      };
+      src.store.nodes['out'] = {
+        id: 'out',
+        type: 'audioOut',
+        domain: 'audio',
+        position: { x: 200, y: 0 },
+        params: { master: 0.7 },
+      };
+      src.store.edges['e'] = {
+        id: 'e',
+        source: { nodeId: 'vco', portId: 'sine' },
+        target: { nodeId: 'out', portId: 'L' },
+        sourceType: 'audio',
+        targetType: 'audio',
       };
     });
-    const env = makeEnvelope(src.ydoc);
-    expect(env.moduleSchemas['analogVco']).toBe(1);
+    const v2 = makeEnvelope(src.ydoc);
+    const legacyV1 = JSON.stringify({
+      envelopeVersion: 1,
+      savedAt: v2.savedAt,
+      // The dropped substrate — must be ignored, not required, on read.
+      moduleSchemas: { analogVco: 1, audioOut: 1 },
+      update: v2.update,
+    });
 
-    // Re-register VCO at v2 to simulate a code update with a migration.
-    registerModule(testVcoDefV2);
+    // parseEnvelope ACCEPTS the older version (tolerant read); the legacy
+    // moduleSchemas field is simply ignored.
+    const parsed = parseEnvelope(legacyV1);
+    expect(parsed.envelopeVersion).toBe(1);
 
     const dest = freshPatch();
-    const result = loadEnvelopeIntoStore(env, dest.ydoc, dest.store);
-    expect(result.nodesLoaded).toBe(1);
+    const result = loadEnvelopeIntoStore(parsed, dest.ydoc, dest.store);
+    // Nothing dropped: topology + edges + authored params + node.data all intact.
     expect(result.diagnostics).toEqual([]);
+    expect(result.nodesLoaded).toBe(2);
+    expect(result.edgesLoaded).toBe(1);
+    const vco = dest.store.nodes['vco'];
+    expect(vco).toBeDefined();
+    expect(vco!.position).toEqual({ x: 12, y: 34 });
+    expect(vco!.params).toEqual({ tune: 5, fine: 9 });
+    expect(vco!.data).toEqual({ note: 'kept' });
+    expect(dest.store.edges['e']).toBeDefined();
+  });
 
-    const loaded = dest.store.nodes['vco'];
-    expect(loaded).toBeDefined();
-    expect((loaded!.data as { wave: string }).wave).toBe('sine');
-
-    // Restore v1 def for downstream tests.
-    registerModule(testVcoDef);
+  it('rejects a FUTURE envelopeVersion it cannot understand', () => {
+    const src = freshPatch();
+    const env = makeEnvelope(src.ydoc);
+    const future = JSON.stringify({ ...env, envelopeVersion: ENVELOPE_VERSION + 1 });
+    expect(() => parseEnvelope(future)).toThrow(/unsupported envelopeVersion/);
   });
 
   it('drops nodes whose module type is not registered, plus edges referencing them', () => {
@@ -393,12 +416,12 @@ describe('persistence: round-trip', () => {
   it('parseEnvelope rejects malformed input', () => {
     expect(() => parseEnvelope('not json')).toThrow();
     expect(() => parseEnvelope(JSON.stringify({}))).toThrow();
+    // A FUTURE envelopeVersion is rejected (tolerant read accepts <=, not >).
     expect(() =>
       parseEnvelope(
         JSON.stringify({
           envelopeVersion: 999,
           savedAt: new Date().toISOString(),
-          moduleSchemas: {},
           update: 'AAAA',
         })
       )
@@ -416,7 +439,7 @@ describe('persistence: round-trip', () => {
 // host's start-game dialog is gated on `mpMode === undefined` and so it
 // never re-renders — the user lands on a stuck "Single-user rack" splash
 // with no way to launch. The loader strips a per-module whitelist of these
-// transient fields off `node.data` post-migration so the load is a clean
+// transient fields off `node.data` on load so the load is a clean
 // topology restore (Bug #1 — the load-from-patch repro).
 describe('persistence: DOOM transient-field stripping', () => {
   /** Minimal DOOM def — only needed so the loader sees `doom` as a known
@@ -429,7 +452,6 @@ describe('persistence: DOOM transient-field stripping', () => {
     domain: 'audio',
     label: 'DOOM',
     category: 'sources',
-    schemaVersion: 2,
     inputs: [],
     outputs: [],
     params: [],
@@ -552,7 +574,6 @@ describe('persistence: asset round-trip (rackspace-persistence audit)', () => {
       domain: 'video',
       label: 'PICTUREBOX',
       category: 'sources',
-      schemaVersion: 2,
       inputs: [],
       outputs: [],
       params: [],
@@ -619,7 +640,6 @@ describe('persistence: asset round-trip (rackspace-persistence audit)', () => {
       domain: 'video',
       label: 'VIDEOBOX',
       category: 'sources',
-      schemaVersion: 1,
       inputs: [],
       outputs: [],
       params: [],
@@ -683,7 +703,6 @@ describe('persistence: asset round-trip (rackspace-persistence audit)', () => {
       domain: 'video',
       label: 'VIDEOBOX',
       category: 'sources',
-      schemaVersion: 1,
       inputs: [],
       outputs: [],
       params: [],
@@ -729,7 +748,6 @@ describe('persistence: asset round-trip (rackspace-persistence audit)', () => {
       domain: 'audio',
       label: 'DX7',
       category: 'sources',
-      schemaVersion: 1,
       inputs: [],
       outputs: [],
       params: [],

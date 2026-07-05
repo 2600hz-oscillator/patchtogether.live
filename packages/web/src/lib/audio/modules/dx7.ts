@@ -69,7 +69,6 @@ export const dx7Def: AudioModuleDef = {
   domain: 'audio',
   label: 'dx7',
   category: 'sources',
-  schemaVersion: 1,
 
   inputs: [
     // poly: 10-channel polyPitchGate; lane i drives voice i.

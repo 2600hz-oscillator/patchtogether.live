@@ -21,7 +21,6 @@ describe('negativityDef: module def shape', () => {
     expect(negativityDef.label).toBe(negativityDef.label.toLowerCase());
     expect(negativityDef.category).toBe('utilities');
     expect(negativityDef.domain).toBe('audio');
-    expect(negativityDef.schemaVersion).toBe(1);
   });
 
   it('lands in the Utilities palette (Audio modules → Utility)', () => {

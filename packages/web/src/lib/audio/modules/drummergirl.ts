@@ -44,7 +44,6 @@ export const drummergirlDef: AudioModuleDef = {
   category: 'sources',
   // `volume` (0-2.0) and `decay` (0.001-0.5s, log) params are backfilled from
   // factory defaults on load, so no migration callback (or version bump) is needed.
-  schemaVersion: 1,
   inputs: [
     { id: 'gate',   type: 'gate' },
     // CV scaling per .myrobots/plans/cv-range-standard.md.

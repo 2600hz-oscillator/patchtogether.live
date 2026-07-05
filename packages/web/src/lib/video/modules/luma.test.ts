@@ -62,10 +62,6 @@ describe('lumaDef shape', () => {
     expect(b?.defaultValue).toBe(0);
   });
 
-  it('schemaVersion is 1 (no load-time migration)', () => {
-    expect(lumaDef.schemaVersion).toBe(1);
-  });
-
   it('output is a single full video stream (not a mask)', () => {
     expect(lumaDef.outputs.map((o) => o.id)).toEqual(['out']);
     expect(lumaDef.outputs[0]!.type).toBe('video');

@@ -174,7 +174,6 @@ export const warpsDef: AudioModuleDef = {
   domain: 'audio',
   label: 'warps',
   category: 'effects',
-  schemaVersion: 1,
   ossAttribution: { author: 'Émilie Gillet' },
 
   inputs: [

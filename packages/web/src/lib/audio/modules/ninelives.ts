@@ -39,7 +39,6 @@ export const ninelivesDef: AudioModuleDef = {
   domain: 'audio',
   label: 'nine lives',
   category: 'modulation',
-  schemaVersion: 1,
 
   inputs: [
     // RESET is a TRIGGER (fires once per rising edge): re-syncs the whole

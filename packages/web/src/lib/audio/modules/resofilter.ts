@@ -70,7 +70,6 @@ export const resofilterDef: AudioModuleDef = {
   domain: 'audio',
   label: 'resofilter',
   category: 'processors',
-  schemaVersion: 1,
   stereoPairs: [['out_l', 'out_r']],
   ossAttribution: { author: 'Gabriel Soule (Resonarium, MultiFilter)' },
 

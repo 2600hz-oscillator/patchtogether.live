@@ -61,7 +61,6 @@ export const analogVcoDef: AudioModuleDef = {
   domain: 'audio',
   label: 'analog vco',
   category: 'sources',
-  schemaVersion: 5,
   inputs: [
     { id: 'pitch', type: 'pitch' },
     { id: 'fm',    type: 'audio' },

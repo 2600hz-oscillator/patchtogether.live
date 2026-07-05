@@ -83,7 +83,6 @@ export const unityscalemathematikDef: AudioModuleDef = {
   domain: 'audio',
   label: 'unityscalemathematik',
   category: 'utilities',
-  schemaVersion: 1,
 
   inputs: [
     { id: 'u_in',        type: 'cv' },

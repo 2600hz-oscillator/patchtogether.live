@@ -48,7 +48,6 @@ export const clockedRunnerDef: AudioModuleDef = {
   domain: 'audio',
   label: 'clocked',
   category: 'utilities',
-  schemaVersion: 1,
   inputs: [],
   outputs: [],
   params: [],

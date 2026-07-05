@@ -7,7 +7,6 @@
 // wires), this patch ships as a serialized Yjs envelope captured from a
 // live rackspace and re-loaded through the canonical persistence path
 // (`loadEnvelopeIntoStore`). That gets us:
-//   - automatic per-module migrations on load (envelope's moduleSchemas)
 //   - identical code path to the user-facing Save/Load buttons
 //   - the PICTUREBOX node already carries its `data.imageBytes` base64
 //     payload in the envelope, so the bundled glitch.jpg renders on
@@ -18,7 +17,7 @@
 // for any future loader that needs a URL-loadable source (e.g. a
 // `default_image_url` PICTUREBOX param). Not used by this loader.
 //
-// Envelope shape: { envelopeVersion: 1, savedAt, moduleSchemas, update }
+// Envelope shape: { envelopeVersion: 2, savedAt, update }
 // where `update` is a base64-encoded Yjs update blob containing `nodes`
 // + `edges` Y.Maps.
 

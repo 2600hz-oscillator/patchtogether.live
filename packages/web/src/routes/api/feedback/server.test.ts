@@ -140,7 +140,7 @@ describe('POST /api/feedback validation', () => {
   });
 
   it('200 + accepts suggestion with rackId + patchJson', async () => {
-    const patch = { envelopeVersion: 1, savedAt: 't', moduleSchemas: {}, update: 'AAAA' };
+    const patch = { envelopeVersion: 2, savedAt: 't', update: 'AAAA' };
     const r = await runPost(makeEvent({
       body: { kind: 'suggestion', message: 'add reverb tails', rackId: 'r_abc123', patchJson: patch },
     }));

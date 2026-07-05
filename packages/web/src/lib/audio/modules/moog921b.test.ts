@@ -29,7 +29,6 @@ describe('moog921bDef: module def shape', () => {
     expect(moog921bDef.type).toBe('moog921b');
     expect(moog921bDef.label).toBe('921b osc');
     expect(moog921bDef.category).toBe('sources');
-    expect(moog921bDef.schemaVersion).toBe(1);
   });
 
   it('is categorized under Moog System 35/55 Clones', () => {

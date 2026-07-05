@@ -115,7 +115,6 @@ export const wavecelDef: AudioModuleDef = {
   domain: 'audio',
   label: 'wavecel',
   category: 'sources',
-  schemaVersion: 1,
   stereoPairs: [['out_l', 'out_r']],
 
   inputs: [

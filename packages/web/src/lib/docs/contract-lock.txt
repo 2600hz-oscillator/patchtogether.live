@@ -4,7 +4,7 @@
 #   flox activate -- task docs:accept -- <type>  (one module)
 # A diff here means a module contract changed: re-author the doc + re-pin, OR
 # recognize it as a bug/side-effect. The docs-drift gate fails on any mismatch.
-4plexvid meta domain=video schema=1
+4plexvid meta domain=video
 4plexvid in gate1 cv param=gate1
 4plexvid in gate2 cv param=gate2
 4plexvid in gate3 cv param=gate3
@@ -25,7 +25,7 @@
 4plexvid param sel2 0..3 discrete default=0
 4plexvid param sel3 0..3 discrete default=0
 4plexvid param sel4 0..3 discrete default=0
-acidwarp meta domain=video schema=1
+acidwarp meta domain=video
 acidwarp in scene_cv cv param=sceneTrig
 acidwarp in speed_cv cv param=speed cvScale=linear
 acidwarp out out video
@@ -34,7 +34,7 @@ acidwarp param paletteType 0..7 discrete default=0
 acidwarp param scene 0..40 discrete default=0
 acidwarp param sceneTrig 0..1 linear default=0
 acidwarp param speed 0..1 linear default=0.5
-adsr meta domain=audio schema=1
+adsr meta domain=audio
 adsr in attack cv param=attack cvScale=log
 adsr in decay cv param=decay cvScale=log
 adsr in gate gate
@@ -46,7 +46,7 @@ adsr param attack 0.001..10 log default=0.005 unit=s
 adsr param decay 0.001..10 log default=0.1 unit=s
 adsr param release 0.001..10 log default=0.3 unit=s
 adsr param sustain 0..1 linear default=0.7
-analogLogicMaths meta domain=audio schema=1
+analogLogicMaths meta domain=audio
 analogLogicMaths in a cv
 analogLogicMaths in attA_cv cv param=attA cvScale=linear
 analogLogicMaths in attB_cv cv param=attB cvScale=linear
@@ -58,7 +58,7 @@ analogLogicMaths out product cv
 analogLogicMaths out sum cv
 analogLogicMaths param attA -1..1 linear default=1
 analogLogicMaths param attB -1..1 linear default=1
-analogVco meta domain=audio schema=5
+analogVco meta domain=audio
 analogVco in fine cv param=fine cvScale=linear
 analogVco in fm audio
 analogVco in fmAmount cv param=fmAmount cvScale=linear
@@ -80,7 +80,7 @@ analogVco param pmAmount -1..1 linear default=0
 analogVco param pw 0.05..0.95 linear default=0.5
 analogVco param shape 0..1 linear default=0
 analogVco param tune -36..36 linear default=0 unit=semi
-aquaTank meta domain=audio schema=1
+aquaTank meta domain=audio
 aquaTank in fb1_cv cv param=fb1 cvScale=linear
 aquaTank in fb2_cv cv param=fb2 cvScale=linear
 aquaTank in fb3_cv cv param=fb3 cvScale=linear
@@ -106,7 +106,7 @@ aquaTank param outLevel 0..1 linear default=0.6
 aquaTank param spread 0..1 linear default=0.7
 aquaTank param tilt -1..1 linear default=0
 aquaTank stereo mix_l+mix_r
-archivist meta domain=video schema=1
+archivist meta domain=video
 archivist in play_trigger gate param=cv_play_trigger edge=gate
 archivist out audio_l audio
 archivist out audio_r audio
@@ -118,7 +118,7 @@ archivist out playing gate edge=gate
 archivist out video video
 archivist param cv_play_trigger 0..1 linear default=0
 archivist param gain 0..2 linear default=1
-atlantisCatalyst meta domain=audio schema=1
+atlantisCatalyst meta domain=audio
 atlantisCatalyst in freeze gate
 atlantisCatalyst in nudge gate
 atlantisCatalyst in play_cv gate
@@ -145,7 +145,7 @@ atlantisCatalyst param coherence 0..1 linear default=0.55
 atlantisCatalyst param driftRate 0..1 log default=0.18
 atlantisCatalyst param level 0..1 linear default=1
 atlantisCatalyst param sceneDepth 0..1 linear default=0.7
-attenumix meta domain=audio schema=1
+attenumix meta domain=audio
 attenumix in cv1 cv
 attenumix in cv2 cv
 attenumix in cv3 cv
@@ -164,15 +164,15 @@ attenumix param att2 0..1 linear default=0
 attenumix param att3 0..1 linear default=0
 attenumix param att4 0..1 linear default=0
 attenumix param master 0..2 linear default=1
-audioIn meta domain=audio schema=1
+audioIn meta domain=audio
 audioIn out audio_l_out audio
 audioIn out audio_r_out audio
 audioIn param gain 0..2 linear default=1 unit=gain
-audioOut meta domain=audio schema=1
+audioOut meta domain=audio
 audioOut in L audio
 audioOut in R audio
 audioOut param master 0..1 linear default=0.7 unit=gain
-b3ntb0x meta domain=video schema=1
+b3ntb0x meta domain=video
 b3ntb0x in ac_dc_cv cv param=ac_dc cvScale=linear
 b3ntb0x in barrel_cv cv param=barrel cvScale=linear
 b3ntb0x in bend_a_cv cv param=bend_a cvScale=linear
@@ -215,7 +215,7 @@ b3ntb0x param sub_drift 0..1 linear default=0
 b3ntb0x param sync_crush 0..2 linear default=1
 b3ntb0x param tbc 0..1 linear default=1
 b3ntb0x param tube_bloom 0..1 linear default=0.35
-backdraft meta domain=video schema=1
+backdraft meta domain=video
 backdraft in b cv param=b cvScale=linear
 backdraft in chroma cv param=chroma cvScale=linear
 backdraft in darken video
@@ -266,7 +266,7 @@ backdraft param rotate -30..30 linear default=0
 backdraft param shape 0..4 discrete default=0
 backdraft param shapeGate 0..1 linear default=0
 backdraft param zoom 0.4..1.6 linear default=1
-bentbox meta domain=video schema=1
+bentbox meta domain=video
 bentbox in bloom_cv cv param=bloom cvScale=linear
 bentbox in chroma_instability_cv cv param=chroma_instability cvScale=linear
 bentbox in chroma_phase_cv cv param=chroma_phase cvScale=linear
@@ -299,7 +299,7 @@ bentbox param noise 0..1 linear default=0.05
 bentbox param scan_wobble 0..1 linear default=0
 bentbox param vsync_drift 0..1 linear default=0
 bentbox param wavefold 0..1 linear default=0
-blood meta domain=video schema=1 maxInstances=1 ownerOnly
+blood meta domain=video maxInstances=1 ownerOnly
 blood in altfire cv param=cv_altfire edge=gate
 blood in crouch cv param=cv_crouch edge=gate
 blood in down cv param=cv_down edge=gate
@@ -331,7 +331,7 @@ blood param cv_use 0..1 linear default=0
 blood param cv_weapnext 0..1 linear default=0
 blood param cv_weapprev 0..1 linear default=0
 blood param fillMode 0..1 discrete default=0
-bluebox meta domain=audio schema=1
+bluebox meta domain=audio
 bluebox in gate_0 gate
 bluebox in gate_1 gate
 bluebox in gate_2 gate
@@ -357,7 +357,7 @@ bluebox param btn_8 0..1 linear default=0
 bluebox param btn_9 0..1 linear default=0
 bluebox param btn_bluebox 0..1 linear default=0
 bluebox param btn_redbox 0..1 linear default=0
-buggles meta domain=audio schema=1
+buggles meta domain=audio
 buggles in chaos_cv cv
 buggles in clock_cv cv
 buggles in external_clock gate
@@ -371,8 +371,8 @@ buggles param chaos 0..1 linear default=0.3
 buggles param level 0..1 linear default=0.7
 buggles param rate 0..1 linear default=0.4
 buggles param smoothness 0..1 linear default=0.5
-cadillac meta domain=meta schema=1 maxInstances=1
-callsine meta domain=audio schema=1
+cadillac meta domain=meta maxInstances=1
+callsine meta domain=audio
 callsine in audio_in audio
 callsine in gate gate
 callsine in harm_cv cv param=harmonics cvScale=linear
@@ -389,7 +389,7 @@ callsine param model 0..13 discrete default=0
 callsine param morph 0..1 linear default=0
 callsine param note -60..60 linear default=0 unit=st
 callsine param timbre 0..1 linear default=0.4
-cameraInput meta domain=video schema=1 maxInstances=4
+cameraInput meta domain=video maxInstances=4
 cameraInput in gain cv param=gain cvScale=linear
 cameraInput in mirror gate param=mirror edge=gate
 cameraInput out out video
@@ -397,7 +397,7 @@ cameraInput param enabled 0..1 discrete default=1
 cameraInput param fillMode 0..1 discrete default=1
 cameraInput param gain 0..2 linear default=1
 cameraInput param mirror 0..1 discrete default=1
-cartesian meta domain=audio schema=4
+cartesian meta domain=audio
 cartesian in clock gate
 cartesian in lfo_clock gate
 cartesian in x_cv cv
@@ -414,7 +414,7 @@ cartesian param mode 0..1 discrete default=0
 cartesian param octave -2..2 discrete default=0
 cartesian param snh 0..1 discrete default=1
 cartesian family cart-pitch kind=cell prefix=cart-pitch
-cellshade meta domain=video schema=1
+cellshade meta domain=video
 cellshade in bits cv param=bits cvScale=discrete
 cellshade in in video
 cellshade in thickness cv param=thickness cvScale=linear
@@ -423,7 +423,7 @@ cellshade out out video
 cellshade param bits 0..4 discrete default=2
 cellshade param thickness 1..8 linear default=2 unit=px
 cellshade param threshold 0..1 linear default=0.2
-charlottesEchos meta domain=audio schema=1
+charlottesEchos meta domain=audio
 charlottesEchos in delay cv param=delay cvScale=log
 charlottesEchos in L audio
 charlottesEchos in R audio
@@ -435,7 +435,7 @@ charlottesEchos param feedback 0..1 linear default=0.5
 charlottesEchos param mix 0..1 linear default=0.5
 charlottesEchos param pitchUp 0..0.2 linear default=0
 charlottesEchos stereo L+R
-chowkick meta domain=audio schema=1
+chowkick meta domain=audio
 chowkick in amplitude_cv cv param=amplitude cvScale=linear
 chowkick in bounce_cv cv param=bounce cvScale=linear
 chowkick in damping_cv cv param=damping cvScale=linear
@@ -477,7 +477,7 @@ chowkick param sustain 0..1 linear default=0
 chowkick param tight 0..1 linear default=0.6
 chowkick param tone 50..4000 log default=3200 unit=Hz
 chowkick param width 0.1..50 log default=0.5 unit=ms
-chroma meta domain=video schema=1
+chroma meta domain=video
 chroma in hue cv param=hue cvScale=linear
 chroma in in video
 chroma in saturation cv param=saturation cvScale=linear
@@ -492,7 +492,7 @@ chroma param tintB 0..1 linear default=1
 chroma param tintG 0..1 linear default=1
 chroma param tintMix 0..1 linear default=0
 chroma param tintR 0..1 linear default=1
-chromakey meta domain=video schema=1
+chromakey meta domain=video
 chromakey in bg video
 chromakey in fg video
 chromakey in keyB cv param=keyB cvScale=linear
@@ -508,7 +508,7 @@ chromakey param keyR 0..1 linear default=0
 chromakey param softness 0..0.5 linear default=0.08
 chromakey param spillSuppress 0..1 linear default=0.5
 chromakey param threshold 0..1 linear default=0.15
-clipplayer meta domain=audio schema=2 exposesSequence
+clipplayer meta domain=audio exposesSequence
 clipplayer in stop_all gate
 clipplayer out gate1 gate
 clipplayer out gate2 gate
@@ -542,8 +542,8 @@ clipplayer param stepDiv 0..3 discrete default=2
 clipplayer family clipplayer-cell kind=cell prefix=clipplayer-cell
 clipplayer family clipplayer-mono kind=other prefix=clipplayer-mono
 clipplayer family clipplayer-pad kind=cell prefix=clipplayer-pad
-clockedRunner meta domain=audio schema=1
-clouds meta domain=audio schema=1
+clockedRunner meta domain=audio
+clouds meta domain=audio
 clouds in blend_cv cv param=blend cvScale=linear
 clouds in density_cv cv param=density cvScale=linear
 clouds in freeze_gate gate
@@ -565,7 +565,7 @@ clouds param size 0..1 linear default=0.5
 clouds param texture 0..1 linear default=0.5
 clouds stereo in_l+in_r
 clouds stereo out_l+out_r
-cloudseed meta domain=audio schema=1
+cloudseed meta domain=audio
 cloudseed in cross_seed_cv cv param=cross_seed cvScale=linear
 cloudseed in dry_cv cv param=dry_out cvScale=linear
 cloudseed in early_cv cv param=early_out cvScale=linear
@@ -625,7 +625,7 @@ cloudseed param tap_length 0..1 linear default=0.98
 cloudseed param tap_predelay 0..1 linear default=0
 cloudseed stereo in_l+in_r
 cloudseed stereo out_l+out_r
-cofefve meta domain=audio schema=1
+cofefve meta domain=audio
 cofefve in clock gate edge=trigger
 cofefve in drift_cv cv param=driftAmount cvScale=linear
 cofefve in drive_cv cv param=driveGain cvScale=linear
@@ -665,7 +665,7 @@ cofefve param tempoSync 0..19 discrete default=0
 cofefve param wetVolume 0..2 linear default=0.5
 cofefve stereo inL+inR
 cofefve stereo outL+outR
-colorizer meta domain=video schema=1
+colorizer meta domain=video
 colorizer in in mono-video
 colorizer in tintB cv param=tintB cvScale=linear
 colorizer in tintG cv param=tintG cvScale=linear
@@ -674,7 +674,7 @@ colorizer out out video
 colorizer param tintB 0..1 linear default=0.7
 colorizer param tintG 0..1 linear default=0.4
 colorizer param tintR 0..1 linear default=1
-colourofmagic meta domain=video schema=1
+colourofmagic meta domain=video
 colourofmagic in hsv_h_cv cv param=bias_h cvScale=linear
 colourofmagic in hsv_h_in mono-video accepts=image,keys,video
 colourofmagic in hsv_s_cv cv param=bias_s cvScale=linear
@@ -765,8 +765,8 @@ colourofmagic param pal_g 0..16777215 discrete default=57536
 colourofmagic param pal_r 0..16777215 discrete default=16738816
 colourofmagic param preview 0..21 discrete default=1
 colourofmagic param replace 0..1 discrete default=0
-controlSurface meta domain=meta schema=1
-cube meta domain=audio schema=1
+controlSurface meta domain=meta
+cube meta domain=audio
 cube in connect cv param=connect cvScale=linear
 cube in connect_strength cv param=connect_strength cvScale=linear
 cube in crush cv param=crush cvScale=linear
@@ -813,18 +813,18 @@ cube param view_rot_y -3.1416..3.1416 linear default=0.7
 cube param view_rot_z -3.1416..3.1416 linear default=0
 cube param view_zoom 0.3..3 log default=1
 cube param wrap 0..1 discrete default=0
-delay meta domain=audio schema=1
+delay meta domain=audio
 delay in audio audio
 delay in time cv param=time cvScale=linear
 delay out audio audio
 delay param feedback 0..0.95 linear default=0.4
 delay param mix 0..1 linear default=0.35
 delay param time 0.001..2 log default=0.25 unit=s
-depolarizer meta domain=audio schema=1
+depolarizer meta domain=audio
 depolarizer in in cv
 depolarizer out out cv
 depolarizer param depth 0..1 linear default=1
-destroy meta domain=audio schema=1
+destroy meta domain=audio
 destroy in audio audio
 destroy in bits cv param=bits cvScale=linear
 destroy in decimate cv param=decimate cvScale=linear
@@ -833,7 +833,7 @@ destroy out audio audio
 destroy param bits 1..16 linear default=16
 destroy param decimate 1..64 linear default=1
 destroy param wet 0..1 linear default=1
-destructor meta domain=video schema=1
+destructor meta domain=video
 destructor in in video
 destructor in mangle cv param=mangle cvScale=linear
 destructor out out video
@@ -841,7 +841,7 @@ destructor param mangle 0..1 linear default=1
 destructor param posterize 0..1 linear default=0.7
 destructor param scanline 0..1 linear default=0.5
 destructor param shift 0..1 linear default=0.5
-doom meta domain=video schema=2 maxInstances=1 ownerOnly
+doom meta domain=video maxInstances=1 ownerOnly
 doom in iddqd_in cv param=cv_iddqd_in
 doom in idkfa_in cv param=cv_idkfa_in
 doom in p1_alt cv param=cv_p1_alt
@@ -952,7 +952,7 @@ doom param cv_p4_right 0..1 linear default=0
 doom param cv_p4_space 0..1 linear default=0
 doom param cv_p4_up 0..1 linear default=0
 doom param fillMode 0..1 discrete default=0
-drummergirl meta domain=audio schema=1
+drummergirl meta domain=audio
 drummergirl in decay cv param=decay cvScale=log
 drummergirl in gate gate
 drummergirl in pitch cv param=pitch cvScale=linear
@@ -965,7 +965,7 @@ drummergirl param pitch -36..36 linear default=0 unit=semi
 drummergirl param shape 0..1 linear default=0.3
 drummergirl param tone 0..1 linear default=0.3
 drummergirl param volume 0..2 linear default=1
-drumseqz meta domain=audio schema=1 exposesSequence
+drumseqz meta domain=audio exposesSequence
 drumseqz in clock gate
 drumseqz in play_cv gate
 drumseqz in queue1_cv gate
@@ -1002,7 +1002,7 @@ drumseqz param trk4_octave -2..2 discrete default=0
 drumseqz param trk4_root 33..114 discrete default=48
 drumseqz expose playStop
 drumseqz family drumseqz-pitch kind=cell prefix=drumseqz-pitch count=length
-dx7 meta domain=audio schema=1
+dx7 meta domain=audio
 dx7 in gate gate edge=gate
 dx7 in pitch_cv cv
 dx7 in poly polyPitchGate
@@ -1017,15 +1017,15 @@ dx7 param transpose -24..24 linear default=0 unit=st
 dx7 param voiceCount 1..5 discrete default=5
 dx7 family dx7-preset-select kind=other prefix=dx7-preset-select
 dx7 family dx7-syx-input kind=other prefix=dx7-syx-input
-edges meta domain=video schema=1
+edges meta domain=video
 edges in in video
 edges in thickness cv param=thickness cvScale=linear
 edges in threshold cv param=threshold cvScale=linear
 edges out out mono-video
 edges param thickness 1..8 linear default=2 unit=px
 edges param threshold 0..1 linear default=0.2
-electraControl meta domain=meta schema=1 maxInstances=1
-elements meta domain=audio schema=1
+electraControl meta domain=meta maxInstances=1
+elements meta domain=audio
 elements in blowlvl_cv cv param=blowLevel cvScale=linear
 elements in blowmeta_cv cv param=blowMeta cvScale=linear
 elements in blowtim_cv cv param=blowTimbre cvScale=linear
@@ -1065,7 +1065,7 @@ elements param strikeLevel 0..1 linear default=0.8
 elements param strikeMeta 0..1 linear default=0.5
 elements param strikeTimbre 0..1 linear default=0.5
 elements stereo main+aux
-fader meta domain=video schema=1
+fader meta domain=video
 fader in in_a video
 fader in in_b video
 fader in return video
@@ -1075,7 +1075,7 @@ fader param abTransition 0..4 linear default=0
 fader param dryWet 0..1 linear default=0
 fader param dwTransition 0..4 linear default=0
 fader param fader 0..1 linear default=0.5
-featurecv meta domain=audio schema=1
+featurecv meta domain=audio
 featurecv in in audio
 featurecv out bright cv
 featurecv out loud cv
@@ -1087,7 +1087,7 @@ featurecv param gain 0.25..4 log default=1
 featurecv param onset_debounce 20..1000 log default=80 unit=ms
 featurecv param onset_sens 0..1 linear default=0.5
 featurecv param release 1..2000 log default=100 unit=ms
-feedback meta domain=video schema=1
+feedback meta domain=video
 feedback in decay cv param=decay cvScale=linear
 feedback in in video
 feedback in offsetX cv param=offsetX cvScale=linear
@@ -1102,7 +1102,7 @@ feedback param offsetY -1..1 linear default=0
 feedback param rotate -3.14159..3.14159 linear default=0.05
 feedback param wet 0..1 linear default=0.5
 feedback param zoom 0.9..1.1 linear default=1.02
-filter meta domain=audio schema=1
+filter meta domain=audio
 filter in audio audio
 filter in cutoff cv param=cutoff
 filter in res cv
@@ -1110,12 +1110,12 @@ filter out audio audio
 filter param cutoff 20..20000 log default=1000 unit=Hz
 filter param mode 0..2 discrete default=0
 filter param resonance 0..0.99 linear default=0.1
-flipper meta domain=audio schema=1
+flipper meta domain=audio
 flipper in in1 gate
 flipper in in2 gate
 flipper out flip gate
 flipper out flop gate
-fourplexer meta domain=audio schema=1
+fourplexer meta domain=audio
 fourplexer in gate1 gate
 fourplexer in gate2 gate
 fourplexer in gate3 gate
@@ -1132,7 +1132,7 @@ fourplexer param sel1 0..3 discrete default=0
 fourplexer param sel2 0..3 discrete default=1
 fourplexer param sel3 0..3 discrete default=2
 fourplexer param sel4 0..3 discrete default=3
-foxy meta domain=audio schema=1
+foxy meta domain=audio
 foxy in fm audio
 foxy in fold_cv cv param=fold cvScale=linear
 foxy in morph_cv cv param=morph cvScale=linear
@@ -1177,7 +1177,7 @@ foxy param xyz_yshape 0..1 linear default=0.2
 foxy param xyz_zheight 0..1 linear default=0.5
 foxy param xyz_zoom 1..8 linear default=4
 foxy stereo out_l+out_r
-freezeframe meta domain=video schema=1
+freezeframe meta domain=video
 freezeframe in gate_in gate param=gateLevel
 freezeframe in video_in video
 freezeframe out b_out video
@@ -1190,7 +1190,7 @@ freezeframe param quant_b 0..1 linear default=0
 freezeframe param quant_g 0..1 linear default=0
 freezeframe param quant_luma 0..1 linear default=0
 freezeframe param quant_r 0..1 linear default=0
-frogger meta domain=audio schema=1
+frogger meta domain=audio
 frogger in down_gate gate
 frogger in left_gate gate
 frogger in right_gate gate
@@ -1200,7 +1200,7 @@ frogger out dead_gate gate
 frogger out home_gate gate
 frogger out level_gate gate
 frogger param initialTime 10..120 linear default=60
-gamepad meta domain=audio schema=1
+gamepad meta domain=audio
 gamepad out a gate
 gamepad out b gate
 gamepad out back gate
@@ -1220,13 +1220,13 @@ gamepad out start gate
 gamepad out x gate
 gamepad out y gate
 gamepad param padIndex 0..3 discrete default=0
-gatemaiden meta domain=audio schema=1
+gatemaiden meta domain=audio
 gatemaiden in in gate accepts=cv,pitch edge=gate
 gatemaiden out gate gate edge=gate
 gatemaiden out trig gate edge=trigger
 gatemaiden param gateLen 0.005..2 log default=0.05 unit=s
 gatemaiden param trigShape 0..1 discrete default=0
-gibribbon meta domain=video schema=1
+gibribbon meta domain=video
 gibribbon in a gate param=btn_a
 gibribbon in b gate param=btn_b
 gibribbon in clock gate param=clock
@@ -1259,7 +1259,7 @@ gibribbon param cv2 0..1 linear default=0
 gibribbon param cv3 0..1 linear default=0
 gibribbon param cv4 0..1 linear default=0
 gibribbon param gate 0..1 linear default=0
-graphicEq meta domain=video schema=1
+graphicEq meta domain=video
 graphicEq in audio_l audio
 graphicEq in audio_r audio
 graphicEq out out video
@@ -1268,7 +1268,7 @@ graphicEq param gain 0.5..4 linear default=1.6
 graphicEq param hue 0..1 linear default=0
 graphicEq param peak 0.5..0.99 linear default=0.92
 graphicEq param style 0..1 discrete default=1
-grids meta domain=audio schema=1
+grids meta domain=audio
 grids in bdDensity_cv cv
 grids in chaos_cv cv
 grids in clock gate
@@ -1294,8 +1294,8 @@ grids param sdDensity 0..1 linear default=0.5
 grids param swing 0..0.75 linear default=0
 grids param tempo 30..300 linear default=120
 grids expose playStop
-group meta domain=meta schema=1
-hypercube meta domain=audio schema=1
+group meta domain=meta
+hypercube meta domain=audio
 hypercube in alpha cv param=alpha cvScale=linear
 hypercube in connect cv param=connect cvScale=linear
 hypercube in crush cv param=crush cvScale=linear
@@ -1330,7 +1330,7 @@ hypercube param view_rot_y -3.1416..3.1416 linear default=0.7
 hypercube param view_rot_z -3.1416..3.1416 linear default=0
 hypercube param view_zoom 0.3..3 log default=1
 hypercube param wrap 0..1 discrete default=0
-illogic meta domain=audio schema=1
+illogic meta domain=audio
 illogic in in1 cv
 illogic in in2 cv
 illogic in in3 cv
@@ -1349,7 +1349,7 @@ illogic param att1_amount -1..1 linear default=1
 illogic param att2_amount -1..1 linear default=1
 illogic param att3_amount -1..1 linear default=1
 illogic param att4_amount -1..1 linear default=1
-inwards meta domain=video schema=1
+inwards meta domain=video
 inwards in density cv param=density cvScale=linear
 inwards in speed cv param=speed cvScale=linear
 inwards in thickness cv param=thickness cvScale=linear
@@ -1357,14 +1357,14 @@ inwards out out mono-video
 inwards param density 1..50 linear default=10
 inwards param speed -2..2 linear default=0.5
 inwards param thickness 0..1 linear default=0.35
-joystick meta domain=audio schema=1
+joystick meta domain=audio
 joystick out nx cv
 joystick out ny cv
 joystick out x cv
 joystick out y cv
 joystick param pos_x -1..1 linear default=0
 joystick param pos_y -1..1 linear default=0
-kickdrum meta domain=audio schema=1
+kickdrum meta domain=audio
 kickdrum in accent_in cv
 kickdrum in choke_in gate edge=gate
 kickdrum in pitch_cv cv
@@ -1397,7 +1397,7 @@ kickdrum param translate 0..1 linear default=0.3
 kickdrum param tune 20..120 log default=50 unit=Hz
 kickdrum param width 0..1 linear default=0.2
 kickdrum stereo audio_l+audio_r
-kria meta domain=audio schema=1
+kria meta domain=audio
 kria in clock gate edge=trigger
 kria in reset gate edge=trigger
 kria out gate1 gate
@@ -1411,8 +1411,8 @@ kria out pitch4 pitch
 kria param bpm 30..300 linear default=120
 kria param running 0..1 discrete default=0
 kria family kria-cell kind=cell prefix=kria-cell
-launchpadControlLeft meta domain=meta schema=1
-lfo meta domain=audio schema=1
+launchpadControlLeft meta domain=meta
+lfo meta domain=audio
 lfo in clock gate
 lfo in depth_cv cv param=depth cvScale=linear
 lfo in rate cv param=rate cvScale=log
@@ -1424,7 +1424,7 @@ lfo out phase90 cv
 lfo param depth 0..1 linear default=0.5
 lfo param rate 0.01..100 log default=1 unit=Hz
 lfo param shape 0..2 linear default=0
-lines meta domain=video schema=1
+lines meta domain=video
 lines in amp cv param=amp cvScale=linear
 lines in fm mono-video
 lines in orient cv param=orient cvScale=linear
@@ -1436,12 +1436,12 @@ lines param fmDepth 0..1 linear default=0
 lines param orient 0..1 linear default=0
 lines param phase 0..1 linear default=0
 lines param thickness 0..1 linear default=0.35
-livecode meta domain=audio schema=1
-loopback meta domain=video schema=1 maxInstances=2
+livecode meta domain=audio
+loopback meta domain=video maxInstances=2
 loopback out out video
 loopback param crop 0..1 discrete default=1
 loopback param gain 0..2 linear default=1
-luma meta domain=video schema=1
+luma meta domain=video
 luma in bias cv param=bias cvScale=linear
 luma in contrast cv param=contrast cvScale=linear
 luma in gamma cv param=gamma cvScale=linear
@@ -1452,7 +1452,7 @@ luma param bias -0.5..0.5 linear default=0
 luma param contrast 0..2 linear default=1
 luma param gamma 0.1..3 linear default=1
 luma param posterizeLevels 2..16 discrete default=16
-lumakey meta domain=video schema=1
+lumakey meta domain=video
 lumakey in bg video
 lumakey in fg video
 lumakey in invert cv param=invert cvScale=discrete
@@ -1462,7 +1462,7 @@ lumakey out out video
 lumakey param invert 0..1 discrete default=0
 lumakey param softness 0..0.5 linear default=0.1
 lumakey param threshold 0..1 linear default=0.5
-macrooscillator meta domain=audio schema=1
+macrooscillator meta domain=audio
 macrooscillator in harm_cv cv param=harmonics cvScale=linear
 macrooscillator in level_cv cv param=level cvScale=linear
 macrooscillator in model_cv cv param=model cvScale=discrete
@@ -1480,7 +1480,7 @@ macrooscillator param morph 0..1 linear default=0.5
 macrooscillator param note -60..60 linear default=0 unit=st
 macrooscillator param timbre 0..1 linear default=0.3
 macrooscillator family macro-model-name kind=other prefix=macro-model-name
-macseq meta domain=audio schema=1 exposesSequence
+macseq meta domain=audio exposesSequence
 macseq in clock gate
 macseq in next_cv gate
 macseq in play_cv gate
@@ -1507,7 +1507,7 @@ macseq param octave -2..2 discrete default=0
 macseq expose playStop
 macseq family macseq-model kind=cell prefix=macseq-model count=length
 macseq family macseq-pitch kind=cell prefix=macseq-pitch count=length
-mandelbulb meta domain=video schema=1
+mandelbulb meta domain=video
 mandelbulb in detail_cv cv param=detail cvScale=linear
 mandelbulb in hue_cv cv param=hue cvScale=linear
 mandelbulb in power_cv cv param=power cvScale=linear
@@ -1533,7 +1533,7 @@ mandelbulb param slice_ry -3.141592653589793..3.141592653589793 linear default=0
 mandelbulb param slice_rz -3.141592653589793..3.141592653589793 linear default=0
 mandelbulb param slice_y -1.2..1.2 linear default=0
 mandelbulb param zoom 0.3..3 log default=1
-mandleblot meta domain=video schema=1
+mandleblot meta domain=video
 mandleblot in zoom_cv cv param=zoom cvScale=linear
 mandleblot out color_out video
 mandleblot out mono_out mono-video
@@ -1543,13 +1543,13 @@ mandleblot param color_cycle 0..4 linear default=1
 mandleblot param iterations 50..500 discrete default=150
 mandleblot param rotation 0..1 linear default=0
 mandleblot param zoom 0..1 log default=0.2
-mapper meta domain=video schema=1
+mapper meta domain=video
 mapper in key video
 mapper in threshold cv param=threshold cvScale=linear
 mapper in video video
 mapper out out video
 mapper param threshold 0..1 linear default=0.5
-mappy meta domain=video schema=1
+mappy meta domain=video
 mappy in in1 video
 mappy in in2 video
 mappy in in3 video
@@ -1559,7 +1559,7 @@ mappy in in6 video
 mappy out out video
 mappy param showGrid 0..1 linear default=0
 mappy param surfaceCount 1..6 linear default=1
-marbles meta domain=audio schema=1
+marbles meta domain=audio
 marbles in dejavu_cv cv param=deja_vu cvScale=linear
 marbles in length_cv cv param=length cvScale=linear
 marbles in rate_cv cv param=rate cvScale=linear
@@ -1590,8 +1590,8 @@ marbles param t_model 0..5 discrete default=0
 marbles param x_bias 0..1 linear default=0.5
 marbles param x_deja_vu 0..1 linear default=0
 marbles param x_length 1..16 discrete default=8
-matrixMix meta domain=meta schema=1
-meowbox meta domain=audio schema=1
+matrixMix meta domain=meta
+meowbox meta domain=audio
 meowbox in decay cv param=decay cvScale=log
 meowbox in gate gate
 meowbox in level cv param=level cvScale=linear
@@ -1603,16 +1603,16 @@ meowbox param decay 0.05..2 log default=0.4 unit=s
 meowbox param level 0..2 linear default=1
 meowbox param morph 0..1 linear default=0.25
 meowbox param pitch -36..36 linear default=0 unit=semi
-midiclock meta domain=audio schema=1
+midiclock meta domain=audio
 midiclock out clock gate
 midiclock out midistart gate
 midiclock out midistop gate
 midiclock out run cv
-midiCvBuddy meta domain=audio schema=1
+midiCvBuddy meta domain=audio
 midiCvBuddy out gate gate
 midiCvBuddy out pitch_cv cv
 midiCvBuddy out velocity_cv cv
-midiLane meta domain=audio schema=1
+midiLane meta domain=audio
 midiLane out cc_a cv
 midiLane out cc_b cv
 midiLane out gate gate
@@ -1620,11 +1620,11 @@ midiLane out note_gate gate
 midiLane out pitch_cv cv
 midiLane out poly polyPitchGate
 midiLane out velocity_cv cv
-midiOutBuddy meta domain=audio schema=1
+midiOutBuddy meta domain=audio
 midiOutBuddy in gate gate
 midiOutBuddy in pitch cv
 midiOutBuddy in velocity cv
-milkdrop meta domain=video schema=1
+milkdrop meta domain=video
 milkdrop in audio audio
 milkdrop in bass cv param=bass cvScale=linear
 milkdrop in mid cv param=mid cvScale=linear
@@ -1643,7 +1643,7 @@ milkdrop param presetSelect 0..19 linear default=0
 milkdrop param reactivity 0..2 linear default=1
 milkdrop param speed 0..2 linear default=1
 milkdrop param treb 0..2 linear default=1
-mixer meta domain=audio schema=1
+mixer meta domain=audio
 mixer in in1 audio
 mixer in in2 audio
 mixer in in3 audio
@@ -1654,7 +1654,7 @@ mixer param ch2 0..1 linear default=1
 mixer param ch3 0..1 linear default=1
 mixer param ch4 0..1 linear default=1
 mixer param master 0..1 linear default=1
-mixmstrs meta domain=audio schema=1
+mixmstrs meta domain=audio
 mixmstrs in ch1_compEnable cv param=ch1_compEnable cvScale=discrete
 mixmstrs in ch1_high cv param=ch1_high cvScale=linear
 mixmstrs in ch1_low cv param=ch1_low cvScale=linear
@@ -1807,7 +1807,7 @@ mixmstrs stereo ch5L+ch5R
 mixmstrs stereo ch6L+ch6R
 mixmstrs stereo ret1L+ret1R
 mixmstrs stereo ret2L+ret2R
-modtris meta domain=audio schema=1
+modtris meta domain=audio
 modtris in drop_fast gate
 modtris in move_l gate
 modtris in move_r gate
@@ -1817,7 +1817,7 @@ modtris out line_cleared gate
 modtris out overfill gate
 modtris param gravityBpm 30..240 log default=60
 modtris param levelStep 1..20 linear default=10
-monoglitch meta domain=video schema=1
+monoglitch meta domain=video
 monoglitch in hRamp cv param=hRamp cvScale=linear
 monoglitch in in video
 monoglitch in intensity cv param=intensity cvScale=linear
@@ -1831,7 +1831,7 @@ monoglitch param tintB 0..1 linear default=0.5
 monoglitch param tintG 0..1 linear default=1
 monoglitch param tintR 0..1 linear default=0.4
 monoglitch param vRamp -1..1 linear default=0
-moog902 meta domain=audio schema=1
+moog902 meta domain=audio
 moog902 in audio audio
 moog902 in cv cv param=gain
 moog902 in fcv cv param=gain
@@ -1840,11 +1840,11 @@ moog902 out audio_inv audio
 moog902 param cvAmount -1..1 linear default=1
 moog902 param gain 0..1 linear default=0.5
 moog902 param mode 0..1 discrete default=0
-moog903a meta domain=audio schema=1
+moog903a meta domain=audio
 moog903a out pink audio
 moog903a out white audio
 moog903a param level 0..1 linear default=0.8
-moog904a meta domain=audio schema=1
+moog904a meta domain=audio
 moog904a in audio audio
 moog904a in cutoff_cv cv param=cutoff
 moog904a in reso_cv cv param=regeneration
@@ -1852,26 +1852,26 @@ moog904a out audio audio
 moog904a param cutoff 20..20000 log default=1000 unit=Hz
 moog904a param range 1..3 discrete default=2
 moog904a param regeneration 0..1 linear default=0
-moog904b meta domain=audio schema=1
+moog904b meta domain=audio
 moog904b in audio audio
 moog904b in cutoff_cv cv param=cutoff
 moog904b out audio audio
 moog904b param cutoff 4..20000 log default=1000 unit=Hz
 moog904b param range 1..2 discrete default=1
-moog904c meta domain=audio schema=1
+moog904c meta domain=audio
 moog904c in audio audio
 moog904c in cutoff_cv cv param=cutoff cvScale=log
 moog904c out audio audio
 moog904c param cutoff 20..20000 log default=800 unit=Hz
 moog904c param mode 0..1 linear default=0
 moog904c param width 0..1 linear default=0.5
-moog905 meta domain=audio schema=1
+moog905 meta domain=audio
 moog905 in audio audio
 moog905 out audio audio
 moog905 param decay 0..1 linear default=0.6
 moog905 param mix 0..1 linear default=0.35
 moog905 param size 0..1 linear default=0.5
-moog907a meta domain=audio schema=1
+moog907a meta domain=audio
 moog907a in audio audio
 moog907a out audio audio
 moog907a param band1 0..1 linear default=0.5
@@ -1884,7 +1884,7 @@ moog907a param band7 0..1 linear default=0.5
 moog907a param band8 0..1 linear default=0.5
 moog907a param hp 0..1 linear default=0.5
 moog907a param lp 0..1 linear default=0.5
-moog911 meta domain=audio schema=1
+moog911 meta domain=audio
 moog911 in esus_cv cv param=esus cvScale=linear
 moog911 in gate gate
 moog911 in t1_cv cv param=t1 cvScale=log
@@ -1896,7 +1896,7 @@ moog911 param esus 0..1 linear default=0.6
 moog911 param t1 0.0001..10 log default=0.01 unit=s
 moog911 param t2 0.0001..10 log default=0.2 unit=s
 moog911 param t3 0.0001..10 log default=0.4 unit=s
-moog911a meta domain=audio schema=1
+moog911a meta domain=audio
 moog911a in trig1 gate
 moog911a in trig2 gate
 moog911a out out1 gate
@@ -1904,13 +1904,13 @@ moog911a out out2 gate
 moog911a param delay1 0.002..10 log default=0.1 unit=s
 moog911a param delay2 0.002..10 log default=0.1 unit=s
 moog911a param mode 0..2 discrete default=0
-moog912 meta domain=audio schema=1
+moog912 meta domain=audio
 moog912 in audio audio
 moog912 out env cv
 moog912 out gate gate
 moog912 param sensitivity 0..1 linear default=0.7
 moog912 param smoothing 0..1 linear default=0.5
-moog914 meta domain=audio schema=1
+moog914 meta domain=audio
 moog914 in audio audio
 moog914 out audio audio
 moog914 param band1 0..1 linear default=0.5
@@ -1927,7 +1927,7 @@ moog914 param band8 0..1 linear default=0.5
 moog914 param band9 0..1 linear default=0.5
 moog914 param hp 0..1 linear default=0.5
 moog914 param lp 0..1 linear default=0.5
-moog921a meta domain=audio schema=1
+moog921a meta domain=audio
 moog921a in freq_cv pitch param=frequency
 moog921a in width_cv cv param=width
 moog921a out freq_bus cv
@@ -1935,7 +1935,7 @@ moog921a out width_bus cv
 moog921a param freqRange 1..2 discrete default=1
 moog921a param frequency -1..1 linear default=0
 moog921a param width 0..1 linear default=0.5
-moog921b meta domain=audio schema=1
+moog921b meta domain=audio
 moog921b in ac_mod audio
 moog921b in dc_mod audio
 moog921b in freq_bus cv
@@ -1950,7 +1950,7 @@ moog921b param level 0..2 linear default=1
 moog921b param modAmount -1..1 linear default=0
 moog921b param range -5..5 discrete default=0 unit=oct
 moog921b param syncMode -1..1 linear default=0
-moog921Vco meta domain=audio schema=1
+moog921Vco meta domain=audio
 moog921Vco in level cv param=level cvScale=linear
 moog921Vco in lin_fm audio
 moog921Vco in linFmAmount cv param=linFmAmount cvScale=linear
@@ -1969,7 +1969,7 @@ moog921Vco param octave -5..5 linear default=0 unit=oct
 moog921Vco param sync -1..1 linear default=0
 moog921Vco param tune -12..12 linear default=0 unit=st
 moog921Vco param width 0.02..0.98 linear default=0.5
-moog923 meta domain=audio schema=1
+moog923 meta domain=audio
 moog923 in audio audio
 moog923 out hp audio
 moog923 out lp audio
@@ -1978,14 +1978,14 @@ moog923 out white audio
 moog923 param hpCutoff 0..1 linear default=0.5
 moog923 param level 0..1 linear default=0.8
 moog923 param lpCutoff 0..1 linear default=0.5
-moog956 meta domain=audio schema=1
+moog956 meta domain=audio
 moog956 out gate gate
 moog956 out pitch pitch
 moog956 param gate 0..1 linear default=0
 moog956 param offset -2..2 linear default=0
 moog956 param pos 0..1 linear default=0
 moog956 param scale 0..5 linear default=2
-moog960 meta domain=audio schema=1
+moog960 meta domain=audio
 moog960 in clock gate
 moog960 in start gate
 moog960 in stop gate
@@ -2029,7 +2029,7 @@ moog960 param range1 0..2 discrete default=0
 moog960 param range2 0..2 discrete default=0
 moog960 param range3 0..2 discrete default=0
 moog960 param rate 0.1..20 log default=2 unit=Hz
-moog961 meta domain=audio schema=1
+moog961 meta domain=audio
 moog961 in audio_in audio
 moog961 in s_in gate
 moog961 in v_in_a gate
@@ -2040,14 +2040,14 @@ moog961 out v_out1 gate
 moog961 out v_out2 gate
 moog961 param sensitivity 0..1 linear default=0.5
 moog961 param switchOnTime 0.04..4 log default=0.2 unit=s
-moog962 meta domain=audio schema=1
+moog962 meta domain=audio
 moog962 in in1 cv
 moog962 in in2 cv
 moog962 in in3 cv
 moog962 in shift gate
 moog962 out out cv
 moog962 param stages 2..3 discrete default=3
-moog984 meta domain=audio schema=1
+moog984 meta domain=audio
 moog984 in in1 audio
 moog984 in in2 audio
 moog984 in in3 audio
@@ -2072,7 +2072,7 @@ moog984 param m41 0..1 linear default=0
 moog984 param m42 0..1 linear default=0
 moog984 param m43 0..1 linear default=0
 moog984 param m44 0..1 linear default=0
-moog992 meta domain=audio schema=1
+moog992 meta domain=audio
 moog992 in cv1 cv
 moog992 in cv2 cv
 moog992 in cv3 cv
@@ -2082,7 +2082,7 @@ moog992 param atten1 0..1 linear default=1
 moog992 param atten2 0..1 linear default=1
 moog992 param atten3 0..1 linear default=1
 moog992 param atten4 0..1 linear default=1
-moog993 meta domain=audio schema=1
+moog993 meta domain=audio
 moog993 in env_in1 cv
 moog993 in env_in2 cv
 moog993 in trig_from1 gate
@@ -2095,7 +2095,7 @@ moog993 out trig_out3 gate
 moog993 param route1 0..2 linear default=1
 moog993 param route2 0..2 linear default=1
 moog993 param route3 0..2 linear default=1
-moog994 meta domain=audio schema=1
+moog994 meta domain=audio
 moog994 in a_in audio
 moog994 in b_in audio
 moog994 out a1 audio
@@ -2104,7 +2104,7 @@ moog994 out a3 audio
 moog994 out b1 audio
 moog994 out b2 audio
 moog994 out b3 audio
-moog995 meta domain=audio schema=1
+moog995 meta domain=audio
 moog995 in in1 audio
 moog995 in in2 audio
 moog995 in in3 audio
@@ -2114,7 +2114,7 @@ moog995 out out3 audio
 moog995 param atten1 0..1 linear default=1
 moog995 param atten2 0..1 linear default=1
 moog995 param atten3 0..1 linear default=1
-moogCp3 meta domain=audio schema=1
+moogCp3 meta domain=audio
 moogCp3 in ext4 cv
 moogCp3 in in1 audio
 moogCp3 in in2 audio
@@ -2132,10 +2132,10 @@ moogCp3 param ch1 0..1 linear default=1
 moogCp3 param ch2 0..1 linear default=1
 moogCp3 param ch3 0..1 linear default=1
 moogCp3 param ch4 0..1 linear default=1
-negativity meta domain=audio schema=1
+negativity meta domain=audio
 negativity in in cv
 negativity out out cv
-nibbles meta domain=video schema=1
+nibbles meta domain=video
 nibbles out death gate
 nibbles out dir_change gate
 nibbles out gated audio
@@ -2145,7 +2145,7 @@ nibbles out pellet gate
 nibbles out snake audio
 nibbles param auto 0..1 discrete default=0
 nibbles param tick_ms 40..200 linear default=80
-ninelives meta domain=audio schema=1
+ninelives meta domain=audio
 ninelives in reset gate edge=trigger
 ninelives out out1 cv
 ninelives out out2 cv
@@ -2158,12 +2158,12 @@ ninelives out out8 cv
 ninelives out out9 cv
 ninelives param rate 0.01..100 log default=1 unit=Hz
 ninelives param shape 0..2 linear default=0
-noise meta domain=audio schema=1
+noise meta domain=audio
 noise out brown audio
 noise out pink audio
 noise out white audio
 noise param level 0..1 linear default=0.5
-numpadPlus meta domain=audio schema=1
+numpadPlus meta domain=audio
 numpadPlus in clock gate
 numpadPlus in layer cv
 numpadPlus out l1_gate gate
@@ -2183,7 +2183,7 @@ numpadPlus param overdub 0..1 discrete default=0
 numpadPlus param poly 0..1 discrete default=0
 numpadPlus param recArm 0..1 discrete default=0
 numpadPlus family numpad-cell kind=cell prefix=numpad-cell
-onetonine meta domain=video schema=1
+onetonine meta domain=video
 onetonine in in video
 onetonine out out1 video
 onetonine out out2 video
@@ -2195,7 +2195,7 @@ onetonine out out7 video
 onetonine out out8 video
 onetonine out out9 video
 onetonine param showGrid 0..1 linear default=1
-outlines meta domain=video schema=1
+outlines meta domain=video
 outlines in collide gate param=cv_collide
 outlines in d cv param=d cvScale=linear
 outlines in decay cv param=decay cvScale=linear
@@ -2218,9 +2218,9 @@ outlines param rotation 0..1 linear default=0.5
 outlines param shape 0..1 linear default=0
 outlines param spd 0..1 linear default=0.4
 outlines param v 0..1 linear default=0.125
-painter meta domain=video schema=1
+painter meta domain=video
 painter out out video
-peaks meta domain=audio schema=1
+peaks meta domain=audio
 peaks in gate0 gate
 peaks in gate1 gate
 peaks in k1_0_cv cv param=k1_0 cvScale=linear
@@ -2237,7 +2237,7 @@ peaks param k2_0 0.001..5 linear default=0.3
 peaks param k2_1 0.001..5 linear default=0.3
 peaks param mode0 0..4 discrete default=4
 peaks param mode1 0..4 discrete default=4
-peakstate meta domain=video schema=1
+peakstate meta domain=video
 peakstate in color_speed_cv cv param=color_speed cvScale=linear
 peakstate in complexity_cv cv param=complexity cvScale=linear
 peakstate in speed_cv cv param=speed cvScale=linear
@@ -2249,7 +2249,7 @@ peakstate param complexity 4..32 discrete default=12
 peakstate param move 0..1 linear default=0
 peakstate param oblong 0..1 linear default=0
 peakstate param speed 0.1..4 linear default=1
-peertube meta domain=video schema=1
+peertube meta domain=video
 peertube in next_trigger gate param=cv_next_trigger edge=trigger
 peertube in play_trigger gate param=cv_play_trigger edge=trigger
 peertube out audio_l audio
@@ -2262,7 +2262,7 @@ peertube out video video
 peertube param cv_next_trigger 0..1 linear default=0
 peertube param cv_play_trigger 0..1 linear default=0
 peertube param gain 0..2 linear default=1
-pentemelodica meta domain=audio schema=1
+pentemelodica meta domain=audio
 pentemelodica in fm1 audio
 pentemelodica in fm2 audio
 pentemelodica in fm3 audio
@@ -2325,7 +2325,7 @@ pentemelodica param v5_tune -36..36 linear default=0 unit=st
 pentemelodica param v5_wave 0..1 linear default=0
 pentemelodica param wetdry 0..1 linear default=1
 pentemelodica stereo out_l+out_r
-picturebox meta domain=video schema=4 maxInstances=8
+picturebox meta domain=video maxInstances=8
 picturebox in asset_gate gate param=asset_gate
 picturebox in asset_pitch pitch param=asset_pitch
 picturebox in gain cv param=gain cvScale=linear
@@ -2333,11 +2333,11 @@ picturebox out out image
 picturebox param asset_gate 0..1 linear default=0
 picturebox param asset_pitch -10..10 linear default=0
 picturebox param gain 0..2 linear default=1
-polarizer meta domain=audio schema=1
+polarizer meta domain=audio
 polarizer in in cv
 polarizer out out cv
 polarizer param depth 0..1 linear default=1
-polyseqz meta domain=audio schema=1 exposesSequence
+polyseqz meta domain=audio exposesSequence
 polyseqz in clock gate
 polyseqz in humanize_cv cv param=humanize cvScale=linear
 polyseqz in play_cv gate
@@ -2358,7 +2358,7 @@ polyseqz param octave -2..2 discrete default=0
 polyseqz param snh 0..1 discrete default=1
 polyseqz expose playStop
 polyseqz family polyseqz-root kind=cell prefix=polyseqz-root count=length
-pong meta domain=audio schema=1
+pong meta domain=audio
 pong in paddle_left cv
 pong in paddle_right cv
 pong out score_left gate
@@ -2366,7 +2366,7 @@ pong out score_right gate
 pong param paddleH 0.05..0.5 linear default=0.2
 pong param serveAngle 0..1 linear default=0.3
 pong param speed 0.25..4 log default=1
-qbert meta domain=video schema=1
+qbert meta domain=video
 qbert in coin_in gate param=cv_coin_in
 qbert in joy_x cv param=cv_joy_x
 qbert in joy_y cv param=cv_joy_y
@@ -2380,7 +2380,7 @@ qbert param cv_coin_in 0..1 linear default=0
 qbert param cv_joy_x -1..1 linear default=0
 qbert param cv_joy_y -1..1 linear default=0
 qbert param cv_start_in 0..1 linear default=0
-qbrt meta domain=audio schema=1
+qbrt meta domain=audio
 qbrt in cutoff cv param=cutoff cvScale=log
 qbrt in L audio
 qbrt in mode cv param=mode cvScale=discrete
@@ -2394,7 +2394,7 @@ qbrt param cutoff 20..20000 log default=1000 unit=Hz
 qbrt param mode 0..1 linear default=0
 qbrt param pingDecay 0.005..0.5 log default=0.15 unit=s
 qbrt param resonance 0..0.99 linear default=0.7
-quadralogical meta domain=video schema=1
+quadralogical meta domain=video
 quadralogical in blend_sharp cv param=blend_sharp cvScale=linear
 quadralogical in diamond_margin cv param=diamond_margin cvScale=linear
 quadralogical in edge1_amount cv param=edge1_amount cvScale=linear
@@ -2437,7 +2437,7 @@ quadralogical param keyG 0..1 linear default=1
 quadralogical param keyR 0..1 linear default=0
 quadralogical param pos_x -1..1 linear default=0
 quadralogical param pos_y -1..1 linear default=0
-rasterize meta domain=audio schema=1
+rasterize meta domain=audio
 rasterize in cursor cv param=cursor
 rasterize in gain cv param=gain
 rasterize in in audio
@@ -2449,12 +2449,12 @@ rasterize param cursor 0..786432 linear default=0 unit=px
 rasterize param gain 0..8 log default=1
 rasterize param samplesPerFrame 16..8000 log default=800
 rasterize param wrap 0..1 discrete default=0
-recorderbox meta domain=video schema=1
+recorderbox meta domain=video
 recorderbox in audio_l audio
 recorderbox in audio_r audio
 recorderbox in in video
 recorderbox out out video
-reshaper meta domain=video schema=1
+reshaper meta domain=video
 reshaper in intensity cv param=intensity cvScale=linear
 reshaper in x mono-video
 reshaper in xDisp cv param=xDisp cvScale=linear
@@ -2468,7 +2468,7 @@ reshaper param tintG 0..1 linear default=1
 reshaper param tintR 0..1 linear default=1
 reshaper param xDisp -1..1 linear default=0
 reshaper param yDisp -1..1 linear default=0
-resofilter meta domain=audio schema=1
+resofilter meta domain=audio
 resofilter in audio audio
 resofilter in cutoff_cv cv param=cutoff cvScale=linear
 resofilter in reso_cv cv param=resonance cvScale=linear
@@ -2479,13 +2479,13 @@ resofilter param mix 0..1 linear default=1
 resofilter param mode 0..4 discrete default=0
 resofilter param resonance 0..1 linear default=0.3
 resofilter stereo out_l+out_r
-reverb meta domain=audio schema=1
+reverb meta domain=audio
 reverb in audio audio
 reverb out audio audio
 reverb param damp 0..1 linear default=0.3
 reverb param mix 0..1 linear default=0.3
 reverb param size 0..1 linear default=0.5
-ringback meta domain=audio schema=1
+ringback meta domain=audio
 ringback in feedback cv param=feedback cvScale=linear
 ringback in in_l audio
 ringback in in_r audio
@@ -2498,7 +2498,7 @@ ringback param feedback 0..0.98 linear default=0.3
 ringback param mix 0..1 linear default=1
 ringback param rate 0.05..4 linear default=0.5
 ringback param size 2..4096 log default=64 unit=smp
-rings meta domain=audio schema=1
+rings meta domain=audio
 rings in bright_cv cv param=brightness cvScale=linear
 rings in damp_cv cv param=damping cvScale=linear
 rings in in audio
@@ -2519,7 +2519,7 @@ rings param note -60..60 linear default=0 unit=st
 rings param position 0..1 linear default=0.5
 rings param structure 0..1 linear default=0.25
 rings stereo odd+even
-riotgirls meta domain=audio schema=1
+riotgirls meta domain=audio
 riotgirls in bc_bits cv param=bc_bits cvScale=linear
 riotgirls in bc_decimate cv param=bc_decimate cvScale=linear
 riotgirls in bc_wet cv param=bc_wet cvScale=linear
@@ -2625,7 +2625,7 @@ riotgirls param v4_sustain 0..1 linear default=0.7
 riotgirls param v4_tune -36..36 linear default=0 unit=st
 riotgirls param v4_volume 0..2 linear default=0.8
 riotgirls param v4_wavePos 0..1 linear default=0
-ruttetra meta domain=video schema=2
+ruttetra meta domain=video
 ruttetra in intensity cv param=intensity cvScale=linear
 ruttetra in xDisp cv param=xDisp cvScale=linear
 ruttetra in xFreq cv param=xFreq cvScale=linear
@@ -2647,13 +2647,13 @@ ruttetra param yDisp -1..1 linear default=-0.3
 ruttetra param yFreq 0.25..8 linear default=1
 ruttetra param yPhase 0..1 linear default=0
 ruttetra param yShape 0..1 linear default=0
-sampleHold meta domain=audio schema=1
+sampleHold meta domain=audio
 sampleHold in cv_in cv
 sampleHold in gate_in gate
 sampleHold out cv_out cv
 sampleHold out cv_quant cv
 sampleHold param scale 0..9 discrete default=1
-samsloop meta domain=audio schema=1
+samsloop meta domain=audio
 samsloop in audio_l_in audio
 samsloop in audio_r_in audio
 samsloop in rate_cv cv param=rate cvScale=linear
@@ -2663,11 +2663,11 @@ samsloop param end 0..1000000 linear default=1000000
 samsloop param mode 0..1 discrete default=1
 samsloop param rate -2..2 linear default=1
 samsloop param start 0..1000000 linear default=0
-scaler meta domain=audio schema=1
+scaler meta domain=audio
 scaler in in audio accepts=cv,gate,pitch
 scaler out out audio adopts=in
 scaler param amount 0.1..10 log default=1
-scope meta domain=audio schema=1
+scope meta domain=audio
 scope in ch1 audio accepts=cv,gate,pitch
 scope in ch1Offset cv param=ch1Offset
 scope in ch1Range cv param=ch1Range
@@ -2691,7 +2691,7 @@ scope param ch2Scale 0.1..10 log default=1
 scope param intensity 0..1 linear default=0.5
 scope param mode 0..1 discrete default=0
 scope param timeMs 1..200 log default=20 unit=ms
-score meta domain=audio schema=2 exposesSequence
+score meta domain=audio exposesSequence
 score in attack cv param=attack cvScale=log
 score in clock gate
 score in decay cv param=decay cvScale=log
@@ -2717,14 +2717,14 @@ score expose playStop
 score family score-dyn kind=cell prefix=score-dyn
 score family score-note kind=cell prefix=score-note
 score family score-tie kind=cell prefix=score-tie
-scoreboard meta domain=video schema=1
+scoreboard meta domain=video
 scoreboard in reset cv param=resetTrig
 scoreboard in score cv param=scoreTrig
 scoreboard out out video
 scoreboard param color 0..1 linear default=0.3333333333333333
 scoreboard param resetTrig 0..1 linear default=0
 scoreboard param scoreTrig 0..1 linear default=0
-sequencer meta domain=audio schema=4 exposesSequence
+sequencer meta domain=audio exposesSequence
 sequencer in clock gate
 sequencer in next_cv gate
 sequencer in play_cv gate
@@ -2754,7 +2754,7 @@ sequencer family quicksave-slot kind=quicksave prefix=quicksave-slot
 sequencer family seq-chord kind=cell prefix=seq-chord count=length
 sequencer family seq-gate kind=step-grid prefix=seq-gate count=length
 sequencer family seq-pitch kind=cell prefix=seq-pitch count=length
-shapedramps meta domain=video schema=1
+shapedramps meta domain=video
 shapedramps in h_freq cv param=h_freq cvScale=linear
 shapedramps in h_phase cv param=h_phase cvScale=linear
 shapedramps in h_shape cv param=h_shape cvScale=linear
@@ -2781,7 +2781,7 @@ shapedramps param mix2 0..1 linear default=0.5
 shapedramps param v_freq 0.5..8 linear default=1
 shapedramps param v_phase 0..1 linear default=0
 shapedramps param v_shape 0..1 linear default=0
-shapegen meta domain=video schema=1
+shapegen meta domain=video
 shapegen in clock_in gate param=cv_clock
 shapegen in raster_a video
 shapegen in raster_b video
@@ -2791,7 +2791,7 @@ shapegen param cv_clock 0..1 linear default=0
 shapegen param rotate 0..1 linear default=0
 shapegen param size 0.1..3 linear default=1
 shapegen param solids 0..1 discrete default=0
-shapes meta domain=video schema=1
+shapes meta domain=video
 shapes in rotate cv param=rotate cvScale=linear
 shapes in shape cv param=shape cvScale=linear
 shapes in tile cv param=tile cvScale=linear
@@ -2802,7 +2802,7 @@ shapes param shape 0..2 linear default=0
 shapes param tile 0..1 linear default=0
 shapes param tileN 1..16 linear default=4
 shapes param zoom 0.05..10 log default=1
-shimmershine meta domain=audio schema=1
+shimmershine meta domain=audio
 shimmershine in decay_cv cv param=decay cvScale=linear
 shimmershine in in_l audio
 shimmershine in in_r audio
@@ -2818,7 +2818,7 @@ shimmershine param shimmer 0..1 linear default=0.4
 shimmershine param size 0..1 linear default=0.6
 shimmershine stereo in_l+in_r
 shimmershine stereo out_l+out_r
-sidecar meta domain=audio schema=1
+sidecar meta domain=audio
 sidecar in audio_l_in audio
 sidecar in audio_r_in audio
 sidecar in env_mag_cv cv param=envMag cvScale=linear
@@ -2842,12 +2842,12 @@ sidecar param threshold -60..0 linear default=-18 unit=dB
 sidecar stereo audio_l_in+audio_r_in
 sidecar stereo audio_l_out+audio_r_out
 sidecar stereo sc_l_in+sc_r_in
-skifree meta domain=audio schema=1 maxInstances=1
+skifree meta domain=audio maxInstances=1
 skifree in x cv
 skifree in y cv
 skifree out gate gate
 skifree out out video
-slewSwitch meta domain=audio schema=1
+slewSwitch meta domain=audio
 slewSwitch in in1 cv
 slewSwitch in in2 cv
 slewSwitch in in3 cv
@@ -2872,7 +2872,7 @@ slewSwitch param slew2 0.001..5 log default=0.5 unit=s
 slewSwitch param slew3 0.001..5 log default=0.5 unit=s
 slewSwitch param slew4 0.001..5 log default=0.5 unit=s
 slewSwitch param xfadeTime 0.001..2 log default=0.05 unit=s
-snaredrum meta domain=audio schema=1
+snaredrum meta domain=audio
 snaredrum in accent_in cv
 snaredrum in choke_in gate edge=gate
 snaredrum in gate_in gate edge=gate
@@ -2904,7 +2904,7 @@ snaredrum param wire 0..1 linear default=0.7
 snaredrum param wire_decay 40..700 log default=260 unit=ms
 snaredrum param wire_tone 1500..9000 log default=4500 unit=Hz
 snaredrum stereo audio_l+audio_r
-snes9x meta domain=video schema=1 maxInstances=1
+snes9x meta domain=video maxInstances=1
 snes9x in a gate param=cv_a
 snes9x in b gate param=cv_b
 snes9x in clock_in gate param=cv_clock_in
@@ -2943,7 +2943,7 @@ snes9x param cv_up 0..1 linear default=0
 snes9x param cv_x 0..1 linear default=0
 snes9x param cv_y 0..1 linear default=0
 snes9x param fillMode 0..1 discrete default=0
-sourcery meta domain=video schema=1
+sourcery meta domain=video
 sourcery in a video
 sourcery in b video
 sourcery in colorSkew cv param=colorSkew cvScale=linear
@@ -2955,12 +2955,12 @@ sourcery param colorSkew 0..1 linear default=0.5
 sourcery param rotate 0..1 linear default=0.5
 sourcery param thresholdA 0..1 linear default=0.2
 sourcery param thresholdB 0..1 linear default=0.2
-spectrograph meta domain=audio schema=1
+spectrograph meta domain=audio
 spectrograph in in audio
 spectrograph out bw mono-video
 spectrograph out color mono-video
 spectrograph param gain 0.25..4 log default=1
-spirographs meta domain=video schema=1
+spirographs meta domain=video
 spirographs in count cv param=count cvScale=discrete
 spirographs in s1_chroma cv param=s1_chroma cvScale=linear
 spirographs in s1_inside cv param=s1_inside cvScale=discrete
@@ -3026,7 +3026,7 @@ spirographs param s3_scale 4..60 linear default=20
 spirographs param s3_thickness 0.5..12 linear default=2
 spirographs param s3_xOffset -1..1 linear default=0
 spirographs param s3_yOffset -1..1 linear default=0
-stages meta domain=audio schema=1
+stages meta domain=audio
 stages in gate0 gate
 stages in gate1 gate
 stages in gate2 gate
@@ -3075,7 +3075,7 @@ stages param type2 0..2 discrete default=0
 stages param type3 0..2 discrete default=0
 stages param type4 0..2 discrete default=0
 stages param type5 0..2 discrete default=0
-stereovca meta domain=audio schema=1
+stereovca meta domain=audio
 stereovca in in_l audio
 stereovca in in_r audio
 stereovca in strength_l cv
@@ -3084,8 +3084,8 @@ stereovca out out_l audio
 stereovca out out_r audio
 stereovca param level 0..1 linear default=1
 stereovca param offset -1..1 linear default=0
-sticky meta domain=meta schema=1
-swolevco meta domain=audio schema=1
+sticky meta domain=meta
+swolevco meta domain=audio
 swolevco in fm audio
 swolevco in fold cv param=fold cvScale=linear
 swolevco in mod_pitch pitch
@@ -3105,7 +3105,7 @@ swolevco param ratio 0..8 linear default=1
 swolevco param symmetry 0..1 linear default=0.5
 swolevco param timbre 0..1 linear default=0
 swolevco param tune -36..36 linear default=0 unit=st
-symbiote meta domain=audio schema=1
+symbiote meta domain=audio
 symbiote in aciddensity_cv cv param=acid_density cvScale=linear
 symbiote in acidlength_cv cv param=acid_length cvScale=linear
 symbiote in bd_cv cv param=bd_density cvScale=linear
@@ -3137,7 +3137,7 @@ symbiote param sd_density 0..1 linear default=0.5
 symbiote param seed_lock 0..1 discrete default=0
 symbiote param sub_mode 0..1 discrete default=0
 symbiote param transpose -18..18 linear default=0 unit=st
-synesthesia meta domain=audio schema=1
+synesthesia meta domain=audio
 synesthesia in a_in audio
 synesthesia in a_video_in video
 synesthesia in b_in audio
@@ -3212,12 +3212,12 @@ synesthesia param b_gain3 1..2 linear default=1
 synesthesia param b_gain4 1..2 linear default=1
 synesthesia param b_master 0.5..1.5 linear default=1
 synesthesia param b_mode 0..1 discrete default=0
-tempest meta domain=video schema=1
+tempest meta domain=video
 tempest in rim cv param=rim cvScale=linear
 tempest out out video
 tempest param rim 0..1 linear default=0
 tempest param shape 0..2 discrete default=0
-textmarquee meta domain=video schema=1
+textmarquee meta domain=video
 textmarquee in posX cv param=posX cvScale=linear
 textmarquee in posY cv param=posY cvScale=linear
 textmarquee in scrollX cv param=scrollX cvScale=linear
@@ -3227,7 +3227,7 @@ textmarquee param posX 0..1 linear default=0.5
 textmarquee param posY 0..1 linear default=0.5
 textmarquee param scrollX 0..1 linear default=0.5
 textmarquee param scrollY 0..1 linear default=0.5
-tides2 meta domain=audio schema=1
+tides2 meta domain=audio
 tides2 in clock gate
 tides2 in freq_cv cv param=frequency cvScale=linear
 tides2 in shape_cv cv param=shape cvScale=linear
@@ -3248,12 +3248,12 @@ tides2 param shape 0..1 linear default=0.5
 tides2 param shift 0..1 linear default=0.5
 tides2 param slope 0..1 linear default=0.5
 tides2 param smoothness 0..1 linear default=0.5
-tiler meta domain=video schema=1
+tiler meta domain=video
 tiler in in video
 tiler in tile_cv cv param=tile cvScale=discrete
 tiler out out video
 tiler param tile 0..5 discrete default=0
-timelorde meta domain=audio schema=1 maxInstances=1 undeletable
+timelorde meta domain=audio maxInstances=1 undeletable
 timelorde in clock gate
 timelorde in gate gate edge=gate
 timelorde in start_in gate
@@ -3282,7 +3282,7 @@ timelorde param wizardOn 0..1 discrete default=1
 timelorde expose bpm
 timelorde expose swingAmount
 timelorde expose swingSource
-toybox meta domain=video schema=4
+toybox meta domain=video
 toybox in cv1 modsignal cvScale=linear
 toybox in cv2 modsignal cvScale=linear
 toybox in cv3 modsignal cvScale=linear
@@ -3292,7 +3292,7 @@ toybox in cv6 modsignal cvScale=linear
 toybox in inA video
 toybox in inB video
 toybox out out video
-treeohvox meta domain=audio schema=1
+treeohvox meta domain=audio
 treeohvox in accent_cv cv param=accent cvScale=linear
 treeohvox in accent_in gate
 treeohvox in cutoff_cv cv param=cutoff cvScale=linear
@@ -3311,7 +3311,7 @@ treeohvox param envelope 0..1 linear default=0.5
 treeohvox param resonance 0..1 linear default=0.5
 treeohvox param tune -12..12 linear default=0 unit=st
 treeohvox param waveform 0..1 linear default=0
-tvLibrarian meta domain=video schema=1
+tvLibrarian meta domain=video
 tvLibrarian in next gate param=cv_next edge=trigger
 tvLibrarian in random gate param=cv_random edge=trigger
 tvLibrarian out audio_l audio
@@ -3322,7 +3322,7 @@ tvLibrarian out video video
 tvLibrarian param cv_next 0..1 linear default=0
 tvLibrarian param cv_random 0..1 linear default=0
 tvLibrarian param gain 0..2 linear default=1
-twotracks meta domain=audio schema=1
+twotracks meta domain=audio
 twotracks in audio_l_in_a audio
 twotracks in audio_l_in_b audio
 twotracks in audio_r_in_a audio
@@ -3366,7 +3366,7 @@ twotracks param reso_a 0..1 linear default=0
 twotracks param reso_b 0..1 linear default=0
 twotracks param start_a 0..1 linear default=0
 twotracks param start_b 0..1 linear default=0
-unityscalemathematik meta domain=audio schema=1
+unityscalemathematik meta domain=audio
 unityscalemathematik in a_atten_cv cv param=aAtten cvScale=linear
 unityscalemathematik in a_curve_cv cv param=aCurve cvScale=linear
 unityscalemathematik in a_in cv
@@ -3383,14 +3383,14 @@ unityscalemathematik param aCurve 0..1 linear default=0
 unityscalemathematik param bAtten -1..1 linear default=1
 unityscalemathematik param bCurve 0..1 linear default=0
 unityscalemathematik param unityAtten -1..1 linear default=1
-vca meta domain=audio schema=1
+vca meta domain=audio
 vca in audio audio
 vca in cv cv
 vca out audio audio
 vca out audio_inv audio
 vca param base 0..1 linear default=0
 vca param cvAmount -1..1 linear default=1
-vdelay meta domain=video schema=1
+vdelay meta domain=video
 vdelay in feedback_cv cv param=feedback cvScale=linear
 vdelay in in video
 vdelay in mix_cv cv param=mix cvScale=linear
@@ -3400,7 +3400,7 @@ vdelay param colorShift 0..1 linear default=0
 vdelay param delayTime 1..32 linear default=8
 vdelay param feedback 0..0.95 linear default=0.4
 vdelay param mix 0..1 linear default=0.5
-veils meta domain=audio schema=1
+veils meta domain=audio
 veils in cv1 cv
 veils in cv2 cv
 veils in cv3 cv
@@ -3422,7 +3422,7 @@ veils param resp1 0..1 discrete default=0
 veils param resp2 0..1 discrete default=0
 veils param resp3 0..1 discrete default=1
 veils param resp4 0..1 discrete default=1
-vfpgaRunner meta domain=video schema=1
+vfpgaRunner meta domain=video
 vfpgaRunner in cv1 cv param=cv1_val cvScale=linear
 vfpgaRunner in cv2 cv param=cv2_val cvScale=linear
 vfpgaRunner in cv3 cv param=cv3_val cvScale=linear
@@ -3453,14 +3453,14 @@ vfpgaRunner param p5 0..1 linear default=0
 vfpgaRunner param p6 0..1 linear default=0
 vfpgaRunner param p7 0..1 linear default=0
 vfpgaRunner param p8 0..1 linear default=0
-videobox meta domain=video schema=1
+videobox meta domain=video
 videobox in play_trigger gate param=cv_play_trigger
 videobox out audio_l audio
 videobox out audio_r audio
 videobox out video video
 videobox param cv_play_trigger 0..1 linear default=0
 videobox param gain 0..2 linear default=1
-videoMixer meta domain=video schema=1
+videoMixer meta domain=video
 videoMixer in amount1 cv param=amount1 cvScale=linear
 videoMixer in amount2 cv param=amount2 cvScale=linear
 videoMixer in amount3 cv param=amount3 cvScale=linear
@@ -3474,10 +3474,10 @@ videoMixer param amount1 0..1 linear default=1
 videoMixer param amount2 0..1 linear default=0
 videoMixer param amount3 0..1 linear default=0
 videoMixer param amount4 0..1 linear default=0
-videoOut meta domain=video schema=1
+videoOut meta domain=video
 videoOut in in video
 videoOut out out video
-videovarispeed meta domain=video schema=1
+videovarispeed meta domain=video
 videovarispeed in asset_gate gate param=asset_gate
 videovarispeed in asset_pitch pitch param=asset_pitch
 videovarispeed in cv_loop_toggle gate param=cv_loop_toggle
@@ -3502,7 +3502,7 @@ videovarispeed param speed 0..1 linear default=0.5
 videovarispeed param speedCv -1..1 linear default=0
 videovarispeed param start 0..1 linear default=0
 videovarispeed param startCv -1..1 linear default=0
-warps meta domain=audio schema=1
+warps meta domain=audio
 warps in algorithm_cv cv param=algorithm cvScale=discrete
 warps in carrier_in audio
 warps in carrier_shape_cv cv param=carrier_shape cvScale=linear
@@ -3518,7 +3518,7 @@ warps param level_1 0..1 linear default=1
 warps param level_2 0..1 linear default=1
 warps param note -60..60 linear default=0 unit=st
 warps param timbre 0..1 linear default=0.5
-warrenspectrum meta domain=audio schema=1
+warrenspectrum meta domain=audio
 warrenspectrum in band1_in audio
 warrenspectrum in band2_in audio
 warrenspectrum in band3_in audio
@@ -3580,7 +3580,7 @@ warrenspectrum param tuning_mode 0..1 discrete default=0
 warrenspectrum param viznoise 0..1 linear default=0.3
 warrenspectrum stereo in_l+in_r
 warrenspectrum stereo out_l+out_r
-wavecel meta domain=audio schema=1
+wavecel meta domain=audio
 wavecel in fm audio
 wavecel in fold_cv cv param=fold cvScale=linear
 wavecel in morph_cv cv param=morph cvScale=linear
@@ -3607,7 +3607,7 @@ wavecel family wavecel-preset-select kind=other prefix=wavecel-preset-select
 wavecel family wavecel-source-select kind=other prefix=wavecel-source-select
 wavecel family wavecel-viz-toggle kind=other prefix=wavecel-viz-toggle
 wavecel family wavecel-wav-input kind=other prefix=wavecel-wav-input
-wavesculpt meta domain=audio schema=1
+wavesculpt meta domain=audio
 wavesculpt in alpha_in video
 wavesculpt in gate1 gate
 wavesculpt in gate2 gate
@@ -3732,7 +3732,7 @@ wavesculpt param wavefold 0..1 linear default=0
 wavesculpt param wiggle 0..1 linear default=0
 wavesculpt param zoom 0.3..3 log default=1
 wavesculpt family wavesculpt-osc kind=cell prefix=wavesculpt-osc
-wavetableVco meta domain=audio schema=3
+wavetableVco meta domain=audio
 wavetableVco in fine cv param=fine cvScale=linear
 wavetableVco in fm audio
 wavetableVco in fmAmount cv param=fmAmount cvScale=linear
@@ -3747,7 +3747,7 @@ wavetableVco param fmAmount -1..1 linear default=0
 wavetableVco param pmAmount -1..1 linear default=0
 wavetableVco param tune -36..36 linear default=0 unit=st
 wavetableVco param wavePos 0..1 linear default=0
-writeseq meta domain=audio schema=1 exposesSequence
+writeseq meta domain=audio exposesSequence
 writeseq in clock gate
 writeseq in cv pitch
 writeseq in gate gate

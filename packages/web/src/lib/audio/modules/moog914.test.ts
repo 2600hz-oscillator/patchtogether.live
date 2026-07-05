@@ -38,7 +38,6 @@ describe('moog914Def: module def shape', () => {
     expect(moog914Def.type).toBe('moog914');
     expect(moog914Def.label).toBe('914 extended fixed filter bank');
     expect(moog914Def.category).toBe('filters');
-    expect(moog914Def.schemaVersion).toBe(1);
   });
 
   it('lives in the Moog System 35/55 Clones palette bucket and uses the Moog914Card', () => {

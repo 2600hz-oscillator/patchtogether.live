@@ -30,7 +30,6 @@ const stubPictureboxDef: VideoModuleDef = {
   domain: 'video',
   label: 'PICTUREBOX',
   category: 'sources',
-  schemaVersion: 2,
   inputs: [{ id: 'gain', type: 'cv', paramTarget: 'gain' }],
   outputs: [{ id: 'out', type: 'image' }],
   params: [{ id: 'gain', label: 'Gain', defaultValue: 1, min: 0, max: 2, curve: 'linear' }],
@@ -46,7 +45,6 @@ const stubCadillacDef: MetaModuleDef = {
   inputs: [],
   outputs: [],
   params: [],
-  schemaVersion: 1,
   maxInstances: 1,
 };
 
@@ -74,21 +72,16 @@ describe('media-burn: envelope shape', () => {
     expect(MEDIA_BURN_ENVELOPE_RAW).not.toBeNull();
   });
 
-  it('parses into a PatchEnvelope (v1, moduleSchemas + update present)', () => {
+  it('parses into a lean v2 PatchEnvelope (no moduleSchemas; savedAt + update present)', () => {
     const env = getMediaBurnEnvelope();
     expect(env.envelopeVersion).toBe(ENVELOPE_VERSION);
+    expect(ENVELOPE_VERSION).toBe(2);
     expect(typeof env.savedAt).toBe('string');
     expect(new Date(env.savedAt).getTime()).toBeGreaterThan(0);
-    expect(env.moduleSchemas).toBeTypeOf('object');
+    expect('moduleSchemas' in env).toBe(false);
     expect(typeof env.update).toBe('string');
     expect(env.update.length).toBeGreaterThan(0);
     expect(env.update).toMatch(/^[A-Za-z0-9+/=]+$/);
-  });
-
-  it('moduleSchemas advertises picturebox + cadillac (the only two types in the patch)', () => {
-    const env = getMediaBurnEnvelope();
-    expect(env.moduleSchemas).toHaveProperty('picturebox');
-    expect(env.moduleSchemas).toHaveProperty('cadillac');
   });
 });
 

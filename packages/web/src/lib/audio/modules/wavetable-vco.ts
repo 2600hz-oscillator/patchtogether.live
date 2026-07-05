@@ -83,7 +83,6 @@ export const wavetableVcoDef: AudioModuleDef = {
   domain: 'audio',
   label: 'wavetable vco',
   category: 'sources',
-  schemaVersion: 3,
 
   inputs: [
     { id: 'pitch',   type: 'pitch' },

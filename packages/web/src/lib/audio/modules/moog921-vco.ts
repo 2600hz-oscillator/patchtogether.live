@@ -52,7 +52,6 @@ export const moog921VcoDef: AudioModuleDef = {
   domain: 'audio',
   label: '921 vco',
   category: 'sources',
-  schemaVersion: 1,
 
   inputs: [
     { id: 'pitch',    type: 'pitch' },

@@ -60,7 +60,6 @@ export const moog984Def: AudioModuleDef = {
   domain: 'audio',
   label: '984 matrix',
   category: 'utilities',
-  schemaVersion: 1,
 
   inputs: [
     { id: 'in1', type: 'audio' },

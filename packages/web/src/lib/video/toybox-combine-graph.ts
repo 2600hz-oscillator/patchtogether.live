@@ -190,13 +190,6 @@ export function opHistoryDepth(kind: ToyboxNodeKind | string | undefined): numbe
  *  engine res). The delay params clamp to MAX_HISTORY_FRAMES-1. */
 export const MAX_HISTORY_FRAMES = 33;
 
-/** The TOYBOX node.data schema version. The SINGLE source of truth — toyboxDef
- *  (modules/toybox.ts) references it, the preset SAVE/EXPORT stamps it into the
- *  blob, and the preset RESTORE path migrates a blob saved at an older version
- *  forward (audit M5). Lives here (a light, engine-free module the card already
- *  imports) so the card can stamp it without pulling the whole video engine. */
-export const TOYBOX_SCHEMA_VERSION = 4;
-
 /** A node in the combine graph. `params` holds the op's float params keyed by
  *  id (op nodes only); `layer` is the layer index a SOURCE node emits. */
 export interface ToyboxGraphNode {

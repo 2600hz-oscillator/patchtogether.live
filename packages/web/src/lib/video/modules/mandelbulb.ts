@@ -342,7 +342,6 @@ export const mandelbulbDef: VideoModuleDef = {
   domain: 'video',
   label: 'mandelbulb',
   category: 'sources',
-  schemaVersion: 1,
   inputs: [
     // EVERY spatial / zoom control gets a CV input (user requirement).
     // Continuous targets carry a cvScale hint so a ±1 source sweeps the

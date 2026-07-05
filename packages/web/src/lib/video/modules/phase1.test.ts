@@ -334,9 +334,6 @@ describe('video — RESHAPER raster-scan-coordinate REMAP (formerly RUTTETRA)', 
     const ids = def.params.map((p) => p.id).sort();
     expect(ids).toEqual(['intensity', 'tintB', 'tintG', 'tintR', 'xDisp', 'yDisp']);
   });
-  it('keeps the legacy schemaVersion (1) so it is the migration target for old ruttetra saves', () => {
-    expect(getVideoModuleDef('reshaper')!.schemaVersion).toBe(1);
-  });
 });
 
 describe('video — SHAPEDRAMPS sync-locked ramp generator', () => {

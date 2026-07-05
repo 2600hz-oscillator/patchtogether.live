@@ -7,8 +7,8 @@
 // plus the cross-domain wiring that DRIVES the game (4 slow SYNESTHESIA
 // envelopes → cv1..cv4, MACSEQ gate → gate, TIMELORDE 1× → clock).
 //
-// We register minimal stub defs (the loader only reads schemaVersion + an
-// optional migrate; it never calls factory) so loadEnvelopeIntoStore accepts
+// We register minimal stub defs (the loader only reads the registered type +
+// ports; it never calls factory) so loadEnvelopeIntoStore accepts
 // every node + edge. The real defs live under $lib/audio/modules + $lib/video/
 // modules; stubbing here avoids pulling in the AudioWorklet / WebGL2 `?url`
 // loaders that don't resolve outside SvelteKit/Vite.
@@ -34,7 +34,6 @@ const throwingFactory = (): never => {
 
 function makeStubAudio(
   type: string,
-  schemaVersion: number,
   inputs: PortDef[] = [],
   outputs: PortDef[] = [],
 ): AudioModuleDef {
@@ -43,7 +42,6 @@ function makeStubAudio(
     domain: 'audio',
     label: type.toUpperCase(),
     category: 'sources',
-    schemaVersion,
     inputs,
     outputs,
     params: [],
@@ -57,7 +55,6 @@ const stubGibribbonDef: VideoModuleDef = {
   domain: 'video',
   label: 'GIBRIBBON',
   category: 'sources',
-  schemaVersion: 1,
   inputs: [
     { id: 'cv1', type: 'modsignal' },
     { id: 'cv2', type: 'modsignal' },
@@ -110,15 +107,12 @@ function hasEdge(
 // ---------------- Setup ----------------
 
 beforeAll(() => {
-  // schemaVersions must match the envelope's moduleSchemas so the loader
-  // doesn't try to run a (nonexistent) migration. timelorde = v2.
-  //
   // Ports declared per the demo's 11 edges — the Phase-4d import validator
-  // (loadEnvelopeIntoStore → validateEdge) now drops any edge whose port
-  // doesn't resolve on the endpoint def, so the stubs must carry the real
-  // ports + cable types the patch wires through (gate→gate, cv→modsignal, …).
+  // (loadEnvelopeIntoStore → validateEdge) drops any edge whose port doesn't
+  // resolve on the endpoint def, so the stubs must carry the real ports + cable
+  // types the patch wires through (gate→gate, cv→modsignal, …).
   registerModule(
-    makeStubAudio('timelorde', 2, [], [
+    makeStubAudio('timelorde', [], [
       { id: '1x', type: 'gate' },
       { id: '2x', type: 'gate' },
     ]),
@@ -126,7 +120,6 @@ beforeAll(() => {
   registerModule(
     makeStubAudio(
       'macseq',
-      1,
       [{ id: 'clock', type: 'gate' }],
       [
         { id: 'pitch', type: 'pitch' },
@@ -138,7 +131,6 @@ beforeAll(() => {
   registerModule(
     makeStubAudio(
       'macrooscillator',
-      1,
       [
         { id: 'pitch', type: 'pitch' },
         { id: 'trig', type: 'gate' },
@@ -148,7 +140,7 @@ beforeAll(() => {
     ),
   );
   registerModule(
-    makeStubAudio('synesthesia', 1, [{ id: 'a_in', type: 'audio' }], [
+    makeStubAudio('synesthesia', [{ id: 'a_in', type: 'audio' }], [
       { id: 'a_band1_env_slow', type: 'cv' },
       { id: 'a_band2_env_slow', type: 'cv' },
       { id: 'a_band3_env_slow', type: 'cv' },
@@ -166,26 +158,16 @@ describe('gibribbon-demo: envelope shape', () => {
     expect(GIBRIBBON_DEMO_ENVELOPE_RAW).not.toBeNull();
   });
 
-  it('parses into a PatchEnvelope (v1, moduleSchemas + update present)', () => {
+  it('parses into a lean v2 PatchEnvelope (no moduleSchemas; savedAt + update present)', () => {
     const env = getGibribbonDemoEnvelope();
     expect(env.envelopeVersion).toBe(ENVELOPE_VERSION);
+    expect(ENVELOPE_VERSION).toBe(2);
     expect(typeof env.savedAt).toBe('string');
     expect(new Date(env.savedAt).getTime()).toBeGreaterThan(0);
-    expect(env.moduleSchemas).toBeTypeOf('object');
+    expect('moduleSchemas' in env).toBe(false);
     expect(typeof env.update).toBe('string');
     expect(env.update.length).toBeGreaterThan(0);
     expect(env.update).toMatch(/^[A-Za-z0-9+/=]+$/);
-  });
-
-  it('moduleSchemas advertises the 5 patch types with the pinned versions', () => {
-    const env = getGibribbonDemoEnvelope();
-    expect(env.moduleSchemas).toMatchObject({
-      timelorde: 2,
-      macseq: 1,
-      macrooscillator: 1,
-      synesthesia: 1,
-      gibribbon: 1,
-    });
   });
 
   it('re-validates through parseEnvelope cleanly (idempotent shape check)', () => {

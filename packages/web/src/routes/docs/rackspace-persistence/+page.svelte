@@ -103,23 +103,24 @@
 <h2>the .imp.json envelope</h2>
 <p>
   The portable <code>.ptperf.zip</code> wraps a single JSON patch envelope,
-  format <code>envelopeVersion: 1</code> (the same envelope the auto-sync path
-  and the dev tooling round-trip):
+  format <code>envelopeVersion: 2</code> — the lean format (the same envelope the
+  auto-sync path and the dev tooling round-trip):
 </p>
 <pre><code>{`{
-  "envelopeVersion": 1,
+  "envelopeVersion": 2,
   "savedAt":         "2026-05-09T12:34:56.000Z",
-  "moduleSchemas":   { "analogVco": 1, "picturebox": 2, "dx7": 1, ... },
   "update":          "<base64 of Y.encodeStateAsUpdate(ydoc)>"
 }`}</code></pre>
 <p>
   The <code>update</code> field is the actual source of truth — the same bytes the
   Hocuspocus server stores in <code>rack_snapshots.yjs_state</code>. Loading an
   envelope decodes that update into a fresh Y.Doc and atomically swaps the live
-  rack contents for the loaded ones. <code>moduleSchemas</code> drives per-module
-  data migrations on load — if a saved patch's PICTUREBOX is at v1 and the running
-  build is at v2, the v1 -&gt; v2 migration runs before the node is added to the
-  live store.
+  rack contents for the loaded ones. A patch stores only TOPOLOGY (which modules,
+  where, how wired) plus authored/sequenced values — never a moment-in-time live
+  sample. The format is <em>nimble write, tolerant read</em>: a new save stamps
+  <code>envelopeVersion 2</code>, and the loader still ACCEPTS an older
+  <code>v1</code> envelope (the legacy per-module <code>moduleSchemas</code>
+  migration map, if present, is simply ignored).
 </p>
 
 <h2>limits + future evolution</h2>

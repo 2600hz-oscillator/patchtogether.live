@@ -248,7 +248,6 @@ export const sourceryDef: VideoModuleDef = {
   domain: 'video',
   label: 'sourcery',
   category: 'effects',
-  schemaVersion: 1,
   inputs: [
     { id: 'a', type: 'video' },
     { id: 'b', type: 'video' },

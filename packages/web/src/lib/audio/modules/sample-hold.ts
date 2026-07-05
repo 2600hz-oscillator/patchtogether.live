@@ -71,7 +71,6 @@ export const sampleHoldDef: AudioModuleDef = {
   domain: 'audio',
   label: 'sample & hold',
   category: 'utility',
-  schemaVersion: 1,
   inputs: [
     { id: 'cv_in',   type: 'cv' },
     { id: 'gate_in', type: 'gate' },

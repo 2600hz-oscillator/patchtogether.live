@@ -15,7 +15,6 @@ export const load: PageServerLoad = () => {
     type: mappyDef.type,
     label: mappyDef.label,
     category: mappyDef.category,
-    schemaVersion: mappyDef.schemaVersion,
     inputs: mappyDef.inputs.map((p) => ({ id: p.id, type: p.type })),
     outputs: mappyDef.outputs.map((p) => ({ id: p.id, type: p.type })),
     params: mappyDef.params.map((p) => ({

@@ -55,7 +55,6 @@ export const featurecvDef: AudioModuleDef = {
   label: 'feature cv',
   category: 'modulation',
   card: 'FeaturecvCard',
-  schemaVersion: 1,
 
   inputs: [
     // The signal under analysis — plain audio PASSTHROUGH into the input trim

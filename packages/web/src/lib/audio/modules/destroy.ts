@@ -37,7 +37,6 @@ export const destroyDef: AudioModuleDef = {
   domain: 'audio',
   label: 'destroy',
   category: 'effects',
-  schemaVersion: 1,
   inputs: [
     { id: 'audio',    type: 'audio' },
     // CV scaling per .myrobots/plans/cv-range-standard.md.

@@ -86,14 +86,14 @@ test('topbar: Raw JSON → Export JSON downloads a valid envelope', async ({ pag
   // Filename is the envelope default (patch.imp.json — a .json file).
   expect(download.suggestedFilename()).toMatch(/\.json$/);
 
-  // Read the downloaded bytes + assert a valid v1 envelope.
+  // Read the downloaded bytes + assert a valid v2 LEAN envelope (no moduleSchemas).
   const path = await download.path();
   expect(path).toBeTruthy();
   const text = readFileSync(path as string, 'utf8');
-  const env = JSON.parse(text) as { envelopeVersion: number; update: string; moduleSchemas: unknown };
-  expect(env.envelopeVersion).toBe(1);
+  const env = JSON.parse(text) as { envelopeVersion: number; update: string; moduleSchemas?: unknown };
+  expect(env.envelopeVersion).toBe(2);
   expect(typeof env.update).toBe('string');
-  expect(env.moduleSchemas).toBeTruthy();
+  expect(env.moduleSchemas).toBeUndefined();
 });
 
 // Full UI round-trip: Export JSON via the menu → clear the patch → Import JSON

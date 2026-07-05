@@ -45,7 +45,6 @@ export const kickdrumDef: AudioModuleDef = {
   domain: 'audio',
   label: 'kick drum',
   category: 'sources',
-  schemaVersion: 1,
   // Owner decision: a WIDE 3u card (banded layout, ~26 controls).
   size: '3u',
   hp: 2,

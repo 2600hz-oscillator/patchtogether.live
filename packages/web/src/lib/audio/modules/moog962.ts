@@ -41,7 +41,6 @@ export const moog962Def: AudioModuleDef = {
   // 'utilities' to bucket alongside the sibling Moog routing/utility modules
   // (CP3 / 902 / 961 / 984 / 994 / 995) in the palette tree.
   category: 'utilities',
-  schemaVersion: 1,
 
   inputs: [
     // Signal inputs — audio OR cv route identically through the engine.

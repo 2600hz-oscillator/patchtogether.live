@@ -145,7 +145,6 @@ export const monoglitchDef: VideoModuleDef = {
   domain: 'video',
   label: 'monoglitch',
   category: 'output',
-  schemaVersion: 1,
   inputs: [
     // Video source. `video` is the polymorphic type so users can patch
     // mono-video / image / keys via the engine's implicit upcasts.

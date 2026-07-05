@@ -167,7 +167,6 @@ export const chromakeyDef: VideoModuleDef = {
   domain: 'video',
   label: 'chromakey',
   category: 'effects',
-  schemaVersion: 1,
   inputs: [
     { id: 'fg',            type: 'video' },
     { id: 'bg',            type: 'video' },

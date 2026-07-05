@@ -97,7 +97,6 @@ const TEST_DEF: AudioModuleDef = {
   domain: 'audio',
   label: 'CV Scale Test Module',
   category: 'utilities',
-  schemaVersion: 1,
   inputs: [
     {
       id: 'gain',
@@ -134,7 +133,6 @@ const TEST_SOURCE_DEF: AudioModuleDef = {
   domain: 'audio',
   label: 'CV Scale Test Source',
   category: 'utilities',
-  schemaVersion: 1,
   inputs: [],
   outputs: [{ id: 'cv_out', type: 'cv' }],
   params: [],
@@ -253,7 +251,6 @@ describe('engine + cv-scale integration', () => {
       domain: 'audio',
       label: 'CV Scale Live Knob Test Module',
       category: 'utilities',
-      schemaVersion: 1,
       inputs: [
         { id: 'gain', type: 'cv', paramTarget: 'gain', cvScale: { mode: 'log' } },
       ],

@@ -92,7 +92,6 @@ export const peakstateDef: VideoModuleDef = {
   // time); 'sources' is the closest fit — PEAKSTATE generates a video
   // signal from internal state, with no input ports.
   category: 'sources',
-  schemaVersion: 1,
   inputs: [
     // CV inputs are cheap to add (mirrors LINES / SHAPEDRAMPS) — port id
     // == param id so the cross-domain CV bridge routes audio cv signals

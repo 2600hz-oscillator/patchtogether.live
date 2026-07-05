@@ -34,7 +34,6 @@ export const moog995Def: AudioModuleDef = {
   domain: 'audio',
   label: '995 atten',
   category: 'utilities',
-  schemaVersion: 1,
 
   inputs: [
     { id: 'in1', type: 'audio' },

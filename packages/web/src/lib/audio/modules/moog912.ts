@@ -115,7 +115,6 @@ export const moog912Def: AudioModuleDef = {
   domain: 'audio',
   label: '912 envelope follower',
   category: 'modulation',
-  schemaVersion: 1,
 
   inputs: [
     // The signal being analysed. Plain audio passthrough into the input gain;

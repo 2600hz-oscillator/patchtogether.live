@@ -84,7 +84,6 @@ const SOURCE_DEF: AudioModuleDef = {
   domain: 'audio',
   label: 'Leak Test Source',
   category: 'utilities',
-  schemaVersion: 1,
   inputs: [],
   outputs: [{ id: 'cv_out', type: 'cv' }],
   params: [],
@@ -106,7 +105,6 @@ const TARGET_DEF: AudioModuleDef = {
   domain: 'audio',
   label: 'Leak Test Target',
   category: 'utilities',
-  schemaVersion: 1,
   inputs: [
     { id: 'gain', type: 'cv', paramTarget: 'gain', cvScale: { mode: 'linear' } },
   ],

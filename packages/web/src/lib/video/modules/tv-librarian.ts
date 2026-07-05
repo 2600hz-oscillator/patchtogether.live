@@ -117,7 +117,6 @@ export const tvLibrarianDef: VideoModuleDef = {
   domain: 'video',
   label: 'tv librarian',
   category: 'sources',
-  schemaVersion: 1,
   // No hard cap — multiple "TVs" tuned to different countries is a legit
   // wall-of-screens use case (like VIDEOBOX).
   inputs: [

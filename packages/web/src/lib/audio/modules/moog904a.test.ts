@@ -28,7 +28,6 @@ describe('moog904aDef: module def shape', () => {
     expect(moog904aDef.type).toBe('moog904a');
     expect(moog904aDef.label).toBe('904a vcf');
     expect(moog904aDef.category).toBe('filters');
-    expect(moog904aDef.schemaVersion).toBe(1);
   });
 
   it('exposes the 904A inputs: audio + cutoff_cv + reso_cv', () => {

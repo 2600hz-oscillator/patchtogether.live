@@ -17,7 +17,6 @@ export const flipperDef: AudioModuleDef = {
   domain: 'audio',
   label: 'flipper',
   category: 'utilities',
-  schemaVersion: 1,
   card: 'FlipperCard',
 
   inputs: [

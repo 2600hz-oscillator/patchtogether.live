@@ -251,7 +251,6 @@ export const oneToNineDef: VideoModuleDef = {
   domain: 'video',
   label: 'one to nine',
   category: 'utilities',
-  schemaVersion: 1,
   inputs: [{ id: 'in', type: 'video' }],
   outputs: OUTPUT_IDS.map((id) => ({ id, type: 'video' as const })),
   params: [

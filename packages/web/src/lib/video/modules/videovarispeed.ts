@@ -211,7 +211,6 @@ export const videoVarispeedDef: VideoModuleDef = {
   domain: 'video',
   label: 'videovarispeed',
   category: 'sources',
-  schemaVersion: 1,
   // No cap — files are user-supplied; multiple cards is a legit use case.
   inputs: [
     // --- Gate inputs (rising-edge). Each routes through the standard CV

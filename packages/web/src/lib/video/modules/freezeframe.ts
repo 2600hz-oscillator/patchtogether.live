@@ -274,7 +274,6 @@ export const freezeframeDef: VideoModuleDef = {
   domain: 'video',
   label: 'freezeframe',
   category: 'effects',
-  schemaVersion: 1,
   inputs: [
     { id: 'video_in', type: 'video' },
     // Gate input. paramTarget routes the gate CV through the cross-domain

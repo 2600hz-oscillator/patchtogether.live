@@ -50,7 +50,6 @@ export const fourplexerDef: AudioModuleDef = {
   domain: 'audio',
   label: '4plexer',
   category: 'utility',
-  schemaVersion: 1,
   inputs: [
     // Signal inputs — audio OR cv route identically through the engine.
     { id: 'in1',   type: 'cv' },

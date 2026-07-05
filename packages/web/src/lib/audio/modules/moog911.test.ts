@@ -31,7 +31,6 @@ describe('moog911Def: module def shape', () => {
     expect(moog911Def.type).toBe('moog911');
     expect(moog911Def.label).toBe('911 eg');
     expect(moog911Def.category).toBe('modulation');
-    expect(moog911Def.schemaVersion).toBe(1);
   });
 
   it('exposes the 911 inputs: gate + t1_cv/t2_cv/esus_cv/t3_cv', () => {

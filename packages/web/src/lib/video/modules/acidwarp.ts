@@ -121,7 +121,6 @@ export const acidwarpDef: VideoModuleDef = {
   domain: 'video',
   label: 'acidwarp',
   category: 'sources',
-  schemaVersion: 1,
   // Fix E Phase 1 — acidwarp is the first module opted into the off-main-thread
   // render worker (flag-gated; default OFF → byte-identical to today). It's a
   // pure-GL plasma SOURCE with a DOM-free factory; its only inputs are CV

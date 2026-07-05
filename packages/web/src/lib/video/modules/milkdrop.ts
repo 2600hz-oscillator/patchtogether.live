@@ -184,7 +184,6 @@ export const milkdropDef: VideoModuleDef = {
   label: 'milkdrop',
   category: 'sources',
   card: 'MilkdropCard',
-  schemaVersion: 1,
   inputs: [
     // Audio the visuals react to (audio-typed input → cross-domain audio bridge).
     { id: 'audio', type: 'audio' },

@@ -103,7 +103,6 @@ export const lumaDef: VideoModuleDef = {
   domain: 'video',
   label: 'luma',
   category: 'effects',
-  schemaVersion: 1,
   inputs: [
     { id: 'in',              type: 'video' },
     { id: 'gamma',           type: 'cv', paramTarget: 'gamma', cvScale: { mode: 'linear' } },

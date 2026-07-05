@@ -171,7 +171,6 @@ export const mixmstrsDef: AudioModuleDef = {
   domain: 'audio',
   label: 'mixmstrs',
   category: 'utilities',
-  schemaVersion: 1,
   stereoPairs: [
     ...MIXMSTRS_CHANNELS.map((ch) => [`ch${ch}L`, `ch${ch}R`] as [string, string]),
     ['ret1L', 'ret1R'],

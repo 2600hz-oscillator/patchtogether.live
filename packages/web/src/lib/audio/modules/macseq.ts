@@ -39,8 +39,6 @@
 // and the persisted data path independent — no migration tax on existing
 // sequencer saves.
 //
-// schemaVersion: 1 — brand new module.
-//
 // Inputs:
 //   clock (gate): external clock; rising edges advance one step. Unpatched = internal BPM.
 //   play_cv / reset_cv (gate): shared transport CV (toggle isPlaying / reset to step 0).
@@ -248,7 +246,6 @@ export const macseqDef: AudioModuleDef = {
   domain: 'audio',
   label: 'macseq',
   category: 'modulation',
-  schemaVersion: 1,
 
   inputs: [
     // External clock input (optional). When patched, advances on rising

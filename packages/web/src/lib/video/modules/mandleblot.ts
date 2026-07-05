@@ -220,7 +220,6 @@ export const mandleblotDef: VideoModuleDef = {
   domain: 'video',
   label: 'mandleblot',
   category: 'video-effects',
-  schemaVersion: 1,
   inputs: [
     // zoom_cv: user explicitly asked for a CV input on zoom. Rotation
     // is knob-only by user direction (no rotation_cv).

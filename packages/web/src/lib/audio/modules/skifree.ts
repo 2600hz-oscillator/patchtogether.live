@@ -135,7 +135,6 @@ export const skifreeDef: AudioModuleDef = {
   domain: 'audio',
   label: 'skifree',
   category: 'games',
-  schemaVersion: 1,
   vizPassthrough: true,
   // Single-instance per rack: the bundle controller binds to ONE card
   // canvas + we publish a single window.__skifree bridge. A second card

@@ -117,7 +117,6 @@ export const videoboxDef: VideoModuleDef = {
   domain: 'video',
   label: 'videobox',
   category: 'sources',
-  schemaVersion: 1,
   // No cap — files are user-supplied + sized; multiple cards on one rack
   // are a legitimate "switcher" use case.
   inputs: [

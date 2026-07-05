@@ -204,7 +204,6 @@ export const shapedrampsDef: VideoModuleDef = {
   domain: 'video',
   label: 'shapedramps',
   category: 'sources',
-  schemaVersion: 1,
   inputs: [
     // CV inputs — port id == param id so the cross-domain CV bridge in
     // PatchEngine routes audio cv signals into VideoEngine.setParam.

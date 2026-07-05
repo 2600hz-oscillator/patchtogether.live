@@ -40,7 +40,6 @@ export const negativityDef: AudioModuleDef = {
   domain: 'audio',
   label: 'negativity',
   category: 'utilities',
-  schemaVersion: 1,
 
   inputs: [
     // The CV to invert. CV-typed (this is CV math, not audio).

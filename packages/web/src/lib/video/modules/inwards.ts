@@ -81,7 +81,6 @@ export const inwardsDef: VideoModuleDef = {
   domain: 'video',
   label: 'inwards',
   category: 'sources',
-  schemaVersion: 1,
   inputs: [
     // Per-param CV inputs. Mirrors the LINES CV pattern (PR-65): the
     // cross-domain CV bridge in PatchEngine routes audio-side cv signals

@@ -177,7 +177,6 @@ export const mapperDef: VideoModuleDef = {
   domain: 'video',
   label: 'mapper',
   category: 'effects',
-  schemaVersion: 1,
   inputs: [
     { id: 'video', type: 'video' },
     // The KEY/matte. Declared `video` so BOTH a colour video source AND a

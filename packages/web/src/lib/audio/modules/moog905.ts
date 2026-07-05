@@ -43,7 +43,6 @@ export const moog905Def: AudioModuleDef = {
   domain: 'audio',
   label: '905 spring reverb',
   category: 'processors',
-  schemaVersion: 1,
 
   inputs: [{ id: 'audio', type: 'audio' }],
   outputs: [{ id: 'audio', type: 'audio' }],

@@ -27,7 +27,6 @@ describe('moog905Def: module def shape', () => {
     expect(moog905Def.type).toBe('moog905');
     expect(moog905Def.label).toBe('905 spring reverb');
     expect(moog905Def.category).toBe('processors');
-    expect(moog905Def.schemaVersion).toBe(1);
     expect(moog905Def.domain).toBe('audio');
   });
 

@@ -35,7 +35,6 @@ import type { ControlFamily, ModuleDocs } from '$lib/graph/types';
 interface ContractDefLike {
   type: string;
   domain: string;
-  schemaVersion?: number;
   inputs?: readonly ContractPortLike[];
   outputs?: readonly ContractPortLike[];
   params?: readonly ContractParamLike[];
@@ -88,8 +87,8 @@ export function serializeModuleContract(def: ContractDefLike): string[] {
   const t = def.type;
   const lines: string[] = [];
 
-  // meta line: domain + schema + persistence-shaping flags (sorted flag order).
-  const meta = [`domain=${def.domain}`, `schema=${def.schemaVersion ?? 0}`];
+  // meta line: domain + persistence-shaping flags (sorted flag order).
+  const meta = [`domain=${def.domain}`];
   if (def.maxInstances !== undefined) meta.push(`maxInstances=${num(def.maxInstances)}`);
   if (def.exposesSequence) meta.push('exposesSequence');
   if (def.undeletable) meta.push('undeletable');

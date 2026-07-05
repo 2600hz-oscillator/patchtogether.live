@@ -43,7 +43,6 @@ export const moog992Def: AudioModuleDef = {
   domain: 'audio',
   label: '992 control voltage panel',
   category: 'modulation',
-  schemaVersion: 1,
 
   inputs: [
     // The four CV inputs being summed. PASSTHROUGH (the signal being routed,

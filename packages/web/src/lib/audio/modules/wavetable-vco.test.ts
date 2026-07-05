@@ -85,10 +85,4 @@ describe('wavetableVcoDef: module def shape', () => {
     expect(port!.cvScale).toBeUndefined();
   });
 
-  it('schemaVersion=3 with no migrate() (old-patch migrate logic removed — cleanup 2/5)', () => {
-    expect(wavetableVcoDef.schemaVersion).toBe(3);
-    // Per-module old-patch migrate() bodies were dropped; a fresh save stamps
-    // the current version so no migrate ever fires for new patches.
-    expect(wavetableVcoDef.migrate).toBeUndefined();
-  });
 });

@@ -52,7 +52,6 @@ export const rasterizeDef: AudioModuleDef = {
   domain: 'audio',
   label: 'rasterize',
   category: 'utilities',
-  schemaVersion: 1,
 
   inputs: [
     // The audio signal to rasterize.

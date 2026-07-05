@@ -114,7 +114,6 @@ export const illogicDef: AudioModuleDef = {
   domain: 'audio',
   label: 'illogic',
   category: 'utilities',
-  schemaVersion: 1,
 
   inputs: [
     { id: 'in1', type: 'cv' },

@@ -90,7 +90,6 @@ export const destructorDef: VideoModuleDef = {
   domain: 'video',
   label: 'destructor',
   category: 'effects',
-  schemaVersion: 1,
   inputs: [
     { id: 'in',     type: 'video' },
     // paramTarget == port.id keeps docs manifest in sync; bridge uses

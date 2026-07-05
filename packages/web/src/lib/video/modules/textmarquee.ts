@@ -111,7 +111,6 @@ export const textmarqueeDef: VideoModuleDef = {
   domain: 'video',
   label: 'textmarquee',
   category: 'sources',
-  schemaVersion: 1,
   inputs: [
     // Per-param CV — port id == param id (the cross-domain CV bridge routes
     // onto setParam(portId)). Each carries a linear cvScale so a bipolar ±1

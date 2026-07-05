@@ -9,8 +9,9 @@
 // path the .zip + auto-sync use), so the round-trip contract stays covered
 // without depending on removed topbar buttons.
 //
-// Format spec: phase-1-mvp.md lines 344-377 (PatchEnvelope: envelopeVersion=1,
-// savedAt, moduleSchemas, base64 Y.encodeStateAsUpdate).
+// Format spec: v2 LEAN envelope (cleanup 5/5): envelopeVersion=2, savedAt,
+// base64 Y.encodeStateAsUpdate — the per-module moduleSchemas map was dropped
+// with the migration substrate (parseEnvelope still tolerantly READS v1).
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from './_helpers';
@@ -20,7 +21,8 @@ test.describe.configure({ mode: 'parallel' });
 interface PatchEnvelope {
   envelopeVersion: number;
   savedAt: string;
-  moduleSchemas: Record<string, number>;
+  /** Dropped from v2 saves — asserted ABSENT below (legacy v1 field). */
+  moduleSchemas?: Record<string, number>;
   update: string;
 }
 
@@ -113,11 +115,11 @@ test('save-load: round-trip preserves nodes, edges, params, and sequencer step d
     };
   });
 
-  // Envelope shape sanity.
+  // Envelope shape sanity — the v2 LEAN format (no moduleSchemas).
   const env = result.env as PatchEnvelope;
-  expect(env.envelopeVersion).toBe(1);
+  expect(env.envelopeVersion).toBe(2);
   expect(typeof env.savedAt).toBe('string');
-  expect(env.moduleSchemas).toBeTruthy();
+  expect(env.moduleSchemas).toBeUndefined();
   expect(env.update).toMatch(/^[A-Za-z0-9+/=]+$/); // base64
 
   // Round-trip data integrity.
@@ -164,13 +166,11 @@ test('save-load: __persistence.save() emits a valid PatchEnvelope JSON', async (
     return w.__persistence.save();
   })) as PatchEnvelope;
 
-  expect(env.envelopeVersion).toBe(1);
+  expect(env.envelopeVersion).toBe(2);
   expect(typeof env.savedAt).toBe('string');
   expect(new Date(env.savedAt).getTime()).toBeGreaterThan(0); // valid ISO date
-  expect(env.moduleSchemas).toBeTruthy();
-  // Voice demo registers all 10 module types — schemas record at least these.
-  expect(env.moduleSchemas['sequencer']).toBeGreaterThanOrEqual(1);
-  expect(env.moduleSchemas['analogVco']).toBeGreaterThanOrEqual(1);
+  // v2 lean format: the moduleSchemas map is no longer stamped.
+  expect(env.moduleSchemas).toBeUndefined();
   // base64 of a non-trivial Yjs update
   expect(env.update.length).toBeGreaterThan(100);
   expect(env.update).toMatch(/^[A-Za-z0-9+/=]+$/);

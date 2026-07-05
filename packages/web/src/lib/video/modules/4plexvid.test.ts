@@ -19,7 +19,6 @@ describe('fourPlexVidDef — module def shape', () => {
     expect(fourPlexVidDef.domain).toBe('video');
     expect(fourPlexVidDef.label).toBe('4plexvid');
     expect(fourPlexVidDef.category).toBe('utilities');
-    expect(fourPlexVidDef.schemaVersion).toBe(1);
   });
 
   it('declares 4 video inputs + 4 gate (cv) inputs', () => {

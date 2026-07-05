@@ -33,5 +33,4 @@ export const controlSurfaceDef: MetaModuleDef = {
   inputs: [],
   outputs: [],
   params: [],
-  schemaVersion: 1,
 };

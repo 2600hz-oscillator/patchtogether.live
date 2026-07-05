@@ -28,7 +28,6 @@ describe('moogCp3Def: module def shape', () => {
     expect(moogCp3Def.type).toBe('moogCp3');
     expect(moogCp3Def.label).toBe('cp3 mixer');
     expect(moogCp3Def.category).toBe('utilities');
-    expect(moogCp3Def.schemaVersion).toBe(1);
   });
 
   it('exposes the five inputs: in1..in4 + ext4', () => {

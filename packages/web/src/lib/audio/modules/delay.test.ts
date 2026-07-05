@@ -16,10 +16,6 @@ describe('delay: module-def shape', () => {
     expect(delayDef.category).toBe('effects');
   });
 
-  it('schemaVersion is 1', () => {
-    expect(delayDef.schemaVersion).toBe(1);
-  });
-
   it('exposes audio in/out plus a time CV input', () => {
     expect(delayDef.inputs.map((p) => p.id).sort()).toEqual(['audio', 'time']);
     expect(delayDef.outputs.map((p) => p.id)).toEqual(['audio']);

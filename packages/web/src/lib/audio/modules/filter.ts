@@ -41,7 +41,6 @@ export const filterDef: AudioModuleDef = {
   domain: 'audio',
   label: 'filter',
   category: 'filters',
-  schemaVersion: 1,
   inputs: [
     { id: 'audio',  type: 'audio' },
     // CV inputs are routed through the channel merger (channels 1, 2)

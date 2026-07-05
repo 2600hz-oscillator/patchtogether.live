@@ -669,7 +669,6 @@ export const wavesculptDef: AudioModuleDef = {
   // pulls wavesculpt.ts into the WebGL content-hash basis + is cross-checked
   // against the card's getContext('webgl2') by the §12 coverage guard.
   rendersWebGL: true,
-  schemaVersion: 1,
 
   inputs: [
     { id: 'gate1',     type: 'gate' },

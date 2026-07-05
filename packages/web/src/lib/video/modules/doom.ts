@@ -284,7 +284,6 @@ export const doomDef: VideoModuleDef = {
   // a pre-#353 DOOM save now loses its CV gate cables on load (they no longer
   // resolve a port and are dropped by validateEdge) — an accepted one-time
   // break of old patches. The version number is retained as a historical marker.
-  schemaVersion: 2,
   // ONE DOOM NODE per rack — and it stays 1. The committed slice-3 model
   // is "one shared node, N per-peer runtimes": the host spawns the single
   // node; every other peer sees it via Yjs sync and JOINS it (claims a slot

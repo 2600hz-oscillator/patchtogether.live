@@ -67,7 +67,6 @@ export const colorizerDef: VideoModuleDef = {
   domain: 'video',
   label: 'colorizer',
   category: 'effects',
-  schemaVersion: 1,
   inputs: [
     { id: 'in',    type: 'mono-video' },
     // Per-channel CV inputs — the cross-domain bridge writes these

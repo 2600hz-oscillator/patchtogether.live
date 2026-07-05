@@ -18,7 +18,6 @@ describe('videoVarispeedDef — module def shape', () => {
     expect(videoVarispeedDef.domain).toBe('video');
     expect(videoVarispeedDef.label).toBe('videovarispeed');
     expect(videoVarispeedDef.category).toBe('sources');
-    expect(videoVarispeedDef.schemaVersion).toBe(1);
   });
 
   it('declares the transport gate inputs (start/pause/reset/loop) as rising-edge gates', () => {

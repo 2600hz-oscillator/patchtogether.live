@@ -12,8 +12,6 @@
 // Per-step state shape: 4 tracks x 16 cells, each {on, midi: number | null}.
 // midi === null means the track-root pitch falls through.
 //
-// schemaVersion: 1 — brand-new module, no migration.
-//
 // Inputs:
 //   clock (gate): external clock; rising edges advance one step. Unpatched = internal BPM.
 //
@@ -200,7 +198,6 @@ export const drumseqzDef: AudioModuleDef = {
   domain: 'audio',
   label: 'drumseqz',
   category: 'modulation',
-  schemaVersion: 1,
 
   inputs: [
     { id: 'clock', type: 'gate' },

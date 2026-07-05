@@ -82,7 +82,6 @@ describe('moog984Def: module def shape', () => {
     expect(moog984Def.type).toBe('moog984');
     expect(moog984Def.label).toBe('984 matrix');
     expect(moog984Def.category).toBe('utilities');
-    expect(moog984Def.schemaVersion).toBe(1);
   });
 
   it('is in the Moog System 35/55 Clones palette bucket', () => {

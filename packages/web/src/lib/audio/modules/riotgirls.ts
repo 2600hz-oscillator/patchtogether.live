@@ -321,7 +321,6 @@ export const riotgirlsDef: AudioModuleDef = {
   domain: 'audio',
   label: 'riotgirls',
   category: 'sources',
-  schemaVersion: 1,
 
   inputs: INPUTS,
   outputs: [

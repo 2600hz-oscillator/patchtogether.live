@@ -162,7 +162,6 @@ export const cubeDef: AudioModuleDef = {
   // cube.ts into the WebGL content-hash basis + is cross-checked against the
   // card's getContext('webgl2') by the §12 coverage guard.
   rendersWebGL: true,
-  schemaVersion: 1,
 
   inputs: [
     // V/oct pitch — the only audio-rate MONO node input the worklet reads directly.

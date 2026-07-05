@@ -36,7 +36,6 @@ export const slewSwitchDef: AudioModuleDef = {
   domain: 'audio',
   label: 'slewswitch',
   category: 'utility',
-  schemaVersion: 1,
   inputs: [
     { id: 'in1',        type: 'cv' },
     { id: 'in2',        type: 'cv' },

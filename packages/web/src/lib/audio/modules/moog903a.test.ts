@@ -25,7 +25,6 @@ describe('moog903aDef: module def shape', () => {
     expect(moog903aDef.type).toBe('moog903a');
     expect(moog903aDef.label).toBe('903a random signal generator');
     expect(moog903aDef.category).toBe('sources');
-    expect(moog903aDef.schemaVersion).toBe(1);
   });
 
   it('lives in the Moog System 35/55 Clones palette bucket and uses the Moog903aCard', () => {

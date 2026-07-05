@@ -842,7 +842,6 @@ export const backdraftDef: VideoModuleDef = {
   domain: 'video',
   label: 'backdraft',
   category: 'effects',
-  schemaVersion: 1,
   inputs: [
     { id: 'in_a',    type: 'video' },
     { id: 'in_b',    type: 'video' },

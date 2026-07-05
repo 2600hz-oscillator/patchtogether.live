@@ -262,7 +262,6 @@ export const midiLaneDef: AudioModuleDef = {
   domain: 'audio',
   label: 'midi lane',
   category: 'sources',
-  schemaVersion: 1,
 
   inputs: [],
   outputs: [

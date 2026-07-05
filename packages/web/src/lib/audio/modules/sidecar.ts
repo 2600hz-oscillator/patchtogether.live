@@ -75,7 +75,6 @@ export const sidecarDef: AudioModuleDef = {
   domain: 'audio',
   label: 'sidecar',
   category: 'processors',
-  schemaVersion: 1,
   stereoPairs: [['audio_l_in', 'audio_r_in'], ['sc_l_in', 'sc_r_in'], ['audio_l_out', 'audio_r_out']],
   ossAttribution: {
     author: 'Algorithm: Giannoulis-Massberg-Reiss 2012 JAES; Faust co.compressor_stereo as reference',

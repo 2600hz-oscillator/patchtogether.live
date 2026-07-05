@@ -28,7 +28,6 @@ describe('moog902Def: module def shape', () => {
     expect(moog902Def.type).toBe('moog902');
     expect(moog902Def.label).toBe('902 vca');
     expect(moog902Def.category).toBe('utilities');
-    expect(moog902Def.schemaVersion).toBe(1);
   });
 
   it('exposes the 902 inputs: audio (SIGNAL) + cv + fcv summing CONTROL INPUTS', () => {

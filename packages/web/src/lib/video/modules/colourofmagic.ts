@@ -370,7 +370,6 @@ export const colourofmagicDef: VideoModuleDef = {
   domain: 'video',
   label: 'colour of magic',
   category: 'effects',
-  schemaVersion: 1,
   renderLocus: 'main',
   inputs: [
     { id: 'in', type: 'video' },

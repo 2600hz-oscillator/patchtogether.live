@@ -104,7 +104,6 @@ export const peertubeDef: VideoModuleDef = {
   domain: 'video',
   label: 'peertube',
   category: 'sources',
-  schemaVersion: 1,
   // No hard cap — a wall of federated screens is a legit use case (like VIDEOBOX
   // / TV-LIBRARIAN).
   inputs: [

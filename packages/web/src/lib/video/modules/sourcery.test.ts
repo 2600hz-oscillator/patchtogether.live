@@ -16,7 +16,6 @@ describe('sourceryDef — module shape', () => {
     expect(sourceryDef.domain).toBe('video');
     expect(sourceryDef.label).toBe('sourcery');
     expect(sourceryDef.label).toBe(sourceryDef.label.toLowerCase());
-    expect(sourceryDef.schemaVersion).toBe(1);
   });
 
   it('declares exactly two video inputs (a = top, b = bottom)', () => {

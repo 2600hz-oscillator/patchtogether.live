@@ -431,7 +431,6 @@ export const cellshadeDef: VideoModuleDef = {
   domain: 'video',
   label: 'cellshade',
   category: 'effects',
-  schemaVersion: 1,
   inputs: [
     { id: 'in', type: 'video' },
     // Per-param CV inputs — port id == param id (the cross-domain CV bridge

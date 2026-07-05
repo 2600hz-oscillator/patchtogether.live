@@ -178,7 +178,6 @@ export const gibribbonDef: VideoModuleDef = {
   domain: 'video',
   label: 'gibribbon',
   category: 'sources',
-  schemaVersion: 1,
   inputs: [
     // Event-generation modulation (cv OR audio OR gate via modsignal).
     { id: 'cv1', type: 'modsignal' as const, paramTarget: 'cv1', cvScale: { mode: 'linear' as const } },

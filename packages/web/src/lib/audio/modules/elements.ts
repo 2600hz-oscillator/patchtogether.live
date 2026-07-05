@@ -382,7 +382,6 @@ export const elementsDef: AudioModuleDef = {
   domain: 'audio',
   label: 'elements',
   category: 'sources',
-  schemaVersion: 1,
   stereoPairs: [['main', 'aux']],
   ossAttribution: { author: 'Émilie Gillet' },
 

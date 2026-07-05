@@ -92,7 +92,6 @@ describe('contract-signature — canonical + change-detecting', () => {
   const base = {
     type: 'fixturemod',
     domain: 'audio',
-    schemaVersion: 1,
     inputs: [
       { id: 'in_a', type: 'audio' },
       { id: 'gate', type: 'gate', edge: 'trigger' as const },

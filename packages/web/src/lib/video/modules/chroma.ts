@@ -146,7 +146,6 @@ export const chromaDef: VideoModuleDef = {
   domain: 'video',
   label: 'chroma',
   category: 'effects',
-  schemaVersion: 1,
   inputs: [
     { id: 'in',         type: 'video' },
     { id: 'hue',        type: 'cv', paramTarget: 'hue', cvScale: { mode: 'linear' } },
