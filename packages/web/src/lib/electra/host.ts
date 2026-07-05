@@ -27,6 +27,7 @@ import {
 } from '$lib/graph/electra-control';
 import { resolveSurfaceParam } from '$lib/graph/control-surface-params';
 import { resolveControlColor } from '$lib/graph/control-color';
+import { createCcCommit, type CcCommit } from '$lib/ui/controls/cc-commit';
 import type { AutoconfigHost } from './autoconfig';
 import type { PresetGenInput, GenParamDef, SurfaceBinding } from './preset';
 
@@ -141,6 +142,53 @@ export function buildLiveHost(args: {
   const { getEngine, luaSource } = args;
   const tlId = () => findSingleton('timelorde');
 
+  // ── Streaming-CC coalescing (the MIDI-CC render-starvation fix) ──
+  //
+  // The physical Electra One does NOT go through midi-learn: autoconfig's
+  // handleCc calls host.writeParam per inbound CC. The old body was one bare
+  // proxy write PER MESSAGE — one Y.Doc transaction each, detonating the
+  // full snapshot/flowNodes/reconciler/card-pump cascade at 100–300 msg/s
+  // and starving the video rAF loop (owner report: "twisting Electra knobs
+  // murders video rendering"; gamepad CV was fine because it never writes
+  // the store).
+  //
+  // One pump per (moduleId, paramId): per message the value is pushed
+  // TRANSIENTLY into the engine (handle-local write — the FeedbackPump's
+  // readParamValue reads engine.readParam, so echo suppression + value
+  // feedback see the live value immediately), and the durable store write
+  // is coalesced (leading edge + ≥150 ms gaps + 200 ms settle flush, so
+  // collab peers / persistence always converge on the final knob position).
+  //
+  // The COMMIT leg PRESERVES the original deliberately NON-UNDOABLE bare
+  // proxy write — never LOCAL_ORIGIN (a tracked write would flood the undo
+  // stack over a session of hardware twiddling; see the writeParam comment).
+  const ccPumps = new Map<string, CcCommit>();
+  function ccPumpFor(moduleId: string, paramId: string): CcCommit {
+    const key = `${moduleId}:${paramId}`;
+    let pump = ccPumps.get(key);
+    if (!pump) {
+      pump = createCcCommit({
+        commit: (value) => {
+          const live = patch.nodes[moduleId];
+          if (!live) return;
+          live.params[paramId] = value; // guard:allow-raw-write — streaming hardware CC
+        },
+        transient: (value) => {
+          const e = getEngine();
+          const node = patch.nodes[moduleId] as ModuleNode | undefined;
+          if (!e || !node) return;
+          try {
+            e.setParam(node, paramId, value);
+          } catch {
+            /* no engine mapping — the settled commit still converges */
+          }
+        },
+      });
+      ccPumps.set(key, pump);
+    }
+    return pump;
+  }
+
   return {
     buildGenInput: buildLiveGenInput,
 
@@ -186,12 +234,12 @@ export function buildLiveHost(args: {
     },
 
     writeParam(moduleId, paramId, value) {
-      const live = patch.nodes[moduleId];
-      if (!live) return;
       // Driven by streaming Electra One hardware CC (MIDI-rate); a tracked
       // LOCAL_ORIGIN write per CC would flood the undo stack. Synced via the
-      // bare proxy transact, deliberately non-undoable.
-      live.params[paramId] = value; // guard:allow-raw-write — streaming hardware CC
+      // bare proxy transact, deliberately non-undoable — now COALESCED
+      // through the per-(module,param) CC pump (transient engine push per
+      // message; the bare store write at ≤~7/s + a trailing settle flush).
+      ccPumpFor(moduleId, paramId).push(value);
     },
 
     hasExternalClock() {

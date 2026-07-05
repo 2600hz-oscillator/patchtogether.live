@@ -30,6 +30,9 @@ import {
   type MidiBinding,
 } from '$lib/midi/midi-learn.svelte';
 import { patch } from '$lib/graph/store';
+import { createCcCommit, type CcCommit } from './cc-commit';
+import { useEngine, type EngineContext } from '$lib/audio/engine-context';
+import type { ModuleNode } from '$lib/graph/types';
 import {
   listControlSurfaces,
   readSurfaceData,
@@ -58,8 +61,16 @@ export interface MidiAssignableArgs {
   /** Continuous range — the CC's 0..127 maps to [min,max]. CC only. */
   min?: number;
   max?: number;
-  /** The value setter (CC only). */
+  /** The value setter (CC only). Called at COALESCED cadence for streaming
+   *  CC input (see register()): the store commit rides createCcCommit, so a
+   *  250 msg/s hardware twist lands ~7 durable writes/s + a settled final
+   *  value instead of 250 full snapshot/reconciler cascades per second. */
   onchange?: (v: number) => void;
+  /** Per-MESSAGE transient visual hook (CC only): called with the scaled
+   *  value on EVERY inbound CC so the control keeps tracking in real time
+   *  while store commits are coalesced. Knob/Fader feed their local
+   *  liveValue from this (the drag-guard pattern). */
+  onTransient?: (v: number) => void;
   // ── kind:'note' ──
   /** Driven on every matching NOTE: true on note-on, false on note-off. NOTE only. */
   onGate?: (high: boolean) => void;
@@ -101,6 +112,11 @@ export interface MidiAssignable {
   register(): void;
   /** Drop the live setter (call onDestroy). Cancels an in-flight learn for this control. */
   unregister(): void;
+  /** True while a CC stream is actively driving this control (between the
+   *  first message and the trailing settle commit). Controls gate their
+   *  store→visual follow on this — mirroring the `dragging` guard — so the
+   *  knob never snaps back to a stale store value mid-stream. */
+  readonly ccActive: boolean;
 }
 
 /** Build the shared reactive MIDI-assign block for one control. Call inside a
@@ -111,6 +127,67 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
   // Local bump kept for the legacy click-handler path; the bindingsRune() read
   // below is what makes an engine-completed learn (injected CC/NOTE) reactive.
   let bindingTick = $state(0);
+
+  // ── Streaming-CC coalescing (the MIDI-CC render-starvation fix) ──
+  //
+  // The setter registered with midi-learn used to be the RAW card onchange:
+  // every CC message = one ydoc.transact = one full snapshot/flowNodes/
+  // reconciler cascade — at 100–300 msg/s (an Electra encoder twist) that
+  // starves the video rAF loop. The rAF coalescer (createDragCommit) only
+  // ever protected the pointer-drag path; MIDI bypassed it entirely.
+  //
+  // The CC dispatch now rides a createCcCommit pump: per message it pushes
+  // the value TRANSIENTLY (engine handle write + the consumer's onTransient
+  // visual hook — both zero-Y.Doc, the gamepad/#719 pattern) and coalesces
+  // the durable onchange commit (leading edge + ≥150 ms gaps + a 200 ms
+  // trailing settle flush, so the final value always converges for collab
+  // peers / persistence / undo). Undo stays LOCAL_ORIGIN via the card's own
+  // onchange; store.ts's captureTimeout (500 ms) merges a twist into ONE
+  // undo item. NOTE-path gate setters are NOT coalesced — gates are edges.
+  //
+  // Engine access: makeMidiAssignable runs during component init, so Svelte
+  // context is available; non-component callers (unit tests) fall back to a
+  // null engine (transient push disabled, commits still coalesce).
+  let engineCtx: EngineContext = { get: () => null };
+  try {
+    engineCtx = useEngine();
+  } catch {
+    /* outside component init — no engine context */
+  }
+
+  let ccActive = $state(false);
+  let pump: CcCommit | null = null;
+
+  function pushTransient(v: number): void {
+    args.onTransient?.(v);
+    const m = args.moduleId, p = args.paramId;
+    if (!m || !p) return;
+    const engine = engineCtx.get();
+    if (!engine) return;
+    const node = patch.nodes[m] as ModuleNode | undefined;
+    if (!node) return;
+    try {
+      // Params-backed modules: the same handle-local write the reconciler
+      // makes, so the post-settle reconciler re-push of the identical value
+      // is idempotent. TOYBOX layer/combine-qualified ids land on its
+      // render-local clone (toybox.ts setParam). Unknown params/domains are
+      // harmless — the settled commit still converges everything.
+      engine.setParam(node, p, v);
+    } catch {
+      /* no engine mapping for this param — durable commit still lands */
+    }
+  }
+
+  function ccPump(): CcCommit {
+    if (!pump) {
+      pump = createCcCommit({
+        commit: (v) => args.onchange?.(v),
+        transient: (v) => pushTransient(v),
+        onActiveChange: (a) => { ccActive = a; },
+      });
+    }
+    return pump;
+  }
 
   let surfaces = $state<SurfaceEntry[]>([]);
   let electras = $state<ElectraEntry[]>([]);
@@ -163,7 +240,9 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
     if (kind === 'note') {
       registerGateSetter(m, p, { onGate: (h) => args.onGate?.(h) });
     } else {
-      registerSetter(m, p, { min: args.min ?? 0, max: args.max ?? 1, onchange: (v) => args.onchange?.(v) });
+      // Coalesced: dispatch → pump.push (transient per message, durable
+      // commit coalesced) — never the raw onchange (the CC-storm bug).
+      registerSetter(m, p, { min: args.min ?? 0, max: args.max ?? 1, onchange: (v) => ccPump().push(v) });
     }
   }
 
@@ -172,6 +251,10 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
     if (!m || !p) return;
     if (kind === 'note') unregisterGateSetter(m, p);
     else unregisterSetter(m, p);
+    // Unconditional flush: a value the stream already applied transiently
+    // must reach the store even if the card unmounts mid-twist.
+    pump?.dispose();
+    pump = null;
     if (learning) cancelLearn();
   }
 
@@ -181,7 +264,10 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
     if (kind === 'note') {
       void beginNoteLearn({ moduleId: m, paramId: p, onGate: (h) => args.onGate?.(h) });
     } else {
-      void beginLearn({ moduleId: m, paramId: p, min: args.min ?? 0, max: args.max ?? 1, onchange: (v) => args.onchange?.(v) });
+      // beginLearn re-registers the setter (registerSetter inside) — route it
+      // through the SAME pump or a completed learn would silently restore the
+      // raw uncoalesced onchange until the next remount.
+      void beginLearn({ moduleId: m, paramId: p, min: args.min ?? 0, max: args.max ?? 1, onchange: (v) => ccPump().push(v) });
     }
     bindingTick++;
   }
@@ -228,6 +314,7 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
     clearElectra,
     register,
     unregister,
+    get ccActive() { return ccActive; },
   };
 }
 

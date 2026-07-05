@@ -43,6 +43,7 @@
     SETTINGS_MAP_KEY,
     type PatchEnvelope,
   } from '$lib/graph/persistence';
+  import { flushAllCcCommits } from '$lib/ui/controls/cc-commit';
   import {
     makePerformanceBundle,
     validateBundle,
@@ -386,8 +387,13 @@
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__persistence = {
         makeEnvelope,
-        // Wrap the bound versions so tests can call without args.
-        save: () => makeEnvelope(ydoc),
+        // Wrap the bound versions so tests can call without args. Flush any
+        // in-flight coalesced CC commits first so a save mid-twist captures
+        // the latest value, never a lagging one.
+        save: () => {
+          flushAllCcCommits();
+          return makeEnvelope(ydoc);
+        },
         load: (env: unknown) => {
           // Caller passes a parsed envelope object (or its JSON form).
           if (typeof env === 'string') {
@@ -1165,6 +1171,9 @@
   function exportPatchJson() {
     error = null;
     try {
+      // A save taken during/just after a hardware CC twist must capture the
+      // settled value — flush the coalesced CC pumps before snapshotting.
+      flushAllCcCommits();
       const env = makeEnvelope(ydoc);
       downloadEnvelope(env, DEFAULT_FILENAME);
       trace(
@@ -1306,6 +1315,9 @@
    *  reads the live store + resolves loaded video bytes. Exposed for the e2e
    *  hook so the round-trip test can capture the bytes without a download. */
   async function buildPerformanceZipBytes(): Promise<Uint8Array> {
+    // A zip export mid-twist must capture the settled knob values (the CC
+    // coalescer defers store commits) — flush before snapshotting.
+    flushAllCcCommits();
     // Resolve loaded video bytes across all VIDEOBOX cards FIRST (registry), so
     // we know which nodes carry out-of-band video before snapshotting the graph.
     const resolved = await resolveAllVideoExports();

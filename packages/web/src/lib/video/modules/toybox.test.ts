@@ -572,3 +572,125 @@ describe('FEEDBACK fragment shader (the stateful op program)', () => {
     expect(tunnel).not.toContain('0.10 + 0.35 * src.a');
   });
 });
+
+// ---------------------------------------------------------------------------
+// TRANSIENT KNOB/CC setParam — the MIDI-CC render-starvation fix.
+//
+// TOYBOX layer/material/combine params have NO reconciler push path (they live
+// in node.data; the reconciler diffs node.params only) — historically they
+// reached the render ONLY via the per-message store write, which is exactly
+// the write storm the CC coalescer (cc-commit.ts) removes. handle.setParam now
+// also accepts the layer-qualified ('layer:<i>:<param>') / combine
+// ('combine:<op>:<param>') / bare-material ids the card's knobs pass to
+// MIDI-learn + control surfaces, applied to the RENDER-LOCAL clone exactly
+// like applyCvRoute (the #719 invariant: per-message writes never touch the
+// Y.Doc). The settled store commit then flips the liveLayers change key and
+// re-syncs the clone — so the store re-apply is idempotent with the transient.
+// ---------------------------------------------------------------------------
+
+const TRID = 'toybox-transient-param';
+
+describe('TOYBOX transient knob/CC setParam (layer-qualified) — render-local only', () => {
+  beforeAll(() => {
+    vi.stubGlobal('fetch', async () =>
+      ({ ok: true, status: 200, statusText: 'OK', json: async () => ({ shaders: [], gen: [], models: [], presets: [] }) }) as unknown as Response,
+    );
+  });
+  afterAll(() => { vi.unstubAllGlobals(); });
+
+  afterEach(() => {
+    delete patch.nodes[TRID];
+    for (const id of Object.keys(patch.edges)) delete patch.edges[id];
+  });
+
+  function seedObjToybox(): void {
+    patch.nodes[TRID] = {
+      id: TRID,
+      type: 'toybox',
+      domain: 'video',
+      position: { x: 0, y: 0 },
+      params: {},
+      data: {
+        layers: [
+          { kind: 'obj', contentId: null, params: {}, material: { modelId: 'cube', rotX: 0.3, rotY: 0.6, scale: 1 } },
+        ],
+        combine: makeDefaultCombineGraph(),
+      },
+    } as unknown as ModuleNode;
+  }
+
+  type LiveModulated = {
+    layers: Array<{ material?: Record<string, number> }>;
+    combine: { nodes: Array<{ id: string; params?: Record<string, number> }> };
+  };
+
+  it('a 250-message layer:0:rotX stream drives the clone per message with ZERO Y.Doc updates', () => {
+    seedObjToybox();
+    const storedBefore = ((patch.nodes[TRID]!.data as { layers: Array<{ material: Record<string, number> }> })
+      .layers[0]!.material.rotX);
+    expect(storedBefore).toBe(0.3);
+
+    let docUpdates = 0;
+    const onUpdate = () => { docUpdates++; };
+    ydoc.on('update', onUpdate);
+    let lastSent = 0;
+    try {
+      const handle = toyboxDef.factory(makeToyboxCtx(), patch.nodes[TRID] as ModuleNode);
+      for (let i = 0; i < 250; i++) {
+        lastSent = -3.14159 + (i / 249) * 6.28318;
+        handle.setParam('layer:0:rotX', lastSent);
+      }
+      // The ENGINE sees the last transient value (the render pulls the clone)…
+      const lm = handle.read?.('liveModulated') as LiveModulated;
+      expect(lm.layers[0]!.material!.rotX).toBeCloseTo(lastSent, 6);
+      handle.dispose();
+    } finally {
+      ydoc.off('update', onUpdate);
+    }
+
+    // …while the SYNCED store value + Y.Doc are untouched (the durable value
+    // lands via the coalesced settle commit, not here).
+    const storedAfter = ((patch.nodes[TRID]!.data as { layers: Array<{ material: Record<string, number> }> })
+      .layers[0]!.material.rotX);
+    expect(storedAfter).toBe(0.3);
+    expect(docUpdates).toBe(0);
+  });
+
+  it('the settled store commit re-syncs the clone (idempotent with the transient value)', () => {
+    seedObjToybox();
+    const handle = toyboxDef.factory(makeToyboxCtx(), patch.nodes[TRID] as ModuleNode);
+    handle.setParam('layer:0:rotX', 1.25);
+    let lm = handle.read?.('liveModulated') as LiveModulated;
+    expect(lm.layers[0]!.material!.rotX).toBeCloseTo(1.25, 6);
+
+    // Simulate the trailing settle commit: the SAME value lands in the store
+    // (what setLayerMaterialField does at commit time).
+    (patch.nodes[TRID]!.data as { layers: Array<{ material: Record<string, number> }> })
+      .layers[0]!.material.rotX = 1.25;
+
+    // The change-key flip re-clones from the store — same value, no snap.
+    lm = handle.read?.('liveModulated') as LiveModulated;
+    expect(lm.layers[0]!.material!.rotX).toBeCloseTo(1.25, 6);
+    handle.dispose();
+  });
+
+  it('combine:<op>:<param> + bare material ids resolve; unknown ids are ignored', () => {
+    seedObjToybox();
+    const handle = toyboxDef.factory(makeToyboxCtx(), patch.nodes[TRID] as ModuleNode);
+
+    // Combine op param (the default graph ships op1 with an `amount`).
+    handle.setParam('combine:op1:amount', 0.9);
+    let lm = handle.read?.('liveModulated') as LiveModulated;
+    expect(lm.combine.nodes.find((n) => n.id === 'op1')!.params!.amount).toBeCloseTo(0.9, 6);
+
+    // Bare material id (legacy binding shape) → first OBJ layer.
+    handle.setParam('scale', 2.5);
+    lm = handle.read?.('liveModulated') as LiveModulated;
+    expect(lm.layers[0]!.material!.scale).toBeCloseTo(2.5, 6);
+
+    // Unknown / unresolvable ids are silently ignored (as before).
+    expect(() => handle.setParam('layer:9:rotX', 1)).not.toThrow();
+    expect(() => handle.setParam('not-a-param', 1)).not.toThrow();
+    handle.dispose();
+  });
+});

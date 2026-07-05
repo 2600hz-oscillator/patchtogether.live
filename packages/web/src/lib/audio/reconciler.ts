@@ -43,6 +43,12 @@ export function attachReconciler(
 
   const appliedNodes = new Map<string, ModuleNode>();
   const appliedEdges = new Map<string, Edge>();
+  // The LIVE data reference each applied node was last cloned from. The
+  // snapshot leaks the live SyncedStore proxy as `node.data` (snapshot.ts
+  // `data: n.data`), whose identity is STABLE for a given node — so an
+  // unchanged reference means the data object was not wholly replaced and
+  // the existing clone can be kept. See step 5 for why this is safe.
+  const appliedDataRefs = new Map<string, unknown>();
 
   let latest: PatchSnapshot = bus.current();
   let scheduled = false;
@@ -125,6 +131,7 @@ export function attachReconciler(
       const prev = appliedNodes.get(id)!;
       engine.removeNode(prev);
       appliedNodes.delete(id);
+      appliedDataRefs.delete(id);
     }
 
     // 3. Added nodes (await — async factories). Snapshot is sorted; we
@@ -135,6 +142,7 @@ export function attachReconciler(
       if (appliedNodes.has(node.id)) continue;
       await engine.addNode(node);
       appliedNodes.set(node.id, snapshotNode(node));
+      appliedDataRefs.set(node.id, node.data);
     }
 
     // 4. Added edges. Skip edges whose source or target is a meta node —
@@ -170,13 +178,41 @@ export function attachReconciler(
       const prev = appliedNodes.get(node.id);
       if (!prev) continue;
       const paramKeys = Object.keys(node.params).sort();
+      let paramsChanged = false;
       for (const paramId of paramKeys) {
         const value = node.params[paramId];
         if (prev.params[paramId] !== value) {
           engine.setParam(node, paramId, value);
+          paramsChanged = true;
         }
       }
-      appliedNodes.set(node.id, snapshotNode(node));
+      // Refresh the applied snapshot WITHOUT the old unconditional
+      // snapshotNode() deep-clone. JSON round-tripping EVERY node's data
+      // blob (sequencer 128-step arrays, toybox base64 image layers) on
+      // EVERY pass was the rank-1 per-transaction amplifier under
+      // high-rate param writes (the MIDI-CC render-starvation fix) — a
+      // param-only diff never needs the data re-clone.
+      //
+      // `node.data` in the snapshot is the LIVE SyncedStore proxy
+      // (snapshot.ts `data: n.data`) with a stable identity per node: a
+      // CHANGED identity means the whole data object was replaced → re-
+      // clone; an UNCHANGED identity keeps the existing clone. In-place
+      // data mutations therefore no longer refresh the clone — safe,
+      // because this reconciler never diffs `data`: `prev` is only read
+      // for the params diff above and by removeNode/edgeDomain (id/domain
+      // only). If proxy identity were ever unstable this degrades to the
+      // old always-clone behavior, never to a missed update.
+      if (appliedDataRefs.get(node.id) !== node.data) {
+        appliedNodes.set(node.id, snapshotNode(node));
+        appliedDataRefs.set(node.id, node.data);
+      } else if (
+        paramsChanged
+        || paramKeys.length !== Object.keys(prev.params).length
+      ) {
+        // Keep the params snapshot exact (including key removals) so the
+        // next pass diffs against what the engine actually has.
+        prev.params = { ...node.params };
+      }
     }
   }
 
