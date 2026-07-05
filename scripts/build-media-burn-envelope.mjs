@@ -57,7 +57,10 @@ const cadillacX = xR + CADILLAC_SPEED * SECONDS_UNTIL_HIT; // 1400
 const cadillacY = BASE_Y + (ROWS * CARD_H) / 2 - 47; // center on middle row; -47 = CAR_H/2
 
 // -- Picturebox schemaVersion (mirrors packages/web/src/lib/video/modules/picturebox.ts).
-const PICTUREBOX_SCHEMA_VERSION = 2;
+//    Current def is v4; the tile data shape (imageBytes-only) matches a fresh
+//    v4 "choose image" node, so re-exporting at the current stamp needs no
+//    data transform. (Per-module old-patch migrate() was dropped in cleanup 2/5.)
+const PICTUREBOX_SCHEMA_VERSION = 4;
 // -- Cadillac schemaVersion.
 const CADILLAC_SCHEMA_VERSION = 1;
 

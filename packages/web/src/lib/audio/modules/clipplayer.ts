@@ -65,18 +65,6 @@ export const clipplayerDef: AudioModuleDef = {
   size: '3u',
   hp: 2,
 
-  // v1 (schemaVersion 1) stored single playing/queued strings + single
-  // pitch/gate/velocity. v2 is per-lane; v1 saves had no live playing-set worth
-  // preserving (brand-new module), so we just drop the stale single-lane state.
-  migrate(data, fromVersion) {
-    if (!data || typeof data !== 'object') return data;
-    if (fromVersion >= 2) return data;
-    const d = { ...(data as Record<string, unknown>) };
-    delete d.playing; // was string|null → now (number|null)[]
-    delete d.queued; // was string|'stop'|null → now per-lane array
-    return d;
-  },
-
   inputs: [{ id: 'stop_all', type: 'gate' }],
   outputs: Array.from({ length: CLIP_LANES }, (_, i) => [
     { id: `pitch${i + 1}`, type: 'polyPitchGate' as const },

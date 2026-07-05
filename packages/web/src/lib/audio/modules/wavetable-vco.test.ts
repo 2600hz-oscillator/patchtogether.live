@@ -85,15 +85,10 @@ describe('wavetableVcoDef: module def shape', () => {
     expect(port!.cvScale).toBeUndefined();
   });
 
-  it('schemaVersion=3 (v1→v2 pmAmount migration; v2→v3 bipolar fm/pmAmount widen)', () => {
+  it('schemaVersion=3 with no migrate() (old-patch migrate logic removed — cleanup 2/5)', () => {
     expect(wavetableVcoDef.schemaVersion).toBe(3);
-    expect(wavetableVcoDef.migrate).toBeDefined();
-    const migrated = wavetableVcoDef.migrate!({ params: { tune: 0 } }, 1) as { params: Record<string, number> };
-    expect(migrated.params.pmAmount).toBe(0);
-    expect(migrated.params.tune).toBe(0);
-    // v2 → v3 is a no-op: old [0..1] values are a legal subset of [-1..+1].
-    const v2 = wavetableVcoDef.migrate!({ params: { fmAmount: 0.5, pmAmount: 0.25 } }, 2) as { params: Record<string, number> };
-    expect(v2.params.fmAmount).toBe(0.5);
-    expect(v2.params.pmAmount).toBe(0.25);
+    // Per-module old-patch migrate() bodies were dropped; a fresh save stamps
+    // the current version so no migrate ever fires for new patches.
+    expect(wavetableVcoDef.migrate).toBeUndefined();
   });
 });

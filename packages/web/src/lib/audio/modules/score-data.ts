@@ -368,38 +368,6 @@ export function quantizeTick(rawTick: number, duration: NoteDuration): number {
   return Math.max(0, Math.min(TICKS_PER_BAR - 1, n));
 }
 
-/**
- * Migrate a v1 score-data shape (pre-pages) to the v2 shape. v1 had a single
- * 8-bar timeline (TOTAL_BARS=8); v2 expands to a single 16-bar page with the
- * same 8 bars in the first 8 slots. Notes/dynamics/ties keep their absolute
- * `bar` values (0..7) and are fully backward-compatible because page 1
- * occupies bars 0..15.
- *
- * Behavior:
- *   - if data already has a numeric `pages`, return as-is (idempotent for
- *     forward-rolled data)
- *   - otherwise: notes/dynamics/ties/keySignature passed through, pages=1,
- *     loop=false, no stopBar.
- */
-export function migrateScoreV1ToV2(raw: unknown): ScoreData {
-  if (raw && typeof raw === 'object') {
-    const r = raw as Record<string, unknown>;
-    const notes = Array.isArray(r.notes) ? (r.notes as ScoreNote[]) : [];
-    const dynamics = Array.isArray(r.dynamics) ? (r.dynamics as DynamicMarker[]) : [];
-    const ties = Array.isArray(r.ties) ? (r.ties as Tie[]) : [];
-    const ks = typeof r.keySignature === 'number' ? (r.keySignature as number) : 0;
-    const pages =
-      typeof r.pages === 'number' ? Math.max(1, Math.min(MAX_PAGES, r.pages as number)) : DEFAULT_PAGES;
-    const loop = typeof r.loop === 'boolean' ? (r.loop as boolean) : false;
-    const sb = r.stopBar as StopBar | undefined;
-    const stopBar =
-      sb && typeof sb === 'object' && typeof sb.bar === 'number' && typeof sb.tick === 'number'
-        ? { bar: sb.bar, tick: sb.tick }
-        : undefined;
-    return { notes, dynamics, ties, keySignature: ks, pages, loop, stopBar };
-  }
-  return emptyScoreData();
-}
 
 // SMuFL Unicode codepoints used by the renderer. Bravura ships these.
 export const SMUFL = {

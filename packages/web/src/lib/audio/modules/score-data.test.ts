@@ -20,7 +20,6 @@ import {
   canPlace,
   dynamicAt,
   emptyScoreData,
-  migrateScoreV1ToV2,
   staffStepToMidi,
   tickWidth,
   tieChainFrom,
@@ -281,7 +280,7 @@ describe('triplet packing', () => {
   });
 });
 
-describe('page model + migration', () => {
+describe('page model', () => {
   it('emptyScoreData defaults to 1 page, loop=false, no stopBar', () => {
     const d = emptyScoreData();
     expect(d.pages).toBe(DEFAULT_PAGES);
@@ -298,57 +297,6 @@ describe('page model + migration', () => {
   it('totalBars clamps pages to [1, MAX_PAGES]', () => {
     expect(totalBars({ ...emptyScoreData(), pages: 0 })).toBe(BARS_PER_PAGE);
     expect(totalBars({ ...emptyScoreData(), pages: 99 })).toBe(BARS_PER_PAGE * MAX_PAGES);
-  });
-
-  it('migrateScoreV1ToV2 produces 1 page with original 8 bars in slots 0..7', () => {
-    // v1 shape: notes/dynamics/ties + keySignature, no pages/loop/stopBar.
-    const v1 = {
-      notes: [
-        { id: 'n1', bar: 0, tick: 0, duration: 'quarter', midi: 77, staffStep: 0, accidental: null },
-        { id: 'n7', bar: 7, tick: 0, duration: 'quarter', midi: 77, staffStep: 0, accidental: null },
-      ],
-      dynamics: [{ id: 'd1', bar: 0, tick: 0, level: 'mf' }],
-      ties: [],
-      keySignature: 1,
-    };
-    const v2 = migrateScoreV1ToV2(v1);
-    expect(v2.pages).toBe(1);
-    expect(v2.loop).toBe(false);
-    expect(v2.stopBar).toBeUndefined();
-    expect(v2.keySignature).toBe(1);
-    expect(v2.notes).toHaveLength(2);
-    // Bars are preserved verbatim — notes at bars 0..7 fit inside page 1
-    // (bars 0..15) automatically.
-    expect(v2.notes[0].bar).toBe(0);
-    expect(v2.notes[1].bar).toBe(7);
-  });
-
-  it('migrateScoreV1ToV2 handles missing/invalid input gracefully', () => {
-    expect(migrateScoreV1ToV2(undefined)).toEqual(emptyScoreData());
-    expect(migrateScoreV1ToV2(null)).toEqual(emptyScoreData());
-    expect(migrateScoreV1ToV2(42)).toEqual(emptyScoreData());
-  });
-
-  it('migrateScoreV1ToV2 is idempotent on v2 data (round-trip)', () => {
-    const v2 = {
-      notes: [],
-      dynamics: [],
-      ties: [],
-      keySignature: 0,
-      pages: 3,
-      loop: true,
-      stopBar: { bar: 5, tick: 24 },
-    };
-    const out = migrateScoreV1ToV2(v2);
-    expect(out.pages).toBe(3);
-    expect(out.loop).toBe(true);
-    expect(out.stopBar).toEqual({ bar: 5, tick: 24 });
-  });
-
-  it('cannot exceed MAX_PAGES (clamped during migration)', () => {
-    const v2 = { notes: [], dynamics: [], ties: [], keySignature: 0, pages: 99, loop: false };
-    const out = migrateScoreV1ToV2(v2);
-    expect(out.pages).toBe(MAX_PAGES);
   });
 });
 

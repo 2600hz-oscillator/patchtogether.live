@@ -169,12 +169,6 @@ export interface PictureboxData {
   creatorId?: string;
 }
 
-const DATA_DEFAULTS: Pick<PictureboxData, 'imageBytes' | 'imageMime' | 'imageName'> = {
-  imageBytes: null,
-  imageMime: 'image/jpeg',
-  imageName: null,
-};
-
 export const pictureboxDef: VideoModuleDef = {
   type: 'picturebox',
   palette: { top: 'Video modules', sub: 'Sources' },
@@ -215,56 +209,6 @@ export const pictureboxDef: VideoModuleDef = {
     { id: 'asset_gate',  label: 'Asset gate',  defaultValue: 0, min: 0,   max: 1,  curve: 'linear' },
   ],
 
-  // v1 had no imageBytes/imageMime/imageName/creatorId fields. v2 adds
-  // them. v3 adds `assets` (7-slot array) + `assetNames`. v4 adds `assetMimes`
-  // (per-slot MIME, for the animated-gif decode path). The migration fills
-  // defaults so the card's reactive reads find well-defined values, and seeds
-  // slot 1 from the legacy single image so a v2 node keeps showing its picture
-  // (now as slot 1 of 7).
-  migrate(data, fromVersion) {
-    const d = (data as Partial<PictureboxData> | null | undefined) ?? {};
-    let out: Partial<PictureboxData> = { ...d };
-    if (fromVersion < 2) {
-      out = {
-        ...out,
-        imageBytes: out.imageBytes ?? DATA_DEFAULTS.imageBytes,
-        imageMime: out.imageMime ?? DATA_DEFAULTS.imageMime,
-        imageName: out.imageName ?? DATA_DEFAULTS.imageName,
-        // creatorId intentionally NOT defaulted: legacy nodes stay
-        // unattributed (loose grandfathering — see picturebox-limits.ts).
-      };
-    }
-    if (fromVersion < 3) {
-      // Seed slot 1 from the currently-displayed image; rest empty.
-      if (!Array.isArray(out.assets)) {
-        const slots: (string | null)[] = new Array(ASSET_SLOTS).fill(null);
-        slots[0] = out.imageBytes ?? null;
-        out.assets = slots;
-      }
-      if (!Array.isArray(out.assetNames)) {
-        const names: (string | null)[] = new Array(ASSET_SLOTS).fill(null);
-        names[0] = out.imageName ?? null;
-        out.assetNames = names;
-      }
-    }
-    if (fromVersion < 4) {
-      // Seed per-slot MIMEs parallel to `assets`. A v3 slot only ever held a
-      // JPEG, so seed loaded slots to imageMime (usually 'image/jpeg') and
-      // leave empty slots null. Absent on read is ALSO treated as jpeg, so this
-      // is belt-and-suspenders — but materialising it keeps the shape uniform.
-      if (!Array.isArray(out.assetMimes)) {
-        const assets = Array.isArray(out.assets)
-          ? out.assets
-          : new Array(ASSET_SLOTS).fill(null);
-        const mimes: (string | null)[] = new Array(ASSET_SLOTS).fill(null);
-        for (let i = 0; i < ASSET_SLOTS; i++) {
-          if (assets[i] != null) mimes[i] = out.imageMime ?? DATA_DEFAULTS.imageMime;
-        }
-        out.assetMimes = mimes;
-      }
-    }
-    return out;
-  },
 
   // docs-hash-ignore:start
   docs: {

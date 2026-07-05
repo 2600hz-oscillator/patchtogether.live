@@ -72,7 +72,7 @@ test('MEOWBOX: gate triggers audible voice on L output', async ({ page }) => {
     w.__ydoc.transact(() => {
       const seq = w.__patch.nodes['seq'];
       if (!seq.data) seq.data = {};
-      seq.data.steps = Array.from({ length: 32 }, (_, i) => ({ on: i < 4, pitch: 0 }));
+      seq.data.steps = Array.from({ length: 32 }, (_, i) => ({ on: i < 4, midi: 60 }));
     });
   });
 
@@ -265,7 +265,7 @@ test("CHARLOTTE'S ECHOS: passes signal through and produces echo tail", async ({
     w.__ydoc.transact(() => {
       const seq = w.__patch.nodes['seq'];
       if (!seq.data) seq.data = {};
-      seq.data.steps = Array.from({ length: 32 }, (_, i) => ({ on: i < 4, pitch: 0 }));
+      seq.data.steps = Array.from({ length: 32 }, (_, i) => ({ on: i < 4, midi: 60 }));
     });
   });
 

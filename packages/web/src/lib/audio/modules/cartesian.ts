@@ -40,7 +40,6 @@ import { patch as livePatch } from '$lib/graph/store';
 import { isInputPortConnected } from './transport-helpers';
 import {
   coerceToNoteStep,
-  migrateStepArrayV1ToV2,
   C3_MIDI,
 } from '$lib/audio/note-entry';
 import {
@@ -64,8 +63,8 @@ export const LFO_DEFAULT_RATE_HZ = _LFO_DEFAULT_RATE_HZ;
 
 export interface Cell {
   on: boolean;
-  /** MIDI int (a4 = 69) for this cell's pitch, or null = no note. v1 of this
-   *  module used `pitch: <semitones from C4>`. */
+  /** MIDI int (a4 = 69) for this cell's pitch, or null = no note. Normalized
+   *  from persisted data via coerceToNoteStep. */
   midi: number | null;
   /** Stage-1 polyphony (v3). Defaults to 'mono' = legacy single-note behavior. */
   chord?: ChordQuality;
@@ -107,27 +106,6 @@ export const cartesianDef: AudioModuleDef = {
   //     polyphony. Pitch output port type changed to `polyPitchGate`.
   //     Backward-compat resolved by engine.addEdge → resolveConnection().
   schemaVersion: 4,
-  migrate(data, fromVersion) {
-    // v1 -> v2: per-cell pitch encoding (semitones-from-C4) -> midi int.
-    let migrated: Record<string, unknown> | undefined;
-    if (fromVersion < 2) {
-      migrated = migrateStepArrayV1ToV2(data, 'cells');
-    } else if (data && typeof data === 'object') {
-      migrated = { ...(data as Record<string, unknown>) };
-    } else {
-      migrated = undefined;
-    }
-    // v2 -> v3: lfoDiv/lfoShape defaults applied lazily from node.params at
-    // runtime; nothing to do for the persisted shape.
-    // v3 -> v4: ensure each cell carries a `chord` field; missing -> 'mono'.
-    if (fromVersion < 4 && migrated && Array.isArray(migrated.cells)) {
-      migrated.cells = (migrated.cells as unknown[]).map((c) => {
-        const ns = coerceToCartesianCell(c);
-        return { on: ns.on, midi: ns.midi, chord: ns.chord ?? 'mono' };
-      });
-    }
-    return migrated;
-  },
 
   inputs: [
     { id: 'clock', type: 'gate' },

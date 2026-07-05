@@ -84,17 +84,6 @@ export const wavetableVcoDef: AudioModuleDef = {
   label: 'wavetable vco',
   category: 'sources',
   schemaVersion: 3,
-  migrate(data, fromVersion) {
-    if (fromVersion < 2) {
-      const d = (data ?? {}) as { params?: Record<string, number> };
-      const params = { ...(d.params ?? {}) };
-      if (params.pmAmount === undefined) params.pmAmount = 0;
-      return { ...d, params };
-    }
-    // v2 → v3: fmAmount / pmAmount widened from [0..1] to [-1..+1]. Old values
-    // are already legal in the new range, so this is a no-op.
-    return data;
-  },
 
   inputs: [
     { id: 'pitch',   type: 'pitch' },

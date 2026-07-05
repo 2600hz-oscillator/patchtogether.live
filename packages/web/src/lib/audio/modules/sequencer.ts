@@ -31,7 +31,6 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { patch as livePatch } from '$lib/graph/store';
 import {
   coerceToNoteStep,
-  migrateStepArrayV1ToV2,
   C3_MIDI,
 } from '$lib/audio/note-entry';
 import {
@@ -64,10 +63,8 @@ import { shouldWritePitch } from '../../../../../dsp/src/lib/sample-hold-dsp';
 
 export interface Step {
   on: boolean;
-  /** MIDI int (a4 = 69) for this step's pitch, or null = no note. v1 of this
-   *  module used `pitch: <semitones from C4>`; the runtime accepts both shapes
-   *  via coerceToNoteStep, and persisted patches migrate via the def.migrate
-   *  callback. */
+  /** MIDI int (a4 = 69) for this step's pitch, or null = no note. Normalized
+   *  from persisted data via coerceToNoteStep. */
   midi: number | null;
   /** Stage-1 polyphony (v3). Defaults to 'mono' = legacy single-note behavior.
    *  'maj' / 'min' broadcast a triad (root/3rd/5th/octave) on the polyPitchGate
@@ -122,29 +119,6 @@ export const sequencerDef: AudioModuleDef = {
   // Rack: 3u tall (step grid + transport + quicksave), 3 tiles wide (540px).
   size: '3u',
   hp: 3,
-
-  migrate(data, fromVersion) {
-    // v1 -> v2: per-step pitch encoding (semitones-from-C4) -> midi int.
-    let migrated: Record<string, unknown> | undefined;
-    if (fromVersion < 2) {
-      migrated = migrateStepArrayV1ToV2(data, 'steps');
-    } else if (data && typeof data === 'object') {
-      migrated = { ...(data as Record<string, unknown>) };
-    } else {
-      migrated = undefined;
-    }
-    // v2 -> v3: PR-31's behavioral changes (keyboard-nav, hold-CV, C3 default
-    // for fresh instances). No persisted-data shape change; saved patches
-    // pass through untouched.
-    // v3 -> v4: ensure each step carries a `chord` field; missing -> 'mono'.
-    if (fromVersion < 4 && migrated && Array.isArray(migrated.steps)) {
-      migrated.steps = (migrated.steps as unknown[]).map((s) => {
-        const ns = coerceToSequencerStep(s);
-        return { on: ns.on, midi: ns.midi, chord: ns.chord ?? 'mono' };
-      });
-    }
-    return migrated;
-  },
 
   inputs: [
     // External clock: when patched, the sequencer advances on incoming rising
@@ -377,8 +351,7 @@ export const sequencerDef: AudioModuleDef = {
       const live = livePatch.nodes[nodeId];
       const steps = (live?.data as Record<string, unknown> | undefined)?.steps;
       if (Array.isArray(steps)) {
-        // Coerce each step shape so legacy {on, pitch} entries still drive
-        // audio while in-memory until a save+load triggers the def.migrate.
+        // Normalize each persisted step to the canonical {on, midi, chord} shape.
         return (steps as unknown[]).map(coerceToSequencerStep);
       }
       return defaultSteps();

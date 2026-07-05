@@ -45,7 +45,7 @@
     "lines": 1,
     "videoOut": 1,
     "inwards": 1,
-    "picturebox": 2,
+    "picturebox": 4,
     "destructor": 1,
     "chroma": 1,
     "luma": 1,

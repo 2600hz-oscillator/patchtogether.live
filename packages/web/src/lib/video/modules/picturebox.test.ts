@@ -1,9 +1,9 @@
 // packages/web/src/lib/video/modules/picturebox.test.ts
 //
-// Schema migration tests for the v1 → v2 PICTUREBOX shape change.
-// PICTUREBOX got `imageBytes`/`imageMime`/`imageName` fields in v2 to
-// carry image content over the wire. v1 nodes have to load cleanly
-// (with default-null bytes) without surprising the card.
+// Def-shape + factory (7-slot asset switching, animated-gif playback) tests
+// for PICTUREBOX. The old v1→v4 old-patch migrate() was dropped in the schema
+// cleanup (cleanup 2/5); a fresh save stamps the current version so no migrate
+// ever fires for new patches.
 
 import { describe, expect, it, vi } from 'vitest';
 import { pictureboxDef, type PictureboxHandleExtras } from './picturebox';
@@ -22,98 +22,8 @@ describe('PICTUREBOX def — schema v4', () => {
     expect(pictureboxDef.maxInstances).toBe(8);
   });
 
-  it('exposes a migrate function', () => {
-    expect(typeof pictureboxDef.migrate).toBe('function');
-  });
-});
-
-describe('PICTUREBOX migration v1 → v2', () => {
-  it('fills in missing imageBytes/imageMime/imageName from undefined data', () => {
-    const out = pictureboxDef.migrate?.(undefined, 1) as Record<string, unknown>;
-    expect(out.imageBytes).toBeNull();
-    expect(out.imageMime).toBe('image/jpeg');
-    expect(out.imageName).toBeNull();
-  });
-
-  it('fills in missing fields when data exists but lacks them', () => {
-    const out = pictureboxDef.migrate?.({ unrelated: 'value' }, 1) as Record<string, unknown>;
-    expect(out.imageBytes).toBeNull();
-    expect(out.imageMime).toBe('image/jpeg');
-    expect(out.imageName).toBeNull();
-    // Pre-existing keys preserved.
-    expect(out.unrelated).toBe('value');
-  });
-
-  it('preserves user-supplied fields if v1 already had them (forward-compat reads)', () => {
-    const out = pictureboxDef.migrate?.(
-      { imageBytes: 'AAAA', imageMime: 'image/png', imageName: 'x.png' },
-      1,
-    ) as Record<string, unknown>;
-    expect(out.imageBytes).toBe('AAAA');
-    expect(out.imageMime).toBe('image/png');
-    expect(out.imageName).toBe('x.png');
-  });
-
-  it('does NOT default-fill creatorId for legacy nodes (loose grandfathering)', () => {
-    const out = pictureboxDef.migrate?.({}, 1) as Record<string, unknown>;
-    // Important: undefined / missing creatorId is intentional. The
-    // per-user cap helper treats those as unattributed.
-    expect(out.creatorId).toBeUndefined();
-  });
-
-  it('v2 → v3 seeds slot 1 from the displayed image; rest empty', () => {
-    const out = pictureboxDef.migrate?.(
-      { imageBytes: 'BBBB', imageMime: 'image/jpeg', imageName: 'photo.jpg', creatorId: 'u1' },
-      2,
-    ) as Record<string, unknown>;
-    const assets = out.assets as (string | null)[];
-    expect(assets).toHaveLength(ASSET_SLOTS);
-    expect(assets[0]).toBe('BBBB');
-    expect(assets.slice(1)).toEqual([null, null, null, null, null, null]);
-    const names = out.assetNames as (string | null)[];
-    expect(names[0]).toBe('photo.jpg');
-    // The single-image fields stay intact (back-compat render path).
-    expect(out.imageBytes).toBe('BBBB');
-  });
-
-  it('v1 → v3 fills both the v2 image fields AND the v3 slot arrays', () => {
-    const out = pictureboxDef.migrate?.(undefined, 1) as Record<string, unknown>;
-    expect(out.imageBytes).toBeNull();
-    const assets = out.assets as (string | null)[];
-    expect(assets).toEqual(new Array(ASSET_SLOTS).fill(null));
-  });
-
-  it('v3 → v4 seeds assetMimes parallel to assets (loaded=jpeg, empty=null)', () => {
-    const out = pictureboxDef.migrate?.(
-      {
-        imageBytes: 'BBBB',
-        imageMime: 'image/jpeg',
-        imageName: 'photo.jpg',
-        assets: ['BBBB', null, 'CCCC', null, null, null, null],
-        assetNames: ['photo.jpg', null, 'x.jpg', null, null, null, null],
-      },
-      3,
-    ) as Record<string, unknown>;
-    const mimes = out.assetMimes as (string | null)[];
-    expect(mimes).toHaveLength(ASSET_SLOTS);
-    expect(mimes[0]).toBe('image/jpeg');
-    expect(mimes[1]).toBeNull();
-    expect(mimes[2]).toBe('image/jpeg');
-    expect(mimes.slice(3)).toEqual([null, null, null, null]);
-  });
-
-  it('passes through v4 data unchanged (idempotent)', () => {
-    const v4 = {
-      imageBytes: 'BBBB',
-      imageMime: 'image/gif',
-      imageName: 'loop.gif',
-      assets: ['BBBB', null, null, null, null, null, null],
-      assetNames: ['loop.gif', null, null, null, null, null, null],
-      assetMimes: ['image/gif', null, null, null, null, null, null],
-      creatorId: 'u1',
-    };
-    const out = pictureboxDef.migrate?.(v4, 4) as Record<string, unknown>;
-    expect(out).toEqual(v4);
+  it('has no migrate() (old-patch migrate logic removed — cleanup 2/5)', () => {
+    expect(pictureboxDef.migrate).toBeUndefined();
   });
 });
 
