@@ -84,6 +84,21 @@ Proper fix (tracked): `scope-video-out.spec.ts` is an e2e file → NOT in the at
 basis, so bumping its `waitForFunction` timeout / adding a settle loop is
 hash-free (no re-attest) and would let the default-5 run clean.
 
+## RULE 6 — the camera-test refusal is NOT your change
+
+`task webgl:attest` can **REFUSE** because the 2 `video-orientation.spec`
+`cameraInput` tests fail Pass-A-heavy on some machines (a `getUserMedia`/fake-cam
+timing issue), which is **unrelated to your basis edit** — but it blocks ANY video
+re-attest. CI only hash-*verifies* (no GPU/camera), so this stays latent until you
+try to re-attest locally. If you hit it and can't clear it (it's a known-flaky
+camera spec, not something you touched), you're genuinely blocked — fix/stabilise
+the camera spec first, or split the PR so the basis-touching part waits. Don't
+force-write around it. (Memory `webgl-attest-video-orientation-camera-fail`;
+parked ruttetra rename #979.)
+
+To reproduce CI's software renderer locally (SwiftShader ≠ your real GPU — a flat
+pixel/encode assert that passes on Metal can go red on CI): `E2E_ANGLE_BACKEND=swiftshader`.
+
 ## The procedure
 
 ```sh
