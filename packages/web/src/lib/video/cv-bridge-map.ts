@@ -45,8 +45,10 @@ export interface CvBridgeMapping {
     hint: CvScaleHint;
     min: number;
     max: number;
-    /** Param's current value — the modulation centre, mirroring the
-     *  audio path (knob position). */
+    /** The modulation centre (value cv=0 maps to), mirroring the audio path's
+     *  knob. Normally the param's current stored value; for a `center: 'default'`
+     *  hint (absolute-position params) it's the param's defaultValue so a cabled
+     *  input tracks the source directly regardless of any stale saved base. */
     knob: number;
   };
 }
@@ -78,7 +80,13 @@ export function buildCvBridgeMapping(
     // passthrough rather than guessing a range.
     return { targetParamId };
   }
-  const knob = nodeParams?.[targetParamId] ?? def.defaultValue;
+  // Modulation centre. `center: 'default'` (absolute-position params like a
+  // joystick's X/Y) IGNORES the stored value so a cabled input tracks the
+  // source directly — a stale saved position can't offset a cable-driven value.
+  // Otherwise centre on the stored knob (the bias-knob metaphor: base + wobble).
+  const knob = hint.center === 'default'
+    ? def.defaultValue
+    : (nodeParams?.[targetParamId] ?? def.defaultValue);
   return {
     targetParamId,
     scale: { hint, min: def.min, max: def.max, knob },
