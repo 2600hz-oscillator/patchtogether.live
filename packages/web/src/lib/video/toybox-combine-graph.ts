@@ -266,9 +266,9 @@ export const OP_PARAMS: Record<ToyboxOpKind, ToyboxOpParamDef[]> = {
   //            (how close to the key hue counts as keyed), soft = SHARPNESS
   //            (edge feather), keyR/keyG/keyB = the key COLOUR (0..1 floats,
   //            green-screen default). The keyer-config popover edits all of
-  //            these (a colour picker drives keyR/G/B). Replaces the old single
-  //            `key` channel-select scalar (migrated forward — see
-  //            migrateToyboxData).
+  //            these (a colour picker drives keyR/G/B). Replaced the old single
+  //            `key` channel-select scalar (v2→v3; the load-time migration was
+  //            since removed — old saves now load with the current default key).
   chromakey: [
     { id: 'amount', label: 'THRESHOLD', min: 0, max: 1, default: 0.3 },
     { id: 'soft', label: 'SHARPNESS', min: 0, max: 1, default: 0.1 },
@@ -306,7 +306,8 @@ export const OP_PARAMS: Record<ToyboxOpKind, ToyboxOpParamDef[]> = {
     // INTENSITY — wet/dry mix between the live input (dry) and the recursive
     // feedback result (wet). At 1 the effect OWNS the output (opaque mirrors /
     // strong accumulation); at 0 it passes the input through. Added in
-    // schemaVersion 4 (migrateToyboxData backfills the default for old saves).
+    // schemaVersion 4; a missing value renders at this default (0.5) via the
+    // OP_PARAMS fallback, so presets/old saves without it read half-wet.
     { id: 'intensity', label: 'INTENSITY', min: 0, max: 1, default: 0.5 },
   ],
 

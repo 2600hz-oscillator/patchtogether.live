@@ -29,8 +29,6 @@ import {
   type ToyboxLayer,
   type ToyboxPreset,
 } from '$lib/video/toybox-content';
-import { TOYBOX_SCHEMA_VERSION } from '$lib/video/toybox-combine-graph';
-import { migrateToyboxData } from '$lib/video/modules/toybox';
 
 /** Deep-clone plain JSON (presets are plain JSON, so this is total + safe). */
 function clone<T>(v: T): T {
@@ -173,20 +171,13 @@ export function applyDataBlobToData(
 ): void {
   const src = clone(blob);
 
-  // Audit M5: run schema migration BEFORE applying, mirroring the rack-load
-  // path (persistence.ts calls def.migrate). The blob's `schemaVersion` (stamped
-  // at save/export time) is the FROM version; a blob with no version is a
-  // legacy/pre-M5 save → migrate from 0 (every migration step is guarded +
-  // idempotent, so running them on already-current data is a no-op). After
-  // migrating we drop the marker so it doesn't linger as a node.data field.
-  const savedVersion =
-    typeof src.schemaVersion === 'number' && Number.isFinite(src.schemaVersion)
-      ? src.schemaVersion
-      : 0;
+  // The blob may carry a `schemaVersion` marker (stamped at save/export time).
+  // The per-module schema-migration machinery was removed (schema cleanup): a
+  // blob saved BELOW the current version is now applied VERBATIM — an
+  // owner-accepted break for old user-saved / imported toybox blobs (new-patch
+  // behavior is unchanged; a current-version blob was always applied as-is).
+  // Still DROP the marker so it doesn't linger as a stray node.data field.
   delete src.schemaVersion;
-  if (savedVersion < TOYBOX_SCHEMA_VERSION) {
-    migrateToyboxData(src, savedVersion); // mutates src in place
-  }
 
   // --- layers (array of live Y types) ---
   if (Array.isArray(src.layers)) {

@@ -5,12 +5,10 @@
 // here we pin the port surface — that the 6 generic modulation input ports exist
 // (type `modsignal`, so they accept cv/gate/audio) with the neutral linear hint
 // + no paramTarget (routing is dynamic, handled in setParam) — so a regression
-// that drops a port or re-narrows the type fails a fast unit test. Also covers
-// the schemaVersion-2 migration that strips dropped cv7/cv8 routes (the 8→6
-// non-destructive load).
+// that drops a port or re-narrows the type fails a fast unit test.
 
 import { describe, it, expect, afterEach, beforeAll, afterAll, vi } from 'vitest';
-import { toyboxDef, migrateToyboxData, __FEEDBACK_FRAG_SRC_FOR_TEST } from './toybox';
+import { toyboxDef, __FEEDBACK_FRAG_SRC_FOR_TEST } from './toybox';
 import { CV_PORT_IDS } from '$lib/video/toybox-cv-routes';
 import { FEEDBACK_MODE_COUNT } from '$lib/video/toybox-feedback';
 import { patch, ydoc } from '$lib/graph/store';
@@ -61,41 +59,13 @@ describe('toyboxDef shape', () => {
     expect(toyboxDef.params).toEqual([]);
   });
 
-  it('is schemaVersion 4 with a migrate hook', () => {
-    // v4 = feedback gained the `intensity` (wet/dry mix) param (backfilled).
-    // v3 = chromakey single `key` channel-select → keyR/keyG/keyB HSV key
-    // (v2 was the 8→6 cv7/cv8 route strip).
+  it('is schemaVersion 4 with NO migrate hook (schema cleanup removed it)', () => {
+    // The per-module old-patch migrate() machinery was dropped (schema cleanup):
+    // schemaVersion stays 4 as a documentary marker, but there is no migrate fn,
+    // so an old sub-v4 save now loads with current defaults (owner-accepted
+    // break). New-patch behavior is unchanged (a fresh node saves at v4).
     expect(toyboxDef.schemaVersion).toBe(4);
-    expect(typeof toyboxDef.migrate).toBe('function');
-  });
-});
-
-describe('migrateToyboxData — 8-input (cv1..cv8) patch loads as 6 inputs', () => {
-  it('strips the dropped cv7/cv8 routes from a v1 save without throwing', () => {
-    const v1data = {
-      layers: [{ kind: 'gen', contentId: 'noise-fbm', params: {} }],
-      cvRoutes: {
-        cv1: { target: 'layer', layer: 0, param: 'speed' },
-        cv6: { target: 'combine', nodeId: 'op1', param: 'amount' },
-        cv7: { target: 'layer', layer: 0, param: 'scale' }, // dropped pool port
-        cv8: { target: 'layer', layer: 1, param: 'speed' }, // dropped pool port
-      },
-    };
-    const out = migrateToyboxData(v1data, 1) as { cvRoutes: Record<string, unknown> };
-    const keys = Object.keys(out.cvRoutes);
-    expect(keys).toContain('cv1');
-    expect(keys).toContain('cv6');
-    expect(keys).not.toContain('cv7');
-    expect(keys).not.toContain('cv8');
-    expect(keys).toHaveLength(2);
-  });
-
-  it('is a no-op at/above the current schemaVersion + tolerates missing/garbage data', () => {
-    const same = { cvRoutes: { cv7: { target: 'layer', layer: 0, param: 'x' } } };
-    expect(migrateToyboxData(same, 2)).toBe(same); // already current → untouched
-    expect(() => migrateToyboxData(null, 1)).not.toThrow();
-    expect(() => migrateToyboxData(undefined, 1)).not.toThrow();
-    expect(() => migrateToyboxData({}, 1)).not.toThrow();
+    expect(toyboxDef.migrate).toBeUndefined();
   });
 });
 
