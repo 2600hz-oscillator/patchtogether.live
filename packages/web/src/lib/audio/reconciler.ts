@@ -86,18 +86,16 @@ export function attachReconciler(
     // are insertion-order; we explicitly sort the key sets we iterate.
 
     // Helper: pick an edge's transport domain from its source node's
-    // domain. The source's engine owns the routing primitives. Cross-domain
-    // edges (e.g. audio CV feeding a video module's param input) keep the
-    // source-side dispatch — the bridge module on the audio side handles the
-    // rate conversion. The node is always resolvable + carries a domain here:
-    // buildPatchSnapshot skips domain-less nodes (snapshot.ts), and both call
-    // sites resolve the node (removeEdge via appliedNodes; addEdge only after
-    // the `if (!src || !dst) continue` guard), so there is no missing-node case
-    // to default to 'audio' for.
+    // domain. The source's engine owns the routing primitives. The first
+    // generation of this code hardcoded 'audio'; the Phase-0 video spike
+    // (.myrobots/plans/video-modules-mvp.md §1) introduces a second
+    // domain so we now look it up. Cross-domain edges (e.g. audio CV
+    // feeding a video module's param input) keep the source-side dispatch
+    // — the bridge module on the audio side handles the rate conversion.
     function edgeDomain(edge: Edge): string {
       const sourceNode = currentNodes.get(edge.source.nodeId)
         ?? appliedNodes.get(edge.source.nodeId);
-      return sourceNode!.domain;
+      return sourceNode?.domain ?? 'audio';
     }
 
     /** Target node's domain. Mirrors edgeDomain but for the destination
@@ -106,7 +104,7 @@ export function attachReconciler(
     function edgeTargetDomain(edge: Edge): string {
       const targetNode = currentNodes.get(edge.target.nodeId)
         ?? appliedNodes.get(edge.target.nodeId);
-      return targetNode!.domain;
+      return targetNode?.domain ?? 'audio';
     }
 
     // 1. Removed edges first (release node references).
