@@ -10,7 +10,6 @@ import { doomDef } from './doom';
 import {
   CV_GATE_PORT_IDS,
   CV_GATE_PORT_IDS_BY_SLOT,
-  cvGatePortIdForSlot,
 } from '$lib/doom/doomkeys';
 import {
   MONSTER_KILL_PORTS,
@@ -49,19 +48,6 @@ describe('doomDef — module def shape', () => {
       // the cheat-gate inputs, into the rising-edge cheat-injection scheduler).
       expect(inp.paramTarget).toBe(`cv_${inp.id}`);
     }
-  });
-
-  it('migrates the legacy single CV set → p1 (slot 0): bare `up` → `p1_up`', () => {
-    expect(doomDef.schemaVersion).toBe(2);
-    expect(typeof doomDef.migrateEdgePortId).toBe('function');
-    for (const base of CV_GATE_PORT_IDS) {
-      expect(doomDef.migrateEdgePortId!(base, 1)).toBe(cvGatePortIdForSlot(0, base));
-    }
-    // Non-cv ports (out/audio) are left untouched (null = no rewrite).
-    expect(doomDef.migrateEdgePortId!('out', 1)).toBeNull();
-    expect(doomDef.migrateEdgePortId!('audio_l', 1)).toBeNull();
-    // Already-migrated per-slot ports are not double-rewritten.
-    expect(doomDef.migrateEdgePortId!('p2_left', 1)).toBeNull();
   });
 
   it('declares a video out + stereo audio outputs + base Phase-1 SP event gates + per-type death gates', () => {

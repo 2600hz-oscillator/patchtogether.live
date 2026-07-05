@@ -7,7 +7,9 @@
 //   - the line-list index buffer / grid generation (count + topology);
 //   - param defaults / ranges;
 //   - both modules register with the correct type ids;
-//   - the persisted-`ruttetra`(v1) → `reshaper` load-time type remap.
+//   - a persisted `ruttetra` node loads as `ruttetra` (the old v1→`reshaper`
+//     load-time remap was removed in schema-cleanup 4/5 — an accepted break of
+//     pre-rename saves).
 
 import { describe, it, expect } from 'vitest';
 import * as Y from 'yjs';
@@ -193,7 +195,7 @@ describe('both modules register with the correct type ids', () => {
   });
 });
 
-describe('persisted ruttetra(v1) → reshaper load-time remap', () => {
+describe('persisted ruttetra load-time type (v1→reshaper remap removed in cleanup 4/5)', () => {
   function liveStore(): { ydoc: Y.Doc; patch: LivePatch } {
     const store = syncedStore<{ nodes: Record<string, ModuleNode>; edges: Record<string, Edge> }>({ nodes: {}, edges: {} });
     return { ydoc: getYjsDoc(store), patch: store as unknown as LivePatch };
@@ -219,12 +221,16 @@ describe('persisted ruttetra(v1) → reshaper load-time remap', () => {
     return env;
   }
 
-  it('remaps a ruttetra node saved at v1 to reshaper (preserves the look)', () => {
+  it('a v1-saved ruttetra node loads as ruttetra (the old→reshaper remap was removed)', () => {
+    // The load-time ruttetra(v1)→reshaper remap was dropped in schema-cleanup
+    // 4/5, so a pre-rename save now loads as today's RUTTETRA scope (no rewrite)
+    // — identical to the v2 case below. A pre-rename coord-remap patch showing
+    // the new look is the accepted one-time break.
     const { ydoc, patch } = liveStore();
     const res = loadEnvelopeIntoStore(oldRuttetraEnvelope(1), ydoc, patch);
     expect(res.nodesLoaded).toBe(1);
-    expect(patch.nodes['n1']?.type).toBe('reshaper');
-    // Params carry over so the displaced look is preserved.
+    expect(patch.nodes['n1']?.type).toBe('ruttetra');
+    // Params still pass through the loader unchanged.
     expect(patch.nodes['n1']?.params.xDisp).toBe(0.4);
   });
 

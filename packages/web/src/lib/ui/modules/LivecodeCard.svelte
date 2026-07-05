@@ -24,7 +24,6 @@
   import { makeEditor, type EditorHandle } from '$lib/livecode/editor';
   import { makeCompletionSource } from '$lib/livecode/completions';
   import { makeLinter } from '$lib/livecode/diagnostics';
-  import { looksLikeLegacy, migrateLegacyText } from '$lib/livecode/migrate';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import { testHooksEnabled } from '$lib/dev/test-hooks';
@@ -109,16 +108,10 @@
 
   onMount(() => {
     if (!editorEl) return;
-    // One-time migration: if the stored text looks like legacy DSL,
-    // wrap it in a banner comment + leave a fresh canvas at the top.
-    const initial = looksLikeLegacy(storedText)
-      ? migrateLegacyText(storedText)
-      : storedText;
-    if (initial !== storedText) commitDraft(initial);
 
     editor = makeEditor({
       parent: editorEl,
-      doc: initial,
+      doc: storedText,
       onChange: (value) => scheduleCommit(value),
       completionSource: makeCompletionSource(() => ({
         liveNodes: patch.nodes,

@@ -53,7 +53,6 @@ import { detectEdge, makeEdgeState, type EdgeState } from '$lib/doom/cv-gate-edg
 import {
   CV_GATE_PORT_IDS_BY_SLOT,
   parseSlotPortId,
-  migrateLegacyCvGatePortId,
   type CvGatePortId,
 } from '$lib/doom/doomkeys';
 import {
@@ -280,18 +279,12 @@ export const doomDef: VideoModuleDef = {
   label: 'doom',
   category: 'sources',
   // schemaVersion 2 (#353): the single shared CV-gate input set became four
-  // per-slot input GROUPS (p1..p4 → slots 0..3). Old (v1) patches wired CV to
-  // the bare port ids (`up`/`down`/…); the load-time migration rewrites those
-  // edges to the p1 group (slot 0) so they keep driving the owner's marine.
+  // per-slot input GROUPS (p1..p4 → slots 0..3). The v1→v2 load-time edge-port
+  // migration (bare `up`/… → the p1 group) was dropped in schema-cleanup 4/5;
+  // a pre-#353 DOOM save now loses its CV gate cables on load (they no longer
+  // resolve a port and are dropped by validateEdge) — an accepted one-time
+  // break of old patches. The version number is retained as a historical marker.
   schemaVersion: 2,
-  // Edge-port migration (v1 → v2): rewrite a legacy bare cv-gate port id to its
-  // p1_<id> equivalent so saved patches keep their CV connections. The
-  // persistence loader calls this per edge target whose nodeId is a DOOM node
-  // saved at a version below this def's schemaVersion. Returns null for ports
-  // that aren't legacy cv-gate ids (out/audio_l/audio_r — left untouched).
-  migrateEdgePortId(portId, _fromVersion) {
-    return migrateLegacyCvGatePortId(portId);
-  },
   // ONE DOOM NODE per rack — and it stays 1. The committed slice-3 model
   // is "one shared node, N per-peer runtimes": the host spawns the single
   // node; every other peer sees it via Yjs sync and JOINS it (claims a slot

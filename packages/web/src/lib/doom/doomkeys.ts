@@ -166,13 +166,3 @@ export function parseSlotPortId(portId: string): { slot: number; base: CvGatePor
   if (!(CV_GATE_PORT_IDS as readonly string[]).includes(base)) return null;
   return { slot, base };
 }
-
-/** Migrate a legacy (schemaVersion 1) bare cv-gate port id to its p1 equivalent.
- *  'up' → 'p1_up'. Returns null for anything that isn't a bare cv-gate id (so
- *  the caller leaves non-cv ports — out/audio_l/audio_r — untouched). */
-export function migrateLegacyCvGatePortId(portId: string): string | null {
-  if ((CV_GATE_PORT_IDS as readonly string[]).includes(portId)) {
-    return cvGatePortIdForSlot(0, portId as CvGatePortId);
-  }
-  return null;
-}

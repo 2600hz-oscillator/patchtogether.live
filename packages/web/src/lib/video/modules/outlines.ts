@@ -623,9 +623,3 @@ export const outlinesDef: VideoModuleDef = {
     };
   },
 };
-
-// Back-compat alias for the pre-rename export name (was circlesDef). The glob
-// registry collects exports ending in 'Def'; outlinesDef is the live one. This
-// alias keeps any straggling `circlesDef` import resolving but is the SAME def
-// object (same type:'outlines'), so it does NOT double-register in the palette.
-export const circlesDef = outlinesDef;
