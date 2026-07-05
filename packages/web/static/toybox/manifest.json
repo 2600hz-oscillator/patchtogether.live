@@ -405,6 +405,17 @@
       ]
     },
     {
+      "id": "flighty-sky",
+      "label": "FLIGHTY SKY",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/flighty-sky.frag.glsl",
+      "params": [
+        { "id": "speed", "label": "SPEED", "min": 0.0, "max": 3.0, "default": 0.4, "curve": "linear" },
+        { "id": "cover", "label": "COVER", "min": 0.0, "max": 1.0, "default": 0.5, "curve": "linear" },
+        { "id": "sun",   "label": "SUN",   "min": 0.0, "max": 1.0, "default": 0.7, "curve": "linear" }
+      ]
+    },
+    {
       "id": "reaction-diffusion-still",
       "label": "REACTION DIFFUSION",
       "family": "GEN",
@@ -607,7 +618,14 @@
     { "id": "cone",        "label": "CONE",        "builtin": "cone",        "matcap": 1, "license": "builtin" },
     { "id": "torus-knot",  "label": "TORUS KNOT",  "builtin": "torus-knot",  "matcap": 2, "license": "builtin" },
     { "id": "banana",      "label": "BANANA",      "obj": "/toybox/models/banana.obj",  "matcap": 1, "license": "CC0-1.0" },
-    { "id": "snowman",     "label": "SNOWMAN",     "obj": "/toybox/models/snowman.obj", "matcap": 0, "license": "CC0-1.0" }
+    { "id": "snowman",     "label": "SNOWMAN",     "obj": "/toybox/models/snowman.obj", "matcap": 0, "license": "CC0-1.0" },
+    { "id": "bird-ernest",     "label": "BIRD",        "obj": "/toybox/models/bird-ernest.obj",     "matcap": 1, "license": "CC0-1.0" },
+    { "id": "pigeon",          "label": "PIGEON",      "obj": "/toybox/models/pigeon.obj",          "matcap": 0, "license": "CC0-1.0" },
+    { "id": "armabee",         "label": "ARMABEE",     "obj": "/toybox/models/armabee.obj",         "matcap": 2, "license": "CC0-1.0" },
+    { "id": "armabee-evolved", "label": "ARMABEE EVO", "obj": "/toybox/models/armabee-evolved.obj", "matcap": 2, "license": "CC0-1.0" },
+    { "id": "chick",           "label": "CHICK",       "obj": "/toybox/models/chick.obj",           "matcap": 1, "license": "CC0-1.0" },
+    { "id": "chicken",         "label": "CHICKEN",     "obj": "/toybox/models/chicken.obj",         "matcap": 0, "license": "CC0-1.0" },
+    { "id": "bat",             "label": "BAT",         "obj": "/toybox/models/bat.obj",             "matcap": 2, "license": "CC0-1.0" }
   ],
   "presets": [
     {
@@ -1423,6 +1441,47 @@
         "cv1": { "target": "layer", "layer": 1, "param": "spin" },
         "cv2": { "target": "layer", "layer": 0, "param": "speed" },
         "cv6": { "target": "layer", "layer": 1, "param": "drift" }
+      }
+    },
+    {
+      "id": "flighty",
+      "label": "FLIGHTY",
+      "note": "A songbird soaring over a drifting daytime sky, wings flapping. The CC0 Quaternius 'Ernest' bird OBJ (layer 1) gets a procedural uTime wing-flap (uFlap material gate — verts past the hinge beat up/down as a sine of the freeze-aware engine time), luma-keyed over the FLIGHTY SKY GEN (layer 0: azure→haze gradient + sun disc/halo + two drifting fBm cloud layers). A gentle soaring transform (slow yaw spin + slight pitch + small bank) reads as banking through the air. cv1 drives flap depth; cv2 steers heading.",
+      "layers": [
+        { "kind": "gen", "contentId": "flighty-sky", "params": { "speed": 0.4, "cover": 0.5, "sun": 0.72 } },
+        {
+          "kind": "obj", "contentId": null, "params": {},
+          "material": {
+            "modelId": "bird-ernest",
+            "rotX": -0.3, "rotY": 0.5, "rotZ": 0.1,
+            "scale": 1.05, "spin": 0.12, "matcap": 1,
+            "tintR": 1.0, "tintG": 1.0, "tintB": 1.0,
+            "flap": 1, "flapAmount": 1.0, "flapRate": 6.0, "flapHinge": 0.15,
+            "wingAxisX": 1, "wingAxisY": 0, "wingAxisZ": 0,
+            "hingeAxisX": 0, "hingeAxisY": 0, "hingeAxisZ": 1
+          }
+        },
+        { "kind": "off", "contentId": null, "params": {} },
+        { "kind": "off", "contentId": null, "params": {} }
+      ],
+      "combine": {
+        "nodes": [
+          { "id": "src0", "kind": "source", "layer": 0, "x": 14, "y": 14 },
+          { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
+          { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
+          { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
+          { "id": "lk1", "kind": "lumakey", "x": 120, "y": 40, "params": { "amount": 0.05, "soft": 0.1, "invert": 0 } },
+          { "id": "out", "kind": "output", "x": 286, "y": 40 }
+        ],
+        "edges": [
+          { "id": "e0", "from": "src0", "to": "lk1", "toPort": "in0" },
+          { "id": "e1", "from": "src1", "to": "lk1", "toPort": "in1" },
+          { "id": "e2", "from": "lk1", "to": "out", "toPort": "in0" }
+        ]
+      },
+      "cvRoutes": {
+        "cv1": { "target": "layer", "layer": 1, "param": "material:flapAmount" },
+        "cv2": { "target": "layer", "layer": 1, "param": "material:rotY" }
       }
     }
   ]

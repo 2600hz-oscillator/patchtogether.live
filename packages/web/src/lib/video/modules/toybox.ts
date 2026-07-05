@@ -149,15 +149,49 @@ layout(location = 2) in vec2 aUv;
 uniform mat4 uMVP;
 uniform mat4 uModel;       // model→world (for projective surface mapping)
 uniform mat3 uNormalMat;
+// ---- Wing-flap (procedural vertex deform) ----
+// Gated by uFlap (default 0 = OFF, so every non-flapping OBJ layer/preset/VRT
+// baseline is byte-identical). When on, verts PAST the hinge along the wingspan
+// axis rotate up/down as sin(uTime·rate), hinged near the body → a wing-beat.
+// All in RAW model space, BEFORE uMVP (which already bakes preCenter·userModel·
+// projView), so the deform composes correctly with the auto-frame + transform.
+uniform float uTime;        // freeze-aware time (deterministic under VRT)
+uniform int   uFlap;        // 0 = off (default), 1 = flap
+uniform float uFlapAmount;  // max wingtip deflection (radians)
+uniform float uFlapRate;    // angular rate (rad/sec of the sine)
+uniform float uFlapHinge;   // 0..1 normalized half-width of the rigid body
+uniform vec3  uWingAxis;    // unit model axis the wingspan runs along
+uniform vec3  uHingeAxis;   // fore-aft horizontal hinge axis
+uniform vec3  uMeshCenter;  // = GpuMesh.frameCenter (bounds centre, raw space)
+uniform float uMeshScale;   // = GpuMesh.frameScale (2 / longest extent)
 out vec3 vNormal;          // world-space normal (used for matcap + projective front-face)
 out vec2 vUv;
 out vec3 vWorldPos;        // world-space position (projective mapping)
 void main() {
-  vNormal = normalize(uNormalMat * aNormal);
+  vec3 p = aPos;
+  vec3 n = aNormal;
+  if (uFlap == 1) {
+    // Normalized coordinate along the wingspan: ~[-1,1], 0 at the body centreline.
+    float w = (dot(aPos, uWingAxis) - dot(uMeshCenter, uWingAxis)) * uMeshScale;
+    // Distance PAST the hinge (0 for body verts → rigid; grows toward the tip).
+    float wing = max(abs(w) - uFlapHinge, 0.0);
+    // sign(w) makes both wings beat UP together (symmetric flap).
+    float ang = sin(uTime * uFlapRate) * uFlapAmount * wing * sign(w);
+    // Hinge point on this side, back in RAW model space.
+    vec3 hp = uMeshCenter + uWingAxis * (sign(w) * uFlapHinge / max(uMeshScale, 1e-6));
+    // Rotate (aPos - hp) by ang about uHingeAxis (Rodrigues), add hp back.
+    vec3 k = normalize(uHingeAxis);
+    vec3 v = aPos - hp;
+    float c = cos(ang), s = sin(ang);
+    p = hp + v * c + cross(k, v) * s + k * dot(k, v) * (1.0 - c);
+    // Rotate the normal too so the matcap/lighting tracks the flap.
+    n = aNormal * c + cross(k, aNormal) * s + k * dot(k, aNormal) * (1.0 - c);
+  }
+  vNormal = normalize(uNormalMat * n);
   vUv = aUv;
-  vec4 world = uModel * vec4(aPos, 1.0);
+  vec4 world = uModel * vec4(p, 1.0);
   vWorldPos = world.xyz;
-  gl_Position = uMVP * vec4(aPos, 1.0);
+  gl_Position = uMVP * vec4(p, 1.0);
 }`;
 
 const OBJ_FRAG_SRC = `#version 300 es
@@ -515,6 +549,16 @@ export const toyboxDef: VideoModuleDef = {
     const uProjMode = gl.getUniformLocation(objProgram, 'uProjMode');
     const uProjVP = gl.getUniformLocation(objProgram, 'uProjVP');
     const uProjEye = gl.getUniformLocation(objProgram, 'uProjEye');
+    // Wing-flap vertex-deform uniforms (default OFF via uFlap=0).
+    const uTime = gl.getUniformLocation(objProgram, 'uTime');
+    const uFlap = gl.getUniformLocation(objProgram, 'uFlap');
+    const uFlapAmount = gl.getUniformLocation(objProgram, 'uFlapAmount');
+    const uFlapRate = gl.getUniformLocation(objProgram, 'uFlapRate');
+    const uFlapHinge = gl.getUniformLocation(objProgram, 'uFlapHinge');
+    const uWingAxis = gl.getUniformLocation(objProgram, 'uWingAxis');
+    const uHingeAxis = gl.getUniformLocation(objProgram, 'uHingeAxis');
+    const uMeshCenter = gl.getUniformLocation(objProgram, 'uMeshCenter');
+    const uMeshScale = gl.getUniformLocation(objProgram, 'uMeshScale');
 
     interface GpuMesh {
       vao: WebGLVertexArrayObject;
@@ -1317,6 +1361,20 @@ export const toyboxDef: VideoModuleDef = {
       if (uNormalMat) g.uniformMatrix3fv(uNormalMat, false, nrm);
       if (uMatcap) g.uniform1i(uMatcap, Math.max(0, Math.min(MATCAP_STYLES - 1, Math.round(mat.matcap))));
       if (uTint) g.uniform3f(uTint, mat.tintR, mat.tintG, mat.tintB);
+
+      // Wing-flap: read the material's flap fields LIVE every frame (same cadence
+      // as mat.spin), so a card knob or CV route animates instantly. uFlap defaults
+      // to 0 when mat.flap is undefined → every existing OBJ layer is unchanged.
+      const flapOn = mat.flap ? 1 : 0;
+      if (uFlap) g.uniform1i(uFlap, flapOn);
+      if (uTime) g.uniform1f(uTime, time);
+      if (uFlapAmount) g.uniform1f(uFlapAmount, mat.flapAmount ?? 0.6);
+      if (uFlapRate) g.uniform1f(uFlapRate, mat.flapRate ?? 6.0);
+      if (uFlapHinge) g.uniform1f(uFlapHinge, mat.flapHinge ?? 0.25);
+      if (uWingAxis) g.uniform3f(uWingAxis, mat.wingAxisX ?? 1, mat.wingAxisY ?? 0, mat.wingAxisZ ?? 0);
+      if (uHingeAxis) g.uniform3f(uHingeAxis, mat.hingeAxisX ?? 0, mat.hingeAxisY ?? 0, mat.hingeAxisZ ?? 1);
+      if (uMeshCenter) g.uniform3f(uMeshCenter, m.frameCenter[0], m.frameCenter[1], m.frameCenter[2]);
+      if (uMeshScale) g.uniform1f(uMeshScale, m.frameScale);
 
       // Texmap: when this layer has a SAFE surface source (rendered earlier this
       // frame, non-self, non-cyclic), bind that layer's FBO colour texture and

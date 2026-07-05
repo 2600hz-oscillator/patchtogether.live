@@ -1222,6 +1222,17 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/toybox-truchet',
   'linux/toybox-obj-icosahedron',
   'linux/toybox-frag-kaleido',
+  // TOYBOX birds + the FLIGHTY animated scene: the flighty preset (a CC0 bird
+  // flapping over the animated flighty-sky GEN, luma-keyed) + the bird-ernest
+  // OBJ per-model baseline. Darwin baselines captured locally; linux pending a
+  // `task vrt:update` on linux CI (same WebGL/shader pipeline — the flap is
+  // plain vertex arithmetic + the sky is value-noise fBm, both renderer-
+  // tolerant, but the masked-canvas paint timing shifts sub-thresholdly on
+  // linux Chromium). Functional coverage: toybox-manifest-integrity.test.ts
+  // (bird OBJs exist + licensed, flighty-sky GEN convention) +
+  // toybox-presets.test.ts (flighty structure + cvRoutes) + the toybox e2e.
+  'linux/toybox-preset-flighty',
+  'linux/toybox-obj-bird-ernest',
   // COMPOSITE VRT — first category (vrt-composite.spec.ts). Captures
   // NIBBLES.length_cv → SCOPE.ch1 at 5 CV levels via the
   // `__nibblesForceLength` test hook. Darwin baselines captured on this
