@@ -505,8 +505,7 @@ export const ${varName}: AudioModuleDef = {
   palette: { top: '${palette.top}', sub: '${palette.sub}' },
   domain: 'audio',
   label: '${label}',
-  category: '${category}',
-  schemaVersion: 1,${stereo}
+  category: '${category}',${stereo}
 
   inputs: [
 ${inputs}
@@ -579,7 +578,6 @@ export const ${varName}: VideoModuleDef = {
   domain: 'video',
   label: '${label}',
   category: '${category}',
-  schemaVersion: 1,
 
   inputs: [
 ${inputs}
@@ -639,7 +637,6 @@ export const ${varName}: MetaModuleDef = {
   inputs: [],
   outputs: [],
   params: [],
-  schemaVersion: 1,
 };
 `;
 }
@@ -663,7 +660,6 @@ describe('${varName}: shape', () => {
     expect(${varName}.label.length).toBeGreaterThan(0);
     expect(typeof ${varName}.category).toBe('string');
     expect(${varName}.category.length).toBeGreaterThan(0);
-    expect(${varName}.schemaVersion).toBeGreaterThanOrEqual(1);
   });
 
   it('exposes inputs / outputs / params arrays', () => {

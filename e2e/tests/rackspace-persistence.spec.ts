@@ -27,7 +27,6 @@ test.describe.configure({ mode: 'parallel' });
 interface PatchEnvelope {
   envelopeVersion: number;
   savedAt: string;
-  moduleSchemas: Record<string, number>;
   update: string;
 }
 
@@ -146,7 +145,7 @@ test('rackspace-persistence: PICTUREBOX bytes + DX7 SYX + sequencer steps surviv
   });
 
   // Quick envelope-shape sanity (covered more thoroughly in save-load.spec).
-  expect(env.envelopeVersion).toBe(1);
+  expect(env.envelopeVersion).toBe(2);
   expect(typeof env.savedAt).toBe('string');
   expect(env.update.length).toBeGreaterThan(1000); // fat: bytes + 32 voices
 
