@@ -93,6 +93,23 @@ flox activate -- git push origin <branch>
 # CI-side (cheap, no DB): task collab:attest:verify. Local read-only check: task collab:attest:check.
 ```
 
+## Refusal with `0 specs ran` = the app server never came up (env, not tests)
+
+`Timed out waiting 120000ms from config.webServer` + `spec files: 0` means the
+attest's **vite preview build+serve** didn't reach its port inside 120s — the
+runner refuses (correctly: a run with 0 specs proves nothing). Two observed causes:
+
+- **A leaked server squatting port 4173** — the attest serves the preview build
+  on 4173; if an old `E2E_PREVIEW=1 task e2e:serve` is still alive, vite prints
+  `Port 4173 is in use, trying another one...` and binds elsewhere while
+  Playwright waits on 4173 forever. **Removing a worktree does NOT kill servers
+  started from it.** Check `lsof -iTCP:4173 -sTCP:LISTEN` (and 5173) before
+  attesting; kill worktree-owned squatters; always `task e2e:stop` in every
+  worktree you served from.
+- **Machine load** — the full vite build (~30s quiet) can blow the window when
+  other agents/builds are churning. Attest on a quiet machine (same discipline
+  as webgl RULE 2).
+
 ## Rules
 
 1. **`retries=0` + relay-vacuity-skip = HARD FAILURE.** A `test.skip(true,'…relay

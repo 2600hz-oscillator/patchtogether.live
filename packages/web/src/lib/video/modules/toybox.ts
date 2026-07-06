@@ -53,6 +53,8 @@
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface, VideoEngineContext, VideoFrameContext } from '$lib/video/engine';
 import { patch as livePatch } from '$lib/graph/store';
+import { getYjsValue } from '@syncedstore/core';
+import type * as Y from 'yjs';
 import {
   DEFAULT_CONTENT_ID,
   LAYER_COUNT,
@@ -1058,13 +1060,187 @@ export const toyboxDef: VideoModuleDef = {
     let cachedCombineKey = '\0uninit';
     let cachedCombine: ToyboxCombineGraph | ToyboxCombine | null = null;
 
+    // ── Observer-driven change keys (phase-2 MIDI-CC perf fix) ──
+    //
+    // The old change-detect stringified the ENTIRE layers array (including
+    // base64 imageBytes — 80-330KB per image layer) on EVERY liveLayers()
+    // call, 2-10×/frame at 60fps: a standing tens-to-hundreds-of-MB/s
+    // serialization tax whenever image layers exist, plus a full JSON
+    // re-clone (discarding the CV-modulated clone) per settled CC commit.
+    //
+    // Replacement: an ENGINE-TRANSIENT observeDeep rev counter on this
+    // node's Y.Map. The hot path is two integer compares — zero stringify.
+    // Why an OBSERVER (not a writer-side data.layersRev): (i) rev stays
+    // engine-local — no persisted field to ride saves/goldens (the #1024
+    // no-transient-persist doctrine); (ii) it fires for EVERY writer —
+    // toybox-layers.ts setters, toybox-combine, presets, example loads,
+    // UNDO/REDO (inverse Y ops never re-run setters), and REMOTE peers via
+    // Y.applyUpdate — where a writer-side bump would silently go stale.
+    //
+    // The dirty-LEAF list additionally lets a settled CC commit whose value
+    // the #1030 transient leg already applied patch ONLY the touched keys,
+    // value-equal keys being a no-op — so a settle echo neither re-clones
+    // the (possibly megabyte) layers blob nor resets the CV-modulated
+    // clone values on OTHER params. Unrecognized/structural paths degrade
+    // to a FULL re-clone (never a silently-stale clone).
+    //
+    // Fallback: a node that is NOT store-backed (some unit tests / preview
+    // renders pass a bare node object) keeps the legacy stringify key path.
+    let layersRev = 1;
+    let combineRev = 1;
+    let clonedLayersRev = 0;
+    let clonedCombineRev = 0;
+    interface LayerDirtyLeaf {
+      layer: number;
+      /** 'material' | 'params' | … (layers[i].<sub>.<key> writes) or null
+       *  for direct layers[i].<key> writes. */
+      sub: string | null;
+      keys: Array<{ k: string; action: 'add' | 'update' | 'delete' }>;
+    }
+    let layersDirty: LayerDirtyLeaf[] | 'full' | null = null;
+    // Observe the nodes ROOT map (stable for the doc's lifetime), NOT the
+    // node's own Y.Map: an envelope load / spawn helper can REPLACE the
+    // entry wholesale under the SAME id — the reconciler keeps this handle
+    // (same id), so an observer on the old entry map would sit on an
+    // ORPHANED type and never fire again (the perf e2e caught exactly
+    // this: observed=true, layersRev stuck at 1, clone frozen at the
+    // defaults). Root-observing also invalidates correctly ON the
+    // replacement itself (a root-level event whose changed key is our
+    // id). Events are filtered by path[0] === node.id.
+    // Captured ONCE: `node` may be a live proxy in unit envs, and after a
+    // wholesale entry replacement an orphaned proxy's reads (incl. .id)
+    // return undefined — the observer must keep filtering by the REAL id.
+    const observedNodeId = node.id;
+    const yNodesRoot = getYjsValue(livePatch.nodes) as Y.Map<unknown> | undefined;
+    const observed =
+      !!yNodesRoot
+      && typeof (yNodesRoot as { observeDeep?: unknown }).observeDeep === 'function'
+      && !!livePatch.nodes[observedNodeId]; // a bare (never-inserted) node keeps the stringify fallback
+    function markLayersFull(): void {
+      layersRev++;
+      layersDirty = 'full';
+    }
+    const onNodesDeep = (events: Array<Y.YEvent<Y.AbstractType<unknown>>>): void => {
+      for (const ev of events) {
+        const p = ev.path;
+        if (p.length === 0) {
+          // Root event: our entry added / replaced / removed wholesale.
+          if (ev.changes.keys.has(observedNodeId)) {
+            markLayersFull();
+            combineRev++;
+          }
+          continue;
+        }
+        if (String(p[0]) !== observedNodeId) continue; // another module's subtree
+        if (p.length === 1) {
+          // Node-map event: `data` replaced wholesale.
+          if (ev.changes.keys.has('data')) {
+            markLayersFull();
+            combineRev++;
+          }
+          continue;
+        }
+        if (p[1] !== 'data') continue; // params/position/name — not pulled here
+        if (p.length === 2) {
+          if (ev.changes.keys.has('layers')) markLayersFull();
+          if (ev.changes.keys.has('combine')) combineRev++;
+          continue;
+        }
+        if (p[2] === 'combine') {
+          combineRev++;
+          continue;
+        }
+        if (p[2] !== 'layers') continue; // cvRoutes/cvInputs are read live — no clone
+        if (p.length === 3) {
+          // Array-level insert/delete/replace of layer entries.
+          markLayersFull();
+          continue;
+        }
+        layersRev++;
+        if (layersDirty === 'full') continue;
+        const sub = p.length === 4 ? null : p.length === 5 ? String(p[4]) : 'full';
+        if (sub === 'full') {
+          layersDirty = 'full';
+          continue;
+        }
+        if (layersDirty === null) layersDirty = [];
+        layersDirty.push({
+          layer: Number(p[3]),
+          sub,
+          keys: [...ev.changes.keys.entries()].map(([k, c]) => ({ k, action: c.action })),
+        });
+      }
+    };
+    if (observed) yNodesRoot!.observeDeep(onNodesDeep);
+
+    /** Full JSON re-clone of the store layers (LAYER_COUNT-padded) — the
+     *  legacy clone body, extracted. */
+    function cloneLayersFull(raw: ToyboxLayer[] | undefined): ToyboxLayer[] {
+      if (!raw || raw.length === 0) return makeDefaultLayers();
+      const base = (JSON.parse(JSON.stringify(raw)) as ToyboxLayer[]).slice(0, LAYER_COUNT);
+      while (base.length < LAYER_COUNT) base.push({ kind: 'off', contentId: null, params: {} });
+      return base;
+    }
+
+    /** Patch ONLY the dirty leaves from the store into the render-local
+     *  clone. Primitive values assign IFF changed (a settle commit echoing a
+     *  transient-applied value is a pure no-op); fresh sub-objects JSON
+     *  round-trip just that small subtree. Returns false on any shape
+     *  mismatch → caller degrades to the full re-clone. */
+    function applyLayerDirty(
+      cached: ToyboxLayer[],
+      raw: ToyboxLayer[] | undefined,
+      dirty: LayerDirtyLeaf[],
+    ): boolean {
+      for (const d of dirty) {
+        if (!Number.isInteger(d.layer) || d.layer < 0 || d.layer >= LAYER_COUNT) return false;
+        const rawLayer = raw?.[d.layer] as Record<string, unknown> | undefined;
+        const cachedLayer = cached[d.layer] as unknown as Record<string, unknown> | undefined;
+        if (!rawLayer || !cachedLayer) return false;
+        let target: Record<string, unknown>;
+        let src: Record<string, unknown> | undefined;
+        if (d.sub === null) {
+          target = cachedLayer;
+          src = rawLayer;
+        } else {
+          target = (cachedLayer[d.sub] ??= {}) as Record<string, unknown>;
+          src = rawLayer[d.sub] as Record<string, unknown> | undefined;
+        }
+        for (const { k, action } of d.keys) {
+          if (action === 'delete') {
+            delete target[k];
+            continue;
+          }
+          const v = src?.[k];
+          if (v === null || typeof v !== 'object') {
+            if (target[k] !== v) target[k] = v; // value-equal skip
+          } else {
+            target[k] = JSON.parse(JSON.stringify(v));
+          }
+        }
+      }
+      return true;
+    }
+
     function liveLayers(): ToyboxLayer[] {
-      const live = livePatch.nodes[node.id];
+      const live = livePatch.nodes[observedNodeId];
       const raw =
         (live?.data?.layers as ToyboxLayer[] | undefined) ??
         (node.data?.layers as ToyboxLayer[] | undefined);
-      // Cheap change-detect: the store JSON only changes on a USER edit now that
-      // CV writes land on the clone, so this stringify runs the deep clone rarely.
+      if (observed) {
+        // Hot path (unchanged since last clone): two integer compares.
+        if (cachedLayers && clonedLayersRev === layersRev) return cachedLayers;
+        const dirty = layersDirty;
+        layersDirty = null;
+        clonedLayersRev = layersRev;
+        if (cachedLayers && Array.isArray(dirty) && applyLayerDirty(cachedLayers, raw, dirty)) {
+          return cachedLayers;
+        }
+        cachedLayers = cloneLayersFull(raw);
+        return cachedLayers;
+      }
+      // Fallback (not store-backed): cheap change-detect via the stringify
+      // key — the pre-observer behavior, VERBATIM.
       const key = raw ? JSON.stringify(raw) : '';
       if (key !== cachedLayersKey || !cachedLayers) {
         cachedLayersKey = key;
@@ -1084,11 +1260,21 @@ export const toyboxDef: VideoModuleDef = {
      *  Returns a render-local CLONE (see the clone rationale above) so the CV
      *  apply path never writes through the synced Y.Doc proxy. */
     function liveCombineRaw(): ToyboxCombineGraph | ToyboxCombine {
-      const live = livePatch.nodes[node.id];
+      const live = livePatch.nodes[observedNodeId];
       const raw =
         (live?.data?.combine as unknown) ?? (node.data?.combine as unknown);
       const usable =
         isCombineGraph(raw) || (raw && Array.isArray((raw as ToyboxCombine).steps));
+      if (observed) {
+        // Rev gate only — combine carries no base64 blobs, so a full
+        // re-clone on flip is fine (no targeted leg needed).
+        if (cachedCombine && clonedCombineRev === combineRev) return cachedCombine;
+        clonedCombineRev = combineRev;
+        cachedCombine = usable
+          ? (JSON.parse(JSON.stringify(raw)) as ToyboxCombineGraph | ToyboxCombine)
+          : makeDefaultCombineGraph();
+        return cachedCombine;
+      }
       const key = usable ? JSON.stringify(raw) : '';
       if (key !== cachedCombineKey || !cachedCombine) {
         cachedCombineKey = key;
@@ -1209,9 +1395,10 @@ export const toyboxDef: VideoModuleDef = {
      * the clone to the committed state — so the reconciler/store re-apply of
      * the same value after settle is idempotent with what was pushed here.
      *
-     * PERF: reuses the CURRENT clones without re-keying — liveLayers()'s
-     * change-key stringify is too heavy to run per CC message when image
-     * layers carry base64 bytes; draw() re-keys once per frame anyway.
+     * PERF: reuses the CURRENT clones without re-keying. With the observer
+     * rev-keys above, a settled commit that echoes a value this leg already
+     * applied lands as a VALUE-EQUAL dirty-leaf no-op — no re-clone, no
+     * CV-clone reset (and liveLayers()'s hot path is two int compares).
      */
     function applyTransientParam(paramId: string, value: number): void {
       const layers = cachedLayers ?? liveLayers();
@@ -2332,7 +2519,20 @@ export const toyboxDef: VideoModuleDef = {
         }
         return undefined;
       },
-      dispose() { surface.dispose(); },
+      dispose() {
+        // Detach the transient rev-key observer BEFORE tearing down GL — a
+        // handle that outlived its observer would hold a listener on the
+        // node's Y.Map forever (rackspace rebind destroys the doc, but the
+        // engine also disposes handles on node delete within a mount).
+        if (observed) {
+          try {
+            yNodesRoot!.unobserveDeep(onNodesDeep);
+          } catch {
+            /* doc may already be destroyed */
+          }
+        }
+        surface.dispose();
+      },
     };
   },
 };

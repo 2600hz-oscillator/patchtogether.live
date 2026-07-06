@@ -9,7 +9,7 @@
   // bound api prop. Renders nothing.
   import { useSvelteFlow, useStore } from '@xyflow/svelte';
   import { initialConnection, type XYPosition } from '@xyflow/system';
-  import type { Node as FlowNode } from '@xyflow/svelte';
+  import type { Node as FlowNode, Edge as FlowEdge } from '@xyflow/svelte';
 
   /** xyflow's per-handle bounds entry (relative to the node's top-left
    *  in flow-space). Inlined here so the canvas's insert-on-cable code
@@ -33,6 +33,13 @@
         source?: HandleBoundsEntry[];
         target?: HandleBoundsEntry[];
       };
+      /** xyflow's CURRENT user-node object for this id. After a measure /
+       *  selection writeback this is xyflow's own clone (NOT the object the
+       *  parent last passed in `nodes`) — the reuse SOURCE for Canvas's
+       *  identity-stable flowNodes rebuild: re-emitting THIS object makes
+       *  adoptUserNodes' checkEquality hit, which preserves measured +
+       *  handleBounds (no per-commit re-measure). */
+      userNode?: FlowNode;
     };
   };
 
@@ -45,6 +52,10 @@
     getNode: (id: string) => FlowNode | undefined;
     getInternalNode: (id: string) => InternalFlowNode | undefined;
     getNodes: () => FlowNode[];
+    /** xyflow's CURRENT edge array (its local prop value — includes any
+     *  selection clones from updateEdge). Reuse source for the identity-
+     *  stable flowEdges rebuild, mirroring getInternalNode for nodes. */
+    getEdges: () => FlowEdge[];
     /** Current viewport: pan offset (x,y in screen px) + zoom factor. Used by
      *  Organize-modules to compute the visible region in flow-space. */
     getViewport: () => { x: number; y: number; zoom: number };
@@ -89,6 +100,7 @@
       getNode: flow.getNode,
       getInternalNode: (id: string) => flow.getInternalNode(id) as unknown as InternalFlowNode | undefined,
       getNodes: () => flow.getNodes(),
+      getEdges: () => flow.getEdges(),
       getViewport: () => flow.getViewport(),
       cancelClickConnect: () => {
         store.clickConnectStartHandle = null;

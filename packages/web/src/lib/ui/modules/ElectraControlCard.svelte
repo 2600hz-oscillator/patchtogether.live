@@ -29,7 +29,8 @@
   // logic (identify → generate preset → push + Lua → import CC map). Placement
   // mirrors LaunchpadControlCard's on-card connect button.
   import ElectraConnectButton from '$lib/ui/ElectraConnectButton.svelte';
-  import { patch, ydoc } from '$lib/graph/store';
+  import { patch } from '$lib/graph/store';
+  import { nodeVersion, nodesStructuralVersion } from '$lib/graph/node-versions.svelte';
   import { setNodeParam } from '$lib/graph/mutate';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode, ParamDef } from '$lib/graph/types';
@@ -51,11 +52,17 @@
 
   // Re-derive on any Yjs update so live param reads + remote slot writes reflect
   // instantly (mirrors ControlSurfaceCard's cardVersion pump).
-  let cardVersion = $state(0);
-  $effect(() => {
-    const h = () => { cardVersion = cardVersion + 1; };
-    ydoc.on('update', h);
-    return () => ydoc.off('update', h);
+  // Bounded node-scoped re-derive — mirrors ControlSurfaceCard (see its
+  // comment): own node + every slot-bound SOURCE module + node add/remove.
+  let cardVersion = $derived.by(() => {
+    let v = nodeVersion(id) + nodesStructuralVersion();
+    const seen = new Set<string>();
+    for (const b of Object.values(readElectraData(patch.nodes[id]).slots ?? {})) {
+      if (!b || seen.has(b.moduleId)) continue;
+      seen.add(b.moduleId);
+      v += nodeVersion(b.moduleId);
+    }
+    return v;
   });
 
   // AUTO-PRUNE dangling slots: when a bound source disappears the slot stops

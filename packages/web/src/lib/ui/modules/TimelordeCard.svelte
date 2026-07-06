@@ -4,7 +4,8 @@
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { patch, ydoc } from '$lib/graph/store';
+  import { patch } from '$lib/graph/store';
+  import { nodeVersion, edgesVersion, nodesStructuralVersion } from '$lib/graph/node-versions.svelte';
   import { setNodeParam } from '$lib/graph/mutate';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
@@ -39,12 +40,14 @@
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
 
-  let cardVersion = $state(0);
-  $effect(() => {
-    const h = () => { cardVersion = cardVersion + 1; };
-    ydoc.on('update', h);
-    return () => ydoc.off('update', h);
-  });
+  // Node-scoped re-derive (phase-2 CC perf fix): own-node params ride THIS
+  // node's version; the edge scans below (hasVideoIn / hasExternalClock /
+  // transportSlaved) ride the coarse edges+structural counters — NOT a
+  // whole-doc pump, so a CC commit on another module no longer re-runs
+  // this card's derived chain (the blind s/cardVersion/nodeVersion sweep
+  // would have left the jack indicators stale — hence the split).
+  let cardVersion = $derived(nodeVersion(id));
+  let wiringVersion = $derived(edgesVersion() + nodesStructuralVersion());
 
   // Live BPM the engine is currently locked to when an external clock
   // is patched (the worklet posts a measurement on each rising edge;
@@ -194,7 +197,7 @@
   }
 
   let hasVideoIn = $derived.by(() => {
-    void cardVersion;
+    void wiringVersion;
     return findVideoInSource() !== null;
   });
   // The display mode is the PURE decision (video feed wins, else wizard/off).
@@ -381,7 +384,7 @@
   });
 
   let hasExternalClock = $derived.by(() => {
-    void cardVersion;
+    void wiringVersion;
     for (const edge of Object.values(patch.edges)) {
       if (!edge) continue;
       if (edge.target.nodeId === id && edge.target.portId === 'clock') return true;
@@ -391,7 +394,7 @@
   // When start_in / stop_in are patched, an external transport owns `running`
   // (MIDICLOCK etc.), so the card's transport button steps aside to avoid a fight.
   let transportSlaved = $derived.by(() => {
-    void cardVersion;
+    void wiringVersion;
     for (const edge of Object.values(patch.edges)) {
       if (!edge) continue;
       if (edge.target.nodeId === id && (edge.target.portId === 'start_in' || edge.target.portId === 'stop_in'))

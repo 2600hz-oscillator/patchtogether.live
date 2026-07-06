@@ -33,7 +33,8 @@
   // click as a drag-start.
 
   import ModuleNameLabel from '$lib/ui/ModuleNameLabel.svelte';
-  import { patch, ydoc } from '$lib/graph/store';
+  import { patch } from '$lib/graph/store';
+  import { nodeVersion } from '$lib/graph/node-versions.svelte';
   import { resolveControlColor } from '$lib/graph/control-color';
   import type { ModuleNode } from '$lib/graph/types';
 
@@ -65,17 +66,11 @@
     return patch.nodes[id] as ModuleNode | undefined;
   });
 
-  // Re-derive the colour dot on any Yjs update so an assign / reset / undo /
-  // remote change reflects immediately (the dot has no other reactive trigger —
-  // a nested node.data.controlColor write isn't deeply tracked through the
-  // SyncedStore proxy by a plain $derived read). Mirrors the cards' cardVersion
-  // pump, scoped to just the dot.
-  let docVersion = $state(0);
-  $effect(() => {
-    const h = () => { docVersion = docVersion + 1; };
-    ydoc.on('update', h);
-    return () => ydoc.off('update', h);
-  });
+  // Node-scoped re-derive (phase-2 CC perf fix): subscribe to THIS node's
+  // version from the shared registry (nodes.observeDeep) instead of a
+  // per-component whole-doc ydoc.on('update') pump — a commit on another
+  // module no longer re-runs this card's derived chain.
+  let docVersion = $derived(nodeVersion(id));
 
   // CONTROL COLOUR dot — a subtle swatch by the title showing this module's
   // resolved control colour, but ONLY once the user has EXPLICITLY assigned one

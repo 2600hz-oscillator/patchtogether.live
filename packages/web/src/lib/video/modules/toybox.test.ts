@@ -11,7 +11,11 @@ import { describe, it, expect, afterEach, beforeAll, afterAll, vi } from 'vitest
 import { toyboxDef, __FEEDBACK_FRAG_SRC_FOR_TEST } from './toybox';
 import { CV_PORT_IDS } from '$lib/video/toybox-cv-routes';
 import { FEEDBACK_MODE_COUNT } from '$lib/video/toybox-feedback';
-import { patch, ydoc } from '$lib/graph/store';
+import { patch, ydoc, undoManager } from '$lib/graph/store';
+import * as Y from 'yjs';
+import { syncedStore, getYjsDoc } from '@syncedstore/core';
+import { setLayerMaterialField } from '$lib/graph/toybox-layers';
+import { LAYER_COUNT as LAYER_COUNT_FOR_TEST } from '$lib/video/toybox-content';
 import { makeDefaultCombineGraph } from '$lib/video/toybox-combine-graph';
 import type { VideoEngineContext, VideoFrameContext } from '$lib/video/engine';
 import type { ModuleNode, Edge } from '$lib/graph/types';
@@ -683,6 +687,225 @@ describe('TOYBOX transient knob/CC setParam (layer-qualified) — render-local o
     // Unknown / unresolvable ids are silently ignored (as before).
     expect(() => handle.setParam('layer:9:rotX', 1)).not.toThrow();
     expect(() => handle.setParam('not-a-param', 1)).not.toThrow();
+    handle.dispose();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// OBSERVER REV-KEYS (phase-2 MIDI-CC perf fix) — liveLayers()/liveCombineRaw()
+// change detection now rides an engine-transient observeDeep rev counter on
+// the node's Y.Map instead of stringifying the whole layers blob per call
+// (with image layers that was up to ~1.3MB of JSON.stringify per call,
+// 2-10×/frame). These tests pin:
+//   - hot path = ZERO stringify + stable clone reference between writes
+//   - settled-commit echo of a transient-applied value = value-equal no-op
+//     (no re-clone, CV/transient values on SIBLING params preserved)
+//   - invalidation still fires for real edits, REMOTE peer edits (observers
+//     cover Y.applyUpdate) and UNDO (inverse ops never re-run the setters)
+//   - structural layer edits degrade to the padded full re-clone
+//   - a NON-store-backed node keeps the legacy stringify fallback
+// ---------------------------------------------------------------------------
+
+const REVID = 'toybox-rev-keys';
+
+describe('TOYBOX observer rev-keys (liveLayers change detection)', () => {
+  beforeAll(() => {
+    vi.stubGlobal('fetch', async () =>
+      ({ ok: true, status: 200, statusText: 'OK', json: async () => ({ shaders: [], gen: [], models: [], presets: [] }) }) as unknown as Response,
+    );
+  });
+  afterAll(() => { vi.unstubAllGlobals(); });
+
+  afterEach(() => {
+    if (patch.nodes[REVID]) delete patch.nodes[REVID];
+    for (const id of Object.keys(patch.edges)) delete patch.edges[id];
+  });
+
+  function seedRevToybox(): void {
+    patch.nodes[REVID] = {
+      id: REVID,
+      type: 'toybox',
+      domain: 'video',
+      position: { x: 0, y: 0 },
+      params: {},
+      data: {
+        // Fully LAYER_COUNT-padded, like any card-edited patch: the
+        // toybox-layers setters pad in place on first touch, and that pad IS
+        // a structural (full-reclone) event — seeding padded keeps these
+        // tests focused on the leaf/echo semantics.
+        layers: [
+          { kind: 'obj', contentId: null, params: {}, material: { modelId: 'cube', rotX: 0.3, rotY: 0.6, scale: 1 } },
+          { kind: 'off', contentId: null, params: {} },
+          { kind: 'off', contentId: null, params: {} },
+          { kind: 'off', contentId: null, params: {} },
+        ],
+        combine: makeDefaultCombineGraph(),
+      },
+    } as unknown as ModuleNode;
+  }
+
+  type LiveModulated = {
+    layers: Array<{ kind?: string; material?: Record<string, number> }>;
+    combine: { nodes: Array<{ id: string; params?: Record<string, number> }> };
+  };
+
+  it('hot path: repeated reads with no writes return the SAME clone with ZERO JSON.stringify', () => {
+    seedRevToybox();
+    const handle = toyboxDef.factory(makeToyboxCtx(), patch.nodes[REVID] as ModuleNode);
+    // Prime the clone (first read may stringify/parse once for the clone).
+    const first = (handle.read?.('liveModulated') as LiveModulated).layers;
+    const spy = vi.spyOn(JSON, 'stringify');
+    for (let i = 0; i < 20; i++) {
+      const lm = handle.read?.('liveModulated') as LiveModulated;
+      expect(lm.layers).toBe(first); // stable reference — no per-frame re-key
+    }
+    // The whole point: the per-frame change-detect no longer serializes the
+    // layers blob (base64 imageBytes included) on every pull.
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+    handle.dispose();
+  });
+
+  it('settle echo is a value-equal NO-OP: no re-clone, transient values on sibling params survive', () => {
+    seedRevToybox();
+    const handle = toyboxDef.factory(makeToyboxCtx(), patch.nodes[REVID] as ModuleNode);
+    // Transient CC leg applies rotX AND a sibling (rotY) to the clone.
+    handle.setParam('layer:0:rotX', 1.25);
+    handle.setParam('layer:0:rotY', 2.0);
+    const before = (handle.read?.('liveModulated') as LiveModulated).layers;
+    expect(before[0]!.material!.rotX).toBeCloseTo(1.25, 6);
+
+    // The settled store commit echoes the SAME rotX value.
+    setLayerMaterialField(REVID, 0, 'rotX', 1.25);
+
+    const after = (handle.read?.('liveModulated') as LiveModulated).layers;
+    // Same clone object — the echo neither re-cloned nor reset anything…
+    expect(after).toBe(before);
+    expect(after[0]!.material!.rotX).toBeCloseTo(1.25, 6);
+    // …and the CV/transient value on the SIBLING param is preserved (a full
+    // re-clone would have snapped it back to the stored 0.6).
+    expect(after[0]!.material!.rotY).toBeCloseTo(2.0, 6);
+    handle.dispose();
+  });
+
+  it('a REAL store change invalidates: the clone reflects the new value', () => {
+    seedRevToybox();
+    const handle = toyboxDef.factory(makeToyboxCtx(), patch.nodes[REVID] as ModuleNode);
+    handle.setParam('layer:0:rotX', 1.25); // transient
+    setLayerMaterialField(REVID, 0, 'rotX', 0.9); // user turns the knob elsewhere
+    const lm = handle.read?.('liveModulated') as LiveModulated;
+    expect(lm.layers[0]!.material!.rotX).toBeCloseTo(0.9, 6);
+    handle.dispose();
+  });
+
+  it('a REMOTE peer edit invalidates (observeDeep covers Y.applyUpdate)', () => {
+    seedRevToybox();
+    const handle = toyboxDef.factory(makeToyboxCtx(), patch.nodes[REVID] as ModuleNode);
+    // Prime the clone.
+    expect((handle.read?.('liveModulated') as LiveModulated).layers[0]!.material!.rotX).toBeCloseTo(0.3, 6);
+
+    // Second client: sync the doc state, edit the layer, ship the diff back.
+    const remote = syncedStore<{ nodes: Record<string, ModuleNode>; edges: Record<string, Edge> }>({ nodes: {}, edges: {} });
+    const remoteDoc = getYjsDoc(remote);
+    Y.applyUpdate(remoteDoc, Y.encodeStateAsUpdate(ydoc));
+    ((remote.nodes[REVID]!.data as { layers: Array<{ material: Record<string, number> }> })
+      .layers[0]!.material).rotX = -2.5;
+    Y.applyUpdate(ydoc, Y.encodeStateAsUpdate(remoteDoc, Y.encodeStateVector(ydoc)));
+
+    const lm = handle.read?.('liveModulated') as LiveModulated;
+    expect(lm.layers[0]!.material!.rotX).toBeCloseTo(-2.5, 6);
+    handle.dispose();
+  });
+
+  it('UNDO invalidates (inverse Y ops never re-run the toybox-layers setters)', () => {
+    seedRevToybox();
+    const handle = toyboxDef.factory(makeToyboxCtx(), patch.nodes[REVID] as ModuleNode);
+    undoManager.stopCapturing();
+    undoManager.clear();
+    setLayerMaterialField(REVID, 0, 'rotX', 2.75); // tracked LOCAL_ORIGIN edit
+    expect((handle.read?.('liveModulated') as LiveModulated).layers[0]!.material!.rotX).toBeCloseTo(2.75, 6);
+    undoManager.stopCapturing();
+    undoManager.undo();
+    const lm = handle.read?.('liveModulated') as LiveModulated;
+    expect(lm.layers[0]!.material!.rotX).toBeCloseTo(0.3, 6); // reverted + clone re-synced
+    handle.dispose();
+  });
+
+  it('structural layers replacement degrades to the padded full re-clone', () => {
+    seedRevToybox();
+    const handle = toyboxDef.factory(makeToyboxCtx(), patch.nodes[REVID] as ModuleNode);
+    handle.setParam('layer:0:rotY', 2.0); // transient value that must NOT survive a structural reset
+    ydoc.transact(() => {
+      (patch.nodes[REVID]!.data as { layers: unknown }).layers = [
+        { kind: 'off', contentId: null, params: {} },
+        { kind: 'obj', contentId: null, params: {}, material: { modelId: 'cube', rotX: 1.1, scale: 1 } },
+      ];
+    });
+    const lm = handle.read?.('liveModulated') as LiveModulated;
+    expect(lm.layers).toHaveLength(LAYER_COUNT_FOR_TEST);
+    expect(lm.layers[0]!.kind).toBe('off');
+    expect(lm.layers[0]!.material?.rotY ?? 0).not.toBeCloseTo(2.0, 6);
+    expect(lm.layers[1]!.material!.rotX).toBeCloseTo(1.1, 6);
+    handle.dispose();
+  });
+
+  it('WHOLESALE entry replacement under the SAME id still invalidates (root-map observer)', () => {
+    // The reconciler keeps a handle when only the node's CONTENT changes
+    // (same id) — but an envelope load / spawn helper may REPLACE the
+    // whole patch.nodes[id] entry, orphaning the node's original Y.Map.
+    // Observing the nodes ROOT map (filtered by path[0]) survives that:
+    // the replacement itself is a root-level event on our id. Regression
+    // for the perf-e2e clone-frozen-at-defaults bug.
+    seedRevToybox();
+    const handle = toyboxDef.factory(makeToyboxCtx(), patch.nodes[REVID] as ModuleNode);
+    expect((handle.read?.('liveModulated') as LiveModulated).layers[0]!.material!.rotX).toBeCloseTo(0.3, 6);
+
+    ydoc.transact(() => {
+      patch.nodes[REVID] = {
+        id: REVID,
+        type: 'toybox',
+        domain: 'video',
+        position: { x: 0, y: 0 },
+        params: {},
+        data: {
+          layers: [
+            { kind: 'obj', contentId: null, params: {}, material: { modelId: 'cube', rotX: -1.5, scale: 1 } },
+            { kind: 'off', contentId: null, params: {} },
+            { kind: 'off', contentId: null, params: {} },
+            { kind: 'off', contentId: null, params: {} },
+          ],
+          combine: makeDefaultCombineGraph(),
+        },
+      } as unknown as ModuleNode;
+    });
+    const lm = handle.read?.('liveModulated') as LiveModulated;
+    expect(lm.layers[0]!.material!.rotX).toBeCloseTo(-1.5, 6);
+    // …and edits to the REPLACEMENT entry keep invalidating.
+    setLayerMaterialField(REVID, 0, 'rotX', 0.42);
+    expect((handle.read?.('liveModulated') as LiveModulated).layers[0]!.material!.rotX).toBeCloseTo(0.42, 6);
+    handle.dispose();
+  });
+
+  it('a NON-store-backed node keeps the stringify fallback (still change-detects)', () => {
+    const bare = {
+      id: 'toybox-bare-node',
+      type: 'toybox',
+      domain: 'video',
+      position: { x: 0, y: 0 },
+      params: {},
+      data: {
+        layers: [
+          { kind: 'obj', contentId: null, params: {}, material: { modelId: 'cube', rotX: 0.3, scale: 1 } },
+        ],
+        combine: makeDefaultCombineGraph(),
+      },
+    } as unknown as ModuleNode;
+    // NOT inserted into patch.nodes — the observer can't attach; the factory
+    // must fall back to the legacy stringify change key.
+    const handle = toyboxDef.factory(makeToyboxCtx(), bare);
+    expect((handle.read?.('liveModulated') as LiveModulated).layers[0]!.material!.rotX).toBeCloseTo(0.3, 6);
+    (bare.data as { layers: Array<{ material: Record<string, number> }> }).layers[0]!.material.rotX = 0.8;
+    expect((handle.read?.('liveModulated') as LiveModulated).layers[0]!.material!.rotX).toBeCloseTo(0.8, 6);
     handle.dispose();
   });
 });

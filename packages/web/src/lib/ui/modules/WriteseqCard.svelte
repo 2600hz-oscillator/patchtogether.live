@@ -18,6 +18,7 @@
   import QuicksaveControls from '$lib/ui/QuicksaveControls.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch, ydoc } from '$lib/graph/store';
+  import { nodeVersion } from '$lib/graph/node-versions.svelte';
   import { setNodeParam } from '$lib/graph/mutate';
   import {
     STEP_COUNT,
@@ -49,13 +50,11 @@
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
 
-  // Force re-derive on every Yjs update — matches the other sequencer cards.
-  let cardVersion = $state(0);
-  $effect(() => {
-    const h = () => { cardVersion = cardVersion + 1; };
-    ydoc.on('update', h);
-    return () => ydoc.off('update', h);
-  });
+  // Node-scoped re-derive (phase-2 CC perf fix): subscribe to THIS node's
+  // version from the shared registry (nodes.observeDeep) instead of a
+  // per-component whole-doc ydoc.on('update') pump — a commit on another
+  // module no longer re-runs this card's derived chain.
+  let cardVersion = $derived(nodeVersion(id));
 
   let bpm        = $derived((void cardVersion, node?.params.bpm        ?? 120));
   let length     = $derived((void cardVersion, node?.params.length     ?? 16));

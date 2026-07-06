@@ -27,7 +27,8 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { patch, ydoc } from '$lib/graph/store';
+  import { patch } from '$lib/graph/store';
+  import { nodeVersion, nodesStructuralVersion } from '$lib/graph/node-versions.svelte';
   import { setNodeParam } from '$lib/graph/mutate';
   import { useEngine } from '$lib/audio/engine-context';
   import { getModuleDef } from '$lib/audio/module-registry';
@@ -59,11 +60,23 @@
 
   // Re-derive on any Yjs update so live param reads + remote binding adds
   // reflect instantly (mirrors GroupCard's cardVersion pump).
-  let cardVersion = $state(0);
-  $effect(() => {
-    const h = () => { cardVersion = cardVersion + 1; };
-    ydoc.on('update', h);
-    return () => ydoc.off('update', h);
+  // Bounded node-scoped re-derive (phase-2 CC perf fix): the surface reads
+  // its OWN data (bindings/layout/locked) + every bound SOURCE module's
+  // subtree (live values, renames, control colours) + node add/remove (the
+  // prune below cares about deletions; a bound TOYBOX reconfigure bumps
+  // that source's own version). A binding edit bumps the surface's own
+  // version, which re-derives the source subscription set. NOT a
+  // whole-doc pump: a commit on an unbound module no longer re-runs this
+  // card's derived chain.
+  let cardVersion = $derived.by(() => {
+    let v = nodeVersion(id) + nodesStructuralVersion();
+    const seen = new Set<string>();
+    for (const b of readSurfaceData(patch.nodes[id]).bindings ?? []) {
+      if (seen.has(b.moduleId)) continue;
+      seen.add(b.moduleId);
+      v += nodeVersion(b.moduleId);
+    }
+    return v;
   });
 
   // AUTO-PRUNE dangling proxied controls: when a bound source disappears (a

@@ -74,7 +74,8 @@
     bindingsRune,
   } from '$lib/midi/midi-learn.svelte';
   import { getActiveEngine } from '$lib/audio/engine-ref';
-  import { patch, ydoc } from '$lib/graph/store';
+  import { patch } from '$lib/graph/store';
+  import { nodeVersion, edgesVersion, nodesStructuralVersion } from '$lib/graph/node-versions.svelte';
   import { getModuleDef } from '$lib/audio/module-registry';
   import { getVideoModuleDef } from '$lib/video/module-registry';
   import { getMetaModuleDef } from '$lib/meta/module-registry';
@@ -179,12 +180,12 @@
   // We re-derive on every Yjs update — the SAME cardVersion pump MatrixMixCard
   // / CONTROL SURFACE / GROUP use — so the indicator reflects patches made
   // ANYWHERE (drag-connect, this menu, a collaborator) in real time.
-  let edgeVersion = $state(0);
-  $effect(() => {
-    const h = () => { edgeVersion = edgeVersion + 1; };
-    ydoc.on('update', h);
-    return () => ydoc.off('update', h);
-  });
+  // Scoped re-derive (phase-2 CC perf fix): the panel's consumers read the
+  // edge set (jack indicators), OWN-node name/type (back title, annotate
+  // index) and node add/remove — NOT the whole doc. PatchPanel mounts once
+  // per card (the rear-view back panel), so the old whole-doc pump made
+  // every card's panel re-derive on every CC settle commit.
+  let edgeVersion = $derived(edgesVersion() + nodesStructuralVersion() + nodeVersion(nodeId));
 
   // Any-domain def lookup — the SAME chain validate-edge / persistence /
   // MATRIXMIX use, so remote module names match everywhere.
@@ -194,6 +195,16 @@
 
   let connections = $derived.by(() => {
     void edgeVersion; // re-run on every edge change
+    // Rename-liveness: ALSO subscribe to each connected REMOTE endpoint's
+    // node version — portConnections bakes remote module NAMES into its
+    // hover strings, and a remote rename is a node-subtree write that
+    // bumps neither the edges nor the structural counters. The edge scan
+    // re-runs (and re-subscribes) whenever the edge set changes.
+    for (const e of Object.values(patch.edges)) {
+      if (!e?.source || !e?.target) continue;
+      if (e.source.nodeId === nodeId) void nodeVersion(e.target.nodeId);
+      else if (e.target.nodeId === nodeId) void nodeVersion(e.source.nodeId);
+    }
     return portConnections(
       patch.edges,
       nodeId,

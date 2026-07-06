@@ -34,6 +34,23 @@
 // Timers are setTimeout-based (NOT rAF): rAF is suspended in background
 // tabs while hardware MIDI keeps arriving — a background twist must still
 // commit. All timer/now dependencies are injectable for unit tests.
+//
+// PHASE 2 (the per-commit-cascade fix): when a `batcher` is provided
+// (production always passes the cc-batch-store singleton), the pump's
+// PRIVATE throttle timer is replaced by the SHARED two-lane batcher:
+//   - the leading-edge commit is handed to batcher.enqueue() (end-of-
+//     microtask — N knobs' first CCs in one task merge into ONE
+//     transaction per lane; a lone poke still lands in the same task);
+//   - while hot, the pump joins the shared 150ms ticker (markHot) and the
+//     batcher drains its pending value each window — N hot knobs = ≤1
+//     transaction per lane per window instead of N;
+//   - the settle flush enqueues (simultaneously-released knobs merge);
+//   - flush()/dispose() enqueue + flushNow() (synchronous — save/export/
+//     visibility semantics unchanged).
+// Without a batcher (unit tests / legacy callers) the original private-
+// timer behavior is preserved verbatim.
+
+import type { CcBatcher, CcLane, CcTickClient } from './cc-commit-batch';
 
 export interface CcCommit {
   /** Feed one CC message's scaled value: transient-applies it immediately
@@ -67,6 +84,15 @@ export interface CcCommitOpts {
   activeCommitMs?: number;
   /** Trailing flush delay after the last message — the settled commit. */
   settleMs?: number;
+  /** Which shared-transaction lane this pump's commits ride:
+   *  'undoable' (default — card onchange under LOCAL_ORIGIN) or 'bare'
+   *  (the Electra host's deliberately non-undoable raw writes). Only
+   *  meaningful with a `batcher`. */
+  lane?: CcLane;
+  /** The shared two-lane batcher (cc-batch-store's singleton in
+   *  production; a fake in unit tests). Absent → the legacy private
+   *  throttle-timer behavior. */
+  batcher?: CcBatcher;
   // ── test seams (fake timers) ──
   now?: () => number;
   schedule?: (cb: () => void, ms: number) => unknown;
@@ -115,6 +141,9 @@ export function createCcCommit(opts: CcCommitOpts): CcCommit {
   const cancel: (h: unknown) => void =
     opts.cancel ?? ((h) => clearTimeout(h as ReturnType<typeof setTimeout>));
 
+  const lane: CcLane = opts.lane ?? 'undoable';
+  const batcher = opts.batcher ?? null;
+
   let pending: number | null = null;
   let lastCommitAt = -Infinity;
   let throttleTimer: unknown = null;
@@ -136,6 +165,26 @@ export function createCcCommit(opts: CcCommitOpts): CcCommit {
     opts.commit(v);
   }
 
+  /** Batched path: hand over the pending value as a commit thunk (clearing
+   *  it + stamping the throttle clock at DRAIN time), or null. Also the
+   *  pump's CcTickClient.takeDue — the shared ticker drains hot pumps
+   *  through this every window. */
+  function takePendingThunk(): (() => void) | null {
+    if (pending === null) return null;
+    const v = pending;
+    pending = null;
+    lastCommitAt = now();
+    return () => opts.commit(v);
+  }
+
+  const tickClient: CcTickClient = { lane, takeDue: takePendingThunk };
+
+  /** Queue the pending value on the shared batcher (if any is pending). */
+  function enqueuePending(): void {
+    const t = takePendingThunk();
+    if (t && batcher) batcher.enqueue(lane, t);
+  }
+
   function clearThrottle(): void {
     if (throttleTimer !== null) {
       cancel(throttleTimer);
@@ -151,8 +200,15 @@ export function createCcCommit(opts: CcCommitOpts): CcCommit {
 
   function onSettle(): void {
     settleTimer = null;
-    clearThrottle();
-    commitPending();
+    if (batcher) {
+      // Settle flushes of simultaneously-released knobs land in the same
+      // task → the batcher's microtask flush merges them per lane.
+      enqueuePending();
+      batcher.markCold(tickClient);
+    } else {
+      clearThrottle();
+      commitPending();
+    }
     setActive(false);
   }
 
@@ -171,6 +227,19 @@ export function createCcCommit(opts: CcCommitOpts): CcCommit {
       clearSettle();
       settleTimer = schedule(onSettle, settleMs);
       const since = now() - lastCommitAt;
+      if (batcher) {
+        if (since >= activeCommitMs) {
+          // Leading edge → end-of-microtask shared commit (N knobs' first
+          // CCs in one task = ONE transaction per lane; a lone poke still
+          // lands within the same task).
+          enqueuePending();
+        } else {
+          // Hot: join the SHARED ticker — it drains us each 150ms window
+          // together with every other hot pump in the lane.
+          batcher.markHot(tickClient);
+        }
+        return;
+      }
       if (since >= activeCommitMs) {
         // Leading edge: a cold stream commits IMMEDIATELY (a single CC poke
         // keeps today's semantics — the store never lags a lone message).
@@ -184,13 +253,24 @@ export function createCcCommit(opts: CcCommitOpts): CcCommit {
       }
     },
     flush(): void {
+      if (batcher) {
+        enqueuePending();
+        batcher.flushNow(); // synchronous — save/export must not lag
+        return;
+      }
       clearThrottle();
       commitPending();
     },
     dispose(): void {
       clearThrottle();
       clearSettle();
-      commitPending();
+      if (batcher) {
+        enqueuePending();
+        batcher.markCold(tickClient);
+        batcher.flushNow();
+      } else {
+        commitPending();
+      }
       setActive(false);
       disposed = true;
       livePumps.delete(pump);
