@@ -245,6 +245,24 @@ async function assertKnobSticks(page: Page, nodeId: string, param: string, label
   // parks the cursor on it. Pointer CAPTURE on pointerdown keeps the drag flowing
   // to this knob even as the cursor leaves it.
   await panToElement(page, slider);
+  // SETTLE before placing the cursor: ToyboxCard's graph-wrap persistResize
+  // action DEBOUNCES (200ms) a store write of the wrap height; right after
+  // the params pane opens, that write lands a beat later and collapses the
+  // layout ~54px — moving every knob between hover() and mouse.down(), so
+  // the drag hits the WRONG knob (zoom's drag committed tx). Main used to
+  // win this race by accident: the pre-identity-reuse Canvas re-measured
+  // every node per commit, slowing the pre-drag steps until hover's
+  // stability window straddled the collapse; the fast path loses it
+  // deterministically. Wait until the knob's box is unchanged across a
+  // window that OUTLASTS the debounce (the height-stability settle-loop
+  // pattern), re-panning if it drifted.
+  for (let i = 0; i < 20; i++) {
+    const a = await slider.boundingBox();
+    await page.waitForTimeout(250);
+    const b = await slider.boundingBox();
+    if (a && b && Math.abs(a.y - b.y) < 1 && Math.abs(a.x - b.x) < 1) break;
+    await panToElement(page, slider);
+  }
   await slider.hover();
   const box = (await slider.boundingBox())!;
   const cx = box.x + box.width / 2;
