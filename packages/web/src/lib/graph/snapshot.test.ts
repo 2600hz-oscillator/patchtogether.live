@@ -312,3 +312,302 @@ describe('B3 determinism — clear+add ops sequence', () => {
     expect(buildPatchSnapshot(a.patch as never)).toEqual(buildPatchSnapshot(b.patch as never));
   });
 });
+
+// ───────────────────── Identity-stable entries (per-commit-cascade fix, phase 2) ─────────────────────
+//
+// The bus feeds buildPatchSnapshot a SnapshotMemo built from observeDeep
+// dirty-id sets, so a param write on ONE module emits a snapshot where every
+// OTHER entry is reference-identical to the previous one. These tests pin:
+//   - the yjs deep-observer-before-'update' cleanup ordering the memo relies on
+//   - per-entry reuse/rebuild semantics for params, deep data, structure
+//   - fresh wrapper arrays every emit (multiplayer layouts stay responsive)
+//   - remote-transaction + rebind correctness
+//   - copy-on-write for adoptsUpstreamFrom edges (never reused, never mutated)
+describe('snapshot memo: yjs ordering pin', () => {
+  it('deep observers fire BEFORE the doc-level update event in the same transaction cleanup', () => {
+    // The memo is only correct if the dirty sets are complete when the bus's
+    // onUpdate → recompute runs. Yjs calls deep observers (_dEH) during
+    // transaction cleanup before doc.emit('update'). If a yjs upgrade
+    // reorders that, this test fails loudly instead of the app serving
+    // stale snapshot entries.
+    const { patch, ydoc } = freshPatch();
+    const order: string[] = [];
+    ydoc.getMap('nodes').observeDeep(() => order.push('deep'));
+    ydoc.on('update', () => order.push('update'));
+    addNode(patch, 'n1');
+    expect(order).toEqual(['deep', 'update']);
+
+    // Nested (params) writes too — path-based deep events, same ordering.
+    order.length = 0;
+    ydoc.transact(() => {
+      patch.nodes['n1']!.params['freq'] = 0.5;
+    });
+    expect(order).toEqual(['deep', 'update']);
+  });
+});
+
+describe('snapshot bus: identity-stable entries', () => {
+  function busWithLog(patch: ReturnType<typeof freshPatch>['patch'], ydoc: Y.Doc) {
+    const bus = createSnapshotBus({ patch: patch as never, ydoc });
+    const snaps: PatchSnapshot[] = [];
+    bus.subscribe((s) => snaps.push(s));
+    return { bus, snaps };
+  }
+
+  it('a param write rebuilds ONLY that node entry; all others identity-reused', () => {
+    const { patch, ydoc } = freshPatch();
+    addNode(patch, 'a');
+    addNode(patch, 'b');
+    addEdge(patch, 'e1', 'a', 'b');
+    const { bus, snaps } = busWithLog(patch, ydoc);
+
+    ydoc.transact(() => {
+      patch.nodes['a']!.params['freq'] = 0.5;
+    });
+
+    expect(snaps).toHaveLength(2);
+    const [prev, next] = [snaps[0]!, snaps[1]!];
+    // Fresh wrapper + arrays every emit (bus contract unchanged).
+    expect(next).not.toBe(prev);
+    expect(next.nodes).not.toBe(prev.nodes);
+    expect(next.edges).not.toBe(prev.edges);
+    // The written node is a fresh entry carrying the new value…
+    const nextA = next.nodes.find((n) => n.id === 'a')!;
+    expect(nextA).not.toBe(prev.nodes.find((n) => n.id === 'a'));
+    expect(nextA.params['freq']).toBe(0.5);
+    // …every untouched entry is the SAME object.
+    expect(next.nodes.find((n) => n.id === 'b')).toBe(prev.nodes.find((n) => n.id === 'b'));
+    expect(next.edges[0]).toBe(prev.edges[0]);
+    bus.dispose();
+  });
+
+  it('a deep data write under a STABLE data ref still dirties the node (sequencer steps reassign)', () => {
+    // SequencerCard's write path REASSIGNS the `steps` KEY under a data
+    // proxy whose REF stays stable — invisible to ref-compare, visible to
+    // observeDeep path[0]. A regression here = cards render stale steps.
+    const { patch, ydoc } = freshPatch();
+    patch.nodes['seq'] = {
+      id: 'seq',
+      type: 'sequencer',
+      domain: 'audio',
+      position: { x: 0, y: 0 },
+      params: {},
+      data: { steps: [1, 2, 3] },
+    } as never;
+    addNode(patch, 'other');
+    const { bus, snaps } = busWithLog(patch, ydoc);
+
+    ydoc.transact(() => {
+      (patch.nodes['seq']!.data as { steps: number[] }).steps = [7, 8, 9];
+    });
+
+    const [prev, next] = [snaps[0]!, snaps[1]!];
+    expect(next.nodes.find((n) => n.id === 'seq')).not.toBe(prev.nodes.find((n) => n.id === 'seq'));
+    expect(next.nodes.find((n) => n.id === 'other')).toBe(prev.nodes.find((n) => n.id === 'other'));
+    bus.dispose();
+  });
+
+  it('a write to a NON-graph root map (per-user layouts) still emits fresh wrappers with every entry reused', () => {
+    const { patch, ydoc } = freshPatch();
+    addNode(patch, 'a');
+    addNode(patch, 'b');
+    const { bus, snaps } = busWithLog(patch, ydoc);
+
+    // multiplayer/layouts.ts stores per-user positions OUTSIDE the nodes map.
+    ydoc.transact(() => {
+      const layouts = ydoc.getMap('layouts');
+      const mine = new Y.Map();
+      layouts.set('user-1', mine);
+    });
+
+    expect(snaps).toHaveLength(2);
+    const [prev, next] = [snaps[0]!, snaps[1]!];
+    expect(next).not.toBe(prev); // Canvas still re-resolves getNodePosition per transaction
+    expect(next.nodes).not.toBe(prev.nodes);
+    expect(next.nodes[0]).toBe(prev.nodes[0]);
+    expect(next.nodes[1]).toBe(prev.nodes[1]);
+    bus.dispose();
+  });
+
+  it('node add/remove: the new entry is fresh, survivors are reused, deleted ids fall out', () => {
+    const { patch, ydoc } = freshPatch();
+    addNode(patch, 'a');
+    const { bus, snaps } = busWithLog(patch, ydoc);
+
+    addNode(patch, 'c');
+    let [prev, next] = [snaps.at(-2)!, snaps.at(-1)!];
+    expect(next.nodes.map((n) => n.id)).toEqual(['a', 'c']);
+    expect(next.nodes.find((n) => n.id === 'a')).toBe(prev.nodes.find((n) => n.id === 'a'));
+
+    ydoc.transact(() => {
+      delete patch.nodes['a'];
+    });
+    [prev, next] = [snaps.at(-2)!, snaps.at(-1)!];
+    expect(next.nodes.map((n) => n.id)).toEqual(['c']);
+    expect(next.nodes[0]).toBe(prev.nodes.find((n) => n.id === 'c'));
+    bus.dispose();
+  });
+
+  it('a REMOTE peer transaction dirties the right node (observeDeep covers applied updates)', () => {
+    const a = freshPatch();
+    const b = freshPatch();
+    addNode(a.patch, 'x');
+    addNode(a.patch, 'y');
+    // Wire A → B like a provider relay, then seed B with A's state.
+    a.ydoc.on('update', (u: Uint8Array) => Y.applyUpdate(b.ydoc, u));
+    Y.applyUpdate(b.ydoc, Y.encodeStateAsUpdate(a.ydoc));
+
+    const { bus, snaps } = busWithLog(b.patch, b.ydoc);
+    a.ydoc.transact(() => {
+      a.patch.nodes['x']!.params['gain'] = 0.9;
+    });
+
+    expect(snaps.length).toBeGreaterThanOrEqual(2);
+    const [prev, next] = [snaps.at(-2)!, snaps.at(-1)!];
+    const nextX = next.nodes.find((n) => n.id === 'x')!;
+    expect(nextX).not.toBe(prev.nodes.find((n) => n.id === 'x'));
+    expect(nextX.params['gain']).toBe(0.9);
+    expect(next.nodes.find((n) => n.id === 'y')).toBe(prev.nodes.find((n) => n.id === 'y'));
+    bus.dispose();
+  });
+
+  it('rebind() drops the memo: same-id entries are NOT resurrected and the new doc dirties correctly', () => {
+    const one = freshPatch();
+    addNode(one.patch, 'a');
+    const { bus, snaps } = busWithLog(one.patch, one.ydoc);
+    const oldA = snaps[0]!.nodes.find((n) => n.id === 'a')!;
+
+    const two = freshPatch();
+    addNode(two.patch, 'a'); // SAME id in a different rackspace
+    bus.rebind(two.patch as never, two.ydoc);
+
+    const rebound = snaps.at(-1)!;
+    const newA = rebound.nodes.find((n) => n.id === 'a')!;
+    expect(newA).not.toBe(oldA); // full rebuild — never reuse across docs
+
+    // Old doc is detached: its edits no longer emit.
+    const count = snaps.length;
+    addNode(one.patch, 'ghost');
+    expect(snaps).toHaveLength(count);
+
+    // New doc's observers are live: a param write reuses untouched entries.
+    addNode(two.patch, 'b');
+    two.ydoc.transact(() => {
+      two.patch.nodes['b']!.params['p'] = 1;
+    });
+    const [prev, next] = [snaps.at(-2)!, snaps.at(-1)!];
+    expect(next.nodes.find((n) => n.id === 'a')).toBe(prev.nodes.find((n) => n.id === 'a'));
+    expect(next.nodes.find((n) => n.id === 'b')).not.toBe(prev.nodes.find((n) => n.id === 'b'));
+    bus.dispose();
+  });
+
+  it('DEV aliasing tripwire: bus-emitted entries are frozen', () => {
+    // Reused entries alias prior snapshots — any in-place mutation must
+    // throw (strict mode) instead of silently corrupting older snapshots.
+    const { patch, ydoc } = freshPatch();
+    addNode(patch, 'a');
+    addNode(patch, 'b');
+    addEdge(patch, 'e1', 'a', 'b');
+    const { bus, snaps } = busWithLog(patch, ydoc);
+    const snap = snaps[0]!;
+    expect(Object.isFrozen(snap.nodes[0])).toBe(true);
+    expect(Object.isFrozen(snap.nodes[0]!.params)).toBe(true);
+    expect(Object.isFrozen(snap.nodes[0]!.position)).toBe(true);
+    expect(Object.isFrozen(snap.edges[0])).toBe(true);
+    expect(() => {
+      (snap.edges[0] as { sourceType: string }).sourceType = 'cv';
+    }).toThrow();
+    bus.dispose();
+  });
+});
+
+describe('buildPatchSnapshot memo: adoptsUpstreamFrom edges are copy-on-write, never reused', () => {
+  // Same fixtures as the pass-through describe above (redeclared locally —
+  // that block's consts are scoped to it).
+  const SCALER_DEF = {
+    inputs: [{ id: 'in', type: 'audio', accepts: ['cv', 'pitch', 'gate'] }],
+    outputs: [{ id: 'out', type: 'audio', adoptsUpstreamFrom: 'in' }],
+  };
+  const LFO_DEF = { inputs: [], outputs: [{ id: 'phase0', type: 'cv' }] };
+  const LINES_DEF = { inputs: [{ id: 'orient', type: 'cv' }], outputs: [{ id: 'out', type: 'mono-video' }] };
+  const defs: Record<string, unknown> = { scaler: SCALER_DEF, lfo: LFO_DEF, lines: LINES_DEF };
+  const resolveDef = (t: string) => defs[t] as never;
+
+  function memoFrom(snap: PatchSnapshot, dirty: { nodes?: string[]; edges?: string[] } = {}) {
+    return {
+      prevNodesById: new Map(snap.nodes.map((n) => [n.id, n])),
+      prevEdgesById: new Map(snap.edges.map((e) => [e.id, e])),
+      dirtyNodeIds: new Set(dirty.nodes ?? []),
+      dirtyEdgeIds: new Set(dirty.edges ?? []),
+      fullRebuild: false,
+    };
+  }
+
+  function passThroughPatch() {
+    const { patch, ydoc } = freshPatch();
+    patch.nodes['sc'] = { id: 'sc', type: 'scaler', domain: 'audio', position: { x: 0, y: 0 }, params: {} } as never;
+    patch.nodes['lfo'] = { id: 'lfo', type: 'lfo', domain: 'audio', position: { x: 0, y: 0 }, params: {} } as never;
+    patch.nodes['ln'] = { id: 'ln', type: 'lines', domain: 'video', position: { x: 0, y: 0 }, params: {} } as never;
+    // SCALER.out → LINES.orient, declared audio (what a naive connect wrote).
+    patch.edges['e2'] = {
+      id: 'e2',
+      source: { nodeId: 'sc', portId: 'out' },
+      target: { nodeId: 'ln', portId: 'orient' },
+      sourceType: 'audio',
+      targetType: 'cv',
+    } as never;
+    return { patch, ydoc };
+  }
+
+  it('an upstream RE-PATCH retypes the downstream pass-through edge even though it is not dirty', () => {
+    const { patch } = passThroughPatch();
+    const first = buildPatchSnapshot(patch as never, resolveDef);
+    expect(first.edges.find((e) => e.id === 'e2')!.sourceType).toBe('audio');
+
+    // Patch LFO → SCALER.in. Only e1 is dirty; e2 is untouched — but its
+    // RESOLVED type must flip to cv on a NEW object (the reused-entry
+    // aliasing hazard the copy-on-write resolver exists for).
+    patch.edges['e1'] = {
+      id: 'e1',
+      source: { nodeId: 'lfo', portId: 'phase0' },
+      target: { nodeId: 'sc', portId: 'in' },
+      sourceType: 'cv',
+      targetType: 'audio',
+    } as never;
+    const second = buildPatchSnapshot(patch as never, resolveDef, memoFrom(first, { edges: ['e1'] }));
+    const e2 = second.edges.find((e) => e.id === 'e2')!;
+    expect(e2.sourceType).toBe('cv');
+    expect(e2).not.toBe(first.edges.find((e) => e.id === 'e2'));
+    // The PREVIOUS snapshot's entry is untouched (no in-place retype).
+    expect(first.edges.find((e) => e.id === 'e2')!.sourceType).toBe('audio');
+  });
+
+  it('an upstream UNPATCH reverts the pass-through edge to its declared type', () => {
+    const { patch } = passThroughPatch();
+    patch.edges['e1'] = {
+      id: 'e1',
+      source: { nodeId: 'lfo', portId: 'phase0' },
+      target: { nodeId: 'sc', portId: 'in' },
+      sourceType: 'cv',
+      targetType: 'audio',
+    } as never;
+    const first = buildPatchSnapshot(patch as never, resolveDef);
+    expect(first.edges.find((e) => e.id === 'e2')!.sourceType).toBe('cv');
+
+    delete patch.edges['e1'];
+    const second = buildPatchSnapshot(patch as never, resolveDef, memoFrom(first, { edges: ['e1'] }));
+    // A naive identity-reuse of e2 would leave the stale adopted 'cv' here.
+    expect(second.edges.find((e) => e.id === 'e2')!.sourceType).toBe('audio');
+  });
+
+  it('non-adopting edges ARE identity-reused when not dirty', () => {
+    const { patch } = freshPatch();
+    addNode(patch, 'a');
+    addNode(patch, 'b');
+    addEdge(patch, 'plain', 'a', 'b');
+    const resolveNone = () => undefined;
+    const first = buildPatchSnapshot(patch as never, resolveNone);
+    const second = buildPatchSnapshot(patch as never, resolveNone, memoFrom(first, { nodes: ['a'] }));
+    expect(second.edges[0]).toBe(first.edges[0]);
+  });
+});
