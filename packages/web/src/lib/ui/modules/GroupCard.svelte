@@ -24,6 +24,7 @@
   import type { ModuleNode } from '$lib/graph/types';
   import type { GroupData, ExposedPort } from '$lib/graph/group-projection';
   import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
+  import { nodeVersion, nodesStructuralVersion } from '$lib/graph/node-versions.svelte';
   import { getModuleDef } from '$lib/audio/module-registry';
   import { getVideoModuleDef } from '$lib/video/module-registry';
   import ScopeCard from '$lib/ui/modules/ScopeCard.svelte';
@@ -37,11 +38,16 @@
   // mutation lands. Reading the children's params live (rather than
   // snapshotting on mount) is essential so a remote peer toggling an
   // exposed sequencer's play state updates the group's button instantly.
-  let cardVersion = $state(0);
-  $effect(() => {
-    const h = () => { cardVersion = cardVersion + 1; };
-    ydoc.on('update', h);
-    return () => ydoc.off('update', h);
+  // Bounded node-scoped re-derive (phase-2 CC perf fix): the group card
+  // reads its OWN data (exposed ports/controls/label) plus its MEMBER
+  // modules' live params (GroupExposedControls takes cardVersion as a
+  // prop) — so subscribe to the group's version + every child's version +
+  // node add/remove, instead of a whole-doc pump. A membership edit bumps
+  // the group's own version, which re-derives the child subscription set.
+  let cardVersion = $derived.by(() => {
+    let v = nodeVersion(id) + nodesStructuralVersion();
+    for (const cid of groupData?.childIds ?? []) v += nodeVersion(cid);
+    return v;
   });
   let hasExposedControls = $derived.by(() => {
     void cardVersion;

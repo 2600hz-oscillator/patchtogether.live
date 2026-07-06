@@ -31,6 +31,7 @@ import {
 } from '$lib/midi/midi-learn.svelte';
 import { patch } from '$lib/graph/store';
 import { createCcCommit, type CcCommit } from './cc-commit';
+import { getCcBatcher } from './cc-batch-store';
 import { useEngine, type EngineContext } from '$lib/audio/engine-context';
 import type { ModuleNode } from '$lib/graph/types';
 import {
@@ -184,6 +185,12 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
         commit: (v) => args.onchange?.(v),
         transient: (v) => pushTransient(v),
         onActiveChange: (a) => { ccActive = a; },
+        // Shared two-lane batcher: the card onchange routes to setNodeParam
+        // (& friends) under LOCAL_ORIGIN — the UNDOABLE lane. N twisted
+        // knobs now share ≤1 tracked transaction per 150ms window instead
+        // of N independent commit streams.
+        lane: 'undoable',
+        batcher: getCcBatcher(),
       });
     }
     return pump;

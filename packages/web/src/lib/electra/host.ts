@@ -28,6 +28,7 @@ import {
 import { resolveSurfaceParam } from '$lib/graph/control-surface-params';
 import { resolveControlColor } from '$lib/graph/control-color';
 import { createCcCommit, type CcCommit } from '$lib/ui/controls/cc-commit';
+import { getCcBatcher } from '$lib/ui/controls/cc-batch-store';
 import type { AutoconfigHost } from './autoconfig';
 import type { PresetGenInput, GenParamDef, SurfaceBinding } from './preset';
 
@@ -168,6 +169,13 @@ export function buildLiveHost(args: {
     let pump = ccPumps.get(key);
     if (!pump) {
       pump = createCcCommit({
+        // Shared two-lane batcher, BARE lane: the raw proxy writes of every
+        // hot Electra pump land in ONE CC_STREAM_ORIGIN transaction per
+        // 150ms window — still deliberately NON-undoable (CC_STREAM_ORIGIN
+        // is not a tracked origin; wrapping absorbs SyncedStore's internal
+        // no-origin transact without promoting it to LOCAL_ORIGIN).
+        lane: 'bare',
+        batcher: getCcBatcher(),
         commit: (value) => {
           const live = patch.nodes[moduleId];
           if (!live) return;

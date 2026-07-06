@@ -13,6 +13,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch, ydoc } from '$lib/graph/store';
+  import { nodeVersion } from '$lib/graph/node-versions.svelte';
   import type { ModuleNode } from '$lib/graph/types';
   import { CLIP_LANES, CLIP_SLOTS, type ClipPlayerData } from '$lib/audio/modules/clip-types';
   import {
@@ -42,14 +43,11 @@
     onClose: () => void;
   } = $props();
 
-  // Re-render on every synced update (card + peers + the engine all mutate the
-  // same node.data; this is the same cardVersion pattern the card uses).
-  let version = $state(0);
-  $effect(() => {
-    const h = () => { version = version + 1; };
-    ydoc.on('update', h);
-    return () => ydoc.off('update', h);
-  });
+  // Node-scoped re-derive (phase-2 CC perf fix): subscribe to THIS node's
+  // version from the shared registry (nodes.observeDeep) instead of a
+  // per-component whole-doc ydoc.on('update') pump — a commit on another
+  // module no longer re-runs this card's derived chain.
+  let version = $derived(nodeVersion(id));
 
   function dataObj(): ClipPlayerData {
     return (node?.data ?? {}) as ClipPlayerData;

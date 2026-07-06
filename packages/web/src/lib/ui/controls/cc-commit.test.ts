@@ -193,3 +193,141 @@ describe('createCcCommit — streaming-CC coalescer', () => {
     pump.dispose();
   });
 });
+
+// ───────────────────── Batched mode (the shared two-lane batcher) ─────────────────────
+//
+// With a `batcher` injected, the pump must route EVERY durable commit
+// through it (never its private timer): leading edge → enqueue, hot →
+// markHot (the shared ticker drains via takeDue), settle → enqueue +
+// markCold, flush/dispose → enqueue + flushNow. Fake batcher — the real
+// sink's transaction/origin behavior is pinned in cc-batch-store.test.ts.
+
+import type { CcBatcher, CcLane, CcTickClient } from './cc-commit-batch';
+
+interface FakeBatcher extends CcBatcher {
+  log: string[];
+  enqueued: Array<{ lane: CcLane; run: () => void }>;
+  hot: Set<CcTickClient>;
+  drainQueued(): void;
+  drainHot(): void;
+}
+
+function fakeBatcher(): FakeBatcher {
+  const log: string[] = [];
+  const enqueued: Array<{ lane: CcLane; run: () => void }> = [];
+  const hot = new Set<CcTickClient>();
+  return {
+    log,
+    enqueued,
+    hot,
+    enqueue(lane, run) {
+      log.push(`enqueue:${lane}`);
+      enqueued.push({ lane, run });
+    },
+    markHot(c) {
+      log.push('markHot');
+      hot.add(c);
+    },
+    markCold(c) {
+      log.push('markCold');
+      hot.delete(c);
+    },
+    flushNow() {
+      log.push('flushNow');
+      this.drainHot();
+      this.drainQueued();
+    },
+    drainQueued() {
+      for (const e of enqueued.splice(0)) e.run();
+    },
+    drainHot() {
+      for (const c of [...hot]) {
+        const t = c.takeDue();
+        if (t) t();
+      }
+    },
+  };
+}
+
+function batchedHarness(opts: { lane?: CcLane } = {}) {
+  const timers = new FakeTimers();
+  const batcher = fakeBatcher();
+  const commits: number[] = [];
+  const transients: number[] = [];
+  const pump = createCcCommit({
+    commit: (v) => commits.push(v),
+    transient: (v) => transients.push(v),
+    lane: opts.lane,
+    batcher,
+    now: timers.now,
+    schedule: timers.schedule,
+    cancel: timers.cancel,
+  });
+  return { timers, batcher, commits, transients, pump };
+}
+
+describe('createCcCommit + shared batcher', () => {
+  it('cold poke: the leading commit goes through enqueue (end-of-microtask), not a direct write', () => {
+    const h = batchedHarness();
+    h.pump.push(0.4);
+    expect(h.transients).toEqual([0.4]); // transient stays per-message + synchronous
+    expect(h.commits).toEqual([]); // durable commit deferred to the batcher flush
+    expect(h.batcher.log).toEqual(['enqueue:undoable']);
+    h.batcher.drainQueued();
+    expect(h.commits).toEqual([0.4]);
+  });
+
+  it('hot stream: joins the shared ticker; drains via takeDue once per window; settle enqueues + goes cold', () => {
+    const h = batchedHarness();
+    h.pump.push(0.1); // leading → enqueue
+    h.batcher.drainQueued();
+    h.timers.advance(20);
+    h.pump.push(0.2); // hot → markHot (NO private throttle timer)
+    h.timers.advance(20);
+    h.pump.push(0.3);
+    expect(h.batcher.log).toEqual(['enqueue:undoable', 'markHot', 'markHot']);
+    expect(h.batcher.hot.size).toBe(1); // markHot idempotent
+
+    h.batcher.drainHot(); // the shared tick
+    expect(h.commits).toEqual([0.1, 0.3]); // latest pending only
+    h.batcher.drainHot(); // due-less tick → nothing
+    expect(h.commits).toEqual([0.1, 0.3]);
+
+    h.pump.push(0.5);
+    h.timers.advance(300); // settle fires
+    expect(h.batcher.log.at(-2)).toBe('enqueue:undoable');
+    expect(h.batcher.log.at(-1)).toBe('markCold');
+    expect(h.batcher.hot.size).toBe(0);
+    h.batcher.drainQueued();
+    expect(h.commits).toEqual([0.1, 0.3, 0.5]); // settled value always lands
+    expect(h.pump.active).toBe(false);
+  });
+
+  it('flush() + dispose() enqueue any pending value and flushNow synchronously', () => {
+    const h = batchedHarness();
+    h.pump.push(0.1);
+    h.batcher.drainQueued();
+    h.timers.advance(20);
+    h.pump.push(0.9); // hot, pending
+    h.pump.flush();
+    expect(h.batcher.log.at(-2)).toBe('enqueue:undoable');
+    expect(h.batcher.log.at(-1)).toBe('flushNow');
+    expect(h.commits).toEqual([0.1, 0.9]);
+
+    h.timers.advance(10);
+    h.pump.push(0.95);
+    h.pump.dispose();
+    expect(h.commits).toEqual([0.1, 0.9, 0.95]);
+    expect(h.batcher.hot.size).toBe(0); // markCold on dispose
+  });
+
+  it("the Electra pump's lane rides through as 'bare'", () => {
+    const h = batchedHarness({ lane: 'bare' });
+    h.pump.push(0.7);
+    expect(h.batcher.log).toEqual(['enqueue:bare']);
+    h.timers.advance(20);
+    h.pump.push(0.8);
+    const client = [...h.batcher.hot][0]!;
+    expect(client.lane).toBe('bare');
+  });
+});

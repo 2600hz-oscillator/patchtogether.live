@@ -13,6 +13,7 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch, ydoc } from '$lib/graph/store';
+  import { nodeVersion } from '$lib/graph/node-versions.svelte';
   import { setNodeParam } from '$lib/graph/mutate';
   import { onMeterFrame } from '$lib/ui/meter-frame';
   import { useEngine } from '$lib/audio/engine-context';
@@ -77,12 +78,11 @@
     if (ok || gridIsConnected()) bindGridToKria(id);
   }
 
-  let cardVersion = $state(0);
-  $effect(() => {
-    const h = () => { cardVersion = cardVersion + 1; };
-    ydoc.on('update', h);
-    return () => ydoc.off('update', h);
-  });
+  // Node-scoped re-derive (phase-2 CC perf fix): subscribe to THIS node's
+  // version from the shared registry (nodes.observeDeep) instead of a
+  // per-component whole-doc ydoc.on('update') pump — a commit on another
+  // module no longer re-runs this card's derived chain.
+  let cardVersion = $derived(nodeVersion(id));
 
   function pdef(pid: string) {
     return kriaDef.params.find((p) => p.id === pid)!;

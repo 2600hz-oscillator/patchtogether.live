@@ -17,7 +17,8 @@
 
   import type { NodeProps } from '@xyflow/svelte';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { patch, ydoc } from '$lib/graph/store';
+  import { patch } from '$lib/graph/store';
+  import { docVersion } from '$lib/graph/node-versions.svelte';
   import { getModuleDef } from '$lib/audio/module-registry';
   import { getVideoModuleDef } from '$lib/video/module-registry';
   import { getMetaModuleDef } from '$lib/meta/module-registry';
@@ -45,12 +46,12 @@
   // Re-derive on every Yjs update so the grid reflects patches made ANYWHERE
   // (drag-connect, patch-to, another collaborator, this card) in real time —
   // same cardVersion pump CONTROL SURFACE / GROUP use.
-  let cardVersion = $state(0);
-  $effect(() => {
-    const h = () => { cardVersion = cardVersion + 1; };
-    ydoc.on('update', h);
-    return () => ydoc.off('update', h);
-  });
+  // Whole-doc version from the shared registry (ONE listener app-wide
+  // instead of a per-card pump). MATRIXMIX is the one legitimately
+  // near-global card: moduleChoices scans ALL nodes and the grid scans
+  // ALL edges, so it keeps per-transaction invalidation for now
+  // (decomposing it further is a known follow-up).
+  let cardVersion = $derived(docVersion());
 
   // Any-domain def lookup — the SAME chain validate-edge / persistence use.
   function defLookup(type: string) {
