@@ -71,6 +71,18 @@ type W = {
   __midiTestInstall?: () => boolean;
   __midiTestInject?: (ch: number, cc: number, v: number) => boolean;
   __midiLearnApi?: { importBindings: (b: unknown[]) => void };
+  /** Canvas dev probe (identity-reuse gate): current flowNodes/flowEdges +
+   *  the xyflow internal-node lookup. */
+  __flowGraphProbe?: () => {
+    nodes: Array<{ id: string; measured?: unknown }>;
+    edges: Array<{ id: string }>;
+    internal: (id: string) =>
+      | {
+          measured?: { width?: number; height?: number };
+          internals?: { handleBounds?: unknown; userNode?: unknown };
+        }
+      | undefined;
+  };
 };
 
 async function bootVideoPatch(page: Page, errors: string[]): Promise<void> {
@@ -253,6 +265,74 @@ test.describe('MIDI-CC coalescing — store-write starvation gate', () => {
     expect(engineRot).toBeCloseTo(expectedRot, 3);
 
     expect(errors, 'no page errors during the CC storm').toEqual([]);
+  });
+
+  test('flowNode identity + measured survive a settled CC commit (no per-commit re-measure)', async ({ page }) => {
+    // Phase-2 gate (Canvas per-entry reuse): a settled CC commit on ONE
+    // module must not rebuild the OTHER cards' FlowNode objects — a fresh
+    // object per node per commit is what made xyflow rebuild every
+    // InternalNode, reset `measured`, and getBoundingClientRect-re-measure
+    // every handle of every card (~6.7×/s during a twist). Deterministic +
+    // renderer-independent: pure object-identity asserts, no FPS.
+    test.setTimeout(180_000);
+    const errors: string[] = [];
+    await bootVideoPatch(page, errors);
+    await assertChainLive(page);
+
+    const res = await page.evaluate(async () => {
+      const w = globalThis as unknown as W;
+      const probe = w.__flowGraphProbe!;
+      // Warmup commit: after it, the reuse pass has already switched to
+      // xyflow's post-measure userNode clones (steady state).
+      w.__midiTestInject!(0, 21, 30);
+      await new Promise((r) => setTimeout(r, 700));
+
+      const before = probe();
+      const findN = (arr: Array<{ id: string }>, id: string) => arr.find((n) => n.id === id);
+      const bdBefore = findN(before.nodes, 'bd');
+      const outBefore = findN(before.nodes, 'v-out');
+      const tbBefore = findN(before.nodes, 'tb');
+      const edgeBefore = findN(before.edges, 'e-bd-out');
+      const outInternalBefore = before.internal('v-out');
+      const outHandleBoundsBefore = outInternalBefore?.internals?.handleBounds;
+
+      // The commit under test: one CC on the TOYBOX knob (leading commit +
+      // settle flush land two store transactions on node tb).
+      w.__midiTestInject!(0, 21, 90);
+      await new Promise((r) => setTimeout(r, 700));
+
+      const after = probe();
+      const outInternalAfter = after.internal('v-out');
+      return {
+        // Untouched cards + cables: reference-identical FlowNode/FlowEdge.
+        bdReused: findN(after.nodes, 'bd') === bdBefore,
+        outReused: findN(after.nodes, 'v-out') === outBefore,
+        edgeReused: findN(after.edges, 'e-bd-out') === edgeBefore,
+        // The whole InternalNode survived (adoptUserNodes checkEquality hit
+        // → no re-parse, no re-measure): object + handleBounds identity.
+        internalReused: outInternalAfter === outInternalBefore,
+        handleBoundsReused:
+          outInternalAfter?.internals?.handleBounds === outHandleBoundsBefore
+          && outHandleBoundsBefore !== undefined,
+        // checkEquality's actual predicate: our array entry IS xyflow's
+        // internals.userNode.
+        userNodeHit: outInternalAfter?.internals?.userNode === findN(after.nodes, 'v-out'),
+        // The DIRTY node rebuilds (fresh entry carrying the new snapshot)…
+        tbRebuilt: findN(after.nodes, 'tb') !== tbBefore,
+        // …but carries `measured` forward, so even IT does not re-measure.
+        tbMeasuredKept: after.internal('tb')?.measured?.width !== undefined,
+      };
+    });
+
+    expect(res.bdReused, 'untouched BACKDRAFT FlowNode reused').toBe(true);
+    expect(res.outReused, 'untouched OUTPUT FlowNode reused').toBe(true);
+    expect(res.edgeReused, 'untouched FlowEdge reused').toBe(true);
+    expect(res.internalReused, 'xyflow InternalNode reused (no adopt rebuild)').toBe(true);
+    expect(res.handleBoundsReused, 'handleBounds survive (no handle re-measure)').toBe(true);
+    expect(res.userNodeHit, 'checkEquality seam hits (entry === internals.userNode)').toBe(true);
+    expect(res.tbRebuilt, 'dirty TOYBOX entry rebuilds').toBe(true);
+    expect(res.tbMeasuredKept, 'dirty node keeps measured (no re-measure)').toBe(true);
+    expect(errors, 'no page errors').toEqual([]);
   });
 
   test('FPS under CC blast — LOG-ONLY diagnostic (renderer-dependent, not a CI gate)', async ({ page }) => {

@@ -4,7 +4,7 @@
   // Click "Load example" → patch graph populates → Svelte Flow renders cards →
   // reconciler instantiates engine nodes → audio plays. Twiddle a knob →
   // patch graph mutates → reconciler calls engine.setParam → audible change.
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import {
     SvelteFlow,
     Background,
@@ -823,12 +823,64 @@
     return map;
   });
 
+  // ── Per-entry FlowNode/FlowEdge identity reuse (per-commit-cascade fix) ──
+  //
+  // Layer 2 of the phase-2 MIDI-CC perf fix. The snapshot bus now emits
+  // identity-stable entries for untouched nodes/edges (graph/snapshot.ts
+  // memo); these effects extend that stability into the arrays fed to
+  // SvelteFlow, because a FRESH FlowNode object per node per commit is what
+  // makes xyflow rebuild every InternalNode: adoptUserNodes' checkEquality
+  // (`userNode === internals.userNode`) misses, `measured` resets (our
+  // objects were built without it), nodesInitialized flips false, and every
+  // node + every HANDLE gets getBoundingClientRect re-measured — hundreds of
+  // forced-layout reads per settled CC commit on a heavy video patch.
+  //
+  // Reuse rules (per node): the snapshot entry identity, the RESOLVED
+  // per-user position (layouts live OUTSIDE the nodes map, so the memo
+  // can't cover them), the remote-grouping badge ref, and the top-z flag
+  // must all be unchanged. class/style/draggable are pure functions of the
+  // entry (type + data content), so entry identity covers them.
+  //
+  // Reuse SOURCE: xyflow's CURRENT `internals.userNode` — after a measure/
+  // selection writeback xyflow's store holds ITS OWN clone of our object,
+  // so re-emitting OUR previous object would still miss checkEquality.
+  // Re-emitting xyflow's clone is what makes the equality hit and keeps
+  // measured/handleBounds alive. Guarded: only when our data wrapper +
+  // type are literally the same (never resurrects a stale clone after a
+  // clear→load id collision — the B3-stomp bug class that killed
+  // bind:nodes; this stays strictly prop-rebuild reuse, NO bind:nodes).
+  //
+  // Rebuilt (dirty) entries carry xyflow-owned fields forward (`measured`,
+  // `selected`) so a single dirty node doesn't re-measure either — with
+  // `measured` present, xyflow's parseHandles keeps the existing
+  // handleBounds instead of resetting them.
+  interface PrevFlowNodeEntry {
+    snapNode: ModuleNode;
+    x: number;
+    y: number;
+    remoteUser: PresenceUser | undefined;
+    top: boolean;
+    obj: FlowNode;
+  }
+  interface PrevFlowEdgeEntry {
+    snapEdge: Edge;
+    related: boolean;
+    obj: FlowEdge;
+  }
+  // Plain (non-reactive) maps — swept every pass, so deleted ids GC.
+  // Component-instance state: the rackspace page remounts Canvas per
+  // rackspace ({#key rackspace.id}), so a rebind never leaks entries.
+  let prevFlowNodes = new Map<string, PrevFlowNodeEntry>();
+  let prevFlowEdges = new Map<string, PrevFlowEdgeEntry>();
+
   $effect(() => {
     const snap = snapshot;
     const top = topNodeId;
     const collapsed = collapsedGroupIds;
     const remoteByNode = remoteGroupBuildingByNode;
     const next: FlowNode[] = [];
+    const nextPrev = new Map<string, PrevFlowNodeEntry>();
+    let rebuiltAny = false;
     for (const n of snap.nodes) {
       // Skip children belonging to a collapsed group — the group card
       // stands in for them visually. Phase 2 will flip to inline-rendering
@@ -840,13 +892,52 @@
       // xyflow doesn't draw a fallback white box at the spawn point.
       if (n.type === 'cadillac') continue;
       const remoteUser = remoteByNode[n.id];
+      // Per-user layouts: getNodePosition returns the user's override
+      // (when in multiplayer) or falls back to n.position (when single-
+      // user OR when this user has no entry yet).
+      const resolved = getNodePosition(ydoc, currentUserId, n.id, { x: n.position.x, y: n.position.y });
+      const isTop = top === n.id;
+      // xyflow's current user-node for this id. untrack: nodeLookup is a
+      // plain Map today, but an xyflow upgrade to reactive lookups must
+      // not create an effect↔measure feedback loop.
+      const cur = untrack(() => flowApi?.getInternalNode(n.id))?.internals?.userNode as
+        | (FlowNode & { measured?: { width?: number; height?: number } })
+        | undefined;
+      const prev = prevFlowNodes.get(n.id);
+      if (
+        prev
+        && prev.snapNode === n
+        && prev.x === resolved.x
+        && prev.y === resolved.y
+        && prev.remoteUser === remoteUser
+        && prev.top === isTop
+      ) {
+        // Unchanged → reuse. Prefer xyflow's current userNode (see header
+        // comment). Guard on PRIMITIVE fields only: after a writeback,
+        // xyflow's local nodes live behind a Svelte 5 deep proxy, so nested
+        // object identity (cur.data === …) can NEVER hit through it — but
+        // id/type strings compare fine. Data lineage is safe by
+        // construction: within a mount, internals.userNode for this id is
+        // always the object WE last emitted for it or an xyflow
+        // spread-clone descending from it (spreads preserve `data`), and
+        // any change to what we emit goes through the rebuild branch below,
+        // which resets prev.obj — so a matching id+type here cannot carry a
+        // stale data payload.
+        const reusable = cur && cur.id === n.id && cur.type === n.type ? cur : prev.obj;
+        next.push(reusable);
+        nextPrev.set(n.id, { snapNode: n, x: resolved.x, y: resolved.y, remoteUser, top: isTop, obj: reusable });
+        continue;
+      }
+      rebuiltAny = true;
       const node: FlowNode = {
+        // Carry xyflow-owned fields forward on a rebuild so ONE dirty node
+        // doesn't reset measured/handleBounds (re-measure) or lose its
+        // selection. Type-guarded so a same-id different-type replacement
+        // never inherits a foreign card's dimensions.
+        ...(cur && cur.type === n.type ? { measured: cur.measured, selected: cur.selected } : {}),
         id: n.id,
         type: n.type,
-        // Per-user layouts: getNodePosition returns the user's override
-        // (when in multiplayer) or falls back to n.position (when single-
-        // user OR when this user has no entry yet).
-        position: getNodePosition(ydoc, currentUserId, n.id, { x: n.position.x, y: n.position.y }),
+        position: resolved,
         data: {
           node: n,
           // Phase 3C: when a remote rack-mate has this node in their
@@ -886,8 +977,21 @@
         node.draggable = false;
         node.class = node.class ? `${String(node.class)} node-locked` : 'node-locked';
       }
-      if (top === n.id) node.zIndex = 1000;
+      if (isTop) node.zIndex = 1000;
       next.push(node);
+      nextPrev.set(n.id, { snapNode: n, x: resolved.x, y: resolved.y, remoteUser, top: isTop, obj: node });
+    }
+    prevFlowNodes = nextPrev;
+    // No-op short-circuit: if every entry is identity-reused AND the array
+    // shape matches, skip the reassign — that skips the whole adoptUserNodes
+    // pass for transactions that touched nothing we render (e.g. layouts).
+    const current = untrack(() => flowNodes);
+    if (!rebuiltAny && next.length === current.length) {
+      let same = true;
+      for (let i = 0; i < next.length; i++) {
+        if (next[i] !== current[i]) { same = false; break; }
+      }
+      if (same) return;
     }
     flowNodes = next;
   });
@@ -897,6 +1001,16 @@
     const hovered = hoveredNodeId;
     const childToGroup = nodeIdToCollapsedGroupId;
     const next: FlowEdge[] = [];
+    const nextPrev = new Map<string, PrevFlowEdgeEntry>();
+    let rebuiltAny = false;
+    // xyflow's current edge array (selection clones included) — the edge
+    // reuse source, mirroring internals.userNode for nodes. One map per
+    // pass; getLayoutedEdges reuses an edge's LAYOUT iff the edge object +
+    // both InternalNodes are reference-equal, so stable identities here
+    // (+ stable nodes above) skip getEdgePosition for untouched cables.
+    const curEdges = untrack(() => flowApi?.getEdges() ?? []);
+    const curById = new Map<string, FlowEdge>();
+    for (const ce of curEdges) curById.set(ce.id, ce);
     for (const e of snap.edges) {
       // Skip edges whose endpoint references a hidden child (i.e. a
       // member of a collapsed group). Internal edges between two children
@@ -907,6 +1021,24 @@
       // pre-group-creation snapshot — defensive drop.
       if (childToGroup.has(e.source.nodeId) || childToGroup.has(e.target.nodeId)) continue;
       const related = !!hovered && (e.source.nodeId === hovered || e.target.nodeId === hovered);
+      const prev = prevFlowEdges.get(e.id);
+      if (prev && prev.snapEdge === e && prev.related === related) {
+        // Hover now flips identity for only the hovered node's cables
+        // instead of rebuilding ALL edges on every hover change.
+        const cur = curById.get(e.id);
+        const reusable =
+          cur
+          && cur.source === prev.obj.source
+          && cur.target === prev.obj.target
+          && cur.sourceHandle === prev.obj.sourceHandle
+          && cur.targetHandle === prev.obj.targetHandle
+            ? cur
+            : prev.obj;
+        next.push(reusable);
+        nextPrev.set(e.id, { snapEdge: e, related, obj: reusable });
+        continue;
+      }
+      rebuiltAny = true;
       const edge: FlowEdge = {
         id: e.id,
         source: e.source.nodeId,
@@ -916,10 +1048,37 @@
         style: `stroke: var(--cable-${e.sourceType}); stroke-width: 3;`,
       };
       if (related) edge.class = 'cable-related';
+      // Carry xyflow-owned selection forward on a rebuild (mirror nodes).
+      const cur = curById.get(e.id);
+      if (cur && cur.selected !== undefined) edge.selected = cur.selected;
       next.push(edge);
+      nextPrev.set(e.id, { snapEdge: e, related, obj: edge });
+    }
+    prevFlowEdges = nextPrev;
+    const current = untrack(() => flowEdges);
+    if (!rebuiltAny && next.length === current.length) {
+      let same = true;
+      for (let i = 0; i < next.length; i++) {
+        if (next[i] !== current[i]) { same = false; break; }
+      }
+      if (same) return;
     }
     flowEdges = next;
   });
+
+  // Dev/test-only probes for the identity-reuse regression e2e: expose the
+  // CURRENT flowNodes/flowEdges arrays + the xyflow internal-node lookup so
+  // a spec can assert (in ONE page.evaluate) that an untouched card's
+  // FlowNode object + measured stay reference-identical across a store
+  // commit — the mechanism gate for the no-re-measure fix.
+  if (testHooksEnabled()) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).__flowGraphProbe = () => ({
+      nodes: flowNodes,
+      edges: flowEdges,
+      internal: (id: string) => flowApi?.getInternalNode(id),
+    });
+  }
 
   function trace(line: string) {
     console.log('[canvas]', line);
