@@ -1098,58 +1098,80 @@ export const toyboxDef: VideoModuleDef = {
       keys: Array<{ k: string; action: 'add' | 'update' | 'delete' }>;
     }
     let layersDirty: LayerDirtyLeaf[] | 'full' | null = null;
-    const liveNodeAtFactory = livePatch.nodes[node.id];
-    const yNode = liveNodeAtFactory
-      ? (getYjsValue(liveNodeAtFactory) as Y.Map<unknown> | undefined)
-      : undefined;
+    // Observe the nodes ROOT map (stable for the doc's lifetime), NOT the
+    // node's own Y.Map: an envelope load / spawn helper can REPLACE the
+    // entry wholesale under the SAME id — the reconciler keeps this handle
+    // (same id), so an observer on the old entry map would sit on an
+    // ORPHANED type and never fire again (the perf e2e caught exactly
+    // this: observed=true, layersRev stuck at 1, clone frozen at the
+    // defaults). Root-observing also invalidates correctly ON the
+    // replacement itself (a root-level event whose changed key is our
+    // id). Events are filtered by path[0] === node.id.
+    // Captured ONCE: `node` may be a live proxy in unit envs, and after a
+    // wholesale entry replacement an orphaned proxy's reads (incl. .id)
+    // return undefined — the observer must keep filtering by the REAL id.
+    const observedNodeId = node.id;
+    const yNodesRoot = getYjsValue(livePatch.nodes) as Y.Map<unknown> | undefined;
     const observed =
-      !!yNode && typeof (yNode as { observeDeep?: unknown }).observeDeep === 'function';
+      !!yNodesRoot
+      && typeof (yNodesRoot as { observeDeep?: unknown }).observeDeep === 'function'
+      && !!livePatch.nodes[observedNodeId]; // a bare (never-inserted) node keeps the stringify fallback
     function markLayersFull(): void {
       layersRev++;
       layersDirty = 'full';
     }
-    const onNodeDeep = (events: Array<Y.YEvent<Y.AbstractType<unknown>>>): void => {
+    const onNodesDeep = (events: Array<Y.YEvent<Y.AbstractType<unknown>>>): void => {
       for (const ev of events) {
         const p = ev.path;
         if (p.length === 0) {
-          // Root node-map event: `data` replaced wholesale.
+          // Root event: our entry added / replaced / removed wholesale.
+          if (ev.changes.keys.has(observedNodeId)) {
+            markLayersFull();
+            combineRev++;
+          }
+          continue;
+        }
+        if (String(p[0]) !== observedNodeId) continue; // another module's subtree
+        if (p.length === 1) {
+          // Node-map event: `data` replaced wholesale.
           if (ev.changes.keys.has('data')) {
             markLayersFull();
             combineRev++;
           }
           continue;
         }
-        if (p[0] !== 'data') continue; // params/position/name — not pulled here
-        if (p.length === 1) {
+        if (p[1] !== 'data') continue; // params/position/name — not pulled here
+        if (p.length === 2) {
           if (ev.changes.keys.has('layers')) markLayersFull();
           if (ev.changes.keys.has('combine')) combineRev++;
           continue;
         }
-        if (p[1] === 'combine') {
+        if (p[2] === 'combine') {
           combineRev++;
           continue;
         }
-        if (p[1] !== 'layers') continue; // cvRoutes/cvInputs are read live — no clone
-        if (p.length === 2) {
+        if (p[2] !== 'layers') continue; // cvRoutes/cvInputs are read live — no clone
+        if (p.length === 3) {
           // Array-level insert/delete/replace of layer entries.
           markLayersFull();
           continue;
         }
         layersRev++;
         if (layersDirty === 'full') continue;
-        const sub = p.length === 3 ? null : p.length === 4 ? String(p[3]) : 'full';
+        const sub = p.length === 4 ? null : p.length === 5 ? String(p[4]) : 'full';
         if (sub === 'full') {
           layersDirty = 'full';
           continue;
         }
-        (layersDirty ??= []).push({
-          layer: Number(p[2]),
+        if (layersDirty === null) layersDirty = [];
+        layersDirty.push({
+          layer: Number(p[3]),
           sub,
           keys: [...ev.changes.keys.entries()].map(([k, c]) => ({ k, action: c.action })),
         });
       }
     };
-    if (observed) yNode!.observeDeep(onNodeDeep);
+    if (observed) yNodesRoot!.observeDeep(onNodesDeep);
 
     /** Full JSON re-clone of the store layers (LAYER_COUNT-padded) — the
      *  legacy clone body, extracted. */
@@ -1201,7 +1223,7 @@ export const toyboxDef: VideoModuleDef = {
     }
 
     function liveLayers(): ToyboxLayer[] {
-      const live = livePatch.nodes[node.id];
+      const live = livePatch.nodes[observedNodeId];
       const raw =
         (live?.data?.layers as ToyboxLayer[] | undefined) ??
         (node.data?.layers as ToyboxLayer[] | undefined);
@@ -1238,7 +1260,7 @@ export const toyboxDef: VideoModuleDef = {
      *  Returns a render-local CLONE (see the clone rationale above) so the CV
      *  apply path never writes through the synced Y.Doc proxy. */
     function liveCombineRaw(): ToyboxCombineGraph | ToyboxCombine {
-      const live = livePatch.nodes[node.id];
+      const live = livePatch.nodes[observedNodeId];
       const raw =
         (live?.data?.combine as unknown) ?? (node.data?.combine as unknown);
       const usable =
@@ -2504,7 +2526,7 @@ export const toyboxDef: VideoModuleDef = {
         // engine also disposes handles on node delete within a mount).
         if (observed) {
           try {
-            yNode!.unobserveDeep(onNodeDeep);
+            yNodesRoot!.unobserveDeep(onNodesDeep);
           } catch {
             /* doc may already be destroyed */
           }

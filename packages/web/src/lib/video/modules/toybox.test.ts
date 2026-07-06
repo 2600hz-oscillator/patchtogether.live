@@ -849,6 +849,43 @@ describe('TOYBOX observer rev-keys (liveLayers change detection)', () => {
     handle.dispose();
   });
 
+  it('WHOLESALE entry replacement under the SAME id still invalidates (root-map observer)', () => {
+    // The reconciler keeps a handle when only the node's CONTENT changes
+    // (same id) — but an envelope load / spawn helper may REPLACE the
+    // whole patch.nodes[id] entry, orphaning the node's original Y.Map.
+    // Observing the nodes ROOT map (filtered by path[0]) survives that:
+    // the replacement itself is a root-level event on our id. Regression
+    // for the perf-e2e clone-frozen-at-defaults bug.
+    seedRevToybox();
+    const handle = toyboxDef.factory(makeToyboxCtx(), patch.nodes[REVID] as ModuleNode);
+    expect((handle.read?.('liveModulated') as LiveModulated).layers[0]!.material!.rotX).toBeCloseTo(0.3, 6);
+
+    ydoc.transact(() => {
+      patch.nodes[REVID] = {
+        id: REVID,
+        type: 'toybox',
+        domain: 'video',
+        position: { x: 0, y: 0 },
+        params: {},
+        data: {
+          layers: [
+            { kind: 'obj', contentId: null, params: {}, material: { modelId: 'cube', rotX: -1.5, scale: 1 } },
+            { kind: 'off', contentId: null, params: {} },
+            { kind: 'off', contentId: null, params: {} },
+            { kind: 'off', contentId: null, params: {} },
+          ],
+          combine: makeDefaultCombineGraph(),
+        },
+      } as unknown as ModuleNode;
+    });
+    const lm = handle.read?.('liveModulated') as LiveModulated;
+    expect(lm.layers[0]!.material!.rotX).toBeCloseTo(-1.5, 6);
+    // …and edits to the REPLACEMENT entry keep invalidating.
+    setLayerMaterialField(REVID, 0, 'rotX', 0.42);
+    expect((handle.read?.('liveModulated') as LiveModulated).layers[0]!.material!.rotX).toBeCloseTo(0.42, 6);
+    handle.dispose();
+  });
+
   it('a NON-store-backed node keeps the stringify fallback (still change-detects)', () => {
     const bare = {
       id: 'toybox-bare-node',
