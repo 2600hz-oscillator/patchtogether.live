@@ -30,6 +30,13 @@
     status = 'connecting';
     detail = '';
     try {
+      // A re-Send after a slot edit must tear down the previous orchestrator
+      // FIRST: its inbound listeners + feedback pump hold the OLD allocation
+      // table, and leaving them live makes one hardware twist write two params
+      // (the row-2↔row-3 ElectraControl crosstalk). run() also guards this
+      // cross-instance (liveAutoconfig), but stopping here keeps the button's
+      // own reference lifecycle honest.
+      auto?.stop();
       const host = buildLiveHost({ getEngine: () => getActiveEngine(), luaSource });
       auto = new ElectraAutoconfig(host);
       const res = await auto.run();

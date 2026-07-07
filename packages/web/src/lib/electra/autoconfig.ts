@@ -74,6 +74,17 @@ function splitKey(key: string): { moduleId: string; paramId: string } {
  *  until the engine is live at click time, which the later primes cover. */
 export const DEFAULT_PRIME_DELAYS_MS = [250, 800, 1800] as const;
 
+/** The single LIVE autoconfig. `run()` stops any prior live instance before
+ *  wiring its own inbound dispatch + feedback pump: a re-"Send to Electra"
+ *  after a slot edit must never leave a ZOMBIE listener behind — the old
+ *  instance's allocation table maps the same inbound CCs to the PRE-edit keys,
+ *  so one hardware twist writes TWO different params (the ElectraControl
+ *  "twist row 2 → row 3 also moves" crosstalk: inserting a 6-slot row shifts
+ *  every later CC by one row-block, pairing old/new keys column-for-column).
+ *  Same guard for the old FeedbackPump, which would keep pushing values on the
+ *  superseded CC numbers (moving the wrong rings on the device). */
+let liveAutoconfig: ElectraAutoconfig | null = null;
+
 export class ElectraAutoconfig {
   private pump: FeedbackPump | null = null;
   private tap: TapTempo | null = null;
@@ -100,8 +111,13 @@ export class ElectraAutoconfig {
     this.schedule = opts.scheduler ?? ((fn, ms) => setTimeout(fn, ms));
   }
 
-  /** The full automagic flow. Returns a result describing what happened. */
+  /** The full automagic flow. Returns a result describing what happened.
+   *  Idempotent ACROSS instances: stops the previous live autoconfig first so
+   *  its inbound listeners + pump can't dispatch a stale allocation table in
+   *  parallel with this one (see `liveAutoconfig`). */
   async run(): Promise<AutoconfigResult> {
+    if (liveAutoconfig && liveAutoconfig !== this) liveAutoconfig.stop();
+    liveAutoconfig = this;
     const connected = await this.broker.connect();
     if (!connected) {
       return { ok: false, isElectra: false, reason: 'no-midi-access' };
@@ -247,7 +263,8 @@ export class ElectraAutoconfig {
     return this.generated?.allocations ?? [];
   }
 
-  /** Tear down the pump + inbound listeners (e.g. on disconnect / unmount). */
+  /** Tear down the pump + inbound listeners (e.g. on disconnect / unmount /
+   *  being superseded by a newer `run()`). */
   stop(): void {
     this.pump?.stop();
     this.pump = null;
@@ -258,5 +275,6 @@ export class ElectraAutoconfig {
     this.unsubNote?.();
     this.unsubNote = null;
     this.tap = null;
+    if (liveAutoconfig === this) liveAutoconfig = null;
   }
 }

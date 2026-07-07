@@ -349,3 +349,79 @@ describe('value prime on connect (MIXMASTER shows real values, not 0, on first l
     auto.stop();
   });
 });
+
+describe('zombie-instance guard (the row-2↔row-3 ElectraControl crosstalk)', () => {
+  // Re-"Send to Electra" after a slot edit creates a NEW autoconfig whose
+  // allocation table maps the same CC numbers to DIFFERENT keys (inserting a
+  // row shifts every later CC by a row-block). If the previous instance's
+  // inbound listener survives, ONE hardware twist writes BOTH the old and new
+  // key for that CC — the owner-reported "twist row 2 → row 3 also moves".
+  // run() must stop the prior live instance (cross-instance idempotence).
+  function hostWith(bindings: Array<{ moduleId: string; paramId: string }>) {
+    const writes: Array<[string, string, number]> = [];
+    const host: AutoconfigHost = {
+      buildGenInput: () => ({
+        surfaceBindings: bindings,
+        moduleLabel: (id) => id,
+        resolveParamDef: () => ({ id: 'p', label: 'P', min: 0, max: 1, defaultValue: 0, curve: 'linear' }),
+        mixmstrsId: 'mx',
+        timelordeId: 'tl',
+        name: 'patchtogether',
+      }),
+      readParamValue: () => undefined,
+      readMeterAmp: () => 0,
+      writeParam: (m, p, v) => writes.push([m, p, v]),
+      hasExternalClock: () => false,
+      luaSource: () => '-- lua',
+    };
+    return { host, writes };
+  }
+
+  it('a re-run on a NEW instance detaches the old inbound table (one CC → exactly one write)', async () => {
+    const fake = makeFakeBroker();
+    // First send: cc0 → old:level (the pre-edit layout).
+    const a = hostWith([{ moduleId: 'old', paramId: 'level' }]);
+    const autoA = new ElectraAutoconfig(a.host, fake.broker, { identifyTimeoutMs: 20 });
+    await autoA.run();
+    // Slot edit inserts a binding ahead: cc0 now → fresh:gain on the re-send.
+    const b = hostWith([
+      { moduleId: 'fresh', paramId: 'gain' },
+      { moduleId: 'old', paramId: 'level' },
+    ]);
+    const autoB = new ElectraAutoconfig(b.host, fake.broker, { identifyTimeoutMs: 20 });
+    await autoB.run();
+
+    fake.emit([0xb0, 0, 127]); // one physical twist on cc0
+
+    // The ZOMBIE bug: autoA's listener also fires → old:level ALSO written.
+    expect(a.writes).toEqual([]); // stale table must be dead
+    expect(b.writes).toEqual([['fresh', 'gain', 1]]); // exactly one write
+    autoB.stop();
+  });
+
+  it('re-running the SAME instance stays idempotent (no double dispatch)', async () => {
+    const fake = makeFakeBroker();
+    const a = hostWith([{ moduleId: 'osc', paramId: 'level' }]);
+    const auto = new ElectraAutoconfig(a.host, fake.broker, { identifyTimeoutMs: 20 });
+    await auto.run();
+    await auto.run(); // user mashes Send twice
+    fake.emit([0xb0, 0, 127]);
+    expect(a.writes).toEqual([['osc', 'level', 1]]);
+    auto.stop();
+  });
+
+  it('stop() releases the live-instance registry (a later run is unaffected)', async () => {
+    const fake = makeFakeBroker();
+    const a = hostWith([{ moduleId: 'osc', paramId: 'level' }]);
+    const autoA = new ElectraAutoconfig(a.host, fake.broker, { identifyTimeoutMs: 20 });
+    await autoA.run();
+    autoA.stop();
+    const b = hostWith([{ moduleId: 'osc2', paramId: 'level' }]);
+    const autoB = new ElectraAutoconfig(b.host, fake.broker, { identifyTimeoutMs: 20 });
+    await autoB.run();
+    fake.emit([0xb0, 0, 127]);
+    expect(a.writes).toEqual([]);
+    expect(b.writes).toEqual([['osc2', 'level', 1]]);
+    autoB.stop();
+  });
+});
