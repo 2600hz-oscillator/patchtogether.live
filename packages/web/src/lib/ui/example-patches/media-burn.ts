@@ -6,8 +6,10 @@
 // meta-node positioned so the car starts demolishing the rightmost
 // column exactly 1 second after load.
 //
-// Same shape as glitches.ts: the envelope is built offline by
-// scripts/build-media-burn-envelope.mjs and loaded through the canonical
+// Same shape as glitches.ts: the envelope was built offline by
+// scripts/build-media-burn-envelope.mjs (removed in the LoC hygiene sweep —
+// recover it from git history at the deleting commit if the envelope ever
+// needs regenerating) and is loaded through the canonical
 // `loadEnvelopeIntoStore` path so we automatically get:
 //   - per-module migrations on load
 //   - identical code path to the user-facing Save/Load buttons

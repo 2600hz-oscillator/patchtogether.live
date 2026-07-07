@@ -18,8 +18,8 @@ static/doom/doom.js
 static/doom/doom.wasm
 static/doom/doom.data
 static/doom/DOOM1.WAD
-# Slice-1 MP Node test artifact (built on demand by the net_pt acceptance
-# harness; same gitignore rationale as the prod build above).
+# Slice-1 MP Node test artifact (built on demand by the lockstep-barrier
+# acceptance harness; same gitignore rationale as the prod build above).
 static/doom/doom-mp-node.js
 static/doom/doom-mp-node.wasm
 # DOOM_MP=1 web build artefact (built on demand; same rationale).
