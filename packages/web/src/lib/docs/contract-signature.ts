@@ -43,7 +43,13 @@ interface ContractDefLike {
   exposesSequence?: boolean;
   undeletable?: boolean;
   ownerOnly?: boolean;
-  exposableControls?: readonly { id: string }[];
+  /** Off-main-thread render routing (video defs). engine.ts consults this to
+   *  pick the WorkerProxyHandle path — behavioral contract, not cosmetics. */
+  renderLocus?: string;
+  /** Module-grouping viz-passthrough flag — behavioral (GroupCard portals the
+   *  on-card canvas), same class as exposesSequence/undeletable. */
+  vizPassthrough?: boolean;
+  exposableControls?: readonly { id: string; paramId?: string; kind?: string }[];
   controlFamilies?: readonly ControlFamily[];
 }
 interface ContractPortLike {
@@ -93,6 +99,8 @@ export function serializeModuleContract(def: ContractDefLike): string[] {
   if (def.exposesSequence) meta.push('exposesSequence');
   if (def.undeletable) meta.push('undeletable');
   if (def.ownerOnly) meta.push('ownerOnly');
+  if (def.renderLocus) meta.push(`renderLocus=${def.renderLocus}`);
+  if (def.vizPassthrough) meta.push('vizPassthrough');
   lines.push(`${t} meta ${meta.join(' ')}`);
 
   for (const p of [...(def.inputs ?? [])].sort(byId)) lines.push(`${t} in ${portLine(p)}`);
@@ -104,7 +112,15 @@ export function serializeModuleContract(def: ContractDefLike): string[] {
   // stereo pairs: order WITHIN a pair is meaningful (L,R); sort the LIST.
   const pairs = [...(def.stereoPairs ?? [])].map(([l, r]) => `${l}+${r}`).sort();
   for (const s of pairs) lines.push(`${t} stereo ${s}`);
-  for (const c of [...(def.exposableControls ?? [])].sort(byId)) lines.push(`${t} expose ${c.id}`);
+  // exposable controls: pin the id AND its param binding + primitive kind —
+  // the id keys GroupData.exposedControls persistence, the paramId decides
+  // WHAT a group-bar control writes (an id↔param rebinding is a contract
+  // change even when the id survives).
+  for (const c of [...(def.exposableControls ?? [])].sort(byId)) {
+    const paramPart = c.paramId ? ` param=${c.paramId}` : '';
+    const kindPart = c.kind ? ` kind=${c.kind}` : '';
+    lines.push(`${t} expose ${c.id}${paramPart}${kindPart}`);
+  }
   for (const f of [...(def.controlFamilies ?? [])].sort(byId)) {
     lines.push(
       `${t} family ${f.id} kind=${f.kind} prefix=${f.testidPrefix}${f.countParam ? ` count=${f.countParam}` : ''}`,
