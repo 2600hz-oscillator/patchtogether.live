@@ -5,9 +5,10 @@
 //
 // WHAT THIS PROVES (the P1 deliverable: the LIVE barrier path is bit-exact):
 //
-//   lockstep-determinism.acceptance.mjs proves the SCRIPTED overlay
-//   (dgpt_set_scripted) is bit-exact. But the LIVE game does NOT use scripted
-//   mode — it uses the new P1 barrier: dgpt_set_lockstep(1) +
+//   lockstep-determinism.acceptance.mjs (a non-CI dev harness, removed in the
+//   LoC hygiene sweep — recover it from git history at the deleting commit)
+//   proved the SCRIPTED overlay (dgpt_set_scripted) is bit-exact. But the LIVE
+//   game does NOT use scripted mode — it uses the new P1 barrier: dgpt_set_lockstep(1) +
 //   dgpt_receive_ticset(tic, ...) feeding the consolidated TicSet through
 //   D_ReceiveTic-style delivery, with the engine's own GetLowTic/TryRunTics
 //   gating advancement against dgpt_recvtic. This harness exercises EXACTLY that
