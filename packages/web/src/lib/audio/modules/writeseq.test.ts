@@ -24,7 +24,7 @@ import {
   resolveStepVOct,
   quantizeToNearestStep,
   STEP_COUNT,
-  type } from './writeseq';
+} from './writeseq';
 import { C4_MIDI, midiToVOct, vOctToMidi } from '$lib/audio/note-entry';
 
 describe('coerceStep', () => {
