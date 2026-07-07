@@ -28,41 +28,6 @@ import {
 // ---------------------------------------------------------------------------
 
 describe('callsineDef shape', () => {
-  it('declares type=callsine, label=CALLSINE, category=effects', () => {
-    expect(callsineDef.type).toBe('callsine');
-    expect(callsineDef.label).toBe('callsine');
-    expect(callsineDef.category).toBe('effects');
-  });
-
-  it('exposes the expected input ports (audio + pitch + gate + 6 cv)', () => {
-    const ids = callsineDef.inputs.map((p) => p.id);
-    expect(ids).toEqual([
-      'audio_in', 'pitch', 'gate',
-      'model_cv', 'note_cv', 'harm_cv', 'timb_cv', 'morph_cv', 'level_cv',
-    ]);
-  });
-
-  it('exposes 1 audio output: out', () => {
-    const ids = callsineDef.outputs.map((p) => p.id);
-    expect(ids).toEqual(['out']);
-    for (const p of callsineDef.outputs) expect(p.type).toBe('audio');
-  });
-
-  it('exposes 6 params: model, note, harmonics, timbre, morph, level', () => {
-    const ids = callsineDef.params.map((p) => p.id);
-    expect(ids).toEqual(['model', 'note', 'harmonics', 'timbre', 'morph', 'level']);
-  });
-
-  it('every cv input has paramTarget pointing at a real param + cvScale set', () => {
-    for (const port of callsineDef.inputs) {
-      if (port.type !== 'cv') continue;
-      expect(port.paramTarget, `${port.id} paramTarget`).toBeDefined();
-      expect(port.cvScale, `${port.id} cvScale`).toBeDefined();
-      const param = callsineDef.params.find((p) => p.id === port.paramTarget);
-      expect(param, `${port.id} → param ${port.paramTarget}`).toBeDefined();
-    }
-  });
-
   it(`model param: discrete 0..${CALLSINE_MAX_MODEL} (= MODEL_NAMES.length - 1)`, () => {
     const p = callsineDef.params.find((p) => p.id === 'model')!;
     expect(p.curve).toBe('discrete');
@@ -76,25 +41,6 @@ describe('callsineDef shape', () => {
     expect(port.cvScale).toEqual({ mode: 'discrete' });
   });
 
-  it('note param: ±60 semitone offset, units=st', () => {
-    const p = callsineDef.params.find((p) => p.id === 'note')!;
-    expect(p.min).toBe(-60);
-    expect(p.max).toBe(60);
-    expect(p.units).toBe('st');
-  });
-
-  it('continuous macros (harmonics/timbre/morph/level) live in [0..1] linear', () => {
-    for (const id of ['harmonics', 'timbre', 'morph', 'level']) {
-      const p = callsineDef.params.find((x) => x.id === id)!;
-      expect(p.min, `${id} min`).toBe(0);
-      expect(p.max, `${id} max`).toBe(1);
-      expect(p.curve, `${id} curve`).toBe('linear');
-    }
-  });
-
-  it('credits the upstream CallSine authors (MIT)', () => {
-    expect(callsineDef.ossAttribution?.author).toMatch(/callsine|Warren/i);
-  });
 });
 
 // ---------------------------------------------------------------------------

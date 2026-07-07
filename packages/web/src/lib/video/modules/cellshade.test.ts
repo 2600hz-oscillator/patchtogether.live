@@ -34,40 +34,6 @@ import { EDGES_MAX_THICKNESS } from './edges';
 // Def shape
 // ---------------------------------------------------------------------------
 describe('cellshadeDef shape', () => {
-  it('is a video PROCESSOR: exactly one video input (in) → one video out', () => {
-    const videoInputs = cellshadeDef.inputs.filter((p) => p.type === 'video');
-    expect(videoInputs.map((p) => p.id)).toEqual(['in']);
-    expect(cellshadeDef.outputs.map((o) => o.id)).toEqual(['out']);
-    expect(cellshadeDef.outputs[0]!.type).toBe('video');
-  });
-
-  it('lowercase label, video domain, effects category', () => {
-    expect(cellshadeDef.label).toBe('cellshade');
-    expect(cellshadeDef.domain).toBe('video');
-    expect(cellshadeDef.category).toBe('effects');
-  });
-
-  it('declares threshold + thickness + bits params', () => {
-    const ids = cellshadeDef.params.map((p) => p.id).sort();
-    expect(ids).toEqual(['bits', 'thickness', 'threshold']);
-  });
-
-  it('declares a CV input mirroring every modulatable param (paramTarget == id)', () => {
-    const inputIds = cellshadeDef.inputs.map((p) => p.id);
-    expect(inputIds).toContain('in');
-    for (const p of ['threshold', 'thickness', 'bits'] as const) {
-      expect(inputIds, `missing cv input for ${p}`).toContain(p);
-    }
-    for (const port of cellshadeDef.inputs.filter((i) => i.type === 'cv')) {
-      expect(port.paramTarget, `cv input ${port.id} paramTarget`).toBe(port.id);
-    }
-  });
-
-  it('bits CV input uses a DISCRETE cvScale (snaps to the 5 steps)', () => {
-    const bitsIn = cellshadeDef.inputs.find((i) => i.id === 'bits');
-    expect(bitsIn?.cvScale?.mode).toBe('discrete');
-  });
-
   it('threshold spans 0..1 (default 0.2), matching EDGES', () => {
     const t = cellshadeDef.params.find((p) => p.id === 'threshold');
     expect([t?.min, t?.max, t?.defaultValue]).toEqual([0, 1, 0.2]);

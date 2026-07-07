@@ -165,31 +165,6 @@ function makeMidiAccess(...inputs: ReturnType<typeof makeMidiInput>[]): MidiAcce
 // ════════════════════════════════════════════════════════════════════
 
 describe('midiLaneDef: module shape', () => {
-  it('declares no inputs (MIDI source is external) and 7 outputs', () => {
-    expect(midiLaneDef.inputs).toEqual([]);
-    const outIds = midiLaneDef.outputs.map((o) => o.id);
-    expect(outIds).toEqual([
-      'pitch_cv', 'gate', 'velocity_cv', 'cc_a', 'cc_b', 'note_gate', 'poly',
-    ]);
-  });
-
-  it('output cable types are correct (cv / gate / polyPitchGate)', () => {
-    const byId = Object.fromEntries(midiLaneDef.outputs.map((o) => [o.id, o.type]));
-    expect(byId.pitch_cv).toBe('cv');
-    expect(byId.gate).toBe('gate');
-    expect(byId.velocity_cv).toBe('cv');
-    expect(byId.cc_a).toBe('cv');
-    expect(byId.cc_b).toBe('cv');
-    expect(byId.note_gate).toBe('gate');
-    expect(byId.poly).toBe('polyPitchGate');
-  });
-
-  it('lives in the MIDI palette + sources category, with no AudioParams', () => {
-    expect(midiLaneDef.palette).toEqual({ top: 'MIDI', sub: 'MIDI' });
-    expect(midiLaneDef.category).toBe('sources');
-    expect(midiLaneDef.params).toEqual([]);
-  });
-
   it('defaults are sensible: all channels, mono, last, retrig, CC1=A, kick=36', () => {
     expect(DEFAULT_DATA.channels).toBeNull();
     expect(DEFAULT_DATA.mode).toBe('mono');

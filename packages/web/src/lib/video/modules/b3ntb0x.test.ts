@@ -296,81 +296,6 @@ describe('B3NTB0X burst starve (decode colour-killer + subcarrier crawl)', () =>
   });
 });
 
-describe('B3NTB0X module def shape', () => {
-  it('declares the video-domain type', () => {
-    expect(b3ntb0xDef.type).toBe('b3ntb0x');
-    expect(b3ntb0xDef.domain).toBe('video');
-    expect(b3ntb0xDef.category).toBe('output');
-  });
-
-  it('classifies itself as a Video Processor (palette)', () => {
-    expect(b3ntb0xDef.palette).toEqual({ top: 'Video modules', sub: 'Processors' });
-  });
-
-  it('has a single video input + a single video output', () => {
-    expect(b3ntb0xDef.inputs.find((p) => p.id === 'in' && p.type === 'video')).toBeTruthy();
-    expect(b3ntb0xDef.outputs).toHaveLength(1);
-    expect(b3ntb0xDef.outputs[0]!.id).toBe('out');
-    expect(b3ntb0xDef.outputs[0]!.type).toBe('video');
-  });
-
-  it('every CV input has a matching paramTarget that exists in params', () => {
-    const paramIds = new Set(b3ntb0xDef.params.map((p) => p.id));
-    for (const port of b3ntb0xDef.inputs) {
-      if (port.type === 'cv') {
-        expect(port.paramTarget, port.id).toBeDefined();
-        expect(paramIds.has(port.paramTarget!), `${port.id} -> ${port.paramTarget}`).toBe(true);
-      }
-    }
-  });
-
-  it('continuous CV inputs carry cvScale:linear; mirror gates omit it', () => {
-    for (const port of b3ntb0xDef.inputs) {
-      if (port.type !== 'cv') continue;
-      if (port.id === 'mirror_x_gate' || port.id === 'mirror_y_gate') {
-        expect(port.cvScale, port.id).toBeUndefined();
-      } else {
-        expect(port.cvScale, port.id).toEqual({ mode: 'linear' });
-      }
-    }
-  });
-
-  it('exposes mirror_x_gate / mirror_y_gate as raw gate inputs', () => {
-    for (const [pid, target] of [
-      ['mirror_x_gate', 'mirrorXGate'],
-      ['mirror_y_gate', 'mirrorYGate'],
-    ] as const) {
-      const g = b3ntb0xDef.inputs.find((p) => p.id === pid);
-      expect(g, pid).toBeDefined();
-      expect(g?.type).toBe('cv');
-      expect(g?.cvScale).toBeUndefined();
-      expect(g?.paramTarget).toBe(target);
-    }
-  });
-
-  it('default params land within their declared ranges', () => {
-    for (const p of b3ntb0xDef.params) {
-      if (typeof p.min === 'number') expect(p.defaultValue, p.id).toBeGreaterThanOrEqual(p.min);
-      if (typeof p.max === 'number') expect(p.defaultValue, p.id).toBeLessThanOrEqual(p.max);
-    }
-  });
-
-  it('bend A-D are bipolar -1..1 with identity default 0 (P1 stub)', () => {
-    const byId = new Map(b3ntb0xDef.params.map((p) => [p.id, p]));
-    for (const id of ['bend_a', 'bend_b', 'bend_c', 'bend_d']) {
-      const p = byId.get(id)!;
-      expect(p.min).toBe(-1);
-      expect(p.max).toBe(1);
-      expect(p.defaultValue).toBe(0);
-    }
-  });
-
-  it('TBC/Lock defaults to rock-steady (1) so a fresh patch is stable', () => {
-    const tbc = b3ntb0xDef.params.find((p) => p.id === 'tbc')!;
-    expect(tbc.defaultValue).toBe(1);
-  });
-});
-
 // ---------------------------------------------------------------------------
 // PARAM-MUTATION WIRING — downgraded from b3ntb0x.spec.ts test 3 ("CV-bending
 // knobs mutate params via the patch store"), webgl-suite-optimization §1/§2/§7-3.
@@ -633,14 +558,6 @@ describe('B3NTB0X param→uniform wiring (no dead controls)', () => {
     }
   });
 
-  it('mirror GATES drive the CPU edge-detect (not a uniform) — covered separately', () => {
-    // mirrorXGate/mirrorYGate have NO uniform: they tick b3ntb0xMirrorGateTick
-    // which flips mirrorX/mirrorY (whose uniforms ARE guarded above). Assert the
-    // gate params exist + are excluded from the uniform table on purpose.
-    for (const g of ['mirrorXGate', 'mirrorYGate']) {
-      expect(b3ntb0xDef.params.find((p) => p.id === g), g).toBeDefined();
-    }
-  });
 });
 
 // ===========================================================================

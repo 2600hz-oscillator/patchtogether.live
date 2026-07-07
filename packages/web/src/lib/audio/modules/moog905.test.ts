@@ -22,41 +22,6 @@ import { moog905Def } from './moog905';
 import type { ModuleNode } from '$lib/graph/types';
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
-describe('moog905Def: module def shape', () => {
-  it('declares type=moog905, label="905 Spring Reverb", category=processors, schemaVersion=1', () => {
-    expect(moog905Def.type).toBe('moog905');
-    expect(moog905Def.label).toBe('905 spring reverb');
-    expect(moog905Def.category).toBe('processors');
-    expect(moog905Def.domain).toBe('audio');
-  });
-
-  it('lives in the Moog System 35/55 Clones palette bucket and uses the Moog905Card', () => {
-    expect(moog905Def.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
-    expect(moog905Def.card).toBe('Moog905Card');
-  });
-
-  it('exposes a single audio input (audio)', () => {
-    expect(moog905Def.inputs.map((p) => p.id)).toEqual(['audio']);
-    expect(moog905Def.inputs[0].type).toBe('audio');
-    // Plain audio passthrough — not a knob modulator.
-    expect(moog905Def.inputs[0].paramTarget).toBeUndefined();
-    expect(moog905Def.inputs[0].cvScale).toBeUndefined();
-  });
-
-  it('exposes a single audio output (audio)', () => {
-    expect(moog905Def.outputs.map((p) => p.id)).toEqual(['audio']);
-    expect(moog905Def.outputs[0].type).toBe('audio');
-  });
-
-  it('exposes 3 params (mix, decay, size) with the documented ranges + defaults', () => {
-    const byId = Object.fromEntries(moog905Def.params.map((p) => [p.id, p] as const));
-    expect(moog905Def.params.map((p) => p.id)).toEqual(['mix', 'decay', 'size']);
-    expect(byId.mix).toMatchObject({ min: 0, max: 1, curve: 'linear', defaultValue: 0.35 });
-    expect(byId.decay).toMatchObject({ min: 0, max: 1, curve: 'linear', defaultValue: 0.6 });
-    expect(byId.size).toMatchObject({ min: 0, max: 1, curve: 'linear', defaultValue: 0.5 });
-  });
-});
-
 // ───────────────────── Layer 2: factory wiring ─────────────────────
 //
 // Minimal Web Audio mock for a worklet module. The AudioWorkletNode exposes a

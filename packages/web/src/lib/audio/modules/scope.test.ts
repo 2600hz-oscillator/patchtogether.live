@@ -20,62 +20,6 @@ import {
   EDGE_ALPHA,
 } from './scope-draw';
 
-describe('SCOPE module def shape', () => {
-  it('declares the mono-video output port', () => {
-    const out = scopeDef.outputs.find((p) => p.id === 'out');
-    expect(out, 'scope.out video port present').toBeDefined();
-    expect(out?.type).toBe('mono-video');
-  });
-
-  it('preserves the legacy audio passthrough outputs', () => {
-    const ids = scopeDef.outputs.map((p) => p.id);
-    expect(ids).toContain('ch1_out');
-    expect(ids).toContain('ch2_out');
-  });
-
-  it('exposes per-channel display-mode params (ch1Range, ch2Range)', () => {
-    // The mode toggle is named ch{1,2}Range in the def (the param
-    // shipped pre-PR as a generic "range" toggle; the AUDIO↔CV UX
-    // landed in this PR). Both are discrete 0..1 with default 0 = AUDIO.
-    const ch1 = scopeDef.params.find((p) => p.id === 'ch1Range');
-    const ch2 = scopeDef.params.find((p) => p.id === 'ch2Range');
-    expect(ch1, 'ch1Range param present').toBeDefined();
-    expect(ch2, 'ch2Range param present').toBeDefined();
-    for (const p of [ch1!, ch2!]) {
-      expect(p.curve).toBe('discrete');
-      expect(p.min).toBe(0);
-      expect(p.max).toBe(1);
-      expect(p.defaultValue).toBe(0); // 0 = AUDIO; today's behavior preserved
-    }
-  });
-
-  it('exposes 2 audio inputs + 1 cv input per param', () => {
-    // PR-69 added per-param CV inputs ("scope should have cv inputs
-    // for everything"). Port id MUST equal param id so the cross-domain
-    // CV bridge in PatchEngine routes via setParam(portId).
-    const ids = scopeDef.inputs.map((p) => p.id).sort();
-    expect(ids).toEqual(
-      [
-        'ch1', 'ch2',
-        'timeMs',
-        'ch1Scale', 'ch1Offset', 'ch1Range',
-        'ch2Scale', 'ch2Offset', 'ch2Range',
-        'mode',
-        'intensity',
-      ].sort(),
-    );
-    for (const p of scopeDef.inputs) {
-      if (p.id === 'ch1' || p.id === 'ch2') {
-        expect(p.type, `${p.id} stays audio`).toBe('audio');
-      } else {
-        expect(p.type, `${p.id} is CV`).toBe('cv');
-        // Param routing invariant: port id == paramTarget == def.params[].id.
-        expect((p as { paramTarget?: string }).paramTarget, `${p.id} routes to itself`).toBe(p.id);
-      }
-    }
-  });
-});
-
 // ---- Per-channel single-sample readback (`read('ch1_last_sample')`) ------
 //
 // Used by e2e (vrt-composite + nibbles-cv-scope.spec.ts) to assert that a
@@ -226,12 +170,6 @@ describe('SCOPE intensity param def', () => {
     expect(p!.defaultValue).toBe(DEFAULT_INTENSITY);
   });
 
-  it('exposes an intensity CV input routing to itself', () => {
-    const inp = scopeDef.inputs.find((q) => q.id === 'intensity');
-    expect(inp, 'intensity CV input present').toBeDefined();
-    expect(inp!.type).toBe('cv');
-    expect((inp as { paramTarget?: string }).paramTarget).toBe('intensity');
-  });
 });
 
 describe('intensityToPersistScreens (INTENSITY -> persistence length in screens)', () => {

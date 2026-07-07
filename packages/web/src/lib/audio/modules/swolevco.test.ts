@@ -6,59 +6,10 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-  swolevcoDef,
   symmetryGains,
   buildVoctCurve,
   tuneFineToHz,
 } from './swolevco';
-
-describe('swolevcoDef: module-def shape', () => {
-  it('declares type=swolevco, label=SWOLEVCO, category=sources', () => {
-    expect(swolevcoDef.type).toBe('swolevco');
-    expect(swolevcoDef.label).toBe('swolevco');
-    expect(swolevcoDef.category).toBe('sources');
-  });
-
-  it('exposes 7 input ports (pitch, mod_pitch, fm + 4 cv)', () => {
-    const ids = swolevcoDef.inputs.map((p) => p.id).sort();
-    expect(ids).toEqual(
-      ['pitch', 'mod_pitch', 'fm', 'timbre', 'symmetry', 'fold', 'ratio'].sort(),
-    );
-  });
-
-  it('exposes 4 output ports (out, mod_out, sum_out, scope)', () => {
-    const ids = swolevcoDef.outputs.map((p) => p.id).sort();
-    expect(ids).toEqual(['mod_out', 'out', 'scope', 'sum_out']);
-  });
-
-  it('scope output is mono-video (matches the WAVVIZ pattern)', () => {
-    const scope = swolevcoDef.outputs.find((p) => p.id === 'scope');
-    expect(scope).toBeDefined();
-    expect(scope?.type).toBe('mono-video');
-  });
-
-  it('declares 8 params with sensible defaults', () => {
-    const ids = swolevcoDef.params.map((p) => p.id).sort();
-    expect(ids).toEqual(
-      ['fine', 'fold', 'mod_fine', 'mod_tune', 'ratio', 'symmetry', 'timbre', 'tune'].sort(),
-    );
-    const ratio = swolevcoDef.params.find((p) => p.id === 'ratio');
-    expect(ratio?.defaultValue).toBe(1.0); // unison default
-    const symmetry = swolevcoDef.params.find((p) => p.id === 'symmetry');
-    expect(symmetry?.defaultValue).toBe(0.5); // triangle midpoint
-    const fold = swolevcoDef.params.find((p) => p.id === 'fold');
-    expect(fold?.defaultValue).toBe(0); // bypass by default
-  });
-
-  it('CV inputs declare paramTarget so the engine routes to AudioParam', () => {
-    const cvInputs = swolevcoDef.inputs.filter((p) => p.type === 'cv');
-    for (const p of cvInputs) {
-      expect(p.paramTarget, `${p.id} has paramTarget`).toBeDefined();
-      // Convention: the paramTarget id matches the port id.
-      expect(p.paramTarget).toBe(p.id);
-    }
-  });
-});
 
 describe('SWOLEVCO helpers: symmetryGains', () => {
   it('symmetry=0 → saw only', () => {

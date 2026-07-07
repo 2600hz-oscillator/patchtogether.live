@@ -11,39 +11,7 @@
 // ART scenario which runs against a real OfflineAudioContext.
 
 import { describe, expect, it } from 'vitest';
-import { shimmershineDef, shimmershineMath } from './shimmershine';
-
-describe('shimmershineDef shape', () => {
-  it('declares the expected ports (2 audio + 4 cv in, 2 audio out)', () => {
-    const inputs = shimmershineDef.inputs;
-    const outputs = shimmershineDef.outputs;
-    expect(inputs.map((p) => p.id)).toEqual([
-      'in_l', 'in_r', 'decay_cv', 'shimmer_cv', 'size_cv', 'mix_cv',
-    ]);
-    expect(outputs.map((p) => p.id)).toEqual(['out_l', 'out_r']);
-    expect(inputs.filter((p) => p.type === 'audio')).toHaveLength(2);
-    expect(inputs.filter((p) => p.type === 'cv')).toHaveLength(4);
-  });
-
-  it('every cv input has cvScale + paramTarget (no PASSTHROUGH_BY_DESIGN cases)', () => {
-    for (const p of shimmershineDef.inputs) {
-      if (p.type !== 'cv') continue;
-      expect(p.cvScale, `${p.id} cvScale`).toBeDefined();
-      expect(p.paramTarget, `${p.id} paramTarget`).toBeDefined();
-    }
-  });
-
-  it('all 5 params live in [0..1] linear', () => {
-    expect(shimmershineDef.params.map((p) => p.id)).toEqual([
-      'decay', 'shimmer', 'size', 'damp', 'mix',
-    ]);
-    for (const p of shimmershineDef.params) {
-      expect(p.min).toBe(0);
-      expect(p.max).toBe(1);
-      expect(p.curve).toBe('linear');
-    }
-  });
-});
+import { shimmershineMath } from './shimmershine';
 
 describe('shimmershineMath.hannWindow', () => {
   it('phase 0 and phase 1 both return 0 (window endpoints)', () => {

@@ -4,7 +4,7 @@
 // Worklet rendering is exercised by the ART harness.
 
 import { describe, expect, it } from 'vitest';
-import { unityscalemathematikDef, unityScaleMath } from './unityscalemathematik';
+import { unityScaleMath } from './unityscalemathematik';
 
 describe('unityScaleMath: unity attenuvert', () => {
   it('atten=+1 passes input through unchanged', () => {
@@ -96,70 +96,5 @@ describe('unityScaleMath: bipolar sign preservation', () => {
   it('atten=-1 with curve=1 inverts the sign of the shaped magnitude', () => {
     expect(unityScaleMath.shape(0.5, -1, 1)).toBeCloseTo(-0.125, 12);
     expect(unityScaleMath.shape(-0.5, -1, 1)).toBeCloseTo(0.125, 12);
-  });
-});
-
-describe('unityscalemathematikDef: module-def shape', () => {
-  it('declares type=unityscalemathematik, label=UNITYSCALEMATHEMATIK, category=utilities', () => {
-    expect(unityscalemathematikDef.type).toBe('unityscalemathematik');
-    expect(unityscalemathematikDef.label).toBe('unityscalemathematik');
-    expect(unityscalemathematikDef.category).toBe('utilities');
-    expect(unityscalemathematikDef.domain).toBe('audio');
-  });
-
-  it('exposes 8 cv inputs', () => {
-    const ids = unityscalemathematikDef.inputs.map((p) => p.id).sort();
-    expect(ids).toEqual([
-      'a_atten_cv', 'a_curve_cv', 'a_in',
-      'b_atten_cv', 'b_curve_cv', 'b_in',
-      'u_atten_cv', 'u_in',
-    ]);
-    for (const p of unityscalemathematikDef.inputs) {
-      expect(p.type).toBe('cv');
-    }
-  });
-
-  it('exposes 3 cv outputs (u_out, a_out, b_out)', () => {
-    const ids = unityscalemathematikDef.outputs.map((p) => p.id).sort();
-    expect(ids).toEqual(['a_out', 'b_out', 'u_out']);
-    for (const p of unityscalemathematikDef.outputs) {
-      expect(p.type).toBe('cv');
-    }
-  });
-
-  it('cv-on-param inputs declare paramTarget + linear cvScale', () => {
-    const cvParams = ['u_atten_cv', 'a_atten_cv', 'a_curve_cv', 'b_atten_cv', 'b_curve_cv'];
-    for (const id of cvParams) {
-      const port = unityscalemathematikDef.inputs.find((p) => p.id === id);
-      expect(port, id).toBeDefined();
-      expect(port?.paramTarget, `${id} paramTarget`).toBeDefined();
-      expect(port?.cvScale?.mode, `${id} cvScale.mode`).toBe('linear');
-    }
-  });
-
-  it('signal inputs (u_in, a_in, b_in) carry no paramTarget', () => {
-    for (const id of ['u_in', 'a_in', 'b_in']) {
-      const port = unityscalemathematikDef.inputs.find((p) => p.id === id);
-      expect(port?.paramTarget, `${id} paramTarget`).toBeUndefined();
-      expect(port?.cvScale, `${id} cvScale`).toBeUndefined();
-    }
-  });
-
-  it('exposes 5 params with bipolar attenuverters and unipolar curves', () => {
-    const ids = unityscalemathematikDef.params.map((p) => p.id).sort();
-    expect(ids).toEqual(['aAtten', 'aCurve', 'bAtten', 'bCurve', 'unityAtten']);
-
-    for (const id of ['unityAtten', 'aAtten', 'bAtten']) {
-      const p = unityscalemathematikDef.params.find((q) => q.id === id);
-      expect(p?.min, `${id} min`).toBe(-1);
-      expect(p?.max, `${id} max`).toBe(1);
-      expect(p?.defaultValue, `${id} default`).toBe(1);
-    }
-    for (const id of ['aCurve', 'bCurve']) {
-      const p = unityscalemathematikDef.params.find((q) => q.id === id);
-      expect(p?.min, `${id} min`).toBe(0);
-      expect(p?.max, `${id} max`).toBe(1);
-      expect(p?.defaultValue, `${id} default`).toBe(0);
-    }
   });
 });

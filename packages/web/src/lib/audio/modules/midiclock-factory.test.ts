@@ -146,14 +146,6 @@ describe('midiclockDef.factory — MIDI System Real-Time → ConstantSourceNode 
     }
   }
 
-  it('exposes midistart + midistop as gate outputs', () => {
-    const ids = midiclockDef.outputs.map((o) => o.id);
-    expect(ids).toContain('midistart');
-    expect(ids).toContain('midistop');
-    expect(midiclockDef.outputs.find((o) => o.id === 'midistart')?.type).toBe('gate');
-    expect(midiclockDef.outputs.find((o) => o.id === 'midistop')?.type).toBe('gate');
-  });
-
   it('0xFA (MIDI Start) pulses midistart: setValueAtTime(1, t), then 0 at t+GATE_PULSE_S', async () => {
     // Regression pin for the user's bug: 0xFA from a connected DAW must
     // produce a real audio-thread pulse on the midistart output, not

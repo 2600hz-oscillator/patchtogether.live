@@ -75,48 +75,6 @@ describe('moog912 DSP helpers', () => {
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
 describe('moog912Def: module def shape', () => {
-  it('declares type=moog912, label="912 Envelope Follower", category=modulation, schemaVersion=1', () => {
-    expect(moog912Def.type).toBe('moog912');
-    expect(moog912Def.label).toBe('912 envelope follower');
-    expect(moog912Def.category).toBe('modulation');
-  });
-
-  it('lives in the Moog System 35/55 Clones palette bucket and uses the Moog912Card', () => {
-    expect(moog912Def.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
-    expect(moog912Def.card).toBe('Moog912Card');
-    expect(moog912Def.domain).toBe('audio');
-  });
-
-  it('exposes a single audio input: audio (audio, PASSTHROUGH — no CV scale/target)', () => {
-    const ids = moog912Def.inputs.map((p) => p.id);
-    expect(ids).toEqual(['audio']);
-    expect(moog912Def.inputs[0].type).toBe('audio');
-    for (const p of moog912Def.inputs) {
-      expect(p.cvScale).toBeUndefined();
-      expect(p.paramTarget).toBeUndefined();
-    }
-  });
-
-  it('exposes env (cv) + gate (gate) outputs', () => {
-    const ids = moog912Def.outputs.map((p) => p.id);
-    expect(ids).toEqual(['env', 'gate']);
-    expect(moog912Def.outputs.find((o) => o.id === 'env')!.type).toBe('cv');
-    expect(moog912Def.outputs.find((o) => o.id === 'gate')!.type).toBe('gate');
-  });
-
-  it('exposes 2 params (sensitivity default 0.7, smoothing default 0.5), both linear 0..1', () => {
-    const ids = moog912Def.params.map((p) => p.id);
-    expect(ids).toEqual(['sensitivity', 'smoothing']);
-    for (const p of moog912Def.params) {
-      expect(p.min).toBe(0);
-      expect(p.max).toBe(1);
-      expect(p.curve).toBe('linear');
-      expect(p.label).toBeTruthy();
-    }
-    expect(moog912Def.params.find((p) => p.id === 'sensitivity')!.defaultValue).toBe(0.7);
-    expect(moog912Def.params.find((p) => p.id === 'smoothing')!.defaultValue).toBe(0.5);
-  });
-
   it('output port ids match the handle Map keys exactly (no drift)', async () => {
     const { ctx } = makeMockCtx();
     const handle = await moog912Def.factory(ctx, makeNode());

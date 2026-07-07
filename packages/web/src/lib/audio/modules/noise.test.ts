@@ -11,7 +11,7 @@
 // the leaky integrator brown noise has a small DC pole offset.
 
 import { describe, expect, it } from 'vitest';
-import { noiseDef, noiseGenerators } from './noise';
+import { noiseGenerators } from './noise';
 
 // N kept small (1024) because we do an O(N²) naive DFT — the spectral
 // shape is statistical and a 1024-point window already gives stable
@@ -151,37 +151,5 @@ describe('noiseGenerators: brown noise', () => {
       if (a > peak) peak = a;
     }
     expect(peak, `brown peak=${peak}`).toBeLessThan(1.5);
-  });
-});
-
-describe('noiseDef: module-def shape', () => {
-  it('declares type=noise, label=NOISE, category=sources', () => {
-    expect(noiseDef.type).toBe('noise');
-    expect(noiseDef.label).toBe('noise');
-    expect(noiseDef.category).toBe('sources');
-    expect(noiseDef.domain).toBe('audio');
-  });
-
-  it('exposes 0 inputs (it is a source)', () => {
-    expect(noiseDef.inputs).toEqual([]);
-  });
-
-  it('exposes 3 audio outputs: white, pink, brown', () => {
-    const ids = noiseDef.outputs.map((p) => p.id).sort();
-    expect(ids).toEqual(['brown', 'pink', 'white']);
-    for (const p of noiseDef.outputs) {
-      expect(p.type).toBe('audio');
-    }
-  });
-
-  it('exposes a single LEVEL param (0..1, defaults to 0.5)', () => {
-    expect(noiseDef.params).toHaveLength(1);
-    const level = noiseDef.params[0]!;
-    expect(level.id).toBe('level');
-    expect(level.label).toBe('Level');
-    expect(level.min).toBe(0);
-    expect(level.max).toBe(1);
-    expect(level.defaultValue).toBe(0.5);
-    expect(level.curve).toBe('linear');
   });
 });

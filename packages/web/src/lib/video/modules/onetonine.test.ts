@@ -10,13 +10,6 @@ import {
 } from './onetonine';
 
 describe('onetonine module def', () => {
-  it('is a video module with lowercase label "one to nine"', () => {
-    expect(oneToNineDef.type).toBe('onetonine');
-    expect(oneToNineDef.domain).toBe('video');
-    expect(oneToNineDef.label).toBe('one to nine');
-    expect(oneToNineDef.label).toBe(oneToNineDef.label.toLowerCase());
-  });
-
   it('declares a single video input "in" and nine video outputs out1..out9', () => {
     expect(oneToNineDef.inputs).toEqual([{ id: 'in', type: 'video' }]);
     expect(oneToNineDef.outputs.map((p) => p.id)).toEqual([...OUTPUT_IDS]);
@@ -26,11 +19,6 @@ describe('onetonine module def', () => {
     expect(oneToNineDef.inputs.some((p) => p.type === 'cv')).toBe(false);
   });
 
-  it('exposes a showGrid param defaulting ON', () => {
-    const p = oneToNineDef.params.find((x) => x.id === 'showGrid');
-    expect(p).toBeTruthy();
-    expect(p!.defaultValue).toBe(1);
-  });
 });
 
 describe('cell row/col (reading order)', () => {

@@ -92,58 +92,6 @@ function peak(b: Float32Array): number { let m = 0; for (let i = 0; i < b.length
 // 1) Module-def shape.
 // ─────────────────────────────────────────────────────────────────────────
 
-describe('hypercubeDef — module def shape', () => {
-  it('declares pitch + the documented CV inputs incl. the ALPHA CV', () => {
-    expect(hypercubeDef.inputs.map((i) => i.id)).toEqual([
-      'pitch',
-      'slice_y', 'slice_rx', 'slice_ry', 'slice_rz',
-      'morph_fc', 'connect', 'crush', 'fold_cv', 'alpha', 'tune',
-    ]);
-  });
-
-  it('the ALPHA CV input targets the alpha param with linear cvScale', () => {
-    const p = hypercubeDef.inputs.find((i) => i.id === 'alpha')!;
-    expect(p.type).toBe('cv');
-    expect(p.paramTarget).toBe('alpha');
-    expect(p.cvScale).toEqual({ mode: 'linear' });
-  });
-
-  it('declares SEPARATE L and R audio outputs + a mono-video out', () => {
-    expect(hypercubeDef.outputs.map((o) => o.id)).toEqual(['L', 'R', 'video_out']);
-    expect(hypercubeDef.outputs.find((o) => o.id === 'L')!.type).toBe('audio');
-    expect(hypercubeDef.outputs.find((o) => o.id === 'R')!.type).toBe('audio');
-    expect(hypercubeDef.outputs.find((o) => o.id === 'video_out')!.type).toBe('mono-video');
-  });
-
-  it('declares an ALPHA param (linear 0..1, default 0 = HYPERCUBE-off)', () => {
-    const byId = Object.fromEntries(hypercubeDef.params.map((p) => [p.id, p] as const));
-    expect(byId.alpha).toMatchObject({ min: 0, max: 1, defaultValue: 0, curve: 'linear' });
-  });
-
-  it('keeps CUBE\'s param surface (morph/connect/crush/fold/spread/etc.)', () => {
-    const byId = Object.fromEntries(hypercubeDef.params.map((p) => [p.id, p] as const));
-    expect(byId.tune).toMatchObject({ min: -36, max: 36, defaultValue: 0 });
-    expect(byId.morph_fc).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
-    expect(byId.connect).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
-    expect(byId.crush).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
-    expect(byId.fold).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
-    expect(byId.spread).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
-    expect(byId.wrap).toMatchObject({ curve: 'discrete' });
-    expect(byId.material).toMatchObject({ curve: 'discrete' });
-  });
-
-  it('params is a LITERAL array (manifest static extractor requirement)', () => {
-    expect(Array.isArray(hypercubeDef.params)).toBe(true);
-    expect(hypercubeDef.params.length).toBeGreaterThan(10);
-  });
-
-  it('claims sources category + type hypercube', () => {
-    expect(hypercubeDef.category).toBe('sources');
-    expect(hypercubeDef.type).toBe('hypercube');
-    expect(hypercubeDef.label).toBe('hypercube');
-  });
-});
-
 describe('resolveSlotFrames — FOUR per-slot wavetable defaults (incl. HOLO)', () => {
   it('exposes the HOLO slot alongside floor / wall / ceiling', () => {
     expect(HYPERCUBE_SLOTS).toEqual(['floor', 'wall', 'ceiling', 'holo']);

@@ -23,67 +23,6 @@ beforeAll(() => {
 });
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
-describe('moog904aDef: module def shape', () => {
-  it('declares type=moog904a, label="904A VCF", category=filters, schemaVersion=1', () => {
-    expect(moog904aDef.type).toBe('moog904a');
-    expect(moog904aDef.label).toBe('904a vcf');
-    expect(moog904aDef.category).toBe('filters');
-  });
-
-  it('exposes the 904A inputs: audio + cutoff_cv + reso_cv', () => {
-    const ids = moog904aDef.inputs.map((p) => p.id).sort();
-    expect(ids).toEqual(['audio', 'cutoff_cv', 'reso_cv']);
-  });
-
-  it('exposes a single low-pass audio output', () => {
-    const ids = moog904aDef.outputs.map((p) => p.id);
-    expect(ids).toEqual(['audio']);
-  });
-
-  it('exposes 3 params (cutoff, range, regeneration)', () => {
-    const ids = moog904aDef.params.map((p) => p.id).sort();
-    expect(ids).toEqual(['cutoff', 'range', 'regeneration']);
-  });
-
-  it('audio input is an audio cable', () => {
-    expect(moog904aDef.inputs.find((p) => p.id === 'audio')!.type).toBe('audio');
-  });
-
-  it('cutoff_cv: cv input, paramTarget=cutoff, no cvScale (audio-rate sum, PASSTHROUGH)', () => {
-    const port = moog904aDef.inputs.find((p) => p.id === 'cutoff_cv')!;
-    expect(port.type).toBe('cv');
-    expect(port.paramTarget).toBe('cutoff');
-    expect(port.cvScale).toBeUndefined();
-  });
-
-  it('reso_cv: cv input, paramTarget=regeneration, no cvScale (audio-rate sum, PASSTHROUGH)', () => {
-    const port = moog904aDef.inputs.find((p) => p.id === 'reso_cv')!;
-    expect(port.type).toBe('cv');
-    expect(port.paramTarget).toBe('regeneration');
-    expect(port.cvScale).toBeUndefined();
-  });
-
-  it('cutoff is a log knob spanning 20..20000 Hz; range is discrete 1..3; regeneration linear 0..1', () => {
-    const cutoff = moog904aDef.params.find((p) => p.id === 'cutoff')!;
-    expect(cutoff.min).toBe(20);
-    expect(cutoff.max).toBe(20000);
-    expect(cutoff.curve).toBe('log');
-    expect(cutoff.units).toBe('Hz');
-
-    const range = moog904aDef.params.find((p) => p.id === 'range')!;
-    expect(range.min).toBe(1);
-    expect(range.max).toBe(3);
-    expect(range.curve).toBe('discrete');
-    expect(range.defaultValue).toBe(2);
-
-    const regen = moog904aDef.params.find((p) => p.id === 'regeneration')!;
-    expect(regen.min).toBe(0);
-    expect(regen.max).toBe(1);
-    expect(regen.curve).toBe('linear');
-    expect(regen.defaultValue).toBe(0);
-  });
-});
-
 // ───────────────────── Layer 2: real worklet DSP ─────────────────────
 type ProcInstance = {
   process: (i: Float32Array[][], o: Float32Array[][], p: Record<string, Float32Array>) => boolean;

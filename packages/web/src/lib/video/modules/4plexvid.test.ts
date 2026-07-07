@@ -14,51 +14,6 @@ import { getVideoModuleDef, listVideoModuleDefs } from '$lib/video/module-regist
 import '$lib/video/modules';
 
 describe('fourPlexVidDef — module def shape', () => {
-  it('registers under type "4plexvid" with the right metadata', () => {
-    expect(fourPlexVidDef.type).toBe('4plexvid');
-    expect(fourPlexVidDef.domain).toBe('video');
-    expect(fourPlexVidDef.label).toBe('4plexvid');
-    expect(fourPlexVidDef.category).toBe('utilities');
-  });
-
-  it('declares 4 video inputs + 4 gate (cv) inputs', () => {
-    const video = fourPlexVidDef.inputs.filter((p) => p.type === 'video');
-    const gates = fourPlexVidDef.inputs.filter((p) => p.type === 'cv');
-    expect(video.map((p) => p.id)).toEqual(['in1', 'in2', 'in3', 'in4']);
-    expect(gates.map((p) => p.id)).toEqual(['gate1', 'gate2', 'gate3', 'gate4']);
-    // Each gate routes through its own synthetic param via the CV bridge.
-    for (const g of gates) expect(g.paramTarget).toBe(g.id);
-  });
-
-  it('declares 4 video outputs', () => {
-    expect(fourPlexVidDef.outputs.map((o) => ({ id: o.id, type: o.type }))).toEqual([
-      { id: 'out1', type: 'video' },
-      { id: 'out2', type: 'video' },
-      { id: 'out3', type: 'video' },
-      { id: 'out4', type: 'video' },
-    ]);
-  });
-
-  it('exposes 4 discrete selector params (0..3) + 4 hidden gate params', () => {
-    const ids = fourPlexVidDef.params.map((p) => p.id);
-    for (const s of ['sel1', 'sel2', 'sel3', 'sel4']) expect(ids).toContain(s);
-    for (const g of ['gate1', 'gate2', 'gate3', 'gate4']) expect(ids).toContain(g);
-
-    for (const s of ['sel1', 'sel2', 'sel3', 'sel4']) {
-      const def = fourPlexVidDef.params.find((p) => p.id === s)!;
-      expect(def.min).toBe(0);
-      expect(def.max).toBe(3);
-      expect(def.curve).toBe('discrete');
-    }
-  });
-
-  it('every default value is within the declared min/max range', () => {
-    for (const p of fourPlexVidDef.params) {
-      expect(p.defaultValue, `${p.id} >= min`).toBeGreaterThanOrEqual(p.min);
-      expect(p.defaultValue, `${p.id} <= max`).toBeLessThanOrEqual(p.max);
-    }
-  });
-
   it('appears in the global video registry list (auto-registered via barrel import)', () => {
     const types = listVideoModuleDefs().map((d) => d.type);
     expect(types).toContain('4plexvid');

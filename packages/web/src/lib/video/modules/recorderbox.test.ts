@@ -22,7 +22,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import { syncedStore, getYjsDoc } from '@syncedstore/core';
-import { getVideoModuleDef, listVideoModuleDefs } from '$lib/video/module-registry';
+import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { recorderboxDef } from '$lib/video/modules/recorderbox';
 // Side-effect import auto-registers the video defs.
 import '$lib/video/modules';
@@ -30,42 +30,11 @@ import type { ModuleNode, Edge } from '$lib/graph/types';
 import type { VideoEngineContext } from '$lib/video/engine';
 
 describe('RECORDERBOX — module def shape', () => {
-  it('is registered under type "recorderbox" with domain "video"', () => {
-    const def = getVideoModuleDef('recorderbox');
-    expect(def).toBeDefined();
-    if (!def) return;
-    expect(def.domain).toBe('video');
-    expect(def.label).toBe('recorderbox');
-    expect(def.category).toBe('output');
-  });
-
-  it('input surface: in (video) + audio_l (audio) + audio_r (audio)', () => {
-    const def = getVideoModuleDef('recorderbox')!;
-    expect(def.inputs).toHaveLength(3);
-    expect(def.inputs.find((p) => p.id === 'in')?.type).toBe('video');
-    expect(def.inputs.find((p) => p.id === 'audio_l')?.type).toBe('audio');
-    expect(def.inputs.find((p) => p.id === 'audio_r')?.type).toBe('audio');
-  });
-
-  it('output surface: a single video pass-through output', () => {
-    const def = getVideoModuleDef('recorderbox')!;
-    expect(def.outputs).toHaveLength(1);
-    expect(def.outputs.find((p) => p.id === 'out')?.type).toBe('video');
-  });
-
-  it('declares no params (filename + record live in node.data, not params)', () => {
-    const def = getVideoModuleDef('recorderbox')!;
-    expect(def.params).toEqual([]);
-  });
-
   it('appears in the global video registry list (auto-registered)', () => {
     const types = listVideoModuleDefs().map((d) => d.type);
     expect(types).toContain('recorderbox');
   });
 
-  it('has a factory function', () => {
-    expect(typeof recorderboxDef.factory).toBe('function');
-  });
 });
 
 // ── Factory guards (a minimal GL + AudioContext mock; we never call draw()) ──

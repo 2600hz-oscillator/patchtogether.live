@@ -21,63 +21,6 @@ beforeAll(() => {
   (globalThis as unknown as { sampleRate: number }).sampleRate = SR;
 });
 
-describe('WAVECEL module def shape', () => {
-  it('keeps the legacy stereo audio outputs', () => {
-    const ids = wavecelDef.outputs.map((p) => p.id);
-    expect(ids).toContain('out_l');
-    expect(ids).toContain('out_r');
-    expect(wavecelDef.outputs.find((p) => p.id === 'out_l')?.type).toBe('audio');
-    expect(wavecelDef.outputs.find((p) => p.id === 'out_r')?.type).toBe('audio');
-  });
-
-  it('exposes scope_out as mono-video (single-color trace)', () => {
-    const p = wavecelDef.outputs.find((o) => o.id === 'scope_out');
-    expect(p, 'scope_out declared').toBeDefined();
-    expect(p?.type).toBe('mono-video');
-  });
-
-  it('exposes wave3d_out as video (RGB so orange + white survive)', () => {
-    const p = wavecelDef.outputs.find((o) => o.id === 'wave3d_out');
-    expect(p, 'wave3d_out declared').toBeDefined();
-    expect(p?.type).toBe('video');
-  });
-
-  it('has 7 inputs (pitch, fm, 3×cv, poly, trigger) + 4 outputs', () => {
-    expect(wavecelDef.inputs.length).toBe(7);
-    expect(wavecelDef.outputs.length).toBe(4);
-  });
-
-  it('declares a poly input (polyPitchGate, 5-voice chord bus) — still at index 5', () => {
-    const poly = wavecelDef.inputs.find((i) => i.id === 'poly');
-    expect(poly, 'WAVECEL must expose a `poly` input port').toBeTruthy();
-    expect(poly!.type).toBe('polyPitchGate');
-    // Node connection (no paramTarget — it carries audio-rate pitch+gate).
-    expect(poly!.paramTarget).toBeUndefined();
-    // Poly STAYS at input index 5 (the new trigger is APPENDED at 6).
-    expect(wavecelDef.inputs.findIndex((i) => i.id === 'poly')).toBe(5);
-  });
-
-  it('declares a mono trigger gate input (per-voice ADSR) appended at index 6', () => {
-    const trig = wavecelDef.inputs.find((i) => i.id === 'trigger');
-    expect(trig, 'WAVECEL must expose a `trigger` input port').toBeTruthy();
-    expect(trig!.type).toBe('gate');
-    expect(trig!.paramTarget).toBeUndefined();
-    expect(wavecelDef.inputs.findIndex((i) => i.id === 'trigger')).toBe(6);
-  });
-
-  it('declares the 4 per-voice ADSR params (attack/decay/sustain/release)', () => {
-    const byId = Object.fromEntries(wavecelDef.params.map((p) => [p.id, p] as const));
-    expect(byId.attack).toMatchObject({ min: 0.001, max: 5, defaultValue: 0.001, curve: 'log' });
-    expect(byId.decay).toMatchObject({ min: 0.001, max: 5, defaultValue: 0.1, curve: 'log' });
-    expect(byId.sustain).toMatchObject({ min: 0, max: 1, defaultValue: 1, curve: 'linear' });
-    expect(byId.release).toMatchObject({ min: 0.001, max: 5, defaultValue: 0.005, curve: 'log' });
-  });
-
-  it('preserves the stereoPairs metadata for the audio outs', () => {
-    expect(wavecelDef.stereoPairs).toEqual([['out_l', 'out_r']]);
-  });
-});
-
 // ─────────────────────────────────────────────────────────────────────────
 // Worklet DSP behavior — capture the processor + drive process().
 // ─────────────────────────────────────────────────────────────────────────

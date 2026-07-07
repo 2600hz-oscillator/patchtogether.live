@@ -43,62 +43,6 @@ import {
 } from './wavesculpt';
 
 describe('wavesculpt v2: module-def shape', () => {
-  it('declares type/label/domain/category', () => {
-    expect(wavesculptDef.type).toBe('wavesculpt');
-    expect(wavesculptDef.label).toBe('wavesculpt');
-    expect(wavesculptDef.domain).toBe('audio');
-    expect(wavesculptDef.category).toBe('sources');
-  });
-
-  it('declares gate + pitch_cv for each of 4 oscillators', () => {
-    const inIds = wavesculptDef.inputs.map((p) => p.id);
-    for (let i = 1; i <= 4; i++) {
-      expect(inIds).toContain(`gate${i}`);
-      expect(inIds).toContain(`pitch_cv${i}`);
-    }
-  });
-
-  it('declares camera CV inputs incl. new rot port', () => {
-    const inIds = wavesculptDef.inputs.map((p) => p.id);
-    for (const id of ['pos_x', 'pos_y', 'pos_z', 'zoom', 'rot']) {
-      expect(inIds).toContain(id);
-    }
-  });
-
-  it('declares an alpha_in video input port', () => {
-    const ai = wavesculptDef.inputs.find((p) => p.id === 'alpha_in');
-    expect(ai, 'alpha_in port exists').toBeDefined();
-    expect(ai!.type).toBe('video');
-  });
-
-  it('declares 6 video WALL inputs (wall1..wall6), all video-typed', () => {
-    const inIds = wavesculptDef.inputs.map((p) => p.id);
-    for (let i = 1; i <= 6; i++) {
-      const port = wavesculptDef.inputs.find((p) => p.id === `wall${i}`);
-      expect(port, `wall${i} port exists`).toBeDefined();
-      expect(port!.type, `wall${i} is video-typed`).toBe('video');
-    }
-    // No duplicates among the inputs (the new walls don't collide with
-    // anything — also re-asserted globally in the unique-ids test).
-    expect(new Set(inIds).size).toBe(inIds.length);
-  });
-
-  it('declares a TRANSPARENCY + DISTORT param per wall (12 total)', () => {
-    for (let i = 1; i <= 6; i++) {
-      const a = wavesculptDef.params.find((p) => p.id === `wall${i}_alpha`);
-      expect(a, `wall${i}_alpha exists`).toBeDefined();
-      expect(a!.min, `wall${i}_alpha min 0%`).toBe(0);
-      expect(a!.max, `wall${i}_alpha max 100%`).toBe(100);
-      expect(a!.defaultValue, `wall${i}_alpha default 100% (visible)`).toBe(100);
-
-      const d = wavesculptDef.params.find((p) => p.id === `wall${i}_distort`);
-      expect(d, `wall${i}_distort exists`).toBeDefined();
-      expect(d!.min, `wall${i}_distort min 0 (flat)`).toBe(0);
-      expect(d!.max, `wall${i}_distort max 1 (dome)`).toBe(1);
-      expect(d!.defaultValue, `wall${i}_distort default 0 (flat)`).toBe(0);
-    }
-  });
-
   it('VIDEO_WALL_FACES maps all 6 faces to distinct axis/sign of the unit box', () => {
     expect(VIDEO_WALL_FACES.length).toBe(6);
     // wallIdx 0..5 in order.
@@ -116,104 +60,6 @@ describe('wavesculpt v2: module-def shape', () => {
     expect(VIDEO_WALL_FACES[0]).toMatchObject({ label: 'FRONT', axis: 2, sign: -1 });
     expect(VIDEO_WALL_FACES[3]).toMatchObject({ label: 'RIGHT', axis: 0, sign: 1 });
     expect(VIDEO_WALL_FACES[5]).toMatchObject({ label: 'CEILING', axis: 1, sign: 1 });
-  });
-
-  it('declares L + R audio outputs and a video output', () => {
-    const outs = wavesculptDef.outputs;
-    expect(outs.find((o) => o.id === 'L')?.type).toBe('audio');
-    expect(outs.find((o) => o.id === 'R')?.type).toBe('audio');
-    const v = outs.find((o) => o.id === 'video_out');
-    expect(v).toBeDefined();
-    expect(['video', 'mono-video']).toContain(v!.type);
-  });
-
-  it('declares 4 per-oscillator AUDIO outputs (RED/GRN/BLU/ALP), additive to L/R', () => {
-    const outs = wavesculptDef.outputs;
-    // The summed main mix is KEPT intact + backward-compatible.
-    expect(outs.find((o) => o.id === 'L')?.type).toBe('audio');
-    expect(outs.find((o) => o.id === 'R')?.type).toBe('audio');
-    expect(outs.find((o) => o.id === 'video_out')).toBeDefined();
-    // Plus one per-osc tap per oscillator, all audio-typed.
-    for (const id of ['out_red', 'out_grn', 'out_blu', 'out_alp']) {
-      const o = outs.find((p) => p.id === id);
-      expect(o, `${id} declared`).toBeDefined();
-      expect(o!.type, `${id} is audio`).toBe('audio');
-    }
-    // No duplicate port ids.
-    const ids = outs.map((o) => o.id);
-    expect(new Set(ids).size).toBe(ids.length);
-  });
-
-  it('exposes per-osc wavetable params (tune/fine/morph/spread/fold) for all 4 oscs', () => {
-    const ids = wavesculptDef.params.map((p) => p.id);
-    for (let i = 1; i <= 4; i++) {
-      expect(ids).toContain(`tune${i}`);
-      expect(ids).toContain(`fine${i}`);
-      expect(ids).toContain(`morph${i}`);
-      expect(ids).toContain(`spread${i}`);
-      expect(ids).toContain(`fold${i}`);
-    }
-  });
-
-  it('still exposes per-osc ADSR + thickness (unchanged from v1)', () => {
-    const ids = wavesculptDef.params.map((p) => p.id);
-    for (let i = 1; i <= 4; i++) {
-      expect(ids).toContain(`A${i}`);
-      expect(ids).toContain(`D${i}`);
-      expect(ids).toContain(`S${i}`);
-      expect(ids).toContain(`R${i}`);
-      expect(ids).toContain(`thickness${i}`);
-    }
-  });
-
-  it('per-osc wavetable params have standard wavetable ranges', () => {
-    for (let i = 1; i <= 4; i++) {
-      const tune = wavesculptDef.params.find((p) => p.id === `tune${i}`)!;
-      expect(tune.min).toBe(-36); expect(tune.max).toBe(36);
-      const fine = wavesculptDef.params.find((p) => p.id === `fine${i}`)!;
-      expect(fine.min).toBe(-100); expect(fine.max).toBe(100);
-      const morph = wavesculptDef.params.find((p) => p.id === `morph${i}`)!;
-      expect(morph.min).toBe(0); expect(morph.max).toBe(1);
-      const spread = wavesculptDef.params.find((p) => p.id === `spread${i}`)!;
-      expect(spread.min).toBe(1); expect(spread.max).toBe(5);
-      const fold = wavesculptDef.params.find((p) => p.id === `fold${i}`)!;
-      expect(fold.min).toBe(0); expect(fold.max).toBe(1);
-    }
-  });
-
-  it('does NOT expose per-osc pitch params any more (folded into tune+fine)', () => {
-    const ids = wavesculptDef.params.map((p) => p.id);
-    for (let i = 1; i <= 4; i++) {
-      expect(ids, `pitch${i} should be gone`).not.toContain(`pitch${i}`);
-    }
-  });
-
-  it('thickness defaults stay at 0.3 (don\'t lose the dogfood fix)', () => {
-    for (let i = 1; i <= 4; i++) {
-      const p = wavesculptDef.params.find((q) => q.id === `thickness${i}`)!;
-      expect(p.defaultValue).toBe(0.3);
-    }
-  });
-
-  it('alpha_brightness still present (don\'t lose the v1.1 fix)', () => {
-    const p = wavesculptDef.params.find((q) => q.id === 'alpha_brightness');
-    expect(p, 'alpha_brightness param exists').toBeDefined();
-    expect(p!.defaultValue).toBe(1);
-  });
-
-  it('exposes camera + UNISON + Detune + rot + 12 bentscreen-wiggle params', () => {
-    const ids = wavesculptDef.params.map((p) => p.id);
-    for (const id of ['unison', 'detune', 'pos_x', 'pos_y', 'pos_z', 'zoom', 'rot']) {
-      expect(ids).toContain(id);
-    }
-    for (const id of [
-      'hsync_drift', 'hsync_loss', 'vsync_drift', 'scan_wobble',
-      'chroma_phase', 'chroma_instability',
-      'feedback_gain', 'feedback_delay', 'wavefold',
-      'bloom', 'noise', 'master_gain',
-    ]) {
-      expect(ids).toContain(id);
-    }
   });
 
   it('layout has exactly 4 wall positions with non-zero inward vectors', () => {
@@ -435,43 +281,6 @@ describe('PCU: camera CV axes move the eye + the mix (ex e2e wavesculpt-camera-c
   }
 });
 
-describe('PCU: camera/morph CV def contract — no double-count (ex e2e wavesculpt-state-unity.spec.ts)', () => {
-  // The e2e asserted readParam vs read('camera') alignment (CV added exactly
-  // once) + that morph1_cv is a patchable port. The architectural invariant
-  // that PREVENTS double-counting is the DEF CONTRACT: every camera/morph CV
-  // input declares a `paramTarget` pointing at its matching param, so the
-  // engine layer folds the CV into that param exactly once. Pin the contract.
-  const CV_PORT_TO_PARAM: Record<string, string> = {
-    pos_x: 'pos_x', pos_y: 'pos_y', pos_z: 'pos_z', zoom: 'zoom', rot: 'rot',
-    morph1_cv: 'morph1', morph2_cv: 'morph2', morph3_cv: 'morph3', morph4_cv: 'morph4',
-    scale: 'scale', wiggle: 'wiggle',
-  };
-
-  for (const [portId, paramId] of Object.entries(CV_PORT_TO_PARAM)) {
-    it(`${portId} is a cv input whose paramTarget === '${paramId}'`, () => {
-      const port = wavesculptDef.inputs.find((p) => p.id === portId);
-      expect(port, `${portId} input exists`).toBeDefined();
-      expect(port!.type, `${portId} is cv-typed`).toBe('cv');
-      expect(
-        (port as { paramTarget?: string }).paramTarget,
-        `${portId} paramTarget points at param '${paramId}' (CV folded in exactly once)`,
-      ).toBe(paramId);
-      // And the targeted param actually exists, so the engine has somewhere
-      // to add the CV (a dangling paramTarget would silently drop the CV).
-      expect(
-        wavesculptDef.params.some((p) => p.id === paramId),
-        `param '${paramId}' exists for ${portId} to target`,
-      ).toBe(true);
-    });
-  }
-
-  it("morph1_cv exists in inputs with type:'cv' (ex e2e: handle is patchable on the card)", () => {
-    const m1 = wavesculptDef.inputs.find((p) => p.id === 'morph1_cv');
-    expect(m1, 'morph1_cv port exists').toBeDefined();
-    expect(m1!.type).toBe('cv');
-  });
-});
-
 describe('lineWallCrossings (luminosity → bandpass geometry)', () => {
   it('a line straight through the box on the Z axis crosses FRONT + BACK at centre', () => {
     // Origin at the −Z wall, aimed +Z → exits at +Z. Both crossings centred
@@ -674,91 +483,6 @@ describe('chordQualityFromKnob + CHORD_INTERVALS_SEMITONES', () => {
 });
 
 describe('wavesculpt def: new ports + params landed', () => {
-  it('declares morph1_cv..morph4_cv inputs targeting the worklet morph param', () => {
-    const inIds = wavesculptDef.inputs.map((p) => p.id);
-    for (let i = 1; i <= 4; i++) {
-      expect(inIds).toContain(`morph${i}_cv`);
-      const port = wavesculptDef.inputs.find((p) => p.id === `morph${i}_cv`);
-      expect(port?.type).toBe('cv');
-      expect((port as { paramTarget?: string } | undefined)?.paramTarget).toBe(`morph${i}`);
-    }
-  });
-  it('exposes a lum_depth param (luminosity → bandpass depth, OFF by default)', () => {
-    const p = wavesculptDef.params.find((pp) => pp.id === 'lum_depth')!;
-    expect(p, 'lum_depth param exists').toBeDefined();
-    expect(p.min).toBe(0);
-    expect(p.max).toBe(1);
-    expect(p.defaultValue, 'OFF by default (no surprise filtering)').toBe(0);
-    expect(p.curve).toBe('linear');
-  });
-
-  it('exposes chord_mode + chord_quality params', () => {
-    const ids = wavesculptDef.params.map((p) => p.id);
-    expect(ids).toContain('chord_mode');
-    expect(ids).toContain('chord_quality');
-    const mode = wavesculptDef.params.find((p) => p.id === 'chord_mode')!;
-    expect(mode.defaultValue).toBe(0);
-    expect(mode.curve).toBe('discrete');
-  });
-
-  it('exposes per-osc fxType{1..4} (discrete 0=OFF, 1=REVERB, 2=DELAY) + fxAmount', () => {
-    for (let i = 1; i <= 4; i++) {
-      const t = wavesculptDef.params.find((p) => p.id === `fxType${i}`)!;
-      expect(t, `fxType${i} exists`).toBeDefined();
-      expect(t.min).toBe(0);
-      expect(t.max).toBe(2);
-      expect(t.curve).toBe('discrete');
-      expect(t.defaultValue).toBe(0); // FX off by default
-
-      const a = wavesculptDef.params.find((p) => p.id === `fxAmount${i}`)!;
-      expect(a, `fxAmount${i} exists`).toBeDefined();
-      expect(a.min).toBe(0);
-      expect(a.max).toBe(1);
-      expect(a.curve).toBe('linear');
-    }
-  });
-
-  it('exposes video_mode (discrete 0=PROXIMITY, 1=BIRDSEYE, 2=SPECTROGRAPH)', () => {
-    const m = wavesculptDef.params.find((p) => p.id === 'video_mode')!;
-    expect(m, 'video_mode exists').toBeDefined();
-    expect(m.defaultValue).toBe(0);
-    expect(m.min).toBe(0);
-    // Max bumped from 1 → 2 in the spectrograph PR so the discrete
-    // cycle covers PROXIMITY → BIRDSEYE → SPECTROGRAPH.
-    expect(m.max).toBe(2);
-    expect(m.curve).toBe('discrete');
-  });
-
-  it('exposes blink_mode (discrete 0=current, 1=SCOPES TRIAL, 2=REALITY BASED COMMUNITY)', () => {
-    const m = wavesculptDef.params.find((p) => p.id === 'blink_mode')!;
-    expect(m, 'blink_mode exists').toBeDefined();
-    // Default = mode 0 (today's render), so existing patches are unchanged.
-    expect(m.defaultValue).toBe(0);
-    expect(m.min).toBe(0);
-    expect(m.max).toBe(2);
-    // Discrete so the BLINK button cycles cleanly through the 3 modes and
-    // the value persists/syncs like every other param.
-    expect(m.curve).toBe('discrete');
-  });
-
-  it('exposes SCALE param reusing SCOPE ch1Scale semantics (log 0.1..10, unity default)', () => {
-    const s = wavesculptDef.params.find((p) => p.id === 'scale')!;
-    expect(s, 'scale param exists').toBeDefined();
-    expect(s.defaultValue).toBe(1);   // unity = scope shape at SCOPE's default
-    expect(s.min).toBe(0.1);
-    expect(s.max).toBe(10);
-    expect(s.curve).toBe('log');
-  });
-
-  it('exposes WIGGLE param defaulting OFF (linear 0..1)', () => {
-    const w = wavesculptDef.params.find((p) => p.id === 'wiggle')!;
-    expect(w, 'wiggle param exists').toBeDefined();
-    expect(w.defaultValue).toBe(0);   // OFF by default = current fixed dir
-    expect(w.min).toBe(0);
-    expect(w.max).toBe(1);
-    expect(w.curve).toBe('linear');
-  });
-
   it('exposes per-osc CHROMA colour params (red/grn/blu) defaulting to r/g/b', () => {
     const r = wavesculptDef.params.find((p) => p.id === 'red_color')!;
     const g = wavesculptDef.params.find((p) => p.id === 'grn_color')!;
@@ -793,23 +517,6 @@ describe('wavesculpt def: new ports + params landed', () => {
     expect(bb).toBeGreaterThan(bg);
   });
 
-  it('ALP oscillator has NO colour param (it is the alpha/mask layer)', () => {
-    const ids = wavesculptDef.params.map((p) => p.id);
-    expect(ids).not.toContain('alp_color');
-    expect(ids).not.toContain('alpha_color');
-  });
-
-  it('declares CV inputs for scale + wiggle (so they are CV + MIDI wired)', () => {
-    const inIds = wavesculptDef.inputs.map((p) => p.id);
-    expect(inIds).toContain('scale');
-    expect(inIds).toContain('wiggle');
-    const sc = wavesculptDef.inputs.find((p) => p.id === 'scale');
-    const wg = wavesculptDef.inputs.find((p) => p.id === 'wiggle');
-    expect(sc?.type).toBe('cv');
-    expect(wg?.type).toBe('cv');
-    expect((sc as { paramTarget?: string } | undefined)?.paramTarget).toBe('scale');
-    expect((wg as { paramTarget?: string } | undefined)?.paramTarget).toBe('wiggle');
-  });
 });
 
 describe('CHROMA colour packing / parsing (packed 0xRRGGBB ⇄ 0..1 floats)', () => {

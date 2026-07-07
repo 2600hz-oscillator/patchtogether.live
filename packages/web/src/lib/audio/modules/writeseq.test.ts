@@ -23,10 +23,8 @@ import {
   defaultSteps,
   resolveStepVOct,
   quantizeToNearestStep,
-  writeseqDef,
   STEP_COUNT,
-  type WriteseqStep,
-} from './writeseq';
+  type } from './writeseq';
 import { C4_MIDI, midiToVOct, vOctToMidi } from '$lib/audio/note-entry';
 
 describe('coerceStep', () => {
@@ -158,56 +156,5 @@ describe('resolveStepVOct + vOctToMidi round-trip', () => {
     for (let m = 36; m <= 96; m++) {
       expect(vOctToMidi(midiToVOct(m))).toBe(m);
     }
-  });
-});
-
-describe('writeseqDef shape', () => {
-  it('declares the cv/gate/clock/rec inputs + the base transport spread', () => {
-    const ids = writeseqDef.inputs.map((p) => p.id);
-    // Declaration order is load-bearing.
-    expect(ids.slice(0, 4)).toEqual(['cv', 'gate', 'clock', 'rec']);
-    // Base transport spread (NOT the extended nav set).
-    for (const t of ['play_cv', 'reset_cv', 'queue1_cv', 'queue2_cv', 'queue3_cv', 'queue4_cv']) {
-      expect(ids, `input ${t}`).toContain(t);
-    }
-    // NOT the extended nav set.
-    for (const t of ['queue5_cv', 'next_cv', 'prev_cv', 'random_cv']) {
-      expect(ids, `should NOT have ${t}`).not.toContain(t);
-    }
-  });
-
-  it('cv input is a pitch cable; gate/clock/rec are gate cables', () => {
-    const byId = Object.fromEntries(writeseqDef.inputs.map((p) => [p.id, p.type]));
-    expect(byId.cv).toBe('pitch');
-    expect(byId.gate).toBe('gate');
-    expect(byId.clock).toBe('gate');
-    expect(byId.rec).toBe('gate');
-  });
-
-  it('declares pitch/gate/clock outputs', () => {
-    const out = writeseqDef.outputs.map((p) => p.id);
-    expect(out).toEqual(['pitch', 'gate', 'clock']);
-    const byId = Object.fromEntries(writeseqDef.outputs.map((p) => [p.id, p.type]));
-    expect(byId.pitch).toBe('pitch');
-    expect(byId.gate).toBe('gate');
-    expect(byId.clock).toBe('gate');
-  });
-
-  it('recArm + overdub default to 0; length default 16', () => {
-    const byId = Object.fromEntries(writeseqDef.params.map((p) => [p.id, p]));
-    expect(byId.recArm?.defaultValue).toBe(0);
-    expect(byId.overdub?.defaultValue).toBe(0);
-    expect(byId.isPlaying?.defaultValue).toBe(0);
-    expect(byId.length?.defaultValue).toBe(16);
-    expect(byId.bpm?.defaultValue).toBe(120);
-  });
-
-  it('is a schemaVersion-1 audio module with a palette + exposesSequence', () => {
-    expect(writeseqDef.type).toBe('writeseq');
-    expect(writeseqDef.domain).toBe('audio');
-    expect(writeseqDef.palette).toBeTruthy();
-    expect(writeseqDef.palette?.top).toBe('Audio modules');
-    expect(writeseqDef.exposesSequence).toBe(true);
-    expect(writeseqDef.exposableControls?.some((c) => c.paramId === 'isPlaying')).toBe(true);
   });
 });

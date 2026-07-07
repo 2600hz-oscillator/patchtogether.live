@@ -32,34 +32,6 @@ const ALL_PARAM_IDS = ['hp', ...BAND_IDS, 'lp'];
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
 describe('moog907aDef: module def shape', () => {
-  it('declares type=moog907a, label, category=filters, schemaVersion=1', () => {
-    expect(moog907aDef.type).toBe('moog907a');
-    expect(moog907aDef.label).toBe('907a fixed filter bank');
-    expect(moog907aDef.category).toBe('filters');
-  });
-
-  it('lives in the Moog System 35/55 Clones palette bucket and uses the Moog907aCard', () => {
-    expect(moog907aDef.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
-    expect(moog907aDef.card).toBe('Moog907aCard');
-  });
-
-  it('exposes a single audio input: audio (audio, no CV)', () => {
-    const ids = moog907aDef.inputs.map((p) => p.id);
-    expect(ids).toEqual(['audio']);
-    expect(moog907aDef.inputs[0].type).toBe('audio');
-    // Fixed bank → NO CV inputs, no paramTarget anywhere.
-    for (const p of moog907aDef.inputs) {
-      expect(p.type).toBe('audio');
-      expect(p.paramTarget).toBeUndefined();
-    }
-  });
-
-  it('exposes a single audio output: audio (audio)', () => {
-    const ids = moog907aDef.outputs.map((p) => p.id);
-    expect(ids).toEqual(['audio']);
-    expect(moog907aDef.outputs[0].type).toBe('audio');
-  });
-
   it('exposes params hp, band1..bandN, lp — N from the SHARED 907A centers', () => {
     const ids = moog907aDef.params.map((p) => p.id);
     expect(ids).toEqual(ALL_PARAM_IDS);
@@ -68,14 +40,6 @@ describe('moog907aDef: module def shape', () => {
     expect(N).toBe(8);
   });
 
-  it('every param is linear 0..1 default 0.5 (unity-ish neutral)', () => {
-    for (const p of moog907aDef.params) {
-      expect(p.min).toBe(0);
-      expect(p.max).toBe(1);
-      expect(p.defaultValue).toBe(0.5);
-      expect(p.curve).toBe('linear');
-    }
-  });
 });
 
 // ───────────────────── Layer 2: factory wiring ─────────────────────

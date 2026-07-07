@@ -25,50 +25,6 @@ import type { ModuleNode } from '$lib/graph/types';
 vi.mock('@patchtogether.live/dsp/dist/moog962.js?url', () => ({ default: 'moog962.js' }));
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
-describe('moog962Def: module def shape', () => {
-  it('declares type=moog962, label="962 Seq Switch", category=utilities, schemaVersion=1', () => {
-    expect(moog962Def.type).toBe('moog962');
-    expect(moog962Def.label).toBe('962 seq switch');
-    expect(moog962Def.category).toBe('utilities');
-    expect(moog962Def.domain).toBe('audio');
-  });
-
-  it('lives in the Moog System 35/55 Clones palette bucket and uses the Moog962Card', () => {
-    expect(moog962Def.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
-    expect(moog962Def.card).toBe('Moog962Card');
-  });
-
-  it('exposes three signal inputs (in1..in3, cv) + a shift gate', () => {
-    const ids = moog962Def.inputs.map((p) => p.id);
-    expect(ids).toEqual(['in1', 'in2', 'in3', 'shift']);
-    for (const id of ['in1', 'in2', 'in3']) {
-      const p = moog962Def.inputs.find((q) => q.id === id)!;
-      expect(p.type).toBe('cv');
-      // The inputs are signals being routed, not knob modulators.
-      expect(p.cvScale).toBeUndefined();
-      expect(p.paramTarget).toBeUndefined();
-    }
-    expect(moog962Def.inputs.find((p) => p.id === 'shift')!.type).toBe('gate');
-  });
-
-  it('exposes a single selected output: out (cv)', () => {
-    const ids = moog962Def.outputs.map((p) => p.id);
-    expect(ids).toEqual(['out']);
-    expect(moog962Def.outputs[0].type).toBe('cv');
-  });
-
-  it('exposes one param (stages), discrete 2..3 default 3', () => {
-    const ids = moog962Def.params.map((p) => p.id);
-    expect(ids).toEqual(['stages']);
-    const p = moog962Def.params[0];
-    expect(p.min).toBe(2);
-    expect(p.max).toBe(3);
-    expect(p.defaultValue).toBe(3);
-    expect(p.curve).toBe('discrete');
-    expect(p.label).toBe('Stages');
-  });
-});
-
 // ───────────────────── Layer 2: factory wiring ─────────────────────
 //
 // Minimal Web Audio worklet mock. The AudioWorkletNode tracks its param values

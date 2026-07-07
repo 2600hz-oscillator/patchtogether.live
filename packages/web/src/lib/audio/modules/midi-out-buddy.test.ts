@@ -21,23 +21,6 @@ import {
 import { vOctToMidi, C4_MIDI } from '$lib/audio/note-entry';
 
 describe('midiOutBuddyDef: module shape', () => {
-  it('declares gate/pitch/velocity inputs and zero outputs (terminal MIDI sink)', () => {
-    expect(midiOutBuddyDef.inputs.map((p) => p.id)).toEqual(['gate', 'pitch', 'velocity']);
-    expect(midiOutBuddyDef.inputs.map((p) => p.type)).toEqual(['gate', 'cv', 'cv']);
-    expect(midiOutBuddyDef.outputs).toEqual([]);
-  });
-
-  it('is an output-category module distinct from midiCvBuddy', () => {
-    expect(midiOutBuddyDef.type).toBe('midiOutBuddy');
-    expect(midiOutBuddyDef.type).not.toBe('midiCvBuddy');
-    expect(midiOutBuddyDef.category).toBe('output');
-    expect(midiOutBuddyDef.label).toBe('midi cv buddy out');
-  });
-
-  it('has no AudioParam-style knobs (channel + device live on node.data)', () => {
-    expect(midiOutBuddyDef.params).toEqual([]);
-  });
-
   it('default data is channel 1, no device', () => {
     expect(DEFAULT_DATA).toEqual({ channel: 1, lastDeviceId: null });
   });

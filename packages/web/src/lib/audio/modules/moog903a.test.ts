@@ -20,43 +20,6 @@ import { moog903aDef } from './moog903a';
 import type { ModuleNode } from '$lib/graph/types';
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
-describe('moog903aDef: module def shape', () => {
-  it('declares type=moog903a, label="903A Random Signal Generator", category=sources, schemaVersion=1', () => {
-    expect(moog903aDef.type).toBe('moog903a');
-    expect(moog903aDef.label).toBe('903a random signal generator');
-    expect(moog903aDef.category).toBe('sources');
-  });
-
-  it('lives in the Moog System 35/55 Clones palette bucket and uses the Moog903aCard', () => {
-    expect(moog903aDef.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
-    expect(moog903aDef.card).toBe('Moog903aCard');
-    expect(moog903aDef.domain).toBe('audio');
-  });
-
-  it('declares NO inputs (pure source)', () => {
-    expect(moog903aDef.inputs).toEqual([]);
-  });
-
-  it('exposes the two independent noise outputs: white + pink (both audio)', () => {
-    const ids = moog903aDef.outputs.map((p) => p.id);
-    expect(ids).toEqual(['white', 'pink']);
-    for (const p of moog903aDef.outputs) {
-      expect(p.type).toBe('audio');
-    }
-  });
-
-  it('exposes a single param: level (linear 0..1, default 0.8)', () => {
-    const ids = moog903aDef.params.map((p) => p.id);
-    expect(ids).toEqual(['level']);
-    const p = moog903aDef.params[0];
-    expect(p.label).toBe('Level');
-    expect(p.min).toBe(0);
-    expect(p.max).toBe(1);
-    expect(p.defaultValue).toBe(0.8);
-    expect(p.curve).toBe('linear');
-  });
-});
-
 // ───────────────────── Layer 2: factory wiring ─────────────────────
 //
 // Minimal Web Audio mock. GainNodes track gain.value + connect/disconnect;

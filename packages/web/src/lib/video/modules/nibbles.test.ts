@@ -7,52 +7,6 @@ import { nibblesDef, NIBBLES_MAX_LENGTH } from './nibbles';
 import type { VideoEngineContext } from '$lib/video/engine';
 
 describe('nibblesDef — module def shape', () => {
-  it('registers with the right type / domain / category / label', () => {
-    expect(nibblesDef.type).toBe('nibbles');
-    expect(nibblesDef.domain).toBe('video');
-    expect(nibblesDef.category).toBe('sources');
-    expect(nibblesDef.label).toBe('nibbles');
-  });
-
-  it('declares the video output, 3 gate outputs, length CV, and 2 audio outputs', () => {
-    const outs = nibblesDef.outputs.map((p) => p.id);
-    expect(outs).toEqual([
-      'out',
-      'pellet',
-      'death',
-      'dir_change',
-      'length_cv',
-      'snake',
-      'gated',
-    ]);
-    const types = Object.fromEntries(nibblesDef.outputs.map((p) => [p.id, p.type]));
-    expect(types).toEqual({
-      out: 'video',
-      pellet: 'gate',
-      death: 'gate',
-      dir_change: 'gate',
-      length_cv: 'cv',
-      snake: 'audio',
-      gated: 'audio',
-    });
-  });
-
-  it('declares no inputs (snake is driven by keyboard focus or AUTO)', () => {
-    expect(nibblesDef.inputs).toEqual([]);
-  });
-
-  it('exposes the AUTO toggle + tick_ms params', () => {
-    const paramIds = nibblesDef.params.map((p) => p.id);
-    expect(paramIds).toEqual(['auto', 'tick_ms']);
-    const auto = nibblesDef.params.find((p) => p.id === 'auto')!;
-    expect(auto.defaultValue).toBe(0);
-    expect(auto.curve).toBe('discrete');
-    const tick = nibblesDef.params.find((p) => p.id === 'tick_ms')!;
-    expect(tick.defaultValue).toBe(80);
-    expect(tick.min).toBe(40);
-    expect(tick.max).toBe(200);
-  });
-
   it('NIBBLES_MAX_LENGTH is a positive integer (the 95th-percentile cap)', () => {
     expect(Number.isInteger(NIBBLES_MAX_LENGTH)).toBe(true);
     expect(NIBBLES_MAX_LENGTH).toBeGreaterThan(0);

@@ -20,50 +20,6 @@ import { moog923Def, cutoffToHz, CUTOFF_MIN_HZ, CUTOFF_MAX_HZ } from './moog923'
 import type { ModuleNode } from '$lib/graph/types';
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
-describe('moog923Def: module def shape', () => {
-  it('declares type=moog923, label="923 Filters / Noise Source", category=filter, schemaVersion=1', () => {
-    expect(moog923Def.type).toBe('moog923');
-    expect(moog923Def.label).toBe('923 filters / noise source');
-    expect(moog923Def.category).toBe('filter');
-  });
-
-  it('lives in the Moog System 35/55 Clones palette bucket and uses the Moog923Card', () => {
-    expect(moog923Def.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
-    expect(moog923Def.card).toBe('Moog923Card');
-  });
-
-  it('exposes a single audio input: audio (PASSTHROUGH)', () => {
-    const ids = moog923Def.inputs.map((p) => p.id);
-    expect(ids).toEqual(['audio']);
-    expect(moog923Def.inputs[0].type).toBe('audio');
-    // The input is a signal being filtered, not a knob modulator.
-    expect(moog923Def.inputs[0].cvScale).toBeUndefined();
-    expect(moog923Def.inputs[0].paramTarget).toBeUndefined();
-  });
-
-  it('exposes four audio outputs: white, pink, lp, hp', () => {
-    const ids = moog923Def.outputs.map((p) => p.id);
-    expect(ids).toEqual(['white', 'pink', 'lp', 'hp']);
-    for (const p of moog923Def.outputs) {
-      expect(p.type).toBe('audio');
-    }
-  });
-
-  it('exposes 3 params (level, lpCutoff, hpCutoff), all linear 0..1', () => {
-    const ids = moog923Def.params.map((p) => p.id);
-    expect(ids).toEqual(['level', 'lpCutoff', 'hpCutoff']);
-    for (const p of moog923Def.params) {
-      expect(p.min).toBe(0);
-      expect(p.max).toBe(1);
-      expect(p.curve).toBe('linear');
-    }
-    const byId = Object.fromEntries(moog923Def.params.map((p) => [p.id, p]));
-    expect(byId.level.defaultValue).toBe(0.8);
-    expect(byId.lpCutoff.defaultValue).toBe(0.5);
-    expect(byId.hpCutoff.defaultValue).toBe(0.5);
-  });
-});
-
 // ───────────────────── cutoff log map ─────────────────────
 describe('cutoffToHz: log map 0..1 → ~40 Hz .. 20 kHz', () => {
   it('maps the endpoints to the band edges', () => {

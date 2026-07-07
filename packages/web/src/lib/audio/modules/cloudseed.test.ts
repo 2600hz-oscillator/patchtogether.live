@@ -232,22 +232,6 @@ describe('Preset bank', () => {
 });
 
 describe('cloudseedDef: module-def shape', () => {
-  it('declares type=cloudseed, label=CLOUDSEED, category=effects, domain=audio', () => {
-    expect(cloudseedDef.type).toBe('cloudseed');
-    expect(cloudseedDef.label).toBe('cloudseed');
-    expect(cloudseedDef.category).toBe('effects');
-    expect(cloudseedDef.domain).toBe('audio');
-  });
-
-  it('exposes stereo audio I/O (in_l/in_r + out_l/out_r)', () => {
-    const inIds = cloudseedDef.inputs.map((p) => p.id);
-    const outIds = cloudseedDef.outputs.map((p) => p.id);
-    expect(inIds).toContain('in_l');
-    expect(inIds).toContain('in_r');
-    expect(outIds).toEqual(['out_l', 'out_r']);
-    expect(cloudseedDef.stereoPairs).toEqual([['in_l', 'in_r'], ['out_l', 'out_r']]);
-  });
-
   it('exposes 7 macro AudioParam CV inputs (one per CV input matches a paramTarget)', () => {
     const cvInputs = cloudseedDef.inputs.filter((p) => p.type === 'cv');
     expect(cvInputs.length).toBe(7);

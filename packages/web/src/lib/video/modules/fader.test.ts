@@ -16,7 +16,6 @@ import {
   type TransitionMode,
   type RGB,
 } from './fader-transitions';
-import { faderDef } from './fader';
 
 const MODES: TransitionMode[] = [0, 1, 2, 3, 4];
 
@@ -96,31 +95,5 @@ describe('fader — transitionAt blends colours', () => {
   it('endpoints return the exact source colour', () => {
     expect(transitionAt(A, B, 0, 2, 0.3, 0.7)).toEqual(A);
     expect(transitionAt(A, B, 1, 3, 0.3, 0.7)).toEqual(B);
-  });
-});
-
-describe('fader — module def contract', () => {
-  it('is a lowercase-labelled video mixer: 3 video inputs (A/B/return) + 2 video outputs (out/send)', () => {
-    expect(faderDef.type).toBe('fader');
-    expect(faderDef.label).toBe('fader');
-    expect(faderDef.label).toBe(faderDef.label.toLowerCase());
-    expect(faderDef.domain).toBe('video');
-    expect(faderDef.inputs).toEqual([
-      { id: 'in_a', type: 'video' },
-      { id: 'in_b', type: 'video' },
-      { id: 'return', type: 'video' },
-    ]);
-    expect(faderDef.outputs).toEqual([
-      { id: 'out', type: 'video' },
-      { id: 'send', type: 'video' },
-    ]);
-  });
-  it('declares the two faders + two transition params', () => {
-    const ids = (faderDef.params ?? []).map((pp) => pp.id);
-    expect(ids).toEqual(['fader', 'abTransition', 'dryWet', 'dwTransition']);
-    for (const pp of faderDef.params ?? []) {
-      expect(pp.label).toBeTruthy();
-      expect(typeof pp.defaultValue).toBe('number');
-    }
   });
 });

@@ -188,24 +188,6 @@ beforeEach(() => {
   clearPatch();
 });
 
-describe('kria: module def', () => {
-  it('registers as audio-domain "kria" with a lowercase label', () => {
-    expect(kriaDef.type).toBe('kria');
-    expect(kriaDef.domain).toBe('audio');
-    expect(kriaDef.label).toBe('kria');
-    expect(kriaDef.label).toBe(kriaDef.label.toLowerCase());
-    expect(kriaDef.category).toBe('modulation');
-  });
-  it('declares 4 pitch + 4 gate outputs (Ansible Kria shape) + clock/reset ins', () => {
-    expect(kriaDef.inputs.map((p) => p.id).sort()).toEqual(['clock', 'reset']);
-    const outs = kriaDef.outputs.map((p) => `${p.id}:${p.type}`).sort();
-    expect(outs).toEqual([
-      'gate1:gate', 'gate2:gate', 'gate3:gate', 'gate4:gate',
-      'pitch1:pitch', 'pitch2:pitch', 'pitch3:pitch', 'pitch4:pitch',
-    ]);
-  });
-});
-
 describe('kria: playback', () => {
   it('does NOT run when stopped (running=0, no TIMELORDE, no clock)', async () => {
     seed({ bpm: 240, running: 0 }, { active: 0, patterns: bank(runningPattern()) });

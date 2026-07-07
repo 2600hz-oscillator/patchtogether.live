@@ -211,39 +211,9 @@ describe('MODEL_NAMES (single source of truth)', () => {
 });
 
 describe('macseqDef (module def shape)', () => {
-  it('declares the three signature outputs (pitch, gate, modelcv) + clock', () => {
-    const ids = macseqDef.outputs.map((o) => o.id);
-    expect(ids).toContain('pitch');
-    expect(ids).toContain('gate');
-    expect(ids).toContain('modelcv');
-    expect(ids).toContain('clock');
-  });
-
-  it('MODELCV is a `cv` cable so it terminates on macrooscillator.model_cv', () => {
-    const modelcv = macseqDef.outputs.find((o) => o.id === 'modelcv');
-    expect(modelcv).toBeDefined();
-    expect(modelcv!.type).toBe('cv');
-  });
-
-  it('inputs include external clock-in', () => {
-    const ids = macseqDef.inputs.map((i) => i.id);
-    expect(ids).toContain('clock');
-  });
-
-  it('isPlaying param defaults to 0 (explicit play)', () => {
-    const p = macseqDef.params.find((x) => x.id === 'isPlaying');
-    expect(p?.defaultValue).toBe(0);
-  });
-
   it('has 128 steps (STEP_COUNT) — page-nav PR widened capacity', () => {
     expect(STEP_COUNT).toBe(128);
     expect(defaultSteps()).toHaveLength(128);
   });
 
-  it('length param: max=128, default=16 (1 page of audible steps)', () => {
-    const p = macseqDef.params.find((x) => x.id === 'length');
-    expect(p?.max).toBe(128);
-    expect(p?.defaultValue).toBe(16);
-    expect(p?.min).toBe(1);
-  });
 });

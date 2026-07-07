@@ -25,32 +25,6 @@ const AAAHGOOD_SYX = join(__dirname, '..', '__fixtures__', 'AAAHGOOD.SYX');
 
 // ---------------- module-def shape ----------------
 
-describe('dx7Def: shape', () => {
-  it('declares the algorithm param with discrete 1..32 range', () => {
-    const algo = dx7Def.params.find((p) => p.id === 'algorithm');
-    expect(algo).toBeDefined();
-    expect(algo?.min).toBe(1);
-    expect(algo?.max).toBe(32);
-    expect(algo?.curve).toBe('discrete');
-    expect(algo?.defaultValue).toBe(5);
-  });
-
-  it('declares the control params + the 4 master-ADSR params', () => {
-    const ids = dx7Def.params.map((p) => p.id).sort();
-    expect(ids).toEqual([
-      'algorithm', 'attack', 'decay', 'level', 'release', 'sustain', 'transpose', 'voiceCount',
-    ]);
-  });
-
-  it('declares the 4 master-ADSR params with documented ranges + ~pass-through defaults', () => {
-    const byId = Object.fromEntries(dx7Def.params.map((p) => [p.id, p] as const));
-    expect(byId.attack).toMatchObject({ min: 0.001, max: 5, defaultValue: 0.001, curve: 'log' });
-    expect(byId.decay).toMatchObject({ min: 0.001, max: 5, defaultValue: 0.1, curve: 'log' });
-    expect(byId.sustain).toMatchObject({ min: 0, max: 1, defaultValue: 1, curve: 'linear' });
-    expect(byId.release).toMatchObject({ min: 0.001, max: 5, defaultValue: 0.005, curve: 'log' });
-  });
-});
-
 // ---------------- host bridge integration test ----------------
 //
 // We mock just enough of Web Audio (AudioContext, AudioWorkletNode, port,

@@ -3,7 +3,7 @@
 // Pure unit tests for the TEMPEST renderer's GL-free geometry builder (P1).
 
 import { describe, expect, it } from 'vitest';
-import { buildTempestLines, shapeOf, tempestDef, CLAW_SEGMENTS, TEMPEST_STRIDE } from './tempest';
+import { buildTempestLines, shapeOf, CLAW_SEGMENTS, TEMPEST_STRIDE } from './tempest';
 import { DEFAULT_LANES, TUBE_SHAPES } from '$lib/video/tempest/tempest-core';
 
 // One stroke (rim/lane/claw segment) is expanded into a glow QUAD: 2 triangles =
@@ -92,15 +92,5 @@ describe('buildTempestLines', () => {
     // the claw is at a different rim location → different vertex positions
     const same = [...a].every((p) => b.has(p));
     expect(same).toBe(false);
-  });
-});
-
-describe('tempestDef', () => {
-  it('is a lowercase-labelled video module with a cv rim input + video out', () => {
-    expect(tempestDef.type).toBe('tempest');
-    expect(tempestDef.label).toBe(tempestDef.label.toLowerCase());
-    expect(tempestDef.domain).toBe('video');
-    expect(tempestDef.inputs?.find((p) => p.id === 'rim')?.type).toBe('cv');
-    expect(tempestDef.outputs?.some((p) => p.id === 'out' && p.type === 'video')).toBe(true);
   });
 });

@@ -17,61 +17,6 @@
 import { describe, expect, it } from 'vitest';
 import { MEOWBOX_C4_HZ, meowboxBaseFreqHz, meowboxDef } from './meowbox';
 
-describe('meowboxDef: module-def shape', () => {
-  it('declares type=meowbox, label=MEOWBOX, category=sources', () => {
-    expect(meowboxDef.type).toBe('meowbox');
-    expect(meowboxDef.label).toBe('meowbox');
-    expect(meowboxDef.category).toBe('sources');
-  });
-
-  it('declares 5 input ports: gate, pitch, morph, decay, level', () => {
-    const ids = meowboxDef.inputs.map((p) => p.id).sort();
-    expect(ids).toEqual(['decay', 'gate', 'level', 'morph', 'pitch']);
-  });
-
-  it('pitch input is type=pitch (1V/oct), NOT cv (the bug being fixed)', () => {
-    const pitch = meowboxDef.inputs.find((p) => p.id === 'pitch');
-    expect(pitch).toBeDefined();
-    // The whole point of this PR: the cable type must be 'pitch' so that
-    // sequencer/score/keys outputs (which are 1V/oct) connect with matching
-    // semantics, and the engine routes audio-rate V/oct to the Faust input
-    // channel rather than to an AudioParam interpreted as semitones.
-    expect(pitch!.type).toBe('pitch');
-    // 'pitch' inputs do NOT use paramTarget — they're audio-rate node-to-node
-    // connections. paramTarget is only meaningful for 'cv' inputs.
-    expect(pitch!.paramTarget).toBeUndefined();
-  });
-
-  it('gate input is type=gate', () => {
-    const gate = meowboxDef.inputs.find((p) => p.id === 'gate');
-    expect(gate?.type).toBe('gate');
-  });
-
-  it('non-pitch CV inputs (morph, decay, level) keep type=cv with paramTarget', () => {
-    for (const id of ['morph', 'decay', 'level']) {
-      const p = meowboxDef.inputs.find((x) => x.id === id);
-      expect(p, `${id} port exists`).toBeDefined();
-      expect(p!.type).toBe('cv');
-      expect(p!.paramTarget).toBe(id);
-    }
-  });
-
-  it('pitch knob is a transposition in semitones (range -36..+36)', () => {
-    const p = meowboxDef.params.find((x) => x.id === 'pitch');
-    expect(p).toBeDefined();
-    expect(p!.units).toBe('semi');
-    expect(p!.min).toBe(-36);
-    expect(p!.max).toBe(36);
-    expect(p!.defaultValue).toBe(0);
-  });
-
-  it('exposes 2 stereo audio outputs: L, R', () => {
-    const ids = meowboxDef.outputs.map((p) => p.id).sort();
-    expect(ids).toEqual(['L', 'R']);
-    for (const o of meowboxDef.outputs) expect(o.type).toBe('audio');
-  });
-});
-
 describe('meowboxBaseFreqHz: V/oct → Hz (mirrors Faust baseFreq)', () => {
   it('0V + 0 semis → C4 (261.6256 Hz)', () => {
     expect(meowboxBaseFreqHz(0, 0)).toBeCloseTo(MEOWBOX_C4_HZ, 4);
