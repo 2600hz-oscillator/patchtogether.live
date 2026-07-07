@@ -136,6 +136,7 @@ async function assertChainLive(page: Page): Promise<void> {
   await expect
     .poll(async () => page.evaluate(() => (globalThis as unknown as W).__patch.nodes['bd']?.params['mix']), {
       message: 'single CC lands on backdraft mix (chain live)',
+      timeout: 20_000, // settle flush on a starved SwiftShader shard can lag well past the 5s default
     })
     .toBeCloseTo(ccToParam(64, 0, 1), 2);
 
@@ -144,7 +145,7 @@ async function assertChainLive(page: Page): Promise<void> {
     .poll(
       async () =>
         page.evaluate(() => (globalThis as unknown as W).__patch.nodes['tb']?.data?.layers?.[0]?.material?.rotX),
-      { message: 'single CC lands on toybox layer:0:rotX (chain live)' },
+      { message: 'single CC lands on toybox layer:0:rotX (chain live)', timeout: 20_000 },
     )
     .toBeCloseTo(ccToParam(96, ROT_MIN, ROT_MAX), 2);
 }
@@ -235,7 +236,7 @@ test.describe('MIDI-CC coalescing — store-write starvation gate', () => {
     expect(mix.txns).toBeGreaterThanOrEqual(1);
     // Final-value convergence: the settled store equals the LAST sent CC.
     await expect
-      .poll(async () => page.evaluate(() => (globalThis as unknown as W).__patch.nodes['bd']?.params['mix']))
+      .poll(async () => page.evaluate(() => (globalThis as unknown as W).__patch.nodes['bd']?.params['mix']), { timeout: 20_000 })
       .toBeCloseTo(ccToParam(mix.lastVal, 0, 1), 3);
 
     // ── Leg 2: toybox DATA-write leg (layer:0:rotX — Knob setter → setMat). ──
@@ -250,6 +251,7 @@ test.describe('MIDI-CC coalescing — store-write starvation gate', () => {
       .poll(
         async () =>
           page.evaluate(() => (globalThis as unknown as W).__patch.nodes['tb']?.data?.layers?.[0]?.material?.rotX),
+        { timeout: 20_000 },
       )
       .toBeCloseTo(expectedRot, 3);
     // The ENGINE's render-local clone agrees (transient leg + post-commit
@@ -304,8 +306,9 @@ test.describe('MIDI-CC coalescing — store-write starvation gate', () => {
       const lastVal: Record<number, number> = {};
       // Schedule-driven catch-up loop (see burst()): the wire rate holds
       // even when the render loop stalls the main thread.
+      const TOTAL = Math.floor(STREAM_MS * RATE_PER_MS) + 1;
       while (performance.now() - t0 < STREAM_MS) {
-        const due = Math.floor((performance.now() - t0) * RATE_PER_MS) + 1;
+        const due = Math.min(TOTAL, Math.floor((performance.now() - t0) * RATE_PER_MS) + 1);
         while (sent < due) {
           const cc = CCS[sent % 4]!;
           const val = Math.round(63.5 + 63.5 * Math.sin(sent * 0.11));
@@ -314,6 +317,19 @@ test.describe('MIDI-CC coalescing — store-write starvation gate', () => {
           sent++;
         }
         await new Promise((r) => setTimeout(r, 0));
+      }
+      // FINAL CATCH-UP: on a starved shard a stall can carry `elapsed` past
+      // STREAM_MS and exit the loop before the last due window was pumped,
+      // leaving `sent` load-dependent (the shard-9 reshuffle failure). Pump
+      // the remainder so `sent` is DETERMINISTIC (= TOTAL) under any load —
+      // the ceiling below derives from the ACTUAL streamMs, so the mechanism
+      // gate is unaffected.
+      while (sent < TOTAL) {
+        const cc = CCS[sent % 4]!;
+        const val = Math.round(63.5 + 63.5 * Math.sin(sent * 0.11));
+        lastVal[cc] = val;
+        w.__midiTestInject!(0, cc, val);
+        sent++;
       }
       const streamMs = performance.now() - t0;
       await new Promise((r) => setTimeout(r, 700)); // settle + margin
@@ -326,18 +342,18 @@ test.describe('MIDI-CC coalescing — store-write starvation gate', () => {
       `[perf-midi-cc] MULTI-KNOB burst: sent=${res.sent} txns=${res.txns} `
       + `streamMs=${Math.round(res.streamMs)} two-lane ceiling=${twoLaneCeiling}`,
     );
-    expect(res.sent).toBeGreaterThan(1000); // the storm actually ran (4 knobs)
+    expect(res.sent).toBe(1501); // the storm ran to completion (deterministic — final catch-up)
     expect(res.txns, 'total transactions fit the SHARED two-lane windows').toBeLessThanOrEqual(twoLaneCeiling);
     expect(res.txns, 'nowhere near per-knob-per-window (pre-batcher: ~4x)').toBeLessThan(res.sent * 0.05);
     expect(res.txns).toBeGreaterThanOrEqual(1);
 
     // Final-value convergence per module + per param (collab/persistence).
     await expect
-      .poll(async () => page.evaluate(() => (globalThis as unknown as W).__patch.nodes['bd']?.params['mix']))
+      .poll(async () => page.evaluate(() => (globalThis as unknown as W).__patch.nodes['bd']?.params['mix']), { timeout: 20_000 })
       .toBeCloseTo(ccToParam(res.lastVal[22]!, 0, 1), 3);
     await expect
       .poll(async () =>
-        page.evaluate(() => (globalThis as unknown as W).__patch.nodes['tb']?.data?.layers?.[0]?.material?.rotX))
+        page.evaluate(() => (globalThis as unknown as W).__patch.nodes['tb']?.data?.layers?.[0]?.material?.rotX), { timeout: 20_000 })
       .toBeCloseTo(ccToParam(res.lastVal[21]!, ROT_MIN, ROT_MAX), 3);
     expect(errors, 'no page errors during the multi-knob storm').toEqual([]);
   });
