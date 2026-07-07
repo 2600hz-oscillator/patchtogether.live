@@ -78,7 +78,6 @@ MODULE_BLURB: dict[str, str] = {
     "mixmstrs": "Master mix bus + sends.",
     "timelorde": "Clock divider + euclidean gen.",
     "charlottesEchos": "Stereo delay + feedback echo.",
-    "riotgirls": "Wavefolder / shaper chain.",
     "score": "Step-score module (4x4x4 pages).",
     "drumseqz": "4-channel drum sequencer.",
     "polyseqz": "Polyphonic step sequencer.",

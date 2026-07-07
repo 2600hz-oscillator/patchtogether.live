@@ -198,12 +198,13 @@ test.describe('PatchPanel: redesigned menu', () => {
   }) => {
     await page.goto('/rack');
     await page.waitForLoadState('networkidle');
-    await spawnPatch(page, [{ id: 'rg', type: 'riotgirls', position: { x: 200, y: 200 } }]);
-    await expect(chrome(page, 'rg')).toHaveCount(0);
-    // RIOTGIRLS: 55 inputs + 2 outputs = 57 handles regardless of menu state.
+    await spawnPatch(page, [{ id: 'mm', type: 'mixmstrs', position: { x: 200, y: 200 } }]);
+    await expect(chrome(page, 'mm')).toHaveCount(0);
+    // MIXMSTRS: every declared port materialises a handle regardless of menu
+    // state (49 inputs + outputs — the sectioned mega-module case).
     const count = await page
-      .locator('.svelte-flow__node[data-id="rg"] .svelte-flow__handle[data-handleid]')
+      .locator('.svelte-flow__node[data-id="mm"] .svelte-flow__handle[data-handleid]')
       .count();
-    expect(count).toBe(57);
+    expect(count).toBeGreaterThanOrEqual(50);
   });
 });

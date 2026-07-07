@@ -74,7 +74,7 @@ attempt 1, then "passes" on retry when timing noise nudges it over the
 
 This is a **latent gap that compiles, type-checks, and passes every other
 layer** — it only shows up (sometimes intermittently) in the per-module
-e2e smoke. It bit TREE.oh.VOX (#446) and chowkick (#462).
+e2e smoke. It bit TREE.oh.VOX (#446) and the since-retired chowkick (#462).
 
 When adding a gate/pitch-triggered AUDIO module, add an OVERRIDES entry:
 

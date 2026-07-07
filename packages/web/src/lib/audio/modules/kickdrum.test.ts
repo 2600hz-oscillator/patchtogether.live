@@ -17,7 +17,7 @@ beforeAll(() => {
 });
 
 // Capture the Processor class via the registerProcessor shim (the
-// chowkick.test.ts / sidecar.test.ts loader pattern).
+// sidecar.test.ts loader pattern).
 type ProcCtor = new () => {
   process: (i: Float32Array[][], o: Float32Array[][], p: Record<string, Float32Array>) => boolean;
 };
@@ -90,7 +90,7 @@ describe('kickdrumDef — module def shape', () => {
     expect(byId.glue).toMatchObject({        defaultValue: 0.3,  min: 0,   max: 1,    curve: 'linear' });
     expect(byId.ceiling).toMatchObject({     defaultValue: 0.5,  min: 0,   max: 1,    curve: 'linear' });
     expect(byId.width).toMatchObject({       defaultValue: 0.2,  min: 0,   max: 1,    curve: 'linear' });
-    // The headroom fix: level spans −24..+12 dB (vs chowkick's −60..0).
+    // The headroom fix: level spans −24..+12 dB.
     expect(byId.level).toMatchObject({       defaultValue: 0,    min: -24, max: 12,   curve: 'linear' });
     expect(Object.keys(byId)).toHaveLength(25);
   });

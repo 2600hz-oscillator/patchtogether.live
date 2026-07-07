@@ -78,7 +78,7 @@ describe('ART audio-profile coverage gate', () => {
       missing,
       `${missing.length} audio module(s) have NO committed audio profile and are not excluded/backlogged:\n` +
         missing.map((id) => `  - ${id} (expected art/baselines/${moduleIdToBaselineGroup(id)}/*.f32)`).join('\n') +
-        '\nAdd a profile scenario (art/setup/capture.ts + drivers.ts — see art/scenarios/chowkick/profile.test.ts), ' +
+        '\nAdd a profile scenario (art/setup/capture.ts + drivers.ts — see art/scenarios/kickdrum/profile.test.ts), ' +
         'or add a REASONED entry to ART_EXCLUDED in art/setup/profile-coverage.ts. ' +
         'Do NOT add to ART_BACKLOG — the backlog only shrinks.',
     ).toEqual([]);

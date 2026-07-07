@@ -27,7 +27,7 @@
 // kickdrum idiom). width=0 AND spread=0 → L == R exactly (mono-safe).
 //
 // Every time constant derives from the LIVE sampleRate. Continuous params are
-// smoothed with WtParamSmoother (80 Hz one-pole, the chowkick/kickdrum pattern);
+// smoothed with WtParamSmoother (80 Hz one-pole, the kickdrum pattern);
 // `hard` is a discrete k-rate switch and is NOT smoothed.
 
 import {
@@ -38,7 +38,7 @@ import {
   type SnaredrumParams,
   type SnaredrumState,
 } from './lib/snaredrum-dsp';
-import { clamp } from './lib/chowkick-dsp';
+import { clamp } from './lib/dsp-utils';
 import { WtParamSmoother } from './lib/wavetable-osc';
 
 declare const sampleRate: number;
@@ -54,7 +54,7 @@ declare class AudioWorkletProcessor {
 declare function registerProcessor(name: string, ctor: typeof AudioWorkletProcessor): void;
 
 // Shim worklet globals when running outside AudioWorkletGlobalScope (vitest
-// captures the class via this shim — the chowkick/kickdrum loader pattern).
+// captures the class via this shim — the kickdrum loader pattern).
 const G = globalThis as unknown as { AudioWorkletProcessor?: unknown; registerProcessor?: unknown };
 if (typeof G.AudioWorkletProcessor === 'undefined') G.AudioWorkletProcessor = class {};
 if (typeof G.registerProcessor === 'undefined') G.registerProcessor = () => {};

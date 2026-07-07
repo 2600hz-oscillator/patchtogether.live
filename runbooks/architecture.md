@@ -15,7 +15,7 @@ database, and an auth provider.
 | Database | Postgres | Neon (web tier, HTTP driver) + Fly Postgres path for relay (TCP) |
 | Auth | Clerk (session JWTs) | Clerk-hosted; verified locally in web + relay |
 | DSP | Faust `.dsp` → WASM + TS AudioWorklets | client browser |
-| Emulator modules | Emscripten-compiled C (DOOM, SNES9X, …) → WASM | client browser |
+| Emulator modules | Emscripten-compiled C (DOOM, …) → WASM | client browser |
 
 ## Data-flow diagram
 

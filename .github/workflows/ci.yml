@@ -473,7 +473,7 @@ jobs:
   # function". It's a build-time Vite var (baked into the bundle), so it must
   # be set on `task build:web`, not at preview runtime.
   #
-  # The DOOM/SNES9X WASM + DOOM1.WAD static assets are baked into the bundle
+  # The DOOM WASM + DOOM1.WAD static assets are baked into the bundle
   # here (vite build copies the whole static/ tree into
   # .svelte-kit/output/client/), so the e2e shards no longer build WASM or
   # fetch the WAD — they're inside the downloaded artifact.
@@ -526,7 +526,7 @@ jobs:
       - name: Install workspace deps
         run: flox activate -- task install
 
-      # DOOM/SNES9X WASM + DOOM1.WAD are static-served assets (under
+      # DOOM WASM + DOOM1.WAD are static-served assets (under
       # packages/web/static/). `vite build` copies static/ into the client
       # output, so they need to be present here to be baked into the preview
       # artifact the e2e shards download. Same cache+build pattern as the
@@ -543,19 +543,6 @@ jobs:
       - name: Build DOOM WASM (emcc)
         if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
         run: flox activate -- bash packages/web/native/build-doom-wasm.sh
-
-      - name: Cache SNES9X WASM artifact
-        id: cache-snes9x-wasm
-        uses: actions/cache@v4
-        with:
-          path: |
-            packages/web/static/snes9x/snes9x.js
-            packages/web/static/snes9x/snes9x.wasm
-          key: ${{ runner.os }}-snes9x-wasm-${{ hashFiles('packages/web/native/build-snes9x-wasm.sh', 'packages/web/native/snes9x/**') }}
-
-      - name: Build SNES9X WASM (emcc)
-        if: steps.cache-snes9x-wasm.outputs.cache-hit != 'true'
-        run: flox activate -- bash packages/web/native/build-snes9x-wasm.sh
 
       - name: Cache DOOM1.WAD (shareware)
         id: cache-doom-wad
@@ -584,7 +571,7 @@ jobs:
       # `vite preview` (adapter-cloudflare) serves from .svelte-kit/output/
       # (client + prerendered + server) — NOT packages/web/build/, which the
       # cloudflare adapter leaves empty for the preview path. Upload that tree;
-      # the static DOOM/SNES9X/skifree assets are inside output/client/.
+      # the static DOOM/skifree assets are inside output/client/.
       - name: Upload web preview bundle artifact
         uses: actions/upload-artifact@v4
         with:
@@ -721,7 +708,7 @@ jobs:
       # Download the web bundle built ONCE by build-web. `vite preview`
       # (E2E_USE_PREVIEW=1, set in env above) serves from
       # packages/web/.svelte-kit/output, so the artifact restores there. The
-      # bundle already contains the DOOM/SNES9X WASM + DOOM1.WAD + skifree
+      # bundle already contains the DOOM WASM + DOOM1.WAD + skifree
       # static assets (vite build copied static/ into output/client/), so this
       # shard no longer builds WASM or fetches the WAD.
       - name: Download web preview bundle artifact
@@ -994,28 +981,6 @@ jobs:
         if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
         run: flox activate -- bash packages/web/native/build-doom-wasm.sh
 
-      # SNES9X WASM blob — emcc-compiled from the vendored snes9x2005 core +
-      # snes9x_bridge.c. Same cache+build pattern as DOOM above: key is the
-      # hash of build-snes9x-wasm.sh + the entire vendored native/snes9x tree.
-      # Output is .gitignored (packages/web/.gitignore) so a hit restores
-      # snes9x.{js,wasm} into static/snes9x/ in place; a miss runs the build
-      # via flox (emcc is in the flox manifest). The SNES ROM itself stays
-      # user-provided + gitignored, so the e2e ROM-gated spec skips in CI —
-      # but the no-ROM dropzone smoke + the module's page-load import need the
-      # WASM present.
-      - name: Cache SNES9X WASM artifact
-        id: cache-snes9x-wasm
-        uses: actions/cache@v4
-        with:
-          path: |
-            packages/web/static/snes9x/snes9x.js
-            packages/web/static/snes9x/snes9x.wasm
-          key: ${{ runner.os }}-snes9x-wasm-${{ hashFiles('packages/web/native/build-snes9x-wasm.sh', 'packages/web/native/snes9x/**') }}
-
-      - name: Build SNES9X WASM (emcc)
-        if: steps.cache-snes9x-wasm.outputs.cache-hit != 'true'
-        run: flox activate -- bash packages/web/native/build-snes9x-wasm.sh
-
       - name: Cache DOOM1.WAD (shareware)
         id: cache-doom-wad
         uses: actions/cache@v4
@@ -1042,7 +1007,7 @@ jobs:
       # of rebuilding it here — a full `task build:web` ran on EVERY collab run
       # (not cache-gated) and was the main reason this job blew its 40-min ceiling
       # and got cancelled (the e2e shards already consume this same artifact).
-      # The bundle bakes in the DOOM/SNES9X/WAD static assets, so the specs get
+      # The bundle bakes in the DOOM/WAD static assets, so the specs get
       # them from here; the cache-gated DOOM/WAD steps above remain for the C-side
       # lockstep-barrier oracle, which builds + runs DOOM independently.
       - name: Download web preview bundle artifact
@@ -1967,28 +1932,6 @@ jobs:
       - name: Build DOOM WASM (emcc)
         if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
         run: flox activate -- bash packages/web/native/build-doom-wasm.sh
-
-      # SNES9X WASM blob — emcc-compiled from the vendored snes9x2005 core +
-      # snes9x_bridge.c. Same cache+build pattern as DOOM above: key is the
-      # hash of build-snes9x-wasm.sh + the entire vendored native/snes9x tree.
-      # Output is .gitignored (packages/web/.gitignore) so a hit restores
-      # snes9x.{js,wasm} into static/snes9x/ in place; a miss runs the build
-      # via flox (emcc is in the flox manifest). The SNES ROM itself stays
-      # user-provided + gitignored, so the e2e ROM-gated spec skips in CI —
-      # but the no-ROM dropzone smoke + the module's page-load import need the
-      # WASM present.
-      - name: Cache SNES9X WASM artifact
-        id: cache-snes9x-wasm
-        uses: actions/cache@v4
-        with:
-          path: |
-            packages/web/static/snes9x/snes9x.js
-            packages/web/static/snes9x/snes9x.wasm
-          key: ${{ runner.os }}-snes9x-wasm-${{ hashFiles('packages/web/native/build-snes9x-wasm.sh', 'packages/web/native/snes9x/**') }}
-
-      - name: Build SNES9X WASM (emcc)
-        if: steps.cache-snes9x-wasm.outputs.cache-hit != 'true'
-        run: flox activate -- bash packages/web/native/build-snes9x-wasm.sh
 
       - name: Run VRT
         run: flox activate -- task vrt

@@ -1,8 +1,8 @@
 // packages/web/src/lib/audio/modules/drumseqz.ts
 //
 // DRUMSEQZ — 4-channel x 16-step drum sequencer with Euclidean fills + per-track
-// quantized CV. Sister module to RIOTGIRLS (the canonical pairing wires gate{N}
-// + pitch{N} into RIOTGIRLS' four voices).
+// quantized CV. The canonical pairing wires gate{N} + pitch{N} into a
+// four-voice drum rack (e.g. four DRUMMERGIRLs).
 //
 // No Faust / no AudioWorklet — this is a clock + CV module. The factory uses
 // the shared scheduler-clock (Worker tick, jank-immune) to drive a 200 ms
@@ -250,7 +250,7 @@ export const drumseqzDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A four-track drum/trigger sequencer: four independent rows of steps (16 visible per page, up to 128 across 8 pages) that all share one playhead and one tempo. Each row emits its own gate + pitch pair, so it's the natural drive for a four-voice drum rack (it pairs with RIOTGIRLS' four voices). Per step in a row you set on/off and an optional pitch (a lit step with no note plays the row's root note), and each row also has a Euclidean fill that scatters N evenly-spread hits across the page for instant rhythms. The playhead steps on its own BPM clock or on an external clock fed into CLOCK IN, with swing to shuffle the feel; a transport row plus the CV inputs (play / reset / queue) let you drive and switch four saved patterns hands-free.",
+      "A four-track drum/trigger sequencer: four independent rows of steps (16 visible per page, up to 128 across 8 pages) that all share one playhead and one tempo. Each row emits its own gate + pitch pair, so it's the natural drive for a four-voice drum rack. Per step in a row you set on/off and an optional pitch (a lit step with no note plays the row's root note), and each row also has a Euclidean fill that scatters N evenly-spread hits across the page for instant rhythms. The playhead steps on its own BPM clock or on an external clock fed into CLOCK IN, with swing to shuffle the feel; a transport row plus the CV inputs (play / reset / queue) let you drive and switch four saved patterns hands-free.",
     inputs: {
       clock:
         "External clock: each rising edge advances the shared playhead exactly one step. While anything is patched here the internal BPM is ignored and the incoming pulses set the pace (and act as the play signal); unpatch to fall back to the BPM clock.",

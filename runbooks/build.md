@@ -4,7 +4,7 @@ The full production build has three independent artifact families:
 
 1. **DSP dist** — Faust `.dsp` → WASM, TS worklets → JS (`packages/dsp/dist/`).
 2. **Web bundle** — SvelteKit + Vite → Cloudflare Pages output (`.svelte-kit/cloudflare`).
-3. **WASM emulator assets** — Emscripten C → static assets (DOOM, SNES9X).
+3. **WASM emulator assets** — Emscripten C → static assets (DOOM).
 
 All commands run through Flox: `flox activate -- …`.
 
@@ -81,7 +81,6 @@ Require `emcc` (Emscripten) on `PATH`:
 
 ```sh
 flox activate -- bash packages/web/native/build-doom-wasm.sh    # vendored doomgeneric → static/doom/doom.{js,wasm}
-flox activate -- bash packages/web/native/build-snes9x-wasm.sh  # snes9x2005 core    → static/snes9x/snes9x.{js,wasm}
 ```
 
 Built with `-sMODULARIZE -sEXPORT_ES6`. ROM/WAD data is loaded at runtime and is

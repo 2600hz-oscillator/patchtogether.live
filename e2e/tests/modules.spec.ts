@@ -33,33 +33,13 @@ const SKIP_RENDER: Record<string, string> = {
   // `.svelte-flow__node-cadillac` to assert against. Functional coverage:
   // e2e/tests/cadillac.spec.ts (drive + delete + self-destruct).
   cadillac: 'overlay sprite, not a flow card; covered by e2e/tests/cadillac.spec.ts',
-  // QBERT fetches a user-provided ROM zip from /roms/qbert/qbert.zip at
-  // spawn time. On a clean checkout (no ROM installed) this 404s by
-  // design — the card surfaces the "ROM MISSING" overlay. The 404
-  // surfaces as a Chromium console error which this strict spec rejects.
-  // Dedicated coverage: e2e/tests/qbert-rom-missing.spec.ts (asserts
-  // overlay + handle count, filtering the expected 404). The handle
-  // count + CV path are also covered by per-module-per-port specs.
-  qbert: 'fetches user-provided ROM (404s on clean checkout); covered by e2e/tests/qbert-rom-missing.spec.ts',
-  // SNES9X auto-fetches /roms/snes9x/game.sfc at spawn (DOOM-style autoload).
-  // On a clean checkout (no user-provided ROM) that 404s by design — the card
-  // shows the "LOAD A ROM" dropzone. The 404 surfaces as a Chromium console
-  // error that this strict "no console errors" smoke rejects. Under the
-  // prebuilt `vite preview` server the static 404 is returned synchronously,
-  // so it lands before the assertion every time (under the dev server the
-  // async autoload occasionally lost the race → latent flake). Same shape as
-  // qbert. Dedicated coverage that tolerates the expected 404: the no-ROM
-  // dropzone path in e2e/tests/snes9x.spec.ts (+ snes9x-gameplay-gates.spec.ts
-  // when a ROM is installed); handle count + CV/GATE wiring also covered by
-  // the per-module-per-port specs.
-  snes9x: 'fetches user-provided ROM (404s on clean checkout); covered by e2e/tests/snes9x.spec.ts',
   // GIBRIBBON renders DOOM-WAD sprites; the shareware DOOM1.WAD is gitignored
   // and baked in by the build-web job (SHA-pinned download from an external
   // mirror). On a clean checkout — OR when that single-mirror download misses
   // transiently in CI — the spawn-time fetch 404s, which this strict "no console
-  // errors" smoke rejects. Same shape as qbert/snes9x (its siblings were already
-  // exempted; gibribbon was overlooked → a latent flake that fired on PR #832's
-  // shard 4). Render coverage lives in e2e/tests/gibribbon.spec.ts; the real cure
+  // errors" smoke rejects. Same ROM-404 shape as the since-retired qbert/snes9x
+  // (its siblings were already exempted; gibribbon was overlooked → a latent
+  // flake that fired on PR #832's shard 4). Render coverage lives in e2e/tests/gibribbon.spec.ts; the real cure
   // for the flake is hardening the build-web WAD acquisition (task #83).
   gibribbon: 'renders the gitignored DOOM WAD (404s on clean checkout / transient build-web miss); covered by e2e/tests/gibribbon.spec.ts',
 };

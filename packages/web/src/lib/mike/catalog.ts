@@ -58,7 +58,7 @@ export const PREFERRED_TYPES = {
   /** Drum voices — modules whose output is a drum hit. Mike's drum-
    *  voice slot in his progression accepts any "audio out + gate in"
    *  module; in practice that's the modules below. */
-  drumVoices: ['drummergirl', 'riotgirls', 'meowbox', 'noise'],
+  drumVoices: ['drummergirl', 'meowbox', 'noise'],
   /** Effects — apply after a voice, before the mixer. */
   effects: ['reverb', 'cloudseed', 'shimmershine', 'clouds', 'charlottesEchos'],
   /** Mixers — Mike spawns ONE per rack and re-uses it. */

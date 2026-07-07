@@ -1,7 +1,7 @@
 // packages/web/src/lib/dev/test-hooks.ts
 //
 // Single gate for the dev-only window globals (`__patch`, `__ydoc`,
-// `__engine`, `__riotgirlsTriggerVoice`, `__drumseqzCellAt`,
+// `__engine`, `__drumseqzCellAt`,
 // `__drumseqzSetCell`, etc.) that Playwright drives.
 // Originally gated on `import.meta.env.DEV` only, which Vite strips in
 // production builds — so the autotest tier (a prod build) couldn't use them.

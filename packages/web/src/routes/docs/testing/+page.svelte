@@ -50,8 +50,8 @@
 <h2>Port-surface consistency gates</h2>
 <p>
   Three gates keep each module&rsquo;s I/O surface consistent across def, published manifest,
-  and rendered UI — drift between them was the root cause of the <code>RIOTGIRLS</code>
-  regression where the def grew dozens of CV inputs but the card only rendered three handles
+  and rendered UI — drift between them was the root cause of a past regression
+  where a def grew dozens of CV inputs but the card only rendered three handles
   per voice (cables had nothing visible to land on).
 </p>
 <ol>

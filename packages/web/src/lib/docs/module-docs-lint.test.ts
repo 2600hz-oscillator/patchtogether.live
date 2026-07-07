@@ -256,9 +256,14 @@ describe('module-docs lint — STRICT_DOCS RATCHET (only grows)', () => {
   //   module. Only LOWER it for a real, justified un-promotion — NEVER to make a
   //   red docs gate go green.
   it('STRICT_DOCS never shrinks below its frozen floor', () => {
+    // 178→169 (2026-07-07): the 15-module deletion PR removed the 14 STRICT
+    // members among them (chowkick / riotgirls / atlantisCatalyst / grids /
+    // peaks / stages / symbiote / veils / warps / aquaTank / elements / tides2 /
+    // qbert / snes9x) — a real un-promotion via module deletion, not a gate
+    // dodge. (The old floor had lagged the list's actual size.)
     expect(
       STRICT_DOCS.size,
       'STRICT_DOCS shrank below its frozen floor — see the RATCHET rule above',
-    ).toBeGreaterThanOrEqual(178);
+    ).toBeGreaterThanOrEqual(169);
   });
 });

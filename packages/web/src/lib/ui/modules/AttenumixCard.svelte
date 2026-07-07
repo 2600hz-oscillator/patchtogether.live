@@ -4,7 +4,7 @@
   // inputs and per-channel direct outs live on the PatchPanel; the MIX
   // output is the last port at the bottom of the outputs column.
   //
-  // PatchPanel pattern (mirrors VeilsCard's layout but stripped of the
+  // PatchPanel pattern (a quad-channel fader layout stripped of the
   // response toggle — ATTENUMIX is the no-extra-controls mixer).
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';

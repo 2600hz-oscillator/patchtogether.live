@@ -6,7 +6,7 @@
 // kick plan's provenance section). Shared by the kick voice's EQ and any
 // future own-code filter stage.
 //
-// Style: explicit state objects + per-sample steps (chowkick discipline).
+// Style: explicit state objects + per-sample steps (DSP-core discipline).
 // Coefficients are cached inside the state and recomputed only when the
 // controlling parameters change, so a per-sample caller with static knobs
 // pays one comparison, not transcendental math.

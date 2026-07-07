@@ -121,39 +121,6 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "tune": "Coarse pitch in semitones (−36 to +36) — shift the whole oscillator up or down by whole-step intervals. With CV modulation on, knob + CV add together, so a sequencer can select octaves while the knob sets a base pitch."
     }
   },
-  "aquaTank": {
-    "explanation": "A 4-channel Hadamard feedback-delay-network (FDN) — a feedback matrix that takes four audio inputs, runs them through delay lines whose outputs are mixed back into each other through a Hadamard matrix, and recirculates them. Depending on settings it behaves as a dense reverb, a metallic resonator, a chorus, or a self-oscillating feedback-resonance instrument. Each channel has its own feedback ratio (F1..F4) and a direct out, plus there's a stereo MIX bus that spreads the four channels across the field. TILT shapes the LF/HF balance in the loop, DAMP rolls off the highs, CROSS sets how strongly channels couple through the matrix, and SPREAD/OUT shape the stereo mix. It's one of the three ATLANTIS-PATCH support modules but stands alone as a reverb/feedback box.",
-    "inputs": {
-      "fb1_cv": "CV that displaces the F1 feedback-ratio knob, modulating channel 1's loop gain (resonance / decay).",
-      "fb2_cv": "CV that displaces the F2 knob, modulating channel 2's feedback ratio.",
-      "fb3_cv": "CV that displaces the F3 knob, modulating channel 3's feedback ratio.",
-      "fb4_cv": "CV that displaces the F4 knob, modulating channel 4's feedback ratio.",
-      "in1": "Audio input to channel 1 of the Hadamard FDN matrix.",
-      "in2": "Audio input to channel 2.",
-      "in3": "Audio input to channel 3.",
-      "in4": "Audio input to channel 4. (Patch fewer than four — empty channels still resonate via the matrix coupling.)",
-      "tilt_cv": "CV that displaces the TILT knob, modulating the LF/HF balance inside the feedback loop."
-    },
-    "outputs": {
-      "mix_l": "Left side of the stereo MIX bus: out1..4 summed and panned across the field by SPREAD, scaled by OUT.",
-      "mix_r": "Right side of the stereo MIX bus.",
-      "out1": "Channel 1's direct post-matrix output — use these four for parallel/multi-tap routing of the resonator.",
-      "out2": "Channel 2's direct post-matrix output.",
-      "out3": "Channel 3's direct post-matrix output.",
-      "out4": "Channel 4's direct post-matrix output."
-    },
-    "controls": {
-      "crossMix": "Inter-channel matrix coupling (0..1): how strongly the four channels feed into each other through the Hadamard mix. Low keeps channels independent (parallel combs); high binds them into a dense, diffuse reverb.",
-      "damp": "High-frequency damping inside the matrix (0..1): higher values bleed off the highs each pass, taming harshness and shortening bright resonances.",
-      "fb1": "Channel 1 feedback ratio (0..0.95): how much of the loop recirculates. Low = short decay / subtle ambience; near 0.95 = long ringing resonance approaching self-oscillation.",
-      "fb2": "Channel 2 feedback ratio (0..0.95).",
-      "fb3": "Channel 3 feedback ratio (0..0.95).",
-      "fb4": "Channel 4 feedback ratio (0..0.95).",
-      "outLevel": "Output gain of the stereo MIX bus (0..1). The direct out1..4 taps are unaffected by this.",
-      "spread": "Per-channel stereo-pan width on the MIX bus (0..1): 0 collapses the four channels to center, 1 spreads them wide across the stereo field.",
-      "tilt": "LF/HF balance in the loop (-1..+1): negative tilts the recirculating energy toward the lows (darker, boomier resonance), positive toward the highs (brighter, more metallic)."
-    }
-  },
   "archivist": {
     "explanation": "ARCHIVIST is a universal Internet Archive (archive.org) media source for the VIDEO domain. You pick a media type (image / audio / video / any) and a search term (plus an optional year-from/year-to range), and the card runs an archive.org advancedsearch query, picks a RANDOM matching public item, and loads it into a resizable preview. Restricted/lending items are always excluded from the query, and the file picker only chooses HTML5-playable derivatives (jpg/png/gif/webp for images; mp3/ogg/m4a/flac/wav for audio; h.264/theora/webm-class video, rejecting bare MPEG-4-Part-2 / HEVC), auto-advancing to another random match if a chosen derivative will not decode — so it lands on something that plays instead of hanging on \"Loading\". CORS BEHAVIOR IS PER-TYPE: only IMAGE and AUDIO items are CORS-clean and deliver real downstream signal — an image becomes a clean WebGL texture on the `image` output (and free-upcasts to `video` so it can drive video inputs), and an audio item routes clean stereo to `audio_l`/`audio_r` via the cross-domain audio bridge. VIDEO items are PLAY-ONLY: archive.org video lacks CORS on the served file, so the texture is tainted and the `video` output stays the idle pattern (the card shows a \"play-only (no clean output)\" warning), and a video item's audio track is likewise CORS-tainted so its audio jacks are effectively dead. So archivist is video-output-only for VIDEO items, but its audio jacks ARE live and clean for genuine AUDIO items. Search and metadata are CORS-open and fetched directly with no proxy. Usage: choose \"image\" to feed clean stills into the video graph, or \"audio\" to pull found-sound stereo into the audio graph; use \"video\" only for in-card preview/scrubbing. Multiplayer-aware: the loaded item, search inputs, and play state mirror on the node so peers see and drive the same item. The card is corner-drag resizable (handle bottom-right, min 360x360, default 360x540), with a 16:9 preview screen inside showing the loaded image, the playing video, or a cover-art placeholder for audio items.",
     "inputs": {
@@ -172,41 +139,6 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
     "controls": {
       "cv_play_trigger": "Synthetic edge-detector param (linear 0..1, default 0) mirroring the play_trigger gate input; the card polls it and edge-detects a rising crossing of mid-scale (0.5) to toggle play/pause. Normally driven through the play_trigger jack rather than directly.",
       "gain": "Output gain, linear 0..2 (default 1). Reserved in v1 — declared on the module but not yet consumed in the signal path."
-    }
-  },
-  "atlantisCatalyst": {
-    "explanation": "A slow-drift 'macro brain' (displayed as SCENECHANGE) that nudges a whole patch into new states without you touching every knob. It emits EIGHT correlated CV outputs (drift1–drift8), each a smooth band-limited random walk; a Coherence control sets how tightly the eight tracks move together versus wandering independently, and a Chaos control sets how much they jitter. On a timer (Drift sets the spacing, from a few seconds to minutes) — or on demand via the NUDGE button/gate — it transitions to a fresh 'scene', ramping all eight outputs smoothly to new targets. A scene_pulse gate fires on each transition and a scene_idx CV reports which scene is current, so downstream sequencers can follow along. You can save up to four scenes and recall them deterministically (the queue CV inputs jump straight to a scene), and FREEZE latches every output where it stands. Patch the drift outputs into filter cutoffs, mix levels, FX depths — anywhere you'd want hands-free, slowly-evolving modulation.",
-    "inputs": {
-      "freeze": "While this gate is held high, all eight drift outputs latch at their current values and stop wandering; drop it low (or toggle the card's FREEZE button) to release them.",
-      "nudge": "A rising edge manually triggers the next scene transition (the same as the card's NUDGE button), cycling the scene index forward. Ignored while frozen.",
-      "play_cv": "Shared transport play gate (reserved for transport sync); ATLANTIS-CATALYST takes its scene jumps from the queue inputs below.",
-      "queue1_cv": "A rising edge jumps to scene 1 — recalling its saved snapshot if one exists, otherwise making a fresh transition toward scene-index 1.",
-      "queue2_cv": "A rising edge jumps to scene 2 — recalling its saved snapshot if one exists, else a fresh transition.",
-      "queue3_cv": "A rising edge jumps to scene 3 — recalling its saved snapshot if one exists, else a fresh transition.",
-      "queue4_cv": "A rising edge jumps to scene 4 — recalling its saved snapshot if one exists, else a fresh transition.",
-      "reset_cv": "Shared transport reset gate (reserved for transport sync).",
-      "seed_cv": "Per-instance seed CV: latches the random-walk generator's seed so the drift sequence can be made reproducible across sessions."
-    },
-    "outputs": {
-      "drift1": "Smooth band-limited random-walk CV (-1..+1), channel 1; ramps toward a new target on each scene change and jitters within it by the Chaos amount. Patch into any modulation destination.",
-      "drift2": "Random-walk CV channel 2 — correlated with the others by the Coherence amount.",
-      "drift3": "Random-walk CV channel 3.",
-      "drift4": "Random-walk CV channel 4.",
-      "drift5": "Random-walk CV channel 5.",
-      "drift6": "Random-walk CV channel 6.",
-      "drift7": "Random-walk CV channel 7.",
-      "drift8": "Random-walk CV channel 8 — the eighth of the correlated drift bank.",
-      "scene_idx": "CV that reports the current scene as a voltage (-1..+1 across scenes 0..3), so another module can address its own scene/snapshot selector from this one.",
-      "scene_pulse": "A short gate pulse that fires on every scene transition (timer, manual nudge, or queued recall) — patch it where you want a downstream event to mark 'a new scene just started'."
-    },
-    "controls": {
-      "autoMode": "Whether scenes change on their own: on (default) transitions automatically on the Drift timer; off means scenes only change when you nudge or send a queue CV.",
-      "bias": "A DC offset added to all eight drift outputs (-1..+1), tilting the whole bank's average higher or lower.",
-      "chaos": "How much micro-jitter the eight outputs add even while holding a scene (0..1): 0 is glassy-smooth, higher values keep the voltages subtly alive.",
-      "coherence": "How tightly the eight channels move together (0..1): 0 makes them fully independent random walks, 1 locks them onto one shared 'weather' voltage, and 0.55 (default) is a balanced blend.",
-      "driftRate": "How long between automatic scene changes, from a few seconds (high) to several minutes (low) — how restlessly the brain explores new states (the card's Drift fader).",
-      "level": "Overall output amplitude of the eight drift CVs (0..1), ramped smoothly when changed to avoid clicks.",
-      "sceneDepth": "How far each scene transition moves the outputs (0..1) — small for gentle shifts, large for dramatic jumps between scenes."
     }
   },
   "attenumix": {
@@ -590,56 +522,6 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "feedback": "Feedback amount fed to EVERY stage (0..1). Because it compounds across the four-stage chain, even moderate settings build long tails and high settings smear into near-infinite, self-sustaining echoes.",
       "mix": "Dry / wet balance (0..1): 0 is the clean input, 1 is the cascade only, between crossfades the two.",
       "pitchUp": "Per-stage upward pitch shift (0..0.2). At 0 the internal varispeed grain shifter is bypassed entirely and the echoes repeat at pitch; above 0 each successive stage is transposed up by a compounding ratio so the cascaded echoes climb in pitch — the signature ascending shimmer."
-    }
-  },
-  "chowkick": {
-    "explanation": "A physical-modeling synth-kick voice, ported from Chowdhury DSP's ChowKick. Instead of a simple sine + envelope, it strikes a tuned 2-pole resonant filter with a shaped pulse plus a noise burst — the filter rings like a struck drum body, so the character comes from how you excite and tune that resonator. The signal path is two bands you tune separately: a PULSE SHAPE band (the click/transient and its noise) feeds a RESONANT FILTER band (the pitched body), then a pitch-sweep 'punch', drive saturation, and tone/level on the way out. The card draws a live preview of the pulse envelope and the filter's resonant peak so you can see the kick you're sculpting. Trigger it from a gate; tune the body with the Freq knob or a 1V/oct CV. Every knob also has a CV input for animated, per-hit kicks.",
-    "inputs": {
-      "amplitude_cv": "CV that adds to the pulse Amp (the excitation strength).",
-      "bounce_cv": "CV that adds to Bounce (extra resonant feedback/saturation character).",
-      "damping_cv": "CV that adds to Damping (the ring time: long boom vs short thud).",
-      "decay_cv": "CV that adds to the pulse Decay.",
-      "drive_cv": "CV that adds to Drive (the body saturation/overdrive).",
-      "freq_cv": "CV that scales the body Freq (log, summed) — for filter/pitch sweeps that aren't 1V/oct-tracked (use pitch_cv for true octave tracking).",
-      "gate_in": "The trigger: a rising edge strikes the resonator (fires the pulse + noise burst that excite the body). Each edge is one kick; the hit's length comes from the decay/damping controls, not how long the gate stays high.",
-      "level_cv": "CV that adds to the output Level (dB).",
-      "noise_amount_cv": "CV that adds to the Noise Amount (how much transient noise is mixed into the strike).",
-      "noise_cutoff_cv": "CV that scales the Noise Cutoff (log) — the brightness of the click.",
-      "noise_decay_cv": "CV that adds to the Noise Decay.",
-      "pitch_amount_cv": "CV that adds to the Pitch Amount (depth of the per-hit downward pitch sweep — the 'punch').",
-      "pitch_cv": "A 1V/oct pitch input applied as a multiplier on the body Freq (the worklet does freq × 2^pitch_cv), so it tracks pitch correctly across octaves — patch a sequencer here to tune kicks melodically. This is separate from the freq_cv summing input.",
-      "pitch_decay_cv": "CV that adds to the Pitch Decay (how fast that sweep settles).",
-      "portamento_cv": "CV that scales the Portamento glide time (log).",
-      "q_cv": "CV that scales the resonator Q (log) — the sharpness/ring of the body.",
-      "sustain_cv": "CV that adds to the pulse Sustain floor.",
-      "tight_cv": "CV that adds to Tight (the tightness macro affecting the body's snap).",
-      "tone_cv": "CV that scales the output Tone low-pass cutoff (log).",
-      "width_cv": "CV that scales the pulse Width (log)."
-    },
-    "outputs": {
-      "audio_out": "The mono kick voice — the excited resonant body, pitch-swept, driven, and tone/level-shaped. Patch to a mixer or bus."
-    },
-    "controls": {
-      "amplitude": "PULSE SHAPE: strength of the excitation pulse (0..2) — how hard the body is struck.",
-      "bounce": "RESONANT FILTER: extra resonant feedback/saturation character on the body (0..1) for a livelier, springier ring.",
-      "damping": "RESONANT FILTER: the ring time / pole radius (0..1) — low = a long boom, high = a short thud.",
-      "decay": "PULSE SHAPE: how quickly the pulse falls after its hold (0..1).",
-      "drive": "PUNCH: body saturation/overdrive (0..1) — adds harmonics and loudness/heat to the kick.",
-      "freq": "RESONANT FILTER: the body's tuned frequency (20–500 Hz, log) — the kick's pitch; the resonant peak is shown in the filter preview. The pitch_cv input tracks this in 1V/oct.",
-      "level": "Output level in dB (-60 to 0).",
-      "link": "Tightness LINK toggle (0 = off, 1 = on): when on, Q and Damping move together as one 'tightness' macro, the upstream plugin's coupled behavior.",
-      "noise_amount": "PULSE SHAPE: how much filtered noise is added to the strike (0..1) — adds click/snap and grit to the attack.",
-      "noise_cutoff": "PULSE SHAPE: low-pass cutoff of the noise (20–8000 Hz, log) — the brightness/color of the click.",
-      "noise_decay": "PULSE SHAPE: decay time of the noise burst (0..1).",
-      "noise_type": "PULSE SHAPE: the noise color (discrete: Uniform, Gaussian, Pink, Velvet) — different textures for the strike's noise.",
-      "pitch_amount": "PUNCH: depth of the fast downward pitch sweep at the start of each hit (0..1) — the chirp that gives the kick its punch.",
-      "pitch_decay": "PUNCH: how fast that pitch sweep settles to the body Freq (0..1) — short for a sharp click, longer for a deeper drop.",
-      "portamento": "Pitch glide time between consecutive notes (0–100 ms, log) — for sliding kick tunings.",
-      "q": "RESONANT FILTER: resonance sharpness (0.1–10, log) — higher Q rings longer and more tonally.",
-      "sustain": "PULSE SHAPE: the floor the pulse decays toward (0..1) — raise it to sustain the strike rather than let it die fully.",
-      "tight": "RESONANT FILTER: the tightness macro (0..1) tightening the body's snap; when LINK is on it moves together with Q and Damping.",
-      "tone": "Output low-pass tone (50–4000 Hz, log) — rolls off the top end of the whole kick.",
-      "width": "PULSE SHAPE: width of the excitation pulse (0.1–50 ms, log) — how long the strike pushes the body before it decays; shown in the envelope preview."
     }
   },
   "chroma": {
@@ -1225,7 +1107,7 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
     }
   },
   "drummergirl": {
-    "explanation": "A one-shot synth drum voice: fire a gate and it plays a single percussion hit. Mental model — a pitched body oscillator crossfaded against a noise/transient layer, gain-shaped by an internal attack/decay envelope, so one module covers everything from a tuned tom or kick to a noisy snare or hat. There is no separate trigger and tone path to wire: pitch, tone, shape, level, and decay are all on the faceplate (and CV-modulatable), and the gate edge is the only thing you have to patch. It's also the per-voice engine inside RIOTGIRLS, so the timbre you dial here is the same one those voices use.",
+    "explanation": "A one-shot synth drum voice: fire a gate and it plays a single percussion hit. Mental model — a pitched body oscillator crossfaded against a noise/transient layer, gain-shaped by an internal attack/decay envelope, so one module covers everything from a tuned tom or kick to a noisy snare or hat. There is no separate trigger and tone path to wire: pitch, tone, shape, level, and decay are all on the faceplate (and CV-modulatable), and the gate edge is the only thing you have to patch.",
     "inputs": {
       "decay": "CV that scales the envelope Decay time (logarithmic), shortening or lengthening the tail of each hit.",
       "gate": "The trigger: a rising edge fires exactly one drum hit and restarts the internal amplitude envelope. Patch a sequencer gate, a clock, or any pulse here — its level isn't sustained, only the rising edge matters, so hit length is set by the Decay control rather than how long the gate stays high.",
@@ -1246,7 +1128,7 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
     }
   },
   "drumseqz": {
-    "explanation": "A four-track drum/trigger sequencer: four independent rows of steps (16 visible per page, up to 128 across 8 pages) that all share one playhead and one tempo. Each row emits its own gate + pitch pair, so it's the natural drive for a four-voice drum rack (it pairs with RIOTGIRLS' four voices). Per step in a row you set on/off and an optional pitch (a lit step with no note plays the row's root note), and each row also has a Euclidean fill that scatters N evenly-spread hits across the page for instant rhythms. The playhead steps on its own BPM clock or on an external clock fed into CLOCK IN, with swing to shuffle the feel; a transport row plus the CV inputs (play / reset / queue) let you drive and switch four saved patterns hands-free.",
+    "explanation": "A four-track drum/trigger sequencer: four independent rows of steps (16 visible per page, up to 128 across 8 pages) that all share one playhead and one tempo. Each row emits its own gate + pitch pair, so it's the natural drive for a four-voice drum rack. Per step in a row you set on/off and an optional pitch (a lit step with no note plays the row's root note), and each row also has a Euclidean fill that scatters N evenly-spread hits across the page for instant rhythms. The playhead steps on its own BPM clock or on an external clock fed into CLOCK IN, with swing to shuffle the feel; a transport row plus the CV inputs (play / reset / queue) let you drive and switch four saved patterns hands-free.",
     "inputs": {
       "clock": "External clock: each rising edge advances the shared playhead exactly one step. While anything is patched here the internal BPM is ignored and the incoming pulses set the pace (and act as the play signal); unpatch to fall back to the BPM clock.",
       "play_cv": "A rising edge toggles play/stop (each pulse flips the current run state); when patched it takes priority over the clock-as-play behavior.",
@@ -1325,53 +1207,6 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
     "controls": {
       "thickness": "Thick is the rendered edge width in pixels (1..8 px, default 2). 1 px is the raw single-texel edge with no dilation; higher values dilate the mask by taking the max over a square neighbourhood of radius round(thickness)-1, fattening the strokes up to the set width.",
       "threshold": "Thresh sets the normalised gradient magnitude (in luma-step units) at or above which a pixel counts as an edge. 0 = every pixel passes so the whole frame floods white; 1 = almost nothing passes (a near-full unit luma step is needed); default 0.2 catches salient contours without low-contrast texture noise."
-    }
-  },
-  "elements": {
-    "explanation": "A modal physical-modeling voice (a port of Mutable Instruments Elements): instead of an oscillator you have THREE exciters that inject energy into a tuned modal resonator, like rubbing, blowing, or hitting a physical object. BOW is continuous friction (a smooth, sustained scrape, as on a bowed string). BLOW is breath/air noise shaped by a tube (its Flow + Timbre give everything from a flute to a rush of wind). STRIKE is a percussive impact (a mallet hit, scattered particles, or a plucked pluck). You blend the three by their LEVEL knobs and they sum into the RESONATOR — a bank of tuned filters whose GEOMETRY, BRIGHTNESS, DAMPING, and POSITION sculpt the virtual body (string vs. plate vs. bell, how bright, how long it rings, where it's struck). The resonator's output then runs through SPACE, a single meta-knob that goes from bone-dry, through stereo widening, into reverb, and finally a frozen infinite tail. A GATE plays the note (it opens the exciter envelope); PITCH (V/oct) and the Note knob tune it. You can also feed an external signal into the resonator instead of (or alongside) the built-in exciters to 'play' the body with any sound. Two outputs (MAIN + AUX) form a stereo pair.",
-    "inputs": {
-      "blowlvl_cv": "CV that displaces the Blow control, modulating how much of the breath/air BLOW exciter feeds the resonator.",
-      "blowmeta_cv": "CV that displaces the Flow control (the BLOW exciter's meta/character — the granularity and turbulence of the breath).",
-      "blowtim_cv": "CV that displaces the Blow Tmb control, modulating the BLOW exciter's tone (the air noise's spectral tilt / tube colour).",
-      "bowlvl_cv": "CV that displaces the Bow control, modulating how much of the continuous-friction BOW exciter feeds the resonator.",
-      "bowtim_cv": "CV that displaces the Bow Tmb control, modulating the BOW exciter's tone (its friction-table brightness, also tracked by the resonator's brightness).",
-      "bright_cv": "CV that displaces the Brightness control, modulating the resonator's high-frequency content (how much energy survives in the upper partials).",
-      "damp_cv": "CV that displaces the Damping control, modulating how fast the resonator's partials decay (short, muted ring vs. long sustain).",
-      "env_cv": "CV that displaces the Env control, modulating the exciter envelope's shape (how percussive vs. sustained the excitation is).",
-      "gate": "The note gate (a GATE, level-sensitive on both edges): while it is high the BOW and BLOW exciters sustain and the exciter envelope holds open; its rising edge also retriggers/strikes the STRIKE exciter, and its falling edge starts the release. Hold it for a sustained bow/blow tone, pulse it for plucks and hits.",
-      "geom_cv": "CV that displaces the Geometry control, reshaping the resonator's modal layout (the inharmonicity / 'body shape' — string toward plate/bell).",
-      "in": "External excitation input — an audio signal mixed in alongside the BOW/BLOW/STRIKE exciters so you can drive the modal resonator with any external sound (a drum loop, another voice, noise) and hear it 'resonated' through the body. Unpatched it contributes nothing and the built-in exciters play the voice on their own.",
-      "note_cv": "CV that displaces the Note control, transposing the played pitch in semitones (sums on top of the pitch input).",
-      "pitch": "1V/oct pitch CV. Sums with the Note knob to set the resonator's fundamental frequency; 0V plays the base note (≈ C4) and each volt shifts an octave.",
-      "pos_cv": "CV that displaces the Position control, moving the virtual pickup point along the body and combing the partials (changes which harmonics are emphasised).",
-      "space_cv": "CV that displaces the Space control, sweeping the dry → stereo-spread → reverb → freeze meta-amount.",
-      "strength_cv": "CV that displaces the Strength control, modulating the excitation strength / accent (how hard the voice is driven).",
-      "strike_in": "External per-strike impulse input — an audio signal injected at the STRIKE stage to excite the resonator with an outside transient (e.g. a click or click-track) in place of the internal mallet/particle exciter. Unpatched it does nothing; the internal STRIKE exciter still fires on the gate.",
-      "strklvl_cv": "CV that displaces the Strike control, modulating how much of the percussive STRIKE exciter feeds the resonator (high values bleed extra raw impact into the body).",
-      "strkmeta_cv": "CV that displaces the Mallet control (the STRIKE exciter's meta — it morphs the impact model from a soft mallet through to scattered particles).",
-      "strktim_cv": "CV that displaces the Strike Tmb control, modulating the STRIKE exciter's tone (the hardness/brightness of the impact)."
-    },
-    "outputs": {
-      "aux": "The stereo partner of MAIN — the resonator's side/left channel (a slightly different pickup tap via a slow internal LFO), so MAIN + AUX together give a stereo image whose width grows with SPACE. At very low SPACE this channel also carries the dry, un-resonated exciter signal (the 'raw' tap), so AUX can double as a direct exciter output. The two share the stereoPairs grouping (MAIN = right, AUX = left).",
-      "main": "The primary modal-voice output — the resonator's centre/right channel after the SPACE mixdown and soft-limiting. Use it on its own for a mono patch."
-    },
-    "controls": {
-      "blowLevel": "BLOW exciter level (labeled Blow): how much breath/air-noise excitation (shaped by a tube model) is injected into the resonator. 0 = no blow.",
-      "blowMeta": "BLOW character (labeled Flow): the meta-parameter of the breath model — the granularity and turbulence of the air, from a smooth steady stream to a rough, bubbling flow.",
-      "blowTimbre": "BLOW tone (labeled Blow Tmb): the spectral tilt / tube colour of the breath noise — from a dark, hollow air sound to a bright, hissy one.",
-      "bowLevel": "BOW exciter level (labeled Bow): how much continuous-friction excitation (a smooth, sustained scrape, like a bow on a string) is injected into the resonator. 0 = no bow.",
-      "bowTimbre": "BOW tone (labeled Bow Tmb): the brightness/character of the friction excitation — from a soft, dark bow to a scratchy, bright one. The resonator's brightness also colours it.",
-      "brightness": "Resonator brightness: how much energy survives in the upper partials — dark and woody at low settings, bright and metallic at high settings. Also feeds the BOW timbre.",
-      "damping": "Resonator damping: how fast the partials lose energy — low values ring long and sustain, high values decay quickly into a short, muted body.",
-      "envShape": "Exciter envelope shape (labeled Env): morphs the excitation from a short percussive blip (fast decay, no sustain) up through to a held, fully-sustained excitation while the gate is high — i.e. how plucked vs. bowed the voice feels.",
-      "geometry": "Resonator geometry: reshapes the modal layout / inharmonicity of the virtual body, sweeping from a near-harmonic string toward plate-, bar-, and bell-like stretched/clustered partials.",
-      "note": "Coarse tune of the played note in semitones (sums with the pitch input's V/oct); sets the resonator's fundamental.",
-      "position": "Pickup position along the resonator body: combs the partials (emphasising or notching harmonics) the way moving where you pluck/listen changes a string's tone; also sets the stereo side-channel offset.",
-      "space": "SPACE meta-knob (0–2): one knob that sweeps the ambience. Near 0 the voice is bone-dry (and AUX carries the raw exciter); rising into the low range adds stereo SPREAD (widening MAIN/AUX); past the midpoint it crossfades in a REVERB whose tail lengthens as you go up; near the top (~1.75+) the reverb FREEZES into an infinite, self-sustaining tail.",
-      "strength": "Excitation strength / accent: scales how hard the exciters drive the resonator (an overall accent/intensity), from a gentle, soft voice to a hard-driven, louder one.",
-      "strikeLevel": "STRIKE exciter level (labeled Strike): how much percussive-impact excitation (mallet / particles / pluck) is injected into the resonator on each gate. Past unity it also bleeds extra raw impact straight into the body.",
-      "strikeMeta": "STRIKE character (labeled Mallet): the meta-parameter that morphs the impact model — from a soft, single mallet hit through to scattered, granular particles.",
-      "strikeTimbre": "STRIKE tone (labeled Strike Tmb / Strk Tmb): the hardness/brightness of the impact — from a soft, muffled thud to a sharp, bright click."
     }
   },
   "fader": {
@@ -1674,39 +1509,6 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "hue": "Hue (0..1, default 0): rotates the whole green→yellow→red colour ramp around the hue wheel (0 = classic VU colours, 0.5 = ~180° opposite), tinting both bars and peak caps.",
       "peak": "Peak (0.5..0.99, default 0.92): peak-hold decay. A cap marker jumps up instantly to each band's latest peak then falls back, multiplying by this factor per frame — 0.5 falls fast, 0.99 lingers near the top.",
       "style": "Style (0..1 switch, default boxes): toggles the meter look. 0 = SOLID BARS (each band is one smooth filled bar). 1 = STACKED BOXES (each band is an LED ladder of discrete lit segments). The card's STYLE button flips it."
-    }
-  },
-  "grids": {
-    "explanation": "A topographic drum-pattern generator (a port of Mutable Instruments Grids) that produces three drum trigger streams — kick (BD), snare (SD), hi-hat (HH) — plus an accent. Instead of drawing steps, you steer an X/Y pad across a built-in map of drum patterns: the X/Y position blends between many curated 32-step grooves, and a per-instrument Density knob decides how many of that groove's hits actually fire (low = sparse, high = busy). A Chaos control sprinkles in random variation each loop, and Swing shuffles the off-beats. It clocks from its own BPM or an external CLOCK IN, and there's an alternate Euclidean mode that swaps the drum map for evenly-spread Euclidean rhythms. Patch BD/SD/HH into three drum voices and the accent into a VCA/velocity input for dynamics.",
-    "inputs": {
-      "bdDensity_cv": "CV that sums onto the kick (BD) Density — modulate how many kick hits fire.",
-      "chaos_cv": "CV that sums onto Chaos — modulate how much random variation is sprinkled into the pattern.",
-      "clock": "External clock: each rising edge advances the 32-step pattern one step. While patched it sets the pace; unpatch to run on the internal tempo.",
-      "hhDensity_cv": "CV that sums onto the hi-hat (HH) Density — modulate how many hat hits fire.",
-      "mapX_cv": "CV that sums onto the X pad coordinate, sweeping the drum map left-right to morph the groove's character.",
-      "mapY_cv": "CV that sums onto the Y pad coordinate, sweeping the drum map top-bottom to morph the groove's character.",
-      "reset": "A rising edge resets the pattern back to step 0, realigning the groove to the downbeat.",
-      "sdDensity_cv": "CV that sums onto the snare (SD) Density — modulate how many snare hits fire.",
-      "swing_cv": "CV that sums onto Swing — modulate the off-beat shuffle (0..0.75)."
-    },
-    "outputs": {
-      "accent": "Accent gate: fires on the loud steps (any instrument's accent bit set this step) — patch into a VCA or velocity input to emphasize the strong hits.",
-      "bd": "Kick / bass-drum trigger gate: fires on each step whose map level clears the BD density threshold. Patch into a kick voice's trigger.",
-      "clock": "A short pulse on every step advance — chain it into another module's clock in to lock everything to the Grids tempo.",
-      "hh": "Hi-hat trigger gate: fires when the step level clears the HH density threshold.",
-      "sd": "Snare trigger gate: fires when the step level clears the SD density threshold."
-    },
-    "controls": {
-      "bdDensity": "How busy the kick is (0..1): 0 plays almost no kicks, 1 plays the groove's full kick pattern.",
-      "chaos": "How much random variation is mixed into the pattern each loop (0..1): 0 is the clean curated groove, higher values perturb the hits for evolving fills.",
-      "hhDensity": "How busy the hi-hat is (0..1), from sparse to the full hat pattern.",
-      "isPlaying": "Run/stop transport (1 = running, 0 = stopped); the card's RUN button. Note this defaults to running.",
-      "mapX": "The X coordinate of the pad on the drum map (0..1) — selects the groove's character along one axis (summed with the mapX_cv input).",
-      "mapY": "The Y coordinate of the pad on the drum map (0..1) — selects the groove's character along the other axis (summed with the mapY_cv input).",
-      "mode": "Pattern engine: DRUMS (the default) walks the curated X/Y drum map; EUCLIDEAN swaps it for evenly-spread Euclidean rhythms whose fill follows the density knobs. The card's mode button toggles this.",
-      "sdDensity": "How busy the snare is (0..1), from sparse to the full snare pattern.",
-      "swing": "Off-beat shuffle (0..0.75): 0 is dead-straight, higher values push the off-beat steps later for a swung feel.",
-      "tempo": "Internal tempo in beats per minute, used when nothing is patched into CLOCK IN."
     }
   },
   "hypercube": {
@@ -3067,31 +2869,6 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "out": "Video output carrying the painted canvas at the engine output resolution, blitted 1:1 from the card's live drawing surface every frame (a flat opaque white page before you draw anything). This is the module's only port and lives on the card's drill-down patch panel."
     }
   },
-  "peaks": {
-    "explanation": "A dual-channel percussion-and-modulation Swiss-army module after Mutable Instruments Peaks. It's two identical channels (A and B), each a self-contained generator you trigger with a gate. Each channel runs in one of five modes — KICK, SNARE, HIHAT (full drum voices), ENV (a one-shot attack/decay envelope), or LFO (a retriggerable sine/triangle/square) — and its two faders change meaning with the mode (the card relabels them: e.g. KICK's are Pitch/Decay, LFO's are Rate/Wave). So one Peaks gives you a kick + snare, a pair of drum voices, two trigger-shaped envelopes, two tempo-able LFOs, or any mix. Each channel's output is audio in the drum modes and control voltage in ENV/LFO. Use the two channels independently; there's no internal cross-link.",
-    "inputs": {
-      "gate0": "Channel A's trigger: a rising edge fires the active mode once — a drum hit (KICK/SNARE/HIHAT), one attack/decay envelope (ENV), or a phase-reset of the LFO. Length comes from the mode's controls, not how long the gate stays high.",
-      "gate1": "Channel B's trigger: same as channel A's gate for the B channel.",
-      "k1_0_cv": "CV that adds to channel A's knob 1 (whose meaning follows A's mode — Pitch/Mix/Bright/Attack/Rate).",
-      "k1_1_cv": "CV that adds to channel B's knob 1 (B's mode-dependent first parameter).",
-      "k2_0_cv": "CV that adds to channel A's knob 2 (Decay in the drum/ENV modes, Wave in LFO mode).",
-      "k2_1_cv": "CV that adds to channel B's knob 2 (B's mode-dependent second parameter).",
-      "mode0_cv": "CV that displaces channel A's Mode selector (discrete), so a stepped CV can switch A between KICK/SNARE/HIHAT/ENV/LFO between hits.",
-      "mode1_cv": "CV that displaces channel B's Mode selector (discrete)."
-    },
-    "outputs": {
-      "out0": "Channel A's output: audio in the KICK/SNARE/HIHAT modes, or a unipolar control voltage in ENV (an attack/decay shape) and a bipolar one in LFO. Patch to the mixer for drums, or to a CV destination for ENV/LFO.",
-      "out1": "Channel B's output, same audio/CV duality as channel A based on B's mode."
-    },
-    "controls": {
-      "k1_0": "Channel A's first knob — its meaning follows the mode: Pitch (KICK), Mix of body vs noise (SNARE), Brightness (HIHAT), Attack time (ENV), or Rate (LFO).",
-      "k1_1": "Channel B's first knob (mode-dependent, same mapping as channel A's knob 1).",
-      "k2_0": "Channel A's second knob: Decay time in the KICK/SNARE/HIHAT/ENV modes, or Wave shape (sine→triangle→square) in LFO mode.",
-      "k2_1": "Channel B's second knob (mode-dependent, same mapping as channel A's knob 2).",
-      "mode0": "Channel A's mode: KICK, SNARE, HIHAT, ENV (one-shot attack/decay), or LFO (retriggered each gate). Changing it relabels A's two faders to that mode's parameters.",
-      "mode1": "Channel B's mode (same five options as channel A)."
-    }
-  },
   "peakstate": {
     "explanation": "peakstate is a self-running mandala/kaleidoscope generator — a video SOURCE with no video input. An internal \"pen\" traces a deterministic drifting Lissajous path (penAtTime: x = 0.5·cos(0.7t), y = 0.5·sin(1.3t + 0.4·cos(0.3t))) through a centred unit disc, pushing one sample per frame into a 600-sample ring buffer (~10s of comet trail). Each frame the whole trail is redrawn once per kaleidoscope arm — rotated by 2π/complexity and mirrored about the arm axis — over a translucent black overlay that decays the previous frame, giving the classic mirror-arm bloom. MOVE + OBLONG add a slow spirograph orbit of the mandala's centre (period ~20s at Speed 1): MOVE sets orbit radius, OBLONG squashes the orbit's vertical extent from a circle toward a near-horizontal \"rolling tube\". The module emits three coherent views of the SAME pen trail with different palette/transform. Usage: drop it in for a generative kaleidoscope bloom, patch an LFO or envelope into the CV jacks to pulse the speed/arm-count/hue, and pick the mono, full-colour, or pseudo-3D output to suit the look.",
     "inputs": {
@@ -3232,7 +3009,7 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
     }
   },
   "polyseqz": {
-    "explanation": "A polyphonic CHORD sequencer: instead of one note per step it stores a whole chord — a root note plus a quality (major/minor/etc.), an inversion, and a voicing strategy (closed / open / spread) — and plays the lot at once. It walks a playhead across up to 128 steps (16 per page, 8 pages) on its own BPM clock or an external clock, emitting a 5-voice POLY cable that carries the full chord per step. To hear it you feed that POLY output into a poly-aware voice (RIOTGIRLS, DX7, CUBE, or any module with a poly input) so each chord tone gets its own voice; a mono pitch input still works and just receives the chord's root. A convenience mono GATE goes high whenever any voice is sounding (handy for one shared envelope), and a Humanize control adds per-voice timing jitter so chords don't land perfectly machine-tight. Eight quicksave slots and the transport CV inputs let you build and switch chord progressions live.",
+    "explanation": "A polyphonic CHORD sequencer: instead of one note per step it stores a whole chord — a root note plus a quality (major/minor/etc.), an inversion, and a voicing strategy (closed / open / spread) — and plays the lot at once. It walks a playhead across up to 128 steps (16 per page, 8 pages) on its own BPM clock or an external clock, emitting a 5-voice POLY cable that carries the full chord per step. To hear it you feed that POLY output into a poly-aware voice (DX7, CUBE, or any module with a poly input) so each chord tone gets its own voice; a mono pitch input still works and just receives the chord's root. A convenience mono GATE goes high whenever any voice is sounding (handy for one shared envelope), and a Humanize control adds per-voice timing jitter so chords don't land perfectly machine-tight. Eight quicksave slots and the transport CV inputs let you build and switch chord progressions live.",
     "inputs": {
       "clock": "External clock: each rising edge advances the playhead exactly one step (one chord). While anything is patched here the internal BPM is ignored and the incoming pulses set the pace (and run the sequencer); unpatch to fall back to the BPM clock.",
       "humanize_cv": "CV that modulates the Humanize amount (0..1, summed with the knob): a positive voltage adds more per-voice timing jitter so the chord's notes don't all strike on exactly the same instant. Patch an LFO or envelope here to make the looseness breathe.",
@@ -3246,7 +3023,7 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
     "outputs": {
       "clock": "A short ~10 ms pulse on every step advance, regardless of whether the step is on — chain it into another sequencer's clock in.",
       "gate": "A convenience mono gate that goes high while ANY voice of the current chord is sounding and low between chords — drive one shared ADSR/VCA from it without unpacking the poly cable. Its high time within the step follows the gate-length control.",
-      "poly": "The current step's chord as a 5-voice POLY cable (each lane carries its own pitch CV + gate). Patch into a poly-aware voice (RIOTGIRLS / DX7 / CUBE / any module with a poly input) so each chord tone gets its own voice; a mono pitch input automatically receives just lane 0, the chord's root."
+      "poly": "The current step's chord as a 5-voice POLY cable (each lane carries its own pitch CV + gate). Patch into a poly-aware voice (DX7 / CUBE / any module with a poly input) so each chord tone gets its own voice; a mono pitch input automatically receives just lane 0, the chord's root."
     },
     "controls": {
       "bpm": "Internal tempo in beats per minute (each step is an 8th note here — slower than the mono sequencer's 16th-note grid, which suits chords), used only when nothing is patched into CLOCK IN.",
@@ -3275,30 +3052,8 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "speed": "Ball speed multiplier (0.25..4, log, default 1) — scales how fast the ball travels, so faster = quicker rallies and a denser stream of SCORE pulses."
     }
   },
-  "qbert": {
-    "explanation": "QBERT is a patchable arcade module modeled on Q*Bert (Gottlieb, 1982) and rendered as a video signal — the premise is hopping the little orange creature around an isometric cube pyramid, recoloring cubes while dodging enemies. It is a VIDEO source that ALSO bridges into the audio domain (same shape as DOOM and NIBBLES). Control is entirely via CV/gate cables — there are NO knobs or sliders on the card by design. Patch a gate into COIN to drop in a quarter (rising edge), a gate into START to begin a credited game (only works once a coin is in), and bipolar CV (-1..+1) into JOY_X / JOY_Y to steer. Because Q*Bert's stick is a 45-degree-rotated 4-way DIAGONAL, the two axes are resolved together into one of NE/NW/SE/SW each frame: only when BOTH axes sit inside the 0.3 dead-band is the result NEUTRAL (no direction) — a single axis past 0.3 still resolves to a diagonal, biasing the inactive axis toward down/right. The card shows a fixed 256x240 screen with INSERT COIN / PRESS START prompts, or a ROM MISSING overlay telling you to run `task setup:qbert` when the ROM zip isn't on the static server. The framebuffer is letterboxed (full height, black side bars) into the engine's 16:9 FBO. Note: this v1 ships the engine SHAPE — the memory map, ROM-name surface, framebuffer pipe, and gate/audio plumbing are real and end-to-end, while full Z80 opcode coverage and the I8039 sound CPU are follow-ups; the move/die/level events and the hop SFX are currently driven by a faithful synthetic stream (move every 8 tics a direction is held, die after a held-NEUTRAL timeout, level every 28 moves) so the outputs are exercisable today. Emulator state is LOCAL per client (no Yjs replication) — each user in a shared rackspace runs their own runtime, like DOOM.",
-    "inputs": {
-      "coin_in": "Gate (edge-triggered): a rising edge above 0.6 inserts one quarter (the Gottlieb COIN1 dip). Patch a clock or button gate here to add a credit; only the rising transition fires, with hysteresis (must fall below 0.4 before it can fire again) to absorb chatter. Holding it high does nothing further.",
-      "joy_x": "CV (-1..+1): the horizontal joystick axis. Negative = left, positive = right. Sampled on every write and combined with JOY_Y into a Q*Bert diagonal. Both axes inside the 0.3 dead-band reads as NEUTRAL; a deflection of |x| >= 0.3 alone still resolves to a diagonal (the unset axis biases toward down).",
-      "joy_y": "CV (-1..+1): the vertical joystick axis in screen coords — negative = up, positive = down. Combined with JOY_X into one of NE/NW/SE/SW each write; only when BOTH axes are inside the 0.3 dead-band is no direction held. Modulate from an LFO/sequencer to auto-hop.",
-      "start_in": "Gate (edge-triggered): a rising edge above 0.6 presses 1P START, which begins the game only when at least one coin has already been inserted. Acts on the rising edge with the same 0.6 rise / 0.4 fall hysteresis as COIN; holding it high does nothing further."
-    },
-    "outputs": {
-      "audio_out": "Audio (mono): the synthesized SFX stream played back through the DOOM PCM worklet. v1 emits a 1 kHz square-wave blip (50 ms linear decay) on every completed hop, mirroring Q*Bert's hop sound; the real I8039 sound chip is a follow-up but this path is live and patchable.",
-      "evt_die": "Gate (trigger): a 10 ms pulse fired on Q*Bert's death — in v1 a synthetic 'fell off the pyramid' event when NEUTRAL is held for ~200 tics after a credited game started (it also re-arms by requiring another coin/start). Patch to trigger an envelope, sample, or stinger on each death.",
-      "evt_level": "Gate (trigger): a 10 ms pulse on level advance — fires once every 28 moves (one full cube-pyramid pass in v1). Patch to mark progress: step a sequencer, swap a scene, or trigger a fill on each new level.",
-      "evt_move": "Gate (trigger): a 10 ms pulse on every completed hop — fires every 8 tics that a non-NEUTRAL direction is held after the game starts (about 4 hops/sec). Use as a gameplay-derived rhythmic clock to trigger drums or envelopes.",
-      "out": "Video: the 256x240 RGBA game framebuffer, letterboxed (full height, black side bars) into the engine's 640x360 FBO with aspect preserved. Shows the magenta diamond test pattern until a real ROM writes VRAM."
-    },
-    "controls": {
-      "cv_coin_in": "Hidden synthetic param (0..1) backing the COIN gate input. Not shown on the card; the engine's CV bridge writes it via setParam and a rising edge past 0.6 inserts a coin. Patch the COIN jack rather than setting it directly.",
-      "cv_joy_x": "Hidden synthetic param (-1..+1) backing the JOY_X CV input. Not shown on the card; the engine writes it from the patched JOY_X cable, and it is resolved together with cv_joy_y into the joystick diagonal on every write (0.3 dead-band per axis).",
-      "cv_joy_y": "Hidden synthetic param (-1..+1) backing the JOY_Y CV input. Not a card control; written by the CV bridge from the JOY_Y cable and combined with cv_joy_x into the NE/NW/SE/SW direction (NEUTRAL only when both axes are inside the 0.3 dead-band).",
-      "cv_start_in": "Hidden synthetic param (0..1) backing the START gate input. Not a card control; written by the CV bridge, its rising edge past 0.6 presses 1P START (only effective once a coin is in)."
-    }
-  },
   "qbrt": {
-    "explanation": "A stereo resonant filter with a 'ping' excitation input — the project's big-knob VCF, also used as a pluck/drum resonator. Each channel runs a state-variable filter whose mode crossfades continuously between low-pass and band-pass, with a big resonance (Q) control that can sing right up to self-oscillation. The twist is the PING input: a trigger fires a short vactrol-shaped impulse into the filter, so it rings at its cutoff frequency for a moment and then settles — patch a drum sequencer into PING and sweep CUTOFF and you get kick/tom-style pluck-resonator sounds with no oscillator at all. Ignore PING and it's an ordinary stereo filter you patch audio through. (This is the resonator RIOTGIRLS uses internally.)",
+    "explanation": "A stereo resonant filter with a 'ping' excitation input — the project's big-knob VCF, also used as a pluck/drum resonator. Each channel runs a state-variable filter whose mode crossfades continuously between low-pass and band-pass, with a big resonance (Q) control that can sing right up to self-oscillation. The twist is the PING input: a trigger fires a short vactrol-shaped impulse into the filter, so it rings at its cutoff frequency for a moment and then settles — patch a drum sequencer into PING and sweep CUTOFF and you get kick/tom-style pluck-resonator sounds with no oscillator at all. Ignore PING and it's an ordinary stereo filter you patch audio through.",
     "inputs": {
       "L": "Left audio input — the signal fed through the left filter channel.",
       "R": "Right audio input — the signal fed through the right filter channel.",
@@ -3502,120 +3257,6 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "note": "A fixed semitone offset (-60..+60 st) added on top of the PITCH input, so you can tune the resonator without an external pitch source or transpose it relative to one. At 0 the resonator tracks PITCH (or middle C with PITCH unpatched).",
       "position": "The pickup position along the resonator (0..1): it changes which partials are emphasized via a cosine-weighted tap, and because it weights the ODD and EVEN sums differently it also shifts the balance and stereo image between the two outputs.",
       "structure": "The inharmonicity / structure macro (0..1): in MODAL it stretches the partial spacing from harmonic (0) toward bell-/metal-like (1); in SYMPATHETIC it detunes the second string from unison (0) up to about +19 semitones. The single biggest control over how 'tuned' versus 'clangy' the resonance sounds."
-    }
-  },
-  "riotgirls": {
-    "explanation": "A 4-voice drum/synth machine with a built-in aux-FX rack. Voices 1-3 are DRUMMERGIRL synth-drum voices (one-shot, tuned, with tone/shape/decay), and voice 4 is a sustaining melodic voice — a wavetable oscillator → ADSR → VCA — so RIOTGIRLS covers both percussion AND a playable pad/bass. Each voice has its own TRIGGER and GATE input plus a V/oct PITCH input (voices 1-3 retrigger on the edge; voice 4 holds its envelope while the gate is high), and a full mix strip (pitch/tone/shape/decay or tune/wave/ADSR, plus VOLUME, PAN, and two aux SENDS). The two aux buses feed an internal effects rack: SEND A → a DESTROY bitcrusher, SEND B → a reverb, each with a level RETURN back into the master. The summed stereo mix then runs through a master QBRT resonant filter (cutoff / resonance / mode / ping-decay) out to outL/outR. Every knob also has a CV input, so an LFO or sequencer can modulate any voice or FX parameter. Drive the voices from a SEQUENCER, DRUMSEQZ, or any gate source.",
-    "inputs": {
-      "bc_bits": "CV that offsets DESTROY BITS.",
-      "bc_decimate": "CV that offsets DESTROY DECIMATE.",
-      "bc_wet": "CV that offsets DESTROY WET.",
-      "flt_cutoff": "CV that offsets the MASTER FILTER CUTOFF (log).",
-      "flt_mode": "CV that offsets the MASTER FILTER MODE.",
-      "flt_pingDecay": "CV that offsets the MASTER FILTER PING DECAY (log).",
-      "flt_resonance": "CV that offsets the MASTER FILTER RESONANCE.",
-      "gate1": "Voice 1 GATE — a rising edge re-triggers voice 1 (the DRUMMERGIRL voices are one-shot, so they restart on the leading edge). Shares its input node with trig1.",
-      "gate2": "Voice 2 GATE — a rising edge re-triggers voice 2 (the DRUMMERGIRL voices are one-shot, so they restart on the leading edge). Shares its input node with trig2.",
-      "gate3": "Voice 3 GATE — a rising edge re-triggers voice 3 (the DRUMMERGIRL voices are one-shot, so they restart on the leading edge). Shares its input node with trig3.",
-      "gate4": "Voice 4 GATE — voice 4's amp ADSR holds open WHILE this gate is high (sustain), and releases on the falling edge. The level-sensitive gate that lets V4 play sustained pad/bass notes (unlike the one-shot voices 1-3). Shares its input with trig4.",
-      "pitch1": "Voice 1 V/oct PITCH input — sets the drum voice's tuning; summed with the V1 PIT knob.",
-      "pitch2": "Voice 2 V/oct PITCH input — sets the drum voice's tuning; summed with the V2 PIT knob.",
-      "pitch3": "Voice 3 V/oct PITCH input — sets the drum voice's tuning; summed with the V3 PIT knob.",
-      "pitch4": "Voice 4 V/oct PITCH input — sets the wavetable oscillator's pitch; summed with the V4 TUN + FIN knobs.",
-      "returnA": "CV (audio-rate) — the aux-A wet RETURN bus; also accepts an external wet signal patched back from an outboard effect.",
-      "returnB": "CV (audio-rate) — the aux-B wet RETURN bus; also accepts an external wet signal patched back from an outboard effect.",
-      "rv_damp": "CV that offsets REVERB DAMP.",
-      "rv_mix": "CV that offsets REVERB MIX.",
-      "rv_size": "CV that offsets REVERB SIZE.",
-      "trig1": "Voice 1 TRIGGER — a rising edge fires voice 1 once (one drum hit). trig1 and gate1 land on the same input, so a sequencer gate or an external trigger can drive either.",
-      "trig2": "Voice 2 TRIGGER — a rising edge fires voice 2 once (one drum hit). trig2 and gate2 land on the same input, so a sequencer gate or an external trigger can drive either.",
-      "trig3": "Voice 3 TRIGGER — a rising edge fires voice 3 once (one drum hit). trig3 and gate3 land on the same input, so a sequencer gate or an external trigger can drive either.",
-      "trig4": "Voice 4 TRIGGER — a rising edge fires voice 4's ADSR (attack→decay→sustain). Shares its input with gate4.",
-      "v1_decay": "CV that offsets voice 1's DECAY (log).",
-      "v1_pan": "CV that offsets voice 1's PAN.",
-      "v1_sendA": "CV that offsets voice 1's SEND A amount.",
-      "v1_sendB": "CV that offsets voice 1's SEND B amount.",
-      "v1_shape": "CV that offsets voice 1's SHAPE.",
-      "v1_tone": "CV that offsets voice 1's TONE.",
-      "v1_volume": "CV that offsets voice 1's VOLUME.",
-      "v2_decay": "CV that offsets voice 2's DECAY (log).",
-      "v2_pan": "CV that offsets voice 2's PAN.",
-      "v2_sendA": "CV that offsets voice 2's SEND A amount.",
-      "v2_sendB": "CV that offsets voice 2's SEND B amount.",
-      "v2_shape": "CV that offsets voice 2's SHAPE.",
-      "v2_tone": "CV that offsets voice 2's TONE.",
-      "v2_volume": "CV that offsets voice 2's VOLUME.",
-      "v3_decay": "CV that offsets voice 3's DECAY (log).",
-      "v3_pan": "CV that offsets voice 3's PAN.",
-      "v3_sendA": "CV that offsets voice 3's SEND A amount.",
-      "v3_sendB": "CV that offsets voice 3's SEND B amount.",
-      "v3_shape": "CV that offsets voice 3's SHAPE.",
-      "v3_tone": "CV that offsets voice 3's TONE.",
-      "v3_volume": "CV that offsets voice 3's VOLUME.",
-      "v4_attack": "CV that offsets voice 4's ATTACK (log).",
-      "v4_decay": "CV that offsets voice 4's DECAY (log).",
-      "v4_fm": "Voice 4 FM input (audio-rate) — an external audio signal that frequency-modulates voice 4's oscillator (depth set by the FM amount).",
-      "v4_pan": "CV that offsets voice 4's PAN.",
-      "v4_release": "CV that offsets voice 4's RELEASE (log).",
-      "v4_sendA": "CV that offsets voice 4's SEND A amount.",
-      "v4_sendB": "CV that offsets voice 4's SEND B amount.",
-      "v4_sustain": "CV that offsets voice 4's SUSTAIN.",
-      "v4_volume": "CV that offsets voice 4's VOLUME.",
-      "v4_wavePos": "CV that offsets voice 4's WAVE POSITION."
-    },
-    "outputs": {
-      "outL": "Master mix output, LEFT — all four voices (post per-voice vol/pan/sends), the two aux returns, summed and passed through the master QBRT filter.",
-      "outR": "Master mix output, RIGHT — the partner of outL (carries the pan-positioned right side of the stereo image)."
-    },
-    "controls": {
-      "bc_bits": "DESTROY BITS (1..16) — bit-depth reduction on the aux-A bus (quantization crunch); 16 = clean. CV via the bc_bits input.",
-      "bc_decimate": "DESTROY DECIMATE (1..64) — sample-rate reduction on the aux-A bus (downsampling grit). CV via the bc_decimate input.",
-      "bc_wet": "DESTROY WET (0..1) — dry/wet of the bitcrusher on the aux-A bus. CV via the bc_wet input.",
-      "flt_cutoff": "MASTER FILTER (QBRT) CUTOFF (20 Hz..20 kHz, log) — the corner frequency of the master resonant filter the whole mix passes through. CV via the flt_cutoff input.",
-      "flt_mode": "MASTER FILTER MODE (0..1) — morphs the QBRT filter's response (e.g. low-pass ↔ band-pass character). CV via the flt_mode input.",
-      "flt_pingDecay": "MASTER FILTER PING DECAY (0.005..0.5 s, log) — how long the resonant filter 'pings'/rings when struck. CV via the flt_pingDecay input.",
-      "flt_resonance": "MASTER FILTER RESONANCE (0..0.99) — emphasis at the cutoff; high values ring/self-oscillate. CV via the flt_resonance input.",
-      "returnA": "RETURN A level (0..1) — how much of the DESTROY (aux-A) wet bus returns into the master mix. CV via the returnA input.",
-      "returnB": "RETURN B level (0..1) — how much of the reverb (aux-B) wet bus returns into the master mix. CV via the returnB input.",
-      "rv_damp": "REVERB DAMP (0..1) — high-frequency damping of the reverb tail (darker as it rises). CV via the rv_damp input.",
-      "rv_mix": "REVERB MIX (0..1) — dry/wet of the aux-B reverb. CV via the rv_mix input.",
-      "rv_size": "REVERB SIZE (0..1) — the aux-B reverb tank's room size / decay length. CV via the rv_size input.",
-      "v1_decay": "Voice 1 DECAY (0.001..0.5 s, log) — how long the drum hit rings out. CV via the v1_decay input.",
-      "v1_pan": "Voice 1 PAN (−1 left .. +1 right) in the stereo mix. CV via the v1_pan input.",
-      "v1_pitch": "Voice 1 PITCH (semitones, −36..+36) — coarse tuning of the synth-drum voice. CV via the pitch1 input.",
-      "v1_sendA": "Voice 1 SEND A (0..1) — how much of voice 1 is tapped to aux bus A (→ DESTROY bitcrusher). CV via the v1_sendA input.",
-      "v1_sendB": "Voice 1 SEND B (0..1) — how much of voice 1 is tapped to aux bus B (→ reverb). CV via the v1_sendB input.",
-      "v1_shape": "Voice 1 SHAPE (0..1) — the voice's waveshape/timbre morph. CV via the v1_shape input.",
-      "v1_tone": "Voice 1 TONE (0..1) — DRUMMERGIRL's tonal/click character. CV via the v1_tone input.",
-      "v1_volume": "Voice 1 VOLUME (0..2) — the voice's level before pan + sends. CV via the v1_volume input.",
-      "v2_decay": "Voice 2 DECAY (0.001..0.5 s, log) — how long the drum hit rings out. CV via the v2_decay input.",
-      "v2_pan": "Voice 2 PAN (−1 left .. +1 right) in the stereo mix. CV via the v2_pan input.",
-      "v2_pitch": "Voice 2 PITCH (semitones, −36..+36) — coarse tuning of the synth-drum voice. CV via the pitch2 input.",
-      "v2_sendA": "Voice 2 SEND A (0..1) — how much of voice 2 is tapped to aux bus A (→ DESTROY bitcrusher). CV via the v2_sendA input.",
-      "v2_sendB": "Voice 2 SEND B (0..1) — how much of voice 2 is tapped to aux bus B (→ reverb). CV via the v2_sendB input.",
-      "v2_shape": "Voice 2 SHAPE (0..1) — the voice's waveshape/timbre morph. CV via the v2_shape input.",
-      "v2_tone": "Voice 2 TONE (0..1) — DRUMMERGIRL's tonal/click character. CV via the v2_tone input.",
-      "v2_volume": "Voice 2 VOLUME (0..2) — the voice's level before pan + sends. CV via the v2_volume input.",
-      "v3_decay": "Voice 3 DECAY (0.001..0.5 s, log) — how long the drum hit rings out. CV via the v3_decay input.",
-      "v3_pan": "Voice 3 PAN (−1 left .. +1 right) in the stereo mix. CV via the v3_pan input.",
-      "v3_pitch": "Voice 3 PITCH (semitones, −36..+36) — coarse tuning of the synth-drum voice. CV via the pitch3 input.",
-      "v3_sendA": "Voice 3 SEND A (0..1) — how much of voice 3 is tapped to aux bus A (→ DESTROY bitcrusher). CV via the v3_sendA input.",
-      "v3_sendB": "Voice 3 SEND B (0..1) — how much of voice 3 is tapped to aux bus B (→ reverb). CV via the v3_sendB input.",
-      "v3_shape": "Voice 3 SHAPE (0..1) — the voice's waveshape/timbre morph. CV via the v3_shape input.",
-      "v3_tone": "Voice 3 TONE (0..1) — DRUMMERGIRL's tonal/click character. CV via the v3_tone input.",
-      "v3_volume": "Voice 3 VOLUME (0..2) — the voice's level before pan + sends. CV via the v3_volume input.",
-      "v4_attack": "Voice 4 ATTACK (0.001..2 s, log) — amp-envelope rise time from note-on. CV via the v4_attack input.",
-      "v4_decay": "Voice 4 DECAY (0.001..4 s, log) — fall from the attack peak to the sustain level. CV via the v4_decay input.",
-      "v4_fine": "Voice 4 FINE tune (cents, −100..+100) — fine pitch trim between the semitone steps of TUNE.",
-      "v4_fmAmount": "Voice 4 FM AMOUNT (0..1) — depth of the audio-rate frequency modulation from the v4_fm input.",
-      "v4_pan": "Voice 4 PAN (−1 left .. +1 right). CV via the v4_pan input.",
-      "v4_release": "Voice 4 RELEASE (0.001..8 s, log) — fade to silence after the gate falls. CV via the v4_release input.",
-      "v4_sendA": "Voice 4 SEND A (0..1) — amount tapped to aux bus A (→ DESTROY). CV via the v4_sendA input.",
-      "v4_sendB": "Voice 4 SEND B (0..1) — amount tapped to aux bus B (→ reverb). CV via the v4_sendB input.",
-      "v4_sustain": "Voice 4 SUSTAIN level (0..1) — the level held while the V4 gate stays high. CV via the v4_sustain input.",
-      "v4_tune": "Voice 4 TUNE (semitones, −36..+36) — coarse tuning of the wavetable oscillator. CV via the pitch4 input.",
-      "v4_volume": "Voice 4 VOLUME (0..2) — the voice's level before pan + sends. CV via the v4_volume input.",
-      "v4_wavePos": "Voice 4 WAVE POSITION (0..1) — scans through the wavetable frames (saw → square → triangle → sine), morphing the timbre. CV via the v4_wavePos input."
     }
   },
   "ruttetra": {
@@ -4025,53 +3666,6 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "wire_tone": "WIRE: the high-pass corner of the wire noise (1500–9000 Hz, log). Lower = a darker, fuller rattle; higher = a bright, papery sizzle that sits on top of the mix."
     }
   },
-  "snes9x": {
-    "explanation": "A Super Nintendo emulator turned into a patchable video+audio module. It runs the snes9x2005 (CAT SFC) libretro core compiled to WASM, rendering the SNES screen (locked 256×224/239, 4:3) to the video out and 32 kHz stereo to audio_l/audio_r. The ROM is user-provided and gitignored: if /roms/snes9x/game.sfc isn't autoloaded the card shows a LOAD A ROM dropzone/file-picker (drop or click a .sfc/.smc — it stays local in your browser). Beyond the picture and sound, it reads the live SNES WRAM each frame to emit game-event CV/GATE: for Super Mario World it pulses on kills and deaths, holds a CV for the current world, and turns clock_in into a clock multiplied by (world+level). Drive it by wiring a GAMEPAD module's gate outputs straight into the 12 SNES button inputs (du→up, a→a, …) plus a clock into clock_in. Single-instance per rack (the WASM core is heavy). DOM-only affordances with no patch port: the ROM dropzone/file picker, and a right-click \"see output definition for CV/GATES\" panel that explains every game-event output for the loaded ROM; the card's OUTPUT FIT toggle sets the fillMode param (letterbox vs fill). Non-SMW ROMs still boot and show video/audio but the game-event outputs stay inert.",
-    "inputs": {
-      "a": "Holds the SNES A face button while the gate level is high (held). Maps to the controller's A bit.",
-      "b": "Holds the SNES B face button while the gate level is high (held, not edge). Maps to the controller's B bit.",
-      "clock_in": "Clock input (gate cable). Each rising edge is treated as a clock pulse that feeds the gate3 multiplier: the period between edges is measured and replayed as (world+level) evenly-spaced sub-pulses on gate3 (×1 passthrough when not in a level).",
-      "down": "Holds the SNES D-pad DOWN button while the gate level is high (held). Maps to the controller's DOWN bit.",
-      "l": "Holds the SNES left shoulder (L) button while the gate level is high (held). Maps to the controller's L bit.",
-      "left": "Holds the SNES D-pad LEFT button while the gate level is high (held). Maps to the controller's LEFT bit.",
-      "r": "Holds the SNES right shoulder (R) button while the gate level is high (held). Maps to the controller's R bit.",
-      "right": "Holds the SNES D-pad RIGHT button while the gate level is high (held). Maps to the controller's RIGHT bit.",
-      "select": "Holds the SNES SELECT button while the gate level is high (held). Maps to the controller's SELECT bit.",
-      "start": "Holds the SNES START button while the gate level is high (held). Pauses / advances menus; maps to the controller's START bit.",
-      "up": "Holds the SNES D-pad UP button while the gate level is high (held, not edge). Maps to the controller's UP bit; wire a GAMEPAD up gate straight in.",
-      "x": "Holds the SNES X face button while the gate level is high (held). Maps to the controller's X bit.",
-      "y": "Holds the SNES Y face button while the gate level is high (held, not edge). Maps to the controller's Y bit."
-    },
-    "outputs": {
-      "audio_l": "Left audio channel of the emulator's 32 kHz stereo output, split off a ChannelSplitter from the PCM worklet. Patch into the audio domain.",
-      "audio_r": "Right audio channel of the emulator's 32 kHz stereo output (the other split of the PCM worklet). Patch into the audio domain.",
-      "cv1": "WORLD CV: a steady constant for the current SMW world (world/7 → ~0.143 at world 1 up to 1.0 at world 7, 0 when idle). Only changes on a world change.",
-      "cv2": "Reserved CV output: present for patching but idle (held at 0) for SMW.",
-      "cv3": "Reserved CV output: present for patching but idle (held at 0) for SMW.",
-      "cv4": "Reserved CV output: present for patching but idle (held at 0) for SMW.",
-      "gate1": "KILL gate: a short (~10 ms) pulse each time Mario kills a monster in SMW (sprite-status table transitions, debounced per slot). Idle for non-SMW ROMs.",
-      "gate2": "DEATH gate: a short pulse each time Mario dies in SMW (death-animation trigger, with a lives-decrement fallback). Idle for non-SMW ROMs.",
-      "gate3": "CLOCK ×(world+level): clock_in multiplied — (world+level) evenly-spaced pulses per input period, in-phase first sub-pulse so ×1 is a clean passthrough. Clamped to ×32 max; ×1 when not in a level.",
-      "gate4": "Reserved gate output: present so a cable can be wired, but idle for SMW (no signal driven). Held at 0.",
-      "out": "Video output: the live SNES screen, letterboxed/pillarboxed into the engine framebuffer (Y-flipped, 4:3). Shows a faint scanline void until a ROM frame is available."
-    },
-    "controls": {
-      "cv_a": "A (0..1, linear). Synthetic gate param backing the a input; its level sets whether the SNES A button is held.",
-      "cv_b": "B (0..1, linear). Synthetic gate param backing the b input; its level sets whether the SNES B button is held.",
-      "cv_clock_in": "CLOCK (0..1, linear). Synthetic param target of the clock_in gate input; its rising edge drives the gate3 clock multiplier. Set by patching clock_in, not a user knob.",
-      "cv_down": "DOWN (0..1, linear). Synthetic gate param backing the down input; its level sets whether the SNES DOWN button is held.",
-      "cv_l": "L (0..1, linear). Synthetic gate param backing the l input; its level sets whether the SNES L shoulder button is held.",
-      "cv_left": "LEFT (0..1, linear). Synthetic gate param backing the left input; its level sets whether the SNES LEFT button is held.",
-      "cv_r": "R (0..1, linear). Synthetic gate param backing the r input; its level sets whether the SNES R shoulder button is held.",
-      "cv_right": "RIGHT (0..1, linear). Synthetic gate param backing the right input; its level sets whether the SNES RIGHT button is held.",
-      "cv_select": "SELECT (0..1, linear). Synthetic gate param backing the select input; its level sets whether the SNES SELECT button is held.",
-      "cv_start": "START (0..1, linear). Synthetic gate param backing the start input; its level sets whether the SNES START button is held.",
-      "cv_up": "UP (0..1, linear). Synthetic gate param backing the up input — its level sets whether the SNES UP button is held. Set by patching the up gate, not a knob.",
-      "cv_x": "X (0..1, linear). Synthetic gate param backing the x input; its level sets whether the SNES X button is held.",
-      "cv_y": "Y (0..1, linear). Synthetic gate param backing the y input; its level sets whether the SNES Y button is held.",
-      "fillMode": "Fill (0..1, discrete). Output fit mode: 0 = letterbox/pillarbox (default, aspect-preserving), 1 = fill/cover-crop. Driven by the card's OUTPUT FIT toggle; only matters when the output aspect isn't 4:3."
-    }
-  },
   "sourcery": {
     "explanation": "sourcery is a two-input region-transplant recolorizer: it edge-detects video A (top) and video B (bottom), carves each edge map into bounded regions (the connected non-edge areas walled off by the detected edges), then for every region in A finds the B region most similar in SHAPE (angles + geometry) first and SIZE second, and paints A's region with B's colors placed at the SAME relative position inside the shape (a corner of A samples the matching corner of B). A B shape may be matched by many A regions (reuse is fine) and EVERY part of the A frame maps to some region (tiny/culled regions and the walls are absorbed into their nearest surviving region, so the output never has holes — the whole-screen background becomes one giant region filled by some B shape). Two global controls move all the transferred color: SKEW rotates the hue of every filled pixel, ROT rotates the sampling frame inside each region. The result is a shifting stained-glass / photomosaic where A's edge structure is the cell boundaries and each cell is a warped fragment of B chosen by shape similarity: as B moves the fills shimmer with B's live color, as A moves the boundaries flow with A's structure. Region boundaries are intentionally BLOCKY (segmentation runs at a coarse 128x96 grid, nearest-upscaled) while the colors are full-res sharp (B is sampled at engine resolution). For real-time performance the shape/segmentation stage is amortized (recomputed every few frames) while the color fill sampling live B runs every frame; on live noisy video at low threshold the regions shimmer/boil frame-to-frame (a disclosed v1 limitation). Usage: patch a structural source into A and a colorful source into B, raise ThrA/ThrB until A's cells and B's shapes read cleanly (higher = fewer, bolder regions), then twist SKEW to tint and ROT to swirl the transplanted color; with nothing in B the module passes A through (hue-skewed).",
     "inputs": {
@@ -4179,63 +3773,6 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "s3_yOffset": "Spiro 3 Y (-1..1): nudges the drift home position vertically (center still drifts and bounces)."
     }
   },
-  "stages": {
-    "explanation": "A six-segment cascadable function generator after Mutable Instruments' Stages — six column strips, each an independent envelope/CV segment with its own TYPE, two knobs, a GATE input and a CV output. Each segment's TYPE button cycles RAMP (a timed slope, the knob sets TIME), HOLD (a settled level, the knob sets LEVEL) or STEP (a stepped level/sample-and-hold). The real power is LINKING: the five toggles between adjacent columns chain segments into one multi-stage shape, so e.g. a RAMP+HOLD+RAMP chain becomes a single attack-hold-release envelope. A linked chain fires from its first segment's gate, then each subsequent linked segment takes over in turn as the previous one finishes; every segment in the chain reads the chain's current value out its own CV output, so you can tap any stage. The global TRIG fires every chain's leader at once. Unlinked segments stay independent — six separate one-segment envelopes/CVs.",
-    "inputs": {
-      "gate0": "Segment 1's gate: a rising edge fires this segment (or, when it's a chain leader, the whole linked chain that starts here). For a HOLD/STEP segment the held level latches; for a RAMP it starts the timed slope.",
-      "gate1": "Segment 2's gate — fires segment 2 (or the chain it leads) on a rising edge. When segment 2 is linked to segment 1, segment 1's chain hands off to it automatically and this input is the manual re-fire.",
-      "gate2": "Segment 3's gate — a rising edge fires segment 3, or the linked chain it leads.",
-      "gate3": "Segment 4's gate — a rising edge fires segment 4, or the linked chain it leads.",
-      "gate4": "Segment 5's gate — a rising edge fires segment 5, or the linked chain it leads.",
-      "gate5": "Segment 6's gate — a rising edge fires segment 6, or the linked chain it leads.",
-      "primary0_cv": "CV that displaces segment 1's PRIMARY knob (its TIME for RAMP, or LEVEL for HOLD/STEP) around the knob position.",
-      "primary1_cv": "CV that displaces segment 2's PRIMARY knob (TIME or LEVEL) around the knob position.",
-      "primary2_cv": "CV that displaces segment 3's PRIMARY knob (TIME or LEVEL) around the knob position.",
-      "primary3_cv": "CV that displaces segment 4's PRIMARY knob (TIME or LEVEL) around the knob position.",
-      "primary4_cv": "CV that displaces segment 5's PRIMARY knob (TIME or LEVEL) around the knob position.",
-      "primary5_cv": "CV that displaces segment 6's PRIMARY knob (TIME or LEVEL) around the knob position.",
-      "shape0_cv": "CV that displaces segment 1's SHAPE knob (slope curve for RAMP, portamento glide for HOLD/STEP).",
-      "shape1_cv": "CV that displaces segment 2's SHAPE knob (slope curve or portamento).",
-      "shape2_cv": "CV that displaces segment 3's SHAPE knob (slope curve or portamento).",
-      "shape3_cv": "CV that displaces segment 4's SHAPE knob (slope curve or portamento).",
-      "shape4_cv": "CV that displaces segment 5's SHAPE knob (slope curve or portamento).",
-      "shape5_cv": "CV that displaces segment 6's SHAPE knob (slope curve or portamento).",
-      "trig": "Global trigger: a rising edge fires the leader (first segment) of every chain group at once, so one pulse re-triggers all six segments / all linked envelopes together."
-    },
-    "outputs": {
-      "out0": "Segment 1's CV output — its own value when unlinked, or the current value of the chain it belongs to when linked (so any segment in a chain mirrors the chain's running envelope).",
-      "out1": "Segment 2's CV output — its own value, or the value of the chain it's linked into.",
-      "out2": "Segment 3's CV output — its own value, or the value of the chain it's linked into.",
-      "out3": "Segment 4's CV output — its own value, or the value of the chain it's linked into.",
-      "out4": "Segment 5's CV output — its own value, or the value of the chain it's linked into.",
-      "out5": "Segment 6's CV output — its own value, or the value of the chain it's linked into."
-    },
-    "controls": {
-      "link0": "Link toggle between segments 1 and 2 — when on, they chain into one multi-stage shape (segment 1 hands off to segment 2 as it finishes); off keeps them independent.",
-      "link1": "Link toggle between segments 2 and 3 — chains them into the same group when on.",
-      "link2": "Link toggle between segments 3 and 4 — chains them into the same group when on.",
-      "link3": "Link toggle between segments 4 and 5 — chains them into the same group when on.",
-      "link4": "Link toggle between segments 5 and 6 — chains them into the same group when on.",
-      "primary0": "Segment 1's PRIMARY fader — TIME when the segment is a RAMP (how long the slope takes), or LEVEL when it's HOLD/STEP (the target value, bipolar -1..+1).",
-      "primary1": "Segment 2's PRIMARY fader — TIME (RAMP) or LEVEL (HOLD/STEP).",
-      "primary2": "Segment 3's PRIMARY fader — TIME (RAMP) or LEVEL (HOLD/STEP).",
-      "primary3": "Segment 4's PRIMARY fader — TIME (RAMP) or LEVEL (HOLD/STEP).",
-      "primary4": "Segment 5's PRIMARY fader — TIME (RAMP) or LEVEL (HOLD/STEP).",
-      "primary5": "Segment 6's PRIMARY fader — TIME (RAMP) or LEVEL (HOLD/STEP).",
-      "shape0": "Segment 1's SHAPE fader — the slope curve for a RAMP (from logarithmic through linear to exponential), or the portamento glide time for a HOLD/STEP segment.",
-      "shape1": "Segment 2's SHAPE fader — slope curve (RAMP) or portamento glide (HOLD/STEP).",
-      "shape2": "Segment 3's SHAPE fader — slope curve or portamento glide.",
-      "shape3": "Segment 4's SHAPE fader — slope curve or portamento glide.",
-      "shape4": "Segment 5's SHAPE fader — slope curve or portamento glide.",
-      "shape5": "Segment 6's SHAPE fader — slope curve or portamento glide.",
-      "type0": "Segment 1's TYPE — cycles RAMP (a timed slope, the knob below becomes TIME), HOLD (a steady level, the knob becomes LEVEL) or STEP (a stepped level / sample-and-hold). The card's column button cycles it.",
-      "type1": "Segment 2's TYPE — RAMP / HOLD / STEP, exactly as segment 1's type control.",
-      "type2": "Segment 3's TYPE — RAMP / HOLD / STEP.",
-      "type3": "Segment 4's TYPE — RAMP / HOLD / STEP.",
-      "type4": "Segment 5's TYPE — RAMP / HOLD / STEP.",
-      "type5": "Segment 6's TYPE — RAMP / HOLD / STEP."
-    }
-  },
   "stereovca": {
     "explanation": "A dual (stereo) voltage-controlled amplifier that doubles as a ring modulator — no mode switch, the behavior is purely a function of how fast the control signal is. Each channel computes out = in × (strength + offset) × level: when the STRENGTH input is slow (an LFO, an envelope, a sequencer step) it acts as a VCA, gating and shaping the audio's volume; when STRENGTH is audio-rate it acts as a ring modulator, multiplying two audio signals into clangorous sum-and-difference tones (this matches the hardware truth that 'CV is just slow audio'). The two channels share the LEVEL and OFFSET knobs but have independent audio and strength inputs, with smart normalling so you can drive both sides from one cable: leave IN R unpatched and it mirrors IN L (mono in, stereo out), leave STRENGTH R unpatched and it mirrors STRENGTH L (one modulator drives both VCAs). The STRENGTH inputs take raw bipolar CV directly with no scaling.",
     "inputs": {
@@ -4279,46 +3816,6 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "symmetry": "Morphs the PRIMARY waveform across a three-way crossfade (0 to 1): 0 = saw, 0.5 = triangle, 1 = square, with a linear blend of the two neighboring shapes in between. Default 0.5 (pure triangle).",
       "timbre": "Audio-rate FM amount: how much the modulator deviates the primary's frequency (0 to 1, where 1 ≈ ±200 Hz at C4). 0 leaves the primary clean; turning it up grows the sidebands from a gentle vibrato-like shimmer into clangorous, bell-like and noisy Buchla-style timbres.",
       "tune": "Coarse tuning of the PRIMARY oscillator in semitones (-36 to +36, i.e. ±3 octaves) relative to C4; combines with Fine and any pitch CV to set the base pitch."
-    }
-  },
-  "symbiote": {
-    "explanation": "A self-running generative rhythm + melody brain — a Mutable Instruments Marbles core running the 'Symbiote' alt-firmware, which fuses two classic Eurorack patterns into one module. There is NO audio input and no clock input: an internal master clock (set by RATE) drives everything. The T-SECTION is a Grids drum engine that emits three correlated drum triggers — BD (t1), SD (t2), HH (t3) — whose busy-ness you steer with the MAP X / MAP Y drum-map coordinate and the per-channel densities, or switch to a Euclidean pattern generator. The X-SECTION is a TB-3PO acid sequencer that emits a master clock (x1), a 1V/oct pitch CV (x2), a note gate (x3) and an accent gate (y), with controls for note density, transposition, loop length and a musical scale. CHAOS adds randomness/variation to the drums; SEED LOCK freezes the current generated pattern so it stops re-rolling on each cycle. Patch the trigger/gate outs into drum voices and the pitch+gate into a synth voice to get a complete evolving pattern from one box.",
-    "inputs": {
-      "aciddensity_cv": "CV that offsets the ACID DENSITY — how many of the TB-3PO steps play a note vs. rest.",
-      "acidlength_cv": "CV that offsets the ACID LENGTH — the number of steps in the TB-3PO loop before it repeats.",
-      "bd_cv": "CV that offsets the BD density — raises or lowers how often the bass-drum trigger (t1) fires.",
-      "chaos_cv": "CV that offsets the CHAOS amount — adds or removes randomness/variation in the generated drum pattern (and, in Euclid mode, fill/rotation).",
-      "hh_cv": "CV that offsets the HH density — how often the hi-hat trigger (t3) fires.",
-      "rate_cv": "CV that offsets the RATE macro — speeds up or slows down the internal master clock that drives both the drum and acid sections.",
-      "scale_cv": "CV that offsets the SCALE selector (discrete) — picks the musical scale the acid pitch CV is quantized to.",
-      "sd_cv": "CV that offsets the SD density — how often the snare trigger (t2) fires.",
-      "submode_cv": "CV that offsets the MODE selector (discrete), switching the T-section between the DRUMS map and the EUCLID pattern generator.",
-      "transpose_cv": "CV that offsets the TRANSPOSE — shifts the acid sequence up or down (1V/oct-style pitch passthrough on the worklet param)."
-    },
-    "outputs": {
-      "t1": "Grids BD trigger — a rising-edge pulse on each bass-drum hit of the generated drum pattern. Patch into a kick voice.",
-      "t2": "Grids SD trigger — a rising-edge pulse on each snare hit. Patch into a snare voice.",
-      "t3": "Grids HH trigger — a rising-edge pulse on each hi-hat hit. Patch into a hat/percussion voice.",
-      "x1": "TB-3PO master clock — a rising-edge pulse on each acid step. Use it to clock other sequencers/envelopes in sync with the acid line.",
-      "x2": "TB-3PO pitch CV (1V/oct) — the current acid note, quantized to the selected SCALE and shifted by TRANSPOSE. Patch into an oscillator's pitch input.",
-      "x3": "TB-3PO note gate — goes high while the current acid step plays a note (and low on rests). Patch into an envelope/VCA to articulate each note.",
-      "y": "TB-3PO accent gate — a pulse on accented acid steps. Patch into a second envelope, a VCA boost, or a filter ping to emphasise accented notes (classic 303 accent)."
-    },
-    "controls": {
-      "acid_density": "TB-3PO note DENSITY (0..1) — what fraction of the acid steps play a note rather than rest. CV via the ACID DENS input.",
-      "acid_length": "TB-3PO loop LENGTH (1..32 steps) — the number of steps in the acid sequence before it repeats. CV via the ACID LEN input.",
-      "bd_density": "Bass-drum fill density (0..1) — how busy the BD (t1) trigger pattern is. CV via the BD input.",
-      "chaos": "CHAOS (−1..+1) — injects randomness/variation into the drum pattern (its magnitude is the randomness amount). In EUCLID mode negative values add T2 fill and positive values add rotation. CV via the CHAOS input.",
-      "euclid_length": "Euclidean loop LENGTH (1..16 steps) — used only in EUCLID mode; sets the period of the Euclidean drum pattern.",
-      "hh_density": "Hi-hat fill density (0..1) — how busy the HH (t3) trigger pattern is. CV via the HH input.",
-      "map_x": "Grids drum-map X coordinate (DRUMS mode): scans across the 2-D map of pre-baked drum patterns, morphing the FEEL/style of the three drum channels together.",
-      "map_y": "Grids drum-map Y coordinate (DRUMS mode): the other axis of the drum-pattern map; MAP X and MAP Y together pick a point in the pattern space.",
-      "rate": "Master clock RATE macro (−60..+60 semitones of tempo, i.e. a wide ±5-octave speed range) — the single tempo control for the whole module; everything (drums + acid) runs off this internal clock.",
-      "scale": "TB-3PO SCALE — the musical scale the acid pitch CV is quantized to (C major / C minor / Pentatonic / Pelog / Raag Bhairav / Raag Shri). Cycle on the card; CV via the SCALE input.",
-      "sd_density": "Snare fill density (0..1) — how busy the SD (t2) trigger pattern is. CV via the SD input.",
-      "seed_lock": "SEED LOCK — when on, freezes the current generated pattern seed so the drums + acid stop re-randomizing on each cycle (a repeatable loop); off lets the pattern keep evolving.",
-      "sub_mode": "T-section MODE — DRUMS (the Grids drum-map engine, steered by MAP X/Y) vs EUCLID (a Euclidean pattern generator, where CHAOS becomes fill/rotation and E.LEN sets the length). Toggle on the card.",
-      "transpose": "TB-3PO TRANSPOSE (−18..+18 semitones) — shifts the whole acid melody up or down. CV via the TRANSPOSE input."
     }
   },
   "synesthesia": {
@@ -4420,35 +3917,6 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "posY": "PosY — raw vertical position, 0..1. 0 places the ribbon fully off the top, 1 fully off the bottom, 0.5 centred. Combined additively with the ScrlY scroll offset.",
       "scrollX": "ScrlX — horizontal scroll speed, bipolar 0..1. 0.5 is static (the text sits where PosX/PosY put it); below 0.5 scrolls one way, above 0.5 the other, faster toward the extremes. The ribbon wraps continuously, re-entering from the opposite edge.",
       "scrollY": "ScrlY — vertical scroll speed, bipolar 0..1. 0.5 is static; below 0.5 crawls up, above 0.5 crawls down (or vice-versa), faster toward the extremes, wrapping the ribbon back in from the opposite edge."
-    }
-  },
-  "tides2": {
-    "explanation": "A tidal modulator / poly-slope generator after Mutable Instruments' Tides — at heart a single rising-then-falling ramp whose speed, contour and symmetry you sculpt with five macro knobs, exposed not once but as FOUR related copies on outputs 1–4. It works as an LFO, an envelope, an oscillator, or a clockable ramp depending on three mode switches. RANGE picks the speed band (slow LFO, audio-rate, or external-clock-synced TEMPO). MODE picks how the ramp behaves: AD fires a one-shot rising-then-falling shape on each trigger, LOOP free-runs as an oscillating LFO/oscillator, and AR follows a held gate (rises while held, releases when let go). OUTPUT mode sets the relationship between the four outputs — GATES gives the main slope plus a variant and two end-of-rise/end-of-fall pulses; AMP, PHASE and FREQ give four copies staggered in amplitude, phase or frequency, with SHIFT spreading them apart. Every macro also has a CV input so the whole shape can be modulated. (Note: the SHAPE morph is a faithful sine→triangle→ramp→expo bank, not a bit-exact wavetable copy of the original.)",
-    "inputs": {
-      "clock": "External clock input used by the TEMPO range: TIDES2 measures the time between rising edges and phase-locks the ramp period to it, so the LFO/cycle stays in tempo with the rack. Has no effect in the LFO/AUDIO ranges.",
-      "freq_cv": "CV that displaces the FREQ macro around its knob setting (full-range bipolar sweep), so an LFO or envelope can speed up and slow down the ramp continuously.",
-      "shape_cv": "CV that displaces the SHAPE macro, morphing the waveform contour (sine→triangle→ramp→expo) under modulation.",
-      "shift_cv": "CV that displaces the SHIFT macro, sweeping the relationship between the four outputs (the amplitude/phase/frequency spread, or the GATES variant) under modulation.",
-      "slope_cv": "CV that displaces the SLOPE macro, sweeping the rise/fall symmetry from fast-attack/slow-decay through to the reverse.",
-      "smooth_cv": "CV that displaces the SMOOTH macro, modulating how rounded vs. sharp the slope's corners are (from smoothed curves to crisp folded edges).",
-      "trig": "Trigger input: a rising edge fires the ramp once in AD mode (one full rise-then-fall) and re-starts/syncs the cycle in LOOP mode. Patch a clock or gate sequencer here to make TIDES2 an envelope per note.",
-      "voct": "1V/oct pitch input that displaces the FREQ macro — most useful in the AUDIO range, where TIDES2 tracks a keyboard/sequencer like an oscillator (±1 maps to ±5 octaves). In the LFO/TEMPO ranges it still shifts the rate up and down by octaves."
-    },
-    "outputs": {
-      "out0": "Output 1 — the main slope. In GATES output mode this is the primary rising-then-falling ramp; in AMP/PHASE/FREQ mode it is the first of four related copies (the reference, with no amplitude/phase/frequency offset).",
-      "out1": "Output 2 — a variant of the main slope. In GATES mode this is an alternate contour of the same ramp; in AMP/PHASE/FREQ mode it is the second copy, offset from output 1 by the amount SHIFT sets.",
-      "out2": "Output 3 — in GATES mode an end-of-attack pulse (a short trigger when the rise completes); in AMP/PHASE/FREQ mode the third staggered copy.",
-      "out3": "Output 4 — in GATES mode an end-of-release pulse (a short trigger when the fall completes); in AMP/PHASE/FREQ mode the fourth staggered copy."
-    },
-    "controls": {
-      "frequency": "FREQ — the base rate of the ramp, scaled by the RANGE band: slow LFO cycles, audio-rate pitch, or the clock-synced period in TEMPO. Pitch/freq CV and the V/oct input add to this.",
-      "outputMode": "OUT — the relationship between outputs 1–4: GATES (main slope + variant + end-of-rise + end-of-fall pulses), AMP (four amplitude-staggered copies), PHASE (four phase-staggered copies), or FREQ (four frequency-divided/multiplied copies). The card's OUT button cycles these.",
-      "rampMode": "MODE — how the ramp is driven: AD fires a one-shot rise-then-fall on each trigger (an envelope), LOOP free-runs as a repeating LFO/oscillator, and AR follows a held gate (rises while high, releases on the falling edge). The card's MODE button cycles these.",
-      "range": "RANGE — the speed band: LFO (slow, sub-audio cycles), AUDIO (audio-rate, so TIDES2 acts as an oscillator and tracks V/oct), or TEMPO (the cycle locks to the external CLOCK input). The card's RNG button cycles these.",
-      "shape": "SHAPE — morphs the waveform contour continuously from sine through triangle and ramp to a near-exponential curve, cross-fading between adjacent shapes at in-between settings.",
-      "shift": "SHIFT — spreads the four outputs apart: in AMP it pans amplitude across the four, in PHASE it spreads their phase, in FREQ it picks the frequency-division ratios, and in GATES it morphs the variant/pulse relationship.",
-      "slope": "SLOPE — the rise/fall symmetry of the ramp: centred is a symmetric triangle, one way is fast-attack/slow-decay (a plucky envelope), the other is slow-attack/fast-decay.",
-      "smoothness": "SMOOTH — how rounded vs. sharp the slope's corners are; low values give crisp, even folded edges, high values smooth the curve into gentle bends."
     }
   },
   "tiler": {
@@ -4654,36 +4122,6 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "mix": "Mix (0..1, linear). Dry/wet crossfade in the visible output between the live input (0) and the delayed echo tap (1). Default 0.5."
     }
   },
-  "veils": {
-    "explanation": "A quad VCA and mixer modelled on the Mutable Instruments Veils: four independent voltage-controlled amplifiers that each have a gain knob, a CV input, a direct out, and a linear/exponential response toggle — feeding one summed MIX out. Per channel out = in · shape(knob + cv), where the gain knob spans 0..2: at unity-position knob a ±1V CV sweeps gain from 0 (CV at -1) to 2 (CV at +1). The four channels sum and pass through a tanh soft-clip (mix = tanh(sum)) — gain is NOT clamped at unity, so pushing knob+CV high overdrives into warm saturation rather than digital clipping. Use it as four utility VCAs, a CV-controlled mixer, or four cross-fading/amplitude-modulated voices. There is a DSP worklet for the per-sample VCA + soft-clip math.",
-    "inputs": {
-      "cv1": "Channel 1 gain CV. Summed RAW with the gain knob (no scaling): a ±1V LFO at a unity-position knob sweeps gain 0..2, the natural full-range VCA modulation, so this is the per-channel tremolo / ducking / cross-fade control.",
-      "cv2": "Channel 2 gain CV (raw, summed with gain2).",
-      "cv3": "Channel 3 gain CV (raw, summed with gain3).",
-      "cv4": "Channel 4 gain CV (raw, summed with gain4).",
-      "in1": "Channel 1 audio input — multiplied by its VCA gain shape(gain1 + cv1) into the channel-1 direct out and the mix.",
-      "in2": "Channel 2 audio input, multiplied by shape(gain2 + cv2).",
-      "in3": "Channel 3 audio input, multiplied by shape(gain3 + cv3).",
-      "in4": "Channel 4 audio input, multiplied by shape(gain4 + cv4)."
-    },
-    "outputs": {
-      "mix": "The summed bus, soft-clipped: tanh(out1 + out2 + out3 + out4). Because the sum is not clamped before the tanh, driving channels past unity produces warm saturation — Veils' signature overdrive — instead of a hard clip.",
-      "out1": "Channel 1 direct VCA out — in1 · shape(gain1 + cv1), taken BEFORE the summing bus and soft-clip, so downstream sees the raw post-VCA channel.",
-      "out2": "Channel 2 direct VCA out (pre-mix, pre-clip).",
-      "out3": "Channel 3 direct VCA out (pre-mix, pre-clip).",
-      "out4": "Channel 4 direct VCA out (pre-mix, pre-clip)."
-    },
-    "controls": {
-      "gain1": "Channel 1 VCA gain knob, linear 0..2 (default 0 = silent). Sums with CV1; the past-unity range exists so knob + CV can push the channel into the mix soft-clip.",
-      "gain2": "Channel 2 VCA gain, linear 0..2 (default 0). Sums with CV2.",
-      "gain3": "Channel 3 VCA gain, linear 0..2 (default 0). Sums with CV3.",
-      "gain4": "Channel 4 VCA gain, linear 0..2 (default 0). Sums with CV4.",
-      "resp1": "Channel 1 response toggle: 0 = LINEAR (gain follows knob+CV directly — best for control signals), 1 = EXPONENTIAL (the signal is squared, giving smoother perceptual fades — best for audio). Default LINEAR.",
-      "resp2": "Channel 2 response toggle (0 = linear, 1 = exponential). Default LINEAR.",
-      "resp3": "Channel 3 response toggle (0 = linear, 1 = exponential). Default EXPONENTIAL (audio-friendly out of the box).",
-      "resp4": "Channel 4 response toggle (0 = linear, 1 = exponential). Default EXPONENTIAL."
-    }
-  },
   "vfpgaRunner": {
     "explanation": "vfpga-runner is a runtime that executes a loaded .vfpga declarative spec — a \"virtual FPGA bitstream\" — as a WebGL video effect. ONE registered host module declares the full I/O superset it can ever wire (4 video ins, 4 CV, 4 gates, 2 video outs, an 8-slot generic param bank); the loaded VfpgaSpec selects which subset is ACTIVE and what render-graph runs, the way a bitstream reconfigures an FPGA fabric. A fabric-described spec (a grid of typed tiles wired by a routing netlist) is place-and-routed into the GL pass pipeline; a spec may also carry a legacy hand-authored render graph as an escape hatch, and when a spec declares both, the fabric path wins at runtime (smpte-bars ships both — its fabric lowers byte-identically to its legacy effect — to dogfood place-and-route on the reference VFPGA). Changing the preset hot-swaps the effect: the old GL pipeline is disposed and a new one built, with the new spec's param-slot defaults seeded. Usage: pick a VFPGA from the card's \"load preset…\" menu (the bundled catalog ships smpte-bars as the default test-pattern generator plus glitch/datamosh-style effects: chroma-rot, databend-cvbs, framestore-howl, macroblock-mosh, scaler-glitch, sync-bender and tmds-sparkle). The card preview shows the REAL output of whatever VFPGA is loaded (a live blit of this node's own output FBO, not a frozen CPU snapshot); the \"fabric\" button toggles a read-only floorplan view (tile grid + lit routing nets). The card surfaces controls only for the loaded spec's active roles — a knob per mapped param slot, a SCALE attenuverter + OFFSET + always-on scope per active CV input, and an activity LED per active gate input — while the PatchPanel still renders the full superset of jacks (inactive ports dimmed). The def declares the off-main-thread worker render locus (every catalog VFPGA is pure-GL, so it is eligible to render off the main thread).",
     "inputs": {
@@ -4800,30 +4238,6 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "speedCv": "Cached Speed CV value (-1..+1, default 0). Holds the live bipolar sample from the speedCv input, summed into the SPEED knob; not a user-facing control.",
       "start": "Start slider (0..1 of duration, default 0). The play-from and reset-to point of the playback window. Summed with Start CV when patched.",
       "startCv": "Cached Start CV value (-1..+1, default 0). Holds the live bipolar sample from the startCv input, summed into the START slider while patched; not a user-facing control."
-    }
-  },
-  "warps": {
-    "explanation": "A meta-modulator after Mutable Instruments' Warps: it cross-modulates two audio signals — a CARRIER and a MODULATOR — through a chosen modulation algorithm. ALGORITHM picks the cross-mod type (XFADE = equal-power crossfade between the two; RING-MOD = ring modulation for metallic/bell tones; XOR = a 16-bit bit-mash for digital grit; COMPARATOR = waveshaping comparison modes), TIMBRE sets that algorithm's intensity/mix, and LEVEL 1 / LEVEL 2 set the carrier and modulator input gains. When nothing is patched into CARRIER IN, an internal oscillator takes over — SHAPE morphs its waveform, NOTE offsets its pitch, and the V/OCT input plays it — so WARPS doubles as a playable cross-mod synth voice, not just an effect on two external sources.",
-    "inputs": {
-      "algorithm_cv": "CV (discrete) that displaces the ALGORITHM selector, switching the cross-mod type live — step it with a sequencer to jump between XFADE / RING-MOD / XOR / COMPARATOR.",
-      "carrier_in": "External carrier audio. When patched it is the carrier the algorithm modulates; when left unpatched the internal oscillator (set by SHAPE / NOTE / V/OCT) takes its place so WARPS becomes a self-contained voice.",
-      "carrier_shape_cv": "CV that displaces the SHAPE knob, morphing the internal carrier waveform.",
-      "level_1_cv": "CV that displaces the LEVEL 1 knob, modulating carrier input gain (and the crossfade weight in XFADE mode).",
-      "level_2_cv": "CV that displaces the LEVEL 2 knob, modulating modulator input gain.",
-      "modulator_in": "External modulator audio — the second operand of the cross-modulation. Unpatched, the modulator side is silent (so e.g. RING-MOD with no modulator passes the carrier through).",
-      "pitch": "V/oct pitch input for the internal carrier oscillator. Summed with the NOTE offset; only audible when CARRIER IN is unpatched (the internal osc is in use).",
-      "timbre_cv": "CV that displaces the TIMBRE knob, modulating the active algorithm's intensity — the main \"wiggle this\" input for evolving cross-mod textures."
-    },
-    "outputs": {
-      "out": "The mono cross-modulated result of the carrier and modulator through the selected algorithm at the chosen TIMBRE intensity."
-    },
-    "controls": {
-      "algorithm": "Cross-modulation algorithm selector (discrete): 0 = XFADE (equal-power crossfade between carrier and modulator), 1 = RING-MOD (ring modulation — metallic, inharmonic tones), 2 = XOR (16-bit bitwise XOR mash — harsh digital grit), 3 = COMPARATOR (waveshaping comparison sub-modes). The card shows the current name.",
-      "carrier_shape": "Internal-carrier waveform morph (0..1): sweeps the built-in oscillator's timbre (only in play when CARRIER IN is unpatched).",
-      "level_1": "Carrier input gain (0..1) — and, in XFADE mode, its crossfade weight. Turn down to attenuate the carrier going into the cross-mod.",
-      "level_2": "Modulator input gain (0..1): how hot the modulator drives the cross-modulation.",
-      "note": "Internal-carrier pitch offset in semitones (-60..+60). Sums with the V/OCT input to set the internal oscillator's frequency (used when CARRIER IN is unpatched).",
-      "timbre": "The active algorithm's intensity / mix (0..1): in XFADE it's the carrier↔modulator balance; in RING-MOD/XOR/COMPARATOR it scales how aggressively the modulation is applied. The primary expressive control."
     }
   },
   "warrenspectrum": {

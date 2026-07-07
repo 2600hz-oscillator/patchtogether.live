@@ -28,7 +28,7 @@
 // PRNG is a seeded xorshift reseeded on the gate rising edge so a roll is
 // repeatable relative to the gate epoch. No Math.random / Date.now anywhere.
 
-import { clamp } from './chowkick-dsp';
+import { clamp } from './dsp-utils';
 
 // GATE high threshold — the shared semantic ($lib/audio/gate-trigger GATE_HI).
 // Inlined (a lib/ DSP helper can't import from $lib), kept === 0.5.

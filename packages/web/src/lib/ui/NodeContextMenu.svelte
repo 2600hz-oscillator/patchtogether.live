@@ -68,11 +68,6 @@
      *  Canvas already constrains this to signed-in users + group nodes;
      *  the menu just respects whatever the parent asserts. */
     canSaveGroup?: boolean;
-    /** SNES9X — when true (right-clicked node is a snes9x with a ROM loaded),
-     *  the menu surfaces "see output definition for CV/GATES". */
-    canSeeSnesOutputDef?: boolean;
-    /** SNES9X — open the per-ROM CV/GATE output-definition panel. */
-    onseesnesoutputdef?: () => void;
     /** Control colour — the module's CURRENT resolved colour (6-digit hex, no
      *  `#`), shown as the menu's preview swatch. */
     currentControlColor?: string | null;
@@ -110,8 +105,6 @@
     onduplicategroup,
     onsavegroup,
     canSaveGroup = false,
-    canSeeSnesOutputDef = false,
-    onseesnesoutputdef,
     currentControlColor = null,
     hasCustomControlColor = false,
     onsetcontrolcolor,
@@ -217,10 +210,6 @@
     onsavegroup?.();
     onclose();
   }
-  function pickSeeSnesOutputDef() {
-    onseesnesoutputdef?.();
-    onclose();
-  }
 </script>
 
 {#if open}
@@ -250,16 +239,6 @@
           data-testid="ctx-annotate"
         >
           {annotateActive ? 'Annotate ✓' : 'Annotate'}
-        </button>
-      {/if}
-      {#if canSeeSnesOutputDef}
-        <button
-          class="ctx-item"
-          onclick={pickSeeSnesOutputDef}
-          role="menuitem"
-          data-testid="ctx-snes-output-def"
-        >
-          see output definition for CV/GATES
         </button>
       {/if}
       <div class="ctx-sep" role="presentation"></div>

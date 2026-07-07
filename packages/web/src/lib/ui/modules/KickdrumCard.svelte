@@ -1,7 +1,7 @@
 <script lang="ts">
   // KickdrumCard — layered stereo kick-voice card (build plan:
   // .myrobots/plans/kick-drum-voice-2026-07-01.md). WIDE 3u banded layout
-  // (owner decision), Ports-family chrome matching ChowkickCard:
+  // (owner decision), Ports-family chrome:
   //
   //   ┌──── SUB ─────┬───────── BODY ─────────┬──── CLICK ────┐
   //   │ Tune SubDec  │ PAmt PTime Tens        │ Click ClkTone │

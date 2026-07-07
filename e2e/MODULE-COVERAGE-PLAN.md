@@ -119,7 +119,7 @@ Module types: `reverb`, `charlottesEchos`, `shimmershine`, `qbrt`,
 
 ### Group 7 — Drum voices
 
-Module types: `drummergirl`, `meowbox`, `riotgirls`. Gate ping ->
+Module types: `drummergirl`, `meowbox`. Gate ping ->
 audio burst.
 
 ### Group 8 — Video sources + effects

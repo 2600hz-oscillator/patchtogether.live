@@ -48,7 +48,7 @@ export { SAMPLE_RATE };
 
 /**
  * Combined source SHA over one or more files under `packages/dsp/src/`
- * (paths relative to that dir, e.g. `'chowkick.ts', 'lib/chowkick-dsp.ts'`).
+ * (paths relative to that dir, e.g. `'kickdrum.ts', 'lib/kickdrum-dsp.ts'`).
  * 16-hex sha256 slice, matching moduleSourceSha / the dist .sha convention.
  *
  * Pin EVERY file whose per-sample math the profile renders through — the

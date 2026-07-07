@@ -33,30 +33,40 @@ import { buildNodeTypes, conventionalCardName, type CardDefLike } from './module
 // fewer). When you add a NEW module, add its type id here too — that's the
 // one intentional touch (a single line in a test), NOT a shared registry edit.
 const EXPECTED_NODE_TYPES = [
-  '4plexvid', 'acidwarp', 'adsr', 'analogLogicMaths', 'analogVco', 'aquaTank', 'archivist',
-  'atlantisCatalyst', 'attenumix', 'audioIn', 'audioOut', 'backdraft', 'bentbox',
+  '4plexvid', 'acidwarp', 'adsr', 'analogLogicMaths', 'analogVco', 'archivist',
+  'attenumix', 'audioIn', 'audioOut', 'backdraft', 'bentbox',
   'blood', 'bluebox', 'buggles', 'callsine', 'cameraInput', 'cartesian',
-  'charlottesEchos', 'chowkick', 'chroma', 'chromakey', 'clipplayer', 'clockedRunner', 'clouds',
+  'charlottesEchos', 'chroma', 'chromakey', 'clipplayer', 'clockedRunner', 'clouds',
   'cloudseed', 'cofefve', 'colorizer', 'colourofmagic', 'cube', 'delay', 'depolarizer', 'destroy', 'destructor',
-  'doom', 'drummergirl', 'drumseqz', 'dx7', 'elements', 'fader', 'feedback', 'filter',
+  'doom', 'drummergirl', 'drumseqz', 'dx7', 'fader', 'feedback', 'filter',
   'featurecv',
-  'fourplexer', 'foxy', 'freezeframe', 'frogger', 'gamepad', 'gatemaiden', 'gibribbon', 'graphicEq', 'grids', 'group',
+  'fourplexer', 'foxy', 'freezeframe', 'frogger', 'gamepad', 'gatemaiden', 'gibribbon', 'graphicEq', 'group',
   'hypercube', 'illogic', 'inwards', 'joystick', 'kickdrum', 'kria', 'lfo', 'lines', 'livecode', 'loopback',
   'ninelives',
   'luma', 'lumakey', 'macrooscillator', 'macseq', 'mandleblot', 'mappy', 'marbles', 'matrixMix', 'meowbox',
   'mandelbulb', 'midiCvBuddy', 'midiOutBuddy', 'midiclock', 'mixer', 'mixmstrs', 'modtris',
-  'monoglitch', 'moog902', 'moog904a', 'moog911', 'moog921Vco', 'moogCp3', 'negativity', 'nibbles',
-  'noise', 'numpadPlus', 'onetonine', 'painter', 'peaks', 'peakstate', 'peertube', 'picturebox', 'polyseqz', 'pong',
-  'polarizer', 'qbert', 'qbrt', 'rasterize', 'reshaper', 'resofilter', 'reverb', 'ringback', 'rings',
-  'riotgirls', 'ruttetra', 'sampleHold', 'samsloop', 'scope', 'score', 'scoreboard',
+  'monoglitch', 'moog902', 'moog904a', 'moog911', 'moog921Vco', 'moogCp3', 'nibbles',
+  'noise', 'numpadPlus', 'onetonine', 'painter', 'peakstate', 'peertube', 'picturebox', 'polyseqz', 'pong',
+  'polarizer', 'qbrt', 'rasterize', 'reshaper', 'resofilter', 'reverb', 'ringback', 'rings',
+  'ruttetra', 'sampleHold', 'samsloop', 'scope', 'score', 'scoreboard',
   'scaler', 'sequencer', 'shapedramps', 'shapegen', 'shapes', 'shimmershine', 'sidecar', 'sourcery', 'spectrograph',
-  'skifree', 'slewSwitch', 'snaredrum', 'snes9x', 'stages', 'stereovca', 'sticky',
-  'swolevco', 'symbiote', 'synesthesia', 'tempest', 'tides2', 'timelorde', 'treeohvox', 'tvLibrarian',
+  'skifree', 'slewSwitch', 'snaredrum', 'stereovca', 'sticky',
+  'swolevco', 'synesthesia', 'tempest', 'timelorde', 'treeohvox', 'tvLibrarian',
   'launchpadControlLeft',
-  'unityscalemathematik', 'vca', 'vdelay', 'veils', 'vfpgaRunner', 'videoMixer', 'videoOut',
-  'videobox', 'videovarispeed', 'warps', 'warrenspectrum', 'wavecel', 'wavesculpt',
+  'unityscalemathematik', 'vca', 'vdelay', 'vfpgaRunner', 'videoMixer', 'videoOut',
+  'videobox', 'videovarispeed', 'warrenspectrum', 'wavecel', 'wavesculpt',
   'twotracks', 'wavetableVco', 'writeseq', 'textmarquee', 'tiler', 'spirographs',
   'milkdrop',
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -252,9 +262,9 @@ describe('buildNodeTypes() (glob-driven card map)', () => {
 //
 //   (1) The card TEMPLATE renders no raw `<Handle>` tag. (We judge the
 //       template, not the whole file: the migration convention documents the
-//       ban in a `// NO raw <Handle> jacks` comment + type-only imports like
-//       `QbertHandleExtras` carry the word "Handle" — neither is a rendered
-//       jack, so a whole-file substring scan would false-positive.)
+//       ban in a `// NO raw <Handle> jacks` comment + type-only imports whose
+//       names carry the word "Handle" — neither is a rendered jack, so a
+//       whole-file substring scan would false-positive.)
 //   (2) A card whose def declares ports (inputs+outputs > 0) references the
 //       shared <PatchPanel> — i.e. its jacks live in the panel.
 describe('card patch-surface invariants', () => {

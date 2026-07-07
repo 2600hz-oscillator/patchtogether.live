@@ -63,7 +63,7 @@ export const SUB_ORDER: Record<TopCategory, readonly string[]> = {
   'Video modules': ['Sources', 'Processors', 'Utilities'],
   // Games = playable game modules (emulators + in-house arcade ports) that
   // emit game-event CV/GATE. Two subs: Emulators (load an external game
-  // engine / ROM — DOOM, SNES9X, Q*Bert) + Arcade (in-house ports —
+  // engine / ROM — DOOM) + Arcade (in-house ports —
   // NIBBLES, PONG, MODTRIS, FROGGER, SKIFREE).
   Games: ['Emulators', 'Arcade'],
   // Moog System 35/55 Clones = the moogafakkin family (System 55 big modular

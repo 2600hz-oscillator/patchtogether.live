@@ -53,7 +53,7 @@ test('RINGBACK: VCO → stereo in → stereo out has audible RMS on BOTH channel
   await expect(card).toContainText('RINGBACK');
 
   // Max-hold over a window so the assertion is renderer/timing-tolerant on CI
-  // (same discipline as chowkick.spec) — a continuous VCO source keeps energy
+  // (gate-loop discipline) — a continuous VCO source keeps energy
   // in every frame, so any frame proves liveness.
   const hold = await readScopePeakOverWindow(page, 'a-scp', 1200);
   expect(hold.polls, 'SCOPE was polled across the window').toBeGreaterThan(0);

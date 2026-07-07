@@ -2,9 +2,8 @@
 //
 // DRUMMERGIRL — gate-triggered all-in-one synth drum voice. One module,
 // one voice — fire a gate, hear a drum hit shaped by pitch / tone /
-// shape / volume / decay. Used as the per-voice DSP for voices 1-3 of
-// RIOTGIRLS and stands alone in the palette for plain drum-machine /
-// percussion-voice use. Faust-compiled DSP (packages/dsp/src/
+// shape / volume / decay. Stands alone in the palette for plain
+// drum-machine / percussion-voice use. Faust-compiled DSP (packages/dsp/src/
 // drummergirl.dsp): a pitched body oscillator + a noise/transient
 // shaper crossfaded by `shape`, with `tone` modulating the body
 // timbre, gain-shaped by an internal AD envelope set by `decay`.
@@ -68,7 +67,7 @@ export const drummergirlDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A one-shot synth drum voice: fire a gate and it plays a single percussion hit. Mental model — a pitched body oscillator crossfaded against a noise/transient layer, gain-shaped by an internal attack/decay envelope, so one module covers everything from a tuned tom or kick to a noisy snare or hat. There is no separate trigger and tone path to wire: pitch, tone, shape, level, and decay are all on the faceplate (and CV-modulatable), and the gate edge is the only thing you have to patch. It's also the per-voice engine inside RIOTGIRLS, so the timbre you dial here is the same one those voices use.",
+      "A one-shot synth drum voice: fire a gate and it plays a single percussion hit. Mental model — a pitched body oscillator crossfaded against a noise/transient layer, gain-shaped by an internal attack/decay envelope, so one module covers everything from a tuned tom or kick to a noisy snare or hat. There is no separate trigger and tone path to wire: pitch, tone, shape, level, and decay are all on the faceplate (and CV-modulatable), and the gate edge is the only thing you have to patch.",
     inputs: {
       gate: "The trigger: a rising edge fires exactly one drum hit and restarts the internal amplitude envelope. Patch a sequencer gate, a clock, or any pulse here — its level isn't sustained, only the rising edge matters, so hit length is set by the Decay control rather than how long the gate stays high.",
       pitch: "CV that adds to the Pitch fader (bipolar, ±1 sweeps the full ±36-semitone range from the knob's center), so an LFO or sequencer can re-tune the body per hit; sampled at the gate edge that fires the note.",

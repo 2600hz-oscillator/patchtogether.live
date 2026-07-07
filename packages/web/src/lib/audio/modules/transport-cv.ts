@@ -77,7 +77,7 @@ interface PortEntry {
 export interface TransportCvOptions {
   /** Include the extended ports (queue5..8_cv + next/prev/random_cv).
    *  Default false — only Sequencer + MACSEQ opt in. The other consumers
-   *  (DRUMSEQZ / SCORE / POLYSEQZ / ATLANTIS-CATALYST) keep the
+   *  (DRUMSEQZ / SCORE / POLYSEQZ) keep the
    *  legacy 6-port shape untouched. */
   extended?: boolean;
 }

@@ -115,7 +115,7 @@ describe('relay-vacuity skip classifier', () => {
       'DOOM WASM / WAD missing — run build-doom-wasm.sh + fetch DOOM1.WAD',
       'DOOM runtime failed to load on A within 25s',
       'resource-constrained: a DOOM context could not load 4-up in time',
-      'no /roms/snes9x/game.sfc — run',
+      'no ROM fixture present — run the setup script',
       '', // no reason
     ];
     for (const r of benign) expect(isRelayVacuitySkip(r)).toBe(false);

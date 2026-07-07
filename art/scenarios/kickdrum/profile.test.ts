@@ -21,7 +21,7 @@
 // xorshift32 chains, and the trigger train is epoch-pinned to sample 0.
 //
 // The .sha pin covers the worklet entry AND every -dsp lib the per-sample
-// math flows through (kickdrum-dsp + its moog-vco / chowkick-dsp imports),
+// math flows through (kickdrum-dsp + its moog-vco / dsp-utils imports),
 // so a coefficient change in ANY of them forces an intentional
 // `task art:update` re-capture. Re-pin the .sha LAST (memory
 // `art-sha-pin-regenerate-last`).
@@ -93,7 +93,7 @@ describe('ART kickdrum / audio profile (default patch, 2-strike trigger train)',
       'kickdrum.ts',
       'lib/kickdrum-dsp.ts',
       'lib/moog-vco-dsp.ts',
-      'lib/chowkick-dsp.ts',
+      'lib/dsp-utils.ts',
     );
     await pinAll('kickdrum', srcSha, renderProfile());
   });

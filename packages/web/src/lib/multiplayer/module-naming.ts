@@ -3,7 +3,7 @@
 // Auto-naming + uniqueness for module instances within a single rack.
 //
 // Every module gets a stable, human-readable name like `ANALOGVCO1`,
-// `ANALOGVCO2`, `RIOTGIRLS1`. The name lives on `node.data.name` so it
+// `ANALOGVCO2`, `MIXMSTRS1`. The name lives on `node.data.name` so it
 // syncs via Y.Doc to every collaborator on the rack. The LIVECODE DSL
 // addresses pre-existing modules by exactly this name (e.g.
 // `ANALOGVCO1.frequency = 440`), so the naming has to be deterministic
