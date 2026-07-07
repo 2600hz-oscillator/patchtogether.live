@@ -24,10 +24,10 @@
 // Every time constant derives from the LIVE sample rate (audit A2 — no 48 000
 // literals; the unit tests assert identical decay at 44 100 and 48 000).
 // Amp-decay knobs are calibrated as TIME TO −60 dB. All state lives in an
-// explicit state object (chowkick discipline) so per-sample math is
+// explicit state object (DSP-core discipline) so per-sample math is
 // unit-testable without the worklet. Denormals flushed at 1e−20.
 
-import { clamp, dcBlockStep, makeDcBlockState, type DcBlockState } from './chowkick-dsp';
+import { clamp, dcBlockStep, makeDcBlockState, type DcBlockState } from './dsp-utils';
 import { moogWaves } from './moog-vco-dsp';
 import { createOversampler, type Oversampler } from './oversample';
 import {
@@ -68,7 +68,7 @@ export interface KickdrumP1Params {
   /** Sub fundamental, Hz (plan: 20–120, default 50). */
   tune: number;
   /** Body pitch-sweep depth, semitones above settled (0–48, default 24 = the
-   *  canonical 4× start multiple — matches chowkick's PITCH_ENV_START_MULT). */
+   *  canonical 4× start multiple — the canonical kick-voice start multiple). */
   pitchAmt: number;
   /** Body pitch-env decay, ms (5–120, default 30). */
   pitchTime: number;

@@ -42,8 +42,8 @@ const rings: StereoDef = {
   stereoPairs: [['odd', 'even']],
 };
 
-// aquatank — stereo OUTPUT pair mix_l/mix_r among 4 mono outs; mono inputs.
-const aquatank: StereoDef = {
+// fdnQuad — a synthetic FDN-style def: stereo OUTPUT pair mix_l/mix_r among 4 mono outs; mono inputs.
+const fdnQuad: StereoDef = {
   inputs: [audio('in1'), audio('in2'), audio('in3'), audio('in4')],
   outputs: [audio('out1'), audio('out2'), audio('out3'), audio('out4'), audio('mix_l'), audio('mix_r')],
   stereoPairs: [['mix_l', 'mix_r']],
@@ -79,14 +79,14 @@ describe('findStereoSibling', () => {
   it('is naming-agnostic — odd/even, mix_l/mix_r, L/R, inL/inR', () => {
     expect(findStereoSibling(rings, 'odd')).toBe('even');
     expect(findStereoSibling(rings, 'even')).toBe('odd');
-    expect(findStereoSibling(aquatank, 'mix_l')).toBe('mix_r');
+    expect(findStereoSibling(fdnQuad, 'mix_l')).toBe('mix_r');
     expect(findStereoSibling(charlottesEchos, 'L')).toBe('R');
     expect(findStereoSibling(cofefve, 'inL')).toBe('inR');
   });
 
   it('returns null for a non-paired port', () => {
     expect(findStereoSibling(rings, 'in')).toBeNull();
-    expect(findStereoSibling(aquatank, 'out1')).toBeNull();
+    expect(findStereoSibling(fdnQuad, 'out1')).toBeNull();
     expect(findStereoSibling(monoOsc, 'out')).toBeNull();
   });
 
@@ -210,11 +210,11 @@ describe('planStereoAutowire', () => {
   });
 
   it('returns null when the source declares the wrong direction of pair (output-only source pair, target also output-only — no input sibling exists)', () => {
-    // aquatank.mix_l (output) → rings... rings has no stereo INPUT pair, only
+    // fdnQuad.mix_l (output) → rings... rings has no stereo INPUT pair, only
     // a mono `in`. So target `in` is not paired ⇒ null.
     const plan = planStereoAutowire({
       fromPortId: 'mix_l',
-      fromDef: aquatank,
+      fromDef: fdnQuad,
       toNodeId: 'r1',
       toPortId: 'in',
       toDef: rings,

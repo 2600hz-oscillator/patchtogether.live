@@ -15,14 +15,13 @@ import { listModuleDefs } from '$lib/audio/module-registry';
 // full-musical-range mapping. New entries here MUST be justified in
 // .myrobots/plans/cv-range-standard.md.
 const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
-  // polarizer/depolarizer/negativity: 1-in/1-out CV-math UTILITIES — `in` is the
+  // polarizer/depolarizer: 1-in/1-out CV-math UTILITIES — `in` is the
   // signal being transformed directly (out = f(in): polarizer 2·in−1, depolarizer
-  // in/2+0.5, negativity −in), NOT a knob modulator routed onto an AudioParam (the
+  // in/2+0.5), NOT a knob modulator routed onto an AudioParam (the
   // DEPTH knob, where present, is a separate control). So cvScale doesn't apply —
   // same shape as moog992's passive CV panel.
   polarizer: ['in'],
   depolarizer: ['in'],
-  negativity: ['in'],
   // moog992 cv1..cv4: a passive CV PANEL — these inputs are the signals being
   // attenuated + summed into cv_out (no paramTarget, not modulating a knob), so
   // cvScale doesn't apply. The per-channel attenuator knobs scale them.
@@ -124,13 +123,6 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // per-sample multiply (out = in * (strength + offset) * level). No
   // scaling — slow CV gives tremolo, audio-rate CV gives ring modulation.
   stereovca: ['strength_l', 'strength_r'],
-  // VEILS cv1..cv4: per-channel gain CV summed directly with the gain knob
-  // inside the worklet's per-sample multiply. The gain knob's natural
-  // range is [0, 2], so a ±1V LFO at unity-knob already swings the
-  // effective gain from 0 to 2 — already a full natural-range sweep.
-  // Applying cvScale 'linear' would compute scale = (max-min)/2 = 1.0
-  // and pass the CV through unchanged anyway.
-  veils: ['cv1', 'cv2', 'cv3', 'cv4'],
   // ATTENUMIX cv1..cv4: per-channel attenuator CV summed with the knob
   // inside the worklet's per-sample multiply (then clamp 0..1). The
   // attenuator's natural range is [0, 1], so a ±1V LFO at knob=0 already
@@ -183,35 +175,16 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // apply. As a 1V/oct value any scaling would also corrupt the pitch
   // quantization. Same shape as SLEWSWITCH.in1..in4 + CUBE.pitch.
   sampleHold: ['cv_in'],
-  // ATLANTISCATALYST seed_cv: bias-direction input read directly by the
-  // JS orchestrator each tick (sampled into the next-scene picker).
-  // Same shape as buggles.chaos_cv — no AudioParam fast path.
-  atlantisCatalyst: ['seed_cv'],
-  // GRIDS map/density/chaos/swing CV: sampled into a JS shadow each
-  // scheduler tick (most-recent analyser sample → unitToByte → 0..255
-  // pattern parameter), then summed onto the corresponding knob inside
-  // the pattern engine. There's no AudioParam fast path — the CV value IS
-  // a pattern coordinate / fill / randomness amount, not a knob modulator
-  // routed through a WaveShaperNode. Same shape as cartesian's x_cv/y_cv
-  // address selectors + buggles.chaos_cv.
-  grids: ['mapX_cv', 'mapY_cv', 'bdDensity_cv', 'sdDensity_cv', 'hhDensity_cv', 'chaos_cv', 'swing_cv'],
   // 4PLEXER in1..in4: raw signal inputs (audio OR cv) routed straight to
   // the selected output by the worklet's per-output select — they are the
   // signal being switched, NOT a knob modulator, so there is no AudioParam
   // fast path and cvScale doesn't apply. Same shape as SLEWSWITCH.in1..in4.
   // The gate1..gate4 advance inputs are `gate`-typed and so aren't checked.
   fourplexer: ['in1', 'in2', 'in3', 'in4'],
-  // CHOWKICK pitch_cv: 1V/oct pitch CV consumed directly by the worklet —
-  // freq *= 2^pitch_cv applied per-sample. Same shape as dx7.pitch_cv:
-  // a V/oct fallback input with no paramTarget (a freq
-  // AudioParam additive cvScale would NOT be 1V/oct, so we route the
-  // pitch CV as its own audio-rate node input + apply the octave map
-  // inside the per-sample DSP).
-  chowkick: ['pitch_cv'],
   // KICKDRUM pitch_cv: V/oct consumed directly by the worklet as its own
   // audio-rate node input (tune × 2^pitch_cv per-sample — an additive
-  // AudioParam cvScale would NOT be 1V/oct). Same shape as chowkick.pitch_cv
-  // / dx7.pitch_cv. accent_in: a raw per-hit 0..1 value SAMPLED at the
+  // AudioParam cvScale would NOT be 1V/oct). Same shape as
+  // dx7.pitch_cv. accent_in: a raw per-hit 0..1 value SAMPLED at the
   // trigger edge inside the worklet (a latch input, not a knob modulator —
   // no paramTarget), so cvScale doesn't apply.
   kickdrum: ['pitch_cv', 'accent_in'],
@@ -221,12 +194,11 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // NOT be 1V/oct), accent_in is a raw 0..1 value SAMPLED at each strike (a latch
   // input, no paramTarget), and roll_speed_cv is a 1V/oct multiply on the roll
   // rate consumed per-sample inside the roll engine. Same shape as
-  // kickdrum.pitch_cv / accent_in and dx7/chowkick.pitch_cv.
+  // kickdrum.pitch_cv / accent_in and dx7.pitch_cv.
   snaredrum: ['pitch_cv', 'accent_in', 'roll_speed_cv'],
   // CUBE pitch: V/oct input consumed directly by the worklet as its own
   // audio-rate node input (freq = C4·2^(pitch + tune/12 + fine/1200), applied
-  // per-sample). No paramTarget — same V/oct-fallback shape as dx7.pitch_cv /
-  // chowkick.pitch_cv. CUBE's OTHER cv inputs (slice_y/rx/ry/rz, morph_fc,
+  // per-sample). No paramTarget — same V/oct-fallback shape as dx7.pitch_cv. CUBE's OTHER cv inputs (slice_y/rx/ry/rz, morph_fc,
   // connect, crush, tune) DO have paramTarget + cvScale:linear; only the raw
   // V/oct pitch is passthrough-by-design.
   cube: ['pitch'],

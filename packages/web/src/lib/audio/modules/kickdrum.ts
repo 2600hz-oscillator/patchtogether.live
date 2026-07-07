@@ -29,8 +29,8 @@
 // Outputs are SEPARATE audio_l / audio_r ports (the cube.ts idiom: one
 // stereo worklet output fanned through a ChannelSplitter) so the stereo
 // width survives downstream patching; stereoPairs lets the engine auto-pair
-// them. Level spans −24..+12 dB (the deliberate headroom fix vs chowkick's
-// −60..0), guarded by the voice's own ceiling stage when Phase 4 lands.
+// them. Level spans −24..+12 dB (deliberate headroom), guarded by the
+// voice's own ceiling stage when Phase 4 lands.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';

@@ -39,7 +39,7 @@ describe('resolveVerboseLabel', () => {
     expect(resolveVerboseLabel({ id: 'cv' })).toBe('CV');
   });
 
-  it('expands voice-prefixed ports for RIOTGIRLS', () => {
+  it('expands voice-prefixed ports (v{N}_… drum-voice id shape)', () => {
     expect(resolveVerboseLabel({ id: 'v1_tone' })).toBe('V1 TONE');
     expect(resolveVerboseLabel({ id: 'v4_attack' })).toBe('V4 ATTACK');
     expect(resolveVerboseLabel({ id: 'v3_sendA' })).toBe('V3 SEND A');

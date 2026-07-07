@@ -20,7 +20,7 @@
 //       the device's onmidimessage handler via a queued sender.
 //
 //   * Clock / divider / sequencer-like modules with internal self-running
-//     state (TIMELORDE, MARBLES, SYMBIOTE, GRIDS, STAGES, TIDES2):
+//     state (TIMELORDE, MARBLES):
 //       Seed isPlaying-equivalent params or trig pulse via SEQUENCER, and
 //       lean on the module's internal RNG / clock to produce edges.
 //
@@ -146,35 +146,6 @@ const DRIVERS: Record<string, PerPortDriver> = {
   marbles: {
     params: { rate: 36, t_bias: 0.5, t_jitter: 0 },
     note: 'MARBLES: bump rate to 36 semitones (~8x default) so t1/t2 fire ≥10 Hz',
-  },
-  //
-  // SYMBIOTE: same shape as MARBLES — self-running worklet.
-  symbiote: {
-    // rate=36: master clock at ~8× default so t/x outputs fire many times per
-    // second. bd_density/sd_density/hh_density at max so every step fires
-    // (t1/t2/t3 are probabilistic at default 0.5 densities). acid_density=1
-    // keeps the TB-3PO gate always open (needed for x3 + y). transpose=7
-    // semitones ensures x2 (pitch) is offset from 0V → passes scope floor.
-    params: {
-      rate: 36,
-      bd_density: 1, sd_density: 1, hh_density: 1,
-      acid_density: 1, transpose: 7,
-    },
-    note: 'SYMBIOTE: rate=36 + max densities + transpose=7; t1/t2/t3/x1/x2/x3/y all emit',
-  },
-  //
-  // GRIDS: isPlaying default 1 + internal tempo. Crank tempo to fit
-  // all 5 outputs into the poll budget.
-  grids: {
-    params: { tempo: 300, isPlaying: 1, bdDensity: 1, sdDensity: 1, hhDensity: 1 },
-    note: 'GRIDS: tempo 300 + max densities; bd/sd/hh fire ~5x per second',
-  },
-  //
-  // TIDES2: rampMode default + range=0 LFO → outputs sweep. Crank
-  // frequency.
-  tides2: {
-    params: { frequency: 0.9, rampMode: 1 /* LOOP */, outputMode: 2 /* PHASE */ },
-    note: 'TIDES2: high freq + LOOP mode + PHASE output; out0..3 sweep',
   },
   //
   // NINE LIVES: a 9-output LFO on a geometric ⅓ rate ladder (out_n = rate ×
@@ -748,45 +719,6 @@ const DRIVERS: Record<string, PerPortDriver> = {
     note: 'NUMPAD+: seed all 4 layers (midi=72) + isPlaying=1 + Numpad2 held; l{1..4}_pitch/gate all emit',
   },
 
-  // ───── QBERT — forcePulse the evt_die/evt_move/evt_level gates ─────
-  qbert: {
-    // QBERT's evt_die/evt_move/evt_level are gameplay-conditional gates:
-    // they only fire on in-game events (die, hop, level-up). The runtime
-    // exposes forcePulse() so the test can trigger them deterministically
-    // without the ROM or game state. We pulse each gate twice, spaced
-    // 200ms apart so the scope's 43ms analyser window catches the 10ms
-    // pulse with high probability. The video  passes without a driver
-    // (the test-pattern framebuffer renders even without the ROM).
-    postSpawn: async (page, sutId) => {
-      await page.evaluate(async (id) => {
-        const w = globalThis as unknown as {
-          __engine?: () => {
-            getDomain?: (d: string) => {
-              read?: (id: string, k: string) => unknown;
-            } | null;
-          } | null;
-        };
-        const ve = w.__engine?.()?.getDomain?.('video');
-        const extras = ve?.read?.(id, 'extras') as
-          | { forcePulse?: (port: 'evt_die' | 'evt_move' | 'evt_level') => void }
-          | undefined;
-        if (!extras?.forcePulse) return;
-        // Fire each evt port once immediately so the scope window catches
-        // at least one pulse regardless of which port is under test.
-        extras.forcePulse('evt_die');
-        extras.forcePulse('evt_move');
-        extras.forcePulse('evt_level');
-        // Second burst at +300ms for more coverage.
-        setTimeout(() => {
-          extras.forcePulse?.('evt_die');
-          extras.forcePulse?.('evt_move');
-          extras.forcePulse?.('evt_level');
-        }, 300);
-      }, sutId);
-    },
-    note: 'QBERT: forcePulse evt_die/evt_move/evt_level via extras; video out from test-pattern',
-  },
-
   // ───── MIDICLOCK — mock requestMIDIAccess + post clock messages ─────
   midiclock: {
     pageSetup: async (page) => {
@@ -1013,15 +945,14 @@ const DRIVERS: Record<string, PerPortDriver> = {
     note: 'MIDI LANE: mock requestMIDIAccess + send note-on (pitch/gate/vel) + CC1/CC7 (cc_a/cc_b); note_gate/poly exempt',
   },
 
-  // ───── CV-polarity utility trio (POLARIZER / DEPOLARIZER / NEGATIVITY) ─────
+  // ───── CV-polarity utility pair (POLARIZER / DEPOLARIZER) ─────
   //
-  // All three are 1-in/1-out CV-math pass-throughs (out = f(in)). With nothing
+  // Both are 1-in/1-out CV-math pass-throughs (out = f(in)). With nothing
   // patched the per-port outputs-emit sweep would see only a DC artifact
-  // (polarizer/depolarizer rest at −1 / 0.5) — and NEGATIVITY's out = −in rests
-  // at exactly 0 (silent), failing the peak-above-floor check. Drive `in` with
+  // (polarizer/depolarizer rest at −1 / 0.5). Drive `in` with
   // a self-running CV source (BUGGLES.smooth, slow random walk) so `out` carries
   // a real, moving signal — a genuine driven-signal emit check, not a DC fluke.
-  // (The exact math is pinned by polarizer/depolarizer/negativity.test.ts.)
+  // (The exact math is pinned by polarizer/depolarizer .test.ts.)
   polarizer: {
     upstream: () => ({
       nodes: [bugglesCv('drv-bug')],
@@ -1049,20 +980,6 @@ const DRIVERS: Record<string, PerPortDriver> = {
       ],
     }),
     note: 'DEPOLARIZER: drive `in` with BUGGLES.smooth (self-running CV) so `out` = 0.5 + depth·(in/2) carries a moving signal',
-  },
-  negativity: {
-    upstream: () => ({
-      nodes: [bugglesCv('drv-bug')],
-      edges: [
-        {
-          id: 'e-drv-neg',
-          from: { nodeId: 'drv-bug', portId: 'smooth' },
-          to:   { nodeId: 'sut',     portId: 'in' },
-          sourceType: 'cv', targetType: 'cv',
-        },
-      ],
-    }),
-    note: 'NEGATIVITY: drive `in` with BUGGLES.smooth (self-running CV) so `out` = −in carries a moving signal (rests at 0 unpatched)',
   },
 
   // ───── VIDEOOUT — wire ACIDWARP.out into .in so .out passes through ─────

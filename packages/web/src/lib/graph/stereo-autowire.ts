@@ -5,7 +5,7 @@
 // WHY THIS EXISTS
 // ---------------
 // ~15 audio modules declare `stereoPairs: readonly [string, string][]` on their
-// def (clouds, cofefve, rings, charlottes-echos, aquatank, …) but NOTHING
+// def (clouds, cofefve, rings, charlottes-echos, …) but NOTHING
 // reads it at patch-commit time yet. The user wants: patching L (or R) of a
 // stereo SOURCE into a stereo-accepting TARGET whose sibling input is currently
 // UNPATCHED should auto-wire the OTHER side too (out_l→in_l implies out_r→in_r).

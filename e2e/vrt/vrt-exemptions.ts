@@ -372,31 +372,13 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // provide coverage. Linux baseline is darwin-only for v1; a
   // follow-up PR will capture both platforms and promote into MODULES.
   rings: 'VRT baseline pending; ART + unit + E2E provide coverage. Linux baseline is darwin-only for v1.',
-  elements: 'No custom visualization — card is standard Fader controls (like rings). ART + unit tests provide DSP coverage.',
-  // PEAKS first-slice PR: VRT baseline pending; ART + unit + E2E provide
-  // coverage. Promote into MODULES + capture baselines on both platforms
-  // in a follow-up PR.
-  peaks: 'VRT baseline pending; ART + unit + E2E provide coverage.',
-  // TIDES2: the card is plain knobs + mode buttons (no custom canvas
-  // visualization), so a VRT scene adds no signal over the unit pass that
-  // pins the four-output DSP math. Capture a baseline only if a future PR
-  // adds a slope-preview scope to the card.
-  tides2: 'Card has no custom visualization (knobs + mode buttons); unit tests pin the DSP. No VRT scene needed.',
-  // MARBLES / SYMBIOTE first-slice PR: plain fader cards (no custom canvas
-  // viz), so VRT adds little; unit tests cover the DSP cores. Promote +
+  // MARBLES first-slice PR: plain fader card (no custom canvas
+  // viz), so VRT adds little; unit tests cover the DSP core. Promote +
   // capture baselines in a follow-up PR.
   marbles: 'VRT baseline pending; standard fader card; unit tests cover the DSP core.',
-  symbiote: 'VRT baseline pending; standard fader card; unit tests cover the DSP core.',
-  // WARPS first-slice PR: VRT baseline pending; ART + unit + E2E provide
-  // coverage. Promote into MODULES + capture baselines on both platforms
-  // in a follow-up PR.
-  warps: 'VRT baseline pending; ART + unit + E2E provide coverage.',
-  // VEILS quad-VCA: VRT baseline pending; ART + unit + E2E provide coverage.
-  veils: 'VRT baseline pending; ART + unit + E2E provide coverage',
   // ATTENUMIX simple mixer: VRT baseline pending; ART + unit + E2E cover it.
   // 4 attenuator faders + master + standard PatchPanel — no unique visual
-  // surface beyond what VEILS already exercises; baseline can be promoted
-  // in a follow-up. Same rationale as VEILS.
+  // surface; baseline can be promoted in a follow-up.
   attenumix: 'VRT baseline pending; ART + unit + E2E provide coverage',
   // SIDECAR stereo sidechain compressor: VRT baseline pending; standard
   // 8-knob fader card + standard PatchPanel — no unique visual surface
@@ -404,13 +386,6 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // E2E provide full DSP + behavior coverage. Promote into MODULES +
   // capture darwin/linux baselines in a follow-up PR.
   sidecar: 'VRT baseline pending; standard 8-knob card; ART + unit + E2E provide coverage',
-  // CHOWKICK first-slice PR: VRT baseline pending; large 2-band fader card
-  // with two live preview canvases (pulse envelope + filter response).
-  // The canvases re-paint reactively on knob change so a baseline needs
-  // careful capture timing — ART + unit + E2E provide full DSP + behavior
-  // coverage in the meantime. Promote into MODULES + capture darwin/linux
-  // baselines in a follow-up PR.
-  chowkick: 'VRT baseline pending; 20-knob card (PULSE SHAPE + RESONANT FILTER bands + a PUNCH fader row) with two live preview canvases; ART + unit + E2E provide coverage.',
   // CLOUDSEED first-slice PR: VRT baseline pending; complex card (4 panels
   // + bottom mix + preset bar). ART + unit + E2E provide coverage. Promote
   // into MODULES + capture darwin/linux baselines in a follow-up PR.
@@ -528,11 +503,9 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // animation that animates whether the sequence is running or not.
   // Functional coverage via the e2e spec; pinning baselines pending.
   numpadPlus: 'live step-highlight box + REC ARM animation defeat deterministic capture; unit + E2E provide coverage',
-  // ATLANTIS-PATCH support trio. VRT baselines pending; the demo
+  // ATLANTIS-PATCH support module. VRT baseline pending; the demo
   // patch itself is the integration test.
-  slewSwitch: 'VRT baseline pending — first-slice ATLANTIS-PATCH module; unit + Atlantis-patch E2E provide coverage',
-  atlantisCatalyst: 'card has a live scene-countdown + pulsing NUDGE button; capture is non-deterministic. Unit covers the def + pure helpers; Atlantis E2E covers the wired-up patch',
-  aquaTank: 'VRT baseline pending — first-slice ATLANTIS-PATCH module; unit covers def shape, Atlantis-patch E2E covers the wired-up FDN',
+  slewSwitch: 'VRT baseline pending — first-slice ATLANTIS-PATCH module; unit + E2E provide coverage',
   // WAVESCULPT: previously VRT-exempt (animated 3D render + CRT feedback
   // defeated single-frame capture). The alpha-rotate bugfix PR adds a
   // deterministic render-freeze hook (globalThis.__wavesculptVrtFreeze →
@@ -558,26 +531,6 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // there is no rendered frame to baseline. Unit suites cover the TS shim
   // (blood-runtime) + the CV-gate scancode map (blood-keys).
   blood: 'live game-loop framebuffer + user-supplied non-redistributable data (no frame on CI) defeats deterministic capture; unit suites cover blood-runtime shim + blood-keys scancode map',
-  // QBERT — Q*Bert (Gottlieb 1982) arcade emulator. Same rationale as
-  // DOOM: the canvas is a live game framebuffer (test pattern when no
-  // ROM is loaded, ROM-driven once present) that defeats deterministic
-  // capture. ROM is also user-provided + gitignored, so a CI-side VRT
-  // baseline can't be reproduced without a license-encumbered ROM in
-  // the runner. Unit suites cover joy-cv translation, ROM zip parsing,
-  // and the Z80 + runtime wire-up; e2e covers the ROM-missing card
-  // render + the CV-joystick → evt_move gate path.
-  qbert: 'live game-loop framebuffer + ROM is user-provided (gitignored); unit suites cover joy-cv translation + ROM zip parser + Z80 wire-up + runtime; e2e covers ROM-missing card + CV-joystick → evt_move path',
-  // SNES9X — Super Nintendo emulator (snes9x2005/CAT SFC → WASM). Same
-  // rationale as DOOM/QBERT: the card is a live game framebuffer (a
-  // "LOAD A ROM" dropzone overlay before a ROM is loaded, ROM-driven after)
-  // that defeats deterministic single-frame capture, AND the ROM is
-  // user-provided + gitignored so a CI-side VRT baseline can't be reproduced
-  // without a license-encumbered ROM in the runner. Coverage: the pure
-  // smw-events / clock-multiplier / snes-input / output-definitions unit
-  // suites (detection, multiplier, input mask, output-def panel data) +
-  // snes9x-runtime unit (mocked WASM shim) + the snes9x e2e (ROM-gated:
-  // video/audio/input + clock_in→gate3 multiply, skips when ROM absent).
-  snes9x: 'live game-loop framebuffer + ROM is user-provided (gitignored); pure unit suites cover SMW game-event detection + clock multiplier + input mask + output-definition panel + runtime shim; ROM-gated e2e covers video/audio/input + clock_in→gate3 multiply',
   // CALLSINE first-slice PR: VRT baseline pending; unit + ART + E2E
   // provide coverage. Card is a standard 6-fader layout (model + 5
   // continuous macros) — pinning baselines in a follow-up PR after
@@ -661,10 +614,6 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   chroma: 'VRT baseline pending — v3 reshape (PR feat/keyers-and-restore-chroma-luma) deleted obsolete baselines; regenerate via `task vrt:update` on each platform.',
   // LUMA — v2 reshape (this PR) same rationale as CHROMA above.
   luma: 'VRT baseline pending — v2 reshape (PR feat/keyers-and-restore-chroma-luma) deleted obsolete baselines; regenerate via `task vrt:update` on each platform.',
-  // GRIDS — fader + button card (no custom visualization), so VRT adds
-  // little over the unit + spawn-smoke coverage. Baseline pending; promote
-  // into MODULES + capture darwin/linux baselines in a follow-up PR.
-  grids: 'VRT baseline pending; standard fader/button card (no custom viz). Unit tests (grids.test.ts) + per-module spawn smoke provide coverage. Capture darwin/linux baselines via `task vrt:update` in a follow-up PR.',
   // 4PLEXER — first-slice PR. The card is fully deterministic (4 discrete
   // selector knobs at default positions + static input/output readouts, no
   // canvas / animation), so it is a good VRT candidate; baselines are
@@ -855,7 +804,6 @@ export const STRICT_VRT_MODULES = new Set<string>([
   // captured + validated their linux baselines (both platforms now committed;
   // pure-DOM, ≤1 knob, no canvas → deterministic). They diff on darwin+linux.
   'depolarizer',          // bipolar→unipolar CV util (DEPTH knob)
-  'negativity',           // −1× CV inverter (no knob)
   'polarizer',            // unipolar→bipolar CV util (DEPTH knob)
   'scaler',               // 1-in/1-out CV multiplier (AMOUNT knob)
   // MOOG cluster — promoted to the strict gate after Track-2 batch 2 (#953)
@@ -904,7 +852,7 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // binding edits + LED frame) + the per-module-per-port + behavioral sweeps +
   // the bespoke real-source-chain kria.spec.ts (TIMELORDE → KRIA → voice → RMS).
   'linux/kria',
-  // SCALER / POLARIZER / DEPOLARIZER / NEGATIVITY: the tiny CV-utility cards
+  // SCALER / POLARIZER / DEPOLARIZER: the tiny CV-utility cards
   // (1-in/1-out, ≤1 knob, no canvas) — linux baselines CAPTURED (vrt-update.yml
   // linux dispatch), so their pairs are dropped from here: they now DIFF on both
   // platforms in the full `vrt` lane (informational). First Track-2 linux-coverage
@@ -1123,7 +1071,6 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // raising threshold shrinks the keyed area).
   'linux/mapper',
   'linux/monoglitch',
-  'linux/riotgirls',
   'linux/shapedramps',
   'linux/unityscalemathematik',
   'linux/vdelay',

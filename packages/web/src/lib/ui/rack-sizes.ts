@@ -28,8 +28,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   adsr: { size: '1u', hp: 2 }, // 154×240px  [LOCKED]
   analogLogicMaths: { size: '1u', hp: 2 }, // 154×220px
   analogVco: { size: '3u', hp: 2 }, // 225×240px  [LOCKED]
-  aquaTank: { size: '2u', hp: 2 }, // 273×320px
-  atlantisCatalyst: { size: '2u', hp: 2 }, // 261×360px
   attenumix: { size: '1u', hp: 2 }, // 158×300px
   audioIn: { size: '2u', hp: 1 }, // 241×200px
   audioOut: { size: '1u', hp: 1 }, // 200×180px  [LOCKED]
@@ -38,7 +36,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   callsine: { size: '1u', hp: 2 }, // 196×340px
   cartesian: { size: '4u', hp: 2 }, // 563×360px
   charlottesEchos: { size: '1u', hp: 2 }, // 109×320px  [LOCKED]
-  chowkick: { size: '5u', hp: 3 }, // 839×540px
   clipplayer: { size: '3u', hp: 2 }, // 8×8 launch grid + piano-roll note editor + transport
   clouds: { size: '2u', hp: 2 }, // 201×340px
   cloudseed: { size: '3u', hp: 4 }, // 427×680px
@@ -51,7 +48,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   drummergirl: { size: '1u', hp: 2 }, // 152×320px  [LOCKED]
   drumseqz: { size: '4u', hp: 5 }, // 604×820px
   dx7: { size: '2u', hp: 2 }, // 326×320px
-  elements: { size: '2u', hp: 3 }, // 298×460px
   featurecv: { size: '2u', hp: 2 }, // ~260 wide — 3 feature meters + ONSET led + 6 knobs/toggle over a 5-port PatchPanel (≈ spectrograph)
   fader: { size: '2u', hp: 2 }, // ~360 wide — 2 long faders + 2 transition dropdowns (A/B + dry/wet) over a 5-port PatchPanel
   filter: { size: '1u', hp: 1 }, // 180×200px  [LOCKED]
@@ -72,7 +68,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   gamepad: { size: '2u', hp: 2 }, // 267×280px
   gatemaiden: { size: '1u', hp: 1 }, // 199×200px
   graphicEq: { size: '2u', hp: 2 }, // 360×360px — Winamp-style VU-meter video output
-  grids: { size: '3u', hp: 2 }, // 463×320px
   hypercube: { size: '3u', hp: 4 }, // 540×720px — 2-col (viewport left, controls right)
   illogic: { size: '1u', hp: 2 }, // 154×240px
   joystick: { size: '2u', hp: 2 }, // 234×220px
@@ -113,11 +108,9 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   moog994: { size: '1u', hp: 1 }, // 61×180px
   moog995: { size: '1u', hp: 1 }, // 124×200px
   moogCp3: { size: '1u', hp: 2 }, // 187×264px
-  negativity: { size: '1u', hp: 1 }, // 160×150px (tiny 1-in/1-out CV inverter, no knob)
   ninelives: { size: '2u', hp: 2 }, // 292×240px — Rate/Waveform faders + 9-out PatchPanel + reset
   noise: { size: '1u', hp: 1 }, // 154×160px
   numpadPlus: { size: '4u', hp: 4 }, // 714×722px
-  peaks: { size: '3u', hp: 2 }, // 197×320px  [LOCKED]
   pentemelodica: { size: '3u', hp: 7 }, // 462×1180px
   polarizer: { size: '1u', hp: 1 }, // 160×150px (tiny 1-in/1-out unipolar→bipolar CV util)
   polyseqz: { size: '2u', hp: 3 }, // 321×540px
@@ -128,7 +121,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   reverb: { size: '1u', hp: 1 }, // 152×200px
   ringback: { size: '1u', hp: 2 }, // 123×240px
   rings: { size: '1u', hp: 2 }, // 199×360px
-  riotgirls: { size: '5u', hp: 6 }, // 849×1100px
   sampleHold: { size: '1u', hp: 2 }, // 149×260px
   samsloop: { size: '3u', hp: 2 }, // 420×360px
   scaler: { size: '1u', hp: 1 }, // 160×150px (tiny 1-in/1-out 1-knob multiplier)
@@ -139,21 +131,16 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   sidecar: { size: '2u', hp: 2 }, // 299×380px
   skifree: { size: '3u', hp: 2 }, // 420×360px
   slewSwitch: { size: '2u', hp: 2 }, // 273×320px
-  stages: { size: '2u', hp: 3 }, // 302×460px
   stereovca: { size: '1u', hp: 1 }, // 156×180px
   swolevco: { size: '2u', hp: 2 }, // 262×360px
-  symbiote: { size: '1u', hp: 3 }, // 199×440px
   synesthesia: { size: '3u', hp: 2 }, // 540×360 — was 3hp, trimmed empty right margin
   tempest: { size: '2u', hp: 2 }, // 320×360px — vector-well preview + RIM knob + SHAPE
   textmarquee: { size: '3u', hp: 2 }, // 280×~450px — rich-text editor + preview + 4 knobs
-  tides2: { size: '2u', hp: 2 }, // 221×380px
   timelorde: { size: '3u', hp: 2 }, // 152×280px  [LOCKED]
   treeohvox: { size: '2u', hp: 2 }, // 240×340px
   twotracks: { size: '3u', hp: 4 }, // 406×580px
   unityscalemathematik: { size: '3u', hp: 2 }, // 446×240px
   vca: { size: '1u', hp: 1 }, // 156×160px
-  veils: { size: '1u', hp: 2 }, // 179×280px
-  warps: { size: '1u', hp: 2 }, // 187×320px
   warrenspectrum: { size: '3u', hp: 3 }, // 481×440px
   wavecel: { size: '3u', hp: 2 }, // 398×320px
   wavetableVco: { size: '1u', hp: 2 }, // 152×240px
@@ -193,7 +180,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   painter: { size: '3u', hp: 3 }, // 540×540 — MS-Paint card: 9-tool toolbar + flex-filled 4:3 paint canvas (fills the tier; faceplate letterbox margin, no overflow) + 28-swatch palette
   peakstate: { size: '2u', hp: 2 }, // 329×240px
   picturebox: { size: '2u', hp: 2 }, // 240×220px
-  qbert: { size: '2u', hp: 2 }, // 326×340px
   quadralogical: { size: '3u', hp: 4 }, // 540×720px — 2-col (joystick left, preview+edges right)
   recorderbox: { size: '2u', hp: 2 }, // 296×248px
   spectrograph: { size: '2u', hp: 2 }, // 320×220px — sonogram preview + gain (≈ cellshade/recorderbox)
@@ -204,7 +190,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   sourcery: { size: '2u', hp: 2 }, // 300×304px — 2 video ins + preview + 4 knobs (mirrors shapegen)
   spirographs: { size: '3u', hp: 2 }, // 260×~360px — 160×120 preview + count/selector + colorwheel + per-spiro fader bank
   tiler: { size: '2u', hp: 2 }, // 200×200px — 160×120 preview + one TILE fader (mirrors cellshade)
-  snes9x: { size: '2u', hp: 3 }, // 380×442px
   vdelay: { size: '3u', hp: 2 }, // 431×220px
   vfpgaRunner: { size: '3u', hp: 3 }, // 467×420px
   videoMixer: { size: '1u', hp: 2 }, // 180×280px — 4 channel faders in one row  [LOCKED]

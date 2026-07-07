@@ -28,7 +28,7 @@
 //               below; later phases fold it into the core's decay laws.)
 //
 // AudioParams: the full 25-param frozen contract (see the def). Continuous
-// params are smoothed with WtParamSmoother (80 Hz one-pole, the chowkick
+// params are smoothed with WtParamSmoother (80 Hz one-pole
 // pattern); `hard` is a discrete k-rate switch and is NOT smoothed.
 //
 // Output: outputs[0] = one STEREO (2-channel) output. The web factory fans
@@ -49,7 +49,7 @@ import {
   type KickdrumP1Params,
   type KickdrumState,
 } from './lib/kickdrum-dsp';
-import { clamp } from './lib/chowkick-dsp';
+import { clamp } from './lib/dsp-utils';
 import { WtParamSmoother } from './lib/wavetable-osc';
 
 declare const sampleRate: number;
@@ -68,7 +68,7 @@ declare function registerProcessor(
 ): void;
 
 // Shim worklet globals when running outside AudioWorkletGlobalScope (vitest
-// captures the class via this shim — the chowkick.test.ts loader pattern).
+// captures the class via this shim — the registerProcessor-shim loader pattern).
 const G = globalThis as unknown as {
   AudioWorkletProcessor?: unknown;
   registerProcessor?: unknown;
@@ -127,7 +127,7 @@ class KickdrumProcessor extends AudioWorkletProcessor {
   // Reused per-sample param object for the core (no per-sample GC).
   private p1: KickdrumP1Params;
 
-  // One smoother per continuous param (the chowkick 80 Hz one-pole pattern);
+  // One smoother per continuous param (the 80 Hz one-pole pattern);
   // `hard` (discrete) reads k-rate + unsmoothed.
   private sm: Record<string, WtParamSmoother> = {};
 

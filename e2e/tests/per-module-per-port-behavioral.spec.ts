@@ -217,7 +217,6 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   nibbles:  'gameplay-conditional outputs (snake/pellet/etc); covered by nibbles + video-audio-cvgate-coverage',
   pong:     'gameplay-conditional outputs; covered by pong-related specs',
   modtris:  'gameplay-conditional outputs; covered by modtris-related specs',
-  snes9x:   'ROM-gated emulator: all outputs (incl. measured audio_l) need a loaded ROM (user-provided, gitignored, absent in CI) so control + patched both read silence; covered by snes9x.spec.ts + snes9x-gameplay-gates.spec.ts (skip when ROM absent) + snes-input/clock-multiplier/smw-events unit tests',
   blood:    'data-gated emulator: outputs need user-supplied, non-redistributable Blood data (BLOOD.RFF/GUI.RFF/SOUNDS.RFF, gitignored, absent in CI) — the NBlood engine aborts in its resource loader without it, so driven + control inputs both observe the idle shader / silent PCM stub; covered by blood-keys.test.ts + the blood-frame-harness (run locally with owned data). See native/nblood/PHASE1-STATUS.md.',
   frogger:  'gameplay-conditional outputs; covered by frogger specs',
   skifree:  'gate fires only on in-game crash/eaten; out is animated canvas; covered by e2e/tests/skifree.spec.ts',
@@ -340,17 +339,11 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //    input. Same shape as 4plexvid. Covered by slewswitch.spec.ts.
   slewSwitch: 'CV switcher with sequential channel selection; covered by slewswitch.spec.ts',
 
-  // ── MI ports: marbles, stages, symbiote (marbles fork), tides2 —
-  //    sequencer-like state machines whose outputs depend on prior
-  //    state + multi-second probability distributions. Tests like
-  //    "gate1 → out0" can't trigger a perturbation in 1.5s because
-  //    the segment transitions require multiple gate cycles AND
-  //    the right mode knob settings. Covered by their respective
-  //    dedicated specs.
+  // ── MI ports: marbles — a sequencer-like state machine whose outputs
+  //    depend on prior state + multi-second probability distributions.
+  //    Tests like "gate1 → out0" can't trigger a perturbation in 1.5s.
+  //    Covered by its dedicated specs.
   marbles:  'probabilistic t-loop with multi-second distributions; covered by marbles-related specs',
-  stages:   'multi-segment state machine; needs multi-cycle window + mode setup; covered by stages-related specs',
-  symbiote: 'marbles fork with deep probabilistic t-loop state; covered by symbiote-related specs',
-  tides2:   'multi-output ASR + freq-mod state machine; covered by tides2-related specs',
 
   // ── wavesculpt — multi-voice (4 voices) wavetable cluster
   //    instrument. Driver picks gate1+voice1 output; gate2-4 and the
@@ -371,11 +364,9 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // signal" pointer + a concrete re-enable path. The `inputs-accept` dim in
   // per-module-per-port.spec.ts STILL pins wire-up for every port below.
   //
-  // (adsr + peaks RE-ENABLED — behavioral-recon #3. adsr's decay/release CV
+  // (adsr RE-ENABLED — behavioral-recon #3. adsr's decay/release CV
   //  scalers are now real-coverage passes via a BEHAVIORAL_PARAMS leverage boost
-  //  — see BEHAVIORAL_PARAMS.adsr; peaks' channel-0 ports clear out0 with a big
-  //  margin while its channel-1 ports are per-port-exempt as independent-output —
-  //  see the peaks.* entries in BEHAVIORAL_SWEEP_EXEMPT. Verified 3-4× locally.)
+  //  — see BEHAVIORAL_PARAMS.adsr. Verified 3-4× locally.)
 
   // buggles — self-clocking random-CV source. The CV inputs modulate the woggle
   // STEP RATE / CHAOS, not the output amplitude. Because the observed `smooth`
@@ -394,20 +385,6 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // backdraft.spec.ts (E2E trail-persistence assertion).
   backdraft: 'animated-video VARIANCE-FLOOR class (cf. bentbox / b3ntb0x): the HDR feedback-trail `out` has a per-frame luma-variance baseline of ~7700 with a HUGE ±4000-6000 per-frame RANGE driven by the ACIDWARP context motion + trail accumulation. Across 3 video snapshots × 2 spawns the mean-of-3 standard error (±several thousand) SWAMPS every input\'s footprint — Δμvar runs 37→1750 and ΔRvar runs 2.7→4060 with NO correlation to which port is driven, so the variance metric can\'t attribute a delta to ANY input (the 22 ports all "passed" once but only on the animation\'s own noise). Whole-module exempt (same class as bentbox). Covered by backdraft.test.ts (per-frame trail-buffer math) + backdraft.spec.ts (E2E trail-persistence with a longer window + spawn-once-perturb pattern)',
 
-  // qbert — arcade ROM game (qbert.zip). Outputs are gameplay-
-  // conditional (player_cv, score_cv, sfx) and the test browser
-  // doesn't have the ROM fixture (404s on /roms/qbert/qbert.zip in
-  // the failing run). Same exemption shape as `doom`/`nibbles`/
-  // `frogger` above. Covered by qbert-rom-missing.spec.ts
-  // (ROM-absence behavior) + qbert-cv-joystick.spec.ts (input wiring
-  // when ROM is present) + qbert-runtime.test.ts (game-loop unit).
-  qbert: 'arcade ROM gameplay-conditional outputs (ROM not fetched in test env); covered by qbert-*.spec.ts + qbert-runtime.test.ts',
-
-  // (peaks RE-ENABLED — behavioral-recon #3. It IS a dual-INDEPENDENT-channel
-  //  module — gate0/mode0/k1_0/k2_0 → out0, gate1/mode1/k1_1/k2_1 → out1 — but
-  //  the channel-0 ports DO clear the observed out0 with a big margin, and the
-  //  channel-1 ports are now per-port-exempt as independent-output, not whole-
-  //  module exempt. See the peaks.* entries in BEHAVIORAL_SWEEP_EXEMPT.)
 
   // (treeohvox RE-ENABLED — behavioral-recon #4. The held-note driver
   //  (BEHAVIORAL_HELD_NOTE_DRIVER plays a constant C3 instead of the 60/64/67/72
@@ -462,43 +439,6 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   chromakey: VIDEO_SINK_SWIFTSHADER_NOTE,
   outlines: VIDEO_SINK_SWIFTSHADER_NOTE,
 
-  // ── GRIDS — Mutable Instruments Grids (pattern-based drum trigger).
-  //    Internal BPM clock is non-deterministic under CI scheduling:
-  //    sometimes bd/sd/hh fire within the 800ms window, sometimes the
-  //    AudioContext scheduler hasn't committed the first step yet. The
-  //    random alignment between AudioContext-start + scheduler-tick +
-  //    scope-poll means both CONTROL and PATCHED can read 0 on the same
-  //    retry, producing a false Δ=0. Covered by grids.spec.ts which drives
-  //    grids with an explicit clock edge from a sequencer (deterministic)
-  //    + asserts bd/sd/hh output.
-  grids: 'non-deterministic AudioContext scheduler startup; C=P=0 race on CI retry; covered by grids.spec.ts',
-
-  // ── aquaTank — 4-channel Hadamard feedback delay network (FDN). REMAINS
-  //    reconcilable (behavioral-recon #4 investigated + measured but did NOT
-  //    re-enable). The earlier note ("observe out1, near-silent") was only HALF
-  //    the story; observing the SUMMED `mix_l` (driver outputPort) + exciting all
-  //    channels makes the output LOUD, but the per-channel CV footprint is still
-  //    genuinely below the floor. Measured this leg, two regimes:
-  //      • NOISE excitation (per-spawn RNG seed) → the FDN integrates the noise
-  //        into a random-walk ring whose energy DIFFERS spawn-to-spawn; ports
-  //        "pass" only on that RNG jitter (fb3_cv read Δμrms=0.006 / Δrange=0.016,
-  //        BELOW floor, the same run others passed on noise — a FLAKE, exactly the
-  //        class that quarantined it).
-  //      • DETERMINISTIC excitation (a 110 Hz analogVco sine fanned into all 4
-  //        inputs, identical across both spawns) → C and P are stable (±0.007) but
-  //        the deltas collapse to ~0: in3/in4/fb1_cv/fb2_cv/fb3_cv/fb4_cv/tilt_cv
-  //        ALL read Δμrms≈0.000, Δcent≈0-8 Hz, Δcrest≈0.00 — i.e. modulating ONE
-  //        channel's feedback/input genuinely barely moves the soft-limited,
-  //        damped, SUMMED mix_l (the tanh + one-pole damp + cross-mix average out
-  //        a single channel's contribution).
-  //    So the per-channel-CV-on-a-summed-FDN footprint is REAL-but-tiny, not a
-  //    harness blind spot. Re-enterable only with a per-CHANNEL sink (observe
-  //    out{N} for fb{N}_cv, not the sum) AND a deterministic per-channel source —
-  //    the same per-channel-sink-selection follow-up mixmstrs needs. The `inputs-
-  //    accept` dim still pins wire-up for every port; per-tap feedback/routing math
-  //    pinned by aquatank.test.ts (with a sustained source + per-channel taps).
-  aquaTank: 'per-channel-CV-on-summed-FDN class: observing the loud summed mix_l (not the near-silent out1) + exciting all 4 channels, the per-channel footprint is still real-but-tiny — a DETERMINISTIC 110 Hz tone fanned into all inputs (identical both spawns) gives stable C≈P with in3/in4/fb1-4_cv/tilt_cv ALL at Δμrms≈0.000 / Δcent≈0-8 Hz (the tanh + damp + cross-mix average out one channel\'s contribution to the sum), while NOISE excitation only "passes" on per-spawn RNG ring jitter (fb3_cv Δμrms=0.006 below floor = flake); re-enterable with a per-CHANNEL sink (out{N} for fb{N}_cv) + deterministic per-channel source (same per-channel-sink follow-up as mixmstrs); covered by aquatank.test.ts (per-tap feedback/routing with a sustained source)',
-
   // ── MOOG System 55/35 routing / mixer / utility modules (batch-2 +
   //    batch-5). These are PURE gain / patch-bay / format-converter /
   //    trigger-delay modules: their observed output is a passive function
@@ -518,7 +458,7 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //  "no-upstream-source" case: out1 = Σ in_i × m_i1 and ALL 16 cross-points
   //  default to 0, so the matrix is silent until a cross-point is dialled in —
   //  the IDENTICAL passive-mixer-with-default-0-levels class as attenumix /
-  //  veils / videoMixer, which are NOT exempt because they carry a
+  //  videoMixer, which are NOT exempt because they carry a
   //  BEHAVIORAL_PARAMS boost opening their gating knobs. Opening column-1
   //  cross-points (m11=m21=m31=m41=1, see BEHAVIORAL_PARAMS.moog984) lets the
   //  noise source on ANY of in1..in4 reach the observed out1 → all 4 inputs are
@@ -567,8 +507,8 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // make row1 sweep, but then the FREE-RUNNING control already sweeps too, so a
   // 4-Hz clock/start/stop gate only RE-PHASES that same sweep — a subtle
   // variance/timing shift that straddles the universal RMS-over-windows
-  // threshold (the SAME subtle-sequencer-state class as sequencer.reset /
-  // atlantisCatalyst.reset_cv). Deterministic per-step CV, range scaling, and
+  // threshold (the SAME subtle-sequencer-state class as sequencer.reset).
+  // Deterministic per-step CV, range scaling, and
   // mode (SKIP/STOP) logic is pinned by moog960.test.ts (Seq960Stepper) +
   // seq960-dsp.test.ts. (Re-enterable once the harness supports a held-CV /
   // per-column-distinct-pots driver that makes the clock advance observable.)
@@ -746,12 +686,10 @@ const BEHAVIORAL_PARAMS: Record<string, Record<string, number>> = {
   // inputs reach the mix bus and CV inputs (which sum onto att*) can
   // perturb the mix.
   attenumix: { att1: 0.5, att2: 0.5, att3: 0.5, att4: 0.5, master: 1 },
-  // veils: 4-channel VCA; gain1-4 default to 0 (channels closed).
-  veils: { gain1: 0.6, gain2: 0.6, gain3: 0.6, gain4: 0.6 },
   // moog984: 4×4 cross-point matrix mixer. out_j = Σ_i in_i × m_ij; ALL 16
   // cross-points (m11..m44) default to 0 so the matrix is silent until a
   // connection is dialled in — the SAME default-0-levels passive-mixer class as
-  // attenumix / veils. The behavioral sweep observes out1 (first audio output),
+  // attenumix. The behavioral sweep observes out1 (first audio output),
   // so open COLUMN 1 (m11/m21/m31/m41 = 1) — then driving ANY of in1..in4 with
   // the noise source reaches out1 and perturbs it (the context-noise on the
   // other channels is the SAME in both control + patched, so the test input is
@@ -800,49 +738,6 @@ const BEHAVIORAL_PARAMS: Record<string, Record<string, number>> = {
   // so a context-gate on `gate` (fired for the cv test) doesn't start recording
   // and muddy the control. populateAllSequencerSteps seeds the SUT's grid.
   writeseq: { isPlaying: 0, recArm: 0, overdub: 0, bpm: 240, length: 4, gateLength: 0.5 },
-  // elements — MI Elements modal/string resonator. The DEFAULT exciter mix
-  // is strikeLevel=0.8, bowLevel=0, blowLevel=0 (see elements.ts params), so
-  // the bow/blow CV scalers (bowlvl_cv / blowlvl_cv / blowmeta_cv) modulate
-  // params pinned at 0 → no audible effect on `main`. The context-gate
-  // (buildContextEdges fires a 240-BPM gate on `gate` for every non-gate
-  // test port) STRIKES the resonator; strike=0.6 makes the struck tone LOUD
-  // + STABLE (the strike exciter is deterministic + dominant, unlike the
-  // intrinsically-quiet bow/blow exciters the worklet attenuates ×0.125 /
-  // ×0.4) WHILE leaving HEADROOM so the strklvl_cv / strength_cv scalers can
-  // modulate the level UP as well as down (at strike=1 / strength=1 those
-  // CVs are clipped at the param max and can't perturb the output). A loud,
-  // stable struck tone with headroom maximizes signal-to-jitter so the
-  // resonator + strike + note CV scalers perturb `main` observably and
-  // REPEATABLY across the two independent BUGGLES-RNG spawns (control vs
-  // patched). bow/blow stay at 0.5 (a non-zero base) but their level/exciter
-  // CVs sit BELOW threshold under the dominant strike and are exempted as the
-  // intrinsically-quiet-exciter subtle class; see BEHAVIORAL_SWEEP_EXEMPT.
-  elements: { strikeLevel: 0.6, bowLevel: 0.5, blowLevel: 0.5, strength: 0.5 },
-  // riotgirls — open the aux FX bus so the DESTROY/Reverb ports perturb the
-  // output. The driver + context gate fire VOICE 1 (trig1) and OPEN ALL four
-  // voices' sends + both return levels with HEADROOM so the whole FX bus carries
-  // signal. With this:
-  //   * vN_sendA / vN_sendB CV modulates each per-voice send level,
-  //   * returnA / returnB CV modulates the wet-return level into the master sum,
-  //   * bc_* (decimate/bits/wet) reshapes the DESTROY (bitcrush) path,
-  //   * rv_* (size/damp/mix) reshapes the Reverb path.
-  // bc_wet=1 keeps DESTROY's crush fully wet (so bc_decimate/bits move the output);
-  // rv_mix=0.5 keeps the reverb path half-wet with headroom for rv_* to swing it.
-  // Verified locally: ALL 53 drivable riotgirls inputs perturb outL (no
-  // BEHAVIORAL_SWEEP_EXEMPT needed) — opening every voice's send (not just
-  // voice 1's) lets the context-gate-fired transients hit both FX buses, so the
-  // per-voice sends + returns + bc_*/rv_* all clear the delta metric.
-  riotgirls: {
-    v1_volume: 1.6, v1_decay: 0.4,
-    v1_sendA: 0.6, v1_sendB: 0.6,
-    v2_sendA: 0.6, v2_sendB: 0.6,
-    v3_sendA: 0.6, v3_sendB: 0.6,
-    v4_sendA: 0.6, v4_sendB: 0.6,
-    returnA: 0.7, returnB: 0.7,
-    bc_decimate: 1, bc_bits: 16, bc_wet: 1,
-    rv_size: 0.6, rv_damp: 0.3, rv_mix: 0.5,
-    flt_cutoff: 18000,
-  },
 };
 
 // ────────── Per-port behavioral exemptions ──────────
@@ -997,34 +892,6 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    Covered by adsr-vca-invert.spec.ts.
   'adsr.retrig': 'retrig depends on prior gate state; covered by adsr-vca-invert.spec.ts',
 
-  // ── atlantisCatalyst play_cv: a gate train on play_cv toggles
-  //    play-state on EVERY rising edge, which thrashes the runtime
-  //    between play/stop — the drift outputs barely move because
-  //    they're stuck near start each toggle. Covered by
-  //    atlantis-catalyst.spec.ts (which holds play_cv at a steady
-  //    high level + drives queue events).
-  'atlantisCatalyst.play_cv':  'gate-train toggles play/stop too fast to settle; covered by atlantis-catalyst.spec.ts',
-  // ── atlantisCatalyst reset_cv: reset only has an observable effect
-  //    AFTER drift has accumulated state; within the test window the
-  //    drift hasn't moved enough for reset to show a delta. Covered
-  //    by atlantis-catalyst.spec.ts.
-  'atlantisCatalyst.reset_cv': 'reset effect needs accumulated drift to observe; covered by atlantis-catalyst.spec.ts',
-  // ── atlantisCatalyst nudge / freeze / seed_cv / queue1..4_cv: the
-  //    observed output (drift1, a slow correlated O-U random walk —
-  //    atlantis-catalyst.ts) already carries large baseline variance, so a
-  //    one-shot perturbation (nudge to a new attractor, freeze the walk,
-  //    re-seed the RNG, or queue a scene) is buried in the drift's own
-  //    noise floor within the 1.5s observation window — the SAME class as
-  //    the existing atlantisCatalyst.play_cv / reset_cv exempts above.
-  //    Covered by atlantis-catalyst.spec.ts (which holds state across a
-  //    longer window + asserts the attractor/scene transition directly).
-  'atlantisCatalyst.nudge':     'one-shot attractor nudge buried in drift random-walk variance in 1.5s; covered by atlantis-catalyst.spec.ts',
-  'atlantisCatalyst.freeze':    'freeze-latch effect buried in drift random-walk variance in 1.5s; covered by atlantis-catalyst.spec.ts',
-  'atlantisCatalyst.seed_cv':   're-seed perturbation buried in drift random-walk variance in 1.5s; covered by atlantis-catalyst.spec.ts',
-  'atlantisCatalyst.queue1_cv': 'scene-queue applied at scene-end, perturbation buried in drift variance in 1.5s; covered by atlantis-catalyst.spec.ts',
-  'atlantisCatalyst.queue2_cv': 'scene-queue applied at scene-end, perturbation buried in drift variance in 1.5s; covered by atlantis-catalyst.spec.ts',
-  'atlantisCatalyst.queue3_cv': 'scene-queue applied at scene-end, perturbation buried in drift variance in 1.5s; covered by atlantis-catalyst.spec.ts',
-  'atlantisCatalyst.queue4_cv': 'scene-queue applied at scene-end, perturbation buried in drift variance in 1.5s; covered by atlantis-catalyst.spec.ts',
 
   // ── CUBE morph_fc / connect / crush: each DOES shape the slice readout (the
   //    cube-dsp unit tests + node-ART baselines prove morph picks floor↔ceiling
@@ -1236,22 +1103,6 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    cent-RANGE. Covered by moog921b.test.ts (bus→pitch/octave math).
   'moog921b.freq_bus': '1V/oct pitch bus — the pitch DOES respond (perturbed cent jitters ±13–24 Hz vs control ±1 Hz, mean 264→255) but a symmetric sweep collapses the MEAN-cent metric to Δμcent 3–10 Hz → near-threshold metric-mismatch flake (not dead CV); width_bus/fine/range stay gated. RE-ENABLE: STEP the bus (not sweep) or score cent-RANGE/zero-cross. Covered by moog921b.test.ts',
 
-  // ── PEAKS channel-1 inputs (re-enabled module, behavioral-recon #3). PEAKS is
-  //    TWO INDEPENDENT channels (Émilie Gillet's dual-mode Peaks): gate0/mode0/
-  //    k1_0/k2_0 drive worklet output 0 (out0), and gate1/mode1/k1_1/k2_1 drive
-  //    the SEPARATE worklet output 1 (out1) — see the factory's inputs/outputs
-  //    map (input 1 → ch1 → output 1). The behavioral sweep observes out0 (the
-  //    first output), so the channel-1 ports correctly show NO delta on out0 —
-  //    the IDENTICAL independent-output shape as synesthesia.b_in / moog921a.
-  //    width_cv. The channel-0 ports (gate0/mode0_cv/k1_0_cv/k2_0_cv) ARE real-
-  //    coverage passes with healthy margins (gate0 Δμrms≈0.36; mode0_cv switches
-  //    out0 LFO→drum so Δzc≈530 + Δcent≈3000Hz; k1_0_cv/k2_0_cv Δrange≈0.6/0.8 —
-  //    the LFO rate/wave knobs widen out0's per-snapshot RMS range). The per-
-  //    channel/per-mode DSP is pinned by peaks.test.ts + peaks.spec.ts.
-  'peaks.gate1':    'channel-1 trigger → worklet out1 ONLY, never the observed out0 (two independent channels by design, like synesthesia.b_in); ch1 path pinned by peaks.test.ts + peaks.spec.ts',
-  'peaks.mode1_cv': 'channel-1 mode selector → out1 ONLY, never the observed out0 (independent channel); per-mode ch1 path pinned by peaks.test.ts',
-  'peaks.k1_1_cv':  'channel-1 knob1 → out1 ONLY, never the observed out0 (independent channel); ch1 knob math pinned by peaks.test.ts',
-  'peaks.k2_1_cv':  'channel-1 knob2 → out1 ONLY, never the observed out0 (independent channel); ch1 knob math pinned by peaks.test.ts',
 
   // ── wavetableVco mirrors analogVco's FM/PM gating shape. Same set
   //    of fundamentally-gated inputs that need DC-biased modulators
@@ -1261,59 +1112,6 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   'wavetableVco.fmAmount': 'cv-modulates-knob-that-modulates-zero-input; covered by wavetable-vco.test.ts',
   'wavetableVco.pmAmount': 'cv-modulates-knob-that-modulates-zero-input; covered by wavetable-vco.test.ts',
 
-  // ── CHOWKICK subtle CV params: chowkick is a physical-model kick synth
-  //    driven by gate_in. The following CV inputs modulate physical model
-  //    coefficients (pitch contour, noise cutoff, damping, tonal mix,
-  //    portamento) whose effect on the spectral centroid is below the
-  //    universal delta threshold in an 800ms window with a slow BUGGLES
-  //    random walk. The gate + primary amplitude/decay/sustain CVs DO
-  //    pass consistently. Covered by chowkick.spec.ts + chowkick.test.ts
-  //    which drive these with deterministic sweeps + assert pitch contour
-  //    shape and noise-floor changes.
-  'chowkick.pitch_cv':      'pitch-contour CV; spectral centroid shift below threshold in 800ms; covered by chowkick.spec.ts',
-  'chowkick.noise_cutoff_cv': 'noise-filter CV; RMS delta <0.01 in gate-loop window; covered by chowkick.spec.ts',
-  'chowkick.damping_cv':    'damping CV; subtle envelope-shape change below centroid threshold; covered by chowkick.spec.ts',
-  'chowkick.tone_cv':       'tone-blend CV; 10Hz centroid shift within noise range; covered by chowkick.spec.ts',
-  'chowkick.portamento_cv': 'portamento-glide CV; glide effect below centroid threshold at 800ms; covered by chowkick.spec.ts',
-  // The excitation-amplitude CVs are clipped/pinned by the resonant tanh at the
-  // unity-gain kick the driver uses, so RMS does not move in the gate-loop
-  // window (de-saturating to expose them masks the noise/freq/q CVs instead —
-  // verified). Their wiring is covered at the DSP level by chowkick-dsp.test.ts.
-  'chowkick.amplitude_cv':  'excitation amplitude is clipped by the resonant tanh at unity output so audio_out RMS is pinned; covered by chowkick-dsp.test.ts (amplitude scales excitation) + chowkick.spec.ts',
-  'chowkick.width_cv':      'pulse hold-width sets excitation duration; RMS shift below threshold in the saturated gate-loop window; covered by chowkick-dsp.test.ts (width pins hold length) + chowkick.spec.ts',
-  'chowkick.sustain_cv':    'sustain sets the gate-high decay-floor; tail-energy shift below RMS threshold in the gate-on window; covered by chowkick-dsp.test.ts (sustain holds pulse) + chowkick.spec.ts',
-  // Spectral-character CVs on a short percussive transient: verified to sit
-  // consistently below the gate-loop RMS+centroid threshold across 3 runs
-  // (Δrms≈0, Δcent≈0); they shape noise/pitch character, not bulk energy. The
-  // wiring is covered per-param at the DSP level by chowkick-dsp.test.ts. (A
-  // percussion-appropriate metric — per-transient peak/spectral — would gate
-  // these; tracked as a behavioral-harness follow-up.)
-  'chowkick.noise_amount_cv': 'noise-blend CV; bulk-energy shift below RMS/centroid threshold on the short transient; covered by chowkick-dsp.test.ts + chowkick.spec.ts',
-  'chowkick.noise_decay_cv':  'noise-decay CV; tail-character shift below RMS/centroid threshold in the gate-loop window; covered by chowkick-dsp.test.ts + chowkick.spec.ts',
-  'chowkick.freq_cv':         'base-frequency CV; low-fundamental shift not captured by the centroid metric on the transient; covered by chowkick-dsp.test.ts + chowkick.spec.ts',
-  // q_cv (resonance) + decay_cv (amplitude-envelope decay) sit at the metric
-  // threshold EDGE on the short percussive transient: q_cv shifts the resonant
-  // filter bandwidth (Δrms≈0.008-0.017, straddling the ~0.01 floor) and
-  // decay_cv shapes the tail length — both perturb in some runs but fall below
-  // the RMS/centroid threshold in others (near-threshold jitter, same subtle/
-  // percussion-transient class as the chowkick CVs above). The wiring +
-  // per-param response is pinned at the DSP level by chowkick-dsp.test.ts.
-  'chowkick.q_cv':            'resonance CV; bandwidth shift straddles the ~0.01 RMS threshold on the short transient (jitter); covered by chowkick-dsp.test.ts + chowkick.spec.ts',
-  'chowkick.decay_cv':        'amplitude-decay CV; tail-length shift near/below the RMS/centroid threshold on the gate-loop transient (jitter); covered by chowkick-dsp.test.ts + chowkick.spec.ts',
-  // pitch_amount/pitch_decay/drive (PR feat/chowkick-oomph) all shape the kick
-  // CHARACTER, not its bulk energy: pitch_amount/pitch_decay set the per-trigger
-  // downward PITCH SWEEP (attack frequency contour → 2-7 Hz centroid wobble,
-  // pitch_cv class) and drive sets the body waveshaper drive (harmonic content
-  // + weight, mostly absorbed by the body's safety tanh at the unity-gain kick
-  // the driver fires). All three straddle the universal RMS/centroid threshold
-  // on the short percussive transient (Δrms≈0.001-0.04, jitters pass/fail run-
-  // to-run) — same subtle percussion-transient class as the chowkick CVs above.
-  // Wiring + per-param response pinned deterministically at the DSP level by
-  // chowkick-dsp.test.ts (pitchEnvStep sweeps down + retriggers; bodyDriveStep
-  // saturates loud / passes quiet) and end-to-end by chowkick.spec.ts.
-  'chowkick.pitch_amount_cv': 'pitch-sweep DEPTH CV; modulates attack pitch contour not bulk energy → 2-7 Hz centroid wobble straddles the RMS/centroid threshold (jitter, pitch_cv class); covered by chowkick-dsp.test.ts + chowkick.spec.ts',
-  'chowkick.pitch_decay_cv':  'pitch-sweep TIME CV; modulates attack pitch contour not bulk energy → sub-threshold centroid shift on the short transient (jitter, pitch_cv class); covered by chowkick-dsp.test.ts + chowkick.spec.ts',
-  'chowkick.drive_cv':        'body-waveshaper DRIVE CV; adds harmonics/weight largely absorbed by the body safety tanh on the unity-gain kick → Δrms straddles the ~0.01 threshold on the short transient (jitter, percussion class); covered by chowkick-dsp.test.ts (bodyDriveStep) + chowkick.spec.ts',
 
   // ── TREE.oh.VOX subtle filter/envelope/tune CV scalers (module re-enabled,
   //    behavioral-recon #4). With the held-note driver (BEHAVIORAL_HELD_NOTE_DRIVER
@@ -1327,8 +1125,8 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    jitter floor: a zero-mean BUGGLES CV on them averages out across the window,
   //    and they flake run-to-run (pass on one metric/run, fail the next — measured
   //    2×). They are NOT a held-note regression (that fixed the centroid baseline);
-  //    they are the genuine subtle-CV-on-a-303-filter class (cf chowkick's pitch/
-  //    noise/tone CVs). Each is pinned per-param at the DSP level by treeohvox-dsp
+  //    they are the genuine subtle-CV-on-a-303-filter class (the subtle
+  //    percussion-CV class). Each is pinned per-param at the DSP level by treeohvox-dsp
   //    .test.ts + treeohvox-parity.test.ts (Open303 CV→filter/envelope response)
   //    and the treeohvox ART baseline. (Re-enterable with a per-port-calibrated
   //    floor sized to that stable baseline OR a DC-biased/swept driver per CV.)
@@ -1340,57 +1138,6 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   'treeohvox.decay_cv':   'filter-decay-time CV: the tail-length shift straddles the floor on the gate-loop transient (Δμrms 0.001-0.010, Δrms.range 0.008-0.010, both ~at floor) — flakes; decay→envelope response pinned by treeohvox-dsp.test.ts',
   'treeohvox.accent_cv':  'accent-intensity CV: a GENUINE ~0 delta on audio_out (Δμrms≈0.001-0.003, Δrms.range≈0.005-0.016, all below floor both runs) — the accent CV scaler barely moves the bulk energy under a non-accented held note; accent→boost response pinned by treeohvox-dsp.test.ts',
 
-  // ── ELEMENTS bow/blow EXCITER CV scalers. ELEMENTS (elements.ts) is an MI
-  //    Elements modal/string resonator; BEHAVIORAL_PARAMS strikes it loudly
-  //    via the context-gate (strike=1, strength=1) so the strike + note +
-  //    resonator CV scalers all perturb `main` observably. The BOW + BLOW
-  //    exciters, however, are intrinsically QUIET — the worklet sums bow at
-  //    ×0.125·accent and blow at ×0.4·env (elements.ts process loop) — so
-  //    under the dominant struck tone their level/meta/timbre CV scalers
-  //    shift `main`'s RMS/centroid below the universal delta threshold, and
-  //    flake run-to-run against the two independent BUGGLES-RNG spawns. This
-  //    is the same intrinsically-quiet-exciter / subtle-spectral class as
-  //    chowkick's noise/tone CVs + rings' resonator-timbre CVs. The wiring +
-  //    per-exciter response is covered by elements.test.ts (elementsMath
-  //    per-param DSP parity) and the elements ART/spec coverage.
-  'elements.bowlvl_cv':  'bow exciter is summed at ×0.125·accent (intrinsically quiet); its level CV sits below threshold under the dominant struck tone; covered by elements.test.ts',
-  'elements.bowtim_cv':  'bow-timbre CV: bow exciter (×0.125) shape shift below centroid threshold on the struck transient; covered by elements.test.ts',
-  'elements.blowlvl_cv': 'blow exciter is summed at ×0.4·env (intrinsically quiet); its level CV sits below threshold under the dominant struck tone; covered by elements.test.ts',
-  'elements.blowmeta_cv':'blow-meta (flow) CV: blow exciter (×0.4) shape shift below centroid threshold under the struck tone; covered by elements.test.ts',
-  'elements.blowtim_cv': 'blow-timbre CV: blow exciter (×0.4) shape shift below centroid threshold on the struck transient; covered by elements.test.ts',
-  // pos_cv = PICKUP POSITION (0..1): where the pickup samples the resonator — a
-  // subtle timbral colour, not a level/pitch change. Under the dominant struck
-  // tone it shifts the spectrum below the centroid/cent threshold: the purge saw
-  // Δμrms=0.000 / Δcent=19 Hz inside a ±101 Hz cent-noise floor on a near-silent
-  // (rms 0.002) resonator → near-threshold flake (9/10 elements inputs pass; only
-  // pos_cv, one of the subtle-spectral class alongside bow/blow above). RE-ENABLE:
-  // drive pos_cv WITH a sustained/held excitation so the pickup colours an
-  // actively-sounding resonator, or score a spectral-centroid metric. Covered by
-  // elements.test.ts (elementsMath per-param response).
-  'elements.pos_cv':     'pickup POSITION is a subtle spectral colour below the centroid/cent threshold under the dominant struck tone (Δμrms 0.000 / Δcent 19 Hz vs ±101 Hz on a near-silent resonator) → near-threshold flake, same subtle-spectral class as elements bow/blow CVs; the other 9 inputs stay gated. RE-ENABLE: drive with a held excitation or score spectral centroid. Covered by elements.test.ts',
-  // env_cv (exciter envelope macro) + geom_cv (resonator mode-spacing
-  // geometry) shift the spectral CHARACTER of the struck transient subtly —
-  // at the fast 240-BPM context-gate the envelope barely completes its
-  // attack/release, and the geometry change moves modal spacing below the
-  // centroid threshold. Both sit consistently below the universal delta
-  // metric on the transient (verified flaking 3×). Same subtle-spectral
-  // class as the resonator-timbre CVs. Covered by elements.test.ts.
-  'elements.env_cv':  'exciter-envelope-shape CV: barely-completing envelope at the fast context-gate shifts the transient below the delta threshold; covered by elements.test.ts',
-  'elements.geom_cv': 'resonator geometry (mode-spacing) CV: modal-spacing shift below centroid threshold on the struck transient; covered by elements.test.ts',
-  // strength_cv (global accent = 0.25+0.75·strength, scaling every exciter)
-  // + space_cv (reverb space mix) shift bulk energy / ambience too subtly to
-  // clear the metric reliably against the two independent BUGGLES-RNG spawns
-  // (verified flaking across 3 runs). Same subtle/near-threshold class.
-  // Covered by elements.test.ts (per-param DSP response).
-  'elements.strength_cv': 'global accent scaler: RMS shift near/below threshold + flaky across the two BUGGLES-RNG spawns; covered by elements.test.ts',
-  'elements.space_cv':    'reverb-space (ambience) CV: spatial-mix shift below the delta threshold on the struck transient; covered by elements.test.ts',
-  // strklvl_cv (strike level scaler) sits at the threshold EDGE: it perturbs
-  // `main` in most runs but the strike envelope's fast decay at the 240-BPM
-  // context-gate + the two independent BUGGLES-RNG spawns push it below the
-  // metric ~1-in-3 runs. Exempted to keep the lane deterministic; the strike
-  // exciter's level response is covered at the DSP level by elements.test.ts
-  // (elementsMath strike-excited voice).
-  'elements.strklvl_cv':  'strike-level scaler at the metric threshold edge (flaky across the two BUGGLES-RNG spawns); covered by elements.test.ts',
 
   // ── RINGS subtle resonator-timbre CVs on a strummed transient. RINGS is
   //    an MI Rings modal/sympathetic-string resonator (rings.ts) driven by
@@ -1399,8 +1146,8 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    all pass). These four shape the RESONATOR TIMBRE — structure,
   //    brightness, damping, position — whose spectral-centroid change on a
   //    short strummed transient sits below the universal centroid threshold
-  //    in the 1.5s window (the SAME subtle-spectral class as chowkick's
-  //    pitch/tone CVs + swolevco.timbre). Covered by rings.test.ts
+  //    in the 1.5s window (the SAME subtle-spectral class as
+  //    swolevco.timbre). Covered by rings.test.ts
   //    (per-param DSP response) + the rings ART/spec coverage.
   'rings.str_cv':    'structure CV: resonator-timbre shift below centroid threshold on a strummed transient; covered by rings.test.ts',
   'rings.bright_cv': 'brightness CV: resonator-timbre shift below centroid threshold on a strummed transient; covered by rings.test.ts',
@@ -1413,8 +1160,8 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    threshold while the other 7 bands carry signal (the SAME per-channel
   //    class as the mixmstrs module-level exempt). ping{1..8} + global_ping
   //    fire percussive vactrol pings — short transients whose bulk-energy
-  //    shift sits below the RMS/centroid threshold (the SAME percussion
-  //    class as chowkick's gate-loop pings). root_cv / spread_cv / q_cv /
+  //    shift sits below the RMS/centroid threshold (the SAME gate-loop
+  //    percussion class). root_cv / spread_cv / q_cv /
   //    decay_cv shift resonator timbre subtly (subtle-spectral class);
   //    spread is a STEREO-PAN width that only moves the L/R BALANCE, a
   //    no-op on the mono-observed out_l; viznoise_cv drives the viz_out
@@ -1428,15 +1175,15 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   'warrenspectrum.level6_cv':   'per-band level scaler on summed out_l; single-channel shift below RMS threshold (mixmstrs class); covered by warrenspectrum specs',
   'warrenspectrum.level7_cv':   'per-band level scaler on summed out_l; single-channel shift below RMS threshold (mixmstrs class); covered by warrenspectrum specs',
   'warrenspectrum.level8_cv':   'per-band level scaler on summed out_l; single-channel shift below RMS threshold (mixmstrs class); covered by warrenspectrum specs',
-  'warrenspectrum.ping1':       'percussive vactrol ping; short-transient bulk-energy shift below threshold (chowkick percussion class); covered by warrenspectrum specs',
-  'warrenspectrum.ping2':       'percussive vactrol ping; short-transient bulk-energy shift below threshold (chowkick percussion class); covered by warrenspectrum specs',
-  'warrenspectrum.ping3':       'percussive vactrol ping; short-transient bulk-energy shift below threshold (chowkick percussion class); covered by warrenspectrum specs',
-  'warrenspectrum.ping4':       'percussive vactrol ping; short-transient bulk-energy shift below threshold (chowkick percussion class); covered by warrenspectrum specs',
-  'warrenspectrum.ping5':       'percussive vactrol ping; short-transient bulk-energy shift below threshold (chowkick percussion class); covered by warrenspectrum specs',
-  'warrenspectrum.ping6':       'percussive vactrol ping; short-transient bulk-energy shift below threshold (chowkick percussion class); covered by warrenspectrum specs',
-  'warrenspectrum.ping7':       'percussive vactrol ping; short-transient bulk-energy shift below threshold (chowkick percussion class); covered by warrenspectrum specs',
-  'warrenspectrum.ping8':       'percussive vactrol ping; short-transient bulk-energy shift below threshold (chowkick percussion class); covered by warrenspectrum specs',
-  'warrenspectrum.global_ping': 'percussive vactrol ping (all bands); short-transient bulk-energy shift below threshold (chowkick percussion class); covered by warrenspectrum specs',
+  'warrenspectrum.ping1':       'percussive vactrol ping; short-transient bulk-energy shift below threshold (percussion class); covered by warrenspectrum specs',
+  'warrenspectrum.ping2':       'percussive vactrol ping; short-transient bulk-energy shift below threshold (percussion class); covered by warrenspectrum specs',
+  'warrenspectrum.ping3':       'percussive vactrol ping; short-transient bulk-energy shift below threshold (percussion class); covered by warrenspectrum specs',
+  'warrenspectrum.ping4':       'percussive vactrol ping; short-transient bulk-energy shift below threshold (percussion class); covered by warrenspectrum specs',
+  'warrenspectrum.ping5':       'percussive vactrol ping; short-transient bulk-energy shift below threshold (percussion class); covered by warrenspectrum specs',
+  'warrenspectrum.ping6':       'percussive vactrol ping; short-transient bulk-energy shift below threshold (percussion class); covered by warrenspectrum specs',
+  'warrenspectrum.ping7':       'percussive vactrol ping; short-transient bulk-energy shift below threshold (percussion class); covered by warrenspectrum specs',
+  'warrenspectrum.ping8':       'percussive vactrol ping; short-transient bulk-energy shift below threshold (percussion class); covered by warrenspectrum specs',
+  'warrenspectrum.global_ping': 'percussive vactrol ping (all bands); short-transient bulk-energy shift below threshold (percussion class); covered by warrenspectrum specs',
   'warrenspectrum.root_cv':     'resonator root-tuning CV; subtle spectral shift below centroid threshold; covered by warrenspectrum specs',
   'warrenspectrum.spread_cv':   'stereo-pan WIDTH only; moves the L/R balance, a no-op on the mono-observed out_l; covered by warrenspectrum specs',
   'warrenspectrum.q_cv':        'resonator-Q CV; subtle bandwidth/centroid shift below threshold; covered by warrenspectrum specs',
@@ -1522,12 +1269,6 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    see the systemic-fix TODO at the BEHAVIORAL_SWEEP_EXEMPT header below.)
   'dx7.poly': 'poly note/gate retriggers the FM voice (zc/centroid wobble) but mean-RMS delta straddles the ~0.01 floor under the overlapping context-gate voice (jitter); covered by dx7.test.ts + dx7 ART/specs',
 
-  // (aquaTank moved to BEHAVIORAL_MODULE_EXEMPT — its observed out1 is
-  //  intrinsically near-silent (~0.005 RMS) so MANY ports straddle the
-  //  floor, NOT just the fb*_cv sends: a 3× local flake-check showed in3
-  //  (an AUDIO input) jitter too, so the per-port fb{1..4}_cv approach
-  //  doesn't converge. Module-level exempt is the reliable fix.)
-
 };
 
 // ─── RATCHET — behavioral exemption caps ─────────────────────────────────
@@ -1547,14 +1288,13 @@ test('RATCHET: behavioral exemption lists only shrink', () => {
   expect(
     Object.keys(BEHAVIORAL_SWEEP_EXEMPT).length,
     'BEHAVIORAL_SWEEP_EXEMPT grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(169); // +1 snaredrum.roll_speed_cv (CV only modulates the drumroll rate, which needs gate_in held high; the sweep drives trigger_in single strikes → no roll → no delta, cf. pentemelodica.fmN; rate map unit-proven in snare-roll-dsp.test.ts, density asserted in snaredrum-roll.spec.ts); +1 tempest.rim (claw occupies ~1/16 lanes; sliding it doesn't move global frame-variance — video-variance class; claw motion unit-proven in tempest.test.ts + render-smoke); +1 textmarquee.posY (vertical text translation keeps covered pixel-area/frame-variance unchanged → near-threshold flake, video-variance class; posX/scrollX stay gated; covered by textmarquee-layout.test.ts + render-smoke); +1 moog962.shift (advancing the seq-switch selector across UNPATCHED in1..in3 gives Δμrms 0.004 inside the ±0.089 out-noise floor → near-threshold flake; in1/in2/in3 stay gated; covered by moog962.test.ts); +1 lines.phase (phase scroll translates the line bands but preserves frame-variance, Δμvar 2.36 vs ±63.7 → near-threshold flake, video-variance class; orient/amp/thickness stay gated; covered by lines-render-smoke.spec.ts); +1 moog911.esus_cv (sustain-level CV only shapes the held-sustain phase; short retriggering window is attack/release-dominated, Δμrms 0.003 inside ±0.105 → near-threshold flake; t1/t2/t3/gate stay gated; covered by moog911.test.ts); +1 textmarquee.scrollY (vertical scroll of the horizontal band keeps frame-variance ≈ constant, Δμvar 1.45–2.08 → near-threshold flake, same geometry as posY; posX/scrollX stay gated; covered by textmarquee-layout.test.ts); +1 moog921b.freq_bus (1V/oct pitch bus responds — perturbed cent jitters ±24Hz — but a symmetric sweep collapses the mean-cent metric to Δμcent 3–10Hz → metric-mismatch flake, not dead CV; width_bus/fine/range stay gated; covered by moog921b.test.ts); +1 elements.pos_cv (pickup POSITION is a subtle spectral colour below the centroid/cent threshold under the dominant struck tone, Δμrms 0.000/Δcent 19Hz vs ±101Hz on a near-silent resonator → near-threshold flake, same subtle-spectral class as elements bow/blow CVs; other 9 inputs stay gated; covered by elements.test.ts)
+  ).toBeLessThanOrEqual(169); // +1 snaredrum.roll_speed_cv (CV only modulates the drumroll rate, which needs gate_in held high; the sweep drives trigger_in single strikes → no roll → no delta, cf. pentemelodica.fmN; rate map unit-proven in snare-roll-dsp.test.ts, density asserted in snaredrum-roll.spec.ts); +1 tempest.rim (claw occupies ~1/16 lanes; sliding it doesn't move global frame-variance — video-variance class; claw motion unit-proven in tempest.test.ts + render-smoke); +1 textmarquee.posY (vertical text translation keeps covered pixel-area/frame-variance unchanged → near-threshold flake, video-variance class; posX/scrollX stay gated; covered by textmarquee-layout.test.ts + render-smoke); +1 moog962.shift (advancing the seq-switch selector across UNPATCHED in1..in3 gives Δμrms 0.004 inside the ±0.089 out-noise floor → near-threshold flake; in1/in2/in3 stay gated; covered by moog962.test.ts); +1 lines.phase (phase scroll translates the line bands but preserves frame-variance, Δμvar 2.36 vs ±63.7 → near-threshold flake, video-variance class; orient/amp/thickness stay gated; covered by lines-render-smoke.spec.ts); +1 moog911.esus_cv (sustain-level CV only shapes the held-sustain phase; short retriggering window is attack/release-dominated, Δμrms 0.003 inside ±0.105 → near-threshold flake; t1/t2/t3/gate stay gated; covered by moog911.test.ts); +1 textmarquee.scrollY (vertical scroll of the horizontal band keeps frame-variance ≈ constant, Δμvar 1.45–2.08 → near-threshold flake, same geometry as posY; posX/scrollX stay gated; covered by textmarquee-layout.test.ts); +1 moog921b.freq_bus (1V/oct pitch bus responds — perturbed cent jitters ±24Hz — but a symmetric sweep collapses the mean-cent metric to Δμcent 3–10Hz → metric-mismatch flake, not dead CV; width_bus/fine/range stay gated; covered by moog921b.test.ts)
 });
 
 // TODO(behavioral-coverage, systemic fix — tracks the header note + the
 // behavioral-coverage TODO in .github/workflows/ci.yml): the Class-A
-// near-threshold entries above (cube*/hypercube.*, chowkick.q_cv/decay_cv,
-// dx7.poly, the module-level aquaTank quiet-tank exempt, and
-// the existing swolevco/elements/rings/warrenspectrum families) all straddle a SINGLE universal delta threshold
+// near-threshold entries above (cube*/hypercube.*, dx7.poly, and
+// the existing swolevco/rings/warrenspectrum families) all straddle a SINGLE universal delta threshold
 // that is too coarse for subtle CV→audio effects. The right long-term fix is a
 // MORE SENSITIVE / per-port-CALIBRATED metric (e.g. a pitch/zc-keyed metric for
 // retrigger inputs, a per-transient peak/spectral metric for percussion, and
@@ -1829,7 +1569,7 @@ const BEHAVIORAL_PORT_PARAMS: Record<string, Record<string, number>> = {
 // floor) and — read the other way — too LOOSE for a noisy output whose intrinsic
 // jitter already swings a metric past the floor (a no-delta port passes on
 // noise). This is the systemic gap the BEHAVIORAL_SWEEP_EXEMPT header TODO calls
-// out (cube*/chowkick/dx7/treeohvox/… all straddle the single universal floor).
+// out (cube*/dx7/treeohvox/… all straddle the single universal floor).
 //
 // This map lets a SPECIFIC port (or whole module) override ONLY the floors that
 // matter for it — sized to THAT port's measured unperturbed-jitter floor — WITHOUT
@@ -2347,8 +2087,8 @@ function buildContextEdges(
 
   if (NEEDS_AUDIO_CONTEXT_CATEGORIES.has(mod.category)) {
     // Feed sustained noise into EVERY non-test audio input (fan-out from ONE
-    // shared NOISE source), not just the first. A multi-input effect (e.g. the
-    // aquaTank FDN, in1..in4 → summed mix_l) needs ALL its channels excited so a
+    // shared NOISE source), not just the first. A multi-input effect (e.g. a
+    // multi-channel FDN, in1..in4 → summed mix_l) needs ALL its channels excited so a
     // per-channel input/feedback CV under test perturbs the observed output —
     // wiring only the first audio input leaves the other channels silent, so e.g.
     // fb3_cv (scales channel-3 feedback) is a no-op on a channel carrying nothing.

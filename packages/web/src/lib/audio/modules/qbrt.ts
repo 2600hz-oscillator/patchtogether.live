@@ -1,7 +1,7 @@
 // packages/web/src/lib/audio/modules/qbrt.ts
 //
 // QBRT — stereo resonant filter with vactrol-style ping excitation. The
-// "stereo big-knob" filter the project ships for the RIOTGIRLS master bus
+// "stereo big-knob" filter the project ships for master-bus filtering
 // and pluck-style ping-resonator voicings. Faust DSP (packages/dsp/src/
 // qbrt.dsp). Per channel: a state-variable filter with continuous LP/BP
 // (mode 0..1 crossfades the modes) and a ping gate that fires a short
@@ -9,7 +9,7 @@
 // center frequency at the impulse moment, then continues to filter the
 // audio normally. Use it as a regular VCF by ignoring `ping`, or trigger
 // `ping` with a drum sequencer for kick / tom-style pluck-resonator
-// drum sounds (this is what RIOTGIRLS uses internally).
+// drum sounds.
 //
 // Inputs:
 //   L (audio): left-channel signal.
@@ -77,7 +77,7 @@ export const qbrtDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A stereo resonant filter with a 'ping' excitation input — the project's big-knob VCF, also used as a pluck/drum resonator. Each channel runs a state-variable filter whose mode crossfades continuously between low-pass and band-pass, with a big resonance (Q) control that can sing right up to self-oscillation. The twist is the PING input: a trigger fires a short vactrol-shaped impulse into the filter, so it rings at its cutoff frequency for a moment and then settles — patch a drum sequencer into PING and sweep CUTOFF and you get kick/tom-style pluck-resonator sounds with no oscillator at all. Ignore PING and it's an ordinary stereo filter you patch audio through. (This is the resonator RIOTGIRLS uses internally.)",
+      "A stereo resonant filter with a 'ping' excitation input — the project's big-knob VCF, also used as a pluck/drum resonator. Each channel runs a state-variable filter whose mode crossfades continuously between low-pass and band-pass, with a big resonance (Q) control that can sing right up to self-oscillation. The twist is the PING input: a trigger fires a short vactrol-shaped impulse into the filter, so it rings at its cutoff frequency for a moment and then settles — patch a drum sequencer into PING and sweep CUTOFF and you get kick/tom-style pluck-resonator sounds with no oscillator at all. Ignore PING and it's an ordinary stereo filter you patch audio through.",
     inputs: {
       L: "Left audio input — the signal fed through the left filter channel.",
       R: "Right audio input — the signal fed through the right filter channel.",

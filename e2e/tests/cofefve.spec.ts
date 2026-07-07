@@ -11,7 +11,7 @@
 //      wire-broken / silent delay reads 0).
 //   3. Delayed TAIL: higher FEEDBACK produces a measurably longer/denser wet
 //      tail than low feedback (the decaying-echo-train behavior) — a relative,
-//      max-hold comparison (robust to analyser phase, like chowkick.spec.ts).
+//      max-hold comparison (robust to analyser phase).
 //
 // The per-sample delay/decay/sync SHAPE is pinned deterministically in the ART
 // tier (art/scenarios/cofefve/profile.test.ts) + the DSP unit tests

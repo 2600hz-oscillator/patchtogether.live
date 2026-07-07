@@ -134,7 +134,7 @@ Doesn't work offline (visible but harmlessly inert):
 
 | category   | modules |
 |------------|---------|
-| sources    | analogVco, wavetableVco, vizvco, swolevco, drummergirl, meowbox, riotgirls, dx7, noise |
+| sources    | analogVco, wavetableVco, vizvco, swolevco, drummergirl, meowbox, dx7, noise |
 | modulation | adsr, lfo, sequencer, cartesian, score, drumseqz, polyseqz, timelorde, buggles |
 | filters    | filter, qbrt |
 | effects    | reverb, charlottesEchos, destroy |

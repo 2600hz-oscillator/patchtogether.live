@@ -173,7 +173,6 @@ const SEQUENCER_TYPES = new Set([
   'drumseqz',
   'macseq',
   'sequencerPages',
-  'riotgirls',
   'drummergirl',
 ]);
 

@@ -15,17 +15,11 @@
 import { describe, expect, it } from 'vitest';
 import { cloudsDef } from './clouds';
 import { ringsDef } from './rings';
-import { elementsDef } from './elements';
-import { peaksDef } from './peaks';
 import { marblesDef } from './marbles';
-import { symbioteDef } from './symbiote';
 import { macrooscillatorDef } from './macrooscillator';
 import { cloudseedDef } from './cloudseed';
-import { stagesDef } from './stages';
-import { warpsDef } from './warps';
 import { meowboxDef } from './meowbox';
 import { drummergirlDef } from './drummergirl';
-import { veilsDef } from './veils';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 
 interface PortExpectation {
@@ -41,30 +35,18 @@ interface PortExpectation {
 const EXPECTED_PORTS: PortExpectation[] = [
   { type: 'clouds',          def: cloudsDef,          author: 'Émilie Gillet' },
   { type: 'rings',           def: ringsDef,           author: 'Émilie Gillet' },
-  { type: 'elements',        def: elementsDef,        author: 'Émilie Gillet' },
-  { type: 'peaks',           def: peaksDef,           author: 'Émilie Gillet' },
   { type: 'marbles',         def: marblesDef,         author: 'Émilie Gillet' },
-  { type: 'symbiote',        def: symbioteDef,        author: 'Émilie Gillet' },
   { type: 'macrooscillator', def: macrooscillatorDef, author: 'Émilie Gillet' },
-  { type: 'stages',          def: stagesDef,          author: 'Émilie Gillet' },
-  { type: 'warps',           def: warpsDef,           author: 'Émilie Gillet' },
   { type: 'cloudseed',       def: cloudseedDef,       author: 'Ghost Note Audio' },
 ];
 
 // Modules whose DSP is original (no upstream code crossed over) and which
-// MUST NOT carry the "Ported from MIT-licensed OSS" disclaimer. Two
-// categories:
-//   1. From-scratch Faust DSP (MEOWBOX, DRUMMERGIRL) — never had an
-//      upstream; their packages/dsp/src/*.dsp headers carry no attribution.
-//   2. From-spec implementations of Mutable Instruments analog hardware
-//      (VEILS) — eurorack/veils/ upstream contains only hardware_design, no
-//      firmware DSP to port. The header in packages/dsp/src/veils.ts
-//      explicitly says "from-spec, not a port", so per the user's wording
-//      these are "inspired by", not "ported from".
+// MUST NOT carry the "Ported from MIT-licensed OSS" disclaimer: from-scratch
+// Faust DSP (MEOWBOX, DRUMMERGIRL) — never had an upstream; their
+// packages/dsp/src/*.dsp headers carry no attribution.
 const EXPECTED_NOT_PORTS: { type: string; def: AudioModuleDef }[] = [
   { type: 'meowbox',     def: meowboxDef },
   { type: 'drummergirl', def: drummergirlDef },
-  { type: 'veils',       def: veilsDef },
 ];
 
 describe('OSS attribution', () => {

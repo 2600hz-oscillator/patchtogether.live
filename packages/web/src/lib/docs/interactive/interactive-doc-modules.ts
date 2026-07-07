@@ -53,7 +53,6 @@ export const INTERACTIVE_DOC_MODULES: ReadonlySet<string> = new Set<string>([
   'depolarizer',
   'scaler',
   'attenumix',
-  'veils',
   'unityscalemathematik',
   'sampleHold',
   'slewSwitch',
@@ -67,9 +66,7 @@ export const INTERACTIVE_DOC_MODULES: ReadonlySet<string> = new Set<string>([
   'clouds',
   'charlottesEchos',
   'shimmershine',
-  'aquaTank',
   'destroy',
-  'warps',
   'ringback',
   // Batch 6 — Moog System 55/35 sources & utilities (2026-06-26): only the
   // CONVENTION-card members go here (no `card:` override, so the doc route's
@@ -114,16 +111,13 @@ export const INTERACTIVE_DOC_MODULES: ReadonlySet<string> = new Set<string>([
   // resolves `<Type>Card` and the live virtual module mounts). Each card is a
   // pure Fader/Knob + PatchPanel with NO onMount/$effect, no canvas/rAF/WebGL,
   // no Web-MIDI panel, no file input — the macrooscillator profile — so it
-  // mounts cleanly in the engine-less doc sandbox (peaks also carries two
-  // static mode buttons, no dynamic mount work). Verified live by
+  // mounts cleanly in the engine-less doc sandbox. Verified live by
   // docs-virtual-module.spec.ts (treeohvox / callsine also exercise the CV→param
-  // dual context). The STATIC siblings stay off this list: chowkick runs a
-  // 2D-canvas envelope/filter preview (onMount + $effect) and pentemelodica
+  // dual context). The STATIC siblings stay off this list: pentemelodica
   // runs per-voice waveform scopes ($effect) — see strict-docs.ts.
   'drummergirl',
   'meowbox',
   'treeohvox',
-  'peaks',
   'buggles',
   'callsine',
   // Batch 10 — sequencers, clocks & pattern generators (2026-06-26): the
@@ -146,45 +140,34 @@ export const INTERACTIVE_DOC_MODULES: ReadonlySet<string> = new Set<string>([
   'polyseqz',
   'writeseq',
   'marbles',
-  'grids',
-  'atlantisCatalyst',
   // Batch 12 — modulation, function generators, clocks & live-control utilities
   // (2026-06-26): only the CONVENTION-card members whose cards are a pure
   // Fader/button + PatchPanel with NO onMount/$effect, no canvas/rAF/WebGL, no
   // Web-MIDI panel and no file input — the macrooscillator profile — go here, so
   // each mounts cleanly in the engine-less doc sandbox. Verified live by
-  // docs-virtual-module.spec.ts (tides2 freq_cv→FREQ, stages primary0_cv→P1, and
-  // qbrt cutoff→CUTOFF each exercise the CV→param dual context). The STATIC
+  // docs-virtual-module.spec.ts (qbrt cutoff→CUTOFF exercises the CV→param
+  // dual context). The STATIC
   // siblings stay off this list: timelorde + rasterize run a 2D-canvas render,
   // score's card is an SVG staff with mouse note-entry, clipplayer runs a
   // playhead render loop + the WebSerial monome grid, and clockedRunner + livecode
   // mount a CodeMirror editor — see strict-docs.ts.
-  'tides2',
-  'stages',
   'qbrt',
   // Batch 13 — heavy synth voices, effects & utilities (2026-06-26): only the
   // CONVENTION-card members whose cards are a pure Knob/Fader + buttons +
   // PatchPanel with NO onMount/$effect, no canvas/rAF/WebGL, no Web-MIDI panel
   // and no file input — the macrooscillator profile — go here, so each mounts
   // cleanly in the engine-less doc sandbox. cloudseed (Knobs/Faders + ON/OFF
-  // pills + preset footer) and symbiote (Faders + mode/scale/seed buttons) both
-  // qualify; verified live by docs-virtual-module.spec.ts (cloudseed late_cv→
-  // late_out and symbiote rate_cv→rate exercise the CV→param dual context). The
+  // pills + preset footer) qualifies; verified live by docs-virtual-module.spec.ts
+  // (cloudseed late_cv→late_out exercises the CV→param dual context). The
   // STATIC siblings stay off this list: foxy/twotracks/synesthesia/warrenspectrum
   // run a 2D-canvas render in the card, hypercube renders WebGL + has a file
   // picker, and bluebox has no
   // control-<paramId> Knob/Fader to hover (its keys are press-and-hold buttons)
   // — see strict-docs.ts.
   'cloudseed',
-  'symbiote',
-  // Batch 14 — FINAL audio batch (2026-06-26): the one CONVENTION-card
-  // member that mounts cleanly in the engine-less doc sandbox goes here. riotgirls
-  // is a pure Knob + PatchPanel card (no onMount/$effect, no canvas/rAF/WebGL,
-  // no file input); a control hover updates the pane. Verified live by
-  // docs-virtual-module.spec.ts (riotgirls v1_volume→v1_volume exercises the
-  // CV→param dual context). The STATIC siblings stay off this list: the four
-  // games (frogger/modtris/pong/skifree) + spectrograph run a 2D-canvas rAF
-  // render loop, samsloop adds a waveform canvas + file-upload + mic record, and
-  // wavesculpt renders WebGL2 + has a per-osc .wav picker — see strict-docs.ts.
-  'riotgirls',
+  // Batch 14 — FINAL audio batch (2026-06-26): every member stays STATIC (off
+  // this list): the four games (frogger/modtris/pong/skifree) + spectrograph
+  // run a 2D-canvas rAF render loop, samsloop adds a waveform canvas +
+  // file-upload + mic record, and wavesculpt renders WebGL2 + has a per-osc
+  // .wav picker — see strict-docs.ts.
 ]);

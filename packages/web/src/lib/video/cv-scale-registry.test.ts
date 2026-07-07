@@ -70,12 +70,6 @@ const VIDEO_PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // passthrough by design (like DOOM), no continuous knob; scaling would distort
   // the rise/fall the detector keys off.
   blood: ['up', 'down', 'left', 'right', 'fire', 'altfire', 'use', 'jump', 'crouch', 'weapnext', 'weapprev', 'esc', 'enter'],
-  // QBERT joy_x / joy_y: RAW analog joystick AXES (−1..+1) onto synthetic
-  // cv_joy_x/cv_joy_y params, resolved by joyCvToDiagonal into one of the four
-  // diagonal directions each tick. The CV IS the stick position, not a knob
-  // modulator — scaling would corrupt the axis mapping. Same shape as the audio
-  // PONG/SKIFREE paddle/cursor CVs (also passthrough-by-design).
-  qbert: ['joy_x', 'joy_y'],
 };
 
 // DOOM declares its per-slot fire gates programmatically (p1_up … p4_use), so

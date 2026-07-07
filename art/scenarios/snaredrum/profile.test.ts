@@ -129,7 +129,7 @@ describe('ART snaredrum / audio profile (default patch)', () => {
       'snaredrum.ts',
       'lib/snaredrum-dsp.ts',
       'lib/snare-roll-dsp.ts',
-      'lib/chowkick-dsp.ts',
+      'lib/dsp-utils.ts',
       'lib/oversample.ts',
       'lib/rbj-biquad.ts',
     );

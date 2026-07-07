@@ -105,7 +105,7 @@ function projectPort(p: {
 
 /**
  * Snapshot every registered module def's I/O surface. Modules whose
- * `inputs` are computed via a builder function (e.g. RIOTGIRLS,
+ * `inputs` are computed via a builder function (e.g.
  * MIXMSTRS) work transparently — by the time they're
  * registered, the computed array is already attached to the def.
  *

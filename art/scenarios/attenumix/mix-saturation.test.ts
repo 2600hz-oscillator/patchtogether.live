@@ -3,7 +3,7 @@
 // ART-tier check on ATTENUMIX — sweeps the pure-math helper across the
 // attenuator + master ranges to pin the per-channel attenuation linearity,
 // the 0..1 clamp at the channel level, and the tanh saturation curve on
-// the mix. Same offline-render shape as the veils ART.
+// the mix. Standard offline-render profile shape.
 //
 // Why ART rather than just vitest: the defining property of ATTENUMIX is
 // "channel attenuates, master saturates" — a future refactor that lifts

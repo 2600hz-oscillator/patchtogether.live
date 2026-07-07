@@ -111,7 +111,7 @@ export interface DomainEngine {
    *  Only AudioEngine implements this today. Card visualizers call
    *  PatchEngine.readModulatorTap(nodeId, portId) to read CV-side
    *  modulation when the input port id differs from the AudioParam id
-   *  (e.g. WARPS: 'modulator_cv' → param 'modulator'). */
+   *  (e.g. a `rate_cv` port targeting a `rate` param). */
   readModulatorTap?(nodeId: string, portId: string): number | undefined;
   read(nodeId: string, key: string): unknown;
   /** Optional inverse of `read`: push card-computed data into a node (see the
@@ -605,7 +605,7 @@ export class AudioEngine implements DomainEngine {
   /** Read the most-recent sample from a modulator tap by CV-input portId,
    *  not paramId. Used by PatchEngine.readParam to fold in modulator
    *  samples for modules whose CV port id differs from the AudioParam id
-   *  (e.g. WARPS: port 'modulator_cv' → param 'modulator'). Returns undefined
+   *  (e.g. a `rate_cv` port targeting a `rate` param). Returns undefined
    *  when no edge is connected to that port. */
   readModulatorTap(nodeId: string, portId: string): number | undefined {
     const tap = this.paramTaps.get(this.paramTapKey(nodeId, portId));
@@ -1694,8 +1694,8 @@ export class PatchEngine {
   /** Most-recent sample at a per-port modulator-tap analyser. Returns 0
    *  when no edge is connected to that port (or the domain doesn't
    *  implement taps). Card visualizers use this to read CV signals on
-   *  ports whose id differs from the AudioParam id (e.g. WARPS'
-   *  `modulator_cv` port targets the `modulator` AudioParam). */
+   *  ports whose id differs from the AudioParam id (e.g. a `rate_cv`
+   *  port targeting a `rate` AudioParam). */
   readModulatorTap(nodeId: string, portId: string, domain: string = 'audio'): number {
     const dom = this.domains.get(domain);
     return dom?.readModulatorTap?.(nodeId, portId) ?? 0;

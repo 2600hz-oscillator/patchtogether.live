@@ -256,10 +256,13 @@ describe('vrt-meta — STRICT_VRT_MODULES RATCHET (only grows)', () => {
     // 25→29 (2026-06-29): the 4 CV-utility cards (Track-2 batch 1, #951).
     // 29→49 (2026-06-29): the 20-card MOOG cluster (Track-2 batch 2, #953) —
     // deterministic beige-faceplate cards, both-platform baselines validated.
+    // 49→48 (2026-07-07): the 15-module deletion PR removed the one STRICT
+    // member among them (negativity) — a real un-promotion via module
+    // deletion, not a gate dodge.
     expect(
       STRICT_VRT_MODULES.size,
       'STRICT_VRT_MODULES shrank below its frozen floor — see the RATCHET rule above',
-    ).toBeGreaterThanOrEqual(49);
+    ).toBeGreaterThanOrEqual(48);
   });
 });
 

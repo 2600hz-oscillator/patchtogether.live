@@ -139,7 +139,7 @@
 
   // Nested mode: top → sub → defs. Unknown modules surface in an
   // Uncategorized bucket so newly-landed modules from parallel agents
-  // (BLADES/STAGES/…) stay addable even before they're classified.
+  // (from parallel module PRs) stay addable even before they're classified.
   let grouped = $derived(groupDefs(allDefs));
 
   $effect(() => {

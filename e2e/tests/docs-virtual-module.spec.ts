@@ -146,14 +146,6 @@ const PROBES: Probe[] = [
     modulates: /./,
   },
   {
-    id: 'veils',
-    heading: /veils/i,
-    controlParam: 'gain1',
-    controlDescIncludes: /gain|vca|channel/i,
-    cvPort: '', // CV inputs are raw gain CV (no paramTarget)
-    modulates: /./,
-  },
-  {
     id: 'unityscalemathematik',
     heading: /unityscalemathematik/i,
     controlParam: 'unityAtten',
@@ -222,27 +214,11 @@ const PROBES: Probe[] = [
     modulates: /modulates/i,
   },
   {
-    id: 'aquaTank',
-    heading: /aquatank/i,
-    controlParam: 'fb1',
-    controlDescIncludes: /feedback|resonance|recirculat/i,
-    cvPort: 'fb1_cv', // CV → fb1 param
-    modulates: /modulates/i,
-  },
-  {
     id: 'destroy',
     heading: /destroy/i,
     controlParam: 'bits',
     controlDescIncludes: /quantiz|bit|crunch/i,
     cvPort: 'decimate', // CV → decimate param
-    modulates: /modulates/i,
-  },
-  {
-    id: 'warps',
-    heading: /warps/i,
-    controlParam: 'timbre',
-    controlDescIncludes: /intensity|algorithm|mix/i,
-    cvPort: 'timbre_cv', // CV → timbre param
     modulates: /modulates/i,
   },
   {
@@ -372,13 +348,13 @@ const PROBES: Probe[] = [
     modulates: /modulates/i,
   },
   // --- Batch 9 — synth voices & percussion sources (2026-06-26). Each is on
-  // INTERACTIVE_DOC_MODULES (convention card: pure Fader/Knob + PatchPanel; peaks
-  // adds two static mode buttons); this proves the live card mounts cleanly and a
+  // INTERACTIVE_DOC_MODULES (convention card: pure Fader/Knob + PatchPanel);
+  // this proves the live card mounts cleanly and a
   // control hover updates the pane. The CV→param dual-context check runs where the
   // module has a CV input with a paramTarget (drummergirl pitch→pitch, meowbox
-  // morph→morph, treeohvox cutoff_cv→cutoff, peaks k1_0_cv→k1_0, callsine
+  // morph→morph, treeohvox cutoff_cv→cutoff, callsine
   // note_cv→note); buggles' CV inputs are raw sampled values (no paramTarget), so
-  // cvPort '' skips it. chowkick + pentemelodica stay STATIC (canvas) — no probe. ---
+  // cvPort '' skips it. pentemelodica stays STATIC (canvas) — no probe. ---
   {
     id: 'drummergirl',
     heading: /drummergirl/i,
@@ -404,14 +380,6 @@ const PROBES: Probe[] = [
     modulates: /modulates/i,
   },
   {
-    id: 'peaks',
-    heading: /peaks/i,
-    controlParam: 'k1_0',
-    controlDescIncludes: /pitch|mix|bright|attack|rate|knob/i,
-    cvPort: 'k1_0_cv', // CV (paramTarget=k1_0) → channel A knob 1
-    modulates: /modulates/i,
-  },
-  {
     id: 'buggles',
     heading: /buggles/i,
     controlParam: 'chaos',
@@ -434,7 +402,7 @@ const PROBES: Probe[] = [
   // live card mounts cleanly and a control hover updates the pane. The CV→param
   // dual-context check runs where the module has a CV input with a paramTarget
   // (polyseqz humanize_cv→humanize, marbles rate_cv→rate); cartesian / drumseqz /
-  // macseq / writeseq / grids / scenechange have no CV→param link (their CVs are
+  // macseq / writeseq have no CV→param link (their CVs are
   // clock/transport/X-Y/density/scene gates), so cvPort '' skips it. KRIA +
   // NUMPAD+ stay STATIC (WebSerial grid / document keydown capture) — no probe. ---
   {
@@ -487,46 +455,13 @@ const PROBES: Probe[] = [
     cvPort: 'rate_cv', // CV (paramTarget=rate) → master clock rate
     modulates: /modulates/i,
   },
-  {
-    id: 'grids',
-    heading: /grids/i,
-    controlParam: 'chaos',
-    controlDescIncludes: /chaos|random|variation/i,
-    cvPort: '', // CV inputs sum onto knobs but have no paramTarget
-    modulates: /./,
-  },
-  {
-    id: 'atlantisCatalyst',
-    heading: /scenechange/i, // the module's label is 'scenechange' (type stays atlantisCatalyst)
-    controlParam: 'coherence',
-    controlDescIncludes: /coheren|together|weather|independent/i,
-    cvPort: '', // queue/nudge/freeze/seed inputs have no paramTarget
-    modulates: /./,
-  },
   // --- Batch 12 — modulation, function generators, clocks & live-control
   // utilities (2026-06-26). Only the CONVENTION-card members (pure Fader/button +
   // PatchPanel, no canvas/rAF/onMount) are interactive; this proves the live card
   // mounts cleanly and a control hover updates the pane. The CV→param dual-context
-  // check runs on each (tides2 freq_cv→frequency, stages primary0_cv→primary0,
-  // qbrt cutoff→cutoff). The STATIC siblings (timelorde / rasterize / score /
-  // clipplayer / clockedRunner / livecode) have no live-card probe — see
-  // interactive-doc-modules.ts. ---
-  {
-    id: 'tides2',
-    heading: /tides2/i,
-    controlParam: 'frequency',
-    controlDescIncludes: /rate|ramp|freq/i,
-    cvPort: 'freq_cv', // CV (paramTarget=frequency) → FREQ macro
-    modulates: /modulates/i,
-  },
-  {
-    id: 'stages',
-    heading: /stages/i,
-    controlParam: 'primary0',
-    controlDescIncludes: /time|level|primary|segment/i,
-    cvPort: 'primary0_cv', // CV (paramTarget=primary0) → segment 1 primary
-    modulates: /modulates/i,
-  },
+  // check runs on each (qbrt cutoff→cutoff). The STATIC siblings (timelorde /
+  // rasterize / score / clipplayer / clockedRunner / livecode) have no
+  // live-card probe — see interactive-doc-modules.ts. ---
   {
     id: 'qbrt',
     heading: /qbrt/i,
@@ -540,7 +475,7 @@ const PROBES: Probe[] = [
   // PatchPanel (no canvas/rAF/WebGL, no Web-MIDI panel, no file input) are
   // interactive; this proves the live card mounts cleanly and a control hover
   // updates the pane. The CV→param dual-context check runs on each (cloudseed
-  // late_cv→late_out, symbiote rate_cv→rate). The STATIC siblings (foxy /
+  // late_cv→late_out). The STATIC siblings (foxy /
   // twotracks / hypercube / synesthesia / warrenspectrum / mixmstrs /
   // bluebox) have no live-card probe — see interactive-doc-modules.ts. ---
   {
@@ -551,33 +486,9 @@ const PROBES: Probe[] = [
     cvPort: 'late_cv', // CV (paramTarget=late_out) → LATE output level
     modulates: /modulates/i,
   },
-  {
-    id: 'symbiote',
-    heading: /symbiote/i,
-    controlParam: 'rate',
-    controlDescIncludes: /rate|clock|tempo/i,
-    cvPort: 'rate_cv', // CV (paramTarget=rate) → master clock rate
-    modulates: /modulates/i,
-  },
-  // --- Batch 14 — FINAL audio batch (2026-06-26). The one CONVENTION-card
-  // member that mounts cleanly in the engine-less doc sandbox is interactive:
-  // riotgirls (pure Knob + PatchPanel). It proves the live card mounts + a
-  // control hover updates the pane. The CV→param dual-context step is SKIPPED
-  // for it (cvPort: '') — the card is very wide (riotgirls 1100px) so the
-  // doc-sandbox <main> overlaps the patch-trigger, making the patch-panel
-  // drill-in flaky; the control-hover demo is the interactive value here (same
-  // posture as the sequencer/vca/mixer probes that also skip the CV step). The
-  // STATIC siblings (frogger / modtris / pong / skifree / samsloop /
-  // spectrograph / wavesculpt) have no live-card probe — see
-  // interactive-doc-modules.ts. ---
-  {
-    id: 'riotgirls',
-    heading: /riotgirls/i,
-    controlParam: 'v1_volume',
-    controlDescIncludes: /volume|level/i,
-    cvPort: '', // wide card — patch-panel drill-in is flaky in the doc sandbox
-    modulates: /./,
-  },
+  // --- Batch 14 — FINAL audio batch (2026-06-26). The STATIC members
+  // (frogger / modtris / pong / skifree / samsloop / spectrograph /
+  // wavesculpt) have no live-card probe — see interactive-doc-modules.ts. ---
 ];
 
 /** Wait for the live virtual module to finish mounting (the flow host appears

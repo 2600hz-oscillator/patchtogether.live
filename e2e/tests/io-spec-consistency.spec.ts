@@ -4,7 +4,7 @@
 // module's AudioModuleDef must render as a Svelte Flow handle in that
 // module's card UI.
 //
-// The bug class this guards against: the RIOTGIRLS regression where
+// The bug class this guards against: the (since-retired) RIOTGIRLS regression where
 // buildInputs() grew dozens of CV ports (per-voice tone/shape/volume/
 // decay, ADSR, sends, master FX) but RiotgirlsCard.svelte only
 // rendered trig/gate/pitch per voice + outL/outR. The published

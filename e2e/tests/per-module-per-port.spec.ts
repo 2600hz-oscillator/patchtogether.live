@@ -77,15 +77,14 @@ const SKIP_SPAWN: Record<string, string> = {
 //   * MIDI-driven (MIDICLOCK, MIDICVBUDDY) → navigator.requestMIDIAccess
 //     mock + synthetic 0xFA / 0xF8 / note-on messages routed via the
 //     module's cardApi.connect() hook.
-//   * Self-running clock modules (TIMELORDE, MARBLES, SYMBIOTE, GRIDS,
-//     TIDES2) → just removed (the old "needs upstream clock" comment was
-//     wrong; defaults already self-run).
+//   * Self-running clock modules (TIMELORDE, MARBLES) → just removed
+//     (the old "needs upstream clock" comment was wrong; defaults
+//     already self-run).
 //   * Step sequencers (SEQUENCER, SCORE, DRUMSEQZ, POLYSEQZ, MACSEQ)
 //     → driver seeds isPlaying=1 + node.data.steps so the
 //     internal scheduler fires.
 //   * CV/gate utilities (ILLOGIC, SLEWSWITCH) → driver wires BUGGLES +
 //     SEQUENCER upstream.
-//   * STAGES → SEQUENCER.gate → STAGES.trig.
 //   * ADSR → SEQUENCER.gate → ADSR.gate (already supported via driverFor).
 //   * VIDEOOUT → ACIDWARP.out → VIDEOOUT.in (passthrough sweep).
 //
@@ -137,11 +136,7 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   midiOutBuddy: 'no audio/CV outputs (emits MIDI to external gear); covered by midi-out-buddy.spec.ts',
   // ── Clock / divider / sequencer-like modules that need an upstream clock ──
   timelorde: 'clock divider; needs upstream clock; covered by timelorde-related specs',
-  grids:     'requires upstream clock to step; covered by grids-related specs',
   marbles:   'requires UI-enabled internal clock; covered by marbles-related specs',
-  symbiote:  'requires UI-enabled internal clock; covered by symbiote-related specs',
-  stages:    'requires upstream segment gate; covered by stages-related specs',
-  tides2:    'requires upstream gate/pitch; covered by tides2-related specs',
   macseq:    'requires toggled steps; covered by macseq-related specs',
   // ── CV/gate utility modules with no self-running source ──
   illogic:    'boolean logic on inputs; no upstream → no output; covered by illogic.spec.ts',
@@ -203,23 +198,12 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   // specs simulate full games + drive scoring deterministically.
   modtris: 'line_cleared/overfill only fire after ~10 piece drops; covered by modtris-related specs (simulated)',
   pong:    'score_left/score_right only fire on ball-miss after bounces; covered by pong-related specs',
-  // ── SNES9X: the snes9x2005 WASM core renders nothing until a ROM is
-  // loaded, and the ROM is user-provided + gitignored (absent in CI), so
-  // the card shows the "LOAD A ROM" dropzone + every output is inert. The
-  // game-event gates (gate1 KILL / gate2 DEATH) only fire on real gameplay
-  // (or forcePulse); gate3 multiplies clock_in (needs an in-level world+
-  // level → a ROM); cv1 reads the world from WRAM (needs a ROM). Handle-
-  // presence still pins every input/output port here; signal flow is
-  // covered by the ROM-gated snes9x e2e (video/audio/input + clock_in→gate3)
-  // and the pure unit suites (detection / multiplier / input mask).
-  snes9x: 'all outputs need a loaded ROM (user-provided, gitignored, absent in CI); event gates fire on gameplay/forcePulse; covered by the ROM-gated snes9x e2e + pure unit suites',
   blood: 'all outputs need user-supplied, non-redistributable Blood data (BLOOD.RFF/GUI.RFF/SOUNDS.RFF, gitignored, absent in CI) — the NBlood engine aborts in its resource loader without it, so the video surface is the idle shader + audio is the silent PCM stub; covered by blood-keys.test.ts + the blood-frame-harness (run locally with owned data). See native/nblood/PHASE1-STATUS.md.',
   // ── Driver page.evaluate / postSpawn hangs ──
   // These modules' drivers time out under CI load — the per-output
   // serial loop (8 × 20 s, 7 × 20 s) exhausts the test budget before
   // all ports resolve. Handle-presence still asserts the ports exist.
   numpadPlus:  'driver page.evaluate hangs under CI load (8 outputs × 20s exceeds budget)',
-  qbert:       'event gates require ROM; EXEMPT_OUTPUT_EMIT already set but still hangs',
   slewSwitch:  'driver setup hangs in CI (7 outputs × 20s exceeds budget)',
   // ── MIDICLOCK: clock/midistop pulses are too brief for the scope window ──
   // The MIDI-clock driver sends 0xF8 pulses but each pulse is a
@@ -309,16 +293,6 @@ const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   // NIBBLES `gated` is the snake oscillator passed through an internal
   // VCA that opens on `pellet` — silent until a pellet is eaten.
   'nibbles.gated': 'requires in-game pellet event to open internal VCA; covered by nibbles-related specs',
-  // ── QBERT partial: audio_out requires (a) the Q*Bert ROM zip at
-  // /roms/qbert/qbert.zip to initialize the runtime, and (b) coin
-  // insertion + game start + joystick movement to trigger the hop blip
-  // audio. Without the ROM in CI, loadQbertRoms() returns null + the
-  // runtime stays !initialized, so pumpAudio() always writes zeros.
-  // The evt_die / evt_move / evt_level gate outputs and the video `out`
-  // ARE covered by the same QBERT sweep test (evt_* via forcePulse;
-  // out via the test-pattern framebuffer). audio_out needs a dedicated
-  // spec with a seeded ROM or a PCM stub — covered by qbert-cv-joystick.spec.ts.
-  'qbert.audio_out': 'requires ROM + game start + movement to emit PCM; ROM absent in CI; covered by qbert-cv-joystick.spec.ts',
   // NIBBLES length_cv encodes snake length; at idle the snake has a
   // constant length so the CV is a steady DC value — but lengthToCv(4)
   // is below the SCOPE.ch1 peak floor (≈-0.93). When the snake eats /
@@ -345,10 +319,6 @@ const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   'timelorde.1/16': 'period 3.2 s @ test BPM 300; sweep budget 1.2 s; covered by timelorde-related specs',
   'timelorde.1/32': 'period 6.4 s @ test BPM 300; sweep budget 1.2 s; covered by timelorde-related specs',
   'timelorde.1/64': 'period 12.8 s @ test BPM 300; sweep budget 1.2 s; covered by timelorde-related specs',
-  // ── atlantisCatalyst partial: scene_pulse + scene_idx wait for a
-  // scene change (several seconds). Drift outputs are continuous CV.
-  'atlantisCatalyst.scene_pulse': 'scene-transition gate fires every several seconds; outside test window; covered by atlantis-catalyst.spec.ts',
-  'atlantisCatalyst.scene_idx':   'CV stays at 0 until first scene transition; covered by atlantis-catalyst.spec.ts',
   // ── ILLOGIC partial: the LOGIC outputs (and/nand/or/not) only fire
   // when their inputs cross specific threshold combinations. With
   // BUGGLES.smooth as a slow ±1V random walk on in1 and SEQUENCER.gate
@@ -1002,10 +972,6 @@ test.describe('per-module per-port: outputs emit signal', () => {
       // belt-and-suspenders guard in case its def ever loses its video output.
       // (Today all DOOM outputs are emit-exempt, so this whole test is skipped.)
       if (mod.type === 'doom') scaled = Math.max(scaled, 90_000);
-      // atlantisCatalyst is a NON-video heavy mount (it spins up an internal
-      // scene engine + worklet chain), so touchesVideo doesn't catch it; keep
-      // its explicit 90s floor (was in the old per-module heavy list).
-      if (mod.type === 'atlantisCatalyst') scaled = Math.max(scaled, 90_000);
 
       test.setTimeout(scaled);
 

@@ -26,7 +26,7 @@
 // catastrophic and needless). Every time constant derives from the LIVE sr; no
 // Math.random / Date.now — every strike reseeds a deterministic xorshift.
 
-import { clamp, dcBlockStep, makeDcBlockState, type DcBlockState } from './chowkick-dsp';
+import { clamp, dcBlockStep, makeDcBlockState, type DcBlockState } from './dsp-utils';
 import { createOversampler, type Oversampler } from './oversample';
 import { makeBiquad, biquadStep, updateHighpass, type Biquad } from './rbj-biquad';
 import {

@@ -659,7 +659,7 @@ export class MeticulousMike {
   }
 
   private isDrumVoice(type: string): boolean {
-    return ['drummergirl', 'riotgirls', 'meowbox', 'noise'].includes(type);
+    return ['drummergirl', 'meowbox', 'noise'].includes(type);
   }
 
   private isTonalVoice(type: string): boolean {

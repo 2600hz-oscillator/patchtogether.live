@@ -99,7 +99,7 @@ async function loadProcessor(): Promise<ProcCtor> {
   if (capturedProc) return capturedProc;
   // Capture the registered processor class via the registerProcessor shim —
   // the same pattern the sibling worklet tests use (cube / resofilter /
-  // chowkick / sidecar). We import the DSP *source* directly (vitest
+  // sidecar). We import the DSP *source* directly (vitest
   // transpiles it) rather than reading the built dist/<name>.js bundle: the
   // web unit suite has no guaranteed DSP-build step before it runs, so a
   // dist read is order-dependent and ENOENTs on a clean CI checkout. The

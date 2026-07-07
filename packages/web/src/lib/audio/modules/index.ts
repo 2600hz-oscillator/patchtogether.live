@@ -15,13 +15,7 @@
 // because they don't match that shape. See `looksLikeAudioDef` below.
 
 import { registerModule, type AnyModuleDef } from '$lib/audio/module-registry';
-import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
-// RIOTGIRLS exports a per-instance trigger helper alongside its def. The def
-// itself is picked up by the glob below; this named helper is wired onto
-// `window` for Playwright. riotgirls.ts is already eagerly imported by the
-// glob, so this static import adds no extra bundle cost.
-import { triggerVoice as riotgirlsTriggerVoice } from './riotgirls';
 
 // Eagerly import every sibling module file. Vite inlines this at build time
 // (and resolves the worklet `?url` imports the def files do). The `!` patterns
@@ -81,14 +75,6 @@ export function registerAudioModules(): void {
     registerModule(def);
   }
 
-  if (testHooksEnabled() && typeof window !== 'undefined') {
-    // Per-instance trigger so Playwright can drive a specific RIOTGIRLS by
-    // node id without spawning a Sequencer. Returns true if the voice was
-    // triggered, false if no instance / voice found.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (window as any).__riotgirlsTriggerVoice = (nodeId: string, voiceIdx: number) =>
-      riotgirlsTriggerVoice(nodeId, voiceIdx);
-  }
   exposeModuleSpecsForTests();
 }
 

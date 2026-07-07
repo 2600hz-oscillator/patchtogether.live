@@ -44,7 +44,6 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'wavecel',
   'dx7',
   'rings',
-  'elements',
   'wavetableVco',
   'swolevco',
   // Batch 3 — CV utilities & modulation shapers (2026-06-26): the bread-and-
@@ -54,22 +53,19 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'depolarizer',
   'scaler',
   'attenumix',
-  'veils',
   'unityscalemathematik',
   'sampleHold',
   'slewSwitch',
   // Batch 4 — effects (2026-06-26): the wet-FX cluster — the basic reverb &
-  // delay, the granular CLOUDS, the SHIMMERSHINE/AQUATANK reverb-resonators,
+  // delay, the granular CLOUDS, the SHIMMERSHINE reverb-resonator,
   // the destructive CHARLOTTE'S ECHOS multi-tap delay, the DESTROY bitcrusher,
-  // the WARPS meta-modulator, and the RINGBACK stereo crush.
+  // and the RINGBACK stereo crush.
   'reverb',
   'delay',
   'clouds',
   'charlottesEchos',
   'shimmershine',
-  'aquaTank',
   'destroy',
-  'warps',
   'ringback',
   // Batch 5 — Moog System 35/55 signal-processing cluster (2026-06-26): the
   // classic Moog filtering & processing chain — the 902 VCA, the 904A low-pass
@@ -148,22 +144,18 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // Batch 9 — synth voices & percussion sources (2026-06-26): a coherent cluster
   // of sound-generating modules — DRUMMERGIRL (one-shot synth drum voice),
   // MEOWBOX (formant cat-vocal voice), TREE.oh.VOX (TB-303 acid-bass voice),
-  // CHOWKICK (physical-model resonant kick), PEAKS (dual drum/env/LFO utility),
   // BUGGLES (wogglebug chaotic random source), CALLSINE (spectral additive
   // resynth), and PENTEMELODICA (5-voice poly synth). The convention-card
-  // members (drummergirl / meowbox / treeohvox / peaks / buggles / callsine —
-  // pure Fader/Knob + PatchPanel, peaks adds two static mode buttons) ARE
-  // interactive; the others stay STATIC: chowkick + pentemelodica each run a
-  // 2D-canvas render in the card (chowkick's envelope/filter previews via
-  // onMount + $effect, pentemelodica's per-voice waveform scopes via $effect),
+  // members (drummergirl / meowbox / treeohvox / buggles / callsine —
+  // pure Fader/Knob + PatchPanel) ARE
+  // interactive; PENTEMELODICA stays STATIC: it runs a
+  // 2D-canvas render in the card (per-voice waveform scopes via $effect),
   // so the engine-less doc sandbox falls back to the static face. PENTEMELODICA
   // is POLY — its POLY input must be fed by a real poly source (MIDI LANE /
   // POLYSEQZ / SEQUENCER chord steps), noted in its prose.
   'drummergirl',
   'meowbox',
   'treeohvox',
-  'chowkick',
-  'peaks',
   'buggles',
   'callsine',
   'pentemelodica',
@@ -172,19 +164,18 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // (4-track drum/trigger sequencer), KRIA (monome-Kria multi-track grid),
   // MACSEQ (MACROOSCILLATOR model+note sequencer), POLYSEQZ (polyphonic chord
   // sequencer), WRITESEQ (write-in / live-record step sequencer), MARBLES (MI
-  // random sampler + clock), GRIDS (MI topographic drum-pattern generator),
-  // NUMPAD+ (numpad live-record layered sequencer), and ATLANTIS-CATALYST /
-  // SCENECHANGE (8-channel correlated random-walk macro brain). The
+  // random sampler + clock), and
+  // NUMPAD+ (numpad live-record layered sequencer). The
   // convention-card members whose cards are pure Knob/Fader/buttons + PatchPanel
   // (a playhead-polling requestAnimationFrame is fine — the sequencer itself
   // does it and is interactive; the engine-less doc sandbox just no-ops the
   // read) are on INTERACTIVE_DOC_MODULES: cartesian / drumseqz / macseq /
-  // polyseqz / writeseq / marbles / grids / atlantisCatalyst. Two stay STATIC:
+  // polyseqz / writeseq / marbles. Two stay STATIC:
   // KRIA's card touches the WebSerial monome-grid API at init, and NUMPAD+'s
   // card installs a document-level capturing keydown listener to own the Numpad
   // keys — both side effects we keep out of the shared doc sandbox (face
   // fallback). POLYSEQZ and NUMPAD+ are POLY: their poly output must feed a real
-  // poly-aware voice (RIOTGIRLS / DX7 / a module with a poly input),
+  // poly-aware voice (DX7 / a module with a poly input),
   // noted in their prose.
   'cartesian',
   'drumseqz',
@@ -193,9 +184,7 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'polyseqz',
   'writeseq',
   'marbles',
-  'grids',
   'numpadPlus',
-  'atlantisCatalyst',
   // Batch 11 — MIDI, external control & audio I/O (2026-06-26): the cluster that
   // bridges the rack to the outside world — MIDICLOCK (external MIDI transport →
   // clock/run/start/stop), MIDI-CV-BUDDY (mono MIDI keyboard → pitch/gate/vel),
@@ -222,13 +211,12 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'audioIn',
   'audioOut',
   // Batch 12 — modulation, function generators, clocks & live-control utilities
-  // (2026-06-26): the MI-style function generators TIDES2 (tidal modulator /
-  // poly-slope) and STAGES (6-segment cascadable FG), the rack master clock
+  // (2026-06-26): the rack master clock
   // TIMELORDE, the sheet-music sequencer SCORE and the Ableton-style clip
   // launcher CLIP PLAYER, the ping-able stereo resonant filter QBRT, the
   // audio→video raster mapper RASTERIZE, and the LIVECODE scripting pair
-  // (LIVECODE + the CLOCKED runner it spawns). The convention-card members whose
-  // cards are pure Knob/Fader + PatchPanel — tides2, stages, qbrt — ARE on
+  // (LIVECODE + the CLOCKED runner it spawns). The convention-card member whose
+  // card is pure Knob/Fader + PatchPanel — qbrt — IS on
   // INTERACTIVE_DOC_MODULES. The rest stay STATIC: timelorde + rasterize run a
   // 2D-canvas render in the card (the wizard display / the raster framebuffer),
   // score's card is an SVG staff with mouse note-entry + an onMount/$effect
@@ -238,8 +226,6 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // fallback. SCORE declares note/tie/dynamic cell families; CLIP PLAYER declares
   // the lane mono toggles + the launch-grid pads + the piano-roll note cells (a
   // stable indexed data-testid was added to the pads + cells, which had none).
-  'tides2',
-  'stages',
   'timelorde',
   'score',
   'clipplayer',
@@ -251,13 +237,12 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // audio catalog, 2026-06-26): the previously-deferred large-param modules and
   // the remaining substantive voices/processors — CLOUDSEED (Ghost-Note algo
   // reverb, 7 macro + 38 message-port params), FOXY (hybrid realtime-wavetable
-  // oscillator), SYMBIOTE (Marbles
-  // alt-firmware Grids+TB-3PO brain), TWOTRACKS (two-reel tape looper), HYPERCUBE
+  // oscillator), TWOTRACKS (two-reel tape looper), HYPERCUBE
   // (4D-tesseract wavetable oscillator), SYNESTHESIA (dual 4-band audio→CV/video
   // analyser, 48 outputs), WARRENSPECTRUM (8-band ping resonator bank), MIXMSTRS
   // (6-ch stereo mixer, 61 params), and BLUEBOX (DTMF/phreaker dialer). Only the
-  // CONVENTION-card pure-Knob/Fader+PatchPanel members go INTERACTIVE: cloudseed
-  // + symbiote (verified live by docs-virtual-module.spec.ts). The rest stay
+  // CONVENTION-card pure-Knob/Fader+PatchPanel member goes INTERACTIVE: cloudseed
+  // (verified live by docs-virtual-module.spec.ts). The rest stay
   // STATIC: foxy/twotracks/synesthesia/warrenspectrum run a 2D-canvas render in
   // the card, hypercube renders WebGL (rendersWebGL — its docs are wrapped in
   // docs-hash-ignore markers like sibling cube so authoring stays attest-neutral)
@@ -266,7 +251,6 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // press-and-hold buttons) — so the static face is the right fallback for each.
   'cloudseed',
   'foxy',
-  'symbiote',
   'twotracks',
   'hypercube',
   'synesthesia',
@@ -276,22 +260,19 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // Batch 14 — FINAL audio batch: the last undocumented AUDIO modules, which
   // completes the audio catalog (2026-06-26). The arcade GAME modules FROGGER /
   // MODTRIS / PONG / SKIFREE (gameplay-as-CV: gate inputs steer the game, gate
-  // outputs pulse on its events), the 4-voice drum/synth + FX-rack RIOTGIRLS, the
+  // outputs pulse on its events), the
   // single-sample loop player SAMSLOOP, the scrolling-sonogram video generator
-  // SPECTROGRAPH, and the hybrid 4-oscillator 3D video synth WAVESCULPT. Only the
-  // CONVENTION-card pure-Knob/Fader+PatchPanel member goes INTERACTIVE: riotgirls
-  // (pure Knob+PatchPanel). The rest stay
+  // SPECTROGRAPH, and the hybrid 4-oscillator 3D video synth WAVESCULPT. All stay
   // STATIC: the four games + spectrograph run a 2D-canvas rAF render loop,
   // samsloop adds a waveform canvas + file-upload + mic record, and wavesculpt
   // renders WebGL2 (rendersWebGL — its docs + controlFamilies are wrapped in
   // docs-hash-ignore markers like cube/hypercube so authoring stays
   // attest-neutral) plus a per-osc .wav file picker. WAVESCULPT declares the per-osc
-  // wavetable-source strip family (wavesculpt-osc). (negativity stays
+  // wavetable-source strip family (wavesculpt-osc). (matrixMix stays
   // undocumented on purpose — it is the e2e "undocumented module" fixture.)
   'frogger',
   'modtris',
   'pong',
-  'riotgirls',
   'samsloop',
   'skifree',
   'spectrograph',
@@ -352,16 +333,14 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'videobox',
   'videovarispeed',
   'picturebox',
-  // Video batch 8 (2026-06-26): media sources (archive.org / peertube) + recorder + games (gibribbon/nibbles/qbert).
+  // Video batch 8 (2026-06-26): media sources (archive.org / peertube) + recorder + games (gibribbon/nibbles).
   'archivist',
   'peertube',
   'recorderbox',
   'gibribbon',
   'nibbles',
-  'qbert',
-  // Video batch 9 (2026-06-26): emulators + mappers/router (doom/snes9x/mappy/onetonine/vfpgaRunner) — completes the video catalog.
+  // Video batch 9 (2026-06-26): emulators + mappers/router (doom/mappy/onetonine/vfpgaRunner) — completes the video catalog.
   'doom',
-  'snes9x',
   'mappy',
   'onetonine',
   'vfpgaRunner',

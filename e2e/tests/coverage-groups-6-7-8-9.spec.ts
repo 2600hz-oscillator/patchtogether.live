@@ -5,7 +5,7 @@
 //
 //   Group 6 — time-based effects: reverb, charlottesEchos, shimmershine,
 //             qbrt, warrenspectrum.
-//   Group 7 — drum voices: drummergirl, meowbox, riotgirls.
+//   Group 7 — drum voices: drummergirl, meowbox.
 //   Group 8 — video sources + effects: every video-domain module spawns
 //             and the canvas of a downstream videoOut renders non-trivial
 //             content.
@@ -263,51 +263,6 @@ test('meowbox: gate → stereo L emits audio', async ({ page }) => {
   const snap = await readScopeSnapshot(page, 'scp');
   const sum = summarize(snap!.ch1);
   expect(sum.peak, `meowbox L peak=${sum.peak.toFixed(4)}`).toBeGreaterThan(0.01);
-});
-
-test('riotgirls: trigger voices via test hook → outL emits audio', async ({ page }) => {
-  // Mirrors the established pattern in e2e/tests/riotgirls.spec.ts:
-  // high volume + low cutoff + audioOut on the chain + poll-and-break
-  // loop so we don't fail on analyser-window timing.
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
-  await spawnPatch(
-    page,
-    [
-      { id: 'rg',  type: 'riotgirls', params: { v1_volume: 1.5, v2_volume: 1.5, v3_volume: 1.5, v4_volume: 1.5, flt_cutoff: 18000 } },
-      { id: 'scp', type: 'scope', params: { timeMs: 50 } },
-      { id: 'out', type: 'audioOut', params: { master: 0.1 } },
-    ],
-    [
-      { id: 'e1', from: { nodeId: 'rg',  portId: 'outL'    }, to: { nodeId: 'scp', portId: 'ch1' } },
-      { id: 'e2', from: { nodeId: 'scp', portId: 'ch1_out' }, to: { nodeId: 'out', portId: 'L'   } },
-      { id: 'e3', from: { nodeId: 'rg',  portId: 'outR'    }, to: { nodeId: 'out', portId: 'R'   } },
-    ],
-  );
-
-  // Poll-and-break: fire all 4 voices, sample the scope, repeat until
-  // we see audio activity (avoids analyser-window-timing flakes).
-  let peak = 0;
-  const start = Date.now();
-  while (Date.now() - start < 4000 && peak <= 0.005) {
-    await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __riotgirlsTriggerVoice?: (id: string, voiceIdx: number) => boolean;
-      };
-      if (typeof w.__riotgirlsTriggerVoice !== 'function') return null;
-      w.__riotgirlsTriggerVoice('rg', 0);
-      w.__riotgirlsTriggerVoice('rg', 1);
-      w.__riotgirlsTriggerVoice('rg', 2);
-      w.__riotgirlsTriggerVoice('rg', 3);
-      return true;
-    });
-    await runFor(page, 180);
-    const snap = await readScopeSnapshot(page, 'scp');
-    if (snap) peak = summarize(snap.ch1).peak;
-  }
-
-  expect(peak, `riotgirls outL peak=${peak.toFixed(4)}`).toBeGreaterThan(0.005);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

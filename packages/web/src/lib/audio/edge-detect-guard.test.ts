@@ -1,10 +1,11 @@
 // packages/web/src/lib/audio/edge-detect-guard.test.ts
 //
 // Source-scan regression guard for the overlap-rescan double-count bug class.
-// The main-thread consumers that had the bug (NUMPAD+ / ATLANTIS-CATALYST)
-// must stay on the shared windowed `createEdgeCounter` seam
-// and must NOT reintroduce a whole-buffer rising-edge rescan. This is a cheap
-// static guard so a future refactor can't silently regress the fix.
+// The main-thread consumers that had the bug (NUMPAD+; ATLANTIS-CATALYST had
+// it too before its deletion) must stay on the shared windowed
+// `createEdgeCounter` seam and must NOT reintroduce a whole-buffer rising-edge
+// rescan. This is a cheap static guard so a future refactor can't silently
+// regress the fix.
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -24,7 +25,7 @@ function src(file: string): string {
 const WHOLE_BUFFER_SCAN = /for\s*\(\s*let\s+\w+\s*=\s*0\s*;\s*\w+\s*<\s*\w+\.length/;
 
 describe('edge-detect seam — main-thread consumers stay windowed (no whole-buffer rescan)', () => {
-  for (const file of ['numpad-plus.ts', 'atlantis-catalyst.ts']) {
+  for (const file of ['numpad-plus.ts']) {
     it(`${file} routes trigger/clock detection through createEdgeCounter`, () => {
       const code = src(file);
       expect(code, `${file} should import the shared edge counter`).toMatch(

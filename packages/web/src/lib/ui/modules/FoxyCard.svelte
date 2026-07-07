@@ -118,7 +118,7 @@
   }
 
   // Named-mode label next to the SYNC knob (Off / X & Y / XYZ). Mirrors the
-  // pattern used by BLADES / TIDES2 — render the constant indexed by the
+  // pattern — render the constant indexed by the
   // current discrete param value.
   let syncMode = $derived(pv('sync_mode', defv('sync_mode')));
   let syncModeLabel = $derived(
@@ -358,7 +358,7 @@
 
       <!-- VCO sync (ratio-lock): swoleB and (mode 2) swoleC snap their base
            Hz to integer ratios of swoleA. Named-mode label sits next to the
-           knob (Off / X & Y / XYZ) — mirrors RESOFILTER / TIDES2. -->
+           knob (Off / X & Y / XYZ) — mirrors RESOFILTER. -->
       <div class="section-label">VCO SYNC (raster source oscillators)</div>
       <div class="knob-row sync-row">
         <Knob value={pv('sync_mode', defv('sync_mode'))} min={0} max={FOXY_SYNC_MODE_MAX} defaultValue={defv('sync_mode')}

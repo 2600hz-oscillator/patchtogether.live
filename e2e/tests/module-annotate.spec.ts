@@ -112,20 +112,20 @@ test('documented module (adsr): hovering a PATCH PORT shows its doc incl. the CV
   await page.screenshot({ path: 'test-results/module-annotate-port-popover.png' });
 });
 
-test('undocumented module (negativity): NO Annotate entry', async ({ page }) => {
+test('undocumented module (matrixMix): NO Annotate entry', async ({ page }) => {
   await page.goto('/rack');
   await page.waitForLoadState('networkidle');
-  // FIXTURE CHOICE: a currently-undocumented, LIGHTWEIGHT audio module (the
-  // `negativity` CV inverter — trivial card, no WebGL). toybox (the permanent
-  // docs exemption) is the conceptually-correct "never documented" fixture but
-  // it's the heaviest WebGL module and TIMES OUT spawning on CI's SwiftShader
-  // renderer (30s) — so we use a light undocumented module instead.
-  // NOTE TO DOCS-BATCH AGENTS: if you ever add `negativity` to STRICT_DOCS,
-  // re-point this fixture at another undocumented lightweight audio module
-  // (grep `undocumented` here). analogVco/toybox both lived here before.
-  await spawnModule(page, 'negativity', 'negativity');
+  // FIXTURE CHOICE: a currently-undocumented, LIGHTWEIGHT module (the
+  // `matrixMix` DOM matrix-mixer card — trivial card, no WebGL). toybox (the
+  // permanent docs exemption) is the conceptually-correct "never documented"
+  // fixture but it's the heaviest WebGL module and TIMES OUT spawning on CI's
+  // SwiftShader renderer (30s) — so we use a light undocumented module instead.
+  // NOTE TO DOCS-BATCH AGENTS: if you ever author docs for `matrixMix`,
+  // re-point this fixture at another undocumented lightweight module
+  // (grep `undocumented` here). analogVco/toybox/negativity all lived here before.
+  await spawnModule(page, 'matrixMix', 'matrixmix');
 
-  const menu = await openModuleMenu(page, 'negativity');
+  const menu = await openModuleMenu(page, 'matrixMix');
   // Docs (external page) is always present; the on-canvas Annotate entry is
   // gated on authored docs, so it must be absent for the undocumented module.
   await expect(menu.locator('[role="menuitem"]', { hasText: 'Docs' })).toBeVisible();

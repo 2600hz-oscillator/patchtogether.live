@@ -57,17 +57,6 @@ jobs:
       - name: Build DOOM WASM (emcc)
         if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
         run: flox activate -- bash packages/web/native/build-doom-wasm.sh
-      - name: Cache SNES9X WASM artifact
-        id: cache-snes9x-wasm
-        uses: actions/cache@v4
-        with:
-          path: |
-            packages/web/static/snes9x/snes9x.js
-            packages/web/static/snes9x/snes9x.wasm
-          key: ${{ runner.os }}-snes9x-wasm-${{ hashFiles('packages/web/native/build-snes9x-wasm.sh', 'packages/web/native/snes9x/**') }}
-      - name: Build SNES9X WASM (emcc)
-        if: steps.cache-snes9x-wasm.outputs.cache-hit != 'true'
-        run: flox activate -- bash packages/web/native/build-snes9x-wasm.sh
       - name: Cache DOOM1.WAD (shareware)
         id: cache-doom-wad
         uses: actions/cache@v4

@@ -139,7 +139,7 @@ export function toneBurst(opts: ToneBurstOptions): Float32Array {
   return buf;
 }
 
-/** Deterministic seed for profile noise drivers (also the chowkick worklet's
+/** Deterministic seed for profile noise drivers (also any seedable worklet's
  *  default noise seed). DETERMINISM.md "Random seed (ART audio profiles)". */
 export const PROFILE_NOISE_SEED = 0xc0ffee;
 

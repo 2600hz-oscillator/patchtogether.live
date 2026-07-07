@@ -234,7 +234,7 @@ flox activate -- bash packages/web/native/build-blood-wasm.sh
 **Conclusion:** we treat **all** Blood data — full *and* shareware — as **not
 redistributable by us**. The project never ships or auto-fetches it; assets
 are strictly **user-provided** (own a copy: GOG/Steam *One Unit Whole Blood* /
-*Fresh Supply*). This matches the QBERT/SNES9X "user-supplied ROM" pattern,
+*Fresh Supply*). This matches the (since-retired) QBERT/SNES9X "user-supplied ROM" pattern,
 **not** the DOOM "we fetch the shareware WAD" pattern. (Out-of-box play is
 therefore not possible the way it is for DOOM.)
 
@@ -250,8 +250,8 @@ therefore not possible the way it is for DOOM.)
 - **`packages/web/static/blood/README.md`**: required files, where-to-buy,
   SHA-1 table (TODOs until a Phase-1 loader exists to pin against a legally
   owned copy), and the full legal-status rationale for "user-supplied only."
-- **`.gitignore`**: `packages/web/static/blood/*` + `!…/README.md`, appended
-  after the SNES9X block. Also ignores the build script's NBlood scratch
+- **`.gitignore`**: `packages/web/static/blood/*` + `!…/README.md`. Also
+  ignores the build script's NBlood scratch
   checkout (`packages/web/native/nblood/.upstream/`). Verified via
   `git check-ignore` (data ignored, README tracked).
 - **`packages/web/native/build-blood-wasm.sh`**: the spike build recipe

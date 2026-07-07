@@ -4,7 +4,7 @@
 // STEREOVCA is a SELF-CONTAINED pure-math TS worklet
 // (packages/dsp/src/stereovca.ts: out = in * (strength + offset) * level, no
 // WASM / RNG / state), so the highest-fidelity render is the SHIPPING
-// AudioWorkletProcessor pumped through process() (the veils/attenumix pattern,
+// AudioWorkletProcessor pumped through process() (the attenumix pattern,
 // §1.3 #2 — art/setup/worklet.ts). Worklet input order: [in_l, in_r,
 // strength_l, strength_r]; outputs [out_l, out_r].
 //

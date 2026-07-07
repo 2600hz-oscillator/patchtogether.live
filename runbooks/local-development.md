@@ -26,8 +26,6 @@ flox activate -- task setup:standalone   # offline prep: npm warmup + dsp:build 
 Optional ROM-backed modules (user supplies their own ROM; gitignored):
 
 ```sh
-flox activate -- task setup:qbert ROM=~/qbert.zip      # Q*Bert arcade module
-flox activate -- task setup:snes9x ROM=~/game.sfc      # SNES ROM, then setup:snes9x:build
 ```
 
 ## Running locally
@@ -113,12 +111,11 @@ dedicated `dsp-build` job.
 
 ## WASM emulator modules
 
-DOOM and SNES9X modules are Emscripten-compiled C → static assets. These require
+The DOOM module is Emscripten-compiled C → static assets. It requires
 `emcc` on `PATH` (provided by Flox's emscripten, or your own emsdk):
 
 ```sh
 flox activate -- bash packages/web/native/build-doom-wasm.sh    # → static/doom/doom.{js,wasm}
-flox activate -- bash packages/web/native/build-snes9x-wasm.sh  # → static/snes9x/snes9x.{js,wasm}
 ```
 
 DOOM loads `DOOM1.WAD` (shareware) from `/doom/DOOM1.WAD` at runtime. It's fetched

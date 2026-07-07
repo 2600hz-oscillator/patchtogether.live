@@ -45,7 +45,7 @@ export const ART_EXCLUDED: Readonly<Record<string, string>> = {
  * caps): the audio-domain modules that do not yet have an audio profile.
  * Seeded 2026-07-01 from the live registry (126 audio defs − 7 already
  * covered − 16 structural exclusions = 103), minus the 2 Phase-0 pilots
- * (chowkick, adsr) profiled in the same PR → 101 committed entries.
+ * (the since-retired chowkick, plus adsr) profiled in the same PR → 101 committed entries.
  * Batch 1 (#1001) −6 → 95; batch 2 (#1002) −6 → 89; batch 3 (#1005) −6 → 83;
  * batch 4 −8 → 75; batch 5 −8 → 67 (noise, scaler, polarizer, depolarizer,
  * negativity, illogic, delay, veils); batch 6 −8 → 59 — the tier-crossing
@@ -64,8 +64,6 @@ export const ART_EXCLUDED: Readonly<Record<string, string>> = {
  * ART_BACKLOG_MAX to the new length. NEVER raise ART_BACKLOG_MAX.
  */
 export const ART_BACKLOG: readonly string[] = [
-  'aquaTank',
-  'atlantisCatalyst',
   'buggles',
   'callsine',
   'cartesian',
@@ -75,9 +73,7 @@ export const ART_BACKLOG: readonly string[] = [
   'drummergirl',
   'drumseqz',
   'dx7',
-  'elements',
   'foxy',
-  'grids',
   'kria',
   'lfo',
   'macrooscillator',
@@ -98,23 +94,17 @@ export const ART_BACKLOG: readonly string[] = [
   'moog994',
   'moog995',
   'numpadPlus',
-  'peaks',
   'pentemelodica',
   'polyseqz',
   'rasterize',
   'rings',
-  'riotgirls',
   'samsloop',
   'score',
   'sequencer',
   'shimmershine',
-  'stages',
   'swolevco',
-  'symbiote',
-  'tides2',
   'timelorde',
   'twotracks',
-  'warps',
   'warrenspectrum',
   'wavecel',
   'wavesculpt',
@@ -124,4 +114,4 @@ export const ART_BACKLOG: readonly string[] = [
 
 /** The ratchet cap. Lower it (to ART_BACKLOG.length) every time a batch
  *  removes entries; the gate fails if the list ever grows past it. */
-export const ART_BACKLOG_MAX = 56;
+export const ART_BACKLOG_MAX = 46;

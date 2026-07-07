@@ -2605,23 +2605,6 @@
     return (n?.data as { rackLocked?: boolean } | undefined)?.rackLocked === true;
   });
 
-  // SNES9X — the right-clicked node is a snes9x with a ROM loaded → offer
-  // the "see output definition for CV/GATES" menu item. The ROM-loaded check
-  // reads the engine extras; defaults to false when the engine/extras aren't
-  // available (the item just doesn't show).
-  let ctxMenuCanSeeSnesOutputDef = $derived.by<boolean>(() => {
-    void snapshot;
-    if (!ctxMenuNodeId || ctxMenuNodeType !== 'snes9x') return false;
-    const n = patch.nodes[ctxMenuNodeId];
-    if (!n || !engine) return false;
-    try {
-      const extras = engine.read(n, 'extras') as { romLoaded?: () => boolean } | undefined;
-      return extras?.romLoaded?.() === true;
-    } catch {
-      return false;
-    }
-  });
-
   // Control colour — the right-clicked module's CURRENT resolved colour (for the
   // menu preview swatch) + whether the user has explicitly assigned one (gates
   // "Reset to default"). Resolved LIVE from the node (passthrough); the auto
@@ -5469,19 +5452,10 @@
   groupExpanded={ctxMenuGroupExpanded}
   locked={ctxMenuLocked}
   canSaveGroup={Boolean(currentUserId) && ctxMenuNodeType === 'group'}
-  canSeeSnesOutputDef={ctxMenuCanSeeSnesOutputDef}
   currentControlColor={ctxMenuControlColor}
   hasCustomControlColor={ctxMenuHasCustomColor}
   onsetcontrolcolor={(hex) => ctxMenuNodeId && setControlColor(ctxMenuNodeId, hex)}
   onresetcontrolcolor={() => ctxMenuNodeId && setControlColor(ctxMenuNodeId, null)}
-  onseesnesoutputdef={() => {
-    if (!ctxMenuNodeId) return;
-    // The Snes9xCard listens for this window event keyed by node id +
-    // opens its per-ROM CV/GATE output-definition panel.
-    window.dispatchEvent(
-      new CustomEvent('snes9x:show-output-def', { detail: { nodeId: ctxMenuNodeId } }),
-    );
-  }}
   ondelete={() => {
     if (!ctxMenuNodeId) return;
     if (ctxMenuNodeType === 'group') deleteGroupAndChildren(ctxMenuNodeId);

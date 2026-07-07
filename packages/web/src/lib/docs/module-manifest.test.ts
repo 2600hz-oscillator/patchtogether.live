@@ -116,17 +116,17 @@ describe('buildModuleManifest', () => {
   });
 
   it('auto I/O section: a stereo-pair module notes L/R normaling', () => {
-    // aquaTank declares stereoPairs [['mix_l','mix_r']] (verified in the
+    // kickdrum declares stereoPairs [['audio_l','audio_r']] (verified in the
     // registry manifest). The doc parser should pick it up + io-explain
     // should note the L-only auto-duplicate on the L side.
-    const aqua = m.modules.find((x) => x.type === 'aquaTank');
-    expect(aqua, 'aquaTank present').toBeDefined();
-    if (!aqua) return;
-    expect(aqua.stereoPairs, 'aquaTank stereoPairs parsed').toEqual([['mix_l', 'mix_r']]);
-    // mix_l / mix_r are OUTPUTS (the stereo mix bus). The output explainer
-    // notes the pair membership.
-    const left = aqua.io.outputs.find((p) => p.id === 'mix_l');
-    expect(left?.explain, 'mix_l explanation').toMatch(/stereo pair with mix_r/);
+    const kick = m.modules.find((x) => x.type === 'kickdrum');
+    expect(kick, 'kickdrum present').toBeDefined();
+    if (!kick) return;
+    expect(kick.stereoPairs, 'kickdrum stereoPairs parsed').toEqual([['audio_l', 'audio_r']]);
+    // audio_l / audio_r are OUTPUTS (the stereo voice bus). The output
+    // explainer notes the pair membership.
+    const left = kick.io.outputs.find((p) => p.id === 'audio_l');
+    expect(left?.explain, 'audio_l explanation').toMatch(/stereo pair with audio_r/);
 
     // clouds declares two pairs incl. a stereo INPUT pair (in_l/in_r); the
     // input explainer notes the L-only auto-duplicate-to-R normaling.

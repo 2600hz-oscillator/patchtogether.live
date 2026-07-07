@@ -108,7 +108,7 @@ and Cloudflare so they never drift. Full inventory:
 | --- | --- |
 | [architecture.md](architecture.md) | System overview + data-flow diagram, tier domains |
 | [local-development.md](local-development.md) | Flox, Taskfile, running locally, DSP/Faust + WASM artifacts |
-| [build.md](build.md) | Full build pipeline: SvelteKit/Vite, adapter-cloudflare, DSP dist, DOOM/SNES9X WASM |
+| [build.md](build.md) | Full build pipeline: SvelteKit/Vite, adapter-cloudflare, DSP dist, DOOM WASM |
 | [testing.md](testing.md) | Unit / E2E / VRT / ART / behavioral / collab layers, running, sharding, flake discipline |
 | [ci.md](ci.md) | Every GitHub Actions workflow, required checks, **how to read a failure** |
 | [deployment.md](deployment.md) | Tier map + triggers + exact by-hand deploy commands, rollback, single-machine invariant |

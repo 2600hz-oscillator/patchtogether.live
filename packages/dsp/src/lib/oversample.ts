@@ -16,7 +16,7 @@
 // zero-stuffing energy loss).
 //
 // State-only-via-explicit-object so the per-sample math is unit-testable without
-// the worklet (DSP-core discipline; see chowkick-dsp.ts). No top-level worklet
+// the worklet (DSP-core discipline). No top-level worklet
 // export concerns — this is a `lib/` helper, inlined at build time.
 //
 // Correctness bar (oversample.test.ts): for EVERY nonlinearity the drive stage
