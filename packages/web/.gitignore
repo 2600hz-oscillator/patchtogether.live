@@ -5,6 +5,16 @@ build/
 .env.*
 !.env.example
 
+# Living-docs render module — a BUILD ARTIFACT since the LoC row-4 PR (was a
+# committed 4.5k-line generated file and a documented merge-conflict magnet).
+# Regenerated from the live registry's `def.docs` by the docs:ensure seam
+# (the module-docs-ensure spec on every full unit sweep; `task docs:ensure` as
+# a dep of build/build:web/dev/typecheck; vitest.setup.docs.ts + a vite-plugin
+# fallback covering missing-artifact boots).
+# The committed/PINNED living-docs artifact is contract-lock.txt ONLY — the
+# module-docs-ensure.test.ts ratchet asserts this entry stays here.
+src/lib/docs/module-docs.generated.ts
+
 # Numbered-control DEVICE-FACE doc images — build-COPIED from the canonical
 # LFS source (e2e/vrt/__annotated__/darwin/) by scripts/copy-doc-faces.sh at
 # `task build`. Committing them here would duplicate the LFS PNGs, so the

@@ -35,5 +35,11 @@ export default defineConfig({
     globals: false,
     pool: 'forks',
     poolOptions: { forks: { singleFork: true } },
+    // Generate the gitignored `src/lib/docs/module-docs.generated.ts` BUILD
+    // ARTIFACT when missing, before each test file is imported — several specs
+    // import it transitively (module-manifest, modules-card-map) and it is no
+    // longer committed. Fork-pool setupFiles, NOT globalSetup: globalSetup's
+    // vite-node context denies the barrels' external `?url` worklet imports.
+    setupFiles: ['./vitest.setup.docs.ts'],
   },
 });

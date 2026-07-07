@@ -1,7 +1,10 @@
+import { execSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { sveltekit } from '@sveltejs/kit/vite';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 
 // Where node_modules actually resolves from. In a normal checkout this is the
 // repo root (already covered by the '..'/'../..' allow entries below). In a
@@ -27,10 +30,49 @@ const HOISTED_NODE_MODULES = path.dirname(
 // which the version-heading e2e asserts against verbatim.
 const APP_VERSION: string = require('../../package.json').version;
 
+// `src/lib/docs/module-docs.generated.ts` is a gitignored BUILD ARTIFACT (LoC
+// campaign row 4 — it used to be committed): the render module the prerendered
+// /docs/modules/[id] page + Canvas's has-docs check import. The sanctioned
+// Taskfile paths (`task build` / `build:web` / `dev` / `typecheck`) regenerate
+// it via the `docs:ensure` dep, and the unit lane regenerates it via
+// vitest.setup.docs.ts + the module-docs-ensure spec. This plugin is the
+// LAST-RESORT seam for direct
+// `vite dev` / `vite build` boots that bypass Task (e.g. a local `npx
+// playwright test` whose webServer runs `npm run dev` on a fresh checkout):
+// when the artifact is MISSING it shells out to the same vitest-driven
+// generator; a missing file would otherwise be an import error at the first
+// transform (and a prerender build failure). Presence-only on purpose — the
+// full regenerate-always freshness pass belongs to the Task/vitest seams, and
+// `vite preview` never runs build hooks so the prebuilt-bundle CI shards
+// (E2E_USE_PREVIEW) don't pay this.
+function ensureModuleDocs(): Plugin {
+  const WEB_DIR = fileURLToPath(new URL('.', import.meta.url));
+  const GENERATED = path.join(WEB_DIR, 'src/lib/docs/module-docs.generated.ts');
+  return {
+    name: 'patchtogether:ensure-module-docs',
+    enforce: 'pre',
+    buildStart() {
+      if (existsSync(GENERATED)) return;
+      // eslint-disable-next-line no-console
+      console.log('[docs:ensure] module-docs.generated.ts missing — generating (vitest module-docs-ensure)');
+      execSync('npx vitest run --config vitest.config.ts module-docs-ensure', {
+        cwd: WEB_DIR,
+        stdio: 'inherit',
+      });
+      if (!existsSync(GENERATED)) {
+        throw new Error(
+          '[docs:ensure] generation ran but src/lib/docs/module-docs.generated.ts is still missing — ' +
+            'run `flox activate -- task docs:ensure` and check its output.',
+        );
+      }
+    },
+  };
+}
+
 // COOP/COEP headers required for SharedArrayBuffer (Faust may want it).
 // Phase 1 dev sets these; Phase 2 sets them in production via _headers.
 export default defineConfig({
-  plugins: [sveltekit()],
+  plugins: [ensureModuleDocs(), sveltekit()],
   // Inline the product version as a compile-time constant (see APP_VERSION
   // above). Applies in both `dev` (serve) and `build`, so the topbar heading
   // renders the real X.Y.Z locally, in e2e, and in the deployed bundle.
