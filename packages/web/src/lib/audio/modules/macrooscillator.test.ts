@@ -12,41 +12,6 @@ import { describe, expect, it } from 'vitest';
 import { macrooscillatorDef, macrooscillatorMath, MACRO_MAX_MODEL, type MacroParams } from './macrooscillator';
 
 describe('macrooscillatorDef shape', () => {
-  it('declares type=macrooscillator, label=MACROOSCILLATOR, category=sources', () => {
-    expect(macrooscillatorDef.type).toBe('macrooscillator');
-    expect(macrooscillatorDef.label).toBe('macrooscillator');
-    expect(macrooscillatorDef.category).toBe('sources');
-  });
-
-  it('exposes the expected input ports (2 audio-rate + 6 cv → param)', () => {
-    const ids = macrooscillatorDef.inputs.map((p) => p.id);
-    expect(ids).toEqual([
-      'pitch', 'trig',
-      'model_cv', 'note_cv', 'harm_cv', 'timb_cv', 'morph_cv', 'level_cv',
-    ]);
-  });
-
-  it('exposes 2 audio outputs: out + aux', () => {
-    const ids = macrooscillatorDef.outputs.map((p) => p.id);
-    expect(ids).toEqual(['out', 'aux']);
-    for (const p of macrooscillatorDef.outputs) expect(p.type).toBe('audio');
-  });
-
-  it('exposes 6 params: model, note, harmonics, timbre, morph, level', () => {
-    const ids = macrooscillatorDef.params.map((p) => p.id);
-    expect(ids).toEqual(['model', 'note', 'harmonics', 'timbre', 'morph', 'level']);
-  });
-
-  it('every cv input has paramTarget pointing at a real param + cvScale set', () => {
-    for (const port of macrooscillatorDef.inputs) {
-      if (port.type !== 'cv') continue;
-      expect(port.paramTarget, `${port.id} paramTarget`).toBeDefined();
-      expect(port.cvScale, `${port.id} cvScale`).toBeDefined();
-      const param = macrooscillatorDef.params.find((p) => p.id === port.paramTarget);
-      expect(param, `${port.id} → param ${port.paramTarget}`).toBeDefined();
-    }
-  });
-
   it(`model param: discrete 0..${MACRO_MAX_MODEL} (grows as more models land)`, () => {
     const p = macrooscillatorDef.params.find((p) => p.id === 'model')!;
     expect(p.curve).toBe('discrete');
@@ -59,12 +24,6 @@ describe('macrooscillatorDef shape', () => {
     expect(port.cvScale).toEqual({ mode: 'discrete' });
   });
 
-  it('note param: ±60 semitone offset on top of pitch V/oct', () => {
-    const p = macrooscillatorDef.params.find((p) => p.id === 'note')!;
-    expect(p.min).toBe(-60);
-    expect(p.max).toBe(60);
-    expect(p.units).toBe('st');
-  });
 });
 
 const SR = 48000;

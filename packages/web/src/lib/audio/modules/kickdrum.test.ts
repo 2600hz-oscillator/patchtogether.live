@@ -39,63 +39,6 @@ async function loadProcessor(): Promise<ProcCtor> {
 // Module-def shape (the frozen contract)
 // ───────────────────────────────────────────────────────────────────────
 
-describe('kickdrumDef — module def shape', () => {
-  it('module id is "kickdrum" + LOWERCASE label "kick drum"', () => {
-    expect(kickdrumDef.type).toBe('kickdrum');
-    expect(kickdrumDef.label).toBe('kick drum');
-  });
-
-  it('declares the 4 frozen inputs with the declared edge semantics', () => {
-    expect(kickdrumDef.inputs.map((i) => i.id)).toEqual([
-      'trigger_in', 'accent_in', 'pitch_cv', 'choke_in',
-    ]);
-    const byId = Object.fromEntries(kickdrumDef.inputs.map((p) => [p.id, p] as const));
-    // The STRIKE fires once per rising edge — a trigger, never level-sampled.
-    expect(byId.trigger_in).toMatchObject({ type: 'gate', edge: 'trigger' });
-    // CHOKE is level-sensitive (acts WHILE high, both edges) — a gate.
-    expect(byId.choke_in).toMatchObject({ type: 'gate', edge: 'gate' });
-    expect(byId.accent_in!.type).toBe('cv');
-    expect(byId.pitch_cv!.type).toBe('cv');
-  });
-
-  it('declares separate stereo audio_l / audio_r outs + the stereo pair', () => {
-    expect(kickdrumDef.outputs.map((o) => o.id)).toEqual(['audio_l', 'audio_r']);
-    expect(kickdrumDef.outputs.every((o) => o.type === 'audio')).toBe(true);
-    expect(kickdrumDef.stereoPairs).toEqual([['audio_l', 'audio_r']]);
-  });
-
-  it('declares all 25 params with the frozen defaults/ranges/curves', () => {
-    const byId = Object.fromEntries(kickdrumDef.params.map((p) => [p.id, p] as const));
-    expect(byId.tune).toMatchObject({        defaultValue: 50,   min: 20,  max: 120,  curve: 'log' });
-    expect(byId.pitch_amt).toMatchObject({   defaultValue: 24,   min: 0,   max: 48,   curve: 'linear' });
-    expect(byId.pitch_time).toMatchObject({  defaultValue: 30,   min: 5,   max: 120,  curve: 'log' });
-    expect(byId.tension).toMatchObject({     defaultValue: 0,    min: 0,   max: 0.6,  curve: 'linear' });
-    expect(byId.sub_decay).toMatchObject({   defaultValue: 450,  min: 50,  max: 800,  curve: 'log' });
-    expect(byId.body_decay).toMatchObject({  defaultValue: 120,  min: 20,  max: 400,  curve: 'log' });
-    expect(byId.click_len).toMatchObject({   defaultValue: 12,   min: 2,   max: 60,   curve: 'log' });
-    expect(byId.sub_level).toMatchObject({   defaultValue: 0.9,  min: 0,   max: 1,    curve: 'linear' });
-    expect(byId.body_level).toMatchObject({  defaultValue: 0.7,  min: 0,   max: 1,    curve: 'linear' });
-    expect(byId.click_level).toMatchObject({ defaultValue: 0.4,  min: 0,   max: 1,    curve: 'linear' });
-    expect(byId.body_shape).toMatchObject({  defaultValue: 0.3,  min: 0,   max: 1,    curve: 'linear' });
-    expect(byId.click_tone).toMatchObject({  defaultValue: 2800, min: 500, max: 6000, curve: 'log' });
-    expect(byId.drive).toMatchObject({       defaultValue: 0.4,  min: 0,   max: 1,    curve: 'linear' });
-    expect(byId.hard).toMatchObject({        defaultValue: 0,    min: 0,   max: 1,    curve: 'discrete' });
-    expect(byId.translate).toMatchObject({   defaultValue: 0.3,  min: 0,   max: 1,    curve: 'linear' });
-    expect(byId.sub_eq).toMatchObject({      defaultValue: 0,    min: -12, max: 12,   curve: 'linear' });
-    expect(byId.body_eq).toMatchObject({     defaultValue: 3,    min: -12, max: 12,   curve: 'linear' });
-    expect(byId.attack_eq).toMatchObject({   defaultValue: 2,    min: -12, max: 12,   curve: 'linear' });
-    expect(byId.tilt).toMatchObject({        defaultValue: 0,    min: -1,  max: 1,    curve: 'linear' });
-    expect(byId.attack).toMatchObject({      defaultValue: 0.2,  min: -1,  max: 1,    curve: 'linear' });
-    expect(byId.sustain).toMatchObject({     defaultValue: 0,    min: -1,  max: 1,    curve: 'linear' });
-    expect(byId.glue).toMatchObject({        defaultValue: 0.3,  min: 0,   max: 1,    curve: 'linear' });
-    expect(byId.ceiling).toMatchObject({     defaultValue: 0.5,  min: 0,   max: 1,    curve: 'linear' });
-    expect(byId.width).toMatchObject({       defaultValue: 0.2,  min: 0,   max: 1,    curve: 'linear' });
-    // The headroom fix: level spans −24..+12 dB.
-    expect(byId.level).toMatchObject({       defaultValue: 0,    min: -24, max: 12,   curve: 'linear' });
-    expect(Object.keys(byId)).toHaveLength(25);
-  });
-});
-
 // ───────────────────────────────────────────────────────────────────────
 // Worklet processor — load + behavior the wrapper owns
 // ───────────────────────────────────────────────────────────────────────

@@ -18,35 +18,6 @@ import {
 } from './edges';
 
 describe('edgesDef shape', () => {
-  it('is a video PROCESSOR: exactly one video input (in)', () => {
-    const videoInputs = edgesDef.inputs.filter((p) => p.type === 'video');
-    expect(videoInputs.map((p) => p.id)).toEqual(['in']);
-  });
-
-  it('output is a single MONO-VIDEO stream (white edges on black)', () => {
-    expect(edgesDef.outputs.map((o) => o.id)).toEqual(['out']);
-    expect(edgesDef.outputs[0]!.type).toBe('mono-video');
-  });
-
-  it('declares threshold + thickness params', () => {
-    const ids = edgesDef.params.map((p) => p.id).sort();
-    expect(ids).toEqual(['thickness', 'threshold']);
-  });
-
-  it('declares a CV input mirroring every modulatable param', () => {
-    const inputIds = edgesDef.inputs.map((p) => p.id);
-    expect(inputIds).toContain('in');
-    for (const p of ['threshold', 'thickness'] as const) {
-      expect(inputIds, `missing cv input for ${p}`).toContain(p);
-    }
-  });
-
-  it('every CV input declares paramTarget == its own id', () => {
-    for (const port of edgesDef.inputs.filter((i) => i.type === 'cv')) {
-      expect(port.paramTarget, `cv input ${port.id} paramTarget`).toBe(port.id);
-    }
-  });
-
   it('threshold spans 0..1 (default 0.2)', () => {
     const t = edgesDef.params.find((p) => p.id === 'threshold');
     expect(t?.min).toBe(0);
@@ -64,12 +35,6 @@ describe('edgesDef shape', () => {
     expect(w?.defaultValue).toBe(EDGES_DEFAULTS.thickness);
   });
 
-  it('is a video-domain module categorised as a processor/effect', () => {
-    expect(edgesDef.domain).toBe('video');
-    expect(edgesDef.type).toBe('edges');
-    expect(edgesDef.category).toBe('effects');
-    expect(edgesDef.label).toBe('edges');
-  });
 });
 
 describe('edgesLuma — Rec. 601 luminance', () => {

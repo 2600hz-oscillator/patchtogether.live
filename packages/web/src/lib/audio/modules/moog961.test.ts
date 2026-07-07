@@ -136,54 +136,6 @@ function countHigh(buf: Float32Array): number {
 // 1) Module-def shape.
 // ────────────────────────────────────────────────────────────────────────────
 
-describe('moog961Def — module def shape', () => {
-  it('declares type=moog961, label, category=utilities, schemaVersion=1', () => {
-    expect(moog961Def.type).toBe('moog961');
-    expect(moog961Def.label).toBe('961 interface');
-    expect(moog961Def.category).toBe('utilities');
-  });
-
-  it('lives in the Moog System 35/55 Clones palette bucket and uses the Moog961Card', () => {
-    expect(moog961Def.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
-    expect(moog961Def.card).toBe('Moog961Card');
-    expect(moog961Def.domain).toBe('audio');
-  });
-
-  it('exposes audio_in (audio) + three gate inputs (s_in, v_in_a, v_in_b)', () => {
-    expect(moog961Def.inputs.map((p) => p.id)).toEqual([
-      'audio_in',
-      's_in',
-      'v_in_a',
-      'v_in_b',
-    ]);
-    const byId = Object.fromEntries(moog961Def.inputs.map((p) => [p.id, p]));
-    expect(byId.audio_in.type).toBe('audio');
-    for (const id of ['s_in', 'v_in_a', 'v_in_b']) {
-      expect(byId[id].type).toBe('gate');
-      // The gate inputs are signals being converted, not knob modulators.
-      expect(byId[id].cvScale).toBeUndefined();
-      expect(byId[id].paramTarget).toBeUndefined();
-    }
-  });
-
-  it('exposes four gate outputs (v_out1, v_out2, s_out_a, s_out_b)', () => {
-    expect(moog961Def.outputs.map((p) => p.id)).toEqual([
-      'v_out1',
-      'v_out2',
-      's_out_a',
-      's_out_b',
-    ]);
-    expect(moog961Def.outputs.every((o) => o.type === 'gate')).toBe(true);
-  });
-
-  it('exposes 2 params with the documented ranges + curves', () => {
-    const byId = Object.fromEntries(moog961Def.params.map((p) => [p.id, p]));
-    expect(Object.keys(byId).sort()).toEqual(['sensitivity', 'switchOnTime']);
-    expect(byId.sensitivity).toMatchObject({ min: 0, max: 1, curve: 'linear', defaultValue: 0.5 });
-    expect(byId.switchOnTime).toMatchObject({ min: 0.04, max: 4, curve: 'log', defaultValue: 0.2 });
-  });
-});
-
 // ────────────────────────────────────────────────────────────────────────────
 // 2) DSP behaviour — drive the worklet processor directly.
 // ────────────────────────────────────────────────────────────────────────────

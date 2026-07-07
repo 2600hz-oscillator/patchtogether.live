@@ -16,43 +16,6 @@ import { depolarizerDef, depolarize } from './depolarizer';
 import type { ModuleNode } from '$lib/graph/types';
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
-describe('depolarizerDef: module def shape', () => {
-  it('declares type=depolarizer, label="depolarizer" (lowercase), category=utilities, domain=audio, schemaVersion=1', () => {
-    expect(depolarizerDef.type).toBe('depolarizer');
-    expect(depolarizerDef.label).toBe('depolarizer');
-    expect(depolarizerDef.label).toBe(depolarizerDef.label.toLowerCase());
-    expect(depolarizerDef.category).toBe('utilities');
-    expect(depolarizerDef.domain).toBe('audio');
-  });
-
-  it('lands in the Utilities palette (Audio modules → Utility)', () => {
-    expect(depolarizerDef.palette).toEqual({ top: 'Audio modules', sub: 'Utility' });
-  });
-
-  it('exposes a single CV-only `in` input (no audio widening)', () => {
-    expect(depolarizerDef.inputs.map((p) => p.id)).toEqual(['in']);
-    const inp = depolarizerDef.inputs[0];
-    expect(inp.type).toBe('cv');
-    expect(inp.accepts).toBeUndefined();
-    expect(inp.paramTarget).toBeUndefined();
-  });
-
-  it('exposes a single CV-only `out` output', () => {
-    expect(depolarizerDef.outputs.map((p) => p.id)).toEqual(['out']);
-    expect(depolarizerDef.outputs[0].type).toBe('cv');
-  });
-
-  it('exposes one DEPTH param: linear taper, 0..1, default 1', () => {
-    expect(depolarizerDef.params.map((p) => p.id)).toEqual(['depth']);
-    const d = depolarizerDef.params[0];
-    expect(d.label).toBe('DEPTH');
-    expect(d.min).toBe(0);
-    expect(d.max).toBe(1);
-    expect(d.defaultValue).toBe(1);
-    expect(d.curve).toBe('linear');
-  });
-});
-
 // ───────────────────── Layer 2: DSP correctness ─────────────────────
 describe('depolarize(): out = 0.5 + depth·(in/2)', () => {
   it('depth=1 (full map): in=−1 → 0, in=0 → 0.5, in=+1 → 1', () => {

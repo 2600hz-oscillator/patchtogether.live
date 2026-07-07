@@ -6,7 +6,7 @@
 // and the module-def shape.
 
 import { describe, expect, it } from 'vitest';
-import { attenumixDef, attenumixMath } from './attenumix';
+import { attenumixMath } from './attenumix';
 
 describe('attenumixMath.channelAtt: per-channel attenuator clamp', () => {
   it('passes 0..1 through identically', () => {
@@ -197,77 +197,5 @@ describe('attenumixMath.render: per-channel independence + mix sum', () => {
       expect(mix[i]).toBeCloseTo(Math.tanh(3.0), 5);
       expect(Math.abs(mix[i] ?? 0)).toBeLessThan(1);
     }
-  });
-});
-
-describe('attenumixDef: module-def shape', () => {
-  it('declares type=attenumix, label=ATTENUMIX, category=utilities, domain=audio', () => {
-    expect(attenumixDef.type).toBe('attenumix');
-    expect(attenumixDef.label).toBe('attenumix');
-    expect(attenumixDef.category).toBe('utilities');
-    expect(attenumixDef.domain).toBe('audio');
-  });
-
-  it('exposes 8 inputs: in1..in4 (audio) + cv1..cv4 (cv)', () => {
-    const ids = attenumixDef.inputs.map((p) => p.id).sort();
-    expect(ids).toEqual(['cv1', 'cv2', 'cv3', 'cv4', 'in1', 'in2', 'in3', 'in4']);
-    const byId = Object.fromEntries(attenumixDef.inputs.map((p) => [p.id, p]));
-    for (let ch = 1; ch <= 4; ch++) {
-      expect(byId[`in${ch}`]!.type).toBe('audio');
-      expect(byId[`cv${ch}`]!.type).toBe('cv');
-      // CV ports are PASSTHROUGH_BY_DESIGN (att range [0, 1] already
-      // matches ±1V LFO swing without a WaveShaperNode).
-      expect(byId[`cv${ch}`]!.cvScale).toBeUndefined();
-      expect(byId[`cv${ch}`]!.paramTarget).toBeUndefined();
-    }
-  });
-
-  it('exposes 5 audio outputs: out1..out4 + mix', () => {
-    const ids = attenumixDef.outputs.map((p) => p.id).sort();
-    expect(ids).toEqual(['mix', 'out1', 'out2', 'out3', 'out4']);
-    for (const p of attenumixDef.outputs) {
-      expect(p.type).toBe('audio');
-    }
-  });
-
-  it('exposes 5 params: att1..att4 (0..1) + master (0..2, default 1)', () => {
-    const ids = attenumixDef.params.map((p) => p.id).sort();
-    expect(ids).toEqual(['att1', 'att2', 'att3', 'att4', 'master']);
-    for (let ch = 1; ch <= 4; ch++) {
-      const a = attenumixDef.params.find((p) => p.id === `att${ch}`);
-      expect(a?.min).toBe(0);
-      // Attenuators ATTENUATE — capped at 1.0. Boost lives on master.
-      expect(a?.max).toBe(1);
-      expect(a?.defaultValue).toBe(0);
-      expect(a?.curve).toBe('linear');
-    }
-    const m = attenumixDef.params.find((p) => p.id === 'master');
-    expect(m?.min).toBe(0);
-    // Master spans 0..2 — pushing past 1 recruits the tanh for saturation.
-    expect(m?.max).toBe(2);
-    expect(m?.defaultValue).toBe(1.0);
-    expect(m?.curve).toBe('linear');
-  });
-
-  it('keeps it simple: ≤5 controls per channel (count attenuator + CV + direct + 2 ports = 4)', () => {
-    // ATTENUMIX is the SIMPLE mixer — keep the per-channel surface minimal.
-    // The 4 per-channel surfaces are: audio in, CV in, attenuator knob,
-    // direct out. The spec budget is "no more than 5 per channel".
-    // (Master + mix-out are global, not per-channel.)
-    const perChannelInputs  = attenumixDef.inputs.filter((p) =>
-      p.id.endsWith('1') || p.id.endsWith('2') || p.id.endsWith('3') || p.id.endsWith('4')
-    ).length / 4;
-    const perChannelOutputs = attenumixDef.outputs.filter((p) =>
-      p.id.endsWith('1') || p.id.endsWith('2') || p.id.endsWith('3') || p.id.endsWith('4')
-    ).length / 4;
-    const perChannelParams  = attenumixDef.params.filter((p) =>
-      p.id.endsWith('1') || p.id.endsWith('2') || p.id.endsWith('3') || p.id.endsWith('4')
-    ).length / 4;
-    expect(perChannelInputs + perChannelOutputs + perChannelParams).toBeLessThanOrEqual(5);
-  });
-
-  it('has handle count 13 (8 inputs + 5 outputs)', () => {
-    const total = attenumixDef.inputs.length + attenumixDef.outputs.length;
-    expect(total).toBe(13);
   });
 });

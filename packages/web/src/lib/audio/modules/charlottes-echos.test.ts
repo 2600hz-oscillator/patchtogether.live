@@ -7,7 +7,6 @@
 //   • feedback + decay behave sensibly; output stays finite at extremes.
 
 import { describe, it, expect, beforeAll } from 'vitest';
-import { charlottesEchosDef } from './charlottes-echos';
 
 const SR = 48000;
 
@@ -105,21 +104,6 @@ function spectralCentroid(buf: Float32Array, start: number, end: number): number
   }
   return den > 0 ? num / den : 0;
 }
-
-describe('charlottesEchosDef shape (backward compat)', () => {
-  it('keeps the stable module id', () => {
-    expect(charlottesEchosDef.type).toBe('charlottesEchos');
-  });
-  it('keeps L/R audio ports + the delay CV input', () => {
-    expect(charlottesEchosDef.inputs.map((p) => p.id)).toEqual(['L', 'R', 'delay']);
-    expect(charlottesEchosDef.outputs.map((p) => p.id)).toEqual(['L', 'R']);
-  });
-  it('keeps the original 5 params (delay/feedback/decay/pitchUp/mix)', () => {
-    expect(charlottesEchosDef.params.map((p) => p.id)).toEqual([
-      'delay', 'feedback', 'decay', 'pitchUp', 'mix',
-    ]);
-  });
-});
 
 describe('charlottesEchos 4-stage cascade DSP', () => {
   it('first full-wet echo lands near the SUM of the 4 stage delays (≈ 4 × delay)', async () => {

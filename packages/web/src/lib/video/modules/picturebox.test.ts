@@ -13,44 +13,6 @@ import type { ModuleNode } from '$lib/graph/types';
 import { ASSET_SLOTS, ASSET_SLOT_NOTES, slotForVOct } from '$lib/video/asset-select';
 import { midiToVOct } from '$lib/audio/note-entry';
 
-describe('PICTUREBOX def', () => {
-  it('declares maxInstances = 8 (workspace cap mirror)', () => {
-    expect(pictureboxDef.maxInstances).toBe(8);
-  });
-});
-
-describe('PICTUREBOX def — port surface (v3 asset-selector ports added)', () => {
-  it('keeps gain in + image out, and adds asset_pitch + asset_gate inputs', () => {
-    expect(pictureboxDef.inputs.map((p) => p.id)).toEqual(['gain', 'asset_pitch', 'asset_gate']);
-    expect(pictureboxDef.inputs[0]?.type).toBe('cv');
-    expect(pictureboxDef.outputs.map((p) => p.id)).toEqual(['out']);
-    expect(pictureboxDef.outputs[0]?.type).toBe('image');
-  });
-
-  it('asset_pitch is a pitch input with NO cvScale hint (raw V/oct passthrough)', () => {
-    const ap = pictureboxDef.inputs.find((p) => p.id === 'asset_pitch')!;
-    expect(ap.type).toBe('pitch');
-    expect(ap.paramTarget).toBe('asset_pitch');
-    expect(ap.cvScale).toBeUndefined();
-  });
-
-  it('asset_gate is a gate input routed to a synthetic param', () => {
-    const ag = pictureboxDef.inputs.find((p) => p.id === 'asset_gate')!;
-    expect(ag.type).toBe('gate');
-    expect(ag.paramTarget).toBe('asset_gate');
-  });
-
-  it('every cv/gate/pitch input has a paramTarget that exists in params', () => {
-    const paramIds = new Set(pictureboxDef.params.map((p) => p.id));
-    for (const port of pictureboxDef.inputs) {
-      if (port.type === 'cv' || port.type === 'gate' || port.type === 'pitch') {
-        expect(port.paramTarget, `${port.id} has paramTarget`).toBeDefined();
-        expect(paramIds.has(port.paramTarget!), `${port.id} → ${port.paramTarget}`).toBe(true);
-      }
-    }
-  });
-});
-
 // ---------------------------------------------------------------------------
 // Factory: 7-slot asset switching (fake GL — no WebGL). Mirrors the fake-GL
 // pattern in scoreboard.test.ts / 4plexvid.test.ts.

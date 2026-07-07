@@ -486,56 +486,6 @@ describe('backdraft module def — params + ports', () => {
     expect(byId.offsetY).toMatchObject({ min: BACKDRAFT_OFFSET_MIN, max: BACKDRAFT_OFFSET_MAX, defaultValue: 0 });
   });
 
-  it('exposes two video inputs, two key masks, and the out port', () => {
-    const inIds = backdraftDef.inputs.filter((p) => p.type === 'video').map((p) => p.id);
-    expect(inIds).toEqual(expect.arrayContaining(['in_a', 'in_b', 'lighten', 'darken']));
-    expect(backdraftDef.outputs.map((p) => p.id)).toEqual(['out']);
-  });
-
-  it('every modulatable param has a matching CV input (port id == param id, or _cv)', () => {
-    const cvTargets = backdraftDef.inputs
-      .filter((p) => p.type === 'cv')
-      .map((p) => p.paramTarget);
-    for (const id of [
-      'mix', 'feedback', 'delay', 'luma', 'chroma', 'r', 'g', 'b', 'lighten', 'darken',
-      // PIXELATE is CV-wired too
-      'pixelate',
-      // spatial feedback transform is CV-wired too
-      'zoom', 'rotate', 'offsetX', 'offsetY',
-    ]) {
-      expect(cvTargets, `cv for ${id}`).toContain(id);
-    }
-  });
-
-  it('exposes a DELAY CLOCK gate input (raw passthrough, no cvScale)', () => {
-    const clk = backdraftDef.inputs.find((p) => p.id === 'delay_clock');
-    expect(clk, 'delay_clock port').toBeDefined();
-    expect(clk?.type).toBe('cv');
-    // Gate-style: NO cvScale hint => the bridge passes the raw swing through
-    // so the module edge-detects rising edges (vs scaling across a range).
-    expect(clk?.cvScale).toBeUndefined();
-    expect(clk?.paramTarget).toBe('delayClock');
-    // The synthetic gate param exists (hidden — no card knob).
-    const byId = Object.fromEntries(backdraftDef.params.map((p) => [p.id, p]));
-    expect(byId.delayClock).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
-  });
-
-  it('exposes mirror_x_gate / mirror_y_gate as raw (no cvScale) gate inputs + 0/1 mirror params', () => {
-    for (const [port, target] of [
-      ['mirror_x_gate', 'mirrorXGate'],
-      ['mirror_y_gate', 'mirrorYGate'],
-    ] as const) {
-      const g = backdraftDef.inputs.find((p) => p.id === port);
-      expect(g, port).toBeDefined();
-      expect(g?.type).toBe('cv');
-      expect(g?.cvScale).toBeUndefined(); // gate semantics — raw passthrough
-      expect(g?.paramTarget).toBe(target);
-    }
-    const byId = Object.fromEntries(backdraftDef.params.map((p) => [p.id, p]));
-    expect(byId.mirrorX).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
-    expect(byId.mirrorY).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
-  });
-
   it('exposes shape_gate / pure_geo_gate as raw (no cvScale) gate inputs + SHAPE/PURE GEO params', () => {
     for (const [port, target] of [
       ['shape_gate', 'shapeGate'],
@@ -567,11 +517,6 @@ describe('backdraft module def — params + ports', () => {
     expect(BACKDRAFT_MAX_DELAY_MS).toBe(500);
     const f = backdraftDelayFrames(BACKDRAFT_MAX_DELAY_MS, BACKDRAFT_BUFFER_FRAMES);
     expect(f).toBe(BACKDRAFT_BUFFER_FRAMES - 1);
-  });
-
-  it('bipolar CV params use linear cvScale', () => {
-    const lumaCv = backdraftDef.inputs.find((p) => p.type === 'cv' && p.paramTarget === 'luma');
-    expect(lumaCv?.cvScale).toMatchObject({ mode: 'linear' });
   });
 
   it('ring buffer covers the max delay at the assumed frame rate', () => {

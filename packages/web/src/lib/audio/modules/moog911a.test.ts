@@ -36,32 +36,6 @@ beforeAll(() => {
 // ────────────────────────────────────────────────────────────────────────────
 
 describe('moog911aDef — module def shape', () => {
-  it('declares type=moog911a, label, modulation category, schemaVersion=1', () => {
-    expect(moog911aDef.type).toBe('moog911a');
-    expect(moog911aDef.label).toBe('911a trig delay');
-    expect(moog911aDef.category).toBe('modulation');
-    expect(moog911aDef.domain).toBe('audio');
-  });
-
-  it('lives in the Moog System 35/55 Clones palette bucket and uses the Moog911aCard', () => {
-    expect(moog911aDef.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
-    expect(moog911aDef.card).toBe('Moog911aCard');
-  });
-
-  it('exposes two gate inputs: trig1, trig2 (PASSTHROUGH — no cvScale/paramTarget)', () => {
-    expect(moog911aDef.inputs.map((p) => p.id)).toEqual(['trig1', 'trig2']);
-    for (const p of moog911aDef.inputs) {
-      expect(p.type).toBe('gate');
-      expect(p.cvScale).toBeUndefined();
-      expect(p.paramTarget).toBeUndefined();
-    }
-  });
-
-  it('exposes two gate outputs: out1, out2', () => {
-    expect(moog911aDef.outputs.map((p) => p.id)).toEqual(['out1', 'out2']);
-    for (const p of moog911aDef.outputs) expect(p.type).toBe('gate');
-  });
-
   it('exposes 3 params: delay1/delay2 (log s, 0.002..10, default 0.1) + mode (discrete 0..2)', () => {
     const byId = Object.fromEntries(moog911aDef.params.map((p) => [p.id, p] as const));
     expect(moog911aDef.params.map((p) => p.id)).toEqual(['delay1', 'delay2', 'mode']);

@@ -8,7 +8,6 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  freezeframeDef,
   quantLevels,
   posterizeChannel,
   lumaOf,
@@ -18,48 +17,6 @@ import {
   QUANT_MID_LEVELS,
   QUANT_MIN_LEVELS,
 } from './freezeframe';
-
-describe('freezeframeDef shape', () => {
-  it('declares video_in (video) + gate_in (gate) inputs', () => {
-    const byId = Object.fromEntries(freezeframeDef.inputs.map((p) => [p.id, p.type]));
-    expect(byId.video_in).toBe('video');
-    expect(byId.gate_in).toBe('gate');
-  });
-
-  it('gate_in routes to the gateLevel param (CV bridge target)', () => {
-    const gate = freezeframeDef.inputs.find((p) => p.id === 'gate_in');
-    expect(gate?.paramTarget).toBe('gateLevel');
-  });
-
-  it('declares exactly five video outputs: video_out, r/g/b/luma_out', () => {
-    expect(freezeframeDef.outputs.map((o) => o.id)).toEqual([
-      'video_out', 'r_out', 'g_out', 'b_out', 'luma_out',
-    ]);
-    for (const o of freezeframeDef.outputs) expect(o.type).toBe('video');
-  });
-
-  it('declares the four QUANT knobs over 0..1 linear, default 0', () => {
-    for (const id of ['quant_r', 'quant_g', 'quant_b', 'quant_luma'] as const) {
-      const p = freezeframeDef.params.find((x) => x.id === id);
-      expect(p, `missing ${id}`).toBeTruthy();
-      expect(p!.min).toBe(0);
-      expect(p!.max).toBe(1);
-      expect(p!.defaultValue).toBe(0);
-      expect(p!.curve).toBe('linear');
-    }
-  });
-
-  it('exposes a hidden gateLevel param for the CV bridge', () => {
-    const g = freezeframeDef.params.find((p) => p.id === 'gateLevel');
-    expect(g).toBeTruthy();
-  });
-
-  it('is a video module in the effects category', () => {
-    expect(freezeframeDef.domain).toBe('video');
-    expect(freezeframeDef.category).toBe('effects');
-    expect(freezeframeDef.type).toBe('freezeframe');
-  });
-});
 
 describe('quantLevels mapping (256 -> 32 -> 2)', () => {
   it('7:00 / min knob = 0 → 256 levels (full depth)', () => {

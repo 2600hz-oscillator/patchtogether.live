@@ -23,66 +23,6 @@ beforeAll(() => {
 });
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
-describe('moog902Def: module def shape', () => {
-  it('declares type=moog902, label="902 VCA", category=utilities, schemaVersion=1', () => {
-    expect(moog902Def.type).toBe('moog902');
-    expect(moog902Def.label).toBe('902 vca');
-    expect(moog902Def.category).toBe('utilities');
-  });
-
-  it('exposes the 902 inputs: audio (SIGNAL) + cv + fcv summing CONTROL INPUTS', () => {
-    const ids = moog902Def.inputs.map((p) => p.id).sort();
-    expect(ids).toEqual(['audio', 'cv', 'fcv']);
-  });
-
-  it('exposes the differential output pair: audio (OUT) + audio_inv (OUT−)', () => {
-    const ids = moog902Def.outputs.map((p) => p.id);
-    expect(ids).toEqual(['audio', 'audio_inv']);
-  });
-
-  it('exposes 3 params (gain, cvAmount, mode)', () => {
-    const ids = moog902Def.params.map((p) => p.id).sort();
-    expect(ids).toEqual(['cvAmount', 'gain', 'mode']);
-  });
-
-  it('audio is an audio cable; cv + fcv are cv cables', () => {
-    expect(moog902Def.inputs.find((p) => p.id === 'audio')!.type).toBe('audio');
-    expect(moog902Def.inputs.find((p) => p.id === 'cv')!.type).toBe('cv');
-    expect(moog902Def.inputs.find((p) => p.id === 'fcv')!.type).toBe('cv');
-  });
-
-  it('cv + fcv: cv inputs, paramTarget=gain, no cvScale (audio-rate sum, PASSTHROUGH)', () => {
-    for (const id of ['cv', 'fcv']) {
-      const port = moog902Def.inputs.find((p) => p.id === id)!;
-      expect(port.type).toBe('cv');
-      expect(port.paramTarget).toBe('gain');
-      expect(port.cvScale).toBeUndefined();
-    }
-  });
-
-  it('both outputs are audio cables (the differential pair)', () => {
-    for (const id of ['audio', 'audio_inv']) {
-      expect(moog902Def.outputs.find((p) => p.id === id)!.type).toBe('audio');
-    }
-  });
-
-  it('gain spans 0..1 (default 0.5); cvAmount ±1; mode is a discrete 0/1 switch', () => {
-    const gain = moog902Def.params.find((p) => p.id === 'gain')!;
-    expect(gain.min).toBe(0);
-    expect(gain.max).toBe(1);
-    expect(gain.defaultValue).toBe(0.5);
-    const cvAmount = moog902Def.params.find((p) => p.id === 'cvAmount')!;
-    expect(cvAmount.min).toBe(-1);
-    expect(cvAmount.max).toBe(1);
-    expect(cvAmount.defaultValue).toBe(1);
-    const mode = moog902Def.params.find((p) => p.id === 'mode')!;
-    expect(mode.min).toBe(0);
-    expect(mode.max).toBe(1);
-    expect(mode.defaultValue).toBe(0);
-    expect(mode.curve).toBe('discrete');
-  });
-});
-
 // ───────────────────── Layer 2: real worklet DSP ─────────────────────
 type ProcInstance = {
   process: (i: Float32Array[][], o: Float32Array[][], p: Record<string, Float32Array>) => boolean;

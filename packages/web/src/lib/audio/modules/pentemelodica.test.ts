@@ -14,39 +14,6 @@ import { pentemelodicaDef, pentemelodicaMath, PENTE_VOICES } from './pentemelodi
 const SR = 48000;
 
 describe('pentemelodicaDef shape', () => {
-  it('declares type/label/category/domain/palette/stereoPairs', () => {
-    expect(pentemelodicaDef.type).toBe('pentemelodica');
-    // #658 module-rename convention: the def label is lowercase (the card's
-    // displayed defaultLabel stays uppercase, matching cube/wavecel/dx7).
-    expect(pentemelodicaDef.label).toBe('pentemelodica');
-    expect(pentemelodicaDef.category).toBe('sources');
-    expect(pentemelodicaDef.domain).toBe('audio');
-    expect(pentemelodicaDef.palette).toEqual({ top: 'Audio modules', sub: 'VCOs' });
-    expect(pentemelodicaDef.stereoPairs).toEqual([['out_l', 'out_r']]);
-  });
-
-  it('exposes 6 inputs: poly + fm1..fm5', () => {
-    const ids = pentemelodicaDef.inputs.map((p) => p.id);
-    expect(ids).toEqual(['poly', 'fm1', 'fm2', 'fm3', 'fm4', 'fm5']);
-    expect(pentemelodicaDef.inputs.find((p) => p.id === 'poly')!.type).toBe('polyPitchGate');
-    for (const id of ['fm1', 'fm2', 'fm3', 'fm4', 'fm5']) {
-      expect(pentemelodicaDef.inputs.find((p) => p.id === id)!.type).toBe('audio');
-    }
-  });
-
-  it('poly + fm inputs are plain node connections (no paramTarget / cvScale)', () => {
-    for (const port of pentemelodicaDef.inputs) {
-      expect(port.paramTarget, `${port.id} should not target a param`).toBeUndefined();
-      expect(port.cvScale, `${port.id} should not have cvScale`).toBeUndefined();
-    }
-  });
-
-  it('exposes 7 audio outputs: out_l, out_r, voice1..voice5', () => {
-    const ids = pentemelodicaDef.outputs.map((p) => p.id);
-    expect(ids).toEqual(['out_l', 'out_r', 'voice1', 'voice2', 'voice3', 'voice4', 'voice5']);
-    for (const p of pentemelodicaDef.outputs) expect(p.type).toBe('audio');
-  });
-
   it('declares 48 params: 5 voices × 8 + 4 shared ADSR + 4 filter', () => {
     expect(pentemelodicaDef.params.length).toBe(PENTE_VOICES * 8 + 4 + 4);
   });
@@ -81,41 +48,6 @@ describe('pentemelodicaDef shape', () => {
     }
   });
 
-  it('declares ONE shared ADSR (attack/decay/sustain/release) matching cube\'s shape', () => {
-    const want: Array<{ id: string; min: number; max: number; def: number; curve: string }> = [
-      { id: 'attack',  min: 0.001, max: 5, def: 0.001, curve: 'log' },
-      { id: 'decay',   min: 0.001, max: 5, def: 0.1,   curve: 'log' },
-      { id: 'sustain', min: 0,     max: 1, def: 1,     curve: 'linear' },
-      { id: 'release', min: 0.001, max: 5, def: 0.005, curve: 'log' },
-    ];
-    for (const w of want) {
-      const matches = pentemelodicaDef.params.filter((p) => p.id === w.id);
-      expect(matches.length, `exactly one shared ${w.id}`).toBe(1);
-      const p = matches[0]!;
-      expect(p.min).toBe(w.min);
-      expect(p.max).toBe(w.max);
-      expect(p.defaultValue).toBe(w.def);
-      expect(p.curve).toBe(w.curve);
-    }
-  });
-
-  it('declares the 4 filter params with documented ranges', () => {
-    const cutoff = pentemelodicaDef.params.find((p) => p.id === 'cutoff')!;
-    expect(cutoff.min).toBe(20);
-    expect(cutoff.max).toBe(20000);
-    expect(cutoff.defaultValue).toBe(1000);
-    expect(cutoff.curve).toBe('log');
-    const reso = pentemelodicaDef.params.find((p) => p.id === 'resonance')!;
-    expect(reso.min).toBe(0);
-    expect(reso.max).toBe(0.99);
-    const mode = pentemelodicaDef.params.find((p) => p.id === 'mode')!;
-    expect(mode.min).toBe(0);
-    expect(mode.max).toBe(1);
-    const wet = pentemelodicaDef.params.find((p) => p.id === 'wetdry')!;
-    expect(wet.min).toBe(0);
-    expect(wet.max).toBe(1);
-    expect(wet.defaultValue).toBe(1);
-  });
 });
 
 function defVoices() {

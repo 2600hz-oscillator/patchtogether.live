@@ -18,49 +18,6 @@ import { moog995Def } from './moog995';
 import type { ModuleNode } from '$lib/graph/types';
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
-describe('moog995Def: module def shape', () => {
-  it('declares type=moog995, label="995 Atten", category=utilities, domain=audio, schemaVersion=1', () => {
-    expect(moog995Def.type).toBe('moog995');
-    expect(moog995Def.label).toBe('995 atten');
-    expect(moog995Def.category).toBe('utilities');
-    expect(moog995Def.domain).toBe('audio');
-  });
-
-  it('is filed under the Moog System 35/55 Clones palette bucket', () => {
-    expect(moog995Def.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
-  });
-
-  it('exposes the three audio inputs: in1..in3', () => {
-    const ids = moog995Def.inputs.map((p) => p.id);
-    expect(ids).toEqual(['in1', 'in2', 'in3']);
-    for (const p of moog995Def.inputs) {
-      expect(p.type).toBe('audio');
-      // Passive signal attenuation — not a CV→param routing.
-      expect(p.paramTarget).toBeUndefined();
-      expect(p.cvScale).toBeUndefined();
-    }
-  });
-
-  it('exposes the three audio outputs: out1..out3', () => {
-    const ids = moog995Def.outputs.map((p) => p.id);
-    expect(ids).toEqual(['out1', 'out2', 'out3']);
-    for (const p of moog995Def.outputs) {
-      expect(p.type).toBe('audio');
-    }
-  });
-
-  it('exposes 3 params (atten1..atten3), all linear 0..1 default 1', () => {
-    const ids = moog995Def.params.map((p) => p.id);
-    expect(ids).toEqual(['atten1', 'atten2', 'atten3']);
-    for (const p of moog995Def.params) {
-      expect(p.min).toBe(0);
-      expect(p.max).toBe(1);
-      expect(p.defaultValue).toBe(1);
-      expect(p.curve).toBe('linear');
-    }
-  });
-});
-
 // ───────────────────── Layer 2: pure Web Audio factory ─────────────────────
 // The 995 is a pure-gain module (no worklet / no Faust). Mock just the slice
 // of AudioContext the factory touches: createGain() + currentTime. Each

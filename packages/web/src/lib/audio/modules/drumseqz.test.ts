@@ -183,25 +183,6 @@ describe('coerceTracks', () => {
 });
 
 describe('drumseqzDef shape', () => {
-  it('declares 9 outputs (4 gate + 4 pitch + chained clock)', () => {
-    const ids = drumseqzDef.outputs.map((p) => p.id);
-    expect(ids).toEqual([
-      'gate1', 'pitch1',
-      'gate2', 'pitch2',
-      'gate3', 'pitch3',
-      'gate4', 'pitch4',
-      'clock',
-    ]);
-  });
-
-  it('declares clock + transport CV inputs', () => {
-    expect(drumseqzDef.inputs.map((p) => p.id)).toEqual([
-      'clock',
-      'play_cv', 'reset_cv',
-      'queue1_cv', 'queue2_cv', 'queue3_cv', 'queue4_cv',
-    ]);
-  });
-
   it('declares per-track euclid/root/octave params', () => {
     const ids = drumseqzDef.params.map((p) => p.id);
     for (let t = 1; t <= TRACK_COUNT; t++) {

@@ -67,69 +67,6 @@ describe('mapCompMacro: per-channel comp knob → (enable, thresh, ratio)', () =
   });
 });
 
-describe('mixmstrsDef: 6 channels, each with a comp macro + cv port', () => {
-  it('exposes comp1..comp6 params', () => {
-    const ids = mixmstrsDef.params.map((p) => p.id);
-    for (const ch of [1, 2, 3, 4, 5, 6]) {
-      expect(ids, `comp${ch} param exists`).toContain(`comp${ch}`);
-    }
-  });
-
-  it('comp params default to 0 (bypass — preserves existing patches)', () => {
-    for (const ch of [1, 2, 3, 4, 5, 6]) {
-      const p = mixmstrsDef.params.find((q) => q.id === `comp${ch}`);
-      expect(p?.defaultValue, `comp${ch} default`).toBe(0);
-    }
-  });
-
-  it('exposes comp1..comp6 cv input ports with paramTarget', () => {
-    for (const ch of [1, 2, 3, 4, 5, 6]) {
-      const port = mixmstrsDef.inputs.find((p) => p.id === `comp${ch}`);
-      expect(port, `comp${ch} input port exists`).toBeDefined();
-      expect(port?.type).toBe('cv');
-      expect(port?.paramTarget).toBe(`comp${ch}`);
-    }
-  });
-
-  it('preserves the original ch1..ch4 params (existing patches still work)', () => {
-    const ids = mixmstrsDef.params.map((p) => p.id);
-    // Spot-check the originals: per-channel thresh/ratio/compEnable,
-    // master_volume. ch1..ch4 ids must NOT change (saved patches reference them).
-    for (const ch of [1, 2, 3, 4]) {
-      expect(ids).toContain(`ch${ch}_thresh`);
-      expect(ids).toContain(`ch${ch}_ratio`);
-      expect(ids).toContain(`ch${ch}_compEnable`);
-    }
-    expect(ids).toContain('master_volume');
-  });
-
-  it('adds channels 5 + 6 with the full per-channel chain', () => {
-    const ids = mixmstrsDef.params.map((p) => p.id);
-    for (const ch of [5, 6]) {
-      for (const k of ['volume', 'low', 'mid', 'high', 'thresh', 'ratio', 'compEnable', 'send1', 'send2']) {
-        expect(ids, `ch${ch}_${k}`).toContain(`ch${ch}_${k}`);
-      }
-      expect(ids, `comp${ch}`).toContain(`comp${ch}`);
-    }
-    // ch5/ch6 stereo audio inputs.
-    const inIds = mixmstrsDef.inputs.map((p) => p.id);
-    for (const ch of [5, 6]) {
-      expect(inIds).toContain(`ch${ch}L`);
-      expect(inIds).toContain(`ch${ch}R`);
-    }
-  });
-
-  it('total param count = 61 (55 underlying + 6 comp macros)', () => {
-    expect(mixmstrsDef.params.length).toBe(61);
-  });
-
-  it('exposes exactly 6 patchable outputs (master + sends; VU taps are not ports)', () => {
-    expect(mixmstrsDef.outputs.map((o) => o.id)).toEqual([
-      'masterL', 'masterR', 'send1L', 'send1R', 'send2L', 'send2R',
-    ]);
-  });
-});
-
 describe('rmsLevel: pure RMS over a sample window', () => {
   it('a constant buffer reads back its absolute value (RMS of a DC level)', () => {
     expect(rmsLevel(new Float32Array(64).fill(0.5))).toBeCloseTo(0.5, 6);

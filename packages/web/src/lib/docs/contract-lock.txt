@@ -25,7 +25,7 @@
 4plexvid param sel2 0..3 discrete default=0
 4plexvid param sel3 0..3 discrete default=0
 4plexvid param sel4 0..3 discrete default=0
-acidwarp meta domain=video
+acidwarp meta domain=video renderLocus=worker
 acidwarp in scene_cv cv param=sceneTrig
 acidwarp in speed_cv cv param=speed cvScale=linear
 acidwarp out out video
@@ -579,7 +579,7 @@ colorizer out out video
 colorizer param tintB 0..1 linear default=0.7
 colorizer param tintG 0..1 linear default=0.4
 colorizer param tintR 0..1 linear default=1
-colourofmagic meta domain=video
+colourofmagic meta domain=video renderLocus=main
 colourofmagic in hsv_h_cv cv param=bias_h cvScale=linear
 colourofmagic in hsv_h_in mono-video accepts=image,keys,video
 colourofmagic in hsv_s_cv cv param=bias_s cvScale=linear
@@ -905,7 +905,7 @@ drumseqz param trk3_root 33..114 discrete default=48
 drumseqz param trk4_euclid 0..16 discrete default=0
 drumseqz param trk4_octave -2..2 discrete default=0
 drumseqz param trk4_root 33..114 discrete default=48
-drumseqz expose playStop
+drumseqz expose playStop param=isPlaying kind=button
 drumseqz family drumseqz-pitch kind=cell prefix=drumseqz-pitch count=length
 dx7 meta domain=audio
 dx7 in gate gate edge=gate
@@ -1055,7 +1055,7 @@ freezeframe param quant_b 0..1 linear default=0
 freezeframe param quant_g 0..1 linear default=0
 freezeframe param quant_luma 0..1 linear default=0
 freezeframe param quant_r 0..1 linear default=0
-frogger meta domain=audio
+frogger meta domain=audio vizPassthrough
 frogger in down_gate gate
 frogger in left_gate gate
 frogger in right_gate gate
@@ -1343,7 +1343,7 @@ macseq param gateLength 0.1..0.95 linear default=0.5
 macseq param isPlaying 0..1 discrete default=0
 macseq param length 1..128 discrete default=16
 macseq param octave -2..2 discrete default=0
-macseq expose playStop
+macseq expose playStop param=isPlaying kind=button
 macseq family macseq-model kind=cell prefix=macseq-model count=length
 macseq family macseq-pitch kind=cell prefix=macseq-pitch count=length
 mandelbulb meta domain=video
@@ -1646,7 +1646,7 @@ mixmstrs stereo ch5L+ch5R
 mixmstrs stereo ch6L+ch6R
 mixmstrs stereo ret1L+ret1R
 mixmstrs stereo ret2L+ret2R
-modtris meta domain=audio
+modtris meta domain=audio vizPassthrough
 modtris in drop_fast gate
 modtris in move_l gate
 modtris in move_r gate
@@ -2175,9 +2175,9 @@ polyseqz param isPlaying 0..1 discrete default=0
 polyseqz param length 1..128 discrete default=8
 polyseqz param octave -2..2 discrete default=0
 polyseqz param snh 0..1 discrete default=1
-polyseqz expose playStop
+polyseqz expose playStop param=isPlaying kind=button
 polyseqz family polyseqz-root kind=cell prefix=polyseqz-root count=length
-pong meta domain=audio
+pong meta domain=audio vizPassthrough
 pong in paddle_left cv
 pong in paddle_right cv
 pong out score_left gate
@@ -2366,7 +2366,7 @@ scaler meta domain=audio
 scaler in in audio accepts=cv,gate,pitch
 scaler out out audio adopts=in
 scaler param amount 0.1..10 log default=1
-scope meta domain=audio
+scope meta domain=audio vizPassthrough
 scope in ch1 audio accepts=cv,gate,pitch
 scope in ch1Offset cv param=ch1Offset
 scope in ch1Range cv param=ch1Range
@@ -2412,7 +2412,7 @@ score param decay 0.001..10 log default=0.1 unit=s
 score param isPlaying 0..1 discrete default=0
 score param release 0.001..10 log default=0.3 unit=s
 score param sustain 0..1 linear default=0.7
-score expose playStop
+score expose playStop param=isPlaying kind=button
 score family score-dyn kind=cell prefix=score-dyn
 score family score-note kind=cell prefix=score-note
 score family score-tie kind=cell prefix=score-tie
@@ -2448,7 +2448,7 @@ sequencer param length 1..128 discrete default=16
 sequencer param octave -2..2 discrete default=0
 sequencer param snh 0..1 discrete default=1
 sequencer param swing 0..0.75 linear default=0
-sequencer expose playStop
+sequencer expose playStop param=isPlaying kind=button
 sequencer family quicksave-slot kind=quicksave prefix=quicksave-slot
 sequencer family seq-chord kind=cell prefix=seq-chord count=length
 sequencer family seq-gate kind=step-grid prefix=seq-gate count=length
@@ -2541,7 +2541,7 @@ sidecar param threshold -60..0 linear default=-18 unit=dB
 sidecar stereo audio_l_in+audio_r_in
 sidecar stereo audio_l_out+audio_r_out
 sidecar stereo sc_l_in+sc_r_in
-skifree meta domain=audio maxInstances=1
+skifree meta domain=audio maxInstances=1 vizPassthrough
 skifree in x cv
 skifree in y cv
 skifree out gate gate
@@ -2837,10 +2837,10 @@ timelorde param running 0..1 discrete default=1
 timelorde param swingAmount 0..90 linear default=0 unit=deg
 timelorde param swingSource 0..10 discrete default=0
 timelorde param wizardOn 0..1 discrete default=1
-timelorde expose bpm
-timelorde expose swingAmount
-timelorde expose swingSource
-toybox meta domain=video
+timelorde expose bpm param=bpm kind=knob
+timelorde expose swingAmount param=swingAmount kind=knob
+timelorde expose swingSource param=swingSource kind=knob
+toybox meta domain=video renderLocus=worker
 toybox in cv1 modsignal cvScale=linear
 toybox in cv2 modsignal cvScale=linear
 toybox in cv3 modsignal cvScale=linear
@@ -2958,7 +2958,7 @@ vdelay param colorShift 0..1 linear default=0
 vdelay param delayTime 1..32 linear default=8
 vdelay param feedback 0..0.95 linear default=0.4
 vdelay param mix 0..1 linear default=0.5
-vfpgaRunner meta domain=video
+vfpgaRunner meta domain=video renderLocus=worker
 vfpgaRunner in cv1 cv param=cv1_val cvScale=linear
 vfpgaRunner in cv2 cv param=cv2_val cvScale=linear
 vfpgaRunner in cv3 cv param=cv3_val cvScale=linear
@@ -3288,5 +3288,5 @@ writeseq param length 1..128 discrete default=16
 writeseq param octave -2..2 discrete default=0
 writeseq param overdub 0..1 discrete default=0
 writeseq param recArm 0..1 discrete default=0
-writeseq expose playStop
+writeseq expose playStop param=isPlaying kind=button
 writeseq family writeseq-pitch kind=cell prefix=writeseq-pitch count=length

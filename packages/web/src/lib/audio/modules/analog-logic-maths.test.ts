@@ -4,7 +4,7 @@
 // rendering is covered by the ART harness next door.
 
 import { describe, expect, it } from 'vitest';
-import { analogLogicMath, analogLogicMathsDef } from './analog-logic-maths';
+import { analogLogicMath } from './analog-logic-maths';
 
 describe('analogLogicMath: attenuverter', () => {
   it('atten=+1 is identity', () => {
@@ -130,56 +130,5 @@ describe('analogLogicMath: attenuverter applies before the math', () => {
     const aPrime = analogLogicMath.atten(0.1, 1);
     const bPrime = analogLogicMath.atten(0.5, 0);
     expect(analogLogicMath.sum(aPrime, bPrime)).toBeCloseTo(Math.tanh(0.1), 12);
-  });
-});
-
-describe('analogLogicMathsDef: module-def shape', () => {
-  it('declares type=analogLogicMaths, label=ANALOGLOGICMATHS, category=utilities, domain=audio', () => {
-    expect(analogLogicMathsDef.type).toBe('analogLogicMaths');
-    expect(analogLogicMathsDef.label).toBe('analoglogicmaths');
-    expect(analogLogicMathsDef.category).toBe('utilities');
-    expect(analogLogicMathsDef.domain).toBe('audio');
-  });
-
-  it('exposes 4 cv inputs (a, b, attA_cv, attB_cv)', () => {
-    const ids = analogLogicMathsDef.inputs.map((p) => p.id).sort();
-    expect(ids).toEqual(['a', 'attA_cv', 'attB_cv', 'b']);
-    for (const p of analogLogicMathsDef.inputs) {
-      expect(p.type).toBe('cv');
-    }
-  });
-
-  it('exposes 5 cv outputs (min, max, diff, sum, product)', () => {
-    const ids = analogLogicMathsDef.outputs.map((p) => p.id).sort();
-    expect(ids).toEqual(['diff', 'max', 'min', 'product', 'sum']);
-    for (const p of analogLogicMathsDef.outputs) {
-      expect(p.type).toBe('cv');
-    }
-  });
-
-  it('cv-on-param inputs carry paramTarget + linear cvScale; signal inputs do not', () => {
-    const attA = analogLogicMathsDef.inputs.find((p) => p.id === 'attA_cv')!;
-    expect(attA.paramTarget).toBe('attA');
-    expect(attA.cvScale?.mode).toBe('linear');
-    const attB = analogLogicMathsDef.inputs.find((p) => p.id === 'attB_cv')!;
-    expect(attB.paramTarget).toBe('attB');
-    expect(attB.cvScale?.mode).toBe('linear');
-    for (const id of ['a', 'b']) {
-      const p = analogLogicMathsDef.inputs.find((q) => q.id === id);
-      expect(p?.paramTarget, `${id} paramTarget`).toBeUndefined();
-      expect(p?.cvScale, `${id} cvScale`).toBeUndefined();
-    }
-  });
-
-  it('exposes 2 bipolar attenuverter params (default +1)', () => {
-    const ids = analogLogicMathsDef.params.map((p) => p.id).sort();
-    expect(ids).toEqual(['attA', 'attB']);
-    for (const id of ['attA', 'attB']) {
-      const p = analogLogicMathsDef.params.find((q) => q.id === id);
-      expect(p?.min, `${id} min`).toBe(-1);
-      expect(p?.max, `${id} max`).toBe(1);
-      expect(p?.defaultValue, `${id} default`).toBe(1);
-      expect(p?.curve, `${id} curve`).toBe('linear');
-    }
   });
 });

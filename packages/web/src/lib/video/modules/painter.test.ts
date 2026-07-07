@@ -22,7 +22,6 @@ import {
   type OpLogData,
   type RgbaBitmap,
 } from './painter-draw';
-import { painterDef } from './painter';
 import { patch } from '$lib/graph/store';
 import { mutateNode } from '$lib/graph/mutate';
 import type { ModuleNode } from '$lib/graph/types';
@@ -200,17 +199,6 @@ describe('painter — floodFill', () => {
   it('out-of-bounds seed does nothing', () => {
     const img = whiteBitmap(2, 2);
     expect(floodFill(img, 9, 9, [0, 0, 0, 255])).toBe(0);
-  });
-});
-
-describe('painter — module def contract', () => {
-  it('is a lowercase-labelled video source with a single video out + no inputs', () => {
-    expect(painterDef.type).toBe('painter');
-    expect(painterDef.label).toBe('painter');
-    expect(painterDef.label).toBe(painterDef.label.toLowerCase());
-    expect(painterDef.domain).toBe('video');
-    expect(painterDef.inputs).toEqual([]);
-    expect(painterDef.outputs).toEqual([{ id: 'out', type: 'video' }]);
   });
 });
 

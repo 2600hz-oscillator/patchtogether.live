@@ -51,38 +51,6 @@ describe('ribbonToVOct', () => {
 });
 
 // ───────────────────── Layer 2: module-def shape ─────────────────────
-describe('moog956Def: module def shape', () => {
-  it('declares type=moog956, label="956 Ribbon", category=utility, schemaVersion=1', () => {
-    expect(moog956Def.type).toBe('moog956');
-    expect(moog956Def.label).toBe('956 ribbon');
-    expect(moog956Def.category).toBe('utility');
-  });
-
-  it('lives in the Moog System 35/55 Clones palette bucket and uses the Moog956Card', () => {
-    expect(moog956Def.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
-    expect(moog956Def.card).toBe('Moog956Card');
-    expect(moog956Def.domain).toBe('audio');
-  });
-
-  it('declares NO inputs (UI-driven source)', () => {
-    expect(moog956Def.inputs).toEqual([]);
-  });
-
-  it('exposes pitch + gate outputs with the right cable types', () => {
-    const out = Object.fromEntries(moog956Def.outputs.map((p) => [p.id, p.type]));
-    expect(out).toEqual({ pitch: 'pitch', gate: 'gate' });
-  });
-
-  it('exposes pos/gate/scale/offset params with sane ranges + defaults', () => {
-    const byId = Object.fromEntries(moog956Def.params.map((p) => [p.id, p]));
-    expect(Object.keys(byId).sort()).toEqual(['gate', 'offset', 'pos', 'scale']);
-    expect(byId.pos).toMatchObject({ min: 0, max: 1, defaultValue: 0, curve: 'linear' });
-    expect(byId.gate).toMatchObject({ min: 0, max: 1, defaultValue: 0, curve: 'linear' });
-    expect(byId.scale).toMatchObject({ min: 0, max: 5, defaultValue: 2, curve: 'linear' });
-    expect(byId.offset).toMatchObject({ min: -2, max: 2, defaultValue: 0, curve: 'linear' });
-  });
-});
-
 // ───────────────────── Layer 3: factory wiring ─────────────────────
 interface MockConstSource {
   __kind: 'const';

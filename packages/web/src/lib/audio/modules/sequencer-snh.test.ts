@@ -167,18 +167,6 @@ beforeEach(() => {
   clearPatch();
 });
 
-describe('sequencer: s&h param', () => {
-  it('declares a discrete s&h param defaulting ON (1), lowercase label', () => {
-    const snh = sequencerDef.params.find((p) => p.id === 'snh');
-    expect(snh).toBeDefined();
-    expect(snh!.defaultValue).toBe(1);
-    expect(snh!.min).toBe(0);
-    expect(snh!.max).toBe(1);
-    expect(snh!.curve).toBe('discrete');
-    expect(snh!.label).toBe(snh!.label.toLowerCase());
-  });
-});
-
 describe('sequencer: gate-sampled S&H (pitch holds between gates)', () => {
   // Pattern: step 0 ON (midi 72 = +1 oct = 1.0 V), step 1 OFF (rest), step 2 ON
   // (midi 67 = +7 semis = 0.5833 V — deliberately NON-zero so a held step is

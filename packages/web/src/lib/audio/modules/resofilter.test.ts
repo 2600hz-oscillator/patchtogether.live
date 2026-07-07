@@ -117,20 +117,6 @@ function rms(buf: Float32Array, start = 0, end = buf.length): number {
 // ────────────────────────────────────────────────────────────────────────────
 
 describe('resofilterDef — module def shape', () => {
-  it('declares 3 inputs (audio, cutoff_cv, reso_cv)', () => {
-    expect(resofilterDef.inputs.map((i) => i.id)).toEqual([
-      'audio',
-      'cutoff_cv',
-      'reso_cv',
-    ]);
-  });
-
-  it('declares 2 audio outputs in a stereo pair', () => {
-    expect(resofilterDef.outputs.map((o) => o.id)).toEqual(['out_l', 'out_r']);
-    expect(resofilterDef.outputs.every((o) => o.type === 'audio')).toBe(true);
-    expect(resofilterDef.stereoPairs).toEqual([['out_l', 'out_r']]);
-  });
-
   it('declares 4 params with the documented ranges + defaults', () => {
     const byId = Object.fromEntries(resofilterDef.params.map((p) => [p.id, p] as const));
     expect(Object.keys(byId).sort()).toEqual(['cutoff', 'mix', 'mode', 'resonance']);
@@ -141,26 +127,12 @@ describe('resofilterDef — module def shape', () => {
     expect(byId.mix).toMatchObject({ min: 0, max: 1, curve: 'linear', defaultValue: 1 });
   });
 
-  it('CV inputs target the right params with linear cvScale', () => {
-    const cutoffCv = resofilterDef.inputs.find((p) => p.id === 'cutoff_cv')!;
-    expect(cutoffCv.paramTarget).toBe('cutoff');
-    expect(cutoffCv.cvScale).toEqual({ mode: 'linear' });
-
-    const resoCv = resofilterDef.inputs.find((p) => p.id === 'reso_cv')!;
-    expect(resoCv.paramTarget).toBe('resonance');
-    expect(resoCv.cvScale).toEqual({ mode: 'linear' });
-  });
-
   it('MODE_NAMES length matches the mode param discrete range', () => {
     const modeParam = resofilterDef.params.find((p) => p.id === 'mode')!;
     expect(RESOFILTER_MODE_NAMES.length).toBe(modeParam.max - modeParam.min + 1);
     expect(RESOFILTER_MODE_COUNT).toBe(5);
   });
 
-  it('claims processors category + Resonarium attribution', () => {
-    expect(resofilterDef.category).toBe('processors');
-    expect(resofilterDef.ossAttribution?.author).toMatch(/Resonarium/i);
-  });
 });
 
 // ────────────────────────────────────────────────────────────────────────────

@@ -21,46 +21,6 @@ import { polarizerDef, polarize } from './polarizer';
 import type { ModuleNode } from '$lib/graph/types';
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
-describe('polarizerDef: module def shape', () => {
-  it('declares type=polarizer, label="polarizer" (lowercase), category=utilities, domain=audio, schemaVersion=1', () => {
-    expect(polarizerDef.type).toBe('polarizer');
-    expect(polarizerDef.label).toBe('polarizer');
-    // Guard against the uppercase-label CI failure (card CSS uppercases for display).
-    expect(polarizerDef.label).toBe(polarizerDef.label.toLowerCase());
-    expect(polarizerDef.category).toBe('utilities');
-    expect(polarizerDef.domain).toBe('audio');
-  });
-
-  it('lands in the Utilities palette (Audio modules → Utility)', () => {
-    expect(polarizerDef.palette).toEqual({ top: 'Audio modules', sub: 'Utility' });
-  });
-
-  it('exposes a single CV-only `in` input (no audio widening)', () => {
-    expect(polarizerDef.inputs.map((p) => p.id)).toEqual(['in']);
-    const inp = polarizerDef.inputs[0];
-    expect(inp.type).toBe('cv');
-    // CV-only — NOT widened to audio (unlike SCALER).
-    expect(inp.accepts).toBeUndefined();
-    // It is a signal transform, NOT a CV→AudioParam routing.
-    expect(inp.paramTarget).toBeUndefined();
-  });
-
-  it('exposes a single CV-only `out` output', () => {
-    expect(polarizerDef.outputs.map((p) => p.id)).toEqual(['out']);
-    expect(polarizerDef.outputs[0].type).toBe('cv');
-  });
-
-  it('exposes one DEPTH param: linear taper, 0..1, default 1', () => {
-    expect(polarizerDef.params.map((p) => p.id)).toEqual(['depth']);
-    const d = polarizerDef.params[0];
-    expect(d.label).toBe('DEPTH');
-    expect(d.min).toBe(0);
-    expect(d.max).toBe(1);
-    expect(d.defaultValue).toBe(1);
-    expect(d.curve).toBe('linear');
-  });
-});
-
 // ───────────────────── Layer 2: DSP correctness ─────────────────────
 describe('polarize(): out = (2·in − 1)·depth', () => {
   it('depth=1 (full ±1 swing): in=0 → −1, in=0.5 → 0, in=1 → +1', () => {

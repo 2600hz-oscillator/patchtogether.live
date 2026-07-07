@@ -9,72 +9,11 @@ import { mandelbulbDef, MANDELBULB_DEFAULTS } from './mandelbulb';
 import type { VideoEngineContext } from '$lib/video/engine';
 
 describe('mandelbulbDef shape', () => {
-  it('is a video-source module with a mono-video output AND a mono-audio out', () => {
-    expect(mandelbulbDef.type).toBe('mandelbulb');
-    expect(mandelbulbDef.domain).toBe('video');
-    const video = mandelbulbDef.outputs.find((o) => o.id === 'video_out');
-    expect(video?.type).toBe('mono-video');
-    // The slice → waveform → audio out (silent unless the slice toggle is ON,
-    // but always DECLARED so the handle-presence sweep pins it).
-    const audio = mandelbulbDef.outputs.find((o) => o.id === 'audio_out');
-    expect(audio?.type).toBe('audio');
-    expect(mandelbulbDef.outputs).toHaveLength(2);
-  });
-
-  it('declares zoom + every spatial control AND every slice control as a CV input', () => {
-    const ids = mandelbulbDef.inputs.map((p) => p.id).sort();
-    expect(ids).toEqual([
-      'detail_cv', 'hue_cv', 'power_cv', 'rotate_x_cv', 'rotate_y_cv',
-      'slice_rx_cv', 'slice_ry_cv', 'slice_rz_cv', 'slice_y_cv', 'zoom_cv',
-    ]);
-  });
-
-  it('EVERY CV input has a matching param target + linear cvScale (full-range sweep)', () => {
-    // The user requirement: zoom + spatial controls under BOTH CV and knobs.
-    // Each cv port must map to a real param so the bridge sweeps it.
-    const paramIds = new Set(mandelbulbDef.params.map((p) => p.id));
-    for (const input of mandelbulbDef.inputs) {
-      expect(input.type).toBe('cv');
-      expect(input.paramTarget, `${input.id} paramTarget`).toBeTruthy();
-      expect(paramIds.has(input.paramTarget!), `${input.paramTarget} is a real param`).toBe(true);
-      expect(input.cvScale?.mode, `${input.id} cvScale`).toBe('linear');
-    }
-  });
-
-  it('every CV-targeted param is also a KNOB on the card (knob + CV each)', () => {
-    // Each input.paramTarget must appear in params (so the card renders a
-    // knob for it) — the "knob AND CV" guarantee.
-    const cvTargets = mandelbulbDef.inputs.map((p) => p.paramTarget);
-    const knobIds = new Set(mandelbulbDef.params.map((p) => p.id));
-    for (const t of cvTargets) {
-      expect(knobIds.has(t!), `${t} has a knob`).toBe(true);
-    }
-  });
-
-  it('declares the documented param set (incl. the slice toggle + slice controls)', () => {
-    const ids = mandelbulbDef.params.map((p) => p.id).sort();
-    expect(ids).toEqual([
-      'autospin', 'detail', 'hue', 'power', 'rotate_x', 'rotate_y', 'screen_on',
-      'slice', 'slice_rx', 'slice_ry', 'slice_rz', 'slice_y', 'zoom',
-    ]);
-  });
-
   it('the slice toggle defaults OFF (video-identity guarantee)', () => {
     const slice = mandelbulbDef.params.find((p) => p.id === 'slice')!;
     expect(slice.curve).toBe('discrete');
     expect(slice.defaultValue).toBe(0);
     expect(MANDELBULB_DEFAULTS.slice).toBe(0);
-  });
-
-  it('slice_y travels symmetrically in fractal space; slice rotations are ±π', () => {
-    const y = mandelbulbDef.params.find((p) => p.id === 'slice_y')!;
-    expect(y.min).toBe(-y.max);
-    expect(y.max).toBeGreaterThan(0);
-    for (const k of ['slice_rx', 'slice_ry', 'slice_rz'] as const) {
-      const p = mandelbulbDef.params.find((pp) => pp.id === k)!;
-      expect(p.min).toBeCloseTo(-Math.PI, 4);
-      expect(p.max).toBeCloseTo(Math.PI, 4);
-    }
   });
 
   it('power defaults to 8 (the classic Mandelbulb) and detail to ~20', () => {
@@ -84,32 +23,6 @@ describe('mandelbulbDef shape', () => {
     expect(power.defaultValue).toBe(8);
   });
 
-  it('detail / autospin / screen_on are discrete toggles/steppers', () => {
-    for (const k of ['detail', 'autospin', 'screen_on'] as const) {
-      expect(mandelbulbDef.params.find((p) => p.id === k)?.curve).toBe('discrete');
-    }
-  });
-
-  it('declares exactly ONE audio output (audio_out) — the slice readout', () => {
-    // Honest port declaration: MANDELBULB now emits audio via the slice
-    // readout, wired through VideoNodeHandle.audioSources when slice is ON.
-    const audioOuts = mandelbulbDef.outputs.filter((o) => o.type === 'audio');
-    expect(audioOuts.map((o) => o.id)).toEqual(['audio_out']);
-  });
-
-  it('EVERY slice CV input maps to a real slice param (knob + CV each)', () => {
-    const paramIds = new Set(mandelbulbDef.params.map((p) => p.id));
-    for (const sid of ['slice_y_cv', 'slice_rx_cv', 'slice_ry_cv', 'slice_rz_cv']) {
-      const input = mandelbulbDef.inputs.find((p) => p.id === sid)!;
-      expect(input.type).toBe('cv');
-      expect(input.cvScale?.mode).toBe('linear');
-      expect(paramIds.has(input.paramTarget!)).toBe(true);
-    }
-  });
-
-  it('files itself into the video palette via def.palette (no shared edit)', () => {
-    expect(mandelbulbDef.palette).toEqual({ top: 'Video modules', sub: 'Sources' });
-  });
 });
 
 // ──────────────────────────────────────────────────────────────────────────

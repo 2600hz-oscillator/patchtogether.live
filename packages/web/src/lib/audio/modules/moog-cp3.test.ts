@@ -23,59 +23,6 @@ beforeAll(() => {
 });
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
-describe('moogCp3Def: module def shape', () => {
-  it('declares type=moogCp3, label="CP3 Mixer", category=utilities, schemaVersion=1', () => {
-    expect(moogCp3Def.type).toBe('moogCp3');
-    expect(moogCp3Def.label).toBe('cp3 mixer');
-    expect(moogCp3Def.category).toBe('utilities');
-  });
-
-  it('exposes the five inputs: in1..in4 + ext4', () => {
-    const ids = moogCp3Def.inputs.map((p) => p.id);
-    expect(ids).toEqual(['in1', 'in2', 'in3', 'in4', 'ext4']);
-  });
-
-  it('in1..in4 are audio cables; ext4 is a cv cable (signal being mixed)', () => {
-    for (const id of ['in1', 'in2', 'in3', 'in4']) {
-      expect(moogCp3Def.inputs.find((p) => p.id === id)!.type).toBe('audio');
-    }
-    const ext4 = moogCp3Def.inputs.find((p) => p.id === 'ext4')!;
-    expect(ext4.type).toBe('cv');
-    // ext4 is the signal being attenuated, not a knob modulator → no cvScale.
-    expect(ext4.cvScale).toBeUndefined();
-    expect(ext4.paramTarget).toBeUndefined();
-  });
-
-  it('exposes the (+)/(−) outputs, the 1→3 MULTIPLE, and the ±ref outs', () => {
-    const ids = moogCp3Def.outputs.map((p) => p.id);
-    expect(ids).toEqual([
-      'out_positive', 'out_negative',
-      'multiple_one', 'multiple_two', 'multiple_three',
-      'plus_twelve', 'minus_six',
-    ]);
-  });
-
-  it('(+)/(−)/MULTIPLE outs are audio; ±ref outs are cv', () => {
-    for (const id of ['out_positive', 'out_negative', 'multiple_one', 'multiple_two', 'multiple_three']) {
-      expect(moogCp3Def.outputs.find((p) => p.id === id)!.type).toBe('audio');
-    }
-    for (const id of ['plus_twelve', 'minus_six']) {
-      expect(moogCp3Def.outputs.find((p) => p.id === id)!.type).toBe('cv');
-    }
-  });
-
-  it('exposes 5 params (ch1..ch4 + attenuator4), all linear 0..1 default 1', () => {
-    const ids = moogCp3Def.params.map((p) => p.id);
-    expect(ids).toEqual(['ch1', 'ch2', 'ch3', 'ch4', 'attenuator4']);
-    for (const p of moogCp3Def.params) {
-      expect(p.min).toBe(0);
-      expect(p.max).toBe(1);
-      expect(p.defaultValue).toBe(1);
-      expect(p.curve).toBe('linear');
-    }
-  });
-});
-
 // ───────────────────── Layer 2: real worklet DSP ─────────────────────
 type ProcInstance = {
   process: (i: Float32Array[][], o: Float32Array[][], p: Record<string, Float32Array>) => boolean;

@@ -5,7 +5,7 @@
 // Live AudioContext behavior is covered by the ART scenario.
 
 import { describe, expect, it } from 'vitest';
-import { bugglesDef, bugglesMath, bugglesPrng } from './buggles';
+import { bugglesMath, bugglesPrng } from './buggles';
 
 describe('bugglesMath: rate knob → Hz', () => {
   it('knob=0 → 0.1 Hz (lowest rate)', () => {
@@ -120,44 +120,5 @@ describe('bugglesMath: rollBurst', () => {
     // Wide tolerance — PRNG variance at 1000 trials.
     expect(fired, `fired ${fired}/1000 at p=0.5`).toBeGreaterThan(420);
     expect(fired, `fired ${fired}/1000 at p=0.5`).toBeLessThan(580);
-  });
-});
-
-describe('bugglesDef: module-def shape', () => {
-  it('declares type=buggles, label=BUGGLES, category=modulation, domain=audio', () => {
-    expect(bugglesDef.type).toBe('buggles');
-    expect(bugglesDef.label).toBe('buggles');
-    expect(bugglesDef.category).toBe('modulation');
-    expect(bugglesDef.domain).toBe('audio');
-  });
-
-  it('exposes 3 inputs: clock_cv, chaos_cv, external_clock', () => {
-    const ids = bugglesDef.inputs.map((p) => p.id).sort();
-    expect(ids).toEqual(['chaos_cv', 'clock_cv', 'external_clock']);
-    expect(bugglesDef.inputs.find((p) => p.id === 'clock_cv')?.type).toBe('cv');
-    expect(bugglesDef.inputs.find((p) => p.id === 'chaos_cv')?.type).toBe('cv');
-    expect(bugglesDef.inputs.find((p) => p.id === 'external_clock')?.type).toBe('gate');
-  });
-
-  it('exposes 5 outputs: smooth, stepped, clock, burst, ring', () => {
-    const ids = bugglesDef.outputs.map((p) => p.id).sort();
-    expect(ids).toEqual(['burst', 'clock', 'ring', 'smooth', 'stepped']);
-    // smooth + stepped → cv; clock + burst → gate; ring → audio.
-    const byId = Object.fromEntries(bugglesDef.outputs.map((p) => [p.id, p.type]));
-    expect(byId.smooth).toBe('cv');
-    expect(byId.stepped).toBe('cv');
-    expect(byId.clock).toBe('gate');
-    expect(byId.burst).toBe('gate');
-    expect(byId.ring).toBe('audio');
-  });
-
-  it('exposes 5 params: rate, chaos, smoothness, burst_probability, level', () => {
-    const ids = bugglesDef.params.map((p) => p.id).sort();
-    expect(ids).toEqual(['burst_probability', 'chaos', 'level', 'rate', 'smoothness']);
-    for (const p of bugglesDef.params) {
-      expect(p.min).toBe(0);
-      expect(p.max).toBe(1);
-      expect(p.curve).toBe('linear');
-    }
   });
 });

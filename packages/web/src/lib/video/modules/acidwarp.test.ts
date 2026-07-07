@@ -4,7 +4,7 @@
 // The actual GL pipeline is exercised by E2E (jsdom can't render shaders).
 
 import { describe, it, expect } from 'vitest';
-import { acidwarpDef, speedKnobToMultiplier } from './acidwarp';
+import { speedKnobToMultiplier } from './acidwarp';
 import {
   generatePattern,
   buildPalette,
@@ -12,43 +12,6 @@ import {
   SCENE_COUNT,
   PALETTE_COUNT,
 } from './acidwarp-patterns';
-
-describe('acidwarpDef shape', () => {
-  it('is a video-source module with one video output', () => {
-    expect(acidwarpDef.type).toBe('acidwarp');
-    expect(acidwarpDef.domain).toBe('video');
-    expect(acidwarpDef.outputs).toHaveLength(1);
-    expect(acidwarpDef.outputs[0]!.id).toBe('out');
-    expect(acidwarpDef.outputs[0]!.type).toBe('video');
-  });
-
-  it('is opted into the Fix E render worker (renderLocus: worker)', () => {
-    // acidwarp is the Phase-1 vehicle for the off-main-thread render worker.
-    // The flag is OFF by default, so this only changes behavior when
-    // VITE_VIDEO_WORKER / __videoWorkerEnabled is set; the def field is what
-    // the engine consults to pick the WorkerProxyHandle path.
-    expect(acidwarpDef.renderLocus).toBe('worker');
-  });
-
-  it('declares speed + scene CV inputs', () => {
-    const ids = acidwarpDef.inputs.map((p) => p.id).sort();
-    expect(ids).toEqual(['scene_cv', 'speed_cv']);
-    const speed = acidwarpDef.inputs.find((p) => p.id === 'speed_cv')!;
-    expect(speed.paramTarget).toBe('speed');
-    expect(speed.cvScale?.mode).toBe('linear');
-  });
-
-  it('declares speed / freeze / scene / paletteType / sceneTrig params', () => {
-    const ids = acidwarpDef.params.map((p) => p.id).sort();
-    expect(ids).toEqual(['freeze', 'paletteType', 'scene', 'sceneTrig', 'speed']);
-  });
-
-  it('freeze + scene + paletteType are discrete', () => {
-    for (const k of ['freeze', 'scene', 'paletteType'] as const) {
-      expect(acidwarpDef.params.find((p) => p.id === k)?.curve).toBe('discrete');
-    }
-  });
-});
 
 describe('speedKnobToMultiplier — piecewise mapping', () => {
   it('knob = 0 → 0× (stopped)', () => {

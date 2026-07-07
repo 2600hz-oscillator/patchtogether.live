@@ -21,46 +21,12 @@ import type { VideoEngineContext, VideoFrameContext } from '$lib/video/engine';
 import type { ModuleNode, Edge } from '$lib/graph/types';
 
 describe('toyboxDef shape', () => {
-  it('is a video-source module with one video output', () => {
-    expect(toyboxDef.type).toBe('toybox');
-    expect(toyboxDef.domain).toBe('video');
-    expect(toyboxDef.outputs).toHaveLength(1);
-    expect(toyboxDef.outputs[0]!.id).toBe('out');
-    expect(toyboxDef.outputs[0]!.type).toBe('video');
-  });
-
   it('declares 8 inputs: 6 generic modulation ports (cv1..cv6) THEN 2 video ports (inA/inB)', () => {
     const ids = toyboxDef.inputs.map((p) => p.id);
     // cv1..cv6 first (order matters: the card + CV routing read ports by id at
     // a stable index), inA/inB appended LAST.
     expect(ids).toEqual([...CV_PORT_IDS, 'inA', 'inB']);
     expect(toyboxDef.inputs).toHaveLength(8);
-  });
-
-  it('the 6 cv ports are type `modsignal` (cv/gate/audio) with a linear hint + NO paramTarget', () => {
-    const cvPorts = toyboxDef.inputs.filter((p) => p.id !== 'inA' && p.id !== 'inB');
-    expect(cvPorts).toHaveLength(6);
-    for (const port of cvPorts) {
-      // modsignal: accepts cv, gate, OR audio (canConnect scopes audio→non-audio
-      // to this type only). The port IDs stay cv1..cv6.
-      expect(port.type).toBe('modsignal');
-      // Neutral-linear hint: the cv-bridge degrades to raw passthrough (no
-      // param named 'cvN' to resolve), so TOYBOX shapes the value in setParam.
-      expect(port.cvScale).toEqual({ mode: 'linear' });
-      // Dynamic routing → no static paramTarget.
-      expect(port.paramTarget).toBeUndefined();
-    }
-  });
-
-  it('the 2 video inputs (inA/inB) are type `video` (a patched feed into a layer)', () => {
-    const inA = toyboxDef.inputs.find((p) => p.id === 'inA');
-    const inB = toyboxDef.inputs.find((p) => p.id === 'inB');
-    expect(inA?.type).toBe('video');
-    expect(inB?.type).toBe('video');
-  });
-
-  it('has no static numeric engine params (content/material/combine live in node.data)', () => {
-    expect(toyboxDef.params).toEqual([]);
   });
 
 });

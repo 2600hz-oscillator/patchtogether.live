@@ -174,20 +174,6 @@ describe('tilerResolveGrid — CV sum-then-snap (the effective grid)', () => {
 });
 
 describe('tiler module def — params + ports', () => {
-  it('is a lowercase-labelled video processor', () => {
-    expect(tilerDef.type).toBe('tiler');
-    expect(tilerDef.domain).toBe('video');
-    expect(tilerDef.label).toBe('tiler'); // lowercase — CI guard fails on uppercase
-    expect(tilerDef.label).toBe(tilerDef.label.toLowerCase());
-  });
-
-  it('exposes a single video IN and video OUT', () => {
-    const videoIns = tilerDef.inputs.filter((p) => p.type === 'video').map((p) => p.id);
-    expect(videoIns).toEqual(['in']);
-    expect(tilerDef.outputs.map((p) => p.id)).toEqual(['out']);
-    expect(tilerDef.outputs[0]!.type).toBe('video');
-  });
-
   it('declares the TILE knob as a discrete 0..5 step index', () => {
     const byId = Object.fromEntries(tilerDef.params.map((p) => [p.id, p]));
     expect(byId.tile).toMatchObject({
@@ -198,13 +184,4 @@ describe('tiler module def — params + ports', () => {
     });
   });
 
-  it('exposes a TILE CV input (discrete cvScale, targets the tile param)', () => {
-    const cv = tilerDef.inputs.find((p) => p.id === 'tile_cv');
-    expect(cv, 'tile_cv port').toBeDefined();
-    expect(cv?.type).toBe('cv');
-    expect(cv?.paramTarget).toBe('tile');
-    // DISCRETE so the CV snaps onto the index steps before summing; the module
-    // then snaps the summed value to the nearest valid step.
-    expect(cv?.cvScale).toEqual({ mode: 'discrete' });
-  });
 });

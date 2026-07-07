@@ -28,20 +28,6 @@ import { midiToVOct } from '$lib/audio/note-entry';
 import type { ModuleNode } from '$lib/graph/types';
 
 describe('midiCvBuddyDef: module shape', () => {
-  it('declares no inputs and three outputs (pitch / gate / velocity)', () => {
-    expect(midiCvBuddyDef.inputs).toEqual([]);
-    const outIds = midiCvBuddyDef.outputs.map((o) => o.id);
-    expect(outIds).toEqual(['pitch_cv', 'gate', 'velocity_cv']);
-  });
-
-  it('belongs to the sources category', () => {
-    expect(midiCvBuddyDef.category).toBe('sources');
-  });
-
-  it('has no AudioParam-style knobs (discrete settings live on node.data)', () => {
-    expect(midiCvBuddyDef.params).toEqual([]);
-  });
-
   it('lookahead is ≥ one render quantum and < 10 ms (jitter-safe but still immediate)', () => {
     // Must be AT LEAST one 128-frame render quantum (~2.67 ms @ 48 kHz) so a
     // jittery main-thread MIDI callback, after the schedAt() clamp, still

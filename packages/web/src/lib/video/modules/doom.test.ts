@@ -20,18 +20,6 @@ import {
 import type { VideoEngineContext } from '$lib/video/engine';
 
 describe('doomDef — module def shape', () => {
-  it('registers with the right type + domain + category + max-instances', () => {
-    expect(doomDef.type).toBe('doom');
-    expect(doomDef.domain).toBe('video');
-    expect(doomDef.category).toBe('sources');
-    expect(doomDef.maxInstances).toBe(1);
-    expect(doomDef.label).toBe('doom');
-  });
-
-  it('is owner-only (round 5: host-only widget — only the rack owner may add it)', () => {
-    expect(doomDef.ownerOnly).toBe(true);
-  });
-
   it('declares 4 per-slot input GROUPS (p1..p4) × 9 gates + 2 cheat-gates = 38 cv ports', () => {
     const ids = doomDef.inputs.map((p) => p.id);
     // Per-slot gates come first in (slot, base) declaration order; the two
@@ -50,36 +38,6 @@ describe('doomDef — module def shape', () => {
     }
   });
 
-  it('declares a video out + stereo audio outputs + base Phase-1 SP event gates + per-type death gates', () => {
-    const outs = doomDef.outputs.map((p) => p.id);
-    // Base outputs come first in stable order; the per-monster-type kill
-    // gates + per-player death gates append per
-    // packages/web/src/lib/doom/doom-death-ports.ts. The any-monster `evt_kill`
-    // row stays at the head of the gate set — it MUST remain untouched
-    // (feat/doom-per-type-death-gates constraint).
-    const expectedHead = [
-      'out', 'audio_l', 'audio_r',
-      // Phase-1 base event gates — KILL, DOOR, GUN_p1..p4.
-      'evt_kill', 'evt_door', 'evt_gun_p1', 'evt_gun_p2', 'evt_gun_p3', 'evt_gun_p4',
-    ];
-    expect(outs.slice(0, expectedHead.length)).toEqual(expectedHead);
-
-    const types = Object.fromEntries(doomDef.outputs.map((p) => [p.id, p.type]));
-    expect(types.out).toBe('video');
-    expect(types.audio_l).toBe('audio');
-    expect(types.audio_r).toBe('audio');
-    for (const id of ['evt_kill', 'evt_door', 'evt_gun_p1', 'evt_gun_p2', 'evt_gun_p3', 'evt_gun_p4']) {
-      expect(types[id]).toBe('gate');
-    }
-  });
-
-  it('Phase-1 base event gates all declare type=gate', () => {
-    const types = Object.fromEntries(doomDef.outputs.map((p) => [p.id, p.type]));
-    for (const id of ['evt_kill', 'evt_door', 'evt_gun_p1', 'evt_gun_p2', 'evt_gun_p3', 'evt_gun_p4']) {
-      expect(types[id]).toBe('gate');
-    }
-  });
-
   // feat/doom-per-type-death-gates ------------------------------------------
   it('declares one per-monster-type kill gate for every MONSTER_KILL_PORTS row', () => {
     const ids = new Set(doomDef.outputs.map((p) => p.id));
@@ -87,20 +45,6 @@ describe('doomDef — module def shape', () => {
       expect(ids.has(port.portId), `expected output ${port.portId}`).toBe(true);
       const def = doomDef.outputs.find((p) => p.id === port.portId);
       expect(def?.type).toBe('gate');
-    }
-  });
-
-  it('shareware-floor monster gates are present (the WAD we ship lives in E1)', () => {
-    // The 8 monsters that can be in player kills on shareware E1. Their
-    // absence would drop the floor for the in-game death event coverage.
-    const sharewareIds = [
-      'evt_kill_zombieman', 'evt_kill_shotguy', 'evt_kill_imp',
-      'evt_kill_demon', 'evt_kill_spectre', 'evt_kill_lostsoul',
-      'evt_kill_caco', 'evt_kill_baron',
-    ];
-    const ids = new Set(doomDef.outputs.map((p) => p.id));
-    for (const id of sharewareIds) {
-      expect(ids.has(id), `shareware monster ${id} missing`).toBe(true);
     }
   });
 
@@ -113,29 +57,11 @@ describe('doomDef — module def shape', () => {
     }
   });
 
-  it('legacy evt_kill any-monster gate remains untouched (constraint)', () => {
-    // The new per-type gates must NOT replace the legacy any-monster gate.
-    const ids = doomDef.outputs.map((p) => p.id);
-    expect(ids).toContain('evt_kill');
-    const def = doomDef.outputs.find((p) => p.id === 'evt_kill');
-    expect(def?.type).toBe('gate');
-  });
-
   it('every per-slot cv-gate port has a matching synthetic param', () => {
     const paramIds = new Set(doomDef.params.map((p) => p.id));
     for (const { portId } of CV_GATE_PORT_IDS_BY_SLOT) {
       expect(paramIds.has(`cv_${portId}`), `expected param cv_${portId}`).toBe(true);
     }
-  });
-
-  it('exposes the audioGain user-facing param (no surprises)', () => {
-    const paramIds = doomDef.params.map((p) => p.id);
-    expect(paramIds).toContain('audioGain');
-  });
-
-  it('has no "running"/pause param (true-lockstep netgame — a local pause would desync)', () => {
-    const paramIds = doomDef.params.map((p) => p.id);
-    expect(paramIds).not.toContain('running');
   });
 
 });
@@ -561,27 +487,6 @@ describe('doomDef.factory — extras.forcePulse() test hook', () => {
 // Pins the new p{1..4}_esc + p{1..4}_enter ports — the menu (escape) +
 // menu-select (enter) cv inputs added so a SEQUENCER → DOOM patch can drive
 // the pause menu.
-
-describe('doomDef — ESC + ENTER per-slot CV gates', () => {
-  it('declares p1_esc / p1_enter (and p2..p4) — 36 per-slot cv-gate inputs (4 slots × 9 gates), plus the 2 trailing cheat gates', () => {
-    const ids = doomDef.inputs.map((p) => p.id);
-    expect(ids).toContain('p1_esc');
-    expect(ids).toContain('p1_enter');
-    expect(ids).toContain('p4_esc');
-    expect(ids).toContain('p4_enter');
-    // 4 × 9 per-slot + 2 cheat gates = 38.
-    expect(ids).toHaveLength(38);
-  });
-
-  it('every per-slot gate (incl. esc/enter) has a paramTarget routing to a real synthetic param', () => {
-    const paramIds = new Set(doomDef.params.map((p) => p.id));
-    for (const input of doomDef.inputs) {
-      const pt = input.paramTarget;
-      expect(pt).toBe(`cv_${input.id}`);
-      expect(pt && paramIds.has(pt)).toBe(true);
-    }
-  });
-});
 
 // ---- SP single-player CV-drives-player fallback (2026-05-29) -----------
 //

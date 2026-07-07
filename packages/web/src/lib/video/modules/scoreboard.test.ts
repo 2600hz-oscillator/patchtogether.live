@@ -23,27 +23,6 @@ import { SCOREBOARD_WRAP_AT } from './scoreboard-draw';
 import '$lib/video/modules';
 
 describe('scoreboardDef — module def shape', () => {
-  it('registers under type "scoreboard" with the right metadata', () => {
-    expect(scoreboardDef.type).toBe('scoreboard');
-    expect(scoreboardDef.domain).toBe('video');
-    expect(scoreboardDef.label).toBe('scoreboard');
-    expect(scoreboardDef.category).toBe('utilities');
-  });
-
-  it('declares 2 cv-gate inputs (SCORE + RESET) routed through paramTargets', () => {
-    const ids = scoreboardDef.inputs.map((p) => ({ id: p.id, type: p.type, t: p.paramTarget }));
-    expect(ids).toEqual([
-      { id: 'score', type: 'cv', t: 'scoreTrig' },
-      { id: 'reset', type: 'cv', t: 'resetTrig' },
-    ]);
-  });
-
-  it('declares a single video output named "out"', () => {
-    expect(scoreboardDef.outputs.map((o) => ({ id: o.id, type: o.type }))).toEqual([
-      { id: 'out', type: 'video' },
-    ]);
-  });
-
   it('exposes a user-facing "color" knob plus the two synthetic gate params', () => {
     const byId = new Map(scoreboardDef.params.map((p) => [p.id, p]));
     const color = byId.get('color');
@@ -58,13 +37,6 @@ describe('scoreboardDef — module def shape', () => {
     // Hidden gate params present.
     expect(byId.get('scoreTrig')).toBeDefined();
     expect(byId.get('resetTrig')).toBeDefined();
-  });
-
-  it('every default value sits within the declared min/max', () => {
-    for (const p of scoreboardDef.params) {
-      expect(p.defaultValue, `${p.id} >= min`).toBeGreaterThanOrEqual(p.min);
-      expect(p.defaultValue, `${p.id} <= max`).toBeLessThanOrEqual(p.max);
-    }
   });
 
   it('appears in the global video registry (side-effect import)', () => {

@@ -4,7 +4,7 @@
 // Web Audio wiring is exercised by the ART scenarios (offline render).
 
 import { describe, expect, it } from 'vitest';
-import { illogicDef, illogicMath } from './illogic';
+import { illogicMath } from './illogic';
 
 describe('illogicMath: per-channel attenuverter', () => {
   it('att=+1 is identity', () => {
@@ -97,45 +97,5 @@ describe('illogicMath: logic truth tables', () => {
     expect(illogicMath.and(+1, +1)).toBe(1);
     expect(illogicMath.and(+1, -1)).toBe(0);
     expect(illogicMath.or(-1, -1)).toBe(0);
-  });
-});
-
-describe('illogicDef: module-def shape', () => {
-  it('declares type=illogic, label=ILLOGIC, category=utilities', () => {
-    expect(illogicDef.type).toBe('illogic');
-    expect(illogicDef.label).toBe('illogic');
-    expect(illogicDef.category).toBe('utilities');
-    expect(illogicDef.domain).toBe('audio');
-  });
-
-  it('exposes 4 cv inputs (in1..in4)', () => {
-    const ids = illogicDef.inputs.map((p) => p.id).sort();
-    expect(ids).toEqual(['in1', 'in2', 'in3', 'in4']);
-    for (const p of illogicDef.inputs) {
-      expect(p.type).toBe('cv');
-    }
-  });
-
-  it('exposes 10 outputs: per-channel atts + sum/diff + and/nand/or/not', () => {
-    const ids = illogicDef.outputs.map((p) => p.id).sort();
-    expect(ids).toEqual([
-      'and', 'att1', 'att2', 'att3', 'att4',
-      'diff', 'nand', 'not', 'or', 'sum',
-    ]);
-    // The four logic outputs carry the 'gate' cable color so the patch panel
-    // highlights them visually distinct from the cv math outs.
-    const gateOuts = illogicDef.outputs.filter((p) => p.type === 'gate').map((p) => p.id).sort();
-    expect(gateOuts).toEqual(['and', 'nand', 'not', 'or']);
-  });
-
-  it('exposes 4 attenuverter params, all bipolar (-1..+1) defaulting to +1', () => {
-    const ids = illogicDef.params.map((p) => p.id).sort();
-    expect(ids).toEqual(['att1_amount', 'att2_amount', 'att3_amount', 'att4_amount']);
-    for (const p of illogicDef.params) {
-      expect(p.min).toBe(-1);
-      expect(p.max).toBe(1);
-      expect(p.defaultValue).toBe(1);
-      expect(p.curve).toBe('linear');
-    }
   });
 });
