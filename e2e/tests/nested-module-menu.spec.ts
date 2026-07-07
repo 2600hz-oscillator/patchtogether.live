@@ -7,14 +7,12 @@
 // category (Audio modules / Video modules / Hybrid) so the basic shape
 // of the menu is covered end-to-end.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { openModulePalette } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('nested palette: top-level rows render and are collapsed by default', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('nested palette: top-level rows render and are collapsed by default', async ({ page, rack }) => {
   await openModulePalette(page);
   await expect(page.locator('.module-palette')).toBeVisible();
 
@@ -28,9 +26,7 @@ test('nested palette: top-level rows render and are collapsed by default', async
   await expect(page.getByTestId('palette-item-analogVco')).toHaveCount(0);
 });
 
-test('nested palette: Audio modules → VCOs → spawn Analog VCO', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('nested palette: Audio modules → VCOs → spawn Analog VCO', async ({ page, rack }) => {
   await openModulePalette(page);
 
   await page.getByTestId('palette-top-audio-modules').click();
@@ -42,9 +38,7 @@ test('nested palette: Audio modules → VCOs → spawn Analog VCO', async ({ pag
   await expect(page.locator('.module-palette')).not.toBeVisible();
 });
 
-test('nested palette: Video modules → Sources → spawn LINES', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('nested palette: Video modules → Sources → spawn LINES', async ({ page, rack }) => {
   await openModulePalette(page);
 
   await page.getByTestId('palette-top-video-modules').click();
@@ -55,9 +49,7 @@ test('nested palette: Video modules → Sources → spawn LINES', async ({ page 
   await expect(page.locator('.svelte-flow__node-lines')).toHaveCount(1);
 });
 
-test('nested palette: Hybrid → SCOPE spawns directly (flat sub-list)', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('nested palette: Hybrid → SCOPE spawns directly (flat sub-list)', async ({ page, rack }) => {
   await openModulePalette(page);
 
   await page.getByTestId('palette-top-hybrid').click();
@@ -67,9 +59,7 @@ test('nested palette: Hybrid → SCOPE spawns directly (flat sub-list)', async (
   await expect(page.locator('.svelte-flow__node-scope')).toHaveCount(1);
 });
 
-test('nested palette: typing flattens to search-mode results', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('nested palette: typing flattens to search-mode results', async ({ page, rack }) => {
   await openModulePalette(page);
 
   // Drill in first to ensure search clears the drill-down state.

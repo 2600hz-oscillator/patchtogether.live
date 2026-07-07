@@ -15,20 +15,11 @@
 // those are pinned by the unit suite (shapegen.test.ts +
 // shapegen-math.test.ts) without a browser in the loop.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe('SHAPEGEN — 3D-shape-generator video module', () => {
-  test('spawns + card mounts + preview canvas paints without errors', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => {
-      if (m.type() === 'error') errors.push(m.text());
-    });
-
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('spawns + card mounts + preview canvas paints without errors', async ({ page, rack, errorWatch }) => {
     await spawnPatch(
       page,
       [
@@ -90,19 +81,9 @@ test.describe('SHAPEGEN — 3D-shape-generator video module', () => {
     // wireframe box + bg gradient + any shape silhouettes drive this.
     expect(variance, 'preview canvas paints non-flat content').toBeGreaterThan(5);
 
-    expect(errors, 'no console / page errors during SHAPEGEN render').toEqual([]);
   });
 
-  test('SOLIDS toggle changes the rendered pixel content', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => {
-      if (m.type() === 'error') errors.push(m.text());
-    });
-
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('SOLIDS toggle changes the rendered pixel content', async ({ page, rack, errorWatch }) => {
     await spawnPatch(
       page,
       [
@@ -171,13 +152,9 @@ test.describe('SHAPEGEN — 3D-shape-generator video module', () => {
       `solids mode shifts mean luma (wf=${lumaWireframe.toFixed(2)}, solids=${lumaSolids.toFixed(2)})`,
     ).toBeGreaterThan(0.05);
 
-    expect(errors, 'no console / page errors during SOLIDS toggle').toEqual([]);
   });
 
-  test('SIZE + ROT knobs mutate params via the patch store', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('SIZE + ROT knobs mutate params via the patch store', async ({ page, rack }) => {
     await spawnPatch(page, [
       { id: 'sg', type: 'shapegen', position: { x: 200, y: 100 }, domain: 'video' },
     ]);

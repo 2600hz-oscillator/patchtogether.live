@@ -11,15 +11,12 @@
 //     through the wavetable VCO; we verify the V/oct on the pitch ConstantSource
 //     output equals (69-60)/12 = 0.75 V.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('note-entry: typing valid notes into Sequencer steps normalizes display + drives V/oct', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('note-entry: typing valid notes into Sequencer steps normalizes display + drives V/oct', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'seq', type: 'sequencer', params: { bpm: 120, length: 4, isPlaying: 0 } },
   ]);
@@ -62,10 +59,7 @@ test('note-entry: typing valid notes into Sequencer steps normalizes display + d
   await expect(step2).toHaveValue('c#3');
 });
 
-test('note-entry: invalid input keeps midi null + the input ring goes red on focus', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('note-entry: invalid input keeps midi null + the input ring goes red on focus', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'seq', type: 'sequencer', params: { bpm: 120, length: 4, isPlaying: 0 } },
   ]);
@@ -87,9 +81,7 @@ test('note-entry: invalid input keeps midi null + the input ring goes red on foc
   await expect(step).toHaveValue('');
 });
 
-test('note-entry: out-of-range note (c#8 above c8) becomes null', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('note-entry: out-of-range note (c#8 above c8) becomes null', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'seq', type: 'sequencer', params: { bpm: 120, length: 4 } }]);
 
   const step = page.locator('[data-testid="seq-pitch-seq-0"]');
@@ -105,10 +97,7 @@ test('note-entry: out-of-range note (c#8 above c8) becomes null', async ({ page 
   expect(stored?.midi).toBeNull();
 });
 
-test('note-entry: Cartesian cell accepts text-entry note names', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('note-entry: Cartesian cell accepts text-entry note names', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'cart', type: 'cartesian', params: { mode: 0 } },
   ]);
@@ -134,9 +123,7 @@ test('note-entry: Cartesian cell accepts text-entry note names', async ({ page }
   expect(cellsData?.[5]?.midi).toBe(108);
 });
 
-test('note-entry: gate button toggles step.on without touching the pitch input', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('note-entry: gate button toggles step.on without touching the pitch input', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'seq', type: 'sequencer', params: { bpm: 120, length: 4 } }]);
 
   const pitchEl = page.locator('[data-testid="seq-pitch-seq-0"]');
@@ -155,10 +142,7 @@ test('note-entry: gate button toggles step.on without touching the pitch input',
   expect(stepData).toMatchObject({ on: true, midi: 64 });
 });
 
-test('note-entry: a4 step drives the pitch port to V/oct 0.75 (MIDI 69 - 60 = 9 semis up)', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('note-entry: a4 step drives the pitch port to V/oct 0.75 (MIDI 69 - 60 = 9 semis up)', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'seq', type: 'sequencer', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.9 } },
   ]);
@@ -208,10 +192,7 @@ test('note-entry: a4 step drives the pitch port to V/oct 0.75 (MIDI 69 - 60 = 9 
   expect(Math.abs(reconstructedHz - 440)).toBeLessThan(0.5);
 });
 
-test('hold-cv: pitch port retains last gated V/oct across an off step', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('hold-cv: pitch port retains last gated V/oct across an off step', async ({ page, rack }) => {
   // 3 steps: a4 (on), e4 (off), a4-different (gated again later). After the
   // off step is reached, the pitch port should still emit the V/oct of a4 —
   // not zero, and not the e4 V/oct.
@@ -269,10 +250,7 @@ test('hold-cv: pitch port retains last gated V/oct across an off step', async ({
   }
 });
 
-test('note-entry: invalid step (midi=null) suppresses gate output even when on=true', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('note-entry: invalid step (midi=null) suppresses gate output even when on=true', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'seq', type: 'sequencer', params: { bpm: 240, length: 1, isPlaying: 1, gateLength: 0.9 } },
   ]);

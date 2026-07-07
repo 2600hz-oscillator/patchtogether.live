@@ -29,7 +29,7 @@
 // interface is the production scheduler's authoritative count, and it
 // would lag iff the lookahead window starved.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -45,12 +45,7 @@ const RUN_MS = 2500;
 const EXPECTED_ADVANCES_MIN = 16; // floor — well below the 20 we expect
 const EXPECTED_ADVANCES_MAX = 24; // ceiling — guards against a stuck-firing bug
 
-test('tempo-stability: sequencer keeps tempo under repeated main-thread jank', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('tempo-stability: sequencer keeps tempo under repeated main-thread jank', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
@@ -123,12 +118,7 @@ test('tempo-stability: sequencer keeps tempo under repeated main-thread jank', a
 // Calibration: same setup WITHOUT jank confirms the baseline advance
 // rate matches our expectation. If this test fails, the jank test's
 // thresholds are wrong, not the production scheduler.
-test('tempo-stability: baseline (no jank) sequencer advance rate matches BPM', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('tempo-stability: baseline (no jank) sequencer advance rate matches BPM', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
@@ -183,12 +173,7 @@ test('tempo-stability: baseline (no jank) sequencer advance rate matches BPM', a
 // to advance, so its regression coverage is a follow-up (the code path is
 // the same one proven here).
 for (const mod of ['sequencer', 'polyseqz', 'drumseqz'] as const) {
-  test(`tempo-stability: ${mod} drops the past-due backlog under a stall > lookahead, never bunches (#229/#224)`, async ({
-    page,
-  }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test(`tempo-stability: ${mod} drops the past-due backlog under a stall > lookahead, never bunches (#229/#224)`, async ({ page, rack }) => {
     const id = `j_${mod}`;
     await spawnPatch(
       page,

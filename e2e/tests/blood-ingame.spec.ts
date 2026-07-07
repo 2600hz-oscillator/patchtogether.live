@@ -18,7 +18,7 @@
 // exact menu navigation can be tuned. SwiftShader-independent (reads the engine's
 // own software framebuffer, not the GL canvas).
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 const BLOOD_ID = 'blood-ig';
@@ -26,10 +26,8 @@ const SC_ENTER = 0x1c;
 const SC_DOWN = 0xd0;
 const SC_SPACE = 0x39;
 
-test('blood in-game: drive the menu into a level + read the in-game framebuffer', async ({ page }) => {
+test('blood in-game: drive the menu into a level + read the in-game framebuffer', async ({ page, rack }) => {
   test.setTimeout(90_000);
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
     [

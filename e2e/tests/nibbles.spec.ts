@@ -10,7 +10,8 @@
 //      bridge is wired).
 //   3. The on-card canvas has non-trivial pixels.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -55,9 +56,7 @@ test('nibbles: card mounts cleanly + canvas renders', async ({ page }) => {
   expect(errors.filter((e) => !e.includes('AudioContext'))).toEqual([]);
 });
 
-test('nibbles: AUTO on → game advances within 5s (length_cv leaves default; snake grows or dies)', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('nibbles: AUTO on → game advances within 5s (length_cv leaves default; snake grows or dies)', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'n', type: 'nibbles', position: { x: 200, y: 200 }, domain: 'video', params: { auto: 1 } },
   ]);

@@ -13,7 +13,8 @@
 // spawn handler's call site is straight-line code (no branches the
 // e2e would catch that the unit doesn't). Skipped here.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { openModulePalette } from './_helpers';
 
 async function openPalette(page: Page): Promise<void> {
@@ -51,10 +52,7 @@ async function countPictureboxes(page: Page): Promise<number> {
 test.describe('PICTUREBOX spawn limits', () => {
   test.setTimeout(60_000);
 
-  test('per-workspace cap = 8: ninth pick is blocked and the palette greys it out', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('per-workspace cap = 8: ninth pick is blocked and the palette greys it out', async ({ page, rack }) => {
     // Spawn 8 PICTUREBOXes — all should succeed.
     for (let i = 0; i < 8; i++) {
       const ok = await pickPicturebox(page);

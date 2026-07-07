@@ -14,7 +14,8 @@
 // reading bin indices and produces a per-frequency magnitude we can
 // compare against an off-band reference (500 Hz).
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -105,13 +106,7 @@ async function setBlueboxParam(page: Page, nodeId: string, paramId: string, valu
 
 // ─── tests ──────────────────────────────────────────────────────────────────
 
-test('bluebox: card mounts with no console errors', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('bluebox: card mounts with no console errors', async ({ page, rack, errorWatch }) => {
   await spawnPatch(page, [{ id: 'bb', type: 'bluebox', position: { x: 100, y: 100 } }]);
 
   const card = page.locator('[data-testid="bluebox-card"]');
@@ -123,13 +118,9 @@ test('bluebox: card mounts with no console errors', async ({ page }) => {
   await expect(page.locator('[data-testid="bluebox-key-9"]')).toBeVisible();
   await expect(page.locator('[data-testid="bluebox-key-bluebox"]')).toBeVisible();
   await expect(page.locator('[data-testid="bluebox-key-redbox"]')).toBeVisible();
-  expect(errors, errors.join('; ')).toEqual([]);
 });
 
-test('bluebox: clicking "5" produces 770 + 1336 Hz peaks at the scope', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('bluebox: clicking "5" produces 770 + 1336 Hz peaks at the scope', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
@@ -184,10 +175,7 @@ test('bluebox: clicking "5" produces 770 + 1336 Hz peaks at the scope', async ({
   expect(ampOff).toBeLessThan(ampCol * 0.5);
 });
 
-test('bluebox: clicking BLUEBOX produces a 2600 Hz dominant peak', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('bluebox: clicking BLUEBOX produces a 2600 Hz dominant peak', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
@@ -217,10 +205,7 @@ test('bluebox: clicking BLUEBOX produces a 2600 Hz dominant peak', async ({ page
   expect(amp2600).toBeGreaterThan(amp1700 * 5);
 });
 
-test('bluebox: clicking REDBOX produces 1700 + 2200 Hz peaks', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('bluebox: clicking REDBOX produces 1700 + 2200 Hz peaks', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
@@ -253,12 +238,10 @@ test('bluebox: clicking REDBOX produces 1700 + 2200 Hz peaks', async ({ page }) 
   expect(amp2200).toBeGreaterThan(amp2600 * 3);
 });
 
-test('bluebox: setting btn_5 param directly drives the tone (no UI click)', async ({ page }) => {
+test('bluebox: setting btn_5 param directly drives the tone (no UI click)', async ({ page, rack }) => {
   // Sanity-check the param→worklet path independent of the keypad UI —
   // this is the same path the Instruments / Group-controls layer uses
   // to surface BLUEBOX's keys on a containing group's bar.
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
 
   await spawnPatch(
     page,

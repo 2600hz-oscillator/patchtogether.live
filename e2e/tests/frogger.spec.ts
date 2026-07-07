@@ -10,7 +10,8 @@
 //   3. A CV/gate source patched into start_gate restarts the game
 //      mid-flight (player position resets to (7,13)).
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -81,9 +82,7 @@ test('frogger: drop module → card mounts with no console errors', async ({ pag
   expect(errors.filter((e) => !e.includes('AudioContext'))).toEqual([]);
 });
 
-test('frogger: auto-starts on spawn (no user input — isGameInPlay flips + sprites advance)', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('frogger: auto-starts on spawn (no user input — isGameInPlay flips + sprites advance)', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'f', type: 'frogger', position: { x: 200, y: 200 } }]);
   // Resume the AudioContext so the scheduler-clock subscribes start firing.
   // Same flow as MODTRIS / PONG specs.
@@ -107,9 +106,7 @@ test('frogger: auto-starts on spawn (no user input — isGameInPlay flips + spri
   expect(snap2!.tick, `tick did not advance (snap1=${snap1!.tick} snap2=${snap2!.tick})`).toBeGreaterThan(snap1!.tick);
 });
 
-test('frogger: BUGGLES.clock patched into start_gate restarts the game', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('frogger: BUGGLES.clock patched into start_gate restarts the game', async ({ page, rack }) => {
   // BUGGLES.clock is a real gate source (5 ms pulses at ~1-2 Hz). Each
   // pulse should re-fire startGame() and reset the world; the tick keeps
   // advancing across restarts, so we use that + isGameInPlay as the

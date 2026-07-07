@@ -19,7 +19,7 @@
 // (saw/square/triangle/sine) — that's covered by ART. Here we just
 // require ONE declared audio output emits audio.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch, type SpawnNode, type SpawnEdge } from './_helpers';
 import { readScopeSnapshot, summarize, runFor } from './_module-coverage-helpers';
 
@@ -59,16 +59,7 @@ const SOURCES: SourceCase[] = [
 ];
 
 for (const src of SOURCES) {
-  test(`source ${src.type}: emits audio at ${src.outputPort}`, async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => {
-      if (m.type() === 'error') errors.push(m.text());
-    });
-
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test(`source ${src.type}: emits audio at ${src.outputPort}`, async ({ page, rack, errorWatch }) => {
     const nodes: SpawnNode[] = [
       { id: 'src', type: src.type, params: src.params },
       { id: 'scp', type: 'scope',  params: { timeMs: 50 } },
@@ -141,25 +132,10 @@ for (const src of SOURCES) {
       `${src.type} ${src.outputPort} peak (peak=${sum.peak.toFixed(4)}, rms=${sum.rms.toFixed(4)})`,
     ).toBeGreaterThan(0.005);
 
-    expect(
-      errors,
-      `console/page errors during ${src.type} render: ${errors.join('; ')}`,
-    ).toEqual([]);
   });
 }
 
-test('integration (Group 2): sequencer drives analogVco + wavetableVco in parallel → mixer → scope', async ({
-  page,
-}) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text());
-  });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('integration (Group 2): sequencer drives analogVco + wavetableVco in parallel → mixer → scope', async ({ page, rack, errorWatch }) => {
   // Two VCOs in parallel, summed by a Mixer, read by Scope. Both pick
   // up the sequencer's pitch CV — they should produce stepped tones.
   await spawnPatch(
@@ -212,5 +188,4 @@ test('integration (Group 2): sequencer drives analogVco + wavetableVco in parall
     `2x VCO sum peak=${sum.peak.toFixed(4)} rms=${sum.rms.toFixed(4)}`,
   ).toBeGreaterThan(0.05);
 
-  expect(errors, errors.join('; ')).toEqual([]);
 });

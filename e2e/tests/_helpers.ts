@@ -27,16 +27,9 @@ export interface SpawnEdge {
   targetType?: string;
 }
 
-/**
- * Navigate to the scratch canvas. The canvas moved from `/` to `/rack` in the
- * landing-page overhaul (`/` is now the static landing / front door). Prefer
- * this helper in NEW specs over a bare `page.goto('/rack')` so a future route
- * move is a one-line change here instead of another ~800-call codemod across
- * the suite.
- */
-export async function gotoCanvas(page: Page): Promise<void> {
-  await page.goto('/rack');
-}
+// (gotoCanvas was pruned as an unreferenced export — LoC campaign row 16.
+// The route-move seam it reserved now lives in `_fixtures.ts`'s `rack`
+// fixture, which converted specs actually use.)
 
 /**
  * Match the Playwright/CDP errors thrown when the page's execution context
@@ -296,31 +289,9 @@ export async function ensureCombineOpen(page: Page): Promise<void> {
   await ensureToyboxSectionOpen(page, 'toybox-combine-toggle', 'toybox-graph-svg');
 }
 
-/**
- * Right-click a combine-graph node until its context menu opens. The single
- * right-click can land before a freshly-added node is interactive on cold
- * SwiftShader (the node map re-renders async), so the menu intermittently fails
- * to open — the dominant toybox-node-menu / keyer-config flake. Retrying the
- * (right-click → assert menu) pair makes it deterministic. Returns once the menu
- * is visible; throws (with the node id) if it never opens within the budget.
- */
-export async function openToyboxNodeMenu(page: Page, nodeId: string): Promise<void> {
-  const node = page.locator(`[data-testid="toybox-gnode-${nodeId}"]`);
-  await node.waitFor({ state: 'visible', timeout: 15_000 });
-  const menu = page.locator('[data-testid="toybox-node-menu"]');
-  await expect(
-    async () => {
-      await node.click({ button: 'right', force: true, noWaitAfter: true });
-      await expect(menu).toBeVisible({ timeout: 3_000 });
-    },
-    `node menu for ${nodeId} should open on right-click`,
-  ).toPass({ timeout: 20_000 });
-}
-
-/** Ensure the CV/MOD section is open (its rows are visible). */
-export async function ensureCvOpen(page: Page): Promise<void> {
-  await ensureToyboxSectionOpen(page, 'toybox-cv-toggle', 'toybox-cv-rows');
-}
+// (openToyboxNodeMenu / ensureCvOpen were pruned as unreferenced exports —
+// LoC campaign row 16. The toybox specs that needed them roll their own or
+// use ensureToyboxSectionOpen directly.)
 
 // ---------------- Rackspace seed helper ----------------
 //

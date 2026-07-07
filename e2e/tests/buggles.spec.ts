@@ -4,7 +4,8 @@
 // setTimeout, so we need a real (in-browser) AudioContext rather than
 // the offline render that ART scenarios use.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -81,22 +82,14 @@ async function pollScopePeak(
   return best;
 }
 
-test('buggles: drop module → card mounts with no console errors', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('buggles: drop module → card mounts with no console errors', async ({ page, rack, errorWatch }) => {
   await spawnPatch(page, [{ id: 'b', type: 'buggles', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-buggles');
   await expect(card).toBeVisible();
   await expect(card).toContainText('BUGGLES');
-  expect(errors, errors.join('; ')).toEqual([]);
 });
 
-test('buggles: STEPPED output produces varying voltages over time (chaos > 0)', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('buggles: STEPPED output produces varying voltages over time (chaos > 0)', async ({ page, rack }) => {
   // Set rate fairly high (knob 0.7 → ~10 Hz) so we see lots of steps in
   // the test window. Chaos 0.8 ensures big jumps so peaks are visible.
   await spawnPatch(
@@ -124,9 +117,7 @@ test('buggles: STEPPED output produces varying voltages over time (chaos > 0)', 
   expect(stats.nonzeroSamples).toBeGreaterThan(100);
 });
 
-test('buggles: SMOOTH output produces a slowly-varying voltage', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('buggles: SMOOTH output produces a slowly-varying voltage', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
@@ -149,9 +140,7 @@ test('buggles: SMOOTH output produces a slowly-varying voltage', async ({ page }
   expect(stats.nonzeroSamples).toBeGreaterThan(100);
 });
 
-test('buggles: CLOCK output triggers ADSR envelope', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('buggles: CLOCK output triggers ADSR envelope', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
@@ -187,9 +176,7 @@ test('buggles: CLOCK output triggers ADSR envelope', async ({ page }) => {
   expect(stats.peak, `ADSR env peak from BUGGLES.clock=${stats.peak}`).toBeGreaterThan(0.1);
 });
 
-test('buggles: SMOOTH output modulates VCA amplitude', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('buggles: SMOOTH output modulates VCA amplitude', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [

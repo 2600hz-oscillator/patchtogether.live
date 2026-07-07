@@ -8,7 +8,7 @@
 // The pure note-entry math is unit-tested in clip-types.test.ts; this proves the
 // card buttons are actually wired to the synced state.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -17,11 +17,7 @@ type W = {
   __patch: { nodes: Record<string, { type?: string; params?: Record<string, number>; data?: Record<string, unknown> }> };
 };
 
-test('clip player: per-lane MONO toggle flips data + replaces-on-add in the editor', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('clip player: per-lane MONO toggle flips data + replaces-on-add in the editor', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
 
   const card = page.locator('.svelte-flow__node-clipplayer');
@@ -59,9 +55,7 @@ test('clip player: per-lane MONO toggle flips data + replaces-on-add in the edit
   expect(col3, 'mono lane: one note per column (replace-on-add)').toBe(1);
 });
 
-test('TIMELORDE: the global transport (run) button flips running', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('TIMELORDE: the global transport (run) button flips running', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'tl', type: 'timelorde', position: { x: 80, y: 80 }, domain: 'audio' }]);
 
   const run = page.getByTestId('timelorde-run-tl');
@@ -75,11 +69,7 @@ test('TIMELORDE: the global transport (run) button flips running', async ({ page
   expect(running).toBe(0);
 });
 
-test('TIMELORDE: the run button hides when an external transport (start_in) owns it', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('TIMELORDE: the run button hides when an external transport (start_in) owns it', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [

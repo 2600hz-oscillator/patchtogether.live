@@ -16,7 +16,7 @@
 // The pre→post delta proves the launch produces sound through the real spawn +
 // engine (catches the green-but-silent class).
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 import { readScopePeakOverWindow } from './_module-coverage-helpers';
 
@@ -48,18 +48,7 @@ async function setTransport(page: import('@playwright/test').Page, running: numb
   }, running);
 }
 
-test('CLIP PLAYER: launched clip is silent until TIMELORDE runs, then audible (per-lane)', async ({
-  page,
-}) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text());
-  });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('CLIP PLAYER: launched clip is silent until TIMELORDE runs, then audible (per-lane)', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
@@ -135,5 +124,4 @@ test('CLIP PLAYER: launched clip is silent until TIMELORDE runs, then audible (p
   expect(after.nonzeroSamples, `structured signal, not a glitch`).toBeGreaterThan(50);
   expect(after.rms, `running the transport raised the output`).toBeGreaterThan(frozen.rms + 0.02);
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });

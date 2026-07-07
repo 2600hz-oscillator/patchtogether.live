@@ -20,7 +20,8 @@
 // [data-patch-panel-chrome="<nodeId>"] / [data-testid="patch-panel"], NOT
 // inside the card node. Selectors here target the portaled chrome by node id.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -207,11 +208,7 @@ test('carry → patch to → target module → valid port commits the edge', asy
 
 // ── (5) invalid carry-commit (output→output) → no edge, silent close ─────
 
-test('invalid carry-commit (output→output) makes no edge + closes silently', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('invalid carry-commit (output→output) makes no edge + closes silently', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'lfo', type: 'lfo', position: { x: 80, y: 120 } },
     { id: 'osc', type: 'analogVco', position: { x: 760, y: 120 } },

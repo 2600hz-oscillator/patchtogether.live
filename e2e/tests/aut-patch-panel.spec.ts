@@ -16,7 +16,8 @@
 //
 // AUT tests are tagged @aut so they're easy to run as a focused suite.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 function chrome(page: Page, nodeId: string) {
@@ -32,12 +33,7 @@ async function openFrom(page: Page, nodeId: string, side: 'left' | 'right' = 'le
 }
 
 test.describe('@aut PatchPanel acceptance flow', () => {
-  test('ADSR click-open, verbose labels, patch via carry, outside-click closes', async ({
-    page,
-  }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('ADSR click-open, verbose labels, patch via carry, outside-click closes', async ({ page, rack }) => {
     await spawnPatch(page, [
       { id: 'seq', type: 'sequencer', position: { x: 80, y: 120 } },
       { id: 'adsr', type: 'adsr', position: { x: 760, y: 120 } },
@@ -89,12 +85,7 @@ test.describe('@aut PatchPanel acceptance flow', () => {
     await expect(chrome(page, 'seq')).toHaveCount(0);
   });
 
-  test('MIXMSTRS spawn → click-open → section nav rows + drill shows verbose labels', async ({
-    page,
-  }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('MIXMSTRS spawn → click-open → section nav rows + drill shows verbose labels', async ({ page, rack }) => {
     await spawnPatch(page, [{ id: 'mm', type: 'mixmstrs', position: { x: 200, y: 100 } }]);
 
     await openFrom(page, 'mm', 'left');

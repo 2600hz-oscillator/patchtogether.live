@@ -28,7 +28,7 @@
 // Per-port "edge materializes" assertions do NOT count for this module — this
 // is the real source→module→audible-output chain the repo standard requires.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import type { Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -142,11 +142,8 @@ async function readOutputStats(page: Page, outNodeId: string) {
 }
 
 test.describe('TV LIBRARIAN — tuned-stream audio reaches the destination @video', () => {
-  test('audio_l/audio_r → AUDIO OUT: real energy reaches the terminal output', async ({ page }) => {
+  test('audio_l/audio_r → AUDIO OUT: real energy reaches the terminal output', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await installMocks(page);
     await page.goto('/rack');
@@ -246,6 +243,5 @@ test.describe('TV LIBRARIAN — tuned-stream audio reaches the destination @vide
     });
     expect(muted, 'the <video> is un-muted after audio wiring (else the MediaElementSource is silent)').toBe(false);
 
-    expect(errors, `no page errors: ${errors.join(' | ')}`).toEqual([]);
   });
 });

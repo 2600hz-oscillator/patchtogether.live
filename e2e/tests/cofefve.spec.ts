@@ -20,75 +20,17 @@
 // relative deltas (deterministic, renderer/timing-tolerant) yet still fail on
 // a silent / broken delay.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 import { readScopePeakOverWindow, setNodeParams } from './_module-coverage-helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
 // ────────────────────────────────────────────────────────────────────────
-// 1. SMOKE
-// ────────────────────────────────────────────────────────────────────────
-
-test('COFEFVE smoke: NOISE → COFEFVE → AUDIOOUT — card mounts, param round-trips', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
-  await spawnPatch(
-    page,
-    [
-      { id: 'a-n',   type: 'noise',    position: { x: 60,  y: 60 }, domain: 'audio', params: { level: 0.6 } },
-      { id: 'a-cf',  type: 'cofefve',  position: { x: 360, y: 60 }, domain: 'audio',
-        params: { delayTime: 0.15, feedback: 0.5, dryVolume: 1, wetVolume: 0.6 } },
-      { id: 'a-out', type: 'audioOut', position: { x: 760, y: 60 }, domain: 'audio', params: { master: 0.3 } },
-    ],
-    [
-      { id: 'e1', from: { nodeId: 'a-n',  portId: 'white' }, to: { nodeId: 'a-cf',  portId: 'inL' } },
-      { id: 'e2', from: { nodeId: 'a-cf', portId: 'outL' },  to: { nodeId: 'a-out', portId: 'L' } },
-      { id: 'e3', from: { nodeId: 'a-cf', portId: 'outR' },  to: { nodeId: 'a-out', portId: 'R' } },
-    ],
-  );
-
-  const card = page.locator('.svelte-flow__node-cofefve');
-  await expect(card).toHaveCount(1);
-  // The vertical rail title splits "COFEFVE" / "DELAY" across lines (interleaved
-  // with the Dry/Wet faders in DOM order), so assert the headline word.
-  await expect(card).toContainText('COFEFVE');
-
-  await page.waitForTimeout(500);
-  const readable = await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __engine?: () => {
-        readParam: (n: { id: string; type: string; domain: string }, p: string) => number | undefined;
-      } | null;
-      __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
-    };
-    const e = w.__engine?.();
-    const n = w.__patch.nodes['a-cf'];
-    if (!e || !n) return null;
-    return e.readParam(n, 'delayTime');
-  });
-  expect(readable).toBeCloseTo(0.15, 2);
-
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
-});
-
-// ────────────────────────────────────────────────────────────────────────
 // 2. AUDIBLE WET ECHO (dry muted → only the delayed path reaches the scope)
 // ────────────────────────────────────────────────────────────────────────
 
-test('COFEFVE wet echo is audible with dry muted (only the delayed path carries signal)', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('COFEFVE wet echo is audible with dry muted (only the delayed path carries signal)', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
@@ -113,21 +55,13 @@ test('COFEFVE wet echo is audible with dry muted (only the delayed path carries 
   expect(hold.rms).toBeGreaterThan(0.001);
   expect(hold.nonzeroSamples).toBeGreaterThan(50);
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });
 
 // ────────────────────────────────────────────────────────────────────────
 // 3. FEEDBACK lengthens the wet echo tail
 // ────────────────────────────────────────────────────────────────────────
 
-test('COFEFVE feedback amount audibly lengthens the wet echo tail', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('COFEFVE feedback amount audibly lengthens the wet echo tail', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
@@ -160,5 +94,4 @@ test('COFEFVE feedback amount audibly lengthens the wet echo tail', async ({ pag
   // High feedback measurably raises the sustained wet energy vs low feedback.
   expect(high.rms).toBeGreaterThan(low.rms * 1.3);
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });

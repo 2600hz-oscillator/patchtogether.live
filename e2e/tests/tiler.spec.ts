@@ -26,7 +26,7 @@
 // ci-swiftshader-video-e2e-timeouts memory: don't use a flat 90s), and we do
 // two full SHAPES→TILER→OUTPUT spawn+settle cycles here.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 // SHAPES + TILER + videoOut are WebGL canvas cards whose first paint is slow on
@@ -121,10 +121,7 @@ async function captureTiler(
 }
 
 test.describe('TILER — video multiscreen / tile processor', () => {
-  test('SHAPES -> TILER -> OUTPUT: the TILE knob changes the rendered output', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  test('SHAPES -> TILER -> OUTPUT: the TILE knob changes the rendered output', async ({ page, errorWatch }) => {
 
     // TILE=0 → total 1 → 1:1 passthrough (the single shape).
     const passthrough = await captureTiler(page, 0);
@@ -142,12 +139,9 @@ test.describe('TILER — video multiscreen / tile processor', () => {
     const diff = fingerprintDiff(passthrough.grid, tiled8.grid);
     expect(diff, 'TILE=8×8 output differs spatially from the passthrough').toBeGreaterThan(4);
 
-    expect(errors, 'no console / page errors').toEqual([]);
   });
 
-  test('TILE CV param routes through the patch store', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('TILE CV param routes through the patch store', async ({ page, rack }) => {
     await spawnPatch(
       page,
       [{ id: 'tlr', type: 'tiler', position: { x: 200, y: 100 }, domain: 'video' }],

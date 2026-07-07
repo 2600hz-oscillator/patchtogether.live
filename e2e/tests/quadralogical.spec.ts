@@ -52,7 +52,7 @@
 //
 // No waitForTimeout, no poll, no animation-diff, no exact-pixel equality.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import type { Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { installRenderSmokeHooks } from './_render-smoke';
@@ -203,10 +203,7 @@ test.describe('QUADRALOGICAL — 4-input video mixer (Phase 1)', () => {
   // make: a LIVE LINES source, tinted by a real CHROMA, reaches the right corner
   // of the real MIX FBO (structured, not all-black, routed colour dominating) —
   // now proven DETERMINISTICALLY (freeze+pause+step) instead of by wall-clock.
-  test('4 colored CHROMA inputs → MIX renders a structured live frame; TL corner is in1 (red) dominant', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  test('4 colored CHROMA inputs → MIX renders a structured live frame; TL corner is in1 (red) dominant', async ({ page, errorWatch }) => {
 
     // Pause the engine rAF loop (the test owns the frame count) + pin the clock
     // (LINES → identical frame every step) BEFORE boot.
@@ -242,13 +239,9 @@ test.describe('QUADRALOGICAL — 4-input video mixer (Phase 1)', () => {
     expect(Math.abs(tl2.mean - tl.mean), `frozen MIX is frame-stable (mean ${tl.mean.toFixed(3)} vs ${tl2.mean.toFixed(3)})`).toBeLessThan(0.5);
     expect(Math.abs(tl2.variance - tl.variance), 'frozen MIX variance is frame-stable').toBeLessThan(1.0);
 
-    expect(errors, 'no console / page errors').toEqual([]);
   });
 
-  test('PREVIEW output (2×2 raw tile) emits when routed through a videoOut', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  test('PREVIEW output (2×2 raw tile) emits when routed through a videoOut', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
 
@@ -282,7 +275,6 @@ test.describe('QUADRALOGICAL — 4-input video mixer (Phase 1)', () => {
     expect(Math.abs(stats2.mean - stats.mean), `frozen PREVIEW is frame-stable (mean ${stats.mean.toFixed(3)} vs ${stats2.mean.toFixed(3)})`).toBeLessThan(0.5);
     expect(Math.abs(stats2.variance - stats.variance), 'frozen PREVIEW variance is frame-stable').toBeLessThan(1.0);
 
-    expect(errors, 'no console / page errors').toEqual([]);
   });
 
   // NOTE (Phase 2 lean, §1/§7-3): the FREEZE deterministic-capture test was
@@ -293,10 +285,7 @@ test.describe('QUADRALOGICAL — 4-input video mixer (Phase 1)', () => {
 
   // ── Phase 2: per-edge effects ────────────────────────────────────────────
 
-  test('selecting a DIFFERENT effect on an edge VISIBLY changes the MIX (no more "always dissolve")', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  test('selecting a DIFFERENT effect on an edge VISIBLY changes the MIX (no more "always dissolve")', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
 
@@ -338,7 +327,6 @@ test.describe('QUADRALOGICAL — 4-input video mixer (Phase 1)', () => {
     const diffDelta = Math.abs(diff.r - dissolve.r) + Math.abs(diff.g - dissolve.g) + Math.abs(diff.b - dissolve.b);
     expect(diffDelta, 'DIFF frame differs from DISSOLVE frame').toBeGreaterThan(8);
 
-    expect(errors, 'no console / page errors').toEqual([]);
   });
 
   // NOTE (Phase 2 lean, §1/§2/§7-2): the "all 8 effects render distinct" test
@@ -348,10 +336,7 @@ test.describe('QUADRALOGICAL — 4-input video mixer (Phase 1)', () => {
   // effect branch. The dynamic "effect-change moves the mix" claim is kept by
   // the DISSOLVE≠MULTIPLY≠DIFF test above (the "always-dissolve" regression).
 
-  test('per-edge assignment is INDEPENDENT (edge 1–2 fx does not affect a different active edge)', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  test('per-edge assignment is INDEPENDENT (edge 1–2 fx does not affect a different active edge)', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
 
@@ -388,6 +373,5 @@ test.describe('QUADRALOGICAL — 4-input video mixer (Phase 1)', () => {
     // renderer-tolerant of SwiftShader rounding.
     expect(delta, 'changing edge 1–2 fx does NOT perturb the edge 3–4 output').toBeLessThan(4);
 
-    expect(errors, 'no console / page errors').toEqual([]);
   });
 });

@@ -24,7 +24,7 @@
 // runtime without WebGL2 (shouldn't happen in our CI Chromium, but be safe) the
 // test SKIPS rather than failing.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 import { installRenderSmokeHooks, stepAndReadStats, assertRenderStats } from './_render-smoke';
 
@@ -36,13 +36,10 @@ import { installRenderSmokeHooks, stepAndReadStats, assertRenderStats } from './
 const FIXED_STEPS = 16;
 
 test.describe('MILKDROP — deterministic render smoke (butterchurn)', () => {
-  test('freeze + fixed delta + synthetic audio → non-black, structured, zero GL errors', async ({ page }) => {
+  test('freeze + fixed delta + synthetic audio → non-black, structured, zero GL errors', async ({ page, errorWatch }) => {
     // Base budget + per-step cost on the software renderer (multi-pass engine).
     test.setTimeout(45_000 + FIXED_STEPS * 3_000);
 
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     // Pause the engine rAF loop + pin the clock BEFORE boot…
     await installRenderSmokeHooks(page);
@@ -99,6 +96,5 @@ test.describe('MILKDROP — deterministic render smoke (butterchurn)', () => {
     const stats = await stepAndReadStats(page, { nodeId: 'mk', steps: FIXED_STEPS });
     assertRenderStats(stats, FIXED_STEPS);
 
-    expect(errors, 'no console / page errors during render').toEqual([]);
   });
 });

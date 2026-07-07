@@ -15,7 +15,7 @@
 // snapshot (the canonical pattern in this codebase for assertion-grade
 // audio probes — direct AnalyserNode access through the engine).
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 import { readScopeSnapshot, summarize } from './_module-coverage-helpers';
 
@@ -25,16 +25,7 @@ test.describe.configure({ mode: 'parallel' });
 // 1. SMOKE — card mounts + audio flows
 // ────────────────────────────────────────────────────────────────────────────
 
-test('SIDECAR smoke: VCO → SIDECAR → AUDIOOUT — card mounts, no errors', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text());
-  });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('SIDECAR smoke: VCO → SIDECAR → AUDIOOUT — card mounts, no errors', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
@@ -75,21 +66,13 @@ test('SIDECAR smoke: VCO → SIDECAR → AUDIOOUT — card mounts, no errors', a
   });
   expect(readable).toBeCloseTo(-18, 0);
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });
 
 // ────────────────────────────────────────────────────────────────────────────
 // 2. SC-in-mix + ducking (THE BUG FIX): SC pad → output; MAIN trigger ducks it
 // ────────────────────────────────────────────────────────────────────────────
 
-test('SIDECAR ducker: SC pad is in the mix + dips when the MAIN trigger fires', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('SIDECAR ducker: SC pad is in the mix + dips when the MAIN trigger fires', async ({ page, rack, errorWatch }) => {
   // VCO pad → SIDECHAIN (always-on signal). NOISE (mutable level) → MAIN
   // trigger. audio_l_out = MAIN passthrough + ducked SC. NOISE hot → SC
   // ducked → output dips; NOISE silent → SC at full → output loud.
@@ -142,21 +125,13 @@ test('SIDECAR ducker: SC pad is in the mix + dips when the MAIN trigger fires', 
   // And the SC really is audible when un-ducked (the core bug: it was 0).
   expect(openRms).toBeGreaterThan(0.05);
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });
 
 // ────────────────────────────────────────────────────────────────────────────
 // 3. Cross-patch ducking via env_inv_out → STEREOVCA.strength
 // ────────────────────────────────────────────────────────────────────────────
 
-test('SIDECAR env_inv_out → STEREOVCA.strength_l ducks a second VCO', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('SIDECAR env_inv_out → STEREOVCA.strength_l ducks a second VCO', async ({ page, rack, errorWatch }) => {
   // Patch: NOISE (mutable level) → SIDECAR (self-detect, hot);
   // SIDECAR.env_inv_out → STEREOVCA.strength_l/_r;
   // VCO → STEREOVCA.in_l/_r → SCOPE.
@@ -217,5 +192,4 @@ test('SIDECAR env_inv_out → STEREOVCA.strength_l ducks a second VCO', async ({
   // floor).
   expect(openRms).toBeGreaterThan(duckedRms * 1.5);
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });

@@ -1,10 +1,14 @@
 // e2e/tests/noise.spec.ts
 //
-// NOISE module end-to-end: spawn the card, route each output through a
-// scope so we can read amplitude back from the engine, assert each
-// output produces non-zero signal.
+// NOISE behavioral e2e: LEVEL=0 must silence the output (a knob-value →
+// definite-silence contract the registry sweeps don't pin — they only
+// assert each output EMITS when driven). Mount smoke + per-output
+// "white/pink/brown emit non-silence" tests were deleted as weaker
+// duplicates of the per-module-per-port emit sweep + the per-module
+// output-alive check (LoC campaign row 2).
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -37,86 +41,7 @@ async function readScopeStats(page: Page, scopeNodeId: string): Promise<ScopeSta
   }, scopeNodeId);
 }
 
-test('noise: drop module → card mounts with no console errors', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-  await spawnPatch(page, [{ id: 'n', type: 'noise', position: { x: 200, y: 200 } }]);
-  const card = page.locator('.svelte-flow__node-noise');
-  await expect(card).toBeVisible();
-  await expect(card).toContainText('NOISE');
-  expect(errors, errors.join('; ')).toEqual([]);
-});
-
-test('noise: WHITE output produces non-zero audio at scope', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-  await spawnPatch(
-    page,
-    [
-      { id: 'n',   type: 'noise',    position: { x: 100, y: 100 }, params: { level: 0.8 } },
-      { id: 'scp', type: 'scope',    position: { x: 400, y: 100 }, params: { timeMs: 50 } },
-      { id: 'out', type: 'audioOut', position: { x: 700, y: 100 }, params: { master: 0.3 } },
-    ],
-    [
-      { id: 'e1', from: { nodeId: 'n',   portId: 'white'   }, to: { nodeId: 'scp', portId: 'ch1' } },
-      { id: 'e2', from: { nodeId: 'scp', portId: 'ch1_out' }, to: { nodeId: 'out', portId: 'L'   } },
-    ],
-  );
-  await page.waitForTimeout(700);
-  const stats = await readScopeStats(page, 'scp');
-  expect(stats.peak, `WHITE peak=${stats.peak}`).toBeGreaterThan(0.05);
-  // White noise has many non-zero samples — well above 90% of buffer.
-  expect(stats.nonzeroSamples).toBeGreaterThan(stats.total * 0.5);
-});
-
-test('noise: PINK output produces non-zero audio at scope', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-  await spawnPatch(
-    page,
-    [
-      { id: 'n',   type: 'noise',    params: { level: 0.8 } },
-      { id: 'scp', type: 'scope',    params: { timeMs: 50 } },
-      { id: 'out', type: 'audioOut', params: { master: 0.3 } },
-    ],
-    [
-      { id: 'e1', from: { nodeId: 'n',   portId: 'pink'    }, to: { nodeId: 'scp', portId: 'ch1' } },
-      { id: 'e2', from: { nodeId: 'scp', portId: 'ch1_out' }, to: { nodeId: 'out', portId: 'L'   } },
-    ],
-  );
-  await page.waitForTimeout(700);
-  const stats = await readScopeStats(page, 'scp');
-  expect(stats.peak, `PINK peak=${stats.peak}`).toBeGreaterThan(0.02);
-  expect(stats.nonzeroSamples).toBeGreaterThan(stats.total * 0.5);
-});
-
-test('noise: BROWN output produces non-zero audio at scope', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-  await spawnPatch(
-    page,
-    [
-      { id: 'n',   type: 'noise',    params: { level: 0.8 } },
-      { id: 'scp', type: 'scope',    params: { timeMs: 200 } },
-      { id: 'out', type: 'audioOut', params: { master: 0.3 } },
-    ],
-    [
-      { id: 'e1', from: { nodeId: 'n',   portId: 'brown'   }, to: { nodeId: 'scp', portId: 'ch1' } },
-      { id: 'e2', from: { nodeId: 'scp', portId: 'ch1_out' }, to: { nodeId: 'out', portId: 'L'   } },
-    ],
-  );
-  await page.waitForTimeout(700);
-  const stats = await readScopeStats(page, 'scp');
-  expect(stats.peak, `BROWN peak=${stats.peak}`).toBeGreaterThan(0.01);
-  expect(stats.nonzeroSamples).toBeGreaterThan(stats.total * 0.5);
-});
-
-test('noise: LEVEL=0 silences output', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('noise: LEVEL=0 silences output', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [

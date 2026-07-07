@@ -188,25 +188,9 @@ export async function sendCc(page: Page, channel: number, cc: number, value: num
   );
 }
 
-export async function sendNoteOn(page: Page, channel: number, note: number, velocity: number): Promise<void> {
-  await page.evaluate(
-    ({ ch, n, v }) => {
-      const w = window as unknown as { __mockMidi: { noteOn(c: number, n: number, v: number): void } };
-      w.__mockMidi.noteOn(ch, n, v);
-    },
-    { ch: channel, n: note, v: velocity },
-  );
-}
-
-export async function sendNoteOff(page: Page, channel: number, note: number, velocity = 0): Promise<void> {
-  await page.evaluate(
-    ({ ch, n, v }) => {
-      const w = window as unknown as { __mockMidi: { noteOff(c: number, n: number, v: number): void } };
-      w.__mockMidi.noteOff(ch, n, v);
-    },
-    { ch: channel, n: note, v: velocity },
-  );
-}
+// (sendNoteOn / sendNoteOff were pruned as unreferenced exports — LoC
+// campaign row 16. The __mockMidi init-script still exposes noteOn/noteOff;
+// re-add thin wrappers if a spec needs them.)
 
 /** Burst N clock pulses spaced `intervalMs` apart.
  *

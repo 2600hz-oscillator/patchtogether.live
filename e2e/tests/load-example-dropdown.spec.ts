@@ -22,7 +22,8 @@
 // Consolidates the retired cabinet-spawn.spec.ts, glitches-button.spec.ts,
 // and media-burn-button.spec.ts.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -169,11 +170,8 @@ test('System 35 option spawns 17 non-overlapping cabinet modules', async ({ page
 // load-assertion is dropped. Restore a deterministic version if the demo is
 // revived.
 
-test('Glitches Get Riches option loads the demo patch with a PICTUREBOX carrying image bytes', async ({ page }) => {
+test('Glitches Get Riches option loads the demo patch with a PICTUREBOX carrying image bytes', async ({ page, errorWatch }) => {
   test.setTimeout(60_000);
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(`console.error: ${m.text()}`); });
 
   await ready(page);
   await page.getByTestId('load-example-select').selectOption('glitches');
@@ -201,7 +199,6 @@ test('Glitches Get Riches option loads the demo patch with a PICTUREBOX carrying
   expect(pictureboxInfo[0].imageBytesLen, 'PICTUREBOX carries image bytes').toBeGreaterThan(1000);
   expect(pictureboxInfo[0].imageMime).toBe('image/jpeg');
 
-  expect(errors, errors.join('\n')).toEqual([]);
 });
 
 test('GIBRIBBON (game demo) option loads the 5-node audio→video game-driver chain', async ({ page }) => {

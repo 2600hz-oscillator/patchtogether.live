@@ -18,14 +18,11 @@
 //     spec guards against a future agent globally re-pinning cables and
 //     killing that affordance.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe('cable z-order: cables under cards in idle, free during drag', () => {
-  test('idle: edges layer paints below nodes layer', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('idle: edges layer paints below nodes layer', async ({ page, rack }) => {
     // Three modules in a row with a cable from the leftmost to the
     // rightmost — the cable's bezier path crosses the middle card body.
     await spawnPatch(
@@ -71,12 +68,10 @@ test.describe('cable z-order: cables under cards in idle, free during drag', () 
     expect(nz, 'nodes layer must paint above edges layer').toBeGreaterThan(ez);
   });
 
-  test('dragging: layer split is dropped so cables can float over neighbors', async ({ page }) => {
+  test('dragging: layer split is dropped so cables can float over neighbors', async ({ page, rack }) => {
     // Guard rail: cables-in-front-of-cards during drag is intentional UX.
     // If a future agent globally pins cables under cards, this assertion
     // will fail — flagging the drag-time regression before it ships.
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
 
     await spawnPatch(
       page,
@@ -136,10 +131,7 @@ test.describe('cable z-order: cables under cards in idle, free during drag', () 
     }
   });
 
-  test('OUTPUT card root is fully opaque (no cable bleed-through)', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('OUTPUT card root is fully opaque (no cable bleed-through)', async ({ page, rack }) => {
     await spawnPatch(
       page,
       [

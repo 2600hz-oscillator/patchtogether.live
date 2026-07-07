@@ -15,7 +15,7 @@
 //      factory table.
 //   4. No console / page errors throughout.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 /** Sum of all RGB across a canvas — cheap "is there content" + "did it
@@ -40,16 +40,7 @@ test.describe('FOXY hybrid module', () => {
   // box-blur + bilinear-sample pass added in v4.1. On slow Linux CI runners the
   // 30s default budget runs out before the 'foxy-xyz' canvas appears. Bump.
   test.setTimeout(90_000);
-  test('renders the full internal chain + animates the live wavetable + makes audio', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => {
-      if (m.type() === 'error') errors.push(m.text());
-    });
-
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('renders the full internal chain + animates the live wavetable + makes audio', async ({ page, rack, errorWatch }) => {
     // FOXY alone (self-driving) → audio OUTPUT (so the WAVECEL VCO actually
     // plays) AND wave3d_out → video OUTPUT (so we can read the live wavetable
     // render that the same bridge feeds the worklet).
@@ -158,6 +149,5 @@ test.describe('FOXY hybrid module', () => {
       )
       .toBeGreaterThan(5);
 
-    expect(errors, 'no console / page errors').toEqual([]);
   });
 });

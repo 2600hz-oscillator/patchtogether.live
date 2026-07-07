@@ -20,7 +20,8 @@
 // commit site through a real user gesture, not just the pure planner (which
 // is unit-tested in stereo-autowire.test.ts).
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 interface PatchEdge {
@@ -86,9 +87,7 @@ async function cascadePatch(
 }
 
 test.describe('stereo L/R auto-wire', () => {
-  test('stereo source L → stereo target L auto-wires R too (rings odd/even → cofefve inL/inR)', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('stereo source L → stereo target L auto-wires R too (rings odd/even → cofefve inL/inR)', async ({ page, rack }) => {
     await spawnPatch(page, [
       { id: 'rings', type: 'rings', position: { x: 80, y: 100 } },
       { id: 'coco', type: 'cofefve', position: { x: 760, y: 100 } },
@@ -106,9 +105,7 @@ test.describe('stereo L/R auto-wire', () => {
       .toBe(true);
   });
 
-  test('occupied sibling target input is NOT overwritten', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('occupied sibling target input is NOT overwritten', async ({ page, rack }) => {
     await spawnPatch(page, [
       { id: 'rings', type: 'rings', position: { x: 80, y: 100 } },
       { id: 'coco', type: 'cofefve', position: { x: 760, y: 100 } },
@@ -143,9 +140,7 @@ test.describe('stereo L/R auto-wire', () => {
     expect(edges.some((e) => e.id === 'e-rings-even-coco-inR')).toBe(false);
   });
 
-  test('MONO source into a stereo target L leaves the sibling UNPATCHED', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('MONO source into a stereo target L leaves the sibling UNPATCHED', async ({ page, rack }) => {
     // analogVco's `saw` is a mono audio output (no stereoPairs) → no auto-wire.
     await spawnPatch(page, [
       { id: 'vco', type: 'analogVco', position: { x: 80, y: 100 } },
@@ -162,9 +157,7 @@ test.describe('stereo L/R auto-wire', () => {
     expect(edges.some((e) => e.target.nodeId === 'coco' && e.target.portId === 'inR')).toBe(false);
   });
 
-  test('naming-agnostic target (charlottes-echos L/R): clouds out_l → L auto-wires out_r → R', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('naming-agnostic target (charlottes-echos L/R): clouds out_l → L auto-wires out_r → R', async ({ page, rack }) => {
     await spawnPatch(page, [
       { id: 'clouds', type: 'clouds', position: { x: 80, y: 100 } },
       { id: 'ce', type: 'charlottesEchos', position: { x: 760, y: 100 } },

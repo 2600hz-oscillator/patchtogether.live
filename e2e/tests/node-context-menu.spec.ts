@@ -6,7 +6,8 @@
 //   - Lock / Unlock (virtual-rack Phase 2): "screw down" a module to its rack
 //     slot — snap to the 180px grid, persist data.locked, pin non-draggable.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -29,9 +30,7 @@ async function readNodeState(
   }, id);
 }
 
-test('node context menu: right-click opens, Escape closes', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('node context menu: right-click opens, Escape closes', async ({ page, rack }) => {
   await page.getByTestId('load-example-select').selectOption('sequenced-vco');
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
@@ -47,9 +46,7 @@ test('node context menu: right-click opens, Escape closes', async ({ page }) => 
   await expect(page.locator('[role="menu"][aria-label="Module actions"]')).toHaveCount(0);
 });
 
-test('node context menu: Delete removes the node + all edges touching it', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('node context menu: Delete removes the node + all edges touching it', async ({ page, rack }) => {
   await page.getByTestId('load-example-select').selectOption('sequenced-vco');
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
   await expect(page.locator('.svelte-flow__edge')).toHaveCount(6);
@@ -70,9 +67,7 @@ test('node context menu: Delete removes the node + all edges touching it', async
   await expect(page.locator('.svelte-flow__edge')).toHaveCount(2);
 });
 
-test('node context menu: Unpatch all keeps the node, removes only edges touching it', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('node context menu: Unpatch all keeps the node, removes only edges touching it', async ({ page, rack }) => {
   await page.getByTestId('load-example-select').selectOption('sequenced-vco');
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
   await expect(page.locator('.svelte-flow__edge')).toHaveCount(6);
@@ -89,7 +84,7 @@ test('node context menu: Unpatch all keeps the node, removes only edges touching
   await expect(page.locator('.svelte-flow__edge')).toHaveCount(2);
 });
 
-test('node context menu: TOYBOX hides "Unpatch all" (node-map module) but keeps Docs/Duplicate/Delete', async ({ page }) => {
+test('node context menu: TOYBOX hides "Unpatch all" (node-map module) but keeps Docs/Duplicate/Delete', async ({ page, rack }) => {
   // TOYBOX is a node-map module — its in-card combine editor owns disconnects,
   // so the generic card menu's "Unpatch all" is hidden for type==='toybox'.
   //
@@ -100,8 +95,6 @@ test('node context menu: TOYBOX hides "Unpatch all" (node-map module) but keeps 
   // Docs / Duplicate assertions pass), but the slow heavy page burns the clock
   // before the final assertion settles. Give the heavy card headroom.
   test.setTimeout(90_000);
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
     [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
@@ -122,9 +115,7 @@ test('node context menu: TOYBOX hides "Unpatch all" (node-map module) but keeps 
   await expect(menu.locator('[role="menuitem"]', { hasText: 'Delete' })).toHaveCount(1);
 });
 
-test('node context menu: Lock snaps to the HP×U rack grid, marks locked + non-draggable; Unlock reverts', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('node context menu: Lock snaps to the HP×U rack grid, marks locked + non-draggable; Unlock reverts', async ({ page, rack }) => {
   // Spawn a single module at a DELIBERATELY off-grid position so the snap is
   // observable. The rack grid is ANISOTROPIC (PR #806): X snaps to the 22.5px
   // HP column (1u = 8hp → 180/8), Y snaps to the 180px U row. So 250→247.5 (11hp),

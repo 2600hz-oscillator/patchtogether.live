@@ -7,7 +7,8 @@
 // click-to-open + negative-space-click-close on the (body-portaled) menu
 // chrome, plus the io-spec handle-in-DOM parity.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 function chrome(page: Page, nodeId: string) {
@@ -15,11 +16,7 @@ function chrome(page: Page, nodeId: string) {
 }
 
 test.describe('PatchPanel: click-open / outside-click-close', () => {
-  test('click opens the menu; hover alone does not; outside-click closes', async ({
-    page,
-  }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('click opens the menu; hover alone does not; outside-click closes', async ({ page, rack }) => {
     await spawnPatch(page, [{ id: 'adsr', type: 'adsr', position: { x: 200, y: 200 } }]);
 
     const trigger = page.locator(

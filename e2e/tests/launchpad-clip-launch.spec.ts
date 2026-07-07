@@ -18,7 +18,7 @@
 // the test proves the launch produces sound only once the transport runs
 // (silent before launch → audible after), catching the green-but-silent class.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 import { readScopePeakOverWindow } from './_module-coverage-helpers';
 
@@ -85,18 +85,7 @@ async function arrangeState(page: import('@playwright/test').Page) {
 const CC_REC = 91;
 const CC_SONG = 92;
 
-test('@launchpad a simulated pad press launches a clip → audible RMS at the clipplayer voice', async ({
-  page,
-}) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text());
-  });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('@launchpad a simulated pad press launches a clip → audible RMS at the clipplayer voice', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
@@ -180,21 +169,9 @@ test('@launchpad a simulated pad press launches a clip → audible RMS at the cl
   expect(after.nonzeroSamples, 'structured signal, not a glitch').toBeGreaterThan(50);
   expect(after.rms, 'the pad launch raised the output').toBeGreaterThan(before.rms + 0.02);
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });
 
-test('@launchpad arming REC on the deck captures a launch to the arrangement; SONG flips clipMode', async ({
-  page,
-}) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text());
-  });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('@launchpad arming REC on the deck captures a launch to the arrangement; SONG flips clipMode', async ({ page, rack, errorWatch }) => {
   // The SAME real chain (TIMELORDE-clocked clip → VCO → VCA → SCOPE) so the
   // arranger capture is proven on an audibly-running launch, not a dry write.
   await spawnPatch(
@@ -287,7 +264,6 @@ test('@launchpad arming REC on the deck captures a launch to the arrangement; SO
   }, CC_SONG);
   await expect.poll(() => arrangeState(page).then((s) => s.clipMode), { timeout: 5000 }).toBe('arrangement');
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });
 
 // ===========================================================================
@@ -298,18 +274,7 @@ test('@launchpad arming REC on the deck captures a launch to the arrangement; SO
 // → RMS returns. Proves the single device + view toggle + the real source chain
 // end to end (silent-before / audible-after, the green-but-silent guard).
 // ===========================================================================
-test('@launchpad single-unit: clip view launches (audible), CC-98 flips to control (editor), round-trip relaunches', async ({
-  page,
-}) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text());
-  });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('@launchpad single-unit: clip view launches (audible), CC-98 flips to control (editor), round-trip relaunches', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
@@ -464,5 +429,4 @@ test('@launchpad single-unit: clip view launches (audible), CC-98 flips to contr
   const relaunched = await readScopePeakOverWindow(page, 's-scp', 1500);
   expect(relaunched.rms, 'RMS returns after the round-trip relaunch').toBeGreaterThan(0.03);
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });

@@ -21,7 +21,7 @@
 // video artifact — useful for catching subtle visual regressions that the
 // numeric assertion alone would miss.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.use({ video: 'on' });
@@ -45,9 +45,7 @@ async function sampleFaderThumbTops(
   return tops;
 }
 
-test('LFO modulating QBRT cutoff visibly moves the cutoff fader thumb', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('LFO modulating QBRT cutoff visibly moves the cutoff fader thumb', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
@@ -84,9 +82,7 @@ test('LFO modulating QBRT cutoff visibly moves the cutoff fader thumb', async ({
   await expect(cutoffFader.locator('.thumb')).toBeVisible();
 });
 
-test('LFO modulating DRUMMERGIRL volume visibly moves the volume fader thumb', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('LFO modulating DRUMMERGIRL volume visibly moves the volume fader thumb', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [

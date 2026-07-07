@@ -9,7 +9,7 @@
 // and a reload re-applies the chosen skin (proving localStorage round-
 // trips).
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -28,17 +28,13 @@ async function openSwitcher(page: import('@playwright/test').Page) {
   await expect(page.getByTestId('skin-switcher-popover')).toBeVisible();
 }
 
-test('skins: switcher renders in topbar with default skin active', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('skins: switcher renders in topbar with default skin active', async ({ page, rack }) => {
   await expect(page.getByTestId('skin-switcher-trigger')).toBeVisible();
   await expect(page.getByTestId('skin-current-id')).toHaveText('default');
   await expect(page.getByTestId('skin-current-label')).toHaveText('Default');
 });
 
-test('skins: popover lists all 8 in-tree skins', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('skins: popover lists all 8 in-tree skins', async ({ page, rack }) => {
   await openSwitcher(page);
   for (const id of [
     'default',
@@ -54,9 +50,7 @@ test('skins: popover lists all 8 in-tree skins', async ({ page }) => {
   }
 });
 
-test('skins: picking terminal-green flips --bg + persists choice', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('skins: picking terminal-green flips --bg + persists choice', async ({ page, rack }) => {
   await openSwitcher(page);
   await page.getByTestId('skin-option-terminal-green').click();
   await expect(page.getByTestId('skin-current-id')).toHaveText('terminal-green');
@@ -68,9 +62,7 @@ test('skins: picking terminal-green flips --bg + persists choice', async ({ page
   expect(stored).toBe('terminal-green');
 });
 
-test('skins: choice survives a reload', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('skins: choice survives a reload', async ({ page, rack }) => {
   await openSwitcher(page);
   await page.getByTestId('skin-option-vaporwave').click();
   await expect(page.getByTestId('skin-current-id')).toHaveText('vaporwave');
@@ -84,9 +76,7 @@ test('skins: choice survives a reload', async ({ page }) => {
   expect(await readVar(page, '--accent')).toBe('#ff7ce0');
 });
 
-test('skins: each shipped skin sets the expected --bg', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('skins: each shipped skin sets the expected --bg', async ({ page, rack }) => {
   // Iterate every skin; the trigger re-renders with the new label/id
   // after each pick so the test exercises the complete switch loop.
   const cases: Array<{ id: string; bg: string }> = [
@@ -107,7 +97,7 @@ test('skins: each shipped skin sets the expected --bg', async ({ page }) => {
   }
 });
 
-test('skins: switching to Vintage renders sprite-based fader handles', async ({ page }) => {
+test('skins: switching to Vintage renders sprite-based fader handles', async ({ page, rack }) => {
   // Vintage is the first skin to opt into controlStyle:'sprite'. When
   // active, every Fader thumb must render an inline <svg> handle
   // (data-testid=fader-handle-sprite) instead of the CSS-gradient block,
@@ -116,8 +106,6 @@ test('skins: switching to Vintage renders sprite-based fader handles', async ({ 
   // VCA has both a unipolar Fader (Base, min=0) and a bipolar one
   // (CV Amt, min=-1, max=1) — so the same card exercises the with-hash
   // and without-hash paths in sprite mode.
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
     [{ id: 'vca', type: 'vca', position: { x: 100, y: 100 } }],
@@ -166,9 +154,7 @@ test('skins: switching to Vintage renders sprite-based fader handles', async ({ 
     .toBeGreaterThan(0);
 });
 
-test('skins: clicking outside closes the popover without changing skin', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('skins: clicking outside closes the popover without changing skin', async ({ page, rack }) => {
   await openSwitcher(page);
   // Click the topbar's h1 — outside the switcher, inside the topbar
   // (avoids accidentally triggering Add-module / Load-example).

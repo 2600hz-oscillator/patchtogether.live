@@ -21,7 +21,7 @@
 // Runtime-conscious: pure DOM + injected MIDI events. No real hardware, no
 // permission prompts, no extra audio graph beyond the cards each test spawns.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import type { Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import {
@@ -64,10 +64,7 @@ async function clearMidiBindings(page: Page): Promise<void> {
 //       + the auto-spawned TIMELORDE — the realistic "patch loaded on boot"
 //       path the old eager trigger fired on.
 
-test('@midi REGRESSION: page load never requests Web-MIDI access', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+test('@midi REGRESSION: page load never requests Web-MIDI access', async ({ page, errorWatch }) => {
 
   // Count requestMIDIAccess calls from before the very first navigation.
   await installMidiMock(page);
@@ -94,7 +91,6 @@ test('@midi REGRESSION: page load never requests Web-MIDI access', async ({ page
   });
   expect(callsAfterPatch, 'navigator.requestMIDIAccess was called while loading a non-MIDI patch (eager-prompt regression)').toBe(0);
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });
 
 // ============================================================================
@@ -108,10 +104,7 @@ test('@midi REGRESSION: page load never requests Web-MIDI access', async ({ page
 // path (the existing spec patches the singleton's `access` directly via
 // `__midiTestInstall`).
 
-test('@midi plain CC reception drives a learned param across the full range', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+test('@midi plain CC reception drives a learned param across the full range', async ({ page, errorWatch }) => {
 
   // Install BEFORE navigation so the app's first requestMIDIAccess() resolves
   // against the mock instead of the (Linux-CI-absent) Web MIDI implementation.
@@ -159,7 +152,6 @@ test('@midi plain CC reception drives a learned param across the full range', as
   await sendCc(page, 1, 20, 127);
   await expect.poll(() => readParam(page, 'm-wc', 'morph')).toBeCloseTo(1, 2);
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });
 
 // ============================================================================
@@ -189,10 +181,7 @@ test('@midi plain CC reception drives a learned param across the full range', as
 //     before the new page's first requestMIDIAccess call).
 //   * Send CC 127. The knob MUST move. If it doesn't, this is the regression.
 
-test('@midi REGRESSION: save patch → reload → CC values still fire (PR #389 class)', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+test('@midi REGRESSION: save patch → reload → CC values still fire (PR #389 class)', async ({ page, errorWatch }) => {
 
   await installMidiMock(page);
   await page.goto('/rack');
@@ -319,7 +308,6 @@ test('@midi REGRESSION: save patch → reload → CC values still fire (PR #389 
   await sendCc(page, 1, 30, 0);
   await expect.poll(() => readParam(page, 'm-wc', 'morph')).toBeCloseTo(0, 2);
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });
 
 // ============================================================================
@@ -415,10 +403,7 @@ test('@midi NoteOn / NoteOff drives MIDI-CV-BUDDY gate', async ({ page }) => {
 // intervalMs = 50 → 50 BPM. We send 60 pulses (2.5 quarters) to let the
 // one-pole smoothing (α=0.25) settle, and tolerate ±5 BPM for timer jitter.
 
-test('@midi MIDI Clock pulses drive midi-clock-source BPM derivation', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+test('@midi MIDI Clock pulses drive midi-clock-source BPM derivation', async ({ page, errorWatch }) => {
 
   await installMidiMock(page);
   await page.goto('/rack');
@@ -493,5 +478,4 @@ test('@midi MIDI Clock pulses drive midi-clock-source BPM derivation', async ({ 
   });
   expect(afterStop).toBeNull();
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });

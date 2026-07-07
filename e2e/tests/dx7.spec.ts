@@ -8,7 +8,8 @@
 //   3. Switching the preset via the dropdown updates the visible patch
 //      name and rejects garbled input.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -31,12 +32,7 @@ async function readScopeRms(page: Page, scopeId: string): Promise<number> {
   }, scopeId);
 }
 
-test('dx7: spawns + renders card with preset selector + 4 knobs + 4 handles', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('dx7: spawns + renders card with preset selector + 4 knobs + 4 handles', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'dx', type: 'dx7' }]);
 
   // Card renders.
@@ -62,10 +58,7 @@ test('dx7: spawns + renders card with preset selector + 4 knobs + 4 handles', as
   expect(handles).toBe(4);
 });
 
-test('dx7: sequencer (poly) → DX7 → audioOut produces audible RMS', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('dx7: sequencer (poly) → DX7 → audioOut produces audible RMS', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
@@ -154,15 +147,13 @@ async function readScopeFrame(page: Page, scopeId: string): Promise<number[]> {
   }, scopeId);
 }
 
-test('dx7: switching algorithm changes the audible scope content', async ({ page }) => {
+test('dx7: switching algorithm changes the audible scope content', async ({ page, rack }) => {
   // Regression: prior to fix/dx7-algorithm-switching the host's setParam
   // early-out short-circuited algorithm changes (algorithm is NOT an
   // AudioParam — it travels via worklet.port.postMessage) so moving the
   // knob silently no-op'd. This test asserts the scope tap reports a
   // measurably different waveform after we change algorithm 1 → 32 on the
   // SAME preset / sequencer feed.
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
 
   await spawnPatch(
     page,
@@ -275,10 +266,7 @@ test('dx7: switching algorithm changes the audible scope content', async ({ page
   expect(ratio, `algo-1 vs algo-32 frame normalized L2 distance (got ${ratio.toFixed(3)})`).toBeGreaterThan(0.1);
 });
 
-test('dx7: changing preset updates the dropdown value', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('dx7: changing preset updates the dropdown value', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'dx', type: 'dx7' }]);
 
   const presetSel = page.locator('[data-testid="dx7-preset-select"]');

@@ -16,7 +16,8 @@
 // writes through createMatrixEdge → validateEdge → patch.edges, the same path
 // the drag-connect + patch-to flows use.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 const MM = 'mm-1';
@@ -230,11 +231,7 @@ test('RED ✕ (inputTaken) is clickable: cancel no-ops; accept REPLACES the fore
   await expect(cell).toHaveAttribute('data-kind', 'inputTaken');
 });
 
-test('GRAY ✕ (outputFanout) is clickable: accept ADDS a cable, the foreign consumer stays', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('GRAY ✕ (outputFanout) is clickable: accept ADDS a cable, the foreign consumer stays', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: MM, type: 'matrixMix', position: { x: 520, y: 80 }, domain: 'meta' },
     { id: 'vco-1', type: 'analogVco', position: { x: 60, y: 80 }, domain: 'audio' },
@@ -280,16 +277,12 @@ test('GRAY ✕ (outputFanout) is clickable: accept ADDS a cable, the foreign con
   await expect(cell).toHaveAttribute('data-kind', 'direct');
 });
 
-test('Sequenced VCO: matrix unpatch + re-patch, then Cmd-Z all the way back to the exact starting patch', async ({
-  page,
-}) => {
+test('Sequenced VCO: matrix unpatch + re-patch, then Cmd-Z all the way back to the exact starting patch', async ({ page, rack }) => {
   // CI-load robustness: loads a 5-module example then drives a long multi-step
   // matrix patch/unpatch + full Cmd-Z undo chain (each step polls the edge
   // store). The flat 30s default timed out under CI load (main run 1b897a3c,
   // cleared on rerun → flake, not a real break). Give it room.
   test.setTimeout(90_000);
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
 
   // Load the REAL "Sequenced VCO" example (5 modules, 6 edges) — the example
   // load is a single NON-undoable transaction, so it is the undo FLOOR.

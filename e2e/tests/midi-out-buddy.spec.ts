@@ -16,7 +16,8 @@
 // CV→MIDI mapping + note-tracking math is covered by the unit test
 // (packages/web/src/lib/audio/modules/midi-out-buddy.test.ts).
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -57,10 +58,7 @@ async function installFakeMidiOut(page: Page): Promise<void> {
   await page.addInitScript({ content: fakeMidiOutScript });
 }
 
-test('midi-out-buddy: drops + card mounts with the 3 input handles, no console errors', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+test('midi-out-buddy: drops + card mounts with the 3 input handles, no console errors', async ({ page, errorWatch }) => {
   await installFakeMidiOut(page);
   await page.goto('/rack');
   await page.waitForLoadState('networkidle');
@@ -72,7 +70,6 @@ test('midi-out-buddy: drops + card mounts with the 3 input handles, no console e
   for (const portId of ['gate', 'pitch', 'velocity']) {
     await expect(card.locator(`[data-handleid="${portId}"]`)).toHaveCount(1);
   }
-  expect(errors, errors.join('; ')).toEqual([]);
 });
 
 test('midi-out-buddy: Connect MIDI… reveals the OUT device + channel selectors', async ({ page }) => {
@@ -92,11 +89,8 @@ test('midi-out-buddy: Connect MIDI… reveals the OUT device + channel selectors
   await expect(card.getByRole('option', { name: 'Fake MIDI Out (Playwright)' })).toHaveCount(1);
 });
 
-test('midi-out-buddy: SEQUENCER gate/pitch → captured MIDI NoteOn on the fake output', async ({ page }) => {
+test('midi-out-buddy: SEQUENCER gate/pitch → captured MIDI NoteOn on the fake output', async ({ page, errorWatch }) => {
   test.setTimeout(45_000);
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   await installFakeMidiOut(page);
   await page.goto('/rack');
   await page.waitForLoadState('networkidle');
@@ -175,5 +169,4 @@ test('midi-out-buddy: SEQUENCER gate/pitch → captured MIDI NoteOn on the fake 
     expect(noteOn[2]).toBeLessThanOrEqual(127);
   }
 
-  expect(errors, errors.join('; ')).toEqual([]);
 });

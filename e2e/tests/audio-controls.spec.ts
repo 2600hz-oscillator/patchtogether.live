@@ -19,7 +19,8 @@
 // and the analyser size (2048 samples) is plenty for RMS / peak /
 // zero-crossing-rate stats.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 interface SignalStats {
@@ -111,12 +112,7 @@ async function waitForSignal(page: Page, scopeNodeId: string): Promise<SignalSta
 }
 
 test.describe('audio-controls: FILTER cutoff CV actually changes audio', () => {
-  test('Filter: cutoff knob moved from 20Hz to 8000Hz changes the captured spectrum', async ({
-    page,
-  }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('Filter: cutoff knob moved from 20Hz to 8000Hz changes the captured spectrum', async ({ page, rack }) => {
     // VCO saw (default ~261.6 Hz / C4) → Filter (LP, brick wall) → SCOPE
     // → silent Out. master=0 keeps the test silent locally while leaving
     // the audio graph alive (AudioWorklet pruning would otherwise freeze
@@ -172,12 +168,7 @@ test.describe('audio-controls: FILTER cutoff CV actually changes audio', () => {
 });
 
 test.describe('audio-controls: DESTROY bits CV actually changes audio', () => {
-  test('Destroy: bits=16 vs bits=1 produces measurably different RMS or peak', async ({
-    page,
-  }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('Destroy: bits=16 vs bits=1 produces measurably different RMS or peak', async ({ page, rack }) => {
     // VCO sine (default ~261.6 Hz / C4) → DESTROY (passthrough at
     // bits=16, decimate=1, wet=1) → SCOPE.
     await spawnPatch(
@@ -218,12 +209,7 @@ test.describe('audio-controls: DESTROY bits CV actually changes audio', () => {
 });
 
 test.describe('audio-controls: Audio Out master fader attenuates output', () => {
-  test('Audio Out: master=0 silences the destination; master=0.5 produces signal', async ({
-    page,
-  }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('Audio Out: master=0 silences the destination; master=0.5 produces signal', async ({ page, rack }) => {
     // VCO → AudioOut.L. We tap a SCOPE BEFORE the Out so the test
     // assertion is on the GainNode that sits BEHIND `master`. To do
     // that we need an analyser inside Out — which doesn't exist. So

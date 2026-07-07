@@ -16,7 +16,7 @@
 //                        a small per-pixel tolerance — interpolation +
 //                        canvas-side scaling create minor differences).
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 interface PixelStats {
@@ -52,16 +52,7 @@ async function readCanvasStats(
 }
 
 test.describe('RESHAPER + SHAPEDRAMPS integration', () => {
-  test('shaped wiring renders a non-uniform deformed coordinate field', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => {
-      if (m.type() === 'error') errors.push(m.text());
-    });
-
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('shaped wiring renders a non-uniform deformed coordinate field', async ({ page, rack, errorWatch }) => {
     await spawnPatch(
       page,
       [
@@ -94,19 +85,9 @@ test.describe('RESHAPER + SHAPEDRAMPS integration', () => {
     expect(stats.variance, `variance ${stats.variance} > 50 (non-flat)`).toBeGreaterThan(50);
     expect(stats.nonZero / stats.samples, 'fraction of bright pixels > 5%').toBeGreaterThan(0.05);
 
-    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 
-  test('linear (h_lin/v_lin) wiring acts like a clean raster passthrough', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => {
-      if (m.type() === 'error') errors.push(m.text());
-    });
-
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('linear (h_lin/v_lin) wiring acts like a clean raster passthrough', async ({ page, rack, errorWatch }) => {
     // Two separate cards, same LINES feeding each. Output RESHAPER wired
     // to h_lin/v_lin (identity coord field). The OUTPUT card displays
     // the same LINES feed directly. Their pixel stats should be very
@@ -158,19 +139,9 @@ test.describe('RESHAPER + SHAPEDRAMPS integration', () => {
       `mean delta ${meanDelta} too large (reshaper=${reshaperStats.mean}, out=${outStats.mean})`,
     ).toBeLessThan(0.15);
 
-    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 
-  test('onboard mix1 crossfades two LINES into RESHAPER.x and reacts to mix1 knob', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => {
-      if (m.type() === 'error') errors.push(m.text());
-    });
-
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('onboard mix1 crossfades two LINES into RESHAPER.x and reacts to mix1 knob', async ({ page, rack, errorWatch }) => {
     // Two distinct LINES sources → SHAPEDRAMPS.mix1_a / mix1_b.
     // SHAPEDRAMPS.mix1_out → RESHAPER.x. Linear v_lin → RESHAPER.y so the
     // vertical axis is well-defined. LINES1 also drives RESHAPER.z (the
@@ -236,6 +207,5 @@ test.describe('RESHAPER + SHAPEDRAMPS integration', () => {
       `mix1 sweep should change RESHAPER output (mean ${stats0.mean}→${stats1.mean}, var ${stats0.variance}→${stats1.variance})`,
     ).toBeGreaterThan(2.5);
 
-    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 });

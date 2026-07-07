@@ -26,7 +26,8 @@
 // 40% is enough to PROVE the LFO is driving the param across multiple
 // orders of magnitude (vs. the pre-PR baseline of ~1-10%).
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -78,9 +79,7 @@ async function sampleParamSweep(
   return { min: lo, max: hi, span: hi - lo, samples: out };
 }
 
-test('LFO sweeps ADSR attack (log) across multiple orders of magnitude', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('LFO sweeps ADSR attack (log) across multiple orders of magnitude', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
@@ -112,9 +111,7 @@ test('LFO sweeps ADSR attack (log) across multiple orders of magnitude', async (
   ).toBeGreaterThanOrEqual(0.5);
 });
 
-test('LFO sweeps QBRT cutoff (log) across multiple octaves', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('LFO sweeps QBRT cutoff (log) across multiple octaves', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
@@ -137,9 +134,7 @@ test('LFO sweeps QBRT cutoff (log) across multiple octaves', async ({ page }) =>
   ).toBeGreaterThanOrEqual(2);
 });
 
-test('LFO sweeps DRUMMERGIRL volume (linear 0..2) across full range', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('LFO sweeps DRUMMERGIRL volume (linear 0..2) across full range', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
@@ -161,9 +156,7 @@ test('LFO sweeps DRUMMERGIRL volume (linear 0..2) across full range', async ({ p
   ).toBeGreaterThanOrEqual(0.8);
 });
 
-test('LFO sweeps MIXMSTRS ch1 EQ low (-12..+12 dB linear) across full range', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('LFO sweeps MIXMSTRS ch1 EQ low (-12..+12 dB linear) across full range', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
@@ -185,9 +178,7 @@ test('LFO sweeps MIXMSTRS ch1 EQ low (-12..+12 dB linear) across full range', as
   ).toBeGreaterThanOrEqual(9);
 });
 
-test('LFO sweeps DESTROY decimate (1..64 linear) across most of range', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('LFO sweeps DESTROY decimate (1..64 linear) across most of range', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
@@ -209,9 +200,7 @@ test('LFO sweeps DESTROY decimate (1..64 linear) across most of range', async ({
   ).toBeGreaterThanOrEqual(25);
 });
 
-test('LFO sweeps RINGBACK mix (0..1 linear) across most of range', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('LFO sweeps RINGBACK mix (0..1 linear) across most of range', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [

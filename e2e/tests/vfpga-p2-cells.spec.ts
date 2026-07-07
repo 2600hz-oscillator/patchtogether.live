@@ -14,7 +14,7 @@
 // No app module / VFPGA spec is loaded (P2 is engine breadth only); the kernel
 // strings come straight from the cell library so they can never drift from prod.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { cellInputUniform } from '../../packages/web/src/lib/video/vfpga/cells/types';
 import { addCell } from '../../packages/web/src/lib/video/vfpga/cells/add';
 import { multiplyCell } from '../../packages/web/src/lib/video/vfpga/cells/multiply';
@@ -55,10 +55,8 @@ void main() {
 }`;
 
 test.describe('vfpga P2 cells compile + link on a real WebGL2 context', () => {
-  test('every P2 cell kernel compiles + links', async ({ page }) => {
+  test('every P2 cell kernel compiles + links', async ({ page, rack }) => {
     test.setTimeout(45_000);
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
 
     const cellFrags = P2_CELLS.map((c) => ({ key: `${c.type}:${c.op}`, frag: fragFor(c) }));
 

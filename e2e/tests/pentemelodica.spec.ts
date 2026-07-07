@@ -9,7 +9,7 @@
 //     are real signal),
 //   - no console / page errors throughout.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 import { readScopeSnapshot, summarize } from './_module-coverage-helpers';
 
@@ -18,14 +18,7 @@ test.describe.configure({ mode: 'parallel' });
 const INPUT_PORTS = ['poly', 'fm1', 'fm2', 'fm3', 'fm4', 'fm5'];
 const OUTPUT_PORTS = ['out_l', 'out_r', 'voice1', 'voice2', 'voice3', 'voice4', 'voice5'];
 
-test('pentemelodica: card mounts with all 6 input + 7 output handles', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('pentemelodica: card mounts with all 6 input + 7 output handles', async ({ page, rack, errorWatch }) => {
   await spawnPatch(page, [
     { id: 'pm', type: 'pentemelodica', position: { x: 200, y: 120 }, domain: 'audio' },
   ]);
@@ -47,17 +40,9 @@ test('pentemelodica: card mounts with all 6 input + 7 output handles', async ({ 
     ).toHaveCount(1);
   }
 
-  expect(errors, 'no console / page errors').toEqual([]);
 });
 
-test('pentemelodica: a POLYSEQZ chord drives the stereo OUT', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('pentemelodica: a POLYSEQZ chord drives the stereo OUT', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
@@ -103,5 +88,4 @@ test('pentemelodica: a POLYSEQZ chord drives the stereo OUT', async ({ page }) =
   }
 
   expect(peak, 'PENTEMELODICA OUT_L should carry audio when a chord is gated in').toBeGreaterThan(0.02);
-  expect(errors, 'no console / page errors').toEqual([]);
 });

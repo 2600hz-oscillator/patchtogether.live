@@ -6,7 +6,8 @@
 // songBeat advances and the engine records/plays. Asserts the SYNCED data
 // (node.data.arrangement / clipMode / playing) — the observable contract.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -58,9 +59,7 @@ async function readData(page: Page, nodeId: string): Promise<CPData> {
   }, nodeId);
 }
 
-test('song mode: arming RECORD captures clip launches into the arrangement', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('song mode: arming RECORD captures clip launches into the arrangement', async ({ page, rack }) => {
   // quantize off → launches apply immediately (deterministic capture). No
   // TIMELORDE → free-run.
   await spawnPatch(page, [
@@ -88,9 +87,7 @@ test('song mode: arming RECORD captures clip launches into the arrangement', asy
   for (let i = 1; i < evs.length; i++) expect(evs[i].beat).toBeGreaterThanOrEqual(evs[i - 1].beat);
 });
 
-test('song mode: the SES/ARR button flips clipMode', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('song mode: the SES/ARR button flips clipMode', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
   const modeBtn = page.getByTestId('clipplayer-mode-cp');
   await expect(modeBtn).toHaveText('SES');
@@ -101,9 +98,7 @@ test('song mode: the SES/ARR button flips clipMode', async ({ page }) => {
   await expect(modeBtn).toHaveText('SES');
 });
 
-test('song mode: ARRANGEMENT playback launches lanes from the recorded log', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('song mode: ARRANGEMENT playback launches lanes from the recorded log', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
   await seedClips(page, 'cp', [0, 8]);
   // Inject a pre-built arrangement (lane 0 + lane 1 both launch slot 0 at beat 0)
@@ -134,9 +129,7 @@ test('song mode: ARRANGEMENT playback launches lanes from the recorded log', asy
     .toBe(true);
 });
 
-test('song view: renders blocks + select/delete edits the arrangement', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('song view: renders blocks + select/delete edits the arrangement', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
   await seedClips(page, 'cp', [0, 8]);
   // lane 0: slot 0 [0,8) then slot 1 [8,16); lane 1: slot 0 [0,16) → 3 blocks.
@@ -171,9 +164,7 @@ test('song view: renders blocks + select/delete edits the arrangement', async ({
   expect(evs.length).toBe(2);
 });
 
-test('song mode: OVERDUB keeps the take + merges new launches (vs REPLACE wiping it)', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('song mode: OVERDUB keeps the take + merges new launches (vs REPLACE wiping it)', async ({ page, rack }) => {
   // quantize off → launches apply immediately. No TIMELORDE → free-run.
   await spawnPatch(page, [
     { id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio', params: { quantize: 0 } },
@@ -214,9 +205,7 @@ test('song mode: OVERDUB keeps the take + merges new launches (vs REPLACE wiping
   for (let i = 1; i < evs.length; i++) expect(evs[i].beat).toBeGreaterThanOrEqual(evs[i - 1].beat);
 });
 
-test('song mode: REPLACE arming wipes the pre-seeded take (contrast control)', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('song mode: REPLACE arming wipes the pre-seeded take (contrast control)', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio', params: { quantize: 0 } },
   ]);
@@ -244,9 +233,7 @@ test('song mode: REPLACE arming wipes the pre-seeded take (contrast control)', a
     .toBe(0);
 });
 
-test('drag-to-move: dragging a block retimes its launch + persists (bar-snapped)', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('drag-to-move: dragging a block retimes its launch + persists (bar-snapped)', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
   await seedClips(page, 'cp', [0, 1]); // lane0/slot0 + lane0/slot1
   // lane 0: slot 0 [0,8) then slot 1 [8,16); lengthBeats 16 so beat-8 → bar-4 = beat 4.
@@ -295,9 +282,7 @@ test('drag-to-move: dragging a block retimes its launch + persists (bar-snapped)
   expect(evs.length).toBe(2);
 });
 
-test('pop-out editor: opens, edits the SAME synced arrangement, closes on Esc', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('pop-out editor: opens, edits the SAME synced arrangement, closes on Esc', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
   await seedClips(page, 'cp', [0, 8]);
   await page.evaluate(() => {

@@ -18,7 +18,7 @@
 // Dedicated spec (rather than folding into skins.spec.ts) so the DINER
 // contract — especially the new optional tokens — is testable in isolation.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -31,10 +31,7 @@ async function readVar(
   }, name);
 }
 
-test('diner: selectable from switcher + applies vaporwave palette + shape tokens', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('diner: selectable from switcher + applies vaporwave palette + shape tokens', async ({ page, rack }) => {
   await page.getByTestId('skin-switcher-trigger').click();
   await expect(page.getByTestId('skin-switcher-popover')).toBeVisible();
   await expect(page.getByTestId('skin-option-diner')).toBeVisible();
@@ -78,9 +75,7 @@ test('diner: selectable from switcher + applies vaporwave palette + shape tokens
   expect(stored).toBe('diner');
 });
 
-test('diner: choice survives a reload', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('diner: choice survives a reload', async ({ page, rack }) => {
   await page.getByTestId('skin-switcher-trigger').click();
   await page.getByTestId('skin-option-diner').click();
   await expect(page.getByTestId('skin-current-id')).toHaveText('diner');
@@ -92,10 +87,7 @@ test('diner: choice survives a reload', async ({ page }) => {
   expect(await readVar(page, '--module-radius')).toBe('14px');
 });
 
-test('diner: switching back to default CLEARS the optional shape tokens', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('diner: switching back to default CLEARS the optional shape tokens', async ({ page, rack }) => {
   await page.getByTestId('skin-switcher-trigger').click();
   await page.getByTestId('skin-option-diner').click();
   await expect(page.getByTestId('skin-current-id')).toHaveText('diner');
@@ -115,12 +107,10 @@ test('diner: switching back to default CLEARS the optional shape tokens', async 
   expect(await readVar(page, '--font-silkscreen')).toBe('');
 });
 
-test('diner: the six pre-existing skins never set the optional shape tokens', async ({ page }) => {
+test('diner: the six pre-existing skins never set the optional shape tokens', async ({ page, rack }) => {
   // Defensive cross-check at the live-DOM layer: cycle each non-DINER skin
   // and assert the optional tokens stay UNSET, so their _module-card.css
   // fallbacks (hard corners, no glow) hold and their VRT baselines don't move.
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
   const others = ['terminal-green', 'brutalist', 'vaporwave', 'vintage', 'matrixcowboy', 'default'];
   for (const id of others) {
     await page.getByTestId('skin-switcher-trigger').click();

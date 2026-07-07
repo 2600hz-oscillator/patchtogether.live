@@ -11,7 +11,8 @@
 // It is body-portaled + edge-aligned. It closes on Escape, on picking a
 // port, or on a negative-space pointerdown.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 interface PatchEdge {
@@ -67,9 +68,7 @@ async function portIdsInPicker(page: Page): Promise<string[]> {
 
 test.describe.configure({ mode: 'parallel' });
 
-test('happy path: LFO.phase0 → FILTER.cutoff via carry → picker', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('happy path: LFO.phase0 → FILTER.cutoff via carry → picker', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'lfo1', type: 'lfo', position: { x: 100, y: 200 } },
     { id: 'flt1', type: 'filter', position: { x: 600, y: 200 } },
@@ -88,9 +87,7 @@ test('happy path: LFO.phase0 → FILTER.cutoff via carry → picker', async ({ p
   expect(edges[0]!.target).toEqual({ nodeId: 'flt1', portId: 'cutoff' });
 });
 
-test('type filtering: cv source → AudioOut shows "No compatible ports"', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('type filtering: cv source → AudioOut shows "No compatible ports"', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'lfo1', type: 'lfo', position: { x: 100, y: 200 } },
     { id: 'ao1', type: 'audioOut', position: { x: 600, y: 200 } },
@@ -101,11 +98,7 @@ test('type filtering: cv source → AudioOut shows "No compatible ports"', async
   await expect(page.locator('[data-testid="no-compatible-ports"]')).toBeVisible();
 });
 
-test('destructive overwrite: occupied input → "!" prefix + replaces the edge', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('destructive overwrite: occupied input → "!" prefix + replaces the edge', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
@@ -140,9 +133,7 @@ test('destructive overwrite: occupied input → "!" prefix + replaces the edge',
   expect(edges[0]!.target).toEqual({ nodeId: 'flt1', portId: 'cutoff' });
 });
 
-test('disabled when no other modules exist', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('disabled when no other modules exist', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'lfo1', type: 'lfo', position: { x: 200, y: 200 } }]);
 
   await openPickerFor(page, { nodeId: 'lfo1', portId: 'phase0', direction: 'output' });
@@ -152,11 +143,7 @@ test('disabled when no other modules exist', async ({ page }) => {
   await expect(disabled).toHaveAttribute('title', /no other modules/i);
 });
 
-test('compatible direction: carry an INPUT → picker lists OUTPUTs of the target', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('compatible direction: carry an INPUT → picker lists OUTPUTs of the target', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'lfo1', type: 'lfo', position: { x: 100, y: 200 } },
     { id: 'flt1', type: 'filter', position: { x: 600, y: 200 } },
@@ -178,11 +165,7 @@ test('compatible direction: carry an INPUT → picker lists OUTPUTs of the targe
   expect(edges[0]!.target).toEqual({ nodeId: 'flt1', portId: 'cutoff' });
 });
 
-test('overlay-replace: clicking a module replaces the modules list with its ports; back returns', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('overlay-replace: clicking a module replaces the modules list with its ports; back returns', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'lfo1', type: 'lfo', position: { x: 100, y: 200 } },
     { id: 'flt1', type: 'filter', position: { x: 600, y: 200 } },
@@ -198,9 +181,7 @@ test('overlay-replace: clicking a module replaces the modules list with its port
   await expect(menu.locator('[data-testid="patch-to-modules"]')).toBeVisible();
 });
 
-test('persists through pointer movement; closes on Escape', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('persists through pointer movement; closes on Escape', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'lfo1', type: 'lfo', position: { x: 100, y: 200 } },
     { id: 'flt1', type: 'filter', position: { x: 600, y: 200 } },
@@ -217,9 +198,7 @@ test('persists through pointer movement; closes on Escape', async ({ page }) => 
   await expect(menu).toHaveCount(0);
 });
 
-test('closes on commit (port click)', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('closes on commit (port click)', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'lfo1', type: 'lfo', position: { x: 100, y: 200 } },
     { id: 'flt1', type: 'filter', position: { x: 600, y: 200 } },
@@ -232,11 +211,7 @@ test('closes on commit (port click)', async ({ page }) => {
   expect((await readEdges(page)).length).toBe(1);
 });
 
-test('ADSR.env → Analog VCO shows tune/fine/fmAmount/pmAmount as cv destinations', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('ADSR.env → Analog VCO shows tune/fine/fmAmount/pmAmount as cv destinations', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'adsr', type: 'adsr', position: { x: 100, y: 200 } },
     { id: 'vco', type: 'analogVco', position: { x: 600, y: 200 } },
@@ -250,11 +225,7 @@ test('ADSR.env → Analog VCO shows tune/fine/fmAmount/pmAmount as cv destinatio
   }
 });
 
-test('ADSR.env → Wavetable VCO shows tune/fine/fmAmount/pmAmount/wavePos as cv destinations', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('ADSR.env → Wavetable VCO shows tune/fine/fmAmount/pmAmount/wavePos as cv destinations', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'adsr', type: 'adsr', position: { x: 100, y: 200 } },
     { id: 'wvco', type: 'wavetableVco', position: { x: 600, y: 200 } },

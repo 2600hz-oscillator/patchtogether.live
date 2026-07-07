@@ -12,7 +12,8 @@
 //   - Double-clicking on a .svelte-flow__handle inside the card still
 //     reaches the document-level patch-to listener (PR-113 regression).
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 interface NodeDataShape {
@@ -197,10 +198,7 @@ for (const m of MODULES) {
 }
 
 test.describe('OUTPUT regression', () => {
-  test('videoOut keeps existing data.width/data.height resize behavior', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('videoOut keeps existing data.width/data.height resize behavior', async ({ page, rack }) => {
     await spawnPatch(page, [
       { id: 'v-out', type: 'videoOut', position: { x: 200, y: 100 }, domain: 'video' },
     ]);
@@ -229,10 +227,7 @@ test.describe('OUTPUT regression', () => {
   // the INNER canvas dimensions follow the card (aspect-fit, not collapsed to 0).
   // We set the size directly via patch mutation (skip the drag) so the aspect-fit
   // math is testable independent of the drag harness.
-  test('inner canvas keeps aspect-fit after resize (engine 4:3)', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('inner canvas keeps aspect-fit after resize (engine 4:3)', async ({ page, rack }) => {
     await spawnPatch(page, [
       { id: 'v-out', type: 'videoOut', position: { x: 200, y: 100 }, domain: 'video' },
     ]);
@@ -280,10 +275,7 @@ test.describe('dblclick a PatchPanel corner-trigger opens the port cascade', () 
   // the real-GPU attest lane, silently blocking every lib/video re-attest.)
   // The drag-to-patch drill-down is covered by cable-drag-drilldown.spec; THIS
   // guards the dblclick→port-menu shortcut, which no other spec exercises.
-  test('dblclick on a PatchPanel corner-trigger opens the port menu', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('dblclick on a PatchPanel corner-trigger opens the port menu', async ({ page, rack }) => {
     await spawnPatch(page, [
       { id: 'c', type: 'chroma', position: { x: 200, y: 100 }, domain: 'video' },
       { id: 'l', type: 'lines', position: { x: 600, y: 100 }, domain: 'video' },

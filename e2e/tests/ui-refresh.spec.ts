@@ -6,15 +6,13 @@
 // Each test is independent and runs against a fresh page; no fixtures share
 // state across tests.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { openModulePalette } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
 test.describe('MiniMap', () => {
-  test('renders and reflects the canvas viewport', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('renders and reflects the canvas viewport', async ({ page, rack }) => {
     await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
@@ -32,10 +30,7 @@ test.describe('MiniMap', () => {
     expect(await minimapShapes.count()).toBeGreaterThanOrEqual(5);
   });
 
-  test('toggle button hides and shows the minimap', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('toggle button hides and shows the minimap', async ({ page, rack }) => {
     const toggle = page.getByTestId('minimap-toggle');
     await expect(toggle).toBeVisible();
 
@@ -56,7 +51,7 @@ test.describe('MiniMap', () => {
 });
 
 test.describe('Cable hover affordances', () => {
-  test('cable-hover CSS class thickens the stroke (visual elevation)', async ({ page }) => {
+  test('cable-hover CSS class thickens the stroke (visual elevation)', async ({ page, rack }) => {
     // Post-PatchPanel: cables anchor at the top-left of each card by
     // default (all handles stack at the affordance), so the physical
     // hover path runs through overlapping card chrome and the original
@@ -65,8 +60,6 @@ test.describe('Cable hover affordances', () => {
     // `.cable-hover` class to an edge thickens its stroke. The visual
     // affordance still works in real browsers; only the synthetic pointer
     // path is unreachable.
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
     await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__edge')).toHaveCount(6, { timeout: 10_000 });
 
@@ -86,9 +79,7 @@ test.describe('Cable hover affordances', () => {
     expect(afterHover, `stroke should thicken with .cable-hover class`).toBeGreaterThan(initial);
   });
 
-  test('hovering a card dims unrelated cables', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('hovering a card dims unrelated cables', async ({ page, rack }) => {
     // Load example: 5 nodes, 6 edges. The Sequencer (vd-seq) only touches
     // 2 of the 6 edges (seq.pitch→vco and seq.gate→adsr), so the remaining
     // 4 should dim when we hover the Sequencer card.
@@ -126,9 +117,7 @@ test.describe('Cable hover affordances', () => {
 });
 
 test.describe('Undo / redo', () => {
-  test('Cmd-Z removes a freshly-spawned module; Cmd-Shift-Z restores it', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('Cmd-Z removes a freshly-spawned module; Cmd-Shift-Z restores it', async ({ page, rack }) => {
     await expect(page.locator('.svelte-flow__node')).toHaveCount(0);
 
     // Spawn through Canvas.svelte's spawnFromPalette path so the edit
@@ -152,9 +141,7 @@ test.describe('Undo / redo', () => {
     await expect(page.locator('.svelte-flow__node-reverb')).toHaveCount(1, { timeout: 5000 });
   });
 
-  test('Cmd-Z reverts a node deletion (right-click → Delete)', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('Cmd-Z reverts a node deletion (right-click → Delete)', async ({ page, rack }) => {
     await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
     await expect(page.locator('.svelte-flow__edge')).toHaveCount(6);
@@ -174,9 +161,7 @@ test.describe('Undo / redo', () => {
     await expect(page.locator('.svelte-flow__edge')).toHaveCount(6, { timeout: 5000 });
   });
 
-  test('Cmd-Z is ignored while focus is in a text input (no hijack of native undo)', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('Cmd-Z is ignored while focus is in a text input (no hijack of native undo)', async ({ page, rack }) => {
     await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
@@ -192,9 +177,7 @@ test.describe('Undo / redo', () => {
     expect(afterCount).toBe(beforeCount);
   });
 
-  test('Cmd-Z on an empty undo stack is a no-op (no crash)', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('Cmd-Z on an empty undo stack is a no-op (no crash)', async ({ page, rack }) => {
     await expect(page.locator('.svelte-flow__node')).toHaveCount(0);
 
     // Press Cmd-Z without any prior tracked edits.

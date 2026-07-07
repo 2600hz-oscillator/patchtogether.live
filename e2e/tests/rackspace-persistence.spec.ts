@@ -19,7 +19,8 @@
 // covers the file-download path. This spec adds the asset-payload
 // dimension that neither of those exercises.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -43,12 +44,7 @@ async function readNodesSnapshot(page: Page): Promise<Record<string, unknown>> {
   });
 }
 
-test('rackspace-persistence: PICTUREBOX bytes + DX7 SYX + sequencer steps survive export → clear → import', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('rackspace-persistence: PICTUREBOX bytes + DX7 SYX + sequencer steps survive export → clear → import', async ({ page, rack }) => {
   // Spawn one of each "asset-bearing" module type. The spawnPatch helper
   // bypasses the palette + per-user cap (single-user dev mode); we set
   // node.data directly afterwards.

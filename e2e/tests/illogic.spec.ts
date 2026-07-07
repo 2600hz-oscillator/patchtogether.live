@@ -13,7 +13,8 @@
 //   5. Two LFOs into in1 + in2 → sum produces summed signal that is louder
 //      than either alone.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -46,22 +47,14 @@ async function readScopeStats(page: Page, scopeNodeId: string): Promise<ScopeSta
   }, scopeNodeId);
 }
 
-test('illogic: drop module → card mounts with no console errors', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('illogic: drop module → card mounts with no console errors', async ({ page, rack, errorWatch }) => {
   await spawnPatch(page, [{ id: 'il', type: 'illogic', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-illogic');
   await expect(card).toBeVisible();
   await expect(card).toContainText('ILLOGIC');
-  expect(errors, errors.join('; ')).toEqual([]);
 });
 
-test('illogic: LFO → in1 → att1 (gain=1) produces audible signal at scope', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('illogic: LFO → in1 → att1 (gain=1) produces audible signal at scope', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
@@ -83,9 +76,7 @@ test('illogic: LFO → in1 → att1 (gain=1) produces audible signal at scope', 
   expect(stats.nonzeroSamples).toBeGreaterThan(50);
 });
 
-test('illogic: att1_amount=0 mutes the att1 output', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('illogic: att1_amount=0 mutes the att1 output', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
@@ -105,9 +96,7 @@ test('illogic: att1_amount=0 mutes the att1 output', async ({ page }) => {
   expect(stats.peak, `att1=0 should silence att1 (peak=${stats.peak})`).toBeLessThan(0.005);
 });
 
-test('illogic: att1_amount=-1 still produces audible signal (sign-flipped)', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('illogic: att1_amount=-1 still produces audible signal (sign-flipped)', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
@@ -128,9 +117,7 @@ test('illogic: att1_amount=-1 still produces audible signal (sign-flipped)', asy
     .toBeGreaterThan(0.05);
 });
 
-test('illogic: two LFOs → in1+in2 → sum produces summed audible signal', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('illogic: two LFOs → in1+in2 → sum produces summed audible signal', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [

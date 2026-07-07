@@ -13,7 +13,8 @@
 //             module's cv input; scope.out (mono-video) renders through
 //             videoOut.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch, type SpawnNode, type SpawnEdge } from './_helpers';
 import {
   readScopeSnapshot,
@@ -28,10 +29,7 @@ test.describe.configure({ mode: 'parallel' });
 // Group 6 — time-based effects
 // ─────────────────────────────────────────────────────────────────────────────
 
-test('reverb: input → output emits audio with mix > 0', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('reverb: input → output emits audio with mix > 0', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
@@ -50,10 +48,7 @@ test('reverb: input → output emits audio with mix > 0', async ({ page }) => {
   expect(sum.peak, `reverb output peak=${sum.peak.toFixed(4)}`).toBeGreaterThan(0.005);
 });
 
-test('charlottesEchos: stereo L → out_L produces a delayed audio tail', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('charlottesEchos: stereo L → out_L produces a delayed audio tail', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
@@ -72,10 +67,7 @@ test('charlottesEchos: stereo L → out_L produces a delayed audio tail', async 
   expect(sum.peak, `charlottesEchos L peak=${sum.peak.toFixed(4)}`).toBeGreaterThan(0.005);
 });
 
-test('shimmershine: stereo input → out_l + out_r emit audio', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('shimmershine: stereo input → out_l + out_r emit audio', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
@@ -94,10 +86,7 @@ test('shimmershine: stereo input → out_l + out_r emit audio', async ({ page })
   expect(sum.peak, `shimmershine out_l peak=${sum.peak.toFixed(4)}`).toBeGreaterThan(0.005);
 });
 
-test('qbrt: ping → resonant L output emits audio', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('qbrt: ping → resonant L output emits audio', async ({ page, rack }) => {
   // QBRT is a comb / Karplus-Strong-ish resonator. A gate ping excites
   // a resonant tail at the cutoff. We use a sequencer gate as the ping
   // source so the resonator is excited repeatedly inside the capture
@@ -133,10 +122,7 @@ test('qbrt: ping → resonant L output emits audio', async ({ page }) => {
   expect(sum.peak, `qbrt L peak=${sum.peak.toFixed(4)}`).toBeGreaterThan(0.005);
 });
 
-test('warrenspectrum: stereo input → out_l emits audio', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('warrenspectrum: stereo input → out_l emits audio', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
@@ -156,12 +142,7 @@ test('warrenspectrum: stereo input → out_l emits audio', async ({ page }) => {
   expect(sum.peak, `warrenspectrum out_l peak=${sum.peak.toFixed(4)}`).toBeGreaterThan(0.001);
 });
 
-test('integration (Group 6): voice → reverb → audioOut produces wider/longer tail than dry', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('integration (Group 6): voice → reverb → audioOut produces wider/longer tail than dry', async ({ page, rack }) => {
   // Generate a transient gate from a sequencer driving a drum voice
   // into a reverb. After the gate stops, reverb tail decays slowly.
   await spawnPatch(
@@ -199,10 +180,7 @@ test('integration (Group 6): voice → reverb → audioOut produces wider/longer
 // Group 7 — drum voices
 // ─────────────────────────────────────────────────────────────────────────────
 
-test('drummergirl: gate ping → audio burst', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('drummergirl: gate ping → audio burst', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
@@ -232,10 +210,7 @@ test('drummergirl: gate ping → audio burst', async ({ page }) => {
   expect(sum.peak, `drummergirl audio peak=${sum.peak.toFixed(4)}`).toBeGreaterThan(0.01);
 });
 
-test('meowbox: gate → stereo L emits audio', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('meowbox: gate → stereo L emits audio', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
@@ -374,16 +349,7 @@ const VIDEO_SOURCES: VideoSourceCase[] = [
 ];
 
 for (const src of VIDEO_SOURCES) {
-  test(`video ${src.type}: ${src.outputPort} → videoOut renders non-trivial content`, async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => {
-      if (m.type() === 'error') errors.push(m.text());
-    });
-
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test(`video ${src.type}: ${src.outputPort} → videoOut renders non-trivial content`, async ({ page, rack, errorWatch }) => {
     const nodes: SpawnNode[] = [
       ...(src.upstream ?? []).map((n) => ({ ...n, domain: 'video' as const })),
       { id: 'mod', type: src.type, domain: 'video', params: src.params },
@@ -413,7 +379,6 @@ for (const src of VIDEO_SOURCES) {
       `${src.type}: expected variance>5 or nonZero>0, got variance=${stats.variance.toFixed(1)} nonZero=${stats.nonZero}/${stats.samples}`,
     ).toBe(true);
 
-    expect(errors, errors.join('; ')).toEqual([]);
   });
 }
 
@@ -441,36 +406,15 @@ test('cameraInput: spawns without errors (no live camera in headless CI; just sm
   expect(errors.filter((e) => !/getUserMedia|camera/i.test(e)), errors.join('; ')).toEqual([]);
 });
 
-test('picturebox: spawns without errors (no image loaded; verify card mounts)', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text());
-  });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('picturebox: spawns without errors (no image loaded; verify card mounts)', async ({ page, rack, errorWatch }) => {
   await spawnPatch(page, [{ id: 'pb', type: 'picturebox', domain: 'video' }]);
 
   const card = page.locator('.svelte-flow__node-picturebox');
   await expect(card).toBeVisible();
 
-  expect(errors, errors.join('; ')).toEqual([]);
 });
 
-test('integration (Group 8): shapes → destructor → chroma → videoOut renders chained content', async ({
-  page,
-}) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text());
-  });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('integration (Group 8): shapes → destructor → chroma → videoOut renders chained content', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
@@ -495,20 +439,17 @@ test('integration (Group 8): shapes → destructor → chroma → videoOut rende
   const ok = stats!.variance > 5 || stats!.nonZero > 0;
   expect(ok, `chain variance=${stats!.variance.toFixed(1)} nonZero=${stats!.nonZero}`).toBe(true);
 
-  expect(errors, errors.join('; ')).toEqual([]);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Group 9 — cross-domain (audio <-> video)
 // ─────────────────────────────────────────────────────────────────────────────
 
-test('cross-domain: lfo cv → lines.amp modulates video output over time', async ({ page }) => {
+test('cross-domain: lfo cv → lines.amp modulates video output over time', async ({ page, rack }) => {
   // LFO (audio domain) → LINES.amp (video domain CV input). The
   // cross-domain CV bridge in PatchEngine samples the LFO each frame
   // and pushes it into VideoEngine.setParam('amp', value). The
   // resulting video should evolve over time as the LFO sweeps.
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
 
   await spawnPatch(
     page,
@@ -537,14 +478,10 @@ test('cross-domain: lfo cv → lines.amp modulates video output over time', asyn
   expect(stats2!.nonZero, `stats2 nonZero > 0`).toBeGreaterThan(0);
 });
 
-test('cross-domain: scope.out (mono-video) → videoOut renders the waveform', async ({
-  page,
-}) => {
+test('cross-domain: scope.out (mono-video) → videoOut renders the waveform', async ({ page, rack }) => {
   // Scope's mono-video output is rendered via drawFrame each video
   // frame from the live analyser snapshot. A noise input should
   // produce visible variance in the rendered scope trace.
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
 
   await spawnPatch(
     page,

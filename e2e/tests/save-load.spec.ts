@@ -13,7 +13,7 @@
 // base64 Y.encodeStateAsUpdate — the per-module moduleSchemas map was dropped
 // with the migration substrate (parseEnvelope still tolerantly READS v1).
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -26,12 +26,7 @@ interface PatchEnvelope {
   update: string;
 }
 
-test('save-load: round-trip preserves nodes, edges, params, and sequencer step data', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('save-load: round-trip preserves nodes, edges, params, and sequencer step data', async ({ page, rack }) => {
   // Build the canonical voice chain (5 nodes, 6 edges, sequencer with steps).
   await spawnPatch(
     page,
@@ -153,9 +148,7 @@ test('save-load: round-trip preserves nodes, edges, params, and sequencer step d
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5);
 });
 
-test('save-load: __persistence.save() emits a valid PatchEnvelope JSON', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('save-load: __persistence.save() emits a valid PatchEnvelope JSON', async ({ page, rack }) => {
   await page.getByTestId('load-example-select').selectOption('sequenced-vco');
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
@@ -176,10 +169,7 @@ test('save-load: __persistence.save() emits a valid PatchEnvelope JSON', async (
   expect(env.update).toMatch(/^[A-Za-z0-9+/=]+$/);
 });
 
-test('save-load: __persistence.load() restores the patch from a saved envelope', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('save-load: __persistence.load() restores the patch from a saved envelope', async ({ page, rack }) => {
   // Start with a known patch and capture its envelope.
   await page.getByTestId('load-example-select').selectOption('sequenced-vco');
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });

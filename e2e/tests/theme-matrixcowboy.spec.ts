@@ -14,7 +14,7 @@
 // skins.spec.ts) so the MATRIXCOWBOY contract is testable in isolation
 // and easy to grep for when the theme evolves.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -27,10 +27,7 @@ async function readVar(
   }, name);
 }
 
-test('matrixcowboy: selectable from switcher + applies phosphor palette', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('matrixcowboy: selectable from switcher + applies phosphor palette', async ({ page, rack }) => {
   // Open switcher + select MATRIXCOWBOY.
   await page.getByTestId('skin-switcher-trigger').click();
   await expect(page.getByTestId('skin-switcher-popover')).toBeVisible();
@@ -67,9 +64,7 @@ test('matrixcowboy: selectable from switcher + applies phosphor palette', async 
   expect(stored).toBe('matrixcowboy');
 });
 
-test('matrixcowboy: choice survives a reload + page stays functional', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('matrixcowboy: choice survives a reload + page stays functional', async ({ page, rack }) => {
   await page.getByTestId('skin-switcher-trigger').click();
   await page.getByTestId('skin-option-matrixcowboy').click();
   await expect(page.getByTestId('skin-current-id')).toHaveText('matrixcowboy');
@@ -91,10 +86,7 @@ test('matrixcowboy: choice survives a reload + page stays functional', async ({ 
   expect(errors).toEqual([]);
 });
 
-test('matrixcowboy: switching back to default clears data-skin overlay hook', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('matrixcowboy: switching back to default clears data-skin overlay hook', async ({ page, rack }) => {
   await page.getByTestId('skin-switcher-trigger').click();
   await page.getByTestId('skin-option-matrixcowboy').click();
   await expect(page.getByTestId('skin-current-id')).toHaveText('matrixcowboy');

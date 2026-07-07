@@ -24,7 +24,8 @@
 //   4. __undoManager.undo() (the same UndoManager Cmd-Z drives).
 //   5. assert params.size === 0.9 again (the edit was tracked + reverted).
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -42,10 +43,7 @@ async function readParam(page: Page, nodeId: string, paramId: string): Promise<n
   );
 }
 
-test('card param edit is undoable: a Fader edit reverts on undo (setNodeParam migration)', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('card param edit is undoable: a Fader edit reverts on undo (setNodeParam migration)', async ({ page, rack }) => {
   // 1. Spawn a reverb with size seeded to a non-default value. The ReverbCard
   //    Size fader's defaultValue is 0.5; we seed 0.9 so the dblclick (which
   //    sets the param to the default) produces an observable change.

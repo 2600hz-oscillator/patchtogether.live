@@ -16,7 +16,7 @@
 // next iteration moves this to OfflineAudioContext + bit-accurate baseline
 // comparison; for now the assertion is "audio peak above threshold."
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -27,18 +27,7 @@ interface ScopeSnap {
   sampleRate: number;
 }
 
-test('voice-chain: Seq → VCO + ADSR → VCA → Scope → Out produces audible signal', async ({
-  page,
-}) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text());
-  });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('voice-chain: Seq → VCO + ADSR → VCA → Scope → Out produces audible signal', async ({ page, rack, errorWatch }) => {
   // Deterministic patch: known step pattern + known knob values.
   await spawnPatch(
     page,
@@ -133,13 +122,9 @@ test('voice-chain: Seq → VCO + ADSR → VCA → Scope → Out produces audible
     `voice-chain audio peak too low (peak=${result.peak.toFixed(4)}, rms=${result.rms.toFixed(4)})`
   ).toBeGreaterThan(0.01);
   expect(result.nonzeroSamples).toBeGreaterThan(50);
-  expect(errors, errors.join('; ')).toEqual([]);
 });
 
-test('voice-chain: stopping the sequencer silences the output (gate goes low)', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('voice-chain: stopping the sequencer silences the output (gate goes low)', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [

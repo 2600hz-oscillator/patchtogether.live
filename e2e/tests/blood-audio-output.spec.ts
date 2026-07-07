@@ -25,7 +25,8 @@
 // Renderer-independent for the AUDIO assertion (analyser reads the engine's own
 // PCM, not the GL canvas) → SwiftShader-safe. Gated on blood-ready + e2e hooks.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 const BLOOD_ID = 'blood-aud';
@@ -176,10 +177,8 @@ test('BLOOD audio_l → SCOPE: the game-audio mixer produces audible signal in-g
 // Test: drive into a level, then STAND STILL (no fire / no movement) and sample
 // the SCOPE — continuous music keeps RMS above the floor on (nearly) every
 // sample, whereas sparse ambient SFX would not. Asserts the SUSTAINED fraction.
-test('BLOOD music: in-level OPL3 music produces SUSTAINED audio on audio_l (standing still)', async ({ page }) => {
+test('BLOOD music: in-level OPL3 music produces SUSTAINED audio on audio_l (standing still)', async ({ page, rack }) => {
   test.setTimeout(90_000);
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
     [

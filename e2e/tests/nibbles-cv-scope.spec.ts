@@ -44,7 +44,8 @@
 // We assert (a) the read value tracks `lengthToCv(length)` within
 // tolerance, (b) the values are monotonic across the 5-step sweep.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 // Mirrors the NIBBLES mapping in
@@ -183,13 +184,11 @@ test.describe('NIBBLES.length_cv → SCOPE.ch1: regression for PR #163', () => {
     ).toEqual([]);
   });
 
-  test('ch1 sample is monotonic across the 5-step CV sweep used by composite VRT', async ({ page }) => {
+  test('ch1 sample is monotonic across the 5-step CV sweep used by composite VRT', async ({ page, rack }) => {
     // Same 5 lengths the composite VRT pins. Mirrors the spec values in
     // vrt-composite-scenes.ts; if you change them there, change them here.
     const SWEEP_LENGTHS = [1, 30, 60, 89, 119];
 
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
 
     await spawnPatch(
       page,

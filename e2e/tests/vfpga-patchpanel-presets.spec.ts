@@ -22,7 +22,8 @@
 //          SwiftShader renders, but we keep the assertion renderer-tolerant —
 //          a structural DIFFERENCE, not exact colours).
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 /** Per-channel mean-luma histogram + summary for the OUTPUT canvas. The OUTPUT
@@ -73,10 +74,8 @@ async function spawnHostToOutput(page: Page) {
 }
 
 test.describe('vfpga-runner — PatchPanel + presets', () => {
-  test('BUG 1: card uses PatchPanel — no raw side-column jacks; all handles at the corner', async ({ page }) => {
+  test('BUG 1: card uses PatchPanel — no raw side-column jacks; all handles at the corner', async ({ page, rack }) => {
     test.setTimeout(45_000);
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
     await spawnHostToOutput(page);
 
     const card = page.locator('.svelte-flow__node-vfpgaRunner');
@@ -109,14 +108,9 @@ test.describe('vfpga-runner — PatchPanel + presets', () => {
     expect(spread.leftSpread, `handles are NOT spread horizontally (leftSpread=${spread.leftSpread})`).toBeLessThan(20);
   });
 
-  test('BUG 2: loading a non-default preset visibly changes OUTPUT away from the smpte test pattern', async ({ page }) => {
+  test('BUG 2: loading a non-default preset visibly changes OUTPUT away from the smpte test pattern', async ({ page, rack, errorWatch }) => {
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
 
     // Renderer probe: only assert pixels when WebGL2 actually renders (CI uses
     // SwiftShader, which DOES render — but skip cleanly on a context-less runtime
@@ -167,6 +161,5 @@ test.describe('vfpga-runner — PatchPanel + presets', () => {
       `OUTPUT changed from the smpte pattern (Δmean=${meanDelta.toFixed(1)} Δvar=${varDelta.toFixed(1)})`,
     ).toBe(true);
 
-    expect(errors, 'no console / page errors').toEqual([]);
   });
 });
