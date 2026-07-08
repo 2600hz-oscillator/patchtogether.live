@@ -159,14 +159,19 @@ in vec2 vUv;
 out vec4 outColor;
 uniform sampler2D uSrc;
 uniform float uMatteWhite;
+uniform vec3 uKeyColor;  // per-entry estimated backdrop colour (border-ring median)
+uniform float uKeyTol;   // inner tolerance — fully transparent below this distance
 
 void main() {
   vec4 c = texture(uSrc, vUv);
   if (uMatteWhite > 0.5) {
-    float lum = dot(c.rgb, vec3(0.299, 0.587, 0.114));
-    float sat = max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b));
-    float whiteness = smoothstep(0.82, 0.94, lum) * (1.0 - smoothstep(0.06, 0.2, sat));
-    c.a *= 1.0 - whiteness;
+    // Chroma-distance key against the SAMPLED backdrop colour (not a fixed
+    // "white"): the real atlas mixes bright-white scans, beige/aged paper
+    // (saturation up to ~0.24 — a plain luma+low-sat gate misses those and
+    // the plates rendered as opaque rectangles) and even black-mounted
+    // engravings. The soft ramp keeps anti-aliased plant edges.
+    float d = distance(c.rgb, uKeyColor);
+    c.a *= smoothstep(uKeyTol, uKeyTol * 1.9 + 0.02, d);
   }
   outColor = vec4(c.rgb * c.a, c.a); // premultiply
 }`;
@@ -376,6 +381,8 @@ export const lushgardenDef: VideoModuleDef = {
 
     const uPrepSrc = gl.getUniformLocation(prepProgram, 'uSrc');
     const uPrepMatte = gl.getUniformLocation(prepProgram, 'uMatteWhite');
+    const uPrepKeyColor = gl.getUniformLocation(prepProgram, 'uKeyColor');
+    const uPrepKeyTol = gl.getUniformLocation(prepProgram, 'uKeyTol');
     const uOutlineSrc = gl.getUniformLocation(outlineProgram, 'uSrc');
     const uOutlineTexel = gl.getUniformLocation(outlineProgram, 'uTexel');
     const uBlurSrc = gl.getUniformLocation(blurProgram, 'uSrc');
@@ -418,8 +425,66 @@ export const lushgardenDef: VideoModuleDef = {
     let manifestFailed = false;
     const baked = new Map<string, BakedEntry>();
     const entryById = new Map<string, LushgardenManifestEntry>();
+    /** Per-entry backdrop key estimate for matte:'white' plates. */
+    interface KeyEstimate { r: number; g: number; b: number; tol: number }
+    const DEFAULT_KEY: KeyEstimate = { r: 1, g: 1, b: 1, tol: 0.12 };
     /** Decoded bitmaps awaiting their GL bake (drained inside draw()). */
-    const pendingBakes: Array<{ entry: LushgardenManifestEntry; bitmap: ImageBitmap }> = [];
+    const pendingBakes: Array<{
+      entry: LushgardenManifestEntry;
+      bitmap: ImageBitmap;
+      key: KeyEstimate;
+    }> = [];
+
+    /**
+     * Estimate a matte plate's backdrop colour from its BORDER RING (2 px,
+     * downscaled ≤160 px wide): per-channel MEDIAN (robust to a stem or
+     * caption crossing the border) + a luma median-abs-deviation-derived
+     * tolerance. Handles bright-white scans, beige/aged paper AND
+     * black-mounted engravings uniformly — measured across the real atlas
+     * the border satMean runs 0→0.24, which a fixed "white" key misses.
+     * Falls back to DEFAULT_KEY when 2D canvas readback is unavailable.
+     */
+    function estimateKeyBackdrop(bitmap: ImageBitmap): KeyEstimate {
+      try {
+        if (typeof OffscreenCanvas === 'undefined') return DEFAULT_KEY;
+        const w = Math.max(8, Math.min(160, bitmap.width));
+        const h = Math.max(8, Math.round((bitmap.height / bitmap.width) * w));
+        const canvas = new OffscreenCanvas(w, h);
+        const c2d = canvas.getContext('2d', { willReadFrequently: true });
+        if (!c2d) return DEFAULT_KEY;
+        c2d.drawImage(bitmap, 0, 0, w, h);
+        const img = c2d.getImageData(0, 0, w, h).data;
+        const rs: number[] = [];
+        const gs: number[] = [];
+        const bs: number[] = [];
+        const push = (x: number, y: number): void => {
+          const o = (y * w + x) * 4;
+          rs.push(img[o]! / 255);
+          gs.push(img[o + 1]! / 255);
+          bs.push(img[o + 2]! / 255);
+        };
+        for (let x = 0; x < w; x++) { push(x, 0); push(x, 1); push(x, h - 1); push(x, h - 2); }
+        for (let y = 2; y < h - 2; y++) { push(0, y); push(1, y); push(w - 1, y); push(w - 2, y); }
+        const median = (a: number[]): number => {
+          const s = [...a].sort((p, q) => p - q);
+          return s[s.length >> 1] ?? 1;
+        };
+        const r = median(rs);
+        const g = median(gs);
+        const b = median(bs);
+        const lum = (i: number): number => 0.299 * rs[i]! + 0.587 * gs[i]! + 0.114 * bs[i]!;
+        const lumMed = 0.299 * r + 0.587 * g + 0.114 * b;
+        const devs: number[] = [];
+        for (let i = 0; i < rs.length; i++) devs.push(Math.abs(lum(i) - lumMed));
+        const mad = median(devs);
+        // Paper grain sets the floor; a plant crossing the border inflates
+        // MAD a little — clamp keeps the key usable either way.
+        const tol = Math.min(0.16, Math.max(0.08, 4 * mad + 0.05));
+        return { r, g, b, tol };
+      } catch {
+        return DEFAULT_KEY;
+      }
+    }
 
     const canFetch = typeof fetch === 'function';
     if (canFetch) {
@@ -445,9 +510,19 @@ export const lushgardenDef: VideoModuleDef = {
       baked.set(entryId, { status: 'loading', clean: null, outline: null, watercolor: null });
       fetch(LUSHGARDEN_ASSET_BASE + entry.file)
         .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`HTTP ${r.status}`))))
-        .then((blob) => createImageBitmap(blob))
+        // Flip AT DECODE TIME: UNPACK_FLIP_Y_WEBGL is spec-IGNORED for
+        // ImageBitmap sources (verified in this Chromium — a FLIP_Y upload
+        // still put image-row-0 at v=0, rendering every cutout upside-down;
+        // the INGA plate's mirrored caption exposed it). imageOrientation
+        // is the sanctioned control; premultiplyAlpha 'none' keeps the
+        // texels straight-alpha for the PREP shader's own premultiply.
+        .then((blob) => createImageBitmap(blob, {
+          imageOrientation: 'flipY',
+          premultiplyAlpha: 'none',
+        }))
         .then((bitmap) => {
-          pendingBakes.push({ entry, bitmap });
+          const key = entry.matte === 'white' ? estimateKeyBackdrop(bitmap) : DEFAULT_KEY;
+          pendingBakes.push({ entry, bitmap, key });
         })
         .catch((err) => {
           const b = baked.get(entryId);
@@ -458,7 +533,7 @@ export const lushgardenDef: VideoModuleDef = {
 
     /** Run the 5-pass bake for one decoded cutout. All passes render with
      *  blending OFF into bakeFbo-attached textures at capped dims. */
-    function bakeEntry(entry: LushgardenManifestEntry, bitmap: ImageBitmap): void {
+    function bakeEntry(entry: LushgardenManifestEntry, bitmap: ImageBitmap, key: KeyEstimate): void {
       const rec = baked.get(entry.id);
       if (!rec) return;
       const bakeH = LUSHGARDEN_BAKE_HEIGHT[entry.kind];
@@ -466,12 +541,13 @@ export const lushgardenDef: VideoModuleDef = {
       const halfW = Math.max(4, bakeW >> 1);
       const halfH = Math.max(4, bakeH >> 1);
 
-      // 0. Upload the straight-alpha source (flipped to GL orientation).
+      // 0. Upload the straight-alpha source. Orientation was handled at
+      //    DECODE time (createImageBitmap imageOrientation:'flipY') — the
+      //    UNPACK_FLIP_Y_WEBGL pixel-store flag is spec-ignored for
+      //    ImageBitmap sources, so setting it here would be a silent no-op.
       const srcTex = makeTex(1, 1);
       gl.bindTexture(gl.TEXTURE_2D, srcTex);
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bitmap);
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0);
 
       const clean = makeTex(bakeW, bakeH);
       const outline = makeTex(bakeW, bakeH);
@@ -493,12 +569,14 @@ export const lushgardenDef: VideoModuleDef = {
         ctx.drawFullscreenQuad();
       };
 
-      // 1. PREP → clean (white-key + premultiply)
+      // 1. PREP → clean (backdrop-distance key + premultiply)
       pass(clean, bakeW, bakeH, prepProgram, () => {
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, srcTex);
         gl.uniform1i(uPrepSrc, 0);
         gl.uniform1f(uPrepMatte, entry.matte === 'white' ? 1 : 0);
+        gl.uniform3f(uPrepKeyColor, key.r, key.g, key.b);
+        gl.uniform1f(uPrepKeyTol, key.tol);
       });
       // 2. OUTLINE ← clean alpha Sobel
       pass(outline, bakeW, bakeH, outlineProgram, () => {
@@ -636,7 +714,7 @@ export const lushgardenDef: VideoModuleDef = {
         for (let i = 0; i < BAKES_PER_FRAME && pendingBakes.length > 0; i++) {
           const job = pendingBakes.shift()!;
           try {
-            bakeEntry(job.entry, job.bitmap);
+            bakeEntry(job.entry, job.bitmap, job.key);
           } catch (err) {
             const b = baked.get(job.entry.id);
             if (b) b.status = 'failed';

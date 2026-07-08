@@ -70,6 +70,10 @@ const KINDS: readonly PlantKind[] = ['flower', 'bush', 'tree'];
  * rather than failing the whole atlas — one bad row must never kill the
  * module. Missing `matte` defaults to 'none', missing `alpha` to true
  * (the atlas contract says cutouts are alpha PNGs unless flagged).
+ *
+ * The result is SORTED BY id: seeded selection (the fixed-seed spawn RNG +
+ * the __lushgardenVrtSeed VRT scene) indexes into this array, so the entry
+ * order must be stable even if the manifest file is ever reordered.
  */
 export function parseLushgardenManifest(json: unknown): LushgardenManifestEntry[] {
   if (!Array.isArray(json)) return [];
@@ -97,6 +101,7 @@ export function parseLushgardenManifest(json: unknown): LushgardenManifestEntry[
       sourcePage: typeof r.sourcePage === 'string' ? r.sourcePage : '',
     });
   }
+  out.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   return out;
 }
 

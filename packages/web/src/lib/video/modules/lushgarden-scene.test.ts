@@ -87,6 +87,18 @@ describe('parseLushgardenManifest', () => {
     expect(parseLushgardenManifest({ nope: true })).toEqual([]);
     expect(parseLushgardenManifest(undefined)).toEqual([]);
   });
+
+  it('sorts entries by id — seeded selection indexes stably across manifest reorders', () => {
+    const shuffled = [
+      { id: 'tree-003', file: 't3.png', kind: 'tree', w: 10, h: 10 },
+      { id: 'bush-001', file: 'b1.png', kind: 'bush', w: 10, h: 10 },
+      { id: 'flower-002', file: 'f2.png', kind: 'flower', w: 10, h: 10 },
+    ];
+    expect(parseLushgardenManifest(shuffled).map((r) => r.id))
+      .toEqual(['bush-001', 'flower-002', 'tree-003']);
+    expect(parseLushgardenManifest([...shuffled].reverse()).map((r) => r.id))
+      .toEqual(['bush-001', 'flower-002', 'tree-003']);
+  });
 });
 
 // ── kind mix ────────────────────────────────────────────────────────────────
