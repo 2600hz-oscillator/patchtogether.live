@@ -347,6 +347,10 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // Milkdrop (feat/milkdrop): butterchurn (Winamp Milkdrop) music visualizer —
   // CV-instrumented per-band overrides + reactivity/speed/preset/morph + NEXT.
   'milkdrop',
+  // Lush Garden (feat/lushgarden): generative layered-garden video source —
+  // 4 style outputs (mono/watercolor/psychedelic/clean), grow/reset triggers,
+  // invisible-horizon placement + parallax view pan, background passthrough.
+  'lushgarden',
   // Audio analysis / modulation (2026-06-27): the audio→CV feature extractor.
   'featurecv',
   // GRAPHIC EQ (2026-06-27): Winamp-style graphic-EQ / VU-meter video output.

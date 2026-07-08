@@ -1301,6 +1301,23 @@ lumakey out out video
 lumakey param invert 0..1 discrete default=0
 lumakey param softness 0..0.5 linear default=0.1
 lumakey param threshold 0..1 linear default=0.5
+lushgarden meta domain=video
+lushgarden in background video
+lushgarden in grow gate param=cv_grow edge=trigger
+lushgarden in horizon cv param=horizon cvScale=linear
+lushgarden in rate cv param=rate cvScale=log
+lushgarden in reset gate param=cv_reset edge=trigger
+lushgarden in view cv param=view cvScale=linear
+lushgarden out clean video
+lushgarden out mono video
+lushgarden out psychedelic video
+lushgarden out watercolor video
+lushgarden param cv_grow 0..1 linear default=0
+lushgarden param cv_reset 0..1 linear default=0
+lushgarden param freeze 0..1 linear default=0
+lushgarden param horizon 0..1 linear default=0.65
+lushgarden param rate 0.5..10 log default=2
+lushgarden param view 0..1 linear default=0.5
 macrooscillator meta domain=audio
 macrooscillator in harm_cv cv param=harmonics cvScale=linear
 macrooscillator in level_cv cv param=level cvScale=linear

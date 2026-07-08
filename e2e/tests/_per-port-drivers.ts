@@ -1036,6 +1036,20 @@ const DRIVERS: Record<string, PerPortDriver> = {
     params: { regeneration: 1, range: 2, cutoff: 800 },
     note: 'MOOG 904A: regeneration=1 → ladder self-oscillates; audio out is a driven sine',
   },
+  // ───── LUSH GARDEN — a GENERATOR despite its optional video input ─────
+  //
+  // LUSHGARDEN has an optional `background` video input, which pattern-
+  // matches the effect-shape skip — but it is a self-running generator
+  // (plants spawn on the internal RATE clock; the background is only a
+  // backdrop). This driver's presence routes it through the normal
+  // per-output emit path (each of the 4 video outs → VIDEOOUT.in by the
+  // sweep). rate=10 (max) packs the bed fast so mono/watercolor/
+  // psychedelic/clean all ring non-black well inside the poll window,
+  // even with the cutout fetch+bake latency on the SwiftShader runner.
+  lushgarden: {
+    params: { rate: 10 },
+    note: 'LUSHGARDEN: generator (background input is only a backdrop) — rate=10 self-spawns; all 4 style outs ring',
+  },
   // ───── FREEZEFRAME — drive video_in so all 5 video outs emit ─────
   //
   // FREEZEFRAME is an effect (video in → posterized/S&H out), so it needs

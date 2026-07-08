@@ -433,6 +433,45 @@ export const VRT_SCENES: Record<string, VrtScene> = {
     },
   },
 
+  // LUSH GARDEN: the garden is spawn-clock-driven + RNG-placed, so the
+  // default solo spawn is nondeterministic. __lushgardenVrtSeed re-seeds
+  // the factory with a FIXED, fully-grown 24-plant set (fixed RNG) and
+  // suppresses all further spawning — the scene then only has to wait for
+  // the referenced cutout textures to finish their lazy fetch+bake
+  // (pendingLoads → 0). The clean preview is time-invariant afterwards
+  // (only the un-previewed psychedelic output animates), so the capture
+  // is pixel-stable with no mask.
+  lushgarden: {
+    nodes: [
+      { id: 'vrt-1', type: 'lushgarden', position: { x: 80, y: 80 }, domain: 'video' },
+    ],
+    edges: [],
+    afterSpawn: async (page) => {
+      await page.evaluate(() => {
+        (globalThis as unknown as { __lushgardenVrtSeed?: number }).__lushgardenVrtSeed = 0x5eed;
+      });
+      // Wait until the seeded plant set exists AND every referenced cutout
+      // has settled (ready or failed) — then the render is deterministic.
+      await page.waitForFunction(() => {
+        const w = globalThis as unknown as {
+          __engine?: () => {
+            getDomain?: (d: string) => { read?: (n: string, k: string) => unknown } | null;
+          } | null;
+        };
+        const ve = w.__engine?.()?.getDomain?.('video');
+        if (!ve?.read) return false;
+        const seeded = ve.read('vrt-1', 'vrtSeeded');
+        const pending = ve.read('vrt-1', 'pendingLoads');
+        const ready = ve.read('vrt-1', 'readyCount');
+        return seeded === 1 && pending === 0 && typeof ready === 'number' && ready > 0;
+      }, undefined, { timeout: 20000 });
+    },
+    // A few more blit ticks after the last bake so the preview shows the
+    // final composite.
+    settleMs: 400,
+    freezeAudio: false,
+  },
+
   // NIBBLES (snake game module): the game state is RNG-seeded and
   // tick-driven, so the on-card framebuffer evolves frame-to-frame.
   // We set globalThis.__nibblesVrtSeed BEFORE spawning so the factory
