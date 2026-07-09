@@ -137,8 +137,17 @@ export const WORLD_WIDTH = 2.5;
 /** Grow-in duration (seconds): quick ease-out scale-up from the ground anchor. */
 export const GROW_IN_S = 0.35;
 
-/** Perspective scale at the horizon (depth 1). Near plane (depth 0) = 1. */
+/** Perspective scale at the horizon (depth 1). Near plane (depth 0) = 1.
+ *  This is the DEFAULT gradient — the FOV knob remaps it via fovToFarScale. */
 export const FAR_SCALE = 0.22;
+
+/** FOV knob (0..1) → horizon scale. Higher FOV = stronger perspective (far
+ *  plants shrink more, so near plants dominate). The default knob position
+ *  reproduces FAR_SCALE exactly: 0.5 − 0.4·0.7 = 0.22. */
+export const FOV_DEFAULT = 0.7;
+export function fovToFarScale(fov: number): number {
+  return 0.5 - 0.4 * clamp01(fov);
+}
 
 /** Fraction of the view pan applied to a plant AT the horizon (depth 1).
  *  Near-plane plants (depth 0) get the full pan. */
@@ -348,6 +357,9 @@ export interface LayoutParams {
   /** Engine render resolution. */
   resW: number;
   resH: number;
+  /** Horizon perspective scale (from the FOV knob via fovToFarScale).
+   *  Omitted → FAR_SCALE (pre-FOV callers/tests keep the default look). */
+  farScale?: number;
 }
 
 /** A sprite rect in BOTTOM-LEFT-origin pixels (GL viewport convention). */
@@ -374,7 +386,7 @@ export function layoutPlant(plant: Plant, p: LayoutParams): PlantRect | null {
   const g = growFactor(p.now - grownAt);
   if (g <= 0) return null;
 
-  const persp = 1 - clamp01(plant.depth) * (1 - FAR_SCALE);
+  const persp = 1 - clamp01(plant.depth) * (1 - (p.farScale ?? FAR_SCALE));
   const hPx = KIND_CANONICAL_HEIGHT[plant.kind] * (p.resH / CANONICAL_FRAME_H) * persp * g;
   const wPx = hPx * plant.aspect;
   if (hPx < 1 || wPx < 1) return null;
