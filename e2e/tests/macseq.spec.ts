@@ -20,7 +20,7 @@
 //
 // These live on MacseqCard.svelte's $effect block.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch, type SpawnNode, type SpawnEdge } from './_helpers';
 import { readScopeSnapshot, summarize, runFor } from './_module-coverage-helpers';
 
@@ -77,12 +77,7 @@ async function readEngineKey(
   );
 }
 
-test('macseq: drop module → 16-cell grid renders + each cell has a model dropdown', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('macseq: drop module → 16-cell grid renders + each cell has a model dropdown', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'ms', type: 'macseq', params: { isPlaying: 0 } },
   ]);
@@ -103,18 +98,7 @@ test('macseq: drop module → 16-cell grid renders + each cell has a model dropd
   expect(optionCount).toBe(15);
 });
 
-test('macseq → macrooscillator: every MODEL_NAMES entry is reachable via MODELCV', async ({
-  page,
-}) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text());
-  });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('macseq → macrooscillator: every MODEL_NAMES entry is reachable via MODELCV', async ({ page, rack, errorWatch }) => {
   // Patch: MACSEQ → MACROOSCILLATOR → SCOPE.
   //
   // pitch + gate go through too so the macrooscillator actually emits
@@ -291,15 +275,9 @@ test('macseq → macrooscillator: every MODEL_NAMES entry is reachable via MODEL
     `macrooscillator must emit audio while MACSEQ drives MODELCV; bestPeak=${bestPeak.toFixed(4)} bestRms=${bestRms.toFixed(4)}`,
   ).toBeGreaterThan(0.005);
 
-  expect(errors, `console / pageerror during the MACSEQ→MACROOSCILLATOR run: ${errors.join('; ')}`).toEqual([]);
 });
 
-test('macseq: HOLD-LAST policy — null model on a step holds the previous MODELCV value', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('macseq: HOLD-LAST policy — null model on a step holds the previous MODELCV value', async ({ page, rack }) => {
   // Plain MACSEQ → MACROOSCILLATOR with no scope (we read the model param
   // directly).
   await spawnPatch(

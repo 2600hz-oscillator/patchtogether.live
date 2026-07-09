@@ -19,7 +19,8 @@
 //   4. Handles for every declared port stay in the card DOM with the menu
 //      CLOSED — the io-spec / per-module-per-port sweep depends on it.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { REGISTRY } from './_registry';
 
@@ -52,9 +53,7 @@ async function visibleRowCount(page: Page, nodeId: string): Promise<number> {
 }
 
 test.describe('PatchPanel: overlay-replace nested sections', () => {
-  test('MIXMSTRS: 6 channel nav rows; drill/back overlay behaviour', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('MIXMSTRS: 6 channel nav rows; drill/back overlay behaviour', async ({ page, rack }) => {
     await spawnPatch(page, [{ id: 'mm', type: 'mixmstrs', position: { x: 100, y: 100 } }]);
     await openMenu(page, 'mm');
 
@@ -85,12 +84,7 @@ test.describe('PatchPanel: overlay-replace nested sections', () => {
     expect(box.height).toBeLessThanOrEqual(600);
   });
 
-  test('handles remain in the card DOM with the menu closed (io-spec parity)', async ({
-    page,
-  }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('handles remain in the card DOM with the menu closed (io-spec parity)', async ({ page, rack }) => {
     const mmDef = REGISTRY.find((m) => m.type === 'mixmstrs')!;
     const mmExpected = mmDef.inputs.length + mmDef.outputs.length;
     // Menu CLOSED — the per-module-per-port sweep counts handles here.

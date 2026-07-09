@@ -40,46 +40,7 @@ export const SYNC_BUDGET_MS = 20_000;
 // stay responsive enough that a fast converge returns promptly.
 export const SYNC_POLL_INTERVALS = [100, 250, 500, 1000];
 
-export interface CollabSession {
-  contexts: BrowserContext[];
-  pages: Page[];
-  canvasId: string;
-  /** Close every context. Call this at end of test. */
-  close: () => Promise<void>;
-}
-
-/**
- * Open `count` browser contexts on the same canvasId and load the app in each.
- * Until Phase 4 wires the Yjs provider, every context starts with an empty
- * patch (no cross-context sync) — tests that depend on convergence are
- * `test.skip`'d via the `@collab` tag.
- */
-export async function openCollab(
-  browser: Browser,
-  count: number,
-  options: { baseURL?: string; canvasId?: string } = {},
-): Promise<CollabSession> {
-  const baseURL = options.baseURL ?? process.env.E2E_BASE_URL ?? 'http://localhost:5173';
-  const canvasId = options.canvasId ?? `collab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-  const contexts: BrowserContext[] = [];
-  const pages: Page[] = [];
-  for (let i = 0; i < count; i++) {
-    const ctx = await browser.newContext({ baseURL });
-    const page = await ctx.newPage();
-    // Phase 4+ will read this query param and pass it to attachProvider().
-    await page.goto(`/rack?canvas=${encodeURIComponent(canvasId)}`);
-    await page.waitForLoadState('networkidle');
-    contexts.push(ctx);
-    pages.push(page);
-  }
-
-  return {
-    contexts,
-    pages,
-    canvasId,
-    async close() {
-      await Promise.all(contexts.map((c) => c.close()));
-    },
-  };
-}
+// (The CollabSession/openCollab Phase-2 harness was pruned as unreferenced —
+// LoC campaign row 16. Every @collab spec rolls its own two-context setup on
+// the seeded-rackspace flow instead; the shared constants above are what
+// they actually import from this file.)

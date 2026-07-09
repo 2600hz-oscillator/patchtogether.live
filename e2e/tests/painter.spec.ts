@@ -8,7 +8,8 @@
 // unit-tested in painter-draw.test.ts; the GL canvas→texture→OUT passthrough is a
 // trivial blit covered by the per-port emit sweep.)
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 type PatchGlobal = {
@@ -58,13 +59,7 @@ async function drawStroke(page: Page, yFrac = 0.5): Promise<void> {
 }
 
 test.describe('PAINTER — interactive draw → synced ops', () => {
-  test('a pointer drag paints the canvas + commits a synced stroke op', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('a pointer drag paints the canvas + commits a synced stroke op', async ({ page, rack, errorWatch }) => {
     await spawnPatch(page, [
       { id: 'pt', type: 'painter', position: { x: 200, y: 120 }, domain: 'video' },
     ]);
@@ -91,12 +86,9 @@ test.describe('PAINTER — interactive draw → synced ops', () => {
       .toBe(2);
     expect(await paintedFrac(page), 'both stroke bands remain painted (no rollback)').toBeGreaterThan(0.02);
 
-    expect(errors, `no console / page errors: ${errors.join('; ')}`).toEqual([]);
   });
 
-  test('CLEAR empties the op log + returns a blank page', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('CLEAR empties the op log + returns a blank page', async ({ page, rack }) => {
     await spawnPatch(page, [
       { id: 'pt', type: 'painter', position: { x: 200, y: 120 }, domain: 'video' },
     ]);
@@ -112,9 +104,7 @@ test.describe('PAINTER — interactive draw → synced ops', () => {
     await expect.poll(() => paintedFrac(page), { message: 'canvas is blank/white again' }).toBeLessThan(0.02);
   });
 
-  test('the FILL tool floods the canvas with the foreground colour', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('the FILL tool floods the canvas with the foreground colour', async ({ page, rack }) => {
     await spawnPatch(page, [
       { id: 'pt', type: 'painter', position: { x: 200, y: 120 }, domain: 'video' },
     ]);

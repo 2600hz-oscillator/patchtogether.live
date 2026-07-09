@@ -16,7 +16,8 @@
 //   6. Handles for every declared port stay in the card DOM with the panel
 //      CLOSED (io-spec parity — the per-module-per-port sweep depends on it).
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -57,9 +58,7 @@ async function spawnSeqAdsr(page: Page) {
   ]);
 }
 
-test('clicking the patch-trigger opens the menu; hover alone does not', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('clicking the patch-trigger opens the menu; hover alone does not', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'adsr', type: 'adsr', position: { x: 200, y: 200 } }]);
   const trigger = page.locator(
     '.svelte-flow__node[data-id="adsr"] [data-testid="patch-trigger"]',
@@ -127,11 +126,7 @@ test('clicking in canvas negative space closes the patch-to picker', async ({ pa
   await expect(page.locator('[data-testid="port-context-menu"]')).toHaveCount(0);
 });
 
-test('handles for every declared port stay in the card DOM with the panel closed (io-spec parity)', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('handles for every declared port stay in the card DOM with the panel closed (io-spec parity)', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'adsr', type: 'adsr', position: { x: 200, y: 200 } }]);
   // Panel CLOSED — the per-module-per-port sweep counts handles here.
   await expect(chrome(page, 'adsr')).toHaveCount(0);

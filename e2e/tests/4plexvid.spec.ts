@@ -52,7 +52,8 @@
 // (frame.timeDelta / Math.random / performance.now / unbounded accumulator) to
 // defer.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import {
   installRenderSmokeHooks,
@@ -128,13 +129,8 @@ async function fireGateAndStep(
 }
 
 test.describe('4PLEXVID — gate-advanced 4x4 video router (DRS)', () => {
-  test('each output shows its selected input; gate advances + wraps; outputs are independent', async ({ page }) => {
+  test('each output shows its selected input; gate advances + wraps; outputs are independent', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => {
-      if (m.type() === 'error') errors.push(m.text());
-    });
 
     // Pause the engine rAF loop (the test owns the exact frame count) + pin the
     // engine clock (SHAPES + the 4PLEXVID copy shader render an identical frame
@@ -217,6 +213,5 @@ test.describe('4PLEXVID — gate-advanced 4x4 video router (DRS)', () => {
       expectBright(o1, 'out1 bright again after wrap (4 gates → back to in1)');
     }
 
-    expect(errors, `console/page errors: ${errors.join(' | ')}`).toEqual([]);
   });
 });

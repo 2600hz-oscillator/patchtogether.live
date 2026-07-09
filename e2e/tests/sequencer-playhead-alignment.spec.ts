@@ -26,7 +26,8 @@
 // fired. The new approach is event-driven: we wait for the audio thread to
 // REPORT step K, then freeze before asserting.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import {
   waitForSoundingStep,
@@ -69,12 +70,7 @@ async function readEngine<T = unknown>(
   ) as T | null;
 }
 
-test('polyseqz: playhead matches sounding step (no off-by-one at start)', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('polyseqz: playhead matches sounding step (no off-by-one at start)', async ({ page, rack }) => {
   // 60 BPM, 8th notes (POLYSEQZ default) → step every 500 ms. Slow enough
   // that the freeze-after-waitForStep window is comfortable.
   await spawnPatch(page, [
@@ -116,12 +112,7 @@ test('polyseqz: playhead matches sounding step (no off-by-one at start)', async 
   expect(step).toBe(1);
 });
 
-test('sequencer: playhead matches sounding step (no off-by-one at start)', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('sequencer: playhead matches sounding step (no off-by-one at start)', async ({ page, rack }) => {
   // 10 BPM, 16th notes → step every 1500 ms — slow enough that ctx.suspend() completes within step 0
   await spawnPatch(page, [
     {
@@ -162,12 +153,7 @@ test('sequencer: playhead matches sounding step (no off-by-one at start)', async
   expect(step).toBe(1);
 });
 
-test('drumseqz: playhead matches sounding step (no off-by-one at start)', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('drumseqz: playhead matches sounding step (no off-by-one at start)', async ({ page, rack }) => {
   // 10 BPM, 16th notes → step every 1500 ms — slow enough that ctx.suspend() completes within step 0
   await spawnPatch(page, [
     {
@@ -200,12 +186,7 @@ test('drumseqz: playhead matches sounding step (no off-by-one at start)', async 
   expect(step).toBe(1);
 });
 
-test('score: playhead matches sounding 16th-note slot (no off-by-one)', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('score: playhead matches sounding 16th-note slot (no off-by-one)', async ({ page, rack }) => {
   // 60 BPM → 1 beat = 1 s, 1 16th = 250 ms.
   // Spawn with isPlaying=0 so the first tick doesn't fire before we've
   // applied the notes data (an empty-notes first tick would silently advance
@@ -281,14 +262,10 @@ test('score: playhead matches sounding 16th-note slot (no off-by-one)', async ({
   expect(note1).toBe('n1');
 });
 
-test('all sequencers: playhead is exposed via engine.read("currentStep") (smoke + audit guard)', async ({
-  page,
-}) => {
+test('all sequencers: playhead is exposed via engine.read("currentStep") (smoke + audit guard)', async ({ page, rack }) => {
   // Belt-and-suspenders: every sequencer module that has a visual playhead
   // must expose 'currentStep' (or 'currentNoteId' for SCORE) via engine.read.
   // This is a stable contract the per-module Card.svelte files depend on.
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
 
   // Cartesian requires an external clock to advance — give it one via the
   // Sequencer's clock output. (We don't assert Cartesian's currentStep

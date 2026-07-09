@@ -18,7 +18,7 @@
 // scale with the number of capture windows rather than a flat value, and we keep
 // the capture count modest.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 import { readScopePeakOverWindow } from './_module-coverage-helpers';
 
@@ -47,14 +47,9 @@ async function seedSeqSteps(page: import('@playwright/test').Page, seqId: string
   }, seqId);
 }
 
-test('dx7 master-ADSR: a gated poly note carries audio through the master VCA', async ({ page }) => {
+test('dx7 master-ADSR: a gated poly note carries audio through the master VCA', async ({ page, rack, errorWatch }) => {
   test.setTimeout(timeoutFor(1));
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
 
   // Drive DX7 via the poly bus (the proven dx7.spec path): SEQUENCER.pitch →
   // DX7.poly, with seeded always-on steps so a gate fires every step. Each gate
@@ -89,17 +84,11 @@ test('dx7 master-ADSR: a gated poly note carries audio through the master VCA', 
 
   const { peak } = await readScopePeakOverWindow(page, 'sc', CAPTURE_MS);
   expect(peak, 'DX7 OUT should carry audio when gated (master ADSR open)').toBeGreaterThan(0.01);
-  expect(errors, 'no console / page errors').toEqual([]);
 });
 
-test('cube mono TRIGGER gates the per-voice envelope (audio opens on trigger)', async ({ page }) => {
+test('cube mono TRIGGER gates the per-voice envelope (audio opens on trigger)', async ({ page, rack, errorWatch }) => {
   test.setTimeout(timeoutFor(1));
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
 
   await spawnPatch(
     page,
@@ -117,17 +106,11 @@ test('cube mono TRIGGER gates the per-voice envelope (audio opens on trigger)', 
 
   const { peak } = await readScopePeakOverWindow(page, 'sc', CAPTURE_MS);
   expect(peak, 'CUBE L should carry audio when the TRIGGER gate fires').toBeGreaterThan(0.01);
-  expect(errors, 'no console / page errors').toEqual([]);
 });
 
-test('cube back-compat: an unpatched TRIGGER keeps CUBE droning (env skipped)', async ({ page }) => {
+test('cube back-compat: an unpatched TRIGGER keeps CUBE droning (env skipped)', async ({ page, rack, errorWatch }) => {
   test.setTimeout(timeoutFor(1));
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
 
   // CUBE with NOTHING patched to TRIGGER (and no poly) → free-running drone.
   await spawnPatch(
@@ -143,17 +126,11 @@ test('cube back-compat: an unpatched TRIGGER keeps CUBE droning (env skipped)', 
 
   const { peak } = await readScopePeakOverWindow(page, 'sc', CAPTURE_MS);
   expect(peak, 'CUBE must keep droning with no TRIGGER patched (legacy free-run)').toBeGreaterThan(0.01);
-  expect(errors, 'no console / page errors').toEqual([]);
 });
 
-test('cube no-stray-drone: a TRIGGER patched but NEVER gated is SILENT (gated, not droning)', async ({ page }) => {
+test('cube no-stray-drone: a TRIGGER patched but NEVER gated is SILENT (gated, not droning)', async ({ page, rack, errorWatch }) => {
   test.setTimeout(timeoutFor(1));
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
 
   // TRIGGER patched from a sequencer that is NOT playing (gate stays 0) → the
   // gate is PATCHED but NEVER goes high. Per the no-stray-drone fix, a patched
@@ -176,17 +153,11 @@ test('cube no-stray-drone: a TRIGGER patched but NEVER gated is SILENT (gated, n
 
   const { peak } = await readScopePeakOverWindow(page, 'sc', CAPTURE_MS);
   expect(peak, 'a patched-but-never-gated TRIGGER must keep CUBE SILENT (no stray drone)').toBeLessThan(0.01);
-  expect(errors, 'no console / page errors').toEqual([]);
 });
 
-test('wavecel mono TRIGGER gates the per-voice envelope (audio opens on trigger)', async ({ page }) => {
+test('wavecel mono TRIGGER gates the per-voice envelope (audio opens on trigger)', async ({ page, rack, errorWatch }) => {
   test.setTimeout(timeoutFor(1));
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
 
   await spawnPatch(
     page,
@@ -204,17 +175,11 @@ test('wavecel mono TRIGGER gates the per-voice envelope (audio opens on trigger)
 
   const { peak } = await readScopePeakOverWindow(page, 'sc', CAPTURE_MS);
   expect(peak, 'WAVECEL out_l should carry audio when the TRIGGER gate fires').toBeGreaterThan(0.01);
-  expect(errors, 'no console / page errors').toEqual([]);
 });
 
-test('cube poly chord (POLYSEQZ → poly) drives the per-voice envelopes', async ({ page }) => {
+test('cube poly chord (POLYSEQZ → poly) drives the per-voice envelopes', async ({ page, rack, errorWatch }) => {
   test.setTimeout(timeoutFor(1));
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
 
   await spawnPatch(
     page,
@@ -250,5 +215,4 @@ test('cube poly chord (POLYSEQZ → poly) drives the per-voice envelopes', async
 
   const { peak } = await readScopePeakOverWindow(page, 'sc', CAPTURE_MS);
   expect(peak, 'CUBE L should carry audio when a poly chord gates the voices').toBeGreaterThan(0.01);
-  expect(errors, 'no console / page errors').toEqual([]);
 });

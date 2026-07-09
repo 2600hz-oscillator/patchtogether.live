@@ -19,7 +19,8 @@
 // Renderer-tolerant throughout (SwiftShader on CI vs a real GPU agree on the
 // FLOORS + that mangle changes the frame, never on exact pixels).
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { installRenderSmokeHooks, stepAndReadStats, assertRenderStats } from './_render-smoke';
 
@@ -58,11 +59,8 @@ async function spawnLinesDestructor(page: Page): Promise<void> {
 }
 
 test.describe('DESTRUCTOR — deterministic render smoke', () => {
-  test('freeze + pause + step → non-black, structured, frame-stable, zero GL errors', async ({ page }) => {
+  test('freeze + pause + step → non-black, structured, frame-stable, zero GL errors', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await installRenderSmokeHooks(page);
     await spawnLinesDestructor(page);
@@ -78,14 +76,10 @@ test.describe('DESTRUCTOR — deterministic render smoke', () => {
     expect(Math.abs(b.mean - a.mean), `frozen output frame-stable (mean ${a.mean.toFixed(2)} vs ${b.mean.toFixed(2)})`).toBeLessThan(0.5);
     expect(Math.abs(b.variance - a.variance), 'frozen output variance frame-stable').toBeLessThan(1.0);
 
-    expect(errors, 'no console / page errors during render').toEqual([]);
   });
 
-  test('mangle 0 → 1 changes the rendered frame (the param→pixels bridge claim)', async ({ page }) => {
+  test('mangle 0 → 1 changes the rendered frame (the param→pixels bridge claim)', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await installRenderSmokeHooks(page);
     await spawnLinesDestructor(page);
@@ -117,6 +111,5 @@ test.describe('DESTRUCTOR — deterministic render smoke', () => {
         `low mean=${low.mean.toFixed(1)} var=${low.variance.toFixed(1)}, high mean=${high.mean.toFixed(1)} var=${high.variance.toFixed(1)})`,
     ).toBeGreaterThan(0.02);
 
-    expect(errors, 'no console / page errors during render').toEqual([]);
   });
 });

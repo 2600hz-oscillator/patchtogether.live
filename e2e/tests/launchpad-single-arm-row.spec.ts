@@ -8,7 +8,7 @@
 // as hardware (installSimulatedLaunchpadSingle + the CC-98 view flip). The
 // real-source-chain proof per CLAUDE.md: a pasted/new clip actually plays.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 import { readScopePeakOverWindow } from './_module-coverage-helpers';
 
@@ -63,18 +63,7 @@ async function lane0Playing(page: import('@playwright/test').Page) {
   });
 }
 
-test('@launchpad single-unit ARM ROW: NEW->edit->COPY->PASTE on one device, the pasted clip launches -> audible RMS', async ({
-  page,
-}) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text());
-  });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('@launchpad single-unit ARM ROW: NEW->edit->COPY->PASTE on one device, the pasted clip launches -> audible RMS', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
@@ -178,7 +167,6 @@ test('@launchpad single-unit ARM ROW: NEW->edit->COPY->PASTE on one device, the 
   expect(after.polls, 'SCOPE polled').toBeGreaterThan(0);
   expect(after.rms, 'the pasted-clip launch raised the output').toBeGreaterThan(before.rms + 0.02);
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });
 
 // SINGLE-UNIT DOUBLE-TAP -> editor (PR #892). On one device, CLIP view: a single
@@ -187,18 +175,7 @@ test('@launchpad single-unit ARM ROW: NEW->edit->COPY->PASTE on one device, the 
 // taps are fired BACK-TO-BACK inside one page.evaluate (gap ~= 0 scheduler ticks)
 // so the real-clock window is hit deterministically — no inter-tap round-trip
 // latency to flake on. Asserts the editor opened on the right clip.
-test('@launchpad single-unit DOUBLE-TAP a clip pad -> opens its note editor (control view)', async ({
-  page,
-}) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text());
-  });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('@launchpad single-unit DOUBLE-TAP a clip pad -> opens its note editor (control view)', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [{ id: 'd-cp', type: 'clipplayer', position: { x: 60, y: 60 }, domain: 'audio', params: {} }],
@@ -249,5 +226,4 @@ test('@launchpad single-unit DOUBLE-TAP a clip pad -> opens its note editor (con
   await expect.poll(() => simState().then((s) => s.activeView)).toBe('control');
   await expect.poll(() => simState().then((s) => s.editClipIndex)).toBe(0);
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });

@@ -20,7 +20,7 @@
 //   linesB (grating) → chroma   → sourcery.b   (B = colorful pool of shapes)
 //   sourcery.out                → videoOut
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import type { Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { installRenderSmokeHooks } from './_render-smoke';
@@ -132,10 +132,7 @@ function assertFrame(s: FrameStats, steps: number, minNonZeroFrac = 0.05): void 
 test.describe('SOURCERY — 2-input region shape-match recolor', () => {
   test.describe.configure({ timeout: 120_000 });
 
-  test('real 2-source chain: A + B patched → structured non-black output', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  test('real 2-source chain: A + B patched → structured non-black output', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
     await page.goto('/rack');
@@ -159,13 +156,9 @@ test.describe('SOURCERY — 2-input region shape-match recolor', () => {
     const b = await setStepRead(page, { nodeId: 'src', steps: STEPS });
     expect(Math.abs(a.mean - b.mean), 'frozen output frame-stable').toBeLessThan(1.5);
 
-    expect(errors, 'no console / page errors').toEqual([]);
   });
 
-  test('parameter response: ROT rotates the intra-region sampling frame', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  test('parameter response: ROT rotates the intra-region sampling frame', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
     await page.goto('/rack');
@@ -190,13 +183,9 @@ test.describe('SOURCERY — 2-input region shape-match recolor', () => {
     const balDelta = Math.abs((idn.r - idn.b) - (rot.r - rot.b));
     expect(meanDelta + balDelta, 'ROT rearranges the transplanted color').toBeGreaterThan(6);
 
-    expect(errors, 'no console / page errors').toEqual([]);
   });
 
-  test('parameter response: SKEW rotates the transferred hue', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  test('parameter response: SKEW rotates the transferred hue', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
     await page.goto('/rack');
@@ -216,13 +205,9 @@ test.describe('SOURCERY — 2-input region shape-match recolor', () => {
     const skewBal = skew.r - skew.b;
     expect(Math.abs(idnBal - skewBal), 'SKEW rotates the hue (channel balance shifts)').toBeGreaterThan(4);
 
-    expect(errors, 'no console / page errors').toEqual([]);
   });
 
-  test('B unpatched → passthrough of A (non-black, no holes)', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  test('B unpatched → passthrough of A (non-black, no holes)', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
     await page.goto('/rack');
@@ -238,6 +223,5 @@ test.describe('SOURCERY — 2-input region shape-match recolor', () => {
     assertFrame(s, STEPS, 0.05);
     expect(s.variance, 'A passthrough retains structure').toBeGreaterThan(3);
 
-    expect(errors, 'no console / page errors').toEqual([]);
   });
 });

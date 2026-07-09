@@ -22,7 +22,7 @@
 // settle-waits are replaced with proper deterministic waits (expect.poll on the
 // observable state), NOT a render assertion. Goal: 0 waitForTimeout in the file.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 import { installRenderSmokeHooks, stepAndReadStats, assertRenderStats } from './_render-smoke';
 
@@ -42,13 +42,8 @@ async function freezeBentbox(page: import('@playwright/test').Page): Promise<voi
 }
 
 test.describe('BENTBOX — CRT-emulation output', () => {
-  test('spawns + canvas mounts + decodes a non-black, frame-stable frame', async ({ page }) => {
+  test('spawns + canvas mounts + decodes a non-black, frame-stable frame', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => {
-      if (m.type() === 'error') errors.push(m.text());
-    });
 
     await freezeBentbox(page);
     await page.goto('/rack');
@@ -111,13 +106,9 @@ test.describe('BENTBOX — CRT-emulation output', () => {
     expect(Math.abs(b.mean - a.mean), `frozen CRT output is frame-stable (mean ${a.mean.toFixed(3)} vs ${b.mean.toFixed(3)})`).toBeLessThan(0.5);
     expect(Math.abs(b.variance - a.variance), 'frozen CRT output variance is frame-stable').toBeLessThan(1.0);
 
-    expect(errors, 'no console / page errors during BENTBOX render').toEqual([]);
   });
 
-  test('CV-bending knobs mutate params via patch store', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('CV-bending knobs mutate params via patch store', async ({ page, rack }) => {
     await spawnPatch(page, [
       { id: 'bb', type: 'bentbox', position: { x: 200, y: 100 }, domain: 'video' },
     ]);
@@ -168,10 +159,7 @@ test.describe('BENTBOX — CRT-emulation output', () => {
     expect(params.feedback_gain).toBe(0.5);
   });
 
-  test('resize handle is present + drag grows the card', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('resize handle is present + drag grows the card', async ({ page, rack }) => {
     await spawnPatch(page, [
       { id: 'bb', type: 'bentbox', position: { x: 200, y: 100 }, domain: 'video' },
     ]);

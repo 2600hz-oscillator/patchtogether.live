@@ -12,7 +12,7 @@
 // It exercises the REAL module on the canvas (not a re-render / copy / modal):
 // the same card, the same patch panel, just an extra personal hover lens.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { openModulePalette } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -34,11 +34,7 @@ async function openModuleMenu(page: import('@playwright/test').Page, type: strin
   return menu;
 }
 
-test('documented module (adsr): Annotate entry toggles a hover popover over a control', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('documented module (adsr): Annotate entry toggles a hover popover over a control', async ({ page, rack }) => {
   await spawnModule(page, 'adsr', 'adsr');
 
   // 1) The Annotate entry exists for a documented module.
@@ -74,11 +70,7 @@ test('documented module (adsr): Annotate entry toggles a hover popover over a co
   await expect(page.getByTestId('annotate-popover')).toHaveCount(0);
 });
 
-test('documented module (adsr): hovering a PATCH PORT shows its doc incl. the CV→param dual context', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('documented module (adsr): hovering a PATCH PORT shows its doc incl. the CV→param dual context', async ({ page, rack }) => {
   await spawnModule(page, 'adsr', 'adsr');
 
   // Turn Annotate ON.
@@ -112,9 +104,7 @@ test('documented module (adsr): hovering a PATCH PORT shows its doc incl. the CV
   await page.screenshot({ path: 'test-results/module-annotate-port-popover.png' });
 });
 
-test('undocumented module (matrixMix): NO Annotate entry', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('undocumented module (matrixMix): NO Annotate entry', async ({ page, rack }) => {
   // FIXTURE CHOICE: a currently-undocumented, LIGHTWEIGHT module (the
   // `matrixMix` DOM matrix-mixer card — trivial card, no WebGL). toybox (the
   // permanent docs exemption) is the conceptually-correct "never documented"

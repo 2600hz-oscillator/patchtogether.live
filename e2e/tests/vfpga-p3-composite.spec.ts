@@ -16,7 +16,8 @@
 // deterministic, but vfpga-runner is VRT-exempt (live preview + scopes), so this
 // asserts behaviour, not a baseline.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 const BENT = ['sync-bender', 'chroma-rot', 'framestore-howl', 'databend-cvbs'] as const;
@@ -110,16 +111,11 @@ async function outputSaturation(page: Page): Promise<number> {
 
 test.describe('vfpga P3 composite-era bent VFPGAs', () => {
   for (const program of BENT) {
-    test(`${program}: bends the smpte source into distinct non-black output`, async ({ page }) => {
+    test(`${program}: bends the smpte source into distinct non-black output`, async ({ page, rack, errorWatch }) => {
       // Two pure-GL vfpga-runners + an OUTPUT compile fast even on SwiftShader,
       // but give headroom for boot + spawn + first-frame settle + the hot-swap.
       test.setTimeout(60_000);
-      const errors: string[] = [];
-      page.on('pageerror', (e) => errors.push(e.message));
-      page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-      await page.goto('/rack');
-      await page.waitForLoadState('networkidle');
 
       await spawnPatch(
         page,
@@ -173,7 +169,6 @@ test.describe('vfpga P3 composite-era bent VFPGAs', () => {
       }
       expect(delta, `${program}: bent output is DISTINCT from the un-bent reference (Δluma=${delta.toFixed(2)}/255)`).toBeGreaterThan(6);
 
-      expect(errors, 'no console / page errors').toEqual([]);
     });
   }
 
@@ -183,14 +178,9 @@ test.describe('vfpga P3 composite-era bent VFPGAs', () => {
   // sink — the first spec to exercise vout2 end-to-end (the runner's vout2 path
   // existed but no spec drove it). We wire bent.vout2 (NOT vout1) → OUTPUT and
   // require a non-black, structured frame: the feedback send is live + patchable.
-  test('framestore-howl: vout2 (frame-store send) flows to a real sink, non-black', async ({ page }) => {
+  test('framestore-howl: vout2 (frame-store send) flows to a real sink, non-black', async ({ page, rack, errorWatch }) => {
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
       [
@@ -213,7 +203,6 @@ test.describe('vfpga P3 composite-era bent VFPGAs', () => {
     const stats = await pollStats(page);
     expect(stats.nonZeroFrac, `vout2 send reaches OUTPUT non-black (frac=${stats.nonZeroFrac})`).toBeGreaterThan(0.1);
     expect(stats.variance, `vout2 send has spatial structure (var=${stats.variance})`).toBeGreaterThan(20);
-    expect(errors, 'no console / page errors').toEqual([]);
   });
 
   // framestore-howl LEAK AUDIT (the flagship's feedback FBOs): under sustained
@@ -276,14 +265,9 @@ test.describe('vfpga P3 composite-era bent VFPGAs', () => {
   // and IIN2 GREYSCALE (saturation 0). With p5 cxfer=0 the output keeps IIN1's own
   // (colourful) chroma; with cxfer=1 it takes IIN2's (zero) chroma → the output
   // desaturates to ~greyscale. A dead vin2 binding would leave it colourful.
-  test('chroma-rot: clip B (vin2) chroma transplants onto image A (Y/C, two-source)', async ({ page }) => {
+  test('chroma-rot: clip B (vin2) chroma transplants onto image A (Y/C, two-source)', async ({ page, rack, errorWatch }) => {
     test.setTimeout(75_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
       [
@@ -346,21 +330,15 @@ test.describe('vfpga P3 composite-era bent VFPGAs', () => {
     // vin2 binding would leave the output's colour unchanged between the two.
     expect(satColorB, `colourful chroma source → colourful output (sat=${satColorB.toFixed(1)})`).toBeGreaterThan(12);
     expect(satGrayB, `greyscale chroma source desaturates the output (satGrayB=${satGrayB.toFixed(1)} < satColorB=${satColorB.toFixed(1)})`).toBeLessThan(satColorB * 0.7);
-    expect(errors, 'no console / page errors').toEqual([]);
   });
 
   // chroma-rot SECOND OUTPUT: vout2 = the separated LUMA (Y) plane (the S-video Y
   // tap). Route vout2 → OUTPUT and require it non-black + structured AND ~greyscale
   // (it is luma replicated to RGB, so saturation ≈ 0) — distinguishing it from the
   // colourful vout1 composite.
-  test('chroma-rot: vout2 (the separated Y/luma plane) flows to a sink, non-black + greyscale', async ({ page }) => {
+  test('chroma-rot: vout2 (the separated Y/luma plane) flows to a sink, non-black + greyscale', async ({ page, rack, errorWatch }) => {
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
       [
@@ -384,6 +362,5 @@ test.describe('vfpga P3 composite-era bent VFPGAs', () => {
     // It is the LUMA plane (greyscale), not the colourful composite — saturation ~0.
     const sat = await outputSaturation(page);
     expect(sat, `vout2 is the luma (Y) plane → ~greyscale (sat=${sat.toFixed(1)})`).toBeLessThan(8);
-    expect(errors, 'no console / page errors').toEqual([]);
   });
 });

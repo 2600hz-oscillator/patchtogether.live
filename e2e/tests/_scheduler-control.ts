@@ -129,34 +129,6 @@ export async function waitForSoundingStepAndFreeze(
 }
 
 /**
- * Wait until the engine reports a step in [lo, hi] (inclusive). Useful for
- * SCORE-style assertions where "around tick 4" maps to a small window because
- * the tickIndex granularity vs scheduler quantum can land ±1.
- */
-export async function waitForSoundingStepInRange(
-  page: Page,
-  nodeId: string,
-  lo: number,
-  hi: number,
-  opts: { key?: string; timeoutMs?: number } = {},
-): Promise<void> {
-  const key = opts.key ?? 'currentStep';
-  const timeoutMs = opts.timeoutMs ?? 10_000;
-  await page.waitForFunction(
-    ({ id, k, l, h }) => {
-      const w = globalThis as unknown as EngineGlobals;
-      const eng = w.__engine?.();
-      const node = w.__patch.nodes[id];
-      if (!eng || !node) return false;
-      const v = eng.read(node, k);
-      return typeof v === 'number' && v >= l && v <= h;
-    },
-    { id: nodeId, k: key, l: lo, h: hi },
-    { timeout: timeoutMs, polling: 25 },
-  );
-}
-
-/**
  * Wait until the engine reports `currentNoteId === target` for a SCORE-like
  * node (target may be a string id or null).
  */

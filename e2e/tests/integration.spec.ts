@@ -21,7 +21,7 @@
 //   * Every CV source × every CV consumer (~150 tests — same reason).
 //   * Video-domain pair-patches beyond the mono-video bridge.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 import { readScopeSnapshot, summarize, runFor } from './_module-coverage-helpers';
 import {
@@ -34,15 +34,7 @@ import {
 test.describe.configure({ mode: 'parallel' });
 
 function runPair(group: string, patch: PairPatch): void {
-  test(`${group} — ${patch.label}`, async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-    page.on('console', (m) => {
-      if (m.type() === 'error') errors.push(`console: ${m.text()}`);
-    });
-
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test(`${group} — ${patch.label}`, async ({ page, rack, errorWatch }) => {
     await spawnPatch(page, patch.nodes, patch.edges);
 
     // If a sequencer is in the patch, seed playable steps so its gate
@@ -83,10 +75,6 @@ function runPair(group: string, patch: PairPatch): void {
       `${patch.label}: peak (peak=${sum.peak.toFixed(4)}, rms=${sum.rms.toFixed(4)})`,
     ).toBeGreaterThan(0.005);
 
-    expect(
-      errors,
-      `console/page errors: ${errors.join(' | ')}`,
-    ).toEqual([]);
   });
 }
 

@@ -9,15 +9,12 @@
 //   3. Backward-compat: POLYSEQZ.poly → analogVco.pitch (mono) auto-routes
 //      lane 0 (root) through the engine's resolveConnection path.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('polyseqz: drop module → 16-cell page-0 grid renders + defaults shown', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('polyseqz: drop module → 16-cell page-0 grid renders + defaults shown', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'p', type: 'polyseqz', params: { isPlaying: 0 } },
   ]);
@@ -39,10 +36,7 @@ test('polyseqz: drop module → 16-cell page-0 grid renders + defaults shown', a
   await expect(page.getByTestId('polyseqz-voicing-p-0')).toHaveAttribute('data-voicing', 'closed');
 });
 
-test('polyseqz: per-step UI cycles quality (maj→min→...) and inversion (0→1→2→0)', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('polyseqz: per-step UI cycles quality (maj→min→...) and inversion (0→1→2→0)', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'p', type: 'polyseqz', params: { isPlaying: 0 } },
   ]);
@@ -69,10 +63,7 @@ test('polyseqz: per-step UI cycles quality (maj→min→...) and inversion (0→
   await expect(voicingBadge).toHaveAttribute('data-voicing', 'spread');
 });
 
-test('polyseqz: Cmaj step emits 5 gated lanes with C/E/G/C/E V/oct', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('polyseqz: Cmaj step emits 5 gated lanes with C/E/G/C/E V/oct', async ({ page, rack }) => {
   await spawnPatch(page, [
     {
       id: 'p',
@@ -130,10 +121,7 @@ test('polyseqz: Cmaj step emits 5 gated lanes with C/E/G/C/E V/oct', async ({ pa
   expect(Math.abs((lanes![4]!.pitch ?? -1) - 16 / 12)).toBeLessThan(TOL);
 });
 
-test('polyseqz: backward-compat — poly → mono pitch auto-routes lane 0 (root)', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('polyseqz: backward-compat — poly → mono pitch auto-routes lane 0 (root)', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
@@ -183,10 +171,7 @@ test('polyseqz: backward-compat — poly → mono pitch auto-routes lane 0 (root
   expect(Math.abs((root as number) - 0.75)).toBeLessThan(1e-6);
 });
 
-test('polyseqz: humanize=0 keeps gates synchronous; humanize=1 spreads them', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('polyseqz: humanize=0 keeps gates synchronous; humanize=1 spreads them', async ({ page, rack }) => {
   // First: humanize=0. All voices gate-on simultaneously, so every
   // humanizeOffset:N read should be exactly 0.
   await spawnPatch(page, [
@@ -285,10 +270,7 @@ test('polyseqz: humanize=0 keeps gates synchronous; humanize=1 spreads them', as
 //   - Enter on pitch commits + advances to next step's pitch.
 //   - Tab moves between steps in same role.
 
-test('keyboard-nav POLYSEQZ: Right/Left across steps in same role', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('keyboard-nav POLYSEQZ: Right/Left across steps in same role', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'p', type: 'polyseqz', params: { isPlaying: 0 } }]);
 
   const pitch0 = page.locator('[data-testid="polyseqz-root-p-0"]');
@@ -299,10 +281,7 @@ test('keyboard-nav POLYSEQZ: Right/Left across steps in same role', async ({ pag
   await expect(page.locator('[data-testid="polyseqz-root-p-1"]')).toBeFocused();
 });
 
-test('keyboard-nav POLYSEQZ: Down cycles gate → pitch → quality → inversion → voicing', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('keyboard-nav POLYSEQZ: Down cycles gate → pitch → quality → inversion → voicing', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'p', type: 'polyseqz', params: { isPlaying: 0 } }]);
 
   const gate2 = page.locator('[data-testid="polyseqz-gate-p-2"]');
@@ -326,10 +305,7 @@ test('keyboard-nav POLYSEQZ: Down cycles gate → pitch → quality → inversio
   await expect(page.locator('[data-testid="polyseqz-voicing-p-2"]')).toBeFocused();
 });
 
-test('keyboard-nav POLYSEQZ: Up reverses the role stack and clamps at gate', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('keyboard-nav POLYSEQZ: Up reverses the role stack and clamps at gate', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'p', type: 'polyseqz', params: { isPlaying: 0 } }]);
 
   const voicing0 = page.locator('[data-testid="polyseqz-voicing-p-0"]');
@@ -348,10 +324,7 @@ test('keyboard-nav POLYSEQZ: Up reverses the role stack and clamps at gate', asy
   await expect(gate0).toBeFocused();
 });
 
-test('keyboard-nav POLYSEQZ: Space/Enter on quality badge cycles quality', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('keyboard-nav POLYSEQZ: Space/Enter on quality badge cycles quality', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'p', type: 'polyseqz', params: { isPlaying: 0 } }]);
 
   const quality = page.locator('[data-testid="polyseqz-quality-p-1"]');
@@ -363,10 +336,7 @@ test('keyboard-nav POLYSEQZ: Space/Enter on quality badge cycles quality', async
   await expect(quality).toHaveAttribute('data-quality', 'maj7');
 });
 
-test('keyboard-nav POLYSEQZ: Space on inversion + voicing cycles each field', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('keyboard-nav POLYSEQZ: Space on inversion + voicing cycles each field', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'p', type: 'polyseqz', params: { isPlaying: 0 } }]);
 
   const inv = page.locator('[data-testid="polyseqz-inv-p-3"]');
@@ -388,10 +358,7 @@ test('keyboard-nav POLYSEQZ: Space on inversion + voicing cycles each field', as
   await expect(voicing).toHaveAttribute('data-voicing', 'spread');
 });
 
-test('keyboard-nav POLYSEQZ: Space on gate toggles step on (matches Sequencer)', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('keyboard-nav POLYSEQZ: Space on gate toggles step on (matches Sequencer)', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'p', type: 'polyseqz', params: { isPlaying: 0 } }]);
 
   const gate1 = page.locator('[data-testid="polyseqz-gate-p-1"]');
@@ -406,10 +373,7 @@ test('keyboard-nav POLYSEQZ: Space on gate toggles step on (matches Sequencer)',
   expect(stepOn).toBe(true);
 });
 
-test('keyboard-nav POLYSEQZ: rapid-add (type root, ArrowRight, type root, ...)', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('keyboard-nav POLYSEQZ: rapid-add (type root, ArrowRight, type root, ...)', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'p', type: 'polyseqz', params: { bpm: 90, length: 4, isPlaying: 0 } },
   ]);
@@ -435,10 +399,7 @@ test('keyboard-nav POLYSEQZ: rapid-add (type root, ArrowRight, type root, ...)',
   expect(stored).toEqual([48, 52, 55, 59]);
 });
 
-test('keyboard-nav POLYSEQZ: ArrowLeft/Right inside pitch input never moves caret', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('keyboard-nav POLYSEQZ: ArrowLeft/Right inside pitch input never moves caret', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'p', type: 'polyseqz', params: { isPlaying: 0 } }]);
 
   const step0 = page.locator('[data-testid="polyseqz-root-p-0"]');

@@ -15,17 +15,12 @@
 // voice priority + retrig + bend mapping all have unit coverage in
 // packages/web/src/lib/audio/modules/midi-cv-buddy.test.ts.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('midi-cv-buddy: drop module → card mounts with no console errors', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('midi-cv-buddy: drop module → card mounts with no console errors', async ({ page, rack, errorWatch }) => {
   await spawnPatch(page, [{ id: 'm', type: 'midiCvBuddy', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-midiCvBuddy');
   await expect(card).toBeVisible();
@@ -34,12 +29,9 @@ test('midi-cv-buddy: drop module → card mounts with no console errors', async 
   // the editable name button takes precedence over `defaultLabel` once
   // `migrateAssignNames` runs at spawn (see $lib/multiplayer/module-naming.ts).
   await expect(card.locator('[data-testid="name-label-button"]')).toHaveText(/^MIDICVBUDDY(\d+)?$/);
-  expect(errors, errors.join('; ')).toEqual([]);
 });
 
-test('midi-cv-buddy: Connect MIDI… button is visible + interactive', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('midi-cv-buddy: Connect MIDI… button is visible + interactive', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'm', type: 'midiCvBuddy', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-midiCvBuddy');
   await expect(card).toBeVisible();
@@ -50,12 +42,7 @@ test('midi-cv-buddy: Connect MIDI… button is visible + interactive', async ({ 
   await expect(btn).toBeEnabled();
 });
 
-test('midi-cv-buddy: clicking Connect does not crash the card', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('midi-cv-buddy: clicking Connect does not crash the card', async ({ page, rack, errorWatch }) => {
   await spawnPatch(page, [{ id: 'm', type: 'midiCvBuddy', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-midiCvBuddy');
   await expect(card).toBeVisible();
@@ -76,5 +63,4 @@ test('midi-cv-buddy: clicking Connect does not crash the card', async ({ page })
   // `migrateAssignNames` runs at spawn (see $lib/multiplayer/module-naming.ts).
   await expect(card.locator('[data-testid="name-label-button"]')).toHaveText(/^MIDICVBUDDY(\d+)?$/);
   // No unhandled pageerror / console.error along the way.
-  expect(errors, errors.join('; ')).toEqual([]);
 });

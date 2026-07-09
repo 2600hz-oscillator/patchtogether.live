@@ -21,7 +21,8 @@
 // shipped, the test skips with the canonical diagnostic (matches the
 // pattern of doom-wasm.spec.ts).
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 async function assetsMissing(page: Page): Promise<string | null> {
@@ -112,9 +113,7 @@ async function waitForLevel(page: Page): Promise<void> {
 
 // ----------------------------------------------------------------- #1
 test.describe('GAMEPAD card — button-LED labels match output port labels (#1)', () => {
-  test('button LEDs render the SAME glyphs as the port label table', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('button LEDs render the SAME glyphs as the port label table', async ({ page, rack }) => {
     await spawnPatch(page, [
       { id: 'g', type: 'gamepad', position: { x: 100, y: 100 }, domain: 'audio' },
     ]);
@@ -279,9 +278,7 @@ test.describe('Keyboard goes inert when CV is patched (#3)', () => {
 
 // ----------------------------------------------------------------- #4
 test.describe('ESC + ENTER CV gate inputs (#4)', () => {
-  test('p1_esc / p1_enter ports exist on the DOOM module def (smoke)', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('p1_esc / p1_enter ports exist on the DOOM module def (smoke)', async ({ page, rack }) => {
     // Read the def shape from the registered module-spec window global.
     // No WASM required — this is a pure def smoke.
     await spawnPatch(page, [

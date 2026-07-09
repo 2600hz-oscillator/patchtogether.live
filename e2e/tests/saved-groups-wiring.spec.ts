@@ -19,7 +19,8 @@
 //
 // Test the components in their natural Canvas mount; no special hooks.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -92,10 +93,7 @@ async function createTestGroup(page: Page): Promise<void> {
   ).toBeVisible();
 }
 
-test('ModulePalette renders tools section without the saved-groups entry for anonymous users', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('ModulePalette renders tools section without the saved-groups entry for anonymous users', async ({ page, rack }) => {
   const pane = page.locator('.svelte-flow__pane');
   const box = await pane.boundingBox();
   if (!box) throw new Error('no pane');

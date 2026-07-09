@@ -10,7 +10,7 @@
 // - Dynamic affects amplitude (ff vs pp peak, observed via dynamicScale read)
 // - Bar overflow rejected (red shake CSS, second whole note not added)
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -40,9 +40,7 @@ async function readScoreData(page: import('@playwright/test').Page) {
   });
 }
 
-test('score: place a note via the quarter tool + click', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('score: place a note via the quarter tool + click', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'score', type: 'score' }]);
 
   await page.locator('[data-testid="score-tool-quarter-score"]').click();
@@ -59,9 +57,7 @@ test('score: place a note via the quarter tool + click', async ({ page }) => {
   expect(data.notes[0].midi).toBeLessThanOrEqual(84);
 });
 
-test('score: drag-snap to nearest 16th tick', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('score: drag-snap to nearest 16th tick', async ({ page, rack }) => {
   // Pre-seed a note at bar 0, tick 0 so we can grab + drag it.
   await spawnPatch(page, [
     {
@@ -113,9 +109,7 @@ test('score: drag-snap to nearest 16th tick', async ({ page }) => {
   expect(data.notes[0].tick % 3).toBe(0);
 });
 
-test('score: sharp tool on note toggles per-note accidental + transposes MIDI +1', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('score: sharp tool on note toggles per-note accidental + transposes MIDI +1', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'score', type: 'score' }]);
 
   // Seed an F5 note via quarter tool click on top line, then click again with sharp tool.
@@ -145,9 +139,7 @@ test('score: sharp tool on note toggles per-note accidental + transposes MIDI +1
   expect(data.notes[0].midi).toBe(78);
 });
 
-test('score: sharp tool on empty staff increments key signature', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('score: sharp tool on empty staff increments key signature', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'score', type: 'score' }]);
 
   // Seed an F5 note (no per-note accidental) so we can verify it gets the key-sig sharp.
@@ -181,9 +173,7 @@ test('score: sharp tool on empty staff increments key signature', async ({ page 
   expect(data.notes[0].midi).toBe(78);
 });
 
-test('score: tie tool — picking two notes creates a Tie object + SVG path', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('score: tie tool — picking two notes creates a Tie object + SVG path', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'score', type: 'score' }]);
 
   await page.evaluate(() => {
@@ -218,9 +208,7 @@ test('score: tie tool — picking two notes creates a Tie object + SVG path', as
   await expect(page.locator(`[data-tie-id="${tieId}"]`)).toBeVisible();
 });
 
-test('score: currently-playing note highlight tracks engine.read currentNoteId', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('score: currently-playing note highlight tracks engine.read currentNoteId', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'score', type: 'score', params: { bpm: 240, isPlaying: 1 } }]);
 
   // Seed a few notes spanning bars so the engine has something to play.
@@ -261,9 +249,7 @@ test('score: currently-playing note highlight tracks engine.read currentNoteId',
   expect(['n1', 'n2', 'n3']).toContain(noteId);
 });
 
-test('score: dynamic marker scales the env output amplitude', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('score: dynamic marker scales the env output amplitude', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'score', type: 'score', params: { bpm: 240, isPlaying: 1 } }]);
 
   await page.evaluate(() => {
@@ -312,9 +298,7 @@ test('score: dynamic marker scales the env output amplitude', async ({ page }) =
   expect(await readDynScale()).toBeLessThan(1.05);
 });
 
-test('score: bar overflow rejected — second whole note in the same bar does NOT add', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('score: bar overflow rejected — second whole note in the same bar does NOT add', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'score', type: 'score' }]);
 
   await page.locator('[data-testid="score-tool-whole-score"]').click();
@@ -353,9 +337,7 @@ async function readScoreV2(page: import('@playwright/test').Page) {
   });
 }
 
-test('score: page nav — add a page, navigate via arrows, counter shows correctly', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('score: page nav — add a page, navigate via arrows, counter shows correctly', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'score', type: 'score' }]);
 
   // Default: 1 page. Counter shows "1 / 1".
@@ -407,9 +389,7 @@ test('score: page nav — add a page, navigate via arrows, counter shows correct
   await expect(counter).toHaveText('3 / 4');
 });
 
-test('score: page count is capped at 4 — add button disabled at max', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('score: page count is capped at 4 — add button disabled at max', async ({ page, rack }) => {
   // Seed with 4 pages directly.
   await spawnPatch(page, [{ id: 'score', type: 'score' }]);
   await page.evaluate(() => {
@@ -434,9 +414,7 @@ test('score: page count is capped at 4 — add button disabled at max', async ({
   await expect(page.locator('[data-testid="score-page-counter-score"]')).toHaveText('1 / 4');
 });
 
-test('score: loop toggle persists in score data', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('score: loop toggle persists in score data', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'score', type: 'score' }]);
 
   // Default: loop=false.
@@ -449,9 +427,7 @@ test('score: loop toggle persists in score data', async ({ page }) => {
   await expect.poll(async () => (await readScoreV2(page)).loop).toBe(false);
 });
 
-test('score: stop-bar — placing the marker writes to score data', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('score: stop-bar — placing the marker writes to score data', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'score', type: 'score' }]);
 
   // Activate stop-bar tool.
@@ -479,9 +455,7 @@ test('score: stop-bar — placing the marker writes to score data', async ({ pag
   await expect(page.locator('[data-testid="score-stop-bar-score"]')).toBeVisible();
 });
 
-test('score: stop-bar + loop=on wraps tickIndex back to 0 at end of sequence', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('score: stop-bar + loop=on wraps tickIndex back to 0 at end of sequence', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'score', type: 'score', params: { bpm: 240, isPlaying: 1 } },
   ]);
@@ -528,9 +502,7 @@ test('score: stop-bar + loop=on wraps tickIndex back to 0 at end of sequence', a
   expect(tickIdx).toBeLessThan(32);
 });
 
-test('score: stop-bar + loop=off stops playback at end of sequence', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('score: stop-bar + loop=off stops playback at end of sequence', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'score', type: 'score', params: { bpm: 480, isPlaying: 1 } },
   ]);
@@ -580,9 +552,7 @@ test('score: stop-bar + loop=off stops playback at end of sequence', async ({ pa
 // signal deterministically: poll `tiedGateHoldUntilTick` until it arms to 36
 // (the chain-end grid tick), then read the gate — which is guaranteed high once
 // the hold tick is set, since both are written together in the tied-start branch.
-test('score: tied notes produce a single sustained envelope (engine-level held gate)', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('score: tied notes produce a single sustained envelope (engine-level held gate)', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'score', type: 'score', params: { bpm: 120, isPlaying: 1 } },
   ]);

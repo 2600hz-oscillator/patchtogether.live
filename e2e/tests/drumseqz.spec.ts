@@ -15,17 +15,12 @@
 // These are exposed by DrumseqzCard.svelte's $effect block; spawnPatch's
 // dev-mode globals (__patch + __ydoc) cover the rest.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('drumseqz: drop module → 64-cell grid renders + Eucl sliders default to 0', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('drumseqz: drop module → 64-cell grid renders + Eucl sliders default to 0', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'drum', type: 'drumseqz', params: { isPlaying: 0 } },
   ]);
@@ -54,12 +49,7 @@ test('drumseqz: drop module → 64-cell grid renders + Eucl sliders default to 0
   }
 });
 
-test('drumseqz: trk1_euclid=4 → steps 0/4/8/12 light up via Bjorklund rewrite', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('drumseqz: trk1_euclid=4 → steps 0/4/8/12 light up via Bjorklund rewrite', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'drum', type: 'drumseqz', params: { isPlaying: 0 } },
   ]);
@@ -135,12 +125,7 @@ test('drumseqz: trk1_euclid=4 → steps 0/4/8/12 light up via Bjorklund rewrite'
   expect(after).toEqual([true, true, true]);
 });
 
-test('drumseqz → drummergirl → audioOut: gate1 fires audio when trk1 has any pulse', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('drumseqz → drummergirl → audioOut: gate1 fires audio when trk1 has any pulse', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [

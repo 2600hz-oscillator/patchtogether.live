@@ -5,7 +5,7 @@
 // it clearly. Failures dump captured console + screenshot path so the agent
 // can read the diagnostic without separate steps.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { captureConsole, formatConsole } from './helpers';
 import { spawnPatch } from './_helpers';
 
@@ -41,10 +41,8 @@ test.describe('AI smoke check', () => {
     expect(isolated, 'crossOriginIsolated must be true').toBe(true);
   });
 
-  test('canvas: topbar + Load example dropdown render', async ({ page }) => {
+  test('canvas: topbar + Load example dropdown render', async ({ page, rack }) => {
     const cc = captureConsole(page);
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
 
     const h1 = page.locator('h1', { hasText: 'patchtogether' });
     await expect(h1, 'topbar h1 missing').toBeVisible();
@@ -64,10 +62,7 @@ test.describe('AI smoke check', () => {
   // entry must be a plain link, not a Clerk component. This test runs against
   // the live autotest env once main is deployed, catching regressions where a
   // refactor removes the entry point or a layout change hides it.
-  test('auth: landing page exposes a sign-in entry point @smoke', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('auth: landing page exposes a sign-in entry point @smoke', async ({ page, rack }) => {
     const link = page.getByTestId('signin-link');
     await expect(link, 'sign-in link missing on landing page').toBeVisible();
 
@@ -78,9 +73,7 @@ test.describe('AI smoke check', () => {
     expect(href, `sign-in link href: ${href}`).toMatch(/^\/(dashboard|sign-in)/);
   });
 
-  test('canvas: Load example creates 5 Svelte Flow nodes @smoke', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('canvas: Load example creates 5 Svelte Flow nodes @smoke', async ({ page, rack }) => {
     await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     const nodes = page.locator('.svelte-flow__node');
     await expect(nodes, 'expected 5 module-card nodes after Load example').toHaveCount(5, {
@@ -88,9 +81,7 @@ test.describe('AI smoke check', () => {
     });
   });
 
-  test('canvas: spawned nodes are VISUALLY rendered (non-zero bounding rect)', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('canvas: spawned nodes are VISUALLY rendered (non-zero bounding rect)', async ({ page, rack }) => {
     await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
@@ -119,9 +110,7 @@ test.describe('AI smoke check', () => {
     await expect(bgPattern, 'background dot pattern not in DOM').toBeAttached();
   });
 
-  test('fader: dragging visibly moves the thumb (motorized state reflection)', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('fader: dragging visibly moves the thumb (motorized state reflection)', async ({ page, rack }) => {
     await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
@@ -157,9 +146,7 @@ test.describe('AI smoke check', () => {
     ).not.toBe(initialTop);
   });
 
-  test('connect-replaces-existing: patching to an occupied input replaces the prior cable', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('connect-replaces-existing: patching to an occupied input replaces the prior cable', async ({ page, rack }) => {
     await spawnPatch(
       page,
       [
@@ -188,14 +175,12 @@ test.describe('AI smoke check', () => {
     await expect(page.locator('.svelte-flow__edge'), 'still 1 edge after replace').toHaveCount(1);
   });
 
-  test('detach-on-grab: jack-clicking a patched input removes the existing cable', async ({ page }) => {
+  test('detach-on-grab: jack-clicking a patched input removes the existing cable', async ({ page, rack }) => {
     // Redesign: cable dragging is retired. The "grab a patched input to
     // rewire it" gesture is now a jack-click on the patched INPUT row — it
     // detaches the existing cable + picks it up for re-patching. We assert
     // the detach half here (the cable is removed the moment the input row is
     // clicked); Esc then drops the carried cable so no new edge forms.
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
       [
@@ -234,7 +219,7 @@ test.describe('AI smoke check', () => {
     await expect(page.locator('.svelte-flow__edge')).toHaveCount(0);
   });
 
-  test('delete: selecting an edge + Backspace removes it from the patch', async ({ page }) => {
+  test('delete: selecting an edge + Backspace removes it from the patch', async ({ page, rack }) => {
     // Headless Playwright can't reliably click Svelte Flow's thin SVG edge
     // (the visible stroke is 3 px; the wider invisible interaction band has
     // subtle pointer-events semantics). Instead of a brittle SVG click, we
@@ -245,8 +230,6 @@ test.describe('AI smoke check', () => {
     // deleteElements → ondelete path, which Canvas's handleDelete mirrors back
     // into the patch graph. So this asserts the full select→Backspace→teardown
     // behaviour, just with a deterministic selection step.
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
       [
@@ -302,9 +285,7 @@ test.describe('AI smoke check', () => {
       .toBe(0);
   });
 
-  test('clear: Clear button removes all nodes + edges from patch + DOM', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('clear: Clear button removes all nodes + edges from patch + DOM', async ({ page, rack }) => {
     await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
     await expect(page.locator('.svelte-flow__edge')).toHaveCount(6);
@@ -319,9 +300,7 @@ test.describe('AI smoke check', () => {
     expect(statusText).toMatch(/edges\s*0/);
   });
 
-  test('node-drag: dragging a card persists position back to the patch graph', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('node-drag: dragging a card persists position back to the patch graph', async ({ page, rack }) => {
     await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
@@ -350,10 +329,8 @@ test.describe('AI smoke check', () => {
     expect(after, `node transform should change after drag (was ${before})`).not.toBe(before);
   });
 
-  test('canvas: spawned patch produces audio (peak meter > 0) @smoke', async ({ page }) => {
+  test('canvas: spawned patch produces audio (peak meter > 0) @smoke', async ({ page, rack }) => {
     const cc = captureConsole(page);
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
     await page.getByTestId('load-example-select').selectOption('sequenced-vco');
 
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });

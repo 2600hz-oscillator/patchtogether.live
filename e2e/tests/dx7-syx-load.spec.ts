@@ -18,7 +18,8 @@
 // `page.evaluate` and feed it to the card's hidden file input via a
 // DataTransfer-style File. No user-filesystem dependency.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'serial' });
@@ -59,10 +60,7 @@ async function readScopeFrame(page: Page, scopeId: string): Promise<number[]> {
   }, scopeId);
 }
 
-test('dx7: uploading a 32-voice SYX populates the dropdown + selecting different patches changes the audible waveform', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('dx7: uploading a 32-voice SYX populates the dropdown + selecting different patches changes the audible waveform', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [

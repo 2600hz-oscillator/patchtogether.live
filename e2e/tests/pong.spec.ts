@@ -10,7 +10,8 @@
 //      LEFT paddle's reported Y on the snapshot. This proves the
 //      end-to-end CV-in → game-state path.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -72,9 +73,7 @@ test('pong: drop module → card mounts with no console errors', async ({ page }
   expect(errors.filter((e) => !e.includes('AudioContext'))).toEqual([]);
 });
 
-test('pong: ball moves across simulated time (game-loop ticks)', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('pong: ball moves across simulated time (game-loop ticks)', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'p', type: 'pong', position: { x: 200, y: 200 } }]);
 
   // Trigger the audio gate (so the AudioContext resumes — modules need it).
@@ -102,9 +101,7 @@ test('pong: ball moves across simulated time (game-loop ticks)', async ({ page }
     .toBe(true);
 });
 
-test('pong: CV source patched into paddle_left moves the on-screen paddle', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('pong: CV source patched into paddle_left moves the on-screen paddle', async ({ page, rack }) => {
   // BUGGLES is the simplest CV source we have. Its `smooth` output is a
   // slow-changing voltage in roughly [-1, +1] — exactly what we feed into
   // a paddle CV input. The exact paddle position is non-deterministic

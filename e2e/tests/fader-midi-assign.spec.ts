@@ -11,7 +11,7 @@
 // Simulated MIDI (no hardware / no permission prompt) via the dev-only
 // __midiTestInstall / __midiTestInject hooks — same path real CCs take.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 import type { Page } from '@playwright/test';
 
@@ -53,15 +53,7 @@ async function injectCc(page: Page, channel: number, cc: number, value: number):
   );
 }
 
-test('FADER A↔B + dry/wet sliders are MIDI/Electra assignable (right-click → learn → CC drives param)', async ({
-  page,
-}) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('FADER A↔B + dry/wet sliders are MIDI/Electra assignable (right-click → learn → CC drives param)', async ({ page, rack, errorWatch }) => {
   await page.evaluate(() => window.localStorage.removeItem('pt.midi-bindings.v1'));
 
   await spawnPatch(
@@ -103,5 +95,4 @@ test('FADER A↔B + dry/wet sliders are MIDI/Electra assignable (right-click →
     .toBeGreaterThan(0.3);
   await expect(card.locator('[data-testid="fader-drywet-midi-badge"]'), 'dry/wet shows bound badge').toBeVisible();
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });

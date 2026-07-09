@@ -8,7 +8,8 @@
 // non-render path: the load-preset menu lists smpte-bars and re-applying it
 // hot-swaps without crash/blank, with a renderer-tolerant OUTPUT floor.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 /** OUTPUT canvas pixel stats — the OUTPUT card blits its sampled FBO texture
@@ -34,10 +35,8 @@ async function outputStats(page: Page): Promise<{ nonZeroFrac: number; variance:
 }
 
 test.describe('vfpga-runner host module', () => {
-  test('the load-preset menu lists smpte-bars and re-applies it (hot-swap stays valid)', async ({ page }) => {
+  test('the load-preset menu lists smpte-bars and re-applies it (hot-swap stays valid)', async ({ page, rack }) => {
     test.setTimeout(45_000);
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
 
     await spawnPatch(
       page,

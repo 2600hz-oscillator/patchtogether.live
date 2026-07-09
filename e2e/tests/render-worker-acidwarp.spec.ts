@@ -25,7 +25,8 @@
 // non-black under CI's exact renderer flags. The flag is OFF by default; the ON
 // test flips it via addInitScript BEFORE boot.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { installRenderSmokeHooks, stepAndReadStats, assertRenderStats } from './_render-smoke';
 
@@ -86,14 +87,11 @@ test.describe('Fix E render worker — acidwarp', () => {
   // worker render path produces non-black output under CI's SwiftShader (the
   // Fix-E Phase-0 spike already confirmed it does). Renderer-tolerant (non-black
   // fraction + delivered-frame count, NOT exact pixels).
-  test('flag ON: acidwarp renders in the worker; downstream OUTPUT is non-black @webgl-smoke', async ({ page }) => {
+  test('flag ON: acidwarp renders in the worker; downstream OUTPUT is non-black @webgl-smoke', async ({ page, errorWatch }) => {
     // Worker WebGL2 compiles + warms slowly on CI's software renderer. The
     // readiness poll below is bounded by REAL worker progress, not a fixed
     // budget; 60s headroom covers boot + worker spawn + shader warm-up on CI.
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     // Flip the worker flag ON before the app boots (default is OFF).
     await page.addInitScript(() => {
@@ -166,17 +164,13 @@ test.describe('Fix E render worker — acidwarp', () => {
       console.log('[render-worker] acidwarp worker-WebGL2 unavailable on this renderer → main-thread fallback (OUTPUT non-black)');
     }
 
-    expect(errors, 'no console / page errors with the render worker on').toEqual([]);
   });
 
-  test('flag OFF (default): acidwarp renders on the main thread — deterministic render smoke (parity)', async ({ page }) => {
+  test('flag OFF (default): acidwarp renders on the main thread — deterministic render smoke (parity)', async ({ page, errorWatch }) => {
     // The flag-off path is the existing main-thread render: prod's default. With
     // no worker, acidwarp reads `frame.time` directly, so a frozen clock + paused
     // rAF make it bit-stable → pure DRS on its OWN output texture.
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await installRenderSmokeHooks(page);
 
@@ -209,6 +203,5 @@ test.describe('Fix E render worker — acidwarp', () => {
     expect(Math.abs(b.mean - a.mean), `frozen output is frame-stable (mean ${a.mean.toFixed(3)} vs ${b.mean.toFixed(3)})`).toBeLessThan(0.5);
     expect(Math.abs(b.variance - a.variance), 'frozen output variance is frame-stable').toBeLessThan(1.0);
 
-    expect(errors, 'no console / page errors (flag off)').toEqual([]);
   });
 });

@@ -19,7 +19,7 @@
 // We use `noise` as the test source — it's the only audio-domain module
 // with zero inputs that emits audio out of the box (no pitch CV needed).
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 import {
   readScopeSnapshot,
@@ -91,16 +91,7 @@ test('audioOut: master fader sweep changes downstream signal level', async ({ pa
   expect(errors, errors.join('; ')).toEqual([]);
 });
 
-test('destroy: bit-crush / decimate passes audio through to its output', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text());
-  });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('destroy: bit-crush / decimate passes audio through to its output', async ({ page, rack, errorWatch }) => {
   // noise.white -> destroy.audio -> scope.ch1 -> audioOut.L
   // destroy params: decimate=8 (~3-bit-sample-rate reduction), bits=4
   // (heavy bitcrush), wet=1 (fully wet). Output should still emit.
@@ -134,19 +125,9 @@ test('destroy: bit-crush / decimate passes audio through to its output', async (
   ).toBeGreaterThan(0.01);
   expect(sum.nonzeroSamples / sum.totalSamples).toBeGreaterThan(0.5);
 
-  expect(errors, errors.join('; ')).toEqual([]);
 });
 
-test('scope: ch1 captures wired audio, ch2 is silent when unwired', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text());
-  });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('scope: ch1 captures wired audio, ch2 is silent when unwired', async ({ page, rack, errorWatch }) => {
   // Wire noise.white -> scope.ch1 ONLY. ch2 is intentionally left
   // unconnected so we can assert it reads as silence.
   await spawnPatch(
@@ -174,19 +155,9 @@ test('scope: ch1 captures wired audio, ch2 is silent when unwired', async ({ pag
   // ch2 unwired -> silent
   expect(ch2.peak, `scope ch2 should be silent (peak=${ch2.peak.toFixed(6)})`).toBeLessThan(1e-3);
 
-  expect(errors, errors.join('; ')).toEqual([]);
 });
 
-test('scope: ch1_out passthrough emits audio downstream', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text());
-  });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('scope: ch1_out passthrough emits audio downstream', async ({ page, rack, errorWatch }) => {
   // noise -> scope.ch1 -> scope2.ch1 (chained scopes). Validates that
   // scope.ch1_out is a real passthrough audio output, not a stub.
   await spawnPatch(
@@ -222,7 +193,6 @@ test('scope: ch1_out passthrough emits audio downstream', async ({ page }) => {
     `scope2 ch1 (downstream of scope1.ch1_out) peak=${sum2.peak.toFixed(4)}; scope1=${sum1.peak.toFixed(4)}`,
   ).toBeGreaterThan(0.005);
 
-  expect(errors, errors.join('; ')).toEqual([]);
 });
 
 test('sticky: meta-domain card renders without engine binding', async ({ page }) => {
@@ -273,18 +243,7 @@ test('sticky: meta-domain card renders without engine binding', async ({ page })
   expect(errors, errors.join('; ')).toEqual([]);
 });
 
-test('integration (Group 1): noise -> destroy -> scope -> audioOut chain produces audio end-to-end', async ({
-  page,
-}) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text());
-  });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('integration (Group 1): noise -> destroy -> scope -> audioOut chain produces audio end-to-end', async ({ page, rack, errorWatch }) => {
   // The full sinks+utility chain: every module from Group 1 (minus
   // sticky which is a no-engine meta card) wired in sequence.
   await spawnPatch(
@@ -311,5 +270,4 @@ test('integration (Group 1): noise -> destroy -> scope -> audioOut chain produce
   expect(sum.peak, `Group 1 chain peak=${sum.peak.toFixed(4)} rms=${sum.rms.toFixed(4)}`).toBeGreaterThan(0.01);
   expect(sum.nonzeroSamples / sum.totalSamples).toBeGreaterThan(0.5);
 
-  expect(errors, errors.join('; ')).toEqual([]);
 });

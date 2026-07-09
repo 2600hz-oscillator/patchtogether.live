@@ -5,7 +5,7 @@
 // gate/signal source, route output through a Scope, then assert the Scope
 // snapshot reports a non-trivial peak — i.e. audio actually flows.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -38,16 +38,7 @@ async function readScopePeak(page: import('@playwright/test').Page, scopeId: str
   return peak;
 }
 
-test('MEOWBOX: gate triggers audible voice on L output', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text());
-  });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('MEOWBOX: gate triggers audible voice on L output', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
@@ -81,19 +72,9 @@ test('MEOWBOX: gate triggers audible voice on L output', async ({ page }) => {
 
   const peak = await readScopePeak(page, 'scope');
   expect(peak, `MEOWBOX scope peak (got ${peak})`).toBeGreaterThan(0.001);
-  expect(errors, `MEOWBOX errors: ${errors.join('; ')}`).toEqual([]);
 });
 
-test('TIMELORDE: 1x output emits gate pulses at the configured BPM', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text());
-  });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('TIMELORDE: 1x output emits gate pulses at the configured BPM', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
@@ -122,10 +103,9 @@ test('TIMELORDE: 1x output emits gate pulses at the configured BPM', async ({ pa
     if (peak > 0.5) break;
   }
   expect(peak, `TIMELORDE 4x peak (got ${peak})`).toBeGreaterThan(0.5);
-  expect(errors, `TIMELORDE errors: ${errors.join('; ')}`).toEqual([]);
 });
 
-test('TIMELORDE: singleton — a duplicate is cleaned up to a single survivor by the dedupe pass', async ({ page }) => {
+test('TIMELORDE: singleton — a duplicate is cleaned up to a single survivor by the dedupe pass', async ({ page, rack }) => {
   // Phase 4c — deterministic post-merge singleton cleanup.
   //
   // PRE-4c MODEL (now obsolete): a forced 2nd TIMELORDE PERSISTED in the graph
@@ -144,8 +124,6 @@ test('TIMELORDE: singleton — a duplicate is cleaned up to a single survivor by
   // wait can never be satisfied under 4c (that was the pre-4c assumption that
   // timed out). No provider is attached on `/`, so the cleanup runs as the lone
   // elected deleter.
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
 
   // Bootstrap the engine + clear the doc (empty spawn => no DOM-mount wait).
   await spawnPatch(page, [], []);
@@ -225,16 +203,7 @@ test('TIMELORDE: singleton — a duplicate is cleaned up to a single survivor by
   );
 });
 
-test("CHARLOTTE'S ECHOS: passes signal through and produces echo tail", async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text());
-  });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test("CHARLOTTE'S ECHOS: passes signal through and produces echo tail", async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
@@ -290,19 +259,9 @@ test("CHARLOTTE'S ECHOS: passes signal through and produces echo tail", async ({
     await page.waitForTimeout(50);
   }
   expect(peak, `Echos scope peak (got ${peak})`).toBeGreaterThan(0.001);
-  expect(errors, `Echos errors: ${errors.join('; ')}`).toEqual([]);
 });
 
-test('MIXMSTRS: passes channel 1 through to master out', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text());
-  });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('MIXMSTRS: passes channel 1 through to master out', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
@@ -324,13 +283,9 @@ test('MIXMSTRS: passes channel 1 through to master out', async ({ page }) => {
 
   const peak = await readScopePeak(page, 'scope');
   expect(peak, `MIXMSTRS scope peak (got ${peak})`).toBeGreaterThan(0.01);
-  expect(errors, `MIXMSTRS errors: ${errors.join('; ')}`).toEqual([]);
 });
 
-test('MIXMSTRS: multiple instances allowed — both materialize in engine', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('MIXMSTRS: multiple instances allowed — both materialize in engine', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [

@@ -6,20 +6,11 @@
 // the note text reads "A4". Also confirms the tuning meter's center hash
 // element is rendered (the hash is the visual "0 cents" reference).
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe('SCOPE pitch tuner readout', () => {
-  test('ANALOG-VCO at A4 → pitch=440Hz / note=A4 / center hash visible', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => {
-      if (m.type() === 'error') errors.push(m.text());
-    });
-
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('ANALOG-VCO at A4 → pitch=440Hz / note=A4 / center hash visible', async ({ page, rack, errorWatch }) => {
     await spawnPatch(
       page,
       [
@@ -79,13 +70,9 @@ test.describe('SCOPE pitch tuner readout', () => {
     const marker = scopeCard.locator('[data-testid="tuning-meter-marker"]');
     await expect(marker).toBeVisible();
 
-    expect(errors, `unexpected errors: ${errors.join('\n')}`).toEqual([]);
   });
 
-  test('SCOPE with no signal shows em-dashes', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('SCOPE with no signal shows em-dashes', async ({ page, rack }) => {
     await spawnPatch(
       page,
       [

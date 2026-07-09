@@ -11,7 +11,8 @@
 //      stays live (the whole point: control collapsed modules).
 //   6. "Remove from <surface>" takes the proxy away again.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 interface PatchNode {
@@ -192,9 +193,7 @@ async function injectCc(page: Page, channel: number, cc: number, value: number):
   }, { channel, cc, value });
 }
 
-test('multiple controls from multiple modules: grouped, lock/unlock + move, MIDI-mapped works on the proxy', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('multiple controls from multiple modules: grouped, lock/unlock + move, MIDI-mapped works on the proxy', async ({ page, rack }) => {
   await installSimMidi(page);
   // Two source modules + a surface.
   await spawnPatch(page, [
@@ -303,9 +302,7 @@ async function bindControls(page: Page, surfaceId: string): Promise<void> {
   }, surfaceId);
 }
 
-test('card grows so ALL groups + knobs render within bounds (locked + unlocked)', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('card grows so ALL groups + knobs render within bounds (locked + unlocked)', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'cs-1', type: 'controlSurface', position: { x: 900, y: 40 }, domain: 'meta' },
     { id: 'adsr-1', type: 'adsr', position: { x: 40, y: 40 }, domain: 'audio' },
@@ -450,9 +447,7 @@ async function seedToyboxAndBindings(page: Page): Promise<void> {
   });
 }
 
-test('toybox material + combine params: proxy renders on the surface and drives the live node', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('toybox material + combine params: proxy renders on the surface and drives the live node', async ({ page, rack }) => {
   // The TOYBOX card is WIDE (~880px) + tall and has its OWN SCALE knob; place
   // the surface well to the right so its proxy knobs aren't occluded by the
   // toybox card. spawnPatch's fitView zooms both into view, preserving the gap.
@@ -513,13 +508,11 @@ test('toybox material + combine params: proxy renders on the surface and drives 
 // drove the wrong layer when the model sat on layer 2/3/4). This drives the WHOLE
 // chain through the real CARD knob (right-click → Send to surface), so it proves
 // the card emission, not just the resolver.
-test('toybox model SCALE on a NON-FIRST layer: card knob → surface drives the LEARNED layer', async ({ page }) => {
+test('toybox model SCALE on a NON-FIRST layer: card knob → surface drives the LEARNED layer', async ({ page, rack }) => {
   // Heavy TOYBOX WebGL card under 10-way-sharded CI CPU contention renders
   // controls well past the default 30s/5s budgets (passes ~8s locally idle).
   // Mirror the sibling toybox specs' CI-robustness timeout.
   test.setTimeout(60_000);
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'toybox-1', type: 'toybox', position: { x: 0, y: 0 }, domain: 'video' },
     { id: 'cs-1', type: 'controlSurface', position: { x: 1200, y: 0 }, domain: 'meta' },

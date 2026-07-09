@@ -22,7 +22,8 @@
 // We assert pixel STATISTICS (non-black + spatial structure + a frozen
 // clean-vs-bent difference), not pixel-exact content — the module is VRT-exempt.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { installRenderSmokeHooks, stepAndReadStats, assertRenderStats } from './_render-smoke';
 
@@ -115,11 +116,8 @@ async function freezeB3ntb0x(page: import('@playwright/test').Page): Promise<voi
 }
 
 test.describe('B3NTB0X — NTSC composite re-arch output', () => {
-  test('spawns + canvas mounts + decodes a non-black, frame-stable frame', async ({ page }) => {
+  test('spawns + canvas mounts + decodes a non-black, frame-stable frame', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await freezeB3ntb0x(page);
     await page.goto('/rack');
@@ -155,14 +153,10 @@ test.describe('B3NTB0X — NTSC composite re-arch output', () => {
     expect(Math.abs(b.mean - a.mean), `frozen CRT output is frame-stable (mean ${a.mean.toFixed(3)} vs ${b.mean.toFixed(3)})`).toBeLessThan(0.5);
     expect(Math.abs(b.variance - a.variance), 'frozen CRT output variance is frame-stable').toBeLessThan(1.0);
 
-    expect(errors, 'no console / page errors during B3NTB0X render').toEqual([]);
   });
 
-  test('Sync Crush + Enhance visibly change the decoded output (the bend proof point)', async ({ page }) => {
+  test('Sync Crush + Enhance visibly change the decoded output (the bend proof point)', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await freezeB3ntb0x(page);
     await page.goto('/rack');
@@ -214,7 +208,6 @@ test.describe('B3NTB0X — NTSC composite re-arch output', () => {
       `bent output differs from clean (Δmean=${meanDelta.toFixed(2)} Δvar=${varDelta.toFixed(2)} Δnz=${nzDelta.toFixed(3)})`,
     ).toBe(true);
 
-    expect(errors, 'no console / page errors during B3NTB0X bend').toEqual([]);
   });
 
   // LIVE-CONTROLS PIXEL GATE (owner: "controls that don't do much/anything"),
@@ -245,11 +238,8 @@ test.describe('B3NTB0X — NTSC composite re-arch output', () => {
   //   ac_dc     — the strengthened AC-coupling path
   //   tbc       — time-base correction (1=steady, 0=wobble)
   //   bend_a/b/c/d — the bend-network taps
-  test('newly-wired SPATIAL controls change the decoded output (frozen; time-modulated ones are unit-tested)', async ({ page }) => {
+  test('newly-wired SPATIAL controls change the decoded output (frozen; time-modulated ones are unit-tested)', async ({ page, errorWatch }) => {
     test.setTimeout(120_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     // Pin BOTH clocks BEFORE boot (engine rAF/clock + b3ntb0x's own subcarrier-
     // drift clock at the off-zero t=2 so sub_drift's term is exercised, not the
@@ -333,7 +323,6 @@ test.describe('B3NTB0X — NTSC composite re-arch output', () => {
       await setVideoParam(page, 'bb', param, CLEAN[param]!);
     }
 
-    expect(errors, 'no console / page errors during B3NTB0X live-controls gate').toEqual([]);
   });
 
   // NOTE (Phase 2 lean, webgl-suite-optimization §1/§2/§7-3): the old test 3

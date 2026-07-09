@@ -20,7 +20,8 @@
 // rAF-throttling flake per ci-swiftshader-video-e2e-timeouts). VRT untouched
 // (aspect defaults 4:3).
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 /** Read the video engine's current render res via the dev __engine hook. */
@@ -75,16 +76,7 @@ async function setAspect(page: Page, aspect: '4:3' | '16:9'): Promise<void> {
 }
 
 test.describe('video: OUTPUT aspect switch reallocates IN PLACE (no teardown)', () => {
-  test('4:3↔16:9 changes engine res in place + keeps LINES→OUTPUT routed', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => {
-      if (m.type() === 'error') errors.push(m.text());
-    });
-
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('4:3↔16:9 changes engine res in place + keeps LINES→OUTPUT routed', async ({ page, rack, errorWatch }) => {
     // LINES (procedural source) → OUTPUT.
     await spawnPatch(
       page,
@@ -140,7 +132,6 @@ test.describe('video: OUTPUT aspect switch reallocates IN PLACE (no teardown)', 
     expect(rBack?.source, 'OUTPUT STILL fed by LINES after 4:3 switch').toBe('v-lines');
     expect(rBack?.hasInput, 'OUTPUT still has a live input texture back in 4:3').toBe(true);
 
-    expect(errors, `no page errors during the switch: ${errors.join(' | ')}`).toEqual([]);
   });
 
   test('save@16:9 → reload restores 16:9 engine res + OUTPUT live', async ({ page }) => {

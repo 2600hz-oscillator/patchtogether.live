@@ -24,7 +24,7 @@
 // ART (art/scenarios/snaredrum/profile.test.ts); this e2e proves the LIVE
 // trigger/gate → snare → audible-stereo chain.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 import { readScopeSnapshot } from './_module-coverage-helpers';
 
@@ -104,14 +104,7 @@ async function seedSteps(
   );
 }
 
-test('SNARE DRUM real chain: SEQUENCER → trigger_in → audible stereo hits (L + R)', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('SNARE DRUM real chain: SEQUENCER → trigger_in → audible stereo hits (L + R)', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
@@ -151,17 +144,9 @@ test('SNARE DRUM real chain: SEQUENCER → trigger_in → audible stereo hits (L
   expect(hit.l.max, 'audible RMS on audio_l').toBeGreaterThan(0.005);
   expect(hit.r.max, 'audible RMS on audio_r').toBeGreaterThan(0.005);
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });
 
-test('SNARE DRUM real chain: SEQUENCER held gate → gate_in → CONTINUOUS two-hand roll (L + R, no gaps)', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('SNARE DRUM real chain: SEQUENCER held gate → gate_in → CONTINUOUS two-hand roll (L + R, no gaps)', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
@@ -224,5 +209,4 @@ test('SNARE DRUM real chain: SEQUENCER held gate → gate_in → CONTINUOUS two-
     expect(diff, 'the roll is a genuine stereo image').toBeGreaterThan(1e-4);
   }
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });

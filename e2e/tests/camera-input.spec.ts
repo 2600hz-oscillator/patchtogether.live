@@ -32,18 +32,15 @@
 // Runs under the `chromium-camera` Playwright project (camera permission
 // pre-granted) so the card's onMount auto-acquire succeeds quietly.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 import { installRenderSmokeHooks, stepAndReadStats, assertRenderStats } from './_render-smoke';
 
 const FIXED_STEPS = 6;
 
 test.describe('CAMERA → OUTPUT (deterministic render smoke)', () => {
-  test('injected frame renders through the camera pass to a non-black, frame-stable FBO', async ({ page }) => {
+  test('injected frame renders through the camera pass to a non-black, frame-stable FBO', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     // Pause the engine rAF loop (the test owns the exact frame count), pin the
     // clock, AND enable the deterministic camera frame — all BEFORE boot so the
@@ -92,7 +89,6 @@ test.describe('CAMERA → OUTPUT (deterministic render smoke)', () => {
     expect(Math.abs(b.mean - a.mean), `frozen camera output is frame-stable (mean ${a.mean.toFixed(3)} vs ${b.mean.toFixed(3)})`).toBeLessThan(0.5);
     expect(Math.abs(b.variance - a.variance), 'frozen camera output variance is frame-stable').toBeLessThan(1.0);
 
-    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 });
 
@@ -186,9 +182,7 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
     expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 
-  test('recovers from "no-cameras-found": picking an available camera starts the stream', async ({
-    page,
-  }) => {
+  test('recovers from "no-cameras-found": picking an available camera starts the stream', async ({ page, errorWatch }) => {
     // Reproduce the reported bug: load a patch whose saved camera is gone (or on
     // a different machine), land in 'no-cameras-found' — then switch to an
     // AVAILABLE camera and confirm the stream actually starts (it used to stay
@@ -198,11 +192,6 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
     // reject (OverconstrainedError — exactly what a missing saved device throws)
     // while a window flag is set, then flip the flag and let the real Chromium
     // fake device satisfy the pick.
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => {
-      if (m.type() === 'error') errors.push(m.text());
-    });
 
     await page.addInitScript(() => {
       const md = navigator.mediaDevices;
@@ -268,7 +257,6 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
       { timeout: 10_000 },
     );
 
-    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 
   test('shows "no cameras" if enumerateDevices returns empty', async ({ page }) => {

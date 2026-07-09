@@ -9,7 +9,8 @@
 // the cable's type, the splice is refused and a normal spawn-at-cursor
 // happens instead.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -79,10 +80,7 @@ async function midpointOfEdge(page: Page, edgeId: string): Promise<{ x: number; 
   }, edgeId);
 }
 
-test('palette drop within 12px of cable midpoint splices a compatible module', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('palette drop within 12px of cable midpoint splices a compatible module', async ({ page, rack }) => {
   // LFO (cv outputs) → FILTER (cv input on cutoff). Wide separation so
   // the midpoint is comfortably inside the canvas.
   await spawnPatch(
@@ -145,10 +143,7 @@ test('palette drop within 12px of cable midpoint splices a compatible module', a
   expect(newToFilter!.targetType).toBe('cv');
 });
 
-test('palette drop near cable falls back to normal spawn when new module has no compatible input', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('palette drop near cable falls back to normal spawn when new module has no compatible input', async ({ page, rack }) => {
   // Same cv-typed cable, but NOISE has no inputs at all — splice must
   // fall back to a plain spawn-at-cursor.
   await spawnPatch(
@@ -191,9 +186,7 @@ test('palette drop near cable falls back to normal spawn when new module has no 
   expect(edges.length, 'exactly the original cable, no new edges from splice').toBe(1);
 });
 
-test('palette drop outside 12px tolerance does NOT splice', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('palette drop outside 12px tolerance does NOT splice', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [

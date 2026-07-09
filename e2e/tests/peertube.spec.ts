@@ -20,7 +20,8 @@
 // on the element actually decoding (readyState), so it SKIPS (never fails) where
 // the headless runner can't decode the fixture.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { spawnPatch } from './_helpers';
@@ -269,7 +270,7 @@ test.describe('PEERTUBE — network-mocked source chain', () => {
     expect(errors, `no page errors: ${errors.join(' | ')}`).toEqual([]);
   });
 
-  test('audio_l/audio_r -> AUDIO OUT: real HLS-stream energy reaches the terminal output (capability-gated) @video', async ({ page }) => {
+  test('audio_l/audio_r -> AUDIO OUT: real HLS-stream energy reaches the terminal output (capability-gated) @video', async ({ page, errorWatch }) => {
     // Drives the REAL HLS path (resolveStream → hls.js attach), the path a live
     // PeerTube instance actually serves — NOT the progressive-MP4 fallback. This
     // is the regression guard for the operator-reported "video module = no audio":
@@ -278,9 +279,6 @@ test.describe('PEERTUBE — network-mocked source chain', () => {
     // element feeds SILENCE into the MediaElementSource (the audio is gated at the
     // SOURCE, upstream of the Web Audio tap). Mirrors tv-librarian-audio.spec.ts.
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await installHlsMocks(page);
     await page.goto('/rack');
@@ -376,7 +374,6 @@ test.describe('PEERTUBE — network-mocked source chain', () => {
     const muted = await page.getByTestId('peertube-video').evaluate((el: HTMLVideoElement) => el.muted);
     expect(muted, 'the <video> is un-muted after audio wiring (else the MediaElementSource is silent)').toBe(false);
 
-    expect(errors, `no page errors: ${errors.join(' | ')}`).toEqual([]);
   });
 
   test('CORS-misconfigured media → graceful "display unavailable", never a crash/hang @video', async ({ page }) => {

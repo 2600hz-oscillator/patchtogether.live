@@ -28,7 +28,8 @@
 // SwiftShader software renderer is far slower than a real GPU — see the
 // ci-swiftshader-video-e2e-timeouts memory: don't use a flat 90s).
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 // ACIDWARP + SHAPES + MAPPER + videoOut are WebGL canvas cards whose
@@ -112,10 +113,7 @@ async function captureMapper(
 }
 
 test.describe('MAPPER — video keyer / matte processor', () => {
-  test('ACIDWARP(video) + SHAPES(key) -> MAPPER -> OUTPUT shows the video only in the keyed region', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  test('ACIDWARP(video) + SHAPES(key) -> MAPPER -> OUTPUT shows the video only in the keyed region', async ({ page, errorWatch }) => {
 
     const stats = await captureMapper(page, 0.5);
 
@@ -129,7 +127,6 @@ test.describe('MAPPER — video keyer / matte processor', () => {
     // would key the whole frame, shownFrac → ~1).
     expect(stats.shownFrac, 'frame is not fully keyed (background matted to black)').toBeLessThan(0.95);
 
-    expect(errors, 'no console / page errors').toEqual([]);
   });
 
   test('raising THRESHOLD shrinks the keyed area; lowering grows it', async ({ page }) => {
@@ -148,9 +145,7 @@ test.describe('MAPPER — video keyer / matte processor', () => {
     ).toBeLessThanOrEqual(low.shownFrac);
   });
 
-  test('CV param routes through the patch store', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('CV param routes through the patch store', async ({ page, rack }) => {
     await spawnPatch(
       page,
       [{ id: 'map', type: 'mapper', position: { x: 200, y: 100 }, domain: 'video' }],

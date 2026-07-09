@@ -18,18 +18,15 @@
 // silence.) Follows the LINES / ACIDWARP DRS template exactly. SwiftShader-
 // frugal: 6 fixed steps, renderer-tolerant floors.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 import { installRenderSmokeHooks, stepAndReadStats, assertRenderStats } from './_render-smoke';
 
 const FIXED_STEPS = 6;
 
 test.describe('GRAPHIC EQ — deterministic render smoke', () => {
-  test('freeze + pause + synchronous step → non-black, structured, frame-stable, zero GL errors', async ({ page }) => {
+  test('freeze + pause + synchronous step → non-black, structured, frame-stable, zero GL errors', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     // Pause the engine rAF loop + pin the clock BEFORE boot.
     await installRenderSmokeHooks(page);
@@ -61,6 +58,5 @@ test.describe('GRAPHIC EQ — deterministic render smoke', () => {
     expect(Math.abs(b.mean - a.mean), `frozen output is frame-stable (mean ${a.mean.toFixed(3)} vs ${b.mean.toFixed(3)})`).toBeLessThan(0.5);
     expect(Math.abs(b.variance - a.variance), 'frozen output variance is frame-stable').toBeLessThan(1.0);
 
-    expect(errors, 'no console / page errors during render').toEqual([]);
   });
 });

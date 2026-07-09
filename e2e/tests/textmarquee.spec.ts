@@ -23,7 +23,8 @@
 // render samples from this file (waitForTimeout → read-once brightness floor),
 // keeping only the editor → store round-trip that has no other coverage.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 const HEAVY_MOUNT_TIMEOUT = 30_000;
@@ -56,10 +57,7 @@ async function spawnMarquee(page: Page): Promise<void> {
 }
 
 test.describe('TEXTMARQUEE — rich-text marquee video generator', () => {
-  test('typing serializes a rich-text model into the patch store', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  test('typing serializes a rich-text model into the patch store', async ({ page, errorWatch }) => {
 
     await spawnMarquee(page);
 
@@ -77,7 +75,6 @@ test.describe('TEXTMARQUEE — rich-text marquee video generator', () => {
       return (m?.paragraphs ?? []).flatMap((p) => (p.runs ?? []).map((r) => r.text ?? '')).join('');
     }, { timeout: 5000, message: 'typed text serialized into the model' }).toContain('HELLO MARQUEE');
 
-    expect(errors, 'no console / page errors').toEqual([]);
   });
 
   test('BOLD toolbar applies a bold run to the selection', async ({ page }) => {

@@ -29,7 +29,7 @@
 // Renderer-independent (spies the JS forward + reads input values) → SwiftShader
 // safe. Gated on the engine reaching 'ready' + e2e hooks (skips on prod-preview).
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch, openModulePalette } from './_helpers';
 
 const BLOOD_ID = 'blood-kb';
@@ -74,9 +74,7 @@ async function spawnBloodReady(page: import('@playwright/test').Page): Promise<b
   return ready;
 }
 
-test('control: Add-module palette receives typing with NO blood present', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('control: Add-module palette receives typing with NO blood present', async ({ page, rack }) => {
   await openModulePalette(page);
   const inp = page.locator('.module-palette input').first();
   await inp.waitFor({ state: 'visible', timeout: 5_000 });

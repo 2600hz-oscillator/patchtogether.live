@@ -5,27 +5,19 @@
 // so the spec is limited to mount + Connect-button + no-crash. The
 // divider math + System Real-Time parsing are covered in unit tests.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('midiclock: drop module → card mounts with no console errors', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('midiclock: drop module → card mounts with no console errors', async ({ page, rack, errorWatch }) => {
   await spawnPatch(page, [{ id: 'mc', type: 'midiclock', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-midiclock');
   await expect(card).toBeVisible();
   await expect(card).toContainText('MIDICLOCK');
-  expect(errors, errors.join('; ')).toEqual([]);
 });
 
-test('midiclock: Connect MIDI… button is visible + interactive', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('midiclock: Connect MIDI… button is visible + interactive', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'mc', type: 'midiclock', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-midiclock');
   await expect(card).toBeVisible();
@@ -34,12 +26,7 @@ test('midiclock: Connect MIDI… button is visible + interactive', async ({ page
   await expect(btn).toBeEnabled();
 });
 
-test('midiclock: clicking Connect does not crash the card', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('midiclock: clicking Connect does not crash the card', async ({ page, rack, errorWatch }) => {
   await spawnPatch(page, [{ id: 'mc', type: 'midiclock', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-midiclock');
   await card.getByRole('button', { name: /Connect MIDI/ }).click();
@@ -47,12 +34,9 @@ test('midiclock: clicking Connect does not crash the card', async ({ page }) => 
   // (permission granted with empty device list, or rejection), neither
   // tears the card down.
   await expect(card).toBeVisible();
-  expect(errors, errors.join('; ')).toEqual([]);
 });
 
-test('midiclock: card exposes the four documented output ports', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('midiclock: card exposes the four documented output ports', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'mc', type: 'midiclock', position: { x: 200, y: 200 } }]);
   // Each output renders as a port-labelled row inside the patch panel. Under
   // the patch-menu redesign the labels live in the PORTALED chrome (appended to

@@ -45,7 +45,8 @@
 // screen coordinate inside the target card, so handleConnectEnd's
 // elementFromPoint resolves the dropped-on card exactly as a real release does.
 
-import { test, expect, type Page, type Locator } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page, type Locator } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 // Serial (not parallel): this spec shares a shard with heavy WebGL video specs
@@ -192,15 +193,11 @@ test('picking a port in the drilled-down picker commits the chosen edge', async 
 // ── (3) reverse-direction drag onto a PatchPanel card opens the picker for the
 //        card's OUTPUTS, and the committed edge is correctly oriented ──────────
 
-test('reverse drag — grab an INPUT, drop on a PatchPanel card — picker offers the card OUTPUTS and orients the edge', async ({
-  page,
-}) => {
+test('reverse drag — grab an INPUT, drop on a PatchPanel card — picker offers the card OUTPUTS and orients the edge', async ({ page, rack }) => {
   // FILTER (audio `audio` INPUT) ← VCO (PatchPanel, audio OUTPUTs). Grabbing the
   // input and dragging to the output is the reverse direction the owner reported
   // as snagging; the picker must offer VCO's compatible OUTPUTS and the
   // resulting edge must run vco.<out> (OUTPUT) → flt.audio (INPUT).
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
   // VCO is the DROP target, so place it where the forward-drag test drops
   // (x:760) — a proven-visible region away from the left viewport edge.
   await spawnPatch(page, [

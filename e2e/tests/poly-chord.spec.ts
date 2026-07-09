@@ -9,15 +9,12 @@
 //     keep working,
 //   - the chord-picker UI cycles mono → maj → min → mono on click.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('poly-chord: maj triad on a4 emits 4 gated lanes with M3 + P5 + octave intervals', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('poly-chord: maj triad on a4 emits 4 gated lanes with M3 + P5 + octave intervals', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'seq', type: 'sequencer', params: { bpm: 240, length: 1, isPlaying: 1, gateLength: 0.9 } },
   ]);
@@ -76,10 +73,7 @@ test('poly-chord: maj triad on a4 emits 4 gated lanes with M3 + P5 + octave inte
   expect(Math.abs((lanes![3]!.pitch ?? -1) - 21 / 12)).toBeLessThan(TOL);
 });
 
-test('poly-chord: min step on a4 emits c5 (m3) instead of c#5 (M3)', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('poly-chord: min step on a4 emits c5 (m3) instead of c#5 (M3)', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'seq', type: 'sequencer', params: { bpm: 240, length: 1, isPlaying: 1, gateLength: 0.9 } },
   ]);
@@ -113,10 +107,7 @@ test('poly-chord: min step on a4 emits c5 (m3) instead of c#5 (M3)', async ({ pa
   expect(Math.abs((laneOnePitch as number) - 1.0)).toBeLessThan(1e-6);
 });
 
-test('poly-chord: backward-compat - polyPitchGate source -> mono pitch sink routes lane 0 (root)', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('poly-chord: backward-compat - polyPitchGate source -> mono pitch sink routes lane 0 (root)', async ({ page, rack }) => {
   // Sequencer (poly pitch out) → VCO (mono pitch in). The engine's
   // resolveConnection() should auto-route lane 0 to the VCO's pitch.
   await spawnPatch(
@@ -171,10 +162,7 @@ test('poly-chord: backward-compat - polyPitchGate source -> mono pitch sink rout
   // test just asserts the read succeeds and the engine kept running.)
 });
 
-test('poly-chord: chord-picker UI cycles mono -> maj -> min -> mono on click', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('poly-chord: chord-picker UI cycles mono -> maj -> min -> mono on click', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'seq', type: 'sequencer', params: { bpm: 60, length: 4, isPlaying: 0 } },
   ]);

@@ -30,7 +30,7 @@
 // ART (art/scenarios/kickdrum/profile.test.ts); this e2e proves the LIVE
 // trigger→kick→audible-deep-sub chain.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 import { readScopePeakOverWindow, readScopeSnapshot } from './_module-coverage-helpers';
 
@@ -57,14 +57,7 @@ function goertzelPower(buf: ArrayLike<number>, sampleRate: number, hz: number): 
 const LOW_BAND_HZ = [30, 45, 60, 75, 90, 105];
 const HIGH_BAND_HZ = [200, 300, 500, 800, 1600, 3200, 4800];
 
-test('KICK DRUM real chain: SEQUENCER → trigger_in → stereo AUDIOOUT — audible RMS + sub-dominant spectrum', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('KICK DRUM real chain: SEQUENCER → trigger_in → stereo AUDIOOUT — audible RMS + sub-dominant spectrum', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
@@ -173,5 +166,4 @@ test('KICK DRUM real chain: SEQUENCER → trigger_in → stereo AUDIOOUT — aud
   // Max-hold agreement: the loudest sub frame beats the loudest high frame.
   expect(maxLow).toBeGreaterThan(maxHigh);
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });

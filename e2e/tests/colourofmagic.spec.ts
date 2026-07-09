@@ -20,7 +20,7 @@
 //      gate;
 //   4. OVER vs CLAMP differ at an out-of-range bias.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import type { Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { installRenderSmokeHooks } from './_render-smoke';
@@ -158,10 +158,7 @@ test.describe('COLOUR OF MAGIC — multi-colorspace video processor', () => {
   // Luma-family taps carry the stripe brightness → they DO have structure.
   const STRUCTURED_TAPS = ['luma', 'ydb_y', 'hsv_v', 'yiq_y', 'ycc_y'];
 
-  test('real chain: all 22 outputs (6 colour + 16 taps) emit a non-black frame', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  test('real chain: all 22 outputs (6 colour + 16 taps) emit a non-black frame', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
     await page.goto('/rack');
@@ -201,13 +198,9 @@ test.describe('COLOUR OF MAGIC — multi-colorspace video processor', () => {
     const b = await setStepRead(page, { nodeId: 'com', portId: 'rgb', steps: FIXED_STEPS });
     expect(Math.abs(a.mean - b.mean), 'frozen rgb out frame-stable').toBeLessThan(0.5);
 
-    expect(errors, 'no console / page errors').toEqual([]);
   });
 
-  test('YIQ I-bias warms the picture; YCbCr studio-swing responds + crushes', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  test('YIQ I-bias warms the picture; YCbCr studio-swing responds + crushes', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
     await page.goto('/rack');
@@ -232,13 +225,9 @@ test.describe('COLOUR OF MAGIC — multi-colorspace video processor', () => {
     assertFrame(ccClamp, FIXED_STEPS); assertFrame(ccWrap, FIXED_STEPS);
     expect(Math.abs(ccClamp.mean - ccWrap.mean), 'studio-swing CLAMP vs WRAP differ at over-drive').toBeGreaterThan(15);
 
-    expect(errors, 'no console / page errors').toEqual([]);
   });
 
-  test('palette REPLACE visibly recolours the rgb out at the default swatches (nudge)', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  test('palette REPLACE visibly recolours the rgb out at the default swatches (nudge)', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
     await page.goto('/rack');
@@ -254,13 +243,9 @@ test.describe('COLOUR OF MAGIC — multi-colorspace video processor', () => {
     const channelShift = Math.abs(direct.r - replaced.r) + Math.abs(direct.g - replaced.g) + Math.abs(direct.b - replaced.b);
     expect(channelShift, 'REPLACE-on at the default swatches materially recolours the rgb out').toBeGreaterThan(20);
 
-    expect(errors, 'no console / page errors').toEqual([]);
   });
 
-  test('recolorization: bias_r reddens rgb; luma is grayscale; Db bias moves blue-yellow', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  test('recolorization: bias_r reddens rgb; luma is grayscale; Db bias moves blue-yellow', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
     await page.goto('/rack');
@@ -285,13 +270,9 @@ test.describe('COLOUR OF MAGIC — multi-colorspace video processor', () => {
     assertFrame(db0, FIXED_STEPS); assertFrame(dbHi, FIXED_STEPS);
     expect(dbHi.b, 'positive Db bias raises blue (blue-yellow axis)').toBeGreaterThan(db0.b + 15);
 
-    expect(errors, 'no console / page errors').toEqual([]);
   });
 
-  test('mono override CLOBBERS the channel (green grating replaces a green-poor source)', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  test('mono override CLOBBERS the channel (green grating replaces a green-poor source)', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
 
@@ -324,13 +305,9 @@ test.describe('COLOUR OF MAGIC — multi-colorspace video processor', () => {
     expect(b.g, 'green override clobbers the green channel (bright grating)').toBeGreaterThan(a.g + 30);
     expect(b.variance, 'clobbered green out has grating structure').toBeGreaterThan(a.variance + 100);
 
-    expect(errors, 'no console / page errors').toEqual([]);
   });
 
-  test('OVER vs CLAMP differ at an out-of-range bias', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  test('OVER vs CLAMP differ at an out-of-range bias', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
     await page.goto('/rack');
@@ -344,6 +321,5 @@ test.describe('COLOUR OF MAGIC — multi-colorspace video processor', () => {
     assertFrame(clamp, FIXED_STEPS); assertFrame(wrap, FIXED_STEPS);
     expect(Math.abs(clamp.r - wrap.r), 'OVER (wrap) and CLAMP (clip) produce different red').toBeGreaterThan(15);
 
-    expect(errors, 'no console / page errors').toEqual([]);
   });
 });

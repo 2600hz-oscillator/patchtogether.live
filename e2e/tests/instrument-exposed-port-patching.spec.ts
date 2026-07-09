@@ -38,7 +38,8 @@
 // Also asserts the symmetric "exposed INPUT fed by external source" case
 // so both edge directions are covered.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -194,9 +195,7 @@ test('exposed group OUTPUT → external INPUT: cable lands in patch.edges (regre
   expect(ext!.sourceType).toBe('audio');
 });
 
-test('exposed group INPUT ← external SOURCE: cable lands in patch.edges (regression)', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('exposed group INPUT ← external SOURCE: cable lands in patch.edges (regression)', async ({ page, rack }) => {
   // VCO + FILTER will be grouped (FILTER.cutoff exposed). External LFO
   // will feed the exposed cutoff.
   await spawnPatch(
@@ -269,13 +268,11 @@ test('exposed group INPUT ← external SOURCE: cable lands in patch.edges (regre
   expect(ext!.targetType).toBe('cv');
 });
 
-test('connect with both endpoints on (different) groups: cable still lands (sanity)', async ({ page }) => {
+test('connect with both endpoints on (different) groups: cable still lands (sanity)', async ({ page, rack }) => {
   // Edge case: two grouped instruments wired together. Source group's
   // exposed OUTPUT → dest group's exposed INPUT. Pre-fix, neither def
   // resolved + the connect bailed. This catches a regression where the
   // fix accidentally short-circuited only one side of the lookup.
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
     [

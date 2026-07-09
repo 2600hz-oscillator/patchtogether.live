@@ -7,7 +7,8 @@
 // renderer-tolerant by construction (no SwiftShader/real-GPU divergence) — but
 // we still assert a non-black + variance FLOOR rather than exact pixels.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 /** Read the floorplan canvas' pixel stats (it draws on a 2D context, so reading
@@ -46,14 +47,9 @@ async function spawnRunner(page: Page) {
 }
 
 test.describe('vfpga-runner — fabric floorplan view (P5)', () => {
-  test('the floorplan is off by default and toggles a non-blank tile-grid/nets diagram', async ({ page }) => {
+  test('the floorplan is off by default and toggles a non-blank tile-grid/nets diagram', async ({ page, rack, errorWatch }) => {
     test.setTimeout(45_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
     await spawnRunner(page);
 
     // Off by default — the card already shows the preview + controls.
@@ -81,13 +77,10 @@ test.describe('vfpga-runner — fabric floorplan view (P5)', () => {
     await toggle.click();
     await expect(page.locator('[data-testid="vfpga-floorplan"]')).toHaveCount(0);
 
-    expect(errors, 'no console / page errors').toEqual([]);
   });
 
-  test('switching to a richer fabric (sync-bender) re-draws the floorplan with its legend', async ({ page }) => {
+  test('switching to a richer fabric (sync-bender) re-draws the floorplan with its legend', async ({ page, rack }) => {
     test.setTimeout(45_000);
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
     await spawnRunner(page);
 
     await page.locator('[data-testid="vfpga-floorplan-toggle"]').click();
