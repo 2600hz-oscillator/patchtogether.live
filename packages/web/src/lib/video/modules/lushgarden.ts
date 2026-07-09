@@ -81,6 +81,8 @@ import {
   sortPlantsForRender,
   spawnPlant,
   stepSpawner,
+  fovToFarScale,
+  FOV_DEFAULT,
   HORIZON_DEFAULT,
   RATE_DEFAULT,
   RATE_MAX,
@@ -134,6 +136,7 @@ interface LushgardenParams {
   rate: number;    // 0.5..10 spawns/sec (log knob)
   horizon: number; // 0..1 — INVISIBLE placement ceiling (no drawn line)
   view: number;    // 0..1 — parallax pan
+  fov: number;     // 0..1 — perspective strength (fovToFarScale)
   cv_grow: number; // hidden synthetic gate param (grow trigger)
   cv_reset: number;// hidden synthetic gate param (reset trigger)
   freeze: number;  // hidden VRT/determinism hold (quadralogical convention)
@@ -143,6 +146,7 @@ const DEFAULTS: LushgardenParams = {
   rate: RATE_DEFAULT,
   horizon: HORIZON_DEFAULT,
   view: VIEW_DEFAULT,
+  fov: FOV_DEFAULT,
   cv_grow: 0,
   cv_reset: 0,
   freeze: 0,
@@ -331,6 +335,7 @@ export const lushgardenDef: VideoModuleDef = {
     { id: 'rate',    label: 'Rate',    defaultValue: DEFAULTS.rate,    min: RATE_MIN, max: RATE_MAX, curve: 'log' },
     { id: 'horizon', label: 'Horizon', defaultValue: DEFAULTS.horizon, min: 0, max: 1, curve: 'linear' },
     { id: 'view',    label: 'View',    defaultValue: DEFAULTS.view,    min: 0, max: 1, curve: 'linear' },
+    { id: 'fov',     label: 'Fov',     defaultValue: DEFAULTS.fov,     min: 0, max: 1, curve: 'linear' },
     // Hidden synthetic gate params (SHAPEGEN cv_clock convention) — rendered
     // as the grow/reset jacks via the standard port rows, not as knobs.
     { id: LUSHGARDEN_GROW_PARAM_ID,  label: 'GRW', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
@@ -342,7 +347,7 @@ export const lushgardenDef: VideoModuleDef = {
   // docs-hash-ignore:start
   docs: {
     explanation:
-      "lush garden is a generative video source that grows a dense, layered 2D English-garden bed out of a bank of ~150 real plant cutouts (flowers, bushes, small trees). Plants spawn continuously at the RATE knob's spawns-per-second onto a virtual ground plane that runs from the bottom edge up to an INVISIBLE horizon: each plant lands at a random (x, depth), where depth places its ground anchor between the bottom edge (near) and the horizon (far) and scales it down with distance on top of the natural kind scale (trees > bushes > flowers; the spawn mix is roughly 70% flowers / 20% bushes / 10% trees). New plants grow in from their ground anchor with a quick ~350 ms ease-out. The scene composites back-to-front (painter's algorithm), and VIEW pans a viewport across a world ~2.5 frames wide with depth-proportional parallax — near plants sweep past while the far rank barely moves, a deliberately flat, theatre-flat parallax. At the 350-plant cap each new spawn replaces the OLDEST plant, so a full bed keeps slowly turning over instead of freezing. Patch a gate into GROW to take manual control: continuous spawning stops entirely and exactly one plant grows per rising edge (the card shows [GATED]); pulse RESET to clear the bed. The same scene renders through four simultaneous outputs — clean (the plain composite, also the card preview), mono (white silhouette outlines), watercolor (colours bled inside each plant's boundary), and psychedelic (animated hue-cycled colours, phase-offset per plant) — and an optional background video passes through unprocessed behind the plants on all four. Usage: run it bare as an evolving backdrop; clock GROW from a sequencer so the garden grows on the beat; sweep VIEW with a slow LFO for a drifting parallax pan; or feed a camera into background and outlines into a mixer for a garden-stencil overlay.",
+      "lush garden is a generative video source that grows a dense, layered 2D English-garden bed out of a bank of ~75 real plant cutouts (flowers, bushes, small trees), each background-keyed to a clean silhouette. Plants spawn continuously at the RATE knob's spawns-per-second onto a virtual ground plane that runs from the bottom edge up to an INVISIBLE horizon: each plant lands at a random (x, depth), where depth places its ground anchor between the bottom edge (near) and the horizon (far) and scales it down with distance on top of the natural kind scale (FOV sets how steep that shrink is; trees > bushes > flowers; the spawn mix is roughly 70% flowers / 20% bushes / 10% trees). New plants grow in from their ground anchor with a quick ~350 ms ease-out. The scene composites back-to-front (painter's algorithm), and VIEW pans a viewport across a world ~2.5 frames wide with depth-proportional parallax — near plants sweep past while the far rank barely moves, a deliberately flat, theatre-flat parallax. At the 350-plant cap each new spawn replaces the OLDEST plant, so a full bed keeps slowly turning over instead of freezing. Patch a gate into GROW to take manual control: continuous spawning stops entirely and exactly one plant grows per rising edge (the card shows [GATED]); pulse RESET to clear the bed. The same scene renders through four simultaneous outputs — clean (the plain composite, also the card preview), mono (white silhouette outlines), watercolor (colours bled inside each plant's boundary), and psychedelic (animated hue-cycled colours, phase-offset per plant) — and an optional background video passes through unprocessed behind the plants on all four. Usage: run it bare as an evolving backdrop; clock GROW from a sequencer so the garden grows on the beat; sweep VIEW with a slow LFO for a drifting parallax pan; or feed a camera into background and outlines into a mixer for a garden-stencil overlay.",
     inputs: {
       background: "Optional backdrop video. When patched, the upstream frame renders UNPROCESSED behind the plants on ALL FOUR outputs (the per-plant styling stays strictly inside plant silhouettes; on mono the white outlines draw over it too). Unpatched: black backdrop.",
       rate: "CV over RATE (log scale): modulates the continuous spawn rate between 0.5 and 10 plants per second. Ignored while a cable is patched into GROW (gated mode spawns only on edges).",
@@ -361,6 +366,7 @@ export const lushgardenDef: VideoModuleDef = {
       rate: "RATE (0.5–10 spawns/sec, log, default 2): how fast new plants appear in continuous mode. Has no effect while GROW is patched (gated mode).",
       horizon: "HORIZON (0–1, default 0.65): the height of the INVISIBLE horizon — a placement control only. It caps how high far plants anchor and sets the perspective scale gradient; no output ever draws a line, gradient or ground fill at it (its existence is only inferable from where plants stop appearing).",
       view: "VIEW (0–1, default 0.5): pans the virtual viewport across the ~2.5-frame-wide garden. Near plants shift proportionally more than far ones (2D parallax), revealing/hiding plants at the edges.",
+      fov: "FOV (0–1, default 0.7): perspective strength — how much plants shrink with distance. The default reproduces the original look (far plants at 22% of near size); higher values shrink the far rank further so close plants dominate, lower values flatten the scene toward a uniform-scale collage (far plants at up to 50%). Placement, horizon and parallax are unaffected — only the depth-size gradient changes.",
       cv_grow: "Hidden synthetic gate param backing the GROW jack (not a knob). The engine CV-bridge writes the gate sample here; a rising edge (0.6/0.4 hysteresis) spawns exactly one plant, and the first write latches gated mode.",
       cv_reset: "Hidden synthetic gate param backing the RESET jack (not a knob). A rising edge clears all plants.",
       freeze: "Freeze (0 to 1, hidden): a determinism toggle for deterministic capture — at >=0.5 the renderer holds the last frame and stops drawing; no card control.",
@@ -729,6 +735,7 @@ export const lushgardenDef: VideoModuleDef = {
           now,
           resW: ctx.res.width,
           resH: ctx.res.height,
+          farScale: fovToFarScale(params.fov ?? FOV_DEFAULT),
         };
         const ordered = sortPlantsForRender(scene.plants);
         const draws: Array<{ rec: BakedEntry; rect: { x: number; y: number; w: number; h: number }; phase: number }> = [];

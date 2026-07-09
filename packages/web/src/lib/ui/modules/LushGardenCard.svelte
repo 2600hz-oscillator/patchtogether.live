@@ -157,6 +157,12 @@
           label="VIEW" curve="linear"
           onchange={set('view')} moduleId={id} paramId="view"
         />
+        <Knob
+          value={paramVal('fov')}
+          min={0} max={1} defaultValue={defaultFor('fov')}
+          label="FOV" curve="linear"
+          onchange={set('fov')} moduleId={id} paramId="fov"
+        />
       </div>
     </div>
   </PatchPanel>

@@ -27,6 +27,8 @@ import {
   WORLD_WIDTH,
   GROW_IN_S,
   FAR_SCALE,
+  FOV_DEFAULT,
+  fovToFarScale,
   FAR_PARALLAX,
   RATE_MIN,
   RATE_MAX,
@@ -339,6 +341,30 @@ describe('layoutPlant', () => {
     expect(parallaxFactor(1)).toBeCloseTo(FAR_PARALLAX);
     expect(effectiveWorldWidth(0)).toBeCloseTo(WORLD_WIDTH);
     expect(effectiveWorldWidth(1)).toBeCloseTo(1 + (WORLD_WIDTH - 1) * FAR_PARALLAX);
+  });
+
+  it('fovToFarScale: default knob reproduces FAR_SCALE exactly; range + clamp pinned', () => {
+    expect(fovToFarScale(FOV_DEFAULT)).toBeCloseTo(FAR_SCALE, 10);
+    expect(fovToFarScale(0)).toBeCloseTo(0.5);   // flattest — far plants half size
+    expect(fovToFarScale(1)).toBeCloseTo(0.1);   // steepest — far plants 10%
+    expect(fovToFarScale(-5)).toBeCloseTo(0.5);  // clamps below
+    expect(fovToFarScale(9)).toBeCloseTo(0.1);   // clamps above
+  });
+
+  it('farScale in LayoutParams steers the depth-size gradient (near plane unaffected)', () => {
+    const far = grownPlant(1, 0.5, 'tree');
+    const near = grownPlant(0, 0.5, 'tree');
+    const flat = layoutPlant(far, baseLayout({ view: 0, farScale: fovToFarScale(0) }))!;
+    const dflt = layoutPlant(far, baseLayout({ view: 0 }))!; // omitted → FAR_SCALE
+    const steep = layoutPlant(far, baseLayout({ view: 0, farScale: fovToFarScale(1) }))!;
+    expect(flat.h).toBeGreaterThan(dflt.h);
+    expect(dflt.h).toBeGreaterThan(steep.h);
+    const expectedDflt = KIND_CANONICAL_HEIGHT.tree * (RES.resH / CANONICAL_FRAME_H) * FAR_SCALE;
+    expect(dflt.h).toBe(Math.round(expectedDflt)); // omitted farScale = pre-FOV look
+    // The near plane never moves with FOV: persp(depth 0) = 1 for any farScale.
+    const nearFlat = layoutPlant(near, baseLayout({ view: 0, farScale: fovToFarScale(0) }))!;
+    const nearSteep = layoutPlant(near, baseLayout({ view: 0, farScale: fovToFarScale(1) }))!;
+    expect(nearFlat.h).toBe(nearSteep.h);
   });
 });
 

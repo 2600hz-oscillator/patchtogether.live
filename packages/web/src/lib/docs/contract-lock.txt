@@ -1314,6 +1314,7 @@ lushgarden out psychedelic video
 lushgarden out watercolor video
 lushgarden param cv_grow 0..1 linear default=0
 lushgarden param cv_reset 0..1 linear default=0
+lushgarden param fov 0..1 linear default=0.7
 lushgarden param freeze 0..1 linear default=0
 lushgarden param horizon 0..1 linear default=0.65
 lushgarden param rate 0.5..10 log default=2
