@@ -11,12 +11,12 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { moog904cDef } from '$lib/audio/modules/moog904c';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import MoogPanel from './moog/MoogPanel.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -43,13 +43,8 @@
   }
 
   // Audio in + CV cutoff input (left); single band-passed audio out.
-  const inputs: PortDescriptor[] = [
-    { id: 'audio', label: 'IN', cable: 'audio' },
-    { id: 'cutoff_cv', label: 'CUTOFF CV', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'audio', label: 'OUT', cable: 'audio' },
-  ];
+  const inputs = portsFromDef(moog904cDef.inputs, { audio: 'IN', cutoff_cv: 'CUTOFF CV' });
+  const outputs = portsFromDef(moog904cDef.outputs, { audio: 'OUT' });
 </script>
 
 <MoogPanel {id} {data} defaultLabel="904C Coupler" width={220}>

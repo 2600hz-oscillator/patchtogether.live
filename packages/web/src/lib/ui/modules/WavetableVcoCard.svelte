@@ -2,16 +2,14 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { wavetableVcoDef } from '$lib/audio/modules/wavetable-vco';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live } = cardParams(wavetableVcoDef, () => id, () => node);
 
   let tune     = $derived(node?.params.tune     ?? wavetableVcoDef.params.find((p) => p.id === 'tune')!.defaultValue);
   let fine     = $derived(node?.params.fine     ?? wavetableVcoDef.params.find((p) => p.id === 'fine')!.defaultValue);
@@ -19,20 +17,11 @@
   let fmAmount = $derived(node?.params.fmAmount ?? wavetableVcoDef.params.find((p) => p.id === 'fmAmount')!.defaultValue);
   let pmAmount = $derived(node?.params.pmAmount ?? wavetableVcoDef.params.find((p) => p.id === 'pmAmount')!.defaultValue);
 
-  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
-  const live = (k: string) => () => { const e = engineCtx.get(); if (!e || !node) return undefined; return e.readParam(node, k); };
 
-  const inputs: PortDescriptor[] = [
-    { id: 'pitch',    cable: 'pitch' },
-    { id: 'fm',       cable: 'audio' },
-    { id: 'pm',       cable: 'audio' },
-    { id: 'wavePos',  label: 'WAVE POSITION', cable: 'cv' },
-    { id: 'tune',     cable: 'cv' },
-    { id: 'fine',     cable: 'cv' },
-    { id: 'fmAmount', label: 'FM AMT', cable: 'cv' },
-    { id: 'pmAmount', label: 'PM AMT', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [{ id: 'audio', cable: 'audio' }];
+  const inputs = portsFromDef(wavetableVcoDef.inputs, {
+    wavePos: 'WAVE POSITION', fmAmount: 'FM AMT', pmAmount: 'PM AMT',
+  });
+  const outputs = portsFromDef(wavetableVcoDef.outputs);
 </script>
 
 <div class="mod-card wt-card">

@@ -8,15 +8,14 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { tempestDef } from '$lib/video/modules/tempest';
   import { TUBE_SHAPES } from '$lib/video/tempest/tempest-core';
   import { VIDEO_RES, type VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -29,10 +28,10 @@
     const v = node?.params?.[name];
     return typeof v === 'number' ? v : pdef(name);
   }
-  const set = (name: string) => (v: number) => setNodeParam(id, name, v);
+  const { set } = cardParams(tempestDef, () => id, () => node);
 
-  const inputs: PortDescriptor[] = [{ id: 'rim', label: 'RIM', cable: 'cv' }];
-  const outputs: PortDescriptor[] = [{ id: 'out', cable: 'video' }];
+  const inputs = portsFromDef(tempestDef.inputs);
+  const outputs = portsFromDef(tempestDef.outputs);
 
   const SHAPE_NAMES = TUBE_SHAPES;
   let shapeName = $derived(SHAPE_NAMES[Math.round(p('shape')) % SHAPE_NAMES.length]);

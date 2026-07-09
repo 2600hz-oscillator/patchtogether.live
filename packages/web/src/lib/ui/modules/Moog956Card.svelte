@@ -17,13 +17,13 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import { moog956Def, clampRibbon, ribbonToVOct } from '$lib/audio/modules/moog956';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import MoogPanel from './moog/MoogPanel.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -101,11 +101,8 @@
     return (v * 12).toFixed(1);
   }
 
-  const inputs: PortDescriptor[] = [];
-  const outputs: PortDescriptor[] = [
-    { id: 'pitch', label: 'PITCH', cable: 'pitch' },
-    { id: 'gate', label: 'GATE', cable: 'gate' },
-  ];
+  const inputs = portsFromDef(moog956Def.inputs);
+  const outputs = portsFromDef(moog956Def.outputs);
 </script>
 
 <MoogPanel {id} {data} defaultLabel="956 Ribbon" width={240}>

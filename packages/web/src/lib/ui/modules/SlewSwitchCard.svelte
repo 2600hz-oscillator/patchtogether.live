@@ -7,54 +7,25 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { slewSwitchDef } from '$lib/audio/modules/slewswitch';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { defaultFor, paramVal, set, live } = cardParams(slewSwitchDef, () => id, () => node);
 
-  function defaultFor(k: string): number {
-    return slewSwitchDef.params.find((p) => p.id === k)?.defaultValue ?? 0;
-  }
-  function paramVal(k: string): number {
-    const v = node?.params?.[k];
-    return typeof v === 'number' ? v : defaultFor(k);
-  }
-  const set = (k: string) => (v: number) => {
-    setNodeParam(id, k, v);
-  };
-  const live = (k: string) => () => {
-    const e = engineCtx.get(); if (!e || !node) return undefined;
-    return e.readParam(node, k);
-  };
 
-  const inputs: PortDescriptor[] = [
-    { id: 'in1',        label: 'IN 1',   cable: 'cv' },
-    { id: 'in2',        label: 'IN 2',   cable: 'cv' },
-    { id: 'in3',        label: 'IN 3',   cable: 'cv' },
-    { id: 'in4',        label: 'IN 4',   cable: 'cv' },
-    { id: 'step_clock', label: 'CLK',    cable: 'gate' },
-    { id: 'reset',      label: 'RST',    cable: 'gate' },
-    { id: 'slew1_cv',   label: 'S1 CV',  cable: 'cv' },
-    { id: 'slew2_cv',   label: 'S2 CV',  cable: 'cv' },
-    { id: 'slew3_cv',   label: 'S3 CV',  cable: 'cv' },
-    { id: 'slew4_cv',   label: 'S4 CV',  cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'out1',     label: 'OUT 1',    cable: 'cv' },
-    { id: 'out2',     label: 'OUT 2',    cable: 'cv' },
-    { id: 'out3',     label: 'OUT 3',    cable: 'cv' },
-    { id: 'out4',     label: 'OUT 4',    cable: 'cv' },
-    { id: 'switched', label: 'SW',       cable: 'cv' },
-    { id: 'step_idx', label: 'IDX',      cable: 'cv' },
-    { id: 'eoc',      label: 'EOC',      cable: 'gate' },
-  ];
+  const inputs = portsFromDef(slewSwitchDef.inputs, {
+    in1: 'IN 1', in2: 'IN 2', in3: 'IN 3', in4: 'IN 4', step_clock: 'CLK', reset: 'RST',
+    slew1_cv: 'S1 CV', slew2_cv: 'S2 CV', slew3_cv: 'S3 CV', slew4_cv: 'S4 CV',
+  });
+  const outputs = portsFromDef(slewSwitchDef.outputs, {
+    out1: 'OUT 1', out2: 'OUT 2', out3: 'OUT 3', out4: 'OUT 4', switched: 'SW',
+    step_idx: 'IDX',
+  });
 
   const channels = [1, 2, 3, 4] as const;
   const modeLabels = ['→ FWD', '⇄ PND', '? RND'] as const;
@@ -127,9 +98,7 @@
     border-color: var(--accent);
     box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
   }
-  .stripe { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 2px 2px 0 0; }
-  .title { font-size: 0.85rem; font-weight: 500; text-align: center; margin: 0 0 8px; letter-spacing: 0.05em; }
-  .body { padding: 4px 10px 10px; }
+  .stripe { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 2px 2px 0 0; }  .body { padding: 4px 10px 10px; }
   .strips {
     display: grid;
     grid-template-columns: repeat(4, 1fr);

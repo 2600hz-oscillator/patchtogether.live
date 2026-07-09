@@ -308,7 +308,7 @@
 
 <div
   bind:this={cardEl}
-  class="card video"
+  class="vcard card video"
   class:resizing
   class:full-frame={fullFrame}
   style="width: {cardWidth}px; height: {cardHeight}px;"
@@ -377,41 +377,12 @@
      * OUTPUT card can bleed through the live-video canvas. */
     background-color: #000;
     background-image: linear-gradient(var(--module-bg), var(--module-bg));
-    border: 1px solid var(--border);
-    border-radius: 2px;
-    color: var(--text);
-    padding-top: 18px;
-    padding-bottom: 14px;
-    position: relative;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
     overflow: hidden;
     isolation: isolate;
-  }
-  :global(.svelte-flow__node:hover) .card {
-    border-color: var(--accent-dim);
-  }
-  :global(.svelte-flow__node.selected) .card {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
   }
   .card.resizing {
     /* Avoid hover/selected pulses while the user drags. */
     transition: none;
-  }
-  .stripe {
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 2px;
-    border-radius: 2px 2px 0 0;
-    background: var(--cable-video);
-  }
-  .title {
-    font-size: 0.85rem;
-    font-weight: 500;
-    text-align: center;
-    margin: 0 0 8px;
-    letter-spacing: 0.05em;
   }
   .canvas-wrap {
     margin: 18px auto 0;

@@ -16,29 +16,19 @@
   import { type NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { mandleblotDef, jsZoomFromKnob } from '$lib/video/modules/mandleblot';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
 
-  function defaultFor(k: string): number {
-    return mandleblotDef.params.find((p) => p.id === k)?.defaultValue ?? 0;
-  }
-  function paramVal(k: string): number {
-    const v = node?.params?.[k];
-    return typeof v === 'number' ? v : defaultFor(k);
-  }
-  const set = (k: string) => (v: number) => {
-    setNodeParam(id, k, v);
-  };
+  const { defaultFor, paramVal, set } = cardParams(mandleblotDef, () => id, () => node);
 
   // Engine render resolution (VIDEO_RES). Used to letterbox the preview
   // so a 4:3 fractal render fits the card's preview rect without skew.
@@ -124,13 +114,8 @@
     return `${(z / 1_000_000).toFixed(1)}M×`;
   }
 
-  const inputs: PortDescriptor[] = [
-    { id: 'zoom_cv', label: 'ZOOM', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'mono_out',  label: 'MONO',  cable: 'mono-video' },
-    { id: 'color_out', label: 'COLOR', cable: 'video' },
-  ];
+  const inputs = portsFromDef(mandleblotDef.inputs, { zoom_cv: 'ZOOM' });
+  const outputs = portsFromDef(mandleblotDef.outputs, { mono_out: 'MONO', color_out: 'COLOR' });
 </script>
 
 <div class="mod-card mandleblot-card" data-testid="mandleblot-card" data-node-id={id}>

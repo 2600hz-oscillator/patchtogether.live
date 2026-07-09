@@ -27,15 +27,13 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
   import ModuleTitle from './ModuleTitle.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { treeohvoxDef } from '$lib/audio/modules/treeohvox';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live } = cardParams(treeohvoxDef, () => id, () => node);
 
   const defaultFor = (pid: string): number =>
     treeohvoxDef.params.find((p) => p.id === pid)!.defaultValue;
@@ -45,31 +43,13 @@
     return typeof v === 'number' ? v : defaultFor(k);
   }
 
-  const set = (pid: string) => (v: number) => {
-    setNodeParam(id, pid, v);
-  };
-  const live = (pid: string) => () => {
-    const e = engineCtx.get(); if (!e || !node) return undefined;
-    return e.readParam(node, pid);
-  };
 
-  const inputs: PortDescriptor[] = [
-    // Audio-rate signals — patch from a sequencer / keyboard / clock.
-    { id: 'pitch_in',  label: 'PITCH',  cable: 'pitch' },
-    { id: 'gate_in',   label: 'GATE',   cable: 'gate' },
-    { id: 'accent_in', label: 'ACCNT',  cable: 'gate' },
-    // CV inputs targeting each knob's AudioParam.
-    { id: 'tune_cv',   label: 'TUNE',   cable: 'cv' },
-    { id: 'cutoff_cv', label: 'CUT',    cable: 'cv' },
-    { id: 'res_cv',    label: 'RES',    cable: 'cv' },
-    { id: 'env_cv',    label: 'ENV',    cable: 'cv' },
-    { id: 'decay_cv',  label: 'DCY',    cable: 'cv' },
-    { id: 'accent_cv', label: 'ACC',    cable: 'cv' },
-    { id: 'waveform_cv', label: 'WAVE', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'audio_out', label: 'OUT', cable: 'audio' },
-  ];
+  const inputs = portsFromDef(treeohvoxDef.inputs, {
+    pitch_in: 'PITCH', gate_in: 'GATE', accent_in: 'ACCNT', tune_cv: 'TUNE',
+    cutoff_cv: 'CUT', res_cv: 'RES', env_cv: 'ENV', decay_cv: 'DCY', accent_cv: 'ACC',
+    waveform_cv: 'WAVE',
+  });
+  const outputs = portsFromDef(treeohvoxDef.outputs, { audio_out: 'OUT' });
 </script>
 
 <div class="mod-card treeohvox-card">

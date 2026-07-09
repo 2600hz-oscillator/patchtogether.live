@@ -8,13 +8,13 @@
 
   import type { NodeProps } from '@xyflow/svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { twotracksDef, type TwoTracksData, TWOTRACKS_MAX_SAMPLES, abGains, clampLoopStart, clampLoopEnd } from '$lib/audio/modules/twotracks';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -170,22 +170,13 @@
   // ─── Filter mode labels ───
   const FILTER_MODES = ['OFF', 'HP', 'LP', 'BP'] as const;
 
-  const inputs: PortDescriptor[] = [
-    { id: 'audio_l_in_a', label: 'L IN A',    cable: 'audio' },
-    { id: 'audio_r_in_a', label: 'R IN A',    cable: 'audio' },
-    { id: 'rec_start_a',  label: 'REC START A', cable: 'gate' },
-    { id: 'rec_arm_a',    label: 'REC ARM A', cable: 'gate' },
-    { id: 'overdub_a',    label: 'OVERDUB A', cable: 'gate' },
-    { id: 'audio_l_in_b', label: 'L IN B',    cable: 'audio' },
-    { id: 'audio_r_in_b', label: 'R IN B',    cable: 'audio' },
-    { id: 'rec_start_b',  label: 'REC START B', cable: 'gate' },
-    { id: 'rec_arm_b',    label: 'REC ARM B', cable: 'gate' },
-    { id: 'overdub_b',    label: 'OVERDUB B', cable: 'gate' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'out_l', label: 'OUT L', cable: 'audio' },
-    { id: 'out_r', label: 'OUT R', cable: 'audio' },
-  ];
+  const inputs = portsFromDef(twotracksDef.inputs, {
+    audio_l_in_a: 'L IN A', audio_r_in_a: 'R IN A', rec_start_a: 'REC START A',
+    rec_arm_a: 'REC ARM A', overdub_a: 'OVERDUB A', audio_l_in_b: 'L IN B',
+    audio_r_in_b: 'R IN B', rec_start_b: 'REC START B', rec_arm_b: 'REC ARM B',
+    overdub_b: 'OVERDUB B',
+  });
+  const outputs = portsFromDef(twotracksDef.outputs, { out_l: 'OUT L', out_r: 'OUT R' });
 
   // ─── Helpers ───
 

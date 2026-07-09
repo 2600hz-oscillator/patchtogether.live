@@ -2,26 +2,22 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { reverbDef } from '$lib/audio/modules/reverb';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live } = cardParams(reverbDef, () => id, () => node);
 
   let size = $derived(node?.params.size ?? reverbDef.params[0]!.defaultValue);
   let damp = $derived(node?.params.damp ?? reverbDef.params[1]!.defaultValue);
   let mix  = $derived(node?.params.mix  ?? reverbDef.params[2]!.defaultValue);
 
-  const set = (id_: string) => (v: number) => setNodeParam(id, id_, v);
-  const live = (id_: string) => () => { const e = engineCtx.get(); if (!e || !node) return undefined; return e.readParam(node, id_); };
 
-  const inputs: PortDescriptor[] = [{ id: 'audio', label: 'IN', cable: 'audio' }];
-  const outputs: PortDescriptor[] = [{ id: 'audio', label: 'OUT', cable: 'audio' }];
+  const inputs = portsFromDef(reverbDef.inputs, { audio: 'IN' });
+  const outputs = portsFromDef(reverbDef.outputs, { audio: 'OUT' });
 </script>
 
 <div class="mod-card reverb-card">

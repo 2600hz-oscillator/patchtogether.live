@@ -22,7 +22,6 @@
   import { acquireCameraStream } from '$lib/ui/camera-acquire';
   import { type NodeProps } from '@xyflow/svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { useProvider } from '$lib/multiplayer/provider-context';
@@ -40,6 +39,7 @@
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import NativeFillToggle from './NativeFillToggle.svelte';
+  import { portsFromDef } from './card-kit';
 
   type State =
     | 'idle'
@@ -62,14 +62,8 @@
   //      standard; also gives the card its rear-view back panel). Port `id`s are
   //      BYTE-IDENTICAL to the module def so the CV bridge + persisted edges
   //      route unchanged; only the rendering moved into the panel. ----
-  const inputs: PortDescriptor[] = [
-    { id: 'gain', label: 'GAIN', cable: 'cv' },
-    // Gate that mirrors the image while held high (drives the `mirror` param).
-    { id: 'mirror', label: 'MIRROR', cable: 'gate' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'out', label: 'OUT', cable: 'video' },
-  ];
+  const inputs = portsFromDef(cameraInputDef.inputs);
+  const outputs = portsFromDef(cameraInputDef.outputs);
 
   let videoEl: HTMLVideoElement | null = $state(null);
   let stream: MediaStream | null = null;
@@ -453,7 +447,7 @@
   };
 </script>
 
-<div class="card video">
+<div class="vcard card video">
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="CAMERA" />
 
@@ -591,34 +585,6 @@
   .card {
     width: 280px;
     min-height: 360px;
-    background: var(--module-bg);
-    border: 1px solid var(--border);
-    border-radius: 2px;
-    color: var(--text);
-    padding-top: 18px;
-    padding-bottom: 14px;
-    position: relative;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
-  }
-  :global(.svelte-flow__node:hover) .card { border-color: var(--accent-dim); }
-  :global(.svelte-flow__node.selected) .card {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
-  }
-  .stripe {
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 2px;
-    border-radius: 2px 2px 0 0;
-    background: var(--cable-video);
-  }
-  .title {
-    font-size: 0.85rem;
-    font-weight: 500;
-    text-align: center;
-    margin: 0 0 8px;
-    letter-spacing: 0.05em;
   }
   .body {
     /* Clear the PatchPanel's top-left/right trigger affordances (18px tall,

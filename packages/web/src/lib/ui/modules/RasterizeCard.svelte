@@ -3,28 +3,22 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import { rasterizeDef } from '$lib/audio/modules/rasterize';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { portsFromDef } from './card-kit';
 
   // Inputs: audio in + 1 CV per param. Port ids match RASTERIZE's def
   // 1:1 (io-spec consistency e2e enforces this); the CV bridge routes
   // via setParam(portId).
-  const inputs: PortDescriptor[] = [
-    { id: 'in',              label: 'AUDIO IN',         cable: 'audio' },
-    { id: 'cursor',          label: 'SCAN (CV)',        cable: 'cv' },
-    { id: 'samplesPerFrame', label: 'SAMP/FRAME (CV)',  cable: 'cv' },
-    { id: 'gain',            label: 'GAIN (CV)',        cable: 'cv' },
-    { id: 'wrap',            label: 'WRAP (CV)',        cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'thru', label: 'AUDIO THRU', cable: 'audio' },
-    { id: 'out',  label: 'VIDEO OUT',  cable: 'mono-video' },
-  ];
+  const inputs = portsFromDef(rasterizeDef.inputs, {
+    in: 'AUDIO IN', cursor: 'SCAN (CV)', samplesPerFrame: 'SAMP/FRAME (CV)',
+    gain: 'GAIN (CV)', wrap: 'WRAP (CV)',
+  });
+  const outputs = portsFromDef(rasterizeDef.outputs, { thru: 'AUDIO THRU', out: 'VIDEO OUT' });
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -92,7 +86,7 @@
   }
 </script>
 
-<div class="card">
+<div class="vcard card">
   <div class="stripe"></div>
   <header class="title">
     <ModuleTitle {id} {data} defaultLabel="Rasterize" inline />
@@ -128,30 +122,10 @@
   .card {
     width: 320px;
     min-height: 260px;
-    background: var(--module-bg);
-    border: 1px solid var(--border);
-    border-radius: 2px;
-    color: var(--text);
-    padding-top: 18px;
-    padding-bottom: 14px;
-    position: relative;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
-  }
-  :global(.svelte-flow__node:hover) .card {
-    border-color: var(--accent-dim);
-  }
-  :global(.svelte-flow__node.selected) .card {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
   }
   .stripe {
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 2px;
-    /* mono-video cable color — RASTERIZE is an audio→video bridge module. */
+/* mono-video cable color — RASTERIZE is an audio→video bridge module. */
     background: var(--cable-mono-video, var(--cable-cv));
-    border-radius: 2px 2px 0 0;
   }
   .title {
     font-size: 0.85rem;

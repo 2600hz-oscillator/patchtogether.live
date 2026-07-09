@@ -11,13 +11,13 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import { moog921aDef } from '$lib/audio/modules/moog921a';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import MoogPanel from './moog/MoogPanel.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -54,14 +54,8 @@
   }
 
   // Summing CONTROL INPUTS (left); CV bus OUTPUTS — NO audio ports.
-  const inputs: PortDescriptor[] = [
-    { id: 'freq_cv',  label: 'FREQ',  cable: 'pitch' },
-    { id: 'width_cv', label: 'WIDTH', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'freq_bus',  label: 'FREQ',  cable: 'cv' },
-    { id: 'width_bus', label: 'WIDTH', cable: 'cv' },
-  ];
+  const inputs = portsFromDef(moog921aDef.inputs, { freq_cv: 'FREQ', width_cv: 'WIDTH' });
+  const outputs = portsFromDef(moog921aDef.outputs, { freq_bus: 'FREQ', width_bus: 'WIDTH' });
 </script>
 
 <MoogPanel {id} {data} defaultLabel="921A Driver" width={236}>

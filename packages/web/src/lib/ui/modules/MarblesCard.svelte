@@ -5,17 +5,15 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { marblesDef, MARBLES_T_MODEL_NAMES, MARBLES_SCALE_NAMES } from '$lib/audio/modules/marbles';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live } = cardParams(marblesDef, () => id, () => node);
 
   const defaultFor = (k: string): number =>
     marblesDef.params.find((p) => p.id === k)!.defaultValue;
@@ -30,11 +28,6 @@
   let tModelLabel = $derived(MARBLES_T_MODEL_NAMES[clampI(tModel, MAX_T)]);
   let scaleLabel = $derived(MARBLES_SCALE_NAMES[clampI(scale, MAX_SCALE)]);
 
-  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
-  const live = (k: string) => () => {
-    const e = engineCtx.get(); if (!e || !node) return undefined;
-    return e.readParam(node, k);
-  };
   function cycleTModel(): void {
     const t = patch.nodes[id]; if (t) t.params.t_model = (clampI(tModel, MAX_T) + 1) % (MAX_T + 1);
   }
@@ -42,27 +35,8 @@
     const t = patch.nodes[id]; if (t) t.params.scale = (clampI(scale, MAX_SCALE) + 1) % (MAX_SCALE + 1);
   }
 
-  const inputs: PortDescriptor[] = [
-    { id: 'rate_cv', cable: 'cv' },
-    { id: 'tmodel_cv', cable: 'cv' },
-    { id: 'tbias_cv', cable: 'cv' },
-    { id: 'tjitter_cv', cable: 'cv' },
-    { id: 'dejavu_cv', cable: 'cv' },
-    { id: 'length_cv', cable: 'cv' },
-    { id: 'spread_cv', cable: 'cv' },
-    { id: 'xbias_cv', cable: 'cv' },
-    { id: 'steps_cv', cable: 'cv' },
-    { id: 'xdejavu_cv', cable: 'cv' },
-    { id: 'scale_cv', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 't1', cable: 'gate' },
-    { id: 't2', cable: 'gate' },
-    { id: 'x1', cable: 'cv' },
-    { id: 'x2', cable: 'cv' },
-    { id: 'x3', cable: 'cv' },
-    { id: 'clk', cable: 'gate' },
-  ];
+  const inputs = portsFromDef(marblesDef.inputs);
+  const outputs = portsFromDef(marblesDef.outputs);
 </script>
 
 <div class="mod-card marbles-card">
@@ -96,13 +70,7 @@
 </div>
 
 <style>
-  .marbles-card { width: 420px; }
-  .marbles-card .title {
-    font-family: var(--font-display, inherit);
-    font-size: 0.85rem;
-    letter-spacing: 0.04em;
-  }
-  /* Rack-compaction (#759): tighter btn-row margin to fit 1u. */
+  .marbles-card { width: 420px; }  /* Rack-compaction (#759): tighter btn-row margin to fit 1u. */
   .marbles-card .btn-row { display: flex; gap: 8px; margin: 1px 12px 2px; }
   .marbles-card .sel-btn {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;

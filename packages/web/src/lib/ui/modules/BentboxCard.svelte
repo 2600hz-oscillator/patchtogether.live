@@ -15,7 +15,6 @@
 
   import { onMount, onDestroy } from 'svelte';
   import { Handle, Position, useStore, type NodeProps } from '@xyflow/svelte';
-  import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
   import { setNodeParam, mutateNode } from '$lib/graph/mutate';
   import { startCornerResize } from './card-resize';
@@ -33,10 +32,11 @@
   import { fullscreenCanvasDims } from './fullscreen-canvas-dims';
   import { liveEngineAspect } from './video-card-aspect';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live, engineCtx } = cardParams(bentboxDef, () => id, () => node);
   const flowStore = useStore();
 
   // ---------------- Resize (mirror VideoOutCard) ----------------
@@ -255,11 +255,6 @@
   const defaultFor = (key: string): number =>
     bentboxDef.params.find((p) => p.id === key)!.defaultValue;
 
-  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
-  const live = (k: string) => () => {
-    const e = engineCtx.get(); if (!e || !node) return undefined;
-    return e.readParam(node, k);
-  };
 
   // Reactive param reads from the patch store (Y.Doc-synced).
   let hsync_drift        = $derived(node?.params.hsync_drift        ?? defaultFor('hsync_drift'));
@@ -304,9 +299,7 @@
     { id: 'mirror_x_gate',         label: 'MIRX',  cable: 'cv' },
     { id: 'mirror_y_gate',         label: 'MIRY',  cable: 'cv' },
   ];
-  const outputs: PortDescriptor[] = [
-    { id: 'out', label: 'OUT', cable: 'video' },
-  ];
+  const outputs = portsFromDef(bentboxDef.outputs);
 </script>
 
 <div
@@ -435,15 +428,7 @@
     height: 2px;
     border-radius: 2px 2px 0 0;
     background: var(--cable-video);
-  }
-  .title {
-    font-size: 0.85rem;
-    font-weight: 500;
-    text-align: center;
-    margin: 0 0 8px;
-    letter-spacing: 0.05em;
-  }
-  .screen-wrap {
+  }  .screen-wrap {
     margin: 0 auto 10px;
     display: flex;
     justify-content: center;

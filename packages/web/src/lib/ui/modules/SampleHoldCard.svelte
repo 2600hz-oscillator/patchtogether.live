@@ -16,21 +16,19 @@
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import ModuleTitle from './ModuleTitle.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
-  import { setNodeParam } from '$lib/graph/mutate';
   import {
     sampleHoldDef,
     SAMPLE_HOLD_SCALE_NAMES,
     SAMPLE_HOLD_MAX_SCALE,
     sampleHoldScaleName,
   } from '$lib/audio/modules/sample-hold';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live } = cardParams(sampleHoldDef, () => id, () => node);
 
   const defaultFor = (pid: string): number =>
     sampleHoldDef.params.find((p) => p.id === pid)!.defaultValue;
@@ -40,13 +38,6 @@
     return typeof v === 'number' ? v : defaultFor(k);
   }
 
-  const set = (pid: string) => (v: number) => {
-    setNodeParam(id, pid, v);
-  };
-  const live = (pid: string) => () => {
-    const e = engineCtx.get(); if (!e || !node) return undefined;
-    return e.readParam(node, pid);
-  };
 
   // The scale-name label — tracks the live `scale` param (user / CV / MIDI).
   let scaleNameStr = $derived(sampleHoldScaleName(paramVal('scale')));
@@ -61,14 +52,8 @@
   );
   let modeHint = $derived(gatePatched ? 'S&H' : 'QUANTIZER');
 
-  const inputs: PortDescriptor[] = [
-    { id: 'cv_in',   label: 'CV',   cable: 'cv' },
-    { id: 'gate_in', label: 'GATE', cable: 'gate' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'cv_out',   label: 'HOLD',  cable: 'cv' },
-    { id: 'cv_quant', label: 'QUANT', cable: 'cv' },
-  ];
+  const inputs = portsFromDef(sampleHoldDef.inputs, { cv_in: 'CV', gate_in: 'GATE' });
+  const outputs = portsFromDef(sampleHoldDef.outputs, { cv_out: 'HOLD', cv_quant: 'QUANT' });
 </script>
 
 <div class="mod-card samplehold-card">

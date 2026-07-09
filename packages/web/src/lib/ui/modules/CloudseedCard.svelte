@@ -21,7 +21,6 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam, mutateNode } from '$lib/graph/mutate';
   import {
     cloudseedDef,
@@ -29,26 +28,14 @@
     formatParameter,
     CloudseedParam,
   } from '$lib/audio/modules/cloudseed';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { paramVal, set, live } = cardParams(cloudseedDef, () => id, () => node);
 
-  function defaultFor(k: string): number {
-    return cloudseedDef.params.find((p) => p.id === k)?.defaultValue ?? 0;
-  }
-  function paramVal(k: string): number {
-    const v = node?.params?.[k];
-    return typeof v === 'number' ? v : defaultFor(k);
-  }
-  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
-  const live = (k: string) => () => {
-    const e = engineCtx.get(); if (!e || !node) return undefined;
-    return e.readParam(node, k);
-  };
   function toggle(k: string): void {
     setNodeParam(id, k, paramVal(k) >= 0.5 ? 0 : 1);
   }
@@ -137,21 +124,11 @@
   let decayLabel = $derived(formatParameter(paramVal('late_line_decay'), CloudseedParam.LateLineDecay));
   // Live INPUT mix etc. labels (unused inline but available for testids).
 
-  const inputs: PortDescriptor[] = [
-    { id: 'in_l',          label: 'IN L',  cable: 'audio' },
-    { id: 'in_r',          label: 'IN R',  cable: 'audio' },
-    { id: 'dry_cv',        label: 'DRY',   cable: 'cv' },
-    { id: 'early_cv',      label: 'EARL',  cable: 'cv' },
-    { id: 'late_cv',       label: 'LATE',  cable: 'cv' },
-    { id: 'input_mix_cv',  label: 'IMIX',  cable: 'cv' },
-    { id: 'low_cut_cv',    label: 'LOC',   cable: 'cv' },
-    { id: 'high_cut_cv',   label: 'HIC',   cable: 'cv' },
-    { id: 'cross_seed_cv', label: 'XSED',  cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'out_l', label: 'OUT L', cable: 'audio' },
-    { id: 'out_r', label: 'OUT R', cable: 'audio' },
-  ];
+  const inputs = portsFromDef(cloudseedDef.inputs, {
+    in_l: 'IN L', in_r: 'IN R', dry_cv: 'DRY', early_cv: 'EARL', late_cv: 'LATE',
+    input_mix_cv: 'IMIX', low_cut_cv: 'LOC', high_cut_cv: 'HIC', cross_seed_cv: 'XSED',
+  });
+  const outputs = portsFromDef(cloudseedDef.outputs, { out_l: 'OUT L', out_r: 'OUT R' });
 
   // Tap enabled / diffusion enabled / late diffusion / EQ enables.
   let tapOn = $derived(paramVal('tap_enabled') >= 0.5);
@@ -300,14 +277,7 @@
     width: 680px;
     background: var(--cloudseed-bg, var(--surface-2, #1a2530));
     color: var(--text, #e0e8f0);
-  }
-  .cloudseed-card .title {
-    font-family: var(--font-display, inherit);
-    font-size: 0.95rem;
-    letter-spacing: 0.08em;
-    padding: 6px 12px;
-  }
-  .panel-grid {
+  }  .panel-grid {
     display: grid;
     grid-template-columns: 1fr 1.2fr 2fr 1.4fr;
     grid-template-rows: auto auto auto;

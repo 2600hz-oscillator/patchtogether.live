@@ -11,12 +11,12 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { moog984Def } from '$lib/audio/modules/moog984';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import MoogPanel from './moog/MoogPanel.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -53,18 +53,12 @@
   const COLS = [1, 2, 3, 4];
   const cellId = (i: number, j: number) => `m${i}${j}`;
 
-  const inputs: PortDescriptor[] = [
-    { id: 'in1', label: 'IN 1', cable: 'audio' },
-    { id: 'in2', label: 'IN 2', cable: 'audio' },
-    { id: 'in3', label: 'IN 3', cable: 'audio' },
-    { id: 'in4', label: 'IN 4', cable: 'audio' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'out1', label: 'OUT 1', cable: 'audio' },
-    { id: 'out2', label: 'OUT 2', cable: 'audio' },
-    { id: 'out3', label: 'OUT 3', cable: 'audio' },
-    { id: 'out4', label: 'OUT 4', cable: 'audio' },
-  ];
+  const inputs = portsFromDef(moog984Def.inputs, {
+    in1: 'IN 1', in2: 'IN 2', in3: 'IN 3', in4: 'IN 4',
+  });
+  const outputs = portsFromDef(moog984Def.outputs, {
+    out1: 'OUT 1', out2: 'OUT 2', out3: 'OUT 3', out4: 'OUT 4',
+  });
 </script>
 
 <MoogPanel {id} {data} defaultLabel="984 Matrix" width={300}>

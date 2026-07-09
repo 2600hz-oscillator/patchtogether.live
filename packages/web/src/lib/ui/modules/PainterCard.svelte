@@ -18,7 +18,6 @@
   import { onMount, onDestroy } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
   import { mutateNode } from '$lib/graph/mutate';
   import { painterDef, type PainterHandleExtras } from '$lib/video/modules/painter';
@@ -44,6 +43,7 @@
   import { VIDEO_RES } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -310,10 +310,8 @@
     if (bindRetry) clearTimeout(bindRetry);
   });
 
-  const inputs: PortDescriptor[] = [];
-  const outputs: PortDescriptor[] = [
-    { id: 'out', label: 'OUT', cable: 'video' },
-  ];
+  const inputs = portsFromDef(painterDef.inputs);
+  const outputs = portsFromDef(painterDef.outputs);
 </script>
 
 <div class="mod-card painter-card" data-testid="painter-card">

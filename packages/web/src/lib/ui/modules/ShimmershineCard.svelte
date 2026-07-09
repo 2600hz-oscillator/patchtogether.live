@@ -2,16 +2,14 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { shimmershineDef } from '$lib/audio/modules/shimmershine';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live } = cardParams(shimmershineDef, () => id, () => node);
 
   let decay   = $derived(node?.params.decay   ?? shimmershineDef.params[0]!.defaultValue);
   let shimmer = $derived(node?.params.shimmer ?? shimmershineDef.params[1]!.defaultValue);
@@ -19,24 +17,9 @@
   let damp    = $derived(node?.params.damp    ?? shimmershineDef.params[3]!.defaultValue);
   let mix     = $derived(node?.params.mix     ?? shimmershineDef.params[4]!.defaultValue);
 
-  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
-  const live = (k: string) => () => {
-    const e = engineCtx.get(); if (!e || !node) return undefined;
-    return e.readParam(node, k);
-  };
 
-  const inputs: PortDescriptor[] = [
-    { id: 'in_l',       cable: 'audio' },
-    { id: 'in_r',       cable: 'audio' },
-    { id: 'decay_cv',   cable: 'cv' },
-    { id: 'shimmer_cv', cable: 'cv' },
-    { id: 'size_cv',    cable: 'cv' },
-    { id: 'mix_cv',     cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'out_l', cable: 'audio' },
-    { id: 'out_r', cable: 'audio' },
-  ];
+  const inputs = portsFromDef(shimmershineDef.inputs);
+  const outputs = portsFromDef(shimmershineDef.outputs);
 </script>
 
 <div class="mod-card shimmershine-card">
@@ -55,13 +38,7 @@
 </div>
 
 <style>
-  .shimmershine-card { width: 280px; }
-  .shimmershine-card .title {
-    font-family: var(--font-display, inherit);
-    font-size: 0.85rem;
-    letter-spacing: 0.04em;
-  }
-  .shimmershine-card .fader-row {
+  .shimmershine-card { width: 280px; }  .shimmershine-card .fader-row {
     margin-top: 14px;
     display: flex;
     justify-content: center;

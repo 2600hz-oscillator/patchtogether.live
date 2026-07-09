@@ -19,7 +19,6 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
   import { setNodeParam } from '$lib/graph/mutate';
   import { fourPlexVidDef } from '$lib/video/modules/4plexvid';
@@ -27,6 +26,7 @@
   import { VIDEO_RES } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -48,22 +48,10 @@
 
   // Ports — ids byte-identical to fourPlexVidDef (in1..in4 = video,
   // gate1..gate4 = cv, out1..out4 = video).
-  const inputs: PortDescriptor[] = [
-    { id: 'in1', label: 'IN1', cable: 'video' },
-    { id: 'in2', label: 'IN2', cable: 'video' },
-    { id: 'in3', label: 'IN3', cable: 'video' },
-    { id: 'in4', label: 'IN4', cable: 'video' },
-    { id: 'gate1', label: 'G1', cable: 'cv' },
-    { id: 'gate2', label: 'G2', cable: 'cv' },
-    { id: 'gate3', label: 'G3', cable: 'cv' },
-    { id: 'gate4', label: 'G4', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'out1', label: 'OUT1', cable: 'video' },
-    { id: 'out2', label: 'OUT2', cable: 'video' },
-    { id: 'out3', label: 'OUT3', cable: 'video' },
-    { id: 'out4', label: 'OUT4', cable: 'video' },
-  ];
+  const inputs = portsFromDef(fourPlexVidDef.inputs, {
+    gate1: 'G1', gate2: 'G2', gate3: 'G3', gate4: 'G4',
+  });
+  const outputs = portsFromDef(fourPlexVidDef.outputs);
 
   // --- Live preview of OUT 1 (the canonical surface.texture). Mirrors the
   // VideoOutCard blit: ask the engine to render this node's surface FBO
@@ -104,7 +92,7 @@
   onDestroy(() => { if (rafId !== null) cancelAnimationFrame(rafId); });
 </script>
 
-<div class="card video" data-testid="fourplexvid-card" data-node-id={id}>
+<div class="vcard card video" data-testid="fourplexvid-card" data-node-id={id}>
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="4PLEXVID" />
 
@@ -136,23 +124,7 @@
   .card {
     width: 280px;
     min-height: 300px;
-    background: var(--module-bg);
-    border: 1px solid var(--border);
-    border-radius: 2px;
-    color: var(--text);
-    padding-top: 18px;
-    padding-bottom: 14px;
-    position: relative;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
   }
-  :global(.svelte-flow__node:hover) .card { border-color: var(--accent-dim); }
-  :global(.svelte-flow__node.selected) .card {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
-  }
-  .stripe { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--cable-video); }
-  .title { font-size: 0.85rem; font-weight: 500; text-align: center; margin: 0 0 8px; letter-spacing: 0.05em; }
   .body {
     /* Clear the PatchPanel's top-left/right trigger affordances. */
     margin-top: 24px;

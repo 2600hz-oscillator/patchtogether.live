@@ -34,6 +34,7 @@
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -101,7 +102,7 @@
     id: buttonGateId(name),
     cable: 'gate' as const,
   }));
-  const outputs: PortDescriptor[] = [{ id: 'out', cable: 'audio' as const }];
+  const outputs = portsFromDef(blueboxDef.outputs);
 
   // The 4-row × 3-col digit grid is laid out as the standard phone
   // keypad — row 1: 1 2 3 / row 2: 4 5 6 / row 3: 7 8 9 / row 4: _ 0 _.

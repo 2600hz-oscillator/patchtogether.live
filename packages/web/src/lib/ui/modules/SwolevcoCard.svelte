@@ -7,47 +7,25 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { swolevcoDef } from '$lib/audio/modules/swolevco';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live } = cardParams(swolevcoDef, () => id, () => node);
 
   function paramVal(id_: string, fallback: number): number {
     const v = node?.params?.[id_];
     return typeof v === 'number' ? v : fallback;
   }
-  const set = (k: string) => (v: number) => {
-    setNodeParam(id, k, v);
-  };
-  const live = (k: string) => () => {
-    const e = engineCtx.get(); if (!e || !node) return undefined;
-    return e.readParam(node, k);
-  };
 
   // Inputs + outputs feed the PatchPanel. The patch-panel auto-grouper
   // sorts by cable type — pitches first, then audio, then cv. Outputs
   // group similarly (audio + mono-video).
-  const inputs: PortDescriptor[] = [
-    { id: 'pitch',     cable: 'pitch' },
-    { id: 'mod_pitch', label: 'MOD PITCH', cable: 'pitch' },
-    { id: 'fm',        cable: 'audio' },
-    { id: 'timbre',    cable: 'cv' },
-    { id: 'symmetry',  cable: 'cv' },
-    { id: 'fold',      cable: 'cv' },
-    { id: 'ratio',     cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'out',     cable: 'audio' },
-    { id: 'mod_out', label: 'MOD OUT', cable: 'audio' },
-    { id: 'sum_out', label: 'SUM OUT', cable: 'audio' },
-    { id: 'scope',   cable: 'mono-video' },
-  ];
+  const inputs = portsFromDef(swolevcoDef.inputs, { mod_pitch: 'MOD PITCH' });
+  const outputs = portsFromDef(swolevcoDef.outputs, { mod_out: 'MOD OUT', sum_out: 'SUM OUT' });
 </script>
 
 <div class="mod-card swolevco-card">

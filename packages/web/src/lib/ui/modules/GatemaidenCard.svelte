@@ -6,41 +6,20 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { gatemaidenDef } from '$lib/audio/modules/gatemaiden';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { defaultFor, paramVal, set, live } = cardParams(gatemaidenDef, () => id, () => node);
 
-  function defaultFor(k: string): number {
-    return gatemaidenDef.params.find((p) => p.id === k)?.defaultValue ?? 0;
-  }
-  function paramVal(k: string): number {
-    const v = node?.params?.[k];
-    return typeof v === 'number' ? v : defaultFor(k);
-  }
-  const set = (k: string) => (v: number) => {
-    setNodeParam(id, k, v);
-  };
-  const live = (k: string) => () => {
-    const e = engineCtx.get(); if (!e || !node) return undefined;
-    return e.readParam(node, k);
-  };
 
   // ▷ = trigger (short pulse), ▭ = gate (held level) — the trigger/gate glyphs.
-  const inputs: PortDescriptor[] = [
-    { id: 'in', label: 'IN', cable: 'gate' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'gate', label: '▭ GATE', cable: 'gate' },
-    { id: 'trig', label: '▷ TRIG', cable: 'gate' },
-  ];
+  const inputs = portsFromDef(gatemaidenDef.inputs);
+  const outputs = portsFromDef(gatemaidenDef.outputs, { gate: '▭ GATE', trig: '▷ TRIG' });
 
   const shapeLabels = ['△ TRI', '▭ SQR'] as const;
   function cycleShape() {

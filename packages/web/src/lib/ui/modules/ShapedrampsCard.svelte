@@ -13,11 +13,11 @@
   import { type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { shapedrampsDef } from '$lib/video/modules/shapedramps';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -30,36 +30,15 @@
     return (v: number) => setNodeParam(id, paramId, v);
   }
 
-  const inputs: PortDescriptor[] = [
-    // 6 CV inputs (shape/phase/freq).
-    { id: 'h_shape', label: 'HS',   cable: 'cv' },
-    { id: 'v_shape', label: 'VS',   cable: 'cv' },
-    { id: 'h_phase', label: 'HP',   cable: 'cv' },
-    { id: 'v_phase', label: 'VP',   cable: 'cv' },
-    { id: 'h_freq',  label: 'HF',   cable: 'cv' },
-    { id: 'v_freq',  label: 'VF',   cable: 'cv' },
-    // MIX 1 — 2 mono-video signal ins + 1 cv in.
-    { id: 'mix1_a',  label: 'M1A',  cable: 'mono-video' },
-    { id: 'mix1_b',  label: 'M1B',  cable: 'mono-video' },
-    { id: 'mix1_cv', label: 'M1CV', cable: 'cv' },
-    // MIX 2 — 2 mono-video signal ins + 1 cv in.
-    { id: 'mix2_a',  label: 'M2A',  cable: 'mono-video' },
-    { id: 'mix2_b',  label: 'M2B',  cable: 'mono-video' },
-    { id: 'mix2_cv', label: 'M2CV', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    // 4 mono-video outputs (linear identity + shaped).
-    { id: 'h_lin',    label: 'H_LIN',  cable: 'mono-video' },
-    { id: 'v_lin',    label: 'V_LIN',  cable: 'mono-video' },
-    { id: 'h_out',    label: 'H_OUT',  cable: 'mono-video' },
-    { id: 'v_out',    label: 'V_OUT',  cable: 'mono-video' },
-    // Mixer outs.
-    { id: 'mix1_out', label: 'M1_OUT', cable: 'mono-video' },
-    { id: 'mix2_out', label: 'M2_OUT', cable: 'mono-video' },
-  ];
+  const inputs = portsFromDef(shapedrampsDef.inputs, {
+    h_shape: 'HS', v_shape: 'VS', h_phase: 'HP', v_phase: 'VP', h_freq: 'HF', v_freq: 'VF',
+    mix1_a: 'M1A', mix1_b: 'M1B', mix2_a: 'M2A', mix2_b: 'M2B', mix1_cv: 'M1CV',
+    mix2_cv: 'M2CV',
+  });
+  const outputs = portsFromDef(shapedrampsDef.outputs, { mix1_out: 'M1_OUT', mix2_out: 'M2_OUT' });
 </script>
 
-<div class="card video">
+<div class="vcard card video">
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="SHAPEDRAMPS" />
 
@@ -88,36 +67,10 @@
   .card {
     width: 240px;
     min-height: 280px;
-    background: var(--module-bg);
-    border: 1px solid var(--border);
-    border-radius: 2px;
-    color: var(--text);
-    padding-top: 18px;
-    padding-bottom: 14px;
-    position: relative;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
-  }
-  :global(.svelte-flow__node:hover) .card { border-color: var(--accent-dim); }
-  :global(.svelte-flow__node.selected) .card {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
   }
   .stripe {
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 2px;
-    border-radius: 2px 2px 0 0;
     background: var(--cable-mono-video);
-  }
-  .title {
-    font-size: 0.85rem;
-    font-weight: 500;
-    text-align: center;
-    margin: 0 0 8px;
-    letter-spacing: 0.05em;
-  }
-  .fader-grid {
+  }  .fader-grid {
     margin-top: 16px;
     padding: 0 12px;
     display: grid;

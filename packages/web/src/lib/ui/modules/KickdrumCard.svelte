@@ -16,32 +16,16 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { kickdrumDef } from '$lib/audio/modules/kickdrum';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { defaultFor, paramVal, set, live } = cardParams(kickdrumDef, () => id, () => node);
 
-  function defaultFor(pid: string): number {
-    return kickdrumDef.params.find((p) => p.id === pid)?.defaultValue ?? 0;
-  }
-  function paramVal(k: string): number {
-    const v = node?.params?.[k];
-    return typeof v === 'number' ? v : defaultFor(k);
-  }
 
-  const set = (pid: string) => (v: number) => {
-    setNodeParam(id, pid, v);
-  };
-  const live = (pid: string) => () => {
-    const e = engineCtx.get(); if (!e || !node) return undefined;
-    return e.readParam(node, pid);
-  };
 
   // Per-param reactive reads.
   let tune       = $derived(paramVal('tune'));
@@ -73,16 +57,10 @@
   let hardOn = $derived(hard >= 0.5);
   function toggleHard(): void { set('hard')(hardOn ? 0 : 1); }
 
-  const inputs: PortDescriptor[] = [
-    { id: 'trigger_in', label: 'TRIG',  cable: 'gate' },
-    { id: 'accent_in',  label: 'ACC',   cable: 'cv' },
-    { id: 'pitch_cv',   label: 'V/OCT', cable: 'cv' },
-    { id: 'choke_in',   label: 'CHOKE', cable: 'gate' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'audio_l', label: 'OUT L', cable: 'audio' },
-    { id: 'audio_r', label: 'OUT R', cable: 'audio' },
-  ];
+  const inputs = portsFromDef(kickdrumDef.inputs, {
+    trigger_in: 'TRIG', accent_in: 'ACC', pitch_cv: 'V/OCT', choke_in: 'CHOKE',
+  });
+  const outputs = portsFromDef(kickdrumDef.outputs, { audio_l: 'OUT L', audio_r: 'OUT R' });
 </script>
 
 <div class="mod-card kickdrum-card">

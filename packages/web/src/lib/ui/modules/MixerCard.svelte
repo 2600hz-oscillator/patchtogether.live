@@ -2,16 +2,14 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { mixerDef } from '$lib/audio/modules/mixer';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live } = cardParams(mixerDef, () => id, () => node);
 
   let ch1    = $derived(node?.params.ch1    ?? mixerDef.params[0]!.defaultValue);
   let ch2    = $derived(node?.params.ch2    ?? mixerDef.params[1]!.defaultValue);
@@ -19,18 +17,11 @@
   let ch4    = $derived(node?.params.ch4    ?? mixerDef.params[3]!.defaultValue);
   let master = $derived(node?.params.master ?? mixerDef.params[4]!.defaultValue);
 
-  const set = (id_: string) => (v: number) => setNodeParam(id, id_, v);
-  const live = (id_: string) => () => { const e = engineCtx.get(); if (!e || !node) return undefined; return e.readParam(node, id_); };
 
-  const inputs: PortDescriptor[] = [
-    { id: 'in1', label: 'INPUT 1', cable: 'audio' },
-    { id: 'in2', label: 'INPUT 2', cable: 'audio' },
-    { id: 'in3', label: 'INPUT 3', cable: 'audio' },
-    { id: 'in4', label: 'INPUT 4', cable: 'audio' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'audio', label: 'OUT', cable: 'audio' },
-  ];
+  const inputs = portsFromDef(mixerDef.inputs, {
+    in1: 'INPUT 1', in2: 'INPUT 2', in3: 'INPUT 3', in4: 'INPUT 4',
+  });
+  const outputs = portsFromDef(mixerDef.outputs, { audio: 'OUT' });
 </script>
 
 <div class="mod-card mixer-card">

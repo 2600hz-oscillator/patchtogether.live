@@ -50,6 +50,7 @@
   import { hitTestSurfaces } from './mappy-hit';
   import MappyEditor from './MappyEditor.svelte';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -299,7 +300,7 @@
     label: `IN${i + 1}`,
     cable: 'video',
   }));
-  const outputs: PortDescriptor[] = [{ id: 'out', label: 'OUT', cable: 'video' }];
+  const outputs = portsFromDef(mappyDef.outputs);
 
   void mappyDef; // referenced for parity with sibling cards
 </script>

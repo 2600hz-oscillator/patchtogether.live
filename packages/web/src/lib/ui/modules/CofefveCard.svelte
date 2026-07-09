@@ -17,7 +17,6 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import ModuleTitle from './ModuleTitle.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import {
     cofefveDelayDef,
@@ -26,25 +25,13 @@
     COFEFVE_PAN_MODE_OPTIONS,
     COFEFVE_FILTER_MODE_OPTIONS,
   } from '$lib/audio/modules/cofefve';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { paramVal, set, live } = cardParams(cofefveDelayDef, () => id, () => node);
 
-  function defaultFor(k: string): number {
-    return cofefveDelayDef.params.find((p) => p.id === k)?.defaultValue ?? 0;
-  }
-  function paramVal(k: string): number {
-    const v = node?.params?.[k];
-    return typeof v === 'number' ? v : defaultFor(k);
-  }
-  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
-  const live = (k: string) => () => {
-    const e = engineCtx.get(); if (!e || !node) return undefined;
-    return e.readParam(node, k);
-  };
   function setDiscrete(k: string, v: number): void {
     setNodeParam(id, k, v);
   }
@@ -57,23 +44,11 @@
 
   const PI = Math.PI;
 
-  const inputs: PortDescriptor[] = [
-    { id: 'inL',         label: 'IN L', cable: 'audio' },
-    { id: 'inR',         label: 'IN R', cable: 'audio' },
-    { id: 'clock',       label: 'CLK',  cable: 'gate' },
-    { id: 'time_cv',     label: 'TIME', cable: 'cv' },
-    { id: 'feedback_cv', label: 'FBK',  cable: 'cv' },
-    { id: 'mix_cv',      label: 'MIX',  cable: 'cv' },
-    { id: 'drive_cv',    label: 'DRV',  cable: 'cv' },
-    { id: 'lfo_cv',      label: 'WOW',  cable: 'cv' },
-    { id: 'drift_cv',    label: 'FLTR', cable: 'cv' },
-    { id: 'pan_cv',      label: 'PAN',  cable: 'cv' },
-    { id: 'duck_cv',     label: 'DUCK', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'outL', label: 'OUT L', cable: 'audio' },
-    { id: 'outR', label: 'OUT R', cable: 'audio' },
-  ];
+  const inputs = portsFromDef(cofefveDelayDef.inputs, {
+    clock: 'CLK', time_cv: 'TIME', feedback_cv: 'FBK', mix_cv: 'MIX', drive_cv: 'DRV',
+    lfo_cv: 'WOW', drift_cv: 'FLTR', pan_cv: 'PAN', duck_cv: 'DUCK',
+  });
+  const outputs = portsFromDef(cofefveDelayDef.outputs);
 </script>
 
 <div class="mod-card cofefve-delay-card">

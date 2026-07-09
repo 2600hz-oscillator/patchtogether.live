@@ -14,11 +14,11 @@
 
   import type { NodeProps } from '@xyflow/svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { joystickDef, clampJoy } from '$lib/audio/modules/joystick';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -79,13 +79,8 @@
     return v.toFixed(2);
   }
 
-  const inputs: PortDescriptor[] = [];
-  const outputs: PortDescriptor[] = [
-    { id: 'x',  label: 'X',  cable: 'cv' },
-    { id: 'y',  label: 'Y',  cable: 'cv' },
-    { id: 'nx', label: 'NX', cable: 'cv' },
-    { id: 'ny', label: 'NY', cable: 'cv' },
-  ];
+  const inputs = portsFromDef(joystickDef.inputs);
+  const outputs = portsFromDef(joystickDef.outputs);
 </script>
 
 <div class="mod-card joystick-card" data-testid="joystick-card" data-node-id={id}>
@@ -132,15 +127,7 @@
     top: 0; left: 0; right: 0;
     height: 2px;
     border-radius: 2px 2px 0 0;
-  }
-  .title {
-    font-size: 0.85rem;
-    font-weight: 500;
-    text-align: center;
-    margin: 0 0 8px;
-    letter-spacing: 0.05em;
-  }
-  .pad-wrap {
+  }  .pad-wrap {
     display: flex;
     flex-direction: column;
     align-items: center;

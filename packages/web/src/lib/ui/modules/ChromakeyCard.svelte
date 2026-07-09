@@ -9,12 +9,12 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import { chromakeyDef } from '$lib/video/modules/chromakey';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -47,20 +47,13 @@
 
   // Ports — ids byte-identical to chromakeyDef (fg/bg = video, keyR/keyG/keyB +
   // threshold/softness/spillSuppress = cv, out = video).
-  const inputs: PortDescriptor[] = [
-    { id: 'fg', label: 'FG', cable: 'video' },
-    { id: 'bg', label: 'BG', cable: 'video' },
-    { id: 'keyR', label: 'KEY R', cable: 'cv' },
-    { id: 'keyG', label: 'KEY G', cable: 'cv' },
-    { id: 'keyB', label: 'KEY B', cable: 'cv' },
-    { id: 'threshold', label: 'THRESH', cable: 'cv' },
-    { id: 'softness', label: 'SOFT', cable: 'cv' },
-    { id: 'spillSuppress', label: 'SPILL', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [{ id: 'out', label: 'OUT', cable: 'video' }];
+  const inputs = portsFromDef(chromakeyDef.inputs, {
+    threshold: 'THRESH', softness: 'SOFT', spillSuppress: 'SPILL',
+  });
+  const outputs = portsFromDef(chromakeyDef.outputs);
 </script>
 
-<div class="card video" data-testid="chromakey-card">
+<div class="vcard card video" data-testid="chromakey-card">
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="CHROMAKEY" />
 
@@ -93,23 +86,7 @@
   .card {
     width: 260px;
     min-height: 220px;
-    background: var(--module-bg);
-    border: 1px solid var(--border);
-    border-radius: 2px;
-    color: var(--text);
-    padding-top: 18px;
-    padding-bottom: 14px;
-    position: relative;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
   }
-  :global(.svelte-flow__node:hover) .card { border-color: var(--accent-dim); }
-  :global(.svelte-flow__node.selected) .card {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
-  }
-  .stripe { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--cable-video); }
-  .title { font-size: 0.85rem; font-weight: 500; text-align: center; margin: 0 0 8px; letter-spacing: 0.05em; }
   .body {
     /* Clear the PatchPanel's top-left/right trigger affordances. */
     margin-top: 24px;

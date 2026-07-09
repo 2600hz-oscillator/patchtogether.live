@@ -10,12 +10,12 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { moog911Def } from '$lib/audio/modules/moog911';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import MoogPanel from './moog/MoogPanel.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -42,17 +42,10 @@
     };
   }
 
-  const inputs: PortDescriptor[] = [
-    { id: 'gate',    label: 'TRIG', cable: 'gate' },
-    { id: 't1_cv',   label: 'T1',   cable: 'cv' },
-    { id: 't2_cv',   label: 'T2',   cable: 'cv' },
-    { id: 'esus_cv', label: 'ESUS', cable: 'cv' },
-    { id: 't3_cv',   label: 'T3',   cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'env',     label: 'OUT', cable: 'cv' },
-    { id: 'env_inv', label: 'INV', cable: 'cv' },
-  ];
+  const inputs = portsFromDef(moog911Def.inputs, {
+    gate: 'TRIG', t1_cv: 'T1', t2_cv: 'T2', esus_cv: 'ESUS', t3_cv: 'T3',
+  });
+  const outputs = portsFromDef(moog911Def.outputs, { env: 'OUT', env_inv: 'INV' });
 </script>
 
 <MoogPanel {id} {data} defaultLabel="911 EG" width={232}>

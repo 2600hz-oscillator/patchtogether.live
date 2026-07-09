@@ -12,12 +12,12 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { moogCp3Def } from '$lib/audio/modules/moog-cp3';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import MoogPanel from './moog/MoogPanel.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -45,22 +45,13 @@
     };
   }
 
-  const inputs: PortDescriptor[] = [
-    { id: 'in1',  label: 'IN 1', cable: 'audio' },
-    { id: 'in2',  label: 'IN 2', cable: 'audio' },
-    { id: 'in3',  label: 'IN 3', cable: 'audio' },
-    { id: 'in4',  label: 'IN 4', cable: 'audio' },
-    { id: 'ext4', label: 'EXT 4', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'out_positive',   label: '(+) OUT', cable: 'audio' },
-    { id: 'out_negative',   label: '(−) OUT', cable: 'audio' },
-    { id: 'multiple_one',   label: 'MULT 1',  cable: 'audio' },
-    { id: 'multiple_two',   label: 'MULT 2',  cable: 'audio' },
-    { id: 'multiple_three', label: 'MULT 3',  cable: 'audio' },
-    { id: 'plus_twelve',    label: '+12V',    cable: 'cv' },
-    { id: 'minus_six',      label: '−6V',     cable: 'cv' },
-  ];
+  const inputs = portsFromDef(moogCp3Def.inputs, {
+    in1: 'IN 1', in2: 'IN 2', in3: 'IN 3', in4: 'IN 4', ext4: 'EXT 4',
+  });
+  const outputs = portsFromDef(moogCp3Def.outputs, {
+    out_positive: '(+) OUT', out_negative: '(−) OUT', multiple_one: 'MULT 1',
+    multiple_two: 'MULT 2', multiple_three: 'MULT 3', plus_twelve: '+12V', minus_six: '−6V',
+  });
 </script>
 
 <MoogPanel {id} {data} defaultLabel="CP3 Mixer" width={264}>

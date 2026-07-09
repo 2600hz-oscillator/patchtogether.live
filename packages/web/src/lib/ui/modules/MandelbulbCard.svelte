@@ -30,8 +30,6 @@
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { useEngine } from '$lib/audio/engine-context';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { mandelbulbDef, MB_SLICE_Y_RANGE } from '$lib/video/modules/mandelbulb';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
@@ -41,31 +39,18 @@
   // so the 2D slice display matches the sound. Imported via a relative path (the
   // cube.ts / bluebox.ts pattern: worktrees may not symlink the workspace pkg).
   import { mbSampleSlice, type MbSliceParams } from '../../../../../dsp/src/lib/mandelbulb-slice';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { defaultFor, paramVal, set, live, engineCtx } = cardParams(mandelbulbDef, () => id, () => node);
 
-  function defaultFor(k: string): number {
-    return mandelbulbDef.params.find((p) => p.id === k)?.defaultValue ?? 0;
-  }
   function minFor(k: string): number {
     return mandelbulbDef.params.find((p) => p.id === k)?.min ?? 0;
   }
   function maxFor(k: string): number {
     return mandelbulbDef.params.find((p) => p.id === k)?.max ?? 1;
   }
-  function paramVal(k: string): number {
-    const v = node?.params?.[k];
-    return typeof v === 'number' ? v : defaultFor(k);
-  }
-  const set = (k: string) => (v: number) => {
-    setNodeParam(id, k, v);
-  };
-  const live = (pid: string) => () => {
-    const e = engineCtx.get(); if (!e || !node) return undefined;
-    return e.readParam(node, pid);
-  };
   // Live param read (knob + CV via the engine), falling back to the stored value.
   function liveParam(pid: string, fallback: number): number {
     const e = engineCtx.get();
@@ -267,10 +252,7 @@
     ...CONTROLS.map((c): PortDescriptor => ({ id: `${c.pid}_cv`, label: c.label, cable: 'cv' })),
     ...SLICE_CONTROLS.map((c): PortDescriptor => ({ id: `${c.pid}_cv`, label: c.label, cable: 'cv' })),
   ];
-  const outputs: PortDescriptor[] = [
-    { id: 'video_out', label: 'VIDEO', cable: 'mono-video' },
-    { id: 'audio_out', label: 'AUDIO', cable: 'audio' },
-  ];
+  const outputs = portsFromDef(mandelbulbDef.outputs, { video_out: 'VIDEO', audio_out: 'AUDIO' });
 </script>
 
 <div class="mod-card mandelbulb-card" data-testid="mandelbulb-card" data-node-id={id}>

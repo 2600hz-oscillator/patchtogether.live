@@ -19,20 +19,18 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
   import ModuleTitle from './ModuleTitle.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { setNodeParam } from '$lib/graph/mutate';
   import {
     resofilterDef,
     RESOFILTER_MODE_NAMES,
     RESOFILTER_MAX_MODE,
     type ResofilterMode,
   } from '$lib/audio/modules/resofilter';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live } = cardParams(resofilterDef, () => id, () => node);
 
   const defaultFor = (pid: string): number =>
     resofilterDef.params.find((p) => p.id === pid)!.defaultValue;
@@ -42,13 +40,6 @@
     return typeof v === 'number' ? v : defaultFor(k);
   }
 
-  const set = (pid: string) => (v: number) => {
-    setNodeParam(id, pid, v);
-  };
-  const live = (pid: string) => () => {
-    const e = engineCtx.get(); if (!e || !node) return undefined;
-    return e.readParam(node, pid);
-  };
 
   function clampMode(v: number): ResofilterMode {
     const r = Math.round(v);
@@ -62,15 +53,8 @@
   let modeIdx = $derived(clampMode(paramVal('mode')));
   let modeName = $derived(RESOFILTER_MODE_NAMES[modeIdx]);
 
-  const inputs: PortDescriptor[] = [
-    { id: 'audio',     label: 'AUDIO',  cable: 'audio' },
-    { id: 'cutoff_cv', label: 'CUTOFF', cable: 'cv' },
-    { id: 'reso_cv',   label: 'RESO',   cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'out_l', label: 'OUT L', cable: 'audio' },
-    { id: 'out_r', label: 'OUT R', cable: 'audio' },
-  ];
+  const inputs = portsFromDef(resofilterDef.inputs, { cutoff_cv: 'CUTOFF', reso_cv: 'RESO' });
+  const outputs = portsFromDef(resofilterDef.outputs, { out_l: 'OUT L', out_r: 'OUT R' });
 </script>
 
 <div class="mod-card resofilter-card">

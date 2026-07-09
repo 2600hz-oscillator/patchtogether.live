@@ -17,27 +17,18 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { shapegenDef, SHAPEGEN_CLOCK_PORT_ID } from '$lib/video/modules/shapegen';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import { onMount, onDestroy } from 'svelte';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
 
-  function defaultFor(k: string): number {
-    return shapegenDef.params.find((p) => p.id === k)?.defaultValue ?? 0;
-  }
-  function paramVal(k: string): number {
-    const v = node?.params?.[k];
-    return typeof v === 'number' ? v : defaultFor(k);
-  }
-  const set = (k: string) => (v: number) => {
-    setNodeParam(id, k, v);
-  };
+  const { defaultFor, paramVal, set } = cardParams(shapegenDef, () => id, () => node);
 
   // ----- Preview canvas: blit the engine's OffscreenCanvas scene -----
   let previewEl: HTMLCanvasElement | null = $state(null);
@@ -92,7 +83,7 @@
     { id: 'raster_c', label: 'C', cable: 'video' },
     { id: SHAPEGEN_CLOCK_PORT_ID, label: 'CLK', cable: 'gate' },
   ];
-  const outputs: PortDescriptor[] = [{ id: 'out', label: 'OUT', cable: 'video' }];
+  const outputs = portsFromDef(shapegenDef.outputs);
 </script>
 
 <div class="mod-card shapegen-card" data-testid="shapegen-card">

@@ -10,12 +10,12 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { moog961Def } from '$lib/audio/modules/moog961';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import MoogPanel from './moog/MoogPanel.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -41,18 +41,12 @@
   }
 
   // audio input + S / V trigger inputs (left); V / S trigger outputs (right).
-  const inputs: PortDescriptor[] = [
-    { id: 'audio_in', label: 'AUDIO', cable: 'audio' },
-    { id: 's_in',     label: 'S IN',  cable: 'gate' },
-    { id: 'v_in_a',   label: 'V A',   cable: 'gate' },
-    { id: 'v_in_b',   label: 'V B',   cable: 'gate' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'v_out1',  label: 'V 1',  cable: 'gate' },
-    { id: 'v_out2',  label: 'V 2',  cable: 'gate' },
-    { id: 's_out_a', label: 'S A',  cable: 'gate' },
-    { id: 's_out_b', label: 'S B',  cable: 'gate' },
-  ];
+  const inputs = portsFromDef(moog961Def.inputs, {
+    audio_in: 'AUDIO', s_in: 'S IN', v_in_a: 'V A', v_in_b: 'V B',
+  });
+  const outputs = portsFromDef(moog961Def.outputs, {
+    v_out1: 'V 1', v_out2: 'V 2', s_out_a: 'S A', s_out_b: 'S B',
+  });
 </script>
 
 <MoogPanel {id} {data} defaultLabel="961 Interface" width={220}>

@@ -12,13 +12,13 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import { moog904bDef } from '$lib/audio/modules/moog904b';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import MoogPanel from './moog/MoogPanel.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -54,11 +54,8 @@
   }
 
   // CONTROL INPUT (summing, left) + SIGNAL INPUT; single OUTPUT.
-  const inputs: PortDescriptor[] = [
-    { id: 'audio',     label: 'SIGNAL', cable: 'audio' },
-    { id: 'cutoff_cv', label: 'FREQ',   cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [{ id: 'audio', cable: 'audio' }];
+  const inputs = portsFromDef(moog904bDef.inputs, { audio: 'SIGNAL', cutoff_cv: 'FREQ' });
+  const outputs = portsFromDef(moog904bDef.outputs);
 </script>
 
 <MoogPanel {id} {data} defaultLabel="904B VCF" width={236}>

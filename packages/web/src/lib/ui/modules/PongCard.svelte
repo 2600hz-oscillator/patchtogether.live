@@ -3,22 +3,20 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { pongDef, drawPong, type PongState, type PongParams } from '$lib/audio/modules/pong';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { portsFromDef } from './card-kit';
 
   // Inputs: two paddle CVs. Outputs: two score gates.
-  const inputs: PortDescriptor[] = [
-    { id: 'paddle_left',  label: 'PADDLE L (CV)', cable: 'cv' },
-    { id: 'paddle_right', label: 'PADDLE R (CV)', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'score_left',  label: 'SCORE L (GATE)', cable: 'gate' },
-    { id: 'score_right', label: 'SCORE R (GATE)', cable: 'gate' },
-  ];
+  const inputs = portsFromDef(pongDef.inputs, {
+    paddle_left: 'PADDLE L (CV)', paddle_right: 'PADDLE R (CV)',
+  });
+  const outputs = portsFromDef(pongDef.outputs, {
+    score_left: 'SCORE L (GATE)', score_right: 'SCORE R (GATE)',
+  });
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);

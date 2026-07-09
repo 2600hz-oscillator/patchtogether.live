@@ -2,9 +2,7 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { wavecelDef, type WavecelData } from '$lib/audio/modules/wavecel';
   import { drawWave3D, drawWaveScope } from '$lib/audio/modules/wavecel-draw';
   import {
@@ -18,14 +16,14 @@
     WAVETABLE_PRESETS,
     loadWavetablePreset,
   } from '$lib/audio/wavetable-presets';
-  import { useEngine } from '$lib/audio/engine-context';
   import { spreadTaps } from '$lib/audio/wavecel-math';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live, engineCtx } = cardParams(wavecelDef, () => id, () => node);
 
   const defFor = (pid: string): number => wavecelDef.params.find((p) => p.id === pid)!.defaultValue;
   let tune    = $derived(node?.params.tune    ?? defFor('tune'));
@@ -42,34 +40,13 @@
   // base + (1-base)*env). Default 1 = full (env does nothing → raw-VCO drone).
   let baseVol = $derived(node?.params.base_vol ?? defFor('base_vol'));
 
-  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
-  const live = (k: string) => () => {
-    const e = engineCtx.get(); if (!e || !node) return undefined;
-    return e.readParam(node, k);
-  };
 
-  const inputs: PortDescriptor[] = [
-    { id: 'pitch',     cable: 'pitch' },
-    { id: 'fm',        cable: 'audio' },
-    { id: 'morph_cv',  label: 'MORPH (CV)',  cable: 'cv' },
-    { id: 'spread_cv', label: 'SPREAD (CV)', cable: 'cv' },
-    { id: 'fold_cv',   label: 'FOLD (CV)',   cable: 'cv' },
-    // Polyphonic chord bus (MIDI LANE mode=poly / POLYSEQZ). Gated lanes play
-    // simultaneously; unpatched → the mono PITCH path. cable: 'polyPitchGate'.
-    { id: 'poly',      label: 'POLY',        cable: 'polyPitchGate' },
-    // Mono TRIGGER gate for the per-voice amplitude ADSR. The FIRST note turns
-    // WAVECEL into a gated voice; before any note (and unpatched) it drones.
-    { id: 'trigger',   label: 'TRIG',        cable: 'gate' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'out_l', label: 'OUT L', cable: 'audio' },
-    { id: 'out_r', label: 'OUT R', cable: 'audio' },
-    // Two video outs. The card toggle picks 2D/3D for the on-card
-    // preview only; these ports ALWAYS emit their respective view
-    // regardless of the toggle. See wavecel-draw.ts.
-    { id: 'scope_out',  label: 'SCOPE VIDEO',   cable: 'mono-video' },
-    { id: 'wave3d_out', label: '3D VIDEO',      cable: 'video' },
-  ];
+  const inputs = portsFromDef(wavecelDef.inputs, {
+    morph_cv: 'MORPH (CV)', spread_cv: 'SPREAD (CV)', fold_cv: 'FOLD (CV)', trigger: 'TRIG',
+  });
+  const outputs = portsFromDef(wavecelDef.outputs, {
+    out_l: 'OUT L', out_r: 'OUT R', scope_out: 'SCOPE VIDEO', wave3d_out: '3D VIDEO',
+  });
 
   // Visualizer state.
   let canvasEl: HTMLCanvasElement | null = $state(null);

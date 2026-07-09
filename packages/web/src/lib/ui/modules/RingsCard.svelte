@@ -4,17 +4,15 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { ringsDef, RINGS_MODEL_NAMES } from '$lib/audio/modules/rings';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live } = cardParams(ringsDef, () => id, () => node);
 
   const defaultFor = (id: string): number =>
     ringsDef.params.find((p) => p.id === id)!.defaultValue;
@@ -33,11 +31,6 @@
   }
   let modelLabel = $derived(RINGS_MODEL_NAMES[clampModel(model)]);
 
-  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
-  const live = (k: string) => () => {
-    const e = engineCtx.get(); if (!e || !node) return undefined;
-    return e.readParam(node, k);
-  };
 
   function cycleModel(): void {
     const cur = clampModel(model);
@@ -46,22 +39,8 @@
     if (t) t.params.model = next;
   }
 
-  const inputs: PortDescriptor[] = [
-    { id: 'in',        cable: 'audio' },
-    { id: 'pitch',     cable: 'pitch' },
-    { id: 'strum',     cable: 'gate' },
-    { id: 'model_cv',  cable: 'cv' },
-    { id: 'note_cv',   cable: 'cv' },
-    { id: 'str_cv',    cable: 'cv' },
-    { id: 'bright_cv', cable: 'cv' },
-    { id: 'damp_cv',   cable: 'cv' },
-    { id: 'pos_cv',    cable: 'cv' },
-    { id: 'level_cv',  cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'odd',  cable: 'audio' },
-    { id: 'even', cable: 'audio' },
-  ];
+  const inputs = portsFromDef(ringsDef.inputs);
+  const outputs = portsFromDef(ringsDef.outputs);
 </script>
 
 <div class="mod-card rings-card">
@@ -91,13 +70,7 @@
 </div>
 
 <style>
-  .rings-card { width: 360px; }
-  .rings-card .title {
-    font-family: var(--font-display, inherit);
-    font-size: 0.85rem;
-    letter-spacing: 0.04em;
-  }
-  .rings-card .model-btn {
+  .rings-card { width: 360px; }  .rings-card .model-btn {
     display: flex;
     align-items: center;
     justify-content: space-between;

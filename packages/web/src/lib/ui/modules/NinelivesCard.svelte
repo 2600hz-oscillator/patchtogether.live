@@ -3,25 +3,18 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { ninelivesDef } from '$lib/audio/modules/ninelives';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live } = cardParams(ninelivesDef, () => id, () => node);
 
   let rate  = $derived(node?.params.rate  ?? ninelivesDef.params[0]!.defaultValue);
   let shape = $derived(node?.params.shape ?? ninelivesDef.params[1]!.defaultValue);
 
-  const set = (id_: string) => (v: number) => setNodeParam(id, id_, v);
-  const live = (id_: string) => () => {
-    const e = engineCtx.get();
-    if (!e || !node) return undefined;
-    return e.readParam(node, id_);
-  };
 
   const SHAPE_GLYPHS: Array<{ frac: number; kind: 'sine' | 'tri' | 'saw' | 'square' }> = [
     { frac: 0,   kind: 'sine'   },
@@ -29,7 +22,7 @@
     { frac: 1,   kind: 'square' },
   ];
 
-  const inputs: PortDescriptor[] = [{ id: 'reset', cable: 'gate' }];
+  const inputs = portsFromDef(ninelivesDef.inputs);
   // Nine CV taps on the geometric ⅓ ladder (out1 fastest … out9 = rate/6561).
   const outputs: PortDescriptor[] = Array.from({ length: 9 }, (_, i) => ({
     id: `out${i + 1}`,

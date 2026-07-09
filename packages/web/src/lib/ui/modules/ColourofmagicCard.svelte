@@ -13,7 +13,6 @@
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { useEngine } from '$lib/audio/engine-context';
   import { setNodeParam } from '$lib/graph/mutate';
   import { colourofmagicDef } from '$lib/video/modules/colourofmagic';
   import { packColor01, unpackColor01 } from '$lib/video/colourofmagic-colorspace';
@@ -21,10 +20,11 @@
   import { VIDEO_RES } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live, engineCtx } = cardParams(colourofmagicDef, () => id, () => node);
 
   function defaultFor(key: string): number {
     return colourofmagicDef.params.find((p) => p.id === key)!.defaultValue;
@@ -36,13 +36,7 @@
     const p = colourofmagicDef.params.find((x) => x.id === pid)!;
     return { min: p.min, max: p.max };
   }
-  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
   // Motorized live-CV read so a patched LFO / bound CC rotates the tick.
-  const live = (k: string) => () => {
-    const e = engineCtx.get();
-    if (!e || !node) return undefined;
-    return e.readParam(node, k);
-  };
 
   // ── channel-row config per block ──
   interface Chan { bias: string; over: string; label: string; deg?: boolean; advisory?: boolean }

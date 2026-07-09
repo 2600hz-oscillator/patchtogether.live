@@ -88,6 +88,48 @@
   justify-content: center;
 }
 
+/* ── .vcard — the legacy/video card chrome ──────────────────────────────────
+ * ~46 cards (mostly video-domain plus the pre-skin audio cards using a `.card`
+ * root) carried this EXACT chrome block copy-pasted in their scoped styles
+ * (LoC campaign row 6 extraction — proven by a zero-diff VRT run).
+ *
+ * Deliberately NOT merged into .mod-card: these cards predate the skin tokens
+ * and must keep rendering byte-identically under every skin — flat
+ * `--module-bg` (no --panel-bg sprite hook, no --module-border-color /
+ * --module-radius / --module-glow), and the pre-compaction 18/14 padding.
+ *
+ * Per-card deviations stay in the card's scoped <style> and win by
+ * specificity: a scoped `.card.svelte-hash` (0,2,0) deterministically beats
+ * this global `.vcard` (0,1,0), so e.g. AUDIO OUT's 10/9 compaction padding
+ * and opaque #000 underlay override cleanly with no source-order dependence. */
+.vcard {
+  background: var(--module-bg);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  color: var(--text);
+  padding-top: 18px;
+  padding-bottom: 14px;
+  position: relative;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
+}
+.svelte-flow__node:hover .vcard {
+  border-color: var(--accent-dim);
+}
+.svelte-flow__node.selected .vcard {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+.vcard .stripe {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  /* Video is the dominant stripe colour; cards with another colour keep a
+   * scoped `background` (or an inline style), which wins over this. */
+  background: var(--cable-video);
+}
+
 /* ── Rack sizing (Nu height tiers · 1u×1u square grid) ──────────────────────
  * One square grid tile = --rack-unit (180px). A sized card is `--rack-hp` tiles
  * wide × `--rack-u` tiles tall — both set inline by the flowNodes derivation

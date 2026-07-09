@@ -2,16 +2,14 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { bugglesDef } from '$lib/audio/modules/buggles';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live } = cardParams(bugglesDef, () => id, () => node);
 
   let rate       = $derived(node?.params.rate              ?? bugglesDef.params[0]!.defaultValue);
   let chaos      = $derived(node?.params.chaos             ?? bugglesDef.params[1]!.defaultValue);
@@ -19,21 +17,11 @@
   let burstProb  = $derived(node?.params.burst_probability ?? bugglesDef.params[3]!.defaultValue);
   let level      = $derived(node?.params.level             ?? bugglesDef.params[4]!.defaultValue);
 
-  const set = (id_: string) => (v: number) => setNodeParam(id, id_, v);
-  const live = (id_: string) => () => { const e = engineCtx.get(); if (!e || !node) return undefined; return e.readParam(node, id_); };
 
-  const inputs: PortDescriptor[] = [
-    { id: 'clock_cv',       label: 'CLOCK CV', cable: 'cv' },
-    { id: 'chaos_cv',       label: 'CHAOS CV', cable: 'cv' },
-    { id: 'external_clock', label: 'EXT CLK',  cable: 'gate' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'smooth',  label: 'SMOOTH',  cable: 'cv' },
-    { id: 'stepped', label: 'STEPPED', cable: 'cv' },
-    { id: 'clock',   label: 'CLOCK',   cable: 'gate' },
-    { id: 'burst',   label: 'BURST',   cable: 'gate' },
-    { id: 'ring',    label: 'RING',    cable: 'audio' },
-  ];
+  const inputs = portsFromDef(bugglesDef.inputs, {
+    clock_cv: 'CLOCK CV', chaos_cv: 'CHAOS CV', external_clock: 'EXT CLK',
+  });
+  const outputs = portsFromDef(bugglesDef.outputs);
 </script>
 
 <div class="mod-card buggles-card">

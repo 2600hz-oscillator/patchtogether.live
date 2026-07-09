@@ -11,7 +11,6 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch, ydoc } from '$lib/graph/store';
   import { nodeVersion } from '$lib/graph/node-versions.svelte';
   import { setNodeParam } from '$lib/graph/mutate';
@@ -50,6 +49,7 @@
     boundKriaNode,
     bindingRune,
   } from '$lib/control/monome/kria-grid.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -225,20 +225,11 @@
     return () => cancelAnimationFrame(raf);
   });
 
-  const inputs: PortDescriptor[] = [
-    { id: 'clock', label: 'CLOCK IN', cable: 'gate' },
-    { id: 'reset', label: 'RESET IN', cable: 'gate' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'pitch1', label: 'PITCH 1', cable: 'pitch' },
-    { id: 'gate1', label: 'GATE 1', cable: 'gate' },
-    { id: 'pitch2', label: 'PITCH 2', cable: 'pitch' },
-    { id: 'gate2', label: 'GATE 2', cable: 'gate' },
-    { id: 'pitch3', label: 'PITCH 3', cable: 'pitch' },
-    { id: 'gate3', label: 'GATE 3', cable: 'gate' },
-    { id: 'pitch4', label: 'PITCH 4', cable: 'pitch' },
-    { id: 'gate4', label: 'GATE 4', cable: 'gate' },
-  ];
+  const inputs = portsFromDef(kriaDef.inputs, { clock: 'CLOCK IN', reset: 'RESET IN' });
+  const outputs = portsFromDef(kriaDef.outputs, {
+    pitch1: 'PITCH 1', gate1: 'GATE 1', pitch2: 'PITCH 2', gate2: 'GATE 2',
+    pitch3: 'PITCH 3', gate3: 'GATE 3', pitch4: 'PITCH 4', gate4: 'GATE 4',
+  });
 </script>
 
 <div class="card audio kria-card" data-testid="kria-card">

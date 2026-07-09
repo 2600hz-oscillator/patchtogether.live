@@ -2,16 +2,14 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { charlottesEchosDef } from '$lib/audio/modules/charlottes-echos';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live } = cardParams(charlottesEchosDef, () => id, () => node);
 
   let delay    = $derived(node?.params.delay    ?? charlottesEchosDef.params[0]!.defaultValue);
   let feedback = $derived(node?.params.feedback ?? charlottesEchosDef.params[1]!.defaultValue);
@@ -23,21 +21,9 @@
   // become audibly compounding.
   let shimmer = $derived(feedback > 0.6);
 
-  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
-  const live = (k: string) => () => {
-    const e = engineCtx.get(); if (!e || !node) return undefined;
-    return e.readParam(node, k);
-  };
 
-  const inputs: PortDescriptor[] = [
-    { id: 'L',     cable: 'audio' },
-    { id: 'R',     cable: 'audio' },
-    { id: 'delay', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'L', cable: 'audio' },
-    { id: 'R', cable: 'audio' },
-  ];
+  const inputs = portsFromDef(charlottesEchosDef.inputs);
+  const outputs = portsFromDef(charlottesEchosDef.outputs);
 </script>
 
 <div class="mod-card charlottes-echos-card">
@@ -58,13 +44,7 @@
 <style>
   .charlottes-echos-card {
     width: 320px;
-  }
-  .charlottes-echos-card .title {
-    font-family: var(--font-display, inherit);
-    font-size: 0.85rem;
-    letter-spacing: 0.04em;
-  }
-  .charlottes-echos-card .stripe.shimmer {
+  }  .charlottes-echos-card .stripe.shimmer {
     background: linear-gradient(
       90deg,
       var(--cable-audio) 0%,

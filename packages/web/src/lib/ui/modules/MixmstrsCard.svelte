@@ -3,15 +3,14 @@
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { mixmstrsDef } from '$lib/audio/modules/mixmstrs';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode, PortDef } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live } = cardParams(mixmstrsDef, () => id, () => node);
 
   let compact = $state(false);
 
@@ -19,11 +18,6 @@
     const v = node?.params?.[id_];
     return typeof v === 'number' ? v : fallback;
   }
-  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
-  const live = (k: string) => () => {
-    const e = engineCtx.get(); if (!e || !node) return undefined;
-    return e.readParam(node, k);
-  };
 
   const CH = [1, 2, 3, 4, 5, 6] as const;
   type Channel = (typeof CH)[number];

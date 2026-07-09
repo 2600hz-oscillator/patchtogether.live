@@ -4,10 +4,8 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import NoteEntry from '$lib/ui/controls/NoteEntry.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch, ydoc } from '$lib/graph/store';
   import { nodeVersion } from '$lib/graph/node-versions.svelte';
-  import { setNodeParam } from '$lib/graph/mutate';
   import {
     cartesianDef,
     defaultCells,
@@ -18,15 +16,15 @@
     type Cell,
   } from '$lib/audio/modules/cartesian';
   import { type ChordQuality, nextChordQuality } from '$lib/audio/poly';
-  import { useEngine } from '$lib/audio/engine-context';
   import { parseNoteName } from '$lib/audio/note-entry';
   import { resolveArrowNav, type ArrowKey } from '$lib/audio/grid-nav';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live, engineCtx } = cardParams(cartesianDef, () => id, () => node);
 
   // Node-scoped re-derive (phase-2 CC perf fix): subscribe to THIS node's
   // version from the shared registry (nodes.observeDeep) instead of a
@@ -71,13 +69,6 @@
     return defaultCells();
   });
 
-  const set = (k: string) => (v: number) => {
-    setNodeParam(id, k, v);
-  };
-  const live = (k: string) => () => {
-    const e = engineCtx.get(); if (!e || !node) return undefined;
-    return e.readParam(node, k);
-  };
   function toggleMode() {
     set('mode')(mode === 1 ? 0 : 1);
   }
@@ -195,19 +186,8 @@
     return false;
   }
 
-  const inputs: PortDescriptor[] = [
-    { id: 'clock',     label: 'CLOCK', cable: 'gate' },
-    { id: 'x_cv',      label: 'X CV',  cable: 'cv' },
-    { id: 'y_cv',      label: 'Y CV',  cable: 'cv' },
-    { id: 'lfo_clock', label: 'LFO CLOCK', cable: 'gate' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'pitch', cable: 'polyPitchGate' },
-    { id: 'gate',  cable: 'gate' },
-    { id: 'clock', cable: 'gate' },
-    { id: 'lfo_x', label: 'LFO X', cable: 'cv' },
-    { id: 'lfo_y', label: 'LFO Y', cable: 'cv' },
-  ];
+  const inputs = portsFromDef(cartesianDef.inputs, { x_cv: 'X CV', y_cv: 'Y CV' });
+  const outputs = portsFromDef(cartesianDef.outputs);
 </script>
 
 <div class="mod-card cartesian-card">

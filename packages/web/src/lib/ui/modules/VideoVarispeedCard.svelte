@@ -24,7 +24,6 @@
   import { onMount, onDestroy } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
@@ -63,6 +62,7 @@
     unregisterVideoExport,
   } from '$lib/video/video-export-registry';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -72,22 +72,11 @@
   //      standard; also gives the card its rear-view back panel). Port `id`s are
   //      BYTE-IDENTICAL to the module def so the CV bridge + persisted edges
   //      route unchanged; only the rendering moved into the panel. ----
-  const inputs: PortDescriptor[] = [
-    { id: 'cv_start', label: 'START', cable: 'gate' },
-    { id: 'cv_pause', label: 'PAUSE', cable: 'gate' },
-    { id: 'cv_reset', label: 'RESET', cable: 'gate' },
-    { id: 'cv_loop_toggle', label: 'LOOP', cable: 'gate' },
-    { id: 'asset_pitch', label: 'ASSET PITCH', cable: 'pitch' },
-    { id: 'asset_gate', label: 'ASSET GATE', cable: 'gate' },
-    { id: 'speedCv', label: 'SPEED', cable: 'cv' },
-    { id: 'startCv', label: 'START CV', cable: 'cv' },
-    { id: 'endCv', label: 'END CV', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'video', label: 'VIDEO', cable: 'video' },
-    { id: 'audio_l', label: 'AUDIO L', cable: 'audio' },
-    { id: 'audio_r', label: 'AUDIO R', cable: 'audio' },
-  ];
+  const inputs = portsFromDef(videoVarispeedDef.inputs, {
+    cv_start: 'START', cv_pause: 'PAUSE', cv_reset: 'RESET', cv_loop_toggle: 'LOOP',
+    asset_pitch: 'ASSET PITCH', asset_gate: 'ASSET GATE', speedCv: 'SPEED',
+  });
+  const outputs = portsFromDef(videoVarispeedDef.outputs, { audio_l: 'AUDIO L', audio_r: 'AUDIO R' });
 
   // ---- DOM refs + local state ----
   //
@@ -168,13 +157,7 @@
   let hasLocalFile = $derived<boolean>((slotNames[activeSlot] ?? null) !== null);
 
   // ---- Transport param accessors (knob + sliders live on node.params) ----
-  function defaultFor(k: string): number {
-    return videoVarispeedDef.params.find((p) => p.id === k)?.defaultValue ?? 0;
-  }
-  function paramVal(k: string): number {
-    const v = node?.params?.[k];
-    return typeof v === 'number' ? v : defaultFor(k);
-  }
+  const { defaultFor, paramVal } = cardParams(videoVarispeedDef, () => id, () => node);
   const setParamFn = (k: string) => (v: number): void => {
     setNodeParam(id, k, v);
   };
@@ -1033,7 +1016,7 @@
 </script>
 
 <div
-  class="card video videovarispeed-card"
+  class="vcard card video videovarispeed-card"
   class:drag-over={isDragOver}
   data-testid="videovarispeed-card"
   data-has-local-file={hasLocalFile}
@@ -1233,41 +1216,13 @@
   .card {
     width: 320px;
     min-height: 420px;
-    background: var(--module-bg);
-    border: 1px solid var(--border);
-    border-radius: 2px;
-    color: var(--text);
-    padding-top: 18px;
-    padding-bottom: 14px;
-    position: relative;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
     overflow: hidden;
     display: flex;
     flex-direction: column;
   }
-  :global(.svelte-flow__node:hover) .card { border-color: var(--accent-dim); }
-  :global(.svelte-flow__node.selected) .card {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
-  }
   .card.drag-over {
     border-color: var(--cable-video);
     box-shadow: 0 0 0 2px var(--cable-video), 0 2px 8px rgba(0, 0, 0, 0.3);
-  }
-  .stripe {
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 2px;
-    border-radius: 2px 2px 0 0;
-    background: var(--cable-video);
-  }
-  .title {
-    font-size: 0.85rem;
-    font-weight: 500;
-    text-align: center;
-    margin: 0 0 8px;
-    letter-spacing: 0.05em;
   }
   .body {
     margin-top: 28px;

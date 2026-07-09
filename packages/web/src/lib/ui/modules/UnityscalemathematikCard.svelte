@@ -2,16 +2,14 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { unityscalemathematikDef } from '$lib/audio/modules/unityscalemathematik';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live } = cardParams(unityscalemathematikDef, () => id, () => node);
 
   let unityAtten = $derived(node?.params.unityAtten ?? unityscalemathematikDef.params[0]!.defaultValue);
   let aAtten     = $derived(node?.params.aAtten     ?? unityscalemathematikDef.params[1]!.defaultValue);
@@ -19,24 +17,11 @@
   let bAtten     = $derived(node?.params.bAtten     ?? unityscalemathematikDef.params[3]!.defaultValue);
   let bCurve     = $derived(node?.params.bCurve     ?? unityscalemathematikDef.params[4]!.defaultValue);
 
-  const set = (id_: string) => (v: number) => setNodeParam(id, id_, v);
-  const live = (id_: string) => () => { const e = engineCtx.get(); if (!e || !node) return undefined; return e.readParam(node, id_); };
 
-  const inputs: PortDescriptor[] = [
-    { id: 'u_in',       cable: 'cv' },
-    { id: 'u_atten_cv', cable: 'cv' },
-    { id: 'a_in',       cable: 'cv' },
-    { id: 'a_atten_cv', cable: 'cv' },
-    { id: 'a_curve_cv', cable: 'cv' },
-    { id: 'b_in',       cable: 'cv' },
-    { id: 'b_atten_cv', cable: 'cv' },
-    { id: 'b_curve_cv', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'u_out', label: 'U', cable: 'cv' },
-    { id: 'a_out', label: 'A', cable: 'cv' },
-    { id: 'b_out', label: 'B', cable: 'cv' },
-  ];
+  const inputs = portsFromDef(unityscalemathematikDef.inputs);
+  const outputs = portsFromDef(unityscalemathematikDef.outputs, {
+    u_out: 'U', a_out: 'A', b_out: 'B',
+  });
 </script>
 
 <div class="mod-card unity-card">

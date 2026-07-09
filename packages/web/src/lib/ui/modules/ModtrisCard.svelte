@@ -3,25 +3,21 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { modtrisDef, drawModtris, type ModtrisState } from '$lib/audio/modules/modtris';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { portsFromDef } from './card-kit';
 
   // Inputs: 5 gate inputs. Outputs: 2 gate outputs.
-  const inputs: PortDescriptor[] = [
-    { id: 'rotate_l',  label: 'ROT L (GATE)',  cable: 'gate' },
-    { id: 'rotate_r',  label: 'ROT R (GATE)',  cable: 'gate' },
-    { id: 'drop_fast', label: 'DROP (GATE)',   cable: 'gate' },
-    { id: 'move_l',    label: 'MOVE L (GATE)', cable: 'gate' },
-    { id: 'move_r',    label: 'MOVE R (GATE)', cable: 'gate' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'line_cleared', label: 'LINE (GATE)',     cable: 'gate' },
-    { id: 'overfill',     label: 'OVERFILL (GATE)', cable: 'gate' },
-  ];
+  const inputs = portsFromDef(modtrisDef.inputs, {
+    rotate_l: 'ROT L (GATE)', rotate_r: 'ROT R (GATE)', drop_fast: 'DROP (GATE)',
+    move_l: 'MOVE L (GATE)', move_r: 'MOVE R (GATE)',
+  });
+  const outputs = portsFromDef(modtrisDef.outputs, {
+    line_cleared: 'LINE (GATE)', overfill: 'OVERFILL (GATE)',
+  });
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);

@@ -11,12 +11,12 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { moog911aDef, MOOG911A_MODE_NAMES } from '$lib/audio/modules/moog911a';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import MoogPanel from './moog/MoogPanel.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -47,14 +47,8 @@
   }
 
   // Two gate triggers (left); two delayed gate outputs (right).
-  const inputs: PortDescriptor[] = [
-    { id: 'trig1', label: 'TRIG 1', cable: 'gate' },
-    { id: 'trig2', label: 'TRIG 2', cable: 'gate' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'out1', label: 'OUT 1', cable: 'gate' },
-    { id: 'out2', label: 'OUT 2', cable: 'gate' },
-  ];
+  const inputs = portsFromDef(moog911aDef.inputs, { trig1: 'TRIG 1', trig2: 'TRIG 2' });
+  const outputs = portsFromDef(moog911aDef.outputs, { out1: 'OUT 1', out2: 'OUT 2' });
 </script>
 
 <MoogPanel {id} {data} defaultLabel="911A Trig Delay" width={200}>

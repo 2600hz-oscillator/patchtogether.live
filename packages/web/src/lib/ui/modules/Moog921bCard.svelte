@@ -11,13 +11,13 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import { moog921bDef } from '$lib/audio/modules/moog921b';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import MoogPanel from './moog/MoogPanel.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -56,19 +56,10 @@
     if (target) target.params.syncMode = v;
   }
 
-  const inputs: PortDescriptor[] = [
-    { id: 'freq_bus',  label: 'FREQ',  cable: 'cv' },
-    { id: 'width_bus', label: 'WIDTH', cable: 'cv' },
-    { id: 'dc_mod',    label: 'DC FM', cable: 'audio' },
-    { id: 'ac_mod',    label: 'AC FM', cable: 'audio' },
-    { id: 'sync',      cable: 'audio' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'sine',     cable: 'audio' },
-    { id: 'triangle', cable: 'audio' },
-    { id: 'saw',      cable: 'audio' },
-    { id: 'rect',     cable: 'audio' },
-  ];
+  const inputs = portsFromDef(moog921bDef.inputs, {
+    freq_bus: 'FREQ', width_bus: 'WIDTH', dc_mod: 'DC FM', ac_mod: 'AC FM',
+  });
+  const outputs = portsFromDef(moog921bDef.outputs);
 </script>
 
 <MoogPanel {id} {data} defaultLabel="921B Osc" width={252}>

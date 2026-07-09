@@ -6,29 +6,22 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { delayDef } from '$lib/audio/modules/delay';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live } = cardParams(delayDef, () => id, () => node);
 
   let time     = $derived(node?.params.time     ?? delayDef.params[0]!.defaultValue);
   let feedback = $derived(node?.params.feedback ?? delayDef.params[1]!.defaultValue);
   let mix      = $derived(node?.params.mix      ?? delayDef.params[2]!.defaultValue);
 
-  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
-  const live = (k: string) => () => { const e = engineCtx.get(); if (!e || !node) return undefined; return e.readParam(node, k); };
 
-  const inputs: PortDescriptor[] = [
-    { id: 'audio', label: 'IN',   cable: 'audio' },
-    { id: 'time',  label: 'TIME', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [{ id: 'audio', label: 'OUT', cable: 'audio' }];
+  const inputs = portsFromDef(delayDef.inputs, { audio: 'IN' });
+  const outputs = portsFromDef(delayDef.outputs, { audio: 'OUT' });
 </script>
 
 <div class="mod-card delay-card">

@@ -22,28 +22,18 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { useEngine } from '$lib/audio/engine-context';
   import { scoreboardDef } from '$lib/video/modules/scoreboard';
   import { drawScoreboard } from '$lib/video/modules/scoreboard-draw';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
 
-  function defaultFor(k: string): number {
-    return scoreboardDef.params.find((p) => p.id === k)?.defaultValue ?? 0;
-  }
-  function paramVal(k: string): number {
-    const v = node?.params?.[k];
-    return typeof v === 'number' ? v : defaultFor(k);
-  }
-  const set = (k: string) => (v: number) => {
-    setNodeParam(id, k, v);
-  };
+  const { defaultFor, paramVal, set } = cardParams(scoreboardDef, () => id, () => node);
 
   // -------- Live preview canvas (200×56) --------
   const PREVIEW_W = 200;
@@ -80,11 +70,8 @@
   onDestroy(() => { if (raf !== null) cancelAnimationFrame(raf); });
 
   // Ports — ids byte-identical to scoreboardDef (score/reset = cv, out = video).
-  const inputs: PortDescriptor[] = [
-    { id: 'score', label: 'SCORE', cable: 'cv' },
-    { id: 'reset', label: 'RESET', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [{ id: 'out', label: 'OUT', cable: 'video' }];
+  const inputs = portsFromDef(scoreboardDef.inputs);
+  const outputs = portsFromDef(scoreboardDef.outputs);
 </script>
 
 <div class="mod-card scoreboard-card" data-testid="scoreboard-card" data-node-id={id}>

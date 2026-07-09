@@ -2,38 +2,23 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { qbrtDef } from '$lib/audio/modules/qbrt';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live } = cardParams(qbrtDef, () => id, () => node);
 
   let cutoff    = $derived(node?.params.cutoff    ?? qbrtDef.params[0]!.defaultValue);
   let resonance = $derived(node?.params.resonance ?? qbrtDef.params[1]!.defaultValue);
   let mode      = $derived(node?.params.mode      ?? qbrtDef.params[2]!.defaultValue);
   let pingDecay = $derived(node?.params.pingDecay ?? qbrtDef.params[3]!.defaultValue);
 
-  const set = (id_: string) => (v: number) => setNodeParam(id, id_, v);
-  const live = (id_: string) => () => { const e = engineCtx.get(); if (!e || !node) return undefined; return e.readParam(node, id_); };
 
-  const inputs: PortDescriptor[] = [
-    { id: 'L',         cable: 'audio' },
-    { id: 'R',         cable: 'audio' },
-    { id: 'ping',      cable: 'gate' },
-    { id: 'cutoff',    cable: 'cv' },
-    { id: 'resonance', cable: 'cv' },
-    { id: 'mode',      cable: 'cv' },
-    { id: 'pingDecay', label: 'PING DECAY', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'L', cable: 'audio' },
-    { id: 'R', cable: 'audio' },
-  ];
+  const inputs = portsFromDef(qbrtDef.inputs);
+  const outputs = portsFromDef(qbrtDef.outputs);
 </script>
 
 <div class="mod-card qbrt-card">

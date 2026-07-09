@@ -9,53 +9,26 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { attenumixDef } from '$lib/audio/modules/attenumix';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { defaultFor, paramVal, set, live } = cardParams(attenumixDef, () => id, () => node);
 
-  function defaultFor(k: string): number {
-    return attenumixDef.params.find((p) => p.id === k)?.defaultValue ?? 0;
-  }
-  function paramVal(k: string, fallback?: number): number {
-    const v = node?.params?.[k];
-    if (typeof v === 'number') return v;
-    return fallback ?? defaultFor(k);
-  }
-  const set = (k: string) => (v: number) => {
-    setNodeParam(id, k, v);
-  };
-  const live = (k: string) => () => {
-    const e = engineCtx.get(); if (!e || !node) return undefined;
-    return e.readParam(node, k);
-  };
 
   // Ports — generated channel-by-channel so source order reads L→R per
   // channel (in1, cv1, out1, …). PatchPanel groups by cable type for
   // display, so this explicit ordering is just for readability here.
-  const inputs: PortDescriptor[] = [
-    { id: 'in1', label: 'IN 1', cable: 'audio' },
-    { id: 'in2', label: 'IN 2', cable: 'audio' },
-    { id: 'in3', label: 'IN 3', cable: 'audio' },
-    { id: 'in4', label: 'IN 4', cable: 'audio' },
-    { id: 'cv1', label: 'CV 1', cable: 'cv' },
-    { id: 'cv2', label: 'CV 2', cable: 'cv' },
-    { id: 'cv3', label: 'CV 3', cable: 'cv' },
-    { id: 'cv4', label: 'CV 4', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'out1', label: 'OUT 1', cable: 'audio' },
-    { id: 'out2', label: 'OUT 2', cable: 'audio' },
-    { id: 'out3', label: 'OUT 3', cable: 'audio' },
-    { id: 'out4', label: 'OUT 4', cable: 'audio' },
-    { id: 'mix',  label: 'MIX',   cable: 'audio' },
-  ];
+  const inputs = portsFromDef(attenumixDef.inputs, {
+    in1: 'IN 1', in2: 'IN 2', in3: 'IN 3', in4: 'IN 4', cv1: 'CV 1', cv2: 'CV 2',
+    cv3: 'CV 3', cv4: 'CV 4',
+  });
+  const outputs = portsFromDef(attenumixDef.outputs, {
+    out1: 'OUT 1', out2: 'OUT 2', out3: 'OUT 3', out4: 'OUT 4',
+  });
 
   const channels = [1, 2, 3, 4] as const;
 </script>

@@ -8,16 +8,14 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { macrooscillatorDef } from '$lib/audio/modules/macrooscillator';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live } = cardParams(macrooscillatorDef, () => id, () => node);
 
   const defaultFor = (id: string): number =>
     macrooscillatorDef.params.find((p) => p.id === id)!.defaultValue;
@@ -37,26 +35,9 @@
   const MAX_MODEL = MODEL_NAMES.length - 1;
   let modelLabel = $derived(MODEL_NAMES[Math.max(0, Math.min(MODEL_NAMES.length - 1, Math.round(model)))]);
 
-  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
-  const live = (k: string) => () => {
-    const e = engineCtx.get(); if (!e || !node) return undefined;
-    return e.readParam(node, k);
-  };
 
-  const inputs: PortDescriptor[] = [
-    { id: 'pitch',    cable: 'pitch' },
-    { id: 'trig',     cable: 'gate' },
-    { id: 'model_cv', cable: 'cv' },
-    { id: 'note_cv',  cable: 'cv' },
-    { id: 'harm_cv',  cable: 'cv' },
-    { id: 'timb_cv',  cable: 'cv' },
-    { id: 'morph_cv', cable: 'cv' },
-    { id: 'level_cv', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'out', cable: 'audio' },
-    { id: 'aux', cable: 'audio' },
-  ];
+  const inputs = portsFromDef(macrooscillatorDef.inputs);
+  const outputs = portsFromDef(macrooscillatorDef.outputs);
 </script>
 
 <div class="mod-card macro-card">
@@ -78,13 +59,7 @@
 </div>
 
 <style>
-  .macro-card { width: 320px; }
-  .macro-card .title {
-    font-family: var(--font-display, inherit);
-    font-size: 0.85rem;
-    letter-spacing: 0.04em;
-  }
-  /* Tiny readout strip under the title — gives the player visual confirmation
+  .macro-card { width: 320px; }  /* Tiny readout strip under the title — gives the player visual confirmation
      of which model is selected when MODEL is at an integer; otherwise the
      discrete fader's snap-to-step is the only feedback. */
   .macro-card .model-readout {

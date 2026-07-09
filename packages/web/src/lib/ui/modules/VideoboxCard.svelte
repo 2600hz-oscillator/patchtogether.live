@@ -61,7 +61,7 @@
   } from '$lib/video/video-export-registry';
   import ModuleTitle from './ModuleTitle.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -688,19 +688,13 @@
   // post-#767 hard standard — NO raw side <Handle> jacks). Port `id`s are
   // byte-identical to videoboxDef so the CV bridge + persisted edges route
   // unchanged (play_trigger = gate; video/audio_l/audio_r = video/audio outs).
-  const inputs: PortDescriptor[] = [
-    { id: 'play_trigger', label: 'TRIG', cable: 'gate' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'video', label: 'VID', cable: 'video' },
-    { id: 'audio_l', label: 'A-L', cable: 'audio' },
-    { id: 'audio_r', label: 'A-R', cable: 'audio' },
-  ];
+  const inputs = portsFromDef(videoboxDef.inputs, { play_trigger: 'TRIG' });
+  const outputs = portsFromDef(videoboxDef.outputs, { video: 'VID', audio_l: 'A-L', audio_r: 'A-R' });
 </script>
 
 <div
   bind:this={cardEl}
-  class="card video videobox-card"
+  class="vcard card video videobox-card"
   class:drag-over={isDragOver}
   class:resizing
   class:full-frame={fullFrame}
@@ -855,15 +849,6 @@
 
 <style>
   .card {
-    background: var(--module-bg);
-    border: 1px solid var(--border);
-    border-radius: 2px;
-    color: var(--text);
-    padding-top: 18px;
-    padding-bottom: 14px;
-    position: relative;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
     overflow: hidden;
     /* The body fills the card below the header so the preview-wrap can
      * grow as the card is resized (and to 100% in full-frame). */
@@ -871,28 +856,9 @@
     flex-direction: column;
   }
   .card.resizing { transition: none; }
-  :global(.svelte-flow__node:hover) .card { border-color: var(--accent-dim); }
-  :global(.svelte-flow__node.selected) .card {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
-  }
   .card.drag-over {
     border-color: var(--cable-video);
     box-shadow: 0 0 0 2px var(--cable-video), 0 2px 8px rgba(0, 0, 0, 0.3);
-  }
-  .stripe {
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 2px;
-    border-radius: 2px 2px 0 0;
-    background: var(--cable-video);
-  }
-  .title {
-    font-size: 0.85rem;
-    font-weight: 500;
-    text-align: center;
-    margin: 0 0 8px;
-    letter-spacing: 0.05em;
   }
   .body {
     margin-top: 28px;

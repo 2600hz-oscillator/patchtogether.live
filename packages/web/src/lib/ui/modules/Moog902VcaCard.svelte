@@ -12,13 +12,13 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import { moog902Def } from '$lib/audio/modules/moog902';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import MoogPanel from './moog/MoogPanel.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -56,15 +56,8 @@
 
   // CONTROL INPUTS (summing) + SIGNAL INPUT on the left; the differential
   // output pair (OUT + phase-inverted OUT−) on the right.
-  const inputs: PortDescriptor[] = [
-    { id: 'audio', label: 'SIGNAL', cable: 'audio' },
-    { id: 'cv',    label: 'CTRL',   cable: 'cv' },
-    { id: 'fcv',   label: 'FCV',    cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'audio',     label: 'OUT',  cable: 'audio' },
-    { id: 'audio_inv', label: 'OUT−', cable: 'audio' },
-  ];
+  const inputs = portsFromDef(moog902Def.inputs, { audio: 'SIGNAL', cv: 'CTRL' });
+  const outputs = portsFromDef(moog902Def.outputs, { audio: 'OUT', audio_inv: 'OUT−' });
 </script>
 
 <MoogPanel {id} {data} defaultLabel="902 VCA" width={236}>

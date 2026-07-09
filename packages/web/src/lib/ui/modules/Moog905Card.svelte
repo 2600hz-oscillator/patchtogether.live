@@ -10,12 +10,12 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { moog905Def } from '$lib/audio/modules/moog905';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import MoogPanel from './moog/MoogPanel.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -42,12 +42,8 @@
   }
 
   // One audio input (left); one audio output (right).
-  const inputs: PortDescriptor[] = [
-    { id: 'audio', label: 'IN', cable: 'audio' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'audio', label: 'OUT', cable: 'audio' },
-  ];
+  const inputs = portsFromDef(moog905Def.inputs, { audio: 'IN' });
+  const outputs = portsFromDef(moog905Def.outputs, { audio: 'OUT' });
 </script>
 
 <MoogPanel {id} {data} defaultLabel="905 Spring Reverb" width={220}>

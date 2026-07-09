@@ -17,7 +17,6 @@
   import { type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
   import { setNodeParam } from '$lib/graph/mutate';
   import { tilerDef, tilerStepGrid, TILER_STEPS, TILER_GRID_STEPS } from '$lib/video/modules/tiler';
@@ -25,6 +24,7 @@
   import { VIDEO_RES } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -92,16 +92,11 @@
   onMount(() => { rafId = requestAnimationFrame(draw); });
   onDestroy(() => { if (rafId !== null) cancelAnimationFrame(rafId); });
 
-  const inputs: PortDescriptor[] = [
-    { id: 'in',      label: 'IN',   cable: 'video' },
-    { id: 'tile_cv', label: 'TILE', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'out', label: 'OUT', cable: 'video' },
-  ];
+  const inputs = portsFromDef(tilerDef.inputs, { tile_cv: 'TILE' });
+  const outputs = portsFromDef(tilerDef.outputs);
 </script>
 
-<div class="card video" data-testid="tiler-card" data-node-id={id}>
+<div class="vcard card video" data-testid="tiler-card" data-node-id={id}>
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="TILER" />
 
@@ -140,23 +135,8 @@
   .card {
     width: 200px;
     min-height: 200px;
-    background: var(--module-bg);
-    border: 1px solid var(--border);
-    border-radius: 2px;
-    color: var(--text);
-    padding-top: 18px;
     padding-bottom: 9px;
-    position: relative;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
   }
-  :global(.svelte-flow__node:hover) .card { border-color: var(--accent-dim); }
-  :global(.svelte-flow__node.selected) .card {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
-  }
-  /* Video stripe — same accent the OUT handle uses. */
-  .stripe { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--cable-video); }
   .preview-wrap {
     margin: 6px auto 0;
     width: 160px;

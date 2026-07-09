@@ -21,6 +21,7 @@
   import { VIDEO_RES } from '$lib/video/engine';
   import { oneToNineDef, OUTPUT_IDS } from '$lib/video/modules/onetonine';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -76,7 +77,7 @@
   });
 
   // ───────── patch panel ports ─────────
-  const inputs: PortDescriptor[] = [{ id: 'in', label: 'IN', cable: 'video' }];
+  const inputs = portsFromDef(oneToNineDef.inputs);
   const outputs: PortDescriptor[] = OUTPUT_IDS.map((portId, i) => ({
     id: portId,
     label: `OUT${i + 1}`,

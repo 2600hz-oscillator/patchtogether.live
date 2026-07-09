@@ -8,7 +8,6 @@
 
   import { type NodeProps } from '@xyflow/svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { faderDef } from '$lib/video/modules/fader';
   import { TRANSITION_NAMES } from '$lib/video/modules/fader-transitions';
@@ -17,6 +16,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { makeMidiAssignable } from '$lib/ui/controls/midi-assignable.svelte';
   import ControlContextMenu from '$lib/ui/controls/ControlContextMenu.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -27,7 +27,7 @@
     const v = node?.params?.[name];
     return typeof v === 'number' ? v : (paramDef(name)?.defaultValue ?? 0);
   }
-  const set = (paramId: string) => (v: number) => setNodeParam(id, paramId, v);
+  const { set } = cardParams(faderDef, () => id, () => node);
 
   // ---- MIDI / control-surface / Electra assignability for the two faders ----
   // The A↔B and dry/wet faders are raw HORIZONTAL sliders (a crossfade reads
@@ -63,15 +63,8 @@
   onMount(() => { abMidi.register(); dwMidi.register(); });
   onDestroy(() => { abMidi.unregister(); dwMidi.unregister(); });
 
-  const inputs: PortDescriptor[] = [
-    { id: 'in_a',   label: 'A',   cable: 'video' },
-    { id: 'in_b',   label: 'B',   cable: 'video' },
-    { id: 'return', label: 'RET', cable: 'video' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'out',  label: 'OUT',  cable: 'video' },
-    { id: 'send', label: 'SEND', cable: 'video' },
-  ];
+  const inputs = portsFromDef(faderDef.inputs, { in_a: 'A', in_b: 'B', return: 'RET' });
+  const outputs = portsFromDef(faderDef.outputs);
 </script>
 
 <div class="mod-card fader-card" data-testid="fader-card">

@@ -3,7 +3,6 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { pentemelodicaDef, PENTE_VOICES } from '$lib/audio/modules/pentemelodica';
   import { moogWaves } from '../../../../../dsp/src/lib/moog-vco-dsp';
@@ -11,6 +10,7 @@
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -107,26 +107,16 @@
     }
   });
 
-  const inputs: PortDescriptor[] = [
-    { id: 'poly', cable: 'polyPitchGate' },
-    { id: 'fm1', label: 'FM 1', cable: 'audio' },
-    { id: 'fm2', label: 'FM 2', cable: 'audio' },
-    { id: 'fm3', label: 'FM 3', cable: 'audio' },
-    { id: 'fm4', label: 'FM 4', cable: 'audio' },
-    { id: 'fm5', label: 'FM 5', cable: 'audio' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'out_l', label: 'OUT L', cable: 'audio' },
-    { id: 'out_r', label: 'OUT R', cable: 'audio' },
-    { id: 'voice1', label: 'V1', cable: 'audio' },
-    { id: 'voice2', label: 'V2', cable: 'audio' },
-    { id: 'voice3', label: 'V3', cable: 'audio' },
-    { id: 'voice4', label: 'V4', cable: 'audio' },
-    { id: 'voice5', label: 'V5', cable: 'audio' },
-  ];
+  const inputs = portsFromDef(pentemelodicaDef.inputs, {
+    fm1: 'FM 1', fm2: 'FM 2', fm3: 'FM 3', fm4: 'FM 4', fm5: 'FM 5',
+  });
+  const outputs = portsFromDef(pentemelodicaDef.outputs, {
+    out_l: 'OUT L', out_r: 'OUT R', voice1: 'V1', voice2: 'V2', voice3: 'V3', voice4: 'V4',
+    voice5: 'V5',
+  });
 </script>
 
-<div class="card" data-testid="pentemelodica-card">
+<div class="vcard card" data-testid="pentemelodica-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
   <ModuleTitle {id} {data} defaultLabel="PENTEMELODICA" />
 
@@ -207,28 +197,7 @@
 <style>
   .card {
     width: 1180px;
-    background: var(--module-bg);
-    border: 1px solid var(--border);
-    border-radius: 2px;
-    color: var(--text);
-    padding-top: 18px;
     padding-bottom: 12px;
-    position: relative;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
-  }
-  :global(.svelte-flow__node:hover) .card {
-    border-color: var(--accent-dim);
-  }
-  :global(.svelte-flow__node.selected) .card {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
-  }
-  .stripe {
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 2px;
-    border-radius: 2px 2px 0 0;
   }
   .body {
     display: flex;
