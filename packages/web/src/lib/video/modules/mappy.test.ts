@@ -27,13 +27,6 @@ const ptNear = (a: Vec2, b: Vec2, eps = 1e-6) =>
   Math.abs(a[0] - b[0]) <= eps && Math.abs(a[1] - b[1]) <= eps;
 
 describe('mappy module def', () => {
-  it('is a video module with lowercase label "mappy"', () => {
-    expect(mappyDef.type).toBe('mappy');
-    expect(mappyDef.domain).toBe('video');
-    expect(mappyDef.label).toBe('mappy');
-    expect(mappyDef.label).toBe(mappyDef.label.toLowerCase());
-  });
-
   it('declares in1..in6 video inputs + a single video out (no camera / cv)', () => {
     expect(mappyDef.inputs.map((p) => p.id)).toEqual([...MAPPY_INPUT_IDS]);
     for (const p of mappyDef.inputs) expect(p.type).toBe('video');

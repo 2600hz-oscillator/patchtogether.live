@@ -34,34 +34,6 @@ const ALL_PARAM_IDS = ['hp', ...BAND_IDS, 'lp'];
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
 describe('moog914Def: module def shape', () => {
-  it('declares type=moog914, label, category=filters, schemaVersion=1', () => {
-    expect(moog914Def.type).toBe('moog914');
-    expect(moog914Def.label).toBe('914 extended fixed filter bank');
-    expect(moog914Def.category).toBe('filters');
-  });
-
-  it('lives in the Moog System 35/55 Clones palette bucket and uses the Moog914Card', () => {
-    expect(moog914Def.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
-    expect(moog914Def.card).toBe('Moog914Card');
-  });
-
-  it('exposes a single audio input: audio (audio, no CV)', () => {
-    const ids = moog914Def.inputs.map((p) => p.id);
-    expect(ids).toEqual(['audio']);
-    expect(moog914Def.inputs[0].type).toBe('audio');
-    // Fixed bank → NO CV inputs, no paramTarget anywhere.
-    for (const p of moog914Def.inputs) {
-      expect(p.type).toBe('audio');
-      expect(p.paramTarget).toBeUndefined();
-    }
-  });
-
-  it('exposes a single audio output: audio (audio)', () => {
-    const ids = moog914Def.outputs.map((p) => p.id);
-    expect(ids).toEqual(['audio']);
-    expect(moog914Def.outputs[0].type).toBe('audio');
-  });
-
   it('exposes params hp, band1..bandN, lp — N from the SHARED 914 centers', () => {
     const ids = moog914Def.params.map((p) => p.id);
     expect(ids).toEqual(ALL_PARAM_IDS);
@@ -71,14 +43,6 @@ describe('moog914Def: module def shape', () => {
     expect(N).toBe(12);
   });
 
-  it('every param is linear 0..1 default 0.5 (unity-ish neutral)', () => {
-    for (const p of moog914Def.params) {
-      expect(p.min).toBe(0);
-      expect(p.max).toBe(1);
-      expect(p.defaultValue).toBe(0.5);
-      expect(p.curve).toBe('linear');
-    }
-  });
 });
 
 // ───────────────────── Layer 2: factory wiring ─────────────────────

@@ -7,7 +7,6 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-  bentboxDef,
   bentboxMirrorUv,
   bentboxMirrorGateTick,
   makeBentboxMirrorGateState,
@@ -134,72 +133,6 @@ describe('BENTBOX pure helpers', () => {
       expect(Math.abs(softClip(1000))).toBeLessThan(1000);
       expect(Math.abs(softClip(-1000))).toBeLessThan(1000);
     });
-  });
-});
-
-describe('BENTBOX module def shape', () => {
-  it('declares the video-domain type', () => {
-    expect(bentboxDef.type).toBe('bentbox');
-    expect(bentboxDef.domain).toBe('video');
-    expect(bentboxDef.category).toBe('output');
-  });
-
-  it('has the input video port + 14 CV inputs (12 knobs + 2 mirror gates)', () => {
-    const ins = bentboxDef.inputs;
-    expect(ins.find((p) => p.id === 'in' && p.type === 'video')).toBeTruthy();
-    const cvCount = ins.filter((p) => p.type === 'cv').length;
-    expect(cvCount).toBe(14);
-  });
-
-  it('exposes mirror_x_gate / mirror_y_gate as raw (no cvScale) gate inputs', () => {
-    for (const [port, target] of [
-      ['mirror_x_gate', 'mirrorXGate'],
-      ['mirror_y_gate', 'mirrorYGate'],
-    ] as const) {
-      const g = bentboxDef.inputs.find((p) => p.id === port);
-      expect(g, port).toBeDefined();
-      expect(g?.type).toBe('cv');
-      expect(g?.cvScale).toBeUndefined(); // gate semantics — raw passthrough
-      expect(g?.paramTarget).toBe(target);
-    }
-    const byId = Object.fromEntries(bentboxDef.params.map((p) => [p.id, p]));
-    expect(byId.mirrorX).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
-    expect(byId.mirrorY).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
-  });
-
-  it('every CV input has a matching paramTarget that exists in params', () => {
-    const paramIds = new Set(bentboxDef.params.map((p) => p.id));
-    for (const port of bentboxDef.inputs) {
-      if (port.type === 'cv') {
-        expect(port.paramTarget).toBeDefined();
-        expect(paramIds.has(port.paramTarget!)).toBe(true);
-      }
-    }
-  });
-
-  it('exposes a single video output for chaining', () => {
-    expect(bentboxDef.outputs).toHaveLength(1);
-    expect(bentboxDef.outputs[0]!.id).toBe('out');
-    expect(bentboxDef.outputs[0]!.type).toBe('video');
-  });
-
-  it('default params land in their declared ranges', () => {
-    for (const p of bentboxDef.params) {
-      const def = p.defaultValue;
-      if (typeof p.min === 'number') expect(def).toBeGreaterThanOrEqual(p.min);
-      if (typeof p.max === 'number') expect(def).toBeLessThanOrEqual(p.max);
-    }
-  });
-
-  it('defaults bending params to 0 (pristine display) so users dial in', () => {
-    const byId = new Map(bentboxDef.params.map((p) => [p.id, p]));
-    for (const id of [
-      'hsync_drift', 'hsync_loss', 'vsync_drift', 'scan_wobble',
-      'chroma_phase', 'chroma_instability',
-      'feedback_gain', 'feedback_delay', 'wavefold',
-    ]) {
-      expect(byId.get(id)?.defaultValue).toBe(0);
-    }
   });
 });
 

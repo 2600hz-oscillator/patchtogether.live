@@ -32,66 +32,6 @@ beforeAll(() => {
 });
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
-describe('moog904cDef: module def shape', () => {
-  it('declares type=moog904c, label="904C Voltage Controlled Filter Coupler", category=filters, schemaVersion=1', () => {
-    expect(moog904cDef.type).toBe('moog904c');
-    expect(moog904cDef.label).toBe('904c voltage controlled filter coupler');
-    expect(moog904cDef.category).toBe('filters');
-    expect(moog904cDef.domain).toBe('audio');
-  });
-
-  it('lives in the Moog System 35/55 Clones palette bucket and uses the Moog904cCard', () => {
-    expect(moog904cDef.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
-    expect(moog904cDef.card).toBe('Moog904cCard');
-  });
-
-  it('exposes the 904C inputs: audio + cutoff_cv', () => {
-    const ids = moog904cDef.inputs.map((p) => p.id);
-    expect(ids).toEqual(['audio', 'cutoff_cv']);
-  });
-
-  it('audio input is an audio cable', () => {
-    expect(moog904cDef.inputs.find((p) => p.id === 'audio')!.type).toBe('audio');
-  });
-
-  it('cutoff_cv: cv input, paramTarget=cutoff, cvScale log', () => {
-    const port = moog904cDef.inputs.find((p) => p.id === 'cutoff_cv')!;
-    expect(port.type).toBe('cv');
-    expect(port.paramTarget).toBe('cutoff');
-    expect(port.cvScale).toEqual({ mode: 'log' });
-  });
-
-  it('exposes a single band-passed audio output', () => {
-    const ids = moog904cDef.outputs.map((p) => p.id);
-    expect(ids).toEqual(['audio']);
-    expect(moog904cDef.outputs[0].type).toBe('audio');
-  });
-
-  it('exposes 3 params (cutoff log 20..20000 @800, width linear 0..1 @0.5, mode linear 0..1 @0)', () => {
-    const ids = moog904cDef.params.map((p) => p.id);
-    expect(ids).toEqual(['cutoff', 'width', 'mode']);
-
-    const cutoff = moog904cDef.params.find((p) => p.id === 'cutoff')!;
-    expect(cutoff.min).toBe(20);
-    expect(cutoff.max).toBe(20000);
-    expect(cutoff.defaultValue).toBe(800);
-    expect(cutoff.curve).toBe('log');
-    expect(cutoff.units).toBe('Hz');
-
-    const width = moog904cDef.params.find((p) => p.id === 'width')!;
-    expect(width.min).toBe(0);
-    expect(width.max).toBe(1);
-    expect(width.defaultValue).toBe(0.5);
-    expect(width.curve).toBe('linear');
-
-    const mode = moog904cDef.params.find((p) => p.id === 'mode')!;
-    expect(mode.min).toBe(0);
-    expect(mode.max).toBe(1);
-    expect(mode.defaultValue).toBe(0);
-    expect(mode.curve).toBe('linear');
-  });
-});
-
 // ───────────────────── Layer 2: factory wiring (mock ctx) ─────────────────────
 //
 // Minimal Web Audio mock for a worklet-backed module. The AudioWorkletNode

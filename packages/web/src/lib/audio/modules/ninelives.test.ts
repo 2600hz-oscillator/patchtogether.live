@@ -19,28 +19,6 @@ import type { ModuleNode } from '$lib/graph/types';
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
 describe('ninelivesDef: module def shape', () => {
-  it('is a lowercase-labelled audio modulation module', () => {
-    expect(ninelivesDef.type).toBe('ninelives');
-    expect(ninelivesDef.label).toBe('nine lives');
-    expect(ninelivesDef.label).toBe(ninelivesDef.label.toLowerCase()); // lowercase-label guard
-    expect(ninelivesDef.domain).toBe('audio');
-    expect(ninelivesDef.category).toBe('modulation');
-    expect(ninelivesDef.palette).toEqual({ top: 'Audio modules', sub: 'Utility' });
-  });
-
-  it('exposes a single RESET input declared as a TRIGGER (gate cable)', () => {
-    expect(ninelivesDef.inputs.map((p) => p.id)).toEqual(['reset']);
-    const reset = ninelivesDef.inputs[0]!;
-    expect(reset.type).toBe('gate');
-    expect(reset.edge).toBe('trigger');
-  });
-
-  it('exposes nine CV outputs out1..out9 in order', () => {
-    const ids = ninelivesDef.outputs.map((p) => p.id);
-    expect(ids).toEqual(['out1', 'out2', 'out3', 'out4', 'out5', 'out6', 'out7', 'out8', 'out9']);
-    for (const o of ninelivesDef.outputs) expect(o.type).toBe('cv');
-  });
-
   it('reuses the LFO rate definition exactly (out1 behaves like a normal LFO)', () => {
     const rate = ninelivesDef.params.find((p) => p.id === 'rate')!;
     const lfoRate = lfoDef.params.find((p) => p.id === 'rate')!;
@@ -68,23 +46,6 @@ describe('ninelivesDef: module def shape', () => {
     expect(shape.label).toBe('Waveform');
   });
 
-  it('declares exactly the rate + shape params (no CV param inputs)', () => {
-    expect(ninelivesDef.params.map((p) => p.id)).toEqual(['rate', 'shape']);
-  });
-
-  it('documents every port + every param (STRICT_DOCS completeness)', () => {
-    const docs = ninelivesDef.docs!;
-    expect(docs.explanation && docs.explanation.length).toBeGreaterThan(40);
-    for (const inp of ninelivesDef.inputs) {
-      expect(docs.inputs?.[inp.id], `input ${inp.id} documented`).toBeTruthy();
-    }
-    for (const out of ninelivesDef.outputs) {
-      expect(docs.outputs?.[out.id], `output ${out.id} documented`).toBeTruthy();
-    }
-    for (const p of ninelivesDef.params) {
-      expect(docs.controls?.[p.id], `control ${p.id} documented`).toBeTruthy();
-    }
-  });
 });
 
 // ───────────────────── Layer 2: factory wiring (mock worklet) ─────────

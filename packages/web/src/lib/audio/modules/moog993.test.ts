@@ -17,48 +17,6 @@ import { moog993Def } from './moog993';
 import type { ModuleNode } from '$lib/graph/types';
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
-describe('moog993Def: module def shape', () => {
-  it('declares type=moog993, label="993 Trig", category=modulation, schemaVersion=1', () => {
-    expect(moog993Def.type).toBe('moog993');
-    expect(moog993Def.label).toBe('993 trig');
-    expect(moog993Def.category).toBe('modulation');
-    expect(moog993Def.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
-  });
-
-  it('exposes the four inputs: trig_from1/2 (gate) + env_in1/2 (cv)', () => {
-    const ids = moog993Def.inputs.map((p) => p.id);
-    expect(ids).toEqual(['trig_from1', 'trig_from2', 'env_in1', 'env_in2']);
-    for (const id of ['trig_from1', 'trig_from2']) {
-      expect(moog993Def.inputs.find((p) => p.id === id)!.type).toBe('gate');
-    }
-    for (const id of ['env_in1', 'env_in2']) {
-      expect(moog993Def.inputs.find((p) => p.id === id)!.type).toBe('cv');
-    }
-  });
-
-  it('exposes the five outputs: trig_out1/2/3 (gate) + env_out1/2 (cv)', () => {
-    const ids = moog993Def.outputs.map((p) => p.id);
-    expect(ids).toEqual(['trig_out1', 'trig_out2', 'trig_out3', 'env_out1', 'env_out2']);
-    for (const id of ['trig_out1', 'trig_out2', 'trig_out3']) {
-      expect(moog993Def.outputs.find((p) => p.id === id)!.type).toBe('gate');
-    }
-    for (const id of ['env_out1', 'env_out2']) {
-      expect(moog993Def.outputs.find((p) => p.id === id)!.type).toBe('cv');
-    }
-  });
-
-  it('exposes 3 params (route1..3), all linear 0..2 default 1', () => {
-    const ids = moog993Def.params.map((p) => p.id);
-    expect(ids).toEqual(['route1', 'route2', 'route3']);
-    for (const p of moog993Def.params) {
-      expect(p.min).toBe(0);
-      expect(p.max).toBe(2);
-      expect(p.defaultValue).toBe(1);
-      expect(p.curve).toBe('linear');
-    }
-  });
-});
-
 // ───────────────────── Layer 2: real factory (mock Web Audio) ─────────
 // A minimal GainNode mock that records every connect()/disconnect() so we can
 // assert the routing graph. setValueAtTime mirrors the .value (the factory

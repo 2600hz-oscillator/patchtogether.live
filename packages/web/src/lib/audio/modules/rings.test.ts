@@ -6,45 +6,6 @@ import { describe, expect, it } from 'vitest';
 import { ringsDef, ringsMath, RINGS_MAX_MODEL, RINGS_MODEL_NAMES, type RingsParams } from './rings';
 
 describe('ringsDef shape', () => {
-  it('declares type=rings, label=RINGS, category=sources', () => {
-    expect(ringsDef.type).toBe('rings');
-    expect(ringsDef.label).toBe('rings');
-    expect(ringsDef.category).toBe('sources');
-  });
-
-  it('exposes the expected input ports', () => {
-    const ids = ringsDef.inputs.map((p) => p.id);
-    expect(ids).toEqual([
-      'in', 'pitch', 'strum',
-      'model_cv', 'note_cv', 'str_cv', 'bright_cv', 'damp_cv', 'pos_cv', 'level_cv',
-    ]);
-  });
-
-  it("exposes 2 audio outputs: odd + even", () => {
-    const ids = ringsDef.outputs.map((p) => p.id);
-    expect(ids).toEqual(['odd', 'even']);
-    for (const p of ringsDef.outputs) expect(p.type).toBe('audio');
-  });
-
-  it('declares odd/even as a stereoPair', () => {
-    expect(ringsDef.stereoPairs).toEqual([['odd', 'even']]);
-  });
-
-  it('exposes 7 params: model, note, structure, brightness, damping, position, level', () => {
-    const ids = ringsDef.params.map((p) => p.id);
-    expect(ids).toEqual(['model', 'note', 'structure', 'brightness', 'damping', 'position', 'level']);
-  });
-
-  it('every cv input has paramTarget pointing at a real param + cvScale set', () => {
-    for (const port of ringsDef.inputs) {
-      if (port.type !== 'cv') continue;
-      expect(port.paramTarget).toBeDefined();
-      expect(port.cvScale).toBeDefined();
-      const param = ringsDef.params.find((p) => p.id === port.paramTarget);
-      expect(param).toBeDefined();
-    }
-  });
-
   it(`model param: discrete 0..${RINGS_MAX_MODEL}`, () => {
     const p = ringsDef.params.find((p) => p.id === 'model')!;
     expect(p.curve).toBe('discrete');
@@ -55,24 +16,6 @@ describe('ringsDef shape', () => {
     expect(port.cvScale).toEqual({ mode: 'discrete' });
   });
 
-  it('note param: ±60 semitone offset', () => {
-    const p = ringsDef.params.find((p) => p.id === 'note')!;
-    expect(p.min).toBe(-60);
-    expect(p.max).toBe(60);
-    expect(p.units).toBe('st');
-  });
-
-  it('strum input is gate-typed', () => {
-    expect(ringsDef.inputs.find((p) => p.id === 'strum')!.type).toBe('gate');
-  });
-
-  it('exciter `in` is audio-typed', () => {
-    expect(ringsDef.inputs.find((p) => p.id === 'in')!.type).toBe('audio');
-  });
-
-  it('pitch input is pitch-typed', () => {
-    expect(ringsDef.inputs.find((p) => p.id === 'pitch')!.type).toBe('pitch');
-  });
 });
 
 const SR = 48000;

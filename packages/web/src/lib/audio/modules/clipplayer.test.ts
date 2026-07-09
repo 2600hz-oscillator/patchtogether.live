@@ -179,42 +179,6 @@ beforeEach(() => {
   clearPatch();
 });
 
-describe('clipplayer: module def', () => {
-  it('registers as audio-domain "clipplayer" with a lowercase label', () => {
-    expect(clipplayerDef.type).toBe('clipplayer');
-    expect(clipplayerDef.domain).toBe('audio');
-    expect(clipplayerDef.label).toBe('clip player');
-    expect(clipplayerDef.label).toBe(clipplayerDef.label.toLowerCase());
-    expect(clipplayerDef.category).toBe('modulation');
-  });
-  it('declares stop_all in + 8 lanes × (pitch/gate/vel) out', () => {
-    expect(clipplayerDef.inputs.map((p) => p.id)).toEqual(['stop_all']);
-    const outs = Object.fromEntries(clipplayerDef.outputs.map((p) => [p.id, p.type]));
-    expect(clipplayerDef.outputs).toHaveLength(24);
-    expect(outs.pitch1).toBe('polyPitchGate');
-    expect(outs.gate1).toBe('gate');
-    expect(outs.vel1).toBe('cv');
-    expect(outs.pitch8).toBe('polyPitchGate');
-    expect(outs.gate8).toBe('gate');
-    expect(outs.vel8).toBe('cv');
-  });
-  it('has no BPM/clock — STEP param drives steps-per-beat', () => {
-    const ids = clipplayerDef.params.map((p) => p.id);
-    expect(ids).toContain('stepDiv');
-    expect(ids).not.toContain('bpm');
-    expect(clipplayerDef.inputs.map((p) => p.id)).not.toContain('clock');
-  });
-  it('declares a discrete s&h param defaulting ON (1), lowercase label', () => {
-    const snh = clipplayerDef.params.find((p) => p.id === 'snh');
-    expect(snh).toBeDefined();
-    expect(snh!.defaultValue).toBe(1);
-    expect(snh!.min).toBe(0);
-    expect(snh!.max).toBe(1);
-    expect(snh!.curve).toBe('discrete');
-    expect(snh!.label).toBe(snh!.label.toLowerCase());
-  });
-});
-
 describe('clipplayer: gate-sampled S&H (pitch holds between gates)', () => {
   // A sparse clip: a note at step 0 (midi 72) only, then rests. gateLength low
   // so the gate closes well before step 1. Under S&H the lane's pitch must HOLD

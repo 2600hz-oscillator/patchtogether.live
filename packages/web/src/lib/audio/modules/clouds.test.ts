@@ -10,7 +10,7 @@
 // passing) is covered by the Playwright E2E + ART scenarios.
 
 import { describe, expect, it } from 'vitest';
-import { cloudsDef, cloudsMath, type CloudsParams } from './clouds';
+import { cloudsMath, type CloudsParams } from './clouds';
 
 const SR = 48000;
 
@@ -40,72 +40,6 @@ function sineStereo(n: number, freq: number): { L: Float32Array; R: Float32Array
   }
   return { L, R };
 }
-
-describe('cloudsDef shape', () => {
-  it('declares type=clouds, label=CLOUDS, category=effects', () => {
-    expect(cloudsDef.type).toBe('clouds');
-    expect(cloudsDef.label).toBe('clouds');
-    expect(cloudsDef.category).toBe('effects');
-  });
-
-  it('exposes the expected input ports', () => {
-    const ids = cloudsDef.inputs.map((p) => p.id);
-    expect(ids).toEqual([
-      'in_l', 'in_r',
-      'pitch', 'freeze_gate',
-      'position_cv', 'size_cv', 'pitch_cv', 'density_cv', 'texture_cv', 'blend_cv',
-    ]);
-  });
-
-  it('exposes 2 audio outputs: out_l + out_r', () => {
-    const ids = cloudsDef.outputs.map((p) => p.id);
-    expect(ids).toEqual(['out_l', 'out_r']);
-    for (const p of cloudsDef.outputs) expect(p.type).toBe('audio');
-  });
-
-  it('declares stereoPairs for in and out', () => {
-    expect(cloudsDef.stereoPairs).toEqual([['in_l', 'in_r'], ['out_l', 'out_r']]);
-  });
-
-  it('exposes 7 params: position, size, pitch, density, texture, blend, freeze', () => {
-    const ids = cloudsDef.params.map((p) => p.id);
-    expect(ids).toEqual(['position', 'size', 'pitch', 'density', 'texture', 'blend', 'freeze']);
-  });
-
-  it('all unipolar knob params live in [0..1] linear', () => {
-    const knobs = ['position', 'size', 'density', 'texture', 'blend'];
-    for (const k of knobs) {
-      const p = cloudsDef.params.find((p) => p.id === k)!;
-      expect(p.min, `${k} min`).toBe(0);
-      expect(p.max, `${k} max`).toBe(1);
-      expect(p.curve, `${k} curve`).toBe('linear');
-    }
-  });
-
-  it('pitch param spans ±24 semitones', () => {
-    const p = cloudsDef.params.find((p) => p.id === 'pitch')!;
-    expect(p.min).toBe(-24);
-    expect(p.max).toBe(24);
-    expect(p.units).toBe('st');
-  });
-
-  it('freeze param is discrete 0..1', () => {
-    const p = cloudsDef.params.find((p) => p.id === 'freeze')!;
-    expect(p.min).toBe(0);
-    expect(p.max).toBe(1);
-    expect(p.curve).toBe('discrete');
-  });
-
-  it('every cv input has cvScale + paramTarget pointing at a real param', () => {
-    for (const port of cloudsDef.inputs) {
-      if (port.type !== 'cv') continue;
-      expect(port.cvScale, `${port.id} cvScale`).toBeDefined();
-      expect(port.paramTarget, `${port.id} paramTarget`).toBeDefined();
-      const param = cloudsDef.params.find((p) => p.id === port.paramTarget);
-      expect(param, `${port.id} → param ${port.paramTarget}`).toBeDefined();
-    }
-  });
-});
 
 describe('cloudsMath.grainEnvelope', () => {
   it('returns 0 outside [0..1)', () => {

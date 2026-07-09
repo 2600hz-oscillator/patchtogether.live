@@ -93,54 +93,6 @@ function peakIndex(buf: Float32Array, from = 0): number {
   return bi;
 }
 
-describe('cofefveDelayDef shape', () => {
-  it('is an effects-section module with id cofefve + lowercase label', () => {
-    expect(cofefveDelayDef.type).toBe('cofefve');
-    expect(cofefveDelayDef.label).toBe('cofefve delay');
-    expect(cofefveDelayDef.domain).toBe('audio');
-    // No `card:` override — resolves by convention to CofefveCard.
-    expect(cofefveDelayDef.card).toBeUndefined();
-  });
-
-  it('declares stereo audio in/out + a clock trigger input', () => {
-    const inIds = cofefveDelayDef.inputs.map((p) => p.id);
-    expect(inIds).toContain('inL');
-    expect(inIds).toContain('inR');
-    const clk = cofefveDelayDef.inputs.find((p) => p.id === 'clock');
-    expect(clk?.type).toBe('gate');
-    expect(clk?.edge).toBe('trigger');
-    expect(cofefveDelayDef.outputs.map((p) => p.id)).toEqual(['outL', 'outR']);
-  });
-
-  it('exposes per-param CV for the musical params (time/feedback/mix/drive + more)', () => {
-    const cvByTarget = new Map(
-      cofefveDelayDef.inputs.filter((p) => p.type === 'cv').map((p) => [p.paramTarget, p]),
-    );
-    for (const target of ['delayTime', 'feedback', 'wetVolume', 'driveGain', 'lfoAmount', 'driftAmount', 'pan', 'duckAmount']) {
-      expect(cvByTarget.has(target)).toBe(true);
-    }
-  });
-
-  it('declares all DSP params (delay/lfo/drift/feedback/duck/filter/drive/dry/wet + sync)', () => {
-    const ids = new Set(cofefveDelayDef.params.map((p) => p.id));
-    for (const id of [
-      'delayTime', 'tempoSync', 'clockSource',
-      'lfoAmount', 'lfoFrequency', 'driftAmount', 'driftSpeed',
-      'feedback', 'stereoOffset', 'pan', 'panMode',
-      'duckAmount', 'duckAttack', 'duckRelease',
-      'filterMode', 'lowCut', 'highCut',
-      'driveGain', 'driveMix', 'driveCutoff', 'driveIterations',
-      'dryVolume', 'wetVolume',
-    ]) {
-      expect(ids.has(id)).toBe(true);
-    }
-  });
-
-  it('carries NO GPL/OSS attribution (own-code, clean-room)', () => {
-    expect(cofefveDelayDef.ossAttribution).toBeUndefined();
-  });
-});
-
 describe('cofefve DSP behavior', () => {
   it('delays a click by ≈ the configured time (free-running, no feedback)', async () => {
     const Proc = await loadProcessor();

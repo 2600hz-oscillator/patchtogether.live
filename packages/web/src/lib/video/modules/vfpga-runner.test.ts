@@ -21,14 +21,6 @@ import {
 import '$lib/video/modules';
 
 describe('vfpgaRunnerDef — module def shape', () => {
-  it('is a video module, type vfpgaRunner, lowercase label', () => {
-    expect(vfpgaRunnerDef.type).toBe('vfpgaRunner');
-    expect(vfpgaRunnerDef.domain).toBe('video');
-    expect(vfpgaRunnerDef.label).toBe('vfpga-runner');
-    // Lowercase-label repo standard.
-    expect(vfpgaRunnerDef.label).toBe(vfpgaRunnerDef.label.toLowerCase());
-  });
-
   it('runs off-main-thread (renderLocus worker) — all catalog VFPGAs are pure-GL', () => {
     expect(vfpgaRunnerDef.renderLocus).toBe('worker');
   });
@@ -51,12 +43,6 @@ describe('vfpgaRunnerDef — module def shape', () => {
     }
   });
 
-  it('declares two video outputs (vout1 canonical, vout2)', () => {
-    const outs = vfpgaRunnerDef.outputs.map((o) => o.id);
-    expect(outs).toEqual(['vout1', 'vout2']);
-    for (const o of vfpgaRunnerDef.outputs) expect(o.type).toBe('video');
-  });
-
   it('declares the p1..p8 generic slot bank + synthetic cv/gate params', () => {
     const ids = new Set(vfpgaRunnerDef.params.map((p) => p.id));
     for (const slot of VFPGA_PARAM_SLOTS) expect(ids.has(slot)).toBe(true);
@@ -71,9 +57,6 @@ describe('vfpgaRunnerDef — module def shape', () => {
     expect(getVideoModuleDef('vfpgaRunner')).toBe(vfpgaRunnerDef);
   });
 
-  it('declares no maxInstances (no cap)', () => {
-    expect(vfpgaRunnerDef.maxInstances).toBeUndefined();
-  });
 });
 
 // ---------------------------------------------------------------------------

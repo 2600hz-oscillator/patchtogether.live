@@ -1059,6 +1059,16 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // e2e/tests/edges.spec.ts (SHAPES → EDGES → OUTPUT shows edges; raising
   // threshold drops edge pixels; raising thickness adds them).
   'linux/edges',
+  // LUSH GARDEN (generative garden video source): ships a REAL deterministic
+  // baseline via the VRT_SCENES.lushgarden seeded scene (__lushgardenVrtSeed
+  // → fixed fully-grown 24-plant set, spawning suppressed, capture waits for
+  // every referenced cutout bake to settle). Darwin baseline captured on this
+  // machine; linux baseline pending a `vrt-update.yml` workflow_dispatch on
+  // this branch — darwin is the regression gate here. Garden behavior is
+  // additionally proven by the pure scene-math unit suite
+  // (lushgarden-scene.test.ts) + the bespoke e2e/tests/lushgarden.spec.ts
+  // (continuous spawn / gated growth / reset / background passthrough).
+  'linux/lushgarden',
   // MAPPER (video keyer / matte processor — generalises OUTLINES' `mapped`
   // output to an arbitrary key): deterministic card chrome (VID/KEY/threshold
   // handles + 1 fader, no canvas/animation), so it ships a REAL solo-spawn

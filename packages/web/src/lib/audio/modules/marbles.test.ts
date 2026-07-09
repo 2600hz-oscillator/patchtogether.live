@@ -30,16 +30,6 @@ function baseParams(overrides: Partial<MarblesParams> = {}): MarblesParams {
 }
 
 describe('marblesDef registry shape', () => {
-  it('declares the t1/t2 gate + x1/x2/x3 cv + clk outputs', () => {
-    const ids = marblesDef.outputs.map((o) => o.id);
-    expect(ids).toEqual(['t1', 't2', 'x1', 'x2', 'x3', 'clk']);
-    expect(marblesDef.ossAttribution?.author).toBe('Émilie Gillet');
-  });
-  it('every CV input carries a cvScale hint', () => {
-    for (const i of marblesDef.inputs) {
-      expect(i.cvScale, `${i.id} cvScale`).toBeTruthy();
-    }
-  });
   it('exposes 6 T-model names', () => {
     expect(MARBLES_T_MODEL_NAMES.length).toBe(6);
   });

@@ -17,8 +17,6 @@ import {
   OUTLINES_COLLIDE_PORT_ID,
   OUTLINES_COLLIDE_PARAM_ID,
 } from './outlines';
-import { getVideoModuleDef } from '$lib/video/module-registry';
-import { registerVideoModules } from './index';
 import type { VideoEngineContext, VideoFrameContext } from '$lib/video/engine';
 import type { ModuleNode } from '$lib/graph/types';
 import {
@@ -67,15 +65,6 @@ import {
 // ---------------------------------------------------------------------------
 
 describe('outlinesDef — shape', () => {
-  it('is a video-domain source with the lowercase label', () => {
-    expect(outlinesDef.type).toBe('outlines');
-    expect(outlinesDef.domain).toBe('video');
-    expect(outlinesDef.label).toBe('outlines');
-    // Lowercase-label guard (a card uppercases for display).
-    expect(outlinesDef.label).toBe(outlinesDef.label.toLowerCase());
-    expect(outlinesDef.category).toBe('sources');
-  });
-
   it('declares gate / collide / d / v / spd / decay / shape / rotation / video inputs', () => {
     const byId = Object.fromEntries(outlinesDef.inputs.map((p) => [p.id, p]));
     expect(byId[OUTLINES_GATE_PORT_ID].type).toBe('gate');
@@ -106,18 +95,6 @@ describe('outlinesDef — shape', () => {
     expect(byId[OUTLINES_COLLIDE_PORT_ID].cvScale).toBeUndefined();
   });
 
-  it('has NO cv input for rate (knob only)', () => {
-    expect(outlinesDef.inputs.find((p) => p.id === 'rate')).toBeUndefined();
-  });
-
-  it('declares the four outputs with the right cable types', () => {
-    const byId = Object.fromEntries(outlinesDef.outputs.map((p) => [p.id, p]));
-    expect(byId['overlap'].type).toBe('mono-video');
-    expect(byId['contour'].type).toBe('mono-video');
-    expect(byId['combine'].type).toBe('video');
-    expect(byId['mapped'].type).toBe('video');
-  });
-
   it('exposes d / v / spd / decay / shape / rotation / rate knobs (+ hidden synthetic gate + collide params)', () => {
     const ids = outlinesDef.params.map((p) => p.id);
     expect(ids).toEqual(
@@ -138,33 +115,6 @@ describe('outlinesDef — shape', () => {
   it('SHAPE knob defaults to the circle (index 0)', () => {
     const shape = outlinesDef.params.find((p) => p.id === 'shape')!;
     expect(mapShape(shape.defaultValue)).toBe(0);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Video module registry lookup.
-//
-// (The legacy `circles → outlines` runtime type alias + `canonicalizeVideoType`
-// were removed in schema-cleanup 4/5 — a pre-#699 `circles` node now drops to a
-// placeholder error card instead of resolving the OUTLINES def, an accepted
-// one-time break of old patches. `getVideoModuleDef` is now a plain registry
-// get with no legacy fallback.)
-// ---------------------------------------------------------------------------
-
-describe('video module registry lookup', () => {
-  // Populate the live video registry (idempotent — registerVideoModules guards).
-  registerVideoModules();
-
-  it("a direct lookup for the current 'outlines' id resolves the def", () => {
-    expect(getVideoModuleDef('outlines')!.type).toBe('outlines');
-  });
-
-  it('an unknown video type returns undefined', () => {
-    expect(getVideoModuleDef('definitely-not-a-module' as never)).toBeUndefined();
-  });
-
-  it("the removed legacy 'circles' id no longer resolves (dropped on load)", () => {
-    expect(getVideoModuleDef('circles' as never)).toBeUndefined();
   });
 });
 

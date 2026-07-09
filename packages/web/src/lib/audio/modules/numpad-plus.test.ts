@@ -7,7 +7,6 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-  numpadPlusDef,
   DEFAULT_KEYMAP,
   OCTAVE_UP_KEY,
   OCTAVE_DOWN_KEY,
@@ -73,56 +72,6 @@ describe('numpadPlus: keymap remap helpers', () => {
     // octave 4, no modifier → E4 = (4+1)*12 + 4 = 64
     expect(midiForKey('KeyZ', 4, 0, next)).toBe(64);
     expect(midiForKey('Numpad5', 4, 0, next)).toBeNull(); // old E key freed
-  });
-});
-
-describe('numpadPlus: module def shape', () => {
-  it('declares the expected type/label/domain/category', () => {
-    expect(numpadPlusDef.type).toBe('numpadPlus');
-    expect(numpadPlusDef.label).toBe('numpad+');
-    expect(numpadPlusDef.domain).toBe('audio');
-    expect(numpadPlusDef.category).toBe('sources');
-  });
-
-  it('exposes clock + layer CV inputs', () => {
-    const ids = numpadPlusDef.inputs.map((p) => p.id).sort();
-    expect(ids).toEqual(['clock', 'layer']);
-  });
-
-  it('exposes 8 mono outputs (l{1..4}_pitch/gate) + a poly output', () => {
-    const ids = numpadPlusDef.outputs.map((p) => p.id).sort();
-    expect(ids).toEqual([
-      'l1_gate', 'l1_pitch',
-      'l2_gate', 'l2_pitch',
-      'l3_gate', 'l3_pitch',
-      'l4_gate', 'l4_pitch',
-      'poly',
-    ]);
-    for (let i = 1; i <= 4; i++) {
-      expect(numpadPlusDef.outputs.find((o) => o.id === `l${i}_pitch`)?.type).toBe('pitch');
-      expect(numpadPlusDef.outputs.find((o) => o.id === `l${i}_gate`)?.type).toBe('gate');
-    }
-    expect(numpadPlusDef.outputs.find((o) => o.id === 'poly')?.type).toBe('polyPitchGate');
-  });
-
-  it('exposes bpm/isPlaying/activeLayer/recArm/overdub/octave/poly params', () => {
-    const ids = numpadPlusDef.params.map((p) => p.id).sort();
-    expect(ids).toEqual(['activeLayer', 'bpm', 'isPlaying', 'octave', 'overdub', 'poly', 'recArm']);
-    expect(numpadPlusDef.params.find((p) => p.id === 'poly')?.defaultValue).toBe(0);
-  });
-
-  it('octave param defaults to 4 (clamped 0..8)', () => {
-    const p = numpadPlusDef.params.find((x) => x.id === 'octave');
-    expect(p?.defaultValue).toBe(4);
-    expect(p?.min).toBe(0);
-    expect(p?.max).toBe(8);
-  });
-
-  it('activeLayer param defaults to 0 (clamped 0..3)', () => {
-    const p = numpadPlusDef.params.find((x) => x.id === 'activeLayer');
-    expect(p?.defaultValue).toBe(0);
-    expect(p?.min).toBe(0);
-    expect(p?.max).toBe(3);
   });
 });
 

@@ -37,46 +37,6 @@ import {
 // ---------- module-def shape ----------
 
 describe('samsloopDef shape', () => {
-  it('declares type=samsloop, label=SAMSLOOP, category=sources', () => {
-    expect(samsloopDef.type).toBe('samsloop');
-    expect(samsloopDef.label).toBe('samsloop');
-    expect(samsloopDef.category).toBe('sources');
-  });
-
-  it('exposes the expected I/O surface (trig + rate_cv + audio_l_in + audio_r_in, mono out)', () => {
-    const inIds = samsloopDef.inputs.map((p) => p.id);
-    // Audio-record inputs added for the recording feature (see
-    // samsloop-record.ts + SamsloopCard.svelte's REC button). The two
-    // audio inputs follow the stereovca normalling convention — R
-    // normalizes to L when unpatched, handled inside the samsloop-tap
-    // worklet.
-    expect(inIds).toEqual(['trig', 'rate_cv', 'audio_l_in', 'audio_r_in']);
-    const outIds = samsloopDef.outputs.map((p) => p.id);
-    expect(outIds).toEqual(['out']);
-    expect(samsloopDef.outputs[0]!.type).toBe('audio');
-    // The record-input ports both carry audio.
-    expect(samsloopDef.inputs.find((p) => p.id === 'audio_l_in')?.type).toBe('audio');
-    expect(samsloopDef.inputs.find((p) => p.id === 'audio_r_in')?.type).toBe('audio');
-  });
-
-  it('exposes the expected params: rate / mode / start / end', () => {
-    const ids = samsloopDef.params.map((p) => p.id);
-    expect(ids).toEqual(['rate', 'mode', 'start', 'end']);
-  });
-
-  it('rate_cv routes through the rate AudioParam (cvScale: linear)', () => {
-    const port = samsloopDef.inputs.find((p) => p.id === 'rate_cv')!;
-    expect(port.paramTarget).toBe('rate');
-    expect(port.cvScale).toEqual({ mode: 'linear' });
-  });
-
-  it('mode param is discrete 0..1 (1-shot / loop)', () => {
-    const p = samsloopDef.params.find((p) => p.id === 'mode')!;
-    expect(p.curve).toBe('discrete');
-    expect(p.min).toBe(0);
-    expect(p.max).toBe(1);
-  });
-
   it('rate param: −2..+2 with default 1.0 (slider center = forward unity)', () => {
     const p = samsloopDef.params.find((p) => p.id === 'rate')!;
     expect(p.min).toBe(SAMSLOOP_RATE_RANGE.min);

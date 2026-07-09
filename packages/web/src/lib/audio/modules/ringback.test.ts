@@ -8,68 +8,12 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-  ringbackDef,
   RingChannel,
   ringRead,
   mixSample,
   clampFeedback,
   RINGBACK_MAX_FEEDBACK,
 } from './ringback';
-
-describe('ringbackDef: module-def shape', () => {
-  it('declares type=ringback, label=ringback (lowercase), category=effects, domain=audio', () => {
-    expect(ringbackDef.type).toBe('ringback');
-    expect(ringbackDef.label).toBe('ringback');
-    expect(ringbackDef.label).toBe(ringbackDef.label.toLowerCase()); // guard
-    expect(ringbackDef.category).toBe('effects');
-    expect(ringbackDef.domain).toBe('audio');
-  });
-
-  it('stereo audio in (in_l + in_r) + a CV input per param (rate/size/feedback/mix)', () => {
-    const audioIns = ringbackDef.inputs.filter((p) => p.type === 'audio').map((p) => p.id).sort();
-    expect(audioIns).toEqual(['in_l', 'in_r']);
-    const cvIns = ringbackDef.inputs.filter((p) => p.type === 'cv').map((p) => p.id).sort();
-    expect(cvIns).toEqual(['feedback', 'mix', 'rate', 'size']);
-    // each CV input drives its like-named param through the shared cvScale routing.
-    for (const p of ringbackDef.inputs.filter((q) => q.type === 'cv')) {
-      expect(p.paramTarget).toBe(p.id);
-      expect(p.cvScale).toBeDefined();
-    }
-  });
-
-  it('is stereo out: out_l + out_r (audio)', () => {
-    const ids = ringbackDef.outputs.map((p) => p.id).sort();
-    expect(ids).toEqual(['out_l', 'out_r']);
-    for (const p of ringbackDef.outputs) expect(p.type).toBe('audio');
-  });
-
-  it('exposes the 4 crush params (rate / size / feedback / mix) with the documented ranges', () => {
-    const byId = Object.fromEntries(ringbackDef.params.map((p) => [p.id, p]));
-    expect(Object.keys(byId).sort()).toEqual(['feedback', 'mix', 'rate', 'size']);
-
-    expect(byId.rate!.min).toBe(0.05);
-    expect(byId.rate!.max).toBe(4);
-    expect(byId.rate!.defaultValue).toBe(0.5);
-
-    expect(byId.size!.min).toBe(2);
-    expect(byId.size!.max).toBe(4096);
-    expect(byId.size!.curve).toBe('log');
-
-    expect(byId.feedback!.min).toBe(0);
-    // Feedback is clamped strictly below 1 so the ring can't self-amplify to ∞.
-    expect(byId.feedback!.max).toBe(0.98);
-    expect(byId.feedback!.max).toBeLessThan(1);
-
-    expect(byId.mix!.min).toBe(0);
-    expect(byId.mix!.max).toBe(1);
-    expect(byId.mix!.defaultValue).toBe(1);
-  });
-
-  it('has a factory + handle count 8 (2 audio in + 4 CV in + 2 out)', () => {
-    expect(typeof ringbackDef.factory).toBe('function');
-    expect(ringbackDef.inputs.length + ringbackDef.outputs.length).toBe(8);
-  });
-});
 
 describe('ringback re-exports the crush core (one shared import surface)', () => {
   it('re-exports RingChannel + the pure crush helpers', () => {

@@ -751,6 +751,33 @@ const BEHAVIORAL_PARAMS: Record<string, Record<string, number>> = {
 // Each entry must cite the dedicated test that DOES cover the port's
 // downstream effect — otherwise we're hiding a coverage gap.
 const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
+  // ── LUSHGARDEN scene-geometry CV inputs (rate / horizon / view). The
+  //    garden is a stochastic scene (random spawn positions/depths at ~2/s):
+  //    the mono output's luma-variance fingerprint carries a ±300-std
+  //    per-snapshot spread from the random bed itself, and the control vs
+  //    patched phases compare two DIFFERENT random beds — so these three
+  //    CVs' real but geometry-shaped effects land near the noise floor:
+  //      • view  — pure horizontal parallax TRANSLATION; frame-variance is
+  //        ~translation-invariant (the exact lines.phase / textmarquee.posY
+  //        class). Measured Δμvar 2.8–99 across repeats → sporadic NO-DELTA.
+  //      • horizon — vertically compresses far-rank anchors proportional to
+  //        depth (near plants barely move). Δμvar 0.7–117 across repeats.
+  //      • rate — repopulation speed; the wiggling spawn cadence is masked
+  //        by the random bed's own variance spread. Δμvar 2.8–132.
+  //    Measured over 7 local repeats: each row detected in most runs, each
+  //    also read a Δμvar <4 at least once → the near-threshold class from
+  //    the behavioral-stabilization campaign, not dead ports (grow / reset /
+  //    background all stay gated here and detect with Δμvar 770–2690). The
+  //    exact rate/horizon/view math is pinned deterministically in
+  //    lushgarden-scene.test.ts (stepSpawner rate→interval, depth-0/depth-1
+  //    anchor + FAR_SCALE, parallax shift rows), and view/horizon/rate knobs
+  //    ride the same params the CV bridge writes. RE-ENABLE PATH: the
+  //    campaign's per-port-calibrated metric, or a seeded-garden behavioral
+  //    driver (__lushgardenVrtSeed) so control and patched phases compare
+  //    the SAME plant set instead of two random beds.
+  'lushgarden.rate': 'stochastic-garden variance floor (±300 std) masks the spawn-cadence wiggle (Δμvar 2.8–132 across repeats) → near-threshold class; rate→interval math pinned in lushgarden-scene.test.ts; re-enable via per-port-calibrated metric or a __lushgardenVrtSeed-seeded driver',
+  'lushgarden.horizon': 'stochastic-garden variance floor (±300 std) swamps the depth-proportional horizon anchor shift (Δμvar 0.7–117) → near-threshold class, cf. lines.phase/textmarquee.posY; placement math pinned in lushgarden-scene.test.ts; re-enable via per-port-calibrated metric or a __lushgardenVrtSeed-seeded driver',
+  'lushgarden.view': 'parallax pan is a horizontal TRANSLATION — frame-variance ~invariant (the lines.phase class), Δμvar 2.8–99 across repeats → near-threshold; parallax shift math pinned in lushgarden-scene.test.ts; re-enable via per-port-calibrated metric or a __lushgardenVrtSeed-seeded driver',
   // ── RECORDERBOX audio inputs. audio_l / audio_r are RECORDED into the MP4
   //    soundtrack — they do NOT render into the module's VIDEO `out` (which is
   //    a pure passthrough of the `in` video). So driving an audio input
@@ -1288,7 +1315,7 @@ test('RATCHET: behavioral exemption lists only shrink', () => {
   expect(
     Object.keys(BEHAVIORAL_SWEEP_EXEMPT).length,
     'BEHAVIORAL_SWEEP_EXEMPT grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(169); // +1 snaredrum.roll_speed_cv (CV only modulates the drumroll rate, which needs gate_in held high; the sweep drives trigger_in single strikes → no roll → no delta, cf. pentemelodica.fmN; rate map unit-proven in snare-roll-dsp.test.ts, density asserted in snaredrum-roll.spec.ts); +1 tempest.rim (claw occupies ~1/16 lanes; sliding it doesn't move global frame-variance — video-variance class; claw motion unit-proven in tempest.test.ts + render-smoke); +1 textmarquee.posY (vertical text translation keeps covered pixel-area/frame-variance unchanged → near-threshold flake, video-variance class; posX/scrollX stay gated; covered by textmarquee-layout.test.ts + render-smoke); +1 moog962.shift (advancing the seq-switch selector across UNPATCHED in1..in3 gives Δμrms 0.004 inside the ±0.089 out-noise floor → near-threshold flake; in1/in2/in3 stay gated; covered by moog962.test.ts); +1 lines.phase (phase scroll translates the line bands but preserves frame-variance, Δμvar 2.36 vs ±63.7 → near-threshold flake, video-variance class; orient/amp/thickness stay gated; covered by lines-render-smoke.spec.ts); +1 moog911.esus_cv (sustain-level CV only shapes the held-sustain phase; short retriggering window is attack/release-dominated, Δμrms 0.003 inside ±0.105 → near-threshold flake; t1/t2/t3/gate stay gated; covered by moog911.test.ts); +1 textmarquee.scrollY (vertical scroll of the horizontal band keeps frame-variance ≈ constant, Δμvar 1.45–2.08 → near-threshold flake, same geometry as posY; posX/scrollX stay gated; covered by textmarquee-layout.test.ts); +1 moog921b.freq_bus (1V/oct pitch bus responds — perturbed cent jitters ±24Hz — but a symmetric sweep collapses the mean-cent metric to Δμcent 3–10Hz → metric-mismatch flake, not dead CV; width_bus/fine/range stay gated; covered by moog921b.test.ts)
+  ).toBeLessThanOrEqual(172); // +3 lushgarden.{rate,horizon,view} (stochastic-garden variance floor ±300 std masks the three scene-geometry CVs — view is a pure translation (lines.phase class), horizon a depth-proportional anchor shift, rate a spawn-cadence wiggle; each read Δμvar <4 at least once over 7 repeats → near-threshold flakes; grow/reset/background stay gated and detect at Δμvar 770–2690; math pinned in lushgarden-scene.test.ts, re-enable via per-port-calibrated metric or __lushgardenVrtSeed-seeded driver); +1 snaredrum.roll_speed_cv (CV only modulates the drumroll rate, which needs gate_in held high; the sweep drives trigger_in single strikes → no roll → no delta, cf. pentemelodica.fmN; rate map unit-proven in snare-roll-dsp.test.ts, density asserted in snaredrum-roll.spec.ts); +1 tempest.rim (claw occupies ~1/16 lanes; sliding it doesn't move global frame-variance — video-variance class; claw motion unit-proven in tempest.test.ts + render-smoke); +1 textmarquee.posY (vertical text translation keeps covered pixel-area/frame-variance unchanged → near-threshold flake, video-variance class; posX/scrollX stay gated; covered by textmarquee-layout.test.ts + render-smoke); +1 moog962.shift (advancing the seq-switch selector across UNPATCHED in1..in3 gives Δμrms 0.004 inside the ±0.089 out-noise floor → near-threshold flake; in1/in2/in3 stay gated; covered by moog962.test.ts); +1 lines.phase (phase scroll translates the line bands but preserves frame-variance, Δμvar 2.36 vs ±63.7 → near-threshold flake, video-variance class; orient/amp/thickness stay gated; covered by lines-render-smoke.spec.ts); +1 moog911.esus_cv (sustain-level CV only shapes the held-sustain phase; short retriggering window is attack/release-dominated, Δμrms 0.003 inside ±0.105 → near-threshold flake; t1/t2/t3/gate stay gated; covered by moog911.test.ts); +1 textmarquee.scrollY (vertical scroll of the horizontal band keeps frame-variance ≈ constant, Δμvar 1.45–2.08 → near-threshold flake, same geometry as posY; posX/scrollX stay gated; covered by textmarquee-layout.test.ts); +1 moog921b.freq_bus (1V/oct pitch bus responds — perturbed cent jitters ±24Hz — but a symmetric sweep collapses the mean-cent metric to Δμcent 3–10Hz → metric-mismatch flake, not dead CV; width_bus/fine/range stay gated; covered by moog921b.test.ts)
 });
 
 // TODO(behavioral-coverage, systemic fix — tracks the header note + the

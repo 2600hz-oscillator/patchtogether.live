@@ -173,6 +173,53 @@ describe('registry manifest emitter', () => {
     ).toEqual([]);
   });
 
+  // The def `category` string is cosmetic ordering data (docs CAT_ORDER, the
+  // legacy palette fallback, mike/personality's 'sequencers' probe) and is
+  // deliberately EXCLUDED from the contract-lock golden — so this registry-wide
+  // allowlist is the single guard that a def's category isn't a typo. The set
+  // is FROZEN to what the registry uses today; a genuinely new category is a
+  // one-line, reviewed addition here. ('utility' vs 'utilities' and 'filter'
+  // vs 'filters' are pre-existing legacy near-duplicates — normalizing them
+  // changes docs ordering + mike lookups, so they stay listed until a
+  // dedicated cleanup.)
+  it('every module category is in the known set (no typo categories)', () => {
+    const KNOWN_CATEGORIES = new Set([
+      'sources', 'modulation', 'filters', 'filter', 'effects', 'video-effects',
+      'utilities', 'utility', 'tools', 'output', 'processors', 'games', 'hybrid',
+    ]);
+    const offenders = specs
+      .filter((m) => !KNOWN_CATEGORIES.has(m.category))
+      .map((m) => `${m.type}: ${JSON.stringify(m.category)}`);
+    expect(
+      offenders,
+      `unknown module category (typo, or add it to KNOWN_CATEGORIES deliberately):\n  ${offenders.join('\n  ')}`,
+    ).toEqual([]);
+  });
+
+  // Registry-wide ParamDef validity — the invariants per-module def-shape
+  // tests used to re-assert N times (LoC-reduction row 1). The golden pins the
+  // VALUES (min/max/default per param); these pin the RULES that must hold for
+  // any value the golden accepts.
+  it('every param declares a non-empty label and a default within [min, max]', () => {
+    const offenders: string[] = [];
+    for (const m of specs) {
+      for (const p of m.params) {
+        if (typeof p.label !== 'string' || p.label.length === 0) {
+          offenders.push(`${m.type}.${p.id}: empty label`);
+        }
+        if (!(p.defaultValue >= p.min && p.defaultValue <= p.max)) {
+          offenders.push(
+            `${m.type}.${p.id}: default ${p.defaultValue} outside [${p.min}, ${p.max}]`,
+          );
+        }
+        if (!(p.min <= p.max)) {
+          offenders.push(`${m.type}.${p.id}: min ${p.min} > max ${p.max}`);
+        }
+      }
+    }
+    expect(offenders, `param validity:\n  ${offenders.join('\n  ')}`).toEqual([]);
+  });
+
   it('emits the manifest JSON to disk', () => {
     const path = manifestPath();
     mkdirSync(dirname(path), { recursive: true });

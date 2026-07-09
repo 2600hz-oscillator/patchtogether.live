@@ -17,11 +17,9 @@ import { syncedStore, getYjsDoc } from '@syncedstore/core';
 import {
   shapedRamp,
   buildRuttetraIndices,
-  ruttetraDef,
   RUTTETRA_GRID,
 } from './ruttetra';
 import './index'; // register all video modules
-import { getVideoModuleDef } from '$lib/video/module-registry';
 import { makeEnvelope, loadEnvelopeIntoStore, type LivePatch } from '$lib/graph/persistence';
 import type { ModuleNode, Edge } from '$lib/graph/types';
 
@@ -136,60 +134,6 @@ describe('ruttetra index buffer / grid (port of XYZRenderer.swift)', () => {
       expect(Math.floor(a / cols)).toBe(Math.floor(b / cols));
       expect(b - a).toBe(1); // adjacent columns
     }
-  });
-});
-
-describe('ruttetra param set (matches XYZState.swift defaults)', () => {
-  it('exposes the 12 params with exact ids/ranges/defaults', () => {
-    const ids = ruttetraDef.params.map((p) => p.id);
-    expect(ids).toEqual([
-      'xShape', 'yShape', 'xDisp', 'yDisp', 'intensity',
-      'tintR', 'tintG', 'tintB', 'xFreq', 'yFreq', 'xPhase', 'yPhase',
-    ]);
-    const by = Object.fromEntries(ruttetraDef.params.map((p) => [p.id, p]));
-    expect(by.xShape).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
-    expect(by.yShape).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
-    expect(by.xDisp).toMatchObject({ min: -1, max: 1, defaultValue: 0 });
-    expect(by.yDisp).toMatchObject({ min: -1, max: 1, defaultValue: -0.3 });
-    expect(by.intensity).toMatchObject({ min: 0, max: 2, defaultValue: 1.5 });
-    expect(by.tintR).toMatchObject({ min: 0, max: 1, defaultValue: 1 });
-    expect(by.tintG).toMatchObject({ min: 0, max: 1, defaultValue: 1 });
-    expect(by.tintB).toMatchObject({ min: 0, max: 1, defaultValue: 1 });
-    expect(by.xFreq).toMatchObject({ min: 0.25, max: 8, defaultValue: 1 });
-    expect(by.yFreq).toMatchObject({ min: 0.25, max: 8, defaultValue: 1 });
-    expect(by.xPhase).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
-    expect(by.yPhase).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
-    for (const p of ruttetraDef.params) expect(p.curve).toBe('linear');
-  });
-
-  it('has ONE z video input + 7 cv inputs (port id == param id)', () => {
-    const z = ruttetraDef.inputs.find((p) => p.id === 'z');
-    expect(z?.type).toBe('video');
-    const cv = ruttetraDef.inputs.filter((p) => p.type === 'cv');
-    expect(cv.map((p) => p.id).sort()).toEqual(
-      ['intensity', 'xDisp', 'xFreq', 'xShape', 'yDisp', 'yFreq', 'yShape'],
-    );
-    for (const port of cv) expect(port.paramTarget).toBe(port.id);
-    // No x/y coordinate-field inputs (that's RESHAPER's shape).
-    expect(ruttetraDef.inputs.some((p) => p.id === 'x' && p.type === 'mono-video')).toBe(false);
-    expect(ruttetraDef.inputs.some((p) => p.id === 'y' && p.type === 'mono-video')).toBe(false);
-  });
-});
-
-describe('both modules register with the correct type ids', () => {
-  it('reshaper = coord-remap (schemaVersion 1)', () => {
-    const def = getVideoModuleDef('reshaper');
-    expect(def?.label).toBe('reshaper');
-    // RESHAPER keeps the X/Y mono-video coordinate-field inputs.
-    expect(def?.inputs.find((p) => p.id === 'x')?.type).toBe('mono-video');
-  });
-
-  it('ruttetra = authentic scope (schemaVersion 2)', () => {
-    const def = getVideoModuleDef('ruttetra');
-    // type id stays 'ruttetra' (patches/registry key unchanged); the DISPLAY
-    // label was renamed to 'xyz' (shallow app-facing rename — see ruttetra.ts).
-    expect(def?.label).toBe('xyz');
-    expect(def?.inputs.find((p) => p.id === 'z')?.type).toBe('video');
   });
 });
 

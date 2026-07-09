@@ -21,55 +21,6 @@ beforeAll(() => {
 });
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
-describe('moog904bDef: module def shape', () => {
-  it('declares type=moog904b, label="904B VCF", category=filters, schemaVersion=1', () => {
-    expect(moog904bDef.type).toBe('moog904b');
-    expect(moog904bDef.label).toBe('904b vcf');
-    expect(moog904bDef.category).toBe('filters');
-  });
-
-  it('is categorized under Moog System 35/55 Clones and uses the Moog904bVcfCard', () => {
-    expect(moog904bDef.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
-    expect(moog904bDef.card).toBe('Moog904bVcfCard');
-  });
-
-  it('exposes the 904B inputs: audio + cutoff_cv (NO reso_cv — no resonance)', () => {
-    const ids = moog904bDef.inputs.map((p) => p.id).sort();
-    expect(ids).toEqual(['audio', 'cutoff_cv']);
-  });
-
-  it('exposes a single high-pass audio output', () => {
-    expect(moog904bDef.outputs.map((p) => p.id)).toEqual(['audio']);
-  });
-
-  it('exposes 2 params (cutoff, range) — NO regeneration (the 904B has no resonance pot)', () => {
-    const ids = moog904bDef.params.map((p) => p.id).sort();
-    expect(ids).toEqual(['cutoff', 'range']);
-    expect(moog904bDef.params.find((p) => p.id === 'regeneration')).toBeUndefined();
-  });
-
-  it('cutoff_cv: cv input, paramTarget=cutoff, no cvScale (audio-rate sum, PASSTHROUGH)', () => {
-    const port = moog904bDef.inputs.find((p) => p.id === 'cutoff_cv')!;
-    expect(port.type).toBe('cv');
-    expect(port.paramTarget).toBe('cutoff');
-    expect(port.cvScale).toBeUndefined();
-  });
-
-  it('cutoff is a log knob 4..20000 Hz; range is discrete 1..2', () => {
-    const cutoff = moog904bDef.params.find((p) => p.id === 'cutoff')!;
-    expect(cutoff.min).toBe(4);
-    expect(cutoff.max).toBe(20000);
-    expect(cutoff.curve).toBe('log');
-    expect(cutoff.units).toBe('Hz');
-
-    const range = moog904bDef.params.find((p) => p.id === 'range')!;
-    expect(range.min).toBe(1);
-    expect(range.max).toBe(2);
-    expect(range.curve).toBe('discrete');
-    expect(range.defaultValue).toBe(1);
-  });
-});
-
 // ───────────────────── Layer 2: real worklet DSP ─────────────────────
 type ProcInstance = {
   process: (i: Float32Array[][], o: Float32Array[][], p: Record<string, Float32Array>) => boolean;

@@ -18,41 +18,6 @@ import { moog994Def } from './moog994';
 import type { ModuleNode } from '$lib/graph/types';
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
-describe('moog994Def: module def shape', () => {
-  it('declares type=moog994, label="994 Mult", category=utilities, schemaVersion=1', () => {
-    expect(moog994Def.type).toBe('moog994');
-    expect(moog994Def.label).toBe('994 mult');
-    expect(moog994Def.category).toBe('utilities');
-  });
-
-  it('classifies under the Moog System 35/55 Clones palette bucket', () => {
-    expect(moog994Def.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
-  });
-
-  it('exposes the two group inputs: a_in + b_in (both audio)', () => {
-    const ids = moog994Def.inputs.map((p) => p.id);
-    expect(ids).toEqual(['a_in', 'b_in']);
-    for (const p of moog994Def.inputs) {
-      expect(p.type).toBe('audio');
-      // A passive multiple — the inputs are not knob modulators.
-      expect((p as { cvScale?: unknown }).cvScale).toBeUndefined();
-      expect((p as { paramTarget?: unknown }).paramTarget).toBeUndefined();
-    }
-  });
-
-  it('exposes the six fan-out outputs: a1..a3 + b1..b3 (all audio)', () => {
-    const ids = moog994Def.outputs.map((p) => p.id);
-    expect(ids).toEqual(['a1', 'a2', 'a3', 'b1', 'b2', 'b3']);
-    for (const p of moog994Def.outputs) {
-      expect(p.type).toBe('audio');
-    }
-  });
-
-  it('has no params (a passive multiple has no controls)', () => {
-    expect(moog994Def.params).toEqual([]);
-  });
-});
-
 // ───────────────────── Layer 2: real factory wiring ─────────────────────
 
 /** A GainNode stub that records its gain value + disconnect calls. */

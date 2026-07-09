@@ -160,18 +160,6 @@ beforeEach(() => {
   clearPatch();
 });
 
-describe('cartesian: s&h param', () => {
-  it('declares a discrete s&h param defaulting ON (1), lowercase label', () => {
-    const snh = cartesianDef.params.find((p) => p.id === 'snh');
-    expect(snh).toBeDefined();
-    expect(snh!.defaultValue).toBe(1);
-    expect(snh!.min).toBe(0);
-    expect(snh!.max).toBe(1);
-    expect(snh!.curve).toBe('discrete');
-    expect(snh!.label).toBe(snh!.label.toLowerCase());
-  });
-});
-
 describe('cartesian: gate-sampled S&H — clock-UNPATCHED X/Y branch', () => {
   // Patch x_cv only (clock + y_cv unpatched). Drive X CV to move the selected
   // pad. With a long gate (0.95) and tight ticks (5 ms), a pad change lands

@@ -18,44 +18,10 @@ import { POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
 import { TRANSPORT_CV_PORT_DEFS } from './transport-cv';
 
 describe('polyseqz: module def', () => {
-  it('registers as audio-domain module type "polyseqz"', () => {
-    expect(polyseqzDef.type).toBe('polyseqz');
-    expect(polyseqzDef.domain).toBe('audio');
-    expect(polyseqzDef.label).toBe('polyseqz');
-    expect(polyseqzDef.category).toBe('modulation');
-  });
-
-  it('declares the polyPitchGate output port', () => {
-    const out = polyseqzDef.outputs.find((p) => p.id === 'poly');
-    expect(out).toBeDefined();
-    expect(out?.type).toBe('polyPitchGate');
-  });
-
-  it('exposes humanize CV input + knob param', () => {
-    const inp = polyseqzDef.inputs.find((p) => p.id === 'humanize_cv');
-    expect(inp?.type).toBe('cv');
-    expect(inp?.paramTarget).toBe('humanize');
-    const knob = polyseqzDef.params.find((p) => p.id === 'humanize');
-    expect(knob).toBeDefined();
-    expect(knob?.min).toBe(0);
-    expect(knob?.max).toBe(1);
-    expect(knob?.defaultValue).toBe(0);
-  });
-
   it('exposes a length param matching STEP_COUNT', () => {
     const length = polyseqzDef.params.find((p) => p.id === 'length');
     expect(length).toBeDefined();
     expect(length?.max).toBe(STEP_COUNT);
-  });
-
-  it('declares a discrete s&h param defaulting ON (1), lowercase label', () => {
-    const snh = polyseqzDef.params.find((p) => p.id === 'snh');
-    expect(snh).toBeDefined();
-    expect(snh!.defaultValue).toBe(1);
-    expect(snh!.min).toBe(0);
-    expect(snh!.max).toBe(1);
-    expect(snh!.curve).toBe('discrete');
-    expect(snh!.label).toBe(snh!.label.toLowerCase());
   });
 
   it('voice lane count matches the polyPitchGate cable', () => {
@@ -156,18 +122,6 @@ describe('polyseqz: shared transport CV inputs', () => {
     }
   });
 
-  it('keeps clock + humanize_cv + the 6 transport CV ports = 8 inputs total', () => {
-    expect(polyseqzDef.inputs.length).toBe(8);
-    const ids = new Set(polyseqzDef.inputs.map((p) => p.id));
-    expect(ids.has('clock')).toBe(true);
-    expect(ids.has('humanize_cv')).toBe(true);
-    expect(ids.has('play_cv')).toBe(true);
-    expect(ids.has('reset_cv')).toBe(true);
-    expect(ids.has('queue1_cv')).toBe(true);
-    expect(ids.has('queue2_cv')).toBe(true);
-    expect(ids.has('queue3_cv')).toBe(true);
-    expect(ids.has('queue4_cv')).toBe(true);
-  });
 });
 
 describe('polyseqz: quicksave snapshot helpers (transport-card)', () => {

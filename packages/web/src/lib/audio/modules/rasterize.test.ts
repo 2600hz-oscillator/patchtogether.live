@@ -11,38 +11,6 @@ import { rasterizeDef } from './rasterize';
 import { VIDEO_RES } from '$lib/video/engine';
 
 describe('RASTERIZE module def shape', () => {
-  it('is an audio-domain utility', () => {
-    expect(rasterizeDef.type).toBe('rasterize');
-    expect(rasterizeDef.domain).toBe('audio');
-    expect(rasterizeDef.category).toBe('utilities');
-  });
-
-  it('declares the mono-video output port (the audio→video bridge seam)', () => {
-    const out = rasterizeDef.outputs.find((p) => p.id === 'out');
-    expect(out, 'rasterize.out video port present').toBeDefined();
-    expect(out?.type).toBe('mono-video');
-  });
-
-  it('declares an audio passthrough output', () => {
-    const thru = rasterizeDef.outputs.find((p) => p.id === 'thru');
-    expect(thru?.type).toBe('audio');
-  });
-
-  it('has exactly the audio in + one CV input per knob', () => {
-    const ids = rasterizeDef.inputs.map((p) => p.id).sort();
-    expect(ids).toEqual(['cursor', 'gain', 'in', 'samplesPerFrame', 'wrap']);
-    for (const p of rasterizeDef.inputs) {
-      if (p.id === 'in') {
-        expect(p.type, 'in stays audio').toBe('audio');
-      } else {
-        expect(p.type, `${p.id} is CV`).toBe('cv');
-        // Param routing invariant: port id == paramTarget == param id, so
-        // the cross-domain CV bridge routes via setParam(portId).
-        expect((p as { paramTarget?: string }).paramTarget, `${p.id} routes to itself`).toBe(p.id);
-      }
-    }
-  });
-
   it('exposes the four raster knobs with sane ranges', () => {
     const byId = Object.fromEntries(rasterizeDef.params.map((p) => [p.id, p]));
     expect(Object.keys(byId).sort()).toEqual(['cursor', 'gain', 'samplesPerFrame', 'wrap']);
@@ -56,11 +24,4 @@ describe('RASTERIZE module def shape', () => {
     expect(byId.wrap!.max).toBe(1);
   });
 
-  it('every CV input has a matching param (1:1 port↔param)', () => {
-    const paramIds = new Set(rasterizeDef.params.map((p) => p.id));
-    for (const p of rasterizeDef.inputs) {
-      if (p.id === 'in') continue;
-      expect(paramIds.has(p.id), `${p.id} has a param`).toBe(true);
-    }
-  });
 });

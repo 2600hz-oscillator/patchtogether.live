@@ -19,47 +19,6 @@ import { moog992Def } from './moog992';
 import type { ModuleNode } from '$lib/graph/types';
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
-describe('moog992Def: module def shape', () => {
-  it('declares type=moog992, label="992 Control Voltage Panel", category=modulation, schemaVersion=1', () => {
-    expect(moog992Def.type).toBe('moog992');
-    expect(moog992Def.label).toBe('992 control voltage panel');
-    expect(moog992Def.category).toBe('modulation');
-  });
-
-  it('lives in the Moog System 35/55 Clones palette bucket and uses the Moog992Card', () => {
-    expect(moog992Def.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
-    expect(moog992Def.card).toBe('Moog992Card');
-  });
-
-  it('exposes the four CV inputs: cv1..cv4 (all cv cables, PASSTHROUGH)', () => {
-    const ids = moog992Def.inputs.map((p) => p.id);
-    expect(ids).toEqual(['cv1', 'cv2', 'cv3', 'cv4']);
-    for (const p of moog992Def.inputs) {
-      expect(p.type).toBe('cv');
-      // The inputs are signals being routed, not knob modulators.
-      expect(p.cvScale).toBeUndefined();
-      expect(p.paramTarget).toBeUndefined();
-    }
-  });
-
-  it('exposes a single summed cv output: cv_out (cv)', () => {
-    const ids = moog992Def.outputs.map((p) => p.id);
-    expect(ids).toEqual(['cv_out']);
-    expect(moog992Def.outputs[0].type).toBe('cv');
-  });
-
-  it('exposes 4 params (atten1..atten4), all linear 0..1 default 1', () => {
-    const ids = moog992Def.params.map((p) => p.id);
-    expect(ids).toEqual(['atten1', 'atten2', 'atten3', 'atten4']);
-    for (const p of moog992Def.params) {
-      expect(p.min).toBe(0);
-      expect(p.max).toBe(1);
-      expect(p.defaultValue).toBe(1);
-      expect(p.curve).toBe('linear');
-    }
-  });
-});
-
 // ───────────────────── Layer 2: factory wiring ─────────────────────
 //
 // Minimal Web Audio mock. Each GainNode tracks its gain.value + the nodes it

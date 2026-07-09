@@ -10,41 +10,10 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
-  skifreeDef,
   cvToCanvasCoord,
   SKIFREE_CANVAS_SIZE,
   SKIFREE_GATE_PULSE_S,
 } from './skifree';
-
-describe('skifree module def', () => {
-  it('exposes the expected IO surface', () => {
-    expect(skifreeDef.type).toBe('skifree');
-    expect(skifreeDef.domain).toBe('audio');
-    expect(skifreeDef.label).toBe('skifree');
-    expect(skifreeDef.category).toBe('games');
-    expect(skifreeDef.maxInstances).toBe(1);
-    expect(skifreeDef.vizPassthrough).toBe(true);
-    expect(skifreeDef.params.length).toBe(0);
-
-    // Inputs: x / y CV (the synthesized cursor the skier steers toward).
-    const inputIds = skifreeDef.inputs.map((p) => p.id).sort();
-    expect(inputIds).toEqual(['x', 'y']);
-    for (const p of skifreeDef.inputs) expect(p.type).toBe('cv');
-
-    // Outputs: gate (crash/eaten) + out (video canvas).
-    const gate = skifreeDef.outputs.find((p) => p.id === 'gate');
-    const out = skifreeDef.outputs.find((p) => p.id === 'out');
-    expect(gate, 'skifree must expose a `gate` output').toBeDefined();
-    expect(gate!.type).toBe('gate');
-    expect(out, 'skifree must expose an `out` video output').toBeDefined();
-    expect(out!.type).toBe('video');
-  });
-
-  it('declares attribution to the upstream skifree.js (MIT)', () => {
-    expect(skifreeDef.ossAttribution?.author).toContain('skifree.js');
-    expect(skifreeDef.ossAttribution?.author).toContain('MIT');
-  });
-});
 
 describe('cvToCanvasCoord — CV → cursor mapping', () => {
   it('maps CV 0 to the canvas centre (skier straight down)', () => {

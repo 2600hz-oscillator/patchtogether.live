@@ -13,99 +13,18 @@
 // `--use-fake-device-for-media-stream`).
 
 import { describe, expect, it } from 'vitest';
-import { getVideoModuleDef, listVideoModuleDefs } from '$lib/video/module-registry';
+import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { cameraCoverScale } from '$lib/video/modules/camera-input';
 // Side-effect import auto-registers the video defs (lines, videoOut,
 // cameraInput).
 import '$lib/video/modules';
 
 describe('CAMERA — module def shape', () => {
-  it('is registered under type "cameraInput" with domain "video"', () => {
-    const def = getVideoModuleDef('cameraInput');
-    expect(def).toBeDefined();
-    if (!def) return;
-    expect(def.domain).toBe('video');
-    expect(def.label).toBe('camera');
-    expect(def.category).toBe('sources');
-  });
-
-  it('input port surface: a CV gain input + a level-sensitive mirror gate', () => {
-    const def = getVideoModuleDef('cameraInput')!;
-    expect(def.inputs).toHaveLength(2);
-    const gain = def.inputs.find((p) => p.id === 'gain');
-    expect(gain?.type).toBe('cv');
-    expect(gain?.paramTarget).toBe('gain');
-    // MIRROR gate: while held high the image mirrors (drives the `mirror` param,
-    // raw passthrough → shader thresholds at 0.5). edge:'gate' = level-sensitive.
-    const mirror = def.inputs.find((p) => p.id === 'mirror');
-    expect(mirror?.type).toBe('gate');
-    expect(mirror?.edge).toBe('gate');
-    expect(mirror?.paramTarget).toBe('mirror');
-    expect(mirror?.cvScale).toBeUndefined();
-  });
-
-  it('output port surface: a single video output', () => {
-    const def = getVideoModuleDef('cameraInput')!;
-    expect(def.outputs).toHaveLength(1);
-    const out = def.outputs.find((p) => p.id === 'out');
-    expect(out?.type).toBe('video');
-  });
-
-  it('declares the documented params with documented ranges', () => {
-    const def = getVideoModuleDef('cameraInput')!;
-    const ids = def.params.map((p) => p.id).sort();
-    expect(ids).toEqual(['enabled', 'fillMode', 'gain', 'mirror']);
-
-    // Per-source fit/fill: discrete, defaults to FILL (1 = cover-crop, the
-    // existing camera behaviour — never letterbox the live feed by default).
-    const fillMode = def.params.find((p) => p.id === 'fillMode')!;
-    expect(fillMode.curve).toBe('discrete');
-    expect(fillMode.defaultValue).toBe(1);
-    expect(fillMode.min).toBe(0);
-    expect(fillMode.max).toBe(1);
-
-    const gain = def.params.find((p) => p.id === 'gain')!;
-    expect(gain.min).toBe(0);
-    expect(gain.max).toBe(2);
-    expect(gain.defaultValue).toBe(1);
-    expect(gain.curve).toBe('linear');
-
-    const enabled = def.params.find((p) => p.id === 'enabled')!;
-    expect(enabled.curve).toBe('discrete');
-    // Default ON — user can spawn the card and immediately request access
-    // without flipping a switch first.
-    expect(enabled.defaultValue).toBe(1);
-    expect(enabled.min).toBe(0);
-    expect(enabled.max).toBe(1);
-
-    const mirror = def.params.find((p) => p.id === 'mirror')!;
-    expect(mirror.curve).toBe('discrete');
-    // Default ON — selfie convention (matches Zoom / Photo Booth).
-    expect(mirror.defaultValue).toBe(1);
-  });
-
-  it('caps simultaneous instances at 4 (matches per-rackspace user limit)', () => {
-    const def = getVideoModuleDef('cameraInput')!;
-    expect(def.maxInstances).toBe(4);
-  });
-
-  it('every default value is within the declared min/max range', () => {
-    const def = getVideoModuleDef('cameraInput')!;
-    for (const p of def.params) {
-      expect(p.defaultValue, `${p.id} defaultValue ≥ min`).toBeGreaterThanOrEqual(p.min);
-      expect(p.defaultValue, `${p.id} defaultValue ≤ max`).toBeLessThanOrEqual(p.max);
-    }
-  });
-
   it('appears in the global video registry list (auto-registered)', () => {
     const types = listVideoModuleDefs().map((d) => d.type);
     expect(types).toContain('cameraInput');
   });
 
-  it('has a factory function (not yet invoked under node — see e2e)', () => {
-    const def = getVideoModuleDef('cameraInput')!;
-    expect(typeof def.factory).toBe('function');
-  });
 });
 
 describe('CAMERA — zoom-fit (cover) scale math', () => {
@@ -192,17 +111,5 @@ describe('CAMERA — zoom-fit (cover) scale math', () => {
       expect(cy).toBeGreaterThanOrEqual(0);
       expect(cy).toBeLessThanOrEqual(1);
     }
-  });
-});
-
-describe('CAMERA — interop with cable type rules', () => {
-  // The output is `video`, so it should accept the same upcast rules
-  // every video-domain output gets. We don't re-test canConnect itself
-  // (engine.test.ts already does); this is a regression guard against
-  // accidentally typing the output as `mono-video` or `image`.
-  it('output is type "video" so downstream OUTPUT (input video) accepts directly', () => {
-    const def = getVideoModuleDef('cameraInput')!;
-    const out = def.outputs[0];
-    expect(out?.type).toBe('video');
   });
 });

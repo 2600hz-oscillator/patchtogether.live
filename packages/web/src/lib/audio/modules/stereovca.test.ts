@@ -7,7 +7,7 @@
 // is caught at vitest time.
 
 import { describe, expect, it } from 'vitest';
-import { stereovcaDef, stereoVcaMath } from './stereovca';
+import { stereoVcaMath } from './stereovca';
 
 const SR = 48000;
 
@@ -195,61 +195,5 @@ describe('stereoVcaMath.render: ring modulation produces sum + difference freque
     expect(m200, '200Hz carrier passes with offset=1').toBeGreaterThan(0.1);
     expect(m150, '150Hz sideband still present').toBeGreaterThan(0.05);
     expect(m250, '250Hz sideband still present').toBeGreaterThan(0.05);
-  });
-});
-
-describe('stereovcaDef: module-def shape', () => {
-  it('declares type=stereovca, label=STEREOVCA, category=utilities, domain=audio', () => {
-    expect(stereovcaDef.type).toBe('stereovca');
-    expect(stereovcaDef.label).toBe('stereovca');
-    expect(stereovcaDef.category).toBe('utilities');
-    expect(stereovcaDef.domain).toBe('audio');
-  });
-
-  it('exposes 4 inputs: in_l/in_r (audio) + strength_l/strength_r (cv)', () => {
-    const ids = stereovcaDef.inputs.map((p) => p.id).sort();
-    expect(ids).toEqual(['in_l', 'in_r', 'strength_l', 'strength_r']);
-    const byId = Object.fromEntries(stereovcaDef.inputs.map((p) => [p.id, p]));
-    // Audio carriers stay `audio` so an oscillator → in_l works as same-type.
-    expect(byId.in_l!.type).toBe('audio');
-    expect(byId.in_r!.type).toBe('audio');
-    // Strength inputs are `cv` so LFOs / ADSRs land without a cross-type cast;
-    // PASSTHROUGH_BY_DESIGN in cv-scale-registry.test.ts justifies omitting cvScale
-    // (the worklet treats strength as a raw bipolar carrier in the per-sample multiply).
-    expect(byId.strength_l!.type).toBe('cv');
-    expect(byId.strength_r!.type).toBe('cv');
-    for (const p of stereovcaDef.inputs) {
-      // No paramTarget — these are audio-rate node inputs, not CV→param.
-      expect(p.paramTarget, `${p.id} paramTarget`).toBeUndefined();
-      expect(p.cvScale, `${p.id} cvScale`).toBeUndefined();
-    }
-  });
-
-  it('exposes 2 audio outputs (out_l, out_r)', () => {
-    const ids = stereovcaDef.outputs.map((p) => p.id).sort();
-    expect(ids).toEqual(['out_l', 'out_r']);
-    for (const p of stereovcaDef.outputs) {
-      expect(p.type).toBe('audio');
-    }
-  });
-
-  it('exposes 2 params: level (0..1, default 1) and offset (-1..+1, default 0)', () => {
-    const ids = stereovcaDef.params.map((p) => p.id).sort();
-    expect(ids).toEqual(['level', 'offset']);
-
-    const level = stereovcaDef.params.find((p) => p.id === 'level');
-    expect(level?.min).toBe(0);
-    expect(level?.max).toBe(1);
-    expect(level?.defaultValue).toBe(1);
-
-    const offset = stereovcaDef.params.find((p) => p.id === 'offset');
-    expect(offset?.min).toBe(-1);
-    expect(offset?.max).toBe(1);
-    expect(offset?.defaultValue).toBe(0);
-  });
-
-  it('has handle count 6 (4 inputs + 2 outputs)', () => {
-    const total = stereovcaDef.inputs.length + stereovcaDef.outputs.length;
-    expect(total).toBe(6);
   });
 });

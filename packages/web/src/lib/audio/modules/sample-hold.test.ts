@@ -24,19 +24,6 @@ beforeAll(() => {
 
 // ── Layer 1: module-def shape ──
 describe('sampleHold / module def', () => {
-  it('declares cv_in + gate_in inputs', () => {
-    const ids = sampleHoldDef.inputs.map((p) => p.id);
-    expect(ids).toEqual(['cv_in', 'gate_in']);
-    expect(sampleHoldDef.inputs.find((p) => p.id === 'cv_in')!.type).toBe('cv');
-    expect(sampleHoldDef.inputs.find((p) => p.id === 'gate_in')!.type).toBe('gate');
-  });
-
-  it('declares cv_out + cv_quant outputs (both cv)', () => {
-    const ids = sampleHoldDef.outputs.map((p) => p.id);
-    expect(ids).toEqual(['cv_out', 'cv_quant']);
-    for (const p of sampleHoldDef.outputs) expect(p.type).toBe('cv');
-  });
-
   it('has a discrete SCALE param spanning the scale table, default = Major', () => {
     const scale = sampleHoldDef.params.find((p) => p.id === 'scale')!;
     expect(scale.curve).toBe('discrete');
@@ -50,11 +37,6 @@ describe('sampleHold / module def', () => {
     expect(SAMPLE_HOLD_SCALE_NAMES).toEqual(SAMPLE_HOLD_SCALES.map((s) => s.name));
   });
 
-  it('is registered in the utility category as type sampleHold', () => {
-    expect(sampleHoldDef.type).toBe('sampleHold');
-    expect(sampleHoldDef.category).toBe('utility');
-    expect(sampleHoldDef.label).toBe('sample & hold');
-  });
 });
 
 // ── Layer 2: real worklet processor behavior ──

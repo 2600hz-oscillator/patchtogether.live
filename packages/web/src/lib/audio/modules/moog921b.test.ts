@@ -24,67 +24,6 @@ beforeAll(() => {
 });
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
-describe('moog921bDef: module def shape', () => {
-  it('declares type=moog921b, label="921B Osc", category=sources, schemaVersion=1', () => {
-    expect(moog921bDef.type).toBe('moog921b');
-    expect(moog921bDef.label).toBe('921b osc');
-    expect(moog921bDef.category).toBe('sources');
-  });
-
-  it('is categorized under Moog System 35/55 Clones', () => {
-    expect(moog921bDef.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
-  });
-
-  it('exposes the 921B inputs: freq_bus, width_bus, dc_mod, ac_mod, sync', () => {
-    const ids = moog921bDef.inputs.map((p) => p.id).sort();
-    expect(ids).toEqual(['ac_mod', 'dc_mod', 'freq_bus', 'sync', 'width_bus']);
-  });
-
-  it('exposes FOUR fixed-level waveform outs: sine / triangle / saw / rect (all audio)', () => {
-    const ids = moog921bDef.outputs.map((p) => p.id);
-    expect(ids).toEqual(['sine', 'triangle', 'saw', 'rect']);
-    for (const o of moog921bDef.outputs) expect(o.type).toBe('audio');
-  });
-
-  it('freq_bus + width_bus are cv CONTROL INPUTS (no paramTarget — bus-driven)', () => {
-    const fb = moog921bDef.inputs.find((p) => p.id === 'freq_bus')!;
-    expect(fb.type).toBe('cv');
-    expect(fb.paramTarget).toBeUndefined();
-    const wb = moog921bDef.inputs.find((p) => p.id === 'width_bus')!;
-    expect(wb.type).toBe('cv');
-    expect(wb.paramTarget).toBeUndefined();
-  });
-
-  it('dc_mod, ac_mod + sync are audio cables', () => {
-    expect(moog921bDef.inputs.find((p) => p.id === 'dc_mod')!.type).toBe('audio');
-    expect(moog921bDef.inputs.find((p) => p.id === 'ac_mod')!.type).toBe('audio');
-    expect(moog921bDef.inputs.find((p) => p.id === 'sync')!.type).toBe('audio');
-  });
-
-  it('exposes 5 params (fine, range, modAmount, syncMode, level)', () => {
-    const ids = moog921bDef.params.map((p) => p.id).sort();
-    expect(ids).toEqual(['fine', 'level', 'modAmount', 'range', 'syncMode']);
-  });
-
-  it('fine ±12 st; range discrete -5..5; syncMode -1..1; level 0..2', () => {
-    const fine = moog921bDef.params.find((p) => p.id === 'fine')!;
-    expect(fine.min).toBe(-12);
-    expect(fine.max).toBe(12);
-    const range = moog921bDef.params.find((p) => p.id === 'range')!;
-    expect(range.min).toBe(-5);
-    expect(range.max).toBe(5);
-    expect(range.curve).toBe('discrete');
-    const sync = moog921bDef.params.find((p) => p.id === 'syncMode')!;
-    expect(sync.min).toBe(-1);
-    expect(sync.max).toBe(1);
-    expect(sync.defaultValue).toBe(0);
-    const level = moog921bDef.params.find((p) => p.id === 'level')!;
-    expect(level.min).toBe(0);
-    expect(level.max).toBe(2);
-    expect(level.defaultValue).toBe(1);
-  });
-});
-
 // ───────────────────── Layer 2: real worklet DSP ─────────────────────
 type ProcInstance = {
   process: (i: Float32Array[][], o: Float32Array[][], p: Record<string, Float32Array>) => boolean;

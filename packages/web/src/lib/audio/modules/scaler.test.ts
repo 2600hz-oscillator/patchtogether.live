@@ -19,52 +19,6 @@ import { scalerDef } from './scaler';
 import type { ModuleNode } from '$lib/graph/types';
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
-describe('scalerDef: module def shape', () => {
-  it('declares type=scaler, label="scaler" (lowercase), category=utilities, domain=audio, schemaVersion=1', () => {
-    expect(scalerDef.type).toBe('scaler');
-    expect(scalerDef.label).toBe('scaler');
-    // Guard against the uppercase-label CI failure (card CSS uppercases for display).
-    expect(scalerDef.label).toBe(scalerDef.label.toLowerCase());
-    expect(scalerDef.category).toBe('utilities');
-    expect(scalerDef.domain).toBe('audio');
-  });
-
-  it('exposes a single `in` audio input that also accepts the CV family', () => {
-    expect(scalerDef.inputs.map((p) => p.id)).toEqual(['in']);
-    const inp = scalerDef.inputs[0];
-    expect(inp.type).toBe('audio');
-    // Widened so a CV / pitch / gate source can be scaled too (SCOPE-probe pattern).
-    expect(inp.accepts).toEqual(['cv', 'pitch', 'gate']);
-    // It is a signal multiply, NOT a CV→AudioParam routing.
-    expect(inp.paramTarget).toBeUndefined();
-  });
-
-  it('exposes a single `out` output that adopts its upstream input type', () => {
-    expect(scalerDef.outputs.map((p) => p.id)).toEqual(['out']);
-    // Declared `audio` is the FALLBACK type (nothing patched upstream).
-    expect(scalerDef.outputs[0].type).toBe('audio');
-    // TYPE-TRANSPARENT pass-through: the emitted cable type adopts whatever's
-    // patched into `in`, so a CV source → a CV out (→ the cross-domain video
-    // bridge reads the scaled value on the raw tail-sample path, not the RMS
-    // follower that clamped the AMOUNT knob dead). The id MUST reference a real
-    // input port. See snapshot.ts resolveAdoptedSourceTypes.
-    expect(scalerDef.outputs[0].adoptsUpstreamFrom).toBe('in');
-    expect(scalerDef.inputs.map((p) => p.id)).toContain(scalerDef.outputs[0].adoptsUpstreamFrom);
-  });
-
-  it('exposes one AMOUNT param: log taper, 0.1..10, default 1 (unity)', () => {
-    expect(scalerDef.params.map((p) => p.id)).toEqual(['amount']);
-    const amt = scalerDef.params[0];
-    expect(amt.label).toBe('AMOUNT');
-    expect(amt.min).toBe(0.1);
-    expect(amt.max).toBe(10);
-    expect(amt.defaultValue).toBe(1);
-    // LOG so unity sits at knob center and ×0.1..×10 is symmetric (needs min>0).
-    expect(amt.curve).toBe('log');
-    expect(amt.min).toBeGreaterThan(0);
-  });
-});
-
 // ───────────────────── Layer 2 + 3: pure Web Audio factory + DSP ─────────────────────
 // SCALER is a pure-gain module (no worklet / no Faust). Mock just the slice of
 // AudioContext the factory touches: createGain() + currentTime. The GainNode

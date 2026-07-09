@@ -26,68 +26,6 @@ beforeAll(() => {
 });
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
-describe('moog911Def: module def shape', () => {
-  it('declares type=moog911, label="911 EG", category=modulation, schemaVersion=1', () => {
-    expect(moog911Def.type).toBe('moog911');
-    expect(moog911Def.label).toBe('911 eg');
-    expect(moog911Def.category).toBe('modulation');
-  });
-
-  it('exposes the 911 inputs: gate + t1_cv/t2_cv/esus_cv/t3_cv', () => {
-    const ids = moog911Def.inputs.map((p) => p.id).sort();
-    expect(ids).toEqual(['esus_cv', 'gate', 't1_cv', 't2_cv', 't3_cv']);
-  });
-
-  it('exposes the env + inverted env_inv outputs', () => {
-    const ids = moog911Def.outputs.map((p) => p.id);
-    expect(ids).toEqual(['env', 'env_inv']);
-  });
-
-  it('exposes 4 params (t1, t2, esus, t3)', () => {
-    const ids = moog911Def.params.map((p) => p.id).sort();
-    expect(ids).toEqual(['esus', 't1', 't2', 't3']);
-  });
-
-  it('gate input is a gate cable', () => {
-    expect(moog911Def.inputs.find((p) => p.id === 'gate')!.type).toBe('gate');
-  });
-
-  it('t1_cv / t2_cv / t3_cv: cv inputs with LOG cvScale to their time params', () => {
-    for (const [inId, paramId] of [['t1_cv', 't1'], ['t2_cv', 't2'], ['t3_cv', 't3']] as const) {
-      const port = moog911Def.inputs.find((p) => p.id === inId)!;
-      expect(port.type).toBe('cv');
-      expect(port.paramTarget).toBe(paramId);
-      expect(port.cvScale).toEqual({ mode: 'log' });
-    }
-  });
-
-  it('esus_cv: cv input with LINEAR cvScale to the esus level param', () => {
-    const port = moog911Def.inputs.find((p) => p.id === 'esus_cv')!;
-    expect(port.type).toBe('cv');
-    expect(port.paramTarget).toBe('esus');
-    expect(port.cvScale).toEqual({ mode: 'linear' });
-  });
-
-  it('env + env_inv are cv outputs', () => {
-    expect(moog911Def.outputs.find((p) => p.id === 'env')!.type).toBe('cv');
-    expect(moog911Def.outputs.find((p) => p.id === 'env_inv')!.type).toBe('cv');
-  });
-
-  it('time params (t1/t2/t3) use a log curve up to 10 s; esus is linear 0..1', () => {
-    for (const id of ['t1', 't2', 't3']) {
-      const p = moog911Def.params.find((x) => x.id === id)!;
-      expect(p.curve).toBe('log');
-      expect(p.max).toBe(10);
-      expect(p.units).toBe('s');
-    }
-    const esus = moog911Def.params.find((p) => p.id === 'esus')!;
-    expect(esus.curve).toBe('linear');
-    expect(esus.min).toBe(0);
-    expect(esus.max).toBe(1);
-    expect(esus.defaultValue).toBe(0.6);
-  });
-});
-
 // ───────────────────── Layer 2: real worklet DSP ─────────────────────
 type ProcInstance = {
   process: (i: Float32Array[][], o: Float32Array[][], p: Record<string, Float32Array>) => boolean;

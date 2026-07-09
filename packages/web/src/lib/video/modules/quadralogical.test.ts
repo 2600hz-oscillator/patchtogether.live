@@ -53,39 +53,6 @@ function sum(w: readonly number[]): number {
 const PREC = 4;
 
 describe('quadralogicalDef shape', () => {
-  it('declares type "quadralogical" + video domain + utilities category', () => {
-    expect(quadralogicalDef.type).toBe('quadralogical');
-    expect(quadralogicalDef.domain).toBe('video');
-    expect(quadralogicalDef.category).toBe('utilities');
-    expect(quadralogicalDef.label).toBe('quadralogical');
-  });
-
-  it('palette = Video modules / Utilities (firing unit gate for new video modules)', () => {
-    expect(quadralogicalDef.palette).toEqual({ top: 'Video modules', sub: 'Utilities' });
-  });
-
-  it('declares exactly 4 video inputs in1..in4', () => {
-    const videoInputs = quadralogicalDef.inputs.filter((p) => p.type === 'video');
-    expect(videoInputs.map((p) => p.id)).toEqual(['in1', 'in2', 'in3', 'in4']);
-  });
-
-  it('declares TWO video outputs: out (canonical=MIX) + preview', () => {
-    expect(quadralogicalDef.outputs.map((o) => o.id)).toEqual(['out', 'preview']);
-    for (const o of quadralogicalDef.outputs) expect(o.type).toBe('video');
-  });
-
-  it('out is the FIRST output (canonical surface.texture convention)', () => {
-    expect(quadralogicalDef.outputs[0]!.id).toBe('out');
-  });
-
-  it('exposes pos_x / pos_y / diamond_margin / blend_sharp params with the documented defaults', () => {
-    const byId = new Map(quadralogicalDef.params.map((p) => [p.id, p]));
-    expect(byId.get('pos_x')).toMatchObject({ min: -1, max: 1, curve: 'linear', defaultValue: 0 });
-    expect(byId.get('pos_y')).toMatchObject({ min: -1, max: 1, curve: 'linear', defaultValue: 0 });
-    expect(byId.get('diamond_margin')?.defaultValue).toBe(0.5);
-    expect(byId.get('blend_sharp')?.defaultValue).toBe(3);
-  });
-
   it('every edge has its own discrete fx selector spanning 0..7 (all 8 modes reachable)', () => {
     for (const edge of EDGES) {
       const t = quadralogicalDef.params.find((p) => p.id === `${edge.id}_fx`);
@@ -113,15 +80,6 @@ describe('quadralogicalDef shape', () => {
     }
   });
 
-  it('exposes a shared chroma key colour (keyR/keyG/keyB) + global invert', () => {
-    for (const id of ['keyR', 'keyG', 'keyB', 'invert'] as const) {
-      const p = quadralogicalDef.params.find((x) => x.id === id);
-      expect(p, `${id} param`).toBeDefined();
-      expect(p?.min).toBe(0);
-      expect(p?.max).toBe(1);
-    }
-  });
-
   it('per-edge amount/param + chroma key are all CV-targetable', () => {
     const inputIds = new Set(quadralogicalDef.inputs.map((p) => p.id));
     for (const edge of EDGES) {
@@ -133,31 +91,6 @@ describe('quadralogicalDef shape', () => {
     }
   });
 
-  it('has a hidden freeze param (0..1) for VRT deterministic capture', () => {
-    const f = quadralogicalDef.params.find((p) => p.id === 'freeze');
-    expect(f).toMatchObject({ min: 0, max: 1, curve: 'linear', defaultValue: 0 });
-  });
-
-  it('every CV input whose id matches a param declares paramTarget == id (cv-paramtarget invariant)', () => {
-    const paramIds = new Set(quadralogicalDef.params.map((p) => p.id));
-    for (const port of quadralogicalDef.inputs.filter((i) => i.type === 'cv')) {
-      if (!paramIds.has(port.id)) continue;
-      expect(port.paramTarget, `cv input ${port.id} paramTarget`).toBe(port.id);
-    }
-  });
-
-  it('joystick + tuning params are all CV-patchable', () => {
-    const inputIds = new Set(quadralogicalDef.inputs.map((p) => p.id));
-    for (const id of ['pos_x', 'pos_y', 'diamond_margin', 'blend_sharp'] as const) {
-      expect(inputIds, `missing cv input for ${id}`).toContain(id);
-    }
-  });
-
-  it('every CV input carries a cvScale hint', () => {
-    for (const port of quadralogicalDef.inputs.filter((i) => i.type === 'cv')) {
-      expect(port.cvScale, `cv input ${port.id} cvScale`).toBeDefined();
-    }
-  });
 });
 
 describe('quadWeights — corner one-hot map', () => {

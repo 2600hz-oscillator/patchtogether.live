@@ -77,46 +77,6 @@ async function build(params: Record<string, number> = {}) {
 }
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
-describe('moog984Def: module def shape', () => {
-  it('declares type=moog984, label="984 Matrix", category=utilities, schemaVersion=1', () => {
-    expect(moog984Def.type).toBe('moog984');
-    expect(moog984Def.label).toBe('984 matrix');
-    expect(moog984Def.category).toBe('utilities');
-  });
-
-  it('is in the Moog System 35/55 Clones palette bucket', () => {
-    expect(moog984Def.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
-  });
-
-  it('exposes the four audio inputs in1..in4', () => {
-    const ids = moog984Def.inputs.map((p) => p.id);
-    expect(ids).toEqual(['in1', 'in2', 'in3', 'in4']);
-    for (const p of moog984Def.inputs) expect(p.type).toBe('audio');
-  });
-
-  it('exposes the four audio outputs out1..out4', () => {
-    const ids = moog984Def.outputs.map((p) => p.id);
-    expect(ids).toEqual(['out1', 'out2', 'out3', 'out4']);
-    for (const p of moog984Def.outputs) expect(p.type).toBe('audio');
-  });
-
-  it('exposes the 16 cross-point params m11..m44 (row-major), all linear 0..1 default 0', () => {
-    const expected: string[] = [];
-    for (let i = 1; i <= 4; i++) for (let j = 1; j <= 4; j++) expected.push(`m${i}${j}`);
-    const ids = moog984Def.params.map((p) => p.id);
-    expect(ids).toEqual(expected);
-    expect(ids.length).toBe(16);
-    for (const p of moog984Def.params) {
-      expect(p.min).toBe(0);
-      expect(p.max).toBe(1);
-      expect(p.defaultValue).toBe(0);
-      expect(p.curve).toBe('linear');
-      expect(typeof p.label).toBe('string');
-      expect(p.label.length).toBeGreaterThan(0);
-    }
-  });
-});
-
 // ───────────────────── Layer 2: pure factory wiring ─────────────────────
 describe('moog984 factory: pure GainNode matrix', () => {
   it('exposes the declared input port surface (in1..in4 each → one receiving node)', async () => {

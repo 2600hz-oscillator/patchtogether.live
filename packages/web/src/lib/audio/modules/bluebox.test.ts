@@ -137,15 +137,6 @@ describe('bluebox-card — phone-keypad letters under each digit', () => {
 });
 
 describe('blueboxDef — registry shape', () => {
-  it('exposes 12 gate inputs + 1 audio output + 12 button params', () => {
-    expect(blueboxDef.type).toBe('bluebox');
-    expect(blueboxDef.domain).toBe('audio');
-    expect(blueboxDef.inputs.length).toBe(12);
-    expect(blueboxDef.outputs.length).toBe(1);
-    expect(blueboxDef.params.length).toBe(12);
-    expect(blueboxDef.outputs[0]).toEqual({ id: 'out', type: 'audio' });
-  });
-
   it('every button has matching gate input + button param ids', () => {
     for (const name of BLUEBOX_BUTTON_NAMES) {
       expect(blueboxDef.inputs.find((p) => p.id === `gate_${name}`)).toBeTruthy();

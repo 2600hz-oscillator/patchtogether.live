@@ -19,40 +19,6 @@ import {
 } from './mapper';
 
 describe('mapperDef shape', () => {
-  it('is a video PROCESSOR: a video input (video) AND a key input (key)', () => {
-    const videoInputs = mapperDef.inputs.filter((p) => p.type === 'video');
-    // Both the source AND the key are declared `video` (the key accepts a
-    // colour video OR an upcast mono-video — see the def comment).
-    expect(videoInputs.map((p) => p.id).sort()).toEqual(['key', 'video']);
-  });
-
-  it('declares a video input named `video` and a key input named `key`', () => {
-    const ids = mapperDef.inputs.map((p) => p.id);
-    expect(ids).toContain('video');
-    expect(ids).toContain('key');
-  });
-
-  it('output is a single VIDEO stream (video shown in the keyed region)', () => {
-    expect(mapperDef.outputs.map((o) => o.id)).toEqual(['out']);
-    expect(mapperDef.outputs[0]!.type).toBe('video');
-  });
-
-  it('declares exactly the threshold param', () => {
-    const ids = mapperDef.params.map((p) => p.id).sort();
-    expect(ids).toEqual(['threshold']);
-  });
-
-  it('declares a CV input mirroring the threshold param', () => {
-    const inputIds = mapperDef.inputs.map((p) => p.id);
-    expect(inputIds).toContain('threshold');
-  });
-
-  it('every CV input declares paramTarget == its own id', () => {
-    for (const port of mapperDef.inputs.filter((i) => i.type === 'cv')) {
-      expect(port.paramTarget, `cv input ${port.id} paramTarget`).toBe(port.id);
-    }
-  });
-
   it('threshold spans 0..1 (default 0.5)', () => {
     const t = mapperDef.params.find((p) => p.id === 'threshold');
     expect(t?.min).toBe(0);
@@ -61,12 +27,6 @@ describe('mapperDef shape', () => {
     expect(t?.defaultValue).toBe(MAPPER_DEFAULTS.threshold);
   });
 
-  it('is a video-domain module categorised as a processor/effect', () => {
-    expect(mapperDef.domain).toBe('video');
-    expect(mapperDef.type).toBe('mapper');
-    expect(mapperDef.category).toBe('effects');
-    expect(mapperDef.label).toBe('mapper');
-  });
 });
 
 describe('mapperLuma — Rec. 601 luminance', () => {
