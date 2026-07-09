@@ -102,7 +102,7 @@ export interface ManifestModule {
   };
   /** AUTHORED, drift-gated prose (living-docs): behavioral overview + per-input/
    *  output + per-control descriptions. From the def's co-located `docs`, via the
-   *  committed `module-docs.generated.ts` (the page can't import the live registry).
+   *  build-time-generated `module-docs.generated.ts` (the page can't import the live registry).
    *  Undefined for modules not yet documented. */
   docs?: ModuleDocs;
 }
