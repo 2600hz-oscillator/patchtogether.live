@@ -136,6 +136,13 @@ test.describe('BACKDRAFT — video feedback generator', () => {
     // MEANINGFULLY DIFFERENT frame — proving the transform actually moves
     // where the feedback tap samples (tunnels/spirals), not just brightness.
     async function captureFrame(transform: { zoom: number; rotate: number }): Promise<number[]> {
+      // FRESH RACK PER CAPTURE (restored from pre-fixture main): both
+      // captures spawn the SAME node ids, and capture 1 leaves 'bd' with
+      // freeze=1 — re-spawning onto the live doc reads the frozen scene
+      // (identical frames, diff exactly 0 — the shard-1 failure on #1036).
+      // The `rack` fixture only navigates once per test, so re-navigate here.
+      await page.goto('/rack');
+      await page.waitForLoadState('networkidle');
       await spawnPatch(
         page,
         [
@@ -203,6 +210,12 @@ test.describe('BACKDRAFT — video feedback generator', () => {
     // representative colour → near-zero spatial variance (a flat block). At
     // pixelate=0 the frame keeps its full structure (HARD INVARIANT: identity).
     async function captureVariance(pixelate: number): Promise<number> {
+      // FRESH RACK PER CAPTURE (restored from pre-fixture main): both
+      // captures spawn the SAME node ids, and re-spawning onto the live doc
+      // compares the wrong scenes (same failure class as captureFrame above).
+      // The `rack` fixture only navigates once per test, so re-navigate here.
+      await page.goto('/rack');
+      await page.waitForLoadState('networkidle');
       await spawnPatch(
         page,
         [
