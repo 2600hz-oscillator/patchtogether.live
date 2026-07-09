@@ -269,18 +269,32 @@ test.describe('SCOPE.out (mono-video) -> OUTPUT @webgl-serial', () => {
     // record drawFrame reads).
     await setScopeParam(page, 'a-scope', 'mode', 1);
 
-    const afterXy = await stepAndReadRowSig(page, { nodeId: 'v-out', steps: FIXED_STEPS });
     // XY mode collapses the two stacked traces toward the canvas center; the row
     // distribution differs from the split layout. Count rows whose bright-pixel
     // count changed by more than the small live-analyser jitter (±2), exactly as
-    // the original asserted.
+    // the original asserted — but SETTLE-THEN-ASSERT over a bounded burst loop:
+    // under the attest's Pass A-serial (which runs right after the ~47-spec
+    // parallel heavy pass) the mode param's trip through the setParam hot-path
+    // into the drawFrame params record can lag the first burst, so a ONE-SHOT
+    // read raced it (observed 2026-07-08 on a quiet dedicated box:
+    // differingRows=4 refused three otherwise-green attests while the same
+    // one-shot read was green standalone 9/9). A later burst reads the applied
+    // mode; if the mode NEVER applies (the PR-69 regression this test pins),
+    // every burst still reads ≈split and the bounded loop fails honestly.
+    // Same settle discipline as wavecel-video-outs.spec.ts.
     let differingRows = 0;
-    for (let i = 0; i < before.length; i++) {
-      if (Math.abs((before[i] ?? 0) - (afterXy[i] ?? 0)) > 2) differingRows++;
+    let bursts = 0;
+    for (; bursts < 8; bursts++) {
+      const afterXy = await stepAndReadRowSig(page, { nodeId: 'v-out', steps: FIXED_STEPS });
+      differingRows = 0;
+      for (let i = 0; i < before.length; i++) {
+        if (Math.abs((before[i] ?? 0) - (afterXy[i] ?? 0)) > 2) differingRows++;
+      }
+      if (differingRows > 10) break;
     }
     expect(
       differingRows,
-      `flipping XY mode must change the output (got ${differingRows} differing rows)`,
+      `flipping XY mode must change the output (got ${differingRows} differing rows after ${bursts + 1} burst(s))`,
     ).toBeGreaterThan(10);
 
     expect(errors, 'no console / page errors during SCOPE XY toggle').toEqual([]);
