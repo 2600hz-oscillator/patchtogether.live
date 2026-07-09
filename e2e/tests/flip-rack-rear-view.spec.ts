@@ -15,17 +15,12 @@
 //      flip is "in place", not a whole-rack mirror).
 //   4. Toggling OFF removes the class and hides the back panel again.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('flip-rack: toggle reveals per-card back panels in place, then hides them', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('flip-rack: toggle reveals per-card back panels in place, then hides them', async ({ page, rack }) => {
   // A tiny 2-card patch is enough — the toggle is global.
   await spawnPatch(
     page,
@@ -89,10 +84,7 @@ test('flip-rack: toggle reveals per-card back panels in place, then hides them',
   await expect(adsrBack).toBeHidden();
 });
 
-test('flip-rack: the Tab key flips the rack front↔rear', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('flip-rack: the Tab key flips the rack front↔rear', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'adsr', type: 'adsr', position: { x: 120, y: 120 } }], []);
   await expect(page.locator('.svelte-flow__node')).toHaveCount(1);
 

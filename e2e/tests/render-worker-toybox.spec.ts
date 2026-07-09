@@ -26,7 +26,8 @@
 // worker WebGL2 renders non-black under CI. The flag is OFF by default; the ON
 // test flips it via addInitScript.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { stepAndReadStats, assertRenderStats } from './_render-smoke';
 
@@ -77,15 +78,12 @@ async function workerActive(page: Page, nodeId: string): Promise<boolean> {
 }
 
 test.describe('Fix E render worker — toybox', () => {
-  test('flag ON: TOYBOX gen layer renders in the worker; downstream OUTPUT is non-black', async ({ page }) => {
+  test('flag ON: TOYBOX gen layer renders in the worker; downstream OUTPUT is non-black', async ({ page, errorWatch }) => {
     // Worker WebGL2 compiles + warms slowly on CI's software renderer; TOYBOX's
     // larger shader set takes longer. The readiness poll is bounded by REAL worker
     // progress, not a fixed budget; 90s headroom covers boot + worker spawn +
     // shader warm-up + gen-layer content on CI.
     test.setTimeout(90_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     // Flip the worker flag ON before the app boots (default is OFF).
     await page.addInitScript(() => {
@@ -151,20 +149,14 @@ test.describe('Fix E render worker — toybox', () => {
       console.log('[render-worker-toybox] worker-WebGL2 unavailable on this renderer → main-thread fallback (OUTPUT non-black)');
     }
 
-    expect(errors, 'no console / page errors with the render worker on').toEqual([]);
   });
 
   // @webgl-smoke — REQUIRED on-CI WebGL floor: TOYBOX's MAIN-THREAD WebGL render
   // path (the prod default) compiles its gen-layer shader + paints non-black
   // downstream under CI's SwiftShader, deterministically.
-  test('flag OFF (default): TOYBOX renders on main thread — deterministic render smoke (parity) @webgl-smoke', async ({ page }) => {
+  test('flag OFF (default): TOYBOX renders on main thread — deterministic render smoke (parity) @webgl-smoke', async ({ page, rack, errorWatch }) => {
     test.setTimeout(90_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
 
     await spawnPatch(
       page,
@@ -210,6 +202,5 @@ test.describe('Fix E render worker — toybox', () => {
     expect(Math.abs(b.mean - a.mean), `frozen output is frame-stable (mean ${a.mean.toFixed(3)} vs ${b.mean.toFixed(3)})`).toBeLessThan(0.5);
     expect(Math.abs(b.variance - a.variance), 'frozen output variance is frame-stable').toBeLessThan(1.0);
 
-    expect(errors, 'no console / page errors (flag off, main-thread render)').toEqual([]);
   });
 });

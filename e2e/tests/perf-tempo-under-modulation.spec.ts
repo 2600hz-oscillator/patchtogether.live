@@ -58,7 +58,8 @@
 // downstream tempo doesn't drift — backstop for the broader user
 // symptom even if a future change loosens the ratio invariant.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -269,12 +270,7 @@ async function stressFader(
   );
 }
 
-test('perf-tempo-under-modulation: hand-drag coalesces patch-store commits to ≤ rAF rate', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('perf-tempo-under-modulation: hand-drag coalesces patch-store commits to ≤ rAF rate', async ({ page, rack }) => {
   // Sequencer at 120 BPM (so tempo backstop has signal) + a VCA whose
   // Base fader we'll stress. The VCA is a convenient "card with a
   // fader and a CV input" and lives on the same module-coverage path
@@ -404,12 +400,7 @@ test('perf-tempo-under-modulation: hand-drag coalesces patch-store commits to �
 // stress test so the two assertions share an apples-to-apples band
 // (and so this test isn't itself vulnerable to the IPC-overhead
 // flake we just fixed in the stress variant).
-test('perf-tempo-under-modulation: baseline (no drag) advance rate matches BPM', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('perf-tempo-under-modulation: baseline (no drag) advance rate matches BPM', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [

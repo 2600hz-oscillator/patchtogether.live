@@ -19,7 +19,8 @@
 //     output as audible (non-zero RMS) signal, proving audio AND cv both
 //     patch + route identically.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -106,14 +107,7 @@ async function fireGate(page: Page, joyNodeId: string): Promise<void> {
   await page.waitForTimeout(40);
 }
 
-test('4PLEXER routes the SELECTED input to each output (discrete, cv source)', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('4PLEXER routes the SELECTED input to each output (discrete, cv source)', async ({ page, rack, errorWatch }) => {
   // JOYSTICK: x=+0.3, y=+0.7, nx=-0.3, ny=-0.7 → four distinguishable DCs.
   await spawnPatch(
     page,
@@ -151,17 +145,9 @@ test('4PLEXER routes the SELECTED input to each output (discrete, cv source)', a
     ).toBeLessThan(0.08);
   }
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });
 
-test('4PLEXER gate advances a selector to the next input and wraps 4→1', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('4PLEXER gate advances a selector to the next input and wraps 4→1', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
@@ -215,17 +201,9 @@ test('4PLEXER gate advances a selector to the next input and wraps 4→1', async
   expect(Math.abs(st.mean - 0.3), `after 4 pulses (wrap): out1 back to in1 (+0.3), got ${st.mean.toFixed(3)}`).toBeLessThan(0.08);
   expect(await readParam(page, 'plx', 'sel1'), 'sel1 wrapped to 0').toBe(0);
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });
 
-test('4PLEXER outputs are independent (own selection + own gate)', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('4PLEXER outputs are independent (own selection + own gate)', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
@@ -269,17 +247,9 @@ test('4PLEXER outputs are independent (own selection + own gate)', async ({ page
   expect(await readParam(page, 'plx', 'sel1'), 'sel1 untouched by gate2').toBe(1);
   expect(await readParam(page, 'plx', 'sel2'), 'sel2 advanced 3→0').toBe(0);
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });
 
-test('4PLEXER routes an AUDIO source identically to a CV source', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('4PLEXER routes an AUDIO source identically to a CV source', async ({ page, rack, errorWatch }) => {
   // NOISE white into in1; in2 left silent. Selecting in1 ⇒ audible
   // (non-zero RMS); selecting the silent in2 ⇒ ~silence. Proves an AUDIO
   // cable patches + routes through the same path the CV cables use above.
@@ -313,5 +283,4 @@ test('4PLEXER routes an AUDIO source identically to a CV source', async ({ page 
   st = await readScopeChannel(page, 'sc1', 'ch1');
   expect(st.rms, `out1=in2 (unpatched) should be silent, rms=${st.rms.toFixed(4)}`).toBeLessThan(0.01);
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });

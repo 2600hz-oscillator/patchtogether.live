@@ -16,7 +16,8 @@
 // but vfpga-runner is VRT-exempt (live preview + scopes), so this asserts behaviour,
 // not a baseline. Mirrors the P3 composite spec.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 const BENT = ['macroblock-mosh', 'tmds-sparkle', 'scaler-glitch'] as const;
@@ -88,16 +89,11 @@ async function pollStats(page: Page): Promise<{ mean: number; nonZeroFrac: numbe
 
 test.describe('vfpga P4 early-HD-era bent VFPGAs', () => {
   for (const program of BENT) {
-    test(`${program}: bends the smpte source into distinct non-black output`, async ({ page }) => {
+    test(`${program}: bends the smpte source into distinct non-black output`, async ({ page, rack, errorWatch }) => {
       // Two pure-GL vfpga-runners + an OUTPUT compile fast even on SwiftShader,
       // but give headroom for boot + spawn + first-frame settle + the hot-swap.
       test.setTimeout(60_000);
-      const errors: string[] = [];
-      page.on('pageerror', (e) => errors.push(e.message));
-      page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-      await page.goto('/rack');
-      await page.waitForLoadState('networkidle');
 
       await spawnPatch(
         page,
@@ -147,7 +143,6 @@ test.describe('vfpga P4 early-HD-era bent VFPGAs', () => {
       }
       expect(delta, `${program}: bent output is DISTINCT from the un-bent reference (Δluma=${delta.toFixed(2)}/255)`).toBeGreaterThan(6);
 
-      expect(errors, 'no console / page errors').toEqual([]);
     });
   }
 
@@ -168,14 +163,9 @@ test.describe('vfpga P4 early-HD-era bent VFPGAs', () => {
   // per-frame motion warps A and the output animates. We assert the temporal change is
   // decisively larger with mvectB on than off — a renderer-tolerant causal proof that
   // clip B's motion reaches the picture (a dead vin2 binding would leave it static).
-  test('macroblock-mosh: clip B (vin2) motion transfers onto image A (two-clip datamosh)', async ({ page }) => {
+  test('macroblock-mosh: clip B (vin2) motion transfers onto image A (two-clip datamosh)', async ({ page, rack, errorWatch }) => {
     test.setTimeout(75_000); // 3 runners + output on SwiftShader, two capture phases
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
       [
@@ -251,7 +241,6 @@ test.describe('vfpga P4 early-HD-era bent VFPGAs', () => {
     // equality). dOn also clears an absolute floor (it really moves under B).
     expect(dOn, `B-transfer animates the output (Δon=${dOn.toFixed(2)} vs Δoff=${dOff.toFixed(2)} /255)`).toBeGreaterThan(dOff + 5);
     expect(dOn, `output visibly animates under B's motion (Δon=${dOn.toFixed(2)}/255)`).toBeGreaterThan(6);
-    expect(errors, 'no console / page errors').toEqual([]);
   });
 
   // macroblock-mosh LEAK AUDIT (the flagship's reference frame-store FBOs): under
@@ -259,14 +248,9 @@ test.describe('vfpga P4 early-HD-era bent VFPGAs', () => {
   // place — no per-frame GL allocation. Same audit as framestore-howl: assert the
   // render loop survives many frames with NO console errors AND (where the JS-heap
   // API is available — Chromium) that the heap does not grow unboundedly.
-  test('macroblock-mosh: sustained feedback does not leak (FBOs swapped in place)', async ({ page }) => {
+  test('macroblock-mosh: sustained feedback does not leak (FBOs swapped in place)', async ({ page, rack, errorWatch }) => {
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
       [
@@ -295,6 +279,5 @@ test.describe('vfpga P4 early-HD-era bent VFPGAs', () => {
       const heap1 = await page.evaluate(() => (performance as unknown as { memory: { usedJSHeapSize: number } }).memory.usedJSHeapSize);
       expect(heap1 - heap0, `JS heap growth bounded (Δ=${((heap1 - heap0) / 1e6).toFixed(1)}MB)`).toBeLessThan(10_000_000);
     }
-    expect(errors, 'no console / page errors over the sustained run').toEqual([]);
   });
 });

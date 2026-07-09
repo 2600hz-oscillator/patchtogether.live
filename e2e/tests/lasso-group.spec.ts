@@ -18,7 +18,8 @@
 // hit-test logic still get hit; only the synthetic pointer events are
 // short-circuited.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -46,9 +47,7 @@ async function setupChain(page: Page): Promise<void> {
   await expect(page.locator('.svelte-flow__node[data-id="out-1"]')).toBeVisible();
 }
 
-test('left-drag empty pane pans the SvelteFlow viewport (default behavior restored)', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('left-drag empty pane pans the SvelteFlow viewport (default behavior restored)', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [{ id: 'lfo-1', type: 'lfo', position: { x: 100, y: 100 }, domain: 'audio' }],
@@ -79,9 +78,7 @@ test('left-drag empty pane pans the SvelteFlow viewport (default behavior restor
   expect(after).not.toBe(before);
 });
 
-test('right-click pane → palette shows "Create group" tool entry', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('right-click pane → palette shows "Create group" tool entry', async ({ page, rack }) => {
   const pane = page.locator('.svelte-flow__pane');
   const box = await pane.boundingBox();
   if (!box) throw new Error('no pane');

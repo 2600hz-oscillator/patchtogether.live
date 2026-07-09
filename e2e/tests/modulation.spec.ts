@@ -7,15 +7,12 @@
 // 3. The motorized Fader's readLive() (which polls engine.readParam) sees
 //    that variation — i.e. the fader's thumb visibly tracks the modulation.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('lfo: phase0 emits a non-trivial AC waveform at the configured rate', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('lfo: phase0 emits a non-trivial AC waveform at the configured rate', async ({ page, rack }) => {
   // LFO at 5 Hz, sine shape, into a Scope so we can sample the output.
   await spawnPatch(
     page,
@@ -81,10 +78,7 @@ test('lfo: phase0 emits a non-trivial AC waveform at the configured rate', async
 // we poll readParam many times across several full LFO cycles and assert the
 // observed RANGE (max-min) is non-trivial. That's robust to scheduler jitter,
 // the exact moment the worklet starts, and analyser block-boundary timing.
-test('cv-to-fader-sync: LFO modulating ADSR.attack varies the AudioParam reading', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('cv-to-fader-sync: LFO modulating ADSR.attack varies the AudioParam reading', async ({ page, rack }) => {
   // LFO at 10 Hz, shape=2 (saw on the 0=sine↔1=tri↔2=saw morph axis) → a full
   // ±1 sweep into ADSR.attack's CV input. attack is a log-scaled param (knob 5,
   // range 0.001..10s); a ±1 CV sweep multiplies it by sqrt(10/0.001)=±100×, so

@@ -20,7 +20,7 @@
 // because exact pixels are the VRT suite's job; here we prove the FEATURE
 // behaves (2D figure renders; trail length responds to the knob).
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import type { Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
@@ -76,14 +76,7 @@ async function setParam(page: Page, nodeId: string, param: string, value: number
 }
 
 test.describe('SCOPE X/Y mode + INTENSITY persistence', () => {
-  test('X/Y mode draws a non-trivial Lissajous from two oscillators', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('X/Y mode draws a non-trivial Lissajous from two oscillators', async ({ page, rack, errorWatch }) => {
     // vco1 → ch1 (X), vco2 (a perfect fifth up, ~3:2) → ch2 (Y).
     await spawnPatch(
       page,
@@ -117,17 +110,9 @@ test.describe('SCOPE X/Y mode + INTENSITY persistence', () => {
     expect(s.rows, 'X/Y figure spans many rows (2D, not a horizontal line)').toBeGreaterThan(s.height * 0.3);
     expect(s.cols, 'X/Y figure spans many cols (2D, not a vertical line)').toBeGreaterThan(s.width * 0.3);
 
-    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 
-  test('INTENSITY sweep: 7:00 dot lights far fewer pixels than 5:00 long trail', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('INTENSITY sweep: 7:00 dot lights far fewer pixels than 5:00 long trail', async ({ page, rack, errorWatch }) => {
     // Single tone on ch1, NORMAL (split) mode. Longer timebase so a 2-screen
     // trail (5:00) still fits inside the 2048-sample analyser buffer.
     await spawnPatch(
@@ -167,6 +152,5 @@ test.describe('SCOPE X/Y mode + INTENSITY persistence', () => {
     // Make the dot↔trail contrast unambiguous (not a 1-pixel fluke).
     expect(long.lit, 'long trail >> dot').toBeGreaterThan(dot.lit * 3);
 
-    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 });

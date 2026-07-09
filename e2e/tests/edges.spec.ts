@@ -21,7 +21,7 @@
 // far slower than a real GPU — see the ci-swiftshader-video-e2e-timeouts
 // memory: don't use a flat 90s).
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 // SHAPES + EDGES + videoOut are WebGL canvas cards whose FIRST-paint is slow on
@@ -100,10 +100,7 @@ async function captureEdges(
 }
 
 test.describe('EDGES — Sobel edge-detection processor', () => {
-  test('SHAPES -> EDGES -> OUTPUT renders white edges on black', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  test('SHAPES -> EDGES -> OUTPUT renders white edges on black', async ({ page, errorWatch }) => {
 
     const stats = await captureEdges(page, { threshold: 0.2, thickness: 2 });
 
@@ -114,7 +111,6 @@ test.describe('EDGES — Sobel edge-detection processor', () => {
     expect(stats.whiteFrac, 'EDGES rendered white edge pixels').toBeGreaterThan(0.003);
     expect(stats.nonZeroFrac, 'frame is mostly black (edges, not a fill)').toBeLessThan(0.6);
 
-    expect(errors, 'no console / page errors').toEqual([]);
   });
 
   test('raising THRESHOLD reduces edge pixels; lowering increases them', async ({ page }) => {
@@ -149,9 +145,7 @@ test.describe('EDGES — Sobel edge-detection processor', () => {
     ).toBeGreaterThan(thin.whiteFrac);
   });
 
-  test('CV params route through the patch store', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('CV params route through the patch store', async ({ page, rack }) => {
     await spawnPatch(
       page,
       [{ id: 'edg', type: 'edges', position: { x: 200, y: 100 }, domain: 'video' }],

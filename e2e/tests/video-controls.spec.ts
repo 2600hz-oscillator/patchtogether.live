@@ -73,7 +73,8 @@
 // any CONVERTED test (the lone remaining waitForTimeout lives in the explicitly
 // DEFERRED FEEDBACK test + the carried-over palette test's networkidle waits).
 
-import { test, expect, type Page, type Locator } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page, type Locator } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import {
   installRenderSmokeHooks,
@@ -192,11 +193,8 @@ function frameDiff(a: number[], b: number[]): number {
 }
 
 test.describe('video controls drive output (deterministic render smoke)', () => {
-  test('LINES amp knob changes pixel pattern', async ({ page }) => {
+  test('LINES amp knob changes pixel pattern', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     // Pause the rAF loop + pin the clock BEFORE boot — kills LINES auto-scroll
     // (the OLD test's drift confound) so the param is the only thing that moves.
@@ -240,14 +238,10 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
       `LINES amp 4→44 per-pixel delta (frozen): pre mean=${before.mean.toFixed(1)} var=${before.variance.toFixed(1)} | post mean=${after.mean.toFixed(1)} var=${after.variance.toFixed(1)} frameDiff=${pxDelta.toFixed(1)}`,
     ).toBeGreaterThan(6);
 
-    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 
-  test('INWARDS density knob changes pixel pattern', async ({ page }) => {
+  test('INWARDS density knob changes pixel pattern', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     // Pin the clock — INWARDS reads uTime = frame.time, so the frozen clock halts
     // the inward zoom; density is the ONLY thing that can move a pixel. (The OLD
@@ -289,14 +283,10 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
       `INWARDS density 4→30 per-pixel delta (frozen): pre mean=${before.mean.toFixed(1)} var=${before.variance.toFixed(1)} | post mean=${after.mean.toFixed(1)} var=${after.variance.toFixed(1)} frameDiff=${pxDelta.toFixed(1)}`,
     ).toBeGreaterThan(6);
 
-    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 
-  test('DESTRUCTOR mangle knob changes pixel pattern', async ({ page }) => {
+  test('DESTRUCTOR mangle knob changes pixel pattern', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await installRenderSmokeHooks(page);
     await page.goto('/rack');
@@ -336,14 +326,10 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
       `DESTRUCTOR all-on (frozen): pre mean=${before.mean.toFixed(1)} var=${before.variance.toFixed(1)} nz=${before.nonZeroFrac.toFixed(3)} | post mean=${after.mean.toFixed(1)} var=${after.variance.toFixed(1)} nz=${after.nonZeroFrac.toFixed(3)}`,
     ).toBe(true);
 
-    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 
-  test('LUMA gamma knob changes pixel pattern', async ({ page }) => {
+  test('LUMA gamma knob changes pixel pattern', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await installRenderSmokeHooks(page);
     await page.goto('/rack');
@@ -378,14 +364,10 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
       `LUMA gamma 1.0→2.5 (frozen): pre mean=${before.mean.toFixed(1)} var=${before.variance.toFixed(1)} nz=${before.nonZeroFrac.toFixed(3)} | post mean=${after.mean.toFixed(1)} var=${after.variance.toFixed(1)} nz=${after.nonZeroFrac.toFixed(3)}`,
     ).toBe(true);
 
-    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 
-  test('CHROMA tintMix knob changes pixel pattern', async ({ page }) => {
+  test('CHROMA tintMix knob changes pixel pattern', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await installRenderSmokeHooks(page);
     await page.goto('/rack');
@@ -421,7 +403,6 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
       `CHROMA tintMix 0→1 (frozen): pre mean=${before.mean.toFixed(1)} var=${before.variance.toFixed(1)} nz=${before.nonZeroFrac.toFixed(3)} | post mean=${after.mean.toFixed(1)} var=${after.variance.toFixed(1)} nz=${after.nonZeroFrac.toFixed(3)}`,
     ).toBe(true);
 
-    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 
   test('CHROMAKEY threshold knob changes pixel pattern (FG + BG composite)', async ({ page }) => {
@@ -485,11 +466,8 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
     expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 
-  test('LUMAKEY threshold knob changes pixel pattern (FG + BG composite)', async ({ page }) => {
+  test('LUMAKEY threshold knob changes pixel pattern (FG + BG composite)', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await installRenderSmokeHooks(page);
     await page.goto('/rack');
@@ -529,14 +507,10 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
       `LUMAKEY threshold 0→0.9 (frozen): pre mean=${before.mean.toFixed(1)} var=${before.variance.toFixed(1)} nz=${before.nonZeroFrac.toFixed(3)} | post mean=${after.mean.toFixed(1)} var=${after.variance.toFixed(1)} nz=${after.nonZeroFrac.toFixed(3)}`,
     ).toBe(true);
 
-    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 
-  test('COLORIZER tintR knob changes pixel pattern', async ({ page }) => {
+  test('COLORIZER tintR knob changes pixel pattern', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await installRenderSmokeHooks(page);
     await page.goto('/rack');
@@ -572,7 +546,6 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
       `COLORIZER tintR 0→1 (frozen): pre mean=${before.mean.toFixed(1)} var=${before.variance.toFixed(1)} nz=${before.nonZeroFrac.toFixed(3)} | post mean=${after.mean.toFixed(1)} var=${after.variance.toFixed(1)} nz=${after.nonZeroFrac.toFixed(3)}`,
     ).toBe(true);
 
-    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 
   // DEFERRED — NOT converted to DRS. FEEDBACK is an UNBOUNDED ping-pong
@@ -585,10 +558,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
   // ORIGINAL wall-clock readCanvasStats/statsDiffer mechanism — the only test in
   // this file that still uses waitForTimeout. To DRS it later, the module needs
   // a source-level `freeze` pin (same call as VDELAY in video-chain.spec.ts).
-  test('FEEDBACK wet knob changes pixel pattern', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('FEEDBACK wet knob changes pixel pattern', async ({ page, rack }) => {
     await spawnPatch(
       page,
       [
@@ -615,11 +585,8 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
     ).toBe(true);
   });
 
-  test('V-MIXER amount2 knob changes pixel pattern', async ({ page }) => {
+  test('V-MIXER amount2 knob changes pixel pattern', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await installRenderSmokeHooks(page);
     await page.goto('/rack');
@@ -666,7 +633,6 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
       `V-MIXER cross-fade per-pixel delta (frozen): pre mean=${before.mean.toFixed(1)} var=${before.variance.toFixed(1)} | post mean=${after.mean.toFixed(1)} var=${after.variance.toFixed(1)} frameDiff=${pxDelta.toFixed(1)}`,
     ).toBeGreaterThan(6);
 
-    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 });
 
@@ -722,9 +688,7 @@ function statsDifferLegacy(a: LegacyPixelStats, b: LegacyPixelStats): boolean {
 }
 
 test.describe('module palette: VIDEO grouping + V-MIXER visibility', () => {
-  test('palette renders AUDIO + VIDEO domain headers and lists V-MIXER', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('palette renders AUDIO + VIDEO domain headers and lists V-MIXER', async ({ page, rack }) => {
     // Bootstrap the engine + register video module defs (their
     // registration runs on Canvas mount).
     await page.waitForFunction(() => {

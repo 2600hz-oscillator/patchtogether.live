@@ -15,7 +15,7 @@
 // The clip is EMPTY so any sound is the KEYS keyboard, not a pre-seeded pattern —
 // which is exactly the green-but-silent class this guards.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 import { readScopePeakOverWindow } from './_module-coverage-helpers';
 
@@ -158,15 +158,7 @@ async function buildChain(page: import('@playwright/test').Page, prefix: string)
   await expect(page.locator('.svelte-flow__node-clipplayer')).toHaveCount(1);
 }
 
-test('@launchpad KEYS live audition — playing a keyboard pad is AUDIBLE (empty clip, transport running)', async ({
-  page,
-}) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('@launchpad KEYS live audition — playing a keyboard pad is AUDIBLE (empty clip, transport running)', async ({ page, rack, errorWatch }) => {
   await buildChain(page, 'k');
   await seedEmptyClip(page, 'k-cp');
 
@@ -198,18 +190,9 @@ test('@launchpad KEYS live audition — playing a keyboard pad is AUDIBLE (empty
     .poll(async () => (await readScopePeakOverWindow(page, 'k-scp', 400)).rms, { timeout: 5000 })
     .toBeLessThan(0.03);
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });
 
-test('@launchpad KEYS record — queue-record captures played notes into the clip; they SOUND on the next loop', async ({
-  page,
-}) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('@launchpad KEYS record — queue-record captures played notes into the clip; they SOUND on the next loop', async ({ page, rack, errorWatch }) => {
   await buildChain(page, 'r');
   await seedEmptyClip(page, 'r-cp');
 
@@ -247,5 +230,4 @@ test('@launchpad KEYS record — queue-record captures played notes into the cli
   expect(playback.rms, 'the recorded notes sound back on the loop').toBeGreaterThan(0.03);
   expect(playback.nonzeroSamples, 'structured playback, not a glitch').toBeGreaterThan(50);
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });

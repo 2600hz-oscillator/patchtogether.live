@@ -12,17 +12,12 @@
 //   3. Clicking Connect doesn't crash (either grant → device dropdown, or
 //      reject → permission hint).
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('midi-lane: drop module → card mounts with no console errors + output handles present', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('midi-lane: drop module → card mounts with no console errors + output handles present', async ({ page, rack, errorWatch }) => {
   await spawnPatch(page, [{ id: 'm', type: 'midiLane', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-midiLane');
   await expect(card).toBeVisible();
@@ -31,12 +26,9 @@ test('midi-lane: drop module → card mounts with no console errors + output han
   for (const portId of ['pitch_cv', 'gate', 'velocity_cv', 'cc_a', 'cc_b', 'note_gate']) {
     await expect(card.locator(`[data-handleid="${portId}"]`)).toHaveCount(1);
   }
-  expect(errors, errors.join('; ')).toEqual([]);
 });
 
-test('midi-lane: Connect MIDI… button is visible + interactive', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('midi-lane: Connect MIDI… button is visible + interactive', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'm', type: 'midiLane', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-midiLane');
   await expect(card).toBeVisible();
@@ -45,12 +37,7 @@ test('midi-lane: Connect MIDI… button is visible + interactive', async ({ page
   await expect(btn).toBeEnabled();
 });
 
-test('midi-lane: clicking Connect does not crash the card', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('midi-lane: clicking Connect does not crash the card', async ({ page, rack, errorWatch }) => {
   await spawnPatch(page, [{ id: 'm', type: 'midiLane', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-midiLane');
   await expect(card).toBeVisible();
@@ -59,5 +46,4 @@ test('midi-lane: clicking Connect does not crash the card', async ({ page }) => 
   await page.waitForTimeout(300);
   await expect(card).toBeVisible();
   await expect(card.locator('[data-testid="name-label-button"]')).toHaveText(/^MIDILANE(\d+)?$/);
-  expect(errors, errors.join('; ')).toEqual([]);
 });

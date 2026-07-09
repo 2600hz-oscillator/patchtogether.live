@@ -34,7 +34,8 @@
 //   - mixer: each input contributes; master fader scales.
 //   - mixmstrs: spawn + master output emits when a channel is wired.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import {
   readScopeSnapshot,
@@ -49,14 +50,7 @@ test.describe.configure({ mode: 'parallel' });
 // Group 3 — modulation + utility
 // ─────────────────────────────────────────────────────────────────────────────
 
-test('lfo: phase outputs emit cv that crosses zero', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('lfo: phase outputs emit cv that crosses zero', async ({ page, rack, errorWatch }) => {
   // LFO at 5 Hz with shape=0 (sine). Patch phase0 → scope.ch1 as a `cv`
   // edge so the engine doesn't try to interpret it as `pitch`. The scope
   // captures the CV as a low-frequency waveform we can sample.
@@ -94,17 +88,9 @@ test('lfo: phase outputs emit cv that crosses zero', async ({ page }) => {
   expect(posSeen, `lfo emits positive cv (peak=${peak.toFixed(4)})`).toBe(true);
   expect(negSeen, `lfo emits negative cv (peak=${peak.toFixed(4)})`).toBe(true);
 
-  expect(errors, errors.join('; ')).toEqual([]);
 });
 
-test('adsr: gate ping triggers an attack-then-decay envelope on env output', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('adsr: gate ping triggers an attack-then-decay envelope on env output', async ({ page, rack, errorWatch }) => {
   // 240 BPM sequencer at gateLength=0.5 → gate cycles every ~125 ms.
   // env (cv 0..1) -> scope.ch1 captured as audio.
   await spawnPatch(
@@ -144,13 +130,9 @@ test('adsr: gate ping triggers an attack-then-decay envelope on env output', asy
   // ch1Range=cv mode is set; absolute peak should be substantial.
   expect(sum.peak, `adsr env peak=${sum.peak.toFixed(4)}`).toBeGreaterThan(0.05);
 
-  expect(errors, errors.join('; ')).toEqual([]);
 });
 
-test('adsr: env_inv is the 1-env complement', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('adsr: env_inv is the 1-env complement', async ({ page, rack }) => {
   // We can't easily subtract two CV streams in the patch graph from a
   // test; instead, verify env_inv is non-zero when env is held high
   // by gate=0 (sustain=0 → env=0 → env_inv=1). Use ch1+ch2.
@@ -181,14 +163,7 @@ test('adsr: env_inv is the 1-env complement', async ({ page }) => {
   expect(envInv.peak, `env_inv should be high without gate (peak=${envInv.peak})`).toBeGreaterThan(0.3);
 });
 
-test('buggles: smooth/stepped CV outputs emit chaotic non-constant signals', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('buggles: smooth/stepped CV outputs emit chaotic non-constant signals', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
@@ -242,16 +217,13 @@ test('buggles: smooth/stepped CV outputs emit chaotic non-constant signals', asy
   expect(smoothPeak,  `buggles smooth max-peak=${smoothPeak.toFixed(4)}`).toBeGreaterThan(0.05);
   expect(steppedPeak, `buggles stepped max-peak=${steppedPeak.toFixed(4)}`).toBeGreaterThan(0.05);
 
-  expect(errors, errors.join('; ')).toEqual([]);
 });
 
-test('illogic: in1=0.5, in2=0 → sum≈0.5, diff≈0.5; gates fire on in1>threshold', async ({ page }) => {
+test('illogic: in1=0.5, in2=0 → sum≈0.5, diff≈0.5; gates fire on in1>threshold', async ({ page, rack }) => {
   // illogic + unityscalemathematik are pure passthrough CV utilities;
   // their outputs are deterministic given the input. We drive in1 + in2
   // from two LFOs at different rates so the chaining produces measurable
   // motion at the outputs.
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
 
   await spawnPatch(
     page,
@@ -284,10 +256,7 @@ test('illogic: in1=0.5, in2=0 → sum≈0.5, diff≈0.5; gates fire on in1>thres
   expect(diffStat.peak, `illogic diff peak=${diffStat.peak.toFixed(4)}`).toBeGreaterThan(0.1);
 });
 
-test('unityscalemathematik: u_in passthrough scaled by unityAtten', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('unityscalemathematik: u_in passthrough scaled by unityAtten', async ({ page, rack }) => {
   // LFO drives u_in. unityAtten=1 means full passthrough; output should
   // closely match the input amplitude.
   await spawnPatch(
@@ -312,11 +281,9 @@ test('unityscalemathematik: u_in passthrough scaled by unityAtten', async ({ pag
   expect(sum.peak, `usm u_out peak=${sum.peak.toFixed(4)}`).toBeGreaterThan(0.1);
 });
 
-test('timelorde: external clock drives gate-divider outputs', async ({ page }) => {
+test('timelorde: external clock drives gate-divider outputs', async ({ page, rack }) => {
   // Drive timelorde.clock from a sequencer's clock_out. Verify that
   // any one of timelorde's divider outputs fires.
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
 
   await spawnPatch(
     page,
@@ -354,16 +321,7 @@ test('timelorde: external clock drives gate-divider outputs', async ({ page }) =
   expect(sum.peak, `timelorde 1x gate peak=${sum.peak.toFixed(4)}`).toBeGreaterThan(0.05);
 });
 
-test('integration (Group 3): lfo modulates filter cutoff → audible spectrum sweep', async ({
-  page,
-}) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('integration (Group 3): lfo modulates filter cutoff → audible spectrum sweep', async ({ page, rack, errorWatch }) => {
   // analogVco (sine) → filter.audio. lfo.phase0 → filter.cutoff. Scope at
   // the filter output sees a tone whose level pulses as the LFO sweeps
   // cutoff across the sine's fundamental.
@@ -392,7 +350,6 @@ test('integration (Group 3): lfo modulates filter cutoff → audible spectrum sw
   // current cutoff. Should be non-silent.
   expect(sum.peak, `lfo→filter→scope peak=${sum.peak.toFixed(4)}`).toBeGreaterThan(0.005);
 
-  expect(errors, errors.join('; ')).toEqual([]);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -421,10 +378,7 @@ for (const seq of [
   { type: 'polyseqz',  stepsCount: 4 },
   { type: 'drumseqz',  stepsCount: 4 },
 ]) {
-  test(`sequencer ${seq.type}: currentStep advances when isPlaying=1`, async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test(`sequencer ${seq.type}: currentStep advances when isPlaying=1`, async ({ page, rack }) => {
     // 480 BPM → step every 31 ms; 4 steps fit easily in 250 ms.
     await spawnPatch(page, [
       { id: 'q', type: seq.type, params: { bpm: 480, length: seq.stepsCount, isPlaying: 1, gateLength: 0.5 } },
@@ -489,10 +443,7 @@ for (const seq of [
 // Once n0 has sounded the playhead latches it (createPlayheadTrackerOf keeps the
 // last-sounding value), so this is monotonic — no before/after race remains. The
 // poll backs off (250→500→1000ms) so we don't hammer engine.read under contention.
-test('score: tickIndex advances + currentNoteId resolves to laid-down note', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('score: tickIndex advances + currentNoteId resolves to laid-down note', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'sc', type: 'score', params: { bpm: 480, isPlaying: 1, attack: 0.01, decay: 0.05, sustain: 0.7, release: 0.05 } },
   ]);
@@ -529,10 +480,7 @@ test('score: tickIndex advances + currentNoteId resolves to laid-down note', asy
     .toBe('n0');
 });
 
-test('cartesian: external clock drives pitch output (poly cable, lane 0 = pitch)', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('cartesian: external clock drives pitch output (poly cable, lane 0 = pitch)', async ({ page, rack }) => {
   // Drive cartesian.clock from sequencer.clock_out. Its pitch output is
   // a polyPitchGate; route lane 0 into a scope as cv to verify motion.
   await spawnPatch(
@@ -570,16 +518,7 @@ test('cartesian: external clock drives pitch output (poly cable, lane 0 = pitch)
   expect(step).toBeGreaterThanOrEqual(0);
 });
 
-test('integration (Group 4): sequencer drives 3 drum voices in parallel via mixer', async ({
-  page,
-}) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('integration (Group 4): sequencer drives 3 drum voices in parallel via mixer', async ({ page, rack, errorWatch }) => {
   // sequencer.gate -> drummergirl + meowbox + qbrt (gate/ping inputs).
   // All three sum into a mixer; the mixer reads in scope.
   await spawnPatch(
@@ -628,17 +567,13 @@ test('integration (Group 4): sequencer drives 3 drum voices in parallel via mixe
     `3-voice drum mix peak=${sum.peak.toFixed(4)} rms=${sum.rms.toFixed(4)}`,
   ).toBeGreaterThan(0.01);
 
-  expect(errors, errors.join('; ')).toEqual([]);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Group 5 — VCAs + filters + mixers
 // ─────────────────────────────────────────────────────────────────────────────
 
-test('vca: cv=0 silences output; cv=1 passes audio through', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('vca: cv=0 silences output; cv=1 passes audio through', async ({ page, rack }) => {
   // noise (loud) -> vca.audio. lfo.shape param fixed; CV input held at 0
   // initially. We'll change the base param to verify gating.
   await spawnPatch(
@@ -668,10 +603,7 @@ test('vca: cv=0 silences output; cv=1 passes audio through', async ({ page }) =>
   expect(sum.peak, `vca base=1 passes audio (peak=${sum.peak})`).toBeGreaterThan(0.02);
 });
 
-test('vca: audio_inv is the phase-flipped twin of audio', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('vca: audio_inv is the phase-flipped twin of audio', async ({ page, rack }) => {
   // Send audio + audio_inv into the two scope channels with the same
   // base/cvAmount path, then verify ch1 and ch2 are both non-silent and
   // have similar magnitude (the inversion test would require summing,
@@ -704,14 +636,10 @@ test('vca: audio_inv is the phase-flipped twin of audio', async ({ page }) => {
   expect(Math.abs(a.peak - b.peak)).toBeLessThan(Math.max(a.peak, b.peak) * 0.5);
 });
 
-test('filter: cutoff=300Hz removes more of a 4kHz noise spectrum than cutoff=8kHz', async ({
-  page,
-}) => {
+test('filter: cutoff=300Hz removes more of a 4kHz noise spectrum than cutoff=8kHz', async ({ page, rack }) => {
   // Drive noise through the filter; record RMS at two cutoff settings.
   // Low cutoff should produce a substantially smaller signal than high
   // cutoff (the filter removes everything above its cutoff).
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
 
   await spawnPatch(
     page,
@@ -743,10 +671,7 @@ test('filter: cutoff=300Hz removes more of a 4kHz noise spectrum than cutoff=8kH
   expect(rmsHi, `high cutoff still passes audio (rms=${rmsHi})`).toBeGreaterThan(0.001);
 });
 
-test('mixer: each input contributes; master fader scales output', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('mixer: each input contributes; master fader scales output', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
@@ -775,10 +700,7 @@ test('mixer: each input contributes; master fader scales output', async ({ page 
   expect(sum2.peak, `mixer at master=0 peak=${sum2.peak.toFixed(4)}`).toBeLessThan(sum1.peak * 0.3);
 });
 
-test('mixmstrs: routing a single channel produces audio at masterL', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('mixmstrs: routing a single channel produces audio at masterL', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
@@ -800,10 +722,7 @@ test('mixmstrs: routing a single channel produces audio at masterL', async ({ pa
   expect(sum.peak, `mixmstrs masterL peak=${sum.peak.toFixed(4)}`).toBeGreaterThan(0.005);
 });
 
-test('stereovca: independent L/R strength CV', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('stereovca: independent L/R strength CV', async ({ page, rack }) => {
   // Drive in_l from noise.white, in_r from noise.pink. strength_l = 0
   // (silences L), strength_r = 1 (passes R). Verify out_l is silent and
   // out_r is loud.

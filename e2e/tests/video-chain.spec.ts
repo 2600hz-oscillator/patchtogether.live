@@ -36,7 +36,7 @@
 //
 // No waitForTimeout, no poll, no animation-diff, no exact-pixel assert.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 import { installRenderSmokeHooks, stepAndReadStats, assertRenderStats } from './_render-smoke';
 
@@ -51,13 +51,8 @@ test.describe('Video chain — chainable outputs on RUTTETRA / MONOGLITCH / OUTP
   // (LINES → MONOGLITCH → RUTTETRA → OUTPUT) composes through the WebGL engine
   // and paints visible content under CI's SwiftShader. Renderer-tolerant
   // (visible content + frame-stable under the frozen clock, NOT exact pixels).
-  test('LINES → MONOGLITCH → RUTTETRA → OUTPUT renders something visible @webgl-smoke', async ({ page }) => {
+  test('LINES → MONOGLITCH → RUTTETRA → OUTPUT renders something visible @webgl-smoke', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => {
-      if (m.type() === 'error') errors.push(m.text());
-    });
 
     // Pause the engine rAF loop (the test owns the exact frame count) + pin the
     // engine clock (LINES renders an identical frame every step) BEFORE boot.
@@ -107,7 +102,6 @@ test.describe('Video chain — chainable outputs on RUTTETRA / MONOGLITCH / OUTP
     expect(Math.abs(b.mean - a.mean), `frozen chain output is frame-stable (mean ${a.mean.toFixed(3)} vs ${b.mean.toFixed(3)})`).toBeLessThan(0.5);
     expect(Math.abs(b.variance - a.variance), 'frozen chain output variance is frame-stable').toBeLessThan(1.0);
 
-    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 
   test('LINES → VDELAY → OUTPUT produces echoed/blended content', async ({ page }) => {

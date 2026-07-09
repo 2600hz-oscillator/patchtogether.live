@@ -18,20 +18,11 @@
 // Determinism for the PIXEL baseline lives in the VRT suite (vrt-scenes.ts:
 // BACKDRAFT freezes after settle). This spec is the behavioural gate.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe('BACKDRAFT — video feedback generator', () => {
-  test('SHAPES/LINES masks + SHAPES sources -> BACKDRAFT -> OUTPUT renders a live feedback frame', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => {
-      if (m.type() === 'error') errors.push(m.text());
-    });
-
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('SHAPES/LINES masks + SHAPES sources -> BACKDRAFT -> OUTPUT renders a live feedback frame', async ({ page, rack, errorWatch }) => {
     await spawnPatch(
       page,
       [
@@ -85,13 +76,9 @@ test.describe('BACKDRAFT — video feedback generator', () => {
     expect(stats!.nonZeroFrac, 'output is not all-black (feedback rendered)').toBeGreaterThan(0.02);
     expect(stats!.variance, 'output has spatial structure (trails + masks)').toBeGreaterThan(20);
 
-    expect(errors, 'no console / page errors').toEqual([]);
   });
 
-  test('FREEZE holds the output still (deterministic capture hook)', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('FREEZE holds the output still (deterministic capture hook)', async ({ page, rack }) => {
     await spawnPatch(
       page,
       [
@@ -142,13 +129,18 @@ test.describe('BACKDRAFT — video feedback generator', () => {
     expect(b).toEqual(a);
   });
 
-  test('SPATIAL TRANSFORM (zoom+rotate) changes the feedback geometry vs identity', async ({ page }) => {
+  test('SPATIAL TRANSFORM (zoom+rotate) changes the feedback geometry vs identity', async ({ page, rack }) => {
     // Two runs of the SAME feedback scene: one at identity (zoom=1,
     // rotate=0 → 1:1 tap, the original behaviour) and one with a tunnel
     // transform (zoom>1 + rotate). The transformed run must produce a
     // MEANINGFULLY DIFFERENT frame — proving the transform actually moves
     // where the feedback tap samples (tunnels/spirals), not just brightness.
     async function captureFrame(transform: { zoom: number; rotate: number }): Promise<number[]> {
+      // FRESH RACK PER CAPTURE (restored from pre-fixture main): both
+      // captures spawn the SAME node ids, and capture 1 leaves 'bd' with
+      // freeze=1 — re-spawning onto the live doc reads the frozen scene
+      // (identical frames, diff exactly 0 — the shard-1 failure on #1036).
+      // The `rack` fixture only navigates once per test, so re-navigate here.
       await page.goto('/rack');
       await page.waitForLoadState('networkidle');
       await spawnPatch(
@@ -212,12 +204,16 @@ test.describe('BACKDRAFT — video feedback generator', () => {
     expect(changedFrac, 'a real fraction of pixels move (tunnel geometry)').toBeGreaterThan(0.05);
   });
 
-  test('PIXELATE reduces the source resolution (1.0 → flat frame; 0 → unchanged)', async ({ page }) => {
+  test('PIXELATE reduces the source resolution (1.0 → flat frame; 0 → unchanged)', async ({ page, rack }) => {
     // Drive BACKDRAFT with a structured source and NO feedback, so the output
     // ≈ the (pixelated) source. At pixelate=1 the whole frame collapses to one
     // representative colour → near-zero spatial variance (a flat block). At
     // pixelate=0 the frame keeps its full structure (HARD INVARIANT: identity).
     async function captureVariance(pixelate: number): Promise<number> {
+      // FRESH RACK PER CAPTURE (restored from pre-fixture main): both
+      // captures spawn the SAME node ids, and re-spawning onto the live doc
+      // compares the wrong scenes (same failure class as captureFrame above).
+      // The `rack` fixture only navigates once per test, so re-navigate here.
       await page.goto('/rack');
       await page.waitForLoadState('networkidle');
       await spawnPatch(
@@ -277,14 +273,7 @@ test.describe('BACKDRAFT — video feedback generator', () => {
     expect(varFlat, 'pixelate=1 is far flatter than pixelate=0').toBeLessThan(varFull / 8);
   });
 
-  test('DELAY CLOCK input overrides the DELAY knob (CLK badge appears when patched)', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('DELAY CLOCK input overrides the DELAY knob (CLK badge appears when patched)', async ({ page, rack, errorWatch }) => {
     // Drive the DELAY CLOCK gate input with an LFO (its phase0 CV output is a
     // steady periodic swing). When the delay_clock cable is patched, the card
     // must flip the Delay knob into the "clock-driven" (overridden) state and
@@ -311,7 +300,6 @@ test.describe('BACKDRAFT — video feedback generator', () => {
       'CLK badge shows the DELAY knob is clock-overridden',
     ).toBeVisible();
 
-    expect(errors, 'no console / page errors').toEqual([]);
   });
 
   test('MIRROR X / MIRROR Y fold the output (kaleidoscope) + gate toggles the param', async ({ page }) => {
@@ -538,10 +526,7 @@ test.describe('BACKDRAFT — video feedback generator', () => {
       .toBeLessThan(0.5);
   });
 
-  test('faders route through the patch store', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('faders route through the patch store', async ({ page, rack }) => {
     await spawnPatch(page, [
       { id: 'bd', type: 'backdraft', position: { x: 200, y: 100 }, domain: 'video' },
     ]);

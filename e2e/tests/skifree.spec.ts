@@ -21,7 +21,8 @@
 // reach the gate — the controller hooks fire the exact same hasHitObstacle
 // path a real crash/eat would.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -205,9 +206,7 @@ test('skifree: card mounts, canvas renders, x/y inputs + gate/out outputs presen
   expect(errors.filter((e) => !e.includes('AudioContext'))).toEqual([]);
 });
 
-test('skifree: CV patched into x flips cvDriven true (CV overrides mouse)', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('skifree: CV patched into x flips cvDriven true (CV overrides mouse)', async ({ page, rack }) => {
   // BUGGLES.smooth is a continuous ±1 CV source — patch it into x so the
   // factory's CV tap sees a non-zero connection and flips cvDriven.
   await spawnPatch(
@@ -227,9 +226,7 @@ test('skifree: CV patched into x flips cvDriven true (CV overrides mouse)', asyn
   }, { timeout: 6000, message: 'cvDriven should flip true once a CV source is patched into x' }).toBe(true);
 });
 
-test('skifree: crash → gate pulse reaches a downstream SCOPE + crash counter increments', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('skifree: crash → gate pulse reaches a downstream SCOPE + crash counter increments', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
@@ -273,9 +270,7 @@ test('skifree: crash → gate pulse reaches a downstream SCOPE + crash counter i
   expect(scopePeak, `gate pulse should reach SCOPE (peak=${scopePeak})`).toBeGreaterThan(0.5);
 });
 
-test('skifree: eaten-by-yeti → gate pulse + eaten counter increments', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('skifree: eaten-by-yeti → gate pulse + eaten counter increments', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [

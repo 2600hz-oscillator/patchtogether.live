@@ -10,20 +10,13 @@
 // pure-core unit tier (packages/dsp/src/lib/ringback-core.test.ts); this e2e
 // tier proves the real audio path through the module is alive on both channels.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
-import { readScopePeakOverWindow } from './_module-coverage-helpers';
+import { readScopePeakOverWindow, setNodeParams } from './_module-coverage-helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('RINGBACK: VCO → stereo in → stereo out has audible RMS on BOTH channels', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('RINGBACK: VCO → stereo in → stereo out has audible RMS on BOTH channels', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
@@ -64,17 +57,9 @@ test('RINGBACK: VCO → stereo in → stereo out has audible RMS on BOTH channel
   expect(hold.peak, `peak at the stereo out`).toBeGreaterThan(0.05);
   expect(hold.nonzeroSamples, `structured signal, not a glitch`).toBeGreaterThan(50);
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });
 
-test('RINGBACK: mix=0 passes the input through; sweeping the crush params stays error-free', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('RINGBACK: mix=0 passes the input through; sweeping the crush params stays error-free', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
@@ -107,16 +92,7 @@ test('RINGBACK: mix=0 passes the input through; sweeping the crush params stays 
     { rate: 1,    size: 64,   feedback: 0.3,  mix: 1 },
   ];
   for (const corner of corners) {
-    await page.evaluate((params) => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { params: Record<string, number> }> };
-        __ydoc: { transact: (fn: () => void) => void };
-      };
-      w.__ydoc.transact(() => {
-        const n = w.__patch.nodes['a-rb'];
-        if (n) Object.assign(n.params, params);
-      });
-    }, corner);
+    await setNodeParams(page, 'a-rb', corner);
     await page.waitForTimeout(120);
   }
 
@@ -125,5 +101,4 @@ test('RINGBACK: mix=0 passes the input through; sweeping the crush params stays 
   expect(Number.isFinite(after.rms)).toBe(true);
   expect(Number.isFinite(after.peak)).toBe(true);
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });

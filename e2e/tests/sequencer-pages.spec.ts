@@ -10,15 +10,12 @@
 //      while the playhead crosses the page boundary. Then toggle HOLD off
 //      and assert the visible page catches up to the playhead.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('drumseqz: LEN=64 reveals 4 pages of nav', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('drumseqz: LEN=64 reveals 4 pages of nav', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'drum', type: 'drumseqz', params: { isPlaying: 0, length: 64 } },
   ]);
@@ -29,10 +26,7 @@ test('drumseqz: LEN=64 reveals 4 pages of nav', async ({ page }) => {
   await expect(label).toHaveText(/p1\/4/);
 });
 
-test('drumseqz: > / < nav crosses page boundary; per-page edits persist', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('drumseqz: > / < nav crosses page boundary; per-page edits persist', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'drum', type: 'drumseqz', params: { isPlaying: 0, length: 64 } },
   ]);
@@ -85,10 +79,7 @@ test('drumseqz: > / < nav crosses page boundary; per-page edits persist', async 
   expect(cell17?.on).toBe(true);
 });
 
-test('drumseqz: HOLD freezes visible page while playhead advances', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('drumseqz: HOLD freezes visible page while playhead advances', async ({ page, rack }) => {
   // BPM=600 so the 16th-note step is 25 ms — playhead crosses page 0 → page 1
   // in <500 ms. length=32 = 2 pages.
   await spawnPatch(page, [

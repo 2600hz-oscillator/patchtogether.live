@@ -18,22 +18,13 @@
 //      continuously and the VCO still sings (pure quantizer mode), and the
 //      card's mode hint reads QUANTIZER.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
-import { readScopePeakOverWindow } from './_module-coverage-helpers';
+import { readScopePeakOverWindow, setNodeParams } from './_module-coverage-helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('SAMPLE & HOLD chain: BUGGLES → S&H (clocked) → VCO → SCOPE produces audio', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text());
-  });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('SAMPLE & HOLD chain: BUGGLES → S&H (clocked) → VCO → SCOPE produces audio', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
@@ -68,13 +59,9 @@ test('SAMPLE & HOLD chain: BUGGLES → S&H (clocked) → VCO → SCOPE produces 
   const obs = await readScopePeakOverWindow(page, 's-scope', 1200);
   expect(obs.peak, `scope peak over window: ${JSON.stringify(obs)}`).toBeGreaterThan(0.01);
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });
 
-test('SAMPLE & HOLD scale-name label updates as the scale param changes', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('SAMPLE & HOLD scale-name label updates as the scale param changes', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [{ id: 's-sh', type: 'sampleHold', position: { x: 120, y: 120 }, domain: 'audio' }],
@@ -102,30 +89,12 @@ test('SAMPLE & HOLD scale-name label updates as the scale param changes', async 
   ] as const;
 
   for (const [scale, name] of expected) {
-    await page.evaluate((s) => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { params: Record<string, number> }> };
-        __ydoc: { transact: (fn: () => void) => void };
-      };
-      w.__ydoc.transact(() => {
-        const n = w.__patch.nodes['s-sh'];
-        if (n) n.params.scale = s;
-      });
-    }, scale);
+    await setNodeParams(page, 's-sh', { scale: scale });
     await expect(label).toHaveText(name);
   }
 });
 
-test('SAMPLE & HOLD continuous-quantizer (no gate): cv passes through, VCO sings, hint=QUANTIZER', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text());
-  });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('SAMPLE & HOLD continuous-quantizer (no gate): cv passes through, VCO sings, hint=QUANTIZER', async ({ page, rack, errorWatch }) => {
   // NO sequencer / gate cable — sampleHold becomes a pure quantizer.
   await spawnPatch(
     page,
@@ -156,5 +125,4 @@ test('SAMPLE & HOLD continuous-quantizer (no gate): cv passes through, VCO sings
   const obs = await readScopePeakOverWindow(page, 'q-scope', 1000);
   expect(obs.peak, `scope peak over window: ${JSON.stringify(obs)}`).toBeGreaterThan(0.01);
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });

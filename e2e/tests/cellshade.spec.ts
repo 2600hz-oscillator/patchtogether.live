@@ -26,7 +26,8 @@
 // SwiftShader software renderer is far slower than a real GPU — see the
 // ci-swiftshader-video-e2e-timeouts memory: don't use a flat 90s).
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 // ACIDWARP + CELLSHADE + videoOut are WebGL canvas cards whose FIRST-paint is
@@ -119,10 +120,7 @@ async function captureCell(
 }
 
 test.describe('CELLSHADE — cel-shader video processor', () => {
-  test('ACIDWARP -> CELLSHADE -> OUTPUT shows posterized colour + edge ink', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  test('ACIDWARP -> CELLSHADE -> OUTPUT shows posterized colour + edge ink', async ({ page, errorWatch }) => {
 
     // 4-bit (idx 2) default + a thicker ink so the edges read clearly.
     const stats = await captureCell(page, { threshold: 0.18, thickness: 3, bits: 2 });
@@ -135,7 +133,6 @@ test.describe('CELLSHADE — cel-shader video processor', () => {
     expect(stats.inkFrac, 'CELLSHADE inks some edges (black lines)').toBeGreaterThan(0.001);
     expect(stats.inkFrac, 'frame is not all-black ink').toBeLessThan(0.9);
 
-    expect(errors, 'no console / page errors').toEqual([]);
   });
 
   // NOTE on BITS/THRESHOLD MONOTONICITY: the EXACT "lower BITS → fewer distinct
@@ -176,9 +173,7 @@ test.describe('CELLSHADE — cel-shader video processor', () => {
     expect(highThresh.colourFrac, 'high-threshold frame still shows colour').toBeGreaterThan(0.01);
   });
 
-  test('CV params route through the patch store (incl. discrete BITS)', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('CV params route through the patch store (incl. discrete BITS)', async ({ page, rack }) => {
     await spawnPatch(
       page,
       [{ id: 'cel', type: 'cellshade', position: { x: 200, y: 100 }, domain: 'video' }],

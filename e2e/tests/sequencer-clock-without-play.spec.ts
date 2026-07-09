@@ -23,7 +23,7 @@
 // engine.read(node, 'totalAdvances') and assert the sequencer advanced
 // (or didn't, depending on the case).
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 // Serial mode: each test reuses the same page to avoid 5+ concurrent page.goto
@@ -71,13 +71,9 @@ async function readTotalAdvances(
 
 for (const s of SEQUENCERS) {
   test.describe(`${s.type}: clock-without-play orthogonality`, () => {
-    test(`${s.type}: clock patched + play_cv NOT patched + isPlaying=0 → advances at clock rate`, async ({
-      page,
-    }) => {
+    test(`${s.type}: clock patched + play_cv NOT patched + isPlaying=0 → advances at clock rate`, async ({ page, rack }) => {
       // The headline bug fix: clock pulses should drive the sequencer even
       // when isPlaying is 0 and play_cv is unpatched.
-      await page.goto('/rack');
-      await page.waitForLoadState('networkidle');
 
       await spawnPatch(
         page,
@@ -128,13 +124,9 @@ for (const s of SEQUENCERS) {
         .toBeGreaterThanOrEqual(3);
     });
 
-    test(`${s.type}: free-run mode (no clock, no play_cv) — Play button toggle still works`, async ({
-      page,
-    }) => {
+    test(`${s.type}: free-run mode (no clock, no play_cv) — Play button toggle still works`, async ({ page, rack }) => {
       // Regression: the original "press Play with no patches" path must
       // continue to advance via internal BPM.
-      await page.goto('/rack');
-      await page.waitForLoadState('networkidle');
 
       await spawnPatch(
         page,
@@ -157,15 +149,11 @@ for (const s of SEQUENCERS) {
         .toBeGreaterThanOrEqual(3);
     });
 
-    test(`${s.type}: play_cv patched + clock patched + play_cv LOW → does NOT advance (play_cv overrides)`, async ({
-      page,
-    }) => {
+    test(`${s.type}: play_cv patched + clock patched + play_cv LOW → does NOT advance (play_cv overrides)`, async ({ page, rack }) => {
       // play_cv-patched semantics: play_cv state wins over clock-only mode.
       // We patch BOTH clock AND play_cv and leave play_cv low (the source
       // never sends a rising edge). The sequencer should stay stopped even
       // though clock pulses are arriving.
-      await page.goto('/rack');
-      await page.waitForLoadState('networkidle');
 
       await spawnPatch(
         page,

@@ -10,7 +10,8 @@
 // pickupMenuOpen), follows the cursor on move, and is consumed by the
 // patch-to / carry-commit flow or discarded by Esc.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 function chrome(page: Page, nodeId: string) {
@@ -50,11 +51,7 @@ async function readPickupState(page: Page): Promise<{
 }
 
 test.describe('PatchPanel: jack-click → pickup carry', () => {
-  test('clicking an OUTPUT port row picks up a cable (mode=pickup, menu open)', async ({
-    page,
-  }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('clicking an OUTPUT port row picks up a cable (mode=pickup, menu open)', async ({ page, rack }) => {
     await spawnPatch(page, [
       { id: 'lfo', type: 'lfo', position: { x: 80, y: 120 } },
       { id: 'flt', type: 'filter', position: { x: 700, y: 120 } },
@@ -86,11 +83,7 @@ test.describe('PatchPanel: jack-click → pickup carry', () => {
     expect((await readPickupState(page)).mode).toBe('idle');
   });
 
-  test('handles for every declared port stay in the card DOM (io-spec parity)', async ({
-    page,
-  }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('handles for every declared port stay in the card DOM (io-spec parity)', async ({ page, rack }) => {
     await spawnPatch(page, [{ id: 'lfo', type: 'lfo', position: { x: 80, y: 120 } }]);
     // Panel CLOSED.
     await expect(chrome(page, 'lfo')).toHaveCount(0);

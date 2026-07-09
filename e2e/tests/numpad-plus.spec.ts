@@ -16,7 +16,8 @@
 //      scope's most-recent sample (proves the pitch CV actually
 //      reaches the audio graph).
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 async function spawnNumpadPlus(page: Page): Promise<void> {
@@ -141,9 +142,7 @@ test.describe('NUMPAD+ module', () => {
     await expect(page.locator('.svelte-flow [data-testid="numpad-key-menu"]')).toHaveCount(0);
   });
 
-  test('pressing Numpad1 at octave 4 drives l1_pitch ~ 0 V/oct (C4)', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('pressing Numpad1 at octave 4 drives l1_pitch ~ 0 V/oct (C4)', async ({ page, rack }) => {
     await spawnPatch(
       page,
       [
@@ -241,9 +240,7 @@ test.describe('NUMPAD+ module', () => {
     expect(step0?.midi).toBe(62); // D4 = MIDI 62 (Numpad3 at octave 4)
   });
 
-  test('layer-CV input wins over the activeLayer param', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('layer-CV input wins over the activeLayer param', async ({ page, rack }) => {
     // JOYSTICK pinned to x=0.75 → cv 0.75 → round(0.75*4) = 3 → L4.
     await spawnPatch(
       page,

@@ -20,7 +20,8 @@
 // RELATIVE on/off ratio — never bit-equality) and gated on a runtime GL probe
 // (CI renders wavesculpt-class 3D under SwiftShader).
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 type PatchGlobal = {
@@ -97,13 +98,7 @@ async function cubeGlUsable(page: Page): Promise<boolean> {
 }
 
 test.describe('CUBE v4 — reload / screen-off / initial render', () => {
-  test('card + all three viz canvases mount; 3D cube is non-blank on initial mount', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('card + all three viz canvases mount; 3D cube is non-blank on initial mount', async ({ page, rack, errorWatch }) => {
     await spawnPatch(page, [
       { id: 'cb', type: 'cube', position: { x: 200, y: 100 }, domain: 'audio' },
     ]);
@@ -122,12 +117,9 @@ test.describe('CUBE v4 — reload / screen-off / initial render', () => {
       test.info().annotations.push({ type: 'skip-floor', description: 'no usable GL pixel read on this renderer' });
     }
 
-    expect(errors, 'no console / page errors during CUBE render').toEqual([]);
   });
 
-  test('FLOOR dropdown reload replaces node.data twice (item #1)', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('FLOOR dropdown reload replaces node.data twice (item #1)', async ({ page, rack }) => {
     await spawnPatch(page, [
       { id: 'cb', type: 'cube', position: { x: 200, y: 100 }, domain: 'audio' },
     ]);

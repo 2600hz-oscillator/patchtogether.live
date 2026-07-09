@@ -26,7 +26,8 @@
 //   5. assert the 2 nodes + the edge are restored — in both __patch and the
 //      rendered DOM.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -44,10 +45,7 @@ async function readGraph(page: Page): Promise<{ nodes: string[]; edges: string[]
   });
 }
 
-test('Clear patch is undoable: Clear empties the rack, undo restores nodes + edge', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('Clear patch is undoable: Clear empties the rack, undo restores nodes + edge', async ({ page, rack }) => {
   // 1. Spawn two real-engine modules + a (cv→cv) edge between them. spawnPatch
   //    bootstraps the engine, mutates the graph in one transact, and waits for
   //    both node wrappers to mount in the DOM (bounded mountTimeout).

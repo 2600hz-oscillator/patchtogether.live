@@ -16,7 +16,8 @@
 // I/O-spec consistency (exact handle id matching) is covered separately in
 // io-spec-consistency.spec.ts / per-module-per-port.spec.ts.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 function chrome(page: Page, nodeId: string) {
@@ -36,11 +37,7 @@ async function drill(page: Page, nodeId: string, nav: 'inputs' | 'outputs') {
 }
 
 test.describe('PatchPanel: redesigned menu', () => {
-  test('ADSR default state hides jacks; click-open + drill shows verbose labels', async ({
-    page,
-  }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('ADSR default state hides jacks; click-open + drill shows verbose labels', async ({ page, rack }) => {
     await spawnPatch(page, [{ id: 'adsr', type: 'adsr', position: { x: 200, y: 200 } }]);
 
     // 1. Default: chrome not mounted.
@@ -78,9 +75,7 @@ test.describe('PatchPanel: redesigned menu', () => {
     expect(outLabels).not.toContain('GATE');
   });
 
-  test('Filter drill uses verbose CUTOFF / RESONANCE labels', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('Filter drill uses verbose CUTOFF / RESONANCE labels', async ({ page, rack }) => {
     await spawnPatch(page, [{ id: 'flt', type: 'filter', position: { x: 200, y: 200 } }]);
     await openFrom(page, 'flt', 'left');
     await drill(page, 'flt', 'inputs');
@@ -92,9 +87,7 @@ test.describe('PatchPanel: redesigned menu', () => {
     expect(labels).not.toContain('CUT');
   });
 
-  test('both triggers open the same menu (shared state)', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('both triggers open the same menu (shared state)', async ({ page, rack }) => {
     await spawnPatch(page, [{ id: 'adsr', type: 'adsr', position: { x: 200, y: 200 } }]);
 
     const rightTrigger = page.locator(
@@ -117,11 +110,7 @@ test.describe('PatchPanel: redesigned menu', () => {
     await expect(chrome(page, 'adsr')).toHaveCount(0);
   });
 
-  test('edge-alignment: left trigger anchors menu left; right trigger anchors menu right', async ({
-    page,
-  }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('edge-alignment: left trigger anchors menu left; right trigger anchors menu right', async ({ page, rack }) => {
     await spawnPatch(page, [{ id: 'adsr', type: 'adsr', position: { x: 200, y: 160 } }]);
 
     const cardLoc = page.locator('.svelte-flow__node[data-id="adsr"]');
@@ -148,11 +137,7 @@ test.describe('PatchPanel: redesigned menu', () => {
     expect(menuRight).toBeLessThanOrEqual(cardRight + 1);
   });
 
-  test('cables visually anchor at the affordance corner when the menu is closed', async ({
-    page,
-  }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('cables visually anchor at the affordance corner when the menu is closed', async ({ page, rack }) => {
     await spawnPatch(
       page,
       [
@@ -193,11 +178,7 @@ test.describe('PatchPanel: redesigned menu', () => {
     expect(dy, `closed output handle anchors near trigger y (dy=${dy})`).toBeLessThan(30);
   });
 
-  test('handles for every declared port stay in the card DOM with the menu closed (io-spec parity)', async ({
-    page,
-  }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('handles for every declared port stay in the card DOM with the menu closed (io-spec parity)', async ({ page, rack }) => {
     await spawnPatch(page, [{ id: 'mm', type: 'mixmstrs', position: { x: 200, y: 200 } }]);
     await expect(chrome(page, 'mm')).toHaveCount(0);
     // MIXMSTRS: every declared port materialises a handle regardless of menu

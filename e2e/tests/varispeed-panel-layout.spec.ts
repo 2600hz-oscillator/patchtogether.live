@@ -11,7 +11,7 @@
 //
 // Pure geometry: no video decode / WebGL, so it's fast and CI-renderer-safe.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 const CARDS = [
@@ -20,9 +20,7 @@ const CARDS = [
 ] as const;
 
 for (const c of CARDS) {
-  test(`${c.type} multi-panel fits inside the card (no clip/spill)`, async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test(`${c.type} multi-panel fits inside the card (no clip/spill)`, async ({ page, rack }) => {
     await spawnPatch(page, [
       { id: 'n1', type: c.type, domain: c.domain, position: { x: 140, y: 80 } },
     ]);

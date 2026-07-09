@@ -11,7 +11,8 @@
 //      recreates the topbar's "Load example" patch produces the same
 //      set of nodes + edges as clicking the button.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -96,9 +97,7 @@ test('livecode: spawn → run JS produces named modules with cables', async ({ p
   expect(errors.filter((e) => !e.includes('DEP0040')), errors.join('; ')).toEqual([]);
 });
 
-test('livecode: patch() works direction-agnostically (destination-first)', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('livecode: patch() works direction-agnostically (destination-first)', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'lc', type: 'livecode', position: { x: 100, y: 100 } }]);
 
   // The user typed patch() with the destination first — the runtime
@@ -118,9 +117,7 @@ test('livecode: patch() works direction-agnostically (destination-first)', async
   expect(summary.edges).toContainEqual(['analogVco', 'sine', 'audioOut', 'L']);
 });
 
-test('livecode: runtime error surfaces in status + leaves rack stable', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('livecode: runtime error surfaces in status + leaves rack stable', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'lc', type: 'livecode', position: { x: 100, y: 100 } }]);
 
   const beforeNodeIds = await page.evaluate(() => {
@@ -146,9 +143,7 @@ test('livecode: runtime error surfaces in status + leaves rack stable', async ({
   expect(afterNodeIds).toEqual(beforeNodeIds);
 });
 
-test('livecode: clocked() spawns a clockedRunner with the body + division', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('livecode: clocked() spawns a clockedRunner with the body + division', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'lc', type: 'livecode', position: { x: 100, y: 100 } }]);
 
   await typeAndRun(
@@ -172,9 +167,7 @@ test('livecode: clocked() spawns a clockedRunner with the body + division', asyn
   expect(runner.data?.source).toContain("set('TIMELORDE1', 'bpm', 130)");
 });
 
-test('livecode: setData writes sequencer step array → node.data.steps', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('livecode: setData writes sequencer step array → node.data.steps', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'lc', type: 'livecode', position: { x: 100, y: 100 } }]);
 
   await typeAndRun(
@@ -206,9 +199,7 @@ setData('seq', 'steps', [
   expect((steps[0] as { pitch?: number }).pitch).toBe(60);
 });
 
-test('livecode: state.set persists on owning livecode card across two runs', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('livecode: state.set persists on owning livecode card across two runs', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'lc', type: 'livecode', position: { x: 100, y: 100 } }]);
 
   // Run 1 — initialize counter to 1.
@@ -224,9 +215,7 @@ test('livecode: state.set persists on owning livecode card across two runs', asy
   expect(beat).toBe(2);
 });
 
-test('livecode: editable name label — rename + reject duplicate', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('livecode: editable name label — rename + reject duplicate', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'a', type: 'analogVco', position: { x: 100, y: 100 } },
     { id: 'b', type: 'analogVco', position: { x: 400, y: 100 } },

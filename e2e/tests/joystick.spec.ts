@@ -4,20 +4,11 @@
 // the dot, confirm the CV outputs (pos_x / pos_y) update via the patch
 // store, and that pointer-up snaps back to center.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe('JOYSTICK — XY CV utility', () => {
-  test('spawns + pad mounts + no console errors', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => {
-      if (m.type() === 'error') errors.push(m.text());
-    });
-
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('spawns + pad mounts + no console errors', async ({ page, rack, errorWatch }) => {
     await spawnPatch(page, [
       { id: 'j1', type: 'joystick', position: { x: 200, y: 100 }, domain: 'audio' },
     ]);
@@ -28,13 +19,9 @@ test.describe('JOYSTICK — XY CV utility', () => {
     await expect(page.locator('[data-testid="joystick-readout"]')).toHaveCount(1);
 
     await page.waitForTimeout(80);
-    expect(errors, 'no console / page errors during JOYSTICK render').toEqual([]);
   });
 
-  test('drag updates pos_x + pos_y; pointer-up snaps back', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('drag updates pos_x + pos_y; pointer-up snaps back', async ({ page, rack }) => {
     await spawnPatch(page, [
       { id: 'j1', type: 'joystick', position: { x: 200, y: 100 }, domain: 'audio' },
     ]);

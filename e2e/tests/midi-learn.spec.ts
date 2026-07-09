@@ -19,7 +19,7 @@
 // Runtime-conscious: pure DOM + injected MIDI. No extra WASM, relay, or audio
 // graph beyond the one card each test already spawns.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 import type { Page } from '@playwright/test';
 
@@ -65,13 +65,7 @@ async function injectCc(page: Page, channel: number, cc: number, value: number):
   );
 }
 
-test('MIDI Learn: right-click a knob → learn → CC drives the param + badge shows + tracks', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('MIDI Learn: right-click a knob → learn → CC drives the param + badge shows + tracks', async ({ page, rack, errorWatch }) => {
   // Isolate from any persisted bindings on this dev origin.
   await page.evaluate(() => window.localStorage.removeItem('pt.midi-bindings.v1'));
 
@@ -127,16 +121,9 @@ test('MIDI Learn: right-click a knob → learn → CC drives the param + badge s
   await page.waitForTimeout(50);
   expect(await readParam(page, 'm-wc', 'morph')).toBeCloseTo(0, 2);
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });
 
-test('MIDI Learn: a Fader (CALLSINE · Level) learns + tracks via simulated CC', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('MIDI Learn: a Fader (CALLSINE · Level) learns + tracks via simulated CC', async ({ page, rack, errorWatch }) => {
   await page.evaluate(() => window.localStorage.removeItem('pt.midi-bindings.v1'));
 
   await spawnPatch(
@@ -167,10 +154,9 @@ test('MIDI Learn: a Fader (CALLSINE · Level) learns + tracks via simulated CC',
   await injectCc(page, 0, 7, 100);
   await expect.poll(() => readParam(page, 'm-cs', 'level')).toBeCloseTo(100 / 127, 2);
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });
 
-test('MIDI Learn: the control menu spawns under the cursor (portalled out of the transformed canvas)', async ({ page }) => {
+test('MIDI Learn: the control menu spawns under the cursor (portalled out of the transformed canvas)', async ({ page, rack, errorWatch }) => {
   // Regression: the menu lives inside a SvelteFlow node, and `.svelte-flow__viewport`
   // always has a CSS `transform` (pan/zoom) → it is the containing block for the
   // menu's `position: fixed`. Without portalling the menu to <body>, its
@@ -178,12 +164,7 @@ test('MIDI Learn: the control menu spawns under the cursor (portalled out of the
   // space, so it lands in the wrong spot (and drifts as you pan/zoom). After the
   // portal fix the menu must appear AT the click point regardless of viewport
   // transform.
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
   await page.evaluate(() => window.localStorage.removeItem('pt.midi-bindings.v1'));
 
   await spawnPatch(
@@ -227,5 +208,4 @@ test('MIDI Learn: the control menu spawns under the cursor (portalled out of the
   expect(Math.abs(mb.x - cursorX), `menu x ${mb.x} should ≈ knob-centre x ${cursorX}`).toBeLessThanOrEqual(10);
   expect(Math.abs(mb.y - cursorY), `menu y ${mb.y} should ≈ knob-centre y ${cursorY}`).toBeLessThanOrEqual(10);
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });

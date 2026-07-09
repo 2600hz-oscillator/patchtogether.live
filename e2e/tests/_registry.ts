@@ -107,27 +107,6 @@ const _manifest = loadManifest();
  *  hardcoded MODULES arrays in favour of this. */
 export const REGISTRY: readonly RegistryModule[] = _manifest.modules;
 
-/** Subset helpers — convenience predicates so spec files stay terse.
- *  All return a *new* array each call so callers can mutate without
- *  surprising sibling specs. */
-export function modulesByDomain(domain: 'audio' | 'video' | 'meta'): RegistryModule[] {
-  return REGISTRY.filter((m) => m.domain === domain);
-}
-
-export function audioOutputProducers(): RegistryModule[] {
-  return REGISTRY.filter((m) => m.hasAudioOutput);
-}
-
-export function cvOutputProducers(): RegistryModule[] {
-  return REGISTRY.filter((m) => m.hasCvOutput);
-}
-
-export function videoOutputProducers(): RegistryModule[] {
-  return REGISTRY.filter((m) => m.hasVideoOutput);
-}
-
-/** Look up one module's spec by type. Returns `undefined` if the type
- *  isn't in the manifest (typo in a test fixture). */
-export function moduleByType(type: string): RegistryModule | undefined {
-  return REGISTRY.find((m) => m.type === type);
-}
+// (The former subset helpers — modulesByDomain / audioOutputProducers /
+// cvOutputProducers / videoOutputProducers / moduleByType — were pruned as
+// unreferenced exports in the LoC campaign, row 16. Filter REGISTRY inline.)

@@ -15,24 +15,13 @@
 // produces sound through the real spawn + engine + TIMELORDE clock lock
 // (catches the green-but-silent class).
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 import { readScopePeakOverWindow } from './_module-coverage-helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('KRIA: running pattern clocked by TIMELORDE → VCO+VCA → audible gated RMS (silent until seeded)', async ({
-  page,
-}) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text());
-  });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('KRIA: running pattern clocked by TIMELORDE → VCO+VCA → audible gated RMS (silent until seeded)', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
@@ -114,5 +103,4 @@ test('KRIA: running pattern clocked by TIMELORDE → VCO+VCA → audible gated R
   expect(after.nonzeroSamples, `structured signal, not a glitch`).toBeGreaterThan(50);
   expect(after.rms, `seeding the pattern raised the output`).toBeGreaterThan(before.rms + 0.02);
 
-  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });

@@ -47,7 +47,8 @@
 // GPU-free in scope-draw.test.ts (PCU), so dropping the bit-stable GL check
 // loses no coverage. waitForTimeout count: 0 (was 3).
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { installRenderSmokeHooks, stepAndReadStats, assertRenderStats } from './_render-smoke';
 
@@ -133,11 +134,8 @@ async function setScopeParam(page: Page, nodeId: string, param: string, value: n
 // (E2E_REAL_GPU=1 REPEAT=3 task e2e:one -- scope-video-out), so the attest runs
 // it in the SERIAL bucket (workers=1) instead. See WEBGL_SERIAL_SPECS.
 test.describe('SCOPE.out (mono-video) -> OUTPUT @webgl-serial', () => {
-  test('SCOPE patched into OUTPUT renders a non-black, structured waveform trace', async ({ page }) => {
+  test('SCOPE patched into OUTPUT renders a non-black, structured waveform trace', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     // Pause the engine rAF loop (the test owns the exact frame count) + pin the
     // engine clock BEFORE boot. No __scopeVrtFreeze: drawScope has no clock term.
@@ -211,10 +209,9 @@ test.describe('SCOPE.out (mono-video) -> OUTPUT @webgl-serial', () => {
     // here would flake by construction. The deterministic waveform→trace
     // geometry is covered GPU-free in scope-draw.test.ts instead.
 
-    expect(errors, 'no console / page errors during SCOPE video-out render').toEqual([]);
   });
 
-  test('flipping XY mode changes the video output (PR-69 user-reported bug fix)', async ({ page }) => {
+  test('flipping XY mode changes the video output (PR-69 user-reported bug fix)', async ({ page, errorWatch }) => {
     // User report (verbatim): "when scope is patched to the video output, we
     // just see noise, not the same lines on the scope. we should see the data of
     // the scope as a 2-d mono layer, and it should change as we change the
@@ -232,9 +229,6 @@ test.describe('SCOPE.out (mono-video) -> OUTPUT @webgl-serial', () => {
     // live analyser introduces (the original used a ±2-per-row tolerance for the
     // same reason; preserved here).
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await installRenderSmokeHooks(page);
     await page.goto('/rack');
@@ -297,6 +291,5 @@ test.describe('SCOPE.out (mono-video) -> OUTPUT @webgl-serial', () => {
       `flipping XY mode must change the output (got ${differingRows} differing rows after ${bursts + 1} burst(s))`,
     ).toBeGreaterThan(10);
 
-    expect(errors, 'no console / page errors during SCOPE XY toggle').toEqual([]);
   });
 });

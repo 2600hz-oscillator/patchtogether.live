@@ -39,7 +39,8 @@
 // We also assert the [CLOCKED] badge becomes visible when an edge is
 // patched into clock_in (UI hint that the hold behaviour is active).
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 /** Read the SHAPEGEN factory's regenCount via the engine read API. The
@@ -84,14 +85,7 @@ test.describe('SHAPEGEN — CLOCK gate sample-and-hold', () => {
   // Scoped retries guard without masking regressions in other specs.
   test.describe.configure({ retries: 2 });
 
-  test('rising edges regenerate; within-hold window holds; stopped clock freezes regen count', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('rising edges regenerate; within-hold window holds; stopped clock freezes regen count', async ({ page, rack, errorWatch }) => {
     // ACIDWARP (time-varying) → SHAPEGEN.raster_a.
     // SEQUENCER → SHAPEGEN.clock_in.
     //
@@ -238,6 +232,5 @@ test.describe('SHAPEGEN — CLOCK gate sample-and-hold', () => {
     ).toBe(stopped1);
     expect(stopped3, `still held after another 1.5 s`).toBe(stopped1);
 
-    expect(errors, `no console / page errors during clock-gate flow: ${errors.join(' | ')}`).toEqual([]);
   });
 });

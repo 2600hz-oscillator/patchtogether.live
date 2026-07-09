@@ -12,7 +12,8 @@
 // is the integration smoke proving the new ports are reachable from
 // the patch graph + factory and produce signal at the audio thread.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -50,10 +51,7 @@ async function readScopeBothChannels(page: Page, scopeNodeId: string): Promise<S
   }, scopeNodeId);
 }
 
-test('ADSR: env_inv produces non-zero CV signal that is the unipolar inverse of env', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('ADSR: env_inv produces non-zero CV signal that is the unipolar inverse of env', async ({ page, rack }) => {
   // Sequencer drives a slow envelope cycle so env spends meaningful time
   // both at the attack peak and at rest. We probe env_inv by routing it
   // into a VCA's CV input, then to a scope; if env_inv is alive, the
@@ -105,10 +103,7 @@ test('ADSR: env_inv produces non-zero CV signal that is the unipolar inverse of 
   expect(stats.ch1.nonzero).toBeGreaterThan(50);
 });
 
-test('VCA: audio_inv carries the same envelope-shaped signal as audio, with inverted polarity', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('VCA: audio_inv carries the same envelope-shaped signal as audio, with inverted polarity', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [

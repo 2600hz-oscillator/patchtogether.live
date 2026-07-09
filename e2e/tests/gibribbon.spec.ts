@@ -18,7 +18,8 @@
 // driven via eng.setParam(node, paramTarget, value), the same path a patched
 // cable uses.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch, type SpawnNode, type SpawnEdge } from './_helpers';
 
 test.describe.configure({ mode: 'serial' });
@@ -232,14 +233,12 @@ test('gibribbon: card mounts cleanly + 1024×576 canvas renders the white ribbon
   expect(real).toEqual([]);
 });
 
-test('gibribbon: AUTOPLAY — a bare card (no clock/CV patched) self-plays', async ({ page }) => {
+test('gibribbon: AUTOPLAY — a bare card (no clock/CV patched) self-plays', async ({ page, rack }) => {
   // REGRESSION: a freshly-dropped GibRibbon card used to sit inert — marine
   // running in place, ZERO events — because clockTick only fired on an external
   // clock edge. The internal autoplay clock must drive the game with nothing
   // patched. With no button presses the spawned events MISS → the health ladder
   // degrades from the initial 'healthy', proving the game is actually running.
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
   ]);
@@ -256,15 +255,13 @@ test('gibribbon: AUTOPLAY — a bare card (no clock/CV patched) self-plays', asy
     .toBe(true);
 });
 
-test('gibribbon: AUTOPLAY shows a VARIED, READABLE stream — ≥3 distinct kinds approach in the first ~5s', async ({ page }) => {
+test('gibribbon: AUTOPLAY shows a VARIED, READABLE stream — ≥3 distinct kinds approach in the first ~5s', async ({ page, rack }) => {
   // DROP-AND-PLAY (gap #1) + READABLE LOOKAHEAD (gap #2): a bare card must not
   // just "degrade health" — it must show a varied stream of distinct event
   // kinds the player can READ in the lookahead lane. We accumulate the distinct
   // kinds visible in the lane over the opening seconds and assert ≥3 of the four
   // kinds (loop/jump/imp/zombie) appear, AND that the lane is actually populated
   // (a non-empty readable queue), within ~5s.
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
   ]);
@@ -350,13 +347,11 @@ test('gibribbon: joystick X/Y axes are consumed (no dead ports) — aim engaged,
   expect(errors.filter((e) => !e.includes('AudioContext'))).toEqual([]);
 });
 
-test('gibribbon: GAME OVER overlay + in-card RESTART returns to a fresh healthy game', async ({ page }) => {
+test('gibribbon: GAME OVER overlay + in-card RESTART returns to a fresh healthy game', async ({ page, rack }) => {
   // GAME-OVER + RESTART from the play surface (gap #3/#5): drive the marine to
   // death (autoplay off, three controlled misses), assert the on-canvas GAME
   // OVER overlay appears, then RESTART in-card → health 'healthy', score 0,
   // game live again.
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
   ]);
@@ -390,9 +385,7 @@ test('gibribbon: GAME OVER overlay + in-card RESTART returns to a fresh healthy 
   await expect(overlay).toBeHidden();
 });
 
-test('gibribbon: clock+gate+CV spawns an imp → a correct ABXY press clears it (score up)', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('gibribbon: clock+gate+CV spawns an imp → a correct ABXY press clears it (score up)', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
   ]);
@@ -452,9 +445,7 @@ test('gibribbon: clock+gate+CV spawns an imp → a correct ABXY press clears it 
   expect(await readNum(page, 'g', 'score')).toBeGreaterThan(0);
 });
 
-test('gibribbon: a missed event degrades the marine (health drops below healthy)', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('gibribbon: a missed event degrades the marine (health drops below healthy)', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
   ]);
@@ -486,10 +477,7 @@ test('gibribbon: a missed event degrades the marine (health drops below healthy)
 const GATE_PORTS = ['evt_hit', 'evt_miss', 'evt_fire', 'evt_kill', 'evt_gameover'] as const;
 
 for (const port of GATE_PORTS) {
-  test(`gibribbon: ${port} bridges into scope.ch1 (forcePulse)`, async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test(`gibribbon: ${port} bridges into scope.ch1 (forcePulse)`, async ({ page, rack }) => {
     const scopeId = `scope-${port}`;
     await spawnPatch(
       page,

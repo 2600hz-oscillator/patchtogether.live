@@ -9,17 +9,12 @@
 // connected, seqB.currentStep should have advanced ~4 steps. Without the
 // chain, it would have advanced ~0 steps. Use a healthy margin.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('sequencer-clock: external clock advances slower sequencer at the faster rate', async ({
-  page,
-}) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('sequencer-clock: external clock advances slower sequencer at the faster rate', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
@@ -70,10 +65,7 @@ test('sequencer-clock: external clock advances slower sequencer at the faster ra
   expect(seqBStep, `seqB.currentStep after 600ms should reflect external clock`).toBeGreaterThanOrEqual(3);
 });
 
-test('sequencer-clock: without chain, sequencer uses internal BPM', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('sequencer-clock: without chain, sequencer uses internal BPM', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [

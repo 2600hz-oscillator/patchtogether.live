@@ -29,7 +29,7 @@
 // "aspect-rendering / letterbox math"). This e2e covers the end-to-end
 // path: shader + FBO + VideoOut blit + canvas pixel read.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe('DOOM — aspect / letterbox shape in the 4:3 engine pipeline', () => {
@@ -245,14 +245,12 @@ test.describe('DOOM — aspect / letterbox shape in the 4:3 engine pipeline', ()
     expect(realErrors, `unexpected errors: ${realErrors.join(' | ')}`).toEqual([]);
   });
 
-  test('content band contains non-zero pixels at multiple sample coordinates (DOOM not clipped to nothing)', async ({ page }) => {
+  test('content band contains non-zero pixels at multiple sample coordinates (DOOM not clipped to nothing)', async ({ page, rack }) => {
     // Companion: single-context sanity check that the gameplay band
     // covers MOST of the canvas — sample 5 widely-spread points in the
     // active band and assert at least 3 are non-black. Even a static
     // title (intermission frozen) would satisfy this; a clipped FBO
     // would not.
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
 
     const wasmShim = await page.request.get('/doom/doom.js');
     if (!wasmShim.ok()) { test.skip(true, 'DOOM WASM not built'); return; }

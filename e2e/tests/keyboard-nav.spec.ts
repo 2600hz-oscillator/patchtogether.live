@@ -10,15 +10,12 @@
 //   - Cartesian: Up from a non-top-row gate jumps to the pitch of the cell
 //     directly above (one cell row up, same column).
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('keyboard-nav Sequencer: arrow keys never move caret + jump gate<->pitch', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('keyboard-nav Sequencer: arrow keys never move caret + jump gate<->pitch', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'seq', type: 'sequencer', params: { bpm: 120, length: 8, isPlaying: 0 } },
   ]);
@@ -74,10 +71,7 @@ test('keyboard-nav Sequencer: arrow keys never move caret + jump gate<->pitch', 
   await expect(gate2).toBeFocused();
 });
 
-test('keyboard-nav Sequencer: rapid-add scenario (type, right, type, right, ...)', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('keyboard-nav Sequencer: rapid-add scenario (type, right, type, right, ...)', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'seq', type: 'sequencer', params: { bpm: 120, length: 4, isPlaying: 0 } },
   ]);
@@ -106,10 +100,7 @@ test('keyboard-nav Sequencer: rapid-add scenario (type, right, type, right, ...)
   expect(stored).toEqual([48, 50, 52, 53]);
 });
 
-test('keyboard-nav Cartesian: ArrowUp from row-1 cell pitch hits gate of cell directly above', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('keyboard-nav Cartesian: ArrowUp from row-1 cell pitch hits gate of cell directly above', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'cart', type: 'cartesian', params: { mode: 0 } }]);
 
   // Cell idx 5 (row 1, col 1). Pitch -> Up -> gate of idx 5 -> Up -> pitch
@@ -133,10 +124,7 @@ test('keyboard-nav Cartesian: ArrowUp from row-1 cell pitch hits gate of cell di
   await expect(g1).toBeFocused();
 });
 
-test('keyboard-nav: caret never moves inside the pitch input on arrow keys', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('keyboard-nav: caret never moves inside the pitch input on arrow keys', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'seq', type: 'sequencer', params: { bpm: 120, length: 4, isPlaying: 0 } },
   ]);
@@ -157,10 +145,7 @@ test('keyboard-nav: caret never moves inside the pitch input on arrow keys', asy
   await expect(step0).toHaveValue('a4');
 });
 
-test('keyboard-nav: default value of new sequencer step is c3', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('keyboard-nav: default value of new sequencer step is c3', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'seq', type: 'sequencer', params: { bpm: 120, length: 4, isPlaying: 0 } },
   ]);
@@ -173,10 +158,7 @@ test('keyboard-nav: default value of new sequencer step is c3', async ({ page })
   await expect(step3).toHaveValue('c3');
 });
 
-test('keyboard-nav: default value of new cartesian cell is c3', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('keyboard-nav: default value of new cartesian cell is c3', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'cart', type: 'cartesian', params: { mode: 0 } }]);
 
   for (const i of [0, 5, 15]) {

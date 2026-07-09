@@ -13,7 +13,8 @@
 // and lets us assert "patching gamepad.lx to wavesculpt.pos_x with a
 // stub stick position pushes the wavesculpt's combined pos_x value".
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 /** Inject a fake gamepad into navigator.getGamepads(). Call BEFORE
@@ -89,9 +90,7 @@ test.describe('GAMEPAD module', () => {
     expect(errors.filter((e) => !e.includes('DEP0040')), errors.join('; ')).toEqual([]);
   });
 
-  test('connected state + live values flow into engine.read snapshot', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('connected state + live values flow into engine.read snapshot', async ({ page, rack }) => {
     await installFakeGamepad(page, { axes: [0.6, -0.4, 0, 0] });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
     // Give the rAF poll a few frames to pick up the fake.
@@ -117,9 +116,7 @@ test.describe('GAMEPAD module', () => {
     expect(s.values.ly).toBeGreaterThan(0.3);
   });
 
-  test('LFO-style sweep: updating fake axes moves the engine.readParam(lx) over time', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('LFO-style sweep: updating fake axes moves the engine.readParam(lx) over time', async ({ page, rack }) => {
     await installFakeGamepad(page, { axes: [0, 0, 0, 0] });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
     await page.waitForTimeout(150);
@@ -149,9 +146,7 @@ test.describe('GAMEPAD module', () => {
     expect(stddev, `lx samples should move: ${samples.map((s) => s.toFixed(3)).join(', ')}`).toBeGreaterThan(0.1);
   });
 
-  test('patch GAMEPAD.lx → WAVESCULPT.pos_x; fake stick drives wavesculpt camera', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('patch GAMEPAD.lx → WAVESCULPT.pos_x; fake stick drives wavesculpt camera', async ({ page, rack }) => {
     await installFakeGamepad(page, { axes: [0, 0, 0, 0] });
     await spawnPatch(
       page,
@@ -204,14 +199,12 @@ test.describe('GAMEPAD module', () => {
     ).toBeGreaterThan(0.5);
   });
 
-  test('GAMEPAD stick reaches BOTH extremes of WAVESCULPT.pos_x + moves the on-card joystick dot', async ({ page }) => {
+  test('GAMEPAD stick reaches BOTH extremes of WAVESCULPT.pos_x + moves the on-card joystick dot', async ({ page, rack }) => {
     // Regression: the gamepad-driven camera joystick couldn't reach the
     // stick's extremes and the dot updated horribly slowly (the live-poll
     // was on a setInterval that got starved behind the card's WebGL render;
     // it now rides rAF). Assert (1) the full ±range is reachable via
     // engine.readParam AND (2) the rendered dot tracks to each extreme.
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
     await installFakeGamepad(page, { axes: [0, 0, 0, 0] });
     await spawnPatch(
       page,
@@ -259,13 +252,11 @@ test.describe('GAMEPAD module', () => {
     await expect.poll(dotLeftPx, { timeout: 2000 }).toBeLessThan(22);
   });
 
-  test('calibrate left stick: sweep (simulated) → complete → locked range remaps to full ±1', async ({ page }) => {
+  test('calibrate left stick: sweep (simulated) → complete → locked range remaps to full ±1', async ({ page, rack }) => {
     // The first deliverable: enter calibration MODE, sweep the fake stick
     // through a REDUCED range (a flight stick / worn pad that only reaches
     // ±0.6), complete, and assert that AFTER calibration the same ±0.6 raw
     // deflection now maps to (near) ±1 on lx — i.e. observed-max → full-max.
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
     await installFakeGamepad(page, { axes: [0, 0, 0, 0] });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
     await page.waitForTimeout(150);
@@ -336,9 +327,7 @@ test.describe('GAMEPAD module', () => {
     await expect.poll(readLx, { timeout: 2000 }).toBeCloseTo(0, 1);
   });
 
-  test('clear calibration reverts the left stick to the fixed-deadzone path', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('clear calibration reverts the left stick to the fixed-deadzone path', async ({ page, rack }) => {
     await installFakeGamepad(page, { axes: [0, 0, 0, 0] });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
     await page.waitForTimeout(150);
@@ -389,9 +378,7 @@ test.describe('GAMEPAD module', () => {
     return (eng.readParam(gp, p) as number | undefined) ?? -99;
   }, port);
 
-  test('right-click a button LED → arm → press a DIFFERENT physical button binds the output, and the output now follows it', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('right-click a button LED → arm → press a DIFFERENT physical button binds the output, and the output now follows it', async ({ page, rack }) => {
     // All buttons released at rest (17 zeros) so the armed baseline is clean.
     await installFakeGamepad(page, { buttons: Array(17).fill(0) });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
@@ -429,9 +416,7 @@ test.describe('GAMEPAD module', () => {
     await expect.poll(() => readGp(page, 'a'), { timeout: 2000 }).toBe(0);
   });
 
-  test('"Remap X" under the left stick → move an axis → axis binding persists + output follows', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('"Remap X" under the left stick → move an axis → axis binding persists + output follows', async ({ page, rack }) => {
     await installFakeGamepad(page, { axes: [0, 0, 0, 0] });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
     await page.waitForTimeout(200);
@@ -456,9 +441,7 @@ test.describe('GAMEPAD module', () => {
     await expect.poll(() => readGp(page, 'lx'), { timeout: 2000 }).toBeLessThan(0.2);
   });
 
-  test('Esc cancels an armed remap with no binding written', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('Esc cancels an armed remap with no binding written', async ({ page, rack }) => {
     await installFakeGamepad(page, { buttons: Array(17).fill(0) });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
     await page.waitForTimeout(200);
@@ -476,13 +459,11 @@ test.describe('GAMEPAD module', () => {
     expect(await readBindings(page)).toBeNull();
   });
 
-  test('remap the RIGHT stick after another remap → module KEEPS emitting (regression)', async ({ page }) => {
+  test('remap the RIGHT stick after another remap → module KEEPS emitting (regression)', async ({ page, rack }) => {
     // The shipped bug: the 2nd remap commit threw "reassigning object that
     // already occurs in the tree" out of the card's rAF poll, killing the poll
     // loop so the module went DEAD. Reproduce the user's flow: remap one output,
     // then remap the right-stick X, and assert the module STILL produces output.
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
     await installFakeGamepad(page, { axes: [0, 0, 0, 0], buttons: Array(17).fill(0) });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
     await page.waitForTimeout(200);
@@ -521,9 +502,7 @@ test.describe('GAMEPAD module', () => {
     await expect.poll(() => readGp(page, 'a'), { timeout: 2000 }).toBe(1);
   });
 
-  test('INVERT toggle flips the sign of a stick axis (composes with remap)', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('INVERT toggle flips the sign of a stick axis (composes with remap)', async ({ page, rack }) => {
     await installFakeGamepad(page, { axes: [0, 0, 0, 0] });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
     await page.waitForTimeout(200);
@@ -567,9 +546,7 @@ test.describe('GAMEPAD module', () => {
     await expect.poll(() => readGp(page, 'rx'), { timeout: 2000 }).toBeLessThan(-0.8);
   });
 
-  test('button press shows up as a gate (a-button)', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('button press shows up as a gate (a-button)', async ({ page, rack }) => {
     await installFakeGamepad(page, { buttons: Array(17).fill(0) });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
     await page.waitForTimeout(150);
@@ -598,9 +575,7 @@ test.describe('GAMEPAD module', () => {
   // fake RIGHT stick (axes 2,3) through a REDUCED ±0.6 range, complete, and
   // assert AFTER calibration the same ±0.6 deflection now maps to (near) ±1 on
   // rx, persisting to node.data.rightStickCalibration.
-  test('calibrate RIGHT stick: sweep (simulated) → complete → locked range remaps to full ±1', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('calibrate RIGHT stick: sweep (simulated) → complete → locked range remaps to full ±1', async ({ page, rack }) => {
     await installFakeGamepad(page, { axes: [0, 0, 0, 0] });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
     await page.waitForTimeout(150);
@@ -678,9 +653,7 @@ test.describe('GAMEPAD module', () => {
 
   // ─────────────────────── SAVE / LOAD MAPPING + PRESETS ───────────────────────
 
-  test('save mapping triggers a .json download of the current control config', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('save mapping triggers a .json download of the current control config', async ({ page, rack }) => {
     await installFakeGamepad(page, { axes: [0, 0, 0, 0] });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
     await page.waitForTimeout(150);
@@ -762,9 +735,7 @@ test.describe('GAMEPAD module', () => {
     expect(errors.filter((e) => !e.includes('DEP0040')), errors.join('; ')).toEqual([]);
   });
 
-  test('load mapping from JSON file applies the bindings + survives a 2nd load (rAF alive)', async ({ page }) => {
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
+  test('load mapping from JSON file applies the bindings + survives a 2nd load (rAF alive)', async ({ page, rack }) => {
     await installFakeGamepad(page, { axes: [0, 0, 0, 0], buttons: Array(17).fill(0) });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
     await page.waitForTimeout(200);

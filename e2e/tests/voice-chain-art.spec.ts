@@ -18,7 +18,7 @@
 // metrics under realtime jitter. Regenerate the baseline (e2e/baselines/
 // voice-chain-fingerprint.json) by setting UPDATE_BASELINES=1 in the env.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -89,10 +89,7 @@ function withinTolerance(actual: number, expected: number, tol: number): boolean
   return Math.abs(actual - expected) / Math.abs(expected) <= tol;
 }
 
-test('voice-chain-art: deterministic patch matches fingerprint baseline', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('voice-chain-art: deterministic patch matches fingerprint baseline', async ({ page, rack }) => {
   // Deterministic voice patch — fixed BPM, fixed step pattern, fixed knobs.
   await spawnPatch(
     page,

@@ -21,7 +21,7 @@
 //                          renders it), proving the record-the-viewport use case
 //                          without needing an H.264 encoder.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 import { installRenderSmokeHooks, stepAndReadStats, assertRenderStats } from './_render-smoke';
 
@@ -53,11 +53,8 @@ async function setVideoParam(
 }
 
 test.describe('LOOPBACK (deterministic render smoke)', () => {
-  test('injected frame renders through the loopback pass to a non-black, frame-stable FBO', async ({ page }) => {
+  test('injected frame renders through the loopback pass to a non-black, frame-stable FBO', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await installRenderSmokeHooks(page);
     await installLoopbackTestFrame(page);
@@ -94,14 +91,10 @@ test.describe('LOOPBACK (deterministic render smoke)', () => {
     expect(Math.abs(b.mean - a.mean), `frozen loopback output is frame-stable (mean ${a.mean.toFixed(3)} vs ${b.mean.toFixed(3)})`).toBeLessThan(0.5);
     expect(Math.abs(b.variance - a.variance), 'frozen loopback output variance is frame-stable').toBeLessThan(1.0);
 
-    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 
-  test('crop toggle changes the output: crop-to-viewport differs from whole-tab', async ({ page }) => {
+  test('crop toggle changes the output: crop-to-viewport differs from whole-tab', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await installRenderSmokeHooks(page);
     await installLoopbackTestFrame(page);
@@ -135,7 +128,6 @@ test.describe('LOOPBACK (deterministic render smoke)', () => {
       `crop-to-viewport output differs from whole-tab (full mean ${full.mean.toFixed(2)} vs crop mean ${crop.mean.toFixed(2)})`,
     ).toBeGreaterThan(12);
 
-    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 });
 

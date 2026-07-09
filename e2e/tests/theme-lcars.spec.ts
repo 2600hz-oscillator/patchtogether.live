@@ -21,7 +21,7 @@
 // Dedicated spec (mirrors theme-diner.spec.ts) so the LCARS contract is
 // testable in isolation.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -34,10 +34,7 @@ async function readVar(
   }, name);
 }
 
-test('lcars: selectable from switcher + applies Okudagram palette + shape tokens', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('lcars: selectable from switcher + applies Okudagram palette + shape tokens', async ({ page, rack }) => {
   await page.getByTestId('skin-switcher-trigger').click();
   await expect(page.getByTestId('skin-switcher-popover')).toBeVisible();
   await expect(page.getByTestId('skin-option-lcars')).toBeVisible();
@@ -82,9 +79,7 @@ test('lcars: selectable from switcher + applies Okudagram palette + shape tokens
   expect(stored).toBe('lcars');
 });
 
-test('lcars: choice survives a reload', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('lcars: choice survives a reload', async ({ page, rack }) => {
   await page.getByTestId('skin-switcher-trigger').click();
   await page.getByTestId('skin-option-lcars').click();
   await expect(page.getByTestId('skin-current-id')).toHaveText('lcars');
@@ -96,10 +91,7 @@ test('lcars: choice survives a reload', async ({ page }) => {
   expect(await readVar(page, '--module-radius')).toBe('22px');
 });
 
-test('lcars: switching back to default CLEARS the optional shape tokens', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('lcars: switching back to default CLEARS the optional shape tokens', async ({ page, rack }) => {
   await page.getByTestId('skin-switcher-trigger').click();
   await page.getByTestId('skin-option-lcars').click();
   await expect(page.getByTestId('skin-current-id')).toHaveText('lcars');
@@ -119,11 +111,9 @@ test('lcars: switching back to default CLEARS the optional shape tokens', async 
   expect(await readVar(page, '--font-silkscreen')).toBe('');
 });
 
-test('lcars: switching to LCARS does not disturb the other skins', async ({ page }) => {
+test('lcars: switching to LCARS does not disturb the other skins', async ({ page, rack }) => {
   // Cross-check that activating LCARS then another skin produces that other
   // skin's expected palette — i.e. LCARS's vars don't leak across a switch.
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
 
   await page.getByTestId('skin-switcher-trigger').click();
   await page.getByTestId('skin-option-lcars').click();

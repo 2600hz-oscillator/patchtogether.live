@@ -8,16 +8,13 @@
 // pins the surviving button set so a regression that re-adds (or accidentally
 // drops a survivor) is caught.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { readFileSync } from 'node:fs';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('topbar: removed Save/Load/Save Perf/Load Perf buttons are gone', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('topbar: removed Save/Load/Save Perf/Load Perf buttons are gone', async ({ page, rack }) => {
   const header = page.locator('header');
 
   // REMOVED — manual patch Save/Load (exact, so "Load Perf (.zip)" /
@@ -32,10 +29,7 @@ test('topbar: removed Save/Load/Save Perf/Load Perf buttons are gone', async ({ 
   await expect(page.getByTestId('load-perf-btn')).toHaveCount(0);
 });
 
-test('topbar: Clear + zip Export/Load survivors remain', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('topbar: Clear + zip Export/Load survivors remain', async ({ page, rack }) => {
   const header = page.locator('header');
 
   // SURVIVORS.
@@ -53,10 +47,7 @@ test('topbar: Clear + zip Export/Load survivors remain', async ({ page }) => {
 // "Raw JSON" menu (restored raw-JSON envelope export/import; the convenience
 // the old Save/Load buttons gave). Present in the top-RIGHT actions cluster
 // with exactly two actions.
-test('topbar: Raw JSON menu present with Export/Import JSON options', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('topbar: Raw JSON menu present with Export/Import JSON options', async ({ page, rack }) => {
   const select = page.getByTestId('raw-json-select');
   await expect(select).toBeVisible();
   // The two action options (plus the disabled placeholder).
@@ -67,10 +58,7 @@ test('topbar: Raw JSON menu present with Export/Import JSON options', async ({ p
 // "Export JSON (only)" downloads the patch as a raw JSON envelope (no zip).
 // Drives the REAL menu (selectOption fires the onchange action), captures the
 // download, and asserts the bytes are a valid envelopeVersion=1 envelope.
-test('topbar: Raw JSON → Export JSON downloads a valid envelope', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('topbar: Raw JSON → Export JSON downloads a valid envelope', async ({ page, rack }) => {
   // A minimal patch so the export has content.
   await spawnPatch(
     page,
@@ -100,10 +88,7 @@ test('topbar: Raw JSON → Export JSON downloads a valid envelope', async ({ pag
 // via the menu (feeding the downloaded file into the native picker) restores
 // the exact node/edge set. This exercises the REAL menu wiring end-to-end (the
 // new surface), not just the underlying envelope contract.
-test('topbar: Raw JSON Export → Import round-trips the patch via the menu', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('topbar: Raw JSON Export → Import round-trips the patch via the menu', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [

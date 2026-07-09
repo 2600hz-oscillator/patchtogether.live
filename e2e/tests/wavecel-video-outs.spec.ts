@@ -43,7 +43,8 @@
 // We assert pixel STATISTICS (non-black + spatial structure + RGB content), not
 // pixel-exact content — the module is VRT-exempt and SwiftShader ≠ real GPU.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { installRenderSmokeHooks, stepAndReadStats, assertRenderStats } from './_render-smoke';
 
@@ -99,11 +100,8 @@ async function stepAndReadFrame(
 // (E2E_REAL_GPU=1 REPEAT=3 task e2e:one -- wavecel-video-outs), so the attest
 // runs it in the SERIAL bucket (workers=1) instead. See WEBGL_SERIAL_SPECS.
 test.describe('WAVECEL video outputs (cross-domain bridge) @webgl-serial', () => {
-  test('WAVECEL.scope_out -> OUTPUT renders a structured, frame-stable waveform trace', async ({ page }) => {
+  test('WAVECEL.scope_out -> OUTPUT renders a structured, frame-stable waveform trace', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     // Pin the engine clock + pause the rAF loop BEFORE boot so the test owns the
     // exact frame count and any patched modulator can't drift the frame.
@@ -189,14 +187,10 @@ test.describe('WAVECEL video outputs (cross-domain bridge) @webgl-serial', () =>
     // The SETTLED frame is still a real structured trace (not a settled-black).
     assertRenderStats(last, FIXED_STEPS, { minNonZeroFrac: 0.005, minVariance: 5 });
 
-    expect(errors, 'no console / page errors during WAVECEL scope_out render').toEqual([]);
   });
 
-  test('WAVECEL.wave3d_out -> OUTPUT renders the 3D wavetable view (red-dominant orange content)', async ({ page }) => {
+  test('WAVECEL.wave3d_out -> OUTPUT renders the 3D wavetable view (red-dominant orange content)', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await installRenderSmokeHooks(page);
     await page.goto('/rack');
@@ -258,7 +252,6 @@ test.describe('WAVECEL video outputs (cross-domain bridge) @webgl-serial', () =>
     // variance from the GL upload pipeline + SwiftShader.
     expect(hasOrange || hasWhite, 'orange or white pixels present').toBe(true);
 
-    expect(errors, 'no console / page errors during WAVECEL wave3d_out render').toEqual([]);
   });
 
   // NOTE (consolidation §2): the third test "on-card scope/3D toggle is

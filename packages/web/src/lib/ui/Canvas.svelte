@@ -2576,7 +2576,7 @@
   });
 
   // Living-docs: whether the right-clicked module has AUTHORED docs — gates the
-  // "Annotate" entry. MODULE_DOCS is the committed authored-docs registry.
+  // "Annotate" entry. MODULE_DOCS is the generated authored-docs registry (a build artifact).
   let ctxMenuHasDocs = $derived.by<boolean>(() => {
     void snapshot;
     return !!ctxMenuNodeType && !!MODULE_DOCS[ctxMenuNodeType];

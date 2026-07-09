@@ -21,17 +21,6 @@ export function captureConsole(page: Page): CapturedConsole {
   return out;
 }
 
-/** Read the AudioContext state from the canvas page (available after engine init). */
-export async function readEngineState(page: Page) {
-  return page.evaluate(() => {
-    return {
-      crossOriginIsolated: globalThis.crossOriginIsolated,
-      // Anything else we want to expose for diagnostics:
-      // (the canvas component already shows ctx state in the DOM, this is for raw access)
-    };
-  });
-}
-
 /** Pretty-print a CapturedConsole for AI-readable test output. */
 export function formatConsole(cc: CapturedConsole, opts: { maxLines?: number } = {}): string {
   const max = opts.maxLines ?? 20;

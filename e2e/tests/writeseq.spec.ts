@@ -15,16 +15,13 @@
 //   __writeseqStepAt(id, step)            → WriteseqStep | null
 //   __writeseqSetStep(id, step, {on?,midi?})
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 import { spawnPatch, type SpawnNode, type SpawnEdge } from './_helpers';
 import { readScopeSnapshot, summarize, runFor } from './_module-coverage-helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('writeseq: card renders the step grid + RECORD + OVERDUB buttons', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('writeseq: card renders the step grid + RECORD + OVERDUB buttons', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'ws', type: 'writeseq', params: { isPlaying: 0 } }]);
 
   // 16 cells in the first page of the grid.
@@ -36,16 +33,7 @@ test('writeseq: card renders the step grid + RECORD + OVERDUB buttons', async ({
   await expect(page.getByTestId('writeseq-overdub-ws')).toBeVisible();
 });
 
-test('writeseq: a programmed sequence plays back through a downstream SCOPE', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text());
-  });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('writeseq: a programmed sequence plays back through a downstream SCOPE', async ({ page, rack, errorWatch }) => {
   // WRITESEQ.gate → ADSR.gate → VCA, WRITESEQ.pitch → an oscillator so the
   // SCOPE sees real audio. Simpler: route WRITESEQ.gate into a SCOPE as a CV
   // signal — the sequenced gate is a 0/1 ConstantSource, which the scope reads
@@ -80,19 +68,9 @@ test('writeseq: a programmed sequence plays back through a downstream SCOPE', as
   // The sequenced gate toggles 0↔1 → a non-trivial signal (peak ≈ 1).
   expect(s.peak, `gate-out should be sounding; summary ${JSON.stringify(s)}`).toBeGreaterThan(0.5);
 
-  expect(errors, `page errors: ${errors.join('\n')}`).toEqual([]);
 });
 
-test('writeseq: PASS-THROUGH — a live gate+cv source drives the outputs (stopped, record off)', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text());
-  });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('writeseq: PASS-THROUGH — a live gate+cv source drives the outputs (stopped, record off)', async ({ page, rack, errorWatch }) => {
   // A SEQUENCER provides a steady gate+pitch source. Wire its gate+pitch into
   // WRITESEQ.gate/cv; WRITESEQ is STOPPED + record OFF; its gate-out feeds a
   // SCOPE. Pure pass-through must surface the live gate on the WRITESEQ output.
@@ -138,19 +116,9 @@ test('writeseq: PASS-THROUGH — a live gate+cv source drives the outputs (stopp
   });
   expect(isPlaying).toBe(0);
 
-  expect(errors, `page errors: ${errors.join('\n')}`).toEqual([]);
 });
 
-test('writeseq: armed + internal clock captures live gates onto steps', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text());
-  });
-
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
-
+test('writeseq: armed + internal clock captures live gates onto steps', async ({ page, rack, errorWatch }) => {
   // WRITESEQ on its INTERNAL clock (no clock-in patched) — deterministic
   // recording: the internal pulses are always available, so an armed WRITESEQ
   // records the incoming gates. A SEQUENCER source drives WRITESEQ.gate/cv.
@@ -203,5 +171,4 @@ test('writeseq: armed + internal clock captures live gates onto steps', async ({
   });
   expect(recordedOn, 'at least one step recorded from the live gate').toBeGreaterThanOrEqual(1);
 
-  expect(errors, `page errors: ${errors.join('\n')}`).toEqual([]);
 });

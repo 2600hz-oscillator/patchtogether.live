@@ -10,7 +10,8 @@
 //      samples). We don't try to play a full Tetris from Playwright;
 //      smoke + the load-bearing "CV → game-state" path only.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -70,9 +71,7 @@ test('modtris: drop module → card mounts with no console errors', async ({ pag
   expect(errors.filter((e) => !e.includes('AudioContext'))).toEqual([]);
 });
 
-test('modtris: game-loop ticks (piece spawns + state evolves)', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('modtris: game-loop ticks (piece spawns + state evolves)', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'm', type: 'modtris', position: { x: 200, y: 200 } }]);
 
   // Resume the AudioContext so the analyser taps work. Same flow as PONG's
@@ -96,9 +95,7 @@ test('modtris: game-loop ticks (piece spawns + state evolves)', async ({ page })
   expect(tickAdvanced, `tick did not advance (snap1=${snap1!.tick}, snap2=${snap2!.tick})`).toBe(true);
 });
 
-test('modtris: BUGGLES.clock patched into drop_fast produces game-state evolution', async ({ page }) => {
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
+test('modtris: BUGGLES.clock patched into drop_fast produces game-state evolution', async ({ page, rack }) => {
   // BUGGLES.clock is a real gate source (5 ms pulses at ~2 Hz). Patching
   // it into MODTRIS's drop_fast input should produce hard-drop events,
   // which advance the well + tick counter and may produce locks.

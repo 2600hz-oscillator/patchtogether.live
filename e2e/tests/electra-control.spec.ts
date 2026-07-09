@@ -22,7 +22,8 @@
 // module is a SINGLETON (maxInstances 1) — a second one is blocked, asserted via
 // the real palette (the at-cap def is filtered out).
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch, openModulePalette } from './_helpers';
 
 interface PatchNode {
@@ -142,12 +143,10 @@ test('send a control to a fixed (row, knob) slot → grid renders it, label pers
   await expect(card.locator('[data-testid="electra-control-slot-2-2"]')).toHaveAttribute('data-filled', 'false');
 });
 
-test('SINGLETON: a second ElectraControl is blocked — the palette hides it at the cap', async ({ page }) => {
+test('SINGLETON: a second ElectraControl is blocked — the palette hides it at the cap', async ({ page, rack }) => {
   // Spawn ONE ElectraControl, then drive the REAL palette (right-click pane →
   // search) to prove `maxInstances: 1` blocks a second: the palette entry is
   // filtered out (first-line UI enforcement), and the node count stays at 1.
-  await page.goto('/rack');
-  await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'ec-1', type: 'electraControl', position: { x: 700, y: 60 }, domain: 'meta' },
   ]);

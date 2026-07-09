@@ -22,7 +22,8 @@
 // stats would prove the cards share a render path — the original
 // bug.)
 
-import { test, expect, type Locator, type Page } from '@playwright/test';
+import { test, expect } from './_fixtures';
+import { type Locator, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { visualChecksEnabled } from './_visual-checks';
 
@@ -95,16 +96,7 @@ async function readCanvasStats(canvas: Locator): Promise<PixelStats | null> {
 }
 
 test.describe('video: multi-OUTPUT independent routing', () => {
-  test('LINES->OUT-A and INWARDS->OUT-B render independent content', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => {
-      if (m.type() === 'error') errors.push(m.text());
-    });
-
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-
+  test('LINES->OUT-A and INWARDS->OUT-B render independent content', async ({ page, rack, errorWatch }) => {
     // Two visually-distinct procedural sources, each piped into its
     // own OUTPUT card. LINES = horizontal stripes, INWARDS = radial
     // expanding rings; their pixel stats are easy to distinguish.
@@ -195,22 +187,14 @@ test.describe('video: multi-OUTPUT independent routing', () => {
       await page.screenshot({ path: 'test-results/multi-output-demo.png', fullPage: false });
     }
 
-    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 
-  test('unpatched second OUTPUT shows idle pattern, patched first OUTPUT shows source', async ({ page }) => {
+  test('unpatched second OUTPUT shows idle pattern, patched first OUTPUT shows source', async ({ page, rack, errorWatch }) => {
     // Edge case: only ONE of two OUTPUTs has its input wired. The
     // patched OUTPUT shows its source; the unpatched one shows the
     // OUTPUT shader's idle pattern (not the source either, and not
     // the same content as the patched one).
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => {
-      if (m.type() === 'error') errors.push(m.text());
-    });
 
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
 
     await spawnPatch(
       page,
@@ -259,6 +243,5 @@ test.describe('video: multi-OUTPUT independent routing', () => {
       expect(b.variance, `OUTPUT B idle variance ${b.variance} < A's by >10×`).toBeLessThan(a.variance / 10);
     }
 
-    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 });
