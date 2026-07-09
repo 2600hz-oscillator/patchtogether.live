@@ -2,36 +2,23 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { adsrDef } from '$lib/audio/modules/adsr';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live } = cardParams(adsrDef, () => id, () => node);
 
   let attack  = $derived(node?.params.attack  ?? adsrDef.params[0]!.defaultValue);
   let decay   = $derived(node?.params.decay   ?? adsrDef.params[1]!.defaultValue);
   let sustain = $derived(node?.params.sustain ?? adsrDef.params[2]!.defaultValue);
   let release = $derived(node?.params.release ?? adsrDef.params[3]!.defaultValue);
 
-  const set = (id_: string) => (v: number) => setNodeParam(id, id_, v);
-  const live = (id_: string) => () => { const e = engineCtx.get(); if (!e || !node) return undefined; return e.readParam(node, id_); };
 
-  const inputs: PortDescriptor[] = [
-    { id: 'gate',    cable: 'gate' },
-    { id: 'attack',  cable: 'cv' },
-    { id: 'decay',   cable: 'cv' },
-    { id: 'sustain', cable: 'cv' },
-    { id: 'release', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'env',     cable: 'cv' },
-    { id: 'env_inv', label: 'ENV INV', cable: 'cv' },
-  ];
+  const inputs = portsFromDef(adsrDef.inputs);
+  const outputs = portsFromDef(adsrDef.outputs, { env_inv: 'ENV INV' });
 </script>
 
 <div class="mod-card adsr-card">

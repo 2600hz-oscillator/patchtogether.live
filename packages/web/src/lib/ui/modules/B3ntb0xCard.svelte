@@ -17,7 +17,6 @@
 
   import { onMount, onDestroy } from 'svelte';
   import { Handle, Position, useStore, type NodeProps } from '@xyflow/svelte';
-  import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
   import { setNodeParam, mutateNode } from '$lib/graph/mutate';
   import { startCornerResize } from './card-resize';
@@ -27,7 +26,6 @@
   import VideoCanvasContextMenu from './VideoCanvasContextMenu.svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
@@ -35,10 +33,11 @@
   import { fullscreenCanvasDims } from './fullscreen-canvas-dims';
   import { liveEngineAspect } from './video-card-aspect';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live, engineCtx } = cardParams(b3ntb0xDef, () => id, () => node);
   const flowStore = useStore();
 
   // ---------------- Resize (mirror BentboxCard) ----------------
@@ -229,11 +228,6 @@
   // ---------------- Knob plumbing ----------------
   const defaultFor = (key: string): number =>
     b3ntb0xDef.params.find((p) => p.id === key)!.defaultValue;
-  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
-  const live = (k: string) => () => {
-    const e = engineCtx.get(); if (!e || !node) return undefined;
-    return e.readParam(node, k);
-  };
 
   let enhance      = $derived(node?.params.enhance      ?? defaultFor('enhance'));
   let bias         = $derived(node?.params.bias         ?? defaultFor('bias'));
@@ -265,30 +259,14 @@
 
   // PatchPanel MUST list EVERY declared input + output id so handle-presence
   // passes (io-spec-consistency + per-module-per-port).
-  const inputs: PortDescriptor[] = [
-    { id: 'in',              label: 'IN',    cable: 'video' },
-    { id: 'enhance_cv',      label: 'ENH',   cable: 'cv' },
-    { id: 'bias_cv',         label: 'BIAS',  cable: 'cv' },
-    { id: 'ac_dc_cv',        label: 'AC',    cable: 'cv' },
-    { id: 'sync_crush_cv',   label: 'CRSH',  cable: 'cv' },
-    { id: 'burst_starve_cv', label: 'BRST',  cable: 'cv' },
-    { id: 'chroma_leak_cv',  label: 'CHRM',  cable: 'cv' },
-    { id: 'luma_peak_cv',    label: 'LUMA',  cable: 'cv' },
-    { id: 'bend_a_cv',       label: 'BNDA',  cable: 'cv' },
-    { id: 'bend_b_cv',       label: 'BNDB',  cable: 'cv' },
-    { id: 'bend_c_cv',       label: 'BNDC',  cable: 'cv' },
-    { id: 'bend_d_cv',       label: 'BNDD',  cable: 'cv' },
-    { id: 'feedback_cv',     label: 'FBK',   cable: 'cv' },
-    { id: 'tbc_cv',          label: 'TBC',   cable: 'cv' },
-    { id: 'tube_bloom_cv',   label: 'BLM',   cable: 'cv' },
-    { id: 'overscan_cv',     label: 'OVSC',  cable: 'cv' },
-    { id: 'barrel_cv',       label: 'BARL',  cable: 'cv' },
-    { id: 'mirror_x_gate',   label: 'MIRX',  cable: 'cv' },
-    { id: 'mirror_y_gate',   label: 'MIRY',  cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'out', label: 'OUT', cable: 'video' },
-  ];
+  const inputs = portsFromDef(b3ntb0xDef.inputs, {
+    enhance_cv: 'ENH', bias_cv: 'BIAS', ac_dc_cv: 'AC', sync_crush_cv: 'CRSH',
+    burst_starve_cv: 'BRST', chroma_leak_cv: 'CHRM', luma_peak_cv: 'LUMA', bend_a_cv: 'BNDA',
+    bend_b_cv: 'BNDB', bend_c_cv: 'BNDC', bend_d_cv: 'BNDD', feedback_cv: 'FBK',
+    tbc_cv: 'TBC', tube_bloom_cv: 'BLM', overscan_cv: 'OVSC', barrel_cv: 'BARL',
+    mirror_x_gate: 'MIRX', mirror_y_gate: 'MIRY',
+  });
+  const outputs = portsFromDef(b3ntb0xDef.outputs);
 </script>
 
 <div

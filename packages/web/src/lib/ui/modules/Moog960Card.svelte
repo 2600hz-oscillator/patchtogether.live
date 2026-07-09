@@ -19,6 +19,7 @@
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import MoogPanel from './moog/MoogPanel.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -82,11 +83,7 @@
   // gates — matching the hardware's front-panel jacks.
 
   // Inputs (left): clock + start/stop gates. Outputs (right): 3 row CV + clock.
-  const inputs: PortDescriptor[] = [
-    { id: 'clock', label: 'CLOCK', cable: 'gate' },
-    { id: 'start', label: 'START', cable: 'gate' },
-    { id: 'stop', label: 'STOP', cable: 'gate' },
-  ];
+  const inputs = portsFromDef(moog960Def.inputs);
   const outputs: PortDescriptor[] = [
     { id: 'row1', label: 'ROW 1', cable: 'cv' },
     { id: 'row2', label: 'ROW 2', cable: 'cv' },

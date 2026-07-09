@@ -9,12 +9,12 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { scalerDef } from '$lib/audio/modules/scaler';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -36,11 +36,11 @@
     };
   }
 
-  const inputs: PortDescriptor[] = [{ id: 'in', label: 'IN', cable: 'audio' }];
-  const outputs: PortDescriptor[] = [{ id: 'out', label: 'OUT', cable: 'audio' }];
+  const inputs = portsFromDef(scalerDef.inputs);
+  const outputs = portsFromDef(scalerDef.outputs);
 </script>
 
-<div class="card audio" data-testid="scaler-card">
+<div class="vcard card audio" data-testid="scaler-card">
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="SCALER" />
 
@@ -71,26 +71,8 @@
   .card {
     width: 160px;
     min-height: 150px;
-    background: var(--module-bg);
-    border: 1px solid var(--border);
-    border-radius: 2px;
-    color: var(--text);
-    padding-top: 18px;
-    padding-bottom: 14px;
-    position: relative;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
-  }
-  :global(.svelte-flow__node:hover) .card { border-color: var(--accent-dim); }
-  :global(.svelte-flow__node.selected) .card {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
   }
   .stripe {
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 2px;
-    border-radius: 2px 2px 0 0;
     background: var(--cable-audio);
   }
   .body {

@@ -11,13 +11,13 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import { moog921VcoDef } from '$lib/audio/modules/moog921-vco';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import MoogPanel from './moog/MoogPanel.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -57,22 +57,11 @@
     if (target) target.params.sync = v;
   }
 
-  const inputs: PortDescriptor[] = [
-    { id: 'pitch',       cable: 'pitch' },
-    { id: 'lin_fm',      label: 'LIN FM', cable: 'audio' },
-    { id: 'sync',        cable: 'audio' },
-    { id: 'width_cv',    label: 'WIDTH',  cable: 'cv' },
-    { id: 'octave',      label: 'RANGE',  cable: 'cv' },
-    { id: 'tune',        label: 'FREQ',   cable: 'cv' },
-    { id: 'linFmAmount', label: 'FM AMT', cable: 'cv' },
-    { id: 'level',       cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'sine',        cable: 'audio' },
-    { id: 'triangle',    cable: 'audio' },
-    { id: 'sawtooth',    cable: 'audio' },
-    { id: 'rectangular', cable: 'audio' },
-  ];
+  const inputs = portsFromDef(moog921VcoDef.inputs, {
+    lin_fm: 'LIN FM', width_cv: 'WIDTH', octave: 'RANGE', tune: 'FREQ',
+    linFmAmount: 'FM AMT',
+  });
+  const outputs = portsFromDef(moog921VcoDef.outputs);
 </script>
 
 <MoogPanel {id} {data} defaultLabel="921 VCO" width={252}>

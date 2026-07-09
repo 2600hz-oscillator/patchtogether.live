@@ -5,36 +5,21 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { analogLogicMathsDef } from '$lib/audio/modules/analog-logic-maths';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live } = cardParams(analogLogicMathsDef, () => id, () => node);
 
   let attA = $derived(node?.params.attA ?? analogLogicMathsDef.params[0]!.defaultValue);
   let attB = $derived(node?.params.attB ?? analogLogicMathsDef.params[1]!.defaultValue);
 
-  const set = (id_: string) => (v: number) => setNodeParam(id, id_, v);
-  const live = (id_: string) => () => { const e = engineCtx.get(); if (!e || !node) return undefined; return e.readParam(node, id_); };
 
-  const inputs: PortDescriptor[] = [
-    { id: 'a',       cable: 'cv' },
-    { id: 'b',       cable: 'cv' },
-    { id: 'attA_cv', cable: 'cv' },
-    { id: 'attB_cv', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'min',     label: 'MIN',  cable: 'cv' },
-    { id: 'max',     label: 'MAX',  cable: 'cv' },
-    { id: 'diff',    label: 'DIFF', cable: 'cv' },
-    { id: 'sum',     label: 'SUM',  cable: 'cv' },
-    { id: 'product', label: 'PROD', cable: 'cv' },
-  ];
+  const inputs = portsFromDef(analogLogicMathsDef.inputs);
+  const outputs = portsFromDef(analogLogicMathsDef.outputs, { product: 'PROD' });
 </script>
 
 <div class="mod-card alm-card">

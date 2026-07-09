@@ -9,12 +9,12 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { moog903aDef } from '$lib/audio/modules/moog903a';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import MoogPanel from './moog/MoogPanel.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -39,11 +39,8 @@
   }
 
   // No inputs (pure source). Two independent noise outputs.
-  const inputs: PortDescriptor[] = [];
-  const outputs: PortDescriptor[] = [
-    { id: 'white', label: 'WHITE', cable: 'audio' },
-    { id: 'pink',  label: 'PINK',  cable: 'audio' },
-  ];
+  const inputs = portsFromDef(moog903aDef.inputs);
+  const outputs = portsFromDef(moog903aDef.outputs);
 </script>
 
 <MoogPanel {id} {data} defaultLabel="903A Noise" width={180}>

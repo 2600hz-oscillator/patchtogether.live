@@ -12,6 +12,7 @@
   import { ringbackDef } from '$lib/audio/modules/ringback';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -33,10 +34,7 @@
     { id: 'feedback', label: 'FB CV',   cable: 'cv' },
     { id: 'mix',      label: 'MIX CV',  cable: 'cv' },
   ];
-  const outputs: PortDescriptor[] = [
-    { id: 'out_l', label: 'L OUT', cable: 'audio' },
-    { id: 'out_r', label: 'R OUT', cable: 'audio' },
-  ];
+  const outputs = portsFromDef(ringbackDef.outputs, { out_l: 'L OUT', out_r: 'R OUT' });
 </script>
 
 <div class="mod-card ringback-card" data-testid="ringback-card">

@@ -10,7 +10,6 @@
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch, ydoc } from '$lib/graph/store';
   import { nodeVersion } from '$lib/graph/node-versions.svelte';
-  import { setNodeParam } from '$lib/graph/mutate';
   import {
     drumseqzDef,
     defaultTracks,
@@ -24,7 +23,6 @@
   } from '$lib/audio/modules/drumseqz';
   import SequencerPageNav from '$lib/ui/modules/SequencerPageNav.svelte';
   import { visiblePageFor, pageRange } from '$lib/audio/modules/sequencer-pages';
-  import { useEngine } from '$lib/audio/engine-context';
   import { parseNoteName, noteNameForMidi, C3_MIDI } from '$lib/audio/note-entry';
   import { resolveArrowNav, type ArrowKey } from '$lib/audio/grid-nav';
   import { testHooksEnabled } from '$lib/dev/test-hooks';
@@ -41,10 +39,11 @@
   } from '$lib/audio/modules/transport-card';
   import type { PendingMode, SlotKey, Snapshot } from '$lib/audio/modules/transport-helpers';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live, engineCtx } = cardParams(drumseqzDef, () => id, () => node);
 
   // Node-scoped re-derive (phase-2 CC perf fix): subscribe to THIS node's
   // version from the shared registry (nodes.observeDeep) instead of a
@@ -71,16 +70,10 @@
     return typeof v === 'number' ? v : fallback;
   }
 
-  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
 
   function togglePlay() {
     set('isPlaying')(isPlaying ? 0 : 1);
   }
-  const live = (k: string) => () => {
-    const e = engineCtx.get();
-    if (!e || !node) return undefined;
-    return e.readParam(node, k);
-  };
 
   let currentStep = $state(0);
   // Per-user view state. NOT persisted via Y.Doc — two peers in the same rack
@@ -317,15 +310,11 @@
     if (wasPlaying) requestAnimationFrame(() => set('isPlaying')(1));
   }
 
-  const inputs: PortDescriptor[] = [
-    { id: 'clock', label: 'CLOCK IN', cable: 'gate' },
-    { id: 'play_cv',   label: 'PLAY GATE',     cable: 'gate' },
-    { id: 'reset_cv',  label: 'RESET GATE',    cable: 'gate' },
-    { id: 'queue1_cv', label: 'PLAY QUEUE 1',  cable: 'gate' },
-    { id: 'queue2_cv', label: 'PLAY QUEUE 2',  cable: 'gate' },
-    { id: 'queue3_cv', label: 'PLAY QUEUE 3',  cable: 'gate' },
-    { id: 'queue4_cv', label: 'PLAY QUEUE 4',  cable: 'gate' },
-  ];
+  const inputs = portsFromDef(drumseqzDef.inputs, {
+    clock: 'CLOCK IN', play_cv: 'PLAY GATE', reset_cv: 'RESET GATE',
+    queue1_cv: 'PLAY QUEUE 1', queue2_cv: 'PLAY QUEUE 2', queue3_cv: 'PLAY QUEUE 3',
+    queue4_cv: 'PLAY QUEUE 4',
+  });
   const outputs: PortDescriptor[] = [
     ...Array.from({ length: TRACK_COUNT }, (_, t) => ({
       id: `gate${t + 1}`,

@@ -3,7 +3,6 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import { audioOutDef } from '$lib/audio/modules/audio-out';
@@ -16,6 +15,7 @@
   import type { ModuleNode } from '$lib/graph/types';
   import type { AudioEngine } from '$lib/audio/engine';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -168,13 +168,10 @@
     }
   });
 
-  const inputs: PortDescriptor[] = [
-    { id: 'L', cable: 'audio' },
-    { id: 'R', cable: 'audio' },
-  ];
+  const inputs = portsFromDef(audioOutDef.inputs);
 </script>
 
-<div class="card">
+<div class="vcard card">
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="Audio Out" />
 
@@ -238,29 +235,12 @@
     min-height: 180px;
     background-color: #000;
     background-image: linear-gradient(var(--module-bg), var(--module-bg));
-    border: 1px solid var(--border);
-    border-radius: 2px;
-    color: var(--text);
     /* Rack-compaction (#759): tightened 18/14 → 10/9 to fit the 1u tier. */
     padding-top: 10px;
     padding-bottom: 9px;
-    position: relative;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
     isolation: isolate;
   }
-  :global(.svelte-flow__node:hover) .card {
-    border-color: var(--accent-dim);
-  }
-  :global(.svelte-flow__node.selected) .card {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
-  }
   .stripe {
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 2px;
-    border-radius: 2px 2px 0 0;
     background: var(--text-dim);
   }
   .device-area {

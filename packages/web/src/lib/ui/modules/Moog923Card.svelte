@@ -12,12 +12,12 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { moog923Def } from '$lib/audio/modules/moog923';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import MoogPanel from './moog/MoogPanel.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -44,16 +44,9 @@
   }
 
   // One audio input (the signal fed into the LP + HP filter section).
-  const inputs: PortDescriptor[] = [
-    { id: 'audio', label: 'AUDIO IN', cable: 'audio' },
-  ];
+  const inputs = portsFromDef(moog923Def.inputs, { audio: 'AUDIO IN' });
   // Two noise outputs + the two filtered outputs.
-  const outputs: PortDescriptor[] = [
-    { id: 'white', label: 'WHITE', cable: 'audio' },
-    { id: 'pink',  label: 'PINK',  cable: 'audio' },
-    { id: 'lp',    label: 'LP',    cable: 'audio' },
-    { id: 'hp',    label: 'HP',    cable: 'audio' },
-  ];
+  const outputs = portsFromDef(moog923Def.outputs);
 </script>
 
 <MoogPanel {id} {data} defaultLabel="923 Filt/Noise" width={220}>

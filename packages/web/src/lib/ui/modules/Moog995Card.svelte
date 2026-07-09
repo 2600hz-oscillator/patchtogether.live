@@ -10,12 +10,12 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { moog995Def } from '$lib/audio/modules/moog995';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import MoogPanel from './moog/MoogPanel.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -41,16 +41,8 @@
     };
   }
 
-  const inputs: PortDescriptor[] = [
-    { id: 'in1', label: 'IN 1', cable: 'audio' },
-    { id: 'in2', label: 'IN 2', cable: 'audio' },
-    { id: 'in3', label: 'IN 3', cable: 'audio' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'out1', label: 'OUT 1', cable: 'audio' },
-    { id: 'out2', label: 'OUT 2', cable: 'audio' },
-    { id: 'out3', label: 'OUT 3', cable: 'audio' },
-  ];
+  const inputs = portsFromDef(moog995Def.inputs, { in1: 'IN 1', in2: 'IN 2', in3: 'IN 3' });
+  const outputs = portsFromDef(moog995Def.outputs, { out1: 'OUT 1', out2: 'OUT 2', out3: 'OUT 3' });
 </script>
 
 <MoogPanel {id} {data} defaultLabel="995 Atten" width={200}>

@@ -14,28 +14,18 @@
   import { onMount, onDestroy } from 'svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { nibblesDef, type NibblesHandleExtras } from '$lib/video/modules/nibbles';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
 
-  function defaultFor(k: string): number {
-    return nibblesDef.params.find((p) => p.id === k)?.defaultValue ?? 0;
-  }
-  function paramVal(k: string): number {
-    const v = node?.params?.[k];
-    return typeof v === 'number' ? v : defaultFor(k);
-  }
-  const set = (k: string) => (v: number) => {
-    setNodeParam(id, k, v);
-  };
+  const { defaultFor, paramVal, set } = cardParams(nibblesDef, () => id, () => node);
 
   // ---------- Card surface ----------
   let cardEl: HTMLDivElement | null = $state(null);
@@ -120,15 +110,7 @@
   let screenW = $derived(320 * scale);
   let screenH = $derived(200 * scale);
 
-  const outputs: PortDescriptor[] = [
-    { id: 'out',        label: 'OUT',    cable: 'video' },
-    { id: 'pellet',     label: 'PELLET', cable: 'gate' },
-    { id: 'death',      label: 'DEATH',  cable: 'gate' },
-    { id: 'dir_change', label: 'DIR',    cable: 'gate' },
-    { id: 'length_cv',  label: 'LENGTH', cable: 'cv' },
-    { id: 'snake',      label: 'SNAKE',  cable: 'audio' },
-    { id: 'gated',      label: 'GATED',  cable: 'audio' },
-  ];
+  const outputs = portsFromDef(nibblesDef.outputs, { dir_change: 'DIR', length_cv: 'LENGTH' });
 </script>
 
 <div

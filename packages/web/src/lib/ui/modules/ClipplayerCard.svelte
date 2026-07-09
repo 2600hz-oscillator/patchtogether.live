@@ -76,6 +76,7 @@
     boundClipNode,
     bindingRune,
   } from '$lib/control/monome/monome-control.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -489,7 +490,7 @@
     view === 'edit' && lanePlaying(dataObj(), editLane) === editSlot ? curStep : -1,
   );
 
-  const inputs: PortDescriptor[] = [{ id: 'stop_all', label: 'STOP ALL', cable: 'gate' }];
+  const inputs = portsFromDef(clipplayerDef.inputs, { stop_all: 'STOP ALL' });
   const outputs: PortDescriptor[] = Array.from({ length: CLIP_LANES }, (_, i) => [
     { id: `pitch${i + 1}`, label: `PITCH ${i + 1}`, cable: 'polyPitchGate' },
     { id: `gate${i + 1}`, label: `GATE ${i + 1}`, cable: 'gate' },

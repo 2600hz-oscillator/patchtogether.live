@@ -11,12 +11,12 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { moog993Def } from '$lib/audio/modules/moog993';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import MoogPanel from './moog/MoogPanel.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -42,19 +42,13 @@
     };
   }
 
-  const inputs: PortDescriptor[] = [
-    { id: 'trig_from1', label: 'TRIG 1', cable: 'gate' },
-    { id: 'trig_from2', label: 'TRIG 2', cable: 'gate' },
-    { id: 'env_in1',    label: 'ENV 1',  cable: 'cv' },
-    { id: 'env_in2',    label: 'ENV 2',  cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'trig_out1', label: 'OUT 1', cable: 'gate' },
-    { id: 'trig_out2', label: 'OUT 2', cable: 'gate' },
-    { id: 'trig_out3', label: 'OUT 3', cable: 'gate' },
-    { id: 'env_out1',  label: 'ENV 1', cable: 'cv' },
-    { id: 'env_out2',  label: 'ENV 2', cable: 'cv' },
-  ];
+  const inputs = portsFromDef(moog993Def.inputs, {
+    trig_from1: 'TRIG 1', trig_from2: 'TRIG 2', env_in1: 'ENV 1', env_in2: 'ENV 2',
+  });
+  const outputs = portsFromDef(moog993Def.outputs, {
+    trig_out1: 'OUT 1', trig_out2: 'OUT 2', trig_out3: 'OUT 3', env_out1: 'ENV 1',
+    env_out2: 'ENV 2',
+  });
 </script>
 
 <MoogPanel {id} {data} defaultLabel="993 Trig" width={220}>

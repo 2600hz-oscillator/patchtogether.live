@@ -2,36 +2,21 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { vcaDef } from '$lib/audio/modules/vca';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live } = cardParams(vcaDef, () => id, () => node);
 
   let base = $derived(node?.params.base ?? vcaDef.params[0]!.defaultValue);
   let cvAmount = $derived(node?.params.cvAmount ?? vcaDef.params[1]!.defaultValue);
 
-  const set = (id_: string) => (v: number) => {
-    setNodeParam(id, id_, v);
-  };
-  const live = (id_: string) => () => {
-    const e = engineCtx.get(); if (!e || !node) return undefined;
-    return e.readParam(node, id_);
-  };
 
-  const inputs: PortDescriptor[] = [
-    { id: 'audio', cable: 'audio' },
-    { id: 'cv',    cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'audio',     cable: 'audio' },
-    { id: 'audio_inv', label: 'AUDIO INV', cable: 'audio' },
-  ];
+  const inputs = portsFromDef(vcaDef.inputs);
+  const outputs = portsFromDef(vcaDef.outputs, { audio_inv: 'AUDIO INV' });
 </script>
 
 <div class="mod-card vca-card">

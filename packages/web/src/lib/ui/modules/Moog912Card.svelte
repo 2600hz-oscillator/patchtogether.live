@@ -11,12 +11,12 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { moog912Def } from '$lib/audio/modules/moog912';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import MoogPanel from './moog/MoogPanel.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -42,13 +42,8 @@
   }
 
   // One AUDIO input (left); env (CV) + gate outputs (right). No audio out.
-  const inputs: PortDescriptor[] = [
-    { id: 'audio', label: 'In', cable: 'audio' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'env', label: 'Env', cable: 'cv' },
-    { id: 'gate', label: 'Gate', cable: 'gate' },
-  ];
+  const inputs = portsFromDef(moog912Def.inputs, { audio: 'In' });
+  const outputs = portsFromDef(moog912Def.outputs, { env: 'Env' });
 </script>
 
 <MoogPanel {id} {data} defaultLabel="912 Env Follow" width={200}>

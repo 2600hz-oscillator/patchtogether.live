@@ -11,24 +11,19 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { froggerDef, drawFrogger, type FroggerState } from '$lib/audio/modules/frogger';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import { portsFromDef } from './card-kit';
 
-  const inputs: PortDescriptor[] = [
-    { id: 'up_gate',    label: 'UP (GATE)',    cable: 'gate' },
-    { id: 'down_gate',  label: 'DOWN (GATE)',  cable: 'gate' },
-    { id: 'left_gate',  label: 'LEFT (GATE)',  cable: 'gate' },
-    { id: 'right_gate', label: 'RIGHT (GATE)', cable: 'gate' },
-    { id: 'start_gate', label: 'START (GATE)', cable: 'gate' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'home_gate',  label: 'HOME (GATE)',  cable: 'gate' },
-    { id: 'dead_gate',  label: 'DEAD (GATE)',  cable: 'gate' },
-    { id: 'level_gate', label: 'LVL (GATE)',   cable: 'gate' },
-  ];
+  const inputs = portsFromDef(froggerDef.inputs, {
+    up_gate: 'UP (GATE)', down_gate: 'DOWN (GATE)', left_gate: 'LEFT (GATE)',
+    right_gate: 'RIGHT (GATE)', start_gate: 'START (GATE)',
+  });
+  const outputs = portsFromDef(froggerDef.outputs, {
+    home_gate: 'HOME (GATE)', dead_gate: 'DEAD (GATE)', level_gate: 'LVL (GATE)',
+  });
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);

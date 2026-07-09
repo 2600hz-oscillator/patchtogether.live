@@ -20,7 +20,6 @@
   import { type NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
   import { setNodeParam, mutateNode } from '$lib/graph/mutate';
   import {
@@ -51,6 +50,7 @@
   import { VIDEO_RES } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -505,15 +505,10 @@
   let isEmpty = $derived(modelPlainText(model).trim().length === 0);
 
   // ── Ports — all via the yellow drill-down PatchPanel (no raw side jacks) ──
-  const inputs: PortDescriptor[] = [
-    { id: 'scrollX', label: 'SCRLX', cable: 'cv' },
-    { id: 'scrollY', label: 'SCRLY', cable: 'cv' },
-    { id: 'posX',    label: 'POSX',  cable: 'cv' },
-    { id: 'posY',    label: 'POSY',  cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'out', label: 'OUT', cable: 'video' },
-  ];
+  const inputs = portsFromDef(textmarqueeDef.inputs, {
+    scrollX: 'SCRLX', scrollY: 'SCRLY', posX: 'POSX', posY: 'POSY',
+  });
+  const outputs = portsFromDef(textmarqueeDef.outputs);
 </script>
 
 <div class="mod-card textmarquee-card" data-testid="textmarquee-card">

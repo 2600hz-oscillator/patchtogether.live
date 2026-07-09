@@ -19,17 +19,15 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { sidecarDef } from '$lib/audio/modules/sidecar';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import OssAttribution from './OssAttribution.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live } = cardParams(sidecarDef, () => id, () => node);
 
   // Build a defaults map by id so we don't depend on the param order in
   // the def array (defensive against future re-ordering).
@@ -47,29 +45,14 @@
   let makeup    = $derived(node?.params.makeup     ?? defaults.makeup);
   let scHpf     = $derived(node?.params.sc_hpf     ?? defaults.sc_hpf);
 
-  const set = (id_: string) => (v: number) => {
-    setNodeParam(id, id_, v);
-  };
-  const live = (id_: string) => () => {
-    const e = engineCtx.get(); if (!e || !node) return undefined;
-    return e.readParam(node, id_);
-  };
 
-  const inputs: PortDescriptor[] = [
-    { id: 'audio_l_in',   label: 'AUD L',  cable: 'audio' },
-    { id: 'audio_r_in',   label: 'AUD R',  cable: 'audio' },
-    { id: 'sc_l_in',      label: 'SC L',   cable: 'audio' },
-    { id: 'sc_r_in',      label: 'SC R',   cable: 'audio' },
-    { id: 'threshold_cv',   label: 'THR CV', cable: 'cv' },
-    { id: 'env_mag_cv',     label: 'MAG CV', cable: 'cv' },
-    { id: 'input_level_cv', label: 'LVL CV', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'audio_l_out', label: 'OUT L',   cable: 'audio' },
-    { id: 'audio_r_out', label: 'OUT R',   cable: 'audio' },
-    { id: 'env_out',     label: 'ENV',     cable: 'cv' },
-    { id: 'env_inv_out', label: 'ENV INV', cable: 'cv' },
-  ];
+  const inputs = portsFromDef(sidecarDef.inputs, {
+    audio_l_in: 'AUD L', audio_r_in: 'AUD R', sc_l_in: 'SC L', sc_r_in: 'SC R',
+    threshold_cv: 'THR CV', env_mag_cv: 'MAG CV', input_level_cv: 'LVL CV',
+  });
+  const outputs = portsFromDef(sidecarDef.outputs, {
+    audio_l_out: 'OUT L', audio_r_out: 'OUT R', env_out: 'ENV', env_inv_out: 'ENV INV',
+  });
 </script>
 
 <div class="mod-card sidecar-card">

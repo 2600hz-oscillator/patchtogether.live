@@ -2,41 +2,23 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { meowboxDef } from '$lib/audio/modules/meowbox';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live } = cardParams(meowboxDef, () => id, () => node);
 
   let pitch = $derived(node?.params.pitch ?? meowboxDef.params[0]!.defaultValue);
   let morph = $derived(node?.params.morph ?? meowboxDef.params[1]!.defaultValue);
   let decay = $derived(node?.params.decay ?? meowboxDef.params[2]!.defaultValue);
   let level = $derived(node?.params.level ?? meowboxDef.params[3]!.defaultValue);
 
-  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
-  const live = (k: string) => () => {
-    const e = engineCtx.get(); if (!e || !node) return undefined;
-    return e.readParam(node, k);
-  };
 
-  const inputs: PortDescriptor[] = [
-    { id: 'gate',  cable: 'gate' },
-    // pitch is now a true 1V/oct audio-rate input (matches sequencer/score
-    // pitch outputs). Schema v2; see meowbox.ts.
-    { id: 'pitch', cable: 'pitch' },
-    { id: 'morph', cable: 'cv' },
-    { id: 'decay', cable: 'cv' },
-    { id: 'level', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'L', cable: 'audio' },
-    { id: 'R', cable: 'audio' },
-  ];
+  const inputs = portsFromDef(meowboxDef.inputs);
+  const outputs = portsFromDef(meowboxDef.outputs);
 </script>
 
 <div class="mod-card meowbox-card">

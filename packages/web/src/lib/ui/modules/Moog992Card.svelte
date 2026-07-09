@@ -10,12 +10,12 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { moog992Def } from '$lib/audio/modules/moog992';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import MoogPanel from './moog/MoogPanel.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -43,15 +43,10 @@
   }
 
   // Four CV inputs (left); single summed CV output (SUM). No audio ports.
-  const inputs: PortDescriptor[] = [
-    { id: 'cv1', label: 'CV 1', cable: 'cv' },
-    { id: 'cv2', label: 'CV 2', cable: 'cv' },
-    { id: 'cv3', label: 'CV 3', cable: 'cv' },
-    { id: 'cv4', label: 'CV 4', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'cv_out', label: 'SUM', cable: 'cv' },
-  ];
+  const inputs = portsFromDef(moog992Def.inputs, {
+    cv1: 'CV 1', cv2: 'CV 2', cv3: 'CV 3', cv4: 'CV 4',
+  });
+  const outputs = portsFromDef(moog992Def.outputs, { cv_out: 'SUM' });
 </script>
 
 <MoogPanel {id} {data} defaultLabel="992 CV" width={220}>

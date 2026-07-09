@@ -11,8 +11,6 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { setNodeParam } from '$lib/graph/mutate';
   import {
     foxyDef,
     FOXY_GEN_MODE_NAMES,
@@ -27,13 +25,13 @@
   import { drawFoxyShapes } from '$lib/audio/modules/foxy-shapes-draw';
   import type { Shape as FoxyShape } from '$lib/audio/modules/foxy-shapes';
   import type { FoxyFieldRow } from '$lib/audio/modules/foxy-map';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live, engineCtx } = cardParams(foxyDef, () => id, () => node);
 
   function pv(k: string, fallback: number): number {
     const v = node?.params?.[k];
@@ -42,30 +40,15 @@
   function defv(k: string): number {
     return foxyDef.params.find((p) => p.id === k)!.defaultValue;
   }
-  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
-  const live = (k: string) => () => {
-    const e = engineCtx.get(); if (!e || !node) return undefined;
-    return e.readParam(node, k);
-  };
 
   // FOXY exposes WAVECEL's full IO verbatim.
-  const inputs: PortDescriptor[] = [
-    { id: 'pitch',     cable: 'pitch' },
-    { id: 'fm',        cable: 'audio' },
-    { id: 'morph_cv',  label: 'MORPH (CV)',  cable: 'cv' },
-    { id: 'spread_cv', label: 'SPREAD (CV)', cable: 'cv' },
-    { id: 'fold_cv',   label: 'FOLD (CV)',   cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'out_l', label: 'OUT L', cable: 'audio' },
-    { id: 'out_r', label: 'OUT R', cable: 'audio' },
-    { id: 'scope_out',    label: 'SCOPE VIDEO',    cable: 'mono-video' },
-    { id: 'wave3d_out',   label: '3D VIDEO',       cable: 'video' },
-    // COMBINED is the mode-aware render of the active GEN visualization —
-    // XYZ field (gen_mode=0) or 3D Shape Gen scene (gen_mode=1) — exposed
-    // as a patchable video signal. Same content as the on-card XYZ window.
-    { id: 'combined_out', label: 'COMBINED VIDEO', cable: 'video' },
-  ];
+  const inputs = portsFromDef(foxyDef.inputs, {
+    morph_cv: 'MORPH (CV)', spread_cv: 'SPREAD (CV)', fold_cv: 'FOLD (CV)',
+  });
+  const outputs = portsFromDef(foxyDef.outputs, {
+    out_l: 'OUT L', out_r: 'OUT R', scope_out: 'SCOPE VIDEO', wave3d_out: '3D VIDEO',
+    combined_out: 'COMBINED VIDEO',
+  });
 
   let rasterAEl: HTMLCanvasElement | null = $state(null);
   let rasterBEl: HTMLCanvasElement | null = $state(null);

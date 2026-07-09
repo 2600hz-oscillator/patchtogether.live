@@ -19,24 +19,18 @@
   import { type NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { peakstateDef } from '$lib/video/modules/peakstate';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
 
-  function defaultFor(k: string): number {
-    return peakstateDef.params.find((p) => p.id === k)?.defaultValue ?? 0;
-  }
-  function paramVal(k: string): number {
-    const v = node?.params?.[k];
-    return typeof v === 'number' ? v : defaultFor(k);
-  }
+  const { defaultFor, paramVal } = cardParams(peakstateDef, () => id, () => node);
   const setP = (k: string) => (v: number) => {
     setNodeParam(id, k, v);
   };
@@ -67,16 +61,12 @@
   });
   onDestroy(() => { if (pollTimer) clearInterval(pollTimer); });
 
-  const inputs: PortDescriptor[] = [
-    { id: 'speed_cv',       label: 'SPD', cable: 'cv' },
-    { id: 'complexity_cv',  label: 'CMP', cable: 'cv' },
-    { id: 'color_speed_cv', label: 'CLR', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'mono_out', label: 'MONO', cable: 'mono-video' },
-    { id: 'rgb_out',  label: 'RGB',  cable: 'video' },
-    { id: 'out_3d',   label: '3D',   cable: 'video' },
-  ];
+  const inputs = portsFromDef(peakstateDef.inputs, {
+    speed_cv: 'SPD', complexity_cv: 'CMP', color_speed_cv: 'CLR',
+  });
+  const outputs = portsFromDef(peakstateDef.outputs, {
+    mono_out: 'MONO', rgb_out: 'RGB', out_3d: '3D',
+  });
 </script>
 
 <div class="mod-card peakstate-card" data-testid="peakstate-card" data-node-id={id}>

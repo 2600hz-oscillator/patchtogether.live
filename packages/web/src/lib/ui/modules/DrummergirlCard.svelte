@@ -2,16 +2,14 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { drummergirlDef } from '$lib/audio/modules/drummergirl';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live } = cardParams(drummergirlDef, () => id, () => node);
 
   let pitch  = $derived(node?.params.pitch  ?? drummergirlDef.params[0]!.defaultValue);
   let tone   = $derived(node?.params.tone   ?? drummergirlDef.params[1]!.defaultValue);
@@ -19,18 +17,9 @@
   let volume = $derived(node?.params.volume ?? drummergirlDef.params[3]!.defaultValue);
   let decay  = $derived(node?.params.decay  ?? drummergirlDef.params[4]!.defaultValue);
 
-  const set = (id_: string) => (v: number) => setNodeParam(id, id_, v);
-  const live = (id_: string) => () => { const e = engineCtx.get(); if (!e || !node) return undefined; return e.readParam(node, id_); };
 
-  const inputs: PortDescriptor[] = [
-    { id: 'gate',   cable: 'gate' },
-    { id: 'pitch',  cable: 'cv' },
-    { id: 'tone',   cable: 'cv' },
-    { id: 'shape',  cable: 'cv' },
-    { id: 'volume', cable: 'cv' },
-    { id: 'decay',  cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [{ id: 'audio', label: 'OUT', cable: 'audio' }];
+  const inputs = portsFromDef(drummergirlDef.inputs);
+  const outputs = portsFromDef(drummergirlDef.outputs, { audio: 'OUT' });
 </script>
 
 <div class="mod-card drummergirl-card">

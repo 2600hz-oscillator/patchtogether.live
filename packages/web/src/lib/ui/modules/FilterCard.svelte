@@ -2,36 +2,28 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { filterDef } from '$lib/audio/modules/filter';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live } = cardParams(filterDef, () => id, () => node);
 
   let cutoff    = $derived(node?.params.cutoff    ?? filterDef.params[0]!.defaultValue);
   let resonance = $derived(node?.params.resonance ?? filterDef.params[1]!.defaultValue);
   let mode      = $derived(node?.params.mode      ?? 0);
 
-  const set = (id_: string) => (v: number) => setNodeParam(id, id_, v);
-  const live = (id_: string) => () => { const e = engineCtx.get(); if (!e || !node) return undefined; return e.readParam(node, id_); };
 
   const MODES = ['LP', 'HP', 'BP'] as const;
   function selectMode(m: number) {
     const t = patch.nodes[id]; if (t) t.params.mode = m;
   }
 
-  const inputs: PortDescriptor[] = [
-    { id: 'audio',  cable: 'audio' },
-    { id: 'cutoff', cable: 'cv' },
-    { id: 'res',    cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [{ id: 'audio', label: 'OUT', cable: 'audio' }];
+  const inputs = portsFromDef(filterDef.inputs);
+  const outputs = portsFromDef(filterDef.outputs, { audio: 'OUT' });
 </script>
 
 <div class="mod-card filter-card">

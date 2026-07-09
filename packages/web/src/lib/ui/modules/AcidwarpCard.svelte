@@ -8,41 +8,26 @@
 
   import type { NodeProps } from '@xyflow/svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import { patch } from '$lib/graph/store';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { acidwarpDef, speedKnobToMultiplier } from '$lib/video/modules/acidwarp';
   import { SCENE_COUNT, PALETTE_COUNT } from '$lib/video/modules/acidwarp-patterns';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import { onMount, onDestroy } from 'svelte';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
 
-  function defaultFor(k: string): number {
-    return acidwarpDef.params.find((p) => p.id === k)?.defaultValue ?? 0;
-  }
-  function paramVal(k: string): number {
-    const v = node?.params?.[k];
-    return typeof v === 'number' ? v : defaultFor(k);
-  }
-  const set = (k: string) => (v: number) => {
-    setNodeParam(id, k, v);
-  };
+  const { defaultFor, paramVal, set } = cardParams(acidwarpDef, () => id, () => node);
 
   // Patch ports for the yellow drill-down PatchPanel (ids match acidwarpDef
   // I/O — speed_cv/scene_cv CV inputs + the video out). No raw side <Handle>s.
-  const inputs: PortDescriptor[] = [
-    { id: 'speed_cv', label: 'SPEED', cable: 'cv' },
-    { id: 'scene_cv', label: 'SCENE', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'out', label: 'OUT', cable: 'video' },
-  ];
+  const inputs = portsFromDef(acidwarpDef.inputs, { speed_cv: 'SPEED', scene_cv: 'SCENE' });
+  const outputs = portsFromDef(acidwarpDef.outputs);
 
   // ----- Display canvas: pull the engine's per-frame snapshot -----
   let canvasEl: HTMLCanvasElement | null = $state(null);

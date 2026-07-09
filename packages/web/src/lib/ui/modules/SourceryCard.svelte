@@ -10,8 +10,6 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { sourceryDef } from '$lib/video/modules/sourcery';
   import { useEngine } from '$lib/audio/engine-context';
   import type { VideoEngine } from '$lib/video/engine';
@@ -19,19 +17,13 @@
   import type { ModuleNode } from '$lib/graph/types';
   import { onMount, onDestroy } from 'svelte';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
 
-  function defaultFor(k: string): number {
-    return sourceryDef.params.find((p) => p.id === k)?.defaultValue ?? 0;
-  }
-  function paramVal(k: string): number {
-    const v = node?.params?.[k];
-    return typeof v === 'number' ? v : defaultFor(k);
-  }
-  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
+  const { defaultFor, paramVal, set } = cardParams(sourceryDef, () => id, () => node);
 
   // ---- on-card preview canvas: blit the module's own output ----
   const ENGINE_W = VIDEO_RES.width;
@@ -80,15 +72,10 @@
   onDestroy(() => { if (drawRaf !== null) cancelAnimationFrame(drawRaf); });
 
   // Ports — ids byte-identical to sourceryDef (a/b = video in, out = video).
-  const inputs: PortDescriptor[] = [
-    { id: 'a', label: 'A', cable: 'video' },
-    { id: 'b', label: 'B', cable: 'video' },
-    { id: 'thresholdA', label: 'ThrA', cable: 'cv' },
-    { id: 'thresholdB', label: 'ThrB', cable: 'cv' },
-    { id: 'colorSkew', label: 'Skew', cable: 'cv' },
-    { id: 'rotate', label: 'Rot', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [{ id: 'out', label: 'OUT', cable: 'video' }];
+  const inputs = portsFromDef(sourceryDef.inputs, {
+    thresholdA: 'ThrA', thresholdB: 'ThrB', colorSkew: 'Skew', rotate: 'Rot',
+  });
+  const outputs = portsFromDef(sourceryDef.outputs);
 </script>
 
 <div class="mod-card sourcery-card" data-testid="sourcery-card" data-node-id={id}>

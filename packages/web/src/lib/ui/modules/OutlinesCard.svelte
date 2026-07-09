@@ -17,28 +17,19 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { outlinesDef, OUTLINES_GATE_PORT_ID, OUTLINES_COLLIDE_PORT_ID } from '$lib/video/modules/outlines';
   import { mapShape, ROT_CENTER } from '$lib/video/modules/outlines-sim';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import { onMount, onDestroy } from 'svelte';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
 
-  function defaultFor(k: string): number {
-    return outlinesDef.params.find((p) => p.id === k)?.defaultValue ?? 0;
-  }
-  function paramVal(k: string): number {
-    const v = node?.params?.[k];
-    return typeof v === 'number' ? v : defaultFor(k);
-  }
-  const set = (k: string) => (v: number) => {
-    setNodeParam(id, k, v);
-  };
+  const { defaultFor, paramVal, set } = cardParams(outlinesDef, () => id, () => node);
 
   // SHAPE readout: the discrete shape NAME for the current `shape` knob value.
   const SHAPE_NAMES = ['CIRCLE', 'TRI', 'SQUARE', 'PENTA', 'HEXA', 'OCTA'];
@@ -93,12 +84,9 @@
     { id: 'video',    label: 'VID', cable: 'video' },
   ];
   // Right rail: the four outputs.
-  const outputs: PortDescriptor[] = [
-    { id: 'overlap', label: 'OVR', cable: 'mono-video' },
-    { id: 'contour', label: 'CNT', cable: 'mono-video' },
-    { id: 'combine', label: 'CMB', cable: 'video' },
-    { id: 'mapped',  label: 'MAP', cable: 'video' },
-  ];
+  const outputs = portsFromDef(outlinesDef.outputs, {
+    overlap: 'OVR', contour: 'CNT', combine: 'CMB', mapped: 'MAP',
+  });
 </script>
 
 <div class="mod-card outlines-card" data-testid="outlines-card">

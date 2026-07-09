@@ -165,7 +165,7 @@
 </script>
 
 <div
-  class="card clocked-runner"
+  class="vcard card clocked-runner"
   class:resizing
   class:err={!!lastError}
   style="width: {cardWidth}px; height: {cardHeight}px;"
@@ -208,27 +208,13 @@
 
 <style>
   .card {
-    background: var(--module-bg);
-    border: 1px solid var(--border);
-    border-radius: 2px;
-    color: var(--text);
     padding-top: 16px;
     padding-bottom: 4px;
-    position: relative;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
     overflow: hidden;
-  }
-  :global(.svelte-flow__node:hover) .card { border-color: var(--accent-dim); }
-  :global(.svelte-flow__node.selected) .card {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
   }
   .card.resizing { transition: none; }
   .card.err { border-color: #fca5a5; }
   .stripe {
-    position: absolute; top: 0; left: 0; right: 0; height: 2px;
-    border-radius: 2px 2px 0 0;
     background: var(--cable-gate);
   }
   .title {

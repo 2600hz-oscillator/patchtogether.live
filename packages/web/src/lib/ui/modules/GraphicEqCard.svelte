@@ -10,7 +10,6 @@
   import { useStore, type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
@@ -20,6 +19,7 @@
   import { VIDEO_RES } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -37,13 +37,8 @@
     return (v: number) => setNodeParam(id, paramId, v);
   }
 
-  const inputs: PortDescriptor[] = [
-    { id: 'audio_l', label: 'A·L', cable: 'audio' },
-    { id: 'audio_r', label: 'A·R', cable: 'audio' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'out', cable: 'video' },
-  ];
+  const inputs = portsFromDef(graphicEqDef.inputs, { audio_l: 'A·L', audio_r: 'A·R' });
+  const outputs = portsFromDef(graphicEqDef.outputs);
 
   // Discrete switches (0/1), mirrored from the def (SynesthesiaCard pattern).
   let isBoxes = $derived(Math.round(p('style')) === 1);
@@ -191,7 +186,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions a11y_no_noninteractive_element_interactions -->
 <div
-  class="card video"
+  class="vcard card video"
   class:hide-controls={hideControls}
   class:resizing
   style={hideControls ? `width: ${resizedWidth}px; height: ${resizedHeight}px;` : ''}
@@ -276,15 +271,6 @@
   .card {
     width: 320px;
     min-height: 420px;
-    background: var(--module-bg);
-    border: 1px solid var(--border);
-    border-radius: 2px;
-    color: var(--text);
-    padding-top: 18px;
-    padding-bottom: 14px;
-    position: relative;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
   }
   .card.hide-controls {
     background-color: #000;
@@ -296,18 +282,6 @@
   }
   .card.resizing {
     transition: none;
-  }
-  :global(.svelte-flow__node:hover) .card { border-color: var(--accent-dim); }
-  :global(.svelte-flow__node.selected) .card {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
-  }
-  .stripe {
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 2px;
-    border-radius: 2px 2px 0 0;
-    background: var(--cable-video);
   }
   .canvas-wrap {
     margin: 12px 18px 8px;

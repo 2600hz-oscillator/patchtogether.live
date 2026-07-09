@@ -15,7 +15,6 @@
   import { type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
   import { setNodeParam } from '$lib/graph/mutate';
   import { freezeframeDef } from '$lib/video/modules/freezeframe';
@@ -23,6 +22,7 @@
   import { VIDEO_RES } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -39,17 +39,10 @@
     return freezeframeDef.params.find((x) => x.id === name)!;
   }
 
-  const inputs: PortDescriptor[] = [
-    { id: 'video_in', label: 'VIDEO', cable: 'video' },
-    { id: 'gate_in',  label: 'GATE',  cable: 'gate' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'video_out', label: 'OUT',  cable: 'video' },
-    { id: 'r_out',     label: 'R',    cable: 'video' },
-    { id: 'g_out',     label: 'G',    cable: 'video' },
-    { id: 'b_out',     label: 'B',    cable: 'video' },
-    { id: 'luma_out',  label: 'LUMA', cable: 'video' },
-  ];
+  const inputs = portsFromDef(freezeframeDef.inputs, { video_in: 'VIDEO', gate_in: 'GATE' });
+  const outputs = portsFromDef(freezeframeDef.outputs, {
+    video_out: 'OUT', r_out: 'R', g_out: 'G', b_out: 'B', luma_out: 'LUMA',
+  });
 
   // --- Live preview of video_out (the canonical surface.texture). ---
   const ENGINE_W = VIDEO_RES.width;
@@ -90,7 +83,7 @@
   onDestroy(() => { if (rafId !== null) cancelAnimationFrame(rafId); });
 </script>
 
-<div class="card video" data-testid="freezeframe-card" data-node-id={id}>
+<div class="vcard card video" data-testid="freezeframe-card" data-node-id={id}>
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="FREEZEFRAME" />
 
@@ -120,23 +113,7 @@
   .card {
     width: 260px;
     min-height: 460px;
-    background: var(--module-bg);
-    border: 1px solid var(--border);
-    border-radius: 2px;
-    color: var(--text);
-    padding-top: 18px;
-    padding-bottom: 14px;
-    position: relative;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
   }
-  :global(.svelte-flow__node:hover) .card { border-color: var(--accent-dim); }
-  :global(.svelte-flow__node.selected) .card {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
-  }
-  .stripe { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--cable-video); }
-  .title { font-size: 0.85rem; font-weight: 500; text-align: center; margin: 0 0 8px; letter-spacing: 0.05em; }
   .preview-wrap {
     margin: 8px auto 0;
     width: 100%;

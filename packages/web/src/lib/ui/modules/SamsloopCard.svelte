@@ -32,9 +32,7 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
-  import { setNodeParam } from '$lib/graph/mutate';
   import {
     samsloopDef,
     loadSamsloopWav,
@@ -68,14 +66,14 @@
     type SamsloopRecBits,
     type SamsloopRecChannels,
   } from '$lib/audio/modules/samsloop-record';
-  import { useEngine } from '$lib/audio/engine-context';
   import { AudioEngine } from '$lib/audio/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live, engineCtx } = cardParams(samsloopDef, () => id, () => node);
 
   const defaultFor = (k: string): number =>
     samsloopDef.params.find((p) => p.id === k)!.defaultValue;
@@ -135,21 +133,11 @@
     return !!d?.fileBytesB64 && d.fileBytesB64.length > 0;
   });
 
-  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
-  const live = (k: string) => () => {
-    const e = engineCtx.get(); if (!e || !node) return undefined;
-    return e.readParam(node, k);
-  };
 
-  const inputs: PortDescriptor[] = [
-    { id: 'trig',       cable: 'gate' },
-    { id: 'rate_cv',    label: 'RATE (CV)', cable: 'cv' },
-    { id: 'audio_l_in', label: 'L IN',      cable: 'audio' },
-    { id: 'audio_r_in', label: 'R IN',      cable: 'audio' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'out', cable: 'audio' },
-  ];
+  const inputs = portsFromDef(samsloopDef.inputs, {
+    rate_cv: 'RATE (CV)', audio_l_in: 'L IN', audio_r_in: 'R IN',
+  });
+  const outputs = portsFromDef(samsloopDef.outputs);
 
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let uploadStatus = $state<string | null>(null);
@@ -967,13 +955,7 @@
   .samsloop-card {
     width: 360px;
     min-height: 420px;
-  }
-  .samsloop-card .title {
-    font-family: var(--font-display, inherit);
-    font-size: 0.85rem;
-    letter-spacing: 0.04em;
-  }
-  .samsloop-card .subtitle {
+  }  .samsloop-card .subtitle {
     font-size: 0.55rem;
     color: var(--text-dim, #8b94a5);
     text-align: center;

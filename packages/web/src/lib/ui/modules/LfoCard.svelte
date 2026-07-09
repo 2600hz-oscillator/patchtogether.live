@@ -3,23 +3,19 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { lfoDef } from '$lib/audio/modules/lfo';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live } = cardParams(lfoDef, () => id, () => node);
 
   let rate  = $derived(node?.params.rate  ?? lfoDef.params[0]!.defaultValue);
   let shape = $derived(node?.params.shape ?? lfoDef.params[1]!.defaultValue);
   let depth = $derived(node?.params.depth ?? lfoDef.params[2]!.defaultValue);
 
-  const set = (id_: string) => (v: number) => setNodeParam(id, id_, v);
-  const live = (id_: string) => () => { const e = engineCtx.get(); if (!e || !node) return undefined; return e.readParam(node, id_); };
 
   const SHAPE_GLYPHS: Array<{ frac: number; kind: 'sine' | 'tri' | 'saw' | 'square' }> = [
     { frac: 0,   kind: 'sine'   },
@@ -27,18 +23,10 @@
     { frac: 1,   kind: 'square' },
   ];
 
-  const inputs: PortDescriptor[] = [
-    { id: 'clock', cable: 'gate' },
-    { id: 'rate',  cable: 'cv' },
-    { id: 'shape', cable: 'cv' },
-    { id: 'depth_cv', label: 'DEPTH', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'phase0',   label: 'PHASE 0°',   cable: 'cv' },
-    { id: 'phase90',  label: 'PHASE 90°',  cable: 'cv' },
-    { id: 'phase180', label: 'PHASE 180°', cable: 'cv' },
-    { id: 'phase270', label: 'PHASE 270°', cable: 'cv' },
-  ];
+  const inputs = portsFromDef(lfoDef.inputs, { depth_cv: 'DEPTH' });
+  const outputs = portsFromDef(lfoDef.outputs, {
+    phase0: 'PHASE 0°', phase90: 'PHASE 90°', phase180: 'PHASE 180°', phase270: 'PHASE 270°',
+  });
 </script>
 
 <div class="mod-card lfo-card">

@@ -5,17 +5,15 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { cloudsDef } from '$lib/audio/modules/clouds';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live, engineCtx } = cardParams(cloudsDef, () => id, () => node);
 
   const defaultFor = (key: string): number =>
     cloudsDef.params.find((p) => p.id === key)!.defaultValue;
@@ -28,11 +26,6 @@
   let blend    = $derived(node?.params.blend    ?? defaultFor('blend'));
   let freeze   = $derived(node?.params.freeze   ?? defaultFor('freeze'));
 
-  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
-  const live = (k: string) => () => {
-    const e = engineCtx.get(); if (!e || !node) return undefined;
-    return e.readParam(node, k);
-  };
 
   const toggleFreeze = (): void => {
     const t = patch.nodes[id];
@@ -43,22 +36,12 @@
     if (e && node) e.setParam(node, 'freeze', next);
   };
 
-  const inputs: PortDescriptor[] = [
-    { id: 'in_l',        label: 'IN L', cable: 'audio' },
-    { id: 'in_r',        label: 'IN R', cable: 'audio' },
-    { id: 'pitch',       label: 'V/OCT', cable: 'pitch' },
-    { id: 'freeze_gate', label: 'FRZ',  cable: 'gate' },
-    { id: 'position_cv', label: 'POS',  cable: 'cv' },
-    { id: 'size_cv',     label: 'SIZE', cable: 'cv' },
-    { id: 'pitch_cv',    label: 'PTCH', cable: 'cv' },
-    { id: 'density_cv',  label: 'DENS', cable: 'cv' },
-    { id: 'texture_cv',  label: 'TEXT', cable: 'cv' },
-    { id: 'blend_cv',    label: 'BLND', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'out_l', label: 'OUT L', cable: 'audio' },
-    { id: 'out_r', label: 'OUT R', cable: 'audio' },
-  ];
+  const inputs = portsFromDef(cloudsDef.inputs, {
+    in_l: 'IN L', in_r: 'IN R', pitch: 'V/OCT', freeze_gate: 'FRZ', position_cv: 'POS',
+    size_cv: 'SIZE', pitch_cv: 'PTCH', density_cv: 'DENS', texture_cv: 'TEXT',
+    blend_cv: 'BLND',
+  });
+  const outputs = portsFromDef(cloudsDef.outputs, { out_l: 'OUT L', out_r: 'OUT R' });
 
   let frozen = $derived(freeze >= 0.5);
 </script>
@@ -92,13 +75,7 @@
 </div>
 
 <style>
-  .clouds-card { width: 340px; }
-  .clouds-card .title {
-    font-family: var(--font-display, inherit);
-    font-size: 0.85rem;
-    letter-spacing: 0.04em;
-  }
-  .clouds-card .fader-row {
+  .clouds-card { width: 340px; }  .clouds-card .fader-row {
     /* Rack-compaction (#759): tighter top margin to fit 1u. */
     margin-top: 4px;
     display: flex;

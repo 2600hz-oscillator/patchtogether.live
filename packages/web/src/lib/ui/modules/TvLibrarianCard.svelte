@@ -23,7 +23,6 @@
   import { type NodeProps, useStore } from '@xyflow/svelte';
   import Hls from 'hls.js';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
   import { startCornerResize } from './card-resize';
@@ -49,6 +48,7 @@
     type Channel,
   } from '$lib/video/modules/tv-librarian-data';
   import { countryMarkers, nearestCountry } from '$lib/video/modules/tv-librarian-geo';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -406,21 +406,12 @@
 
   let countryName = $derived(countries.find((c) => c.code === countryCode)?.name ?? countryCode ?? '');
 
-  const inputs: PortDescriptor[] = [
-    { id: 'next',   cable: 'gate' },
-    { id: 'random', cable: 'gate' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'video',           cable: 'video' },
-    { id: 'audio_l',         cable: 'audio' },
-    { id: 'audio_r',         cable: 'audio' },
-    { id: 'channel_changed', cable: 'gate' },
-    { id: 'stream_online',   cable: 'gate' },
-  ];
+  const inputs = portsFromDef(tvLibrarianDef.inputs);
+  const outputs = portsFromDef(tvLibrarianDef.outputs);
 </script>
 
 <div
-  class="card video tv-librarian-card"
+  class="vcard card video tv-librarian-card"
   class:resizing
   style="width: {cardWidth}px; height: {cardHeight}px;"
   data-testid="tv-librarian-card"
@@ -551,32 +542,12 @@
 
 <style>
   .card {
-    background: var(--module-bg);
-    border: 1px solid var(--border);
-    border-radius: 2px;
-    color: var(--text);
-    padding-top: 18px;
     padding-bottom: 12px;
-    position: relative;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
     overflow: hidden;
     display: flex;
     flex-direction: column;
   }
   .card.resizing { transition: none; }
-  :global(.svelte-flow__node:hover) .card { border-color: var(--accent-dim); }
-  :global(.svelte-flow__node.selected) .card {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
-  }
-  .stripe {
-    position: absolute; top: 0; left: 0; right: 0;
-    height: 2px; border-radius: 2px 2px 0 0;
-    background: var(--cable-video);
-  }
-  .title { font-size: 0.85rem; font-weight: 500; text-align: center; margin: 0 0 8px; letter-spacing: 0.05em; }
-
   .body {
     margin-top: 26px;
     padding: 0 10px;

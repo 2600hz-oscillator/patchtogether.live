@@ -5,10 +5,9 @@
   import NoteEntry from '$lib/ui/controls/NoteEntry.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import QuicksaveControls from '$lib/ui/QuicksaveControls.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch, ydoc } from '$lib/graph/store';
   import { nodeVersion } from '$lib/graph/node-versions.svelte';
-  import { mutateNode, setNodeParam } from '$lib/graph/mutate';
+  import { mutateNode } from '$lib/graph/mutate';
   import {
     sequencerDef,
     defaultSteps,
@@ -24,7 +23,6 @@
     ensureCapacity,
   } from '$lib/audio/modules/sequencer-pages';
   import { type ChordQuality, nextChordQuality } from '$lib/audio/poly';
-  import { useEngine } from '$lib/audio/engine-context';
   import { parseNoteName } from '$lib/audio/note-entry';
   import { resolveArrowNav, type ArrowKey } from '$lib/audio/grid-nav';
   import type { ModuleNode } from '$lib/graph/types';
@@ -40,10 +38,11 @@
   } from '$lib/audio/modules/transport-card';
   import type { PendingMode, SlotKey, Snapshot } from '$lib/audio/modules/transport-helpers';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live, engineCtx } = cardParams(sequencerDef, () => id, () => node);
 
   // Node-scoped re-derive (phase-2 CC perf fix): subscribe to THIS node's
   // version from the shared registry (nodes.observeDeep) instead of a
@@ -76,17 +75,10 @@
     );
   });
 
-  const set = (k: string) => (v: number) => {
-    setNodeParam(id, k, v);
-  };
 
   function togglePlay() {
     set('isPlaying')(isPlaying ? 0 : 1);
   }
-  const live = (k: string) => () => {
-    const e = engineCtx.get(); if (!e || !node) return undefined;
-    return e.readParam(node, k);
-  };
 
   // --- Visual current step indicator (polled from engine) ---
   let currentStep = $state(0);
@@ -296,27 +288,14 @@
     }
   }
 
-  const inputs: PortDescriptor[] = [
-    { id: 'clock', label: 'CLOCK IN', cable: 'gate' },
-    { id: 'play_cv',   label: 'PLAY GATE',     cable: 'gate' },
-    { id: 'reset_cv',  label: 'RESET GATE',    cable: 'gate' },
-    { id: 'queue1_cv', label: 'PLAY QUEUE 1',  cable: 'gate' },
-    { id: 'queue2_cv', label: 'PLAY QUEUE 2',  cable: 'gate' },
-    { id: 'queue3_cv', label: 'PLAY QUEUE 3',  cable: 'gate' },
-    { id: 'queue4_cv', label: 'PLAY QUEUE 4',  cable: 'gate' },
-    { id: 'queue5_cv', label: 'PLAY QUEUE 5',  cable: 'gate' },
-    { id: 'queue6_cv', label: 'PLAY QUEUE 6',  cable: 'gate' },
-    { id: 'queue7_cv', label: 'PLAY QUEUE 7',  cable: 'gate' },
-    { id: 'queue8_cv', label: 'PLAY QUEUE 8',  cable: 'gate' },
-    { id: 'next_cv',   label: 'NEXT',          cable: 'gate' },
-    { id: 'prev_cv',   label: 'PREV',          cable: 'gate' },
-    { id: 'random_cv', label: 'RANDOM',        cable: 'gate' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'pitch', cable: 'polyPitchGate' },
-    { id: 'gate',  cable: 'gate' },
-    { id: 'clock', label: 'CLOCK OUT', cable: 'gate' },
-  ];
+  const inputs = portsFromDef(sequencerDef.inputs, {
+    clock: 'CLOCK IN', play_cv: 'PLAY GATE', reset_cv: 'RESET GATE',
+    queue1_cv: 'PLAY QUEUE 1', queue2_cv: 'PLAY QUEUE 2', queue3_cv: 'PLAY QUEUE 3',
+    queue4_cv: 'PLAY QUEUE 4', queue5_cv: 'PLAY QUEUE 5', queue6_cv: 'PLAY QUEUE 6',
+    queue7_cv: 'PLAY QUEUE 7', queue8_cv: 'PLAY QUEUE 8', next_cv: 'NEXT', prev_cv: 'PREV',
+    random_cv: 'RANDOM',
+  });
+  const outputs = portsFromDef(sequencerDef.outputs, { clock: 'CLOCK OUT' });
 </script>
 
 <div class="mod-card seq-card">

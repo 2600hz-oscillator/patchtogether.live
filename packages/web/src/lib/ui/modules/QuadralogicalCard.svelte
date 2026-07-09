@@ -32,12 +32,10 @@
 
   import { onMount, onDestroy } from 'svelte';
   import { useStore, type NodeProps } from '@xyflow/svelte';
-  import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import type { ModuleNode } from '$lib/graph/types';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
@@ -78,10 +76,11 @@
     setSlotName,
   } from '$lib/graph/electra-control';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live, engineCtx } = cardParams(quadralogicalDef, () => id, () => node);
   // useStore() is intentionally read so the card participates in SvelteFlow's
   // node context (parity with the other video cards); not otherwise used yet.
   useStore();
@@ -92,15 +91,9 @@
   function pget(key: string): number {
     return (node?.params?.[key] ?? defaultFor(key)) as number;
   }
-  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
   // Wavesculpt-style live-CV poll (suppressed during a drag) so a patched LFO /
   // bound MIDI CC moves the dot in real time. engine.readParam returns
   // intrinsic-knob + most-recent-CV sample.
-  const live = (k: string) => () => {
-    const e = engineCtx.get();
-    if (!e || !node) return undefined;
-    return e.readParam(node, k);
-  };
 
   // ---- joystick state ----
   let draggingPad = $state(false);
@@ -397,31 +390,13 @@
   }
 
   // ---- patch panel ports ----
-  const inputs: PortDescriptor[] = [
-    { id: 'in1', label: 'IN1', cable: 'video' },
-    { id: 'in2', label: 'IN2', cable: 'video' },
-    { id: 'in3', label: 'IN3', cable: 'video' },
-    { id: 'in4', label: 'IN4', cable: 'video' },
-    { id: 'pos_x', label: 'X', cable: 'cv' },
-    { id: 'pos_y', label: 'Y', cable: 'cv' },
-    { id: 'diamond_margin', label: 'DIAMOND', cable: 'cv' },
-    { id: 'blend_sharp', label: 'SHARP', cable: 'cv' },
-    { id: 'edge1_amount', label: '1–2 AMT', cable: 'cv' },
-    { id: 'edge1_param', label: '1–2 PRM', cable: 'cv' },
-    { id: 'edge2_amount', label: '2–3 AMT', cable: 'cv' },
-    { id: 'edge2_param', label: '2–3 PRM', cable: 'cv' },
-    { id: 'edge3_amount', label: '3–4 AMT', cable: 'cv' },
-    { id: 'edge3_param', label: '3–4 PRM', cable: 'cv' },
-    { id: 'edge4_amount', label: '4–1 AMT', cable: 'cv' },
-    { id: 'edge4_param', label: '4–1 PRM', cable: 'cv' },
-    { id: 'keyR', label: 'KEY R', cable: 'cv' },
-    { id: 'keyG', label: 'KEY G', cable: 'cv' },
-    { id: 'keyB', label: 'KEY B', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'out', label: 'MIX', cable: 'video' },
-    { id: 'preview', label: 'PREVIEW', cable: 'video' },
-  ];
+  const inputs = portsFromDef(quadralogicalDef.inputs, {
+    pos_x: 'X', pos_y: 'Y', diamond_margin: 'DIAMOND', blend_sharp: 'SHARP',
+    edge1_amount: '1–2 AMT', edge1_param: '1–2 PRM', edge2_amount: '2–3 AMT',
+    edge2_param: '2–3 PRM', edge3_amount: '3–4 AMT', edge3_param: '3–4 PRM',
+    edge4_amount: '4–1 AMT', edge4_param: '4–1 PRM',
+  });
+  const outputs = portsFromDef(quadralogicalDef.outputs, { out: 'MIX' });
 </script>
 
 <div class="mod-card quadralogical-card" data-testid="quadralogical-card" data-node-id={id}>

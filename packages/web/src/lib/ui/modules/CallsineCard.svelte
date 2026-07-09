@@ -20,16 +20,14 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { callsineDef, CALLSINE_MODEL_NAMES, CALLSINE_MAX_MODEL } from '$lib/audio/modules/callsine';
-  import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
+  const { set, live } = cardParams(callsineDef, () => id, () => node);
 
   const defaultFor = (id: string): number =>
     callsineDef.params.find((p) => p.id === id)!.defaultValue;
@@ -47,26 +45,9 @@
     ],
   );
 
-  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
-  const live = (k: string) => () => {
-    const e = engineCtx.get(); if (!e || !node) return undefined;
-    return e.readParam(node, k);
-  };
 
-  const inputs: PortDescriptor[] = [
-    { id: 'audio_in', cable: 'audio' },
-    { id: 'pitch',    cable: 'pitch' },
-    { id: 'gate',     cable: 'gate' },
-    { id: 'model_cv', cable: 'cv' },
-    { id: 'note_cv',  cable: 'cv' },
-    { id: 'harm_cv',  cable: 'cv' },
-    { id: 'timb_cv',  cable: 'cv' },
-    { id: 'morph_cv', cable: 'cv' },
-    { id: 'level_cv', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'out', cable: 'audio' },
-  ];
+  const inputs = portsFromDef(callsineDef.inputs);
+  const outputs = portsFromDef(callsineDef.outputs);
 </script>
 
 <div class="mod-card callsine-card" data-testid="callsine-card">
@@ -88,13 +69,7 @@
 </div>
 
 <style>
-  .callsine-card { width: 340px; }
-  .callsine-card .title {
-    font-family: var(--font-display, inherit);
-    font-size: 0.85rem;
-    letter-spacing: 0.04em;
-  }
-  .callsine-card .model-readout {
+  .callsine-card { width: 340px; }  .callsine-card .model-readout {
     text-align: center;
     font-size: 0.7rem;
     letter-spacing: 0.08em;

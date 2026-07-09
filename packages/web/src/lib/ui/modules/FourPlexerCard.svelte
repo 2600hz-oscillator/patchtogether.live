@@ -9,13 +9,13 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { fourplexerDef } from '$lib/audio/modules/fourplexer';
   import { fourplexerClampSelector } from '$lib/audio/fourplexer-select';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -41,22 +41,13 @@
     return typeof v === 'number' ? v : undefined;
   };
 
-  const inputs: PortDescriptor[] = [
-    { id: 'in1',   label: 'IN 1',  cable: 'cv' },
-    { id: 'in2',   label: 'IN 2',  cable: 'cv' },
-    { id: 'in3',   label: 'IN 3',  cable: 'cv' },
-    { id: 'in4',   label: 'IN 4',  cable: 'cv' },
-    { id: 'gate1', label: 'GATE 1', cable: 'gate' },
-    { id: 'gate2', label: 'GATE 2', cable: 'gate' },
-    { id: 'gate3', label: 'GATE 3', cable: 'gate' },
-    { id: 'gate4', label: 'GATE 4', cable: 'gate' },
-  ];
-  const outputs: PortDescriptor[] = [
-    { id: 'out1', label: 'OUT 1', cable: 'cv' },
-    { id: 'out2', label: 'OUT 2', cable: 'cv' },
-    { id: 'out3', label: 'OUT 3', cable: 'cv' },
-    { id: 'out4', label: 'OUT 4', cable: 'cv' },
-  ];
+  const inputs = portsFromDef(fourplexerDef.inputs, {
+    in1: 'IN 1', in2: 'IN 2', in3: 'IN 3', in4: 'IN 4', gate1: 'GATE 1', gate2: 'GATE 2',
+    gate3: 'GATE 3', gate4: 'GATE 4',
+  });
+  const outputs = portsFromDef(fourplexerDef.outputs, {
+    out1: 'OUT 1', out2: 'OUT 2', out3: 'OUT 3', out4: 'OUT 4',
+  });
 
   const outs = [1, 2, 3, 4] as const;
   // 1-based input label for the current selector position of output o.
@@ -110,9 +101,7 @@
     border-color: var(--accent);
     box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
   }
-  .stripe { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 2px 2px 0 0; }
-  .title { font-size: 0.85rem; font-weight: 500; text-align: center; margin: 0 0 6px; letter-spacing: 0.05em; }
-  .body { padding: 4px 10px 10px; }
+  .stripe { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 2px 2px 0 0; }  .body { padding: 4px 10px 10px; }
   .hint {
     font-size: 0.6rem;
     text-align: center;
