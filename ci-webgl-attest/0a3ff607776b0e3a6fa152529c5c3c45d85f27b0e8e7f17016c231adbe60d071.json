@@ -1,18 +1,18 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "e81dcf64fafac77e8b36b3d92614f969b983ea4df0df32604fc7e67b2882d7fd",
-  "attestedAt": "2026-07-09T14:48:40.371Z",
+  "webglContentHash": "0a3ff607776b0e3a6fa152529c5c3c45d85f27b0e8e7f17016c231adbe60d071",
+  "attestedAt": "2026-07-10T11:58:37.671Z",
   "attestedBy": "tmayshark@gmail.com",
-  "gitHeadAtAttest": "3d52e0846d6620d5fc3c67fb6ac7429e691ea949",
+  "gitHeadAtAttest": "82b6057e8a4bc1adbd329c1872f68f29a2731926",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
-  "host": "2600hzs-MacBook-Pro.local",
+  "host": "2600hzs-MBP.home.local",
   "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
   "repeatEach": 1,
   "suites": {
     "A-heavy": {
-      "specFiles": 48,
-      "passed": 150,
+      "specFiles": 49,
+      "passed": 152,
       "failed": 0,
       "flaky": 0,
       "skipped": 1,
@@ -43,5 +43,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 150
+  "durationSec": 140
 }
