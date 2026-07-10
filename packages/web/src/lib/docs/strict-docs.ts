@@ -18,6 +18,9 @@
 // See .myrobots/plans/living-docs-drift-2026-06-24.md.
 
 export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
+  // ES-9 native-bridge I/O module (2026-07-10): born strict — every jack and
+  // class selector documented from day one (46 ports, 22 controls).
+  'es9',
   // Pilot wave (2026-06-24): a spread across a synth utility, a modulator, a
   // dynamic-control sequencer, a video mixer, and a stereo effect.
   'adsr',
