@@ -30,8 +30,10 @@
 //
 // GPU-attest rebuild Phase 3 (SwiftShader-cheap conversion): this spec reads the
 // MAIN-THREAD toybox 2D canvas (`toybox-canvas`) — NOT worker-rendered pixels. It
-// does NOT set `__videoWorkerEnabled` (default OFF), so TOYBOX renders on the
-// main thread (engine factory path, not the OffscreenCanvas worker compositor),
+// does NOT set `__videoWorkerEnabled` — TOYBOX is `renderLocus:
+// 'worker-experimental'` (PR V2), so the DEFAULT flag state keeps it on the
+// main thread (engine factory path, not the OffscreenCanvas worker
+// compositor; only the explicit flag opts TOYBOX into the worker),
 // and it drives every frame via `__toyboxFreeze(t)` which calls a DIRECT
 // engine.step() at the pinned time then blits the main-thread output FBO into the
 // 2D canvas. The only reason it timed out on CI's SwiftShader was TOYBOX's live

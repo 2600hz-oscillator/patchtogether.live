@@ -243,13 +243,16 @@ describe('video — e2e render-suppression freeze (step() short-circuit)', () =>
 });
 
 describe('video — Fix E render-worker install decision (engine seam)', () => {
-  // The engine installs a WorkerProxyHandle for a renderLocus:'worker' module
-  // ONLY when the flag is on AND the runtime supports a worker
-  // (OffscreenCanvas+Worker+createImageBitmap). vitest runs under node with none
-  // of those, so the worker path is unreachable here — which is exactly the
-  // FALLBACK we assert: even with the flag forced ON, the engine renders the
-  // node on the main thread via the real factory (no WorkerProxyHandle, no
-  // blank node). The real worker round-trip is covered by the e2e.
+  // The engine installs a WorkerProxyHandle for a worker-eligible module ONLY
+  // when workerLocusEligible(def.renderLocus, workerFlagState()) AND the
+  // runtime supports a worker (OffscreenCanvas+Worker+createImageBitmap).
+  // Since PR V2 the flag DEFAULTS ON for parity-complete `renderLocus:
+  // 'worker'` modules ('worker-experimental' still needs the explicit flag).
+  // vitest runs under node with none of the worker primitives, so the worker
+  // path is unreachable here — which is exactly the FALLBACK we assert: in
+  // every flag state, the engine renders the node on the main thread via the
+  // real factory (no WorkerProxyHandle, no blank node). The real worker
+  // round-trip is covered by the e2e.
 
   afterEach(() => {
     delete (globalThis as unknown as { __videoWorkerEnabled?: boolean }).__videoWorkerEnabled;
@@ -286,12 +289,22 @@ describe('video — Fix E render-worker install decision (engine seam)', () => {
     return { engine, mainDraw, nodeId };
   }
 
-  it('flag OFF: a worker-locus module renders on the main thread (normal factory handle)', () => {
+  it('DEFAULT flag state (worker ON since PR V2) in a worker-incapable runtime: main factory handle', () => {
     const { engine, mainDraw, nodeId } = makeEngineWithWorkerLocusNode();
-    // The installed handle is the real factory handle, not a proxy — its draw()
-    // fires on step().
+    // Default state now attempts the worker for renderLocus:'worker' — but
+    // node has no Worker/OffscreenCanvas, so the bridge reports unsupported
+    // and the engine installs the real factory handle (the clean fallback).
     engine.step();
-    expect(mainDraw, 'main-thread factory draw runs with flag off').toHaveBeenCalledTimes(1);
+    expect(mainDraw, 'main-thread factory draw runs (worker-incapable runtime)').toHaveBeenCalledTimes(1);
+    expect(engine.getNodeHandle(nodeId)?.constructor.name).not.toBe('WorkerProxyHandle');
+    engine.dispose();
+  });
+
+  it('kill switch (__videoWorkerEnabled=false): main factory handle, no worker attempt', () => {
+    (globalThis as unknown as { __videoWorkerEnabled?: boolean }).__videoWorkerEnabled = false;
+    const { engine, mainDraw, nodeId } = makeEngineWithWorkerLocusNode();
+    engine.step();
+    expect(mainDraw, 'main-thread factory draw runs with the kill switch').toHaveBeenCalledTimes(1);
     expect(engine.getNodeHandle(nodeId)?.constructor.name).not.toBe('WorkerProxyHandle');
     engine.dispose();
   });
@@ -303,6 +316,43 @@ describe('video — Fix E render-worker install decision (engine seam)', () => {
     engine.step();
     expect(mainDraw, 'fallback to main-thread factory when worker unsupported').toHaveBeenCalledTimes(1);
     expect(engine.getNodeHandle(nodeId)?.constructor.name).not.toBe('WorkerProxyHandle');
+    engine.dispose();
+  });
+
+  it("'worker-experimental' locus stays on the main thread in the DEFAULT flag state", () => {
+    // The experimental tier (TOYBOX / VFPGA-RUNNER) must never engage from
+    // the default state — only the explicit flag opts it in. In node the
+    // observable is identical (main handle), but this pins the engine seam
+    // against a future 'default'-tier widening; the pure decision matrix is
+    // worker-bridge.test.ts's workerLocusEligible suite.
+    const glStub = {} as unknown as WebGL2RenderingContext;
+    const canvas = { width: 1, height: 1, getContext: () => glStub } as unknown as HTMLCanvasElement;
+    const engine = new VideoEngine({ canvas });
+    const mainDraw = vi.fn();
+    const handle: VideoNodeHandle = {
+      domain: 'video',
+      surface: { fbo: null, texture: null, draw: mainDraw, dispose: () => {} },
+      setParam: () => {},
+      readParam: () => undefined,
+      dispose: () => {},
+    };
+    const stubType = ('worker-exp-' + Math.random().toString(36).slice(2)) as ModuleNode['type'];
+    registerVideoModule({
+      type: stubType,
+      domain: 'video',
+      label: 'worker-exp-spy',
+      category: 'sources',
+      inputs: [],
+      outputs: [{ id: 'out', type: 'video' }],
+      params: [],
+      renderLocus: 'worker-experimental',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      factory: (() => handle) as any,
+    });
+    void engine.addNode({ id: 'we', type: stubType, domain: 'video', position: { x: 0, y: 0 }, params: {} } as ModuleNode);
+    engine.step();
+    expect(mainDraw, 'experimental locus renders on main by default').toHaveBeenCalledTimes(1);
+    expect(engine.getNodeHandle('we')?.constructor.name).not.toBe('WorkerProxyHandle');
     engine.dispose();
   });
 });

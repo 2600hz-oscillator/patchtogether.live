@@ -44,7 +44,7 @@ import {
   type EnvelopeFollower,
 } from './toybox-cv-math';
 import { VIDEO_RES } from './video-res';
-import { RenderWorkerBridge, isWorkerFlagOn } from './worker/worker-bridge';
+import { RenderWorkerBridge, workerFlagState, workerLocusEligible } from './worker/worker-bridge';
 import { WorkerProxyHandle } from './worker/worker-proxy-handle';
 import { computeActiveSet, isPullEvalOn } from './pull-eval';
 
@@ -685,8 +685,10 @@ export class VideoEngine implements DomainEngine {
    * fails to init degrades to the main path with no blank frames.
    */
   private maybeWorkerBridge(def: VideoModuleDef): RenderWorkerBridge | null {
-    if (def.renderLocus !== 'worker') return null;
-    if (!isWorkerFlagOn()) return null;
+    // Tri-state flag (default ON since PR V2): parity-complete
+    // `renderLocus:'worker'` modules use the worker in the 'default' state;
+    // `worker-experimental' ones need the explicit 'on'; 'off' kills all.
+    if (!workerLocusEligible(def.renderLocus, workerFlagState())) return null;
     if (!this.workerBridge) {
       const b = new RenderWorkerBridge({
         res: { width: this._res.width, height: this._res.height },
@@ -1144,6 +1146,12 @@ export class VideoEngine implements DomainEngine {
    *  doesn't have to wait for rAF. */
   step(): void {
     if (this.topoStale) this.recomputeTopo();
+
+    // Determinism forwarding — mirror the main-thread freeze/pause globals
+    // into the render worker (its own realm can't see them). BEFORE the
+    // freeze-render early-return below, so a frozen harness stops worker
+    // frames too. Cheap no-op when unchanged / no worker.
+    this.workerBridge?.syncDeterminism();
 
     // E2E render-suppression hook (per-module-per-port sweeps only).
     //

@@ -22,8 +22,16 @@
 //     non-black) can no longer masquerade as a passing worker path.
 //
 // Run under CI SwiftShader: the Phase-0 spike proved worker WebGL2 renders
-// non-black under CI's exact renderer flags. The flag is OFF by default; the ON
-// test flips it via addInitScript BEFORE boot.
+// non-black under CI's exact renderer flags (where worker-GL can't init, the
+// proxy's transparent main-thread fallback is the asserted floor).
+//
+// PR V2 — the worker flag now DEFAULTS ON for parity-complete
+// `renderLocus:'worker'` modules (acidwarp): the "default" test asserts the
+// no-flag boot engages the worker where capable, and the old flag-off test
+// became the KILL-SWITCH test (`__videoWorkerEnabled=false` → main render,
+// zero worker frames, DRS parity). The determinism test proves the main
+// thread's frozen clock is FORWARDED into the worker realm (worker frames
+// are pixel-stable under a pinned iTime).
 
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
@@ -166,12 +174,16 @@ test.describe('Fix E render worker — acidwarp', () => {
 
   });
 
-  test('flag OFF (default): acidwarp renders on the main thread — deterministic render smoke (parity)', async ({ page, errorWatch }) => {
-    // The flag-off path is the existing main-thread render: prod's default. With
-    // no worker, acidwarp reads `frame.time` directly, so a frozen clock + paused
-    // rAF make it bit-stable → pure DRS on its OWN output texture.
+  test('kill switch (__videoWorkerEnabled=false): main-thread render — deterministic render smoke (parity)', async ({ page, errorWatch }) => {
+    // The kill-switch path is the pre-V2 main-thread render (the worker flag
+    // defaults ON now, so "off" must be forced). With no worker, acidwarp
+    // reads `frame.time` directly, so a frozen clock + paused rAF make it
+    // bit-stable → pure DRS on its OWN output texture.
     test.setTimeout(60_000);
 
+    await page.addInitScript(() => {
+      (globalThis as unknown as { __videoWorkerEnabled?: boolean }).__videoWorkerEnabled = false;
+    });
     await installRenderSmokeHooks(page);
 
     await page.goto('/rack');
@@ -190,8 +202,8 @@ test.describe('Fix E render worker — acidwarp', () => {
 
     await expect(page.locator('[data-testid="video-out-card"]')).toHaveCount(1);
 
-    // Worker flag stayed OFF → workerFramesDelivered must be 0 (no worker path).
-    expect(await workerFramesDelivered(page, 'aw'), 'no worker frames with the flag off').toBe(0);
+    // Kill switch → workerFramesDelivered must be 0 (no worker path at all).
+    expect(await workerFramesDelivered(page, 'aw'), 'no worker frames with the kill switch').toBe(0);
 
     const a = await stepAndReadStats(page, { nodeId: 'aw', steps: FIXED_STEPS });
     assertRenderStats(a, FIXED_STEPS);
@@ -203,5 +215,129 @@ test.describe('Fix E render worker — acidwarp', () => {
     expect(Math.abs(b.mean - a.mean), `frozen output is frame-stable (mean ${a.mean.toFixed(3)} vs ${b.mean.toFixed(3)})`).toBeLessThan(0.5);
     expect(Math.abs(b.variance - a.variance), 'frozen output variance is frame-stable').toBeLessThan(1.0);
 
+  });
+
+  // PR V2 — the production DEFAULT (no flag anywhere) engages the worker for
+  // the parity-complete acidwarp wherever worker-WebGL2 initializes, with the
+  // documented transparent main fallback elsewhere (CI SwiftShader).
+  test('DEFAULT (no flag): worker path engages where capable; clean fallback otherwise @webgl-smoke', async ({ page, errorWatch }) => {
+    test.setTimeout(60_000);
+
+    await page.goto('/rack');
+    await page.waitForLoadState('networkidle');
+
+    await spawnPatch(
+      page,
+      [
+        { id: 'aw', type: 'acidwarp', position: { x: 80, y: 80 }, domain: 'video' },
+        { id: 'out', type: 'videoOut', position: { x: 560, y: 80 }, domain: 'video' },
+      ],
+      [
+        { id: 'e1', from: { nodeId: 'aw', portId: 'out' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'video', targetType: 'video' },
+      ],
+    );
+    await expect(page.locator('[data-testid="video-out-card"]')).toHaveCount(1);
+
+    // Capability-aware readiness, same shape as the explicit-ON test: worker
+    // active + ≥2 delivered bitmaps, OR inactive (SwiftShader) + non-black
+    // main fallback. Bounded by real state.
+    let delivered = 0;
+    let active = false;
+    await expect
+      .poll(async () => {
+        active = await workerActive(page, 'aw');
+        delivered = await workerFramesDelivered(page, 'aw');
+        const s = await outputStats(page);
+        const nonBlack = (s?.nonZeroFrac ?? 0) > 0.02;
+        return (active && delivered >= 2) || (!active && nonBlack);
+      }, {
+        message: 'default boot: worker delivered ≥2 bitmaps OR non-black main fallback',
+        timeout: 30_000,
+      })
+      .toBe(true);
+
+    const stats = await outputStats(page);
+    expect(stats!.nonZeroFrac, 'OUTPUT is not all-black under the default flag state').toBeGreaterThan(0.02);
+    if (active) {
+      expect(delivered, 'default-ON worker actually delivered frames').toBeGreaterThanOrEqual(2);
+      console.log(`[render-worker] DEFAULT flag state → WORKER path verified (framesDelivered=${delivered})`);
+    } else {
+      console.log('[render-worker] DEFAULT flag state → worker-WebGL2 unavailable on this renderer → main fallback (non-black)');
+    }
+  });
+
+  // PR V2 — determinism forwarding: the worker realm can't see the main
+  // thread's `__videoEngineFreezeTime`, so the bridge forwards it (init +
+  // on-change). Under a pinned clock BOTH paths (worker frames on a real GPU,
+  // main fallback on SwiftShader) must be pixel-stable over time — acidwarp
+  // derives all animation from frame.time deltas, so a frozen clock means
+  // dt=0 → a static image.
+  test('determinism forwarding: frozen engine clock reaches the worker (stable output)', async ({ page, errorWatch }) => {
+    test.setTimeout(60_000);
+
+    // Freeze the clock but do NOT pause the loop — frames must keep flowing
+    // so we can compare two live samples. Explicit ON so a capable runtime
+    // definitely exercises the worker path.
+    await page.addInitScript(() => {
+      const g = globalThis as unknown as { __videoWorkerEnabled?: boolean; __videoEngineFreezeTime?: number };
+      g.__videoWorkerEnabled = true;
+      g.__videoEngineFreezeTime = 2.0;
+    });
+
+    await page.goto('/rack');
+    await page.waitForLoadState('networkidle');
+
+    await spawnPatch(
+      page,
+      [
+        { id: 'aw', type: 'acidwarp', position: { x: 80, y: 80 }, domain: 'video' },
+        { id: 'out', type: 'videoOut', position: { x: 560, y: 80 }, domain: 'video' },
+      ],
+      [
+        { id: 'e1', from: { nodeId: 'aw', portId: 'out' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'video', targetType: 'video' },
+      ],
+    );
+    await expect(page.locator('[data-testid="video-out-card"]')).toHaveCount(1);
+
+    // Wait until SOME path painted the OUTPUT non-black (worker or fallback).
+    await expect
+      .poll(async () => ((await outputStats(page))?.nonZeroFrac ?? 0) > 0.02, {
+        message: 'OUTPUT painted non-black under the frozen clock',
+        timeout: 30_000,
+      })
+      .toBe(true);
+
+    // Two samples with REAL frames in between (engine frame counter advances
+    // ≥30 — a state-bounded gap, not a wall-clock sleep): a frozen clock must
+    // hold the image still on BOTH render paths (renderer-tolerant:
+    // mean/variance epsilons, not exact pixels).
+    const framesNow = () =>
+      page.evaluate(() => {
+        const w = globalThis as unknown as {
+          __engine: () => { getDomain: (d: string) => { currentFrameCount: () => number } };
+        };
+        return w.__engine().getDomain('video').currentFrameCount();
+      });
+    const s1 = await outputStats(page);
+    const f1 = await framesNow();
+    await expect
+      .poll(async () => (await framesNow()) - f1, {
+        message: 'engine advanced ≥30 frames between determinism samples',
+        timeout: 15_000,
+      })
+      .toBeGreaterThanOrEqual(30);
+    const s2 = await outputStats(page);
+    expect(s1).not.toBeNull();
+    expect(s2).not.toBeNull();
+    expect(
+      Math.abs(s2!.mean - s1!.mean),
+      `frozen-clock output is time-stable (mean ${s1!.mean.toFixed(3)} vs ${s2!.mean.toFixed(3)})`,
+    ).toBeLessThan(0.75);
+    expect(
+      Math.abs(s2!.variance - s1!.variance),
+      'frozen-clock output variance is time-stable',
+    ).toBeLessThan(2.0);
+    const active = await workerActive(page, 'aw');
+    console.log(`[render-worker] determinism check ran on the ${active ? 'WORKER' : 'main-fallback'} path`);
   });
 });

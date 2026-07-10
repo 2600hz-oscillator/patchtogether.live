@@ -78,9 +78,16 @@ export interface VideoModuleDef {
    * module renders on the main engine exactly as today — byte-identical.
    *
    * ONLY pure-GL, DOM-free factories are eligible (the worker has no DOM and
-   * no AudioContext). See `.myrobots/plans/fixe-offscreen-canvas-plan-*.md`.
+   * no AudioContext). See `.myrobots/plans/fixe-video-offload-shoes1-*.md`.
+   *
+   * `'worker'` = PARITY-COMPLETE: rendered in the worker whenever the flag is
+   * not explicitly off (the production default is ON as of PR V2).
+   * `'worker-experimental'` = worker path exists but has known parity gaps
+   * (documented at the def) — used ONLY under the explicit flag
+   * (`?videoworker=1` / `__videoWorkerEnabled=true` / `VITE_VIDEO_WORKER=true`),
+   * so the default experience never regresses. See workerLocusEligible.
    */
-  renderLocus?: 'main' | 'worker';
+  renderLocus?: 'main' | 'worker' | 'worker-experimental';
   /**
    * Sink-driven pull evaluation (see $lib/video/pull-eval): opt this module
    * OUT of unwatched-skip so its draw() runs EVERY frame even when nothing

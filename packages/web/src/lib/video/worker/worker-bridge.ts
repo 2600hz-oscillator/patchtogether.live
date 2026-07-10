@@ -17,35 +17,76 @@
 import type { ModuleNode } from '$lib/graph/types';
 import type { WorkerInboundMsg, WorkerOutboundMsg } from './protocol';
 
-/** Read the Fix E worker flag. Default OFF. Precedence (first match wins):
+/** The Fix E worker flag, TRI-STATE (stack-study adoption item 1, PR V2):
+ *  - 'on'      — explicitly enabled: EVERY worker-locus module uses the worker,
+ *                including `renderLocus:'worker-experimental'` ones.
+ *  - 'off'     — kill switch: nothing uses the worker (main render everywhere).
+ *  - 'default' — nothing set: the worker is ON for parity-complete
+ *                `renderLocus:'worker'` modules only (the production default
+ *                since this PR; it was OFF-by-default while the co-processor
+ *                soaked behind the flag).
+ *  Precedence (first match wins):
  *  1. runtime override `globalThis.__videoWorkerEnabled` (e2e flips this via
  *     addInitScript BEFORE boot, or a dev pokes the console). `=== false`
  *     force-disables even if a build/URL said on.
- *  2. URL param `?videoworker=1` (or `=true`) → ON, `=0`/`=false` → OFF. Lets a
+ *  2. URL param `?videoworker=1` (or `=true`) → on, `=0`/`=false` → off. Lets a
  *     reviewer A/B the worker path by opening a link — no console, works on
  *     mobile. SSR-safe (guarded on `location`).
- *  3. prod/dev build flag `import.meta.env.VITE_VIDEO_WORKER === 'true'`.
- *  Otherwise OFF. */
-export function isWorkerFlagOn(): boolean {
+ *  3. prod/dev build flag `VITE_VIDEO_WORKER`: 'true' → on, 'false' → off.
+ *  Otherwise 'default'. */
+export type WorkerFlagState = 'on' | 'off' | 'default';
+
+export function workerFlagState(): WorkerFlagState {
   const override = (globalThis as unknown as { __videoWorkerEnabled?: boolean })
     .__videoWorkerEnabled;
-  if (override === true) return true;
-  if (override === false) return false;
+  if (override === true) return 'on';
+  if (override === false) return 'off';
   try {
     if (typeof location !== 'undefined' && location.search) {
       const v = new URLSearchParams(location.search).get('videoworker');
-      if (v === '1' || v === 'true') return true;
-      if (v === '0' || v === 'false') return false;
+      if (v === '1' || v === 'true') return 'on';
+      if (v === '0' || v === 'false') return 'off';
     }
   } catch {
     // location / URLSearchParams unavailable (SSR / odd realm) — fall through.
   }
   try {
-    return (import.meta as unknown as { env?: Record<string, string> }).env
-      ?.VITE_VIDEO_WORKER === 'true';
+    const env = (import.meta as unknown as { env?: Record<string, string> }).env
+      ?.VITE_VIDEO_WORKER;
+    if (env === 'true') return 'on';
+    if (env === 'false') return 'off';
   } catch {
-    return false;
+    /* import.meta.env unavailable — fall through to default */
   }
+  return 'default';
+}
+
+/** Back-compat boolean view: is the worker path enabled AT ALL? True for both
+ *  'on' and 'default' (the default is ON as of PR V2); false only for the
+ *  explicit kill switch. Per-module eligibility is workerLocusEligible. */
+export function isWorkerFlagOn(): boolean {
+  return workerFlagState() !== 'off';
+}
+
+/**
+ * Per-module worker eligibility (pure — unit-testable without a Worker):
+ *  - kill switch ('off') → never;
+ *  - `renderLocus:'worker'` (parity-complete: acidwarp) → 'on' AND 'default';
+ *  - `renderLocus:'worker-experimental'` (parity gaps: TOYBOX's video/image
+ *    layers render black in the worker + no freeze-hook forwarding for its
+ *    bespoke VRT; VFPGA's card polls `read('gateState')` per frame, which
+ *    materializes + ticks a main-thread fallback → double render) → explicit
+ *    'on' only;
+ *  - anything else → never.
+ */
+export function workerLocusEligible(
+  locus: 'main' | 'worker' | 'worker-experimental' | undefined,
+  state: WorkerFlagState,
+): boolean {
+  if (state === 'off') return false;
+  if (locus === 'worker') return true;
+  if (locus === 'worker-experimental') return state === 'on';
+  return false;
 }
 
 /** Static capability gate: does this realm even have the primitives the worker
@@ -82,6 +123,9 @@ export class RenderWorkerBridge {
   private pending = new Map<string, ImageBitmap>();
   /** Nodes the bridge has been told about (so a re-init can replay them). */
   private knownNodes = new Map<string, ModuleNode>();
+  /** Last determinism state forwarded to the worker ("<freeze>|<paused>"),
+   *  so syncDeterminism only posts on change. */
+  private lastDeterminismKey = '';
 
   constructor(opts: WorkerBridgeOpts) {
     this.res = { ...opts.res };
@@ -102,6 +146,10 @@ export class RenderWorkerBridge {
         this.fail();
       };
       this.send({ type: 'init', res: this.res });
+      // Forward the CURRENT determinism globals right away — e2e harnesses set
+      // them via addInitScript BEFORE the app boots, and the worker's clock
+      // must honor them from its very first frame.
+      this.syncDeterminism();
     } catch (err) {
       this.trace?.(`[render-worker] construct failed: ${err instanceof Error ? err.message : err} — main-thread fallback`);
       this.fail();
@@ -161,6 +209,36 @@ export class RenderWorkerBridge {
   sendToyboxSync(nodeId: string, state: unknown): void {
     if (!this.supported) return;
     this.send({ type: 'toybox-sync', nodeId, state });
+  }
+
+  /**
+   * DETERMINISM FORWARDING — the worker is a separate realm with its own
+   * clock, so the main thread's e2e/VRT determinism globals
+   * (`__videoEngineFreezeTime` pins the engine clock; `__videoEnginePause` /
+   * `__videoEngineFreezeRender` stop per-frame draws) would otherwise be
+   * invisible to worker-resident nodes and leave them animating under a
+   * frozen harness. The VideoEngine calls this once per step() (cheap string
+   * compare; posts only on CHANGE) and the constructor calls it once so
+   * addInitScript-set hooks apply from the first worker frame.
+   */
+  syncDeterminism(): void {
+    if (!this.supported) return;
+    const g = globalThis as unknown as {
+      __videoEngineFreezeTime?: unknown;
+      __videoEnginePause?: unknown;
+      __videoEngineFreezeRender?: unknown;
+    };
+    const freeze =
+      typeof g.__videoEngineFreezeTime === 'number' && Number.isFinite(g.__videoEngineFreezeTime)
+        ? (g.__videoEngineFreezeTime as number)
+        : null;
+    // Both pause (idle the loop) and freeze-render (skip draws) mean the same
+    // thing to the worker: stop producing new frames.
+    const paused = g.__videoEnginePause === true || g.__videoEngineFreezeRender === true;
+    const key = `${freeze}|${paused}`;
+    if (key === this.lastDeterminismKey) return;
+    this.lastDeterminismKey = key;
+    this.send({ type: 'determinism', freezeTimeSec: freeze, paused });
   }
 
   /** Drain (remove + return) the latest pending bitmap for a node, transferring
