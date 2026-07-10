@@ -216,13 +216,20 @@ const hocuspocus = Server.configure({
       return undefined;
     }
     const ydoc = new Y.Doc();
-<<<<<<< HEAD
-    if (snapshot) Y.applyUpdate(ydoc, snapshot);
+    if (snapshot) {
+      Y.applyUpdate(ydoc, snapshot);
+      // Seed the per-rack accounting with the restored size so an already-huge
+      // rack alarms at load, not only on its first store.
+      rackAccountant.recordSnapshot(data.documentName, snapshot.byteLength);
+    }
     let replayed = 0;
     for (const entry of journal) {
       try {
         Y.applyUpdate(ydoc, entry.update);
         replayed += 1;
+        // Replayed rows are churn on top of the snapshot — same accounting
+        // model as live onChange updates.
+        rackAccountant.recordUpdate(data.documentName, entry.update.byteLength);
       } catch (err) {
         // One corrupt row must not sink the whole doc — skip it, keep the
         // snapshot + remaining rows. (Corruption here would mean a torn
@@ -234,12 +241,6 @@ const hocuspocus = Server.configure({
         );
       }
     }
-=======
-    Y.applyUpdate(ydoc, snapshot);
-    // Seed the per-rack accounting with the restored size so an already-huge
-    // rack alarms at load, not only on its first store.
-    rackAccountant.recordSnapshot(data.documentName, snapshot.byteLength);
->>>>>>> origin/main
     // eslint-disable-next-line no-console
     console.log(
       `[hocuspocus] load (restored ${snapshot?.byteLength ?? 0} bytes + ${replayed} journal rows): ` +
@@ -248,18 +249,14 @@ const hocuspocus = Server.configure({
     return ydoc;
   },
 
-<<<<<<< HEAD
-  // Fires once per incremental Yjs update applied to a loaded doc. Append
-  // it to the crash journal — fire-and-forget so a slow/failed insert can
-  // neither backpressure the update fan-out nor crash the relay
-  // (appendJournalUpdate swallows internally). See ./journal.ts.
+  // Fires once per incremental Yjs update applied to a loaded doc. Two cheap
+  // duties: (1) append it to the crash journal — fire-and-forget so a
+  // slow/failed insert can neither backpressure the update fan-out nor crash
+  // the relay (appendJournalUpdate swallows internally, see ./journal.ts);
+  // (2) byte-length bookkeeping for the per-rack memory accounting (updates
+  // are churn on top of the last snapshot encode, see ./rack-accounting.ts).
   async onChange(data) {
     void appendJournalUpdate(data.documentName, data.update);
-=======
-  // Fires once per Yjs update applied to a loaded doc. Cheap (byte-length
-  // bookkeeping only) — the accounting model treats incremental updates as
-  // churn on top of the last full snapshot encode. See ./rack-accounting.ts.
-  async onChange(data) {
     rackAccountant.recordUpdate(data.documentName, data.update.byteLength);
   },
 
@@ -267,7 +264,6 @@ const hocuspocus = Server.configure({
   // its RAM is freed, so stop attributing it.
   async afterUnloadDocument(data) {
     rackAccountant.evict(data.documentName);
->>>>>>> origin/main
   },
 
   // Hocuspocus debounces this hook per the `debounce`/`maxDebounce` config
@@ -282,13 +278,11 @@ const hocuspocus = Server.configure({
     // → idempotent replay later. Safe direction.)
     const watermark = await latestJournalSeq(data.documentName);
     const state = Y.encodeStateAsUpdate(data.document);
-<<<<<<< HEAD
     const durable = await snapshots.store(data.documentName, state);
-=======
-    await storeSnapshot(data.documentName, state);
-    // Full-state encode = exact current size; resets this rack's churn.
+    // Full-state encode = exact current size; resets this rack's churn —
+    // recorded regardless of persistence outcome (the doc IS this size in
+    // RAM; the accounting tracks memory, not durability).
     rackAccountant.recordSnapshot(data.documentName, state.byteLength);
->>>>>>> origin/main
     // eslint-disable-next-line no-console
     console.log(`[hocuspocus] persist (${state.byteLength} bytes): doc=${data.documentName}`);
     // Compact ONLY when the snapshot really landed — after a swallowed
