@@ -19,11 +19,14 @@
     "yjs": "^13.6.0"
   },
   "devDependencies": {
+    "@hocuspocus/provider": "^4.3.0",
     "@types/node": "^22.10.0",
     "@types/pg": "^8.20.0",
+    "@types/ws": "^8.18.1",
     "convert-source-map": "^2.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",
-    "vitest": "^3.2.0"
+    "vitest": "^3.2.0",
+    "ws": "^8.21.0"
   }
 }

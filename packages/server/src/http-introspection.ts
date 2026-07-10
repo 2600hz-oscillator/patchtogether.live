@@ -33,11 +33,12 @@ import type { RackAlertLevel, RackMemSummary } from './rack-accounting.js';
 interface HocuspocusLike {
   getConnectionsCount(): number;
   getDocumentsCount(): number;
-  /** Snapshot-store mode the relay resolved at boot — 'postgres' (durable) or
-   *  'memory' (process-local, lost on restart). Surfaced on /health + /metrics
-   *  so a misconfigured prod relay serving a non-persistent rack is observable.
-   *  See packages/server/src/db.ts:persistenceMode. */
-  getPersistenceMode(): 'postgres' | 'memory';
+  /** Snapshot-store mode the relay resolved at boot — 'r2' (blobs in object
+   *  storage, Postgres fallback), 'postgres' (durable rows), or 'memory'
+   *  (process-local, lost on restart). Surfaced on /health + /metrics so a
+   *  misconfigured prod relay serving a non-persistent rack is observable.
+   *  See packages/server/src/snapshot-store.ts. */
+  getPersistenceMode(): 'r2' | 'postgres' | 'memory';
   /** Count of uncaught exceptions the relay caught + stayed up through since
    *  boot. Optional so existing callers/tests need no change; absent → 0.
    *  See packages/server/src/relay-error-handlers.ts. */
@@ -67,9 +68,10 @@ export interface MetricsSnapshot {
   conns: number;
   rooms: number;
   persist_writes_per_min: number;
-  /** Snapshot-store mode: 'postgres' (durable) or 'memory' (lost on restart).
-   *  A prod relay reporting 'memory' is serving a non-persistent rack. */
-  persist_mode: 'postgres' | 'memory';
+  /** Snapshot-store mode: 'r2' (blobs in object storage), 'postgres'
+   *  (durable rows), or 'memory' (lost on restart). A prod relay reporting
+   *  'memory' is serving a non-persistent rack. */
+  persist_mode: 'r2' | 'postgres' | 'memory';
   /** Uncaught exceptions the relay caught + stayed up through since boot.
    *  Non-zero → pair with the tagged `event=relay_uncaught_exception` log line. */
   relay_uncaught_exceptions: number;

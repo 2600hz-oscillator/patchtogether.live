@@ -74,7 +74,10 @@ export function shouldFailFast(
   return env.NODE_ENV === 'production' && usingMemory && env.ALLOW_MEMORY_STORE !== '1';
 }
 
-function getPool(): pg.Pool {
+/** Shared relay-wide pg pool. Exported (since the journal slice) so sibling
+ *  persistence modules — journal.ts, snapshot-store.ts — reuse the SAME pool
+ *  (and its crash-proofing 'error' listener) instead of growing their own. */
+export function getPool(): pg.Pool {
   if (pool) return pool;
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
@@ -163,11 +166,18 @@ export async function loadSnapshot(rackId: string): Promise<Uint8Array | null> {
  *  loader inserts the rack before the WS handshake), but Playwright
  *  tests connect with ephemeral rack ids that never get a `racks` row.
  *  Logging + swallowing keeps the test ergonomics clean and is safe in
- *  prod (the FK still enforces integrity if it ever did get triggered). */
-export async function storeSnapshot(rackId: string, state: Uint8Array): Promise<void> {
+ *  prod (the FK still enforces integrity if it ever did get triggered).
+ *
+ *  Returns whether the state is now DURABLE (written, or a deliberate
+ *  no-op for an FK-less test rack — which journals nothing either, so
+ *  there's nothing to lose). `false` = a swallowed transient failure —
+ *  the caller must NOT compact the update journal on false, or a crash
+ *  during the failure window loses edits the journal was holding. The
+ *  never-throws contract is unchanged (see the crash rationale below). */
+export async function storeSnapshot(rackId: string, state: Uint8Array): Promise<boolean> {
   if (USE_MEMORY) {
     memSnapshots.set(rackId, state);
-    return;
+    return true;
   }
   try {
     await getPool().query(
@@ -176,11 +186,12 @@ export async function storeSnapshot(rackId: string, state: Uint8Array): Promise<
        ON CONFLICT (rack_id) DO UPDATE SET yjs_state = $2, updated_at = now()`,
       [rackId, Buffer.from(state)],
     );
+    return true;
   } catch (err) {
     if ((err as { code?: string }).code === '23503') {
       // eslint-disable-next-line no-console
       console.log(`[hocuspocus] persist skipped (no such rack): doc=${rackId}`);
-      return;
+      return true;
     }
     // A persist failure must NEVER crash the relay. onStoreDocument has no
     // catch of its own, so a re-throw here becomes an unhandled rejection
@@ -197,5 +208,11 @@ export async function storeSnapshot(rackId: string, state: Uint8Array): Promise<
       `[hocuspocus] persist FAILED (transient — relay stays up, will retry): doc=${rackId} ` +
         `code=${(err as { code?: string }).code ?? ''} ${(err as Error).message}`,
     );
+    return false;
   }
+}
+
+/** Test-only: wipe the in-memory snapshot map between cases. */
+export function _resetMemorySnapshots(): void {
+  memSnapshots.clear();
 }
