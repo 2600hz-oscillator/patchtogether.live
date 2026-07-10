@@ -7,6 +7,7 @@ import {
   type IntrospectionDeps,
   type MetricsSnapshot,
 } from './http-introspection.js';
+import type { RackMemSummary } from './rack-accounting.js';
 
 interface MockTimer {
   fn: () => void;
@@ -74,6 +75,7 @@ function makeExt(opts?: {
   persist?: 'postgres' | 'memory';
   uncaught?: number;
   unhandled?: number;
+  rackSummary?: RackMemSummary;
   env?: Record<string, string | undefined>;
   fetch?: (url: string) => Promise<unknown>;
 }) {
@@ -82,6 +84,7 @@ function makeExt(opts?: {
   let rooms = opts?.rooms ?? 0;
   let uncaught = opts?.uncaught ?? 0;
   let unhandled = opts?.unhandled ?? 0;
+  const rackSummary = opts?.rackSummary;
   const persist = opts?.persist ?? 'postgres';
   const ext = createIntrospectionExtension(
     {
@@ -90,6 +93,7 @@ function makeExt(opts?: {
       getPersistenceMode: () => persist,
       getUncaughtExceptions: () => uncaught,
       getUnhandledRejections: () => unhandled,
+      getRackMemSummary: rackSummary === undefined ? undefined : () => rackSummary,
     },
     {
       deps: {
@@ -180,6 +184,13 @@ describe('computeAlertState', () => {
   it("is 'crit' when rss is fine but unhandled rejections > 0", () => {
     expect(computeAlertState(50, 0, 1, t)).toBe('crit');
   });
+  it('folds in the per-rack level: rack warn/crit escalates a healthy process', () => {
+    expect(computeAlertState(50, 0, 0, t, 'ok')).toBe('ok');
+    expect(computeAlertState(50, 0, 0, t, 'warn')).toBe('warn');
+    expect(computeAlertState(50, 0, 0, t, 'crit')).toBe('crit');
+    // Rack warn never DOWNGRADES a memory crit.
+    expect(computeAlertState(250, 0, 0, t, 'warn')).toBe('crit');
+  });
 });
 
 describe('createIntrospectionExtension — snapshot shape', () => {
@@ -206,6 +217,10 @@ describe('createIntrospectionExtension — snapshot shape', () => {
       'persist_mode',
       'relay_uncaught_exceptions',
       'relay_unhandled_rejections',
+      'largest_rack_mb',
+      'racks_over_warn',
+      'racks_over_crit',
+      'rack_alert_state',
       'alert_state',
     ];
     expect(Object.keys(snap).sort()).toEqual([...keys].sort());
@@ -222,6 +237,11 @@ describe('createIntrospectionExtension — snapshot shape', () => {
     expect(snap.persist_mode).toBe('postgres');
     expect(snap.relay_uncaught_exceptions).toBe(0);
     expect(snap.relay_unhandled_rejections).toBe(0);
+    // No getRackMemSummary injected → empty per-rack roll-up defaults.
+    expect(snap.largest_rack_mb).toBe(0);
+    expect(snap.racks_over_warn).toBe(0);
+    expect(snap.racks_over_crit).toBe(0);
+    expect(snap.rack_alert_state).toBe('ok');
     expect(typeof snap.boot_id).toBe('string');
     expect(snap.boot_id.length).toBeGreaterThan(2);
   });
@@ -322,6 +342,31 @@ describe('createIntrospectionExtension — alert_state rollup', () => {
     clock.setMem({ rss: 50 });
     setUnhandled(1);
     expect(ext._snapshot().alert_state).toBe('crit');
+  });
+
+  it("is 'warn' when the process is healthy but a rack crossed its warn threshold", () => {
+    const { clock, ext } = makeExt({
+      thresholds,
+      rackSummary: { rackCount: 2, largestRackMb: 20, racksOverWarn: 1, racksOverCrit: 0, level: 'warn' },
+    });
+    clock.setMem({ rss: 50 });
+    const snap = ext._snapshot();
+    expect(snap.alert_state).toBe('warn');
+    expect(snap.rack_alert_state).toBe('warn');
+    expect(snap.largest_rack_mb).toBe(20);
+    expect(snap.racks_over_warn).toBe(1);
+    expect(snap.racks_over_crit).toBe(0);
+  });
+
+  it("is 'crit' when a rack crossed its crit threshold", () => {
+    const { clock, ext } = makeExt({
+      thresholds,
+      rackSummary: { rackCount: 1, largestRackMb: 30, racksOverWarn: 1, racksOverCrit: 1, level: 'crit' },
+    });
+    clock.setMem({ rss: 50 });
+    const snap = ext._snapshot();
+    expect(snap.alert_state).toBe('crit');
+    expect(snap.racks_over_crit).toBe(1);
   });
 
   it('serializes alert_state into the /metrics body', async () => {

@@ -38,6 +38,7 @@
     "mediabunny": "^1.46.0",
     "milkdrop-preset-converter": "^0.1.2",
     "svelte-clerk": "^1.1.6",
+    "y-indexeddb": "^9.0.12",
     "yjs": "^13.6.0"
   },
   "devDependencies": {
@@ -45,6 +46,7 @@
     "@sveltejs/adapter-cloudflare": "^7.2.8",
     "@sveltejs/kit": "^2.0.0",
     "@sveltejs/vite-plugin-svelte": "^6.0.0",
+    "fake-indexeddb": "^6.2.5",
     "fast-check": "^4.8.0",
     "svelte": "^5.0.0",
     "svelte-check": "^4.0.0",
