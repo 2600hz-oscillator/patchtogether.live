@@ -930,6 +930,75 @@ edges out out mono-video
 edges param thickness 1..8 linear default=2 unit=px
 edges param threshold 0..1 linear default=0.2
 electraControl meta domain=meta maxInstances=1
+es9 meta domain=audio maxInstances=1
+es9 in out1 audio accepts=cv,gate,pitch
+es9 in out2 audio accepts=cv,gate,pitch
+es9 in out3 audio accepts=cv,gate,pitch
+es9 in out4 audio accepts=cv,gate,pitch
+es9 in out5 audio accepts=cv,gate,pitch
+es9 in out6 audio accepts=cv,gate,pitch
+es9 in out7 audio accepts=cv,gate,pitch
+es9 in out8 audio accepts=cv,gate,pitch
+es9 in usb1 audio
+es9 in usb2 audio
+es9 in usb3 audio
+es9 in usb4 audio
+es9 in usb5 audio
+es9 in usb6 audio
+es9 in usb7 audio
+es9 in usb8 audio
+es9 out in1 audio
+es9 out in1_cv cv
+es9 out in10 audio
+es9 out in10_cv cv
+es9 out in11 audio
+es9 out in11_cv cv
+es9 out in12 audio
+es9 out in12_cv cv
+es9 out in13 audio
+es9 out in13_cv cv
+es9 out in14 audio
+es9 out in14_cv cv
+es9 out in2 audio
+es9 out in2_cv cv
+es9 out in3 audio
+es9 out in3_cv cv
+es9 out in4 audio
+es9 out in4_cv cv
+es9 out in5 audio
+es9 out in5_cv cv
+es9 out in6 audio
+es9 out in6_cv cv
+es9 out in7 audio
+es9 out in7_cv cv
+es9 out in8 audio
+es9 out in8_cv cv
+es9 out in9 audio
+es9 out in9_cv cv
+es9 out spdif_l audio
+es9 out spdif_r audio
+es9 param in1_class 0..3 discrete default=1
+es9 param in10_class 0..3 discrete default=1
+es9 param in11_class 0..3 discrete default=1
+es9 param in12_class 0..3 discrete default=1
+es9 param in13_class 0..3 discrete default=1
+es9 param in14_class 0..3 discrete default=1
+es9 param in2_class 0..3 discrete default=1
+es9 param in3_class 0..3 discrete default=1
+es9 param in4_class 0..3 discrete default=1
+es9 param in5_class 0..3 discrete default=1
+es9 param in6_class 0..3 discrete default=1
+es9 param in7_class 0..3 discrete default=1
+es9 param in8_class 0..3 discrete default=1
+es9 param in9_class 0..3 discrete default=1
+es9 param out1_class 0..3 discrete default=0
+es9 param out2_class 0..3 discrete default=0
+es9 param out3_class 0..3 discrete default=0
+es9 param out4_class 0..3 discrete default=0
+es9 param out5_class 0..3 discrete default=0
+es9 param out6_class 0..3 discrete default=0
+es9 param out7_class 0..3 discrete default=0
+es9 param out8_class 0..3 discrete default=0
 fader meta domain=video
 fader in in_a video
 fader in in_b video

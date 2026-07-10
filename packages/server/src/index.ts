@@ -37,6 +37,7 @@ import {
   getUnhandledRejectionCount,
   installRelayProcessGuards,
 } from './relay-error-handlers.js';
+import { createRackAccountant, readRackMemThresholds } from './rack-accounting.js';
 
 // Port choice: 1235 instead of Hocuspocus's documented default 1234,
 // because BitwigStudio (and likely other DAWs) reserve 1234 for OSC.
@@ -67,6 +68,19 @@ installRelayProcessGuards();
 // this becomes a Durable Object or Redis-backed counter.
 const slots = createSlotTracker();
 
+// Per-rack memory accounting: attributes doc memory to individual racks so
+// the pre-OOM alarm names the offender (the process-RSS alarm alone says
+// "the relay is big", not WHICH rack). Fed from the onLoadDocument /
+// onChange / onStoreDocument hooks below; the roll-up is surfaced on
+// /metrics and folded into `alert_state` so the existing Better Stack
+// keyword monitors catch a runaway rack. See ./rack-accounting.ts.
+const rackAccountant = createRackAccountant({
+  thresholds: readRackMemThresholds(),
+  // eslint-disable-next-line no-console
+  log: (level, msg) => console[level === 'error' ? 'error' : 'warn'](msg),
+  bootId: RELAY_BOOT_ID,
+});
+
 // Snapshot blob storage behind the backend-picking abstraction: R2 when the
 // four R2_* env vars are set (blobs in object storage — the correct shape at
 // the ~25MB/rack ceiling), else the existing Postgres/memory path from
@@ -93,6 +107,9 @@ const introspection = createIntrospectionExtension(
     // rejection since boot. See ./relay-error-handlers.ts.
     getUncaughtExceptions: getUncaughtExceptionCount,
     getUnhandledRejections: getUnhandledRejectionCount,
+    // Per-rack memory roll-up (largest rack, over-threshold counts, worst
+    // level) for /metrics + the alert_state fold. See ./rack-accounting.ts.
+    getRackMemSummary: () => rackAccountant.summary(),
   },
   // Reuse the single process-wide boot id so the boot_id on /health + /metrics
   // matches the boot_id stamped on the tagged error log lines for correlation.
@@ -199,6 +216,7 @@ const hocuspocus = Server.configure({
       return undefined;
     }
     const ydoc = new Y.Doc();
+<<<<<<< HEAD
     if (snapshot) Y.applyUpdate(ydoc, snapshot);
     let replayed = 0;
     for (const entry of journal) {
@@ -216,6 +234,12 @@ const hocuspocus = Server.configure({
         );
       }
     }
+=======
+    Y.applyUpdate(ydoc, snapshot);
+    // Seed the per-rack accounting with the restored size so an already-huge
+    // rack alarms at load, not only on its first store.
+    rackAccountant.recordSnapshot(data.documentName, snapshot.byteLength);
+>>>>>>> origin/main
     // eslint-disable-next-line no-console
     console.log(
       `[hocuspocus] load (restored ${snapshot?.byteLength ?? 0} bytes + ${replayed} journal rows): ` +
@@ -224,12 +248,26 @@ const hocuspocus = Server.configure({
     return ydoc;
   },
 
+<<<<<<< HEAD
   // Fires once per incremental Yjs update applied to a loaded doc. Append
   // it to the crash journal — fire-and-forget so a slow/failed insert can
   // neither backpressure the update fan-out nor crash the relay
   // (appendJournalUpdate swallows internally). See ./journal.ts.
   async onChange(data) {
     void appendJournalUpdate(data.documentName, data.update);
+=======
+  // Fires once per Yjs update applied to a loaded doc. Cheap (byte-length
+  // bookkeeping only) — the accounting model treats incremental updates as
+  // churn on top of the last full snapshot encode. See ./rack-accounting.ts.
+  async onChange(data) {
+    rackAccountant.recordUpdate(data.documentName, data.update.byteLength);
+  },
+
+  // Doc evicted from memory (last client left + Hocuspocus unloaded it):
+  // its RAM is freed, so stop attributing it.
+  async afterUnloadDocument(data) {
+    rackAccountant.evict(data.documentName);
+>>>>>>> origin/main
   },
 
   // Hocuspocus debounces this hook per the `debounce`/`maxDebounce` config
@@ -244,7 +282,13 @@ const hocuspocus = Server.configure({
     // → idempotent replay later. Safe direction.)
     const watermark = await latestJournalSeq(data.documentName);
     const state = Y.encodeStateAsUpdate(data.document);
+<<<<<<< HEAD
     const durable = await snapshots.store(data.documentName, state);
+=======
+    await storeSnapshot(data.documentName, state);
+    // Full-state encode = exact current size; resets this rack's churn.
+    rackAccountant.recordSnapshot(data.documentName, state.byteLength);
+>>>>>>> origin/main
     // eslint-disable-next-line no-console
     console.log(`[hocuspocus] persist (${state.byteLength} bytes): doc=${data.documentName}`);
     // Compact ONLY when the snapshot really landed — after a swallowed

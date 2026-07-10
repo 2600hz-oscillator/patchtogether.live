@@ -9,6 +9,7 @@
   import { ydoc, patch, bindRackspace, unbindRackspace } from '$lib/graph/store';
   import { makeEnvelope } from '$lib/graph/persistence';
   import { attachProvider } from '$lib/multiplayer/provider';
+  import { attachLocalReplica, clearLocalReplica } from '$lib/multiplayer/local-replica';
   import { createCarlController, type CarlController } from '$lib/carl/controller';
   import { buildCatalogFromRegistry } from '$lib/carl/catalog';
   import {
@@ -112,6 +113,13 @@
   let provider: HocuspocusProvider | null = $state(null);
   $effect(() => {
     if (!data.isMember) return;
+    // LOCAL REPLICA (before the provider): seed the freshly-bound Y.Doc
+    // from IndexedDB immediately — a relay outage becomes a sync outage,
+    // not a blank rack. The provider's y-sync handshake then reconciles
+    // replica-vs-server both ways (CRDT merge; no custom merge code).
+    // Anon guests get a replica too; it's wiped on auth rejection below.
+    // Corrupt replicas self-clear + refetch (see local-replica.ts).
+    const replica = attachLocalReplica(data.rackspace.id, ydoc);
     // PR-D: token is a callback so Hocuspocus pulls a fresh value on every
     // (re)connect. Anon users carry their HMAC-derived invite code; authed
     // users carry their Clerk session JWT. The server's onAuthenticate
@@ -151,6 +159,10 @@
         // this branch means their invite was good HTTP-side but the
         // server's HMAC disagrees — an ops issue worth surfacing in the
         // sign-in URL via &reason=.
+        //
+        // Access is gone → this machine should not keep a browsable local
+        // copy of the rack. Best-effort wipe (never blocks navigation).
+        void clearLocalReplica(data.rackspace.id);
         const here = window.location.pathname + window.location.search;
         goto(
           `/sign-in?redirect_url=${encodeURIComponent(here)}&reason=${encodeURIComponent(reason)}`,
@@ -162,6 +174,9 @@
     return () => {
       p.destroy();
       provider = null;
+      // Detach the replica listeners; the stored data STAYS (it must
+      // survive navigation/reload — that's the whole point).
+      void replica.destroy();
     };
   });
 

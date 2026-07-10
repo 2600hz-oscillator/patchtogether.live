@@ -258,6 +258,13 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // edge-detect). Promote into MODULES + capture darwin/linux PNGs (the
   // canvas mask above masks the live preview) in a follow-up PR.
   '4plexvid': 'VRT baseline pending; e2e/tests/4plexvid.spec.ts + plex-select unit tests provide coverage. Promote + capture darwin/linux baselines (live preview masked) in a follow-up PR.',
+  // ES9 — native-bridge 16×16 hardware I/O. The card is static chrome
+  // (status LED + class selectors + sectioned patch panel, no canvas), so
+  // it IS baseline-able — pending the darwin/linux capture pass (4plexvid
+  // precedent). Functional coverage: es9-bridge-core unit tests (dsp: ring,
+  // class scaling, gate hysteresis, underrun policies) + es9.test.ts (def
+  // shape, class→worklet mapping) + the per-module handle-presence sweep.
+  es9: 'VRT baseline pending; es9-bridge-core (dsp) + es9.test.ts unit suites cover the logic, card is static chrome. Promote + capture darwin/linux baselines in a follow-up PR.',
   // ONE TO NINE — 1-in/9-out fixed 3×3 splitter. The card is a live MONITOR
   // preview canvas (input + grid + numbers) + a GRID toggle + the IN/OUT1..OUT9
   // patch panel; nothing patched is a black preview, and the live render is

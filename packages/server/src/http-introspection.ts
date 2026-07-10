@@ -25,6 +25,7 @@
 // /metrics endpoint is the "scrape after the fact" half.
 
 import type { Extension } from '@hocuspocus/server';
+import type { RackAlertLevel, RackMemSummary } from './rack-accounting.js';
 
 // Structural subset of @hocuspocus/server's Hocuspocus instance we need.
 // Importing the deep d.ts path trips nodenext + verbatimModuleSyntax (see
@@ -44,6 +45,9 @@ interface HocuspocusLike {
   getUncaughtExceptions?(): number;
   /** Count of unhandled promise rejections caught since boot (see above). */
   getUnhandledRejections?(): number;
+  /** PER-RACK memory accounting roll-up (see ./rack-accounting.ts). Optional
+   *  so existing callers/tests need no change; absent → empty summary. */
+  getRackMemSummary?(): RackMemSummary;
 }
 
 /** Process-level numbers that change at sub-second cadence. */
@@ -74,12 +78,25 @@ export interface MetricsSnapshot {
   /** Unhandled promise rejections caught since boot (see above; tag
    *  `event=relay_unhandled_rejection`). */
   relay_unhandled_rejections: number;
-  /** Unified early-warning rollup over memory + caught exceptions, so a single
-   *  Better Stack keyword uptime monitor (looking for `"alert_state":"ok"`)
-   *  catches BOTH a pre-OOM memory climb AND any non-fatal exception — no log
-   *  pipeline, no ClickHouse. Derived purely from the snapshot inputs:
-   *   - 'crit' when rss > critMb OR either exception counter is > 0
-   *   - 'warn' when warnMb < rss <= critMb (and no exceptions)
+  /** Largest single rack's tracked size in MB (per-rack accounting; see
+   *  ./rack-accounting.ts). 0 when no docs are loaded. */
+  largest_rack_mb: number;
+  /** Racks currently over the per-rack warn threshold (includes crit). */
+  racks_over_warn: number;
+  /** Racks currently over the per-rack crit threshold. */
+  racks_over_crit: number;
+  /** Worst per-rack level — 'ok' | 'warn' | 'crit'. Folded into
+   *  `alert_state` below so the existing keyword monitors catch it. */
+  rack_alert_state: RackAlertLevel;
+  /** Unified early-warning rollup over memory + caught exceptions + per-rack
+   *  accounting, so a single Better Stack keyword uptime monitor (looking for
+   *  `"alert_state":"ok"`) catches a pre-OOM memory climb, any non-fatal
+   *  exception, AND a single runaway rack — no log pipeline, no ClickHouse.
+   *  Derived purely from the snapshot inputs:
+   *   - 'crit' when rss > critMb OR either exception counter is > 0 OR any
+   *     rack is over its crit threshold
+   *   - 'warn' when warnMb < rss <= critMb or any rack is over its warn
+   *     threshold (and nothing is crit)
    *   - 'ok'   otherwise
    *  See `computeAlertState`. */
   alert_state: 'ok' | 'warn' | 'crit';
@@ -155,19 +172,23 @@ export function classifyMemory(
 /** Unified `alert_state` for the /metrics rollup. Pure for unit-testing.
  *
  *  Reuses {@link classifyMemory} for the memory half ('error'→crit, 'warn',
- *  or null→ok), then escalates to 'crit' whenever either caught-exception
- *  counter is > 0 — so a single keyword monitor catches both a pre-OOM memory
- *  climb and any non-fatal exception. */
+ *  or null→ok), escalates to 'crit' whenever either caught-exception counter
+ *  is > 0, and folds in the worst PER-RACK level (rack-accounting.ts) — so a
+ *  single keyword monitor catches a pre-OOM memory climb, any non-fatal
+ *  exception, and a single runaway rack. `rackLevel` is optional so existing
+ *  callers/tests are unchanged. */
 export function computeAlertState(
   rssMb: number,
   uncaughtExceptions: number,
   unhandledRejections: number,
   thresholds: { warnMb: number; critMb: number },
+  rackLevel: RackAlertLevel = 'ok',
 ): 'ok' | 'warn' | 'crit' {
   if (uncaughtExceptions > 0 || unhandledRejections > 0) return 'crit';
+  if (rackLevel === 'crit') return 'crit';
   const mem = classifyMemory(rssMb, thresholds);
   if (mem === 'error') return 'crit';
-  if (mem === 'warn') return 'warn';
+  if (mem === 'warn' || rackLevel === 'warn') return 'warn';
   return 'ok';
 }
 
@@ -233,6 +254,13 @@ export function createIntrospectionExtension(
     const rssMb = round(mem.rss / BYTES_PER_MB, 1);
     const uncaught = hocuspocus.getUncaughtExceptions?.() ?? 0;
     const unhandled = hocuspocus.getUnhandledRejections?.() ?? 0;
+    const rackMem = hocuspocus.getRackMemSummary?.() ?? {
+      rackCount: 0,
+      largestRackMb: 0,
+      racksOverWarn: 0,
+      racksOverCrit: 0,
+      level: 'ok' as const,
+    };
     return {
       ts: deps.now(),
       boot_id: bootId,
@@ -250,7 +278,11 @@ export function createIntrospectionExtension(
       persist_mode: hocuspocus.getPersistenceMode(),
       relay_uncaught_exceptions: uncaught,
       relay_unhandled_rejections: unhandled,
-      alert_state: computeAlertState(rssMb, uncaught, unhandled, thresholds),
+      largest_rack_mb: rackMem.largestRackMb,
+      racks_over_warn: rackMem.racksOverWarn,
+      racks_over_crit: rackMem.racksOverCrit,
+      rack_alert_state: rackMem.level,
+      alert_state: computeAlertState(rssMb, uncaught, unhandled, thresholds, rackMem.level),
     };
   }
 
