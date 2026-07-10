@@ -129,8 +129,10 @@
       outputs: pick(outputById, IN_JACKS.slice(7).flatMap((n) => [`in${n}`, `in${n}_cv`])),
     },
     { label: 'S/PDIF', outputs: pick(outputById, ['spdif_l', 'spdif_r']) },
-    { label: 'OUT 1–8', inputs: pick(inputById, OUT_JACKS.map((n) => `out${n}`)) },
-    { label: 'MIX 9–16', inputs: pick(inputById, [9, 10, 11, 12, 13, 14, 15, 16].map((n) => `mix${n}`)) },
+    // Physical jacks (USB 9-16 under the ES-9's default routing).
+    { label: 'OUT 1–8 (jacks)', inputs: pick(inputById, OUT_JACKS.map((n) => `out${n}`)) },
+    // USB 1-8: internal mixer (main/phones), S/PDIF out, ES-5 header.
+    { label: 'USB 1–8 (mix/S-PDIF/ES-5)', inputs: pick(inputById, [1, 2, 3, 4, 5, 6, 7, 8].map((n) => `usb${n}`)) },
   ];
 
   const stateLabel = $derived.by(() => {

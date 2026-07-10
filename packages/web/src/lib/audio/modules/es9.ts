@@ -35,8 +35,14 @@
 // →0|1). The 16 browser→hardware jacks are single `audio` ports widened
 // with accepts:['cv','pitch','gate'] (the scope.ts/scaler.ts precedent),
 // inverse-scaled per their class param. S/PDIF returns (USB in 15/16) are
-// AC digital — audio only, no cv twin. USB outs 9-16 are the ES-9's
-// internal-mixer buses — audio only.
+// AC digital — audio only, no cv twin.
+//
+// OUTPUT-DIRECTION CHANNEL MAP (hardware-verified + ES-9 manual §Routing):
+// under the ES-9's DEFAULT routing the 8 physical DC-coupled jacks are
+// driven by USB/DAW channels 9-16 — NOT 1-8. USB 1-8 feed the internal
+// blocks instead (1-2 main outs, 3-4 phones, 5-6 S/PDIF, 7-8 the ES-5
+// header; all AC-coupled → audio only). So the module's out1-8 jack ports
+// map to worklet inputs 8..15 and usb1-8 to worklet inputs 0..7.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -59,8 +65,13 @@ const HW_CHANNELS = 16;
 const CV_TWIN_BASE = 16;
 /** DC-coupled input jacks (with cv twins); 15/16 are the S/PDIF return. */
 const DC_INPUT_JACKS = 14;
-/** DC-coupled output jacks; USB outs 9-16 are internal-mixer buses. */
+/** DC-coupled output jacks. */
 const DC_OUTPUT_JACKS = 8;
+/** First USB output channel (0-based) that drives a physical jack: the
+ *  ES-9's DEFAULT routing puts the 8 jacks on USB/DAW channels 9-16
+ *  (manual §Routing; hardware-verified) — USB 1-8 feed the internal
+ *  mixer (main/phones), S/PDIF, and the ES-5 header. */
+const JACK_CHANNEL_BASE = 8;
 
 /** Payload the card hands across on connect (null = detach). */
 export interface Es9AttachPayload {
@@ -85,8 +96,13 @@ export function es9ClassesFromParams(params: Record<string, number> | undefined)
     inClasses.push(
       c < DC_INPUT_JACKS ? (p[`in${c + 1}_class`] ?? ES9_CLASS_CV) : ES9_CLASS_AUDIO,
     );
+    // The PHYSICAL jacks (out1-8 ports / out{n}_class params) live on USB
+    // channels 9-16 — i.e. channel index 8 + (n-1). Channels 0-7 are the
+    // internal mixer / S-PDIF / ES-5 feeds: always plain audio.
     outClasses.push(
-      c < DC_OUTPUT_JACKS ? (p[`out${c + 1}_class`] ?? ES9_CLASS_AUDIO) : ES9_CLASS_AUDIO,
+      c >= JACK_CHANNEL_BASE
+        ? (p[`out${c - JACK_CHANNEL_BASE + 1}_class`] ?? ES9_CLASS_AUDIO)
+        : ES9_CLASS_AUDIO,
     );
   }
   return { inClasses, outClasses };
@@ -109,11 +125,21 @@ function inputDocs(): Record<string, string> {
   const docs: Record<string, string> = {};
   for (let n = 1; n <= DC_OUTPUT_JACKS; n++) {
     docs[`out${n}`] =
-      `To ES-9 hardware output jack ${n} (DC-coupled, ±10 V). Takes audio or any CV-family signal; the Out ${n} class selector sets the voltage scaling (audio = raw full scale, cv = ±1 → ±5 V, pitch = 1.0/oct → 1 V/oct, gate = 0|1 → 0/+5 V) and whether the jack holds (cv-ish) or fades (audio) if the browser stream hiccups.`;
+      `To ES-9 physical output jack ${n} (DC-coupled, ±10 V; USB channel ${8 + n} under the ES-9's default routing). Takes audio or any CV-family signal; the Out ${n} class selector sets the voltage scaling (audio = raw full scale, cv = ±1 → ±5 V, pitch = 1.0/oct → 1 V/oct, gate = 0|1 → 0/+5 V) and whether the jack holds (cv-ish) or fades (audio) if the browser stream hiccups.`;
   }
-  for (let n = 9; n <= 16; n++) {
-    docs[`mix${n}`] =
-      `To ES-9 USB output channel ${n} — by default these feed the ES-9's internal 8×8 mixer / headphone buses rather than a rear jack (configurable in the ES-9's own config tool). Audio-rate, raw full scale.`;
+  const usbDefault: Record<number, string> = {
+    1: 'the main outputs (via internal mix 1) and phones',
+    2: 'the main outputs (via internal mix 2) and phones',
+    3: 'the headphone mix (internal mix 3)',
+    4: 'the headphone mix (internal mix 4)',
+    5: 'the S/PDIF output (left)',
+    6: 'the S/PDIF output (right)',
+    7: 'the ES-5 expansion header (left)',
+    8: 'the ES-5 expansion header (right)',
+  };
+  for (let n = 1; n <= 8; n++) {
+    docs[`usb${n}`] =
+      `To ES-9 USB channel ${n} — under the default routing this feeds ${usbDefault[n]}, NOT a rear jack (re-routable in the ES-9 config tool). Audio-rate: these destinations are AC-coupled, so send audio here, not CV.`;
   }
   return docs;
 }
@@ -161,8 +187,12 @@ export const es9Def: AudioModuleDef = {
   hp: 3,
 
   inputs: [
-  // Widened like SCOPE's probes: a DC-coupled jack takes audio OR any
-  // CV-family signal; the class param picks the voltage scaling.
+  // out1-8 = the PHYSICAL 3.5mm DC-coupled jacks. HARDWARE-VERIFIED default
+  // routing (ES-9 manual §Routing p.11, confirmed on a real unit): the jacks
+  // are driven by USB/DAW channels 9-16, NOT 1-8 — the factory below maps
+  // these ports to worklet inputs 8..15. Widened like SCOPE's probes: a
+  // DC-coupled jack takes audio OR any CV-family signal; the class param
+  // picks the voltage scaling.
   { id: 'out1', type: 'audio', accepts: ['cv', 'pitch', 'gate'] },
   { id: 'out2', type: 'audio', accepts: ['cv', 'pitch', 'gate'] },
   { id: 'out3', type: 'audio', accepts: ['cv', 'pitch', 'gate'] },
@@ -171,14 +201,18 @@ export const es9Def: AudioModuleDef = {
   { id: 'out6', type: 'audio', accepts: ['cv', 'pitch', 'gate'] },
   { id: 'out7', type: 'audio', accepts: ['cv', 'pitch', 'gate'] },
   { id: 'out8', type: 'audio', accepts: ['cv', 'pitch', 'gate'] },
-  { id: 'mix9', type: 'audio' },
-  { id: 'mix10', type: 'audio' },
-  { id: 'mix11', type: 'audio' },
-  { id: 'mix12', type: 'audio' },
-  { id: 'mix13', type: 'audio' },
-  { id: 'mix14', type: 'audio' },
-  { id: 'mix15', type: 'audio' },
-  { id: 'mix16', type: 'audio' },
+  // usb1-8 = USB/DAW channels 1-8, which by default feed the ES-9's
+  // INTERNAL blocks, not jacks: 1-2 → main outs (via mix 1/2), 3-4 → phones
+  // (via mix 3/4), 5-6 → S/PDIF out, 7-8 → the ES-5 expansion header.
+  // Audio-typed (AC-coupled destinations — not a CV path).
+  { id: 'usb1', type: 'audio' },
+  { id: 'usb2', type: 'audio' },
+  { id: 'usb3', type: 'audio' },
+  { id: 'usb4', type: 'audio' },
+  { id: 'usb5', type: 'audio' },
+  { id: 'usb6', type: 'audio' },
+  { id: 'usb7', type: 'audio' },
+  { id: 'usb8', type: 'audio' },
   ],
   outputs: [
   { id: 'in1', type: 'audio' },
@@ -287,10 +321,12 @@ export const es9Def: AudioModuleDef = {
 
     const inputsMap = new Map<string, { node: AudioNode; input: number }>();
     for (let n = 1; n <= DC_OUTPUT_JACKS; n++) {
-      inputsMap.set(`out${n}`, { node: worklet, input: n - 1 });
+      // Physical jacks ride USB channels 9-16 (default routing).
+      inputsMap.set(`out${n}`, { node: worklet, input: JACK_CHANNEL_BASE + (n - 1) });
     }
-    for (let n = 9; n <= 16; n++) {
-      inputsMap.set(`mix${n}`, { node: worklet, input: n - 1 });
+    for (let n = 1; n <= 8; n++) {
+      // USB 1-8: internal mixer (main/phones) / S-PDIF / ES-5 feeds.
+      inputsMap.set(`usb${n}`, { node: worklet, input: n - 1 });
     }
     const outputsMap = new Map<string, { node: AudioNode; output: number }>();
     for (let n = 1; n <= DC_INPUT_JACKS; n++) {

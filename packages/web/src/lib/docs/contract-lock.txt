@@ -931,14 +931,6 @@ edges param thickness 1..8 linear default=2 unit=px
 edges param threshold 0..1 linear default=0.2
 electraControl meta domain=meta maxInstances=1
 es9 meta domain=audio maxInstances=1
-es9 in mix10 audio
-es9 in mix11 audio
-es9 in mix12 audio
-es9 in mix13 audio
-es9 in mix14 audio
-es9 in mix15 audio
-es9 in mix16 audio
-es9 in mix9 audio
 es9 in out1 audio accepts=cv,gate,pitch
 es9 in out2 audio accepts=cv,gate,pitch
 es9 in out3 audio accepts=cv,gate,pitch
@@ -947,6 +939,14 @@ es9 in out5 audio accepts=cv,gate,pitch
 es9 in out6 audio accepts=cv,gate,pitch
 es9 in out7 audio accepts=cv,gate,pitch
 es9 in out8 audio accepts=cv,gate,pitch
+es9 in usb1 audio
+es9 in usb2 audio
+es9 in usb3 audio
+es9 in usb4 audio
+es9 in usb5 audio
+es9 in usb6 audio
+es9 in usb7 audio
+es9 in usb8 audio
 es9 out in1 audio
 es9 out in1_cv cv
 es9 out in10 audio
