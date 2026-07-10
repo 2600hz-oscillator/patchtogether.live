@@ -160,9 +160,12 @@ spec). Summary:
   bit, ascending. Bridge→client = ES-9 input channels; client→bridge = ES-9
   output channels. Masks make bandwidth proportional to use (all 16 both ways
   is still only ~3 MB/s per direction — trivial on loopback).
-- Channel labels come from `deviceInfo` — ES-9 defaults: inputs 1–14 = the
-  DC-coupled jacks, 15/16 = S/PDIF return; outputs 1–8 = the DC-coupled
-  jacks, 9–16 = internal mixer buses.
+- Channel labels come from `deviceInfo` — ES-9 defaults (hardware-verified
+  + manual §Routing): inputs 1–14 = the DC-coupled jacks, 15/16 = S/PDIF
+  return; **outputs: USB 1–8 feed the internal blocks** (1–2 main mix, 3–4
+  phones, 5–6 S/PDIF out, 7–8 ES-5 header) and **the 8 physical DC-coupled
+  jacks ride USB channels 9–16**. (An earlier revision had the output halves
+  swapped; a browser LFO "went nowhere" until this was corrected.)
 
 ## Latency budget (48 kHz, 128-frame hardware buffer, defaults)
 

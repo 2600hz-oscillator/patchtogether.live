@@ -187,9 +187,11 @@ public struct DeviceInfoMessage: Codable, Equatable {
     public var inputChannels: Int
     public var outputChannels: Int
     public var bufferFrames: Int
-    /// Human labels, index = channel. For the ES-9 defaults: inputs 1-14 are
-    /// the DC-coupled jacks, 15/16 the S/PDIF return; outputs 1-8 the
-    /// DC-coupled jacks.
+    /// Human labels, index = channel. ES-9 defaults (hardware-verified +
+    /// manual §Routing): inputs 1-14 are the DC-coupled jacks, 15/16 the
+    /// S/PDIF return. Outputs: USB 1-8 feed the internal blocks (main /
+    /// phones mixes, S/PDIF out, ES-5 header) and the 8 physical DC-coupled
+    /// jacks are driven by USB channels 9-16.
     public var inputLabels: [String]
     public var outputLabels: [String]
     public init(protocolVersion: Int = BridgeWire.protocolVersion, name: String, uid: String,

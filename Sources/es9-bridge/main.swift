@@ -67,9 +67,11 @@ if popFlag("--list") {
     exit(0)
 }
 
-// ---- ES-9 default channel labels (hardware truth: 14 DC-coupled input
-// jacks + S/PDIF return on USB 15/16; 8 DC-coupled output jacks, USB outs
-// 9-16 feed the internal mixer/phones/S/PDIF per the ES-9 config).
+// ---- ES-9 default channel labels (hardware-verified against a real unit +
+// the manual's §Routing: inputs — 14 DC-coupled jacks then the S/PDIF return
+// on USB 15/16; outputs — USB 1-8 feed the INTERNAL blocks (1-2 main via
+// mix 1/2, 3-4 phones via mix 3/4, 5-6 S/PDIF out, 7-8 the ES-5 header),
+// and the 8 physical DC-coupled jacks ride USB channels 9-16).
 func es9InputLabels(_ count: Int) -> [String] {
     (0..<count).map { c in
         switch c {
@@ -83,8 +85,14 @@ func es9InputLabels(_ count: Int) -> [String] {
 func es9OutputLabels(_ count: Int) -> [String] {
     (0..<count).map { c in
         switch c {
-        case 0..<8: return "Out \(c + 1)"
-        default: return "USB Out \(c + 1) (mix)"
+        case 0, 1: return "Main Mix \(c + 1) (USB \(c + 1))"
+        case 2, 3: return "Phones Mix (USB \(c + 1))"
+        case 4: return "S/PDIF Out L (USB 5)"
+        case 5: return "S/PDIF Out R (USB 6)"
+        case 6: return "ES-5 L (USB 7)"
+        case 7: return "ES-5 R (USB 8)"
+        case 8..<16: return "Out \(c - 7)"   // physical jacks 1-8
+        default: return "USB Out \(c + 1)"
         }
     }
 }

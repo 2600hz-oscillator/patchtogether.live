@@ -83,9 +83,14 @@ recording (audio) and a Maths LFO (cv). Resolution:
 
 - **IN 1–14** (DC-coupled jacks): 14 × (`audio` + `cv`) output ports = 28.
 - **S/PDIF IN L/R** (USB in 15/16): 2 × `audio` output ports.
-- **OUT 1–8** (DC-coupled jacks): 8 input ports (`audio` + accepts CV family).
-- **MIX 9–16** (USB outs 9–16, internal mixer/phones buses): 8 input ports,
-  audio-only, in a collapsed section.
+- **OUT 1–8** (DC-coupled jacks): 8 input ports (`audio` + accepts CV
+  family). **CORRECTION (2026-07-10, hardware-verified):** under the ES-9's
+  default routing the physical jacks are driven by **USB channels 9–16**,
+  not 1–8 — map these ports to channels 8..15.
+- **USB 1–8** (internal blocks: 1–2 main mix, 3–4 phones, 5–6 S/PDIF out,
+  7–8 ES-5 header — all AC-coupled): 8 input ports, audio-only, in a
+  collapsed section. (Originally planned as "MIX 9–16" with the halves
+  swapped; the browser LFO went to the mixer dead-end until corrected.)
 - Card uses `PatchPanel groupingStrategy="sectioned"` (MixmstrsCard
   precedent): sections IN 1–8 / IN 9–14 + S/PDIF / OUT 1–8 / MIX.
 - Labels render from `deviceInfo.inputLabels/outputLabels` (don't hardcode —
