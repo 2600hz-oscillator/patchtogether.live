@@ -23,9 +23,14 @@ import PackageDescription
 
 let package = Package(
     name: "patchtogether-es9",
-    platforms: [.macOS(.v12)],
+    // macOS 15 for the Synchronization framework (lock-free Atomic<> used on
+    // the real-time audio path). The original spike targeted v12; the bridge
+    // needs modern atomics and Network.framework niceties.
+    platforms: [.macOS("15.0")],
     targets: [
-        // Shared CoreAudio helpers (device discovery, property getters).
+        // Shared CoreAudio helpers (device discovery, property getters),
+        // pair-routing model, duplex engine, and the bridge core (ring
+        // buffers, wire protocol, resampler, WebSocket server).
         .target(
             name: "ES9Core",
             linkerSettings: [
@@ -41,6 +46,14 @@ let package = Package(
         .executableTarget(
             name: "es9-duplex",
             dependencies: ["ES9Core"]
+        ),
+        // The bridge app: ES-9 <-> browser (patchtogether) audio+CV bridge.
+        // Serves an embedded test-harness page over HTTP and streams audio
+        // both directions over a localhost WebSocket.
+        .executableTarget(
+            name: "es9-bridge",
+            dependencies: ["ES9Core"],
+            resources: [.embedInCode("Resources/harness.html")]
         ),
         .testTarget(
             name: "ES9CoreTests",

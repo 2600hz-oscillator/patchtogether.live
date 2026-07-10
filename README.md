@@ -1,15 +1,42 @@
-# patchtogether.es9 — native CoreAudio 16×16 I/O for the Expert Sleepers ES-9
+# patchtogether.es9 — the ES-9 ↔ patchtogether bridge
 
-Standalone **proof-of-concept + design** for high-quality, low-latency,
-multi-channel duplex audio I/O with the **Expert Sleepers ES-9** (16-in / 16-out
-USB-C audio interface) on macOS, using **CoreAudio**.
+Native macOS app (**`es9-bridge`**) that opens the **Expert Sleepers ES-9**
+(16-in / 16-out USB-C, DC-coupled ±10 V) full duplex via CoreAudio and
+streams **audio AND CV both directions** to a browser over a localhost
+WebSocket — so patchtogether can patch a hardware Maths LFO into a browser CV
+input, and send a browser LFO out of a real ES-9 jack into the rack.
 
-This de-risks the single hardest native-audio question for `patchtogether.native`
-independently: can we get **individually-addressable input/output PAIRS**
-(1/2, 3/4, … 15/16 — the Bitwig model) at low latency from a single USB
-interface? **Yes.** This repo proves it with a working spike and recommends the
-exact API + latency strategy. It does **not** modify the native app; that
-integration is documented elsewhere — see "Slotting into a native engine" below.
+- **Design:** `docs/DESIGN.md` (architecture, protocol v1, clock/CV model,
+  security, latency budget).
+- **Browser module plan (inet.modular — plan only, not yet implemented):**
+  `docs/inet-modular-es9-module-plan.md`.
+- The original CoreAudio 16×16 spike (`es9-devices`, `es9-duplex`,
+  `DuplexEngine`) is retained unchanged below — it remains the reference for
+  the AUHAL pattern and was verified live on hardware.
+
+## Quick start
+
+```sh
+swift build -c release
+.build/release/es9-bridge                    # requires an ES-9 attached
+.build/release/es9-bridge --synthetic        # no hardware: test signals
+# then open http://127.0.0.1:9209/ in Chrome — the embedded harness has
+# per-channel meters, generators (sine/LFO/DC), a CV-aware scope, and a
+# loopback latency test (patch ES-9 out 1 -> in 1 with a cable).
+```
+
+`es9-bridge --help` lists `--port`, `--buffer`, `--sr`, `--device`,
+`--target-frames`, `--list`.
+
+> Note: this repo previously stated the native integration would live in
+> `patchtogether.native` and that no browser companion app would exist. The
+> owner reversed that for the ES-9 on 2026-07-09 — this repo *is* the bridge
+> product now; `patchtogether.native` remains a separate track. See
+> `docs/DESIGN.md`.
+
+---
+
+# Original spike documentation (still accurate for the ES9Core AUHAL layer)
 
 > Why native at all? The browser app (`../inet.modular`) can only reach the
 > **first** stereo pair of the ES-9 (`getUserMedia` exposes a device's first two
