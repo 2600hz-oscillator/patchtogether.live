@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "collabContentHash": "0f360f716cf25ca95f363d19c01dc86f027f0b42bf3e06a598e14b434666ef3f",
+  "attestedAt": "2026-07-10T21:21:38.672Z",
+  "attestedBy": "tmayshark@gmail.com",
+  "gitHeadAtAttest": "a4611d160cec6680a0cd67849bd0a5a66e056fac",
+  "playwrightVersion": "1.50.0",
+  "hocuspocusVersion": "2.13.5",
+  "os": "darwin 25.4.0 (arm64)",
+  "host": "2600hzs-MBP.home.local",
+  "databaseConfirmed": true,
+  "relayConfirmed": true,
+  "relayPort": 1235,
+  "appPort": 4173,
+  "repeatEach": 1,
+  "retries": 0,
+  "run": {
+    "specFiles": 23,
+    "passed": 50,
+    "failed": 0,
+    "flaky": 0,
+    "skipped": 1,
+    "relayVacuitySkips": 0,
+    "assetSkips": 1
+  },
+  "durationSec": 90
+}
