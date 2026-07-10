@@ -81,6 +81,18 @@ export interface VideoModuleDef {
    * no AudioContext). See `.myrobots/plans/fixe-offscreen-canvas-plan-*.md`.
    */
   renderLocus?: 'main' | 'worker';
+  /**
+   * Sink-driven pull evaluation (see $lib/video/pull-eval): opt this module
+   * OUT of unwatched-skip so its draw() runs EVERY frame even when nothing
+   * observes its output. The engine already exempts structurally
+   * side-effectful handles (non-empty `audioSources`/`audioInputs`, a
+   * `subscribePulse` hook) — this flag is the escape hatch for a module
+   * whose draw() advances state that must not pause (a real-time simulation
+   * with no audio surface) but exposes none of those markers. Texture-only
+   * modules must NOT set it: freezing them while unobserved is, by
+   * definition, unobservable.
+   */
+  pullExempt?: boolean;
 }
 
 const registry = new Map<ModuleType, VideoModuleDef>();

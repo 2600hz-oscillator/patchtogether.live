@@ -123,7 +123,13 @@ const FROM_TEST_ROOT = resolve(__dirname, '../../../../..');
 // for non-black/structured/param-response). Full-res dependent-texelFetch fill →
 // isolated in the serialized heavy lane; e2e/webgl-heavy-globs.ts is in the hash
 // basis, so this moved the WebGL hash (re-attested). 49 → 50.
-const EXPECTED_HEAVY_SPEC_COUNT = 50;
+// PULL EVAL (2026-07-10): +video-pull-eval.spec.ts (sink-driven pull evaluation
+// gate — engine-probe cadence asserts on a LIVE unpaused render loop plus one
+// video-out canvas non-black read). It matches the existing `**/video-*.spec.ts`
+// glob and genuinely belongs in the serialized lane (relies on real continuous
+// rendering; reads a canvas). No edit to e2e/webgl-heavy-globs.ts, so the SET
+// grew without moving the hash basis. 50 → 51.
+const EXPECTED_HEAVY_SPEC_COUNT = 51;
 
 describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
   const basis = resolveWebglBasis();

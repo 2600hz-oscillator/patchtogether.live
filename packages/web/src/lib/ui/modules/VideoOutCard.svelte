@@ -156,6 +156,28 @@
   // Double-click a full-frame card exits back to normal chrome.
   $effect(() => ff.attach(cardEl, () => fullFrame));
 
+  // ---------- Pull-eval HARD LEASE while presenting ----------
+  // True fullscreen / present-on-second-display / in-app full-frame put this
+  // OUTPUT's pixels on a surface that outlives the flow node's viewport rect,
+  // so the engine's sink-driven pull evaluation must keep the chain rendering
+  // even if the card element itself is scrolled offscreen / demoted by the
+  // Canvas visibility observer. The lease is refcounted and released the
+  // moment every presenting mode ends ($effect cleanup).
+  $effect(() => {
+    const presenting = fs.isFullscreen || present.isPresenting || fullFrame;
+    if (!presenting) return;
+    const e = engineCtx.get();
+    if (!e) return;
+    let ve: VideoEngine | undefined;
+    try {
+      ve = e.getDomain<VideoEngine>('video');
+    } catch {
+      return;
+    }
+    if (!ve) return;
+    return ve.acquireRenderLease(id);
+  });
+
   // Canvas drawing-buffer dims. In the rack: the card's inner dims (card
   // aspect). In TRUE fullscreen — OR while PRESENTING on a second display: the
   // live ENGINE dims so the buffer carries the ENGINE aspect — fitRect then
