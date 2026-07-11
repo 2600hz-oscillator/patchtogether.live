@@ -384,4 +384,9 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // brightness damping, pick-position comb, dispersion allpasses, curated
   // exciter). Ships documented.
   'karplus',
+  // CLAP (2026-07-11): the analog-modeled handclap voice (808 twin-VCA
+  // burst+tail topology; 909/ClapTrap/LinnDrum corners — PULSES×SPREAD
+  // retrigger burst, TONE/WIDTH band-pass, COLOR noise tilt, SNAP
+  // burst↔room balance). Ships documented.
+  'clap',
 ]);

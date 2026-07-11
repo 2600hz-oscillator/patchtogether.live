@@ -179,7 +179,12 @@ test.describe('DOOM per-type death gates: every new gate routes via forcePulse â
           after = await readScopePeak(page, scopeNodeId);
           return after?.peak ?? 0;
         },
-        { timeout: 6000, intervals: [50, 80, 120, 200, 300] },
+        // 20s ceiling, not 6s: the poll RE-FIRES the pulse each round so a
+        // bigger ceiling is free when healthy (~1.7-4.5s locally), but on a
+        // loaded SwiftShader runner DOOM boot + worklet start + kill event
+        // can exceed a flat 6s â€” evt_kill_demon/imp went 0-amplitude on CI
+        // (clap run 29156798711) while 189 shard-mates passed.
+        { timeout: 20_000, intervals: [50, 80, 120, 200, 300] },
       ).toBeGreaterThan(0.1);
 
       expect(before, `${pair.id}: baseline scope read must succeed`).not.toBeNull();

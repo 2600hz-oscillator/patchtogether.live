@@ -413,6 +413,23 @@ chromakey param keyR 0..1 linear default=0
 chromakey param softness 0..0.5 linear default=0.08
 chromakey param spillSuppress 0..1 linear default=0.5
 chromakey param threshold 0..1 linear default=0.15
+clap meta domain=audio
+clap in accent_in cv
+clap in spread_cv cv
+clap in tail_cv cv
+clap in tone_cv cv
+clap in trigger_in gate edge=trigger
+clap out audio_out audio
+clap param color 0..1 linear default=0.15
+clap param drive 0..1 linear default=0.2
+clap param level -24..12 linear default=0 unit=dB
+clap param pulses 2..5 discrete default=3
+clap param snap 0..1 linear default=0.5
+clap param spread 4..25 log default=10 unit=ms
+clap param strike 0..1 discrete default=0
+clap param tail 30..800 log default=150 unit=ms
+clap param tone 400..3000 log default=1000 unit=Hz
+clap param width 0..1 linear default=0.5
 clipplayer meta domain=audio exposesSequence
 clipplayer in stop_all gate
 clipplayer out gate1 gate

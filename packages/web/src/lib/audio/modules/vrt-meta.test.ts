@@ -325,12 +325,17 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // 89→90 for KARPLUS (2026-07-11, deliberate darwin-first new module —
       // the extended Karplus-Strong string-voice card; linux baseline pending
       // the vrt-update.yml dispatch on the PR branch).
-      // 90→96 for the KARPLUS + TOM DRUM composite-state scenes (2026-07-11,
+      // 90→94 for CLAP (2026-07-11, deliberate darwin-first new module — the
+      // compact BURST·NOISE·ROOM/OUT clap-voice card + 3 composite-state
+      // scenes (clap-909-dense / clap-linn-room / clap-dry-snap in
+      // vrt-clap.spec.ts); linux baselines pending the vrt-update.yml
+      // dispatch on the PR branch).
+          // 94→100 for the KARPLUS + TOM DRUM composite-state scenes (2026-07-11,
       // deliberate darwin-first — 6 non-default-state card scenes in
       // vrt-karplus-tomtom-states.spec.ts, the sonic-audit coverage gap-fill;
       // linux baselines pending the vrt-update.yml dispatch on the PR
       // branch, same precedent as the COLOUR OF MAGIC scene batches).
-    ).toBeLessThanOrEqual(96);
+    ).toBeLessThanOrEqual(100);
   });
 });
 
