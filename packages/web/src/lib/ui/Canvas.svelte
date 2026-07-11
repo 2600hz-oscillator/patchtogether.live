@@ -159,6 +159,9 @@
   } from '$lib/graph/saved-group-resurrect';
   import type { SavedGroup } from '$lib/server/saved-groups';
   import { connectDragState } from '$lib/ui/connect-drag-state.svelte';
+  import { assetLinks } from '$lib/media/asset-links.svelte';
+  import { mediaLibrary } from '$lib/media/library.svelte';
+  import { runAssetRebindSweep } from '$lib/media/asset-spawn';
   import {
     buildModuleEntries,
     compatibleTargetPorts,
@@ -894,6 +897,37 @@
   $effect(() => {
     dockStore.closeAll();
     return () => dockStore.closeAll();
+  });
+
+  // WORKFLOW MODE P3 — asset-link hygiene. Same per-rackspace discipline
+  // as the dock store: the local assetId↔nodeId map never leaks across
+  // canvas mounts (asset ids are per-tab; nodeIds are per-rackspace).
+  $effect(() => {
+    assetLinks.clear();
+    return () => assetLinks.clear();
+  });
+
+  // WORKFLOW MODE P3 — link prune + descriptor REBIND sweep. Re-runs when
+  // the node set or the media library changes:
+  //  * prune: links whose module was deleted by ANY path (Backspace,
+  //    Clear, remote peer) drop, so picker rows un-highlight.
+  //  * rebind: nodes carrying data.mediaDesc that match a loaded library
+  //    item (dupe-key) re-link — and re-drive the module's own load path
+  //    when its media is missing (asset-spawn.ts runAssetRebindSweep).
+  // The sweep itself runs UNTRACKED (it reads + writes assetLinks; the
+  // explicit deps above are the re-run triggers), and it's internally
+  // reentrancy-guarded + idempotent.
+  $effect(() => {
+    if (!workflowMode) return;
+    const liveIds = new Set(snapshot.nodes.map((n) => n.id));
+    void mediaLibrary.items.length; // track add/remove
+    untrack(() => {
+      assetLinks.pruneMissing(liveIds);
+      void runAssetRebindSweep({
+        currentUserId: currentUserId ?? null,
+        ensureEngine,
+      });
+    });
   });
 
   // The docked pinned node (bottom zone), resolved from the snapshot; the
@@ -2580,6 +2614,24 @@
     params: { nodeId: string | null; handleId: string | null; handleType: 'source' | 'target' | null },
   ) {
     if (!params.nodeId || !params.handleId || !params.handleType) return;
+    // A directly-clicked INPUT handle while a VIRTUAL carry is in flight
+    // COMMITS the carry to that input (parity with the PatchPanel-row
+    // commit) instead of clobbering it with a fresh pickup. xyflow's own
+    // click-connect (which just started internally) is cancelled so the
+    // next handle click starts clean.
+    const virtual = connectDragState.pickupVirtual;
+    if (virtual && params.handleType === 'target') {
+      const to = { nodeId: params.nodeId, portId: params.handleId };
+      connectDragState.discard();
+      connectDragState.endCascade();
+      flowApi?.cancelClickConnect();
+      void (async () => {
+        const resolved = await virtual.resolve();
+        if (!resolved) return;
+        commitCarriedEdge(resolved, to);
+      })();
+      return;
+    }
     // Resolve cable type for compatibility filtering on the commit click.
     const node = patch.nodes[params.nodeId];
     const def = node ? defLookup(node.type) : undefined;
@@ -4123,6 +4175,27 @@
       if (!detail) return;
       const src = connectDragState.pickupSource;
       if (!src) return;
+      // VIRTUAL-PORT carry (workflow assets picker — P3 primitive): the
+      // source port doesn't exist yet. Resolve it NOW (creating/reusing
+      // the asset's module), then run the SAME validated commit path.
+      // Only an INPUT row can terminate a virtual carry (the resolved
+      // source is always an output); anything else discards silently,
+      // mirroring the invalid-commit rule.
+      const virtual = connectDragState.pickupVirtual;
+      if (virtual) {
+        connectDragState.discard();
+        connectDragState.endCascade();
+        if (detail.direction !== 'input') {
+          trace('virtual carry-commit reject: target row is not an input');
+          return;
+        }
+        void (async () => {
+          const resolved = await virtual.resolve();
+          if (!resolved) return; // creation refused/failed — silent
+          commitCarriedEdge(resolved, { nodeId: detail.nodeId, portId: detail.portId });
+        })();
+        return;
+      }
       // The carried cable runs SOURCE.output → TARGET.input. Resolve which
       // side the clicked row is. A carried OUTPUT lands on an INPUT row; a
       // carried INPUT (rewire) lands on an OUTPUT row.
@@ -5346,6 +5419,7 @@
       dinAssigned={workflowDinAssigned}
       nodeTypes={nodeTypes as unknown as Record<string, unknown>}
       onEnsureEngine={ensureEngine}
+      currentUserId={currentUserId ?? null}
     />
   {:else}
   <header class="topbar">

@@ -34,6 +34,28 @@ export interface PickupSource {
   cableType?: string;
 }
 
+/**
+ * VIRTUAL-PORT drag origin (workflow-mode P3 primitive, reused by the
+ * assets picker now and camera/headless menus later): a pickup whose
+ * source is NOT an existing canvas port. The ghost cable hangs from a
+ * fixed screen-space anchor (the clicked menu row), and the REAL source
+ * port is resolved lazily AT COMMIT TIME — creating the backing module
+ * when needed — so an abandoned drag (Esc / discard) never writes to the
+ * graph at all.
+ */
+export interface VirtualPickupSource {
+  /** Screen-space point the ghost cable hangs from. */
+  anchor: { x: number; y: number };
+  /** Cable type for the ghost colour + commit-time validation. */
+  cableType: string;
+  /**
+   * Resolve the real OUTPUT port when the user drops on an input.
+   * May create the backing module (asset flow). Null = abort silently
+   * (creation refused/failed) — mirrors the silent invalid-commit rule.
+   */
+  resolve: () => Promise<{ nodeId: string; portId: string } | null>;
+}
+
 class ConnectDragState {
   /** Current gesture mode. `idle` = nothing in flight. */
   mode = $state<ConnectDragMode>('idle');
@@ -51,6 +73,10 @@ class ConnectDragState {
   cascadeActiveForPanel = $state<string | null>(null);
   /** Pickup-mode source port info. Non-null only while mode === 'pickup'. */
   pickupSource = $state<PickupSource | null>(null);
+  /** Virtual-origin descriptor. Non-null only for a virtual pickup (the
+   *  paired pickupSource then carries sentinel ids + the cable type so
+   *  every existing pickup reader keeps working unmodified). */
+  pickupVirtual = $state<VirtualPickupSource | null>(null);
   /** Pickup-mode cursor position (screen-space). Updated on every mousemove
    *  while pickup is active. Canvas reads this to render the ghost cable
    *  from the source port to the cursor. */
@@ -103,6 +129,29 @@ class ConnectDragState {
     this.active = true;
     this.lockedPanelNodeId = null;
     this.pickupSource = source;
+    this.pickupVirtual = null;
+    this.pickupCursor = null;
+    this.pickupMenuOpen = false;
+    this.cableHidden = false;
+    this.installHoverTracker();
+  }
+
+  /** Begin a VIRTUAL-PORT pickup (see VirtualPickupSource): the ghost
+   *  cable hangs from `virtual.anchor`, and the real source port is
+   *  resolved by Canvas at commit time. pickupSource carries sentinel
+   *  ids ('' — matches no node) + the cable type so PickupCable colour,
+   *  PatchPanel locks and the Esc/discard lifecycle all work as-is. */
+  beginVirtualPickup(virtual: VirtualPickupSource): void {
+    this.mode = 'pickup';
+    this.active = true;
+    this.lockedPanelNodeId = null;
+    this.pickupSource = {
+      nodeId: '',
+      portId: '',
+      handleType: 'source',
+      cableType: virtual.cableType,
+    };
+    this.pickupVirtual = virtual;
     this.pickupCursor = null;
     this.pickupMenuOpen = false;
     this.cableHidden = false;
@@ -119,6 +168,7 @@ class ConnectDragState {
     this.active = true;
     this.lockedPanelNodeId = null;
     this.pickupSource = source;
+    this.pickupVirtual = null;
     this.pickupCursor = null;
     this.pickupMenuOpen = true;
     this.cableHidden = false;
@@ -158,6 +208,7 @@ class ConnectDragState {
     this.active = false;
     this.lockedPanelNodeId = null;
     this.pickupSource = null;
+    this.pickupVirtual = null;
     this.pickupCursor = null;
     this.pickupMenuOpen = false;
     this.cableHidden = false;

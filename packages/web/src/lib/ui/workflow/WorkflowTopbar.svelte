@@ -18,12 +18,17 @@
   //   🕐 clock  → ClockSurface (TIMELORDE: BPM readout / knob / tap / patch-out)
   //   ⚇ DIN     → MidiDinSurface (assign a MIDI input as TIMELORDE's clock)
   //   🎧 audio  → AudioIoSurface (always-on AUDIO IN + AUDIO OUT faces)
-  // The remaining phases keep clearly-marked disabled PLACEHOLDER SLOTS so
-  // the owner's left→right bar order stays stable:
-  //   + media loader (P3) · assets picker (P3) · cameras (P4).
+  // P3 fills the two media slots:
+  //   +  media loader → MediaLoaderSurface (file/folder pick + drop target
+  //      feeding the centralized mediaLibrary)
+  //   💾 loaded assets → AssetsPickerSurface (images/videos/sounds
+  //      submenus; click-to-patch via the virtual-port cable drag)
+  // Remaining placeholder: 📷 cameras (P4).
   //
-  // One menu at a time: File.. + the three surface dropdowns share a
-  // single `openMenu` slot; outside-click + ESC close whichever is up.
+  // One menu at a time: File.. + the surface dropdowns share a single
+  // `openMenu` slot; outside-click + ESC close whichever is up — EXCEPT
+  // the assets picker, which is STICKY by spec ("stays open until an
+  // asset is selected or ESC"): outside pointerdown leaves it up.
   // Clicks inside PORTALED overlay children (the MIDI-learn context menu a
   // topbar Knob opens, the patch-to picker) do NOT count as outside.
 
@@ -33,6 +38,8 @@
   import ClockSurface from './ClockSurface.svelte';
   import MidiDinSurface from './MidiDinSurface.svelte';
   import AudioIoSurface from './AudioIoSurface.svelte';
+  import MediaLoaderSurface from './MediaLoaderSurface.svelte';
+  import AssetsPickerSurface from './AssetsPickerSurface.svelte';
   import type { ModuleNode } from '$lib/graph/types';
 
   interface Props {
@@ -71,6 +78,9 @@
     /** Canvas's ensureEngine — surfaces whose backing api lives on the
      *  engine-side module boot it on first use. */
     onEnsureEngine?: (() => Promise<unknown>) | null;
+    /** Multiplayer user id (asset-module cap checks + creatorId
+     *  stamping) — null single-user, mirroring spawnFromPalette. */
+    currentUserId?: string | null;
   }
   let {
     appVersion,
@@ -94,10 +104,11 @@
     dinAssigned = false,
     nodeTypes = {},
     onEnsureEngine = null,
+    currentUserId = null,
   }: Props = $props();
 
   // ---- Topbar menu state: ONE menu open at a time ----
-  type MenuId = 'file' | 'clock' | 'din' | 'io';
+  type MenuId = 'file' | 'clock' | 'din' | 'io' | 'assets';
   let openMenu = $state<MenuId | null>(null);
   let fileOpen = $derived(openMenu === 'file');
   /** Which File.. submenu section is expanded ('quicksave' | 'quickload' | 'rawjson' | 'theme' | null). */
@@ -128,6 +139,9 @@
   onMount(() => {
     function onDocPointerDown(e: PointerEvent) {
       if (openMenu === null) return;
+      // STICKY assets picker (owner spec): an open submenu stays open
+      // until an asset is SELECTED or ESC — outside clicks don't close it.
+      if (openMenu === 'assets') return;
       const t = e.target as HTMLElement | null;
       if (!t) return;
       // Inside any topbar menu anchor (trigger or its dropdown)?
@@ -161,11 +175,7 @@
     };
   });
 
-  /** The P3/P4 placeholder slots still pending, in bar order. */
-  const PLACEHOLDER_SLOTS_LEFT: ReadonlyArray<{ id: string; glyph: string; label: string; phase: string }> = [
-    { id: 'media-loader', glyph: '+', label: 'media loader', phase: 'P3' },
-    { id: 'assets-picker', glyph: '💾', label: 'loaded assets', phase: 'P3' },
-  ];
+  /** The P4 placeholder slots still pending, in bar order. */
   const PLACEHOLDER_SLOTS_RIGHT: ReadonlyArray<{ id: string; glyph: string; label: string; phase: string }> = [
     { id: 'cameras', glyph: '📷', label: 'cameras', phase: 'P4' },
   ];
@@ -321,15 +331,31 @@
        then the LIVE P2 surfaces (clock / DIN / audio I/O), then the P4
        cameras placeholder. See the header comment. -->
   <div class="placeholders" data-testid="workflow-topbar-placeholders">
-    {#each PLACEHOLDER_SLOTS_LEFT as p (p.id)}
+    <!-- + MEDIA LOADER — pick/drop sound, video + image files (P3). -->
+    <MediaLoaderSurface />
+
+    <!-- 💾 LOADED ASSETS — images/videos/sounds submenus; click a row to
+         drag a patch wire out (the virtual-port drag). STICKY while open
+         (see onDocPointerDown). -->
+    <div class="slot-anchor" data-wf-anchor="assets">
       <button
-        class="placeholder"
-        data-testid={`workflow-topbar-slot-${p.id}`}
-        disabled
-        title={`${p.label} — lands in ${p.phase}`}
-        aria-label={`${p.label} (coming in ${p.phase})`}
-      >{p.glyph}</button>
-    {/each}
+        class="slot-trigger"
+        class:open={openMenu === 'assets'}
+        data-testid="workflow-topbar-slot-assets-picker"
+        onclick={() => toggleMenu('assets')}
+        aria-haspopup="menu"
+        aria-expanded={openMenu === 'assets'}
+        title="Loaded assets — click one to patch it into the rack"
+        aria-label="Loaded assets picker"
+      >💾</button>
+      {#if openMenu === 'assets'}
+        <AssetsPickerSurface
+          currentUserId={currentUserId ?? null}
+          {onEnsureEngine}
+          onRequestClose={closeMenus}
+        />
+      {/if}
+    </div>
 
     <!-- 🕐 CLOCK — TIMELORDE's workflow face (BPM / knob / tap / patch-out). -->
     <div class="slot-anchor" data-wf-anchor="clock">

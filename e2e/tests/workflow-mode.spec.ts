@@ -71,8 +71,10 @@ test.describe('workflow shell', () => {
     // File.. REPLACES the top-left slot bar (Q5 reversible default).
     await expect(page.getByTestId('preset-slot-bar')).toHaveCount(0);
     await expect(page.getByTestId('workflow-file-trigger')).toBeVisible();
-    // The P2/P3/P4 placeholder slots are present and disabled.
-    await expect(page.getByTestId('workflow-topbar-slot-media-loader')).toBeDisabled();
+    // The P3 media slots are LIVE (loader + assets picker — behavior in
+    // workflow-media.spec.ts); P4 cameras stays a disabled placeholder.
+    await expect(page.getByTestId('workflow-topbar-slot-media-loader')).toBeEnabled();
+    await expect(page.getByTestId('workflow-topbar-slot-assets-picker')).toBeEnabled();
     await expect(page.getByTestId('workflow-topbar-slot-cameras')).toBeDisabled();
 
     // The pinned trio lands in the patch graph…

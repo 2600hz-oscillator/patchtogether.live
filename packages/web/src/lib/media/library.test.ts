@@ -203,3 +203,47 @@ describe('MediaLibrary — probe status machine', () => {
     expect(b.status).toBe('ready');
   });
 });
+
+describe('MediaLibrary — poster URL lifecycle (P3 video thumbnails)', () => {
+  it('revokes meta.posterUrl alongside objectUrl on remove', async () => {
+    const { lib, pending, revokeObjectUrl } = libWithSpies();
+    const [item] = lib.add([accepted(makeFile('a.mp4', 'video/mp4'), 'video')]).added;
+    pending[0].resolve({ durationS: 3, posterUrl: 'blob:poster/1' });
+    await settle();
+    expect(item.meta.posterUrl).toBe('blob:poster/1');
+    lib.remove(item.id);
+    expect(revokeObjectUrl.mock.calls.map((c) => c[0]).sort()).toEqual([
+      'blob:poster/1',
+      'blob:test/1',
+    ]);
+  });
+
+  it('revokes poster URLs on clear too', async () => {
+    const { lib, pending, revokeObjectUrl } = libWithSpies();
+    lib.add([
+      accepted(makeFile('a.mp4', 'video/mp4'), 'video'),
+      accepted(makeFile('b.wav')),
+    ]);
+    pending[0].resolve({ durationS: 3, posterUrl: 'blob:poster/1' });
+    pending[1].resolve({ durationS: 1 }); // audio — no poster
+    await settle();
+    lib.clear();
+    expect(revokeObjectUrl.mock.calls.map((c) => c[0]).sort()).toEqual([
+      'blob:poster/1',
+      'blob:test/1',
+      'blob:test/2',
+    ]);
+  });
+
+  it('a poster minted for an already-removed item is revoked, not leaked', async () => {
+    const { lib, pending, revokeObjectUrl } = libWithSpies();
+    const [item] = lib.add([accepted(makeFile('a.mp4', 'video/mp4'), 'video')]).added;
+    lib.remove(item.id); // revokes blob:test/1; probe still in flight
+    pending[0].resolve({ durationS: 3, posterUrl: 'blob:poster/ghost' });
+    await settle();
+    expect(revokeObjectUrl.mock.calls.map((c) => c[0]).sort()).toEqual([
+      'blob:poster/ghost',
+      'blob:test/1',
+    ]);
+  });
+});
