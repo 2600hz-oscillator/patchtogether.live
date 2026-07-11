@@ -196,6 +196,13 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // rate consumed per-sample inside the roll engine. Same shape as
   // kickdrum.pitch_cv / accent_in and dx7.pitch_cv.
   snaredrum: ['pitch_cv', 'accent_in', 'roll_speed_cv'],
+  // KARPLUS accent_in: a raw per-hit 0..1 value SAMPLED (latched) at the
+  // trigger edge inside the worklet — a latch input consumed as an
+  // audio-rate node input, not a knob modulator (no paramTarget), so
+  // cvScale doesn't apply. Same shape as kickdrum/snaredrum.accent_in.
+  // (The five *_cv knob modulators all declare cvScale; the `pitch` input
+  // is the V/oct cable consumed per-sample as tune × 2^V, like CUBE.pitch.)
+  karplus: ['accent_in'],
   // CUBE pitch: V/oct input consumed directly by the worklet as its own
   // audio-rate node input (freq = C4·2^(pitch + tune/12 + fine/1200), applied
   // per-sample). No paramTarget — same V/oct-fallback shape as dx7.pitch_cv. CUBE's OTHER cv inputs (slice_y/rx/ry/rz, morph_fc,

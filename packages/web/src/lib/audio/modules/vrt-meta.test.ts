@@ -319,7 +319,10 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // 87→88 for DOCKSCOPE (2026-07-11, deliberate darwin-first new module —
       // workflow P2.5b's slim 1u rail scope with the seeded VRT scene; linux
       // baseline pending the vrt-update.yml dispatch on the PR branch).
-    ).toBeLessThanOrEqual(88);
+      // 88→89 for KARPLUS (2026-07-11, deliberate darwin-first new module —
+      // the extended Karplus-Strong string-voice card; linux baseline pending
+      // the vrt-update.yml dispatch on the PR branch).
+    ).toBeLessThanOrEqual(89);
   });
 });
 
