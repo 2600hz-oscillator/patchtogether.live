@@ -330,7 +330,12 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // scenes (clap-909-dense / clap-linn-room / clap-dry-snap in
       // vrt-clap.spec.ts); linux baselines pending the vrt-update.yml
       // dispatch on the PR branch).
-    ).toBeLessThanOrEqual(94);
+          // 94→100 for the KARPLUS + TOM DRUM composite-state scenes (2026-07-11,
+      // deliberate darwin-first — 6 non-default-state card scenes in
+      // vrt-karplus-tomtom-states.spec.ts, the sonic-audit coverage gap-fill;
+      // linux baselines pending the vrt-update.yml dispatch on the PR
+      // branch, same precedent as the COLOUR OF MAGIC scene batches).
+    ).toBeLessThanOrEqual(100);
   });
 });
 

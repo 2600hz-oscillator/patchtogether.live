@@ -25,7 +25,10 @@
 //              delay at f0 is compensated EXACTLY (closed form below), so
 //              brightness never detunes the string.
 //            → STIFFNESS dispersion: two first-order allpasses
-//              Hs(z) = (a + z⁻¹)/(1 + a·z⁻¹), a = −0.55·stiffness
+//              Hs(z) = (a + z⁻¹)/(1 + a·z⁻¹), a = karplusStiffA(knob, f0)
+//              — the knob sets the allpass DC group delay (1 → 12 samples,
+//              perceptually tapered, capped at 20 % of the period), so the
+//              stretch is audible at EVERY pitch, not just the top octaves
 //              (upper partials arrive early → stretched sharp → bell/metal)
 //            → in-loop DC blocker whose corner TRACKS the note (f0/20) —
 //              see the stability note below
@@ -98,8 +101,55 @@ export const KARPLUS_G_MAX = 1.1;
 /** Palm-mute decay time while the DAMP gate is held (s, to −60 dB). */
 export const KARPLUS_DAMP_T60_S = 0.05;
 
-/** Stiffness knob → allpass coefficient: a = −KARPLUS_STIFF_A_MAX · knob. */
-export const KARPLUS_STIFF_A_MAX = 0.55;
+/** Stiffness knob → per-allpass DC PHASE delay τ0 (samples) at knob = 1.
+ *
+ *  SONIC-RANGE RETAPE (2026-07-11 adversarial audit): the original map
+ *  a = −0.55·knob gave each allpass a near-FLAT phase delay across the low
+ *  normalized frequencies a 48 kHz loop actually uses, so at the DEFAULT
+ *  tune (220 Hz, w0 ≈ 0.029 rad) the FULL knob range stretched partial 5 by
+ *  only ~2–3 cents — inaudible; the knob was dead below ~500 Hz and only
+ *  woke up in the top octaves (the original unit test even probed it at A5
+ *  for this reason). The knob now sets the allpass DC phase delay LINEARLY
+ *  (τ0 = 1 + 23·knob, a = −(τ0−1)/(τ0+1)) — the pole walks toward z = 1,
+ *  which is what actually deepens the dispersion: at 220 Hz the measured
+ *  partial-5 stretch is now ≈ +6 c / +34 c / +75 c / +130 c at knob 0.25 /
+ *  0.5 / 0.75 / 1 (subtle piano wire → real bell), and knob = 0 keeps
+ *  a = 0 exactly (τ0 = 1 — the continuous-topology guarantee: a pure
+ *  1-sample delay). Allpasses are unity-magnitude, so loop STABILITY is
+ *  unaffected at any a. */
+export const KARPLUS_STIFF_TAU_MAX = 24;
+
+/** Fraction of the period the two allpasses may consume at f0 (tuning
+ *  budget): 2·τp(w0) ≤ 0.5·(sr/f0) keeps the compensated delay-line target
+ *  comfortably positive at every reachable pitch (period ≥ 11.4 samples at
+ *  F0_MAX), so high notes stay in tune instead of clamping at the floor. */
+export const KARPLUS_STIFF_BUDGET = 0.5;
+
+/** Stiffness knob (0..1) → allpass coefficient a ≤ 0 for the current f0.
+ *  Linear DC-phase-delay taper (see KARPLUS_STIFF_TAU_MAX), then a closed-
+ *  form BUDGET cap: if the pair's actual phase delay AT f0 would exceed
+ *  half the period, τ0 is scaled down (2 fixed-point refinements of the
+ *  monotone τ0 → τp(w0) map — deterministic, no search). The compensation
+ *  in karplusDelayTarget uses the SAME returned a, so tuning stays exact
+ *  wherever the budget lands. */
+export function karplusStiffA(stiffness: number, f0: number, sr: number): number {
+  const k = clamp(stiffness, 0, 1);
+  if (k <= 0) return 0;
+  const w0 = (TWO_PI * f0) / sr;
+  const budget = (KARPLUS_STIFF_BUDGET * sr) / f0;
+  let tau0 = 1 + (KARPLUS_STIFF_TAU_MAX - 1) * k;
+  let a = -(tau0 - 1) / (tau0 + 1);
+  // τp(w0) is sublinear in τ0, so the plain ratio update approaches the
+  // budget from above — 6 bounded iterations land within ~3% (only the
+  // high-pitch × high-stiffness corner ever iterates at all).
+  for (let i = 0; i < 6; i++) {
+    const used = 2 * karplusAllpassPhaseDelay(a, w0);
+    if (used <= budget) break;
+    tau0 = Math.max(1, tau0 * (budget / used));
+    a = -(tau0 - 1) / (tau0 + 1);
+  }
+  return a;
+}
 
 /** Exciter COLOR knob → burst low-pass cutoff sweep (Hz, exponential). */
 export const KARPLUS_COLOR_FC_LO = 200;
@@ -292,7 +342,7 @@ export function karplusDelayTarget(
   sr: number,
 ): number {
   const w = (TWO_PI * f0) / sr;
-  const a = -KARPLUS_STIFF_A_MAX * clamp(stiffness, 0, 1);
+  const a = karplusStiffA(stiffness, f0, sr);
   const aLp = karplusDampingCoeff(f0, brightness, sr);
   const target =
     sr / f0 -
@@ -383,7 +433,7 @@ export function karplusStep(
   const damped = s.lpState;
 
   // Two dispersion allpasses: y = a·x + x1 − a·y1.
-  const a = -KARPLUS_STIFF_A_MAX * clamp(p.stiffness, 0, 1);
+  const a = karplusStiffA(p.stiffness, f0, sr);
   let ap1 = a * damped + s.ap1X1 - a * s.ap1Y1;
   if (Math.abs(ap1) < FLUSH) ap1 = 0;
   s.ap1X1 = damped;

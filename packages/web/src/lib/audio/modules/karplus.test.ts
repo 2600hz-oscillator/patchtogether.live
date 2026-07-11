@@ -240,4 +240,91 @@ describe('KARPLUS worklet — load + wrapper behavior', () => {
     for (let i = 0; i < a.length; i++) maxDiff = Math.max(maxDiff, Math.abs(a[i]! - b[i]!));
     expect(maxDiff).toBe(0);
   });
+
+  // ── CV plumbing (2026-07-11 sonic audit): the five *_cv ports modulate
+  // through AudioParams, so the wrapper must (1) declare every param a-rate
+  // and (2) actually read the PER-SAMPLE parameter array — a k-rate-style
+  // arr[0] read would silently freeze CV modulation at the block edge. ──
+
+  it('every param is a-rate (per-sample CV modulation reaches the DSP)', async () => {
+    const Proc = await loadProcessor();
+    const desc = Proc.parameterDescriptors as ReadonlyArray<{ name: string; automationRate?: string }>;
+    for (const d of desc) {
+      expect(d.automationRate, `param ${d.name}`).toBe('a-rate');
+    }
+  });
+
+  it('an a-rate brightness array modulates hits within one render (bright_cv path)', async () => {
+    const Proc = await loadProcessor();
+    // One render, two strikes: the brightness parameter is a PER-SAMPLE
+    // array (what an AudioParam carries under CV modulation) that sits dark
+    // for hit 1 and steps bright before hit 2 — the step lands mid-block.
+    // (A brightness step mid-RING is nearly inert — a dark string holds only
+    // its fundamental by then, verified at the core — so the audible seam is
+    // per-hit, matching the bright_cv doc.)
+    const seconds = 0.8;
+    const strike2 = Math.round(0.4 * SR);
+    const stepAt = Math.round(0.33 * SR);
+    const pulse = Math.round(0.005 * SR);
+    const renderWith = (brightFn: ((n: number) => number) | null): Float32Array => {
+      const proc = new Proc();
+      const params = makeParams({ brightness: 0.1 });
+      const total = Math.round(SR * seconds);
+      const out = new Float32Array(total);
+      let g = 0;
+      while (g < total) {
+        const len = Math.min(BLOCK, total - g);
+        const inTrig = new Float32Array(len);
+        for (let i = 0; i < len; i++) {
+          const n = g + i;
+          inTrig[i] = n < pulse || (n >= strike2 && n < strike2 + pulse) ? 1 : 0;
+        }
+        if (brightFn) {
+          const arr = new Float32Array(len);
+          for (let i = 0; i < len; i++) arr[i] = brightFn(g + i);
+          params['brightness'] = arr;
+        }
+        const blockOut = new Float32Array(len);
+        proc.process(
+          [[inTrig], [new Float32Array(len)], [new Float32Array(len)], [new Float32Array(len)]],
+          [[blockOut]],
+          params,
+        );
+        out.set(blockOut, g);
+        g += len;
+      }
+      return out;
+    };
+    const darkRef = renderWith(null);
+    const modulated = renderWith((n) => (n < stepAt ? 0.1 : 0.95));
+    const zcr = (b: Float32Array, sS: number, eS: number): number => {
+      const s = Math.round(sS * SR);
+      const e = Math.round(eS * SR);
+      let c = 0;
+      for (let i = s + 1; i < e; i++) if (b[i - 1]! < 0 !== b[i]! < 0) c++;
+      return c;
+    };
+    // Hit 2 in the modulated render rings brighter + louder than (a) hit 1
+    // of the SAME render and (b) hit 2 of the constant-dark reference.
+    expect(rmsOf(modulated, strike2, Math.round(0.7 * SR))).toBeGreaterThan(
+      rmsOf(modulated, 0, Math.round(0.3 * SR)) * 1.5,
+    );
+    expect(rmsOf(modulated, strike2, Math.round(0.7 * SR))).toBeGreaterThan(
+      rmsOf(darkRef, strike2, Math.round(0.7 * SR)) * 1.5,
+    );
+    expect(zcr(modulated, 0.45, 0.7)).toBeGreaterThan(zcr(darkRef, 0.45, 0.7) * 1.3);
+  });
+
+  it('accent_in (input 2) latched at the strike lands a hotter hit', async () => {
+    const Proc = await loadProcessor();
+    const soft = runProc(new Proc(), makeParams(), { seconds: 0.4, trigFn: oneStrike });
+    const hard = runProc(new Proc(), makeParams(), {
+      seconds: 0.4,
+      trigFn: oneStrike,
+      accentFn: () => 1,
+    });
+    expect(rmsOf(hard, 0, Math.round(0.3 * SR))).toBeGreaterThan(
+      rmsOf(soft, 0, Math.round(0.3 * SR)) * 1.3,
+    );
+  });
 });

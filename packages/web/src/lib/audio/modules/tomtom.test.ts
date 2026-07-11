@@ -292,4 +292,66 @@ describe('TOMTOM worklet — load + wrapper behavior', () => {
     }
     expect(eBreathy).toBeGreaterThan(3 * Math.max(eDry, 1e-12));
   });
+
+  // ── remaining CV input routing (2026-07-11 sonic audit): bend_cv /
+  // decay_cv / tone_cv are worklet inputs 3 / 4 / 5 — each cable must reach
+  // its core law (the laws themselves are gated in tomtom-dsp.sonic-range).
+
+  it('bend_cv input (3) deepens the strike sweep', async () => {
+    const Proc = await loadProcessor();
+    const base = { bend_amt: 0, noise: 0, tone: 0, drive: 0 };
+    const flat = runProc(new Proc(), makeParams(base), { seconds: 0.4, trigFn: oneStrike });
+    const bent = runProc(new Proc(), makeParams(base), {
+      seconds: 0.4,
+      trigFn: oneStrike,
+      bendFn: () => 0.5, // +12 st of bend depth
+    });
+    const atk = (b: Float32Array) => estimateFreq(b, Math.round(0.002 * SR), Math.round(0.02 * SR));
+    const set = (b: Float32Array) => estimateFreq(b, Math.round(0.25 * SR), Math.round(0.38 * SR));
+    expect(atk(flat) / set(flat)).toBeLessThan(1.1); // no sweep without CV
+    expect(atk(bent) / set(bent)).toBeGreaterThan(1.25); // audible dive with CV
+  });
+
+  it('decay_cv input (4) stretches the ring time (+0.5 V ≈ ×2)', async () => {
+    const Proc = await loadProcessor();
+    const dry = runProc(new Proc(), makeParams(), { seconds: 1.2, trigFn: oneStrike });
+    const long = runProc(new Proc(), makeParams(), {
+      seconds: 1.2,
+      trigFn: oneStrike,
+      decayFn: () => 0.5,
+    });
+    // 350 ms default → ~700 ms at +0.5 V: the late window only rings with CV.
+    const s = Math.round(0.45 * SR);
+    const e = Math.round(0.65 * SR);
+    expect(rmsOf(long, s, e)).toBeGreaterThan(rmsOf(dry, s, e) * 3);
+  });
+
+  it('tone_cv input (5) brings the 1.593× overtone up', async () => {
+    const Proc = await loadProcessor();
+    const base = { tune: 110, bend_amt: 0, noise: 0, tone: 0, drive: 0 };
+    const pure = runProc(new Proc(), makeParams(base), { seconds: 0.25, trigFn: oneStrike });
+    const struck = runProc(new Proc(), makeParams(base), {
+      seconds: 0.25,
+      trigFn: oneStrike,
+      toneFn: () => 0.7,
+    });
+    const goertzel = (buf: Float32Array, hz: number): number => {
+      const e = Math.round(0.2 * SR);
+      const omega = (2 * Math.PI * hz) / SR;
+      const coeff = 2 * Math.cos(omega);
+      let q1 = 0;
+      let q2 = 0;
+      for (let i = 0; i < e; i++) {
+        const win = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (e - 1)));
+        const q0 = coeff * q1 - q2 + (buf[i] ?? 0) * win;
+        q2 = q1;
+        q1 = q0;
+      }
+      return q1 * q1 + q2 * q2 - q1 * q2 * coeff;
+    };
+    const ot = 110 * 1.593;
+    const ratioPure = goertzel(pure, ot) / Math.max(goertzel(pure, 110), 1e-12);
+    const ratioStruck = goertzel(struck, ot) / Math.max(goertzel(struck, 110), 1e-12);
+    expect(ratioStruck).toBeGreaterThan(ratioPure * 5 + 0.01);
+  });
 });

@@ -53,6 +53,37 @@ function rms(b: Float32Array, s = 0, e = b.length): number {
   return Math.sqrt(x / Math.max(1, e - s));
 }
 
+/** Render a 3-note MELODIC phrase (2026-07-11 coverage audit: the golden
+ *  must exercise the voice "plucking pitched notes", not one pitch): plucks
+ *  at 0 / 0.5 / 1.0 s with the 1 V/oct input stepping A3 → C4 → E4
+ *  (0 / +3 / +7 semitones — the module's real melodic path). */
+function renderMelody(): Record<string, Float32Array> {
+  const trig = triggerTrain({ totalS: DURATION_S, bpm: 120 });
+  const p = { ...KARPLUS_DEFAULTS };
+  const st = makeKarplusState(SR);
+  return captureOutputs({ durationS: DURATION_S, outputs: ['melody'] }, (i) => {
+    const t = i / SR;
+    p.pitchCv = t < 0.5 ? 0 : t < 1.0 ? 3 / 12 : 7 / 12;
+    return { melody: karplusStep(trig[i]!, 0, 0, p, SR, st) };
+  });
+}
+
+/** Hann-windowed Goertzel magnitude of buf[from..to) at freq. */
+function goertzelMag(buf: Float32Array, from: number, to: number, freq: number): number {
+  const w = (2 * Math.PI * freq) / SR;
+  const coeff = 2 * Math.cos(w);
+  const n = to - from;
+  let s1 = 0;
+  let s2 = 0;
+  for (let i = 0; i < n; i++) {
+    const win = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (n - 1));
+    const s0 = buf[from + i]! * win + coeff * s1 - s2;
+    s2 = s1;
+    s1 = s0;
+  }
+  return Math.sqrt(Math.max(0, s1 * s1 + s2 * s2 - coeff * s1 * s2));
+}
+
 describe('ART karplus / audio profile (default patch, 2-pluck trigger train)', () => {
   it('renders a finite, audible, ringing, deterministic pluck train', () => {
     const { out } = renderProfile();
@@ -91,5 +122,53 @@ describe('ART karplus / audio profile (default patch, 2-pluck trigger train)', (
       'lib/dsp-utils.ts',
     );
     await pinAll('karplus', srcSha, renderProfile());
+  });
+});
+
+describe('ART karplus / melodic phrase (3 plucks, 1 V/oct stepping A3→C4→E4)', () => {
+  it('each pluck rings at ITS OWN sequenced pitch (the melodic 1 V/oct path)', () => {
+    const { melody } = renderMelody();
+    const buf = melody!;
+    expect(buf.every(Number.isFinite)).toBe(true);
+    // Three attacks landed.
+    for (const at of [0, 0.5, 1.0]) {
+      expect(rms(buf, Math.round(at * SR), Math.round((at + 0.1) * SR))).toBeGreaterThan(0.01);
+    }
+    // Per-note fundamental beats the OTHER two notes' fundamentals inside
+    // its own sustain window (ring-over from earlier notes decays below the
+    // fresh pluck — the phrase is audibly MELODIC, not three identical hits).
+    const notes = [220, 220 * Math.pow(2, 3 / 12), 220 * Math.pow(2, 7 / 12)];
+    const windows: Array<[number, number]> = [
+      [0.15, 0.45],
+      [0.65, 0.95],
+      [1.15, 1.45],
+    ];
+    for (let n = 0; n < 3; n++) {
+      const [w0, w1] = windows[n]!;
+      const from = Math.round(w0 * SR);
+      const to = Math.round(w1 * SR);
+      const own = goertzelMag(buf, from, to, notes[n]!);
+      for (let m = 0; m < 3; m++) {
+        if (m === n) continue;
+        expect(own, `note ${n} window dominated by its own f0 vs note ${m}`).toBeGreaterThan(
+          goertzelMag(buf, from, to, notes[m]!),
+        );
+      }
+    }
+    // Deterministic re-render.
+    const again = renderMelody().melody!;
+    let diff = 0;
+    for (let i = 0; i < buf.length; i++) diff = Math.max(diff, Math.abs(buf[i]! - again[i]!));
+    expect(diff).toBe(0);
+  });
+
+  it('pins the melody baseline (SHA-gated, RMS tier B)', async () => {
+    const srcSha = await dspSourceSha(
+      'karplus.ts',
+      'lib/karplus-dsp.ts',
+      'lib/analog-delay-core.ts',
+      'lib/dsp-utils.ts',
+    );
+    await pinAll('karplus', srcSha, renderMelody());
   });
 });
