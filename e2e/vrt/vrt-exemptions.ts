@@ -1359,4 +1359,17 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // the bespoke real-source-chain e2e/tests/karplus.spec.ts (SEQUENCER →
   // trigger_in + pitch → AUDIOOUT, audible RMS + fundamental spectrum).
   'linux/karplus',
+  // KARPLUS + TOM DRUM composite-state scenes (2026-07-11, the sonic-audit
+  // coverage gap-fill): vrt-karplus-tomtom-states.spec.ts locks each card at
+  // 3 sonically/visually distinct NON-DEFAULT control states (bell/mallet/
+  // scrape fader constellations; Simmons-zap/timbale extremes + the held
+  // STRIKE pad's stateful CSS). Pure-DOM deterministic chrome, same
+  // darwin-first pattern as the modules' default cards above; linux
+  // baselines pending a `vrt-update.yml` workflow_dispatch on the PR branch.
+  'linux/karplus-bell-extreme',
+  'linux/karplus-dark-mallet',
+  'linux/karplus-scrape-bridge',
+  'linux/tomtom-simmons-zap',
+  'linux/tomtom-timbale-tight',
+  'linux/tomtom-strike-held',
 ]);

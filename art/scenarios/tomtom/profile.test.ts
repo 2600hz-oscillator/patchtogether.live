@@ -92,3 +92,78 @@ describe('ART tomtom / audio profile (default patch, 2-strike trigger train)', (
     await pinAll('tomtom', srcSha, renderProfile());
   });
 });
+
+// ── tuned-toms spread (2026-07-11 coverage audit: the golden must exercise
+// "hits at distinct tunings", not two identical strikes) ──
+
+const SPREAD_DURATION_S = 1.5;
+
+/** Three hits at 0 / 0.5 / 1.0 s with the 1 V/oct input stepping
+ *  −0.5 V → 0 V → +0.5 V: floor tom (77.8 Hz) → the 110 Hz default →
+ *  high rack (155.6 Hz) — the classic multi-tom fill from ONE voice. */
+function renderTuneSpread(): Record<string, Float32Array> {
+  const trig = triggerTrain({ totalS: SPREAD_DURATION_S, bpm: 120 });
+  const p = { ...TOMTOM_DEFAULTS };
+  const st = makeTomtomState();
+  return captureOutputs({ durationS: SPREAD_DURATION_S, outputs: ['tune_spread'] }, (i) => {
+    const t = i / SR;
+    p.pitchCv = t < 0.5 ? -0.5 : t < 1.0 ? 0 : 0.5;
+    return { tune_spread: tomtomStep(trig[i]!, 0, p, SR, st) };
+  });
+}
+
+/** Interpolated rising-zero-crossing pitch over [s, e) samples. */
+function zcPitch(buf: Float32Array, s: number, e: number): number {
+  let first = -1;
+  let last = -1;
+  let count = 0;
+  for (let i = s + 1; i < e; i++) {
+    if (buf[i - 1]! < 0 && buf[i]! >= 0) {
+      const frac = buf[i - 1]! / (buf[i - 1]! - buf[i]!);
+      const t = i - 1 + frac;
+      if (first < 0) first = t;
+      last = t;
+      count++;
+    }
+  }
+  if (count < 2) return 0;
+  return ((count - 1) * SR) / (last - first);
+}
+
+describe('ART tomtom / tuned-toms spread (3 hits, 1 V/oct −0.5 → 0 → +0.5)', () => {
+  it('each hit settles at ITS OWN tuning (floor → mid → high rack)', () => {
+    const { tune_spread } = renderTuneSpread();
+    const buf = tune_spread!;
+    expect(buf.every(Number.isFinite)).toBe(true);
+    // Three attacks landed.
+    for (const at of [0, 0.5, 1.0]) {
+      expect(rms(buf, Math.round(at * SR), Math.round((at + 0.1) * SR))).toBeGreaterThan(0.01);
+    }
+    // Settled pitch per hit (post-bend window, membrane-dominant zone):
+    // 110·2^cv within 6% (the breath layer adds some zero-crossing jitter).
+    const targets: Array<[number, number]> = [
+      [0.25, 110 * Math.pow(2, -0.5)],
+      [0.75, 110],
+      [1.25, 110 * Math.pow(2, 0.5)],
+    ];
+    for (const [wS, fExp] of targets) {
+      const f = zcPitch(buf, Math.round(wS * SR), Math.round((wS + 0.1) * SR));
+      expect(Math.abs(f / fExp - 1), `settled pitch @${wS}s`).toBeLessThan(0.06);
+    }
+    // Deterministic re-render (per-strike reseeded breath).
+    const again = renderTuneSpread().tune_spread!;
+    let diff = 0;
+    for (let i = 0; i < buf.length; i++) diff = Math.max(diff, Math.abs(buf[i]! - again[i]!));
+    expect(diff).toBe(0);
+  });
+
+  it('pins the tune_spread baseline (SHA-gated, RMS tier B)', async () => {
+    const srcSha = await dspSourceSha(
+      'tomtom.ts',
+      'lib/tomtom-dsp.ts',
+      'lib/dsp-utils.ts',
+      'lib/oversample.ts',
+    );
+    await pinAll('tomtom', srcSha, renderTuneSpread());
+  });
+});
