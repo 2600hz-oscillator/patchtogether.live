@@ -2313,6 +2313,15 @@ pong out score_right gate
 pong param paddleH 0.05..0.5 linear default=0.2
 pong param serveAngle 0..1 linear default=0.3
 pong param speed 0.25..4 log default=1
+posterbox meta domain=video
+posterbox in depth cv param=depth cvScale=discrete
+posterbox in dither cv param=dither cvScale=linear
+posterbox in in video
+posterbox in mix cv param=mix cvScale=linear
+posterbox out out video
+posterbox param depth 0..4 discrete default=2
+posterbox param dither 0..1 linear default=0
+posterbox param mix 0..1 linear default=1
 qbrt meta domain=audio
 qbrt in cutoff cv param=cutoff cvScale=log
 qbrt in L audio

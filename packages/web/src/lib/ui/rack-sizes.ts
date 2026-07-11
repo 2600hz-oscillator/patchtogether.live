@@ -181,6 +181,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   painter: { size: '3u', hp: 3 }, // 540×540 — MS-Paint card: 9-tool toolbar + flex-filled 4:3 paint canvas (fills the tier; faceplate letterbox margin, no overflow) + 28-swatch palette
   peakstate: { size: '2u', hp: 2 }, // 329×240px
   picturebox: { size: '2u', hp: 2 }, // 240×220px
+  posterbox: { size: '2u', hp: 2 }, // 220×~520px card body — 160×120 preview + 3 faders (mirrors cellshade)
   quadralogical: { size: '3u', hp: 4 }, // 540×720px — 2-col (joystick left, preview+edges right)
   recorderbox: { size: '2u', hp: 2 }, // 296×248px
   spectrograph: { size: '2u', hp: 2 }, // 320×220px — sonogram preview + gain (≈ cellshade/recorderbox)

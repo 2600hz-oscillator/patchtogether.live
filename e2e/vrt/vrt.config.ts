@@ -49,6 +49,7 @@ const FULL_MATCH = [
   'vrt-quadralogical.spec.ts',
   'vrt-clap.spec.ts',
   'vrt-karplus-tomtom-states.spec.ts',
+  'vrt-posterbox-states.spec.ts',
   'vrt-colourofmagic.spec.ts',
   'vrt-toybox.spec.ts',
   'vrt-aspect-16x9.spec.ts',

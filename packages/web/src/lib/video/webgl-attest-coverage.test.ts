@@ -123,7 +123,13 @@ const FROM_TEST_ROOT = resolve(__dirname, '../../../../..');
 // for non-black/structured/param-response). Full-res dependent-texelFetch fill →
 // isolated in the serialized heavy lane; e2e/webgl-heavy-globs.ts is in the hash
 // basis, so this moved the WebGL hash (re-attested). 49 → 50.
-const EXPECTED_HEAVY_SPEC_COUNT = 51;
+// POSTERBOX (2026-07-11): +posterbox-functional.spec.ts (retro palette-crush —
+// the theory-derived spec readPixels()es the module's output FBO for the legacy
+// 3-3-2 continuity anchors, hue-order preservation, the Bayer dither checker
+// block, and the mix sweep). Real-GPU pixel reads → serialized heavy lane;
+// e2e/webgl-heavy-globs.ts is in the hash basis, and the new video module def
+// moves the hash anyway (re-attest at merge). 51 → 52.
+const EXPECTED_HEAVY_SPEC_COUNT = 52;
 
 describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
   const basis = resolveWebglBasis();
