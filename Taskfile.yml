@@ -167,6 +167,9 @@ tasks:
       - task: docs:faces
       - task: docs:ensure
       - npm run build -w {{.WEB}}
+      # Same silent-prerender-skip guard as build:web (this task INLINES the
+      # web build rather than calling build:web, so it needs its own line).
+      - node {{.WEB}}/scripts/check-prerender.mjs
 
   build:web:
     desc: Build web only
