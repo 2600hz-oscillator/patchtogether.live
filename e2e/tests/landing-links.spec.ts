@@ -20,8 +20,12 @@ test.describe('landing links', () => {
   }) => {
     await page.goto('/');
 
-    // The 6 tiles (no numbers, no hero) — ART + VRT galleries are cards too.
+    // The tiles (no numbers, no hero) — ART + VRT galleries are cards too.
+    // WORKFLOW MODE: the unauthenticated front door offers BOTH shells
+    // (owner directive 2026-07-11 — the dashboard-only card left anonymous
+    // users with no path into workflow mode).
     await expect(page.getByTestId('tile-new-rack')).toHaveAttribute('href', '/rack');
+    await expect(page.getByTestId('tile-new-workflow-rack')).toHaveAttribute('href', '/rack?mode=workflow');
     await expect(page.getByTestId('tile-rackspaces')).toHaveAttribute('href', '/dashboard');
     await expect(page.getByTestId('tile-modules')).toHaveAttribute('href', '/docs/modules');
     await expect(page.getByTestId('tile-art')).toHaveAttribute('href', `${GH_PAGES}/art/`);
@@ -31,17 +35,27 @@ test.describe('landing links', () => {
     // Static header sign-in.
     await expect(page.getByTestId('header-signin')).toHaveAttribute('href', '/sign-in');
 
-    // All six tiles are actually rendered/visible.
-    for (const id of ['new-rack', 'rackspaces', 'modules', 'art', 'docs', 'vrt']) {
+    // All tiles are actually rendered/visible.
+    for (const id of ['new-rack', 'new-workflow-rack', 'rackspaces', 'modules', 'art', 'docs', 'vrt']) {
       await expect(page.getByTestId(`tile-${id}`)).toBeVisible();
     }
   });
 
-  test('the NEW RACK tile navigates to the canvas', async ({ page }) => {
+  test('the NEW DAWLESS RACK tile navigates to the canvas', async ({ page }) => {
     await page.goto('/');
     await page.getByTestId('tile-new-rack').click();
     await expect(page).toHaveURL(/\/rack$/);
     await expect(page.locator('[data-testid="canvas-root"]')).toBeVisible();
+  });
+
+  test('the NEW WORKFLOW RACK tile boots the WORKFLOW shell without auth', async ({ page }) => {
+    await page.goto('/');
+    await page.getByTestId('tile-new-workflow-rack').click();
+    await expect(page).toHaveURL(/\/rack\?mode=workflow$/);
+    // The workflow shell's distinguishing chrome: the WorkflowTopbar (File..)
+    // — not the dawless topbar. Anonymous users get the full shell.
+    await expect(page.getByTestId('workflow-topbar')).toBeVisible();
+    await expect(page.getByTestId('workflow-file-trigger')).toBeVisible();
   });
 
   test('internal doc tiles resolve to real routes (no 404)', async ({ page }) => {

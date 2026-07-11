@@ -27,8 +27,15 @@ interface DeferredQuery {
   __isNeonShim: true;
   text: string;
   values: unknown[];
-  /** When awaited directly (no transaction), runs against the pool with its own implicit tx. */
-  then: <T>(resolve: (v: Record<string, unknown>[]) => T) => Promise<T>;
+  /** When awaited directly (no transaction), runs against the pool with its
+   *  own implicit tx. MUST honor the full thenable contract (onRejected too):
+   *  before 2026-07-11 the rejection handler was dropped, so a FAILING
+   *  standalone query never settled its awaiter (test timeout) and surfaced
+   *  as an unhandled rejection — first hit by the 42703 mode-fallback test. */
+  then: <T>(
+    resolve: (v: Record<string, unknown>[]) => T,
+    reject?: (err: unknown) => T,
+  ) => Promise<T>;
 }
 
 function buildPgQuery(strings: TemplateStringsArray, params: unknown[]): { text: string; values: unknown[] } {
@@ -58,8 +65,11 @@ export function neonShim(pool: pg.Pool): NeonShim {
       // Thenable: awaiting the deferred runs its own one-off query against
       // the pool. Inside transaction() we read .text/.values directly and
       // never await it, so this branch only fires for stand-alone queries.
-      then: (<T>(onFulfilled: (v: Record<string, unknown>[]) => T) =>
-        pool.query(text, values).then((r) => onFulfilled(r.rows))) as DeferredQuery['then'],
+      then: (<T>(
+        onFulfilled: (v: Record<string, unknown>[]) => T,
+        onRejected?: (err: unknown) => T,
+      ) =>
+        pool.query(text, values).then((r) => onFulfilled(r.rows), onRejected)) as DeferredQuery['then'],
     };
     return deferred;
   }) as NeonShim;
