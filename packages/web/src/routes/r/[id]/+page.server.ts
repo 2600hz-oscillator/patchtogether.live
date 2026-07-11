@@ -61,6 +61,9 @@ export const load: PageServerLoad = async ({ locals, params, url, request }) => 
         ownerUserId: rackspace.ownerUserId,
         memberCount: rackspace.memberUserIds.length,
         maxMembers: RACKSPACE_MAX_MEMBERS,
+        // The rack shell ('dawless' | 'workflow') — server column is the
+        // authoritative source; the page mirrors it into the doc meta.
+        mode: rackspace.mode,
       },
       isMember: true, // anon-via-invite gets canvas access; membership concept stays auth-scoped
       isAnon: true,
@@ -85,6 +88,8 @@ export const load: PageServerLoad = async ({ locals, params, url, request }) => 
       ownerUserId: rackspace.ownerUserId,
       memberCount: rackspace.memberUserIds.length,
       maxMembers: RACKSPACE_MAX_MEMBERS,
+      // The rack shell ('dawless' | 'workflow') — see the anon branch above.
+      mode: rackspace.mode,
     },
     isMember: member,
     isAnon: false,

@@ -210,6 +210,26 @@
     shouldAutoSpawnTimelorde,
     pickTimelordeDefaultPosition,
   } from '$lib/audio/modules/timelorde-autospawn';
+  // WORKFLOW MODE P1 — the shell fork. Dawless renders the topbar below
+  // EXACTLY as before (every workflow branch is gated on `workflowMode`);
+  // workflow replaces the topbar with WorkflowTopbar (File.. menu =
+  // recomposed existing handlers), overlays the empty left rail, ensures
+  // the pinned M/E/C singleton trio, and hosts the docked drawer (the
+  // first dock zone — $lib/ui/dock).
+  import WorkflowTopbar from '$lib/ui/workflow/WorkflowTopbar.svelte';
+  import WorkflowLeftbar from '$lib/ui/workflow/WorkflowLeftbar.svelte';
+  import DockZoneContainer from '$lib/ui/dock/DockZoneContainer.svelte';
+  import { dockStore } from '$lib/ui/dock/dock-store.svelte';
+  import {
+    WORKFLOW_PINNED_MODULES,
+    WORKFLOW_PIN_SPAWN_ORIGIN,
+    DRAWER_KEY_TO_PINNED,
+    planPinnedSpawns,
+    isPinnedNode,
+    isTypingTarget,
+  } from '$lib/graph/workflow-pins';
+  import { removePatchNode } from '$lib/graph/mutate';
+  import type { RackMode } from '$lib/graph/rack-mode';
   import type { HocuspocusProvider } from '@hocuspocus/provider';
   import type { PresenceUser } from '$lib/multiplayer/presence';
   import { installSimulatedMidiDevice, installSimulatedNoteDevice } from '$lib/midi/midi-learn.svelte';
@@ -241,6 +261,11 @@
       imageUrl: string | null;
       initials: string | null;
     } | null;
+    // WORKFLOW MODE P1: the rack shell. 'dawless' (default) renders the
+    // existing UI unchanged; 'workflow' forks the shell (see the imports
+    // block above). Sourced from the rackspace's server-side mode column
+    // on /r/[id], or ?mode=workflow on the /rack scratch canvas.
+    mode?: RackMode;
   }
   let {
     currentUserId,
@@ -248,7 +273,11 @@
     presenceUser = null,
     audioGate,
     headerAuth = null,
+    mode = 'dawless',
   }: Props = $props();
+
+  /** True when this canvas renders the workflow shell. */
+  let workflowMode = $derived(mode === 'workflow');
 
   // The header shows "Sign in" only when we're confident the user is signed
   // out. On the public `/` canvas (no client ClerkProvider) that signal is
@@ -776,6 +805,94 @@
     }, LOCAL_ORIGIN);
   });
 
+  // ---------------- WORKFLOW MODE P1: pinned M/E/C trio + dock drawer ----------------
+  //
+  // ENSURE: every workflow rack always holds one pinned MIXMSTRS, one
+  // ELECTRA CONTROL and one CLIPPLAYER (graph/workflow-pins.ts). Runs on
+  // every snapshot (no latch) so the trio SELF-HEALS after any wholesale
+  // node replacement (quickload / performance load / raw-JSON import all
+  // wipe patch.nodes); planPinnedSpawns returns [] once present, so the
+  // effect terminates. DETERMINISTIC ids (`pinned-<type>`) make racing
+  // clients converge on ONE Y.Map entry per type — no duplicate race, no
+  // cleanup dependency. Gate mirrors the TIMELORDE auto-spawn: with a
+  // provider, wait for first sync (never race server state); without one
+  // (the /rack?mode=workflow sandbox) spawn immediately — the "literally
+  // empty /rack canvas" e2e expectation only applies to DAWLESS /rack.
+  // Non-tracked origin → never on the undo stack.
+  $effect(() => {
+    if (!workflowMode) return;
+    if (provider && !providerHasSynced) return;
+    const missing = planPinnedSpawns(snapshot.nodes);
+    if (missing.length === 0) return;
+    ydoc.transact(() => {
+      for (const spec of missing) {
+        if (patch.nodes[spec.id]) continue; // in-transact re-check
+        patch.nodes[spec.id] = {
+          id: spec.id,
+          type: spec.type,
+          domain: spec.domain,
+          // Position is inert while drawer-only (flowNodes skips pinned);
+          // kept sane in case the Q3 default is reversed to on-canvas.
+          position: { x: 24, y: 24 },
+          params: {},
+          data: { pinned: true, name: nextDefaultName(patch.nodes, spec.type) },
+        };
+      }
+    }, WORKFLOW_PIN_SPAWN_ORIGIN);
+    trace(`workflow: ensured pinned trio (${missing.map((s) => s.type).join(', ')})`);
+  });
+
+  // DOCK KEYMAP: M / E / C toggle the matching pinned card in the BOTTOM
+  // dock zone ($lib/ui/dock — one card per zone, so opening another
+  // replaces the current one); ESC closes. Workflow-only; inert while
+  // typing (input/textarea/select/contenteditable — isTypingTarget) and
+  // under any modifier. Plain listener (not capture) so capture-phase ESC
+  // consumers (pickup-cancel, lasso, the File.. menu) win first.
+  $effect(() => {
+    if (!workflowMode) return;
+    function onDockKey(e: KeyboardEvent) {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isTypingTarget(e.target)) return;
+      if (e.key === 'Escape') {
+        if (dockStore.dockedNodeId('bottom')) {
+          e.preventDefault();
+          dockStore.close('bottom');
+        }
+        return;
+      }
+      const spec = DRAWER_KEY_TO_PINNED.get(e.key.toLowerCase());
+      if (!spec) return;
+      // Only toggle once the pinned node exists (the ensure above lands it
+      // within the same tick on an empty rack; pre-sync there's nothing to
+      // show yet).
+      if (!patch.nodes[spec.id]) return;
+      e.preventDefault();
+      dockStore.toggle('bottom', spec.id);
+    }
+    window.addEventListener('keydown', onDockKey);
+    return () => window.removeEventListener('keydown', onDockKey);
+  });
+
+  // Dock hygiene: a drawer left open never leaks across canvas mounts
+  // (rackspace navigation remounts Canvas via {#key rackspace.id}).
+  $effect(() => {
+    dockStore.closeAll();
+    return () => dockStore.closeAll();
+  });
+
+  // The docked pinned node (bottom zone), resolved from the snapshot; the
+  // container only renders while it exists.
+  let dockedBottomNode = $derived.by(() => {
+    const id = dockStore.dockedNodeId('bottom');
+    if (!id) return null;
+    return snapshot.nodes.find((n) => n.id === id && isPinnedNode(n)) ?? null;
+  });
+  let dockedBottomSpec = $derived(
+    dockedBottomNode
+      ? WORKFLOW_PINNED_MODULES.find((s) => s.type === dockedBottomNode!.type) ?? null
+      : null,
+  );
+
   // Mirror snapshot → SvelteFlow node/edge arrays. We DROPPED bind:nodes /
   // bind:edges in favor of one-way props because the two-way bind let
   // Svelte Flow's internal cache stomp our just-computed arrays after a
@@ -805,6 +922,16 @@
       if (n.type !== 'group') continue;
       const expanded = (n.data as { expanded?: boolean } | undefined)?.expanded === true;
       if (!expanded) ids.add(n.id);
+    }
+    return ids;
+  });
+
+  // WORKFLOW MODE P1 — ids of pinned drawer singletons (hidden from the
+  // canvas), for the defensive edge filter below. Empty in dawless racks.
+  let pinnedNodeIds = $derived.by<Set<string>>(() => {
+    const ids = new Set<string>();
+    for (const n of snapshot.nodes) {
+      if (isPinnedNode(n)) ids.add(n.id);
     }
     return ids;
   });
@@ -891,6 +1018,11 @@
       // not as a SvelteFlow card. Filter it out of the node array so
       // xyflow doesn't draw a fallback white box at the spawn point.
       if (n.type === 'cadillac') continue;
+      // PINNED workflow singletons (data.pinned — graph/workflow-pins.ts)
+      // render ONLY in their dock drawer, never as canvas cards. Drawer-only
+      // is the REVERSIBLE Q3 default — deleting this skip puts them on the
+      // canvas too. Dawless racks never contain pinned nodes (inert there).
+      if (isPinnedNode(n)) continue;
       const remoteUser = remoteByNode[n.id];
       // Per-user layouts: getNodePosition returns the user's override
       // (when in multiplayer) or falls back to n.position (when single-
@@ -1020,6 +1152,10 @@
       // node here. A leftover edge to a hidden child indicates a
       // pre-group-creation snapshot — defensive drop.
       if (childToGroup.has(e.source.nodeId) || childToGroup.has(e.target.nodeId)) continue;
+      // Edges touching a PINNED drawer singleton: the node isn't on the
+      // canvas, so the cable can't render there either (defensive — same
+      // rationale as the hidden-group-child drop above).
+      if (pinnedNodeIds.has(e.source.nodeId) || pinnedNodeIds.has(e.target.nodeId)) continue;
       const related = !!hovered && (e.source.nodeId === hovered || e.target.nodeId === hovered);
       const prev = prevFlowEdges.get(e.id);
       if (prev && prev.snapEdge === e && prev.related === related) {
@@ -1302,7 +1438,13 @@
   function clearPatch() {
     ydoc.transact(() => {
       for (const id of Object.keys(patch.edges)) delete patch.edges[id];
-      for (const id of Object.keys(patch.nodes)) delete patch.nodes[id];
+      for (const id of Object.keys(patch.nodes)) {
+        // PINNED workflow singletons survive Clear — they're structural to
+        // a workflow rack (always-on M/E/C drawers). Their edges still go
+        // (Clear = unpatch everything). Inert in dawless (never pinned).
+        if (isPinnedNode(patch.nodes[id])) continue;
+        delete patch.nodes[id];
+      }
     }, LOCAL_ORIGIN);
     // No defensive flowNodes=[] anymore: B3's snapshot bus pushes the
     // empty snapshot to this $effect synchronously on the same Yjs
@@ -1855,6 +1997,31 @@
       const msg = e instanceof BundleParseError || e instanceof EnvelopeParseError ? e.message : (e instanceof Error ? e.message : String(e));
       error = `Slot ${index + 1} switch failed: ${msg}`;
       trace(`slot ${index + 1} switch failed: ${msg}`);
+    } finally {
+      slotBusy = false;
+    }
+  }
+
+  /** WORKFLOW File..→Quicksave N: store the CURRENT rack into slot N —
+   *  the same perf-zip bytes Export Perf produces, into the same IndexedDB
+   *  slot store the dawless preset bar reads (pure recomposition; the
+   *  dawless bar itself is unchanged). Replaces the slot's contents when
+   *  already occupied (mirrors "Replace with…" semantics, minus the file
+   *  picker). */
+  async function quicksaveSlot(index: number): Promise<void> {
+    error = null;
+    if (slotBusy) return;
+    slotBusy = true;
+    try {
+      // A quicksave taken mid-knob-twist must capture the settled value.
+      flushAllCcCommits();
+      const bytes = await buildPerformanceZipBytes();
+      await putSlot(index, bytes, `quicksave-${index + 1}`);
+      slotOccupied[index] = true;
+      trace(`slot ${index + 1}: quicksaved current rack (${(bytes.length / 1024).toFixed(0)} KB)`);
+    } catch (e) {
+      error = `Quicksave ${index + 1} failed: ${e instanceof Error ? e.message : String(e)}`;
+      trace(`quicksave ${index + 1} failed: ${String(e)}`);
     } finally {
       slotBusy = false;
     }
@@ -2418,6 +2585,10 @@
         if (patch.edges[e.id]) delete patch.edges[e.id];
       }
       for (const n of payload.nodes) {
+        // Pinned drawer singletons never render as flow nodes, so they
+        // can't be in a SvelteFlow delete payload — but guard anyway (the
+        // shared delete discipline: pinned nodes are undeletable).
+        if (isPinnedNode(patch.nodes[n.id])) continue;
         if (patch.nodes[n.id]) delete patch.nodes[n.id];
         // Also drop any edges that referenced the deleted node.
         for (const [edgeId, edge] of Object.entries(patch.edges)) {
@@ -4099,17 +4270,13 @@
         return;
       }
     }
-    ydoc.transact(() => {
-      // Remove every edge touching this node first so the engine sees a clean
-      // disconnect before disposal (avoids dangling-target warnings).
-      for (const [eid, edge] of Object.entries(patch.edges)) {
-        if (!edge) continue;
-        if (edge.source.nodeId === nodeId || edge.target.nodeId === nodeId) {
-          delete patch.edges[eid];
-        }
-      }
-      delete patch.nodes[nodeId];
-    }, LOCAL_ORIGIN);
+    // Shared delete primitive (graph/mutate.ts): removes the node + every
+    // touching edge in one undoable transact, and REFUSES pinned workflow
+    // singletons (node-level data.pinned — the M/E/C drawer trio).
+    if (!removePatchNode(nodeId)) {
+      if (target) trace(`delete refused: ${nodeId} (${target.type}) is pinned`);
+      return;
+    }
     // No defensive flow* sync needed: snapshot bus + one-way prop (B3).
     if (topNodeId === nodeId) topNodeId = null;
     clearAnnotate(nodeId); // drop any personal annotate-mode state for this node
@@ -5094,6 +5261,27 @@
 </script>
 
 <div class="root" class:lasso-mode={lassoMode} data-testid="canvas-root">
+  {#if workflowMode}
+    <!-- WORKFLOW shell: File.. menu topbar (recomposes the same handlers
+         the dawless topbar binds below). The dawless top-left slot bar is
+         NOT rendered in workflow mode — File..→Quicksave/Quickload replace
+         it (reversible Q5 default; see WorkflowTopbar.svelte). -->
+    <WorkflowTopbar
+      {appVersion}
+      {slotOccupied}
+      {slotBusy}
+      perfBusy={perfZipBusy}
+      hasNodes={nodeCount > 0}
+      onQuicksave={quicksaveSlot}
+      onQuickload={loadSlot}
+      onSavePerformance={exportPerformanceZip}
+      onLoadPerformance={loadPerformanceZip}
+      onExportJson={exportPatchJson}
+      onImportJson={importPatchJson}
+      signedIn={headerSignedIn}
+      {headerAuth}
+    />
+  {:else}
   <header class="topbar">
     <h1>patchtogether <span class="app-version" data-testid="app-version">v{appVersion}</span></h1>
     <!-- Quick-switch PRESET SLOTS (top-left): five numbered buttons.
@@ -5212,6 +5400,7 @@
       {/if}
     </div>
   </header>
+  {/if}
 
   <!-- Per-slot right-click context menu. A full-screen transparent backdrop
        closes it on any outside click / right-click. -->
@@ -5344,6 +5533,25 @@
            data-testid hooks ('name-label-button' / 'name-label-input' /
            'name-label-error') so existing e2e selectors still resolve. -->
     </SvelteFlow>
+    {#if workflowMode}
+      <!-- WORKFLOW left rail: empty scaffold pending owner Q1. Overlays the
+           canvas's left edge (.flow is position:relative). -->
+      <WorkflowLeftbar />
+      <!-- The BOTTOM dock zone: the M/E/C drawer. Renders the docked pinned
+           card through the shared DockZoneContainer (fixed overlay, own
+           scale — see $lib/ui/dock). One card per zone; ESC closes. -->
+      {#if dockedBottomNode && dockedBottomSpec}
+        <DockZoneContainer
+          zone="bottom"
+          node={dockedBottomNode}
+          nodeTypes={nodeTypes as unknown as Record<string, unknown>}
+          rackSize={rackSizeByType[dockedBottomNode.type]}
+          scale={dockStore.scaleFor('bottom')}
+          title={dockedBottomSpec.label}
+          onClose={() => dockStore.close('bottom')}
+        />
+      {/if}
+    {/if}
     <button
       type="button"
       class="minimap-toggle"

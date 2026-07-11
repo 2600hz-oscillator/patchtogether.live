@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { page } from '$app/state';
   import Canvas from '$lib/ui/Canvas.svelte';
+  import { normalizeRackMode } from '$lib/graph/rack-mode';
 
   // `homeAuth` is derived SERVER-SIDE in +layout.server.ts (the scratch
   // canvas at `/rack` doesn't mount the client <ClerkProvider> — that would
@@ -17,6 +19,12 @@
         }
       : null,
   );
+
+  // WORKFLOW MODE P1 — `/rack?mode=workflow` boots the scratch canvas in the
+  // workflow shell (no rackspace / no DB): a local workflow sandbox, and the
+  // seam the non-collab e2e lane uses to exercise the shell. Anything except
+  // exactly 'workflow' is the dawless scratch canvas, unchanged.
+  let mode = $derived(normalizeRackMode(page.url.searchParams.get('mode')));
 </script>
 
-<Canvas {headerAuth} />
+<Canvas {headerAuth} {mode} />
