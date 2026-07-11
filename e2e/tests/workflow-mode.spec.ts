@@ -95,13 +95,15 @@ test.describe('workflow shell', () => {
 
     const drawer = page.getByTestId('dock-zone-bottom');
 
-    // M → mixmstrs drawer, rendering the pinned card IN FULL (the real
-    // module card mounts inside the dock's standalone flow host).
+    // M → mixmstrs drawer, rendering the pinned card IN FULL (P2.5a: the
+    // real module card PLAIN-mounts in the drawer via DockCardHost — no
+    // flow host, so the card carries a data-dock-card marker, not a
+    // .svelte-flow__node wrapper; the mixmstrs face itself proves "full").
     await page.keyboard.press('m');
     await expect(drawer).toBeVisible();
     await expect(drawer).toHaveAttribute('data-dock-type', 'mixmstrs');
     await expect(
-      drawer.locator('.svelte-flow__node[data-id="pinned-mixmstrs"]'),
+      drawer.locator('[data-dock-card="pinned-mixmstrs"] .mod-card, [data-dock-card="pinned-mixmstrs"] .card').first(),
     ).toBeVisible();
 
     // E while M is open → the electra drawer REPLACES it (one at a time).
@@ -109,7 +111,7 @@ test.describe('workflow shell', () => {
     await expect(drawer).toHaveCount(1);
     await expect(drawer).toHaveAttribute('data-dock-type', 'electraControl');
     await expect(
-      drawer.locator('.svelte-flow__node[data-id="pinned-electraControl"]'),
+      drawer.locator('[data-dock-card="pinned-electraControl"]'),
     ).toBeVisible();
 
     // E again → toggles closed.
@@ -120,7 +122,7 @@ test.describe('workflow shell', () => {
     await page.keyboard.press('c');
     await expect(drawer).toHaveAttribute('data-dock-type', 'clipplayer');
     await expect(
-      drawer.locator('.svelte-flow__node[data-id="pinned-clipplayer"]'),
+      drawer.locator('[data-dock-card="pinned-clipplayer"]'),
     ).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(drawer).toHaveCount(0);
