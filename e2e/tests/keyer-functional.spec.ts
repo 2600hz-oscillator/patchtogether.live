@@ -28,30 +28,28 @@
 // 0..255), never exact equality: CI's software renderer and a real GPU may
 // disagree on low bits, never on a 14/255 band.
 //
-// EXPECTED-FAIL tests are marked test.fixme with a FINDING reference — each
-// one is a live divergence between keying theory and the current shader,
-// catalogued in the design doc. They stay fixme until the phase-4 framework
-// build fixes the math (then the fixme flips to a hard assertion).
-//
-// FINDINGS referenced below:
-//   F-L1  LUMA "gamma" uses the inverse (Levels) convention pow(l, 1/gamma) —
-//         documented, but diverges from the display-gamma convention
-//         out = in^gamma that "gamma = 2 darkens mid-gray to 0.25" implies.
-//   F-L2  LUMA's default posterizeLevels=16 is NOT identity: floor(l*16)/15
-//         quantizes (crushes >= 15/16 to white, < 1/16 to black; up to
-//         ±6% mid-scale error), so the documented "defaults pass the picture
-//         through essentially untouched" is false and there is NO bypass.
-//   F-C1  CHROMAKEY's mask metric is HUE-ANGLE-ONLY (+ a fixed saturation
-//         gate): a mildly green-cast subject pixel (sat > 0.18) sits inside
-//         the key band and is punched out entirely, where a chroma-plane
-//         (CbCr-distance) keyer keeps it. Industry keyers measure distance
-//         in the chroma plane, not hue angle alone.
-//   F-C2  CHROMAKEY "spill suppression" only acts where alpha < 1 (the
-//         matte's soft edge). Fully-KEPT pixels (alpha = 1) — the only
-//         pixels a viewer can see spill on — are untouched at any
-//         spillSuppress setting, so the control cannot remove green
-//         contamination from the subject (theory: despill green-limits
-//         KEPT pixels).
+// PHASE-4 STATUS (the keying-core rebuild, design doc §4 + §11): every
+// phase-1 finding is now RESOLVED and the former test.fixme rows below are
+// hard assertions pinning the fixed behavior:
+//   F-L1  LUMA "gamma" uses the inverse (Levels) convention pow(l, 1/gamma).
+//         RESOLVED AS DOCS: the convention is deliberate and now explicit in
+//         luma.ts docs ("Levels-style, >1 brightens"); the passing
+//         "documented transfer" test pins it. (Its fixme was DELETED — the
+//         display-gamma expectation was the doc-bug, not the shader.)
+//   F-L2  LUMA posterizeLevels=16 (default AND max) is now a TRUE BYPASS, so
+//         the documented "defaults pass the picture through untouched"
+//         identity actually holds; 2..15 keep the floor-quantize banding.
+//   F-C1  CHROMAKEY now keys on KEY-RELATIVE CHROMA-PLANE (CbCr) DISTANCE
+//         (kcChromaMask in $lib/video/keying-core) — the low-chroma
+//         green-cast subject survives the key (kept + despilled) while the
+//         backdrop is replaced. Default threshold recalibrated 0.15 -> 0.5
+//         (chroma distance scales with brightness; see the probe rows).
+//   F-C2  CHROMAKEY spill suppression is now a dominant-channel min-limit
+//         (kcDespill) acting on KEPT pixels — exactly where spill is
+//         visible. Exact identity at spillSuppress = 0.
+//   F-F1  FADER's factory now reads node.params at spawn, so persisted
+//         fader/dryWet/transition positions survive a patch reload (the
+//         reconciler only pushes params on CHANGE).
 
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
@@ -166,9 +164,10 @@ function expectNear(actual: number, expected: number, label: string): void {
 //             patched to clear its uHasInput guard; the ramp serves.
 // split(A|B)  FADER in WIPE mode at fader=0.5: LEFT half = in_b, RIGHT half
 //             = in_a, soft edge only ±0.02 around x=0.5 (probes sit at
-//             0.25/0.75, far outside it). FADER's factory ignores initial
-//             node.params, so the two params are pushed post-spawn via
-//             setNodeParam (the reconciler path).
+//             0.25/0.75, far outside it). The fixture pushes the two params
+//             post-spawn via setNodeParam (the reconciler path) — that also
+//             keeps the live-param chain covered; the F-F1 test below covers
+//             the factory's spawn-time param read.
 
 const rampNode: SpawnNode = { id: 'f-ramp', type: 'shapedramps', position: { x: 40, y: 40 }, domain: 'video' };
 
@@ -230,7 +229,9 @@ test.describe('keyer functional validation (theory-derived pixels)', () => {
       ],
     );
     await expect(page.locator('.svelte-flow__node-fader'), 'FADER visible').toBeVisible();
-    // FADER's factory ignores initial node.params — push through the live chain.
+    // Push the split params through the live chain (ydoc → reconciler →
+    // setParam) — deliberately NOT via spawn params, so this fixture keeps
+    // covering the live-mutation path (the F-F1 test covers spawn-time init).
     await setNodeParam(page, 'f-split', 'abTransition', 1); // WIPE
     await setNodeParam(page, 'f-split', 'fader', 0.5);
 
@@ -258,8 +259,48 @@ test.describe('keyer functional validation (theory-derived pixels)', () => {
     expect(splitR![0], `split right no red ${fmt(splitR!)}`).toBeLessThanOrEqual(LOW);
   });
 
+  // ── FADER (F-F1: factory reads node.params at spawn) ─────────────────────
+  test('FADER: [F-F1] spawn-time params take effect without a live param write', async ({ page, errorWatch }) => {
+    test.setTimeout(60_000);
+    await bootRack(page);
+    // Spawn the FADER WITH its params — NO setNodeParam afterwards. Before
+    // the F-F1 fix the factory initialized literals (fader 0.5 / FADE), so a
+    // persisted WIPE split silently reset to a 50/50 FADE blend on reload.
+    await spawnPatch(
+      page,
+      [
+        rampNode,
+        solidNode('f-red', 1, 0, 0, 40, 260),
+        solidNode('f-green', 0, 1, 0, 40, 480),
+        { id: 'f-split', type: 'fader', position: { x: 420, y: 260 }, domain: 'video',
+          params: { fader: 0.5, abTransition: 1, dryWet: 0, dwTransition: 0 } },
+        sinkNode,
+      ],
+      [
+        feedEdge('e-r1', 'f-red', 'in'),
+        feedEdge('e-r2', 'f-green', 'in'),
+        videoEdge('e-a', 'f-green', 'out', 'f-split', 'in_a'),
+        videoEdge('e-b', 'f-red', 'out', 'f-split', 'in_b'),
+        videoEdge('e-o', 'f-split', 'out', 'f-out', 'in'),
+      ],
+    );
+    await expect(page.locator('.svelte-flow__node-fader'), 'FADER visible').toBeVisible();
+
+    const [left, right] = await stepAndSample(page, [
+      { nodeId: 'f-split', u: 0.25, v: 0.5 },
+      { nodeId: 'f-split', u: 0.75, v: 0.5 },
+    ]);
+    // WIPE at 0.5 from spawn params alone: left = in_b (pure red), right =
+    // in_a (pure green). The pre-fix failure mode is unmistakable: FADE at
+    // 0.5 gives (128,128,0) on BOTH probes.
+    expect(left![0], `left is red ${fmt(left!)}`).toBeGreaterThanOrEqual(HIGH);
+    expect(left![1], `left no green ${fmt(left!)}`).toBeLessThanOrEqual(LOW);
+    expect(right![1], `right is green ${fmt(right!)}`).toBeGreaterThanOrEqual(HIGH);
+    expect(right![0], `right no red ${fmt(right!)}`).toBeLessThanOrEqual(LOW);
+  });
+
   // ── LUMA (single-input luminance processor) ───────────────────────────────
-  test('LUMA: shader implements its DOCUMENTED transfer (pow(l,1/gamma) then floor-posterize)', async ({ page, errorWatch }) => {
+  test('LUMA: shader implements its DOCUMENTED transfer (pow(l,1/gamma); floor-posterize below the 16-level bypass)', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
     await bootRack(page);
     await spawnPatch(
@@ -274,10 +315,14 @@ test.describe('keyer functional validation (theory-derived pixels)', () => {
     );
     await expect(page.locator('.svelte-flow__node-luma'), 'LUMA visible').toBeVisible();
 
-    // Documented chain at gamma=2 (probes chosen mid-quantizer-interval so an
-    // 8-bit ±2 input wobble cannot cross a floor() boundary):
-    //   l=0.36 → sqrt=0.600 → ·16=9.61 → floor 9 → 9/15=0.600 → 153
-    //   l=0.64 → sqrt=0.800 → ·16=12.8 → floor 12 → 12/15=0.800 → 204
+    // Documented chain at gamma=2, posterize 16 = BYPASS (the probes are also
+    // quantizer fixed points, so these exact values pinned the OLD 16-level
+    // path too — the F-L2 bypass did not move them):
+    //   l=0.36 → sqrt=0.600 → 153
+    //   l=0.64 → sqrt=0.800 → 204
+    // The gamma CONVENTION pinned here is the documented Levels-style INVERSE
+    // pow(l, 1/gamma) — gamma 2 BRIGHTENS (0.36 → 0.60), the resolution of
+    // finding F-L1 (display-gamma out=in^γ was the doc-bug, not the shader).
     const [p36, p64] = await stepAndSample(page, [
       { nodeId: 'f-luma', u: 0.36, v: 0.5 },
       { nodeId: 'f-luma', u: 0.64, v: 0.5 },
@@ -288,36 +333,27 @@ test.describe('keyer functional validation (theory-derived pixels)', () => {
     }
     // chroma preservation: a gray input stays gray (equal channels).
     expect(Math.abs(p36![0]! - p36![1]!), 'gray in → gray out').toBeLessThanOrEqual(6);
+
+    // Below the bypass the floor-posterize still bands (F-L2 kept 2..15
+    // intact). levels=8 at gamma 2 (probes mid-quantizer-interval):
+    //   l=0.36 → 0.600 → ·8=4.8 → floor 4 → 4/7≈0.571 → 146
+    //   l=0.64 → 0.800 → ·8=6.4 → floor 6 → 6/7≈0.857 → 219
+    await setNodeParam(page, 'f-luma', 'posterizeLevels', 8);
+    const [q36, q64] = await stepAndSample(page, [
+      { nodeId: 'f-luma', u: 0.36, v: 0.5 },
+      { nodeId: 'f-luma', u: 0.64, v: 0.5 },
+    ]);
+    expectNear(q36![0]!, 146, `luma(gamma2,post8)@0.36 ${fmt(q36!)}`);
+    expectNear(q64![0]!, 219, `luma(gamma2,post8)@0.64 ${fmt(q64!)}`);
   });
 
-  // FINDING F-L1 (doc-bug / convention): theory example "50% gray through
-  // gamma=2 comes out ≈ 0.5^2 = 0.25" (display-gamma convention out=in^γ).
-  // The shader applies pow(l, 1/gamma) (the Photoshop-Levels convention,
-  // documented in docs.controls), so 0.5 gray brightens to ≈0.71 and then
-  // posterizes to 11/15 ≈ 0.733 (187) instead of darkening to 64.
-  test.fixme('LUMA: [F-L1] gamma=2 darkens mid-gray to ~0.25 (display-gamma convention)', async ({ page, errorWatch }) => {
-    test.setTimeout(60_000);
-    await bootRack(page);
-    await spawnPatch(
-      page,
-      [
-        rampNode,
-        { id: 'f-luma', type: 'luma', position: { x: 420, y: 40 }, domain: 'video',
-          params: { gamma: 2, contrast: 1, posterizeLevels: 16, bias: 0 } },
-        sinkNode,
-      ],
-      [feedEdge('e-in', 'f-luma', 'in'), videoEdge('e-o', 'f-luma', 'out', 'f-out', 'in')],
-    );
-    await expect(page.locator('.svelte-flow__node-luma'), 'LUMA visible').toBeVisible();
-    const [mid] = await stepAndSample(page, [{ nodeId: 'f-luma', u: 0.5, v: 0.5 }]);
-    // THEORY (out = in^gamma): 0.5² = 0.25 → 64. ACTUAL: ≈187.
-    expect(Math.abs(mid![0]! - 64), `gamma=2 on mid-gray ${fmt(mid!)}, want ≈64`).toBeLessThanOrEqual(20);
-  });
+  // (The former F-L1 fixme — "gamma=2 darkens mid-gray to 0.25" — was DELETED:
+  //  the finding resolved as a DOC-BUG. The shader's Levels-style inverse
+  //  convention is deliberate, now explicit in luma.ts docs, and pinned by the
+  //  documented-transfer test above.)
 
-  // FINDING F-L2 (design-gap): default params are documented as "essentially
-  // untouched" but posterizeLevels=16 has no bypass: floor(l·16)/15 crushes
-  // l ≥ 15/16 to pure white and l < 1/16 to pure black at DEFAULTS.
-  test.fixme('LUMA: [F-L2] default params are an identity transfer', async ({ page, errorWatch }) => {
+  // F-L2 (FIXED by the posterize-16 bypass): defaults are a true identity.
+  test('LUMA: [F-L2] default params are an identity transfer', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
     await bootRack(page);
     await spawnPatch(
@@ -332,8 +368,8 @@ test.describe('keyer functional validation (theory-derived pixels)', () => {
     );
     await expect(page.locator('.svelte-flow__node-luma'), 'LUMA visible').toBeVisible();
     const [hi, lo] = await stepAndSample(page, [
-      { nodeId: 'f-luma', u: 0.95, v: 0.5 },  // in 242 → ACTUAL 255 (crushed to white)
-      { nodeId: 'f-luma', u: 0.06, v: 0.5 },  // in 15  → ACTUAL 0   (crushed to black)
+      { nodeId: 'f-luma', u: 0.95, v: 0.5 },  // in 242 → out 242 (pre-fix: crushed to 255)
+      { nodeId: 'f-luma', u: 0.06, v: 0.5 },  // in 15  → out 15  (pre-fix: crushed to 0)
     ]);
     expect(Math.abs(hi![0]! - 242), `identity@0.95 ${fmt(hi!)}, want ≈242`).toBeLessThanOrEqual(8);
     expect(Math.abs(lo![0]! - 15), `identity@0.06 ${fmt(lo!)}, want ≈15`).toBeLessThanOrEqual(8);
@@ -456,50 +492,118 @@ test.describe('keyer functional validation (theory-derived pixels)', () => {
     expect(greenSide![0], `no red in keyed region ${fmt(greenSide!)}`).toBeLessThanOrEqual(LOW);
   });
 
-  // FINDING F-C1 (real-bug / design-gap): the mask metric is hue-angle only.
-  // A mildly green-cast SUBJECT pixel — (0.6, 0.75, 0.55), saturation 0.27,
-  // the color of foliage-bounce on skin/cloth — has hue ≈ 0.291, within
-  // 0.042 of the green key hue, so the default threshold keys it OUT
-  // entirely and the background floods through. A chroma-plane keyer
-  // (CbCr distance — the standard metric) sees its tiny chroma magnitude
-  // vs the saturated key and KEEPS it (ideally despilled).
-  test.fixme('CHROMAKEY: [F-C1] low-chroma green-cast subject pixels survive the key', async ({ page, errorWatch }) => {
+  // F-C1 (FIXED by kcChromaMask; assertion REWRITTEN per §11 change 1): a
+  // mildly green-cast SUBJECT pixel — (0.6, 0.75, 0.55), the color of
+  // foliage-bounce on skin/cloth — sat 0.27, hue within 0.042 of the key: the
+  // OLD hue-angle metric keyed it out entirely (bg flooded through). Under
+  // the chroma-plane metric it sits at normalized d = 0.828 — far outside
+  // the key band — so it is KEPT and despilled, while the actual green
+  // screen next to it IS replaced by the background. NOTE the original fixme
+  // asserted B ≤ 120, which no correct keyer can satisfy: the KEPT subject's
+  // OWN blue channel is 140. The rewritten bands assert the theory-derived
+  // kept color (153, 172, 140) = despill(subject, green, 0.5) — "no bg
+  // flood" means B ≈ the subject's own 140, far below the bg's 255.
+  test('CHROMAKEY: [F-C1] green-cast subject survives the key while the green screen is replaced', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
     await bootRack(page);
     await spawnPatch(
       page,
       [
         rampNode,
-        solidNode('f-subj', 0.6, 0.75, 0.55, 40, 260),
-        solidNode('f-blue', 0, 0, 1, 40, 480),
+        solidNode('f-green', 0, 1, 0, 40, 260),
+        solidNode('f-subj', 0.6, 0.75, 0.55, 40, 480),
+        solidNode('f-blue', 0, 0, 1, 40, 700),
+        { id: 'f-split', type: 'fader', position: { x: 420, y: 260 }, domain: 'video' },
+        // Params = the SHIPPED defaults (thr 0.5 / soft 0.08 / spill 0.5) —
+        // this row doubles as the default-calibration pin for the subject.
         { id: 'f-ck', type: 'chromakey', position: { x: 700, y: 260 }, domain: 'video',
-          params: { keyR: 0, keyG: 1, keyB: 0, threshold: 0.15, softness: 0.08, spillSuppress: 0.5 } },
+          params: { keyR: 0, keyG: 1, keyB: 0, threshold: 0.5, softness: 0.08, spillSuppress: 0.5 } },
         sinkNode,
       ],
       [
-        feedEdge('e-r1', 'f-subj', 'in'),
-        feedEdge('e-r2', 'f-blue', 'in'),
-        videoEdge('e-fg', 'f-subj', 'out', 'f-ck', 'fg'),
+        feedEdge('e-r1', 'f-green', 'in'),
+        feedEdge('e-r2', 'f-subj', 'in'),
+        feedEdge('e-r3', 'f-blue', 'in'),
+        videoEdge('e-a', 'f-subj', 'out', 'f-split', 'in_a'),
+        videoEdge('e-b', 'f-green', 'out', 'f-split', 'in_b'),
+        videoEdge('e-fg', 'f-split', 'out', 'f-ck', 'fg'),
         videoEdge('e-bg', 'f-blue', 'out', 'f-ck', 'bg'),
         videoEdge('e-o', 'f-ck', 'out', 'f-out', 'in'),
       ],
     );
     await expect(page.locator('.svelte-flow__node-chromakey'), 'CHROMAKEY visible').toBeVisible();
-    const [subj] = await stepAndSample(page, [{ nodeId: 'f-ck', u: 0.5, v: 0.5 }]);
-    // THEORY: the subject stays opaque (R stays ≈153; background must not
-    // flood in). ACTUAL: alpha=0 → pure blue (0,0,255).
-    expect(subj![0], `subject R survives ${fmt(subj!)}`).toBeGreaterThanOrEqual(120);
-    expect(subj![2], `no bg flood through subject ${fmt(subj!)}`).toBeLessThanOrEqual(120);
+    await setNodeParam(page, 'f-split', 'abTransition', 1); // WIPE
+    await setNodeParam(page, 'f-split', 'fader', 0.5);
+
+    const [screen, subj] = await stepAndSample(page, [
+      { nodeId: 'f-ck', u: 0.25, v: 0.5 },  // fg = green screen → replaced by bg
+      { nodeId: 'f-ck', u: 0.75, v: 0.5 },  // fg = subject      → kept + despilled
+    ]);
+    // bg-replacement where the green was: pure blue, no green residue.
+    expect(screen![2], `green screen shows bg (blue) ${fmt(screen!)}`).toBeGreaterThanOrEqual(HIGH);
+    expect(screen![1], `no green residue over bg ${fmt(screen!)}`).toBeLessThanOrEqual(LOW);
+    // subject kept at its despilled color (0.6, 0.675, 0.55) → (153,172,140):
+    expectNear(subj![0]!, 153, `subject R kept ${fmt(subj!)}`);
+    expectNear(subj![2]!, 140, `subject B is its OWN blue (no bg flood) ${fmt(subj!)}`);
+    expectNear(subj![1]!, 172, `subject G despilled ${fmt(subj!)}`);
+    // and G stays below ~180 — the undespilled subject would read 191, so
+    // this proves kcDespill acted on a fully-KEPT (alpha=1) pixel.
+    expect(subj![1], `despill acted on the kept pixel ${fmt(subj!)}`).toBeLessThanOrEqual(180);
   });
 
-  // FINDING F-C2 (real-bug): spill suppression never touches KEPT pixels.
-  // fg = (0.8, 0.9, 0.3) — a kept, green-contaminated pixel (hue 0.194 is
-  // outside the key band → alpha = 1; green channel dominates max(r,b)).
-  // THEORY (despill = green-limit on kept pixels): raising spillSuppress
-  // 0 → 1 pulls G down toward max(r,b) (Δ ≥ ~26/255 here). ACTUAL: the
-  // shader scales desaturation by (1-alpha) = 0, so the two frozen renders
-  // are bit-identical.
-  test.fixme('CHROMAKEY: [F-C2] spillSuppress removes green contamination from kept fg', async ({ page, errorWatch }) => {
+  // §11 change 2 — the realistic-screen probes at TRUE DEFAULTS (the node is
+  // spawned WITHOUT params, so this pins the shipped defaultValue path):
+  // chroma-plane distance scales with brightness, so the default threshold
+  // was recalibrated 0.15 → 0.5 to key real-world screen variation:
+  //   realistic screen green (0.2, 0.8, 0.3) → d = 0.454 → keyed
+  //   half-brightness key green (0, 0.5, 0)  → d = 0.500 → keyed
+  test('CHROMAKEY: realistic screen variation keys out at DEFAULT settings', async ({ page, errorWatch }) => {
+    test.setTimeout(60_000);
+    await bootRack(page);
+    await spawnPatch(
+      page,
+      [
+        rampNode,
+        solidNode('f-real', 0.2, 0.8, 0.3, 40, 260),
+        solidNode('f-half', 0, 0.5, 0, 40, 480),
+        solidNode('f-blue', 0, 0, 1, 40, 700),
+        { id: 'f-split', type: 'fader', position: { x: 420, y: 260 }, domain: 'video' },
+        { id: 'f-ck', type: 'chromakey', position: { x: 700, y: 260 }, domain: 'video' }, // NO params
+        sinkNode,
+      ],
+      [
+        feedEdge('e-r1', 'f-real', 'in'),
+        feedEdge('e-r2', 'f-half', 'in'),
+        feedEdge('e-r3', 'f-blue', 'in'),
+        videoEdge('e-a', 'f-half', 'out', 'f-split', 'in_a'),
+        videoEdge('e-b', 'f-real', 'out', 'f-split', 'in_b'),
+        videoEdge('e-fg', 'f-split', 'out', 'f-ck', 'fg'),
+        videoEdge('e-bg', 'f-blue', 'out', 'f-ck', 'bg'),
+        videoEdge('e-o', 'f-ck', 'out', 'f-out', 'in'),
+      ],
+    );
+    await expect(page.locator('.svelte-flow__node-chromakey'), 'CHROMAKEY visible').toBeVisible();
+    await setNodeParam(page, 'f-split', 'abTransition', 1); // WIPE
+    await setNodeParam(page, 'f-split', 'fader', 0.5);
+
+    const [real, half] = await stepAndSample(page, [
+      { nodeId: 'f-ck', u: 0.25, v: 0.5 },  // fg = realistic screen → keyed
+      { nodeId: 'f-ck', u: 0.75, v: 0.5 },  // fg = half-brightness key → keyed
+    ]);
+    for (const [label, px] of [['realistic screen', real], ['half-brightness key', half]] as const) {
+      expect(px![2], `${label} keyed to bg (blue) ${fmt(px!)}`).toBeGreaterThanOrEqual(HIGH);
+      expect(px![1], `${label} no green residue ${fmt(px!)}`).toBeLessThanOrEqual(LOW);
+      expect(px![0], `${label} no red residue ${fmt(px!)}`).toBeLessThanOrEqual(LOW);
+    }
+  });
+
+  // F-C2 (FIXED by kcDespill): spill suppression now reaches KEPT pixels.
+  // fg = (0.8, 0.9, 0.3) — a kept, green-contaminated pixel (chroma-plane
+  // d = 0.787, outside the key band → alpha = 1; green dominates max(r,b)).
+  // Despill = dominant-channel min-limit on the kept fg: spillSuppress 0 → 1
+  // pulls G from 0.9 down to max(r,b) = 0.8 (230 → 204, Δ = 26/255). At
+  // spillSuppress 0 the passthrough is EXACT (bit-identical, no fudge).
+  test('CHROMAKEY: [F-C2] spillSuppress removes green contamination from kept fg', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
     await bootRack(page);
     await spawnPatch(
