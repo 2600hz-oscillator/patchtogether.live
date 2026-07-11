@@ -167,6 +167,9 @@ tasks:
       - task: docs:faces
       - task: docs:ensure
       - npm run build -w {{.WEB}}
+      # Same silent-prerender-skip guard as build:web (this task INLINES the
+      # web build rather than calling build:web, so it needs its own line).
+      - node {{.WEB}}/scripts/check-prerender.mjs
 
   build:web:
     desc: Build web only
@@ -174,6 +177,15 @@ tasks:
       - task: docs:faces
       - task: docs:ensure
       - npm run build -w {{.WEB}}
+      # Postbuild guard: the prerenderer can skip '/' SILENTLY (2026-07-11 —
+      # an intermittent empty-shell index.html surfaced an hour later as the
+      # landing-routing raw-HTML e2e red on #1059, with both Playwright
+      # attempts reusing the same bad artifact and no build-side trail).
+      # Fail THE BUILD loudly instead. Lives here rather than the web
+      # package.json build script because packages/web/package.json is a
+      # WebGL-attest toolchain pin — a script edit there forces a GPU
+      # re-attest.
+      - node {{.WEB}}/scripts/check-prerender.mjs
 
   # ---------------- DSP ----------------
   dsp:build:

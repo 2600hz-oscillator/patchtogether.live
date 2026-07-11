@@ -84,8 +84,9 @@ test.describe('landing routing', () => {
 
     // Content is present in the INITIAL server HTML → prerendered/SSR, not a
     // client-only render. (A csr-only page would ship an empty shell.) The
-    // tile label is lowercase in the markup — CSS uppercases it for display.
-    expect(html).toContain('new rack');
+    // tile labels are lowercase in the markup — CSS uppercases them for display.
+    expect(html).toContain('new dawless rack');
+    expect(html).toContain('new workflow rack');
     expect(html).toContain('sign in');
 
     // The landing reads NO auth state: none of the canvas's per-request header

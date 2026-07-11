@@ -71,6 +71,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   hypercube: { size: '3u', hp: 4 }, // 540×720px — 2-col (viewport left, controls right)
   illogic: { size: '1u', hp: 2 }, // 154×240px
   joystick: { size: '2u', hp: 2 }, // 234×220px
+  karplus: { size: '2u', hp: 2 }, // ~310×450px — STRING/EXCITER fader bands + PLUCK button
   lfo: { size: '1u', hp: 2 }, // 180×360px — Rate/Shape faders + Depth knob in one row
   macrooscillator: { size: '1u', hp: 2 }, // 187×320px
   macseq: { size: '2u', hp: 5 }, // 282×880px

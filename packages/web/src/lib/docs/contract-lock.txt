@@ -1294,6 +1294,25 @@ joystick out x cv
 joystick out y cv
 joystick param pos_x -1..1 linear default=0
 joystick param pos_y -1..1 linear default=0
+karplus meta domain=audio
+karplus in accent_in cv
+karplus in bright_cv cv param=brightness cvScale=linear
+karplus in color_cv cv param=color cvScale=linear
+karplus in damp_in gate edge=gate
+karplus in decay_cv cv param=decay cvScale=log
+karplus in pitch pitch
+karplus in position_cv cv param=position cvScale=linear
+karplus in stiff_cv cv param=stiffness cvScale=linear
+karplus in trigger_in gate edge=trigger
+karplus out out audio
+karplus param brightness 0..1 linear default=0.7
+karplus param burst 0.1..4 log default=1
+karplus param color 0..1 linear default=0.6
+karplus param decay 0.1..10 log default=2 unit=s
+karplus param level -24..12 linear default=0 unit=dB
+karplus param position 0.02..0.5 linear default=0.2
+karplus param stiffness 0..1 linear default=0
+karplus param tune 55..1760 log default=220 unit=Hz
 kickdrum meta domain=audio
 kickdrum in accent_in cv
 kickdrum in choke_in gate edge=gate
@@ -2949,6 +2968,24 @@ timelorde param wizardOn 0..1 discrete default=1
 timelorde expose bpm param=bpm kind=knob
 timelorde expose swingAmount param=swingAmount kind=knob
 timelorde expose swingSource param=swingSource kind=knob
+tomtom meta domain=audio
+tomtom in accent_in cv
+tomtom in bend_cv cv
+tomtom in decay_cv cv
+tomtom in noise_cv cv
+tomtom in pitch_cv cv
+tomtom in tone_cv cv
+tomtom in trigger_in gate edge=trigger
+tomtom out audio_out audio
+tomtom param bend_amt 0..24 linear default=7 unit=st
+tomtom param bend_time 10..300 log default=60 unit=ms
+tomtom param decay 40..1500 log default=350 unit=ms
+tomtom param drive 0..1 linear default=0.25
+tomtom param level -24..12 linear default=0 unit=dB
+tomtom param noise 0..1 linear default=0.25
+tomtom param strike 0..1 discrete default=0
+tomtom param tone 0..1 linear default=0.35
+tomtom param tune 60..400 log default=110 unit=Hz
 toybox meta domain=video renderLocus=worker
 toybox in cv1 modsignal cvScale=linear
 toybox in cv2 modsignal cvScale=linear
