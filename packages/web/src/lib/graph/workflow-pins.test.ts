@@ -1,16 +1,25 @@
 // packages/web/src/lib/graph/workflow-pins.test.ts
 //
 // WORKFLOW MODE P1 — pinned-singleton planning + drawer keymap + the
-// keyboard typing guard. Pure-unit (plain fixtures, no DOM, no Yjs).
+// keyboard typing guard. P2 — the always-on topbar SURFACE pins
+// (timelorde / midiclock / audioIn / audioOut) and their presence rules.
+// Pure-unit (plain fixtures, no DOM, no Yjs).
 
 import { describe, it, expect } from 'vitest';
 import {
   WORKFLOW_PINNED_MODULES,
+  WORKFLOW_PINNED_SURFACES,
+  ALL_WORKFLOW_PINNED,
   DRAWER_KEY_TO_PINNED,
   planPinnedSpawns,
   isPinnedNode,
   isTypingTarget,
 } from './workflow-pins';
+
+/** Fixture: every always-on module present in its pinned form. */
+function fullPinnedSet() {
+  return ALL_WORKFLOW_PINNED.map((s) => ({ type: s.type, data: { pinned: true } }));
+}
 
 describe('WORKFLOW_PINNED_MODULES — the M/E/C trio contract', () => {
   it('is exactly mixmstrs + electraControl + clipplayer with deterministic ids', () => {
@@ -30,43 +39,97 @@ describe('WORKFLOW_PINNED_MODULES — the M/E/C trio contract', () => {
   });
 });
 
+describe('WORKFLOW_PINNED_SURFACES — the P2 topbar surface contract', () => {
+  it('is timelorde + midiclock + audioIn + audioOut with deterministic ids', () => {
+    expect(WORKFLOW_PINNED_SURFACES.map((s) => [s.type, s.id, s.presence ?? 'pinned'])).toEqual([
+      ['timelorde', 'pinned-timelorde', 'type'],
+      ['midiclock', 'pinned-midiclock', 'pinned'],
+      ['audioIn', 'pinned-audioIn', 'pinned'],
+      ['audioOut', 'pinned-audioOut', 'pinned'],
+    ]);
+  });
+
+  it('surface pins have NO drawer key (their faces are topbar menus)', () => {
+    for (const s of WORKFLOW_PINNED_SURFACES) {
+      expect('key' in s).toBe(false);
+    }
+    // The drawer keymap stays trio-only.
+    expect(DRAWER_KEY_TO_PINNED.size).toBe(WORKFLOW_PINNED_MODULES.length);
+  });
+
+  it('ALL_WORKFLOW_PINNED is trio-then-surfaces with globally unique ids', () => {
+    expect(ALL_WORKFLOW_PINNED.map((s) => s.type)).toEqual([
+      'mixmstrs',
+      'electraControl',
+      'clipplayer',
+      'timelorde',
+      'midiclock',
+      'audioIn',
+      'audioOut',
+    ]);
+    const ids = ALL_WORKFLOW_PINNED.map((s) => s.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const s of ALL_WORKFLOW_PINNED) expect(s.id).toBe(`pinned-${s.type}`);
+  });
+});
+
 describe('planPinnedSpawns', () => {
-  it('an empty rack plans all three, in M/E/C order', () => {
+  it('an empty rack plans every always-on module, trio first', () => {
     expect(planPinnedSpawns([]).map((s) => s.type)).toEqual([
       'mixmstrs',
       'electraControl',
       'clipplayer',
+      'timelorde',
+      'midiclock',
+      'audioIn',
+      'audioOut',
     ]);
   });
 
   it('plans only the missing specs', () => {
-    const nodes = [
-      { type: 'mixmstrs', data: { pinned: true } },
-      { type: 'clipplayer', data: { pinned: true } },
-    ];
+    const nodes = fullPinnedSet().filter((n) => n.type !== 'electraControl');
     expect(planPinnedSpawns(nodes).map((s) => s.type)).toEqual(['electraControl']);
   });
 
-  it('a full trio plans nothing (the ensure is idempotent)', () => {
-    const nodes = WORKFLOW_PINNED_MODULES.map((s) => ({
-      type: s.type,
-      data: { pinned: true },
-    }));
-    expect(planPinnedSpawns(nodes)).toEqual([]);
+  it('a full pinned set plans nothing (the ensure is idempotent)', () => {
+    expect(planPinnedSpawns(fullPinnedSet())).toEqual([]);
   });
 
-  it('UNPINNED instances of the same types do NOT satisfy the invariant', () => {
-    // A user-spawned canvas mixmstrs is a normal card, not the pinned one.
+  it('UNPINNED instances do NOT satisfy presence:"pinned" specs', () => {
+    // A user-spawned canvas mixmstrs / audioIn is a normal card, not the
+    // always-on hidden one.
     const nodes = [
       { type: 'mixmstrs', data: {} },
       { type: 'electraControl' },
       { type: 'clipplayer', data: { pinned: false } },
+      { type: 'audioIn', data: {} },
+      { type: 'audioOut', data: {} },
+      { type: 'midiclock', data: {} },
     ];
     expect(planPinnedSpawns(nodes).map((s) => s.type)).toEqual([
       'mixmstrs',
       'electraControl',
       'clipplayer',
+      'timelorde',
+      'midiclock',
+      'audioIn',
+      'audioOut',
     ]);
+  });
+
+  it('an UNPINNED canvas timelorde DOES satisfy the presence:"type" spec', () => {
+    // A dawless-authored patch loaded into a workflow rack carries a
+    // random-id canvas TIMELORDE; it is the rack clock (maxInstances=1) —
+    // no hidden competitor may spawn.
+    const nodes = [
+      ...fullPinnedSet().filter((n) => n.type !== 'timelorde'),
+      { type: 'timelorde', data: {} },
+    ];
+    expect(planPinnedSpawns(nodes)).toEqual([]);
+  });
+
+  it('a PINNED timelorde satisfies the presence:"type" spec too', () => {
+    expect(planPinnedSpawns(fullPinnedSet())).toEqual([]);
   });
 });
 

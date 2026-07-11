@@ -13,15 +13,27 @@
   // (replace vs. duplicate): re-rendering the bar next to File.. is a
   // one-line template change in Canvas.svelte.
   //
-  // The other toolbar icons from the owner spec land in later phases —
-  // clearly-marked disabled PLACEHOLDER SLOTS below keep the left→right
-  // order stable so P2/P3/P4 fill slots instead of reflowing the bar:
-  //   + media loader (P3) · assets picker (P3) · clock/Timelorde (P2) ·
-  //   MIDI-clock DIN (P2) · audio I/O plug (P2) · cameras (P4).
+  // P2 fills three of the reserved slots with LIVE surfaces (the pinned
+  // module faces — see graph/workflow-pins.ts WORKFLOW_PINNED_SURFACES):
+  //   🕐 clock  → ClockSurface (TIMELORDE: BPM readout / knob / tap / patch-out)
+  //   ⚇ DIN     → MidiDinSurface (assign a MIDI input as TIMELORDE's clock)
+  //   🎧 audio  → AudioIoSurface (always-on AUDIO IN + AUDIO OUT faces)
+  // The remaining phases keep clearly-marked disabled PLACEHOLDER SLOTS so
+  // the owner's left→right bar order stays stable:
+  //   + media loader (P3) · assets picker (P3) · cameras (P4).
+  //
+  // One menu at a time: File.. + the three surface dropdowns share a
+  // single `openMenu` slot; outside-click + ESC close whichever is up.
+  // Clicks inside PORTALED overlay children (the MIDI-learn context menu a
+  // topbar Knob opens, the patch-to picker) do NOT count as outside.
 
   import { onMount } from 'svelte';
   import SkinSwitcher from '$lib/ui/SkinSwitcher.svelte';
   import { SLOT_COUNT } from '$lib/graph/preset-set';
+  import ClockSurface from './ClockSurface.svelte';
+  import MidiDinSurface from './MidiDinSurface.svelte';
+  import AudioIoSurface from './AudioIoSurface.svelte';
+  import type { ModuleNode } from '$lib/graph/types';
 
   interface Props {
     appVersion: string;
@@ -42,6 +54,23 @@
     /** Header account state (same seam as the dawless topbar). */
     signedIn: boolean;
     headerAuth?: { isSignedIn: boolean; imageUrl: string | null; initials: string | null } | null;
+    // ---- P2 surface plumbing (snapshot-derived by Canvas) ----
+    /** THE rack timelorde (pinned, or a dawless import's canvas one). */
+    timelordeNode?: ModuleNode | null;
+    /** The hidden pinned MIDICLOCK bridge. */
+    midiclockNode?: ModuleNode | null;
+    /** The pinned always-on AUDIO IN / AUDIO OUT. */
+    audioInNode?: ModuleNode | null;
+    audioOutNode?: ModuleNode | null;
+    /** True while a cable feeds TIMELORDE's `clock` input (any source). */
+    externallyClocked?: boolean;
+    /** True while the DIN bridge's clock edge into TIMELORDE exists. */
+    dinAssigned?: boolean;
+    /** The main canvas's glob-driven nodeTypes map (for the card hosts). */
+    nodeTypes?: Record<string, unknown>;
+    /** Canvas's ensureEngine — surfaces whose backing api lives on the
+     *  engine-side module boot it on first use. */
+    onEnsureEngine?: (() => Promise<unknown>) | null;
   }
   let {
     appVersion,
@@ -57,22 +86,34 @@
     onImportJson,
     signedIn,
     headerAuth = null,
+    timelordeNode = null,
+    midiclockNode = null,
+    audioInNode = null,
+    audioOutNode = null,
+    externallyClocked = false,
+    dinAssigned = false,
+    nodeTypes = {},
+    onEnsureEngine = null,
   }: Props = $props();
 
-  // ---- File.. menu open/close + accordion section state ----
-  let fileOpen = $state(false);
-  /** Which submenu section is expanded ('quicksave' | 'quickload' | 'rawjson' | 'theme' | null). */
+  // ---- Topbar menu state: ONE menu open at a time ----
+  type MenuId = 'file' | 'clock' | 'din' | 'io';
+  let openMenu = $state<MenuId | null>(null);
+  let fileOpen = $derived(openMenu === 'file');
+  /** Which File.. submenu section is expanded ('quicksave' | 'quickload' | 'rawjson' | 'theme' | null). */
   let section = $state<string | null>(null);
-  let menuEl: HTMLDivElement | null = $state(null);
   let triggerEl: HTMLButtonElement | null = $state(null);
 
-  function toggleFile() {
-    fileOpen = !fileOpen;
-    if (!fileOpen) section = null;
+  function toggleMenu(id: MenuId) {
+    openMenu = openMenu === id ? null : id;
+    if (openMenu !== 'file') section = null;
   }
-  function closeFile() {
-    fileOpen = false;
+  function closeMenus() {
+    openMenu = null;
     section = null;
+  }
+  function toggleFile() {
+    toggleMenu('file');
   }
   function toggleSection(name: string) {
     section = section === name ? null : name;
@@ -80,25 +121,35 @@
 
   /** Fire a menu action, then close (action menus don't linger). */
   async function fire(action: () => void | Promise<void>) {
-    closeFile();
+    closeMenus();
     await action();
   }
 
   onMount(() => {
     function onDocPointerDown(e: PointerEvent) {
-      if (!fileOpen) return;
+      if (openMenu === null) return;
       const t = e.target as HTMLElement | null;
       if (!t) return;
-      if (menuEl && menuEl.contains(t)) return;
-      if (triggerEl && triggerEl.contains(t)) return;
-      closeFile();
+      // Inside any topbar menu anchor (trigger or its dropdown)?
+      if (t.closest('[data-wf-anchor]')) return;
+      // Inside a PORTALED overlay a menu child opened (the MIDI-learn
+      // context menu portals to <body>; the patch-to picker floats too)?
+      // Those interactions must not slam the hosting dropdown shut.
+      if (
+        t.closest('.ctx-overlay') ||
+        t.closest('[data-testid="control-context-menu"]') ||
+        t.closest('[data-testid="port-context-menu"]')
+      ) {
+        return;
+      }
+      closeMenus();
     }
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape' && fileOpen) {
+      if (e.key === 'Escape' && openMenu !== null) {
         // Capture-phase + stopPropagation so the Canvas ESC keymap (which
         // closes the dock drawer) doesn't ALSO fire off this press.
         e.stopPropagation();
-        closeFile();
+        closeMenus();
         triggerEl?.focus();
       }
     }
@@ -110,13 +161,12 @@
     };
   });
 
-  /** The P2/P3/P4 placeholder slots, in the owner's left→right bar order. */
-  const PLACEHOLDER_SLOTS: ReadonlyArray<{ id: string; glyph: string; label: string; phase: string }> = [
+  /** The P3/P4 placeholder slots still pending, in bar order. */
+  const PLACEHOLDER_SLOTS_LEFT: ReadonlyArray<{ id: string; glyph: string; label: string; phase: string }> = [
     { id: 'media-loader', glyph: '+', label: 'media loader', phase: 'P3' },
     { id: 'assets-picker', glyph: '💾', label: 'loaded assets', phase: 'P3' },
-    { id: 'clock', glyph: '🕐', label: 'clock / timelorde', phase: 'P2' },
-    { id: 'midi-din', glyph: '⚇', label: 'MIDI clock', phase: 'P2' },
-    { id: 'audio-io', glyph: '🎧', label: 'audio in/out', phase: 'P2' },
+  ];
+  const PLACEHOLDER_SLOTS_RIGHT: ReadonlyArray<{ id: string; glyph: string; label: string; phase: string }> = [
     { id: 'cameras', glyph: '📷', label: 'cameras', phase: 'P4' },
   ];
 </script>
@@ -124,7 +174,7 @@
 <header class="workflow-topbar" data-testid="workflow-topbar">
   <h1>patchtogether <span class="app-version" data-testid="app-version">v{appVersion}</span></h1>
 
-  <div class="file-anchor">
+  <div class="file-anchor" data-wf-anchor="file">
     <button
       class="file-trigger"
       data-testid="workflow-file-trigger"
@@ -136,7 +186,7 @@
     >File..</button>
 
     {#if fileOpen}
-      <div class="file-menu" data-testid="workflow-file-menu" role="menu" bind:this={menuEl}>
+      <div class="file-menu" data-testid="workflow-file-menu" role="menu">
         <!-- Quicksave 1–5: store the CURRENT rack into a preset slot
              (buildPerformanceZipBytes → the same IndexedDB slot store the
              dawless preset bar uses). -->
@@ -267,9 +317,90 @@
     {/if}
   </div>
 
-  <!-- P2/P3/P4 placeholder slots (disabled). See the header comment. -->
+  <!-- Toolbar slots, in the owner's left→right order: P3 placeholders,
+       then the LIVE P2 surfaces (clock / DIN / audio I/O), then the P4
+       cameras placeholder. See the header comment. -->
   <div class="placeholders" data-testid="workflow-topbar-placeholders">
-    {#each PLACEHOLDER_SLOTS as p (p.id)}
+    {#each PLACEHOLDER_SLOTS_LEFT as p (p.id)}
+      <button
+        class="placeholder"
+        data-testid={`workflow-topbar-slot-${p.id}`}
+        disabled
+        title={`${p.label} — lands in ${p.phase}`}
+        aria-label={`${p.label} (coming in ${p.phase})`}
+      >{p.glyph}</button>
+    {/each}
+
+    <!-- 🕐 CLOCK — TIMELORDE's workflow face (BPM / knob / tap / patch-out). -->
+    <div class="slot-anchor" data-wf-anchor="clock">
+      <button
+        class="slot-trigger"
+        class:open={openMenu === 'clock'}
+        data-testid="workflow-topbar-slot-clock"
+        onclick={() => toggleMenu('clock')}
+        aria-haspopup="menu"
+        aria-expanded={openMenu === 'clock'}
+        title="Clock — tempo, tap tempo, and TIMELORDE patch-out"
+        aria-label="Clock (TIMELORDE surface)"
+      >🕐</button>
+      {#if openMenu === 'clock'}
+        <ClockSurface
+          timelorde={timelordeNode}
+          {externallyClocked}
+          onRequestClose={closeMenus}
+        />
+      {/if}
+    </div>
+
+    <!-- ⚇ MIDI DIN — assign a MIDI input as TIMELORDE's clock source. -->
+    <div class="slot-anchor" data-wf-anchor="din">
+      <button
+        class="slot-trigger"
+        class:open={openMenu === 'din'}
+        class:active={dinAssigned}
+        data-testid="workflow-topbar-slot-midi-din"
+        onclick={() => toggleMenu('din')}
+        aria-haspopup="menu"
+        aria-expanded={openMenu === 'din'}
+        title={dinAssigned
+          ? 'MIDI clock — a MIDI input is driving TIMELORDE'
+          : 'MIDI clock — assign a MIDI input as the tempo source'}
+        aria-label="MIDI clock source"
+      >⚇</button>
+      {#if openMenu === 'din'}
+        <MidiDinSurface
+          midiclock={midiclockNode}
+          timelorde={timelordeNode}
+          assigned={dinAssigned}
+          {onEnsureEngine}
+        />
+      {/if}
+    </div>
+
+    <!-- 🎧 AUDIO I/O — the always-on AUDIO IN + AUDIO OUT faces. The panel
+         stays MOUNTED (the hosted AudioinCard owns the live input stream);
+         open/close only toggles its visibility. -->
+    <div class="slot-anchor" data-wf-anchor="io">
+      <button
+        class="slot-trigger"
+        class:open={openMenu === 'io'}
+        data-testid="workflow-topbar-slot-audio-io"
+        onclick={() => toggleMenu('io')}
+        aria-haspopup="menu"
+        aria-expanded={openMenu === 'io'}
+        title="Audio in/out — input source, output device, and AUDIO IN patch-out"
+        aria-label="Audio input and output"
+      >🎧</button>
+      <AudioIoSurface
+        audioIn={audioInNode}
+        audioOut={audioOutNode}
+        {nodeTypes}
+        open={openMenu === 'io'}
+        onRequestClose={closeMenus}
+      />
+    </div>
+
+    {#each PLACEHOLDER_SLOTS_RIGHT as p (p.id)}
       <button
         class="placeholder"
         data-testid={`workflow-topbar-slot-${p.id}`}
@@ -427,6 +558,28 @@
     opacity: 0.55;
     font-size: 0.8rem;
     cursor: not-allowed;
+  }
+  .slot-anchor {
+    position: relative;
+  }
+  .slot-trigger {
+    width: 30px;
+    height: 26px;
+    border-radius: 3px;
+    border: 1px solid #404652;
+    background: #2a2f3a;
+    color: var(--text);
+    font-size: 0.8rem;
+    cursor: pointer;
+  }
+  .slot-trigger:hover {
+    background: #353a47;
+  }
+  .slot-trigger.open {
+    border-color: var(--cable-gate, #f97316);
+  }
+  .slot-trigger.active {
+    box-shadow: inset 0 -2px 0 var(--cable-gate, #f97316);
   }
   .spacer {
     flex: 1;

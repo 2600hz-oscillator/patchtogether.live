@@ -247,16 +247,46 @@
     }
     if (!attached) {
       console.warn('[audioIn] could not attach stream — engine node not present yet');
+      // Hand off to the LATE-ENGINE reconciler below: the workflow topbar
+      // hosts this card as an always-on pinned module, so it can mount +
+      // start streaming BEFORE the audio engine ever boots — the bounded
+      // retry above is not enough there.
+      pendingAttach = { channelCount };
+    } else {
+      pendingAttach = null;
     }
 
     inState = 'streaming';
   }
+
+  // Late-engine attach reconciliation. When requestStream() acquired a
+  // stream but the engine (or its node handle) wasn't up yet, keep trying
+  // at a slow cadence until it lands, then stop. Idempotent with respect
+  // to a subsequent manual re-acquire (requestStream resets the marker).
+  let pendingAttach = $state<{ channelCount: number } | null>(null);
+  $effect(() => {
+    if (!pendingAttach) return;
+    const timer = setInterval(() => {
+      if (!stream || inState !== 'streaming') {
+        pendingAttach = null;
+        return;
+      }
+      const eng = engineCtx.get();
+      if (!eng) return;
+      const payload = pendingAttach;
+      if (payload && audioInAttach(eng, id, { stream, channelCount: payload.channelCount })) {
+        pendingAttach = null;
+      }
+    }, 500);
+    return () => clearInterval(timer);
+  });
 
   function stopStream(): void {
     if (stream) {
       for (const t of stream.getTracks()) t.stop();
       stream = null;
     }
+    pendingAttach = null;
     liveChannels = 0;
     const e = engineCtx.get();
     if (e) audioInAttach(e, id, null);
