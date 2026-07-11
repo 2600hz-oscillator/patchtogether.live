@@ -389,7 +389,7 @@ test.describe('workflow media system (P3)', () => {
     // One video-domain module boots the video engine on CI's SwiftShader.
     test.setTimeout(90_000);
     await gotoWorkflow(page);
-    await spawnPatch(page, [{ id: 'fx', type: 'chroma', position: { x: 60, y: 200 } }]);
+    await spawnPatch(page, [{ id: 'fx', type: 'chroma', position: { x: 60, y: 200 }, domain: 'video' }]);
     await loadViaLoader(page, [
       { name: 'red.png', mimeType: 'image/png', buffer: Buffer.from(RED_PNG_B64, 'base64') },
     ]);
