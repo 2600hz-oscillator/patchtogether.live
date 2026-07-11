@@ -1480,6 +1480,25 @@ const BEHAVIORAL_PORT_TEST_SOURCE: Record<string, InputSource> = {
   'tomtom.bend_cv': {
     node: {
       id: 'up-bendcv-lfo',
+      type: 'lfo',
+      position: { x: 60, y: 60 },
+      domain: 'audio',
+      params: { rate: 3, shape: 0, depth: 0.5 },
+    },
+    outPort: 'phase0',
+    sourceType: 'cv',
+  },
+  'tomtom.decay_cv': {
+    node: {
+      id: 'up-decaycv-lfo',
+      type: 'lfo',
+      position: { x: 60, y: 60 },
+      domain: 'audio',
+      params: { rate: 3, shape: 0, depth: 0.5 },
+    },
+    outPort: 'phase0',
+    sourceType: 'cv',
+  },
   // CLAP tone_cv / tail_cv / spread_cv — octave-law CVs on a percussive
   // noise voice whose effect the generic BUGGLES walk (±~0.15 V
   // excursions) under-exercises within the 800 ms window. A deterministic
@@ -1502,9 +1521,6 @@ const BEHAVIORAL_PORT_TEST_SOURCE: Record<string, InputSource> = {
     outPort: 'phase0',
     sourceType: 'cv',
   },
-  'tomtom.decay_cv': {
-    node: {
-      id: 'up-decaycv-lfo',
   'clap.tail_cv': {
     node: {
       id: 'up-tailcv-lfo',
