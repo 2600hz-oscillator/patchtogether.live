@@ -132,7 +132,13 @@ const FROM_TEST_ROOT = resolve(__dirname, '../../../../..');
 // +cellshade.spec.ts (ACIDWARP→cellshade live-render canvas stats). Both
 // readPixels()-class specs from the sharded-matrix contention class.
 // Batched into the rebuild's single re-attest. 52 → 54.
-const EXPECTED_HEAVY_SPEC_COUNT = 54;
+// POSTERBOX (2026-07-11): +posterbox-functional.spec.ts (retro palette-crush —
+// the theory-derived spec readPixels()es the module's output FBO for the legacy
+// 3-3-2 continuity anchors, hue-order preservation, the Bayer dither checker
+// block, and the mix sweep). Real-GPU pixel reads → serialized heavy lane;
+// e2e/webgl-heavy-globs.ts is in the hash basis, and the new video module def
+// moves the hash anyway (re-attest at merge). 54 → 55.
+const EXPECTED_HEAVY_SPEC_COUNT = 55;
 
 describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
   const basis = resolveWebglBasis();

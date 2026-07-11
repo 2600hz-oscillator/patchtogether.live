@@ -438,6 +438,12 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   cellshade: VIDEO_SINK_SWIFTSHADER_NOTE,
   chromakey: VIDEO_SINK_SWIFTSHADER_NOTE,
   outlines: VIDEO_SINK_SWIFTSHADER_NOTE,
+  // POSTERBOX (retro palette-crush, 2026-07-11): the same per-frame-WebGL →
+  // video-out-canvas class as cellshade above. Real behavioral coverage lives
+  // in posterbox.test.ts (the CPU mirror of the shader) + the theory-derived
+  // e2e/tests/posterbox-functional.spec.ts (readPixels probes: continuity
+  // anchors, hue-order, dither checker, mix sweep) + the VRT baselines.
+  posterbox: VIDEO_SINK_SWIFTSHADER_NOTE,
 
   // ── MOOG System 55/35 routing / mixer / utility modules (batch-2 +
   //    batch-5). These are PURE gain / patch-bay / format-converter /
