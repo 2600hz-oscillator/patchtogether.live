@@ -157,6 +157,111 @@ export function planPinnedSpawns(
   );
 }
 
+// ---------------- Default wiring: MIXMSTRS master → AUDIO OUT ----------------
+//
+// Owner directive: "the audio out in the rack should be default wired to the
+// master L/R outs from the in rack mixmstrs in workflow mode." The pinned
+// MIXMSTRS is the rack's master bus and the pinned AUDIO OUT is the terminal
+// sink, so a fresh workflow rack should make sound the moment anything feeds
+// the mixer — no hidden hand-patch required.
+//
+// SEED, not invariant: unlike the node ensure (which self-heals forever),
+// these edges are a ONE-SHOT default. The first time both pinned endpoints
+// exist we write the wires and stamp `data.workflowDefaultWired: true` on the
+// pinned AUDIO OUT (node.data is the documented home for cross-cutting
+// per-node keys — `pinned`, `name`, `controlColor`). Once the latch is set the
+// planner never re-plans, so a USER deleting the cable is respected — the
+// ensure never fights intent. A wholesale node replacement (quickload /
+// performance load) either carries the saved latch (respected) or spawns
+// fresh pins without it (wires re-seed) — matching the node ensure's
+// self-healing story.
+//
+// DETERMINISTIC edge ids use the platform's edge-id convention
+// (`e-<src>-<srcPort>-<dst>-<dstPort>`, the same template handleConnect
+// writes), so two clients racing the seed converge on ONE Y.Map entry per
+// wire — CRDT-safe exactly like the `pinned-<type>` node ids.
+
+/** The `node.data` latch key on the pinned AUDIO OUT: "the default wires were
+ *  seeded once — never re-fight the user over them". */
+export const WORKFLOW_DEFAULT_WIRE_LATCH = 'workflowDefaultWired';
+
+/** One default wire (a full Edge-shaped record; ids deterministic). */
+export interface WorkflowDefaultWire {
+  id: string;
+  source: { nodeId: string; portId: string };
+  target: { nodeId: string; portId: string };
+  sourceType: 'audio';
+  targetType: 'audio';
+}
+
+/** Pinned MIXMSTRS master L/R → pinned AUDIO OUT L/R. Port ids are pinned by
+ *  the defs (mixmstrs.ts outputs / audio-out.ts inputs) + the unit contract. */
+export const WORKFLOW_DEFAULT_WIRES: readonly WorkflowDefaultWire[] = [
+  {
+    id: 'e-pinned-mixmstrs-masterL-pinned-audioOut-L',
+    source: { nodeId: 'pinned-mixmstrs', portId: 'masterL' },
+    target: { nodeId: 'pinned-audioOut', portId: 'L' },
+    sourceType: 'audio',
+    targetType: 'audio',
+  },
+  {
+    id: 'e-pinned-mixmstrs-masterR-pinned-audioOut-R',
+    source: { nodeId: 'pinned-mixmstrs', portId: 'masterR' },
+    target: { nodeId: 'pinned-audioOut', portId: 'R' },
+    sourceType: 'audio',
+    targetType: 'audio',
+  },
+] as const;
+
+/** Minimal node shape the wire planner inspects (id + the data latch). */
+export interface DefaultWireNodeLike {
+  id: string;
+  data?: Record<string, unknown> | null;
+}
+
+/** Minimal edge shape the wire planner inspects (target occupancy). */
+export interface DefaultWireEdgeLike {
+  target: { nodeId: string; portId: string };
+}
+
+export interface DefaultWirePlan {
+  /** Wires to write — the default pairs whose target input is currently
+   *  UNOCCUPIED (an input takes one cable; a user's own patch into AUDIO OUT
+   *  is never replaced). May be empty even when `latch` is true. */
+  wires: WorkflowDefaultWire[];
+  /** True when the one-shot latch must be WRITTEN this pass (both pinned
+   *  endpoints exist and the latch isn't set yet). False = nothing to do —
+   *  either an endpoint is still missing (re-plan next snapshot) or the seed
+   *  already ran (never re-fight a user delete). */
+  latch: boolean;
+}
+
+/**
+ * Plan the workflow default wires. Pure predicate over the snapshot — the
+ * caller transacts the writes (and re-checks inside the transact, mirroring
+ * planPinnedSpawns' belt-and-braces convention).
+ */
+export function planDefaultWires(
+  nodes: ReadonlyArray<DefaultWireNodeLike>,
+  edges: ReadonlyArray<DefaultWireEdgeLike | null | undefined>,
+): DefaultWirePlan {
+  const none: DefaultWirePlan = { wires: [], latch: false };
+  const src = nodes.find((n) => n.id === 'pinned-mixmstrs');
+  const dst = nodes.find((n) => n.id === 'pinned-audioOut');
+  if (!src || !dst) return none; // endpoints still spawning — replan later
+  if (dst.data?.[WORKFLOW_DEFAULT_WIRE_LATCH] === true) return none; // seeded once already
+  const occupied = new Set<string>();
+  for (const e of edges) {
+    if (e) occupied.add(`${e.target.nodeId}:${e.target.portId}`);
+  }
+  return {
+    wires: WORKFLOW_DEFAULT_WIRES.filter(
+      (w) => !occupied.has(`${w.target.nodeId}:${w.target.portId}`),
+    ),
+    latch: true,
+  };
+}
+
 /** Minimal event-target shape for the typing guard (structural, so unit
  *  tests need no DOM). Matches HTMLElement's relevant surface. */
 export interface TypingTargetLike {

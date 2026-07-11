@@ -43,7 +43,29 @@
     const nodeEl = document.querySelector(
       `.svelte-flow__node[data-id="${source.nodeId}"]`,
     );
-    if (!nodeEl) return '';
+    if (!nodeEl) {
+      // DOCK-HOSTED fallback: a PINNED drawer/panel card has NO canvas
+      // element at all (no stub, no handles), so a pickup started from its
+      // port rows / back jacks rendered no ghost. Hang the cable from the
+      // matching edge of the card's dock frame instead. Docked NON-pinned
+      // cards keep anchoring at their canvas stub (found above) — the
+      // documented cable-anchor model.
+      const dockEl = document.querySelector(
+        `[data-dock-card="${CSS.escape(source.nodeId)}"] [data-dock-card-frame]`,
+      );
+      if (!dockEl) return '';
+      const frame = dockEl.getBoundingClientRect();
+      const fromRight = source.handleType === 'source';
+      const [d] = getBezierPath({
+        sourceX: fromRight ? frame.right : frame.left,
+        sourceY: frame.y + frame.height / 2,
+        sourcePosition: fromRight ? Position.Right : Position.Left,
+        targetX: cursor.x,
+        targetY: cursor.y,
+        targetPosition: fromRight ? Position.Left : Position.Right,
+      });
+      return d;
+    }
     // Prefer the handle matching the gesture's side (source vs target)
     // because some cards have both source + target handles with the
     // same handleId (rare but possible).
