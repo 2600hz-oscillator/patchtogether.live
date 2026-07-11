@@ -347,7 +347,14 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // regression gate; linux baselines pending the vrt-update.yml
       // dispatch on the PR branch, same precedent as the COLOUR OF MAGIC
       // scene batches).
-    ).toBeLessThanOrEqual(90);
+      // 90→92 for the WORKFLOW audio-UX composite scenes (2026-07-11,
+      // deliberate darwin-first — the OPEN 🎧 audio-I/O panel
+      // (workflow-audio-io-composite.spec.ts, device text masked) + the
+      // bottom dock drawer with the patch-to picker open
+      // (workflow-dock-composite.spec.ts, menu position pinned) — the
+      // owner's "this should have been caught with vrt" coverage; linux
+      // baselines pending the vrt-update.yml dispatch on the PR branch).
+    ).toBeLessThanOrEqual(92);
   });
 });
 

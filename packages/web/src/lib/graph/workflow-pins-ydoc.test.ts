@@ -17,7 +17,10 @@ import { syncedStore, getYjsDoc } from '@syncedstore/core';
 import type { ModuleNode, Edge } from './types';
 import {
   ALL_WORKFLOW_PINNED,
+  WORKFLOW_DEFAULT_WIRES,
+  WORKFLOW_DEFAULT_WIRE_LATCH,
   WORKFLOW_PIN_SPAWN_ORIGIN,
+  planDefaultWires,
   planPinnedSpawns,
 } from './workflow-pins';
 
@@ -68,6 +71,46 @@ function runEnsure(peer: Peer): number {
 
 function nodeIds(peer: Peer): string[] {
   return Object.keys(peer.patch.nodes).sort();
+}
+
+/** Run the DEFAULT-WIRE seed EXACTLY as Canvas.svelte's $effect does:
+ *  plan against the snapshot, then transact the wires + the one-shot latch
+ *  (with the in-transact re-checks) under the non-undoable origin. */
+function runWireEnsure(peer: Peer): number {
+  const plan = planDefaultWires(
+    Object.values(peer.patch.nodes).filter((n): n is ModuleNode => !!n),
+    Object.values(peer.patch.edges),
+  );
+  if (!plan.latch) return 0;
+  let wrote = 0;
+  peer.doc.transact(() => {
+    const dst = peer.patch.nodes['pinned-audioOut'];
+    if (!dst) return;
+    const data = (dst.data ?? {}) as Record<string, unknown>;
+    if (data[WORKFLOW_DEFAULT_WIRE_LATCH] === true) return;
+    for (const wire of plan.wires) {
+      if (peer.patch.edges[wire.id]) continue;
+      const occupied = Object.values(peer.patch.edges).some(
+        (e) => e && e.target.nodeId === wire.target.nodeId && e.target.portId === wire.target.portId,
+      );
+      if (occupied) continue;
+      peer.patch.edges[wire.id] = {
+        id: wire.id,
+        source: { nodeId: wire.source.nodeId, portId: wire.source.portId },
+        target: { nodeId: wire.target.nodeId, portId: wire.target.portId },
+        sourceType: wire.sourceType,
+        targetType: wire.targetType,
+      } as Edge;
+      wrote++;
+    }
+    if (!dst.data) dst.data = {};
+    dst.data[WORKFLOW_DEFAULT_WIRE_LATCH] = true;
+  }, WORKFLOW_PIN_SPAWN_ORIGIN);
+  return wrote;
+}
+
+function edgeIds(peer: Peer): string[] {
+  return Object.keys(peer.patch.edges).sort();
 }
 
 describe('workflow pinned ensure on real Y.Docs', () => {
@@ -141,5 +184,95 @@ describe('workflow pinned ensure on real Y.Docs', () => {
       ].sort(),
     );
     expect(nodeIds(b)).toEqual(nodeIds(a));
+  });
+});
+
+describe('workflow default wires (mixmstrs master → audioOut) on real Y.Docs', () => {
+  it('seeds both wires + the latch once the pins exist, then is a no-op', () => {
+    const a = makePeer();
+    runEnsure(a);
+    expect(runWireEnsure(a)).toBe(2);
+    expect(edgeIds(a)).toEqual(WORKFLOW_DEFAULT_WIRES.map((w) => w.id).sort());
+    expect(
+      (a.patch.nodes['pinned-audioOut']?.data as Record<string, unknown>)[
+        WORKFLOW_DEFAULT_WIRE_LATCH
+      ],
+    ).toBe(true);
+    // Second pass: latched → nothing to plan, nothing written.
+    expect(runWireEnsure(a)).toBe(0);
+    expect(edgeIds(a)).toHaveLength(2);
+  });
+
+  it('plans nothing before the pinned endpoints exist (no latch burn on an empty doc)', () => {
+    const a = makePeer();
+    expect(runWireEnsure(a)).toBe(0);
+    expect(edgeIds(a)).toEqual([]);
+    // The ensure lands the pins → the wires seed on the NEXT pass.
+    runEnsure(a);
+    expect(runWireEnsure(a)).toBe(2);
+  });
+
+  it('two peers racing the seed CONVERGE to exactly one edge per wire', () => {
+    const a = makePeer();
+    const b = makePeer();
+    runEnsure(a);
+    converge(a, b);
+    // Both observe pins-present + unlatched and both write (the race).
+    expect(runWireEnsure(a)).toBe(2);
+    expect(runWireEnsure(b)).toBe(2);
+    converge(a, b);
+    expect(edgeIds(a)).toEqual(WORKFLOW_DEFAULT_WIRES.map((w) => w.id).sort());
+    expect(edgeIds(b)).toEqual(edgeIds(a));
+    expect(runWireEnsure(a)).toBe(0);
+    expect(runWireEnsure(b)).toBe(0);
+  });
+
+  it('a USER-DELETED default wire is never re-added (the latch outlives the edge)', () => {
+    const a = makePeer();
+    runEnsure(a);
+    runWireEnsure(a);
+    // The user rips out the L cable (a normal local delete).
+    a.doc.transact(() => {
+      delete a.patch.edges['e-pinned-mixmstrs-masterL-pinned-audioOut-L'];
+    });
+    expect(edgeIds(a)).toEqual(['e-pinned-mixmstrs-masterR-pinned-audioOut-R']);
+    // Snapshot churn re-runs the ensure — the latch holds the line.
+    expect(runWireEnsure(a)).toBe(0);
+    expect(edgeIds(a)).toEqual(['e-pinned-mixmstrs-masterR-pinned-audioOut-R']);
+  });
+
+  it('a pre-occupied audioOut input is respected (user patch never replaced)', () => {
+    const a = makePeer();
+    runEnsure(a);
+    // The user hand-patched something into AUDIO OUT L before the seed ran.
+    a.doc.transact(() => {
+      a.patch.edges['e-user'] = {
+        id: 'e-user',
+        source: { nodeId: 'osc1', portId: 'out' },
+        target: { nodeId: 'pinned-audioOut', portId: 'L' },
+        sourceType: 'audio',
+        targetType: 'audio',
+      } as Edge;
+    });
+    expect(runWireEnsure(a)).toBe(1); // only the R wire seeds
+    expect(edgeIds(a)).toEqual(['e-pinned-mixmstrs-masterR-pinned-audioOut-R', 'e-user']);
+    // Seed consumed: deleting the user edge later does NOT invite the default back.
+    a.doc.transact(() => {
+      delete a.patch.edges['e-user'];
+    });
+    expect(runWireEnsure(a)).toBe(0);
+  });
+
+  it('a quickload-style wholesale wipe re-seeds (fresh pins carry no latch)', () => {
+    const a = makePeer();
+    runEnsure(a);
+    runWireEnsure(a);
+    a.doc.transact(() => {
+      for (const id of Object.keys(a.patch.nodes)) delete a.patch.nodes[id];
+      for (const id of Object.keys(a.patch.edges)) delete a.patch.edges[id];
+    });
+    runEnsure(a); // the node ensure self-heals the pinned set
+    expect(runWireEnsure(a)).toBe(2); // fresh audioOut data → the seed re-runs
+    expect(edgeIds(a)).toEqual(WORKFLOW_DEFAULT_WIRES.map((w) => w.id).sort());
   });
 });
