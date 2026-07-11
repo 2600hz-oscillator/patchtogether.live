@@ -226,6 +226,11 @@
     hasExternalClock as hasWorkflowExternalClock,
     isDinAssigned,
   } from '$lib/ui/workflow/workflow-surfaces';
+  import {
+    listWorkflowCameras,
+    workflowCameraAtCap,
+  } from '$lib/ui/workflow/workflow-cameras';
+  import { isCanvasHiddenNode } from '$lib/graph/hidden-card';
   import DockZoneContainer from '$lib/ui/dock/DockZoneContainer.svelte';
   import { dockStore } from '$lib/ui/dock/dock-store.svelte';
   import {
@@ -974,6 +979,17 @@
       ? isDinAssigned(snapshot.edges, 'pinned-midiclock', workflowTimelordeNode?.id ?? null)
       : false,
   );
+  // ---------------- WORKFLOW MODE P4: camera manager plumbing ----------------
+  /** The mapped (hiddenCard) camera nodes the 📷 menu lists, in stable
+   *  ordinal order. DYNAMIC (0..N, user-added) — never auto-ensured. */
+  let workflowCameraNodes = $derived(
+    workflowMode ? listWorkflowCameras(snapshot.nodes) : [],
+  );
+  /** One more camera would exceed cameraInput.maxInstances (the ＋ row's
+   *  disabled state — hidden cameras + canvas CAMERA cards both count). */
+  let workflowCameraAtCapNow = $derived(
+    workflowMode ? workflowCameraAtCap(snapshot.nodes) : false,
+  );
 
   // Mirror snapshot → SvelteFlow node/edge arrays. We DROPPED bind:nodes /
   // bind:edges in favor of one-way props because the two-way bind let
@@ -1008,12 +1024,14 @@
     return ids;
   });
 
-  // WORKFLOW MODE P1 — ids of pinned drawer singletons (hidden from the
-  // canvas), for the defensive edge filter below. Empty in dawless racks.
-  let pinnedNodeIds = $derived.by<Set<string>>(() => {
+  // WORKFLOW MODE P1/P4 — ids of every canvas-hidden node: the pinned
+  // drawer/topbar singletons (P1/P2) plus the hiddenCard headless camera
+  // instances (P4), for the defensive edge filter below. Empty in dawless
+  // racks.
+  let canvasHiddenNodeIds = $derived.by<Set<string>>(() => {
     const ids = new Set<string>();
     for (const n of snapshot.nodes) {
-      if (isPinnedNode(n)) ids.add(n.id);
+      if (isCanvasHiddenNode(n)) ids.add(n.id);
     }
     return ids;
   });
@@ -1100,11 +1118,13 @@
       // not as a SvelteFlow card. Filter it out of the node array so
       // xyflow doesn't draw a fallback white box at the spawn point.
       if (n.type === 'cadillac') continue;
-      // PINNED workflow singletons (data.pinned — graph/workflow-pins.ts)
-      // render ONLY in their dock drawer, never as canvas cards. Drawer-only
-      // is the REVERSIBLE Q3 default — deleting this skip puts them on the
-      // canvas too. Dawless racks never contain pinned nodes (inert there).
-      if (isPinnedNode(n)) continue;
+      // CANVAS-HIDDEN workflow nodes: PINNED singletons (data.pinned —
+      // graph/workflow-pins.ts; drawer-only is the REVERSIBLE Q3 default)
+      // and hiddenCard headless instances (data.hiddenCard —
+      // graph/hidden-card.ts; the P4 camera manager's mapped cameras,
+      // whose face is the topbar 📷 menu). Dawless racks never contain
+      // either flag (inert there).
+      if (isCanvasHiddenNode(n)) continue;
       const remoteUser = remoteByNode[n.id];
       // Per-user layouts: getNodePosition returns the user's override
       // (when in multiplayer) or falls back to n.position (when single-
@@ -1234,10 +1254,11 @@
       // node here. A leftover edge to a hidden child indicates a
       // pre-group-creation snapshot — defensive drop.
       if (childToGroup.has(e.source.nodeId) || childToGroup.has(e.target.nodeId)) continue;
-      // Edges touching a PINNED drawer singleton: the node isn't on the
-      // canvas, so the cable can't render there either (defensive — same
-      // rationale as the hidden-group-child drop above).
-      if (pinnedNodeIds.has(e.source.nodeId) || pinnedNodeIds.has(e.target.nodeId)) continue;
+      // Edges touching a CANVAS-HIDDEN node (pinned singleton OR
+      // hiddenCard headless camera): the node isn't on the canvas, so the
+      // cable can't render there either (defensive — same rationale as
+      // the hidden-group-child drop above).
+      if (canvasHiddenNodeIds.has(e.source.nodeId) || canvasHiddenNodeIds.has(e.target.nodeId)) continue;
       const related = !!hovered && (e.source.nodeId === hovered || e.target.nodeId === hovered);
       const prev = prevFlowEdges.get(e.id);
       if (prev && prev.snapEdge === e && prev.related === related) {
@@ -5420,6 +5441,8 @@
       nodeTypes={nodeTypes as unknown as Record<string, unknown>}
       onEnsureEngine={ensureEngine}
       currentUserId={currentUserId ?? null}
+      cameraNodes={workflowCameraNodes}
+      cameraAtCap={workflowCameraAtCapNow}
     />
   {:else}
   <header class="topbar">
