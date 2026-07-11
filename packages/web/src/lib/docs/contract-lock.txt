@@ -1277,6 +1277,25 @@ joystick out x cv
 joystick out y cv
 joystick param pos_x -1..1 linear default=0
 joystick param pos_y -1..1 linear default=0
+karplus meta domain=audio
+karplus in accent_in cv
+karplus in bright_cv cv param=brightness cvScale=linear
+karplus in color_cv cv param=color cvScale=linear
+karplus in damp_in gate edge=gate
+karplus in decay_cv cv param=decay cvScale=log
+karplus in pitch pitch
+karplus in position_cv cv param=position cvScale=linear
+karplus in stiff_cv cv param=stiffness cvScale=linear
+karplus in trigger_in gate edge=trigger
+karplus out out audio
+karplus param brightness 0..1 linear default=0.7
+karplus param burst 0.1..4 log default=1
+karplus param color 0..1 linear default=0.6
+karplus param decay 0.1..10 log default=2 unit=s
+karplus param level -24..12 linear default=0 unit=dB
+karplus param position 0.02..0.5 linear default=0.2
+karplus param stiffness 0..1 linear default=0
+karplus param tune 55..1760 log default=220 unit=Hz
 kickdrum meta domain=audio
 kickdrum in accent_in cv
 kickdrum in choke_in gate edge=gate

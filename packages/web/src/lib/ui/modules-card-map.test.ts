@@ -42,7 +42,7 @@ const EXPECTED_NODE_TYPES = [
   'doom', 'drummergirl', 'drumseqz', 'dx7', 'es9', 'fader', 'feedback', 'filter',
   'featurecv',
   'fourplexer', 'foxy', 'freezeframe', 'frogger', 'gamepad', 'gatemaiden', 'gibribbon', 'graphicEq', 'group',
-  'hypercube', 'illogic', 'inwards', 'joystick', 'kickdrum', 'kria', 'lfo', 'lines', 'livecode', 'loopback',
+  'hypercube', 'illogic', 'inwards', 'joystick', 'karplus', 'kickdrum', 'kria', 'lfo', 'lines', 'livecode', 'loopback',
   'ninelives',
   'luma', 'lumakey', 'lushgarden', 'macrooscillator', 'macseq', 'mandleblot', 'mappy', 'marbles', 'matrixMix', 'meowbox',
   'mandelbulb', 'midiCvBuddy', 'midiOutBuddy', 'midiclock', 'mixer', 'mixmstrs', 'modtris',

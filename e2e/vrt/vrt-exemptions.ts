@@ -1346,4 +1346,17 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // the bespoke real-source-chain e2e/tests/tomtom.spec.ts (SEQUENCER →
   // trigger_in → AUDIOOUT, audible RMS + tom-band-dominant spectrum).
   'linux/tomtom',
+  // KARPLUS (2026-07-11): darwin baseline captured locally (the string-voice
+  // card is deterministic chrome — STRING·EXCITER fader bands + the PLUCK
+  // audition button over the PatchPanel TRIG/V-OCT/ACC/DAMP + 5 CV → OUT
+  // drill-down, NO canvas/animation); linux baseline pending a
+  // `vrt-update.yml` workflow_dispatch on the PR branch (the darwin-first
+  // new-module pattern, same as KICK/SNARE above). Functional coverage: the
+  // pure core packages/dsp/src/lib/karplus-dsp.test.ts (1V/oct < 3 cents
+  // gate, ρ-compensated decay, stability extremes) + karplus.test.ts (def
+  // contract + worklet wrapper) + the ART audio profile
+  // (art/scenarios/karplus/profile.test.ts) + the per-module-per-port sweep +
+  // the bespoke real-source-chain e2e/tests/karplus.spec.ts (SEQUENCER →
+  // trigger_in + pitch → AUDIOOUT, audible RMS + fundamental spectrum).
+  'linux/karplus',
 ]);

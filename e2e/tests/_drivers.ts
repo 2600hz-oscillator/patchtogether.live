@@ -139,6 +139,11 @@ const OVERRIDES: Record<string, ModuleDriver> = {
   // outputs-emit + behavioral dims. audio_out is the one mono output.
   // (Behavioral-sweep observability params live in BEHAVIORAL_PARAMS.)
   tomtom:       { outputPort: 'audio_out', gatePort: 'trigger_in' },
+  // KARPLUS — extended Karplus-Strong string voice; trigger_in (edge:'trigger')
+  // plucks it and the pitch input tracks 1 V/oct. Silent with no strike, so
+  // the sequencer gate train is required for the outputs-emit + behavioral
+  // dims. Mono `out` is the signature output.
+  karplus:      { outputPort: 'out', gatePort: 'trigger_in', pitchPort: 'pitch' },
   // TREE.oh.VOX — TB-303 voice. pitch/gate ride on dedicated audio-rate
   // node ports (pitch_in / gate_in), NOT AudioParams, so the sequencer
   // gate must be wired to gate_in for the amp envelope to open. Without
