@@ -14,6 +14,7 @@
     quantizeToRgb565,
     normalizeHex,
   } from '$lib/graph/control-color';
+  import type { DockZone } from '$lib/ui/dock/dock';
 
   interface Props {
     open: boolean;
@@ -78,6 +79,14 @@
     onsetcontrolcolor?: (hex: string) => void;
     /** Clear the module's control colour → revert to the auto default. */
     onresetcontrolcolor?: () => void;
+    /** DOCKING P2.5a — "Dock to …" entries (allowlisted types, workflow
+     *  racks only; Canvas gates and this just renders). */
+    dockable?: boolean;
+    /** DOCKING P2.5a — the right-clicked node is currently docked (its
+     *  canvas presence is a DockStubCard): show "Undock" instead. */
+    docked?: boolean;
+    ondock?: (zone: DockZone) => void;
+    onundock?: () => void;
     onclose: () => void;
   }
 
@@ -109,8 +118,21 @@
     hasCustomControlColor = false,
     onsetcontrolcolor,
     onresetcontrolcolor,
+    dockable = false,
+    docked = false,
+    ondock,
+    onundock,
     onclose,
   }: Props = $props();
+
+  function pickDock(zone: DockZone) {
+    ondock?.(zone);
+    onclose();
+  }
+  function pickUndock() {
+    onundock?.();
+    onclose();
+  }
 
   // ── Control-colour submenu state ──
   let colorSubmenuOpen = $state(false);
@@ -370,6 +392,28 @@
           </div>
         {/if}
       {/if}
+      {#if docked && onundock}
+        <!-- DOCKING P2.5a: the node's canvas presence is a DockStubCard —
+             undock returns the full card to its dock-time position. NOT
+             undoable (dock state is local; undock is the explicit inverse). -->
+        <button class="ctx-item" onclick={pickUndock} role="menuitem" data-testid="ctx-undock">
+          ⇲ Undock — return to canvas
+        </button>
+        <div class="ctx-sep" role="presentation"></div>
+      {:else if dockable && ondock}
+        <!-- DOCKING P2.5a: workflow racks, allowlisted control modules +
+             scope only (owner Q3). Three zones (owner Q5). -->
+        <button class="ctx-item" onclick={() => pickDock('top')} role="menuitem" data-testid="ctx-dock-top">
+          ⇱ Dock to top rail
+        </button>
+        <button class="ctx-item" onclick={() => pickDock('left')} role="menuitem" data-testid="ctx-dock-left">
+          ⇱ Dock to left rail
+        </button>
+        <button class="ctx-item" onclick={() => pickDock('bottom')} role="menuitem" data-testid="ctx-dock-bottom">
+          ⇱ Dock to bottom drawer
+        </button>
+        <div class="ctx-sep" role="presentation"></div>
+      {/if}
       <button class="ctx-item" onclick={pickDuplicate} role="menuitem">
         Duplicate
       </button>
@@ -384,7 +428,9 @@
       {/if}
       <!-- Virtual-rack Phase 2: "screw down" the module to its rack slot
            (snap to the 180px grid + pin non-draggable), or release it. -->
-      {#if onlock || onunlock}
+      {#if (onlock || onunlock) && !docked}
+        <!-- Lock (screw-down) is a canvas-position op — meaningless while
+             the node's canvas presence is a dock stub, so hidden then. -->
         <button
           class="ctx-item"
           onclick={pickLock}

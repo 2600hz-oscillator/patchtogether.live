@@ -51,25 +51,28 @@ describe('storeSnapshot — never crashes the relay on a persist failure', () =>
     const authTimeout = Object.assign(new Error('Authentication timed out'), { code: '08P01' });
     queryMock.mockRejectedValueOnce(authTimeout);
     // The pre-fix code re-threw here → unhandled rejection → relay crash.
-    await expect(storeSnapshot('r_x', new Uint8Array([1, 2, 3]))).resolves.toBeUndefined();
+    // Since the journal slice, the swallow also reports NOT-durable (false)
+    // so the caller must not compact the update journal on this round.
+    await expect(storeSnapshot('r_x', new Uint8Array([1, 2, 3]))).resolves.toBe(false);
   });
 
   it('still no-ops on a FK violation (23503 — ephemeral test rack)', async () => {
     const { storeSnapshot } = await import('./db.js');
     queryMock.mockRejectedValueOnce(Object.assign(new Error('fk'), { code: '23503' }));
-    await expect(storeSnapshot('r_missing', new Uint8Array([1]))).resolves.toBeUndefined();
+    // FK-less racks journal nothing either → nothing to lose → durable=true.
+    await expect(storeSnapshot('r_missing', new Uint8Array([1]))).resolves.toBe(true);
   });
 
   it('SWALLOWS a generic connection error (no code) too', async () => {
     const { storeSnapshot } = await import('./db.js');
     queryMock.mockRejectedValueOnce(new Error('connection terminated unexpectedly'));
-    await expect(storeSnapshot('r_y', new Uint8Array([9]))).resolves.toBeUndefined();
+    await expect(storeSnapshot('r_y', new Uint8Array([9]))).resolves.toBe(false);
   });
 
   it('a healthy write resolves normally', async () => {
     const { storeSnapshot } = await import('./db.js');
     queryMock.mockResolvedValueOnce({ rowCount: 1 });
-    await expect(storeSnapshot('r_ok', new Uint8Array([1]))).resolves.toBeUndefined();
+    await expect(storeSnapshot('r_ok', new Uint8Array([1]))).resolves.toBe(true);
     expect(queryMock).toHaveBeenCalledTimes(1);
   });
 

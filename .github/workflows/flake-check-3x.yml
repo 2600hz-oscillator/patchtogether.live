@@ -271,7 +271,7 @@ jobs:
 
       - name: Apply DB schema
         if: inputs.suite != 'unit'
-        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
+        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql -f db/schema/005_rackspace_mode.sql
 
       - name: Emit registry manifest for E2E
         if: inputs.suite != 'unit'

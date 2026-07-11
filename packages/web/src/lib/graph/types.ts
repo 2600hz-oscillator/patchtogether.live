@@ -401,6 +401,18 @@ export interface ModuleNode {
    *     it onto their own data). Set via `setControlColor` (mutate.ts); resolved
    *     — with an auto per-instance default when unset — by `resolveControlColor`
    *     (control-color.ts).
+   *   - `pinned?: boolean` — workflow-mode always-on singleton (the M/E/C
+   *     bottom-drawer trio, graph/workflow-pins.ts). Pinned nodes render only
+   *     in their dock drawer (never as canvas cards), are refused by the
+   *     delete path (`removePatchNode`, mutate.ts) and skipped by Clear, and
+   *     are excluded from `maxInstances` counting (cap.ts) + the singleton
+   *     cleanup pass. Never set in dawless racks.
+   *   - `hiddenCard?: boolean` — workflow-mode HEADLESS instance
+   *     (graph/hidden-card.ts; the P4 camera manager's mapped cameras).
+   *     Presentation-only: renders no canvas card (its face is a topbar
+   *     menu) but is otherwise an ordinary node — user-deletable via the
+   *     standard remove path and COUNTED toward `maxInstances`. Never set
+   *     in dawless racks.
    */
   data?: Record<string, unknown>;
 }

@@ -129,7 +129,11 @@ const FROM_TEST_ROOT = resolve(__dirname, '../../../../..');
 // glob and genuinely belongs in the serialized lane (relies on real continuous
 // rendering; reads a canvas). No edit to e2e/webgl-heavy-globs.ts, so the SET
 // grew without moving the hash basis. 50 → 51.
-const EXPECTED_HEAVY_SPEC_COUNT = 51;
+// TOYBOX CONTROL-SURFACE (2026-07-11, #1056): +toybox-control-surface.spec.ts
+// (the two toybox-booting surface tests split out of control-surface.spec.ts —
+// the LEARNED-layer 60s-timeout shard-contention class). Matches the existing
+// `**/toybox-*.spec.ts` glob; no globs-file edit, hash basis unmoved. 51 → 52.
+const EXPECTED_HEAVY_SPEC_COUNT = 52;
 
 describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
   const basis = resolveWebglBasis();

@@ -171,3 +171,66 @@ describe('connectDragState carry-mode (redesigned jack-click flow)', () => {
     expect(connectDragState.cableHidden).toBe(false);
   });
 });
+
+describe('connectDragState virtual-port pickup (workflow P3 primitive)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('document', {
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      elementFromPoint: () => null,
+    });
+  });
+
+  afterEach(() => {
+    connectDragState.cancelPickup();
+    connectDragState.end();
+    vi.unstubAllGlobals();
+  });
+
+  const virtual = () => ({
+    anchor: { x: 40, y: 12 },
+    cableType: 'video',
+    resolve: async () => ({ nodeId: 'asset-node', portId: 'video' }),
+  });
+
+  it('beginVirtualPickup enters pickup mode with a sentinel source carrying the cable type', () => {
+    connectDragState.beginVirtualPickup(virtual());
+    expect(connectDragState.mode).toBe('pickup');
+    expect(connectDragState.active).toBe(true);
+    expect(connectDragState.pickupVirtual?.anchor).toEqual({ x: 40, y: 12 });
+    // Sentinel source: matches no node, but colours the ghost + engages
+    // the existing pickup readers (drag-lock, expand-all) unmodified.
+    expect(connectDragState.pickupSource).toEqual({
+      nodeId: '',
+      portId: '',
+      handleType: 'source',
+      cableType: 'video',
+    });
+    expect(connectDragState.pickupMenuOpen).toBe(false);
+  });
+
+  it('cancelPickup / discard clear the virtual descriptor with the rest', () => {
+    connectDragState.beginVirtualPickup(virtual());
+    connectDragState.discard();
+    expect(connectDragState.mode).toBe('idle');
+    expect(connectDragState.pickupVirtual).toBeNull();
+    expect(connectDragState.pickupSource).toBeNull();
+  });
+
+  it('starting a REAL pickup clears any stale virtual descriptor', () => {
+    connectDragState.beginVirtualPickup(virtual());
+    connectDragState.pickup({ nodeId: 'src', portId: 'out', handleType: 'source' });
+    expect(connectDragState.pickupVirtual).toBeNull();
+    expect(connectDragState.pickupSource?.nodeId).toBe('src');
+    connectDragState.cancelPickup();
+    connectDragState.beginVirtualPickup(virtual());
+    connectDragState.beginPickupWithMenu({ nodeId: 's2', portId: 'out', handleType: 'source' });
+    expect(connectDragState.pickupVirtual).toBeNull();
+  });
+
+  it('updatePickupCursor drives the ghost endpoint for virtual pickups too', () => {
+    connectDragState.beginVirtualPickup(virtual());
+    connectDragState.updatePickupCursor(300, 400);
+    expect(connectDragState.pickupCursor).toEqual({ x: 300, y: 400 });
+  });
+});

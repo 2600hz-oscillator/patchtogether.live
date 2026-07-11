@@ -21,15 +21,34 @@
 // per-rackspace budget, NOT the flat type count, so they are deliberately
 // NOT folded in here.
 //
-// PURE + framework-free: no Svelte, no Yjs, no `$lib` imports. Typed against
-// minimal structural shapes so it accepts a live SyncedStore `patch.nodes`
-// record, a plain `{ id: node }` map, or any record of node-likes — and ports
-// verbatim to the native core.
+// PURE + framework-free: no Svelte, no Yjs, no `$lib` imports (the one
+// relative import below is the equally-pure workflow-pins spec table).
+// Typed against minimal structural shapes so it accepts a live SyncedStore
+// `patch.nodes` record, a plain `{ id: node }` map, or any record of
+// node-likes — and ports verbatim to the native core.
 
-/** Minimal shape this module needs from a patch node: just its module type. */
+import { WORKFLOW_PINNED_SURFACES } from './workflow-pins';
+
+/** Minimal shape this module needs from a patch node: its module type +
+ *  (optionally) the cross-cutting `data.pinned` flag (workflow-mode pinned
+ *  singletons — see graph/workflow-pins.ts). */
 export interface TypedNode {
   type: string;
+  data?: { pinned?: unknown } | null;
 }
+
+/** Types whose PINNED instance DOES consume the `maxInstances` budget.
+ *
+ * These are the presence-by-TYPE workflow surface pins (today: TIMELORDE).
+ * For a rack singleton, the always-on pinned instance IS the rack's one
+ * instance — letting a canvas copy spawn beside it would give the rack two
+ * competing system clocks. Multi-instance pins (audioIn / audioOut /
+ * midiclock) and the drawer trio keep the P1 rule: pinned instances live
+ * OUTSIDE the cap economy ("additional instances spawn as normal canvas
+ * cards"). */
+const PINNED_COUNTS_TOWARD_CAP: ReadonlySet<string> = new Set(
+  WORKFLOW_PINNED_SURFACES.filter((s) => s.presence === 'type').map((s) => s.type),
+);
 
 /** Minimal shape this module needs from a module def: its type + (optional)
  *  instance cap. `maxInstances` undefined ⇒ no cap. */
@@ -50,14 +69,31 @@ export interface CapDef {
  * Counts by `type` value alone, so a custom / non-prefixed node id (e.g. a
  * saved-group child whose id doesn't start with its type) is still counted
  * correctly.
+ *
+ * PINNED nodes (`data.pinned === true` — the workflow-mode always-on
+ * drawer singletons, graph/workflow-pins.ts) are EXCLUDED: they live
+ * outside the canvas economy (drawer-only, undeletable, auto-spawned), so
+ * they must not consume a type's `maxInstances` budget — "additional
+ * instances spawn as normal canvas cards" (e.g. the pinned ELECTRA CONTROL
+ * plus the one user-spawnable canvas instance its `maxInstances: 1`
+ * allows). Dawless racks never contain pinned nodes, so this is inert
+ * there.
+ *
+ * EXCEPTION (P2): presence-by-TYPE surface pins (PINNED_COUNTS_TOWARD_CAP
+ * — today just TIMELORDE) DO count. The pinned TIMELORDE is the rack's one
+ * system clock; excluding it would let the palette spawn a second,
+ * competing clock beside the hidden one.
  */
 export function instanceCount(
   nodes: Record<string, TypedNode | null | undefined>,
   type: string,
 ): number {
+  const pinnedCounts = PINNED_COUNTS_TOWARD_CAP.has(type);
   let n = 0;
   for (const node of Object.values(nodes)) {
-    if (node && node.type === type) n++;
+    if (!node || node.type !== type) continue;
+    if (node.data?.pinned === true && !pinnedCounts) continue;
+    n++;
   }
   return n;
 }

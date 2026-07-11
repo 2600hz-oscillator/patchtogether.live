@@ -194,6 +194,12 @@ export function planSingletonCleanup(
   const byType = new Map<string, { ids: string[]; def: CleanupDef }>();
   for (const [id, node] of Object.entries(nodes)) {
     if (!node || !node.type) continue;
+    // PINNED nodes (data.pinned === true — workflow drawer singletons, see
+    // graph/workflow-pins.ts) are outside the canvas cap economy: excluded
+    // from `instanceCount` (cap.ts) and never planned for deletion here.
+    // Their deterministic ids can't duplicate (Y.Map key convergence), and
+    // deleting one would break the workflow rack's always-on invariant.
+    if (node.data?.pinned === true) continue;
     const def = defForType(node.type) ?? undefined;
     if (!isTypeLevelCapped(def)) continue;
     // `node.id` is the authoritative id; fall back to the map key (they match

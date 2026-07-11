@@ -475,9 +475,15 @@
 
   function cardRectOf(el: HTMLElement): Rect {
     // Edge-align against the whole CARD, not just the host wrapper (the host
-    // is display:contents). Walk up to the svelte-flow node element.
+    // is display:contents). Walk up to the svelte-flow node element — or, in
+    // a DOCK RAIL (P2.5a: the card renders OUTSIDE the SvelteFlow provider,
+    // hosted by DockCardHost), to the rail frame. Without the frame fallback
+    // the `?? el` branch measures the display:contents host → a 0×0 rect →
+    // the menu opens at the viewport origin. Inside the canvas no
+    // [data-dock-card-frame] ancestor exists, so the resolved element is
+    // identical to the pre-dock behavior.
     const card =
-      (el.closest('.svelte-flow__node') as HTMLElement | null) ?? el;
+      (el.closest('.svelte-flow__node, [data-dock-card-frame]') as HTMLElement | null) ?? el;
     const r = card.getBoundingClientRect();
     return {
       left: r.left,
@@ -571,8 +577,32 @@
   // PatchPanel site, on every card, was the remaining source). Reading the
   // method off the stable store inside OUR cancellable rAF — and guarding the
   // call — keeps it on the live component's lifecycle.
-  const flowStore = useStore();
+  // DOCK GATE (P2.5a): PatchPanel is mounted by every module card, and a
+  // DOCKED card renders in a screen-fixed rail OUTSIDE the SvelteFlow
+  // provider (DockCardHost). `useStore()` THROWS there ("wrap your
+  // component in a <SvelteFlowProvider />"), so the capture is guarded:
+  // outside the provider `flowStore` is null and the two provider-coupled
+  // features self-disable —
+  //   * the <Handle> stack below does not mount (Handle also needs the
+  //     provider; the docked node's cables anchor on its canvas
+  //     DockStubCard, which mounts the real handle stack with the SAME
+  //     node id — exactly ONE `.svelte-flow__node[data-id]`/handle set per
+  //     node exists in the DOM, so PickupCable + the per-port sweep
+  //     contracts are unambiguous);
+  //   * the re-measure $effect below is a no-op (nothing to re-measure —
+  //     the stub's handles never move).
+  // INSIDE the provider (every canvas card, dawless and workflow alike)
+  // the try succeeds and behavior is byte-identical to before this gate.
+  function captureFlowStore(): ReturnType<typeof useStore> | null {
+    try {
+      return useStore();
+    } catch {
+      return null; // outside the provider (dock rail) — self-disable
+    }
+  }
+  const flowStore = captureFlowStore();
   $effect(() => {
+    if (!flowStore) return; // dock rail: no flow to re-measure
     void open;
     const id = nodeId;
     let f1 = 0;
@@ -707,24 +737,29 @@
     AND the per-module-per-port handle-presence target. It NEVER moves out of
     the card and is independent of the portaled chrome.
   -->
-  <div class="handle-stack" aria-hidden="true">
-    {#each allInputs as port (port.id)}
-      <Handle
-        type="target"
-        position={Position.Left}
-        id={port.id}
-        style={`--handle-color: ${cableColorVar(port.cable)};`}
-      />
-    {/each}
-    {#each allOutputs as port (port.id)}
-      <Handle
-        type="source"
-        position={Position.Right}
-        id={port.id}
-        style={`--handle-color: ${cableColorVar(port.cable)};`}
-      />
-    {/each}
-  </div>
+  <!-- DOCK GATE: <Handle> needs the SvelteFlow provider; in a dock rail
+       (flowStore === null) the stack is skipped — the canvas DockStubCard
+       carries the node's ONLY handle set (same ids). -->
+  {#if flowStore}
+    <div class="handle-stack" aria-hidden="true">
+      {#each allInputs as port (port.id)}
+        <Handle
+          type="target"
+          position={Position.Left}
+          id={port.id}
+          style={`--handle-color: ${cableColorVar(port.cable)};`}
+        />
+      {/each}
+      {#each allOutputs as port (port.id)}
+        <Handle
+          type="source"
+          position={Position.Right}
+          id={port.id}
+          style={`--handle-color: ${cableColorVar(port.cable)};`}
+        />
+      {/each}
+    </div>
+  {/if}
 
   {@render children?.()}
 

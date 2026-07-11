@@ -62,6 +62,7 @@ describe('isBetaGatePublic', () => {
 
   it('does NOT exempt other auth-touched paths', () => {
     expect(isBetaGatePublic('/rack')).toBe(false);
+    expect(isBetaGatePublic('/media')).toBe(false); // media loader — gated like /rack
     expect(isBetaGatePublic('/dashboard')).toBe(false);
     expect(isBetaGatePublic('/sign-in')).toBe(false);
     expect(isBetaGatePublic('/r/abc123')).toBe(false);

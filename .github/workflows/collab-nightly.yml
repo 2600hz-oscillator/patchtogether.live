@@ -114,7 +114,7 @@ jobs:
         run: flox activate -- task setup
 
       - name: Apply DB schema
-        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
+        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql -f db/schema/005_rackspace_mode.sql
 
       # --- Build artifacts inline (this workflow is off the ci.yml job graph) ---
 
