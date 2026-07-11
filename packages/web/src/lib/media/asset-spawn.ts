@@ -62,7 +62,7 @@ import {
   putVideoFileBlob,
   getVideoFileHandle,
 } from '$lib/video/video-file-store';
-import { isPinnedNode } from '$lib/graph/workflow-pins';
+import { isCanvasHiddenNode } from '$lib/graph/hidden-card';
 import type { MediaItem } from './library.svelte';
 import { mediaLibrary } from './library.svelte';
 import { assetLinks } from './asset-links.svelte';
@@ -127,7 +127,7 @@ export function computeRailPosition(): { x: number; y: number } {
   const rail: RailBox[] = [];
   for (const node of Object.values(patch.nodes) as (ModuleNode | undefined)[]) {
     if (!node) continue;
-    if (isPinnedNode(node)) continue; // drawer/topbar pins render no card
+    if (isCanvasHiddenNode(node)) continue; // pins + hiddenCard cameras render no card
     if (node.type === 'cadillac') continue; // transient drive-through car
     (readMediaDescriptor(node) ? rail : others).push(nodeBox(node));
   }
