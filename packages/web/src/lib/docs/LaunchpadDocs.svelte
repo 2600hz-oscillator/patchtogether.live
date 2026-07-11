@@ -274,13 +274,15 @@
 
   const PAD_MAP: { what: string; addr: string }[] = [
     { what: '8×8 pads (programmer mode)', addr: 'note = row*10 + col · 11 = bottom-left · 88 = top-right' },
-    { what: 'KEYS entry (pair)', addr: 'hold note-REC / note-OVERDUB (deck row 1, cols 0/1) + DOUBLE-TAP a clip on L → KEYS view (REC = overdub off · OVERDUB = overdub on)' },
-    { what: 'KEYS layout (both units)', addr: 'top row = 16-cell playhead · middle 6 rows = isomorphic keyboard (chromatic fourths, continuous L|R) · bottom row (unit L) = EXIT · QUEUE-REC · OVERDUB · LEN' },
+    { what: 'KEYS entry (pair + single)', addr: 'hold note-REC / note-OVERDUB (deck row 1, cols 0/1) + DOUBLE-TAP a clip on the matrix → KEYS view (REC = overdub off · OVERDUB = overdub on). Single: hold in CONTROL view, CC 98 to CLIP (the hold survives), then double-tap' },
+    { what: 'KEYS layout (pair)', addr: 'top row = 16-cell playhead · middle 6 rows = isomorphic keyboard (chromatic fourths, continuous L|R) · bottom row (unit L) = EXIT · QUEUE-REC · OVERDUB · LEN' },
+    { what: 'KEYS layout (single)', addr: 'the L half on one device: top row = 8-cell whole-clip playhead · 6 keyboard rows (cols 0–7) · bottom row = EXIT · QUEUE-REC · OVERDUB · LEN. CC 98 inactive while KEYS is open' },
+    { what: 'single-unit FOLLOW (editor)', addr: 'scene column, 4th pad from the top (under EXIT · DBL · LEN) — green = following, violet = frozen (CC 98 is the view flip, so FOLLOW moves off the top row; single mode only)' },
     { what: 'top row ▲ ▼ ◀ ▶ ▣(SHIFT)', addr: 'CC 91 · 92 · 93 · 94 · 95 — editor nav (▲▼◀▶) + SHIFT(95)' },
     { what: 'top row arranger (session) / globals', addr: 'CC 91 = REC · 92 = SONG · 96 = transport · 97 = stop-all' },
     { what: 'single-unit ARM ROW (clip view)', addr: 'CC 91 = NEW · 92 = COPY (dbl-tap = clear) · 93 = PASTE · 94 = PASTE-REV · 95 = NOW (sticky) · 96 = LENGTH · 97 = DOUBLE — arm, then tap a clip (single mode only)' },
     { what: 'single-unit double-tap (clip view)', addr: 'double-tap a clip pad (~¼s) → open its note editor + flip to CONTROL, without changing whether the clip plays (single mode only; single tap still launches immediately)' },
-    { what: 'single-unit VIEW toggle', addr: 'CC 98 (rightmost top-row button) — flips CLIP ⇄ CONTROL (single mode only; pair mode = editor FOLLOW)' },
+    { what: 'single-unit VIEW toggle', addr: 'CC 98 (rightmost top-row button) — flips CLIP ⇄ CONTROL (single mode only; pair mode = editor FOLLOW). Inactive while KEYS or its length page owns the device' },
     { what: 'right scene column (top→bottom)', addr: 'CC 89 · 79 · 69 · 59 · 49 · 39 · 29 · 19' },
     { what: 'per-LED full RGB', addr: 'F0 00 20 29 02 0D 03  03 <pad> <R> <G> <B>  F7   (0–127)' },
   ];
@@ -305,7 +307,11 @@
   deck / editor, so you never lose sight of the matrix. With a <strong>single</strong> unit, that one
   device does <em>both jobs</em> — you <strong>flip its view</strong> between <strong>CLIP</strong> (the L
   role: the 8×8 matrix) and <strong>CONTROL</strong> (the R role: the deck, note editor + length page).
-  Everything the pair's RIGHT unit can do, single-mode's CONTROL view does — same handlers, same colours.
+  Everything the pair can do is reachable on one device — same handlers, same colours — with exactly
+  two single-mode adaptations: the editor's <strong>FOLLOW</strong> moves to a scene-column pad
+  (4th from the top, since <strong>CC 98</strong> is the view flip), and <strong>KEYS</strong> runs on
+  the one device as the 8-wide left half of the keyboard (its playhead strip compresses to 8 cells so
+  the moving dot never leaves the surface).
 </p>
 
 <h2>Quick start — pair (two units)</h2>
@@ -344,7 +350,9 @@
   pad to apply it</strong> — the matrix never disappears. While an action is armed the matrix shows an
   <em>aiming wash</em> (legal targets brighten, empty pads show a faint dot) so you can see where the
   action will land. An arm <strong>auto-disarms</strong> after ~4 seconds, and re-tapping the armed
-  cell cancels it. <strong>CC 98 (rightmost) stays the view-flip.</strong>
+  cell cancels it. <strong>CC 98 (rightmost) stays the view-flip</strong> — and note that flipping views
+  <strong>cancels a pending arm and switches NOW off</strong> (the strip is a clip-view tool; re-arm
+  after you flip back).
 </p>
 <ul>
   <li><strong>CC 91 — NEW:</strong> arm, then tap an <em>empty</em> pad → it gets a fresh clip and the
@@ -478,8 +486,11 @@
 />
 <ul class="tight">
   <li><strong>▲ ▼</strong> scroll pitch ±1 row; <strong>◀ ▶</strong> scroll the step window ±1. <strong>Hold SHIFT</strong> (▣, CC 95) → jump a full screen (±8).</li>
-  <li><strong>VEL</strong> (hold + tap a note to cycle its velocity), <strong>SCALE</strong> (cycle the clip scale), <strong>FOLLOW</strong> (auto-scroll with the playhead — green = on).</li>
+  <li><strong>VEL</strong> (hold + tap a note to cycle its velocity), <strong>SCALE</strong> (cycle the clip scale), <strong>FOLLOW</strong> (auto-scroll with the playhead — green = on; a manual ◀/▶ scroll freezes it).</li>
   <li>Right column: <strong>EXIT</strong> (top), <strong>DBL</strong>, <strong>LEN</strong>.</li>
+  <li><strong>Single mode:</strong> CC 98 is the view flip, so <strong>FOLLOW joins the right column</strong>
+    as the 4th pad from the top (under LEN) — green while following, violet while frozen. Tap it to
+    resume following after a manual scroll; everything else on this page is identical.</li>
 </ul>
 
 <h2>Unit R — the length page</h2>
@@ -490,21 +501,26 @@
   caption="Open with LEN on the deck · bottom row = end BLOCK (1–8); the next two rows = end STEP (1–8, then 9–16). The bright pad is the current end — tap a pad to set the clip length (non-destructive). EXIT top-right."
 />
 
-<h2>KEYS — play + record notes (both units, pair)</h2>
+<h2>KEYS — play + record notes (pair: both units · single: one)</h2>
 <p class="muted">
-  <strong>KEYS</strong> turns the <strong>pair</strong> into a playable <strong>isomorphic keyboard</strong>
+  <strong>KEYS</strong> turns the surface into a playable <strong>isomorphic keyboard</strong>
   (LinnStrument-style) routed live to a clip's track, <em>and</em> a <strong>loop recorder</strong> — with a
-  clip playhead across the top. Both units flip to KEYS together (the matrix is hidden until you EXIT), and the
-  keyboard is <strong>continuous across the L|R seam</strong> so a chord shape crossing the two units is the
-  same shape. (KEYS is a <strong>two-unit</strong> feature today; a single-unit port is a follow-up.)
+  clip playhead across the top. With a <strong>pair</strong>, both units flip to KEYS together (the matrix is
+  hidden until you EXIT), and the keyboard is <strong>continuous across the L|R seam</strong> so a chord shape
+  crossing the two units is the same shape. With a <strong>single</strong> unit, the one device becomes the
+  keyboard's <strong>left half</strong> (8 columns × 6 rows) with the same bottom-row controls, and the
+  playhead strip compresses to <strong>8 cells spanning the whole clip</strong> — while KEYS is open the
+  device belongs to it entirely (<strong>CC 98 is inactive</strong>; EXIT is the way out).
 </p>
 <h3>Getting in — a two-step safety gesture</h3>
 <ol class="steps">
-  <li><strong>Hold</strong> the <strong>note-REC</strong> or <strong>note-OVERDUB</strong> button on the RIGHT
+  <li><strong>Hold</strong> the <strong>note-REC</strong> or <strong>note-OVERDUB</strong> button on the
     deck (<em>row 1</em>, the two pads just above EDIT/COPY — <span style="color:{hex(RGB_KEYS_REC_HOLD)}">dim red</span>
-    /<span style="color:{hex(RGB_KEYS_OD_HOLD)}">dim purple</span>). While held, taps on the LEFT matrix
-    <strong>don't launch</strong>.</li>
-  <li><strong>Double-tap</strong> a clip on the LEFT (two quick taps of the same pad) → both units flip to
+    /<span style="color:{hex(RGB_KEYS_OD_HOLD)}">dim purple</span>). While held, taps on the clip matrix
+    <strong>don't launch</strong>. <em>Single unit:</em> hold it in <strong>CONTROL</strong> view, then flip
+    to <strong>CLIP</strong> view with <strong>CC 98</strong> — the hold survives the flip (the same
+    two-handed family as the hold-EDIT gesture); letting go before the double-tap simply cancels.</li>
+  <li><strong>Double-tap</strong> a clip on the matrix (two quick taps of the same pad) → the surface flips to
     <strong>KEYS</strong> for that clip. Entering via <strong>note-REC</strong> presets <strong>overdub OFF</strong>
     (true replace); via <strong>note-OVERDUB</strong> presets <strong>overdub ON</strong> (additive). An empty pad
     makes a fresh clip. The clip starts <strong>playing</strong> and the keyboard is <strong>live</strong> — but

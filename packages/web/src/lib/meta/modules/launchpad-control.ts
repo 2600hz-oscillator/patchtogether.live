@@ -12,10 +12,13 @@
 // $lib/control/launchpad/launchpad-control.svelte.ts for the behaviour and the
 // proposal at .myrobots/plans/clip-launcher-launchpad/.
 //
-// The "Pair" button runs the press-a-pad L/R handshake; the binding (which
-// ports are L vs R, which clip-player) is per-machine localStorage, never
-// synced. LED frames are local render state, never written to the Y.Doc. The
-// card is pair-oriented: it shows a PROMINENT error if it can't find BOTH units.
+// The "Pair" button runs the press-a-pad L/R handshake; "Connect single
+// Launchpad" binds ONE device whose role flips between the CLIP (matrix) and
+// CONTROL (deck/editor) views — single mode is a first-class deployment with
+// the full feature set (arm row, double-tap edit, FOLLOW on the editor's scene
+// column, KEYS on one device). The binding (which ports are L vs R, which
+// clip-player) is per-machine localStorage, never synced. LED frames are local
+// render state, never written to the Y.Doc.
 //
 // NOTE: this single module consolidates the former LEFT + RIGHT cards. The type
 // string is KEPT as `launchpadControlLeft` so saved LEFT nodes keep loading
