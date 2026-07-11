@@ -140,3 +140,136 @@ describe('seedRackspaceForTest', () => {
     ).rejects.toThrow(/no row/);
   });
 });
+
+// ---------------- WORKFLOW MODE P1: the racks.mode column ----------------
+
+const { createRackspace, getRackspace } = await import('./rackspaces');
+
+describe('createRackspace — mode plumbing', () => {
+  beforeEach(() => {
+    sqlTagMock.mockReset();
+  });
+
+  function mockCreateRow(mode: string | null) {
+    sqlTagMock.mockResolvedValueOnce([
+      {
+        owned_n: 0,
+        id: 'r_modetest1',
+        owner_user_id: 'user_a',
+        name: 'My rack',
+        created_at: '2026-07-10T08:00:00Z',
+        mode,
+      },
+    ]);
+  }
+
+  it('binds the requested mode into the INSERT and returns it', async () => {
+    mockCreateRow('workflow');
+    const result = await createRackspace('user_a', 'My rack', 'workflow');
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+    expect(result.rackspace.mode).toBe('workflow');
+    // The tagged-template call carries 'workflow' as a bound parameter.
+    const boundValues = sqlTagMock.mock.calls[0].slice(1);
+    expect(boundValues).toContain('workflow');
+    expect(boundValues).toContain('user_a');
+  });
+
+  it('defaults to dawless when the caller omits mode', async () => {
+    mockCreateRow('dawless');
+    const result = await createRackspace('user_a', 'My rack');
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+    expect(result.rackspace.mode).toBe('dawless');
+    const boundValues = sqlTagMock.mock.calls[0].slice(1);
+    expect(boundValues).toContain('dawless');
+    expect(boundValues).not.toContain('workflow');
+  });
+
+  it('cap-reached path is unchanged by mode', async () => {
+    sqlTagMock.mockResolvedValueOnce([
+      { owned_n: 4, id: null, owner_user_id: null, name: null, created_at: null, mode: null },
+    ]);
+    const result = await createRackspace('user_a', 'One too many', 'workflow');
+    expect(result).toEqual({ status: 'cap-reached', ownedCount: 4 });
+  });
+});
+
+describe('getRackspace — old rows without mode read as dawless', () => {
+  beforeEach(() => {
+    sqlTagMock.mockReset();
+  });
+
+  function mockGetRow(mode: string | null | undefined) {
+    sqlTagMock.mockResolvedValueOnce([
+      {
+        id: 'r_oldrow',
+        owner_user_id: 'user_b',
+        name: 'Pre-migration rack',
+        created_at: '2026-01-01T00:00:00Z',
+        member_user_ids: ['user_b'],
+        ...(mode === undefined ? {} : { mode }),
+      },
+    ]);
+  }
+
+  it('a NULL / absent mode column value normalizes to dawless', async () => {
+    mockGetRow(null);
+    expect((await getRackspace('r_oldrow'))?.mode).toBe('dawless');
+    mockGetRow(undefined);
+    expect((await getRackspace('r_oldrow'))?.mode).toBe('dawless');
+  });
+
+  it('a stored workflow mode round-trips', async () => {
+    mockGetRow('workflow');
+    expect((await getRackspace('r_oldrow'))?.mode).toBe('workflow');
+  });
+
+  it('garbage in the column normalizes to dawless (defensive)', async () => {
+    mockGetRow('yolo');
+    expect((await getRackspace('r_oldrow'))?.mode).toBe('dawless');
+  });
+});
+
+describe('seedRackspaceForTest — mode plumbing', () => {
+  beforeEach(() => {
+    sqlTagMock.mockReset();
+  });
+
+  it('binds the requested mode and returns it', async () => {
+    sqlTagMock.mockResolvedValueOnce([
+      {
+        id: 'r_seedwf',
+        owner_user_id: 'test_seed_wf',
+        name: 'Workflow seed',
+        created_at: '2026-07-10T08:00:00Z',
+        mode: 'workflow',
+      },
+    ]);
+    const result = await seedRackspaceForTest({
+      ownerUserId: 'test_seed_wf',
+      name: 'Workflow seed',
+      mode: 'workflow',
+    });
+    expect(result.mode).toBe('workflow');
+    expect(sqlTagMock.mock.calls[0].slice(1)).toContain('workflow');
+  });
+
+  it('defaults to dawless when mode is omitted', async () => {
+    sqlTagMock.mockResolvedValueOnce([
+      {
+        id: 'r_seeddl',
+        owner_user_id: 'test_seed_dl',
+        name: 'Default seed',
+        created_at: '2026-07-10T08:00:00Z',
+        mode: 'dawless',
+      },
+    ]);
+    const result = await seedRackspaceForTest({
+      ownerUserId: 'test_seed_dl',
+      name: 'Default seed',
+    });
+    expect(result.mode).toBe('dawless');
+    expect(sqlTagMock.mock.calls[0].slice(1)).toContain('dawless');
+  });
+});

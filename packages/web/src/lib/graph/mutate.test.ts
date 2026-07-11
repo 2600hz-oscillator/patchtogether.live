@@ -17,7 +17,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { patch, ydoc, undoManager, LOCAL_ORIGIN } from './store';
-import { mutateNode, setNodeParam, setControlColor, setNodeLocked } from './mutate';
+import { mutateNode, setNodeParam, setControlColor, setNodeLocked, removePatchNode } from './mutate';
 import type { ModuleNode } from './types';
 
 const NID = 'mutate-test-node';
@@ -212,5 +212,130 @@ describe('missing nodeId — safe no-op', () => {
     expect(called).toBe(false);
     expect(patch.nodes['does-not-exist']).toBeUndefined();
     expect(undoManager.undoStack.length).toBe(0);
+  });
+});
+
+// ---------------- removePatchNode — the pinned-guarded delete (workflow P1) ----------------
+//
+// Real-Y.Doc coverage for the shared delete primitive: normal nodes delete
+// (with their edges, in one undoable transaction); PINNED nodes
+// (data.pinned === true — workflow drawer singletons) are REFUSED.
+
+describe('removePatchNode — deletes a normal node + its edges', () => {
+  function makeWiredPair(): void {
+    ydoc.transact(() => {
+      patch.nodes[NID] = {
+        id: NID,
+        type: 'analogVco',
+        domain: 'audio',
+        position: { x: 0, y: 0 },
+        params: {},
+        data: {},
+      } as ModuleNode;
+      patch.nodes['other'] = {
+        id: 'other',
+        type: 'audioOut',
+        domain: 'audio',
+        position: { x: 100, y: 0 },
+        params: {},
+        data: {},
+      } as ModuleNode;
+      patch.edges['e1'] = {
+        id: 'e1',
+        source: { nodeId: NID, portId: 'out' },
+        target: { nodeId: 'other', portId: 'in' },
+        sourceType: 'audio',
+        targetType: 'audio',
+      };
+      patch.edges['e2'] = {
+        id: 'e2',
+        source: { nodeId: 'other', portId: 'thru' },
+        target: { nodeId: NID, portId: 'fm' },
+        sourceType: 'audio',
+        targetType: 'audio',
+      };
+    }, LOCAL_ORIGIN);
+    undoManager.clear();
+    undoManager.stopCapturing();
+  }
+
+  it('removes the node and BOTH touching edges in one undoable entry', () => {
+    makeWiredPair();
+    expect(removePatchNode(NID)).toBe(true);
+    expect(patch.nodes[NID]).toBeUndefined();
+    expect(patch.edges['e1']).toBeUndefined();
+    expect(patch.edges['e2']).toBeUndefined();
+    expect(patch.nodes['other']).toBeDefined(); // neighbor untouched
+    // One transaction → one undo entry; undo restores node + edges together.
+    expect(undoManager.undoStack.length).toBe(1);
+    undoManager.undo();
+    expect(patch.nodes[NID]).toBeDefined();
+    expect(patch.edges['e1']).toBeDefined();
+    expect(patch.edges['e2']).toBeDefined();
+  });
+
+  it('non-tracked origin → deleted but deliberately not undoable', () => {
+    makeWiredPair();
+    expect(removePatchNode(NID, { origin: 'reconciler-sweep' })).toBe(true);
+    expect(patch.nodes[NID]).toBeUndefined();
+    expect(undoManager.undoStack.length).toBe(0);
+  });
+
+  it('absent node → false, no-op, no undo entry', () => {
+    expect(removePatchNode('does-not-exist')).toBe(false);
+    expect(undoManager.undoStack.length).toBe(0);
+  });
+});
+
+describe('removePatchNode — REFUSES pinned nodes (workflow drawer singletons)', () => {
+  const PINNED = 'pinned-mixmstrs';
+
+  function makePinned(): void {
+    ydoc.transact(() => {
+      patch.nodes[PINNED] = {
+        id: PINNED,
+        type: 'mixmstrs',
+        domain: 'audio',
+        position: { x: 0, y: 0 },
+        params: {},
+        data: { pinned: true, name: 'MIXMSTRS1' },
+      } as ModuleNode;
+      patch.edges['pe'] = {
+        id: 'pe',
+        source: { nodeId: 'someone', portId: 'out' },
+        target: { nodeId: PINNED, portId: 'ch1L' },
+        sourceType: 'audio',
+        targetType: 'audio',
+      };
+    }, LOCAL_ORIGIN);
+    undoManager.clear();
+    undoManager.stopCapturing();
+  }
+
+  it('returns false and leaves the node AND its edges fully intact', () => {
+    makePinned();
+    expect(removePatchNode(PINNED)).toBe(false);
+    expect(patch.nodes[PINNED]).toBeDefined();
+    expect((patch.nodes[PINNED]!.data as { pinned?: boolean }).pinned).toBe(true);
+    // The edge sweep must not have run — refusal happens BEFORE any delete.
+    expect(patch.edges['pe']).toBeDefined();
+    expect(undoManager.undoStack.length).toBe(0); // no-op → no undo churn
+  });
+
+  it('data.pinned must be EXACTLY true — truthy lookalikes stay deletable', () => {
+    ydoc.transact(() => {
+      patch.nodes['fake-pin'] = {
+        id: 'fake-pin',
+        type: 'analogVco',
+        domain: 'audio',
+        position: { x: 0, y: 0 },
+        params: {},
+        data: { pinned: 'true' },
+      } as ModuleNode;
+    }, LOCAL_ORIGIN);
+    undoManager.clear();
+    undoManager.stopCapturing();
+    expect(removePatchNode('fake-pin')).toBe(true);
+    expect(patch.nodes['fake-pin']).toBeUndefined();
   });
 });

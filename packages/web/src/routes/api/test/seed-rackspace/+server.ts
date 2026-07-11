@@ -38,6 +38,8 @@ interface SeedBody {
   name?: unknown;
   ownerUserId?: unknown;
   envelope?: unknown;
+  /** Optional rack shell ('dawless' | 'workflow'); default 'dawless'. */
+  mode?: unknown;
 }
 
 interface EnvelopeShape {
@@ -107,7 +109,17 @@ export const POST: RequestHandler = async ({ request }) => {
     }
   }
 
-  const rack = await seedRackspaceForTest({ ownerUserId, name, snapshot });
+  // Mode: absent → 'dawless'; present-but-invalid → 400 (mirror the real
+  // create endpoint so specs fail loudly on a typo).
+  let mode: 'dawless' | 'workflow' = 'dawless';
+  if (body.mode !== undefined) {
+    if (body.mode !== 'dawless' && body.mode !== 'workflow') {
+      throw error(400, "mode must be 'dawless' or 'workflow'");
+    }
+    mode = body.mode;
+  }
+
+  const rack = await seedRackspaceForTest({ ownerUserId, name, snapshot, mode });
   const inviteCode = await getInviteCode(rack.id);
 
   return json({ id: rack.id, inviteCode });

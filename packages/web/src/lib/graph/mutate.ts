@@ -148,6 +148,50 @@ export function setControlColor(
 }
 
 /**
+ * Delete node `nodeId` + every edge touching it, in ONE origin-tagged
+ * transaction — the shared DELETE path (workflow-mode P1).
+ *
+ * PINNED-NODE GUARD: a node carrying `data.pinned === true` (a workflow
+ * rackspace's always-on M/E/C drawer singleton — see
+ * graph/workflow-pins.ts) is REFUSED: the call is a no-op and returns
+ * false. Pinned modules are structural to a workflow rack (like
+ * TIMELORDE's def-level `undeletable`, but a NODE-level flag, since the
+ * same types remain freely deletable as ordinary canvas cards). The
+ * def-level `undeletable` check stays in Canvas.deleteNode (it needs the
+ * registry); this guard is the layer every programmatic delete shares.
+ *
+ * The pinned re-read happens INSIDE the transaction (same discipline as
+ * mutateNode) so a remote write can't slip a pinned node into a delete
+ * that was validated against a stale render.
+ *
+ * @param nodeId  the patch node to delete
+ * @param options `{ origin = LOCAL_ORIGIN }` — the transaction origin
+ * @returns true when the node was deleted; false when absent or pinned.
+ */
+export function removePatchNode(
+  nodeId: string,
+  { origin = LOCAL_ORIGIN }: MutateOptions = {},
+): boolean {
+  let removed = false;
+  ydoc.transact(() => {
+    const live = patch.nodes[nodeId] as ModuleNode | undefined;
+    if (!live) return; // node gone → safe no-op
+    if (live.data?.pinned === true) return; // pinned → refuse
+    // Drop every edge touching the doomed node first so the engine sees a
+    // clean disconnect before disposal (mirrors Canvas.deleteNode).
+    for (const [eid, edge] of Object.entries(patch.edges)) {
+      if (!edge) continue;
+      if (edge.source.nodeId === nodeId || edge.target.nodeId === nodeId) {
+        delete patch.edges[eid];
+      }
+    }
+    delete patch.nodes[nodeId];
+    removed = true;
+  }, origin);
+  return removed;
+}
+
+/**
  * Set (or clear) a node's rack-lock flag — `node.data.rackLocked` — the
  * virtual-rack Phase-2 "screwed down" state. When `true`, the card is snapped
  * onto the rack grid and made non-draggable by the flowNodes derivation

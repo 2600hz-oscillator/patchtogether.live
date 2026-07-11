@@ -401,6 +401,12 @@ export interface ModuleNode {
    *     it onto their own data). Set via `setControlColor` (mutate.ts); resolved
    *     — with an auto per-instance default when unset — by `resolveControlColor`
    *     (control-color.ts).
+   *   - `pinned?: boolean` — workflow-mode always-on singleton (the M/E/C
+   *     bottom-drawer trio, graph/workflow-pins.ts). Pinned nodes render only
+   *     in their dock drawer (never as canvas cards), are refused by the
+   *     delete path (`removePatchNode`, mutate.ts) and skipped by Clear, and
+   *     are excluded from `maxInstances` counting (cap.ts) + the singleton
+   *     cleanup pass. Never set in dawless racks.
    */
   data?: Record<string, unknown>;
 }

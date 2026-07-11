@@ -26,9 +26,12 @@
 // record, a plain `{ id: node }` map, or any record of node-likes — and ports
 // verbatim to the native core.
 
-/** Minimal shape this module needs from a patch node: just its module type. */
+/** Minimal shape this module needs from a patch node: its module type +
+ *  (optionally) the cross-cutting `data.pinned` flag (workflow-mode pinned
+ *  singletons — see graph/workflow-pins.ts). */
 export interface TypedNode {
   type: string;
+  data?: { pinned?: unknown } | null;
 }
 
 /** Minimal shape this module needs from a module def: its type + (optional)
@@ -50,6 +53,15 @@ export interface CapDef {
  * Counts by `type` value alone, so a custom / non-prefixed node id (e.g. a
  * saved-group child whose id doesn't start with its type) is still counted
  * correctly.
+ *
+ * PINNED nodes (`data.pinned === true` — the workflow-mode always-on
+ * drawer singletons, graph/workflow-pins.ts) are EXCLUDED: they live
+ * outside the canvas economy (drawer-only, undeletable, auto-spawned), so
+ * they must not consume a type's `maxInstances` budget — "additional
+ * instances spawn as normal canvas cards" (e.g. the pinned ELECTRA CONTROL
+ * plus the one user-spawnable canvas instance its `maxInstances: 1`
+ * allows). Dawless racks never contain pinned nodes, so this is inert
+ * there.
  */
 export function instanceCount(
   nodes: Record<string, TypedNode | null | undefined>,
@@ -57,7 +69,7 @@ export function instanceCount(
 ): number {
   let n = 0;
   for (const node of Object.values(nodes)) {
-    if (node && node.type === type) n++;
+    if (node && node.type === type && node.data?.pinned !== true) n++;
   }
   return n;
 }

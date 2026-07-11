@@ -17,6 +17,7 @@
 // (owner + 3 invitees) can join.
 
 import { sql } from './db.js';
+import { normalizeRackMode, type RackMode } from '$lib/graph/rack-mode';
 
 const MAX_MEMBERS = 4;
 const MAX_OWNED_PER_USER = 4;
@@ -27,6 +28,10 @@ export interface Rackspace {
   name: string;
   createdAt: number;
   memberUserIds: string[]; // includes the owner
+  /** The rack shell: 'dawless' (the existing UI) or 'workflow'. Column
+   *  added by db/schema/005_rackspace_mode.sql; pre-migration rows read
+   *  as 'dawless' via normalizeRackMode. */
+  mode: RackMode;
 }
 
 function generateId(): string {
@@ -58,6 +63,9 @@ interface RackRow {
   name: string;
   created_at: string;
   member_user_ids: string[] | null;
+  /** Nullable at the type level for defensive reads; the column itself is
+   *  NOT NULL DEFAULT 'dawless' (005_rackspace_mode.sql). */
+  mode?: string | null;
 }
 
 function rackFromRow(row: RackRow): Rackspace {
@@ -67,6 +75,7 @@ function rackFromRow(row: RackRow): Rackspace {
     name: row.name,
     createdAt: new Date(row.created_at).getTime(),
     memberUserIds: row.member_user_ids ?? [],
+    mode: normalizeRackMode(row.mode),
   };
 }
 
@@ -77,8 +86,12 @@ export type CreateResult =
 export async function createRackspace(
   ownerUserId: string,
   name: string,
+  mode: RackMode = 'dawless',
 ): Promise<CreateResult> {
   const id = generateId();
+  // Defensive: never trust a caller-supplied string beyond the union (the
+  // route validates too; the CHECK constraint is the last line).
+  const safeMode = normalizeRackMode(mode);
   // CTE: count user's owned racks; only insert if under cap. Single
   // statement keeps the check + insert atomic against concurrent creates.
   const rows = (await sql()`
@@ -88,11 +101,11 @@ export async function createRackspace(
        WHERE owner_user_id = ${ownerUserId}
     ),
     new_rack AS (
-      INSERT INTO racks (id, owner_user_id, name)
-      SELECT ${id}, ${ownerUserId}, ${name}
+      INSERT INTO racks (id, owner_user_id, name, mode)
+      SELECT ${id}, ${ownerUserId}, ${name}, ${safeMode}
         FROM owned
        WHERE owned.n < ${MAX_OWNED_PER_USER}
-      RETURNING id, owner_user_id, name, created_at
+      RETURNING id, owner_user_id, name, created_at, mode
     ), new_member AS (
       INSERT INTO rack_members (rack_id, user_id, role)
       SELECT id, owner_user_id, 'owner' FROM new_rack
@@ -102,13 +115,15 @@ export async function createRackspace(
       (SELECT id            FROM new_rack) AS id,
       (SELECT owner_user_id FROM new_rack) AS owner_user_id,
       (SELECT name          FROM new_rack) AS name,
-      (SELECT created_at    FROM new_rack) AS created_at
+      (SELECT created_at    FROM new_rack) AS created_at,
+      (SELECT mode          FROM new_rack) AS mode
   `) as Array<{
     owned_n: number;
     id: string | null;
     owner_user_id: string | null;
     name: string | null;
     created_at: string | null;
+    mode: string | null;
   }>;
   const row = rows[0];
   if (row.id === null) {
@@ -122,6 +137,7 @@ export async function createRackspace(
       name: row.name!,
       created_at: row.created_at!,
       member_user_ids: [ownerUserId],
+      mode: row.mode,
     }),
   };
 }
@@ -206,7 +222,7 @@ export async function leaveRackspace(
 
 export async function getRackspace(id: string): Promise<Rackspace | null> {
   const rows = (await sql()`
-    SELECT r.id, r.owner_user_id, r.name, r.created_at,
+    SELECT r.id, r.owner_user_id, r.name, r.created_at, r.mode,
            COALESCE(
              (SELECT array_agg(m.user_id ORDER BY m.joined_at)
                 FROM rack_members m WHERE m.rack_id = r.id),
@@ -222,7 +238,7 @@ export async function getRackspace(id: string): Promise<Rackspace | null> {
 /** Rackspaces this user is a member of (owner included). */
 export async function listRackspacesForUser(userId: string): Promise<Rackspace[]> {
   const rows = (await sql()`
-    SELECT r.id, r.owner_user_id, r.name, r.created_at,
+    SELECT r.id, r.owner_user_id, r.name, r.created_at, r.mode,
            COALESCE(
              (SELECT array_agg(m2.user_id ORDER BY m2.joined_at)
                 FROM rack_members m2 WHERE m2.rack_id = r.id),
@@ -247,6 +263,7 @@ interface JoinRow {
   owner_user_id: string | null;
   name: string | null;
   created_at: string | null;
+  mode: string | null;
   existing_members: string[];
   inserted: boolean;
 }
@@ -271,7 +288,7 @@ export async function joinRackspace(rackspaceId: string, userId: string): Promis
     sql()`SELECT pg_advisory_xact_lock(hashtext(${rackspaceId})::bigint)`,
     sql()`
       WITH rack AS (
-        SELECT id, owner_user_id, name, created_at
+        SELECT id, owner_user_id, name, created_at, mode
           FROM racks
          WHERE id = ${rackspaceId}
       ),
@@ -297,6 +314,7 @@ export async function joinRackspace(rackspaceId: string, userId: string): Promis
         (SELECT owner_user_id   FROM rack) AS owner_user_id,
         (SELECT name            FROM rack) AS name,
         (SELECT created_at      FROM rack) AS created_at,
+        (SELECT mode            FROM rack) AS mode,
         COALESCE(
           (SELECT array_agg(user_id ORDER BY joined_at) FROM existing),
           ARRAY[]::text[]
@@ -317,6 +335,7 @@ export async function joinRackspace(rackspaceId: string, userId: string): Promis
     memberUserIds: row.inserted
       ? [...row.existing_members, userId]
       : row.existing_members,
+    mode: normalizeRackMode(row.mode),
   };
 
   if (row.inserted) return { status: 'ok', rackspace: rack };
@@ -358,25 +377,30 @@ export interface SeedRackspaceInput {
   ownerUserId: string;
   name: string;
   snapshot?: Uint8Array | null;
+  /** Rack shell for the seeded rackspace (default 'dawless') — lets e2e
+   *  specs boot a workflow rack without the dashboard/Clerk flow. */
+  mode?: RackMode;
 }
 
 export async function seedRackspaceForTest(input: SeedRackspaceInput): Promise<Rackspace> {
   const id = generateId();
+  const mode = normalizeRackMode(input.mode);
   const rows = (await sql()`
     WITH new_rack AS (
-      INSERT INTO racks (id, owner_user_id, name)
-      VALUES (${id}, ${input.ownerUserId}, ${input.name})
-      RETURNING id, owner_user_id, name, created_at
+      INSERT INTO racks (id, owner_user_id, name, mode)
+      VALUES (${id}, ${input.ownerUserId}, ${input.name}, ${mode})
+      RETURNING id, owner_user_id, name, created_at, mode
     ), new_member AS (
       INSERT INTO rack_members (rack_id, user_id, role)
       SELECT id, owner_user_id, 'owner' FROM new_rack
     )
-    SELECT id, owner_user_id, name, created_at FROM new_rack
+    SELECT id, owner_user_id, name, created_at, mode FROM new_rack
   `) as Array<{
     id: string;
     owner_user_id: string;
     name: string;
     created_at: string;
+    mode: string | null;
   }>;
   const row = rows[0];
   if (!row) {
@@ -402,5 +426,6 @@ export async function seedRackspaceForTest(input: SeedRackspaceInput): Promise<R
     name: row.name,
     created_at: row.created_at,
     member_user_ids: [row.owner_user_id],
+    mode: row.mode,
   });
 }
