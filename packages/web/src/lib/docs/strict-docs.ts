@@ -371,6 +371,10 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // crack, hard-switch drive, M/S width + two-hand pan — design
   // .myrobots/snare-drum-module-design.md). Ships documented.
   'snaredrum',
+  // TOM DRUM (2026-07-11): the analog-modeled tom voice (membrane + 1.593×
+  // overtone on one bend law, breath noise, warm drive — 808→909→Simmons
+  // spectrum, frequency-compensated decay). Ships documented.
+  'tomtom',
   // DOCKSCOPE (2026-07-11, workflow P2.5b): the slim 1u rail scope — vector
   // trace re-drawn at live pixel size (crisp under the dock 50–150% ladder),
   // ch1-only terminal visualiser. Ships documented.

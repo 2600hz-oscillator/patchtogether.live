@@ -1333,4 +1333,17 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // e2e/tests/snaredrum-roll.spec.ts (SEQUENCER → trigger_in single hit AND
   // held gate_in → sustained two-hand roll, audible stereo RMS on both L/R).
   'linux/snaredrum',
+  // TOM DRUM (2026-07-11): darwin baseline captured locally (the compact
+  // MEMBRANE·COLOR·OUT fader band + the STRIKE pad over the PatchPanel
+  // TRIG/ACC/V-OCT/BEND/DEC/TONE/NSE → OUT drill-down is deterministic
+  // chrome, NO canvas/animation); linux baseline pending a `vrt-update.yml`
+  // workflow_dispatch on the PR branch (the darwin-first new-module pattern,
+  // same as KICK DRUM / SNARE DRUM above). Functional coverage:
+  // packages/dsp/src/lib/tomtom-dsp.test.ts (bend/decay laws, frequency
+  // compensation, the sonic-range proof) + tomtom.test.ts (def contract +
+  // worklet strike-pad/accent/level/CV routing) + the ART audio profile
+  // (art/scenarios/tomtom/profile.test.ts) + the per-module-per-port sweep +
+  // the bespoke real-source-chain e2e/tests/tomtom.spec.ts (SEQUENCER →
+  // trigger_in → AUDIOOUT, audible RMS + tom-band-dominant spectrum).
+  'linux/tomtom',
 ]);

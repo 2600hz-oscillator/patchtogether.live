@@ -2932,6 +2932,24 @@ timelorde param wizardOn 0..1 discrete default=1
 timelorde expose bpm param=bpm kind=knob
 timelorde expose swingAmount param=swingAmount kind=knob
 timelorde expose swingSource param=swingSource kind=knob
+tomtom meta domain=audio
+tomtom in accent_in cv
+tomtom in bend_cv cv
+tomtom in decay_cv cv
+tomtom in noise_cv cv
+tomtom in pitch_cv cv
+tomtom in tone_cv cv
+tomtom in trigger_in gate edge=trigger
+tomtom out audio_out audio
+tomtom param bend_amt 0..24 linear default=7 unit=st
+tomtom param bend_time 10..300 log default=60 unit=ms
+tomtom param decay 40..1500 log default=350 unit=ms
+tomtom param drive 0..1 linear default=0.25
+tomtom param level -24..12 linear default=0 unit=dB
+tomtom param noise 0..1 linear default=0.25
+tomtom param strike 0..1 discrete default=0
+tomtom param tone 0..1 linear default=0.35
+tomtom param tune 60..400 log default=110 unit=Hz
 toybox meta domain=video renderLocus=worker
 toybox in cv1 modsignal cvScale=linear
 toybox in cv2 modsignal cvScale=linear
