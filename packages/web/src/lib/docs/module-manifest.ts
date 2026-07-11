@@ -1249,6 +1249,9 @@ export function buildModuleManifest(
       // CLIPPLAYER dual-Launchpad KEYS live-audition side-channel (in-memory
       // note queue) — not a ModuleDef (the def lives in clipplayer.ts).
       if (file === 'clip-audition.ts') return false;
+      // CLIPPLAYER per-lane clock RATE (mult/div) pure helpers — not a
+      // ModuleDef (the def lives in clipplayer.ts).
+      if (file === 'clip-clock.ts') return false;
       // KRIA step/pattern data model + step-advance / scale / cue math — not a
       // ModuleDef (the def lives in kria.ts).
       if (file === 'kria-types.ts') return false;
