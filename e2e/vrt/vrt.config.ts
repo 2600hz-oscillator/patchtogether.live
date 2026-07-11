@@ -47,6 +47,7 @@ const FULL_MATCH = [
   'cube-adsr-composite.spec.ts',
   'vrt-synesthesia-video.spec.ts',
   'vrt-quadralogical.spec.ts',
+  'vrt-clap.spec.ts',
   'vrt-colourofmagic.spec.ts',
   'vrt-toybox.spec.ts',
   'vrt-aspect-16x9.spec.ts',

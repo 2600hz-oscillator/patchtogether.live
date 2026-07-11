@@ -325,7 +325,12 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // 89→90 for KARPLUS (2026-07-11, deliberate darwin-first new module —
       // the extended Karplus-Strong string-voice card; linux baseline pending
       // the vrt-update.yml dispatch on the PR branch).
-    ).toBeLessThanOrEqual(90);
+      // 90→94 for CLAP (2026-07-11, deliberate darwin-first new module — the
+      // compact BURST·NOISE·ROOM/OUT clap-voice card + 3 composite-state
+      // scenes (clap-909-dense / clap-linn-room / clap-dry-snap in
+      // vrt-clap.spec.ts); linux baselines pending the vrt-update.yml
+      // dispatch on the PR branch).
+    ).toBeLessThanOrEqual(94);
   });
 });
 
