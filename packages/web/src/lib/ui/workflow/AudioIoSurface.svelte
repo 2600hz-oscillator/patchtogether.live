@@ -170,12 +170,21 @@
     padding: 8px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
     /* Hidden ≠ unmounted: the hosted AudioinCard owns the live input
-       stream and must survive menu close. visibility (not display) keeps
-       the standalone flow hosts measurable for fitView. */
+       stream and must survive menu close, so the panel stays mounted and
+       laid out (fitView needs measurable hosts — no display:none).
+       OPACITY, not visibility alone: xyflow stamps inline
+       `visibility: visible` on every measured .svelte-flow__node wrapper,
+       and visibility is inheritable-but-child-overridable — so with only
+       visibility:hidden here the two hosted card faces still painted as
+       floating ghost cards over the canvas while the panel chrome
+       vanished. opacity composites the whole subtree; children cannot
+       opt back in. */
+    opacity: 0;
     visibility: hidden;
     pointer-events: none;
   }
   .io-panel.open {
+    opacity: 1;
     visibility: visible;
     pointer-events: auto;
   }

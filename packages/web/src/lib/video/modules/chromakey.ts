@@ -3,23 +3,41 @@
 // CHROMAKEY — proper 2-input chroma-key compositor (green-screen style).
 //
 // Inputs: `fg` (foreground), `bg` (background). Output: composited video.
-// Replaces the old CHROMA module's confused "mask-only" semantics.
 //
-// Per-pixel algorithm (matches p10entrancer/Shaders/Keyer.metal where the
-// math is well-defined):
-//   1. Compute foreground hue and the key-color's hue.
-//   2. hueDistance(fg, key) in [0, 0.5] (0 = identical hue, 0.5 = exactly
-//      complementary).
-//   3. alpha = smoothstep(threshold/2, (threshold+softness)/2, hd). Map
-//      slider 0..1 onto the hue-distance range 0..0.5 so the slider feels
-//      like a "how close to the key counts as keyed" knob.
-//   4. Saturation gate: gray-ish foreground pixels are not "this color"
-//      regardless of where their hue noisily computes, so we bias them
-//      toward keep (alpha -> 1).
-//   5. Spill suppression: in pixels where alpha < 1 (foreground edges),
-//      desaturate the foreground proportional to (1 - alpha) * spill to
-//      kill the key-color halo that bleeds onto the subject.
-//   6. Composite: mix(BG, FG, alpha) — alpha=0 -> BG only, alpha=1 -> FG.
+// Built on the SHARED KEYING CORE ($lib/video/keying-core — kcChromaMask /
+// kcDespill / kcComposite; design: .myrobots/plans/keyer-framework-2026-07-11.md
+// §4 + §11). Per-pixel algorithm:
+//   1. alpha = kcChromaMask(fg, key, thr, soft): distance between the pixel
+//      and the key colour IN THE CHROMA PLANE (full-swing Rec. 601 CbCr),
+//      normalized by the key's own chroma magnitude — the industry-standard
+//      (Vlahos-family) metric. 0 at the key colour; EXACTLY 1.0 for any
+//      neutral gray vs a saturated key, so shadows/highlights and low-chroma
+//      subject pixels survive WITHOUT a bolted-on saturation gate. alpha =
+//      smoothstep(thr, thr + soft, d): alpha 0 -> background, 1 -> keep fg.
+//      (Replaces the old hue-angle + satGate metric, which keyed out mildly
+//      green-cast SUBJECT pixels — finding F-C1.)
+//   2. Spill suppression: fg' = kcDespill(fg, key, spill) — limit the key's
+//      dominant channel (green key: g' = min(g, max(r, b)), lerped by
+//      spill). Acts on KEPT pixels — where spill is actually visible.
+//      EXACT identity at spill = 0. (Replaces the old (1-alpha)-scaled edge
+//      desaturation, which could never touch an alpha=1 pixel — finding F-C2.)
+//   3. Composite: kcComposite(bg, fg', alpha) = mix(bg, fg', alpha).
+//
+// DEFAULT THRESHOLD 0.5 (was 0.15 under the old hue metric — a deliberate
+// re-calibration, §11 change 2): chroma-plane distance scales with pixel
+// BRIGHTNESS (a half-brightness key green sits at d = 0.5 from the key), so
+// the default must key real-world screen variation, not just near-pure key
+// pixels. Calibration probes (normalized d vs the pure green key):
+//   pure key (0,1,0)                 d = 0.000  -> keyed
+//   realistic screen (0.2,0.8,0.3)   d = 0.454  -> keyed at default
+//   half-brightness key (0,0.5,0)    d = 0.500  -> keyed at default
+//   green-cast subject (0.6,0.75,0.55) d = 0.828 -> KEPT (the F-C1 pixel)
+//   any neutral gray                 d = 1.000  -> KEPT
+// Pinned by keying-core.test.ts (probes) + keyer-functional.spec.ts (e2e).
+//
+// ACHROMATIC KEYS: a neutral key colour (black/white/gray) has ~zero chroma;
+// with the floored normalizer ALL neutrals then measure as "at the key" and
+// key out together regardless of luma. Use LUMAKEY for black/white backdrops.
 //
 // CV inputs declare paramTarget == port id (PR #264 convention) so the
 // cross-domain bridge writes them correctly.
@@ -28,21 +46,22 @@
 //   fg (video): foreground (the layer with the key colour).
 //   bg (video): background (composited where the key matches).
 //   keyR / keyG / keyB (cv, paramTarget=…): displaces the key-colour components.
-//   threshold (cv, paramTarget=threshold): displaces the hue-distance threshold.
+//   threshold (cv, paramTarget=threshold): displaces the chroma-distance threshold.
 //   softness (cv, paramTarget=softness): displaces the smoothstep softness.
-//   spillSuppress (cv, paramTarget=spillSuppress): displaces the chroma-spill removal amount.
+//   spillSuppress (cv, paramTarget=spillSuppress): displaces the despill amount.
 //
 // Outputs:
 //   out (video): composited RGB.
 //
 // Params:
 //   keyR / keyG / keyB (linear 0..1): key colour components.
-//   threshold (linear 0..1): how close to the key counts as "keyed".
+//   threshold (linear 0..1): normalized chroma distance below which fg is keyed.
 //   softness (linear 0..0.5): edge feathering.
-//   spillSuppress (linear 0..1): how aggressively to remove key-colour spill from FG edges.
+//   spillSuppress (linear 0..1): dominant-channel despill amount on the kept fg.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
+import { GLSL_KEY_HELPERS } from '$lib/video/keying-core';
 
 const FRAG_SRC = `#version 300 es
 precision highp float;
@@ -60,51 +79,7 @@ uniform float uKeyB;
 uniform float uThreshold;
 uniform float uSoftness;
 uniform float uSpillSuppress;
-
-vec3 rgbToHsv(vec3 c) {
-  float mx = max(c.r, max(c.g, c.b));
-  float mn = min(c.r, min(c.g, c.b));
-  float v = mx;
-  float d = mx - mn;
-  float s = (mx > 0.0001) ? d / mx : 0.0;
-  float h = 0.0;
-  if (d > 0.0001) {
-    if (mx == c.r) {
-      h = (c.g - c.b) / d;
-      if (h < 0.0) h += 6.0;
-    } else if (mx == c.g) {
-      h = (c.b - c.r) / d + 2.0;
-    } else {
-      h = (c.r - c.g) / d + 4.0;
-    }
-    h /= 6.0;
-  }
-  return vec3(h, s, v);
-}
-
-vec3 hsvToRgb(vec3 hsv) {
-  float h = hsv.x;
-  float s = clamp(hsv.y, 0.0, 1.0);
-  float v = clamp(hsv.z, 0.0, 1.0);
-  float h6 = h * 6.0;
-  float c = v * s;
-  float x = c * (1.0 - abs(mod(h6, 2.0) - 1.0));
-  vec3 rgb;
-  if      (h6 < 1.0) rgb = vec3(c, x, 0.0);
-  else if (h6 < 2.0) rgb = vec3(x, c, 0.0);
-  else if (h6 < 3.0) rgb = vec3(0.0, c, x);
-  else if (h6 < 4.0) rgb = vec3(0.0, x, c);
-  else if (h6 < 5.0) rgb = vec3(x, 0.0, c);
-  else               rgb = vec3(c, 0.0, x);
-  float m = v - c;
-  return rgb + m;
-}
-
-float hueDistance(float a, float b) {
-  float d = abs(a - b);
-  return min(d, 1.0 - d);
-}
-
+${GLSL_KEY_HELPERS}
 void main() {
   vec3 fg = uHasFg > 0.5 ? texture(uFg, vUv).rgb : vec3(0.0);
   vec3 bg = uHasBg > 0.5 ? texture(uBg, vUv).rgb : vec3(0.0);
@@ -116,31 +91,14 @@ void main() {
     return;
   }
 
-  vec3 fgHSV  = rgbToHsv(fg);
-  vec3 keyHSV = rgbToHsv(vec3(uKeyR, uKeyG, uKeyB));
-  float hd = hueDistance(fgHSV.x, keyHSV.x);
-  float satGate = smoothstep(0.04, 0.18, fgHSV.y);
-
-  float tol  = clamp(uThreshold, 0.0, 1.0);
-  float soft = max(clamp(uSoftness, 0.0, 0.5), 0.001);
-  float tolH  = tol  * 0.5;
-  float softH = soft * 0.5;
-  float hueAlpha = smoothstep(tolH, tolH + softH, hd);
-  // Pull unsaturated pixels toward keep (alpha = 1) since their hue is
-  // unstable and we don't want shadows / highlights keyed out.
-  float alpha = mix(1.0, hueAlpha, satGate);
-
-  // Spill suppression — desaturate FG proportional to (1 - alpha) * spill
-  // so the key color halo doesn't tint the kept subject.
-  if (uSpillSuppress > 0.001) {
-    float pull = (1.0 - alpha) * clamp(uSpillSuppress, 0.0, 1.0);
-    vec3 desaturated = hsvToRgb(vec3(fgHSV.x, fgHSV.y * (1.0 - pull), fgHSV.z));
-    fg = desaturated;
-  }
+  vec3 key = vec3(uKeyR, uKeyG, uKeyB);
+  // thr/soft/spill are clamped to their declared ranges INSIDE the core
+  // helpers (ydoc params are not range-validated; CV writes are).
+  float alpha = kcChromaMask(fg, key, uThreshold, uSoftness, 0.0);
+  fg = kcDespill(fg, key, uSpillSuppress);
 
   // alpha = 0 -> BG only, alpha = 1 -> FG only.
-  vec3 out_rgb = mix(bg, fg, alpha);
-  outColor = vec4(out_rgb, 1.0);
+  outColor = vec4(kcComposite(bg, fg, alpha), 1.0);
 }`;
 
 interface ChromakeyParams {
@@ -156,7 +114,7 @@ const DEFAULTS: ChromakeyParams = {
   keyR: 0.0,
   keyG: 1.0,  // green-screen default
   keyB: 0.0,
-  threshold: 0.15,
+  threshold: 0.5, // keys shaded/realistic screen variation (see header calibration)
   softness: 0.08,
   spillSuppress: 0.5,
 };
@@ -191,27 +149,27 @@ export const chromakeyDef: VideoModuleDef = {
 
   // docs-hash-ignore:start
   docs: {
-    explanation: "chromakey is a two-input green-screen compositor: it takes a foreground video (the layer shot against a key colour) and a background video, and replaces every foreground pixel whose hue is close to the chosen key colour with the matching background pixel. Per pixel it converts foreground and key colour to HSV, measures the hue distance, and builds an alpha via smoothstep over the thr/soft window (alpha 0 = show background, alpha 1 = keep foreground); near-gray pixels are biased toward keep so shadows and highlights are not punched out, and edge pixels are desaturated by the spill amount to kill the key-colour halo. Pick the key colour with the swatch (defaults to pure green), then tune thr until the backdrop drops out cleanly, raise soft to feather the matte edge, and add spill to remove green fringing on the subject; if no foreground is patched it just passes the background through.",
+    explanation: "chromakey is a two-input green-screen compositor: it takes a foreground video (the layer shot against a key colour) and a background video, and replaces every foreground pixel that is chromatically close to the chosen key colour with the matching background pixel. Per pixel it measures the DISTANCE IN THE CHROMA PLANE (full-swing Rec. 601 Cb/Cr) between the pixel and the key colour, normalized by the key's own chroma strength — the industry-standard keying metric — and builds an alpha via smoothstep over the thr/soft window (alpha 0 = show background, alpha 1 = keep foreground). A neutral gray always sits at exactly distance 1.0 from a saturated key, so shadows, highlights and low-saturation subject pixels survive the key without any special gating. Spill suppression then limits the key colour's dominant channel on the KEPT foreground (for a green key: green is pulled down toward max(red, blue)), removing green contamination from the subject itself — not just from the matte edge. Pick the key colour with the swatch (defaults to pure green), then tune thr: the default 0.5 keys real-world screen variation (shading, off-tint) while keeping subjects; lower it toward 0.15 to key only near-pure key pixels, raise soft to feather the matte edge, and raise spill to remove key-colour fringing from the subject. If no foreground is patched it just passes the background through. Note: an achromatic (black/white/gray) key colour has no chroma to measure against, so ALL neutral pixels key out together regardless of brightness — for keying off a black or white backdrop use lumakey instead.",
     inputs: {
-      fg: "Foreground video frame — the layer shot against the key colour that gets keyed out where its hue matches.",
+      fg: "Foreground video frame — the layer shot against the key colour that gets keyed out where its chroma matches.",
       bg: "Background video frame — composited in wherever the foreground is keyed out; shown directly if no foreground is patched.",
       keyR: "CV input that modulates the R control — the red component of the key colour (linear 0..1).",
       keyG: "CV input that modulates the G control — the green component of the key colour (linear 0..1).",
       keyB: "CV input that modulates the B control — the blue component of the key colour (linear 0..1).",
-      threshold: "CV input that modulates the Thr control — how close a pixel's hue must be to the key to be removed (linear 0..1).",
+      threshold: "CV input that modulates the Thr control — how chromatically close a pixel must be to the key to be removed (linear 0..1).",
       softness: "CV input that modulates the Soft control — the feathering width of the matte edge (linear 0..0.5).",
-      spillSuppress: "CV input that modulates the Spill control — how aggressively key-colour spill is desaturated from foreground edges (linear 0..1).",
+      spillSuppress: "CV input that modulates the Spill control — how strongly the key colour's dominant channel is limited on the kept foreground (linear 0..1).",
     },
     outputs: {
-      out: "The composited RGB video frame: foreground over background with the key colour replaced.",
+      out: "The composited RGB video frame: foreground over background with the key colour replaced and key-colour spill suppressed on the kept subject.",
     },
     controls: {
-      keyR: "R — red channel of the key colour, set via the colour-picker swatch (0..1); part of the hue being matched, default 0 for the green-screen default.",
+      keyR: "R — red channel of the key colour, set via the colour-picker swatch (0..1); part of the chroma being matched, default 0 for the green-screen default.",
       keyG: "G — green channel of the key colour, set via the colour-picker swatch (0..1); default 1 so the keyer starts on a green screen.",
       keyB: "B — blue channel of the key colour, set via the colour-picker swatch (0..1); default 0 for the green-screen default.",
-      threshold: "Thr fader — how close a pixel's hue must be to the key to be keyed out (0..1, default 0.15); higher widens the keyed hue band so more colour drops to background.",
-      softness: "Soft fader — smoothstep feathering of the matte edge (0..0.5, default 0.08); 0 = hard cutoff, higher = softer, more gradual key edge.",
-      spillSuppress: "Spill fader — desaturates the foreground at edge pixels proportional to (1-alpha)*spill (0..1, default 0.5); 0 = off, 1 = full removal of key-colour halo from the subject.",
+      threshold: "Thr fader — the normalized chroma-plane distance from the key colour below which a pixel is keyed out (0..1, default 0.5). The scale: 0 = only the key colour itself, 0.5 = shaded/off-tint screen variation drops out (a half-brightness key green sits at exactly 0.5), 1 = even neutral grays (distance 1.0) reach the edge of the key band. Lower it to key only near-pure key pixels; raise it if screen shading survives the key.",
+      softness: "Soft fader — smoothstep feathering of the matte edge over the chroma-distance band (0..0.5, default 0.08); 0 = hard cutoff, higher = softer, more gradual key edge.",
+      spillSuppress: "Spill fader — dominant-channel despill on the kept foreground (0..1, default 0.5): for a green key the green channel is pulled toward max(red, blue) by this amount, removing key-colour contamination from the subject itself. 0 = exactly off (bit-identical passthrough), 1 = full limit.",
     },
   },
   // docs-hash-ignore:end

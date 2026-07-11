@@ -418,7 +418,7 @@ chromakey param keyG 0..1 linear default=1
 chromakey param keyR 0..1 linear default=0
 chromakey param softness 0..0.5 linear default=0.08
 chromakey param spillSuppress 0..1 linear default=0.5
-chromakey param threshold 0..1 linear default=0.15
+chromakey param threshold 0..1 linear default=0.5
 clap meta domain=audio
 clap in accent_in cv
 clap in spread_cv cv

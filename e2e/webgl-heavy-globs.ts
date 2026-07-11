@@ -94,6 +94,13 @@ export const WEBGL_HEAVY_GLOBS = [
   // non-advancing (min=max=1.0) frame under contention → false red (passes in
   // isolation ~2.8s). Isolate the whole file in the serialized lane.
   '**/picturebox-gif.spec.ts', // animated-gif luma-over-time — heavy WebGL pixel read
+  // KEYER FRAMEWORK (§11 change 6): the keyer functional-validation spec is a
+  // DRS readPixels suite (frozen clock, gl.readPixels off module FBOs) that
+  // matched NO heavy glob — it ran on the sharded SwiftShader matrix, the
+  // documented contention-flake class (#621/#1016). Enroll it in the
+  // serialized heavy lane. e2e/webgl-heavy-globs.ts is in the WebGL hash
+  // basis → batched into the keyer-framework PR's single re-attest.
+  '**/keyer-functional.spec.ts', // keyer family theory-derived pixel asserts — DRS readPixels
   // (mandleblot.spec.ts was deleted — its waitForTimeout pixel gate was fully
   //  redundant with the deterministic mandleblot-render-smoke.spec.ts, which the
   //  `**/*-render-smoke.spec.ts` glob below already enrolls in this heavy lane.)
