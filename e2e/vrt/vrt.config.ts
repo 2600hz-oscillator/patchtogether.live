@@ -52,6 +52,8 @@ const FULL_MATCH = [
   'vrt-posterbox-states.spec.ts',
   'vrt-colourofmagic.spec.ts',
   'cellshade-composite.spec.ts',
+  'workflow-audio-io-composite.spec.ts',
+  'workflow-dock-composite.spec.ts',
   'vrt-toybox.spec.ts',
   'vrt-aspect-16x9.spec.ts',
   'topbar.spec.ts',

@@ -380,17 +380,24 @@ export const CC_EDIT_FOLLOW = CC_TOP_SPARE_8; // 98 — FOLLOW toggle
 // Editor scene-column functions (the full 8×8 is the note grid, so DOUBLE +
 // LENGTH-EDIT live on the otherwise-spare right scene column):
 //   row 7 (top) = EXIT · row 6 = DOUBLE · row 5 = LENGTH-EDIT.
+//   row 4 = FOLLOW — SINGLE MODE ONLY. In pair mode FOLLOW is CC 98 on the top
+//   row, but the single device's CC 98 is the dedicated view-flip, so single
+//   mode gives FOLLOW a real button on the next spare scene row (opt-in via the
+//   classifier's `followButton` / the frame's `followSceneButton` so the pair
+//   surface is untouched byte-for-byte).
 export const EDIT_EXIT_SCENE_ROW = LP_HEIGHT - 1; // 7
 export const EDIT_DOUBLE_SCENE_ROW = LP_HEIGHT - 2; // 6
 export const EDIT_LENGTH_SCENE_ROW = LP_HEIGHT - 3; // 5
+export const EDIT_FOLLOW_SCENE_ROW = LP_HEIGHT - 4; // 4 — single mode only
 export function isEditExitSceneRow(row: number): boolean {
   return row === EDIT_EXIT_SCENE_ROW;
 }
-export type EditSceneAction = 'exit' | 'double' | 'lengthEdit' | null;
-export function editSceneAction(row: number): EditSceneAction {
+export type EditSceneAction = 'exit' | 'double' | 'lengthEdit' | 'follow' | null;
+export function editSceneAction(row: number, opts: { followButton?: boolean } = {}): EditSceneAction {
   if (row === EDIT_EXIT_SCENE_ROW) return 'exit';
   if (row === EDIT_DOUBLE_SCENE_ROW) return 'double';
   if (row === EDIT_LENGTH_SCENE_ROW) return 'lengthEdit';
+  if (opts.followButton && row === EDIT_FOLLOW_SCENE_ROW) return 'follow';
   return null;
 }
 
@@ -421,8 +428,8 @@ export function rLengthPad(x: number, y: number): LengthEditAction | null {
 }
 
 // ---------------------------------------------------------------------------
-// KEYS mode (dual-Launchpad note/keyboard + clip-record). BOTH units flip here
-// together, side-by-side = 16 wide:
+// KEYS mode (note/keyboard + clip-record). In PAIR deployment BOTH units flip
+// here together, side-by-side = 16 wide:
 //   · top row (y=7) = PLAYHEAD strip, 16 cells (L cols 0..7 = clip cells 0..7,
 //     R cols 0..7 = cells 8..15) — the whole clip.
 //   · middle 6 rows (y=1..6) = isomorphic KEYBOARD, 6×16 (LinnStrument chromatic
@@ -430,6 +437,10 @@ export function rLengthPad(x: number, y: number): LengthEditAction | null {
 //     = keyboard col x+8; y=1 = keyboard row 0 up to y=6 = row 5).
 //   · bottom row (y=0) = CONTROLS (on unit L only): EXIT · QUEUE-REC · OVERDUB ·
 //     LEN; the rest dark (and unit R's bottom row is dark).
+// In SINGLE deployment the lone device IS the L half: keyboard cols 0..7 (6×8),
+// the same bottom-row controls, and the playhead strip compressed to 8 cells
+// spanning the WHOLE clip (KeysFrameOpts.phCells = LP_WIDTH) so the moving dot
+// never runs off the one surface.
 // ---------------------------------------------------------------------------
 export const KEYS_PH_ROW = LP_HEIGHT - 1; // top row (y=7) = playhead strip
 export const KEYS_KB_ROW_LO = 1; // keyboard band y=1..6 (row 0 = y=1)
@@ -692,6 +703,10 @@ export interface REditOpts {
   velArmed?: boolean;
   followOn?: boolean;
   shiftHeld?: boolean;
+  /** SINGLE mode: paint the FOLLOW pad on scene row 4 (CC 98 is the view-flip,
+   *  so the single editor's FOLLOW lives on the scene column). Pair mode leaves
+   *  this unset → row 4 stays dark, exactly as before. */
+  followSceneButton?: boolean;
 }
 
 export function computeREditFrame(clip: NoteClipRecord, opts: REditOpts = {}): LaunchpadFrame {
@@ -732,12 +747,16 @@ export function computeREditFrame(clip: NoteClipRecord, opts: REditOpts = {}): L
   put(frame, CC_EDIT_VEL, opts.velArmed ? RGB_FUNC_ON : RGB_FUNC);
   put(frame, CC_EDIT_SCALE, RGB_FUNC);
   put(frame, CC_EDIT_FOLLOW, opts.followOn ? RGB_TRANSPORT_ON : RGB_FUNC_ON);
-  // Scene column: top = EXIT (red), row 6 = DOUBLE, row 5 = LENGTH-EDIT, rest dark.
+  // Scene column: top = EXIT (red), row 6 = DOUBLE, row 5 = LENGTH-EDIT, rest
+  // dark. SINGLE mode adds FOLLOW on row 4 (green = following, violet = frozen —
+  // the same colours the pair's CC-98 FOLLOW uses).
   for (let i = 0; i < SCENE_CCS.length; i++) {
     const row = LP_HEIGHT - 1 - i;
     let rgb: Rgb = RGB_OFF;
     if (row === EDIT_EXIT_SCENE_ROW) rgb = RGB_EXIT;
     else if (row === EDIT_DOUBLE_SCENE_ROW || row === EDIT_LENGTH_SCENE_ROW) rgb = RGB_FUNC;
+    else if (opts.followSceneButton && row === EDIT_FOLLOW_SCENE_ROW)
+      rgb = opts.followOn ? RGB_TRANSPORT_ON : RGB_FUNC_ON;
     put(frame, SCENE_CCS[i], rgb);
   }
   return frame;
@@ -799,6 +818,10 @@ export interface KeysFrameOpts {
   /** Overdub ON (bright purple) vs OFF (light purple). */
   overdub?: boolean;
   blinkOn?: boolean;
+  /** Playhead-strip cell count. Defaults to the 16-cell PAIR strip (L 0..7 + R
+   *  8..15). SINGLE mode passes LP_WIDTH (8): the lone device's top row spans
+   *  the WHOLE clip in 8 cells, so the moving dot never leaves the surface. */
+  phCells?: number;
 }
 
 export function computeKeysFrame(opts: KeysFrameOpts): LaunchpadFrame {
@@ -832,7 +855,8 @@ export function computeKeysFrame(opts: KeysFrameOpts): LaunchpadFrame {
   // as a "recording now" indicator across the top of both units.
   const step = opts.playheadStep ?? -1;
   const len = opts.lengthSteps ?? 16;
-  const cur = step >= 0 ? playheadCell(step, len, KEYS_PH_CELLS) : -1;
+  const phCells = opts.phCells ?? KEYS_PH_CELLS;
+  const cur = step >= 0 ? playheadCell(step, len, phCells) : -1;
   const curRgb: Rgb = opts.recording
     ? blinkOn ? RGB_QREC_REC : RGB_RECORDING_DIM
     : opts.recArmed

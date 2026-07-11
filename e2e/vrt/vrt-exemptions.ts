@@ -851,6 +851,16 @@ export const STRICT_VRT_MODULES = new Set<string>([
  *  up CI capture lands the other platform's PNG. The exempted pair is
  *  SKIPPED at the test level rather than allowed to fail. */
 export const EXEMPT_BASELINE_PAIRS = new Set<string>([
+  // WORKFLOW audio-UX composite scenes (2026-07-11, deliberate darwin-first):
+  // the OPEN 🎧 audio-I/O panel (workflow-audio-io-composite.spec.ts — the
+  // plain-mounted card faces, device-name text masked) and the bottom dock
+  // drawer with the docked CLIPPLAYER's patch-to picker open
+  // (workflow-dock-composite.spec.ts — pins the menu-spawn position). Darwin
+  // baselines captured locally + visually inspected; linux baselines pending
+  // a vrt-update.yml workflow_dispatch on the PR branch (the
+  // cellshade-composite precedent).
+  'linux/workflow-audio-io',
+  'linux/workflow-dock-patch',
   // CLIPPLAYER: darwin baseline (the clip-launcher card — 8×8 launch grid +
   // piano-roll note editor + transport knobs; no animated canvas) captured
   // locally; linux baseline pending a `vrt-update.yml` workflow_dispatch on

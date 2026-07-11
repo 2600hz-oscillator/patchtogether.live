@@ -130,8 +130,14 @@
    *
    * Scoping to `.svelte-flow__node .title` keeps this from leaking out
    * to non-module surfaces that happen to use a `.title` class
-   * (browser-level title chrome elsewhere). */
-  :global(.svelte-flow__node .title) {
+   * (browser-level title chrome elsewhere). The `.dock-*-sized` selectors
+   * are the DOCK-HOST mirror (P2.5a plain-mount: DockCardHost + the 🎧
+   * panel hosts have no .svelte-flow__node wrapper) — without them a
+   * dock-hosted card's title lost the centering/margin baseline and
+   * rendered flush against the corner patch trigger. */
+  :global(.svelte-flow__node .title),
+  :global(.dock-rack-sized .title),
+  :global(.dock-natural-sized .title) {
     font-size: 0.85rem;
     font-weight: 500;
     text-align: center;

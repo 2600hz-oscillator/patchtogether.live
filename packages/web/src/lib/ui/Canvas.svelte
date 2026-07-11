@@ -245,8 +245,10 @@
   import {
     WORKFLOW_PINNED_MODULES,
     WORKFLOW_PIN_SPAWN_ORIGIN,
+    WORKFLOW_DEFAULT_WIRE_LATCH,
     DRAWER_KEY_TO_PINNED,
     planPinnedSpawns,
+    planDefaultWires,
     isPinnedNode,
     isTypingTarget,
   } from '$lib/graph/workflow-pins';
@@ -897,6 +899,49 @@
       }
     }, WORKFLOW_PIN_SPAWN_ORIGIN);
     trace(`workflow: ensured pinned modules (${missing.map((s) => s.type).join(', ')})`);
+  });
+
+  // DEFAULT WIRING (owner directive): pinned MIXMSTRS master L/R → pinned
+  // AUDIO OUT L/R, so a fresh workflow rack makes sound the moment anything
+  // feeds the mixer. ONE-SHOT SEED, not an invariant: planDefaultWires only
+  // plans while the `workflowDefaultWired` latch on the pinned AUDIO OUT is
+  // unset, and the latch is written IN THE SAME TRANSACT as the wires — so a
+  // user deleting the cable afterwards is respected forever (the ensure never
+  // fights intent). Deterministic edge ids (the handleConnect `e-…` template)
+  // make two racing clients converge on one Y.Map entry per wire; occupied
+  // target inputs are skipped (a user's own patch into AUDIO OUT is never
+  // replaced). Runs after the node ensure above lands both endpoints; a
+  // wholesale node replacement re-seeds only when the loaded doc lacks the
+  // latch (fresh pins), mirroring the node ensure's self-healing story.
+  // Same non-tracked origin → never on the undo stack.
+  $effect(() => {
+    if (!workflowMode) return;
+    if (provider && !providerHasSynced) return;
+    const plan = planDefaultWires(snapshot.nodes, snapshot.edges);
+    if (!plan.latch) return;
+    ydoc.transact(() => {
+      const dst = patch.nodes['pinned-audioOut'];
+      if (!dst) return; // raced a wholesale wipe — replan on the next snapshot
+      const data = (dst.data ?? {}) as Record<string, unknown>;
+      if (data[WORKFLOW_DEFAULT_WIRE_LATCH] === true) return; // in-transact re-check
+      for (const wire of plan.wires) {
+        if (patch.edges[wire.id]) continue;
+        const occupied = Object.values(patch.edges).some(
+          (e) => e && e.target.nodeId === wire.target.nodeId && e.target.portId === wire.target.portId,
+        );
+        if (occupied) continue;
+        patch.edges[wire.id] = {
+          id: wire.id,
+          source: { nodeId: wire.source.nodeId, portId: wire.source.portId },
+          target: { nodeId: wire.target.nodeId, portId: wire.target.portId },
+          sourceType: wire.sourceType,
+          targetType: wire.targetType,
+        };
+      }
+      if (!dst.data) dst.data = {};
+      dst.data[WORKFLOW_DEFAULT_WIRE_LATCH] = true;
+    }, WORKFLOW_PIN_SPAWN_ORIGIN);
+    trace('workflow: seeded default wires mixmstrs master L/R → audioOut (one-shot)');
   });
 
   // DOCK KEYMAP: M / E / C toggle the matching pinned card in the BOTTOM
@@ -4358,10 +4403,23 @@
   // edge-aligned coordinates so the PortContextMenu lines up with the card
   // side it opened from (UX item 1), instead of spawning at the raw cursor.
 
-  /** Resolve a node's CARD bounding rect from the DOM (the svelte-flow node
-   *  wrapper). Returns null when the card isn't mounted. */
+  /** Resolve a node's CARD bounding rect from the DOM. DOCK-HOSTED cards
+   *  first: a docked/pinned card's real FACE lives in a rail or topbar
+   *  panel (DockCardHost's [data-dock-card-frame]) while its only
+   *  .svelte-flow__node element — if any — is the small canvas stub.
+   *  Menus for a dock-hosted card must anchor to the face the user
+   *  actually clicked: the pinned drawer occupants have NO canvas element
+   *  at all, so the old stub-only lookup returned null and the patch-to
+   *  picker fell back to a stale (0,0) → "menu spawns at the top-left of
+   *  the screen" (owner report 2026-07-11). Canvas cards resolve exactly
+   *  as before (no dock frame exists for them). Returns null when the
+   *  card isn't mounted anywhere. */
   function cardRectFor(nodeId: string): DOMRect | null {
     if (typeof document === 'undefined') return null;
+    const dockFrame = document.querySelector(
+      `[data-dock-card="${CSS.escape(nodeId)}"] [data-dock-card-frame]`,
+    ) as HTMLElement | null;
+    if (dockFrame) return dockFrame.getBoundingClientRect();
     const el = document.querySelector(
       `.svelte-flow__node[data-id="${nodeId}"]`,
     ) as HTMLElement | null;
@@ -4417,6 +4475,22 @@
     // module list, so clear any stale preselect here.
     portMenuPreselectNodeId = null;
     portMenuOpen = true;
+    // POST-MOUNT viewport clamp: edgeAlignedMenuPos can only estimate the
+    // picker's size before it renders (width 200, height unknown), so a
+    // card near the BOTTOM edge — a dock-drawer card is the canonical case
+    // — would open the picker spilling off-screen. One rAF later the real
+    // chrome is measurable: slide it fully on-screen (the picker owns its
+    // own overflow, max-height 70vh).
+    requestAnimationFrame(() => {
+      if (!portMenuOpen) return;
+      const el = document.querySelector('[data-testid="port-context-menu"]') as HTMLElement | null;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const margin = 4;
+      const x = Math.max(margin, Math.min(portMenuPos.x, window.innerWidth - r.width - margin));
+      const y = Math.max(margin, Math.min(portMenuPos.y, window.innerHeight - r.height - margin));
+      if (x !== portMenuPos.x || y !== portMenuPos.y) portMenuPos = { x, y };
+    });
     connectDragState.beginCascade(info.nodeId);
   }
 
@@ -5758,6 +5832,7 @@
       externallyClocked={workflowExternallyClocked}
       dinAssigned={workflowDinAssigned}
       nodeTypes={nodeTypes as unknown as Record<string, unknown>}
+      {rackSizeByType}
       onEnsureEngine={ensureEngine}
       currentUserId={currentUserId ?? null}
       cameraNodes={workflowCameraNodes}
@@ -5925,6 +6000,7 @@
       nodeTypes={nodeTypes as unknown as Record<string, unknown>}
       {rackSizeByType}
       onUndock={undockNode}
+      {rearView}
     />
   {/if}
 
@@ -5943,6 +6019,7 @@
         nodeTypes={nodeTypes as unknown as Record<string, unknown>}
         {rackSizeByType}
         onUndock={undockNode}
+        {rearView}
       />
     {/if}
   <div class="flow" class:rear-view={rearView} class:flip-back={flipBack} data-rear-view={rearView ? 'true' : undefined} bind:this={flowEl}>
@@ -6060,6 +6137,7 @@
         {rackSizeByType}
         onUndock={undockNode}
         onClosePinned={() => dockStore.close('bottom')}
+        {rearView}
       />
     {/if}
     <button

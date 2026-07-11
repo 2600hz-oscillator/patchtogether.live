@@ -81,6 +81,9 @@
     dinAssigned?: boolean;
     /** The main canvas's glob-driven nodeTypes map (for the card hosts). */
     nodeTypes?: Record<string, unknown>;
+    /** Canvas's type → rack {size, hp} map (the audio-I/O plain-mount hosts
+     *  size their cards exactly like the dock drawers do). */
+    rackSizeByType?: Record<string, { size?: string; hp?: number }>;
     /** Canvas's ensureEngine — surfaces whose backing api lives on the
      *  engine-side module boot it on first use. */
     onEnsureEngine?: (() => Promise<unknown>) | null;
@@ -114,6 +117,7 @@
     externallyClocked = false,
     dinAssigned = false,
     nodeTypes = {},
+    rackSizeByType = {},
     onEnsureEngine = null,
     currentUserId = null,
     cameraNodes = [],
@@ -435,6 +439,7 @@
         audioIn={audioInNode}
         audioOut={audioOutNode}
         {nodeTypes}
+        {rackSizeByType}
         open={openMenu === 'io'}
         onRequestClose={closeMenus}
       />

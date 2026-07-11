@@ -16,9 +16,32 @@
 // routes — only the mode SOURCE differs (?mode= vs. the rackspace column).
 
 import { test, expect, type Page } from '@playwright/test';
+import { spawnPatch } from './_helpers';
 
 /** The pinned trio's deterministic node ids (graph/workflow-pins.ts). */
 const PINNED_IDS = ['pinned-mixmstrs', 'pinned-electraControl', 'pinned-clipplayer'] as const;
+
+/** The workflow default wires (graph/workflow-pins.ts WORKFLOW_DEFAULT_WIRES):
+ *  pinned MIXMSTRS master L/R → pinned AUDIO OUT L/R, deterministic ids. */
+const DEFAULT_WIRE_IDS = [
+  'e-pinned-mixmstrs-masterL-pinned-audioOut-L',
+  'e-pinned-mixmstrs-masterR-pinned-audioOut-R',
+] as const;
+
+/** Wait until the default-wire seed has written both master→out edges. */
+async function waitForDefaultWires(page: Page): Promise<void> {
+  await page.waitForFunction(
+    (ids) => {
+      const w = globalThis as unknown as {
+        __patch?: { edges: Record<string, unknown> };
+      };
+      if (!w.__patch) return false;
+      return ids.every((id) => !!w.__patch!.edges[id]);
+    },
+    DEFAULT_WIRE_IDS as unknown as string[],
+    { timeout: 10_000 },
+  );
+}
 
 /** Wait until the workflow ensure effect has written the pinned trio. */
 async function waitForPinnedTrio(page: Page): Promise<void> {
@@ -213,6 +236,130 @@ test.describe('workflow shell', () => {
       });
     });
     await waitForPinnedTrio(page); // the ensure effect re-spawns the trio
+  });
+
+  test('default wiring: pinned MIXMSTRS master L/R auto-wires to pinned AUDIO OUT (one-shot, user delete respected)', async ({ page }) => {
+    // Owner directive: "the audio out in the rack should be default wired to
+    // the master L/R outs from the in rack mixmstrs in workflow mode."
+    await page.goto('/rack?mode=workflow');
+    await waitForPinnedTrio(page);
+    await waitForDefaultWires(page);
+
+    // Both edges carry the exact endpoints (not just the ids).
+    const wires = await page.evaluate((ids) => {
+      const w = globalThis as unknown as {
+        __patch: {
+          edges: Record<
+            string,
+            { source: { nodeId: string; portId: string }; target: { nodeId: string; portId: string } } | undefined
+          >;
+        };
+      };
+      return ids.map((id) => {
+        const e = w.__patch.edges[id];
+        return e ? `${e.source.nodeId}.${e.source.portId}->${e.target.nodeId}.${e.target.portId}` : null;
+      });
+    }, DEFAULT_WIRE_IDS as unknown as string[]);
+    expect(wires).toEqual([
+      'pinned-mixmstrs.masterL->pinned-audioOut.L',
+      'pinned-mixmstrs.masterR->pinned-audioOut.R',
+    ]);
+
+    // USER DELETE IS RESPECTED: rip out the L wire, churn the snapshot with
+    // an unrelated node write, and prove the ensure does NOT re-add it (the
+    // one-shot `workflowDefaultWired` latch on the pinned AUDIO OUT).
+    await page.evaluate((id) => {
+      const w = globalThis as unknown as {
+        __patch: { edges: Record<string, unknown> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        delete w.__patch.edges[id];
+      });
+    }, DEFAULT_WIRE_IDS[0]);
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, Record<string, unknown>> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        w.__patch.nodes['wf-churn'] = {
+          id: 'wf-churn',
+          type: 'analogVco',
+          domain: 'audio',
+          position: { x: 260, y: 260 },
+          params: {},
+          data: {},
+        };
+      });
+    });
+    await expect(page.locator('.svelte-flow__node[data-id="wf-churn"]')).toBeVisible();
+    // The R wire survives; the deleted L wire STAYS deleted across churn.
+    const after = await page.evaluate((ids) => {
+      const w = globalThis as unknown as { __patch: { edges: Record<string, unknown> } };
+      return ids.map((id) => !!w.__patch.edges[id]);
+    }, DEFAULT_WIRE_IDS as unknown as string[]);
+    expect(after).toEqual([false, true]);
+  });
+
+  test('default wiring carries REAL audio: source → mixmstrs ch1 → auto-wired AUDIO OUT is audible', async ({ page }) => {
+    // Real-chain proof (not just edge materialization): a free-running VCO
+    // into the pinned mixer's channel 1 must register energy on the pinned
+    // AUDIO OUT's terminal tap (the limiter feeding ctx.destination) with
+    // ZERO hand-patching between mixer and output — the default wires are
+    // the only mixer→out cables in the rack.
+    await page.goto('/rack?mode=workflow');
+    await waitForPinnedTrio(page);
+    await waitForDefaultWires(page);
+
+    // spawnPatch boots the engine + wipes the graph; the ensure re-spawns
+    // the pins and re-seeds the default wires (fresh audioOut, no latch).
+    await spawnPatch(page, [
+      { id: 'vco', type: 'analogVco', position: { x: 120, y: 120 } },
+    ]);
+    await waitForPinnedTrio(page);
+    await waitForDefaultWires(page);
+
+    // Feed the mixer: VCO sine → MIXMSTRS ch1 L (a normal user patch).
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { edges: Record<string, unknown> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        w.__patch.edges['e-vco-sine-pinned-mixmstrs-ch1L'] = {
+          id: 'e-vco-sine-pinned-mixmstrs-ch1L',
+          source: { nodeId: 'vco', portId: 'sine' },
+          target: { nodeId: 'pinned-mixmstrs', portId: 'ch1L' },
+          sourceType: 'audio',
+          targetType: 'audio',
+        };
+      });
+    });
+
+    // The terminal audibility probe: AUDIO OUT's outputSnapshot RMS.
+    await expect
+      .poll(
+        async () =>
+          page.evaluate(() => {
+            const w = globalThis as unknown as {
+              __engine?: () => {
+                read: (n: { id: string; type: string; domain: string }, k: string) => unknown;
+              } | null;
+              __patch: { nodes: Record<string, { id: string; type: string; domain: string } | undefined> };
+            };
+            const eng = w.__engine?.();
+            const node = w.__patch.nodes['pinned-audioOut'];
+            if (!eng || !node) return 0;
+            const snap = eng.read(node, 'outputSnapshot') as { samples: Float32Array } | undefined;
+            if (!snap?.samples?.length) return 0;
+            let sumSq = 0;
+            for (let i = 0; i < snap.samples.length; i++) sumSq += snap.samples[i]! * snap.samples[i]!;
+            return Math.sqrt(sumSq / snap.samples.length);
+          }),
+        { timeout: 15_000 },
+      )
+      .toBeGreaterThan(0.01);
   });
 
   test('File.. menu: quicksave slot 1 round-trips through quickload', async ({ page }) => {

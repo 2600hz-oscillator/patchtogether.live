@@ -39,8 +39,13 @@
     onUndock: (nodeId: string) => void;
     /** Close the pinned drawer occupant (bottom zone's ✕ / Esc). */
     onClosePinned?: () => void;
+    /** Canvas's rear-view ("flip rack") toggle. The flip's CSS is gated on a
+     *  `.rear-view` ANCESTOR; the bottom drawer inherits it from `.flow`, but
+     *  the top/left rails are flex siblings OUTSIDE `.flow` — stamping the
+     *  class here makes docked cards flip with the rack in every zone. */
+    rearView?: boolean;
   }
-  let { zone, cards, nodeTypes, rackSizeByType, onUndock, onClosePinned }: Props = $props();
+  let { zone, cards, nodeTypes, rackSizeByType, onUndock, onClosePinned, rearView = false }: Props = $props();
 
   let collapsed = $derived(dockStore.railCollapsed(zone));
   let railSize = $derived(dockStore.railSize(zone));
@@ -134,6 +139,7 @@
       bind:this={railEl}
       class={`dock-rail dock-rail-${zone}`}
       class:dock-rail-horizontal={horizontal}
+      class:rear-view={rearView}
       style={sizeStyle}
       data-testid={zone === 'bottom' ? 'dock-zone-bottom' : `dock-rail-${zone}`}
       data-dock-count={cards.length}
