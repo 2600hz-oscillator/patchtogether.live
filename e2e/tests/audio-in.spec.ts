@@ -297,6 +297,46 @@ test.describe('WORKFLOW audio I/O surface (🎧 always-on pinned AUDIO IN/OUT)',
     );
   }
 
+  test('closed 🎧 panel paints NOTHING — the pinned card faces never ghost onto the canvas', async ({ page }) => {
+    // Regression: the io-panel hid itself with `visibility: hidden`, but
+    // xyflow stamps inline `visibility: visible` on every measured
+    // .svelte-flow__node wrapper — visibility is child-overridable, so the
+    // two hosted card faces painted as floating, non-draggable ghost cards
+    // over a fresh workflow rack while the panel chrome stayed invisible
+    // (owner report 2026-07-11, reproduced on dev). The fix hides the
+    // panel with `opacity: 0` — opacity composites the WHOLE subtree and
+    // no descendant can opt back in, which is why the assertion below pins
+    // the computed opacity (Playwright's toBeVisible ignores opacity, and
+    // the inner wrapper legitimately keeps visibility:visible).
+    await page.goto('/rack?mode=workflow');
+    await page.waitForLoadState('networkidle');
+    await waitForWorkflowPins(page);
+
+    const panel = page.getByTestId('workflow-io-panel');
+    await expect(panel).toHaveAttribute('data-open', 'false');
+    // The always-on lifecycle keeps both hosts MOUNTED while closed…
+    await expect(panel.locator('[data-testid="workflow-io-audioin-host"]')).toHaveCount(1);
+    await expect(panel.locator('[data-testid="workflow-io-audioout-host"]')).toHaveCount(1);
+    // …but the closed panel must never paint: opacity 0 is the spec-level
+    // "no pixels from this subtree" guarantee the visibility approach lacked.
+    await expect(panel).toHaveCSS('opacity', '0');
+    await expect(panel).toHaveCSS('pointer-events', 'none');
+
+    // Open → the panel paints and the real card faces are usable.
+    await page.getByTestId('workflow-topbar-slot-audio-io').click();
+    await expect(panel).toHaveAttribute('data-open', 'true');
+    await expect(panel).toHaveCSS('opacity', '1');
+    await expect(
+      panel.locator('[data-testid="workflow-io-audioin-host"] [data-testid="audioin-device-select"]'),
+    ).toBeVisible();
+
+    // Close again → back to zero paint (the stream-preserving mount stays).
+    await page.getByTestId('workflow-topbar-slot-audio-io').click();
+    await expect(panel).toHaveAttribute('data-open', 'false');
+    await expect(panel).toHaveCSS('opacity', '0');
+    await expect(panel.locator('[data-testid="workflow-io-audioin-host"]')).toHaveCount(1);
+  });
+
   test('menu patch-out wires pinned AUDIO IN → SCOPE and the fake-mic signal materializes', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));

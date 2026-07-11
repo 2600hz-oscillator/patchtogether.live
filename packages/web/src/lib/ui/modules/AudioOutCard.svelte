@@ -31,7 +31,15 @@
   // sink choice, but same as every other Yjs-shared field).
   let devices = $state<MinimalDevice[]>([]);
   let selectedOutputId = $state<string | null>(null);
-  let setSinkIdSupported = $state<boolean>(false);
+  // STATIC platform feature-detect, not engine-instance detect: the old
+  // `false` initial value meant the "requires Chromium-based browsers"
+  // notice showed on EVERY browser (Edge included) whenever the audio
+  // engine hadn't booted within the onMount probe's 5 s window — a fresh
+  // rack with no user gesture yet always hit it. AudioContext.setSinkId
+  // is a prototype member; its presence doesn't need a live engine.
+  let setSinkIdSupported = $state<boolean>(
+    typeof AudioContext !== 'undefined' && 'setSinkId' in AudioContext.prototype,
+  );
   let setSinkIdError = $state<string | null>(null);
 
   function setParam(paramId: string) {
