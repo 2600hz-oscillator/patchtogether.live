@@ -265,6 +265,76 @@ test.describe('P2.5a docking core (workflow racks)', () => {
   });
 });
 
+test.describe('P2.5b pan cable tail (workflow racks)', () => {
+  test('a screen-space tail bridges stub→rail DURING a pan gesture — one path per docked-with-edges node — and dies on release', async ({ page }) => {
+    const errors = collectErrors(page);
+    await gotoWorkflow(page);
+    // mx is docked WITH an edge (gets a tail); lf is docked WITHOUT edges
+    // (degrades to nothing — the tail is per docked-with-edges node).
+    await spawnPatch(
+      page,
+      [
+        { id: 'nz', type: 'noise', position: { x: 80, y: 120 } },
+        { id: 'mx', type: 'mixer', position: { x: 380, y: 160 } },
+        { id: 'lf', type: 'lfo', position: { x: 380, y: 430 } },
+      ],
+      [{ id: 'e1', from: { nodeId: 'nz', portId: 'white' }, to: { nodeId: 'mx', portId: 'in1' } }],
+    );
+    await page.evaluate(() => {
+      const d = (globalThis as unknown as { __dock: { dock: (id: string, z: string) => void } }).__dock;
+      d.dock('mx', 'top');
+      d.dock('lf', 'top');
+    });
+    await expect(page.getByTestId('dock-rail-top').locator('[data-dock-card="mx"]')).toBeVisible();
+
+    // Idle: ZERO overlay DOM (the tail is gesture-scoped, zero idle cost).
+    await expect(page.getByTestId('dock-pan-tail')).toHaveCount(0);
+
+    // Pan gesture: press-drag on an empty spot of the pane (lower-left
+    // third — the far corners host the minimap toggle / Controls chrome).
+    const pane = page.locator('.svelte-flow__pane:visible').first();
+    const box = await pane.boundingBox();
+    expect(box).not.toBeNull();
+    const sx = box!.x + box!.width * 0.35;
+    const sy = box!.y + box!.height * 0.9;
+    await page.mouse.move(sx, sy);
+    await page.mouse.down();
+    await page.mouse.move(sx - 80, sy - 40, { steps: 6 });
+    await page.mouse.move(sx - 160, sy - 80, { steps: 6 });
+
+    // Mid-gesture: the tail overlay exists with EXACTLY ONE path — mx (has
+    // an edge) gets a tail, lf (no edges) does not.
+    await expect(page.getByTestId('dock-pan-tail')).toBeVisible();
+    await expect(page.locator('[data-testid="dock-pan-tail"] path')).toHaveCount(1);
+    await expect(page.locator('[data-tail-node="mx"]')).toHaveCount(1);
+
+    // Release: the tail dies with the gesture (edges snap under the rail).
+    await page.mouse.up();
+    await expect(page.getByTestId('dock-pan-tail')).toHaveCount(0);
+    expect(errors, `pageerrors: ${errors.join(' | ')}`).toEqual([]);
+  });
+
+  test('zero docked-with-edges nodes → a pan gesture renders NO tail overlay', async ({ page }) => {
+    await gotoWorkflow(page);
+    await spawnPatch(page, [{ id: 'lf', type: 'lfo', position: { x: 380, y: 200 } }]);
+    await page.evaluate(() => {
+      (globalThis as unknown as { __dock: { dock: (id: string, z: string) => void } }).__dock.dock('lf', 'top');
+    });
+    await expect(page.getByTestId('dock-rail-top').locator('[data-dock-card="lf"]')).toBeVisible();
+    const pane = page.locator('.svelte-flow__pane:visible').first();
+    const box = await pane.boundingBox();
+    const sx = box!.x + box!.width * 0.35;
+    const sy = box!.y + box!.height * 0.9;
+    await page.mouse.move(sx, sy);
+    await page.mouse.down();
+    await page.mouse.move(sx - 120, sy - 60, { steps: 8 });
+    // Give a settled frame mid-gesture, then assert nothing rendered.
+    await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+    await expect(page.getByTestId('dock-pan-tail')).toHaveCount(0);
+    await page.mouse.up();
+  });
+});
+
 test.describe('dawless is unchanged by the docking core', () => {
   test('/rack: no rails, no dock menu entries, PatchPanel handle stack intact on canvas cards', async ({ page }) => {
     const errors = collectErrors(page);

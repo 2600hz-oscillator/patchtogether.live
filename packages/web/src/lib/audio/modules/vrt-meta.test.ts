@@ -316,7 +316,10 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // animated flighty-sky GEN) + obj-bird-ernest (the bird OBJ per-model
       // baseline); linux baselines pending the vrt-update.yml dispatch, same
       // darwin-first precedent as every other linux/toybox-* pair).
-    ).toBeLessThanOrEqual(87);
+      // 87→88 for DOCKSCOPE (2026-07-11, deliberate darwin-first new module —
+      // workflow P2.5b's slim 1u rail scope with the seeded VRT scene; linux
+      // baseline pending the vrt-update.yml dispatch on the PR branch).
+    ).toBeLessThanOrEqual(88);
   });
 });
 

@@ -16,7 +16,7 @@
     type Edge as FlowEdge,
     type Connection,
   } from '@xyflow/svelte';
-  import { patch, ydoc, undoManager, LOCAL_ORIGIN } from '$lib/graph/store';
+  import { patch, ydoc, undoManager, LOCAL_ORIGIN, onBindRackspace } from '$lib/graph/store';
   import { buildDuplicate } from '$lib/graph/duplicate';
   import { instanceCount, wouldExceedCap } from '$lib/graph/cap';
   import { setControlColor, setNodeLocked } from '$lib/graph/mutate';
@@ -237,6 +237,8 @@
   // dock store. Design: .myrobots/docking-recommendation.md.
   import DockRail from '$lib/ui/dock/DockRail.svelte';
   import DockStubCard from '$lib/ui/dock/DockStubCard.svelte';
+  // DOCKING P2.5b: the pan-gesture screen-space cable tail (stub → rail).
+  import DockPanTail, { type DockTailSpec } from '$lib/ui/dock/DockPanTail.svelte';
   import { dockStore } from '$lib/ui/dock/dock-store.svelte';
   import { isDockableType } from '$lib/ui/dock/dockable';
   import type { DockZone } from '$lib/ui/dock/dock';
@@ -1054,6 +1056,56 @@
     });
   });
 
+  // DOCKING P2.5b eviction hardening: when a RACK-MATE deletes a node the
+  // local user has docked, the sweep above evicts the rail card silently
+  // (retire → tombstone, keeping the revive path if the id returns — e.g.
+  // the peer undoes). The performer staring at a rail deserves a notice,
+  // so observe the Y nodes map directly: remote-transaction deletes of a
+  // DOCKED id toast. Local transactions are skipped (the local explicit-
+  // delete path has its own toast via noteDockDeletes, and a local
+  // quickload slot switch must stay silent — the P2.5a tombstone
+  // round-trip semantics). A remote LOAD (delete+add in one transaction)
+  // is also skipped: those ids are coming back, the entries just revive.
+  //
+  // Doc-swap seam: `bindRackspace()` REPLACES the whole Y.Doc when a
+  // provider attaches mid-mount (the /rack + __attachProvider path — no
+  // Canvas remount), so an observer taken from the mount-time `ydoc`
+  // would sit on the destroyed doc and never fire. Re-point through
+  // onBindRackspace, exactly like the snapshot bus does.
+  $effect(() => {
+    if (!workflowMode) return;
+    const onNodes = (event: { transaction: { local: boolean }; changes: { keys: Map<string, { action: string; oldValue?: unknown }> } }) => {
+      if (event.transaction.local) return;
+      let hasAdds = false;
+      for (const [, change] of event.changes.keys) {
+        if (change.action === 'add') { hasAdds = true; break; }
+      }
+      if (hasAdds) return; // bulk replace (peer load) — retire/revive, not a delete notice
+      for (const [key, change] of event.changes.keys) {
+        if (change.action !== 'delete') continue;
+        if (!untrack(() => dockStore.isDocked(key))) continue;
+        // Best-effort label: the deleted Y.Map may still expose its type.
+        let label = key;
+        try {
+          const t = (change.oldValue as { get?: (k: string) => unknown } | null)?.get?.('type');
+          if (typeof t === 'string' && t) label = t;
+        } catch { /* deleted-type read — fall back to the id */ }
+        showDockToast(`${label} was deleted by a rack-mate — undocked`);
+      }
+    };
+    let nodesMap = ydoc.getMap('nodes');
+    nodesMap.observe(onNodes);
+    const offBind = onBindRackspace((_p, doc) => {
+      try { nodesMap.unobserve(onNodes); } catch { /* previous doc destroyed */ }
+      nodesMap = doc.getMap('nodes');
+      nodesMap.observe(onNodes);
+    });
+    return () => {
+      offBind();
+      try { nodesMap.unobserve(onNodes); } catch { /* doc may be destroyed */ }
+    };
+  });
+
   /** Rail card lists (top/left; bottom adds the pinned occupant below).
    *  A docked id whose node is mid-retirement resolves to nothing here —
    *  the rail slot simply disappears until the tombstone revives. */
@@ -1069,6 +1121,76 @@
   }
   let topRailCards = $derived(railCards('top'));
   let leftRailCards = $derived(railCards('left'));
+
+  // ---------------- DOCKING P2.5b: the pan-gesture cable tail ----------------
+  //
+  // During a pan/zoom gesture, edges to a docked module ride the canvas
+  // with the stub (accepted drift, owner Q1) — the tail bridges the gap
+  // visually: one presentation-only screen-space bezier per docked-WITH-
+  // EDGES node, stub → rail card, mounted on onmovestart and KILLED on
+  // onmoveend. Zero cost when idle or when no docked node has edges
+  // (dockPanTails stays [] → the overlay renders nothing and onmove does
+  // no work). Endpoints: stub via store-derived flowToScreenPosition
+  // (re-projected per onmove tick — same-frame, drift-free mid-pan); rail
+  // via ONE gBCR at gesture start (rails are viewport-fixed).
+
+  /** DockStubCard face-center offset in FLOW units (158×44 fixed face). */
+  const DOCK_STUB_CENTER = { x: 79, y: 22 };
+
+  let dockPanTails = $state<DockTailSpec[]>([]);
+  let dockPanTick = $state(0);
+
+  /** Where a tail lands on the rail card: the edge-center FACING the canvas. */
+  function railTailAnchor(r: DOMRect, zone: DockZone): { x: number; y: number } {
+    switch (zone) {
+      case 'top': return { x: r.x + r.width / 2, y: r.bottom };
+      case 'left': return { x: r.right, y: r.y + r.height / 2 };
+      case 'right': return { x: r.x, y: r.y + r.height / 2 };
+      default: return { x: r.x + r.width / 2, y: r.top }; // bottom drawer
+    }
+  }
+
+  /** Snapshot the gesture's tails: docked nodes that (a) have ≥1 edge and
+   *  (b) have a mounted rail card (collapsed rails degrade to no tail). */
+  function buildDockPanTails(): DockTailSpec[] {
+    if (!workflowMode || !flowApi) return [];
+    const ids = dockStore.dockedIds;
+    if (ids.length === 0) return [];
+    const docked = new Set(ids);
+    const connected = new Set<string>();
+    for (const e of snapshot.edges) {
+      if (docked.has(e.source.nodeId)) connected.add(e.source.nodeId);
+      if (docked.has(e.target.nodeId)) connected.add(e.target.nodeId);
+    }
+    if (connected.size === 0) return [];
+    const out: DockTailSpec[] = [];
+    for (const id of connected) {
+      const entry = dockStore.entryFor(id);
+      const n = snapshot.nodes.find((sn) => sn.id === id);
+      if (!entry || !n) continue;
+      const railEl = document.querySelector(`[data-dock-card="${CSS.escape(id)}"]`);
+      if (!railEl) continue;
+      const pos = getNodePosition(ydoc, currentUserId, id, { x: n.position.x, y: n.position.y });
+      out.push({
+        nodeId: id,
+        flow: { x: pos.x + DOCK_STUB_CENTER.x, y: pos.y + DOCK_STUB_CENTER.y },
+        rail: railTailAnchor(railEl.getBoundingClientRect(), entry.zone),
+        zone: entry.zone,
+      });
+    }
+    return out;
+  }
+
+  function onViewportMoveStart(): void {
+    dockPanTails = buildDockPanTails();
+  }
+  function onViewportMove(): void {
+    if (dockPanTails.length > 0) dockPanTick++;
+  }
+  function onViewportMoveEnd(): void {
+    if (dockPanTails.length > 0) dockPanTails = [];
+  }
+
   let bottomRailCards = $derived.by(() => {
     const docked = railCards('bottom');
     // The pinned M/E/C occupant renders FIRST, alongside docked cards —
@@ -5841,6 +5963,9 @@
       connectionMode={ConnectionMode.Loose}
       ondelete={handleDelete}
       onnodedragstop={handleNodeDragStop}
+      onmovestart={onViewportMoveStart}
+      onmove={onViewportMove}
+      onmoveend={onViewportMoveEnd}
       onpanecontextmenu={onPaneContextMenu}
       onnodecontextmenu={onNodeContextMenu}
       onselectioncontextmenu={onSelectionContextMenu}
@@ -5950,6 +6075,15 @@
     </button>
     <AwarenessLayer {provider} />
     <PickupCable />
+    {#if workflowMode && dockPanTails.length > 0 && flowApi}
+      <!-- DOCKING P2.5b: gesture-scoped stub→rail tail (presentation-only;
+           mounted onmovestart, killed onmoveend — zero idle cost). -->
+      <DockPanTail
+        tails={dockPanTails}
+        toScreen={flowApi.flowToScreenPosition}
+        tick={dockPanTick}
+      />
+    {/if}
     {#if lassoMode && lassoOriginFlow}
       <LassoOverlay origin={lassoOriginScreen} cursor={lassoCursorScreen} />
     {/if}
