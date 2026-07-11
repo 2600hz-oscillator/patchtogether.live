@@ -72,10 +72,11 @@ test.describe('workflow shell', () => {
     await expect(page.getByTestId('preset-slot-bar')).toHaveCount(0);
     await expect(page.getByTestId('workflow-file-trigger')).toBeVisible();
     // The P3 media slots are LIVE (loader + assets picker — behavior in
-    // workflow-media.spec.ts); P4 cameras stays a disabled placeholder.
+    // workflow-media.spec.ts), and so is the P4 camera manager (behavior
+    // in workflow-camera.spec.ts).
     await expect(page.getByTestId('workflow-topbar-slot-media-loader')).toBeEnabled();
     await expect(page.getByTestId('workflow-topbar-slot-assets-picker')).toBeEnabled();
-    await expect(page.getByTestId('workflow-topbar-slot-cameras')).toBeDisabled();
+    await expect(page.getByTestId('workflow-topbar-slot-cameras')).toBeEnabled();
 
     // The pinned trio lands in the patch graph…
     await waitForPinnedTrio(page);

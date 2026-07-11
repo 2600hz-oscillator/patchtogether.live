@@ -23,7 +23,12 @@
   //      feeding the centralized mediaLibrary)
   //   💾 loaded assets → AssetsPickerSurface (images/videos/sounds
   //      submenus; click-to-patch via the virtual-port cable drag)
-  // Remaining placeholder: 📷 cameras (P4).
+  // P4 fills the last slot:
+  //   📷 cameras → CameraSurface (headless hiddenCard camera modules:
+  //      ＋ map / ✕ unmap / source assign via the hosted REAL card /
+  //      row-click virtual-port patching). Its card-host farm stays
+  //      MOUNTED like the audio I/O panel — a mapped camera's stream
+  //      must survive the menu closing.
   //
   // One menu at a time: File.. + the surface dropdowns share a single
   // `openMenu` slot; outside-click + ESC close whichever is up — EXCEPT
@@ -40,6 +45,7 @@
   import AudioIoSurface from './AudioIoSurface.svelte';
   import MediaLoaderSurface from './MediaLoaderSurface.svelte';
   import AssetsPickerSurface from './AssetsPickerSurface.svelte';
+  import CameraSurface from './CameraSurface.svelte';
   import type { ModuleNode } from '$lib/graph/types';
 
   interface Props {
@@ -81,6 +87,11 @@
     /** Multiplayer user id (asset-module cap checks + creatorId
      *  stamping) — null single-user, mirroring spawnFromPalette. */
     currentUserId?: string | null;
+    // ---- P4 camera manager plumbing (snapshot-derived by Canvas) ----
+    /** The mapped (hiddenCard) camera nodes, in stable menu order. */
+    cameraNodes?: ModuleNode[];
+    /** True when one more camera would exceed cameraInput.maxInstances. */
+    cameraAtCap?: boolean;
   }
   let {
     appVersion,
@@ -105,10 +116,12 @@
     nodeTypes = {},
     onEnsureEngine = null,
     currentUserId = null,
+    cameraNodes = [],
+    cameraAtCap = false,
   }: Props = $props();
 
   // ---- Topbar menu state: ONE menu open at a time ----
-  type MenuId = 'file' | 'clock' | 'din' | 'io' | 'assets';
+  type MenuId = 'file' | 'clock' | 'din' | 'io' | 'assets' | 'cameras';
   let openMenu = $state<MenuId | null>(null);
   let fileOpen = $derived(openMenu === 'file');
   /** Which File.. submenu section is expanded ('quicksave' | 'quickload' | 'rawjson' | 'theme' | null). */
@@ -149,10 +162,15 @@
       // Inside a PORTALED overlay a menu child opened (the MIDI-learn
       // context menu portals to <body>; the patch-to picker floats too)?
       // Those interactions must not slam the hosting dropdown shut.
+      // The camera manager's fixed-position card hosts (the source
+      // picker / live preview) are the same case: they float outside the
+      // anchor, and working the hosted card's device dropdown must not
+      // close the cameras menu (which would hide the host mid-pick).
       if (
         t.closest('.ctx-overlay') ||
         t.closest('[data-testid="control-context-menu"]') ||
-        t.closest('[data-testid="port-context-menu"]')
+        t.closest('[data-testid="port-context-menu"]') ||
+        t.closest('[data-wf-camera-host]')
       ) {
         return;
       }
@@ -175,10 +193,6 @@
     };
   });
 
-  /** The P4 placeholder slots still pending, in bar order. */
-  const PLACEHOLDER_SLOTS_RIGHT: ReadonlyArray<{ id: string; glyph: string; label: string; phase: string }> = [
-    { id: 'cameras', glyph: '📷', label: 'cameras', phase: 'P4' },
-  ];
 </script>
 
 <header class="workflow-topbar" data-testid="workflow-topbar">
@@ -426,15 +440,33 @@
       />
     </div>
 
-    {#each PLACEHOLDER_SLOTS_RIGHT as p (p.id)}
+    <!-- 📷 CAMERAS — the camera manager: ＋ map / ✕ unmap / source assign /
+         row-click virtual-port patching of headless camera modules. The
+         panel + its card-host farm stay MOUNTED (a mapped camera's stream
+         must survive menu close); open/close only toggles visibility. -->
+    <div class="slot-anchor" data-wf-anchor="cameras">
       <button
-        class="placeholder"
-        data-testid={`workflow-topbar-slot-${p.id}`}
-        disabled
-        title={`${p.label} — lands in ${p.phase}`}
-        aria-label={`${p.label} (coming in ${p.phase})`}
-      >{p.glyph}</button>
-    {/each}
+        class="slot-trigger"
+        class:open={openMenu === 'cameras'}
+        class:active={cameraNodes.length > 0}
+        data-testid="workflow-topbar-slot-cameras"
+        onclick={() => toggleMenu('cameras')}
+        aria-haspopup="menu"
+        aria-expanded={openMenu === 'cameras'}
+        title={cameraNodes.length > 0
+          ? `Cameras — ${cameraNodes.length} mapped; click a row to patch its output`
+          : 'Cameras — map a camera source and patch its output from the menu'}
+        aria-label="Camera manager"
+      >📷</button>
+      <CameraSurface
+        cameras={cameraNodes}
+        atCap={cameraAtCap}
+        {nodeTypes}
+        open={openMenu === 'cameras'}
+        onRequestClose={closeMenus}
+        {onEnsureEngine}
+      />
+    </div>
   </div>
 
   <span class="spacer"></span>
@@ -573,17 +605,6 @@
     display: flex;
     align-items: center;
     gap: 6px;
-  }
-  .placeholder {
-    width: 30px;
-    height: 26px;
-    border-radius: 3px;
-    border: 1px dashed #33394a;
-    background: transparent;
-    color: var(--text-dim);
-    opacity: 0.55;
-    font-size: 0.8rem;
-    cursor: not-allowed;
   }
   .slot-anchor {
     position: relative;
