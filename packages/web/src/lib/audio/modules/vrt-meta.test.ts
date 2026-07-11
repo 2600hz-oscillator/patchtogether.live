@@ -330,12 +330,17 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // scenes (clap-909-dense / clap-linn-room / clap-dry-snap in
       // vrt-clap.spec.ts); linux baselines pending the vrt-update.yml
       // dispatch on the PR branch).
-          // 94→100 for the KARPLUS + TOM DRUM composite-state scenes (2026-07-11,
+      // 94→100 for the KARPLUS + TOM DRUM composite-state scenes (2026-07-11,
       // deliberate darwin-first — 6 non-default-state card scenes in
       // vrt-karplus-tomtom-states.spec.ts, the sonic-audit coverage gap-fill;
       // linux baselines pending the vrt-update.yml dispatch on the PR
       // branch, same precedent as the COLOUR OF MAGIC scene batches).
-    ).toBeLessThanOrEqual(100);
+      // 100→87 DRAIN (2026-07-11): the whole drum-wave pending set —
+      // dockscope + karplus + tomtom + clap default cards, clap's 3
+      // composite scenes, and the 6 karplus/tomtom sonic-audit scenes —
+      // got real linux baselines via a single vrt-update.yml dispatch on
+      // this branch, so their 13 exemption pairs came out.
+    ).toBeLessThanOrEqual(87);
   });
 });
 
