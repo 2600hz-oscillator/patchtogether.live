@@ -4,8 +4,11 @@
   // this panel is where they live).
   //
   // REUSE OVER DUPLICATION: the panel hosts the REAL AudioinCard +
-  // AudioOutCard through the same standalone single-node SvelteFlow host
-  // the dock drawer uses (DockZoneContainer precedent), so the input
+  // AudioOutCard through a standalone single-node SvelteFlow host (the P1
+  // dock-drawer precedent; the drawer itself moved to the plain-mount
+  // DockCardHost in P2.5a — this surface keeps the flow host because its
+  // pinned nodes are canvas-hidden, so no stub/data-id collision exists
+  // and its geometry is already attested by the P2 e2e), so the input
   // source picker, getUserMedia permission flow, music-mode, status LED,
   // gain fader, output device pick (setSinkId) and master fader are all
   // the card's own code — zero forked device-enumeration logic.
@@ -36,7 +39,7 @@
   }
   let { audioIn, audioOut, nodeTypes, open, onRequestClose }: Props = $props();
 
-  /** Single-node host row — the DockZoneContainer mounting pattern. */
+  /** Single-node host row — the P1 dock-drawer flow-host pattern. */
   function hostNodesFor(node: ModuleNode) {
     return [
       {

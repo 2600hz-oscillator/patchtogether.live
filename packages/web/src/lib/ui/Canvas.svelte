@@ -204,6 +204,7 @@
   import {
     nextDefaultName,
     migrateAssignNames,
+    resolveDisplayName,
   } from '$lib/multiplayer/module-naming';
   // TIMELORDE auto-spawn — the rack always needs a system clock, so when the
   // patch loads (or boots empty) without one, drop a TIMELORDE in. Pure
@@ -220,7 +221,6 @@
   // the pinned M/E/C singleton trio, and hosts the docked drawer (the
   // first dock zone — $lib/ui/dock).
   import WorkflowTopbar from '$lib/ui/workflow/WorkflowTopbar.svelte';
-  import WorkflowLeftbar from '$lib/ui/workflow/WorkflowLeftbar.svelte';
   import {
     resolveWorkflowTimelorde,
     hasExternalClock as hasWorkflowExternalClock,
@@ -231,8 +231,15 @@
     workflowCameraAtCap,
   } from '$lib/ui/workflow/workflow-cameras';
   import { isCanvasHiddenNode } from '$lib/graph/hidden-card';
-  import DockZoneContainer from '$lib/ui/dock/DockZoneContainer.svelte';
+  // DOCKING P2.5a — three dock zones (top rail / LEFT rail = the workflow
+  // left toolbar / bottom drawer), plain-mount rail hosts (DockCardHost via
+  // DockRail), the canvas-side DockStubCard swap, and the local tombstoned
+  // dock store. Design: .myrobots/docking-recommendation.md.
+  import DockRail from '$lib/ui/dock/DockRail.svelte';
+  import DockStubCard from '$lib/ui/dock/DockStubCard.svelte';
   import { dockStore } from '$lib/ui/dock/dock-store.svelte';
+  import { isDockableType } from '$lib/ui/dock/dockable';
+  import type { DockZone } from '$lib/ui/dock/dock';
   import {
     WORKFLOW_PINNED_MODULES,
     WORKFLOW_PIN_SPAWN_ORIGIN,
@@ -279,6 +286,10 @@
     // block above). Sourced from the rackspace's server-side mode column
     // on /r/[id], or ?mode=workflow on the /rack scratch canvas.
     mode?: RackMode;
+    // DOCKING P2.5a: the localStorage key scope for this rack's dock state
+    // (`pt.dock.v2:${rackspaceId}`). /r/[id] passes the rackspace id; the
+    // scratch canvases fall back to 'scratch'.
+    rackspaceId?: string;
   }
   let {
     currentUserId,
@@ -287,6 +298,7 @@
     audioGate,
     headerAuth = null,
     mode = 'dawless',
+    rackspaceId = undefined,
   }: Props = $props();
 
   /** True when this canvas renders the workflow shell. */
@@ -312,11 +324,19 @@
   // (audio + video + meta) via the glob-driven card resolver. Adding a
   // module needs no edit here. Built once at module scope (the registries
   // self-register on the barrel imports above, so the lists are populated).
-  const nodeTypes = buildNodeTypes([
-    ...listModuleDefs(),
-    ...listVideoModuleDefs(),
-    ...listMetaModuleDefs(),
-  ]);
+  const nodeTypes = {
+    ...buildNodeTypes([
+      ...listModuleDefs(),
+      ...listVideoModuleDefs(),
+      ...listMetaModuleDefs(),
+    ]),
+    // DOCKING P2.5a: the canvas-side stub a docked module's card swaps to
+    // (same node id — cables stay attached). NOT a module def: it never
+    // enters the registries, the card-map glob, or the VRT/per-port sweeps
+    // (dock-by-default OFF is a hard invariant — nothing docks without a
+    // user gesture).
+    dockStub: DockStubCard as unknown as ReturnType<typeof buildNodeTypes>[string],
+  };
 
   // Rack sizing: module type → resolved { size, hp }. The flowNodes derivation
   // tags each card's SvelteFlow wrapper (rack-sized rack-{1u,3u} + an inline
@@ -426,6 +446,17 @@
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__setNodePosition = (userId: string | undefined, nodeId: string, pos: { x: number; y: number }) =>
         setNodePosition(ydoc, userId, nodeId, pos);
+      // DOCKING P2.5a — programmatic dock/undock + store observability for
+      // the workflow-dock e2e (the UI path is the node context menu; the
+      // hook drives the same functions for setup-heavy specs like the
+      // tombstone-revive round-trip). Stripped in prod.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__dock = {
+        dock: (nodeId: string, zone: DockZone) => dockNode(nodeId, zone),
+        undock: (nodeId: string) => undockNode(nodeId),
+        entryFor: (nodeId: string) => dockStore.entryFor(nodeId),
+        tombstoneCount: () => dockStore.tombstoneCount,
+      };
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__persistence = {
         makeEnvelope,
@@ -897,11 +928,14 @@
     return () => window.removeEventListener('keydown', onDockKey);
   });
 
-  // Dock hygiene: a drawer left open never leaks across canvas mounts
-  // (rackspace navigation remounts Canvas via {#key rackspace.id}).
+  // Dock hygiene + P2.5a persistence binding: each Canvas mount binds the
+  // dock store to THIS rackspace's localStorage scope (loading its docked
+  // entries + tombstones) and clears the transient pinned-drawer occupancy;
+  // unmount unbinds (rackspace navigation remounts Canvas via
+  // {#key rackspace.id}, so state never leaks across racks).
   $effect(() => {
-    dockStore.closeAll();
-    return () => dockStore.closeAll();
+    dockStore.bind(rackspaceId ?? 'scratch');
+    return () => dockStore.unbind();
   });
 
   // WORKFLOW MODE P3 — asset-link hygiene. Same per-rackspace discipline
@@ -947,6 +981,106 @@
       ? WORKFLOW_PINNED_MODULES.find((s) => s.type === dockedBottomNode!.type) ?? null
       : null,
   );
+
+  // ---------------- DOCKING P2.5a: dock/undock + rails + GC ----------------
+  //
+  // A docked module NEVER leaves patch.nodes/edges — docking is a LOCAL
+  // projection (dock-store entries, per rackspace in localStorage): the
+  // canvas swaps its card for a DockStubCard (same node id — cables stay
+  // attached there) and the real card face renders in a screen-fixed rail
+  // (DockRail → DockCardHost, outside the SvelteFlow provider — PatchPanel
+  // self-gates). Design: .myrobots/docking-recommendation.md.
+
+  /** Transient dock toast (auto-evict / delete notices). LOCAL chrome. */
+  let dockToast = $state<string | null>(null);
+  let dockToastTimer: ReturnType<typeof setTimeout> | null = null;
+  function showDockToast(msg: string): void {
+    dockToast = msg;
+    if (dockToastTimer) clearTimeout(dockToastTimer);
+    dockToastTimer = setTimeout(() => (dockToast = null), 4000);
+  }
+
+  /** Display name for dock chrome (rail headers, toasts). */
+  function dockDisplayName(node: ModuleNode): string {
+    return resolveDisplayName(node, patch.nodes as Record<string, ModuleNode | undefined>);
+  }
+
+  /** Dock a canvas module into a zone (context-menu action; workflow racks
+   *  + DOCKABLE_TYPES only — the menu is gated the same way, this re-checks).
+   *  Captures restorePosition and BAKES the current canvas position through
+   *  the existing layouts/node.position split, so .ptperf exports and
+   *  newcomers always see a sane position while the module is docked. */
+  function dockNode(nodeId: string, zone: DockZone): void {
+    if (!workflowMode) return;
+    const n = patch.nodes[nodeId] as ModuleNode | undefined;
+    if (!n || isPinnedNode(n) || !isDockableType(n.type)) return;
+    const pos = currentNodePosition(nodeId);
+    if (!pos) return;
+    writeNodePosition(nodeId, pos); // bake (existing mutate path — no new surface)
+    dockStore.dock(nodeId, zone, pos);
+    trace(`docked ${nodeId} (${n.type}) → ${zone}`);
+  }
+
+  /** Undock: remove the local entry + return the node to its dock-time
+   *  restorePosition through the SAME position split. NOT undoable (dock
+   *  state lives outside the Y.Doc; undock is the explicit inverse). */
+  function undockNode(nodeId: string): void {
+    const entry = dockStore.undock(nodeId);
+    if (!entry) return;
+    writeNodePosition(nodeId, entry.restorePosition);
+    trace(`undocked ${nodeId} → canvas (${entry.restorePosition.x},${entry.restorePosition.y})`);
+  }
+
+  // GC sweep: retire entries whose node vanished (quicksave slot switch,
+  // peer delete) to TOMBSTONES — they revive when the id reappears
+  // (quickload round-trip) — and auto-evict entries whose node a peer
+  // folded into a collapsed group (with a toast; the card has no canvas
+  // presence to stub). Runs per snapshot; untracked so the sweep's own
+  // store writes never loop the effect.
+  $effect(() => {
+    if (!workflowMode) return;
+    const liveIds = new Set(snapshot.nodes.map((n) => n.id));
+    const grouped = new Set<string>();
+    for (const n of snapshot.nodes) {
+      const pg = (n.data as { parentGroupId?: string } | undefined)?.parentGroupId;
+      if (pg && collapsedGroupIds.has(pg)) grouped.add(n.id);
+    }
+    const names = new Map(snapshot.nodes.map((n) => [n.id, dockDisplayName(n)]));
+    untrack(() => {
+      const evicted = dockStore.sweep(liveIds, grouped);
+      for (const id of evicted) {
+        showDockToast(`${names.get(id) ?? id} was grouped — undocked`);
+      }
+    });
+  });
+
+  /** Rail card lists (top/left; bottom adds the pinned occupant below).
+   *  A docked id whose node is mid-retirement resolves to nothing here —
+   *  the rail slot simply disappears until the tombstone revives. */
+  function railCards(zone: DockZone): Array<{ node: ModuleNode; title: string; pinned: boolean }> {
+    if (!workflowMode) return [];
+    const out: Array<{ node: ModuleNode; title: string; pinned: boolean }> = [];
+    for (const { nodeId } of dockStore.entriesFor(zone)) {
+      const node = snapshot.nodes.find((n) => n.id === nodeId);
+      if (!node) continue;
+      out.push({ node, title: dockDisplayName(node), pinned: false });
+    }
+    return out;
+  }
+  let topRailCards = $derived(railCards('top'));
+  let leftRailCards = $derived(railCards('left'));
+  let bottomRailCards = $derived.by(() => {
+    const docked = railCards('bottom');
+    // The pinned M/E/C occupant renders FIRST, alongside docked cards —
+    // the P1 drawer generalized (pinned stays drawer-only per owner Q2).
+    if (dockedBottomNode && dockedBottomSpec) {
+      return [
+        { node: dockedBottomNode, title: dockedBottomSpec.label, pinned: true },
+        ...docked,
+      ];
+    }
+    return docked;
+  });
 
   // ---------------- WORKFLOW MODE P2: topbar surface plumbing ----------------
   //
@@ -1087,6 +1221,15 @@
     y: number;
     remoteUser: PresenceUser | undefined;
     top: boolean;
+    /** DOCKING P2.5a: the type we EMITTED for this node ('dockStub' while
+     *  docked, else the snapshot type). The reuse + carry-forward guards
+     *  below compare against THIS, not n.type — comparing the snapshot
+     *  type would permanently miss for stubs (the verifier's re-measure-
+     *  churn catch) and dock/undock must dirty exactly one rebuild. */
+    emittedType: string;
+    /** Dock zone baked into a stub's data (re-dock to another zone must
+     *  rebuild so the stub face relabels). Null when not docked. */
+    dockZone: DockZone | null;
     obj: FlowNode;
   }
   interface PrevFlowEdgeEntry {
@@ -1131,6 +1274,14 @@
       // user OR when this user has no entry yet).
       const resolved = getNodePosition(ydoc, currentUserId, n.id, { x: n.position.x, y: n.position.y });
       const isTop = top === n.id;
+      // DOCKING P2.5a: a docked node renders as a small DockStubCard IN ITS
+      // PLACE — same node id, so every cable stays attached natively. The
+      // real card face lives in the dock rail (DockCardHost). Reading
+      // entryFor subscribes this pass to dock/undock; dawless racks never
+      // read the store (workflowMode gate) — zero tracking, zero overhead.
+      const dockEntry = workflowMode ? dockStore.entryFor(n.id) : null;
+      const emittedType = dockEntry ? 'dockStub' : n.type;
+      const dockZone = dockEntry?.zone ?? null;
       // xyflow's current user-node for this id. untrack: nodeLookup is a
       // plain Map today, but an xyflow upgrade to reactive lookups must
       // not create an effect↔measure feedback loop.
@@ -1145,35 +1296,42 @@
         && prev.y === resolved.y
         && prev.remoteUser === remoteUser
         && prev.top === isTop
+        && prev.emittedType === emittedType
+        && prev.dockZone === dockZone
       ) {
         // Unchanged → reuse. Prefer xyflow's current userNode (see header
         // comment). Guard on PRIMITIVE fields only: after a writeback,
         // xyflow's local nodes live behind a Svelte 5 deep proxy, so nested
         // object identity (cur.data === …) can NEVER hit through it — but
-        // id/type strings compare fine. Data lineage is safe by
-        // construction: within a mount, internals.userNode for this id is
-        // always the object WE last emitted for it or an xyflow
+        // id/type strings compare fine. The comparison is against the
+        // EMITTED type (stub swap): comparing n.type would permanently miss
+        // for docked stubs → re-measure churn every pass. Data lineage is
+        // safe by construction: within a mount, internals.userNode for this
+        // id is always the object WE last emitted for it or an xyflow
         // spread-clone descending from it (spreads preserve `data`), and
         // any change to what we emit goes through the rebuild branch below,
         // which resets prev.obj — so a matching id+type here cannot carry a
         // stale data payload.
-        const reusable = cur && cur.id === n.id && cur.type === n.type ? cur : prev.obj;
+        const reusable = cur && cur.id === n.id && cur.type === emittedType ? cur : prev.obj;
         next.push(reusable);
-        nextPrev.set(n.id, { snapNode: n, x: resolved.x, y: resolved.y, remoteUser, top: isTop, obj: reusable });
+        nextPrev.set(n.id, { snapNode: n, x: resolved.x, y: resolved.y, remoteUser, top: isTop, emittedType, dockZone, obj: reusable });
         continue;
       }
       rebuiltAny = true;
       const node: FlowNode = {
         // Carry xyflow-owned fields forward on a rebuild so ONE dirty node
         // doesn't reset measured/handleBounds (re-measure) or lose its
-        // selection. Type-guarded so a same-id different-type replacement
+        // selection. Type-guarded against the EMITTED type so a same-id
+        // different-type replacement — including the card↔stub dock swap —
         // never inherits a foreign card's dimensions.
-        ...(cur && cur.type === n.type ? { measured: cur.measured, selected: cur.selected } : {}),
+        ...(cur && cur.type === emittedType ? { measured: cur.measured, selected: cur.selected } : {}),
         id: n.id,
-        type: n.type,
+        type: emittedType,
         position: resolved,
         data: {
           node: n,
+          // DOCKING P2.5a: the stub face labels its zone + click-to-focus.
+          ...(dockZone ? { dockZone } : {}),
           // Phase 3C: when a remote rack-mate has this node in their
           // active group-builder selection, expose the user's identity
           // so the per-card overlay can render the soft-lock badge.
@@ -1184,6 +1342,17 @@
         // remote-state branching.
         ...(remoteUser ? { className: 'remote-group-building' } : {}),
       };
+      if (dockEntry) {
+        // Stubs: fixed small face (no rack sizing), not draggable (undock
+        // returns the node to restorePosition — a movable stub would make
+        // that write-back ambiguous), `no-flip` so rear view neither
+        // mirrors nor hides it (its cables must stay traceable).
+        node.draggable = false;
+        node.class = 'dock-stub no-flip';
+        next.push(node);
+        nextPrev.set(n.id, { snapNode: n, x: resolved.x, y: resolved.y, remoteUser, top: isTop, emittedType, dockZone, obj: node });
+        continue;
+      }
       // Lift the most-recently-spawned node above its siblings so it's
       // visible immediately when it lands on top of an existing card.
       // xyflow's default node zIndex is 0; bumping to 1000 puts the new
@@ -1213,7 +1382,7 @@
       }
       if (isTop) node.zIndex = 1000;
       next.push(node);
-      nextPrev.set(n.id, { snapNode: n, x: resolved.x, y: resolved.y, remoteUser, top: isTop, obj: node });
+      nextPrev.set(n.id, { snapNode: n, x: resolved.x, y: resolved.y, remoteUser, top: isTop, emittedType, dockZone, obj: node });
     }
     prevFlowNodes = nextPrev;
     // No-op short-circuit: if every entry is identity-reused AND the array
@@ -2722,7 +2891,20 @@
     if (topNodeId && payload.nodes.some((n) => n.id === topNodeId)) {
       topNodeId = null;
     }
+    // DOCKING P2.5a: an EXPLICIT local delete hard-drops dock entries AND
+    // tombstones (the one signal retirement must never revive from).
+    noteDockDeletes(payload.nodes.map((n) => n.id));
     trace(`deleted ${payload.nodes.length} node(s), ${payload.edges.length} edge(s)`);
+  }
+
+  /** Hard-drop dock state for explicitly deleted nodes (+ toast when a
+   *  docked card just vanished from a rail). */
+  function noteDockDeletes(nodeIds: string[]): void {
+    if (nodeIds.length === 0) return;
+    const wasDocked = dockStore.noteExplicitDelete(nodeIds);
+    for (const id of wasDocked) {
+      showDockToast(`${id} was deleted — removed from its dock`);
+    }
   }
 
   /** User finished dragging one or more module cards. Persist new positions.
@@ -2895,6 +3077,19 @@
     if (!ctxMenuNodeId) return false;
     const n = patch.nodes[ctxMenuNodeId];
     return (n?.data as { rackLocked?: boolean } | undefined)?.rackLocked === true;
+  });
+
+  // DOCKING P2.5a — context-menu gating. "Dock to …" appears ONLY for
+  // allowlisted types in workflow racks (owner Q3: control-first + scope,
+  // workflow only); a right-clicked DockStubCard gets "Undock" instead.
+  let ctxMenuDocked = $derived.by<boolean>(() => {
+    if (!workflowMode || !ctxMenuNodeId) return false;
+    return dockStore.isDocked(ctxMenuNodeId);
+  });
+  let ctxMenuDockable = $derived.by<boolean>(() => {
+    if (!workflowMode || !ctxMenuNodeId || ctxMenuDocked) return false;
+    const n = patch.nodes[ctxMenuNodeId];
+    return !!n && !isPinnedNode(n as ModuleNode) && isDockableType(n.type);
   });
 
   // Control colour — the right-clicked module's CURRENT resolved colour (for the
@@ -3785,6 +3980,7 @@
       }
       for (const id of doomed) delete patch.nodes[id];
     }, LOCAL_ORIGIN);
+    noteDockDeletes([groupId, ...childIds]); // explicit delete → hard-drop dock state
     trace(`deleted group ${groupId} + ${childIds.length} children`);
   }
 
@@ -4432,6 +4628,7 @@
     // No defensive flow* sync needed: snapshot bus + one-way prop (B3).
     if (topNodeId === nodeId) topNodeId = null;
     clearAnnotate(nodeId); // drop any personal annotate-mode state for this node
+    noteDockDeletes([nodeId]); // explicit delete → hard-drop dock entry/tombstone
     trace(`deleted ${nodeId}`);
   }
 
@@ -5596,6 +5793,36 @@
     <pre class="error">{error}</pre>
   {/if}
 
+  {#if workflowMode}
+    <!-- DOCKING P2.5a: the TOP dock rail — a reserved-space flex sibling
+         ABOVE the canvas row (never an overlay inside .svelte-flow). Empty
+         → renders zero pixels. -->
+    <DockRail
+      zone="top"
+      cards={topRailCards}
+      nodeTypes={nodeTypes as unknown as Record<string, unknown>}
+      {rackSizeByType}
+      onUndock={undockNode}
+    />
+  {/if}
+
+  <!-- The canvas row: [left dock rail | flow]. The wrapper exists in BOTH
+       modes so dawless and workflow share one layout path (in dawless it
+       contains only .flow and is layout-transparent — verified pixel-
+       identical by the full VRT sweep). -->
+  <div class="canvas-row">
+    {#if workflowMode}
+      <!-- The LEFT dock rail IS the workflow left toolbar (owner Q5):
+           empty → the P1 44px scaffold strip; docked cards are its
+           contents. Reserved-space flex sibling of .flow. -->
+      <DockRail
+        zone="left"
+        cards={leftRailCards}
+        nodeTypes={nodeTypes as unknown as Record<string, unknown>}
+        {rackSizeByType}
+        onUndock={undockNode}
+      />
+    {/if}
   <div class="flow" class:rear-view={rearView} class:flip-back={flipBack} data-rear-view={rearView ? 'true' : undefined} bind:this={flowEl}>
     <SvelteFlow
       nodes={flowNodes}
@@ -5697,23 +5924,18 @@
            'name-label-error') so existing e2e selectors still resolve. -->
     </SvelteFlow>
     {#if workflowMode}
-      <!-- WORKFLOW left rail: empty scaffold pending owner Q1. Overlays the
-           canvas's left edge (.flow is position:relative). -->
-      <WorkflowLeftbar />
-      <!-- The BOTTOM dock zone: the M/E/C drawer. Renders the docked pinned
-           card through the shared DockZoneContainer (fixed overlay, own
-           scale — see $lib/ui/dock). One card per zone; ESC closes. -->
-      {#if dockedBottomNode && dockedBottomSpec}
-        <DockZoneContainer
-          zone="bottom"
-          node={dockedBottomNode}
-          nodeTypes={nodeTypes as unknown as Record<string, unknown>}
-          rackSize={rackSizeByType[dockedBottomNode.type]}
-          scale={dockStore.scaleFor('bottom')}
-          title={dockedBottomSpec.label}
-          onClose={() => dockStore.close('bottom')}
-        />
-      {/if}
+      <!-- The BOTTOM dock zone: the P1 M/E/C drawer GENERALIZED (P2.5a) —
+           one overlay drawer holding the toggled pinned occupant (drawer-
+           only forever, owner Q2) ALONGSIDE any cards docked to 'bottom'.
+           Renders zero pixels when nothing is pinned-open or docked. -->
+      <DockRail
+        zone="bottom"
+        cards={bottomRailCards}
+        nodeTypes={nodeTypes as unknown as Record<string, unknown>}
+        {rackSizeByType}
+        onUndock={undockNode}
+        onClosePinned={() => dockStore.close('bottom')}
+      />
     {/if}
     <button
       type="button"
@@ -5745,6 +5967,11 @@
         Save instrument
       </button>
     {/if}
+    {#if dockToast}
+      <!-- DOCKING P2.5a: transient local notice (auto-evict / delete). -->
+      <div class="dock-toast" data-testid="dock-toast" role="status">{dockToast}</div>
+    {/if}
+  </div>
   </div>
 
   <footer class="bottombar">
@@ -5827,6 +6054,10 @@
   hasCustomControlColor={ctxMenuHasCustomColor}
   onsetcontrolcolor={(hex) => ctxMenuNodeId && setControlColor(ctxMenuNodeId, hex)}
   onresetcontrolcolor={() => ctxMenuNodeId && setControlColor(ctxMenuNodeId, null)}
+  dockable={ctxMenuDockable}
+  docked={ctxMenuDocked}
+  ondock={(zone) => ctxMenuNodeId && dockNode(ctxMenuNodeId, zone)}
+  onundock={() => ctxMenuNodeId && undockNode(ctxMenuNodeId)}
   ondelete={() => {
     if (!ctxMenuNodeId) return;
     if (ctxMenuNodeType === 'group') deleteGroupAndChildren(ctxMenuNodeId);
@@ -5930,8 +6161,19 @@
   .root > .trace-panel {
     flex: 0 0 auto;
   }
-  .root > .flow {
+  /* DOCKING P2.5a: .flow sits inside .canvas-row — a flex ROW that hosts
+   * the LEFT dock rail as a reserved-space sibling (workflow mode only; in
+   * dawless the row contains only .flow, so the layout is unchanged: the
+   * row takes the old `.root > .flow` flex slot and .flow fills it). */
+  .root > .canvas-row {
     flex: 1 1 auto;
+    display: flex;
+    flex-direction: row;
+    min-height: 0;
+  }
+  .canvas-row > .flow {
+    flex: 1 1 auto;
+    min-width: 0;
   }
   .topbar {
     display: flex;
@@ -6200,6 +6442,22 @@
   }
   .topbar .account-link:hover .account-avatar {
     border-color: #6ba0d4;
+  }
+  /* DOCKING P2.5a: transient dock toast (auto-evict / delete notices). */
+  .dock-toast {
+    position: absolute;
+    bottom: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 40;
+    background: rgba(14, 17, 22, 0.95);
+    color: var(--text);
+    border: 1px solid var(--accent-dim, #1d5f66);
+    border-radius: 4px;
+    padding: 6px 14px;
+    font-size: 0.75rem;
+    font-family: ui-monospace, monospace;
+    pointer-events: none;
   }
   .flow {
     position: relative;
