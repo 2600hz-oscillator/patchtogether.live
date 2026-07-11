@@ -123,7 +123,7 @@ const FROM_TEST_ROOT = resolve(__dirname, '../../../../..');
 // for non-black/structured/param-response). Full-res dependent-texelFetch fill →
 // isolated in the serialized heavy lane; e2e/webgl-heavy-globs.ts is in the hash
 // basis, so this moved the WebGL hash (re-attested). 49 → 50.
-const EXPECTED_HEAVY_SPEC_COUNT = 50;
+const EXPECTED_HEAVY_SPEC_COUNT = 51;
 
 describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
   const basis = resolveWebglBasis();
