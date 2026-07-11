@@ -314,3 +314,113 @@ params, rewritten docs prose); cellshade stays in STRICT_DOCS.
    the same wave?
 2. Default band count: proposal 4 bands (idx 2 stays the default position).
 3. `smooth` default 0.35 — final value set by eye on the preview material.
+
+## 12. Phase-3 adversarial review — CORRECTIONS (2026-07-11, fresh-eyes agent)
+
+Verdict: **GO-WITH-CHANGES.** The architecture (§4) is sound and every
+precedent claim checked out in code (FADER 1-program/2-pass/2-FBO, B3NTB0X
+4-program multi-sampler chain, managed `createFbo()` = engine-res auto-resized,
+no ping-pong needed, spec files hash-transparent to the attest). The §3
+findings all reproduce byte-exactly on the CPU mirror. But four §4/§6/§7
+claims are numerically FALSE as written and must be fixed in phase 4. All
+numbers below were computed against the doc's exact P3/P1 math
+(scratch-verified; smoothstep w = mix(1e-3, 0.5, softness), additive
+reconstruction, NEW_BANDS = {2,3,4,6,8}).
+
+* **R1 — F-CS3 as written FAILS a correct implementation (test-plan
+  blocker).** The additive luma-shift (verified: it IS YCbCr Y-replacement —
+  YCbCr is linear in RGB, so fixing Cb/Cr and moving Y by Δ moves each channel
+  by Δ) sends saturated blue (0,0,1) at n=2/band-0 to **(0,0,226)** — the
+  clamp eats the −0.886 the dark band demands and only −0.114 is realizable.
+  The test asserts EVERY channel ≤ 60. No chroma-preserving YCbCr
+  reconstruction can pass it; the multiplicative alternative (RGB gain
+  Yq/Y — HSV-V scaling) blackens blue (0,0,0) but then F-CS1's magenta
+  `R ≥ 231` fails (magenta at band 1/3 → (206,0,206)). **Fix: keep additive
+  (matches §4 and the Winnemöller chroma-passthrough intent, modulo gamut
+  clamp) and rewrite F-CS3 to assert the output's Rec.601 LUMA ≤ ~0.15·255
+  (computed: 25.8) plus B ≫ R,G (hue retained) — not per-channel ≤ 60.**
+  §6's "saturated blue lands in the dark band" sentence stays true in LUMA
+  terms only.
+* **R2 — the band remap breaks the neutral-ramp anchor AS WRITTEN.** New
+  mapping {2,3,4,6,8} changes idx1 4→3 bands and idx2 6→4 bands (today's V
+  bands are {2,4,6} at idx 0/1/2). The passing anchor test uses `bits: 1`
+  expecting {0,85,170,255}; at n=3 it gets {0,128,128,255} → FAILS (Δ=43 >
+  TOL 14). §4's "the passing neutral-ramp test keeps passing" is wrong
+  without an edit the doc never mentions. **Fix: the anchor test moves to
+  `bits: 2` (n=4 reproduces today's exact values — verified 0/85/170/255 and
+  threshold positions i/n match floor()) and pins `softness: 0` (+`smooth: 0`
+  for hygiene). Only idx 0 is band-count-identical at the same knob position;
+  say so in the PR body.**
+* **R3 — F-CS4 is VACUOUS as written and fails at the default when fixed.**
+  At `bits: 1` (new n=3, thresholds 1/3 & 2/3) the 0.48/0.52 probes sit
+  mid-band → jump = 0 even under HARD quantization — the test would pass
+  while proving nothing. Moved to `bits: 2` (threshold at 0.5), the default
+  softness 0.25 (w = 0.126 band units; smoothstep centre slope 1.5/2w ≈ 6/band
+  unit) yields jump **71 > 30**; ≤ 30 needs softness ≥ ~0.68. **Fix: F-CS4
+  sets `bits: 2` + an EXPLICIT `softness` ≥ 0.7 for the ≤30 assertion, plus a
+  hard-anchor companion read at `softness: 0` asserting the full ~85 jump.
+  Do NOT raise the module default to satisfy the test** (0.7-default bands
+  stop reading as bands). §6's "boundary straddle is smooth at default
+  softness" is retracted. Note w is CAPPED at 0.5 by construction — beyond
+  that, adjacent smoothstep windows create discontinuities at band CENTERS
+  (the round()-tie robustness proof only holds for w ≤ 0.5), so "wider w"
+  is not an available lever.
+* **R4 — `smooth = 0` is NOT a true bypass.** σ_r = mix(0.03, 0.4, 0) = 0.03
+  passes neighbours within ~±0.01 luma at high weight: measured up to ~5/255
+  shift on low-contrast structure (uniform −0.03 neighbours shift the centre
+  5.26 codes). **Fix: explicit bypass — skip the P1/P2 draws in JS when
+  smooth === 0 (cheapest; also saves 2 passes) or an early-out branch in the
+  shader. Bit-identity is by-branch, not by-limit.** (F-CS1/2 solids are
+  unaffected — bilateral is identity on constant frames — but the "true
+  bypass" contract as stated is false.)
+* **R5 — margin note:** F-CS1 magenta under additive computes to (235,0,235);
+  the `R ≥ 231` floor leaves 4 codes of margin (vs TOL=14 elsewhere). Assert
+  ≥ 220, or derive the expected value from the CPU mirror.
+* **R6 — §7 "card baseline unchanged" is FALSE.** The VRT mask covers only
+  the canvas; the card's UNMASKED DOM changes: "Bits"→"Bands" label, the
+  `{bitDepth}-BIT · {colorCount} COL` readout (`cellshade-bits-readout`),
+  the 1/2/4/8/16 tick labels, +3 knobs, +3 CV jacks (and likely a
+  rack-sizes.ts height bump). Budget a darwin card-baseline regen via the
+  vrt-update workflow; `linux/cellshade` stays in EXEMPT_BASELINE_PAIRS
+  until the composite scenes pin linux.
+* **R7 — lane assignment (same as keyer phase-3 item 6):**
+  cellshade-functional.spec.ts matches NO `WEBGL_HEAVY_GLOBS` entry → it runs
+  in the SHARDED matrix doing `gl.readPixels` (the picturebox-gif
+  false-red-under-contention class; webgl-heavy-globs.ts's own rule: "a file
+  that reads a canvas must stay in the lane"). **Phase 4 adds the glob (+
+  boy-scout: `cellshade.spec.ts`, same class, sharded today).**
+  webgl-heavy-globs.ts is a STANDALONE_BASIS_FILE so the edit batches free
+  into the already-planned single re-attest; spec files themselves are
+  hash-transparent (owner directive 2026-06-26). Land phases 1 and 4 close
+  together to keep the sharded-lane exposure window short. NB: the keyer
+  branch will ALSO edit webgl-heavy-globs.ts — trivial conflict, sweep it.
+* **R8 — retro-modes decision: ASK-FIRST (before the build), not
+  on-the-PR.** If the owner answers "existing patches must keep the retro
+  look", the remedy is a mode/compat param INSIDE cellshade — that reworks
+  the param table, tests, docs and costs the attest again. One async question
+  now de-risks it; engine work (P1–P3) is retro-agnostic and can start in
+  parallel. If dropped: the F-CS5 characterization test is DELETED in phase 4
+  (reconcile = fix-or-delete; no dormant exemption), with the POSTERBOX
+  pointer in the commit message.
+* **R9 — keyer coordination: stay decoupled; two re-attests is correct.**
+  Verified `EDGES_LUMA_WEIGHTS ≡ KEY_LUMA_WEIGHTS ≡ [0.299, 0.587, 0.114]`
+  — no divergence risk. The final attest happens post-rebase regardless
+  (attest-treadmill lesson), so sharing one attest would require coupling two
+  owner-gated PRs for zero net savings. Whichever lands second extracts
+  `e2e/tests/_video-probe.ts` and resolves the webgl-heavy-globs merge.
+* **R10 — smaller confirmations:** per-port sweep is registry-driven (the 3
+  new CV ports auto-enroll; only skip-note lists are hand-maintained);
+  behavioral stays skipped (VIDEO_SINK_SWIFTSHADER_NOTE, verified);
+  SHAPEDRAMPS `h_out` exists for the smooth range-proof fixture;
+  cube-adsr-composite precedent exists; CV `discrete` maps cv∈[−1,1] →
+  round over the UNCHANGED 0..4 span, so zero-migration is mechanically true
+  (the param stores the step INDEX — no patch ever holds "16"); tap-budget
+  math is honest (~+15 taps + 3 passes at 1024×768). CI delta 1–1.5 min is
+  plausible but lands on the SERIALIZED e2e-video lane after R7 — state that
+  lane, not just the number, in the PR body. One flagged taste item for the
+  preview: the range weight on LUMA difference smooths ACROSS isoluminant
+  chroma edges (which the luma Sobel also cannot ink — consistent, but an
+  RGB-distance range weight costs zero extra taps if the preview shows
+  bleeding on saturated synth fixtures); and 1 iteration of r=3/σ_d=2
+  separable bilateral is MILD abstraction — evaluate the compile-time
+  2-iteration variant on the owner preview material.
