@@ -347,7 +347,13 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // regression gate; linux baselines pending the vrt-update.yml
       // dispatch on the PR branch, same precedent as the COLOUR OF MAGIC
       // scene batches).
-    ).toBeLessThanOrEqual(90);
+      // 90→94 for TIDY VCO (2026-07-11, deliberate darwin-first new
+      // module — the flagship VA subtractive voice card + its 3
+      // composite-state scenes (tidyvco-acid / tidyvco-pad / tidyvco-bass
+      // in vrt-tidy-vco.spec.ts); linux baselines pending the
+      // vrt-update.yml dispatch on the PR branch, the karplus/clap
+      // drum-wave precedent).
+    ).toBeLessThanOrEqual(94);
   });
 });
 

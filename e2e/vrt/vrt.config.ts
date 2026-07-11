@@ -48,6 +48,7 @@ const FULL_MATCH = [
   'vrt-synesthesia-video.spec.ts',
   'vrt-quadralogical.spec.ts',
   'vrt-clap.spec.ts',
+  'vrt-tidy-vco.spec.ts',
   'vrt-karplus-tomtom-states.spec.ts',
   'vrt-colourofmagic.spec.ts',
   'cellshade-composite.spec.ts',

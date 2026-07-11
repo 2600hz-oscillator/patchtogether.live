@@ -2940,6 +2940,40 @@ textmarquee param posX 0..1 linear default=0.5
 textmarquee param posY 0..1 linear default=0.5
 textmarquee param scrollX 0..1 linear default=0.5
 textmarquee param scrollY 0..1 linear default=0.5
+tidyVco meta domain=audio
+tidyVco in cutoff_cv cv
+tidyVco in drive_cv cv
+tidyVco in gate gate edge=gate
+tidyVco in pitch cv
+tidyVco in poly polyPitchGate
+tidyVco in pwm_cv cv
+tidyVco in res_cv cv
+tidyVco out out_l audio
+tidyVco out out_r audio
+tidyVco param atk 0.0005..5 log default=0.003 unit=s
+tidyVco param cutoff 40..14000 log default=900 unit=Hz
+tidyVco param dec 0.001..5 log default=0.25 unit=s
+tidyVco param detune -50..50 linear default=6 unit=¢
+tidyVco param drive 0..1 linear default=0.25
+tidyVco param env -1..1 linear default=0.45
+tidyVco param fatk 0.0005..5 log default=0.005 unit=s
+tidyVco param fdec 0.001..5 log default=0.35 unit=s
+tidyVco param frel 0.001..5 log default=0.3 unit=s
+tidyVco param fsus 0..1 linear default=0.2
+tidyVco param hold 0..1 discrete default=0
+tidyVco param level -24..12 linear default=0 unit=dB
+tidyVco param mix 0..1 linear default=0.5
+tidyVco param oct2 -1..1 discrete default=0
+tidyVco param pw 0.05..0.5 linear default=0.5
+tidyVco param rel 0.001..5 log default=0.25 unit=s
+tidyVco param res 0..1 linear default=0.35
+tidyVco param shape1 0..1 linear default=0
+tidyVco param shape2 0..1 linear default=0
+tidyVco param sub 0..1 linear default=0.15
+tidyVco param sus 0..1 linear default=0.75
+tidyVco param track 0..1 linear default=0.4
+tidyVco param width 0..1 linear default=0.4
+tidyVco stereo out_l+out_r
 tiler meta domain=video
 tiler in in video
 tiler in tile_cv cv param=tile cvScale=discrete
