@@ -181,8 +181,10 @@ let followOn = true;
 // the legacy caller; 'keys' = the KEYS view, when LEN was opened from KEYS).
 let lengthReturnMode: 'edit' | 'keys' = 'edit';
 
-// ── KEYS mode (dual-Launchpad note/keyboard + clip-record). Pair-only v1 (the
-// single-unit port is a documented follow-up). ──
+// ── KEYS mode (note/keyboard + clip-record). PAIR: both units flip together
+// (16-wide keyboard). SINGLE: the lone device is the L half (8-wide keyboard,
+// 8-cell whole-clip playhead strip); entry = hold note-REC/OVERDUB in CONTROL
+// view (the hold survives the CC-98 flip, like EDIT) + double-tap a clip. ──
 let keysClipIndex = 0; // the clip being played/recorded in KEYS
 let keysRecHeld = false; // SESSION deck note-REC hold (overdub-OFF entry)
 let keysOverdubHeld = false; // SESSION deck note-OVERDUB hold (overdub-ON entry)
@@ -293,7 +295,12 @@ function setSingleView(view: 'clip' | 'control'): void {
   // its release once we switch to clip view (handleL ignores the release), which
   // would leave the modifier stuck. (editArmed deliberately SURVIVES: hold EDIT
   // in control, flip to clip, tap a clip = the single-unit "enter editor"
-  // gesture; handleL consumes + clears editArmed itself.)
+  // gesture; handleL consumes + clears editArmed itself. keysRecHeld /
+  // keysOverdubHeld survive for the SAME reason — hold note-REC/OVERDUB in
+  // control, flip, double-tap a clip = the single-unit "enter KEYS" gesture;
+  // their releases in clip view still route to handleL where they're ignored,
+  // but the KEYS entry consumes the double-tap first, and a release after
+  // re-flipping to control clears them through handleRDeck as usual.)
   copyHeld = false;
   pasteHeld = false;
   pasteRevHeld = false;
@@ -776,7 +783,9 @@ function toggleArrangeMode(nodeId: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// KEYS mode (dual-Launchpad note/keyboard + clip-record). Pair-only v1.
+// KEYS mode (note/keyboard + clip-record). Pair AND single deployments — the
+// handlers below are deployment-agnostic; only entry-routing + the painted
+// frame (16- vs 8-cell playhead) differ, and both live at the routing seams.
 // ---------------------------------------------------------------------------
 
 /** The bottom-left keyboard cell pitch for a clip — the clip's root, so every
@@ -1068,19 +1077,48 @@ function handleKey(e: LaunchpadKeyEvent): void {
 /**
  * SINGLE-UNIT routing. The lone device is bound to the L slot, so every event
  * arrives tagged unit:'L'; we route it by the ACTIVE VIEW, not the unit tag:
- *   · CC 98 (the spare top-right button) ALWAYS flips clip↔control — it's free
- *     in pair mode (pair never reaches this path). On a single device CC 98 is
- *     the DEDICATED view-flip, so it takes over the slot the pair editor used
- *     for FOLLOW. FOLLOW is therefore not on a button in single mode; it still
- *     defaults ON each time you enter the editor (and EXIT/re-enter re-enables
- *     it), which is the single-unit tradeoff for one device doing both roles.
+ *   · CC 98 (the spare top-right button) flips clip↔control — it's free in pair
+ *     mode (pair never reaches this path). On a single device CC 98 is the
+ *     DEDICATED view-flip, so it takes over the slot the pair editor used for
+ *     FOLLOW. The single editor's FOLLOW instead lives on the scene column
+ *     (EDIT_FOLLOW_SCENE_ROW — row 4, right under EXIT/DBL/LEN), so freeze +
+ *     re-follow stay fully reachable on one device.
+ *   · KEYS mode owns the WHOLE device (there is no view concept inside it):
+ *     every event routes to the keys handler as the L half, and CC 98 is
+ *     swallowed until EXIT (the lit EXIT pad is the way out). The LENGTH page
+ *     opened from KEYS likewise owns the device until its EXIT returns to KEYS.
  *   · clip view    → handleL (the clip matrix + scene column).
  *   · control view → handleR (the deck / editor / length — the SAME R brain).
  */
 function handleSingleKey(nodeId: string, e: LaunchpadKeyEvent): void {
+  // KEYS (and the LENGTH page opened from KEYS) suspend the view machinery on
+  // the lone device — the mode owns the surface until EXIT.
+  if (mode === 'keys') {
+    if (e.ev.type === 'top' && e.ev.cc === CC_TOP_SPARE_8) return; // no view flip inside KEYS
+    handleKeysUnit(nodeId, 'L', e);
+    return;
+  }
+  if (mode === 'lengthEdit' && lengthReturnMode === 'keys') {
+    if (e.ev.type === 'top' && e.ev.cc === CC_TOP_SPARE_8) return;
+    handleR(nodeId, e); // the ruler; EXIT returns to KEYS
+    return;
+  }
   if (e.ev.type === 'top' && e.ev.cc === CC_TOP_SPARE_8) {
     if (e.ev.s === 1) toggleSingleView(); // flip on press only (release is a no-op)
     return;
+  }
+  // Deck-HOLD releases landing in CLIP view: the flip-spanning holds (EDIT /
+  // note-REC / note-OVERDUB, set in control view) are held on the SAME physical
+  // pads whichever view is active — so when their release arrives in clip view
+  // (where handleL ignores releases), clear the matching hold here. Without
+  // this a release-without-consume leaves a STUCK modifier (a stuck keys-hold
+  // suppresses every launch = a modal trap). A release after the gesture
+  // already consumed the hold falls through harmlessly.
+  if (activeView === 'clip' && e.ev.type === 'pad' && e.ev.s === 0) {
+    const keysHold = rDeckKeysHold(e.ev.x, e.ev.y);
+    if (keysHold === 'keysRec' && keysRecHeld) { keysRecHeld = false; return; }
+    if (keysHold === 'keysOverdub' && keysOverdubHeld) { keysOverdubHeld = false; return; }
+    if (rDeckPad(e.ev.x, e.ev.y) === 'edit' && editArmed) { editArmed = false; return; }
   }
   // Clip-view ARM ROW: top CCs 91..97 are the single-mode action-arm strip (the
   // clip view's top row is otherwise dead — handleL has no `top` branch). Route
@@ -1256,12 +1294,14 @@ function handleL(nodeId: string, e: LaunchpadKeyEvent): void {
       consumeArmed(nodeId, clipIdx, data);
       return;
     }
-    // KEYS ENTRY (pair only): holding note-REC or note-OVERDUB on the R deck
+    // KEYS ENTRY (pair + single): holding note-REC or note-OVERDUB on the R deck
     // SUPPRESSES the launch on L taps (mirror editArmed) and a DOUBLE-TAP of a
     // clip opens the KEYS view for it — hold-REC = overdub OFF, hold-OVERDUB =
     // overdub ON. The double-tap (two taps of the same clip within the window) is
-    // the safety layer against accidental entry into a destructive mode.
-    if (deployment === 'pair' && (keysRecHeld || keysOverdubHeld)) {
+    // the safety layer against accidental entry into a destructive mode. In
+    // SINGLE mode the hold is set in the CONTROL view's deck and SURVIVES the
+    // CC-98 flip to clip view (like editArmed — the one-device gesture family).
+    if (keysRecHeld || keysOverdubHeld) {
       if (clipIdx === lastTapClipIndex && tickCount - lastTapTick <= DOUBLE_TAP_TICKS) {
         lastTapClipIndex = -1;
         enterKeys(nodeId, clipIdx, keysOverdubHeld, data);
@@ -1269,6 +1309,13 @@ function handleL(nodeId: string, e: LaunchpadKeyEvent): void {
       }
       lastTapClipIndex = clipIdx;
       lastTapTick = tickCount;
+      // Snapshot the lane's prior intent even for this SUPPRESSED tap: if the
+      // hold is released between the taps, the next quick tap of the same clip
+      // falls into the single double-tap-editor branch, whose revert reads these
+      // — a stale snapshot would mis-revert the lane. The suppressed tap changed
+      // nothing, so snapshotting NOW makes that revert a harmless no-op.
+      lastTapPrevQueued = laneQueued(data, laneOf(clipIdx));
+      lastTapWasPlaying = lanePlaying(data, laneOf(clipIdx)) === slotOf(clipIdx);
       return; // single tap while a KEYS-hold is held = suppressed (no launch)
     }
     // Held-modifier branches FIRST (the modifiers live on R, read here).
@@ -1397,9 +1444,11 @@ function handleRDeck(nodeId: string, e: LaunchpadKeyEvent): void {
       if (ev.s === 1) clearBuffer();
       return;
     }
-    // KEYS-entry hold buttons (dark deck pads, row 1) — pair only. HELD modifiers
-    // (act on both edges): hold one + double-tap a clip on L → open KEYS.
-    if (deployment === 'pair') {
+    // KEYS-entry hold buttons (dark deck pads, row 1) — pair AND single. HELD
+    // modifiers (act on both edges): hold one + double-tap a clip on L → open
+    // KEYS. In single mode the hold is set here (CONTROL view) and survives the
+    // CC-98 flip to clip view, where the double-tap lands (see handleL).
+    {
       const keysHold = rDeckKeysHold(ev.x, ev.y);
       if (keysHold === 'keysRec') { keysRecHeld = ev.s === 1; return; }
       if (keysHold === 'keysOverdub') { keysOverdubHeld = ev.s === 1; return; }
@@ -1454,10 +1503,12 @@ function handleREdit(nodeId: string, e: LaunchpadKeyEvent): void {
   const clip = clipAtIndex(liveData(nodeId), editClipIndex);
   if (!clip) { mode = 'session'; return; }
 
-  // Scene column: top = EXIT · row 6 = DOUBLE · row 5 = LENGTH-EDIT.
+  // Scene column: top = EXIT · row 6 = DOUBLE · row 5 = LENGTH-EDIT. SINGLE
+  // mode adds row 4 = FOLLOW (CC 98 is the view-flip on one device, so the
+  // single editor's FOLLOW lives here; pair keeps row 4 dark + inert).
   if (ev.type === 'scene') {
     if (ev.s !== 1) return;
-    const act = editSceneAction(ev.row);
+    const act = editSceneAction(ev.row, { followButton: deployment === 'single' });
     if (act === 'exit') {
       mode = 'session';
       editAnchor = null;
@@ -1468,6 +1519,8 @@ function handleREdit(nodeId: string, e: LaunchpadKeyEvent): void {
       if (next !== clip) writeClip(nodeId, next);
     } else if (act === 'lengthEdit') {
       mode = 'lengthEdit';
+    } else if (act === 'follow') {
+      toggleFollow(clip);
     }
     return;
   }
@@ -1492,15 +1545,7 @@ function handleREdit(nodeId: string, e: LaunchpadKeyEvent): void {
       return;
     }
     if (ev.cc === CC_EDIT_FOLLOW) {
-      if (followOn) {
-        // freeze on the window currently shown (capture before clearing).
-        editWindowStart = shownWindowStart(clip);
-        followOn = false;
-        clampWindow(clip);
-      } else {
-        followOn = true;
-        clampWindow(clip);
-      }
+      toggleFollow(clip);
       return;
     }
     return;
@@ -1526,6 +1571,20 @@ function handleREdit(nodeId: string, e: LaunchpadKeyEvent): void {
     if (!editSpanned) writeClip(nodeId, toggleNoteAt(clip, note.step, note.midi, { mono }));
     editAnchor = null;
     editSpanned = false;
+  }
+}
+
+/** FOLLOW toggle — the ONE body behind the pair's CC-98 button AND the single
+ *  editor's scene-row-4 FOLLOW pad. ON→OFF freezes on the window currently
+ *  shown (capture before clearing); OFF→ON resumes tracking the playhead. */
+function toggleFollow(clip: NoteClipRecord): void {
+  if (followOn) {
+    editWindowStart = shownWindowStart(clip);
+    followOn = false;
+    clampWindow(clip);
+  } else {
+    followOn = true;
+    clampWindow(clip);
   }
 }
 
@@ -1620,6 +1679,9 @@ function paintRRole(
         velArmed: velHeld,
         followOn,
         shiftHeld,
+        // SINGLE: FOLLOW gets a real pad on scene row 4 (CC 98 is the view
+        // flip). Pair leaves row 4 dark — its FOLLOW is the CC-98 button.
+        followSceneButton: deployment === 'single',
       }));
       return;
     }
@@ -1642,8 +1704,9 @@ function paintRRole(
   }));
 }
 
-/** Paint the KEYS view onto a unit (both units are the keyboard). Returns false
- *  when the KEYS clip has vanished (caller should drop back to session). */
+/** Paint the KEYS view onto a unit (pair: both units are the keyboard; single:
+ *  the lone device is the L half with an 8-cell whole-clip playhead strip).
+ *  Returns false when the KEYS clip has vanished (caller drops to session). */
 function paintKeysRole(
   target: LaunchpadUnit,
   nodeId: string,
@@ -1668,6 +1731,10 @@ function paintKeysRole(
       recording: rec?.recording,
       overdub: rec?.overdub,
       blinkOn,
+      // SINGLE: the whole clip across the lone device's 8 top-row cells (the
+      // pair spreads 16 cells over L+R; one device compresses to 8 so the
+      // moving dot never runs off the surface).
+      phCells: deployment === 'single' ? LP_WIDTH : undefined,
     }),
   );
   return true;
@@ -1709,6 +1776,20 @@ function renderLeds(): void {
   }
 
   if (single) {
+    // KEYS owns the lone device (no view concept inside it): service the record
+    // machine, paint the single (8-cell-playhead) keys frame, and skip the view
+    // marker — CC 98 is swallowed in KEYS, so a lit marker would lie. The same
+    // applies to the LENGTH page opened FROM keys (the ruler owns the device
+    // until its EXIT returns to KEYS).
+    if (mode === 'keys') {
+      serviceKeysRecord(nodeId, data);
+      if (paintKeysRole('L', nodeId, data, blinkOn)) return;
+      mode = 'session'; // the KEYS clip vanished — fall through to the views
+    }
+    if (mode === 'lengthEdit' && lengthReturnMode === 'keys') {
+      paintRRole('L', nodeId, data, blinkOn);
+      return;
+    }
     // ONE device, role chosen by the active view. The CC-98 view marker is set
     // AFTER the role frame in EITHER view (and after the R painter's early
     // returns in edit/length modes), so it always reflects the active view on
