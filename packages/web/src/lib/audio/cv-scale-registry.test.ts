@@ -196,6 +196,16 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // rate consumed per-sample inside the roll engine. Same shape as
   // kickdrum.pitch_cv / accent_in and dx7.pitch_cv.
   snaredrum: ['pitch_cv', 'accent_in', 'roll_speed_cv'],
+  // TOM DRUM: ALL six cv inputs are consumed DIRECTLY by the worklet as its
+  // own audio-rate node inputs, not AudioParams — pitch_cv is V/oct (tune ×
+  // 2^pitch_cv per-sample; an additive AudioParam cvScale would NOT be
+  // 1V/oct), accent_in is a raw 0..1 value SAMPLED at the strike edge (a
+  // latch input, no paramTarget), and bend_cv / decay_cv / tone_cv /
+  // noise_cv carry their full-swing laws INSIDE the core (±24 st/V bend,
+  // 2 oct/V decay time, ±1 sums on the tone/noise balances — see
+  // tomtom-dsp.ts), satisfying the cv-range full-swing standard at the DSP
+  // level. Same shape as kickdrum / snaredrum.
+  tomtom: ['pitch_cv', 'accent_in', 'bend_cv', 'decay_cv', 'tone_cv', 'noise_cv'],
   // KARPLUS accent_in: a raw per-hit 0..1 value SAMPLED (latched) at the
   // trigger edge inside the worklet — a latch input consumed as an
   // audio-rate node input, not a knob modulator (no paramTarget), so

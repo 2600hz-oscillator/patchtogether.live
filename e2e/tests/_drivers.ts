@@ -133,6 +133,12 @@ const OVERRIDES: Record<string, ModuleDriver> = {
   // no strike, so the sequencer gate train into trigger_in is required for the
   // outputs-emit + behavioral dims. audio_l is the signature output.
   snaredrum:    { outputPort: 'audio_l', gatePort: 'trigger_in' },
+  // TOM DRUM — analog-modeled mono tom voice; trigger_in (edge:'trigger')
+  // strikes it. Gate-only (accent/pitch/per-knob CVs are optional). Silent
+  // with no strike, so the sequencer gate train is required for the
+  // outputs-emit + behavioral dims. audio_out is the one mono output.
+  // (Behavioral-sweep observability params live in BEHAVIORAL_PARAMS.)
+  tomtom:       { outputPort: 'audio_out', gatePort: 'trigger_in' },
   // KARPLUS — extended Karplus-Strong string voice; trigger_in (edge:'trigger')
   // plucks it and the pitch input tracks 1 V/oct. Silent with no strike, so
   // the sequencer gate train is required for the outputs-emit + behavioral
