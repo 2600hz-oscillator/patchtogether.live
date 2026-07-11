@@ -164,3 +164,24 @@ describe('pinned nodes are outside the cap economy (workflow P1)', () => {
     expect(instanceCount(nodes, 'electraControl')).toBe(3);
   });
 });
+
+describe('presence-by-TYPE surface pins DO consume the cap (workflow P2)', () => {
+  const singletonTimelorde = { type: 'timelorde', maxInstances: 1 };
+
+  it('the pinned TIMELORDE counts — no second canvas clock can spawn', () => {
+    // The pinned TIMELORDE is the rack's one system clock (presence:'type'
+    // in WORKFLOW_PINNED_SURFACES). Unlike the drawer trio, excluding it
+    // from the count would let the palette spawn a competing canvas clock.
+    const nodes = {
+      'pinned-timelorde': { type: 'timelorde', data: { pinned: true } },
+    };
+    expect(instanceCount(nodes, 'timelorde')).toBe(1);
+    expect(wouldExceedCap(nodes, singletonTimelorde)).toBe(true);
+  });
+
+  it('a dawless canvas TIMELORDE alone also fills the cap (unchanged)', () => {
+    const nodes = { 'timelorde-abc': { type: 'timelorde', data: {} } };
+    expect(instanceCount(nodes, 'timelorde')).toBe(1);
+    expect(wouldExceedCap(nodes, singletonTimelorde)).toBe(true);
+  });
+});

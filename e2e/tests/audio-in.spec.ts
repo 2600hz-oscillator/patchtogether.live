@@ -265,6 +265,144 @@ test.describe('AUDIO IN → SCOPE (fake mic)', () => {
   });
 });
 
+test.describe('WORKFLOW audio I/O surface (🎧 always-on pinned AUDIO IN/OUT)', () => {
+  // The workflow topbar's 1/8"-plug menu hosts the REAL AudioinCard +
+  // AudioOutCard for the always-on pinned instances (canvas-hidden). This
+  // spec lives in audio-in.spec.ts so it runs under the chromium-audio-in
+  // project (fake mic + pre-granted permission) — the workflow surface is
+  // exercised with a genuinely streaming device, per the real-source-chain
+  // rule: menu patch-out → canvas SCOPE → signal visibly materializes.
+
+  const WORKFLOW_PINNED_IDS = [
+    'pinned-mixmstrs',
+    'pinned-electraControl',
+    'pinned-clipplayer',
+    'pinned-timelorde',
+    'pinned-midiclock',
+    'pinned-audioIn',
+    'pinned-audioOut',
+  ];
+
+  async function waitForWorkflowPins(page: import('@playwright/test').Page): Promise<void> {
+    await page.waitForFunction(
+      (ids) => {
+        const w = globalThis as unknown as {
+          __patch?: { nodes: Record<string, { data?: { pinned?: boolean } } | undefined> };
+        };
+        if (!w.__patch) return false;
+        return ids.every((id) => w.__patch!.nodes[id]?.data?.pinned === true);
+      },
+      WORKFLOW_PINNED_IDS,
+      { timeout: 10_000 },
+    );
+  }
+
+  test('menu patch-out wires pinned AUDIO IN → SCOPE and the fake-mic signal materializes', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto('/rack?mode=workflow');
+    await page.waitForLoadState('networkidle');
+    await waitForWorkflowPins(page);
+
+    // A canvas destination for the patch-out. spawnPatch wipes the graph
+    // (and boots the engine); the ensure effect re-spawns the pins.
+    await spawnPatch(page, [
+      { id: 'sc', type: 'scope', position: { x: 420, y: 200 }, params: { timeMs: 50 } },
+    ]);
+    await waitForWorkflowPins(page);
+
+    // The pinned pair never renders as MAIN-CANVAS cards (`.flow` = the
+    // rack flow; the topbar menu hosts their faces in its own flows).
+    await expect(page.locator('.flow .svelte-flow__node[data-id="pinned-audioIn"]')).toHaveCount(0);
+    await expect(page.locator('.flow .svelte-flow__node[data-id="pinned-audioOut"]')).toHaveCount(0);
+
+    // Open the 🎧 menu: the REAL cards render inside the panel — the input
+    // device picker (AudioinCard) + the output readout/picker (AudioOutCard).
+    await page.getByTestId('workflow-topbar-slot-audio-io').click();
+    const panel = page.getByTestId('workflow-io-panel');
+    await expect(panel).toHaveAttribute('data-open', 'true');
+    await expect(
+      panel.locator('[data-testid="workflow-io-audioin-host"] [data-testid="audioin-device-select"]'),
+    ).toBeVisible();
+    // Output side: the device dropdown, or the setSinkId-unsupported notice.
+    await page.waitForFunction(() => {
+      const host = document.querySelector('[data-testid="workflow-io-audioout-host"]');
+      if (!host) return false;
+      const sel = host.querySelector('[data-testid="audioout-device-select"]') as HTMLSelectElement | null;
+      const notice = host.querySelector('[data-testid="audioout-setsinkid-notice"]');
+      return (sel !== null && sel.options.length > 0) || notice !== null;
+    }, undefined, { timeout: 5_000 });
+
+    // The hosted AudioinCard reaches `streaming` (fake mic, pre-granted) —
+    // the same helper the dawless card tests use, against the same testids.
+    await ensureAudioInStreaming(page);
+
+    // Click-driven patch-out: AUDIO IN L → the drill-down picker → SCOPE.ch1.
+    await page.getByTestId('workflow-io-patchout-audio_l_out').click();
+    const picker = page.locator('[data-testid="port-context-menu"]');
+    await expect(picker).toBeVisible();
+    await picker.locator('[data-testid="patch-to-module"][data-node-id="sc"]').click();
+    const ch1 = picker.locator('[data-testid="patch-to-port"][data-port-id="ch1"]');
+    await expect(ch1).toBeVisible();
+    await ch1.click();
+
+    // The patch-out hand-off CLOSED the menu — from here on the panel is
+    // hidden (not unmounted), so the signal assertions below double as the
+    // "stream survives menu close" proof.
+    await expect(panel).toHaveAttribute('data-open', 'false');
+
+    // The edge materialized from the PINNED (canvas-hidden) source…
+    await expect
+      .poll(async () =>
+        page.evaluate(() => {
+          const w = globalThis as unknown as {
+            __patch: {
+              edges: Record<
+                string,
+                { source: { nodeId: string; portId: string }; target: { nodeId: string; portId: string } } | undefined
+              >;
+            };
+          };
+          return Object.values(w.__patch.edges).some(
+            (e) =>
+              !!e &&
+              e.source.nodeId === 'pinned-audioIn' &&
+              e.source.portId === 'audio_l_out' &&
+              e.target.nodeId === 'sc' &&
+              e.target.portId === 'ch1',
+          );
+        }),
+      { timeout: 5_000 })
+      .toBe(true);
+
+    // …and REAL signal flows down it: the scope trace is non-flat (the
+    // same pixel-variance proxy the dawless AUDIO IN → SCOPE test uses).
+    await page.waitForTimeout(800);
+    const scopeCanvas = page.locator('[data-testid="scope-canvas"]').first();
+    await expect(scopeCanvas).toBeVisible({ timeout: 5_000 });
+    await expect
+      .poll(async () =>
+        scopeCanvas.evaluate((el) => {
+          const c = el as HTMLCanvasElement;
+          const ctx = c.getContext('2d', { willReadFrequently: true });
+          if (!ctx) return 0;
+          const img = ctx.getImageData(0, 0, c.width, c.height);
+          const data = img.data;
+          let n = 0, sum = 0, sumSq = 0;
+          for (let i = 0; i < data.length; i += 16) {
+            const v = (data[i]! + data[i + 1]! + data[i + 2]!) / 3;
+            sum += v; sumSq += v * v; n++;
+          }
+          const mean = sum / n;
+          return sumSq / n - mean * mean;
+        }),
+      { timeout: 10_000 })
+      .toBeGreaterThan(5);
+
+    expect(errors.filter((e) => !/getUserMedia|audio/i.test(e)), errors.join('; ')).toEqual([]);
+  });
+});
+
 test.describe('AUDIO OUT device dropdown', () => {
   test('renders the output dropdown with at least one option', async ({ page }) => {
     await setupPage(page);

@@ -218,6 +218,11 @@
   // first dock zone — $lib/ui/dock).
   import WorkflowTopbar from '$lib/ui/workflow/WorkflowTopbar.svelte';
   import WorkflowLeftbar from '$lib/ui/workflow/WorkflowLeftbar.svelte';
+  import {
+    resolveWorkflowTimelorde,
+    hasExternalClock as hasWorkflowExternalClock,
+    isDinAssigned,
+  } from '$lib/ui/workflow/workflow-surfaces';
   import DockZoneContainer from '$lib/ui/dock/DockZoneContainer.svelte';
   import { dockStore } from '$lib/ui/dock/dock-store.svelte';
   import {
@@ -671,6 +676,12 @@
         hasTimelordeInSnap: snapshot.nodes.some((n) => n.type === 'timelorde'),
       };
     }
+    // WORKFLOW MODE P2: workflow racks get their always-on TIMELORDE from
+    // the pinned ensure below (deterministic `pinned-timelorde`, canvas-
+    // hidden — the topbar clock surface is its face). Racing this random-id
+    // canvas auto-spawn against that ensure on an empty rack would seed TWO
+    // clocks, so the dawless path stands down entirely in workflow mode.
+    if (workflowMode) return;
     if (didAutoSpawnTimelorde) return;
     if (!providerHasSynced) return;
     if (!shouldAutoSpawnTimelorde(snapshot.nodes)) {
@@ -806,10 +817,15 @@
   });
 
   // ---------------- WORKFLOW MODE P1: pinned M/E/C trio + dock drawer ----------------
+  // ---------------- WORKFLOW MODE P2: + the topbar surface pins ----------------
   //
   // ENSURE: every workflow rack always holds one pinned MIXMSTRS, one
-  // ELECTRA CONTROL and one CLIPPLAYER (graph/workflow-pins.ts). Runs on
-  // every snapshot (no latch) so the trio SELF-HEALS after any wholesale
+  // ELECTRA CONTROL and one CLIPPLAYER (graph/workflow-pins.ts) — plus,
+  // since P2, the always-on topbar surface modules (TIMELORDE / the hidden
+  // MIDICLOCK bridge / AUDIO IN / AUDIO OUT — WORKFLOW_PINNED_SURFACES;
+  // TIMELORDE is presence-by-TYPE so a dawless import's canvas clock
+  // satisfies it instead of gaining a hidden competitor). Runs on
+  // every snapshot (no latch) so the set SELF-HEALS after any wholesale
   // node replacement (quickload / performance load / raw-JSON import all
   // wipe patch.nodes); planPinnedSpawns returns [] once present, so the
   // effect terminates. DETERMINISTIC ids (`pinned-<type>`) make racing
@@ -839,7 +855,7 @@
         };
       }
     }, WORKFLOW_PIN_SPAWN_ORIGIN);
-    trace(`workflow: ensured pinned trio (${missing.map((s) => s.type).join(', ')})`);
+    trace(`workflow: ensured pinned modules (${missing.map((s) => s.type).join(', ')})`);
   });
 
   // DOCK KEYMAP: M / E / C toggle the matching pinned card in the BOTTOM
@@ -891,6 +907,38 @@
     dockedBottomNode
       ? WORKFLOW_PINNED_MODULES.find((s) => s.type === dockedBottomNode!.type) ?? null
       : null,
+  );
+
+  // ---------------- WORKFLOW MODE P2: topbar surface plumbing ----------------
+  //
+  // Snapshot-derived nodes/state the three topbar surfaces (clock / MIDI
+  // DIN / audio I/O) render from. All null/false in dawless racks — the
+  // derivations are gated so the dawless path does zero extra scanning.
+  let workflowTimelordeNode = $derived(
+    workflowMode ? resolveWorkflowTimelorde(snapshot.nodes) : null,
+  );
+  let workflowMidiclockNode = $derived(
+    workflowMode ? snapshot.nodes.find((n) => n.id === 'pinned-midiclock') ?? null : null,
+  );
+  let workflowAudioInNode = $derived(
+    workflowMode ? snapshot.nodes.find((n) => n.id === 'pinned-audioIn') ?? null : null,
+  );
+  let workflowAudioOutNode = $derived(
+    workflowMode ? snapshot.nodes.find((n) => n.id === 'pinned-audioOut') ?? null : null,
+  );
+  /** A cable feeds TIMELORDE's clock input (DIN assignment or hand-patch)
+   *  → tap tempo + tempo knob flip to the externally-clocked state. */
+  let workflowExternallyClocked = $derived(
+    workflowMode
+      ? hasWorkflowExternalClock(snapshot.edges, workflowTimelordeNode?.id ?? null)
+      : false,
+  );
+  /** The DIN bridge's clock edge into TIMELORDE exists (the ⚇ menu shows
+   *  the assigned device + unassign ✕). */
+  let workflowDinAssigned = $derived(
+    workflowMode
+      ? isDinAssigned(snapshot.edges, 'pinned-midiclock', workflowTimelordeNode?.id ?? null)
+      : false,
   );
 
   // Mirror snapshot → SvelteFlow node/edge arrays. We DROPPED bind:nodes /
@@ -4041,13 +4089,23 @@
       trace(`jackclick-pickup ${detail.nodeId}.${detail.portId}`);
     };
     const onPatchTo = (e: Event) => {
-      const detail = (e as CustomEvent).detail as { nodeId: string } | null;
+      // `pos` is an OPTIONAL screen-space anchor: the workflow topbar
+      // surfaces patch out of canvas-HIDDEN pinned nodes (no card rect to
+      // edge-align to), so they pass the clicked menu row's coordinates
+      // and edgeAlignedMenuPos falls back to them.
+      const detail = (e as CustomEvent).detail as
+        | { nodeId: string; pos?: { x: number; y: number } }
+        | null;
       if (!detail) return;
       if (connectDragState.mode !== 'pickup') return;
       // Hide the dangling cable; retain the carry/source state for commit.
       connectDragState.hideCableForPicker();
       if (!portMenuSourceNodeId || !portMenuSourcePortId) return;
-      const pos = edgeAlignedMenuPos(portMenuSourceNodeId, carrySide, portMenuPos);
+      const pos = edgeAlignedMenuPos(
+        portMenuSourceNodeId,
+        carrySide,
+        detail.pos ?? portMenuPos,
+      );
       openPortMenuAt(pos, {
         nodeId: portMenuSourceNodeId,
         portId: portMenuSourcePortId,
@@ -5280,6 +5338,14 @@
       onImportJson={importPatchJson}
       signedIn={headerSignedIn}
       {headerAuth}
+      timelordeNode={workflowTimelordeNode}
+      midiclockNode={workflowMidiclockNode}
+      audioInNode={workflowAudioInNode}
+      audioOutNode={workflowAudioOutNode}
+      externallyClocked={workflowExternallyClocked}
+      dinAssigned={workflowDinAssigned}
+      nodeTypes={nodeTypes as unknown as Record<string, unknown>}
+      onEnsureEngine={ensureEngine}
     />
   {:else}
   <header class="topbar">

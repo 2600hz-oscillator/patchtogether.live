@@ -86,7 +86,10 @@ test.describe('workflow shell', () => {
   test('M / E / C toggle the bottom dock drawers with the FULL pinned card; one at a time; ESC closes', async ({ page }) => {
     await page.goto('/rack?mode=workflow');
     await waitForPinnedTrio(page);
-    await page.locator('.svelte-flow__pane').first().waitFor({ state: 'visible' });
+    // :visible — the workflow topbar's always-mounted audio-I/O card hosts
+    // (P2) are standalone flows inside a visibility-hidden panel, so the
+    // FIRST .svelte-flow__pane in DOM order is hidden until that menu opens.
+    await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 
     const drawer = page.getByTestId('dock-zone-bottom');
 
@@ -143,7 +146,7 @@ test.describe('workflow shell', () => {
     await page.keyboard.type('mec');
     await expect(page.getByTestId('dock-zone-bottom')).toHaveCount(0);
     // Blur back to the canvas → the keymap is live again.
-    await page.locator('.svelte-flow__pane').first().click();
+    await page.locator('.svelte-flow__pane:visible').first().click();
     await page.keyboard.press('m');
     await expect(page.getByTestId('dock-zone-bottom')).toBeVisible();
   });
@@ -166,7 +169,9 @@ test.describe('workflow shell', () => {
       // remain. We drive the real Clear button below instead.
       return Object.keys(w.__patch.nodes).filter((id) => id.startsWith('pinned-')).length;
     });
-    expect(survived).toBe(3);
+    // P1's M/E/C trio + P2's topbar surface pins (timelorde, the MIDI-DIN
+    // midiclock bridge, audioIn, audioOut) = 7 always-on pinned modules.
+    expect(survived).toBe(7);
 
     // Spawn a normal node, then Clear via the graph-level sweep the Clear
     // button runs (workflow topbar has no Clear button in P1; the pinned
