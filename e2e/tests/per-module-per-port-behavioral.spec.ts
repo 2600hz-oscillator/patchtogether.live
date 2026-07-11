@@ -738,6 +738,17 @@ const BEHAVIORAL_PARAMS: Record<string, Record<string, number>> = {
   // so a context-gate on `gate` (fired for the cv test) doesn't start recording
   // and muddy the control. populateAllSequencerSteps seeds the SUT's grid.
   writeseq: { isPlaying: 0, recArm: 0, overdub: 0, bpm: 240, length: 4, gateLength: 0.5 },
+  // CLAP — a percussive noise voice: the scope's 43 ms windows land at random
+  // phases of the 250 ms strike cycle, so at SHIPPING defaults the control's
+  // own window jitter is huge (band-passed noise bursts + a 150 ms tail that
+  // is DEAD in half the windows) and buries small CV perturbations. Pin the
+  // control to a QUIET, stable baseline: width=0.15 (narrow → tonal, stable
+  // zc/centroid), color=0 + drive=0 (no extra spectral churn / tanh
+  // compression of level deltas), tail=700 (the room rings between the 4 Hz
+  // driver strikes → every window carries signal), snap=0.4 (room-dominant
+  // for a smooth control, burst still present so spread_cv stays audible).
+  // All values inside the params' native ranges.
+  clap: { width: 0.15, color: 0, drive: 0, tail: 700, snap: 0.4 },
 };
 
 // ────────── Per-port behavioral exemptions ──────────
@@ -1442,6 +1453,50 @@ const BEHAVIORAL_PORT_TEST_SOURCE: Record<string, InputSource> = {
     },
     outPort: 'phase0',
     sourceType: 'gate',
+  },
+  // CLAP tone_cv / tail_cv / spread_cv — octave-law CVs on a percussive
+  // noise voice whose effect the generic BUGGLES walk (±~0.15 V
+  // excursions) under-exercises within the 800 ms window. A deterministic
+  // ±1 V SINE (depth=0.5 → ±1 swing; shape=0 = sine per lfo.ts morph();
+  // 3 Hz ≈ the 4 Hz strike train's beat neighbor, so successive strikes +
+  // windows sample DIFFERENT phases of the swing) exercises the FULL
+  // calibrated CV range every window: tone_cv sweeps the band center
+  // 400→3000 Hz (zc/centroid range explodes vs the pinned narrow-band
+  // control), tail_cv sweeps the room ×¼→×4 (per-window rms/crest range
+  // widens), spread_cv re-latches each strike's burst grid 4→25 ms
+  // (attack-window crest/rms range widens).
+  'clap.tone_cv': {
+    node: {
+      id: 'up-tonecv-lfo',
+      type: 'lfo',
+      position: { x: 60, y: 60 },
+      domain: 'audio',
+      params: { rate: 3, shape: 0, depth: 0.5 },
+    },
+    outPort: 'phase0',
+    sourceType: 'cv',
+  },
+  'clap.tail_cv': {
+    node: {
+      id: 'up-tailcv-lfo',
+      type: 'lfo',
+      position: { x: 60, y: 60 },
+      domain: 'audio',
+      params: { rate: 3, shape: 0, depth: 0.5 },
+    },
+    outPort: 'phase0',
+    sourceType: 'cv',
+  },
+  'clap.spread_cv': {
+    node: {
+      id: 'up-spreadcv-lfo',
+      type: 'lfo',
+      position: { x: 60, y: 60 },
+      domain: 'audio',
+      params: { rate: 3, shape: 0, depth: 0.5 },
+    },
+    outPort: 'phase0',
+    sourceType: 'cv',
   },
 };
 

@@ -375,4 +375,9 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // trace re-drawn at live pixel size (crisp under the dock 50–150% ladder),
   // ch1-only terminal visualiser. Ships documented.
   'dockscope',
+  // CLAP (2026-07-11): the analog-modeled handclap voice (808 twin-VCA
+  // burst+tail topology; 909/ClapTrap/LinnDrum corners — PULSES×SPREAD
+  // retrigger burst, TONE/WIDTH band-pass, COLOR noise tilt, SNAP
+  // burst↔room balance). Ships documented.
+  'clap',
 ]);

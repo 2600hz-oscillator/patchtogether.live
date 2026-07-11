@@ -133,6 +133,12 @@ const OVERRIDES: Record<string, ModuleDriver> = {
   // no strike, so the sequencer gate train into trigger_in is required for the
   // outputs-emit + behavioral dims. audio_l is the signature output.
   snaredrum:    { outputPort: 'audio_l', gatePort: 'trigger_in' },
+  // CLAP — analog-modeled mono handclap voice; trigger_in (edge:'trigger')
+  // strikes it. Gate-only (accent/tone/tail/spread CVs are optional). Silent
+  // with no strike, so the sequencer gate train is required for the
+  // outputs-emit + behavioral dims. audio_out is the one mono output.
+  // (Behavioral-sweep observability params live in BEHAVIORAL_PARAMS.)
+  clap:         { outputPort: 'audio_out', gatePort: 'trigger_in' },
   // TREE.oh.VOX — TB-303 voice. pitch/gate ride on dedicated audio-rate
   // node ports (pitch_in / gate_in), NOT AudioParams, so the sequencer
   // gate must be wired to gate_in for the amp envelope to open. Without

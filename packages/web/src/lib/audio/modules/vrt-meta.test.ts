@@ -319,7 +319,12 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // 87→88 for DOCKSCOPE (2026-07-11, deliberate darwin-first new module —
       // workflow P2.5b's slim 1u rail scope with the seeded VRT scene; linux
       // baseline pending the vrt-update.yml dispatch on the PR branch).
-    ).toBeLessThanOrEqual(88);
+      // 88→92 for CLAP (2026-07-11, deliberate darwin-first new module — the
+      // compact BURST·NOISE·ROOM/OUT clap-voice card + 3 composite-state
+      // scenes (clap-909-dense / clap-linn-room / clap-dry-snap in
+      // vrt-clap.spec.ts); linux baselines pending the vrt-update.yml
+      // dispatch on the PR branch).
+    ).toBeLessThanOrEqual(92);
   });
 });
 

@@ -1333,4 +1333,27 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // e2e/tests/snaredrum-roll.spec.ts (SEQUENCER → trigger_in single hit AND
   // held gate_in → sustained two-hand roll, audible stereo RMS on both L/R).
   'linux/snaredrum',
+  // CLAP (2026-07-11): darwin baseline captured locally (the compact
+  // BURST·NOISE·ROOM/OUT fader band + the CLAP pad over the PatchPanel
+  // TRIG/ACC/TONE/TAIL/SPRD → OUT drill-down is deterministic chrome, NO
+  // canvas/animation); linux baseline pending a `vrt-update.yml`
+  // workflow_dispatch on the PR branch (the darwin-first new-module pattern,
+  // same as KICK DRUM / SNARE DRUM above). Functional coverage:
+  // packages/dsp/src/lib/clap-dsp.test.ts (burst scheduler + control laws +
+  // the full sonic-range proof suite) + clap.test.ts (def contract + worklet
+  // pad/accent/level/CV routing) + the ART audio profile
+  // (art/scenarios/clap/profile.test.ts, 3-strike TONE/TAIL corner train) +
+  // the per-module-per-port sweep + the bespoke real-source-chain
+  // e2e/tests/clap.spec.ts (SEQUENCER → trigger_in → AUDIOOUT, audible RMS +
+  // clap-band-dominant spectrum).
+  'linux/clap',
+  // CLAP composite-state VRT scenes (vrt-clap.spec.ts, 2026-07-11): the card
+  // captured at three sonically-distinct non-default settings (909-dense /
+  // linn-room / dry-snap — every fader at a clearly different position per
+  // scene), locking the param→fader render path at non-default values.
+  // Darwin baselines captured locally; linux pending the same vrt-update.yml
+  // dispatch as linux/clap above.
+  'linux/clap-909-dense',
+  'linux/clap-linn-room',
+  'linux/clap-dry-snap',
 ]);
