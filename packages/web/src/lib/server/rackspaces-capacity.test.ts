@@ -52,6 +52,19 @@ beforeAll(async () => {
           `Apply db/schema/001_init.sql to ${TEST_DB_URL}.`,
       );
     }
+    // createRackspace/joinRackspace now read/write racks.mode (workflow-mode
+    // P1) — probe for the column so a not-yet-migrated test DB fails with an
+    // actionable message instead of a mid-test SQL error.
+    const modeColumn = await pool.query(
+      `SELECT 1 FROM information_schema.columns
+       WHERE table_schema='public' AND table_name='racks' AND column_name='mode'`,
+    );
+    if (modeColumn.rowCount !== 1) {
+      throw new Error(
+        `test DB missing the racks.mode column. ` +
+          `Apply db/schema/005_rackspace_mode.sql to ${TEST_DB_URL}.`,
+      );
+    }
     pgAvailable = true;
   } catch (e) {
     probeError = e as Error;
