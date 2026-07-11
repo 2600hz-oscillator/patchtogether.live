@@ -1,28 +1,22 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "49c3fc79f2fe1cc1c142bc3e9d6198ebe0494258f64819937b7d1cb070476e34",
-  "attestedAt": "2026-07-10T11:53:31.687Z",
+  "webglContentHash": "9d961c29136a4b13b51f2697dae8ad099c7b82b87a09993ab4ea5f26a65a5150",
+  "attestedAt": "2026-07-11T21:29:31.151Z",
   "attestedBy": "tmayshark@gmail.com",
-  "gitHeadAtAttest": "390b20ea773c846e86f402f941ca29950a81c4f1",
+  "gitHeadAtAttest": "9d01573bb8117bf129b1c845b5c816837e0a8172",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
-  "host": "2600hzs-MBP.home.local",
+  "host": "2600hzs-MacBook-Pro.local",
   "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
   "repeatEach": 1,
   "suites": {
     "A-heavy": {
-      "specFiles": 48,
-      "passed": 149,
+      "specFiles": 52,
+      "passed": 176,
       "failed": 0,
-      "flaky": 1,
+      "flaky": 0,
       "skipped": 1,
-      "flakyDetails": [
-        {
-          "test": "4x VIDEOVARISPEED -> MIXER: every source advances + mixer shows moving video + audio is produced",
-          "file": "multi-video-playback.spec.ts",
-          "firstError": "Error: all 4 sources' uploadCount advances while unpatched — deltas: {\"vv0\":0,\"vv1\":93,\"vv2\":119,\"vv3\":120} |  | expect(received).toBe(expected) // Object.is equality | "
-        }
-      ]
+      "flakyDetails": []
     },
     "A-serial": {
       "specFiles": 2,
@@ -49,5 +43,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 144
+  "durationSec": 158
 }

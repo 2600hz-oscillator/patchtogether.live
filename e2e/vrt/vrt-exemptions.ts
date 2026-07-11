@@ -130,11 +130,13 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // is the regression gate. The S&H + posterize correctness is covered by
   // freezeframe.test.ts (unit) + the freezeframe e2e (pixel sampling).
   freezeframe: [{ selector: 'canvas' }],
-  // CELLSHADE (cel-shader video processor) carries a live OUT preview
-  // canvas; mask it so the deterministic chrome (THRESH/THICK/BITS faders +
-  // IN/T/W/B/OUT handle rows + the BITS readout) is the regression gate.
-  // The quantize + edge-ink correctness is covered by cellshade.test.ts
-  // (CPU mirror of the shader) + the bespoke cellshade e2e (pixel sampling).
+  // CELLSHADE (rebuilt 4-pass cel-shader) carries a live OUT preview
+  // canvas; mask it so the deterministic chrome (THRESH/THICK/BANDS/SOFT/
+  // SMOOTH/INK faders + handle rows + the BANDS readout) is the regression
+  // gate. The banding + smoothing + edge-ink correctness is covered by
+  // cellshade.test.ts (CPU mirror of all 4 passes), the theory-derived
+  // cellshade-functional e2e, and the UNMASKED frozen composite scenes in
+  // cellshade-composite.spec.ts.
   cellshade: [{ selector: 'canvas' }],
   // POSTERBOX (retro palette-crush video processor) carries a live OUT
   // preview canvas; mask it so the deterministic chrome (DEPTH/DITHER/MIX
@@ -1106,15 +1108,23 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // the same across platforms but the masked-canvas chrome PNG can shift
   // sub-thresholdly under linux Chromium timing.
   'linux/freezeframe',
-  // CELLSHADE (cel-shader video processor): darwin baseline captured on this
-  // machine (live OUT preview canvas masked — see VRT_MODULE_MASKS). linux
-  // baseline pending a `vrt-update.yml` workflow_dispatch on this branch;
-  // the deterministic chrome (THRESH/THICK/BITS faders + 5 handle rows + the
-  // BITS readout) is the same across platforms but the masked-canvas chrome
-  // PNG can shift sub-thresholdly under linux Chromium timing. The quantize +
-  // edge-ink correctness is proven by cellshade.test.ts (CPU mirror) + the
-  // bespoke e2e/tests/cellshade.spec.ts (posterize + ink + BITS/THRESH sweeps).
+  // CELLSHADE (rebuilt 4-pass cel-shader): the darwin card baseline was
+  // REGENERATED for the rebuild (the unmasked chrome changed: "Bits"→"Bands"
+  // relabel, the "N BANDS" readout, +3 knobs SOFT/SMOOTH/INK, +3 CV jacks —
+  // §12 R6); the linux baseline stays pending a `vrt-update.yml`
+  // workflow_dispatch on this branch. The banding/smoothing/ink correctness
+  // is proven by cellshade.test.ts (CPU mirror of all 4 passes) + the
+  // theory-derived e2e/tests/cellshade-functional.spec.ts + the bespoke
+  // e2e/tests/cellshade.spec.ts.
   'linux/cellshade',
+  // CELLSHADE rebuild composite scenes (cellshade-composite.spec.ts):
+  // deliberate darwin-first — darwin baselines captured locally; linux
+  // baselines pending the same vrt-update.yml dispatch. The three scenes are
+  // the UNMASKED-canvas regression gate for the new engine (hard bands /
+  // ink-dominant / high-smooth abstraction).
+  'linux/cellshade-bands',
+  'linux/cellshade-ink',
+  'linux/cellshade-smooth',
   // POSTERBOX (retro palette-crush video processor, 2026-07-11): darwin
   // baseline captured on this machine (live OUT preview canvas masked — see
   // VRT_MODULE_MASKS). linux baseline pending a `vrt-update.yml`

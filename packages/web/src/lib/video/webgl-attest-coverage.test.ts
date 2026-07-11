@@ -123,13 +123,22 @@ const FROM_TEST_ROOT = resolve(__dirname, '../../../../..');
 // for non-black/structured/param-response). Full-res dependent-texelFetch fill →
 // isolated in the serialized heavy lane; e2e/webgl-heavy-globs.ts is in the hash
 // basis, so this moved the WebGL hash (re-attested). 49 → 50.
+// KEYER FRAMEWORK (2026-07-11, §11 change 6): +keyer-functional.spec.ts (the
+// keyer-family functional validation — DRS frozen-clock gl.readPixels off
+// module FBOs, previously mis-binned onto the sharded SwiftShader matrix).
+// Batched into the keyer-framework PR's single re-attest. 51 → 52.
+// CELLSHADE rebuild (§12 R7): +cellshade-functional.spec.ts (theory-derived
+// exact-texel probes off the module's own FBO — DRS-frozen fixtures) and
+// +cellshade.spec.ts (ACIDWARP→cellshade live-render canvas stats). Both
+// readPixels()-class specs from the sharded-matrix contention class.
+// Batched into the rebuild's single re-attest. 52 → 54.
 // POSTERBOX (2026-07-11): +posterbox-functional.spec.ts (retro palette-crush —
 // the theory-derived spec readPixels()es the module's output FBO for the legacy
 // 3-3-2 continuity anchors, hue-order preservation, the Bayer dither checker
 // block, and the mix sweep). Real-GPU pixel reads → serialized heavy lane;
 // e2e/webgl-heavy-globs.ts is in the hash basis, and the new video module def
-// moves the hash anyway (re-attest at merge). 51 → 52.
-const EXPECTED_HEAVY_SPEC_COUNT = 52;
+// moves the hash anyway (re-attest at merge). 54 → 55.
+const EXPECTED_HEAVY_SPEC_COUNT = 55;
 
 describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
   const basis = resolveWebglBasis();

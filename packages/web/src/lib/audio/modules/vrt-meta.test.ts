@@ -340,12 +340,19 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // composite scenes, and the 6 karplus/tomtom sonic-audit scenes —
       // got real linux baselines via a single vrt-update.yml dispatch on
       // this branch, so their 13 exemption pairs came out.
-      // 87→91 for POSTERBOX (2026-07-11, deliberate darwin-first new module —
+      // 87→90 for the CELLSHADE rebuild composite scenes (2026-07-11,
+      // deliberate darwin-first — 3 UNMASKED frozen scenes
+      // cellshade-bands/cellshade-ink/cellshade-smooth in
+      // cellshade-composite.spec.ts, the new 4-pass engine's canvas
+      // regression gate; linux baselines pending the vrt-update.yml
+      // dispatch on the PR branch, same precedent as the COLOUR OF MAGIC
+      // scene batches).
+          // 90→94 for POSTERBOX (2026-07-11, deliberate darwin-first new module —
       // the retro palette-crush video card + 3 composite-state scenes
       // (posterbox-brutal-1bit / posterbox-dither-hatch / posterbox-subtle-565
       // in vrt-posterbox-states.spec.ts); linux baselines pending the
       // vrt-update.yml dispatch on the PR branch).
-    ).toBeLessThanOrEqual(91);
+    ).toBeLessThanOrEqual(94);
   });
 });
 

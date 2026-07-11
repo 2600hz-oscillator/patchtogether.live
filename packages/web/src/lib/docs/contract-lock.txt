@@ -364,10 +364,16 @@ cartesian family cart-pitch kind=cell prefix=cart-pitch
 cellshade meta domain=video
 cellshade in bits cv param=bits cvScale=discrete
 cellshade in in video
+cellshade in ink cv param=ink cvScale=linear
+cellshade in smooth cv param=smooth cvScale=linear
+cellshade in softness cv param=softness cvScale=linear
 cellshade in thickness cv param=thickness cvScale=linear
 cellshade in threshold cv param=threshold cvScale=linear
 cellshade out out video
 cellshade param bits 0..4 discrete default=2
+cellshade param ink 0..1 linear default=1
+cellshade param smooth 0..1 linear default=0.35
+cellshade param softness 0..1 linear default=0.25
 cellshade param thickness 1..8 linear default=2 unit=px
 cellshade param threshold 0..1 linear default=0.2
 charlottesEchos meta domain=audio
@@ -412,7 +418,7 @@ chromakey param keyG 0..1 linear default=1
 chromakey param keyR 0..1 linear default=0
 chromakey param softness 0..0.5 linear default=0.08
 chromakey param spillSuppress 0..1 linear default=0.5
-chromakey param threshold 0..1 linear default=0.15
+chromakey param threshold 0..1 linear default=0.5
 clap meta domain=audio
 clap in accent_in cv
 clap in spread_cv cv

@@ -155,7 +155,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   '4plexvid': { size: '3u', hp: 2 }, // 463×280px
   acidwarp: { size: '3u', hp: 2 }, // 407×380px
   cameraInput: { size: '3u', hp: 2 }, // 370×280px  [LOCKED]
-  cellshade: { size: '2u', hp: 2 }, // 369×220px
+  cellshade: { size: '3u', hp: 2 }, // 369×~490px — rebuild added the SOFT/SMOOTH/INK fader row (2u overflowed the INK row)
   chroma: { size: '2u', hp: 2 }, // 360×260px
   chromakey: { size: '3u', hp: 2 }, // 389×260px
   colorizer: { size: '2u', hp: 2 }, // 270×240px
