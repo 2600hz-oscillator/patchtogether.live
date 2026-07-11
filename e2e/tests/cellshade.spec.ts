@@ -6,18 +6,19 @@
 // Graph:
 //   ACIDWARP (colour video, self-running) --> CELLSHADE.in --> CELLSHADE.out --> OUTPUT
 //
-// CELLSHADE quantizes the colour to an N-bit retro palette and inks the
-// Sobel edges as black lines. ACIDWARP is a self-running COLOURFUL source
-// with high-contrast moving structure — a clean probe for both the
-// posterize (colourful output) AND the edge-ink (some black-line pixels).
+// CELLSHADE (rebuilt engine) smooths, bands the LUMINANCE into a few flat
+// tonal steps (hue rides through), and inks the Sobel edges as black lines.
+// ACIDWARP is a self-running COLOURFUL source with high-contrast moving
+// structure — a clean probe for both the banding (colourful output, since
+// chroma is preserved) AND the edge-ink (some black-line pixels).
 // We assert, on the live render:
 //   1. all cards spawn + the OUTPUT preview canvas mounts,
-//   2. CELLSHADE.out shows POSTERIZED COLOUR (colourful pixels) PLUS some
+//   2. CELLSHADE.out shows BANDED COLOUR (colourful pixels) PLUS some
 //      BLACK INK pixels (the inked Sobel edges) — the cel signature vs. a
 //      passthrough,
-//   3. LOWERING BITS reduces the count of DISTINCT colours,
-//   4. RAISING THRESHOLD reduces the edge-ink (black) pixels,
-//   5. CV params route through the patch store,
+//   3. a LOW band count still renders colourful (chroma-preserving),
+//   4. low and high THRESHOLD gates both yield a sane cel frame,
+//   5. CV params route through the patch store (all six knobs),
 //   6. no console / page errors.
 //
 // Pixel determinism for a baseline lives in the VRT card chrome capture +
@@ -120,14 +121,14 @@ async function captureCell(
 }
 
 test.describe('CELLSHADE — cel-shader video processor', () => {
-  test('ACIDWARP -> CELLSHADE -> OUTPUT shows posterized colour + edge ink', async ({ page, errorWatch }) => {
+  test('ACIDWARP -> CELLSHADE -> OUTPUT shows banded colour + edge ink', async ({ page, errorWatch }) => {
 
-    // 4-bit (idx 2) default + a thicker ink so the edges read clearly.
+    // 4 bands (idx 2) default + a thicker ink so the edges read clearly.
     const stats = await captureCell(page, { threshold: 0.18, thickness: 3, bits: 2 });
 
-    // Colourful posterized pixels show through (renderer-tolerant: assert
+    // Colourful banded pixels show through (renderer-tolerant: assert
     // "some colour" not an exact count — SwiftShader vs a real GPU differ).
-    expect(stats.colourFrac, 'CELLSHADE renders posterized colour').toBeGreaterThan(0.01);
+    expect(stats.colourFrac, 'CELLSHADE renders banded colour').toBeGreaterThan(0.01);
     // Some black-ink edge pixels exist (the inked Sobel contours over a
     // high-contrast moving source). Not all-black, not edge-free.
     expect(stats.inkFrac, 'CELLSHADE inks some edges (black lines)').toBeGreaterThan(0.001);
@@ -135,12 +136,11 @@ test.describe('CELLSHADE — cel-shader video processor', () => {
 
   });
 
-  // NOTE on BITS/THRESHOLD MONOTONICITY: the EXACT "lower BITS → fewer distinct
-  // colours" and "higher THRESHOLD → fewer/equal inked pixels" relations are
-  // proven pixel-deterministically by the pure CPU mirror in
-  // packages/web/src/lib/video/modules/cellshade.test.ts
-  // ("lower BITS yields FEWER distinct tones" / "raising THRESHOLD inks FEWER
-  // pixels"). We do NOT re-assert that monotonicity across two LIVE renders
+  // NOTE on BANDS/THRESHOLD MONOTONICITY: the EXACT "fewer BANDS → fewer
+  // distinct tones" and "higher THRESHOLD → fewer/equal inked pixels"
+  // relations are proven pixel-deterministically by the pure CPU mirror in
+  // packages/web/src/lib/video/modules/cellshade.test.ts (the 5-point
+  // dynamism proofs). We do NOT re-assert that monotonicity across two LIVE renders
   // here: each captureCell re-spawns and samples an INDEPENDENT frame of the
   // self-running, animated ACIDWARP source, so the only-the-param-changed
   // premise doesn't hold — the moving frame content confounds the comparison,
@@ -150,13 +150,14 @@ test.describe('CELLSHADE — cel-shader video processor', () => {
   // a LOW-bit render is still colourful, and BOTH a low- and a high-threshold
   // render produce a sane (non-all-black, non-blank) cel frame.
 
-  test('BITS sweep: a low-bit live render is still colourful (posterized)', async ({ page }) => {
-    // 1-bit (idx 0 = 2 colours / luma-band): the coarsest depth still shows
-    // colour through (it's posterized, not crushed to grey/black). Exact band
-    // counts are the CPU mirror's job (see note above).
-    const lowBits = await captureCell(page, { threshold: 0.95, thickness: 1, bits: 0 });
-    expect(lowBits.distinctColours, 'low-bit render has colours').toBeGreaterThan(0);
-    expect(lowBits.colourFrac, 'low-bit render is colourful, not crushed').toBeGreaterThan(0.01);
+  test('BANDS sweep: a 2-band live render is still colourful (chroma-preserving)', async ({ page }) => {
+    // idx 0 = 2 luminance bands: the coarsest step still shows colour
+    // through — hue is never quantized, so even the boldest banding keeps the
+    // source's chroma (the F-CS1/F-CS2 fix). Exact band counts are the CPU
+    // mirror's job (see note above).
+    const lowBands = await captureCell(page, { threshold: 0.95, thickness: 1, bits: 0 });
+    expect(lowBands.distinctColours, 'low-band render has colours').toBeGreaterThan(0);
+    expect(lowBands.colourFrac, 'low-band render is colourful, not crushed').toBeGreaterThan(0.01);
   });
 
   test('THRESHOLD sweep: low and high gates both yield a sane cel frame', async ({ page }) => {
@@ -168,12 +169,13 @@ test.describe('CELLSHADE — cel-shader video processor', () => {
     const lowThresh  = await captureCell(page, { threshold: 0.08, thickness: 2, bits: 3 });
     const highThresh = await captureCell(page, { threshold: 0.9,  thickness: 2, bits: 3 });
 
+
     expect(lowThresh.inkFrac, 'low threshold inks some edges').toBeGreaterThan(0);
     expect(highThresh.inkFrac, 'high threshold is not all-black ink').toBeLessThan(0.9);
     expect(highThresh.colourFrac, 'high-threshold frame still shows colour').toBeGreaterThan(0.01);
   });
 
-  test('CV params route through the patch store (incl. discrete BITS)', async ({ page, rack }) => {
+  test('CV params route through the patch store (incl. discrete BANDS)', async ({ page, rack }) => {
     await spawnPatch(
       page,
       [{ id: 'cel', type: 'cellshade', position: { x: 200, y: 100 }, domain: 'video' }],
@@ -192,7 +194,10 @@ test.describe('CELLSHADE — cel-shader video processor', () => {
         if (!n) return;
         n.params.threshold = 0.42;
         n.params.thickness = 5;
-        n.params.bits = 3; // 8-bit step index
+        n.params.bits = 3; // 6-band step index
+        n.params.softness = 0.6;
+        n.params.smooth = 0.8;
+        n.params.ink = 0.4;
       });
     });
     await page.waitForTimeout(120);
@@ -202,15 +207,21 @@ test.describe('CELLSHADE — cel-shader video processor', () => {
         __patch: { nodes: Record<string, { params: Record<string, number> }> };
       };
       const n = w.__patch.nodes['cel'];
-      return { th: n?.params.threshold, wk: n?.params.thickness, bits: n?.params.bits };
+      return {
+        th: n?.params.threshold, wk: n?.params.thickness, bits: n?.params.bits,
+        soft: n?.params.softness, smo: n?.params.smooth, ink: n?.params.ink,
+      };
     });
     expect(params.th).toBe(0.42);
     expect(params.wk).toBe(5);
     expect(params.bits).toBe(3);
+    expect(params.soft).toBe(0.6);
+    expect(params.smo).toBe(0.8);
+    expect(params.ink).toBe(0.4);
 
-    // The card's BITS readout reflects the 8-bit step (data-testid set on the
-    // readout). Renderer-agnostic DOM assertion (no canvas read needed).
+    // The card's BANDS readout reflects the 6-band step (data-testid kept on
+    // the readout). Renderer-agnostic DOM assertion (no canvas read needed).
     await expect(page.locator('[data-testid="cellshade-bits-readout"]'))
-      .toContainText('8-BIT');
+      .toContainText('6 BANDS');
   });
 });

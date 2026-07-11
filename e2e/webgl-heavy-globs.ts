@@ -76,6 +76,15 @@ export const WEBGL_HEAVY_GLOBS = [
   // off the sharded matrix so it never co-tenants a SwiftShader shard.
   // e2e/webgl-heavy-globs.ts is in the WebGL hash basis → re-attested.
   '**/sourcery.spec.ts', // 2-input region-transplant recolor — heavy WebGL pixel read
+  // CELLSHADE rebuild (§12 R7): both cellshade specs readPixels() real FBOs —
+  // the functional spec probes exact texels off the module's own output FBO
+  // (DRS-frozen fixtures), and the bespoke spec samples the OUTPUT canvas.
+  // Neither matched a heavy glob, so they ran in the SHARDED matrix doing
+  // GPU-timing-sensitive pixel reads (the picturebox-gif false-red-under-
+  // contention class; this file's own rule: "a file that reads a canvas must
+  // stay in the lane"). Isolate both in the serialized e2e-video lane.
+  '**/cellshade-functional.spec.ts', // theory-derived exact-texel probes — heavy WebGL pixel read
+  '**/cellshade.spec.ts', // ACIDWARP→cellshade live-render stats — heavy WebGL pixel read
   // picturebox-gif (#1016 boy-scout): unlike picturebox-limits/picturebox-sync
   // (re-binned OUT for doing NO pixel work — see the EXCLUDE note below), the
   // GIF spec's `ANIMATES` test samples the video output's LUMA OVER TIME to

@@ -50,6 +50,7 @@ const FULL_MATCH = [
   'vrt-clap.spec.ts',
   'vrt-karplus-tomtom-states.spec.ts',
   'vrt-colourofmagic.spec.ts',
+  'cellshade-composite.spec.ts',
   'vrt-toybox.spec.ts',
   'vrt-aspect-16x9.spec.ts',
   'topbar.spec.ts',

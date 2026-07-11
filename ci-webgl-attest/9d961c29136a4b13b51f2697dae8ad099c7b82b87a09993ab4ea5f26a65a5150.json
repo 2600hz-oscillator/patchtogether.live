@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "dbcb66e9f285cc0606364c597743e3add2b12bdead242f5ce778cb6d1c33434e",
-  "attestedAt": "2026-07-11T21:07:31.617Z",
+  "webglContentHash": "9d961c29136a4b13b51f2697dae8ad099c7b82b87a09993ab4ea5f26a65a5150",
+  "attestedAt": "2026-07-11T21:29:31.151Z",
   "attestedBy": "tmayshark@gmail.com",
-  "gitHeadAtAttest": "b22ba1d9a9e844440099cd6174a92f7b4a45dd6b",
+  "gitHeadAtAttest": "9d01573bb8117bf129b1c845b5c816837e0a8172",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "host": "2600hzs-MacBook-Pro.local",
@@ -11,8 +11,8 @@
   "repeatEach": 1,
   "suites": {
     "A-heavy": {
-      "specFiles": 50,
-      "passed": 163,
+      "specFiles": 52,
+      "passed": 176,
       "failed": 0,
       "flaky": 0,
       "skipped": 1,
@@ -43,5 +43,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 157
+  "durationSec": 158
 }
