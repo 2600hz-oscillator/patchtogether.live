@@ -159,21 +159,23 @@ export class MediaLibrary {
     return { added, skipped };
   }
 
-  /** Remove one item; revokes its object URL. Returns false for unknown ids. */
+  /** Remove one item; revokes its object URL(s). Returns false for unknown ids. */
   remove(id: string): boolean {
     const idx = this.items.findIndex((i) => i.id === id);
     if (idx < 0) return false;
     const item = this.items[idx];
     this.revokeObjectUrl(item.objectUrl);
+    if (item.meta.posterUrl) this.revokeObjectUrl(item.meta.posterUrl);
     this.keys.delete(dupeKey(item.file));
     this.items.splice(idx, 1);
     return true;
   }
 
-  /** Remove everything; revokes every object URL. */
+  /** Remove everything; revokes every object URL (posters included). */
   clear(): void {
     for (const item of this.items) {
       this.revokeObjectUrl(item.objectUrl);
+      if (item.meta.posterUrl) this.revokeObjectUrl(item.meta.posterUrl);
     }
     this.keys.clear();
     this.items = [];
@@ -193,9 +195,14 @@ export class MediaLibrary {
       failure = err instanceof Error ? err.message : String(err);
     }
     // Look the item up NOW — it may have been removed (URL already revoked)
-    // while the probe was in flight; in that case there is nothing to update.
+    // while the probe was in flight; in that case there is nothing to update
+    // — but a poster URL the probe minted for the ghost item must still be
+    // revoked here, or it leaks (nobody else ever sees it).
     const item = this.get(id);
-    if (!item) return;
+    if (!item) {
+      if (meta?.posterUrl) this.revokeObjectUrl(meta.posterUrl);
+      return;
+    }
     if (meta) {
       item.meta = meta;
       item.status = 'ready';

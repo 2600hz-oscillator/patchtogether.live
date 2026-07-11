@@ -21,6 +21,21 @@
     const cursor = connectDragState.pickupCursor;
     const source = connectDragState.pickupSource;
     if (!cursor || !source) return '';
+    // VIRTUAL-PORT pickup (workflow assets picker & friends): no canvas
+    // handle exists — the ghost hangs from the fixed screen-space anchor
+    // (the clicked menu row) and drops DOWN toward the cursor.
+    const virtual = connectDragState.pickupVirtual;
+    if (virtual) {
+      const [d] = getBezierPath({
+        sourceX: virtual.anchor.x,
+        sourceY: virtual.anchor.y,
+        sourcePosition: Position.Bottom,
+        targetX: cursor.x,
+        targetY: cursor.y,
+        targetPosition: Position.Left,
+      });
+      return d;
+    }
     // Look up the source handle's screen position by data-id selector.
     // We search by [data-handleid] within the source nodeId's
     // .svelte-flow__node — works for both PatchPanel-mounted handles
