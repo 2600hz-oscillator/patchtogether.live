@@ -290,23 +290,37 @@ describe('karplus-dsp / timbre controls', () => {
     expect(ratioDark).toBeLessThan(ratioBright * 0.5);
   });
 
-  it('stiffness stretches the 5th partial SHARP of 5·f0 (inharmonic bell zone)', () => {
-    // Probed at A5: the loop is short (~54 samples), so two a = −0.44
-    // allpasses shift mode 5 by ≈ +50 cents — squarely measurable. (At low
-    // pitch the same dispersion is only a couple of cents — physical:
-    // stiffness matters more up high.)
-    const stiff = render({ tune: 880, stiffness: 0.8, color: 0.9, brightness: 0.9 });
-    // Compare energy just above vs just below 5·f0: dispersion pushes the
-    // partial sharp, so the +15..+90 cent band must beat −90..−15 cents.
-    const from = Math.round(0.1 * SR);
-    const to = Math.round(0.5 * SR);
-    let above = 0;
-    let below = 0;
-    for (let c = 15; c <= 90; c += 3) {
-      above = Math.max(above, goertzelMag(stiff, from, to, 5 * 880 * Math.pow(2, c / 1200), SR));
-      below = Math.max(below, goertzelMag(stiff, from, to, 5 * 880 * Math.pow(2, -c / 1200), SR));
-    }
-    expect(above).toBeGreaterThan(below);
+  it('stiffness stretches partial 2 SHARP at A5 (monotone into the bell zone)', () => {
+    // POST-RETAPE (2026-07-11 sonic audit): karplusStiffA maps the knob to
+    // the allpass DC phase delay, so the stretch is far deeper than the
+    // original a = −0.55·knob law (which moved partials ~2 c at low pitch —
+    // a dead knob below ~500 Hz; see karplus-dsp.sonic-range.test.ts for
+    // the full 5-point sweep at the default tune). Here: track the partial-2
+    // PEAK at A5 — its slot has ±700 c of clearance, so identification is
+    // unambiguous even at bell-depth stretches. Audited walk: −10 c at
+    // knob 0, +36 c at 0.25, +184 c at 0.5.
+    const peakCents = (stiffness: number): number => {
+      const b = render({ tune: 880, stiffness, color: 0.9, brightness: 0.9 });
+      const from = Math.round(0.05 * SR);
+      const to = Math.round(0.35 * SR);
+      let best = 0;
+      let bestC = -60;
+      for (let c = -60; c <= 400; c += 2) {
+        const m = goertzelMag(b, from, to, 2 * 880 * Math.pow(2, c / 1200), SR);
+        if (m > best) {
+          best = m;
+          bestC = c;
+        }
+      }
+      return bestC;
+    };
+    const p0 = peakCents(0);
+    const p25 = peakCents(0.25);
+    const p50 = peakCents(0.5);
+    expect(Math.abs(p0)).toBeLessThanOrEqual(14); // harmonic string at knob 0
+    expect(p25).toBeGreaterThanOrEqual(25); // audibly sharp by 25% travel
+    expect(p50).toBeGreaterThanOrEqual(100); // bell territory by mid-travel
+    expect(p50).toBeGreaterThan(p25);
   });
 
   it('exciter range stays audible and bounded (mallet ↔ scrape extremes)', () => {
