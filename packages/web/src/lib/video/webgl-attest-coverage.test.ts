@@ -123,7 +123,14 @@ const FROM_TEST_ROOT = resolve(__dirname, '../../../../..');
 // for non-black/structured/param-response). Full-res dependent-texelFetch fill →
 // isolated in the serialized heavy lane; e2e/webgl-heavy-globs.ts is in the hash
 // basis, so this moved the WebGL hash (re-attested). 49 → 50.
-const EXPECTED_HEAVY_SPEC_COUNT = 51;
+// CELLSHADE rebuild (§12 R7): +cellshade-functional.spec.ts (theory-derived
+// exact-texel probes off the module's own FBO — DRS-frozen fixtures) and
+// +cellshade.spec.ts (ACIDWARP→cellshade live-render canvas stats). Both
+// readPixels()-class specs that ran in the SHARDED matrix (the picturebox-gif
+// false-red-under-contention class); e2e/webgl-heavy-globs.ts is in the hash
+// basis, so this moves the WebGL hash (batched into the rebuild's single
+// re-attest). 51 → 53.
+const EXPECTED_HEAVY_SPEC_COUNT = 53;
 
 describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
   const basis = resolveWebglBasis();

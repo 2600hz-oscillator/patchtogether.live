@@ -340,7 +340,14 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // composite scenes, and the 6 karplus/tomtom sonic-audit scenes —
       // got real linux baselines via a single vrt-update.yml dispatch on
       // this branch, so their 13 exemption pairs came out.
-    ).toBeLessThanOrEqual(87);
+      // 87→90 for the CELLSHADE rebuild composite scenes (2026-07-11,
+      // deliberate darwin-first — 3 UNMASKED frozen scenes
+      // cellshade-bands/cellshade-ink/cellshade-smooth in
+      // cellshade-composite.spec.ts, the new 4-pass engine's canvas
+      // regression gate; linux baselines pending the vrt-update.yml
+      // dispatch on the PR branch, same precedent as the COLOUR OF MAGIC
+      // scene batches).
+    ).toBeLessThanOrEqual(90);
   });
 });
 
