@@ -156,6 +156,20 @@
   max-height: calc(var(--rack-u, 1) * var(--rack-unit));
 }
 
+/* DOCK RAILS (P2.5a): a docked card renders in a screen-fixed rail hosted by
+ * DockCardHost — a classed wrapper that replicates the rack tier WITHOUT the
+ * .svelte-flow__node class (which would collide with PickupCable + sweep
+ * selectors; the canvas keeps exactly ONE .svelte-flow__node per node id —
+ * the DockStubCard). Same dimensions formula as above. */
+.dock-rack-sized > :is(.mod-card, .card, .moog-panel),
+.dock-rack-sized > * > :is(.mod-card, .card, .moog-panel) {
+  box-sizing: border-box;
+  width: calc(var(--rack-hp, 1) * var(--rack-unit));
+  height: calc(var(--rack-u, 1) * var(--rack-unit));
+  min-height: calc(var(--rack-u, 1) * var(--rack-unit));
+  max-height: calc(var(--rack-u, 1) * var(--rack-unit));
+}
+
 /* ── Rear view / "flip rack" (rack Phase 3 + rear-view patching) ──────────────
  * A single LOCAL toggle (Canvas `rearView`) puts `.rear-view` on the flow
  * container. Each card then turns over IN PLACE (the node does NOT move) to

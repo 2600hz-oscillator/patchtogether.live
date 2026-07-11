@@ -663,6 +663,7 @@
         {presenceUser}
         {audioGate}
         mode={data.rackspace.mode}
+        rackspaceId={data.rackspace.id}
       />
     {/key}
     <AudioGate gate={audioGate} />
