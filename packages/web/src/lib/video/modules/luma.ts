@@ -22,9 +22,14 @@
 //   out (video): luma-processed RGB.
 //
 // Params:
-//   gamma (linear 0.1..3.0): gamma correction (1.0 = linear).
+//   gamma (linear 0.1..3.0): gamma correction (1.0 = linear). CONVENTION
+//     (F-L1, deliberate): Levels-style INVERSE gamma pow(luma, 1/gamma) —
+//     values ABOVE 1 BRIGHTEN midtones, below 1 darken. This is the
+//     Photoshop-Levels convention, NOT display-gamma (out = in^gamma).
 //   contrast (linear 0..2): contrast scale (1.0 = pristine).
-//   posterizeLevels (discrete 2..16): luma quantization steps.
+//   posterizeLevels (discrete 2..16): luma quantization steps; 16 (the
+//     default and max) is a TRUE BYPASS (no quantization) so the default
+//     transfer is identity (F-L2).
 //   bias (linear -0.5..0.5): luma additive bias (lifts/depresses midtones).
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
@@ -65,9 +70,16 @@ void main() {
   float contrastLuma = (gammaLuma - 0.5) * uContrast + 0.5;
 
   // Posterize: quantize to N levels. Clamp + round so a sub-2 CV value
-  // doesn't divide by < 1.
+  // doesn't divide by < 1. At the ROUNDED level 16 (the default AND max)
+  // posterize is a TRUE BYPASS (F-L2): floor(l*16)/15 is NOT identity — it
+  // crushes l >= 15/16 to white and l < 1/16 to black — so "defaults pass
+  // the picture through untouched" requires an explicit off position.
+  // Testing the rounded level (not the raw uniform) means a CV value like
+  // 15.7 rounds to 16 -> bypass, instead of banding HARDER than 16.0 would.
   float levels = max(2.0, floor(uPosterizeLevels + 0.5));
-  float posterLuma = floor(contrastLuma * levels) / max(levels - 1.0, 1.0);
+  float posterLuma = levels >= 16.0
+    ? contrastLuma
+    : floor(contrastLuma * levels) / max(levels - 1.0, 1.0);
 
   // Bias is a final additive brightness offset.
   float finalLuma = clamp(posterLuma + uBias, 0.0, 1.0);
@@ -88,7 +100,7 @@ interface LumaParams {
 const DEFAULTS: LumaParams = {
   gamma: 1.0,
   contrast: 1.0,
-  posterizeLevels: 16, // max = effectively off (no visible banding)
+  posterizeLevels: 16, // max = TRUE BYPASS (no quantization; defaults are identity)
   bias: 0.0,
 };
 
@@ -122,7 +134,7 @@ export const lumaDef: VideoModuleDef = {
 
   // docs-hash-ignore:start
   docs: {
-    explanation: "luma is a luminance-domain color processor for a single video stream. It reads the Rec. 601 brightness (0.299/0.587/0.114) of every pixel, runs that luma through a chain of gamma, contrast (scaled around the 0.5 midpoint), posterize (quantize to N steps), then an additive bias, and finally re-applies the new-luma/old-luma ratio to all three RGB channels so chroma (hue and saturation) is preserved while only tonality changes. Patch a video source into in and use it to crush blacks, lift gamma, flatten the image into hard tonal bands, or shift overall brightness; with the defaults (gamma 1, cntr 1, post 16, bias 0) the picture passes through essentially untouched. Note this is NOT a keyer — for foreground/background luma compositing use lumakey instead.",
+    explanation: "luma is a luminance-domain color processor for a single video stream. It reads the Rec. 601 brightness (0.299/0.587/0.114) of every pixel, runs that luma through a chain of gamma, contrast (scaled around the 0.5 midpoint), posterize (quantize to N steps; 16 = off), then an additive bias, and finally re-applies the new-luma/old-luma ratio to all three RGB channels so chroma (hue and saturation) is preserved while only tonality changes. Gamma uses the Levels-style INVERSE convention pow(luma, 1/gamma): values above 1 brighten midtones, below 1 darken them (this is the Photoshop-Levels convention, not display-gamma out = in^gamma). Patch a video source into in and use it to crush blacks, lift gamma, flatten the image into hard tonal bands, or shift overall brightness; with the defaults (gamma 1, cntr 1, post 16, bias 0) the transfer is a true identity — the picture passes through untouched. Note this is NOT a keyer — for foreground/background luma compositing use lumakey instead.",
     inputs: {
       in: "The video frame to process. With nothing patched here the output is solid black; otherwise the luma chain runs on this RGB image.",
       gamma: "CV input that modulates Gamma; a linear-scaled control voltage drives the gamma-correction exponent applied to the luma.",
@@ -134,9 +146,9 @@ export const lumaDef: VideoModuleDef = {
       out: "The luma-processed video frame: the same RGB image with gamma, contrast, posterize and bias applied to its brightness while chroma (hue and saturation) is preserved (opaque alpha).",
     },
     controls: {
-      gamma: "Gamma fader — gamma correction of the luma via pow(luma, 1/gamma), range 0.1 to 3.0; 1.0 is linear/untouched, below 1 darkens midtones, above 1 brightens them.",
+      gamma: "Gamma fader — gamma correction of the luma via pow(luma, 1/gamma), range 0.1 to 3.0; 1.0 is linear/untouched, below 1 darkens midtones, above 1 brightens them. NOTE the convention: this is the Levels-style INVERSE gamma (like Photoshop's Levels middle slider), NOT display-gamma out = in^gamma — so gamma 2 BRIGHTENS a mid-gray (0.5 -> ~0.71), it does not darken it to 0.25.",
       contrast: "Cntr fader — contrast scaling of the luma around 0.5, range 0 to 2; 1.0 is pristine, 0 flattens everything to mid-grey, values above 1 push tones apart for harder contrast.",
-      posterizeLevels: "Post fader — number of luma quantization steps, range 2 to 16; 16 is effectively off (no visible banding) and 2 crushes the image to two hard tonal bands.",
+      posterizeLevels: "Post fader — number of luma quantization steps, range 2 to 16; 16 (the default and max) is a TRUE BYPASS (no quantization at all, so the default transfer is identity), 15 and below quantize with floor(luma*N)/(N-1), and 2 crushes the image to two hard tonal bands.",
       bias: "Bias fader — a final additive luma offset, range -0.5 to 0.5; negative depresses overall brightness, positive lifts it, 0 leaves it unchanged.",
     },
   },

@@ -123,7 +123,11 @@ const FROM_TEST_ROOT = resolve(__dirname, '../../../../..');
 // for non-black/structured/param-response). Full-res dependent-texelFetch fill →
 // isolated in the serialized heavy lane; e2e/webgl-heavy-globs.ts is in the hash
 // basis, so this moved the WebGL hash (re-attested). 49 → 50.
-const EXPECTED_HEAVY_SPEC_COUNT = 51;
+// KEYER FRAMEWORK (2026-07-11, §11 change 6): +keyer-functional.spec.ts (the
+// keyer-family functional validation — DRS frozen-clock gl.readPixels off
+// module FBOs, previously mis-binned onto the sharded SwiftShader matrix).
+// Batched into the keyer-framework PR's single re-attest. 51 → 52.
+const EXPECTED_HEAVY_SPEC_COUNT = 52;
 
 describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
   const basis = resolveWebglBasis();
