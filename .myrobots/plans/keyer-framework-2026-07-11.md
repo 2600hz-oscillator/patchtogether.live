@@ -257,3 +257,89 @@ matte-output decision in phase 3.
 5. LUMAKEY/CHROMA dedupe swaps (behavior-identity; the passing e2e pins it).
 6. `task docs:accept`; typecheck; 3× flake-checks; ONE re-attest (post-rebase);
    owner preview of the chromakey look change; PR.
+
+## 11. Phase-3 adversarial design review (2026-07-11) — verdict + required changes
+
+**Verdict: GO-WITH-CHANGES.** Independently verified sound: the metric family
+(key-relative CbCr distance fixes F-C1 — the finding pixel lands at normalized
+d=0.828 vs default thr 0.15 + soft 0.08 → kept; any neutral gray sits at
+EXACTLY d=1.0 for every saturated key; blue-screen symmetric d=0 at key);
+kcDespill (standard min-limit family, exact identity at amount=0); the
+LUMAKEY/LUMA swaps ARE coefficient-exact (both already Rec.601, same smoothstep
+form → bit-identical for in-range params); zero-migration (all five cards
+persist params only — no `node.data`; the curated examples Glitches / Media
+Burn / gibribbon contain NO keyer/fader nodes, verified by decoding the Yjs
+envelopes); the VRT-exempt claim (all four keyers + FADER "baseline pending" on
+this branch AND current origin/main — the 13-pair drain didn't touch them);
+attest scope (edited files all inside the `lib/video/**` dir-walk basis, e2e
+spec edits hash-transparent; reconciler.ts is UNTOUCHED by this design and in
+NEITHER basis — the F-F1 fix is fader.ts-factory-side, so no collab attest);
+existing e2e survive the new metric (video-controls' orange-key flip: red d=0.60
+→ kept at thr 0, keyed at 0.9; orientation triangles are neutral → d=1 → kept).
+`keyer-functional.spec.ts` re-run on this branch: 6 passed / 4 fixme, 11.8s.
+
+**Required changes for phase 4, by severity:**
+
+1. **[blocks step 4] The F-C1 fixme CANNOT flip green as written.** The kept
+   subject (0.6,0.75,0.55) composited at alpha=1 has B=140 (its OWN blue), but
+   the test asserts `B ≤ 120`. Post-fix output is (153,172,140) at
+   spillSuppress 0.5. Rewrite the assertion when flipping the fixme:
+   band-assert the kept color (R≈153±TOL, B≈140±TOL, and G below ~180 to prove
+   despill acted) — "no bg flood" means B far below 255, not below the
+   subject's own channel.
+2. **[HIGH, look-quality] The default-threshold calibration criterion is too
+   weak.** "Pure key → 0, red/blue → 1" already holds at thr=0.15, but a
+   REALISTIC screen pixel (0.2,0.8,0.3) sits at d=0.454 and half-brightness
+   key-green (0,0.5,0) at d=0.500 — both KEPT at defaults, both keyed by the
+   OLD hue metric. Chroma-plane distance conflates shading variation with hue
+   distance. Either re-tune the default (thr≈0.5 keys both probes while the
+   F-C1 subject at 0.828 still survives — note a defaultValue change is a
+   contract-lock diff) or explicitly accept "defaults key only near-pure keys"
+   (fine for this app's synthetic sources). PIN the decision: add the three
+   probe colors to keying-core.test.ts + one realistic-screen e2e row, and put
+   the default choice in the owner-preview loop.
+3. **[MED] HSV inconsistency / CHROMA scope.** The §4 core sketch has no HSV
+   helpers, yet §5/§10 have CHROMA "import shared HSV helpers" — and the NEW
+   chromakey needs no HSV at all. Recommended: DROP chroma.ts from phase 4
+   (zero functional change there; HSV dedupe moves to the §8 quad/toybox pass).
+   Alternative: add GLSL_HSV_HELPERS + TS mirrors + tests to the core now.
+   Basis-edit count becomes four + the new core either way; still ONE re-attest.
+4. **[MED] Keep the defensive in-shader clamps.** ydoc params are NOT
+   range-validated (only CV writes are clamped, by scaleCv); today's shaders
+   clamp thr/soft/gamma as the last line of defense (luma.ts says so
+   explicitly). kcLumaMask/kcChromaMask must clamp to the declared ranges to
+   preserve exact current semantics.
+5. **[MED] Interpolate shared constants into the GLSL** (the mapper.ts
+   pattern): the sketch hardcodes 0.299/0.587/0.114 and 0.564/0.713 in BOTH the
+   GLSL string and TS. Template-interpolate from KEY_LUMA_WEIGHTS etc. so
+   GLSL↔TS lockstep holds by construction, not by a string-containment test.
+6. **[MED, CI hygiene] keyer-functional.spec.ts matches NO WEBGL_HEAVY_GLOBS
+   entry** → this readPixels DRS spec runs on the sharded SwiftShader matrix
+   (the documented contention-flake class, #621/#1016). Add a glob entry in the
+   phase-4 PR (webgl-heavy-globs.ts is in the attest basis — free inside the
+   already-planned single re-attest), or rename to match
+   `**/*-render-smoke.spec.ts` to auto-enroll.
+7. **Minor:** (a) posterize bypass must test the ROUNDED level
+   (`levels >= 16.0` after `floor(x+0.5)`), not the raw uniform, so CV 15.7
+   doesn't band harder than 16.0; (b) drop the unexplained `(0.5 + 0.5·alpha)`
+   despill scale — plain `uSpillSuppress` matches the cited literature and no
+   test distinguishes them (if kept, justify it); (c) the owner-preview note
+   must mention LUMA-at-defaults also changes look (banding removed), not just
+   CHROMAKEY; (d) toybox-chromakey-shader.test.ts's premise ("ports the
+   standalone chromakey.ts verbatim") inverts after the rebuild — update its
+   header to "pins toybox's LEGACY hue+satGate keying (module moved to
+   chroma-plane; toybox migration deferred, §8)"; (e) the §4 main() sketch
+   omits the uHasFg/uHasBg fallbacks — keep them; (f) document that an
+   achromatic key (length(kc) floored at 0.05) keys ALL neutrals regardless of
+   luma — point black/white-backdrop users at LUMAKEY.
+
+**Phase-4b (matte output + invert): DEFER.** Neither HIGH finding needs it; it
+adds contract-lock churn + per-port sweep enrollment for a med design-gap.
+Ship the core fixes first; matte-out rides the §8 follow-up.
+
+**Scope judgment (simpler-alternative test):** a chromakey.ts-only fix would
+close F-C1/F-C2 but costs the SAME one re-attest (any basis edit churns the
+hash) and leaves the four-way mask/composite duplication + the F-L2/F-F1 fixes
+un-batched. The shared core earns its surface via the proven mapper/
+fader-transitions TS-mirror pattern and the §8 adopters — minus chroma.ts,
+which adds identity-risk for zero immediate dedupe (change 3).
