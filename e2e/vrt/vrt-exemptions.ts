@@ -943,10 +943,6 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/scope-xy-lissajous',
   'linux/scope-intensity-dot',
   'linux/scope-intensity-long',
-  // DOCKSCOPE (P2.5b): NEW module — darwin baseline captured locally with
-  // the seeded VRT_SCENES.dockscope trace; linux baseline pending a
-  // `vrt-update.yml` workflow_dispatch, then this entry comes out.
-  'linux/dockscope',
   // VIDEO-OUT: this PR re-captures the darwin baseline with a real,
   // frozen VIDEOBOX frame driven through the output (via VRT_SCENES) to
   // prove the VIDEOBOX -> VIDEO-OUT path renders video content. VP9
@@ -1333,66 +1329,4 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // e2e/tests/snaredrum-roll.spec.ts (SEQUENCER → trigger_in single hit AND
   // held gate_in → sustained two-hand roll, audible stereo RMS on both L/R).
   'linux/snaredrum',
-  // TOM DRUM (2026-07-11): darwin baseline captured locally (the compact
-  // MEMBRANE·COLOR·OUT fader band + the STRIKE pad over the PatchPanel
-  // TRIG/ACC/V-OCT/BEND/DEC/TONE/NSE → OUT drill-down is deterministic
-  // chrome, NO canvas/animation); linux baseline pending a `vrt-update.yml`
-  // workflow_dispatch on the PR branch (the darwin-first new-module pattern,
-  // same as KICK DRUM / SNARE DRUM above). Functional coverage:
-  // packages/dsp/src/lib/tomtom-dsp.test.ts (bend/decay laws, frequency
-  // compensation, the sonic-range proof) + tomtom.test.ts (def contract +
-  // worklet strike-pad/accent/level/CV routing) + the ART audio profile
-  // (art/scenarios/tomtom/profile.test.ts) + the per-module-per-port sweep +
-  // the bespoke real-source-chain e2e/tests/tomtom.spec.ts (SEQUENCER →
-  // trigger_in → AUDIOOUT, audible RMS + tom-band-dominant spectrum).
-  'linux/tomtom',
-  // KARPLUS (2026-07-11): darwin baseline captured locally (the string-voice
-  // card is deterministic chrome — STRING·EXCITER fader bands + the PLUCK
-  // audition button over the PatchPanel TRIG/V-OCT/ACC/DAMP + 5 CV → OUT
-  // drill-down, NO canvas/animation); linux baseline pending a
-  // `vrt-update.yml` workflow_dispatch on the PR branch (the darwin-first
-  // new-module pattern, same as KICK/SNARE above). Functional coverage: the
-  // pure core packages/dsp/src/lib/karplus-dsp.test.ts (1V/oct < 3 cents
-  // gate, ρ-compensated decay, stability extremes) + karplus.test.ts (def
-  // contract + worklet wrapper) + the ART audio profile
-  // (art/scenarios/karplus/profile.test.ts) + the per-module-per-port sweep +
-  // the bespoke real-source-chain e2e/tests/karplus.spec.ts (SEQUENCER →
-  // trigger_in + pitch → AUDIOOUT, audible RMS + fundamental spectrum).
-  'linux/karplus',
-  // CLAP (2026-07-11): darwin baseline captured locally (the compact
-  // BURST·NOISE·ROOM/OUT fader band + the CLAP pad over the PatchPanel
-  // TRIG/ACC/TONE/TAIL/SPRD → OUT drill-down is deterministic chrome, NO
-  // canvas/animation); linux baseline pending a `vrt-update.yml`
-  // workflow_dispatch on the PR branch (the darwin-first new-module pattern,
-  // same as KICK DRUM / SNARE DRUM above). Functional coverage:
-  // packages/dsp/src/lib/clap-dsp.test.ts (burst scheduler + control laws +
-  // the full sonic-range proof suite) + clap.test.ts (def contract + worklet
-  // pad/accent/level/CV routing) + the ART audio profile
-  // (art/scenarios/clap/profile.test.ts, 3-strike TONE/TAIL corner train) +
-  // the per-module-per-port sweep + the bespoke real-source-chain
-  // e2e/tests/clap.spec.ts (SEQUENCER → trigger_in → AUDIOOUT, audible RMS +
-  // clap-band-dominant spectrum).
-  'linux/clap',
-  // CLAP composite-state VRT scenes (vrt-clap.spec.ts, 2026-07-11): the card
-  // captured at three sonically-distinct non-default settings (909-dense /
-  // linn-room / dry-snap — every fader at a clearly different position per
-  // scene), locking the param→fader render path at non-default values.
-  // Darwin baselines captured locally; linux pending the same vrt-update.yml
-  // dispatch as linux/clap above.
-  'linux/clap-909-dense',
-  'linux/clap-linn-room',
-  'linux/clap-dry-snap',
-  // KARPLUS + TOM DRUM composite-state scenes (2026-07-11, the sonic-audit
-  // coverage gap-fill): vrt-karplus-tomtom-states.spec.ts locks each card at
-  // 3 sonically/visually distinct NON-DEFAULT control states (bell/mallet/
-  // scrape fader constellations; Simmons-zap/timbale extremes + the held
-  // STRIKE pad's stateful CSS). Pure-DOM deterministic chrome, same
-  // darwin-first pattern as the modules' default cards above; linux
-  // baselines pending a `vrt-update.yml` workflow_dispatch on the PR branch.
-  'linux/karplus-bell-extreme',
-  'linux/karplus-dark-mallet',
-  'linux/karplus-scrape-bridge',
-  'linux/tomtom-simmons-zap',
-  'linux/tomtom-timbale-tight',
-  'linux/tomtom-strike-held',
 ]);
