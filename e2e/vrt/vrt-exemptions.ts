@@ -943,6 +943,10 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/scope-xy-lissajous',
   'linux/scope-intensity-dot',
   'linux/scope-intensity-long',
+  // DOCKSCOPE (P2.5b): NEW module — darwin baseline captured locally with
+  // the seeded VRT_SCENES.dockscope trace; linux baseline pending a
+  // `vrt-update.yml` workflow_dispatch, then this entry comes out.
+  'linux/dockscope',
   // VIDEO-OUT: this PR re-captures the darwin baseline with a real,
   // frozen VIDEOBOX frame driven through the output (via VRT_SCENES) to
   // prove the VIDEOBOX -> VIDEO-OUT path renders video content. VP9

@@ -44,6 +44,10 @@ export const DOCKABLE_TYPES: ReadonlySet<string> = new Set([
   // Scope (owner Q3 explicitly includes it; see the P2.5a scope-in-rail
   // assessment in the PR — a slim `dockscope` variant is a P2.5b candidate).
   'scope',
+  // DOCKSCOPE (P2.5b): the pre-approved slim rail scope — dockable by
+  // default (it exists FOR the rails; vector redraw stays crisp at every
+  // dock zoom step, unlike scope's fixed 320×300 raster).
+  'dockscope',
 ]);
 
 /** Is `type` dockable? (Callers additionally gate on workflow mode and on

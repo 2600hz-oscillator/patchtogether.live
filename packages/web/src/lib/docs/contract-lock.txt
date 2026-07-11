@@ -746,6 +746,11 @@ destructor param mangle 0..1 linear default=1
 destructor param posterize 0..1 linear default=0.7
 destructor param scanline 0..1 linear default=0.5
 destructor param shift 0..1 linear default=0.5
+dockscope meta domain=audio
+dockscope in ch1 audio accepts=cv,gate,pitch
+dockscope param range 0..1 discrete default=0
+dockscope param scale 0.1..10 log default=1
+dockscope param timeMs 1..200 log default=20 unit=ms
 doom meta domain=video maxInstances=1 ownerOnly
 doom in iddqd_in cv param=cv_iddqd_in
 doom in idkfa_in cv param=cv_idkfa_in

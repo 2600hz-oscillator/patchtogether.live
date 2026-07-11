@@ -39,6 +39,7 @@ export const ART_EXCLUDED: Readonly<Record<string, string>> = {
   audioOut: 'terminal sink — no audio-family OUTPUT port to capture',
   clockedRunner: 'utility with no audio-family OUTPUT port to capture',
   spectrograph: 'video-only outputs (analysis sink) — video belongs to VRT/WebGL-attest',
+  dockscope: 'terminal visualiser (analysis sink) — no OUTPUT ports at all; nothing to capture',
 };
 
 /**
