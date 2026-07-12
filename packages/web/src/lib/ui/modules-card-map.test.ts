@@ -52,7 +52,7 @@ const EXPECTED_NODE_TYPES = [
   'ruttetra', 'sampleHold', 'samsloop', 'scope', 'score', 'scoreboard',
   'scaler', 'sequencer', 'shapedramps', 'shapegen', 'shapes', 'shimmershine', 'sidecar', 'sourcery', 'spectrograph',
   'skifree', 'slewSwitch', 'snaredrum', 'stereovca', 'sticky',
-  'tomtom',
+  'tidyVco', 'tomtom',
   'swolevco', 'synesthesia', 'tempest', 'timelorde', 'treeohvox', 'tvLibrarian',
   'launchpadControlLeft',
   'unityscalemathematik', 'vca', 'vdelay', 'vfpgaRunner', 'videoMixer', 'videoOut',

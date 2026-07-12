@@ -359,7 +359,13 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // (posterbox-brutal-1bit / posterbox-dither-hatch / posterbox-subtle-565
       // in vrt-posterbox-states.spec.ts); linux baselines pending the
       // vrt-update.yml dispatch on the PR branch).
-    ).toBeLessThanOrEqual(96);
+          // 96→100 for TIDY VCO (2026-07-11, deliberate darwin-first new
+      // module — the flagship VA subtractive voice card + its 3
+      // composite-state scenes (tidyvco-acid / tidyvco-pad / tidyvco-bass
+      // in vrt-tidy-vco.spec.ts); linux baselines pending the
+      // vrt-update.yml dispatch on the PR branch, the karplus/clap
+      // drum-wave precedent).
+    ).toBeLessThanOrEqual(100);
   });
 });
 

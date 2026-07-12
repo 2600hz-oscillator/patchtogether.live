@@ -150,6 +150,12 @@ const OVERRIDES: Record<string, ModuleDriver> = {
   // outputs-emit + behavioral dims. audio_out is the one mono output.
   // (Behavioral-sweep observability params live in BEHAVIORAL_PARAMS.)
   clap:         { outputPort: 'audio_out', gatePort: 'trigger_in' },
+  // TIDY VCO — flagship VA subtractive voice; the mono gate input
+  // (edge:'gate', level-sensitive) opens the amp/filter EGs and the pitch
+  // input tracks 1 V/oct, so the sequencer gate train drives the
+  // outputs-emit + behavioral dims. Silent with no gate (poly bus or mono).
+  // Stereo out — out_l is the signature output.
+  tidyVco:      { outputPort: 'out_l', gatePort: 'gate', pitchPort: 'pitch' },
   // TREE.oh.VOX — TB-303 voice. pitch/gate ride on dedicated audio-rate
   // node ports (pitch_in / gate_in), NOT AudioParams, so the sequencer
   // gate must be wired to gate_in for the amp envelope to open. Without

@@ -767,6 +767,16 @@ const BEHAVIORAL_PARAMS: Record<string, Record<string, number>> = {
   // for a smooth control, burst still present so spread_cv stays audible).
   // All values inside the params' native ranges.
   clap: { width: 0.15, color: 0, drive: 0, tail: 700, snap: 0.4 },
+  // TIDY VCO: pin the observability corners the SHIPPING defaults hide.
+  // shape1/shape2=1 + pw=0.25 put both oscillators on their PULSE leg so
+  // pwm_cv audibly moves the duty (at the default shape=0 both oscs are
+  // SAWS and pw is a no-op — the one dead-CV case by design); drive=0
+  // gives drive_cv its full 0→1 swing (the knob is loudness-compensated,
+  // so the delta shows in crest/centroid, not rms); cutoff=5000 opens the
+  // ladder so waveshape deltas reach the analyser; width=0 + detune=0 +
+  // sub=0 kill the stereo/unison/sub churn that pads window variance.
+  // All values inside the params' native ranges.
+  tidyVco: { shape1: 1, shape2: 1, pw: 0.25, drive: 0, cutoff: 5000, res: 0.3, width: 0, detune: 0, sub: 0 },
 };
 
 // ────────── Per-port behavioral exemptions ──────────
@@ -1541,6 +1551,35 @@ const BEHAVIORAL_PORT_TEST_SOURCE: Record<string, InputSource> = {
   'clap.spread_cv': {
     node: {
       id: 'up-spreadcv-lfo',
+      type: 'lfo',
+      position: { x: 60, y: 60 },
+      domain: 'audio',
+      params: { rate: 3, shape: 0, depth: 0.5 },
+    },
+    outPort: 'phase0',
+    sourceType: 'cv',
+  },
+  // TIDY VCO pwm_cv / drive_cv — full-swing CVs (±0.45 duty/V, ±1 V =
+  // whole DRIVE range) that the generic walk's small excursions
+  // under-exercise: the same deterministic ±1 V sine as clap's octave-law
+  // ports. pwm_cv sweeps the pulse duty across most of 0.05..0.95 (zc +
+  // even-harmonic centroid churn vs the pinned pw=0.25 control); drive_cv
+  // sweeps the loudness-compensated tanh stage 0→1 (crest collapses +
+  // centroid rises as the wave squares up).
+  'tidyVco.pwm_cv': {
+    node: {
+      id: 'up-tvpwm-lfo',
+      type: 'lfo',
+      position: { x: 60, y: 60 },
+      domain: 'audio',
+      params: { rate: 3, shape: 0, depth: 0.5 },
+    },
+    outPort: 'phase0',
+    sourceType: 'cv',
+  },
+  'tidyVco.drive_cv': {
+    node: {
+      id: 'up-tvdrive-lfo',
       type: 'lfo',
       position: { x: 60, y: 60 },
       domain: 'audio',

@@ -1370,4 +1370,23 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // e2e/tests/snaredrum-roll.spec.ts (SEQUENCER → trigger_in single hit AND
   // held gate_in → sustained two-hand roll, audible stereo RMS on both L/R).
   'linux/snaredrum',
+  // TIDY VCO (2026-07-11): darwin baselines captured locally for the new
+  // flagship VA subtractive voice card; linux baselines pending a
+  // vrt-update.yml workflow_dispatch on the PR branch (dockscope/clap
+  // precedent). Non-VRT coverage until then: tidy-vco.test.ts (def
+  // contract + worklet poly/mono/hold/level behaviors), the DSP core +
+  // sonic-range suites (tuning gate, 5-point control proofs), the ART
+  // audio profile (art/scenarios/tidy-vco/profile.test.ts), the
+  // per-module-per-port sweep rows, and the bespoke real-source-chain
+  // e2e/tests/tidy-vco.spec.ts (POLYSEQZ→poly AND SEQUENCER→gate/pitch →
+  // audible RMS + in-tune fundamental).
+  'linux/tidyVco',
+  // TIDY VCO composite-state VRT scenes (vrt-tidy-vco.spec.ts,
+  // 2026-07-11): the 3 sonically-distinct control-state captures
+  // (acid / pad / bass — all 22 faders + the HOLD pad parked off-default
+  // per scene); darwin captured locally, linux pending the same
+  // vrt-update.yml dispatch (the vrt-clap composite-scene precedent).
+  'linux/tidyvco-acid',
+  'linux/tidyvco-pad',
+  'linux/tidyvco-bass',
 ]);
