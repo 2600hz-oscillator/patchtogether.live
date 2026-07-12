@@ -1,7 +1,8 @@
 <script lang="ts">
   // SnaredrumCard — deep stereo snare VOICE with a two-hand drumroll (design:
-  // .myrobots/snare-drum-module-design.md). WIDE 3u banded layout, mate to
-  // KickdrumCard:
+  // .myrobots/snare-drum-module-design.md). WIDE 4u banded layout (the three
+  // bands are ~683px tall at hp:2 — a 3u tier dropped the STEREO/OUT band
+  // below the border, so the def declares 4u), mate to KickdrumCard:
   //
   //   ┌──────── HEAD ────────┬─── BODY ───┬──── WIRE ─────┐
   //   │ Tune Head Damp GDamp │ Tone Body  │ Wire WTn WDec │

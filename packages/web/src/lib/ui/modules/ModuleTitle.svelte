@@ -142,6 +142,21 @@
     font-weight: 500;
     text-align: center;
     margin: 0 0 8px;
+    /* Reserve the top-corner patch-panel drill-down jack icons (PatchPanel
+     * `.patch-trigger.left/.right`: 18px wide at a ~4px inset, so each
+     * occupies ~22px from its card edge, z-index above the title). The
+     * title header spans the full card width and centers its text, so a
+     * long name (up to the 32-char rename cap) previously ran UNDER those
+     * corner icons — clipping "KICKDRUM"→"KICKD". Symmetric side padding
+     * keeps the centered title box clear of both icons; because the padding
+     * is symmetric, any title that still fits stays pixel-identically
+     * centered (no baseline churn), and only a title too wide for the
+     * reserved area truncates (ellipsis, see ModuleNameLabel) instead of
+     * colliding with the icon. box-sizing:border-box so the padding eats
+     * into the header's own width rather than widening the card. */
+    box-sizing: border-box;
+    padding-left: 26px;
+    padding-right: 26px;
     /* Letter-spacing: pre-PR each card carried its own .title rule with a
      * per-card letter-spacing (0.02–0.12em range). Svelte's CSS scoping
      * removed those rules once `.title` moved into ModuleTitle's child
