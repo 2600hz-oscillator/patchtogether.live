@@ -35,7 +35,6 @@
     parseEnvelope,
     loadEnvelopeIntoStore,
     downloadEnvelope,
-    pickAndLoadEnvelope,
     DEFAULT_FILENAME,
     EnvelopeParseError,
     readVideoAspectFromDoc,
@@ -59,6 +58,18 @@
     type PerformanceMedia,
   } from '$lib/graph/performance-zip';
   import { savePerformanceZip } from '$lib/graph/performance-save';
+  // CROSS-MODE import guard: a workflow patch must not load into a dawless rack
+  // (or vice-versa). detectPatchMode + assertLoadable are the pure decisions;
+  // decodeEnvelopeNodes feeds the legacy (stamp-less) inference; stampEnvelopeMode
+  // records the source mode on export. All run as a PRECONDITION — before any
+  // destructive load step — so a rejected import leaves the live graph untouched.
+  import {
+    detectPatchMode,
+    assertLoadable,
+    stampEnvelopeMode,
+    type PatchModeNode,
+  } from '$lib/graph/patch-mode';
+  import { decodeEnvelopeNodes } from '$lib/graph/patch-envelope-nodes';
   // Quick-switch PRESET SLOT bar (top-left of the menu bar) + the portable
   // `.set` container that bundles all five slots + the MIDI map. The pure
   // (de)serialize core lives in preset-set.ts; the per-browser IndexedDB
@@ -96,6 +107,50 @@
     }
     return loadEnvelopeIntoStore(validated, ydocArg, patchArg);
   }
+
+  // ---------------- Cross-mode import guard (precondition) ----------------
+  //
+  // Reject a workflow patch dropped onto a dawless rack (and vice-versa) BEFORE
+  // any destructive step. `mode` (the live rack mode prop) is the authority.
+
+  /** Read-only decode of an envelope's nodes for legacy (stamp-less) inference;
+   *  defensive — a garbage/undecodable update infers 'dawless' (the safe
+   *  default; a real workflow export carries the explicit stamp anyway). */
+  function safeDecodeNodes(env: unknown): PatchModeNode[] {
+    try {
+      return decodeEnvelopeNodes(env as { update?: unknown });
+    } catch {
+      return [];
+    }
+  }
+
+  /** Classify a raw-JSON envelope (or a perf-zip's `bundle.patch`): stamp-first,
+   *  else infer from the decoded nodes. */
+  function patchModeOfEnvelope(env: unknown): RackMode {
+    const stamp = env && typeof env === 'object' ? (env as Record<string, unknown>).mode : undefined;
+    return detectPatchMode({ mode: stamp, nodes: safeDecodeNodes(env) });
+  }
+
+  /** THE precondition: may `patchMode` load into the current rack? On a mismatch,
+   *  surface the direction-specific message in the visible error notice and
+   *  return false — the caller MUST abort before mutating the graph. */
+  function guardCrossModeLoad(patchMode: RackMode, context: string): boolean {
+    const verdict = assertLoadable(patchMode, mode);
+    if (verdict.ok) return true;
+    error = verdict.message;
+    trace(`${context}: blocked cross-mode load — ${verdict.message}`);
+    return false;
+  }
+
+  /** Guarded raw-envelope load shared by Import JSON + the __persistence.load
+   *  test hook: run the cross-mode precondition FIRST, and only call the
+   *  destructive persistenceLoad when it passes. Returns the LoadResult, or null
+   *  when blocked (error already surfaced, graph untouched). */
+  function loadEnvelopeGuarded(env: unknown) {
+    if (!guardCrossModeLoad(patchModeOfEnvelope(env), 'import JSON')) return null;
+    return persistenceLoad(env, ydoc, patch);
+  }
+
   import { AudioEngine, PatchEngine } from '$lib/audio/engine';
   import { attachReconciler } from '$lib/audio/reconciler';
   import { getModuleDef, listModuleDefs } from '$lib/audio/module-registry';
@@ -469,7 +524,9 @@
         // the latest value, never a lagging one.
         save: () => {
           flushAllCcCommits();
-          return makeEnvelope(ydoc);
+          // Stamp the source mode (mirrors exportPatchJson) so a round-trip
+          // through this hook carries the mode the guard checks on load.
+          return stampEnvelopeMode(makeEnvelope(ydoc), mode);
         },
         load: (env: unknown) => {
           // Caller passes a parsed envelope object (or its JSON form).
@@ -566,8 +623,10 @@
   }
   function loadEnvelopeFromObject(env: unknown) {
     // Indirection so the test global doesn't need its own import of
-    // parseEnvelope / loadEnvelopeIntoStore.
-    return persistenceLoad(env, ydoc, patch);
+    // parseEnvelope / loadEnvelopeIntoStore. Routed through the cross-mode guard
+    // (loadEnvelopeGuarded) so a mismatched patch is rejected here too — a
+    // same-mode load is unaffected. Returns null when the guard blocks.
+    return loadEnvelopeGuarded(env);
   }
 
   // B3: subscribe to the shared PatchSnapshot bus (one Yjs subscription
@@ -1914,7 +1973,9 @@
       // A save taken during/just after a hardware CC twist must capture the
       // settled value — flush the coalesced CC pumps before snapshotting.
       flushAllCcCommits();
-      const env = makeEnvelope(ydoc);
+      // Stamp the source rack mode so the cross-mode import guard can reject
+      // this patch on load into the wrong rack (additive; old importers ignore).
+      const env = stampEnvelopeMode(makeEnvelope(ydoc), mode);
       downloadEnvelope(env, DEFAULT_FILENAME);
       trace(
         `exported patch JSON (${Object.keys(patch.nodes).length} nodes, ${Object.keys(patch.edges).length} edges)`,
@@ -1933,12 +1994,20 @@
   async function importPatchJson() {
     error = null;
     try {
-      await ensureEngine();
-      const result = await pickAndLoadEnvelope(ydoc, patch);
-      if (!result) {
+      // Pick + parse (non-destructive) FIRST — this replaces the old
+      // pickAndLoadEnvelope, which loaded atomically and gave no seam to run
+      // the cross-mode precondition before the destructive wipe.
+      const file = await pickFile('.imp.json,application/json');
+      if (!file) {
         trace('import JSON cancelled');
         return;
       }
+      const env = parseEnvelope(await file.text());
+      // PRECONDITION: reject a cross-mode patch before ensureEngine / the load
+      // wipe — leaves the current graph exactly as it was.
+      if (!guardCrossModeLoad(patchModeOfEnvelope(env), 'import JSON')) return;
+      await ensureEngine();
+      const result = loadEnvelopeIntoStore(env, ydoc, patch);
       await reconciler?.reconcile();
       trace(`imported patch JSON (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges)`);
       if (result.diagnostics.length > 0) {
@@ -2151,7 +2220,9 @@
     // TWOTRACKS reel tapes: worklet-owned PCM that can't ride the envelope.
     // Dump each reel out-of-band as 'audio' media keyed `<nodeId>:<reel>`.
     media.push(...(await collectTwotracksTapes()));
-    return buildPerformanceZip({ bundle, media, savedAt: Date.now() });
+    // Stamp the source rack mode into the manifest for the cross-mode import
+    // guard (additive; a legacy loader ignores it).
+    return buildPerformanceZip({ bundle, media, savedAt: Date.now(), mode });
   }
 
   async function exportPerformanceZip(): Promise<void> {
@@ -2181,6 +2252,13 @@
   async function loadPerformanceZipBytes(zipBytes: Uint8Array): Promise<void> {
     const parsed = parsePerformanceZip(zipBytes);
     const bundle = validateBundle(parsed.bundle);
+
+    // PRECONDITION: reject a cross-mode performance BEFORE any destructive /
+    // side-effecting step (ensureEngine, IDB blob seeding, persistenceLoad).
+    // parse + validate above are read-only, so the live rack is untouched on a
+    // block. Stamp-first (parsed.mode), else infer from the patch content.
+    const patchMode = detectPatchMode({ mode: parsed.mode, nodes: safeDecodeNodes(bundle.patch) });
+    if (!guardCrossModeLoad(patchMode, 'load performance')) return;
 
     await ensureEngine();
 
@@ -5987,7 +6065,7 @@
   {/if}
 
   {#if error}
-    <pre class="error">{error}</pre>
+    <pre class="error" data-testid="load-error">{error}</pre>
   {/if}
 
   {#if workflowMode}
