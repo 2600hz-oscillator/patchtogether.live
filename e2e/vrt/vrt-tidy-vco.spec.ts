@@ -7,9 +7,10 @@
 //
 // Why this exists on top of the default vrt.spec.ts card baseline: the
 // default baseline locks the card at SHIPPING DEFAULTS only — every fader
-// at its default position. These three scenes park all 22 faders + the
-// HOLD pad at clearly DIFFERENT positions per scene (three corners the
-// DSP sonic-range proofs pin: acid squelch / lush pad / unison bass), so
+// at its default position. These three scenes park all 24 faders (incl. the
+// FOLD + SYM wavefolder) + the HOLD pad at clearly DIFFERENT positions per
+// scene (three corners the DSP sonic-range proofs pin: acid squelch / lush
+// pad / unison bass), so
 // the param→fader-position render path is regression-locked across the
 // control ranges, not just at the defaults. The acid scene also latches
 // HOLD=1, locking the pad's held styling.
@@ -49,6 +50,7 @@ const SCENES: TidyVcoScene[] = [
     id: 'tidyvco-acid',
     params: {
       shape1: 1, shape2: 0.8, pw: 0.12, detune: -12, oct2: 0, mix: 0.2, sub: 0.5,
+      fold: 0.7, sym: -0.4,
       cutoff: 700, res: 0.92, drive: 0.8, env: 0.9, track: 0.7,
       fatk: 0.001, fdec: 0.18, fsus: 0, frel: 0.08,
       atk: 0.001, dec: 0.4, sus: 0.35, rel: 0.08,
@@ -59,6 +61,7 @@ const SCENES: TidyVcoScene[] = [
     id: 'tidyvco-pad',
     params: {
       shape1: 0.3, shape2: 1, pw: 0.35, detune: 18, oct2: -1, mix: 0.6, sub: 0.25,
+      fold: 0.3, sym: 0.6,
       cutoff: 2500, res: 0.15, drive: 0.1, env: 0.3, track: 0.2,
       fatk: 1.2, fdec: 2, fsus: 0.7, frel: 1.5,
       atk: 0.8, dec: 1, sus: 1, rel: 2.5,
@@ -69,6 +72,7 @@ const SCENES: TidyVcoScene[] = [
     id: 'tidyvco-bass',
     params: {
       shape1: 0.6, shape2: 0.4, pw: 0.25, detune: 30, oct2: 1, mix: 0.4, sub: 0.85,
+      fold: 0.5, sym: -0.15,
       cutoff: 300, res: 0.55, drive: 0.5, env: -0.4, track: 1,
       fatk: 0.02, fdec: 0.08, fsus: 0.45, frel: 0.5,
       atk: 0.01, dec: 0.12, sus: 0.55, rel: 0.4,

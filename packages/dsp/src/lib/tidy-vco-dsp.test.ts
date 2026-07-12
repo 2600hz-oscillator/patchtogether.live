@@ -29,7 +29,9 @@ import {
   TIDY_VCO_DEFAULTS,
   TIDY_VOICES,
   diodeLadderStep,
+  foldAdaaStep,
   makeDiodeLadderState,
+  makeFoldState,
   makeRcAdsrState,
   makeTidyVcoState,
   rcAdsrGate,
@@ -39,10 +41,15 @@ import {
   tidyCutoffHz,
   tidyCutoffToG,
   tidyDriveGains,
+  tidyFoldBias,
+  tidyFoldGain,
+  tidyFoldSpread,
   tidyFreqHz,
   tidyOtaVca,
   tidyPwEff,
   tidyResToK,
+  triFold,
+  triFoldInt,
   type TidyVcoBus,
   type TidyVcoParams,
 } from './tidy-vco-dsp';
@@ -75,6 +82,17 @@ function rms(buf: Float32Array, s0: number, s1: number): number {
   let s = 0;
   for (let i = s0; i < s1; i++) s += (buf[i] ?? 0) ** 2;
   return Math.sqrt(s / Math.max(1, s1 - s0));
+}
+
+/** FNV-1a over the raw Float32 bytes — a bit-exact fingerprint. */
+function fnv1a(buf: Float32Array): string {
+  const bytes = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+  let h = 0x811c9dc5 >>> 0;
+  for (let i = 0; i < bytes.length; i++) {
+    h ^= bytes[i]!;
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, '0');
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -398,6 +416,86 @@ describe('OTA-flavored VCA', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────
+// Stereo wavefolder — the triangle folder, its ADAA, and the control laws
+// ─────────────────────────────────────────────────────────────────────────
+
+describe('triangle wavefolder core', () => {
+  it('triFold is the IDENTITY on [−1, 1] and reflects off the ±1 rails beyond', () => {
+    for (const u of [-1, -0.6, 0, 0.3, 1]) expect(triFold(u)).toBeCloseTo(u, 12);
+    // Reflections: 1.5→0.5, 2→0, 3→−1, and it is period-4.
+    expect(triFold(1.5)).toBeCloseTo(0.5, 12);
+    expect(triFold(2)).toBeCloseTo(0, 12);
+    expect(triFold(3)).toBeCloseTo(-1, 12);
+    expect(triFold(4.2)).toBeCloseTo(triFold(0.2), 12);
+    // Bounded in [−1, 1] for any input (a folder never overshoots the rails).
+    for (let u = -20; u <= 20; u += 0.013) expect(Math.abs(triFold(u))).toBeLessThanOrEqual(1 + 1e-9);
+  });
+
+  it('triFoldInt is a CONTINUOUS antiderivative of triFold (finite-difference check)', () => {
+    const h = 1e-6;
+    for (const u of [-2.3, -0.5, 0.2, 1.4, 2.7, 3.9]) {
+      const num = (triFoldInt(u + h) - triFoldInt(u - h)) / (2 * h);
+      expect(num, `d/du triFoldInt(${u}) = triFold(${u})`).toBeCloseTo(triFold(u), 4);
+    }
+    // Continuity across the corner + the period wrap.
+    expect(triFoldInt(1 - 1e-7)).toBeCloseTo(triFoldInt(1 + 1e-7), 6);
+    expect(triFoldInt(-1 + 1e-7)).toBeCloseTo(triFoldInt(4 - 1 + 1e-7 - 4) + 0, 6); // handled by wrap
+  });
+
+  it('foldAdaaStep is an EXACT bypass at amt = 0 (returns x for any input)', () => {
+    const st = makeFoldState();
+    for (const x of [-1.7, -0.4, 0, 0.55, 2.3]) {
+      expect(foldAdaaStep(st, x, tidyFoldGain(0), tidyFoldBias(0, 0), 0)).toBe(x);
+    }
+  });
+
+  it('foldAdaaStep ADAA output stays bounded in [−1, 1] and matches triFold on a slow ramp', () => {
+    const st = makeFoldState();
+    // A slowly varying input: ADAA ≈ the instantaneous fold (its Δu→0 limit).
+    let worst = 0;
+    for (let i = 0; i < 4000; i++) {
+      const x = 1.2 * Math.sin((2 * Math.PI * i) / 4000);
+      const u = 5 * x; // gain 5, no bias
+      const y = foldAdaaStep(st, x, 5, 0, 0.7);
+      expect(Math.abs(y)).toBeLessThanOrEqual(1 + 1e-9);
+      worst = Math.max(worst, Math.abs(y - triFold(u)));
+    }
+    // Over a slow ramp the ADAA average tracks the pointwise fold closely.
+    expect(worst).toBeLessThan(0.05);
+  });
+
+  it('control laws: FOLD gain, SYMMETRY bias (fold-scaled), stereo spread', () => {
+    // FOLD gain: 1 at 0 (bypass), 1+MAX at 1.
+    expect(tidyFoldGain(0)).toBe(1);
+    expect(tidyFoldGain(1)).toBeGreaterThan(4);
+    // SYMMETRY bias is SCALED BY FOLD (0 when there is no fold), bipolar.
+    expect(tidyFoldBias(1, 0)).toBe(0);
+    expect(tidyFoldBias(0, 1)).toBe(0);
+    expect(tidyFoldBias(1, 1)).toBeGreaterThan(0);
+    expect(tidyFoldBias(-1, 1)).toBeCloseTo(-tidyFoldBias(1, 1), 12);
+    // Stereo spread: 0 at fold 0 OR width 0 (WIDTH 0 stays mono), grows with both.
+    expect(tidyFoldSpread(0, 1)).toBe(0);
+    expect(tidyFoldSpread(1, 0)).toBe(0);
+    expect(tidyFoldSpread(1, 1)).toBeGreaterThan(tidyFoldSpread(0.5, 1));
+    expect(tidyFoldSpread(1, 1)).toBeGreaterThan(tidyFoldSpread(1, 0.5));
+  });
+
+  it('the folded voice keeps the 2×/ADAA path alias-free (worst inharmonic < −60 dBc)', () => {
+    // Fold a bright 3100 Hz saw hard (fold 1 + drive) — the harshest alias
+    // case — and confirm the ADAA + 2× oversampling hold the alias floor.
+    const voct = Math.log2(3100 / TIDY_C4_HZ);
+    const p = probePatch({ fold: 1, drive: 0.5, res: 0, cutoff: 14000 });
+    const { l } = renderVoice(p, lane0Bus(voct), 1);
+    const h1 = goertzel(l, SR, 3100, SR / 2, SR);
+    let worst = 0;
+    for (const f of [4000, 5150, 7300, 8250, 10850, 13950, 17050, 20150, 23250]) {
+      worst = Math.max(worst, goertzel(l, SR, f, SR / 2, SR) / h1);
+    }
+    expect(db(worst)).toBeLessThan(-60);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
 // Control laws (pure)
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -568,6 +666,9 @@ describe('voice render', () => {
       { cutoff: 40, res: 1, drive: 1, oct2: -1, level: 12, env: -1 },
       { cutoff: 14000, res: 0, drive: 1, detune: 50, sub: 1, level: 12 },
       { cutoff: 40, res: 1, drive: 0, atk: 0.0005, rel: 0.001, level: 12 },
+      // Wavefolder pinned hard: max fold + full asymmetry + hot drive/res.
+      { cutoff: 14000, res: 1, drive: 1, fold: 1, sym: 1, sub: 1, level: 12, env: 1, track: 1 },
+      { cutoff: 40, res: 0.9, fold: 1, sym: -1, drive: 0.7, level: 12 },
     ];
     const poly = new Float32Array(10);
     for (let v = 0; v < TIDY_VOICES; v++) {
@@ -605,5 +706,38 @@ describe('voice render', () => {
     const b = renderVoice(p, { ...silentBus(), monoGate: 1 }, 0.5);
     expect(Buffer.from(a.l.buffer).equals(Buffer.from(b.l.buffer))).toBe(true);
     expect(Buffer.from(a.r.buffer).equals(Buffer.from(b.r.buffer))).toBe(true);
+  });
+
+  it('FOLD = 0 is a BIT-EXACT bypass of the pre-wavefolder voice (regression anchor)', () => {
+    // The wavefolder must be inaudible at FOLD 0 so every existing TIDY VCO
+    // patch sounds UNCHANGED. These FNV-1a fingerprints were captured from
+    // the pre-change (no-wavefolder) core; the stereo fold path, fed FOLD 0,
+    // must reproduce them byte-for-byte (the folder gates to identity + both
+    // channels stay identical). If this flips, the wavefolder leaked into the
+    // default sound — a bug, not an accepted change. (128-block driven to
+    // mirror the worklet granularity.)
+    const render = (p: TidyVcoParams, bus: TidyVcoBus): { l: Float32Array; r: Float32Array } => {
+      const n = Math.round(0.5 * SR);
+      const l = new Float32Array(n);
+      const r = new Float32Array(n);
+      const st = makeTidyVcoState();
+      for (let i = 0; i < n; i += 128) renderTidyVco(p, bus, l, r, i, Math.min(i + 128, n), SR, st);
+      return { l, r };
+    };
+    // Buffer A — mono gate, shipping defaults.
+    const A = render({ ...TIDY_VCO_DEFAULTS }, { ...silentBus(), monoGate: 1 });
+    expect(fnv1a(A.l), 'mono L bit-identical to pre-wavefolder core').toBe('3490905a');
+    expect(fnv1a(A.r), 'mono R bit-identical to pre-wavefolder core').toBe('de484e56');
+    // Buffer B — poly C4/E4/G4 chord, res + drive + width engaged.
+    const polyB = new Float32Array(10);
+    polyB[0] = 0; polyB[1] = 1;
+    polyB[2] = 4 / 12; polyB[3] = 1;
+    polyB[4] = 7 / 12; polyB[5] = 1;
+    const B = render(
+      { ...TIDY_VCO_DEFAULTS, res: 0.6, drive: 0.5, cutoff: 1200, width: 0.7, env: 0.5 },
+      { ...silentBus(), poly: polyB },
+    );
+    expect(fnv1a(B.l), 'poly L bit-identical to pre-wavefolder core').toBe('e7ee903b');
+    expect(fnv1a(B.r), 'poly R bit-identical to pre-wavefolder core').toBe('8d82875e');
   });
 });

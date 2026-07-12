@@ -86,14 +86,56 @@
 //   INSIDE the per-voice 2× oversampled section, so its harmonics can't
 //   alias.
 //
+//   WAVEFOLDER — a STEREO West-Coast timbre folder inserted BEFORE the
+//   filter (osc bus → FOLD → drive → diode ladder → VCA), so the ladder
+//   lowpasses the folded spectrum — the classic Buchla/Serge "timbre into
+//   filter" voice. Topology: the IDEAL reflecting TRIANGLE folder (the
+//   Serge/Buchla 259 & 296 lineage — a triangle reflected off ±1 rails,
+//   folding more times as the FOLD knob drives its input gain up:
+//   u = G·x + bias, y = tri(u), tri = the period-4 triangle wave that is
+//   the IDENTITY on [−1,1] and reflects beyond it). We take the triangle
+//   folder rather than a Lockhart tanh cell or a pure sine folder for two
+//   reasons: (a) it has a TRUE LINEAR (identity) core, so FOLD = 0 is an
+//   exact bypass and the departure from unity is continuous; (b) its
+//   antiderivative is closed-form piecewise-quadratic, which the
+//   antialiasing needs.
+//     ANTIALIASING — a folder's transfer is corner-rich (piecewise linear)
+//   and its harmonics decay slowly, so it aliases badly; the shared 2×
+//   oversampler alone is rated only for low-frequency sources (see
+//   oversample.ts). We therefore run 1st-order ANTIDERIVATIVE
+//   ANTIALIASING (ADAA — Parker/Zavalishin/Bilbao; Esqueda, Bilbao &
+//   Välimäki, "Antialiasing of the wavefolder distortion", DAFx-16) on the
+//   fold INSIDE the 2× section: y[n] = (F(u[n]) − F(u[n−1]))/(u[n]−u[n−1])
+//   with the |Δu|→0 fallback y = tri(½(u[n]+u[n−1])), F = the triangle
+//   antiderivative. ADAA suppresses the alias images by an extra ~order
+//   and, folded together with the 2× oversampling, holds the worst
+//   in-band alias product below the drive stage's own floor (pinned by a
+//   spectral gate in the tests). ADAA's ½-sample group delay only touches
+//   the folded path — bypass is delay-free and bit-exact.
+//     STEREO — the fold is GENUINELY stereo, not dual-mono: L and R fold
+//   with an ANTIPHASE fold-point bias (±spread, spread = FOLD·WIDTH·k), so
+//   the two channels reflect at DIFFERENT input levels and their folded
+//   waveforms decorrelate — the folder itself widens the image, scaling
+//   with FOLD. Each channel runs its OWN fold state + oversampler + diode
+//   ladder + VCA (the voice is stereo from the fold onward; the equal-power
+//   voice pan then places that stereo voice in the field). At FOLD = 0 the
+//   spread is 0 and both channels are identical, so the whole stage is a
+//   bit-exact bypass of the pre-fold voice (regression-pinned).
+//     SYMMETRY — a bipolar DC bias on the fold input (scaled by FOLD): off
+//   center it makes the folding ASYMMETRIC, blooming EVEN harmonics
+//   (a symmetric fold is odd-only). CV jacks on both FOLD (full-swing,
+//   modulation-hungry) and SYMMETRY feed the stage per sample.
+//
 // ── Voice architecture ───────────────────────────────────────────────────
 //   Per voice: OSC1 + OSC2, each a clean-room polyBLEP saw↔pulse MORPH
 //   (SHAPE 0 = saw, 1 = pulse; Välimäki & Huovilainen, "Antialiasing
 //   Oscillators in Subtractive Synthesis", IEEE SP Mag 2007) with shared
 //   PW + PWM CV; OSC2 gets OCT (−1/0/+1) + DETUNE (±50 ¢); equal-power MIX;
 //   a polyBLEP SUB square one octave under OSC1. The osc bus feeds the
-//   diode ladder (per-voice cutoff = CUTOFF · 2^(TRACK·pitch + ENV·FEG·4oct
-//   + 4oct/V·cutoff_cv)), then the OTA VCA driven by the amp EG. Voices sum
+//   stereo WAVEFOLDER, then the diode ladder (per-voice cutoff = CUTOFF ·
+//   2^(TRACK·pitch + ENV·FEG·4oct + 4oct/V·cutoff_cv)), then the OTA VCA
+//   driven by the amp EG — the folder→ladder→VCA chain runs PER CHANNEL
+//   (L/R) at 2× oversampling with ADAA on the fold. Voices sum
 //   through equal-power pans with 1/√n normalization → LEVEL (dB) → per-
 //   channel DC block → tanh true-peak bound (|out| < 1 by construction).
 //
@@ -191,6 +233,28 @@ const PWM_CV_SCALE = 0.45;
 const RES_CV_SCALE = 1;
 const DRIVE_CV_SCALE = 1;
 
+// ── Wavefolder (stereo West-Coast triangle folder, ADAA'd — see header) ──
+/** FOLD knob → input drive gain G = 1 + FOLD·FOLD_GAIN_MAX into the ±1
+ *  reflecting triangle. At FOLD = 1 a ±0.5 osc bus reaches ±3.5 → ~1.7
+ *  reflections (rich but musical; harmonic growth pinned in the tests). */
+const FOLD_GAIN_MAX = 6;
+/** SYMMETRY → fold-input DC bias B = SYM·SYM_BIAS_MAX·FOLD (scaled by FOLD
+ *  so bias only exists when there IS a fold; off center → asymmetric folds
+ *  → even harmonics). One whole rail of bias at SYM = ±1, FOLD = 1. */
+const SYM_BIAS_MAX = 1.0;
+/** Stereo decorrelation: L/R get ANTIPHASE fold-point bias ±spread, with
+ *  spread = FOLD·WIDTH·FOLD_SPREAD_MAX. Ties the folder's stereo to the
+ *  module's WIDTH control (WIDTH 0 stays exactly mono), scales with FOLD
+ *  (decorrelation proof), and is 0 at FOLD 0 (bit-exact bypass). */
+const FOLD_SPREAD_MAX = 0.9;
+/** fold_cv: ±1 V = the whole FOLD range (full-swing, per-sample). */
+const FOLD_CV_SCALE = 1;
+/** sym_cv: ±1 V = the whole SYMMETRY range each way (per-sample). */
+const SYM_CV_SCALE = 1;
+/** ADAA divided-difference guard: below this |Δu| use the midpoint value
+ *  (avoids the 0/0 near a stationary fold input). */
+const FOLD_ADAA_EPS = 1e-5;
+
 /** Mono-unison drift at WIDTH = 1 (± this many cents on the voice pair). */
 const UNISON_CENTS = 7;
 /** Poly pan layout · WIDTH (lane 0 = root anchored center). */
@@ -212,6 +276,8 @@ export interface TidyVcoParams {
   oct2: number; // OSC2 octave (−1/0/+1, discrete)
   mix: number; // OSC1↔OSC2 equal-power mix (0..1)
   sub: number; // sub square level (0..1)
+  fold: number; // stereo wavefolder amount (0..1; 0 = true bypass)
+  sym: number; // wavefolder DC-bias asymmetry (−1..+1; even harmonics)
   cutoff: number; // filter cutoff = resonant pitch (Hz, 40..14000, log)
   res: number; // resonance (0..1; self-osc onset ≈ 0.89)
   drive: number; // filter input drive (0..1)
@@ -237,6 +303,8 @@ export const TIDY_VCO_DEFAULTS: TidyVcoParams = {
   oct2: 0,
   mix: 0.5,
   sub: 0.15,
+  fold: 0,
+  sym: 0,
   cutoff: 900,
   res: 0.35,
   drive: 0.25,
@@ -308,6 +376,26 @@ export function tidyDriveGains(drive: number): { preGain: number; makeup: number
   const d = clamp(drive, 0, 1);
   const preGain = 1 + DRIVE_MAX * d;
   return { preGain, makeup: Math.pow(preGain, -DRIVE_MAKEUP_EXP) };
+}
+
+/** FOLD (0..1, CV-summed full-swing) → wavefolder input drive gain G
+ *  (= 1 at FOLD 0, so the triangle folder's linear core is a pure bypass). */
+export function tidyFoldGain(foldEff: number): number {
+  return 1 + FOLD_GAIN_MAX * clamp(foldEff, 0, 1);
+}
+
+/** SYMMETRY (−1..+1, CV-summed) → fold-input DC bias, SCALED BY FOLD so the
+ *  bias only exists when there is a fold (off center → asymmetric folds →
+ *  even harmonics). Exactly 0 at FOLD 0 (part of the bit-exact bypass). */
+export function tidyFoldBias(symEff: number, foldEff: number): number {
+  return SYM_BIAS_MAX * clamp(symEff, -1, 1) * clamp(foldEff, 0, 1);
+}
+
+/** Stereo decorrelation half-offset (L = −spread, R = +spread on the fold
+ *  bias): FOLD·WIDTH·k. 0 at FOLD 0 OR WIDTH 0 — WIDTH 0 stays exactly mono
+ *  and the decorrelation scales with FOLD. */
+export function tidyFoldSpread(foldEff: number, width: number): number {
+  return FOLD_SPREAD_MAX * clamp(foldEff, 0, 1) * clamp(width, 0, 1);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -426,6 +514,66 @@ export function tidyOtaVca(x: number, gEnv: number): number {
   if (gEnv <= 0) return 0;
   const b = VCA_BIAS * gEnv;
   return (Math.tanh(VCA_W * gEnv * x + b) - Math.tanh(b)) / VCA_W;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Stereo wavefolder — the ideal reflecting TRIANGLE folder (Serge/Buchla
+// 259/296 lineage) with 1st-order ADAA (see header). The triangle wave is
+// the IDENTITY on [−1, 1] and reflects off the ±1 rails beyond it, so the
+// fold's LINEAR core makes FOLD = 0 an exact bypass; its antiderivative is
+// closed-form piecewise-quadratic, which the antialiasing needs.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Ideal reflecting triangle folder: period-4 triangle, tri(u) = u on
+ *  [−1, 1], reflecting beyond — range [−1, 1] for any input. */
+export function triFold(u: number): number {
+  let w = u + 1;
+  w -= 4 * Math.floor(w / 4); // wrap into [0, 4)
+  return w < 2 ? w - 1 : 3 - w;
+}
+
+/** Antiderivative of triFold (continuous everywhere, period 4, range
+ *  [−0.5, 0.5]) — the F(·) that 1st-order ADAA divides. d/du = triFold(u). */
+export function triFoldInt(u: number): number {
+  let w = u + 1;
+  w -= 4 * Math.floor(w / 4);
+  return w < 2 ? 0.5 * w * w - w : 3 * w - 0.5 * w * w - 4;
+}
+
+export interface FoldState {
+  uPrev: number; // previous fold-input u = G·x + bias (ADAA history)
+}
+
+export function makeFoldState(): FoldState {
+  return { uPrev: 0 };
+}
+
+/**
+ * One antialiased wavefolder sample. `amt` (the effective FOLD, 0..1) gates
+ * a TRUE BYPASS at 0 (returns x bit-exactly — the folder's whole purpose at
+ * the default). For amt > 0: u = gain·x + bias, and the fold is 1st-order
+ * ADAA'd — y = (F(u) − F(uPrev)) / (u − uPrev), F = triFoldInt — with the
+ * |Δu| → 0 fallback y = triFold(½(u+uPrev)) (the divided-difference limit).
+ * Run INSIDE the 2× oversampled section; ADAA + 2× together bound the alias
+ * floor (pinned by the spectral gate in the tests).
+ */
+export function foldAdaaStep(
+  s: FoldState,
+  x: number,
+  gain: number,
+  bias: number,
+  amt: number,
+): number {
+  const u = gain * x + bias;
+  if (amt <= 0) {
+    s.uPrev = u; // keep ADAA history in the u-domain for a clean re-engage
+    return x; // TRUE BYPASS (gain = 1, bias = 0 at amt = 0 ⇒ u = x)
+  }
+  const uPrev = s.uPrev;
+  s.uPrev = u;
+  const du = u - uPrev;
+  if (du < FOLD_ADAA_EPS && du > -FOLD_ADAA_EPS) return triFold(0.5 * (u + uPrev));
+  return (triFoldInt(u) - triFoldInt(uPrev)) / du;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -549,16 +697,29 @@ interface TidyVoiceState {
   unisonSign: number; // mono-unison drift/pan sign (−1 voice 0, +1 voice 1)
   feg: RcAdsrState;
   aeg: RcAdsrState;
-  flt: DiodeLadderState;
-  os2: Oversampler;
-  // Per-sample scratch consumed by the oversampled closure.
+  // Per-channel nonlinear section (fold → drive → ladder → VCA runs L and R
+  // SEPARATELY so the stereo folder's decorrelated channels each get their
+  // own filtered path). At FOLD 0 both channels are fed the identical osc
+  // bus and evolve identically ⇒ a bit-exact bypass of the old mono voice.
+  fltL: DiodeLadderState;
+  fltR: DiodeLadderState;
+  os2L: Oversampler;
+  os2R: Oversampler;
+  foldL: FoldState;
+  foldR: FoldState;
+  // Per-sample scratch consumed by the oversampled closures.
   g: number;
   k: number;
   comp: number;
   drivePre: number;
   driveMakeup: number;
   vcaG: number;
-  nlFn: (x: number) => number;
+  foldGain: number; // wavefolder input drive gain G
+  foldBiasL: number; // L fold-input DC bias (center − spread)
+  foldBiasR: number; // R fold-input DC bias (center + spread)
+  foldAmt: number; // effective FOLD (0 ⇒ true bypass gate)
+  nlFnL: (x: number) => number;
+  nlFnR: (x: number) => number;
 }
 
 export interface TidyVcoState {
@@ -584,22 +745,40 @@ export function makeTidyVcoState(): TidyVcoState {
       unisonSign: v === 0 ? -1 : 1,
       feg: makeRcAdsrState(),
       aeg: makeRcAdsrState(),
-      flt: makeDiodeLadderState(),
-      os2: createOversampler(2),
+      fltL: makeDiodeLadderState(),
+      fltR: makeDiodeLadderState(),
+      os2L: createOversampler(2),
+      os2R: createOversampler(2),
+      foldL: makeFoldState(),
+      foldR: makeFoldState(),
       g: 0.1,
       k: 0,
       comp: 1,
       drivePre: 1,
       driveMakeup: 1,
       vcaG: 0,
-      nlFn: (x) => x,
+      foldGain: 1,
+      foldBiasL: 0,
+      foldBiasR: 0,
+      foldAmt: 0,
+      nlFnL: (x) => x,
+      nlFnR: (x) => x,
     };
-    // The per-voice 2×-oversampled nonlinear section: DRIVE tanh → passband
-    // compensation → diode ladder → OTA VCA. Bound once (no per-sample
-    // closure allocation).
-    vs.nlFn = (x: number) => {
-      const driven = Math.tanh(vs.drivePre * x) * vs.driveMakeup;
-      const y = diodeLadderStep(vs.flt, driven * vs.comp, vs.g, vs.k);
+    // The per-voice-per-channel 2×-oversampled nonlinear section: stereo
+    // WAVEFOLD (ADAA) → DRIVE tanh → passband compensation → diode ladder →
+    // OTA VCA. Bound once (no per-sample closure allocation). At FOLD 0 the
+    // fold is a bit-exact bypass and both channels receive the identical osc
+    // bus, so L and R stay identical — the pre-fold mono voice, verbatim.
+    vs.nlFnL = (x: number) => {
+      const folded = foldAdaaStep(vs.foldL, x, vs.foldGain, vs.foldBiasL, vs.foldAmt);
+      const driven = Math.tanh(vs.drivePre * folded) * vs.driveMakeup;
+      const y = diodeLadderStep(vs.fltL, driven * vs.comp, vs.g, vs.k);
+      return tidyOtaVca(y, vs.vcaG);
+    };
+    vs.nlFnR = (x: number) => {
+      const folded = foldAdaaStep(vs.foldR, x, vs.foldGain, vs.foldBiasR, vs.foldAmt);
+      const driven = Math.tanh(vs.drivePre * folded) * vs.driveMakeup;
+      const y = diodeLadderStep(vs.fltR, driven * vs.comp, vs.g, vs.k);
       return tidyOtaVca(y, vs.vcaG);
     };
     voices.push(vs);
@@ -628,6 +807,10 @@ export interface TidyVcoBus {
   /** Per-sample CV arrays (audio-rate modulation) or block-rate scalars. */
   cutoffCv?: ArrayLike<number> | number;
   pwmCv?: ArrayLike<number> | number;
+  /** Wavefolder CVs — per-sample (audio-rate) like cutoff/pwm; fold is very
+   *  modulation-hungry (full-swing), sym rides the asymmetry. */
+  foldCv?: ArrayLike<number> | number;
+  symCv?: ArrayLike<number> | number;
   resCv: number;
   driveCv: number;
 }
@@ -719,6 +902,15 @@ export function renderTidyVco(
     const cutoffCv = busCv(bus.cutoffCv, i - from);
     const pwEff = tidyPwEff(p.pw, busCv(bus.pwmCv, i - from));
 
+    // ── Wavefolder controls (per sample; fold/sym CV are full-swing). ──
+    const foldEff = clamp(clamp(p.fold, 0, 1) + FOLD_CV_SCALE * clamp(busCv(bus.foldCv, i - from), -2, 2), 0, 1);
+    const symEff = clamp(clamp(p.sym, -1, 1) + SYM_CV_SCALE * clamp(busCv(bus.symCv, i - from), -2, 2), -1, 1);
+    const foldGain = tidyFoldGain(foldEff);
+    const foldCenter = tidyFoldBias(symEff, foldEff);
+    const foldSpread = tidyFoldSpread(foldEff, width);
+    const foldBiasL = foldCenter - foldSpread;
+    const foldBiasR = foldCenter + foldSpread;
+
     let sumL = 0;
     let sumR = 0;
     let active = 0;
@@ -757,15 +949,23 @@ export function renderTidyVco(
       vs.drivePre = preGain;
       vs.driveMakeup = makeup;
       vs.vcaG = aeg;
+      vs.foldGain = foldGain;
+      vs.foldBiasL = foldBiasL;
+      vs.foldBiasR = foldBiasR;
+      vs.foldAmt = foldEff;
 
-      // ── 2×-oversampled nonlinear section: drive → ladder → OTA VCA. ──
-      const voice = vs.os2.process(oscBus, vs.nlFn);
+      // ── 2×-oversampled nonlinear section, PER CHANNEL: stereo wavefold
+      // (ADAA) → drive → ladder → OTA VCA. At FOLD 0 both channels fold the
+      // identical osc bus to itself, so voiceL === voiceR (bit-exact bypass).
+      const voiceL = vs.os2L.process(oscBus, vs.nlFnL);
+      const voiceR = vs.os2R.process(oscBus, vs.nlFnR);
 
-      // ── Equal-power pan into the stereo bus. ──
+      // ── Equal-power pan places the stereo voice in the field (folder L→
+      // left-pan leg, R→right-pan leg). ──
       const panPos = clamp(vPan[v]!, -1, 1);
       const ang = ((panPos + 1) * Math.PI) / 4;
-      sumL += voice * Math.cos(ang);
-      sumR += voice * Math.sin(ang);
+      sumL += voiceL * Math.cos(ang);
+      sumR += voiceR * Math.sin(ang);
     }
 
     // 1/√n voice normalization → trim → level → DC block → true-peak bound.

@@ -36,6 +36,8 @@
   let oct2 = $derived(paramVal('oct2'));
   let mix = $derived(paramVal('mix'));
   let sub = $derived(paramVal('sub'));
+  let fold = $derived(paramVal('fold'));
+  let sym = $derived(paramVal('sym'));
   let cutoff = $derived(paramVal('cutoff'));
   let res = $derived(paramVal('res'));
   let drive = $derived(paramVal('drive'));
@@ -86,6 +88,8 @@
     res_cv: 'RES',
     pwm_cv: 'PWM',
     drive_cv: 'DRV',
+    fold_cv: 'FOLD',
+    sym_cv: 'SYM',
   });
   const outputs = portsFromDef(tidyVcoDef.outputs, { out_l: 'OUT L', out_r: 'OUT R' });
 </script>
@@ -107,6 +111,13 @@
             <Fader value={oct2} min={-1} max={1} defaultValue={defaultFor('oct2')} label="Oct2" curve="discrete" onchange={set('oct2')} moduleId={id} paramId="oct2" readLive={live('oct2')} />
             <Fader value={mix} min={0} max={1} defaultValue={defaultFor('mix')} label="Mix" curve="linear" onchange={set('mix')} moduleId={id} paramId="mix" readLive={live('mix')} />
             <Fader value={sub} min={0} max={1} defaultValue={defaultFor('sub')} label="Sub" curve="linear" onchange={set('sub')} moduleId={id} paramId="sub" readLive={live('sub')} />
+          </div>
+        </div>
+        <div class="group fold">
+          <header>WAVEFOLD</header>
+          <div class="fader-row">
+            <Fader value={fold} min={0} max={1} defaultValue={defaultFor('fold')} label="Fold" curve="linear" onchange={set('fold')} moduleId={id} paramId="fold" readLive={live('fold')} />
+            <Fader value={sym} min={-1} max={1} defaultValue={defaultFor('sym')} label="Sym" curve="linear" onchange={set('sym')} moduleId={id} paramId="sym" readLive={live('sym')} />
           </div>
         </div>
         <div class="group">
@@ -186,6 +197,9 @@
   }
   .tidyvco-card .group.osc {
     flex: 1.4;
+  }
+  .tidyvco-card .group.fold {
+    flex: 0.6; /* just 2 faders (Fold + Sym) — keep it compact */
   }
   .tidyvco-card .group {
     flex: 1;

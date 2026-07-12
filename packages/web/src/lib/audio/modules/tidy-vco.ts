@@ -93,6 +93,8 @@ export const tidyVcoDef: AudioModuleDef = {
     { id: 'res_cv', type: 'cv' },
     { id: 'pwm_cv', type: 'cv' },
     { id: 'drive_cv', type: 'cv' },
+    { id: 'fold_cv', type: 'cv' },
+    { id: 'sym_cv', type: 'cv' },
   ],
   outputs: [
     { id: 'out_l', type: 'audio' },
@@ -108,6 +110,9 @@ export const tidyVcoDef: AudioModuleDef = {
     { id: 'oct2', label: 'Oct 2', defaultValue: 0, min: -1, max: 1, curve: 'discrete' },
     { id: 'mix', label: 'Mix', defaultValue: 0.5, min: 0, max: 1, curve: 'linear' },
     { id: 'sub', label: 'Sub', defaultValue: 0.15, min: 0, max: 1, curve: 'linear' },
+    // ── Wavefolder (stereo, before the filter) ──
+    { id: 'fold', label: 'Fold', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
+    { id: 'sym', label: 'Sym', defaultValue: 0, min: -1, max: 1, curve: 'linear' },
     // ── Filter ──
     { id: 'cutoff', label: 'Cutoff', defaultValue: 900, min: 40, max: 14000, curve: 'log', units: 'Hz' },
     { id: 'res', label: 'Res', defaultValue: 0.35, min: 0, max: 1, curve: 'linear' },
@@ -133,7 +138,7 @@ export const tidyVcoDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      'A flagship two-oscillator virtual-analog subtractive voice: OSC1 and OSC2 each morph continuously from sawtooth to pulse (band-limited polyBLEP), share one pulse-width control with a PWM CV jack, and OSC2 adds an octave switch plus cents detune; a sub square one octave under OSC1 fattens the bottom. The mix feeds an all-new nonlinear zero-delay-feedback DIODE LADDER filter — the EMS VCS3 / TB-303 circuit family, deliberately distinct from a Moog-style transistor ladder: bidirectionally coupled stages give a softer, warmer knee into a 24 dB/oct slope, the resonance return passes through a squelch limiter so high RES compresses into a bounded, CLEAN self-oscillation whistle, and the CUTOFF knob is calibrated to the resonant pitch itself (keytracked self-osc plays in tune; the zero-res brightness knee sits well below the knob — the diode pole spread, part of the sound). DRIVE saturates into the filter for harmonic warmth (2× oversampled, loudness-compensated), and the diode ladder’s natural bass-loss at high resonance is deliberately only part-compensated — a musical squelch dip instead of a vanished low end. Two RC-curve ADSRs shape the note: real one-pole exponential segments in the CEM3310 lineage, whose attack charges toward an overshoot target and cuts over at full level — a convex, punchy front — with analog retrigger (a re-struck note resumes from its current level, never a click). The filter EG sweeps cutoff by up to ±4 octaves via ENV; the amp EG drives an OTA-flavored VCA whose tanh knee blooms gentle even harmonics as notes get louder. The voice is 5-voice polyphonic on the POLY chord bus (lane i drives voice i; a releasing voice holds its pitch), falls back to the mono PITCH/GATE pair when no lane is gated — where it plays a REAL two-voice unison, detuned ±7 cents times WIDTH and panned to opposite sides, each side with its own filter and envelopes — and WIDTH also fans the five poly voices across the stereo field with the root note anchored center.',
+      'A flagship two-oscillator virtual-analog subtractive voice: OSC1 and OSC2 each morph continuously from sawtooth to pulse (band-limited polyBLEP), share one pulse-width control with a PWM CV jack, and OSC2 adds an octave switch plus cents detune; a sub square one octave under OSC1 fattens the bottom. The mix then passes through a STEREO WAVEFOLDER placed BEFORE the filter — the West-Coast Serge/Buchla move of folding timbre INTO a lowpass: a reflecting triangle folder (antialiased with antiderivative antialiasing over 2× oversampling) that grows a thicket of harmonics as FOLD climbs, with a SYMMETRY bias that blooms even harmonics off-center, and a genuine stereo image (L and R fold at antiphase points scaled by WIDTH, so the folder itself widens the field). FOLD 0 is a true bypass — every existing patch is unchanged. The folded mix feeds an all-new nonlinear zero-delay-feedback DIODE LADDER filter — the EMS VCS3 / TB-303 circuit family, deliberately distinct from a Moog-style transistor ladder: bidirectionally coupled stages give a softer, warmer knee into a 24 dB/oct slope, the resonance return passes through a squelch limiter so high RES compresses into a bounded, CLEAN self-oscillation whistle, and the CUTOFF knob is calibrated to the resonant pitch itself (keytracked self-osc plays in tune; the zero-res brightness knee sits well below the knob — the diode pole spread, part of the sound). DRIVE saturates into the filter for harmonic warmth (2× oversampled, loudness-compensated), and the diode ladder’s natural bass-loss at high resonance is deliberately only part-compensated — a musical squelch dip instead of a vanished low end. Two RC-curve ADSRs shape the note: real one-pole exponential segments in the CEM3310 lineage, whose attack charges toward an overshoot target and cuts over at full level — a convex, punchy front — with analog retrigger (a re-struck note resumes from its current level, never a click). The filter EG sweeps cutoff by up to ±4 octaves via ENV; the amp EG drives an OTA-flavored VCA whose tanh knee blooms gentle even harmonics as notes get louder. The voice is 5-voice polyphonic on the POLY chord bus (lane i drives voice i; a releasing voice holds its pitch), falls back to the mono PITCH/GATE pair when no lane is gated — where it plays a REAL two-voice unison, detuned ±7 cents times WIDTH and panned to opposite sides, each side with its own filter and envelopes — and WIDTH also fans the five poly voices across the stereo field with the root note anchored center.',
     inputs: {
       poly: 'The 5-lane poly pitch/gate chord bus: lane i drives voice i (fixed mapping, no allocator). Patch a real poly source — MIDI LANE, POLYSEQZ, or a SEQUENCER with chords — and each gated lane opens that voice’s own filter + amp envelopes; a releasing voice keeps sounding at its held pitch. While ANY lane is gated this bus wins over the mono pitch/gate pair.',
       pitch: 'Mono pitch CV, 1 V/oct with 0 V = C4. When no poly lane is gated, this drives the 2-voice unison pair (both voices track it, split by WIDTH’s detune drift).',
@@ -142,6 +147,8 @@ export const tidyVcoDef: AudioModuleDef = {
       res_cv: 'Resonance CV: ±1 V spans the whole RES range on top of the knob — sequence the squelch, or push a moderate knob setting over the self-osc threshold.',
       pwm_cv: 'Pulse-width modulation CV: ±0.45 duty per volt on the shared PW, audio-rate. Classic PWM strings come from an LFO here with SHAPE at pulse.',
       drive_cv: 'Drive CV: ±1 V spans the whole DRIVE range on top of the knob — automate the filter’s input saturation for building intensity.',
+      fold_cv: 'Wavefolder FOLD CV: ±1 V spans the whole FOLD range on top of the knob, audio-rate. The folder is very modulation-hungry — an envelope or LFO here sweeps timbre from clean to fully folded (classic West-Coast dynamic-fold gestures).',
+      sym_cv: 'Wavefolder SYMMETRY CV: ±1 V spans the whole asymmetry range each way, audio-rate. Modulate the fold’s bias to make the even-harmonic content breathe (only audible while FOLD is up).',
     },
     outputs: {
       out_l: 'Left output of the stereo voice bus (equal-power voice pans, 1/√n normalization, dB LEVEL, DC-blocked, true-peak bounded). Pairs with out_r — patching L into a stereo target auto-wires R.',
@@ -155,6 +162,8 @@ export const tidyVcoDef: AudioModuleDef = {
       oct2: 'OSC2 octave switch: −1, 0, or +1 octave against OSC1.',
       mix: 'Equal-power OSC1↔OSC2 balance: 0 = OSC1 only, 1 = OSC2 only.',
       sub: 'Sub-oscillator level: a band-limited square one octave below OSC1, mixed under the pair for floor weight.',
+      fold: 'Stereo WAVEFOLDER amount, placed BEFORE the filter (the West-Coast timbre-into-lowpass voice): 0 is a true bypass (the voice sounds exactly as it did without the folder), and turning it up drives the osc bus into a reflecting triangle folder that reflects more times as you climb — a rising thicket of harmonics the diode ladder then shapes. The fold is antialiased (ADAA + 2× oversampling) and GENUINELY stereo: L and R fold at antiphase points (scaled by WIDTH) so the folder itself widens the image, more as FOLD rises. Very modulation-hungry — patch an envelope or LFO into the FOLD CV.',
+      sym: 'Wavefolder SYMMETRY: a bipolar DC bias on the fold input (only active while FOLD is up). At center the fold is symmetric (odd harmonics only); pushed either way it folds asymmetrically, blooming EVEN harmonics for a hollow, brassy, or reedy character. Modulate it with the SYM CV.',
       cutoff: 'Filter cutoff, 40 Hz–14 kHz — calibrated to the RESONANT pitch: at full RES the filter whistles AT this frequency (and tracks it to under 3 cents). The zero-res brightness knee sits a few octaves below the knob — the diode ladder’s soft spread knee, part of its warmth.',
       res: 'Resonance: squelchy diode-ladder emphasis that compresses through the feedback limiter as it rises; self-oscillation starts near 0.89 and the whistle stays bounded and near-sinusoidal. High RES thins the lows by a few dB by design (the part-compensated diode squelch dip).',
       drive: 'Input saturation into the ladder (2× oversampled tanh with loudness makeup): grows odd harmonics by tens of dB across the travel without acting as a volume knob.',
@@ -180,24 +189,24 @@ export const tidyVcoDef: AudioModuleDef = {
       loadedContexts.add(ctx);
     }
 
-    // 7 audio-rate node inputs: poly (0, 10-ch), pitch (1), gate (2),
-    // cutoff_cv (3), res_cv (4), pwm_cv (5), drive_cv (6). TWO mono outputs
-    // (out_l, out_r).
+    // 9 audio-rate node inputs: poly (0, 10-ch), pitch (1), gate (2),
+    // cutoff_cv (3), res_cv (4), pwm_cv (5), drive_cv (6), fold_cv (7),
+    // sym_cv (8). TWO mono outputs (out_l, out_r).
     const worklet = new AudioWorkletNode(ctx, PROCESSOR_NAME, {
-      numberOfInputs: 7,
+      numberOfInputs: 9,
       numberOfOutputs: 2,
       outputChannelCount: [1, 1],
     });
 
     // Keep the worklet alive with a single 0-offset silence source on every
     // input, so it processes blocks (and the HOLD pad can drone immediately)
-    // even when nothing is patched yet. One ConstantSource, 7 connections.
+    // even when nothing is patched yet. One ConstantSource, 9 connections.
     // The poly input relies on channelCountMode 'max' — a real 10-channel
     // cable fans it out when patched.
     const silence = ctx.createConstantSource();
     silence.offset.value = 0;
     silence.start();
-    for (let i = 0; i < 7; i++) silence.connect(worklet, 0, i);
+    for (let i = 0; i < 9; i++) silence.connect(worklet, 0, i);
 
     // Set initial params from the persisted node state (or defaults).
     const params = worklet.parameters as unknown as Map<string, AudioParam>;
@@ -215,6 +224,8 @@ export const tidyVcoDef: AudioModuleDef = {
     inputsMap.set('res_cv', { node: worklet, input: 4 });
     inputsMap.set('pwm_cv', { node: worklet, input: 5 });
     inputsMap.set('drive_cv', { node: worklet, input: 6 });
+    inputsMap.set('fold_cv', { node: worklet, input: 7 });
+    inputsMap.set('sym_cv', { node: worklet, input: 8 });
 
     return {
       domain: 'audio',
