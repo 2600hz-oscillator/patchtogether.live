@@ -1,8 +1,10 @@
 <script lang="ts">
   // CLIP PLAYER card (v2) — the always-available face of the 8-lane clip
   // launcher. Two views in one 3u tile:
-  //   SESSION (default): an 8×8 launch grid. ROWS = 8 instrument lanes, COLS = 8
-  //     clip slots. Single-click a cell = launch/queue that clip in its lane;
+  //   SESSION (default): an 8×8 launch grid. COLS = 8 instrument lanes
+  //     (channels, ch1 = leftmost col), ROWS = 8 clip slots (slot 0 = top row).
+  //     Matches the transposed Launchpad grid (Ableton convention: cols =
+  //     tracks, rows = scenes). Single-click a cell = launch/queue that clip;
   //     click the playing cell = stop the lane; double-click = open its editor.
   //     A ▶/■ transport drives TIMELORDE (hidden when TIMELORDE is externally
   //     clocked). STEP / OCT / GATE / QNT params below.
@@ -683,28 +685,39 @@
           </div>
         </div>
       {:else if view === 'session'}
-        <!-- 8×8 launch grid: rows = instrument lanes, cols = clip slots -->
+        <!-- 8×8 launch grid: COLS = instrument lanes (channels, ch1 = leftmost),
+             ROWS = clip slots (slot 0 = top). Per-channel MONO header (top) +
+             clock-RATE footer (bottom) sit above/below their own column. The
+             flat clip index (lane*8 + slot) is unchanged — only the on-screen
+             (lane,slot) → (col,row) placement is transposed to match the pad. -->
         <div class="launch-grid" data-testid="clipplayer-grid" role="grid" aria-label="clip launch grid">
-          {#each Array(CLIP_LANES) as _l, lane (lane)}
-            <div class="grid-row" role="row" style={`--lane-hue:${laneHue(lane)}`}>
+          <!-- channel header: per-lane MONO/POLY toggle, one per channel column -->
+          <div class="grid-head" role="row">
+            {#each Array(CLIP_LANES) as _l, lane (lane)}
               <button
                 class="lane-mono"
                 class:on={laneIsMono(lane)}
+                style={`--lane-hue:${laneHue(lane)}`}
                 onclick={() => toggleLaneMono(lane)}
                 title={laneIsMono(lane)
-                  ? `Lane ${lane + 1}: MONO — one note per column (click for POLY)`
-                  : `Lane ${lane + 1}: POLY — up to 5 notes per column (click for MONO)`}
-                aria-label={`lane ${lane + 1} ${laneIsMono(lane) ? 'mono' : 'poly'}`}
+                  ? `Ch ${lane + 1}: MONO — one note per column (click for POLY)`
+                  : `Ch ${lane + 1}: POLY — up to 5 notes per column (click for MONO)`}
+                aria-label={`channel ${lane + 1} ${laneIsMono(lane) ? 'mono' : 'poly'}`}
                 aria-pressed={laneIsMono(lane)}
                 data-lane={lane}
                 data-testid={`clipplayer-mono-${lane}`}
               >{laneIsMono(lane) ? '1' : '5'}</button>
-              {#each Array(CLIP_SLOTS) as _s, slot (slot)}
+            {/each}
+          </div>
+          {#each Array(CLIP_SLOTS) as _s, slot (slot)}
+            <div class="grid-row" role="row">
+              {#each Array(CLIP_LANES) as _l, lane (lane)}
                 {@const idx = clipIndex(slot, lane)}
                 {@const st = padState(idx)}
                 <button
                   class="pad {st}"
                   role="gridcell"
+                  style={`--lane-hue:${laneHue(lane)}`}
                   aria-label={`lane ${lane + 1} slot ${slot + 1} ${st}`}
                   data-clip={idx}
                   data-lane={lane}
@@ -715,14 +728,19 @@
                   ondblclick={() => onPadDblClick(idx)}
                 ></button>
               {/each}
-              <!-- per-lane clock rate: divide/multiply this lane's step rate off
-                   the global STEP grid (card-only for now). -->
+            </div>
+          {/each}
+          <!-- channel footer: per-lane clock RATE select — divide/multiply this
+               channel's step rate off the global STEP grid (card-only for now). -->
+          <div class="grid-foot" role="row">
+            {#each Array(CLIP_LANES) as _l, lane (lane)}
               <select
                 class="lane-rate"
                 class:offgrid={laneRate(lane) !== RATE_DEFAULT_INDEX}
+                style={`--lane-hue:${laneHue(lane)}`}
                 value={String(laneRate(lane))}
-                title={`Lane ${lane + 1} clock rate — ×/÷ the STEP grid (${RATE_LABELS[laneRate(lane)]})`}
-                aria-label={`lane ${lane + 1} clock rate`}
+                title={`Ch ${lane + 1} clock rate — ×/÷ the STEP grid (${RATE_LABELS[laneRate(lane)]})`}
+                aria-label={`channel ${lane + 1} clock rate`}
                 data-lane={lane}
                 data-testid={`clipplayer-rate-${lane}`}
                 onchange={(e) => setLaneRate(lane, Number((e.currentTarget as HTMLSelectElement).value))}
@@ -731,8 +749,8 @@
                   <option value={String(ri)}>{lbl}</option>
                 {/each}
               </select>
-            </div>
-          {/each}
+            {/each}
+          </div>
         </div>
 
         <!-- params -->
@@ -826,9 +844,11 @@
 
 <style>
   .card {
-    /* 300 → 336px when the per-lane rate column landed: 16 mono + 8×28 pads +
-       gaps + the 34px rate select = ~301px of row, + 2×12px body padding. Still
-       hp 2 (≤ 360px slot). */
+    /* Transposed layout: 8 channel COLUMNS of 28px pads + 7×3px gaps = 245px of
+       grid (MONO header / RATE footer are per-column strips of the same width),
+       + 2×12px body padding = ~269px of content. Card stays 336px (hp 2 rack
+       tier forces 360px anyway); the narrower grid centers in the body. The 3u
+       tier (540px tall) has ample room for the now-taller grid. */
     width: 336px;
     background: var(--module-bg);
     border: 1px solid var(--border);
@@ -1020,7 +1040,12 @@
     align-items: center;
     gap: 3px;
   }
-  .grid-row { display: flex; gap: 3px; }
+  /* A grid ROW is now one clip SLOT across all 8 channels; the head/foot strips
+     hold the per-channel MONO toggle / RATE select. All share the 3px column
+     gap so the 8 channel columns line up top-to-bottom. */
+  .grid-row,
+  .grid-head,
+  .grid-foot { display: flex; gap: 3px; }
   /* Fixed INTEGER pad size (no flex:1 / aspect-ratio) so the 8-column layout is
      pixel-deterministic — sub-pixel flex rounding drifts across columns and
      flakes the VRT baseline. */
@@ -1141,12 +1166,12 @@
   .cell.vel0.playhead,
   .cell.vel1.playhead,
   .cell.vel2.playhead { background: hsl(200 95% 70%); }
-  /* per-lane MONO/POLY toggle to the left of each launch-grid row */
+  /* per-channel MONO/POLY toggle — one per channel COLUMN, sits in the header
+     strip directly above its column (28px wide to align with the pads below). */
   .lane-mono {
-    width: 16px;
-    height: 28px;
+    width: 28px;
+    height: 18px;
     flex: none;
-    margin-right: 3px;
     border: 1px solid var(--border);
     border-radius: 2px;
     background: #141414;
@@ -1162,13 +1187,14 @@
     color: #fff;
     border-color: hsl(var(--lane-hue) 70% 55%);
   }
-  /* per-lane clock RATE dropdown to the right of each launch-grid row. Fixed
-     integer size (like .pad) so the 8-row layout stays pixel-deterministic. */
+  /* per-channel clock RATE dropdown — one per channel COLUMN, sits in the footer
+     strip directly below its column. Fixed integer size (28px wide to align with
+     the pads above; RATE_LABELS are ≤3 chars so they fit) so the layout stays
+     pixel-deterministic. */
   .lane-rate {
-    width: 34px;
-    height: 28px;
+    width: 28px;
+    height: 22px;
     flex: none;
-    margin-left: 3px;
     border: 1px solid var(--border);
     border-radius: 2px;
     background: #141414;

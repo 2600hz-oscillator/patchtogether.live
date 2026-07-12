@@ -11,7 +11,11 @@ import {
   findClockSource,
   isSequencerType,
   MAJOR_SCALE_STEPS,
+  MINOR_SCALE_STEPS,
   PENTATONIC_SCALE_STEPS,
+  DORIAN_SCALE_STEPS,
+  PHRYGIAN_SCALE_STEPS,
+  MIXOLYDIAN_SCALE_STEPS,
 } from './music-theory';
 
 const determRand = (seed: number) => {
@@ -29,6 +33,30 @@ describe('music-theory: scale + key picker', () => {
 
   it('pentatonic has 5 notes', () => {
     expect(PENTATONIC_SCALE_STEPS.length).toBe(5);
+  });
+
+  it('the three added modes are the canonical semitone sets', () => {
+    expect(DORIAN_SCALE_STEPS).toEqual([0, 2, 3, 5, 7, 9, 10]);
+    expect(PHRYGIAN_SCALE_STEPS).toEqual([0, 1, 3, 5, 7, 8, 10]);
+    expect(MIXOLYDIAN_SCALE_STEPS).toEqual([0, 2, 4, 5, 7, 9, 10]);
+  });
+
+  it('the modes are 7-note scales that differ from major/minor by one degree', () => {
+    // Dorian = minor with a raised 6th (9 vs 8); Mixolydian = major with a
+    // lowered 7th (10 vs 11); Phrygian = minor with a lowered 2nd (1 vs 2).
+    for (const s of [DORIAN_SCALE_STEPS, PHRYGIAN_SCALE_STEPS, MIXOLYDIAN_SCALE_STEPS]) {
+      expect(s).toHaveLength(7);
+      expect(s[0]).toBe(0); // rooted
+      expect(new Set(s).size).toBe(7); // no duplicate degrees
+    }
+    expect(DORIAN_SCALE_STEPS).not.toEqual(MINOR_SCALE_STEPS);
+    expect(MIXOLYDIAN_SCALE_STEPS).not.toEqual(MAJOR_SCALE_STEPS);
+  });
+
+  it('isInKey honours the new modes (dorian C: A natural in, A♭ out)', () => {
+    const cDorian = { root: 0, scale: 'dorian' as const };
+    expect(isInKey(9, cDorian)).toBe(true); // A — the raised 6th
+    expect(isInKey(8, cDorian)).toBe(false); // A♭ — the natural-minor 6th, out
   });
 
   it('pickKey returns a valid root + scale', () => {

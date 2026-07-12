@@ -45,6 +45,14 @@ import {
   lengthFromBlockTap,
   lengthFromStepTap,
   readNoteRec,
+  SCALE_NAMES,
+  SCALE_CYCLE,
+  coerceScaleName,
+  laneSwing,
+  clampSwing,
+  isSwingCentered,
+  swingStepOffset,
+  MAX_SWING,
   type NoteClipRecord,
   type NoteEvent,
   type ClipPlayerData,
@@ -325,11 +333,126 @@ describe('held notes (the hold-pad + tap-another tie gesture)', () => {
 });
 
 describe('nextScale (the grid SCALE pad / card scale cycle)', () => {
-  it('cycles major → minor → pentatonic → chromatic → major', () => {
+  it('cycles through all six named scales then chromatic, wrapping to major', () => {
     expect(nextScale('major')).toBe('minor');
     expect(nextScale('minor')).toBe('pentatonic');
-    expect(nextScale('pentatonic')).toBeUndefined(); // chromatic
+    expect(nextScale('pentatonic')).toBe('dorian');
+    expect(nextScale('dorian')).toBe('phrygian');
+    expect(nextScale('phrygian')).toBe('mixolydian');
+    expect(nextScale('mixolydian')).toBeUndefined(); // chromatic
     expect(nextScale(undefined)).toBe('major'); // wraps from chromatic
+  });
+  it('SCALE_CYCLE = the six named scales followed by undefined (chromatic)', () => {
+    expect(SCALE_CYCLE).toEqual([
+      'major', 'minor', 'pentatonic', 'dorian', 'phrygian', 'mixolydian', undefined,
+    ]);
+    expect(SCALE_NAMES).toEqual([
+      'major', 'minor', 'pentatonic', 'dorian', 'phrygian', 'mixolydian',
+    ]);
+  });
+});
+
+describe('scaleSteps for the added modes', () => {
+  it('returns the canonical semitone set for each new mode', () => {
+    expect(scaleSteps('dorian')).toEqual([0, 2, 3, 5, 7, 9, 10]);
+    expect(scaleSteps('phrygian')).toEqual([0, 1, 3, 5, 7, 8, 10]);
+    expect(scaleSteps('mixolydian')).toEqual([0, 2, 4, 5, 7, 9, 10]);
+  });
+  it('in-key rows walk the mode degrees (dorian from C3=48)', () => {
+    // C dorian: C D E♭ F G A B♭ C → 48 50 51 53 55 57 58 60
+    expect(rowToMidi(0, 48, 'dorian')).toBe(48);
+    expect(rowToMidi(2, 48, 'dorian')).toBe(51); // E♭ (the minor 3rd)
+    expect(rowToMidi(5, 48, 'dorian')).toBe(57); // A (the raised 6th)
+    expect(rowToMidi(7, 48, 'dorian')).toBe(60); // next octave's root
+  });
+});
+
+describe('coerceScaleName + scale round-trip on load', () => {
+  it('accepts every named scale (incl. the 3 new ones)', () => {
+    for (const s of SCALE_NAMES) expect(coerceScaleName(s)).toBe(s);
+  });
+  it('unknown / legacy / absent ⇒ undefined (chromatic)', () => {
+    expect(coerceScaleName('ionian')).toBeUndefined(); // dropped alias
+    expect(coerceScaleName('aeolian')).toBeUndefined();
+    expect(coerceScaleName('chromatic')).toBeUndefined(); // chromatic = absence
+    expect(coerceScaleName('bogus')).toBeUndefined();
+    expect(coerceScaleName(undefined)).toBeUndefined();
+    expect(coerceScaleName(3)).toBeUndefined();
+  });
+  it('coerceClipRecord round-trips each new mode', () => {
+    for (const scale of ['dorian', 'phrygian', 'mixolydian'] as const) {
+      const c = coerceClipRecord({ kind: 'note', steps: [], lengthSteps: 8, root: 48, scale });
+      expect((c as NoteClipRecord).scale).toBe(scale);
+    }
+  });
+  it('coerceClipRecord drops an unknown scale (legacy → chromatic)', () => {
+    const c = coerceClipRecord({ kind: 'note', steps: [], lengthSteps: 8, root: 48, scale: 'ionian' });
+    expect('scale' in (c as NoteClipRecord)).toBe(false);
+  });
+});
+
+describe('per-clip div coercion', () => {
+  it('clamps a finite div to a valid RATE index, rounding', () => {
+    expect((coerceClipRecord({ kind: 'note', steps: [], lengthSteps: 8, root: 48, div: 0 }) as NoteClipRecord).div).toBe(0);
+    expect((coerceClipRecord({ kind: 'note', steps: [], lengthSteps: 8, root: 48, div: 5 }) as NoteClipRecord).div).toBe(5);
+    expect((coerceClipRecord({ kind: 'note', steps: [], lengthSteps: 8, root: 48, div: 2.4 }) as NoteClipRecord).div).toBe(2);
+    expect((coerceClipRecord({ kind: 'note', steps: [], lengthSteps: 8, root: 48, div: 99 }) as NoteClipRecord).div).toBe(5); // clamp high
+    expect((coerceClipRecord({ kind: 'note', steps: [], lengthSteps: 8, root: 48, div: -3 }) as NoteClipRecord).div).toBe(0); // clamp low
+  });
+  it('missing / non-numeric div ⇒ undefined (clip follows the lane rate)', () => {
+    expect((coerceClipRecord({ kind: 'note', steps: [], lengthSteps: 8, root: 48 }) as NoteClipRecord).div).toBeUndefined();
+    expect((coerceClipRecord({ kind: 'note', steps: [], lengthSteps: 8, root: 48, div: 'x' }) as NoteClipRecord).div).toBeUndefined();
+    expect((coerceClipRecord({ kind: 'note', steps: [], lengthSteps: 8, root: 48, div: NaN }) as NoteClipRecord).div).toBeUndefined();
+  });
+  it('copyClip preserves an explicit div (and omits it when absent)', () => {
+    const withDiv: NoteClipRecord = { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true, div: 4 };
+    expect(copyClip(withDiv).div).toBe(4);
+    const noDiv: NoteClipRecord = { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true };
+    expect('div' in copyClip(noDiv)).toBe(false);
+  });
+});
+
+describe('per-lane SWING helpers', () => {
+  it('MAX_SWING matches the DRUMSEQZ range (0..0.75)', () => {
+    expect(MAX_SWING).toBe(0.75);
+  });
+  it('clampSwing clamps to [0, MAX_SWING] and defaults garbage to 0', () => {
+    expect(clampSwing(0)).toBe(0);
+    expect(clampSwing(0.5)).toBe(0.5);
+    expect(clampSwing(0.75)).toBe(0.75);
+    expect(clampSwing(2)).toBe(0.75); // clamp high
+    expect(clampSwing(-1)).toBe(0); // clamp low
+    expect(clampSwing(NaN)).toBe(0);
+    expect(clampSwing(undefined)).toBe(0);
+    expect(clampSwing('nope')).toBe(0);
+  });
+  it('laneSwing reads a per-lane entry, 0 when absent/short/corrupt', () => {
+    expect(laneSwing({ swing: [0.5, 0.25, 0] }, 0)).toBe(0.5);
+    expect(laneSwing({ swing: [0.5, 0.25, 0] }, 1)).toBe(0.25);
+    expect(laneSwing({ swing: [2] }, 0)).toBe(0.75); // clamped
+    expect(laneSwing(undefined, 0)).toBe(0);
+    expect(laneSwing({}, 0)).toBe(0);
+    expect(laneSwing({ swing: 'nope' }, 0)).toBe(0);
+    expect(laneSwing({ swing: [0.5] }, 3)).toBe(0); // short array
+  });
+  it('swingStepOffset delays ODD steps by swing*stepDur, EVEN steps stay on grid', () => {
+    // stepDur 0.25, swing 0.5 → odd steps push late by 0.125, even steps 0.
+    expect(swingStepOffset(0, 0.5, 0.25)).toBe(0);
+    expect(swingStepOffset(1, 0.5, 0.25)).toBe(0.125);
+    expect(swingStepOffset(2, 0.5, 0.25)).toBe(0);
+    expect(swingStepOffset(3, 0.5, 0.25)).toBe(0.125);
+    // a different amount + a clamp inside the helper
+    expect(swingStepOffset(1, 0.25, 0.4)).toBeCloseTo(0.1, 10);
+    expect(swingStepOffset(1, 2, 0.25)).toBe(0.1875); // clamped to 0.75 → 0.75*0.25
+  });
+  it('swing 0 ⇒ every step offset is 0 (the un-swung even grid)', () => {
+    for (let i = 0; i < 8; i++) expect(swingStepOffset(i, 0, 0.25)).toBe(0);
+  });
+  it('isSwingCentered is true only at 0 (within epsilon)', () => {
+    expect(isSwingCentered(0)).toBe(true);
+    expect(isSwingCentered(1e-12)).toBe(true);
+    expect(isSwingCentered(0.02)).toBe(false);
+    expect(isSwingCentered(0.75)).toBe(false);
   });
 });
 

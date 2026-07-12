@@ -15,8 +15,12 @@ import {
   MAJOR_SCALE_STEPS,
   MINOR_SCALE_STEPS,
   PENTATONIC_SCALE_STEPS,
+  DORIAN_SCALE_STEPS,
+  PHRYGIAN_SCALE_STEPS,
+  MIXOLYDIAN_SCALE_STEPS,
   type ScaleName,
 } from '$lib/mike/music-theory';
+import { coerceRateIndex } from './clip-clock';
 import { POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
 // Type-only import (erased at runtime → no cycle with clip-arrange.ts, which
 // imports VALUES from this file). The arranger model lives in clip-arrange.ts.
@@ -89,6 +93,13 @@ export interface NoteClipRecord extends ClipBase {
   lengthSteps: number;
   root: number; // MIDI root for the in-key editor (e.g. C3 = 48)
   scale?: ScaleName; // absent = chromatic editor rows
+  /** Optional PER-CLIP clock DIVIDER — an index into clip-clock.ts RATE_MULTS
+   *  ([1/8,1/4,1/2,1,2x,4x]; default 3 = '1'). When set it OVERRIDES the lane's
+   *  `rate[]` for this clip's step duration; the engine LATCHES it at the clip's
+   *  loop boundary so a live edit only takes effect at the next clip start (see
+   *  clipDivIndex in clip-clock.ts). Absent = follow the per-lane rate. Set by
+   *  the Launchpad Grid-shift "Clip Div". */
+  div?: number;
 }
 
 /** LATER — audio-loop clip (reuses SAMSLOOP's bytes discipline). */
@@ -142,6 +153,13 @@ export interface ClipPlayerData {
    *  every peer's engine scales that lane's step duration. Card-only control
    *  for now (no monome-grid / Launchpad surface). */
   rate?: number[];
+  /** Per-LANE SWING amount (length CLIP_LANES), 0..MAX_SWING. Delays each lane's
+   *  ODD steps by swing*laneDur (MPC/off-beat shuffle: even steps stay on the
+   *  grid, odd steps push late). Absent/short array/entry ⇒ 0 (straight grid,
+   *  byte-identical to the un-swung schedule). SYNCED — the Launchpad Grid-shift
+   *  Swing± writes swing[selectedChannel]; every peer's engine offsets that
+   *  lane's odd steps. Back-compat on load like `rate`/`mono`. */
+  swing?: number[];
   /** RESET intent nonce. The card's RST button (and its MIDI binding)
    *  INCREMENTS this; every peer's engine observes the change and snaps all
    *  ACTIVE lanes back to step 1 at a common re-anchor instant (queued
@@ -246,6 +264,38 @@ export function clipRecordMode(data: ClipPlayerData | undefined): 'replace' | 'o
 }
 
 // ---------------------------------------------------------------------------
+// SWING (per-lane off-beat shuffle) — PURE. Same 0..0.75 range as DRUMSEQZ's
+// swing param. The engine delays a lane's ODD steps by swing*laneDur so even
+// steps stay locked to the grid (swing 0 ⇒ no offset ⇒ the un-swung schedule).
+// ---------------------------------------------------------------------------
+/** Max swing amount (fraction of a step the odd steps are pushed late). */
+export const MAX_SWING = 0.75;
+/** Clamp a raw swing value into [0, MAX_SWING]; non-finite ⇒ 0 (straight). */
+export function clampSwing(v: unknown): number {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(MAX_SWING, n));
+}
+/** Lane L's swing amount from node.data (0 when absent/short/corrupt — the
+ *  straight grid, same back-compat discipline as `rate`/`mono`). */
+export function laneSwing(data: { swing?: unknown } | undefined, lane: number): number {
+  const arr = data?.swing;
+  if (!Array.isArray(arr)) return 0;
+  return clampSwing(arr[lane]);
+}
+/** The time OFFSET (s) to add to a step's on-grid time: ODD steps push late by
+ *  swing*stepDur, EVEN steps sit on the grid (offset 0). Single source of the
+ *  swing math the scheduler applies. */
+export function swingStepOffset(stepIndex: number, swing: number, stepDur: number): number {
+  return stepIndex % 2 === 1 ? clampSwing(swing) * stepDur : 0;
+}
+/** Return-to-center detector — true when swing is 0 within epsilon. The
+ *  Launchpad flashes green on the Swing± press that lands back on dead-center. */
+export function isSwingCentered(v: number, eps = 1e-9): boolean {
+  return Math.abs(v) <= eps;
+}
+
+// ---------------------------------------------------------------------------
 // Defaults + coercion
 // ---------------------------------------------------------------------------
 export function defaultNoteClip(): NoteClipRecord {
@@ -297,9 +347,12 @@ export function coerceClipRecord(raw: unknown): ClipRecord | null {
         ? Math.round(r.root)
         : C3_MIDI;
     const out: NoteClipRecord = { kind: 'note', steps, lengthSteps, root, loop };
-    if (r.scale === 'major' || r.scale === 'minor' || r.scale === 'pentatonic') {
-      out.scale = r.scale;
-    }
+    // Unknown / legacy / absent scale ⇒ undefined (chromatic editor rows).
+    const scale = coerceScaleName(r.scale);
+    if (scale) out.scale = scale;
+    // Per-clip divider: clamp a finite value to a valid RATE index; missing /
+    // non-numeric ⇒ undefined (the clip follows its lane's rate).
+    if (typeof r.div === 'number' && Number.isFinite(r.div)) out.div = coerceRateIndex(r.div);
     if (typeof r.color === 'number') out.color = r.color;
     if (typeof r.name === 'string') out.name = r.name;
     if (typeof r.gain === 'number') out.gain = r.gain;
@@ -371,15 +424,30 @@ export function lanesForStep(clip: NoteClipRecord, step: number): StepLanes {
 // piano-roll note-editor row math (X = step, Y = pitch) — PURE
 // ---------------------------------------------------------------------------
 
-/** The editor's scale cycle (a SCALE pad / the card tag steps through these).
- *  `undefined` = chromatic (12 semitone rows). Switching to chromatic spreads a
- *  clip's notes apart vertically (each row becomes a semitone, not a degree). */
-export const SCALE_CYCLE: readonly (ScaleName | undefined)[] = [
+/** The named scales, in KEYS-view select order. Chromatic is the ABSENCE of a
+ *  scale (undefined), so it is not in this list. */
+export const SCALE_NAMES: readonly ScaleName[] = [
   'major',
   'minor',
   'pentatonic',
-  undefined,
+  'dorian',
+  'phrygian',
+  'mixolydian',
 ];
+
+/** Coerce a persisted scale value to a known ScaleName, or undefined (chromatic)
+ *  for anything unknown / legacy / absent (preserves the chromatic editor rows
+ *  on load — same forgiving discipline as the rest of coerceClipRecord). */
+export function coerceScaleName(raw: unknown): ScaleName | undefined {
+  return (SCALE_NAMES as readonly string[]).includes(raw as string)
+    ? (raw as ScaleName)
+    : undefined;
+}
+
+/** The editor's scale cycle (a SCALE pad / the card tag steps through these).
+ *  `undefined` = chromatic (12 semitone rows). Switching to chromatic spreads a
+ *  clip's notes apart vertically (each row becomes a semitone, not a degree). */
+export const SCALE_CYCLE: readonly (ScaleName | undefined)[] = [...SCALE_NAMES, undefined];
 /** Next scale in the cycle (major → minor → pentatonic → chromatic → major). */
 export function nextScale(scale: ScaleName | undefined): ScaleName | undefined {
   const i = SCALE_CYCLE.indexOf(scale);
@@ -400,6 +468,12 @@ export function scaleSteps(scale?: ScaleName): readonly number[] {
       return MINOR_SCALE_STEPS;
     case 'pentatonic':
       return PENTATONIC_SCALE_STEPS;
+    case 'dorian':
+      return DORIAN_SCALE_STEPS;
+    case 'phrygian':
+      return PHRYGIAN_SCALE_STEPS;
+    case 'mixolydian':
+      return MIXOLYDIAN_SCALE_STEPS;
     default:
       return [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
   }
@@ -668,6 +742,7 @@ export function copyClip(clip: NoteClipRecord): NoteClipRecord {
     loop: clip.loop,
   };
   if (clip.scale) out.scale = clip.scale;
+  if (typeof clip.div === 'number') out.div = clip.div;
   if (typeof clip.color === 'number') out.color = clip.color;
   if (typeof clip.name === 'string') out.name = clip.name;
   if (typeof clip.gain === 'number') out.gain = clip.gain;
