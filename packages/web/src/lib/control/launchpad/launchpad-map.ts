@@ -62,9 +62,12 @@ import {
   type NoteClipRecord,
   lanePlaying,
   laneQueued,
+  laneMono,
+  laneMuted,
   velBucket,
   noteCovering,
 } from '$lib/audio/modules/clip-types';
+import { laneRateIndex, RATE_MULTS } from '$lib/audio/modules/clip-clock';
 import {
   clipIndexForSlotLane,
   slotLaneForClipIndex,
@@ -170,11 +173,50 @@ export const RGB_QREC_REC: Rgb = [127, 16, 16]; // red (recording, pulses)
 export const RGB_OD: Rgb = [40, 14, 60]; // light purple (overdub OFF)
 export const RGB_OD_ON: Rgb = [104, 40, 127]; // bright purple (overdub ON)
 // SESSION deck KEYS-entry hold buttons (dark deck pads, row 1 — NOT the arranger
-// CC_REC). Distinct hue + name; brighten while held.
-export const RGB_KEYS_REC_HOLD: Rgb = [50, 6, 6]; // dim red (idle)
-export const RGB_KEYS_REC_HOLD_ON: Rgb = [127, 16, 16]; // red (held)
+// CC_REC). Distinct hue + name; brighten while held. Also drive the reclaimed
+// CC-91 KEYS-ARM tri-state cell in single clip view (off = dim red idle, armed-
+// REC = bright red, armed-OD = bright purple), so the arm cell reuses the same
+// two hues the deck holds already speak.
+export const RGB_KEYS_REC_HOLD: Rgb = [50, 6, 6]; // dim red (idle / KEYS-arm off)
+export const RGB_KEYS_REC_HOLD_ON: Rgb = [127, 16, 16]; // red (held / armed-REC)
 export const RGB_KEYS_OD_HOLD: Rgb = [30, 10, 45]; // dim purple (idle)
-export const RGB_KEYS_OD_HOLD_ON: Rgb = [104, 40, 127]; // purple (held)
+export const RGB_KEYS_OD_HOLD_ON: Rgb = [104, 40, 127]; // purple (held / armed-OD)
+// ── RESET pad (P1) — snap every active lane back to step 1 (bumps resetNonce,
+// the SAME field the card RST button + reset gate drive). A calm steel-blue so
+// it reads as a distinct "re-sync" control (never confused with the red STOPs or
+// the purple NOW). Momentary — lit statically as a "ready" indicator.
+export const RGB_RESET: Rgb = [24, 52, 120]; // steel blue
+// ── Per-lane MONO toggle (P4) — surface node.data.mono[lane] (card-only before).
+// A teal deck row: ON (mono, one-note-per-column) bright, OFF (poly, default)
+// dim. Teal is distinct from the row-0 COPY green + the amber scenes.
+export const RGB_MONO_ON: Rgb = [8, 78, 92]; // teal (mono engaged)
+export const RGB_MONO_OFF: Rgb = [4, 16, 20]; // dim teal (poly — the default)
+// ── Per-lane MUTE toggle (P3) — a muted lane KEEPS advancing its playhead (stays
+// locked to the transport) but emits NO audio. ON (muted) = bright orange, OFF
+// (live) = dim. Orange is distinct from the red per-lane STOP (which halts the
+// lane) so mute-in-place reads apart from stop.
+export const RGB_MUTE_ON: Rgb = [110, 44, 4]; // orange (muted — silent, still running)
+export const RGB_MUTE_OFF: Rgb = [6, 14, 8]; // dim (live)
+// ── Per-lane RATE (P2) — surface the clip clock division node.data.rate[lane]
+// (1/8·1/4·1/2·1·2x·4x = indices 0..5, card-only before). One deck pad per lane;
+// tap cycles the rate up (wrapping). A cool→warm ramp so slower reads cooler,
+// faster warmer; the default '1' (index 3) is green.
+export const RGB_RATE_BY_INDEX: readonly Rgb[] = [
+  [8, 12, 64], // 0 = 1/8  — deep blue
+  [10, 34, 84], // 1 = 1/4  — blue
+  [10, 62, 62], // 2 = 1/2  — teal
+  [16, 72, 26], // 3 = 1    — green (default)
+  [78, 60, 8], // 4 = 2x   — amber
+  [96, 30, 6], // 5 = 4x   — orange-red
+];
+// ── Tempo nudge −/+ (P5) — step TIMELORDE bpm (CC 93/94). A calm neutral white
+// so the two nudge buttons read as transport-adjacent, not a launch colour.
+export const RGB_TEMPO_NUDGE: Rgb = [40, 40, 50]; // dim white
+// ── KEYS panic (P7) — kill every sounding auditioned note. Red-orange so it
+// reads as an emergency control, distinct from the adjacent red EXIT.
+export const RGB_PANIC: Rgb = [96, 22, 0]; // red-orange
+// ── KEYS octave ± / editor octave ± (P6/P7) — a neutral function hue.
+export const RGB_OCTAVE: Rgb = RGB_FUNC;
 
 // ---------------------------------------------------------------------------
 // UNIT L — the clip matrix placement (PURE classifiers).
@@ -218,13 +260,20 @@ export function lSceneSlotForRow(row: number): number | null {
 // — two-handed deck ops without ever leaving the matrix view. CC 98 stays the
 // view-flip. PAIR mode never reaches this (single-only routing), so the pair
 // top-row roles (REC/SONG/transport/…) are untouched.
-//   CC 91 (▲)      = NEW       · CC 92 (▼) = COPY (+ double-tap = clear buffer)
+//   CC 91 (▲)      = KEYS      (sticky tri-state: off→armed-REC→armed-OD→off;
+//                               then tap a clip → enter KEYS for it, one-handed,
+//                               no view flip — the reclaimed NEW cell. NEW's
+//                               create-a-clip role is covered by double-tapping
+//                               an empty pad, which already opens the editor.)
+//   CC 92 (▼)      = COPY (+ re-tap while loaded = clear buffer)
 //   CC 93 (◀)      = PASTE     · CC 94 (▶) = PASTE-REV
 //   CC 95 (▣)      = NOW       (sticky toggle, not arm-then-tap)
 //   CC 96          = LENGTH    · CC 97 = DOUBLE
+// 'keys' + 'now' are STICKY toggles (never stored in `armedAction`); the rest are
+// arm-then-tap actions consumed by consumeArmed.
 // ---------------------------------------------------------------------------
 export type ClipArmAction =
-  | 'new'
+  | 'keys'
   | 'copy'
   | 'paste'
   | 'pasteRev'
@@ -237,7 +286,7 @@ export type ClipArmAction =
 export function clipArmAction(cc: number): ClipArmAction | null {
   switch (cc) {
     case CC_UP:
-      return 'new';
+      return 'keys';
     case CC_DOWN:
       return 'copy';
     case CC_LEFT:
@@ -254,6 +303,10 @@ export function clipArmAction(cc: number): ClipArmAction | null {
       return null; // CC_TOP_SPARE_8 (98) = view-flip; everything else ignored
   }
 }
+
+/** SINGLE-mode CC-91 KEYS-ARM tri-state (the reclaimed NEW cell). off → armed
+ *  with overdub OFF (true-replace) → armed with overdub ON (additive) → off. */
+export type KeysArm = 'off' | 'rec' | 'od';
 
 // ---------------------------------------------------------------------------
 // UNIT R — SESSION command-deck placement.
@@ -336,6 +389,63 @@ export function rDeckKeysHold(x: number, y: number): 'keysRec' | 'keysOverdub' |
   return null;
 }
 
+// ── SESSION-deck PERFORMANCE controls on the previously-dead deck rows (P1/P4/
+// P3/P2). Shared by the single CONTROL deck AND pair unit R (handleRDeck /
+// computeRDeckFrame), so single (which IS the R brain) and pair match:
+//   row 1 col 2 = RESET (snap all active lanes to step 1 — bumps resetNonce).
+//   row 2       = per-lane MONO toggle (mono[lane]).
+//   row 3       = per-lane MUTE toggle (muted[lane] — advance-but-silent).
+//   row 4       = per-lane RATE cycle (rate[lane] — 1/8..4x, taps step up).
+// Each is a currently-dark pad; none touches the row-0 function pads, the KEYS
+// holds (row 1 cols 0-1), the scene STOP column, or any top CC.
+export const DECK_RESET_COL = 2;
+export const DECK_RESET_ROW = DECK_KEYS_ROW; // row 1 (beside the KEYS holds)
+export const DECK_MONO_ROW = 2;
+export const DECK_MUTE_ROW = 3;
+export const DECK_RATE_ROW = 4;
+/** Is this deck pad the RESET pad? (row 1, col 2.) PURE. */
+export function rDeckReset(x: number, y: number): boolean {
+  return y === DECK_RESET_ROW && x === DECK_RESET_COL;
+}
+/** Deck MONO-row pad → its lane (col = lane 0..7), or null. PURE. */
+export function rDeckMonoLane(x: number, y: number): number | null {
+  return y === DECK_MONO_ROW && x >= 0 && x < CLIP_LANES ? x : null;
+}
+/** Deck MUTE-row pad → its lane (col = lane 0..7), or null. PURE. */
+export function rDeckMuteLane(x: number, y: number): number | null {
+  return y === DECK_MUTE_ROW && x >= 0 && x < CLIP_LANES ? x : null;
+}
+/** Deck RATE-row pad → its lane (col = lane 0..7), or null. PURE. */
+export function rDeckRateLane(x: number, y: number): number | null {
+  return y === DECK_RATE_ROW && x >= 0 && x < CLIP_LANES ? x : null;
+}
+
+// ── SESSION-deck top-row TEMPO NUDGE (P5). CC 93/94 are dead in the session deck
+// (no `top` branch handles them there; the editor uses them as ◀/▶ but that is a
+// different mode/frame), so they host tempo −/+ that steps TIMELORDE's bpm.
+export const CC_TEMPO_DOWN = CC_LEFT; // 93
+export const CC_TEMPO_UP = CC_RIGHT; // 94
+export const TEMPO_NUDGE_BPM = 2; // ±2 bpm per tap (clamped 10..300 in the handler)
+
+// ── PAIR unit-L TOP ROW — the previously-dead 8 CCs (91..98) become the 8
+// per-lane MUTE pads on the always-visible matrix unit (col = lane). Single mode
+// never routes top CCs to handleL (the arm strip + view flip intercept them), so
+// this branch is pair-only in practice. Shared toggleMute seam with the deck.
+/** A top CC (91..98) → its column 0..7, or null. PURE. */
+export function topCcCol(cc: number): number | null {
+  const col = cc - CC_UP;
+  return col >= 0 && col < LP_WIDTH ? col : null;
+}
+/** A column 0..7 → its top CC (91..98). PURE. */
+export function colTopCc(col: number): number {
+  return CC_UP + col;
+}
+/** Pair unit-L top-CC → the MUTE lane it toggles (col = lane), or null. PURE. */
+export function lTopMuteLane(cc: number): number | null {
+  const col = topCcCol(cc);
+  return col !== null && col < CLIP_LANES ? col : null;
+}
+
 // ---------------------------------------------------------------------------
 // UNIT R — EDIT note-grid placement (8 pitch rows × 8 step columns).
 // ---------------------------------------------------------------------------
@@ -389,15 +499,36 @@ export const EDIT_EXIT_SCENE_ROW = LP_HEIGHT - 1; // 7
 export const EDIT_DOUBLE_SCENE_ROW = LP_HEIGHT - 2; // 6
 export const EDIT_LENGTH_SCENE_ROW = LP_HEIGHT - 3; // 5
 export const EDIT_FOLLOW_SCENE_ROW = LP_HEIGHT - 4; // 4 — single mode only
+// ── EDITOR scene-column extras (P6) on the previously-dead bottom scene rows
+// (3,2,1,0). Both deployments (pair had these rows free too; single's row 4 is
+// FOLLOW, rows 3..0 were dead). COPY snapshots the edited clip, PASTE writes the
+// buffer over it, OCT ± shift the whole clip ±12 semitones (transpose).
+export const EDIT_COPY_SCENE_ROW = 3;
+export const EDIT_PASTE_SCENE_ROW = 2;
+export const EDIT_OCT_UP_SCENE_ROW = 1;
+export const EDIT_OCT_DOWN_SCENE_ROW = 0;
 export function isEditExitSceneRow(row: number): boolean {
   return row === EDIT_EXIT_SCENE_ROW;
 }
-export type EditSceneAction = 'exit' | 'double' | 'lengthEdit' | 'follow' | null;
+export type EditSceneAction =
+  | 'exit'
+  | 'double'
+  | 'lengthEdit'
+  | 'follow'
+  | 'copy'
+  | 'paste'
+  | 'octUp'
+  | 'octDown'
+  | null;
 export function editSceneAction(row: number, opts: { followButton?: boolean } = {}): EditSceneAction {
   if (row === EDIT_EXIT_SCENE_ROW) return 'exit';
   if (row === EDIT_DOUBLE_SCENE_ROW) return 'double';
   if (row === EDIT_LENGTH_SCENE_ROW) return 'lengthEdit';
   if (opts.followButton && row === EDIT_FOLLOW_SCENE_ROW) return 'follow';
+  if (row === EDIT_COPY_SCENE_ROW) return 'copy';
+  if (row === EDIT_PASTE_SCENE_ROW) return 'paste';
+  if (row === EDIT_OCT_UP_SCENE_ROW) return 'octUp';
+  if (row === EDIT_OCT_DOWN_SCENE_ROW) return 'octDown';
   return null;
 }
 
@@ -448,10 +579,14 @@ export const KEYS_KB_ROW_HI = LP_HEIGHT - 2; // 6
 export const KEYS_KB_ROWS = KEYS_KB_ROW_HI - KEYS_KB_ROW_LO + 1; // 6
 export const KEYS_CTRL_ROW = 0; // bottom row (y=0) = controls (unit L only)
 export const KEYS_PH_CELLS = LP_WIDTH * 2; // 16 playhead cells across the pair
-// Bottom-row control columns (unit L).
+// Bottom-row control columns (unit L). P7 adds octave ± / panic on the three
+// previously-dead cols 3/4/5 (col 6 stays dark).
 export const KEYS_EXIT_COL = 0;
 export const KEYS_QREC_COL = 1;
 export const KEYS_OVERDUB_COL = 2;
+export const KEYS_OCT_DOWN_COL = 3; // shift the keyboard down an octave
+export const KEYS_OCT_UP_COL = 4; // shift the keyboard up an octave
+export const KEYS_PANIC_COL = 5; // kill every sounding auditioned note
 export const KEYS_LEN_COL = LP_WIDTH - 1; // 7 (far right)
 
 /** What a KEYS-mode pad does on a given unit. `note` carries the CONTINUOUS
@@ -462,6 +597,9 @@ export type KeysPad =
   | { kind: 'exit' }
   | { kind: 'qrec' }
   | { kind: 'overdub' }
+  | { kind: 'octUp' }
+  | { kind: 'octDown' }
+  | { kind: 'panic' }
   | { kind: 'len' }
   | { kind: 'playhead' }
   | null;
@@ -478,6 +616,9 @@ export function keysPad(unit: LaunchpadUnit, x: number, y: number): KeysPad {
   if (x === KEYS_EXIT_COL) return { kind: 'exit' };
   if (x === KEYS_QREC_COL) return { kind: 'qrec' };
   if (x === KEYS_OVERDUB_COL) return { kind: 'overdub' };
+  if (x === KEYS_OCT_DOWN_COL) return { kind: 'octDown' };
+  if (x === KEYS_OCT_UP_COL) return { kind: 'octUp' };
+  if (x === KEYS_PANIC_COL) return { kind: 'panic' };
   if (x === KEYS_LEN_COL) return { kind: 'len' };
   return null;
 }
@@ -507,7 +648,14 @@ export interface LSessionOpts {
     armedAction: ClipArmAction | null;
     bufferLoaded: boolean;
     nowOn: boolean;
+    /** CC-91 KEYS-arm tri-state (the reclaimed NEW cell). */
+    keysArm: KeysArm;
   };
+  /** PAIR unit L: paint the previously-dead top row (CC 91..98) as the 8 per-lane
+   *  MUTE pads (col = lane), read from the `data` passed to computeLSessionFrame.
+   *  Undefined in single mode (the arm strip owns the top row) → the top row
+   *  paints exactly as before. */
+  lTopMute?: boolean;
 }
 
 // The faint target dot painted on EMPTY pads under the aiming wash.
@@ -526,7 +674,9 @@ export function computeLSessionFrame(
   const frame = emptyFrame();
   const blinkOn = opts.blinkOn ?? true;
   const clips = data?.clips ?? {};
-  const aiming = !!opts.arm?.armedAction; // overlay the aiming wash when armed
+  // Overlay the aiming wash when an arm-then-tap action is armed OR the CC-91
+  // KEYS-arm is live (a clip tap will enter KEYS) — both aim at a clip pad.
+  const aiming = !!opts.arm && (!!opts.arm.armedAction || opts.arm.keysArm !== 'off');
   for (let lane = 0; lane < CLIP_LANES; lane++) {
     const pl = lanePlaying(data, lane);
     const q = laneQueued(data, lane);
@@ -571,11 +721,17 @@ export function computeLSessionFrame(
     const row = LP_HEIGHT - 1 - i; // SCENE_CCS[0] = top = row 7
     put(frame, SCENE_CCS[i], row < CLIP_SLOTS ? RGB_SCENE : RGB_OFF);
   }
-  // SINGLE-mode clip-view ARM STRIP (top CCs 91..97). Painted ONLY when opts.arm
-  // is supplied (single mode); pair mode leaves the top row untouched (CC 91..98
-  // are never written here, so the device's top row stays dark in pair clip-role,
-  // exactly as before this change).
+  // SINGLE-mode clip-view ARM STRIP (top CCs 91..97) — painted when opts.arm is
+  // supplied (single mode). PAIR mode instead lights the top row as the 8 per-lane
+  // MUTE pads when opts.lTopMute is set (col = lane). They are mutually exclusive
+  // (single has arm, pair has lTopMute), and a plain pair clip-role with neither
+  // leaves the top row dark, exactly as before this change.
   if (opts.arm) paintClipArmStrip(frame, opts.arm, blinkOn);
+  else if (opts.lTopMute) {
+    for (let lane = 0; lane < CLIP_LANES; lane++) {
+      put(frame, colTopCc(lane), laneMuted(data, lane) ? RGB_MUTE_ON : RGB_MUTE_OFF);
+    }
+  }
   return frame;
 }
 
@@ -586,12 +742,22 @@ export function computeLSessionFrame(
  *  caller's view marker. PURE. */
 function paintClipArmStrip(
   frame: LaunchpadFrame,
-  arm: { armedAction: ClipArmAction | null; bufferLoaded: boolean; nowOn: boolean },
+  arm: { armedAction: ClipArmAction | null; bufferLoaded: boolean; nowOn: boolean; keysArm: KeysArm },
   blinkOn: boolean,
 ): void {
   const a = arm.armedAction;
-  // NEW (CC 91).
-  put(frame, CC_UP, a === 'new' ? RGB_DECK_EDIT_ON : RGB_DECK_EDIT);
+  // KEYS-ARM (CC 91) — the reclaimed NEW cell. Sticky tri-state: off = dim red
+  // (KEYS entry available), armed-REC = bright red (overdub OFF), armed-OD =
+  // bright purple (overdub ON). Tapping a clip while armed enters KEYS for it.
+  put(
+    frame,
+    CC_UP,
+    arm.keysArm === 'rec'
+      ? RGB_KEYS_REC_HOLD_ON
+      : arm.keysArm === 'od'
+      ? RGB_KEYS_OD_HOLD_ON
+      : RGB_KEYS_REC_HOLD,
+  );
   // COPY (CC 92) — turquoise pulse when the buffer holds a clip, else green.
   put(
     frame,
@@ -680,6 +846,18 @@ export function computeRDeckFrame(opts: RSessionOpts = {}): LaunchpadFrame {
   );
   // SONG (CC 92): bright white in ARRANGEMENT, dim white in SESSION.
   put(frame, CC_SONG, opts.arrangeMode ? RGB_SONG_ARRANGE : RGB_SONG_SESSION);
+  // TEMPO NUDGE −/+ (CC 93/94): the previously-dead session-deck arrows.
+  put(frame, CC_TEMPO_DOWN, RGB_TEMPO_NUDGE);
+  put(frame, CC_TEMPO_UP, RGB_TEMPO_NUDGE);
+  // RESET pad (row 1, col 2): steel blue — snap all active lanes to step 1.
+  put(frame, padNote(DECK_RESET_COL, DECK_RESET_ROW), RGB_RESET);
+  // Per-lane performance rows (col = lane): MONO (teal), MUTE (orange when muted),
+  // RATE (a cool→warm ramp per rate index). All read from the live node data.
+  for (let lane = 0; lane < CLIP_LANES; lane++) {
+    put(frame, padNote(lane, DECK_MONO_ROW), laneMono(opts.data, lane) ? RGB_MONO_ON : RGB_MONO_OFF);
+    put(frame, padNote(lane, DECK_MUTE_ROW), laneMuted(opts.data, lane) ? RGB_MUTE_ON : RGB_MUTE_OFF);
+    put(frame, padNote(lane, DECK_RATE_ROW), RGB_RATE_BY_INDEX[laneRateIndex(opts.data, lane)]);
+  }
   // R scene column = per-lane STOP (bright red where a lane plays).
   for (let i = 0; i < SCENE_CCS.length; i++) {
     const row = LP_HEIGHT - 1 - i;
@@ -707,6 +885,8 @@ export interface REditOpts {
    *  so the single editor's FOLLOW lives on the scene column). Pair mode leaves
    *  this unset → row 4 stays dark, exactly as before. */
   followSceneButton?: boolean;
+  /** Clipboard holds a clip — lights the editor PASTE scene pad (dim otherwise). */
+  bufferLoaded?: boolean;
 }
 
 export function computeREditFrame(clip: NoteClipRecord, opts: REditOpts = {}): LaunchpadFrame {
@@ -747,9 +927,10 @@ export function computeREditFrame(clip: NoteClipRecord, opts: REditOpts = {}): L
   put(frame, CC_EDIT_VEL, opts.velArmed ? RGB_FUNC_ON : RGB_FUNC);
   put(frame, CC_EDIT_SCALE, RGB_FUNC);
   put(frame, CC_EDIT_FOLLOW, opts.followOn ? RGB_TRANSPORT_ON : RGB_FUNC_ON);
-  // Scene column: top = EXIT (red), row 6 = DOUBLE, row 5 = LENGTH-EDIT, rest
-  // dark. SINGLE mode adds FOLLOW on row 4 (green = following, violet = frozen —
-  // the same colours the pair's CC-98 FOLLOW uses).
+  // Scene column: top = EXIT (red), row 6 = DOUBLE, row 5 = LENGTH-EDIT. SINGLE
+  // mode adds FOLLOW on row 4 (green = following, violet = frozen). Rows 3,2,1,0
+  // are the P6 extras (both modes): COPY (green) · PASTE (green when the buffer
+  // holds a clip, dim otherwise) · OCT+ / OCT− (transpose the whole clip ±12).
   for (let i = 0; i < SCENE_CCS.length; i++) {
     const row = LP_HEIGHT - 1 - i;
     let rgb: Rgb = RGB_OFF;
@@ -757,6 +938,9 @@ export function computeREditFrame(clip: NoteClipRecord, opts: REditOpts = {}): L
     else if (row === EDIT_DOUBLE_SCENE_ROW || row === EDIT_LENGTH_SCENE_ROW) rgb = RGB_FUNC;
     else if (opts.followSceneButton && row === EDIT_FOLLOW_SCENE_ROW)
       rgb = opts.followOn ? RGB_TRANSPORT_ON : RGB_FUNC_ON;
+    else if (row === EDIT_COPY_SCENE_ROW) rgb = RGB_DECK_COPY;
+    else if (row === EDIT_PASTE_SCENE_ROW) rgb = opts.bufferLoaded ? RGB_DECK_COPY : RGB_FUNC_DIM;
+    else if (row === EDIT_OCT_UP_SCENE_ROW || row === EDIT_OCT_DOWN_SCENE_ROW) rgb = RGB_OCTAVE;
     put(frame, SCENE_CCS[i], rgb);
   }
   return frame;
@@ -878,6 +1062,10 @@ export function computeKeysFrame(opts: KeysFrameOpts): LaunchpadFrame {
     else qrec = RGB_QREC_IDLE;
     put(frame, padNote(KEYS_QREC_COL, KEYS_CTRL_ROW), qrec);
     put(frame, padNote(KEYS_OVERDUB_COL, KEYS_CTRL_ROW), opts.overdub ? RGB_OD_ON : RGB_OD);
+    // P7: octave ± (neutral) + PANIC (red-orange) on the previously-dead cols 3/4/5.
+    put(frame, padNote(KEYS_OCT_DOWN_COL, KEYS_CTRL_ROW), RGB_OCTAVE);
+    put(frame, padNote(KEYS_OCT_UP_COL, KEYS_CTRL_ROW), RGB_OCTAVE);
+    put(frame, padNote(KEYS_PANIC_COL, KEYS_CTRL_ROW), RGB_PANIC);
     put(frame, padNote(KEYS_LEN_COL, KEYS_CTRL_ROW), RGB_DECK_LEN);
   }
   return frame;

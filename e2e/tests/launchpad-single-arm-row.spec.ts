@@ -1,12 +1,14 @@
 // e2e/tests/launchpad-single-arm-row.spec.ts
 //
 // SINGLE-UNIT two-handed ARM ROW — cross-view-combo proof (PR #892). ONE
-// Launchpad, clip-view top-row arm strip (CCs 91..97): arm-NEW -> tap empty ->
-// edit (place a note) -> arm-COPY -> tap the new clip -> arm-PASTE -> tap a
-// second slot -> LAUNCH the pasted clip -> it PLAYS (audible RMS through the
-// REAL TIMELORDE->clipplayer->VCO->VCA->SCOPE chain). Same decode/dispatch path
-// as hardware (installSimulatedLaunchpadSingle + the CC-98 view flip). The
+// Launchpad, clip-view top-row arm strip (CCs 92..97): double-tap-empty -> edit
+// (place a note) -> arm-COPY -> tap the new clip -> arm-PASTE -> tap a second
+// slot -> LAUNCH the pasted clip -> it PLAYS (audible RMS through the REAL
+// TIMELORDE->clipplayer->VCO->VCA->SCOPE chain). Same decode/dispatch path as
+// hardware (installSimulatedLaunchpadSingle + the CC-98 view flip). The
 // real-source-chain proof per CLAUDE.md: a pasted/new clip actually plays.
+// NOTE: CC 91 was reclaimed NEW -> KEYS-arm; NEW's create-a-clip role moved to
+// DOUBLE-TAP an empty pad (openEditor), exercised in step 1 below.
 
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
@@ -14,7 +16,6 @@ import { readScopePeakOverWindow } from './_module-coverage-helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-const CC_ARM_NEW = 91;
 const CC_ARM_COPY = 92;
 const CC_ARM_PASTE = 93;
 
@@ -63,7 +64,7 @@ async function lane0Playing(page: import('@playwright/test').Page) {
   });
 }
 
-test('@launchpad single-unit ARM ROW: NEW->edit->COPY->PASTE on one device, the pasted clip launches -> audible RMS', async ({ page, rack, errorWatch }) => {
+test('@launchpad single-unit ARM ROW: double-tap-new->edit->COPY->PASTE on one device, the pasted clip launches -> audible RMS', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
@@ -111,10 +112,15 @@ test('@launchpad single-unit ARM ROW: NEW->edit->COPY->PASTE on one device, the 
       }).__launchpadSingleSim!.state(),
     );
 
-  // (1) Clip view: arm NEW (CC 91) -> tap the TOP-LEFT pad (slot 0, lane 0 = y=7).
-  await drive('cc', CC_ARM_NEW, 127);
-  await expect.poll(() => simState().then((s) => s.armedAction)).toBe('new');
-  await drive('press', 0, 7);
+  // (1) Clip view: DOUBLE-TAP the empty TOP-LEFT pad (slot 0, lane 0 = y=7) →
+  // creates a fresh clip + opens the editor (NEW's reclaimed create role; the
+  // CC-91 cell is now KEYS-arm). Two taps back-to-back → ~0-tick gap.
+  await page.evaluate(() => {
+    const sim = (globalThis as unknown as { __launchpadSingleSim?: { press: (x: number, y: number) => void } })
+      .__launchpadSingleSim!;
+    sim.press(0, 7); // 1st tap (empty → no launch)
+    sim.press(0, 7); // 2nd tap → openEditor (creates the clip)
+  });
   await expect.poll(() => simState().then((s) => s.mode)).toBe('edit');
   await expect.poll(() => simState().then((s) => s.activeView)).toBe('control');
   await expect.poll(() => clipStepCount(page, 0)).toBe(0);

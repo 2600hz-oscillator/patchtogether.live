@@ -64,10 +64,44 @@ import {
   KEYS_EXIT_COL,
   KEYS_QREC_COL,
   KEYS_OVERDUB_COL,
+  KEYS_OCT_DOWN_COL,
+  KEYS_OCT_UP_COL,
+  KEYS_PANIC_COL,
   KEYS_LEN_COL,
   DECK_KEYS_REC_COL,
   DECK_KEYS_OVERDUB_COL,
   DECK_KEYS_ROW,
+  // performance controls (RESET / MONO / MUTE / RATE / tempo / pair-L MUTE / editor P6)
+  clipArmAction,
+  rDeckReset,
+  rDeckMonoLane,
+  rDeckMuteLane,
+  rDeckRateLane,
+  lTopMuteLane,
+  topCcCol,
+  colTopCc,
+  editSceneAction,
+  DECK_RESET_COL,
+  DECK_RESET_ROW,
+  DECK_MONO_ROW,
+  DECK_MUTE_ROW,
+  DECK_RATE_ROW,
+  CC_TEMPO_DOWN,
+  CC_TEMPO_UP,
+  RGB_RESET,
+  RGB_MONO_ON,
+  RGB_MONO_OFF,
+  RGB_MUTE_ON,
+  RGB_MUTE_OFF,
+  RGB_RATE_BY_INDEX,
+  RGB_TEMPO_NUDGE,
+  RGB_KEYS_REC_HOLD,
+  RGB_KEYS_OD_HOLD_ON,
+  RGB_PANIC,
+  EDIT_COPY_SCENE_ROW,
+  EDIT_PASTE_SCENE_ROW,
+  EDIT_OCT_UP_SCENE_ROW,
+  EDIT_OCT_DOWN_SCENE_ROW,
   RGB_KEY_ROOT,
   RGB_KEY_INSCALE,
   RGB_KEY_OUTSCALE,
@@ -348,10 +382,15 @@ describe('KEYS mode — placement classifiers', () => {
     expect(keysPad('L', KEYS_QREC_COL, KEYS_CTRL_ROW)).toEqual({ kind: 'qrec' });
     expect(keysPad('L', KEYS_OVERDUB_COL, KEYS_CTRL_ROW)).toEqual({ kind: 'overdub' });
     expect(keysPad('L', KEYS_LEN_COL, KEYS_CTRL_ROW)).toEqual({ kind: 'len' });
-    // unit R's bottom row is dark (no controls).
+    // P7 octave ± / panic on the previously-dead bottom-row cols 3/4/5.
+    expect(keysPad('L', KEYS_OCT_DOWN_COL, KEYS_CTRL_ROW)).toEqual({ kind: 'octDown' });
+    expect(keysPad('L', KEYS_OCT_UP_COL, KEYS_CTRL_ROW)).toEqual({ kind: 'octUp' });
+    expect(keysPad('L', KEYS_PANIC_COL, KEYS_CTRL_ROW)).toEqual({ kind: 'panic' });
+    // unit R's bottom row is dark (no controls) even on the new cols.
     expect(keysPad('R', KEYS_EXIT_COL, KEYS_CTRL_ROW)).toBeNull();
-    // an unused L bottom-row cell is null.
-    expect(keysPad('L', 4, KEYS_CTRL_ROW)).toBeNull();
+    expect(keysPad('R', KEYS_OCT_UP_COL, KEYS_CTRL_ROW)).toBeNull();
+    // col 6 is the ONE remaining dead L bottom-row cell.
+    expect(keysPad('L', 6, KEYS_CTRL_ROW)).toBeNull();
   });
 
   it('rDeckKeysHold: the KEYS-entry hold buttons on deck row 1', () => {
@@ -434,5 +473,115 @@ describe('KEYS mode — LED frame (keyboard + playhead + controls)', () => {
   it('the deck frame lights the KEYS-entry hold buttons when held', () => {
     const f = computeRDeckFrame({ keysRecHeld: true });
     expect(eqRgb(at(f, padNote(DECK_KEYS_REC_COL, DECK_KEYS_ROW)), RGB_KEYS_REC_HOLD_ON)).toBe(true);
+  });
+
+  it('KEYS bottom-row octave ± / panic pads paint on unit L (P7)', () => {
+    const base = { unit: 'L' as const, keyboardRoot: 48, playheadStep: -1, lengthSteps: 16, blinkOn: true };
+    const f = computeKeysFrame(base);
+    expect(at(f, padNote(KEYS_OCT_DOWN_COL, KEYS_CTRL_ROW))).not.toBeNull();
+    expect(at(f, padNote(KEYS_OCT_UP_COL, KEYS_CTRL_ROW))).not.toBeNull();
+    expect(eqRgb(at(f, padNote(KEYS_PANIC_COL, KEYS_CTRL_ROW)), RGB_PANIC)).toBe(true);
+    // unit R's bottom row stays dark on the new cols too.
+    const r = computeKeysFrame({ ...base, unit: 'R' });
+    expect(at(r, padNote(KEYS_PANIC_COL, KEYS_CTRL_ROW))).toBeNull();
+  });
+});
+
+// ===========================================================================
+// PERFORMANCE CONTROLS (P1 RESET · P4 MONO · P3 MUTE · P2 RATE · P5 tempo · P6
+// editor extras · pair-L MUTE) — placement classifiers + LED-frame painting.
+// ===========================================================================
+describe('Performance controls — placement classifiers', () => {
+  it('CC 91 (the reclaimed NEW cell) classifies as the KEYS-arm action', () => {
+    expect(clipArmAction(91)).toBe('keys'); // CC_UP
+    expect(clipArmAction(92)).toBe('copy');
+  });
+  it('deck RESET pad = row 1 col 2; MONO/MUTE/RATE rows are per-lane (col = lane)', () => {
+    expect(rDeckReset(DECK_RESET_COL, DECK_RESET_ROW)).toBe(true);
+    expect(rDeckReset(0, DECK_RESET_ROW)).toBe(false); // col 0 = K● hold
+    expect(rDeckMonoLane(3, DECK_MONO_ROW)).toBe(3);
+    expect(rDeckMonoLane(3, DECK_MUTE_ROW)).toBeNull(); // wrong row
+    expect(rDeckMuteLane(5, DECK_MUTE_ROW)).toBe(5);
+    expect(rDeckRateLane(7, DECK_RATE_ROW)).toBe(7);
+    expect(rDeckRateLane(8, DECK_RATE_ROW)).toBeNull(); // out of lane range
+  });
+  it('the three rows never overlap the row-0 functions or each other', () => {
+    // row 0 (functions) is not classified as any performance row.
+    expect(rDeckMonoLane(0, 0)).toBeNull();
+    expect(rDeckMuteLane(0, 0)).toBeNull();
+    expect(rDeckRateLane(0, 0)).toBeNull();
+    expect(rDeckReset(0, 0)).toBe(false);
+    // distinct rows.
+    expect(DECK_MONO_ROW).not.toBe(DECK_MUTE_ROW);
+    expect(DECK_MUTE_ROW).not.toBe(DECK_RATE_ROW);
+  });
+  it('pair unit-L top CCs map to MUTE lanes (col = lane); CC 98 → lane 7', () => {
+    expect(topCcCol(91)).toBe(0);
+    expect(topCcCol(98)).toBe(7);
+    expect(topCcCol(99)).toBeNull();
+    expect(colTopCc(0)).toBe(91);
+    expect(colTopCc(7)).toBe(98);
+    expect(lTopMuteLane(91)).toBe(0);
+    expect(lTopMuteLane(98)).toBe(7);
+  });
+  it('editor scene rows 3/2/1/0 classify as COPY/PASTE/OCT+/OCT− (P6)', () => {
+    expect(editSceneAction(EDIT_COPY_SCENE_ROW)).toBe('copy');
+    expect(editSceneAction(EDIT_PASTE_SCENE_ROW)).toBe('paste');
+    expect(editSceneAction(EDIT_OCT_UP_SCENE_ROW)).toBe('octUp');
+    expect(editSceneAction(EDIT_OCT_DOWN_SCENE_ROW)).toBe('octDown');
+    // EXIT/DOUBLE/LENGTH unchanged.
+    expect(editSceneAction(7)).toBe('exit');
+  });
+});
+
+describe('Performance controls — LED frames', () => {
+  it('deck frame lights RESET (blue) + MONO/MUTE/RATE per-lane + tempo nudge', () => {
+    const d: ClipPlayerData = {
+      mono: [true, false, false, false, false, false, false, false],
+      muted: [false, false, true, false, false, false, false, false],
+      rate: [0, 3, 3, 3, 3, 3, 3, 5],
+    } as ClipPlayerData;
+    const f = computeRDeckFrame({ data: d });
+    expect(eqRgb(at(f, padNote(DECK_RESET_COL, DECK_RESET_ROW)), RGB_RESET)).toBe(true);
+    // lane 0 mono ON (teal), lane 1 mono OFF (dim).
+    expect(eqRgb(at(f, padNote(0, DECK_MONO_ROW)), RGB_MONO_ON)).toBe(true);
+    expect(eqRgb(at(f, padNote(1, DECK_MONO_ROW)), RGB_MONO_OFF)).toBe(true);
+    // lane 2 muted (orange), lane 0 live (dim).
+    expect(eqRgb(at(f, padNote(2, DECK_MUTE_ROW)), RGB_MUTE_ON)).toBe(true);
+    expect(eqRgb(at(f, padNote(0, DECK_MUTE_ROW)), RGB_MUTE_OFF)).toBe(true);
+    // rate ramp: lane 0 = index 0, lane 7 = index 5.
+    expect(eqRgb(at(f, padNote(0, DECK_RATE_ROW)), RGB_RATE_BY_INDEX[0])).toBe(true);
+    expect(eqRgb(at(f, padNote(7, DECK_RATE_ROW)), RGB_RATE_BY_INDEX[5])).toBe(true);
+    // tempo nudge lit.
+    expect(eqRgb(at(f, CC_TEMPO_DOWN), RGB_TEMPO_NUDGE)).toBe(true);
+    expect(eqRgb(at(f, CC_TEMPO_UP), RGB_TEMPO_NUDGE)).toBe(true);
+  });
+  it('SINGLE clip-view arm strip: CC 91 paints the KEYS-arm tri-state', () => {
+    const d: ClipPlayerData = { clips: {} } as ClipPlayerData;
+    const CC_91 = 91; // the reclaimed top-row cell (a CC, not a grid pad)
+    const off = computeLSessionFrame(d, { arm: { armedAction: null, bufferLoaded: false, nowOn: false, keysArm: 'off' } });
+    expect(eqRgb(at(off, CC_91), RGB_KEYS_REC_HOLD)).toBe(true); // idle = dim red
+    const rec = computeLSessionFrame(d, { arm: { armedAction: null, bufferLoaded: false, nowOn: false, keysArm: 'rec' } });
+    expect(eqRgb(at(rec, CC_91), RGB_KEYS_REC_HOLD_ON)).toBe(true); // armed-REC = red
+    const od = computeLSessionFrame(d, { arm: { armedAction: null, bufferLoaded: false, nowOn: false, keysArm: 'od' } });
+    expect(eqRgb(at(od, CC_91), RGB_KEYS_OD_HOLD_ON)).toBe(true); // armed-OD = purple
+  });
+  it('PAIR unit-L top row lights the 8 per-lane MUTE pads (lTopMute)', () => {
+    const d: ClipPlayerData = { muted: [false, true, false, false, false, false, false, false] } as ClipPlayerData;
+    const f = computeLSessionFrame(d, { lTopMute: true });
+    expect(eqRgb(at(f, colTopCc(0)), RGB_MUTE_OFF)).toBe(true); // lane 0 live
+    expect(eqRgb(at(f, colTopCc(1)), RGB_MUTE_ON)).toBe(true); // lane 1 muted
+  });
+  it('editor frame lights COPY (green) + PASTE (buffer-gated) + OCT ± pads', () => {
+    // SCENE_CCS is top→bottom (index 0 = row 7), so scene row r → SCENE_CCS[7-r].
+    const sceneCc = (row: number) => SCENE_CCS[7 - row];
+    const clip = defaultNoteClip();
+    const noBuf = computeREditFrame(clip, { bufferLoaded: false });
+    expect(eqRgb(at(noBuf, sceneCc(EDIT_COPY_SCENE_ROW)), RGB_DECK_COPY)).toBe(true);
+    // OCT pads lit (non-null).
+    expect(at(noBuf, sceneCc(EDIT_OCT_UP_SCENE_ROW))).not.toBeNull();
+    const withBuf = computeREditFrame(clip, { bufferLoaded: true });
+    // PASTE lights green when the buffer holds a clip.
+    expect(eqRgb(at(withBuf, sceneCc(EDIT_PASTE_SCENE_ROW)), RGB_DECK_COPY)).toBe(true);
   });
 });

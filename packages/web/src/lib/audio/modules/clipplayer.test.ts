@@ -293,6 +293,54 @@ describe('clipplayer: per-lane launch', () => {
   });
 });
 
+describe('clipplayer: per-lane MUTE (advance-but-silent)', () => {
+  /** A DENSE clip — a note EVERY step — so gates fire continuously (mute is
+   *  observable as gate events STOPPING while the playhead keeps advancing). */
+  function denseClip(midi: number, len = 64): NoteClipRecord {
+    return {
+      kind: 'note',
+      steps: Array.from({ length: len }, (_, s) => ({ step: s, midi, velocity: 127, lengthSteps: 1 })),
+      lengthSteps: len,
+      root: 48,
+      loop: true,
+    };
+  }
+
+  it('a muted lane keeps advancing its playhead but emits NO audio; unmute resumes', async () => {
+    seed(
+      { stepDiv: 2, quantize: 0, octave: 0, gateLength: 0.9 },
+      { clips: { [clipIndex(0, 0)]: denseClip(72) }, queued: lane8(0, 0, null) },
+    );
+    seedTimelorde(1, 240); // fast so the 64-step clip strides without wrapping
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+    const gate = gateOf(handle, 0);
+
+    // LIVE: gates fire + the playhead advances.
+    run(ctx, 0, 0.4);
+    const stepBefore = handle.read!('currentStep:0') as number;
+    expect(stepBefore).toBeGreaterThan(0);
+    expect(hasHighEvent(gate)).toBe(true);
+
+    // MUTE lane 0 (the SAME synced field the launchpad MUTE pad writes).
+    const muteAt = 0.4;
+    livePatch.nodes[NODE_ID]!.data!.muted = lane8(0, true, false);
+    run(ctx, muteAt, 1.2);
+    // Playhead KEPT advancing (still locked to the transport) — NOT stopped.
+    const stepAfter = handle.read!('currentStep:0') as number;
+    expect(stepAfter).toBeGreaterThan(stepBefore);
+    expect(handle.read!('activeLane:0')).toBe(0); // mute ≠ stop
+    // NO gate went HIGH at/after the mute instant (silent).
+    expect(gate.events.filter((e) => e.time >= muteAt && e.value >= 0.5).length).toBe(0);
+
+    // UNMUTE → audio returns.
+    const unmuteAt = 1.2;
+    livePatch.nodes[NODE_ID]!.data!.muted = lane8(0, false, false);
+    run(ctx, unmuteAt, 2.0);
+    expect(gate.events.filter((e) => e.time >= unmuteAt && e.value >= 0.5).length).toBeGreaterThan(0);
+  });
+});
+
 describe('clipplayer: quantized switch (per lane, at the loop boundary)', () => {
   it('a queued clip takes over only at the active lane loop boundary', async () => {
     // both clips on lane 0: slot0 (clip 0) + slot1 (clip 1).

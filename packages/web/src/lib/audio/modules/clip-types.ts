@@ -129,6 +129,13 @@ export interface ClipPlayerData {
    *  An EDIT-time constraint (the card's per-lane toggle); absent/false = poly
    *  (up to POLY_CHANNEL_PAIRS notes per column). */
   mono?: boolean[];
+  /** Per-lane MUTE flag (length CLIP_LANES). A muted lane KEEPS advancing its
+   *  playhead (stays locked to the transport + the other lanes) but emits NO
+   *  audio — distinct from a per-lane STOP, which halts the lane entirely.
+   *  SYNCED (a performance control the Launchpad surfaces; the card may add a UI
+   *  later). Absent/false = live (the default). Back-compat on load like
+   *  `mono`/`rate`: a missing array reads as all-live. */
+  muted?: boolean[];
   /** Per-lane clock RATE index (length CLIP_LANES) into clip-clock.ts's
    *  RATE_MULTS (1/8 · 1/4 · 1/2 · 1 · 2x · 4x). Absent/invalid ⇒ '1' (the
    *  global STEP grid). SYNCED — the card's per-lane dropdown writes it and
@@ -227,6 +234,11 @@ export function playingSet(data: ClipPlayerData | undefined): (number | null)[] 
 /** Whether a lane is MONO (one note per column on note entry). Default poly. */
 export function laneMono(data: ClipPlayerData | undefined, lane: number): boolean {
   return data?.mono?.[lane] === true;
+}
+/** Whether a lane is MUTED (advances its playhead but emits no audio). Default
+ *  live — a missing/short array reads as not-muted (back-compat on load). */
+export function laneMuted(data: ClipPlayerData | undefined, lane: number): boolean {
+  return data?.muted?.[lane] === true;
 }
 /** Record mode, defaulting to legacy 'replace'. */
 export function clipRecordMode(data: ClipPlayerData | undefined): 'replace' | 'overdub' {

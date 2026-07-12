@@ -289,6 +289,81 @@ test('@launchpad single-unit KEYS — enter on one device, live keys are AUDIBLE
 
 });
 
+// SINGLE-UNIT KEYS via the RECLAIMED CC-91 arm cell (the new one-handed entry).
+// In CLIP view, tap CC 91 to arm KEYS (tri-state: 1 tap = overdub OFF, 2 taps =
+// overdub ON), then tap a clip → KEYS opens for it — NO deck-hold, NO view flip.
+// Then the same real-source-chain proof: queue-record captures played notes, and
+// EXIT stops the take so the captured clip loops back AUDIBLY.
+test('@launchpad single-unit KEYS via the CC-91 arm cell — arm → tap clip → record → audible playback', async ({ page, rack, errorWatch }) => {
+  await buildChain(page, 'a');
+  await seedEmptyClip(page, 'a-cp');
+
+  const installed = await page.evaluate(async () => {
+    const w = globalThis as unknown as { __launchpadTestInstallSingle?: (id: string) => Promise<boolean> };
+    return w.__launchpadTestInstallSingle ? await w.__launchpadTestInstallSingle('a-cp') : false;
+  });
+  expect(installed, 'single simulated Launchpad install hook present').toBe(true);
+
+  const pressS = (x: number, y: number) =>
+    page.evaluate(({ x, y }) => {
+      (globalThis as unknown as { __launchpadSingleSim?: { press: (x: number, y: number) => void } })
+        .__launchpadSingleSim!.press(x, y);
+    }, { x, y });
+  const releaseS = (x: number, y: number) =>
+    page.evaluate(({ x, y }) => {
+      (globalThis as unknown as { __launchpadSingleSim?: { release: (x: number, y: number) => void } })
+        .__launchpadSingleSim!.release(x, y);
+    }, { x, y });
+  const ccS = (cc: number, v: number) =>
+    page.evaluate(({ cc, v }) => {
+      (globalThis as unknown as { __launchpadSingleSim?: { cc: (cc: number, v: number) => void } })
+        .__launchpadSingleSim!.cc(cc, v);
+    }, { cc, v });
+  const singleState = () =>
+    page.evaluate(() =>
+      (globalThis as unknown as { __launchpadSingleSim?: { state: () => { mode: string; keysArm: string } } })
+        .__launchpadSingleSim!.state(),
+    );
+
+  await setTransport(page, 1);
+
+  // ENTER KEYS the NEW way: CLIP view (the default), arm CC 91 TWICE → overdub ON
+  // (additive, so recorded notes accumulate deterministically), then tap the clip.
+  await ccS(91, 127); // → armed-REC
+  await ccS(91, 127); // → armed-OD (overdub ON)
+  await expect.poll(() => singleState().then((s) => s.keysArm)).toBe('od');
+  await pressS(CLIP_L0S0.x, CLIP_L0S0.y); // tap the clip → enter KEYS (one hand, no flip)
+  await expect.poll(() => singleState().then((s) => s.mode), { timeout: 5000 }).toBe('keys');
+
+  // (1) Empty clip → silent until a key sounds.
+  const before = await readScopePeakOverWindow(page, 'a-scp', 500);
+  expect(before.rms, 'silent before a KEYS key is played (empty clip)').toBeLessThan(0.03);
+
+  // (2) QUEUE-REC → recording begins on the loop wrap; play notes → they land.
+  await pressS(KEYS_QREC.x, KEYS_QREC.y);
+  await expect.poll(() => isRecording(page), { timeout: 6000 }).toBe(true);
+  for (const k of [KEY_ROOT, KEY_A, KEY_B]) {
+    await pressS(k.x, k.y);
+    await page.waitForTimeout(120);
+    await releaseS(k.x, k.y);
+    await page.waitForTimeout(120);
+  }
+  await expect.poll(() => clipSteps(page), { timeout: 6000 }).toBeGreaterThan(0);
+
+  // (3) EXIT stops the take (stays in KEYS); the captured clip loops back AUDIBLY.
+  await pressS(KEYS_EXIT.x, KEYS_EXIT.y);
+  await expect.poll(() => isRecording(page), { timeout: 5000 }).toBe(false);
+  let playback = { rms: 0, nonzeroSamples: 0 };
+  await expect
+    .poll(async () => {
+      playback = await readScopePeakOverWindow(page, 'a-scp', 1600);
+      return playback.rms;
+    }, { timeout: 20_000, message: 'the recorded notes sound back on the loop' })
+    .toBeGreaterThan(0.03);
+  expect(playback.nonzeroSamples, 'structured playback, not a glitch').toBeGreaterThan(50);
+
+});
+
 test('@launchpad KEYS record — queue-record captures played notes into the clip; they SOUND on the next loop', async ({ page, rack, errorWatch }) => {
   await buildChain(page, 'r');
   await seedEmptyClip(page, 'r-cp');
