@@ -45,8 +45,12 @@ export const kickdrumDef: AudioModuleDef = {
   domain: 'audio',
   label: 'kick drum',
   category: 'sources',
-  // Owner decision: a WIDE 3u card (banded layout, ~26 controls).
-  size: '3u',
+  // A WIDE banded voice card (~26 controls over three SUB·BODY·CLICK /
+  // DRIVE·EQ·TRANSLATE / DYNAMICS·STEREO·OUT bands). MEASURED natural
+  // content height at hp:2 (360px) is ~576px (offsetHeight probe), so the
+  // 3u tier (540px) clipped the bottom DYNAMICS/STEREO/OUT band; 4u (720px)
+  // contains every control + label with comfortable margin. ~576×360px.
+  size: '4u',
   hp: 2,
 
   inputs: [

@@ -37,8 +37,12 @@ export const snaredrumDef: AudioModuleDef = {
   domain: 'audio',
   label: 'snare drum',
   category: 'sources',
-  // A WIDE 3u card (banded layout, ~22 controls), mate to KICK DRUM.
-  size: '3u',
+  // A WIDE banded voice card (~22 controls over three HEAD·BODY·WIRE /
+  // CRACK·ROLL·DRIVE / STEREO·OUT bands), mate to KICK DRUM. MEASURED
+  // natural content height at hp:2 (360px) is ~683px (offsetHeight probe),
+  // so the 3u tier (540px) dropped the whole STEREO/OUT band below the
+  // border; 4u (720px) contains every control + label. ~683×360px.
+  size: '4u',
   hp: 2,
 
   inputs: [

@@ -140,12 +140,15 @@
   .name-label {
     /* Hosted inside the card .title — tight inline display, no extra box.
      * The card already centers + sizes the title; we just style the
-     * interactive bit. */
+     * interactive bit. `max-width: 100%` caps the label at the title
+     * header's content box (which now reserves the corner patch-icon zones,
+     * see ModuleTitle) so a long name can't spill past it. */
     display: inline-flex;
     flex-direction: column;
     align-items: center;
     gap: 2px;
     line-height: 1.1;
+    max-width: 100%;
   }
   .name-button {
     background: transparent;
@@ -162,6 +165,13 @@
     /* Reset button look so it sits inline like static text. */
     appearance: none;
     -webkit-appearance: none;
+    /* Keep a too-long name on ONE line and ellipsize it rather than wrapping
+     * (which would grow the card height) or running under the corner icons.
+     * No effect on names that already fit — display is byte-identical. */
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .name-button:hover,
   .name-button:focus-visible {

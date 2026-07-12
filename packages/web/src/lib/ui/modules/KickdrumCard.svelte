@@ -1,7 +1,9 @@
 <script lang="ts">
   // KickdrumCard — layered stereo kick-voice card (build plan:
-  // .myrobots/plans/kick-drum-voice-2026-07-01.md). WIDE 3u banded layout
-  // (owner decision), Ports-family chrome:
+  // .myrobots/plans/kick-drum-voice-2026-07-01.md). WIDE 4u banded layout
+  // (the three bands are ~576px tall at hp:2 — a 3u tier clipped the
+  // bottom DYNAMICS/STEREO/OUT band, so the def declares 4u), Ports-family
+  // chrome:
   //
   //   ┌──── SUB ─────┬───────── BODY ─────────┬──── CLICK ────┐
   //   │ Tune SubDec  │ PAmt PTime Tens        │ Click ClkTone │
