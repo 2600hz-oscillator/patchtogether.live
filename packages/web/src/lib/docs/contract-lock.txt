@@ -3037,7 +3037,7 @@ tomtom param noise 0..1 linear default=0.25
 tomtom param strike 0..1 discrete default=0
 tomtom param tone 0..1 linear default=0.35
 tomtom param tune 60..400 log default=110 unit=Hz
-toybox meta domain=video renderLocus=worker
+toybox meta domain=video renderLocus=worker-experimental
 toybox in cv1 modsignal cvScale=linear
 toybox in cv2 modsignal cvScale=linear
 toybox in cv3 modsignal cvScale=linear
@@ -3155,7 +3155,7 @@ vdelay param colorShift 0..1 linear default=0
 vdelay param delayTime 1..32 linear default=8
 vdelay param feedback 0..0.95 linear default=0.4
 vdelay param mix 0..1 linear default=0.5
-vfpgaRunner meta domain=video renderLocus=worker
+vfpgaRunner meta domain=video renderLocus=worker-experimental
 vfpgaRunner in cv1 cv param=cv1_val cvScale=linear
 vfpgaRunner in cv2 cv param=cv2_val cvScale=linear
 vfpgaRunner in cv3 cv param=cv3_val cvScale=linear

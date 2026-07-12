@@ -21,8 +21,14 @@ import {
 import '$lib/video/modules';
 
 describe('vfpgaRunnerDef — module def shape', () => {
-  it('runs off-main-thread (renderLocus worker) — all catalog VFPGAs are pure-GL', () => {
-    expect(vfpgaRunnerDef.renderLocus).toBe('worker');
+  it('worker-eligible under the EXPLICIT flag only (renderLocus worker-experimental)', () => {
+    // All catalog VFPGAs are pure-GL, but the card polls read('gateState') /
+    // readParam('cvN_val') every frame and the WorkerProxyHandle serves
+    // read() by materializing + ticking a main-thread fallback -- so the
+    // DEFAULT-ON worker tier (PR V2) would render every VFPGA twice. It
+    // stays in the experimental tier until worker-side probe forwarding
+    // exists (see the def comment + workerLocusEligible).
+    expect(vfpgaRunnerDef.renderLocus).toBe('worker-experimental');
   });
 
   it('declares the full INPUT superset: vin1-4 (video) + cv1-4 (cv) + g1-4 (gate)', () => {

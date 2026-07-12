@@ -20,10 +20,10 @@
 // `ci-swiftshader-video-e2e-timeouts` discipline.
 //
 // SwiftShader-cheap (GPU-attest rebuild, glsmoke-floor-expansion): TOYBOX is
-// renderLocus:'worker', BUT the worker path is OFF by default (isWorkerFlagOn()
-// === false unless a spec sets __videoWorkerEnabled / ?videoworker=1 — only the
-// dedicated render-worker-*.spec.ts files do), so this spec renders TOYBOX on the
-// MAIN thread via its standard factory. The pixels it reads come from the on-card
+// renderLocus:'worker-experimental' (PR V2), and the experimental tier only
+// engages under the EXPLICIT flag (__videoWorkerEnabled / ?videoworker=1 —
+// only the dedicated render-worker-*.spec.ts files set it), so this spec
+// renders TOYBOX on the MAIN thread via its standard factory. The pixels it reads come from the on-card
 // 2D `toybox-canvas`, populated by __toyboxFreeze's DIRECT engine.step() +
 // blitOutputToDrawingBuffer — NOT from a free-running worker. The only reason this
 // blew its budget on CI's software renderer was TOYBOX's live main-thread rAF

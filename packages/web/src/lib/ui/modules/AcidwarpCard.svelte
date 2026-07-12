@@ -1,10 +1,15 @@
 <script lang="ts">
   // AcidwarpCard — 320×240 plasma display + FREEZE / SCENE buttons + SPEED knob.
   //
-  // On-card display: we render the same pattern × palette that the GL
-  // pipeline outputs, into a <canvas> via `read('snapshot')`. This stays
-  // in sync at ~30 Hz via setInterval; cheap because the engine caches
-  // the ImageData until scene/palette changes.
+  // On-card display (PR V2): the STANDARD blit preview —
+  // blitOutputToDrawingBuffer(id) + drawImage(engine.canvas) each rAF, the
+  // same path LUSHGARDEN/MILKDROP/RUTTETRA use. This shows the module's REAL
+  // output texture, which under the (now default-ON) Fix E render worker is
+  // the worker-rendered frame. The old `read('snapshot')` CPU poll forced the
+  // WorkerProxyHandle to materialize AND tick a main-thread fallback handle
+  // every frame (a double render — exactly the main-thread cost the worker
+  // exists to remove). The blit also feeds the engine's sink-driven pull
+  // evaluation (a presenting card = a watcher).
 
   import type { NodeProps } from '@xyflow/svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
@@ -13,6 +18,7 @@
   import { acidwarpDef, speedKnobToMultiplier } from '$lib/video/modules/acidwarp';
   import { SCENE_COUNT, PALETTE_COUNT } from '$lib/video/modules/acidwarp-patterns';
   import { useEngine } from '$lib/audio/engine-context';
+  import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import { onMount, onDestroy } from 'svelte';
   import ModuleTitle from './ModuleTitle.svelte';
@@ -29,24 +35,50 @@
   const inputs = portsFromDef(acidwarpDef.inputs, { speed_cv: 'SPEED', scene_cv: 'SCENE' });
   const outputs = portsFromDef(acidwarpDef.outputs);
 
-  // ----- Display canvas: pull the engine's per-frame snapshot -----
+  // ----- Display canvas: standard blit preview (engine output texture) -----
   let canvasEl: HTMLCanvasElement | null = $state(null);
-  let ctx2d: CanvasRenderingContext2D | null = null;
-  let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let rafId: number | null = null;
+
+  function getVideoEngine(): VideoEngine | null {
+    const e = engineCtx.get();
+    if (!e) return null;
+    try {
+      return e.getDomain<VideoEngine>('video') ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  function drawPreview(): void {
+    rafId = null;
+    const videoEngine = getVideoEngine();
+    if (videoEngine && canvasEl) {
+      const c2d = canvasEl.getContext('2d', { alpha: false });
+      if (c2d) {
+        try {
+          videoEngine.blitOutputToDrawingBuffer(id);
+          c2d.drawImage(
+            videoEngine.canvas as CanvasImageSource,
+            0, 0, canvasEl.width, canvasEl.height,
+          );
+        } catch {
+          /* engine churn — never let it kill the rAF loop */
+        }
+      }
+    }
+    rafId = requestAnimationFrame(drawPreview);
+  }
 
   onMount(() => {
     if (canvasEl) {
       canvasEl.width = 320;
       canvasEl.height = 240;
-      ctx2d = canvasEl.getContext('2d');
     }
-    pollTimer = setInterval(() => {
-      const e = engineCtx.get(); if (!e || !node || !ctx2d) return;
-      const snap = e.read(node, 'snapshot') as ImageData | undefined;
-      if (snap) ctx2d.putImageData(snap, 0, 0);
-    }, 33); // ~30 Hz
+    rafId = requestAnimationFrame(drawPreview);
   });
-  onDestroy(() => { if (pollTimer) clearInterval(pollTimer); });
+  onDestroy(() => {
+    if (rafId !== null) cancelAnimationFrame(rafId);
+  });
 
   function nextScene() {
     const t = patch.nodes[id]; if (!t) return;

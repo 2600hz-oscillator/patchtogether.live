@@ -329,12 +329,19 @@ export const toyboxDef: VideoModuleDef = {
   label: 'toybox',
   category: 'sources',
   // Fix E Phase 2 — TOYBOX's pure-GL layers (shader/gen/frag/obj) run in the
-  // render worker when the flag is on. The worker-side createToyboxWorkerHandle
-  // receives serialized node.data snapshots via MsgToyboxSync (sent by
-  // VideoEngine.syncNodeData on every data change from ToyboxCard's $effect),
-  // so the worker renderer stays current without accessing the Yjs store.
-  // Video/image layers render black in Phase 2A (DOM/cross-thread limitation).
-  renderLocus: 'worker',
+  // render worker when the flag is EXPLICITLY on. The worker-side
+  // createToyboxWorkerHandle receives serialized node.data snapshots via
+  // MsgToyboxSync (sent by VideoEngine.syncNodeData on every data change from
+  // ToyboxCard's $effect), so the worker renderer stays current without
+  // accessing the Yjs store.
+  //
+  // EXPERIMENTAL (not default-on, PR V2): the worker handle has known parity
+  // gaps — video/image layers render BLACK in Phase 2A (DOM/cross-thread
+  // limitation) and the card's bespoke `__toyboxFreeze` VRT hook pins only the
+  // main-thread clock. Defaulting TOYBOX to the worker would regress any patch
+  // using video/image layers, so it stays behind the explicit flag
+  // (`?videoworker=1` / `__videoWorkerEnabled=true`) until parity lands.
+  renderLocus: 'worker-experimental',
   // A FIXED pool of 6 generic modulation input ports (the Structure-style
   // section). A layer's shader (and its uniforms) is chosen at runtime, so we
   // can't declare a port per possible uniform; instead the card routes each

@@ -51,6 +51,9 @@ const ctx = self as unknown as WorkerScope;
 
 let engine: WorkerRenderEngine | null = null;
 let running = false;
+/** Determinism forwarding: while true (main thread paused / freeze-rendered),
+ *  the loop keeps scheduling but neither steps nor posts frames. */
+let paused = false;
 let timerId: ReturnType<typeof setTimeout> | null = null;
 
 /** Target render cadence (~60fps). The worker is a HEADLESS compute unit with
@@ -69,7 +72,7 @@ function post(msg: WorkerOutboundMsg, transfer?: Transferable[]): void {
 
 function loop(): void {
   if (!running || !engine) return;
-  if (engine.hasNodes()) {
+  if (!paused && engine.hasNodes()) {
     const ready = engine.step();
     for (const nodeId of ready) {
       const bitmap = engine.transferNodeFrame(nodeId);
@@ -123,6 +126,11 @@ ctx.onmessage = (e: MessageEvent<WorkerInboundMsg>) => {
     }
     case 'toybox-sync': {
       engine?.syncToyboxState(m.nodeId, m.state);
+      break;
+    }
+    case 'determinism': {
+      paused = m.paused;
+      engine?.setFrozenTime(m.freezeTimeSec);
       break;
     }
     case 'dispose': {

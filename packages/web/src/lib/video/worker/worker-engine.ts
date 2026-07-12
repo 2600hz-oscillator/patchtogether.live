@@ -88,6 +88,10 @@ export class WorkerRenderEngine {
   private frameCount = 0;
   private timeDelta = 1 / 60;
   private frameRate = 60;
+  /** Determinism forwarding: when non-null, ctx.time is PINNED to this value
+   *  (the worker mirror of the main engine's `__videoEngineFreezeTime` hook)
+   *  so a time-driven worker module renders an identical frame every step. */
+  private frozenTimeSec: number | null = null;
 
   constructor(
     factories: WorkerFactoryRegistry,
@@ -161,6 +165,12 @@ export class WorkerRenderEngine {
     h.syncState?.(data);
   }
 
+  /** Pin (or un-pin, with null) the engine clock — see frozenTimeSec. */
+  setFrozenTime(timeSec: number | null): void {
+    this.frozenTimeSec =
+      typeof timeSec === 'number' && Number.isFinite(timeSec) ? timeSec : null;
+  }
+
   setResolution(width: number, height: number): boolean {
     const w = Math.max(2, Math.round(width));
     const h = Math.max(2, Math.round(height));
@@ -198,7 +208,7 @@ export class WorkerRenderEngine {
 
     const ctx: VideoFrameContext = {
       gl: this.gl,
-      time: (now - this.startTime) / 1000,
+      time: this.frozenTimeSec ?? (now - this.startTime) / 1000,
       frame: this.frameCount++,
       timeDelta: this.timeDelta,
       frameRate: this.frameRate,

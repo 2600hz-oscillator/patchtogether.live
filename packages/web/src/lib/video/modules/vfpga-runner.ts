@@ -131,8 +131,16 @@ export const vfpgaRunnerDef: VideoModuleDef = {
   label: 'vfpga-runner',
   category: 'sources',
   // Every catalog VFPGA is pure-GL with a DOM-free factory → eligible for the
-  // off-main-thread render worker (flag-gated; default OFF → byte-identical).
-  renderLocus: 'worker',
+  // off-main-thread render worker under the EXPLICIT flag.
+  //
+  // EXPERIMENTAL (not default-on, PR V2): the card polls `read('gateState')`
+  // + `readParam('cvN_val')` every frame for its gate LEDs / CV scopes, and
+  // the WorkerProxyHandle serves `read()` by materializing AND ticking a
+  // main-thread fallback handle — so defaulting VFPGA to the worker would
+  // render every catalog VFPGA TWICE (worker GL + main fallback GL), a net
+  // perf LOSS. Stays behind the explicit flag until worker-side probe
+  // forwarding exists.
+  renderLocus: 'worker-experimental',
   inputs: [
     // VIDEO inputs — the superset; a loaded spec binds videoIn of them.
     ...VFPGA_VIDEO_IN_PORTS.map((id) => ({ id, type: 'video' as const })),

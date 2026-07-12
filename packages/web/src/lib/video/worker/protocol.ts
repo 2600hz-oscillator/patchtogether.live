@@ -59,6 +59,23 @@ export interface MsgToyboxSync {
   state: unknown;
 }
 
+/**
+ * DETERMINISM FORWARDING (PR V2) — mirror the main thread's e2e/VRT
+ * determinism hooks into the worker realm. The worker has its own clock and
+ * render loop; without this a frozen/paused harness on the main thread would
+ * leave worker-resident nodes free-running (nondeterministic pixels under
+ * DRS/VRT). Sent by the bridge on construction and whenever the main-side
+ * globals change (see RenderWorkerBridge.syncDeterminism).
+ */
+export interface MsgDeterminism {
+  type: 'determinism';
+  /** Pin the worker engine clock (ctx.time) to this value; null = live. */
+  freezeTimeSec: number | null;
+  /** Stop stepping/posting frames while true (main is paused or
+   *  freeze-rendered). Already-posted frames remain valid. */
+  paused: boolean;
+}
+
 export type WorkerInboundMsg =
   | MsgInit
   | MsgAddNode
@@ -66,7 +83,8 @@ export type WorkerInboundMsg =
   | MsgSetParam
   | MsgSetResolution
   | MsgDispose
-  | MsgToyboxSync;
+  | MsgToyboxSync
+  | MsgDeterminism;
 
 // ---- worker → main ----
 
