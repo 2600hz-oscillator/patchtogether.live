@@ -23,6 +23,7 @@
  */
 export const ART_EXCLUDED: Readonly<Record<string, string>> = {
   audioIn: 'live getUserMedia mic — output is a pass-through of external signal; no offline source',
+  es9: 'physical ES-9 hardware via the native-bridge WebSocket — outputs pass through external rack signal; no deterministic offline source (ring/scaling/policy math pinned by the dsp es9-bridge-core unit suite)',
   gamepad: 'HID controller CV — no deterministic offline input',
   joystick: 'HID controller CV — no deterministic offline input',
   midiLane: 'live MIDIAccess device stream — no deterministic offline source',
@@ -38,6 +39,7 @@ export const ART_EXCLUDED: Readonly<Record<string, string>> = {
   audioOut: 'terminal sink — no audio-family OUTPUT port to capture',
   clockedRunner: 'utility with no audio-family OUTPUT port to capture',
   spectrograph: 'video-only outputs (analysis sink) — video belongs to VRT/WebGL-attest',
+  dockscope: 'terminal visualiser (analysis sink) — no OUTPUT ports at all; nothing to capture',
 };
 
 /**

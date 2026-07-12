@@ -203,7 +203,7 @@ jobs:
           name: web-preview-dist
           path: packages/web/.svelte-kit/output
       - name: Apply DB schema
-        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
+        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql -f db/schema/005_rackspace_mode.sql
       - name: Emit registry manifest for E2E
         run: flox activate -- task test:emit-manifest
       # retries=1 = GATE-REALISTIC: identical to how the ci.yml e2e gate runs on

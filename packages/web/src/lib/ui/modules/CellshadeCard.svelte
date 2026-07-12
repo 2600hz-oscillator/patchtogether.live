@@ -1,10 +1,12 @@
 <script lang="ts">
-  // CellshadeCard — UI for CELLSHADE (cel-shader video processor).
+  // CellshadeCard — UI for CELLSHADE (real cel-shader video processor).
   //
-  // Single video input (in) → video output (out). Three knobs:
-  //   THRESH (edge gate, from EDGES) + THICK (ink stroke width, from EDGES)
-  //   + BITS (a 5-step DISCRETE knob snapping to 1/2/4/8/16-bit colour
-  //   depth). BITS displays its current bit value (1/2/4/8/16) on the card.
+  // Single video input (in) → video output (out). Six knobs:
+  //   THRESH (ink gate, from EDGES) + THICK (ink stroke width, from EDGES)
+  //   + BANDS (a 5-step DISCRETE knob snapping to 2/3/4/6/8 luminance
+  //   bands; the param id stays the legacy `bits`) + SOFT (band-transition
+  //   width) + SMOOTH (bilateral abstraction) + INK (outline darkness).
+  //   BANDS displays its current band count ("N BANDS") on the card.
   // Each knob has a matching per-param CV input. A live preview of the
   // cel-shaded OUT is shown (mirrors FreezeframeCard's blit).
   import { onMount, onDestroy } from 'svelte';
@@ -15,9 +17,8 @@
   import { setNodeParam } from '$lib/graph/mutate';
   import {
     cellshadeDef,
-    cellshadeBitDepth,
-    cellshadeColorCount,
-    CELLSHADE_BIT_STEPS,
+    cellshadeBandCount,
+    CELLSHADE_BAND_STEPS,
   } from '$lib/video/modules/cellshade';
   import { EDGES_MAX_THICKNESS } from '$lib/video/modules/edges';
   import type { VideoEngine } from '$lib/video/engine';
@@ -41,19 +42,18 @@
     return (v: number) => setNodeParam(id, paramId, v);
   }
 
-  // --- BITS discrete display: the knob value is a step INDEX 0..4; show the
-  // bit value (1/2/4/8/16) + colour count below it. ---
-  const BITS_MAX_INDEX = CELLSHADE_BIT_STEPS.length - 1;
-  // Tick rail: one mark per step, labelled with the bit value.
-  const BITS_TICKS = CELLSHADE_BIT_STEPS.map((s, i) => ({
-    frac: BITS_MAX_INDEX > 0 ? i / BITS_MAX_INDEX : 0,
-    label: String(s.bits),
+  // --- BANDS discrete display: the knob value is a step INDEX 0..4 (the
+  // legacy `bits` param id); show the band count (2/3/4/6/8) below it. ---
+  const BANDS_MAX_INDEX = CELLSHADE_BAND_STEPS.length - 1;
+  // Tick rail: one mark per step, labelled with the band count.
+  const BANDS_TICKS = CELLSHADE_BAND_STEPS.map((n, i) => ({
+    frac: BANDS_MAX_INDEX > 0 ? i / BANDS_MAX_INDEX : 0,
+    label: String(n),
   }));
-  function formatBits(v: number): string {
-    return String(cellshadeBitDepth(v));
+  function formatBands(v: number): string {
+    return String(cellshadeBandCount(v));
   }
-  let bitDepth = $derived(cellshadeBitDepth(p('bits')));
-  let colorCount = $derived(cellshadeColorCount(p('bits')));
+  let bands = $derived(cellshadeBandCount(p('bits')));
 
   // --- Live preview of OUT (the canonical surface.texture). ---
   const ENGINE_W = VIDEO_RES.width;
@@ -90,7 +90,14 @@
   onMount(() => { rafId = requestAnimationFrame(draw); });
   onDestroy(() => { if (rafId !== null) cancelAnimationFrame(rafId); });
 
-  const inputs = portsFromDef(cellshadeDef.inputs, { threshold: 'THRESH', thickness: 'THICK' });
+  const inputs = portsFromDef(cellshadeDef.inputs, {
+    threshold: 'THRESH',
+    thickness: 'THICK',
+    bits: 'BANDS',
+    softness: 'SOFT',
+    smooth: 'SMOOTH',
+    ink: 'INK',
+  });
   const outputs = portsFromDef(cellshadeDef.outputs);
 </script>
 
@@ -108,7 +115,7 @@
         data-testid="cellshade-preview"
         data-node-id={id}
       ></canvas>
-      <span class="preview-label" data-testid="cellshade-bits-readout">{bitDepth}-BIT · {colorCount} COL</span>
+      <span class="preview-label" data-testid="cellshade-bits-readout">{bands} BANDS</span>
     </div>
 
     <div class="fader-grid">
@@ -117,16 +124,19 @@
       <Fader
         value={p('bits')}
         min={0}
-        max={BITS_MAX_INDEX}
+        max={BANDS_MAX_INDEX}
         defaultValue={pdef('bits')}
-        label="Bits"
+        label="Bands"
         curve="discrete"
-        formatValue={formatBits}
-        ticks={BITS_TICKS}
+        formatValue={formatBands}
+        ticks={BANDS_TICKS}
         onchange={setParam('bits')}
         moduleId={id}
         paramId="bits"
       />
+      <Fader value={p('softness')} min={0} max={1} defaultValue={pdef('softness')} label="Soft"   curve="linear" onchange={setParam('softness')} moduleId={id} paramId="softness" />
+      <Fader value={p('smooth')}   min={0} max={1} defaultValue={pdef('smooth')}   label="Smooth" curve="linear" onchange={setParam('smooth')}   moduleId={id} paramId="smooth" />
+      <Fader value={p('ink')}      min={0} max={1} defaultValue={pdef('ink')}      label="Ink"    curve="linear" onchange={setParam('ink')}      moduleId={id} paramId="ink" />
     </div>
   </PatchPanel>
 </div>

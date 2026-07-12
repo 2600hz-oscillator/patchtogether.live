@@ -269,3 +269,46 @@ describe('isSafeToDelete (in-transact never-delete-last guard)', () => {
     expect(isSafeToDelete(live, 'x', 'timelorde')).toBe(false);
   });
 });
+
+describe('pinned nodes are never planned (workflow P1)', () => {
+  it('a pinned instance + a canvas instance of a maxInstances:1 type is NOT over-cap', () => {
+    // Workflow rack steady state: pinned ELECTRA CONTROL (drawer) + one
+    // user-spawned canvas instance. The pinned one is outside the cap
+    // economy — the cleanup must not lex-delete either.
+    const nodes = {
+      'electraControl-zz': { id: 'electraControl-zz', type: 'electraControl' },
+      'pinned-electraControl': {
+        id: 'pinned-electraControl',
+        type: 'electraControl',
+        data: { pinned: true },
+      },
+    };
+    const defs = (type: string) =>
+      type === 'electraControl' ? { type, maxInstances: 1 } : undefined;
+    expect(planSingletonCleanup(nodes, defs)).toEqual([]);
+  });
+
+  it('surplus among UNPINNED instances still cleans up, pinned untouched', () => {
+    const nodes = {
+      'electraControl-bb': { id: 'electraControl-bb', type: 'electraControl' },
+      'electraControl-aa': { id: 'electraControl-aa', type: 'electraControl' },
+      'pinned-electraControl': {
+        id: 'pinned-electraControl',
+        type: 'electraControl',
+        data: { pinned: true },
+      },
+    };
+    const defs = (type: string) =>
+      type === 'electraControl' ? { type, maxInstances: 1 } : undefined;
+    const plan = planSingletonCleanup(nodes, defs);
+    // lex-smallest UNPINNED survives; pinned never appears in the plan.
+    expect(plan).toEqual([
+      {
+        id: 'electraControl-bb',
+        type: 'electraControl',
+        keptId: 'electraControl-aa',
+        undeletable: false,
+      },
+    ]);
+  });
+});

@@ -196,6 +196,41 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // rate consumed per-sample inside the roll engine. Same shape as
   // kickdrum.pitch_cv / accent_in and dx7.pitch_cv.
   snaredrum: ['pitch_cv', 'accent_in', 'roll_speed_cv'],
+  // TOM DRUM: ALL six cv inputs are consumed DIRECTLY by the worklet as its
+  // own audio-rate node inputs, not AudioParams — pitch_cv is V/oct (tune ×
+  // 2^pitch_cv per-sample; an additive AudioParam cvScale would NOT be
+  // 1V/oct), accent_in is a raw 0..1 value SAMPLED at the strike edge (a
+  // latch input, no paramTarget), and bend_cv / decay_cv / tone_cv /
+  // noise_cv carry their full-swing laws INSIDE the core (±24 st/V bend,
+  // 2 oct/V decay time, ±1 sums on the tone/noise balances — see
+  // tomtom-dsp.ts), satisfying the cv-range full-swing standard at the DSP
+  // level. Same shape as kickdrum / snaredrum.
+  tomtom: ['pitch_cv', 'accent_in', 'bend_cv', 'decay_cv', 'tone_cv', 'noise_cv'],
+  // KARPLUS accent_in: a raw per-hit 0..1 value SAMPLED (latched) at the
+  // trigger edge inside the worklet — a latch input consumed as an
+  // audio-rate node input, not a knob modulator (no paramTarget), so
+  // cvScale doesn't apply. Same shape as kickdrum/snaredrum.accent_in.
+  // (The five *_cv knob modulators all declare cvScale; the `pitch` input
+  // is the V/oct cable consumed per-sample as tune × 2^V, like CUBE.pitch.)
+  karplus: ['accent_in'],
+  // CLAP: ALL four cv inputs are consumed DIRECTLY by the worklet as its
+  // own audio-rate node inputs, not AudioParams — accent_in is a raw 0..1
+  // value SAMPLED at the strike edge (a latch input, no paramTarget), and
+  // tone_cv / tail_cv / spread_cv carry their full-swing octave laws
+  // INSIDE the core (±1.5 oct/V band center, 2 oct/V tail time, ±1.3 oct/V
+  // burst spacing latched per hit — see clap-dsp.ts), satisfying the
+  // cv-range full-swing standard at the DSP level. Same shape as
+  // kickdrum / snaredrum.
+  clap: ['accent_in', 'tone_cv', 'tail_cv', 'spread_cv'],
+  // TIDY VCO: all five cv inputs are consumed DIRECTLY by the worklet as
+  // its own audio-rate node inputs, not AudioParams. `pitch` is the mono
+  // V/oct cable (freq = C4·2^V per voice, the CUBE.pitch V/oct-fallback
+  // shape), and cutoff_cv / res_cv / pwm_cv / drive_cv carry their
+  // full-swing laws INSIDE the core (4 oct/V cutoff at audio rate,
+  // ±1 V = whole RES / DRIVE range, ±0.45 duty/V PWM at audio rate — see
+  // tidy-vco-dsp.ts), satisfying the cv-range full-swing standard at the
+  // DSP level. Same shape as kickdrum / snaredrum / clap.
+  tidyVco: ['pitch', 'cutoff_cv', 'res_cv', 'pwm_cv', 'drive_cv'],
   // CUBE pitch: V/oct input consumed directly by the worklet as its own
   // audio-rate node input (freq = C4·2^(pitch + tune/12 + fine/1200), applied
   // per-sample). No paramTarget — same V/oct-fallback shape as dx7.pitch_cv. CUBE's OTHER cv inputs (slice_y/rx/ry/rz, morph_fc,

@@ -121,7 +121,7 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // loop) + the bespoke real-source-chain clipplayer.spec.ts (TIMELORDE → clip →
   // voice → audible RMS, incl. the freeze-while-stopped lock) + clip-types.test.ts
   // (note→V/oct + note-editor row math + per-lane/velocity helpers).
-  clipplayer:     'TIMELORDE-locked launch output (8 lanes); only input stop_all silences, no per-output input + needs a running transport — no clean per-input delta in the short window; covered by clipplayer.test.ts + clipplayer.spec.ts + clip-types.test.ts',
+  clipplayer:     'TIMELORDE-locked launch output (8 lanes); inputs stop_all/reset only silence/rewind — no per-output input + needs a running transport, so no clean per-input delta in the short window; covered by clipplayer.test.ts + clipplayer.spec.ts + clipplayer-rate-reset.spec.ts (reset gate input via a REAL sequencer-clock cable) + clip-types.test.ts',
   // KRIA — same shape as clipplayer/sequencer: a 4-track grid step-sequencer
   // whose outputs are clock-derived (a seeded running pattern). Patching `clock`
   // only switches internal-tempo → external-clock advance (RE-PHASES the same
@@ -438,6 +438,12 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   cellshade: VIDEO_SINK_SWIFTSHADER_NOTE,
   chromakey: VIDEO_SINK_SWIFTSHADER_NOTE,
   outlines: VIDEO_SINK_SWIFTSHADER_NOTE,
+  // POSTERBOX (retro palette-crush, 2026-07-11): the same per-frame-WebGL →
+  // video-out-canvas class as cellshade above. Real behavioral coverage lives
+  // in posterbox.test.ts (the CPU mirror of the shader) + the theory-derived
+  // e2e/tests/posterbox-functional.spec.ts (readPixels probes: continuity
+  // anchors, hue-order, dither checker, mix sweep) + the VRT baselines.
+  posterbox: VIDEO_SINK_SWIFTSHADER_NOTE,
 
   // ── MOOG System 55/35 routing / mixer / utility modules (batch-2 +
   //    batch-5). These are PURE gain / patch-bay / format-converter /
@@ -737,7 +743,40 @@ const BEHAVIORAL_PARAMS: Record<string, Record<string, number>> = {
   // isolated, isPlaying=0 harness — see BEHAVIORAL_SWEEP_EXEMPT. recArm stays 0
   // so a context-gate on `gate` (fired for the cv test) doesn't start recording
   // and muddy the control. populateAllSequencerSteps seeds the SUT's grid.
+  // TOM DRUM — a percussive decaying voice: the scope's 43 ms windows land at
+  // random phases of the 250 ms strike cycle, so at SHIPPING defaults the
+  // control's own jitter is huge (the 7 st bend chirps every attack → zc/cent
+  // range ±17/±25; breath+overtone widen it further) and buries small CV
+  // perturbations. Pin the control to a QUIET, stable baseline: bend_amt=0
+  // (stable pitch → control cent range ±6-10 Hz, measured 10×), bend_time=300
+  // (a CV-driven bend stays audible across the whole strike cycle),
+  // tone/noise=0.2 floors (gives accent's brighten-on-hard-strike macro
+  // existing layers to lift), drive=0 (no tanh compression of level deltas),
+  // decay=1200 (the voice rings between the 4 Hz driver strikes). All values
+  // inside the params' native ranges.
+  tomtom: { bend_amt: 0, bend_time: 300, tone: 0.2, noise: 0.2, drive: 0, decay: 1200 },
   writeseq: { isPlaying: 0, recArm: 0, overdub: 0, bpm: 240, length: 4, gateLength: 0.5 },
+  // CLAP — a percussive noise voice: the scope's 43 ms windows land at random
+  // phases of the 250 ms strike cycle, so at SHIPPING defaults the control's
+  // own window jitter is huge (band-passed noise bursts + a 150 ms tail that
+  // is DEAD in half the windows) and buries small CV perturbations. Pin the
+  // control to a QUIET, stable baseline: width=0.15 (narrow → tonal, stable
+  // zc/centroid), color=0 + drive=0 (no extra spectral churn / tanh
+  // compression of level deltas), tail=700 (the room rings between the 4 Hz
+  // driver strikes → every window carries signal), snap=0.4 (room-dominant
+  // for a smooth control, burst still present so spread_cv stays audible).
+  // All values inside the params' native ranges.
+  clap: { width: 0.15, color: 0, drive: 0, tail: 700, snap: 0.4 },
+  // TIDY VCO: pin the observability corners the SHIPPING defaults hide.
+  // shape1/shape2=1 + pw=0.25 put both oscillators on their PULSE leg so
+  // pwm_cv audibly moves the duty (at the default shape=0 both oscs are
+  // SAWS and pw is a no-op — the one dead-CV case by design); drive=0
+  // gives drive_cv its full 0→1 swing (the knob is loudness-compensated,
+  // so the delta shows in crest/centroid, not rms); cutoff=5000 opens the
+  // ladder so waveshape deltas reach the analyser; width=0 + detune=0 +
+  // sub=0 kill the stereo/unison/sub churn that pads window variance.
+  // All values inside the params' native ranges.
+  tidyVco: { shape1: 1, shape2: 1, pw: 0.25, drive: 0, cutoff: 5000, res: 0.3, width: 0, detune: 0, sub: 0 },
 };
 
 // ────────── Per-port behavioral exemptions ──────────
@@ -1443,6 +1482,112 @@ const BEHAVIORAL_PORT_TEST_SOURCE: Record<string, InputSource> = {
     outPort: 'phase0',
     sourceType: 'gate',
   },
+  // TOM DRUM bend_cv / decay_cv — both are DEPTH/TIME CVs on a percussive
+  // voice whose effect the generic BUGGLES walk (±~0.15 V excursions, and
+  // half of them clamped: bend depth can't go below 0 from the pinned
+  // bend_amt=0 control) regularly fails to expose within the 800 ms window
+  // (measured: patched cent range flips 8↔32 Hz run-to-run → 4-5/5 flaky).
+  // A deterministic ±1 V SINE (depth=0.5 → ±1 swing; shape=0 = sine per
+  // lfo.ts morph(); 3 Hz ≈ the 4 Hz strike train's beat neighbor, so
+  // successive strikes sample DIFFERENT phases of the swing) exercises the
+  // FULL calibrated CV range every window: bend_cv sweeps 0→24 st of attack
+  // chirp (cent/zc range explodes vs the stable-pitch control), decay_cv
+  // sweeps the tail ×¼→×4 (per-window rms/crest range widens).
+  'tomtom.bend_cv': {
+    node: {
+      id: 'up-bendcv-lfo',
+      type: 'lfo',
+      position: { x: 60, y: 60 },
+      domain: 'audio',
+      params: { rate: 3, shape: 0, depth: 0.5 },
+    },
+    outPort: 'phase0',
+    sourceType: 'cv',
+  },
+  'tomtom.decay_cv': {
+    node: {
+      id: 'up-decaycv-lfo',
+      type: 'lfo',
+      position: { x: 60, y: 60 },
+      domain: 'audio',
+      params: { rate: 3, shape: 0, depth: 0.5 },
+    },
+    outPort: 'phase0',
+    sourceType: 'cv',
+  },
+  // CLAP tone_cv / tail_cv / spread_cv — octave-law CVs on a percussive
+  // noise voice whose effect the generic BUGGLES walk (±~0.15 V
+  // excursions) under-exercises within the 800 ms window. A deterministic
+  // ±1 V SINE (depth=0.5 → ±1 swing; shape=0 = sine per lfo.ts morph();
+  // 3 Hz ≈ the 4 Hz strike train's beat neighbor, so successive strikes +
+  // windows sample DIFFERENT phases of the swing) exercises the FULL
+  // calibrated CV range every window: tone_cv sweeps the band center
+  // 400→3000 Hz (zc/centroid range explodes vs the pinned narrow-band
+  // control), tail_cv sweeps the room ×¼→×4 (per-window rms/crest range
+  // widens), spread_cv re-latches each strike's burst grid 4→25 ms
+  // (attack-window crest/rms range widens).
+  'clap.tone_cv': {
+    node: {
+      id: 'up-tonecv-lfo',
+      type: 'lfo',
+      position: { x: 60, y: 60 },
+      domain: 'audio',
+      params: { rate: 3, shape: 0, depth: 0.5 },
+    },
+    outPort: 'phase0',
+    sourceType: 'cv',
+  },
+  'clap.tail_cv': {
+    node: {
+      id: 'up-tailcv-lfo',
+      type: 'lfo',
+      position: { x: 60, y: 60 },
+      domain: 'audio',
+      params: { rate: 3, shape: 0, depth: 0.5 },
+    },
+    outPort: 'phase0',
+    sourceType: 'cv',
+  },
+  'clap.spread_cv': {
+    node: {
+      id: 'up-spreadcv-lfo',
+      type: 'lfo',
+      position: { x: 60, y: 60 },
+      domain: 'audio',
+      params: { rate: 3, shape: 0, depth: 0.5 },
+    },
+    outPort: 'phase0',
+    sourceType: 'cv',
+  },
+  // TIDY VCO pwm_cv / drive_cv — full-swing CVs (±0.45 duty/V, ±1 V =
+  // whole DRIVE range) that the generic walk's small excursions
+  // under-exercise: the same deterministic ±1 V sine as clap's octave-law
+  // ports. pwm_cv sweeps the pulse duty across most of 0.05..0.95 (zc +
+  // even-harmonic centroid churn vs the pinned pw=0.25 control); drive_cv
+  // sweeps the loudness-compensated tanh stage 0→1 (crest collapses +
+  // centroid rises as the wave squares up).
+  'tidyVco.pwm_cv': {
+    node: {
+      id: 'up-tvpwm-lfo',
+      type: 'lfo',
+      position: { x: 60, y: 60 },
+      domain: 'audio',
+      params: { rate: 3, shape: 0, depth: 0.5 },
+    },
+    outPort: 'phase0',
+    sourceType: 'cv',
+  },
+  'tidyVco.drive_cv': {
+    node: {
+      id: 'up-tvdrive-lfo',
+      type: 'lfo',
+      position: { x: 60, y: 60 },
+      domain: 'audio',
+      params: { rate: 3, shape: 0, depth: 0.5 },
+    },
+    outPort: 'phase0',
+    sourceType: 'cv',
+  },
 };
 
 // ────────── Per-PORT context-source override ──────────
@@ -1651,10 +1796,25 @@ const UNIVERSAL_AUDIO_THRESHOLDS: AudioThresholds = {
   centRange: 60,
 };
 const BEHAVIORAL_DELTA_THRESHOLDS: Record<string, Partial<AudioThresholds>> = {
-  // (No entries yet — see the note above. Example of the intended shape, for the
-  // next reconciliation batch:
+  // (See the note above for the intended shape:
   //   'somemod.subtle_cv': { rmsMean: 0.004, rmsRange: 0.008 },  // ctrl jitter ±0.002, measured 3×
   // )
+  // TOM DRUM pitch_cv — 1 V/oct (fixed semantics, can't be re-scaled): the
+  // BUGGLES walk's ±~0.15 V excursions move the 110 Hz fundamental ±~12 Hz,
+  // which reads as a clean patched cent-RANGE of 24-47 Hz against the pinned
+  // stable-pitch control's 6-10 Hz (measured 10×) — but the universal
+  // centRange floor (60) and the range-ratio gate (>4×) both sit just past
+  // it (ratio 2.4-5.3, flips run-to-run with the control's 6↔10 jitter).
+  // centRange 16 splits the observed populations with ≥1.4× margin each way.
+  'tomtom.pitch_cv': { centRange: 16 }, // ctrl range 6-10 Hz, patched 24-47 Hz, measured 10×
+  // TOM DRUM tone_cv — the fundamental↔overtone tilt on the pinned tone=0.2
+  // control: the patched run's per-window crest RANGE is 0.30-0.48 vs the
+  // control's 0.13-0.19 (measured 10×; the tilt changes the waveform's
+  // attack-vs-tail shape mix), a level separation the universal crestRange
+  // floor (0.2 on the DELTA) only clears when the run lands 0.33+.
+  // crestRange 0.1 on the delta clears every observed run (floor 0.11) with
+  // ~2× margin over control self-jitter (≤0.06).
+  'tomtom.tone_cv': { crestRange: 0.1 }, // ctrl crest range 0.13-0.19, patched 0.30-0.48, measured 10×
 };
 
 function thresholdsFor(modType: string, portId: string): AudioThresholds {

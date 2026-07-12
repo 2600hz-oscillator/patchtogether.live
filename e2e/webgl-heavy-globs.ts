@@ -76,6 +76,15 @@ export const WEBGL_HEAVY_GLOBS = [
   // off the sharded matrix so it never co-tenants a SwiftShader shard.
   // e2e/webgl-heavy-globs.ts is in the WebGL hash basis → re-attested.
   '**/sourcery.spec.ts', // 2-input region-transplant recolor — heavy WebGL pixel read
+  // CELLSHADE rebuild (§12 R7): both cellshade specs readPixels() real FBOs —
+  // the functional spec probes exact texels off the module's own output FBO
+  // (DRS-frozen fixtures), and the bespoke spec samples the OUTPUT canvas.
+  // Neither matched a heavy glob, so they ran in the SHARDED matrix doing
+  // GPU-timing-sensitive pixel reads (the picturebox-gif false-red-under-
+  // contention class; this file's own rule: "a file that reads a canvas must
+  // stay in the lane"). Isolate both in the serialized e2e-video lane.
+  '**/cellshade-functional.spec.ts', // theory-derived exact-texel probes — heavy WebGL pixel read
+  '**/cellshade.spec.ts', // ACIDWARP→cellshade live-render stats — heavy WebGL pixel read
   // picturebox-gif (#1016 boy-scout): unlike picturebox-limits/picturebox-sync
   // (re-binned OUT for doing NO pixel work — see the EXCLUDE note below), the
   // GIF spec's `ANIMATES` test samples the video output's LUMA OVER TIME to
@@ -85,6 +94,20 @@ export const WEBGL_HEAVY_GLOBS = [
   // non-advancing (min=max=1.0) frame under contention → false red (passes in
   // isolation ~2.8s). Isolate the whole file in the serialized lane.
   '**/picturebox-gif.spec.ts', // animated-gif luma-over-time — heavy WebGL pixel read
+  // KEYER FRAMEWORK (§11 change 6): the keyer functional-validation spec is a
+  // DRS readPixels suite (frozen clock, gl.readPixels off module FBOs) that
+  // matched NO heavy glob — it ran on the sharded SwiftShader matrix, the
+  // documented contention-flake class (#621/#1016). Enroll it in the
+  // serialized heavy lane. e2e/webgl-heavy-globs.ts is in the WebGL hash
+  // basis → batched into the keyer-framework PR's single re-attest.
+  '**/keyer-functional.spec.ts', // keyer family theory-derived pixel asserts — DRS readPixels
+  // POSTERBOX (2026-07-11): the theory-derived functional spec readPixels()es
+  // the module's own output FBO (continuity anchors / hue-order / dither
+  // checker-block / mix sweep) under the DRS pause+step pattern. Real-GPU
+  // pixel reads → serialized heavy lane, never a sharded SwiftShader shard.
+  // e2e/webgl-heavy-globs.ts is in the WebGL hash basis → re-attested (the
+  // new video module def moves the hash this PR anyway).
+  '**/posterbox-functional.spec.ts', // retro palette-crush probes — heavy WebGL pixel read
   // (mandleblot.spec.ts was deleted — its waitForTimeout pixel gate was fully
   //  redundant with the deterministic mandleblot-render-smoke.spec.ts, which the
   //  `**/*-render-smoke.spec.ts` glob below already enrolls in this heavy lane.)

@@ -92,6 +92,14 @@ const SKIP_SPAWN: Record<string, string> = {
 // (~5-7 entries). Each has a one-line citation of the dedicated spec
 // that exercises the full path with the real asset present.
 const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
+  // ES9 — every output carries signal from PHYSICAL ES-9 hardware via the
+  // es9-bridge native app's localhost WebSocket; neither exists in CI, so no
+  // output can emit (module sits in its documented "bridge not found" idle
+  // state). Handle-presence + input-accept still run. Signal flow is covered
+  // by the dsp es9-bridge-core unit suite (ring, scaling, hysteresis,
+  // underrun policies) + on-hardware verification steps in the native repo
+  // (patchtogether.es9/docs/inet-modular-es9-module-plan.md).
+  es9: 'all outputs source from physical ES-9 hardware via the native bridge (absent in CI); ring/scaling/policy logic covered by dsp es9-bridge-core tests, flow verified on hardware per the native repo plan',
   // FADER is a two-source video MIXER: both outputs (OUT = dry/wet of the A/B
   // mix; SEND = a copy of the A/B mix) are a blend of in_a/in_b/return, so with
   // nothing patched they are opaque black — there is no signal to emit until an

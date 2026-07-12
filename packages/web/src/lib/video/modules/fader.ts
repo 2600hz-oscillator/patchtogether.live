@@ -148,10 +148,19 @@ export const faderDef: VideoModuleDef = {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-    let faderPos = 0.5;
-    let abMode: TransitionMode = 0;
-    let dryWet = 0;
-    let dwMode: TransitionMode = 0;
+    // F-F1 fix (keyer-framework §11): the reconciler pushes params only on
+    // CHANGE, so the factory MUST read node.params at spawn or persisted
+    // fader/dryWet/transition positions silently reset on patch reload until
+    // touched. Same coercion as setParam (clamp01 / coerceMode).
+    const initial = node.params as Partial<Record<string, unknown>>;
+    const initNum = (key: string, fallback: number): number => {
+      const v = initial?.[key];
+      return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+    };
+    let faderPos = clamp01(initNum('fader', 0.5));
+    let abMode: TransitionMode = coerceMode(initNum('abTransition', 0));
+    let dryWet = clamp01(initNum('dryWet', 0));
+    let dwMode: TransitionMode = coerceMode(initNum('dwTransition', 0));
 
     /** Run the transition shader: blend texA→texB by t/mode into targetFbo. */
     function pass(targetFbo: WebGLFramebuffer, texA: WebGLTexture, texB: WebGLTexture, t: number, mode: number): void {

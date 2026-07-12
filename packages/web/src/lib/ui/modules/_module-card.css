@@ -156,6 +156,20 @@
   max-height: calc(var(--rack-u, 1) * var(--rack-unit));
 }
 
+/* DOCK RAILS (P2.5a): a docked card renders in a screen-fixed rail hosted by
+ * DockCardHost — a classed wrapper that replicates the rack tier WITHOUT the
+ * .svelte-flow__node class (which would collide with PickupCable + sweep
+ * selectors; the canvas keeps exactly ONE .svelte-flow__node per node id —
+ * the DockStubCard). Same dimensions formula as above. */
+.dock-rack-sized > :is(.mod-card, .card, .moog-panel),
+.dock-rack-sized > * > :is(.mod-card, .card, .moog-panel) {
+  box-sizing: border-box;
+  width: calc(var(--rack-hp, 1) * var(--rack-unit));
+  height: calc(var(--rack-u, 1) * var(--rack-unit));
+  min-height: calc(var(--rack-u, 1) * var(--rack-unit));
+  max-height: calc(var(--rack-u, 1) * var(--rack-unit));
+}
+
 /* ── Rear view / "flip rack" (rack Phase 3 + rear-view patching) ──────────────
  * A single LOCAL toggle (Canvas `rearView`) puts `.rear-view` on the flow
  * container. Each card then turns over IN PLACE (the node does NOT move) to
@@ -277,6 +291,24 @@
  * below. */
 .rear-view .svelte-flow__node > :is(.mod-card, .card, .moog-panel) > :not(.card-back-panel),
 .rear-view .svelte-flow__node > * > :is(.mod-card, .card, .moog-panel) > :not(.card-back-panel) {
+  visibility: hidden;
+  pointer-events: none;
+}
+/* DOCK RAILS (workflow): the front-inert rule above is .svelte-flow__node-
+ * scoped, and a dock-hosted card (DockCardHost) deliberately has no such
+ * wrapper — so in rear view a DOCKED card's live front content stayed
+ * painted OVER its back panel and swallowed the jack clicks ("can't patch
+ * out of the back of the drawer clipplayer", owner report 2026-07-11).
+ * Mirror the rule off the dock host's sizing wrappers, exactly like the
+ * .dock-rack-sized mirror of .svelte-flow__node.rack-sized above. The
+ * reveal + jack pointer-events rules below are already ancestor-generic
+ * (.rear-view …) — DockRail stamps .rear-view on every rail (the bottom
+ * drawer also inherits it from .flow), while the topbar card hosts (the
+ * 🎧 panel) have no .rear-view ancestor and correctly never flip. */
+.rear-view .dock-rack-sized > :is(.mod-card, .card, .moog-panel) > :not(.card-back-panel),
+.rear-view .dock-rack-sized > * > :is(.mod-card, .card, .moog-panel) > :not(.card-back-panel),
+.rear-view .dock-natural-sized > :is(.mod-card, .card, .moog-panel) > :not(.card-back-panel),
+.rear-view .dock-natural-sized > * > :is(.mod-card, .card, .moog-panel) > :not(.card-back-panel) {
   visibility: hidden;
   pointer-events: none;
 }

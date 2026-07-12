@@ -83,7 +83,11 @@
 }
 .docs-root nav {
   display: flex;
-  gap: 1.4rem;
+  /* Wrap on narrow screens — the six links are ~430px in one row, which forced
+     a horizontal page scroll below ~455px (measured on the launchpad docs).
+     No-op at desktop widths. */
+  flex-wrap: wrap;
+  gap: 0.4rem 1.4rem;
   font-size: 0.86rem;
   align-items: baseline;
 }

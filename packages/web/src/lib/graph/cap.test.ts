@@ -127,3 +127,61 @@ describe('wouldExceedCap', () => {
     expect(wouldExceedCap(nodes, singleton)).toBe(false);
   });
 });
+
+describe('pinned nodes are outside the cap economy (workflow P1)', () => {
+  const singletonElectra = { type: 'electraControl', maxInstances: 1 };
+
+  it('instanceCount excludes data.pinned === true nodes', () => {
+    const nodes = {
+      'pinned-electraControl': { type: 'electraControl', data: { pinned: true } },
+      'electraControl-abc': { type: 'electraControl', data: {} },
+    };
+    expect(instanceCount(nodes, 'electraControl')).toBe(1);
+  });
+
+  it('a pinned singleton does NOT consume the canvas maxInstances budget', () => {
+    // Workflow rack: the pinned ELECTRA CONTROL exists → the user can still
+    // spawn ONE normal canvas instance ("additional instances spawn as
+    // normal canvas cards")…
+    const pinnedOnly = {
+      'pinned-electraControl': { type: 'electraControl', data: { pinned: true } },
+    };
+    expect(wouldExceedCap(pinnedOnly, singletonElectra)).toBe(false);
+    // …and the cap still bites once that canvas instance exists.
+    const pinnedPlusCanvas = {
+      ...pinnedOnly,
+      'electraControl-abc': { type: 'electraControl', data: {} },
+    };
+    expect(wouldExceedCap(pinnedPlusCanvas, singletonElectra)).toBe(true);
+  });
+
+  it('only data.pinned === true is excluded — lookalikes still count', () => {
+    const nodes = {
+      a: { type: 'electraControl', data: { pinned: 'true' } },
+      b: { type: 'electraControl', data: { pinned: false } },
+      c: { type: 'electraControl' },
+    };
+    expect(instanceCount(nodes, 'electraControl')).toBe(3);
+  });
+});
+
+describe('presence-by-TYPE surface pins DO consume the cap (workflow P2)', () => {
+  const singletonTimelorde = { type: 'timelorde', maxInstances: 1 };
+
+  it('the pinned TIMELORDE counts — no second canvas clock can spawn', () => {
+    // The pinned TIMELORDE is the rack's one system clock (presence:'type'
+    // in WORKFLOW_PINNED_SURFACES). Unlike the drawer trio, excluding it
+    // from the count would let the palette spawn a competing canvas clock.
+    const nodes = {
+      'pinned-timelorde': { type: 'timelorde', data: { pinned: true } },
+    };
+    expect(instanceCount(nodes, 'timelorde')).toBe(1);
+    expect(wouldExceedCap(nodes, singletonTimelorde)).toBe(true);
+  });
+
+  it('a dawless canvas TIMELORDE alone also fills the cap (unchanged)', () => {
+    const nodes = { 'timelorde-abc': { type: 'timelorde', data: {} } };
+    expect(instanceCount(nodes, 'timelorde')).toBe(1);
+    expect(wouldExceedCap(nodes, singletonTimelorde)).toBe(true);
+  });
+});

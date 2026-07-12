@@ -383,6 +383,172 @@ describe('clipplayer: silent when empty', () => {
   });
 });
 
+describe('clipplayer: per-lane clock rate (mult/div) + reset', () => {
+  // Dense 128-step clip (a note on every step) so currentStep tracks the
+  // playhead and the MONO gate opens once per step (its rising edges ARE the
+  // lane's step times). 128 steps ≫ any window here → no loop wrap.
+  const denseClip = (len = 128): NoteClipRecord => ({
+    kind: 'note',
+    lengthSteps: len,
+    root: 48,
+    loop: true,
+    steps: Array.from({ length: len }, (_, s) => ({ step: s, midi: 60, velocity: 100, lengthSteps: 1 })),
+  });
+  /** Rising-edge (gate-open) times of a lane's mono gate. */
+  function openTimes(handle: { outputs: Map<string, { node: unknown }> }, lane: number): number[] {
+    return gateOf(handle, lane).events.filter((e) => e.value >= 0.5).map((e) => e.time);
+  }
+  const cs = (handle: { read?: (k: string) => unknown }, lane: number) =>
+    handle.read!(`currentStep:${lane}`) as number;
+
+  // bpm 120 + stepDiv 1 (2 steps/beat) → base step 0.25 s. All rate mults are
+  // dyadic, so lane grids anchored at the same origin align EXACTLY.
+  function seedRated(rate: number[], extra: Record<string, unknown> = {}) {
+    seed(
+      { stepDiv: 1, quantize: 0, octave: 0, gateLength: 0.9 },
+      {
+        clips: {
+          [clipIndex(0, 0)]: denseClip(),
+          [clipIndex(0, 1)]: denseClip(),
+          [clipIndex(0, 2)]: denseClip(),
+          [clipIndex(0, 3)]: denseClip(),
+        },
+        queued: [0, 0, 0, 0, null, null, null, null],
+        rate,
+        ...extra,
+      },
+    );
+    seedTimelorde(1, 120);
+  }
+
+  it('rates advance lanes at EXACT 1/2 : 1 : 2x : 4x ratios from a common origin', async () => {
+    // lane0=1/2, lane1=1, lane2=2x, lane3=4x (indices into RATE_MULTS).
+    seedRated([2, 3, 4, 5, 3, 3, 3, 3]);
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+    run(ctx, 0, 2.0); // last tick at 1.975 — all lanes launched at the 0.01 anchor
+    // floor((1.975 - 0.01) / laneDur): the ratio is exactly 2:1:4 relative.
+    expect(cs(handle, 0)).toBe(3); // ÷2 → 0.5 s/step
+    expect(cs(handle, 1)).toBe(7); // 1  → 0.25 s/step
+    expect(cs(handle, 2)).toBe(15); // ×2 → 0.125 s/step
+    expect(cs(handle, 3)).toBe(31); // ×4 → 0.0625 s/step
+  });
+
+  it('phase rule: a ÷2 lane advances on EVEN base steps from the shared origin', async () => {
+    seedRated([2, 3, 4, 3, 3, 3, 3, 3]);
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+    run(ctx, 0, 2.0);
+    const base = openTimes(handle, 1); // the 1x lane = the base grid
+    const half = openTimes(handle, 0); // the ÷2 lane
+    const dbl = openTimes(handle, 2); // the ×2 lane
+    expect(half.length).toBeGreaterThanOrEqual(4);
+    // Every ÷2 open time coincides with a base-grid open time (even steps 0,2,4…).
+    for (const t of half) {
+      expect(base.some((b) => Math.abs(b - t) < 1e-9), `÷2 step at ${t} on the base grid`).toBe(true);
+    }
+    // The ×2 lane lands ON the base grid every second advance (even indices).
+    for (let i = 0; i < dbl.length; i += 2) {
+      expect(base.some((b) => Math.abs(b - dbl[i]) < 1e-9), `×2 step ${i} at ${dbl[i]} on the base grid`).toBe(true);
+    }
+  });
+
+  it('tempo change: every lane rescales together, ratios preserved (no inference lag)', async () => {
+    // lane1=1x, lane2=2x (lane0 also playing but unasserted).
+    seedRated([3, 3, 4, 3, 3, 3, 3, 3]);
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+    run(ctx, 0, 1.0); // @120bpm
+    (livePatch.nodes['tl']!.params as Record<string, number>).bpm = 240; // base 0.25 → 0.125
+    run(ctx, 1.0, 2.0); // settle across the transition (old lookahead drains)
+    const a1 = cs(handle, 1);
+    const a2 = cs(handle, 2);
+    run(ctx, 2.0, 3.0); // a clean 1 s window fully at the new tempo
+    const d1 = cs(handle, 1) - a1;
+    const d2 = cs(handle, 2) - a2;
+    expect(d1).toBe(8); // 1 s / 0.125 s per step
+    expect(d2).toBe(16); // the ×2 lane holds exactly double — locked to bpm, not inferred
+    expect(d2).toBe(2 * d1);
+  });
+
+  it('reset input (rising edge): ACTIVE lanes snap to step 1, phase re-anchors COMMON, queued kept', async () => {
+    // lane0=1x, lane1=÷2; queue a slot-1 switch on lane0 (quantize would apply
+    // it only at the far-away loop boundary — reset must NOT consume it).
+    seed(
+      { stepDiv: 1, quantize: 1, octave: 0, gateLength: 0.9 },
+      {
+        clips: { [clipIndex(0, 0)]: denseClip(), [clipIndex(1, 0)]: denseClip(), [clipIndex(0, 1)]: denseClip() },
+        playing: [0, 0, null, null, null, null, null, null],
+        rate: [3, 2, 3, 3, 3, 3, 3, 3],
+      },
+    );
+    seedTimelorde(1, 120);
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+    run(ctx, 0, 1.2); // both lanes mid-cycle
+    expect(cs(handle, 0)).toBeGreaterThanOrEqual(3);
+    expect(cs(handle, 1)).toBeGreaterThanOrEqual(1);
+    // queue a switch on lane 0 (its 128-step boundary is ~32 s away → stays queued)
+    (livePatch.nodes[NODE_ID]!.data as Record<string, unknown>).queued = lane8<number | null>(0, 1, null);
+    run(ctx, 1.2, 1.25);
+
+    const resetGain = handle.inputs.get('reset')!.node as unknown as FakeGain;
+    resetGain.injected = pulseBuffer();
+    run(ctx, 1.25, 1.27); // ONE tick at t=1.25 services the edge
+    resetGain.injected = null;
+    const R = 1.25 + 0.01; // the common re-anchor instant (reset-tick time + 10 ms)
+    run(ctx, 1.275, 1.35);
+    // Both ACTIVE lanes snapped back to step 1 (index 0) and stayed active.
+    expect(cs(handle, 0)).toBe(0);
+    expect(cs(handle, 1)).toBe(0);
+    expect(handle.read!('activeLane:0')).toBe(0);
+    expect(handle.read!('activeLane:1')).toBe(0);
+    // The queued (not-yet-started) switch was untouched by the reset.
+    const queued = (livePatch.nodes[NODE_ID]!.data as { queued?: (number | null)[] }).queued!;
+    expect(queued[0]).toBe(1);
+
+    // Phase re-anchor: post-reset, BOTH lanes restart at the SAME instant and
+    // the ÷2 lane's opens all land on the 1x lane's (even-step) grid.
+    run(ctx, 1.35, 2.5);
+    const post1 = openTimes(handle, 0).filter((t) => t >= R - 1e-9);
+    const postH = openTimes(handle, 1).filter((t) => t >= R - 1e-9);
+    expect(Math.abs(post1[0] - R)).toBeLessThan(1e-9); // step 1 together, at R
+    expect(Math.abs(postH[0] - R)).toBeLessThan(1e-9);
+    for (const t of postH) {
+      expect(post1.some((b) => Math.abs(b - t) < 1e-9), `÷2 post-reset step at ${t} realigned`).toBe(true);
+    }
+  });
+
+  it('card RST nonce: adopt-on-boot (no replay), then a bump snaps active lanes to step 1', async () => {
+    seedRated([3, 3, 3, 3, 3, 3, 3, 3], { resetNonce: 7 }); // saved patch with an old nonce
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+    run(ctx, 0, 1.2);
+    // The pre-existing nonce did NOT pin the playhead (adopted, not replayed).
+    expect(cs(handle, 0)).toBeGreaterThanOrEqual(3);
+    // Bump (what the card RST button / its MIDI binding writes) → snap.
+    (livePatch.nodes[NODE_ID]!.data as Record<string, unknown>).resetNonce = 8;
+    run(ctx, 1.2, 1.3);
+    expect(cs(handle, 0)).toBe(0);
+    expect(handle.read!('activeLane:0')).toBe(0); // still playing
+  });
+
+  it('reset with nothing active is a no-op (stopped lanes stay stopped)', async () => {
+    seed({ stepDiv: 1, quantize: 1, octave: 0, gateLength: 0.9 }, { clips: {} });
+    seedTimelorde(1, 120);
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+    run(ctx, 0, 0.2);
+    const resetGain = handle.inputs.get('reset')!.node as unknown as FakeGain;
+    resetGain.injected = pulseBuffer();
+    run(ctx, 0.2, 0.25);
+    resetGain.injected = null;
+    run(ctx, 0.25, 0.4);
+    for (let L = 0; L < 8; L++) expect(handle.read!(`activeLane:${L}`)).toBe(-1);
+    expect(hasHighEvent(gateOf(handle, 0))).toBe(false);
+  });
+});
+
 describe('clipplayer: transport-start re-align (regression)', () => {
   // Two lanes playing POLYMETER clips (length 16 + 17). When both are mid-cycle
   // (stepIndex ≠ 0) and the transport edges 0→1, BOTH lanes snap to step 0 on the

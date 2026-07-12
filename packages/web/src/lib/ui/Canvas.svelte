@@ -16,7 +16,7 @@
     type Edge as FlowEdge,
     type Connection,
   } from '@xyflow/svelte';
-  import { patch, ydoc, undoManager, LOCAL_ORIGIN } from '$lib/graph/store';
+  import { patch, ydoc, undoManager, LOCAL_ORIGIN, onBindRackspace } from '$lib/graph/store';
   import { buildDuplicate } from '$lib/graph/duplicate';
   import { instanceCount, wouldExceedCap } from '$lib/graph/cap';
   import { setControlColor, setNodeLocked } from '$lib/graph/mutate';
@@ -162,6 +162,9 @@
   } from '$lib/graph/saved-group-resurrect';
   import type { SavedGroup } from '$lib/server/saved-groups';
   import { connectDragState } from '$lib/ui/connect-drag-state.svelte';
+  import { assetLinks } from '$lib/media/asset-links.svelte';
+  import { mediaLibrary } from '$lib/media/library.svelte';
+  import { runAssetRebindSweep } from '$lib/media/asset-spawn';
   import {
     buildModuleEntries,
     compatibleTargetPorts,
@@ -204,6 +207,7 @@
   import {
     nextDefaultName,
     migrateAssignNames,
+    resolveDisplayName,
   } from '$lib/multiplayer/module-naming';
   // TIMELORDE auto-spawn — the rack always needs a system clock, so when the
   // patch loads (or boots empty) without one, drop a TIMELORDE in. Pure
@@ -213,6 +217,46 @@
     shouldAutoSpawnTimelorde,
     pickTimelordeDefaultPosition,
   } from '$lib/audio/modules/timelorde-autospawn';
+  // WORKFLOW MODE P1 — the shell fork. Dawless renders the topbar below
+  // EXACTLY as before (every workflow branch is gated on `workflowMode`);
+  // workflow replaces the topbar with WorkflowTopbar (File.. menu =
+  // recomposed existing handlers), overlays the empty left rail, ensures
+  // the pinned M/E/C singleton trio, and hosts the docked drawer (the
+  // first dock zone — $lib/ui/dock).
+  import WorkflowTopbar from '$lib/ui/workflow/WorkflowTopbar.svelte';
+  import {
+    resolveWorkflowTimelorde,
+    hasExternalClock as hasWorkflowExternalClock,
+    isDinAssigned,
+  } from '$lib/ui/workflow/workflow-surfaces';
+  import {
+    listWorkflowCameras,
+    workflowCameraAtCap,
+  } from '$lib/ui/workflow/workflow-cameras';
+  import { isCanvasHiddenNode } from '$lib/graph/hidden-card';
+  // DOCKING P2.5a — three dock zones (top rail / LEFT rail = the workflow
+  // left toolbar / bottom drawer), plain-mount rail hosts (DockCardHost via
+  // DockRail), the canvas-side DockStubCard swap, and the local tombstoned
+  // dock store. Design: .myrobots/docking-recommendation.md.
+  import DockRail from '$lib/ui/dock/DockRail.svelte';
+  import DockStubCard from '$lib/ui/dock/DockStubCard.svelte';
+  // DOCKING P2.5b: the pan-gesture screen-space cable tail (stub → rail).
+  import DockPanTail, { type DockTailSpec } from '$lib/ui/dock/DockPanTail.svelte';
+  import { dockStore } from '$lib/ui/dock/dock-store.svelte';
+  import { isDockableType } from '$lib/ui/dock/dockable';
+  import type { DockZone } from '$lib/ui/dock/dock';
+  import {
+    WORKFLOW_PINNED_MODULES,
+    WORKFLOW_PIN_SPAWN_ORIGIN,
+    WORKFLOW_DEFAULT_WIRE_LATCH,
+    DRAWER_KEY_TO_PINNED,
+    planPinnedSpawns,
+    planDefaultWires,
+    isPinnedNode,
+    isTypingTarget,
+  } from '$lib/graph/workflow-pins';
+  import { removePatchNode } from '$lib/graph/mutate';
+  import type { RackMode } from '$lib/graph/rack-mode';
   import type { HocuspocusProvider } from '@hocuspocus/provider';
   import type { PresenceUser } from '$lib/multiplayer/presence';
   import { installSimulatedMidiDevice, installSimulatedNoteDevice } from '$lib/midi/midi-learn.svelte';
@@ -244,6 +288,15 @@
       imageUrl: string | null;
       initials: string | null;
     } | null;
+    // WORKFLOW MODE P1: the rack shell. 'dawless' (default) renders the
+    // existing UI unchanged; 'workflow' forks the shell (see the imports
+    // block above). Sourced from the rackspace's server-side mode column
+    // on /r/[id], or ?mode=workflow on the /rack scratch canvas.
+    mode?: RackMode;
+    // DOCKING P2.5a: the localStorage key scope for this rack's dock state
+    // (`pt.dock.v2:${rackspaceId}`). /r/[id] passes the rackspace id; the
+    // scratch canvases fall back to 'scratch'.
+    rackspaceId?: string;
   }
   let {
     currentUserId,
@@ -251,7 +304,12 @@
     presenceUser = null,
     audioGate,
     headerAuth = null,
+    mode = 'dawless',
+    rackspaceId = undefined,
   }: Props = $props();
+
+  /** True when this canvas renders the workflow shell. */
+  let workflowMode = $derived(mode === 'workflow');
 
   // The header shows "Sign in" only when we're confident the user is signed
   // out. On the public `/` canvas (no client ClerkProvider) that signal is
@@ -273,11 +331,19 @@
   // (audio + video + meta) via the glob-driven card resolver. Adding a
   // module needs no edit here. Built once at module scope (the registries
   // self-register on the barrel imports above, so the lists are populated).
-  const nodeTypes = buildNodeTypes([
-    ...listModuleDefs(),
-    ...listVideoModuleDefs(),
-    ...listMetaModuleDefs(),
-  ]);
+  const nodeTypes = {
+    ...buildNodeTypes([
+      ...listModuleDefs(),
+      ...listVideoModuleDefs(),
+      ...listMetaModuleDefs(),
+    ]),
+    // DOCKING P2.5a: the canvas-side stub a docked module's card swaps to
+    // (same node id — cables stay attached). NOT a module def: it never
+    // enters the registries, the card-map glob, or the VRT/per-port sweeps
+    // (dock-by-default OFF is a hard invariant — nothing docks without a
+    // user gesture).
+    dockStub: DockStubCard as unknown as ReturnType<typeof buildNodeTypes>[string],
+  };
 
   // Rack sizing: module type → resolved { size, hp }. The flowNodes derivation
   // tags each card's SvelteFlow wrapper (rack-sized rack-{1u,3u} + an inline
@@ -387,6 +453,17 @@
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__setNodePosition = (userId: string | undefined, nodeId: string, pos: { x: number; y: number }) =>
         setNodePosition(ydoc, userId, nodeId, pos);
+      // DOCKING P2.5a — programmatic dock/undock + store observability for
+      // the workflow-dock e2e (the UI path is the node context menu; the
+      // hook drives the same functions for setup-heavy specs like the
+      // tombstone-revive round-trip). Stripped in prod.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__dock = {
+        dock: (nodeId: string, zone: DockZone) => dockNode(nodeId, zone),
+        undock: (nodeId: string) => undockNode(nodeId),
+        entryFor: (nodeId: string) => dockStore.entryFor(nodeId),
+        tombstoneCount: () => dockStore.tombstoneCount,
+      };
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__persistence = {
         makeEnvelope,
@@ -645,6 +722,12 @@
         hasTimelordeInSnap: snapshot.nodes.some((n) => n.type === 'timelorde'),
       };
     }
+    // WORKFLOW MODE P2: workflow racks get their always-on TIMELORDE from
+    // the pinned ensure below (deterministic `pinned-timelorde`, canvas-
+    // hidden — the topbar clock surface is its face). Racing this random-id
+    // canvas auto-spawn against that ensure on an empty rack would seed TWO
+    // clocks, so the dawless path stands down entirely in workflow mode.
+    if (workflowMode) return;
     if (didAutoSpawnTimelorde) return;
     if (!providerHasSynced) return;
     if (!shouldAutoSpawnTimelorde(snapshot.nodes)) {
@@ -779,6 +862,439 @@
     }, LOCAL_ORIGIN);
   });
 
+  // ---------------- WORKFLOW MODE P1: pinned M/E/C trio + dock drawer ----------------
+  // ---------------- WORKFLOW MODE P2: + the topbar surface pins ----------------
+  //
+  // ENSURE: every workflow rack always holds one pinned MIXMSTRS, one
+  // ELECTRA CONTROL and one CLIPPLAYER (graph/workflow-pins.ts) — plus,
+  // since P2, the always-on topbar surface modules (TIMELORDE / the hidden
+  // MIDICLOCK bridge / AUDIO IN / AUDIO OUT — WORKFLOW_PINNED_SURFACES;
+  // TIMELORDE is presence-by-TYPE so a dawless import's canvas clock
+  // satisfies it instead of gaining a hidden competitor). Runs on
+  // every snapshot (no latch) so the set SELF-HEALS after any wholesale
+  // node replacement (quickload / performance load / raw-JSON import all
+  // wipe patch.nodes); planPinnedSpawns returns [] once present, so the
+  // effect terminates. DETERMINISTIC ids (`pinned-<type>`) make racing
+  // clients converge on ONE Y.Map entry per type — no duplicate race, no
+  // cleanup dependency. Gate mirrors the TIMELORDE auto-spawn: with a
+  // provider, wait for first sync (never race server state); without one
+  // (the /rack?mode=workflow sandbox) spawn immediately — the "literally
+  // empty /rack canvas" e2e expectation only applies to DAWLESS /rack.
+  // Non-tracked origin → never on the undo stack.
+  $effect(() => {
+    if (!workflowMode) return;
+    if (provider && !providerHasSynced) return;
+    const missing = planPinnedSpawns(snapshot.nodes);
+    if (missing.length === 0) return;
+    ydoc.transact(() => {
+      for (const spec of missing) {
+        if (patch.nodes[spec.id]) continue; // in-transact re-check
+        patch.nodes[spec.id] = {
+          id: spec.id,
+          type: spec.type,
+          domain: spec.domain,
+          // Position is inert while drawer-only (flowNodes skips pinned);
+          // kept sane in case the Q3 default is reversed to on-canvas.
+          position: { x: 24, y: 24 },
+          params: {},
+          data: { pinned: true, name: nextDefaultName(patch.nodes, spec.type) },
+        };
+      }
+    }, WORKFLOW_PIN_SPAWN_ORIGIN);
+    trace(`workflow: ensured pinned modules (${missing.map((s) => s.type).join(', ')})`);
+  });
+
+  // DEFAULT WIRING (owner directive): pinned MIXMSTRS master L/R → pinned
+  // AUDIO OUT L/R, so a fresh workflow rack makes sound the moment anything
+  // feeds the mixer. ONE-SHOT SEED, not an invariant: planDefaultWires only
+  // plans while the `workflowDefaultWired` latch on the pinned AUDIO OUT is
+  // unset, and the latch is written IN THE SAME TRANSACT as the wires — so a
+  // user deleting the cable afterwards is respected forever (the ensure never
+  // fights intent). Deterministic edge ids (the handleConnect `e-…` template)
+  // make two racing clients converge on one Y.Map entry per wire; occupied
+  // target inputs are skipped (a user's own patch into AUDIO OUT is never
+  // replaced). Runs after the node ensure above lands both endpoints; a
+  // wholesale node replacement re-seeds only when the loaded doc lacks the
+  // latch (fresh pins), mirroring the node ensure's self-healing story.
+  // Same non-tracked origin → never on the undo stack.
+  $effect(() => {
+    if (!workflowMode) return;
+    if (provider && !providerHasSynced) return;
+    const plan = planDefaultWires(snapshot.nodes, snapshot.edges);
+    if (!plan.latch) return;
+    ydoc.transact(() => {
+      const dst = patch.nodes['pinned-audioOut'];
+      if (!dst) return; // raced a wholesale wipe — replan on the next snapshot
+      const data = (dst.data ?? {}) as Record<string, unknown>;
+      if (data[WORKFLOW_DEFAULT_WIRE_LATCH] === true) return; // in-transact re-check
+      for (const wire of plan.wires) {
+        if (patch.edges[wire.id]) continue;
+        const occupied = Object.values(patch.edges).some(
+          (e) => e && e.target.nodeId === wire.target.nodeId && e.target.portId === wire.target.portId,
+        );
+        if (occupied) continue;
+        patch.edges[wire.id] = {
+          id: wire.id,
+          source: { nodeId: wire.source.nodeId, portId: wire.source.portId },
+          target: { nodeId: wire.target.nodeId, portId: wire.target.portId },
+          sourceType: wire.sourceType,
+          targetType: wire.targetType,
+        };
+      }
+      if (!dst.data) dst.data = {};
+      dst.data[WORKFLOW_DEFAULT_WIRE_LATCH] = true;
+    }, WORKFLOW_PIN_SPAWN_ORIGIN);
+    trace('workflow: seeded default wires mixmstrs master L/R → audioOut (one-shot)');
+  });
+
+  // DOCK KEYMAP: M / E / C toggle the matching pinned card in the BOTTOM
+  // dock zone ($lib/ui/dock — one card per zone, so opening another
+  // replaces the current one); ESC closes. Workflow-only; inert while
+  // typing (input/textarea/select/contenteditable — isTypingTarget) and
+  // under any modifier. Plain listener (not capture) so capture-phase ESC
+  // consumers (pickup-cancel, lasso, the File.. menu) win first.
+  $effect(() => {
+    if (!workflowMode) return;
+    function onDockKey(e: KeyboardEvent) {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isTypingTarget(e.target)) return;
+      if (e.key === 'Escape') {
+        if (dockStore.dockedNodeId('bottom')) {
+          e.preventDefault();
+          dockStore.close('bottom');
+        }
+        return;
+      }
+      const spec = DRAWER_KEY_TO_PINNED.get(e.key.toLowerCase());
+      if (!spec) return;
+      // Only toggle once the pinned node exists (the ensure above lands it
+      // within the same tick on an empty rack; pre-sync there's nothing to
+      // show yet).
+      if (!patch.nodes[spec.id]) return;
+      e.preventDefault();
+      dockStore.toggle('bottom', spec.id);
+    }
+    window.addEventListener('keydown', onDockKey);
+    return () => window.removeEventListener('keydown', onDockKey);
+  });
+
+  // Dock hygiene + P2.5a persistence binding: each Canvas mount binds the
+  // dock store to THIS rackspace's localStorage scope (loading its docked
+  // entries + tombstones) and clears the transient pinned-drawer occupancy;
+  // unmount unbinds (rackspace navigation remounts Canvas via
+  // {#key rackspace.id}, so state never leaks across racks).
+  $effect(() => {
+    dockStore.bind(rackspaceId ?? 'scratch');
+    return () => dockStore.unbind();
+  });
+
+  // WORKFLOW MODE P3 — asset-link hygiene. Same per-rackspace discipline
+  // as the dock store: the local assetId↔nodeId map never leaks across
+  // canvas mounts (asset ids are per-tab; nodeIds are per-rackspace).
+  $effect(() => {
+    assetLinks.clear();
+    return () => assetLinks.clear();
+  });
+
+  // WORKFLOW MODE P3 — link prune + descriptor REBIND sweep. Re-runs when
+  // the node set or the media library changes:
+  //  * prune: links whose module was deleted by ANY path (Backspace,
+  //    Clear, remote peer) drop, so picker rows un-highlight.
+  //  * rebind: nodes carrying data.mediaDesc that match a loaded library
+  //    item (dupe-key) re-link — and re-drive the module's own load path
+  //    when its media is missing (asset-spawn.ts runAssetRebindSweep).
+  // The sweep itself runs UNTRACKED (it reads + writes assetLinks; the
+  // explicit deps above are the re-run triggers), and it's internally
+  // reentrancy-guarded + idempotent.
+  $effect(() => {
+    if (!workflowMode) return;
+    const liveIds = new Set(snapshot.nodes.map((n) => n.id));
+    void mediaLibrary.items.length; // track add/remove
+    untrack(() => {
+      assetLinks.pruneMissing(liveIds);
+      void runAssetRebindSweep({
+        currentUserId: currentUserId ?? null,
+        ensureEngine,
+      });
+    });
+  });
+
+  // The docked pinned node (bottom zone), resolved from the snapshot; the
+  // container only renders while it exists.
+  let dockedBottomNode = $derived.by(() => {
+    const id = dockStore.dockedNodeId('bottom');
+    if (!id) return null;
+    return snapshot.nodes.find((n) => n.id === id && isPinnedNode(n)) ?? null;
+  });
+  let dockedBottomSpec = $derived(
+    dockedBottomNode
+      ? WORKFLOW_PINNED_MODULES.find((s) => s.type === dockedBottomNode!.type) ?? null
+      : null,
+  );
+
+  // ---------------- DOCKING P2.5a: dock/undock + rails + GC ----------------
+  //
+  // A docked module NEVER leaves patch.nodes/edges — docking is a LOCAL
+  // projection (dock-store entries, per rackspace in localStorage): the
+  // canvas swaps its card for a DockStubCard (same node id — cables stay
+  // attached there) and the real card face renders in a screen-fixed rail
+  // (DockRail → DockCardHost, outside the SvelteFlow provider — PatchPanel
+  // self-gates). Design: .myrobots/docking-recommendation.md.
+
+  /** Transient dock toast (auto-evict / delete notices). LOCAL chrome. */
+  let dockToast = $state<string | null>(null);
+  let dockToastTimer: ReturnType<typeof setTimeout> | null = null;
+  function showDockToast(msg: string): void {
+    dockToast = msg;
+    if (dockToastTimer) clearTimeout(dockToastTimer);
+    dockToastTimer = setTimeout(() => (dockToast = null), 4000);
+  }
+
+  /** Display name for dock chrome (rail headers, toasts). */
+  function dockDisplayName(node: ModuleNode): string {
+    return resolveDisplayName(node, patch.nodes as Record<string, ModuleNode | undefined>);
+  }
+
+  /** Dock a canvas module into a zone (context-menu action; workflow racks
+   *  + DOCKABLE_TYPES only — the menu is gated the same way, this re-checks).
+   *  Captures restorePosition and BAKES the current canvas position through
+   *  the existing layouts/node.position split, so .ptperf exports and
+   *  newcomers always see a sane position while the module is docked. */
+  function dockNode(nodeId: string, zone: DockZone): void {
+    if (!workflowMode) return;
+    const n = patch.nodes[nodeId] as ModuleNode | undefined;
+    if (!n || isPinnedNode(n) || !isDockableType(n.type)) return;
+    const pos = currentNodePosition(nodeId);
+    if (!pos) return;
+    writeNodePosition(nodeId, pos); // bake (existing mutate path — no new surface)
+    dockStore.dock(nodeId, zone, pos);
+    trace(`docked ${nodeId} (${n.type}) → ${zone}`);
+  }
+
+  /** Undock: remove the local entry + return the node to its dock-time
+   *  restorePosition through the SAME position split. NOT undoable (dock
+   *  state lives outside the Y.Doc; undock is the explicit inverse). */
+  function undockNode(nodeId: string): void {
+    const entry = dockStore.undock(nodeId);
+    if (!entry) return;
+    writeNodePosition(nodeId, entry.restorePosition);
+    trace(`undocked ${nodeId} → canvas (${entry.restorePosition.x},${entry.restorePosition.y})`);
+  }
+
+  // GC sweep: retire entries whose node vanished (quicksave slot switch,
+  // peer delete) to TOMBSTONES — they revive when the id reappears
+  // (quickload round-trip) — and auto-evict entries whose node a peer
+  // folded into a collapsed group (with a toast; the card has no canvas
+  // presence to stub). Runs per snapshot; untracked so the sweep's own
+  // store writes never loop the effect.
+  $effect(() => {
+    if (!workflowMode) return;
+    const liveIds = new Set(snapshot.nodes.map((n) => n.id));
+    const grouped = new Set<string>();
+    for (const n of snapshot.nodes) {
+      const pg = (n.data as { parentGroupId?: string } | undefined)?.parentGroupId;
+      if (pg && collapsedGroupIds.has(pg)) grouped.add(n.id);
+    }
+    const names = new Map(snapshot.nodes.map((n) => [n.id, dockDisplayName(n)]));
+    untrack(() => {
+      const evicted = dockStore.sweep(liveIds, grouped);
+      for (const id of evicted) {
+        showDockToast(`${names.get(id) ?? id} was grouped — undocked`);
+      }
+    });
+  });
+
+  // DOCKING P2.5b eviction hardening: when a RACK-MATE deletes a node the
+  // local user has docked, the sweep above evicts the rail card silently
+  // (retire → tombstone, keeping the revive path if the id returns — e.g.
+  // the peer undoes). The performer staring at a rail deserves a notice,
+  // so observe the Y nodes map directly: remote-transaction deletes of a
+  // DOCKED id toast. Local transactions are skipped (the local explicit-
+  // delete path has its own toast via noteDockDeletes, and a local
+  // quickload slot switch must stay silent — the P2.5a tombstone
+  // round-trip semantics). A remote LOAD (delete+add in one transaction)
+  // is also skipped: those ids are coming back, the entries just revive.
+  //
+  // Doc-swap seam: `bindRackspace()` REPLACES the whole Y.Doc when a
+  // provider attaches mid-mount (the /rack + __attachProvider path — no
+  // Canvas remount), so an observer taken from the mount-time `ydoc`
+  // would sit on the destroyed doc and never fire. Re-point through
+  // onBindRackspace, exactly like the snapshot bus does.
+  $effect(() => {
+    if (!workflowMode) return;
+    const onNodes = (event: { transaction: { local: boolean }; changes: { keys: Map<string, { action: string; oldValue?: unknown }> } }) => {
+      if (event.transaction.local) return;
+      let hasAdds = false;
+      for (const [, change] of event.changes.keys) {
+        if (change.action === 'add') { hasAdds = true; break; }
+      }
+      if (hasAdds) return; // bulk replace (peer load) — retire/revive, not a delete notice
+      for (const [key, change] of event.changes.keys) {
+        if (change.action !== 'delete') continue;
+        if (!untrack(() => dockStore.isDocked(key))) continue;
+        // Best-effort label: the deleted Y.Map may still expose its type.
+        let label = key;
+        try {
+          const t = (change.oldValue as { get?: (k: string) => unknown } | null)?.get?.('type');
+          if (typeof t === 'string' && t) label = t;
+        } catch { /* deleted-type read — fall back to the id */ }
+        showDockToast(`${label} was deleted by a rack-mate — undocked`);
+      }
+    };
+    let nodesMap = ydoc.getMap('nodes');
+    nodesMap.observe(onNodes);
+    const offBind = onBindRackspace((_p, doc) => {
+      try { nodesMap.unobserve(onNodes); } catch { /* previous doc destroyed */ }
+      nodesMap = doc.getMap('nodes');
+      nodesMap.observe(onNodes);
+    });
+    return () => {
+      offBind();
+      try { nodesMap.unobserve(onNodes); } catch { /* doc may be destroyed */ }
+    };
+  });
+
+  /** Rail card lists (top/left; bottom adds the pinned occupant below).
+   *  A docked id whose node is mid-retirement resolves to nothing here —
+   *  the rail slot simply disappears until the tombstone revives. */
+  function railCards(zone: DockZone): Array<{ node: ModuleNode; title: string; pinned: boolean }> {
+    if (!workflowMode) return [];
+    const out: Array<{ node: ModuleNode; title: string; pinned: boolean }> = [];
+    for (const { nodeId } of dockStore.entriesFor(zone)) {
+      const node = snapshot.nodes.find((n) => n.id === nodeId);
+      if (!node) continue;
+      out.push({ node, title: dockDisplayName(node), pinned: false });
+    }
+    return out;
+  }
+  let topRailCards = $derived(railCards('top'));
+  let leftRailCards = $derived(railCards('left'));
+
+  // ---------------- DOCKING P2.5b: the pan-gesture cable tail ----------------
+  //
+  // During a pan/zoom gesture, edges to a docked module ride the canvas
+  // with the stub (accepted drift, owner Q1) — the tail bridges the gap
+  // visually: one presentation-only screen-space bezier per docked-WITH-
+  // EDGES node, stub → rail card, mounted on onmovestart and KILLED on
+  // onmoveend. Zero cost when idle or when no docked node has edges
+  // (dockPanTails stays [] → the overlay renders nothing and onmove does
+  // no work). Endpoints: stub via store-derived flowToScreenPosition
+  // (re-projected per onmove tick — same-frame, drift-free mid-pan); rail
+  // via ONE gBCR at gesture start (rails are viewport-fixed).
+
+  /** DockStubCard face-center offset in FLOW units (158×44 fixed face). */
+  const DOCK_STUB_CENTER = { x: 79, y: 22 };
+
+  let dockPanTails = $state<DockTailSpec[]>([]);
+  let dockPanTick = $state(0);
+
+  /** Where a tail lands on the rail card: the edge-center FACING the canvas. */
+  function railTailAnchor(r: DOMRect, zone: DockZone): { x: number; y: number } {
+    switch (zone) {
+      case 'top': return { x: r.x + r.width / 2, y: r.bottom };
+      case 'left': return { x: r.right, y: r.y + r.height / 2 };
+      case 'right': return { x: r.x, y: r.y + r.height / 2 };
+      default: return { x: r.x + r.width / 2, y: r.top }; // bottom drawer
+    }
+  }
+
+  /** Snapshot the gesture's tails: docked nodes that (a) have ≥1 edge and
+   *  (b) have a mounted rail card (collapsed rails degrade to no tail). */
+  function buildDockPanTails(): DockTailSpec[] {
+    if (!workflowMode || !flowApi) return [];
+    const ids = dockStore.dockedIds;
+    if (ids.length === 0) return [];
+    const docked = new Set(ids);
+    const connected = new Set<string>();
+    for (const e of snapshot.edges) {
+      if (docked.has(e.source.nodeId)) connected.add(e.source.nodeId);
+      if (docked.has(e.target.nodeId)) connected.add(e.target.nodeId);
+    }
+    if (connected.size === 0) return [];
+    const out: DockTailSpec[] = [];
+    for (const id of connected) {
+      const entry = dockStore.entryFor(id);
+      const n = snapshot.nodes.find((sn) => sn.id === id);
+      if (!entry || !n) continue;
+      const railEl = document.querySelector(`[data-dock-card="${CSS.escape(id)}"]`);
+      if (!railEl) continue;
+      const pos = getNodePosition(ydoc, currentUserId, id, { x: n.position.x, y: n.position.y });
+      out.push({
+        nodeId: id,
+        flow: { x: pos.x + DOCK_STUB_CENTER.x, y: pos.y + DOCK_STUB_CENTER.y },
+        rail: railTailAnchor(railEl.getBoundingClientRect(), entry.zone),
+        zone: entry.zone,
+      });
+    }
+    return out;
+  }
+
+  function onViewportMoveStart(): void {
+    dockPanTails = buildDockPanTails();
+  }
+  function onViewportMove(): void {
+    if (dockPanTails.length > 0) dockPanTick++;
+  }
+  function onViewportMoveEnd(): void {
+    if (dockPanTails.length > 0) dockPanTails = [];
+  }
+
+  let bottomRailCards = $derived.by(() => {
+    const docked = railCards('bottom');
+    // The pinned M/E/C occupant renders FIRST, alongside docked cards —
+    // the P1 drawer generalized (pinned stays drawer-only per owner Q2).
+    if (dockedBottomNode && dockedBottomSpec) {
+      return [
+        { node: dockedBottomNode, title: dockedBottomSpec.label, pinned: true },
+        ...docked,
+      ];
+    }
+    return docked;
+  });
+
+  // ---------------- WORKFLOW MODE P2: topbar surface plumbing ----------------
+  //
+  // Snapshot-derived nodes/state the three topbar surfaces (clock / MIDI
+  // DIN / audio I/O) render from. All null/false in dawless racks — the
+  // derivations are gated so the dawless path does zero extra scanning.
+  let workflowTimelordeNode = $derived(
+    workflowMode ? resolveWorkflowTimelorde(snapshot.nodes) : null,
+  );
+  let workflowMidiclockNode = $derived(
+    workflowMode ? snapshot.nodes.find((n) => n.id === 'pinned-midiclock') ?? null : null,
+  );
+  let workflowAudioInNode = $derived(
+    workflowMode ? snapshot.nodes.find((n) => n.id === 'pinned-audioIn') ?? null : null,
+  );
+  let workflowAudioOutNode = $derived(
+    workflowMode ? snapshot.nodes.find((n) => n.id === 'pinned-audioOut') ?? null : null,
+  );
+  /** A cable feeds TIMELORDE's clock input (DIN assignment or hand-patch)
+   *  → tap tempo + tempo knob flip to the externally-clocked state. */
+  let workflowExternallyClocked = $derived(
+    workflowMode
+      ? hasWorkflowExternalClock(snapshot.edges, workflowTimelordeNode?.id ?? null)
+      : false,
+  );
+  /** The DIN bridge's clock edge into TIMELORDE exists (the ⚇ menu shows
+   *  the assigned device + unassign ✕). */
+  let workflowDinAssigned = $derived(
+    workflowMode
+      ? isDinAssigned(snapshot.edges, 'pinned-midiclock', workflowTimelordeNode?.id ?? null)
+      : false,
+  );
+  // ---------------- WORKFLOW MODE P4: camera manager plumbing ----------------
+  /** The mapped (hiddenCard) camera nodes the 📷 menu lists, in stable
+   *  ordinal order. DYNAMIC (0..N, user-added) — never auto-ensured. */
+  let workflowCameraNodes = $derived(
+    workflowMode ? listWorkflowCameras(snapshot.nodes) : [],
+  );
+  /** One more camera would exceed cameraInput.maxInstances (the ＋ row's
+   *  disabled state — hidden cameras + canvas CAMERA cards both count). */
+  let workflowCameraAtCapNow = $derived(
+    workflowMode ? workflowCameraAtCap(snapshot.nodes) : false,
+  );
+
   // Mirror snapshot → SvelteFlow node/edge arrays. We DROPPED bind:nodes /
   // bind:edges in favor of one-way props because the two-way bind let
   // Svelte Flow's internal cache stomp our just-computed arrays after a
@@ -808,6 +1324,18 @@
       if (n.type !== 'group') continue;
       const expanded = (n.data as { expanded?: boolean } | undefined)?.expanded === true;
       if (!expanded) ids.add(n.id);
+    }
+    return ids;
+  });
+
+  // WORKFLOW MODE P1/P4 — ids of every canvas-hidden node: the pinned
+  // drawer/topbar singletons (P1/P2) plus the hiddenCard headless camera
+  // instances (P4), for the defensive edge filter below. Empty in dawless
+  // racks.
+  let canvasHiddenNodeIds = $derived.by<Set<string>>(() => {
+    const ids = new Set<string>();
+    for (const n of snapshot.nodes) {
+      if (isCanvasHiddenNode(n)) ids.add(n.id);
     }
     return ids;
   });
@@ -863,6 +1391,15 @@
     y: number;
     remoteUser: PresenceUser | undefined;
     top: boolean;
+    /** DOCKING P2.5a: the type we EMITTED for this node ('dockStub' while
+     *  docked, else the snapshot type). The reuse + carry-forward guards
+     *  below compare against THIS, not n.type — comparing the snapshot
+     *  type would permanently miss for stubs (the verifier's re-measure-
+     *  churn catch) and dock/undock must dirty exactly one rebuild. */
+    emittedType: string;
+    /** Dock zone baked into a stub's data (re-dock to another zone must
+     *  rebuild so the stub face relabels). Null when not docked. */
+    dockZone: DockZone | null;
     obj: FlowNode;
   }
   interface PrevFlowEdgeEntry {
@@ -894,12 +1431,27 @@
       // not as a SvelteFlow card. Filter it out of the node array so
       // xyflow doesn't draw a fallback white box at the spawn point.
       if (n.type === 'cadillac') continue;
+      // CANVAS-HIDDEN workflow nodes: PINNED singletons (data.pinned —
+      // graph/workflow-pins.ts; drawer-only is the REVERSIBLE Q3 default)
+      // and hiddenCard headless instances (data.hiddenCard —
+      // graph/hidden-card.ts; the P4 camera manager's mapped cameras,
+      // whose face is the topbar 📷 menu). Dawless racks never contain
+      // either flag (inert there).
+      if (isCanvasHiddenNode(n)) continue;
       const remoteUser = remoteByNode[n.id];
       // Per-user layouts: getNodePosition returns the user's override
       // (when in multiplayer) or falls back to n.position (when single-
       // user OR when this user has no entry yet).
       const resolved = getNodePosition(ydoc, currentUserId, n.id, { x: n.position.x, y: n.position.y });
       const isTop = top === n.id;
+      // DOCKING P2.5a: a docked node renders as a small DockStubCard IN ITS
+      // PLACE — same node id, so every cable stays attached natively. The
+      // real card face lives in the dock rail (DockCardHost). Reading
+      // entryFor subscribes this pass to dock/undock; dawless racks never
+      // read the store (workflowMode gate) — zero tracking, zero overhead.
+      const dockEntry = workflowMode ? dockStore.entryFor(n.id) : null;
+      const emittedType = dockEntry ? 'dockStub' : n.type;
+      const dockZone = dockEntry?.zone ?? null;
       // xyflow's current user-node for this id. untrack: nodeLookup is a
       // plain Map today, but an xyflow upgrade to reactive lookups must
       // not create an effect↔measure feedback loop.
@@ -914,35 +1466,42 @@
         && prev.y === resolved.y
         && prev.remoteUser === remoteUser
         && prev.top === isTop
+        && prev.emittedType === emittedType
+        && prev.dockZone === dockZone
       ) {
         // Unchanged → reuse. Prefer xyflow's current userNode (see header
         // comment). Guard on PRIMITIVE fields only: after a writeback,
         // xyflow's local nodes live behind a Svelte 5 deep proxy, so nested
         // object identity (cur.data === …) can NEVER hit through it — but
-        // id/type strings compare fine. Data lineage is safe by
-        // construction: within a mount, internals.userNode for this id is
-        // always the object WE last emitted for it or an xyflow
+        // id/type strings compare fine. The comparison is against the
+        // EMITTED type (stub swap): comparing n.type would permanently miss
+        // for docked stubs → re-measure churn every pass. Data lineage is
+        // safe by construction: within a mount, internals.userNode for this
+        // id is always the object WE last emitted for it or an xyflow
         // spread-clone descending from it (spreads preserve `data`), and
         // any change to what we emit goes through the rebuild branch below,
         // which resets prev.obj — so a matching id+type here cannot carry a
         // stale data payload.
-        const reusable = cur && cur.id === n.id && cur.type === n.type ? cur : prev.obj;
+        const reusable = cur && cur.id === n.id && cur.type === emittedType ? cur : prev.obj;
         next.push(reusable);
-        nextPrev.set(n.id, { snapNode: n, x: resolved.x, y: resolved.y, remoteUser, top: isTop, obj: reusable });
+        nextPrev.set(n.id, { snapNode: n, x: resolved.x, y: resolved.y, remoteUser, top: isTop, emittedType, dockZone, obj: reusable });
         continue;
       }
       rebuiltAny = true;
       const node: FlowNode = {
         // Carry xyflow-owned fields forward on a rebuild so ONE dirty node
         // doesn't reset measured/handleBounds (re-measure) or lose its
-        // selection. Type-guarded so a same-id different-type replacement
+        // selection. Type-guarded against the EMITTED type so a same-id
+        // different-type replacement — including the card↔stub dock swap —
         // never inherits a foreign card's dimensions.
-        ...(cur && cur.type === n.type ? { measured: cur.measured, selected: cur.selected } : {}),
+        ...(cur && cur.type === emittedType ? { measured: cur.measured, selected: cur.selected } : {}),
         id: n.id,
-        type: n.type,
+        type: emittedType,
         position: resolved,
         data: {
           node: n,
+          // DOCKING P2.5a: the stub face labels its zone + click-to-focus.
+          ...(dockZone ? { dockZone } : {}),
           // Phase 3C: when a remote rack-mate has this node in their
           // active group-builder selection, expose the user's identity
           // so the per-card overlay can render the soft-lock badge.
@@ -953,6 +1512,17 @@
         // remote-state branching.
         ...(remoteUser ? { className: 'remote-group-building' } : {}),
       };
+      if (dockEntry) {
+        // Stubs: fixed small face (no rack sizing), not draggable (undock
+        // returns the node to restorePosition — a movable stub would make
+        // that write-back ambiguous), `no-flip` so rear view neither
+        // mirrors nor hides it (its cables must stay traceable).
+        node.draggable = false;
+        node.class = 'dock-stub no-flip';
+        next.push(node);
+        nextPrev.set(n.id, { snapNode: n, x: resolved.x, y: resolved.y, remoteUser, top: isTop, emittedType, dockZone, obj: node });
+        continue;
+      }
       // Lift the most-recently-spawned node above its siblings so it's
       // visible immediately when it lands on top of an existing card.
       // xyflow's default node zIndex is 0; bumping to 1000 puts the new
@@ -982,7 +1552,7 @@
       }
       if (isTop) node.zIndex = 1000;
       next.push(node);
-      nextPrev.set(n.id, { snapNode: n, x: resolved.x, y: resolved.y, remoteUser, top: isTop, obj: node });
+      nextPrev.set(n.id, { snapNode: n, x: resolved.x, y: resolved.y, remoteUser, top: isTop, emittedType, dockZone, obj: node });
     }
     prevFlowNodes = nextPrev;
     // No-op short-circuit: if every entry is identity-reused AND the array
@@ -1023,6 +1593,11 @@
       // node here. A leftover edge to a hidden child indicates a
       // pre-group-creation snapshot — defensive drop.
       if (childToGroup.has(e.source.nodeId) || childToGroup.has(e.target.nodeId)) continue;
+      // Edges touching a CANVAS-HIDDEN node (pinned singleton OR
+      // hiddenCard headless camera): the node isn't on the canvas, so the
+      // cable can't render there either (defensive — same rationale as
+      // the hidden-group-child drop above).
+      if (canvasHiddenNodeIds.has(e.source.nodeId) || canvasHiddenNodeIds.has(e.target.nodeId)) continue;
       const related = !!hovered && (e.source.nodeId === hovered || e.target.nodeId === hovered);
       const prev = prevFlowEdges.get(e.id);
       if (prev && prev.snapEdge === e && prev.related === related) {
@@ -1305,7 +1880,13 @@
   function clearPatch() {
     ydoc.transact(() => {
       for (const id of Object.keys(patch.edges)) delete patch.edges[id];
-      for (const id of Object.keys(patch.nodes)) delete patch.nodes[id];
+      for (const id of Object.keys(patch.nodes)) {
+        // PINNED workflow singletons survive Clear — they're structural to
+        // a workflow rack (always-on M/E/C drawers). Their edges still go
+        // (Clear = unpatch everything). Inert in dawless (never pinned).
+        if (isPinnedNode(patch.nodes[id])) continue;
+        delete patch.nodes[id];
+      }
     }, LOCAL_ORIGIN);
     // No defensive flowNodes=[] anymore: B3's snapshot bus pushes the
     // empty snapshot to this $effect synchronously on the same Yjs
@@ -1863,6 +2444,31 @@
     }
   }
 
+  /** WORKFLOW File..→Quicksave N: store the CURRENT rack into slot N —
+   *  the same perf-zip bytes Export Perf produces, into the same IndexedDB
+   *  slot store the dawless preset bar reads (pure recomposition; the
+   *  dawless bar itself is unchanged). Replaces the slot's contents when
+   *  already occupied (mirrors "Replace with…" semantics, minus the file
+   *  picker). */
+  async function quicksaveSlot(index: number): Promise<void> {
+    error = null;
+    if (slotBusy) return;
+    slotBusy = true;
+    try {
+      // A quicksave taken mid-knob-twist must capture the settled value.
+      flushAllCcCommits();
+      const bytes = await buildPerformanceZipBytes();
+      await putSlot(index, bytes, `quicksave-${index + 1}`);
+      slotOccupied[index] = true;
+      trace(`slot ${index + 1}: quicksaved current rack (${(bytes.length / 1024).toFixed(0)} KB)`);
+    } catch (e) {
+      error = `Quicksave ${index + 1} failed: ${e instanceof Error ? e.message : String(e)}`;
+      trace(`quicksave ${index + 1} failed: ${String(e)}`);
+    } finally {
+      slotBusy = false;
+    }
+  }
+
   /** Clear a slot back to empty (red). */
   async function clearSlot(index: number): Promise<void> {
     closeSlotMenu();
@@ -2368,6 +2974,24 @@
     params: { nodeId: string | null; handleId: string | null; handleType: 'source' | 'target' | null },
   ) {
     if (!params.nodeId || !params.handleId || !params.handleType) return;
+    // A directly-clicked INPUT handle while a VIRTUAL carry is in flight
+    // COMMITS the carry to that input (parity with the PatchPanel-row
+    // commit) instead of clobbering it with a fresh pickup. xyflow's own
+    // click-connect (which just started internally) is cancelled so the
+    // next handle click starts clean.
+    const virtual = connectDragState.pickupVirtual;
+    if (virtual && params.handleType === 'target') {
+      const to = { nodeId: params.nodeId, portId: params.handleId };
+      connectDragState.discard();
+      connectDragState.endCascade();
+      flowApi?.cancelClickConnect();
+      void (async () => {
+        const resolved = await virtual.resolve();
+        if (!resolved) return;
+        commitCarriedEdge(resolved, to);
+      })();
+      return;
+    }
     // Resolve cable type for compatibility filtering on the commit click.
     const node = patch.nodes[params.nodeId];
     const def = node ? defLookup(node.type) : undefined;
@@ -2421,6 +3045,10 @@
         if (patch.edges[e.id]) delete patch.edges[e.id];
       }
       for (const n of payload.nodes) {
+        // Pinned drawer singletons never render as flow nodes, so they
+        // can't be in a SvelteFlow delete payload — but guard anyway (the
+        // shared delete discipline: pinned nodes are undeletable).
+        if (isPinnedNode(patch.nodes[n.id])) continue;
         if (patch.nodes[n.id]) delete patch.nodes[n.id];
         // Also drop any edges that referenced the deleted node.
         for (const [edgeId, edge] of Object.entries(patch.edges)) {
@@ -2433,7 +3061,20 @@
     if (topNodeId && payload.nodes.some((n) => n.id === topNodeId)) {
       topNodeId = null;
     }
+    // DOCKING P2.5a: an EXPLICIT local delete hard-drops dock entries AND
+    // tombstones (the one signal retirement must never revive from).
+    noteDockDeletes(payload.nodes.map((n) => n.id));
     trace(`deleted ${payload.nodes.length} node(s), ${payload.edges.length} edge(s)`);
+  }
+
+  /** Hard-drop dock state for explicitly deleted nodes (+ toast when a
+   *  docked card just vanished from a rail). */
+  function noteDockDeletes(nodeIds: string[]): void {
+    if (nodeIds.length === 0) return;
+    const wasDocked = dockStore.noteExplicitDelete(nodeIds);
+    for (const id of wasDocked) {
+      showDockToast(`${id} was deleted — removed from its dock`);
+    }
   }
 
   /** User finished dragging one or more module cards. Persist new positions.
@@ -2606,6 +3247,19 @@
     if (!ctxMenuNodeId) return false;
     const n = patch.nodes[ctxMenuNodeId];
     return (n?.data as { rackLocked?: boolean } | undefined)?.rackLocked === true;
+  });
+
+  // DOCKING P2.5a — context-menu gating. "Dock to …" appears ONLY for
+  // allowlisted types in workflow racks (owner Q3: control-first + scope,
+  // workflow only); a right-clicked DockStubCard gets "Undock" instead.
+  let ctxMenuDocked = $derived.by<boolean>(() => {
+    if (!workflowMode || !ctxMenuNodeId) return false;
+    return dockStore.isDocked(ctxMenuNodeId);
+  });
+  let ctxMenuDockable = $derived.by<boolean>(() => {
+    if (!workflowMode || !ctxMenuNodeId || ctxMenuDocked) return false;
+    const n = patch.nodes[ctxMenuNodeId];
+    return !!n && !isPinnedNode(n as ModuleNode) && isDockableType(n.type);
   });
 
   // Control colour — the right-clicked module's CURRENT resolved colour (for the
@@ -3496,6 +4150,7 @@
       }
       for (const id of doomed) delete patch.nodes[id];
     }, LOCAL_ORIGIN);
+    noteDockDeletes([groupId, ...childIds]); // explicit delete → hard-drop dock state
     trace(`deleted group ${groupId} + ${childIds.length} children`);
   }
 
@@ -3751,10 +4406,23 @@
   // edge-aligned coordinates so the PortContextMenu lines up with the card
   // side it opened from (UX item 1), instead of spawning at the raw cursor.
 
-  /** Resolve a node's CARD bounding rect from the DOM (the svelte-flow node
-   *  wrapper). Returns null when the card isn't mounted. */
+  /** Resolve a node's CARD bounding rect from the DOM. DOCK-HOSTED cards
+   *  first: a docked/pinned card's real FACE lives in a rail or topbar
+   *  panel (DockCardHost's [data-dock-card-frame]) while its only
+   *  .svelte-flow__node element — if any — is the small canvas stub.
+   *  Menus for a dock-hosted card must anchor to the face the user
+   *  actually clicked: the pinned drawer occupants have NO canvas element
+   *  at all, so the old stub-only lookup returned null and the patch-to
+   *  picker fell back to a stale (0,0) → "menu spawns at the top-left of
+   *  the screen" (owner report 2026-07-11). Canvas cards resolve exactly
+   *  as before (no dock frame exists for them). Returns null when the
+   *  card isn't mounted anywhere. */
   function cardRectFor(nodeId: string): DOMRect | null {
     if (typeof document === 'undefined') return null;
+    const dockFrame = document.querySelector(
+      `[data-dock-card="${CSS.escape(nodeId)}"] [data-dock-card-frame]`,
+    ) as HTMLElement | null;
+    if (dockFrame) return dockFrame.getBoundingClientRect();
     const el = document.querySelector(
       `.svelte-flow__node[data-id="${nodeId}"]`,
     ) as HTMLElement | null;
@@ -3810,6 +4478,22 @@
     // module list, so clear any stale preselect here.
     portMenuPreselectNodeId = null;
     portMenuOpen = true;
+    // POST-MOUNT viewport clamp: edgeAlignedMenuPos can only estimate the
+    // picker's size before it renders (width 200, height unknown), so a
+    // card near the BOTTOM edge — a dock-drawer card is the canonical case
+    // — would open the picker spilling off-screen. One rAF later the real
+    // chrome is measurable: slide it fully on-screen (the picker owns its
+    // own overflow, max-height 70vh).
+    requestAnimationFrame(() => {
+      if (!portMenuOpen) return;
+      const el = document.querySelector('[data-testid="port-context-menu"]') as HTMLElement | null;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const margin = 4;
+      const x = Math.max(margin, Math.min(portMenuPos.x, window.innerWidth - r.width - margin));
+      const y = Math.max(margin, Math.min(portMenuPos.y, window.innerHeight - r.height - margin));
+      if (x !== portMenuPos.x || y !== portMenuPos.y) portMenuPos = { x, y };
+    });
     connectDragState.beginCascade(info.nodeId);
   }
 
@@ -3873,13 +4557,23 @@
       trace(`jackclick-pickup ${detail.nodeId}.${detail.portId}`);
     };
     const onPatchTo = (e: Event) => {
-      const detail = (e as CustomEvent).detail as { nodeId: string } | null;
+      // `pos` is an OPTIONAL screen-space anchor: the workflow topbar
+      // surfaces patch out of canvas-HIDDEN pinned nodes (no card rect to
+      // edge-align to), so they pass the clicked menu row's coordinates
+      // and edgeAlignedMenuPos falls back to them.
+      const detail = (e as CustomEvent).detail as
+        | { nodeId: string; pos?: { x: number; y: number } }
+        | null;
       if (!detail) return;
       if (connectDragState.mode !== 'pickup') return;
       // Hide the dangling cable; retain the carry/source state for commit.
       connectDragState.hideCableForPicker();
       if (!portMenuSourceNodeId || !portMenuSourcePortId) return;
-      const pos = edgeAlignedMenuPos(portMenuSourceNodeId, carrySide, portMenuPos);
+      const pos = edgeAlignedMenuPos(
+        portMenuSourceNodeId,
+        carrySide,
+        detail.pos ?? portMenuPos,
+      );
       openPortMenuAt(pos, {
         nodeId: portMenuSourceNodeId,
         portId: portMenuSourcePortId,
@@ -3897,6 +4591,27 @@
       if (!detail) return;
       const src = connectDragState.pickupSource;
       if (!src) return;
+      // VIRTUAL-PORT carry (workflow assets picker — P3 primitive): the
+      // source port doesn't exist yet. Resolve it NOW (creating/reusing
+      // the asset's module), then run the SAME validated commit path.
+      // Only an INPUT row can terminate a virtual carry (the resolved
+      // source is always an output); anything else discards silently,
+      // mirroring the invalid-commit rule.
+      const virtual = connectDragState.pickupVirtual;
+      if (virtual) {
+        connectDragState.discard();
+        connectDragState.endCascade();
+        if (detail.direction !== 'input') {
+          trace('virtual carry-commit reject: target row is not an input');
+          return;
+        }
+        void (async () => {
+          const resolved = await virtual.resolve();
+          if (!resolved) return; // creation refused/failed — silent
+          commitCarriedEdge(resolved, { nodeId: detail.nodeId, portId: detail.portId });
+        })();
+        return;
+      }
       // The carried cable runs SOURCE.output → TARGET.input. Resolve which
       // side the clicked row is. A carried OUTPUT lands on an INPUT row; a
       // carried INPUT (rewire) lands on an OUTPUT row.
@@ -4102,20 +4817,17 @@
         return;
       }
     }
-    ydoc.transact(() => {
-      // Remove every edge touching this node first so the engine sees a clean
-      // disconnect before disposal (avoids dangling-target warnings).
-      for (const [eid, edge] of Object.entries(patch.edges)) {
-        if (!edge) continue;
-        if (edge.source.nodeId === nodeId || edge.target.nodeId === nodeId) {
-          delete patch.edges[eid];
-        }
-      }
-      delete patch.nodes[nodeId];
-    }, LOCAL_ORIGIN);
+    // Shared delete primitive (graph/mutate.ts): removes the node + every
+    // touching edge in one undoable transact, and REFUSES pinned workflow
+    // singletons (node-level data.pinned — the M/E/C drawer trio).
+    if (!removePatchNode(nodeId)) {
+      if (target) trace(`delete refused: ${nodeId} (${target.type}) is pinned`);
+      return;
+    }
     // No defensive flow* sync needed: snapshot bus + one-way prop (B3).
     if (topNodeId === nodeId) topNodeId = null;
     clearAnnotate(nodeId); // drop any personal annotate-mode state for this node
+    noteDockDeletes([nodeId]); // explicit delete → hard-drop dock entry/tombstone
     trace(`deleted ${nodeId}`);
   }
 
@@ -5123,6 +5835,39 @@
 </script>
 
 <div class="root" class:lasso-mode={lassoMode} data-testid="canvas-root">
+  {#if workflowMode}
+    <!-- WORKFLOW shell: File.. menu topbar (recomposes the same handlers
+         the dawless topbar binds below). The dawless top-left slot bar is
+         NOT rendered in workflow mode — File..→Quicksave/Quickload replace
+         it (reversible Q5 default; see WorkflowTopbar.svelte). -->
+    <WorkflowTopbar
+      {appVersion}
+      {slotOccupied}
+      {slotBusy}
+      perfBusy={perfZipBusy}
+      hasNodes={nodeCount > 0}
+      onQuicksave={quicksaveSlot}
+      onQuickload={loadSlot}
+      onSavePerformance={exportPerformanceZip}
+      onLoadPerformance={loadPerformanceZip}
+      onExportJson={exportPatchJson}
+      onImportJson={importPatchJson}
+      signedIn={headerSignedIn}
+      {headerAuth}
+      timelordeNode={workflowTimelordeNode}
+      midiclockNode={workflowMidiclockNode}
+      audioInNode={workflowAudioInNode}
+      audioOutNode={workflowAudioOutNode}
+      externallyClocked={workflowExternallyClocked}
+      dinAssigned={workflowDinAssigned}
+      nodeTypes={nodeTypes as unknown as Record<string, unknown>}
+      {rackSizeByType}
+      onEnsureEngine={ensureEngine}
+      currentUserId={currentUserId ?? null}
+      cameraNodes={workflowCameraNodes}
+      cameraAtCap={workflowCameraAtCapNow}
+    />
+  {:else}
   <header class="topbar">
     <h1>patchtogether <span class="app-version" data-testid="app-version">v{appVersion}</span></h1>
     <!-- Quick-switch PRESET SLOTS (top-left): five numbered buttons.
@@ -5241,6 +5986,7 @@
       {/if}
     </div>
   </header>
+  {/if}
 
   <!-- Per-slot right-click context menu. A full-screen transparent backdrop
        closes it on any outside click / right-click. -->
@@ -5273,6 +6019,38 @@
     <pre class="error">{error}</pre>
   {/if}
 
+  {#if workflowMode}
+    <!-- DOCKING P2.5a: the TOP dock rail — a reserved-space flex sibling
+         ABOVE the canvas row (never an overlay inside .svelte-flow). Empty
+         → renders zero pixels. -->
+    <DockRail
+      zone="top"
+      cards={topRailCards}
+      nodeTypes={nodeTypes as unknown as Record<string, unknown>}
+      {rackSizeByType}
+      onUndock={undockNode}
+      {rearView}
+    />
+  {/if}
+
+  <!-- The canvas row: [left dock rail | flow]. The wrapper exists in BOTH
+       modes so dawless and workflow share one layout path (in dawless it
+       contains only .flow and is layout-transparent — verified pixel-
+       identical by the full VRT sweep). -->
+  <div class="canvas-row">
+    {#if workflowMode}
+      <!-- The LEFT dock rail IS the workflow left toolbar (owner Q5):
+           empty → the P1 44px scaffold strip; docked cards are its
+           contents. Reserved-space flex sibling of .flow. -->
+      <DockRail
+        zone="left"
+        cards={leftRailCards}
+        nodeTypes={nodeTypes as unknown as Record<string, unknown>}
+        {rackSizeByType}
+        onUndock={undockNode}
+        {rearView}
+      />
+    {/if}
   <div class="flow" class:rear-view={rearView} class:flip-back={flipBack} data-rear-view={rearView ? 'true' : undefined} bind:this={flowEl}>
     <SvelteFlow
       nodes={flowNodes}
@@ -5291,6 +6069,9 @@
       connectionMode={ConnectionMode.Loose}
       ondelete={handleDelete}
       onnodedragstop={handleNodeDragStop}
+      onmovestart={onViewportMoveStart}
+      onmove={onViewportMove}
+      onmoveend={onViewportMoveEnd}
       onpanecontextmenu={onPaneContextMenu}
       onnodecontextmenu={onNodeContextMenu}
       onselectioncontextmenu={onSelectionContextMenu}
@@ -5373,6 +6154,21 @@
            data-testid hooks ('name-label-button' / 'name-label-input' /
            'name-label-error') so existing e2e selectors still resolve. -->
     </SvelteFlow>
+    {#if workflowMode}
+      <!-- The BOTTOM dock zone: the P1 M/E/C drawer GENERALIZED (P2.5a) —
+           one overlay drawer holding the toggled pinned occupant (drawer-
+           only forever, owner Q2) ALONGSIDE any cards docked to 'bottom'.
+           Renders zero pixels when nothing is pinned-open or docked. -->
+      <DockRail
+        zone="bottom"
+        cards={bottomRailCards}
+        nodeTypes={nodeTypes as unknown as Record<string, unknown>}
+        {rackSizeByType}
+        onUndock={undockNode}
+        onClosePinned={() => dockStore.close('bottom')}
+        {rearView}
+      />
+    {/if}
     <button
       type="button"
       class="minimap-toggle"
@@ -5386,6 +6182,15 @@
     </button>
     <AwarenessLayer {provider} />
     <PickupCable />
+    {#if workflowMode && dockPanTails.length > 0 && flowApi}
+      <!-- DOCKING P2.5b: gesture-scoped stub→rail tail (presentation-only;
+           mounted onmovestart, killed onmoveend — zero idle cost). -->
+      <DockPanTail
+        tails={dockPanTails}
+        toScreen={flowApi.flowToScreenPosition}
+        tick={dockPanTick}
+      />
+    {/if}
     {#if lassoMode && lassoOriginFlow}
       <LassoOverlay origin={lassoOriginScreen} cursor={lassoCursorScreen} />
     {/if}
@@ -5403,6 +6208,11 @@
         Save instrument
       </button>
     {/if}
+    {#if dockToast}
+      <!-- DOCKING P2.5a: transient local notice (auto-evict / delete). -->
+      <div class="dock-toast" data-testid="dock-toast" role="status">{dockToast}</div>
+    {/if}
+  </div>
   </div>
 
   <footer class="bottombar">
@@ -5485,6 +6295,10 @@
   hasCustomControlColor={ctxMenuHasCustomColor}
   onsetcontrolcolor={(hex) => ctxMenuNodeId && setControlColor(ctxMenuNodeId, hex)}
   onresetcontrolcolor={() => ctxMenuNodeId && setControlColor(ctxMenuNodeId, null)}
+  dockable={ctxMenuDockable}
+  docked={ctxMenuDocked}
+  ondock={(zone) => ctxMenuNodeId && dockNode(ctxMenuNodeId, zone)}
+  onundock={() => ctxMenuNodeId && undockNode(ctxMenuNodeId)}
   ondelete={() => {
     if (!ctxMenuNodeId) return;
     if (ctxMenuNodeType === 'group') deleteGroupAndChildren(ctxMenuNodeId);
@@ -5588,8 +6402,19 @@
   .root > .trace-panel {
     flex: 0 0 auto;
   }
-  .root > .flow {
+  /* DOCKING P2.5a: .flow sits inside .canvas-row — a flex ROW that hosts
+   * the LEFT dock rail as a reserved-space sibling (workflow mode only; in
+   * dawless the row contains only .flow, so the layout is unchanged: the
+   * row takes the old `.root > .flow` flex slot and .flow fills it). */
+  .root > .canvas-row {
     flex: 1 1 auto;
+    display: flex;
+    flex-direction: row;
+    min-height: 0;
+  }
+  .canvas-row > .flow {
+    flex: 1 1 auto;
+    min-width: 0;
   }
   .topbar {
     display: flex;
@@ -5858,6 +6683,22 @@
   }
   .topbar .account-link:hover .account-avatar {
     border-color: #6ba0d4;
+  }
+  /* DOCKING P2.5a: transient dock toast (auto-evict / delete notices). */
+  .dock-toast {
+    position: absolute;
+    bottom: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 40;
+    background: rgba(14, 17, 22, 0.95);
+    color: var(--text);
+    border: 1px solid var(--accent-dim, #1d5f66);
+    border-radius: 4px;
+    padding: 6px 14px;
+    font-size: 0.75rem;
+    font-family: ui-monospace, monospace;
+    pointer-events: none;
   }
   .flow {
     position: relative;

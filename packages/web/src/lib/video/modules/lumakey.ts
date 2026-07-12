@@ -5,13 +5,16 @@
 // Inputs: `fg` (foreground), `bg` (background). Output: composited video.
 // Replaces the old LUMA module's confused "mask-only" semantics.
 //
-// Per-pixel algorithm:
-//   1. Compute fg luminance (Rec. 601).
-//   2. alpha = smoothstep(threshold - softness, threshold + softness, luma).
+// Per-pixel algorithm (SHARED KEYING CORE — $lib/video/keying-core; the
+// kcLuma/kcLumaMask/kcComposite swap is BIT-IDENTICAL to the historical
+// inline expression: same Rec. 601 weights, same centered smoothstep window,
+// same clamps — proven by keying-core.test.ts + the unchanged e2e):
+//   1. Compute fg luminance kcLuma (Rec. 601).
+//   2. alpha = kcLumaMask(luma, threshold, softness, invert) =
+//      smoothstep(threshold - softness, threshold + softness, luma).
 //      Bright fg luma -> alpha = 1 -> FG only; dark fg luma -> alpha = 0
-//      -> BG bleeds through.
-//   3. invert flag flips: dark = opaque instead of bright = opaque.
-//   4. Composite: mix(BG, FG, alpha).
+//      -> BG bleeds through. invert flips: dark = opaque instead.
+//   3. Composite: kcComposite(BG, FG, alpha) = mix(BG, FG, alpha).
 //
 // This is the standard "matte the dark out / matte the bright out" knob
 // used for letterbox text overlays, bright-source compositing, and white-
@@ -32,6 +35,7 @@
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
+import { GLSL_KEY_HELPERS } from '$lib/video/keying-core';
 
 const FRAG_SRC = `#version 300 es
 precision highp float;
@@ -46,7 +50,7 @@ uniform float uHasBg;
 uniform float uThreshold; // 0..1
 uniform float uSoftness;  // 0..0.5
 uniform float uInvert;    // 0 or 1
-
+${GLSL_KEY_HELPERS}
 void main() {
   vec3 fg = uHasFg > 0.5 ? texture(uFg, vUv).rgb : vec3(0.0);
   vec3 bg = uHasBg > 0.5 ? texture(uBg, vUv).rgb : vec3(0.0);
@@ -58,14 +62,10 @@ void main() {
     return;
   }
 
-  float luma = dot(fg, vec3(0.299, 0.587, 0.114));
-  float tol  = clamp(uThreshold, 0.0, 1.0);
-  float soft = max(clamp(uSoftness, 0.0, 0.5), 0.001);
-  float alpha = smoothstep(tol - soft, tol + soft, luma);
-  if (uInvert > 0.5) alpha = 1.0 - alpha;
-
-  vec3 out_rgb = mix(bg, fg, alpha);
-  outColor = vec4(out_rgb, 1.0);
+  // Clamps (thr 0..1, soft 0..0.5 floored at 0.001) live INSIDE kcLumaMask —
+  // identical to the expression this shader carried before the core swap.
+  float alpha = kcLumaMask(kcLuma(fg), uThreshold, uSoftness, uInvert);
+  outColor = vec4(kcComposite(bg, fg, alpha), 1.0);
 }`;
 
 interface LumakeyParams {
