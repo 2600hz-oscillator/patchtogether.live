@@ -101,6 +101,13 @@ export const WEBGL_HEAVY_GLOBS = [
   // serialized heavy lane. e2e/webgl-heavy-globs.ts is in the WebGL hash
   // basis → batched into the keyer-framework PR's single re-attest.
   '**/keyer-functional.spec.ts', // keyer family theory-derived pixel asserts — DRS readPixels
+  // POSTERBOX (2026-07-11): the theory-derived functional spec readPixels()es
+  // the module's own output FBO (continuity anchors / hue-order / dither
+  // checker-block / mix sweep) under the DRS pause+step pattern. Real-GPU
+  // pixel reads → serialized heavy lane, never a sharded SwiftShader shard.
+  // e2e/webgl-heavy-globs.ts is in the WebGL hash basis → re-attested (the
+  // new video module def moves the hash this PR anyway).
+  '**/posterbox-functional.spec.ts', // retro palette-crush probes — heavy WebGL pixel read
   // (mandleblot.spec.ts was deleted — its waitForTimeout pixel gate was fully
   //  redundant with the deterministic mandleblot-render-smoke.spec.ts, which the
   //  `**/*-render-smoke.spec.ts` glob below already enrolls in this heavy lane.)

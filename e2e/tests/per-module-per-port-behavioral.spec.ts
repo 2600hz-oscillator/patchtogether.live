@@ -121,7 +121,7 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // loop) + the bespoke real-source-chain clipplayer.spec.ts (TIMELORDE → clip →
   // voice → audible RMS, incl. the freeze-while-stopped lock) + clip-types.test.ts
   // (note→V/oct + note-editor row math + per-lane/velocity helpers).
-  clipplayer:     'TIMELORDE-locked launch output (8 lanes); only input stop_all silences, no per-output input + needs a running transport — no clean per-input delta in the short window; covered by clipplayer.test.ts + clipplayer.spec.ts + clip-types.test.ts',
+  clipplayer:     'TIMELORDE-locked launch output (8 lanes); inputs stop_all/reset only silence/rewind — no per-output input + needs a running transport, so no clean per-input delta in the short window; covered by clipplayer.test.ts + clipplayer.spec.ts + clipplayer-rate-reset.spec.ts (reset gate input via a REAL sequencer-clock cable) + clip-types.test.ts',
   // KRIA — same shape as clipplayer/sequencer: a 4-track grid step-sequencer
   // whose outputs are clock-derived (a seeded running pattern). Patching `clock`
   // only switches internal-tempo → external-clock advance (RE-PHASES the same
@@ -438,6 +438,12 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   cellshade: VIDEO_SINK_SWIFTSHADER_NOTE,
   chromakey: VIDEO_SINK_SWIFTSHADER_NOTE,
   outlines: VIDEO_SINK_SWIFTSHADER_NOTE,
+  // POSTERBOX (retro palette-crush, 2026-07-11): the same per-frame-WebGL →
+  // video-out-canvas class as cellshade above. Real behavioral coverage lives
+  // in posterbox.test.ts (the CPU mirror of the shader) + the theory-derived
+  // e2e/tests/posterbox-functional.spec.ts (readPixels probes: continuity
+  // anchors, hue-order, dither checker, mix sweep) + the VRT baselines.
+  posterbox: VIDEO_SINK_SWIFTSHADER_NOTE,
 
   // ── MOOG System 55/35 routing / mixer / utility modules (batch-2 +
   //    batch-5). These are PURE gain / patch-bay / format-converter /

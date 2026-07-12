@@ -389,6 +389,11 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // retrigger burst, TONE/WIDTH band-pass, COLOR noise tilt, SNAP
   // burst↔room balance). Ships documented.
   'clap',
+  // POSTERBOX (2026-07-11): the retro palette-crush video processor — the
+  // dedicated home of the per-channel 8-bit 3-3-2 / 16-bit 5-6-5 posterize
+  // looks the CELLSHADE rebuild dropped (ported byte-exact), plus the Bayer
+  // 4×4 ordered-dither companion and a dry/wet. Ships documented.
+  'posterbox',
   // TIDY VCO (2026-07-11): the flagship VA subtractive voice (2-osc polyBLEP
   // morph + sub → nonlinear ZDF diode ladder with pitch-calibrated self-osc →
   // dual RC-punch ADSRs → OTA VCA; 5-voice poly + mono 2-voice unison,

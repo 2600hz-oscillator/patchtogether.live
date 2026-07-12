@@ -129,6 +129,19 @@ export interface ClipPlayerData {
    *  An EDIT-time constraint (the card's per-lane toggle); absent/false = poly
    *  (up to POLY_CHANNEL_PAIRS notes per column). */
   mono?: boolean[];
+  /** Per-lane clock RATE index (length CLIP_LANES) into clip-clock.ts's
+   *  RATE_MULTS (1/8 · 1/4 · 1/2 · 1 · 2x · 4x). Absent/invalid ⇒ '1' (the
+   *  global STEP grid). SYNCED — the card's per-lane dropdown writes it and
+   *  every peer's engine scales that lane's step duration. Card-only control
+   *  for now (no monome-grid / Launchpad surface). */
+  rate?: number[];
+  /** RESET intent nonce. The card's RST button (and its MIDI binding)
+   *  INCREMENTS this; every peer's engine observes the change and snaps all
+   *  ACTIVE lanes back to step 1 at a common re-anchor instant (queued
+   *  launches are untouched). A synced counter — not a boolean — so repeated
+   *  presses always re-fire. The `reset` gate INPUT is the CV equivalent
+   *  (local rising edge per client). */
+  resetNonce?: number;
   // ── SONG MODE (arranger) ──
   /** The recorded arrangement (an event log of clip launches over song time).
    *  Absent = none recorded. See clip-arrange.ts. */

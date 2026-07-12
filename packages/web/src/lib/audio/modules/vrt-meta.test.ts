@@ -347,13 +347,25 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // regression gate; linux baselines pending the vrt-update.yml
       // dispatch on the PR branch, same precedent as the COLOUR OF MAGIC
       // scene batches).
-      // 90→94 for TIDY VCO (2026-07-11, deliberate darwin-first new
+      // 90→92 for the WORKFLOW audio-UX composite scenes (2026-07-11,
+      // deliberate darwin-first — the OPEN 🎧 audio-I/O panel
+      // (workflow-audio-io-composite.spec.ts, device text masked) + the
+      // bottom dock drawer with the patch-to picker open
+      // (workflow-dock-composite.spec.ts, menu position pinned) — the
+      // owner's "this should have been caught with vrt" coverage; linux
+      // baselines pending the vrt-update.yml dispatch on the PR branch).
+          // 92→96 for POSTERBOX (2026-07-11, deliberate darwin-first new module —
+      // the retro palette-crush video card + 3 composite-state scenes
+      // (posterbox-brutal-1bit / posterbox-dither-hatch / posterbox-subtle-565
+      // in vrt-posterbox-states.spec.ts); linux baselines pending the
+      // vrt-update.yml dispatch on the PR branch).
+          // 96→100 for TIDY VCO (2026-07-11, deliberate darwin-first new
       // module — the flagship VA subtractive voice card + its 3
       // composite-state scenes (tidyvco-acid / tidyvco-pad / tidyvco-bass
       // in vrt-tidy-vco.spec.ts); linux baselines pending the
       // vrt-update.yml dispatch on the PR branch, the karplus/clap
       // drum-wave precedent).
-    ).toBeLessThanOrEqual(94);
+    ).toBeLessThanOrEqual(100);
   });
 });
 

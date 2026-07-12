@@ -337,6 +337,61 @@ test.describe('WORKFLOW audio I/O surface (🎧 always-on pinned AUDIO IN/OUT)',
     await expect(panel.locator('[data-testid="workflow-io-audioin-host"]')).toHaveCount(1);
   });
 
+  test('open 🎧 panel PLAIN-MOUNTS both card faces: unclipped, no flow host, no attribution', async ({ page }) => {
+    // Regression (owner report 2026-07-11): the panel hosted the two card
+    // faces in single-node SvelteFlow instances whose one-shot fitView fired
+    // at mount — while the panel was hidden — against fixed 250×330 hosts:
+    // the AUDIO IN card rendered CLIPPED at its host's left edge, AUDIO OUT
+    // floated in dead space, and both hosts leaked the "Svelte Flow"
+    // attribution badge. The fix plain-mounts both faces via DockCardHost
+    // (the P2.5a drawer pattern). This pins the geometry: each card's box
+    // sits fully INSIDE its host's box, and no flow chrome exists in the
+    // panel at all.
+    await page.goto('/rack?mode=workflow');
+    await page.waitForLoadState('networkidle');
+    await waitForWorkflowPins(page);
+
+    await page.getByTestId('workflow-topbar-slot-audio-io').click();
+    const panel = page.getByTestId('workflow-io-panel');
+    await expect(panel).toHaveAttribute('data-open', 'true');
+
+    // ZERO flow-host baggage inside the panel (the failure class is gone,
+    // not patched around): no flow root, no attribution badge, no panes.
+    await expect(panel.locator('.svelte-flow')).toHaveCount(0);
+    await expect(panel.locator('.svelte-flow__attribution')).toHaveCount(0);
+    // The plain-mount hosts carry the dock-card markers instead.
+    await expect(panel.locator('[data-dock-card="pinned-audioIn"]')).toBeVisible();
+    await expect(panel.locator('[data-dock-card="pinned-audioOut"]')).toBeVisible();
+
+    // Geometry: each hosted card root fits fully inside its host column —
+    // the pre-fix AUDIO IN card poked out past the host's LEFT edge.
+    for (const [hostId, cardSel] of [
+      ['workflow-io-audioin-host', '[data-dock-card="pinned-audioIn"] .card'],
+      ['workflow-io-audioout-host', '[data-dock-card="pinned-audioOut"] .card'],
+    ] as const) {
+      const host = panel.locator(`[data-testid="${hostId}"]`);
+      const hostBox = await host.boundingBox();
+      const cardBox = await panel.locator(cardSel).first().boundingBox();
+      expect(hostBox, `${hostId} box`).toBeTruthy();
+      expect(cardBox, `${cardSel} box`).toBeTruthy();
+      expect(cardBox!.x, `${hostId}: card left edge unclipped`).toBeGreaterThanOrEqual(hostBox!.x - 1);
+      expect(cardBox!.y, `${hostId}: card top edge unclipped`).toBeGreaterThanOrEqual(hostBox!.y - 1);
+      expect(
+        cardBox!.x + cardBox!.width,
+        `${hostId}: card right edge inside host`,
+      ).toBeLessThanOrEqual(hostBox!.x + hostBox!.width + 1);
+      expect(
+        cardBox!.y + cardBox!.height,
+        `${hostId}: card bottom edge inside host`,
+      ).toBeLessThanOrEqual(hostBox!.y + hostBox!.height + 1);
+    }
+
+    // Close: the always-mounted lifecycle still holds (the #1068 pin).
+    await page.getByTestId('workflow-topbar-slot-audio-io').click();
+    await expect(panel).toHaveCSS('opacity', '0');
+    await expect(panel.locator('[data-dock-card="pinned-audioIn"]')).toHaveCount(1);
+  });
+
   test('menu patch-out wires pinned AUDIO IN → SCOPE and the fake-mic signal materializes', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
