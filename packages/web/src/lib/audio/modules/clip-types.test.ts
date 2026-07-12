@@ -31,6 +31,7 @@ import {
   velLevelIndex,
   velBucket,
   laneMono,
+  laneMuted,
   VEL_DEFAULT,
   VEL_LEVELS,
   MAX_CLIP_STEPS,
@@ -247,6 +248,16 @@ describe('laneMono', () => {
     expect(laneMono({ mono: [true, false] }, 0)).toBe(true);
     expect(laneMono({ mono: [true, false] }, 1)).toBe(false);
     expect(laneMono({ mono: [true] }, 5)).toBe(false);
+  });
+});
+
+describe('laneMuted (P3 — advance-but-silent)', () => {
+  it('reads the per-lane mute flag; a missing/short array is back-compat all-live', () => {
+    expect(laneMuted(undefined, 0)).toBe(false); // no field → live
+    expect(laneMuted({}, 0)).toBe(false);
+    expect(laneMuted({ muted: [true, false] }, 0)).toBe(true);
+    expect(laneMuted({ muted: [true, false] }, 1)).toBe(false);
+    expect(laneMuted({ muted: [true] }, 5)).toBe(false); // short array → live
   });
 });
 

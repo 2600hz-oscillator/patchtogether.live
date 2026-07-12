@@ -36,6 +36,7 @@ import {
   clipIndex,
   CLIP_LANES,
   CLIP_COUNT,
+  laneMuted,
   type ClipPlayerData,
 } from './clip-types';
 import { laneRateIndex, laneStepDur } from './clip-clock';
@@ -259,6 +260,9 @@ export const clipplayerDef: AudioModuleDef = {
     let unsubscribeTick: (() => void) | null = null;
     let prevRunning = false;
     let totalLoops = 0;
+    // Per-lane MUTE edge-tracking — silence the moment a lane is muted (drive its
+    // buses to 0 at currentTime) rather than waiting for its next scheduled step.
+    const prevMuted: boolean[] = new Array(CLIP_LANES).fill(false);
 
     // --- SONG MODE (arranger) ---
     // songBeat = beats since the current song origin (record-arm or arrangement
@@ -458,6 +462,15 @@ export const clipplayerDef: AudioModuleDef = {
     function emitLaneStep(L: number, idx: number, atTime: number, stepDur: number): void {
       const ln = lanes[L];
       if (ln.active === null) return;
+      // MUTE — the lane KEEPS advancing (push the step so laneDisplayStep + the
+      // launchpad record-capture still track it, staying locked to the transport)
+      // but emits NO audio. The falling edge was already scheduled when mute
+      // engaged (the tick-loop edge-scan), so nothing needs to sound here.
+      if (laneMuted(liveData(), L)) {
+        ln.sched.push({ t: atTime, idx });
+        if (ln.sched.length > 32) ln.sched.shift();
+        return;
+      }
       // LIVE AUDITION owns the lane while KEYS keys are held: advance the visual
       // playhead (push to sched so the launchpad record capture still sees the
       // step move) but DON'T write the poly/gate/vel — otherwise the scheduled
@@ -680,6 +693,16 @@ export const clipplayerDef: AudioModuleDef = {
         const nonceFired = lastResetNonce !== null && nonce !== lastResetNonce;
         lastResetNonce = nonce;
         if (resetEdges > 0 || nonceFired) resetActiveLanes();
+
+        // MUTE edge-scan — the instant a lane becomes muted, silence its buses at
+        // currentTime (don't wait for its next scheduled step). emitLaneStep then
+        // keeps the muted lane's playhead advancing but writes no further audio;
+        // unmuting simply resumes emitting on the next step.
+        for (let L = 0; L < LANES; L++) {
+          const m = laneMuted(d0, L);
+          if (m && !prevMuted[L] && lanes[L].active !== null) silenceLane(L, ctx.currentTime);
+          prevMuted[L] = m;
+        }
 
         const quantize = readParam('quantize', 1) >= 0.5;
 

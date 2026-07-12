@@ -55,6 +55,8 @@ import {
   computeLSessionFrame,
   clipArmAction,
   type ClipArmAction,
+  type KeysArm,
+  lTopMuteLane,
   // R deck
   rDeckPad,
   rStopLaneForRow,
@@ -65,6 +67,13 @@ import {
   CC_STOP_ALL,
   CC_REC,
   CC_SONG,
+  rDeckReset,
+  rDeckMonoLane,
+  rDeckMuteLane,
+  rDeckRateLane,
+  CC_TEMPO_DOWN,
+  CC_TEMPO_UP,
+  TEMPO_NUDGE_BPM,
   // R editor
   editPadToNote,
   computeREditFrame,
@@ -120,6 +129,7 @@ import {
   type NoteRecState,
 } from '$lib/audio/modules/clip-types';
 import { getLanePlayhead } from '$lib/audio/modules/clip-playhead';
+import { laneRateIndex, RATE_MULTS } from '$lib/audio/modules/clip-clock';
 
 export const STORAGE_KEY_NODE = 'pt.launchpad.boundClipNode';
 export const STORAGE_KEY_LEFT = 'pt.launchpad.portLeft';
@@ -192,6 +202,7 @@ const keysPressed = new Set<number>(); // MIDI notes currently sounding (for LED
 const keysOnsets = new Map<number, number>(); // midi → the step its onset recorded on
 let keysPrevStep = -1; // last serviced playhead step (edge-detect wrap/crossing)
 let keysStopAtWrap = false; // overdub toggled OFF mid-record → finish this loop, then stop
+let keysOctaveShift = 0; // KEYS octave ± (semitones, multiples of 12) added to the keyboard root
 
 // Per-machine clip buffer (NOT synced).
 let clipBuffer: NoteClipRecord | null = null;
@@ -207,6 +218,14 @@ let bufferSourceIndex: number | null = null; // which clip index is in the buffe
 let armedAction: ClipArmAction | null = null; // null when nothing armed
 let armTick = 0; // tickCount snapshot for the 4s auto-disarm
 const ARM_TIMEOUT_TICKS = 160; // ~4s at 25ms/tick — auto-disarm a stale arm
+// SINGLE-mode CC-91 KEYS-ARM tri-state (the reclaimed NEW cell). off → armed-REC
+// (overdub OFF, red) → armed-OD (overdub ON, purple) → off. While armed, tapping
+// ANY clip pad in clip view ENTERS KEYS for that clip (one hand, NO view flip) —
+// overdub chosen by the tri-state at entry. Auto-disarms on ARM_TIMEOUT_TICKS.
+// Pair mode never sets it (single-only, like armedAction). Independent of the
+// arm-then-tap actions: arming KEYS clears any pending action-arm and vice versa.
+let keysArm: KeysArm = 'off';
+let keysArmTick = 0; // tickCount snapshot for the 4s auto-disarm
 
 // SINGLE-mode clip-view DOUBLE-TAP → open the editor. The on-card UI launches on
 // single-click + opens the note editor on double-click (ClipplayerCard
@@ -306,8 +325,10 @@ function setSingleView(view: 'clip' | 'control'): void {
   pasteRevHeld = false;
   nowHeld = false;
   shiftHeld = false;
-  // The arm strip is a clip-view-only concept — drop any pending arm on a flip.
+  // The arm strip is a clip-view-only concept — drop any pending arm (action or
+  // the CC-91 KEYS-arm) on a flip.
   armedAction = null;
+  keysArm = 'off';
   persistDeployment();
   bumpView();
   renderLeds(); // repaint the lone unit in its new role without waiting a tick
@@ -332,6 +353,8 @@ function start(): void {
   lengthReturnMode = 'edit';
   armedAction = null;
   armTick = 0;
+  keysArm = 'off';
+  keysArmTick = 0;
   lastTapClipIndex = -1;
   lastTapTick = 0;
   lastTapPrevQueued = null;
@@ -355,6 +378,7 @@ function resetKeysState(): void {
   keysOnsets.clear();
   keysPrevStep = -1;
   keysStopAtWrap = false;
+  keysOctaveShift = 0;
 }
 /** Ensure the key handler + LED render loop are running WITHOUT resetting the
  *  edit/mode state (used after pairing so the units keep painting even before a
@@ -782,16 +806,94 @@ function toggleArrangeMode(nodeId: string): void {
   });
 }
 
+// ── Performance-deck seams (P1/P4/P3/P2/P5). Each writes the SAME synced node
+// field the engine already consumes (or the card writes), so the surface only
+// SURFACES existing model capability — no new engine logic on the launchpad side
+// except the RESET nonce bump / MUTE flag that the engine reads. All are
+// deployment-agnostic (single deck + pair share them via handleRDeck/handleL). ──
+
+/** RESET — bump node.data.resetNonce (the SAME synced counter the card RST button
+ *  + the reset gate drive) so every peer's engine snaps all ACTIVE lanes to step
+ *  1 at a common re-anchor. A counter (not a boolean) so repeated taps re-fire. */
+function doReset(nodeId: string): void {
+  editData(nodeId, (d) => {
+    d.resetNonce = (typeof d.resetNonce === 'number' ? d.resetNonce : 0) + 1;
+  });
+}
+/** Toggle lane L's MONO flag (node.data.mono[lane]) — one note per column on
+ *  note entry vs poly. In-place Y write (build-then-assign, like queueLane). */
+function toggleMono(nodeId: string, lane: number): void {
+  editData(nodeId, (d) => {
+    const m = new Array<boolean>(CLIP_LANES).fill(false);
+    if (Array.isArray(d.mono)) for (let i = 0; i < d.mono.length && i < CLIP_LANES; i++) m[i] = !!d.mono[i];
+    m[lane] = !m[lane];
+    d.mono = m;
+  });
+}
+/** Toggle lane L's MUTE flag (node.data.muted[lane]) — the lane keeps advancing
+ *  its playhead but emits no audio (the engine gates it). In-place Y write. */
+function toggleMute(nodeId: string, lane: number): void {
+  editData(nodeId, (d) => {
+    const m = new Array<boolean>(CLIP_LANES).fill(false);
+    if (Array.isArray(d.muted)) for (let i = 0; i < d.muted.length && i < CLIP_LANES; i++) m[i] = !!d.muted[i];
+    m[lane] = !m[lane];
+    d.muted = m;
+  });
+}
+/** Cycle lane L's clock RATE up one step, wrapping (node.data.rate[lane]) — the
+ *  SAME per-lane rate array the card dropdown writes + the engine consumes. */
+function cycleRate(nodeId: string, lane: number): void {
+  editData(nodeId, (d) => {
+    const r = new Array<number>(CLIP_LANES);
+    for (let i = 0; i < CLIP_LANES; i++) r[i] = laneRateIndex(d, i); // coerce existing
+    r[lane] = (r[lane] + 1) % RATE_MULTS.length;
+    d.rate = r;
+  });
+}
+/** Nudge TIMELORDE's bpm by ±delta (clamped 10..300) — reuses the transport
+ *  reach the PLAY toggle already uses (writes params.bpm the way it writes
+ *  running). A no-op when no TIMELORDE is on the canvas. */
+function nudgeTempo(delta: number): void {
+  const t = timelordeNode();
+  if (!t) return;
+  ydoc.transact(() => {
+    const n = livePatch.nodes[t.id];
+    if (!n) return;
+    if (!n.params) n.params = {};
+    const p = n.params as Record<string, number>;
+    const cur = typeof p.bpm === 'number' ? p.bpm : 120;
+    p.bpm = Math.max(10, Math.min(300, cur + delta));
+  });
+}
+
 // ---------------------------------------------------------------------------
 // KEYS mode (note/keyboard + clip-record). Pair AND single deployments — the
 // handlers below are deployment-agnostic; only entry-routing + the painted
 // frame (16- vs 8-cell playhead) differ, and both live at the routing seams.
 // ---------------------------------------------------------------------------
 
-/** The bottom-left keyboard cell pitch for a clip — the clip's root, so every
- *  octave of the clip root lights cyan and the scale-lighting is anchored. */
+/** The bottom-left keyboard cell pitch for a clip — the clip's root shifted by
+ *  the live KEYS octave offset (P7), so every octave of the (shifted) root lights
+ *  cyan and the scale-lighting is anchored. The offset is used CONSISTENTLY by
+ *  both the LED paint + the note dispatch (both call this), so a shifted pad
+ *  sounds the pitch it lights. */
 function keysKeyboardRoot(clip: NoteClipRecord): number {
-  return clip.root;
+  return clip.root + keysOctaveShift;
+}
+/** KEYS octave ± (P7): shift the keyboard up/down by `delta` semitones (±12),
+ *  clamped so the shifted root stays in a sane band. Repaints immediately. */
+function keysShiftOctave(delta: number): void {
+  keysOctaveShift = Math.max(-48, Math.min(48, keysOctaveShift + delta));
+  renderLeds();
+}
+/** KEYS PANIC (P7): kill every sounding auditioned note (release-all) without
+ *  leaving KEYS or touching the recorded clip — an emergency "all notes off". */
+function keysPanic(nodeId: string): void {
+  const lane = laneOf(keysClipIndex);
+  for (const midi of keysPressed) pushAudition(nodeId, { lane, midi, velocity: 0, on: false });
+  keysPressed.clear();
+  keysOnsets.clear();
+  renderLeds();
 }
 /** Snap a note-on velocity to a stored VEL level. Velocity-insensitive pads
  *  (velocity 0/absent) fall back to VEL_DEFAULT (no device fork — a Launchpad X
@@ -869,6 +971,7 @@ function enterKeys(
   keysOnsets.clear();
   keysPrevStep = -1;
   keysStopAtWrap = false;
+  keysOctaveShift = 0;
   editArmed = false;
   lastTapClipIndex = -1;
   const lane = laneOf(clipIdx);
@@ -966,6 +1069,9 @@ function handleKeysUnit(nodeId: string, unit: LaunchpadUnit, e: LaunchpadKeyEven
   if (p.kind === 'exit') keysExit(nodeId, data);
   else if (p.kind === 'qrec') keysQueueRec(nodeId, data);
   else if (p.kind === 'overdub') keysToggleOverdub(nodeId, data);
+  else if (p.kind === 'octUp') keysShiftOctave(+12);
+  else if (p.kind === 'octDown') keysShiftOctave(-12);
+  else if (p.kind === 'panic') keysPanic(nodeId);
   else if (p.kind === 'len') openLengthFromKeys(nodeId, data);
   // p.kind === 'playhead' → display only, no-op.
 }
@@ -1150,6 +1256,23 @@ function armClip(cc: number, s: 0 | 1): void {
     return;
   }
 
+  // KEYS (CC 91, the reclaimed NEW cell) is a STICKY TRI-STATE — off → armed-REC
+  // (overdub OFF) → armed-OD (overdub ON) → off. It does not go through the arm-
+  // then-tap substrate; a clip-pad tap while armed enters KEYS (handleL). Arming
+  // KEYS clears any pending action-arm (they're mutually exclusive on the strip).
+  if (action === 'keys') {
+    keysArm = keysArm === 'off' ? 'rec' : keysArm === 'rec' ? 'od' : 'off';
+    if (keysArm !== 'off') {
+      armedAction = null;
+      copyHeld = false;
+      pasteHeld = false;
+      pasteRevHeld = false;
+      keysArmTick = tickCount;
+    }
+    renderLeds();
+    return;
+  }
+
   // Re-tapping the armed cell DISARMS it (COPY: clears the buffer if loaded).
   if (armedAction === action) {
     if (action === 'copy' && clipBuffer !== null) clearBuffer();
@@ -1165,6 +1288,8 @@ function armClip(cc: number, s: 0 | 1): void {
   }
 
   // Arm. Reuse the existing modifier booleans as the substrate where they map.
+  // Arming an action cancels a pending KEYS-arm (mutually exclusive on the strip).
+  keysArm = 'off';
   copyHeld = action === 'copy';
   pasteHeld = action === 'paste';
   pasteRevHeld = action === 'pasteRev';
@@ -1192,27 +1317,10 @@ function consumeArmed(nodeId: string, clipIdx: number, data: ClipPlayerData | un
   lastTapClipIndex = -1;
   const action = armedAction;
   switch (action) {
-    case 'new': {
-      // Only onto an EMPTY pad (don't clobber a loaded clip).
-      if (!data?.clips?.[String(clipIdx)]) {
-        editData(nodeId, (d) => {
-          if (!d.clips) d.clips = {};
-          if (!d.clips[String(clipIdx)]) d.clips[String(clipIdx)] = defaultNoteClip();
-        });
-        editClipIndex = clipIdx;
-        mode = 'edit';
-        editAnchor = null;
-        editSpanned = false;
-        editRowOffset = 0;
-        editWindowStart = 0;
-        followOn = true;
-        velHeld = false;
-        disarmClip();
-        setSingleView('control'); // show the editor (also clears armedAction)
-        return;
-      }
-      break; // loaded pad under NEW = no-op
-    }
+    // NOTE: NEW's create-a-clip role was reclaimed for KEYS (CC 91) — a fresh
+    // clip + editor is now made by DOUBLE-TAPPING an empty pad (openEditor). So
+    // consumeArmed only ever sees the arm-then-tap actions below ('keys'/'now'
+    // never reach here — they're handled sticky in armClip/handleL).
     case 'copy': {
       const c = clipAtIndex(data, clipIdx);
       if (c) {
@@ -1287,6 +1395,18 @@ function handleL(nodeId: string, e: LaunchpadKeyEvent): void {
     const clipIdx = lPadToClipIndex(ev.x, ev.y);
     if (clipIdx === null) return;
     if (ev.s !== 1) return; // clip launch acts on press
+    // SINGLE-mode CC-91 KEYS-ARM: while armed, a clip-pad tap ENTERS KEYS for it
+    // (overdub per the tri-state) — one hand, no view flip. This runs BEFORE the
+    // launch path (same suppression contract as the action-arm), BEFORE the
+    // action-arm consume, and BEFORE the double-tap tracker, so the first tap
+    // enters KEYS and the double-tap editor never engages. Pair never arms it.
+    if (deployment === 'single' && keysArm !== 'off') {
+      const overdub = keysArm === 'od';
+      keysArm = 'off';
+      lastTapClipIndex = -1;
+      enterKeys(nodeId, clipIdx, overdub, data);
+      return;
+    }
     // SINGLE-mode arm strip: an armed action consumes the next clip-pad tap
     // (two-handed deck op). Pair mode never sets armedAction, so this is a dead
     // branch in pair → the existing modifier branches below stay byte-for-byte.
@@ -1415,6 +1535,17 @@ function handleL(nodeId: string, e: LaunchpadKeyEvent): void {
     }
     return;
   }
+
+  // PAIR unit-L TOP ROW (CC 91..98) = the 8 per-lane MUTE pads (col = lane) — the
+  // previously-dead, always-visible matrix top row now hosts live-performance
+  // MUTE. Single mode never routes top CCs to handleL (handleSingleKey's arm-row
+  // + view-flip intercept them all), so this branch is reached only in pair.
+  if (ev.type === 'top') {
+    if (ev.s !== 1) return;
+    const lane = lTopMuteLane(ev.cc);
+    if (lane !== null) toggleMute(nodeId, lane);
+    return;
+  }
 }
 
 /** Unit R: the command deck (session) / note editor / length-edit page. */
@@ -1452,6 +1583,20 @@ function handleRDeck(nodeId: string, e: LaunchpadKeyEvent): void {
       const keysHold = rDeckKeysHold(ev.x, ev.y);
       if (keysHold === 'keysRec') { keysRecHeld = ev.s === 1; return; }
       if (keysHold === 'keysOverdub') { keysOverdubHeld = ev.s === 1; return; }
+    }
+    // PERFORMANCE rows on the previously-dead deck pads (P1/P4/P3/P2) — TAP
+    // actions (press only). RESET (row 1 col 2), then the per-lane MONO / MUTE /
+    // RATE rows (row 2 / 3 / 4, col = lane). These pads are dark on the stock
+    // deck, so they can't collide with the row-0 function pads, the KEYS holds
+    // (row 1 cols 0-1), or the scene STOP column.
+    if (rDeckReset(ev.x, ev.y)) { if (ev.s === 1) doReset(nodeId); return; }
+    {
+      const monoLane = rDeckMonoLane(ev.x, ev.y);
+      if (monoLane !== null) { if (ev.s === 1) toggleMono(nodeId, monoLane); return; }
+      const muteLane = rDeckMuteLane(ev.x, ev.y);
+      if (muteLane !== null) { if (ev.s === 1) toggleMute(nodeId, muteLane); return; }
+      const rateLane = rDeckRateLane(ev.x, ev.y);
+      if (rateLane !== null) { if (ev.s === 1) cycleRate(nodeId, rateLane); return; }
     }
     const action = rDeckPad(ev.x, ev.y);
     if (!action) return;
@@ -1495,6 +1640,11 @@ function handleRDeck(nodeId: string, e: LaunchpadKeyEvent): void {
     }
     if (ev.cc === CC_REC) { toggleRecording(nodeId); return; }
     if (ev.cc === CC_SONG) { toggleArrangeMode(nodeId); return; }
+    // TEMPO NUDGE −/+ (CC 93/94) — step TIMELORDE's bpm (clamped 10..300). These
+    // CCs are dead in the session deck (the editor uses them as ◀/▶ in a separate
+    // mode/frame, so no collision).
+    if (ev.cc === CC_TEMPO_DOWN) { nudgeTempo(-TEMPO_NUDGE_BPM); return; }
+    if (ev.cc === CC_TEMPO_UP) { nudgeTempo(+TEMPO_NUDGE_BPM); return; }
   }
 }
 
@@ -1505,7 +1655,10 @@ function handleREdit(nodeId: string, e: LaunchpadKeyEvent): void {
 
   // Scene column: top = EXIT · row 6 = DOUBLE · row 5 = LENGTH-EDIT. SINGLE
   // mode adds row 4 = FOLLOW (CC 98 is the view-flip on one device, so the
-  // single editor's FOLLOW lives here; pair keeps row 4 dark + inert).
+  // single editor's FOLLOW lives here; pair keeps row 4 dark + inert). Rows
+  // 3,2,1,0 are the P6 extras (both modes): COPY snapshots the edited clip to
+  // the machine clipboard, PASTE replaces it with the buffer, OCT ± jump the
+  // pitch window up/down a whole octave.
   if (ev.type === 'scene') {
     if (ev.s !== 1) return;
     const act = editSceneAction(ev.row, { followButton: deployment === 'single' });
@@ -1521,6 +1674,15 @@ function handleREdit(nodeId: string, e: LaunchpadKeyEvent): void {
       mode = 'lengthEdit';
     } else if (act === 'follow') {
       toggleFollow(clip);
+    } else if (act === 'copy') {
+      clipBuffer = copyClip(clip);
+      bufferSourceIndex = editClipIndex;
+    } else if (act === 'paste') {
+      if (clipBuffer) writeClip(nodeId, copyClip(clipBuffer));
+    } else if (act === 'octUp') {
+      editRowOffset += scaleSteps(clip.scale).length; // one octave = a scale's degrees
+    } else if (act === 'octDown') {
+      editRowOffset -= scaleSteps(clip.scale).length;
     }
     return;
   }
@@ -1630,9 +1792,11 @@ function handleRLength(nodeId: string, e: LaunchpadKeyEvent): void {
 // SINGLE: repaint the LONE device (the L slot) in its active-view role.
 // ---------------------------------------------------------------------------
 
-/** Paint the L-role (clip matrix) frame onto a physical unit. In SINGLE clip
- *  view, also paint the action-arm strip + aiming wash (the `arm` opt). Pair mode
- *  passes no `arm`, so the top row + matrix render byte-for-byte as before. */
+/** Paint the L-role (clip matrix) frame onto a physical unit. In SINGLE clip view
+ *  the top row is the action-arm strip (incl. the CC-91 KEYS-arm) + aiming wash
+ *  (the `arm` opt). In PAIR (withArmStrip=false — the only other caller) the top
+ *  row is instead the 8 per-lane MUTE pads (`lTopMute`); the matrix + scene render
+ *  byte-for-byte as before. */
 function paintLRole(
   target: LaunchpadUnit,
   data: ClipPlayerData | undefined,
@@ -1645,8 +1809,9 @@ function paintLRole(
       blinkOn,
       recording: recordArmed(data),
       arm: withArmStrip
-        ? { armedAction, bufferLoaded: clipBuffer !== null, nowOn: nowHeld }
+        ? { armedAction, bufferLoaded: clipBuffer !== null, nowOn: nowHeld, keysArm }
         : undefined,
+      lTopMute: !withArmStrip, // pair-L top row = per-lane MUTE
     }),
   );
 }
@@ -1682,6 +1847,7 @@ function paintRRole(
         // SINGLE: FOLLOW gets a real pad on scene row 4 (CC 98 is the view
         // flip). Pair leaves row 4 dark — its FOLLOW is the CC-98 button.
         followSceneButton: deployment === 'single',
+        bufferLoaded: clipBuffer !== null, // lights the editor PASTE scene pad
       }));
       return;
     }
@@ -1770,9 +1936,14 @@ function renderLeds(): void {
   const data = node.data as ClipPlayerData | undefined;
 
   // Auto-disarm a stale clip-view arm after ~4s (single mode only; pair never
-  // arms). Guards against an "armed then walked away" modal trap.
+  // arms). Guards against an "armed then walked away" modal trap. The CC-91
+  // KEYS-arm auto-disarms on the same timeout (set inline — the paint below reads
+  // keysArm, so no recursive repaint is needed).
   if (single && armedAction && tickCount - armTick > ARM_TIMEOUT_TICKS) {
     disarmClip();
+  }
+  if (single && keysArm !== 'off' && tickCount - keysArmTick > ARM_TIMEOUT_TICKS) {
+    keysArm = 'off';
   }
 
   if (single) {
@@ -1850,6 +2021,8 @@ export function __test_resetBinding(): void {
   lengthReturnMode = 'edit';
   armedAction = null;
   armTick = 0;
+  keysArm = 'off';
+  keysArmTick = 0;
   lastTapClipIndex = -1;
   lastTapTick = 0;
   lastTapPrevQueued = null;
@@ -1876,10 +2049,13 @@ export function __test_mode(): {
   bufferArmed: boolean;
   bufferSourceIndex: number | null;
   armedAction: ClipArmAction | null;
+  keysArm: KeysArm;
   lengthReturnMode: 'edit' | 'keys';
   keysClipIndex: number;
   keysRecHeld: boolean;
   keysOverdubHeld: boolean;
+  keysOctaveShift: number;
+  keysPressedCount: number;
 } {
   return {
     deployment,
@@ -1899,10 +2075,13 @@ export function __test_mode(): {
     bufferArmed: clipBuffer !== null,
     bufferSourceIndex,
     armedAction,
+    keysArm,
     lengthReturnMode,
     keysClipIndex,
     keysRecHeld,
     keysOverdubHeld,
+    keysOctaveShift,
+    keysPressedCount: keysPressed.size,
   };
 }
 
