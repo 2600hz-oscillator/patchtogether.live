@@ -580,11 +580,21 @@ describe('voice render', () => {
         { ...silentBus(), poly },
         1,
       );
+      // Scan into accumulators + assert ONCE per buffer, not per sample: the
+      // old per-sample expect() (≈384k calls across the 4 corners) was pure
+      // matcher overhead that blew vitest's 5s default on a loaded CI runner
+      // while passing on a quiet local box — a slow test, not a hang.
       for (const buf of [l, r]) {
+        let allFinite = true;
+        let peak = 0;
         for (let i = 0; i < buf.length; i++) {
-          expect(Number.isFinite(buf[i]!)).toBe(true);
-          expect(Math.abs(buf[i]!)).toBeLessThan(1);
+          const s = buf[i]!;
+          if (!Number.isFinite(s)) allFinite = false;
+          const a = Math.abs(s);
+          if (a > peak) peak = a;
         }
+        expect(allFinite, 'every sample finite (NaN/Inf-free)').toBe(true);
+        expect(peak, '|out| < 1 by construction').toBeLessThan(1);
       }
     }
   });
