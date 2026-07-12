@@ -243,8 +243,14 @@ class DriveStage {
 }
 
 /** One channel's fractional delay line with a 4-point (Catmull-Rom) cubic read
- *  and a one-pole eased read pointer. */
-class DelayChannel {
+ *  and a one-pole eased read pointer.
+ *
+ *  EXPORTED (behavior unchanged) so KARPLUS can build its string loop on the
+ *  SAME delay fundamentals (owner directive: the Karplus-Strong voice reuses
+ *  the COFEFVE delay core rather than growing a parallel one). COFEFVE's own
+ *  audio is untouched — its ART golden stays byte-identical; only the .sha
+ *  source pin moves with this file's text. */
+export class DelayChannel {
   private buf: Float32Array;
   private size: number;
   private writeIdx = 0;

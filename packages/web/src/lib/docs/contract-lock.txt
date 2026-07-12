@@ -364,10 +364,16 @@ cartesian family cart-pitch kind=cell prefix=cart-pitch
 cellshade meta domain=video
 cellshade in bits cv param=bits cvScale=discrete
 cellshade in in video
+cellshade in ink cv param=ink cvScale=linear
+cellshade in smooth cv param=smooth cvScale=linear
+cellshade in softness cv param=softness cvScale=linear
 cellshade in thickness cv param=thickness cvScale=linear
 cellshade in threshold cv param=threshold cvScale=linear
 cellshade out out video
 cellshade param bits 0..4 discrete default=2
+cellshade param ink 0..1 linear default=1
+cellshade param smooth 0..1 linear default=0.35
+cellshade param softness 0..1 linear default=0.25
 cellshade param thickness 1..8 linear default=2 unit=px
 cellshade param threshold 0..1 linear default=0.2
 charlottesEchos meta domain=audio
@@ -412,9 +418,27 @@ chromakey param keyG 0..1 linear default=1
 chromakey param keyR 0..1 linear default=0
 chromakey param softness 0..0.5 linear default=0.08
 chromakey param spillSuppress 0..1 linear default=0.5
-chromakey param threshold 0..1 linear default=0.15
+chromakey param threshold 0..1 linear default=0.5
+clap meta domain=audio
+clap in accent_in cv
+clap in spread_cv cv
+clap in tail_cv cv
+clap in tone_cv cv
+clap in trigger_in gate edge=trigger
+clap out audio_out audio
+clap param color 0..1 linear default=0.15
+clap param drive 0..1 linear default=0.2
+clap param level -24..12 linear default=0 unit=dB
+clap param pulses 2..5 discrete default=3
+clap param snap 0..1 linear default=0.5
+clap param spread 4..25 log default=10 unit=ms
+clap param strike 0..1 discrete default=0
+clap param tail 30..800 log default=150 unit=ms
+clap param tone 400..3000 log default=1000 unit=Hz
+clap param width 0..1 linear default=0.5
 clipplayer meta domain=audio exposesSequence
-clipplayer in stop_all gate
+clipplayer in reset gate edge=trigger
+clipplayer in stop_all gate edge=trigger
 clipplayer out gate1 gate
 clipplayer out gate2 gate
 clipplayer out gate3 gate
@@ -447,6 +471,7 @@ clipplayer param stepDiv 0..3 discrete default=2
 clipplayer family clipplayer-cell kind=cell prefix=clipplayer-cell
 clipplayer family clipplayer-mono kind=other prefix=clipplayer-mono
 clipplayer family clipplayer-pad kind=cell prefix=clipplayer-pad
+clipplayer family clipplayer-rate kind=other prefix=clipplayer-rate
 clockedRunner meta domain=audio
 clouds meta domain=audio
 clouds in blend_cv cv param=blend cvScale=linear
@@ -746,6 +771,11 @@ destructor param mangle 0..1 linear default=1
 destructor param posterize 0..1 linear default=0.7
 destructor param scanline 0..1 linear default=0.5
 destructor param shift 0..1 linear default=0.5
+dockscope meta domain=audio
+dockscope in ch1 audio accepts=cv,gate,pitch
+dockscope param range 0..1 discrete default=0
+dockscope param scale 0.1..10 log default=1
+dockscope param timeMs 1..200 log default=20 unit=ms
 doom meta domain=video maxInstances=1 ownerOnly
 doom in iddqd_in cv param=cv_iddqd_in
 doom in idkfa_in cv param=cv_idkfa_in
@@ -1272,6 +1302,25 @@ joystick out x cv
 joystick out y cv
 joystick param pos_x -1..1 linear default=0
 joystick param pos_y -1..1 linear default=0
+karplus meta domain=audio
+karplus in accent_in cv
+karplus in bright_cv cv param=brightness cvScale=linear
+karplus in color_cv cv param=color cvScale=linear
+karplus in damp_in gate edge=gate
+karplus in decay_cv cv param=decay cvScale=log
+karplus in pitch pitch
+karplus in position_cv cv param=position cvScale=linear
+karplus in stiff_cv cv param=stiffness cvScale=linear
+karplus in trigger_in gate edge=trigger
+karplus out out audio
+karplus param brightness 0..1 linear default=0.7
+karplus param burst 0.1..4 log default=1
+karplus param color 0..1 linear default=0.6
+karplus param decay 0.1..10 log default=2 unit=s
+karplus param level -24..12 linear default=0 unit=dB
+karplus param position 0.02..0.5 linear default=0.2
+karplus param stiffness 0..1 linear default=0
+karplus param tune 55..1760 log default=220 unit=Hz
 kickdrum meta domain=audio
 kickdrum in accent_in cv
 kickdrum in choke_in gate edge=gate
@@ -2272,6 +2321,15 @@ pong out score_right gate
 pong param paddleH 0.05..0.5 linear default=0.2
 pong param serveAngle 0..1 linear default=0.3
 pong param speed 0.25..4 log default=1
+posterbox meta domain=video
+posterbox in depth cv param=depth cvScale=discrete
+posterbox in dither cv param=dither cvScale=linear
+posterbox in in video
+posterbox in mix cv param=mix cvScale=linear
+posterbox out out video
+posterbox param depth 0..4 discrete default=2
+posterbox param dither 0..1 linear default=0
+posterbox param mix 0..1 linear default=1
 qbrt meta domain=audio
 qbrt in cutoff cv param=cutoff cvScale=log
 qbrt in L audio
@@ -2927,6 +2985,24 @@ timelorde param wizardOn 0..1 discrete default=1
 timelorde expose bpm param=bpm kind=knob
 timelorde expose swingAmount param=swingAmount kind=knob
 timelorde expose swingSource param=swingSource kind=knob
+tomtom meta domain=audio
+tomtom in accent_in cv
+tomtom in bend_cv cv
+tomtom in decay_cv cv
+tomtom in noise_cv cv
+tomtom in pitch_cv cv
+tomtom in tone_cv cv
+tomtom in trigger_in gate edge=trigger
+tomtom out audio_out audio
+tomtom param bend_amt 0..24 linear default=7 unit=st
+tomtom param bend_time 10..300 log default=60 unit=ms
+tomtom param decay 40..1500 log default=350 unit=ms
+tomtom param drive 0..1 linear default=0.25
+tomtom param level -24..12 linear default=0 unit=dB
+tomtom param noise 0..1 linear default=0.25
+tomtom param strike 0..1 discrete default=0
+tomtom param tone 0..1 linear default=0.35
+tomtom param tune 60..400 log default=110 unit=Hz
 toybox meta domain=video renderLocus=worker
 toybox in cv1 modsignal cvScale=linear
 toybox in cv2 modsignal cvScale=linear

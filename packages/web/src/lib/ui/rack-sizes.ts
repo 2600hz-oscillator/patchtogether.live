@@ -71,6 +71,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   hypercube: { size: '3u', hp: 4 }, // 540×720px — 2-col (viewport left, controls right)
   illogic: { size: '1u', hp: 2 }, // 154×240px
   joystick: { size: '2u', hp: 2 }, // 234×220px
+  karplus: { size: '2u', hp: 2 }, // ~310×450px — STRING/EXCITER fader bands + PLUCK button
   lfo: { size: '1u', hp: 2 }, // 180×360px — Rate/Shape faders + Depth knob in one row
   macrooscillator: { size: '1u', hp: 2 }, // 187×320px
   macseq: { size: '2u', hp: 5 }, // 282×880px
@@ -154,7 +155,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   '4plexvid': { size: '3u', hp: 2 }, // 463×280px
   acidwarp: { size: '3u', hp: 2 }, // 407×380px
   cameraInput: { size: '3u', hp: 2 }, // 370×280px  [LOCKED]
-  cellshade: { size: '2u', hp: 2 }, // 369×220px
+  cellshade: { size: '3u', hp: 2 }, // 369×~490px — rebuild added the SOFT/SMOOTH/INK fader row (2u overflowed the INK row)
   chroma: { size: '2u', hp: 2 }, // 360×260px
   chromakey: { size: '3u', hp: 2 }, // 389×260px
   colorizer: { size: '2u', hp: 2 }, // 270×240px
@@ -180,6 +181,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   painter: { size: '3u', hp: 3 }, // 540×540 — MS-Paint card: 9-tool toolbar + flex-filled 4:3 paint canvas (fills the tier; faceplate letterbox margin, no overflow) + 28-swatch palette
   peakstate: { size: '2u', hp: 2 }, // 329×240px
   picturebox: { size: '2u', hp: 2 }, // 240×220px
+  posterbox: { size: '2u', hp: 2 }, // 220×~520px card body — 160×120 preview + 3 faders (mirrors cellshade)
   quadralogical: { size: '3u', hp: 4 }, // 540×720px — 2-col (joystick left, preview+edges right)
   recorderbox: { size: '2u', hp: 2 }, // 296×248px
   spectrograph: { size: '2u', hp: 2 }, // 320×220px — sonogram preview + gain (≈ cellshade/recorderbox)

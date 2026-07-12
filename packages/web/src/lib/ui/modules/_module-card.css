@@ -294,6 +294,24 @@
   visibility: hidden;
   pointer-events: none;
 }
+/* DOCK RAILS (workflow): the front-inert rule above is .svelte-flow__node-
+ * scoped, and a dock-hosted card (DockCardHost) deliberately has no such
+ * wrapper — so in rear view a DOCKED card's live front content stayed
+ * painted OVER its back panel and swallowed the jack clicks ("can't patch
+ * out of the back of the drawer clipplayer", owner report 2026-07-11).
+ * Mirror the rule off the dock host's sizing wrappers, exactly like the
+ * .dock-rack-sized mirror of .svelte-flow__node.rack-sized above. The
+ * reveal + jack pointer-events rules below are already ancestor-generic
+ * (.rear-view …) — DockRail stamps .rear-view on every rail (the bottom
+ * drawer also inherits it from .flow), while the topbar card hosts (the
+ * 🎧 panel) have no .rear-view ancestor and correctly never flip. */
+.rear-view .dock-rack-sized > :is(.mod-card, .card, .moog-panel) > :not(.card-back-panel),
+.rear-view .dock-rack-sized > * > :is(.mod-card, .card, .moog-panel) > :not(.card-back-panel),
+.rear-view .dock-natural-sized > :is(.mod-card, .card, .moog-panel) > :not(.card-back-panel),
+.rear-view .dock-natural-sized > * > :is(.mod-card, .card, .moog-panel) > :not(.card-back-panel) {
+  visibility: hidden;
+  pointer-events: none;
+}
 .rear-view .card-back-panel,
 .rear-view .card-back-panel * {
   visibility: visible;

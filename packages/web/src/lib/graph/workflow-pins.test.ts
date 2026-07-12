@@ -10,8 +10,11 @@ import {
   WORKFLOW_PINNED_MODULES,
   WORKFLOW_PINNED_SURFACES,
   ALL_WORKFLOW_PINNED,
+  WORKFLOW_DEFAULT_WIRES,
+  WORKFLOW_DEFAULT_WIRE_LATCH,
   DRAWER_KEY_TO_PINNED,
   planPinnedSpawns,
+  planDefaultWires,
   isPinnedNode,
   isTypingTarget,
 } from './workflow-pins';
@@ -130,6 +133,80 @@ describe('planPinnedSpawns', () => {
 
   it('a PINNED timelorde satisfies the presence:"type" spec too', () => {
     expect(planPinnedSpawns(fullPinnedSet())).toEqual([]);
+  });
+});
+
+describe('WORKFLOW_DEFAULT_WIRES — the mixmstrs→audioOut default-wire contract', () => {
+  it('is exactly master L/R → audioOut L/R with deterministic e-… ids', () => {
+    // Port ids are pinned to the defs: mixmstrs outputs masterL/masterR
+    // (mixmstrs.ts), audioOut inputs L/R (audio-out.ts). The id template is
+    // the SAME `e-<src>-<srcPort>-<dst>-<dstPort>` handleConnect writes, so
+    // racing clients converge on one Y.Map entry per wire.
+    expect(WORKFLOW_DEFAULT_WIRES).toEqual([
+      {
+        id: 'e-pinned-mixmstrs-masterL-pinned-audioOut-L',
+        source: { nodeId: 'pinned-mixmstrs', portId: 'masterL' },
+        target: { nodeId: 'pinned-audioOut', portId: 'L' },
+        sourceType: 'audio',
+        targetType: 'audio',
+      },
+      {
+        id: 'e-pinned-mixmstrs-masterR-pinned-audioOut-R',
+        source: { nodeId: 'pinned-mixmstrs', portId: 'masterR' },
+        target: { nodeId: 'pinned-audioOut', portId: 'R' },
+        sourceType: 'audio',
+        targetType: 'audio',
+      },
+    ]);
+  });
+});
+
+describe('planDefaultWires — one-shot seed, never re-fight the user', () => {
+  const mix = { id: 'pinned-mixmstrs', data: { pinned: true } };
+  const out = { id: 'pinned-audioOut', data: { pinned: true } };
+
+  it('plans both wires + the latch when both pins exist and nothing is latched', () => {
+    const plan = planDefaultWires([mix, out], []);
+    expect(plan.latch).toBe(true);
+    expect(plan.wires).toEqual([...WORKFLOW_DEFAULT_WIRES]);
+  });
+
+  it('plans NOTHING while either endpoint is still missing (replan later, no latch burn)', () => {
+    expect(planDefaultWires([mix], [])).toEqual({ wires: [], latch: false });
+    expect(planDefaultWires([out], [])).toEqual({ wires: [], latch: false });
+    expect(planDefaultWires([], [])).toEqual({ wires: [], latch: false });
+  });
+
+  it('the latch on the pinned audioOut suppresses re-seeding forever (user delete respected)', () => {
+    const latched = { id: 'pinned-audioOut', data: { pinned: true, [WORKFLOW_DEFAULT_WIRE_LATCH]: true } };
+    // Even with ZERO edges present — i.e. the user deleted the default
+    // cables — a latched audioOut plans nothing.
+    expect(planDefaultWires([mix, latched], [])).toEqual({ wires: [], latch: false });
+  });
+
+  it('a non-boolean latch value does not count (strict === true)', () => {
+    const weird = { id: 'pinned-audioOut', data: { [WORKFLOW_DEFAULT_WIRE_LATCH]: 'yes' } };
+    expect(planDefaultWires([mix, weird], []).latch).toBe(true);
+  });
+
+  it('skips a wire whose target input is already occupied (never replace a user patch)', () => {
+    const edges = [{ target: { nodeId: 'pinned-audioOut', portId: 'L' } }];
+    const plan = planDefaultWires([mix, out], edges);
+    expect(plan.latch).toBe(true);
+    expect(plan.wires.map((w) => w.target.portId)).toEqual(['R']);
+  });
+
+  it('both targets occupied → empty wires but the latch still burns (seed consumed)', () => {
+    const edges = [
+      { target: { nodeId: 'pinned-audioOut', portId: 'L' } },
+      { target: { nodeId: 'pinned-audioOut', portId: 'R' } },
+    ];
+    expect(planDefaultWires([mix, out], edges)).toEqual({ wires: [], latch: true });
+  });
+
+  it('tolerates sparse edge arrays (Y.Map holes)', () => {
+    const plan = planDefaultWires([mix, out], [null, undefined]);
+    expect(plan.wires).toHaveLength(2);
   });
 });
 

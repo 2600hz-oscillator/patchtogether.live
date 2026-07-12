@@ -100,6 +100,44 @@ export const VRT_SCENES: Record<string, VrtScene> = {
     freezeAudio: true,
   },
 
+  // DOCKSCOPE (P2.5b): the slim 1u rail scope. A real analogVco sine is
+  // wired into ch1 (the audio path is exercised), but we pin
+  // `__dockscopeVrtSeed` so the trace paints a fixed synthetic 220 Hz
+  // sine instead of the live analyser window: the card re-plots its
+  // VECTOR trace at live pixel size every meter frame, and the seed
+  // keeps the plotted window phase-locked run-to-run (RASTERIZE's seed
+  // pattern + SCOPE's scene shape).
+  dockscope: {
+    nodes: [
+      { id: 'src',   type: 'analogVco', position: { x: 60,  y: 60 }, domain: 'audio' },
+      { id: 'vrt-1', type: 'dockscope', position: { x: 520, y: 60 }, domain: 'audio' },
+    ],
+    edges: [
+      {
+        id: 'e_src_dockscope',
+        from: { nodeId: 'src',   portId: 'sine' },
+        to:   { nodeId: 'vrt-1', portId: 'ch1'  },
+        sourceType: 'audio',
+        targetType: 'audio',
+      },
+    ],
+    afterSpawn: async (page) => {
+      // Pin the seed BEFORE settle so every paint is the deterministic one.
+      await page.evaluate(() => {
+        (globalThis as unknown as { __dockscopeVrtSeed?: boolean })
+          .__dockscopeVrtSeed = true;
+      });
+      // A few rAFs so the seeded repaint lands before the settle window.
+      for (let i = 0; i < 3; i++) {
+        await page.evaluate(
+          () => new Promise<void>((r) => requestAnimationFrame(() => r())),
+        );
+      }
+    },
+    settleMs: 300,
+    freezeAudio: true,
+  },
+
   // RASTERIZE: drive the audio input with a 261 Hz sine (analogVco default
   // sine out, pitch 0 V/oct ≈ C4). RASTERIZE paints the audio samples as
   // voltage-per-pixel into its 640×480 frame in raster order; a steady tone

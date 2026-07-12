@@ -4,14 +4,20 @@
   // this panel is where they live).
   //
   // REUSE OVER DUPLICATION: the panel hosts the REAL AudioinCard +
-  // AudioOutCard through a standalone single-node SvelteFlow host (the P1
-  // dock-drawer precedent; the drawer itself moved to the plain-mount
-  // DockCardHost in P2.5a — this surface keeps the flow host because its
-  // pinned nodes are canvas-hidden, so no stub/data-id collision exists
-  // and its geometry is already attested by the P2 e2e), so the input
-  // source picker, getUserMedia permission flow, music-mode, status LED,
-  // gain fader, output device pick (setSinkId) and master fader are all
-  // the card's own code — zero forked device-enumeration logic.
+  // AudioOutCard through DockCardHost — the P2.5a PLAIN-MOUNT pattern the
+  // M/E/C drawers use (same nodeTypes map, natural card size via
+  // ResizeObserver, independent 50–150% zoom, NO SvelteFlow host). The
+  // previous single-node <SvelteFlow> hosts fired their one-shot fitView at
+  // mount — while the panel was hidden (opacity:0, per the #1068 ghost-card
+  // fix) — against fixed 250×330 boxes and never re-fit: the AUDIO IN card
+  // rendered clipped at the host's left edge, AUDIO OUT floated in dead
+  // space, and both hosts leaked the "Svelte Flow" attribution badge
+  // (owner report 2026-07-11). Plain-mounting removes the whole failure
+  // class: no fitView, no viewport transform, no attribution, columns size
+  // to the card's natural (rack-sized) box. The input source picker,
+  // getUserMedia permission flow, music-mode, status LED, gain fader,
+  // output device pick (setSinkId) and master fader remain the cards' own
+  // code — zero forked device-enumeration logic.
   //
   // ALWAYS-ON lifecycle: AudioinCard owns the live MediaStream and stops
   // it on unmount, so this panel stays MOUNTED whenever the workflow shell
@@ -23,8 +29,9 @@
   // patch-out (it is a terminal sink; sources patch INTO it from any card
   // jack or picker).
 
-  import { SvelteFlow } from '@xyflow/svelte';
   import type { ModuleNode } from '$lib/graph/types';
+  import DockCardHost from '$lib/ui/dock/DockCardHost.svelte';
+  import { stepScale } from '$lib/ui/dock/dock-entries';
 
   interface Props {
     /** The pinned AUDIO IN / AUDIO OUT (snapshot-derived; null pre-ensure). */
@@ -32,25 +39,19 @@
     audioOut: ModuleNode | null;
     /** The same glob-driven nodeTypes map the main canvas uses. */
     nodeTypes: Record<string, unknown>;
+    /** Canvas's type → rack {size, hp} map (DockCardHost rack sizing). */
+    rackSizeByType?: Record<string, { size?: string; hp?: number }>;
     /** Whether the dropdown is visible (the panel stays mounted either way). */
     open: boolean;
     /** Close the dropdown (called after a patch-out hand-off). */
     onRequestClose: () => void;
   }
-  let { audioIn, audioOut, nodeTypes, open, onRequestClose }: Props = $props();
+  let { audioIn, audioOut, nodeTypes, rackSizeByType = {}, open, onRequestClose }: Props = $props();
 
-  /** Single-node host row — the P1 dock-drawer flow-host pattern. */
-  function hostNodesFor(node: ModuleNode) {
-    return [
-      {
-        id: node.id,
-        type: node.type,
-        position: { x: 0, y: 0 },
-        draggable: false,
-        data: { node },
-      },
-    ];
-  }
+  // Independent per-column zoom — LOCAL panel state (the pinned pair has no
+  // dock entry), stepping the same discrete 50–150% ladder the drawers use.
+  let inScale = $state(1);
+  let outScale = $state(1);
 
   const PATCH_OUTS: ReadonlyArray<{ id: string; label: string }> = [
     { id: 'audio_l_out', label: 'AUDIO IN L' },
@@ -82,28 +83,17 @@
 >
   <div class="io-columns">
     <section class="io-col">
-      <header class="io-col-header">input</header>
       {#if audioIn}
         {#key audioIn.id}
           <div class="card-host" data-testid="workflow-io-audioin-host">
-            <SvelteFlow
-              nodes={hostNodesFor(audioIn)}
-              edges={[]}
-              nodeTypes={nodeTypes as never}
-              colorMode="dark"
-              fitView
-              fitViewOptions={{ padding: 0.04, maxZoom: 1 }}
-              minZoom={0.05}
-              maxZoom={4}
-              panOnDrag={false}
-              panOnScroll={false}
-              zoomOnScroll={false}
-              zoomOnPinch={false}
-              zoomOnDoubleClick={false}
-              nodesDraggable={false}
-              nodesConnectable={false}
-              elementsSelectable={false}
-              preventScrolling={false}
+            <DockCardHost
+              node={audioIn}
+              {nodeTypes}
+              rackSize={rackSizeByType[audioIn.type]}
+              scale={inScale}
+              title="audio in"
+              onStepScale={(dir) => (inScale = stepScale(inScale, dir))}
+              onResetScale={() => (inScale = 1)}
             />
           </div>
         {/key}
@@ -126,28 +116,17 @@
     </section>
 
     <section class="io-col">
-      <header class="io-col-header">output</header>
       {#if audioOut}
         {#key audioOut.id}
           <div class="card-host" data-testid="workflow-io-audioout-host">
-            <SvelteFlow
-              nodes={hostNodesFor(audioOut)}
-              edges={[]}
-              nodeTypes={nodeTypes as never}
-              colorMode="dark"
-              fitView
-              fitViewOptions={{ padding: 0.04, maxZoom: 1 }}
-              minZoom={0.05}
-              maxZoom={4}
-              panOnDrag={false}
-              panOnScroll={false}
-              zoomOnScroll={false}
-              zoomOnPinch={false}
-              zoomOnDoubleClick={false}
-              nodesDraggable={false}
-              nodesConnectable={false}
-              elementsSelectable={false}
-              preventScrolling={false}
+            <DockCardHost
+              node={audioOut}
+              {nodeTypes}
+              rackSize={rackSizeByType[audioOut.type]}
+              scale={outScale}
+              title="audio out"
+              onStepScale={(dir) => (outScale = stepScale(outScale, dir))}
+              onResetScale={() => (outScale = 1)}
             />
           </div>
         {/key}
@@ -170,47 +149,38 @@
     padding: 8px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
     /* Hidden ≠ unmounted: the hosted AudioinCard owns the live input
-       stream and must survive menu close. visibility (not display) keeps
-       the standalone flow hosts measurable for fitView. */
+       stream and must survive menu close, so the panel stays mounted and
+       laid out (the ResizeObserver needs measurable hosts — no
+       display:none).
+       OPACITY, not visibility alone (#1068): visibility is
+       inheritable-but-child-overridable — a descendant stamping inline
+       `visibility: visible` would paint as a floating ghost over the
+       canvas. opacity composites the whole subtree; children cannot
+       opt back in. The regression e2e pins the computed opacity. */
+    opacity: 0;
     visibility: hidden;
     pointer-events: none;
   }
   .io-panel.open {
+    opacity: 1;
     visibility: visible;
     pointer-events: auto;
   }
   .io-columns {
     display: flex;
     gap: 10px;
-    align-items: stretch;
+    align-items: flex-start;
   }
   .io-col {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    width: 250px;
-  }
-  .io-col-header {
-    font-size: 0.6rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-dim);
-    padding: 0 2px;
+    /* Columns size to CONTENT (the plain-mounted card's natural box ×
+       scale) — no fixed 250×330 host, no clipping, no dead space. */
+    width: max-content;
   }
   .card-host {
-    width: 250px;
-    height: 330px;
-    border: 1px solid #2a2f3a;
-    border-radius: 3px;
-    overflow: hidden;
-  }
-  .card-host :global(.svelte-flow) {
-    width: 100%;
-    height: 100%;
-    background: #0e1116;
-  }
-  .card-host :global(.svelte-flow__pane) {
-    cursor: default;
+    width: max-content;
   }
   .hint {
     color: var(--text-dim);

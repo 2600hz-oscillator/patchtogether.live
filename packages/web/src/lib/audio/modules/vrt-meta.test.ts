@@ -316,7 +316,50 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // animated flighty-sky GEN) + obj-bird-ernest (the bird OBJ per-model
       // baseline); linux baselines pending the vrt-update.yml dispatch, same
       // darwin-first precedent as every other linux/toybox-* pair).
-    ).toBeLessThanOrEqual(87);
+      // 87→88 for DOCKSCOPE (2026-07-11, deliberate darwin-first new module —
+      // workflow P2.5b's slim 1u rail scope with the seeded VRT scene; linux
+      // baseline pending the vrt-update.yml dispatch on the PR branch).
+      // 88→89 for TOM DRUM (2026-07-11, deliberate darwin-first new module —
+      // the compact MEMBRANE·COLOR·OUT tom-voice card; linux baseline pending
+      // the vrt-update.yml dispatch on the PR branch).
+      // 89→90 for KARPLUS (2026-07-11, deliberate darwin-first new module —
+      // the extended Karplus-Strong string-voice card; linux baseline pending
+      // the vrt-update.yml dispatch on the PR branch).
+      // 90→94 for CLAP (2026-07-11, deliberate darwin-first new module — the
+      // compact BURST·NOISE·ROOM/OUT clap-voice card + 3 composite-state
+      // scenes (clap-909-dense / clap-linn-room / clap-dry-snap in
+      // vrt-clap.spec.ts); linux baselines pending the vrt-update.yml
+      // dispatch on the PR branch).
+      // 94→100 for the KARPLUS + TOM DRUM composite-state scenes (2026-07-11,
+      // deliberate darwin-first — 6 non-default-state card scenes in
+      // vrt-karplus-tomtom-states.spec.ts, the sonic-audit coverage gap-fill;
+      // linux baselines pending the vrt-update.yml dispatch on the PR
+      // branch, same precedent as the COLOUR OF MAGIC scene batches).
+      // 100→87 DRAIN (2026-07-11): the whole drum-wave pending set —
+      // dockscope + karplus + tomtom + clap default cards, clap's 3
+      // composite scenes, and the 6 karplus/tomtom sonic-audit scenes —
+      // got real linux baselines via a single vrt-update.yml dispatch on
+      // this branch, so their 13 exemption pairs came out.
+      // 87→90 for the CELLSHADE rebuild composite scenes (2026-07-11,
+      // deliberate darwin-first — 3 UNMASKED frozen scenes
+      // cellshade-bands/cellshade-ink/cellshade-smooth in
+      // cellshade-composite.spec.ts, the new 4-pass engine's canvas
+      // regression gate; linux baselines pending the vrt-update.yml
+      // dispatch on the PR branch, same precedent as the COLOUR OF MAGIC
+      // scene batches).
+      // 90→92 for the WORKFLOW audio-UX composite scenes (2026-07-11,
+      // deliberate darwin-first — the OPEN 🎧 audio-I/O panel
+      // (workflow-audio-io-composite.spec.ts, device text masked) + the
+      // bottom dock drawer with the patch-to picker open
+      // (workflow-dock-composite.spec.ts, menu position pinned) — the
+      // owner's "this should have been caught with vrt" coverage; linux
+      // baselines pending the vrt-update.yml dispatch on the PR branch).
+          // 92→96 for POSTERBOX (2026-07-11, deliberate darwin-first new module —
+      // the retro palette-crush video card + 3 composite-state scenes
+      // (posterbox-brutal-1bit / posterbox-dither-hatch / posterbox-subtle-565
+      // in vrt-posterbox-states.spec.ts); linux baselines pending the
+      // vrt-update.yml dispatch on the PR branch).
+    ).toBeLessThanOrEqual(96);
   });
 });
 

@@ -66,8 +66,12 @@
 
   const OFF = '#181a20'; // an unlit pad (visible outline, clearly dark)
 
+  // Only reserve the top-button band when the diagram HAS top buttons — a
+  // topless diagram (matrix / KEYS / length) otherwise carries ~60px of dead
+  // space above the grid.
+  const hasTop = $derived(top.length > 0);
   const topRowY = PAD + TOP_LABEL_H;
-  const gridTop = topRowY + CELL + TOP_GAP;
+  const gridTop = $derived(hasTop ? topRowY + CELL + TOP_GAP : PAD);
   const sceneX = PAD + N * PITCH + SCENE_GAP;
   const gridH = N * PITCH - GAP;
 

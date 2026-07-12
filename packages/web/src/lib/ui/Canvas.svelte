@@ -16,7 +16,7 @@
     type Edge as FlowEdge,
     type Connection,
   } from '@xyflow/svelte';
-  import { patch, ydoc, undoManager, LOCAL_ORIGIN } from '$lib/graph/store';
+  import { patch, ydoc, undoManager, LOCAL_ORIGIN, onBindRackspace } from '$lib/graph/store';
   import { buildDuplicate } from '$lib/graph/duplicate';
   import { instanceCount, wouldExceedCap } from '$lib/graph/cap';
   import { setControlColor, setNodeLocked } from '$lib/graph/mutate';
@@ -240,14 +240,18 @@
   // dock store. Design: .myrobots/docking-recommendation.md.
   import DockRail from '$lib/ui/dock/DockRail.svelte';
   import DockStubCard from '$lib/ui/dock/DockStubCard.svelte';
+  // DOCKING P2.5b: the pan-gesture screen-space cable tail (stub → rail).
+  import DockPanTail, { type DockTailSpec } from '$lib/ui/dock/DockPanTail.svelte';
   import { dockStore } from '$lib/ui/dock/dock-store.svelte';
   import { isDockableType } from '$lib/ui/dock/dockable';
   import type { DockZone } from '$lib/ui/dock/dock';
   import {
     WORKFLOW_PINNED_MODULES,
     WORKFLOW_PIN_SPAWN_ORIGIN,
+    WORKFLOW_DEFAULT_WIRE_LATCH,
     DRAWER_KEY_TO_PINNED,
     planPinnedSpawns,
+    planDefaultWires,
     isPinnedNode,
     isTypingTarget,
   } from '$lib/graph/workflow-pins';
@@ -900,6 +904,49 @@
     trace(`workflow: ensured pinned modules (${missing.map((s) => s.type).join(', ')})`);
   });
 
+  // DEFAULT WIRING (owner directive): pinned MIXMSTRS master L/R → pinned
+  // AUDIO OUT L/R, so a fresh workflow rack makes sound the moment anything
+  // feeds the mixer. ONE-SHOT SEED, not an invariant: planDefaultWires only
+  // plans while the `workflowDefaultWired` latch on the pinned AUDIO OUT is
+  // unset, and the latch is written IN THE SAME TRANSACT as the wires — so a
+  // user deleting the cable afterwards is respected forever (the ensure never
+  // fights intent). Deterministic edge ids (the handleConnect `e-…` template)
+  // make two racing clients converge on one Y.Map entry per wire; occupied
+  // target inputs are skipped (a user's own patch into AUDIO OUT is never
+  // replaced). Runs after the node ensure above lands both endpoints; a
+  // wholesale node replacement re-seeds only when the loaded doc lacks the
+  // latch (fresh pins), mirroring the node ensure's self-healing story.
+  // Same non-tracked origin → never on the undo stack.
+  $effect(() => {
+    if (!workflowMode) return;
+    if (provider && !providerHasSynced) return;
+    const plan = planDefaultWires(snapshot.nodes, snapshot.edges);
+    if (!plan.latch) return;
+    ydoc.transact(() => {
+      const dst = patch.nodes['pinned-audioOut'];
+      if (!dst) return; // raced a wholesale wipe — replan on the next snapshot
+      const data = (dst.data ?? {}) as Record<string, unknown>;
+      if (data[WORKFLOW_DEFAULT_WIRE_LATCH] === true) return; // in-transact re-check
+      for (const wire of plan.wires) {
+        if (patch.edges[wire.id]) continue;
+        const occupied = Object.values(patch.edges).some(
+          (e) => e && e.target.nodeId === wire.target.nodeId && e.target.portId === wire.target.portId,
+        );
+        if (occupied) continue;
+        patch.edges[wire.id] = {
+          id: wire.id,
+          source: { nodeId: wire.source.nodeId, portId: wire.source.portId },
+          target: { nodeId: wire.target.nodeId, portId: wire.target.portId },
+          sourceType: wire.sourceType,
+          targetType: wire.targetType,
+        };
+      }
+      if (!dst.data) dst.data = {};
+      dst.data[WORKFLOW_DEFAULT_WIRE_LATCH] = true;
+    }, WORKFLOW_PIN_SPAWN_ORIGIN);
+    trace('workflow: seeded default wires mixmstrs master L/R → audioOut (one-shot)');
+  });
+
   // DOCK KEYMAP: M / E / C toggle the matching pinned card in the BOTTOM
   // dock zone ($lib/ui/dock — one card per zone, so opening another
   // replaces the current one); ESC closes. Workflow-only; inert while
@@ -1057,6 +1104,56 @@
     });
   });
 
+  // DOCKING P2.5b eviction hardening: when a RACK-MATE deletes a node the
+  // local user has docked, the sweep above evicts the rail card silently
+  // (retire → tombstone, keeping the revive path if the id returns — e.g.
+  // the peer undoes). The performer staring at a rail deserves a notice,
+  // so observe the Y nodes map directly: remote-transaction deletes of a
+  // DOCKED id toast. Local transactions are skipped (the local explicit-
+  // delete path has its own toast via noteDockDeletes, and a local
+  // quickload slot switch must stay silent — the P2.5a tombstone
+  // round-trip semantics). A remote LOAD (delete+add in one transaction)
+  // is also skipped: those ids are coming back, the entries just revive.
+  //
+  // Doc-swap seam: `bindRackspace()` REPLACES the whole Y.Doc when a
+  // provider attaches mid-mount (the /rack + __attachProvider path — no
+  // Canvas remount), so an observer taken from the mount-time `ydoc`
+  // would sit on the destroyed doc and never fire. Re-point through
+  // onBindRackspace, exactly like the snapshot bus does.
+  $effect(() => {
+    if (!workflowMode) return;
+    const onNodes = (event: { transaction: { local: boolean }; changes: { keys: Map<string, { action: string; oldValue?: unknown }> } }) => {
+      if (event.transaction.local) return;
+      let hasAdds = false;
+      for (const [, change] of event.changes.keys) {
+        if (change.action === 'add') { hasAdds = true; break; }
+      }
+      if (hasAdds) return; // bulk replace (peer load) — retire/revive, not a delete notice
+      for (const [key, change] of event.changes.keys) {
+        if (change.action !== 'delete') continue;
+        if (!untrack(() => dockStore.isDocked(key))) continue;
+        // Best-effort label: the deleted Y.Map may still expose its type.
+        let label = key;
+        try {
+          const t = (change.oldValue as { get?: (k: string) => unknown } | null)?.get?.('type');
+          if (typeof t === 'string' && t) label = t;
+        } catch { /* deleted-type read — fall back to the id */ }
+        showDockToast(`${label} was deleted by a rack-mate — undocked`);
+      }
+    };
+    let nodesMap = ydoc.getMap('nodes');
+    nodesMap.observe(onNodes);
+    const offBind = onBindRackspace((_p, doc) => {
+      try { nodesMap.unobserve(onNodes); } catch { /* previous doc destroyed */ }
+      nodesMap = doc.getMap('nodes');
+      nodesMap.observe(onNodes);
+    });
+    return () => {
+      offBind();
+      try { nodesMap.unobserve(onNodes); } catch { /* doc may be destroyed */ }
+    };
+  });
+
   /** Rail card lists (top/left; bottom adds the pinned occupant below).
    *  A docked id whose node is mid-retirement resolves to nothing here —
    *  the rail slot simply disappears until the tombstone revives. */
@@ -1072,6 +1169,76 @@
   }
   let topRailCards = $derived(railCards('top'));
   let leftRailCards = $derived(railCards('left'));
+
+  // ---------------- DOCKING P2.5b: the pan-gesture cable tail ----------------
+  //
+  // During a pan/zoom gesture, edges to a docked module ride the canvas
+  // with the stub (accepted drift, owner Q1) — the tail bridges the gap
+  // visually: one presentation-only screen-space bezier per docked-WITH-
+  // EDGES node, stub → rail card, mounted on onmovestart and KILLED on
+  // onmoveend. Zero cost when idle or when no docked node has edges
+  // (dockPanTails stays [] → the overlay renders nothing and onmove does
+  // no work). Endpoints: stub via store-derived flowToScreenPosition
+  // (re-projected per onmove tick — same-frame, drift-free mid-pan); rail
+  // via ONE gBCR at gesture start (rails are viewport-fixed).
+
+  /** DockStubCard face-center offset in FLOW units (158×44 fixed face). */
+  const DOCK_STUB_CENTER = { x: 79, y: 22 };
+
+  let dockPanTails = $state<DockTailSpec[]>([]);
+  let dockPanTick = $state(0);
+
+  /** Where a tail lands on the rail card: the edge-center FACING the canvas. */
+  function railTailAnchor(r: DOMRect, zone: DockZone): { x: number; y: number } {
+    switch (zone) {
+      case 'top': return { x: r.x + r.width / 2, y: r.bottom };
+      case 'left': return { x: r.right, y: r.y + r.height / 2 };
+      case 'right': return { x: r.x, y: r.y + r.height / 2 };
+      default: return { x: r.x + r.width / 2, y: r.top }; // bottom drawer
+    }
+  }
+
+  /** Snapshot the gesture's tails: docked nodes that (a) have ≥1 edge and
+   *  (b) have a mounted rail card (collapsed rails degrade to no tail). */
+  function buildDockPanTails(): DockTailSpec[] {
+    if (!workflowMode || !flowApi) return [];
+    const ids = dockStore.dockedIds;
+    if (ids.length === 0) return [];
+    const docked = new Set(ids);
+    const connected = new Set<string>();
+    for (const e of snapshot.edges) {
+      if (docked.has(e.source.nodeId)) connected.add(e.source.nodeId);
+      if (docked.has(e.target.nodeId)) connected.add(e.target.nodeId);
+    }
+    if (connected.size === 0) return [];
+    const out: DockTailSpec[] = [];
+    for (const id of connected) {
+      const entry = dockStore.entryFor(id);
+      const n = snapshot.nodes.find((sn) => sn.id === id);
+      if (!entry || !n) continue;
+      const railEl = document.querySelector(`[data-dock-card="${CSS.escape(id)}"]`);
+      if (!railEl) continue;
+      const pos = getNodePosition(ydoc, currentUserId, id, { x: n.position.x, y: n.position.y });
+      out.push({
+        nodeId: id,
+        flow: { x: pos.x + DOCK_STUB_CENTER.x, y: pos.y + DOCK_STUB_CENTER.y },
+        rail: railTailAnchor(railEl.getBoundingClientRect(), entry.zone),
+        zone: entry.zone,
+      });
+    }
+    return out;
+  }
+
+  function onViewportMoveStart(): void {
+    dockPanTails = buildDockPanTails();
+  }
+  function onViewportMove(): void {
+    if (dockPanTails.length > 0) dockPanTick++;
+  }
+  function onViewportMoveEnd(): void {
+    if (dockPanTails.length > 0) dockPanTails = [];
+  }
+
   let bottomRailCards = $derived.by(() => {
     const docked = railCards('bottom');
     // The pinned M/E/C occupant renders FIRST, alongside docked cards —
@@ -4239,10 +4406,23 @@
   // edge-aligned coordinates so the PortContextMenu lines up with the card
   // side it opened from (UX item 1), instead of spawning at the raw cursor.
 
-  /** Resolve a node's CARD bounding rect from the DOM (the svelte-flow node
-   *  wrapper). Returns null when the card isn't mounted. */
+  /** Resolve a node's CARD bounding rect from the DOM. DOCK-HOSTED cards
+   *  first: a docked/pinned card's real FACE lives in a rail or topbar
+   *  panel (DockCardHost's [data-dock-card-frame]) while its only
+   *  .svelte-flow__node element — if any — is the small canvas stub.
+   *  Menus for a dock-hosted card must anchor to the face the user
+   *  actually clicked: the pinned drawer occupants have NO canvas element
+   *  at all, so the old stub-only lookup returned null and the patch-to
+   *  picker fell back to a stale (0,0) → "menu spawns at the top-left of
+   *  the screen" (owner report 2026-07-11). Canvas cards resolve exactly
+   *  as before (no dock frame exists for them). Returns null when the
+   *  card isn't mounted anywhere. */
   function cardRectFor(nodeId: string): DOMRect | null {
     if (typeof document === 'undefined') return null;
+    const dockFrame = document.querySelector(
+      `[data-dock-card="${CSS.escape(nodeId)}"] [data-dock-card-frame]`,
+    ) as HTMLElement | null;
+    if (dockFrame) return dockFrame.getBoundingClientRect();
     const el = document.querySelector(
       `.svelte-flow__node[data-id="${nodeId}"]`,
     ) as HTMLElement | null;
@@ -4298,6 +4478,22 @@
     // module list, so clear any stale preselect here.
     portMenuPreselectNodeId = null;
     portMenuOpen = true;
+    // POST-MOUNT viewport clamp: edgeAlignedMenuPos can only estimate the
+    // picker's size before it renders (width 200, height unknown), so a
+    // card near the BOTTOM edge — a dock-drawer card is the canonical case
+    // — would open the picker spilling off-screen. One rAF later the real
+    // chrome is measurable: slide it fully on-screen (the picker owns its
+    // own overflow, max-height 70vh).
+    requestAnimationFrame(() => {
+      if (!portMenuOpen) return;
+      const el = document.querySelector('[data-testid="port-context-menu"]') as HTMLElement | null;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const margin = 4;
+      const x = Math.max(margin, Math.min(portMenuPos.x, window.innerWidth - r.width - margin));
+      const y = Math.max(margin, Math.min(portMenuPos.y, window.innerHeight - r.height - margin));
+      if (x !== portMenuPos.x || y !== portMenuPos.y) portMenuPos = { x, y };
+    });
     connectDragState.beginCascade(info.nodeId);
   }
 
@@ -5665,6 +5861,7 @@
       externallyClocked={workflowExternallyClocked}
       dinAssigned={workflowDinAssigned}
       nodeTypes={nodeTypes as unknown as Record<string, unknown>}
+      {rackSizeByType}
       onEnsureEngine={ensureEngine}
       currentUserId={currentUserId ?? null}
       cameraNodes={workflowCameraNodes}
@@ -5832,6 +6029,7 @@
       nodeTypes={nodeTypes as unknown as Record<string, unknown>}
       {rackSizeByType}
       onUndock={undockNode}
+      {rearView}
     />
   {/if}
 
@@ -5850,6 +6048,7 @@
         nodeTypes={nodeTypes as unknown as Record<string, unknown>}
         {rackSizeByType}
         onUndock={undockNode}
+        {rearView}
       />
     {/if}
   <div class="flow" class:rear-view={rearView} class:flip-back={flipBack} data-rear-view={rearView ? 'true' : undefined} bind:this={flowEl}>
@@ -5870,6 +6069,9 @@
       connectionMode={ConnectionMode.Loose}
       ondelete={handleDelete}
       onnodedragstop={handleNodeDragStop}
+      onmovestart={onViewportMoveStart}
+      onmove={onViewportMove}
+      onmoveend={onViewportMoveEnd}
       onpanecontextmenu={onPaneContextMenu}
       onnodecontextmenu={onNodeContextMenu}
       onselectioncontextmenu={onSelectionContextMenu}
@@ -5964,6 +6166,7 @@
         {rackSizeByType}
         onUndock={undockNode}
         onClosePinned={() => dockStore.close('bottom')}
+        {rearView}
       />
     {/if}
     <button
@@ -5979,6 +6182,15 @@
     </button>
     <AwarenessLayer {provider} />
     <PickupCable />
+    {#if workflowMode && dockPanTails.length > 0 && flowApi}
+      <!-- DOCKING P2.5b: gesture-scoped stub→rail tail (presentation-only;
+           mounted onmovestart, killed onmoveend — zero idle cost). -->
+      <DockPanTail
+        tails={dockPanTails}
+        toScreen={flowApi.flowToScreenPosition}
+        tick={dockPanTick}
+      />
+    {/if}
     {#if lassoMode && lassoOriginFlow}
       <LassoOverlay origin={lassoOriginScreen} cursor={lassoCursorScreen} />
     {/if}

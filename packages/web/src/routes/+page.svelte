@@ -33,9 +33,15 @@
   const tiles: Tile[] = [
     {
       id: 'new-rack',
-      label: 'new rack',
+      label: 'new dawless rack',
       href: '/rack',
       blurb: 'open a fresh scratch canvas — patch modules, make sound.',
+    },
+    {
+      id: 'new-workflow-rack',
+      label: 'new workflow rack',
+      href: '/rack?mode=workflow',
+      blurb: 'the toolbar-driven shell — media loader, dock rails, always-on mixer/electra/clips.',
     },
     {
       id: 'rackspaces',

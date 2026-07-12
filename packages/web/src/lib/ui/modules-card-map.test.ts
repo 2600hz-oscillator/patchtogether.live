@@ -36,27 +36,44 @@ const EXPECTED_NODE_TYPES = [
   '4plexvid', 'acidwarp', 'adsr', 'analogLogicMaths', 'analogVco', 'archivist',
   'attenumix', 'audioIn', 'audioOut', 'backdraft', 'bentbox',
   'blood', 'bluebox', 'buggles', 'callsine', 'cameraInput', 'cartesian',
-  'charlottesEchos', 'chroma', 'chromakey', 'clipplayer', 'clockedRunner', 'clouds',
+  'charlottesEchos', 'chroma', 'chromakey', 'clap', 'clipplayer', 'clockedRunner', 'clouds',
   'cloudseed', 'cofefve', 'colorizer', 'colourofmagic', 'cube', 'delay', 'depolarizer', 'destroy', 'destructor',
+  'dockscope',
   'doom', 'drummergirl', 'drumseqz', 'dx7', 'es9', 'fader', 'feedback', 'filter',
   'featurecv',
   'fourplexer', 'foxy', 'freezeframe', 'frogger', 'gamepad', 'gatemaiden', 'gibribbon', 'graphicEq', 'group',
-  'hypercube', 'illogic', 'inwards', 'joystick', 'kickdrum', 'kria', 'lfo', 'lines', 'livecode', 'loopback',
+  'hypercube', 'illogic', 'inwards', 'joystick', 'karplus', 'kickdrum', 'kria', 'lfo', 'lines', 'livecode', 'loopback',
   'ninelives',
   'luma', 'lumakey', 'lushgarden', 'macrooscillator', 'macseq', 'mandleblot', 'mappy', 'marbles', 'matrixMix', 'meowbox',
   'mandelbulb', 'midiCvBuddy', 'midiOutBuddy', 'midiclock', 'mixer', 'mixmstrs', 'modtris',
   'monoglitch', 'moog902', 'moog904a', 'moog911', 'moog921Vco', 'moogCp3', 'nibbles',
   'noise', 'numpadPlus', 'onetonine', 'painter', 'peakstate', 'peertube', 'picturebox', 'polyseqz', 'pong',
-  'polarizer', 'qbrt', 'rasterize', 'reshaper', 'resofilter', 'reverb', 'ringback', 'rings',
+  'polarizer', 'posterbox', 'qbrt', 'rasterize', 'reshaper', 'resofilter', 'reverb', 'ringback', 'rings',
   'ruttetra', 'sampleHold', 'samsloop', 'scope', 'score', 'scoreboard',
   'scaler', 'sequencer', 'shapedramps', 'shapegen', 'shapes', 'shimmershine', 'sidecar', 'sourcery', 'spectrograph',
   'skifree', 'slewSwitch', 'snaredrum', 'stereovca', 'sticky',
+  'tomtom',
   'swolevco', 'synesthesia', 'tempest', 'timelorde', 'treeohvox', 'tvLibrarian',
   'launchpadControlLeft',
   'unityscalemathematik', 'vca', 'vdelay', 'vfpgaRunner', 'videoMixer', 'videoOut',
   'videobox', 'videovarispeed', 'warrenspectrum', 'wavecel', 'wavesculpt',
   'twotracks', 'wavetableVco', 'writeseq', 'textmarquee', 'tiler', 'spirographs',
   'milkdrop',
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

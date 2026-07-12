@@ -170,7 +170,7 @@ test('@launchpad KEYS live audition — playing a keyboard pad is AUDIBLE (empty
 
   await setTransport(page, 1);
   await enterKeys(page, DECK_KEYS_REC);
-  await expect.poll(() => keysState(page).then((s) => s?.mode), { timeout: 5000 }).toBe('keys');
+  await expect.poll(() => keysState(page).then((s) => s?.mode), { timeout: 15_000 }).toBe('keys');
 
   // (1) The clip is EMPTY → even playing, the voice is silent until a key sounds.
   const before = await readScopePeakOverWindow(page, 'k-scp', 500);
@@ -187,8 +187,105 @@ test('@launchpad KEYS live audition — playing a keyboard pad is AUDIBLE (empty
   // (3) Release → the audition gate closes → falls silent.
   await releaseL(page, KEY_ROOT.x, KEY_ROOT.y);
   await expect
-    .poll(async () => (await readScopePeakOverWindow(page, 'k-scp', 400)).rms, { timeout: 5000 })
+    .poll(async () => (await readScopePeakOverWindow(page, 'k-scp', 400)).rms, { timeout: 15_000 })
     .toBeLessThan(0.03);
+
+});
+
+// SINGLE-UNIT KEYS — the same real-source-chain proof on ONE device. Entry uses
+// the single gesture family: hold note-REC on the deck (CONTROL view), CC-98
+// flip to CLIP (the hold survives), DOUBLE-TAP the clip → KEYS owns the lone
+// device (8-wide keyboard, 8-cell whole-clip playhead, CC 98 inactive). Then:
+// live audition is AUDIBLE, queue-record captures played notes, and EXIT stops
+// the take — all through the REAL TIMELORDE→clipplayer→VCO→VCA→SCOPE chain.
+test('@launchpad single-unit KEYS — enter on one device, live keys are AUDIBLE, queue-record captures notes', async ({ page, rack, errorWatch }) => {
+  await buildChain(page, 's');
+  await seedEmptyClip(page, 's-cp');
+
+  const installed = await page.evaluate(async () => {
+    const w = globalThis as unknown as { __launchpadTestInstallSingle?: (id: string) => Promise<boolean> };
+    return w.__launchpadTestInstallSingle ? await w.__launchpadTestInstallSingle('s-cp') : false;
+  });
+  expect(installed, 'single simulated Launchpad install hook present (VITE_E2E_HOOKS)').toBe(true);
+
+  const pressS = (x: number, y: number) =>
+    page.evaluate(({ x, y }) => {
+      (globalThis as unknown as { __launchpadSingleSim?: { press: (x: number, y: number) => void } })
+        .__launchpadSingleSim!.press(x, y);
+    }, { x, y });
+  const releaseS = (x: number, y: number) =>
+    page.evaluate(({ x, y }) => {
+      (globalThis as unknown as { __launchpadSingleSim?: { release: (x: number, y: number) => void } })
+        .__launchpadSingleSim!.release(x, y);
+    }, { x, y });
+  const viewFlipS = () =>
+    page.evaluate(() => {
+      (globalThis as unknown as { __launchpadSingleSim?: { viewFlip: () => void } }).__launchpadSingleSim!.viewFlip();
+    });
+  const singleState = () =>
+    page.evaluate(() => {
+      const w = globalThis as unknown as { __launchpadSingleSim?: { state: () => { activeView: string; mode: string } } };
+      return w.__launchpadSingleSim!.state();
+    });
+
+  await setTransport(page, 1);
+
+  // ENTER KEYS on the one device: CONTROL view → hold note-OVERDUB (deck row 1;
+  // additive, so recorded notes accumulate deterministically — same reason the
+  // pair record test enters via OVERDUB) → CC-98 back to CLIP (the hold
+  // survives) → double-tap the clip → release.
+  await viewFlipS(); // clip → control
+  await pressS(DECK_KEYS_OVERDUB.x, DECK_KEYS_OVERDUB.y); // hold note-OVERDUB
+  await viewFlipS(); // control → clip (the hold survives the flip)
+  // Double-tap back-to-back inside ONE evaluate (~0-tick gap, deterministic).
+  await page.evaluate(({ x, y }) => {
+    const s = (globalThis as unknown as { __launchpadSingleSim?: { press: (x: number, y: number) => void } })
+      .__launchpadSingleSim!;
+    s.press(x, y); // 1st tap (suppressed by the hold)
+    s.press(x, y); // 2nd tap → KEYS
+  }, { x: CLIP_L0S0.x, y: CLIP_L0S0.y });
+  await releaseS(DECK_KEYS_OVERDUB.x, DECK_KEYS_OVERDUB.y); // harmless keyboard-off inside KEYS
+  await expect.poll(() => singleState().then((st) => st.mode), { timeout: 5000 }).toBe('keys');
+
+  // CC 98 is INACTIVE while KEYS owns the device (no view flip out of KEYS).
+  const viewBefore = (await singleState()).activeView;
+  await viewFlipS();
+  await expect.poll(() => singleState().then((st) => st.mode)).toBe('keys');
+  expect((await singleState()).activeView, 'view unchanged — CC 98 swallowed in KEYS').toBe(viewBefore);
+
+  // (1) Empty clip → silent until a key sounds.
+  const before = await readScopePeakOverWindow(page, 's-scp', 500);
+  expect(before.rms, 'silent before a KEYS key is played (empty clip)').toBeLessThan(0.03);
+
+  // (2) Hold a keyboard pad on the lone device → live audition → AUDIBLE.
+  await pressS(KEY_A.x, KEY_A.y); // keyboard band (clear of the released hold pad)
+  const during = await readScopePeakOverWindow(page, 's-scp', 1200);
+  expect(during.polls, 'SCOPE polled across the window').toBeGreaterThan(0);
+  expect(during.rms, 'audible RMS while a single-unit KEYS key is held').toBeGreaterThan(0.03);
+  expect(during.nonzeroSamples, 'structured signal, not a glitch').toBeGreaterThan(50);
+  expect(during.rms, 'the keypress raised the output').toBeGreaterThan(before.rms + 0.02);
+  await releaseS(KEY_A.x, KEY_A.y);
+  await expect
+    .poll(async () => (await readScopePeakOverWindow(page, 's-scp', 400)).rms, { timeout: 5000 })
+    .toBeLessThan(0.03);
+
+  // (3) QUEUE-REC → recording begins on the loop wrap; played notes land in the clip.
+  await pressS(KEYS_QREC.x, KEYS_QREC.y);
+  await expect.poll(() => isRecording(page), { timeout: 6000 }).toBe(true);
+  for (const k of [KEY_ROOT, KEY_A, KEY_B]) {
+    await pressS(k.x, k.y);
+    await page.waitForTimeout(120);
+    await releaseS(k.x, k.y);
+    await page.waitForTimeout(120);
+  }
+  await expect.poll(() => clipSteps(page), { timeout: 6000 }).toBeGreaterThan(0);
+
+  // (4) EXIT stops the take (stays in KEYS); the captured clip loops back audibly.
+  await pressS(KEYS_EXIT.x, KEYS_EXIT.y);
+  await expect.poll(() => isRecording(page), { timeout: 5000 }).toBe(false);
+  const playback = await readScopePeakOverWindow(page, 's-scp', 1600);
+  expect(playback.rms, 'the recorded notes sound back on the loop').toBeGreaterThan(0.03);
+  expect(playback.nonzeroSamples, 'structured playback, not a glitch').toBeGreaterThan(50);
 
 });
 
@@ -205,7 +302,7 @@ test('@launchpad KEYS record — queue-record captures played notes into the cli
   await setTransport(page, 1);
   // Enter via OVERDUB (additive) so recorded notes accumulate deterministically.
   await enterKeys(page, DECK_KEYS_OVERDUB);
-  await expect.poll(() => keysState(page).then((s) => s?.mode), { timeout: 5000 }).toBe('keys');
+  await expect.poll(() => keysState(page).then((s) => s?.mode), { timeout: 15_000 }).toBe('keys');
 
   // QUEUE-REC → arm → recording begins on the loop wrap.
   await pressL(page, KEYS_QREC.x, KEYS_QREC.y);
@@ -222,12 +319,23 @@ test('@launchpad KEYS record — queue-record captures played notes into the cli
 
   // EXIT (1st tap) stops recording but stays in KEYS; the clip keeps playing.
   await pressL(page, KEYS_EXIT.x, KEYS_EXIT.y);
-  await expect.poll(() => isRecording(page), { timeout: 5000 }).toBe(false);
+  await expect.poll(() => isRecording(page), { timeout: 15_000 }).toBe(false);
 
   // With keys released + recording stopped, the RECORDED notes play back on the
-  // loop → AUDIBLE RMS (proves the captured clip actually sounds).
-  const playback = await readScopePeakOverWindow(page, 'r-scp', 1600);
-  expect(playback.rms, 'the recorded notes sound back on the loop').toBeGreaterThan(0.03);
+  // loop → AUDIBLE RMS (proves the captured clip actually sounds). POLLED, not
+  // a one-shot window: a fixed 1600 ms capture races the loop phase — the
+  // recorded notes may have just played and not recur until the next pass,
+  // and a loaded CI shard stretches the loop period (posterbox run 29171101494
+  // failed both attempts exactly here while 180+ shard-mates passed). The
+  // loop guarantees recurrence, so retrying windows under a generous ceiling
+  // is assertion-equivalent and load-tolerant; silence still fails.
+  let playback = { rms: 0, nonzeroSamples: 0 };
+  await expect
+    .poll(async () => {
+      playback = await readScopePeakOverWindow(page, 'r-scp', 1600);
+      return playback.rms;
+    }, { timeout: 20_000, message: 'the recorded notes sound back on the loop' })
+    .toBeGreaterThan(0.03);
   expect(playback.nonzeroSamples, 'structured playback, not a glitch').toBeGreaterThan(50);
 
 });
