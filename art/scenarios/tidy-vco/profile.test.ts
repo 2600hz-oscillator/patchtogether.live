@@ -12,15 +12,21 @@
 // unison, so the pinned golden covers the voice's corners, not one
 // default note:
 //
-//   phrase 1 @ 0.00 s — MONO A2, shipping defaults, WIDTH 0.7: the
-//                        2-voice unison stereo beat + the default
-//                        filter-EG pluck sweep. Gate off at 0.70 s.
+//   phrase 1 @ 0.00 s — MONO A2, shipping defaults (FOLD 0 = folder
+//                        BYPASSED, so this phrase also pins the unchanged
+//                        default voice), WIDTH 0.7: the 2-voice unison
+//                        stereo beat + the default filter-EG pluck sweep.
+//                        Gate off at 0.70 s.
 //   phrase 2 @ 1.00 s — POLY C4/E4/G4 chord (lanes 0-2), res 0.6,
-//                        cutoff 1200: the squelchy chord stab with the
-//                        WIDTH pan fan. Gates off at 1.80 s.
+//                        cutoff 1200, FOLD 0.6 + SYM +0.4: the squelchy
+//                        chord stab with the WIDTH pan fan, now folded
+//                        (stereo decorrelation + asymmetric even harmonics).
+//                        Gates off at 1.80 s.
 //   phrase 3 @ 2.10 s — MONO A1 acid stab: res 0.92 (deep squelch just
-//                        under self-osc), drive 0.8, env +0.9, short
-//                        decay. Gate off at 2.60 s.
+//                        under self-osc), drive 0.8, env +0.9, short decay,
+//                        FOLD 0.85 + SYM −0.5 (heavy asymmetric fold INTO
+//                        the ladder — the West-Coast timbre voice). Gate off
+//                        at 2.60 s.
 //
 // Param changes land at exact sample indexes (deterministic; the pure
 // core has no smoothing — the worklet's block smoother is a wrapper
@@ -69,7 +75,7 @@ const SEGMENTS: readonly Segment[] = [
   {
     from: Math.round(1.0 * SR),
     to: Math.round(1.8 * SR),
-    params: { res: 0.6, cutoff: 1200, width: 0.7 },
+    params: { res: 0.6, cutoff: 1200, width: 0.7, fold: 0.6, sym: 0.4 },
     poly: [0, 1, 4 / 12, 1, 7 / 12, 1, 0, 0, 0, 0],
   },
   {
@@ -81,7 +87,7 @@ const SEGMENTS: readonly Segment[] = [
   {
     from: Math.round(2.1 * SR),
     to: Math.round(2.6 * SR),
-    params: { res: 0.92, drive: 0.8, env: 0.9, fdec: 0.18, fsus: 0, cutoff: 700, width: 0.4 },
+    params: { res: 0.92, drive: 0.8, env: 0.9, fdec: 0.18, fsus: 0, cutoff: 700, width: 0.4, fold: 0.85, sym: -0.5 },
     monoPitch: A1,
     monoGate: 1,
   },

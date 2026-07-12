@@ -13,14 +13,19 @@ import {
   TIDY_C4_HZ,
   TIDY_VCO_DEFAULTS,
   diodeLadderStep,
+  foldAdaaStep,
   makeDiodeLadderState,
+  makeFoldState,
   makeTidyVcoState,
   renderTidyVco,
   tidyCutoffToG,
   tidyDriveGains,
+  tidyFoldBias,
+  tidyFoldGain,
   type TidyVcoBus,
   type TidyVcoParams,
 } from './tidy-vco-dsp';
+import { createOversampler } from './oversample';
 
 const SR = 48000;
 
@@ -316,6 +321,109 @@ describe('sonic range — oscillators', () => {
     assertStrictlyIncreasing(values.slice(1), 'sub/fund vs sub level', 1);
     expect(values[1]! - values[0]!).toBeGreaterThan(10); // off → first step is a cliff
     expect(values[4]! - values[1]!).toBeGreaterThan(9);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// WAVEFOLDER
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Fold a pure sine through the ADAA folder INSIDE the 2× oversampler — the
+ *  exact signal path the voice uses. A clean tone (vs a harmonically-dense
+ *  saw) is what makes the folder's own harmonic generation legible. */
+function foldedSine(fold: number, sym: number, srcHz: number, amp = 0.5): Float32Array {
+  const os = createOversampler(2);
+  const st = makeFoldState();
+  const gain = tidyFoldGain(fold);
+  const bias = tidyFoldBias(sym, fold);
+  const n = SR;
+  const buf = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = amp * Math.sin((2 * Math.PI * srcHz * i) / SR);
+    buf[i] = os.process(x, (u) => foldAdaaStep(st, u, gain, bias, fold));
+  }
+  return buf;
+}
+
+describe('sonic range — wavefolder', () => {
+  it('FOLD grows brightness across its whole travel (5-point centroid, folded sine)', () => {
+    // fold=0 is a bypass → the pure 220 Hz sine (centroid = the fundamental);
+    // each fold step reflects the sine more times, climbing the centroid.
+    const values = [0, 0.25, 0.5, 0.75, 1].map((fold) => centroidHz(foldedSine(fold, 0, 220), SR / 2, SR));
+    assertStrictlyIncreasing(values, 'centroid vs fold');
+    expect(values[0]!, 'fold 0 = clean sine (centroid ≈ fundamental)').toBeLessThan(260);
+    expect(values[4]! / values[0]!, 'a real full-range brightness sweep').toBeGreaterThan(3);
+  });
+
+  it('FOLD symmetric fold generates ODD harmonics, no even (folded sine, sym=0)', () => {
+    const buf = foldedSine(1, 0, 220);
+    const h1 = goertzel(buf, SR, 220, SR / 2, SR);
+    const h2 = goertzel(buf, SR, 440, SR / 2, SR);
+    const h3 = goertzel(buf, SR, 660, SR / 2, SR);
+    expect(db(h3 / h1), 'strong 3rd (odd) harmonic').toBeGreaterThan(-10);
+    expect(db(h2 / h1), 'even harmonic nulled by odd symmetry').toBeLessThan(-60);
+  });
+
+  it('SYMMETRY blooms EVEN harmonics as it leaves center (5-point |sym|, fold=0.7)', () => {
+    // At sym=0 the fold is symmetric → H2 nulled; |sym| off-center makes the
+    // fold asymmetric → the 2nd harmonic climbs monotonically.
+    const values = [0, 0.25, 0.5, 0.75, 1].map((sym) => {
+      const buf = foldedSine(0.7, sym, 220);
+      return db(goertzel(buf, SR, 440, SR / 2, SR) / goertzel(buf, SR, 220, SR / 2, SR));
+    });
+    assertStrictlyIncreasing(values, 'H2/H1 vs |sym|', 1);
+    expect(values[0]!, 'centered fold = no even harmonics').toBeLessThan(-60);
+    expect(values[4]! - values[0]!, 'a large even-harmonic swing').toBeGreaterThan(40);
+  });
+
+  it('SYMMETRY is bipolar-symmetric (±sym raise even harmonics equally)', () => {
+    const h2at = (sym: number) => {
+      const buf = foldedSine(0.7, sym, 220);
+      return db(goertzel(buf, SR, 440, SR / 2, SR) / goertzel(buf, SR, 220, SR / 2, SR));
+    };
+    expect(h2at(0.5)).toBeCloseTo(h2at(-0.5), 1);
+    expect(h2at(1)).toBeCloseTo(h2at(-1), 1);
+  });
+
+  it('the STEREO folder decorrelates L/R monotonically with FOLD (5-point, single voice)', () => {
+    // A single centered poly voice (width fans nothing here) is perfectly
+    // mono at fold 0; the folder's antiphase per-channel bias decorrelates it,
+    // deeper as FOLD climbs — the folder itself widening the image.
+    const stats = [0, 0.25, 0.5, 0.75, 1].map((fold) => {
+      const n = Math.round(1.5 * SR);
+      const l = new Float32Array(n);
+      const r = new Float32Array(n);
+      const poly = new Float32Array(10);
+      poly[0] = 0;
+      poly[1] = 1;
+      renderTidyVco(
+        { ...TIDY_VCO_DEFAULTS, width: 0.6, fold, sus: 1, detune: 0, cutoff: 9000, res: 0.2, shape1: 0, sub: 0, mix: 0 },
+        { poly, monoPitch: 0, monoGate: 0, resCv: 0, driveCv: 0 },
+        l,
+        r,
+        0,
+        n,
+        SR,
+        makeTidyVcoState(),
+      );
+      let lr = 0;
+      let ll = 0;
+      let rr = 0;
+      for (let i = Math.round(0.3 * SR); i < n; i++) {
+        lr += l[i]! * r[i]!;
+        ll += l[i]! ** 2;
+        rr += r[i]! ** 2;
+      }
+      return lr / Math.sqrt(ll * rr);
+    });
+    // corr DEcreases → assert the negated series strictly increases.
+    assertStrictlyIncreasing(
+      stats.map((c) => -c),
+      'decorrelation (−corr) vs fold',
+      0.02,
+    );
+    expect(stats[0]!, 'fold 0 = perfectly mono single voice').toBeGreaterThan(0.999);
+    expect(stats[4]!, 'true stereo at full fold').toBeLessThan(0.3);
   });
 });
 

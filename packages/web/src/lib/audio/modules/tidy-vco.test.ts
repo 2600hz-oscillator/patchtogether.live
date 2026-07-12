@@ -62,7 +62,7 @@ describe('TIDY VCO def — frozen contract', () => {
     expect(tidyVcoDef.size).toBe('3u'); // measured: ~527×720px natural box, 4 hp
   });
 
-  it('ports: poly bus + mono pitch/gate (edge:gate) + 4 worklet CVs in, stereo pair out', () => {
+  it('ports: poly bus + mono pitch/gate (edge:gate) + 6 worklet CVs in, stereo pair out', () => {
     expect(tidyVcoDef.inputs.map((p) => p.id)).toEqual([
       'poly',
       'pitch',
@@ -71,6 +71,8 @@ describe('TIDY VCO def — frozen contract', () => {
       'res_cv',
       'pwm_cv',
       'drive_cv',
+      'fold_cv',
+      'sym_cv',
     ]);
     expect(tidyVcoDef.inputs.find((p) => p.id === 'poly')!.type).toBe('polyPitchGate');
     // No edge on the poly port (lane edges are consumed in the worklet).
@@ -79,7 +81,7 @@ describe('TIDY VCO def — frozen contract', () => {
     expect(gate.type).toBe('gate');
     expect(gate.edge).toBe('gate'); // level-sensitive — an ADSR sustain, declared
     expect(tidyVcoDef.inputs.find((p) => p.id === 'pitch')!.type).toBe('cv');
-    for (const id of ['cutoff_cv', 'res_cv', 'pwm_cv', 'drive_cv']) {
+    for (const id of ['cutoff_cv', 'res_cv', 'pwm_cv', 'drive_cv', 'fold_cv', 'sym_cv']) {
       expect(tidyVcoDef.inputs.find((p) => p.id === id)!.type).toBe('cv');
     }
     expect(tidyVcoDef.outputs).toEqual([
@@ -89,9 +91,10 @@ describe('TIDY VCO def — frozen contract', () => {
     expect(tidyVcoDef.stereoPairs).toEqual([['out_l', 'out_r']]);
   });
 
-  it('params: the 22-knob voice + the HOLD pad', () => {
+  it('params: the 24-knob voice + the HOLD pad (incl. the FOLD/SYM wavefolder)', () => {
     expect(tidyVcoDef.params.map((p) => p.id)).toEqual([
       'shape1', 'shape2', 'pw', 'detune', 'oct2', 'mix', 'sub',
+      'fold', 'sym',
       'cutoff', 'res', 'drive', 'env', 'track',
       'fatk', 'fdec', 'fsus', 'frel',
       'atk', 'dec', 'sus', 'rel',
@@ -99,6 +102,8 @@ describe('TIDY VCO def — frozen contract', () => {
     ]);
     const byId = Object.fromEntries(tidyVcoDef.params.map((p) => [p.id, p]));
     expect(byId.cutoff).toMatchObject({ min: 40, max: 14000, defaultValue: 900, curve: 'log', units: 'Hz' });
+    expect(byId.fold).toMatchObject({ min: 0, max: 1, defaultValue: 0, curve: 'linear' });
+    expect(byId.sym).toMatchObject({ min: -1, max: 1, defaultValue: 0, curve: 'linear' });
     expect(byId.detune).toMatchObject({ min: -50, max: 50, defaultValue: 6 });
     expect(byId.oct2).toMatchObject({ min: -1, max: 1, defaultValue: 0, curve: 'discrete' });
     expect(byId.env).toMatchObject({ min: -1, max: 1, defaultValue: 0.45 });
@@ -163,7 +168,7 @@ function runProc(
     const outL = new Float32Array(BLOCK);
     const outR = new Float32Array(BLOCK);
     proc.process(
-      [polyCh, [pitchCh], [gateCh], [zero], [zero], [zero], [zero]],
+      [polyCh, [pitchCh], [gateCh], [zero], [zero], [zero], [zero], [zero], [zero]],
       [[outL], [outR]],
       params,
     );

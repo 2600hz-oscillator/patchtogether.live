@@ -774,8 +774,12 @@ const BEHAVIORAL_PARAMS: Record<string, Record<string, number>> = {
   // gives drive_cv its full 0→1 swing (the knob is loudness-compensated,
   // so the delta shows in crest/centroid, not rms); cutoff=5000 opens the
   // ladder so waveshape deltas reach the analyser; width=0 + detune=0 +
-  // sub=0 kill the stereo/unison/sub churn that pads window variance.
-  // All values inside the params' native ranges.
+  // sub=0 kill the stereo/unison/sub churn that pads window variance. FOLD
+  // is left at 0 module-wide (a bit-exact bypass — folding here would dilute
+  // the weak pitch/cutoff_cv centroid deltas with the folder's harmonic
+  // thicket); fold_cv is still observable from 0 (its LFO drives the folder
+  // 0→engaged), and sym_cv — which is a NO-OP unless FOLD is up — gets a
+  // per-port fold=0.5 override below. All values inside native ranges.
   tidyVco: { shape1: 1, shape2: 1, pw: 0.25, drive: 0, cutoff: 5000, res: 0.3, width: 0, detune: 0, sub: 0 },
 };
 
@@ -1588,6 +1592,34 @@ const BEHAVIORAL_PORT_TEST_SOURCE: Record<string, InputSource> = {
     outPort: 'phase0',
     sourceType: 'cv',
   },
+  // TIDY VCO fold_cv / sym_cv — full-swing wavefolder CVs that the generic
+  // walk under-exercises: the same deterministic ±1 V sine as the pwm/drive
+  // ports. fold_cv sweeps the fold amount around the control's fold=0.5
+  // (harmonic thicket + stereo decorrelation churn); sym_cv sweeps the
+  // fold-input DC bias (even-harmonic content — audible because the control
+  // holds fold engaged).
+  'tidyVco.fold_cv': {
+    node: {
+      id: 'up-tvfold-lfo',
+      type: 'lfo',
+      position: { x: 60, y: 60 },
+      domain: 'audio',
+      params: { rate: 3, shape: 0, depth: 0.5 },
+    },
+    outPort: 'phase0',
+    sourceType: 'cv',
+  },
+  'tidyVco.sym_cv': {
+    node: {
+      id: 'up-tvsym-lfo',
+      type: 'lfo',
+      position: { x: 60, y: 60 },
+      domain: 'audio',
+      params: { rate: 3, shape: 0, depth: 0.5 },
+    },
+    outPort: 'phase0',
+    sourceType: 'cv',
+  },
 };
 
 // ────────── Per-PORT context-source override ──────────
@@ -1730,6 +1762,14 @@ const BEHAVIORAL_PORT_PARAMS: Record<string, Record<string, number>> = {
   // turns trig1 into a dense 50-Hz out1 pulse train. mode stays 0 (OFF):
   // trig1 → out1, the observed first output.
   'moog911a.trig1': { delay1: 0.002, delay2: 0.002 },
+  // tidyVco.sym_cv — SYMMETRY is a FOLD-GATED DC bias (tidyFoldBias scales by
+  // the effective FOLD, so it is an EXACT no-op at the module-wide fold=0).
+  // Engage the wavefolder (fold=0.5) for THIS row ONLY so sweeping sym_cv
+  // moves the fold's asymmetry → even-harmonic content: a robust crest +
+  // zero-cross + RMS-variance delta (Δcrest ≈ 0.9, Δr rms ≈ 0.32 — measured
+  // 5× stable). Keeping fold=0 module-wide leaves the weak pitch/cutoff_cv
+  // centroid deltas undiluted by the folder's harmonic thicket.
+  'tidyVco.sym_cv': { fold: 0.5 },
 };
 
 // ────────── Per-PORT / per-MODULE calibrated delta thresholds ──────────

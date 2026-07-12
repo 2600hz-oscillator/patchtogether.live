@@ -9,6 +9,10 @@
 // owns the frozen I/O surface: 23 params + 7 audio-rate inputs + the
 // stereo out_l/out_r pair.
 //
+// The osc bus passes through a STEREO WAVEFOLDER (ADAA triangle folder,
+// FOLD + SYMMETRY, per-channel decorrelated) BEFORE the diode ladder — the
+// classic West-Coast timbre-into-filter voice. FOLD 0 is a bit-exact bypass.
+//
 // IMPORTANT: this file does NOT `export` anything at the top level —
 // top-level exports leak into the bundled dist/<name>.js + break the ART
 // classic-script eval. The Processor class is registered via the
@@ -27,10 +31,13 @@
 //   inputs[4] = res_cv     (±1 V = the whole RES range)
 //   inputs[5] = pwm_cv     (±0.45 duty/V on the shared pulse width)
 //   inputs[6] = drive_cv   (±1 V = the whole DRIVE range)
+//   inputs[7] = fold_cv    (±1 V = the whole FOLD range — full-swing)
+//   inputs[8] = sym_cv     (±1 V = the whole SYMMETRY range each way)
 //
-// cutoff_cv + pwm_cv are fed to the core PER SAMPLE (audio-rate filter FM
-// / PWM); res_cv + drive_cv are block-rate (they re-derive solver
-// coefficients). Knob params are read once per 128-sample block through an
+// cutoff_cv + pwm_cv + fold_cv + sym_cv are fed to the core PER SAMPLE
+// (audio-rate filter FM / PWM / wavefold); res_cv + drive_cv are block-rate
+// (they re-derive solver coefficients). Knob params are read once per
+// 128-sample block through an
 // 80 Hz one-pole smoother stepped at block rate (the poly gates themselves
 // are block-rate — the house pente/cube pattern). The HOLD param is the
 // card's manual gate pad: OR-ed with the mono gate input, so the pad
@@ -89,6 +96,8 @@ const PARAM_TABLE: ReadonlyArray<readonly [string, number, number, number]> = [
   ['oct2',   TIDY_VCO_DEFAULTS.oct2,   -1, 1],
   ['mix',    TIDY_VCO_DEFAULTS.mix,    0, 1],
   ['sub',    TIDY_VCO_DEFAULTS.sub,    0, 1],
+  ['fold',   TIDY_VCO_DEFAULTS.fold,   0, 1],
+  ['sym',    TIDY_VCO_DEFAULTS.sym,    -1, 1],
   ['cutoff', TIDY_VCO_DEFAULTS.cutoff, 40, 14000],
   ['res',    TIDY_VCO_DEFAULTS.res,    0, 1],
   ['drive',  TIDY_VCO_DEFAULTS.drive,  0, 1],
@@ -146,6 +155,8 @@ class TidyVcoProcessor extends AudioWorkletProcessor {
       monoGate: 0,
       cutoffCv: 0,
       pwmCv: 0,
+      foldCv: 0,
+      symCv: 0,
       resCv: 0,
       driveCv: 0,
     };
@@ -201,11 +212,14 @@ class TidyVcoProcessor extends AudioWorkletProcessor {
     this.bus.monoPitch = inputs[1]?.[0]?.[0] ?? 0;
     this.bus.monoGate = Math.max(inputs[2]?.[0]?.[0] ?? 0, hold);
 
-    // CV inputs: cutoff/pwm per sample (audio-rate), res/drive block-rate.
+    // CV inputs: cutoff/pwm/fold/sym per sample (audio-rate), res/drive
+    // block-rate (they re-derive solver coefficients).
     this.bus.cutoffCv = inputs[3]?.[0] ?? 0;
     this.bus.pwmCv = inputs[5]?.[0] ?? 0;
     this.bus.resCv = inputs[4]?.[0]?.[0] ?? 0;
     this.bus.driveCv = inputs[6]?.[0]?.[0] ?? 0;
+    this.bus.foldCv = inputs[7]?.[0] ?? 0;
+    this.bus.symCv = inputs[8]?.[0] ?? 0;
 
     // Knobs: block-rate smoothed reads off the frozen param table.
     const p = this.p;
@@ -218,6 +232,8 @@ class TidyVcoProcessor extends AudioWorkletProcessor {
     p.oct2 = this.kval(parameters, 'oct2', 0);
     p.mix = rd('mix', TIDY_VCO_DEFAULTS.mix);
     p.sub = rd('sub', TIDY_VCO_DEFAULTS.sub);
+    p.fold = rd('fold', TIDY_VCO_DEFAULTS.fold);
+    p.sym = rd('sym', TIDY_VCO_DEFAULTS.sym);
     p.cutoff = rd('cutoff', TIDY_VCO_DEFAULTS.cutoff);
     p.res = rd('res', TIDY_VCO_DEFAULTS.res);
     p.drive = rd('drive', TIDY_VCO_DEFAULTS.drive);

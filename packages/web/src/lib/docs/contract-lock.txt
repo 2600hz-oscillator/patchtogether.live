@@ -2954,11 +2954,13 @@ textmarquee param scrollY 0..1 linear default=0.5
 tidyVco meta domain=audio
 tidyVco in cutoff_cv cv
 tidyVco in drive_cv cv
+tidyVco in fold_cv cv
 tidyVco in gate gate edge=gate
 tidyVco in pitch cv
 tidyVco in poly polyPitchGate
 tidyVco in pwm_cv cv
 tidyVco in res_cv cv
+tidyVco in sym_cv cv
 tidyVco out out_l audio
 tidyVco out out_r audio
 tidyVco param atk 0.0005..5 log default=0.003 unit=s
@@ -2969,6 +2971,7 @@ tidyVco param drive 0..1 linear default=0.25
 tidyVco param env -1..1 linear default=0.45
 tidyVco param fatk 0.0005..5 log default=0.005 unit=s
 tidyVco param fdec 0.001..5 log default=0.35 unit=s
+tidyVco param fold 0..1 linear default=0
 tidyVco param frel 0.001..5 log default=0.3 unit=s
 tidyVco param fsus 0..1 linear default=0.2
 tidyVco param hold 0..1 discrete default=0
@@ -2982,6 +2985,7 @@ tidyVco param shape1 0..1 linear default=0
 tidyVco param shape2 0..1 linear default=0
 tidyVco param sub 0..1 linear default=0.15
 tidyVco param sus 0..1 linear default=0.75
+tidyVco param sym -1..1 linear default=0
 tidyVco param track 0..1 linear default=0.4
 tidyVco param width 0..1 linear default=0.4
 tidyVco stereo out_l+out_r

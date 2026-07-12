@@ -222,15 +222,16 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // cv-range full-swing standard at the DSP level. Same shape as
   // kickdrum / snaredrum.
   clap: ['accent_in', 'tone_cv', 'tail_cv', 'spread_cv'],
-  // TIDY VCO: all five cv inputs are consumed DIRECTLY by the worklet as
+  // TIDY VCO: all seven cv inputs are consumed DIRECTLY by the worklet as
   // its own audio-rate node inputs, not AudioParams. `pitch` is the mono
   // V/oct cable (freq = C4·2^V per voice, the CUBE.pitch V/oct-fallback
-  // shape), and cutoff_cv / res_cv / pwm_cv / drive_cv carry their
-  // full-swing laws INSIDE the core (4 oct/V cutoff at audio rate,
-  // ±1 V = whole RES / DRIVE range, ±0.45 duty/V PWM at audio rate — see
+  // shape), and cutoff_cv / res_cv / pwm_cv / drive_cv / fold_cv / sym_cv
+  // carry their full-swing laws INSIDE the core (4 oct/V cutoff at audio
+  // rate, ±1 V = whole RES / DRIVE / FOLD range, ±0.45 duty/V PWM and
+  // ±1 V = whole SYMMETRY range each way at audio rate — see
   // tidy-vco-dsp.ts), satisfying the cv-range full-swing standard at the
   // DSP level. Same shape as kickdrum / snaredrum / clap.
-  tidyVco: ['pitch', 'cutoff_cv', 'res_cv', 'pwm_cv', 'drive_cv'],
+  tidyVco: ['pitch', 'cutoff_cv', 'res_cv', 'pwm_cv', 'drive_cv', 'fold_cv', 'sym_cv'],
   // CUBE pitch: V/oct input consumed directly by the worklet as its own
   // audio-rate node input (freq = C4·2^(pitch + tune/12 + fine/1200), applied
   // per-sample). No paramTarget — same V/oct-fallback shape as dx7.pitch_cv. CUBE's OTHER cv inputs (slice_y/rx/ry/rz, morph_fc,
