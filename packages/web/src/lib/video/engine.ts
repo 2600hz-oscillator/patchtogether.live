@@ -46,6 +46,7 @@ import {
 import { VIDEO_RES } from './video-res';
 import { RenderWorkerBridge, isWorkerFlagOn } from './worker/worker-bridge';
 import { WorkerProxyHandle } from './worker/worker-proxy-handle';
+import { computeActiveSet, isPullEvalOn } from './pull-eval';
 
 /** The 4:3 default render resolution (1024×768, "768p"). Re-exported from
  *  video-res.ts (the single aspect→res source of truth) so every importer that
@@ -543,7 +544,46 @@ export class VideoEngine implements DomainEngine {
    */
   private workerBridge: RenderWorkerBridge | null = null;
 
-  constructor(opts: { canvas?: OffscreenCanvas | HTMLCanvasElement; res?: { width: number; height: number } } = {}) {
+  // ---- Sink-driven pull evaluation (see pull-eval.ts) ----
+
+  /** Wall-clock (ms) of the most recent OBSERVATION of each node's output —
+   *  an OUTPUT/preview card blit, a card `read()` poll, a test
+   *  `outputTexture()` read, a pointer interaction. A node counts as WATCHED
+   *  while its mark is younger than {@link VideoEngine.WATCH_TTL_MS}. */
+  private watchedAt = new Map<string, number>();
+  /** Card viewport visibility, fed by the Canvas-level IntersectionObserver
+   *  (see $lib/ui/video-card-visibility). ABSENT = unknown = fail-open
+   *  (treated as visible). `false` demotes a watched node — an offscreen
+   *  card's preview loop keeps blitting, but nobody can see the result, so
+   *  the node must not keep its chain rendering. */
+  private cardVisible = new Map<string, boolean>();
+  /** Hard render leases (refcounted): roots regardless of card visibility.
+   *  Used by presentation surfaces that outlive the card's viewport rect
+   *  (true fullscreen, present-on-second-display). */
+  private renderLeases = new Map<string, number>();
+  /** Per-node cumulative draw counter — the deterministic probe the pull-eval
+   *  tests/e2e assert on (a skipped node's counter must not advance). */
+  private framesDrawn = new Map<string, number>();
+  /** Last frame's pull decision (node ids), for the `pullStats()` probe. */
+  private lastEvaluated: string[] = [];
+  private lastSkipped: string[] = [];
+  /** How long an observation keeps a node watched. Long enough that a card's
+   *  ~60fps blit loop never flickers the state (and that a synchronous
+   *  test-driven `step()` burst inside one task can't expire it), short
+   *  enough that an unmounted/hidden card decays within ~2s. */
+  private static readonly WATCH_TTL_MS = 1500;
+  /** Injectable clock for the watch marks (unit tests advance it to prove
+   *  TTL decay without wall-clock sleeps). Defaults to performance.now. */
+  private readonly watchNow: () => number;
+
+  constructor(opts: {
+    canvas?: OffscreenCanvas | HTMLCanvasElement;
+    res?: { width: number; height: number };
+    /** Test-only injectable clock for watch-mark TTL (defaults to
+     *  performance.now — production callers never pass it). */
+    watchNow?: () => number;
+  } = {}) {
+    this.watchNow = opts.watchNow ?? (() => performance.now());
     // Assign _res BEFORE any `this.res.*` read below (the OffscreenCanvas
     // sizing). Degenerate (0-dim) res falls back to the 4:3 VIDEO_RES so a
     // caller passing a glitched viewport never produces a 0-sized drawing
@@ -625,6 +665,11 @@ export class VideoEngine implements DomainEngine {
     }
     this.nodes.set(node.id, handle);
     this.nodeMeta.set(node.id, node);
+    // Pull-eval SPAWN GRACE: a fresh node starts watched for one TTL so it
+    // renders from frame 1 while its card mounts and begins presenting
+    // (the blit/read marks then keep it alive — or it decays if nothing
+    // ever observes it).
+    this.markWatched(node.id);
     this.topoStale = true;
     this.ensureLoop();
   }
@@ -664,6 +709,10 @@ export class VideoEngine implements DomainEngine {
     this.nodeMeta.delete(nodeId);
     this.mouseState.delete(nodeId);
     this.managedFbos.delete(nodeId);
+    this.watchedAt.delete(nodeId);
+    this.cardVisible.delete(nodeId);
+    this.renderLeases.delete(nodeId);
+    this.framesDrawn.delete(nodeId);
     this.topoStale = true;
   }
 
@@ -703,7 +752,150 @@ export class VideoEngine implements DomainEngine {
    * id and simply read back later if/when the node exists).
    */
   setMouse(nodeId: string, x: number, y: number, z: number, w: number): void {
+    // A pointer on a node's preview is an observation — keep it rendering.
+    this.markWatched(nodeId);
     this.mouseState.set(nodeId, [x, y, z, w]);
+  }
+
+  // -------- Sink-driven pull evaluation: watch bookkeeping --------
+
+  /**
+   * Record that `nodeId`'s output was OBSERVED just now (presented on a
+   * canvas, polled via read(), sampled by a test). The node counts as a pull
+   * root for the next WATCH_TTL_MS, unless its card is known-offscreen
+   * (setCardVisibility(false)). Called implicitly by
+   * blitOutputToDrawingBuffer / read / outputTexture / setMouse; public so
+   * bespoke presentation paths (and tests) can mark directly.
+   */
+  markWatched(nodeId: string): void {
+    this.watchedAt.set(nodeId, this.watchNow());
+  }
+
+  /**
+   * Feed card viewport visibility from the Canvas-level IntersectionObserver
+   * (see $lib/ui/video-card-visibility). `false` demotes the node's watch
+   * marks (an offscreen card's preview loop keeps blitting, but nobody can
+   * see it); `true` restores; `null` clears back to unknown (fail-open =
+   * visible) — used when a card unmounts.
+   */
+  setCardVisibility(nodeId: string, visible: boolean | null): void {
+    if (visible === null) this.cardVisible.delete(nodeId);
+    else this.cardVisible.set(nodeId, visible);
+  }
+
+  /**
+   * Acquire a HARD render lease on a node: it stays a pull root regardless of
+   * card visibility until the returned release fn is called (refcounted, and
+   * release is idempotent). For presentation surfaces that outlive the card's
+   * viewport rect: VideoOutCard's true-fullscreen / present-on-second-display
+   * modes. NOT for preview loops — those use the soft blit/read marks so an
+   * offscreen card decays naturally.
+   */
+  acquireRenderLease(nodeId: string): () => void {
+    this.renderLeases.set(nodeId, (this.renderLeases.get(nodeId) ?? 0) + 1);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const n = (this.renderLeases.get(nodeId) ?? 0) - 1;
+      if (n <= 0) this.renderLeases.delete(nodeId);
+      else this.renderLeases.set(nodeId, n);
+    };
+  }
+
+  /** Last frame's pull decision + cumulative per-node draw counts — the
+   *  deterministic probe the pull-eval unit tests and e2e assert on (counters
+   *  and membership, never pixel timing). JSON-safe for page.evaluate. */
+  pullStats(): {
+    enabled: boolean;
+    evaluated: string[];
+    skipped: string[];
+    framesDrawn: Record<string, number>;
+    /** The card-visibility feed as the engine currently sees it (absent id =
+     *  unknown = fail-open). Diagnostic — lets a spec assert WHY a node was
+     *  skipped/kept. */
+    cardVisible: Record<string, boolean>;
+    /** Nodes currently holding a hard render lease. */
+    leased: string[];
+  } {
+    return {
+      enabled: isPullEvalOn(),
+      evaluated: [...this.lastEvaluated],
+      skipped: [...this.lastSkipped],
+      framesDrawn: Object.fromEntries(this.framesDrawn),
+      cardVisible: Object.fromEntries(this.cardVisible),
+      leased: [...this.renderLeases.keys()],
+    };
+  }
+
+  /** Cumulative number of frames in which `nodeId`'s draw() actually ran. */
+  framesDrawnFor(nodeId: string): number {
+    return this.framesDrawn.get(nodeId) ?? 0;
+  }
+
+  /** Is this node a pull ROOT this frame? Exempt (side-effectful) nodes and
+   *  leased nodes always are; watched nodes are unless their card is
+   *  known-offscreen. */
+  private isPullRoot(nodeId: string, handle: VideoNodeHandle, now: number): boolean {
+    if (this.renderLeases.has(nodeId)) return true;
+    if (this.isPullExempt(nodeId, handle)) return true;
+    const at = this.watchedAt.get(nodeId);
+    if (at === undefined || now - at > VideoEngine.WATCH_TTL_MS) return false;
+    // Watched — but a known-offscreen card doesn't count as an observer.
+    return this.cardVisible.get(nodeId) !== false;
+  }
+
+  /**
+   * Side-effect audit (pull-eval exemptions): a module whose draw() has
+   * observable effects BEYOND its output texture must keep running while
+   * unwatched. Detected structurally from the handle —
+   *   - `audioSources` non-empty: the module publishes live audio/CV on the
+   *     AudioContext graph (DOOM/BLOOD/NIBBLES/GIBRIBBON game sims, the
+   *     video players' soundtracks, MANDELBULB's sonification). Pausing
+   *     draw() would freeze the simulation/CV that audio consumers hear.
+   *   - `audioInputs` non-empty: the module CONSUMES audio (RECORDERBOX's
+   *     soundtrack capture, MILKDROP/GRAPHICEQ analysis) — its draw() drains
+   *     and reacts to a live stream; RECORDERBOX must capture while hidden.
+   *   - `subscribePulse` present: the module publishes discrete pulse events
+   *     from inside draw(); skipping draws would drop pulses.
+   *   - def-level `pullExempt` flag: escape hatch for future stateful sims
+   *     with no audio surface.
+   * Everything else is texture-only: freezing it while unobserved is, by
+   * definition, unobservable.
+   */
+  private isPullExempt(nodeId: string, handle: VideoNodeHandle): boolean {
+    if (handle.audioSources && handle.audioSources.size > 0) return true;
+    if (handle.audioInputs && handle.audioInputs.size > 0) return true;
+    if (typeof handle.subscribePulse === 'function') return true;
+    const meta = this.nodeMeta.get(nodeId);
+    const def = meta ? getVideoModuleDef(meta.type) : undefined;
+    return def?.pullExempt === true;
+  }
+
+  /**
+   * Compute this frame's ACTIVE set (pull evaluation): reverse-reachable from
+   * the roots through the intra-domain edge graph. Upstream sources of an
+   * active node are active — a watched OUTPUT keeps its whole input chain
+   * rendering; an unwatched, side-effect-free chain costs zero draws.
+   */
+  private computePullActiveSet(): Set<string> {
+    const now = this.watchNow();
+    const roots: string[] = [];
+    for (const [id, handle] of this.nodes) {
+      if (this.isPullRoot(id, handle, now)) roots.push(id);
+    }
+    // target -> upstream source node ids (only edges between materialized
+    // video nodes matter for draw scheduling; cross-domain bridges tick
+    // separately and games/CV emitters are already roots via exemptions).
+    const incoming = new Map<string, string[]>();
+    for (const e of this.edges.values()) {
+      const t = e.target.nodeId;
+      if (!this.nodes.has(t) || !this.nodes.has(e.source.nodeId)) continue;
+      let list = incoming.get(t);
+      if (!list) { list = []; incoming.set(t, list); }
+      list.push(e.source.nodeId);
+    }
+    return computeActiveSet(roots, (id) => incoming.get(id) ?? []);
   }
 
   readParam(nodeId: string, paramId: string): number | undefined {
@@ -712,7 +904,12 @@ export class VideoEngine implements DomainEngine {
 
   read(nodeId: string, key: string): unknown {
     const h = this.nodes.get(nodeId);
-    return h?.read ? h.read(key) : undefined;
+    if (!h) return undefined;
+    // A card polling module state (ACIDWARP's snapshot preview, VFPGA's gate
+    // LEDs, LUSHGARDEN's plant counter) is observing the node — keep it
+    // rendering while the polls continue.
+    this.markWatched(nodeId);
+    return h.read ? h.read(key) : undefined;
   }
 
   /** The engine-level frame counter — advanced exactly once per step() (incl.
@@ -732,6 +929,9 @@ export class VideoEngine implements DomainEngine {
   outputTexture(nodeId: string, portId?: string): WebGLTexture | null {
     const h = this.nodes.get(nodeId);
     if (!h) return null;
+    // Sampling a node's output texture (render-smoke readbacks, bespoke
+    // consumers) is an observation — keep the node rendering.
+    this.markWatched(nodeId);
     if (portId && h.read) {
       const t = h.read(`outputTexture:${portId}`) as WebGLTexture | null | undefined;
       if (t) return t;
@@ -902,6 +1102,12 @@ export class VideoEngine implements DomainEngine {
     this.edges.clear();
     this.managedFbos.clear();
     this.topoOrder = [];
+    this.watchedAt.clear();
+    this.cardVisible.clear();
+    this.renderLeases.clear();
+    this.framesDrawn.clear();
+    this.lastEvaluated = [];
+    this.lastSkipped = [];
 
     // Fix E — tear down the render worker (if one was spawned). Each proxy
     // handle already told the worker to removeNode in its dispose() above; this
@@ -974,19 +1180,29 @@ export class VideoEngine implements DomainEngine {
       return;
     }
 
+    // 0b. Sink-driven pull evaluation: compute this frame's ACTIVE set —
+    //     the reverse-reachable subgraph from the frame's roots (watched /
+    //     leased / side-effect-exempt nodes). null = pull eval disabled via
+    //     the kill switch → evaluate everything (the legacy push behavior).
+    const activeSet = isPullEvalOn() ? this.computePullActiveSet() : null;
+
     // 1. Sample every active cross-domain CV bridge BEFORE drawing this
     //    frame's modules. Each sample becomes the param value for the
     //    upcoming draw, so a frame's-worth of CV → video param coupling
     //    is one-frame-deterministic. Quantization at 60fps from a 48kHz
     //    audio source is the documented limit (see plan §2 'Cross-domain
-    //    CV adapter').
+    //    CV adapter'). NOT pull-filtered: setParam writes are cheap, feed
+    //    card-side scopes/UI, and keep param state fresh for the frame a
+    //    target wakes back up.
     this.tickCvBridges();
     // 1b. Render every active audio → video texture bridge so the
     //     target video modules see fresh waveform textures during their
     //     draw() pass. Doing this BEFORE the topo loop matches the CV
     //     bridge ordering — both kinds of cross-domain handoff happen
-    //     "before" intra-domain rendering each frame.
-    this.tickVideoTextureBridges();
+    //     "before" intra-domain rendering each frame. Pull-filtered: a
+    //     bridge whose TARGET node is skipped this frame renders a texture
+    //     nobody samples, so it is skipped with it.
+    this.tickVideoTextureBridges(activeSet);
 
     // Per-frame timing for Shadertoy iTimeDelta / iFrameRate. Clamp the delta
     // to a sane window so a tab-backgrounded long-gap frame doesn't blow up a
@@ -1011,11 +1227,24 @@ export class VideoEngine implements DomainEngine {
       isOutputConnected: (thisNodeId) => this.isOutputConnected(thisNodeId),
       connectedOutputPorts: (thisNodeId) => this.connectedOutputPorts(thisNodeId),
     };
+    const evaluated: string[] = [];
+    const skipped: string[] = [];
     for (const id of this.topoOrder) {
       const handle = this.nodes.get(id);
       if (!handle) continue;
+      if (activeSet && !activeSet.has(id)) {
+        // Pull eval: nothing observable depends on this node this frame —
+        // zero render work. Its texture keeps its last contents; the frame
+        // it becomes watched again it resumes rendering.
+        skipped.push(id);
+        continue;
+      }
+      evaluated.push(id);
+      this.framesDrawn.set(id, (this.framesDrawn.get(id) ?? 0) + 1);
       handle.surface.draw(ctx);
     }
+    this.lastEvaluated = evaluated;
+    this.lastSkipped = skipped;
   }
 
   // -------- Per-OUTPUT visible-canvas blit --------
@@ -1049,6 +1278,11 @@ export class VideoEngine implements DomainEngine {
   blitOutputToDrawingBuffer(nodeId: string): void {
     const handle = this.nodes.get(nodeId);
     if (!handle) return;
+    // Every present path funnels through this blit (OUTPUT cards + the 30+
+    // on-card preview loops), so a blit IS the "something is showing this
+    // node" signal for pull evaluation. Mark BEFORE the GL work so even a
+    // throwing stub context (unit tests) records the observation.
+    this.markWatched(nodeId);
     // Only OUTPUT-shaped modules (those with both an FBO texture AND no
     // declared video output port) make sense to blit. We don't enforce
     // the type check here — any module with a surface.texture can in
@@ -1309,9 +1543,13 @@ void main() {
     this.topoStale = true;
   }
 
-  private tickVideoTextureBridges(): void {
+  private tickVideoTextureBridges(activeSet: Set<string> | null = null): void {
     if (this.videoTextureBridges.size === 0) return;
     for (const bridge of this.videoTextureBridges.values()) {
+      // Pull eval: the bridge's texture is only ever sampled by its TARGET
+      // video node's draw — if that node is skipped this frame, the bridge
+      // render would be unobservable work. (activeSet null = pull disabled.)
+      if (activeSet && !activeSet.has(bridge.edge.target.nodeId)) continue;
       if (bridge.drawFrame && bridge.customCanvas && bridge.customTexture) {
         // Module-driven 2D draw path. The module reads its own state
         // (analysers, params); we just hand it the canvas and upload

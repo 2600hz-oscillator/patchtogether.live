@@ -110,6 +110,9 @@
   import { VideoEngine } from '$lib/video/engine';
   import { listVideoModuleDefs, getVideoModuleDef } from '$lib/video/module-registry';
   import '$lib/video/modules'; // auto-registers linesDef + videoOutDef
+  // Card-viewport visibility feed for the video engine's sink-driven pull
+  // evaluation (one central IntersectionObserver over the flow nodes).
+  import { observeVideoCardVisibility } from '$lib/ui/video-card-visibility';
   // Meta-domain registry — sticky notes etc. (no engine binding).
   import { listMetaModuleDefs, getMetaModuleDef } from '$lib/meta/module-registry';
   import '$lib/meta/modules'; // auto-registers stickyDef
@@ -5323,6 +5326,32 @@
   // peers automatically (30s default); the provider's destroy() also
   // broadcasts a null state so peers see cursors disappear immediately.
   let flowEl = $state<HTMLDivElement | null>(null);
+
+  // ---------------- Video pull-eval: card viewport visibility ----------------
+  // Feed each module card's viewport visibility to the VideoEngine so its
+  // sink-driven pull evaluation ($lib/video/pull-eval) can stop rendering
+  // chains whose previews are panned offscreen. ONE central
+  // IntersectionObserver over the SvelteFlow node elements (no per-card
+  // wiring); the engine fails OPEN on unknown ids, so this feed is a pure
+  // demotion signal and its absence changes nothing.
+  $effect(() => {
+    const e = engine;
+    const root = flowEl;
+    if (!e || !root) return;
+    let ve: VideoEngine | null = null;
+    try {
+      ve = e.getDomain<VideoEngine>('video');
+    } catch {
+      ve = null; // video engine unavailable (no WebGL2) — nothing to feed
+    }
+    if (!ve) return;
+    const engineRef = ve;
+    const obs = observeVideoCardVisibility({
+      container: root,
+      setVisibility: (nodeId, visible) => engineRef.setCardVisibility(nodeId, visible),
+    });
+    return () => obs.dispose();
+  });
 
   $effect(() => {
     const p = provider;
