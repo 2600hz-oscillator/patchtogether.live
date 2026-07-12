@@ -16,6 +16,7 @@
   // are byte-identical to clipplayerDef so the CV bridge routes unchanged.
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
+  import MidiAssignButton from '$lib/ui/controls/MidiAssignButton.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch, ydoc } from '$lib/graph/store';
@@ -44,6 +45,12 @@
     type ClipPlayerData,
     type NoteClipRecord,
   } from '$lib/audio/modules/clip-types';
+  import {
+    RATE_LABELS,
+    RATE_DEFAULT_INDEX,
+    coerceRateIndex,
+    laneRateIndex,
+  } from '$lib/audio/modules/clip-clock';
   import {
     coerceArrangeData,
     arrangeBlocks,
@@ -454,6 +461,35 @@
     });
   }
 
+  // --- per-lane clock RATE dropdown (right of each launch-grid row) ---
+  // 1/8..1/2 divide (advance every Nth base step), 2x/4x multiply; default 1 =
+  // the global STEP grid. Synced per-lane index into clip-clock's RATE_MULTS;
+  // the engine scales that lane's step duration (card-only control for now —
+  // no monome-grid / Launchpad surface).
+  function laneRate(lane: number): number {
+    void cardVersion;
+    return laneRateIndex(dataObj(), lane);
+  }
+  function setLaneRate(lane: number, idx: number) {
+    writeData((d) => {
+      const base = new Array<number>(CLIP_LANES).fill(RATE_DEFAULT_INDEX);
+      if (Array.isArray(d.rate)) {
+        for (let i = 0; i < CLIP_LANES && i < d.rate.length; i++) base[i] = coerceRateIndex(d.rate[i]);
+      }
+      base[lane] = coerceRateIndex(idx);
+      d.rate = base;
+    });
+  }
+
+  // --- RESET (RST button / MIDI note / `reset` gate input) ---
+  // Bumps the synced resetNonce; every peer's engine snaps ACTIVE lanes back to
+  // step 1 and re-anchors the shared rate-phase origin (queued launches keep).
+  function doReset() {
+    writeData((d) => {
+      d.resetNonce = (typeof d.resetNonce === 'number' ? d.resetNonce : 0) + 1;
+    });
+  }
+
   const SCALES: (ScaleName | undefined)[] = ['major', 'minor', 'pentatonic', undefined];
   function scaleName(s: ScaleName | undefined): string {
     return s ? s : 'chromatic';
@@ -490,7 +526,7 @@
     view === 'edit' && lanePlaying(dataObj(), editLane) === editSlot ? curStep : -1,
   );
 
-  const inputs = portsFromDef(clipplayerDef.inputs, { stop_all: 'STOP ALL' });
+  const inputs = portsFromDef(clipplayerDef.inputs, { stop_all: 'STOP ALL', reset: 'RESET' });
   const outputs: PortDescriptor[] = Array.from({ length: CLIP_LANES }, (_, i) => [
     { id: `pitch${i + 1}`, label: `PITCH ${i + 1}`, cable: 'polyPitchGate' },
     { id: `gate${i + 1}`, label: `GATE ${i + 1}`, cable: 'gate' },
@@ -679,6 +715,22 @@
                   ondblclick={() => onPadDblClick(idx)}
                 ></button>
               {/each}
+              <!-- per-lane clock rate: divide/multiply this lane's step rate off
+                   the global STEP grid (card-only for now). -->
+              <select
+                class="lane-rate"
+                class:offgrid={laneRate(lane) !== RATE_DEFAULT_INDEX}
+                value={String(laneRate(lane))}
+                title={`Lane ${lane + 1} clock rate — ×/÷ the STEP grid (${RATE_LABELS[laneRate(lane)]})`}
+                aria-label={`lane ${lane + 1} clock rate`}
+                data-lane={lane}
+                data-testid={`clipplayer-rate-${lane}`}
+                onchange={(e) => setLaneRate(lane, Number((e.currentTarget as HTMLSelectElement).value))}
+              >
+                {#each RATE_LABELS as lbl, ri (ri)}
+                  <option value={String(ri)}>{lbl}</option>
+                {/each}
+              </select>
             </div>
           {/each}
         </div>
@@ -694,6 +746,16 @@
             label="GATE" curve="linear" onchange={setParam('gateLength')} moduleId={id} paramId="gateLength" readLive={readLive('gateLength')} />
           <button class="qnt" class:on={quantize} onclick={() => setParam('quantize')(quantize ? 0 : 1)}
             title="Quantize launch to clip boundary" data-testid="clipplayer-quantize">QNT</button>
+          <!-- RESET: all ACTIVE clips snap to step 1 + the per-lane rate phase
+               re-anchors to a common origin. MIDI-assignable (right-click). -->
+          <MidiAssignButton moduleId={id} paramId="reset" label="RESET" momentary={false} onToggle={doReset}>
+            <button
+              class="rst"
+              onclick={doReset}
+              title="Reset all active clips to step 1 (re-anchors lane clock phase; queued launches keep). Right-click to MIDI-assign."
+              data-testid="clipplayer-reset"
+            >RST</button>
+          </MidiAssignButton>
         </div>
       {:else if editClip}
         <!-- piano-roll note editor for the selected clip -->
@@ -764,7 +826,10 @@
 
 <style>
   .card {
-    width: 300px;
+    /* 300 → 336px when the per-lane rate column landed: 16 mono + 8×28 pads +
+       gaps + the 34px rate select = ~301px of row, + 2×12px body padding. Still
+       hp 2 (≤ 360px slot). */
+    width: 336px;
     background: var(--module-bg);
     border: 1px solid var(--border);
     border-radius: 2px;
@@ -1097,6 +1162,32 @@
     color: #fff;
     border-color: hsl(var(--lane-hue) 70% 55%);
   }
+  /* per-lane clock RATE dropdown to the right of each launch-grid row. Fixed
+     integer size (like .pad) so the 8-row layout stays pixel-deterministic. */
+  .lane-rate {
+    width: 34px;
+    height: 28px;
+    flex: none;
+    margin-left: 3px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    background: #141414;
+    color: var(--text-dim, #888);
+    font-size: 9px;
+    line-height: 1;
+    padding: 0 1px;
+    cursor: pointer;
+    appearance: none; /* flat pill, no platform chrome — VRT-stable */
+    text-align: center;
+    text-align-last: center;
+  }
+  /* highlight a lane that's off the global grid so the polyrhythm reads at a
+     glance (same accent language as the mono toggle). */
+  .lane-rate.offgrid {
+    color: #fff;
+    background: hsl(var(--lane-hue) 55% 34%);
+    border-color: hsl(var(--lane-hue) 70% 55%);
+  }
   .knob-row {
     display: flex;
     align-items: center;
@@ -1128,4 +1219,16 @@
     cursor: pointer;
   }
   .qnt.on { color: var(--accent, #6cf); border-color: var(--accent, #6cf); }
+  /* RESET — all active clips to step 1 (knob-row, next to QNT). */
+  .rst {
+    background: var(--control-bg, #222);
+    color: var(--text-dim, #999);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    padding: 4px 6px;
+    cursor: pointer;
+  }
+  .rst:hover { color: var(--accent, #6cf); border-color: var(--accent, #6cf); }
 </style>

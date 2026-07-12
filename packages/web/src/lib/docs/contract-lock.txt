@@ -437,7 +437,8 @@ clap param tail 30..800 log default=150 unit=ms
 clap param tone 400..3000 log default=1000 unit=Hz
 clap param width 0..1 linear default=0.5
 clipplayer meta domain=audio exposesSequence
-clipplayer in stop_all gate
+clipplayer in reset gate edge=trigger
+clipplayer in stop_all gate edge=trigger
 clipplayer out gate1 gate
 clipplayer out gate2 gate
 clipplayer out gate3 gate
@@ -470,6 +471,7 @@ clipplayer param stepDiv 0..3 discrete default=2
 clipplayer family clipplayer-cell kind=cell prefix=clipplayer-cell
 clipplayer family clipplayer-mono kind=other prefix=clipplayer-mono
 clipplayer family clipplayer-pad kind=cell prefix=clipplayer-pad
+clipplayer family clipplayer-rate kind=other prefix=clipplayer-rate
 clockedRunner meta domain=audio
 clouds meta domain=audio
 clouds in blend_cv cv param=blend cvScale=linear

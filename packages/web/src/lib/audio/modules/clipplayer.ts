@@ -11,9 +11,13 @@
 // BPM, no clock-input cable. A STEP-division param sets steps-per-beat. (See
 // the plan doc §10 + clip-types.ts.)
 //
-// Inputs:  stop_all (gate) — rising edge stops every lane.
+// Inputs:  stop_all (trigger) — rising edge stops every lane.
+//          reset    (trigger) — rising edge snaps every ACTIVE lane to step 1.
 // Outputs: pitch1..8 (polyPitchGate) / gate1..8 / vel1..8 — one set per lane.
 // Params:  stepDiv (1/4..1/32), octave, gateLength, quantize (launch snap).
+// Per-lane clock RATE (1/8..4x, card dropdown → data.rate) scales each lane's
+// step duration off the global STEP grid — see clip-clock.ts for the model +
+// phase rule (common origin at transport start / RESET).
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -34,6 +38,7 @@ import {
   CLIP_COUNT,
   type ClipPlayerData,
 } from './clip-types';
+import { laneRateIndex, laneStepDur } from './clip-clock';
 import {
   coerceArrangeData,
   recordEvent,
@@ -64,7 +69,12 @@ export const clipplayerDef: AudioModuleDef = {
   size: '3u',
   hp: 2,
 
-  inputs: [{ id: 'stop_all', type: 'gate' }],
+  inputs: [
+    // Both are TRIGGERS (declared, per CLAUDE.md): fire ONCE per rising edge,
+    // detected through the shared windowed edge counter ($lib/audio/edge-detect).
+    { id: 'stop_all', type: 'gate', edge: 'trigger' },
+    { id: 'reset', type: 'gate', edge: 'trigger' },
+  ],
   outputs: Array.from({ length: CLIP_LANES }, (_, i) => [
     { id: `pitch${i + 1}`, type: 'polyPitchGate' as const },
     { id: `gate${i + 1}`, type: 'gate' as const },
@@ -91,9 +101,10 @@ export const clipplayerDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A clip launcher in the style of Ableton's Session view, with 8 instrument lanes. The grid's rows are the 8 lanes (instruments) and the columns are 8 clip slots, for 64 note clips in all; each lane independently plays whichever clip you launch out its OWN pitch/gate/velocity outputs, so up to 8 clips can sound at once (one per lane). Click a pad to launch its clip, double-click to open the piano-roll editor and draw notes into it. There's no internal clock or BPM — CLIP PLAYER is locked to TIMELORDE (the rack transport): it runs at TIMELORDE's tempo, only while TIMELORDE is running, and the STEP control sets how many steps fall per beat. Launches can fire immediately or be quantized to snap cleanly at the playing clip's loop boundary. It also has a SONG / arrangement mode that records your launches onto a timeline for non-real-time playback, and pairs with a monome grid for hardware launching. Drive its lanes into eight voices for a full multitrack clip-based performance instrument.",
+      "A clip launcher in the style of Ableton's Session view, with 8 instrument lanes. The grid's rows are the 8 lanes (instruments) and the columns are 8 clip slots, for 64 note clips in all; each lane independently plays whichever clip you launch out its OWN pitch/gate/velocity outputs, so up to 8 clips can sound at once (one per lane). Click a pad to launch its clip, double-click to open the piano-roll editor and draw notes into it. There's no internal clock or BPM — CLIP PLAYER is locked to TIMELORDE (the rack transport): it runs at TIMELORDE's tempo, only while TIMELORDE is running, and the STEP control sets how many steps fall per beat. Each lane also has its own clock-rate dropdown (1/8 · 1/4 · 1/2 · 1 · 2x · 4x, card-only for now) that divides or multiplies that lane's step rate off the global STEP grid — polyrhythms without leaving the card — and because the tempo comes from TIMELORDE, 2x/4x are exact from the first step. All lanes share a common phase origin (transport start or the RST button), so a 1/2 lane lands on even base steps and stays locked to the others; RST (also a MIDI-assignable button, and the reset input) snaps every active lane back to step 1 and re-anchors that shared origin. Launches can fire immediately or be quantized to snap cleanly at the playing clip's loop boundary. It also has a SONG / arrangement mode that records your launches onto a timeline for non-real-time playback, and pairs with a monome grid for hardware launching. Drive its lanes into eight voices for a full multitrack clip-based performance instrument.",
     inputs: {
       stop_all: "Stop-all trigger: a rising edge immediately stops every lane (a panic/stop button), in both session and arrangement modes.",
+      reset: "Reset trigger: a rising edge snaps every ACTIVE lane back to step 1 and re-anchors all lanes to a shared phase origin (divided/multiplied lanes restart their counting together). Queued-but-not-started launches are untouched — they still drop in at their lane's next loop boundary. Stopped lanes stay stopped; the arrangement's song position is not rewound (this is a clip-step reset, not a transport rewind).",
     },
     outputs: {
       pitch1: "Lane 1's pitch output — the launched clip's notes as a poly chord cable (a mono pitch input receives just the root; a poly voice plays the whole chord), shifted by the OCT control.",
@@ -129,6 +140,8 @@ export const clipplayerDef: AudioModuleDef = {
       snh: "S&H — one global sample-and-hold toggle for all 8 lanes' pitch outputs: on (default), on a rest the gate closes but each lane's pitch HOLDS its last note (latched to the gate edge); off, rests reset pitch to 0 (the legacy continuous behavior).",
       "clipplayer-mono-{n}":
         "Lane {n}'s mono/poly toggle — switches that lane between MONO (one note per column) and POLY (up to five notes per column, played as a chord out the lane's poly pitch output).",
+      "clipplayer-rate-{n}":
+        "Lane {n}'s clock-rate dropdown (right of the lane's launch row) — divides or multiplies the lane's step rate off the global STEP grid: 1/8, 1/4 and 1/2 advance the lane every 8th/4th/2nd base step; 2x and 4x advance it 2×/4× per base step (exact, since the tempo comes from TIMELORDE); 1 (the default) runs on the STEP grid. All lanes count from a shared phase origin (transport start or RST), so divided lanes stay locked to the others. Card-only for now — no monome-grid/Launchpad surface.",
       "clipplayer-pad-{n}":
         "A clip slot in the launch grid (one cell of the 8 lanes × 8 slots). Click to launch that lane's clip (immediately or quantized per QNT), click the playing pad to stop the lane, and double-click to open the clip in the piano-roll editor. An empty pad shows differently from a filled or playing one.",
       "clipplayer-cell-{n}":
@@ -138,6 +151,7 @@ export const clipplayerDef: AudioModuleDef = {
 
   controlFamilies: [
     { id: 'clipplayer-mono', label: 'Per-lane mono/poly toggle', kind: 'other', testidPrefix: 'clipplayer-mono' },
+    { id: 'clipplayer-rate', label: 'Per-lane clock rate (mult/div)', kind: 'other', testidPrefix: 'clipplayer-rate' },
     { id: 'clipplayer-pad', label: 'Clip launch grid', kind: 'cell', testidPrefix: 'clipplayer-pad' },
     { id: 'clipplayer-cell', label: 'Piano-roll note cells', kind: 'cell', testidPrefix: 'clipplayer-cell' },
   ],
@@ -225,6 +239,21 @@ export const clipplayerDef: AudioModuleDef = {
     stopSilence.start();
     stopSilence.connect(stopGain);
     const stopCounter = createEdgeCounter({ ctx, analyser: stopAnalyser });
+
+    // --- reset input (same windowed edge-counter seam as stop_all) ---
+    const resetGain = ctx.createGain();
+    const resetAnalyser = ctx.createAnalyser();
+    resetAnalyser.fftSize = 2048;
+    resetGain.connect(resetAnalyser);
+    const resetSilence = ctx.createConstantSource();
+    resetSilence.offset.value = 0;
+    resetSilence.start();
+    resetSilence.connect(resetGain);
+    const resetCounter = createEdgeCounter({ ctx, analyser: resetAnalyser });
+    // Card RST button intent (synced counter on node.data — see ClipPlayerData.
+    // resetNonce). null = "not yet seen": the first tick ADOPTS the current
+    // value without firing, so loading a saved patch never replays a reset.
+    let lastResetNonce: number | null = null;
 
     let alive = true;
     let unsubscribeTick: (() => void) | null = null;
@@ -351,6 +380,35 @@ export const clipplayerDef: AudioModuleDef = {
         d.playing = playing;
       });
       if (slot === null) silenceLane(L, ctx.currentTime);
+    }
+
+    /**
+     * RESET — snap every ACTIVE lane back to step 1 (index 0) at a COMMON
+     * re-anchor instant. Everything already scheduled ahead in the lookahead is
+     * cancelled (clean falling edges — the re-emitted step 0 re-attacks ~10 ms
+     * later, a deliberate re-strike, same invariant as an audition steal).
+     * Because every lane gets the SAME nextStepTime, the per-lane clock rates
+     * (clip-clock.ts) restart their counting from one shared phase origin: a
+     * 1/2 lane advances on even base steps from here, a 2x lane re-lands on the
+     * base grid every second advance. NOT touched: `queued` (a queued launch
+     * still applies at its lane's next loop boundary), stopped lanes, and the
+     * arrangement's song position (this is a clip-step reset, not a rewind).
+     */
+    function resetActiveLanes(): void {
+      const at = ctx.currentTime;
+      for (let L = 0; L < LANES; L++) {
+        const ln = lanes[L];
+        if (ln.active === null) continue;
+        // silenceLane cancels gate/vel + zeroes the poly gates; ALSO cancel the
+        // pending poly pitch writes so a cancelled step's pitch can't land
+        // under the freshly re-attacked step-0 gate.
+        silenceLane(L, at);
+        for (const v of ln.poly.voices) v.pitchSrc.offset.cancelScheduledValues(at);
+        ln.stepIndex = 0;
+        ln.nextStepTime = at + 0.01; // SAME instant for every lane → common origin
+        // Drop the now-cancelled future entries so the playhead can't show them.
+        ln.sched = ln.sched.filter((e) => e.t <= at);
+      }
     }
 
     /** Apply lane L's queued launch/stop (consuming it). Returns true if the
@@ -614,6 +672,15 @@ export const clipplayerDef: AudioModuleDef = {
           for (let L = 0; L < LANES; L++) if (lanes[L].active !== null) setLaneActive(L, null);
         }
 
+        // reset — CV rising edge (local) or the synced card-button nonce: snap
+        // every ACTIVE lane to step 1 + re-anchor the shared rate phase origin.
+        // Both modes; the counter/nonce are drained even when nothing is active.
+        const resetEdges = resetCounter.poll(ctx.currentTime);
+        const nonce = typeof d0?.resetNonce === 'number' ? d0.resetNonce : 0;
+        const nonceFired = lastResetNonce !== null && nonce !== lastResetNonce;
+        lastResetNonce = nonce;
+        if (resetEdges > 0 || nonceFired) resetActiveLanes();
+
         const quantize = readParam('quantize', 1) >= 0.5;
 
         if (mode === 'session') {
@@ -661,6 +728,8 @@ export const clipplayerDef: AudioModuleDef = {
 
         if (!running) return;
 
+        // Base grid from TIMELORDE bpm + the global STEP param; each lane then
+        // scales it by its own clock rate (clip-clock.ts — 1/8..4x, default 1).
         const stepDur = 60 / transportBpm() / (STEP_DIV_SPB[readParam('stepDiv', 2)] ?? 4);
 
         for (let L = 0; L < LANES; L++) {
@@ -669,11 +738,12 @@ export const clipplayerDef: AudioModuleDef = {
             ln.nextStepTime = ctx.currentTime + 0.05;
             continue;
           }
+          const laneDur = laneStepDur(stepDur, laneRateIndex(d0, L));
           while (ln.nextStepTime < ctx.currentTime + LOOKAHEAD_S) {
             const len = laneLength(L);
-            emitLaneStep(L, ln.stepIndex, ln.nextStepTime, stepDur);
+            emitLaneStep(L, ln.stepIndex, ln.nextStepTime, laneDur);
             const nextIdx = (ln.stepIndex + 1) % len;
-            const nextStart = ln.nextStepTime + stepDur;
+            const nextStart = ln.nextStepTime + laneDur;
             if (nextIdx === 0) {
               totalLoops++;
               // Boundary-apply queued launches — SESSION mode only (arrangement
@@ -706,6 +776,7 @@ export const clipplayerDef: AudioModuleDef = {
       domain: 'audio',
       inputs: new Map<string, { node: AudioNode; input: number }>([
         ['stop_all', { node: stopGain, input: 0 }],
+        ['reset', { node: resetGain, input: 0 }],
       ]),
       outputs,
       setParam() {
@@ -762,6 +833,10 @@ export const clipplayerDef: AudioModuleDef = {
         stopSilence.disconnect();
         stopGain.disconnect();
         stopAnalyser.disconnect();
+        try { resetSilence.stop(); } catch { /* */ }
+        resetSilence.disconnect();
+        resetGain.disconnect();
+        resetAnalyser.disconnect();
       },
     };
   },
