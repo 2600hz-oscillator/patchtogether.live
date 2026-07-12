@@ -1,36 +1,30 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "8c91b588edb7fbd675acc6538ecc6b22428f43d7d1c10457353f9c99e8b8e5e2",
-  "attestedAt": "2026-07-11T22:47:14.450Z",
+  "webglContentHash": "dced2055466b9296a3a94666f8d7d4161748642a90cc18b2aed2c4a6699fad34",
+  "attestedAt": "2026-07-12T01:39:14.244Z",
   "attestedBy": "tmayshark@gmail.com",
-  "gitHeadAtAttest": "2c26684401152eaf14708e4f84b5e0e06392d6d5",
+  "gitHeadAtAttest": "f7ade57eca745784bb8c549c158755c0228501ee",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
-  "host": "2600hzs-MacBook-Pro.local",
+  "host": "2600hzs-MBP.home.local",
   "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
   "repeatEach": 1,
   "suites": {
     "A-heavy": {
-      "specFiles": 53,
-      "passed": 179,
+      "specFiles": 54,
+      "passed": 182,
       "failed": 0,
       "flaky": 0,
-      "skipped": 2,
+      "skipped": 1,
       "flakyDetails": []
     },
     "A-serial": {
       "specFiles": 2,
-      "passed": 3,
+      "passed": 4,
       "failed": 0,
-      "flaky": 1,
+      "flaky": 0,
       "skipped": 0,
-      "flakyDetails": [
-        {
-          "test": "flipping XY mode changes the video output (PR-69 user-reported bug fix)",
-          "file": "scope-video-out.spec.ts",
-          "firstError": "Error: flipping XY mode must change the output (got 4 differing rows after 9 burst(s)) |  | expect(received).toBeGreaterThan(expected) | "
-        }
-      ]
+      "flakyDetails": []
     },
     "B-leakers": {
       "specFiles": 4,
@@ -49,5 +43,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 156
+  "durationSec": 149
 }
