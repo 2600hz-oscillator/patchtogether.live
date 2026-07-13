@@ -18,10 +18,11 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { kickdrumDef } from '$lib/audio/modules/kickdrum';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { cardParams, portsFromDef } from './card-kit';
+  import { cardParams } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -59,17 +60,83 @@
   let hardOn = $derived(hard >= 0.5);
   function toggleHard(): void { set('hard')(hardOn ? 0 : 1); }
 
-  const inputs = portsFromDef(kickdrumDef.inputs, {
-    trigger_in: 'TRIG', accent_in: 'ACC', pitch_cv: 'V/OCT', choke_in: 'CHOKE',
-  });
-  const outputs = portsFromDef(kickdrumDef.outputs, { audio_l: 'OUT L', audio_r: 'OUT R' });
+  // Rear PatchPanel — sectioned to MIRROR the on-card control-group headers:
+  // every per-control CV jack sits under the same header as its knob, and the
+  // structural performance jacks (TRIG / ACC / V-OCT / CHOKE) + the audio OUT
+  // pair collect in the trailing OUT / PATCH sections.
+  const subCv: PortDescriptor[] = [
+    { id: 'tune_cv',      label: 'TUNE',    cable: 'cv' },
+    { id: 'sub_decay_cv', label: 'SUB DEC', cable: 'cv' },
+    { id: 'sub_level_cv', label: 'SUB',     cable: 'cv' },
+  ];
+  const bodyCv: PortDescriptor[] = [
+    { id: 'pitch_amt_cv',  label: 'P AMT',    cable: 'cv' },
+    { id: 'pitch_time_cv', label: 'P TIME',   cable: 'cv' },
+    { id: 'tension_cv',    label: 'TENS',     cable: 'cv' },
+    { id: 'body_decay_cv', label: 'BODY DEC', cable: 'cv' },
+    { id: 'body_level_cv', label: 'BODY',     cable: 'cv' },
+    { id: 'body_shape_cv', label: 'SHAPE',    cable: 'cv' },
+  ];
+  const clickCv: PortDescriptor[] = [
+    { id: 'click_len_cv',   label: 'CLICK',    cable: 'cv' },
+    { id: 'click_tone_cv',  label: 'CLK TONE', cable: 'cv' },
+    { id: 'click_level_cv', label: 'CLK LVL',  cable: 'cv' },
+  ];
+  const driveCv: PortDescriptor[] = [
+    { id: 'drive_cv', label: 'DRIVE', cable: 'cv' },
+    { id: 'hard_cv',  label: 'HARD',  cable: 'cv' },
+  ];
+  const eqCv: PortDescriptor[] = [
+    { id: 'sub_eq_cv',    label: 'SUB EQ',  cable: 'cv' },
+    { id: 'body_eq_cv',   label: 'BODY EQ', cable: 'cv' },
+    { id: 'attack_eq_cv', label: 'ATK EQ',  cable: 'cv' },
+    { id: 'tilt_cv',      label: 'TILT',    cable: 'cv' },
+  ];
+  const translateCv: PortDescriptor[] = [
+    { id: 'translate_cv', label: 'XLAT', cable: 'cv' },
+  ];
+  const dynamicsCv: PortDescriptor[] = [
+    { id: 'attack_cv',  label: 'ATTACK',  cable: 'cv' },
+    { id: 'sustain_cv', label: 'SUSTAIN', cable: 'cv' },
+    { id: 'glue_cv',    label: 'GLUE',    cable: 'cv' },
+    { id: 'ceiling_cv', label: 'CEIL',    cable: 'cv' },
+  ];
+  const stereoCv: PortDescriptor[] = [
+    { id: 'width_cv', label: 'WIDTH', cable: 'cv' },
+  ];
+  const outInputs: PortDescriptor[] = [
+    { id: 'level_cv', label: 'LEVEL', cable: 'cv' },
+  ];
+  const outOutputs: PortDescriptor[] = [
+    { id: 'audio_l', label: 'OUT L', cable: 'audio' },
+    { id: 'audio_r', label: 'OUT R', cable: 'audio' },
+  ];
+  const patchInputs: PortDescriptor[] = [
+    { id: 'trigger_in', label: 'TRIG',  cable: 'gate' },
+    { id: 'accent_in',  label: 'ACC',   cable: 'cv' },
+    { id: 'pitch_cv',   label: 'V/OCT', cable: 'cv' },
+    { id: 'choke_in',   label: 'CHOKE', cable: 'gate' },
+  ];
+
+  const sections = [
+    { label: 'SUB',       inputs: subCv },
+    { label: 'BODY',      inputs: bodyCv },
+    { label: 'CLICK',     inputs: clickCv },
+    { label: 'DRIVE',     inputs: driveCv },
+    { label: 'EQ',        inputs: eqCv },
+    { label: 'TRANSLATE', inputs: translateCv },
+    { label: 'DYNAMICS',  inputs: dynamicsCv },
+    { label: 'STEREO',    inputs: stereoCv },
+    { label: 'OUT',       inputs: outInputs, outputs: outOutputs },
+    { label: 'PATCH',     inputs: patchInputs },
+  ];
 </script>
 
 <div class="mod-card kickdrum-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
   <ModuleTitle {id} {data} defaultLabel="KICK DRUM" />
 
-  <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={560}>
+  <PatchPanel nodeId={id} groupingStrategy="sectioned" {sections} panelWidth={560}>
     <!-- ── band 1: SUB · BODY · CLICK ── -->
     <section class="band">
       <div class="groups">

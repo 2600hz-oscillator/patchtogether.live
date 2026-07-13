@@ -51,19 +51,23 @@ describe('KARPLUS def — frozen contract', () => {
     expect(inputs.get('accent_in')?.type).toBe('cv');
     expect(inputs.get('damp_in')?.type).toBe('gate');
     expect(inputs.get('damp_in')?.edge).toBe('gate');
-    // Per-param CV inputs route to their AudioParams (cofefve convention).
-    for (const [port, target] of [
-      ['decay_cv', 'decay'],
-      ['bright_cv', 'brightness'],
-      ['position_cv', 'position'],
-      ['stiff_cv', 'stiffness'],
-      ['color_cv', 'color'],
+    // Per-param CV inputs route to their AudioParams (cofefve convention) —
+    // one CV per voice knob (the 5 original + tune/burst/level added later).
+    for (const [port, target, mode] of [
+      ['decay_cv', 'decay', 'log'],
+      ['bright_cv', 'brightness', 'linear'],
+      ['position_cv', 'position', 'linear'],
+      ['stiff_cv', 'stiffness', 'linear'],
+      ['color_cv', 'color', 'linear'],
+      ['tune_cv', 'tune', 'log'],
+      ['burst_cv', 'burst', 'log'],
+      ['level_cv', 'level', 'linear'],
     ] as const) {
       expect(inputs.get(port)?.type).toBe('cv');
       expect(inputs.get(port)?.paramTarget).toBe(target);
-      expect(inputs.get(port)?.cvScale).toBeTruthy();
+      expect(inputs.get(port)?.cvScale?.mode).toBe(mode);
     }
-    expect(karplusDef.inputs).toHaveLength(9);
+    expect(karplusDef.inputs).toHaveLength(12);
     expect(karplusDef.outputs).toEqual([{ id: 'out', type: 'audio' }]);
   });
 

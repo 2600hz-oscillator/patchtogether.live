@@ -64,6 +64,9 @@ export const karplusDef: AudioModuleDef = {
     { id: 'position_cv', type: 'cv', paramTarget: 'position',   cvScale: { mode: 'linear' } },
     { id: 'stiff_cv',    type: 'cv', paramTarget: 'stiffness',  cvScale: { mode: 'linear' } },
     { id: 'color_cv',    type: 'cv', paramTarget: 'color',      cvScale: { mode: 'linear' } },
+    { id: 'tune_cv',     type: 'cv', paramTarget: 'tune',       cvScale: { mode: 'log' } },
+    { id: 'burst_cv',    type: 'cv', paramTarget: 'burst',      cvScale: { mode: 'log' } },
+    { id: 'level_cv',    type: 'cv', paramTarget: 'level',      cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'out', type: 'audio' },
@@ -101,6 +104,12 @@ export const karplusDef: AudioModuleDef = {
         "CV modulation of STIFF (linear): morphs the harmonic series from a true string toward inharmonic bell/metal live. Great per-step for alternating string and chime timbres.",
       color_cv:
         "CV modulation of COLOR (linear): changes the exciter's tone for hits that follow — soft mallet strikes to hard bright picks under sequencer control. (It shapes the burst, so it's heard on the NEXT strike.)",
+      tune_cv:
+        "CV modulation of TUNE (log-scaled): ±1 sweeps the string's base pitch across its full 55–1760 Hz range, centred on the knob — an LFO gives vibrato, a sequencer plays melodic runs. Distinct from the 1 V/oct pitch input; the loop retunes with the ~10 ms cofefve glide.",
+      burst_cv:
+        "CV modulation of BURST (log-scaled): ±1 moves the exciter length across its full 0.1–4 period span around the knob, morphing the attack from percussive tick to scraped/bowed. It shapes the burst, so it's heard on the NEXT strike.",
+      level_cv:
+        "CV modulation of LEVEL (linear): ±1 sweeps the output gain across its full −24..+12 dB range around the knob — an envelope or LFO here gives the voice tremolo or dynamic swells.",
     },
     outputs: {
       out:
@@ -182,6 +191,9 @@ export const karplusDef: AudioModuleDef = {
         ['position_cv', { node: worklet, input: 0, param: params.get('position')! }],
         ['stiff_cv',    { node: worklet, input: 0, param: params.get('stiffness')! }],
         ['color_cv',    { node: worklet, input: 0, param: params.get('color')! }],
+        ['tune_cv',     { node: worklet, input: 0, param: params.get('tune')! }],
+        ['burst_cv',    { node: worklet, input: 0, param: params.get('burst')! }],
+        ['level_cv',    { node: worklet, input: 0, param: params.get('level')! }],
       ]),
       outputs: new Map([
         ['out', { node: worklet, output: 0 }],
