@@ -64,10 +64,13 @@ import {
   laneQueued,
   laneMono,
   laneMuted,
+  laneColorEff,
   velBucket,
   noteCovering,
+  SCALE_NAMES,
 } from '$lib/audio/modules/clip-types';
 import { laneRateIndex, RATE_MULTS } from '$lib/audio/modules/clip-clock';
+import type { ArpDirection } from '$lib/audio/arp-engine';
 import {
   clipIndexForSlotLane,
   slotLaneForClipIndex,
@@ -217,6 +220,40 @@ export const RGB_TEMPO_NUDGE: Rgb = [40, 40, 50]; // dim white
 export const RGB_PANIC: Rgb = [96, 22, 0]; // red-orange
 // ── KEYS octave ± / editor octave ± (P6/P7) — a neutral function hue.
 export const RGB_OCTAVE: Rgb = RGB_FUNC;
+
+// ---------------------------------------------------------------------------
+// SINGLE-MODE (S2a) COLOUR PALETTE — two families the docs render EXACT colours
+// from (remap in ONE place). (a) the PERMANENT TOP-ROW navigation palette
+// (purple views · yellow shift · red/green transport · orange undo/redo); and
+// (b) the RIGHT-COLUMN function taxonomy (green = pattern · blue = timing ·
+// orange = system · yellow = length), plus the KEYS-entry bright-orange override
+// and the Swing± meter tints. Values REUSE the nearest existing triple where
+// sensible (noted per line) so the single + pair surfaces stay colour-coherent.
+// ---------------------------------------------------------------------------
+// TOP-ROW NAVIGATION palette.
+export const RGB_VIEW_IDLE: Rgb = [16, 6, 30]; // dim purple (a "you-are-not-here" view button)
+export const RGB_VIEW_ACTIVE: Rgb = [104, 40, 127]; // bright purple (active view) — echoes RGB_DECK_NOW_ON
+export const RGB_SHIFT_OFF: Rgb = [24, 20, 0]; // dim yellow (shift idle)
+export const RGB_SHIFT_HELD: Rgb = [127, 112, 0]; // bright yellow (shift momentary-held)
+export const RGB_SHIFT_LATCH: Rgb = [96, 82, 0]; // solid yellow (shift latched)
+export const RGB_TRANSPORT_STOP: Rgb = [104, 23, 23]; // red (transport stopped) — echoes RGB_QUEUED_STOP
+// RGB_TRANSPORT_ON (green, transport running) already exists above — reused as-is.
+export const RGB_SYS: Rgb = [110, 50, 0]; // system orange (undo/redo · NOW · arp range · arp on/off)
+export const RGB_SYS_DIM: Rgb = [22, 10, 0]; // dim system orange (a disabled/no-op system pad)
+// RIGHT-COLUMN function taxonomy.
+export const RGB_PATTERN: Rgb = [12, 48, 16]; // green (copy/paste/pasterev/double/follow/scales/row-nav) — echoes RGB_DECK_COPY
+export const RGB_PATTERN_ARMED: Rgb = [28, 110, 36]; // bright green (armed/selected) — echoes RGB_DECK_COPY_ON
+export const RGB_TIMING: Rgb = [10, 34, 84]; // blue (clip-div · swing± · step-scroll · arp-div) — echoes RGB_RATE_BY_INDEX[1]
+export const RGB_TIMING_ARMED: Rgb = [40, 96, 127]; // bright blue (armed timing / block-jump)
+// RGB_DECK_LEN (yellow, edit-clip-length) already exists above — reused for LEN.
+export const RGB_KEYS_ENTRY: Rgb = [127, 56, 0]; // bright orange (KEYS entry — owner override) — echoes RGB_DECK_EDIT_ON
+// SWING± METER tints (ramped pale→bright by level; green flash at dead-centre).
+export const RGB_SWING_UP: Rgb = [110, 30, 127]; // bright purple (swing INCREASING)
+export const RGB_SWING_DOWN: Rgb = [30, 80, 127]; // bright blue (swing DECREASING)
+export const RGB_SWING_CENTER: Rgb = [23, 104, 53]; // green (returned to dead-centre 0) — echoes RGB_TRANSPORT_ON
+// Misc single-mode washes.
+export const RGB_VEL_WASH: Rgb = [6, 2, 10]; // faint purple (Clip velocity-edit mode grid wash)
+export const RGB_ARRANGER_DIM: Rgb = [3, 1, 6]; // faint purple (inert Arranger grid)
 
 // ---------------------------------------------------------------------------
 // UNIT L — the clip matrix placement (PURE classifiers).
@@ -1068,5 +1105,677 @@ export function computeKeysFrame(opts: KeysFrameOpts): LaunchpadFrame {
     put(frame, padNote(KEYS_PANIC_COL, KEYS_CTRL_ROW), RGB_PANIC);
     put(frame, padNote(KEYS_LEN_COL, KEYS_CTRL_ROW), RGB_DECK_LEN);
   }
+  return frame;
+}
+
+// ===========================================================================
+// SINGLE-UNIT REWORK (S2a) — the single-pad Launchpad layout: a 4-view surface
+// (Grid / Clip / Arranger / Control) with a PERMANENT top-CC nav row + a hybrid
+// shift layer, all over the SAME clip-surface brain. Everything below is
+// SINGLE-MODE ONLY and PURE — the stateful handlers (view enum, shift latch/
+// hold, tap-to-arm, undo/redo, arp wiring) live in launchpad-control (S2b) and
+// consume these classifiers + frame builders. The PAIR-mode code above is
+// untouched. Design: .myrobots/plans/launchpad-single-rework-2026-07-12.md.
+//
+// COORDINATES: the right SCENE column is addressed by SCENE INDEX 0..7 =
+// TOP→bottom (scene index i ↔ SCENE_CCS[i] ↔ physical bottom-origin row
+// LP_HEIGHT-1-i). EVERY single-mode right-column classifier below takes that
+// scene index. The GRID 8×8 is TRANSPOSED vs pair unit-L: x = channel/lane
+// (0..7 left→right); the slot runs TOP→bottom (top row = slot 0), so slot =
+// LP_HEIGHT-1-y.
+// ===========================================================================
+
+// ── Views + permanent top-row navigation ──
+export type SingleView = 'grid' | 'clip' | 'arranger' | 'control';
+export type TopRowAction =
+  | 'transport'
+  | 'grid'
+  | 'clip'
+  | 'arranger'
+  | 'control'
+  | 'undo'
+  | 'redo'
+  | 'shift';
+
+/** Classify a permanent top-row CC (91..98) → its nav action, or null. This row
+ *  NEVER changes meaning per view: CC91 transport · 92 Grid · 93 Clip · 94
+ *  Arranger · 95 Control · 96 undo · 97 redo · 98 shift. PURE. */
+export function topRowAction(cc: number): TopRowAction | null {
+  switch (cc) {
+    case CC_UP:
+      return 'transport'; // 91
+    case CC_DOWN:
+      return 'grid'; // 92
+    case CC_LEFT:
+      return 'clip'; // 93
+    case CC_RIGHT:
+      return 'arranger'; // 94
+    case CC_SESSION:
+      return 'control'; // 95
+    case CC_TOP_SPARE_6:
+      return 'undo'; // 96
+    case CC_TOP_SPARE_7:
+      return 'redo'; // 97
+    case CC_TOP_SPARE_8:
+      return 'shift'; // 98
+    default:
+      return null;
+  }
+}
+
+/** Scene INDEX (0 = top … 7 = bottom) for a right-column CC, or null. Inverse of
+ *  SCENE_CCS[i]; S2b uses it to route a decoded scene press to the active view's
+ *  right-column classifier. PURE. */
+export function sceneIndexForCc(cc: number): number | null {
+  const i = SCENE_CCS.indexOf(cc as (typeof SCENE_CCS)[number]);
+  return i >= 0 ? i : null;
+}
+
+// ── GRID transpose (channel-per-COLUMN) ──
+/** SINGLE grid pad (x = lane 0..7, y from BOTTOM) → flat clip index, or null out
+ *  of the matrix. The slot runs top→bottom, so slot = LP_HEIGHT-1-y, lane = x. */
+export function gridPadToClipIndex(x: number, y: number): number | null {
+  if (x < 0 || x >= CLIP_LANES || y < 0 || y >= LP_HEIGHT) return null;
+  return clipIndexForSlotLane(LP_HEIGHT - 1 - y, x); // slot = LP_HEIGHT-1-y, lane = x
+}
+/** Flat clip index → its SINGLE grid pad {x = lane, y from BOTTOM}. Inverse of
+ *  gridPadToClipIndex (slot 0 = the TOP physical row). PURE. */
+export function clipIndexToGridPad(index: number): { x: number; y: number } {
+  const { slot, lane } = slotLaneForClipIndex(index);
+  return { x: lane, y: LP_HEIGHT - 1 - slot };
+}
+/** A grid ROW (scene index 0 = top … 7 = bottom) → the SLOT it launches across
+ *  ALL channels (a grid row = one clip per channel = a scene), or null. Top row =
+ *  slot 0, so slot = sceneIndex. PURE. */
+export function gridSceneRowToSlot(sceneIndex: number): number | null {
+  return sceneIndex >= 0 && sceneIndex < CLIP_SLOTS ? sceneIndex : null;
+}
+
+// ── Right-column classifiers (per view). All take a SCENE INDEX (0 = top). ──
+export type GridShiftAction =
+  | 'copy'
+  | 'paste'
+  | 'clipDiv'
+  | 'swingUp'
+  | 'swingDown'
+  | 'len'
+  | 'pasteRev'
+  | 'now';
+/** The tap-to-ARM subset of GridShiftAction (Swing± are DIRECT nudges + NOW is a
+ *  STICKY toggle — neither is armed). S2b stores one of these in armedRightAction. */
+export type GridArmAction = 'copy' | 'paste' | 'clipDiv' | 'len' | 'pasteRev';
+
+const GRID_SHIFT_ACTIONS: readonly GridShiftAction[] = [
+  'copy', // 0 (top)
+  'paste', // 1
+  'clipDiv', // 2
+  'swingUp', // 3
+  'swingDown', // 4
+  'len', // 5
+  'pasteRev', // 6
+  'now', // 7 (bottom)
+];
+/** Grid + shift right column (scene 0..7 top→bottom): Copy · Paste · ClipDiv ·
+ *  Swing+ · Swing− · Len · PasteRev · Now. Null out of range. PURE. */
+export function gridShiftRight(sceneIndex: number): GridShiftAction | null {
+  return sceneIndex >= 0 && sceneIndex < GRID_SHIFT_ACTIONS.length
+    ? GRID_SHIFT_ACTIONS[sceneIndex]
+    : null;
+}
+
+export type ClipRightAction =
+  | 'double'
+  | 'lengthEdit'
+  | 'follow'
+  | 'keys'
+  | 'rowUp'
+  | 'rowDown'
+  | 'stepLeft'
+  | 'stepRight';
+const CLIP_RIGHT_ACTIONS: readonly ClipRightAction[] = [
+  'double', // 0 (top)
+  'lengthEdit', // 1
+  'follow', // 2
+  'keys', // 3
+  'rowUp', // 4
+  'rowDown', // 5
+  'stepLeft', // 6
+  'stepRight', // 7 (bottom)
+];
+/** Clip view right column (scene 0..7): Double · LengthEdit · Follow · Keys ·
+ *  RowUp · RowDown · Step◀ · Step▶. Null out of range. PURE. */
+export function clipRight(sceneIndex: number): ClipRightAction | null {
+  return sceneIndex >= 0 && sceneIndex < CLIP_RIGHT_ACTIONS.length
+    ? CLIP_RIGHT_ACTIONS[sceneIndex]
+    : null;
+}
+
+/** Keys view (NO shift) right column (scene 0..7): scales major..mixolydian
+ *  (0..5, in SCALE_NAMES order), CHROMATIC (6 = {scale:undefined}), ARP on/off
+ *  toggle (7). Null out of range. Chromatic is represented as {scale:undefined}
+ *  (NOT the string 'chromatic') so S2b writes it straight onto clip.scale. PURE. */
+export function keysScaleRight(
+  sceneIndex: number,
+): { scale: ScaleName | undefined } | 'arpToggle' | null {
+  if (sceneIndex === 7) return 'arpToggle';
+  if (sceneIndex === 6) return { scale: undefined }; // chromatic (absence of a scale)
+  if (sceneIndex >= 0 && sceneIndex <= 5) return { scale: SCALE_NAMES[sceneIndex] };
+  return null;
+}
+
+export type KeysArpAction =
+  | 'arpDivUp'
+  | 'arpDivDown'
+  | 'arpUp'
+  | 'arpDown'
+  | 'arpUpDown'
+  | 'arpRangeUp'
+  | 'arpRangeDown'
+  | 'arpLatch';
+const KEYS_ARP_ACTIONS: readonly KeysArpAction[] = [
+  'arpDivUp', // 0 (top)
+  'arpDivDown', // 1
+  'arpUp', // 2
+  'arpDown', // 3
+  'arpUpDown', // 4
+  'arpRangeUp', // 5
+  'arpRangeDown', // 6
+  'arpLatch', // 7 (bottom)
+];
+/** Keys view (+ shift) right column (scene 0..7): ArpDiv+ · ArpDiv− · ArpUp ·
+ *  ArpDown · ArpUpDown · ArpRange+ · ArpRange− · ArpLatch. Null out of range. PURE. */
+export function keysArpShiftRight(sceneIndex: number): KeysArpAction | null {
+  return sceneIndex >= 0 && sceneIndex < KEYS_ARP_ACTIONS.length
+    ? KEYS_ARP_ACTIONS[sceneIndex]
+    : null;
+}
+
+/** Control view right column = per-lane STOP (reuses rStopLaneForRow semantics).
+ *  Scene index 0 (top) = lane 7 … scene 7 (bottom) = lane 0 (row = lane, exactly
+ *  like the pair deck's STOP column). Returns the lane, or null. PURE. */
+export function controlRight(sceneIndex: number): number | null {
+  if (sceneIndex < 0 || sceneIndex >= LP_HEIGHT) return null;
+  return rStopLaneForRow(LP_HEIGHT - 1 - sceneIndex);
+}
+
+// ── CONTROL view RE-HOME pads — the displaced deck top-row functions land on
+// currently-dark deck grid pads (the permanent CC row owns the real top row).
+// Transport nudges + STOP-ALL group on the TOP grid row; arranger REC/SONG one
+// row below. Remaining cols stay dark for legibility. (RESET / MONO / MUTE / RATE
+// reuse the shared rDeckReset / rDeckMonoLane / rDeckMuteLane / rDeckRateLane
+// classifiers; per-lane STOP is controlRight.)
+export const CTRL_TEMPO_ROW = LP_HEIGHT - 1; // 7 (top grid row)
+export const CTRL_TEMPO_DOWN_COL = 0; // (0,7)
+export const CTRL_TEMPO_UP_COL = 1; // (1,7)
+export const CTRL_STOP_ALL_COL = 3; // (3,7)
+export const CTRL_ARRANGE_ROW = LP_HEIGHT - 2; // 6
+export const CTRL_REC_COL = 0; // (0,6)
+export const CTRL_SONG_COL = 1; // (1,6)
+
+export type ControlRehomeAction = 'tempoDown' | 'tempoUp' | 'stopAll' | 'rec' | 'song';
+/** Classify a CONTROL-view re-homed grid pad → its action, or null. PURE. */
+export function controlRehomePad(x: number, y: number): ControlRehomeAction | null {
+  if (y === CTRL_TEMPO_ROW) {
+    if (x === CTRL_TEMPO_DOWN_COL) return 'tempoDown';
+    if (x === CTRL_TEMPO_UP_COL) return 'tempoUp';
+    if (x === CTRL_STOP_ALL_COL) return 'stopAll';
+    return null;
+  }
+  if (y === CTRL_ARRANGE_ROW) {
+    if (x === CTRL_REC_COL) return 'rec';
+    if (x === CTRL_SONG_COL) return 'song';
+    return null;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// SINGLE-MODE LED FRAMES (PURE). Each view's frame paints its 8×8 + right column
+// then the PERMANENT TOP ROW via the shared paintPermanentTopRow. The render loop
+// (S2b) passes the blink phase (software pulse/flash) + all the stateful opts.
+// ---------------------------------------------------------------------------
+
+// ── Meter ramp helpers (pale→bright per level) for the Swing± meter. PURE. ──
+function clamp01(t: number): number {
+  return t < 0 ? 0 : t > 1 ? 1 : t;
+}
+function lerpRgb(a: Rgb, b: Rgb, t: number): Rgb {
+  const u = clamp01(t);
+  const f = (x: number, y: number) => Math.max(0, Math.min(127, Math.round(x + (y - x) * u)));
+  return [f(a[0], b[0]), f(a[1], b[1]), f(a[2], b[2])];
+}
+/** Ramp a tint pale→full by level 0..1 (the meter's low end is ~12% of the tint). */
+function rampRgb(tint: Rgb, level0to1: number): Rgb {
+  const pale: Rgb = [
+    Math.round(tint[0] * 0.12),
+    Math.round(tint[1] * 0.12),
+    Math.round(tint[2] * 0.12),
+  ];
+  return lerpRgb(pale, tint, level0to1);
+}
+
+/** The PERMANENT top-row contract — the fields EVERY single-mode frame supplies
+ *  to paintPermanentTopRow. S2b builds one of these per render pass. */
+export interface PermanentTopOpts {
+  /** The active view — its nav button lights bright; the other three dim. */
+  view: SingleView;
+  /** In KEYS (a sub-view of Clip) → the CLIP button lights bright too. */
+  keysActive: boolean;
+  transportRunning: boolean;
+  /** Shift state for the CC98 LED (dim off · bright held · solid latched). The
+   *  EFFECTIVE shift (latched || held) also drives the right-column alt meanings
+   *  in every view frame (the frames read it from here — there is no separate
+   *  `shift` field to keep in sync). */
+  shift: { latched: boolean; held: boolean };
+  /** Undo / redo stacks non-empty → the orange CC96 / CC97 light; else dim. */
+  canUndo: boolean;
+  canRedo: boolean;
+}
+
+/** Paint the permanent nav row (CC 91..98) onto a frame — identical in every
+ *  view: transport (red stopped / green running), the 4 view buttons (bright
+ *  purple = active; Clip bright while KEYS is open), undo/redo (orange, dim when
+ *  the stack is empty), shift (yellow: dim off / bright held / solid latched).
+ *  PURE. */
+export function paintPermanentTopRow(frame: LaunchpadFrame, opts: PermanentTopOpts): void {
+  put(frame, CC_UP, opts.transportRunning ? RGB_TRANSPORT_ON : RGB_TRANSPORT_STOP);
+  put(frame, CC_DOWN, opts.view === 'grid' ? RGB_VIEW_ACTIVE : RGB_VIEW_IDLE);
+  put(frame, CC_LEFT, opts.view === 'clip' || opts.keysActive ? RGB_VIEW_ACTIVE : RGB_VIEW_IDLE);
+  put(frame, CC_RIGHT, opts.view === 'arranger' ? RGB_VIEW_ACTIVE : RGB_VIEW_IDLE);
+  put(frame, CC_SESSION, opts.view === 'control' ? RGB_VIEW_ACTIVE : RGB_VIEW_IDLE);
+  put(frame, CC_TOP_SPARE_6, opts.canUndo ? RGB_SYS : RGB_SYS_DIM);
+  put(frame, CC_TOP_SPARE_7, opts.canRedo ? RGB_SYS : RGB_SYS_DIM);
+  put(
+    frame,
+    CC_TOP_SPARE_8,
+    opts.shift.held ? RGB_SHIFT_HELD : opts.shift.latched ? RGB_SHIFT_LATCH : RGB_SHIFT_OFF,
+  );
+}
+
+/** Effective shift = latched OR momentary-held (drives right-column alt colours). */
+function effShift(top: PermanentTopOpts): boolean {
+  return top.shift.latched || top.shift.held;
+}
+
+// ── SINGLE Grid view ──
+export interface SingleGridOpts {
+  top: PermanentTopOpts;
+  blinkOn?: boolean;
+  /** This clip-player is record-armed → empty pads show dim red. */
+  recording?: boolean;
+  /** The armed tap-to-arm right-column action (grid+shift) → brightened. */
+  armedRightAction?: GridArmAction | null;
+  /** Clip buffer holds a clip → the Paste button pulses turquoise. */
+  bufferLoaded?: boolean;
+  /** NOW sticky toggle on → the NOW button lights orange. */
+  nowOn?: boolean;
+  /** Pulse the TARGET clip pad blue in time with its chosen division (the Clip-Div
+   *  arm preview — the meter is ON the pad, not the top row). S2b toggles `on` on
+   *  the division's phase. */
+  divPulse?: { clipIndex: number; on: boolean };
+  /** Swing± meter: ramp the Swing+ (purple) / Swing− (blue) button pale→bright by
+   *  level, or flash both green at dead-centre. Only rendered under shift. */
+  swingMeter?: { active: boolean; dir: 'up' | 'down' | 'center'; level0to1: number };
+}
+
+/** The clip-state colour for a matrix pad — identical semantics to
+ *  computeLSessionFrame (playing SOLID green · queued-launch flash green ·
+ *  queued-stop flash red · loaded dim blue · record-armed empty dim red · else
+ *  off), just re-used for the transposed single grid. PURE. */
+/** Parse a `#rgb` / `#rrggbb` hex → an RGB triple in the 0..127 lighting range
+ *  (the card stores the picked channel colour as hex; the pad LEDs are 0..127). */
+export function hexToRgb127(hex: string): Rgb {
+  let h = hex.replace('#', '').trim();
+  if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  const v = (i: number) => {
+    const n = parseInt(h.slice(i, i + 2), 16);
+    return Number.isFinite(n) ? Math.round((n * 127) / 255) : 0;
+  };
+  return [v(0), v(2), v(4)];
+}
+/** Scale an RGB triple's brightness (for the dim loaded state off a picked colour). */
+function scaleRgb(rgb: Rgb, f: number): Rgb {
+  return [Math.round(rgb[0] * f), Math.round(rgb[1] * f), Math.round(rgb[2] * f)];
+}
+
+function singleClipStateRgb(
+  data: ClipPlayerData | undefined,
+  idx: number,
+  slot: number,
+  lane: number,
+  blinkOn: boolean,
+  recording: boolean,
+): Rgb {
+  const pl = lanePlaying(data, lane);
+  const q = laneQueued(data, lane);
+  // Every channel's EFFECTIVE colour (the picked colour, else its default hue)
+  // tints the clip states on the pad — dim when loaded, full when playing,
+  // flashing when queued — so the pad matches the CARD for ALL channels, not
+  // just picked ones. Empty pads stay OFF; a queued-STOP keeps the semantic RED
+  // so a pending stop still reads regardless of the channel colour.
+  const base = hexToRgb127(laneColorEff(data, lane));
+  if (pl === slot) {
+    if (q === 'stop') return blinkOn ? RGB_QUEUED_STOP : RGB_OFF;
+    return base;
+  }
+  if (q === slot) return blinkOn ? base : RGB_OFF;
+  if ((data?.clips ?? {})[String(idx)]) return scaleRgb(base, 0.32);
+  if (recording) return RGB_STOP_IDLE;
+  return RGB_OFF;
+}
+
+function swingButtonRgb(which: 'up' | 'down', meter: SingleGridOpts['swingMeter']): Rgb {
+  if (!meter || !meter.active) return RGB_TIMING;
+  if (meter.dir === 'center') return RGB_SWING_CENTER; // flashed green on return-to-centre
+  if (meter.dir === which) return rampRgb(which === 'up' ? RGB_SWING_UP : RGB_SWING_DOWN, meter.level0to1);
+  return RGB_TIMING;
+}
+
+function gridShiftRightRgb(sceneIndex: number, opts: SingleGridOpts, blinkOn: boolean): Rgb {
+  const armed = opts.armedRightAction ?? null;
+  switch (gridShiftRight(sceneIndex)) {
+    case 'copy':
+      return armed === 'copy' ? RGB_PATTERN_ARMED : RGB_PATTERN;
+    case 'paste':
+      if (armed === 'paste') return RGB_PATTERN_ARMED;
+      return opts.bufferLoaded ? (blinkOn ? RGB_COPY_BUFFER : RGB_COPY_BUFFER_DIM) : RGB_PATTERN;
+    case 'clipDiv':
+      return armed === 'clipDiv' ? RGB_TIMING_ARMED : RGB_TIMING;
+    case 'swingUp':
+      return swingButtonRgb('up', opts.swingMeter);
+    case 'swingDown':
+      return swingButtonRgb('down', opts.swingMeter);
+    case 'len':
+      return armed === 'len' ? RGB_DECK_LEN_ON : RGB_DECK_LEN;
+    case 'pasteRev':
+      return armed === 'pasteRev' ? RGB_PATTERN_ARMED : RGB_PATTERN;
+    case 'now':
+      return opts.nowOn ? RGB_SYS : RGB_SYS_DIM;
+    default:
+      return RGB_OFF;
+  }
+}
+
+/** SINGLE Grid view — the transposed 8×8 clip matrix + the right column (no-shift
+ *  scene/row launch OR the grid-shift function palette) + the permanent top row.
+ *  Alt (shift) meanings render only when the effective shift is true. PURE. */
+export function computeSingleGridFrame(
+  data: ClipPlayerData | undefined,
+  opts: SingleGridOpts,
+): LaunchpadFrame {
+  const frame = emptyFrame();
+  const blinkOn = opts.blinkOn ?? true;
+  const shift = effShift(opts.top);
+  const recording = !!opts.recording;
+  // Transposed clip matrix (x = lane, slot top→bottom).
+  for (let lane = 0; lane < CLIP_LANES; lane++) {
+    for (let slot = 0; slot < CLIP_SLOTS; slot++) {
+      const idx = clipIndex(slot, lane);
+      const pad = clipIndexToGridPad(idx);
+      put(frame, padNote(pad.x, pad.y), singleClipStateRgb(data, idx, slot, lane, blinkOn, recording));
+    }
+  }
+  // Clip-Div preview: pulse the target clip pad blue in time with its division.
+  if (opts.divPulse) {
+    const pad = clipIndexToGridPad(opts.divPulse.clipIndex);
+    put(frame, padNote(pad.x, pad.y), opts.divPulse.on ? RGB_TIMING_ARMED : RGB_TIMING);
+  }
+  // Right column: no-shift = scene/row launch (amber; flash when any lane is
+  // queued that slot); +shift = the grid-shift function palette.
+  for (let i = 0; i < SCENE_CCS.length; i++) {
+    let rgb: Rgb;
+    if (shift) {
+      rgb = gridShiftRightRgb(i, opts, blinkOn);
+    } else {
+      const slot = gridSceneRowToSlot(i);
+      if (slot === null) rgb = RGB_OFF;
+      else {
+        let anyQueued = false;
+        for (let lane = 0; lane < CLIP_LANES; lane++) {
+          if (laneQueued(data, lane) === slot) {
+            anyQueued = true;
+            break;
+          }
+        }
+        rgb = anyQueued ? (blinkOn ? RGB_QUEUED : RGB_OFF) : RGB_SCENE;
+      }
+    }
+    put(frame, SCENE_CCS[i], rgb);
+  }
+  paintPermanentTopRow(frame, opts.top);
+  return frame;
+}
+
+// ── SINGLE Clip view (note editor) ──
+export interface SingleClipOpts {
+  top: PermanentTopOpts;
+  rowOffset?: number;
+  colOffset?: number;
+  page?: number;
+  /** Live playhead step (-1 when the edited clip isn't playing). */
+  playheadStep?: number;
+  followOn?: boolean;
+  /** Velocity-edit mode (shift in Clip) → a subtle wash over the note grid. S2b
+   *  drives this (typically = the effective shift). */
+  velEditing?: boolean;
+  blinkOn?: boolean;
+}
+
+function clipRightRgb(sceneIndex: number, opts: SingleClipOpts, shift: boolean): Rgb {
+  switch (clipRight(sceneIndex)) {
+    case 'double':
+    case 'lengthEdit':
+      return RGB_PATTERN;
+    case 'follow':
+      return opts.followOn ? RGB_PATTERN_ARMED : RGB_PATTERN;
+    case 'keys':
+      return RGB_KEYS_ENTRY;
+    case 'rowUp':
+    case 'rowDown':
+      return shift ? RGB_PATTERN_ARMED : RGB_PATTERN; // shift = page/octave tint
+    case 'stepLeft':
+    case 'stepRight':
+      return shift ? RGB_TIMING_ARMED : RGB_TIMING; // shift = block-jump tint
+    default:
+      return RGB_OFF;
+  }
+}
+
+/** SINGLE Clip view — the note editor 8×8 (+ playhead) reusing the pair editor's
+ *  note colouring, but with the clipRight right column + the permanent top row
+ *  (the editor's own top-CC nav is REPLACED by the permanent row). Under shift a
+ *  faint velocity-edit wash tints the empty grid cells (velEditing). PURE. */
+export function computeSingleClipFrame(clip: NoteClipRecord, opts: SingleClipOpts): LaunchpadFrame {
+  const frame = emptyFrame();
+  const rowOffset = opts.rowOffset ?? 0;
+  const colOffset = opts.colOffset ?? 0;
+  const page = opts.page ?? 0;
+  const playheadStep = opts.playheadStep ?? -1;
+  const velEditing = !!opts.velEditing;
+  const shift = effShift(opts.top);
+  const rootPc = ((clip.root % 12) + 12) % 12;
+  const bg: Rgb = velEditing ? RGB_VEL_WASH : RGB_OFF;
+  for (let y = 0; y < EDIT_ROWS; y++) {
+    for (let x = 0; x < EDIT_COLS; x++) {
+      const note = editPadToNote(clip, x, y, { rowOffset, colOffset, page });
+      const index = padNote(x, y);
+      if (!note) {
+        put(frame, index, bg);
+        continue;
+      }
+      const onPlayhead = note.step === playheadStep;
+      const cov = noteCovering(clip, note.step, note.midi);
+      if (cov) {
+        put(frame, index, onPlayhead ? RGB_NOTE_PLAYHEAD : RGB_NOTE_BY_VEL[velBucket(cov.velocity)]);
+      } else if (onPlayhead) {
+        put(frame, index, RGB_PLAYHEAD_WASH);
+      } else if (((note.midi % 12) + 12) % 12 === rootPc) {
+        put(frame, index, RGB_ROOT_GUIDE);
+      } else {
+        put(frame, index, bg);
+      }
+    }
+  }
+  for (let i = 0; i < SCENE_CCS.length; i++) {
+    put(frame, SCENE_CCS[i], clipRightRgb(i, opts, shift));
+  }
+  paintPermanentTopRow(frame, opts.top);
+  return frame;
+}
+
+// ── SINGLE Keys view (sub-view of Clip) ──
+export interface SingleKeysOpts {
+  top: PermanentTopOpts;
+  /** Keyboard + playhead + bottom-controls inputs (forwarded to computeKeysFrame;
+   *  the unit is fixed to the lone device and the playhead strip is the single
+   *  8-cell strip, phCells = LP_WIDTH). */
+  keyboardRoot: number;
+  scale?: ScaleName;
+  playheadStep?: number;
+  lengthSteps?: number;
+  pressed?: ReadonlySet<number>;
+  recArmed?: boolean;
+  recording?: boolean;
+  overdub?: boolean;
+  blinkOn?: boolean;
+  // Right column (no-shift scale-select / +shift arp).
+  /** The clip's selected scale (bright in the scale-select column; undefined =
+   *  chromatic → the CHROMATIC button is the selected one). */
+  selectedScale: ScaleName | undefined;
+  arpOn: boolean;
+  arpDir: ArpDirection;
+  /** Current arp division / octave-range indices (the Div± / Range± buttons are
+   *  static nudges — these are kept on the contract for parity + a future meter). */
+  arpDivIndex: number;
+  arpRangeIndex: number;
+  arpLatch: boolean;
+}
+
+function keysScaleRightRgb(sceneIndex: number, selectedScale: ScaleName | undefined, arpOn: boolean): Rgb {
+  const r = keysScaleRight(sceneIndex);
+  if (r === null) return RGB_OFF;
+  if (r === 'arpToggle') return arpOn ? RGB_SYS : RGB_SYS_DIM;
+  return r.scale === selectedScale ? RGB_PATTERN_ARMED : RGB_PATTERN;
+}
+function keysArpRightRgb(sceneIndex: number, opts: SingleKeysOpts): Rgb {
+  switch (keysArpShiftRight(sceneIndex)) {
+    case 'arpDivUp':
+    case 'arpDivDown':
+      return RGB_TIMING;
+    case 'arpUp':
+      return opts.arpDir === 'up' ? RGB_PATTERN_ARMED : RGB_PATTERN;
+    case 'arpDown':
+      return opts.arpDir === 'down' ? RGB_PATTERN_ARMED : RGB_PATTERN;
+    case 'arpUpDown':
+      return opts.arpDir === 'updown' ? RGB_PATTERN_ARMED : RGB_PATTERN;
+    case 'arpRangeUp':
+    case 'arpRangeDown':
+      return RGB_SYS;
+    case 'arpLatch':
+      return opts.arpLatch ? RGB_SYS : RGB_SYS_DIM;
+    default:
+      return RGB_OFF;
+  }
+}
+
+/** SINGLE Keys view — the isomorphic keyboard + playhead strip + bottom controls
+ *  (via computeKeysFrame, single 8-cell strip) PLUS the right column: no-shift
+ *  scale-select + arp on/off; +shift the arp control column. Permanent top row on
+ *  top. PURE. */
+export function computeSingleKeysFrame(opts: SingleKeysOpts): LaunchpadFrame {
+  const frame = computeKeysFrame({
+    unit: 'L',
+    keyboardRoot: opts.keyboardRoot,
+    scale: opts.scale,
+    playheadStep: opts.playheadStep,
+    lengthSteps: opts.lengthSteps,
+    pressed: opts.pressed,
+    recArmed: opts.recArmed,
+    recording: opts.recording,
+    overdub: opts.overdub,
+    blinkOn: opts.blinkOn,
+    phCells: LP_WIDTH, // single: the playhead strip spans the whole clip in 8 cells
+  });
+  const shift = effShift(opts.top);
+  for (let i = 0; i < SCENE_CCS.length; i++) {
+    put(
+      frame,
+      SCENE_CCS[i],
+      shift ? keysArpRightRgb(i, opts) : keysScaleRightRgb(i, opts.selectedScale, opts.arpOn),
+    );
+  }
+  paintPermanentTopRow(frame, opts.top);
+  return frame;
+}
+
+// ── SINGLE Control view (session performance deck, re-homed) ──
+export interface SingleControlOpts {
+  top: PermanentTopOpts;
+  blinkOn?: boolean;
+  /** Arranger record-arm (node.data.recording) — lights the re-homed REC red + pulse. */
+  recording?: boolean;
+  /** Arrangement mode (node.data.clipMode === 'arrangement') — lights re-homed SONG. */
+  arrangeMode?: boolean;
+  data?: ClipPlayerData | undefined;
+}
+
+/** SINGLE Control view — the session performance deck (RESET · per-lane MONO /
+ *  MUTE / RATE rows · per-lane STOP scene column) with the displaced transport /
+ *  arranger controls RE-HOMED onto dark grid pads (TEMPO−/+ + STOP-ALL on the top
+ *  grid row; REC / SONG one row below), and the permanent top row on top. The old
+ *  deck top row + the row-0 EDIT/COPY/… functions are NOT painted (re-homed to
+ *  the permanent row + Grid-shift respectively). PURE. */
+export function computeSingleControlFrame(opts: SingleControlOpts): LaunchpadFrame {
+  const frame = emptyFrame();
+  const blinkOn = opts.blinkOn ?? true;
+  const data = opts.data;
+  // RESET (row 1 col 2) + per-lane MONO / MUTE / RATE rows (col = lane).
+  put(frame, padNote(DECK_RESET_COL, DECK_RESET_ROW), RGB_RESET);
+  for (let lane = 0; lane < CLIP_LANES; lane++) {
+    put(frame, padNote(lane, DECK_MONO_ROW), laneMono(data, lane) ? RGB_MONO_ON : RGB_MONO_OFF);
+    put(frame, padNote(lane, DECK_MUTE_ROW), laneMuted(data, lane) ? RGB_MUTE_ON : RGB_MUTE_OFF);
+    put(frame, padNote(lane, DECK_RATE_ROW), RGB_RATE_BY_INDEX[laneRateIndex(data, lane)]);
+  }
+  // Per-lane STOP scene column (row = lane, exactly like the pair deck).
+  for (let i = 0; i < SCENE_CCS.length; i++) {
+    const row = LP_HEIGHT - 1 - i;
+    if (row >= CLIP_LANES) {
+      put(frame, SCENE_CCS[i], RGB_OFF);
+      continue;
+    }
+    put(frame, SCENE_CCS[i], lanePlaying(data, row) !== null ? RGB_STOP_ACTIVE : RGB_STOP_IDLE);
+  }
+  // Re-homed transport nudges + STOP-ALL (top grid row) and arranger REC / SONG.
+  put(frame, padNote(CTRL_TEMPO_DOWN_COL, CTRL_TEMPO_ROW), RGB_TEMPO_NUDGE);
+  put(frame, padNote(CTRL_TEMPO_UP_COL, CTRL_TEMPO_ROW), RGB_TEMPO_NUDGE);
+  put(frame, padNote(CTRL_STOP_ALL_COL, CTRL_TEMPO_ROW), RGB_STOP_IDLE);
+  put(
+    frame,
+    padNote(CTRL_REC_COL, CTRL_ARRANGE_ROW),
+    opts.recording ? (blinkOn ? RGB_RECORDING : RGB_RECORDING_DIM) : RGB_STOP_IDLE,
+  );
+  put(
+    frame,
+    padNote(CTRL_SONG_COL, CTRL_ARRANGE_ROW),
+    opts.arrangeMode ? RGB_SONG_ARRANGE : RGB_SONG_SESSION,
+  );
+  paintPermanentTopRow(frame, opts.top);
+  return frame;
+}
+
+// ── SINGLE Arranger view (inert placeholder) ──
+export interface SingleArrangerOpts {
+  top: PermanentTopOpts;
+}
+/** SINGLE Arranger view — an INERT placeholder: a faint dim 8×8, a dark right
+ *  column, and the permanent top row (Arranger active). No handlers wire to it
+ *  yet (REC / SONG park in Control). PURE. */
+export function computeSingleArrangerFrame(opts: SingleArrangerOpts): LaunchpadFrame {
+  const frame = emptyFrame();
+  for (let y = 0; y < LP_HEIGHT; y++) {
+    for (let x = 0; x < LP_WIDTH; x++) put(frame, padNote(x, y), RGB_ARRANGER_DIM);
+  }
+  for (let i = 0; i < SCENE_CCS.length; i++) put(frame, SCENE_CCS[i], RGB_OFF);
+  paintPermanentTopRow(frame, opts.top);
   return frame;
 }

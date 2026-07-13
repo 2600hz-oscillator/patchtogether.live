@@ -37,9 +37,11 @@ import {
   CLIP_LANES,
   CLIP_COUNT,
   laneMuted,
+  laneSwing,
+  swingStepOffset,
   type ClipPlayerData,
 } from './clip-types';
-import { laneRateIndex, laneStepDur } from './clip-clock';
+import { clipDivIndex, laneStepDur, RATE_DEFAULT_INDEX } from './clip-clock';
 import {
   coerceArrangeData,
   recordEvent,
@@ -168,6 +170,11 @@ export const clipplayerDef: AudioModuleDef = {
       velSrc: ConstantSourceNode;
       stepIndex: number;
       nextStepTime: number;
+      // LATCHED effective clock-rate index (into RATE_MULTS) for the step
+      // duration — re-read from the active clip's `div` (or the lane rate) ONLY
+      // at a loop boundary (stepIndex 0), so a mid-loop Clip-Div edit takes
+      // effect at the NEXT clip start, never mid-loop.
+      divIndex: number;
       active: number | null; // active slot (column) in this lane, or null
       lastVOct: number;
       lastGate: number;
@@ -202,6 +209,7 @@ export const clipplayerDef: AudioModuleDef = {
         velSrc,
         stepIndex: 0,
         nextStepTime: ctx.currentTime + 0.05,
+        divIndex: RATE_DEFAULT_INDEX,
         active: null,
         lastVOct: 0,
         lastGate: 0,
@@ -761,10 +769,26 @@ export const clipplayerDef: AudioModuleDef = {
             ln.nextStepTime = ctx.currentTime + 0.05;
             continue;
           }
-          const laneDur = laneStepDur(stepDur, laneRateIndex(d0, L));
+          const swing = laneSwing(d0, L);
           while (ln.nextStepTime < ctx.currentTime + LOOKAHEAD_S) {
+            // DIV LATCH: at each loop start (step 0) re-read the active clip's
+            // effective divider (clip.div OVERRIDES the lane rate[]; else fall
+            // back to it). Held for the whole loop, so a mid-loop edit only
+            // takes effect at the NEXT clip start.
+            if (ln.stepIndex === 0 && ln.active !== null) {
+              // Only a NOTE clip carries `div` (and only note clips step-play
+              // here); audio/snapshot shells fall back to the lane rate via null.
+              const ac = readClip(d0, clipIndex(ln.active, L));
+              ln.divIndex = clipDivIndex(ac?.kind === 'note' ? ac : null, d0, L);
+            }
+            const laneDur = laneStepDur(stepDur, ln.divIndex);
             const len = laneLength(L);
-            emitLaneStep(L, ln.stepIndex, ln.nextStepTime, laneDur);
+            // SWING: even steps sit on the un-swung grid, odd steps push late by
+            // swing*laneDur. Swing 0 ⇒ offset 0 ⇒ the emitted times are the base
+            // grid (byte-identical to the un-swung schedule). The grid recurrence
+            // (nextStepTime += laneDur) is unchanged so pairs stay beat-locked.
+            const emitAt = ln.nextStepTime + swingStepOffset(ln.stepIndex, swing, laneDur);
+            emitLaneStep(L, ln.stepIndex, emitAt, laneDur);
             const nextIdx = (ln.stepIndex + 1) % len;
             const nextStart = ln.nextStepTime + laneDur;
             if (nextIdx === 0) {

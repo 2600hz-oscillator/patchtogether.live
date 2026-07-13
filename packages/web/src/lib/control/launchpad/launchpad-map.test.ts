@@ -116,11 +116,61 @@ import {
   RGB_EXIT,
   RGB_KEYS_REC_HOLD_ON,
 } from './launchpad-map';
+import {
+  // SINGLE-mode (S2a) transpose + classifiers
+  gridPadToClipIndex,
+  clipIndexToGridPad,
+  gridSceneRowToSlot,
+  sceneIndexForCc,
+  topRowAction,
+  gridShiftRight,
+  clipRight,
+  keysScaleRight,
+  keysArpShiftRight,
+  controlRight,
+  controlRehomePad,
+  // SINGLE-mode frame builders
+  paintPermanentTopRow,
+  computeSingleGridFrame,
+  hexToRgb127,
+  computeSingleClipFrame,
+  computeSingleKeysFrame,
+  computeSingleControlFrame,
+  computeSingleArrangerFrame,
+  // re-home pad constants
+  CTRL_TEMPO_ROW,
+  CTRL_TEMPO_DOWN_COL,
+  CTRL_TEMPO_UP_COL,
+  CTRL_STOP_ALL_COL,
+  CTRL_ARRANGE_ROW,
+  CTRL_REC_COL,
+  CTRL_SONG_COL,
+  // SINGLE-mode palette
+  RGB_VIEW_IDLE,
+  RGB_VIEW_ACTIVE,
+  RGB_SHIFT_OFF,
+  RGB_SHIFT_HELD,
+  RGB_SHIFT_LATCH,
+  RGB_TRANSPORT_STOP,
+  RGB_SYS,
+  RGB_SYS_DIM,
+  RGB_PATTERN,
+  RGB_PATTERN_ARMED,
+  RGB_TIMING,
+  RGB_TIMING_ARMED,
+  RGB_KEYS_ENTRY,
+  RGB_SWING_CENTER,
+  RGB_ARRANGER_DIM,
+  RGB_SONG_ARRANGE,
+  type SingleView,
+  type PermanentTopOpts,
+} from './launchpad-map';
 import { padNote, SCENE_CCS } from './launchpad-sysex';
 import { keyboardCellToMidi } from '$lib/audio/modules/keyboard-map';
 import {
   clipIndex,
   defaultNoteClip,
+  defaultLaneColorHex,
   toggleNoteAt,
   setNoteSpan,
   type ClipPlayerData,
@@ -583,5 +633,346 @@ describe('Performance controls — LED frames', () => {
     const withBuf = computeREditFrame(clip, { bufferLoaded: true });
     // PASTE lights green when the buffer holds a clip.
     expect(eqRgb(at(withBuf, sceneCc(EDIT_PASTE_SCENE_ROW)), RGB_DECK_COPY)).toBe(true);
+  });
+});
+
+// ===========================================================================
+// SINGLE-UNIT REWORK (S2a) — transpose helpers, per-view right-column
+// classifiers, the permanent top row, and the per-view frame builders.
+// ===========================================================================
+const emptyLpFrame = () => ({ leds: new Map<number, [number, number, number]>() });
+const mkTop = (view: SingleView, partial: Partial<PermanentTopOpts> = {}): PermanentTopOpts => ({
+  view,
+  keysActive: false,
+  transportRunning: false,
+  shift: { latched: false, held: false },
+  canUndo: false,
+  canRedo: false,
+  ...partial,
+});
+
+describe('Single mode — grid transpose (channel-per-column)', () => {
+  it('gridPadToClipIndex ↔ clipIndexToGridPad round-trip all 64 (x=lane, slot top→bottom)', () => {
+    // top-left pad (x=0,y=7) = lane 0, slot 0; pad (x=1,y=7) = lane 1, slot 0;
+    // pad (x=0,y=6) = lane 0, slot 1.
+    expect(gridPadToClipIndex(0, 7)).toBe(clipIndex(0, 0));
+    expect(gridPadToClipIndex(1, 7)).toBe(clipIndex(0, 1));
+    expect(gridPadToClipIndex(0, 6)).toBe(clipIndex(1, 0));
+    for (let lane = 0; lane < 8; lane++) {
+      for (let slot = 0; slot < 8; slot++) {
+        const idx = clipIndex(slot, lane);
+        const pad = clipIndexToGridPad(idx);
+        expect(pad).toEqual({ x: lane, y: 8 - 1 - slot });
+        expect(gridPadToClipIndex(pad.x, pad.y)).toBe(idx);
+      }
+    }
+  });
+  it('out-of-range grid pads are null', () => {
+    expect(gridPadToClipIndex(-1, 0)).toBeNull();
+    expect(gridPadToClipIndex(8, 0)).toBeNull();
+    expect(gridPadToClipIndex(0, -1)).toBeNull();
+    expect(gridPadToClipIndex(0, 8)).toBeNull();
+  });
+  it('gridSceneRowToSlot: scene index 0=top→slot 0 … 7→slot 7; out of range null', () => {
+    expect(gridSceneRowToSlot(0)).toBe(0);
+    expect(gridSceneRowToSlot(7)).toBe(7);
+    expect(gridSceneRowToSlot(8)).toBeNull();
+    expect(gridSceneRowToSlot(-1)).toBeNull();
+  });
+});
+
+describe('Single mode — classifiers', () => {
+  it('topRowAction maps CC 91..98 → nav actions; other CCs null', () => {
+    expect([91, 92, 93, 94, 95, 96, 97, 98].map(topRowAction)).toEqual([
+      'transport', 'grid', 'clip', 'arranger', 'control', 'undo', 'redo', 'shift',
+    ]);
+    expect(topRowAction(99)).toBeNull();
+    expect(topRowAction(19)).toBeNull();
+  });
+  it('sceneIndexForCc inverts SCENE_CCS (0=top); a non-scene CC is null', () => {
+    expect(sceneIndexForCc(SCENE_CCS[0])).toBe(0);
+    expect(sceneIndexForCc(SCENE_CCS[7])).toBe(7);
+    expect(sceneIndexForCc(91)).toBeNull();
+  });
+  it('gridShiftRight: 0=copy … 7=now; out of range null', () => {
+    expect([0, 1, 2, 3, 4, 5, 6, 7].map(gridShiftRight)).toEqual([
+      'copy', 'paste', 'clipDiv', 'swingUp', 'swingDown', 'len', 'pasteRev', 'now',
+    ]);
+    expect(gridShiftRight(8)).toBeNull();
+    expect(gridShiftRight(-1)).toBeNull();
+  });
+  it('clipRight: 0=double … 7=stepRight; out of range null', () => {
+    expect([0, 1, 2, 3, 4, 5, 6, 7].map(clipRight)).toEqual([
+      'double', 'lengthEdit', 'follow', 'keys', 'rowUp', 'rowDown', 'stepLeft', 'stepRight',
+    ]);
+    expect(clipRight(8)).toBeNull();
+    expect(clipRight(-1)).toBeNull();
+  });
+  it('keysScaleRight: 0..5 scales, 6 chromatic {scale:undefined}, 7 arpToggle; oor null', () => {
+    expect(keysScaleRight(0)).toEqual({ scale: 'major' });
+    expect(keysScaleRight(1)).toEqual({ scale: 'minor' });
+    expect(keysScaleRight(5)).toEqual({ scale: 'mixolydian' });
+    expect(keysScaleRight(6)).toEqual({ scale: undefined }); // chromatic
+    expect(keysScaleRight(7)).toBe('arpToggle');
+    expect(keysScaleRight(8)).toBeNull();
+    expect(keysScaleRight(-1)).toBeNull();
+  });
+  it('keysArpShiftRight: 0=arpDivUp … 7=arpLatch; out of range null', () => {
+    expect([0, 1, 2, 3, 4, 5, 6, 7].map(keysArpShiftRight)).toEqual([
+      'arpDivUp', 'arpDivDown', 'arpUp', 'arpDown', 'arpUpDown', 'arpRangeUp', 'arpRangeDown', 'arpLatch',
+    ]);
+    expect(keysArpShiftRight(8)).toBeNull();
+  });
+  it('controlRight: scene 0(top)=lane 7 … 7(bottom)=lane 0 (row=lane, like the deck)', () => {
+    expect(controlRight(0)).toBe(7);
+    expect(controlRight(7)).toBe(0);
+    expect(controlRight(8)).toBeNull();
+    expect(controlRight(-1)).toBeNull();
+  });
+  it('controlRehomePad classifies the re-homed transport/song pads', () => {
+    expect(controlRehomePad(CTRL_TEMPO_DOWN_COL, CTRL_TEMPO_ROW)).toBe('tempoDown');
+    expect(controlRehomePad(CTRL_TEMPO_UP_COL, CTRL_TEMPO_ROW)).toBe('tempoUp');
+    expect(controlRehomePad(CTRL_STOP_ALL_COL, CTRL_TEMPO_ROW)).toBe('stopAll');
+    expect(controlRehomePad(CTRL_REC_COL, CTRL_ARRANGE_ROW)).toBe('rec');
+    expect(controlRehomePad(CTRL_SONG_COL, CTRL_ARRANGE_ROW)).toBe('song');
+    expect(controlRehomePad(2, CTRL_TEMPO_ROW)).toBeNull(); // a gap column
+    expect(controlRehomePad(0, 0)).toBeNull(); // not a re-home row
+  });
+});
+
+describe('Single mode — permanent top row', () => {
+  it('lights transport (red stopped), the active view bright purple, undo/redo orange, shift', () => {
+    const f = emptyLpFrame();
+    paintPermanentTopRow(f, mkTop('grid', { canUndo: true, canRedo: true }));
+    expect(eqRgb(at(f, 91), RGB_TRANSPORT_STOP)).toBe(true); // stopped = red
+    expect(eqRgb(at(f, 92), RGB_VIEW_ACTIVE)).toBe(true); // grid active = bright purple
+    expect(eqRgb(at(f, 93), RGB_VIEW_IDLE)).toBe(true); // clip idle = dim purple
+    expect(eqRgb(at(f, 96), RGB_SYS)).toBe(true); // undo available = orange
+    expect(eqRgb(at(f, 98), RGB_SHIFT_OFF)).toBe(true); // shift off = dim yellow
+    const run = emptyLpFrame();
+    paintPermanentTopRow(run, mkTop('grid', { transportRunning: true }));
+    expect(eqRgb(at(run, 91), RGB_TRANSPORT_ON)).toBe(true); // running = green
+  });
+  it('KEYS active lights the CLIP button bright (sub-mode indicator)', () => {
+    const f = emptyLpFrame();
+    paintPermanentTopRow(f, mkTop('clip', { keysActive: true }));
+    expect(eqRgb(at(f, 93), RGB_VIEW_ACTIVE)).toBe(true);
+  });
+  it('undo/redo dim when the stacks are empty; shift latched vs held', () => {
+    const f = emptyLpFrame();
+    paintPermanentTopRow(f, mkTop('grid', { shift: { latched: true, held: false } }));
+    expect(eqRgb(at(f, 96), RGB_SYS_DIM)).toBe(true); // canUndo false
+    expect(eqRgb(at(f, 97), RGB_SYS_DIM)).toBe(true); // canRedo false
+    expect(eqRgb(at(f, 98), RGB_SHIFT_LATCH)).toBe(true); // solid yellow
+    const held = emptyLpFrame();
+    paintPermanentTopRow(held, mkTop('grid', { shift: { latched: false, held: true } }));
+    expect(eqRgb(at(held, 98), RGB_SHIFT_HELD)).toBe(true); // bright yellow
+  });
+});
+
+describe('Single mode — frame builders', () => {
+  it('grid: loaded / playing / queued clips land at the transposed positions', () => {
+    const data: ClipPlayerData = {
+      clips: {
+        [clipIndex(0, 0)]: defaultNoteClip(), // lane0 slot0 — queued
+        [clipIndex(1, 1)]: defaultNoteClip(), // lane1 slot1 — playing
+        [clipIndex(2, 3)]: defaultNoteClip(), // lane3 slot2 — just loaded
+      },
+      playing: [null, 1, null, null, null, null, null, null],
+      queued: [0, null, null, null, null, null, null, null],
+    } as ClipPlayerData;
+    const f = computeSingleGridFrame(data, { blinkOn: true, top: mkTop('grid') });
+    // lane1 slot1 playing → SOLID lane-1 default hue at pad {x:1,y:6}.
+    expect(eqRgb(at(f, padNote(1, 6)), hexToRgb127(defaultLaneColorHex(1)))).toBe(true);
+    // lane0 slot0 queued-launch → flash lane-0 default hue (blink on) at pad {x:0,y:7}.
+    expect(eqRgb(at(f, padNote(0, 7)), hexToRgb127(defaultLaneColorHex(0)))).toBe(true);
+    // lane3 slot2 loaded-idle → DIM lane-3 default hue at pad {x:3,y:5}.
+    const dl3 = hexToRgb127(defaultLaneColorHex(3));
+    expect(
+      eqRgb(at(f, padNote(3, 5)), [
+        Math.round(dl3[0] * 0.32),
+        Math.round(dl3[1] * 0.32),
+        Math.round(dl3[2] * 0.32),
+      ]),
+    ).toBe(true);
+    // an empty pad off.
+    expect(eqRgb(at(f, padNote(5, 5)), RGB_OFF)).toBe(true);
+    // scene column (no shift): slot0 has a queued lane → flash; slot1 amber idle.
+    expect(eqRgb(at(f, SCENE_CCS[0]), RGB_QUEUED)).toBe(true);
+    expect(eqRgb(at(f, SCENE_CCS[1]), RGB_SCENE)).toBe(true);
+    // permanent nav: grid active.
+    expect(eqRgb(at(f, 92), RGB_VIEW_ACTIVE)).toBe(true);
+  });
+  it('grid + shift: the right column shows the function palette; the armed action brightens', () => {
+    const f = computeSingleGridFrame({} as ClipPlayerData, {
+      top: mkTop('grid', { shift: { latched: true, held: false } }),
+      armedRightAction: 'copy',
+      bufferLoaded: false,
+      nowOn: false,
+    });
+    expect(eqRgb(at(f, SCENE_CCS[0]), RGB_PATTERN_ARMED)).toBe(true); // COPY armed = bright green
+    expect(eqRgb(at(f, SCENE_CCS[1]), RGB_PATTERN)).toBe(true); // PASTE idle green (no buffer)
+    expect(eqRgb(at(f, SCENE_CCS[2]), RGB_TIMING)).toBe(true); // CLIP DIV blue
+    expect(eqRgb(at(f, SCENE_CCS[5]), RGB_DECK_LEN)).toBe(true); // LEN yellow
+    expect(eqRgb(at(f, SCENE_CCS[7]), RGB_SYS_DIM)).toBe(true); // NOW off = dim orange
+  });
+  it('grid + shift: the Swing buttons flash green on return-to-centre', () => {
+    const f = computeSingleGridFrame({} as ClipPlayerData, {
+      top: mkTop('grid', { shift: { latched: true, held: false } }),
+      swingMeter: { active: true, dir: 'center', level0to1: 0 },
+    });
+    expect(eqRgb(at(f, SCENE_CCS[3]), RGB_SWING_CENTER)).toBe(true); // Swing+
+    expect(eqRgb(at(f, SCENE_CCS[4]), RGB_SWING_CENTER)).toBe(true); // Swing−
+  });
+  it('grid: divPulse pulses the TARGET clip pad blue in time', () => {
+    const shiftTop = mkTop('grid', { shift: { latched: true, held: false } });
+    const on = computeSingleGridFrame({} as ClipPlayerData, {
+      top: shiftTop,
+      divPulse: { clipIndex: clipIndex(0, 0), on: true },
+    });
+    expect(eqRgb(at(on, padNote(0, 7)), RGB_TIMING_ARMED)).toBe(true);
+    const off = computeSingleGridFrame({} as ClipPlayerData, {
+      top: shiftTop,
+      divPulse: { clipIndex: clipIndex(0, 0), on: false },
+    });
+    expect(eqRgb(at(off, padNote(0, 7)), RGB_TIMING)).toBe(true);
+  });
+  it('hexToRgb127 scales #rrggbb / #rgb into the 0..127 lighting range', () => {
+    expect(hexToRgb127('#ff0000')).toEqual([127, 0, 0]);
+    expect(hexToRgb127('#fff')).toEqual([127, 127, 127]);
+    expect(hexToRgb127('#000000')).toEqual([0, 0, 0]);
+  });
+  it('grid: EVERY channel tints its clips by its effective colour (picked, else default hue); dim loaded, full playing; stop stays red', () => {
+    const red = '#ff0000';
+    const laneCol = new Array(8).fill(null);
+    laneCol[2] = red; // channel 2 picked red; channel 3 left unpicked
+    const data = {
+      clips: {
+        [clipIndex(0, 2)]: defaultNoteClip(), // loaded on the coloured lane 2
+        [clipIndex(1, 2)]: defaultNoteClip(), // playing on lane 2
+        [clipIndex(0, 3)]: defaultNoteClip(), // loaded on the UNcoloured lane 3
+      },
+      laneColor: laneCol,
+      playing: [null, null, 1, null, null, null, null, null],
+    } as unknown as ClipPlayerData;
+    const f = computeSingleGridFrame(data, { top: mkTop('grid'), blinkOn: true });
+    const rgb = hexToRgb127(red); // [127,0,0]
+    // loaded clip on the coloured lane → a DIM version of the channel colour
+    expect(eqRgb(at(f, padNote(2, 7 - 0)), [Math.round(rgb[0] * 0.32), 0, 0])).toBe(true);
+    // playing clip on the coloured lane → the FULL channel colour
+    expect(eqRgb(at(f, padNote(2, 7 - 1)), rgb)).toBe(true);
+    // loaded clip on an UNpicked lane → its DEFAULT hue (dim), NOT cool-blue RGB_LOADED
+    const d3 = hexToRgb127(defaultLaneColorHex(3));
+    expect(
+      eqRgb(at(f, padNote(3, 7 - 0)), [
+        Math.round(d3[0] * 0.32),
+        Math.round(d3[1] * 0.32),
+        Math.round(d3[2] * 0.32),
+      ]),
+    ).toBe(true);
+    // a queued-STOP on a coloured lane keeps the semantic RED, not the channel colour
+    const stopData = {
+      clips: { [clipIndex(0, 2)]: defaultNoteClip() },
+      laneColor: laneCol,
+      playing: [null, null, 0, null, null, null, null, null],
+      queued: [null, null, 'stop', null, null, null, null, null],
+    } as unknown as ClipPlayerData;
+    const sf = computeSingleGridFrame(stopData, { top: mkTop('grid'), blinkOn: true });
+    expect(eqRgb(at(sf, padNote(2, 7 - 0)), RGB_QUEUED_STOP)).toBe(true);
+  });
+  it('clip: note grid + clipRight column (KEYS bright orange, Double green, Step◀ blue)', () => {
+    let clip: NoteClipRecord = defaultNoteClip();
+    clip = toggleNoteAt(clip, 2, clip.root);
+    const f = computeSingleClipFrame(clip, { top: mkTop('clip'), playheadStep: -1 });
+    const noteCell = at(f, padNote(2, 0));
+    expect(RGB_NOTE_BY_VEL.some((c) => eqRgb(noteCell, c))).toBe(true);
+    expect(eqRgb(at(f, SCENE_CCS[3]), RGB_KEYS_ENTRY)).toBe(true); // KEYS bright orange
+    expect(eqRgb(at(f, SCENE_CCS[0]), RGB_PATTERN)).toBe(true); // DOUBLE green
+    expect(eqRgb(at(f, SCENE_CCS[6]), RGB_TIMING)).toBe(true); // STEP◀ blue
+    expect(eqRgb(at(f, 93), RGB_VIEW_ACTIVE)).toBe(true); // clip active
+  });
+  it('clip + shift: Step buttons brighten (block jump); Follow lights bright when on', () => {
+    const clip = defaultNoteClip();
+    const f = computeSingleClipFrame(clip, {
+      top: mkTop('clip', { shift: { latched: true, held: false } }),
+      followOn: true,
+    });
+    expect(eqRgb(at(f, SCENE_CCS[6]), RGB_TIMING_ARMED)).toBe(true); // Step◀ block-jump
+    expect(eqRgb(at(f, SCENE_CCS[2]), RGB_PATTERN_ARMED)).toBe(true); // Follow on = bright green
+  });
+  it('keys: scale-select highlights the selected scale; the keyboard still paints', () => {
+    const f = computeSingleKeysFrame({
+      top: mkTop('clip', { keysActive: true }),
+      keyboardRoot: 48,
+      scale: 'major',
+      lengthSteps: 16,
+      selectedScale: 'major',
+      arpOn: false,
+      arpDir: 'up',
+      arpDivIndex: 3,
+      arpRangeIndex: 0,
+      arpLatch: false,
+    });
+    expect(eqRgb(at(f, SCENE_CCS[0]), RGB_PATTERN_ARMED)).toBe(true); // MAJOR selected = bright
+    expect(eqRgb(at(f, SCENE_CCS[1]), RGB_PATTERN)).toBe(true); // MINOR unselected = green
+    expect(eqRgb(at(f, SCENE_CCS[7]), RGB_SYS_DIM)).toBe(true); // ARP off = dim orange
+    expect(at(f, padNote(0, 1))).not.toBeNull(); // keyboard band still painted
+    expect(eqRgb(at(f, 93), RGB_VIEW_ACTIVE)).toBe(true); // CLIP bright (KEYS sub-mode)
+  });
+  it('keys + shift: arp control column; the selected direction + latch brighten', () => {
+    const f = computeSingleKeysFrame({
+      top: mkTop('clip', { keysActive: true, shift: { latched: true, held: false } }),
+      keyboardRoot: 48,
+      lengthSteps: 16,
+      selectedScale: undefined,
+      arpOn: true,
+      arpDir: 'updown',
+      arpDivIndex: 3,
+      arpRangeIndex: 0,
+      arpLatch: true,
+    });
+    expect(eqRgb(at(f, SCENE_CCS[0]), RGB_TIMING)).toBe(true); // ArpDiv+ blue
+    expect(eqRgb(at(f, SCENE_CCS[4]), RGB_PATTERN_ARMED)).toBe(true); // ArpUpDown selected = bright
+    expect(eqRgb(at(f, SCENE_CCS[2]), RGB_PATTERN)).toBe(true); // ArpUp unselected = green
+    expect(eqRgb(at(f, SCENE_CCS[7]), RGB_SYS)).toBe(true); // ArpLatch on = orange
+  });
+  it('control: RESET + per-lane MONO/MUTE/RATE + STOP column + re-homed tempo/stop/rec/song', () => {
+    const data: ClipPlayerData = {
+      mono: [true, false, false, false, false, false, false, false],
+      muted: [false, false, true, false, false, false, false, false],
+      rate: [0, 3, 3, 3, 3, 3, 3, 5],
+      playing: [0, null, null, null, null, null, null, null],
+    } as ClipPlayerData;
+    const f = computeSingleControlFrame({
+      top: mkTop('control'),
+      data,
+      recording: true,
+      arrangeMode: true,
+      blinkOn: true,
+    });
+    expect(eqRgb(at(f, padNote(DECK_RESET_COL, DECK_RESET_ROW)), RGB_RESET)).toBe(true);
+    expect(eqRgb(at(f, padNote(0, DECK_MONO_ROW)), RGB_MONO_ON)).toBe(true);
+    expect(eqRgb(at(f, padNote(2, DECK_MUTE_ROW)), RGB_MUTE_ON)).toBe(true);
+    expect(eqRgb(at(f, padNote(0, DECK_RATE_ROW)), RGB_RATE_BY_INDEX[0])).toBe(true);
+    // STOP column: lane0 playing → bright red at the BOTTOM scene (SCENE_CCS[7]=row0=lane0).
+    expect(eqRgb(at(f, SCENE_CCS[7]), RGB_STOP_ACTIVE)).toBe(true);
+    // re-homed tempo nudges + STOP-ALL on the top grid row.
+    expect(eqRgb(at(f, padNote(CTRL_TEMPO_DOWN_COL, CTRL_TEMPO_ROW)), RGB_TEMPO_NUDGE)).toBe(true);
+    expect(eqRgb(at(f, padNote(CTRL_TEMPO_UP_COL, CTRL_TEMPO_ROW)), RGB_TEMPO_NUDGE)).toBe(true);
+    expect(eqRgb(at(f, padNote(CTRL_STOP_ALL_COL, CTRL_TEMPO_ROW)), RGB_STOP_IDLE)).toBe(true);
+    // REC lit (recording) + SONG = arrangement white.
+    expect(at(f, padNote(CTRL_REC_COL, CTRL_ARRANGE_ROW))).not.toBeNull();
+    expect(eqRgb(at(f, padNote(CTRL_SONG_COL, CTRL_ARRANGE_ROW)), RGB_SONG_ARRANGE)).toBe(true);
+    // the old deck row-0 EDIT/COPY/… functions are DARK in the single control view.
+    expect(at(f, padNote(DECK_EDIT_COL, 0))).toBeNull();
+    // permanent nav: control active.
+    expect(eqRgb(at(f, 95), RGB_VIEW_ACTIVE)).toBe(true);
+  });
+  it('arranger: a dim 8×8, a dark right column, and the permanent nav (Arranger active)', () => {
+    const f = computeSingleArrangerFrame({ top: mkTop('arranger') });
+    expect(eqRgb(at(f, padNote(0, 0)), RGB_ARRANGER_DIM)).toBe(true);
+    expect(eqRgb(at(f, padNote(7, 7)), RGB_ARRANGER_DIM)).toBe(true);
+    expect(eqRgb(at(f, SCENE_CCS[0]), RGB_OFF)).toBe(true); // right column dark
+    expect(eqRgb(at(f, 94), RGB_VIEW_ACTIVE)).toBe(true); // arranger active = bright purple
   });
 });

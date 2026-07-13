@@ -39,7 +39,28 @@
     RGB_EXIT,
     RGB_LEN_BLOCK,
     RGB_LEN_END,
-    RGB_VIEW,
+    // SINGLE-MODE (4-view rework) palettes — the permanent-top-row NAVIGATION
+    // palette + the right-column function TAXONOMY (every swatch is the live
+    // firmware RGB, so the docs can't drift from the constants).
+    RGB_VIEW_IDLE,
+    RGB_VIEW_ACTIVE,
+    RGB_SHIFT_OFF,
+    RGB_SHIFT_HELD,
+    RGB_SHIFT_LATCH,
+    RGB_TRANSPORT_STOP,
+    RGB_SYS,
+    RGB_SYS_DIM,
+    RGB_PATTERN,
+    RGB_PATTERN_ARMED,
+    RGB_TIMING,
+    RGB_TIMING_ARMED,
+    RGB_KEYS_ENTRY,
+    RGB_SWING_UP,
+    RGB_SWING_DOWN,
+    RGB_SWING_CENTER,
+    RGB_ARRANGER_DIM,
+    RGB_VEL_WASH,
+    RGB_SONG_SESSION,
     // KEYS mode (note/keyboard + clip-record)
     RGB_KEY_ROOT,
     RGB_KEY_INSCALE,
@@ -53,9 +74,7 @@
     RGB_OD,
     RGB_OD_ON,
     RGB_KEYS_REC_HOLD,
-    RGB_KEYS_REC_HOLD_ON,
     RGB_KEYS_OD_HOLD,
-    RGB_KEYS_OD_HOLD_ON,
     RGB_FUNC_DIM,
     // performance controls (P1 RESET · P4 MONO · P3 MUTE · P2 RATE · P5 tempo · P7 panic)
     RGB_RESET,
@@ -107,24 +126,192 @@
     { label: 'SLOTS  1 → 8', fromCol: 0, toCol: 7, tier: 0 },
   ];
 
-  // ── SINGLE · CLIP view: the matrix + the top-row ARM STRIP. Colours from
-  // launchpad-map's paintClipArmStrip:
-  //   CC 91 KEYS (dim red, tri-state arm) · 92 COPY · 93 PASTE · 94 P-REV (green)
-  //   · 95 NOW (purple, sticky) · 96 LEN (yellow) · 97 DBL (purple) · 98 VIEW.
-  const sArmTop = [
-    { col: 0, fill: hex(RGB_KEYS_REC_HOLD), label: 'KEYS' }, // CC 91 — KEYS-arm tri-state
-    { col: 1, fill: hex(RGB_DECK_COPY), label: 'COPY' }, // CC 92 — green
-    { col: 2, fill: hex(RGB_DECK_COPY), label: 'PASTE' }, // CC 93 — green
-    { col: 3, fill: hex(RGB_DECK_COPY), label: 'P-REV' }, // CC 94 — green
-    { col: 4, fill: hex(RGB_DECK_NOW), label: 'NOW' }, // CC 95 — purple (sticky)
-    { col: 5, fill: hex(RGB_DECK_LEN), label: 'LEN' }, // CC 96 — yellow
-    { col: 6, fill: hex(RGB_DECK_DBL), label: 'DBL' }, // CC 97 — purple
-    { col: 7, fill: hex(RGB_VIEW), label: 'VIEW' }, // CC 98 — cyan view-flip
+  // ═══════════════════════════════════════════════════════════════════════
+  // SINGLE-MODE (4-view rework) diagram data. The lone device is a Grid / Clip /
+  // Keys / Control / Arranger surface over a PERMANENT top-row nav bar + a hybrid
+  // SHIFT layer. Every colour comes from launchpad-map (permTop mirrors
+  // paintPermanentTopRow; the right columns mirror the per-view classifiers), so
+  // the pictures can't drift from the firmware.
+  // ═══════════════════════════════════════════════════════════════════════
+  type SView = 'grid' | 'clip' | 'arranger' | 'control';
+  /** The PERMANENT top row (CC 91..98) — identical in every view. Mirrors
+   *  paintPermanentTopRow: transport (red stopped / green playing), the 4 view
+   *  buttons (bright purple = active; Clip also bright while KEYS is open),
+   *  undo/redo (orange, dim when the stack is empty), shift (yellow: dim off /
+   *  bright held / solid latched). */
+  function permTop(
+    active: SView,
+    o: { running?: boolean; shift?: 'off' | 'held' | 'latch'; keys?: boolean; undo?: boolean; redo?: boolean } = {},
+  ) {
+    const v = (view: SView) =>
+      hex(active === view || (view === 'clip' && o.keys) ? RGB_VIEW_ACTIVE : RGB_VIEW_IDLE);
+    const sh = o.shift === 'held' ? RGB_SHIFT_HELD : o.shift === 'latch' ? RGB_SHIFT_LATCH : RGB_SHIFT_OFF;
+    return [
+      { col: 0, fill: hex(o.running ? RGB_TRANSPORT_ON : RGB_TRANSPORT_STOP), label: o.running ? '▶' : '■' },
+      { col: 1, fill: v('grid'), label: 'GRID' },
+      { col: 2, fill: v('clip'), label: 'CLIP' },
+      { col: 3, fill: v('arranger'), label: 'ARR' },
+      { col: 4, fill: v('control'), label: 'CTRL' },
+      { col: 5, fill: hex(o.undo ? RGB_SYS : RGB_SYS_DIM), label: 'UNDO' },
+      { col: 6, fill: hex(o.redo ? RGB_SYS : RGB_SYS_DIM), label: 'REDO' },
+      { col: 7, fill: hex(sh), label: 'SHFT' },
+    ];
+  }
+  const permTopGroups = [
+    { label: 'TRANSPORT', fromCol: 0, tier: 0 },
+    { label: 'VIEWS  ·  Grid · Clip · Arranger · Control', fromCol: 1, toCol: 4, tier: 1 },
+    { label: 'UNDO / REDO', fromCol: 5, toCol: 6, tier: 0 },
+    { label: 'SHIFT', fromCol: 7, tier: 1 },
   ];
-  const sArmCallouts = [
-    { label: 'KEYS-ARM → TAP A CLIP', fromCol: 0, tier: 0 },
-    { label: 'ARM AN ACTION → THEN TAP A CLIP', fromCol: 1, toCol: 6, tier: 1 },
-    { label: 'VIEW', fromCol: 7, tier: 0 },
+
+  // ── GRID view — the TRANSPOSED clip matrix: x = channel/lane (0..7 left→right),
+  // slot runs TOP→bottom (top row = slot 0). gp() places a clip by (lane, slot). ──
+  const gp = (lane: number, slot: number, fill: string, label?: string) => ({ x: lane, y: 7 - slot, fill, label });
+  const gridPads = [
+    gp(0, 0, hex(RGB_PLAYING), 'K'), // ch1 slot 0 — playing (solid green)
+    gp(0, 1, hex(RGB_LOADED)),
+    gp(0, 2, hex(RGB_LOADED)),
+    gp(1, 0, hex(RGB_PLAYING), 'S'), // ch2 slot 0 — playing
+    gp(1, 1, hex(RGB_LOADED)),
+    gp(2, 0, hex(RGB_QUEUED), 'V'), // ch3 slot 0 — queued-launch (flashing green)
+    gp(2, 1, hex(RGB_LOADED)),
+    gp(3, 0, hex(RGB_QUEUED_STOP)), // ch4 slot 0 — queued-stop (flashing red)
+    gp(4, 2, hex(RGB_LOADED)),
+  ];
+  const gridCallouts = [{ label: 'CHANNELS / LANES  1 → 8', fromCol: 0, toCol: 7 }];
+  // No shift → the right column is SCENE / ROW launch (a grid ROW = one clip per
+  // channel = a song section). Amber idle; flashes green when a row is queued.
+  const gridRowScene = Array.from({ length: 8 }, (_, r) => ({
+    row: r,
+    fill: hex(r === 6 ? RGB_QUEUED : RGB_SCENE),
+    label: r === 7 ? 'ROW ▶' : undefined,
+  }));
+  // + shift → the function palette (scene index 0..7 = rows 7..0 top→bottom):
+  // Copy · Paste · Clip-Div · Swing+ · Swing− · Length · Paste-Rev · Now.
+  const gridShiftScene = [
+    { row: 7, fill: hex(RGB_PATTERN), label: 'COPY' }, // green (tap-to-arm)
+    { row: 6, fill: hex(RGB_COPY_BUFFER), label: 'PASTE' }, // turquoise while the buffer holds a clip
+    { row: 5, fill: hex(RGB_TIMING), label: 'DIV' }, // blue (per-clip divider)
+    { row: 4, fill: hex(RGB_TIMING), label: 'SW+' }, // blue idle; ramps purple while raising
+    { row: 3, fill: hex(RGB_TIMING), label: 'SW−' }, // blue idle; ramps blue while lowering
+    { row: 2, fill: hex(RGB_DECK_LEN), label: 'LEN' }, // yellow (owner override)
+    { row: 1, fill: hex(RGB_PATTERN), label: 'P-REV' }, // green (tap-to-arm)
+    { row: 0, fill: hex(RGB_SYS), label: 'NOW' }, // orange sticky toggle (shown on)
+  ];
+
+  // ── The NOTE EDITOR 8×8 (an illustrative state) — both modes; declared here
+  // because the CLIP view below reuses it under the velocity-edit wash. ──
+  const editorPads = [
+    { x: 1, y: 2, fill: hex(RGB_NOTE_BY_VEL[1]) }, // med-vel note
+    { x: 3, y: 4, fill: hex(RGB_NOTE_BY_VEL[2]) }, // high-vel note
+    { x: 5, y: 1, fill: hex(RGB_NOTE_BY_VEL[0]) }, // low-vel note
+    { x: 2, y: 3, fill: hex(RGB_NOTE_PLAYHEAD) }, // note under the playhead
+    // playhead column wash (the rest of step-column 2)
+    ...[0, 1, 4, 5, 6, 7].map((y) => ({ x: 2, y, fill: hex(RGB_PLAYHEAD_WASH) })),
+    // faint root-pitch guides on the lowest row
+    { x: 0, y: 0, fill: hex(RGB_ROOT_GUIDE) },
+    { x: 6, y: 0, fill: hex(RGB_ROOT_GUIDE) },
+  ];
+
+  // ── CLIP view — the note editor 8×8 (reuses editorPads) + its right column. ──
+  const clipRightScene = [
+    { row: 7, fill: hex(RGB_PATTERN), label: 'DBL' }, // green
+    { row: 6, fill: hex(RGB_PATTERN), label: 'LEN' }, // green (Clip LEN is green, not yellow)
+    { row: 5, fill: hex(RGB_PATTERN_ARMED), label: 'FOL' }, // bright green = following
+    { row: 4, fill: hex(RGB_KEYS_ENTRY), label: 'KEYS' }, // bright orange (owner override)
+    { row: 3, fill: hex(RGB_PATTERN), label: 'R+' }, // green
+    { row: 2, fill: hex(RGB_PATTERN), label: 'R−' },
+    { row: 1, fill: hex(RGB_TIMING), label: 'S◀' }, // blue
+    { row: 0, fill: hex(RGB_TIMING), label: 'S▶' },
+  ];
+  // + shift → Row± brighten (page/octave), Step± brighten (block jump).
+  const clipShiftScene = [
+    { row: 7, fill: hex(RGB_PATTERN), label: 'DBL' },
+    { row: 6, fill: hex(RGB_PATTERN), label: 'LEN' },
+    { row: 5, fill: hex(RGB_PATTERN_ARMED), label: 'FOL' },
+    { row: 4, fill: hex(RGB_KEYS_ENTRY), label: 'KEYS' },
+    { row: 3, fill: hex(RGB_PATTERN_ARMED), label: 'R+' }, // bright green = page/octave jump
+    { row: 2, fill: hex(RGB_PATTERN_ARMED), label: 'R−' },
+    { row: 1, fill: hex(RGB_TIMING_ARMED), label: 'S◀' }, // bright blue = block jump
+    { row: 0, fill: hex(RGB_TIMING_ARMED), label: 'S▶' },
+  ];
+  // The velocity-edit wash under shift: empty note-grid cells tint faint purple
+  // (editorPads render on top — pads.find takes the first match).
+  const clipVelWashPads = [
+    ...editorPads,
+    ...Array.from({ length: 64 }, (_, i) => ({ x: i % 8, y: Math.floor(i / 8), fill: hex(RGB_VEL_WASH) })),
+  ];
+
+  // ── KEYS view (sub-view of Clip) — keyboard from keysSinglePads; right column
+  // no-shift = scale-select + arp toggle, +shift = the arp control column. ──
+  const keysScaleScene = [
+    { row: 7, fill: hex(RGB_PATTERN_ARMED), label: 'MAJ' }, // selected scale (bright green)
+    { row: 6, fill: hex(RGB_PATTERN), label: 'MIN' },
+    { row: 5, fill: hex(RGB_PATTERN), label: 'PENT' },
+    { row: 4, fill: hex(RGB_PATTERN), label: 'DOR' },
+    { row: 3, fill: hex(RGB_PATTERN), label: 'PHRY' },
+    { row: 2, fill: hex(RGB_PATTERN), label: 'MIXO' },
+    { row: 1, fill: hex(RGB_PATTERN), label: 'CHRM' },
+    { row: 0, fill: hex(RGB_SYS_DIM), label: 'ARP' }, // dim orange = arp off
+  ];
+  const keysArpScene = [
+    { row: 7, fill: hex(RGB_TIMING), label: 'DIV+' }, // blue (faster)
+    { row: 6, fill: hex(RGB_TIMING), label: 'DIV−' }, // blue (slower)
+    { row: 5, fill: hex(RGB_PATTERN_ARMED), label: 'UP' }, // selected direction (bright green)
+    { row: 4, fill: hex(RGB_PATTERN), label: 'DOWN' },
+    { row: 3, fill: hex(RGB_PATTERN), label: 'UP-DN' },
+    { row: 2, fill: hex(RGB_SYS), label: 'RNG+' }, // orange
+    { row: 1, fill: hex(RGB_SYS), label: 'RNG−' },
+    { row: 0, fill: hex(RGB_SYS_DIM), label: 'LTCH' }, // dim orange = latch off
+  ];
+
+  // ── CONTROL view — the performance deck + the RE-HOMED transport/arranger. ──
+  const controlPads = [
+    // re-homed onto dark grid pads (the permanent CC row owns the real top row):
+    { x: 0, y: 7, fill: hex(RGB_TEMPO_NUDGE), label: 'T−' },
+    { x: 1, y: 7, fill: hex(RGB_TEMPO_NUDGE), label: 'T+' },
+    { x: 3, y: 7, fill: hex(RGB_STOP_IDLE), label: 'ALL' },
+    { x: 0, y: 6, fill: hex(RGB_STOP_IDLE), label: 'REC' },
+    { x: 1, y: 6, fill: hex(RGB_SONG_SESSION), label: 'SONG' },
+    // performance rows (col = channel):
+    { x: 2, y: 1, fill: hex(RGB_RESET), label: 'RST' }, // RESET (row 1, col 2)
+    ...Array.from({ length: 8 }, (_, x) => ({ x, y: 2, fill: hex(x === 2 ? RGB_MONO_ON : RGB_MONO_OFF) })), // MONO
+    ...Array.from({ length: 8 }, (_, x) => ({ x, y: 3, fill: hex(x === 4 ? RGB_MUTE_ON : RGB_MUTE_OFF) })), // MUTE
+    ...Array.from({ length: 8 }, (_, x) => ({ x, y: 4, fill: hex(RGB_RATE_BY_INDEX[3]) })), // RATE (default '1')
+  ];
+  const controlScene = Array.from({ length: 8 }, (_, r) => ({
+    row: r,
+    fill: hex(r === 7 ? RGB_STOP_ACTIVE : RGB_STOP_IDLE),
+    label: r === 7 ? 'STOP' : undefined,
+  }));
+  const controlCallouts = [
+    { label: 'T−', fromCol: 0, tier: 0 },
+    { label: 'T+', fromCol: 1, tier: 0 },
+    { label: 'STOP-ALL', fromCol: 3, tier: 0 },
+    { label: 'RESET · MONO · MUTE · RATE  (rows 1–4, one pad per channel)', fromCol: 0, toCol: 7, tier: 1 },
+  ];
+
+  // ── ARRANGER view — an inert placeholder (faint grid, dark right column). ──
+  const arrangerPads = Array.from({ length: 64 }, (_, i) => ({ x: i % 8, y: Math.floor(i / 8), fill: hex(RGB_ARRANGER_DIM) }));
+
+  // ── MASTER colour legend (one diagram): the nav palette on the top row, the
+  // right-column TAXONOMY on the scene column, clip states across the grid. ──
+  const legendPads = [
+    gp(0, 3, hex(RGB_PLAYING), 'PLAY'),
+    gp(1, 3, hex(RGB_LOADED), 'LOAD'),
+    gp(2, 3, hex(RGB_QUEUED), 'Q▶'),
+    gp(3, 3, hex(RGB_QUEUED_STOP), 'Q■'),
+    gp(4, 3, hex(RGB_RECORDING), 'REC'),
+  ];
+  const legendScene = [
+    { row: 7, fill: hex(RGB_PATTERN), label: 'PATTERN — green' },
+    { row: 6, fill: hex(RGB_TIMING), label: 'TIMING — blue' },
+    { row: 5, fill: hex(RGB_SYS), label: 'SYSTEM — orange' },
+    { row: 4, fill: hex(RGB_DECK_LEN), label: 'LENGTH — yellow' },
+    { row: 3, fill: hex(RGB_KEYS_ENTRY), label: 'KEYS — orange' },
+    { row: 2, fill: hex(RGB_COPY_BUFFER), label: 'BUFFER — turquoise' },
+    { row: 1, fill: hex(RGB_SCENE), label: 'SCENE — amber' },
+    { row: 0, fill: hex(RGB_STOP_ACTIVE), label: 'STOP — red' },
   ];
 
   // ── The COMMAND DECK 8×8 (both modes paint the same deck frame). The formerly
@@ -181,20 +368,7 @@
     { col: 5, fill: hex(RGB_STOP_IDLE), label: 'PLAY' }, // CC 96 — transport
     { col: 6, fill: hex(RGB_STOP_IDLE), label: 'ALL' }, // CC 97 — stop-all
   ];
-  const sDeckTop = [...pairDeckTop, { col: 7, fill: hex(RGB_VIEW), label: 'VIEW' }]; // CC 98
 
-  // ── The NOTE EDITOR 8×8 (an illustrative state) — both modes. ──
-  const editorPads = [
-    { x: 1, y: 2, fill: hex(RGB_NOTE_BY_VEL[1]) }, // med-vel note
-    { x: 3, y: 4, fill: hex(RGB_NOTE_BY_VEL[2]) }, // high-vel note
-    { x: 5, y: 1, fill: hex(RGB_NOTE_BY_VEL[0]) }, // low-vel note
-    { x: 2, y: 3, fill: hex(RGB_NOTE_PLAYHEAD) }, // note under the playhead
-    // playhead column wash (the rest of step-column 2)
-    ...[0, 1, 4, 5, 6, 7].map((y) => ({ x: 2, y, fill: hex(RGB_PLAYHEAD_WASH) })),
-    // faint root-pitch guides on the lowest row
-    { x: 0, y: 0, fill: hex(RGB_ROOT_GUIDE) },
-    { x: 6, y: 0, fill: hex(RGB_ROOT_GUIDE) },
-  ];
   const editorTopCommon = [
     { col: 0, fill: hex(RGB_FUNC), label: '▲' },
     { col: 1, fill: hex(RGB_FUNC), label: '▼' },
@@ -221,16 +395,6 @@
     { row: 5, fill: hex(RGB_FUNC), label: 'LEN' },
     ...editSceneExtras,
   ];
-  // SINGLE: CC 98 stays the cyan VIEW button; FOLLOW moves to scene row 4.
-  const sEditTop = [...editorTopCommon, { col: 7, fill: hex(RGB_VIEW), label: 'VIEW' }];
-  const sEditSceneFollowing = [
-    ...pairEditScene,
-    { row: 4, fill: hex(RGB_TRANSPORT_ON), label: 'FOL' },
-  ];
-  const sEditSceneFrozen = [
-    ...pairEditScene,
-    { row: 4, fill: hex(RGB_FUNC_ON), label: 'FOL' },
-  ];
   const editCallouts = [{ label: 'STEP WINDOW  (8 = ½ block)', fromCol: 0, toCol: 7 }];
 
   // ── LENGTH-EDIT page (an illustrative state: 3 blocks, end-step 4) — both. ──
@@ -245,7 +409,6 @@
   ];
   const lenScene = [{ row: 7, fill: hex(RGB_EXIT), label: 'EXIT' }];
   const lenCallouts = [{ label: 'END BLOCK  1 → 8', fromCol: 0, toCol: 7 }];
-  const sLenTop = [{ col: 7, fill: hex(RGB_VIEW), label: 'VIEW' }]; // the single view marker stays lit
 
   // ── KEYS view — generated from the LIVE keyboard-map + role colours so the
   // picture can't drift. C3 major, an illustrative held chord + a playhead. ──
@@ -297,50 +460,6 @@
   const keysPairRCallouts = [{ label: 'KEYBOARD continues (cols 9–16)', fromCol: 0, toCol: 7 }];
   const keysSingleCallouts = [{ label: 'PLAYHEAD — the WHOLE clip in 8 cells', fromCol: 0, toCol: 7, tier: 0 }];
 
-  // ── PERFORMANCE EXAMPLE — a 3-voice live set on ONE Launchpad. ch1→kick,
-  // ch2→snare, ch3→TIDY VCO (poly). Scenes A/B/C are clip SLOTS (columns 0/1/2);
-  // the scene-column buttons that fire them are rows 0/1/2 (slot = row = column).
-  // Lanes map top→bottom (lane 1 = top row) like the card.
-  const perfSessionArmTop = sArmTop; // the CLIP-view arm row (KEYS · COPY · … · VIEW)
-  const perfSessionPads = [
-    // lane 1 (KICK) — top row, scene A playing, B/C loaded.
-    { x: 0, y: yL(0), fill: hex(RGB_PLAYING), label: 'K' },
-    { x: 1, y: yL(0), fill: hex(RGB_LOADED) },
-    { x: 2, y: yL(0), fill: hex(RGB_LOADED) },
-    // lane 2 (SNARE).
-    { x: 0, y: yL(1), fill: hex(RGB_PLAYING), label: 'S' },
-    { x: 1, y: yL(1), fill: hex(RGB_LOADED) },
-    { x: 2, y: yL(1), fill: hex(RGB_LOADED) },
-    // lane 3 (TIDY VCO, poly) — 2 clips (A/B).
-    { x: 0, y: yL(2), fill: hex(RGB_PLAYING), label: 'V' },
-    { x: 1, y: yL(2), fill: hex(RGB_LOADED) },
-  ];
-  const perfSceneCol = Array.from({ length: 8 }, (_, r) => ({
-    row: r,
-    fill: hex(RGB_SCENE),
-    label: r === 0 ? 'A' : r === 1 ? 'B' : r === 2 ? 'C' : undefined,
-  }));
-  const perfSessionCallouts = [
-    { label: 'A     B     C   (scene slots)', fromCol: 0, toCol: 2, tier: 1 },
-  ];
-  // Launch scene B: column-1 clips flash queued-green, scene button B (row 1) hit.
-  const perfSceneLaunchPads = [
-    { x: 0, y: yL(0), fill: hex(RGB_PLAYING), label: 'K' },
-    { x: 1, y: yL(0), fill: hex(RGB_QUEUED) },
-    { x: 0, y: yL(1), fill: hex(RGB_PLAYING), label: 'S' },
-    { x: 1, y: yL(1), fill: hex(RGB_QUEUED) },
-    { x: 0, y: yL(2), fill: hex(RGB_PLAYING), label: 'V' },
-    { x: 1, y: yL(2), fill: hex(RGB_QUEUED) },
-  ];
-  const perfSceneLaunchCol = Array.from({ length: 8 }, (_, r) => ({
-    row: r,
-    fill: hex(r === 1 ? RGB_QUEUED : RGB_SCENE),
-    label: r === 0 ? 'A' : r === 1 ? 'B▶' : r === 2 ? 'C' : undefined,
-  }));
-  // KEYS record state (reuse the single KEYS layout — a held chord + the record
-  // controls). The caption frames it as capturing the TIDY VCO clip.
-  const perfKeysPads = keysSinglePads;
-
   // ── colour legends (shared reference — both sections rely on the same LED
   // language; every swatch is the live firmware RGB). ──
   const SESSION_COLORS: { state: string; rgb: Rgb; anim: string; note: string }[] = [
@@ -351,7 +470,7 @@
     { state: 'queued-stop', rgb: RGB_QUEUED_STOP, anim: 'flash red', note: 'will stop on the boundary' },
     { state: 'record-armed (REC)', rgb: RGB_RECORDING, anim: 'pulse red', note: 'arranger record-arm (deck top row, CC 91)' },
     { state: 'arrangement (SONG)', rgb: RGB_SONG_ARRANGE, anim: 'static white', note: 'SES⇄ARR lit in ARRANGEMENT (deck top row, CC 92)' },
-    { state: 'copy buffer (BUF)', rgb: RGB_COPY_BUFFER, anim: 'pulse turquoise', note: 'a clip is in the clipboard — the deck BUF pad (pair) / the arm-row COPY cell (single); tap it to clear' },
+    { state: 'copy buffer (BUF)', rgb: RGB_COPY_BUFFER, anim: 'pulse turquoise', note: 'a clip is in the clipboard — the deck BUF pad (pair) / the Grid-shift PASTE button (single); tap BUF or re-tap COPY to clear' },
     { state: 'scene (matrix right col)', rgb: RGB_SCENE, anim: 'amber', note: 'fire one clip slot across every lane at once (a whole column)' },
     { state: 'stop lane idle (deck right col)', rgb: RGB_STOP_IDLE, anim: 'dim red', note: 'per-lane stop' },
     { state: 'stop lane active', rgb: RGB_STOP_ACTIVE, anim: 'bright red', note: 'that lane is audible' },
@@ -361,8 +480,7 @@
     { state: 'COPY / PASTE / P-REV', rgb: RGB_DECK_COPY, note: 'green — clipboard actions (brighten while held/armed)' },
     { state: 'DOUBLE', rgb: RGB_DECK_DBL, note: 'purple — duplicate the pattern + double the clip length (cap 128)' },
     { state: 'LENGTH', rgb: RGB_DECK_LEN, note: 'yellow — open the 2-row length page' },
-    { state: 'NOW', rgb: RGB_DECK_NOW, note: 'purple — launches ignore quantize (hold in pair · sticky toggle in single)' },
-    { state: 'VIEW (single only)', rgb: RGB_VIEW, note: 'cyan — CC 98 flips CLIP ⇄ CONTROL; always lit on the lone device' },
+    { state: 'NOW', rgb: RGB_DECK_NOW, note: 'purple — launches ignore quantize (hold on the pair deck; in single mode NOW is the orange Grid-shift toggle)' },
     { state: 'RESET (RST)', rgb: RGB_RESET, note: 'steel blue — snap every active lane back to step 1 (deck row 1 col 2; pair: also the R deck)' },
     { state: 'MONO on / off', rgb: RGB_MONO_ON, note: 'teal — per-lane MONO (one note per column) engaged; dim teal = poly (deck row 2)' },
     { state: 'MUTE on / off', rgb: RGB_MUTE_ON, note: 'orange — lane muted (advances but silent); dim = live (deck row 3 · pair: L top row)' },
@@ -395,19 +513,49 @@
     { state: 'OVERDUB off / on', rgb: RGB_OD_ON, note: 'light purple (off) → bright purple (on, additive)' },
     { state: 'note-REC / OVERDUB hold', rgb: RGB_KEYS_REC_HOLD, note: 'deck row 1 — the KEYS entry holds (dim red / dim purple)' },
   ];
+  // ── SINGLE-MODE palettes (the 4-view rework). (a) the PERMANENT TOP-ROW
+  // navigation palette; (b) the RIGHT-COLUMN function taxonomy. Every swatch is
+  // the live firmware RGB. ──
+  const NAV_COLORS: { state: string; rgb: Rgb; note: string }[] = [
+    { state: 'transport — stopped', rgb: RGB_TRANSPORT_STOP, note: 'red — CC 91; tap to start' },
+    { state: 'transport — playing', rgb: RGB_TRANSPORT_ON, note: 'green — CC 91; tap to stop' },
+    { state: 'view — inactive', rgb: RGB_VIEW_IDLE, note: 'dim purple — a view you are NOT in (Grid · Clip · Arranger · Control)' },
+    { state: 'view — active', rgb: RGB_VIEW_ACTIVE, note: 'bright purple — the current view (Clip is bright while KEYS is open)' },
+    { state: 'undo / redo — available', rgb: RGB_SYS, note: 'orange — CC 96 / 97; a persistent edit is on the stack' },
+    { state: 'undo / redo — empty', rgb: RGB_SYS_DIM, note: 'dim orange — nothing to undo / redo' },
+    { state: 'shift — off', rgb: RGB_SHIFT_OFF, note: 'dim yellow — CC 98 idle' },
+    { state: 'shift — held', rgb: RGB_SHIFT_HELD, note: 'bright yellow — momentary hold' },
+    { state: 'shift — latched', rgb: RGB_SHIFT_LATCH, note: 'solid yellow — tapped to lock the alt layer' },
+  ];
+  const TAXONOMY_COLORS: { state: string; rgb: Rgb; note: string }[] = [
+    { state: 'pattern', rgb: RGB_PATTERN, note: 'green — content: copy · paste · paste-rev · double · follow · scales · row-nav' },
+    { state: 'pattern — armed / selected', rgb: RGB_PATTERN_ARMED, note: 'bright green — armed (tap-to-arm) or the selected scale / arp direction' },
+    { state: 'timing', rgb: RGB_TIMING, note: 'blue — clip divider · swing ± · step-scroll · arp division' },
+    { state: 'timing — armed / jump', rgb: RGB_TIMING_ARMED, note: 'bright blue — armed clip-div, or a block / page jump under shift' },
+    { state: 'length', rgb: RGB_DECK_LEN, note: 'yellow — edit clip length (owner override; not green)' },
+    { state: 'KEYS entry', rgb: RGB_KEYS_ENTRY, note: 'bright orange — open the KEYS keyboard (owner override)' },
+    { state: 'system', rgb: RGB_SYS, note: 'orange — NOW · arp range · arp on/off · arp latch' },
+    { state: 'system — off', rgb: RGB_SYS_DIM, note: 'dim orange — that system toggle is off' },
+    { state: 'copy buffer', rgb: RGB_COPY_BUFFER, note: 'turquoise (pulses) — the Paste button while the clipboard holds a clip' },
+    { state: 'swing — raising', rgb: RGB_SWING_UP, note: 'purple ramp — Swing+ nudged up (pale → bright by amount)' },
+    { state: 'swing — lowering', rgb: RGB_SWING_DOWN, note: 'blue ramp — Swing− nudged down' },
+    { state: 'swing — dead centre', rgb: RGB_SWING_CENTER, note: 'green flash — swing returned to 0 (straight)' },
+  ];
 
   // ── Pad + CC reference tables (per mode; the raw protocol is shared). ──
   const SINGLE_MAP: { what: string; addr: string }[] = [
-    { what: 'VIEW toggle', addr: 'CC 98 (rightmost top button) — flips CLIP ⇄ CONTROL, always lit cyan. Inactive while KEYS (or its length page) owns the device' },
-    { what: 'ARM ROW (CLIP view top row)', addr: 'CC 91 = KEYS-arm (sticky tri-state: off → armed-REC → armed-OD → off; then tap a clip → KEYS) · 92 = COPY (re-tap = clear buffer) · 93 = PASTE · 94 = PASTE-REV · 95 = NOW (sticky) · 96 = LENGTH · 97 = DOUBLE. Auto-disarms after ~4 s' },
-    { what: 'double-tap (CLIP view)', addr: 'two quick taps of the same clip pad (~¼ s) → open its note editor + flip to CONTROL, without changing whether the clip plays. On an EMPTY pad = create a fresh clip + edit (NEW’s home)' },
-    { what: 'deck globals (CONTROL view top row)', addr: 'CC 91 = REC (arranger) · 92 = SONG (SES⇄ARR) · 93 = TEMPO− · 94 = TEMPO+ · 96 = PLAY (transport) · 97 = ALL (stop-all) · 95 = SHIFT (editor ×8)' },
-    { what: 'RESET (CONTROL deck)', addr: 'deck row 1, col 2 (steel blue) — snap every active lane back to step 1 (the card RST / reset-gate field)' },
-    { what: 'per-lane MONO / MUTE / RATE (CONTROL deck)', addr: 'row 2 = MONO (teal on) · row 3 = MUTE (orange = muted, advances but silent) · row 4 = RATE (tap cycles 1/8·1/4·1/2·1·2x·4x). One pad per lane, col = lane' },
-    { what: 'editor nav (CONTROL view top row)', addr: 'CC 91 ▲ · 92 ▼ · 93 ◀ · 94 ▶ (±1; hold SHIFT/CC 95 = ±8) · 96 = VEL (hold + tap) · 97 = SCALE' },
-    { what: 'editor scene column', addr: 'EXIT · DBL · LEN · FOLLOW (green/violet) · then COPY · PASTE · OCT+ · OCT− (rows 3→0)' },
-    { what: 'KEYS entry', addr: 'PRIMARY: CLIP view → tap CC 91 (KEYS-arm) once (overdub off) or twice (overdub on) → tap a clip. LEGACY: CONTROL view hold note-REC / note-OVERDUB (deck row 1 col 0/1) → CC 98 to CLIP → double-tap a clip' },
-    { what: 'KEYS layout', addr: 'top row = 8-cell whole-clip playhead · 6 keyboard rows (cols 1–8) · bottom row = EXIT · QUEUE-REC · OVERDUB · OCT− · OCT+ · PANIC · LEN' },
+    { what: 'permanent top row (every view)', addr: 'CC 91 = transport (red stopped / green playing) · 92 = GRID · 93 = CLIP · 94 = ARRANGER · 95 = CONTROL (purple; bright = active) · 96 = UNDO · 97 = REDO (orange) · 98 = SHIFT (yellow: dim off / bright held / solid latched). This row NEVER changes meaning per view' },
+    { what: 'SHIFT (CC 98)', addr: 'TAP = latch the alt layer (solid yellow); tap again = unlatch. HOLD = momentary (bright yellow). Effective shift = latched OR held. Grid compound functions arm on tap so nothing needs a second hand' },
+    { what: 'GRID — the clip matrix', addr: 'column = channel / lane (1–8 left→right), row = clip slot (top row = slot 1). Single-tap = launch / stop (queued to the boundary; NOW = instant). DOUBLE-TAP a clip = select it + open CLIP on it (empty pad = create a clip). No-shift right column = ROW / scene launch' },
+    { what: 'GRID + shift right column', addr: 'top→bottom: COPY · PASTE · CLIP-DIV · SWING+ · SWING− · LENGTH · PASTE-REV · NOW. Copy / Paste / Paste-Rev / Clip-Div / Length are TAP-TO-ARM (tap → arm → tap a clip). Swing ± are direct ±2 % nudges on the SELECTED channel. NOW is a sticky toggle' },
+    { what: 'CLIP — note-editor right column', addr: 'top→bottom: DOUBLE · LENGTH · FOLLOW · KEYS · ROW+ · ROW− · STEP◀ · STEP▶. Shift: ROW± = ±octave / page, STEP± = block jump, and the 8×8 becomes VELOCITY-cycle (tap a note → cycle its velocity)' },
+    { what: 'KEYS — scale select (no shift)', addr: 'top→bottom: MAJOR · MINOR · PENTATONIC · DORIAN · PHRYGIAN · MIXOLYDIAN · CHROMATIC · ARP on/off. Selected scale glows bright green. The scale lights the keyboard but does NOT snap live input (pads stay chromatic)' },
+    { what: 'KEYS + shift — the arp column', addr: 'top→bottom: DIV+ · DIV− · UP · DOWN · UP-AND-DOWN · RANGE+ · RANGE− · LATCH. Divisions 8x…1/8 (1x default); ranges 1 oct / +1..−1 / +2..−2 (symmetric); up-and-down is an exclusive pendulum' },
+    { what: 'CONTROL — the performance deck', addr: 'RESET (row 1, col 2, steel blue) · MONO row (teal) · MUTE row (orange) · RATE row (rate ramp) — one pad per channel. Right column = per-lane STOP. Re-homed on dark pads: TEMPO− / TEMPO+ / STOP-ALL (top grid row), REC / SONG (row below)' },
+    { what: 'ARRANGER', addr: 'inert placeholder (faint grid, dark right column). The arrangement engine exists but has no launchpad UI yet; REC / SONG live in CONTROL for now' },
+    { what: 'UNDO / REDO (CC 96 / 97)', addr: 'launchpad-scoped: undoes only THIS launchpad’s persistent clip edits (div / swing / length / paste / content / scale) — never a collaborator’s edit, never a transient launch. Lit orange when the stack has something; dim otherwise' },
+    { what: 'KEYS entry / exit', addr: 'enter from CLIP → the KEYS button (right column, bright orange) on the selected clip. In KEYS the bottom row is EXIT · QUEUE-REC · OVERDUB · OCT− · OCT+ · PANIC · LENGTH. A view button exits KEYS; EXIT steps back (recording → armed → idle → the views)' },
+    { what: 'LENGTH-EDIT page', addr: 'opened from GRID+shift LENGTH or CLIP LENGTH. Bottom row = end BLOCK (1–8 ×16), next two rows = end STEP (1–8, 9–16). Length = (endBlock−1)×16 + endStep, up to 128. EXIT = top scene button' },
   ];
   const PAIR_MAP: { what: string; addr: string }[] = [
     { what: 'Unit L top row (CC 91..98)', addr: 'the 8 per-lane MUTE pads (col = lane) — orange = muted (advances but silent), dim = live. On the always-visible matrix unit' },
@@ -436,14 +584,17 @@
     self-contained guide for that mode:
   </p>
   <ul class="tight">
-    <li><a href="#single-launchpad"><strong>SINGLE LAUNCHPAD</strong></a> — one device does everything,
-      flipping between a <strong>CLIP</strong> view (the 8×8 matrix) and a <strong>CONTROL</strong> view
-      (the command deck / note editor / length page) on hardware <strong>CC 98</strong> or the on-card toggle.</li>
-    <li><a href="#two-launchpads"><strong>TWO LAUNCHPADS</strong></a> — the <strong>left</strong> unit is the
-      always-live <strong>8×8 clip matrix</strong>, the <strong>right</strong> unit is the
-      <strong>command deck</strong> + <strong>note editor</strong>, so you never lose sight of the matrix.</li>
-    <li><a href="#performance-example"><strong>PERFORMANCE EXAMPLE</strong></a> — a follow-along 3-voice
-      live set on one Launchpad (kick · snare · TIDY VCO), start to finish.</li>
+    <li><a href="#single-launchpad"><strong>SINGLE LAUNCHPAD</strong></a> — one device is a
+      <strong>four-view surface</strong> — <strong>GRID</strong>, <strong>CLIP</strong>,
+      <strong>KEYS</strong> and <strong>CONTROL</strong> (plus an inert <strong>ARRANGER</strong>) — over
+      a <strong>permanent top-row nav bar</strong> and a one-hand <strong>SHIFT</strong> layer.</li>
+    <li><a href="#make-a-patch"><strong>MAKE A PATCH IN 1-PAD MODE</strong></a> — never touched the
+      device? <strong>Start here.</strong> A button-by-button walkthrough from plugging in to performing
+      a full patch (kick · snare · TIDY VCO).</li>
+    <li><a href="#two-launchpads"><strong>TWO LAUNCHPADS</strong></a> — the <strong>left</strong> unit is
+      the always-live <strong>8×8 clip matrix</strong>, the <strong>right</strong> unit is the
+      <strong>command deck</strong> + <strong>note editor</strong>, so you never lose sight of the matrix.
+      <em>(Pair mode is unchanged by the single-mode rework.)</em></li>
   </ul>
 </section>
 
@@ -504,276 +655,400 @@
      needs the TWO LAUNCHPADS section.
      ====================================================================== -->
 <section class="mode-section" id="single-launchpad">
-  <h2 class="mode-title">SINGLE LAUNCHPAD — one device, two views</h2>
+  <h2 class="mode-title">SINGLE LAUNCHPAD — one device, four views</h2>
   <p>
-    One Launchpad does everything. The device is always in one of two <strong>views</strong>:
-    <strong>CLIP</strong> (the 8×8 clip matrix — launch and stop clips) or <strong>CONTROL</strong>
-    (the command deck, note editor and length page). Flip between them with the hardware
-    <strong>CC 98</strong> button (the rightmost button on the top row — it stays lit
-    <span class="cyan">cyan</span> so you always know it's the view switch) or the on-card
-    <strong>Clip / Control</strong> toggle. Flipping views never resets anything: the editor's step
-    window, pitch scroll, FOLLOW state and edited clip all survive, and the matrix's playing/queued
-    state is always live (it's the shared clip player).
+    One Launchpad does everything. Instead of hiding half the controls behind a mode flip, the lone
+    device is a <strong>four-view surface</strong> — <strong>GRID</strong> (launch clips),
+    <strong>CLIP</strong> (edit notes), <strong>KEYS</strong> (play, record + arpeggiate) and
+    <strong>CONTROL</strong> (the performance deck), plus an inert <strong>ARRANGER</strong> — laid over a
+    <strong>permanent top-row nav bar</strong> that never changes meaning. Switch views with the top-row
+    buttons or the on-card view buttons; a one-hand <strong>SHIFT</strong> layer adds a second function to
+    every right-column button without ever needing a second hand.
+  </p>
+  <p class="muted">
+    New to the device? Jump to <a href="#make-a-patch"><strong>Make a patch in 1-pad mode</strong></a> for
+    a button-by-button walkthrough, then come back here for the full reference.
   </p>
 
   <h3>Setup</h3>
   <ol class="steps">
     <li>Add a <strong>launchpad control</strong> and a <strong>clip player</strong> to the canvas.</li>
-    <li>Click <strong>Connect single Launchpad</strong> on the card (grants Web-MIDI/sysex on first
+    <li>Click <strong>Connect single Launchpad</strong> on the card (grants Web-MIDI/sysex on the first
       click). The one device binds — no press-a-pad handshake — and auto-binds the first clip player.</li>
-    <li>The device starts in <strong>CLIP view</strong>. A reload restores your mode + view; hit
-      <strong>Connect single Launchpad</strong> once to re-attach the hardware (browser permission
-      needs a click).</li>
+    <li>The device starts in <strong>GRID view</strong>. A reload restores your view; hit
+      <strong>Connect single Launchpad</strong> once to re-attach the hardware (browser permission needs a
+      click).</li>
   </ol>
 
-  <h3>CLIP view — launch clips</h3>
+  <h3>The permanent top row — your compass</h3>
   <LaunchpadDiagram
-    top={sArmTop}
-    pads={matrixPads}
-    scene={matrixScene}
-    callouts={sArmCallouts}
-    accent={hex(RGB_VIEW)}
-    caption="SINGLE · CLIP view. The 8×8 matrix: rows = the 8 instrument lanes (top→bottom, matching the on-screen card — lane 1 is the top row), columns = the 8 clip slots. Top row = the action-arm strip (NEW · COPY · PASTE · P-REV · NOW · LEN · DBL) + the cyan VIEW button (CC 98). Right column = scene launch (amber)."
+    top={permTop('grid', { running: true, undo: true, redo: true })}
+    callouts={permTopGroups}
+    accent={hex(RGB_VIEW_ACTIVE)}
+    caption="The 8 top-row buttons (CC 91–98) mean the SAME thing in every view. Left→right: transport (red stopped / green playing) · GRID · CLIP · ARRANGER · CONTROL (purple; the active view is bright) · UNDO · REDO (orange) · SHIFT (yellow). The 8×8 below is dark here only to spotlight the row."
+  />
+  <ul class="tight">
+    <li><strong>Transport (CC 91):</strong> start / stop the rack transport (TIMELORDE). Red = stopped,
+      green = playing — the only red/green button on the row.</li>
+    <li><strong>GRID · CLIP · ARRANGER · CONTROL (CC 92–95):</strong> the four view buttons — dim purple
+      when you're not in them, <strong>bright purple</strong> for the one you're in (a permanent
+      "you-are-here"). While <strong>KEYS</strong> is open (a sub-view of Clip) the <strong>CLIP</strong>
+      button also lights bright; pressing any view button leaves KEYS for that view.</li>
+    <li><strong>UNDO / REDO (CC 96 / 97):</strong> orange when there's something on the stack, dim when
+      empty — see <a href="#single-undo">Undo / redo</a>.</li>
+    <li><strong>SHIFT (CC 98):</strong> the alt-layer key (next). Dim yellow off, bright yellow while held,
+      solid yellow while latched.</li>
+  </ul>
+
+  <h3 id="single-shift">The shift layer + tap-to-arm — one-handed by design</h3>
+  <p>
+    Every right-column button has a plain meaning and a <strong>shift</strong> meaning. SHIFT (CC 98) is
+    <strong>hybrid</strong>: <strong>tap</strong> it to <em>latch</em> the alt layer (it glows solid yellow
+    — the whole right column switches to its shift meaning and stays there), <strong>tap again</strong> to
+    unlatch. Or <strong>hold</strong> it for a momentary alt layer (bright yellow) just while your finger
+    is down. Effective shift = <strong>latched OR held</strong>, so you can work either way.
+  </p>
+  <p>
+    On one device you can't hold a function button <em>and</em> tap a clip at once — so the Grid's compound
+    functions (Copy · Paste · Paste-Rev · Clip-Div · Length) are <strong>tap-to-ARM</strong>:
+    <strong>tap the function → it arms</strong> (brightens; only one at a time) <strong>→ tap a clip → it
+    applies</strong> and auto-disarms. Tap the armed button again to cancel; a stale arm auto-clears after
+    ~4 s. Swing ± are <em>direct nudges</em> (no arm) and NOW is a <em>sticky toggle</em>. Net: no gesture
+    on the whole surface ever needs a second hand.
+  </p>
+
+  <h3>Single-mode colour language</h3>
+  <p class="muted">
+    Single mode adds two palettes on top of the shared <a href="#colour-language">LED colour language</a>
+    above: a <strong>navigation</strong> palette for the permanent top row (purple views · yellow shift ·
+    red/green transport · orange undo/redo) and a right-column function <strong>taxonomy</strong>
+    (<strong>green</strong> = pattern · <strong>blue</strong> = timing · <strong>orange</strong> = system ·
+    <strong>yellow</strong> = length). Every swatch below is the exact firmware RGB.
+  </p>
+  <LaunchpadDiagram
+    top={permTop('grid', { running: true, shift: 'latch', undo: true, redo: true })}
+    pads={legendPads}
+    scene={legendScene}
+    callouts={permTopGroups}
+    accent={hex(RGB_VIEW_ACTIVE)}
+    caption="The single-mode palettes at a glance. TOP ROW = navigation (transport red/green · views purple · undo/redo orange · shift yellow). RIGHT COLUMN = the function-taxonomy families. GRID = the clip-state colours (playing green · loaded blue · queued green · queued-stop red · record-armed dim red)."
+  />
+  <h4>Navigation palette (permanent top row)</h4>
+  <div class="swatch-grid">
+    {#each NAV_COLORS as c (c.state)}
+      <div class="swatch-row two">
+        <span class="chip" style:background={hex(c.rgb)}></span>
+        <span class="s-state">{c.state}</span>
+        <span class="s-note">{c.note}</span>
+      </div>
+    {/each}
+  </div>
+  <h4>Right-column function taxonomy</h4>
+  <div class="swatch-grid">
+    {#each TAXONOMY_COLORS as c (c.state)}
+      <div class="swatch-row two">
+        <span class="chip" style:background={hex(c.rgb)}></span>
+        <span class="s-state">{c.state}</span>
+        <span class="s-note">{c.note}</span>
+      </div>
+    {/each}
+  </div>
+
+  <h3>GRID view — launch clips</h3>
+  <LaunchpadDiagram
+    top={permTop('grid', { running: true })}
+    pads={gridPads}
+    scene={gridRowScene}
+    callouts={gridCallouts}
+    accent={hex(RGB_SCENE)}
+    caption="GRID view (no shift). The 8×8 is the clip matrix, TRANSPOSED to match the on-screen card: each COLUMN is a channel/lane (1–8 left→right), each ROW is a clip slot (top row = slot 1). Loaded = dim blue · playing = solid green · queued-launch = flashing green · queued-stop = flashing red. Right column = ROW / scene launch (amber; one row shown queued)."
   />
   <ul class="tight">
     <li><strong>Tap a loaded clip</strong> (dim blue) to <strong>launch</strong> it — it flashes green
-      (queued) until the next quantize boundary, then turns solid green (playing). Tap the playing clip
-      to queue a <strong>stop</strong> (flashes red until the boundary).</li>
-    <li>Pad <code>(slot, lane)</code> is clip <code>lane*8 + slot</code>; <strong>lane 1 = the TOP
-      physical row</strong>, so the hardware matches what you see on the card.</li>
-    <li><strong>Scene launch (right column):</strong> scene button <em>N</em> fires the clip in
-      <strong>slot N of every lane that has one</strong> and <strong>stops</strong> every lane that
-      doesn't — a one-press section switch (verse → chorus). Same quantize rules as a normal launch.</li>
-    <li><strong>NOW (CC 95, sticky):</strong> while lit bright purple, clip + scene taps launch
-      <strong>immediately</strong> instead of on the boundary. Tap again to turn it off.</li>
-    <li>Empty pads glow <strong>dim red</strong> while the player is record-armed (REC).</li>
+      (queued) until the next quantize boundary, then turns solid green (playing). Tap the playing clip to
+      queue a <strong>stop</strong> (flashes red until the boundary).</li>
+    <li><strong>Columns are channels, rows are slots.</strong> Channel 1 is the left column, slot 1 is the
+      top row — the same orientation as the ClipplayerCard, so the pad you see lit is the clip you see on
+      screen.</li>
+    <li><strong>Row / scene launch (right column):</strong> a grid <strong>row</strong> is one clip per
+      channel — an Ableton-style scene / song section. Scene button <em>N</em> fires <strong>that row's
+      slot across every channel that has a clip</strong> and <strong>stops</strong> the channels that
+      don't — a one-press verse → chorus switch. It flashes green while any channel in that row is queued.</li>
+    <li><strong>NOW</strong> (Grid + shift, bottom of the right column) makes launches fire
+      <strong>instantly</strong> instead of on the boundary while it's lit; empty pads glow dim red while
+      the player is record-armed.</li>
   </ul>
 
-  <h4>The arm row — deck actions (and KEYS) without leaving the matrix</h4>
+  <h4 id="single-select">Single-tap launches · double-tap edits</h4>
   <p>
-    On one device you can't hold a deck button while tapping a clip — so in CLIP view the top row is a
-    7-cell <strong>action-arm strip</strong>: <strong>tap an arm cell to ARM an action, then tap a clip
-    pad to apply it</strong>. While armed, the matrix shows an <em>aiming wash</em> (legal targets
-    brighten, empty pads show a faint dot). An arm <strong>auto-disarms after ~4 s</strong>; re-tapping
-    the armed cell cancels it; flipping views cancels a pending arm and switches NOW off.
-  </p>
-  <ul class="tight">
-    <li><strong>KEYS (CC 91) — the one-handed way into KEYS.</strong> This is the reclaimed NEW cell.
-      It's a <em>sticky tri-state</em>: <strong>tap once</strong> → armed-REC (glows red, overdub OFF /
-      true-replace), <strong>tap again</strong> → armed-OD (glows purple, overdub ON / additive),
-      <strong>tap a third time</strong> → off. While armed, <strong>tap any clip pad</strong> → the
-      device drops straight into <a href="#single-keys">KEYS</a> for that clip — one hand, in clip
-      view, <strong>no view flip</strong>. (This replaces the old hold-a-deck-button-then-flip gesture,
-      which still works as a fallback — see <a href="#single-keys">KEYS</a>.) The overdub on/off choice
-      is made <em>here</em> by the tri-state, and you can still toggle OVR in the KEYS view.</li>
-    <li><strong>COPY (CC 92):</strong> arm, tap a <em>loaded</em> clip → snapshot to the clipboard (the
-      COPY cell pulses turquoise while the clipboard holds a clip). <strong>Re-tap COPY</strong> while
-      loaded to <strong>clear the buffer</strong>. Copy is a <em>snapshot</em> — edit after copying?
-      re-copy to capture the change.</li>
-    <li><strong>PASTE / PASTE-REV (CC 93 / 94):</strong> arm (they only light when the clipboard holds
-      a clip), tap any pad → the buffer is written there (PASTE-REV mirrors the steps in time).</li>
-    <li><strong>LENGTH (CC 96):</strong> arm, tap a loaded clip → its 2-row length page opens (the
-      device flips to CONTROL).</li>
-    <li><strong>DOUBLE (CC 97):</strong> arm, tap a loaded clip → duplicate the pattern into the back
-      half + double the length (cap 128 steps).</li>
-  </ul>
-  <p class="muted">
-    <strong>Where did NEW go?</strong> The old NEW cell only ever duplicated a gesture you already
-    have: <strong>double-tapping an empty pad</strong> makes a fresh clip and opens its editor (below).
-    So CC 91 was freed for the far more valuable one-handed KEYS entry, and no capability was lost.
+    A <strong>single tap launches</strong> immediately (never delayed). A <strong>double-tap</strong> of
+    the same pad (~¼ s) instead <strong>selects that clip and opens it in CLIP view</strong> — and it
+    <strong>reverts the channel to whatever play/queue state it was in before the first tap</strong>, so
+    <strong>editing never changes whether a clip plays</strong>: a stopped clip stays stopped, a playing
+    clip keeps playing, a clip you'd already queued still starts. Double-tap an <em>empty</em> pad to
+    create a fresh clip and edit it. The selected clip is what the <strong>CLIP</strong> and
+    <strong>KEYS</strong> buttons act on, and its channel is the one <strong>Swing ±</strong> nudges.
   </p>
 
-  <h4>Double-tap = edit</h4>
-  <p>
-    In CLIP view a <strong>single tap launches</strong> (immediately — never delayed) and a
-    <strong>double-tap</strong> of the same pad (~¼ s) <strong>opens its note editor</strong>, flipping
-    the device to CONTROL — exactly like double-clicking a cell on the card. A double-tap then
-    <strong>reverts the lane to the play/queue state it was in before the first tap</strong>, so
-    <strong>editing never changes whether a clip plays</strong>: a <em>stopped</em> clip stays stopped,
-    a <em>playing</em> clip keeps playing, and a clip you'd already <em>queued</em> still starts.
-    Double-tap an <em>empty</em> pad to create a fresh clip and edit it.
-  </p>
-
-  <h3>CONTROL view — the command deck</h3>
+  <h4>GRID + shift — the function palette</h4>
   <LaunchpadDiagram
-    pads={deckPads}
-    top={sDeckTop}
-    scene={deckScene}
-    callouts={deckCallouts}
-    accent={hex(RGB_VIEW)}
-    caption="SINGLE · CONTROL view (command deck). Row 0 = function pads: EDIT (orange), COPY/PASTE/P-REV (green), BUF (dark until you copy), DBL + NOW (purple), LEN (yellow). Row 1 = KEYS-entry holds K● / KO + RST (steel blue). Rows 2/3/4 = per-lane MONO (teal) / MUTE (orange) / RATE (a rate ramp). Right column = per-lane STOP. Top row: REC · SONG · T− · T+ · PLAY · ALL + the cyan VIEW button."
+    top={permTop('grid', { running: true, shift: 'latch' })}
+    pads={gridPads}
+    scene={gridShiftScene}
+    callouts={gridCallouts}
+    accent={hex(RGB_PATTERN_ARMED)}
+    caption="GRID + shift (SHIFT latched, solid yellow). The right column becomes the function palette, top→bottom: COPY · PASTE · CLIP-DIV · SWING+ · SWING− · LENGTH · PASTE-REV · NOW. Green = pattern, blue = timing, yellow = length, orange = NOW. PASTE shows turquoise here because the clipboard holds a clip."
   />
   <ul class="tight">
-    <li><strong>EDIT (hold, spans the flip):</strong> hold EDIT here, press <strong>CC 98</strong> to
-      flip to CLIP view (the hold survives), tap a clip → its note editor opens. (The
-      <strong>double-tap</strong> in CLIP view does the same thing one-handed.)</li>
-    <li><strong>BUF (col 5):</strong> pulses turquoise while the clipboard holds a clip — tap it to
-      clear. <strong>COPY / PASTE / P-REV / NOW</strong> hold-modifiers can't span a view flip (a flip
-      releases them), so in single mode use the <strong>CLIP-view arm row</strong> for those instead.</li>
-    <li><strong>DBL / LEN (tap):</strong> act on the clip you most recently edited (DOUBLE duplicates +
-      doubles; LEN opens the length page here in CONTROL view).</li>
-    <li><strong>Per-lane STOP (right column):</strong> row <em>N</em> stops lane <em>N</em> (bright red =
-      that lane is audible now).</li>
-    <li><strong>PLAY (CC 96)</strong> toggles the transport; <strong>ALL (CC 97)</strong> queues a stop
-      on every lane.</li>
-    <li><strong>K● / KO (row 1):</strong> the KEYS-entry holds (the legacy entry — the CLIP-view arm
-      row's KEYS cell is the primary one now). See <a href="#single-keys">KEYS on one device</a>.</li>
+    <li><strong>COPY</strong> (green): arm, then tap a loaded clip → snapshot it to the clipboard. The
+      PASTE button then pulses <span class="cyan">turquoise</span>. Re-tap COPY while the clipboard is
+      loaded to clear it. (Copy is a snapshot — edit after copying? re-copy.)</li>
+    <li><strong>PASTE / PASTE-REV</strong> (green; they only arm when the clipboard holds a clip): arm, tap
+      any pad → the buffer is written there. PASTE-REV mirrors the steps in time.</li>
+    <li><strong>CLIP-DIV</strong> (blue): the per-clip divider. Arm, then <strong>tap a clip repeatedly</strong>
+      to cycle its own clock division (1/8 · 1/4 · 1/2 · 1 · 2x · 4x). While you cycle, the <strong>target
+      clip pad itself pulses in time with the chosen division</strong> — the meter is on the pad, not the
+      top row. It writes once when you disarm, and the engine applies it at the clip's next loop start (a
+      queued parameter change). A clip's own div overrides its channel's CONTROL-view RATE.</li>
+    <li><strong>SWING+ / SWING−</strong> (blue): direct ±2 % nudges (hold to repeat) to the
+      <strong>selected channel's</strong> swing — odd steps slide late for a shuffle. The buttons ramp
+      <span style:color={hex(RGB_SWING_UP)}>purple</span> while you raise and
+      <span style:color={hex(RGB_SWING_DOWN)}>blue</span> while you lower, and both <strong>flash green</strong>
+      on the nudge that returns swing to dead-centre (straight). No arming — they act immediately.</li>
+    <li><strong>LENGTH</strong> (yellow): arm, tap a loaded clip → its length page opens (a full-device
+      takeover; EXIT returns to Grid).</li>
+    <li><strong>NOW</strong> (orange, sticky): toggle on → launches ignore the quantize boundary and fire
+      immediately. Stays on until you tap it again.</li>
   </ul>
 
-  <h4>Performance controls — the formerly-dead deck, now live</h4>
+  <h3>CLIP view — the note editor</h3>
   <p>
-    The command deck used to be <strong>~85% dark</strong> — one function row and two hold pads. Those
-    empty pads are now a live performance layer, all writing the <em>same</em> synced state the card
-    already drives (so peers and the card stay in sync):
+    CLIP edits the <strong>selected clip</strong> (set by a Grid double-tap, or press the
+    <strong>CLIP</strong> top-row button to open the current selection). It's the same piano-roll note
+    editor as pair mode: X = step (an 8-step window = half a 16-step block), Y = pitch (in-key rows, bottom
+    = lowest). The right column is CLIP's own controls.
   </p>
-  <ul class="tight">
-    <li><strong>RESET (RST — row 1, col 2, steel blue):</strong> snap <strong>every playing lane back to
-      step 1</strong> at one shared instant — the classic "re-sync the whole rack" between sections.
-      It's the same field as the card's <strong>RST</strong> button and the <strong>reset</strong>
-      gate input. Reset ≠ stop: the clips keep playing, just re-aligned.</li>
-    <li><strong>MONO row (row 2, one pad per lane, teal):</strong> toggle a lane between <strong>MONO</strong>
-      (one note per column — a clean monophonic line) and <strong>POLY</strong> (chords). Teal = mono
-      on, dim = poly.</li>
-    <li><strong>MUTE row (row 3, one pad per lane, orange):</strong> <strong>mute a lane in place</strong>
-      — it keeps advancing its playhead (stays locked to the transport and every other lane) but goes
-      <strong>silent</strong>. This is different from the per-lane STOP: STOP halts the lane; MUTE
-      drops it out and lets you bring it straight back on the beat. Orange = muted, dim = live.</li>
-    <li><strong>RATE row (row 4, one pad per lane):</strong> <strong>tap to cycle</strong> a lane's clock
-      division up through <strong>1/8 · 1/4 · 1/2 · 1 · 2x · 4x</strong> (wrapping). The pad's colour
-      ramps cool→warm with the rate (green = the default ‘1’). Polyrhythm/half-time without the card;
-      all lanes share one phase origin, so RESET re-locks them.</li>
-    <li><strong>TEMPO nudge (T− / T+, CC 93 / 94):</strong> step the rack transport (TIMELORDE) tempo
-      <strong>±2 bpm</strong> per tap (clamped 10–300) — ride the tempo into a section by hand.</li>
-  </ul>
-
-  <h4>Record a song (arranger)</h4>
-  <p class="muted">
-    The arranger records your <strong>live clip-launch performance</strong> — which clips you fire, in
-    which lanes, exactly when — and plays it back as a song. It records <em>launches</em>, not audio,
-    so the clips stay fully editable. Identical to the card's <strong>●</strong> REC +
-    <strong>SES/ARR</strong> buttons (both write the same synced state).
-  </p>
-  <ol class="steps">
-    <li>Flip to <strong>CONTROL view</strong>. Be in <strong>SESSION</strong> (SONG / CC 92 dim white)
-      and make sure the <strong>transport runs</strong> (PLAY / CC 96) so song-time advances.</li>
-    <li>Press <strong>REC</strong> (CC 91) — it pulses red. In the default <strong>REPLACE</strong> mode
-      arming clears the previous take and restarts at bar 1; switch the RPL/OVR pill on the card for
-      overdub-merge.</li>
-    <li>Flip to <strong>CLIP view</strong> and <strong>perform</strong> — every launch/stop/scene is
-      captured exactly when it applies (quantized launches on the boundary; NOW launches instantly).</li>
-    <li>Flip back to CONTROL, press <strong>REC</strong> again to disarm. Press <strong>SONG</strong>
-      (CC 92) to switch to <strong>ARRANGEMENT</strong> (bright white) — playback runs your recorded
-      launches from the top, looping. <strong>SONG</strong> again returns to live SESSION play.</li>
-  </ol>
-
-  <h3>The note editor</h3>
   <LaunchpadDiagram
+    top={permTop('clip', { running: true })}
     pads={editorPads}
-    top={sEditTop}
-    scene={sEditSceneFollowing}
+    scene={clipRightScene}
     callouts={editCallouts}
-    accent={hex(RGB_VIEW)}
-    caption="SINGLE · note editor, FOLLOW ON. X = step (an 8-step window = half a 16-step block), Y = pitch (in-key, bottom = lowest). The amber column is the playhead. Right column: EXIT · DBL · LEN · FOL (green = following) · CPY · PST · OC+ · OC− (the P6 clip clipboard + octave shortcuts). CC 98 stays the cyan VIEW button."
-  />
-  <LaunchpadDiagram
-    pads={editorPads}
-    top={sEditTop}
-    scene={sEditSceneFrozen}
-    callouts={editCallouts}
-    accent={hex(RGB_FUNC_ON)}
-    caption="SINGLE · note editor, FOLLOW FROZEN. The FOL pad turns violet: the window stays where you put it while the playhead runs on. Any manual ◀/▶ scroll freezes automatically; tap FOL to resume following."
+    accent={hex(RGB_PATTERN_ARMED)}
+    caption="CLIP view (no shift), FOLLOW on. The amber column is the playhead; notes colour by velocity (dim→bright), a yellow-boosted note sits under the playhead, faint dots mark root-pitch rows. Right column, top→bottom: DOUBLE · LENGTH · FOLLOW (bright green = following) · KEYS (bright orange) · ROW+ · ROW− · STEP◀ · STEP▶."
   />
   <ul class="tight">
-    <li><strong>Get in:</strong> double-tap a clip in CLIP view, arm NEW onto an empty pad, or
-      hold-EDIT + flip + tap. <strong>Get out:</strong> <strong>EXIT</strong> (top scene button) —
-      then CC 98 back to CLIP view.</li>
     <li><strong>Tap</strong> a pad to toggle a note; <strong>hold a note + tap another in its row</strong>
       to tie a held span.</li>
-    <li><strong>▲ ▼</strong> scroll pitch ±1 row; <strong>◀ ▶</strong> scroll the step window ±1 step.
-      <strong>Hold SHIFT</strong> (CC 95) → both jump a full screen (±8).</li>
-    <li><strong>VEL</strong> (CC 96, hold + tap a note) cycles its velocity;
-      <strong>SCALE</strong> (CC 97) cycles the clip scale.</li>
-    <li><strong>FOLLOW</strong> lives on the <strong>scene column, 4th pad from the top</strong> (CC 98
-      is the view flip, so FOLLOW gets a real pad here): green = the window auto-scrolls with the
-      playhead; violet = frozen. A manual ◀/▶ scroll freezes; <strong>tap FOL to resume following</strong>.</li>
-    <li><strong>DBL</strong> (scene row 2) doubles the clip; <strong>LEN</strong> (scene row 3) opens the
-      length page.</li>
-    <li><strong>CPY · PST · OC+ · OC− (scene rows 4–7 from the bottom):</strong> <strong>CPY</strong>
-      snapshots this clip to the machine clipboard; <strong>PST</strong> (lit green once the clipboard
-      holds a clip) writes it over the clip you're editing — copy a phrase out of one clip's editor and
-      paste it into another. <strong>OC+ / OC−</strong> jump the pitch window <strong>up / down a whole
-      octave</strong> at once (vs the ▲▼ single-row scroll).</li>
+    <li><strong>DOUBLE</strong> (green) duplicates the pattern into the back half and doubles the length
+      (cap 128). <strong>LENGTH</strong> (green) opens the length page. <strong>FOLLOW</strong> (green →
+      bright green while following) auto-scrolls the window with the playhead; a manual step scroll freezes
+      it — tap FOLLOW to resume.</li>
+    <li><strong>KEYS</strong> (bright orange) drops the device into the <a href="#single-keys">KEYS</a>
+      keyboard for this clip.</li>
+    <li><strong>ROW+ / ROW−</strong> (green) scroll the pitch window ±1 row; <strong>STEP◀ / STEP▶</strong>
+      (blue) scroll the 8-step window ±1 step — essential for clips longer than 8 steps.</li>
   </ul>
+  <h4>CLIP + shift — velocity + big jumps</h4>
+  <LaunchpadDiagram
+    top={permTop('clip', { running: true, shift: 'latch' })}
+    pads={clipVelWashPads}
+    scene={clipShiftScene}
+    callouts={editCallouts}
+    accent={hex(RGB_TIMING_ARMED)}
+    caption="CLIP + shift. The 8×8 becomes VELOCITY-cycle (a faint purple wash over empty cells) — tap a note to cycle its velocity. ROW± brighten (they now jump a whole octave / page) and STEP± brighten (they jump a full block). DOUBLE / LENGTH / FOLLOW / KEYS are unchanged."
+  />
+  <ul class="tight">
+    <li><strong>Velocity:</strong> under shift, tapping a note <strong>cycles its velocity</strong> instead
+      of toggling it (the whole grid is in velocity-edit mode; empty cells show a faint purple wash).</li>
+    <li><strong>Big jumps:</strong> under shift <strong>ROW±</strong> page the pitch window by an octave and
+      <strong>STEP±</strong> jump a full 8-step block — quick travel across a long clip.</li>
+    <li>The clip's <strong>scale</strong> is set in <a href="#single-keys">KEYS</a> (there's no separate
+      scale button here).</li>
+  </ul>
+
+  <h3 id="single-keys">KEYS view — play, record + arpeggiate</h3>
+  <p>
+    <strong>KEYS</strong> turns the device into a playable <strong>isomorphic keyboard</strong>
+    (LinnStrument-style, chromatic fourths) routed live to the selected clip's channel, <em>and</em> a
+    <strong>loop recorder</strong>, <em>and</em> an <strong>arpeggiator</strong>. Enter it from
+    <strong>CLIP → KEYS</strong> (bright orange, right column). The clip plays under you while the keyboard
+    is live; recording is armed-but-idle until you tap QUEUE-REC.
+  </p>
+  <LaunchpadDiagram
+    top={permTop('clip', { running: true, keys: true })}
+    pads={keysSinglePads}
+    scene={keysScaleScene}
+    callouts={keysSingleCallouts}
+    accent={hex(RGB_PATTERN_ARMED)}
+    caption="KEYS (no shift) — scale select. The permanent nav row is on top (CLIP lit — KEYS is a Clip sub-view). Middle 6 rows = the keyboard (root cyan, in-scale green, out-of-scale dim, pressed white). Grid top row = the whole clip's playhead in 8 cells. Bottom row = EXIT · QUEUE-REC · OVERDUB · OCT− · OCT+ · PANIC · LEN. RIGHT COLUMN = scale select, top→bottom: MAJOR (selected, bright green) · MINOR · PENTATONIC · DORIAN · PHRYGIAN · MIXOLYDIAN · CHROMATIC · ARP on/off (dim orange = off)."
+  />
+  <ul class="tight">
+    <li><strong>Scale select (right column):</strong> tap a scale to set the clip's scale — the selected
+      one glows bright green. Seven choices: <strong>major · minor · pentatonic · dorian · phrygian ·
+      mixolydian · chromatic</strong>. The scale <em>lights</em> the keyboard (root cyan, in-scale green)
+      but does <strong>not</strong> snap what you play — the pads stay fully chromatic.</li>
+    <li><strong>Record a loop:</strong> tap <strong>QUEUE-REC</strong> to arm (flashes yellow); recording
+      begins when the playhead wraps to step 1 (the transport auto-starts) and the cell turns red.
+      <strong>OVERDUB off</strong> = true-replace (each step is cleared as the playhead crosses it);
+      <strong>OVERDUB on</strong> = additive layering until you toggle it off. Entering from CLIP → KEYS
+      always starts overdub OFF — toggle OVR inside KEYS to layer.</li>
+    <li><strong>OCT− / OCT+</strong> shift the whole keyboard an octave; <strong>PANIC</strong> kills every
+      sounding note; <strong>LEN</strong> opens the length page (EXIT returns straight to KEYS).</li>
+    <li><strong>Getting out:</strong> <strong>EXIT</strong> while recording stops the take (you stay in
+      KEYS); EXIT again returns to the views. A <strong>view button</strong> also leaves KEYS at any time.</li>
+    <li><strong>ARP on/off</strong> (bottom of the right column, orange) turns the arpeggiator on — then
+      hold SHIFT for its controls (next).</li>
+  </ul>
+  <h4>KEYS + shift — the arpeggiator</h4>
+  <LaunchpadDiagram
+    top={permTop('clip', { running: true, keys: true })}
+    pads={keysSinglePads}
+    scene={keysArpScene}
+    callouts={keysSingleCallouts}
+    accent={hex(RGB_TIMING)}
+    caption="KEYS + shift — the arp control column, top→bottom: DIV+ · DIV− (blue) · UP · DOWN · UP-AND-DOWN (green; UP selected, bright) · RANGE+ · RANGE− (orange) · LATCH (dim orange = off). The keyboard + playhead stay live; the notes you hold feed the arp."
+  />
+  <ul class="tight">
+    <li><strong>Turn it on</strong> (ARP button, no-shift) and hold a chord — the arp sequences your held
+      notes through the SAME channel output as the keyboard, in time with the transport.</li>
+    <li><strong>DIV+ / DIV−</strong> set the rate: <strong>8x · 4x · 2x · 1x</strong> (default) <strong>·
+      1/2 · 1/4 · 1/8</strong> of the clock. DIV+ is faster.</li>
+    <li><strong>UP · DOWN · UP-AND-DOWN</strong> set the direction (the selected one glows bright green).
+      <strong>Up-and-down is an exclusive pendulum</strong> — each extreme is played once
+      (C-E-G-E-C…), never doubled, so 2–3 note chords don't stutter.</li>
+    <li><strong>RANGE+ / RANGE−</strong> widen the octave span: <strong>1 oct</strong> (default) <strong>·
+      +1..−1 · +2..−2</strong>. These are <em>symmetric</em> ranges around the held notes (the classic
+      hardware norm is upward-only 1–4 octaves — a one-line change if ever wanted).</li>
+    <li><strong>LATCH</strong> (orange): hold the note set after you release the keys, so the arp keeps
+      running hands-free. A fresh press after a full release replaces the set; pressing while a key is
+      still down adds to it.</li>
+  </ul>
+
+  <h3>ARRANGER view — reserved</h3>
+  <LaunchpadDiagram
+    top={permTop('arranger')}
+    pads={arrangerPads}
+    accent={hex(RGB_VIEW_ACTIVE)}
+    caption="ARRANGER view is an inert placeholder for now: a faint dim 8×8 and a dark right column, with the ARRANGER nav button lit bright purple. No pad or scene handlers are wired to it yet."
+  />
+  <p class="muted">
+    The arrangement <em>engine</em> (record + replay your live launches as a song) already exists, but it
+    has no launchpad UI in this rework — so <strong>ARRANGER is a lit-but-inert view</strong>. Its two
+    controls, <strong>REC</strong> (record-arm) and <strong>SONG</strong> (SESSION ⇄ ARRANGEMENT), are
+    parked in <strong>CONTROL</strong> for now (below).
+  </p>
+
+  <h3>CONTROL view — the performance deck</h3>
+  <LaunchpadDiagram
+    top={permTop('control', { running: true })}
+    pads={controlPads}
+    scene={controlScene}
+    callouts={controlCallouts}
+    accent={hex(RGB_RESET)}
+    caption="CONTROL view. RESET (row 1 col 2, steel blue) · MONO row (teal) · MUTE row (orange when muted) · RATE row (a cool→warm ramp; shown all-default '1') — one pad per channel. Right column = per-lane STOP (bright red = that channel is audible). Re-homed onto the dark top grid rows: TEMPO− · TEMPO+ · STOP-ALL, and REC · SONG one row below."
+  />
+  <ul class="tight">
+    <li><strong>RESET (RST, steel blue):</strong> snap every playing channel back to step 1 at one shared
+      instant — the classic "everyone back on the one". The same field as the card's RST button and the
+      reset gate. Reset ≠ stop: clips keep playing, just re-aligned.</li>
+    <li><strong>MONO row (teal):</strong> toggle a channel between MONO (one note per column) and POLY
+      (chords). <strong>MUTE row (orange):</strong> mute a channel <em>in place</em> — it keeps advancing
+      its playhead (stays locked to the transport) but goes silent, so it drops out and snaps back on the
+      beat. That's different from per-lane STOP, which halts the channel.</li>
+    <li><strong>RATE row:</strong> tap to cycle a channel's clock division up through <strong>1/8 · 1/4 ·
+      1/2 · 1 · 2x · 4x</strong> (wrapping; the colour ramps cool→warm, green = the default '1'). A clip's
+      own Grid-shift CLIP-DIV overrides this per clip.</li>
+    <li><strong>Per-lane STOP (right column):</strong> stop one channel (bright red = audible now).</li>
+    <li><strong>Re-homed transport / arranger:</strong> <strong>TEMPO− / TEMPO+</strong> nudge the rack
+      tempo ±2 bpm; <strong>STOP-ALL</strong> queues a stop on every channel; <strong>REC</strong> arms the
+      arranger (records your live launches — not audio) and <strong>SONG</strong> flips SESSION ⇄
+      ARRANGEMENT to replay them. (These four moved here off the old deck top row, which is now the
+      permanent nav bar.)</li>
+  </ul>
+
+  <h3 id="single-undo">Undo / redo — launchpad-scoped</h3>
+  <p class="muted">
+    <strong>UNDO (CC 96)</strong> and <strong>REDO (CC 97)</strong> undo only <em>this</em> launchpad's own
+    <strong>persistent</strong> clip edits — div, swing, length, paste, note content, scale. They never
+    touch a collaborator's edits (each surface has its own scoped history, so you can't revert someone
+    else's work) and never touch <strong>transient launches</strong> (a queued clip isn't "edited", so it
+    isn't on the stack). The buttons light orange when there's something to undo / redo, dim when the stack
+    is empty.
+  </p>
 
   <h3>LENGTH-EDIT — set an exact clip length</h3>
   <LaunchpadDiagram
     pads={lenPads}
-    top={sLenTop}
     scene={lenScene}
     callouts={lenCallouts}
-    accent={hex(RGB_VIEW)}
-    caption="SINGLE · LENGTH-EDIT page (shown: 3 blocks, end-step 4 → 36 steps). Bottom row = end BLOCK (1–8, ×16 steps each); the next two rows = end STEP within the end block (1–8, then 9–16). The bright pad is the current end — tap to set. Non-destructive: shortening hides notes past the end, lengthening brings them back. EXIT top-right."
+    accent={hex(RGB_LEN_END)}
+    caption="LENGTH-EDIT page (shown: 3 blocks, end-step 4 → 36 steps). A full-device takeover opened from GRID+shift LENGTH or CLIP LENGTH. Bottom row = end BLOCK (1–8, ×16 steps each); the next two rows = end STEP (1–8, then 9–16). The bright pad is the current end — tap to set. Non-destructive; EXIT (top scene button) returns to the view you came from."
   />
   <p class="muted">
-    Open it from the editor's <strong>LEN</strong> scene pad, the deck's <strong>LEN</strong> pad, or the
-    CLIP-view <strong>arm row LENGTH</strong> cell. Length = (endBlock−1)×16 + endStep, up to 128. Each
-    clip's length is independent — polymeter is the point — and all playing clips re-align to step 1
-    when the transport starts.
+    Length = (endBlock−1)×16 + endStep, up to 128. Each clip's length is independent — polymeter is the
+    point — and all playing clips re-align to step 1 when the transport starts (or on a RESET). The nav row
+    goes dark on this page but stays live: <strong>EXIT</strong> (top scene button) or any top-row
+    <strong>view</strong> button leaves it.
   </p>
 
-  <h3 id="single-keys">KEYS — play + record notes on one device</h3>
-  <LaunchpadDiagram
-    pads={keysSinglePads}
-    callouts={keysSingleCallouts}
-    accent={hex(RGB_QREC_REC)}
-    caption="SINGLE · KEYS. Top row = the playhead — the WHOLE clip compressed into 8 cells, so the moving dot never leaves the device. Middle 6 rows = the isomorphic keyboard (root cyan, in-scale green, out-of-scale dim, pressed white). Bottom row = EXIT (red), QUEUE-REC (yellow → red), OVERDUB (purple), O− / O+ (octave), PNC (panic, red-orange), LEN (yellow). While KEYS is open, CC 98 is inactive — EXIT is the way out."
-  />
+  <h3 id="single-signal-flow">Signal flow — how one pad drives sound</h3>
   <p class="muted">
-    <strong>KEYS</strong> turns the device into a playable <strong>isomorphic keyboard</strong>
-    (LinnStrument-style, chromatic fourths) routed live to the clip's track, <em>and</em> a
-    <strong>loop recorder</strong>. The clip plays under you while the keyboard is live.
+    The Launchpad never makes sound itself. It drives the <strong>clip player</strong>, whose eight
+    per-channel outputs carry <strong>gate</strong> (triggers) and <strong>poly pitch</strong> to your
+    voice modules. KEYS + the arp reach the same per-channel output, so the notes you play / record land on
+    the same cables the clips fire.
   </p>
-  <h4>Getting in — the one-handed way (primary)</h4>
-  <ol class="steps">
-    <li>Stay in <strong>CLIP view</strong>. Tap the <strong>KEYS cell (CC 91)</strong> on the arm row:
-      <strong>once</strong> arms with overdub OFF (true-replace, glows red), <strong>twice</strong> arms
-      with overdub ON (additive, glows purple).</li>
-    <li><strong>Tap the clip</strong> you want to play into → KEYS opens for it (an empty pad makes a
-      fresh clip). No hold, no view flip. The clip starts <strong>playing</strong>, the keyboard is
-      <strong>live</strong>, and recording is <strong>armed-but-idle</strong> until you press QUEUE-REC.</li>
-  </ol>
-  <h4>Getting in — the legacy hold gesture (still works)</h4>
-  <ol class="steps">
-    <li>In <strong>CONTROL view</strong>, <strong>hold K●</strong> (overdub OFF) or <strong>KO</strong>
-      (overdub ON) on deck row 1, press <strong>CC 98</strong> to flip to CLIP view (the hold survives),
-      then <strong>double-tap a clip</strong>. Same result — kept as a fallback (and it's the shared
-      code path pair mode uses).</li>
-  </ol>
-  <h4>Record a loop</h4>
-  <ul class="tight">
-    <li><strong>QUEUE-REC</strong> (bottom row): tap to <strong>arm</strong> — flashes yellow. Recording
-      begins when the playhead <strong>wraps to step 1</strong> (the transport auto-starts if stopped);
-      the pad turns red. Re-tap while armed to cancel.</li>
-    <li><strong>Overdub OFF = TRUE REPLACE:</strong> each step is cleared as the playhead crosses it,
-      then refilled by what you play that pass — an un-played region wipes.</li>
-    <li><strong>OVERDUB ON = additive:</strong> each pass layers onto the last, looping endlessly;
-      toggle <strong>OVR</strong> off to finish (it stops at the end of the current loop).</li>
-    <li><strong>LEN</strong> opens the length page (EXIT returns straight to KEYS, not the editor), so
-      you can resize the loop without leaving.</li>
-    <li><strong>O− / O+ (octave):</strong> shift the whole keyboard down / up an octave so you can reach
-      bass or lead range without re-patching. <strong>PNC (panic):</strong> instantly kill every
-      sounding note (an "all-notes-off" if a gate ever hangs) — you stay in KEYS.</li>
-    <li>Velocity is captured from how hard you hit (a Launchpad X is expressive automatically; a
-      velocity-flat Mini records a default level).</li>
-  </ul>
-  <h4>Getting out</h4>
-  <ul class="tight">
-    <li><strong>EXIT while recording</strong> = stop recording, <strong>stay in KEYS</strong> (the clip
-      keeps playing). <strong>EXIT while armed</strong> = cancel the arm. <strong>EXIT while idle</strong>
-      = back to the views (the device returns to CLIP/CONTROL exactly where you left them).</li>
-    <li><strong>CC 98 does nothing inside KEYS</strong> — the whole device belongs to the keyboard until
-      you EXIT.</li>
-  </ul>
+  <figure class="sigflow">
+    <svg viewBox="0 0 732 216" width="732" height="216" role="img" aria-label="Signal flow: Launchpad → clip player → voice modules → output">
+      <defs>
+        <marker id="sfhead" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 z" class="sf-head" />
+        </marker>
+      </defs>
+      <!-- Launchpad -->
+      <rect class="sf-box" x="8" y="96" width="132" height="54" rx="8" />
+      <text class="sf-txt" x="74" y="120" text-anchor="middle">Launchpad</text>
+      <text class="sf-sub" x="74" y="135" text-anchor="middle">Mini Mk3</text>
+      <path class="sf-arrow" d="M140 123 H176" />
+      <text class="sf-cable" x="158" y="116" text-anchor="middle">Web MIDI</text>
+      <!-- clip player -->
+      <rect class="sf-box hl" x="176" y="40" width="150" height="172" rx="8" />
+      <text class="sf-txt" x="251" y="60" text-anchor="middle">clip player</text>
+      <text class="sf-sub" x="251" y="75" text-anchor="middle">8 channels</text>
+      <rect class="sf-chan" x="184" y="90" width="134" height="20" rx="4" />
+      <text class="sf-sub" x="192" y="104">ch 1  → kick</text>
+      <rect class="sf-chan" x="184" y="118" width="134" height="20" rx="4" />
+      <text class="sf-sub" x="192" y="132">ch 2  → snare</text>
+      <rect class="sf-chan" x="184" y="146" width="134" height="20" rx="4" />
+      <text class="sf-sub" x="192" y="160">ch 3  → TIDY VCO</text>
+      <text class="sf-sub" x="192" y="186">…ch 4–8</text>
+      <!-- voice modules -->
+      <rect class="sf-box" x="392" y="34" width="120" height="40" rx="8" />
+      <text class="sf-txt" x="452" y="58" text-anchor="middle">kickdrum</text>
+      <rect class="sf-box" x="392" y="100" width="120" height="40" rx="8" />
+      <text class="sf-txt" x="452" y="124" text-anchor="middle">snaredrum</text>
+      <rect class="sf-box" x="392" y="156" width="140" height="44" rx="8" />
+      <text class="sf-txt" x="462" y="176" text-anchor="middle">TIDY VCO</text>
+      <text class="sf-sub" x="462" y="190" text-anchor="middle">(poly)</text>
+      <!-- clip → voices -->
+      <path class="sf-arrow" d="M326 100 C356 100 362 54 392 54" />
+      <text class="sf-cable" x="356" y="50" text-anchor="middle">gate1</text>
+      <path class="sf-arrow" d="M326 128 C356 128 362 120 392 120" />
+      <text class="sf-cable" x="356" y="112" text-anchor="middle">gate2</text>
+      <path class="sf-arrow" d="M326 156 C356 156 362 178 392 178" />
+      <text class="sf-cable" x="352" y="205" text-anchor="middle">pitch3 (poly) + gate3</text>
+      <!-- output -->
+      <rect class="sf-box" x="596" y="100" width="120" height="44" rx="8" />
+      <text class="sf-txt" x="656" y="126" text-anchor="middle">mixer / out</text>
+      <path class="sf-arrow" d="M512 54 C556 54 560 116 596 116" />
+      <path class="sf-arrow" d="M512 120 C556 120 560 122 596 122" />
+      <path class="sf-arrow" d="M532 178 C566 178 566 130 596 130" />
+    </svg>
+    <figcaption>
+      One Launchpad → the clip player's channels → gate + poly-pitch cables → your voice modules → your
+      mix. KEYS and the arpeggiator push notes onto the same per-channel output the clips fire.
+    </figcaption>
+  </figure>
 
   <h3>Single-unit pad + CC reference</h3>
   <div class="table-scroll">
@@ -1015,115 +1290,136 @@
 </section>
 
 <!-- ======================================================================
-     PERFORMANCE EXAMPLE — a complete, follow-along live set on ONE Launchpad.
+     MAKE A PATCH IN 1-PAD MODE — the beginner start-to-finish walkthrough.
      ====================================================================== -->
-<section class="mode-section" id="performance-example">
-  <h2 class="mode-title">Performance example — a 3-voice live set</h2>
+<section class="mode-section" id="make-a-patch">
+  <h2 class="mode-title">Make a patch in 1-pad mode</h2>
   <p>
-    A complete end-to-end walkthrough on <strong>one Launchpad</strong>: a three-voice kit —
-    <strong>kick</strong>, <strong>snare</strong> and a <strong>TIDY VCO</strong> bass line (poly) —
-    with two-to-three clips per scene, built, recorded, and performed with the deck's new controls.
-    Follow along button-by-button.
+    Never touched the device? This is the whole journey on <strong>one Launchpad</strong> — plug in, wire
+    three voices, record a bassline in KEYS, lay clips in GRID, build scenes, and perform — with every
+    button press spelled out. By the end you'll have a live three-voice patch: <strong>kick</strong>,
+    <strong>snare</strong> and a poly <strong>TIDY VCO</strong> bassline.
   </p>
 
-  <h3>1 · Patch the three voices</h3>
+  <h3>1 · Plug in + connect</h3>
   <ol class="steps">
-    <li>Drop a <strong>clip player</strong>, a <strong>launchpad control</strong>, a <strong>kickdrum</strong>,
-      a <strong>snaredrum</strong>, a <strong>TIDY VCO</strong>, and a <strong>TIMELORDE</strong> (the
-      rack transport) onto the canvas.</li>
-    <li>Wire the clip player's <strong>per-lane outputs</strong> to the voices — one lane per instrument:
-      <ul class="tight">
-        <li><strong>Lane 1 → kick:</strong> <code>gate1</code> → the kickdrum's trigger (drums fire on
-          the gate; pitch optional).</li>
-        <li><strong>Lane 2 → snare:</strong> <code>gate2</code> → the snaredrum's trigger.</li>
-        <li><strong>Lane 3 → TIDY VCO (poly):</strong> <code>pitch3</code> (the poly pitch cable) → TIDY
-          VCO's <strong>pitch</strong>, and <code>gate3</code> → its gate. TIDY VCO plays the whole
-          chord because it's a poly voice.</li>
-      </ul>
-    </li>
-    <li>Run each voice to your mixer / output. On the card, set <strong>lane 3 to POLY</strong> (or do it
-      from the deck's <strong>MONO row</strong> — leave lane 3's pad <em>dim</em> = poly), so the bass
-      can play chords.</li>
-    <li>Click <strong>Connect single Launchpad</strong> on the launchpad card. It binds the clip player;
-      the device opens in <strong>CLIP view</strong>.</li>
+    <li>Plug the <strong>Launchpad Mini Mk3</strong> into a USB port.</li>
+    <li>On the canvas, drop a <strong>launchpad control</strong> and a <strong>clip player</strong> (in
+      workflow mode, add them from the module drawer — the clip player is the brain the pad drives).</li>
+    <li>Click <strong>Connect single Launchpad</strong> on the launchpad card and accept the browser's
+      Web-MIDI prompt (first click only). The pad lights up in <strong>GRID view</strong> and auto-binds
+      the clip player.</li>
   </ol>
 
-  <h3>2 · Record the clips (using the one-handed KEYS entry)</h3>
+  <h3>2 · Wire three voices</h3>
   <p>
-    You'll build <strong>scene A</strong> first (clip slot 0 of each lane), then B and C. Recording uses
-    the reclaimed <strong>KEYS cell (CC 91)</strong> — the whole point of the single-mode rework:
+    Add a <strong>kickdrum</strong>, a <strong>snaredrum</strong>, a <strong>TIDY VCO</strong>, and a
+    <strong>TIMELORDE</strong> (the rack transport). Wire one clip-player channel per voice — the channels
+    are the pad's columns:
   </p>
+  <ul class="tight">
+    <li><strong>Channel 1 → kick:</strong> <code>gate1</code> → the kickdrum's trigger (drums fire on the
+      gate; pitch optional).</li>
+    <li><strong>Channel 2 → snare:</strong> <code>gate2</code> → the snaredrum's trigger.</li>
+    <li><strong>Channel 3 → TIDY VCO (poly):</strong> <code>pitch3</code> (the poly pitch cable) → TIDY
+      VCO's pitch, and <code>gate3</code> → its gate. Make channel 3 polyphonic so it plays chords: in
+      <strong>CONTROL view</strong> its <strong>MONO</strong> pad (row 2, third column) should be
+      <em>dim</em> — dim = poly, teal = mono.</li>
+    <li>Run each voice to your output. See <a href="#single-signal-flow">Signal flow</a> for the full
+      picture.</li>
+  </ul>
+
+  <h3>3 · Record a bassline into channel 3 (KEYS)</h3>
   <LaunchpadDiagram
-    pads={perfKeysPads}
+    top={permTop('clip', { running: true, keys: true })}
+    pads={keysSinglePads}
+    scene={keysScaleScene}
     callouts={keysSingleCallouts}
-    accent={hex(RGB_QREC_REC)}
-    caption="STEP 2 — KEYS record. After arming CC 91 and tapping the lane-3 clip, the device is the isomorphic keyboard (a held chord shows white). Tap QUEUE-REC (REC) → it flashes yellow, then turns red at the loop top and captures what you play. O−/O+ shift octave; PNC panics; EXIT stops the take."
+    accent={hex(RGB_PATTERN_ARMED)}
+    caption="STEP 3 — KEYS on channel 3. Right column = scale select (MAJOR selected). Play the keyboard rows; QUEUE-REC captures a loop; ARP (bottom orange) + SHIFT open the arp column if you want it."
   />
   <ol class="steps">
-    <li><strong>Kick (lane 1, slot 0):</strong> in CLIP view, tap the <strong>KEYS cell (CC 91) once</strong>
-      (armed-REC, red), then tap the <strong>top-left pad</strong> (lane 1, slot 0). KEYS opens on a fresh
-      clip, the transport starts, recording is armed. Tap <strong>QUEUE-REC</strong>; on the loop top it
-      goes red — play the kick pattern on the low keyboard rows (<strong>O−</strong> to drop an octave if
-      you want a deeper thump). Tap <strong>EXIT</strong> to stop the take (you stay in KEYS), then
-      <strong>EXIT</strong> again to return to the views.</li>
-    <li><strong>Snare (lane 2, slot 0):</strong> back in CLIP view, tap <strong>CC 91 once</strong>, tap
-      the lane-2 slot-0 pad (second row from the top), QUEUE-REC, play the backbeat, EXIT twice.</li>
-    <li><strong>TIDY VCO bass (lane 3, slot 0):</strong> tap <strong>CC 91 twice</strong> (armed-OD —
-      overdub ON, so you can layer a chord over a couple of passes), tap the lane-3 slot-0 pad, QUEUE-REC,
-      and play a bass chord progression. Because lane 3 is poly, the whole chord sounds. Toggle
-      <strong>OVR</strong> off to finish, EXIT twice.</li>
-    <li><strong>Scenes B and C:</strong> repeat for clip slots 1 and 2 (columns B and C) — different kick
-      fills, a busier snare, a lifted bass. For a quick variation, open a clip's editor
-      (<strong>double-tap</strong> it), <strong>CPY</strong> it, double-tap an empty pad in the next
-      column and <strong>PST</strong> — then tweak.</li>
+    <li>In <strong>GRID</strong>, <strong>double-tap</strong> the <strong>channel-3, slot-1 pad</strong>
+      (third column, top row) → the clip opens in <strong>CLIP view</strong> (an empty pad makes a fresh
+      clip).</li>
+    <li>Press <strong>KEYS</strong> (right column, 4th from the top, bright orange) → the device becomes the
+      keyboard for that clip; the transport starts and the clip plays.</li>
+    <li><strong>Pick a scale:</strong> tap a scale in the right column — e.g. <strong>MINOR</strong> (2nd
+      from top). The selected scale glows bright green and lights the in-key rows.</li>
+    <li><strong>(Optional) arpeggiate:</strong> tap <strong>ARP</strong> (bottom of the right column), then
+      <strong>hold SHIFT</strong> and set <strong>direction</strong> (UP), <strong>DIV</strong> (e.g. 1/2)
+      and <strong>RANGE</strong>. Hold a chord and it sequences itself; tap <strong>LATCH</strong> to keep
+      it running hands-free.</li>
+    <li><strong>Record:</strong> tap <strong>QUEUE-REC</strong> (bottom row, 2nd pad) — it flashes yellow,
+      then turns red at the loop top. Play your bassline (use <strong>OCT−</strong> for a deeper register).
+      Leave <strong>OVERDUB</strong> off for a clean replace, or toggle it on to layer.</li>
+    <li><strong>Stop:</strong> tap <strong>EXIT</strong> (bottom-left) to end the take (you stay in KEYS),
+      then a <strong>view button</strong> (GRID) to leave KEYS.</li>
   </ol>
 
-  <h3>3 · The session — three lanes, three scenes</h3>
+  <h3>4 · Lay clips on channels 1 + 2 (GRID)</h3>
   <LaunchpadDiagram
-    top={perfSessionArmTop}
-    pads={perfSessionPads}
-    scene={perfSceneCol}
-    callouts={perfSessionCallouts}
-    accent={hex(RGB_VIEW)}
-    caption="STEP 3 — the session grid. Rows top→bottom = lane 1 KICK (K), lane 2 SNARE (S), lane 3 TIDY VCO (V). Columns = scenes A · B · C (clip slots). Scene A is playing (solid green); B and C are loaded (dim blue). Right column = the scene-launch buttons A/B/C (fire a whole column across all lanes). Top row = the arm strip (KEYS · COPY · … · VIEW)."
+    top={permTop('grid', { running: true })}
+    pads={gridPads}
+    scene={gridRowScene}
+    callouts={gridCallouts}
+    accent={hex(RGB_SCENE)}
+    caption="STEP 4 — clips laid in. Columns = channels (1 kick · 2 snare · 3 bass), rows = slots. Record a kick clip in channel-1 slot 1, a snare clip in channel-2 slot 1, then fill slots 2–3 for variations. Right column = row / scene launch."
   />
-  <p class="muted">
-    Each <strong>row</strong> is one instrument, each <strong>column</strong> is a scene. Tapping a single
-    pad launches just that clip; tapping a <strong>scene button</strong> (right column) fires the whole
-    column — all three voices switch together on the next quantize boundary.
+  <ol class="steps">
+    <li><strong>Kick clip:</strong> in GRID, double-tap <strong>channel-1, slot-1</strong> (top-left pad) →
+      CLIP → <strong>KEYS</strong> → QUEUE-REC → tap out a four-on-the-floor on the low rows → EXIT →
+      GRID.</li>
+    <li><strong>Snare clip:</strong> double-tap <strong>channel-2, slot-1</strong> (second column, top row)
+      → CLIP → KEYS → QUEUE-REC → play the backbeat → EXIT → GRID.</li>
+    <li><strong>Variations (slots 2–3):</strong> for a fast copy, latch <strong>SHIFT</strong>, tap
+      <strong>COPY</strong> (right column, top), tap a source clip, tap <strong>PASTE</strong>, then tap
+      the empty slot below it — now tweak. Repeat so each channel has 2–3 slots.</li>
+    <li>Tapping any loaded pad <strong>launches just that clip</strong>; you'll launch whole rows next.</li>
+  </ol>
+
+  <h3>5 · Build scenes with the row-launch column</h3>
+  <p>
+    A grid <strong>row</strong> is a <strong>scene</strong> — one clip per channel firing together. Slot 1
+    (top row) is your main groove; slot 2 a breakdown; slot 3 a fill.
   </p>
+  <ol class="steps">
+    <li>Press the <strong>top scene button</strong> (right column, top) → the slot-1 clip in every channel
+      launches together (kick + snare + bass) on the next boundary.</li>
+    <li>Press the <strong>second scene button</strong> → every channel switches to its slot-2 clip at once —
+      a one-press section change. Channels with no clip in that slot stop.</li>
+    <li>That's your arrangement: each row is a section, and one button moves the whole band between them.</li>
+  </ol>
 
-  <h3>4 · Perform</h3>
+  <h3>6 · Perform</h3>
   <LaunchpadDiagram
-    pads={perfSceneLaunchPads}
-    scene={perfSceneLaunchCol}
-    accent={hex(RGB_QUEUED)}
-    caption="STEP 4 — launch scene B. Pressing scene button B queues slot 1 across every lane: the column-B clips flash green (queued) and take over on the boundary while scene A still plays underneath until then. Same for A and C — a one-press section switch."
+    top={permTop('control', { running: true })}
+    pads={controlPads}
+    scene={controlScene}
+    callouts={controlCallouts}
+    accent={hex(RGB_RESET)}
+    caption="STEP 6 — CONTROL, the live layer: RESET · MONO · MUTE · RATE rows (one pad per channel), per-lane STOP, and the re-homed TEMPO / STOP-ALL / REC / SONG. Flip here mid-set for hands-on control, GRID to launch."
   />
   <ol class="steps">
-    <li><strong>Start the set:</strong> press <strong>scene A</strong> (right column, bottom button) — all
-      three lanes launch together. If they don't feel locked, tap <strong>RST</strong> (flip to CONTROL,
-      deck row 1 col 2) to snap every lane to step 1 on a shared downbeat.</li>
-    <li><strong>Drop the kick (MUTE):</strong> flip to CONTROL and tap <strong>lane 1's MUTE pad</strong>
-      (deck row 3, col 0) — the kick goes silent <em>in place</em> (its playhead keeps running, so it
-      snaps right back on beat). Tap it again to bring the kick back for the chorus. (No flip needed if
-      you ever run two Launchpads — MUTE is on Unit L's top row too.)</li>
-    <li><strong>Switch sections:</strong> press <strong>scene B</strong> then <strong>scene C</strong> to
-      move through the arrangement; every voice changes clip on the boundary. Need it instant? tap
-      <strong>NOW</strong> (arm-row CC 95) first so launches ignore quantize.</li>
-    <li><strong>Half-time the bass (RATE):</strong> on the deck's <strong>RATE row</strong> (row 4), tap
-      <strong>lane 3's pad</strong> until it reads <strong>1/2</strong> — the TIDY VCO line drops to
-      half-time against the drums for a breakdown. Tap back to <strong>1</strong> to rejoin.</li>
-    <li><strong>Ride the tempo:</strong> nudge <strong>T+ / T−</strong> (CC 94 / 93) a few taps to push
-      or pull the whole set into the next section.</li>
-    <li><strong>Re-sync anytime:</strong> after a flurry of mutes and rate changes, one <strong>RST</strong>
-      re-locks all lanes to a common step 1 — the classic live "everyone back on the one."</li>
+    <li><strong>Mute the kick for a breakdown:</strong> press <strong>CONTROL</strong> (top row), tap
+      <strong>channel 1's MUTE pad</strong> (row 3, first column) — the kick goes silent in place (its
+      playhead keeps running, so it snaps back on beat). Tap again to bring it back.</li>
+    <li><strong>Half-time the bass:</strong> on the <strong>RATE row</strong> (row 4), tap <strong>channel
+      3's pad</strong> until it reads <strong>1/2</strong> — the bass drops to half-time for a section.</li>
+    <li><strong>Add a shuffle:</strong> back in GRID, latch <strong>SHIFT</strong> and tap
+      <strong>SWING+</strong> a few times (it ramps purple) to swing the selected channel; the button
+      flashes green when you return to straight.</li>
+    <li><strong>Reshape a clip's feel:</strong> in GRID + shift, arm <strong>CLIP-DIV</strong> and tap a
+      clip to cycle its own division — the pad pulses at the new rate; disarm to commit.</li>
+    <li><strong>Undo a mistake:</strong> tap <strong>UNDO</strong> (top row) to revert your last persistent
+      edit (a paste, a length change, a swing nudge); <strong>REDO</strong> to reapply.</li>
+    <li><strong>Ride the tempo / drop everything:</strong> in CONTROL, nudge <strong>TEMPO+ / −</strong>, or
+      hit <strong>STOP-ALL</strong> to stop every channel; the <strong>transport</strong> button (top row,
+      CC 91) starts / stops the clock.</li>
   </ol>
   <p class="muted">
-    Every pad used here — <strong>KEYS-arm, MUTE, RATE, RESET, tempo nudge</strong> — sits on pads that
-    were <strong>dark and dead</strong> before this rework. The command deck went from a couple of lit
-    buttons to a full live-performance surface, and the one-handed KEYS entry means you never fumble a
-    hold-across-a-flip mid-set.
+    Every control you touched — the four views, the shift layer, KEYS + arp, MUTE / RATE / RESET / SWING /
+    CLIP-DIV, and launchpad-scoped undo — lives on <strong>one</strong> device, one hand at a time.
   </p>
 </section>
 
@@ -1164,7 +1460,7 @@
   }
   #single-launchpad { border-left-color: #0a5c5c; }
   #two-launchpads { border-left-color: #274a72; }
-  #performance-example { border-left-color: #6a4a12; }
+  #make-a-patch { border-left-color: #6a4a12; }
   ol.steps { line-height: 1.6; max-width: 70ch; }
   ol.steps li { margin-bottom: 0.3rem; }
   ul.tight { line-height: 1.5; max-width: 70ch; margin-top: 0.4rem; }
@@ -1195,4 +1491,24 @@
   table.map td { padding: 5px 10px; border-bottom: 1px solid #2a2d36; vertical-align: top; }
   .m-what { font-weight: 600; white-space: nowrap; }
   .m-addr code { font-size: 0.8rem; color: var(--muted, #cfd3df); }
+  /* Signal-flow block diagram (Launchpad → clip player → voices → out). Follows
+     the LaunchpadDiagram look: boxes stroked in the muted hue, cyan-accented clip
+     player, cable labels in the muted hue. */
+  .sigflow { margin: 1rem 0 1.4rem; }
+  .sigflow svg { max-width: 100%; height: auto; }
+  .sf-box { fill: none; stroke: var(--muted, #9aa0b2); stroke-width: 1.4; }
+  .sf-box.hl { stroke: #16d6d6; }
+  .sf-chan { fill: none; stroke: var(--muted, #9aa0b2); stroke-opacity: 0.45; }
+  .sf-txt { fill: #cdd2de; font: 600 12px/1 ui-monospace, 'SF Mono', Menlo, monospace; }
+  .sf-sub { fill: var(--muted, #9aa0b2); font: 500 10px/1 ui-monospace, 'SF Mono', Menlo, monospace; }
+  .sf-cable { fill: var(--muted, #9aa0b2); font: 600 9px/1 ui-monospace, 'SF Mono', Menlo, monospace; }
+  .sf-arrow { fill: none; stroke: var(--muted, #9aa0b2); stroke-width: 1.4; marker-end: url(#sfhead); }
+  .sf-head { fill: var(--muted, #9aa0b2); }
+  .sigflow figcaption {
+    margin-top: 0.4rem;
+    font-size: 0.82rem;
+    color: var(--muted, #98a);
+    font-style: italic;
+    max-width: 70ch;
+  }
 </style>

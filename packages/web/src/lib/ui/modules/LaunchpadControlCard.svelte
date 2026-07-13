@@ -37,10 +37,11 @@
     bindingRune,
     launchpadDeployment,
     launchpadActiveView,
-    toggleSingleView,
+    setLaunchpadView,
     restoreLaunchpadDeployment,
     viewRune,
   } from '$lib/control/launchpad/launchpad-control.svelte';
+  import type { SingleView } from '$lib/control/launchpad/launchpad-map';
 
   let { id, data }: NodeProps = $props();
 
@@ -117,9 +118,18 @@
     autoBind();
   }
 
-  function flipView() {
-    toggleSingleView();
+  // The 4 single-mode views (KEYS is a sub-mode of Clip, entered on the device).
+  const VIEWS: { id: SingleView; label: string }[] = [
+    { id: 'grid', label: 'GRID' },
+    { id: 'clip', label: 'CLIP' },
+    { id: 'arranger', label: 'ARR' },
+    { id: 'control', label: 'CTRL' },
+  ];
+  function pickView(v: SingleView) {
+    setLaunchpadView(v);
   }
+  const viewLabel = (v: SingleView) =>
+    v === 'grid' ? 'GRID' : v === 'clip' ? 'CLIP' : v === 'arranger' ? 'ARRANGER' : 'CONTROL';
 </script>
 
 <div class="mod-card launchpad-control-card" data-testid="launchpad-control-card" data-node-id={id}>
@@ -130,13 +140,16 @@
   <div class="lp-body">
     <p class="lp-blurb">
       Drives Launchpad Mini Mk3. With a <b>pair</b>: the <b>left</b> unit is the always-live
-      <b>8×8 clip matrix</b> (tap to launch/stop; right column = scene); the <b>right</b> unit is the
-      <b>command deck</b> (EDIT · COPY · PASTE · DOUBLE · LENGTH · NOW + per-lane STOP + transport)
-      and flips to the <b>note editor</b> while you edit. On the deck, <b>note-REC</b> / <b>note-OVERDUB</b>
-      (the two pads on row 1, above EDIT) + a <b>double-tap</b> of a clip open <b>KEYS</b> — a playable
-      keyboard across both units that plays the clip's track live and records a loop (record / overdub).
-      With a <b>single</b> unit, one device does both — flip it between <b>clip</b> and <b>control</b>
-      views (the <b>CC 98</b> top-right button or the on-card toggle).
+      <b>8×8 clip matrix</b>; the <b>right</b> unit is the <b>command deck</b> and flips to the
+      <b>note editor</b>. With a <b>single</b> unit, one device runs a 4-view surface over a
+      <b>permanent top row</b> (transport · GRID · CLIP · ARRANGER · CONTROL · undo · redo · <b>shift</b>):
+      <b>GRID</b> = the channel-per-column clip matrix (tap = launch/stop, double-tap = edit;
+      <b>shift</b> = copy · paste · clip-div · swing · length · now); <b>CLIP</b> = the note editor for
+      the selected clip (double · length · follow · <b>KEYS</b> · row/step nav; shift = velocity);
+      <b>KEYS</b> = a playable keyboard that records a loop, with scale-select + a built-in arp;
+      <b>CONTROL</b> = the performance deck (reset · mono · mute · rate · per-lane stop · tempo);
+      <b>ARRANGER</b> is a placeholder. Shift taps to latch or holds momentarily; undo/redo are
+      launchpad-scoped. Switch views on the top row or the buttons below.
     </p>
 
     {#if !supported}
@@ -180,17 +193,19 @@
       </div>
 
       {#if paired && isSingle}
-        <div class="lp-actions">
-          <button
-            class="lp-btn lp-view-toggle nodrag"
-            class:active-clip={activeView === 'clip'}
-            type="button"
-            data-testid="launchpad-control-view-toggle"
-            aria-pressed={activeView === 'control'}
-            onclick={flipView}
-          >
-            View: <b>{activeView === 'clip' ? 'CLIP' : 'CONTROL'}</b> — tap to flip
-          </button>
+        <div class="lp-actions lp-view-seg" role="group" aria-label="Launchpad view" data-testid="launchpad-control-view-seg">
+          {#each VIEWS as v (v.id)}
+            <button
+              class="lp-btn lp-view-btn nodrag"
+              class:active={activeView === v.id}
+              type="button"
+              data-testid={`launchpad-control-view-${v.id}`}
+              aria-pressed={activeView === v.id}
+              onclick={() => pickView(v.id)}
+            >
+              {v.label}
+            </button>
+          {/each}
         </div>
       {/if}
 
@@ -214,7 +229,7 @@
           {:else if !paired}
             Not connected.
           {:else if isSingle && bound}
-            Single unit driving clip-player <code>{bound}</code> — <b>{activeView === 'clip' ? 'CLIP' : 'CONTROL'}</b> view (CC 98 or the toggle to flip).
+            Single unit driving clip-player <code>{bound}</code> — <b>{viewLabel(activeView)}</b> view (top row or the buttons to switch).
           {:else if isSingle && hasClip}
             Single unit ✓ — hit Bind to drive your clip-player.
           {:else if isSingle}
@@ -262,9 +277,9 @@
     color: var(--accent, #5a7); border-radius: 4px; padding: 4px 10px; font-size: 12px; cursor: pointer;
   }
   .lp-btn:hover { filter: brightness(1.2); }
-  .lp-view-toggle { width: 100%; text-align: center; }
-  .lp-view-toggle.active-clip { border-color: #4a8bd6; color: #7fb3ea; }
-  .lp-view-toggle b { letter-spacing: 0.04em; }
+  .lp-view-seg { gap: 4px; }
+  .lp-view-btn { flex: 1 1 0; text-align: center; padding: 4px 6px; letter-spacing: 0.04em; opacity: 0.72; }
+  .lp-view-btn.active { border-color: #8a6fd6; color: #b79cf0; background: rgba(120, 80, 200, 0.14); opacity: 1; }
   .lp-status { font-size: 11px; color: #9aa0b2; }
   .lp-status code { color: #cfd3df; }
   .lp-hint { margin: 0; font-size: 10px; color: #6f7488; }

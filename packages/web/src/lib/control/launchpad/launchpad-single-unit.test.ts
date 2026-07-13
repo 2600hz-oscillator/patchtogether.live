@@ -1,26 +1,15 @@
 // packages/web/src/lib/control/launchpad/launchpad-single-unit.test.ts
 //
-// SINGLE-UNIT mode for the Launchpad clip-launcher. The owner-locked PAIR
-// invariant (L = clip matrix, ALWAYS LIVE; R = deck/editor) must hold byte-for-
-// byte in pair mode — the VIEW toggle exists ONLY in single mode. This file:
+// SINGLE-UNIT (S2b) mode for the Launchpad clip-launcher — the 4-VIEW surface
+// (Grid / Clip / Arranger / Control) over a PERMANENT top-CC nav row, with KEYS
+// as a Clip sub-view + a built-in arp, hybrid shift latch/hold, Grid-shift
+// tap-to-arm, per-clip div + per-lane swing, and launchpad-scoped undo/redo.
 //
-//   · pins the PAIR-mode regression first (a single-bind seam exists but pair
-//     behaviour + the CC-98 no-op are unchanged),
-//   · proves a single device bound to the L slot behaves identically to L-in-pair
-//     for the clip matrix,
-//   · proves CC 98 / the on-card toggle cycle clip↔control (probed via __test_mode),
-//   · proves clip→control→clip preserves the editor window state,
-//   · proves in PAIR mode CC 98 is NOT a view toggle (it stays the editor FOLLOW),
-//   · proves the single editor's FOLLOW pad (scene row 4 — CC 98 is the view
-//     flip, so FOLLOW gets a real button) toggles + paints, and stays dark/inert
-//     in pair,
-//   · proves single-unit KEYS: entry (hold note-REC/OVERDUB in CONTROL, flip,
-//     double-tap a clip), live audition, queue-record capture, the 8-cell
-//     whole-clip playhead strip, LEN round-trip, EXIT, and that CC 98 is
-//     swallowed while KEYS owns the device — plus the pair 16-cell regression.
-//
-// Driven through the REAL launchpad-device sim (single + pair) + the REAL graph
-// store, mocking only the scheduler-clock so the LED loop can be stepped.
+// The owner-locked PAIR invariant (L = clip matrix ALWAYS LIVE; R = deck/editor)
+// must hold byte-for-byte — the 4-view surface exists ONLY in single mode. This
+// file pins the pair regression first, then exercises the single-mode surface
+// through the REAL launchpad-device sim + the REAL graph store (mocking only the
+// scheduler clock so the LED loop can be stepped).
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
@@ -50,7 +39,7 @@ import {
   bindLaunchpadToClip,
   unbindLaunchpad,
   boundClipNode,
-  toggleSingleView,
+  setLaunchpadView,
   launchpadDeployment,
   launchpadActiveView,
   __test_resetBinding,
@@ -58,42 +47,29 @@ import {
   __test_mode,
 } from './launchpad-control.svelte';
 import {
+  clipIndexToGridPad,
   DECK_EDIT_COL,
-  DECK_COPY_COL,
   CC_TRANSPORT,
-  CC_EDIT_ROW_UP,
-  CC_EDIT_STEP_RIGHT,
   CC_EDIT_FOLLOW,
-  EDIT_FOLLOW_SCENE_ROW,
-  EDIT_EXIT_SCENE_ROW,
-  DECK_KEYS_REC_COL,
-  DECK_KEYS_OVERDUB_COL,
-  DECK_KEYS_ROW,
-  KEYS_QREC_COL,
-  KEYS_EXIT_COL,
-  KEYS_LEN_COL,
-  KEYS_CTRL_ROW,
-  KEYS_PH_ROW,
-  KEYS_OCT_UP_COL,
-  KEYS_OCT_DOWN_COL,
-  KEYS_PANIC_COL,
-  RGB_TRANSPORT_ON,
-  RGB_FUNC_ON,
-  RGB_KEYS_PH_CUR,
-  RGB_KEYS_PH_BASE,
-  // performance controls (P1/P4/P3/P2/P5/P6)
+  colTopCc,
+  // performance-deck (CONTROL view)
   DECK_RESET_COL,
   DECK_RESET_ROW,
   DECK_MONO_ROW,
   DECK_MUTE_ROW,
   DECK_RATE_ROW,
-  CC_TEMPO_DOWN,
-  CC_TEMPO_UP,
-  EDIT_COPY_SCENE_ROW,
-  EDIT_PASTE_SCENE_ROW,
-  EDIT_OCT_UP_SCENE_ROW,
-  EDIT_OCT_DOWN_SCENE_ROW,
-  colTopCc,
+  CTRL_TEMPO_ROW,
+  CTRL_TEMPO_DOWN_COL,
+  CTRL_TEMPO_UP_COL,
+  CTRL_STOP_ALL_COL,
+  CTRL_ARRANGE_ROW,
+  CTRL_REC_COL,
+  CTRL_SONG_COL,
+  // KEYS controls
+  KEYS_QREC_COL,
+  KEYS_EXIT_COL,
+  KEYS_PANIC_COL,
+  KEYS_CTRL_ROW,
 } from './launchpad-map';
 import { RATE_MULTS } from '$lib/audio/modules/clip-clock';
 import { setLanePlayhead, clearPlayheads } from '$lib/audio/modules/clip-playhead';
@@ -101,6 +77,7 @@ import { drainAudition, clearAudition } from '$lib/audio/modules/clip-audition';
 import {
   SCENE_CCS,
   padNote,
+  LP_HEIGHT,
   CC_TOP_SPARE_8,
   CC_UP,
   CC_DOWN,
@@ -114,10 +91,55 @@ import {
   CLIP_LANES,
   clipIndex,
   defaultNoteClip,
+  laneSwing,
+  SCALE_NAMES,
   type NoteClipRecord,
 } from '$lib/audio/modules/clip-types';
 
 const NODE_ID = 'cp1';
+
+// Permanent top-row CC roles (identical in every view).
+const CC_TRANSPORT_TOP = CC_UP; // 91
+const CC_VIEW_GRID = CC_DOWN; // 92
+const CC_VIEW_CLIP = CC_LEFT; // 93
+const CC_VIEW_ARRANGER = CC_RIGHT; // 94
+const CC_VIEW_CONTROL = CC_SESSION; // 95
+const CC_UNDO = CC_TOP_SPARE_6; // 96
+const CC_REDO = CC_TOP_SPARE_7; // 97
+const CC_SHIFT = CC_TOP_SPARE_8; // 98
+
+// Grid-shift right-column scene indices (0 = top).
+const G_COPY = 0;
+const G_PASTE = 1;
+const G_CLIPDIV = 2;
+const G_SWING_UP = 3;
+const G_SWING_DOWN = 4;
+const G_LEN = 5;
+const G_PASTE_REV = 6;
+const G_NOW = 7;
+// Clip right-column scene indices.
+const C_DOUBLE = 0;
+const C_LENGTH = 1;
+const C_FOLLOW = 2;
+const C_KEYS = 3;
+const C_ROW_UP = 4;
+const C_ROW_DOWN = 5;
+const C_STEP_LEFT = 6;
+const C_STEP_RIGHT = 7;
+// Keys no-shift right column (scale-select + arp toggle).
+const K_ARP_TOGGLE = 7;
+// Keys +shift right column (arp controls).
+const KA_DIV_UP = 0;
+const KA_UP = 2;
+const KA_DOWN = 3;
+const KA_UPDOWN = 4;
+const KA_RANGE_UP = 5;
+const KA_LATCH = 7;
+
+const sceneCc = (sceneIndex: number) => SCENE_CCS[sceneIndex];
+// L matrix maps lane 0 → the TOP physical row (pair helper, still used in pair tests).
+const yForLane = (lane: number) => CLIP_LANES - 1 - lane;
+const sceneRowCc = (row: number) => SCENE_CCS[LP_HEIGHT - 1 - row];
 
 function clearPatch() {
   for (const k of Object.keys(livePatch.nodes)) delete livePatch.nodes[k];
@@ -126,15 +148,20 @@ function clearPatch() {
 function noteClip(): NoteClipRecord {
   return defaultNoteClip();
 }
+function clipWithNote(step = 0, midi = 60): NoteClipRecord {
+  const c = noteClip();
+  c.steps = [{ step, midi, velocity: 100, lengthSteps: 1 }];
+  return c;
+}
 function seedClipPlayer(data: Record<string, unknown>) {
   clearPatch();
   livePatch.nodes[NODE_ID] = {
     id: NODE_ID, type: 'clipplayer', domain: 'audio', position: { x: 0, y: 0 }, params: {}, data,
   } as never;
 }
-function seedTimelorde(running: number) {
+function seedTimelorde(running: number, bpm = 120) {
   livePatch.nodes['tl'] = {
-    id: 'tl', type: 'timelorde', domain: 'audio', position: { x: 0, y: 0 }, params: { running }, data: {},
+    id: 'tl', type: 'timelorde', domain: 'audio', position: { x: 0, y: 0 }, params: { running, bpm }, data: {},
   } as never;
 }
 function liveData() {
@@ -143,11 +170,16 @@ function liveData() {
 function queued() {
   return liveData().queued as (number | 'stop' | null)[] | undefined;
 }
-
-// SCENE_CCS is top→bottom (index 0 = row 7).
-const sceneCcForRow = (row: number) => SCENE_CCS[7 - row];
-// L matrix maps lane 0 → the TOP physical row.
-const yForLane = (lane: number) => CLIP_LANES - 1 - lane;
+function clipsOf() {
+  return liveData().clips as Record<string, NoteClipRecord>;
+}
+// Press the SINGLE grid pad for a clip at (slot, lane) — the TRANSPOSED layout.
+function pressClip(sim: SimulatedLaunchpad, slot: number, lane: number) {
+  const p = clipIndexToGridPad(clipIndex(slot, lane));
+  sim.press('L', p.x, p.y);
+}
+const tempoBpm = () => (livePatch.nodes['tl']!.params as Record<string, number>).bpm;
+const tlRunning = () => (livePatch.nodes['tl']!.params as Record<string, number>).running;
 
 beforeEach(() => {
   hoisted.tick = null;
@@ -159,11 +191,11 @@ beforeEach(() => {
 });
 
 // ===========================================================================
-// PAIR-MODE REGRESSION GUARD — the locked invariant must NOT shift. The single-
-// bind seam exists, but with a real PAIR installed the deployment is 'pair', the
-// matrix is always L, and CC 98 is NOT a view toggle.
+// PAIR-MODE REGRESSION GUARD — the locked invariant must NOT shift. With a real
+// PAIR installed the deployment is 'pair', the matrix is always L, and none of
+// the single-mode 4-view surface applies.
 // ===========================================================================
-describe('PAIR regression — single-unit seam does not change pair behaviour', () => {
+describe('PAIR regression — the single 4-view surface does not change pair behaviour', () => {
   let sim: SimulatedLaunchpad;
   beforeEach(async () => {
     sim = await installSimulatedLaunchpad();
@@ -182,38 +214,52 @@ describe('PAIR regression — single-unit seam does not change pair behaviour', 
     seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
     seedTimelorde(0);
     bindLaunchpadToClip(NODE_ID);
-    // L pad → launch (matrix is L).
-    sim.press('L', 0, yForLane(0));
+    sim.press('L', 0, yForLane(0)); // L matrix
     expect(queued()![0]).toBe(0);
-    // R transport CC (deck is R).
-    sim.cc('R', CC_TRANSPORT, 127);
-    expect((livePatch.nodes['tl']!.params as Record<string, number>).running).toBe(1);
+    sim.cc('R', CC_TRANSPORT, 127); // R deck transport
+    expect(tlRunning()).toBe(1);
   });
 
-  it('CC 98 in PAIR mode is NOT a view toggle — it stays the editor FOLLOW on R', () => {
+  it('CC 98 in PAIR mode is the editor FOLLOW toggle — never a view switch', () => {
     seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
     bindLaunchpadToClip(NODE_ID);
-    // enter the editor on R.
     sim.press('R', DECK_EDIT_COL, 0);
     sim.press('L', 0, yForLane(0));
     sim.release('R', DECK_EDIT_COL, 0);
     expect(__test_mode().mode).toBe('edit');
     expect(__test_mode().followOn).toBe(true);
-    // CC 98 on R toggles FOLLOW (the locked editor behaviour) — NOT a deployment flip.
     sim.cc('R', CC_EDIT_FOLLOW, 127);
     expect(__test_mode().followOn, 'CC 98 still = FOLLOW in pair editor').toBe(false);
-    expect(launchpadDeployment(), 'deployment unchanged by CC 98 in pair').toBe('pair');
-    // A CC 98 on L in pair mode is just an L event (no view concept) — no toggle.
-    sim.cc('L', CC_TOP_SPARE_8, 127);
     expect(launchpadDeployment()).toBe('pair');
   });
 
-  it('toggleSingleView() is a no-op in pair mode', () => {
+  it('setLaunchpadView() is a no-op in pair mode', () => {
     seedClipPlayer({ clips: {} });
     bindLaunchpadToClip(NODE_ID);
-    toggleSingleView();
+    setLaunchpadView('control');
     expect(launchpadDeployment()).toBe('pair');
-    expect(launchpadActiveView()).toBe('clip'); // unchanged default
+  });
+
+  it('two fast L taps of the same clip in pair just launch — no view/edit change', () => {
+    seedClipPlayer({
+      clips: { [clipIndex(0, 0)]: noteClip() },
+      playing: [0, null, null, null, null, null, null, null],
+    });
+    bindLaunchpadToClip(NODE_ID);
+    sim.press('L', 0, yForLane(0)); // playing → queue stop
+    expect(queued()![0]).toBe('stop');
+    sim.press('L', 0, yForLane(0));
+    expect(__test_mode().mode, 'pair never double-taps to a view').toBe('session');
+    expect(launchpadDeployment()).toBe('pair');
+  });
+
+  it('pair-L top CC 91 toggles MUTE lane 0 (not an arm); a press still launches', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    bindLaunchpadToClip(NODE_ID);
+    sim.cc('L', colTopCc(0), 127); // pair-L top row = per-lane MUTE
+    expect((liveData().muted as boolean[] | undefined)?.[0]).toBe(true);
+    sim.press('L', 0, yForLane(0));
+    expect(queued()![0], 'L press still launches (mute ≠ stop)').toBe(0);
   });
 
   it('the pair render still paints BOTH units (L matrix + R deck)', () => {
@@ -224,241 +270,666 @@ describe('PAIR regression — single-unit seam does not change pair behaviour', 
     seedTimelorde(1);
     bindLaunchpadToClip(NODE_ID);
     hoisted.tick!();
-    // L lane0 playing → lit at the TOP row.
     const l = sim.ledAt('L', padNote(0, yForLane(0)));
     expect(l).not.toBeNull();
     expect(l![0] + l![1] + l![2]).toBeGreaterThan(0);
-    // R deck EDIT pad lit (pad 11 = (0,0)).
-    expect(sim.ledAt('R', 11)).not.toBeNull();
+    expect(sim.ledAt('R', 11)).not.toBeNull(); // R deck EDIT pad
   });
 });
 
 // ===========================================================================
-// SINGLE-UNIT — one device on the L slot; the clip view behaves identically to
-// L-in-pair, and a view toggle flips to the R (control) functionality.
+// SINGLE — bind + the transposed GRID view (channel-per-column).
 // ===========================================================================
-describe('SINGLE — one device behaves like L-in-pair for the clip matrix', () => {
+describe('SINGLE — Grid view (transposed clip matrix + scene/row launch)', () => {
   let sim: SimulatedLaunchpad;
   beforeEach(async () => {
     sim = await installSimulatedLaunchpadSingle();
-    __test_setDeployment('single', 'clip');
+    __test_setDeployment('single', 'grid');
   });
 
-  it('binds ONE device to the L slot (single-bound, not pair-bound)', () => {
+  it('binds ONE device to the L slot (single-bound, not pair-bound), Grid default', () => {
     seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
     bindLaunchpadToClip(NODE_ID);
     expect(boundClipNode()).toBe(NODE_ID);
     expect(isSingleBound()).toBe(true);
     expect(isPairBound()).toBe(false);
     expect(launchpadDeployment()).toBe('single');
-    expect(launchpadActiveView()).toBe('clip');
+    expect(launchpadActiveView()).toBe('grid');
   });
 
-  it('clip view: a pad press launches its clip — identical to L-in-pair', () => {
+  it('a grid pad launches its clip via the TRANSPOSED coordinate (x = lane)', () => {
     seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip(), [clipIndex(1, 1)]: noteClip() } });
     bindLaunchpadToClip(NODE_ID);
-    sim.press('L', 0, yForLane(0));
+    pressClip(sim, 0, 0);
     expect(queued()![0]).toBe(0);
-    sim.press('L', 1, yForLane(1));
+    pressClip(sim, 1, 1); // slot 1, lane 1
     expect(queued()![1]).toBe(1);
   });
 
-  it('clip view: the scene column launches a slot across all lanes (like L-in-pair)', () => {
+  it('the scene column (no shift) fans a slot out across ALL lanes (a scene/row)', () => {
     seedClipPlayer({ clips: { [clipIndex(2, 0)]: noteClip(), [clipIndex(2, 1)]: noteClip() } });
     bindLaunchpadToClip(NODE_ID);
-    sim.cc('L', sceneCcForRow(2), 127);
+    sim.cc('L', sceneCc(2), 127); // scene index 2 → slot 2 across all lanes
     expect(queued()![0]).toBe(2);
     expect(queued()![1]).toBe(2);
-    expect(queued()![2]).toBe('stop');
+    expect(queued()![2]).toBe('stop'); // no clip in that slot → stop
   });
 
-  it('clip view: pressing a playing clip queues a stop (like L-in-pair)', () => {
+  it('pressing a playing clip queues a stop', () => {
     seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() }, playing: [0, null, null, null, null, null, null, null] });
     bindLaunchpadToClip(NODE_ID);
-    sim.press('L', 0, yForLane(0));
+    pressClip(sim, 0, 0);
     expect(queued()![0]).toBe('stop');
   });
 
-  it('clip view paints the matrix frame onto the lone device', () => {
-    seedClipPlayer({
-      clips: { [clipIndex(0, 0)]: noteClip() },
-      playing: [0, null, null, null, null, null, null, null],
-    });
+  it('a DOUBLE-TAP selects the clip + switches to Clip view (and reverts the lane)', () => {
+    const idx = clipIndex(1, 1);
+    seedClipPlayer({ clips: { [idx]: noteClip() } });
+    seedTimelorde(1);
+    bindLaunchpadToClip(NODE_ID);
+    pressClip(sim, 1, 1); // 1st tap → launch immediately
+    expect(queued()![1], 'first tap launched').toBe(1);
+    expect(__test_mode().singleView).toBe('grid');
+    pressClip(sim, 1, 1); // 2nd tap → select + Clip view
+    expect(__test_mode().singleView, 'double-tap → Clip view').toBe('clip');
+    expect(__test_mode().selectedClipIndex, 'selected the double-tapped clip').toBe(idx);
+    expect(queued()![1], 'the queued start was reverted (double-tap does not change play state)').toBeNull();
+  });
+
+  it('a DOUBLE-TAP of a PLAYING clip keeps it playing even after the stop applied (NOW) [regression]', () => {
+    const idx = clipIndex(1, 1);
+    seedClipPlayer({ clips: { [idx]: noteClip() }, playing: [null, 1, null, null, null, null, null, null] });
+    seedTimelorde(1);
+    bindLaunchpadToClip(NODE_ID);
+    pressClip(sim, 1, 1); // 1st tap of a PLAYING clip → queues a stop
+    // simulate the engine applying that stop before the 2nd tap (immediate: NOW /
+    // QNT-off). Whole-array reassignment — the synced store rejects index writes.
+    liveData().playing = [null, null, null, null, null, null, null, null];
+    pressClip(sim, 1, 1); // 2nd tap (double-tap) → Clip view AND must RESTART the clip
+    expect(__test_mode().singleView).toBe('clip');
+    expect(queued()![1], 'double-tap restarted the clip — play state preserved in both directions').toBe(1);
+  });
+
+  it('paints the transposed matrix + the permanent top row on the lone device', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() }, playing: [0, null, null, null, null, null, null, null] });
     seedTimelorde(1);
     bindLaunchpadToClip(NODE_ID);
     hoisted.tick!();
-    const l = sim.ledAt('L', padNote(0, yForLane(0)));
-    expect(l).not.toBeNull();
-    expect(l![0] + l![1] + l![2]).toBeGreaterThan(0);
+    const p = clipIndexToGridPad(clipIndex(0, 0));
+    const led = sim.ledAt('L', padNote(p.x, p.y));
+    expect(led).not.toBeNull();
+    expect(led![0] + led![1] + led![2]).toBeGreaterThan(0);
+    // The permanent top row is lit (the active GRID button + shift button).
+    const gridBtn = sim.ledAt('L', CC_VIEW_GRID);
+    expect((gridBtn?.[0] ?? 0) + (gridBtn?.[1] ?? 0) + (gridBtn?.[2] ?? 0)).toBeGreaterThan(0);
   });
 });
 
 // ===========================================================================
-// SINGLE — the VIEW toggle (CC 98 + on-card) cycles clip↔control, routing the
-// lone device to handleL (clip) / handleR (control).
+// SINGLE — the PERMANENT TOP ROW is intercepted first in every view.
 // ===========================================================================
-describe('SINGLE — CC 98 + on-card toggle cycle clip↔control', () => {
+describe('SINGLE — permanent top row (transport / views / undo / redo)', () => {
   let sim: SimulatedLaunchpad;
   beforeEach(async () => {
     sim = await installSimulatedLaunchpadSingle();
-    __test_setDeployment('single', 'clip');
+    __test_setDeployment('single', 'grid');
   });
 
-  it('hardware CC 98 (press) flips clip→control→clip', () => {
-    seedClipPlayer({ clips: {} });
-    bindLaunchpadToClip(NODE_ID);
-    expect(__test_mode().activeView).toBe('clip');
-    sim.cc('L', CC_TOP_SPARE_8, 127); // press CC 98
-    expect(__test_mode().activeView, 'clip → control').toBe('control');
-    sim.cc('L', CC_TOP_SPARE_8, 0); // release is a no-op
-    expect(__test_mode().activeView).toBe('control');
-    sim.cc('L', CC_TOP_SPARE_8, 127); // press again
-    expect(__test_mode().activeView, 'control → clip').toBe('clip');
-  });
-
-  it('the on-card toggle (toggleSingleView) flips the view in single mode', () => {
-    seedClipPlayer({ clips: {} });
-    bindLaunchpadToClip(NODE_ID);
-    expect(launchpadActiveView()).toBe('clip');
-    toggleSingleView();
-    expect(launchpadActiveView()).toBe('control');
-    toggleSingleView();
-    expect(launchpadActiveView()).toBe('clip');
-  });
-
-  it('control view routes pad/CC to the R deck (transport works on the one device)', () => {
+  it('transport toggles from ANY view (grid + control)', () => {
     seedClipPlayer({ clips: {} });
     seedTimelorde(0);
     bindLaunchpadToClip(NODE_ID);
-    toggleSingleView(); // → control
-    expect(__test_mode().activeView).toBe('control');
-    // CC 96 (transport) on the lone device now drives the R deck.
-    sim.cc('L', CC_TRANSPORT, 127);
-    expect((livePatch.nodes['tl']!.params as Record<string, number>).running).toBe(1);
+    sim.cc('L', CC_TRANSPORT_TOP, 127);
+    expect(tlRunning()).toBe(1);
+    setLaunchpadView('control');
+    sim.cc('L', CC_TRANSPORT_TOP, 127);
+    expect(tlRunning()).toBe(0);
   });
 
-  it('clip view does NOT launch when CC 98 was used (CC 98 is consumed by the toggle)', () => {
+  it('the 4 view buttons switch the active view', () => {
+    seedClipPlayer({ clips: {} });
+    bindLaunchpadToClip(NODE_ID);
+    sim.cc('L', CC_VIEW_CLIP, 127);
+    expect(__test_mode().singleView).toBe('clip');
+    sim.cc('L', CC_VIEW_CONTROL, 127);
+    expect(__test_mode().singleView).toBe('control');
+    sim.cc('L', CC_VIEW_ARRANGER, 127);
+    expect(__test_mode().singleView).toBe('arranger');
+    sim.cc('L', CC_VIEW_GRID, 127);
+    expect(__test_mode().singleView).toBe('grid');
+  });
+
+  it('a top-row CC is consumed by the permanent row (no launch side effect)', () => {
     seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
     bindLaunchpadToClip(NODE_ID);
-    sim.cc('L', CC_TOP_SPARE_8, 127); // → control (no launch side effect)
+    sim.cc('L', CC_VIEW_CONTROL, 127); // switch view — must NOT launch
     expect(queued()?.[0] ?? null).toBeNull();
   });
 
-  it('control view paints the R deck frame + the CC-98 view marker on the lone device', () => {
-    seedClipPlayer({ clips: {} });
-    seedTimelorde(1);
-    bindLaunchpadToClip(NODE_ID);
-    toggleSingleView(); // → control
-    hoisted.tick!();
-    // The EDIT deck pad (11) is lit in control view.
-    expect(sim.ledAt('L', 11)).not.toBeNull();
-    // The CC-98 view marker is lit on the lone device.
-    const marker = sim.ledAt('L', CC_TOP_SPARE_8);
-    expect(marker).not.toBeNull();
-    expect(marker![0] + marker![1] + marker![2]).toBeGreaterThan(0);
-  });
-
-  it('the CC-98 view marker is lit even inside the EDITOR (control + edit mode)', () => {
-    // Regression: the marker must paint after the R painter's early return in
-    // edit mode (else it shows the editor FOLLOW colour, not the view marker).
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
-    seedTimelorde(1);
-    bindLaunchpadToClip(NODE_ID);
-    // enter the editor (control view + edit mode).
-    toggleSingleView(); // → control
-    sim.press('L', DECK_EDIT_COL, 0);
-    toggleSingleView(); // → clip (editArmed survives)
-    sim.press('L', 0, yForLane(0)); // tap clip → edit
-    sim.release('L', DECK_EDIT_COL, 0);
-    toggleSingleView(); // → control (now the editor)
-    expect(__test_mode().mode).toBe('edit');
-    hoisted.tick!();
-    const marker = sim.ledAt('L', CC_TOP_SPARE_8);
-    expect(marker).not.toBeNull();
-    expect(marker![0] + marker![1] + marker![2], 'view marker lit in the editor too').toBeGreaterThan(0);
-  });
-
-  it('flipping clip↔control clears stuck deck HOLD modifiers (COPY held → cleared)', () => {
-    // Regression: a COPY held in control view never sees its release once we
-    // flip to clip view (handleL ignores the release), so the flip must clear it.
+  it('undo/redo revert a persistent edit (swing) — canUndo/canRedo track the stacks', () => {
     seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
     bindLaunchpadToClip(NODE_ID);
-    toggleSingleView(); // → control
-    sim.press('L', DECK_COPY_COL, 0); // hold COPY (no release)
-    expect(__test_mode().copyHeld).toBe(true);
-    toggleSingleView(); // → clip — the flip must clear copyHeld
-    expect(__test_mode().copyHeld, 'COPY hold cleared on the view flip').toBe(false);
-    // a subsequent clip tap launches (NOT a copy).
-    sim.press('L', 0, yForLane(0));
-    expect(queued()![0], 'clip tap launches, not copies').toBe(0);
-  });
-
-  it('EDIT hold SURVIVES the view flip (the single-unit enter-editor gesture)', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
-    bindLaunchpadToClip(NODE_ID);
-    toggleSingleView(); // → control
-    sim.press('L', DECK_EDIT_COL, 0); // hold EDIT
-    expect(__test_mode().editArmed).toBe(true);
-    toggleSingleView(); // → clip — EDIT must NOT be cleared (it's the gesture)
-    expect(__test_mode().editArmed, 'EDIT survives the flip').toBe(true);
+    expect(__test_mode().canUndo).toBe(false);
+    // Latch shift, nudge swing up (a persistent, undoable edit).
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0); // short tap → latched
+    sim.cc('L', sceneCc(G_SWING_UP), 127);
+    expect(laneSwing(liveData(), 0)).toBeCloseTo(0.02, 5);
+    expect(__test_mode().canUndo, 'a persistent edit is undoable').toBe(true);
+    sim.cc('L', CC_UNDO, 127);
+    expect(laneSwing(liveData(), 0), 'undo reverted the swing edit').toBeCloseTo(0, 5);
+    expect(__test_mode().canRedo).toBe(true);
+    sim.cc('L', CC_REDO, 127);
+    expect(laneSwing(liveData(), 0), 'redo re-applied it').toBeCloseTo(0.02, 5);
   });
 });
 
 // ===========================================================================
-// SINGLE — clip→control→clip preserves the editor window state (the explicit
-// owner requirement). Enter the editor, scroll the window + pitch + freeze
-// FOLLOW, flip clip↔control, and assert the window state survived.
+// SINGLE — SHIFT hybrid latch/hold.
 // ===========================================================================
-describe('SINGLE — view flip preserves editor window state', () => {
+describe('SINGLE — shift latch vs hold', () => {
   let sim: SimulatedLaunchpad;
   beforeEach(async () => {
     sim = await installSimulatedLaunchpadSingle();
-    __test_setDeployment('single', 'clip');
+    __test_setDeployment('single', 'grid');
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote() } });
+    bindLaunchpadToClip(NODE_ID);
   });
 
-  // Enter the editor on the single device: hold EDIT (control view) + flip to
-  // clip view + tap a clip (handleL's editArmed branch creates/edits it).
-  function enterEditSingle(longLen = 64) {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: { ...noteClip(), lengthSteps: longLen } } });
-    bindLaunchpadToClip(NODE_ID);
-    toggleSingleView();           // → control
-    sim.press('L', DECK_EDIT_COL, 0); // hold EDIT (armed, persists across the flip)
-    expect(__test_mode().editArmed).toBe(true);
-    toggleSingleView();           // → clip (editArmed survives)
-    sim.press('L', 0, yForLane(0));   // tap the clip → enter the editor
-    sim.release('L', DECK_EDIT_COL, 0);
-    expect(__test_mode().mode).toBe('edit');
+  it('a SHORT tap toggles the latch; a second tap unlatches', () => {
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0); // tap → latched
+    expect(__test_mode().shiftLatched).toBe(true);
+    expect(__test_mode().shiftHeldSingle).toBe(false);
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0); // tap → unlatched
+    expect(__test_mode().shiftLatched).toBe(false);
+  });
+
+  it('a HOLD (ticks between press + release) is momentary — no latch on release', () => {
+    sim.cc('L', CC_SHIFT, 127);
+    expect(__test_mode().shiftHeldSingle).toBe(true);
+    for (let i = 0; i < 15; i++) hoisted.tick!(); // long hold (> DOUBLE_TAP_TICKS)
+    sim.cc('L', CC_SHIFT, 0);
+    expect(__test_mode().shiftHeldSingle).toBe(false);
+    expect(__test_mode().shiftLatched, 'a long hold does not latch').toBe(false);
+  });
+
+  it('while shift is HELD, the scene column is the grid-shift palette (arm COPY)', () => {
+    sim.cc('L', CC_SHIFT, 127); // hold
+    sim.cc('L', sceneCc(G_COPY), 127); // arm COPY (only reachable under shift)
+    expect(__test_mode().armedRightAction).toBe('copy');
+  });
+});
+
+// ===========================================================================
+// SINGLE — GRID-shift tap-to-ARM (copy / paste / paste-rev / clip-div / len) +
+// swing nudge + NOW.
+// ===========================================================================
+describe('SINGLE — Grid-shift tap-to-arm + swing + now', () => {
+  let sim: SimulatedLaunchpad;
+  beforeEach(async () => {
+    sim = await installSimulatedLaunchpadSingle();
+    __test_setDeployment('single', 'grid');
+  });
+  // Latch shift once so the scene column is the grid-shift palette for the test.
+  function latchShift() {
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0);
+    expect(__test_mode().shiftLatched).toBe(true);
   }
 
-  it('editWindowStart / editRowOffset / followOn survive clip↔control↔clip', () => {
-    enterEditSingle(64);
-    // We're in clip view but in edit MODE; flip to control to drive the editor.
-    toggleSingleView(); // → control (the editor)
-    expect(__test_mode().mode).toBe('edit');
-    // Scroll the step window (+1 step → freezes FOLLOW, sets editWindowStart=1).
-    sim.cc('L', CC_EDIT_STEP_RIGHT, 127);
-    expect(__test_mode().editWindowStart).toBe(1);
-    expect(__test_mode().followOn, 'first manual scroll froze FOLLOW').toBe(false);
-    // Scroll pitch up +1 row.
-    sim.cc('L', CC_EDIT_ROW_UP, 127);
+  it('arm COPY → tap a loaded clip → buffer loaded + auto-disarm', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote(2, 67) } });
+    bindLaunchpadToClip(NODE_ID);
+    latchShift();
+    sim.cc('L', sceneCc(G_COPY), 127);
+    expect(__test_mode().armedRightAction).toBe('copy');
+    pressClip(sim, 0, 0); // copy the loaded clip
+    expect(__test_mode().bufferArmed).toBe(true);
+    expect(__test_mode().bufferSourceIndex).toBe(clipIndex(0, 0));
+    expect(__test_mode().armedRightAction, 'auto-disarmed after applying').toBeNull();
+  });
+
+  it('arm PASTE → tap an empty dest → the buffer clip is written there', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote(2, 67) } });
+    bindLaunchpadToClip(NODE_ID);
+    latchShift();
+    sim.cc('L', sceneCc(G_COPY), 127);
+    pressClip(sim, 0, 0); // copy
+    sim.cc('L', sceneCc(G_PASTE), 127);
+    expect(__test_mode().armedRightAction).toBe('paste');
+    pressClip(sim, 1, 1); // paste into an empty slot
+    const dest = clipsOf()[clipIndex(1, 1)];
+    expect(dest).toBeTruthy();
+    expect(dest.steps.some((st) => st.midi === 67)).toBe(true);
+    expect(__test_mode().armedRightAction).toBeNull();
+  });
+
+  it('arm PASTE-REV → tap a dest → steps mirrored', () => {
+    const src = noteClip();
+    src.lengthSteps = 16;
+    src.steps = [{ step: 0, midi: 60, velocity: 100, lengthSteps: 1 }];
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: src } });
+    bindLaunchpadToClip(NODE_ID);
+    latchShift();
+    sim.cc('L', sceneCc(G_COPY), 127);
+    pressClip(sim, 0, 0); // copy
+    sim.cc('L', sceneCc(G_PASTE_REV), 127);
+    pressClip(sim, 1, 1);
+    const dest = clipsOf()[clipIndex(1, 1)];
+    expect(dest.steps).toHaveLength(1);
+    expect(dest.steps[0].step, 'reversed: 16 − 0 − 1 = 15').toBe(15);
+  });
+
+  it('PASTE with an EMPTY buffer does NOT arm', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote() } });
+    bindLaunchpadToClip(NODE_ID);
+    latchShift();
+    sim.cc('L', sceneCc(G_PASTE), 127);
+    expect(__test_mode().armedRightAction).toBeNull();
+  });
+
+  it('re-tapping an armed button disarms it', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote() } });
+    bindLaunchpadToClip(NODE_ID);
+    latchShift();
+    sim.cc('L', sceneCc(G_COPY), 127);
+    expect(__test_mode().armedRightAction).toBe('copy');
+    sim.cc('L', sceneCc(G_COPY), 127); // re-tap → disarm
+    expect(__test_mode().armedRightAction).toBeNull();
+  });
+
+  it('CLIP-DIV cycles a LOCAL preview per tap; ONE write commits on disarm', () => {
+    const c = clipWithNote();
+    c.lengthSteps = 16; // no div set → falls back to lane rate (default index 3)
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: c } });
+    bindLaunchpadToClip(NODE_ID);
+    latchShift();
+    sim.cc('L', sceneCc(G_CLIPDIV), 127);
+    expect(__test_mode().armedRightAction).toBe('clipDiv');
+    pressClip(sim, 0, 0); // preview → div index 4 (3 + 1), NOT yet written
+    expect(__test_mode().divPreview).toEqual({ clipIndex: clipIndex(0, 0), divIndex: 4 });
+    expect(clipsOf()[clipIndex(0, 0)].div, 'not committed while armed').toBeUndefined();
+    expect(__test_mode().armedRightAction, 'clip-div stays armed while cycling').toBe('clipDiv');
+    // Disarm (re-tap the CLIP-DIV button) → the single committing write.
+    sim.cc('L', sceneCc(G_CLIPDIV), 127);
+    expect(clipsOf()[clipIndex(0, 0)].div, 'committed on disarm').toBe(4);
+    expect(__test_mode().divPreview).toBeNull();
+  });
+
+  it('CLIP-DIV auto-disarm (timeout) commits the pending preview', () => {
+    const c = clipWithNote();
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: c } });
+    seedTimelorde(1);
+    bindLaunchpadToClip(NODE_ID);
+    latchShift();
+    sim.cc('L', sceneCc(G_CLIPDIV), 127);
+    pressClip(sim, 0, 0); // preview div 4
+    for (let i = 0; i < 200; i++) hoisted.tick!(); // > ARM_TIMEOUT_TICKS
+    expect(__test_mode().armedRightAction).toBeNull();
+    expect(clipsOf()[clipIndex(0, 0)].div, 'timeout committed the preview').toBe(4);
+  });
+
+  it('LEN arm → tap a loaded clip → length-edit; EXIT returns to Grid', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote() } });
+    bindLaunchpadToClip(NODE_ID);
+    latchShift();
+    sim.cc('L', sceneCc(G_LEN), 127);
+    expect(__test_mode().armedRightAction).toBe('len');
+    pressClip(sim, 0, 0);
+    expect(__test_mode().mode).toBe('lengthEdit');
+    expect(__test_mode().editClipIndex).toBe(clipIndex(0, 0));
+    expect(__test_mode().lengthReturnView).toBe('grid');
+    // EXIT (top scene) → back to Grid.
+    sim.cc('L', sceneRowCc(LP_HEIGHT - 1), 127);
+    expect(__test_mode().mode).toBe('session');
+    expect(__test_mode().singleView).toBe('grid');
+  });
+
+  it('SWING+ / SWING− nudge swing[selectedChannel] by ±0.02 (undoable, direct — no arm)', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote() } }); // selectedClipIndex 0 → lane 0
+    bindLaunchpadToClip(NODE_ID);
+    latchShift();
+    sim.cc('L', sceneCc(G_SWING_UP), 127);
+    expect(__test_mode().armedRightAction, 'swing is a direct nudge, not an arm').toBeNull();
+    expect(laneSwing(liveData(), 0)).toBeCloseTo(0.02, 5);
+    sim.cc('L', sceneCc(G_SWING_UP), 127);
+    expect(laneSwing(liveData(), 0)).toBeCloseTo(0.04, 5);
+    sim.cc('L', sceneCc(G_SWING_DOWN), 127);
+    sim.cc('L', sceneCc(G_SWING_DOWN), 127);
+    expect(laneSwing(liveData(), 0)).toBeCloseTo(0, 5);
+    expect(__test_mode().swingMeterDir, 'centered → green-flash meter dir').toBe('center');
+  });
+
+  it('NOW is a sticky toggle: clip taps launch immediate', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote() } });
+    bindLaunchpadToClip(NODE_ID);
+    latchShift();
+    sim.cc('L', sceneCc(G_NOW), 127);
+    expect(__test_mode().nowHeld).toBe(true);
+    // Unlatch shift so a plain grid tap launches (shift-tap-armed clips are consumed).
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0);
+    pressClip(sim, 0, 0);
+    expect(queued()![0]).toBe(0);
+    const imm = liveData().queuedImmediate as boolean[] | undefined;
+    expect(imm?.[0]).toBe(true);
+  });
+
+  it('leaving Grid clears a pending arm (commits a clip-div preview)', () => {
+    const c = clipWithNote();
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: c } });
+    bindLaunchpadToClip(NODE_ID);
+    latchShift();
+    sim.cc('L', sceneCc(G_CLIPDIV), 127);
+    pressClip(sim, 0, 0); // preview div 4
+    setLaunchpadView('clip'); // leave Grid
+    expect(__test_mode().armedRightAction).toBeNull();
+    expect(clipsOf()[clipIndex(0, 0)].div, 'preview committed on leaving Grid').toBe(4);
+  });
+});
+
+// ===========================================================================
+// SINGLE — CLIP view (note editor on selectedClipIndex + right column).
+// ===========================================================================
+describe('SINGLE — Clip view', () => {
+  let sim: SimulatedLaunchpad;
+  beforeEach(async () => {
+    sim = await installSimulatedLaunchpadSingle();
+    __test_setDeployment('single', 'grid');
+  });
+  // Select clip 0 + switch to Clip view.
+  function openClip(len = 16) {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: { ...noteClip(), lengthSteps: len } } });
+    bindLaunchpadToClip(NODE_ID);
+    setLaunchpadView('clip');
+    expect(__test_mode().singleView).toBe('clip');
+    expect(__test_mode().selectedClipIndex).toBe(0);
+  }
+
+  it('DOUBLE (right col) doubles the selected clip length', () => {
+    openClip(8);
+    sim.cc('L', sceneCc(C_DOUBLE), 127);
+    expect(clipsOf()[clipIndex(0, 0)].lengthSteps).toBe(16);
+  });
+
+  it('LENGTH (right col) opens the length page; EXIT returns to Clip', () => {
+    openClip();
+    sim.cc('L', sceneCc(C_LENGTH), 127);
+    expect(__test_mode().mode).toBe('lengthEdit');
+    expect(__test_mode().lengthReturnView).toBe('clip');
+    sim.cc('L', sceneRowCc(LP_HEIGHT - 1), 127); // EXIT
+    expect(__test_mode().mode).toBe('session');
+    expect(__test_mode().singleView).toBe('clip');
+  });
+
+  it('FOLLOW (right col) toggles the follow flag', () => {
+    openClip();
+    expect(__test_mode().followOn).toBe(true);
+    sim.cc('L', sceneCc(C_FOLLOW), 127);
+    expect(__test_mode().followOn).toBe(false);
+  });
+
+  it('KEYS (right col) enters KEYS for the selected clip', () => {
+    openClip();
+    seedTimelorde(1);
+    sim.cc('L', sceneCc(C_KEYS), 127);
+    expect(__test_mode().mode).toBe('keys');
+    expect(__test_mode().keysClipIndex).toBe(clipIndex(0, 0));
+  });
+
+  it('ROW UP/DOWN scroll pitch ±1; shift = a page jump', () => {
+    openClip(64);
+    sim.cc('L', sceneCc(C_ROW_UP), 127);
     expect(__test_mode().editRowOffset).toBe(1);
+    sim.cc('L', sceneCc(C_ROW_DOWN), 127);
+    expect(__test_mode().editRowOffset).toBe(0);
+    // shift → page jump (±8).
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0); // latch
+    sim.cc('L', sceneCc(C_ROW_UP), 127);
+    expect(__test_mode().editRowOffset).toBe(8);
+  });
 
-    const snap = {
-      windowStart: __test_mode().editWindowStart,
-      rowOffset: __test_mode().editRowOffset,
-      followOn: __test_mode().followOn,
-      mode: __test_mode().mode,
-      editClipIndex: __test_mode().editClipIndex,
-    };
+  it('STEP ◀/▶ scroll the window; shift = a block jump', () => {
+    openClip(64);
+    sim.cc('L', sceneCc(C_STEP_RIGHT), 127); // +1 (freezes follow)
+    expect(__test_mode().editWindowStart).toBe(1);
+    expect(__test_mode().followOn).toBe(false);
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0); // latch shift
+    sim.cc('L', sceneCc(C_STEP_RIGHT), 127); // +8 block
+    expect(__test_mode().editWindowStart).toBe(9);
+  });
 
-    // Flip control → clip → control. The window state must NOT reset.
-    toggleSingleView(); // → clip
-    toggleSingleView(); // → control
-    expect(__test_mode().editWindowStart, 'window start preserved').toBe(snap.windowStart);
-    expect(__test_mode().editRowOffset, 'pitch offset preserved').toBe(snap.rowOffset);
-    expect(__test_mode().followOn, 'follow flag preserved').toBe(snap.followOn);
-    expect(__test_mode().mode, 'still in edit mode').toBe(snap.mode);
-    expect(__test_mode().editClipIndex, 'same clip').toBe(snap.editClipIndex);
+  it('the 8×8 note grid edits notes (toggle on); under shift it cycles velocity', () => {
+    openClip(16);
+    // toggle a note ON at the bottom-left editor cell (press + release).
+    sim.press('L', 0, 0);
+    sim.release('L', 0, 0);
+    const clip = clipsOf()[clipIndex(0, 0)];
+    expect(clip.steps.length, 'a note was added').toBeGreaterThan(0);
+    const before = clip.steps[0].velocity;
+    // shift → velocity-cycle the same note.
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0); // latch
+    sim.press('L', 0, 0);
+    const after = clipsOf()[clipIndex(0, 0)].steps[0].velocity;
+    expect(after, 'shift cycled the velocity').not.toBe(before);
+  });
+});
+
+// ===========================================================================
+// SINGLE — KEYS sub-view (scale-select + arp); the top row still works.
+// ===========================================================================
+describe('SINGLE — KEYS sub-view (scale + arp)', () => {
+  let sim: SimulatedLaunchpad;
+  beforeEach(async () => {
+    sim = await installSimulatedLaunchpadSingle();
+    __test_setDeployment('single', 'grid');
+  });
+  const noteRec = () => liveData().noteRec as { armed?: boolean; recording?: boolean; overdub?: boolean } | null | undefined;
+  function enterKeys() {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    seedTimelorde(1);
+    bindLaunchpadToClip(NODE_ID);
+    setLaunchpadView('clip');
+    sim.cc('L', sceneCc(C_KEYS), 127); // Clip → KEYS
+    expect(__test_mode().mode).toBe('keys');
+  }
+
+  it('a scale button writes clip.scale; CHROMATIC removes it', () => {
+    enterKeys();
+    sim.cc('L', sceneCc(1), 127); // scale index 1 = minor
+    expect(clipsOf()[clipIndex(0, 0)].scale).toBe(SCALE_NAMES[1]);
+    sim.cc('L', sceneCc(6), 127); // chromatic = the absence of a scale
+    expect(clipsOf()[clipIndex(0, 0)].scale).toBeUndefined();
+  });
+
+  it('ARP toggle + param edits update the arp state', () => {
+    enterKeys();
+    expect(__test_mode().arpOn).toBe(false);
+    sim.cc('L', sceneCc(K_ARP_TOGGLE), 127); // arp ON (no shift)
+    expect(__test_mode().arpOn).toBe(true);
+    // shift → the arp control column.
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0); // latch
+    sim.cc('L', sceneCc(KA_DOWN), 127);
+    expect(__test_mode().arpDir).toBe('down');
+    sim.cc('L', sceneCc(KA_UPDOWN), 127);
+    expect(__test_mode().arpDir).toBe('updown');
+    sim.cc('L', sceneCc(KA_UP), 127);
+    expect(__test_mode().arpDir).toBe('up');
+    const divBefore = __test_mode().arpDivIndex;
+    sim.cc('L', sceneCc(KA_DIV_UP), 127);
+    expect(__test_mode().arpDivIndex, 'arp div moved').not.toBe(divBefore);
+    sim.cc('L', sceneCc(KA_RANGE_UP), 127);
+    expect(__test_mode().arpRangeIndex).toBe(1);
+    sim.cc('L', sceneCc(KA_LATCH), 127);
+    expect(__test_mode().arpLatch).toBe(true);
+  });
+
+  it('with arp OFF a keyboard note auditions directly; with arp ON it feeds the arp pool', () => {
+    enterKeys();
+    drainAudition(NODE_ID); // discard entry noise
+    // arp OFF: a keyboard press auditions immediately.
+    sim.press('L', 2, 1); // keyboard col 2 row 0
+    expect(drainAudition(NODE_ID).length, 'direct audition when arp is off').toBeGreaterThan(0);
+    sim.release('L', 2, 1);
+    drainAudition(NODE_ID);
+    // arp ON: a press feeds the pool (no immediate direct audition), the loop sounds it.
+    sim.cc('L', sceneCc(K_ARP_TOGGLE), 127);
+    sim.press('L', 3, 1); // keyboard col 3 row 0
+    expect(__test_mode().arpPoolLen, 'the held note is in the arp pool').toBeGreaterThan(0);
+    expect(drainAudition(NODE_ID).length, 'no direct audition when arp is on').toBe(0);
+    hoisted.tick!(); // the render loop advances the arp → it sounds a note
+    expect(drainAudition(NODE_ID).some((e) => e.on), 'the arp sounded a note-on').toBe(true);
+  });
+
+  it('a view button EXITS KEYS to that view; transport still toggles from KEYS', () => {
+    enterKeys();
+    sim.cc('L', CC_TRANSPORT_TOP, 127); // transport toggles even inside KEYS
+    expect(tlRunning()).toBe(0);
+    sim.cc('L', CC_VIEW_GRID, 127); // a view button exits KEYS
+    expect(__test_mode().mode).toBe('session');
+    expect(__test_mode().singleView).toBe('grid');
+  });
+
+  it('QUEUE-REC → record on the wrap → a keypress lands in the clip', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    seedTimelorde(0);
+    bindLaunchpadToClip(NODE_ID);
+    setLaunchpadView('clip');
+    sim.cc('L', sceneCc(C_KEYS), 127);
+    sim.press('L', KEYS_QREC_COL, KEYS_CTRL_ROW);
+    expect(noteRec()!.armed).toBe(true);
+    setLanePlayhead(NODE_ID, 0, 0); // the wrap
+    hoisted.tick!();
+    expect(noteRec()!.recording).toBe(true);
+    setLanePlayhead(NODE_ID, 0, 5);
+    sim.press('L', 3, 2); // col 3 row 1 → midi 48 + 3 + 5 = 56
+    sim.release('L', 3, 2);
+    expect(clipsOf()[clipIndex(0, 0)].steps.some((s) => s.step === 5 && s.midi === 56)).toBe(true);
+  });
+
+  it('EXIT with a key held flushes the note-off (no stuck note) [regression]', () => {
+    enterKeys(); // arp OFF → a keyboard press auditions directly
+    drainAudition(NODE_ID); // discard entry noise
+    sim.press('L', 2, 1); // hold a keyboard note
+    const ons = drainAudition(NODE_ID).filter((e) => e.on);
+    expect(ons.length, 'the held note sounded').toBeGreaterThan(0);
+    const heldMidi = ons[0]!.midi;
+    sim.press('L', KEYS_EXIT_COL, KEYS_CTRL_ROW); // idle EXIT → session
+    expect(__test_mode().mode).toBe('session');
+    expect(
+      drainAudition(NODE_ID).some((e) => !e.on && e.midi === heldMidi),
+      'EXIT flushed the held note-off',
+    ).toBe(true);
+  });
+
+  it('PANIC stops the arp: offs its note + clears the (latched) pool [regression]', () => {
+    enterKeys();
+    sim.cc('L', sceneCc(K_ARP_TOGGLE), 127); // arp ON
+    sim.press('L', 3, 1); // hold a note → into the arp pool
+    expect(__test_mode().arpPoolLen).toBeGreaterThan(0);
+    hoisted.tick!(); // the arp sounds a note
+    drainAudition(NODE_ID);
+    sim.press('L', KEYS_PANIC_COL, KEYS_CTRL_ROW); // PANIC
+    expect(__test_mode().arpPoolLen, 'PANIC cleared the arp pool').toBe(0);
+    hoisted.tick!();
+    expect(
+      drainAudition(NODE_ID).some((e) => e.on),
+      'no new arp note-on after PANIC',
+    ).toBe(false);
+  });
+});
+
+// ===========================================================================
+// SINGLE — CONTROL view (performance deck + re-homed transport/arranger pads).
+// ===========================================================================
+describe('SINGLE — Control view', () => {
+  let sim: SimulatedLaunchpad;
+  beforeEach(async () => {
+    sim = await installSimulatedLaunchpadSingle();
+    __test_setDeployment('single', 'control');
+  });
+
+  it('RESET / MONO / MUTE / RATE act on the deck rows', () => {
+    seedClipPlayer({ clips: {}, rate: [3, 3, 3, 3, 3, 3, 3, 3] });
+    bindLaunchpadToClip(NODE_ID);
+    sim.press('L', DECK_RESET_COL, DECK_RESET_ROW);
+    expect(liveData().resetNonce).toBe(1);
+    sim.press('L', 3, DECK_MONO_ROW);
+    expect((liveData().mono as boolean[])?.[3]).toBe(true);
+    sim.press('L', 5, DECK_MUTE_ROW);
+    expect((liveData().muted as boolean[])?.[5]).toBe(true);
+    sim.press('L', 1, DECK_RATE_ROW);
+    expect((liveData().rate as number[])?.[1]).toBe(4); // 1 → 2x
+    // rate wraps a full lap.
+    for (let i = 0; i < RATE_MULTS.length; i++) sim.press('L', 1, DECK_RATE_ROW);
+    expect((liveData().rate as number[])?.[1]).toBe(4);
+  });
+
+  it('re-homed TEMPO ∓ / STOP-ALL / REC / SONG act on their dark grid pads', () => {
+    seedClipPlayer({ clips: {}, playing: [0, null, null, null, null, null, null, null] });
+    seedTimelorde(1, 120);
+    bindLaunchpadToClip(NODE_ID);
+    sim.press('L', CTRL_TEMPO_UP_COL, CTRL_TEMPO_ROW);
+    expect(tempoBpm()).toBe(122);
+    sim.press('L', CTRL_TEMPO_DOWN_COL, CTRL_TEMPO_ROW);
+    sim.press('L', CTRL_TEMPO_DOWN_COL, CTRL_TEMPO_ROW);
+    expect(tempoBpm()).toBe(118);
+    sim.press('L', CTRL_STOP_ALL_COL, CTRL_TEMPO_ROW);
+    expect((liveData().queued as (number | 'stop' | null)[]).every((q) => q === 'stop')).toBe(true);
+    sim.press('L', CTRL_REC_COL, CTRL_ARRANGE_ROW);
+    expect(liveData().recording).toBe(true);
+    sim.press('L', CTRL_SONG_COL, CTRL_ARRANGE_ROW);
+    expect(liveData().clipMode).toBe('arrangement');
+  });
+
+  it('the per-lane STOP scene column stops a playing lane', () => {
+    const playing: (number | null)[] = new Array(CLIP_LANES).fill(null);
+    playing[0] = 0; // lane 0 playing (scene index 7 = bottom = lane 0)
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() }, playing });
+    bindLaunchpadToClip(NODE_ID);
+    sim.cc('L', sceneCc(LP_HEIGHT - 1), 127); // scene index 7 → lane 0
+    expect(queued()![0]).toBe('stop');
+  });
+
+  it('paints the deck frame on the lone device', () => {
+    seedClipPlayer({ clips: {}, mono: [true, false, false, false, false, false, false, false] });
+    seedTimelorde(0);
+    bindLaunchpadToClip(NODE_ID);
+    hoisted.tick!();
+    const reset = sim.ledAt('L', padNote(DECK_RESET_COL, DECK_RESET_ROW));
+    expect(reset![0] + reset![1] + reset![2]).toBeGreaterThan(0);
+  });
+});
+
+// ===========================================================================
+// SINGLE — ARRANGER view is inert (no pad/scene handlers), still paints.
+// ===========================================================================
+describe('SINGLE — Arranger view is inert', () => {
+  let sim: SimulatedLaunchpad;
+  beforeEach(async () => {
+    sim = await installSimulatedLaunchpadSingle();
+    __test_setDeployment('single', 'arranger');
+  });
+
+  it('pad + scene presses do nothing; the frame still paints + the top row works', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    seedTimelorde(0);
+    bindLaunchpadToClip(NODE_ID);
+    sim.press('L', 0, 0); // a pad — inert
+    sim.cc('L', sceneCc(0), 127); // a scene — inert
+    expect(queued()?.[0] ?? null, 'arranger is inert').toBeNull();
+    // The permanent top row still works (transport).
+    sim.cc('L', CC_TRANSPORT_TOP, 127);
+    expect(tlRunning()).toBe(1);
+    hoisted.tick!();
+    const arrBtn = sim.ledAt('L', CC_VIEW_ARRANGER);
+    expect((arrBtn?.[0] ?? 0) + (arrBtn?.[1] ?? 0) + (arrBtn?.[2] ?? 0), 'arranger button lit').toBeGreaterThan(0);
   });
 });
 
@@ -469,7 +940,7 @@ describe('SINGLE — unbind', () => {
   let sim: SimulatedLaunchpad;
   beforeEach(async () => {
     sim = await installSimulatedLaunchpadSingle();
-    __test_setDeployment('single', 'clip');
+    __test_setDeployment('single', 'grid');
   });
 
   it('unbind stops driving + a later press is a no-op', () => {
@@ -477,969 +948,7 @@ describe('SINGLE — unbind', () => {
     bindLaunchpadToClip(NODE_ID);
     unbindLaunchpad();
     expect(boundClipNode()).toBeNull();
-    sim.press('L', 0, yForLane(0));
+    pressClip(sim, 0, 0);
     expect(queued()?.[0] ?? null).toBeNull();
-  });
-});
-
-// ===========================================================================
-// SINGLE — clip-view ARM ROW (top CCs 91..97). Two-handed deck ops without
-// leaving the matrix view: tap an arm cell → arm an action → tap a clip pad →
-// apply. CC 98 stays the view-flip; PAIR mode is unaffected (armClip is
-// single-only). Driven via the single sim + __test_mode discriminants.
-// ===========================================================================
-describe('SINGLE — clip-view arm row', () => {
-  let sim: SimulatedLaunchpad;
-  beforeEach(async () => {
-    sim = await installSimulatedLaunchpadSingle();
-    __test_setDeployment('single', 'clip');
-  });
-
-  // A clip with one note (so paste/reverse/double are observable).
-  function clipWithNote(step = 0, midi = 60): NoteClipRecord {
-    const c = noteClip();
-    c.steps = [{ step, midi, velocity: 100, lengthSteps: 1 }];
-    return c;
-  }
-  const clipsOf = () => liveData().clips as Record<string, NoteClipRecord>;
-
-  // CC 91 is the RECLAIMED NEW cell → a sticky KEYS-arm tri-state. NEW's
-  // create-a-clip role moved to double-tap-empty (covered in its own describe).
-  it('KEYS-arm (CC 91) cycles off → armed-REC → armed-OD → off', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote() } });
-    bindLaunchpadToClip(NODE_ID);
-    expect(__test_mode().keysArm).toBe('off');
-    sim.cc('L', CC_UP, 127); // → armed-REC (overdub OFF)
-    expect(__test_mode().keysArm).toBe('rec');
-    expect(__test_mode().armedAction).toBeNull(); // KEYS-arm is NOT an action-arm
-    sim.cc('L', CC_UP, 127); // → armed-OD (overdub ON)
-    expect(__test_mode().keysArm).toBe('od');
-    sim.cc('L', CC_UP, 127); // → off
-    expect(__test_mode().keysArm).toBe('off');
-  });
-
-  it('KEYS-arm + tap a clip → enters KEYS for it (overdub per the tri-state, no view flip)', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote() } });
-    seedTimelorde(1);
-    bindLaunchpadToClip(NODE_ID);
-    sim.cc('L', CC_UP, 127); // arm KEYS (rec = overdub OFF)
-    sim.cc('L', CC_UP, 127); // → armed-OD (overdub ON)
-    expect(__test_mode().keysArm).toBe('od');
-    sim.press('L', 0, yForLane(0)); // tap the clip → enter KEYS (single tap, one hand)
-    expect(__test_mode().mode).toBe('keys');
-    expect(__test_mode().keysClipIndex).toBe(clipIndex(0, 0));
-    expect(__test_mode().keysArm).toBe('off'); // consumed
-    // overdub-ON entry set the note-record overdub flag.
-    expect((liveData().noteRec as { overdub?: boolean } | undefined)?.overdub).toBe(true);
-  });
-
-  it('KEYS-arm SUPPRESSES the single-tap launch (the tap enters KEYS instead)', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote() } });
-    seedTimelorde(1);
-    bindLaunchpadToClip(NODE_ID);
-    sim.cc('L', CC_UP, 127); // arm KEYS (rec)
-    sim.press('L', 0, yForLane(0)); // would normally launch — but KEYS-armed
-    expect(__test_mode().mode).toBe('keys'); // entered KEYS, did NOT launch
-  });
-
-  it('KEYS-arm is cleared by a view flip', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote() } });
-    bindLaunchpadToClip(NODE_ID);
-    sim.cc('L', CC_UP, 127); // arm KEYS
-    expect(__test_mode().keysArm).toBe('rec');
-    toggleSingleView(); // flip to control
-    expect(__test_mode().keysArm).toBe('off');
-  });
-
-  it('KEYS-arm auto-disarms after the timeout (>160 ticks)', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote() } });
-    seedTimelorde(1);
-    bindLaunchpadToClip(NODE_ID);
-    sim.cc('L', CC_UP, 127); // arm KEYS
-    expect(__test_mode().keysArm).toBe('rec');
-    for (let i = 0; i < 200; i++) hoisted.tick!();
-    expect(__test_mode().keysArm).toBe('off');
-  });
-
-  it('arming an action clears a pending KEYS-arm, and vice versa (mutually exclusive)', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote() } });
-    bindLaunchpadToClip(NODE_ID);
-    sim.cc('L', CC_UP, 127); // KEYS-arm rec
-    expect(__test_mode().keysArm).toBe('rec');
-    sim.cc('L', CC_TOP_SPARE_7, 127); // arm DOUBLE → clears KEYS-arm
-    expect(__test_mode().keysArm).toBe('off');
-    expect(__test_mode().armedAction).toBe('double');
-    sim.cc('L', CC_UP, 127); // KEYS-arm again → clears the DOUBLE arm
-    expect(__test_mode().keysArm).toBe('rec');
-    expect(__test_mode().armedAction).toBeNull();
-  });
-
-  it('copy → paste: arm COPY → tap loaded → arm PASTE → tap empty → clip copied', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote(2, 67) } });
-    bindLaunchpadToClip(NODE_ID);
-    sim.cc('L', CC_DOWN, 127); // arm COPY
-    expect(__test_mode().armedAction).toBe('copy');
-    sim.press('L', 0, yForLane(0)); // copy the loaded clip
-    expect(__test_mode().bufferArmed).toBe(true);
-    expect(__test_mode().bufferSourceIndex).toBe(clipIndex(0, 0));
-    expect(__test_mode().armedAction).toBeNull();
-    // arm PASTE onto an empty dest.
-    sim.cc('L', CC_LEFT, 127);
-    expect(__test_mode().armedAction).toBe('paste');
-    sim.press('L', 1, yForLane(1));
-    const dest = clipsOf()[clipIndex(1, 1)];
-    expect(dest).toBeTruthy();
-    expect(dest.steps).toHaveLength(1);
-    expect(dest.steps[0].midi).toBe(67);
-    expect(__test_mode().armedAction).toBeNull();
-  });
-
-  it('paste-reverse: arm PASTE-REV → tap dest → steps mirrored', () => {
-    // a 16-step clip with a note at step 0 → reversed, the span re-anchors to the
-    // mirrored END (lengthSteps − step − span = 16 − 0 − 1 = 15).
-    const src = noteClip();
-    src.lengthSteps = 16;
-    src.steps = [{ step: 0, midi: 60, velocity: 100, lengthSteps: 1 }];
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: src } });
-    bindLaunchpadToClip(NODE_ID);
-    sim.cc('L', CC_DOWN, 127);
-    sim.press('L', 0, yForLane(0)); // copy
-    sim.cc('L', CC_RIGHT, 127); // arm PASTE-REV
-    expect(__test_mode().armedAction).toBe('pasteRev');
-    sim.press('L', 1, yForLane(1));
-    const dest = clipsOf()[clipIndex(1, 1)];
-    expect(dest.steps).toHaveLength(1);
-    expect(dest.steps[0].step).toBe(15);
-    expect(__test_mode().armedAction).toBeNull();
-  });
-
-  it('paste with an EMPTY buffer does NOT arm — a tap launches normally', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote() } });
-    bindLaunchpadToClip(NODE_ID);
-    sim.cc('L', CC_LEFT, 127); // arm PASTE — no buffer
-    expect(__test_mode().armedAction).toBeNull();
-    sim.press('L', 0, yForLane(0)); // a plain launch
-    expect(queued()![0]).toBe(0);
-  });
-
-  it('NOW is a sticky toggle: it does not arm, and clip taps launch immediate', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote() } });
-    bindLaunchpadToClip(NODE_ID);
-    sim.cc('L', CC_SESSION, 127); // NOW on
-    expect(__test_mode().nowHeld).toBe(true);
-    expect(__test_mode().armedAction).toBeNull(); // NOW does not arm
-    sim.press('L', 0, yForLane(0)); // launch immediate
-    expect(queued()![0]).toBe(0);
-    const imm = liveData().queuedImmediate as boolean[] | undefined;
-    expect(imm?.[0]).toBe(true); // clip index 0 → lane 0
-    sim.cc('L', CC_SESSION, 127); // NOW off
-    expect(__test_mode().nowHeld).toBe(false);
-  });
-
-  it('length: arm LENGTH → tap loaded → length page on the lone device (control)', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote() } });
-    bindLaunchpadToClip(NODE_ID);
-    sim.cc('L', CC_TOP_SPARE_6, 127); // arm LENGTH
-    expect(__test_mode().armedAction).toBe('length');
-    sim.press('L', 0, yForLane(0));
-    expect(__test_mode().mode).toBe('lengthEdit');
-    expect(__test_mode().editClipIndex).toBe(clipIndex(0, 0));
-    expect(launchpadActiveView()).toBe('control');
-    expect(__test_mode().armedAction).toBeNull();
-  });
-
-  it('length onto an EMPTY pad = no-op + disarms (stays in clip view)', () => {
-    seedClipPlayer({ clips: {} });
-    bindLaunchpadToClip(NODE_ID);
-    sim.cc('L', CC_TOP_SPARE_6, 127);
-    sim.press('L', 0, yForLane(0)); // empty
-    expect(__test_mode().mode).toBe('session');
-    expect(launchpadActiveView()).toBe('clip');
-    expect(__test_mode().armedAction).toBeNull();
-  });
-
-  it('double: arm DOUBLE → tap loaded → lengthSteps doubled', () => {
-    const c = clipWithNote(0, 60);
-    c.lengthSteps = 8;
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: c } });
-    bindLaunchpadToClip(NODE_ID);
-    sim.cc('L', CC_TOP_SPARE_7, 127); // arm DOUBLE
-    expect(__test_mode().armedAction).toBe('double');
-    sim.press('L', 0, yForLane(0));
-    expect(clipsOf()[clipIndex(0, 0)].lengthSteps).toBe(16);
-    expect(__test_mode().armedAction).toBeNull();
-  });
-
-  it('COPY double-tap clears the buffer', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote() } });
-    bindLaunchpadToClip(NODE_ID);
-    sim.cc('L', CC_DOWN, 127); // arm COPY
-    sim.press('L', 0, yForLane(0)); // copy → buffer loaded, disarmed
-    expect(__test_mode().bufferArmed).toBe(true);
-    sim.cc('L', CC_DOWN, 127); // arm COPY again
-    expect(__test_mode().armedAction).toBe('copy');
-    sim.cc('L', CC_DOWN, 127); // second tap while buffer loaded → clear
-    expect(__test_mode().bufferArmed).toBe(false);
-    expect(__test_mode().armedAction).toBeNull();
-  });
-
-  it('re-tapping an armed cell disarms it', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote() } });
-    bindLaunchpadToClip(NODE_ID);
-    sim.cc('L', CC_TOP_SPARE_7, 127); // arm DOUBLE
-    expect(__test_mode().armedAction).toBe('double');
-    sim.cc('L', CC_TOP_SPARE_7, 127); // re-tap → disarm
-    expect(__test_mode().armedAction).toBeNull();
-  });
-
-  it('auto-disarm: an arm clears after the timeout (>160 ticks)', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote() } });
-    seedTimelorde(1);
-    bindLaunchpadToClip(NODE_ID);
-    sim.cc('L', CC_DOWN, 127); // arm COPY
-    expect(__test_mode().armedAction).toBe('copy');
-    for (let i = 0; i < 200; i++) hoisted.tick!();
-    expect(__test_mode().armedAction).toBeNull();
-  });
-
-  it('COPY armed onto an EMPTY pad = no buffer + disarms', () => {
-    seedClipPlayer({ clips: {} });
-    bindLaunchpadToClip(NODE_ID);
-    sim.cc('L', CC_DOWN, 127); // arm COPY
-    sim.press('L', 0, yForLane(0)); // empty
-    expect(__test_mode().bufferArmed).toBe(false);
-    expect(__test_mode().armedAction).toBeNull();
-  });
-
-  it('the clip-view arm strip is PAINTED on the lone device (top CCs lit)', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote() } });
-    seedTimelorde(1);
-    bindLaunchpadToClip(NODE_ID);
-    hoisted.tick!();
-    // KEYS-arm (CC 91, the reclaimed NEW cell) idle hue is lit.
-    const newCell = sim.ledAt('L', CC_UP);
-    expect(newCell).not.toBeNull();
-    expect(newCell![0] + newCell![1] + newCell![2]).toBeGreaterThan(0);
-    // CC 98 view marker still lit (unchanged).
-    const marker = sim.ledAt('L', CC_TOP_SPARE_8);
-    expect(marker![0] + marker![1] + marker![2]).toBeGreaterThan(0);
-  });
-});
-
-// ===========================================================================
-// SINGLE — clip-view DOUBLE-TAP a clip pad → open its note editor. Mirrors the
-// card's single-click-launch / double-click-edit (ClipplayerCard onPadDblClick).
-// The FIRST tap launches IMMEDIATELY (no debounce); a SECOND tap on the SAME
-// clip within the window opens the editor + flips to control view. A slow re-tap
-// (outside the window) just launches-then-stops. Empty-pad double-tap = new +
-// edit. PAIR mode never reaches this path. Timing reference = tickCount, driven
-// via the mocked scheduler clock (hoisted.tick advances it by 1 per call).
-// ===========================================================================
-describe('SINGLE — clip-view double-tap opens the editor', () => {
-  let sim: SimulatedLaunchpad;
-  beforeEach(async () => {
-    sim = await installSimulatedLaunchpadSingle();
-    __test_setDeployment('single', 'clip');
-  });
-
-  it('double-tap a LOADED clip (no ticks between) launches then opens its editor', () => {
-    const idx = clipIndex(1, 1);
-    seedClipPlayer({ clips: { [idx]: noteClip() } });
-    seedTimelorde(1);
-    bindLaunchpadToClip(NODE_ID);
-    // 1st tap → immediate launch (no latency: queued written right away).
-    sim.press('L', 1, yForLane(1));
-    expect(queued()![1], 'first tap launched immediately').toBe(1);
-    expect(__test_mode().mode, 'first tap did NOT open the editor').toBe('session');
-    expect(launchpadActiveView()).toBe('clip');
-    // 2nd tap on the SAME clip, within the window → opens the editor.
-    sim.press('L', 1, yForLane(1));
-    expect(__test_mode().mode, 'double-tap → edit mode').toBe('edit');
-    expect(__test_mode().editClipIndex, 'editing the double-tapped clip').toBe(idx);
-    expect(launchpadActiveView(), 'flipped to control to show the editor').toBe('control');
-    // Editor window state reset like the editArmed branch.
-    expect(__test_mode().followOn).toBe(true);
-    expect(__test_mode().editRowOffset).toBe(0);
-    expect(__test_mode().editWindowStart).toBe(0);
-  });
-
-  it('double-tap an EMPTY pad creates a default clip then edits it', () => {
-    const idx = clipIndex(0, 0);
-    seedClipPlayer({ clips: {} });
-    bindLaunchpadToClip(NODE_ID);
-    sim.press('L', 0, yForLane(0)); // 1st tap (empty → no launch, but records the tap)
-    expect(__test_mode().mode).toBe('session');
-    sim.press('L', 0, yForLane(0)); // 2nd tap → create + edit
-    expect((liveData().clips as Record<string, unknown>)[idx], 'a default clip was created').toBeTruthy();
-    expect(__test_mode().mode).toBe('edit');
-    expect(__test_mode().editClipIndex).toBe(idx);
-    expect(launchpadActiveView()).toBe('control');
-  });
-
-  it('a SLOW re-tap (outside the window) launches then stops — NOT edit', () => {
-    const idx = clipIndex(0, 0);
-    seedClipPlayer({ clips: { [idx]: noteClip() } });
-    seedTimelorde(1);
-    bindLaunchpadToClip(NODE_ID);
-    // 1st tap → launch (queued = slot 0).
-    sim.press('L', 0, yForLane(0));
-    expect(queued()![0]).toBe(0);
-    // Advance well past the ~11-tick window so the next tap is a fresh tap.
-    for (let i = 0; i < 20; i++) hoisted.tick!();
-    // Simulate the clip actually playing now (so a fresh tap toggles to stop).
-    liveData().playing = [0, null, null, null, null, null, null, null];
-    sim.press('L', 0, yForLane(0));
-    expect(__test_mode().mode, 'slow re-tap did NOT open the editor').toBe('session');
-    expect(launchpadActiveView()).toBe('clip');
-    expect(queued()![0], 'slow re-tap toggled the lane to stop').toBe('stop');
-  });
-
-  it('two DIFFERENT clips in quick succession do NOT count as a double-tap', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip(), [clipIndex(1, 1)]: noteClip() } });
-    bindLaunchpadToClip(NODE_ID);
-    sim.press('L', 0, yForLane(0)); // tap clip A
-    sim.press('L', 1, yForLane(1)); // tap clip B (different index)
-    expect(__test_mode().mode, 'different clips never double-tap').toBe('session');
-    expect(queued()![0]).toBe(0);
-    expect(queued()![1]).toBe(1);
-  });
-
-  it('a 3rd quick tap after a consumed double-tap launches (does NOT re-flip to the editor)', () => {
-    const idx = clipIndex(0, 0);
-    seedClipPlayer({ clips: { [idx]: noteClip() } });
-    bindLaunchpadToClip(NODE_ID);
-    sim.press('L', 0, yForLane(0)); // 1st → launch (queued slot 0)
-    sim.press('L', 0, yForLane(0)); // 2nd → editor + control view (tracker consumed → -1)
-    expect(__test_mode().mode).toBe('edit');
-    expect(launchpadActiveView()).toBe('control');
-    // Flip back to clip view (the tracker is consumed, so the next single tap is a
-    // FRESH first tap — a launch — not an immediate re-edit off the spent pair).
-    toggleSingleView(); // → clip
-    sim.press('L', 0, yForLane(0)); // a fresh single tap
-    expect(launchpadActiveView(), 'one fresh tap did NOT flip back to control').toBe('clip');
-    // It registered as a plain launch (queued slot 0 again — clip is not playing).
-    expect(queued()![0]).toBe(0);
-  });
-});
-
-// ===========================================================================
-// SINGLE — a double-tap REVERTS the lane to its prior play/queue state. Owner
-// rule: editing a clip via double-tap never changes whether it plays — EXCEPT a
-// clip that was already QUEUED to start must still start. The FIRST tap launches
-// immediately; the SECOND tap (double-tap → editor) restores the lane to exactly
-// the intent it had before the double-tap. Three prior states + the rare
-// boundary-in-gap edge. Helpers: laneQueued/lanePlaying/slotOf/laneOf semantics.
-// ===========================================================================
-describe('SINGLE — double-tap reverts the lane to its prior play/queue state', () => {
-  let sim: SimulatedLaunchpad;
-  beforeEach(async () => {
-    sim = await installSimulatedLaunchpadSingle();
-    __test_setDeployment('single', 'clip');
-  });
-
-  it('STOPPED clip: double-tap opens the editor AND the lane stays stopped (the bug fix)', () => {
-    const idx = clipIndex(1, 1); // lane 1, slot 1
-    seedClipPlayer({ clips: { [idx]: noteClip() } }); // nothing playing, nothing queued
-    seedTimelorde(1);
-    bindLaunchpadToClip(NODE_ID);
-    // 1st tap launches immediately (queues lane 1 → slot 1).
-    sim.press('L', 1, yForLane(1));
-    expect(queued()![1], 'first tap queued a start').toBe(1);
-    // 2nd tap (double-tap) → editor, AND the lane reverts to its prior STOPPED
-    // intent: the queued start is un-queued (restored to null) and nothing plays.
-    sim.press('L', 1, yForLane(1));
-    expect(__test_mode().mode, 'double-tap opened the editor').toBe('edit');
-    expect(__test_mode().editClipIndex).toBe(idx);
-    expect(launchpadActiveView()).toBe('control');
-    expect(queued()![1], 'lane is NOT queued to start (stays stopped)').toBeNull();
-    // Not playing (no boundary crossed).
-    const playing = (liveData().playing as (number | null)[] | undefined) ?? [];
-    expect(playing[1] ?? null, 'lane is not playing').toBeNull();
-  });
-
-  it('ALREADY-QUEUED-not-playing clip: double-tap opens the editor AND it STILL starts', () => {
-    const idx = clipIndex(2, 1); // lane 1, slot 2
-    seedClipPlayer({ clips: { [idx]: noteClip() } });
-    seedTimelorde(1);
-    bindLaunchpadToClip(NODE_ID);
-    // Pre-queue lane 1 to slot 2 (queued-to-start, not yet playing) BEFORE the
-    // double-tap.
-    const pre: (number | 'stop' | null)[] = new Array(CLIP_LANES).fill(null);
-    pre[1] = 2;
-    liveData().queued = pre;
-    // 1st tap: already queued to this slot, not playing → toggle re-queues slot 2.
-    sim.press('L', 2, yForLane(1));
-    expect(queued()![1]).toBe(2);
-    // 2nd tap (double-tap) → editor, AND the lane is STILL queued to slot 2 (the
-    // restore brings back the prior queued value = 2, so it will start).
-    sim.press('L', 2, yForLane(1));
-    expect(__test_mode().mode).toBe('edit');
-    expect(__test_mode().editClipIndex).toBe(idx);
-    expect(queued()![1], 'lane stays queued to its slot → it still starts').toBe(2);
-  });
-
-  it('PLAYING clip: double-tap opens the editor AND it keeps playing (no queued stop)', () => {
-    const idx = clipIndex(0, 1); // lane 1, slot 0
-    const playing: (number | null)[] = new Array(CLIP_LANES).fill(null);
-    playing[1] = 0; // lane 1 is playing slot 0
-    seedClipPlayer({ clips: { [idx]: noteClip() }, playing });
-    seedTimelorde(1);
-    bindLaunchpadToClip(NODE_ID);
-    // 1st tap: lane 1 is playing slot 0 → toggle queues a STOP.
-    sim.press('L', 0, yForLane(1));
-    expect(queued()![1], 'first tap queued a stop').toBe('stop');
-    // 2nd tap (double-tap) → editor, AND the queued stop is cancelled (restored to
-    // the prior null), so it keeps playing.
-    sim.press('L', 0, yForLane(1));
-    expect(__test_mode().mode).toBe('edit');
-    expect(__test_mode().editClipIndex).toBe(idx);
-    expect(queued()![1], 'queued stop cancelled — keeps playing').toBeNull();
-    // Still actually playing.
-    const stillPlaying = (liveData().playing as (number | null)[] | undefined) ?? [];
-    expect(stillPlaying[1], 'lane is still playing its slot').toBe(0);
-  });
-
-  it('BOUNDARY-IN-GAP: a stopped clip that started between the taps snaps back stopped', () => {
-    const idx = clipIndex(0, 1); // lane 1, slot 0
-    seedClipPlayer({ clips: { [idx]: noteClip() } }); // stopped, nothing queued
-    seedTimelorde(1);
-    bindLaunchpadToClip(NODE_ID);
-    // 1st tap: stopped → queues a start (slot 0).
-    sim.press('L', 0, yForLane(1));
-    expect(queued()![1]).toBe(0);
-    // Simulate a boundary passing in the gap: the engine applied the queued start,
-    // so the lane is now ACTUALLY playing slot 0 (and queued cleared) before the
-    // 2nd tap.
-    const playing: (number | null)[] = new Array(CLIP_LANES).fill(null);
-    playing[1] = 0;
-    liveData().playing = playing;
-    liveData().queued = new Array(CLIP_LANES).fill(null);
-    // 2nd tap (double-tap) → editor. Prior intent was STOPPED, but the clip is now
-    // playing → the revert ALSO applies an immediate stop so it snaps back.
-    sim.press('L', 0, yForLane(1));
-    expect(__test_mode().mode).toBe('edit');
-    expect(queued()![1], 'immediate stop queued to snap the lane back to stopped').toBe('stop');
-    const imm = liveData().queuedImmediate as boolean[] | undefined;
-    expect(imm?.[1], 'the stop is immediate (not boundary-quantized)').toBe(true);
-  });
-
-  it('single tap (no 2nd) still launches/queues immediately — revert only fires on a pair', () => {
-    const idx = clipIndex(0, 0);
-    seedClipPlayer({ clips: { [idx]: noteClip() } });
-    seedTimelorde(1);
-    bindLaunchpadToClip(NODE_ID);
-    sim.press('L', 0, yForLane(0));
-    // A lone tap launches and STAYS launched (no revert — the pair never completes).
-    expect(queued()![0], 'single tap queued a start, not reverted').toBe(0);
-    expect(__test_mode().mode, 'single tap does not open the editor').toBe('session');
-    expect(launchpadActiveView()).toBe('clip');
-  });
-});
-
-// ===========================================================================
-// PAIR — double-tap is single-only; pair clip taps never open the editor.
-// ===========================================================================
-describe('PAIR — clip-view double-tap does NOT open the editor', () => {
-  let sim: SimulatedLaunchpad;
-  beforeEach(async () => {
-    sim = await installSimulatedLaunchpad();
-  });
-
-  it('two fast L taps of the same clip in pair just launch — no edit flip', () => {
-    seedClipPlayer({
-      clips: { [clipIndex(0, 0)]: noteClip() },
-      playing: [0, null, null, null, null, null, null, null],
-    });
-    bindLaunchpadToClip(NODE_ID);
-    sim.press('L', 0, yForLane(0)); // playing → queue stop
-    expect(queued()![0]).toBe('stop');
-    sim.press('L', 0, yForLane(0)); // still just a toggle, NOT edit
-    expect(__test_mode().mode, 'pair never double-taps to edit').toBe('session');
-    expect(launchpadDeployment()).toBe('pair');
-  });
-});
-
-// ===========================================================================
-// SINGLE — the editor FOLLOW pad (scene row 4). CC 98 is the view-flip on one
-// device, so the single editor gives FOLLOW a REAL button on the scene column
-// (right under EXIT/DBL/LEN). Pair keeps row 4 dark + inert (its FOLLOW is the
-// CC-98 top-row button, pinned above).
-// ===========================================================================
-describe('SINGLE — editor FOLLOW pad on scene row 4', () => {
-  let sim: SimulatedLaunchpad;
-  beforeEach(async () => {
-    sim = await installSimulatedLaunchpadSingle();
-    __test_setDeployment('single', 'clip');
-  });
-
-  function enterEditSingle(longLen = 64) {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: { ...noteClip(), lengthSteps: longLen } } });
-    bindLaunchpadToClip(NODE_ID);
-    toggleSingleView(); // → control
-    sim.press('L', DECK_EDIT_COL, 0); // hold EDIT
-    toggleSingleView(); // → clip (editArmed survives)
-    sim.press('L', 0, yForLane(0)); // tap the clip → editor
-    sim.release('L', DECK_EDIT_COL, 0);
-    toggleSingleView(); // → control (the editor)
-    expect(__test_mode().mode).toBe('edit');
-  }
-
-  it('a manual scroll freezes FOLLOW; the scene-row-4 pad re-enables it (and freezes again)', () => {
-    enterEditSingle();
-    expect(__test_mode().followOn).toBe(true);
-    sim.cc('L', CC_EDIT_STEP_RIGHT, 127); // scroll → freeze
-    expect(__test_mode().followOn, 'scroll froze FOLLOW').toBe(false);
-    // Re-enable via the dedicated single-mode FOLLOW pad — the capability that
-    // was UNREACHABLE before (CC 98 is the view flip; freeze was one-way).
-    sim.cc('L', sceneCcForRow(EDIT_FOLLOW_SCENE_ROW), 127);
-    expect(__test_mode().followOn, 'FOLLOW pad re-enabled following').toBe(true);
-    // Tapping it again freezes on the shown window (same body as pair CC 98).
-    sim.cc('L', sceneCcForRow(EDIT_FOLLOW_SCENE_ROW), 127);
-    expect(__test_mode().followOn, 'FOLLOW pad freezes again').toBe(false);
-  });
-
-  it('the FOLLOW pad paints green while following, violet while frozen', () => {
-    seedTimelorde(1);
-    enterEditSingle();
-    hoisted.tick!();
-    expect(sim.ledAt('L', sceneCcForRow(EDIT_FOLLOW_SCENE_ROW)), 'green = following').toEqual([
-      ...RGB_TRANSPORT_ON,
-    ]);
-    sim.cc('L', CC_EDIT_STEP_RIGHT, 127); // freeze
-    hoisted.tick!();
-    expect(sim.ledAt('L', sceneCcForRow(EDIT_FOLLOW_SCENE_ROW)), 'violet = frozen').toEqual([
-      ...RGB_FUNC_ON,
-    ]);
-  });
-});
-
-describe('PAIR — editor scene row 4 stays dark + inert (FOLLOW pad is single-only)', () => {
-  let sim: SimulatedLaunchpad;
-  beforeEach(async () => {
-    sim = await installSimulatedLaunchpad();
-  });
-
-  it('a scene-row-4 press in the pair editor does NOT toggle FOLLOW; its LED stays dark', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
-    seedTimelorde(1);
-    bindLaunchpadToClip(NODE_ID);
-    sim.press('R', DECK_EDIT_COL, 0);
-    sim.press('L', 0, yForLane(0));
-    sim.release('R', DECK_EDIT_COL, 0);
-    expect(__test_mode().mode).toBe('edit');
-    expect(__test_mode().followOn).toBe(true);
-    sim.cc('R', sceneCcForRow(EDIT_FOLLOW_SCENE_ROW), 127);
-    expect(__test_mode().followOn, 'row 4 is inert in pair').toBe(true);
-    hoisted.tick!();
-    const led = sim.ledAt('R', sceneCcForRow(EDIT_FOLLOW_SCENE_ROW));
-    expect((led?.[0] ?? 0) + (led?.[1] ?? 0) + (led?.[2] ?? 0), 'row 4 dark in pair').toBe(0);
-  });
-});
-
-// ===========================================================================
-// SINGLE — KEYS on ONE device. Entry mirrors the locked single-unit gesture
-// family (hold a deck modifier in CONTROL, flip via CC 98 — the hold survives —
-// then act on the clip matrix): hold note-REC/note-OVERDUB + DOUBLE-TAP a clip.
-// KEYS then OWNS the lone device (no view concept): the L-half keyboard (cols
-// 0..7), the bottom-row controls, and the playhead strip compressed to 8 cells
-// spanning the WHOLE clip. CC 98 is swallowed until EXIT.
-// ===========================================================================
-describe('SINGLE — KEYS on one device', () => {
-  let sim: SimulatedLaunchpad;
-  beforeEach(async () => {
-    sim = await installSimulatedLaunchpadSingle();
-    __test_setDeployment('single', 'clip');
-  });
-
-  const noteRec = () => liveData().noteRec as
-    | { lane: number; slot: number; armed: boolean; recording: boolean; overdub: boolean }
-    | null
-    | undefined;
-  const clipAt = (idx: number) => (liveData().clips as Record<string, NoteClipRecord>)[String(idx)];
-
-  /** Enter KEYS on the lone device: hold note-REC/OVERDUB (control view) → CC-98
-   *  flip (the hold survives) → double-tap a clip → release the hold in KEYS. */
-  function enterKeysSingle(hold: number = DECK_KEYS_REC_COL, slot = 0, lane = 0) {
-    toggleSingleView(); // → control (the deck)
-    sim.press('L', hold, DECK_KEYS_ROW); // hold note-REC / note-OVERDUB
-    toggleSingleView(); // → clip (the hold survives the flip, like EDIT)
-    sim.press('L', slot, yForLane(lane)); // 1st tap (suppressed)
-    sim.press('L', slot, yForLane(lane)); // 2nd tap → KEYS
-    sim.release('L', hold, DECK_KEYS_ROW); // release (a harmless keyboard-off in KEYS)
-  }
-
-  it('hold note-REC (control) + flip + double-tap enters KEYS overdub OFF; the suppressed tap does not launch', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
-    bindLaunchpadToClip(NODE_ID);
-    toggleSingleView(); // → control
-    sim.press('L', DECK_KEYS_REC_COL, DECK_KEYS_ROW);
-    expect(__test_mode().keysRecHeld, 'deck keys-hold pad is LIVE in single control view').toBe(true);
-    toggleSingleView(); // → clip
-    expect(__test_mode().keysRecHeld, 'the hold survives the view flip').toBe(true);
-    sim.press('L', 0, yForLane(0)); // 1st tap — suppressed
-    expect(queued()?.[0] ?? null, 'single tap while held does NOT launch').toBeNull();
-    expect(__test_mode().mode).toBe('session');
-    sim.press('L', 0, yForLane(0)); // 2nd tap → KEYS
-    expect(__test_mode().mode).toBe('keys');
-    expect(__test_mode().keysClipIndex).toBe(0);
-    expect(noteRec()!.overdub, 'hold-REC entry = overdub OFF').toBe(false);
-    expect(queued()![0], 'entry launches the clip (immediate)').toBe(0);
-  });
-
-  it('hold note-OVERDUB → KEYS overdub ON', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
-    bindLaunchpadToClip(NODE_ID);
-    enterKeysSingle(DECK_KEYS_OVERDUB_COL);
-    expect(__test_mode().mode).toBe('keys');
-    expect(noteRec()!.overdub, 'hold-OVERDUB entry = overdub ON').toBe(true);
-  });
-
-  it('CC 98 is SWALLOWED inside KEYS — no view flip until EXIT', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
-    bindLaunchpadToClip(NODE_ID);
-    enterKeysSingle();
-    expect(__test_mode().mode).toBe('keys');
-    const viewBefore = __test_mode().activeView;
-    sim.cc('L', CC_TOP_SPARE_8, 127);
-    sim.cc('L', CC_TOP_SPARE_8, 0);
-    expect(__test_mode().mode, 'still in KEYS').toBe('keys');
-    expect(__test_mode().activeView, 'view unchanged (CC 98 swallowed)').toBe(viewBefore);
-  });
-
-  it('a keyboard press auditions live; the release ends it', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
-    bindLaunchpadToClip(NODE_ID);
-    enterKeysSingle();
-    drainAudition(NODE_ID); // discard entry noise
-    sim.press('L', 2, 1); // keyboard col 2 row 0 → midi root(48)+2 = 50
-    const ev = drainAudition(NODE_ID);
-    expect(ev).toHaveLength(1);
-    expect(ev[0]).toMatchObject({ lane: 0, midi: 50, on: true });
-    sim.release('L', 2, 1);
-    expect(drainAudition(NODE_ID)[0]).toMatchObject({ midi: 50, on: false });
-  });
-
-  it('QUEUE-REC arms → records on the loop wrap → a keypress lands in the clip', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
-    seedTimelorde(0);
-    bindLaunchpadToClip(NODE_ID);
-    enterKeysSingle();
-    sim.press('L', KEYS_QREC_COL, KEYS_CTRL_ROW); // QUEUE-REC
-    expect(noteRec()!.armed, 'armed').toBe(true);
-    expect((livePatch.nodes['tl']!.params as Record<string, number>).running, 'transport auto-started').toBe(1);
-    setLanePlayhead(NODE_ID, 0, 0); // the wrap
-    hoisted.tick!();
-    expect(noteRec()!.recording, 'recording began on the wrap').toBe(true);
-    setLanePlayhead(NODE_ID, 0, 5);
-    sim.press('L', 3, 2); // col 3 row 1 → midi 48 + 3 + 5 = 56
-    sim.release('L', 3, 2);
-    expect(clipAt(0).steps.some((s) => s.step === 5 && s.midi === 56), 'note captured at step 5').toBe(true);
-  });
-
-  it('the playhead strip spans the WHOLE clip in 8 cells (step 15/16 → cell 7, ON this device)', () => {
-    // In pair, step 15 of a 16-step clip is cell 15 — on unit R, OFF the L
-    // surface. Single compresses to 8 cells so the dot stays visible: cell 7.
-    seedClipPlayer({
-      clips: { [clipIndex(0, 0)]: { ...noteClip(), lengthSteps: 16 } },
-      playing: [0, null, null, null, null, null, null, null],
-    });
-    seedTimelorde(1);
-    bindLaunchpadToClip(NODE_ID);
-    enterKeysSingle();
-    setLanePlayhead(NODE_ID, 0, 15);
-    hoisted.tick!();
-    expect(sim.ledAt('L', padNote(7, KEYS_PH_ROW)), 'last cell = the current dot').toEqual([
-      ...RGB_KEYS_PH_CUR,
-    ]);
-    expect(sim.ledAt('L', padNote(0, KEYS_PH_ROW)), 'first cell = baseline').toEqual([
-      ...RGB_KEYS_PH_BASE,
-    ]);
-  });
-
-  it('LEN opens the length ruler on the lone device; EXIT returns to KEYS (CC 98 swallowed there too)', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
-    bindLaunchpadToClip(NODE_ID);
-    enterKeysSingle();
-    sim.press('L', KEYS_LEN_COL, KEYS_CTRL_ROW);
-    expect(__test_mode().mode).toBe('lengthEdit');
-    expect(__test_mode().lengthReturnMode).toBe('keys');
-    // CC 98 stays swallowed while the keys-length page owns the device.
-    sim.cc('L', CC_TOP_SPARE_8, 127);
-    expect(__test_mode().mode, 'no view flip on the keys-length page').toBe('lengthEdit');
-    // A block tap on the SAME device sets the length (block 2 → 32 steps).
-    sim.press('L', 1, 0);
-    sim.release('L', 1, 0);
-    expect(clipAt(0).lengthSteps).toBe(32);
-    // EXIT (top scene) → back to KEYS.
-    sim.cc('L', sceneCcForRow(EDIT_EXIT_SCENE_ROW), 127);
-    expect(__test_mode().mode, 'LEN EXIT returns to KEYS').toBe('keys');
-  });
-
-  it('EXIT stops a recording (stays in KEYS); a 2nd EXIT returns to session and the matrix works again', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
-    seedTimelorde(0);
-    bindLaunchpadToClip(NODE_ID);
-    enterKeysSingle();
-    sim.press('L', KEYS_QREC_COL, KEYS_CTRL_ROW);
-    setLanePlayhead(NODE_ID, 0, 0);
-    hoisted.tick!();
-    expect(noteRec()!.recording).toBe(true);
-    sim.press('L', KEYS_EXIT_COL, KEYS_CTRL_ROW); // 1st EXIT
-    expect(__test_mode().mode, 'stays in KEYS').toBe('keys');
-    expect(noteRec()!.recording, 'recording stopped').toBe(false);
-    sim.press('L', KEYS_EXIT_COL, KEYS_CTRL_ROW); // 2nd EXIT
-    expect(__test_mode().mode, 'back to session').toBe('session');
-    expect(liveData().noteRec ?? null, 'noteRec cleared').toBeNull();
-    // The lone device is back on the view machinery — a clip tap launches. (The
-    // lane still plays from the KEYS entry launch, so tapping queues a stop —
-    // proving handleL routing is restored either way; use a DIFFERENT clip.)
-    (liveData().clips as Record<string, unknown>)[String(clipIndex(1, 1))] = noteClip();
-    sim.press('L', 1, yForLane(1));
-    expect(queued()![1], 'clip view routing restored after EXIT').toBe(1);
-  });
-
-  it('a keys-hold RELEASE landing in clip view clears the hold (no stuck launch-suppression)', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
-    bindLaunchpadToClip(NODE_ID);
-    toggleSingleView(); // → control
-    sim.press('L', DECK_KEYS_REC_COL, DECK_KEYS_ROW); // hold note-REC
-    toggleSingleView(); // → clip (hold survives)
-    expect(__test_mode().keysRecHeld).toBe(true);
-    sim.release('L', DECK_KEYS_REC_COL, DECK_KEYS_ROW); // change of mind — release in CLIP view
-    expect(__test_mode().keysRecHeld, 'release cleared the hold across views').toBe(false);
-    sim.press('L', 0, yForLane(0)); // a plain tap now LAUNCHES (not suppressed)
-    expect(queued()![0], 'launches normally — no modal trap').toBe(0);
-  });
-});
-
-// ===========================================================================
-// PAIR — KEYS regression: the 16-cell playhead strip still spans BOTH units
-// (the single 8-cell compression must not leak into pair painting).
-// ===========================================================================
-describe('PAIR — KEYS playhead strip stays 16 cells across L+R', () => {
-  let sim: SimulatedLaunchpad;
-  beforeEach(async () => {
-    sim = await installSimulatedLaunchpad();
-  });
-
-  it('step 15 of a 16-step clip lights unit R cell 7 (cell 15 of 16), not unit L', () => {
-    seedClipPlayer({
-      clips: { [clipIndex(0, 0)]: { ...noteClip(), lengthSteps: 16 } },
-      playing: [0, null, null, null, null, null, null, null],
-    });
-    seedTimelorde(1);
-    bindLaunchpadToClip(NODE_ID);
-    sim.press('R', DECK_KEYS_REC_COL, DECK_KEYS_ROW);
-    sim.press('L', 0, yForLane(0));
-    sim.press('L', 0, yForLane(0));
-    sim.release('R', DECK_KEYS_REC_COL, DECK_KEYS_ROW);
-    expect(__test_mode().mode).toBe('keys');
-    setLanePlayhead(NODE_ID, 0, 15);
-    hoisted.tick!();
-    expect(sim.ledAt('R', padNote(7, KEYS_PH_ROW)), 'R cell 7 = the current dot').toEqual([
-      ...RGB_KEYS_PH_CUR,
-    ]);
-    expect(sim.ledAt('L', padNote(7, KEYS_PH_ROW)), 'L cell 7 = baseline (pair keeps 16 cells)').toEqual([
-      ...RGB_KEYS_PH_BASE,
-    ]);
-  });
-});
-
-// ===========================================================================
-// PAIR — the arm row does NOT exist in pair mode (armClip is single-only). The
-// pair-L top row now hosts per-lane MUTE (previously dead), so CC 91 on L toggles
-// MUTE lane 0 — NOT an arm, and clip launching is unchanged.
-// ===========================================================================
-describe('PAIR — clip-view arm row is single-only; L top row is MUTE', () => {
-  let sim: SimulatedLaunchpad;
-  beforeEach(async () => {
-    sim = await installSimulatedLaunchpad();
-  });
-
-  it('CC 91 (▲) on L in pair does NOT arm; it toggles MUTE lane 0; a press still launches', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
-    bindLaunchpadToClip(NODE_ID);
-    sim.cc('L', CC_UP, 127); // pair-L top CC 91 = MUTE lane 0 (col 0)
-    expect(__test_mode().armedAction).toBeNull(); // never an arm
-    expect((liveData().muted as boolean[] | undefined)?.[0]).toBe(true);
-    sim.press('L', 0, yForLane(0));
-    expect(queued()![0], 'L press still launches (mute ≠ stop)').toBe(0);
-  });
-
-  it('pair-L top CC 98 toggles MUTE lane 7; the deck (R) MONO/MUTE/RATE/RESET share the same seams', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
-    bindLaunchpadToClip(NODE_ID);
-    sim.cc('L', colTopCc(7), 127); // CC 98 on L → MUTE lane 7
-    expect((liveData().muted as boolean[] | undefined)?.[7]).toBe(true);
-    // R deck performance rows work in pair too (same handleRDeck path as single).
-    sim.press('R', 2, DECK_MONO_ROW); // MONO lane 2
-    expect((liveData().mono as boolean[] | undefined)?.[2]).toBe(true);
-    sim.press('R', DECK_RESET_COL, DECK_RESET_ROW); // RESET
-    expect(liveData().resetNonce).toBe(1);
-  });
-});
-
-// ===========================================================================
-// SINGLE — CONTROL-deck PERFORMANCE controls (P1 RESET · P4 MONO · P3 MUTE · P2
-// RATE · P5 tempo), the editor extras (P6), and KEYS octave/panic (P7). All
-// driven through the single sim in CONTROL view (handleR → handleRDeck) or the
-// editor / KEYS views. Previously-dead pads, now live.
-// ===========================================================================
-describe('SINGLE — deck performance controls (RESET / MONO / MUTE / RATE / tempo)', () => {
-  let sim: SimulatedLaunchpad;
-  beforeEach(async () => {
-    sim = await installSimulatedLaunchpadSingle();
-    __test_setDeployment('single', 'control'); // the deck lives in CONTROL view
-  });
-
-  it('RESET pad bumps resetNonce (the card RST / reset-gate field) each press', () => {
-    seedClipPlayer({ clips: {} });
-    bindLaunchpadToClip(NODE_ID);
-    expect(liveData().resetNonce ?? 0).toBe(0);
-    sim.press('L', DECK_RESET_COL, DECK_RESET_ROW);
-    expect(liveData().resetNonce).toBe(1);
-    sim.press('L', DECK_RESET_COL, DECK_RESET_ROW);
-    expect(liveData().resetNonce).toBe(2); // a counter — repeated presses re-fire
-  });
-
-  it('MONO row toggles mono[lane] per lane', () => {
-    seedClipPlayer({ clips: {} });
-    bindLaunchpadToClip(NODE_ID);
-    sim.press('L', 3, DECK_MONO_ROW);
-    expect((liveData().mono as boolean[])?.[3]).toBe(true);
-    sim.press('L', 3, DECK_MONO_ROW);
-    expect((liveData().mono as boolean[])?.[3]).toBe(false);
-    // other lanes untouched.
-    expect((liveData().mono as boolean[])?.[0]).toBe(false);
-  });
-
-  it('MUTE row toggles muted[lane] per lane', () => {
-    seedClipPlayer({ clips: {} });
-    bindLaunchpadToClip(NODE_ID);
-    sim.press('L', 5, DECK_MUTE_ROW);
-    expect((liveData().muted as boolean[])?.[5]).toBe(true);
-    sim.press('L', 5, DECK_MUTE_ROW);
-    expect((liveData().muted as boolean[])?.[5]).toBe(false);
-  });
-
-  it('RATE row cycles rate[lane] up, wrapping', () => {
-    seedClipPlayer({ clips: {}, rate: [3, 3, 3, 3, 3, 3, 3, 3] }); // all default '1' (index 3)
-    bindLaunchpadToClip(NODE_ID);
-    sim.press('L', 1, DECK_RATE_ROW);
-    expect((liveData().rate as number[])?.[1]).toBe(4); // 1 → 2x
-    // cycle all the way around back to 4 (RATE_MULTS.length steps).
-    for (let i = 0; i < RATE_MULTS.length; i++) sim.press('L', 1, DECK_RATE_ROW);
-    expect((liveData().rate as number[])?.[1]).toBe(4); // wrapped a full lap
-  });
-
-  it('tempo nudge −/+ (CC 93/94) steps TIMELORDE bpm, clamped', () => {
-    seedClipPlayer({ clips: {} });
-    seedTimelorde(1);
-    (livePatch.nodes['tl']!.params as Record<string, number>).bpm = 120;
-    bindLaunchpadToClip(NODE_ID);
-    sim.cc('L', CC_TEMPO_UP, 127);
-    expect((livePatch.nodes['tl']!.params as Record<string, number>).bpm).toBe(122);
-    sim.cc('L', CC_TEMPO_DOWN, 127);
-    sim.cc('L', CC_TEMPO_DOWN, 127);
-    expect((livePatch.nodes['tl']!.params as Record<string, number>).bpm).toBe(118);
-  });
-
-  it('the deck frame paints RESET + MONO/MUTE/RATE rows on the lone device', () => {
-    seedClipPlayer({ clips: {}, mono: [true, false, false, false, false, false, false, false] });
-    seedTimelorde(0);
-    bindLaunchpadToClip(NODE_ID);
-    hoisted.tick!();
-    const reset = sim.ledAt('L', padNote(DECK_RESET_COL, DECK_RESET_ROW));
-    expect(reset![0] + reset![1] + reset![2]).toBeGreaterThan(0);
-    const mono0 = sim.ledAt('L', padNote(0, DECK_MONO_ROW));
-    expect(mono0![0] + mono0![1] + mono0![2]).toBeGreaterThan(0);
-  });
-});
-
-describe('SINGLE — editor extras (P6 COPY / PASTE / OCT ±)', () => {
-  let sim: SimulatedLaunchpad;
-  beforeEach(async () => {
-    sim = await installSimulatedLaunchpadSingle();
-    __test_setDeployment('single', 'clip');
-  });
-
-  /** Enter the editor on an empty top-left pad via a back-to-back double-tap. */
-  function enterEditorViaDoubleTap() {
-    seedClipPlayer({ clips: {} });
-    bindLaunchpadToClip(NODE_ID);
-    sim.press('L', 0, yForLane(0)); // 1st tap (empty → no launch)
-    sim.press('L', 0, yForLane(0)); // 2nd tap → openEditor (creates the clip)
-    expect(__test_mode().mode).toBe('edit');
-  }
-
-  it('COPY scene pad snapshots the edited clip to the buffer; OCT ± scroll the pitch window', () => {
-    enterEditorViaDoubleTap();
-    expect(__test_mode().bufferArmed).toBe(false);
-    sim.cc('L', sceneCcForRow(EDIT_COPY_SCENE_ROW), 127); // COPY
-    expect(__test_mode().bufferArmed).toBe(true);
-    const before = __test_mode().editRowOffset;
-    sim.cc('L', sceneCcForRow(EDIT_OCT_UP_SCENE_ROW), 127); // OCT+
-    expect(__test_mode().editRowOffset).toBeGreaterThan(before);
-    sim.cc('L', sceneCcForRow(EDIT_OCT_DOWN_SCENE_ROW), 127); // OCT−
-    sim.cc('L', sceneCcForRow(EDIT_OCT_DOWN_SCENE_ROW), 127);
-    expect(__test_mode().editRowOffset).toBeLessThan(before);
-  });
-
-  it('PASTE scene pad writes the buffer over the current clip', () => {
-    // seed TWO clips: edit clip B (empty), copy clip A elsewhere first via the deck.
-    const src = noteClip();
-    src.steps = [{ step: 2, midi: 67, velocity: 100, lengthSteps: 1 }];
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: src } });
-    bindLaunchpadToClip(NODE_ID);
-    // Open clip A's editor (double-tap the loaded pad), COPY it to the buffer.
-    sim.press('L', 0, yForLane(0));
-    sim.press('L', 0, yForLane(0));
-    expect(__test_mode().mode).toBe('edit');
-    sim.cc('L', sceneCcForRow(EDIT_COPY_SCENE_ROW), 127); // buffer = clip A
-    expect(__test_mode().bufferArmed).toBe(true);
-    // EXIT (→ session, still CONTROL view). Flip to CLIP view to tap clip B on the
-    // matrix, then double-tap it → editor on clip B, and PASTE the buffer into it.
-    sim.cc('L', sceneCcForRow(EDIT_EXIT_SCENE_ROW), 127);
-    if (launchpadActiveView() === 'control') sim.cc('L', CC_TOP_SPARE_8, 127); // → clip view
-    sim.press('L', 1, yForLane(1)); // empty
-    sim.press('L', 1, yForLane(1)); // double-tap → editor on clip B
-    expect(__test_mode().editClipIndex).toBe(clipIndex(1, 1));
-    sim.cc('L', sceneCcForRow(EDIT_PASTE_SCENE_ROW), 127); // PASTE
-    const dest = (liveData().clips as Record<string, NoteClipRecord>)[clipIndex(1, 1)];
-    expect(dest.steps.some((s) => s.midi === 67)).toBe(true);
-  });
-});
-
-describe('SINGLE — KEYS octave ± / panic (P7)', () => {
-  let sim: SimulatedLaunchpad;
-  beforeEach(async () => {
-    sim = await installSimulatedLaunchpadSingle();
-    __test_setDeployment('single', 'clip');
-  });
-
-  /** Enter KEYS via the CC-91 KEYS-arm → tap the clip. */
-  function enterKeysViaArm() {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
-    seedTimelorde(1);
-    bindLaunchpadToClip(NODE_ID);
-    sim.cc('L', CC_UP, 127); // KEYS-arm rec
-    sim.press('L', 0, yForLane(0)); // tap clip → KEYS
-    expect(__test_mode().mode).toBe('keys');
-  }
-
-  it('octave ± shift the keyboard root; panic clears the sounding notes', () => {
-    enterKeysViaArm();
-    expect(__test_mode().keysOctaveShift).toBe(0);
-    sim.press('L', KEYS_OCT_UP_COL, KEYS_CTRL_ROW);
-    expect(__test_mode().keysOctaveShift).toBe(12);
-    sim.press('L', KEYS_OCT_DOWN_COL, KEYS_CTRL_ROW);
-    sim.press('L', KEYS_OCT_DOWN_COL, KEYS_CTRL_ROW);
-    expect(__test_mode().keysOctaveShift).toBe(-12);
-    // press a keyboard note (adds to keysPressed), then PANIC clears it.
-    sim.press('L', 0, 1); // keyboard band (y=1 = keyboard row 0)
-    expect(__test_mode().keysPressedCount).toBeGreaterThan(0);
-    sim.press('L', KEYS_PANIC_COL, KEYS_CTRL_ROW);
-    expect(__test_mode().keysPressedCount).toBe(0);
-    expect(__test_mode().mode).toBe('keys'); // panic stays in KEYS
   });
 });

@@ -267,50 +267,100 @@ test('@launchpad arming REC on the deck captures a launch to the arrangement; SO
 });
 
 // ===========================================================================
-// SINGLE-UNIT mode — ONE Launchpad does everything the two-device pair does:
-// the clip view (L role) launches a clip → audible RMS through the SAME real
-// TIMELORDE→clipplayer→VCO→VCA→SCOPE chain; flipping to the control view (R
-// role) via the hardware CC-98 toggle drives the editor; flipping back relaunches
-// → RMS returns. Proves the single device + view toggle + the real source chain
-// end to end (silent-before / audible-after, the green-but-silent guard).
+// SINGLE-UNIT mode — ONE Launchpad does everything the two-device pair does over
+// a 4-VIEW surface (Grid · Clip · Arranger · Control) driven by the PERMANENT
+// top-CC nav row, identical in every view: 91 transport · 92 Grid · 93 Clip ·
+// 94 Arranger · 95 Control · 96 undo · 97 redo · 98 shift (topRowAction). The
+// GRID is TRANSPOSED vs the pair L matrix: x = channel/lane (column), the slot
+// runs top→bottom, so gridPadToClipIndex(x,y) = {lane:x, slot:LP_HEIGHT-1-y}.
+//
+// These prove, behaviour-first, that on the ONE device: selecting GRID on the
+// permanent top row + tapping a clip LAUNCHES it (audible RMS through the SAME
+// real TIMELORDE→clipplayer→VCO→VCA→SCOPE chain), the transpose lands the tap on
+// the right CHANNEL (column), a row/scene launch fires a slot across channels,
+// and a stop→relaunch round-trip returns the RMS (the green-but-silent guard).
 // ===========================================================================
-test('@launchpad single-unit: clip view launches (audible), CC-98 flips to control (editor), round-trip relaunches', async ({ page, rack, errorWatch }) => {
+
+// Permanent top-row CCs (topRowAction in launchpad-map.ts) — a CC on the lone
+// device routes through the SAME decode/dispatch path real hardware uses.
+const CC_VIEW_GRID = 92;
+// Right SCENE column CCs (top→bottom = scene index 0..7). Scene index i launches
+// grid SLOT i across all channels (a "song section"). SCENE_CCS[1] = slot 1.
+const SCENE_CCS = [89, 79, 69, 59, 49, 39, 29, 19] as const;
+
+/** lane-N entry of the clipplayer's synced `playing` set. */
+async function lanePlayingSlot(page: import('@playwright/test').Page, lane: number) {
+  return page.evaluate((l) => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { type?: string; data?: { playing?: unknown[] } }> };
+    };
+    const cp = Object.values(w.__patch.nodes).find((n) => n.type === 'clipplayer');
+    return cp?.data?.playing?.[l] ?? null;
+  }, lane);
+}
+/** Press a pad on the lone (single-mode) device. */
+async function pressSingle(page: import('@playwright/test').Page, x: number, y: number) {
+  await page.evaluate(({ x, y }) => {
+    (globalThis as unknown as { __launchpadSingleSim?: { press: (x: number, y: number) => void } })
+      .__launchpadSingleSim?.press(x, y);
+  }, { x, y });
+}
+/** Select a view (or press any permanent top-row CC) on the lone device. */
+async function ccTapSingle(page: import('@playwright/test').Page, cc: number) {
+  await page.evaluate((c) => {
+    const s = (globalThis as unknown as { __launchpadSingleSim?: { cc: (cc: number, v: number) => void } })
+      .__launchpadSingleSim!;
+    s.cc(c, 127);
+    s.cc(c, 0);
+  }, cc);
+}
+async function singleView(page: import('@playwright/test').Page) {
+  return page.evaluate(
+    () => (globalThis as unknown as { __launchpadSingleSim?: { state: () => { singleView: string } } })
+      .__launchpadSingleSim!.state().singleView,
+  );
+}
+
+async function buildSingleChain(page: import('@playwright/test').Page, prefix: string) {
   await spawnPatch(
     page,
     [
-      { id: 's-cp', type: 'clipplayer', position: { x: 60, y: 60 }, domain: 'audio',
+      { id: `${prefix}-cp`, type: 'clipplayer', position: { x: 60, y: 60 }, domain: 'audio',
         params: { quantize: 0, stepDiv: 2, gateLength: 0.9, octave: 0 } },
-      { id: 's-vco', type: 'analogVco', position: { x: 360, y: 60 }, domain: 'audio' },
-      { id: 's-vca', type: 'vca', position: { x: 640, y: 60 }, domain: 'audio',
+      { id: `${prefix}-vco`, type: 'analogVco', position: { x: 360, y: 60 }, domain: 'audio' },
+      { id: `${prefix}-vca`, type: 'vca', position: { x: 640, y: 60 }, domain: 'audio',
         params: { base: 0, cvAmount: 1 } },
-      { id: 's-scp', type: 'scope', position: { x: 920, y: 60 }, domain: 'audio',
+      { id: `${prefix}-scp`, type: 'scope', position: { x: 920, y: 60 }, domain: 'audio',
         params: { timeMs: 200 } },
     ],
     [
-      { id: 'g1', from: { nodeId: 's-cp', portId: 'pitch1' }, to: { nodeId: 's-vco', portId: 'pitch' },
+      { id: `${prefix}1`, from: { nodeId: `${prefix}-cp`, portId: 'pitch1' }, to: { nodeId: `${prefix}-vco`, portId: 'pitch' },
         sourceType: 'polyPitchGate', targetType: 'pitch' },
-      { id: 'g2', from: { nodeId: 's-vco', portId: 'sine' }, to: { nodeId: 's-vca', portId: 'audio' },
+      { id: `${prefix}2`, from: { nodeId: `${prefix}-vco`, portId: 'sine' }, to: { nodeId: `${prefix}-vca`, portId: 'audio' },
         sourceType: 'audio', targetType: 'audio' },
-      { id: 'g3', from: { nodeId: 's-cp', portId: 'gate1' }, to: { nodeId: 's-vca', portId: 'cv' },
+      { id: `${prefix}3`, from: { nodeId: `${prefix}-cp`, portId: 'gate1' }, to: { nodeId: `${prefix}-vca`, portId: 'cv' },
         sourceType: 'gate', targetType: 'cv' },
-      { id: 'g4', from: { nodeId: 's-vca', portId: 'audio' }, to: { nodeId: 's-scp', portId: 'ch1' },
+      { id: `${prefix}4`, from: { nodeId: `${prefix}-vca`, portId: 'audio' }, to: { nodeId: `${prefix}-scp`, portId: 'ch1' },
         sourceType: 'audio', targetType: 'audio' },
     ],
   );
-
   await expect(page.locator('.svelte-flow__node-clipplayer')).toHaveCount(1);
+}
 
-  // Seed a clip in lane 0 / slot 0.
-  await page.evaluate(() => {
+/** Seed note clips at the given flat indices (lane*8 + slot). Only lane-0 clips
+ *  drive the audible voice (pitch1/gate1 = lane 0's poly output). */
+async function seedClipsAt(page: import('@playwright/test').Page, nodeId: string, indices: number[]) {
+  await page.evaluate(({ id, idxs }) => {
     const w = globalThis as unknown as {
       __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
       __ydoc: { transact: (fn: () => void) => void };
     };
     w.__ydoc.transact(() => {
-      const n = w.__patch.nodes['s-cp'];
+      const n = w.__patch.nodes[id];
       if (!n.data) n.data = {};
-      n.data.clips = {
-        '0': {
+      const clips: Record<string, unknown> = {};
+      for (const i of idxs) {
+        clips[String(i)] = {
           kind: 'note', lengthSteps: 4, root: 48, loop: true, scale: 'major',
           steps: [
             { step: 0, midi: 72, velocity: 127, lengthSteps: 1 },
@@ -318,115 +368,88 @@ test('@launchpad single-unit: clip view launches (audible), CC-98 flips to contr
             { step: 2, midi: 76, velocity: 127, lengthSteps: 1 },
             { step: 3, midi: 79, velocity: 127, lengthSteps: 1 },
           ],
-        },
-      };
+        };
+      }
+      n.data.clips = clips;
     });
-  });
+  }, { id: nodeId, idxs: indices });
+}
 
-  // Install the SINGLE simulated Launchpad (one device on the L slot, single
-  // deployment) + bind it to the clip-player. No Web MIDI prompt.
-  const installed = await page.evaluate(async () => {
+async function installSingle(page: import('@playwright/test').Page, nodeId: string) {
+  const installed = await page.evaluate(async (id) => {
     const w = globalThis as unknown as { __launchpadTestInstallSingle?: (id: string) => Promise<boolean> };
     if (!w.__launchpadTestInstallSingle) return false;
-    return await w.__launchpadTestInstallSingle('s-cp');
-  });
+    return await w.__launchpadTestInstallSingle(id);
+  }, nodeId);
   expect(installed, 'single-unit Launchpad install hook present (VITE_E2E_HOOKS)').toBe(true);
+}
+
+test('@launchpad single-unit GRID view: transposed pad launch → audible RMS; transpose + round-trip relaunch', async ({ page, rack, errorWatch }) => {
+  await buildSingleChain(page, 's');
+  // lane 0 slot 0 (index 0 — drives the voice) + lane 1 slot 0 (index 8 — a
+  // DIFFERENT channel, column 1) so the transpose is observable.
+  await seedClipsAt(page, 's-cp', [0, 8]);
+  await installSingle(page, 's-cp');
+
+  // The lone device binds into the CLIP (note-editor) view; select GRID on the
+  // permanent top row (CC 92) to reach the transposed clip matrix.
+  await ccTapSingle(page, CC_VIEW_GRID);
+  await expect.poll(() => singleView(page), { timeout: 5000 }).toBe('grid');
 
   // (1) Silent before the launch (transport runs but nothing launched yet).
   await setTransport(page, 1);
   const before = await readScopePeakOverWindow(page, 's-scp', 500);
   expect(before.rms, 'silent before the single-unit pad launches a clip').toBeLessThan(0.03);
 
-  // (2) Clip view: press the top-left pad (slot 0, lane 0 = physical y=7) → launch.
-  await page.evaluate(() => {
-    const w = globalThis as unknown as { __launchpadSingleSim?: { press: (x: number, y: number) => void } };
-    w.__launchpadSingleSim?.press(0, 7);
-  });
-  await expect.poll(() => lane0Playing(page), { timeout: 5000 }).toBe(0);
-
-  // (3) The launch produces structured, audible RMS through the real chain.
+  // (2) Transposed grid: (x=lane 0, y=7) = channel 0, slot 0 → launch. Drives the
+  //     voice (pitch1/gate1 = lane 0) → structured audible RMS.
+  await pressSingle(page, 0, 7);
+  await expect.poll(() => lanePlayingSlot(page, 0), { timeout: 5000 }).toBe(0);
   const after = await readScopePeakOverWindow(page, 's-scp', 1500);
-  expect(after.rms, 'audible gated RMS after the single-unit pad launch').toBeGreaterThan(0.03);
+  expect(after.rms, 'audible gated RMS after the single-unit grid launch').toBeGreaterThan(0.03);
   expect(after.nonzeroSamples, 'structured signal, not a glitch').toBeGreaterThan(50);
   expect(after.rms, 'the pad launch raised the output').toBeGreaterThan(before.rms + 0.02);
 
-  // (4) Flip to CONTROL view via the hardware CC-98 toggle, then drive the
-  //     editor (the R functionality on the one device): hold EDIT + flip back to
-  //     clip + tap the clip → enter the editor; flip to control + place a note.
-  await page.evaluate(() => {
-    const w = globalThis as unknown as { __launchpadSingleSim?: { viewFlip: () => void } };
-    w.__launchpadSingleSim?.viewFlip(); // clip → control
-  });
-  // hold EDIT on the deck (col 0, row 0), flip to clip, tap the clip, release.
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __launchpadSingleSim?: {
-        press: (x: number, y: number) => void;
-        release: (x: number, y: number) => void;
-        viewFlip: () => void;
-      };
-    };
-    const s = w.__launchpadSingleSim!;
-    s.press(0, 0); // hold EDIT (control view)
-    s.viewFlip(); // control → clip (editArmed survives)
-    s.press(0, 7); // tap the clip (top-left) → enter the editor
-    s.release(0, 0);
-    s.viewFlip(); // clip → control (now driving the editor)
-  });
-  // Confirm the single device is in the editor role (control view + edit mode) —
-  // the R functionality is now live on the one device.
-  const editState = await page.evaluate(() => {
-    const w = globalThis as unknown as { __launchpadSingleSim?: { state: () => { activeView: string; mode: string } } };
-    return w.__launchpadSingleSim?.state();
-  });
-  expect(editState?.activeView, 'single device in CONTROL view').toBe('control');
-  expect(editState?.mode, 'single device in the note EDITOR (R role)').toBe('edit');
+  // (3) TRANSPOSE proof: (x=1, y=7) is CHANNEL 1 (column 1), slot 0 — the flat
+  //     index 8 — NOT lane 0 slot 1. Launching it lights lane 1's `playing` while
+  //     lane 0 keeps running.
+  await pressSingle(page, 1, 7);
+  await expect.poll(() => lanePlayingSlot(page, 1), { timeout: 5000 }).toBe(0);
+  expect(await lanePlayingSlot(page, 0), 'lane 0 still playing (independent channel)').toBe(0);
 
-  // The editor (R functionality) is live on the single device. Prove it with a
-  // WINDOW-INDEPENDENT editor action: SCALE (CC 97) cycles the clip's scale
-  // (major → minor). This depends only on being in the editor (the R role on the
-  // single device), not on the playhead-driven note-grid window.
-  const CC_EDIT_SCALE = 97;
-  await page.evaluate((cc) => {
-    const w = globalThis as unknown as { __launchpadSingleSim?: { cc: (cc: number, v: number) => void } };
-    w.__launchpadSingleSim?.cc(cc, 127); // SCALE cycle in the editor: major → minor
-  }, CC_EDIT_SCALE);
-  await expect
-    .poll(
-      () =>
-        page.evaluate(() => {
-          const w = globalThis as unknown as {
-            __patch: { nodes: Record<string, { data?: { clips?: Record<string, { scale?: string }> } }> };
-          };
-          return w.__patch.nodes['s-cp']?.data?.clips?.['0']?.scale ?? null;
-        }),
-      { timeout: 5000 },
-    )
-    .toBe('minor');
-
-  // (5) Round-trip back to clip view, stop then relaunch → RMS returns.
-  await page.evaluate(() => {
-    const w = globalThis as unknown as { __launchpadSingleSim?: { viewFlip: () => void; press: (x: number, y: number) => void } };
-    const s = w.__launchpadSingleSim!;
-    s.viewFlip(); // control → clip
-    s.press(0, 7); // the clip is playing → this queues a STOP
-  });
-  await expect.poll(() => lane0Playing(page), { timeout: 5000 }).toBeNull();
-  // Poll for the audio to actually fall silent — the synced `playing=null` flip
-  // leads the audio by the VCA release tail, so a single short window can still
-  // catch the decay (a ~0.034 vs 0.03 tail race). Poll a fresh window until the
-  // gate has fully decayed.
+  // (4) Round-trip: (0,7) again → the running lane-0 clip queues a STOP → falls
+  //     silent; relaunch → the RMS returns.
+  await pressSingle(page, 0, 7);
+  await expect.poll(() => lanePlayingSlot(page, 0), { timeout: 5000 }).toBeNull();
   await expect
     .poll(async () => (await readScopePeakOverWindow(page, 's-scp', 400)).rms, { timeout: 5000 })
     .toBeLessThan(0.03);
-
-  // relaunch in clip view → audible again.
-  await page.evaluate(() => {
-    const w = globalThis as unknown as { __launchpadSingleSim?: { press: (x: number, y: number) => void } };
-    w.__launchpadSingleSim?.press(0, 7);
-  });
-  await expect.poll(() => lane0Playing(page), { timeout: 5000 }).toBe(0);
+  await pressSingle(page, 0, 7);
+  await expect.poll(() => lanePlayingSlot(page, 0), { timeout: 5000 }).toBe(0);
   const relaunched = await readScopePeakOverWindow(page, 's-scp', 1500);
   expect(relaunched.rms, 'RMS returns after the round-trip relaunch').toBeGreaterThan(0.03);
+});
 
+test('@launchpad single-unit GRID scene/ROW launch fires a slot across all channels → audible', async ({ page, rack, errorWatch }) => {
+  await buildSingleChain(page, 'y');
+  // A clip in lane 0 SLOT 1 (index 1) — drives the voice. The scene ROW for slot
+  // 1 fans out across every channel; the lane-0 clip in that slot makes it audible.
+  await seedClipsAt(page, 'y-cp', [1]);
+  await installSingle(page, 'y-cp');
+
+  await ccTapSingle(page, CC_VIEW_GRID);
+  await expect.poll(() => singleView(page), { timeout: 5000 }).toBe('grid');
+
+  await setTransport(page, 1);
+  const before = await readScopePeakOverWindow(page, 'y-scp', 500);
+  expect(before.rms, 'silent before the row launch').toBeLessThan(0.03);
+
+  // Scene index 1 (SCENE_CCS[1] = 79) = grid SLOT 1 across ALL channels → lane 0
+  // slot 1 launches (a "scene"), sounding the real chain.
+  await ccTapSingle(page, SCENE_CCS[1]);
+  await expect.poll(() => lanePlayingSlot(page, 0), { timeout: 5000 }).toBe(1);
+  const after = await readScopePeakOverWindow(page, 'y-scp', 1500);
+  expect(after.rms, 'audible after the scene/row launch').toBeGreaterThan(0.03);
+  expect(after.nonzeroSamples, 'structured signal, not a glitch').toBeGreaterThan(50);
+  expect(after.rms, 'the row launch raised the output').toBeGreaterThan(before.rms + 0.02);
 });

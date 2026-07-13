@@ -18,12 +18,32 @@ export const PENTATONIC_SCALE_STEPS: readonly number[] = [0, 2, 4, 7, 9];
 /** Common natural-minor scale. */
 export const MINOR_SCALE_STEPS: readonly number[] = [0, 2, 3, 5, 7, 8, 10];
 
-export type ScaleName = 'major' | 'minor' | 'pentatonic';
+/** Dorian mode — minor with a raised 6th. */
+export const DORIAN_SCALE_STEPS: readonly number[] = [0, 2, 3, 5, 7, 9, 10];
+
+/** Phrygian mode — minor with a lowered 2nd. */
+export const PHRYGIAN_SCALE_STEPS: readonly number[] = [0, 1, 3, 5, 7, 8, 10];
+
+/** Mixolydian mode — major with a lowered 7th. */
+export const MIXOLYDIAN_SCALE_STEPS: readonly number[] = [0, 2, 4, 5, 7, 9, 10];
+
+// ionian == major and aeolian == minor, so those modes reuse the tables above
+// (no separate entry). Chromatic is represented as an ABSENT scale (undefined).
+export type ScaleName =
+  | 'major'
+  | 'minor'
+  | 'pentatonic'
+  | 'dorian'
+  | 'phrygian'
+  | 'mixolydian';
 
 const SCALES: Record<ScaleName, readonly number[]> = {
   major: MAJOR_SCALE_STEPS,
   minor: MINOR_SCALE_STEPS,
   pentatonic: PENTATONIC_SCALE_STEPS,
+  dorian: DORIAN_SCALE_STEPS,
+  phrygian: PHRYGIAN_SCALE_STEPS,
+  mixolydian: MIXOLYDIAN_SCALE_STEPS,
 };
 
 /** All twelve chromatic root-note offsets (0=C, 1=C#, ..., 11=B). */

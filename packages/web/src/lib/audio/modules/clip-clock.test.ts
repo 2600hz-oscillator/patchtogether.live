@@ -13,6 +13,7 @@ import {
   coerceRateIndex,
   laneRateIndex,
   laneStepDur,
+  clipDivIndex,
 } from './clip-clock';
 
 describe('clip-clock: rate table', () => {
@@ -78,5 +79,27 @@ describe('clip-clock: laneStepDur', () => {
   it('coerces a bad index to the default (1)', () => {
     expect(laneStepDur(0.25, 99)).toBe(0.25 / 4); // clamped to 4x (last)
     expect(laneStepDur(0.25, NaN)).toBe(0.25); // garbage → '1'
+  });
+});
+
+describe('clip-clock: clipDivIndex (per-clip div OVERRIDES lane rate)', () => {
+  it("a clip's own div wins over the lane rate (clamped)", () => {
+    // lane rate = 0 (1/8); clip.div = 4 (2x) → the clip's div is used, not the lane's.
+    expect(clipDivIndex({ div: 4 }, { rate: [0, 0, 0] }, 0)).toBe(4);
+    expect(clipDivIndex({ div: 2.6 }, { rate: [0] }, 0)).toBe(3); // rounds
+    expect(clipDivIndex({ div: 99 }, { rate: [0] }, 0)).toBe(RATE_MULTS.length - 1); // clamps high
+    expect(clipDivIndex({ div: -5 }, { rate: [0] }, 0)).toBe(0); // clamps low
+  });
+  it('no div ⇒ falls back to the per-lane rate (existing behavior)', () => {
+    expect(clipDivIndex({}, { rate: [1, 5] }, 0)).toBe(1);
+    expect(clipDivIndex({}, { rate: [1, 5] }, 1)).toBe(5);
+    expect(clipDivIndex(null, { rate: [2] }, 0)).toBe(2);
+    expect(clipDivIndex(undefined, { rate: [2] }, 0)).toBe(2);
+    // non-numeric div is ignored → lane rate
+    expect(clipDivIndex({ div: NaN }, { rate: [1] }, 0)).toBe(1);
+  });
+  it('no div AND no lane rate ⇒ the default (1)', () => {
+    expect(clipDivIndex({}, {}, 0)).toBe(RATE_DEFAULT_INDEX);
+    expect(clipDivIndex(null, undefined, 0)).toBe(RATE_DEFAULT_INDEX);
   });
 });

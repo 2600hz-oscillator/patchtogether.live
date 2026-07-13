@@ -1,19 +1,22 @@
 // e2e/tests/launchpad-perf-controls.spec.ts
 //
-// SINGLE-UNIT CONTROL-deck PERFORMANCE controls, driven through the SAME
-// decode/dispatch path real hardware uses (installSimulatedLaunchpadSingle + the
-// CC-98 view flip). These pads were DEAD before this change; each now writes the
-// SAME synced node state the card/engine already consume:
+// SINGLE-UNIT CONTROL-view PERFORMANCE controls, driven through the SAME
+// decode/dispatch path real hardware uses (installSimulatedLaunchpadSingle +
+// selecting the CONTROL view on the PERMANENT top row — CC 95). These pads write
+// the SAME synced node state the card/engine already consume:
 //
 //   RESET (deck row 1 col 2)  → node.data.resetNonce → every active lane snaps to
 //                               step 1 (the card RST / reset-gate field).
 //   MUTE  (deck row 3, per-lane) → node.data.muted[lane] → the lane KEEPS
 //                               advancing its playhead but emits NO audio.
-//   MONO  (deck row 2) / RATE (deck row 4) / tempo (CC 93/94) → the mono[]/rate[]
-//                               arrays + TIMELORDE bpm.
+//   MONO  (deck row 2) / RATE (deck row 4) → the mono[]/rate[] arrays.
+//   TEMPO −/+ → the re-homed CONTROL-view grid pads (0,7)/(1,7) → TIMELORDE bpm
+//               (the permanent top row now owns CC 91..98, so tempo moved off the
+//               old CC 93/94 onto dark CONTROL grid pads — controlRehomePad).
 //
 // Deck pad coordinates mirror launchpad-map (DECK_RESET/MONO/MUTE/RATE rows); the
-// lone device is the L slot, routed by the active VIEW, so we flip to CONTROL.
+// lone device is the L slot, routed by the active VIEW, so we select CONTROL via
+// the permanent top-row CC 95.
 
 import type { Page } from '@playwright/test';
 import { test, expect } from './_fixtures';
@@ -27,8 +30,12 @@ const RESET_PAD = { x: 2, y: 1 };
 const MONO_ROW = 2;
 const MUTE_ROW = 3;
 const RATE_ROW = 4;
-const CC_TEMPO_DOWN = 93;
-const CC_TEMPO_UP = 94;
+// Permanent top-row CONTROL-view select (topRowAction: CC 95 = control).
+const CC_VIEW_CONTROL = 95;
+// Re-homed TEMPO −/+ pads on the CONTROL grid's top row (controlRehomePad:
+// CTRL_TEMPO_DOWN_COL=0, CTRL_TEMPO_UP_COL=1, CTRL_TEMPO_ROW=7).
+const TEMPO_DOWN_PAD = { x: 0, y: 7 };
+const TEMPO_UP_PAD = { x: 1, y: 7 };
 
 type EngineW = {
   __engine?: () => { read: (node: { id: string; type: string; domain: string }, key: string) => unknown } | null;
@@ -106,10 +113,14 @@ async function installSingle(page: Page, nodeId: string) {
 }
 const press = (page: Page, x: number, y: number) =>
   page.evaluate(({ x, y }) => (globalThis as unknown as { __launchpadSingleSim?: { press: (x: number, y: number) => void } }).__launchpadSingleSim!.press(x, y), { x, y });
-const cc = (page: Page, c: number, v: number) =>
-  page.evaluate(({ c, v }) => (globalThis as unknown as { __launchpadSingleSim?: { cc: (c: number, v: number) => void } }).__launchpadSingleSim!.cc(c, v), { c, v });
-const viewFlip = (page: Page) =>
-  page.evaluate(() => (globalThis as unknown as { __launchpadSingleSim?: { viewFlip: () => void } }).__launchpadSingleSim!.viewFlip());
+// Select the CONTROL view via the PERMANENT top row (CC 95, press+release). The
+// lone device binds into the CLIP view, so every perf test selects CONTROL first.
+const selectControl = (page: Page) =>
+  page.evaluate((c) => {
+    const s = (globalThis as unknown as { __launchpadSingleSim?: { cc: (c: number, v: number) => void } }).__launchpadSingleSim!;
+    s.cc(c, 127);
+    s.cc(c, 0);
+  }, CC_VIEW_CONTROL);
 const nodeData = (page: Page, nodeId: string) =>
   page.evaluate((id) => (globalThis as unknown as EngineW).__patch.nodes[id]?.data ?? null, nodeId);
 
@@ -129,8 +140,8 @@ test('@launchpad RESET pad snaps every active lane back to step 1 (control-deck)
   const l0 = await waitForEngine(page, 'cp', 'currentStep:0', (v) => v >= 8, 6000);
   expect(l0.ok, `lane 0 mid-clip before reset (saw ${l0.last})`).toBe(true);
 
-  // Flip to CONTROL view + press the hardware RESET pad.
-  await viewFlip(page);
+  // Select the CONTROL view (permanent top row) + press the hardware RESET pad.
+  await selectControl(page);
   await press(page, RESET_PAD.x, RESET_PAD.y);
 
   // Snap back near the top LONG before a natural wrap. Band <=6 (the fast clock
@@ -178,7 +189,7 @@ test('@launchpad MUTE pad silences a running lane in place — RMS drops to ~0 w
   expect(stepBeforeMute).toBeGreaterThanOrEqual(0);
 
   // MUTE lane 0 (control deck, row 3 col 0) → output falls to ~0.
-  await viewFlip(page);
+  await selectControl(page);
   await press(page, 0, MUTE_ROW);
   expect((await nodeData(page, 'cp') as { muted?: boolean[] } | null)?.muted?.[0]).toBe(true);
   await expect
@@ -204,7 +215,7 @@ test('@launchpad MONO / RATE / tempo deck pads write the synced node state', asy
   ]);
   await expect(page.locator('.svelte-flow__node-clipplayer')).toHaveCount(1);
   await installSingle(page, 'cp');
-  await viewFlip(page); // → CONTROL (the deck)
+  await selectControl(page); // → CONTROL (the deck)
 
   // MONO lane 3 (row 2, col 3).
   await press(page, 3, MONO_ROW);
@@ -212,13 +223,14 @@ test('@launchpad MONO / RATE / tempo deck pads write the synced node state', asy
   // RATE lane 1 cycles up from the default '1' (index 3) → 2x (index 4).
   await press(page, 1, RATE_ROW);
   expect((await nodeData(page, 'cp') as { rate?: number[] } | null)?.rate?.[1]).toBe(4);
-  // Tempo nudge − / + steps TIMELORDE bpm (clamped 10..300).
+  // Tempo nudge − / + (the re-homed CONTROL-view grid pads) step TIMELORDE bpm
+  // (clamped 10..300).
   const bpm0 = await page.evaluate(() => (globalThis as unknown as EngineW).__patch.nodes['tl'].params?.bpm);
-  await cc(page, CC_TEMPO_UP, 127);
+  await press(page, TEMPO_UP_PAD.x, TEMPO_UP_PAD.y);
   const bpmUp = await page.evaluate(() => (globalThis as unknown as EngineW).__patch.nodes['tl'].params?.bpm);
   expect(bpmUp!).toBeGreaterThan(bpm0!);
-  await cc(page, CC_TEMPO_DOWN, 127);
-  await cc(page, CC_TEMPO_DOWN, 127);
+  await press(page, TEMPO_DOWN_PAD.x, TEMPO_DOWN_PAD.y);
+  await press(page, TEMPO_DOWN_PAD.x, TEMPO_DOWN_PAD.y);
   const bpmDown = await page.evaluate(() => (globalThis as unknown as EngineW).__patch.nodes['tl'].params?.bpm);
   expect(bpmDown!).toBeLessThan(bpmUp!);
 });

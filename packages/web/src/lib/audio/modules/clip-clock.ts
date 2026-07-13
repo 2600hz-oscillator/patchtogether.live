@@ -58,3 +58,20 @@ export function laneRateIndex(data: { rate?: unknown } | undefined, lane: number
 export function laneStepDur(baseStepDur: number, rateIndex: number): number {
   return baseStepDur / RATE_MULTS[coerceRateIndex(rateIndex)];
 }
+
+/** The EFFECTIVE rate index for a clip playing on a lane: the clip's own `div`
+ *  when set (clamped to a valid RATE index) OVERRIDES the per-lane `rate[]`;
+ *  otherwise fall back to the lane rate. The single seam the engine LATCHES at a
+ *  clip's loop boundary (so a mid-loop Clip-Div edit only takes effect at the
+ *  next clip start). Takes a minimal `{div?}` shape so this file stays free of a
+ *  clip-types import (one-way dependency: clip-types → clip-clock). */
+export function clipDivIndex(
+  clip: { div?: number } | null | undefined,
+  data: { rate?: unknown } | undefined,
+  lane: number,
+): number {
+  if (clip && typeof clip.div === 'number' && Number.isFinite(clip.div)) {
+    return coerceRateIndex(clip.div);
+  }
+  return laneRateIndex(data, lane);
+}

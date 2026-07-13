@@ -192,13 +192,21 @@ test('@launchpad KEYS live audition — playing a keyboard pad is AUDIBLE (empty
 
 });
 
-// SINGLE-UNIT KEYS — the same real-source-chain proof on ONE device. Entry uses
-// the single gesture family: hold note-REC on the deck (CONTROL view), CC-98
-// flip to CLIP (the hold survives), DOUBLE-TAP the clip → KEYS owns the lone
-// device (8-wide keyboard, 8-cell whole-clip playhead, CC 98 inactive). Then:
-// live audition is AUDIBLE, queue-record captures played notes, and EXIT stops
-// the take — all through the REAL TIMELORDE→clipplayer→VCO→VCA→SCOPE chain.
-test('@launchpad single-unit KEYS — enter on one device, live keys are AUDIBLE, queue-record captures notes', async ({ page, rack, errorWatch }) => {
+// SINGLE-UNIT KEYS — the real-source-chain proof on ONE device with the NEW
+// entry: the lone device binds into the CLIP (note-editor) view, and its
+// right-column KEYS button (scene index 3 = SCENE_CCS[3] = 59) opens KEYS for the
+// selected clip — no deck-hold, no view flip. The permanent top row stays live
+// (a view button EXITS KEYS), so we stay put. Then: live audition is AUDIBLE,
+// OVERDUB + queue-record captures played notes (additive → deterministic
+// accumulation), and EXIT stops the take — all through the REAL
+// TIMELORDE→clipplayer→VCO→VCA→SCOPE chain.
+//
+// Bottom-row KEYS controls (unit L, y=0): EXIT (0,0) · QUEUE-REC (1,0) · OVERDUB
+// (2,0). The KEYS scene column (right) selects scale / arp; index 3 = the CLIP
+// view's KEYS entry button.
+const KEYS_OVERDUB = { x: 2, y: 0 };
+const KEYS_SCENE_CC = 59; // SCENE_CCS[3] — the Clip right-column KEYS button.
+test('@launchpad single-unit KEYS — enter from the Clip KEYS button, live keys AUDIBLE, overdub-record captures notes', async ({ page, rack, errorWatch }) => {
   await buildChain(page, 's');
   await seedEmptyClip(page, 's-cp');
 
@@ -218,47 +226,34 @@ test('@launchpad single-unit KEYS — enter on one device, live keys are AUDIBLE
       (globalThis as unknown as { __launchpadSingleSim?: { release: (x: number, y: number) => void } })
         .__launchpadSingleSim!.release(x, y);
     }, { x, y });
-  const viewFlipS = () =>
-    page.evaluate(() => {
-      (globalThis as unknown as { __launchpadSingleSim?: { viewFlip: () => void } }).__launchpadSingleSim!.viewFlip();
-    });
+  // Tap a CC on the lone device (press+release). Used for the KEYS scene button.
+  const ccTapS = (cc: number) =>
+    page.evaluate((c) => {
+      const s = (globalThis as unknown as { __launchpadSingleSim?: { cc: (cc: number, v: number) => void } })
+        .__launchpadSingleSim!;
+      s.cc(c, 127);
+      s.cc(c, 0);
+    }, cc);
   const singleState = () =>
     page.evaluate(() => {
-      const w = globalThis as unknown as { __launchpadSingleSim?: { state: () => { activeView: string; mode: string } } };
+      const w = globalThis as unknown as { __launchpadSingleSim?: { state: () => { singleView: string; mode: string } } };
       return w.__launchpadSingleSim!.state();
     });
 
   await setTransport(page, 1);
 
-  // ENTER KEYS on the one device: CONTROL view → hold note-OVERDUB (deck row 1;
-  // additive, so recorded notes accumulate deterministically — same reason the
-  // pair record test enters via OVERDUB) → CC-98 back to CLIP (the hold
-  // survives) → double-tap the clip → release.
-  await viewFlipS(); // clip → control
-  await pressS(DECK_KEYS_OVERDUB.x, DECK_KEYS_OVERDUB.y); // hold note-OVERDUB
-  await viewFlipS(); // control → clip (the hold survives the flip)
-  // Double-tap back-to-back inside ONE evaluate (~0-tick gap, deterministic).
-  await page.evaluate(({ x, y }) => {
-    const s = (globalThis as unknown as { __launchpadSingleSim?: { press: (x: number, y: number) => void } })
-      .__launchpadSingleSim!;
-    s.press(x, y); // 1st tap (suppressed by the hold)
-    s.press(x, y); // 2nd tap → KEYS
-  }, { x: CLIP_L0S0.x, y: CLIP_L0S0.y });
-  await releaseS(DECK_KEYS_OVERDUB.x, DECK_KEYS_OVERDUB.y); // harmless keyboard-off inside KEYS
+  // The lone device binds into the CLIP view (the note editor). Enter KEYS via the
+  // Clip right-column KEYS button (scene index 3) → KEYS owns the device.
+  await expect.poll(() => singleState().then((s) => s.singleView)).toBe('clip');
+  await ccTapS(KEYS_SCENE_CC);
   await expect.poll(() => singleState().then((st) => st.mode), { timeout: 5000 }).toBe('keys');
-
-  // CC 98 is INACTIVE while KEYS owns the device (no view flip out of KEYS).
-  const viewBefore = (await singleState()).activeView;
-  await viewFlipS();
-  await expect.poll(() => singleState().then((st) => st.mode)).toBe('keys');
-  expect((await singleState()).activeView, 'view unchanged — CC 98 swallowed in KEYS').toBe(viewBefore);
 
   // (1) Empty clip → silent until a key sounds.
   const before = await readScopePeakOverWindow(page, 's-scp', 500);
   expect(before.rms, 'silent before a KEYS key is played (empty clip)').toBeLessThan(0.03);
 
   // (2) Hold a keyboard pad on the lone device → live audition → AUDIBLE.
-  await pressS(KEY_A.x, KEY_A.y); // keyboard band (clear of the released hold pad)
+  await pressS(KEY_A.x, KEY_A.y); // keyboard band (y=1..6)
   const during = await readScopePeakOverWindow(page, 's-scp', 1200);
   expect(during.polls, 'SCOPE polled across the window').toBeGreaterThan(0);
   expect(during.rms, 'audible RMS while a single-unit KEYS key is held').toBeGreaterThan(0.03);
@@ -269,7 +264,9 @@ test('@launchpad single-unit KEYS — enter on one device, live keys are AUDIBLE
     .poll(async () => (await readScopePeakOverWindow(page, 's-scp', 400)).rms, { timeout: 5000 })
     .toBeLessThan(0.03);
 
-  // (3) QUEUE-REC → recording begins on the loop wrap; played notes land in the clip.
+  // (3) OVERDUB on (additive → recorded notes accumulate deterministically), then
+  //     QUEUE-REC → recording begins on the loop wrap; played notes land in the clip.
+  await pressS(KEYS_OVERDUB.x, KEYS_OVERDUB.y);
   await pressS(KEYS_QREC.x, KEYS_QREC.y);
   await expect.poll(() => isRecording(page), { timeout: 6000 }).toBe(true);
   for (const k of [KEY_ROOT, KEY_A, KEY_B]) {
@@ -280,83 +277,13 @@ test('@launchpad single-unit KEYS — enter on one device, live keys are AUDIBLE
   }
   await expect.poll(() => clipSteps(page), { timeout: 6000 }).toBeGreaterThan(0);
 
-  // (4) EXIT stops the take (stays in KEYS); the captured clip loops back audibly.
-  await pressS(KEYS_EXIT.x, KEYS_EXIT.y);
-  await expect.poll(() => isRecording(page), { timeout: 5000 }).toBe(false);
-  const playback = await readScopePeakOverWindow(page, 's-scp', 1600);
-  expect(playback.rms, 'the recorded notes sound back on the loop').toBeGreaterThan(0.03);
-  expect(playback.nonzeroSamples, 'structured playback, not a glitch').toBeGreaterThan(50);
-
-});
-
-// SINGLE-UNIT KEYS via the RECLAIMED CC-91 arm cell (the new one-handed entry).
-// In CLIP view, tap CC 91 to arm KEYS (tri-state: 1 tap = overdub OFF, 2 taps =
-// overdub ON), then tap a clip → KEYS opens for it — NO deck-hold, NO view flip.
-// Then the same real-source-chain proof: queue-record captures played notes, and
-// EXIT stops the take so the captured clip loops back AUDIBLY.
-test('@launchpad single-unit KEYS via the CC-91 arm cell — arm → tap clip → record → audible playback', async ({ page, rack, errorWatch }) => {
-  await buildChain(page, 'a');
-  await seedEmptyClip(page, 'a-cp');
-
-  const installed = await page.evaluate(async () => {
-    const w = globalThis as unknown as { __launchpadTestInstallSingle?: (id: string) => Promise<boolean> };
-    return w.__launchpadTestInstallSingle ? await w.__launchpadTestInstallSingle('a-cp') : false;
-  });
-  expect(installed, 'single simulated Launchpad install hook present').toBe(true);
-
-  const pressS = (x: number, y: number) =>
-    page.evaluate(({ x, y }) => {
-      (globalThis as unknown as { __launchpadSingleSim?: { press: (x: number, y: number) => void } })
-        .__launchpadSingleSim!.press(x, y);
-    }, { x, y });
-  const releaseS = (x: number, y: number) =>
-    page.evaluate(({ x, y }) => {
-      (globalThis as unknown as { __launchpadSingleSim?: { release: (x: number, y: number) => void } })
-        .__launchpadSingleSim!.release(x, y);
-    }, { x, y });
-  const ccS = (cc: number, v: number) =>
-    page.evaluate(({ cc, v }) => {
-      (globalThis as unknown as { __launchpadSingleSim?: { cc: (cc: number, v: number) => void } })
-        .__launchpadSingleSim!.cc(cc, v);
-    }, { cc, v });
-  const singleState = () =>
-    page.evaluate(() =>
-      (globalThis as unknown as { __launchpadSingleSim?: { state: () => { mode: string; keysArm: string } } })
-        .__launchpadSingleSim!.state(),
-    );
-
-  await setTransport(page, 1);
-
-  // ENTER KEYS the NEW way: CLIP view (the default), arm CC 91 TWICE → overdub ON
-  // (additive, so recorded notes accumulate deterministically), then tap the clip.
-  await ccS(91, 127); // → armed-REC
-  await ccS(91, 127); // → armed-OD (overdub ON)
-  await expect.poll(() => singleState().then((s) => s.keysArm)).toBe('od');
-  await pressS(CLIP_L0S0.x, CLIP_L0S0.y); // tap the clip → enter KEYS (one hand, no flip)
-  await expect.poll(() => singleState().then((s) => s.mode), { timeout: 5000 }).toBe('keys');
-
-  // (1) Empty clip → silent until a key sounds.
-  const before = await readScopePeakOverWindow(page, 'a-scp', 500);
-  expect(before.rms, 'silent before a KEYS key is played (empty clip)').toBeLessThan(0.03);
-
-  // (2) QUEUE-REC → recording begins on the loop wrap; play notes → they land.
-  await pressS(KEYS_QREC.x, KEYS_QREC.y);
-  await expect.poll(() => isRecording(page), { timeout: 6000 }).toBe(true);
-  for (const k of [KEY_ROOT, KEY_A, KEY_B]) {
-    await pressS(k.x, k.y);
-    await page.waitForTimeout(120);
-    await releaseS(k.x, k.y);
-    await page.waitForTimeout(120);
-  }
-  await expect.poll(() => clipSteps(page), { timeout: 6000 }).toBeGreaterThan(0);
-
-  // (3) EXIT stops the take (stays in KEYS); the captured clip loops back AUDIBLY.
+  // (4) EXIT stops the take (stays in KEYS); the captured clip loops back AUDIBLY.
   await pressS(KEYS_EXIT.x, KEYS_EXIT.y);
   await expect.poll(() => isRecording(page), { timeout: 5000 }).toBe(false);
   let playback = { rms: 0, nonzeroSamples: 0 };
   await expect
     .poll(async () => {
-      playback = await readScopePeakOverWindow(page, 'a-scp', 1600);
+      playback = await readScopePeakOverWindow(page, 's-scp', 1600);
       return playback.rms;
     }, { timeout: 20_000, message: 'the recorded notes sound back on the loop' })
     .toBeGreaterThan(0.03);
