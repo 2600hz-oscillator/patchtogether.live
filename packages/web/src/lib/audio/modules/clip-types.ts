@@ -160,6 +160,14 @@ export interface ClipPlayerData {
    *  Swing± writes swing[selectedChannel]; every peer's engine offsets that
    *  lane's odd steps. Back-compat on load like `rate`/`mono`. */
   swing?: number[];
+  /** Per-lane CLIP COLOR (length CLIP_LANES) — a user-PICKED `#rrggbb` hex for
+   *  each instrument CHANNEL (a COLUMN of clips in the transposed grid). Every
+   *  non-empty clip in that channel's column renders this color; null/absent =
+   *  unpicked, so the card falls back to the lane's default hue. Card-only for
+   *  now (the color-picker swatch in the grid header writes it — NOT the
+   *  Launchpad LED path). Back-compat on load like `rate`/`mono`/`swing`: a
+   *  missing/short array reads as all-unpicked. */
+  laneColor?: (string | null)[];
   /** RESET intent nonce. The card's RST button (and its MIDI binding)
    *  INCREMENTS this; every peer's engine observes the change and snaps all
    *  ACTIVE lanes back to step 1 at a common re-anchor instant (queued
@@ -261,6 +269,42 @@ export function laneMuted(data: ClipPlayerData | undefined, lane: number): boole
 /** Record mode, defaulting to legacy 'replace'. */
 export function clipRecordMode(data: ClipPlayerData | undefined): 'replace' | 'overdub' {
   return data?.recordMode === 'overdub' ? 'overdub' : 'replace';
+}
+
+// ---------------------------------------------------------------------------
+// Per-lane CLIP COLOR (card color-picker) — PURE. Each instrument channel (a
+// COLUMN of clips in the transposed grid) carries a user-PICKED hex color; the
+// card tints every non-empty clip in that column with it. Stored as a per-lane
+// hex array on node.data, same forgiving discipline as `rate`/`mono`/`swing`: a
+// missing / short / corrupt entry reads as null (unpicked → the default hue).
+// This is node.data only — NO PortDef/ParamDef change, so no contract-lock churn.
+// ---------------------------------------------------------------------------
+/** Coerce a raw value to a normalized lowercase `#rrggbb` hex, or null. Accepts
+ *  a `#rgb` shorthand (expanded to `#rrggbb`) and a full `#rrggbb`; anything
+ *  else (null, number, named color, wrong length, non-hex digits) ⇒ null =
+ *  unpicked. */
+export function coerceLaneColor(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  const s = v.trim().toLowerCase();
+  const m3 = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/.exec(s);
+  if (m3) return `#${m3[1]}${m3[1]}${m3[2]}${m3[2]}${m3[3]}${m3[3]}`;
+  return /^#[0-9a-f]{6}$/.test(s) ? s : null;
+}
+/** Normalize the per-lane color array to exactly CLIP_LANES entries, each a
+ *  coerced hex or null. Missing / short / non-array ⇒ nulls (back-compat on
+ *  load, same shape discipline as `playing`/`mono`/`swing`). */
+export function coerceLaneColors(raw: unknown): (string | null)[] {
+  const out: (string | null)[] = new Array(CLIP_LANES).fill(null);
+  if (Array.isArray(raw)) {
+    for (let i = 0; i < CLIP_LANES; i++) if (i < raw.length) out[i] = coerceLaneColor(raw[i]);
+  }
+  return out;
+}
+/** Lane L's picked clip color (lowercase `#rrggbb`) or null = unpicked (the card
+ *  falls back to the lane's default hue). Absent / short / corrupt ⇒ null —
+ *  mirrors `laneMono`/`laneSwing`. */
+export function laneColor(data: ClipPlayerData | undefined, lane: number): string | null {
+  return coerceLaneColor(data?.laneColor?.[lane]);
 }
 
 // ---------------------------------------------------------------------------
