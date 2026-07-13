@@ -49,14 +49,18 @@ describe('TOMTOM def — frozen contract', () => {
     expect(tomtomDef.category).toBe('sources');
   });
 
-  it('ports: trigger (edge:trigger) + accent + 5 CVs in, ONE mono audio out', () => {
+  it('ports: trigger (edge:trigger) + accent + per-knob CVs in, ONE mono audio out', () => {
     expect(tomtomDef.inputs.map((p) => p.id)).toEqual([
       'trigger_in', 'accent_in', 'pitch_cv', 'bend_cv', 'decay_cv', 'tone_cv', 'noise_cv',
+      'tune_cv', 'bend_time_cv', 'drive_cv', 'level_cv',
     ]);
     const trig = tomtomDef.inputs.find((p) => p.id === 'trigger_in')!;
     expect(trig.type).toBe('gate');
     expect(trig.edge).toBe('trigger'); // ONE strike per rising edge, declared
-    for (const id of ['accent_in', 'pitch_cv', 'bend_cv', 'decay_cv', 'tone_cv', 'noise_cv']) {
+    for (const id of [
+      'accent_in', 'pitch_cv', 'bend_cv', 'decay_cv', 'tone_cv', 'noise_cv',
+      'tune_cv', 'bend_time_cv', 'drive_cv', 'level_cv',
+    ]) {
       expect(tomtomDef.inputs.find((p) => p.id === id)!.type).toBe('cv');
     }
     expect(tomtomDef.outputs).toEqual([{ id: 'audio_out', type: 'audio' }]);
