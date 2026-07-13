@@ -17,10 +17,11 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { snaredrumDef } from '$lib/audio/modules/snaredrum';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { cardParams, portsFromDef } from './card-kit';
+  import { cardParams } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -54,18 +55,79 @@
   let hardOn = $derived(hard >= 0.5);
   function toggleHard(): void { set('hard')(hardOn ? 0 : 1); }
 
-  const inputs = portsFromDef(snaredrumDef.inputs, {
-    trigger_in: 'TRIG', gate_in: 'ROLL', roll_speed_cv: 'SPD', accent_in: 'ACC',
-    pitch_cv: 'V/OCT', choke_in: 'CHOKE',
-  });
-  const outputs = portsFromDef(snaredrumDef.outputs, { audio_l: 'OUT L', audio_r: 'OUT R' });
+  // Rear PatchPanel — sectioned to MIRROR the on-card control-group headers:
+  // every per-control CV jack sits under the same header as its knob (the
+  // existing roll_speed_cv joins the ROLL group), and the structural
+  // performance jacks (TRIG / ROLL gate / ACC / V-OCT / CHOKE) + the audio
+  // OUT pair collect in the trailing OUT / PATCH sections.
+  const headCv: PortDescriptor[] = [
+    { id: 'tune_cv',       label: 'TUNE',     cable: 'cv' },
+    { id: 'head_decay_cv', label: 'HEAD DEC', cable: 'cv' },
+    { id: 'damping_cv',    label: 'DAMP',     cable: 'cv' },
+    { id: 'damp_cv',       label: 'G DAMP',   cable: 'cv' },
+    { id: 'pitch_amt_cv',  label: 'P AMT',    cable: 'cv' },
+    { id: 'pitch_time_cv', label: 'P TIME',   cable: 'cv' },
+  ];
+  const bodyCv: PortDescriptor[] = [
+    { id: 'tone_cv',       label: 'TONE',     cable: 'cv' },
+    { id: 'body_decay_cv', label: 'BODY DEC', cable: 'cv' },
+  ];
+  const wireCv: PortDescriptor[] = [
+    { id: 'wire_cv',       label: 'WIRE',   cable: 'cv' },
+    { id: 'wire_tone_cv',  label: 'W TONE', cable: 'cv' },
+    { id: 'wire_decay_cv', label: 'W DEC',  cable: 'cv' },
+  ];
+  const crackCv: PortDescriptor[] = [
+    { id: 'crack_cv',      label: 'CRACK',   cable: 'cv' },
+    { id: 'crack_tone_cv', label: 'CK TONE', cable: 'cv' },
+  ];
+  const rollCv: PortDescriptor[] = [
+    { id: 'roll_speed_cv', label: 'ROLL SPD', cable: 'cv' },
+    { id: 'bounce_cv',     label: 'BOUNCE',   cable: 'cv' },
+    { id: 'humanize_cv',   label: 'HUMAN',    cable: 'cv' },
+  ];
+  const driveCv: PortDescriptor[] = [
+    { id: 'drive_cv',   label: 'DRIVE', cable: 'cv' },
+    { id: 'hard_cv',    label: 'HARD',  cable: 'cv' },
+    { id: 'ceiling_cv', label: 'CEIL',  cable: 'cv' },
+  ];
+  const stereoCv: PortDescriptor[] = [
+    { id: 'spread_cv', label: 'SPREAD', cable: 'cv' },
+    { id: 'width_cv',  label: 'WIDTH',  cable: 'cv' },
+  ];
+  const outInputs: PortDescriptor[] = [
+    { id: 'level_cv', label: 'LEVEL', cable: 'cv' },
+  ];
+  const outOutputs: PortDescriptor[] = [
+    { id: 'audio_l', label: 'OUT L', cable: 'audio' },
+    { id: 'audio_r', label: 'OUT R', cable: 'audio' },
+  ];
+  const patchInputs: PortDescriptor[] = [
+    { id: 'trigger_in', label: 'TRIG',  cable: 'gate' },
+    { id: 'gate_in',    label: 'ROLL',  cable: 'gate' },
+    { id: 'accent_in',  label: 'ACC',   cable: 'cv' },
+    { id: 'pitch_cv',   label: 'V/OCT', cable: 'cv' },
+    { id: 'choke_in',   label: 'CHOKE', cable: 'gate' },
+  ];
+
+  const sections = [
+    { label: 'HEAD',   inputs: headCv },
+    { label: 'BODY',   inputs: bodyCv },
+    { label: 'WIRE',   inputs: wireCv },
+    { label: 'CRACK',  inputs: crackCv },
+    { label: 'ROLL',   inputs: rollCv },
+    { label: 'DRIVE',  inputs: driveCv },
+    { label: 'STEREO', inputs: stereoCv },
+    { label: 'OUT',    inputs: outInputs, outputs: outOutputs },
+    { label: 'PATCH',  inputs: patchInputs },
+  ];
 </script>
 
 <div class="mod-card snaredrum-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
   <ModuleTitle {id} {data} defaultLabel="SNARE DRUM" />
 
-  <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={560}>
+  <PatchPanel nodeId={id} groupingStrategy="sectioned" {sections} panelWidth={560}>
     <!-- ── band 1: HEAD · BODY · WIRE ── -->
     <section class="band">
       <div class="groups">

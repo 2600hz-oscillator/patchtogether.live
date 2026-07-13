@@ -63,6 +63,35 @@ export const kickdrumDef: AudioModuleDef = {
     { id: 'pitch_cv',   type: 'cv' },
     // Level-sensitive damp — a drum-machine choke group input.
     { id: 'choke_in',   type: 'gate', edge: 'gate' },
+    // Per-control CV for EVERY voice knob (the cofefve/karplus convention): a
+    // -1..+1 CV sweeps the target AudioParam's FULL range centred on the live
+    // knob. cvScale mode matches each param's curve (log / linear / discrete);
+    // at cv=0 the delta is 0, so an unpatched input is a no-op.
+    { id: 'tune_cv',        type: 'cv', paramTarget: 'tune',        cvScale: { mode: 'log' } },
+    { id: 'sub_decay_cv',   type: 'cv', paramTarget: 'sub_decay',   cvScale: { mode: 'log' } },
+    { id: 'sub_level_cv',   type: 'cv', paramTarget: 'sub_level',   cvScale: { mode: 'linear' } },
+    { id: 'pitch_amt_cv',   type: 'cv', paramTarget: 'pitch_amt',   cvScale: { mode: 'linear' } },
+    { id: 'pitch_time_cv',  type: 'cv', paramTarget: 'pitch_time',  cvScale: { mode: 'log' } },
+    { id: 'tension_cv',     type: 'cv', paramTarget: 'tension',     cvScale: { mode: 'linear' } },
+    { id: 'body_decay_cv',  type: 'cv', paramTarget: 'body_decay',  cvScale: { mode: 'log' } },
+    { id: 'body_level_cv',  type: 'cv', paramTarget: 'body_level',  cvScale: { mode: 'linear' } },
+    { id: 'body_shape_cv',  type: 'cv', paramTarget: 'body_shape',  cvScale: { mode: 'linear' } },
+    { id: 'click_len_cv',   type: 'cv', paramTarget: 'click_len',   cvScale: { mode: 'log' } },
+    { id: 'click_tone_cv',  type: 'cv', paramTarget: 'click_tone',  cvScale: { mode: 'log' } },
+    { id: 'click_level_cv', type: 'cv', paramTarget: 'click_level', cvScale: { mode: 'linear' } },
+    { id: 'drive_cv',       type: 'cv', paramTarget: 'drive',       cvScale: { mode: 'linear' } },
+    { id: 'hard_cv',        type: 'cv', paramTarget: 'hard',        cvScale: { mode: 'discrete' } },
+    { id: 'translate_cv',   type: 'cv', paramTarget: 'translate',   cvScale: { mode: 'linear' } },
+    { id: 'sub_eq_cv',      type: 'cv', paramTarget: 'sub_eq',      cvScale: { mode: 'linear' } },
+    { id: 'body_eq_cv',     type: 'cv', paramTarget: 'body_eq',     cvScale: { mode: 'linear' } },
+    { id: 'attack_eq_cv',   type: 'cv', paramTarget: 'attack_eq',   cvScale: { mode: 'linear' } },
+    { id: 'tilt_cv',        type: 'cv', paramTarget: 'tilt',        cvScale: { mode: 'linear' } },
+    { id: 'attack_cv',      type: 'cv', paramTarget: 'attack',      cvScale: { mode: 'linear' } },
+    { id: 'sustain_cv',     type: 'cv', paramTarget: 'sustain',     cvScale: { mode: 'linear' } },
+    { id: 'glue_cv',        type: 'cv', paramTarget: 'glue',        cvScale: { mode: 'linear' } },
+    { id: 'ceiling_cv',     type: 'cv', paramTarget: 'ceiling',     cvScale: { mode: 'linear' } },
+    { id: 'width_cv',       type: 'cv', paramTarget: 'width',       cvScale: { mode: 'linear' } },
+    { id: 'level_cv',       type: 'cv', paramTarget: 'level',       cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'audio_l', type: 'audio' },
@@ -112,6 +141,56 @@ export const kickdrumDef: AudioModuleDef = {
         "1V/oct pitch input: transposes the whole voice — sub fundamental and body together — as a true frequency multiplier (tune × 2^volts), so melodic kick lines track across octaves. Patch a sequencer pitch output here for tuned kicks.",
       choke_in:
         "Choke group input (level-sensitive gate): WHILE the level is high the voice is damped through a short ~30 ms ramp toward silence, and on the falling edge it releases and recovers — both edges matter, like an open-hat choke. Hold it high to duck the kick's tail; it does not fire hits.",
+      tune_cv:
+        "CV modulation of TUNE (log): ±1 sweeps the sub fundamental across its full 20–120 Hz range centred on the knob — tuned kicks or per-step pitch. (Distinct from pitch_cv, which transposes the whole voice at 1V/oct; this sets the SUB's own base.)",
+      sub_decay_cv:
+        "CV modulation of SUB DEC (log): ±1 sweeps the sub layer's decay across its full 50–800 ms range around the knob — shorten for fast patterns, lengthen to make the room breathe.",
+      sub_level_cv:
+        "CV modulation of SUB level (linear): ±1 sweeps the sine-sub layer across its full 0–1 range around the knob — duck or lift the low end per hit.",
+      pitch_amt_cv:
+        "CV modulation of P AMT (linear): ±1 sweeps the body pitch-sweep depth across its full 0–48 st range around the knob — modulate the punch/chirp amount.",
+      pitch_time_cv:
+        "CV modulation of P TIME (log): ±1 sweeps the sweep-settle time across its full 5–120 ms range around the knob — sharp tick to falling 'dooo'.",
+      tension_cv:
+        "CV modulation of TENSION (linear): ±1 sweeps the amplitude→pitch glide across its full 0–0.6 range around the knob — animate the drum-skin bend.",
+      body_decay_cv:
+        "CV modulation of BODY DEC (log): ±1 sweeps the body layer's decay across its full 20–400 ms range around the knob.",
+      body_level_cv:
+        "CV modulation of BODY level (linear): ±1 sweeps the body layer across its full 0–1 range around the knob — the punch-vs-depth balance.",
+      body_shape_cv:
+        "CV modulation of SHAPE (linear): ±1 sweeps the body waveform morph across its full 0–1 range (sine→tri→rect) around the knob — add or remove grit.",
+      click_len_cv:
+        "CV modulation of CLICK len (log): ±1 sweeps the noise transient length across its full 2–60 ms range around the knob.",
+      click_tone_cv:
+        "CV modulation of CLK TONE (log): ±1 sweeps the click band-pass across its full 500–6000 Hz range around the knob — dark knock to bright snap.",
+      click_level_cv:
+        "CV modulation of CLK LVL (linear): ±1 sweeps the click layer across its full 0–1 range around the knob.",
+      drive_cv:
+        "CV modulation of DRIVE (linear): ±1 sweeps the saturation amount across its full 0–1 range around the knob — pump the perceived loudness live.",
+      hard_cv:
+        "CV modulation of HARD (discrete): a positive CV flips the drive character to the aggressive mode and a negative CV to clean-warm — the character switch under CV.",
+      translate_cv:
+        "CV modulation of TRANSLATE (linear): ±1 sweeps the harmonic exciter across its full 0–1 range around the knob — reconstruct the sub for small speakers dynamically.",
+      sub_eq_cv:
+        "CV modulation of SUB EQ (linear): ±1 sweeps the sub shelf across its full ±12 dB range around the knob.",
+      body_eq_cv:
+        "CV modulation of BODY EQ (linear): ±1 sweeps the body bell across its full ±12 dB range around the knob.",
+      attack_eq_cv:
+        "CV modulation of ATK EQ (linear): ±1 sweeps the attack bell across its full ±12 dB range around the knob.",
+      tilt_cv:
+        "CV modulation of TILT (linear): ±1 sweeps the spectral tilt across its full −1..+1 range around the knob — darker to brighter.",
+      attack_cv:
+        "CV modulation of ATTACK (linear): ±1 sweeps the transient-shaper attack across its full −1..+1 range around the knob — round or sharpen the onset.",
+      sustain_cv:
+        "CV modulation of SUSTAIN (linear): ±1 sweeps the transient-shaper sustain across its full −1..+1 range around the knob — tuck or fatten the tail.",
+      glue_cv:
+        "CV modulation of GLUE (linear): ±1 sweeps the compressor amount across its full 0–1 range around the knob.",
+      ceiling_cv:
+        "CV modulation of CEILING (linear): ±1 sweeps the soft-clip ceiling across its full 0–1 range around the knob — earlier or cleaner clipping.",
+      width_cv:
+        "CV modulation of WIDTH (linear): ±1 sweeps the upper-band stereo width across its full 0–1 range around the knob (the sub stays mono).",
+      level_cv:
+        "CV modulation of LEVEL (linear): ±1 sweeps the output gain across its full −24..+12 dB range around the knob — tremolo or dynamic swells.",
     },
     outputs: {
       audio_l:
@@ -187,11 +266,39 @@ export const kickdrumDef: AudioModuleDef = {
       params.get(def.id)?.setValueAtTime(v, ctx.currentTime);
     }
 
-    const inputsMap = new Map<string, { node: AudioNode; input: number }>();
+    const inputsMap = new Map<string, { node: AudioNode; input: number; param?: AudioParam }>();
     inputsMap.set('trigger_in', { node: worklet, input: 0 });
     inputsMap.set('accent_in',  { node: worklet, input: 1 });
     inputsMap.set('pitch_cv',   { node: worklet, input: 2 });
     inputsMap.set('choke_in',   { node: worklet, input: 3 });
+    // Per-control CV → AudioParam routing (cofefve/karplus convention). The
+    // `input: 0` is an unused placeholder; the engine routes onto the
+    // AudioParam named by `param` (with the def's cvScale hint applied).
+    inputsMap.set('tune_cv',        { node: worklet, input: 0, param: params.get('tune')! });
+    inputsMap.set('sub_decay_cv',   { node: worklet, input: 0, param: params.get('sub_decay')! });
+    inputsMap.set('sub_level_cv',   { node: worklet, input: 0, param: params.get('sub_level')! });
+    inputsMap.set('pitch_amt_cv',   { node: worklet, input: 0, param: params.get('pitch_amt')! });
+    inputsMap.set('pitch_time_cv',  { node: worklet, input: 0, param: params.get('pitch_time')! });
+    inputsMap.set('tension_cv',     { node: worklet, input: 0, param: params.get('tension')! });
+    inputsMap.set('body_decay_cv',  { node: worklet, input: 0, param: params.get('body_decay')! });
+    inputsMap.set('body_level_cv',  { node: worklet, input: 0, param: params.get('body_level')! });
+    inputsMap.set('body_shape_cv',  { node: worklet, input: 0, param: params.get('body_shape')! });
+    inputsMap.set('click_len_cv',   { node: worklet, input: 0, param: params.get('click_len')! });
+    inputsMap.set('click_tone_cv',  { node: worklet, input: 0, param: params.get('click_tone')! });
+    inputsMap.set('click_level_cv', { node: worklet, input: 0, param: params.get('click_level')! });
+    inputsMap.set('drive_cv',       { node: worklet, input: 0, param: params.get('drive')! });
+    inputsMap.set('hard_cv',        { node: worklet, input: 0, param: params.get('hard')! });
+    inputsMap.set('translate_cv',   { node: worklet, input: 0, param: params.get('translate')! });
+    inputsMap.set('sub_eq_cv',      { node: worklet, input: 0, param: params.get('sub_eq')! });
+    inputsMap.set('body_eq_cv',     { node: worklet, input: 0, param: params.get('body_eq')! });
+    inputsMap.set('attack_eq_cv',   { node: worklet, input: 0, param: params.get('attack_eq')! });
+    inputsMap.set('tilt_cv',        { node: worklet, input: 0, param: params.get('tilt')! });
+    inputsMap.set('attack_cv',      { node: worklet, input: 0, param: params.get('attack')! });
+    inputsMap.set('sustain_cv',     { node: worklet, input: 0, param: params.get('sustain')! });
+    inputsMap.set('glue_cv',        { node: worklet, input: 0, param: params.get('glue')! });
+    inputsMap.set('ceiling_cv',     { node: worklet, input: 0, param: params.get('ceiling')! });
+    inputsMap.set('width_cv',       { node: worklet, input: 0, param: params.get('width')! });
+    inputsMap.set('level_cv',       { node: worklet, input: 0, param: params.get('level')! });
 
     return {
       domain: 'audio',

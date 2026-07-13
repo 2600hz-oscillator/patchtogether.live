@@ -58,6 +58,32 @@ export const snaredrumDef: AudioModuleDef = {
     { id: 'pitch_cv',     type: 'cv' },
     // Level-sensitive hand-on-head mute (a choke group input).
     { id: 'choke_in',     type: 'gate', edge: 'gate' },
+    // Per-control CV for the voice knobs (the cofefve/karplus convention;
+    // roll_speed keeps its dedicated node-rate roll_speed_cv above). A -1..+1
+    // CV sweeps the target AudioParam's FULL range centred on the live knob;
+    // cvScale mode matches each param's curve. At cv=0 the delta is 0, so an
+    // unpatched input is a no-op.
+    { id: 'tune_cv',       type: 'cv', paramTarget: 'tune',       cvScale: { mode: 'log' } },
+    { id: 'head_decay_cv', type: 'cv', paramTarget: 'head_decay', cvScale: { mode: 'log' } },
+    { id: 'damping_cv',    type: 'cv', paramTarget: 'damping',    cvScale: { mode: 'linear' } },
+    { id: 'damp_cv',       type: 'cv', paramTarget: 'damp',       cvScale: { mode: 'linear' } },
+    { id: 'pitch_amt_cv',  type: 'cv', paramTarget: 'pitch_amt',  cvScale: { mode: 'linear' } },
+    { id: 'pitch_time_cv', type: 'cv', paramTarget: 'pitch_time', cvScale: { mode: 'log' } },
+    { id: 'tone_cv',       type: 'cv', paramTarget: 'tone',       cvScale: { mode: 'linear' } },
+    { id: 'body_decay_cv', type: 'cv', paramTarget: 'body_decay', cvScale: { mode: 'log' } },
+    { id: 'wire_cv',       type: 'cv', paramTarget: 'wire',       cvScale: { mode: 'linear' } },
+    { id: 'wire_tone_cv',  type: 'cv', paramTarget: 'wire_tone',  cvScale: { mode: 'log' } },
+    { id: 'wire_decay_cv', type: 'cv', paramTarget: 'wire_decay', cvScale: { mode: 'log' } },
+    { id: 'crack_cv',      type: 'cv', paramTarget: 'crack',      cvScale: { mode: 'linear' } },
+    { id: 'crack_tone_cv', type: 'cv', paramTarget: 'crack_tone', cvScale: { mode: 'log' } },
+    { id: 'bounce_cv',     type: 'cv', paramTarget: 'bounce',     cvScale: { mode: 'linear' } },
+    { id: 'humanize_cv',   type: 'cv', paramTarget: 'humanize',   cvScale: { mode: 'linear' } },
+    { id: 'drive_cv',      type: 'cv', paramTarget: 'drive',      cvScale: { mode: 'linear' } },
+    { id: 'hard_cv',       type: 'cv', paramTarget: 'hard',       cvScale: { mode: 'discrete' } },
+    { id: 'ceiling_cv',    type: 'cv', paramTarget: 'ceiling',    cvScale: { mode: 'linear' } },
+    { id: 'spread_cv',     type: 'cv', paramTarget: 'spread',     cvScale: { mode: 'linear' } },
+    { id: 'width_cv',      type: 'cv', paramTarget: 'width',      cvScale: { mode: 'linear' } },
+    { id: 'level_cv',      type: 'cv', paramTarget: 'level',      cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'audio_l', type: 'audio' },
@@ -109,6 +135,48 @@ export const snaredrumDef: AudioModuleDef = {
         "1V/oct pitch input: transposes the whole voice — head modes and body together — as a true frequency multiplier (tune × 2^volts), so a snare line can track a melody or be tuned per step.",
       choke_in:
         "Choke group input (level-sensitive gate): WHILE the level is high the output is damped toward silence through a short ~30 ms ramp (a hand on the head), and on the falling edge it releases and recovers — both edges matter. Hold it high to duck the snare's ring/roll; it does not fire hits.",
+      tune_cv:
+        "CV modulation of TUNE (log): ±1 sweeps the head fundamental across its full 90–400 Hz range centred on the knob — the modes and body noise track it. (Distinct from pitch_cv, which transposes the whole voice at 1V/oct.)",
+      head_decay_cv:
+        "CV modulation of HEAD DEC (log): ±1 sweeps the modal ring's decay across its full 30–600 ms range around the knob — dry tick to ringing head.",
+      damping_cv:
+        "CV modulation of DAMP (linear): ±1 sweeps the head mode Q across its full 0–1 range around the knob — open and ringy to tight and muted.",
+      damp_cv:
+        "CV modulation of GLOBAL DAMP (linear): ±1 sweeps the shared head/body/wire decay scaler across its full 0–1 range around the knob — a 'towel on the drum' under CV.",
+      pitch_amt_cv:
+        "CV modulation of P AMT (linear): ±1 sweeps the strike pitch-drop depth across its full 0–12 st range around the knob — flatten or deepen the snare 'pit'.",
+      pitch_time_cv:
+        "CV modulation of P TIME (log): ±1 sweeps the pitch-drop settle time across its full 3–80 ms range around the knob — quick chirp to falling attack.",
+      tone_cv:
+        "CV modulation of TONE (linear): ±1 sweeps the overall bright↔fat tilt across its full 0–1 range around the knob — wire-forward sizzle to head-forward body.",
+      body_decay_cv:
+        "CV modulation of BODY DEC (log): ±1 sweeps the noise-body decay across its full 20–300 ms range around the knob.",
+      wire_cv:
+        "CV modulation of WIRE (linear): ±1 sweeps the snare-wire buzz amount across its full 0–1 range around the knob — also driving how hard each strike re-excites the shared wire bed.",
+      wire_tone_cv:
+        "CV modulation of W TONE (log): ±1 sweeps the wire high-pass corner across its full 1500–9000 Hz range around the knob — dark rattle to papery sizzle.",
+      wire_decay_cv:
+        "CV modulation of W DEC (log): ±1 sweeps the wire bed's sustain across its full 40–700 ms range around the knob — the roll's continuity control.",
+      crack_cv:
+        "CV modulation of CRACK (linear): ±1 sweeps the stick-transient level across its full 0–1 range around the knob — softer or snappier leading edge.",
+      crack_tone_cv:
+        "CV modulation of CK TONE (log): ±1 sweeps the crack band-pass across its full 800–7000 Hz range around the knob — dark knock to bright snap.",
+      bounce_cv:
+        "CV modulation of BOUNCE (linear): ±1 sweeps the roll type across its full 0–1 range around the knob — single-stroke → double/open → dense multi-bounce buzz.",
+      humanize_cv:
+        "CV modulation of HUMANIZE (linear): ±1 sweeps the seeded roll jitter across its full 0–1 range around the knob — machine-perfect to loose and human.",
+      drive_cv:
+        "CV modulation of DRIVE (linear): ±1 sweeps the bus saturation across its full 0–1 range around the knob — pump the perceived loudness live.",
+      hard_cv:
+        "CV modulation of HARD (discrete): a positive CV flips the drive character to the aggressive wavefold and a negative CV to clean-warm tanh — the character switch under CV (only audible when Drive > 0).",
+      ceiling_cv:
+        "CV modulation of CEILING (linear): ±1 sweeps how hard the bus is pushed into the true-peak soft-clip across its full 0–1 range around the knob — cleaner/quieter to hotter/more clipped.",
+      spread_cv:
+        "CV modulation of SPREAD (linear): ±1 sweeps the two-hand pan/detune across its full 0–1 range around the knob — mono-centred to hard L/R hands.",
+      width_cv:
+        "CV modulation of WIDTH (linear): ±1 sweeps the decorrelated wire-sizzle width across its full 0–1 range around the knob (head and body stay centred).",
+      level_cv:
+        "CV modulation of LEVEL (linear): ±1 sweeps the output gain across its full −24..+12 dB range around the knob — tremolo or dynamic swells.",
     },
     outputs: {
       audio_l:
@@ -177,13 +245,37 @@ export const snaredrumDef: AudioModuleDef = {
       params.get(def.id)?.setValueAtTime(v, ctx.currentTime);
     }
 
-    const inputsMap = new Map<string, { node: AudioNode; input: number }>();
+    const inputsMap = new Map<string, { node: AudioNode; input: number; param?: AudioParam }>();
     inputsMap.set('trigger_in',   { node: worklet, input: 0 });
     inputsMap.set('gate_in',      { node: worklet, input: 1 });
     inputsMap.set('roll_speed_cv', { node: worklet, input: 2 });
     inputsMap.set('accent_in',    { node: worklet, input: 3 });
     inputsMap.set('pitch_cv',     { node: worklet, input: 4 });
     inputsMap.set('choke_in',     { node: worklet, input: 5 });
+    // Per-control CV → AudioParam routing (cofefve/karplus convention). The
+    // `input: 0` is an unused placeholder; the engine routes onto the
+    // AudioParam named by `param` (with the def's cvScale hint applied).
+    inputsMap.set('tune_cv',       { node: worklet, input: 0, param: params.get('tune')! });
+    inputsMap.set('head_decay_cv', { node: worklet, input: 0, param: params.get('head_decay')! });
+    inputsMap.set('damping_cv',    { node: worklet, input: 0, param: params.get('damping')! });
+    inputsMap.set('damp_cv',       { node: worklet, input: 0, param: params.get('damp')! });
+    inputsMap.set('pitch_amt_cv',  { node: worklet, input: 0, param: params.get('pitch_amt')! });
+    inputsMap.set('pitch_time_cv', { node: worklet, input: 0, param: params.get('pitch_time')! });
+    inputsMap.set('tone_cv',       { node: worklet, input: 0, param: params.get('tone')! });
+    inputsMap.set('body_decay_cv', { node: worklet, input: 0, param: params.get('body_decay')! });
+    inputsMap.set('wire_cv',       { node: worklet, input: 0, param: params.get('wire')! });
+    inputsMap.set('wire_tone_cv',  { node: worklet, input: 0, param: params.get('wire_tone')! });
+    inputsMap.set('wire_decay_cv', { node: worklet, input: 0, param: params.get('wire_decay')! });
+    inputsMap.set('crack_cv',      { node: worklet, input: 0, param: params.get('crack')! });
+    inputsMap.set('crack_tone_cv', { node: worklet, input: 0, param: params.get('crack_tone')! });
+    inputsMap.set('bounce_cv',     { node: worklet, input: 0, param: params.get('bounce')! });
+    inputsMap.set('humanize_cv',   { node: worklet, input: 0, param: params.get('humanize')! });
+    inputsMap.set('drive_cv',      { node: worklet, input: 0, param: params.get('drive')! });
+    inputsMap.set('hard_cv',       { node: worklet, input: 0, param: params.get('hard')! });
+    inputsMap.set('ceiling_cv',    { node: worklet, input: 0, param: params.get('ceiling')! });
+    inputsMap.set('spread_cv',     { node: worklet, input: 0, param: params.get('spread')! });
+    inputsMap.set('width_cv',      { node: worklet, input: 0, param: params.get('width')! });
+    inputsMap.set('level_cv',      { node: worklet, input: 0, param: params.get('level')! });
 
     return {
       domain: 'audio',

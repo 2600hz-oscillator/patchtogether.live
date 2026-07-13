@@ -15,10 +15,11 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { karplusDef } from '$lib/audio/modules/karplus';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { cardParams, portsFromDef } from './card-kit';
+  import { cardParams } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -46,18 +47,51 @@
     }
   }
 
-  const inputs = portsFromDef(karplusDef.inputs, {
-    trigger_in: 'TRIG', pitch: 'V/OCT', accent_in: 'ACC', damp_in: 'DAMP',
-    decay_cv: 'DEC', bright_cv: 'BRT', position_cv: 'POS', stiff_cv: 'STF', color_cv: 'COL',
-  });
-  const outputs = portsFromDef(karplusDef.outputs, { out: 'OUT' });
+  // Rear PatchPanel — sectioned to MIRROR the on-card control-group headers:
+  // each per-control CV jack sits under the same header as its knob (STRING /
+  // EXCITER / OUT), the external STRIKE trigger lands under STRIKE, and the
+  // global performance inputs (pitch / accent / damp) collect in a trailing
+  // PATCH section alongside the audio OUT.
+  const stringCv: PortDescriptor[] = [
+    { id: 'tune_cv',   label: 'TUNE', cable: 'cv' },
+    { id: 'decay_cv',  label: 'DEC',  cable: 'cv' },
+    { id: 'bright_cv', label: 'BRT',  cable: 'cv' },
+    { id: 'stiff_cv',  label: 'STF',  cable: 'cv' },
+  ];
+  const exciterCv: PortDescriptor[] = [
+    { id: 'color_cv',    label: 'COL',  cable: 'cv' },
+    { id: 'burst_cv',    label: 'BRST', cable: 'cv' },
+    { id: 'position_cv', label: 'POS',  cable: 'cv' },
+  ];
+  const strikeInputs: PortDescriptor[] = [
+    { id: 'trigger_in', label: 'TRIG', cable: 'gate' },
+  ];
+  const outInputs: PortDescriptor[] = [
+    { id: 'level_cv', label: 'LVL', cable: 'cv' },
+  ];
+  const outOutputs: PortDescriptor[] = [
+    { id: 'out', label: 'OUT', cable: 'audio' },
+  ];
+  const patchInputs: PortDescriptor[] = [
+    { id: 'pitch',     label: 'V/OCT', cable: 'pitch' },
+    { id: 'accent_in', label: 'ACC',   cable: 'cv' },
+    { id: 'damp_in',   label: 'DAMP',  cable: 'gate' },
+  ];
+
+  const sections = [
+    { label: 'STRING',  inputs: stringCv },
+    { label: 'EXCITER', inputs: exciterCv },
+    { label: 'STRIKE',  inputs: strikeInputs },
+    { label: 'OUT',     inputs: outInputs, outputs: outOutputs },
+    { label: 'PATCH',   inputs: patchInputs },
+  ];
 </script>
 
 <div class="mod-card karplus-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
   <ModuleTitle {id} {data} defaultLabel="KARPLUS" />
 
-  <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={430}>
+  <PatchPanel nodeId={id} groupingStrategy="sectioned" {sections} panelWidth={430}>
     <!-- ── band 1: STRING · EXCITER ── -->
     <section class="band">
       <div class="groups">

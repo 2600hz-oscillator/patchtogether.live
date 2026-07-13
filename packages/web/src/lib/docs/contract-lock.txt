@@ -1305,13 +1305,16 @@ joystick param pos_y -1..1 linear default=0
 karplus meta domain=audio
 karplus in accent_in cv
 karplus in bright_cv cv param=brightness cvScale=linear
+karplus in burst_cv cv param=burst cvScale=log
 karplus in color_cv cv param=color cvScale=linear
 karplus in damp_in gate edge=gate
 karplus in decay_cv cv param=decay cvScale=log
+karplus in level_cv cv param=level cvScale=linear
 karplus in pitch pitch
 karplus in position_cv cv param=position cvScale=linear
 karplus in stiff_cv cv param=stiffness cvScale=linear
 karplus in trigger_in gate edge=trigger
+karplus in tune_cv cv param=tune cvScale=log
 karplus out out audio
 karplus param brightness 0..1 linear default=0.7
 karplus param burst 0.1..4 log default=1
@@ -1323,9 +1326,34 @@ karplus param stiffness 0..1 linear default=0
 karplus param tune 55..1760 log default=220 unit=Hz
 kickdrum meta domain=audio
 kickdrum in accent_in cv
+kickdrum in attack_cv cv param=attack cvScale=linear
+kickdrum in attack_eq_cv cv param=attack_eq cvScale=linear
+kickdrum in body_decay_cv cv param=body_decay cvScale=log
+kickdrum in body_eq_cv cv param=body_eq cvScale=linear
+kickdrum in body_level_cv cv param=body_level cvScale=linear
+kickdrum in body_shape_cv cv param=body_shape cvScale=linear
+kickdrum in ceiling_cv cv param=ceiling cvScale=linear
 kickdrum in choke_in gate edge=gate
+kickdrum in click_len_cv cv param=click_len cvScale=log
+kickdrum in click_level_cv cv param=click_level cvScale=linear
+kickdrum in click_tone_cv cv param=click_tone cvScale=log
+kickdrum in drive_cv cv param=drive cvScale=linear
+kickdrum in glue_cv cv param=glue cvScale=linear
+kickdrum in hard_cv cv param=hard cvScale=discrete
+kickdrum in level_cv cv param=level cvScale=linear
+kickdrum in pitch_amt_cv cv param=pitch_amt cvScale=linear
 kickdrum in pitch_cv cv
+kickdrum in pitch_time_cv cv param=pitch_time cvScale=log
+kickdrum in sub_decay_cv cv param=sub_decay cvScale=log
+kickdrum in sub_eq_cv cv param=sub_eq cvScale=linear
+kickdrum in sub_level_cv cv param=sub_level cvScale=linear
+kickdrum in sustain_cv cv param=sustain cvScale=linear
+kickdrum in tension_cv cv param=tension cvScale=linear
+kickdrum in tilt_cv cv param=tilt cvScale=linear
+kickdrum in translate_cv cv param=translate cvScale=linear
 kickdrum in trigger_in gate edge=trigger
+kickdrum in tune_cv cv param=tune cvScale=log
+kickdrum in width_cv cv param=width cvScale=linear
 kickdrum out audio_l audio
 kickdrum out audio_r audio
 kickdrum param attack -1..1 linear default=0.2
@@ -2718,11 +2746,32 @@ slewSwitch param slew4 0.001..5 log default=0.5 unit=s
 slewSwitch param xfadeTime 0.001..2 log default=0.05 unit=s
 snaredrum meta domain=audio
 snaredrum in accent_in cv
+snaredrum in body_decay_cv cv param=body_decay cvScale=log
+snaredrum in bounce_cv cv param=bounce cvScale=linear
+snaredrum in ceiling_cv cv param=ceiling cvScale=linear
 snaredrum in choke_in gate edge=gate
+snaredrum in crack_cv cv param=crack cvScale=linear
+snaredrum in crack_tone_cv cv param=crack_tone cvScale=log
+snaredrum in damp_cv cv param=damp cvScale=linear
+snaredrum in damping_cv cv param=damping cvScale=linear
+snaredrum in drive_cv cv param=drive cvScale=linear
 snaredrum in gate_in gate edge=gate
+snaredrum in hard_cv cv param=hard cvScale=discrete
+snaredrum in head_decay_cv cv param=head_decay cvScale=log
+snaredrum in humanize_cv cv param=humanize cvScale=linear
+snaredrum in level_cv cv param=level cvScale=linear
+snaredrum in pitch_amt_cv cv param=pitch_amt cvScale=linear
 snaredrum in pitch_cv cv
+snaredrum in pitch_time_cv cv param=pitch_time cvScale=log
 snaredrum in roll_speed_cv cv
+snaredrum in spread_cv cv param=spread cvScale=linear
+snaredrum in tone_cv cv param=tone cvScale=linear
 snaredrum in trigger_in gate edge=trigger
+snaredrum in tune_cv cv param=tune cvScale=log
+snaredrum in width_cv cv param=width cvScale=linear
+snaredrum in wire_cv cv param=wire cvScale=linear
+snaredrum in wire_decay_cv cv param=wire_decay cvScale=log
+snaredrum in wire_tone_cv cv param=wire_tone cvScale=log
 snaredrum out audio_l audio
 snaredrum out audio_r audio
 snaredrum param body_decay 20..300 log default=110 unit=ms
