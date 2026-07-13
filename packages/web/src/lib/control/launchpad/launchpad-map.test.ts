@@ -132,6 +132,7 @@ import {
   // SINGLE-mode frame builders
   paintPermanentTopRow,
   computeSingleGridFrame,
+  hexToRgb127,
   computeSingleClipFrame,
   computeSingleKeysFrame,
   computeSingleControlFrame,
@@ -827,6 +828,42 @@ describe('Single mode — frame builders', () => {
       divPulse: { clipIndex: clipIndex(0, 0), on: false },
     });
     expect(eqRgb(at(off, padNote(0, 7)), RGB_TIMING)).toBe(true);
+  });
+  it('hexToRgb127 scales #rrggbb / #rgb into the 0..127 lighting range', () => {
+    expect(hexToRgb127('#ff0000')).toEqual([127, 0, 0]);
+    expect(hexToRgb127('#fff')).toEqual([127, 127, 127]);
+    expect(hexToRgb127('#000000')).toEqual([0, 0, 0]);
+  });
+  it('grid: a PICKED per-channel colour tints its clips (dim loaded, full playing); stop stays red; unpicked = default', () => {
+    const red = '#ff0000';
+    const laneCol = new Array(8).fill(null);
+    laneCol[2] = red; // channel 2 picked red; channel 3 left unpicked
+    const data = {
+      clips: {
+        [clipIndex(0, 2)]: defaultNoteClip(), // loaded on the coloured lane 2
+        [clipIndex(1, 2)]: defaultNoteClip(), // playing on lane 2
+        [clipIndex(0, 3)]: defaultNoteClip(), // loaded on the UNcoloured lane 3
+      },
+      laneColor: laneCol,
+      playing: [null, null, 1, null, null, null, null, null],
+    } as unknown as ClipPlayerData;
+    const f = computeSingleGridFrame(data, { top: mkTop('grid'), blinkOn: true });
+    const rgb = hexToRgb127(red); // [127,0,0]
+    // loaded clip on the coloured lane → a DIM version of the channel colour
+    expect(eqRgb(at(f, padNote(2, 7 - 0)), [Math.round(rgb[0] * 0.32), 0, 0])).toBe(true);
+    // playing clip on the coloured lane → the FULL channel colour
+    expect(eqRgb(at(f, padNote(2, 7 - 1)), rgb)).toBe(true);
+    // loaded clip on an UNpicked lane → the default RGB_LOADED (unchanged)
+    expect(eqRgb(at(f, padNote(3, 7 - 0)), RGB_LOADED)).toBe(true);
+    // a queued-STOP on a coloured lane keeps the semantic RED, not the channel colour
+    const stopData = {
+      clips: { [clipIndex(0, 2)]: defaultNoteClip() },
+      laneColor: laneCol,
+      playing: [null, null, 0, null, null, null, null, null],
+      queued: [null, null, 'stop', null, null, null, null, null],
+    } as unknown as ClipPlayerData;
+    const sf = computeSingleGridFrame(stopData, { top: mkTop('grid'), blinkOn: true });
+    expect(eqRgb(at(sf, padNote(2, 7 - 0)), RGB_QUEUED_STOP)).toBe(true);
   });
   it('clip: note grid + clipRight column (KEYS bright orange, Double green, Step◀ blue)', () => {
     let clip: NoteClipRecord = defaultNoteClip();
