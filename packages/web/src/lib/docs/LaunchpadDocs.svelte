@@ -51,6 +51,8 @@
     RGB_SYS,
     RGB_SYS_DIM,
     RGB_PATTERN,
+    RGB_LAUNCH_QUEUE,
+    RGB_LAUNCH_NOW,
     RGB_PATTERN_ARMED,
     RGB_TIMING,
     RGB_TIMING_ARMED,
@@ -226,8 +228,8 @@
   ];
   // + shift → Row± brighten (page/octave), Step± brighten (block jump).
   const clipShiftScene = [
-    { row: 7, fill: hex(RGB_PATTERN), label: 'DBL' },
-    { row: 6, fill: hex(RGB_PATTERN), label: 'LEN' },
+    { row: 7, fill: hex(RGB_LAUNCH_QUEUE), label: 'QUE' }, // orange — QUEUE the edited clip (next boundary)
+    { row: 6, fill: hex(RGB_LAUNCH_NOW), label: 'NOW' }, // orange (bright) — launch the edited clip NOW
     { row: 5, fill: hex(RGB_PATTERN_ARMED), label: 'FOL' },
     { row: 4, fill: hex(RGB_KEYS_ENTRY), label: 'KEYS' },
     { row: 3, fill: hex(RGB_PATTERN_ARMED), label: 'R+' }, // bright green = page/octave jump
@@ -692,8 +694,12 @@
       green = playing — the only red/green button on the row.</li>
     <li><strong>GRID · CLIP · ARRANGER · CONTROL (CC 92–95):</strong> the four view buttons — dim purple
       when you're not in them, <strong>bright purple</strong> for the one you're in (a permanent
-      "you-are-here"). While <strong>KEYS</strong> is open (a sub-view of Clip) the <strong>CLIP</strong>
-      button also lights bright; pressing any view button leaves KEYS for that view.</li>
+      "you-are-here"). GRID / ARRANGER / CONTROL switch <em>instantly</em>. <strong>CLIP is a momentary
+      clip-picker, not an instant switch</strong>: <strong>hold</strong> it to peek the clip launcher over
+      whatever view you're in, <strong>tap a clip</strong> to drop into <em>that</em> clip's note editor
+      (without changing whether it plays), or <strong>release without a tap</strong> to fall back to where
+      you were. While <strong>KEYS</strong> is open (a sub-view of Clip) the <strong>CLIP</strong> button
+      also lights bright; pressing any view button leaves KEYS for that view.</li>
     <li><strong>UNDO / REDO (CC 96 / 97):</strong> orange when there's something on the stack, dim when
       empty — see <a href="#single-undo">Undo / redo</a>.</li>
     <li><strong>SHIFT (CC 98):</strong> the alt-layer key (next). Dim yellow off, bright yellow while held,
@@ -823,10 +829,11 @@
 
   <h3>CLIP view — the note editor</h3>
   <p>
-    CLIP edits the <strong>selected clip</strong> (set by a Grid double-tap, or press the
-    <strong>CLIP</strong> top-row button to open the current selection). It's the same piano-roll note
-    editor as pair mode: X = step (an 8-step window = half a 16-step block), Y = pitch (in-key rows, bottom
-    = lowest). The right column is CLIP's own controls.
+    CLIP edits the <strong>selected clip</strong>. Get here by a Grid double-tap, or <strong>hold the CLIP
+    top-row button and tap a clip</strong> (the launcher peeks while you hold; the tap opens that clip's
+    editor without changing whether it plays). It's the same piano-roll note editor as pair mode: X = step
+    (an 8-step window = half a 16-step block), Y = pitch (in-key rows, bottom = lowest). The right column is
+    CLIP's own controls.
   </p>
   <LaunchpadDiagram
     top={permTop('clip', { running: true })}
@@ -855,11 +862,16 @@
     scene={clipShiftScene}
     callouts={editCallouts}
     accent={hex(RGB_TIMING_ARMED)}
-    caption="CLIP + shift. The 8×8 becomes VELOCITY-cycle (a faint purple wash over empty cells) — tap a note to cycle its velocity. ROW± brighten (they now jump a whole octave / page) and STEP± brighten (they jump a full block). DOUBLE / LENGTH / FOLLOW / KEYS are unchanged."
+    caption="CLIP + shift. The 8×8 becomes VELOCITY-cycle (a faint purple wash over empty cells) — tap a note to cycle its velocity. The top two right-column buttons turn ORANGE — DOUBLE → QUEUE, LENGTH → NOW (launch the edited clip without leaving the editor). ROW± brighten (they jump a whole octave / page) and STEP± brighten (they jump a full block); FOLLOW / KEYS are unchanged."
   />
   <ul class="tight">
     <li><strong>Velocity:</strong> under shift, tapping a note <strong>cycles its velocity</strong> instead
       of toggling it (the whole grid is in velocity-edit mode; empty cells show a faint purple wash).</li>
+    <li><strong>Launch from the editor:</strong> under shift the top two right-column buttons turn
+      <strong>orange</strong> — <strong>QUEUE</strong> (was DOUBLE) starts the edited clip at the next
+      boundary after the channel's playing clip (or the usual grid-queue time if the channel is idle), and
+      <strong>NOW</strong> (was LENGTH) starts it instantly at the step it should be on — so you can launch
+      the clip you're editing without leaving the note editor.</li>
     <li><strong>Big jumps:</strong> under shift <strong>ROW±</strong> page the pitch window by an octave and
       <strong>STEP±</strong> jump a full 8-step block — quick travel across a long clip.</li>
     <li>The clip's <strong>scale</strong> is set in <a href="#single-keys">KEYS</a> (there's no separate
