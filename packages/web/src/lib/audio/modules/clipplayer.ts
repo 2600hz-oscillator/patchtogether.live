@@ -147,6 +147,8 @@ export const clipplayerDef: AudioModuleDef = {
         "Lane {n}'s clock-rate dropdown (right of the lane's launch row) — divides or multiplies the lane's step rate off the global STEP grid: 1/8, 1/4 and 1/2 advance the lane every 8th/4th/2nd base step; 2x and 4x advance it 2×/4× per base step (exact, since the tempo comes from TIMELORDE); 1 (the default) runs on the STEP grid. All lanes count from a shared phase origin (transport start or RST), so divided lanes stay locked to the others. Card-only for now — no monome-grid/Launchpad surface.",
       "clipplayer-pad-{n}":
         "A clip slot in the launch grid (one cell of the 8 lanes × 8 slots). Click to launch that lane's clip (immediately or quantized per QNT), click the playing pad to stop the lane, and double-click to open the clip in the piano-roll editor. An empty pad shows differently from a filled or playing one.",
+      "clipplayer-scene-{n}":
+        "Scene / row-launch button at the right end of row {n} — fires that whole row (slot {n}) across EVERY channel at once (a scene / song section): each channel that has a clip in that row launches it, the rest stop. Quantized per QNT; shift-click launches NOW. The on-screen twin of the physical Launchpad scene column.",
       "clipplayer-cell-{n}":
         "A note cell in the piano-roll editor (rows are scale degrees/pitches, columns are steps). Click to toggle a note on or off at that pitch and step; right-click cycles the note's velocity. The cells make up the clip you're editing for the selected lane+slot.",
     },
@@ -156,6 +158,7 @@ export const clipplayerDef: AudioModuleDef = {
     { id: 'clipplayer-mono', label: 'Per-lane mono/poly toggle', kind: 'other', testidPrefix: 'clipplayer-mono' },
     { id: 'clipplayer-rate', label: 'Per-lane clock rate (mult/div)', kind: 'other', testidPrefix: 'clipplayer-rate' },
     { id: 'clipplayer-pad', label: 'Clip launch grid', kind: 'cell', testidPrefix: 'clipplayer-pad' },
+    { id: 'clipplayer-scene', label: 'Scene / row launch', kind: 'other', testidPrefix: 'clipplayer-scene' },
     { id: 'clipplayer-cell', label: 'Piano-roll note cells', kind: 'cell', testidPrefix: 'clipplayer-cell' },
   ],
 

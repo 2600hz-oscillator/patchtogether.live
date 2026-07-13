@@ -257,6 +257,20 @@ export function laneQueued(
 export function playingSet(data: ClipPlayerData | undefined): (number | null)[] {
   return coerceLaneArray<number | null>(data?.playing, null);
 }
+/** The `queued` array for launching a whole SCENE — a grid ROW (`slot`) across
+ *  EVERY lane: the slot for lanes that HAVE a clip in that slot, 'stop' for the
+ *  lanes that don't. One array = one transaction — shared by the on-card scene
+ *  button and the Launchpad scene/row-launch column so they fire identically. */
+export function sceneQueue(
+  data: ClipPlayerData | undefined,
+  slot: number,
+): (number | 'stop' | null)[] {
+  const q: (number | 'stop' | null)[] = new Array(CLIP_LANES).fill('stop');
+  for (let lane = 0; lane < CLIP_LANES; lane++) {
+    if (data?.clips?.[String(clipIndex(slot, lane))]) q[lane] = slot;
+  }
+  return q;
+}
 /** Whether a lane is MONO (one note per column on note entry). Default poly. */
 export function laneMono(data: ClipPlayerData | undefined, lane: number): boolean {
   return data?.mono?.[lane] === true;
