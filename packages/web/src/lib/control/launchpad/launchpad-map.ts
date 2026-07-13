@@ -64,6 +64,7 @@ import {
   laneQueued,
   laneMono,
   laneMuted,
+  laneColor,
   velBucket,
   noteCovering,
   SCALE_NAMES,
@@ -1421,6 +1422,22 @@ export interface SingleGridOpts {
  *  computeLSessionFrame (playing SOLID green · queued-launch flash green ·
  *  queued-stop flash red · loaded dim blue · record-armed empty dim red · else
  *  off), just re-used for the transposed single grid. PURE. */
+/** Parse a `#rgb` / `#rrggbb` hex → an RGB triple in the 0..127 lighting range
+ *  (the card stores the picked channel colour as hex; the pad LEDs are 0..127). */
+export function hexToRgb127(hex: string): Rgb {
+  let h = hex.replace('#', '').trim();
+  if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  const v = (i: number) => {
+    const n = parseInt(h.slice(i, i + 2), 16);
+    return Number.isFinite(n) ? Math.round((n * 127) / 255) : 0;
+  };
+  return [v(0), v(2), v(4)];
+}
+/** Scale an RGB triple's brightness (for the dim loaded state off a picked colour). */
+function scaleRgb(rgb: Rgb, f: number): Rgb {
+  return [Math.round(rgb[0] * f), Math.round(rgb[1] * f), Math.round(rgb[2] * f)];
+}
+
 function singleClipStateRgb(
   data: ClipPlayerData | undefined,
   idx: number,
@@ -1431,9 +1448,22 @@ function singleClipStateRgb(
 ): Rgb {
   const pl = lanePlaying(data, lane);
   const q = laneQueued(data, lane);
-  if (pl === slot) return q === 'stop' ? (blinkOn ? RGB_QUEUED_STOP : RGB_OFF) : RGB_PLAYING;
-  if (q === slot) return blinkOn ? RGB_QUEUED : RGB_OFF;
-  if ((data?.clips ?? {})[String(idx)]) return RGB_LOADED;
+  // A PICKED per-channel colour (card color-picker) tints the clip states on
+  // the pad: dim when loaded, full when playing, flashing when queued. Empty
+  // pads stay OFF. A queued-STOP keeps the semantic RED so a pending stop still
+  // reads regardless of the channel colour. Unpicked channels use the default
+  // state palette (the Ableton green/blue idiom) unchanged.
+  const picked = laneColor(data, lane);
+  const base = picked ? hexToRgb127(picked) : null;
+  if (pl === slot) {
+    if (q === 'stop') return blinkOn ? RGB_QUEUED_STOP : RGB_OFF;
+    return base ?? RGB_PLAYING;
+  }
+  if (q === slot) {
+    if (!blinkOn) return RGB_OFF;
+    return base ?? RGB_QUEUED;
+  }
+  if ((data?.clips ?? {})[String(idx)]) return base ? scaleRgb(base, 0.32) : RGB_LOADED;
   if (recording) return RGB_STOP_IDLE;
   return RGB_OFF;
 }

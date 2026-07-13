@@ -32,6 +32,9 @@ import {
   velBucket,
   laneMono,
   laneMuted,
+  coerceLaneColor,
+  coerceLaneColors,
+  laneColor,
   VEL_DEFAULT,
   VEL_LEVELS,
   MAX_CLIP_STEPS,
@@ -266,6 +269,51 @@ describe('laneMuted (P3 — advance-but-silent)', () => {
     expect(laneMuted({ muted: [true, false] }, 0)).toBe(true);
     expect(laneMuted({ muted: [true, false] }, 1)).toBe(false);
     expect(laneMuted({ muted: [true] }, 5)).toBe(false); // short array → live
+  });
+});
+
+describe('per-lane CLIP COLOR helpers', () => {
+  it('coerceLaneColor keeps a valid hex, lowercasing + expanding #rgb → #rrggbb', () => {
+    expect(coerceLaneColor('#aabbcc')).toBe('#aabbcc');
+    expect(coerceLaneColor('#AABBCC')).toBe('#aabbcc'); // lowercased
+    expect(coerceLaneColor('#F0A')).toBe('#ff00aa'); // #rgb expanded
+    expect(coerceLaneColor('  #FfEe00  ')).toBe('#ffee00'); // trimmed + lowercased
+  });
+  it('coerceLaneColor rejects non-hex / null / wrong-length ⇒ null', () => {
+    expect(coerceLaneColor(null)).toBeNull();
+    expect(coerceLaneColor(undefined)).toBeNull();
+    expect(coerceLaneColor(0xff00aa)).toBeNull(); // a number, not a string
+    expect(coerceLaneColor('red')).toBeNull(); // named colors not accepted
+    expect(coerceLaneColor('#12')).toBeNull(); // too short (2 digits)
+    expect(coerceLaneColor('#12345')).toBeNull(); // 5 digits
+    expect(coerceLaneColor('#1234567')).toBeNull(); // 7 digits
+    expect(coerceLaneColor('#gggggg')).toBeNull(); // non-hex digits
+    expect(coerceLaneColor('aabbcc')).toBeNull(); // missing '#'
+    expect(coerceLaneColor('')).toBeNull();
+  });
+  it('coerceLaneColors normalizes to exactly CLIP_LANES entries (missing/short ⇒ null)', () => {
+    const out = coerceLaneColors(['#f00', 'nope', '#00FF00']);
+    expect(out).toHaveLength(CLIP_LANES);
+    expect(out[0]).toBe('#ff0000'); // #rgb expanded + kept
+    expect(out[1]).toBeNull(); // invalid entry ⇒ null
+    expect(out[2]).toBe('#00ff00'); // lowercased
+    for (let i = 3; i < CLIP_LANES; i++) expect(out[i]).toBeNull(); // short ⇒ padded null
+  });
+  it('coerceLaneColors on a non-array (absent/corrupt) ⇒ all nulls, still length CLIP_LANES', () => {
+    for (const raw of [undefined, null, 'nope', 42]) {
+      const out = coerceLaneColors(raw);
+      expect(out).toHaveLength(CLIP_LANES);
+      expect(out.every((c) => c === null)).toBe(true);
+    }
+  });
+  it('laneColor reads a per-lane entry, null when absent/short/corrupt', () => {
+    expect(laneColor({ laneColor: ['#abcdef', '#123'] }, 0)).toBe('#abcdef');
+    expect(laneColor({ laneColor: ['#abcdef', '#123'] }, 1)).toBe('#112233'); // #rgb expanded
+    expect(laneColor({ laneColor: ['#abcdef'] }, 3)).toBeNull(); // short array
+    expect(laneColor(undefined, 0)).toBeNull();
+    expect(laneColor({}, 0)).toBeNull();
+    expect(laneColor({ laneColor: 'nope' } as unknown as ClipPlayerData, 0)).toBeNull();
+    expect(laneColor({ laneColor: ['bad'] }, 0)).toBeNull(); // corrupt entry ⇒ null
   });
 });
 

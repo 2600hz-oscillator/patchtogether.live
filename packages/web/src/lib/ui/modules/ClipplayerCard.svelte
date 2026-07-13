@@ -44,6 +44,8 @@
     noteCovering,
     velBucket,
     laneMono,
+    laneColor,
+    coerceLaneColor,
     type ClipPlayerData,
     type NoteClipRecord,
   } from '$lib/audio/modules/clip-types';
@@ -229,8 +231,52 @@
     if (pl === slot) return q === 'stop' ? 'queued' : 'playing';
     return clips[String(idx)] ? 'loaded' : 'empty';
   }
-  // 8 distinct row hues so instruments read at a glance.
+  // 8 distinct row hues — the DEFAULT color a channel shows until the user picks
+  // one with its color swatch.
   const laneHue = (lane: number) => Math.round((lane * 360) / CLIP_LANES);
+  // hsl(h, 70%, 50%) → #rrggbb, so an <input type="color"> whose channel has no
+  // picked color still shows the correct default-hue swatch (and every pad tint
+  // resolves to a concrete hex → color-mix always has a valid color to mix).
+  function hueToHex(h: number): string {
+    const s = 0.7;
+    const l = 0.5;
+    const c = (1 - Math.abs(2 * l - 1)) * s; // chroma
+    const hp = ((((h % 360) + 360) % 360) / 60);
+    const x = c * (1 - Math.abs((hp % 2) - 1));
+    let r = 0, g = 0, b = 0;
+    if (hp < 1) { r = c; g = x; }
+    else if (hp < 2) { r = x; g = c; }
+    else if (hp < 3) { g = c; b = x; }
+    else if (hp < 4) { g = x; b = c; }
+    else if (hp < 5) { r = x; b = c; }
+    else { r = c; b = x; }
+    const m = l - c / 2;
+    const hx = (n: number) => Math.round((n + m) * 255).toString(16).padStart(2, '0');
+    return `#${hx(r)}${hx(g)}${hx(b)}`;
+  }
+  /** The channel's PICKED clip color (a `#rrggbb` hex), or null when unpicked. */
+  function laneColorOf(lane: number): string | null {
+    void cardVersion;
+    return laneColor(dataObj(), lane);
+  }
+  /** The EFFECTIVE channel color: the picked color, else the default-hue hex. A
+   *  concrete hex either way (feeds --lane-color + the color-input default). */
+  function laneColorEff(lane: number): string {
+    return laneColorOf(lane) ?? hueToHex(laneHue(lane));
+  }
+  /** Pick this channel's color — tints its whole column of clips. Mirrors
+   *  setLaneRate: rebuild the CLIP_LANES array + assign the whole (SyncedStore
+   *  Y.Arrays reject index assignment). */
+  function setLaneColor(lane: number, color: string) {
+    writeData((d) => {
+      const base: (string | null)[] = new Array(CLIP_LANES).fill(null);
+      if (Array.isArray(d.laneColor)) {
+        for (let i = 0; i < CLIP_LANES && i < d.laneColor.length; i++) base[i] = coerceLaneColor(d.laneColor[i]);
+      }
+      base[lane] = coerceLaneColor(color);
+      d.laneColor = base;
+    });
+  }
 
   // --- transport: writes TIMELORDE.running; hidden when externally clocked ---
   function timelordeId(): string | null {
@@ -641,7 +687,7 @@
           >
             {#each Array(CLIP_LANES) as _l, lane (lane)}
               <rect x="0" y={lane * ARR_LANE_H} width={ARR_W} height={ARR_LANE_H - 1}
-                class="song-lane" style={`--lane-hue:${laneHue(lane)}`} />
+                class="song-lane" style={`--lane-color:${laneColorEff(lane)}`} />
             {/each}
             <!-- bar gridlines (every 4 beats) -->
             {#each Array(Math.max(1, Math.ceil(arrangeLen / 4))) as _b, bar (bar)}
@@ -658,7 +704,7 @@
                 y={b.lane * ARR_LANE_H + 1}
                 width={blockW(b)}
                 height={ARR_LANE_H - 3}
-                style={`--lane-hue:${laneHue(b.lane)}`}
+                style={`--lane-color:${laneColorEff(b.lane)}`}
                 role="button"
                 tabindex="0"
                 aria-label={`lane ${b.lane + 1} clip ${b.slot + 1} at beat ${b.startBeat}`}
@@ -691,22 +737,36 @@
              flat clip index (lane*8 + slot) is unchanged — only the on-screen
              (lane,slot) → (col,row) placement is transposed to match the pad. -->
         <div class="launch-grid" data-testid="clipplayer-grid" role="grid" aria-label="clip launch grid">
-          <!-- channel header: per-lane MONO/POLY toggle, one per channel column -->
+          <!-- channel header: per-lane COLOR swatch (top) + MONO/POLY toggle
+               (bottom), one stacked cell per channel column. The color swatch is
+               the SINGLE source of the channel color — present for BOTH mono and
+               poly channels — and tints that channel's whole column of clips. -->
           <div class="grid-head" role="row">
             {#each Array(CLIP_LANES) as _l, lane (lane)}
-              <button
-                class="lane-mono"
-                class:on={laneIsMono(lane)}
-                style={`--lane-hue:${laneHue(lane)}`}
-                onclick={() => toggleLaneMono(lane)}
-                title={laneIsMono(lane)
-                  ? `Ch ${lane + 1}: MONO — one note per column (click for POLY)`
-                  : `Ch ${lane + 1}: POLY — up to 5 notes per column (click for MONO)`}
-                aria-label={`channel ${lane + 1} ${laneIsMono(lane) ? 'mono' : 'poly'}`}
-                aria-pressed={laneIsMono(lane)}
-                data-lane={lane}
-                data-testid={`clipplayer-mono-${lane}`}
-              >{laneIsMono(lane) ? '1' : '5'}</button>
+              <div class="head-cell" style={`--lane-color:${laneColorEff(lane)}`}>
+                <input
+                  type="color"
+                  class="lane-color"
+                  value={laneColorEff(lane)}
+                  onchange={(e) => setLaneColor(lane, (e.currentTarget as HTMLInputElement).value)}
+                  title={`Ch ${lane + 1} clip color — tints this channel's whole column (empty clips stay unlit)`}
+                  aria-label={`channel ${lane + 1} clip color`}
+                  data-lane={lane}
+                  data-testid={`clipplayer-color-${lane}`}
+                />
+                <button
+                  class="lane-mono"
+                  class:on={laneIsMono(lane)}
+                  onclick={() => toggleLaneMono(lane)}
+                  title={laneIsMono(lane)
+                    ? `Ch ${lane + 1}: MONO — one note per column (click for POLY)`
+                    : `Ch ${lane + 1}: POLY — up to 5 notes per column (click for MONO)`}
+                  aria-label={`channel ${lane + 1} ${laneIsMono(lane) ? 'mono' : 'poly'}`}
+                  aria-pressed={laneIsMono(lane)}
+                  data-lane={lane}
+                  data-testid={`clipplayer-mono-${lane}`}
+                >{laneIsMono(lane) ? '1' : '5'}</button>
+              </div>
             {/each}
           </div>
           {#each Array(CLIP_SLOTS) as _s, slot (slot)}
@@ -717,7 +777,7 @@
                 <button
                   class="pad {st}"
                   role="gridcell"
-                  style={`--lane-hue:${laneHue(lane)}`}
+                  style={`--lane-color:${laneColorEff(lane)}`}
                   aria-label={`lane ${lane + 1} slot ${slot + 1} ${st}`}
                   data-clip={idx}
                   data-lane={lane}
@@ -737,7 +797,7 @@
               <select
                 class="lane-rate"
                 class:offgrid={laneRate(lane) !== RATE_DEFAULT_INDEX}
-                style={`--lane-hue:${laneHue(lane)}`}
+                style={`--lane-color:${laneColorEff(lane)}`}
                 value={String(laneRate(lane))}
                 title={`Ch ${lane + 1} clock rate — ×/÷ the STEP grid (${RATE_LABELS[laneRate(lane)]})`}
                 aria-label={`channel ${lane + 1} clock rate`}
@@ -1002,11 +1062,11 @@
   /* SONG VIEW — arrangement timeline */
   .song-view { display: flex; flex-direction: column; gap: 6px; align-items: center; }
   .song-tl { background: #0d0d0d; border: 1px solid var(--border); border-radius: 2px; }
-  .song-lane { fill: hsl(var(--lane-hue) 30% 8%); }
+  .song-lane { fill: color-mix(in srgb, var(--lane-color) 20%, #06080d); }
   .song-bar { stroke: rgba(255, 255, 255, 0.08); stroke-width: 1; }
   .song-block {
-    fill: hsl(var(--lane-hue) 65% 45%);
-    stroke: hsl(var(--lane-hue) 70% 60%);
+    fill: color-mix(in srgb, var(--lane-color) 80%, #0b0d12);
+    stroke: color-mix(in srgb, var(--lane-color) 70%, #fff);
     stroke-width: 0.5;
     cursor: grab;
     rx: 1;
@@ -1059,15 +1119,18 @@
     cursor: pointer;
     padding: 0;
   }
-  /* lane-tinted states (hue per row) */
-  .pad.loaded { background: hsl(var(--lane-hue) 45% 28%); }
+  /* Channel-tinted states, all mixed off the single --lane-color (the swatch's
+     picked color, else the default-hue hex). EMPTY pads carry no state class, so
+     only the dark base .pad background shows — empty stays unlit. loaded = dim,
+     queued = mid (+ blink), playing = full color (+ a soft glow). */
+  .pad.loaded { background: color-mix(in srgb, var(--lane-color) 38%, #0b0d12); }
   .pad.queued {
-    background: hsl(var(--lane-hue) 70% 50%);
+    background: color-mix(in srgb, var(--lane-color) 72%, #0b0d12);
     animation: blink 0.4s steps(2) infinite;
   }
   .pad.playing {
-    background: hsl(var(--lane-hue) 80% 55%);
-    box-shadow: 0 0 5px hsl(var(--lane-hue) 90% 60%);
+    background: var(--lane-color);
+    box-shadow: 0 0 5px color-mix(in srgb, var(--lane-color) 70%, transparent);
   }
   @keyframes blink { 50% { opacity: 0.35; } }
 
@@ -1166,8 +1229,37 @@
   .cell.vel0.playhead,
   .cell.vel1.playhead,
   .cell.vel2.playhead { background: hsl(200 95% 70%); }
-  /* per-channel MONO/POLY toggle — one per channel COLUMN, sits in the header
-     strip directly above its column (28px wide to align with the pads below). */
+  /* One stacked header cell per channel COLUMN: the COLOR swatch (top) over the
+     MONO/POLY toggle (bottom). 28px wide to align with the pads below; the
+     --lane-color set here is inherited by both children. */
+  .head-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    width: 28px;
+    flex: none;
+  }
+  /* per-channel COLOR picker — the single source of the channel color, present
+     for BOTH mono and poly channels. Rendered as a flat 28×14 swatch (native
+     platform chrome stripped so the layout stays VRT-stable). */
+  .lane-color {
+    width: 28px;
+    height: 14px;
+    flex: none;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 0;
+    background: none;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+  .lane-color::-webkit-color-swatch-wrapper { padding: 0; }
+  .lane-color::-webkit-color-swatch { border: none; border-radius: 1px; }
+  .lane-color::-moz-color-swatch { border: none; border-radius: 1px; }
+  /* per-channel MONO/POLY toggle — one per channel COLUMN, sits below its color
+     swatch in the header strip (28px wide to align with the pads below). */
   .lane-mono {
     width: 28px;
     height: 18px;
@@ -1183,9 +1275,9 @@
     padding: 0;
   }
   .lane-mono.on {
-    background: hsl(var(--lane-hue) 55% 34%);
+    background: color-mix(in srgb, var(--lane-color) 55%, #0b0d12);
     color: #fff;
-    border-color: hsl(var(--lane-hue) 70% 55%);
+    border-color: color-mix(in srgb, var(--lane-color) 78%, #0b0d12);
   }
   /* per-channel clock RATE dropdown — one per channel COLUMN, sits in the footer
      strip directly below its column. Fixed integer size (28px wide to align with
@@ -1211,8 +1303,8 @@
      glance (same accent language as the mono toggle). */
   .lane-rate.offgrid {
     color: #fff;
-    background: hsl(var(--lane-hue) 55% 34%);
-    border-color: hsl(var(--lane-hue) 70% 55%);
+    background: color-mix(in srgb, var(--lane-color) 55%, #0b0d12);
+    border-color: color-mix(in srgb, var(--lane-color) 78%, #0b0d12);
   }
   .knob-row {
     display: flex;
