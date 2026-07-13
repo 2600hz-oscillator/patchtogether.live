@@ -548,7 +548,7 @@
   const SINGLE_MAP: { what: string; addr: string }[] = [
     { what: 'permanent top row (every view)', addr: 'CC 91 = transport (red stopped / green playing) · 92 = GRID · 93 = CLIP · 94 = ARRANGER · 95 = CONTROL (purple; bright = active) · 96 = UNDO · 97 = REDO (orange) · 98 = SHIFT (yellow: dim off / bright held / solid latched). This row NEVER changes meaning per view' },
     { what: 'SHIFT (CC 98)', addr: 'TAP = latch the alt layer (solid yellow); tap again = unlatch. HOLD = momentary (bright yellow). Effective shift = latched OR held. Grid compound functions arm on tap so nothing needs a second hand' },
-    { what: 'GRID — the clip matrix', addr: 'column = channel / lane (1–8 left→right), row = clip slot (top row = slot 1). Single-tap = launch / stop (queued to the boundary; NOW = instant). DOUBLE-TAP a clip = select it + open CLIP on it (empty pad = create a clip). No-shift right column = ROW / scene launch' },
+    { what: 'GRID — the clip matrix', addr: 'column = channel / lane (1–8 left→right), row = clip slot (top row = slot 1). Single-tap = launch / stop (queued to the boundary; NOW = instant). DOUBLE-TAP a clip — or HOLD the CLIP top-row button + tap it — = select it + open CLIP on it (empty pad = create a clip). No-shift right column = ROW / scene launch' },
     { what: 'GRID + shift right column', addr: 'top→bottom: COPY · PASTE · CLIP-DIV · SWING+ · SWING− · LENGTH · PASTE-REV · NOW. Copy / Paste / Paste-Rev / Clip-Div / Length are TAP-TO-ARM (tap → arm → tap a clip). Swing ± are direct ±2 % nudges on the SELECTED channel. NOW is a sticky toggle' },
     { what: 'CLIP — note-editor right column', addr: 'top→bottom: DOUBLE · LENGTH · FOLLOW · KEYS · ROW+ · ROW− · STEP◀ · STEP▶. Shift: ROW± = ±octave / page, STEP± = block jump, and the 8×8 becomes VELOCITY-cycle (tap a note → cycle its velocity)' },
     { what: 'KEYS — scale select (no shift)', addr: 'top→bottom: MAJOR · MINOR · PENTATONIC · DORIAN · PHRYGIAN · MIXOLYDIAN · CHROMATIC · ARP on/off. Selected scale glows bright green. The scale lights the keyboard but does NOT snap live input (pads stay chromatic)' },
@@ -664,8 +664,10 @@
     <strong>CLIP</strong> (edit notes), <strong>KEYS</strong> (play, record + arpeggiate) and
     <strong>CONTROL</strong> (the performance deck), plus an inert <strong>ARRANGER</strong> — laid over a
     <strong>permanent top-row nav bar</strong> that never changes meaning. Switch views with the top-row
-    buttons or the on-card view buttons; a one-hand <strong>SHIFT</strong> layer adds a second function to
-    every right-column button without ever needing a second hand.
+    buttons — GRID / ARRANGER / CONTROL flip instantly, while <strong>CLIP</strong> is a
+    <strong>hold-to-pick</strong> launcher (hold it, tap a clip to edit that clip, release without a tap to
+    stay put) — or the on-card view buttons; a one-hand <strong>SHIFT</strong> layer adds a second function
+    to every right-column button without ever needing a second hand.
   </p>
   <p class="muted">
     New to the device? Jump to <a href="#make-a-patch"><strong>Make a patch in 1-pad mode</strong></a> for
@@ -705,6 +707,16 @@
     <li><strong>SHIFT (CC 98):</strong> the alt-layer key (next). Dim yellow off, bright yellow while held,
       solid yellow while latched.</li>
   </ul>
+
+  <h4>HOLD CLIP → peek a clip to edit</h4>
+  <LaunchpadDiagram
+    top={permTop('grid', { running: true })}
+    pads={gridPads}
+    scene={gridRowScene}
+    callouts={gridCallouts}
+    accent={hex(RGB_VIEW_ACTIVE)}
+    caption="HOLD the CLIP button (CC 93) from ANY view and the clip launcher peeks over it (shown). TAP a clip → its note editor opens on THAT clip, without changing whether it plays. RELEASE without a tap → you drop back to exactly where you were (grid, arranger, control, or the clip you were already editing). A quick CLIP tap with no clip picked is a no-op."
+  />
 
   <h3 id="single-shift">The shift layer + tap-to-arm — one-handed by design</h3>
   <p>
@@ -1352,8 +1364,8 @@
   />
   <ol class="steps">
     <li>In <strong>GRID</strong>, <strong>double-tap</strong> the <strong>channel-3, slot-1 pad</strong>
-      (third column, top row) → the clip opens in <strong>CLIP view</strong> (an empty pad makes a fresh
-      clip).</li>
+      (third column, top row) — or <strong>hold CLIP and tap it</strong> — → the clip opens in
+      <strong>CLIP view</strong> (an empty pad makes a fresh clip).</li>
     <li>Press <strong>KEYS</strong> (right column, 4th from the top, bright orange) → the device becomes the
       keyboard for that clip; the transport starts and the clip plays.</li>
     <li><strong>Pick a scale:</strong> tap a scale in the right column — e.g. <strong>MINOR</strong> (2nd
