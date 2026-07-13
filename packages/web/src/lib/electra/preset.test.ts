@@ -358,6 +358,46 @@ describe('generatePreset — MIXMASTER page', () => {
     expect(rw.some((a) => /_mid$/.test(a.key) || /:comp/.test(a.key))).toBe(false);
   });
 
+  it('defaults each channel VOLUME label to Ch{n} when no custom names are given', () => {
+    const { preset } = generatePreset(baseInput());
+    for (const ch of [1, 2, 3, 4, 5, 6]) {
+      expect(
+        preset.controls.some((c) => c.pageId === PAGE_MIXMASTER && c.name === `Ch${ch}`),
+      ).toBe(true);
+    }
+  });
+
+  it('uses the custom channel names on the VOLUME faders (passthrough from data.channelNames)', () => {
+    const { preset, allocations } = generatePreset(
+      baseInput({ mixmstrsChannelNames: ['Kick', 'Snare', null, '', '   ', 'Vocals'] }),
+    );
+    const volCtl = (paramId: string) => {
+      const a = allocations.find((x) => x.key === `mx:${paramId}` && x.pageId === PAGE_MIXMASTER)!;
+      return preset.controls.find(
+        (c) => c.pageId === PAGE_MIXMASTER && c.controlSetId === a.controlSetId && c.potId === a.potId,
+      )!;
+    };
+    // Set names replace the default; null / empty / whitespace fall back to Ch{n}.
+    expect(volCtl('ch1_volume').name).toBe('Kick');
+    expect(volCtl('ch2_volume').name).toBe('Snare');
+    expect(volCtl('ch3_volume').name).toBe('Ch3');
+    expect(volCtl('ch4_volume').name).toBe('Ch4');
+    expect(volCtl('ch5_volume').name).toBe('Ch5');
+    expect(volCtl('ch6_volume').name).toBe('Vocals');
+    // The per-function EQ/SEND labels are untouched by the channel name.
+    expect(preset.controls.some((c) => c.pageId === PAGE_MIXMASTER && c.name === 'Lo1')).toBe(true);
+  });
+
+  it('clamps a long custom channel name to the device render width', () => {
+    const long = 'ThisChannelNameIsWayTooLong';
+    const { preset } = generatePreset(baseInput({ mixmstrsChannelNames: [long] }));
+    const ch1 = preset.controls.find(
+      (c) => c.pageId === PAGE_MIXMASTER && c.controlSetId === 1 && c.potId === 1,
+    )!;
+    expect(ch1.name.length).toBeLessThanOrEqual(14);
+    expect(long.startsWith(ch1.name)).toBe(true);
+  });
+
   it('omits MixMaster controls when no mixer is present (page shell only)', () => {
     const { preset } = generatePreset(baseInput({ mixmstrsId: null }));
     expect(preset.controls.filter((c) => c.pageId === PAGE_MIXMASTER)).toHaveLength(0);

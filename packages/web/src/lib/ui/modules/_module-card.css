@@ -370,6 +370,27 @@
   margin-bottom: 2px;
 }
 .card-back-panel .back-col.outputs { text-align: right; }
+/* Opt-in split rear-view INPUT list (PatchPanel `backInputColumns`): the inputs
+ * col grows to take the spare mid-card width so its two sub-columns fit
+ * side-by-side, while the short outputs col keeps its single narrow column. Only
+ * ever applied to a card that opts in (MIXMSTRS's 77-input back panel, which
+ * overflows a single column and clips its lower rows); every other card renders
+ * the single-column `.back-col.inputs` unchanged. */
+.card-back-panel .back-col.inputs.multi {
+  flex: 2 1 0;
+}
+.card-back-panel .back-subcols {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.card-back-panel .back-subcol {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
 /* The jack is a <button> (live patch point in rear view) — strip the native
  * button chrome so it reads as the bare jack-hole + label it did as a div, then
  * layer on a hover/focus cue (only ever shown in rear view, where it's the

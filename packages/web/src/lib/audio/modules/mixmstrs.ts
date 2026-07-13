@@ -68,6 +68,44 @@ const PARAM_PREFIX = '/MIXMSTRS';
 export const MIXMSTRS_CHANNELS = [1, 2, 3, 4, 5, 6] as const;
 const NUM_CHANNELS = MIXMSTRS_CHANNELS.length;
 
+// ---------------- Per-channel custom names ----------------
+//
+// Each channel's `CH {n}` label is user-editable (MixmstrsCard's inline label
+// editor). The chosen name is stored on `node.data.channelNames` — a
+// per-channel `(string | null)[]` (index 0 = ch1), NOT a port/param, so it adds
+// nothing to the I/O contract. null / empty / whitespace-only = "unset" (the
+// card + the rear-view section label + the Electra MIXMASTER page all fall back
+// to the default `CH{n}` / `Ch{n}`). It rides the same Y.Doc `data` channel as
+// `name`/`controlColor`, so it persists + syncs to peers.
+
+/** Max stored length of a per-channel custom name. The card input caps here;
+ *  the Electra control label clamps further to the device's 14-char budget. */
+export const MIXMSTRS_CHANNEL_NAME_MAX = 16;
+
+/**
+ * Coerce arbitrary persisted `node.data.channelNames` into a length-safe
+ * `(string | null)[NUM_CHANNELS]`. ALWAYS returns exactly NUM_CHANNELS entries
+ * regardless of the raw value's shape/length (a shorter/longer/junk array, a
+ * non-array, or undefined). Each entry is trimmed + capped to
+ * MIXMSTRS_CHANNEL_NAME_MAX; a non-string / empty / whitespace-only entry
+ * becomes null (= fall back to the default `CH{n}`). Pure + exported so the
+ * card, the Electra host, and the unit test share one definition.
+ */
+export function coerceChannelNames(raw: unknown): (string | null)[] {
+  const arr = Array.isArray(raw) ? raw : [];
+  const out: (string | null)[] = [];
+  for (let i = 0; i < NUM_CHANNELS; i++) {
+    const v = arr[i];
+    if (typeof v === 'string') {
+      const t = v.trim();
+      out.push(t.length > 0 ? t.slice(0, MIXMSTRS_CHANNEL_NAME_MAX) : null);
+    } else {
+      out.push(null);
+    }
+  }
+  return out;
+}
+
 // ---------------- Comp macro mapping ----------------
 //
 // Pure helper extracted so the unit test can verify the boundary behavior

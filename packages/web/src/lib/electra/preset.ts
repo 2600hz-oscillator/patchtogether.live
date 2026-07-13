@@ -98,6 +98,14 @@ export interface PresetGenInput {
   /** The MIXMASTER source: the mixmstrs node id (null → no MixMaster controls,
    *  just the page shell). */
   mixmstrsId: string | null;
+  /** OPTIONAL per-channel custom names for the MIXMASTER page (index 0 = ch1,
+   *  from the mixmstrs node's `data.channelNames`). A non-empty entry REPLACES
+   *  the default `Ch{n}` label on that channel's VOLUME fader — the channel's
+   *  identity control at the head of its column — so the name the user typed on
+   *  the card shows on the device (clamped to the 14-char render width). A
+   *  null/absent entry keeps `Ch{n}`. The per-function EQ/SEND labels
+   *  (Lo/Hi/S1/S2) stay as-is beneath it. */
+  mixmstrsChannelNames?: (string | null)[];
   /** The SYSTEM source: the timelorde node id (null → no tempo controls). */
   timelordeId: string | null;
   /** Preset name (defaults to "patchtogether"). */
@@ -375,7 +383,12 @@ export function generatePreset(input: PresetGenInput): GeneratedPreset {
       });
     };
     for (const ch of MIX_CHANNELS) {
-      pushMixAt(`ch${ch}_volume`, `Ch${ch}`, 1, ch, 0, 1, 'linear');            // set 1 top: VOL
+      // The VOLUME fader carries the channel's IDENTITY — use the user's custom
+      // name (data.channelNames) when set, else the default `Ch{n}`. clampName
+      // (in the finalize pass below) trims it to the device's 14-char budget.
+      const custom = input.mixmstrsChannelNames?.[ch - 1];
+      const volLabel = custom && custom.trim().length > 0 ? custom.trim() : `Ch${ch}`;
+      pushMixAt(`ch${ch}_volume`, volLabel, 1, ch, 0, 1, 'linear');             // set 1 top: VOL
       // PAN → set 1 bottom (pot 6+ch) RESERVED until the module has a pan param.
       pushMixAt(`ch${ch}_low`, `Lo${ch}`, 2, ch, -12, 12, 'linear', 'dB');       // set 2 top: LOW EQ
       pushMixAt(`ch${ch}_high`, `Hi${ch}`, 2, 6 + ch, -12, 12, 'linear', 'dB');  // set 2 bottom: HIGH EQ

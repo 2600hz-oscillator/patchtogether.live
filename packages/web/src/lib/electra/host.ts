@@ -12,6 +12,7 @@
 import { patch } from '$lib/graph/store';
 import type { ModuleNode } from '$lib/graph/types';
 import { getModuleDef } from '$lib/audio/module-registry';
+import { coerceChannelNames } from '$lib/audio/modules/mixmstrs';
 import type { PatchEngine } from '$lib/audio/engine';
 import {
   listControlSurfaces,
@@ -110,6 +111,7 @@ function moduleLabel(moduleId: string): string {
 
 /** Build the generator input from the live patch. */
 export function buildLiveGenInput(): PresetGenInput {
+  const mixmstrsId = findSingleton('mixmstrs');
   return {
     surfaceBindings: page1Bindings(),
     moduleLabel,
@@ -127,7 +129,14 @@ export function buildLiveGenInput(): PresetGenInput {
         units: def.units,
       };
     },
-    mixmstrsId: findSingleton('mixmstrs'),
+    mixmstrsId,
+    // The custom channel names (data.channelNames) PASS THROUGH to the MIXMASTER
+    // page labels — read LIVE from the node, never copied onto the Electra node.
+    mixmstrsChannelNames: mixmstrsId
+      ? coerceChannelNames(
+          (patch.nodes[mixmstrsId]?.data as { channelNames?: unknown } | undefined)?.channelNames,
+        )
+      : undefined,
     timelordeId: findSingleton('timelorde'),
     name: 'patchtogether',
   };
