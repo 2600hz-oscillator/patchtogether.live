@@ -35,6 +35,7 @@
     slotOf,
     lanePlaying,
     laneQueued,
+    sceneQueue,
     defaultNoteClip,
     coerceClipRecord,
     rowToMidi,
@@ -221,6 +222,21 @@
     }
     if (lanePlaying(dataObj(), lane) === slot) queueLane(lane, 'stop', immediate);
     else queueLane(lane, slot, immediate);
+  }
+
+  // Launch a whole SCENE — a grid ROW is one clip SLOT across every channel. Fire
+  // slot `slot` on every lane that has a clip there, STOP the lanes that don't, in
+  // ONE transaction (the same row/scene fire the physical Launchpad scene column
+  // does — see handleSceneLaunch). Shift-click = NOW (immediate mid-clip switch).
+  function launchScene(slot: number, immediate = false) {
+    const q = sceneQueue(dataObj(), slot);
+    writeData((d) => {
+      d.queued = q;
+      if (immediate) d.queuedImmediate = new Array<boolean>(CLIP_LANES).fill(true);
+    });
+  }
+  function onSceneClick(slot: number, ev: MouseEvent) {
+    launchScene(slot, ev.shiftKey);
   }
 
   function padState(idx: number): 'empty' | 'loaded' | 'queued' | 'playing' {
@@ -751,6 +767,7 @@
                 >{laneIsMono(lane) ? '1' : '5'}</button>
               </div>
             {/each}
+            <div class="scene-spacer" aria-hidden="true"></div>
           </div>
           {#each Array(CLIP_SLOTS) as _s, slot (slot)}
             <div class="grid-row" role="row">
@@ -771,6 +788,16 @@
                   ondblclick={() => onPadDblClick(idx)}
                 ></button>
               {/each}
+              <!-- row / scene launch: fire this slot across every channel, like
+                   the physical Launchpad scene column. Shift-click = NOW. -->
+              <button
+                class="scene-btn"
+                onclick={(e) => onSceneClick(slot, e)}
+                title={`Launch scene ${slot + 1} — fire this row across every channel (shift = now)`}
+                aria-label={`launch scene ${slot + 1}`}
+                data-scene={slot}
+                data-testid={`clipplayer-scene-${slot}`}
+              >▶</button>
             </div>
           {/each}
           <!-- channel footer: per-lane clock RATE select — divide/multiply this
@@ -793,6 +820,7 @@
                 {/each}
               </select>
             {/each}
+            <div class="scene-spacer" aria-hidden="true"></div>
           </div>
         </div>
 
@@ -1117,6 +1145,30 @@
     box-shadow: 0 0 5px color-mix(in srgb, var(--lane-color) 70%, transparent);
   }
   @keyframes blink { 50% { opacity: 0.35; } }
+  /* Scene / row-launch column: a yellow ▶ button at the end of each grid ROW that
+     fires that slot across EVERY channel (a whole scene) — the on-screen twin of
+     the physical Launchpad scene column. Fixed size (VRT-deterministic); the
+     head/foot each carry a matching .scene-spacer so the 8 channel columns stay
+     aligned above and below the pads. */
+  .scene-btn {
+    width: 22px;
+    height: 28px;
+    flex: none;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    background: #d9bb27;
+    color: #000;
+    font-size: 0.72rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .scene-btn:hover { background: #f0d43a; }
+  .scene-btn:active { background: #b89a12; }
+  .scene-spacer { width: 22px; flex: none; }
 
   .editor { display: flex; flex-direction: column; gap: 6px; }
   .editor-head {

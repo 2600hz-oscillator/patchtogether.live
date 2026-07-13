@@ -12,6 +12,7 @@ import {
   lanePlaying,
   laneQueued,
   playingSet,
+  sceneQueue,
   defaultNoteClip,
   coerceNoteEvent,
   coerceClipRecord,
@@ -60,6 +61,33 @@ import {
   type NoteEvent,
   type ClipPlayerData,
 } from './clip-types';
+
+describe('sceneQueue: launch a whole ROW (slot) across every lane', () => {
+  it('queues the slot on lanes that have a clip there, stops the rest', () => {
+    const data = {
+      clips: {
+        [String(clipIndex(2, 0))]: defaultNoteClip(), // slot 2, lane 0
+        [String(clipIndex(2, 3))]: defaultNoteClip(), // slot 2, lane 3
+        [String(clipIndex(5, 1))]: defaultNoteClip(), // a DIFFERENT slot — must be ignored
+      },
+    } as unknown as ClipPlayerData;
+    const q = sceneQueue(data, 2);
+    expect(q).toHaveLength(CLIP_LANES);
+    expect(q[0], 'lane 0 has a slot-2 clip → queue it').toBe(2);
+    expect(q[3], 'lane 3 has a slot-2 clip → queue it').toBe(2);
+    expect(q[1], 'lane 1 has no slot-2 clip → stop').toBe('stop');
+    expect(q[2]).toBe('stop');
+    expect(q[7]).toBe('stop');
+  });
+  it('an empty row queues stop on every lane', () => {
+    expect(sceneQueue({ clips: {} } as unknown as ClipPlayerData, 0)).toEqual(
+      new Array(CLIP_LANES).fill('stop'),
+    );
+  });
+  it('undefined data → all stop (no crash)', () => {
+    expect(sceneQueue(undefined, 3)).toEqual(new Array(CLIP_LANES).fill('stop'));
+  });
+});
 
 describe('dimensions', () => {
   it('is an 8×8 = 64 clip bank', () => {
