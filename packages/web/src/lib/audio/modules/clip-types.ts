@@ -306,6 +306,36 @@ export function coerceLaneColors(raw: unknown): (string | null)[] {
 export function laneColor(data: ClipPlayerData | undefined, lane: number): string | null {
   return coerceLaneColor(data?.laneColor?.[lane]);
 }
+/** The DEFAULT colour for a channel that has no picked colour: an evenly-spaced
+ *  hue around the wheel at hsl(h, 70%, 50%) → #rrggbb. Single source of truth so
+ *  the card swatch AND the Launchpad LED pads show the SAME default (hue 0 →
+ *  #d92626, hue 90 → #80d926). */
+export function defaultLaneColorHex(lane: number): string {
+  const h = Math.round((lane * 360) / CLIP_LANES);
+  const s = 0.7;
+  const l = 0.5;
+  const c = (1 - Math.abs(2 * l - 1)) * s; // chroma
+  const hp = (((h % 360) + 360) % 360) / 60;
+  const x = c * (1 - Math.abs((hp % 2) - 1));
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  if (hp < 1) { r = c; g = x; }
+  else if (hp < 2) { r = x; g = c; }
+  else if (hp < 3) { g = c; b = x; }
+  else if (hp < 4) { g = x; b = c; }
+  else if (hp < 5) { r = x; b = c; }
+  else { r = c; b = x; }
+  const m = l - c / 2;
+  const hx = (n: number) => Math.round((n + m) * 255).toString(16).padStart(2, '0');
+  return `#${hx(r)}${hx(g)}${hx(b)}`;
+}
+/** The EFFECTIVE channel colour: the user-picked colour if set, else the default
+ *  hue. Both the card and the LED grid use this so a channel with no picked
+ *  colour still shows its default hue (not a fixed fallback). */
+export function laneColorEff(data: ClipPlayerData | undefined, lane: number): string {
+  return laneColor(data, lane) ?? defaultLaneColorHex(lane);
+}
 
 // ---------------------------------------------------------------------------
 // SWING (per-lane off-beat shuffle) — PURE. Same 0..0.75 range as DRUMSEQZ's
