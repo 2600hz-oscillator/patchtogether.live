@@ -24,6 +24,15 @@
 //   inputs[4] = decay_cv   (2 oct of decay TIME per volt — +1 V = ×4)
 //   inputs[5] = tone_cv    (sums into TONE, clamped 0..1)
 //   inputs[6] = noise_cv   (sums into NOISE, clamped 0..1)
+//   inputs[7] = tune_cv    (2 oct/V on the TUNE knob — distinct from pitch_cv)
+//   inputs[8] = bend_time_cv (2 oct of bend-settle TIME per volt — +1 V = ×4)
+//   inputs[9] = drive_cv   (sums into DRIVE, clamped 0..1)
+//   inputs[10] = level_cv  (±1 V = ±18 dB — full-swing on the dB level)
+//
+// EVERY continuous control has a per-knob CV input. The scaling law for each
+// lives in the shared core (lib/tomtom-dsp.ts) — cv = 0 is a perfect no-op,
+// so an unpatched input (fed the 0-offset silence source by the factory)
+// leaves the render byte-identical.
 //
 // The `strike` param is the card's manual STRIKE pad (the bluebox
 // press-param pattern): it is OR-ed with trigger_in before the core's edge
@@ -134,6 +143,10 @@ class TomtomProcessor extends AudioWorkletProcessor {
     const inDecay  = inputs[4]?.[0];
     const inTone   = inputs[5]?.[0];
     const inNoise  = inputs[6]?.[0];
+    const inTune     = inputs[7]?.[0];
+    const inBendTime = inputs[8]?.[0];
+    const inDrive    = inputs[9]?.[0];
+    const inLevel    = inputs[10]?.[0];
     const out = outputs[0]?.[0];
     if (!out) return true;
     const n = out.length;
@@ -156,11 +169,15 @@ class TomtomProcessor extends AudioWorkletProcessor {
       p.noise    = rd('noise', 0.25);
       p.drive    = rd('drive', 0.25);
       p.level    = rd('level', 0);
-      p.pitchCv  = inPitch ? (inPitch[s] ?? 0) : 0;
-      p.bendCv   = inBend ? (inBend[s] ?? 0) : 0;
-      p.decayCv  = inDecay ? (inDecay[s] ?? 0) : 0;
-      p.toneCv   = inTone ? (inTone[s] ?? 0) : 0;
-      p.noiseCv  = inNoise ? (inNoise[s] ?? 0) : 0;
+      p.pitchCv    = inPitch ? (inPitch[s] ?? 0) : 0;
+      p.tuneCv     = inTune ? (inTune[s] ?? 0) : 0;
+      p.bendCv     = inBend ? (inBend[s] ?? 0) : 0;
+      p.bendTimeCv = inBendTime ? (inBendTime[s] ?? 0) : 0;
+      p.decayCv    = inDecay ? (inDecay[s] ?? 0) : 0;
+      p.toneCv     = inTone ? (inTone[s] ?? 0) : 0;
+      p.noiseCv    = inNoise ? (inNoise[s] ?? 0) : 0;
+      p.driveCv    = inDrive ? (inDrive[s] ?? 0) : 0;
+      p.levelCv    = inLevel ? (inLevel[s] ?? 0) : 0;
 
       const trig = Math.max(inTrig ? (inTrig[s] ?? 0) : 0, strike);
       const accent = inAccent ? (inAccent[s] ?? 0) : 0;

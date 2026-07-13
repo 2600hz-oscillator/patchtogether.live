@@ -18,8 +18,9 @@
   import { useEngine } from '$lib/audio/engine-context';
   import { tomtomDef } from '$lib/audio/modules/tomtom';
   import type { ModuleNode } from '$lib/graph/types';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { cardParams, portsFromDef } from './card-kit';
+  import { cardParams } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -58,18 +59,49 @@
     setStrike(0);
   }
 
-  const inputs = portsFromDef(tomtomDef.inputs, {
-    trigger_in: 'TRIG', accent_in: 'ACC', pitch_cv: 'V/OCT',
-    bend_cv: 'BEND', decay_cv: 'DEC', tone_cv: 'TONE', noise_cv: 'NSE',
-  });
-  const outputs = portsFromDef(tomtomDef.outputs, { audio_out: 'OUT' });
+  // Rear PatchPanel jacks grouped into labeled SECTIONS that mirror the
+  // on-card headers (MEMBRANE · COLOR · OUT): each section lists its
+  // per-control CV jacks in KNOB ORDER. The structural strike/accent/pitch
+  // jacks + the audio output sit in a trailing TRIG/OUT section.
+  const sections: { label: string; inputs?: PortDescriptor[]; outputs?: PortDescriptor[] }[] = [
+    {
+      label: 'MEMBRANE',
+      inputs: [
+        { id: 'tune_cv',      label: 'TUNE', cable: 'cv' },
+        { id: 'bend_cv',      label: 'BEND', cable: 'cv' },
+        { id: 'bend_time_cv', label: 'BTIM', cable: 'cv' },
+        { id: 'decay_cv',     label: 'DEC',  cable: 'cv' },
+      ],
+    },
+    {
+      label: 'COLOR',
+      inputs: [
+        { id: 'tone_cv',  label: 'TONE', cable: 'cv' },
+        { id: 'noise_cv', label: 'NSE',  cable: 'cv' },
+        { id: 'drive_cv', label: 'DRV',  cable: 'cv' },
+      ],
+    },
+    {
+      label: 'OUT',
+      inputs: [{ id: 'level_cv', label: 'LVL', cable: 'cv' }],
+    },
+    {
+      label: 'TRIG/OUT',
+      inputs: [
+        { id: 'trigger_in', label: 'TRIG',  cable: 'gate' },
+        { id: 'accent_in',  label: 'ACC',   cable: 'cv' },
+        { id: 'pitch_cv',   label: 'V/OCT', cable: 'cv' },
+      ],
+      outputs: [{ id: 'audio_out', label: 'OUT', cable: 'audio' }],
+    },
+  ];
 </script>
 
 <div class="mod-card tomtom-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
   <ModuleTitle {id} {data} defaultLabel="TOM DRUM" />
 
-  <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={440}>
+  <PatchPanel nodeId={id} groupingStrategy="sectioned" {sections} panelWidth={440}>
     <section class="band">
       <div class="groups">
         <div class="group wide">

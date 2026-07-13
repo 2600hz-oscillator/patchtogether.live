@@ -232,6 +232,22 @@ const PWM_CV_SCALE = 0.45;
 /** res_cv / drive_cv: ±1 V = the whole knob range (full-swing rule). */
 const RES_CV_SCALE = 1;
 const DRIVE_CV_SCALE = 1;
+/** The remaining per-knob CVs are GLOBAL block-rate scalars — applied to ALL
+ *  5 voices in the core exactly like res_cv/drive_cv (not per-lane). Every law
+ *  is a perfect NO-OP at cv = 0, so an unpatched input leaves the render
+ *  byte-identical. The 0..1 / −1..1 controls add clamp(cv, ±2) directly
+ *  (scale 1 = the full-swing rule). Special scales: */
+/** detune_cv: ±1 V = ±50 ¢ (the full ±50 ¢ DETUNE range centered on knob). */
+const DETUNE_CV_CENTS = 50;
+/** oct2_cv: 1 octave step per volt (summed, rounded, clamped −1..+1). */
+const OCT2_CV_STEP = 1;
+/** Envelope-TIME CVs (fatk/fdec/frel/atk/dec/rel): 4 octaves of time per volt
+ *  (+1 V = ×16, −1 V = ×1⁄16) — a wide, musical sweep multiplying the knob
+ *  time (cv = 0 → ×1 exactly, a byte-exact no-op). */
+const EG_TIME_CV_OCT = 4;
+/** level_cv (dB): ±1 V sweeps ±18 dB — the FULL 36 dB range centered on the
+ *  knob (the cv-range-standard full-swing rule for a dB control). */
+const LEVEL_CV_DB = 18;
 
 // ── Wavefolder (stereo West-Coast triangle folder, ADAA'd — see header) ──
 /** FOLD knob → input drive gain G = 1 + FOLD·FOLD_GAIN_MAX into the ±1
@@ -813,6 +829,28 @@ export interface TidyVcoBus {
   symCv?: ArrayLike<number> | number;
   resCv: number;
   driveCv: number;
+  /** The remaining per-knob CVs — GLOBAL block-rate scalars (applied to all 5
+   *  voices, like resCv/driveCv). Optional so existing callers + the ART
+   *  profile default them to 0 (a byte-exact no-op). Scaling laws live in
+   *  renderTidyVco. */
+  shape1Cv?: number;
+  shape2Cv?: number;
+  detuneCv?: number;
+  oct2Cv?: number;
+  mixCv?: number;
+  subCv?: number;
+  envCv?: number;
+  trackCv?: number;
+  fatkCv?: number;
+  fdecCv?: number;
+  fsusCv?: number;
+  frelCv?: number;
+  atkCv?: number;
+  decCv?: number;
+  susCv?: number;
+  relCv?: number;
+  widthCv?: number;
+  levelCv?: number;
 }
 
 function busCv(src: ArrayLike<number> | number | undefined, i: number): number {
@@ -849,7 +887,9 @@ export function renderTidyVco(
   }
   const monoHigh = bus.monoGate > 0.5;
 
-  const width = clamp(p.width, 0, 1);
+  // WIDTH + its CV (block-rate, global): drives the poly pan fan / mono unison
+  // spread AND the wavefolder's stereo decorrelation. cv = 0 → clamp(p.width).
+  const width = clamp(clamp(p.width, 0, 1) + clamp(bus.widthCv ?? 0, -2, 2), 0, 1);
   const uniCents = UNISON_CENTS * width;
 
   // Per-voice block-rate setup: gates, held pitch, pan, detune terms.
@@ -885,18 +925,38 @@ export function renderTidyVco(
     vGate[v] = gateNow;
   }
 
-  // Block-rate knob/CV combines.
+  // Block-rate knob/CV combines. EVERY continuous control has a GLOBAL per-knob
+  // CV summed in here (all 5 voices, like res/drive) — each law a no-op at 0.
   const resEff = clamp(clamp(p.res, 0, 1) + RES_CV_SCALE * clamp(bus.resCv, -2, 2), 0, 1);
   const k = tidyResToK(resEff);
   const comp = tidyCompGain(k);
   const driveEff = clamp(clamp(p.drive, 0, 1) + DRIVE_CV_SCALE * clamp(bus.driveCv, -2, 2), 0, 1);
   const { preGain, makeup } = tidyDriveGains(driveEff);
-  const mixA = Math.cos((clamp(p.mix, 0, 1) * Math.PI) / 2);
-  const mixB = Math.sin((clamp(p.mix, 0, 1) * Math.PI) / 2);
-  const subLvl = clamp(p.sub, 0, 1) * SUB_GAIN;
-  const oct2 = Math.round(clamp(p.oct2, -1, 1));
-  const detOct = clamp(p.detune, -50, 50) / 1200;
-  const levelLin = Math.pow(10, clamp(p.level, -24, 12) / 20);
+  // OSC: shape morphs, mix, sub, octave, detune (0..1 / bipolar full-swing).
+  const shape1Eff = clamp(clamp(p.shape1, 0, 1) + clamp(bus.shape1Cv ?? 0, -2, 2), 0, 1);
+  const shape2Eff = clamp(clamp(p.shape2, 0, 1) + clamp(bus.shape2Cv ?? 0, -2, 2), 0, 1);
+  const mixEff = clamp(clamp(p.mix, 0, 1) + clamp(bus.mixCv ?? 0, -2, 2), 0, 1);
+  const mixA = Math.cos((mixEff * Math.PI) / 2);
+  const mixB = Math.sin((mixEff * Math.PI) / 2);
+  const subLvl = clamp(clamp(p.sub, 0, 1) + clamp(bus.subCv ?? 0, -2, 2), 0, 1) * SUB_GAIN;
+  const oct2 = Math.round(clamp(clamp(p.oct2, -1, 1) + OCT2_CV_STEP * clamp(bus.oct2Cv ?? 0, -2, 2), -1, 1));
+  const detuneEff = clamp(clamp(p.detune, -50, 50) + DETUNE_CV_CENTS * clamp(bus.detuneCv ?? 0, -2, 2), -50, 50);
+  const detOct = detuneEff / 1200;
+  // FILTER: env depth (bipolar ±4 oct) + keytracking.
+  const envEff = clamp(clamp(p.env, -1, 1) + clamp(bus.envCv ?? 0, -2, 2), -1, 1);
+  const trackEff = clamp(clamp(p.track, 0, 1) + clamp(bus.trackCv ?? 0, -2, 2), 0, 1);
+  // BOTH EGs: attack/decay/release TIME (4 oct/V) + sustain LEVEL (full-swing).
+  const fatkEff = p.fatk * Math.pow(2, EG_TIME_CV_OCT * clamp(bus.fatkCv ?? 0, -2, 2));
+  const fdecEff = p.fdec * Math.pow(2, EG_TIME_CV_OCT * clamp(bus.fdecCv ?? 0, -2, 2));
+  const fsusEff = clamp(clamp(p.fsus, 0, 1) + clamp(bus.fsusCv ?? 0, -2, 2), 0, 1);
+  const frelEff = p.frel * Math.pow(2, EG_TIME_CV_OCT * clamp(bus.frelCv ?? 0, -2, 2));
+  const atkEff = p.atk * Math.pow(2, EG_TIME_CV_OCT * clamp(bus.atkCv ?? 0, -2, 2));
+  const decEff = p.dec * Math.pow(2, EG_TIME_CV_OCT * clamp(bus.decCv ?? 0, -2, 2));
+  const susEff = clamp(clamp(p.sus, 0, 1) + clamp(bus.susCv ?? 0, -2, 2), 0, 1);
+  const relEff = p.rel * Math.pow(2, EG_TIME_CV_OCT * clamp(bus.relCv ?? 0, -2, 2));
+  // OUT: level (±18 dB/V full-swing).
+  const levelEff = clamp(clamp(p.level, -24, 12) + LEVEL_CV_DB * clamp(bus.levelCv ?? 0, -2, 2), -24, 12);
+  const levelLin = Math.pow(10, levelEff / 20);
 
   for (let i = from; i < to; i++) {
     const cutoffCv = busCv(bus.cutoffCv, i - from);
@@ -917,9 +977,10 @@ export function renderTidyVco(
 
     for (let v = 0; v < TIDY_VOICES; v++) {
       const vs = s.voices[v]!;
-      // EGs tick every sample (release tails keep sounding).
-      const feg = rcAdsrTick(vs.feg, p.fatk, p.fdec, p.fsus, p.frel, sr);
-      const aeg = rcAdsrTick(vs.aeg, p.atk, p.dec, p.sus, p.rel, sr);
+      // EGs tick every sample (release tails keep sounding). Times/sustains
+      // carry their per-knob CV (block-rate effectives computed above).
+      const feg = rcAdsrTick(vs.feg, fatkEff, fdecEff, fsusEff, frelEff, sr);
+      const aeg = rcAdsrTick(vs.aeg, atkEff, decEff, susEff, relEff, sr);
       if (!vGate[v] && vs.aeg.stage === RC_IDLE) continue; // fully idle voice
       active++;
 
@@ -930,8 +991,8 @@ export function renderTidyVco(
       const dt1 = f1 / sr;
       const dt2 = f2 / sr;
       const dtSub = dt1 / 2;
-      const o1 = tidyOscSample(vs.ph1, dt1, p.shape1, pwEff);
-      const o2 = tidyOscSample(vs.ph2, dt2, p.shape2, pwEff);
+      const o1 = tidyOscSample(vs.ph1, dt1, shape1Eff, pwEff);
+      const o2 = tidyOscSample(vs.ph2, dt2, shape2Eff, pwEff);
       const oSub = tidyPulse(vs.phSub, dtSub, 0.5);
       vs.ph1 += dt1;
       if (vs.ph1 >= 1) vs.ph1 -= 1;
@@ -942,7 +1003,7 @@ export function renderTidyVco(
       const oscBus = (mixA * o1 + mixB * o2 + subLvl * oSub) * OSC_NORM;
 
       // ── Per-voice cutoff → prewarped g (keytrack + filter EG + CV). ──
-      const fc = tidyCutoffHz(p.cutoff, p.track, voct, p.env, feg, cutoffCv, osRate);
+      const fc = tidyCutoffHz(p.cutoff, trackEff, voct, envEff, feg, cutoffCv, osRate);
       vs.g = tidyCutoffToG(fc, osRate);
       vs.k = k;
       vs.comp = comp;

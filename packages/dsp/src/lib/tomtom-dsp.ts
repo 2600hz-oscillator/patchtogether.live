@@ -115,6 +115,19 @@ const BEND_CV_ST = 24;
  *  knob's full 40–1500 ms range (the cv-range-standard rule). */
 const DECAY_CV_OCT = 2;
 const DECAY_CV_CLAMP = 2;
+/** tune_cv: 2 octaves of TUNE per volt (+1 V = ×4, −1 V = ×¼), clamped back
+ *  into the 60–400 Hz knob range. This modulates ONLY the settled fundamental
+ *  (the TUNE knob) — distinct from pitch_cv, which is a 1 V/oct transpose of
+ *  the WHOLE voice (fundamental + overtone + breath band). A ±1 V bipolar
+ *  sweep covers the knob's full ~2.7-octave range and beyond (then clamps). */
+const TUNE_CV_OCT = 2;
+/** bend_time_cv: 2 octaves of sweep-settle TIME per volt (+1 V = ×4), clamped
+ *  to a musical 5–600 ms window around the 10–300 ms B Time knob. */
+const BEND_TIME_CV_OCT = 2;
+/** level_cv (dB): a bipolar ±1 V swing sweeps the control's FULL 36 dB range
+ *  centered on the knob (18 dB/V; the cv-range-standard full-swing rule for a
+ *  dB control, clamped back to −24..+12 dB into the true-peak bound). */
+const LEVEL_CV_DB = 18;
 /** Deterministic per-strike noise seed base. */
 const NOISE_SEED_BASE = 0x7c3a9d51;
 /** Chamberlin SVF center clamp (fraction of sr) — stability guard. */
@@ -133,12 +146,17 @@ export interface TomtomParams {
   noise: number; // breath / skin noise mix (0..1)
   drive: number; // oversampled tanh soft-clip amount (0..1)
   level: number; // output level (dB, −24..+12)
-  // CV inputs surfaced as params (the worklet feeds them per sample).
-  pitchCv: number; // 1 V/oct multiplier on tune
+  // CV inputs surfaced as params (the worklet feeds them per sample). Each
+  // scaling law lives below (pure + unit-tested); cv = 0 is a perfect no-op.
+  pitchCv: number; // 1 V/oct multiplier on the whole voice
+  tuneCv: number; // 2 oct/V on the TUNE knob (distinct from pitchCv)
   bendCv: number; // ±1 V adds ±24 st of bend depth (full-swing)
+  bendTimeCv: number; // 2 oct of bend-settle TIME per volt (+1 V = ×4)
   decayCv: number; // 2 oct of decay time per volt (+1 V = ×4)
   toneCv: number; // adds to tone (summed, clamped 0..1)
   noiseCv: number; // adds to noise (summed, clamped 0..1)
+  driveCv: number; // adds to drive (summed, clamped 0..1)
+  levelCv: number; // ±1 V = ±18 dB (full-swing on the dB level)
 }
 
 export const TOMTOM_DEFAULTS: TomtomParams = {
@@ -151,10 +169,14 @@ export const TOMTOM_DEFAULTS: TomtomParams = {
   drive: 0.25,
   level: 0,
   pitchCv: 0,
+  tuneCv: 0,
   bendCv: 0,
+  bendTimeCv: 0,
   decayCv: 0,
   toneCv: 0,
   noiseCv: 0,
+  driveCv: 0,
+  levelCv: 0,
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -211,6 +233,28 @@ export function tomDecayMs(decay: number, decayCv: number): number {
       Math.pow(2, DECAY_CV_OCT * clamp(decayCv, -DECAY_CV_CLAMP, DECAY_CV_CLAMP)),
     20,
     3000,
+  );
+}
+
+/** Effective settled TUNE (Hz) from the knob + tune_cv (2 oct/V), clamped to
+ *  the knob's 60–400 Hz range. Modulates ONLY the fundamental knob — distinct
+ *  from pitchCv (the whole-voice 1 V/oct transpose applied on top of this).
+ *  cv = 0 → clamp(tune, 60, 400), a perfect no-op. */
+export function tomTuneHz(tune: number, tuneCv: number): number {
+  return clamp(
+    clamp(tune, 60, 400) * Math.pow(2, TUNE_CV_OCT * clamp(tuneCv, -2, 2)),
+    60,
+    400,
+  );
+}
+
+/** Effective bend-settle TIME (ms) from the knob + bend_time_cv (2 oct/V),
+ *  clamped to a musical 5–600 ms window. cv = 0 → clamp(bendTime, 10, 300). */
+export function tomBendTimeMs(bendTime: number, bendTimeCv: number): number {
+  return clamp(
+    clamp(bendTime, 10, 300) * Math.pow(2, BEND_TIME_CV_OCT * clamp(bendTimeCv, -2, 2)),
+    5,
+    600,
   );
 }
 
@@ -315,14 +359,18 @@ export function tomtomStep(
   s.trigPrev = trigger;
   if (high && !prevHigh) strikeTom(s, accent);
 
-  // ── effective (CV-summed) params. ──
+  // ── effective (CV-summed) params. Every law is a no-op at cv = 0. ──
+  const tuneEff = tomTuneHz(p.tune, p.tuneCv);
   const depthSt = tomBendDepthSt(p.bendAmt, p.bendCv);
+  const bendTimeEff = tomBendTimeMs(p.bendTime, p.bendTimeCv);
   const decayMs = tomDecayMs(p.decay, p.decayCv);
   const toneEff = clamp(clamp(p.tone, 0, 1) + p.toneCv, 0, 1);
   const noiseEff = clamp(clamp(p.noise, 0, 1) + p.noiseCv, 0, 1);
+  const driveEff = clamp(clamp(p.drive, 0, 1) + p.driveCv, 0, 1);
+  const levelEff = clamp(clamp(p.level, -24, 12) + LEVEL_CV_DB * clamp(p.levelCv, -2, 2), -24, 12);
 
   // ── MEMBRANE: fundamental + 1.593× second mode on one bend law. ──
-  const f1 = Math.min(tomFreqHz(p.tune, p.pitchCv, s.bendEnv, depthSt, s.accentLatch), 0.45 * sr);
+  const f1 = Math.min(tomFreqHz(tuneEff, p.pitchCv, s.bendEnv, depthSt, s.accentLatch), 0.45 * sr);
   s.phase1 += f1 / sr;
   if (s.phase1 >= 1) s.phase1 -= 1;
   const fund = Math.sin(TWO_PI * s.phase1) * s.ampEnv;
@@ -334,7 +382,7 @@ export function tomtomStep(
   // ── BREATH: band-passed seeded noise tracking the settled pitch. ──
   s.rng = xorshift32(s.rng);
   const nz = (s.rng / 0xffffffff) * 2 - 1;
-  const settled = clamp(p.tune, 60, 400) * Math.pow(2, p.pitchCv);
+  const settled = tuneEff * Math.pow(2, p.pitchCv);
   const nfc = clamp(settled * NOISE_CENTER_RATIO, NOISE_FC_MIN, NOISE_FC_MAX);
   const fn = svfF(nfc, sr);
   const qn = 0.6;
@@ -350,7 +398,7 @@ export function tomtomStep(
   // rack tom ring equally long at the same knob). ──
   s.ampEnv *= decayCoeff(decayMs, sr);
   s.otEnv *= decayCoeff(decayMs * OVERTONE_DECAY_FRAC, sr);
-  s.bendEnv *= decayCoeff(clamp(p.bendTime, 10, 300), sr);
+  s.bendEnv *= decayCoeff(bendTimeEff, sr);
   s.noiseEnv *= decayCoeff(
     clamp(decayMs * NOISE_DECAY_FRAC, NOISE_DECAY_MIN_MS, NOISE_DECAY_MAX_MS),
     sr,
@@ -366,7 +414,7 @@ export function tomtomStep(
   const membrane = fund * (1 - TONE_FUND_DUCK * toneEff) + over;
   const pre = (membrane * (1 - NOISE_MEMB_DUCK * noiseEff) + breath) * VOICE_NORM * s.vel;
   let driven = pre;
-  const driveAmt = clamp(p.drive, 0, 1);
+  const driveAmt = driveEff;
   if (driveAmt > 0.001) {
     s.driveAmt = driveAmt;
     driven = s.os2.process(pre, s.softFn);
@@ -374,6 +422,6 @@ export function tomtomStep(
 
   // ── DC block → level → true-peak bound. ──
   const clean = dcBlockStep(driven, s.dc, 20, sr);
-  const lin = Math.pow(10, clamp(p.level, -24, 12) / 20);
+  const lin = Math.pow(10, levelEff / 20);
   return Math.tanh(clean * lin);
 }

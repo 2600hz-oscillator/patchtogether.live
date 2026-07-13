@@ -2952,15 +2952,33 @@ textmarquee param posY 0..1 linear default=0.5
 textmarquee param scrollX 0..1 linear default=0.5
 textmarquee param scrollY 0..1 linear default=0.5
 tidyVco meta domain=audio
+tidyVco in atk_cv cv
 tidyVco in cutoff_cv cv
+tidyVco in dec_cv cv
+tidyVco in detune_cv cv
 tidyVco in drive_cv cv
+tidyVco in env_cv cv
+tidyVco in fatk_cv cv
+tidyVco in fdec_cv cv
 tidyVco in fold_cv cv
+tidyVco in frel_cv cv
+tidyVco in fsus_cv cv
 tidyVco in gate gate edge=gate
+tidyVco in level_cv cv
+tidyVco in mix_cv cv
+tidyVco in oct2_cv cv
 tidyVco in pitch cv
 tidyVco in poly polyPitchGate
 tidyVco in pwm_cv cv
+tidyVco in rel_cv cv
 tidyVco in res_cv cv
+tidyVco in shape1_cv cv
+tidyVco in shape2_cv cv
+tidyVco in sub_cv cv
+tidyVco in sus_cv cv
 tidyVco in sym_cv cv
+tidyVco in track_cv cv
+tidyVco in width_cv cv
 tidyVco out out_l audio
 tidyVco out out_r audio
 tidyVco param atk 0.0005..5 log default=0.003 unit=s
@@ -3026,11 +3044,15 @@ timelorde expose swingSource param=swingSource kind=knob
 tomtom meta domain=audio
 tomtom in accent_in cv
 tomtom in bend_cv cv
+tomtom in bend_time_cv cv
 tomtom in decay_cv cv
+tomtom in drive_cv cv
+tomtom in level_cv cv
 tomtom in noise_cv cv
 tomtom in pitch_cv cv
 tomtom in tone_cv cv
 tomtom in trigger_in gate edge=trigger
+tomtom in tune_cv cv
 tomtom out audio_out audio
 tomtom param bend_amt 0..24 linear default=7 unit=st
 tomtom param bend_time 10..300 log default=60 unit=ms
