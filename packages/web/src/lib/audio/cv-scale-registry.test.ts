@@ -204,8 +204,13 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // noise_cv carry their full-swing laws INSIDE the core (±24 st/V bend,
   // 2 oct/V decay time, ±1 sums on the tone/noise balances — see
   // tomtom-dsp.ts), satisfying the cv-range full-swing standard at the DSP
-  // level. Same shape as kickdrum / snaredrum.
-  tomtom: ['pitch_cv', 'accent_in', 'bend_cv', 'decay_cv', 'tone_cv', 'noise_cv'],
+  // level. Same shape as kickdrum / snaredrum. The new per-knob CVs
+  // (tune_cv, bend_time_cv, drive_cv, level_cv) likewise carry their full-swing
+  // laws in tomtom-dsp.ts — one worklet node input each, no paramTarget.
+  tomtom: [
+    'pitch_cv', 'accent_in', 'bend_cv', 'decay_cv', 'tone_cv', 'noise_cv',
+    'tune_cv', 'bend_time_cv', 'drive_cv', 'level_cv',
+  ],
   // KARPLUS accent_in: a raw per-hit 0..1 value SAMPLED (latched) at the
   // trigger edge inside the worklet — a latch input consumed as an
   // audio-rate node input, not a knob modulator (no paramTarget), so
@@ -230,8 +235,16 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // rate, ±1 V = whole RES / DRIVE / FOLD range, ±0.45 duty/V PWM and
   // ±1 V = whole SYMMETRY range each way at audio rate — see
   // tidy-vco-dsp.ts), satisfying the cv-range full-swing standard at the
-  // DSP level. Same shape as kickdrum / snaredrum / clap.
-  tidyVco: ['pitch', 'cutoff_cv', 'res_cv', 'pwm_cv', 'drive_cv', 'fold_cv', 'sym_cv'],
+  // DSP level. Same shape as kickdrum / snaredrum / clap. The 18 new per-knob
+  // CVs (shape/detune/oct2/mix/sub/env/track + the two EG banks + width/level)
+  // likewise carry their full-swing laws in tidy-vco-dsp.ts — one worklet node
+  // input each, no paramTarget.
+  tidyVco: [
+    'pitch', 'cutoff_cv', 'res_cv', 'pwm_cv', 'drive_cv', 'fold_cv', 'sym_cv',
+    'shape1_cv', 'shape2_cv', 'detune_cv', 'oct2_cv', 'mix_cv', 'sub_cv', 'env_cv', 'track_cv',
+    'fatk_cv', 'fdec_cv', 'fsus_cv', 'frel_cv', 'atk_cv', 'dec_cv', 'sus_cv', 'rel_cv',
+    'width_cv', 'level_cv',
+  ],
   // CUBE pitch: V/oct input consumed directly by the worklet as its own
   // audio-rate node input (freq = C4·2^(pitch + tune/12 + fine/1200), applied
   // per-sample). No paramTarget — same V/oct-fallback shape as dx7.pitch_cv. CUBE's OTHER cv inputs (slice_y/rx/ry/rz, morph_fc,
