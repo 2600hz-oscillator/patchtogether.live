@@ -30,6 +30,8 @@
 // (localStorage). LED frames are local render state, never synced.
 
 import { patch as livePatch, ydoc } from '$lib/graph/store';
+import * as Y from 'yjs';
+import { getYjsValue } from '@syncedstore/core';
 import { getSchedulerClock } from '$lib/audio/scheduler-clock';
 import {
   connect as deviceConnect,
@@ -47,15 +49,12 @@ import {
   type LaunchpadUnit,
   type LaunchpadFrame,
 } from './launchpad-device.svelte';
-import { padNote, LP_WIDTH, LP_HEIGHT, CC_TOP_SPARE_8 } from './launchpad-sysex';
+import { padNote, LP_WIDTH, LP_HEIGHT } from './launchpad-sysex';
 import {
-  // L matrix
+  // L matrix (pair)
   lPadToClipIndex,
   lSceneSlotForRow,
   computeLSessionFrame,
-  clipArmAction,
-  type ClipArmAction,
-  type KeysArm,
   lTopMuteLane,
   // R deck
   rDeckPad,
@@ -91,11 +90,30 @@ import {
   rLengthPad,
   computeRLengthFrame,
   EDIT_COLS,
-  RGB_VIEW,
   // KEYS mode (dual-Launchpad note/keyboard + clip-record)
   rDeckKeysHold,
   keysPad,
   computeKeysFrame,
+  // SINGLE-mode (S2a) — views, right-column classifiers, per-view frames.
+  type SingleView,
+  type GridArmAction,
+  type PermanentTopOpts,
+  topRowAction,
+  sceneIndexForCc,
+  gridPadToClipIndex,
+  gridSceneRowToSlot,
+  gridShiftRight,
+  clipRight,
+  keysScaleRight,
+  keysArpShiftRight,
+  controlRight,
+  controlRehomePad,
+  paintPermanentTopRow,
+  computeSingleGridFrame,
+  computeSingleClipFrame,
+  computeSingleKeysFrame,
+  computeSingleControlFrame,
+  computeSingleArrangerFrame,
 } from './launchpad-map';
 import { keyboardCellToMidi } from '$lib/audio/modules/keyboard-map';
 import { clearStep, recordNoteAt, extendRecordedNote } from '$lib/audio/modules/clip-record';
@@ -124,12 +142,24 @@ import {
   velLevelIndex,
   VEL_LEVELS,
   VEL_DEFAULT,
+  laneSwing,
+  clampSwing,
+  MAX_SWING,
+  isSwingCentered,
   type ClipPlayerData,
   type NoteClipRecord,
   type NoteRecState,
 } from '$lib/audio/modules/clip-types';
 import { getLanePlayhead } from '$lib/audio/modules/clip-playhead';
-import { laneRateIndex, RATE_MULTS } from '$lib/audio/modules/clip-clock';
+import { laneRateIndex, coerceRateIndex, RATE_MULTS } from '$lib/audio/modules/clip-clock';
+import {
+  createArpState,
+  arpSetHeld,
+  arpSetParams,
+  arpAdvance,
+  arpStepPeriod,
+  type ArpState,
+} from '$lib/audio/arp-engine';
 
 export const STORAGE_KEY_NODE = 'pt.launchpad.boundClipNode';
 export const STORAGE_KEY_LEFT = 'pt.launchpad.portLeft';
@@ -139,7 +169,10 @@ export const STORAGE_KEY_RIGHT = 'pt.launchpad.portRight';
 // between the L (clip) + R (control) functionality. These keys never affect the
 // pair deployment — pair mode reads neither.
 export const STORAGE_KEY_DEPLOYMENT = 'pt.launchpad.deployment'; // 'pair' | 'single'
-export const STORAGE_KEY_VIEW = 'pt.launchpad.activeView'; // 'clip' | 'control'
+// Single-mode active VIEW. Legacy values ('clip' = the old always-live matrix,
+// 'control' = the old deck) migrate to the 4-view model on read: 'clip'→'grid',
+// 'control'→'control'. New values: 'grid' | 'clip' | 'arranger' | 'control'.
+export const STORAGE_KEY_VIEW = 'pt.launchpad.activeView';
 
 // Blink toggles every BLINK_TICKS scheduler ticks (~25ms each) → ~2 Hz.
 const BLINK_TICKS = 10;
@@ -152,17 +185,17 @@ let tickCount = 0;
 
 // Deployment + single-unit VIEW. In 'pair' EVERYTHING below behaves exactly as
 // before (L = the always-live matrix, R = the deck/editor — both physical units).
-// In 'single' ONE device is bound to the L slot and `activeView` flips its role:
-//   'clip'    → the device acts as UNIT L (clip matrix): keys → handleL, LED =
-//               computeLSessionFrame.
-//   'control' → the device acts as UNIT R (deck/editor/length): keys → handleR,
-//               LED = the R frames. R's deck→edit→length sub-modes (the `mode`
-//               machine below) keep working inside control view.
-// The view flips via the on-card toggle OR hardware CC 98 (the spare top-right
-// button — FREE in pair mode, see handleSingleKey). Flipping clip↔control does
-// NOT reset the editor window state (editWindowStart/editRowOffset/followOn).
+// In 'single' ONE device is bound to the L slot and drives a 4-VIEW surface over
+// a PERMANENT top-CC nav row (transport · Grid · Clip · Arranger · Control · undo
+// · redo · shift). KEYS is a SUB-VIEW of Clip (mode === 'keys'), entered FROM the
+// Clip right column, not a top-row view. The permanent top row is intercepted
+// FIRST in handleSingleKey (in every view incl. keys); pad/scene events then route
+// to the active view's handler. Pair mode never reads `singleView`.
 let deployment: 'pair' | 'single' = 'pair';
-let activeView: 'clip' | 'control' = 'clip';
+let singleView: SingleView = 'grid';
+// The Clip/Keys edit target (single mode). Set by a Grid double-tap, or defaults
+// to 0. The permanent CLIP button opens Clip on this index; KEYS is entered for it.
+let selectedClipIndex = 0;
 
 // Mode state (R unit's view; L is always the matrix — EXCEPT 'keys', which takes
 // BOTH units for the note/keyboard + clip-record view, owner-locked Q4).
@@ -188,8 +221,12 @@ let editRowOffset = 0; // pitch-window scroll (scale degrees)
 let editWindowStart = 0; // absolute step of the leftmost shown column (frozen value)
 let followOn = true;
 // Which mode the LENGTH-EDIT page returns to on EXIT ('edit' = the note editor,
-// the legacy caller; 'keys' = the KEYS view, when LEN was opened from KEYS).
+// the legacy pair caller; 'keys' = the KEYS view, when LEN was opened from KEYS).
 let lengthReturnMode: 'edit' | 'keys' = 'edit';
+// SINGLE mode: which VIEW the LENGTH-EDIT page returns to (when not opened from
+// KEYS). 'grid' when armed via Grid-shift Len; 'clip' when opened from the Clip
+// right column. Pair ignores this (it uses lengthReturnMode only).
+let lengthReturnView: SingleView = 'grid';
 
 // ── KEYS mode (note/keyboard + clip-record). PAIR: both units flip together
 // (16-wide keyboard). SINGLE: the lone device is the L half (8-wide keyboard,
@@ -208,33 +245,42 @@ let keysOctaveShift = 0; // KEYS octave ± (semitones, multiples of 12) added to
 let clipBuffer: NoteClipRecord | null = null;
 let bufferSourceIndex: number | null = null; // which clip index is in the buffer (for the L turquoise glow)
 
-// SINGLE-mode clip-view ARM STRIP (top CCs 91..97). Two-handed deck ops without
-// leaving the matrix view: tap an arm cell → arm an action → tap a clip pad →
-// apply. Reuses the existing modifier booleans (copyHeld/pasteHeld/pasteRevHeld)
-// as the substrate where they map; `armedAction` is the only NEW discriminant
-// (NEW/LENGTH/DOUBLE have no boolean). NOW is a sticky toggle (reuses nowHeld),
-// NOT arm-then-tap. Pair mode never sets these (armClip is single-only), so the
-// armed-consume guard in handleL is a dead branch in pair.
-let armedAction: ClipArmAction | null = null; // null when nothing armed
+// ── SINGLE-mode SHIFT (hybrid tap-latch OR hold) + tap-to-ARM (Grid-shift). ──
+// Effective shift = shiftLatched || shiftHeld. A SHORT tap of CC 98 (no armed
+// action consumed during the press) toggles the latch; a HOLD (or a consumed arm)
+// is momentary. The Grid-shift Copy/Paste/PasteRev/ClipDiv/Len functions are
+// tap-to-ARM: tap the right-column button to arm, then the next grid-clip tap
+// consumes it. Swing± are direct nudges + NOW is a sticky toggle — neither arms.
+// Pair mode never sets any of these (single-only), so pair stays byte-for-byte.
+let shiftLatched = false;
+let shiftHeldSingle = false; // CC 98 momentary (distinct from pair's CC-95 shiftHeld)
+let shiftPressTick = 0; // tickCount snapshot on the CC-98 press (tap vs hold)
+let armConsumedSincePress = false; // an armed action consumed while shift was held?
+let armedRightAction: GridArmAction | null = null; // Grid-shift tap-to-arm (or null)
 let armTick = 0; // tickCount snapshot for the 4s auto-disarm
 const ARM_TIMEOUT_TICKS = 160; // ~4s at 25ms/tick — auto-disarm a stale arm
-// SINGLE-mode CC-91 KEYS-ARM tri-state (the reclaimed NEW cell). off → armed-REC
-// (overdub OFF, red) → armed-OD (overdub ON, purple) → off. While armed, tapping
-// ANY clip pad in clip view ENTERS KEYS for that clip (one hand, NO view flip) —
-// overdub chosen by the tri-state at entry. Auto-disarms on ARM_TIMEOUT_TICKS.
-// Pair mode never sets it (single-only, like armedAction). Independent of the
-// arm-then-tap actions: arming KEYS clears any pending action-arm and vice versa.
-let keysArm: KeysArm = 'off';
-let keysArmTick = 0; // tickCount snapshot for the 4s auto-disarm
+// Clip-Div LOCAL preview while the ClipDiv arm is active: each target-clip tap
+// cycles divIndex locally (the pad pulses at that rate); ONE writeClip commits it
+// on disarm (avoids the per-tap Y.Doc write-storm — cv-modulation rule).
+let divPreview: { clipIndex: number; divIndex: number } | null = null;
+const SWING_STEP = 0.02; // Grid-shift Swing± nudge (coarser than 1% → one-handed).
+// Swing meter render state (which way the last nudge moved, for the pad ramp).
+let swingMeterActive = false;
+let swingMeterDir: 'up' | 'down' | 'center' = 'center';
 
-// SINGLE-mode clip-view DOUBLE-TAP → open the editor. The on-card UI launches on
-// single-click + opens the note editor on double-click (ClipplayerCard
-// onPadDblClick); single mode has no pair-style hold-EDIT (both halves can't be
-// visible on one device), so a double-tap of a clip pad is the one-device way to
-// open an EXISTING clip's editor. The FIRST tap still launches IMMEDIATELY (no
-// debounce/latency — owner: never slow a launch); a SECOND tap on the SAME clip
-// within the window instead opens the editor (mirroring handleL's editArmed
-// branch). We track the last tap's clip index + tickCount and call it a
+// ── SINGLE-mode ARP (KEYS view). The physically-held keys (keysPressed) feed the
+// arp generator; the arp SOUNDS its sequence through the SAME pushAudition seam as
+// KEYS. Advanced tick-granularly from the render loop, clocked by TIMELORDE bpm
+// (independent of transport running), while KEYS is open OR the arp is latched.
+let arp: ArpState = createArpState();
+let arpOn = false;
+let arpNextTime = 0; // performance.now() ms of the next arp step (0 = fire now).
+
+// SINGLE-mode Grid DOUBLE-TAP → select the clip + switch to Clip view. The FIRST
+// tap launches IMMEDIATELY (no debounce/latency — owner: never slow a launch); a
+// SECOND tap on the SAME clip within the window instead sets selectedClipIndex +
+// opens the Clip view on it (and reverts the lane's play/queue state — see
+// handleGridLaunch). We track the last tap's clip index + tickCount and call it a
 // double-tap when the index matches AND the tick gap is within the window.
 let lastTapClipIndex = -1; // -1 = no pending tap to pair with
 let lastTapTick = 0; // tickCount snapshot of the last clip-pad tap
@@ -282,56 +328,55 @@ function bumpView(): void {
 export function launchpadDeployment(): 'pair' | 'single' {
   return deployment;
 }
-/** The active single-unit view ('clip' | 'control'). Meaningless in pair mode. */
-export function launchpadActiveView(): 'clip' | 'control' {
-  return activeView;
+/** The active single-unit VIEW ('grid'|'clip'|'arranger'|'control'). Meaningless
+ *  in pair mode (returns whatever the single machine last held). */
+export function launchpadActiveView(): SingleView {
+  return singleView;
+}
+/** Migrate a persisted STORAGE_KEY_VIEW value → a valid SingleView. Legacy 'clip'
+ *  (the old always-live matrix) → 'grid'; legacy 'control' → 'control'. */
+function coerceStoredView(raw: string | null): SingleView {
+  if (raw === 'grid' || raw === 'arranger' || raw === 'control') return raw;
+  // Legacy 'clip' meant the matrix → Grid; anything else defaults to Grid.
+  return 'grid';
 }
 
 /** Persist deployment + the single-unit view (per-machine, additive). */
 function persistDeployment(): void {
   try {
     localStorage.setItem(STORAGE_KEY_DEPLOYMENT, deployment);
-    localStorage.setItem(STORAGE_KEY_VIEW, activeView);
+    localStorage.setItem(STORAGE_KEY_VIEW, singleView);
   } catch {
     /* private mode — session-only */
   }
 }
 
-/** Flip the single-unit VIEW between 'clip' and 'control' (no-op in pair mode).
- *  Preserves the editor window state (editWindowStart/editRowOffset/followOn) +
- *  the R deck→edit→length sub-mode across the flip — only the painted/routed
- *  ROLE changes. Repaints the device immediately so the new view lights up. */
-export function toggleSingleView(): void {
+/** Set the single-unit VIEW (no-op in pair mode). The user-facing entry the card
+ *  view-buttons call — routes exactly like a permanent-top-row view press
+ *  (exits KEYS / length-edit, then switches). Repaints the device immediately. */
+export function setLaunchpadView(view: SingleView): void {
   if (deployment !== 'single') return;
-  setSingleView(activeView === 'clip' ? 'control' : 'clip');
+  const nodeId = boundNodeId;
+  if (nodeId && livePatch.nodes[nodeId]) {
+    selectView(nodeId, view);
+  } else {
+    setSingleViewInternal(view);
+    renderLeds();
+  }
 }
-function setSingleView(view: 'clip' | 'control'): void {
-  if (deployment !== 'single') return;
-  if (activeView === view) return;
-  activeView = view;
-  // Clear the deck's transient HOLD modifiers that can't span a view flip on a
-  // single device — a COPY/PASTE/PASTE-REV/NOW held in control view never sees
-  // its release once we switch to clip view (handleL ignores the release), which
-  // would leave the modifier stuck. (editArmed deliberately SURVIVES: hold EDIT
-  // in control, flip to clip, tap a clip = the single-unit "enter editor"
-  // gesture; handleL consumes + clears editArmed itself. keysRecHeld /
-  // keysOverdubHeld survive for the SAME reason — hold note-REC/OVERDUB in
-  // control, flip, double-tap a clip = the single-unit "enter KEYS" gesture;
-  // their releases in clip view still route to handleL where they're ignored,
-  // but the KEYS entry consumes the double-tap first, and a release after
-  // re-flipping to control clears them through handleRDeck as usual.)
-  copyHeld = false;
-  pasteHeld = false;
-  pasteRevHeld = false;
-  nowHeld = false;
-  shiftHeld = false;
-  // The arm strip is a clip-view-only concept — drop any pending arm (action or
-  // the CC-91 KEYS-arm) on a flip.
-  armedAction = null;
-  keysArm = 'off';
+
+/** Low-level view setter: leaving Grid commits/clears any pending Grid arm + div
+ *  preview; then swaps the view + persists + bumps the card rune. Does NOT touch
+ *  the KEYS/length sub-mode (callers handle exiting those). */
+function setSingleViewInternal(view: SingleView): void {
+  if (singleView === 'grid' && view !== 'grid') {
+    if (boundNodeId) commitDivPreview(boundNodeId);
+    armedRightAction = null;
+    divPreview = null;
+  }
+  singleView = view;
   persistDeployment();
   bumpView();
-  renderLeds(); // repaint the lone unit in its new role without waiting a tick
 }
 
 function start(): void {
@@ -351,16 +396,15 @@ function start(): void {
   editWindowStart = 0;
   followOn = true;
   lengthReturnMode = 'edit';
-  armedAction = null;
-  armTick = 0;
-  keysArm = 'off';
-  keysArmTick = 0;
+  lengthReturnView = 'grid';
+  resetSingleState();
   lastTapClipIndex = -1;
   lastTapTick = 0;
   lastTapPrevQueued = null;
   lastTapWasPlaying = false;
   resetKeysState();
   // NOTE: clipBuffer survives a re-bind (it's the machine's clipboard).
+  setupLaunchpadUndo(); // launchpad-scoped, origin-tagged undo/redo (single mode)
   unsubKey = onKey(handleKey);
   unsubTick = getSchedulerClock().subscribe(renderLeds);
   renderLeds(); // paint immediately so binding lights the units without waiting a tick
@@ -368,6 +412,22 @@ function start(): void {
 function stopLoops(): void {
   if (unsubKey) { unsubKey(); unsubKey = null; }
   if (unsubTick) { unsubTick(); unsubTick = null; }
+  teardownLaunchpadUndo();
+}
+/** Reset the single-mode transient state (shift/arm/div-preview/swing/arp). */
+function resetSingleState(): void {
+  shiftLatched = false;
+  shiftHeldSingle = false;
+  shiftPressTick = 0;
+  armConsumedSincePress = false;
+  armedRightAction = null;
+  armTick = 0;
+  divPreview = null;
+  swingMeterActive = false;
+  swingMeterDir = 'center';
+  arp = createArpState();
+  arpOn = false;
+  arpNextTime = 0;
 }
 /** Clear all KEYS-mode transient state (not the synced node.data.noteRec). */
 function resetKeysState(): void {
@@ -514,7 +574,7 @@ export async function startPairing(onPaired?: () => void): Promise<boolean> {
   // A pairing handshake commits the PAIR deployment (the default). Reset the
   // single-unit view so a later single-bind starts clean.
   deployment = 'pair';
-  activeView = 'clip';
+  singleView = 'grid';
   // Bind the first two candidates provisionally to L and R so each can light a
   // prompt + report which pad the user pressed.
   const a = ports[0];
@@ -603,7 +663,7 @@ export function cancelPairing(): void {
 // enumerates the Launchpad-MIDI ports, and binds the FIRST one to the L slot.
 // The single path RELAXES the pair's `ports.length < 2` requirement — it needs
 // just ONE port. The R slot stays UNBOUND (so isSingleBound() is true), and the
-// control layer routes/paints the lone device per `activeView`.
+// control layer routes/paints the lone device per `singleView`.
 // ---------------------------------------------------------------------------
 
 /** Bind the SINGLE Launchpad (the first enumerated port) to the L slot. Returns
@@ -620,7 +680,7 @@ export async function startSingle(onBound?: () => void): Promise<boolean> {
   // single after a prior pair session left R bound).
   if (isUnitBound('R')) clearUnit('R');
   deployment = 'single';
-  activeView = 'clip'; // a fresh single-bind always starts in the clip view
+  singleView = 'grid'; // a fresh single-bind always starts in the Grid view
   persistSinglePort(a);
   persistDeployment();
   ensureRenderLoop();
@@ -652,11 +712,11 @@ export function restoreLaunchpadSingle(): boolean {
   if (!okL) return false;
   if (isUnitBound('R')) clearUnit('R');
   deployment = 'single';
-  // Restore the persisted view so a reload resumes the view the user left.
+  // Restore the persisted view (migrated) so a reload resumes where the user left.
   try {
-    activeView = localStorage.getItem(STORAGE_KEY_VIEW) === 'control' ? 'control' : 'clip';
+    singleView = coerceStoredView(localStorage.getItem(STORAGE_KEY_VIEW));
   } catch {
-    activeView = 'clip';
+    singleView = 'grid';
   }
   bumpPair();
   bumpView();
@@ -669,11 +729,10 @@ export function restoreLaunchpadDeployment(): void {
   try {
     const d = localStorage.getItem(STORAGE_KEY_DEPLOYMENT);
     deployment = d === 'single' ? 'single' : 'pair';
-    const v = localStorage.getItem(STORAGE_KEY_VIEW);
-    activeView = v === 'control' ? 'control' : 'clip';
+    singleView = coerceStoredView(localStorage.getItem(STORAGE_KEY_VIEW));
   } catch {
     deployment = 'pair';
-    activeView = 'clip';
+    singleView = 'grid';
   }
 }
 
@@ -681,13 +740,69 @@ export function restoreLaunchpadDeployment(): void {
 function liveData(nodeId: string): ClipPlayerData | undefined {
   return livePatch.nodes[nodeId]?.data as ClipPlayerData | undefined;
 }
-function editData(nodeId: string, mut: (d: ClipPlayerData) => void): void {
+// ── Launchpad-scoped UNDO/REDO (multiplayer-safe). A per-instance transaction
+// ORIGIN tags PERSISTENT clip edits (div/swing/length/paste/content/scale); a
+// Yjs UndoManager scoped to that origin captures ONLY those, so CC96/CC97 undo
+// the launchpad's own persistent edits without ever reverting a collaborator (a
+// different origin) or a transient launch (no origin). Transient launches
+// (queueLane / restoreQueued / activateLaneClearQueue) transact WITHOUT the
+// origin, so they never land on the stack. The origin is only APPLIED in single
+// mode, so pair transactions stay byte-for-byte (undefined origin). ──
+const LAUNCHPAD_UNDO_ORIGIN = Symbol('launchpad-undo-origin');
+let lpUndo: Y.UndoManager | null = null;
+
+/** Construct the launchpad UndoManager over the bound doc's nodes Y.Map, scoped
+ *  to the launchpad origin. Reuses syncedStore's underlying Y type (no map
+ *  rebuild — the yjs-save-load discipline). No-op / null on any failure. */
+function setupLaunchpadUndo(): void {
+  teardownLaunchpadUndo();
+  try {
+    const yNodes = getYjsValue(livePatch.nodes) as Y.AbstractType<unknown> | undefined;
+    if (yNodes) {
+      lpUndo = new Y.UndoManager(yNodes, {
+        trackedOrigins: new Set<unknown>([LAUNCHPAD_UNDO_ORIGIN]),
+        captureTimeout: 300,
+      });
+    }
+  } catch {
+    lpUndo = null;
+  }
+}
+function teardownLaunchpadUndo(): void {
+  if (lpUndo) {
+    try { lpUndo.destroy(); } catch { /* ignore */ }
+    lpUndo = null;
+  }
+}
+function lpCanUndo(): boolean {
+  return !!lpUndo && lpUndo.undoStack.length > 0;
+}
+function lpCanRedo(): boolean {
+  return !!lpUndo && lpUndo.redoStack.length > 0;
+}
+function lpDoUndo(): void {
+  if (lpUndo && lpUndo.undoStack.length > 0) lpUndo.undo();
+  renderLeds();
+}
+function lpDoRedo(): void {
+  if (lpUndo && lpUndo.redoStack.length > 0) lpUndo.redo();
+  renderLeds();
+}
+
+function editData(
+  nodeId: string,
+  mut: (d: ClipPlayerData) => void,
+  opts: { undoable?: boolean } = {},
+): void {
   const node = livePatch.nodes[nodeId];
   if (!node) return;
+  // Tag PERSISTENT edits with the launchpad origin so lpUndo captures them —
+  // single mode ONLY (pair keeps the undefined origin, byte-for-byte).
+  const origin = opts.undoable && deployment === 'single' ? LAUNCHPAD_UNDO_ORIGIN : undefined;
   ydoc.transact(() => {
     if (!node.data) node.data = {};
     mut(node.data as ClipPlayerData);
-  });
+  }, origin);
 }
 function queueLane(nodeId: string, lane: number, action: number | 'stop' | null, immediate = false): void {
   editData(nodeId, (d) => {
@@ -751,11 +866,20 @@ function shownWindowStart(clip: NoteClipRecord): number {
 function clampWindow(clip: NoteClipRecord): void {
   editWindowStart = Math.max(0, Math.min(maxWindowStart(clip), editWindowStart));
 }
-function writeClip(nodeId: string, next: NoteClipRecord, index: number = editClipIndex): void {
-  editData(nodeId, (d) => {
-    if (!d.clips) d.clips = {};
-    d.clips[String(index)] = { ...next, steps: next.steps.map((s) => ({ ...s })) };
-  });
+function writeClip(
+  nodeId: string,
+  next: NoteClipRecord,
+  index: number = editClipIndex,
+  opts: { undoable?: boolean } = { undoable: true },
+): void {
+  editData(
+    nodeId,
+    (d) => {
+      if (!d.clips) d.clips = {};
+      d.clips[String(index)] = { ...next, steps: next.steps.map((s) => ({ ...s })) };
+    },
+    { undoable: opts.undoable ?? true },
+  );
 }
 function timelordeNode(): { node: { params?: Record<string, number> }; id: string } | null {
   for (const [id, n] of Object.entries(livePatch.nodes)) {
@@ -958,10 +1082,14 @@ function enterKeys(
   data: ClipPlayerData | undefined,
 ): void {
   if (!data?.clips?.[String(clipIdx)]) {
-    editData(nodeId, (d) => {
-      if (!d.clips) d.clips = {};
-      if (!d.clips[String(clipIdx)]) d.clips[String(clipIdx)] = defaultNoteClip();
-    });
+    editData(
+      nodeId,
+      (d) => {
+        if (!d.clips) d.clips = {};
+        if (!d.clips[String(clipIdx)]) d.clips[String(clipIdx)] = defaultNoteClip();
+      },
+      { undoable: true },
+    );
   }
   keysClipIndex = clipIdx;
   mode = 'keys';
@@ -974,6 +1102,10 @@ function enterKeys(
   keysOctaveShift = 0;
   editArmed = false;
   lastTapClipIndex = -1;
+  // Fresh KEYS session → clear the arp note-set + turn it OFF (params preserved).
+  arp = createArpState(arp.params);
+  arpOn = false;
+  arpNextTime = 0;
   const lane = laneOf(clipIdx);
   const slot = slotOf(clipIdx);
   // Launch the clip so KEYS opens with it PLAYING (immediate — never delay).
@@ -997,6 +1129,15 @@ function keysExit(nodeId: string, data: ClipPlayerData | undefined): void {
     return;
   }
   // Idle → session. Blank the KEYS state; the matrix + deck repaint next tick.
+  // SINGLE: silence + reset the arp (its sequence should not outlive an explicit
+  // KEYS EXIT). Pair never runs the arp, so this is single-guarded.
+  if (deployment === 'single' && arpOn) {
+    const lane = laneOf(keysClipIndex);
+    if (arp.playing !== null) pushAudition(nodeId, { lane, midi: arp.playing, velocity: 0, on: false });
+    arpOn = false;
+    arp = createArpState(arp.params);
+    arpNextTime = 0;
+  }
   mode = 'session';
   clearNoteRecField(nodeId);
   resetKeysState();
@@ -1085,6 +1226,20 @@ function handleKeysNote(nodeId: string, col: number, row: number, s: 0 | 1, velo
   const lane = laneOf(keysClipIndex);
   const midi = keyboardCellToMidi(col, row, keysKeyboardRoot(clip));
   const rec = readNoteRec(data);
+  // SINGLE + arp ON: the note feeds the arp HELD-SET (not a direct audition/
+  // record). The arp SOUNDS its own sequence from the render loop (serviceArp).
+  // Pair never sets arpOn, so this branch is single-only.
+  if (deployment === 'single' && arpOn) {
+    if (s === 1) {
+      if (keysPressed.has(midi)) return;
+      keysPressed.add(midi);
+    } else {
+      keysPressed.delete(midi);
+    }
+    arp = arpSetHeld(arp, [...keysPressed]);
+    if (arpNextTime === 0) arpNextTime = nowMs(); // (re)start the arp clock
+    return;
+  }
   if (s === 1) {
     if (keysPressed.has(midi)) return; // already down (dedupe)
     keysPressed.add(midi);
@@ -1180,210 +1335,668 @@ function handleKey(e: LaunchpadKeyEvent): void {
   else handleR(nodeId, e);
 }
 
-/**
- * SINGLE-UNIT routing. The lone device is bound to the L slot, so every event
- * arrives tagged unit:'L'; we route it by the ACTIVE VIEW, not the unit tag:
- *   · CC 98 (the spare top-right button) flips clip↔control — it's free in pair
- *     mode (pair never reaches this path). On a single device CC 98 is the
- *     DEDICATED view-flip, so it takes over the slot the pair editor used for
- *     FOLLOW. The single editor's FOLLOW instead lives on the scene column
- *     (EDIT_FOLLOW_SCENE_ROW — row 4, right under EXIT/DBL/LEN), so freeze +
- *     re-follow stay fully reachable on one device.
- *   · KEYS mode owns the WHOLE device (there is no view concept inside it):
- *     every event routes to the keys handler as the L half, and CC 98 is
- *     swallowed until EXIT (the lit EXIT pad is the way out). The LENGTH page
- *     opened from KEYS likewise owns the device until its EXIT returns to KEYS.
- *   · clip view    → handleL (the clip matrix + scene column).
- *   · control view → handleR (the deck / editor / length — the SAME R brain).
- */
+// ===========================================================================
+// SINGLE-UNIT routing (S2b). The lone device is bound to the L slot, so every
+// event arrives tagged unit:'L'; we route it by the PERMANENT TOP ROW first,
+// then by the active mode/view:
+//   · The permanent top CCs (91..98) are intercepted FIRST in EVERY view incl.
+//     KEYS + length-edit: transport · Grid · Clip · Arranger · Control · undo ·
+//     redo · shift. A view button while in KEYS exits KEYS to that view.
+//   · KEYS (mode==='keys') is a Clip SUB-VIEW: pad = keyboard/controls, scene
+//     column = scale-select / arp (or +shift the arp control column).
+//   · length-edit (mode==='lengthEdit') is a full-device takeover; EXIT (scene)
+//     returns to Grid / Clip / KEYS per how it was opened.
+//   · else route by singleView: grid → handleSingleGrid, clip → handleSingleClip,
+//     control → handleSingleControl, arranger → inert.
+// ===========================================================================
+function singleShiftEff(): boolean {
+  return shiftLatched || shiftHeldSingle;
+}
+
 function handleSingleKey(nodeId: string, e: LaunchpadKeyEvent): void {
-  // KEYS (and the LENGTH page opened from KEYS) suspend the view machinery on
-  // the lone device — the mode owns the surface until EXIT.
+  const ev = e.ev;
+  // 1) PERMANENT TOP ROW — intercepted first, in every view (incl. keys/length).
+  if (ev.type === 'top') {
+    const action = topRowAction(ev.cc);
+    if (action !== null) handleTopRow(nodeId, action, ev.s);
+    return; // any top CC is owned by the permanent row (no fall-through)
+  }
+  // 2) length-edit takeover (scene EXIT returns to the opener's view).
+  if (mode === 'lengthEdit') {
+    handleRLength(nodeId, e);
+    return;
+  }
+  // 3) KEYS sub-view owns pad + scene (top already handled above).
   if (mode === 'keys') {
-    if (e.ev.type === 'top' && e.ev.cc === CC_TOP_SPARE_8) return; // no view flip inside KEYS
-    handleKeysUnit(nodeId, 'L', e);
+    handleSingleKeys(nodeId, e);
     return;
   }
-  if (mode === 'lengthEdit' && lengthReturnMode === 'keys') {
-    if (e.ev.type === 'top' && e.ev.cc === CC_TOP_SPARE_8) return;
-    handleR(nodeId, e); // the ruler; EXIT returns to KEYS
-    return;
+  // 4) route by active view.
+  switch (singleView) {
+    case 'grid':
+      handleSingleGrid(nodeId, e);
+      break;
+    case 'clip':
+      handleSingleClip(nodeId, e);
+      break;
+    case 'control':
+      handleSingleControl(nodeId, e);
+      break;
+    case 'arranger':
+      break; // inert — no pad/scene handlers
   }
-  if (e.ev.type === 'top' && e.ev.cc === CC_TOP_SPARE_8) {
-    if (e.ev.s === 1) toggleSingleView(); // flip on press only (release is a no-op)
-    return;
-  }
-  // Deck-HOLD releases landing in CLIP view: the flip-spanning holds (EDIT /
-  // note-REC / note-OVERDUB, set in control view) are held on the SAME physical
-  // pads whichever view is active — so when their release arrives in clip view
-  // (where handleL ignores releases), clear the matching hold here. Without
-  // this a release-without-consume leaves a STUCK modifier (a stuck keys-hold
-  // suppresses every launch = a modal trap). A release after the gesture
-  // already consumed the hold falls through harmlessly.
-  if (activeView === 'clip' && e.ev.type === 'pad' && e.ev.s === 0) {
-    const keysHold = rDeckKeysHold(e.ev.x, e.ev.y);
-    if (keysHold === 'keysRec' && keysRecHeld) { keysRecHeld = false; return; }
-    if (keysHold === 'keysOverdub' && keysOverdubHeld) { keysOverdubHeld = false; return; }
-    if (rDeckPad(e.ev.x, e.ev.y) === 'edit' && editArmed) { editArmed = false; return; }
-  }
-  // Clip-view ARM ROW: top CCs 91..97 are the single-mode action-arm strip (the
-  // clip view's top row is otherwise dead — handleL has no `top` branch). Route
-  // them to armClip and DON'T fall through to handleL.
-  if (activeView === 'clip' && e.ev.type === 'top' && clipArmAction(e.ev.cc) !== null) {
-    armClip(e.ev.cc, e.ev.s);
-    return;
-  }
-  if (activeView === 'clip') handleL(nodeId, e);
-  else handleR(nodeId, e);
 }
 
-/** SINGLE-mode clip-view arm-strip handler (press-only). Maps a top CC →
- *  ClipArmAction, gates PASTE/PASTE-REV on a loaded buffer, toggles NOW sticky,
- *  and arms (or disarms / clears-buffer on a re-tap) the rest. Sets the matching
- *  modifier boolean substrate + `armedAction` and snapshots `armTick` for the
- *  auto-disarm. */
-function armClip(cc: number, s: 0 | 1): void {
-  if (s !== 1) return; // press-only
-  const action = clipArmAction(cc);
-  if (action === null) return;
-
-  // NOW is a STICKY TOGGLE — it does not arm; it flips the launch-immediate flag
-  // that ordinary clip/scene taps already pass into queueLane. (Composes with
-  // launching, matching the pair NOW intent.)
-  if (action === 'now') {
-    nowHeld = !nowHeld;
-    renderLeds();
-    return;
-  }
-
-  // KEYS (CC 91, the reclaimed NEW cell) is a STICKY TRI-STATE — off → armed-REC
-  // (overdub OFF) → armed-OD (overdub ON) → off. It does not go through the arm-
-  // then-tap substrate; a clip-pad tap while armed enters KEYS (handleL). Arming
-  // KEYS clears any pending action-arm (they're mutually exclusive on the strip).
-  if (action === 'keys') {
-    keysArm = keysArm === 'off' ? 'rec' : keysArm === 'rec' ? 'od' : 'off';
-    if (keysArm !== 'off') {
-      armedAction = null;
-      copyHeld = false;
-      pasteHeld = false;
-      pasteRevHeld = false;
-      keysArmTick = tickCount;
-    }
-    renderLeds();
-    return;
-  }
-
-  // Re-tapping the armed cell DISARMS it (COPY: clears the buffer if loaded).
-  if (armedAction === action) {
-    if (action === 'copy' && clipBuffer !== null) clearBuffer();
-    disarmClip();
-    return;
-  }
-
-  // PASTE / PASTE-REV only arm when there's something to paste; otherwise a
-  // single red blink (no arm) — the strip already shows them dim.
-  if ((action === 'paste' || action === 'pasteRev') && clipBuffer === null) {
-    disarmClip(); // ensure nothing stays armed; LED stays dim (no-op cue)
-    return;
-  }
-
-  // Arm. Reuse the existing modifier booleans as the substrate where they map.
-  // Arming an action cancels a pending KEYS-arm (mutually exclusive on the strip).
-  keysArm = 'off';
-  copyHeld = action === 'copy';
-  pasteHeld = action === 'paste';
-  pasteRevHeld = action === 'pasteRev';
-  armedAction = action;
-  armTick = tickCount;
-  renderLeds();
-}
-
-/** Clear any armed state (back to plain launching). Leaves NOW (sticky) alone. */
-function disarmClip(): void {
-  armedAction = null;
-  copyHeld = false;
-  pasteHeld = false;
-  pasteRevHeld = false;
-  renderLeds();
-}
-
-/** Apply the armed action to a clip pad tap (single mode). Validates the target
- *  per action; an illegal target is a no-op that simply disarms (the LED loop
- *  shows the matrix returning to normal). Runs the SAME helper bodies the pair
- *  modifier branches use, so behaviour stays consistent across deployments. */
-function consumeArmed(nodeId: string, clipIdx: number, data: ClipPlayerData | undefined): void {
-  // An armed tap is NOT a launch — clear the double-tap tracker so a stale
-  // pending launch-tap can't later pair with a plain tap of the same clip.
-  lastTapClipIndex = -1;
-  const action = armedAction;
+/** The permanent top row (identical in every view). Press-only for transport /
+ *  views / undo / redo; both edges for shift (the hold half of the latch/hold). */
+function handleTopRow(nodeId: string, action: ReturnType<typeof topRowAction>, s: 0 | 1): void {
   switch (action) {
-    // NOTE: NEW's create-a-clip role was reclaimed for KEYS (CC 91) — a fresh
-    // clip + editor is now made by DOUBLE-TAPPING an empty pad (openEditor). So
-    // consumeArmed only ever sees the arm-then-tap actions below ('keys'/'now'
-    // never reach here — they're handled sticky in armClip/handleL).
+    case 'transport':
+      if (s === 1) toggleTransport();
+      break;
+    case 'grid':
+    case 'clip':
+    case 'arranger':
+    case 'control':
+      if (s === 1) selectView(nodeId, action);
+      break;
+    case 'undo':
+      if (s === 1) lpDoUndo();
+      break;
+    case 'redo':
+      if (s === 1) lpDoRedo();
+      break;
+    case 'shift':
+      handleShift(nodeId, s);
+      break;
+    default:
+      break;
+  }
+}
+
+/** Switch the active view from a top-row button (or the card). Exits KEYS /
+ *  length-edit cleanly, then swaps the view. Selecting Clip targets the current
+ *  selectedClipIndex (editClipIndex stays synced for the window helpers). */
+function selectView(nodeId: string, view: SingleView): void {
+  if (mode === 'keys') forceExitKeys(nodeId);
+  if (mode === 'lengthEdit') mode = 'session';
+  if (view === 'clip') editClipIndex = selectedClipIndex;
+  setSingleViewInternal(view);
+  renderLeds();
+}
+
+/** Fully leave KEYS to session (a view-button press exits KEYS unconditionally).
+ *  Flushes any sounding keyboard notes; keeps a LATCHED arp running (on the same
+ *  lane), else stops + resets the arp. */
+function forceExitKeys(nodeId: string): void {
+  const data = liveData(nodeId);
+  const rec = readNoteRec(data);
+  if (rec?.recording) finishHeldOnsets(nodeId, data, rec.lane);
+  const lane = laneOf(keysClipIndex);
+  const savedClip = keysClipIndex;
+  for (const midi of keysPressed) pushAudition(nodeId, { lane, midi, velocity: 0, on: false });
+  const keepArp = arpOn && arp.params.latch;
+  if (arpOn && !arp.params.latch && arp.playing !== null) {
+    pushAudition(nodeId, { lane, midi: arp.playing, velocity: 0, on: false });
+  }
+  mode = 'session';
+  clearNoteRecField(nodeId);
+  resetKeysState();
+  if (keepArp) {
+    keysClipIndex = savedClip; // a latched arp keeps sounding on its lane
+  } else {
+    arpOn = false;
+    arp = createArpState(arp.params);
+    arpNextTime = 0;
+  }
+}
+
+/** SHIFT (CC 98): hybrid tap-latch OR momentary hold. A SHORT tap (no armed
+ *  action consumed during the press) toggles the latch; a long hold (or a
+ *  consumed arm) is momentary. Effective shift = latched || held. Clearing the
+ *  effective shift disarms any Grid tap-to-arm (committing a pending Clip-Div). */
+function handleShift(nodeId: string, s: 0 | 1): void {
+  if (s === 1) {
+    shiftHeldSingle = true;
+    shiftPressTick = tickCount;
+    armConsumedSincePress = false;
+  } else {
+    const shortTap = tickCount - shiftPressTick < DOUBLE_TAP_TICKS;
+    if (shortTap && !armConsumedSincePress) shiftLatched = !shiftLatched;
+    shiftHeldSingle = false;
+  }
+  if (!singleShiftEff() && armedRightAction) disarmGridArm(nodeId);
+  renderLeds();
+}
+
+// ── GRID view (transposed 8×8 matrix; scene column = row-launch OR the grid-
+// shift function palette). ──
+function handleSingleGrid(nodeId: string, e: LaunchpadKeyEvent): void {
+  const ev = e.ev;
+  const data = liveData(nodeId);
+  const shift = singleShiftEff();
+  if (ev.type === 'pad') {
+    if (ev.s !== 1) return; // launch acts on press
+    const clipIdx = gridPadToClipIndex(ev.x, ev.y);
+    if (clipIdx === null) return;
+    // A pending Grid-shift arm consumes the next clip-pad tap.
+    if (shift && armedRightAction) {
+      consumeGridArm(nodeId, clipIdx, data);
+      return;
+    }
+    handleGridLaunch(nodeId, clipIdx, data);
+    return;
+  }
+  if (ev.type === 'scene') {
+    if (ev.s !== 1) return;
+    const sceneIndex = sceneIndexForCc(ev.cc);
+    if (sceneIndex === null) return;
+    if (shift) handleGridShiftButton(nodeId, sceneIndex);
+    else handleSceneLaunch(nodeId, sceneIndex, data);
+    return;
+  }
+}
+
+/** No-shift grid clip tap: single-tap = launch/stop; DOUBLE-TAP (same clip within
+ *  the window) = select it + open Clip view on it (reverting the lane's play/queue
+ *  state so the double-tap never changes whether it plays — owner rule). */
+function handleGridLaunch(nodeId: string, clipIdx: number, data: ClipPlayerData | undefined): void {
+  const lane = laneOf(clipIdx);
+  const slot = slotOf(clipIdx);
+  if (clipIdx === lastTapClipIndex && tickCount - lastTapTick <= DOUBLE_TAP_TICKS) {
+    lastTapClipIndex = -1; // consume — a 3rd tap must not re-fire off this pair
+    // Revert the lane to its prior intent (snapshotted on the first tap).
+    restoreQueued(nodeId, lane, lastTapPrevQueued);
+    if (!lastTapWasPlaying && lanePlaying(liveData(nodeId), lane) === slot) {
+      queueLane(nodeId, lane, 'stop', /* immediate */ true);
+    }
+    setSelectedClip(clipIdx);
+    // Materialize a default clip if the pad was empty so Clip view can edit it.
+    if (!data?.clips?.[String(clipIdx)]) {
+      editData(
+        nodeId,
+        (d) => {
+          if (!d.clips) d.clips = {};
+          if (!d.clips[String(clipIdx)]) d.clips[String(clipIdx)] = defaultNoteClip();
+        },
+        { undoable: true },
+      );
+    }
+    // Fresh editor window for the newly-selected clip.
+    editAnchor = null;
+    editSpanned = false;
+    editRowOffset = 0;
+    editWindowStart = 0;
+    followOn = true;
+    setSingleViewInternal('clip');
+    renderLeds();
+    return;
+  }
+  // First tap: snapshot prior intent, record the tap, then launch/stop.
+  lastTapPrevQueued = laneQueued(data, lane);
+  lastTapWasPlaying = lanePlaying(data, lane) === slot;
+  lastTapClipIndex = clipIdx;
+  lastTapTick = tickCount;
+  if (lanePlaying(data, lane) === slot) queueLane(nodeId, lane, 'stop', nowHeld);
+  else if (data?.clips?.[String(clipIdx)]) queueLane(nodeId, lane, slot, nowHeld);
+  // else empty: no launch, but the tap is recorded (double-tap of empty → creates + selects).
+}
+
+/** No-shift scene/row launch: a grid ROW = one clip per channel (a scene). Fire
+ *  slot `sceneIndex` across ALL lanes (stop lanes with no clip in that slot). */
+function handleSceneLaunch(nodeId: string, sceneIndex: number, data: ClipPlayerData | undefined): void {
+  const slot = gridSceneRowToSlot(sceneIndex);
+  if (slot === null) return;
+  for (let lane = 0; lane < CLIP_LANES; lane++) {
+    const has = data?.clips?.[String(clipIndex(slot, lane))];
+    queueLane(nodeId, lane, has ? slot : 'stop', nowHeld);
+  }
+}
+
+/** Grid + shift right column: Copy/Paste/PasteRev/ClipDiv/Len are tap-to-ARM;
+ *  Swing± are direct nudges; NOW is a sticky toggle. */
+function handleGridShiftButton(nodeId: string, sceneIndex: number): void {
+  switch (gridShiftRight(sceneIndex)) {
+    case 'copy':
+    case 'paste':
+    case 'pasteRev':
+    case 'clipDiv':
+    case 'len':
+      toggleGridArm(nodeId, gridShiftRight(sceneIndex) as GridArmAction);
+      break;
+    case 'swingUp':
+      nudgeSwing(nodeId, +SWING_STEP);
+      break;
+    case 'swingDown':
+      nudgeSwing(nodeId, -SWING_STEP);
+      break;
+    case 'now':
+      nowHeld = !nowHeld;
+      renderLeds();
+      break;
+    default:
+      break;
+  }
+}
+
+/** Tap a Grid-shift function button → arm it (or disarm on a re-tap; COPY re-tap
+ *  clears the buffer). Only one arm at a time. Paste/PasteRev require a buffer. */
+function toggleGridArm(nodeId: string, action: GridArmAction): void {
+  if (armedRightAction === action) {
+    if (action === 'copy' && clipBuffer !== null) clearBuffer();
+    disarmGridArm(nodeId);
+    return;
+  }
+  // Switching arms → commit any pending Clip-Div preview from the previous arm.
+  if (armedRightAction === 'clipDiv') commitDivPreview(nodeId);
+  if ((action === 'paste' || action === 'pasteRev') && clipBuffer === null) {
+    // Nothing to paste → don't arm (the button stays its idle green).
+    armedRightAction = null;
+    divPreview = null;
+    renderLeds();
+    return;
+  }
+  armedRightAction = action;
+  armTick = tickCount;
+  if (action !== 'clipDiv') divPreview = null;
+  renderLeds();
+}
+
+/** Disarm the Grid tap-to-arm (committing a pending Clip-Div preview as ONE write). */
+function disarmGridArm(nodeId: string): void {
+  if (armedRightAction === 'clipDiv') commitDivPreview(nodeId);
+  armedRightAction = null;
+  divPreview = null;
+  renderLeds();
+}
+
+/** Commit the local Clip-Div preview (if any) as a SINGLE writeClip — the engine
+ *  latches `clip.div` at the clip's next loop boundary. No-op if unchanged. */
+function commitDivPreview(nodeId: string): void {
+  if (!divPreview) return;
+  const { clipIndex: ci, divIndex } = divPreview;
+  divPreview = null;
+  const clip = clipAtIndex(liveData(nodeId), ci);
+  if (clip && clip.div !== divIndex) {
+    writeClip(nodeId, { ...clip, div: divIndex }, ci, { undoable: true });
+  }
+}
+
+/** Consume a Grid-shift arm on a clip-pad tap. Copy/Paste/PasteRev/Len apply +
+ *  auto-disarm; Clip-Div cycles a LOCAL preview (stays armed; one write on
+ *  disarm). Empty/illegal targets are no-ops that simply disarm. */
+function consumeGridArm(nodeId: string, clipIdx: number, data: ClipPlayerData | undefined): void {
+  lastTapClipIndex = -1; // an armed tap isn't a launch
+  armConsumedSincePress = true; // used shift → releasing it should NOT latch
+  switch (armedRightAction) {
     case 'copy': {
       const c = clipAtIndex(data, clipIdx);
       if (c) {
         clipBuffer = copyClip(c);
         bufferSourceIndex = clipIdx;
       }
-      break; // empty pad = no-op
+      disarmGridArm(nodeId);
+      break;
     }
     case 'paste': {
-      if (clipBuffer) writeClip(nodeId, copyClip(clipBuffer), clipIdx);
+      if (clipBuffer) writeClip(nodeId, copyClip(clipBuffer), clipIdx, { undoable: true });
+      disarmGridArm(nodeId);
       break;
     }
     case 'pasteRev': {
-      if (clipBuffer) writeClip(nodeId, reverseClipSteps(copyClip(clipBuffer)), clipIdx);
+      if (clipBuffer) writeClip(nodeId, reverseClipSteps(copyClip(clipBuffer)), clipIdx, { undoable: true });
+      disarmGridArm(nodeId);
       break;
     }
-    case 'length': {
-      // Only onto a LOADED clip; open the length page (control view shows it).
+    case 'len': {
       if (clipAtIndex(data, clipIdx)) {
         editClipIndex = clipIdx;
+        lengthReturnMode = 'edit';
+        lengthReturnView = 'grid';
         mode = 'lengthEdit';
-        disarmClip();
-        setSingleView('control');
+        armedRightAction = null;
+        divPreview = null;
+        renderLeds();
         return;
       }
-      break; // empty = no-op
+      disarmGridArm(nodeId); // empty = no-op
+      break;
     }
-    case 'double': {
-      const clip = clipAtIndex(data, clipIdx);
-      if (clip) {
-        editClipIndex = clipIdx;
-        const next = doubleNoteClip(clip);
-        if (next !== clip) writeClip(nodeId, next, clipIdx);
+    case 'clipDiv': {
+      const c = clipAtIndex(data, clipIdx);
+      if (c) {
+        // Switching target clips commits the previous preview first.
+        if (divPreview && divPreview.clipIndex !== clipIdx) commitDivPreview(nodeId);
+        if (divPreview && divPreview.clipIndex === clipIdx) {
+          divPreview = { clipIndex: clipIdx, divIndex: (divPreview.divIndex + 1) % RATE_MULTS.length };
+        } else {
+          const cur = typeof c.div === 'number' ? coerceRateIndex(c.div) : laneRateIndex(data, laneOf(clipIdx));
+          divPreview = { clipIndex: clipIdx, divIndex: (cur + 1) % RATE_MULTS.length };
+        }
+        renderLeds();
       }
-      break; // empty / at-max = no-op
+      // STAYS armed — cycles per tap; commits once on disarm.
+      break;
+    }
+    default:
+      disarmGridArm(nodeId);
+      break;
+  }
+}
+
+/** Nudge swing[selectedChannel] by ±SWING_STEP (clamped). selectedChannel = the
+ *  lane of selectedClipIndex. Drives the Swing± pad meter (up/down/center flash). */
+function nudgeSwing(nodeId: string, delta: number): void {
+  const lane = laneOf(selectedClipIndex);
+  const next = clampSwing(laneSwing(liveData(nodeId), lane) + delta);
+  editData(
+    nodeId,
+    (d) => {
+      const arr = new Array<number>(CLIP_LANES).fill(0);
+      if (Array.isArray(d.swing)) {
+        for (let i = 0; i < d.swing.length && i < CLIP_LANES; i++) arr[i] = clampSwing(d.swing[i]);
+      }
+      arr[lane] = next;
+      d.swing = arr;
+    },
+    { undoable: true },
+  );
+  swingMeterActive = true;
+  swingMeterDir = isSwingCentered(next) ? 'center' : delta > 0 ? 'up' : 'down';
+  renderLeds();
+}
+
+// ── CLIP view (note editor on selectedClipIndex; scene column = clipRight). ──
+function setSelectedClip(idx: number): void {
+  selectedClipIndex = idx;
+  editClipIndex = idx; // keep synced so the window/playhead helpers track it
+}
+/** Materialize (if empty) + return the selected clip. Used when an edit needs a
+ *  real clip to write into. */
+function ensureSelClip(nodeId: string): NoteClipRecord {
+  let clip = clipAtIndex(liveData(nodeId), selectedClipIndex);
+  if (!clip) {
+    editData(
+      nodeId,
+      (d) => {
+        if (!d.clips) d.clips = {};
+        if (!d.clips[String(selectedClipIndex)]) d.clips[String(selectedClipIndex)] = defaultNoteClip();
+      },
+      { undoable: true },
+    );
+    clip = clipAtIndex(liveData(nodeId), selectedClipIndex)!;
+  }
+  return clip;
+}
+function writeClipSel(nodeId: string, next: NoteClipRecord): void {
+  writeClip(nodeId, next, selectedClipIndex, { undoable: true });
+}
+
+function handleSingleClip(nodeId: string, e: LaunchpadKeyEvent): void {
+  const ev = e.ev;
+  const data = liveData(nodeId);
+  const shift = singleShiftEff();
+  if (ev.type === 'scene') {
+    if (ev.s !== 1) return;
+    const sceneIndex = sceneIndexForCc(ev.cc);
+    if (sceneIndex === null) return;
+    handleClipRight(nodeId, sceneIndex, shift, data);
+    return;
+  }
+  if (ev.type !== 'pad') return;
+  // Note grid. On press, materialize the clip if needed; on release, only act if
+  // a clip already exists (don't create one from a stray release).
+  const clip = ev.s === 1 ? ensureSelClip(nodeId) : clipAtIndex(data, selectedClipIndex);
+  if (!clip) return;
+  const note = editPadToNote(clip, ev.x, ev.y, { rowOffset: editRowOffset, colOffset: shownWindowStart(clip), page: 0 });
+  if (!note) return;
+  const mono = laneMono(liveData(nodeId), laneOf(selectedClipIndex));
+  // Under shift the note grid is VELOCITY-cycle (tap a note → cycle its velocity).
+  if (shift) {
+    if (ev.s === 1) writeClipSel(nodeId, cycleVelocity(clip, note.step, note.midi));
+    return;
+  }
+  if (ev.s === 1) {
+    if (editAnchor && editAnchor.midi === note.midi && editAnchor.step !== note.step) {
+      writeClipSel(nodeId, setNoteSpan(clip, editAnchor.step, note.step, note.midi, { mono }));
+      editSpanned = true;
+    } else {
+      editAnchor = { step: note.step, midi: note.midi };
+      editSpanned = false;
+    }
+  } else if (editAnchor && editAnchor.step === note.step && editAnchor.midi === note.midi) {
+    if (!editSpanned) writeClipSel(nodeId, toggleNoteAt(clip, note.step, note.midi, { mono }));
+    editAnchor = null;
+    editSpanned = false;
+  }
+}
+
+/** Clip right column: Double · LengthEdit · Follow · Keys · RowUp · RowDown ·
+ *  Step◀ · Step▶. Under shift Row±/Step± jump a page/block. */
+function handleClipRight(
+  nodeId: string,
+  sceneIndex: number,
+  shift: boolean,
+  data: ClipPlayerData | undefined,
+): void {
+  switch (clipRight(sceneIndex)) {
+    case 'double': {
+      const clip = clipAtIndex(data, selectedClipIndex);
+      if (clip) {
+        const next = doubleNoteClip(clip);
+        if (next !== clip) writeClipSel(nodeId, next);
+      }
+      break;
+    }
+    case 'lengthEdit': {
+      if (clipAtIndex(data, selectedClipIndex)) {
+        editClipIndex = selectedClipIndex;
+        lengthReturnMode = 'edit';
+        lengthReturnView = 'clip';
+        mode = 'lengthEdit';
+        renderLeds();
+      }
+      break;
+    }
+    case 'follow': {
+      const clip = ensureSelClip(nodeId);
+      toggleFollow(clip);
+      renderLeds();
+      break;
+    }
+    case 'keys':
+      enterKeys(nodeId, selectedClipIndex, /* overdub */ false, data);
+      break;
+    case 'rowUp':
+      editRowOffset += shift ? SHIFT_JUMP : 1;
+      renderLeds();
+      break;
+    case 'rowDown':
+      editRowOffset -= shift ? SHIFT_JUMP : 1;
+      renderLeds();
+      break;
+    case 'stepLeft': {
+      const clip = ensureSelClip(nodeId);
+      scrollStep(clip, shift ? -SHIFT_JUMP : -1);
+      renderLeds();
+      break;
+    }
+    case 'stepRight': {
+      const clip = ensureSelClip(nodeId);
+      scrollStep(clip, shift ? +SHIFT_JUMP : +1);
+      renderLeds();
+      break;
     }
     default:
       break;
   }
-  disarmClip();
 }
 
-/** Open the note editor on a clip index, creating a default clip if the pad is
- *  empty. The SAME body as handleL's editArmed branch (pair hold-EDIT) + the
- *  consumeArmed NEW branch — the canonical "enter the editor" reset. Flips the
- *  single device to control view so the editor is shown. */
-function openEditor(nodeId: string, clipIdx: number, data: ClipPlayerData | undefined): void {
-  if (!data?.clips?.[String(clipIdx)]) {
-    editData(nodeId, (d) => {
-      if (!d.clips) d.clips = {};
-      if (!d.clips[String(clipIdx)]) d.clips[String(clipIdx)] = defaultNoteClip();
-    });
+// ── KEYS sub-view (right column = scale-select / arp; pad = keyboard/controls). ──
+function handleSingleKeys(nodeId: string, e: LaunchpadKeyEvent): void {
+  const ev = e.ev;
+  if (ev.type === 'scene') {
+    if (ev.s !== 1) return;
+    const sceneIndex = sceneIndexForCc(ev.cc);
+    if (sceneIndex === null) return;
+    if (singleShiftEff()) handleKeysArp(nodeId, sceneIndex);
+    else handleKeysScale(nodeId, sceneIndex);
+    return;
   }
-  editClipIndex = clipIdx;
-  mode = 'edit';
-  editArmed = false;
-  editAnchor = null;
-  editSpanned = false;
-  editRowOffset = 0;
-  editWindowStart = 0;
-  followOn = true;
-  velHeld = false;
-  setSingleView('control'); // show the editor on the lone device
+  // pad = keyboard + bottom-row controls (EXIT/QREC/OVERDUB/OCT±/PANIC/LEN).
+  handleKeysUnit(nodeId, 'L', e);
+}
+
+/** KEYS no-shift right column: set clip.scale to the tapped scale (chromatic =
+ *  remove the scale), or toggle the arp on/off. */
+function handleKeysScale(nodeId: string, sceneIndex: number): void {
+  const r = keysScaleRight(sceneIndex);
+  if (r === null) return;
+  if (r === 'arpToggle') {
+    arpToggle(nodeId);
+    return;
+  }
+  const clip = clipAtIndex(liveData(nodeId), keysClipIndex);
+  if (!clip) return;
+  const next: NoteClipRecord = { ...clip };
+  if (r.scale) next.scale = r.scale;
+  else delete next.scale; // chromatic = the absence of a scale
+  writeClip(nodeId, next, keysClipIndex, { undoable: true });
+  renderLeds();
+}
+
+/** KEYS + shift right column: the arp control column (div ± / direction / range
+ *  ± / latch). All edit the live arp state. arpDivUp = toward the FASTER (larger)
+ *  multiplier (lower ARP_DIVISIONS index); arpRangeUp = a wider octave span. */
+function handleKeysArp(nodeId: string, sceneIndex: number): void {
+  switch (keysArpShiftRight(sceneIndex)) {
+    case 'arpDivUp':
+      arp = arpSetParams(arp, { divisionIndex: arp.params.divisionIndex - 1 });
+      break;
+    case 'arpDivDown':
+      arp = arpSetParams(arp, { divisionIndex: arp.params.divisionIndex + 1 });
+      break;
+    case 'arpUp':
+      arp = arpSetParams(arp, { direction: 'up' });
+      break;
+    case 'arpDown':
+      arp = arpSetParams(arp, { direction: 'down' });
+      break;
+    case 'arpUpDown':
+      arp = arpSetParams(arp, { direction: 'updown' });
+      break;
+    case 'arpRangeUp':
+      arp = arpSetParams(arp, { octaveRangeIndex: arp.params.octaveRangeIndex + 1 });
+      break;
+    case 'arpRangeDown':
+      arp = arpSetParams(arp, { octaveRangeIndex: arp.params.octaveRangeIndex - 1 });
+      break;
+    case 'arpLatch':
+      arp = arpSetParams(arp, { latch: !arp.params.latch });
+      break;
+    default:
+      break;
+  }
+  renderLeds();
+}
+
+/** Toggle the arp on/off. ON: silence the directly-sounding held notes + seed the
+ *  arp from them. OFF: flush the arp's sounding note + re-audition the held keys. */
+function arpToggle(nodeId: string): void {
+  arpOn = !arpOn;
+  const lane = laneOf(keysClipIndex);
+  if (arpOn) {
+    for (const midi of keysPressed) pushAudition(nodeId, { lane, midi, velocity: 0, on: false });
+    arp = arpSetHeld(arp, [...keysPressed]);
+    arpNextTime = 0; // fire on the next service tick
+  } else {
+    if (arp.playing !== null) {
+      pushAudition(nodeId, { lane, midi: arp.playing, velocity: 0, on: false });
+      arp = { ...arp, playing: null };
+    }
+    for (const midi of keysPressed) pushAudition(nodeId, { lane, midi, velocity: VEL_DEFAULT, on: true });
+    arpNextTime = 0;
+  }
+  renderLeds();
+}
+
+/** Monotonic wall clock (ms) for the arp step scheduler. */
+function nowMs(): number {
+  return typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+}
+/** TIMELORDE bpm (default 120 when absent). */
+function transportBpm(): number {
+  const t = timelordeNode();
+  const b = t?.node.params?.bpm;
+  return typeof b === 'number' && b > 0 ? b : 120;
+}
+
+/** Advance the arp from the render loop (tick-granular). Runs while KEYS is open
+ *  OR the arp is latched, clocked by bpm (independent of the transport). NOTE:
+ *  generation is tick-granular (~25 ms) for v1 — a follow-up could move it into
+ *  the clipplayer factory for sample-accurate scheduling. */
+function serviceArp(nodeId: string): void {
+  if (!arpOn) return;
+  if (mode !== 'keys' && !arp.params.latch) return; // stopped when you leave KEYS non-latched
+  const lane = laneOf(keysClipIndex);
+  if (arp.pool.length === 0) {
+    if (arp.playing !== null) applyArpStep(nodeId, lane, arpAdvance(arp)); // flush the final note-off
+    arpNextTime = 0;
+    return;
+  }
+  const now = nowMs();
+  const beatMs = (60 / transportBpm()) * 1000;
+  const stepMs = arpStepPeriod(beatMs, arp.params.divisionIndex);
+  if (arpNextTime === 0) arpNextTime = now;
+  if (now - arpNextTime > beatMs * 8) arpNextTime = now; // recover from a long stall (backgrounded tab)
+  let guard = 0;
+  while (now >= arpNextTime && guard < 32) {
+    applyArpStep(nodeId, lane, arpAdvance(arp));
+    arpNextTime += stepMs;
+    guard++;
+  }
+}
+function applyArpStep(nodeId: string, lane: number, step: ReturnType<typeof arpAdvance>): void {
+  if (step.noteOff !== undefined) pushAudition(nodeId, { lane, midi: step.noteOff, velocity: 0, on: false });
+  if (step.noteOn !== undefined) pushAudition(nodeId, { lane, midi: step.noteOn, velocity: VEL_DEFAULT, on: true });
+  arp = step.state;
+}
+
+// ── CONTROL view (performance deck: RESET/MONO/MUTE/RATE + per-lane STOP; the
+// re-homed transport nudges / STOP-ALL / arranger REC / SONG on dark grid pads). ──
+function handleSingleControl(nodeId: string, e: LaunchpadKeyEvent): void {
+  const ev = e.ev;
+  const data = liveData(nodeId);
+  if (ev.type === 'pad') {
+    if (ev.s !== 1) return; // control taps act on press
+    // Performance rows (RESET · per-lane MONO / MUTE / RATE).
+    if (rDeckReset(ev.x, ev.y)) { doReset(nodeId); return; }
+    const monoLane = rDeckMonoLane(ev.x, ev.y);
+    if (monoLane !== null) { toggleMono(nodeId, monoLane); return; }
+    const muteLane = rDeckMuteLane(ev.x, ev.y);
+    if (muteLane !== null) { toggleMute(nodeId, muteLane); return; }
+    const rateLane = rDeckRateLane(ev.x, ev.y);
+    if (rateLane !== null) { cycleRate(nodeId, rateLane); return; }
+    // Re-homed deck top-row functions (tempo ∓ / STOP-ALL / arranger REC / SONG).
+    switch (controlRehomePad(ev.x, ev.y)) {
+      case 'tempoDown': nudgeTempo(-TEMPO_NUDGE_BPM); return;
+      case 'tempoUp': nudgeTempo(+TEMPO_NUDGE_BPM); return;
+      case 'stopAll':
+        editData(nodeId, (d) => { d.queued = new Array(CLIP_LANES).fill('stop'); });
+        return;
+      case 'rec': toggleRecording(nodeId); return;
+      case 'song': toggleArrangeMode(nodeId); return;
+      default: return;
+    }
+  }
+  if (ev.type === 'scene') {
+    if (ev.s !== 1) return;
+    const sceneIndex = sceneIndexForCc(ev.cc);
+    if (sceneIndex === null) return;
+    const lane = controlRight(sceneIndex);
+    if (lane === null) return;
+    if (lanePlaying(data, lane) !== null) queueLane(nodeId, lane, 'stop', nowHeld);
+  }
 }
 
 /** Unit L is ALWAYS the live clip matrix + scene column. */
@@ -1395,32 +2008,11 @@ function handleL(nodeId: string, e: LaunchpadKeyEvent): void {
     const clipIdx = lPadToClipIndex(ev.x, ev.y);
     if (clipIdx === null) return;
     if (ev.s !== 1) return; // clip launch acts on press
-    // SINGLE-mode CC-91 KEYS-ARM: while armed, a clip-pad tap ENTERS KEYS for it
-    // (overdub per the tri-state) — one hand, no view flip. This runs BEFORE the
-    // launch path (same suppression contract as the action-arm), BEFORE the
-    // action-arm consume, and BEFORE the double-tap tracker, so the first tap
-    // enters KEYS and the double-tap editor never engages. Pair never arms it.
-    if (deployment === 'single' && keysArm !== 'off') {
-      const overdub = keysArm === 'od';
-      keysArm = 'off';
-      lastTapClipIndex = -1;
-      enterKeys(nodeId, clipIdx, overdub, data);
-      return;
-    }
-    // SINGLE-mode arm strip: an armed action consumes the next clip-pad tap
-    // (two-handed deck op). Pair mode never sets armedAction, so this is a dead
-    // branch in pair → the existing modifier branches below stay byte-for-byte.
-    if (deployment === 'single' && armedAction) {
-      consumeArmed(nodeId, clipIdx, data);
-      return;
-    }
-    // KEYS ENTRY (pair + single): holding note-REC or note-OVERDUB on the R deck
+    // KEYS ENTRY (pair): holding note-REC or note-OVERDUB on the R deck
     // SUPPRESSES the launch on L taps (mirror editArmed) and a DOUBLE-TAP of a
     // clip opens the KEYS view for it — hold-REC = overdub OFF, hold-OVERDUB =
     // overdub ON. The double-tap (two taps of the same clip within the window) is
-    // the safety layer against accidental entry into a destructive mode. In
-    // SINGLE mode the hold is set in the CONTROL view's deck and SURVIVES the
-    // CC-98 flip to clip view (like editArmed — the one-device gesture family).
+    // the safety layer against accidental entry into a destructive mode.
     if (keysRecHeld || keysOverdubHeld) {
       if (clipIdx === lastTapClipIndex && tickCount - lastTapTick <= DOUBLE_TAP_TICKS) {
         lastTapClipIndex = -1;
@@ -1429,11 +2021,6 @@ function handleL(nodeId: string, e: LaunchpadKeyEvent): void {
       }
       lastTapClipIndex = clipIdx;
       lastTapTick = tickCount;
-      // Snapshot the lane's prior intent even for this SUPPRESSED tap: if the
-      // hold is released between the taps, the next quick tap of the same clip
-      // falls into the single double-tap-editor branch, whose revert reads these
-      // — a stale snapshot would mis-revert the lane. The suppressed tap changed
-      // nothing, so snapshotting NOW makes that revert a harmless no-op.
       lastTapPrevQueued = laneQueued(data, laneOf(clipIdx));
       lastTapWasPlaying = lanePlaying(data, laneOf(clipIdx)) === slotOf(clipIdx);
       return; // single tap while a KEYS-hold is held = suppressed (no launch)
@@ -1476,48 +2063,6 @@ function handleL(nodeId: string, e: LaunchpadKeyEvent): void {
       writeClip(nodeId, reverseClipSteps(copyClip(clipBuffer)), clipIdx);
       return;
     }
-    // SINGLE + clip view: a DOUBLE-TAP of a clip pad opens its note editor (the
-    // one-device analogue of the card's double-click → edit, since single mode
-    // can't hold-EDIT on a second unit). The FIRST tap launches IMMEDIATELY below
-    // (no debounce — owner: never slow a launch); a SECOND tap on the SAME clip
-    // within DOUBLE_TAP_TICKS opens the editor AND REVERTS the lane to the state
-    // it was in before the first tap (owner rule: a double-tap opens the editor
-    // WITHOUT changing whether the clip plays). Pair mode never reaches this
-    // (deployment !== 'single'), so the pair launch path is byte-for-byte
-    // unchanged.
-    if (deployment === 'single' && activeView === 'clip') {
-      if (clipIdx === lastTapClipIndex && tickCount - lastTapTick <= DOUBLE_TAP_TICKS) {
-        lastTapClipIndex = -1; // consume — don't let a 3rd tap re-trigger off this pair
-        // Revert the lane to its PRIOR intent (snapshotted on the first tap):
-        //   · prior STOPPED   → restoring queued un-queues the first tap's start.
-        //     If a boundary passed and the clip ALREADY started, snap it back with
-        //     an immediate stop (a ≤~275ms blip is the accepted rare edge).
-        //   · prior QUEUED-to-start (not playing) → restoring leaves it QUEUED, so
-        //     it STILL starts at the boundary (the owner's key requirement).
-        //   · prior PLAYING   → restoring cancels the stop the first tap queued, so
-        //     it keeps playing.
-        const lane = laneOf(clipIdx);
-        const slot = slotOf(clipIdx);
-        restoreQueued(nodeId, lane, lastTapPrevQueued);
-        if (!lastTapWasPlaying && lanePlaying(liveData(nodeId), lane) === slot) {
-          // The first tap's queued start crossed a boundary between the two taps —
-          // the clip is now actually playing though it was stopped before the
-          // double-tap. Force it back to stopped immediately.
-          queueLane(nodeId, lane, 'stop', /* immediate */ true);
-        }
-        openEditor(nodeId, clipIdx, data);
-        return;
-      }
-      // First tap (or a stale/different one): SNAPSHOT the lane's prior intent
-      // BEFORE applying the toggle (so a paired second tap can revert it), record
-      // the tap, then fall through to the immediate launch below.
-      const lane = laneOf(clipIdx);
-      const slot = slotOf(clipIdx);
-      lastTapPrevQueued = laneQueued(data, lane);
-      lastTapWasPlaying = lanePlaying(data, lane) === slot;
-      lastTapClipIndex = clipIdx;
-      lastTapTick = tickCount;
-    }
     const lane = laneOf(clipIdx);
     const slot = slotOf(clipIdx);
     if (lanePlaying(data, lane) === slot) queueLane(nodeId, lane, 'stop', nowHeld);
@@ -1538,8 +2083,8 @@ function handleL(nodeId: string, e: LaunchpadKeyEvent): void {
 
   // PAIR unit-L TOP ROW (CC 91..98) = the 8 per-lane MUTE pads (col = lane) — the
   // previously-dead, always-visible matrix top row now hosts live-performance
-  // MUTE. Single mode never routes top CCs to handleL (handleSingleKey's arm-row
-  // + view-flip intercept them all), so this branch is reached only in pair.
+  // MUTE. handleL is PAIR-ONLY now (single routes to handleSingleKey's per-view
+  // handlers), so this branch is reached only in pair.
   if (ev.type === 'top') {
     if (ev.s !== 1) return;
     const lane = lTopMuteLane(ev.cc);
@@ -1766,25 +2311,46 @@ function scrollStep(clip: NoteClipRecord, delta: number): void {
 function lengthExitMode(): 'edit' | 'keys' {
   return lengthReturnMode === 'keys' ? 'keys' : 'edit';
 }
+/** EXIT the length page. PAIR: back to the editor / KEYS (lengthExitMode). SINGLE:
+ *  back to KEYS if opened from KEYS, else to the Grid/Clip VIEW it was opened from
+ *  (lengthReturnView). */
+function exitLengthEdit(clip: NoteClipRecord): void {
+  if (deployment === 'single') {
+    if (lengthReturnMode === 'keys') {
+      mode = 'keys';
+    } else {
+      mode = 'session';
+      setSingleViewInternal(lengthReturnView);
+    }
+    clampWindow(clip);
+    return;
+  }
+  mode = lengthExitMode(); // pair path unchanged
+  clampWindow(clip);
+}
 function handleRLength(nodeId: string, e: LaunchpadKeyEvent): void {
   const ev = e.ev;
   const clip = clipAtIndex(liveData(nodeId), editClipIndex);
   if (!clip) { mode = 'session'; return; }
   if (ev.type === 'scene') {
     if (ev.s !== 1) return;
-    if (isEditExitSceneRow(ev.row)) { mode = lengthExitMode(); clampWindow(clip); }
+    if (isEditExitSceneRow(ev.row)) exitLengthEdit(clip);
     return;
   }
   if (ev.type !== 'pad' || ev.s !== 1) return;
   const act = rLengthPad(ev.x, ev.y);
   if (!act) return;
-  if (act.kind === 'exit') { mode = lengthExitMode(); clampWindow(clip); return; }
+  if (act.kind === 'exit') { exitLengthEdit(clip); return; }
   const nextLen =
     act.kind === 'block' ? lengthFromBlockTap(act.block) : lengthFromStepTap(clip.lengthSteps, act.step);
-  editData(nodeId, (d) => {
-    const c = d.clips?.[String(editClipIndex)] as NoteClipRecord | undefined;
-    if (c) c.lengthSteps = nextLen;
-  });
+  editData(
+    nodeId,
+    (d) => {
+      const c = d.clips?.[String(editClipIndex)] as NoteClipRecord | undefined;
+      if (c) c.lengthSteps = nextLen;
+    },
+    { undoable: true },
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1792,26 +2358,16 @@ function handleRLength(nodeId: string, e: LaunchpadKeyEvent): void {
 // SINGLE: repaint the LONE device (the L slot) in its active-view role.
 // ---------------------------------------------------------------------------
 
-/** Paint the L-role (clip matrix) frame onto a physical unit. In SINGLE clip view
- *  the top row is the action-arm strip (incl. the CC-91 KEYS-arm) + aiming wash
- *  (the `arm` opt). In PAIR (withArmStrip=false — the only other caller) the top
- *  row is instead the 8 per-lane MUTE pads (`lTopMute`); the matrix + scene render
- *  byte-for-byte as before. */
-function paintLRole(
-  target: LaunchpadUnit,
-  data: ClipPlayerData | undefined,
-  blinkOn: boolean,
-  withArmStrip = false,
-): void {
+/** Paint the L-role (clip matrix) frame onto a physical unit. PAIR-ONLY now (the
+ *  single device paints the per-view frames): the top row is the 8 per-lane MUTE
+ *  pads (`lTopMute`); the matrix + scene render byte-for-byte as before. */
+function paintLRole(target: LaunchpadUnit, data: ClipPlayerData | undefined, blinkOn: boolean): void {
   setFrame(
     target,
     computeLSessionFrame(data, {
       blinkOn,
       recording: recordArmed(data),
-      arm: withArmStrip
-        ? { armedAction, bufferLoaded: clipBuffer !== null, nowOn: nowHeld, keysArm }
-        : undefined,
-      lTopMute: !withArmStrip, // pair-L top row = per-lane MUTE
+      lTopMute: true, // pair-L top row = per-lane MUTE
     }),
   );
 }
@@ -1906,10 +2462,64 @@ function paintKeysRole(
   return true;
 }
 
-/** The CC-98 indicator colour for the active view on the single device (a calm
- *  cyan so the dedicated view-flip button reads distinct from the function row).
- *  Sourced from the shared map (`RGB_VIEW`) so the firmware + docs never drift. */
-const VIEW_LED: readonly [number, number, number] = RGB_VIEW;
+/** Build the PERMANENT top-row opts for the current single-mode render pass. */
+function buildTopOpts(): PermanentTopOpts {
+  return {
+    view: singleView,
+    keysActive: mode === 'keys',
+    transportRunning: transportRunning(),
+    shift: { latched: shiftLatched, held: shiftHeldSingle },
+    canUndo: lpCanUndo(),
+    canRedo: lpCanRedo(),
+  };
+}
+/** Software pulse phase for the Clip-Div preview pad (faster div → faster blink). */
+function divPulsePhase(divIndex: number): boolean {
+  const mult = RATE_MULTS[coerceRateIndex(divIndex)];
+  const period = Math.max(1, Math.round(BLINK_TICKS / mult));
+  return Math.floor(tickCount / period) % 2 === 0;
+}
+/** The selected clip's live playhead step (-1 when it isn't playing). */
+function selPlayhead(nodeId: string, data: ClipPlayerData | undefined): number {
+  const lane = laneOf(selectedClipIndex);
+  return lanePlaying(data, lane) === slotOf(selectedClipIndex) ? getLanePlayhead(nodeId, lane) : -1;
+}
+/** Paint the SINGLE KEYS sub-view (keyboard + scale/arp right column + permanent
+ *  top row). Returns false when the KEYS clip vanished (caller drops to session). */
+function paintSingleKeys(
+  nodeId: string,
+  data: ClipPlayerData | undefined,
+  blinkOn: boolean,
+  top: PermanentTopOpts,
+): boolean {
+  const clip = clipAtIndex(data, keysClipIndex);
+  if (!clip) return false;
+  const lane = laneOf(keysClipIndex);
+  const ph = lanePlaying(data, lane) === slotOf(keysClipIndex) ? getLanePlayhead(nodeId, lane) : -1;
+  const rec = readNoteRec(data);
+  setFrame(
+    'L',
+    computeSingleKeysFrame({
+      top,
+      keyboardRoot: keysKeyboardRoot(clip),
+      scale: clip.scale,
+      playheadStep: ph,
+      lengthSteps: clip.lengthSteps,
+      pressed: keysPressed,
+      recArmed: rec?.armed,
+      recording: rec?.recording,
+      overdub: rec?.overdub,
+      blinkOn,
+      selectedScale: clip.scale,
+      arpOn,
+      arpDir: arp.params.direction,
+      arpDivIndex: arp.params.divisionIndex,
+      arpRangeIndex: arp.params.octaveRangeIndex,
+      arpLatch: arp.params.latch,
+    }),
+  );
+  return true;
+}
 
 function renderLeds(): void {
   const single = deployment === 'single';
@@ -1921,10 +2531,16 @@ function renderLeds(): void {
     // Bound device(s) but no clip-player yet — paint a dim "ready" glow so the
     // surface is visibly alive (add a clip-player to go live).
     if (single) {
-      // The lone device shows the view it's in: dim blue (clip) / dim amber
-      // (control) + the CC-98 view marker.
-      setFrame('L', activeView === 'clip' ? idleFrame(0, 0, 20) : idleFrame(14, 7, 0));
-      setLed('L', CC_TOP_SPARE_8, VIEW_LED[0], VIEW_LED[1], VIEW_LED[2]);
+      // The lone device shows a dim wash tinted by the active view + the live
+      // permanent top row (nav is reachable even before a clip-player binds).
+      const idle =
+        singleView === 'control'
+          ? idleFrame(14, 7, 0)
+          : singleView === 'arranger'
+          ? idleFrame(6, 2, 12)
+          : idleFrame(0, 0, 20);
+      paintPermanentTopRow(idle, buildTopOpts());
+      setFrame('L', idle);
     } else {
       setFrame('L', idleFrame(0, 0, 20)); // L (matrix) = dim blue
       setFrame('R', idleFrame(14, 7, 0)); // R (deck) = dim amber
@@ -1935,41 +2551,92 @@ function renderLeds(): void {
   const blinkOn = Math.floor(tickCount / BLINK_TICKS) % 2 === 0;
   const data = node.data as ClipPlayerData | undefined;
 
-  // Auto-disarm a stale clip-view arm after ~4s (single mode only; pair never
-  // arms). Guards against an "armed then walked away" modal trap. The CC-91
-  // KEYS-arm auto-disarms on the same timeout (set inline — the paint below reads
-  // keysArm, so no recursive repaint is needed).
-  if (single && armedAction && tickCount - armTick > ARM_TIMEOUT_TICKS) {
-    disarmClip();
-  }
-  if (single && keysArm !== 'off' && tickCount - keysArmTick > ARM_TIMEOUT_TICKS) {
-    keysArm = 'off';
+  // Auto-disarm a stale Grid tap-to-arm after ~4s (single mode only; pair never
+  // arms). Guards against an "armed then walked away" modal trap. Done inline (no
+  // recursive renderLeds) — commit any pending Clip-Div preview as it clears.
+  if (single && armedRightAction && tickCount - armTick > ARM_TIMEOUT_TICKS) {
+    if (armedRightAction === 'clipDiv') commitDivPreview(nodeId);
+    armedRightAction = null;
+    divPreview = null;
   }
 
   if (single) {
-    // KEYS owns the lone device (no view concept inside it): service the record
-    // machine, paint the single (8-cell-playhead) keys frame, and skip the view
-    // marker — CC 98 is swallowed in KEYS, so a lit marker would lie. The same
-    // applies to the LENGTH page opened FROM keys (the ruler owns the device
-    // until its EXIT returns to KEYS).
+    // Advance the arp (tick-granular; runs while KEYS is open or the arp is
+    // latched, clocked by bpm — independent of the transport).
+    serviceArp(nodeId);
+    const top = buildTopOpts();
+    // KEYS sub-view owns the surface — service the record machine, paint the
+    // single (8-cell-playhead) keys frame + the permanent top row.
     if (mode === 'keys') {
       serviceKeysRecord(nodeId, data);
-      if (paintKeysRole('L', nodeId, data, blinkOn)) return;
+      if (paintSingleKeys(nodeId, data, blinkOn, top)) return;
       mode = 'session'; // the KEYS clip vanished — fall through to the views
     }
-    if (mode === 'lengthEdit' && lengthReturnMode === 'keys') {
-      paintRRole('L', nodeId, data, blinkOn);
-      return;
+    // Length-edit is a full-device takeover (the ruler owns the surface; EXIT via
+    // the scene column returns to the opener's view).
+    if (mode === 'lengthEdit') {
+      const clip = clipAtIndex(data, editClipIndex);
+      if (clip) { setFrame('L', computeRLengthFrame(clip)); return; }
+      mode = 'session';
     }
-    // ONE device, role chosen by the active view. The CC-98 view marker is set
-    // AFTER the role frame in EITHER view (and after the R painter's early
-    // returns in edit/length modes), so it always reflects the active view on
-    // the lone device + survives the setFrame diff. (setLed is a per-LED write
-    // that runs after setFrame, so it wins over whatever the frame painted at
-    // CC 98 — e.g. the editor's FOLLOW colour.)
-    if (activeView === 'clip') paintLRole('L', data, blinkOn, true);
-    else paintRRole('L', nodeId, data, blinkOn);
-    setLed('L', CC_TOP_SPARE_8, VIEW_LED[0], VIEW_LED[1], VIEW_LED[2]);
+    // Else paint the active VIEW's frame (each includes the permanent top row).
+    switch (singleView) {
+      case 'grid':
+        setFrame(
+          'L',
+          computeSingleGridFrame(data, {
+            top,
+            blinkOn,
+            recording: recordArmed(data),
+            armedRightAction,
+            bufferLoaded: clipBuffer !== null,
+            nowOn: nowHeld,
+            divPulse: divPreview
+              ? { clipIndex: divPreview.clipIndex, on: divPulsePhase(divPreview.divIndex) }
+              : undefined,
+            swingMeter: singleShiftEff()
+              ? {
+                  active: swingMeterActive,
+                  dir: swingMeterDir,
+                  level0to1: laneSwing(data, laneOf(selectedClipIndex)) / MAX_SWING,
+                }
+              : undefined,
+          }),
+        );
+        break;
+      case 'clip': {
+        const clip = clipAtIndex(data, selectedClipIndex) ?? defaultNoteClip();
+        setFrame(
+          'L',
+          computeSingleClipFrame(clip, {
+            top,
+            rowOffset: editRowOffset,
+            colOffset: shownWindowStart(clip),
+            page: 0,
+            playheadStep: selPlayhead(nodeId, data),
+            followOn,
+            velEditing: singleShiftEff(),
+            blinkOn,
+          }),
+        );
+        break;
+      }
+      case 'arranger':
+        setFrame('L', computeSingleArrangerFrame({ top }));
+        break;
+      case 'control':
+        setFrame(
+          'L',
+          computeSingleControlFrame({
+            top,
+            blinkOn,
+            recording: recordArmed(data),
+            arrangeMode: arrangeMode(data),
+            data,
+          }),
+        );
+        break;
+    }
     return;
   }
 
@@ -2003,7 +2670,8 @@ export function __test_resetBinding(): void {
   boundNodeId = null;
   tickCount = 0;
   deployment = 'pair';
-  activeView = 'clip';
+  singleView = 'grid';
+  selectedClipIndex = 0;
   mode = 'session';
   editClipIndex = 0;
   editArmed = false;
@@ -2019,10 +2687,8 @@ export function __test_resetBinding(): void {
   editWindowStart = 0;
   followOn = true;
   lengthReturnMode = 'edit';
-  armedAction = null;
-  armTick = 0;
-  keysArm = 'off';
-  keysArmTick = 0;
+  lengthReturnView = 'grid';
+  resetSingleState();
   lastTapClipIndex = -1;
   lastTapTick = 0;
   lastTapPrevQueued = null;
@@ -2033,7 +2699,8 @@ export function __test_resetBinding(): void {
 }
 export function __test_mode(): {
   deployment: 'pair' | 'single';
-  activeView: 'clip' | 'control';
+  singleView: SingleView;
+  selectedClipIndex: number;
   mode: LaunchpadMode;
   editClipIndex: number;
   editArmed: boolean;
@@ -2042,24 +2709,37 @@ export function __test_mode(): {
   pasteRevHeld: boolean;
   nowHeld: boolean;
   shiftHeld: boolean;
+  shiftLatched: boolean;
+  shiftHeldSingle: boolean;
   velHeld: boolean;
   editRowOffset: number;
   editWindowStart: number;
   followOn: boolean;
   bufferArmed: boolean;
   bufferSourceIndex: number | null;
-  armedAction: ClipArmAction | null;
-  keysArm: KeysArm;
+  armedRightAction: GridArmAction | null;
+  divPreview: { clipIndex: number; divIndex: number } | null;
+  swingMeterDir: 'up' | 'down' | 'center';
   lengthReturnMode: 'edit' | 'keys';
+  lengthReturnView: SingleView;
   keysClipIndex: number;
   keysRecHeld: boolean;
   keysOverdubHeld: boolean;
   keysOctaveShift: number;
   keysPressedCount: number;
+  arpOn: boolean;
+  arpDir: ArpState['params']['direction'];
+  arpDivIndex: number;
+  arpRangeIndex: number;
+  arpLatch: boolean;
+  arpPoolLen: number;
+  canUndo: boolean;
+  canRedo: boolean;
 } {
   return {
     deployment,
-    activeView,
+    singleView,
+    selectedClipIndex,
     mode,
     editClipIndex,
     editArmed,
@@ -2068,26 +2748,38 @@ export function __test_mode(): {
     pasteRevHeld,
     nowHeld,
     shiftHeld,
+    shiftLatched,
+    shiftHeldSingle,
     velHeld,
     editRowOffset,
     editWindowStart,
     followOn,
     bufferArmed: clipBuffer !== null,
     bufferSourceIndex,
-    armedAction,
-    keysArm,
+    armedRightAction,
+    divPreview,
+    swingMeterDir,
     lengthReturnMode,
+    lengthReturnView,
     keysClipIndex,
     keysRecHeld,
     keysOverdubHeld,
     keysOctaveShift,
     keysPressedCount: keysPressed.size,
+    arpOn,
+    arpDir: arp.params.direction,
+    arpDivIndex: arp.params.divisionIndex,
+    arpRangeIndex: arp.params.octaveRangeIndex,
+    arpLatch: arp.params.latch,
+    arpPoolLen: arp.pool.length,
+    canUndo: lpCanUndo(),
+    canRedo: lpCanRedo(),
   };
 }
 
 /** Test seam: force the deployment + view (so a unit test can drive single mode
  *  without the connect()/enumerate handshake). Does NOT touch the binding. */
-export function __test_setDeployment(d: 'pair' | 'single', view: 'clip' | 'control' = 'clip'): void {
+export function __test_setDeployment(d: 'pair' | 'single', view: SingleView = 'grid'): void {
   deployment = d;
-  activeView = view;
+  singleView = view;
 }
