@@ -410,6 +410,12 @@ function start(): void {
   renderLeds(); // paint immediately so binding lights the units without waiting a tick
 }
 function stopLoops(): void {
+  // Persist any pending Grid Clip-Div preview before dropping the loops, else an
+  // un-disarmed preview is silently lost on unbind/rebind (single mode). Runs
+  // while boundNodeId is still set (unbindLaunchpad nulls it AFTER this).
+  if (deployment === 'single' && boundNodeId && livePatch.nodes[boundNodeId] && divPreview) {
+    commitDivPreview(boundNodeId);
+  }
   if (unsubKey) { unsubKey(); unsubKey = null; }
   if (unsubTick) { unsubTick(); unsubTick = null; }
   teardownLaunchpadUndo();
@@ -471,13 +477,13 @@ export function bindLaunchpadToClip(nodeId: string): void {
 
 /** Unbind + blank both units. */
 export function unbindLaunchpad(): void {
-  boundNodeId = null;
   try {
     localStorage.removeItem(STORAGE_KEY_NODE);
   } catch {
     /* noop */
   }
-  stopLoops();
+  stopLoops(); // commits any pending div preview while boundNodeId is still set
+  boundNodeId = null;
   if (isPairBound()) {
     clearUnit('L');
     clearUnit('R');
@@ -1010,6 +1016,14 @@ function keysShiftOctave(delta: number): void {
   keysOctaveShift = Math.max(-48, Math.min(48, keysOctaveShift + delta));
   renderLeds();
 }
+/** Off the arp's currently-sounding note (if any) on `lane`. Every KEYS teardown
+ *  calls this so a running/latched arp never strands a voice. SINGLE only (pair
+ *  has no arp). */
+function silenceArp(nodeId: string, lane: number): void {
+  if (deployment === 'single' && arp.playing !== null) {
+    pushAudition(nodeId, { lane, midi: arp.playing, velocity: 0, on: false });
+  }
+}
 /** KEYS PANIC (P7): kill every sounding auditioned note (release-all) without
  *  leaving KEYS or touching the recorded clip — an emergency "all notes off". */
 function keysPanic(nodeId: string): void {
@@ -1017,6 +1031,15 @@ function keysPanic(nodeId: string): void {
   for (const midi of keysPressed) pushAudition(nodeId, { lane, midi, velocity: 0, on: false });
   keysPressed.clear();
   keysOnsets.clear();
+  // The emergency all-notes-off must also kill the ARP: off its sounding note
+  // and drop its (possibly latched) held-note pool so it stops generating —
+  // else it keeps cycling octave-expanded pitches that aren't in keysPressed.
+  // arpOn is left as-is, so re-pressing a key resumes arping.
+  if (deployment === 'single') {
+    silenceArp(nodeId, lane);
+    arp = createArpState(arp.params);
+    arpNextTime = 0;
+  }
   renderLeds();
 }
 /** Snap a note-on velocity to a stored VEL level. Velocity-insensitive pads
@@ -1081,6 +1104,10 @@ function enterKeys(
   overdub: boolean,
   data: ClipPlayerData | undefined,
 ): void {
+  // A LATCHED arp kept running on the PREVIOUS keys clip's lane (forceExitKeys
+  // preserves it) — off its sounding note before we retarget + reset the arp
+  // state below, else it strands a voice on the old lane.
+  silenceArp(nodeId, laneOf(keysClipIndex));
   if (!data?.clips?.[String(clipIdx)]) {
     editData(
       nodeId,
@@ -1128,12 +1155,17 @@ function keysExit(nodeId: string, data: ClipPlayerData | undefined): void {
     patchNoteRec(nodeId, { armed: false });
     return;
   }
-  // Idle → session. Blank the KEYS state; the matrix + deck repaint next tick.
+  // Idle → session. Silence EVERYTHING KEYS is sounding before we blank state,
+  // else clearing keysPressed / the arp below strands open voices (this must
+  // mirror forceExitKeys, which flushes both). The live held keyboard notes are
+  // only actually sounding when the arp is OFF (arp-on suppresses direct
+  // auditions), but a note-off for a silent note is a harmless no-op.
+  const lane = laneOf(keysClipIndex);
+  for (const midi of keysPressed) pushAudition(nodeId, { lane, midi, velocity: 0, on: false });
   // SINGLE: silence + reset the arp (its sequence should not outlive an explicit
   // KEYS EXIT). Pair never runs the arp, so this is single-guarded.
   if (deployment === 'single' && arpOn) {
-    const lane = laneOf(keysClipIndex);
-    if (arp.playing !== null) pushAudition(nodeId, { lane, midi: arp.playing, velocity: 0, on: false });
+    silenceArp(nodeId, lane);
     arpOn = false;
     arp = createArpState(arp.params);
     arpNextTime = 0;
@@ -1505,10 +1537,16 @@ function handleGridLaunch(nodeId: string, clipIdx: number, data: ClipPlayerData 
   const slot = slotOf(clipIdx);
   if (clipIdx === lastTapClipIndex && tickCount - lastTapTick <= DOUBLE_TAP_TICKS) {
     lastTapClipIndex = -1; // consume — a 3rd tap must not re-fire off this pair
-    // Revert the lane to its prior intent (snapshotted on the first tap).
+    // Revert the lane to its prior intent (snapshotted on the first tap) so the
+    // double-tap NEVER changes whether the clip plays (owner rule) — in BOTH
+    // directions, including the immediate case (NOW held / QNT off) where the
+    // first tap's launch/stop already applied within the double-tap window.
     restoreQueued(nodeId, lane, lastTapPrevQueued);
-    if (!lastTapWasPlaying && lanePlaying(liveData(nodeId), lane) === slot) {
-      queueLane(nodeId, lane, 'stop', /* immediate */ true);
+    const nowPlaying = lanePlaying(liveData(nodeId), lane) === slot;
+    if (!lastTapWasPlaying && nowPlaying) {
+      queueLane(nodeId, lane, 'stop', /* immediate */ true); // first tap launched it → undo
+    } else if (lastTapWasPlaying && !nowPlaying) {
+      queueLane(nodeId, lane, slot, /* immediate */ true); // first tap stopped it → restart
     }
     setSelectedClip(clipIdx);
     // Materialize a default clip if the pad was empty so Clip view can edit it.
@@ -1547,10 +1585,17 @@ function handleGridLaunch(nodeId: string, clipIdx: number, data: ClipPlayerData 
 function handleSceneLaunch(nodeId: string, sceneIndex: number, data: ClipPlayerData | undefined): void {
   const slot = gridSceneRowToSlot(sceneIndex);
   if (slot === null) return;
-  for (let lane = 0; lane < CLIP_LANES; lane++) {
-    const has = data?.clips?.[String(clipIndex(slot, lane))];
-    queueLane(nodeId, lane, has ? slot : 'stop', nowHeld);
-  }
+  // Fire the whole scene in ONE transaction (all 8 lanes are addressed, so we
+  // replace the queued array wholesale — same idea as stop-all) instead of 8
+  // separate queueLane writes = 8 ydoc syncs per scene press.
+  editData(nodeId, (d) => {
+    const q = new Array<number | 'stop' | null>(CLIP_LANES).fill('stop');
+    for (let lane = 0; lane < CLIP_LANES; lane++) {
+      if (data?.clips?.[String(clipIndex(slot, lane))]) q[lane] = slot;
+    }
+    d.queued = q;
+    if (nowHeld) d.queuedImmediate = new Array<boolean>(CLIP_LANES).fill(true);
+  });
 }
 
 /** Grid + shift right column: Copy/Paste/PasteRev/ClipDiv/Len are tap-to-ARM;
@@ -2576,7 +2621,14 @@ function renderLeds(): void {
     // the scene column returns to the opener's view).
     if (mode === 'lengthEdit') {
       const clip = clipAtIndex(data, editClipIndex);
-      if (clip) { setFrame('L', computeRLengthFrame(clip)); return; }
+      if (clip) {
+        // The permanent top row stays lit + live even during the length ruler
+        // (the ruler only uses the 8×8 + scene column) — the row NEVER goes dark.
+        const frame = computeRLengthFrame(clip);
+        paintPermanentTopRow(frame, top);
+        setFrame('L', frame);
+        return;
+      }
       mode = 'session';
     }
     // Else paint the active VIEW's frame (each includes the permanent top row).

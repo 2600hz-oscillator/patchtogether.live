@@ -68,6 +68,7 @@ import {
   // KEYS controls
   KEYS_QREC_COL,
   KEYS_EXIT_COL,
+  KEYS_PANIC_COL,
   KEYS_CTRL_ROW,
 } from './launchpad-map';
 import { RATE_MULTS } from '$lib/audio/modules/clip-clock';
@@ -333,6 +334,20 @@ describe('SINGLE — Grid view (transposed clip matrix + scene/row launch)', () 
     expect(__test_mode().singleView, 'double-tap → Clip view').toBe('clip');
     expect(__test_mode().selectedClipIndex, 'selected the double-tapped clip').toBe(idx);
     expect(queued()![1], 'the queued start was reverted (double-tap does not change play state)').toBeNull();
+  });
+
+  it('a DOUBLE-TAP of a PLAYING clip keeps it playing even after the stop applied (NOW) [regression]', () => {
+    const idx = clipIndex(1, 1);
+    seedClipPlayer({ clips: { [idx]: noteClip() }, playing: [null, 1, null, null, null, null, null, null] });
+    seedTimelorde(1);
+    bindLaunchpadToClip(NODE_ID);
+    pressClip(sim, 1, 1); // 1st tap of a PLAYING clip → queues a stop
+    // simulate the engine applying that stop before the 2nd tap (immediate: NOW /
+    // QNT-off). Whole-array reassignment — the synced store rejects index writes.
+    liveData().playing = [null, null, null, null, null, null, null, null];
+    pressClip(sim, 1, 1); // 2nd tap (double-tap) → Clip view AND must RESTART the clip
+    expect(__test_mode().singleView).toBe('clip');
+    expect(queued()![1], 'double-tap restarted the clip — play state preserved in both directions').toBe(1);
   });
 
   it('paints the transposed matrix + the permanent top row on the lone device', () => {
@@ -796,6 +811,37 @@ describe('SINGLE — KEYS sub-view (scale + arp)', () => {
     sim.press('L', 3, 2); // col 3 row 1 → midi 48 + 3 + 5 = 56
     sim.release('L', 3, 2);
     expect(clipsOf()[clipIndex(0, 0)].steps.some((s) => s.step === 5 && s.midi === 56)).toBe(true);
+  });
+
+  it('EXIT with a key held flushes the note-off (no stuck note) [regression]', () => {
+    enterKeys(); // arp OFF → a keyboard press auditions directly
+    drainAudition(NODE_ID); // discard entry noise
+    sim.press('L', 2, 1); // hold a keyboard note
+    const ons = drainAudition(NODE_ID).filter((e) => e.on);
+    expect(ons.length, 'the held note sounded').toBeGreaterThan(0);
+    const heldMidi = ons[0]!.midi;
+    sim.press('L', KEYS_EXIT_COL, KEYS_CTRL_ROW); // idle EXIT → session
+    expect(__test_mode().mode).toBe('session');
+    expect(
+      drainAudition(NODE_ID).some((e) => !e.on && e.midi === heldMidi),
+      'EXIT flushed the held note-off',
+    ).toBe(true);
+  });
+
+  it('PANIC stops the arp: offs its note + clears the (latched) pool [regression]', () => {
+    enterKeys();
+    sim.cc('L', sceneCc(K_ARP_TOGGLE), 127); // arp ON
+    sim.press('L', 3, 1); // hold a note → into the arp pool
+    expect(__test_mode().arpPoolLen).toBeGreaterThan(0);
+    hoisted.tick!(); // the arp sounds a note
+    drainAudition(NODE_ID);
+    sim.press('L', KEYS_PANIC_COL, KEYS_CTRL_ROW); // PANIC
+    expect(__test_mode().arpPoolLen, 'PANIC cleared the arp pool').toBe(0);
+    hoisted.tick!();
+    expect(
+      drainAudition(NODE_ID).some((e) => e.on),
+      'no new arp note-on after PANIC',
+    ).toBe(false);
   });
 });
 
