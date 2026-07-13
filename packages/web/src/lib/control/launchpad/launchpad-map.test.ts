@@ -170,6 +170,7 @@ import { keyboardCellToMidi } from '$lib/audio/modules/keyboard-map';
 import {
   clipIndex,
   defaultNoteClip,
+  defaultLaneColorHex,
   toggleNoteAt,
   setNoteSpan,
   type ClipPlayerData,
@@ -781,12 +782,19 @@ describe('Single mode — frame builders', () => {
       queued: [0, null, null, null, null, null, null, null],
     } as ClipPlayerData;
     const f = computeSingleGridFrame(data, { blinkOn: true, top: mkTop('grid') });
-    // lane1 slot1 playing → SOLID green at pad {x:1,y:6}.
-    expect(eqRgb(at(f, padNote(1, 6)), RGB_PLAYING)).toBe(true);
-    // lane0 slot0 queued-launch → flash green (blink on) at pad {x:0,y:7}.
-    expect(eqRgb(at(f, padNote(0, 7)), RGB_QUEUED)).toBe(true);
-    // lane3 slot2 loaded-idle → dim blue at pad {x:3,y:5}.
-    expect(eqRgb(at(f, padNote(3, 5)), RGB_LOADED)).toBe(true);
+    // lane1 slot1 playing → SOLID lane-1 default hue at pad {x:1,y:6}.
+    expect(eqRgb(at(f, padNote(1, 6)), hexToRgb127(defaultLaneColorHex(1)))).toBe(true);
+    // lane0 slot0 queued-launch → flash lane-0 default hue (blink on) at pad {x:0,y:7}.
+    expect(eqRgb(at(f, padNote(0, 7)), hexToRgb127(defaultLaneColorHex(0)))).toBe(true);
+    // lane3 slot2 loaded-idle → DIM lane-3 default hue at pad {x:3,y:5}.
+    const dl3 = hexToRgb127(defaultLaneColorHex(3));
+    expect(
+      eqRgb(at(f, padNote(3, 5)), [
+        Math.round(dl3[0] * 0.32),
+        Math.round(dl3[1] * 0.32),
+        Math.round(dl3[2] * 0.32),
+      ]),
+    ).toBe(true);
     // an empty pad off.
     expect(eqRgb(at(f, padNote(5, 5)), RGB_OFF)).toBe(true);
     // scene column (no shift): slot0 has a queued lane → flash; slot1 amber idle.
@@ -834,7 +842,7 @@ describe('Single mode — frame builders', () => {
     expect(hexToRgb127('#fff')).toEqual([127, 127, 127]);
     expect(hexToRgb127('#000000')).toEqual([0, 0, 0]);
   });
-  it('grid: a PICKED per-channel colour tints its clips (dim loaded, full playing); stop stays red; unpicked = default', () => {
+  it('grid: EVERY channel tints its clips by its effective colour (picked, else default hue); dim loaded, full playing; stop stays red', () => {
     const red = '#ff0000';
     const laneCol = new Array(8).fill(null);
     laneCol[2] = red; // channel 2 picked red; channel 3 left unpicked
@@ -853,8 +861,15 @@ describe('Single mode — frame builders', () => {
     expect(eqRgb(at(f, padNote(2, 7 - 0)), [Math.round(rgb[0] * 0.32), 0, 0])).toBe(true);
     // playing clip on the coloured lane → the FULL channel colour
     expect(eqRgb(at(f, padNote(2, 7 - 1)), rgb)).toBe(true);
-    // loaded clip on an UNpicked lane → the default RGB_LOADED (unchanged)
-    expect(eqRgb(at(f, padNote(3, 7 - 0)), RGB_LOADED)).toBe(true);
+    // loaded clip on an UNpicked lane → its DEFAULT hue (dim), NOT cool-blue RGB_LOADED
+    const d3 = hexToRgb127(defaultLaneColorHex(3));
+    expect(
+      eqRgb(at(f, padNote(3, 7 - 0)), [
+        Math.round(d3[0] * 0.32),
+        Math.round(d3[1] * 0.32),
+        Math.round(d3[2] * 0.32),
+      ]),
+    ).toBe(true);
     // a queued-STOP on a coloured lane keeps the semantic RED, not the channel colour
     const stopData = {
       clips: { [clipIndex(0, 2)]: defaultNoteClip() },

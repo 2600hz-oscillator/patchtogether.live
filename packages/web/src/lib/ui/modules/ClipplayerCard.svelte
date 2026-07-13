@@ -45,6 +45,7 @@
     velBucket,
     laneMono,
     laneColor,
+    laneColorEff as laneColorEffOf,
     coerceLaneColor,
     type ClipPlayerData,
     type NoteClipRecord,
@@ -232,28 +233,9 @@
     return clips[String(idx)] ? 'loaded' : 'empty';
   }
   // 8 distinct row hues — the DEFAULT color a channel shows until the user picks
-  // one with its color swatch.
-  const laneHue = (lane: number) => Math.round((lane * 360) / CLIP_LANES);
-  // hsl(h, 70%, 50%) → #rrggbb, so an <input type="color"> whose channel has no
-  // picked color still shows the correct default-hue swatch (and every pad tint
-  // resolves to a concrete hex → color-mix always has a valid color to mix).
-  function hueToHex(h: number): string {
-    const s = 0.7;
-    const l = 0.5;
-    const c = (1 - Math.abs(2 * l - 1)) * s; // chroma
-    const hp = ((((h % 360) + 360) % 360) / 60);
-    const x = c * (1 - Math.abs((hp % 2) - 1));
-    let r = 0, g = 0, b = 0;
-    if (hp < 1) { r = c; g = x; }
-    else if (hp < 2) { r = x; g = c; }
-    else if (hp < 3) { g = c; b = x; }
-    else if (hp < 4) { g = x; b = c; }
-    else if (hp < 5) { r = x; b = c; }
-    else { r = c; b = x; }
-    const m = l - c / 2;
-    const hx = (n: number) => Math.round((n + m) * 255).toString(16).padStart(2, '0');
-    return `#${hx(r)}${hx(g)}${hx(b)}`;
-  }
+  // one with its color swatch. The default-hue + effective-colour math lives in
+  // clip-types (laneColorEffOf) so the card swatch and the Launchpad LED pads
+  // resolve the SAME colour for every channel.
   /** The channel's PICKED clip color (a `#rrggbb` hex), or null when unpicked. */
   function laneColorOf(lane: number): string | null {
     void cardVersion;
@@ -262,7 +244,8 @@
   /** The EFFECTIVE channel color: the picked color, else the default-hue hex. A
    *  concrete hex either way (feeds --lane-color + the color-input default). */
   function laneColorEff(lane: number): string {
-    return laneColorOf(lane) ?? hueToHex(laneHue(lane));
+    void cardVersion;
+    return laneColorEffOf(dataObj(), lane);
   }
   /** Pick this channel's color — tints its whole column of clips. Mirrors
    *  setLaneRate: rebuild the CLIP_LANES array + assign the whole (SyncedStore
@@ -860,6 +843,7 @@
                   <button
                     class="cell {cellVel(editClip, step, midi)}"
                     class:playhead={step === playheadCol}
+                    class:beat={step % 4 === 0 || row % 4 === 0}
                     data-step={step}
                     data-row={row}
                     aria-label={`step ${step} row ${row}`}
@@ -1218,6 +1202,11 @@
     cursor: pointer;
     padding: 0;
   }
+  /* Beat/bar guide: every 4th step (the 1/5/9/13 downbeats) and every 4th pitch
+     row read a touch lighter, so the beat structure is easy to scan at a glance.
+     Empty cells only — the vel/playhead rules below (later, same specificity)
+     override on a placed note. */
+  .cell.beat { background: #242424; }
   /* note cells by velocity COLOUR — 3 buckets (low/med/high), 2 of the 6
      velocity levels each, matching the grid's 3 note colours. A placed note
      (even 0%) always shows a colour; only an empty cell is dark. */

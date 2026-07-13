@@ -64,7 +64,7 @@ import {
   laneQueued,
   laneMono,
   laneMuted,
-  laneColor,
+  laneColorEff,
   velBucket,
   noteCovering,
   SCALE_NAMES,
@@ -1448,22 +1448,18 @@ function singleClipStateRgb(
 ): Rgb {
   const pl = lanePlaying(data, lane);
   const q = laneQueued(data, lane);
-  // A PICKED per-channel colour (card color-picker) tints the clip states on
-  // the pad: dim when loaded, full when playing, flashing when queued. Empty
-  // pads stay OFF. A queued-STOP keeps the semantic RED so a pending stop still
-  // reads regardless of the channel colour. Unpicked channels use the default
-  // state palette (the Ableton green/blue idiom) unchanged.
-  const picked = laneColor(data, lane);
-  const base = picked ? hexToRgb127(picked) : null;
+  // Every channel's EFFECTIVE colour (the picked colour, else its default hue)
+  // tints the clip states on the pad — dim when loaded, full when playing,
+  // flashing when queued — so the pad matches the CARD for ALL channels, not
+  // just picked ones. Empty pads stay OFF; a queued-STOP keeps the semantic RED
+  // so a pending stop still reads regardless of the channel colour.
+  const base = hexToRgb127(laneColorEff(data, lane));
   if (pl === slot) {
     if (q === 'stop') return blinkOn ? RGB_QUEUED_STOP : RGB_OFF;
-    return base ?? RGB_PLAYING;
+    return base;
   }
-  if (q === slot) {
-    if (!blinkOn) return RGB_OFF;
-    return base ?? RGB_QUEUED;
-  }
-  if ((data?.clips ?? {})[String(idx)]) return base ? scaleRgb(base, 0.32) : RGB_LOADED;
+  if (q === slot) return blinkOn ? base : RGB_OFF;
+  if ((data?.clips ?? {})[String(idx)]) return scaleRgb(base, 0.32);
   if (recording) return RGB_STOP_IDLE;
   return RGB_OFF;
 }
