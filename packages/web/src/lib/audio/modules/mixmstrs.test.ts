@@ -23,7 +23,13 @@ vi.mock('$lib/audio/faust-runtime', () => ({
   instantiateFaustModule: vi.fn(async () => fakeFaustNode),
 }));
 
-import { mapCompMacro, mixmstrsDef, rmsLevel } from './mixmstrs';
+import {
+  coerceChannelNames,
+  mapCompMacro,
+  MIXMSTRS_CHANNEL_NAME_MAX,
+  mixmstrsDef,
+  rmsLevel,
+} from './mixmstrs';
 import type { ModuleNode } from '$lib/graph/types';
 
 describe('mapCompMacro: per-channel comp knob → (enable, thresh, ratio)', () => {
@@ -64,6 +70,51 @@ describe('mapCompMacro: per-channel comp knob → (enable, thresh, ratio)', () =
     for (const v of [0.001, 0.01, 0.05, 0.25, 0.99]) {
       expect(mapCompMacro(v).enable, `comp=${v}`).toBe(1);
     }
+  });
+});
+
+describe('coerceChannelNames: per-channel custom name coercion + default fallback', () => {
+  it('always returns exactly 6 entries (one per channel)', () => {
+    expect(coerceChannelNames(undefined)).toHaveLength(6);
+    expect(coerceChannelNames(null)).toHaveLength(6);
+    expect(coerceChannelNames([])).toHaveLength(6);
+    expect(coerceChannelNames(['a'])).toHaveLength(6);
+    expect(coerceChannelNames(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'])).toHaveLength(6);
+  });
+
+  it('undefined / non-array → all null (every channel falls back to its default)', () => {
+    expect(coerceChannelNames(undefined)).toEqual([null, null, null, null, null, null]);
+    expect(coerceChannelNames('nope')).toEqual([null, null, null, null, null, null]);
+    expect(coerceChannelNames(42)).toEqual([null, null, null, null, null, null]);
+    expect(coerceChannelNames({ 0: 'kick' })).toEqual([null, null, null, null, null, null]);
+  });
+
+  it('keeps set names, pads missing/short channels with null', () => {
+    expect(coerceChannelNames(['Kick', 'Snare'])).toEqual([
+      'Kick', 'Snare', null, null, null, null,
+    ]);
+  });
+
+  it('empty / whitespace-only / non-string entries → null (default fallback)', () => {
+    expect(coerceChannelNames(['', '   ', 'Bass', 3, null, undefined])).toEqual([
+      null, null, 'Bass', null, null, null,
+    ]);
+  });
+
+  it('trims surrounding whitespace but preserves inner spacing + case', () => {
+    expect(coerceChannelNames(['  Lead Vox  '])[0]).toBe('Lead Vox');
+  });
+
+  it('caps each name at MIXMSTRS_CHANNEL_NAME_MAX chars', () => {
+    const long = 'x'.repeat(MIXMSTRS_CHANNEL_NAME_MAX + 20);
+    const [first] = coerceChannelNames([long]);
+    expect(first).toHaveLength(MIXMSTRS_CHANNEL_NAME_MAX);
+    expect(first).toBe('x'.repeat(MIXMSTRS_CHANNEL_NAME_MAX));
+  });
+
+  it('ignores extra channels beyond the 6th', () => {
+    const out = coerceChannelNames(['1', '2', '3', '4', '5', '6', '7-ignored']);
+    expect(out).toEqual(['1', '2', '3', '4', '5', '6']);
   });
 });
 

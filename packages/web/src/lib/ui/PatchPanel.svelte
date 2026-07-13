@@ -103,6 +103,14 @@
     /** CSS width of the OPEN portaled chrome (default 280). Dense
      *  sectioned modules pass a wider value so verbose labels fit. */
     panelWidth?: number;
+    /** OPT-IN rear-view (back panel) INPUT layout: split the input jacks into
+     *  several side-by-side columns instead of one tall column. Each inner
+     *  array is one column's ordered ports (same descriptors — ids/cables — as
+     *  the sections' inputs, so jack identity is unchanged). Used by MIXMSTRS,
+     *  whose 77-input back panel overflows a single column and clips off the
+     *  bottom rows. When absent (every other card) the inputs render as one
+     *  column (`allInputs`) exactly as before. */
+    backInputColumns?: PortDescriptor[][];
     children?: Snippet;
   }
 
@@ -113,8 +121,13 @@
     groupingStrategy = 'auto',
     sections = [],
     panelWidth = 280,
+    backInputColumns,
     children,
   }: Props = $props();
+
+  // Rear-view inputs render as multiple columns only when the host opts in with
+  // a >1-column split; otherwise the single-column `allInputs` path is used.
+  let backInputMultiCol = $derived(!!backInputColumns && backInputColumns.length > 1);
 
   // ---------------- Menu state (overlay-replace reducer) ----------------
   //
@@ -693,6 +706,32 @@
 {/snippet}
 
 <!--
+  BACK-PANEL JACK — one rear-view patch point. Same shape whether it renders in
+  the outputs column, the single input column, or one of the opt-in input
+  sub-columns (backInputColumns). data-testid="back-jack" + data-port-id are the
+  stable rear-view hooks; onBackJackClick drives the same carry seam as a
+  front-view row.
+-->
+{#snippet backJack(port: PortDescriptor, direction: 'input' | 'output')}
+  {@const patched = isPatched(port.id, direction)}
+  <button
+    type="button"
+    class="back-jack"
+    data-testid="back-jack"
+    data-port-id={port.id}
+    data-direction={direction}
+    data-patched={patched ? 'true' : 'false'}
+    title={patchTitle(port.id, direction) ?? resolveVerboseLabel(port)}
+    aria-label={`patch ${resolveVerboseLabel(port)} ${direction}`}
+    style:--jack-color={cableColorVar(port.cable)}
+    onclick={() => onBackJackClick(port.id, direction)}
+  >
+    <span class="jack-hole" data-patched={patched ? 'true' : 'false'} aria-hidden="true"></span>
+    <span class="jack-label">{resolveVerboseLabel(port)}</span>
+  </button>
+{/snippet}
+
+<!--
   HOST (in card DOM, display:contents). Holds the two trigger affordances +
   the always-rendered handle stack. The handle stack is what the per-port
   sweep counts (panel CLOSED) and what cables anchor to.
@@ -779,27 +818,27 @@
   <div class="card-back-panel" data-testid="card-back-panel">
     <div class="back-title" data-testid="card-back-title">{backTitle}</div>
     <div class="back-cols">
-      <div class="back-col inputs">
+      <div class="back-col inputs" class:multi={backInputMultiCol}>
         <div class="back-col-head">in</div>
         {#if hasInputs}
-          {#each allInputs as port (port.id)}
-            {@const patched = isPatched(port.id, 'input')}
-            <button
-              type="button"
-              class="back-jack"
-              data-testid="back-jack"
-              data-port-id={port.id}
-              data-direction="input"
-              data-patched={patched ? 'true' : 'false'}
-              title={patchTitle(port.id, 'input') ?? resolveVerboseLabel(port)}
-              aria-label={`patch ${resolveVerboseLabel(port)} input`}
-              style:--jack-color={cableColorVar(port.cable)}
-              onclick={() => onBackJackClick(port.id, 'input')}
-            >
-              <span class="jack-hole" data-patched={patched ? 'true' : 'false'} aria-hidden="true"></span>
-              <span class="jack-label">{resolveVerboseLabel(port)}</span>
-            </button>
-          {/each}
+          {#if backInputMultiCol && backInputColumns}
+            <!-- Opt-in split: side-by-side input sub-columns (MIXMSTRS's 77 inputs
+                 overflow one column). Same jacks/ids, just laid across the spare
+                 mid-card width. -->
+            <div class="back-subcols" data-testid="back-input-columns">
+              {#each backInputColumns as col, ci (ci)}
+                <div class="back-subcol">
+                  {#each col as port (port.id)}
+                    {@render backJack(port, 'input')}
+                  {/each}
+                </div>
+              {/each}
+            </div>
+          {:else}
+            {#each allInputs as port (port.id)}
+              {@render backJack(port, 'input')}
+            {/each}
+          {/if}
         {:else}
           <div class="back-empty">—</div>
         {/if}
@@ -808,22 +847,7 @@
         <div class="back-col-head">out</div>
         {#if hasOutputs}
           {#each allOutputs as port (port.id)}
-            {@const patched = isPatched(port.id, 'output')}
-            <button
-              type="button"
-              class="back-jack"
-              data-testid="back-jack"
-              data-port-id={port.id}
-              data-direction="output"
-              data-patched={patched ? 'true' : 'false'}
-              title={patchTitle(port.id, 'output') ?? resolveVerboseLabel(port)}
-              aria-label={`patch ${resolveVerboseLabel(port)} output`}
-              style:--jack-color={cableColorVar(port.cable)}
-              onclick={() => onBackJackClick(port.id, 'output')}
-            >
-              <span class="jack-hole" data-patched={patched ? 'true' : 'false'} aria-hidden="true"></span>
-              <span class="jack-label">{resolveVerboseLabel(port)}</span>
-            </button>
+            {@render backJack(port, 'output')}
           {/each}
         {:else}
           <div class="back-empty">—</div>
