@@ -20,8 +20,9 @@
   import { useEngine } from '$lib/audio/engine-context';
   import { tidyVcoDef } from '$lib/audio/modules/tidy-vco';
   import type { ModuleNode } from '$lib/graph/types';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { cardParams, portsFromDef } from './card-kit';
+  import { cardParams } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -80,25 +81,86 @@
     setHold(0);
   }
 
-  const inputs = portsFromDef(tidyVcoDef.inputs, {
-    poly: 'POLY',
-    pitch: 'PITCH',
-    gate: 'GATE',
-    cutoff_cv: 'CUT',
-    res_cv: 'RES',
-    pwm_cv: 'PWM',
-    drive_cv: 'DRV',
-    fold_cv: 'FOLD',
-    sym_cv: 'SYM',
-  });
-  const outputs = portsFromDef(tidyVcoDef.outputs, { out_l: 'OUT L', out_r: 'OUT R' });
+  // Rear PatchPanel jacks grouped into labeled SECTIONS that mirror the
+  // on-card headers (OSC · WAVEFOLD · DIODE FILTER · FILTER EG · AMP EG · OUT):
+  // each section lists its per-control CV jacks in KNOB ORDER. The structural
+  // poly/pitch/gate jacks + the stereo audio outputs sit in a trailing
+  // POLY/OUT section.
+  const sections: { label: string; inputs?: PortDescriptor[]; outputs?: PortDescriptor[] }[] = [
+    {
+      label: 'OSC',
+      inputs: [
+        { id: 'shape1_cv', label: 'SHP1', cable: 'cv' },
+        { id: 'shape2_cv', label: 'SHP2', cable: 'cv' },
+        { id: 'pwm_cv',    label: 'PWM',  cable: 'cv' },
+        { id: 'detune_cv', label: 'DET',  cable: 'cv' },
+        { id: 'oct2_cv',   label: 'OCT2', cable: 'cv' },
+        { id: 'mix_cv',    label: 'MIX',  cable: 'cv' },
+        { id: 'sub_cv',    label: 'SUB',  cable: 'cv' },
+      ],
+    },
+    {
+      label: 'WAVEFOLD',
+      inputs: [
+        { id: 'fold_cv', label: 'FOLD', cable: 'cv' },
+        { id: 'sym_cv',  label: 'SYM',  cable: 'cv' },
+      ],
+    },
+    {
+      label: 'DIODE FILTER',
+      inputs: [
+        { id: 'cutoff_cv', label: 'CUT', cable: 'cv' },
+        { id: 'res_cv',    label: 'RES', cable: 'cv' },
+        { id: 'drive_cv',  label: 'DRV', cable: 'cv' },
+        { id: 'env_cv',    label: 'ENV', cable: 'cv' },
+        { id: 'track_cv',  label: 'TRK', cable: 'cv' },
+      ],
+    },
+    {
+      label: 'FILTER EG',
+      inputs: [
+        { id: 'fatk_cv', label: 'F.A', cable: 'cv' },
+        { id: 'fdec_cv', label: 'F.D', cable: 'cv' },
+        { id: 'fsus_cv', label: 'F.S', cable: 'cv' },
+        { id: 'frel_cv', label: 'F.R', cable: 'cv' },
+      ],
+    },
+    {
+      label: 'AMP EG',
+      inputs: [
+        { id: 'atk_cv', label: 'A', cable: 'cv' },
+        { id: 'dec_cv', label: 'D', cable: 'cv' },
+        { id: 'sus_cv', label: 'S', cable: 'cv' },
+        { id: 'rel_cv', label: 'R', cable: 'cv' },
+      ],
+    },
+    {
+      label: 'OUT',
+      inputs: [
+        { id: 'width_cv', label: 'WDTH', cable: 'cv' },
+        { id: 'level_cv', label: 'LVL',  cable: 'cv' },
+      ],
+    },
+    {
+      label: 'POLY/OUT',
+      inputs: [
+        { id: 'poly',  label: 'POLY',  cable: 'polyPitchGate' },
+        { id: 'pitch', label: 'PITCH', cable: 'cv' },
+        { id: 'gate',  label: 'GATE',  cable: 'gate' },
+      ],
+      outputs: [
+        { id: 'out_l', label: 'OUT L', cable: 'audio' },
+        { id: 'out_r', label: 'OUT R', cable: 'audio' },
+      ],
+    },
+  ];
 </script>
 
 <div class="mod-card tidyvco-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
   <ModuleTitle {id} {data} defaultLabel="TIDY VCO" />
 
-  <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={540}>
+  <PatchPanel nodeId={id} groupingStrategy="sectioned" {sections} panelWidth={540}>
     <section class="band">
       <div class="groups">
         <div class="group osc">

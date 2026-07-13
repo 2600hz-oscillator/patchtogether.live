@@ -52,11 +52,17 @@ export const tomtomDef: AudioModuleDef = {
     // 1V/oct — transposes the whole voice (fundamental + overtone + the
     // breath band together) as a frequency multiplier.
     { id: 'pitch_cv',   type: 'cv' },
-    // Per-knob CV for the voice's musical core.
-    { id: 'bend_cv',    type: 'cv' },
-    { id: 'decay_cv',   type: 'cv' },
-    { id: 'tone_cv',    type: 'cv' },
-    { id: 'noise_cv',   type: 'cv' },
+    // Per-knob CV for EVERY continuous control (Pattern B: a plain cv port
+    // per knob; the scaling law lives in the shared core, NOT a cvScale hint).
+    // tune_cv modulates the TUNE knob (distinct from the whole-voice pitch_cv).
+    { id: 'bend_cv',      type: 'cv' },
+    { id: 'decay_cv',     type: 'cv' },
+    { id: 'tone_cv',      type: 'cv' },
+    { id: 'noise_cv',     type: 'cv' },
+    { id: 'tune_cv',      type: 'cv' },
+    { id: 'bend_time_cv', type: 'cv' },
+    { id: 'drive_cv',     type: 'cv' },
+    { id: 'level_cv',     type: 'cv' },
   ],
   outputs: [
     { id: 'audio_out', type: 'audio' },
@@ -93,6 +99,14 @@ export const tomtomDef: AudioModuleDef = {
         "Overtone-mix CV: sums into TONE (clamped 0–1). More voltage = more of the 1.59× second membrane mode — brighter, more 'struck', more 909.",
       noise_cv:
         "Breath-mix CV: sums into NOISE (clamped 0–1). More voltage = more of the band-passed skin noise over the attack — more stick, more air.",
+      tune_cv:
+        "TUNE-knob CV at 2 octaves/volt (+1 V = ×4, −1 V = ×¼, clamped back into 60–400 Hz). This modulates ONLY the settled fundamental — the TUNE knob — which is what makes it distinct from pitch_cv (that transposes the WHOLE voice, breath band included). cv = 0 is a perfect no-op; sequence it for melodic tom lines that stay inside the tom's natural range.",
+      bend_time_cv:
+        "Bend-TIME CV: 2 octaves of sweep-settle time per volt (+1 V = ×4, −1 V = ×¼, clamped 5–600 ms), riding the B Time knob independently of DECAY. Ride it to turn a tick-of-attack pitch into an audible 'piuuu' without touching the ring length.",
+      drive_cv:
+        "Drive CV: sums into DRIVE (clamped 0–1) — a ±1 V swing covers the whole 0–1 warmth range on top of the knob, so an envelope here fattens the hit as it lands (2×-oversampled warm-tanh saturation).",
+      level_cv:
+        "Output-level CV (dB): ±1 V sweeps ±18 dB — the FULL 36 dB level range centered on the knob (clamped −24..+12 dB into the true-peak bound), so a ±1 V LFO or envelope covers the whole level travel. cv = 0 is a no-op.",
     },
     outputs: {
       audio_out:
@@ -117,21 +131,25 @@ export const tomtomDef: AudioModuleDef = {
       loadedContexts.add(ctx);
     }
 
-    // 7 audio-rate node inputs: trigger (0), accent (1), pitch (2),
-    // bend (3), decay (4), tone (5), noise (6). ONE mono output.
+    // 11 audio-rate node inputs: trigger (0), accent (1), pitch (2),
+    // bend (3), decay (4), tone (5), noise (6), tune (7), bend_time (8),
+    // drive (9), level (10) — a per-knob CV for EVERY continuous control.
+    // ONE mono output.
     const worklet = new AudioWorkletNode(ctx, PROCESSOR_NAME, {
-      numberOfInputs: 7,
+      numberOfInputs: 11,
       numberOfOutputs: 1,
       outputChannelCount: [1],
     });
 
-    // Keep the worklet alive with a single 0-offset silence source on every
+    // Keep the worklet alive with a single 0-offset silence source on EVERY
     // input, so it processes blocks (and can be struck immediately) even
-    // when nothing is patched yet. One ConstantSource, seven connections.
+    // when nothing is patched yet. The 0-offset fan is ALSO what makes an
+    // unpatched CV a no-op (cv = 0 → the core's scaling laws are identities),
+    // keeping the ART render byte-identical. One ConstantSource, 11 connections.
     const silence = ctx.createConstantSource();
     silence.offset.value = 0;
     silence.start();
-    for (let i = 0; i < 7; i++) silence.connect(worklet, 0, i);
+    for (let i = 0; i < 11; i++) silence.connect(worklet, 0, i);
 
     // Set initial params from the persisted node state (or defaults).
     const params = worklet.parameters as unknown as Map<string, AudioParam>;
@@ -142,13 +160,17 @@ export const tomtomDef: AudioModuleDef = {
     }
 
     const inputsMap = new Map<string, { node: AudioNode; input: number }>();
-    inputsMap.set('trigger_in', { node: worklet, input: 0 });
-    inputsMap.set('accent_in',  { node: worklet, input: 1 });
-    inputsMap.set('pitch_cv',   { node: worklet, input: 2 });
-    inputsMap.set('bend_cv',    { node: worklet, input: 3 });
-    inputsMap.set('decay_cv',   { node: worklet, input: 4 });
-    inputsMap.set('tone_cv',    { node: worklet, input: 5 });
-    inputsMap.set('noise_cv',   { node: worklet, input: 6 });
+    inputsMap.set('trigger_in',   { node: worklet, input: 0 });
+    inputsMap.set('accent_in',    { node: worklet, input: 1 });
+    inputsMap.set('pitch_cv',     { node: worklet, input: 2 });
+    inputsMap.set('bend_cv',      { node: worklet, input: 3 });
+    inputsMap.set('decay_cv',     { node: worklet, input: 4 });
+    inputsMap.set('tone_cv',      { node: worklet, input: 5 });
+    inputsMap.set('noise_cv',     { node: worklet, input: 6 });
+    inputsMap.set('tune_cv',      { node: worklet, input: 7 });
+    inputsMap.set('bend_time_cv', { node: worklet, input: 8 });
+    inputsMap.set('drive_cv',     { node: worklet, input: 9 });
+    inputsMap.set('level_cv',     { node: worklet, input: 10 });
 
     return {
       domain: 'audio',

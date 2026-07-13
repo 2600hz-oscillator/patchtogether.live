@@ -15,8 +15,10 @@ import {
   TOMTOM_DEFAULTS,
   makeTomtomState,
   tomBendDepthSt,
+  tomBendTimeMs,
   tomDecayMs,
   tomFreqHz,
+  tomTuneHz,
   tomtomStep,
   decayCoeff,
   type TomtomParams,
@@ -147,6 +149,44 @@ describe('tomtom: frequency + bend laws', () => {
     expect(tomDecayMs(350, 1)).toBeCloseTo(1400, 6);
     expect(tomDecayMs(350, -1)).toBeCloseTo(87.5, 6);
     expect(tomDecayMs(1500, 2)).toBeCloseTo(3000, 6);
+  });
+
+  it('tune_cv is 2 oct/V on the TUNE knob (clamped 60..400), no-op at 0', () => {
+    expect(tomTuneHz(110, 0)).toBeCloseTo(110, 6); // cv = 0 is a perfect no-op
+    expect(tomTuneHz(100, 0.5)).toBeCloseTo(200, 6); // +0.5 V = ×2
+    expect(tomTuneHz(100, 1)).toBeCloseTo(400, 6); // +1 V = ×4 → clamped at 400
+    expect(tomTuneHz(100, -1)).toBeCloseTo(60, 6); // −1 V = ×¼ = 25 → clamped at 60
+  });
+
+  it('bend_time_cv is 2 oct of bend TIME per volt (clamped 5..600), no-op at 0', () => {
+    expect(tomBendTimeMs(60, 0)).toBeCloseTo(60, 6); // no-op
+    expect(tomBendTimeMs(60, 1)).toBeCloseTo(240, 6); // ×4
+    expect(tomBendTimeMs(60, -1)).toBeCloseTo(15, 6); // ×¼
+    expect(tomBendTimeMs(300, 2)).toBeCloseTo(600, 6); // 300×16 → clamp 600
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// New per-knob CVs (drive_cv / level_cv are consumed; every law no-op at 0)
+// ─────────────────────────────────────────────────────────────────────────
+
+describe('tomtom: drive_cv / level_cv consumption', () => {
+  it('drive_cv sums into DRIVE — a +1 V CV grows the 3rd-harmonic saturation', () => {
+    const base = { tune: 200, bendAmt: 0, tone: 0, noise: 0, decay: 600 };
+    const clean = render(SR, P({ ...base, drive: 0, driveCv: 0 }), SR);
+    const hot = render(SR, P({ ...base, drive: 0, driveCv: 1 }), SR);
+    const w = Math.round(0.12 * SR);
+    const pClean = goertzel(clean, SR, 600, 0, w);
+    const pHot = goertzel(hot, SR, 600, 0, w);
+    expect(pHot).toBeGreaterThan(5 * Math.max(pClean, 1e-12));
+  });
+
+  it('level_cv (dB) — a −1 V CV pulls the hit down ~18 dB; cv = 0 is a no-op', () => {
+    // cv = 0 is byte-identical to the default render (no new-CV perturbation).
+    expect(render(2048, P({ levelCv: 0 }), SR)).toEqual(render(2048, P(), SR));
+    const loud = peakOf(render(SR, P({ levelCv: 0 }), SR));
+    const quiet = peakOf(render(SR, P({ levelCv: -1 }), SR)); // −18 dB ≈ ×0.126
+    expect(quiet).toBeLessThan(loud * 0.3);
   });
 });
 

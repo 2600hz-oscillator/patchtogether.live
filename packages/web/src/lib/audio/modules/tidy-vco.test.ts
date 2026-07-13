@@ -62,17 +62,13 @@ describe('TIDY VCO def — frozen contract', () => {
     expect(tidyVcoDef.size).toBe('3u'); // measured: ~527×720px natural box, 4 hp
   });
 
-  it('ports: poly bus + mono pitch/gate (edge:gate) + 6 worklet CVs in, stereo pair out', () => {
+  it('ports: poly bus + mono pitch/gate (edge:gate) + per-knob worklet CVs in, stereo pair out', () => {
     expect(tidyVcoDef.inputs.map((p) => p.id)).toEqual([
-      'poly',
-      'pitch',
-      'gate',
-      'cutoff_cv',
-      'res_cv',
-      'pwm_cv',
-      'drive_cv',
-      'fold_cv',
-      'sym_cv',
+      'poly', 'pitch', 'gate',
+      'cutoff_cv', 'res_cv', 'pwm_cv', 'drive_cv', 'fold_cv', 'sym_cv',
+      'shape1_cv', 'shape2_cv', 'detune_cv', 'oct2_cv', 'mix_cv', 'sub_cv', 'env_cv', 'track_cv',
+      'fatk_cv', 'fdec_cv', 'fsus_cv', 'frel_cv', 'atk_cv', 'dec_cv', 'sus_cv', 'rel_cv',
+      'width_cv', 'level_cv',
     ]);
     expect(tidyVcoDef.inputs.find((p) => p.id === 'poly')!.type).toBe('polyPitchGate');
     // No edge on the poly port (lane edges are consumed in the worklet).
@@ -81,7 +77,12 @@ describe('TIDY VCO def — frozen contract', () => {
     expect(gate.type).toBe('gate');
     expect(gate.edge).toBe('gate'); // level-sensitive — an ADSR sustain, declared
     expect(tidyVcoDef.inputs.find((p) => p.id === 'pitch')!.type).toBe('cv');
-    for (const id of ['cutoff_cv', 'res_cv', 'pwm_cv', 'drive_cv', 'fold_cv', 'sym_cv']) {
+    for (const id of [
+      'cutoff_cv', 'res_cv', 'pwm_cv', 'drive_cv', 'fold_cv', 'sym_cv',
+      'shape1_cv', 'shape2_cv', 'detune_cv', 'oct2_cv', 'mix_cv', 'sub_cv', 'env_cv', 'track_cv',
+      'fatk_cv', 'fdec_cv', 'fsus_cv', 'frel_cv', 'atk_cv', 'dec_cv', 'sus_cv', 'rel_cv',
+      'width_cv', 'level_cv',
+    ]) {
       expect(tidyVcoDef.inputs.find((p) => p.id === id)!.type).toBe('cv');
     }
     expect(tidyVcoDef.outputs).toEqual([

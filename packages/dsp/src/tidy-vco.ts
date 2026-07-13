@@ -6,8 +6,9 @@
 // oscillators + sub → nonlinear ZDF DIODE LADDER @2× oversampling → dual
 // RC-punch ADSR → OTA-flavored VCA → equal-power stereo bus → DC block →
 // dB level → true-peak tanh bound). This file is the worklet wrapper that
-// owns the frozen I/O surface: 23 params + 7 audio-rate inputs + the
-// stereo out_l/out_r pair.
+// owns the frozen I/O surface: 23 params + 27 audio-rate inputs (poly + mono
+// pitch/gate + a per-knob CV for EVERY continuous control) + the stereo
+// out_l/out_r pair.
 //
 // The osc bus passes through a STEREO WAVEFOLDER (ADAA triangle folder,
 // FOLD + SYMMETRY, per-channel decorrelated) BEFORE the diode ladder — the
@@ -33,11 +34,19 @@
 //   inputs[6] = drive_cv   (±1 V = the whole DRIVE range)
 //   inputs[7] = fold_cv    (±1 V = the whole FOLD range — full-swing)
 //   inputs[8] = sym_cv     (±1 V = the whole SYMMETRY range each way)
+//   inputs[9..26] = one GLOBAL per-knob CV for the remaining controls, in
+//                   order: shape1, shape2, detune, oct2, mix, sub, env, track,
+//                   fatk, fdec, fsus, frel, atk, dec, sus, rel, width, level.
+//                   Block-rate scalars (applied to all 5 voices in the core);
+//                   each scaling law lives in lib/tidy-vco-dsp.ts and is a
+//                   perfect no-op at cv = 0, so an unpatched input (fed the
+//                   0-offset silence source by the factory) leaves the render
+//                   byte-identical.
 //
 // cutoff_cv + pwm_cv + fold_cv + sym_cv are fed to the core PER SAMPLE
-// (audio-rate filter FM / PWM / wavefold); res_cv + drive_cv are block-rate
-// (they re-derive solver coefficients). Knob params are read once per
-// 128-sample block through an
+// (audio-rate filter FM / PWM / wavefold); res_cv + drive_cv + the 18 new
+// per-knob CVs are block-rate (they re-derive per-block coefficients). Knob
+// params are read once per 128-sample block through an
 // 80 Hz one-pole smoother stepped at block rate (the poly gates themselves
 // are block-rate — the house pente/cube pattern). The HOLD param is the
 // card's manual gate pad: OR-ed with the mono gate input, so the pad
@@ -159,6 +168,25 @@ class TidyVcoProcessor extends AudioWorkletProcessor {
       symCv: 0,
       resCv: 0,
       driveCv: 0,
+      // Per-knob CV for EVERY remaining control (GLOBAL block-rate scalars).
+      shape1Cv: 0,
+      shape2Cv: 0,
+      detuneCv: 0,
+      oct2Cv: 0,
+      mixCv: 0,
+      subCv: 0,
+      envCv: 0,
+      trackCv: 0,
+      fatkCv: 0,
+      fdecCv: 0,
+      fsusCv: 0,
+      frelCv: 0,
+      atkCv: 0,
+      decCv: 0,
+      susCv: 0,
+      relCv: 0,
+      widthCv: 0,
+      levelCv: 0,
     };
   }
 
@@ -220,6 +248,26 @@ class TidyVcoProcessor extends AudioWorkletProcessor {
     this.bus.driveCv = inputs[6]?.[0]?.[0] ?? 0;
     this.bus.foldCv = inputs[7]?.[0] ?? 0;
     this.bus.symCv = inputs[8]?.[0] ?? 0;
+    // Per-knob CV for EVERY remaining control — GLOBAL block-rate scalars
+    // (first sample of each input block; cv = 0 is a byte-exact no-op).
+    this.bus.shape1Cv = inputs[9]?.[0]?.[0] ?? 0;
+    this.bus.shape2Cv = inputs[10]?.[0]?.[0] ?? 0;
+    this.bus.detuneCv = inputs[11]?.[0]?.[0] ?? 0;
+    this.bus.oct2Cv = inputs[12]?.[0]?.[0] ?? 0;
+    this.bus.mixCv = inputs[13]?.[0]?.[0] ?? 0;
+    this.bus.subCv = inputs[14]?.[0]?.[0] ?? 0;
+    this.bus.envCv = inputs[15]?.[0]?.[0] ?? 0;
+    this.bus.trackCv = inputs[16]?.[0]?.[0] ?? 0;
+    this.bus.fatkCv = inputs[17]?.[0]?.[0] ?? 0;
+    this.bus.fdecCv = inputs[18]?.[0]?.[0] ?? 0;
+    this.bus.fsusCv = inputs[19]?.[0]?.[0] ?? 0;
+    this.bus.frelCv = inputs[20]?.[0]?.[0] ?? 0;
+    this.bus.atkCv = inputs[21]?.[0]?.[0] ?? 0;
+    this.bus.decCv = inputs[22]?.[0]?.[0] ?? 0;
+    this.bus.susCv = inputs[23]?.[0]?.[0] ?? 0;
+    this.bus.relCv = inputs[24]?.[0]?.[0] ?? 0;
+    this.bus.widthCv = inputs[25]?.[0]?.[0] ?? 0;
+    this.bus.levelCv = inputs[26]?.[0]?.[0] ?? 0;
 
     // Knobs: block-rate smoothed reads off the frozen param table.
     const p = this.p;

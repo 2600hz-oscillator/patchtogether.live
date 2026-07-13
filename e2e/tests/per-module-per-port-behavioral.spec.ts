@@ -1770,6 +1770,49 @@ const BEHAVIORAL_PORT_PARAMS: Record<string, Record<string, number>> = {
   // 5× stable). Keeping fold=0 module-wide leaves the weak pitch/cutoff_cv
   // centroid deltas undiluted by the folder's harmonic thicket.
   'tidyVco.sym_cv': { fold: 0.5 },
+  // tomtom.tune_cv — the module-wide baseline is tone/noise 0.2 (broadband
+  // breath dilutes the pitch centroid) + bend_amt 0. tune_cv sweeps the TUNE
+  // knob (2 oct/V, 60–400 Hz). Strip TONE + NOISE for THIS row so the voice is
+  // a clean membrane sine whose centroid IS the pitch — the slow-LFO sweep then
+  // moves it 60↔400 Hz across the 4 Hz strikes (a large centroid mean+range
+  // delta). Distinct from pitch_cv (whole-voice transpose); this rides the knob.
+  'tomtom.tune_cv': { tone: 0, noise: 0 },
+  // tomtom.bend_time_cv — the baseline pins bend_amt 0, so there is NO pitch
+  // sweep for bend_time to TIME (an exact no-op). Engage a deep 24 st dive for
+  // THIS row (clean sine) so sweeping the settle TIME reshapes the per-strike
+  // pitch trajectory → a robust centroid range/zero-cross delta.
+  'tomtom.bend_time_cv': { bend_amt: 24, tone: 0, noise: 0, decay: 250 },
+  // tidyVco.shape1_cv — the baseline pins shape1 = 1 (already the pulse rail, so
+  // adding CV clamps) behind a 5 kHz filter that hides the saw↔pulse harmonic
+  // difference. Center the morph (0.5), take OSC1 only (mix 0) and OPEN the
+  // filter (12 kHz, low res) for THIS row so the CV swings the full morph and
+  // its even-harmonic content reaches the output → a clear centroid delta.
+  'tidyVco.shape1_cv': { shape1: 0.5, mix: 0, cutoff: 12000, res: 0.1 },
+  // tidyVco.fsus_cv — the SETTLED filter brightness while a note is held. Make
+  // the filter EG the dominant timbre (env 1, low cutoff, fast attack/decay to
+  // the sustain) so fsus_cv (additive on the 0–1 sustain) sweeps the held
+  // brightness → a centroid mean delta.
+  'tidyVco.fsus_cv': { env: 1, fatk: 0.001, fdec: 0.03, fsus: 0.4, cutoff: 220, res: 0.4 },
+  // tidyVco.fatk_cv — the filter-EG ATTACK time. With notes retriggering at
+  // 4 Hz (250 ms), set the base attack ~120 ms (comparable to the note) + env 1
+  // so each note's brightness is still RAMPING; fatk_cv (4 oct/V ⇒ ~30–480 ms)
+  // reshapes that ramp per note → a spectral variance (range) delta.
+  'tidyVco.fatk_cv': { env: 1, fatk: 0.12, fdec: 3, fsus: 1, cutoff: 300, res: 0.4 },
+  // tidyVco.fdec_cv — the filter-EG DECAY time. Fast attack, ~120 ms decay to a
+  // low sustain within each 250 ms note; fdec_cv (4 oct/V) reshapes the per-note
+  // brightness fall → a spectral variance (range) delta.
+  'tidyVco.fdec_cv': { env: 1, fatk: 0.001, fdec: 0.12, fsus: 0.05, cutoff: 300, res: 0.4 },
+  // tidyVco.frel_cv — the filter-EG RELEASE time. The 240 BPM driver gates
+  // 125 ms ON / 125 ms OFF; open the filter fully during the note (env 1, fsus 1)
+  // and keep the amp bleeding into the gap (rel 0.5) so the filter's RELEASE is
+  // audible there. frel_cv (4 oct/V ⇒ ~25–400 ms) reshapes how fast the
+  // brightness falls in each gap → a spectral variance delta.
+  'tidyVco.frel_cv': { env: 1, fsus: 1, frel: 0.1, fatk: 0.001, fdec: 0.02, cutoff: 200, res: 0.4, sus: 1, rel: 0.5 },
+  // tidyVco.rel_cv — the AMP-EG release time. Full sustain + short decay so the
+  // voice sits at full level during the 125 ms gate, then rel_cv (4 oct/V ⇒
+  // ~25–400 ms) sets how much tail bleeds into the 125 ms OFF gap → an RMS
+  // mean/variance delta on the gap energy.
+  'tidyVco.rel_cv': { atk: 0.001, dec: 0.06, sus: 0.12, rel: 0.14, env: 0.4, cutoff: 4000, res: 0.15 },
 };
 
 // ────────── Per-PORT / per-MODULE calibrated delta thresholds ──────────

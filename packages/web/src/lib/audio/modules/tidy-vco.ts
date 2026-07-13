@@ -88,13 +88,40 @@ export const tidyVcoDef: AudioModuleDef = {
     { id: 'pitch', type: 'cv' },
     { id: 'gate', type: 'gate', edge: 'gate' },
     // Per-knob CV jacks, consumed DIRECTLY by the worklet (octave/full-swing
-    // laws applied inside the core — kickdrum/clap convention).
+    // laws applied inside the core — kickdrum/clap convention). Pattern B: a
+    // plain cv port per knob, NO paramTarget/cvScale — the core does the
+    // scaling. Every continuous control now has one (27 inputs total): the six
+    // original (audio-rate) CVs, then a GLOBAL block-rate CV for each of the
+    // remaining OSC / FILTER / EG / OUT knobs.
     { id: 'cutoff_cv', type: 'cv' },
     { id: 'res_cv', type: 'cv' },
     { id: 'pwm_cv', type: 'cv' },
     { id: 'drive_cv', type: 'cv' },
     { id: 'fold_cv', type: 'cv' },
     { id: 'sym_cv', type: 'cv' },
+    // OSC section.
+    { id: 'shape1_cv', type: 'cv' },
+    { id: 'shape2_cv', type: 'cv' },
+    { id: 'detune_cv', type: 'cv' },
+    { id: 'oct2_cv', type: 'cv' },
+    { id: 'mix_cv', type: 'cv' },
+    { id: 'sub_cv', type: 'cv' },
+    // FILTER section (cutoff/res/drive already above).
+    { id: 'env_cv', type: 'cv' },
+    { id: 'track_cv', type: 'cv' },
+    // FILTER EG section.
+    { id: 'fatk_cv', type: 'cv' },
+    { id: 'fdec_cv', type: 'cv' },
+    { id: 'fsus_cv', type: 'cv' },
+    { id: 'frel_cv', type: 'cv' },
+    // AMP EG section.
+    { id: 'atk_cv', type: 'cv' },
+    { id: 'dec_cv', type: 'cv' },
+    { id: 'sus_cv', type: 'cv' },
+    { id: 'rel_cv', type: 'cv' },
+    // OUT section.
+    { id: 'width_cv', type: 'cv' },
+    { id: 'level_cv', type: 'cv' },
   ],
   outputs: [
     { id: 'out_l', type: 'audio' },
@@ -149,6 +176,24 @@ export const tidyVcoDef: AudioModuleDef = {
       drive_cv: 'Drive CV: ±1 V spans the whole DRIVE range on top of the knob — automate the filter’s input saturation for building intensity.',
       fold_cv: 'Wavefolder FOLD CV: ±1 V spans the whole FOLD range on top of the knob, audio-rate. The folder is very modulation-hungry — an envelope or LFO here sweeps timbre from clean to fully folded (classic West-Coast dynamic-fold gestures).',
       sym_cv: 'Wavefolder SYMMETRY CV: ±1 V spans the whole asymmetry range each way, audio-rate. Modulate the fold’s bias to make the even-harmonic content breathe (only audible while FOLD is up).',
+      shape1_cv: 'OSC1 SHAPE CV: ±1 V sweeps the full saw↔pulse morph (0..1) on top of the knob. GLOBAL (all 5 voices), block-rate; cv = 0 is a no-op.',
+      shape2_cv: 'OSC2 SHAPE CV: ±1 V sweeps the full saw↔pulse morph (0..1) on top of the knob. GLOBAL (all voices), block-rate.',
+      detune_cv: 'OSC2 DETUNE CV (cents, linear): ±1 V sweeps ±50 ¢ — the full detune range centered on the knob. GLOBAL (all voices), block-rate; feed a slow LFO for a drifting chorus.',
+      oct2_cv: 'OSC2 OCTAVE CV (discrete): 1 octave step per volt, summed with the knob, rounded and clamped to −1 / 0 / +1. GLOBAL (all voices), block-rate.',
+      mix_cv: 'OSC1↔OSC2 MIX CV: ±1 V sweeps the full equal-power balance (0..1) on top of the knob. GLOBAL (all voices), block-rate.',
+      sub_cv: 'SUB-oscillator level CV: ±1 V sweeps the full sub-square level (0..1) on top of the knob. GLOBAL (all voices), block-rate.',
+      env_cv: 'Filter-EG AMOUNT CV (bipolar): ±1 V sweeps the full ±1 ENV depth (±4 octaves of cutoff sweep) centered on the knob. GLOBAL (all voices), block-rate.',
+      track_cv: 'Cutoff KEYTRACKING CV: ±1 V sweeps the full 0–100 % TRACK amount on top of the knob. GLOBAL (all voices), block-rate.',
+      fatk_cv: 'Filter-EG ATTACK-time CV: 4 octaves of time per volt (+1 V = ×16, −1 V = ×1⁄16) multiplying the knob time. GLOBAL (all voices), block-rate; cv = 0 = ×1, a no-op.',
+      fdec_cv: 'Filter-EG DECAY-time CV: 4 octaves of time per volt on top of the knob. GLOBAL (all voices), block-rate.',
+      fsus_cv: 'Filter-EG SUSTAIN CV: ±1 V sweeps the full 0–1 sustain level on top of the knob. GLOBAL (all voices), block-rate.',
+      frel_cv: 'Filter-EG RELEASE-time CV: 4 octaves of time per volt on top of the knob. GLOBAL (all voices), block-rate.',
+      atk_cv: 'Amp-EG ATTACK-time CV: 4 octaves of time per volt (+1 V = ×16) multiplying the knob time. GLOBAL (all voices), block-rate.',
+      dec_cv: 'Amp-EG DECAY-time CV: 4 octaves of time per volt on top of the knob. GLOBAL (all voices), block-rate.',
+      sus_cv: 'Amp-EG SUSTAIN CV: ±1 V sweeps the full 0–1 sustain level on top of the knob. GLOBAL (all voices), block-rate.',
+      rel_cv: 'Amp-EG RELEASE-time CV: 4 octaves of time per volt on top of the knob. GLOBAL (all voices), block-rate.',
+      width_cv: 'Stereo WIDTH CV: ±1 V sweeps the full 0–1 width — the poly pan fan / mono unison spread AND the wavefolder’s stereo decorrelation. GLOBAL, block-rate.',
+      level_cv: 'Output LEVEL CV (dB): ±1 V sweeps ±18 dB — the full 36 dB level range centered on the knob (clamped −24..+12 dB into the true-peak bound). GLOBAL, block-rate; cv = 0 is a no-op.',
     },
     outputs: {
       out_l: 'Left output of the stereo voice bus (equal-power voice pans, 1/√n normalization, dB LEVEL, DC-blocked, true-peak bounded). Pairs with out_r — patching L into a stereo target auto-wires R.',
@@ -189,24 +234,28 @@ export const tidyVcoDef: AudioModuleDef = {
       loadedContexts.add(ctx);
     }
 
-    // 9 audio-rate node inputs: poly (0, 10-ch), pitch (1), gate (2),
+    // 27 audio-rate node inputs: poly (0, 10-ch), pitch (1), gate (2),
     // cutoff_cv (3), res_cv (4), pwm_cv (5), drive_cv (6), fold_cv (7),
-    // sym_cv (8). TWO mono outputs (out_l, out_r).
+    // sym_cv (8), then a per-knob CV for the remaining controls (9..26):
+    // shape1, shape2, detune, oct2, mix, sub, env, track, fatk, fdec, fsus,
+    // frel, atk, dec, sus, rel, width, level. TWO mono outputs (out_l, out_r).
     const worklet = new AudioWorkletNode(ctx, PROCESSOR_NAME, {
-      numberOfInputs: 9,
+      numberOfInputs: 27,
       numberOfOutputs: 2,
       outputChannelCount: [1, 1],
     });
 
-    // Keep the worklet alive with a single 0-offset silence source on every
+    // Keep the worklet alive with a single 0-offset silence source on EVERY
     // input, so it processes blocks (and the HOLD pad can drone immediately)
-    // even when nothing is patched yet. One ConstantSource, 9 connections.
+    // even when nothing is patched yet. The 0-offset fan is ALSO what makes an
+    // unpatched CV a no-op (cv = 0 → the core's scaling laws are identities),
+    // keeping the ART render byte-identical. One ConstantSource, 27 connections.
     // The poly input relies on channelCountMode 'max' — a real 10-channel
     // cable fans it out when patched.
     const silence = ctx.createConstantSource();
     silence.offset.value = 0;
     silence.start();
-    for (let i = 0; i < 9; i++) silence.connect(worklet, 0, i);
+    for (let i = 0; i < 27; i++) silence.connect(worklet, 0, i);
 
     // Set initial params from the persisted node state (or defaults).
     const params = worklet.parameters as unknown as Map<string, AudioParam>;
@@ -226,6 +275,24 @@ export const tidyVcoDef: AudioModuleDef = {
     inputsMap.set('drive_cv', { node: worklet, input: 6 });
     inputsMap.set('fold_cv', { node: worklet, input: 7 });
     inputsMap.set('sym_cv', { node: worklet, input: 8 });
+    inputsMap.set('shape1_cv', { node: worklet, input: 9 });
+    inputsMap.set('shape2_cv', { node: worklet, input: 10 });
+    inputsMap.set('detune_cv', { node: worklet, input: 11 });
+    inputsMap.set('oct2_cv', { node: worklet, input: 12 });
+    inputsMap.set('mix_cv', { node: worklet, input: 13 });
+    inputsMap.set('sub_cv', { node: worklet, input: 14 });
+    inputsMap.set('env_cv', { node: worklet, input: 15 });
+    inputsMap.set('track_cv', { node: worklet, input: 16 });
+    inputsMap.set('fatk_cv', { node: worklet, input: 17 });
+    inputsMap.set('fdec_cv', { node: worklet, input: 18 });
+    inputsMap.set('fsus_cv', { node: worklet, input: 19 });
+    inputsMap.set('frel_cv', { node: worklet, input: 20 });
+    inputsMap.set('atk_cv', { node: worklet, input: 21 });
+    inputsMap.set('dec_cv', { node: worklet, input: 22 });
+    inputsMap.set('sus_cv', { node: worklet, input: 23 });
+    inputsMap.set('rel_cv', { node: worklet, input: 24 });
+    inputsMap.set('width_cv', { node: worklet, input: 25 });
+    inputsMap.set('level_cv', { node: worklet, input: 26 });
 
     return {
       domain: 'audio',

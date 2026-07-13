@@ -698,7 +698,12 @@ describe('voice render', () => {
         expect(peak, '|out| < 1 by construction').toBeLessThan(1);
       }
     }
-  });
+    // 6 corners × 5 gated voices × 1 s through the 2×-oversampled diode ladder
+    // + ADAA wavefolder is ~4.5–5 s of pure render — right at vitest's 5 s
+    // default. Give it explicit headroom so a LOADED runner (the failure mode
+    // this test's own comment above documents) can't flake it (no-flake-
+    // tolerance; the assertions are unchanged, a real hang still fails fast).
+  }, 15000);
 
   it('is bit-identical run to run (deterministic by construction)', () => {
     const p = { ...TIDY_VCO_DEFAULTS };
@@ -739,5 +744,40 @@ describe('voice render', () => {
     );
     expect(fnv1a(B.l), 'poly L bit-identical to pre-wavefolder core').toBe('e7ee903b');
     expect(fnv1a(B.r), 'poly R bit-identical to pre-wavefolder core').toBe('8d82875e');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// New per-knob CVs — GLOBAL block-rate scalars, consumed by the core. The
+// byte-exact NO-OP at cv = 0 is ALSO pinned by the FNV bit-identity test
+// above (silentBus / lane0Bus omit the new optional fields → they default to
+// 0, so the committed hashes only pass if every new law is an identity at 0).
+// ─────────────────────────────────────────────────────────────────────────
+
+describe('tidy-vco: new per-knob CVs are consumed', () => {
+  it('levelCv (dB): −1 V pulls the whole voice down ~18 dB; cv = 0 is a no-op', () => {
+    const p = probePatch();
+    const rmsAt = (levelCv: number) => {
+      const { l } = renderVoice(p, { ...lane0Bus(0), levelCv }, 0.4);
+      return rms(l, Math.round(0.05 * SR), Math.round(0.35 * SR));
+    };
+    const loud = rmsAt(0);
+    const quiet = rmsAt(-1); // −18 dB ≈ ×0.126
+    expect(quiet).toBeLessThan(loud * 0.3);
+    // cv = 0 is byte-identical to omitting the field entirely.
+    const a = renderVoice(p, { ...lane0Bus(0), levelCv: 0 }, 0.1);
+    const b = renderVoice(p, lane0Bus(0), 0.1);
+    expect(fnv1a(a.l)).toBe(fnv1a(b.l));
+  });
+
+  it('shape1Cv sweeps OSC1 saw→pulse: +1 V drains the even (2nd) harmonic', () => {
+    const p = probePatch({ shape1: 0, cutoff: 12000, res: 0.1 });
+    const saw = renderVoice(p, lane0Bus(0), 0.4); // C4 saw
+    const pulsed = renderVoice(p, { ...lane0Bus(0), shape1Cv: 1 }, 0.4); // → square
+    const s = Math.round(0.1 * SR);
+    const e = Math.round(0.35 * SR);
+    const h2saw = goertzel(saw.l, SR, 2 * TIDY_C4_HZ, s, e);
+    const h2pulse = goertzel(pulsed.l, SR, 2 * TIDY_C4_HZ, s, e);
+    expect(h2saw).toBeGreaterThan(h2pulse * 2); // square nulls even harmonics
   });
 });
