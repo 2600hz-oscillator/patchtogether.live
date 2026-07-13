@@ -193,6 +193,12 @@ let tickCount = 0;
 // to the active view's handler. Pair mode never reads `singleView`.
 let deployment: 'pair' | 'single' = 'pair';
 let singleView: SingleView = 'grid';
+// Clip-PEEK: the permanent-row Clip view button is a MOMENTARY clip-picker, NOT
+// an instant view switch. HOLD it to peek the clip-launcher grid (overlaid on
+// whatever view you're in); TAP a clip to enter its note editor WITHOUT changing
+// its play/queue status; RELEASE without a tap returns to where you were
+// (singleView is never touched until a tap commits it to 'clip'). Single-only.
+let clipPeekActive = false;
 // The Clip/Keys edit target (single mode). Set by a Grid double-tap, or defaults
 // to 0. The permanent CLIP button opens Clip on this index; KEYS is entered for it.
 let selectedClipIndex = 0;
@@ -428,6 +434,7 @@ function resetSingleState(): void {
   armConsumedSincePress = false;
   armedRightAction = null;
   armTick = 0;
+  clipPeekActive = false;
   divPreview = null;
   swingMeterActive = false;
   swingMeterDir = 'center';
@@ -1393,6 +1400,16 @@ function handleSingleKey(nodeId: string, e: LaunchpadKeyEvent): void {
     if (action !== null) handleTopRow(nodeId, action, ev.s);
     return; // any top CC is owned by the permanent row (no fall-through)
   }
+  // 1.5) CLIP-PEEK — while the Clip view button is HELD, the matrix shows the clip
+  //      launcher; a pad tap picks THAT clip to EDIT (no launch) + enters Clip
+  //      view. Scene / other pad events are inert during the peek.
+  if (clipPeekActive) {
+    if (ev.type === 'pad' && ev.s === 1) {
+      const clipIdx = gridPadToClipIndex(ev.x, ev.y);
+      if (clipIdx !== null) enterClipFromPeek(nodeId, clipIdx);
+    }
+    return;
+  }
   // 2) length-edit takeover (scene EXIT returns to the opener's view).
   if (mode === 'lengthEdit') {
     handleRLength(nodeId, e);
@@ -1427,10 +1444,13 @@ function handleTopRow(nodeId: string, action: ReturnType<typeof topRowAction>, s
       if (s === 1) toggleTransport();
       break;
     case 'grid':
-    case 'clip':
     case 'arranger':
     case 'control':
       if (s === 1) selectView(nodeId, action);
+      break;
+    case 'clip':
+      // NOT an instant switch — a momentary clip-picker (see handleClipView).
+      handleClipView(nodeId, s);
       break;
     case 'undo':
       if (s === 1) lpDoUndo();
@@ -1454,6 +1474,55 @@ function selectView(nodeId: string, view: SingleView): void {
   if (mode === 'lengthEdit') mode = 'session';
   if (view === 'clip') editClipIndex = selectedClipIndex;
   setSingleViewInternal(view);
+  renderLeds();
+}
+
+/** The permanent-row CLIP button — a MOMENTARY clip-picker, NOT an instant view
+ *  switch. PRESS (hold): peek the clip-launcher grid over the current view so a
+ *  pad tap can pick a clip to EDIT. RELEASE without a tap: return to where you
+ *  were (singleView was never changed underneath the overlay). A tapped clip has
+ *  already committed to Clip view (enterClipFromPeek), so the release is a no-op. */
+function handleClipView(nodeId: string, s: 0 | 1): void {
+  if (s === 1) {
+    // Start the peek from a clean session state (a view button always leaves KEYS
+    // / length-edit) so the grid overlay + pad routing are unambiguous.
+    if (mode === 'keys') forceExitKeys(nodeId);
+    if (mode === 'lengthEdit') mode = 'session';
+    clipPeekActive = true;
+    renderLeds();
+  } else if (clipPeekActive) {
+    // Released without picking a clip → nothing to enter; drop the overlay and
+    // stay in the view we were already in.
+    clipPeekActive = false;
+    renderLeds();
+  }
+}
+
+/** Enter the tapped clip's note editor from a Clip-peek: select it, materialize a
+ *  default clip if the pad was empty, open a fresh editor window, switch to Clip
+ *  view. NEVER launches / NEVER touches the lane's play/queue state (owner rule:
+ *  peeking a clip to edit does not change whether it plays). */
+function enterClipFromPeek(nodeId: string, clipIdx: number): void {
+  clipPeekActive = false; // a clip was picked — commit (stop peeking)
+  setSelectedClip(clipIdx);
+  editClipIndex = clipIdx;
+  const data = liveData(nodeId);
+  if (!data?.clips?.[String(clipIdx)]) {
+    editData(
+      nodeId,
+      (d) => {
+        if (!d.clips) d.clips = {};
+        if (!d.clips[String(clipIdx)]) d.clips[String(clipIdx)] = defaultNoteClip();
+      },
+      { undoable: true },
+    );
+  }
+  editAnchor = null;
+  editSpanned = false;
+  editRowOffset = 0;
+  editWindowStart = 0;
+  followOn = true;
+  setSingleViewInternal('clip');
   renderLeds();
 }
 
@@ -1777,6 +1846,17 @@ function writeClipSel(nodeId: string, next: NoteClipRecord): void {
   writeClip(nodeId, next, selectedClipIndex, { undoable: true });
 }
 
+/** Launch the currently-EDITED clip WITHOUT leaving the note editor (shift +
+ *  Double/Length in Clip view = QUEUE / NOW). QUEUE (immediate=false) starts at
+ *  the next boundary after the lane's playing clip — or the normal grid-queue
+ *  time if the lane is idle; NOW (immediate=true) starts instantly at the step it
+ *  should be on. Only launches an existing clip (empty = no-op, matching grid);
+ *  never edits the note data / never changes the edit target. */
+function launchSelClip(nodeId: string, immediate: boolean): void {
+  if (!clipAtIndex(liveData(nodeId), selectedClipIndex)) return;
+  queueLane(nodeId, laneOf(selectedClipIndex), slotOf(selectedClipIndex), immediate);
+}
+
 function handleSingleClip(nodeId: string, e: LaunchpadKeyEvent): void {
   const ev = e.ev;
   const data = liveData(nodeId);
@@ -1826,6 +1906,12 @@ function handleClipRight(
 ): void {
   switch (clipRight(sceneIndex)) {
     case 'double': {
+      // +shift = QUEUE the edited clip (launch at the next boundary) WITHOUT
+      // leaving the editor; no-shift = DOUBLE the clip's length.
+      if (shift) {
+        launchSelClip(nodeId, /* immediate */ false);
+        break;
+      }
       const clip = clipAtIndex(data, selectedClipIndex);
       if (clip) {
         const next = doubleNoteClip(clip);
@@ -1834,6 +1920,12 @@ function handleClipRight(
       break;
     }
     case 'lengthEdit': {
+      // +shift = NOW (launch the edited clip instantly at its current step)
+      // WITHOUT leaving the editor; no-shift = open the LENGTH ruler.
+      if (shift) {
+        launchSelClip(nodeId, /* immediate */ true);
+        break;
+      }
       if (clipAtIndex(data, selectedClipIndex)) {
         editClipIndex = selectedClipIndex;
         lengthReturnMode = 'edit';
@@ -2631,6 +2723,23 @@ function renderLeds(): void {
       }
       mode = 'session';
     }
+    // Clip-PEEK overlay — the Clip view button is held: show the clip launcher so
+    // a pad tap can pick a clip to EDIT (singleView is unchanged underneath). Same
+    // frame as the Grid view, minus the arm/swing chrome.
+    if (clipPeekActive) {
+      setFrame(
+        'L',
+        computeSingleGridFrame(data, {
+          top,
+          blinkOn,
+          recording: recordArmed(data),
+          armedRightAction: null,
+          bufferLoaded: clipBuffer !== null,
+          nowOn: nowHeld,
+        }),
+      );
+      return;
+    }
     // Else paint the active VIEW's frame (each includes the permanent top row).
     switch (singleView) {
       case 'grid':
@@ -2752,6 +2861,7 @@ export function __test_resetBinding(): void {
 export function __test_mode(): {
   deployment: 'pair' | 'single';
   singleView: SingleView;
+  clipPeekActive: boolean;
   selectedClipIndex: number;
   mode: LaunchpadMode;
   editClipIndex: number;
@@ -2791,6 +2901,7 @@ export function __test_mode(): {
   return {
     deployment,
     singleView,
+    clipPeekActive,
     selectedClipIndex,
     mode,
     editClipIndex,

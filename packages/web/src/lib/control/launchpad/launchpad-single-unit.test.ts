@@ -386,17 +386,26 @@ describe('SINGLE — permanent top row (transport / views / undo / redo)', () =>
     expect(tlRunning()).toBe(0);
   });
 
-  it('the 4 view buttons switch the active view', () => {
+  it('the Grid / Control / Arranger view buttons switch the active view instantly', () => {
     seedClipPlayer({ clips: {} });
     bindLaunchpadToClip(NODE_ID);
-    sim.cc('L', CC_VIEW_CLIP, 127);
-    expect(__test_mode().singleView).toBe('clip');
     sim.cc('L', CC_VIEW_CONTROL, 127);
     expect(__test_mode().singleView).toBe('control');
     sim.cc('L', CC_VIEW_ARRANGER, 127);
     expect(__test_mode().singleView).toBe('arranger');
     sim.cc('L', CC_VIEW_GRID, 127);
     expect(__test_mode().singleView).toBe('grid');
+  });
+
+  it('the CLIP view button does NOT instant-switch — it peeks; a bare tap leaves the view unchanged', () => {
+    seedClipPlayer({ clips: {} });
+    bindLaunchpadToClip(NODE_ID);
+    sim.cc('L', CC_VIEW_CLIP, 127); // HOLD → peek starts, view unchanged underneath
+    expect(__test_mode().clipPeekActive).toBe(true);
+    expect(__test_mode().singleView, 'peek does not switch the view').toBe('grid');
+    sim.cc('L', CC_VIEW_CLIP, 0); // release WITHOUT picking a clip
+    expect(__test_mode().clipPeekActive).toBe(false);
+    expect(__test_mode().singleView, 'released w/o a clip → back where we were').toBe('grid');
   });
 
   it('a top-row CC is consumed by the permanent row (no launch side effect)', () => {
@@ -717,6 +726,115 @@ describe('SINGLE — Clip view', () => {
     sim.press('L', 0, 0);
     const after = clipsOf()[clipIndex(0, 0)].steps[0].velocity;
     expect(after, 'shift cycled the velocity').not.toBe(before);
+  });
+});
+
+// ===========================================================================
+// SINGLE — Clip-PEEK nav (HOLD Clip + tap a clip → edit it, no launch) +
+// in-editor QUEUE / NOW (shift over the top two clipRight buttons).
+// ===========================================================================
+describe('SINGLE — Clip-peek nav + in-editor Queue/Now', () => {
+  let sim: SimulatedLaunchpad;
+  beforeEach(async () => {
+    sim = await installSimulatedLaunchpadSingle();
+    __test_setDeployment('single', 'grid');
+  });
+
+  it('HOLD Clip + tap a clip → its note editor, WITHOUT launching it', () => {
+    seedClipPlayer({ clips: { [clipIndex(1, 1)]: noteClip() } });
+    bindLaunchpadToClip(NODE_ID);
+    sim.cc('L', CC_VIEW_CLIP, 127); // hold Clip → peek the launcher
+    expect(__test_mode().clipPeekActive).toBe(true);
+    expect(__test_mode().singleView, 'peek leaves the view unchanged underneath').toBe('grid');
+    pressClip(sim, 1, 1); // tap the clip → enter ITS editor
+    expect(__test_mode().singleView, 'a tap during peek → Clip view').toBe('clip');
+    expect(__test_mode().selectedClipIndex).toBe(clipIndex(1, 1));
+    expect(__test_mode().clipPeekActive, 'the tap committed the peek').toBe(false);
+    expect(queued()?.[1] ?? null, 'peeking a clip to edit does NOT launch it').toBeNull();
+    sim.cc('L', CC_VIEW_CLIP, 0); // release (already committed) — stays in Clip
+    expect(__test_mode().singleView).toBe('clip');
+  });
+
+  it('peeking a PLAYING clip to edit does not change its play/queue state', () => {
+    seedClipPlayer({
+      clips: { [clipIndex(0, 0)]: noteClip() },
+      playing: [0, null, null, null, null, null, null, null],
+    });
+    bindLaunchpadToClip(NODE_ID);
+    sim.cc('L', CC_VIEW_CLIP, 127);
+    pressClip(sim, 0, 0); // edit the playing clip
+    expect(__test_mode().singleView).toBe('clip');
+    expect(queued()?.[0] ?? null, 'no stop queued for the playing lane').toBeNull();
+  });
+
+  it('from a NON-grid view: hold Clip peeks the launcher; release w/o a tap returns to that view', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    bindLaunchpadToClip(NODE_ID);
+    setLaunchpadView('control');
+    expect(__test_mode().singleView).toBe('control');
+    sim.cc('L', CC_VIEW_CLIP, 127); // hold → peek overlays the grid
+    expect(__test_mode().clipPeekActive).toBe(true);
+    const pad = clipIndexToGridPad(clipIndex(0, 0));
+    const led = sim.ledAt('L', padNote(pad.x, pad.y));
+    expect(
+      (led?.[0] ?? 0) + (led?.[1] ?? 0) + (led?.[2] ?? 0),
+      'the peek overlay lights the loaded clip (Control view would not)',
+    ).toBeGreaterThan(0);
+    sim.cc('L', CC_VIEW_CLIP, 0); // release without picking a clip
+    expect(__test_mode().singleView, 'released w/o a tap → back to Control').toBe('control');
+    expect(__test_mode().clipPeekActive).toBe(false);
+  });
+
+  it('shift + the TOP clipRight button = QUEUE (launch at the next boundary), not DOUBLE', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: { ...noteClip(), lengthSteps: 8 } } });
+    bindLaunchpadToClip(NODE_ID);
+    setLaunchpadView('clip');
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0); // latch shift
+    sim.cc('L', sceneCc(C_DOUBLE), 127); // = QUEUE under shift
+    expect(queued()?.[0], 'queued (non-immediate)').toBe(0);
+    expect((liveData().queuedImmediate as boolean[] | undefined)?.[0] ?? false).toBe(false);
+    expect(clipsOf()[clipIndex(0, 0)].lengthSteps, 'shift did NOT double the length').toBe(8);
+  });
+
+  it('shift + the 2nd clipRight button = NOW (launch instantly), not the LENGTH page', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    bindLaunchpadToClip(NODE_ID);
+    setLaunchpadView('clip');
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0); // latch shift
+    sim.cc('L', sceneCc(C_LENGTH), 127); // = NOW under shift
+    expect(queued()?.[0]).toBe(0);
+    expect((liveData().queuedImmediate as boolean[] | undefined)?.[0]).toBe(true);
+    expect(__test_mode().mode, 'shift did NOT open the length page').toBe('session');
+  });
+
+  it('under shift the top two clipRight buttons paint ORANGE (Queue dimmer than Now)', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    bindLaunchpadToClip(NODE_ID);
+    setLaunchpadView('clip');
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0); // latch shift → repaints the scene column
+    hoisted.tick!();
+    const q = sim.ledAt('L', sceneCc(C_DOUBLE))!;
+    const n = sim.ledAt('L', sceneCc(C_LENGTH))!;
+    // Orange = red-dominant, no blue (distinct from the green RGB_PATTERN default).
+    expect(q[2], 'Queue has no blue').toBe(0);
+    expect(q[0], 'Queue is red-dominant (orange)').toBeGreaterThan(q[1]);
+    expect(n[2], 'Now has no blue').toBe(0);
+    expect(n[0], 'Now is red-dominant (orange)').toBeGreaterThan(n[1]);
+    expect(n[0], 'Now (instant) is brighter than Queue (waits)').toBeGreaterThan(q[0]);
+  });
+
+  it('WITHOUT shift the top two clipRight buttons keep DOUBLE / LENGTH (no launch)', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: { ...noteClip(), lengthSteps: 8 } } });
+    bindLaunchpadToClip(NODE_ID);
+    setLaunchpadView('clip');
+    sim.cc('L', sceneCc(C_DOUBLE), 127); // no shift → DOUBLE
+    expect(clipsOf()[clipIndex(0, 0)].lengthSteps).toBe(16);
+    expect(queued()?.[0] ?? null, 'no-shift Double does not launch').toBeNull();
+    sim.cc('L', sceneCc(C_LENGTH), 127); // no shift → LENGTH page
+    expect(__test_mode().mode).toBe('lengthEdit');
   });
 });
 

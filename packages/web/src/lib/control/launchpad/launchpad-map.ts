@@ -146,6 +146,11 @@ export const RGB_EXIT: Rgb = [104, 23, 23]; // red (EXIT)
 // view-flip button reads distinct from the function row (single mode only; in
 // pair mode CC 98 is the editor FOLLOW toggle).
 export const RGB_VIEW: Rgb = [10, 60, 60]; // cyan (CLIP ⇄ CONTROL view marker)
+// Clip-view in-editor launch (shift over the top two clipRight buttons): the
+// Double/Length buttons become QUEUE / NOW — both ORANGE (launch), Now brighter
+// (instant) than Queue (waits for the boundary).
+export const RGB_LAUNCH_QUEUE: Rgb = [90, 40, 0]; // orange — QUEUE (next boundary)
+export const RGB_LAUNCH_NOW: Rgb = [127, 56, 0]; // orange — NOW (instant), bright
 // Editor note colours (velocity buckets) + playhead.
 export const RGB_NOTE_BY_VEL: readonly Rgb[] = [
   [29, 41, 57], // low velocity (dim blue)
@@ -1564,8 +1569,11 @@ export interface SingleClipOpts {
 function clipRightRgb(sceneIndex: number, opts: SingleClipOpts, shift: boolean): Rgb {
   switch (clipRight(sceneIndex)) {
     case 'double':
+      // +shift = QUEUE (launch at next boundary); no-shift = DOUBLE length.
+      return shift ? RGB_LAUNCH_QUEUE : RGB_PATTERN;
     case 'lengthEdit':
-      return RGB_PATTERN;
+      // +shift = NOW (launch instantly); no-shift = LENGTH ruler.
+      return shift ? RGB_LAUNCH_NOW : RGB_PATTERN;
     case 'follow':
       return opts.followOn ? RGB_PATTERN_ARMED : RGB_PATTERN;
     case 'keys':
