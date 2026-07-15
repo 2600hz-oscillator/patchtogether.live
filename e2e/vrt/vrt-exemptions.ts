@@ -184,6 +184,15 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // canvas so the deterministic chrome (6 knobs + SPIN/SCRN toggles + CV
   // handle rows + VIDEO out) is the regression gate.
   mandelbulb: [{ selector: 'canvas' }],
+  // MIRRORPOOL — live PTZ liquid-pool render (wind swell + rain rings +
+  // Fresnel reflect/refract); the preview is animated + time-based, so mask
+  // the canvas and let the deterministic chrome (11 PTZ knobs + POOL/SCENE +
+  // CV handle rows + VIDEO out) gate. NOTE: the solo-spawn baseline is DEFERRED
+  // on BOTH platforms via EXEMPT_BASELINE_PAIRS (mirrorpool is HELD for owner
+  // look-preview — a look-affecting video module never captures a baseline
+  // before the owner approves the look). Physics coverage is
+  // mirrorpool-core.test.ts + the (baseline-deferred) mirrorpool-composite.spec.ts.
+  mirrorpool: [{ selector: 'canvas' }],
   // SCOREBOARD — 4-digit 7-segment counter widget. The card carries a live
   // preview canvas; the counter starts at 0 on factory mount (or 1234 when
   // the VRT scene sets `__scoreboardVrtSeed`). Canvas masked here as the
@@ -858,6 +867,23 @@ export const STRICT_VRT_MODULES = new Set<string>([
  *  up CI capture lands the other platform's PNG. The exempted pair is
  *  SKIPPED at the test level rather than allowed to fail. */
 export const EXEMPT_BASELINE_PAIRS = new Set<string>([
+  // MIRRORPOOL (2026-07-15): the solo-spawn masked VRT (chrome around the
+  // masked animated pool canvas) AND the deterministic composite scenes are
+  // DEFERRED on BOTH platforms — MIRRORPOOL is a maximally look-affecting
+  // video source HELD for owner preview, so no VRT baseline is captured until
+  // the owner has approved the look (a look-affecting module never pins a
+  // baseline pre-approval). Once approved, capture darwin locally + linux via
+  // vrt-update.yml, then drop these pairs. Functional coverage meanwhile:
+  // mirrorpool-core.test.ts (Fresnel/swell/normal/Poisson/PTZ) + the per-port
+  // + behavioral sweeps.
+  'darwin/mirrorpool',
+  'linux/mirrorpool',
+  'darwin/mirrorpool-refract',
+  'linux/mirrorpool-refract',
+  'darwin/mirrorpool-mirror',
+  'linux/mirrorpool-mirror',
+  'darwin/mirrorpool-storm',
+  'linux/mirrorpool-storm',
   // WORKFLOW audio-UX composite scenes (2026-07-11, deliberate darwin-first):
   // the OPEN 🎧 audio-I/O panel (workflow-audio-io-composite.spec.ts — the
   // plain-mounted card faces, device-name text masked) and the bottom dock

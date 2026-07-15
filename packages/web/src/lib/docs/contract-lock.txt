@@ -1646,6 +1646,32 @@ milkdrop param presetSelect 0..19 linear default=0
 milkdrop param reactivity 0..2 linear default=1
 milkdrop param speed 0..2 linear default=1
 milkdrop param treb 0..2 linear default=1
+mirrorpool meta domain=video
+mirrorpool in brightness_cv cv param=brightness cvScale=linear
+mirrorpool in cam_x_cv cv param=cam_x cvScale=linear
+mirrorpool in cam_y_cv cv param=cam_y cvScale=linear
+mirrorpool in cam_z_cv cv param=cam_z cvScale=linear
+mirrorpool in pan_cv cv param=pan cvScale=linear
+mirrorpool in pool video
+mirrorpool in rain_cv cv param=rain cvScale=linear
+mirrorpool in scene video
+mirrorpool in surface_mode_cv cv param=surface_mode cvScale=linear
+mirrorpool in tilt_cv cv param=tilt cvScale=linear
+mirrorpool in wind_dir_cv cv param=wind_dir cvScale=linear
+mirrorpool in wind_speed_cv cv param=wind_speed cvScale=linear
+mirrorpool in zoom_cv cv param=zoom cvScale=linear
+mirrorpool out video_out video
+mirrorpool param brightness 0..2 linear default=1
+mirrorpool param cam_x -1.6..1.6 linear default=0
+mirrorpool param cam_y 0.15..2.2 linear default=1.3
+mirrorpool param cam_z -1.6..1.6 linear default=1.6
+mirrorpool param pan -3.141592653589793..3.141592653589793 linear default=0
+mirrorpool param rain 0..1 linear default=0.2
+mirrorpool param surface_mode 0..1 linear default=0
+mirrorpool param tilt -3.141592653589793..3.141592653589793 linear default=-0.6
+mirrorpool param wind_dir -3.141592653589793..3.141592653589793 linear default=0
+mirrorpool param wind_speed 0..1 linear default=0.3
+mirrorpool param zoom 0..1 linear default=0.5
 mixer meta domain=audio
 mixer in in1 audio
 mixer in in2 audio
