@@ -187,7 +187,7 @@
     label: r === 7 ? 'ROW ▶' : undefined,
   }));
   // + shift → the function palette (scene index 0..7 = rows 7..0 top→bottom):
-  // Copy · Paste · Clip-Div · Swing+ · Swing− · Length · Paste-Rev · Now.
+  // Copy · Paste · Clip-Div · Swing+ · Swing− · Length · Scroll▲ · Scroll▼ (amber).
   const gridShiftScene = [
     { row: 7, fill: hex(RGB_PATTERN), label: 'COPY' }, // green (tap-to-arm)
     { row: 6, fill: hex(RGB_COPY_BUFFER), label: 'PASTE' }, // turquoise while the buffer holds a clip
@@ -195,8 +195,8 @@
     { row: 4, fill: hex(RGB_TIMING), label: 'SW+' }, // blue idle; ramps purple while raising
     { row: 3, fill: hex(RGB_TIMING), label: 'SW−' }, // blue idle; ramps blue while lowering
     { row: 2, fill: hex(RGB_DECK_LEN), label: 'LEN' }, // yellow (owner override)
-    { row: 1, fill: hex(RGB_PATTERN), label: 'P-REV' }, // green (tap-to-arm)
-    { row: 0, fill: hex(RGB_SYS), label: 'NOW' }, // orange sticky toggle (shown on)
+    { row: 1, fill: hex(RGB_SCENE), label: 'SCR▲' }, // amber scene-window UP (was P-REV)
+    { row: 0, fill: hex(RGB_SCENE), label: 'SCR▼' }, // amber scene-window DOWN (was NOW)
   ];
 
   // ── The NOTE EDITOR 8×8 (an illustrative state) — both modes; declared here
@@ -480,7 +480,7 @@
     { state: 'COPY / PASTE / P-REV', rgb: RGB_DECK_COPY, note: 'green — clipboard actions (brighten while held/armed)' },
     { state: 'DOUBLE', rgb: RGB_DECK_DBL, note: 'purple — duplicate the pattern + double the clip length (cap 128)' },
     { state: 'LENGTH', rgb: RGB_DECK_LEN, note: 'yellow — open the 2-row length page' },
-    { state: 'NOW', rgb: RGB_DECK_NOW, note: 'purple — launches ignore quantize (hold on the pair deck; in single mode NOW is the orange Grid-shift toggle)' },
+    { state: 'NOW', rgb: RGB_DECK_NOW, note: 'purple — launches ignore quantize (hold on the PAIR deck; the single-mode Grid-shift column no longer carries NOW — its bottom two buttons are the amber scene-scroll)' },
     { state: 'RESET (RST)', rgb: RGB_RESET, note: 'steel blue — snap every active lane back to step 1 (deck row 1 col 2; pair: also the R deck)' },
     { state: 'MONO on / off', rgb: RGB_MONO_ON, note: 'teal — per-lane MONO (one note per column) engaged; dim teal = poly (deck row 2)' },
     { state: 'MUTE on / off', rgb: RGB_MUTE_ON, note: 'orange — lane muted (advances but silent); dim = live (deck row 3 · pair: L top row)' },
@@ -534,7 +534,7 @@
     { state: 'timing — armed / jump', rgb: RGB_TIMING_ARMED, note: 'bright blue — armed clip-div, or a block / page jump under shift' },
     { state: 'length', rgb: RGB_DECK_LEN, note: 'yellow — edit clip length (owner override; not green)' },
     { state: 'KEYS entry', rgb: RGB_KEYS_ENTRY, note: 'bright orange — open the KEYS keyboard (owner override)' },
-    { state: 'system', rgb: RGB_SYS, note: 'orange — NOW · arp range · arp on/off · arp latch' },
+    { state: 'system', rgb: RGB_SYS, note: 'orange — arp range · arp on/off · arp latch' },
     { state: 'system — off', rgb: RGB_SYS_DIM, note: 'dim orange — that system toggle is off' },
     { state: 'copy buffer', rgb: RGB_COPY_BUFFER, note: 'turquoise (pulses) — the Paste button while the clipboard holds a clip' },
     { state: 'swing — raising', rgb: RGB_SWING_UP, note: 'purple ramp — Swing+ nudged up (pale → bright by amount)' },
@@ -546,8 +546,8 @@
   const SINGLE_MAP: { what: string; addr: string }[] = [
     { what: 'permanent top row (every view)', addr: 'CC 91 = transport (red stopped / green playing) · 92 = GRID · 93 = CLIP · 94 = ARRANGER · 95 = CONTROL (purple; bright = active) · 96 = UNDO · 97 = REDO (orange) · 98 = SHIFT (yellow: dim off / bright held / solid latched). This row NEVER changes meaning per view' },
     { what: 'SHIFT (CC 98)', addr: 'TAP = latch the alt layer (solid yellow); tap again = unlatch. HOLD = momentary (bright yellow). Effective shift = latched OR held. Grid compound functions arm on tap so nothing needs a second hand' },
-    { what: 'GRID — the clip matrix', addr: 'column = channel / lane (1–8 left→right), row = clip slot (top row = slot 1). Single-tap = launch / stop (queued to the boundary; NOW = instant). DOUBLE-TAP a clip = select it + open CLIP on it (empty pad = create a clip). No-shift right column = ROW / scene launch' },
-    { what: 'GRID + shift right column', addr: 'top→bottom: COPY · PASTE · CLIP-DIV · SWING+ · SWING− · LENGTH · PASTE-REV · NOW. Copy / Paste / Paste-Rev / Clip-Div / Length are TAP-TO-ARM (tap → arm → tap a clip). Swing ± are direct ±2 % nudges on the SELECTED channel. NOW is a sticky toggle' },
+    { what: 'GRID — the clip matrix', addr: 'column = channel / lane (1–8 left→right), row = clip slot (top row = slot 1). Single-tap = launch / stop (queued to the boundary). DOUBLE-TAP a clip = select it + open CLIP on it (empty pad = create a clip). No-shift right column = ROW / scene launch — a SCROLLING window of position-relative buttons over up to 64 scenes (slid by Grid+shift SCR▲/SCR▼)' },
+    { what: 'GRID + shift right column', addr: 'top→bottom: COPY · PASTE · CLIP-DIV · SWING+ · SWING− · LENGTH · SCROLL▲ · SCROLL▼ (amber). Copy / Paste / Clip-Div / Length are TAP-TO-ARM (tap → arm → tap a target). Copy + a ROW/scene press grabs the WHOLE SCENE (all 8 lanes); Paste is type-gated (clip→clip + scene→scene apply, the cross-type pastes are no-ops). Swing ± are direct ±2 % nudges on the SELECTED channel. SCROLL ▲▼ slide the scene window (up to 64 scenes; each dims at its limit)' },
     { what: 'CLIP — note-editor right column', addr: 'top→bottom: DOUBLE · LENGTH · FOLLOW · KEYS · ROW+ · ROW− · STEP◀ · STEP▶. Shift: ROW± = ±octave / page, STEP± = block jump, and the 8×8 becomes VELOCITY-cycle (tap a note → cycle its velocity)' },
     { what: 'KEYS — scale select (no shift)', addr: 'top→bottom: MAJOR · MINOR · PENTATONIC · DORIAN · PHRYGIAN · MIXOLYDIAN · CHROMATIC · ARP on/off. Selected scale glows bright green. The scale lights the keyboard but does NOT snap live input (pads stay chromatic)' },
     { what: 'KEYS + shift — the arp column', addr: 'top→bottom: DIV+ · DIV− · UP · DOWN · UP-AND-DOWN · RANGE+ · RANGE− · LATCH. Divisions 8x…1/8 (1x default); ranges 1 oct / +1..−1 / +2..−2 (symmetric); up-and-down is an exclusive pendulum' },
@@ -710,11 +710,11 @@
   </p>
   <p>
     On one device you can't hold a function button <em>and</em> tap a clip at once — so the Grid's compound
-    functions (Copy · Paste · Paste-Rev · Clip-Div · Length) are <strong>tap-to-ARM</strong>:
-    <strong>tap the function → it arms</strong> (brightens; only one at a time) <strong>→ tap a clip → it
+    functions (Copy · Paste · Clip-Div · Length) are <strong>tap-to-ARM</strong>:
+    <strong>tap the function → it arms</strong> (brightens; only one at a time) <strong>→ tap a target → it
     applies</strong> and auto-disarms. Tap the armed button again to cancel; a stale arm auto-clears after
-    ~4 s. Swing ± are <em>direct nudges</em> (no arm) and NOW is a <em>sticky toggle</em>. Net: no gesture
-    on the whole surface ever needs a second hand.
+    ~4 s. Swing ± and the scene-scroll <strong>SCR▲ / SCR▼</strong> are <em>direct</em> (no arm). Net: no
+    gesture on the whole surface ever needs a second hand.
   </p>
 
   <h3>Single-mode colour language</h3>
@@ -773,10 +773,12 @@
     <li><strong>Row / scene launch (right column):</strong> a grid <strong>row</strong> is one clip per
       channel — an Ableton-style scene / song section. Scene button <em>N</em> fires <strong>that row's
       slot across every channel that has a clip</strong> and <strong>stops</strong> the channels that
-      don't — a one-press verse → chorus switch. It flashes green while any channel in that row is queued.</li>
-    <li><strong>NOW</strong> (Grid + shift, bottom of the right column) makes launches fire
-      <strong>instantly</strong> instead of on the boundary while it's lit; empty pads glow dim red while
-      the player is record-armed.</li>
+      don't — a one-press verse → chorus switch. It flashes green while any channel in that row is queued.
+      The column is a <strong>scrolling window</strong>: the 8 buttons are position-relative, and the
+      Grid + shift <strong>SCR▲ / SCR▼</strong> buttons slide it through <strong>up to 64 scenes</strong>
+      (clip storage is fixed stride-64, so scenes past the first 8 hold real clips; an empty scene is dark
+      and its launch is a no-op).</li>
+    <li>Empty pads glow dim red while the player is record-armed.</li>
   </ul>
 
   <h4 id="single-select">Single-tap launches · double-tap edits</h4>
@@ -797,14 +799,19 @@
     scene={gridShiftScene}
     callouts={gridCallouts}
     accent={hex(RGB_PATTERN_ARMED)}
-    caption="GRID + shift (SHIFT latched, solid yellow). The right column becomes the function palette, top→bottom: COPY · PASTE · CLIP-DIV · SWING+ · SWING− · LENGTH · PASTE-REV · NOW. Green = pattern, blue = timing, yellow = length, orange = NOW. PASTE shows turquoise here because the clipboard holds a clip."
+    caption="GRID + shift (SHIFT latched, solid yellow). The right column becomes the function palette, top→bottom: COPY · PASTE · CLIP-DIV · SWING+ · SWING− · LENGTH · SCR▲ · SCR▼. Green = pattern, blue = timing, yellow = length, amber = scene-scroll. PASTE shows turquoise here because the clipboard holds a clip."
   />
   <ul class="tight">
-    <li><strong>COPY</strong> (green): arm, then tap a loaded clip → snapshot it to the clipboard. The
-      PASTE button then pulses <span class="cyan">turquoise</span>. Re-tap COPY while the clipboard is
-      loaded to clear it. (Copy is a snapshot — edit after copying? re-copy.)</li>
-    <li><strong>PASTE / PASTE-REV</strong> (green; they only arm when the clipboard holds a clip): arm, tap
-      any pad → the buffer is written there. PASTE-REV mirrors the steps in time.</li>
+    <li><strong>COPY</strong> (green): arm, then tap a loaded clip → snapshot that CLIP to the clipboard, OR
+      tap a <strong>ROW / scene-launch</strong> button → snapshot the WHOLE SCENE (all 8 channels at that
+      slot). The clipboard is <strong>typed</strong>: a clip buffer pulses turquoise, a scene buffer pulses
+      amber. Re-tap COPY while loaded to clear it. (Copy is a snapshot — edit after copying? re-copy.)</li>
+    <li><strong>PASTE</strong> (green; only arms when the clipboard holds something): arm, then tap a
+      <strong>clip pad</strong> to drop a clip buffer there, or a <strong>ROW / scene-launch</strong> button
+      to full-REPLACE that whole scene from a scene buffer. The paste is <strong>type-gated</strong> —
+      clip→clip and scene→scene apply; clip→scene and scene→clip are no-ops (nothing is written). A scene
+      paste is a single undo step. <em>(PASTE-REV, the time-reversed clip paste, is a PAIR-deck function —
+      see the TWO LAUNCHPADS section.)</em></li>
     <li><strong>CLIP-DIV</strong> (blue): the per-clip divider. Arm, then <strong>tap a clip repeatedly</strong>
       to cycle its own clock division (1/8 · 1/4 · 1/2 · 1 · 2x · 4x). While you cycle, the <strong>target
       clip pad itself pulses in time with the chosen division</strong> — the meter is on the pad, not the
@@ -817,8 +824,9 @@
       on the nudge that returns swing to dead-centre (straight). No arming — they act immediately.</li>
     <li><strong>LENGTH</strong> (yellow): arm, tap a loaded clip → its length page opens (a full-device
       takeover; EXIT returns to Grid).</li>
-    <li><strong>NOW</strong> (orange, sticky): toggle on → launches ignore the quantize boundary and fire
-      immediately. Stays on until you tap it again.</li>
+    <li><strong>SCR▲ / SCR▼</strong> (amber): slide the scene-launch window UP (toward scene 1) / DOWN. The
+      window reaches up to 64 scenes; DOWN lazily reveals one empty scene past your deepest clip, and each
+      button dims at its scroll limit. Direct — no arming.</li>
   </ul>
 
   <h3>CLIP view — the note editor</h3>
