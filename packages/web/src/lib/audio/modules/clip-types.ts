@@ -123,20 +123,29 @@ export interface SnapshotClipRecord extends ClipBase {
 // AUTOMATION clip — the "automation lane" (task #183)
 // ---------------------------------------------------------------------------
 //
-// An automation clip records CONTROL moves (param automation) that replay with
-// the clip, alongside the note lanes. MVP: ONE automation lane per clip player
-// (owner: "it's fine if a clip player can't have more than one automation lane
-// for now"), but that one lane automates MULTIPLE mapped params — each param is
-// its own AutomationTrack. Recording writes breakpoints; playback drives the
-// mapped param TRANSIENTLY (never writes the live Y.Doc — see
-// `cv-modulation-live-store-write-storm` discipline; recording is the only
-// writer, playback only reads + applies).
+// An automation clip is a CLIP (kind:'automation') occupying a grid (lane, slot)
+// cell like a note clip — it LAUNCHES, LOOPS, and STOPS on its lane's playhead,
+// with its own `lengthSteps` + `div` (so it can be long + slow to maximize
+// record time). It carries MULTIPLE param tracks (each an AutomationTrack). When
+// launched it drives its params; when armed + playing it records live param moves
+// for one loop pass (quantized punch-in at the loop start, auto punch-out at the
+// loop end). Playback drives the mapped param TRANSIENTLY via engine.setParam —
+// it NEVER writes the live Y.Doc (`cv-modulation-live-store-write-storm`);
+// recording is the only writer and commits ONCE per pass. Automation data is
+// CUSTOM parameter-envelope data (0..1 in the param's own domain), NOT MIDI.
 
-/** MVP automation limit: one MIDI channel per automated param → 16 params max.
- *  DOCUMENTED + enforced at the coerce boundary (owner: "assign a midi channel
- *  to anything mapped ... this may impose a limit ... the limit must be KNOWN
- *  and documented"). Widening this is a later, deliberate change. */
+/** Max automated params (tracks) in one automation clip — a UI-sanity cap,
+ *  enforced at the coerce boundary. (NOT a MIDI-channel limit: automation is
+ *  CUSTOM parameter-envelope data, not MIDI CC — owner: "automation data does
+ *  not need to be midi data".) */
 export const MAX_AUTOMATION_TRACKS = 16;
+
+/** Max breakpoints PER track — the durable-size guard for a long/slow automation
+ *  clip (low clock division + long beat length = a multi-minute pass). The
+ *  recorder's real-time decimation gate keeps density ~30 pts/s, so this bounds
+ *  a single track's committed array (and thus the ydoc/sync payload). Enforced
+ *  at the coerce boundary; the recorder also caps before commit. */
+export const MAX_AUTOMATION_EVENTS = 4000;
 
 /** A single automation breakpoint: a normalized param value at a step position.
  *  `step` may be fractional for sub-step resolution; `value` is 0..1 in the
@@ -153,15 +162,15 @@ export interface AutomationTarget {
   paramId: string;
 }
 
-/** One automated parameter's breakpoint track. `channel`/`cc` are the MIDI
- *  identity the record + replay ride (reused from an existing MIDI/Electra map
- *  when the control already has one, else assigned from the automation pool by
- *  the recording layer — this record only STORES + validates them). */
+/** One automated parameter's breakpoint track. Just a target + its step-ordered
+ *  breakpoints (custom envelope data — no MIDI identity). `interp` overrides the
+ *  playback interpolation for this track: 'linear' (smooth ramp between points)
+ *  or 'hold' (stepped). Absent ⇒ auto: linear for continuous params, hold for
+ *  `curve:'discrete'` params (decided at playback from the ParamDef). */
 export interface AutomationTrack {
   target: AutomationTarget;
-  channel: number; // MIDI channel 0..15
-  cc: number; // MIDI CC 0..127
-  events: AutomationEvent[]; // step-ordered; playback holds the last value
+  events: AutomationEvent[]; // step-ordered
+  interp?: 'linear' | 'hold';
 }
 
 /** The automation clip: many param tracks, looping with the clip length. */
@@ -523,7 +532,8 @@ export function coerceAutomationEvent(raw: unknown): AutomationEvent | null {
 }
 
 /** Clamp a raw object into a valid AutomationTrack, or null (a track with an
- *  unusable target is dropped). Events are coerced, filtered, and step-sorted. */
+ *  unusable target is dropped). Events are coerced, filtered, step-sorted, and
+ *  capped at MAX_AUTOMATION_EVENTS (the durable-size guard for long clips). */
 export function coerceAutomationTrack(raw: unknown): AutomationTrack | null {
   if (!raw || typeof raw !== 'object') return null;
   const t = raw as Record<string, unknown>;
@@ -532,25 +542,14 @@ export function coerceAutomationTrack(raw: unknown): AutomationTrack | null {
   const paramId = target?.paramId;
   if (typeof nodeId !== 'string' || !nodeId) return null;
   if (typeof paramId !== 'string' || !paramId) return null;
-  const channel = clampMidiChannel(Number(t.channel));
-  const cc = clampMidiCc(Number(t.cc));
   const events = (Array.isArray(t.events) ? t.events : [])
     .map(coerceAutomationEvent)
     .filter((e): e is AutomationEvent => e !== null)
-    .sort((a, b) => a.step - b.step);
-  return { target: { nodeId, paramId }, channel, cc, events };
-}
-
-/** Clamp to a valid MIDI channel 0..15 (non-finite ⇒ 0). */
-export function clampMidiChannel(n: number): number {
-  if (!Number.isFinite(n)) return 0;
-  return Math.max(0, Math.min(15, Math.round(n)));
-}
-
-/** Clamp to a valid MIDI CC 0..127 (non-finite ⇒ 0). */
-export function clampMidiCc(n: number): number {
-  if (!Number.isFinite(n)) return 0;
-  return Math.max(0, Math.min(127, Math.round(n)));
+    .sort((a, b) => a.step - b.step)
+    .slice(0, MAX_AUTOMATION_EVENTS);
+  const out: AutomationTrack = { target: { nodeId, paramId }, events };
+  if (t.interp === 'linear' || t.interp === 'hold') out.interp = t.interp;
+  return out;
 }
 
 /** True when two targets reference the same (nodeId, paramId) control. */
@@ -564,15 +563,24 @@ export function defaultAutomationClip(lengthSteps = DEFAULT_CLIP_STEPS): Automat
 }
 
 /**
- * OVERDUB merge (punch-in): replace a track's events inside the half-open
- * re-recorded window [windowStart, windowEnd) with `incoming`, keeping every
- * existing event OUTSIDE the window. This is the owner's "overdub must work" —
- * a second pass punches over only the time it covers, preserving the rest.
+ * OVERDUB merge (punch-in): replace a track's events inside the re-recorded
+ * window with `incoming`, keeping every existing event OUTSIDE it. This is the
+ * owner's "overdub must work" — a second pass punches over only the time it
+ * covers, preserving the rest.
  *
- * Returns a NEW step-sorted array (callers splice it into the live Y track in
- * place). `incoming` need not be pre-filtered to the window; only existing
- * events are windowed — incoming events are all kept (a recorder emits only
- * what it captured during the pass).
+ * The window is half-open and DIRECTIONAL to support a punch that wraps the loop
+ * boundary:
+ *   - `windowStart <= windowEnd`  → the window is `[start, end)` (drop events in it).
+ *   - `windowStart >  windowEnd`  → the punch WRAPPED the loop: the window is
+ *     `[start, ∞) ∪ [0, end)`, so KEEP the events in `[end, start)` (the middle).
+ *     (The naive min/max normalization inverts this and deletes the middle —
+ *     the exact loop-wrap bug the adversarial review caught.)
+ *
+ * Callers MUST pass a PLAIN snapshot of `existing` (e.g. from `coerceClipRecord`),
+ * NEVER the live Y.Array — `kept` retains references to `existing`'s elements, and
+ * reassigning integrated Y children throws "Type already integrated"
+ * ([[yjs-save-load-real-ydoc]]). The commit reassigns the whole clip plain.
+ * Returns a NEW step-sorted, event-capped array.
  */
 export function mergeAutomationOverdub(
   existing: readonly AutomationEvent[],
@@ -580,14 +588,16 @@ export function mergeAutomationOverdub(
   windowStart: number,
   windowEnd: number,
 ): AutomationEvent[] {
-  const lo = Math.min(windowStart, windowEnd);
-  const hi = Math.max(windowStart, windowEnd);
-  const kept = existing.filter((e) => e.step < lo || e.step >= hi);
+  const inWindow = (step: number): boolean =>
+    windowStart <= windowEnd
+      ? step >= windowStart && step < windowEnd // normal [start, end)
+      : step >= windowStart || step < windowEnd; // wrapped [start,∞) ∪ [0,end)
+  const kept = existing.filter((e) => !inWindow(e.step));
   const merged = kept.concat(
     incoming.map((e) => ({ step: e.step, value: Math.max(0, Math.min(1, e.value)) })),
   );
   merged.sort((a, b) => a.step - b.step);
-  return merged;
+  return merged.slice(0, MAX_AUTOMATION_EVENTS);
 }
 
 /**
@@ -628,6 +638,46 @@ export function automationValueAt(
     else break;
   }
   return val;
+}
+
+/**
+ * PLAYBACK read — LINEAR interpolation of the value at `step` (the default for
+ * continuous params; `automationValueAt` is the hold-last variant for discrete).
+ * Returns null before the first breakpoint (param left at its live value); holds
+ * the final value after the last. `events` must be step-sorted.
+ */
+export function automationLinearAt(
+  events: readonly AutomationEvent[],
+  step: number,
+): number | null {
+  if (events.length === 0) return null;
+  if (step < events[0]!.step) return null; // before first bp — leave live value
+  let prev = events[0]!;
+  for (let i = 1; i < events.length; i++) {
+    const cur = events[i]!;
+    if (cur.step > step) {
+      const span = cur.step - prev.step;
+      if (span <= 0) return cur.value;
+      const t = (step - prev.step) / span;
+      return prev.value + (cur.value - prev.value) * t;
+    }
+    prev = cur;
+  }
+  return prev.value; // past the last bp — hold
+}
+
+/**
+ * The first breakpoint strictly AFTER `step` (or null past the last). The
+ * lookahead playback emitter ramps toward this breakpoint's value, scheduled at
+ * its audio time, giving click-free, sample-accurate automation between the
+ * 25 ms scheduler ticks.
+ */
+export function automationNextAfter(
+  events: readonly AutomationEvent[],
+  step: number,
+): AutomationEvent | null {
+  for (const e of events) if (e.step > step) return e;
+  return null;
 }
 
 export function clampStepCount(n: number): number {

@@ -58,16 +58,17 @@ import {
   swingStepOffset,
   MAX_SWING,
   MAX_AUTOMATION_TRACKS,
+  MAX_AUTOMATION_EVENTS,
   coerceAutomationEvent,
   coerceAutomationTrack,
-  clampMidiChannel,
-  clampMidiCc,
   sameAutomationTarget,
   defaultAutomationClip,
   mergeAutomationOverdub,
   removeAutomationTrack,
   findAutomationTrack,
   automationValueAt,
+  automationLinearAt,
+  automationNextAfter,
   type NoteClipRecord,
   type NoteEvent,
   type ClipPlayerData,
@@ -154,21 +155,6 @@ describe('clampStepCount', () => {
 
 const tgt = (nodeId: string, paramId: string) => ({ nodeId, paramId });
 
-describe('automation: clampMidiChannel / clampMidiCc', () => {
-  it('clamps channel to 0..15 and cc to 0..127, non-finite ⇒ 0', () => {
-    expect(clampMidiChannel(-1)).toBe(0);
-    expect(clampMidiChannel(0)).toBe(0);
-    expect(clampMidiChannel(15)).toBe(15);
-    expect(clampMidiChannel(99)).toBe(15);
-    expect(clampMidiChannel(NaN)).toBe(0);
-    expect(clampMidiCc(-5)).toBe(0);
-    expect(clampMidiCc(64)).toBe(64);
-    expect(clampMidiCc(127)).toBe(127);
-    expect(clampMidiCc(999)).toBe(127);
-    expect(clampMidiCc(Infinity)).toBe(0);
-  });
-});
-
 describe('automation: coerceAutomationEvent', () => {
   it('accepts finite step≥0 and clamps value to 0..1', () => {
     expect(coerceAutomationEvent({ step: 0, value: 0.5 })).toEqual({ step: 0, value: 0.5 });
@@ -183,12 +169,11 @@ describe('automation: coerceAutomationEvent', () => {
   });
 });
 
-describe('automation: coerceAutomationTrack', () => {
-  it('normalizes a track: clamps midi identity, step-sorts + filters events', () => {
+describe('automation: coerceAutomationTrack (custom data — no MIDI identity)', () => {
+  it('normalizes a track: step-sorts + filters events, carries interp', () => {
     const t = coerceAutomationTrack({
       target: tgt('nodeA', 'cutoff'),
-      channel: 99,
-      cc: 500,
+      interp: 'hold',
       events: [
         { step: 2, value: 0.2 },
         { step: 0, value: 0.9 },
@@ -196,17 +181,27 @@ describe('automation: coerceAutomationTrack', () => {
       ],
     });
     expect(t).not.toBeNull();
-    expect(t!.channel).toBe(15);
-    expect(t!.cc).toBe(127);
+    expect(t!.target).toEqual(tgt('nodeA', 'cutoff'));
+    expect(t!.interp).toBe('hold');
+    expect((t as unknown as Record<string, unknown>).channel).toBeUndefined(); // no MIDI identity
     expect(t!.events).toEqual([
       { step: 0, value: 0.9 },
       { step: 2, value: 0.2 },
     ]);
   });
-  it('rejects a track with an unusable target', () => {
-    expect(coerceAutomationTrack({ target: { nodeId: '', paramId: 'x' }, channel: 0, cc: 0 })).toBeNull();
-    expect(coerceAutomationTrack({ target: { nodeId: 'a' }, channel: 0, cc: 0 })).toBeNull();
-    expect(coerceAutomationTrack({ channel: 0, cc: 0 })).toBeNull();
+  it('caps events at MAX_AUTOMATION_EVENTS (long-clip guard)', () => {
+    const events = Array.from({ length: MAX_AUTOMATION_EVENTS + 500 }, (_, i) => ({
+      step: i,
+      value: 0.5,
+    }));
+    const t = coerceAutomationTrack({ target: tgt('n', 'p'), events });
+    expect(t!.events.length).toBe(MAX_AUTOMATION_EVENTS);
+  });
+  it('ignores a bad interp value + rejects an unusable target', () => {
+    expect(coerceAutomationTrack({ target: tgt('n', 'p'), interp: 'bogus' })!.interp).toBeUndefined();
+    expect(coerceAutomationTrack({ target: { nodeId: '', paramId: 'x' } })).toBeNull();
+    expect(coerceAutomationTrack({ target: { nodeId: 'a' } })).toBeNull();
+    expect(coerceAutomationTrack({})).toBeNull();
   });
 });
 
@@ -215,15 +210,12 @@ describe('automation: coerceClipRecord kind=automation', () => {
     expect(MAX_AUTOMATION_TRACKS).toBe(16);
     const tracks = Array.from({ length: 20 }, (_, i) => ({
       target: tgt('n' + i, 'p'),
-      channel: i,
-      cc: i,
       events: [{ step: 0, value: 0.5 }],
     }));
     const c = coerceClipRecord({ kind: 'automation', lengthSteps: 32, tracks });
     expect(c?.kind).toBe('automation');
     const rec = c as AutomationClipRecord;
     expect(rec.lengthSteps).toBe(32);
-    // capped at the documented limit
     expect(rec.tracks.length).toBe(MAX_AUTOMATION_TRACKS);
     expect(rec.loop).toBe(true);
   });
@@ -232,8 +224,8 @@ describe('automation: coerceClipRecord kind=automation', () => {
       kind: 'automation',
       lengthSteps: 16,
       tracks: [
-        { target: tgt('good', 'p'), channel: 0, cc: 1, events: [] },
-        { target: { nodeId: '' }, channel: 0, cc: 0 }, // dropped
+        { target: tgt('good', 'p'), events: [] },
+        { target: { nodeId: '' } }, // dropped
       ],
     }) as AutomationClipRecord;
     expect(c.tracks.length).toBe(1);
@@ -253,7 +245,6 @@ describe('automation: defaultAutomationClip', () => {
 
 describe('automation: mergeAutomationOverdub (punch-in)', () => {
   it('replaces only the [start,end) window, preserves events outside it', () => {
-    // existing spans steps 0..3; overdub punches the [1,2) window.
     const existing: AutomationEvent[] = [
       { step: 0, value: 0.1 },
       { step: 1, value: 0.2 },
@@ -264,21 +255,37 @@ describe('automation: mergeAutomationOverdub (punch-in)', () => {
     const incoming: AutomationEvent[] = [{ step: 1.2, value: 0.9 }];
     const merged = mergeAutomationOverdub(existing, incoming, 1, 2);
     expect(merged).toEqual([
-      { step: 0, value: 0.1 }, // before window — kept
-      { step: 1.2, value: 0.9 }, // punched in
-      { step: 2, value: 0.3 }, // window is half-open: step 2 is OUTSIDE, kept
-      { step: 3, value: 0.4 }, // after window — kept
+      { step: 0, value: 0.1 },
+      { step: 1.2, value: 0.9 },
+      { step: 2, value: 0.3 }, // half-open: step 2 outside, kept
+      { step: 3, value: 0.4 },
     ]);
-    // the two existing events at step 1 and 1.5 (inside [1,2)) were dropped
   });
-  it('handles a reversed window + clamps incoming values', () => {
-    const merged = mergeAutomationOverdub(
-      [{ step: 0.5, value: 0.5 }],
-      [{ step: 0.7, value: 3 }],
-      1,
-      0, // reversed → normalized to [0,1)
-    );
+  it('WRAP window (start>end) keeps the middle [end,start), replaces the wrapped ends', () => {
+    // 16-step clip; a punch from step 14 → 2 wraps: window = [14,16) ∪ [0,2).
+    const existing: AutomationEvent[] = [
+      { step: 0.5, value: 0.01 }, // in wrapped window → dropped
+      { step: 4, value: 0.4 }, // middle → KEPT
+      { step: 10, value: 0.6 }, // middle → KEPT
+      { step: 15, value: 0.99 }, // in wrapped window → dropped
+    ];
+    const incoming: AutomationEvent[] = [
+      { step: 15.5, value: 0.7 },
+      { step: 1, value: 0.8 },
+    ];
+    const merged = mergeAutomationOverdub(existing, incoming, 14, 2);
+    expect(merged).toEqual([
+      { step: 1, value: 0.8 },
+      { step: 4, value: 0.4 },
+      { step: 10, value: 0.6 },
+      { step: 15.5, value: 0.7 },
+    ]);
+  });
+  it('clamps incoming values + caps at MAX_AUTOMATION_EVENTS', () => {
+    const merged = mergeAutomationOverdub([], [{ step: 0.7, value: 3 }], 0, 16);
     expect(merged).toEqual([{ step: 0.7, value: 1 }]);
+    const many = Array.from({ length: MAX_AUTOMATION_EVENTS + 10 }, (_, i) => ({ step: i, value: 0.5 }));
+    expect(mergeAutomationOverdub([], many, 0, 99999).length).toBe(MAX_AUTOMATION_EVENTS);
   });
 });
 
@@ -288,44 +295,56 @@ describe('automation: removeAutomationTrack + findAutomationTrack', () => {
     lengthSteps: 16,
     loop: true,
     tracks: [
-      { target: tgt('a', 'cutoff'), channel: 0, cc: 1, events: [] },
-      { target: tgt('b', 'res'), channel: 1, cc: 2, events: [] },
+      { target: tgt('a', 'cutoff'), events: [] },
+      { target: tgt('b', 'res'), events: [{ step: 0, value: 0.3 }] },
     ],
   };
   it('drops exactly the matching target, leaves the rest', () => {
     const out = removeAutomationTrack(rec, tgt('a', 'cutoff'));
     expect(out.tracks.length).toBe(1);
     expect(out.tracks[0]!.target).toEqual(tgt('b', 'res'));
-    // original untouched (pure)
-    expect(rec.tracks.length).toBe(2);
+    expect(rec.tracks.length).toBe(2); // original untouched (pure)
   });
   it('no-op when target not present', () => {
     expect(removeAutomationTrack(rec, tgt('z', 'nope')).tracks.length).toBe(2);
   });
   it('findAutomationTrack matches by (nodeId, paramId)', () => {
-    expect(findAutomationTrack(rec, tgt('b', 'res'))?.cc).toBe(2);
+    expect(findAutomationTrack(rec, tgt('b', 'res'))?.events.length).toBe(1);
     expect(findAutomationTrack(rec, tgt('a', 'res'))).toBeUndefined();
     expect(sameAutomationTarget(tgt('a', 'x'), tgt('a', 'x'))).toBe(true);
     expect(sameAutomationTarget(tgt('a', 'x'), tgt('a', 'y'))).toBe(false);
   });
 });
 
-describe('automation: automationValueAt (hold-last playback read)', () => {
+describe('automation: playback reads (hold-last, linear, next-after)', () => {
   const events: AutomationEvent[] = [
     { step: 0, value: 0.1 },
     { step: 2, value: 0.5 },
     { step: 4, value: 0.9 },
   ];
-  it('holds the last breakpoint at or before the step', () => {
+  it('automationValueAt holds the last breakpoint at or before the step', () => {
     expect(automationValueAt(events, 0)).toBe(0.1);
     expect(automationValueAt(events, 1.9)).toBe(0.1);
     expect(automationValueAt(events, 2)).toBe(0.5);
-    expect(automationValueAt(events, 3.5)).toBe(0.5);
     expect(automationValueAt(events, 100)).toBe(0.9);
   });
-  it('returns null before the first breakpoint (param left at live value)', () => {
+  it('automationValueAt returns null before the first breakpoint', () => {
     expect(automationValueAt([{ step: 2, value: 0.5 }], 1)).toBeNull();
     expect(automationValueAt([], 5)).toBeNull();
+  });
+  it('automationLinearAt interpolates between breakpoints', () => {
+    expect(automationLinearAt(events, 0)).toBe(0.1);
+    expect(automationLinearAt(events, 1)).toBeCloseTo(0.3, 9); // halfway 0.1→0.5
+    expect(automationLinearAt(events, 3)).toBeCloseTo(0.7, 9); // halfway 0.5→0.9
+    expect(automationLinearAt(events, 100)).toBe(0.9); // holds past last
+    expect(automationLinearAt(events, -1)).toBeNull(); // before first
+    expect(automationLinearAt([], 0)).toBeNull();
+  });
+  it('automationNextAfter finds the first breakpoint strictly after step', () => {
+    expect(automationNextAfter(events, 0)).toEqual({ step: 2, value: 0.5 });
+    expect(automationNextAfter(events, 2)).toEqual({ step: 4, value: 0.9 });
+    expect(automationNextAfter(events, 4)).toBeNull();
+    expect(automationNextAfter(events, 3.9)).toEqual({ step: 4, value: 0.9 });
   });
 });
 
