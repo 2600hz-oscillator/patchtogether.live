@@ -144,6 +144,12 @@ const OVERRIDES: Record<string, ModuleDriver> = {
   // the sequencer gate train is required for the outputs-emit + behavioral
   // dims. Mono `out` is the signature output.
   karplus:      { outputPort: 'out', gatePort: 'trigger_in', pitchPort: 'pitch' },
+  // SIX STRUM — 6-voice guitar/bass/harp instrument; silent until struck, so
+  // the sequencer gate train into STRUM #1 (edge:'trigger', normalled #1→all)
+  // strums the open strings → mono `out` rings, driving the outputs-emit +
+  // behavioral dims. (No pitchPort: bare-strum plays the open TUNING; the
+  // Chord CV / Poly paths are covered by e2e/tests/sixstrum-poly.spec.ts.)
+  sixstrum:     { outputPort: 'out', gatePort: 'strum1' },
   // CLAP — analog-modeled mono handclap voice; trigger_in (edge:'trigger')
   // strikes it. Gate-only (accent/tone/tail/spread CVs are optional). Silent
   // with no strike, so the sequencer gate train is required for the
