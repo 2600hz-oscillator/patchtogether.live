@@ -45,6 +45,7 @@ import {
   __test_resetBinding,
   __test_setDeployment,
   __test_mode,
+  __test_copyBuffer,
 } from './launchpad-control.svelte';
 import {
   clipIndexToGridPad,
@@ -1064,5 +1065,203 @@ describe('SINGLE — unbind', () => {
     expect(boundClipNode()).toBeNull();
     pressClip(sim, 0, 0);
     expect(queued()?.[0] ?? null).toBeNull();
+  });
+});
+
+// ===========================================================================
+// SINGLE — SCENE copy/paste (Part 3). While a COPY/PASTE arm is active it is
+// STICKY across shift release, so the NO-SHIFT matrix hosts the target: a clip
+// pad (single clip) OR a scene-launch button (a whole scene = all 8 lanes at a
+// slot). The typed buffer + the 4-combo type gate (scene→scene / clip→clip apply;
+// scene→clip / clip→scene NO-OP), one-step undo, scroll-mapped copy+paste, and an
+// empty-scene clear. Driven through the REAL device→map→binding→Y.Doc chain.
+// ===========================================================================
+describe('SINGLE — SCENE copy/paste (typed buffer + 4-combo type gate)', () => {
+  let sim: SimulatedLaunchpad;
+  beforeEach(async () => {
+    sim = await installSimulatedLaunchpadSingle();
+    __test_setDeployment('single', 'grid');
+  });
+  const G_COPY_I = 0;
+  const G_PASTE_I = 1;
+  const G_SCROLL_DOWN_I = 7;
+  const latch = () => {
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0);
+    expect(__test_mode().shiftLatched).toBe(true);
+  };
+  const unlatch = () => {
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0);
+    expect(__test_mode().shiftLatched).toBe(false);
+  };
+  const sceneBtn = (idx: number) => sim.cc('L', sceneCc(idx), 127);
+  // COPY a whole scene: arm COPY under shift, release shift (COPY stays armed —
+  // sticky), then tap the no-shift SCENE-LAUNCH button for that scene.
+  const copyScene = (idx: number) => {
+    latch();
+    sim.cc('L', sceneCc(G_COPY_I), 127);
+    expect(__test_mode().armedRightAction).toBe('copy');
+    unlatch();
+    expect(__test_mode().armedRightAction, 'COPY survives shift release (sticky)').toBe('copy');
+    sceneBtn(idx);
+  };
+  // ARM paste (buffer must be loaded), release shift → paste sticky in no-shift.
+  const armPaste = () => {
+    latch();
+    sim.cc('L', sceneCc(G_PASTE_I), 127);
+    expect(__test_mode().armedRightAction).toBe('paste');
+    unlatch();
+    expect(__test_mode().armedRightAction, 'PASTE survives shift release (sticky)').toBe('paste');
+  };
+  const pasteSceneAt = (idx: number) => { armPaste(); sceneBtn(idx); };
+  // Copy a SINGLE clip (the existing under-shift clip-pad consume), leave no-shift.
+  const copyClipAt = (slot: number, lane: number) => {
+    latch();
+    sim.cc('L', sceneCc(G_COPY_I), 127);
+    pressClip(sim, slot, lane);
+    unlatch();
+  };
+  const clipAt = (slot: number, lane: number): NoteClipRecord | undefined =>
+    (clipsOf() ?? {})[String(clipIndex(slot, lane))];
+  const NOTE = (step: number, midi: number) => [{ step, midi, velocity: 100, lengthSteps: 1 }];
+
+  it('scene→scene: FULL REPLACE — source lanes land; a source-empty lane empties the target', () => {
+    seedClipPlayer({
+      clips: {
+        // source scene 2: lanes 0 + 2 have clips (lane 1 empty)
+        [clipIndex(2, 0)]: clipWithNote(1, 61),
+        [clipIndex(2, 2)]: clipWithNote(2, 62),
+        // target scene 5: PRE-EXISTING content that a full replace must clear
+        [clipIndex(5, 1)]: clipWithNote(3, 63),
+        [clipIndex(5, 3)]: clipWithNote(4, 64),
+      },
+    });
+    bindLaunchpadToClip(NODE_ID);
+    copyScene(2);
+    expect(__test_copyBuffer()?.kind).toBe('scene');
+    pasteSceneAt(5);
+    // source lanes 0 + 2 landed at slot 5
+    expect(clipAt(5, 0)?.steps).toEqual(NOTE(1, 61));
+    expect(clipAt(5, 2)?.steps).toEqual(NOTE(2, 62));
+    // lanes empty in the source → emptied in the target (full replace)
+    expect(clipAt(5, 1), 'source lane 1 empty → target lane 1 cleared').toBeUndefined();
+    expect(clipAt(5, 3), 'source lane 3 empty → target lane 3 cleared').toBeUndefined();
+    // the source scene is untouched
+    expect(clipAt(2, 0)?.steps).toEqual(NOTE(1, 61));
+  });
+
+  it('clip→clip: a single-clip copy/paste still applies (unchanged behaviour)', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote(2, 67) } });
+    bindLaunchpadToClip(NODE_ID);
+    latch();
+    sim.cc('L', sceneCc(G_COPY_I), 127);
+    pressClip(sim, 0, 0); // consume under shift → CLIP buffer
+    expect(__test_copyBuffer()?.kind).toBe('clip');
+    sim.cc('L', sceneCc(G_PASTE_I), 127); // still latched → arm paste
+    pressClip(sim, 1, 1); // clip-pad target → clip→clip applies
+    expect(clipAt(1, 1)?.steps.some((s) => s.midi === 67)).toBe(true);
+  });
+
+  it('scene→clip: NO-OP — a scene buffer never pastes onto a single clip pad', () => {
+    seedClipPlayer({
+      clips: {
+        [clipIndex(2, 0)]: clipWithNote(1, 61), // scene 2 source content
+        [clipIndex(6, 3)]: clipWithNote(9, 70), // a loaded clip-pad target
+      },
+    });
+    bindLaunchpadToClip(NODE_ID);
+    copyScene(2);
+    expect(__test_copyBuffer()?.kind).toBe('scene');
+    armPaste();
+    pressClip(sim, 6, 3); // CLIP pad target → scene→clip = NO-OP
+    expect(clipAt(6, 3)?.steps, 'target clip untouched').toEqual(NOTE(9, 70));
+    expect(__test_copyBuffer()?.kind, 'buffer untouched').toBe('scene');
+  });
+
+  it('clip→scene: NO-OP — a clip buffer never pastes onto a scene', () => {
+    seedClipPlayer({
+      clips: {
+        [clipIndex(0, 0)]: clipWithNote(2, 67), // single clip to copy
+        [clipIndex(5, 1)]: clipWithNote(3, 63), // scene 5 pre-existing content
+      },
+    });
+    bindLaunchpadToClip(NODE_ID);
+    copyClipAt(0, 0);
+    expect(__test_copyBuffer()?.kind).toBe('clip');
+    pasteSceneAt(5); // SCENE target → clip→scene = NO-OP
+    expect(clipAt(5, 1)?.steps, 'scene lane 1 untouched').toEqual(NOTE(3, 63));
+    expect(clipAt(5, 0), 'scene lane 0 not created').toBeUndefined();
+    expect(__test_copyBuffer()?.kind, 'buffer untouched').toBe('clip');
+  });
+
+  it('undo reverts a scene paste in ONE step (all 8 lanes restored)', () => {
+    seedClipPlayer({
+      clips: {
+        [clipIndex(2, 0)]: clipWithNote(1, 61),
+        [clipIndex(2, 1)]: clipWithNote(2, 62),
+        [clipIndex(5, 3)]: clipWithNote(3, 63), // target pre-existing (full replace clears these)
+        [clipIndex(5, 4)]: clipWithNote(4, 64),
+      },
+    });
+    bindLaunchpadToClip(NODE_ID);
+    copyScene(2);
+    pasteSceneAt(5);
+    expect(clipAt(5, 0)).toBeTruthy();
+    expect(clipAt(5, 1)).toBeTruthy();
+    expect(clipAt(5, 3)).toBeUndefined();
+    expect(clipAt(5, 4)).toBeUndefined();
+    expect(__test_mode().canUndo).toBe(true);
+    // ONE undo → the whole scene 5 restored to its pre-paste state.
+    sim.cc('L', CC_UNDO, 127);
+    expect(clipAt(5, 0), 'lane 0 write undone').toBeUndefined();
+    expect(clipAt(5, 1), 'lane 1 write undone').toBeUndefined();
+    expect(clipAt(5, 3)?.steps, 'lane 3 restored').toEqual(NOTE(3, 63));
+    expect(clipAt(5, 4)?.steps, 'lane 4 restored').toEqual(NOTE(4, 64));
+    expect(__test_mode().canUndo, 'the paste was a single undo step').toBe(false);
+  });
+
+  it('scroll-mapped copy AND paste — copy scene 2, scroll, paste lands at slot 10', () => {
+    seedClipPlayer({
+      clips: {
+        [clipIndex(2, 0)]: clipWithNote(1, 61),
+        [clipIndex(2, 1)]: clipWithNote(2, 62),
+        [clipIndex(9, 0)]: noteClip(), // deep content so DOWN reaches offset 3 (scene 10 visible)
+      },
+    });
+    bindLaunchpadToClip(NODE_ID);
+    copyScene(2); // captured at offset 0 → scene 2
+    expect(__test_copyBuffer()?.kind).toBe('scene');
+    // scroll DOWN to offset 3 (highestContent 9 → maxOffset 3) so scene 10 = bottom row
+    latch();
+    for (let i = 0; i < 3; i++) sim.cc('L', sceneCc(G_SCROLL_DOWN_I), 127);
+    expect(__test_mode().sceneScrollOffset).toBe(3);
+    sim.cc('L', sceneCc(G_PASTE_I), 127); // arm paste (still latched)
+    expect(__test_mode().armedRightAction).toBe('paste');
+    unlatch();
+    sceneBtn(7); // sceneIndex 7 → scene offset(3)+7 = 10 → slot 10
+    expect(clipAt(10, 0)?.steps, 'scene-2 lane 0 landed at slot 10').toEqual(NOTE(1, 61));
+    expect(clipAt(10, 1)?.steps, 'scene-2 lane 1 landed at slot 10').toEqual(NOTE(2, 62));
+    expect(clipAt(10, 2), 'source lane 2 empty → target lane 2 empty').toBeUndefined();
+  });
+
+  it('copy + paste an EMPTY scene clears the target scene', () => {
+    seedClipPlayer({
+      clips: {
+        // scene 3 is EMPTY; target scene 5 has content in several lanes
+        [clipIndex(5, 0)]: clipWithNote(1, 61),
+        [clipIndex(5, 2)]: clipWithNote(2, 62),
+        [clipIndex(5, 7)]: clipWithNote(3, 63),
+      },
+    });
+    bindLaunchpadToClip(NODE_ID);
+    copyScene(3); // empty scene → a buffer of all nulls
+    const buf = __test_copyBuffer();
+    expect(buf?.kind).toBe('scene');
+    expect(buf?.kind === 'scene' && buf.clips.every((c) => c === null)).toBe(true);
+    pasteSceneAt(5); // full replace with empties → clears slot 5
+    for (let lane = 0; lane < CLIP_LANES; lane++) {
+      expect(clipAt(5, lane), `lane ${lane} cleared`).toBeUndefined();
+    }
   });
 });

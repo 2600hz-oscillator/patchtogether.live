@@ -156,8 +156,11 @@ function hasStride64Key(clips: Record<string, unknown>): boolean {
 }
 
 /** Plain JSON deep-clone of a clip value (null-safe). The default `clone` for
- *  `migrateClipPlayerData` on the plain-object (envelope) path. */
-function plainCloneClip(v: ClipRecord | null): ClipRecord | null {
+ *  `migrateClipPlayerData` on the plain-object (envelope) path — and the plain,
+ *  Y-severing clone the Launchpad copy/paste buffer + scene paste reuse (a JSON
+ *  round-trip fully detaches any live syncedStore child; safe for every clip
+ *  kind, which are all pure JSON data). */
+export function plainCloneClip(v: ClipRecord | null): ClipRecord | null {
   return v == null ? null : (JSON.parse(JSON.stringify(v)) as ClipRecord);
 }
 
@@ -828,6 +831,66 @@ export function readClip(
   const clips = data?.clips;
   if (!clips) return null;
   return coerceClipRecord(clips[String(index)]);
+}
+
+// ---------------------------------------------------------------------------
+// SCENE copy/paste — a TYPED clipboard for the Launchpad clip-launcher. A
+// "scene" is all CLIP_LANES lanes' clips at ONE slot (`clipIndex(slot, lane)`).
+// The buffer holds either ONE clip OR a whole scene, always as PLAIN deep-clones
+// (never a live Y child). These helpers are PURE (the .svelte.ts owns the buffer
+// state + the origin-tagged Y writes). See launchpad-control.svelte.ts.
+// ---------------------------------------------------------------------------
+
+/** What the copy buffer holds, or what a paste targets. */
+export type CopyBufferKind = 'clip' | 'scene';
+export type CopyTargetKind = 'clip' | 'scene';
+
+/** The TYPED copy buffer: one clip, or a whole scene (all CLIP_LANES lanes'
+ *  clips at a slot; an empty lane is `null`). Held as PLAIN deep-clones. */
+export type CopyBuffer =
+  | { kind: 'clip'; clip: NoteClipRecord }
+  | { kind: 'scene'; clips: (ClipRecord | null)[] };
+
+/** Paste TYPE-GATE (PURE): a paste applies ONLY when the buffer kind matches the
+ *  target kind — scene→scene + clip→clip apply; scene→clip + clip→scene are
+ *  NO-OPs (buffer + targets untouched, no write). The single source the surface
+ *  and its tests both consult. */
+export function pasteApplies(bufferKind: CopyBufferKind, targetKind: CopyTargetKind): boolean {
+  return bufferKind === targetKind;
+}
+
+/** COPY a whole SCENE (all CLIP_LANES lanes' clips at `slot`) as PLAIN clones —
+ *  index i = lane i's clip (coerced/severed from any live Y child) or `null` when
+ *  that lane is empty at the slot. PURE (reads only). */
+export function readScene(
+  data: { clips?: Record<string, unknown> } | undefined,
+  slot: number,
+): (ClipRecord | null)[] {
+  const out: (ClipRecord | null)[] = new Array(CLIP_LANES).fill(null);
+  for (let lane = 0; lane < CLIP_LANES; lane++) {
+    out[lane] = readClip(data, clipIndex(slot, lane));
+  }
+  return out;
+}
+
+/** Plan a SCENE paste (FULL REPLACE) into `targetSlot`: for EACH lane 0..7, the
+ *  flat clip index + the PLAIN-cloned value to write — `null` MEANS delete that
+ *  lane's key so a lane the source scene left empty EMPTIES the target lane. PURE.
+ *  The caller applies each entry in ONE origin-tagged transaction (set non-null,
+ *  delete null) → a single undo step. Re-clones so pasting one buffer to many
+ *  targets never shares references. */
+export function sceneWritePlan(
+  targetSlot: number,
+  sceneClips: (ClipRecord | null)[],
+): { index: number; value: ClipRecord | null }[] {
+  const plan: { index: number; value: ClipRecord | null }[] = [];
+  for (let lane = 0; lane < CLIP_LANES; lane++) {
+    plan.push({
+      index: clipIndex(targetSlot, lane),
+      value: plainCloneClip(sceneClips[lane] ?? null),
+    });
+  }
+  return plan;
 }
 
 // ---------------------------------------------------------------------------

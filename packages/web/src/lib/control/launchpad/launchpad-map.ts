@@ -69,6 +69,7 @@ import {
   velBucket,
   noteCovering,
   SCALE_NAMES,
+  type CopyBufferKind,
 } from '$lib/audio/modules/clip-types';
 import { laneRateIndex, RATE_MULTS } from '$lib/audio/modules/clip-clock';
 import type { ArpDirection } from '$lib/audio/arp-engine';
@@ -141,8 +142,13 @@ export const RGB_TRANSPORT_ON: Rgb = [23, 104, 53]; // green (transport running)
 export const RGB_RECORDING_DIM: Rgb = [30, 4, 4]; // down phase of the record-arm pulse
 export const RGB_SONG_SESSION: Rgb = [16, 16, 20]; // SES/ARR idle (SESSION) — dim white
 export const RGB_SONG_ARRANGE: Rgb = [90, 90, 100]; // SES/ARR in ARRANGEMENT — bright white
-export const RGB_COPY_BUFFER: Rgb = [15, 99, 99]; // turquoise (copy buffer loaded) — pulses
+export const RGB_COPY_BUFFER: Rgb = [15, 99, 99]; // turquoise (CLIP copy buffer loaded) — pulses
 export const RGB_COPY_BUFFER_DIM: Rgb = [4, 30, 30]; // down phase of the copy pulse
+// A SCENE copy buffer (all 8 lanes' clips at a slot) reads with a DISTINCT amber-
+// tinted colour so the buffer indicator + paste-target lights say "a whole scene
+// is loaded", never confused with the turquoise single-clip buffer.
+export const RGB_COPY_BUFFER_SCENE: Rgb = [110, 78, 12]; // amber (SCENE copy buffer loaded) — pulses
+export const RGB_COPY_BUFFER_SCENE_DIM: Rgb = [26, 18, 3]; // down phase of the scene copy pulse
 export const RGB_EXIT: Rgb = [104, 23, 23]; // red (EXIT)
 // SINGLE-mode CC-98 VIEW-toggle indicator — a calm cyan so the dedicated
 // view-flip button reads distinct from the function row (single mode only; in
@@ -1502,8 +1508,12 @@ export interface SingleGridOpts {
   recording?: boolean;
   /** The armed tap-to-arm right-column action (grid+shift) → brightened. */
   armedRightAction?: GridArmAction | null;
-  /** Clip buffer holds a clip → the Paste button pulses turquoise. */
+  /** The copy buffer holds SOMETHING → the Paste button pulses. */
   bufferLoaded?: boolean;
+  /** WHICH kind the buffer holds — a CLIP buffer pulses turquoise, a SCENE buffer
+   *  amber. Also drives the paste-arm target dimming (below). Undefined/null =
+   *  empty. */
+  bufferKind?: CopyBufferKind | null;
   /** Scene-window scroll offset (0 = scenes 0..7). Slides the matrix + scene
    *  column so visual row r shows scene `offset + r`. Default 0. */
   sceneScrollOffset?: number;
@@ -1580,7 +1590,12 @@ function gridShiftRightRgb(sceneIndex: number, opts: SingleGridOpts, blinkOn: bo
       return armed === 'copy' ? RGB_PATTERN_ARMED : RGB_PATTERN;
     case 'paste':
       if (armed === 'paste') return RGB_PATTERN_ARMED;
-      return opts.bufferLoaded ? (blinkOn ? RGB_COPY_BUFFER : RGB_COPY_BUFFER_DIM) : RGB_PATTERN;
+      if (!opts.bufferLoaded) return RGB_PATTERN;
+      // A loaded buffer pulses the Paste button its buffer-kind colour: turquoise
+      // for a CLIP buffer, amber for a whole SCENE.
+      return opts.bufferKind === 'scene'
+        ? (blinkOn ? RGB_COPY_BUFFER_SCENE : RGB_COPY_BUFFER_SCENE_DIM)
+        : (blinkOn ? RGB_COPY_BUFFER : RGB_COPY_BUFFER_DIM);
     case 'clipDiv':
       return armed === 'clipDiv' ? RGB_TIMING_ARMED : RGB_TIMING;
     case 'swingUp':
@@ -1612,6 +1627,17 @@ export function computeSingleGridFrame(
   const shift = effShift(opts.top);
   const recording = !!opts.recording;
   const offset = opts.sceneScrollOffset ?? 0;
+  // PASTE-ARM target dimming (VISIBLE no-op, not silent): while a paste is armed in
+  // the no-shift matrix, only the buffer's VALID target class lights — a SCENE
+  // buffer lights the scene-launch column + dims the clip pads; a CLIP buffer keeps
+  // the clip pads + dims the scene column. So an illegal target (scene→clip /
+  // clip→scene) reads as "not a target" rather than a mystery no-op. Only under
+  // no-shift (under shift the right column is the grid-shift palette). COPY leaves
+  // both classes lit — either is a legal copy source.
+  const pasteArmed = !shift && opts.armedRightAction === 'paste' && !!opts.bufferLoaded;
+  const sceneBuffer = opts.bufferKind === 'scene';
+  const dimClipPads = pasteArmed && sceneBuffer; // clip pads are the invalid class
+  const dimSceneCol = pasteArmed && !sceneBuffer; // scene column is the invalid class
   // Transposed clip matrix (x = lane, scene top→bottom) through the scroll window:
   // visual row r (top = 0) shows scene `offset + r`. Each in-range scene paints its
   // per-cell clip state (an empty cell is DARK); a scene out of range (≥ MAX_SCENES)
@@ -1625,7 +1651,9 @@ export function computeSingleGridFrame(
         continue;
       }
       const idx = clipIndex(slot, lane);
-      put(frame, padNote(lane, y), singleClipStateRgb(data, idx, slot, lane, blinkOn, recording));
+      let rgb = singleClipStateRgb(data, idx, slot, lane, blinkOn, recording);
+      if (dimClipPads) rgb = scaleRgb(rgb, 0.15); // invalid target class → dimmed
+      put(frame, padNote(lane, y), rgb);
     }
   }
   // Clip-Div preview: pulse the target clip pad blue in time with its division
@@ -1647,7 +1675,14 @@ export function computeSingleGridFrame(
     } else {
       const slot = slotForScene(offset + i);
       if (slot === null) rgb = RGB_OFF;
-      else {
+      else if (pasteArmed && sceneBuffer) {
+        // Scene-buffer paste armed: every in-range scene is a VALID target (even
+        // an empty one — a scene paste can FILL it), pulsing the amber scene-buffer
+        // colour so the scene column reads as "tap to paste the scene here".
+        rgb = blinkOn ? RGB_COPY_BUFFER_SCENE : RGB_COPY_BUFFER_SCENE_DIM;
+      } else if (dimSceneCol) {
+        rgb = RGB_SCENE_DIM; // clip-buffer paste: scene column is the invalid class
+      } else {
         let anyQueued = false;
         let anyContent = false;
         for (let lane = 0; lane < CLIP_LANES; lane++) {

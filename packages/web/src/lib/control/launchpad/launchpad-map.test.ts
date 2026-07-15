@@ -46,6 +46,7 @@ import {
   RGB_STOP_IDLE,
   RGB_TRANSPORT_ON,
   RGB_COPY_BUFFER,
+  RGB_COPY_BUFFER_SCENE,
   RGB_NOTE_BY_VEL,
   RGB_NOTE_PLAYHEAD,
   RGB_DECK_EDIT,
@@ -965,6 +966,63 @@ describe('Single mode — frame builders', () => {
     });
     expect(eqRgb(at(f, SCENE_CCS[3]), RGB_SWING_CENTER)).toBe(true); // Swing+
     expect(eqRgb(at(f, SCENE_CCS[4]), RGB_SWING_CENTER)).toBe(true); // Swing−
+  });
+  it('grid + shift: PASTE pulses the AMBER scene-buffer colour when a SCENE is buffered', () => {
+    // Turquoise for a clip buffer, amber for a scene buffer (distinct colour).
+    const clipBuf = computeSingleGridFrame({} as ClipPlayerData, {
+      top: mkTop('grid', { shift: { latched: true, held: false } }),
+      bufferLoaded: true,
+      bufferKind: 'clip',
+      blinkOn: true,
+    });
+    expect(eqRgb(at(clipBuf, SCENE_CCS[1]), RGB_COPY_BUFFER)).toBe(true); // clip → turquoise
+    const sceneBuf = computeSingleGridFrame({} as ClipPlayerData, {
+      top: mkTop('grid', { shift: { latched: true, held: false } }),
+      bufferLoaded: true,
+      bufferKind: 'scene',
+      blinkOn: true,
+    });
+    expect(eqRgb(at(sceneBuf, SCENE_CCS[1]), RGB_COPY_BUFFER_SCENE)).toBe(true); // scene → amber
+  });
+  it('grid (no shift): a SCENE-buffer PASTE arm lights the scene column + DIMS the clip pads', () => {
+    const data: ClipPlayerData = {
+      clips: { [clipIndex(3, 0)]: defaultNoteClip() }, // a loaded clip pad
+    } as ClipPlayerData;
+    const f = computeSingleGridFrame(data, {
+      top: mkTop('grid'), // NO shift → the sticky paste arm overlays the launch column
+      armedRightAction: 'paste',
+      bufferLoaded: true,
+      bufferKind: 'scene',
+      blinkOn: true,
+    });
+    // Every in-range scene lights the amber scene-buffer target colour (valid class).
+    expect(eqRgb(at(f, SCENE_CCS[0]), RGB_COPY_BUFFER_SCENE)).toBe(true);
+    expect(eqRgb(at(f, SCENE_CCS[5]), RGB_COPY_BUFFER_SCENE)).toBe(true);
+    // The loaded clip pad (invalid class) is DIMMED to ~15% of its state colour.
+    // slot 3 at offset 0 → matrix row 3 → physical y = 7 - 3 = 4.
+    const dl0 = hexToRgb127(defaultLaneColorHex(0)); // lane-0 loaded = 0.32× hue, then 0.15× dim
+    const loadedRgb = [Math.round(dl0[0] * 0.32), Math.round(dl0[1] * 0.32), Math.round(dl0[2] * 0.32)];
+    const dimmed = [Math.round(loadedRgb[0] * 0.15), Math.round(loadedRgb[1] * 0.15), Math.round(loadedRgb[2] * 0.15)];
+    expect(eqRgb(at(f, padNote(0, 4)), dimmed as unknown as typeof RGB_OFF)).toBe(true);
+  });
+  it('grid (no shift): a CLIP-buffer PASTE arm DIMS the scene column (clip pads stay lit)', () => {
+    const data: ClipPlayerData = {
+      clips: { [clipIndex(2, 0)]: defaultNoteClip(), [clipIndex(2, 1)]: defaultNoteClip() }, // scene 2 has content
+    } as ClipPlayerData;
+    const f = computeSingleGridFrame(data, {
+      top: mkTop('grid'),
+      armedRightAction: 'paste',
+      bufferLoaded: true,
+      bufferKind: 'clip',
+      blinkOn: true,
+    });
+    // Scene column dims (invalid class for a clip buffer) even where it has content.
+    expect(eqRgb(at(f, SCENE_CCS[2]), RGB_SCENE_DIM)).toBe(true);
+    // A loaded clip pad stays at its normal loaded colour (valid class, not dimmed).
+    // slot 2 at offset 0 → matrix row 2 → physical y = 7 - 2 = 5.
+    const dl0 = hexToRgb127(defaultLaneColorHex(0));
+    const loadedRgb = [Math.round(dl0[0] * 0.32), Math.round(dl0[1] * 0.32), Math.round(dl0[2] * 0.32)];
+    expect(eqRgb(at(f, padNote(0, 5)), loadedRgb as unknown as typeof RGB_OFF)).toBe(true);
   });
   it('grid: divPulse pulses the TARGET clip pad blue in time', () => {
     const shiftTop = mkTop('grid', { shift: { latched: true, held: false } });

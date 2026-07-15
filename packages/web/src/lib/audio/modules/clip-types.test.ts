@@ -73,6 +73,9 @@ import {
   automationValueAt,
   automationLinearAt,
   automationNextAfter,
+  pasteApplies,
+  readScene,
+  sceneWritePlan,
   type NoteClipRecord,
   type NoteEvent,
   type ClipPlayerData,
@@ -1059,5 +1062,88 @@ describe('readNoteRec — KEYS note-record state normalization', () => {
   });
   it('rejects a non-numeric lane/slot', () => {
     expect(readNoteRec({ noteRec: { lane: 'x', slot: 1 } } as unknown as ClipPlayerData)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SCENE copy/paste — the typed clipboard PURE core (pasteApplies + readScene +
+// sceneWritePlan) used by the Launchpad scene copy/paste. See launchpad-control.
+// ---------------------------------------------------------------------------
+function clipWithNoteHelper(step: number, midi: number): NoteClipRecord {
+  return { ...defaultNoteClip(), steps: [{ step, midi, velocity: 100, lengthSteps: 1 }] };
+}
+describe('scene copy/paste — pasteApplies (the 4-combo type gate)', () => {
+  it('applies ONLY when the buffer kind matches the target kind', () => {
+    expect(pasteApplies('scene', 'scene')).toBe(true); // scene→scene VALID
+    expect(pasteApplies('clip', 'clip')).toBe(true); // clip→clip VALID
+    expect(pasteApplies('scene', 'clip')).toBe(false); // scene→clip NO-OP
+    expect(pasteApplies('clip', 'scene')).toBe(false); // clip→scene NO-OP
+  });
+});
+
+describe('scene copy/paste — readScene (snapshot all 8 lanes at a slot)', () => {
+  it('reads every lane at a slot as a plain clone; empty lanes are null', () => {
+    const a = clipWithNoteHelper(1, 61);
+    const b = clipWithNoteHelper(2, 62);
+    const data = {
+      clips: {
+        [clipIndex(3, 0)]: a,
+        [clipIndex(3, 2)]: b,
+        [clipIndex(4, 1)]: clipWithNoteHelper(0, 60), // a DIFFERENT slot — must be ignored
+      },
+    };
+    const scene = readScene(data, 3);
+    expect(scene).toHaveLength(CLIP_LANES);
+    expect(scene[0]).toMatchObject({ kind: 'note', steps: [{ step: 1, midi: 61 }] });
+    expect(scene[1]).toBeNull(); // empty lane
+    expect(scene[2]).toMatchObject({ kind: 'note', steps: [{ step: 2, midi: 62 }] });
+    for (let lane = 3; lane < CLIP_LANES; lane++) expect(scene[lane]).toBeNull();
+  });
+
+  it('SEVERS live Y children (a plain clone, safe to re-parent)', () => {
+    const store = syncedStore<{ nodes: Record<string, { data: ClipPlayerData }> }>({ nodes: {} });
+    store.nodes['n'] = { data: { clips: { [clipIndex(0, 0)]: clipWithNoteHelper(0, 64) } } };
+    const scene = readScene(store.nodes['n']!.data, 0);
+    // A plain object — mutating it does not touch the live store.
+    (scene[0] as NoteClipRecord).steps.push({ step: 9, midi: 70 });
+    const live = (store.nodes['n']!.data.clips as Record<string, NoteClipRecord>)[String(clipIndex(0, 0))];
+    expect(live.steps).toHaveLength(1); // untouched
+  });
+
+  it('an empty slot reads as all nulls', () => {
+    expect(readScene({ clips: {} }, 5)).toEqual(new Array(CLIP_LANES).fill(null));
+  });
+});
+
+describe('scene copy/paste — sceneWritePlan (full-replace plan incl. deletes)', () => {
+  it('maps each lane to its target flat index + a plain-cloned value (null = delete)', () => {
+    const src = readScene(
+      { clips: { [clipIndex(2, 0)]: clipWithNoteHelper(1, 61), [clipIndex(2, 3)]: clipWithNoteHelper(2, 62) } },
+      2,
+    );
+    const plan = sceneWritePlan(10, src); // paste scene 2 → target slot 10
+    expect(plan).toHaveLength(CLIP_LANES);
+    for (let lane = 0; lane < CLIP_LANES; lane++) {
+      expect(plan[lane]!.index).toBe(clipIndex(10, lane));
+    }
+    expect(plan[0]!.value).toMatchObject({ kind: 'note', steps: [{ step: 1, midi: 61 }] });
+    expect(plan[3]!.value).toMatchObject({ kind: 'note', steps: [{ step: 2, midi: 62 }] });
+    expect(plan[1]!.value).toBeNull(); // empty source lane → delete target
+    expect(plan[7]!.value).toBeNull();
+  });
+
+  it('re-clones so the plan never shares refs with the source array', () => {
+    const src = readScene({ clips: { [clipIndex(0, 0)]: clipWithNoteHelper(0, 60) } }, 0);
+    const plan = sceneWritePlan(0, src);
+    expect(plan[0]!.value).not.toBe(src[0]); // a fresh clone
+    expect(plan[0]!.value).toEqual(src[0]); // but equal by value
+  });
+
+  it('an all-empty scene plans 8 deletes (clears the target)', () => {
+    const plan = sceneWritePlan(4, new Array(CLIP_LANES).fill(null));
+    expect(plan.every((p) => p.value === null)).toBe(true);
+    expect(plan.map((p) => p.index)).toEqual(
+      Array.from({ length: CLIP_LANES }, (_, lane) => clipIndex(4, lane)),
+    );
   });
 });

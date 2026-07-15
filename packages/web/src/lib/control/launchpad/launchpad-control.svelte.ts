@@ -149,8 +149,14 @@ import {
   clampSwing,
   MAX_SWING,
   isSwingCentered,
+  pasteApplies,
+  readScene,
+  sceneWritePlan,
   type ClipPlayerData,
+  type ClipRecord,
   type NoteClipRecord,
+  type CopyBuffer,
+  type CopyBufferKind,
   type NoteRecState,
 } from '$lib/audio/modules/clip-types';
 import { getLanePlayhead } from '$lib/audio/modules/clip-playhead';
@@ -249,9 +255,11 @@ let keysPrevStep = -1; // last serviced playhead step (edge-detect wrap/crossing
 let keysStopAtWrap = false; // overdub toggled OFF mid-record → finish this loop, then stop
 let keysOctaveShift = 0; // KEYS octave ± (semitones, multiples of 12) added to the keyboard root
 
-// Per-machine clip buffer (NOT synced).
-let clipBuffer: NoteClipRecord | null = null;
-let bufferSourceIndex: number | null = null; // which clip index is in the buffer (for the L turquoise glow)
+// Per-machine copy buffer (NOT synced) — a TYPED clipboard: one CLIP or a whole
+// SCENE (all 8 lanes' clips at a slot). Held as PLAIN deep-clones (never a live Y
+// child). LOCAL to this surface, exactly like the old single-clip buffer.
+let copyBuffer: CopyBuffer | null = null;
+let bufferSourceIndex: number | null = null; // clip-kind source index (L turquoise glow); null for a scene buffer
 
 // ── SINGLE-mode SHIFT (hybrid tap-latch OR hold) + tap-to-ARM (Grid-shift). ──
 // Effective shift = shiftLatched || shiftHeld. A SHORT tap of CC 98 (no armed
@@ -311,8 +319,26 @@ const DOUBLE_TAP_TICKS = 11;
  *  COPY-INDICATOR. (Tapping the COPY-INDICATOR pad clears it; the buffer also
  *  survives a re-bind otherwise, so this is the way to dismiss the glow.) */
 function clearBuffer(): void {
-  clipBuffer = null;
+  copyBuffer = null;
   bufferSourceIndex = null;
+}
+
+/** The buffered CLIP (buffer kind === 'clip'), else null. The single-clip paste
+ *  paths (pair deck, clip-view, editor, grid clip-pad target) read through this,
+ *  so a SCENE buffer NEVER pastes onto a single clip (clip→scene / scene→clip are
+ *  no-ops — the type gate). */
+function bufferClip(): NoteClipRecord | null {
+  return copyBuffer?.kind === 'clip' ? copyBuffer.clip : null;
+}
+/** True when ANY buffer (clip OR scene) is loaded — lights the COPY-INDICATOR /
+ *  the Paste button's pulse. */
+function bufferLoaded(): boolean {
+  return copyBuffer !== null;
+}
+/** The buffer kind ('clip' | 'scene'), or null when empty — drives the distinct
+ *  paste colour + the paste-arm target dimming. */
+function bufferKindOf(): CopyBufferKind | null {
+  return copyBuffer?.kind ?? null;
 }
 
 /** Reactive version — bump on bind/unbind so card UI re-derives. */
@@ -411,7 +437,7 @@ function start(): void {
   lastTapPrevQueued = null;
   lastTapWasPlaying = false;
   resetKeysState();
-  // NOTE: clipBuffer survives a re-bind (it's the machine's clipboard).
+  // NOTE: copyBuffer survives a re-bind (it's the machine's clipboard).
   setupLaunchpadUndo(); // launchpad-scoped, origin-tagged undo/redo (single mode)
   unsubKey = onKey(handleKey);
   unsubTick = getSchedulerClock().subscribe(renderLeds);
@@ -1506,7 +1532,19 @@ function handleShift(nodeId: string, s: 0 | 1): void {
     if (shortTap && !armConsumedSincePress) shiftLatched = !shiftLatched;
     shiftHeldSingle = false;
   }
-  if (!singleShiftEff() && armedRightAction) disarmGridArm(nodeId);
+  // Releasing the effective shift disarms a pending SHIFT-scoped arm (Clip-Div
+  // commits its preview; Len drops). COPY / PASTE stay armed on purpose — they
+  // are STICKY so the no-shift matrix can host the copy/paste TARGET: a clip pad
+  // (single-clip) OR a scene-launch button (whole scene). They auto-disarm on
+  // consume, the 4s timeout, or leaving Grid.
+  if (
+    !singleShiftEff() &&
+    armedRightAction &&
+    armedRightAction !== 'copy' &&
+    armedRightAction !== 'paste'
+  ) {
+    disarmGridArm(nodeId);
+  }
   renderLeds();
 }
 
@@ -1522,8 +1560,11 @@ function handleSingleGrid(nodeId: string, e: LaunchpadKeyEvent): void {
     // dark no-op (nothing to launch/create there).
     const clipIdx = gridPadToClipIndexScrolled(ev.x, ev.y, sceneScrollOffset);
     if (clipIdx === null) return;
-    // A pending Grid-shift arm consumes the next clip-pad tap.
-    if (shift && armedRightAction) {
+    // A pending arm consumes the next clip-pad tap → this pad is a CLIP target.
+    // Under shift ANY arm (copy/paste/clip-div/len) consumes here; with shift
+    // released only the STICKY copy/paste arms survive (clip-div/len disarmed on
+    // release), so a no-shift pad tap while armed is a single-clip copy/paste.
+    if (armedRightAction) {
       consumeGridArm(nodeId, clipIdx, data);
       return;
     }
@@ -1534,8 +1575,16 @@ function handleSingleGrid(nodeId: string, e: LaunchpadKeyEvent): void {
     if (ev.s !== 1) return;
     const sceneIndex = sceneIndexForCc(ev.cc);
     if (sceneIndex === null) return;
-    if (shift) handleGridShiftButton(nodeId, sceneIndex);
-    else handleSceneLaunch(nodeId, sceneIndex, data);
+    // Under shift the scene column is the grid-shift palette (arm/nudge/scroll).
+    if (shift) { handleGridShiftButton(nodeId, sceneIndex); return; }
+    // No-shift + a STICKY copy/paste arm → this scene-launch button is a WHOLE-
+    // SCENE target (copy that scene, or paste a scene buffer over it). Otherwise
+    // it is the normal scene launch.
+    if (armedRightAction === 'copy' || armedRightAction === 'paste') {
+      consumeSceneArm(nodeId, sceneIndex, data);
+      return;
+    }
+    handleSceneLaunch(nodeId, sceneIndex, data);
     return;
   }
 }
@@ -1662,13 +1711,13 @@ function scrollScenes(nodeId: string, delta: number): void {
  *  clears the buffer). Only one arm at a time. Paste requires a buffer. */
 function toggleGridArm(nodeId: string, action: GridArmAction): void {
   if (armedRightAction === action) {
-    if (action === 'copy' && clipBuffer !== null) clearBuffer();
+    if (action === 'copy' && bufferLoaded()) clearBuffer();
     disarmGridArm(nodeId);
     return;
   }
   // Switching arms → commit any pending Clip-Div preview from the previous arm.
   if (armedRightAction === 'clipDiv') commitDivPreview(nodeId);
-  if (action === 'paste' && clipBuffer === null) {
+  if (action === 'paste' && !bufferLoaded()) {
     // Nothing to paste → don't arm (the button stays its idle green).
     armedRightAction = null;
     divPreview = null;
@@ -1709,16 +1758,23 @@ function consumeGridArm(nodeId: string, clipIdx: number, data: ClipPlayerData | 
   armConsumedSincePress = true; // used shift → releasing it should NOT latch
   switch (armedRightAction) {
     case 'copy': {
+      // Copy a SINGLE clip onto the typed buffer (kind: 'clip').
       const c = clipAtIndex(data, clipIdx);
       if (c) {
-        clipBuffer = copyClip(c);
+        copyBuffer = { kind: 'clip', clip: copyClip(c) };
         bufferSourceIndex = clipIdx;
       }
       disarmGridArm(nodeId);
       break;
     }
     case 'paste': {
-      if (clipBuffer) writeClip(nodeId, copyClip(clipBuffer), clipIdx, { undoable: true });
+      // A clip pad is a CLIP target — applies only for a CLIP buffer (a SCENE
+      // buffer → scene→clip NO-OP, gated by pasteApplies). The buffer + the other
+      // clips stay untouched on a no-op.
+      const bc = bufferClip();
+      if (bc && copyBuffer && pasteApplies(copyBuffer.kind, 'clip')) {
+        writeClip(nodeId, copyClip(bc), clipIdx, { undoable: true });
+      }
       disarmGridArm(nodeId);
       break;
     }
@@ -1756,6 +1812,62 @@ function consumeGridArm(nodeId: string, clipIdx: number, data: ClipPlayerData | 
       disarmGridArm(nodeId);
       break;
   }
+}
+
+/** Consume a STICKY copy/paste arm on a SCENE-LAUNCH button (no-shift) → this is a
+ *  WHOLE-SCENE target. COPY snapshots the scroll-mapped scene (all 8 lanes' clips)
+ *  onto the typed buffer as PLAIN clones. PASTE full-REPLACES that scene from a
+ *  SCENE buffer (clip→scene is a NO-OP, gated by pasteApplies — buffer + targets
+ *  untouched). Either way the arm auto-disarms. Scroll-aware: the target slot is
+ *  slotForScene(sceneScrollOffset + sceneIndex). */
+function consumeSceneArm(
+  nodeId: string,
+  sceneIndex: number,
+  data: ClipPlayerData | undefined,
+): void {
+  lastTapClipIndex = -1; // an armed tap isn't a launch
+  armConsumedSincePress = true; // used shift to arm → its release must NOT latch
+  const slot = slotForScene(sceneScrollOffset + sceneIndex);
+  if (slot === null) { disarmGridArm(nodeId); return; } // scene out of range
+  if (armedRightAction === 'copy') {
+    copyBuffer = { kind: 'scene', clips: readScene(data, slot) };
+    bufferSourceIndex = null; // a scene has no single source pad
+  } else if (copyBuffer && pasteApplies(copyBuffer.kind, 'scene')) {
+    // pasteApplies(kind, 'scene') is true ONLY for a scene buffer — the `.kind`
+    // check narrows the union for TS; a clip buffer here is the clip→scene NO-OP.
+    if (copyBuffer.kind === 'scene') pasteSceneInto(nodeId, slot, copyBuffer.clips);
+  }
+  disarmGridArm(nodeId);
+}
+
+/** FULL-REPLACE a scene at `targetSlot` from a scene buffer's PLAIN clones, in ONE
+ *  origin-tagged transaction (→ a SINGLE undo step). Each of the 8 lanes is set to
+ *  its plain clone, or its key DELETED when the source lane was empty — so a lane
+ *  the source scene left empty EMPTIES the target lane. Whole-clip plain reassigns
+ *  (never a live Y splice), per the yjs-save-load discipline. */
+function pasteSceneInto(
+  nodeId: string,
+  targetSlot: number,
+  sceneClips: (ClipRecord | null)[],
+): void {
+  const plan = sceneWritePlan(targetSlot, sceneClips);
+  editData(
+    nodeId,
+    (d) => {
+      if (!d.clips) d.clips = {};
+      for (const { index, value } of plan) {
+        const key = String(index);
+        if (value === null) {
+          // Only delete a key that EXISTS — the syncedStore proxy's deleteProperty
+          // trap throws on a missing key. An already-empty target lane is a no-op.
+          if (d.clips[key] !== undefined && d.clips[key] !== null) delete d.clips[key];
+        } else {
+          d.clips[key] = value;
+        }
+      }
+    },
+    { undoable: true },
+  );
 }
 
 /** Nudge swing[selectedChannel] by ±SWING_STEP (clamped). selectedChannel = the
@@ -2124,17 +2236,20 @@ function handleL(nodeId: string, e: LaunchpadKeyEvent): void {
     if (copyHeld) {
       const c = clipAtIndex(data, clipIdx);
       if (c) {
-        clipBuffer = copyClip(c);
+        copyBuffer = { kind: 'clip', clip: copyClip(c) };
         bufferSourceIndex = clipIdx;
       }
       return;
     }
-    if (pasteHeld && clipBuffer) {
-      writeClip(nodeId, copyClip(clipBuffer), clipIdx);
+    // PASTE / PASTE-REV act only with a CLIP buffer loaded (a scene buffer is a
+    // no-op on a single clip); with no clip buffer the tap falls through to launch,
+    // exactly as before.
+    if (pasteHeld && bufferClip()) {
+      writeClip(nodeId, copyClip(bufferClip()!), clipIdx);
       return;
     }
-    if (pasteRevHeld && clipBuffer) {
-      writeClip(nodeId, reverseClipSteps(copyClip(clipBuffer)), clipIdx);
+    if (pasteRevHeld && bufferClip()) {
+      writeClip(nodeId, reverseClipSteps(copyClip(bufferClip()!)), clipIdx);
       return;
     }
     const lane = laneOf(clipIdx);
@@ -2294,10 +2409,11 @@ function handleREdit(nodeId: string, e: LaunchpadKeyEvent): void {
     } else if (act === 'follow') {
       toggleFollow(clip);
     } else if (act === 'copy') {
-      clipBuffer = copyClip(clip);
+      copyBuffer = { kind: 'clip', clip: copyClip(clip) };
       bufferSourceIndex = editClipIndex;
     } else if (act === 'paste') {
-      if (clipBuffer) writeClip(nodeId, copyClip(clipBuffer));
+      const bc = bufferClip();
+      if (bc) writeClip(nodeId, copyClip(bc));
     } else if (act === 'octUp') {
       editRowOffset += scaleSteps(clip.scale).length; // one octave = a scale's degrees
     } else if (act === 'octDown') {
@@ -2477,7 +2593,7 @@ function paintRRole(
         // SINGLE: FOLLOW gets a real pad on scene row 4 (CC 98 is the view
         // flip). Pair leaves row 4 dark — its FOLLOW is the CC-98 button.
         followSceneButton: deployment === 'single',
-        bufferLoaded: clipBuffer !== null, // lights the editor PASTE scene pad
+        bufferLoaded: bufferClip() !== null, // lights the editor PASTE scene pad (CLIP buffer)
       }));
       return;
     }
@@ -2491,7 +2607,7 @@ function paintRRole(
     pasteHeld,
     pasteRevHeld,
     nowHeld,
-    bufferArmed: clipBuffer !== null,
+    bufferArmed: bufferClip() !== null, // pair deck indicator = a CLIP buffer (pair can't paste a scene)
     recording: recordArmed(data),
     arrangeMode: arrangeMode(data),
     keysRecHeld,
@@ -2670,7 +2786,8 @@ function renderLeds(): void {
             blinkOn,
             recording: recordArmed(data),
             armedRightAction,
-            bufferLoaded: clipBuffer !== null,
+            bufferLoaded: bufferLoaded(),
+            bufferKind: bufferKindOf(),
             sceneScrollOffset,
             canScrollUp: sceneScrollOffset > 0,
             canScrollDown: sceneScrollOffset < maxSceneScrollOffset(highestContentScene(data)),
@@ -2776,7 +2893,7 @@ export function __test_resetBinding(): void {
   lastTapTick = 0;
   lastTapPrevQueued = null;
   lastTapWasPlaying = false;
-  clipBuffer = null;
+  copyBuffer = null;
   bufferSourceIndex = null;
   resetKeysState();
 }
@@ -2800,6 +2917,7 @@ export function __test_mode(): {
   sceneScrollOffset: number;
   followOn: boolean;
   bufferArmed: boolean;
+  bufferKind: CopyBufferKind | null;
   bufferSourceIndex: number | null;
   armedRightAction: GridArmAction | null;
   divPreview: { clipIndex: number; divIndex: number } | null;
@@ -2839,7 +2957,8 @@ export function __test_mode(): {
     editWindowStart,
     sceneScrollOffset,
     followOn,
-    bufferArmed: clipBuffer !== null,
+    bufferArmed: bufferLoaded(),
+    bufferKind: bufferKindOf(),
     bufferSourceIndex,
     armedRightAction,
     divPreview,
@@ -2867,4 +2986,10 @@ export function __test_mode(): {
 export function __test_setDeployment(d: 'pair' | 'single', view: SingleView = 'grid'): void {
   deployment = d;
   singleView = view;
+}
+
+/** Test seam: the current typed copy buffer (clip | scene | null) — so a test can
+ *  assert what a scene COPY captured without going through a paste. */
+export function __test_copyBuffer(): CopyBuffer | null {
+  return copyBuffer;
 }
