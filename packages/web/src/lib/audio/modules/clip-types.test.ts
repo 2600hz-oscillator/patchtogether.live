@@ -57,9 +57,23 @@ import {
   isSwingCentered,
   swingStepOffset,
   MAX_SWING,
+  MAX_AUTOMATION_TRACKS,
+  coerceAutomationEvent,
+  coerceAutomationTrack,
+  clampMidiChannel,
+  clampMidiCc,
+  sameAutomationTarget,
+  defaultAutomationClip,
+  mergeAutomationOverdub,
+  removeAutomationTrack,
+  findAutomationTrack,
+  automationValueAt,
   type NoteClipRecord,
   type NoteEvent,
   type ClipPlayerData,
+  type AutomationClipRecord,
+  type AutomationEvent,
+  type AutomationTrack,
 } from './clip-types';
 
 describe('dimensions', () => {
@@ -131,6 +145,187 @@ describe('clampStepCount', () => {
     expect(clampStepCount(128)).toBe(128);
     expect(clampStepCount(999)).toBe(MAX_CLIP_STEPS);
     expect(clampStepCount(NaN)).toBe(DEFAULT_CLIP_STEPS);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AUTOMATION lane (task #183) — the fork-independent record layer
+// ---------------------------------------------------------------------------
+
+const tgt = (nodeId: string, paramId: string) => ({ nodeId, paramId });
+
+describe('automation: clampMidiChannel / clampMidiCc', () => {
+  it('clamps channel to 0..15 and cc to 0..127, non-finite ⇒ 0', () => {
+    expect(clampMidiChannel(-1)).toBe(0);
+    expect(clampMidiChannel(0)).toBe(0);
+    expect(clampMidiChannel(15)).toBe(15);
+    expect(clampMidiChannel(99)).toBe(15);
+    expect(clampMidiChannel(NaN)).toBe(0);
+    expect(clampMidiCc(-5)).toBe(0);
+    expect(clampMidiCc(64)).toBe(64);
+    expect(clampMidiCc(127)).toBe(127);
+    expect(clampMidiCc(999)).toBe(127);
+    expect(clampMidiCc(Infinity)).toBe(0);
+  });
+});
+
+describe('automation: coerceAutomationEvent', () => {
+  it('accepts finite step≥0 and clamps value to 0..1', () => {
+    expect(coerceAutomationEvent({ step: 0, value: 0.5 })).toEqual({ step: 0, value: 0.5 });
+    expect(coerceAutomationEvent({ step: 3.5, value: 2 })).toEqual({ step: 3.5, value: 1 });
+    expect(coerceAutomationEvent({ step: 1, value: -1 })).toEqual({ step: 1, value: 0 });
+  });
+  it('rejects negative/NaN step or non-finite value', () => {
+    expect(coerceAutomationEvent({ step: -1, value: 0.5 })).toBeNull();
+    expect(coerceAutomationEvent({ step: NaN, value: 0.5 })).toBeNull();
+    expect(coerceAutomationEvent({ step: 0, value: NaN })).toBeNull();
+    expect(coerceAutomationEvent(null)).toBeNull();
+  });
+});
+
+describe('automation: coerceAutomationTrack', () => {
+  it('normalizes a track: clamps midi identity, step-sorts + filters events', () => {
+    const t = coerceAutomationTrack({
+      target: tgt('nodeA', 'cutoff'),
+      channel: 99,
+      cc: 500,
+      events: [
+        { step: 2, value: 0.2 },
+        { step: 0, value: 0.9 },
+        { step: 1, value: 'bad' }, // dropped
+      ],
+    });
+    expect(t).not.toBeNull();
+    expect(t!.channel).toBe(15);
+    expect(t!.cc).toBe(127);
+    expect(t!.events).toEqual([
+      { step: 0, value: 0.9 },
+      { step: 2, value: 0.2 },
+    ]);
+  });
+  it('rejects a track with an unusable target', () => {
+    expect(coerceAutomationTrack({ target: { nodeId: '', paramId: 'x' }, channel: 0, cc: 0 })).toBeNull();
+    expect(coerceAutomationTrack({ target: { nodeId: 'a' }, channel: 0, cc: 0 })).toBeNull();
+    expect(coerceAutomationTrack({ channel: 0, cc: 0 })).toBeNull();
+  });
+});
+
+describe('automation: coerceClipRecord kind=automation', () => {
+  it('normalizes an automation clip and enforces MAX_AUTOMATION_TRACKS', () => {
+    expect(MAX_AUTOMATION_TRACKS).toBe(16);
+    const tracks = Array.from({ length: 20 }, (_, i) => ({
+      target: tgt('n' + i, 'p'),
+      channel: i,
+      cc: i,
+      events: [{ step: 0, value: 0.5 }],
+    }));
+    const c = coerceClipRecord({ kind: 'automation', lengthSteps: 32, tracks });
+    expect(c?.kind).toBe('automation');
+    const rec = c as AutomationClipRecord;
+    expect(rec.lengthSteps).toBe(32);
+    // capped at the documented limit
+    expect(rec.tracks.length).toBe(MAX_AUTOMATION_TRACKS);
+    expect(rec.loop).toBe(true);
+  });
+  it('drops malformed tracks before the cap', () => {
+    const c = coerceClipRecord({
+      kind: 'automation',
+      lengthSteps: 16,
+      tracks: [
+        { target: tgt('good', 'p'), channel: 0, cc: 1, events: [] },
+        { target: { nodeId: '' }, channel: 0, cc: 0 }, // dropped
+      ],
+    }) as AutomationClipRecord;
+    expect(c.tracks.length).toBe(1);
+    expect(c.tracks[0]!.target.nodeId).toBe('good');
+  });
+});
+
+describe('automation: defaultAutomationClip', () => {
+  it('is an empty looping automation clip', () => {
+    const c = defaultAutomationClip();
+    expect(c.kind).toBe('automation');
+    expect(c.tracks).toEqual([]);
+    expect(c.lengthSteps).toBe(DEFAULT_CLIP_STEPS);
+    expect(c.loop).toBe(true);
+  });
+});
+
+describe('automation: mergeAutomationOverdub (punch-in)', () => {
+  it('replaces only the [start,end) window, preserves events outside it', () => {
+    // existing spans steps 0..3; overdub punches the [1,2) window.
+    const existing: AutomationEvent[] = [
+      { step: 0, value: 0.1 },
+      { step: 1, value: 0.2 },
+      { step: 1.5, value: 0.25 },
+      { step: 2, value: 0.3 },
+      { step: 3, value: 0.4 },
+    ];
+    const incoming: AutomationEvent[] = [{ step: 1.2, value: 0.9 }];
+    const merged = mergeAutomationOverdub(existing, incoming, 1, 2);
+    expect(merged).toEqual([
+      { step: 0, value: 0.1 }, // before window — kept
+      { step: 1.2, value: 0.9 }, // punched in
+      { step: 2, value: 0.3 }, // window is half-open: step 2 is OUTSIDE, kept
+      { step: 3, value: 0.4 }, // after window — kept
+    ]);
+    // the two existing events at step 1 and 1.5 (inside [1,2)) were dropped
+  });
+  it('handles a reversed window + clamps incoming values', () => {
+    const merged = mergeAutomationOverdub(
+      [{ step: 0.5, value: 0.5 }],
+      [{ step: 0.7, value: 3 }],
+      1,
+      0, // reversed → normalized to [0,1)
+    );
+    expect(merged).toEqual([{ step: 0.7, value: 1 }]);
+  });
+});
+
+describe('automation: removeAutomationTrack + findAutomationTrack', () => {
+  const rec: AutomationClipRecord = {
+    kind: 'automation',
+    lengthSteps: 16,
+    loop: true,
+    tracks: [
+      { target: tgt('a', 'cutoff'), channel: 0, cc: 1, events: [] },
+      { target: tgt('b', 'res'), channel: 1, cc: 2, events: [] },
+    ],
+  };
+  it('drops exactly the matching target, leaves the rest', () => {
+    const out = removeAutomationTrack(rec, tgt('a', 'cutoff'));
+    expect(out.tracks.length).toBe(1);
+    expect(out.tracks[0]!.target).toEqual(tgt('b', 'res'));
+    // original untouched (pure)
+    expect(rec.tracks.length).toBe(2);
+  });
+  it('no-op when target not present', () => {
+    expect(removeAutomationTrack(rec, tgt('z', 'nope')).tracks.length).toBe(2);
+  });
+  it('findAutomationTrack matches by (nodeId, paramId)', () => {
+    expect(findAutomationTrack(rec, tgt('b', 'res'))?.cc).toBe(2);
+    expect(findAutomationTrack(rec, tgt('a', 'res'))).toBeUndefined();
+    expect(sameAutomationTarget(tgt('a', 'x'), tgt('a', 'x'))).toBe(true);
+    expect(sameAutomationTarget(tgt('a', 'x'), tgt('a', 'y'))).toBe(false);
+  });
+});
+
+describe('automation: automationValueAt (hold-last playback read)', () => {
+  const events: AutomationEvent[] = [
+    { step: 0, value: 0.1 },
+    { step: 2, value: 0.5 },
+    { step: 4, value: 0.9 },
+  ];
+  it('holds the last breakpoint at or before the step', () => {
+    expect(automationValueAt(events, 0)).toBe(0.1);
+    expect(automationValueAt(events, 1.9)).toBe(0.1);
+    expect(automationValueAt(events, 2)).toBe(0.5);
+    expect(automationValueAt(events, 3.5)).toBe(0.5);
+    expect(automationValueAt(events, 100)).toBe(0.9);
+  });
+  it('returns null before the first breakpoint (param left at live value)', () => {
+    expect(automationValueAt([{ step: 2, value: 0.5 }], 1)).toBeNull();
+    expect(automationValueAt([], 5)).toBeNull();
   });
 });
 

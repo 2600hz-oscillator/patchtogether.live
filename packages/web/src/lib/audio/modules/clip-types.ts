@@ -67,7 +67,7 @@ export function slotOf(index: number): number {
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-export type ClipKind = 'note' | 'audio' | 'snapshot';
+export type ClipKind = 'note' | 'audio' | 'snapshot' | 'automation';
 
 /** One note in a note clip. Multiple events may share a `step` (a chord). */
 export interface NoteEvent {
@@ -119,7 +119,63 @@ export interface SnapshotClipRecord extends ClipBase {
   snapshot: Record<string, unknown>;
 }
 
-export type ClipRecord = NoteClipRecord | AudioClipRecord | SnapshotClipRecord;
+// ---------------------------------------------------------------------------
+// AUTOMATION clip — the "automation lane" (task #183)
+// ---------------------------------------------------------------------------
+//
+// An automation clip records CONTROL moves (param automation) that replay with
+// the clip, alongside the note lanes. MVP: ONE automation lane per clip player
+// (owner: "it's fine if a clip player can't have more than one automation lane
+// for now"), but that one lane automates MULTIPLE mapped params — each param is
+// its own AutomationTrack. Recording writes breakpoints; playback drives the
+// mapped param TRANSIENTLY (never writes the live Y.Doc — see
+// `cv-modulation-live-store-write-storm` discipline; recording is the only
+// writer, playback only reads + applies).
+
+/** MVP automation limit: one MIDI channel per automated param → 16 params max.
+ *  DOCUMENTED + enforced at the coerce boundary (owner: "assign a midi channel
+ *  to anything mapped ... this may impose a limit ... the limit must be KNOWN
+ *  and documented"). Widening this is a later, deliberate change. */
+export const MAX_AUTOMATION_TRACKS = 16;
+
+/** A single automation breakpoint: a normalized param value at a step position.
+ *  `step` may be fractional for sub-step resolution; `value` is 0..1 in the
+ *  param's normalized space (the same 0..1 a Fader/knob reports), so the track
+ *  is independent of the param's real min/max. */
+export interface AutomationEvent {
+  step: number; // 0..lengthSteps (fractional allowed)
+  value: number; // normalized 0..1 in param space
+}
+
+/** Stable reference to the automated control — a (nodeId, paramId) pair. */
+export interface AutomationTarget {
+  nodeId: string;
+  paramId: string;
+}
+
+/** One automated parameter's breakpoint track. `channel`/`cc` are the MIDI
+ *  identity the record + replay ride (reused from an existing MIDI/Electra map
+ *  when the control already has one, else assigned from the automation pool by
+ *  the recording layer — this record only STORES + validates them). */
+export interface AutomationTrack {
+  target: AutomationTarget;
+  channel: number; // MIDI channel 0..15
+  cc: number; // MIDI CC 0..127
+  events: AutomationEvent[]; // step-ordered; playback holds the last value
+}
+
+/** The automation clip: many param tracks, looping with the clip length. */
+export interface AutomationClipRecord extends ClipBase {
+  kind: 'automation';
+  lengthSteps: number;
+  tracks: AutomationTrack[];
+}
+
+export type ClipRecord =
+  | NoteClipRecord
+  | AudioClipRecord
+  | SnapshotClipRecord
+  | AutomationClipRecord;
 
 /** Persisted on node.data. Note clips are tiny so no caps in v1. */
 export interface ClipPlayerData {
@@ -432,8 +488,146 @@ export function coerceClipRecord(raw: unknown): ClipRecord | null {
     if (typeof r.gain === 'number') out.gain = r.gain;
     return out;
   }
+  if (r.kind === 'automation') {
+    const lengthSteps = clampStepCount(Number(r.lengthSteps));
+    const rawTracks = Array.isArray(r.tracks) ? r.tracks : [];
+    const tracks = rawTracks
+      .map(coerceAutomationTrack)
+      .filter((t): t is AutomationTrack => t !== null)
+      // Enforce the DOCUMENTED cap at the data boundary (MAX_AUTOMATION_TRACKS).
+      .slice(0, MAX_AUTOMATION_TRACKS);
+    const out: AutomationClipRecord = { kind: 'automation', lengthSteps, tracks, loop };
+    if (typeof r.color === 'number') out.color = r.color;
+    if (typeof r.name === 'string') out.name = r.name;
+    if (typeof r.gain === 'number') out.gain = r.gain;
+    return out;
+  }
   if (r.kind === 'audio' || r.kind === 'snapshot') return r as unknown as ClipRecord;
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// AUTOMATION helpers — PURE (record-layer building blocks; the Y.Doc callers
+// mutate in place per `yjs-save-load-real-ydoc`, these just compute values)
+// ---------------------------------------------------------------------------
+
+/** Clamp a raw value into a valid AutomationEvent, or null. */
+export function coerceAutomationEvent(raw: unknown): AutomationEvent | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const e = raw as Record<string, unknown>;
+  const step = Number(e.step);
+  const value = Number(e.value);
+  if (!Number.isFinite(step) || step < 0) return null;
+  if (!Number.isFinite(value)) return null;
+  return { step, value: Math.max(0, Math.min(1, value)) };
+}
+
+/** Clamp a raw object into a valid AutomationTrack, or null (a track with an
+ *  unusable target is dropped). Events are coerced, filtered, and step-sorted. */
+export function coerceAutomationTrack(raw: unknown): AutomationTrack | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const t = raw as Record<string, unknown>;
+  const target = t.target as Record<string, unknown> | undefined;
+  const nodeId = target?.nodeId;
+  const paramId = target?.paramId;
+  if (typeof nodeId !== 'string' || !nodeId) return null;
+  if (typeof paramId !== 'string' || !paramId) return null;
+  const channel = clampMidiChannel(Number(t.channel));
+  const cc = clampMidiCc(Number(t.cc));
+  const events = (Array.isArray(t.events) ? t.events : [])
+    .map(coerceAutomationEvent)
+    .filter((e): e is AutomationEvent => e !== null)
+    .sort((a, b) => a.step - b.step);
+  return { target: { nodeId, paramId }, channel, cc, events };
+}
+
+/** Clamp to a valid MIDI channel 0..15 (non-finite ⇒ 0). */
+export function clampMidiChannel(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(15, Math.round(n)));
+}
+
+/** Clamp to a valid MIDI CC 0..127 (non-finite ⇒ 0). */
+export function clampMidiCc(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(127, Math.round(n)));
+}
+
+/** True when two targets reference the same (nodeId, paramId) control. */
+export function sameAutomationTarget(a: AutomationTarget, b: AutomationTarget): boolean {
+  return a.nodeId === b.nodeId && a.paramId === b.paramId;
+}
+
+/** Empty automation clip of a given length (defaults to DEFAULT_CLIP_STEPS). */
+export function defaultAutomationClip(lengthSteps = DEFAULT_CLIP_STEPS): AutomationClipRecord {
+  return { kind: 'automation', lengthSteps: clampStepCount(lengthSteps), tracks: [], loop: true };
+}
+
+/**
+ * OVERDUB merge (punch-in): replace a track's events inside the half-open
+ * re-recorded window [windowStart, windowEnd) with `incoming`, keeping every
+ * existing event OUTSIDE the window. This is the owner's "overdub must work" —
+ * a second pass punches over only the time it covers, preserving the rest.
+ *
+ * Returns a NEW step-sorted array (callers splice it into the live Y track in
+ * place). `incoming` need not be pre-filtered to the window; only existing
+ * events are windowed — incoming events are all kept (a recorder emits only
+ * what it captured during the pass).
+ */
+export function mergeAutomationOverdub(
+  existing: readonly AutomationEvent[],
+  incoming: readonly AutomationEvent[],
+  windowStart: number,
+  windowEnd: number,
+): AutomationEvent[] {
+  const lo = Math.min(windowStart, windowEnd);
+  const hi = Math.max(windowStart, windowEnd);
+  const kept = existing.filter((e) => e.step < lo || e.step >= hi);
+  const merged = kept.concat(
+    incoming.map((e) => ({ step: e.step, value: Math.max(0, Math.min(1, e.value)) })),
+  );
+  merged.sort((a, b) => a.step - b.step);
+  return merged;
+}
+
+/**
+ * Remove ONE param's automation from a record (owner: right-click a mapped
+ * thing → "Remove automation" deletes THAT param's data only). Returns a NEW
+ * record with the matching track dropped; other tracks untouched. The Y.Doc
+ * caller mirrors this by splicing the track out in place.
+ */
+export function removeAutomationTrack(
+  rec: AutomationClipRecord,
+  target: AutomationTarget,
+): AutomationClipRecord {
+  return { ...rec, tracks: rec.tracks.filter((t) => !sameAutomationTarget(t.target, target)) };
+}
+
+/** Find a track for a target (or undefined). Used by the recorder to reuse an
+ *  existing track (overdub) vs. create a new one. */
+export function findAutomationTrack(
+  rec: AutomationClipRecord,
+  target: AutomationTarget,
+): AutomationTrack | undefined {
+  return rec.tracks.find((t) => sameAutomationTarget(t.target, target));
+}
+
+/**
+ * PLAYBACK read — the normalized value a track holds at `step` (hold-last:
+ * the value of the most recent event with `event.step <= step`). Returns null
+ * when no event precedes `step` (the param is left at its live value until the
+ * first breakpoint). `events` must be step-sorted (coerce/merge guarantee it).
+ */
+export function automationValueAt(
+  events: readonly AutomationEvent[],
+  step: number,
+): number | null {
+  let val: number | null = null;
+  for (const e of events) {
+    if (e.step <= step) val = e.value;
+    else break;
+  }
+  return val;
 }
 
 export function clampStepCount(n: number): number {
