@@ -24,8 +24,11 @@ describe('polyseqz: module def', () => {
     expect(length?.max).toBe(STEP_COUNT);
   });
 
-  it('voice lane count matches the polyPitchGate cable', () => {
-    expect(POLYSEQZ_VOICE_LANES).toBe(POLY_CHANNEL_PAIRS);
+  it('voice lane count fits within the polyPitchGate cable', () => {
+    // The chord VOICING width is musical (5) and must not exceed the cable
+    // width (POLY_CHANNEL_PAIRS, 16) — widening the cable for higher-polyphony
+    // sources must NOT turn a POLYSEQZ triad into a 16-note octave stack.
+    expect(POLYSEQZ_VOICE_LANES).toBeLessThanOrEqual(POLY_CHANNEL_PAIRS);
     expect(POLYSEQZ_VOICE_LANES).toBe(VOICE_LANES);
   });
 });
