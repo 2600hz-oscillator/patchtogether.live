@@ -21,7 +21,13 @@
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
-import { patch as livePatch } from '$lib/graph/store';
+import type { ModuleNode } from '$lib/graph/types';
+import { patch as livePatch, ydoc } from '$lib/graph/store';
+import { getActiveEngine } from '$lib/audio/engine-ref';
+import { resolveSurfaceParam } from '$lib/graph/control-surface-params';
+import { valueToFrac, fracToValue } from '$lib/electra/curve';
+import { AutomationController } from './clip-automation-controller';
+import type { RampPoint } from './clip-automation-engine';
 import { createPolySender, POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
 import { createVoiceAllocator, type VoiceAllocator } from '$lib/audio/poly-alloc';
 import { getSchedulerClock } from '$lib/audio/scheduler-clock';
@@ -39,7 +45,11 @@ import {
   laneMuted,
   laneSwing,
   swingStepOffset,
+  isAutomationRecorder,
   type ClipPlayerData,
+  type AutomationClipRecord,
+  type AutomationTarget,
+  type AutomationTrack,
 } from './clip-types';
 import { clipDivIndex, laneStepDur, RATE_DEFAULT_INDEX } from './clip-clock';
 import {
@@ -296,6 +306,91 @@ export const clipplayerDef: AudioModuleDef = {
       if (!live.data) live.data = {};
       mut(live.data as ClipPlayerData);
     }
+
+    // ─────────────────────────── AUTOMATION LANE ────────────────────────────
+    // One AutomationController per clip-player node (task #183). It composes the
+    // pure record/playback cores with the INJECTED side effects below:
+    //   - readNorm  : the STORE tap (mount-independent, modulation-free) — the
+    //                 resolved surface param's live value, normalized curve-aware.
+    //   - curve/unitNorm: the target ParamDef's curve + one-unit size (discrete).
+    //   - drive     : PLAYBACK — schedule transient ramps via engine.scheduleParam
+    //                 (denormalized curve-aware); touches NO Y.Doc.
+    //   - commit    : RECORD punch-out — one whole-clip PLAIN reassign into
+    //                 d.clips[String(clipIndex(slot,lane))] (never a live splice).
+    // `autoArmed` mirrors the synced arm flag onto the controller (recorder
+    // client only); `automationRecordTarget` names the (slot,lane) the current
+    // recordTick pass commits into (set right before each recordTick call).
+    let autoArmed = false;
+    let automationRecordTarget: { slot: number; lane: number } | null = null;
+
+    /** The LIVE target node for an automation track's (nodeId,paramId). */
+    function targetNode(target: AutomationTarget): ModuleNode | undefined {
+      return livePatch.nodes[target.nodeId] as ModuleNode | undefined;
+    }
+    /** The resolved surface param (def + live get/set) for a target, or null. */
+    function resolveTarget(target: AutomationTarget) {
+      return resolveSurfaceParam(targetNode(target), target.paramId);
+    }
+
+    const controller = new AutomationController({
+      // STORE tap → normalized 0..1 (curve-aware). NOT engine.readParam — that
+      // double-applies live CV; recording must capture the store/knob value.
+      readNorm(target: AutomationTarget): number | null {
+        const r = resolveTarget(target);
+        if (!r) return null;
+        return valueToFrac(r.get(), r.def.min, r.def.max, r.def.curve);
+      },
+      curve(target: AutomationTarget): string | undefined {
+        return resolveTarget(target)?.def.curve;
+      },
+      unitNorm(target: AutomationTarget): number | undefined {
+        const def = resolveTarget(target)?.def;
+        if (!def) return undefined;
+        return def.curve === 'discrete' ? 1 / Math.max(1, def.max - def.min) : undefined;
+      },
+      // PLAYBACK — transient, ZERO Yjs. Denormalize each ramp point (curve-aware)
+      // and schedule it on the target param at its audio time via the engine's
+      // future-time seam. No engine / no def ⇒ silently skip (nothing to drive).
+      drive(target: AutomationTarget, points: RampPoint[]): void {
+        const engine = getActiveEngine();
+        const node = targetNode(target);
+        const def = resolveTarget(target)?.def;
+        if (!engine || !node || !def) return;
+        for (const p of points) {
+          const v = fracToValue(p.value, def.min, def.max, def.curve);
+          engine.scheduleParam(node, target.paramId, v, p.at, p.ramp);
+        }
+      },
+      // RECORD commit — ONE whole-clip PLAIN reassign (never a live Y.Array
+      // splice). Mirrors the card/monome clip-commit pattern (deep-cloned plain
+      // tracks/events). Targets the (slot,lane) captured for this pass.
+      commit(tracks: AutomationTrack[]): void {
+        const t = automationRecordTarget;
+        if (!t) return;
+        const rec = readClip(liveData(), clipIndex(t.slot, t.lane));
+        if (!rec || rec.kind !== 'automation') return;
+        const plain: AutomationClipRecord = {
+          kind: 'automation',
+          lengthSteps: rec.lengthSteps,
+          loop: rec.loop,
+          tracks: tracks.map((tr) => {
+            const out: AutomationTrack = {
+              target: { nodeId: tr.target.nodeId, paramId: tr.target.paramId },
+              events: tr.events.map((e) => ({ step: e.step, value: e.value })),
+            };
+            if (tr.interp) out.interp = tr.interp;
+            return out;
+          }),
+        };
+        if (typeof rec.color === 'number') plain.color = rec.color;
+        if (typeof rec.name === 'string') plain.name = rec.name;
+        if (typeof rec.gain === 'number') plain.gain = rec.gain;
+        writeData((d) => {
+          if (!d.clips) d.clips = {};
+          d.clips[String(clipIndex(t.slot, t.lane))] = plain;
+        });
+      },
+    });
 
     // --- SONG MODE helpers ---
     function clipMode(): ClipPlayMode {
@@ -639,7 +734,31 @@ export const clipplayerDef: AudioModuleDef = {
       const ln = lanes[L];
       if (ln.active === null) return 1;
       const clip = readClip(liveData(), clipIndex(ln.active, L));
-      return clip && clip.kind === 'note' ? Math.max(1, clip.lengthSteps) : 1;
+      // Both NOTE and AUTOMATION clips loop over their own lengthSteps; audio /
+      // snapshot shells still fall back to a single step.
+      return clip && (clip.kind === 'note' || clip.kind === 'automation')
+        ? Math.max(1, clip.lengthSteps)
+        : 1;
+    }
+
+    /** The AUDIBLE fractional-step playhead of lane L (integer display step +
+     *  the fraction elapsed into it, from the audio-time schedule). Feeds the
+     *  automation recorder its quantized punch playhead. Returns -1 when stopped
+     *  or nothing has sounded yet. `laneDur` is the lane's current step length. */
+    function laneFracStep(L: number, laneDur: number): number {
+      const ln = lanes[L];
+      if (ln.active === null) return -1;
+      let best = -1;
+      let bestT = -Infinity;
+      for (const e of ln.sched) {
+        if (e.t <= ctx.currentTime && e.t > bestT) {
+          bestT = e.t;
+          best = e.idx;
+        }
+      }
+      if (best < 0) return -1;
+      const frac = laneDur > 0 ? Math.max(0, Math.min(1, (ctx.currentTime - bestT) / laneDur)) : 0;
+      return best + frac;
     }
 
     function tick(): void {
@@ -757,6 +876,20 @@ export const clipplayerDef: AudioModuleDef = {
         // the keys sound even with the transport STOPPED.
         serviceAudition();
 
+        // AUTOMATION ARM reconcile (single-writer): mirror the synced arm flag
+        // onto the controller — but ONLY on the designated recorder client
+        // (isAutomationRecorder). Non-recorder peers never arm, so they never
+        // record; they still PLAY the automation (playbackStep above). Runs every
+        // tick, even stopped, so an arm/disarm toggle is honored immediately.
+        const wantRecord = isAutomationRecorder(d0, ydoc.clientID);
+        if (wantRecord && !autoArmed) {
+          controller.arm();
+          autoArmed = true;
+        } else if (!wantRecord && autoArmed) {
+          controller.disarm();
+          autoArmed = false;
+        }
+
         if (!running) return;
 
         // Base grid from TIMELORDE bpm + the global STEP param; each lane then
@@ -788,7 +921,22 @@ export const clipplayerDef: AudioModuleDef = {
             // grid (byte-identical to the un-swung schedule). The grid recurrence
             // (nextStepTime += laneDur) is unchanged so pairs stay beat-locked.
             const emitAt = ln.nextStepTime + swingStepOffset(ln.stepIndex, swing, laneDur);
-            emitLaneStep(L, ln.stepIndex, emitAt, laneDur);
+            // AUTOMATION clip: drive each track's param transiently (zero Yjs)
+            // through the SAME per-lane step schedule the notes use, so it stays
+            // sample-accurate + time-aligned. The note path (emitLaneStep) is
+            // untouched and still owns 'note' clips — automation is additive.
+            const activeClip = readClip(d0, clipIndex(ln.active, L));
+            if (activeClip?.kind === 'automation') {
+              // Advance the visual playhead ring (as emitLaneStep does) so the
+              // card/grid + the record fractional playhead track this lane.
+              ln.sched.push({ t: emitAt, idx: ln.stepIndex });
+              if (ln.sched.length > 32) ln.sched.shift();
+              for (const track of activeClip.tracks) {
+                controller.playbackStep(track, ln.stepIndex, laneDur, emitAt);
+              }
+            } else {
+              emitLaneStep(L, ln.stepIndex, emitAt, laneDur);
+            }
             const nextIdx = (ln.stepIndex + 1) % len;
             const nextStart = ln.nextStepTime + laneDur;
             if (nextIdx === 0) {
@@ -803,6 +951,27 @@ export const clipplayerDef: AudioModuleDef = {
             }
             ln.nextStepTime = nextStart;
             ln.stepIndex = nextIdx;
+          }
+        }
+
+        // AUTOMATION RECORD sample (single-writer). Once per tick, on the
+        // recorder client only, feed the controller the audible fractional
+        // playhead of the FIRST lane playing an automation clip. The controller
+        // owns arm→punch-in→capture→punch-out→commit; non-recorder peers never
+        // reach here (autoArmed stays false), so a pass commits exactly once.
+        if (autoArmed) {
+          for (let L = 0; L < LANES; L++) {
+            const ln = lanes[L];
+            if (ln.active === null) continue;
+            const clip = readClip(d0, clipIndex(ln.active, L));
+            if (clip?.kind !== 'automation') continue;
+            const laneDur = laneStepDur(stepDur, ln.divIndex);
+            const frac = laneFracStep(L, laneDur);
+            if (frac < 0) break; // nothing has sounded on this lane yet
+            const len = Math.max(1, clip.lengthSteps);
+            automationRecordTarget = { slot: ln.active, lane: L };
+            controller.recordTick(clip, Math.min(frac, len), len);
+            break; // MVP: one automation recorder lane per node
           }
         }
       } catch (err) {
@@ -863,6 +1032,7 @@ export const clipplayerDef: AudioModuleDef = {
       },
       dispose() {
         alive = false;
+        controller.disarm(); // drop any in-flight automation record pass
         clearPlayheads(nodeId);
         clearAudition(nodeId);
         if (unsubscribeTick) {

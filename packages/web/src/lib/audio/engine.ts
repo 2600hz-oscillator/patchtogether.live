@@ -25,6 +25,17 @@ export interface AudioDomainNodeHandle {
   /** Apply a param value (fader change) to this node. Domain-specific routing. */
   setParam(paramId: string, value: number): void;
   /**
+   * Optional: schedule a param write at a FUTURE audio time (automation
+   * playback). Unlike `setParam` — which lands at `ctx.currentTime` — this uses
+   * `setValueAtTime(value, atTime)` (hard step, `ramp=false`) or
+   * `linearRampToValueAtTime(value, atTime)` (smooth, `ramp=true`) so the
+   * clip-automation lane can queue sample-accurate ramps ahead of the scheduler
+   * tick. A module implements this when it exposes a schedulable AudioParam;
+   * when omitted the AudioEngine falls back to the param's CV-target AudioParam
+   * (`inputs[paramId].param`), else an immediate `setParam`. Touches NO Y.Doc.
+   */
+  scheduleParam?(paramId: string, value: number, atTime: number, ramp: boolean): void;
+  /**
    * Read the LIVE current value of a param (D14 motorized fader convention).
    * Returns the AudioParam.value which includes any CV modulation from
    * connected nodes — so the fader UI can visually track LFOs, envelopes, etc.
@@ -106,6 +117,9 @@ export interface DomainEngine {
   addEdge(edge: Edge): void;
   removeEdge(edgeId: string): void;
   setParam(nodeId: string, paramId: string, value: number): void;
+  /** Optional: schedule a param write at a future audio time (see the handle's
+   *  `scheduleParam`). Only AudioEngine implements this today. */
+  scheduleParam?(nodeId: string, paramId: string, value: number, atTime: number, ramp: boolean): void;
   readParam(nodeId: string, paramId: string): number | undefined;
   /** Optional: most-recent sample at a per-port modulator-tap analyser.
    *  Only AudioEngine implements this today. Card visualizers call
@@ -566,6 +580,44 @@ export class AudioEngine implements DomainEngine {
     // Keep the LUT-bake knob cache in sync so a future addEdge centres the
     // sweep on the user's CURRENT knob position. (LUT hot-rebuild for
     // already-attached cables is a follow-up; cf. attachCvScale notes.)
+    this.knobValues.set(this.knobKey(nodeId, paramId), value);
+  }
+
+  /**
+   * Schedule a param write at a FUTURE audio time — the transient playback seam
+   * the clip-automation lane drives (never touches the Y.Doc). `setParam` only
+   * lands at `ctx.currentTime`, which stair-steps automation between scheduler
+   * ticks; this queues `setValueAtTime` (hard step) / `linearRampToValueAtTime`
+   * (smooth) at `atTime` so a ramp is sample-accurate + click-free.
+   *
+   * Reaches the AudioParam three ways, in order: (1) the handle's own
+   * `scheduleParam` if it exposes one; (2) the param's CV-target AudioParam
+   * (`inputs[paramId].param`) — the same node a CV cable would sum into; (3) a
+   * best-effort immediate `setParam` when neither exists (no schedulable param).
+   * Always refreshes the `knobValues` cache so the on-screen control follows the
+   * automation, exactly like `setParam`.
+   */
+  scheduleParam(
+    nodeId: string,
+    paramId: string,
+    value: number,
+    atTime: number,
+    ramp: boolean,
+  ): void {
+    const handle = this.nodes.get(nodeId);
+    if (!handle) return;
+    if (typeof handle.scheduleParam === 'function') {
+      handle.scheduleParam(paramId, value, atTime, ramp);
+    } else {
+      const param = handle.inputs.get(paramId)?.param;
+      if (param) {
+        if (ramp) param.linearRampToValueAtTime(value, atTime);
+        else param.setValueAtTime(value, atTime);
+      } else {
+        // No schedulable AudioParam exposed → immediate best-effort set.
+        handle.setParam(paramId, value);
+      }
+    }
     this.knobValues.set(this.knobKey(nodeId, paramId), value);
   }
 
@@ -1598,6 +1650,22 @@ export class PatchEngine {
   setParam(node: ModuleNode, paramId: string, value: number): void {
     const engine = this.getDomain(node.domain);
     engine.setParam(node.id, paramId, value);
+  }
+
+  /**
+   * Schedule a param write at a future audio time (clip-automation playback).
+   * Delegates to the target domain's `scheduleParam` when implemented (only
+   * AudioEngine today); a no-op otherwise. Transient — never writes the Y.Doc.
+   */
+  scheduleParam(
+    node: ModuleNode,
+    paramId: string,
+    value: number,
+    atTime: number,
+    ramp: boolean,
+  ): void {
+    const engine = this.getDomain(node.domain);
+    engine.scheduleParam?.(node.id, paramId, value, atTime, ramp);
   }
 
   /** Gate inputs whose port declared no paramTarget — warned once each so a

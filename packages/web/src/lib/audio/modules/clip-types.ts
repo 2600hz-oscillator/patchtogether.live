@@ -262,7 +262,32 @@ export interface ClipPlayerData {
    *  binding while the KEYS keyboard is armed/recording a clip; peers + the card
    *  see it. Absent/null = not note-recording. v1 single-recorder per clip. */
   noteRec?: NoteRecState | null;
+  /** AUTOMATION record-arm state (task #183). `arm` = record-armed; while armed
+   *  AND playing an automation clip, that clip's live param moves are captured
+   *  for one quantized loop pass. `recorderId` = the arming client's
+   *  `ydoc.clientID` — the SINGLE-WRITER: only that client's engine runs the
+   *  recorder + commits the pass, so peers never double-record (see
+   *  `isAutomationRecorder`). SYNCED so every peer sees the armed state (their
+   *  engines still PLAY the automation; only the recorder records). Set by the
+   *  card/launchpad; the engine only READS it. Playback needs no state here — it
+   *  is transient, zero-Yjs. Absent = not armed. */
+  automation?: { arm?: boolean; recorderId?: number };
   creatorId?: string;
+}
+
+/** SINGLE-WRITER automation record gate: true ONLY when automation record is
+ *  ARMED and THIS client is the designated recorder
+ *  (`data.automation.recorderId === clientId`). Every peer reads the same synced
+ *  `arm`/`recorderId`, but only the recorder's engine runs `recordTick` +
+ *  commits — so a record pass writes the durable store exactly once, never once
+ *  per connected peer. The clipplayer tick and the integration test share this
+ *  predicate so the gate is one source of truth. */
+export function isAutomationRecorder(
+  data: ClipPlayerData | undefined,
+  clientId: number,
+): boolean {
+  const a = data?.automation;
+  return !!a && a.arm === true && a.recorderId === clientId;
 }
 
 /** DUAL-LAUNCHPAD KEYS note-record state (see ClipPlayerData.noteRec). */
