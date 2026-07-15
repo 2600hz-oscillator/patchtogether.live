@@ -130,6 +130,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   sequencer: { size: '3u', hp: 3 }, // 307×540px  [LOCKED]
   shimmershine: { size: '1u', hp: 2 }, // 152×280px
   sidecar: { size: '2u', hp: 2 }, // 299×380px
+  sixstrum: { size: '2u', hp: 4 }, // 620×~380px — 4 fader bands + per-string rear PatchPanel
   skifree: { size: '3u', hp: 2 }, // 420×360px
   slewSwitch: { size: '2u', hp: 2 }, // 273×320px
   stereovca: { size: '1u', hp: 1 }, // 156×180px

@@ -293,6 +293,13 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // preview if the module is promoted into MODULES before the seed
   // path is finished.
   shapegen: 'VRT baseline pending; first-slice PR — unit + e2e provide coverage. Capture darwin/linux baselines once the __shapegenVrtSeed deterministic scene path is wired.',
+  // SIX STRUM — 6-voice guitar/bass/harp instrument (first-slice PR). The card
+  // is static deterministic chrome (4 fader bands + selectors + STRUM button +
+  // per-string PatchPanel), so it IS baseline-able — pending the darwin/linux
+  // capture pass. Coverage = sixstrum-dsp/-tuning (26) + sixstrum.test (7,
+  // worklet wiring incl. anti-silent-poly) + ART profile + e2e/tests/
+  // sixstrum-poly.spec.ts (real SEQUENCER→poly/strum→audible RMS).
+  sixstrum: 'VRT baseline pending; card is static chrome — unit (sixstrum-dsp/-tuning/worklet-wiring) + ART + e2e/tests/sixstrum-poly.spec.ts provide coverage. Capture darwin/linux baselines via vrt-update.yml in a follow-up.',
   // SOURCERY — 2-input region shape-match recolor. v1 output is
   // source-dependent (needs A + B patched) AND shimmers/boils frame-to-frame
   // (per-frame-independent segmentation), so a solo-spawn VRT canvas is
