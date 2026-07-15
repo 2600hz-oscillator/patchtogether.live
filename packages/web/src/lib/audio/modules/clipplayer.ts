@@ -27,6 +27,11 @@ import { getActiveEngine } from '$lib/audio/engine-ref';
 import { resolveSurfaceParam } from '$lib/graph/control-surface-params';
 import { valueToFrac, fracToValue } from '$lib/electra/curve';
 import { AutomationController } from './clip-automation-controller';
+import { plainAutomationClip } from './clip-automation';
+import {
+  registerAutomationController,
+  unregisterAutomationController,
+} from '$lib/audio/automation-touch';
 import type { RampPoint } from './clip-automation-engine';
 import { createPolySender, POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
 import { createVoiceAllocator, type VoiceAllocator } from '$lib/audio/poly-alloc';
@@ -47,7 +52,6 @@ import {
   swingStepOffset,
   isAutomationRecorder,
   type ClipPlayerData,
-  type AutomationClipRecord,
   type AutomationTarget,
   type AutomationTrack,
 } from './clip-types';
@@ -369,28 +373,20 @@ export const clipplayerDef: AudioModuleDef = {
         if (!t) return;
         const rec = readClip(liveData(), clipIndex(t.slot, t.lane));
         if (!rec || rec.kind !== 'automation') return;
-        const plain: AutomationClipRecord = {
-          kind: 'automation',
-          lengthSteps: rec.lengthSteps,
-          loop: rec.loop,
-          tracks: tracks.map((tr) => {
-            const out: AutomationTrack = {
-              target: { nodeId: tr.target.nodeId, paramId: tr.target.paramId },
-              events: tr.events.map((e) => ({ step: e.step, value: e.value })),
-            };
-            if (tr.interp) out.interp = tr.interp;
-            return out;
-          }),
-        };
-        if (typeof rec.color === 'number') plain.color = rec.color;
-        if (typeof rec.name === 'string') plain.name = rec.name;
-        if (typeof rec.gain === 'number') plain.gain = rec.gain;
+        // One whole-clip PLAIN reassign (never a live Y.Array splice) — same
+        // deep-plain shape the card/menu use (plainAutomationClip), carrying the
+        // merged tracks + the existing clip's metadata.
+        const plain = plainAutomationClip({ ...rec, tracks });
         writeData((d) => {
           if (!d.clips) d.clips = {};
           d.clips[String(clipIndex(t.slot, t.lane))] = plain;
         });
       },
     });
+    // Register this player's controller so a live grab of any AUTOMATED control
+    // (screen drag / MIDI CC / Electra) suspends its playback via the shared
+    // notifyAutomationTouch seam. Dropped in dispose().
+    registerAutomationController(nodeId, controller);
 
     // --- SONG MODE helpers ---
     function clipMode(): ClipPlayMode {
@@ -1033,6 +1029,7 @@ export const clipplayerDef: AudioModuleDef = {
       dispose() {
         alive = false;
         controller.disarm(); // drop any in-flight automation record pass
+        unregisterAutomationController(nodeId); // drop the touch-suspend hook
         clearPlayheads(nodeId);
         clearAudition(nodeId);
         if (unsubscribeTick) {

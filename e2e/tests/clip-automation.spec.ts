@@ -1,0 +1,468 @@
+// e2e/tests/clip-automation.spec.ts
+//
+// CLIP-LAUNCHER AUTOMATION LANE — the real UI drive (task #183). Proves the
+// whole workflow end-to-end against the live app + engine, gating all timing on
+// the clip transport (the automation lane's own playhead) so nothing races the
+// wall clock.
+//
+// The observable for "playback drives the param" is engine.readParam(node,pid):
+// the automation playback path writes each scheduled value into the engine's
+// knobValues cache (engine.scheduleParam), and readParam reads that cache — so a
+// param under automation VARIES over a loop, while a SUSPENDED (live-grabbed)
+// param stays put. Store writes are separate (playback is zero-Yjs), so reading
+// the store would show nothing; we read the ENGINE.
+//
+// Cases:
+//   1. Original brief — create (+AUTO) → assign a knob via the context MENU →
+//      arm → run transport → move the knob during a loop → assert playback drives
+//      the param on the next loops.
+//   2. MULTIPLE params in ONE record pass + move-detection: move two, leave a
+//      third (with prior automation) untouched → both moved commit breakpoints
+//      and play back independently; the untouched one keeps its prior automation.
+//   3. SCREEN-touch suspends only the grabbed param ("live wins"); the other
+//      keeps playing; re-enable indicator resumes it.
+//   4. MIDI-twist suspends only the twisted param via the SAME seam; the other
+//      keeps playing; re-enable resumes it.
+
+import { test, expect } from './_fixtures';
+import { spawnPatch } from './_helpers';
+import { waitForSoundingStep } from './_scheduler-control';
+import type { Page } from '@playwright/test';
+
+test.describe.configure({ mode: 'serial' });
+
+const CP = 'cp';
+// clipIndex(slot=0, lane=CLIP_LANES-1=7) = 7*8 + 0 = 56 — the "+AUTO" cell.
+const AUTO_IDX = 56;
+const AUTO_LANE = 7;
+// A short clip → ~1s loops at 120bpm / 1/16 (fast, deterministic record + poll).
+const CLIP_LEN = 8;
+
+// ── engine / store helpers ───────────────────────────────────────────────────
+
+/** The engine's live param value (knobValues cache — updated by automation
+ *  playback's scheduleParam AND by user setParam). */
+async function readParam(page: Page, nodeId: string, paramId: string): Promise<number | null> {
+  return page.evaluate(
+    ([id, p]) => {
+      const w = globalThis as unknown as {
+        __engine?: () => { readParam: (n: unknown, p: string) => number | undefined } | null;
+        __patch: { nodes: Record<string, unknown> };
+      };
+      const eng = w.__engine?.();
+      const node = w.__patch?.nodes?.[id];
+      if (!eng || !node) return null;
+      const v = eng.readParam(node, p);
+      return typeof v === 'number' ? v : null;
+    },
+    [nodeId, paramId] as const,
+  );
+}
+
+/** Sample a param N times and report min/max/spread (a rough loop window). */
+async function sampleSpread(
+  page: Page,
+  nodeId: string,
+  paramId: string,
+  count = 14,
+  intervalMs = 70,
+): Promise<{ vals: number[]; spread: number }> {
+  const vals: number[] = [];
+  for (let i = 0; i < count; i++) {
+    const v = await readParam(page, nodeId, paramId);
+    if (v != null) vals.push(v);
+    await page.waitForTimeout(intervalMs);
+  }
+  const spread = vals.length ? Math.max(...vals) - Math.min(...vals) : 0;
+  return { vals, spread };
+}
+
+/** Sample TWO params in lock-step; returns the max |a-b| seen (independence). */
+async function sampleDivergence(
+  page: Page,
+  a: string,
+  b: string,
+  paramId: string,
+  count = 14,
+  intervalMs = 70,
+): Promise<number> {
+  let maxDiff = 0;
+  for (let i = 0; i < count; i++) {
+    const [va, vb] = await Promise.all([readParam(page, a, paramId), readParam(page, b, paramId)]);
+    if (va != null && vb != null) maxDiff = Math.max(maxDiff, Math.abs(va - vb));
+    await page.waitForTimeout(intervalMs);
+  }
+  return maxDiff;
+}
+
+/** Force the transport running (set running=1 on any TIMELORDE; free-run
+ *  otherwise, where the clipplayer treats "no transport" as running). */
+async function ensureTransportRunning(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __ydoc: { transact: (fn: () => void) => void };
+      __patch: { nodes: Record<string, { type?: string; params: Record<string, number> }> };
+    };
+    w.__ydoc.transact(() => {
+      for (const n of Object.values(w.__patch.nodes)) {
+        if (n.type === 'timelorde') { n.params.running = 1; n.params.bpm = 120; }
+      }
+    });
+  });
+}
+
+type SeedTrack = { nodeId: string; paramId: string; events: { step: number; value: number }[] };
+
+/** Seed the automation clip (pointer + tracks) directly into the store — the
+ *  deterministic path for the suspension/multi-param behaviour tests. */
+async function seedAutomationClip(page: Page, tracks: SeedTrack[], len = CLIP_LEN): Promise<void> {
+  await page.evaluate(
+    ({ idx, lane, tracks, len }) => {
+      const w = globalThis as unknown as {
+        __ydoc: { transact: (fn: () => void) => void };
+        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+      };
+      w.__ydoc.transact(() => {
+        const node = w.__patch.nodes['cp'];
+        if (!node.data) node.data = {};
+        const data = node.data as { clips?: Record<string, unknown>; automation?: Record<string, unknown> };
+        if (!data.clips) data.clips = {};
+        data.clips[String(idx)] = {
+          kind: 'automation',
+          lengthSteps: len,
+          loop: true,
+          tracks: tracks.map((t) => ({ target: { nodeId: t.nodeId, paramId: t.paramId }, events: t.events })),
+        };
+        if (!data.automation) data.automation = {};
+        data.automation.clip = { lane, slot: 0 };
+      });
+    },
+    { idx: AUTO_IDX, lane: AUTO_LANE, tracks, len },
+  );
+}
+
+/** Read a summary of the automation clip's tracks (for record assertions). */
+async function readClipTracks(
+  page: Page,
+): Promise<Array<{ nodeId: string; paramId: string; events: { step: number; value: number }[] }>> {
+  return page.evaluate((idx) => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: { clips?: Record<string, unknown> } }> };
+    };
+    const clip = w.__patch?.nodes?.['cp']?.data?.clips?.[String(idx)] as
+      | { tracks?: Array<{ target?: { nodeId?: string; paramId?: string }; events?: Array<{ step?: number; value?: number }> }> }
+      | undefined;
+    const tracks = clip?.tracks;
+    if (!tracks) return [];
+    const out: Array<{ nodeId: string; paramId: string; events: { step: number; value: number }[] }> = [];
+    for (let ti = 0; ti < tracks.length; ti++) {
+      const t = tracks[ti]!;
+      const events: { step: number; value: number }[] = [];
+      const evs = t.events ?? [];
+      for (let ei = 0; ei < evs.length; ei++) events.push({ step: Number(evs[ei]!.step), value: Number(evs[ei]!.value) });
+      out.push({ nodeId: String(t.target?.nodeId), paramId: String(t.target?.paramId), events });
+    }
+    return out;
+  }, AUTO_IDX);
+}
+
+/** Set a clip's lengthSteps in place (speeds the +AUTO clip's loop for records). */
+async function setAutoClipLength(page: Page, len: number): Promise<void> {
+  await page.evaluate(
+    ({ idx, len }) => {
+      const w = globalThis as unknown as {
+        __ydoc: { transact: (fn: () => void) => void };
+        __patch: { nodes: Record<string, { data?: { clips?: Record<string, { lengthSteps?: number }> } }> };
+      };
+      w.__ydoc.transact(() => {
+        const clip = w.__patch.nodes['cp']?.data?.clips?.[String(idx)];
+        if (clip) clip.lengthSteps = len;
+      });
+    },
+    { idx: AUTO_IDX, len },
+  );
+}
+
+/** Launch the automation clip (last-lane pad) and confirm the lane is playing. */
+async function launchAutomationClip(page: Page): Promise<void> {
+  await page.getByTestId(`clipplayer-pad-${AUTO_IDX}`).click();
+  await page.waitForFunction(
+    () => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: { playing?: unknown[] } }> };
+      };
+      return w.__patch?.nodes?.['cp']?.data?.playing?.[7] === 0;
+    },
+    undefined,
+    { timeout: 6000 },
+  );
+  // Gate on the transport: wait until the lane has actually stepped.
+  await waitForSoundingStep(page, CP, 3, { key: 'currentStep:7', timeoutMs: 8000 });
+}
+
+/** Continuously move (sweep) one or more params for `durationMs` — the real
+ *  "turn the knob during the loop" input, as a store write (identical to a knob
+ *  onchange; the recorder reads the store value each tick). */
+async function sweepParams(
+  page: Page,
+  sweeps: { id: string; param: string; mid: number; amp: number; cycles: number; phase?: number }[],
+  durationMs: number,
+): Promise<void> {
+  await page.evaluate(
+    async ({ sweeps, durationMs }) => {
+      const w = globalThis as unknown as {
+        __ydoc: { transact: (fn: () => void) => void };
+        __patch: { nodes: Record<string, { params: Record<string, number> }> };
+      };
+      const start = performance.now();
+      while (performance.now() - start < durationMs) {
+        const t = (performance.now() - start) / durationMs;
+        w.__ydoc.transact(() => {
+          for (const s of sweeps) {
+            const v = s.mid + s.amp * Math.sin(t * Math.PI * 2 * s.cycles + (s.phase ?? 0));
+            w.__patch.nodes[s.id].params[s.param] = Math.max(0, Math.min(1, v));
+          }
+        });
+        await new Promise((r) => setTimeout(r, 40));
+      }
+    },
+    { sweeps, durationMs },
+  );
+}
+
+/** Right-click a VCA's Base fader and open its control menu. */
+function vcaBase(page: Page, vcaId: string) {
+  return page.locator(`.svelte-flow__node[data-id="${vcaId}"]`).getByTestId('control-base');
+}
+
+async function assignViaMenu(page: Page, vcaId: string): Promise<void> {
+  await vcaBase(page, vcaId).click({ button: 'right' });
+  const menu = page.getByTestId('control-context-menu');
+  await expect(menu).toBeVisible();
+  // One automation clip in the rack → a direct "Assign to automation lane" item.
+  await menu.getByTestId(`ctx-automation-${CP}`).click();
+  await expect(menu).toBeHidden();
+}
+
+/** A left-button pointer grab of a VCA Base fader — fires the screen touch-suspend
+ *  choke point (notifyAutomationTouch on pointerdown). */
+async function grabFader(page: Page, vcaId: string): Promise<void> {
+  const box = await vcaBase(page, vcaId).boundingBox();
+  if (!box) throw new Error(`grabFader: no bounding box for ${vcaId}`);
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height * 0.2);
+  await page.mouse.down();
+  await page.mouse.up();
+}
+
+async function installSimMidi(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => typeof (globalThis as unknown as { __midiTestInstall?: () => boolean }).__midiTestInstall === 'function',
+  );
+  await page.evaluate(() => (globalThis as unknown as { __midiTestInstall: () => boolean }).__midiTestInstall());
+}
+async function injectCc(page: Page, channel: number, cc: number, value: number): Promise<void> {
+  await page.evaluate(
+    ({ channel, cc, value }) =>
+      (globalThis as unknown as { __midiTestInject: (c: number, cc: number, v: number) => boolean }).__midiTestInject(
+        channel,
+        cc,
+        value,
+      ),
+    { channel, cc, value },
+  );
+}
+
+// A rising/falling envelope over CLIP_LEN steps that gives a clear playback spread.
+const ENV_UP: SeedTrack['events'] = [
+  { step: 0, value: 0.05 },
+  { step: 4, value: 0.95 },
+  { step: 7, value: 0.1 },
+];
+const ENV_DOWN: SeedTrack['events'] = [
+  { step: 0, value: 0.95 },
+  { step: 4, value: 0.05 },
+  { step: 7, value: 0.9 },
+];
+
+// ── Case 1: the original brief ───────────────────────────────────────────────
+
+test('automation: create + assign via menu + arm + record + playback drives the param', async ({ page, rack }) => {
+  void rack;
+  await spawnPatch(page, [
+    { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
+    { id: 'va', type: 'vca', position: { x: 460, y: 80 }, domain: 'audio', params: { base: 0.2 } },
+  ]);
+  await ensureTransportRunning(page);
+  await expect(page.getByTestId('clipplayer-card')).toBeVisible();
+
+  // CREATE the automation clip (+AUTO), then shrink it for a fast loop.
+  await page.getByTestId(`clipplayer-auto-new-${CP}`).click();
+  await expect(page.getByTestId(`clipplayer-auto-arm-${CP}`)).toBeVisible();
+  await setAutoClipLength(page, CLIP_LEN);
+
+  // ASSIGN the VCA Base knob via the CONTEXT MENU.
+  await assignViaMenu(page, 'va');
+  await expect(page.getByTestId(`clipplayer-auto-count-${CP}`)).toHaveText(`1/16`);
+
+  // LAUNCH + ARM, then MOVE the knob across several loops (the record pass
+  // punches in at a wrap, captures one loop, punches out + commits).
+  await launchAutomationClip(page);
+  await page.getByTestId(`clipplayer-auto-arm-${CP}`).click(); // arm (claims recorderId)
+  await sweepParams(page, [{ id: 'va', param: 'base', mid: 0.5, amp: 0.45, cycles: 2 }], 3200);
+
+  // Wait for the pass to COMMIT (breakpoints appear), then disarm.
+  await expect
+    .poll(async () => (await readClipTracks(page)).find((t) => t.nodeId === 'va')?.events.length ?? 0, {
+      timeout: 8000,
+    })
+    .toBeGreaterThan(1);
+  await page.getByTestId(`clipplayer-auto-arm-${CP}`).click(); // disarm
+
+  // PLAYBACK now drives the knob's param WITHOUT user input — assert it varies.
+  const { spread } = await sampleSpread(page, 'va', 'base');
+  expect(spread, 'automation playback varies the param over a loop').toBeGreaterThan(0.15);
+});
+
+// ── Case 2: multiple params in one pass + move-detection ─────────────────────
+
+test('automation: two params record in one pass + a third untouched keeps its prior automation', async ({ page, rack }) => {
+  void rack;
+  await spawnPatch(page, [
+    { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
+    { id: 'va', type: 'vca', position: { x: 460, y: 40 }, domain: 'audio', params: { base: 0.2 } },
+    { id: 'vb', type: 'vca', position: { x: 460, y: 260 }, domain: 'audio', params: { base: 0.8 } },
+    { id: 'vc', type: 'vca', position: { x: 460, y: 480 }, domain: 'audio', params: { base: 0.5 } },
+  ]);
+  await ensureTransportRunning(page);
+  await expect(page.getByTestId('clipplayer-card')).toBeVisible();
+
+  // Seed: va + vb EMPTY (to be recorded), vc PRE-POPULATED (the untouched one).
+  const VC_PRIOR = [
+    { step: 0, value: 0.2 },
+    { step: 4, value: 0.8 },
+  ];
+  await seedAutomationClip(page, [
+    { nodeId: 'va', paramId: 'base', events: [] },
+    { nodeId: 'vb', paramId: 'base', events: [] },
+    { nodeId: 'vc', paramId: 'base', events: VC_PRIOR },
+  ]);
+
+  await launchAutomationClip(page);
+  await page.getByTestId(`clipplayer-auto-arm-${CP}`).click(); // arm
+
+  // Move BOTH va + vb (out of phase → independent), leave vc UNTOUCHED.
+  await sweepParams(
+    page,
+    [
+      { id: 'va', param: 'base', mid: 0.5, amp: 0.45, cycles: 2, phase: 0 },
+      { id: 'vb', param: 'base', mid: 0.5, amp: 0.45, cycles: 2, phase: Math.PI },
+    ],
+    3400,
+  );
+
+  await expect
+    .poll(async () => {
+      const t = await readClipTracks(page);
+      const a = t.find((x) => x.nodeId === 'va')?.events.length ?? 0;
+      const b = t.find((x) => x.nodeId === 'vb')?.events.length ?? 0;
+      return Math.min(a, b);
+    }, { timeout: 9000 })
+    .toBeGreaterThan(1);
+  await page.getByTestId(`clipplayer-auto-arm-${CP}`).click(); // disarm
+
+  // Both moved params got breakpoints; the untouched vc kept its PRIOR automation.
+  const tracks = await readClipTracks(page);
+  expect(tracks.find((t) => t.nodeId === 'va')!.events.length).toBeGreaterThan(1);
+  expect(tracks.find((t) => t.nodeId === 'vb')!.events.length).toBeGreaterThan(1);
+  expect(tracks.find((t) => t.nodeId === 'vc')!.events, 'untouched track preserved').toEqual(VC_PRIOR);
+
+  // Playback drives va + vb INDEPENDENTLY (both vary, and diverge from each other).
+  const va = await sampleSpread(page, 'va', 'base');
+  const vb = await sampleSpread(page, 'vb', 'base');
+  expect(va.spread).toBeGreaterThan(0.15);
+  expect(vb.spread).toBeGreaterThan(0.15);
+  const diverge = await sampleDivergence(page, 'va', 'vb', 'base');
+  expect(diverge, 'the two envelopes differ (recorded independently)').toBeGreaterThan(0.1);
+  // vc is driven by its preserved automation too.
+  const vc = await sampleSpread(page, 'vc', 'base');
+  expect(vc.spread).toBeGreaterThan(0.1);
+});
+
+// ── Case 3: screen touch suspends only the grabbed param ─────────────────────
+
+test('automation: grabbing an on-screen knob suspends only its playback (live wins); the other keeps playing; re-enable resumes', async ({ page, rack }) => {
+  void rack;
+  await spawnPatch(page, [
+    { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
+    { id: 'va', type: 'vca', position: { x: 460, y: 60 }, domain: 'audio', params: { base: 0.2 } },
+    { id: 'vb', type: 'vca', position: { x: 460, y: 300 }, domain: 'audio', params: { base: 0.8 } },
+  ]);
+  await ensureTransportRunning(page);
+  await seedAutomationClip(page, [
+    { nodeId: 'va', paramId: 'base', events: ENV_UP },
+    { nodeId: 'vb', paramId: 'base', events: ENV_DOWN },
+  ]);
+  await launchAutomationClip(page);
+
+  // Both driven by playback.
+  expect((await sampleSpread(page, 'va', 'base')).spread).toBeGreaterThan(0.15);
+  expect((await sampleSpread(page, 'vb', 'base')).spread).toBeGreaterThan(0.15);
+
+  // GRAB va's fader (screen) → suspend ONLY va. The override indicator lights.
+  await grabFader(page, 'va');
+  await expect(page.getByTestId(`clipplayer-auto-override-${CP}`)).toBeVisible();
+  await page.waitForTimeout(220); // let va settle to the grabbed value
+
+  const vaHeld = await sampleSpread(page, 'va', 'base');
+  const vbLive = await sampleSpread(page, 'vb', 'base');
+  expect(vaHeld.spread, 'grabbed param no longer follows the envelope').toBeLessThan(0.08);
+  expect(vbLive.spread, 'the OTHER param keeps playing (per-param suspension)').toBeGreaterThan(0.15);
+
+  // RE-ENABLE via the indicator → va resumes being driven by automation.
+  await page.getByTestId(`clipplayer-auto-override-${CP}`).click();
+  await expect(page.getByTestId(`clipplayer-auto-override-${CP}`)).toBeHidden();
+  expect((await sampleSpread(page, 'va', 'base')).spread, 'va resumes after re-enable').toBeGreaterThan(0.15);
+});
+
+// ── Case 4: MIDI twist suspends only the twisted param (same seam) ───────────
+
+test('automation: a MIDI CC on an automated param suspends only that param (same seam as screen); the other keeps playing; re-enable resumes', async ({ page, rack }) => {
+  void rack;
+  await spawnPatch(page, [
+    { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
+    { id: 'va', type: 'vca', position: { x: 460, y: 60 }, domain: 'audio', params: { base: 0.2 } },
+    { id: 'vb', type: 'vca', position: { x: 460, y: 300 }, domain: 'audio', params: { base: 0.8 } },
+  ]);
+  await ensureTransportRunning(page);
+  await installSimMidi(page);
+  await seedAutomationClip(page, [
+    { nodeId: 'va', paramId: 'base', events: ENV_UP },
+    { nodeId: 'vb', paramId: 'base', events: ENV_DOWN },
+  ]);
+  await launchAutomationClip(page);
+
+  // Both driven by playback.
+  expect((await sampleSpread(page, 'va', 'base')).spread).toBeGreaterThan(0.15);
+  expect((await sampleSpread(page, 'vb', 'base')).spread).toBeGreaterThan(0.15);
+
+  // MIDI-learn va's Base fader to CC 21, then twist it: the CC binds + drives +
+  // suspends automation for va through the SAME notifyAutomationTouch seam.
+  await vcaBase(page, 'va').click({ button: 'right' });
+  const menu = page.getByTestId('control-context-menu');
+  await expect(menu).toBeVisible();
+  await menu.getByTestId('ctx-midi-learn').click();
+  await injectCc(page, 1, 21, 105); // binds + drives va toward ~0.83, suspends automation
+  await expect(page.getByTestId(`clipplayer-auto-override-${CP}`)).toBeVisible();
+  await page.waitForTimeout(220);
+
+  const vaHeld = await sampleSpread(page, 'va', 'base');
+  const vbLive = await sampleSpread(page, 'vb', 'base');
+  expect(vaHeld.spread, 'MIDI-twisted param no longer follows the envelope').toBeLessThan(0.08);
+  expect(vaHeld.vals.at(-1) ?? 0, 'held near the CC value, not the envelope').toBeGreaterThan(0.6);
+  expect(vbLive.spread, 'the OTHER param keeps playing (per-param suspension)').toBeGreaterThan(0.15);
+
+  // RE-ENABLE → va resumes being driven by automation.
+  await page.getByTestId(`clipplayer-auto-override-${CP}`).click();
+  await expect(page.getByTestId(`clipplayer-auto-override-${CP}`)).toBeHidden();
+  expect((await sampleSpread(page, 'va', 'base')).spread, 'va resumes after re-enable').toBeGreaterThan(0.15);
+});

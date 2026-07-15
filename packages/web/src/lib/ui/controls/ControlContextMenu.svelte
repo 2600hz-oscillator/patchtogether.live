@@ -38,6 +38,17 @@
     onassignelectra?: (electraId: string, slot: number) => void;
     /** Clear this control from (electraId, slot). */
     onclearelectra?: (electraId: string, slot: number) => void;
+    /** Clip-players in the rack that HAVE an automation clip — the "Assign to
+     *  automation lane" targets. Omitted/empty → the section is hidden unless
+     *  `automated` (then "Remove automation" shows). */
+    automations?: Array<{ nodeId: string; name: string }>;
+    /** True when THIS control is already a track in some automation clip → we
+     *  offer "Remove automation" instead of "Assign to automation lane". */
+    automated?: boolean;
+    /** Add this control to the given clip-player's automation clip. */
+    onassignautomation?: (clipPlayerNodeId: string) => void;
+    /** Remove this control from whichever automation clip holds it. */
+    onremoveautomation?: () => void;
   }
 
   let {
@@ -56,6 +67,10 @@
     electras = [],
     onassignelectra,
     onclearelectra,
+    automations = [],
+    automated = false,
+    onassignautomation,
+    onremoveautomation,
   }: Props = $props();
 
   // Fixed 6×6 layout enumeration for the Electra "Send to … → Row → knob"
@@ -70,10 +85,14 @@
   // open, and which Row's knob column is open. Reset on every reopen.
   let activeElectraId = $state<string | null>(null);
   let activeRow = $state<number | null>(null);
+  // Automation "Assign to automation lane" flyout (only when >1 clip-player has
+  // an automation clip — one clip-player renders a direct item instead).
+  let automationFlyoutOpen = $state(false);
   $effect(() => {
     if (!open) {
       activeElectraId = null;
       activeRow = null;
+      automationFlyoutOpen = false;
     }
   });
 
@@ -100,6 +119,8 @@
 
   function pickLearn() { onlearn(); onclose(); }
   function pickForget() { onforget(); onclose(); }
+  function pickAssignAutomation(nodeId: string) { onassignautomation?.(nodeId); onclose(); }
+  function pickRemoveAutomation() { onremoveautomation?.(); onclose(); }
   function pickSurface(s: { id: string; bound: boolean }) {
     if (s.bound) onremovefromsurface?.(s.id);
     else onsendtosurface?.(s.id);
@@ -252,6 +273,67 @@
             {/if}
           </div>
         {/each}
+      {/if}
+      <!-- AUTOMATION LANE (task #183): assign this control to a clip-player's
+           automation clip, or remove it if already automated. One clip-player →
+           a direct item; several → a "Send to …" flyout (like the electras). -->
+      {#if automated}
+        <div class="ctx-divider" role="separator"></div>
+        <button
+          class="ctx-item subtle"
+          onclick={pickRemoveAutomation}
+          role="menuitem"
+          data-testid="ctx-automation-remove"
+        >
+          Remove automation
+        </button>
+      {:else if automations.length === 1}
+        <div class="ctx-divider" role="separator"></div>
+        <button
+          class="ctx-item"
+          onclick={() => pickAssignAutomation(automations[0]!.nodeId)}
+          role="menuitem"
+          data-testid={`ctx-automation-${automations[0]!.nodeId}`}
+        >
+          Assign to automation lane
+        </button>
+      {:else if automations.length > 1}
+        <div class="ctx-divider" role="separator"></div>
+        <div class="cascade-row">
+          <div class="cascade-col">
+            <button
+              class="ctx-item cascade-trigger"
+              class:active={automationFlyoutOpen}
+              type="button"
+              role="menuitem"
+              aria-haspopup="menu"
+              aria-expanded={automationFlyoutOpen}
+              data-testid="ctx-automation-trigger"
+              onmouseenter={() => { automationFlyoutOpen = true; }}
+              onfocus={() => { automationFlyoutOpen = true; }}
+              onclick={() => { automationFlyoutOpen = true; }}
+            >
+              Assign to automation lane <span class="chev" aria-hidden="true">▸</span>
+            </button>
+          </div>
+          {#if automationFlyoutOpen}
+            <ul class="submenu submenu-rows" role="menu" aria-label="Automation lanes" data-testid="ctx-automation-list">
+              {#each automations as a (a.nodeId)}
+                <li>
+                  <button
+                    type="button"
+                    class="ctx-item"
+                    role="menuitem"
+                    data-testid={`ctx-automation-${a.nodeId}`}
+                    onclick={() => pickAssignAutomation(a.nodeId)}
+                  >
+                    {a.name}
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
       {/if}
     </div>
   </div>

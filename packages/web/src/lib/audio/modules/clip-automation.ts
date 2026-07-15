@@ -61,3 +61,31 @@ export function ensureAutomationTrack(
 export function automationCapacityRemaining(rec: AutomationClipRecord): number {
   return Math.max(0, MAX_AUTOMATION_TRACKS - rec.tracks.length);
 }
+
+/**
+ * Deep-clone an automation clip into a PLAIN object graph (no shared references
+ * to `rec`'s arrays/objects, no live Y types). Every whole-clip write — the
+ * record commit, the context-menu assign / remove — reassigns
+ * `d.clips[idx] = plainAutomationClip(next)` so the store never re-integrates an
+ * already-integrated Y child ("Type already integrated" — [[yjs-save-load-real-
+ * ydoc]]). Single source of the plain shape so the engine + the menu agree.
+ */
+export function plainAutomationClip(rec: AutomationClipRecord): AutomationClipRecord {
+  const out: AutomationClipRecord = {
+    kind: 'automation',
+    lengthSteps: rec.lengthSteps,
+    loop: rec.loop,
+    tracks: rec.tracks.map((tr) => {
+      const t: AutomationTrack = {
+        target: { nodeId: tr.target.nodeId, paramId: tr.target.paramId },
+        events: tr.events.map((e) => ({ step: e.step, value: e.value })),
+      };
+      if (tr.interp) t.interp = tr.interp;
+      return t;
+    }),
+  };
+  if (typeof rec.color === 'number') out.color = rec.color;
+  if (typeof rec.name === 'string') out.name = rec.name;
+  if (typeof rec.gain === 'number') out.gain = rec.gain;
+  return out;
+}

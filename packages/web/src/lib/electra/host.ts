@@ -31,6 +31,7 @@ import { createCcCommit, type CcCommit } from '$lib/ui/controls/cc-commit';
 import { getCcBatcher } from '$lib/ui/controls/cc-batch-store';
 import type { AutoconfigHost } from './autoconfig';
 import type { PresetGenInput, GenParamDef, SurfaceBinding } from './preset';
+import { notifyAutomationTouch } from '$lib/audio/automation-touch';
 
 /** Resolve the SOURCE module's current control colour (PASSTHROUGH) for a
  *  binding — read live from patch.nodes, never stored on the surface/electra
@@ -182,6 +183,10 @@ export function buildLiveHost(args: {
           live.params[paramId] = value; // guard:allow-raw-write — streaming hardware CC
         },
         transient: (value) => {
+          // Touch-suspend cross-wire (task #183): an Electra hardware twist is a
+          // live grab — suspend this param's clip-automation via the SAME seam a
+          // screen drag / MIDI CC hits, so the twist wins over playback.
+          notifyAutomationTouch({ nodeId: moduleId, paramId });
           const e = getEngine();
           const node = patch.nodes[moduleId] as ModuleNode | undefined;
           if (!e || !node) return;

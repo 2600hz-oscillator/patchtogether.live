@@ -80,6 +80,11 @@ export class AutomationController {
   reEnable(target: AutomationTarget): void {
     this.suspended.delete(key(target));
   }
+  /** Re-enable ALL suspended params at once (the card's override-indicator
+   *  click clears every live override in one gesture). */
+  reEnableAll(): void {
+    this.suspended.clear();
+  }
   isSuspended(target: AutomationTarget): boolean {
     return this.suspended.has(key(target));
   }

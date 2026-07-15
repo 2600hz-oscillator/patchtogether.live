@@ -47,9 +47,14 @@
     laneColor,
     laneColorEff as laneColorEffOf,
     coerceLaneColor,
+    readClip,
+    defaultAutomationClip,
+    MAX_AUTOMATION_TRACKS,
     type ClipPlayerData,
     type NoteClipRecord,
+    type AutomationClipRecord,
   } from '$lib/audio/modules/clip-types';
+  import { overriddenKeysFor, reEnableAllFor } from '$lib/audio/automation-touch';
   import {
     RATE_LABELS,
     RATE_DEFAULT_INDEX,
@@ -289,6 +294,11 @@
         const sb = e.read(node, 'songBeat');
         if (typeof sb === 'number') songBeatLive = sb;
       }
+      // Automation override indicator (client-local touch state — not synced, so
+      // it's polled here, not derived from cardVersion). Lit when a param THIS
+      // player automates is currently suspended by a live grab.
+      const keys = overriddenKeysFor(id);
+      autoOverridden = keys.length > 0 && keys.some((k) => autoTrackKeys.has(k));
       raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
@@ -326,6 +336,66 @@
   }
   /** The full-window pop-out arranger editor (like the MAPPY MAP editor). */
   let arrangeEditorOpen = $state(false);
+
+  // --- AUTOMATION LANE (task #183) ---
+  // The designated automation clip pointer + its resolved record (the one clip
+  // this player records/plays param envelopes into). Derived from synced
+  // node.data; the override state is CLIENT-LOCAL (read from the touch registry).
+  let autoClipPtr = $derived.by<{ lane: number; slot: number } | null>(() => {
+    void cardVersion;
+    const c = dataObj().automation?.clip;
+    return c && typeof c.lane === 'number' && typeof c.slot === 'number'
+      ? { lane: c.lane, slot: c.slot }
+      : null;
+  });
+  let autoClip = $derived.by<AutomationClipRecord | null>(() => {
+    void cardVersion;
+    if (!autoClipPtr) return null;
+    const rec = readClip(dataObj(), clipIndex(autoClipPtr.slot, autoClipPtr.lane));
+    return rec && rec.kind === 'automation' ? rec : null;
+  });
+  let autoTrackCount = $derived(autoClip?.tracks.length ?? 0);
+  let autoArmed = $derived((void cardVersion, dataObj().automation?.arm === true));
+  // The real track keys ("nodeId::paramId") of THIS clip — the card intersects
+  // the controller's overridden keys against these so the indicator dot only
+  // lights for params THIS player actually automates (never unrelated grabs).
+  let autoTrackKeys = $derived(
+    new Set((autoClip?.tracks ?? []).map((t) => `${t.target.nodeId}::${t.target.paramId}`)),
+  );
+  let autoOverridden = $state(false);
+
+  /** Create THIS player's automation clip: stamp defaultAutomationClip() into the
+   *  FIRST EMPTY cell of the LAST lane (lowest empty slot) + record the pointer.
+   *  No-op if the last lane is full (MVP: one automation clip per player). */
+  function createAutomationClip() {
+    const lane = CLIP_LANES - 1;
+    let slot = -1;
+    for (let s = 0; s < CLIP_SLOTS; s++) {
+      if (!clips[String(clipIndex(s, lane))]) { slot = s; break; }
+    }
+    if (slot < 0) return; // last lane full — no room
+    writeData((d) => {
+      if (!d.clips) d.clips = {};
+      d.clips[String(clipIndex(slot, lane))] = defaultAutomationClip();
+      if (!d.automation) d.automation = {};
+      d.automation.clip = { lane, slot };
+    });
+  }
+  /** Flip automation record-arm. When ARMING, claim single-writer by stamping
+   *  this client's ydoc.clientID as the recorderId (the engine only records on
+   *  the matching client — see isAutomationRecorder). */
+  function toggleAutoArm() {
+    writeData((d) => {
+      if (!d.automation) d.automation = {};
+      const arming = !d.automation.arm;
+      d.automation.arm = arming;
+      if (arming) d.automation.recorderId = ydoc.clientID;
+    });
+  }
+  /** Re-enable every param THIS player has suspended (the override-dot click). */
+  function reEnableAutomation() {
+    reEnableAllFor(id);
+  }
 
   // --- SONG VIEW timeline (shown in ARRANGEMENT mode) ---
   const ARR_W = 312; // svg content width (px)
@@ -625,6 +695,45 @@
         aria-pressed={recordMode === 'overdub'}
         data-testid={`clipplayer-recmode-${id}`}
       >{recordMode === 'overdub' ? 'OVR' : 'RPL'}</button>
+      <!-- AUTOMATION LANE (task #183): create the designated automation clip,
+           then ARM to record live param moves; the badge shows track count and
+           the override dot lights when a grabbed control is overriding playback
+           (click it to re-enable all). -->
+      {#if !autoClipPtr}
+        <button
+          class="auto-new"
+          onclick={createAutomationClip}
+          title="Create this player's automation clip (last lane) — then right-click a control to assign it, and ARM to record moves"
+          data-testid={`clipplayer-auto-new-${id}`}
+        >＋AUTO</button>
+      {:else}
+        <span class="auto-block">
+          <button
+            class="auto-arm"
+            class:on={autoArmed}
+            onclick={toggleAutoArm}
+            title={autoArmed
+              ? 'Automation REC armed — captures live param moves for one loop (click to disarm)'
+              : 'Arm automation record (punches in at the loop start, captures one loop of live param moves)'}
+            aria-pressed={autoArmed}
+            data-testid={`clipplayer-auto-arm-${id}`}
+          >AUTO</button>
+          <span
+            class="auto-count"
+            title={`${autoTrackCount} automated param(s) of ${MAX_AUTOMATION_TRACKS} max`}
+            data-testid={`clipplayer-auto-count-${id}`}
+          >{autoTrackCount}/{MAX_AUTOMATION_TRACKS}</span>
+          {#if autoOverridden}
+            <button
+              class="auto-override"
+              onclick={reEnableAutomation}
+              title="A grabbed control is overriding automation playback (live wins) — click to re-enable all"
+              aria-label="re-enable automation"
+              data-testid={`clipplayer-auto-override-${id}`}
+            >●</button>
+          {/if}
+        </span>
+      {/if}
       <!-- Pop out the full-window arranger editor (timeline large + all ops). -->
       <button
         class="arr-open"
@@ -1018,6 +1127,47 @@
     cursor: pointer;
   }
   .rec-mode.overdub { color: var(--accent, #e8b35b); border-color: var(--accent, #e8b35b); }
+  /* AUTOMATION LANE controls (task #183): +AUTO create button, then the ARM
+     toggle + track-count badge + override dot. Same pill language as the other
+     title toggles. */
+  .auto-new,
+  .auto-arm {
+    background: var(--control-bg, #222);
+    color: var(--text-dim, #999);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    font-size: 9px;
+    letter-spacing: 0.05em;
+    line-height: 1;
+    padding: 3px 5px;
+    cursor: pointer;
+  }
+  .auto-new:hover { color: var(--accent, #b06cff); border-color: var(--accent, #b06cff); }
+  .auto-arm.on {
+    color: #fff;
+    background: #7c3aed;
+    border-color: #9d5cff;
+    animation: rec-blink 1s steps(2) infinite;
+  }
+  .auto-block { display: inline-flex; align-items: center; gap: 3px; }
+  .auto-count {
+    font-size: 8px;
+    color: var(--text-dim, #999);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+    pointer-events: none;
+  }
+  .auto-override {
+    background: transparent;
+    border: none;
+    color: #e8b35b;
+    font-size: 11px;
+    line-height: 1;
+    padding: 0 2px;
+    cursor: pointer;
+    animation: rec-blink 1s steps(2) infinite;
+  }
+  .auto-override:hover { color: #ffd27a; }
   /* Pop-out arranger editor open button. */
   .arr-open {
     background: var(--control-bg, #222);

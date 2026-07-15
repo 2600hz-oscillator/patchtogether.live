@@ -270,8 +270,15 @@ export interface ClipPlayerData {
    *  `isAutomationRecorder`). SYNCED so every peer sees the armed state (their
    *  engines still PLAY the automation; only the recorder records). Set by the
    *  card/launchpad; the engine only READS it. Playback needs no state here — it
-   *  is transient, zero-Yjs. Absent = not armed. */
-  automation?: { arm?: boolean; recorderId?: number };
+   *  is transient, zero-Yjs. Absent = not armed.
+   *
+   *  `clip` designates THE automation clip for this player (MVP: exactly one) —
+   *  a (lane, slot) pointer into `clips` at a `kind:'automation'` record. The
+   *  card's "+AUTO" action stamps the clip into the first empty cell of the last
+   *  lane and records the pointer here; the context-menu "Assign to automation
+   *  lane" adds tracks to it; the ARM toggle records into it. Absent = the
+   *  player has no automation clip yet. */
+  automation?: { arm?: boolean; recorderId?: number; clip?: { lane: number; slot: number } };
   creatorId?: string;
 }
 

@@ -48,8 +48,42 @@ import {
   assignSlotToElectra,
   clearSlot,
 } from '$lib/graph/electra-control';
+import { mutateNode, setNodeParam } from '$lib/graph/mutate';
+import { notifyAutomationTouch } from '$lib/audio/automation-touch';
+import {
+  clipIndex,
+  readClip,
+  findAutomationTrack,
+  removeAutomationTrack,
+  type ClipPlayerData,
+  type AutomationClipRecord,
+} from '$lib/audio/modules/clip-types';
+import { ensureAutomationTrack, plainAutomationClip } from '$lib/audio/modules/clip-automation';
 
 export type AssignKind = 'cc' | 'note';
+
+/** A clip-player in the rack that HAS an automation clip — a "Assign to
+ *  automation lane" target for the control menu. */
+export interface AutomationEntry {
+  nodeId: string;
+  name: string;
+}
+
+/** The automation clip a clip-player node designates, resolved to its flat clip
+ *  index + record + display name, or null (no pointer / not an automation clip). */
+function automationClipOf(
+  node: { data?: unknown } | undefined,
+): { idx: number; name: string; rec: AutomationClipRecord } | null {
+  const data = node?.data as ClipPlayerData | undefined;
+  const ptr = data?.automation?.clip;
+  if (!ptr || typeof ptr.lane !== 'number' || typeof ptr.slot !== 'number') return null;
+  const idx = clipIndex(ptr.slot, ptr.lane);
+  const rec = readClip(data, idx);
+  if (!rec || rec.kind !== 'automation') return null;
+  const label = (data as { label?: unknown } | undefined)?.label;
+  const name = typeof label === 'string' && label ? label : 'clip player';
+  return { idx, name, rec };
+}
 
 export interface MidiAssignableArgs {
   /** Patch-graph node id. */
@@ -97,7 +131,12 @@ export interface MidiAssignable {
   readonly surfaces: SurfaceEntry[];
   /** Snapshot of ElectraControls this control can be assigned to (recompute on open). */
   readonly electras: ElectraEntry[];
-  /** Recompute the surface + electra snapshots (call when a menu opens). */
+  /** Snapshot of clip-players with an automation clip this control can be sent
+   *  to (recompute on open). */
+  readonly automations: AutomationEntry[];
+  /** True when this control is already a track in some automation clip. */
+  readonly automated: boolean;
+  /** Recompute the surface + electra + automation snapshots (call when a menu opens). */
   refresh(): void;
   /** Enter learn mode (CC or NOTE per `kind`). */
   learn(): void;
@@ -109,6 +148,10 @@ export interface MidiAssignable {
   /** Assign/clear this control on an ElectraControl slot. */
   assignElectra(electraId: string, slot: number): void;
   clearElectra(electraId: string, slot: number): void;
+  /** Add this control as a track in the given clip-player's automation clip. */
+  assignAutomation(clipPlayerNodeId: string): void;
+  /** Remove this control's track from whichever automation clip holds it. */
+  removeAutomation(): void;
   /** Register the live setter (call onMount). */
   register(): void;
   /** Drop the live setter (call onDestroy). Cancels an in-flight learn for this control. */
@@ -163,6 +206,11 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
     args.onTransient?.(v);
     const m = args.moduleId, p = args.paramId;
     if (!m || !p) return;
+    // Touch-suspend cross-wire (task #183): an inbound MIDI CC is a live grab —
+    // suspend this param's clip-automation playback (CC wins) via the SAME seam
+    // a screen drag hits. Fires per message so suspension is immediate; cleared
+    // at the loop wrap during recording / by the re-enable indicator otherwise.
+    notifyAutomationTouch({ nodeId: m, paramId: p });
     const engine = engineCtx.get();
     if (!engine) return;
     const node = patch.nodes[m] as ModuleNode | undefined;
@@ -198,6 +246,8 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
 
   let surfaces = $state<SurfaceEntry[]>([]);
   let electras = $state<ElectraEntry[]>([]);
+  let automations = $state<AutomationEntry[]>([]);
+  let automated = $state(false);
 
   const binding = $derived.by<MidiBinding | undefined>(() => {
     void bindingTick;
@@ -228,7 +278,7 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
 
   function refresh(): void {
     const m = args.moduleId, p = args.paramId;
-    if (!m || !p) { surfaces = []; electras = []; return; }
+    if (!m || !p) { surfaces = []; electras = []; automations = []; automated = false; return; }
     surfaces = listControlSurfaces(patch.nodes).map((s) => ({
       id: s.id,
       name: s.name,
@@ -239,6 +289,62 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
       name: e.name,
       assignedSlot: slotForBinding(readElectraData(patch.nodes[e.id]), m, p),
     }));
+    // AUTOMATION targets: every clip-player node that HAS an automation clip.
+    // `automated` = this control is already a track in one of them.
+    const list: AutomationEntry[] = [];
+    let isAuto = false;
+    for (const [nid, node] of Object.entries(patch.nodes)) {
+      const clip = automationClipOf(node);
+      if (!clip) continue;
+      list.push({ nodeId: nid, name: clip.name });
+      if (findAutomationTrack(clip.rec, { nodeId: m, paramId: p })) isAuto = true;
+    }
+    automations = list;
+    automated = isAuto;
+  }
+
+  /** Add this control as a track in the clip-player's automation clip, then
+   *  reassign the WHOLE clip PLAIN through the graph mutate seam (never a live
+   *  Y.Array splice — [[yjs-save-load-real-ydoc]]). No-op when the player has no
+   *  automation clip, or the sanity cap (MAX_AUTOMATION_TRACKS) is already hit. */
+  function assignAutomation(clipPlayerNodeId: string): void {
+    const m = args.moduleId, p = args.paramId;
+    if (!m || !p) return;
+    const node = patch.nodes[clipPlayerNodeId];
+    const clip = automationClipOf(node);
+    if (!clip) return;
+    const { rec: next, track } = ensureAutomationTrack(clip.rec, { nodeId: m, paramId: p });
+    if (!track) return; // at the sanity cap — nothing added
+    const plain = plainAutomationClip(next);
+    mutateNode(clipPlayerNodeId, (live) => {
+      if (!live.data) live.data = {};
+      const data = live.data as ClipPlayerData;
+      if (!data.clips) data.clips = {};
+      data.clips[String(clip.idx)] = plain;
+    });
+  }
+
+  /** Remove this control's track from whichever automation clip holds it, then
+   *  release the param to its current store value (a one-shot no-op commit so
+   *  the engine stops seeing an automation write). Whole-clip PLAIN reassign. */
+  function removeAutomation(): void {
+    const m = args.moduleId, p = args.paramId;
+    if (!m || !p) return;
+    for (const [nid, node] of Object.entries(patch.nodes)) {
+      const clip = automationClipOf(node);
+      if (!clip) continue;
+      if (!findAutomationTrack(clip.rec, { nodeId: m, paramId: p })) continue;
+      const plain = plainAutomationClip(removeAutomationTrack(clip.rec, { nodeId: m, paramId: p }));
+      mutateNode(nid, (live) => {
+        const data = live.data as ClipPlayerData | undefined;
+        if (!data?.clips) return;
+        data.clips[String(clip.idx)] = plain;
+      });
+      // Release the param to its live value (MVP: a one-shot no-op set).
+      const cur = patch.nodes[m]?.params?.[p];
+      if (typeof cur === 'number') setNodeParam(m, p, cur);
+      break;
+    }
   }
 
   function register(): void {
@@ -312,6 +418,8 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
     get badge() { return badge; },
     get surfaces() { return surfaces; },
     get electras() { return electras; },
+    get automations() { return automations; },
+    get automated() { return automated; },
     refresh,
     learn,
     forget,
@@ -319,6 +427,8 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
     removeFromSurface,
     assignElectra,
     clearElectra,
+    assignAutomation,
+    removeAutomation,
     register,
     unregister,
     get ccActive() { return ccActive; },

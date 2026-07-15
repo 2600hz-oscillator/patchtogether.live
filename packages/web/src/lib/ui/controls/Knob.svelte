@@ -11,6 +11,15 @@
   import { createDragCommit } from './drag-commit';
   import ControlContextMenu from './ControlContextMenu.svelte';
   import { makeMidiAssignable } from './midi-assignable.svelte';
+  import { notifyAutomationTouch } from '$lib/audio/automation-touch';
+
+  // Touch-suspend cross-wire (task #183): a live grab of this control suspends
+  // its clip-automation playback until the loop wrap ("live wins"). Fires on the
+  // screen-gesture choke points below; the MIDI path notifies from
+  // makeMidiAssignable so screen + MIDI share the SAME notifyAutomationTouch seam.
+  function touchAutomation() {
+    if (moduleId && paramId) notifyAutomationTouch({ nodeId: moduleId, paramId });
+  }
 
   interface Props {
     value: number;
@@ -166,6 +175,7 @@
 
   function pointerdown(e: PointerEvent) {
     if (e.button !== 0) return;
+    touchAutomation(); // grab → suspend this param's automation (live wins)
     dragging = true;
     startY = e.clientY;
     startFrac = valueToFrac(value);
@@ -199,6 +209,7 @@
 
   function wheel(e: WheelEvent) {
     e.preventDefault();
+    touchAutomation(); // wheel adjust is a live grab too
     // Wheel ticks: small step in normalized space.
     const step = e.shiftKey ? 0.001 : e.ctrlKey || e.metaKey ? 0.0001 : 0.005;
     const direction = e.deltaY < 0 ? 1 : -1;
@@ -274,6 +285,10 @@
     electras={midi.electras}
     onassignelectra={midi.assignElectra}
     onclearelectra={midi.clearElectra}
+    automations={midi.automations}
+    automated={midi.automated}
+    onassignautomation={midi.assignAutomation}
+    onremoveautomation={midi.removeAutomation}
   />
 {/if}
 
