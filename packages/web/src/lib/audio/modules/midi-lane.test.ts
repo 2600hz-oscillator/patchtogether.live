@@ -256,12 +256,14 @@ describe('buildPolyLanes: chord allocation', () => {
     expect(lanes[1].pitch).toBeCloseTo(midiToVOct(64) + bend, 8);
   });
   it('more than MAX_POLY_VOICES held → keeps the most-recent (steal-oldest)', () => {
-    // 6 notes held; only the newest 5 survive.
-    const lanes = buildPolyLanes([60, 61, 62, 63, 64, 65], 0);
+    // MAX_POLY_VOICES+2 notes held; only the newest MAX_POLY_VOICES survive.
+    const held = Array.from({ length: MAX_POLY_VOICES + 2 }, (_, i) => 48 + i);
+    const lanes = buildPolyLanes(held, 0);
     const pitches = lanes.map((l) => l.pitch);
-    // Note 60 (the oldest) should NOT be present.
-    expect(pitches).not.toContain(midiToVOct(60));
-    expect(pitches).toContain(midiToVOct(65));
+    // The two oldest (48, 49) should NOT be present; the newest survives.
+    expect(pitches).not.toContain(midiToVOct(48));
+    expect(pitches).not.toContain(midiToVOct(49));
+    expect(pitches).toContain(midiToVOct(48 + MAX_POLY_VOICES + 1));
     expect(lanes.every((l) => l.gate === 1)).toBe(true);
   });
 });
@@ -444,7 +446,7 @@ describe('midiLaneDef.factory — MIDI demux → ConstantSourceNode automation',
 
       // The poly bus raises 3 lane gates (the triad).
       const gates = polyGateSources(ctx);
-      expect(gates.length).toBe(5);
+      expect(gates.length).toBe(MAX_POLY_VOICES);
       const high = gates.filter((g) => g.offset.events.some((e) => e.kind === 'set' && e.value === 1));
       expect(high.length, 'three poly lane gates raised for the triad').toBe(3);
 
@@ -473,7 +475,7 @@ describe('midiLaneDef.factory — MIDI demux → ConstantSourceNode automation',
       // The POLY port raises all three lane gates EVEN in mono mode (the bug
       // was that these stayed at 0, so the downstream poly synth was silent).
       const gates = polyGateSources(ctx);
-      expect(gates.length).toBe(5);
+      expect(gates.length).toBe(MAX_POLY_VOICES);
       const high = gates.filter((g) => g.offset.events.some((e) => e.kind === 'set' && e.value === 1));
       expect(high.length, 'poly lane gates raised in DEFAULT mono mode').toBe(3);
 

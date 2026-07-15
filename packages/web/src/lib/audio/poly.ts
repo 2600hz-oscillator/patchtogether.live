@@ -1,8 +1,9 @@
 // packages/web/src/lib/audio/poly.ts
 //
-// Stage 1 of the polyphony architecture (see .myrobots/plans/dx7-and-polyphony.md
-// §5). The single concept here is the `polyPitchGate` cable: 5 voice-pairs of
-// (pitch_v_oct, gate) packed into one 10-channel audio-rate connection.
+// The polyphony architecture (see .myrobots/plans/dx7-and-polyphony.md §5). The
+// single concept here is the `polyPitchGate` cable: POLY_CHANNEL_PAIRS voice-pairs
+// of (pitch_v_oct, gate) packed into one POLY_CHANNELS-channel audio-rate
+// connection.
 //
 // Layout, channel-major:
 //   ch 0 = lane 0 pitch (V/oct, 0V = C4)
@@ -10,16 +11,21 @@
 //   ch 2 = lane 1 pitch
 //   ch 3 = lane 1 gate
 //   ...
-//   ch 8 = lane 4 pitch
-//   ch 9 = lane 4 gate
+//   ch 2i   = lane i pitch
+//   ch 2i+1 = lane i gate
 //
 // Lane 0 is "the root note" by convention; backward-compat routing pulls
 // channel 0 when a polyPitchGate source is connected to a mono `pitch` sink.
 //
-// User-confirmed adjustments to the §5 spec:
-//   - 5 lanes (not 4) — "5 is good enough for jazz"; 7ths/9ths use the 5th.
-//   - Stage 1 sequencers/cartesian only emit triads, so lane 4 stays gate=0
-//     and is reserved for a future allocator/extension.
+// WIDTH — POLY_CHANNEL_PAIRS = 16 lanes → POLY_CHANNELS = 32 audio channels. 32
+// is the Web Audio ChannelMerger/ChannelSplitter HARD MAX, so 16 lanes is the
+// absolute ceiling for a single-merger poly cable (raised from 5 for the SIX
+// STRUM 6-string voice; MIDI LANE now packs up to 16 held keys). Per-module
+// voice COUNT is a separate axis: dx7/cube/wavecel/pentemelodica keep their own
+// local 5-voice constants and simply read lanes 0-4, ignoring the extra lanes —
+// so they stay pinned at 5 for free. Do NOT wire those modules to this constant.
+//
+//   - Triad sequencers/cartesian only emit 3-4 gated lanes; the rest stay gate=0.
 //   - Voice stealing = oldest-note (when an allocator is needed; sequencers
 //     don't need one because chord lanes are deterministic).
 
@@ -27,11 +33,11 @@ import { midiToVOct, MAX_MIDI, MIN_MIDI } from '$lib/audio/note-entry';
 
 // ---------------- Constants ----------------
 
-export const POLY_CHANNEL_PAIRS = 5;
+export const POLY_CHANNEL_PAIRS = 16;
 export const POLY_CHANNELS = POLY_CHANNEL_PAIRS * 2;
 
 /** Voice lane index (0..POLY_CHANNEL_PAIRS-1). */
-export type Lane = 0 | 1 | 2 | 3 | 4;
+export type Lane = number;
 
 // ---------------- Chord quality ----------------
 
@@ -78,24 +84,25 @@ export function chordVoicing(
   quality: ChordQuality,
 ): ReadonlyArray<VoicingLane> {
   const empty: VoicingLane = { midi: null, gate: 0 };
+  // Pad any voicing out to the full cable width; unused lanes stay gate=0.
+  const pad = (lanes: ReadonlyArray<VoicingLane>): ReadonlyArray<VoicingLane> => {
+    const out = lanes.slice(0, POLY_CHANNEL_PAIRS);
+    while (out.length < POLY_CHANNEL_PAIRS) out.push(empty);
+    return out;
+  };
+
   if (baseMidi === null || !Number.isFinite(baseMidi)) {
-    return [empty, empty, empty, empty, empty];
+    return pad([]);
   }
   const root = Math.round(baseMidi);
   const rootInRange = root >= MIN_MIDI && root <= MAX_MIDI;
   if (!rootInRange) {
     // Out-of-range root: nothing plays. Defensive — note-entry already clamps.
-    return [empty, empty, empty, empty, empty];
+    return pad([]);
   }
 
   if (quality === 'mono') {
-    return [
-      { midi: root, gate: 1 },
-      empty,
-      empty,
-      empty,
-      empty,
-    ];
+    return pad([{ midi: root, gate: 1 }]);
   }
 
   const thirdSemis = quality === 'maj' ? 4 : 3;
@@ -108,13 +115,12 @@ export function chordVoicing(
     return { midi: m, gate: 1 };
   }
 
-  return [
+  return pad([
     { midi: root, gate: 1 },
     laneFor(thirdSemis),
     laneFor(fifthSemis),
     laneFor(octaveSemis),
-    empty,
-  ];
+  ]);
 }
 
 /** Convert a voicing's MIDI ints to V/oct (0V = C4 = MIDI 60). Lanes whose

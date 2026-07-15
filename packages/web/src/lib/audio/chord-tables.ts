@@ -112,7 +112,12 @@ export interface ChordVoiceLane {
   gate: 0 | 1;
 }
 
-/** Number of voice lanes POLYSEQZ emits — matches POLY_CHANNEL_PAIRS. */
+/** Number of voice lanes a CHORD voicing fills (the POLYSEQZ chord size). This
+ *  is the musical voicing width, NOT the cable width — it must stay ≤
+ *  POLY_CHANNEL_PAIRS (poly.ts, now 16) but does not track it: widening the
+ *  cable for higher-polyphony SOURCES (MIDI LANE, clipplayer) must NOT turn a
+ *  triad into a 16-note octave stack. Kept a local literal so this table stays
+ *  dependency-free; polyseqz.test pins `VOICE_LANES <= POLY_CHANNEL_PAIRS`. */
 export const VOICE_LANES = 5;
 
 const SILENT_LANE: ChordVoiceLane = { midi: null, gate: 0 };

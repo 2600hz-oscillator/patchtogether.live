@@ -155,9 +155,11 @@ export function ccToCv(value: number): number {
   return v / 127;
 }
 
-/** Cap on poly voices the lane allocates (the polyPitchGate carries 5
- *  pitch/gate pairs across 10 channels). */
-export const MAX_POLY_VOICES = 5;
+/** Cap on poly voices the lane allocates (the polyPitchGate carries
+ *  POLY_CHANNEL_PAIRS=16 pitch/gate pairs across 32 channels — the Web Audio
+ *  merger max). MIDI LANE packs up to 16 held keys so it can fully drive a
+ *  16-voice consumer (e.g. SIX STRUM's 6 strings). */
+export const MAX_POLY_VOICES = 16;
 
 /** Build the poly "lanes" array (pitch V/oct + gate 0/1) from a held-keys
  *  stack under a given voice priority. Newest-held voices win when more

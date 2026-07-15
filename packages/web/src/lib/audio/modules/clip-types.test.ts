@@ -1,6 +1,7 @@
 // packages/web/src/lib/audio/modules/clip-types.test.ts
 import { describe, it, expect } from 'vitest';
 import { midiToVOct, C3_MIDI } from '$lib/audio/note-entry';
+import { POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
 import {
   CLIP_COUNT,
   CLIP_LANES,
@@ -233,15 +234,18 @@ describe('toggleNoteAt', () => {
   });
 
   it('POLY caps a column at maxVoices, re-using the OLDEST voice', () => {
-    // Fill column 0 with 5 voices (the poly width), then add a 6th.
+    // Fill column 0 with POLY_CHANNEL_PAIRS voices (the poly width), then add
+    // one more → the oldest (the first note added) is dropped.
     let c: NoteClipRecord = defaultNoteClip();
-    for (const m of [60, 62, 64, 65, 67]) c = toggleNoteAt(c, 0, m);
-    expect(c.steps.filter((e) => e.step === 0)).toHaveLength(5);
-    const c6 = toggleNoteAt(c, 0, 69); // 6th → drop the oldest (midi 60)
-    const col = c6.steps.filter((e) => e.step === 0);
-    expect(col).toHaveLength(5);
-    expect(col.some((e) => e.midi === 60)).toBe(false); // oldest re-used
-    expect(col.some((e) => e.midi === 69)).toBe(true); // newest present
+    const oldest = 48;
+    for (let i = 0; i < POLY_CHANNEL_PAIRS; i++) c = toggleNoteAt(c, 0, oldest + i);
+    expect(c.steps.filter((e) => e.step === 0)).toHaveLength(POLY_CHANNEL_PAIRS);
+    const overflowMidi = oldest + POLY_CHANNEL_PAIRS;
+    const cOver = toggleNoteAt(c, 0, overflowMidi); // one over → drop the oldest
+    const col = cOver.steps.filter((e) => e.step === 0);
+    expect(col).toHaveLength(POLY_CHANNEL_PAIRS);
+    expect(col.some((e) => e.midi === oldest)).toBe(false); // oldest re-used
+    expect(col.some((e) => e.midi === overflowMidi)).toBe(true); // newest present
   });
 
   it('POLY cap leaves OTHER columns untouched', () => {
