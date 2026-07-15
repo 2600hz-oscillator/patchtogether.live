@@ -41,6 +41,7 @@ import {
   RGB_QUEUED,
   RGB_QUEUED_STOP,
   RGB_SCENE,
+  RGB_SCENE_DIM,
   RGB_STOP_ACTIVE,
   RGB_STOP_IDLE,
   RGB_TRANSPORT_ON,
@@ -121,6 +122,15 @@ import {
   gridPadToClipIndex,
   clipIndexToGridPad,
   gridSceneRowToSlot,
+  gridPadToClipIndexScrolled,
+  gridPadForScrolledSlot,
+  slotForScene,
+  sceneForWindowIndex,
+  highestContentScene,
+  maxSceneScrollOffset,
+  clampSceneScrollOffset,
+  SCENE_WINDOW,
+  MAX_SCENES,
   sceneIndexForCc,
   topRowAction,
   gridShiftRight,
@@ -694,9 +704,9 @@ describe('Single mode — classifiers', () => {
     expect(sceneIndexForCc(SCENE_CCS[7])).toBe(7);
     expect(sceneIndexForCc(91)).toBeNull();
   });
-  it('gridShiftRight: 0=copy … 7=now; out of range null', () => {
+  it('gridShiftRight: 0=copy … 5=len, 6=scrollUp, 7=scrollDown; out of range null', () => {
     expect([0, 1, 2, 3, 4, 5, 6, 7].map(gridShiftRight)).toEqual([
-      'copy', 'paste', 'clipDiv', 'swingUp', 'swingDown', 'len', 'pasteRev', 'now',
+      'copy', 'paste', 'clipDiv', 'swingUp', 'swingDown', 'len', 'scrollUp', 'scrollDown',
     ]);
     expect(gridShiftRight(8)).toBeNull();
     expect(gridShiftRight(-1)).toBeNull();
@@ -737,6 +747,99 @@ describe('Single mode — classifiers', () => {
     expect(controlRehomePad(CTRL_SONG_COL, CTRL_ARRANGE_ROW)).toBe('song');
     expect(controlRehomePad(2, CTRL_TEMPO_ROW)).toBeNull(); // a gap column
     expect(controlRehomePad(0, 0)).toBeNull(); // not a re-home row
+  });
+});
+
+describe('Single mode — scene-scroll window (reach scenes beyond 8)', () => {
+  it('slotForScene: 0..CLIP_SLOTS-1 back a stored slot; a scene ≥ CLIP_SLOTS is empty (null)', () => {
+    expect(slotForScene(0)).toBe(0);
+    expect(slotForScene(7)).toBe(7);
+    expect(slotForScene(8)).toBeNull(); // empty scene (no stored slot) → dark / no-op
+    expect(slotForScene(63)).toBeNull();
+    expect(slotForScene(-1)).toBeNull();
+  });
+  it('sceneForWindowIndex: window index i at offset o → global scene o+i', () => {
+    expect(sceneForWindowIndex(0, 0)).toBe(0);
+    expect(sceneForWindowIndex(0, 7)).toBe(7);
+    expect(sceneForWindowIndex(2, 0)).toBe(2); // top button at offset 2 = scene 2
+    expect(sceneForWindowIndex(2, 7)).toBe(9); // bottom button at offset 2 = scene 9
+  });
+  it('SCENE_WINDOW = LP_HEIGHT (8) and MAX_SCENES is a sane cap (64)', () => {
+    expect(SCENE_WINDOW).toBe(8);
+    expect(MAX_SCENES).toBe(64);
+  });
+  it('highestContentScene: -1 when empty; the deepest slot that holds any clip', () => {
+    expect(highestContentScene(undefined)).toBe(-1);
+    expect(highestContentScene({} as ClipPlayerData)).toBe(-1);
+    const d = {
+      clips: { [clipIndex(1, 0)]: defaultNoteClip(), [clipIndex(3, 2)]: defaultNoteClip() },
+    } as unknown as ClipPlayerData;
+    expect(highestContentScene(d)).toBe(3); // slot 3 (lane 2) is the deepest
+    const full = { clips: { [clipIndex(7, 5)]: defaultNoteClip() } } as unknown as ClipPlayerData;
+    expect(highestContentScene(full)).toBe(7);
+  });
+  it('maxSceneScrollOffset: an empty player cannot scroll; content reveals ONE empty scene past it, capped at MAX_SCENES', () => {
+    expect(maxSceneScrollOffset(-1)).toBe(0); // empty → no scroll
+    expect(maxSceneScrollOffset(0)).toBe(0); // content only at scene 0 → still a full window
+    expect(maxSceneScrollOffset(7)).toBe(1); // content through slot 7 → reveal scene 8 (dark)
+    expect(maxSceneScrollOffset(8)).toBe(2); // (once storage grows) content to scene 8 → scene 9 at bottom
+    expect(maxSceneScrollOffset(63)).toBe(MAX_SCENES - SCENE_WINDOW); // hard cap = 56
+    expect(maxSceneScrollOffset(200)).toBe(MAX_SCENES - SCENE_WINDOW); // never past the cap
+  });
+  it('clampSceneScrollOffset: clamps into [0, max]; UP clamps at 0; NaN → 0', () => {
+    expect(clampSceneScrollOffset(-5, 7)).toBe(0); // UP clamp
+    expect(clampSceneScrollOffset(5, 7)).toBe(1); // DOWN clamp (max 1 for content-through-7)
+    expect(clampSceneScrollOffset(1, 7)).toBe(1);
+    expect(clampSceneScrollOffset(3, -1)).toBe(0); // empty player: max 0
+    expect(clampSceneScrollOffset(Number.NaN, 7)).toBe(0);
+  });
+  it('gridPadToClipIndexScrolled: offset 0 === gridPadToClipIndex; offset shifts the scene; an empty scene → null', () => {
+    // offset 0 agrees with the un-scrolled mapping for every pad.
+    for (let x = 0; x < 8; x++) {
+      for (let y = 0; y < 8; y++) {
+        expect(gridPadToClipIndexScrolled(x, y, 0)).toBe(gridPadToClipIndex(x, y));
+      }
+    }
+    // offset 1: the TOP row (y=7) now addresses scene 1 (slot 1).
+    expect(gridPadToClipIndexScrolled(0, 7, 1)).toBe(clipIndex(1, 0));
+    expect(gridPadToClipIndexScrolled(3, 7, 1)).toBe(clipIndex(1, 3));
+    // offset 1: the BOTTOM row (y=0) = scene 8 → beyond the stored slots → null.
+    expect(gridPadToClipIndexScrolled(0, 0, 1)).toBeNull();
+    // out of the matrix → null.
+    expect(gridPadToClipIndexScrolled(8, 0, 0)).toBeNull();
+    expect(gridPadToClipIndexScrolled(0, 8, 0)).toBeNull();
+  });
+  it('gridPadForScrolledSlot: places a stored slot in the window, or null when scrolled off; round-trips with the pad→index map', () => {
+    expect(gridPadForScrolledSlot(0, 0, 0)).toEqual({ x: 0, y: 7 }); // slot 0 = top row
+    expect(gridPadForScrolledSlot(1, 3, 0)).toEqual({ x: 3, y: 6 });
+    expect(gridPadForScrolledSlot(0, 0, 1)).toBeNull(); // scrolled off the top
+    expect(gridPadForScrolledSlot(7, 0, 1)).toEqual({ x: 0, y: 1 }); // slot 7 rises to row 6
+    for (const offset of [0, 1, 2]) {
+      for (let slot = 0; slot < 8; slot++) {
+        for (let lane = 0; lane < 8; lane++) {
+          const pad = gridPadForScrolledSlot(slot, lane, offset);
+          if (pad) expect(gridPadToClipIndexScrolled(pad.x, pad.y, offset)).toBe(clipIndex(slot, lane));
+        }
+      }
+    }
+  });
+  it('computeSingleGridFrame at an offset: the shifted scene paints its clip; the revealed empty scene is DARK', () => {
+    const data = {
+      clips: { [clipIndex(1, 0)]: defaultNoteClip() },
+      playing: [1, null, null, null, null, null, null, null], // lane 0 playing slot 1
+    } as unknown as ClipPlayerData;
+    const f = computeSingleGridFrame(data, {
+      top: mkTop('grid'),
+      blinkOn: true,
+      sceneScrollOffset: 1,
+    });
+    // At offset 1 scene 1 (slot 1) is the TOP row → lane-0 playing shows its hue at (0,7).
+    expect(eqRgb(at(f, padNote(0, 7)), hexToRgb127(defaultLaneColorHex(0)))).toBe(true);
+    // The BOTTOM row is scene 8 (empty) → DARK.
+    expect(eqRgb(at(f, padNote(0, 0)), RGB_OFF)).toBe(true);
+    // Scene column: top button (index 0 → scene 1) = amber; bottom (index 7 → scene 8) = DARK.
+    expect(eqRgb(at(f, SCENE_CCS[0]), RGB_SCENE)).toBe(true);
+    expect(eqRgb(at(f, SCENE_CCS[7]), RGB_OFF)).toBe(true);
   });
 });
 
@@ -803,18 +906,29 @@ describe('Single mode — frame builders', () => {
     // permanent nav: grid active.
     expect(eqRgb(at(f, 92), RGB_VIEW_ACTIVE)).toBe(true);
   });
-  it('grid + shift: the right column shows the function palette; the armed action brightens', () => {
+  it('grid + shift: the right column shows the function palette; the armed action brightens; UP/DOWN are amber', () => {
     const f = computeSingleGridFrame({} as ClipPlayerData, {
       top: mkTop('grid', { shift: { latched: true, held: false } }),
       armedRightAction: 'copy',
       bufferLoaded: false,
-      nowOn: false,
+      canScrollUp: true,
+      canScrollDown: true,
     });
     expect(eqRgb(at(f, SCENE_CCS[0]), RGB_PATTERN_ARMED)).toBe(true); // COPY armed = bright green
     expect(eqRgb(at(f, SCENE_CCS[1]), RGB_PATTERN)).toBe(true); // PASTE idle green (no buffer)
     expect(eqRgb(at(f, SCENE_CCS[2]), RGB_TIMING)).toBe(true); // CLIP DIV blue
     expect(eqRgb(at(f, SCENE_CCS[5]), RGB_DECK_LEN)).toBe(true); // LEN yellow
-    expect(eqRgb(at(f, SCENE_CCS[7]), RGB_SYS_DIM)).toBe(true); // NOW off = dim orange
+    expect(eqRgb(at(f, SCENE_CCS[6]), RGB_SCENE)).toBe(true); // scene UP (was PASTE-REV) = amber
+    expect(eqRgb(at(f, SCENE_CCS[7]), RGB_SCENE)).toBe(true); // scene DOWN (was NOW) = amber
+  });
+  it('grid + shift: UP/DOWN dim to RGB_SCENE_DIM at their scroll clamp', () => {
+    const f = computeSingleGridFrame({} as ClipPlayerData, {
+      top: mkTop('grid', { shift: { latched: true, held: false } }),
+      canScrollUp: false, // at the top (offset 0) → UP dim
+      canScrollDown: false, // nothing more to reveal → DOWN dim
+    });
+    expect(eqRgb(at(f, SCENE_CCS[6]), RGB_SCENE_DIM)).toBe(true);
+    expect(eqRgb(at(f, SCENE_CCS[7]), RGB_SCENE_DIM)).toBe(true);
   });
   it('grid + shift: the Swing buttons flash green on return-to-centre', () => {
     const f = computeSingleGridFrame({} as ClipPlayerData, {

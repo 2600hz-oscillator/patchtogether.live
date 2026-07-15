@@ -100,8 +100,11 @@ import {
   type PermanentTopOpts,
   topRowAction,
   sceneIndexForCc,
-  gridPadToClipIndex,
-  gridSceneRowToSlot,
+  gridPadToClipIndexScrolled,
+  slotForScene,
+  highestContentScene,
+  maxSceneScrollOffset,
+  clampSceneScrollOffset,
   gridShiftRight,
   clipRight,
   keysScaleRight,
@@ -219,6 +222,11 @@ let editAnchor: { step: number; midi: number } | null = null;
 let editSpanned = false;
 let editRowOffset = 0; // pitch-window scroll (scale degrees)
 let editWindowStart = 0; // absolute step of the leftmost shown column (frozen value)
+// SINGLE-mode Grid SCENE-window scroll — a LOCAL per-surface view offset (like
+// editRowOffset / editWindowStart, NEVER synced to node.data): 0 = scenes 0..7
+// at the top. The Grid-shift UP/DOWN buttons (repurposed from PASTE-REV / NOW)
+// slide it so the 8 position-relative scene-launch buttons address `offset + i`.
+let sceneScrollOffset = 0;
 let followOn = true;
 // Which mode the LENGTH-EDIT page returns to on EXIT ('edit' = the note editor,
 // the legacy pair caller; 'keys' = the KEYS view, when LEN was opened from KEYS).
@@ -429,6 +437,7 @@ function resetSingleState(): void {
   armedRightAction = null;
   armTick = 0;
   divPreview = null;
+  sceneScrollOffset = 0;
   swingMeterActive = false;
   swingMeterDir = 'center';
   arp = createArpState();
@@ -1509,7 +1518,9 @@ function handleSingleGrid(nodeId: string, e: LaunchpadKeyEvent): void {
   const shift = singleShiftEff();
   if (ev.type === 'pad') {
     if (ev.s !== 1) return; // launch acts on press
-    const clipIdx = gridPadToClipIndex(ev.x, ev.y);
+    // Scrolled mapping: a pad in an EMPTY scene (scene ≥ CLIP_SLOTS) → null → a
+    // dark no-op (nothing to launch/create there).
+    const clipIdx = gridPadToClipIndexScrolled(ev.x, ev.y, sceneScrollOffset);
     if (clipIdx === null) return;
     // A pending Grid-shift arm consumes the next clip-pad tap.
     if (shift && armedRightAction) {
@@ -1580,11 +1591,13 @@ function handleGridLaunch(nodeId: string, clipIdx: number, data: ClipPlayerData 
   // else empty: no launch, but the tap is recorded (double-tap of empty → creates + selects).
 }
 
-/** No-shift scene/row launch: a grid ROW = one clip per channel (a scene). Fire
- *  slot `sceneIndex` across ALL lanes (stop lanes with no clip in that slot). */
+/** No-shift scene/row launch: a grid ROW = one clip per channel (a scene). The 8
+ *  buttons are POSITION-RELATIVE — button `sceneIndex` (0 = top) launches the
+ *  scrolled scene `offset + sceneIndex`, firing that slot across ALL lanes (stop
+ *  lanes with no clip in it). A scene beyond the stored slots (empty) → no-op. */
 function handleSceneLaunch(nodeId: string, sceneIndex: number, data: ClipPlayerData | undefined): void {
-  const slot = gridSceneRowToSlot(sceneIndex);
-  if (slot === null) return;
+  const slot = slotForScene(sceneScrollOffset + sceneIndex);
+  if (slot === null) return; // empty scene scrolled into view = dark / no launch
   // Fire the whole scene in ONE transaction (all 8 lanes are addressed, so we
   // replace the queued array wholesale — same idea as stop-all) instead of 8
   // separate queueLane writes = 8 ydoc syncs per scene press.
@@ -1604,7 +1617,6 @@ function handleGridShiftButton(nodeId: string, sceneIndex: number): void {
   switch (gridShiftRight(sceneIndex)) {
     case 'copy':
     case 'paste':
-    case 'pasteRev':
     case 'clipDiv':
     case 'len':
       toggleGridArm(nodeId, gridShiftRight(sceneIndex) as GridArmAction);
@@ -1615,17 +1627,30 @@ function handleGridShiftButton(nodeId: string, sceneIndex: number): void {
     case 'swingDown':
       nudgeSwing(nodeId, -SWING_STEP);
       break;
-    case 'now':
-      nowHeld = !nowHeld;
-      renderLeds();
+    case 'scrollUp':
+      scrollScenes(nodeId, -1); // amber UP (was PASTE-REV): toward scene 0
+      break;
+    case 'scrollDown':
+      scrollScenes(nodeId, +1); // amber DOWN (was NOW): reveal the next scene
       break;
     default:
       break;
   }
 }
 
+/** Slide the Grid scene-window by ±1 (UP = −1, toward scene 0). Clamps at the top
+ *  (offset 0) and at the lazy DOWN limit (one empty scene past the deepest clip,
+ *  capped at MAX_SCENES). LOCAL view state — never writes node.data. */
+function scrollScenes(nodeId: string, delta: number): void {
+  const data = liveData(nodeId);
+  const next = clampSceneScrollOffset(sceneScrollOffset + delta, highestContentScene(data));
+  if (next === sceneScrollOffset) return;
+  sceneScrollOffset = next;
+  renderLeds();
+}
+
 /** Tap a Grid-shift function button → arm it (or disarm on a re-tap; COPY re-tap
- *  clears the buffer). Only one arm at a time. Paste/PasteRev require a buffer. */
+ *  clears the buffer). Only one arm at a time. Paste requires a buffer. */
 function toggleGridArm(nodeId: string, action: GridArmAction): void {
   if (armedRightAction === action) {
     if (action === 'copy' && clipBuffer !== null) clearBuffer();
@@ -1634,7 +1659,7 @@ function toggleGridArm(nodeId: string, action: GridArmAction): void {
   }
   // Switching arms → commit any pending Clip-Div preview from the previous arm.
   if (armedRightAction === 'clipDiv') commitDivPreview(nodeId);
-  if ((action === 'paste' || action === 'pasteRev') && clipBuffer === null) {
+  if (action === 'paste' && clipBuffer === null) {
     // Nothing to paste → don't arm (the button stays its idle green).
     armedRightAction = null;
     divPreview = null;
@@ -1667,9 +1692,9 @@ function commitDivPreview(nodeId: string): void {
   }
 }
 
-/** Consume a Grid-shift arm on a clip-pad tap. Copy/Paste/PasteRev/Len apply +
- *  auto-disarm; Clip-Div cycles a LOCAL preview (stays armed; one write on
- *  disarm). Empty/illegal targets are no-ops that simply disarm. */
+/** Consume a Grid-shift arm on a clip-pad tap. Copy/Paste/Len apply + auto-disarm;
+ *  Clip-Div cycles a LOCAL preview (stays armed; one write on disarm).
+ *  Empty/illegal targets are no-ops that simply disarm. */
 function consumeGridArm(nodeId: string, clipIdx: number, data: ClipPlayerData | undefined): void {
   lastTapClipIndex = -1; // an armed tap isn't a launch
   armConsumedSincePress = true; // used shift → releasing it should NOT latch
@@ -1685,11 +1710,6 @@ function consumeGridArm(nodeId: string, clipIdx: number, data: ClipPlayerData | 
     }
     case 'paste': {
       if (clipBuffer) writeClip(nodeId, copyClip(clipBuffer), clipIdx, { undoable: true });
-      disarmGridArm(nodeId);
-      break;
-    }
-    case 'pasteRev': {
-      if (clipBuffer) writeClip(nodeId, reverseClipSteps(copyClip(clipBuffer)), clipIdx, { undoable: true });
       disarmGridArm(nodeId);
       break;
     }
@@ -2642,7 +2662,9 @@ function renderLeds(): void {
             recording: recordArmed(data),
             armedRightAction,
             bufferLoaded: clipBuffer !== null,
-            nowOn: nowHeld,
+            sceneScrollOffset,
+            canScrollUp: sceneScrollOffset > 0,
+            canScrollDown: sceneScrollOffset < maxSceneScrollOffset(highestContentScene(data)),
             divPulse: divPreview
               ? { clipIndex: divPreview.clipIndex, on: divPulsePhase(divPreview.divIndex) }
               : undefined,
@@ -2766,6 +2788,7 @@ export function __test_mode(): {
   velHeld: boolean;
   editRowOffset: number;
   editWindowStart: number;
+  sceneScrollOffset: number;
   followOn: boolean;
   bufferArmed: boolean;
   bufferSourceIndex: number | null;
@@ -2805,6 +2828,7 @@ export function __test_mode(): {
     velHeld,
     editRowOffset,
     editWindowStart,
+    sceneScrollOffset,
     followOn,
     bufferArmed: clipBuffer !== null,
     bufferSourceIndex,

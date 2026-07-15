@@ -116,6 +116,7 @@ export const RGB_QUEUED_STOP: Rgb = [104, 23, 23]; // red (queued-stop) — flas
 export const RGB_RECORDING: Rgb = [127, 16, 16]; // red (record-armed / recording) — pulses
 // Control / function colours.
 export const RGB_SCENE: Rgb = [112, 81, 21]; // amber (scene launch)
+export const RGB_SCENE_DIM: Rgb = [24, 17, 4]; // dim amber (scene UP/DOWN at its scroll clamp — nothing more to reveal)
 export const RGB_STOP_IDLE: Rgb = [69, 37, 16]; // dim red (stop lane idle)
 export const RGB_STOP_ACTIVE: Rgb = [104, 23, 23]; // bright red (lane playing)
 export const RGB_FUNC: Rgb = [60, 60, 70]; // function idle (white-ish)
@@ -1191,6 +1192,96 @@ export function gridSceneRowToSlot(sceneIndex: number): number | null {
   return sceneIndex >= 0 && sceneIndex < CLIP_SLOTS ? sceneIndex : null;
 }
 
+// ── SCENE-SCROLL WINDOW (single-mode Grid view: reach scenes beyond the 8 rows) ──
+// A "scene" is a SLOT fired across all channels. The launchpad shows an 8-row
+// WINDOW onto the scene axis; `sceneScrollOffset` (0 = scenes 0..7 at the top)
+// slides it. This is a PURE VIEW window over the EXISTING model — clipIndex /
+// CLIP_SLOTS / storage are UNCHANGED, so old 64-clip patches load byte-identical.
+// The 8 stored slots back scenes 0..CLIP_SLOTS-1; a scene at or beyond CLIP_SLOTS
+// has no stored slot → it paints DARK and launching it is a no-op (an empty scene
+// you can scroll into). Growing the stored slot cap (to hold clips in scenes 9+)
+// is a separate, higher-blast model change — the window math here is written
+// storage-agnostically so it works unchanged if/when that lands.
+export const SCENE_WINDOW = LP_HEIGHT; // 8 visible scene rows (the grid height)
+export const MAX_SCENES = 64; // hard cap on how far DOWN can reveal (sane ceiling)
+
+/** The GLOBAL scene addressed by a visible scene-column INDEX (0 = top row) at a
+ *  scroll offset. offset 0 → scene = sceneIndex. PURE. */
+export function sceneForWindowIndex(offset: number, sceneIndex: number): number {
+  return offset + sceneIndex;
+}
+
+/** The stored SLOT backing a global scene, or null when the scene is beyond the
+ *  stored slot axis (an empty/dark scene — no clips, launch is a no-op). PURE. */
+export function slotForScene(scene: number): number | null {
+  return scene >= 0 && scene < CLIP_SLOTS ? scene : null;
+}
+
+/** The highest scene index (= slot) that holds ANY clip across all channels, or
+ *  -1 when the player is empty. Bounds the lazy DOWN reveal. PURE. */
+export function highestContentScene(data: ClipPlayerData | undefined): number {
+  const clips = data?.clips ?? {};
+  let hi = -1;
+  for (let slot = 0; slot < CLIP_SLOTS; slot++) {
+    for (let lane = 0; lane < CLIP_LANES; lane++) {
+      if (clips[String(clipIndex(slot, lane))]) {
+        hi = slot;
+        break;
+      }
+    }
+  }
+  return hi;
+}
+
+/** The maximum scroll offset. DOWN lazily reveals ONE empty scene past the
+ *  highest scene that holds a clip ("reveal existing+1"), never scrolls past a
+ *  full window at the top, and never puts the bottom row past `maxScenes`. So an
+ *  empty player can't scroll; content through slot 7 reveals scene 8 (dark);
+ *  content deeper (once storage grows) reveals proportionally further. PURE. */
+export function maxSceneScrollOffset(
+  highestContent: number,
+  windowHeight: number = SCENE_WINDOW,
+  maxScenes: number = MAX_SCENES,
+): number {
+  const bottom = Math.max(windowHeight - 1, Math.min(maxScenes - 1, highestContent + 1));
+  return bottom - (windowHeight - 1);
+}
+
+/** Clamp a raw offset into [0, maxSceneScrollOffset]. Non-finite ⇒ 0. PURE. */
+export function clampSceneScrollOffset(
+  raw: number,
+  highestContent: number,
+  windowHeight: number = SCENE_WINDOW,
+  maxScenes: number = MAX_SCENES,
+): number {
+  const max = maxSceneScrollOffset(highestContent, windowHeight, maxScenes);
+  const n = Number.isFinite(raw) ? Math.trunc(raw) : 0;
+  return Math.max(0, Math.min(max, n));
+}
+
+/** SINGLE grid PAD (x = lane, y from BOTTOM) → flat clip index at a scroll
+ *  `offset`, or null when out of the matrix OR the pad's scene has no stored slot
+ *  (an empty scene scrolled into view). offset 0 === `gridPadToClipIndex`. PURE. */
+export function gridPadToClipIndexScrolled(x: number, y: number, offset: number): number | null {
+  if (x < 0 || x >= CLIP_LANES || y < 0 || y >= LP_HEIGHT) return null;
+  const scene = offset + (LP_HEIGHT - 1 - y); // top row (y=7) = scene `offset`
+  const slot = slotForScene(scene);
+  return slot === null ? null : clipIndexForSlotLane(slot, x);
+}
+
+/** The PHYSICAL grid pad {x = lane, y from BOTTOM} showing a stored slot at a
+ *  scroll `offset`, or null when that slot is scrolled off the window. Inverse of
+ *  gridPadToClipIndexScrolled for the loaded region (scene == slot). PURE. */
+export function gridPadForScrolledSlot(
+  slot: number,
+  lane: number,
+  offset: number,
+): { x: number; y: number } | null {
+  const row = slot - offset; // window row from the TOP (0 = top)
+  if (row < 0 || row >= LP_HEIGHT) return null;
+  return { x: lane, y: LP_HEIGHT - 1 - row };
+}
+
 // ── Right-column classifiers (per view). All take a SCENE INDEX (0 = top). ──
 export type GridShiftAction =
   | 'copy'
@@ -1199,11 +1290,12 @@ export type GridShiftAction =
   | 'swingUp'
   | 'swingDown'
   | 'len'
-  | 'pasteRev'
-  | 'now';
-/** The tap-to-ARM subset of GridShiftAction (Swing± are DIRECT nudges + NOW is a
- *  STICKY toggle — neither is armed). S2b stores one of these in armedRightAction. */
-export type GridArmAction = 'copy' | 'paste' | 'clipDiv' | 'len' | 'pasteRev';
+  | 'scrollUp'
+  | 'scrollDown';
+/** The tap-to-ARM subset of GridShiftAction (Swing± are DIRECT nudges + Scroll▲▼
+ *  slide the scene window — none of those is armed). S2b stores one of these in
+ *  armedRightAction. */
+export type GridArmAction = 'copy' | 'paste' | 'clipDiv' | 'len';
 
 const GRID_SHIFT_ACTIONS: readonly GridShiftAction[] = [
   'copy', // 0 (top)
@@ -1212,8 +1304,8 @@ const GRID_SHIFT_ACTIONS: readonly GridShiftAction[] = [
   'swingUp', // 3
   'swingDown', // 4
   'len', // 5
-  'pasteRev', // 6
-  'now', // 7 (bottom)
+  'scrollUp', // 6 — was PASTE-REV; repurposed to the amber scene-window UP button
+  'scrollDown', // 7 (bottom) — was NOW; repurposed to the amber scene-window DOWN button
 ];
 /** Grid + shift right column (scene 0..7 top→bottom): Copy · Paste · ClipDiv ·
  *  Swing+ · Swing− · Len · PasteRev · Now. Null out of range. PURE. */
@@ -1407,8 +1499,13 @@ export interface SingleGridOpts {
   armedRightAction?: GridArmAction | null;
   /** Clip buffer holds a clip → the Paste button pulses turquoise. */
   bufferLoaded?: boolean;
-  /** NOW sticky toggle on → the NOW button lights orange. */
-  nowOn?: boolean;
+  /** Scene-window scroll offset (0 = scenes 0..7). Slides the matrix + scene
+   *  column so visual row r shows scene `offset + r`. Default 0. */
+  sceneScrollOffset?: number;
+  /** UP is actionable (offset > 0) → bright amber; else dim. Default true. */
+  canScrollUp?: boolean;
+  /** DOWN can reveal a further scene → bright amber; else dim. Default true. */
+  canScrollDown?: boolean;
   /** Pulse the TARGET clip pad blue in time with its chosen division (the Clip-Div
    *  arm preview — the meter is ON the pad, not the top row). S2b toggles `on` on
    *  the division's phase. */
@@ -1487,10 +1584,12 @@ function gridShiftRightRgb(sceneIndex: number, opts: SingleGridOpts, blinkOn: bo
       return swingButtonRgb('down', opts.swingMeter);
     case 'len':
       return armed === 'len' ? RGB_DECK_LEN_ON : RGB_DECK_LEN;
-    case 'pasteRev':
-      return armed === 'pasteRev' ? RGB_PATTERN_ARMED : RGB_PATTERN;
-    case 'now':
-      return opts.nowOn ? RGB_SYS : RGB_SYS_DIM;
+    case 'scrollUp':
+      // amber (scene colour) UP — dim when already at the top (offset 0).
+      return opts.canScrollUp === false ? RGB_SCENE_DIM : RGB_SCENE;
+    case 'scrollDown':
+      // amber (scene colour) DOWN — dim when no further scene can be revealed.
+      return opts.canScrollDown === false ? RGB_SCENE_DIM : RGB_SCENE;
     default:
       return RGB_OFF;
   }
@@ -1507,27 +1606,38 @@ export function computeSingleGridFrame(
   const blinkOn = opts.blinkOn ?? true;
   const shift = effShift(opts.top);
   const recording = !!opts.recording;
-  // Transposed clip matrix (x = lane, slot top→bottom).
+  const offset = opts.sceneScrollOffset ?? 0;
+  // Transposed clip matrix (x = lane, scene top→bottom) through the scroll window:
+  // visual row r (top = 0) shows scene `offset + r`. A scene backed by a stored
+  // slot paints its clip state; a scene beyond the stored slots is DARK (empty).
   for (let lane = 0; lane < CLIP_LANES; lane++) {
-    for (let slot = 0; slot < CLIP_SLOTS; slot++) {
+    for (let row = 0; row < LP_HEIGHT; row++) {
+      const y = LP_HEIGHT - 1 - row;
+      const slot = slotForScene(offset + row);
+      if (slot === null) {
+        put(frame, padNote(lane, y), RGB_OFF);
+        continue;
+      }
       const idx = clipIndex(slot, lane);
-      const pad = clipIndexToGridPad(idx);
-      put(frame, padNote(pad.x, pad.y), singleClipStateRgb(data, idx, slot, lane, blinkOn, recording));
+      put(frame, padNote(lane, y), singleClipStateRgb(data, idx, slot, lane, blinkOn, recording));
     }
   }
-  // Clip-Div preview: pulse the target clip pad blue in time with its division.
+  // Clip-Div preview: pulse the target clip pad blue in time with its division
+  // (only when that clip's scene is inside the current scroll window).
   if (opts.divPulse) {
-    const pad = clipIndexToGridPad(opts.divPulse.clipIndex);
-    put(frame, padNote(pad.x, pad.y), opts.divPulse.on ? RGB_TIMING_ARMED : RGB_TIMING);
+    const { slot, lane } = slotLaneForClipIndex(opts.divPulse.clipIndex);
+    const pad = gridPadForScrolledSlot(slot, lane, offset);
+    if (pad) put(frame, padNote(pad.x, pad.y), opts.divPulse.on ? RGB_TIMING_ARMED : RGB_TIMING);
   }
   // Right column: no-shift = scene/row launch (amber; flash when any lane is
-  // queued that slot); +shift = the grid-shift function palette.
+  // queued that scene's slot; DARK for an empty scene); +shift = the grid-shift
+  // function palette (incl. the amber scene-window UP/DOWN).
   for (let i = 0; i < SCENE_CCS.length; i++) {
     let rgb: Rgb;
     if (shift) {
       rgb = gridShiftRightRgb(i, opts, blinkOn);
     } else {
-      const slot = gridSceneRowToSlot(i);
+      const slot = slotForScene(offset + i);
       if (slot === null) rgb = RGB_OFF;
       else {
         let anyQueued = false;

@@ -115,8 +115,8 @@ const G_CLIPDIV = 2;
 const G_SWING_UP = 3;
 const G_SWING_DOWN = 4;
 const G_LEN = 5;
-const G_PASTE_REV = 6;
-const G_NOW = 7;
+const G_SCROLL_UP = 6; // repurposed from PASTE-REV → amber scene-window UP
+const G_SCROLL_DOWN = 7; // repurposed from NOW → amber scene-window DOWN
 // Clip right-column scene indices.
 const C_DOUBLE = 0;
 const C_LENGTH = 1;
@@ -463,10 +463,11 @@ describe('SINGLE — shift latch vs hold', () => {
 });
 
 // ===========================================================================
-// SINGLE — GRID-shift tap-to-ARM (copy / paste / paste-rev / clip-div / len) +
-// swing nudge + NOW.
+// SINGLE — GRID-shift tap-to-ARM (copy / paste / clip-div / len) + swing nudge.
+// (PASTE-REV + NOW were repurposed to the scene-window UP/DOWN — see the
+// scene-scroll describe below.)
 // ===========================================================================
-describe('SINGLE — Grid-shift tap-to-arm + swing + now', () => {
+describe('SINGLE — Grid-shift tap-to-arm + swing', () => {
   let sim: SimulatedLaunchpad;
   beforeEach(async () => {
     sim = await installSimulatedLaunchpadSingle();
@@ -504,22 +505,6 @@ describe('SINGLE — Grid-shift tap-to-arm + swing + now', () => {
     expect(dest).toBeTruthy();
     expect(dest.steps.some((st) => st.midi === 67)).toBe(true);
     expect(__test_mode().armedRightAction).toBeNull();
-  });
-
-  it('arm PASTE-REV → tap a dest → steps mirrored', () => {
-    const src = noteClip();
-    src.lengthSteps = 16;
-    src.steps = [{ step: 0, midi: 60, velocity: 100, lengthSteps: 1 }];
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: src } });
-    bindLaunchpadToClip(NODE_ID);
-    latchShift();
-    sim.cc('L', sceneCc(G_COPY), 127);
-    pressClip(sim, 0, 0); // copy
-    sim.cc('L', sceneCc(G_PASTE_REV), 127);
-    pressClip(sim, 1, 1);
-    const dest = clipsOf()[clipIndex(1, 1)];
-    expect(dest.steps).toHaveLength(1);
-    expect(dest.steps[0].step, 'reversed: 16 − 0 − 1 = 15').toBe(15);
   });
 
   it('PASTE with an EMPTY buffer does NOT arm', () => {
@@ -602,21 +587,6 @@ describe('SINGLE — Grid-shift tap-to-arm + swing + now', () => {
     expect(__test_mode().swingMeterDir, 'centered → green-flash meter dir').toBe('center');
   });
 
-  it('NOW is a sticky toggle: clip taps launch immediate', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote() } });
-    bindLaunchpadToClip(NODE_ID);
-    latchShift();
-    sim.cc('L', sceneCc(G_NOW), 127);
-    expect(__test_mode().nowHeld).toBe(true);
-    // Unlatch shift so a plain grid tap launches (shift-tap-armed clips are consumed).
-    sim.cc('L', CC_SHIFT, 127);
-    sim.cc('L', CC_SHIFT, 0);
-    pressClip(sim, 0, 0);
-    expect(queued()![0]).toBe(0);
-    const imm = liveData().queuedImmediate as boolean[] | undefined;
-    expect(imm?.[0]).toBe(true);
-  });
-
   it('leaving Grid clears a pending arm (commits a clip-div preview)', () => {
     const c = clipWithNote();
     seedClipPlayer({ clips: { [clipIndex(0, 0)]: c } });
@@ -627,6 +597,115 @@ describe('SINGLE — Grid-shift tap-to-arm + swing + now', () => {
     setLaunchpadView('clip'); // leave Grid
     expect(__test_mode().armedRightAction).toBeNull();
     expect(clipsOf()[clipIndex(0, 0)].div, 'preview committed on leaving Grid').toBe(4);
+  });
+});
+
+// ===========================================================================
+// SINGLE — GRID scene-scroll window (reach scenes beyond the 8 rows). The two
+// side buttons repurposed from PASTE-REV (→ UP) and NOW (→ DOWN) slide the
+// window; the 8 scene-launch buttons stay POSITION-RELATIVE (top = topmost
+// visible scene); a scene beyond the 8 stored slots is DARK / a launch no-op.
+// UP/DOWN live in the grid-shift palette (reached under shift); the scene launch
+// itself is no-shift. Driven through the REAL device→map→binding→Y.Doc chain.
+// ===========================================================================
+describe('SINGLE — Grid scene-scroll (>8 scenes; UP/DOWN from PASTE-REV/NOW)', () => {
+  let sim: SimulatedLaunchpad;
+  beforeEach(async () => {
+    sim = await installSimulatedLaunchpadSingle();
+    __test_setDeployment('single', 'grid');
+  });
+  const latch = () => {
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0);
+    expect(__test_mode().shiftLatched).toBe(true);
+  };
+  const unlatch = () => {
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0);
+    expect(__test_mode().shiftLatched).toBe(false);
+  };
+  // Clips through slot 7 (lane 0) → highestContentScene 7 → DOWN can reveal ONE
+  // empty scene (scene 8), so maxSceneScrollOffset = 1.
+  const seedThroughSlot7 = () =>
+    seedClipPlayer({
+      clips: Object.fromEntries([0, 1, 2, 3, 4, 5, 6, 7].map((s) => [clipIndex(s, 0), noteClip()])),
+    });
+
+  it('starts at offset 0', () => {
+    seedThroughSlot7();
+    bindLaunchpadToClip(NODE_ID);
+    expect(__test_mode().sceneScrollOffset).toBe(0);
+  });
+
+  it('DOWN slides the window; UP clamps at 0; DOWN clamps at the lazy reveal limit', () => {
+    seedThroughSlot7();
+    bindLaunchpadToClip(NODE_ID);
+    latch();
+    sim.cc('L', sceneCc(G_SCROLL_DOWN), 127); // reveal scene 8 (the one empty past content)
+    expect(__test_mode().sceneScrollOffset).toBe(1);
+    sim.cc('L', sceneCc(G_SCROLL_DOWN), 127); // clamped — nothing deeper to reveal
+    expect(__test_mode().sceneScrollOffset).toBe(1);
+    sim.cc('L', sceneCc(G_SCROLL_UP), 127); // back up
+    expect(__test_mode().sceneScrollOffset).toBe(0);
+    sim.cc('L', sceneCc(G_SCROLL_UP), 127); // clamped at the top
+    expect(__test_mode().sceneScrollOffset).toBe(0);
+  });
+
+  it('an empty player cannot scroll (DOWN is a no-op)', () => {
+    seedClipPlayer({ clips: {} });
+    bindLaunchpadToClip(NODE_ID);
+    latch();
+    sim.cc('L', sceneCc(G_SCROLL_DOWN), 127);
+    expect(__test_mode().sceneScrollOffset).toBe(0);
+  });
+
+  it('after DOWN, the POSITION-RELATIVE top scene button launches the SHIFTED scene across all lanes', () => {
+    // scene 1 (slot 1) has clips in lanes 0 + 1; slot 7 makes DOWN reachable.
+    seedClipPlayer({
+      clips: {
+        [clipIndex(1, 0)]: noteClip(),
+        [clipIndex(1, 1)]: noteClip(),
+        [clipIndex(7, 0)]: noteClip(),
+      },
+    });
+    bindLaunchpadToClip(NODE_ID);
+    latch();
+    sim.cc('L', sceneCc(G_SCROLL_DOWN), 127); // offset → 1
+    expect(__test_mode().sceneScrollOffset).toBe(1);
+    unlatch();
+    // Top scene button (index 0) now addresses scene 1 → slot 1 across all lanes.
+    sim.cc('L', sceneCc(0), 127);
+    expect(queued()![0], 'lane 0 fired slot 1').toBe(1);
+    expect(queued()![1], 'lane 1 fired slot 1').toBe(1);
+    expect(queued()![2], 'a lane with no clip in slot 1 stops').toBe('stop');
+  });
+
+  it('a scrolled-in EMPTY scene launches DARK (no-op) — scene button AND grid pad', () => {
+    seedThroughSlot7();
+    bindLaunchpadToClip(NODE_ID);
+    latch();
+    sim.cc('L', sceneCc(G_SCROLL_DOWN), 127); // offset → 1 (bottom row = scene 8, empty)
+    unlatch();
+    // Bottom scene button (index 7 → scene 8) is empty → no queued write at all.
+    sim.cc('L', sceneCc(7), 127);
+    expect(queued(), 'empty scene launch is a no-op').toBeUndefined();
+    // The bottom-row grid pad (y=0 → scene 8) is likewise a dark no-op.
+    sim.press('L', 0, 0);
+    expect(queued(), 'empty-scene grid pad is a no-op').toBeUndefined();
+    // But the TOP row (scene 1 = slot 1) still launches its clip.
+    sim.press('L', 0, 7); // clip at slot 1 lane 0 exists (seedThroughSlot7)
+    expect(queued()![0]).toBe(1);
+  });
+
+  it('scroll offset resets to 0 on re-bind (local view state, never persisted)', () => {
+    seedThroughSlot7();
+    bindLaunchpadToClip(NODE_ID);
+    latch();
+    sim.cc('L', sceneCc(G_SCROLL_DOWN), 127);
+    expect(__test_mode().sceneScrollOffset).toBe(1);
+    expect((liveData() as { sceneScrollOffset?: number }).sceneScrollOffset, 'not written to node.data').toBeUndefined();
+    bindLaunchpadToClip(NODE_ID); // re-bind
+    expect(__test_mode().sceneScrollOffset).toBe(0);
   });
 });
 
