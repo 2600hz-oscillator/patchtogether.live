@@ -224,7 +224,12 @@ export interface KarplusState {
   accentLatch: number;
   /** Remaining excitation-burst samples (0 = idle). */
   burstRemaining: number;
-  /** xorshift32 state, reseeded at every strike. */
+  /** Burst xorshift32 SEED — reseeded into `rng` at every strike. Defaults to
+   *  KARPLUS_SEED (byte-identical to the original hardcoded reseed). Multi-voice
+   *  hosts (SIX STRUM) give each voice a DISTINCT seed so simultaneous strikes
+   *  don't produce phase-coherent, combing bursts. */
+  seed: number;
+  /** xorshift32 state, reseeded to `seed` at every strike. */
   rng: number;
   /** Exciter color one-pole state. */
   colorLp: number;
@@ -232,7 +237,7 @@ export interface KarplusState {
   easeCoeff: number;
 }
 
-export function makeKarplusState(sr: number): KarplusState {
+export function makeKarplusState(sr: number, seed: number = KARPLUS_SEED): KarplusState {
   const rate = sr > 0 ? sr : 48000;
   return {
     // String must hold one full period at f0 min (+ cubic-read headroom).
@@ -249,7 +254,8 @@ export function makeKarplusState(sr: number): KarplusState {
     gatePrev: 0,
     accentLatch: 0,
     burstRemaining: 0,
-    rng: KARPLUS_SEED,
+    seed: seed >>> 0,
+    rng: seed >>> 0,
     colorLp: 0,
     easeCoeff: 1 - Math.exp(-1 / (0.01 * rate)),
   };
@@ -384,7 +390,7 @@ export function karplusStep(
   s.gatePrev = trigger;
   if (high && !prevHigh) {
     s.burstRemaining = Math.max(2, Math.round(clamp(p.burst, 0.1, 4) * periodSamples));
-    s.rng = KARPLUS_SEED;
+    s.rng = s.seed;
     s.colorLp = 0;
     s.accentLatch = clamp(accent, 0, 1);
   }
