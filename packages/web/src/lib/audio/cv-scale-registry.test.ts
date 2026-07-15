@@ -218,6 +218,11 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // (The five *_cv knob modulators all declare cvScale; the `pitch` input
   // is the V/oct cable consumed per-sample as tune × 2^V, like CUBE.pitch.)
   karplus: ['accent_in'],
+  // SIX STRUM: `accent` is a shared 0..1 per-hit velocity SAMPLED at each pluck
+  // inside the worklet (a latch input, no paramTarget), scaled in the core like
+  // karplus/clap accent_in — not an AudioParam modulator, so cvScale doesn't
+  // apply. (Its 19 knobs are plain AudioParams with no CV inputs in v1.)
+  sixstrum: ['accent'],
   // CLAP: ALL four cv inputs are consumed DIRECTLY by the worklet as its
   // own audio-rate node inputs, not AudioParams — accent_in is a raw 0..1
   // value SAMPLED at the strike edge (a latch input, no paramTarget), and

@@ -230,6 +230,15 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
 //
 // Keep this list tight too (~10-15 entries).
 const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
+  // SIX STRUM — a plucked-string voice, silent until struck. Driving it in the
+  // generic sweep would need a _drivers.ts gatePort entry, but _drivers.ts is a
+  // collab-attest BASIS file, so that append forces a full collab re-attest
+  // (the treadmill task #160 is trying to kill). The output-emit is instead
+  // covered by the IDENTICAL drive in the dedicated e2e/tests/sixstrum-poly.spec.ts
+  // (SEQUENCER.gate → strum1 → SCOPE audible RMS + SEQUENCER.pitch → poly → RMS),
+  // plus the worklet-wiring unit test (strum1/poly → audible). Handle-presence +
+  // input-drive still run here.
+  'sixstrum.out': 'plucked-string voice, silent-until-struck; a generic driver would need a collab-basis _drivers.ts append → covered instead by the same drive in sixstrum-poly.spec.ts (gate→strum1→RMS, pitch→poly→RMS) + worklet-wiring unit',
   // ── OUTLINES.mapped is doubly input-conditional: it shows the `video` INPUT
   // wherever ≥2 shapes overlap, so it needs BOTH a patched video source AND a
   // ≥2-overlap region to land in the same sweep window. The driver wires

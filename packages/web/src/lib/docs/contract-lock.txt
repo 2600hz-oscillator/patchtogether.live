@@ -2714,6 +2714,42 @@ sidecar param threshold -60..0 linear default=-18 unit=dB
 sidecar stereo audio_l_in+audio_r_in
 sidecar stereo audio_l_out+audio_r_out
 sidecar stereo sc_l_in+sc_r_in
+sixstrum meta domain=audio
+sixstrum in accent cv
+sixstrum in chord pitch
+sixstrum in mute1 gate edge=gate
+sixstrum in mute2 gate edge=gate
+sixstrum in mute3 gate edge=gate
+sixstrum in mute4 gate edge=gate
+sixstrum in mute5 gate edge=gate
+sixstrum in mute6 gate edge=gate
+sixstrum in poly polyPitchGate
+sixstrum in strum1 gate edge=trigger
+sixstrum in strum2 gate edge=trigger
+sixstrum in strum3 gate edge=trigger
+sixstrum in strum4 gate edge=trigger
+sixstrum in strum5 gate edge=trigger
+sixstrum in strum6 gate edge=trigger
+sixstrum out out audio
+sixstrum param attack 0.0005..5 log default=0.003 unit=s
+sixstrum param body 0..1 linear default=0.35
+sixstrum param envDecay 0.001..5 log default=0.12 unit=s
+sixstrum param level -24..12 linear default=0 unit=dB
+sixstrum param material 0..1 linear default=0.55
+sixstrum param muteDepth 0..1 linear default=0.5
+sixstrum param pickGrain 0.1..4 log default=1
+sixstrum param pickPos 0.02..0.5 linear default=0.17
+sixstrum param pickTone 0..1 linear default=0.6
+sixstrum param quality 0..7 discrete default=0
+sixstrum param register -24..24 linear default=0 unit=st
+sixstrum param release 0.001..5 log default=0.35 unit=s
+sixstrum param ring 0.1..10 log default=2.5 unit=s
+sixstrum param spread 0..1 linear default=0.25
+sixstrum param stiffness 0..1 linear default=0.06
+sixstrum param strumDir 0..2 discrete default=0
+sixstrum param strumSpread 0..1 linear default=0.28
+sixstrum param sustain 0..1 linear default=1
+sixstrum param tuning 0..2 discrete default=0
 skifree meta domain=audio maxInstances=1 vizPassthrough
 skifree in x cv
 skifree in y cv
