@@ -112,8 +112,10 @@ export interface ChordVoiceLane {
   gate: 0 | 1;
 }
 
-/** Number of voice lanes POLYSEQZ emits — matches POLY_CHANNEL_PAIRS. */
-export const VOICE_LANES = 5;
+/** Number of voice lanes POLYSEQZ emits — MUST match POLY_CHANNEL_PAIRS (poly.ts).
+ *  Kept as a local literal so this table stays dependency-free (see header);
+ *  polyseqz.test.ts pins `VOICE_LANES === POLY_CHANNEL_PAIRS` to catch drift. */
+export const VOICE_LANES = 16;
 
 const SILENT_LANE: ChordVoiceLane = { midi: null, gate: 0 };
 

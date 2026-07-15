@@ -54,9 +54,11 @@ const gateEvents = (sender: ReturnType<typeof createPolySender>, lane = 0): Sche
   (sender.voices[lane]!.gateSrc.offset as unknown as FakeParam).events;
 
 describe('poly: constants', () => {
-  it('5 voice pairs = 10 channels', () => {
-    expect(POLY_CHANNEL_PAIRS).toBe(5);
-    expect(POLY_CHANNELS).toBe(10);
+  it('16 voice pairs = 32 channels (Web Audio merger max)', () => {
+    expect(POLY_CHANNEL_PAIRS).toBe(16);
+    expect(POLY_CHANNELS).toBe(32);
+    // 32 channels is the ChannelMerger/ChannelSplitter hard ceiling.
+    expect(POLY_CHANNELS).toBeLessThanOrEqual(32);
   });
 });
 
@@ -248,12 +250,13 @@ describe('poly: resolveConnection backward-compat rules', () => {
     expect(r.splitChannels).toEqual([0]);
   });
 
-  it('poly -> mono gate: OR-sum of all 5 lane gate channels', () => {
+  it('poly -> mono gate: OR-sum of all lane gate channels', () => {
     const r = resolveConnection('polyPitchGate', 'gate');
     expect(r.needSplitter).toBe(true);
     expect(r.needGateSum).toBe(true);
-    // Channels 1, 3, 5, 7, 9 are the gate channels (lane*2+1).
-    expect(r.splitChannels).toEqual([1, 3, 5, 7, 9]);
+    // The gate channels are lane*2+1 for every lane (1, 3, 5, …, 2N-1).
+    const gateChannels = Array.from({ length: POLY_CHANNEL_PAIRS }, (_, i) => i * 2 + 1);
+    expect(r.splitChannels).toEqual(gateChannels);
   });
 
   it('mono pitch -> poly: drive merger input 0 (lane 0 pitch)', () => {
