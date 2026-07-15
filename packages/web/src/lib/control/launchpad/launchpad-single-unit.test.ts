@@ -707,6 +707,41 @@ describe('SINGLE — Grid scene-scroll (>8 scenes; UP/DOWN from PASTE-REV/NOW)',
     bindLaunchpadToClip(NODE_ID); // re-bind
     expect(__test_mode().sceneScrollOffset).toBe(0);
   });
+
+  // >8-SCENE STORAGE (this PR): a scrolled-in scene ≥ 8 backs a REAL slot, so a
+  // clip placed there PERSISTS + LAUNCHES through the full device→map→Y.Doc chain.
+  it('places a clip in a scrolled-in scene ≥ 8: double-tap persists it at the high-slot stride-64 key', () => {
+    seedThroughSlot7(); // content through slot 7 → highestContentScene 7 → DOWN reveals scene 8
+    bindLaunchpadToClip(NODE_ID);
+    latch();
+    sim.cc('L', sceneCc(G_SCROLL_DOWN), 127); // offset → 1 (scene 8 = bottom row, y=0)
+    expect(__test_mode().sceneScrollOffset).toBe(1);
+    unlatch();
+    // Double-tap the empty scene-8 grid pad (x = lane 0, y = 0) → materializes a clip.
+    sim.press('L', 0, 0);
+    sim.press('L', 0, 0);
+    // It persists at clipIndex(8, 0) = 8 (lane 0, slot 8) — a scene beyond the 8.
+    expect(clipsOf()[clipIndex(8, 0)], 'a clip persists in scene 8').toBeTruthy();
+    expect(clipIndex(8, 0)).toBe(8);
+  });
+
+  it('launches a clip stored in a scene ≥ 8 — via the grid pad AND the scene button', () => {
+    // Clips in scene 8 (slot 8) on lanes 0 + 2 → highestContentScene 8 (reachable).
+    seedClipPlayer({ clips: { [clipIndex(8, 0)]: noteClip(), [clipIndex(8, 2)]: noteClip() } });
+    bindLaunchpadToClip(NODE_ID);
+    latch();
+    sim.cc('L', sceneCc(G_SCROLL_DOWN), 127); // offset → 1 (scene 8 = bottom row)
+    expect(__test_mode().sceneScrollOffset).toBe(1);
+    unlatch();
+    // Grid pad: scene 8, lane 0 (x=0, y=0) launches slot 8 on lane 0.
+    sim.press('L', 0, 0);
+    expect(queued()![0], 'grid pad launched the scene-8 clip on lane 0').toBe(8);
+    // Scene button (index 7 → scene 8) fires slot 8 across all lanes (empty lanes stop).
+    sim.cc('L', sceneCc(7), 127);
+    expect(queued()![0]).toBe(8);
+    expect(queued()![2]).toBe(8);
+    expect(queued()![1], 'a lane with no clip in scene 8 stops').toBe('stop');
+  });
 });
 
 // ===========================================================================

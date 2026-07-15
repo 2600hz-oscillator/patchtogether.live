@@ -51,6 +51,8 @@ import {
   laneSwing,
   swingStepOffset,
   isAutomationRecorder,
+  migrateClipPlayerData,
+  coerceClipRecord,
   type ClipPlayerData,
   type AutomationTarget,
   type AutomationTrack,
@@ -310,6 +312,23 @@ export const clipplayerDef: AudioModuleDef = {
       if (!live.data) live.data = {};
       mut(live.data as ClipPlayerData);
     }
+
+    // ── ONE-TIME clip-key SCHEMA MIGRATION (v1 stride-8 → v2 stride-64) ──
+    // The persistence loader (graph/persistence.ts) is in the collab-attest
+    // basis, so the migration can't hook there; instead it runs ONCE here — the
+    // engine factory is the single per-node seam that always runs, for every
+    // load path (envelope load AND live-doc / rackspace restore). It re-keys the
+    // `clips` map so every clip stays at its original (lane, slot), then stamps
+    // `data.sv = 2`. Guarded by `sv` → runs at most once per node per client and
+    // NEVER re-migrates (storm-safe: one small write, not per-tick — see
+    // `cv-modulation-live-store-write-storm`). `coerceClipRecord` clones each
+    // moved clip to a PLAIN object so a live syncedStore Y child is never
+    // re-parented (`yjs-save-load-real-ydoc`). Stamping `sv` here for an EMPTY
+    // new player (before any clip exists) is what makes "clips-present-but-no-sv"
+    // unambiguously mean LEGACY for every later reader.
+    writeData((d) => {
+      migrateClipPlayerData(d, coerceClipRecord);
+    });
 
     // ─────────────────────────── AUTOMATION LANE ────────────────────────────
     // One AutomationController per clip-player node (task #183). It composes the

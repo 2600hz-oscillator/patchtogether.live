@@ -1594,18 +1594,27 @@ function handleGridLaunch(nodeId: string, clipIdx: number, data: ClipPlayerData 
 /** No-shift scene/row launch: a grid ROW = one clip per channel (a scene). The 8
  *  buttons are POSITION-RELATIVE — button `sceneIndex` (0 = top) launches the
  *  scrolled scene `offset + sceneIndex`, firing that slot across ALL lanes (stop
- *  lanes with no clip in it). A scene beyond the stored slots (empty) → no-op. */
+ *  lanes with no clip in it). A scene out of range OR EMPTY (no clip in any lane)
+ *  → no-op (nothing to launch; matches the dark content-gated scene button). */
 function handleSceneLaunch(nodeId: string, sceneIndex: number, data: ClipPlayerData | undefined): void {
   const slot = slotForScene(sceneScrollOffset + sceneIndex);
-  if (slot === null) return; // empty scene scrolled into view = dark / no launch
+  if (slot === null) return; // scene out of range = dark / no launch
+  // Build the per-lane launch set FIRST; a fully-empty scene (no clip in any
+  // lane) is a no-op — we skip the write entirely so an empty scrolled-in scene
+  // never storms a stop-all across the lanes (matches the dark scene button).
+  const q = new Array<number | 'stop' | null>(CLIP_LANES).fill('stop');
+  let anyContent = false;
+  for (let lane = 0; lane < CLIP_LANES; lane++) {
+    if (data?.clips?.[String(clipIndex(slot, lane))]) {
+      q[lane] = slot;
+      anyContent = true;
+    }
+  }
+  if (!anyContent) return; // empty scene → no-op
   // Fire the whole scene in ONE transaction (all 8 lanes are addressed, so we
   // replace the queued array wholesale — same idea as stop-all) instead of 8
   // separate queueLane writes = 8 ydoc syncs per scene press.
   editData(nodeId, (d) => {
-    const q = new Array<number | 'stop' | null>(CLIP_LANES).fill('stop');
-    for (let lane = 0; lane < CLIP_LANES; lane++) {
-      if (data?.clips?.[String(clipIndex(slot, lane))]) q[lane] = slot;
-    }
     d.queued = q;
     if (nowHeld) d.queuedImmediate = new Array<boolean>(CLIP_LANES).fill(true);
   });

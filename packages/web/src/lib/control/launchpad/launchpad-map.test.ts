@@ -751,11 +751,13 @@ describe('Single mode — classifiers', () => {
 });
 
 describe('Single mode — scene-scroll window (reach scenes beyond 8)', () => {
-  it('slotForScene: 0..CLIP_SLOTS-1 back a stored slot; a scene ≥ CLIP_SLOTS is empty (null)', () => {
+  it('slotForScene: every scene 0..MAX_SCENES-1 backs a real slot (scene == slot); out of range → null', () => {
     expect(slotForScene(0)).toBe(0);
     expect(slotForScene(7)).toBe(7);
-    expect(slotForScene(8)).toBeNull(); // empty scene (no stored slot) → dark / no-op
-    expect(slotForScene(63)).toBeNull();
+    expect(slotForScene(8)).toBe(8); // scene 8+ now backs a REAL populatable slot
+    expect(slotForScene(9)).toBe(9);
+    expect(slotForScene(63)).toBe(63); // the last slot on the axis
+    expect(slotForScene(MAX_SCENES)).toBeNull(); // 64 — out of range
     expect(slotForScene(-1)).toBeNull();
   });
   it('sceneForWindowIndex: window index i at offset o → global scene o+i', () => {
@@ -768,7 +770,7 @@ describe('Single mode — scene-scroll window (reach scenes beyond 8)', () => {
     expect(SCENE_WINDOW).toBe(8);
     expect(MAX_SCENES).toBe(64);
   });
-  it('highestContentScene: -1 when empty; the deepest slot that holds any clip', () => {
+  it('highestContentScene: -1 when empty; the deepest slot that holds any clip (scans the FULL MAX_SCENES axis)', () => {
     expect(highestContentScene(undefined)).toBe(-1);
     expect(highestContentScene({} as ClipPlayerData)).toBe(-1);
     const d = {
@@ -777,6 +779,9 @@ describe('Single mode — scene-scroll window (reach scenes beyond 8)', () => {
     expect(highestContentScene(d)).toBe(3); // slot 3 (lane 2) is the deepest
     const full = { clips: { [clipIndex(7, 5)]: defaultNoteClip() } } as unknown as ClipPlayerData;
     expect(highestContentScene(full)).toBe(7);
+    // Content in a scene BEYOND the visible 8 is now reachable (a clip in scene 15).
+    const deep = { clips: { [clipIndex(15, 3)]: defaultNoteClip() } } as unknown as ClipPlayerData;
+    expect(highestContentScene(deep)).toBe(15);
   });
   it('maxSceneScrollOffset: an empty player cannot scroll; content reveals ONE empty scene past it, capped at MAX_SCENES', () => {
     expect(maxSceneScrollOffset(-1)).toBe(0); // empty → no scroll
@@ -793,7 +798,7 @@ describe('Single mode — scene-scroll window (reach scenes beyond 8)', () => {
     expect(clampSceneScrollOffset(3, -1)).toBe(0); // empty player: max 0
     expect(clampSceneScrollOffset(Number.NaN, 7)).toBe(0);
   });
-  it('gridPadToClipIndexScrolled: offset 0 === gridPadToClipIndex; offset shifts the scene; an empty scene → null', () => {
+  it('gridPadToClipIndexScrolled: offset 0 === gridPadToClipIndex; offset shifts the scene onto its real slot; out of range → null', () => {
     // offset 0 agrees with the un-scrolled mapping for every pad.
     for (let x = 0; x < 8; x++) {
       for (let y = 0; y < 8; y++) {
@@ -803,8 +808,10 @@ describe('Single mode — scene-scroll window (reach scenes beyond 8)', () => {
     // offset 1: the TOP row (y=7) now addresses scene 1 (slot 1).
     expect(gridPadToClipIndexScrolled(0, 7, 1)).toBe(clipIndex(1, 0));
     expect(gridPadToClipIndexScrolled(3, 7, 1)).toBe(clipIndex(1, 3));
-    // offset 1: the BOTTOM row (y=0) = scene 8 → beyond the stored slots → null.
-    expect(gridPadToClipIndexScrolled(0, 0, 1)).toBeNull();
+    // offset 1: the BOTTOM row (y=0) = scene 8 → its REAL stored slot 8 (no longer null).
+    expect(gridPadToClipIndexScrolled(0, 0, 1)).toBe(clipIndex(8, 0));
+    // a scene beyond the axis (≥ MAX_SCENES) → null (offset 60, bottom row = scene 67).
+    expect(gridPadToClipIndexScrolled(0, 0, 60)).toBeNull();
     // out of the matrix → null.
     expect(gridPadToClipIndexScrolled(8, 0, 0)).toBeNull();
     expect(gridPadToClipIndexScrolled(0, 8, 0)).toBeNull();
@@ -840,6 +847,27 @@ describe('Single mode — scene-scroll window (reach scenes beyond 8)', () => {
     // Scene column: top button (index 0 → scene 1) = amber; bottom (index 7 → scene 8) = DARK.
     expect(eqRgb(at(f, SCENE_CCS[0]), RGB_SCENE)).toBe(true);
     expect(eqRgb(at(f, SCENE_CCS[7]), RGB_OFF)).toBe(true);
+  });
+  it('scenes ≥ 8 hold REAL clips: scene 9 + 15 key + map + paint correctly; an empty scene past content is dark', () => {
+    // Clips stored in scene 9 (slot 9, lane 0) and scene 15 (slot 15, lane 3).
+    const data = {
+      clips: { [clipIndex(9, 0)]: defaultNoteClip(), [clipIndex(15, 3)]: defaultNoteClip() },
+      playing: [9, null, null, null, null, null, null, null], // lane 0 playing slot 9
+    } as unknown as ClipPlayerData;
+    // Stored keys are stride-64 unique + decode back to (slot, lane).
+    expect(clipIndex(9, 0)).toBe(9);
+    expect(clipIndex(15, 3)).toBe(3 * 64 + 15); // 207
+    // The scrolled grid REACHES those cells: at offset 8 the window shows scenes 8..15.
+    expect(gridPadToClipIndexScrolled(0, 6, 8)).toBe(clipIndex(9, 0)); // scene 9 → row 1 (y=6)
+    expect(gridPadToClipIndexScrolled(3, 0, 8)).toBe(clipIndex(15, 3)); // scene 15 → row 7 (y=0)
+    // Render at offset 8: scene-9 lane-0 pad is SOLID (playing) at (x=0, y=6); its
+    // scene button (index 1 → scene 9) is amber; scene 8 (index 0, empty) is dark.
+    const f = computeSingleGridFrame(data, { top: mkTop('grid'), blinkOn: true, sceneScrollOffset: 8 });
+    expect(eqRgb(at(f, padNote(0, 6)), hexToRgb127(defaultLaneColorHex(0)))).toBe(true);
+    expect(eqRgb(at(f, SCENE_CCS[1]), RGB_SCENE)).toBe(true); // scene 9 has a clip → amber
+    expect(eqRgb(at(f, SCENE_CCS[0]), RGB_OFF)).toBe(true); // scene 8 empty → dark (content-gated)
+    // A scene with NO clip in its window row is a dark pad (scene 10, row 2, y=5).
+    expect(eqRgb(at(f, padNote(0, 5)), RGB_OFF)).toBe(true);
   });
 });
 

@@ -239,7 +239,8 @@ const DRIVERS: Record<string, PerPortDriver> = {
   // CLIPPLAYER (v2) — 8 INSTRUMENT LANES, each with its own pitch/gate/vel outs.
   // Every output port (pitch1..8 / gate1..8 / vel1..8) only emits when ITS lane
   // has a launched, playing clip — so seed a slot-0 note clip in ALL 8 lanes
-  // (clipIndex(0, lane) = lane*8 → keys '0','8',…,'56') and queue slot 0 in
+  // (schema v2 stride-64 keys: clipIndex(0, lane) = lane*64 → keys '0','64',…,'448';
+  //  data.sv=2 marks it current so the load migration no-ops) and queue slot 0 in
   // every lane via the v2 PER-LANE `queued` array. v1's single-clip + single
   // `queued:'0'` string only launched lane 0 (pitch1) — pitch2..8 stayed silent.
   // No TIMELORDE in the per-port harness → the module free-runs (transportRunning
@@ -254,8 +255,10 @@ const DRIVERS: Record<string, PerPortDriver> = {
     ];
     const clips: Record<string, unknown> = {};
     const queued: (number | null)[] = [];
+    const SCENE_STRIDE = 64; // schema-v2 flat-key stride (clip-types SCENE_STRIDE)
     for (let lane = 0; lane < 8; lane++) {
-      clips[String(lane * 8)] = {
+      clips[String(lane * SCENE_STRIDE)] = {
+        // clipIndex(0, lane) = lane*SCENE_STRIDE (slot 0 of this lane)
         kind: 'note',
         lengthSteps: 4,
         root: 48,
@@ -266,7 +269,7 @@ const DRIVERS: Record<string, PerPortDriver> = {
     }
     return {
       params: { quantize: 0, gateLength: 0.9, octave: 0, stepDiv: 2 },
-      data: { clips, queued },
+      data: { sv: 2, clips, queued }, // sv:2 = current schema (no load migration)
       note: 'CLIPPLAYER (v2): seed a slot-0 note clip in ALL 8 lanes + per-lane queued=[0×8], quantize off, free-run; every lane emits pitch/gate/vel',
     };
   })(),

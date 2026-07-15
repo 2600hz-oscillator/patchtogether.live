@@ -1,11 +1,15 @@
 // packages/web/src/lib/audio/modules/clip-types.test.ts
 import { describe, it, expect } from 'vitest';
+import { syncedStore } from '@syncedstore/core';
 import { midiToVOct, C3_MIDI } from '$lib/audio/note-entry';
 import { POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
 import {
   CLIP_COUNT,
   CLIP_LANES,
-  CLIP_TRACKS,
+  SCENE_STRIDE,
+  CLIP_SCHEMA_VERSION,
+  migrateLegacyClipKey,
+  migrateClipPlayerData,
   DEFAULT_CLIP_STEPS,
   clipIndex,
   laneOf,
@@ -78,12 +82,123 @@ import {
 } from './clip-types';
 
 describe('dimensions', () => {
-  it('is an 8×8 = 64 clip bank', () => {
-    expect(CLIP_COUNT).toBe(64);
+  it('has 8 lanes + 8 visible card slots (64 visible cells) at a FIXED stride of 64', () => {
+    expect(CLIP_COUNT).toBe(64); // the VISIBLE 8×8 card grid
+    expect(CLIP_LANES).toBe(8);
+    expect(SCENE_STRIDE).toBe(64); // fixed flat-key stride (decoupled from CLIP_SLOTS)
+  });
+  it('clipIndex keys the sparse map at lane*SCENE_STRIDE + slot', () => {
     expect(clipIndex(0, 0)).toBe(0);
-    expect(clipIndex(7, 0)).toBe(7);
-    expect(clipIndex(0, 1)).toBe(CLIP_TRACKS);
-    expect(clipIndex(7, 7)).toBe(63);
+    expect(clipIndex(7, 0)).toBe(7); // lane 0: slot == key (stride-invariant)
+    expect(clipIndex(0, 1)).toBe(SCENE_STRIDE); // lane 1, slot 0 = 64
+    expect(clipIndex(0, 7)).toBe(7 * SCENE_STRIDE); // 448
+    expect(clipIndex(7, 7)).toBe(7 * SCENE_STRIDE + 7); // 455
+    // slot can grow past the visible CLIP_SLOTS (scenes ≥ 8) with unique keys.
+    expect(clipIndex(8, 0)).toBe(8);
+    expect(clipIndex(63, 7)).toBe(7 * SCENE_STRIDE + 63); // 511 — the max cell
+  });
+  it('laneOf/slotOf round-trip clipIndex for every (slot 0..63, lane 0..7)', () => {
+    const seen = new Set<number>();
+    for (let lane = 0; lane < CLIP_LANES; lane++) {
+      for (let slot = 0; slot < SCENE_STRIDE; slot++) {
+        const idx = clipIndex(slot, lane);
+        expect(laneOf(idx)).toBe(lane);
+        expect(slotOf(idx)).toBe(slot);
+        expect(seen.has(idx)).toBe(false); // every (slot,lane) → a UNIQUE key
+        seen.add(idx);
+      }
+    }
+    expect(seen.size).toBe(CLIP_LANES * SCENE_STRIDE); // 512 distinct keys, no collisions
+  });
+});
+
+describe('clip-key schema migration (v1 stride-8 → v2 stride-64)', () => {
+  it('migrateLegacyClipKey re-keys every legacy key to its identical (lane, slot)', () => {
+    for (let legacy = 0; legacy < CLIP_LANES * 8; legacy++) {
+      const lane = Math.floor(legacy / 8);
+      const slot = legacy % 8;
+      // the new key must equal clipIndex(slot, lane) — i.e. the SAME (lane, slot).
+      expect(migrateLegacyClipKey(legacy)).toBe(clipIndex(slot, lane));
+      expect(laneOf(migrateLegacyClipKey(legacy))).toBe(lane);
+      expect(slotOf(migrateLegacyClipKey(legacy))).toBe(slot);
+    }
+    // lane-0 legacy keys are stride-invariant (unchanged).
+    for (let slot = 0; slot < 8; slot++) expect(migrateLegacyClipKey(slot)).toBe(slot);
+    // lane 1 slot 0 legacy key 8 → 64; lane 7 slot 7 legacy key 63 → 455.
+    expect(migrateLegacyClipKey(8)).toBe(64);
+    expect(migrateLegacyClipKey(63)).toBe(455);
+  });
+
+  it('save-compat: a LEGACY player (stride-8 keys, no sv) loads with every clip at its identical (lane, slot)', () => {
+    // Distinct clips in KNOWN (lane, slot) cells, keyed the OLD way (lane*8+slot).
+    const cells: [number, number, string][] = [
+      [0, 0, 'a'], // lane 0 slot 0 → legacy key 0
+      [3, 0, 'b'], // lane 0 slot 3 → legacy key 3  (lane-0, invariant)
+      [0, 1, 'c'], // lane 1 slot 0 → legacy key 8  → new key 64
+      [5, 2, 'd'], // lane 2 slot 5 → legacy key 21 → new key 133
+      [7, 7, 'e'], // lane 7 slot 7 → legacy key 63 → new key 455
+    ];
+    const mk = (name: string): NoteClipRecord => ({ ...defaultNoteClip(), name });
+    const legacyClips: Record<string, NoteClipRecord> = {};
+    for (const [slot, lane, name] of cells) legacyClips[String(lane * 8 + slot)] = mk(name);
+    const data = { clips: legacyClips } as unknown as ClipPlayerData; // NO sv = legacy v1
+
+    expect(migrateClipPlayerData(data)).toBe(true); // it migrated
+    expect(data.sv).toBe(CLIP_SCHEMA_VERSION);
+    // EVERY clip is now retrievable at the IDENTICAL (lane, slot) via the new key.
+    for (const [slot, lane, name] of cells) {
+      const rec = readClip(data, clipIndex(slot, lane)) as NoteClipRecord | null;
+      expect(rec, `clip at (lane ${lane}, slot ${slot})`).not.toBeNull();
+      expect(rec!.name).toBe(name);
+    }
+    // No legacy stride-8 key survives for a moved lane (lane 1's clip left key "8").
+    expect(data.clips!['8']).toBeUndefined();
+    // …but lane-0 keys are byte-identical in place (never moved/cloned).
+    expect(data.clips!['0']).toBe(legacyClips['0']);
+  });
+
+  it('idempotent: re-running the migration is a no-op (returns false, data unchanged)', () => {
+    const data = {
+      clips: { [String(1 * 8 + 2)]: { ...defaultNoteClip(), name: 'x' } },
+    } as unknown as ClipPlayerData;
+    expect(migrateClipPlayerData(data)).toBe(true);
+    const snapshot = JSON.stringify(data);
+    expect(migrateClipPlayerData(data)).toBe(false); // already sv=2 → no-op
+    expect(JSON.stringify(data)).toBe(snapshot); // byte-identical, no double re-key
+    // clip is at (lane 1, slot 2), NOT re-keyed a second time.
+    expect((readClip(data, clipIndex(2, 1)) as NoteClipRecord).name).toBe('x');
+  });
+
+  it('safe on empty / absent clips + on already-stride-64 data', () => {
+    const empty = {} as ClipPlayerData;
+    expect(migrateClipPlayerData(empty)).toBe(true); // stamps sv even with no clips
+    expect(empty.sv).toBe(CLIP_SCHEMA_VERSION);
+    const withEmptyMap = { clips: {} } as ClipPlayerData;
+    expect(migrateClipPlayerData(withEmptyMap)).toBe(true);
+    expect(withEmptyMap.sv).toBe(CLIP_SCHEMA_VERSION);
+    // A player already stamped sv=2 (new stride-64 data) is left untouched.
+    const already = { sv: CLIP_SCHEMA_VERSION, clips: { [String(clipIndex(8, 1))]: defaultNoteClip() } } as unknown as ClipPlayerData;
+    expect(migrateClipPlayerData(already)).toBe(false);
+    expect((readClip(already, clipIndex(8, 1)) as NoteClipRecord).kind).toBe('note');
+    // nullish input is a no-op.
+    expect(migrateClipPlayerData(undefined)).toBe(false);
+    expect(migrateClipPlayerData(null)).toBe(false);
+  });
+
+  it('save-compat over a REAL @syncedstore/core Y.Doc: re-keys live clips without re-parenting', () => {
+    const store = syncedStore<{ nodes: Record<string, { data?: ClipPlayerData }> }>({ nodes: {} });
+    store.nodes['n'] = { data: { clips: {} } };
+    const d = store.nodes['n']!.data!;
+    // Seed legacy stride-8 clips on the LIVE store (lane 0 slot 1 + lane 2 slot 3).
+    d.clips![String(0 * 8 + 1)] = { ...defaultNoteClip(), name: 'p' };
+    d.clips![String(2 * 8 + 3)] = { ...defaultNoteClip(), name: 'q' };
+    // Migrate in place, cloning each moved value to a PLAIN object (coerce) so a
+    // live Y child is never re-parented ("Type already integrated").
+    expect(() => migrateClipPlayerData(d, coerceClipRecord)).not.toThrow();
+    expect(d.sv).toBe(CLIP_SCHEMA_VERSION);
+    expect((readClip(d, clipIndex(1, 0)) as NoteClipRecord).name).toBe('p'); // lane 0 slot 1
+    expect((readClip(d, clipIndex(3, 2)) as NoteClipRecord).name).toBe('q'); // lane 2 slot 3
+    expect(d.clips![String(2 * 8 + 3)]).toBeUndefined(); // legacy key gone
   });
 });
 
@@ -536,10 +651,11 @@ describe('per-lane CLIP COLOR helpers', () => {
 });
 
 describe('per-lane index + state helpers', () => {
-  it('laneOf / slotOf split a flat index (row-major, lane*8+slot)', () => {
+  it('laneOf / slotOf split a flat index (lane*SCENE_STRIDE + slot)', () => {
     expect([laneOf(0), slotOf(0)]).toEqual([0, 0]);
-    expect([laneOf(9), slotOf(9)]).toEqual([1, 1]);
-    expect([laneOf(63), slotOf(63)]).toEqual([7, 7]);
+    expect([laneOf(SCENE_STRIDE + 1), slotOf(SCENE_STRIDE + 1)]).toEqual([1, 1]); // lane 1 slot 1
+    expect([laneOf(63), slotOf(63)]).toEqual([0, 63]); // stride-64: 63 is lane 0 slot 63
+    expect([laneOf(clipIndex(7, 7)), slotOf(clipIndex(7, 7))]).toEqual([7, 7]);
   });
   it('lanePlaying / laneQueued read the per-lane arrays', () => {
     const data = {

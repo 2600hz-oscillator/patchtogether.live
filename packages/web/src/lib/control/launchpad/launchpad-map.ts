@@ -55,6 +55,7 @@
 import {
   CLIP_LANES,
   CLIP_SLOTS,
+  SCENE_STRIDE,
   clipIndex,
   STEPS_PER_PAGE,
   MAX_EDIT_PAGES,
@@ -1195,15 +1196,14 @@ export function gridSceneRowToSlot(sceneIndex: number): number | null {
 // ── SCENE-SCROLL WINDOW (single-mode Grid view: reach scenes beyond the 8 rows) ──
 // A "scene" is a SLOT fired across all channels. The launchpad shows an 8-row
 // WINDOW onto the scene axis; `sceneScrollOffset` (0 = scenes 0..7 at the top)
-// slides it. This is a PURE VIEW window over the EXISTING model — clipIndex /
-// CLIP_SLOTS / storage are UNCHANGED, so old 64-clip patches load byte-identical.
-// The 8 stored slots back scenes 0..CLIP_SLOTS-1; a scene at or beyond CLIP_SLOTS
-// has no stored slot → it paints DARK and launching it is a no-op (an empty scene
-// you can scroll into). Growing the stored slot cap (to hold clips in scenes 9+)
-// is a separate, higher-blast model change — the window math here is written
-// storage-agnostically so it works unchanged if/when that lands.
+// slides it. The stored slot axis now spans MAX_SCENES (= SCENE_STRIDE) SLOTS
+// (schema-v2 fixed-stride clip keys), so a scene 0..MAX_SCENES-1 backs a REAL,
+// populatable slot — the scroll reaches clips placed in scenes ≥ 8. An EMPTY
+// scene (no clip in any lane) paints DARK and its launch is a no-op (content-
+// gated in computeSingleGridFrame + handleSceneLaunch), and the lazy DOWN reveal
+// (maxSceneScrollOffset) still only exposes ONE empty scene past the deepest clip.
 export const SCENE_WINDOW = LP_HEIGHT; // 8 visible scene rows (the grid height)
-export const MAX_SCENES = 64; // hard cap on how far DOWN can reveal (sane ceiling)
+export const MAX_SCENES = SCENE_STRIDE; // 64 — the stored scene ceiling (= the flat-key stride)
 
 /** The GLOBAL scene addressed by a visible scene-column INDEX (0 = top row) at a
  *  scroll offset. offset 0 → scene = sceneIndex. PURE. */
@@ -1211,18 +1211,21 @@ export function sceneForWindowIndex(offset: number, sceneIndex: number): number 
   return offset + sceneIndex;
 }
 
-/** The stored SLOT backing a global scene, or null when the scene is beyond the
- *  stored slot axis (an empty/dark scene — no clips, launch is a no-op). PURE. */
+/** The stored SLOT backing a global scene (scene == slot for the whole axis now),
+ *  or null when the scene is out of range (< 0 or ≥ MAX_SCENES). A scene in range
+ *  with no clips is EMPTY (dark / launch no-op) but still a real, populatable
+ *  slot — emptiness is decided by content, not by this returning null. PURE. */
 export function slotForScene(scene: number): number | null {
-  return scene >= 0 && scene < CLIP_SLOTS ? scene : null;
+  return scene >= 0 && scene < MAX_SCENES ? scene : null;
 }
 
 /** The highest scene index (= slot) that holds ANY clip across all channels, or
- *  -1 when the player is empty. Bounds the lazy DOWN reveal. PURE. */
+ *  -1 when the player is empty. Bounds the lazy DOWN reveal. Scans the FULL
+ *  MAX_SCENES slot axis so content placed in scenes ≥ 8 is reachable. PURE. */
 export function highestContentScene(data: ClipPlayerData | undefined): number {
   const clips = data?.clips ?? {};
   let hi = -1;
-  for (let slot = 0; slot < CLIP_SLOTS; slot++) {
+  for (let slot = 0; slot < MAX_SCENES; slot++) {
     for (let lane = 0; lane < CLIP_LANES; lane++) {
       if (clips[String(clipIndex(slot, lane))]) {
         hi = slot;
@@ -1260,13 +1263,15 @@ export function clampSceneScrollOffset(
 }
 
 /** SINGLE grid PAD (x = lane, y from BOTTOM) → flat clip index at a scroll
- *  `offset`, or null when out of the matrix OR the pad's scene has no stored slot
- *  (an empty scene scrolled into view). offset 0 === `gridPadToClipIndex`. PURE. */
+ *  `offset`, or null when out of the matrix OR the pad's scene is out of range.
+ *  offset 0 === `gridPadToClipIndex`. Uses `clipIndex` (not clipIndexForSlotLane,
+ *  which caps at the visible CLIP_SLOTS) so a scrolled-in scene ≥ 8 maps to its
+ *  real stored slot. PURE. */
 export function gridPadToClipIndexScrolled(x: number, y: number, offset: number): number | null {
   if (x < 0 || x >= CLIP_LANES || y < 0 || y >= LP_HEIGHT) return null;
   const scene = offset + (LP_HEIGHT - 1 - y); // top row (y=7) = scene `offset`
   const slot = slotForScene(scene);
-  return slot === null ? null : clipIndexForSlotLane(slot, x);
+  return slot === null ? null : clipIndex(slot, x); // slot = scene, lane = x
 }
 
 /** The PHYSICAL grid pad {x = lane, y from BOTTOM} showing a stored slot at a
@@ -1608,8 +1613,9 @@ export function computeSingleGridFrame(
   const recording = !!opts.recording;
   const offset = opts.sceneScrollOffset ?? 0;
   // Transposed clip matrix (x = lane, scene top→bottom) through the scroll window:
-  // visual row r (top = 0) shows scene `offset + r`. A scene backed by a stored
-  // slot paints its clip state; a scene beyond the stored slots is DARK (empty).
+  // visual row r (top = 0) shows scene `offset + r`. Each in-range scene paints its
+  // per-cell clip state (an empty cell is DARK); a scene out of range (≥ MAX_SCENES)
+  // is DARK.
   for (let lane = 0; lane < CLIP_LANES; lane++) {
     for (let row = 0; row < LP_HEIGHT; row++) {
       const y = LP_HEIGHT - 1 - row;
@@ -1629,9 +1635,11 @@ export function computeSingleGridFrame(
     const pad = gridPadForScrolledSlot(slot, lane, offset);
     if (pad) put(frame, padNote(pad.x, pad.y), opts.divPulse.on ? RGB_TIMING_ARMED : RGB_TIMING);
   }
-  // Right column: no-shift = scene/row launch (amber; flash when any lane is
-  // queued that scene's slot; DARK for an empty scene); +shift = the grid-shift
-  // function palette (incl. the amber scene-window UP/DOWN).
+  // Right column: no-shift = scene/row launch (amber when the scene HAS a clip in
+  // any lane; flash when a lane is queued that slot; DARK for an EMPTY scene —
+  // content-gated so a scrolled-in empty scene reads as "nothing to launch");
+  // +shift = the grid-shift function palette (incl. the amber scene-window UP/DOWN).
+  const clips = data?.clips ?? {};
   for (let i = 0; i < SCENE_CCS.length; i++) {
     let rgb: Rgb;
     if (shift) {
@@ -1641,13 +1649,19 @@ export function computeSingleGridFrame(
       if (slot === null) rgb = RGB_OFF;
       else {
         let anyQueued = false;
+        let anyContent = false;
         for (let lane = 0; lane < CLIP_LANES; lane++) {
+          if (clips[String(clipIndex(slot, lane))]) anyContent = true;
           if (laneQueued(data, lane) === slot) {
             anyQueued = true;
             break;
           }
         }
-        rgb = anyQueued ? (blinkOn ? RGB_QUEUED : RGB_OFF) : RGB_SCENE;
+        rgb = anyQueued
+          ? (blinkOn ? RGB_QUEUED : RGB_OFF)
+          : anyContent
+          ? RGB_SCENE
+          : RGB_OFF; // empty scene → dark (content-gated)
       }
     }
     put(frame, SCENE_CCS[i], rgb);

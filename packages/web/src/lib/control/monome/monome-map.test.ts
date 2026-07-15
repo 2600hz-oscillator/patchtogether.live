@@ -95,19 +95,19 @@ const clip = (over: Partial<NoteClipRecord> = {}): NoteClipRecord => ({
 });
 
 describe('pad ↔ clip mapping (left 8×8 quadrant: x=slot, y=lane)', () => {
-  it('maps left-quadrant pads to clip indices row-major (lane*8+slot)', () => {
-    expect(padToClipIndex(0, 0)).toBe(0);
-    expect(padToClipIndex(7, 0)).toBe(7);
-    expect(padToClipIndex(0, 1)).toBe(8); // lane 1, slot 0
-    expect(padToClipIndex(7, 7)).toBe(63);
+  it('maps left-quadrant pads to clip indices (lane*SCENE_STRIDE + slot)', () => {
+    expect(padToClipIndex(0, 0)).toBe(clipIndex(0, 0)); // 0
+    expect(padToClipIndex(7, 0)).toBe(clipIndex(7, 0)); // 7 (lane 0, slot == key)
+    expect(padToClipIndex(0, 1)).toBe(clipIndex(0, 1)); // lane 1, slot 0 = 64
+    expect(padToClipIndex(7, 7)).toBe(clipIndex(7, 7)); // lane 7, slot 7 = 455
   });
   it('returns null for the control strip + out of range', () => {
     expect(padToClipIndex(8, 0)).toBeNull();
     expect(padToClipIndex(15, 7)).toBeNull();
     expect(padToClipIndex(-1, 0)).toBeNull();
   });
-  it('clipIndexToPad inverts padToClipIndex', () => {
-    for (const i of [0, 7, 8, 33, 63]) {
+  it('clipIndexToPad inverts padToClipIndex (over the monome 8×8 clip quadrant)', () => {
+    for (const i of [clipIndex(0, 0), clipIndex(7, 0), clipIndex(0, 1), clipIndex(1, 4), clipIndex(7, 7)]) {
       const { x, y } = clipIndexToPad(i);
       expect(padToClipIndex(x, y)).toBe(i);
     }

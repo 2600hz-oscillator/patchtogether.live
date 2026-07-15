@@ -28,15 +28,34 @@ import type { ArrangeData, ClipPlayMode } from './clip-arrange';
 
 // ---------------------------------------------------------------------------
 // Dimensions (DECIDED 2026-06-15): rows = INSTRUMENTS, columns = clip SLOTS.
-// 8 instrument lanes × 8 clip slots = 64 clips on the left 8×8 grid quadrant.
-// Each lane drives its own pitch/gate/velocity output pair (the owner's
-// "each row reflects a given instrument's materials" model). The flat index is
-// row-major (index = lane*CLIP_SLOTS + slot), i.e. identical numerics to the
-// grid's `y*8 + x` so the pad↔index mapping is unchanged.
+// 8 instrument lanes; the card shows 8 clip slots at a time (CLIP_SLOTS), but a
+// lane can hold clips in up to MAX_SCENES (= SCENE_STRIDE) SLOTS — the launchpad
+// Grid scene-scroll reaches slots ≥ 8. Each lane drives its own
+// pitch/gate/velocity output pair (the owner's "each row reflects a given
+// instrument's materials" model).
+//
+// FLAT KEY (schema v2, 2026-07-14): the sparse `clips` map is keyed by a flat
+// index `lane*SCENE_STRIDE + slot` with a FIXED stride of SCENE_STRIDE (64),
+// DECOUPLED from the card's visible column count. This lets the slot (=scene)
+// axis grow to MAX_SCENES without renumbering stored clips. Schema v1 (pre-this-
+// change) used a stride of 8 (== the old CLIP_SLOTS), so a v1 key `lane*8+slot`
+// is re-keyed to `lane*64+slot` on load by `migrateClipPlayerData` (data.sv=2).
 // ---------------------------------------------------------------------------
 export const CLIP_LANES = 8; // rows = instruments
-export const CLIP_SLOTS = 8; // columns = clip alternatives per instrument
-export const CLIP_COUNT = CLIP_LANES * CLIP_SLOTS; // 64
+export const CLIP_SLOTS = 8; // VISIBLE clip columns per instrument (the card grid)
+/** FIXED storage stride for the flat clip key (`lane*SCENE_STRIDE + slot`). The
+ *  slot axis can grow up to this many scenes without renumbering stored clips —
+ *  it is INDEPENDENT of the card's visible CLIP_SLOTS. Also the scene ceiling
+ *  (MAX_SCENES in launchpad-map re-exports this value). */
+export const SCENE_STRIDE = 64;
+/** The pre-schema-v2 (v1) flat-key stride — the OLD `CLIP_SLOTS` value baked into
+ *  legacy stored keys (`lane*8+slot`). Used only by the load migration. */
+export const LEGACY_SCENE_STRIDE = 8;
+/** node.data schema version marker (`ClipPlayerData.sv`). ABSENT/undefined = a
+ *  legacy v1 patch (stride-8 clip keys) → `migrateClipPlayerData` re-keys it and
+ *  stamps this value. Present = already stride-64 (no migration). */
+export const CLIP_SCHEMA_VERSION = 2;
+export const CLIP_COUNT = CLIP_LANES * CLIP_SLOTS; // 64 (the visible 8×8 card grid)
 export const DEFAULT_CLIP_STEPS = 16;
 // Max steps in a clip. Bumped 64→128 (DECIDED 2026-06-16): the grid edits up to
 // 128 steps via 8 pages of 16. Sparse NoteEvent[] storage doesn't grow with this
@@ -51,17 +70,95 @@ export const DEFAULT_VELOCITY = 100; // MIDI 0..127
 export const CLIP_TRACKS = CLIP_SLOTS;
 export const CLIP_SCENES = CLIP_LANES;
 
-/** Flat clip-bank index for a (slot=col, lane=row) cell, row-major. */
+/** Flat clip-bank index (schema v2) for a (slot, lane) cell: `lane*SCENE_STRIDE +
+ *  slot`. The stride is FIXED at SCENE_STRIDE (64), independent of the card's
+ *  visible CLIP_SLOTS, so `slot` may range 0..SCENE_STRIDE-1. (Note: for lane 0
+ *  the key equals the slot, so lane-0 keys are stride-invariant.) */
 export function clipIndex(slot: number, lane: number): number {
-  return lane * CLIP_SLOTS + slot;
+  return lane * SCENE_STRIDE + slot;
 }
-/** Which instrument lane (row) a flat clip index belongs to. */
+/** Which instrument lane (row) a flat clip index belongs to (stride-64 decode). */
 export function laneOf(index: number): number {
-  return Math.floor(index / CLIP_SLOTS);
+  return Math.floor(index / SCENE_STRIDE);
 }
-/** Which clip slot (column) within its lane a flat clip index is. */
+/** Which clip slot (scene column) within its lane a flat clip index is. */
 export function slotOf(index: number): number {
-  return index % CLIP_SLOTS;
+  return index % SCENE_STRIDE;
+}
+
+/** Re-key ONE legacy (schema v1) flat clip key `lane*8+slot` to the current
+ *  stride-64 key `lane*64+slot` (= `clipIndex(slot, lane)`), preserving the
+ *  (lane, slot) it addressed. PURE. */
+export function migrateLegacyClipKey(legacyKey: number): number {
+  const lane = Math.floor(legacyKey / LEGACY_SCENE_STRIDE);
+  const slot = legacyKey % LEGACY_SCENE_STRIDE;
+  return lane * SCENE_STRIDE + slot;
+}
+
+/**
+ * Bring a clip-player's persisted `data` up to CLIP_SCHEMA_VERSION IN PLACE,
+ * re-keying its sparse `clips` map from the legacy stride-8 flat key to the
+ * current stride-64 key so EVERY clip stays at the identical (lane, slot).
+ *
+ * Idempotent + storm-safe (the #1 save-compat requirement):
+ *   - a no-op returning `false` when `data` is nullish OR already `sv === 2`;
+ *   - stamps `data.sv = 2` so it runs AT MOST ONCE per player (never re-migrates);
+ *   - moves ONLY the lane-1..7 keys — lane-0 keys are stride-invariant
+ *     (`lane*8+slot === lane*64+slot` when lane=0) so they're left in place;
+ *   - the moved keys (≥ SCENE_STRIDE) are DISJOINT from every legacy key
+ *     (0..63), so an in-place delete-then-set on the SAME map never collides.
+ *   - safe on empty / absent `clips` (just stamps `sv`).
+ *
+ * Each moved value is passed through `clone` before re-insertion so a LIVE
+ * syncedStore Y child is never re-parented into a new key ("Type already
+ * integrated" — [[yjs-save-load-real-ydoc]]). The default clone is a JSON deep
+ * copy (fine for the plain-object load path); the engine passes `coerceClipRecord`
+ * to sever live Y proxies. Returns `true` iff it changed the schema version.
+ *
+ * STRUCTURAL SAFETY NET: a genuine legacy (stride-8) key is `lane*8+slot` with
+ * lane,slot ∈ 0..7, so it NEVER exceeds 63. If ANY clip key is ≥ SCENE_STRIDE the
+ * map is unambiguously ALREADY stride-64 (programmatically-built or test v2 data
+ * that just never got its `sv` stamped) — re-keying it would corrupt it, so we
+ * only stamp `sv` and leave the map untouched. `sv` remains the authoritative
+ * marker (the app stamps it at node-add via the engine factory); this net just
+ * prevents a mis-migration of unstamped current-schema data.
+ */
+export function migrateClipPlayerData(
+  data: { clips?: Record<string, ClipRecord | null>; sv?: number } | null | undefined,
+  clone: (v: ClipRecord | null) => ClipRecord | null = plainCloneClip,
+): boolean {
+  if (!data || typeof data !== 'object') return false;
+  if (data.sv === CLIP_SCHEMA_VERSION) return false; // already current — idempotent
+  const clips = data.clips;
+  if (clips && typeof clips === 'object' && !hasStride64Key(clips)) {
+    for (const key of Object.keys(clips)) {
+      const n = Number(key);
+      if (!Number.isInteger(n) || n < 0) continue; // non-numeric / bad key → leave as-is
+      const newKey = migrateLegacyClipKey(n);
+      if (newKey === n) continue; // lane 0 — stride-invariant, no move needed
+      const moved = clone(clips[key] ?? null);
+      delete clips[key];
+      clips[String(newKey)] = moved;
+    }
+  }
+  data.sv = CLIP_SCHEMA_VERSION;
+  return true;
+}
+
+/** True iff the clips map holds ANY key ≥ SCENE_STRIDE — the tell-tale of
+ *  already-stride-64 data (a legacy stride-8 key is always ≤ 63). PURE. */
+function hasStride64Key(clips: Record<string, unknown>): boolean {
+  for (const key of Object.keys(clips)) {
+    const n = Number(key);
+    if (Number.isInteger(n) && n >= SCENE_STRIDE) return true;
+  }
+  return false;
+}
+
+/** Plain JSON deep-clone of a clip value (null-safe). The default `clone` for
+ *  `migrateClipPlayerData` on the plain-object (envelope) path. */
+function plainCloneClip(v: ClipRecord | null): ClipRecord | null {
+  return v == null ? null : (JSON.parse(JSON.stringify(v)) as ClipRecord);
 }
 
 // ---------------------------------------------------------------------------
@@ -188,6 +285,10 @@ export type ClipRecord =
 
 /** Persisted on node.data. Note clips are tiny so no caps in v1. */
 export interface ClipPlayerData {
+  /** Clip-key SCHEMA VERSION. Absent/undefined = legacy v1 (stride-8 flat clip
+   *  keys) → `migrateClipPlayerData` re-keys `clips` to stride-64 on load and
+   *  stamps CLIP_SCHEMA_VERSION here. Present = already stride-64. */
+  sv?: number;
   clips?: Record<string, ClipRecord | null>; // sparse; null/absent = empty
   /** Per-lane active clip SLOT (0..CLIP_SLOTS-1) or null = stopped. Length
    *  CLIP_LANES. SYNCED — the playing-set all peers + grids see (§5.2). Up to
