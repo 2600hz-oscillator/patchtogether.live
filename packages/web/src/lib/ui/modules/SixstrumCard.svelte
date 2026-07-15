@@ -1,15 +1,16 @@
 <script lang="ts">
-  // SixstrumCard — the 6-string guitar/bass/harp instrument. Four fader bands
-  // (karplus-family chrome) + three discrete selectors (Tuning / Dir / Chord)
-  // with name readouts, and a STRUM audition button that barres all six
-  // strings. The rear PatchPanel groups the 15 inputs per string (Strum+Mute)
-  // plus a Play section (Poly / Chord / Accent) and the mono Out.
+  // SixstrumCard — the 6-string guitar/bass/harp instrument. Compact TWO-BAND
+  // layout (karplus-family chrome) so it fits its rack tier: each band packs
+  // three width-weighted groups of faders, with the TUNING / STRUM-DIR / CHORD
+  // discrete selectors shown as name readouts + a STRUM audition button. The
+  // rear PatchPanel groups the 15 inputs per string (Strum+Mute) + Poly/Chord/
+  // Accent + the mono Out.
   //
-  //   ┌───── STRINGS ─────┬─ TUNING ┐   ┌──── PICK ────┐
-  //   │ Reg Ring Matl Pos Stf │ [guitar] │   Tone Grain Sprd Body │
-  //   ├──────── ENVELOPE ─────────┤   ┌── STRUM ──┬─ OUT ─┐
-  //   │ A  D  S  R  Mute          │   │ Strum [dir] [chord] │ Lvl [STRUM] │
-  //   └───────────────────────────┘   └──────────┴───────┘
+  //   ┌ STRINGS ───────────────┬ PICK ──────────┬ TUNING ┐
+  //   │ Reg Ring Matl Pos Stf   │ Tone Grn Spr Bdy│ [guitar]│
+  //   ├ ENVELOPE ───────────────┼ STRUM ─────────┼ OUT ────┤
+  //   │ A  D  S  R  Mute         │ Roll [dir][chd] ⟋│  Lvl   │
+  //   └─────────────────────────┴────────────────┴────────┘
 
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
@@ -51,6 +52,24 @@
   let dirName     = $derived(DIR_NAMES[Math.round(strumDir)] ?? 'down');
   let qualityName = $derived(QUALITY_NAMES[Math.round(quality)] ?? 'maj');
 
+  // MODE is a PRESET RECALL, not just a tuning switch: picking guitar/bass/harp
+  // stamps the calibrated knob configuration onto the visible controls (the
+  // three modes ARE knob states — "presets reflect knob states, no magic").
+  // Includes `tuning` (which open strings) as one of the stamped values. After
+  // a recall every knob is visible + tweakable; the modes are reachable, then
+  // editable. (register/ring/material calibrated to the plucked-string decay
+  // research; guitar ~2.5s, bass long+dark −1 oct, harp long+bright +7 st.)
+  const MODE_PRESETS: Record<string, number>[] = [
+    { tuning: 0, register: 0,   ring: 2.5, material: 0.55, pickPos: 0.17, stiffness: 0.06, pickTone: 0.60, pickGrain: 1.0,  strumSpread: 0.28, strumDir: 0, muteDepth: 0.5, quality: 0, body: 0.35, spread: 0.25 },
+    { tuning: 1, register: -12, ring: 6,   material: 0.32, pickPos: 0.11, stiffness: 0.22, pickTone: 0.40, pickGrain: 1.5,  strumSpread: 0.07, strumDir: 0, muteDepth: 0.6, quality: 6, body: 0.50, spread: 0.15 },
+    { tuning: 2, register: 7,   ring: 9,   material: 0.85, pickPos: 0.28, stiffness: 0.02, pickTone: 0.72, pickGrain: 0.55, strumSpread: 0.70, strumDir: 1, muteDepth: 0.3, quality: 3, body: 0.45, spread: 0.40 },
+  ];
+  function setMode(v: number): void {
+    const idx = Math.max(0, Math.min(MODE_PRESETS.length - 1, Math.round(v)));
+    const preset = MODE_PRESETS[idx]!;
+    for (const [k, val] of Object.entries(preset)) set(k)(val);
+  }
+
   // STRUM audition — barres all six strings (fires strum #1 via the manualTrigger seam).
   let strumPulse = $state(false);
   function strum(): void {
@@ -91,11 +110,11 @@
   <div class="stripe" style="background: var(--cable-audio);"></div>
   <ModuleTitle {id} {data} defaultLabel="SIX STRUM" />
 
-  <PatchPanel nodeId={id} groupingStrategy="sectioned" {sections} panelWidth={600}>
-    <!-- ── band 1: STRINGS · TUNING ── -->
+  <PatchPanel nodeId={id} groupingStrategy="sectioned" {sections} panelWidth={720}>
+    <!-- ── band 1: STRINGS · PICK · TUNING ── -->
     <section class="band">
       <div class="groups">
-        <div class="group wide">
+        <div class="group g-strings">
           <header>STRINGS</header>
           <div class="fader-row">
             <Fader value={register} min={-24} max={24} defaultValue={defaultFor('register')} label="Reg" units="st" curve="linear" onchange={set('register')} moduleId={id} paramId="register" readLive={live('register')} />
@@ -105,18 +124,7 @@
             <Fader value={stiffness} min={0}  max={1}  defaultValue={defaultFor('stiffness')} label="Stf"          curve="linear" onchange={set('stiffness')} moduleId={id} paramId="stiffness" readLive={live('stiffness')} />
           </div>
         </div>
-        <div class="group sel-group">
-          <header>TUNING</header>
-          <div class="sel-readout" data-testid="sixstrum-tuning-name">{tuningName}</div>
-          <Fader value={tuning} min={0} max={2} defaultValue={defaultFor('tuning')} label="Tun" curve="discrete" onchange={set('tuning')} moduleId={id} paramId="tuning" readLive={live('tuning')} />
-        </div>
-      </div>
-    </section>
-
-    <!-- ── band 2: PICK ── -->
-    <section class="band">
-      <div class="groups">
-        <div class="group">
+        <div class="group g-pick">
           <header>PICK</header>
           <div class="fader-row">
             <Fader value={pickTone}  min={0}   max={1} defaultValue={defaultFor('pickTone')}  label="Tone"  curve="linear" onchange={set('pickTone')}  moduleId={id} paramId="pickTone"  readLive={live('pickTone')} />
@@ -125,13 +133,20 @@
             <Fader value={body}      min={0}   max={1} defaultValue={defaultFor('body')}      label="Body"  curve="linear" onchange={set('body')}      moduleId={id} paramId="body"      readLive={live('body')} />
           </div>
         </div>
+        <div class="group g-sel">
+          <header>MODE</header>
+          <div class="sel-cell">
+            <div class="sel-readout" data-testid="sixstrum-tuning-name">{tuningName}</div>
+            <Fader value={tuning} min={0} max={2} defaultValue={defaultFor('tuning')} label="Mode" curve="discrete" onchange={setMode} moduleId={id} paramId="tuning" readLive={live('tuning')} />
+          </div>
+        </div>
       </div>
     </section>
 
-    <!-- ── band 3: ENVELOPE ── -->
+    <!-- ── band 2: ENVELOPE · STRUM · OUT ── -->
     <section class="band">
       <div class="groups">
-        <div class="group wide">
+        <div class="group g-env">
           <header>ENVELOPE</header>
           <div class="fader-row">
             <Fader value={attack}   min={0.0005} max={5} defaultValue={defaultFor('attack')}   label="A"    units="s" curve="log"    onchange={set('attack')}   moduleId={id} paramId="attack"   readLive={live('attack')} />
@@ -141,21 +156,15 @@
             <Fader value={muteDepth} min={0}     max={1} defaultValue={defaultFor('muteDepth')} label="Mute"          curve="linear" onchange={set('muteDepth')} moduleId={id} paramId="muteDepth" readLive={live('muteDepth')} />
           </div>
         </div>
-      </div>
-    </section>
-
-    <!-- ── band 4: STRUM · OUT ── -->
-    <section class="band">
-      <div class="groups">
-        <div class="group wide">
+        <div class="group g-strum">
           <header>STRUM</header>
           <div class="fader-row">
             <Fader value={strumSpread} min={0} max={1} defaultValue={defaultFor('strumSpread')} label="Roll" curve="linear" onchange={set('strumSpread')} moduleId={id} paramId="strumSpread" readLive={live('strumSpread')} />
-            <div class="sel-inline">
+            <div class="sel-cell">
               <div class="sel-readout" data-testid="sixstrum-dir-name">{dirName}</div>
               <Fader value={strumDir} min={0} max={2} defaultValue={defaultFor('strumDir')} label="Dir" curve="discrete" onchange={set('strumDir')} moduleId={id} paramId="strumDir" readLive={live('strumDir')} />
             </div>
-            <div class="sel-inline">
+            <div class="sel-cell">
               <div class="sel-readout" data-testid="sixstrum-chord-name">{qualityName}</div>
               <Fader value={quality} min={0} max={7} defaultValue={defaultFor('quality')} label="Chord" curve="discrete" onchange={set('quality')} moduleId={id} paramId="quality" readLive={live('quality')} />
             </div>
@@ -165,10 +174,10 @@
               onclick={strum}
               data-testid="sixstrum-strum"
               title="Audition: strum all six strings (same as a strum #1 rising edge)"
-            >⟋ STRUM</button>
+            >⟋</button>
           </div>
         </div>
-        <div class="group">
+        <div class="group g-sel">
           <header>OUT</header>
           <div class="fader-row">
             <Fader value={level} min={-24} max={12} defaultValue={defaultFor('level')} label="Lvl" units="dB" curve="linear" onchange={set('level')} moduleId={id} paramId="level" readLive={live('level')} />
@@ -180,9 +189,9 @@
 </div>
 
 <style>
-  .sixstrum-card { width: 620px; min-height: 300px; }
+  .sixstrum-card { width: 720px; }
   .sixstrum-card .band {
-    padding: 6px 12px 8px;
+    padding: 5px 12px 6px;
     border-top: 1px solid #1d1f25;
   }
   .sixstrum-card .band:first-of-type { border-top: none; }
@@ -192,52 +201,55 @@
     align-items: stretch;
   }
   .sixstrum-card .group {
-    flex: 1;
     min-width: 0;
     border-right: 1px solid #1d1f25;
     padding-right: 10px;
   }
-  .sixstrum-card .group.wide { flex: 2.5; }
+  /* width-weighted so groups fill the row proportionally to their content */
+  .sixstrum-card .g-strings { flex: 5.2; }
+  .sixstrum-card .g-pick    { flex: 4.2; }
+  .sixstrum-card .g-env     { flex: 5.2; }
+  .sixstrum-card .g-strum   { flex: 4.4; }
+  .sixstrum-card .g-sel     { flex: 1.3; }
   .sixstrum-card .group:last-child { border-right: none; padding-right: 0; }
   .sixstrum-card .group header {
     font-size: 10px;
     letter-spacing: 1.2px;
     color: #7fd4a8;
     text-transform: uppercase;
-    margin: 4px 0 4px;
+    margin: 3px 0 3px;
     opacity: 0.9;
   }
   .sixstrum-card .fader-row {
     display: flex;
-    gap: 10px;
+    gap: 8px;
     padding: 0 2px;
-    margin-bottom: 6px;
+    margin-bottom: 4px;
     align-items: flex-end;
+    justify-content: flex-start;
   }
-  .sixstrum-card .sel-group { flex: 0.9; display: flex; flex-direction: column; align-items: center; }
-  .sixstrum-card .sel-inline { display: flex; flex-direction: column; align-items: center; }
+  .sixstrum-card .sel-cell { display: flex; flex-direction: column; align-items: center; }
   .sixstrum-card .sel-readout {
     font-family: var(--font-mono, monospace);
-    font-size: 0.62rem;
+    font-size: 0.6rem;
     letter-spacing: 0.5px;
     color: #7fd4a8;
     text-transform: uppercase;
-    margin-bottom: 3px;
-    min-height: 0.8rem;
+    margin-bottom: 2px;
+    min-height: 0.75rem;
+    white-space: nowrap;
   }
   .sixstrum-card .strum-btn {
     align-self: flex-end;
-    font-family: var(--font-mono, monospace);
-    font-size: 0.7rem;
-    letter-spacing: 1px;
-    padding: 10px 16px;
-    margin: 0 0 6px 4px;
+    font-size: 0.85rem;
+    padding: 8px 12px;
+    margin: 0 0 4px 2px;
     background: #14151a;
     color: #7fd4a8;
     border: 1px solid #2a2d36;
     border-radius: 4px;
     cursor: pointer;
-    white-space: nowrap;
+    line-height: 1;
   }
   .sixstrum-card .strum-btn:active,
   .sixstrum-card .strum-btn.pulse {
