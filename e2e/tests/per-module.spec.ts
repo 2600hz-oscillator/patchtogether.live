@@ -53,6 +53,12 @@ const SKIP_OUTPUT_ALIVE: Record<string, string> = {
   livecode: 'text-DSL; no audio path',
   // SAMSLOOP — needs a loaded sample to sound. Covered by samsloop.spec.ts.
   samsloop: 'needs uploaded sample; covered by samsloop.spec.ts',
+  // SIXSTRUM — strings ring only when a strum/pluck gate is struck, but the
+  // bare output-alive driver resolves an output port with no gate source, so
+  // the 6 Karplus voices never fire. The REAL default source chain
+  // (MIDI-LANE→poly pitch + gate→strum) is exercised in sixstrum-poly.spec.ts,
+  // which asserts audible RMS on `out` — the required poly-module coverage.
+  sixstrum: 'needs a strum-gate strike; covered by sixstrum-poly.spec.ts',
   // MIDI-CV-BUDDY / MIDICLOCK — depend on connected MIDI device.
   midiCvBuddy: 'requires MIDI device; covered by midi-cv-buddy.spec.ts',
   midiclock: 'requires MIDI device; covered by midiclock.spec.ts',
