@@ -1,20 +1,23 @@
 // packages/web/src/lib/graph/automation-assign.ts
 //
-// PARAM → AUTOMATION-LANE assignment writes (per-clip automation redesign,
-// Phase B). The synced model is `ClipPlayerData.autoAssign` — a sparse map
-// `automationTargetKey → laneIndex` on each clip-player node. ONE lane per
-// param GLOBALLY: assigning moves the key (removing it from every other player
-// and lane first), so a control is never recorded by two lanes at once.
+// MODULE → AUTOMATION-LANE assignment writes (owner-locked final model: "we
+// assign entire modules to a lane, they get the border"). The synced model is
+// `ClipPlayerData.autoAssign` — a sparse map `moduleNodeId → laneIndex` on each
+// clip-player node. ONE lane per module GLOBALLY: assigning moves the key
+// (removing it from every other player and lane first), so a module is never
+// recorded by two lanes at once.
 //
 // Writes are in-place single-key mutations inside ONE LOCAL_ORIGIN transaction
 // (undoable, never a map spread — [[yjs-save-load-real-ydoc]]). Reads are the
 // pure clip-types helpers (`coerceAutoAssign` et al).
 //
 // PRUNE (mirrors control-surface-params.pruneSurfaceDangling): when an assigned
-// control's source MODULE is deleted, its assignment lingers in node.data — the
-// card's $effect calls `pruneAutoAssignDangling` on every graph change, which
-// is conservative (module-absent only), a no-op when nothing dangles, and
-// transactional when something does.
+// MODULE is deleted, its assignment lingers in node.data. Pruning follows the
+// multi-surface discipline — `pruneAllAutoAssignDangling` sweeps EVERY
+// clip-player (called from the Canvas graph-change seam, so it runs even when
+// no clipplayer card is mounted), and the card's $effect additionally calls the
+// per-player `pruneAutoAssignDangling`. Both are conservative (module-absent
+// only), no-ops when nothing dangles, and transactional when something does.
 
 import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
 import type { ModuleNode } from '$lib/graph/types';
@@ -22,6 +25,7 @@ import {
   automationTargetKey,
   parseAutomationTargetKey,
   coerceAutoAssign,
+  assignedLaneOfModule,
   laneOf,
   CLIP_LANES,
   type AutomationTarget,
@@ -40,34 +44,39 @@ export function listClipPlayers(
   return out;
 }
 
-/** Where `target` is currently assigned — the (player, lane) pair, or null. */
+/** Where MODULE `moduleId` is currently assigned — the (player, lane) pair, or
+ *  null. When several players claim the same module (a transient merge state),
+ *  the LOWEST player node id wins — the same deterministic tie-break the card
+ *  border uses. PURE read. */
 export function automationAssignmentFor(
   nodes: Record<string, { type?: string; data?: unknown } | undefined>,
-  target: AutomationTarget,
+  moduleId: string,
 ): { nodeId: string; lane: number } | null {
-  const key = automationTargetKey(target);
-  for (const nid of listClipPlayers(nodes)) {
-    const lane = coerceAutoAssign((nodes[nid]?.data as ClipPlayerData | undefined)?.autoAssign)[
-      key
-    ];
+  for (const nid of listClipPlayers(nodes).sort()) {
+    const lane = assignedLaneOfModule(
+      nodes[nid]?.data as ClipPlayerData | undefined,
+      moduleId,
+    );
     if (typeof lane === 'number') return { nodeId: nid, lane };
   }
   return null;
 }
 
-/** ASSIGN `target` to `lane` on clip-player `playerId` — the right-click menu's
- *  "Assign to automation lane ▸ N". ONE lane per param: the key is removed from
- *  every other player (and its old lane here) in the SAME transaction, so the
- *  move is atomic + a single undo step. Clamped lane; no-op on a bad player. */
+/** ASSIGN module `moduleId` to `lane` on clip-player `playerId` — the module
+ *  card's right-click "Assign to automation lane ▸ N". ONE lane per module: the
+ *  key is removed from every other player (and its old lane here) in the SAME
+ *  transaction, so the move is atomic + a single undo step. Clamped lane;
+ *  no-op on a bad player / a non-existent module / self-assignment. */
 export function assignAutomationLane(
   playerId: string,
-  target: AutomationTarget,
+  moduleId: string,
   lane: number,
 ): void {
   const L = Math.max(0, Math.min(CLIP_LANES - 1, Math.trunc(lane)));
-  const key = automationTargetKey(target);
-  if (!parseAutomationTargetKey(key)) return;
+  if (typeof moduleId !== 'string' || moduleId.length === 0 || moduleId.includes('::')) return;
+  if (!patch.nodes[moduleId]) return; // assign only a live module
   if (patch.nodes[playerId]?.type !== 'clipplayer') return;
+  if (moduleId === playerId) return; // a player never automates itself
   ydoc.transact(() => {
     for (const nid of listClipPlayers(patch.nodes)) {
       const live = patch.nodes[nid] as ModuleNode | undefined;
@@ -76,28 +85,27 @@ export function assignAutomationLane(
         if (!live.data) live.data = {};
         const d = live.data as ClipPlayerData;
         if (!d.autoAssign) d.autoAssign = {};
-        d.autoAssign[key] = L; // single-key in-place write (move = overwrite)
+        d.autoAssign[moduleId] = L; // single-key in-place write (move = overwrite)
       } else {
         const d = live.data as ClipPlayerData | undefined;
-        if (d?.autoAssign && key in d.autoAssign) delete d.autoAssign[key];
+        if (d?.autoAssign && moduleId in d.autoAssign) delete d.autoAssign[moduleId];
       }
     }
   }, LOCAL_ORIGIN);
 }
 
-/** REMOVE `target`'s automation assignment from whichever player holds it —
- *  the right-click menu's "Remove automation assignment". One transaction. */
-export function removeAutomationAssignment(target: AutomationTarget): void {
-  const key = automationTargetKey(target);
+/** REMOVE module `moduleId`'s automation assignment from whichever player holds
+ *  it — the module card's "Remove automation assignment". One transaction. */
+export function removeAutomationAssignment(moduleId: string): void {
   const holders = listClipPlayers(patch.nodes).filter((nid) => {
     const d = (patch.nodes[nid] as ModuleNode | undefined)?.data as ClipPlayerData | undefined;
-    return !!d?.autoAssign && key in coerceAutoAssign(d.autoAssign);
+    return !!d?.autoAssign && moduleId in coerceAutoAssign(d.autoAssign);
   });
   if (holders.length === 0) return;
   ydoc.transact(() => {
     for (const nid of holders) {
       const d = (patch.nodes[nid] as ModuleNode | undefined)?.data as ClipPlayerData | undefined;
-      if (d?.autoAssign && key in d.autoAssign) delete d.autoAssign[key];
+      if (d?.autoAssign && moduleId in d.autoAssign) delete d.autoAssign[moduleId];
     }
   }, LOCAL_ORIGIN);
 }
@@ -108,9 +116,9 @@ function autoMapOf(nid: string): Record<string, { tracks?: Record<string, unknow
   return d?.auto as Record<string, { tracks?: Record<string, unknown> } | null> | undefined;
 }
 
-/** True when `target` has RECORDED envelopes in ANY clip of any player — the
- *  "Clear recorded automation" menu item shows only when there is something to
- *  clear. PURE read. */
+/** True when `target` (one CONTROL) has RECORDED envelopes in ANY clip of any
+ *  player — the control menu's "Clear recorded automation" shows only when
+ *  there is something to clear. PURE read. */
 export function hasRecordedAutomation(
   nodes: Record<string, { type?: string; data?: unknown } | undefined>,
   target: AutomationTarget,
@@ -128,18 +136,17 @@ export function hasRecordedAutomation(
 }
 
 /**
- * CLEAR `target`'s RECORDED envelopes — the DELETE affordance that pairs with
- * "Remove automation assignment" (remove = stops future recording; CLEAR =
- * deletes what was recorded). Scope (the owner's lane model): when the target
- * is ASSIGNED, delete its track from every clip in its assigned lane on that
- * player; when UNASSIGNED, delete it from EVERY clip on every player (no lane
- * to scope by). A record left with zero tracks is deleted too (no empty-shell
- * litter). ONE LOCAL_ORIGIN transaction (a single undo step). Returns the
- * number of tracks removed.
+ * CLEAR `target`'s RECORDED envelopes — the per-CONTROL delete affordance
+ * (recording is module-scoped, deleting stays control-precise). Scope: when the
+ * control's MODULE is ASSIGNED, delete its track from every clip in the
+ * module's assigned lane on that player; when UNASSIGNED, delete it from EVERY
+ * clip on every player (no lane to scope by). A record left with zero tracks
+ * is deleted too (no empty-shell litter). ONE LOCAL_ORIGIN transaction (a
+ * single undo step). Returns the number of tracks removed.
  */
 export function clearRecordedAutomation(target: AutomationTarget): number {
   const key = automationTargetKey(target);
-  const holder = automationAssignmentFor(patch.nodes, target);
+  const holder = automationAssignmentFor(patch.nodes, target.nodeId);
   // Collect (player, clipKey) hits first so the transaction only opens when
   // there is something to delete.
   const hits: { nid: string; clipKey: string }[] = [];
@@ -181,19 +188,21 @@ export function clearClipAutomation(playerId: string, clipIdx: number): boolean 
   return true;
 }
 
-/** Drop every assignment on player `playerId` whose target MODULE no longer
- *  exists (module-absent only — the conservative, unambiguous case; mirrors
+/** The dangling (module-absent) assignment keys on player `playerId`. PURE. */
+function danglingAssignKeys(playerId: string): string[] {
+  const live = patch.nodes[playerId] as ModuleNode | undefined;
+  if (live?.type !== 'clipplayer') return [];
+  const assign = coerceAutoAssign((live.data as ClipPlayerData | undefined)?.autoAssign);
+  return Object.keys(assign).filter((moduleId) => !patch.nodes[moduleId]);
+}
+
+/** Drop every assignment on player `playerId` whose MODULE no longer exists
+ *  (module-absent only — the conservative, unambiguous case; mirrors
  *  `bindingDefinitelyDangling` case 1). In-place deletes inside one
  *  LOCAL_ORIGIN transaction; NO transaction when nothing dangles. Safe to call
  *  on every graph change. Returns the number removed. */
 export function pruneAutoAssignDangling(playerId: string): number {
-  const live = patch.nodes[playerId] as ModuleNode | undefined;
-  if (live?.type !== 'clipplayer') return 0;
-  const assign = coerceAutoAssign((live.data as ClipPlayerData | undefined)?.autoAssign);
-  const dangling = Object.keys(assign).filter((key) => {
-    const target = parseAutomationTargetKey(key);
-    return !target || !patch.nodes[target.nodeId];
-  });
+  const dangling = danglingAssignKeys(playerId);
   if (dangling.length === 0) return 0;
   ydoc.transact(() => {
     const d = (patch.nodes[playerId] as ModuleNode | undefined)?.data as
@@ -206,3 +215,36 @@ export function pruneAutoAssignDangling(playerId: string): number {
   }, LOCAL_ORIGIN);
   return dangling.length;
 }
+
+/** Sweep EVERY clip-player for dangling module assignments — the multi-surface
+ *  prune (control-surface discipline): runs from the Canvas graph-change seam,
+ *  so a deleted module's assignment is dropped even when no clipplayer CARD is
+ *  mounted (docked, off-screen, collapsed group). ONE transaction covering all
+ *  players; a no-op (no transaction) when nothing dangles anywhere. Returns
+ *  the number removed. */
+export function pruneAllAutoAssignDangling(): number {
+  const hits: { nid: string; keys: string[] }[] = [];
+  for (const nid of listClipPlayers(patch.nodes)) {
+    const keys = danglingAssignKeys(nid);
+    if (keys.length) hits.push({ nid, keys });
+  }
+  if (hits.length === 0) return 0;
+  let removed = 0;
+  ydoc.transact(() => {
+    for (const { nid, keys } of hits) {
+      const d = (patch.nodes[nid] as ModuleNode | undefined)?.data as ClipPlayerData | undefined;
+      if (!d?.autoAssign) continue;
+      for (const key of keys) {
+        if (key in d.autoAssign) {
+          delete d.autoAssign[key];
+          removed++;
+        }
+      }
+    }
+  }, LOCAL_ORIGIN);
+  return removed;
+}
+
+// Retired param-level helper kept as a type re-export point for callers that
+// still parse track keys (tracks stay keyed by `nodeId::paramId`).
+export { parseAutomationTargetKey };

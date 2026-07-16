@@ -95,6 +95,16 @@ export function reEnableAllFor(nodeId: string): void {
   controllers.get(nodeId)?.reEnableAll();
 }
 
+/** CONSUME the player's "track cap reached" flag (MAX_AUTOMATION_TRACKS hit by
+ *  a touch or a commit) — returns true ONCE per hit; the card's poll turns it
+ *  into a transient "MAX" badge (the polite surface). Client-local. */
+export function consumeTrackCapHitFor(nodeId: string): boolean {
+  const ctrl = controllers.get(nodeId);
+  if (!ctrl || !ctrl.capHit) return false;
+  ctrl.capHit = false;
+  return true;
+}
+
 /** TEST-ONLY: drop every registration (isolates unit tests). */
 export function __resetAutomationTouchRegistry(): void {
   controllers.clear();

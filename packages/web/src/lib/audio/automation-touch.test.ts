@@ -107,9 +107,9 @@ describe('automation-touch registry', () => {
     registerAutomationController('cp1', ctrl);
     const t = { nodeId: 'synth', paramId: 'cutoff' };
     notifyAutomationTouch(t);
-    ctrl.arm();
-    ctrl.recordLaneTick(0, 3, [t], 6, 8);
-    ctrl.recordLaneTick(0, 3, [t], 0, 8); // wrap
+    ctrl.armLane(0);
+    ctrl.recordLaneTick(0, 3, new Set([t.nodeId]), 6, 8);
+    ctrl.recordLaneTick(0, 3, new Set([t.nodeId]), 0, 8); // wrap
     expect(ctrl.isSuspended(t)).toBe(true); // still grabbed → still overriding
     notifyAutomationRelease(t);
     expect(ctrl.isSuspended(t)).toBe(false);

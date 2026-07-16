@@ -392,65 +392,108 @@ export interface ClipPlayerData {
    *  binding while the KEYS keyboard is armed/recording a clip; peers + the card
    *  see it. Absent/null = not note-recording. v1 single-recorder per clip. */
   noteRec?: NoteRecState | null;
-  /** AUTOMATION record-arm state. `arm` = GLOBAL record-arm (CLIP RECORD):
-   *  while armed, EVERY lane with a playing note clip + assigned params records
-   *  live moves of ITS params into the PLAYING clip's sibling `auto` object
-   *  (per-lane punch-in at that clip's own wrap). `recorderId` = the arming
-   *  client's `ydoc.clientID` — the SINGLE-WRITER: only that client's engine
-   *  runs the recorder + commits passes, so peers never double-record (see
-   *  `isAutomationRecorder`). SYNCED so every peer sees the armed state (their
-   *  engines still PLAY the automation; only the recorder records). Set by the
-   *  card/launchpad; the engine only READS it. Absent = not armed. */
-  automation?: { arm?: boolean; recorderId?: number };
+  /** AUTOMATION record-arm state — PER LANE (the owner's Deluge-like model:
+   *  "we arm this per channel, not as a global"). `lanes[L]` = lane L's arm:
+   *  while `arm` is true, touching ANY control of a MODULE assigned to lane L
+   *  (screen / MIDI / Electra — never CV) records into lane L's PLAYING clip's
+   *  sibling `auto` object (punch-in at that clip's own wrap; continuous
+   *  overdub). `recorderId` = the arming client's `ydoc.clientID` — the
+   *  SINGLE-WRITER **per lane**: peer A can record lane 1 while peer B records
+   *  lane 2 (each lane commits on exactly one client — see
+   *  `isLaneAutomationRecorder`). SYNCED; set by the card's per-lane ◉ / the
+   *  Launchpad SHIFT+top-row gesture; the engine only READS it. Absent / a
+   *  null slot = that lane not armed. (Clean break from the retired GLOBAL
+   *  `{arm, recorderId}` shape — the branch is unreleased; the factory's load
+   *  sweep deletes the legacy fields.) */
+  automation?: { lanes?: (AutomationLaneState | null)[] };
   /** PER-CLIP AUTOMATION (sibling map): each note clip's automation object,
    *  keyed by the SAME stride-64 flat `clipIndex(slot, lane)` as `clips` — a
    *  PARALLEL key, never a field on the note clip, so note edits and automation
    *  commits are disjoint CRDT scopes (see the AutoClipRecord block above).
    *  Sparse; absent/null = the clip carries no automation. */
   auto?: Record<string, AutoClipRecord | null>;
-  /** PARAM → LANE automation assignment: `automationTargetKey` → lane index
-   *  (0..CLIP_LANES-1). ONE lane per param (re-assigning MOVES it); while
-   *  record-armed, a lane records ONLY params assigned to it that the user
-   *  touches. SYNCED (the right-click "Assign to automation lane" menu writes
-   *  it); the assigned control shows a thin border in the lane's colour. */
+  /** MODULE → LANE automation assignment: module node id → lane index
+   *  (0..CLIP_LANES-1). Assignment is MODULE-level (owner-locked model: "we
+   *  assign entire modules to a lane, they get the border"): ONE lane per
+   *  module (re-assigning MOVES it); while lane L is armed, touching ANY
+   *  control of a module assigned to L records that control. SYNCED (the
+   *  module card's right-click "Assign to automation lane" menu writes it);
+   *  the assigned module's CARD shows a thin border in the lane's colour.
+   *  (Clean break: the retired `nodeId::paramId` keys coerce away.) */
   autoAssign?: Record<string, number>;
   creatorId?: string;
 }
 
-/** SINGLE-WRITER automation record gate: true ONLY when automation record is
- *  ARMED and THIS client is the designated recorder
- *  (`data.automation.recorderId === clientId`). Every peer reads the same synced
- *  `arm`/`recorderId`, but only the recorder's engine runs `recordTick` +
- *  commits — so a record pass writes the durable store exactly once, never once
- *  per connected peer. The clipplayer tick and the integration test share this
- *  predicate so the gate is one source of truth. */
-export function isAutomationRecorder(
+/** One lane's automation record-arm state (see ClipPlayerData.automation). */
+export interface AutomationLaneState {
+  arm?: boolean;
+  recorderId?: number;
+}
+
+/** Lane L's coerced arm state, or null when not armed/absent. PURE. */
+function laneAutomationState(
   data: ClipPlayerData | undefined,
+  lane: number,
+): AutomationLaneState | null {
+  const arr = data?.automation?.lanes;
+  if (!Array.isArray(arr)) return null;
+  const s = arr[lane];
+  return s && typeof s === 'object' ? (s as AutomationLaneState) : null;
+}
+
+/** SINGLE-WRITER automation record gate — PER LANE: true ONLY when lane L is
+ *  ARMED and THIS client is that lane's designated recorder
+ *  (`lanes[L].recorderId === clientId`). Every peer reads the same synced
+ *  per-lane state, but only the matching client's engine runs `recordLaneTick`
+ *  + commits for that lane — so each lane's pass writes the durable store
+ *  exactly once, while DIFFERENT peers may record DIFFERENT lanes
+ *  concurrently. The clipplayer tick and the integration test share this
+ *  predicate so the gate is one source of truth. */
+export function isLaneAutomationRecorder(
+  data: ClipPlayerData | undefined,
+  lane: number,
   clientId: number,
 ): boolean {
-  const a = data?.automation;
-  return !!a && a.arm === true && a.recorderId === clientId;
+  const s = laneAutomationState(data, lane);
+  return !!s && s.arm === true && s.recorderId === clientId;
 }
 
-/** True when automation record is ARMED on this player — the SYNCED flag every
- *  peer, the card, and the Launchpad AUTO-arm pad read (a card/peer arm shows on
- *  the pad, and vice-versa). Distinct from `isAutomationRecorder`, which also
- *  requires THIS client to be the designated single-writer. PURE. */
+/** True when lane L's automation record is ARMED — the SYNCED per-lane flag
+ *  every peer, the card's per-lane ◉, and the Launchpad top-row arm LEDs read.
+ *  Distinct from `isLaneAutomationRecorder`, which also requires THIS client to
+ *  be that lane's single-writer. PURE. */
+export function laneAutomationArmed(data: ClipPlayerData | undefined, lane: number): boolean {
+  return laneAutomationState(data, lane)?.arm === true;
+}
+
+/** Every lane's armed flag (length CLIP_LANES). PURE. */
+export function armedAutomationLanes(data: ClipPlayerData | undefined): boolean[] {
+  const out = new Array<boolean>(CLIP_LANES).fill(false);
+  for (let L = 0; L < CLIP_LANES; L++) out[L] = laneAutomationArmed(data, L);
+  return out;
+}
+
+/** True when ANY lane's automation record is armed on this player. PURE. */
 export function isAutomationArmed(data: ClipPlayerData | undefined): boolean {
-  return data?.automation?.arm === true;
+  for (let L = 0; L < CLIP_LANES; L++) if (laneAutomationArmed(data, L)) return true;
+  return false;
 }
 
 // ---------------------------------------------------------------------------
-// AUTOMATION ASSIGNMENT (param → lane) — PURE reads over `data.autoAssign`.
+// AUTOMATION ASSIGNMENT (MODULE → lane) — PURE reads over `data.autoAssign`.
+// The owner-locked model: entire MODULES are assigned to a lane; while that
+// lane is armed, touching ANY control of an assigned module records it.
 // ---------------------------------------------------------------------------
 
-/** Coerce a raw `autoAssign` map: keep only entries whose key parses as an
- *  automation target AND whose value is an integer lane 0..CLIP_LANES-1. PURE. */
+/** Coerce a raw `autoAssign` map: keep only entries whose key is a plausible
+ *  MODULE node id (a non-empty string WITHOUT the retired `::` target-key
+ *  separator — clean break: legacy param-level keys coerce away) AND whose
+ *  value is an integer lane 0..CLIP_LANES-1. PURE. */
 export function coerceAutoAssign(raw: unknown): Record<string, number> {
   const out: Record<string, number> = {};
   if (!raw || typeof raw !== 'object') return out;
   for (const [key, v] of Object.entries(raw as Record<string, unknown>)) {
-    if (!parseAutomationTargetKey(key)) continue;
+    if (typeof key !== 'string' || key.length === 0 || key.includes('::')) continue;
     const lane = Number(v);
     if (!Number.isInteger(lane) || lane < 0 || lane >= CLIP_LANES) continue;
     out[key] = lane;
@@ -458,42 +501,39 @@ export function coerceAutoAssign(raw: unknown): Record<string, number> {
   return out;
 }
 
-/** The lane a target is assigned to on this player, or null (unassigned). */
-export function assignedLaneOf(
+/** The lane MODULE `moduleId` is assigned to on this player, or null. PURE. */
+export function assignedLaneOfModule(
   data: { autoAssign?: unknown } | undefined,
-  target: AutomationTarget,
+  moduleId: string,
 ): number | null {
-  const lane = coerceAutoAssign(data?.autoAssign)[automationTargetKey(target)];
+  const lane = coerceAutoAssign(data?.autoAssign)[moduleId];
   return typeof lane === 'number' ? lane : null;
 }
 
-/** The assigned targets of EACH lane (length CLIP_LANES) — the per-lane record
- *  scope: while armed, lane L records ONLY these params when touched. PURE. */
-export function laneAssignedTargets(
+/** The assigned MODULE ids of EACH lane (length CLIP_LANES) — the per-lane
+ *  record scope: while lane L is armed, a touched control records IFF its
+ *  module is in `laneAssignedModules(d)[L]`. PURE. */
+export function laneAssignedModules(
   data: { autoAssign?: unknown } | undefined,
-): AutomationTarget[][] {
-  const out: AutomationTarget[][] = Array.from({ length: CLIP_LANES }, () => []);
-  for (const [key, lane] of Object.entries(coerceAutoAssign(data?.autoAssign))) {
-    const target = parseAutomationTargetKey(key);
-    if (target) out[lane]!.push(target);
+): string[][] {
+  const out: string[][] = Array.from({ length: CLIP_LANES }, () => []);
+  for (const [moduleId, lane] of Object.entries(coerceAutoAssign(data?.autoAssign))) {
+    out[lane]!.push(moduleId);
   }
   return out;
 }
 
-/** Per-lane assigned-param COUNTS (length CLIP_LANES) — the card's chip row
+/** Per-lane assigned-MODULE counts (length CLIP_LANES) — the card's chip row
  *  renders exactly this, so the readout can never disagree with `autoAssign`.
- *  `exists` (optional) filters out DANGLING targets (assigned module deleted)
- *  so the chips never count ghosts while the prune catches up. */
+ *  `exists` (optional) filters out DANGLING modules (deleted) so the chips
+ *  never count ghosts while the prune catches up. */
 export function autoAssignCounts(
   data: { autoAssign?: unknown } | undefined,
-  exists?: (target: AutomationTarget) => boolean,
+  exists?: (moduleId: string) => boolean,
 ): number[] {
   const out = new Array<number>(CLIP_LANES).fill(0);
-  for (const [key, lane] of Object.entries(coerceAutoAssign(data?.autoAssign))) {
-    if (exists) {
-      const target = parseAutomationTargetKey(key);
-      if (!target || !exists(target)) continue;
-    }
+  for (const [moduleId, lane] of Object.entries(coerceAutoAssign(data?.autoAssign))) {
+    if (exists && !exists(moduleId)) continue;
     out[lane]!++;
   }
   return out;
@@ -502,13 +542,14 @@ export function autoAssignCounts(
 /**
  * SINGLE-DRIVER playback ownership (per-clip automation, cross-lane rule): for
  * each targetKey carried by any ACTIVE lane's automation, the ONE lane that may
- * drive it this tick — the ASSIGNED lane when it is an active carrier, else the
- * LOWEST active carrier lane. Two clips in different lanes carrying the same
- * param therefore never co-drive (no interleaved ramp fights); assignment
- * resolves the tie the owner's way. PURE.
+ * drive it this tick — the lane its MODULE is ASSIGNED to when that lane is an
+ * active carrier, else the LOWEST active carrier lane. Two clips in different
+ * lanes carrying the same param therefore never co-drive (no interleaved ramp
+ * fights); the module assignment resolves the tie the owner's way. PURE.
  *
- * `carriers[lane]` = the track-key set of that lane's ACTIVE clip's automation
- * (null/undefined = lane inactive or carries none).
+ * `assign` = the coerced MODULE→lane map. `carriers[lane]` = the track-key set
+ * of that lane's ACTIVE clip's automation (null/undefined = lane inactive or
+ * carries none).
  */
 export function autoPlaybackOwners(
   assign: Record<string, number>,
@@ -522,33 +563,71 @@ export function autoPlaybackOwners(
       if (!owners.has(k)) owners.set(k, lane); // lowest active carrier
     }
   }
-  for (const [k, lane] of Object.entries(assign)) {
-    if (carriers[lane]?.has(k)) owners.set(k, lane); // assigned lane WINS when carrying
+  for (const [k] of owners) {
+    const target = parseAutomationTargetKey(k);
+    if (!target) continue;
+    const lane = assign[target.nodeId];
+    if (typeof lane === 'number' && carriers[lane]?.has(k)) {
+      owners.set(k, lane); // the module's assigned lane WINS when carrying
+    }
   }
   return owners;
 }
 
 /**
- * ARM-time shell pre-creation (container-LWW hardening): ensure `auto[k]`
- * exists for every lane with ≥1 assigned param and a PLAYING note clip, so the
- * recorder's per-key commits land in a container created OUTSIDE the racy
- * commit path (a peer's concurrent write to a sibling key can then never be
- * clobbered by a container-creation last-writer-wins). Mutates `d` IN PLACE —
- * call inside the arming write's transaction. (Clips launched later while
- * armed still fall back to the commit-side creation.)
+ * ARM-time shell pre-creation (container-LWW hardening), PER LANE: ensure
+ * `auto[k]` exists for lane L's PLAYING note clip when the lane has ≥1
+ * assigned module, so the recorder's per-key commits land in a container
+ * created OUTSIDE the racy commit path (a peer's concurrent write to a sibling
+ * key can then never be clobbered by a container-creation last-writer-wins).
+ * Mutates `d` IN PLACE — call inside the lane-arming write's transaction.
+ * (Clips launched later while armed still fall back to the commit-side
+ * creation.)
  */
-export function ensureArmAutoShells(d: ClipPlayerData): void {
-  const byLane = laneAssignedTargets(d);
-  for (let lane = 0; lane < CLIP_LANES; lane++) {
-    if (byLane[lane]!.length === 0) continue;
-    const slot = lanePlaying(d, lane);
-    if (slot === null) continue;
-    const k = String(clipIndex(slot, lane));
-    const clip = d.clips?.[k] as { kind?: unknown } | null | undefined;
-    if (!clip || clip.kind !== 'note') continue;
-    if (!d.auto) d.auto = {};
-    if (!d.auto[k] || typeof d.auto[k] !== 'object') d.auto[k] = { tracks: {} };
+export function ensureLaneArmAutoShell(d: ClipPlayerData, lane: number): void {
+  if (laneAssignedModules(d)[lane]!.length === 0) return;
+  const slot = lanePlaying(d, lane);
+  if (slot === null) return;
+  const k = String(clipIndex(slot, lane));
+  const clip = d.clips?.[k] as { kind?: unknown } | null | undefined;
+  if (!clip || clip.kind !== 'note') return;
+  if (!d.auto) d.auto = {};
+  if (!d.auto[k] || typeof d.auto[k] !== 'object') d.auto[k] = { tracks: {} };
+}
+
+/**
+ * TOGGLE lane L's automation record-arm IN PLACE — the ONE write seam the
+ * card's per-lane ◉ AND the Launchpad SHIFT+top-row gesture share (so both
+ * surfaces stay in sync via the same synced field). Rebuild-and-assign the
+ * whole `lanes` array as PLAIN values (SyncedStore Y.Arrays reject index
+ * assignment; plain clones sever live Y children — [[yjs-save-load-real-ydoc]]).
+ * WHEN ARMING: stamps `clientId` as that lane's single-writer recorderId and
+ * pre-creates the lane's auto shell (container-LWW hardening). Call inside the
+ * caller's transaction. Returns the NEW armed state.
+ */
+export function toggleLaneAutomationArm(
+  d: ClipPlayerData,
+  lane: number,
+  clientId: number,
+): boolean {
+  if (!d.automation || typeof d.automation !== 'object') d.automation = {};
+  const cur = d.automation.lanes;
+  const base: (AutomationLaneState | null)[] = new Array(CLIP_LANES).fill(null);
+  if (Array.isArray(cur)) {
+    for (let i = 0; i < CLIP_LANES && i < cur.length; i++) {
+      const e = cur[i] as AutomationLaneState | null | undefined;
+      if (e && typeof e === 'object' && e.arm === true) {
+        const entry: AutomationLaneState = { arm: true };
+        if (typeof e.recorderId === 'number') entry.recorderId = e.recorderId;
+        base[i] = entry;
+      }
+    }
   }
+  const arming = base[lane] === null;
+  base[lane] = arming ? { arm: true, recorderId: clientId } : null;
+  d.automation.lanes = base;
+  if (arming) ensureLaneArmAutoShell(d, lane);
+  return arming;
 }
 
 /** DUAL-LAUNCHPAD KEYS note-record state (see ClipPlayerData.noteRec). */

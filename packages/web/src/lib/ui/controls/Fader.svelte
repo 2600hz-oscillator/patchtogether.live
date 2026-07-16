@@ -472,13 +472,10 @@
       </div>
     {/if}
   </div>
-  <!-- AUTOMATION-ASSIGNED cue (owner spec): a thin border box around the
-       control NAME in the assigned lane's colour (mirror Knob.svelte). -->
-  <div
-    class="label"
-    class:auto-assigned={!!midi.assignedLaneColor}
-    style:--auto-lane-color={midi.assignedLaneColor ?? undefined}
-  >{label}</div>
+  <!-- (Automation assignment is MODULE-level now — the assigned MODULE's card
+       gets the lane-colour border via the shared node wrapper; the old
+       per-control name border is gone. Mirror Knob.svelte.) -->
+  <div class="label">{label}</div>
   {#if midi.binding}
     <div class="midi-badge" title={`Bound to MIDI ${midi.bindingLabel}`}>
       {midi.badge}
@@ -503,11 +500,7 @@
     electras={midi.electras}
     onassignelectra={midi.assignElectra}
     onclearelectra={midi.clearElectra}
-    automations={midi.automations}
-    automated={midi.automated}
     automationRecorded={midi.automationRecorded}
-    onassignautomation={midi.assignAutomation}
-    onremoveautomation={midi.removeAutomation}
     onclearautomation={midi.clearAutomation}
   />
 {/if}
@@ -620,13 +613,6 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     pointer-events: none;
-  }
-  /* Automation-lane assignment cue: thin border around the control name in the
-     lane's colour (--auto-lane-color set inline from the assignment). */
-  .label.auto-assigned {
-    border: 1px solid var(--auto-lane-color, transparent);
-    border-radius: 3px;
-    padding: 0 3px;
   }
   /* MIDI Learn visual states. */
   .fader-wrap.midi-learning {

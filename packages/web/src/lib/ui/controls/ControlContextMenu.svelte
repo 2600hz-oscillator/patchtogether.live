@@ -38,31 +38,13 @@
     onassignelectra?: (electraId: string, slot: number) => void;
     /** Clear this control from (electraId, slot). */
     onclearelectra?: (electraId: string, slot: number) => void;
-    /** Clip-players in the rack — the "Assign to automation lane ▸ 1–8"
-     *  targets (per-clip automation: every clip-player accepts assignments).
-     *  `lanes` carries each lane's colour swatch; `assignedLane` = the lane this
-     *  control already sits on for that player (highlighted in the flyout).
-     *  Omitted/empty → the section is hidden unless `automated` (then only
-     *  "Remove automation assignment" shows). */
-    automations?: Array<{
-      nodeId: string;
-      name: string;
-      lanes: Array<{ lane: number; color: string }>;
-      assignedLane: number | null;
-    }>;
-    /** True when THIS control is already assigned to some automation lane → we
-     *  ALSO offer "Remove automation assignment" (assigning to another lane
-     *  MOVES it — one lane per param). */
-    automated?: boolean;
     /** True when THIS control has RECORDED envelopes in some clip → we offer
-     *  "Clear recorded automation" (remove = stops future recording; clear =
-     *  deletes the recorded envelopes — two different affordances). */
+     *  "Clear recorded automation" (deletes the recorded envelopes; lane
+     *  ASSIGNMENT is MODULE-level and lives on the module card's right-click
+     *  menu — see NodeContextMenu). */
     automationRecorded?: boolean;
-    /** Assign this control to (clipPlayerNodeId, lane). */
-    onassignautomation?: (clipPlayerNodeId: string, lane: number) => void;
-    /** Remove this control's assignment from whichever player holds it. */
-    onremoveautomation?: () => void;
-    /** Delete this control's recorded envelopes (assigned lane / all clips). */
+    /** Delete this control's recorded envelopes (its module's assigned lane's
+     *  clips / all clips when unassigned). */
     onclearautomation?: () => void;
   }
 
@@ -82,11 +64,7 @@
     electras = [],
     onassignelectra,
     onclearelectra,
-    automations = [],
-    automated = false,
     automationRecorded = false,
-    onassignautomation,
-    onremoveautomation,
     onclearautomation,
   }: Props = $props();
 
@@ -102,14 +80,10 @@
   // open, and which Row's knob column is open. Reset on every reopen.
   let activeElectraId = $state<string | null>(null);
   let activeRow = $state<number | null>(null);
-  // Automation "Assign to automation lane ▸ 1–8" flyout: which clip-player's
-  // lane column is open. Reset on every reopen.
-  let activeAutomationId = $state<string | null>(null);
   $effect(() => {
     if (!open) {
       activeElectraId = null;
       activeRow = null;
-      activeAutomationId = null;
     }
   });
 
@@ -136,8 +110,6 @@
 
   function pickLearn() { onlearn(); onclose(); }
   function pickForget() { onforget(); onclose(); }
-  function pickAssignAutomation(nodeId: string, lane: number) { onassignautomation?.(nodeId, lane); onclose(); }
-  function pickRemoveAutomation() { onremoveautomation?.(); onclose(); }
   function pickClearAutomation() { onclearautomation?.(); onclose(); }
   function pickSurface(s: { id: string; bound: boolean }) {
     if (s.bound) onremovefromsurface?.(s.id);
@@ -292,79 +264,16 @@
           </div>
         {/each}
       {/if}
-      <!-- PER-CLIP AUTOMATION: assign this control to ONE of a clip-player's 8
-           automation lanes ("Assign to automation lane ▸ 1–8" — a lane column
-           flyout per player, each row swatched in the lane's colour). One lane
-           per param: picking another lane MOVES the assignment. When already
-           assigned, "Remove automation assignment" is offered too. -->
-      {#if automations.length > 0}
-        <div class="ctx-divider" role="separator"></div>
-        {#each automations as a (a.nodeId)}
-          <div class="cascade-row">
-            <div class="cascade-col">
-              <button
-                class="ctx-item cascade-trigger"
-                class:active={activeAutomationId === a.nodeId}
-                type="button"
-                role="menuitem"
-                aria-haspopup="menu"
-                aria-expanded={activeAutomationId === a.nodeId}
-                data-testid={`ctx-automation-${a.nodeId}`}
-                onmouseenter={() => { activeAutomationId = a.nodeId; }}
-                onfocus={() => { activeAutomationId = a.nodeId; }}
-                onclick={() => { activeAutomationId = a.nodeId; }}
-              >
-                {automations.length > 1
-                  ? `Assign to automation lane (${a.name})`
-                  : 'Assign to automation lane'}
-                <span class="chev" aria-hidden="true">▸</span>
-              </button>
-            </div>
-            {#if activeAutomationId === a.nodeId}
-              <ul
-                class="submenu submenu-rows"
-                role="menu"
-                aria-label="Automation lanes"
-                data-testid={`ctx-automation-${a.nodeId}-lanes`}
-              >
-                {#each a.lanes as l (l.lane)}
-                  <li>
-                    <button
-                      type="button"
-                      class="ctx-item lane-item"
-                      class:assigned={a.assignedLane === l.lane}
-                      role="menuitem"
-                      data-testid={`ctx-automation-${a.nodeId}-lane-${l.lane}`}
-                      onclick={() => pickAssignAutomation(a.nodeId, l.lane)}
-                    >
-                      <span class="lane-swatch" style:background={l.color} aria-hidden="true"
-                      ></span>
-                      Lane {l.lane + 1}{a.assignedLane === l.lane ? ' ✓' : ''}
-                    </button>
-                  </li>
-                {/each}
-              </ul>
-            {/if}
-          </div>
-        {/each}
-      {/if}
-      {#if automated}
-        <button
-          class="ctx-item subtle"
-          onclick={pickRemoveAutomation}
-          role="menuitem"
-          title="Stops FUTURE recording of this control — already-recorded envelopes keep playing (use Clear recorded automation to delete them)"
-          data-testid="ctx-automation-remove"
-        >
-          Remove automation assignment
-        </button>
-      {/if}
+      <!-- PER-CLIP AUTOMATION: lane ASSIGNMENT is MODULE-level (right-click the
+           MODULE card → "Assign to automation lane ▸ 1–8"). The control menu
+           keeps only the control-precise DELETE affordance below. -->
       {#if automationRecorded}
+        <div class="ctx-divider" role="separator"></div>
         <button
           class="ctx-item subtle"
           onclick={pickClearAutomation}
           role="menuitem"
-          title="DELETES this control's recorded envelopes — from every clip in its assigned lane (or all clips when unassigned). Undoable."
+          title="DELETES this control's recorded envelopes — from every clip in its module's assigned lane (or all clips when unassigned). Undoable."
           data-testid="ctx-automation-clear"
         >
           Clear recorded automation (this control)
@@ -473,23 +382,5 @@
   }
   .submenu .ctx-item {
     white-space: nowrap;
-  }
-  /* Automation-lane flyout rows: a colour swatch + "Lane N" (✓ on the current
-     assignment). The swatch is the lane's effective channel colour — the same
-     hue the assigned control's name border and the grid column use. */
-  .lane-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .lane-item.assigned {
-    color: #7ff0ea;
-  }
-  .lane-swatch {
-    width: 10px;
-    height: 10px;
-    border-radius: 2px;
-    flex: none;
-    border: 1px solid rgba(255, 255, 255, 0.25);
   }
 </style>

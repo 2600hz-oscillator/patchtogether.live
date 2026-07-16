@@ -401,8 +401,9 @@ describe('clipplayer automation seams (factory-level, ordered engine log)', () =
       'ONLY the owning lane’s (HIGH) envelope is scheduled — the shadowed lane is silent',
     ).toBe(true);
 
-    // ASSIGN va.base to lane 1 → ownership moves; the LOW envelope takes over.
-    nodeData().autoAssign = { 'va::base': 1 };
+    // ASSIGN module va to lane 1 → ownership moves; the LOW envelope takes
+    // over (assignment is MODULE-level; its params follow the module's lane).
+    nodeData().autoAssign = { va: 1 };
     const mark = log.length;
     run(ctx, 0.8, 1.9);
     const afterAssign = log.slice(mark).filter(isBaseSched);
@@ -447,6 +448,7 @@ describe('clipplayer automation seams (factory-level, ordered engine log)', () =
           '0': { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true },
         },
         automation: { arm: false, recorderId: 1, clip: { lane: 7, slot: 0 } },
+        autoAssign: { 'legacy::paramKey': 3 }, // retired param-level key
       },
     } as never;
     seedTimelorde(1);
@@ -459,8 +461,12 @@ describe('clipplayer automation seams (factory-level, ordered engine log)', () =
     expect(clips['448'], 'stamped automation zombie deleted').toBeUndefined();
     expect(clips['0'], 'real note clip untouched').toBeTruthy();
     expect((d.automation as Record<string, unknown>).clip, 'legacy pointer deleted').toBeUndefined();
+    // CLEAN BREAK (per-lane arm): the retired GLOBAL arm fields are swept too.
+    expect((d.automation as Record<string, unknown>).arm, 'legacy global arm deleted').toBeUndefined();
+    expect((d.automation as Record<string, unknown>).recorderId, 'legacy recorderId deleted').toBeUndefined();
+    // CLEAN BREAK (module assignment): retired `nodeId::paramId` keys swept.
+    expect(d.autoAssign, 'legacy param-level assign keys swept').toEqual({});
     expect(d.auto, 'auto container initialized at the load seam').toEqual({});
-    expect(d.autoAssign, 'autoAssign container initialized at the load seam').toEqual({});
     handle.dispose();
   });
 
@@ -475,8 +481,8 @@ describe('clipplayer automation seams (factory-level, ordered engine log)', () =
       0,
     );
     const data = livePatch.nodes[NODE_ID]!.data as Record<string, unknown>;
-    data.autoAssign = { 'va::base': 0 };
-    data.automation = { arm: true, recorderId: ydoc.clientID };
+    data.autoAssign = { va: 0 }; // MODULE → lane
+    data.automation = { lanes: [{ arm: true, recorderId: ydoc.clientID }] }; // lane 0 armed
     seedTimelorde(1);
     const ctx = new FakeAudioContext();
     const { engine } = makeFakeEngine(ctx);
@@ -511,10 +517,10 @@ describe('clipplayer automation seams (factory-level, ordered engine log)', () =
       { [clipIndex(0, 0)]: { clip: { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true }, auto: { tracks: {} } } },
       0,
     );
-    // Assign va.base to lane 0 + arm (this client is the single writer).
+    // Assign MODULE va to lane 0 + arm LANE 0 (this client is its single writer).
     const data = livePatch.nodes[NODE_ID]!.data as Record<string, unknown>;
-    data.autoAssign = { 'va::base': 0 };
-    data.automation = { arm: true, recorderId: ydoc.clientID };
+    data.autoAssign = { va: 0 };
+    data.automation = { lanes: [{ arm: true, recorderId: ydoc.clientID }] };
     seedTimelorde(1);
     const ctx = new FakeAudioContext();
     const { engine } = makeFakeEngine(ctx);

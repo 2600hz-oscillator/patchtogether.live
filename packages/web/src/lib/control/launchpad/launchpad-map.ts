@@ -70,7 +70,6 @@ import {
   velBucket,
   noteCovering,
   SCALE_NAMES,
-  isAutomationArmed,
   type CopyBufferKind,
 } from '$lib/audio/modules/clip-types';
 import { laneRateIndex, RATE_MULTS } from '$lib/audio/modules/clip-clock';
@@ -1407,21 +1406,16 @@ export const CTRL_STOP_ALL_COL = 3; // (3,7)
 export const CTRL_ARRANGE_ROW = LP_HEIGHT - 2; // 6
 export const CTRL_REC_COL = 0; // (0,6)
 export const CTRL_SONG_COL = 1; // (1,6)
-/** AUTOMATION record-arm — a dark deck pad on the arrange row (2,6), grouped
- *  beside the arranger REC (0,6) + SONG (1,6). Chosen because it is UNUSED in the
- *  Control view (RESET is (2,1); MONO/MUTE/RATE own rows 2/3/4; STOP-ALL is
- *  (3,7); the per-lane STOP scene column + the Grid-shift copy/paste/scene-scroll
- *  /swing/div/len palette are OTHER views) and semantically it is a record-arm,
- *  so it sits with the other record/mode controls. */
-export const CTRL_AUTO_ARM_COL = 2; // (2,6)
+// (The old single AUTOMATION-arm pad at (2,6) is RETIRED — per-lane arm lives
+// on the PERMANENT TOP ROW as SHIFT+column, reachable from EVERY view. See
+// armTopLane below.)
 
 export type ControlRehomeAction =
   | 'tempoDown'
   | 'tempoUp'
   | 'stopAll'
   | 'rec'
-  | 'song'
-  | 'autoArm';
+  | 'song';
 /** Classify a CONTROL-view re-homed grid pad → its action, or null. PURE. */
 export function controlRehomePad(x: number, y: number): ControlRehomeAction | null {
   if (y === CTRL_TEMPO_ROW) {
@@ -1433,11 +1427,37 @@ export function controlRehomePad(x: number, y: number): ControlRehomeAction | nu
   if (y === CTRL_ARRANGE_ROW) {
     if (x === CTRL_REC_COL) return 'rec';
     if (x === CTRL_SONG_COL) return 'song';
-    if (x === CTRL_AUTO_ARM_COL) return 'autoArm';
     return null;
   }
   return null;
 }
+
+// ---------------------------------------------------------------------------
+// PER-LANE AUTOMATION ARM on the PERMANENT TOP ROW (owner gesture, single
+// mode): "for every lane except the right-most, SHIFT + the button at the very
+// top of that lane turns on automation recording … Because Lane 8's top button
+// is the shift button itself, we double-tap [SHFT] to turn it on and off.
+// Because we're using the global row, we can always turn this on and off
+// regardless of what screen we're on."
+//   · SHIFT (held OR latched) + top CC 91..97 → toggle lane 0..6's arm. The
+//     press is CONSUMED — the button's normal function (transport / view flip
+//     / undo / redo) must NOT fire under shift.
+//   · Lane 7 (the 8th) = DOUBLE-TAP of SHFT (CC 98) itself — the second tap
+//     reverts the first tap's latch change and toggles the arm (handled
+//     statefully in launchpad-control's handleShift).
+//   · LED: an ARMED lane's top button red-flashes over its base colour in
+//     EVERY view; while shift is active the whole row paints as the arm map
+//     (see paintPermanentTopRow).
+// ---------------------------------------------------------------------------
+/** SHIFT+top-row arm classifier: the LANE a top CC toggles (columns 0..6 →
+ *  lanes 1..7), or null for CC 98 (lane 8 = the SHFT double-tap special case)
+ *  and non-top CCs. PURE. */
+export function armTopLane(cc: number): number | null {
+  const col = topCcCol(cc);
+  return col !== null && col < LP_WIDTH - 1 ? col : null;
+}
+/** The lane the SHFT double-tap toggles (lane 8 — its column IS shift). */
+export const ARM_SHIFT_LANE = LP_WIDTH - 1; // 7
 
 // ---------------------------------------------------------------------------
 // SINGLE-MODE LED FRAMES (PURE). Each view's frame paints its 8×8 + right column
@@ -1480,26 +1500,58 @@ export interface PermanentTopOpts {
   /** Undo / redo stacks non-empty → the orange CC96 / CC97 light; else dim. */
   canUndo: boolean;
   canRedo: boolean;
+  /** PER-LANE automation arm states (length 8) — the always-visible arm
+   *  indicator: an ARMED lane's top button RED-FLASHES over its base colour in
+   *  every view; while shift is active the whole row paints as the ARM MAP
+   *  (red pulse = armed · dim red = available · col 8 keeps the shift LED,
+   *  red-pulsing when lane 8 is armed). Absent = none armed. */
+  laneArms?: boolean[];
+  /** Blink phase for the arm red-flash (the render loop's shared blinker).
+   *  Absent ⇒ the bright phase. */
+  blinkOn?: boolean;
 }
 
 /** Paint the permanent nav row (CC 91..98) onto a frame — identical in every
  *  view: transport (red stopped / green running), the 4 view buttons (bright
  *  purple = active; Clip bright while KEYS is open), undo/redo (orange, dim when
  *  the stack is empty), shift (yellow: dim off / bright held / solid latched).
- *  PURE. */
+ *  PER-LANE AUTOMATION ARM overlay (owner gesture — SHIFT+column / double-tap
+ *  SHFT): an armed lane's button red-flashes ALTERNATING with its base colour
+ *  (the compass stays readable); while shift is ACTIVE the row becomes the arm
+ *  map so the gesture is discoverable. PURE. */
 export function paintPermanentTopRow(frame: LaunchpadFrame, opts: PermanentTopOpts): void {
-  put(frame, CC_UP, opts.transportRunning ? RGB_TRANSPORT_ON : RGB_TRANSPORT_STOP);
-  put(frame, CC_DOWN, opts.view === 'grid' ? RGB_VIEW_ACTIVE : RGB_VIEW_IDLE);
-  put(frame, CC_LEFT, opts.view === 'clip' || opts.keysActive ? RGB_VIEW_ACTIVE : RGB_VIEW_IDLE);
-  put(frame, CC_RIGHT, opts.view === 'arranger' ? RGB_VIEW_ACTIVE : RGB_VIEW_IDLE);
-  put(frame, CC_SESSION, opts.view === 'control' ? RGB_VIEW_ACTIVE : RGB_VIEW_IDLE);
-  put(frame, CC_TOP_SPARE_6, opts.canUndo ? RGB_SYS : RGB_SYS_DIM);
-  put(frame, CC_TOP_SPARE_7, opts.canRedo ? RGB_SYS : RGB_SYS_DIM);
-  put(
-    frame,
-    CC_TOP_SPARE_8,
-    opts.shift.held ? RGB_SHIFT_HELD : opts.shift.latched ? RGB_SHIFT_LATCH : RGB_SHIFT_OFF,
-  );
+  const blinkOn = opts.blinkOn ?? true;
+  const arms = opts.laneArms ?? [];
+  const shiftActive = opts.shift.held || opts.shift.latched;
+  const shiftRgb = opts.shift.held
+    ? RGB_SHIFT_HELD
+    : opts.shift.latched
+      ? RGB_SHIFT_LATCH
+      : RGB_SHIFT_OFF;
+  // Base compass colours, column-ordered (CC 91..98).
+  const base: Rgb[] = [
+    opts.transportRunning ? RGB_TRANSPORT_ON : RGB_TRANSPORT_STOP,
+    opts.view === 'grid' ? RGB_VIEW_ACTIVE : RGB_VIEW_IDLE,
+    opts.view === 'clip' || opts.keysActive ? RGB_VIEW_ACTIVE : RGB_VIEW_IDLE,
+    opts.view === 'arranger' ? RGB_VIEW_ACTIVE : RGB_VIEW_IDLE,
+    opts.view === 'control' ? RGB_VIEW_ACTIVE : RGB_VIEW_IDLE,
+    opts.canUndo ? RGB_SYS : RGB_SYS_DIM,
+    opts.canRedo ? RGB_SYS : RGB_SYS_DIM,
+    shiftRgb,
+  ];
+  for (let col = 0; col < LP_WIDTH; col++) {
+    const armed = arms[col] === true;
+    let rgb = base[col];
+    if (shiftActive && col < LP_WIDTH - 1) {
+      // ARM MAP while shift is active: red pulse = armed, dim red = available.
+      rgb = armed ? (blinkOn ? RGB_RECORDING : RGB_RECORDING_DIM) : RGB_STOP_IDLE;
+    } else if (armed) {
+      // Always-visible arm indicator: red flash ALTERNATING with the base
+      // colour (col 8 alternates with the shift LED) — every view, all the time.
+      rgb = blinkOn ? RGB_RECORDING : base[col];
+    }
+    put(frame, colTopCc(col), rgb);
+  }
 }
 
 /** Effective shift = latched OR momentary-held (drives right-column alt colours). */
@@ -1912,10 +1964,6 @@ export interface SingleControlOpts {
   recording?: boolean;
   /** Arrangement mode (node.data.clipMode === 'arrangement') — lights re-homed SONG. */
   arrangeMode?: boolean;
-  /** AUTOMATION countdown flash for the AUTO-arm pad — the SOONEST-to-wrap
-   *  recording lane's pre-roll (last 4 beats before its clip's own wrap).
-   *  Overrides the steady armed/idle colour. */
-  autoCountdown?: CountdownPaint | null;
   data?: ClipPlayerData | undefined;
 }
 
@@ -1959,21 +2007,9 @@ export function computeSingleControlFrame(opts: SingleControlOpts): LaunchpadFra
     padNote(CTRL_SONG_COL, CTRL_ARRANGE_ROW),
     opts.arrangeMode ? RGB_SONG_ARRANGE : RGB_SONG_SESSION,
   );
-  // AUTOMATION record-arm (the GLOBAL per-clip-automation arm) — pulses red (the
-  // record-arm colour) while armed, dim red when idle (mirrors the arranger REC
-  // beside it). Reads the SYNCED arm flag so a card/peer arm shows on the pad.
-  // In the last 4 beats before the soonest recording clip's own wrap the
-  // countdown OVERRIDES it (🟡🟡🔴🔴 recordist pre-roll). Same arm toggle the
-  // card's ◉ AUTO makes (handler owns the write).
-  put(
-    frame,
-    padNote(CTRL_AUTO_ARM_COL, CTRL_ARRANGE_ROW),
-    opts.autoCountdown
-      ? countdownRgb(opts.autoCountdown)
-      : isAutomationArmed(data)
-        ? (blinkOn ? RGB_RECORDING : RGB_RECORDING_DIM)
-        : RGB_STOP_IDLE,
-  );
+  // (The old single AUTO pad at (2,6) is RETIRED — per-lane automation arm is
+  // the PERMANENT TOP ROW's SHIFT+column gesture, painted by
+  // paintPermanentTopRow's arm overlay in every view.)
   paintPermanentTopRow(frame, opts.top);
   return frame;
 }

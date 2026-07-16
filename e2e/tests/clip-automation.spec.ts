@@ -1,8 +1,9 @@
 // e2e/tests/clip-automation.spec.ts
 //
-// PER-CLIP AUTOMATION — the real UI drive (redesign Phases 1+2). Proves the
-// whole workflow end-to-end against the live app + engine, gating all timing on
-// the clip transport (each lane's own playhead) so nothing races the wall clock.
+// PER-CLIP AUTOMATION — the real UI drive (owner-locked FINAL model:
+// MODULE-level assignment + PER-LANE arm, Deluge-like). Proves the whole
+// workflow end-to-end against the live app + engine, gating all timing on the
+// clip transport (each lane's own playhead) so nothing races the wall clock.
 //
 // The observable for "playback drives the param" is engine.readParam(node,pid):
 // the automation playback path writes each scheduled value into the engine's
@@ -11,27 +12,31 @@
 // param stays put. Store writes are separate (playback is zero-Yjs), so reading
 // the store would show nothing; we read the ENGINE.
 //
-// Model (owner, redesign 2026-07-16): automation is PER-CLIP — every note clip
-// owns a SIBLING `auto[k]` record (same stride-64 key as `clips[k]`). ASSIGN a
-// control to a LANE (right-click → "Assign to automation lane ▸ 1–8"; one lane
-// per control; the control name gets a thin border in the lane's colour), then
-// the GLOBAL ◉ AUTO arm records: each lane with a PLAYING clip punches in at
-// ITS clip's own next wrap and overdubs the ASSIGNED controls you MOVE into the
-// PLAYING clip's own automation, every loop, until you disarm. Launching a clip
-// launches its envelopes with it (length linked to the clip). There is NO
-// auto-capture: moving an unassigned control records nothing.
+// Model (owner, FINAL): assignment is MODULE-level — right-click a MODULE's
+// CARD → "Assign to automation lane ▸ 1–8" (one lane per module; the assigned
+// card gets a thin border in the lane's colour at the shared node wrapper).
+// The ARM is PER LANE (the small ◉ under each channel column, next to its RATE
+// control; on a Launchpad, SHIFT + the lane's top-row button — lane 8 =
+// double-tap SHIFT). While a lane is armed and its note clip plays, TOUCHING
+// any control of a module assigned to it (screen / MIDI / Electra — NEVER CV)
+// records into the PLAYING clip's sibling `auto[k]` by continuous overdub.
 //
 // Cases:
-//   1. Right-click assign to lane 1 (menu) → border colour cue + chip readout →
-//      launch → ARM → twist across ≥2 loops → still armed (continuous) →
-//      disarm → playback drives the param; the NOTE clip is byte-identical.
-//   2. Clip-switch swaps automation WITH the clip (two clips in one lane, each
-//      carrying its own envelope; no stuck values).
+//   1. Right-click MODULE → assign lane 1 (menu) → card border cue + chip
+//      readout → launch → arm THAT lane → twist across ≥2 loops → still armed
+//      (continuous) → an UNASSIGNED module's control does NOT record → disarm
+//      → playback drives the param; the NOTE clip is byte-identical.
+//   2. Clip-switch swaps automation WITH the clip.
 //   3. MULTI-LANE: two clips in two lanes each drive their own param.
-//   4. SCREEN-touch suspends only the grabbed param until RELEASE ("live wins").
-//   5. Hold-last-value on stop (param-jump policy, re-targeted at auto[k]).
+//   4. SCREEN-touch suspends only the grabbed param until RELEASE.
+//   5. Hold-last-value on stop (param-jump policy).
 //   6. MIDI-twist suspends via the SAME seam; CC-idle resumes.
-//   7. The 🟡🟡🔴🔴 countdown flashes per recording lane while armed.
+//   7. The 🟡🟡🔴🔴 countdown flashes the recording lane's ◉ while armed.
+//   8. Scene-duplicate carries the automation (Launchpad copy/paste).
+//   9. LAUNCHPAD per-lane arm: SHIFT+top-row toggles a lane; double-tap SHFT
+//      toggles lane 8; the card ◉ mirrors the same synced state.
+//  10. CV EXCLUSION: a CV cable driving the assigned module records NOTHING;
+//      a MIDI twist of the same knob records a track.
 
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
@@ -124,8 +129,8 @@ async function ensureTransportRunning(page: Page): Promise<void> {
 type SeedTrack = { nodeId: string; paramId: string; events: { step: number; value: number }[] };
 
 /** Seed a NOTE clip at flat index `idx` (+ optionally its SIBLING auto record +
- *  lane assignments) directly into the store — the deterministic path for the
- *  playback/suspension behaviour tests. */
+ *  MODULE→lane assignments) directly into the store — the deterministic path
+ *  for the playback/suspension behaviour tests. */
 async function seedClip(
   page: Page,
   idx: number,
@@ -190,6 +195,22 @@ async function readAutoEvents(
   );
 }
 
+/** ALL track keys of the sibling auto record at `idx` (CV-exclusion probe). */
+async function readAutoTrackKeys(page: Page, idx: number): Promise<string[]> {
+  return page.evaluate(
+    (idx) => {
+      const w = globalThis as unknown as {
+        __patch: {
+          nodes: Record<string, { data?: { auto?: Record<string, { tracks?: Record<string, unknown> }> } }>;
+        };
+      };
+      const tracks = w.__patch?.nodes?.['cp']?.data?.auto?.[String(idx)]?.tracks;
+      return tracks && typeof tracks === 'object' ? Object.keys(tracks) : [];
+    },
+    idx,
+  );
+}
+
 /** JSON snapshot of the NOTE clip at `idx` (for the byte-identical assertion). */
 async function noteClipSnapshot(page: Page, idx: number): Promise<string> {
   return page.evaluate(
@@ -202,35 +223,37 @@ async function noteClipSnapshot(page: Page, idx: number): Promise<string> {
   );
 }
 
-/** The synced automation arm flag (node.data.automation.arm). */
-async function isArmed(page: Page): Promise<boolean> {
-  return page.evaluate(() => {
+/** The synced PER-LANE automation arm flag (data.automation.lanes[lane].arm). */
+async function isLaneArmed(page: Page, lane: number): Promise<boolean> {
+  return page.evaluate((lane) => {
     const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: { automation?: { arm?: boolean } } }> };
+      __patch: {
+        nodes: Record<string, { data?: { automation?: { lanes?: ({ arm?: boolean } | null)[] } } }>;
+      };
     };
-    return w.__patch?.nodes?.['cp']?.data?.automation?.arm === true;
-  });
+    return w.__patch?.nodes?.['cp']?.data?.automation?.lanes?.[lane]?.arm === true;
+  }, lane);
 }
 
-/** The AUTO button's live countdown colour ('yellow' | 'red' | null) — the card
- *  mirror of the published per-lane render state (its cd-yellow / cd-red classes). */
-async function autoCountdownColor(page: Page): Promise<'yellow' | 'red' | null> {
-  return page.evaluate((cp) => {
-    const btn = document.querySelector(`[data-testid="clipplayer-auto-arm-${cp}"]`);
+/** Lane 0's ◉ arm button live countdown colour ('yellow' | 'red' | null) — the
+ *  card mirror of the published per-lane render state (its cd-* classes). */
+async function laneArmCountdownColor(page: Page, lane: number): Promise<'yellow' | 'red' | null> {
+  return page.evaluate((lane) => {
+    const btn = document.querySelector(`[data-testid="clipplayer-auto-arm-${lane}"]`);
     if (!btn) return null;
     if (btn.classList.contains('cd-red')) return 'red';
     if (btn.classList.contains('cd-yellow')) return 'yellow';
     return null;
-  }, CP);
+  }, lane);
 }
 
-/** Poll the AUTO countdown colour for `ms`, returning the ORDERED sequence of
+/** Poll lane 0's ◉ countdown colour for `ms`, returning the ORDERED sequence of
  *  distinct colours observed (e.g. ['yellow','red']) — proves the 🟡→🔴 order. */
 async function collectCountdown(page: Page, ms: number): Promise<Array<'yellow' | 'red'>> {
   const seq: Array<'yellow' | 'red'> = [];
   const start = Date.now();
   while (Date.now() - start < ms) {
-    const c = await autoCountdownColor(page);
+    const c = await laneArmCountdownColor(page, 0);
     if (c && seq[seq.length - 1] !== c) seq.push(c);
     await page.waitForTimeout(60);
   }
@@ -254,33 +277,47 @@ async function launchClip(page: Page, idx: number, lane: number, slot = 0): Prom
   await waitForSoundingStep(page, CP, 3, { key: `currentStep:${lane}`, timeoutMs: 8000 });
 }
 
-/** Right-click a VCA's Base fader locator. */
+/** ARM lane `lane` from the card's per-lane ◉ (the grid footer, next to RATE). */
+async function armLaneViaCard(page: Page, lane: number): Promise<void> {
+  await page.getByTestId(`clipplayer-auto-arm-${lane}`).click();
+}
+
+/** A module's fader locator (VCA Base). */
 function vcaBase(page: Page, vcaId: string) {
   return page.locator(`.svelte-flow__node[data-id="${vcaId}"]`).getByTestId('control-base');
 }
 
-/** Assign a VCA's Base to automation LANE `lane` via the real context menu:
- *  right-click → "Assign to automation lane ▸" → "Lane N". */
-async function assignViaMenu(page: Page, vcaId: string, lane: number): Promise<void> {
-  await vcaBase(page, vcaId).click({ button: 'right' });
-  const menu = page.getByTestId('control-context-menu');
-  await expect(menu).toBeVisible();
-  await menu.getByTestId(`ctx-automation-${CP}`).hover(); // opens the lane flyout
-  await menu.getByTestId(`ctx-automation-${CP}-lane-${lane}`).click();
-  await expect(menu).toBeHidden();
+/** Assign MODULE `vcaId` to automation LANE `lane` via the real MODULE context
+ *  menu: right-click the module CARD → "Assign to automation lane" → lane N. */
+async function assignModuleViaMenu(page: Page, vcaId: string, lane: number): Promise<void> {
+  const node = page.locator(`.svelte-flow__node[data-id="${vcaId}"]`);
+  // Right-click the card's header area (top-left corner — clear of controls).
+  await node.click({ button: 'right', position: { x: 8, y: 8 } });
+  const trigger = page.getByTestId(`ctx-automation-${CP}`);
+  await expect(trigger).toBeVisible();
+  await trigger.click(); // expand the lane panel
+  await page.getByTestId(`ctx-automation-${CP}-lane-${lane}`).click();
+  await expect(trigger).toBeHidden();
 }
 
-/** The control-name BORDER colour cue: the fader label's computed border colour
- *  (or null when the auto-assigned class is absent). */
-async function labelBorder(page: Page, vcaId: string): Promise<string | null> {
+/** Remove MODULE `vcaId`'s assignment via the module menu. */
+async function removeModuleAssignmentViaMenu(page: Page, vcaId: string): Promise<void> {
+  const node = page.locator(`.svelte-flow__node[data-id="${vcaId}"]`);
+  await node.click({ button: 'right', position: { x: 8, y: 8 } });
+  const remove = page.getByTestId('ctx-automation-remove');
+  await expect(remove).toBeVisible();
+  await remove.click();
+  await expect(remove).toBeHidden();
+}
+
+/** UI-CAN'T-LIE (module border): the assigned MODULE's node WRAPPER carries the
+ *  auto-lane-assigned class; returns its computed outline colour, or null. */
+async function moduleBorder(page: Page, moduleId: string): Promise<string | null> {
   return page.evaluate((id) => {
-    const card = document.querySelector(`.svelte-flow__node[data-id="${id}"]`);
-    const ctrl = card?.querySelector('[data-testid="control-base"]');
-    const wrap = ctrl?.closest('.fader-wrap') ?? ctrl?.closest('.knob-wrap');
-    const label = wrap?.querySelector('.label');
-    if (!label || !label.classList.contains('auto-assigned')) return null;
-    return getComputedStyle(label as HTMLElement).borderTopColor;
-  }, vcaId);
+    const el = document.querySelector(`.svelte-flow__node[data-id="${id}"]`);
+    if (!el || !el.classList.contains('auto-lane-assigned')) return null;
+    return getComputedStyle(el as HTMLElement).outlineColor;
+  }, moduleId);
 }
 
 /** A left-button pointer grab of a VCA Base fader that stays HELD (pointer DOWN,
@@ -322,8 +359,8 @@ async function midiLearn(page: Page, vcaId: string, cc: number): Promise<void> {
 }
 
 /** Sweep a bound CC (0..127) for `ms`. Each inject DRIVES the param AND fires
- *  notifyAutomationTouch — the exact seam a screen drag uses — so while armed an
- *  ASSIGNED param records (record-while-touched). */
+ *  notifyAutomationTouch — the exact seam a screen drag uses — so while its
+ *  module's lane is armed the touched param records (record-while-touched). */
 async function sweepCc(page: Page, cc: number, ms: number): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < ms) {
@@ -382,13 +419,14 @@ const ENV_LOW: SeedTrack['events'] = [
   { step: 7, value: 0.3 },
 ];
 
-// ── Case 1: the full owner workflow — assign (menu) → arm → twist → playback ──
+// ── Case 1: the full owner workflow — assign MODULE → arm LANE → twist ───────
 
-test('per-clip automation: right-click assign to a lane → arm → record while twisting → disarm → playback; note clip untouched', async ({ page, rack }) => {
+test('module-assign + per-lane arm: right-click module → lane 1 (card border) → arm lane → record while twisting → unassigned module records nothing → disarm → playback; note clip untouched', async ({ page, rack }) => {
   void rack;
   await spawnPatch(page, [
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
     { id: 'va', type: 'vca', position: { x: 460, y: 80 }, domain: 'audio', params: { base: 0.2 } },
+    { id: 'vb', type: 'vca', position: { x: 460, y: 340 }, domain: 'audio', params: { base: 0.8 } },
   ]);
   await ensureTransportRunning(page);
   await installSimMidi(page);
@@ -398,44 +436,60 @@ test('per-clip automation: right-click assign to a lane → arm → record while
   await seedClip(page, IDX_L0S0, { len: CLIP_LEN });
   const noteBefore = await noteClipSnapshot(page, IDX_L0S0);
 
-  // ASSIGN va.base → lane 1 via the REAL context menu (lane index 0 = "Lane 1").
-  await assignViaMenu(page, 'va', 0);
-  // UI-CAN'T-LIE (assignment cue): the control NAME gets a thin border in the
-  // lane's colour, and the AUTO block's lane-0 chip reads 1.
-  await expect.poll(async () => labelBorder(page, 'va'), { timeout: 4000 }).not.toBeNull();
-  const border = await labelBorder(page, 'va');
+  // ASSIGN the MODULE va → lane 1 via the REAL module context menu (lane
+  // index 0 = "1").
+  await assignModuleViaMenu(page, 'va', 0);
+  // UI-CAN'T-LIE (assignment cue): the MODULE'S CARD gets a thin border in the
+  // lane's colour (at the shared node wrapper), and the lane-0 chip reads 1.
+  await expect.poll(async () => moduleBorder(page, 'va'), { timeout: 4000 }).not.toBeNull();
+  const border = await moduleBorder(page, 'va');
   // Lane 0's default channel colour is hsl(0,70%,50%) = #d92626 = rgb(217,38,38).
-  expect(border).toBe('rgb(217, 38, 38)');
+  expect(border, 'border colour === the assigned lane’s colour').toBe('rgb(217, 38, 38)');
   await expect(page.getByTestId('clipplayer-auto-assigned-0')).toHaveText('1');
   await expect(page.getByTestId('clipplayer-auto-assigned-0')).toHaveAttribute('data-count', '1');
+  // The UNASSIGNED module has no border.
+  expect(await moduleBorder(page, 'vb')).toBeNull();
 
-  // Bind the fader to a CC so a scripted "move" fires the real touch seam.
+  // Bind BOTH faders to CCs so scripted "moves" fire the real touch seam.
   await midiLearn(page, 'va', 21);
+  await midiLearn(page, 'vb', 22);
 
-  // LAUNCH the clip + ARM (global CLIP RECORD), then MOVE the assigned control
-  // across ≥2 loops — the lane punches in at ITS clip's own wrap and overdubs.
+  // LAUNCH the clip + ARM LANE 0 (the per-lane ◉ next to its RATE control),
+  // then MOVE the assigned module's control across ≥2 loops — the lane punches
+  // in at ITS clip's own wrap and overdubs.
   await launchClip(page, IDX_L0S0, 0);
-  await page.getByTestId(`clipplayer-auto-arm-${CP}`).click(); // arm (claims recorderId)
-  // UI-CAN'T-LIE (arm light): the button state mirrors data.automation.arm.
-  await expect(page.getByTestId(`clipplayer-auto-arm-${CP}`)).toHaveAttribute('aria-pressed', 'true');
-  expect(await isArmed(page)).toBe(true);
+  await armLaneViaCard(page, 0);
+  // UI-CAN'T-LIE (arm light): the per-lane ◉ mirrors data.automation.lanes[0].
+  await expect(page.getByTestId('clipplayer-auto-arm-0')).toHaveAttribute('aria-pressed', 'true');
+  expect(await isLaneArmed(page, 0)).toBe(true);
+  expect(await isLaneArmed(page, 1), 'only lane 0 armed').toBe(false);
+  // Twist BOTH modules' controls — assigned va records; unassigned vb must not.
+  const vbSweep = sweepCc(page, 22, 3500);
   await sweepCc(page, 21, 3500);
+  await vbSweep;
 
   // A pass COMMITTED into the PLAYING clip's sibling auto record (per-key)
   // while STILL ARMED (continuous overdub — no auto-stop).
   await expect
     .poll(async () => (await readAutoEvents(page, IDX_L0S0, 'va::base')).length, { timeout: 12000 })
     .toBeGreaterThan(1);
-  expect(await isArmed(page), 'continuous overdub — still armed after a commit').toBe(true);
+  expect(await isLaneArmed(page, 0), 'continuous overdub — still armed after a commit').toBe(true);
+
+  // MODULE SCOPE: the unassigned module's touched control recorded NOTHING.
+  expect(await readAutoEvents(page, IDX_L0S1, 'vb::base')).toEqual([]);
+  expect(
+    (await readAutoTrackKeys(page, IDX_L0S0)).filter((k) => k.startsWith('vb')),
+    'unassigned module recorded nothing',
+  ).toEqual([]);
 
   // THE HEADLINE INVARIANT: the NOTE clip at clips[k] is BYTE-IDENTICAL — the
   // recording session never touched the note key (disjoint CRDT scopes).
   expect(await noteClipSnapshot(page, IDX_L0S0), 'note clip untouched by recording').toBe(noteBefore);
 
-  // DISARM (manual stop = press ARM again).
-  await page.getByTestId(`clipplayer-auto-arm-${CP}`).click();
-  expect(await isArmed(page), 'disarmed after the second ARM press').toBe(false);
-  await expect(page.getByTestId(`clipplayer-auto-arm-${CP}`)).toHaveAttribute('aria-pressed', 'false');
+  // DISARM (manual stop = press the lane's ◉ again).
+  await armLaneViaCard(page, 0);
+  expect(await isLaneArmed(page, 0), 'disarmed after the second press').toBe(false);
+  await expect(page.getByTestId('clipplayer-auto-arm-0')).toHaveAttribute('aria-pressed', 'false');
 
   // PLAYBACK now drives the param WITHOUT user input — assert it varies.
   const { spread } = await sampleSpread(page, 'va', 'base');
@@ -444,21 +498,18 @@ test('per-clip automation: right-click assign to a lane → arm → record while
   // CARRIER DOT: the recorded clip's pad marks that it carries automation.
   await expect(page.getByTestId(`clipplayer-pad-${IDX_L0S0}`)).toHaveAttribute('data-auto', '1');
 
-  // REMOVE the assignment → the border cue clears (the chip drops to 0); the
-  // recorded automation keeps playing (assignment gates RECORD, not playback).
-  await vcaBase(page, 'va').click({ button: 'right' });
-  const menu = page.getByTestId('control-context-menu');
-  await expect(menu).toBeVisible();
-  await menu.getByTestId('ctx-automation-remove').click();
-  await expect(menu).toBeHidden();
-  await expect.poll(async () => labelBorder(page, 'va'), { timeout: 4000 }).toBeNull();
+  // REMOVE the assignment (module menu) → the border clears (the chip drops to
+  // 0); the recorded automation keeps playing (assignment gates RECORD only).
+  await removeModuleAssignmentViaMenu(page, 'va');
+  await expect.poll(async () => moduleBorder(page, 'va'), { timeout: 4000 }).toBeNull();
   await expect(page.getByTestId('clipplayer-auto-assigned-0')).toHaveAttribute('data-count', '0');
   // The recorded envelopes SURVIVE the un-assignment (remove ≠ clear).
   expect((await readAutoEvents(page, IDX_L0S0, 'va::base')).length).toBeGreaterThan(1);
 
-  // CLEAR RECORDED AUTOMATION (the delete affordance): right-click → clear →
-  // the envelopes are gone and the carrier dot clears.
+  // CLEAR RECORDED AUTOMATION (the per-CONTROL delete affordance): right-click
+  // the control → clear → the envelopes are gone and the carrier dot clears.
   await vcaBase(page, 'va').click({ button: 'right' });
+  const menu = page.getByTestId('control-context-menu');
   await expect(menu).toBeVisible();
   await menu.getByTestId('ctx-automation-clear').click();
   await expect(menu).toBeHidden();
@@ -687,6 +738,30 @@ const SCENE_CC = [89, 79, 69, 59, 49, 39, 29, 19] as const; // scene idx 0..7
 const CC_G_COPY = SCENE_CC[0]; // grid-shift palette: COPY = scene index 0
 const CC_G_PASTE = SCENE_CC[1]; // PASTE = scene index 1
 
+async function installSingleLaunchpad(page: Page): Promise<(cc: number, v?: number) => Promise<void>> {
+  const installed = await page.evaluate(async (id) => {
+    const w = globalThis as unknown as { __launchpadTestInstallSingle?: (id: string) => Promise<boolean> };
+    if (!w.__launchpadTestInstallSingle) return false;
+    return await w.__launchpadTestInstallSingle(id);
+  }, CP);
+  expect(installed, 'single-unit Launchpad install hook present (VITE_E2E_HOOKS)').toBe(true);
+  return async (cc: number, v?: number) => {
+    await page.evaluate(
+      ({ cc, v }) => {
+        const s = (globalThis as unknown as { __launchpadSingleSim?: { cc: (cc: number, v: number) => void } })
+          .__launchpadSingleSim!;
+        if (v === undefined) {
+          s.cc(cc, 127);
+          s.cc(cc, 0);
+        } else {
+          s.cc(cc, v);
+        }
+      },
+      { cc, v },
+    );
+  };
+}
+
 test('per-clip automation: scene-duplicate (Launchpad copy/paste) carries the automation with the clips', async ({ page, rack }) => {
   void rack;
   await spawnPatch(page, [
@@ -698,20 +773,7 @@ test('per-clip automation: scene-duplicate (Launchpad copy/paste) carries the au
   await seedClip(page, IDX_L0S0, { tracks: [{ nodeId: 'va', paramId: 'base', events: ENV_UP }] });
 
   // Install the simulated single-unit Launchpad bound to this player.
-  const installed = await page.evaluate(async (id) => {
-    const w = globalThis as unknown as { __launchpadTestInstallSingle?: (id: string) => Promise<boolean> };
-    if (!w.__launchpadTestInstallSingle) return false;
-    return await w.__launchpadTestInstallSingle(id);
-  }, CP);
-  expect(installed, 'single-unit Launchpad install hook present (VITE_E2E_HOOKS)').toBe(true);
-  const ccTap = async (cc: number) => {
-    await page.evaluate((c) => {
-      const s = (globalThis as unknown as { __launchpadSingleSim?: { cc: (cc: number, v: number) => void } })
-        .__launchpadSingleSim!;
-      s.cc(c, 127);
-      s.cc(c, 0);
-    }, cc);
-  };
+  const ccTap = await installSingleLaunchpad(page);
 
   // The install hook boots in CLIP view — flip to GRID (the copy/paste home).
   await ccTap(CC_VIEW_GRID);
@@ -749,9 +811,116 @@ test('per-clip automation: scene-duplicate (Launchpad copy/paste) carries the au
   expect(spread, 'the duplicated clip’s automation plays').toBeGreaterThan(0.15);
 });
 
-// ── Case 7: the 🟡🟡🔴🔴 countdown flashes per recording lane while armed ─────
+// ── Case 9: LAUNCHPAD per-lane ARM — SHIFT+top-row + the SHFT double-tap ─────
 
-test('per-clip automation: the countdown flashes yellow→red on the AUTO button while a lane records; disarm clears it', async ({ page, rack }) => {
+test('launchpad per-lane arm: SHIFT+top-row toggles a lane (view untouched), double-tap SHFT toggles lane 8; the card ◉ mirrors', async ({ page, rack }) => {
+  void rack;
+  await spawnPatch(page, [
+    { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
+    { id: 'va', type: 'vca', position: { x: 460, y: 80 }, domain: 'audio', params: { base: 0.2 } },
+  ]);
+  await expect(page.getByTestId('clipplayer-card')).toBeVisible();
+  await seedClip(page, IDX_L0S0, { assign: { va: 0 } });
+  const ccTap = await installSingleLaunchpad(page);
+  await ccTap(CC_VIEW_GRID);
+  await page.waitForFunction(() =>
+    (globalThis as unknown as { __launchpadSingleSim?: { state: () => { singleView?: string } } })
+      .__launchpadSingleSim?.state().singleView === 'grid',
+  );
+
+  // SHIFT (held) + top-row col 0 (CC 91 — the transport button) → lane 0 arm.
+  await ccTap(CC_SHIFT, 127); // press + HOLD shift
+  await ccTap(91); // tap col 0 under shift
+  await ccTap(CC_SHIFT, 0); // release shift
+  await expect.poll(async () => isLaneArmed(page, 0), { timeout: 4000 }).toBe(true);
+  // The gesture was CONSUMED: the transport did NOT start (no TIMELORDE here →
+  // free-run; assert the view also did not change).
+  expect(
+    await page.evaluate(() =>
+      (globalThis as unknown as { __launchpadSingleSim?: { state: () => { singleView?: string } } })
+        .__launchpadSingleSim?.state().singleView,
+    ),
+    'shift+top-row never fires the button’s normal function',
+  ).toBe('grid');
+  // The CARD's per-lane ◉ mirrors the same synced state (one data path).
+  await expect(page.getByTestId('clipplayer-auto-arm-0')).toHaveAttribute('aria-pressed', 'true');
+
+  // Same gesture again → disarm.
+  await ccTap(CC_SHIFT, 127);
+  await ccTap(91);
+  await ccTap(CC_SHIFT, 0);
+  await expect.poll(async () => isLaneArmed(page, 0), { timeout: 4000 }).toBe(false);
+  await expect(page.getByTestId('clipplayer-auto-arm-0')).toHaveAttribute('aria-pressed', 'false');
+
+  // LANE 8 = DOUBLE-TAP SHFT (its column IS the shift button): two quick taps
+  // arm lane 8 and the latch nets back to off.
+  await ccTap(CC_SHIFT);
+  await ccTap(CC_SHIFT);
+  await expect.poll(async () => isLaneArmed(page, 7), { timeout: 4000 }).toBe(true);
+  await expect(page.getByTestId('clipplayer-auto-arm-7')).toHaveAttribute('aria-pressed', 'true');
+  // Two more quick taps disarm it.
+  await ccTap(CC_SHIFT);
+  await ccTap(CC_SHIFT);
+  await expect.poll(async () => isLaneArmed(page, 7), { timeout: 4000 }).toBe(false);
+});
+
+// ── Case 10: CV EXCLUSION — a CV cable never records; MIDI does ─────────────
+
+test('CV exclusion: an LFO CV cable driving the assigned module records NOTHING while its lane records; a MIDI twist of the same knob records', async ({ page, rack }) => {
+  void rack;
+  await spawnPatch(
+    page,
+    [
+      { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
+      { id: 'va', type: 'vca', position: { x: 460, y: 80 }, domain: 'audio', params: { base: 0.4 } },
+      { id: 'lfo', type: 'lfo', position: { x: 460, y: 340 }, domain: 'audio', params: { rate: 6 } },
+    ],
+    [
+      // The CV cable: the LFO audibly modulates the ASSIGNED module the whole
+      // time — performance signal, NEVER recorded as automation.
+      {
+        id: 'e_cv',
+        from: { nodeId: 'lfo', portId: 'phase0' },
+        to: { nodeId: 'va', portId: 'cv' },
+        sourceType: 'cv',
+        targetType: 'cv',
+      },
+    ],
+  );
+  await ensureTransportRunning(page);
+  await installSimMidi(page);
+  await expect(page.getByTestId('clipplayer-card')).toBeVisible();
+
+  // Assign MODULE va → lane 0 (seeded — the menu path is covered in case 1),
+  // launch, arm the lane.
+  await seedClip(page, IDX_L0S0, { assign: { va: 0 } });
+  await launchClip(page, IDX_L0S0, 0);
+  await armLaneViaCard(page, 0);
+  expect(await isLaneArmed(page, 0)).toBe(true);
+
+  // Let the lane record for 2+ full loops (~1 s each) with ONLY the CV cable
+  // wiggling the module. No touch fires; readNorm reads the modulation-free
+  // store value → NO track may appear.
+  await page.waitForTimeout(3500);
+  expect(
+    await readAutoTrackKeys(page, IDX_L0S0),
+    'CV modulation recorded NOTHING (automation records your hands — screen, MIDI, Electra — never CV)',
+  ).toEqual([]);
+
+  // Now twist the SAME knob by MIDI (the hand): a track appears.
+  await midiLearn(page, 'va', 21);
+  await sweepCc(page, 21, 3200);
+  await expect
+    .poll(async () => (await readAutoEvents(page, IDX_L0S0, 'va::base')).length, { timeout: 12000 })
+    .toBeGreaterThan(1);
+  // …and it is the ONLY track (still no CV ghost).
+  expect(await readAutoTrackKeys(page, IDX_L0S0)).toEqual(['va::base']);
+  await armLaneViaCard(page, 0); // tidy: disarm
+});
+
+// ── Case 7: the 🟡🟡🔴🔴 countdown flashes the recording lane's ◉ ────────────
+
+test('per-clip automation: the countdown flashes yellow→red on the lane’s ◉ arm while it records; disarm clears it', async ({ page, rack }) => {
   void rack;
   await spawnPatch(page, [
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
@@ -761,16 +930,16 @@ test('per-clip automation: the countdown flashes yellow→red on the AUTO button
   await expect(page.getByTestId('clipplayer-card')).toBeVisible();
 
   // A LONGER clip so the 4-beat countdown is a distinct window: 32 steps on the
-  // 1/16 grid ≈ 4s = 8 beats (countdown = the last ~2s). Assign a param to lane
-  // 0 (the countdown publishes only for lanes with assigned params).
-  await seedClip(page, IDX_L0S0, { len: 32, assign: { 'va::base': 0 } });
+  // 1/16 grid ≈ 4s = 8 beats (countdown = the last ~2s). Assign the MODULE to
+  // lane 0 (the countdown publishes only for lanes with assigned modules).
+  await seedClip(page, IDX_L0S0, { len: 32, assign: { va: 0 } });
 
-  // LAUNCH + ARM — the countdown flashes while armed + looping (no moves needed).
+  // LAUNCH + ARM LANE 0 — the countdown flashes while armed + looping.
   await launchClip(page, IDX_L0S0, 0);
-  await page.getByTestId(`clipplayer-auto-arm-${CP}`).click(); // arm
-  expect(await isArmed(page)).toBe(true);
+  await armLaneViaCard(page, 0);
+  expect(await isLaneArmed(page, 0)).toBe(true);
 
-  // Observe ≥2 loops (~9s over a 4s loop): the AUTO button flashes yellow (4,3
+  // Observe ≥2 loops (~9s over a 4s loop): lane 0's ◉ flashes yellow (4,3
   // beats) THEN red (2,1 beats) before each wrap, published from the tick.
   const seq = await collectCountdown(page, 9500);
   expect(seq, 'countdown flashes yellow in the last 4 beats').toContain('yellow');
@@ -780,7 +949,7 @@ test('per-clip automation: the countdown flashes yellow→red on the AUTO button
   );
 
   // DISARM → the countdown clears (no stuck light).
-  await page.getByTestId(`clipplayer-auto-arm-${CP}`).click();
-  expect(await isArmed(page)).toBe(false);
-  await expect.poll(async () => autoCountdownColor(page), { timeout: 4000 }).toBeNull();
+  await armLaneViaCard(page, 0);
+  expect(await isLaneArmed(page, 0)).toBe(false);
+  await expect.poll(async () => laneArmCountdownColor(page, 0), { timeout: 4000 }).toBeNull();
 });

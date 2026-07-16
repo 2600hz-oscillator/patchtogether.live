@@ -156,7 +156,8 @@ import {
   CTRL_ARRANGE_ROW,
   CTRL_REC_COL,
   CTRL_SONG_COL,
-  CTRL_AUTO_ARM_COL,
+  armTopLane,
+  ARM_SHIFT_LANE,
   countdownRgb,
   // SINGLE-mode palette
   RGB_VIEW_IDLE,
@@ -745,15 +746,27 @@ describe('Single mode — classifiers', () => {
     expect(controlRight(8)).toBeNull();
     expect(controlRight(-1)).toBeNull();
   });
-  it('controlRehomePad classifies the re-homed transport/song pads', () => {
+  it('controlRehomePad classifies the re-homed transport/song pads (the old AUTO pad at (2,6) is RETIRED)', () => {
     expect(controlRehomePad(CTRL_TEMPO_DOWN_COL, CTRL_TEMPO_ROW)).toBe('tempoDown');
     expect(controlRehomePad(CTRL_TEMPO_UP_COL, CTRL_TEMPO_ROW)).toBe('tempoUp');
     expect(controlRehomePad(CTRL_STOP_ALL_COL, CTRL_TEMPO_ROW)).toBe('stopAll');
     expect(controlRehomePad(CTRL_REC_COL, CTRL_ARRANGE_ROW)).toBe('rec');
     expect(controlRehomePad(CTRL_SONG_COL, CTRL_ARRANGE_ROW)).toBe('song');
-    expect(controlRehomePad(CTRL_AUTO_ARM_COL, CTRL_ARRANGE_ROW)).toBe('autoArm'); // (2,6)
+    // The single AUTO pad at (2,6) is retired — per-lane arm is the permanent
+    // top row's SHIFT+column gesture (armTopLane below).
+    expect(controlRehomePad(2, CTRL_ARRANGE_ROW)).toBeNull();
     expect(controlRehomePad(2, CTRL_TEMPO_ROW)).toBeNull(); // a gap column
     expect(controlRehomePad(0, 0)).toBeNull(); // not a re-home row
+  });
+  it('armTopLane: SHIFT+top CC 91..97 → lanes 0..6; CC 98 (shift itself) → null; lane 8 = ARM_SHIFT_LANE', () => {
+    expect(armTopLane(91)).toBe(0);
+    expect(armTopLane(92)).toBe(1);
+    expect(armTopLane(95)).toBe(4);
+    expect(armTopLane(97)).toBe(6);
+    expect(armTopLane(98)).toBeNull(); // the shift button — lane 8 is the double-tap
+    expect(armTopLane(90)).toBeNull();
+    expect(armTopLane(0)).toBeNull();
+    expect(ARM_SHIFT_LANE).toBe(7);
   });
 });
 
@@ -896,15 +909,58 @@ describe('Single mode — permanent top row', () => {
     paintPermanentTopRow(f, mkTop('clip', { keysActive: true }));
     expect(eqRgb(at(f, 93), RGB_VIEW_ACTIVE)).toBe(true);
   });
-  it('undo/redo dim when the stacks are empty; shift latched vs held', () => {
+  it('undo/redo dim when the stacks are empty (no shift); shift latched vs held on CC 98', () => {
     const f = emptyLpFrame();
-    paintPermanentTopRow(f, mkTop('grid', { shift: { latched: true, held: false } }));
+    paintPermanentTopRow(f, mkTop('grid'));
     expect(eqRgb(at(f, 96), RGB_SYS_DIM)).toBe(true); // canUndo false
     expect(eqRgb(at(f, 97), RGB_SYS_DIM)).toBe(true); // canRedo false
-    expect(eqRgb(at(f, 98), RGB_SHIFT_LATCH)).toBe(true); // solid yellow
+    const latch = emptyLpFrame();
+    paintPermanentTopRow(latch, mkTop('grid', { shift: { latched: true, held: false } }));
+    expect(eqRgb(at(latch, 98), RGB_SHIFT_LATCH)).toBe(true); // solid yellow
     const held = emptyLpFrame();
     paintPermanentTopRow(held, mkTop('grid', { shift: { latched: false, held: true } }));
     expect(eqRgb(at(held, 98), RGB_SHIFT_HELD)).toBe(true); // bright yellow
+  });
+  it('ARM MAP while shift is ACTIVE: cols 0..6 = red pulse (armed) / dim red (available); CC 98 keeps the shift LED', () => {
+    // Shift LATCHED, lane 2 armed, blink bright.
+    const f = emptyLpFrame();
+    paintPermanentTopRow(
+      f,
+      mkTop('grid', { shift: { latched: true, held: false }, laneArms: [false, false, true], blinkOn: true }),
+    );
+    expect(eqRgb(at(f, 93), RGB_RECORDING)).toBe(true); // lane 2 armed → red pulse (bright)
+    expect(eqRgb(at(f, 91), RGB_STOP_IDLE)).toBe(true); // lane 0 available → dim red
+    expect(eqRgb(at(f, 97), RGB_STOP_IDLE)).toBe(true); // lane 6 available → dim red
+    expect(eqRgb(at(f, 98), RGB_SHIFT_LATCH)).toBe(true); // the shift button keeps its LED
+    // Blink-off phase: the armed lane dims to the record-dim red.
+    const dim = emptyLpFrame();
+    paintPermanentTopRow(
+      dim,
+      mkTop('grid', { shift: { latched: true, held: false }, laneArms: [false, false, true], blinkOn: false }),
+    );
+    expect(eqRgb(at(dim, 93), RGB_RECORDING_DIM)).toBe(true);
+  });
+  it('ALWAYS-VISIBLE arm overlay (no shift): an armed lane’s top button red-flashes ALTERNATING with its base colour — every view', () => {
+    // Lane 2 (the CLIP button's column) armed, grid view, blink bright → RED.
+    const on = emptyLpFrame();
+    paintPermanentTopRow(on, mkTop('grid', { laneArms: [false, false, true], blinkOn: true }));
+    expect(eqRgb(at(on, 93), RGB_RECORDING)).toBe(true);
+    // Blink-off phase → the BASE compass colour shows (the row stays readable).
+    const off = emptyLpFrame();
+    paintPermanentTopRow(off, mkTop('grid', { laneArms: [false, false, true], blinkOn: false }));
+    expect(eqRgb(at(off, 93), RGB_VIEW_IDLE)).toBe(true);
+    // Unarmed columns keep their base colours in BOTH phases.
+    expect(eqRgb(at(on, 92), RGB_VIEW_ACTIVE)).toBe(true);
+    expect(eqRgb(at(off, 92), RGB_VIEW_ACTIVE)).toBe(true);
+    // Lane 8 armed: CC 98 alternates red ↔ the shift LED.
+    const l8on = emptyLpFrame();
+    paintPermanentTopRow(l8on, mkTop('control', { laneArms: [false, false, false, false, false, false, false, true], blinkOn: true }));
+    expect(eqRgb(at(l8on, 98), RGB_RECORDING)).toBe(true);
+    const l8off = emptyLpFrame();
+    paintPermanentTopRow(l8off, mkTop('control', { laneArms: [false, false, false, false, false, false, false, true], blinkOn: false }));
+    expect(eqRgb(at(l8off, 98), RGB_SHIFT_OFF)).toBe(true);
+    // Works in EVERY view — the same overlay in control view.
+    expect(eqRgb(at(l8on, 95), RGB_VIEW_ACTIVE)).toBe(true); // the control view's own button unaffected
   });
 });
 
@@ -1182,30 +1238,18 @@ describe('Single mode — frame builders', () => {
     expect(eqRgb(at(f, 94), RGB_VIEW_ACTIVE)).toBe(true); // arranger active = bright purple
   });
 
-  it('control: the AUTO-arm pad (2,6) is dim idle, pulses red when armed, and the countdown OVERRIDES it', () => {
+  it('control: the OLD AUTO pad at (2,6) is RETIRED — dark; the top row carries the per-lane arm instead', () => {
     const idle = computeSingleControlFrame({ top: mkTop('control'), data: {} as ClipPlayerData, blinkOn: true });
-    expect(eqRgb(at(idle, padNote(CTRL_AUTO_ARM_COL, CTRL_ARRANGE_ROW)), RGB_STOP_IDLE)).toBe(true);
-    // Armed (synced arm flag) → pulses the record-arm red (blinkOn phase).
+    expect(at(idle, padNote(2, CTRL_ARRANGE_ROW)), 'unpainted = dark').toBeNull();
+    // An armed lane shows on the PERMANENT TOP ROW even in the control view
+    // (the always-visible arm overlay), not on any grid pad.
     const armed = computeSingleControlFrame({
-      top: mkTop('control'),
-      data: { automation: { arm: true } } as ClipPlayerData,
+      top: mkTop('control', { laneArms: [true], blinkOn: true }),
+      data: { automation: { lanes: [{ arm: true }] } } as ClipPlayerData,
       blinkOn: true,
     });
-    expect(eqRgb(at(armed, padNote(CTRL_AUTO_ARM_COL, CTRL_ARRANGE_ROW)), RGB_RECORDING)).toBe(true);
-    const armedDim = computeSingleControlFrame({
-      top: mkTop('control'),
-      data: { automation: { arm: true } } as ClipPlayerData,
-      blinkOn: false,
-    });
-    expect(eqRgb(at(armedDim, padNote(CTRL_AUTO_ARM_COL, CTRL_ARRANGE_ROW)), RGB_RECORDING_DIM)).toBe(true);
-    // Countdown override: yellow-on paints the qrec-armed yellow regardless of arm pulse.
-    const cd = computeSingleControlFrame({
-      top: mkTop('control'),
-      data: { automation: { arm: true } } as ClipPlayerData,
-      blinkOn: false,
-      autoCountdown: { color: 'yellow', on: true },
-    });
-    expect(eqRgb(at(cd, padNote(CTRL_AUTO_ARM_COL, CTRL_ARRANGE_ROW)), RGB_QREC_ARMED)).toBe(true);
+    expect(at(armed, padNote(2, CTRL_ARRANGE_ROW)), 'still dark').toBeNull();
+    expect(eqRgb(at(armed, 91), RGB_RECORDING)).toBe(true); // lane 0's top button flashes red
   });
 
   it('countdownRgb: yellow/red map to the qrec/record palette with an on-beat pulse', () => {

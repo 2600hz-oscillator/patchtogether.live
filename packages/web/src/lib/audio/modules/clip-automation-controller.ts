@@ -7,23 +7,27 @@
 // deps wire to `engine.scheduleParam`/`holdParam` (playback, zero-Yjs), the
 // store-value tap, and the PER-KEY track commit into the sibling `auto` map.
 //
-// Semantics (per-clip automation redesign, Phases 1+2):
+// Semantics (owner-locked final model — MODULE assignment + PER-LANE arm):
 //  - PLAYBACK: a playing NOTE clip drives its sibling `auto[k]` tracks' params
 //    transiently via ramps, in the SAME per-lane step loop as the notes. A param
 //    the user is touching is SUSPENDED until the physical RELEASE (live wins).
-//  - RECORD is PER-LANE CONTINUOUS OVERDUB under ONE GLOBAL ARM: while armed,
-//    EACH lane with a playing note clip runs its OWN QuantizedRecordWindow +
-//    pass map — punch-in at THAT clip's next wrap, commit each wrap, keep going.
-//    A lane records ONLY the params ASSIGNED to it (data.autoAssign) that the
-//    user TOUCHES; there is NO auto-capture (with per-lane targeting a touched
-//    un-assigned param has no unambiguous lane — assignment is explicit).
+//  - RECORD is PER-LANE CONTINUOUS OVERDUB under a PER-LANE ARM (Deluge-like):
+//    each ARMED lane with a playing note clip runs its OWN QuantizedRecordWindow
+//    + pass map — punch-in at THAT clip's next wrap, commit each wrap, keep
+//    going. A lane records any control the user TOUCHES (screen / MIDI /
+//    Electra — the touch registry; NEVER CV, which fires no touch and never
+//    reaches the store tap) on a MODULE ASSIGNED to that lane (data.autoAssign,
+//    module→lane). Tracks are auto-created per touched param (targetKey
+//    `nodeId::paramId`), capped at MAX_AUTOMATION_TRACKS.
 //  - The commit target is LATCHED at pass start (the clip playing when the pass
 //    began) and each wrap commits to THAT latched clip index BEFORE the pass
 //    re-latches — so a queued launch landing on the wrap commits to the
 //    OUTGOING clip, never the incoming one (the mid-record-switch race).
-//  - DISARM (press ARM again) is the manual stop: every lane's in-flight pass
-//    commits PARTIAL (only up to its last captured step — untouched tails
-//    preserved). Runs only on the single recorder client.
+//  - DISARM (press that lane's ARM again) is the manual stop for THAT lane: its
+//    in-flight pass commits PARTIAL (only up to its last captured step —
+//    untouched tails preserved). Runs only on that lane's recorder client;
+//    OTHER armed lanes keep recording (per-lane single-writer: peer A records
+//    lane 1 while peer B records lane 2).
 //  - Touch/override state is CLIENT-LOCAL (never the Y.Doc) — no per-tick sync.
 
 import {
@@ -31,6 +35,8 @@ import {
   automationValueAt,
   automationLinearAt,
   automationTargetKey,
+  parseAutomationTargetKey,
+  MAX_AUTOMATION_TRACKS,
   type AutomationEvent,
   type AutomationTarget,
   type AutomationTrack,
@@ -114,11 +120,18 @@ interface PassState {
   maxDev: number;
   /** The control this pass-state records. */
   target: AutomationTarget;
+  /** The step this track was FIRST sampled at this pass — the PER-TRACK overdub
+   *  window START. Entries are TOUCH-CREATED (module-level assignment has no
+   *  fixed param list to pre-seed), so a grab at step 5 merges only from step 5
+   *  on: the existing envelope BEFORE the touch survives (never the "one-beat
+   *  spot-fix flattens the untouched bars" failure). A gesture already held at
+   *  pass start seeds at 0 — identical to the old pre-seeded window. */
+  firstSampledStep: number;
   /** The furthest step THIS track was actually sampled at this pass — the
    *  PER-TRACK overdub window end. A track released mid-pass merges only
-   *  `[0, lastSampledStep]`, so the untouched remainder of the loop keeps its
-   *  existing events (a gesture spanning a wrap must not erase the part of its
-   *  OWN pass-1 recording it didn't re-cover in pass 2). */
+   *  `[firstSampledStep, lastSampledStep]`, so the untouched remainder of the
+   *  loop keeps its existing events (a gesture spanning a wrap must not erase
+   *  the part of its OWN pass-1 recording it didn't re-cover in pass 2). */
   lastSampledStep: number;
 }
 
@@ -154,10 +167,11 @@ export class AutomationController {
   // playbackStep drives, cleared on stop). Scopes the touch-truncate so grabbing
   // a param only cancels THIS player's scheduled tail, not another writer's.
   private readonly drivenKeys = new Set<string>();
-  // PER-LANE record state (redesign Phase 2): each lane with a playing note
-  // clip runs its own window/pass under the single global arm.
+  // PER-LANE record state: each ARMED lane with a playing note clip runs its
+  // own window/pass. `armedLanes` mirrors the synced per-lane arm flags for
+  // the lanes THIS client is the recorder of.
   private readonly laneRec = new Map<number, LaneRecordState>();
-  private recArmed = false;
+  private readonly armedLanes = new Set<number>();
 
   constructor(private readonly deps: AutomationControllerDeps) {}
 
@@ -234,26 +248,33 @@ export class AutomationController {
   }
 
   // ------------------------------------------------------------------ arm
-  /** GLOBAL record-arm (the synced ◉ AUTO flag, mirrored by the recorder
-   *  client). Lanes arm their own windows lazily on their next record tick. */
-  arm(): void {
-    this.recArmed = true;
+  /** PER-LANE record-arm (the synced `automation.lanes[L].arm`, mirrored by
+   *  that lane's recorder client). The lane arms its window lazily on its next
+   *  record tick. */
+  armLane(lane: number): void {
+    this.armedLanes.add(lane);
   }
-  /** Manual STOP (press ARM again) — the global disarm. EVERY lane with an
-   *  in-flight pass commits it PARTIAL (merge only up to its last captured step
-   *  so untouched tails are preserved), into its LATCHED clip. */
-  disarm(): void {
-    for (const lr of this.laneRec.values()) {
+  /** Manual STOP for ONE lane (press that lane's ARM again) — its in-flight
+   *  pass commits PARTIAL (merge only up to its last captured step so untouched
+   *  tails are preserved), into its LATCHED clip. OTHER armed lanes keep
+   *  recording untouched. */
+  disarmLane(lane: number): void {
+    const lr = this.laneRec.get(lane);
+    if (lr) {
       if (lr.window.disarm() && lr.pass) this.commitLanePass(lr, lr.passLastStep);
+      this.laneRec.delete(lane);
     }
-    this.laneRec.clear();
-    this.recArmed = false;
-    // Manual stop → the take is done, so the just-recorded automation should PLAY
-    // BACK: clear lingering SUSPENDED-only entries so no param stays frozen at
-    // the value it was released on (the "I stopped and it's stuck" confusion),
-    // each resuming with a glide. A param a hand is STILL PHYSICALLY HOLDING
-    // (grabbed) keeps its override — per the release-on-touch-END policy, disarm
-    // must not yank a live gesture; its own pointer-up/CC-idle release ends it.
+    this.armedLanes.delete(lane);
+    // Manual stop → that lane's take is done, so its just-recorded automation
+    // should PLAY BACK: clear lingering SUSPENDED-only entries so no param
+    // stays frozen at the value it was released on (the "I stopped and it's
+    // stuck" confusion), each resuming with a glide. A param a hand is STILL
+    // PHYSICALLY HOLDING (grabbed) keeps its override — per the
+    // release-on-touch-END policy, disarm must not yank a live gesture; its own
+    // pointer-up/CC-idle release ends it. (Lane-scoping the clear would need
+    // the assignment map here; clearing every suspended-only key is safe — an
+    // override with no live hand has nothing keeping it, and other RECORDING
+    // lanes' live gestures are all `grabbed`, so they are untouched.)
     for (const k of this.suspended) {
       if (!this.grabbed.has(k)) {
         this.suspended.delete(k);
@@ -261,8 +282,19 @@ export class AutomationController {
       }
     }
   }
+  /** Disarm EVERY lane (dispose / factory teardown) — each lane's in-flight
+   *  pass commits PARTIAL into its latched clip. */
+  disarmAll(): void {
+    for (const lane of [...this.armedLanes]) this.disarmLane(lane);
+    // Belt-and-suspenders: lanes with record state but no arm entry.
+    for (const lane of [...this.laneRec.keys()]) this.disarmLane(lane);
+  }
+  /** Whether lane L is armed on THIS controller (this client records it). */
+  laneArmed(lane: number): boolean {
+    return this.armedLanes.has(lane);
+  }
   get armed(): boolean {
-    return this.recArmed;
+    return this.armedLanes.size > 0;
   }
   /** True while ANY lane is past its punch-in (actively recording). */
   get recording(): boolean {
@@ -386,27 +418,39 @@ export class AutomationController {
   }
 
   // --------------------------------------------------------------- record
+  /** Every targetKey currently under a live override (grabbed by a hand OR
+   *  suspended) — the touch-created record candidates. */
+  private heldKeys(): string[] {
+    return [...new Set([...this.grabbed.keys(), ...this.suspended])];
+  }
+
   /**
-   * PER-LANE RECORD — called once per tick per lane with a PLAYING note clip
-   * and ≥1 ASSIGNED param, ONLY on the recorder client, with that lane's
-   * fractional-step playhead. Each lane independently runs continuous overdub:
-   * punch-in at ITS clip's own next wrap, capture each tick, and at EVERY wrap
-   * commit the just-finished pass — into the LATCHED clip index, BEFORE the
-   * pass re-latches to `clipIdx` (which a queued launch may just have swapped) —
-   * then start a fresh one. Recording continues until the global disarm.
+   * PER-LANE RECORD — called once per tick per ARMED lane with a PLAYING note
+   * clip and ≥1 ASSIGNED module, ONLY on that lane's recorder client, with the
+   * lane's fractional-step playhead. Each lane independently runs continuous
+   * overdub: punch-in at ITS clip's own next wrap, capture each tick, and at
+   * EVERY wrap commit the just-finished pass — into the LATCHED clip index,
+   * BEFORE the pass re-latches to `clipIdx` (which a queued launch may just
+   * have swapped) — then start a fresh one. Recording continues until that
+   * lane's disarm.
    *
-   * `assigned` = the params autoAssign maps to THIS lane (the record scope):
-   * only those are seeded/captured, and only while TOUCHED. A target assigned
-   * mid-pass is adopted seeded at the current position.
+   * `assignedModules` = the MODULE node ids autoAssign maps to THIS lane (the
+   * record scope): a control records IFF the user is TOUCHING it (screen /
+   * MIDI / Electra — never CV, which fires no touch) AND its module is in this
+   * set. Tracks are TOUCH-CREATED — a pass entry appears the first tick a
+   * matching control is held, seeded at that position (window start), so an
+   * untouched region of the loop is never rewritten. Entries are capped at
+   * MAX_AUTOMATION_TRACKS per pass (the commit-side cap holds the durable
+   * line; `capHit` lets the surface say so politely).
    */
   recordLaneTick(
     lane: number,
     clipIdx: number,
-    assigned: readonly AutomationTarget[],
+    assignedModules: ReadonlySet<string>,
     fracStep: number,
     len: number,
   ): void {
-    if (!this.recArmed) return;
+    if (!this.armedLanes.has(lane)) return;
     let lr = this.laneRec.get(lane);
     if (!lr) {
       lr = { window: new QuantizedRecordWindow(), pass: null, latchedClipIndex: clipIdx, passLen: len, passLastStep: 0 };
@@ -416,9 +460,9 @@ export class AutomationController {
     // PUNCH OUT AT THE SWAP: the lane's active clip changed mid-pass (a queued
     // launch applied — possibly to a SHORTER clip, whose clamped playhead would
     // otherwise read as a spurious early wrap and commit a garbage full-window
-    // pass). Commit the in-flight pass PARTIAL ([0, lastSampledStep]) into the
-    // LATCHED outgoing clip NOW, and reset the window so the next pass punches
-    // in cleanly at the INCOMING clip's own first real wrap.
+    // pass). Commit the in-flight pass PARTIAL (each entry bounded to its own
+    // sampled window) into the LATCHED outgoing clip NOW, and reset the window
+    // so the next pass punches in cleanly at the INCOMING clip's first real wrap.
     if (lr.pass && clipIdx !== lr.latchedClipIndex) {
       this.commitLanePass(lr, lr.passLastStep);
       lr.window.disarm();
@@ -432,41 +476,56 @@ export class AutomationController {
     // to the clip playing NOW) so recording keeps going with no gap.
     if (transition === 'wrap') {
       this.commitLanePass(lr, lr.passLen);
-      this.beginLanePass(lr, clipIdx, assigned, len);
+      this.beginLanePass(lr, clipIdx, assignedModules, len);
     } else if (transition === 'punch-in') {
-      this.beginLanePass(lr, clipIdx, assigned, len);
+      this.beginLanePass(lr, clipIdx, assignedModules, len);
     }
 
     if (lr.window.state === 'recording' && lr.pass) {
       lr.passLen = len;
       lr.passLastStep = Math.max(lr.passLastStep, fracStep);
-      // A param whose assignment LEFT this lane mid-pass (moved to another lane
-      // / removed) punches its OWN entry out: commit what it captured so far
-      // (bounded to ITS sampled window) into the latched clip and stop
-      // sampling it here — the old lane must not keep capturing it.
+      // A param whose MODULE left this lane's assignment mid-pass (unassigned /
+      // moved to another lane) punches its OWN entry out: commit what it
+      // captured so far (bounded to ITS sampled window) into the latched clip
+      // and stop sampling it here — the old lane must not keep capturing it.
       for (const [k, st] of [...lr.pass]) {
-        if (assigned.some((t) => key(t) === k)) continue;
+        if (assignedModules.has(st.target.nodeId)) continue;
         lr.pass.delete(k);
         this.commitEntries(lr.latchedClipIndex, lr.passLen, [st], st.lastSampledStep);
       }
-      // A param assigned to this lane MID-PASS joins seeded at the current
-      // position (its move records from here and commits at the wrap).
-      for (const target of assigned) {
-        const k = key(target);
+      // TOUCH-CREATED entries: a control grabbed THIS tick (screen / MIDI /
+      // Electra) whose module is assigned to this lane joins the pass seeded at
+      // the CURRENT position (its window starts here — the loop before the
+      // touch is preserved). CV modulation can never appear here: it fires no
+      // notifyAutomationTouch, so it is never in the held set.
+      for (const k of this.heldKeys()) {
         if (lr.pass.has(k)) continue;
-        const v = this.deps.readNorm(target) ?? 0;
+        const target = parseAutomationTargetKey(k);
+        if (!target || !assignedModules.has(target.nodeId)) continue;
+        if (lr.pass.size >= MAX_AUTOMATION_TRACKS) {
+          this.capHit = true; // surfaced politely (card badge); durable cap holds
+          continue;
+        }
+        const v = this.deps.readNorm(target);
+        if (v == null) continue; // unresolvable control (no ParamDef) → skip
         const unit = this.deps.unitNorm(target);
         const gate = new RecordGate(unit != null ? { unitDelta: unit } : {});
         gate.sample(fracStep, v);
-        lr.pass.set(k, { gate, startVal: v, maxDev: 0, target, lastSampledStep: fracStep });
+        lr.pass.set(k, {
+          gate,
+          startVal: v,
+          maxDev: 0,
+          target,
+          firstSampledStep: fracStep,
+          lastSampledStep: fracStep,
+        });
       }
       // TOUCH-GATED capture: sample ONLY the tracks the user is ACTIVELY TOUCHING
-      // this pass (in `suspended`/`grabbed`). Untouched tracks are NOT sampled →
-      // their gate stays at its seed → not committed → their existing automation
-      // is preserved and keeps PLAYING BACK. So moving param A re-records A while
-      // B/C keep looping; releasing A reverts it to playback next loop.
+      // (in `suspended`/`grabbed`). A released track is NOT sampled further →
+      // its window stops extending → the un-recovered remainder of the loop
+      // keeps its existing events and resumes PLAYING BACK next loop.
       for (const st of lr.pass.values()) {
-        if (!this.isHeld(key(st.target))) continue; // not being touched/held → keep playback
+        if (!this.isHeld(key(st.target))) continue; // released → window frozen
         const v = this.deps.readNorm(st.target);
         if (v == null) continue;
         st.gate.sample(fracStep, v);
@@ -482,13 +541,19 @@ export class AutomationController {
       // physically holding (grabbed): a gesture spanning the wrap keeps its
       // suspension so the param isn't yanked to the envelope mid-drag, and its
       // capture continues into the next pass. Scoped to THIS lane's assigned
-      // params — another recording lane's wrap must not clear this lane's state.
-      for (const target of assigned) {
-        const k = key(target);
-        if (this.suspended.has(k) && !this.grabbed.has(k)) this.suspended.delete(k);
+      // MODULES — another recording lane's wrap must not clear this lane's state.
+      for (const k of [...this.suspended]) {
+        if (this.grabbed.has(k)) continue;
+        const target = parseAutomationTargetKey(k);
+        if (target && assignedModules.has(target.nodeId)) this.suspended.delete(k);
       }
     }
   }
+
+  /** Sticky "track cap reached" flag — set when a touch could not open a new
+   *  track (MAX_AUTOMATION_TRACKS). The card polls + clears it (polite surface,
+   *  client-local — never the Y.Doc). */
+  capHit = false;
 
   /** Lane L STOPPED playing (or switched to a non-note clip) while armed —
    *  punch out: commit the in-flight PARTIAL pass (bounded to its last captured
@@ -505,19 +570,37 @@ export class AutomationController {
   private beginLanePass(
     lr: LaneRecordState,
     clipIdx: number,
-    assigned: readonly AutomationTarget[],
+    assignedModules: ReadonlySet<string>,
     len: number,
   ): void {
     lr.pass = new Map();
     lr.latchedClipIndex = clipIdx; // LATCH the commit target at pass start
     lr.passLen = len;
     lr.passLastStep = 0;
-    for (const target of assigned) {
+    // Seed entries for the controls a hand is ALREADY HOLDING at pass start
+    // (a gesture spanning the wrap keeps recording seamlessly) — seeded at
+    // step 0, so their window covers the loop start exactly like the old
+    // pre-seeded model. New touches mid-pass join in recordLaneTick.
+    for (const k of this.heldKeys()) {
+      const target = parseAutomationTargetKey(k);
+      if (!target || !assignedModules.has(target.nodeId)) continue;
+      if (lr.pass.size >= MAX_AUTOMATION_TRACKS) {
+        this.capHit = true;
+        continue;
+      }
+      const v = this.deps.readNorm(target);
+      if (v == null) continue;
       const unit = this.deps.unitNorm(target);
-      const startVal = this.deps.readNorm(target) ?? 0;
       const gate = new RecordGate(unit != null ? { unitDelta: unit } : {});
-      gate.sample(0, startVal); // seed the loop start so the pre-move hold is captured
-      lr.pass.set(key(target), { gate, startVal, maxDev: 0, target, lastSampledStep: 0 });
+      gate.sample(0, v); // seed the loop start so the pre-move hold is captured
+      lr.pass.set(k, {
+        gate,
+        startVal: v,
+        maxDev: 0,
+        target,
+        firstSampledStep: 0,
+        lastSampledStep: 0,
+      });
     }
   }
 
@@ -525,13 +608,14 @@ export class AutomationController {
    * Merge the lane's current pass into its LATCHED clip's existing tracks and
    * commit ONCE — per-key writes only (deps.commit). Only tracks that MOVED
    * (maxDev ≥ MOVE_EPS) are merged; the rest keep their existing automation.
-   * Each track's overdub window is `[0, min(windowEnd, its OWN lastSampledStep)]`
-   * — PER-TRACK, not one global window: a track released mid-pass (its grab
-   * ended at step R) replaces only what it actually re-covered, so existing
-   * events in `(R, len)` — including a PREVIOUS pass's recording by the same
-   * wrap-spanning gesture — survive. `windowEnd` is the global clamp: `passLen`
-   * at a wrap commit, the last captured step on a PARTIAL pass (manual disarm /
-   * lane stop mid-loop).
+   * Each track's overdub window is
+   * `[firstSampledStep, min(windowEnd, its OWN lastSampledStep)]` — PER-TRACK,
+   * not one global window: a track grabbed at step F and released at step R
+   * replaces only what it actually covered, so existing events BEFORE the
+   * touch and in `(R, len)` — including a PREVIOUS pass's recording by the
+   * same wrap-spanning gesture — survive. `windowEnd` is the global clamp:
+   * `passLen` at a wrap commit, the last captured step on a PARTIAL pass
+   * (manual disarm / lane stop mid-loop).
    */
   private commitLanePass(lr: LaneRecordState, windowEnd: number): void {
     const pass = lr.pass;
@@ -541,8 +625,8 @@ export class AutomationController {
   }
 
   /** Merge + commit a SET of pass entries into `clipIdx` (the whole pass at a
-   *  wrap/stop, or a single moved-away entry mid-pass). Same per-track window
-   *  discipline as always: `[0, min(passLen, windowEnd, entry.lastSampledStep)]`. */
+   *  wrap/stop, or a single moved-away entry mid-pass). Per-track window:
+   *  `[entry.firstSampledStep, min(passLen, windowEnd, entry.lastSampledStep)]`. */
   private commitEntries(
     clipIdx: number,
     passLen: number,
@@ -558,7 +642,8 @@ export class AutomationController {
       const k = key(st.target);
       const incoming: AutomationEvent[] = st.gate.close();
       const end = Math.max(0, Math.min(globalEnd, st.lastSampledStep));
-      const events = mergeAutomationOverdub(byKey.get(k)?.events ?? [], incoming, 0, end);
+      const start = Math.max(0, Math.min(st.firstSampledStep, end));
+      const events = mergeAutomationOverdub(byKey.get(k)?.events ?? [], incoming, start, end);
       updates.push({ key: k, target: st.target, events });
     }
     if (updates.length) this.deps.commit(clipIdx, updates);

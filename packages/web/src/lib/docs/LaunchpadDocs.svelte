@@ -17,7 +17,8 @@
   //
   // VOCABULARY (owner directive): two kinds of recording, named consistently —
   //   CLIP RECORD     = recording INTO a clip (KEYS note-record; automation
-  //                     record via the teal ◉ AUTO).
+  //                     record via the per-lane arm — SHIFT+top-row on the
+  //                     Launchpad, the per-lane ◉ on the card).
   //   ARRANGER RECORD = the red ● that records clip LAUNCHES into the song
   //                     arrangement.
   //
@@ -345,7 +346,8 @@
   ];
 
   // ── CONTROL view — the performance deck + the RE-HOMED transport/arranger
-  // controls + the AUTO (automation CLIP-RECORD arm) pad at (2,6). ──
+  // controls. (The old single AUTO pad at (2,6) is RETIRED — per-lane
+  // automation arm is the permanent top row's SHIFT+column gesture.) ──
   const controlPads = [
     // re-homed onto dark grid pads (the permanent CC row owns the real top row):
     { x: 0, y: 7, fill: hex(RGB_TEMPO_NUDGE), label: 'T−' },
@@ -353,7 +355,6 @@
     { x: 3, y: 7, fill: hex(RGB_STOP_IDLE), label: 'ALL' },
     { x: 0, y: 6, fill: hex(RGB_STOP_IDLE), label: 'REC' }, // ARRANGER RECORD arm
     { x: 1, y: 6, fill: hex(RGB_SONG_SESSION), label: 'SONG' },
-    { x: 2, y: 6, fill: hex(RGB_STOP_IDLE), label: 'AUTO' }, // automation CLIP RECORD arm
     // performance rows (col = channel):
     { x: 2, y: 1, fill: hex(RGB_RESET), label: 'RST' }, // RESET (row 1, col 2)
     ...Array.from({ length: 8 }, (_, x) => ({ x, y: 2, fill: hex(x === 2 ? RGB_MONO_ON : RGB_MONO_OFF) })), // MONO
@@ -557,7 +558,7 @@
     { state: 'MUTE on / off', rgb: RGB_MUTE_ON, note: 'orange — channel muted (advances but silent); dim = live (row 3)' },
     { state: 'RATE (per channel)', rgb: RGB_RATE_BY_INDEX[3], note: 'a cool→warm ramp (1/8…4x); the shown green = the default ‘1’ (row 4). Tap to cycle up' },
     { state: 'TEMPO nudge − / +', rgb: RGB_TEMPO_NUDGE, note: 'dim white — step TIMELORDE’s bpm ±2' },
-    { state: 'per-lane STOP idle', rgb: RGB_STOP_IDLE, note: 'dim red — right column (also the idle REC / AUTO / STOP-ALL re-homed pads)' },
+    { state: 'per-lane STOP idle', rgb: RGB_STOP_IDLE, note: 'dim red — right column (also the idle REC / STOP-ALL re-homed pads, and the “available” lanes of the top-row arm map under SHIFT)' },
     { state: 'per-lane STOP active', rgb: RGB_STOP_ACTIVE, note: 'bright red — that channel is audible now' },
   ];
   const DECK_COLORS: { state: string; rgb: Rgb; note: string }[] = [
@@ -629,8 +630,9 @@
   type MapRow = { what: string; addr: string };
   const SINGLE_MAP_GLOBAL: MapRow[] = [
     { what: 'permanent top row (every view)', addr: 'CC 91 = transport (red stopped / green playing) · 92 = GRID · 93 = CLIP · 94 = ARRANGER · 95 = CONTROL (purple; bright = active) · 96 = UNDO · 97 = REDO (orange) · 98 = SHIFT (yellow: dim off / bright held / solid latched). This row NEVER changes meaning per view' },
-    { what: 'SHIFT (CC 98)', addr: 'TAP = latch the alt layer (solid yellow); tap again = unlatch. HOLD = momentary (bright yellow). Effective shift = latched OR held. Grid compound functions arm on tap so nothing needs a second hand' },
-    { what: 'UNDO / REDO (CC 96 / 97)', addr: 'launchpad-scoped: undoes only THIS launchpad’s persistent clip edits (div / swing / length / paste / content / scale) — never a collaborator’s edit, never a transient launch. Lit orange when the stack has something; dim otherwise' },
+    { what: 'SHIFT (CC 98)', addr: 'TAP = latch the alt layer (solid yellow); tap again = unlatch. HOLD = momentary (bright yellow). Effective shift = latched OR held. Grid compound functions arm on tap so nothing needs a second hand. DOUBLE-TAP = toggle lane 8’s automation arm (the latch nets back to where it was)' },
+    { what: 'AUTOMATION ARM (SHIFT + top row)', addr: 'while SHIFT is held or latched, the top row becomes the PER-LANE ARM MAP: press column 1–7 to toggle that lane’s automation record (red pulse = armed · dim red = available); lane 8 = double-tap SHIFT itself. Works from EVERY view; the press is consumed (no transport/view/undo side-effect). An armed lane’s button red-flashes over its normal colour all the time' },
+    { what: 'UNDO / REDO (CC 96 / 97)', addr: 'launchpad-scoped: undoes only THIS launchpad’s persistent clip edits (div / swing / length / paste / content / scale) — never a collaborator’s edit, never a transient launch. Lit orange when the stack has something; dim otherwise. Under SHIFT these presses are the lane 6/7 arm toggles instead' },
   ];
   const SINGLE_MAP_GRID: MapRow[] = [
     { what: 'GRID — the clip matrix', addr: 'column = channel / lane (1–8 left→right), row = clip slot (top row = slot 1). Single-tap = launch / stop (queued to the boundary). DOUBLE-TAP a clip = select it + open CLIP on it (empty pad = create a clip). No-shift right column = ROW / scene launch — a SCROLLING window of position-relative buttons over up to 64 scenes (slid by Grid+shift SCR▲/SCR▼)' },
@@ -644,7 +646,7 @@
     { what: 'LENGTH-EDIT page', addr: 'opened from GRID+shift LENGTH or CLIP LENGTH. Bottom row = end BLOCK (1–8 ×16), next two rows = end STEP (1–8, 9–16). Length = (endBlock−1)×16 + endStep, up to 128. EXIT = top scene button' },
   ];
   const SINGLE_MAP_CONTROL: MapRow[] = [
-    { what: 'CONTROL — the performance deck', addr: 'RESET (row 1, col 2, steel blue) · MONO row (teal) · MUTE row (orange) · RATE row (rate ramp) — one pad per channel. Right column = per-lane STOP. Re-homed on dark pads: TEMPO− / TEMPO+ / STOP-ALL (top grid row); REC (arranger record) · SONG · AUTO (automation clip-record arm) one row below' },
+    { what: 'CONTROL — the performance deck', addr: 'RESET (row 1, col 2, steel blue) · MONO row (teal) · MUTE row (orange) · RATE row (rate ramp) — one pad per channel. Right column = per-lane STOP. Re-homed on dark pads: TEMPO− / TEMPO+ / STOP-ALL (top grid row); REC (arranger record) · SONG one row below. Automation arm is NOT here — it is SHIFT + the lane’s top-row button (every view)' },
   ];
   const SINGLE_MAP_ARRANGER: MapRow[] = [
     { what: 'ARRANGER', addr: 'inert placeholder (faint grid, dark right column). The arrangement engine exists but has no launchpad UI yet; ARRANGER RECORD (REC) + SONG live in CONTROL for now' },
@@ -655,6 +657,7 @@
   const PAIR_MAP_DECK: MapRow[] = [
     { what: 'deck hold-modifiers (R, row 0)', addr: 'EDIT · COPY · PASTE · P-REV · NOW — hold on R + tap a clip on L. BUF (col 4) = tap to clear the clipboard' },
     { what: 'deck globals (R top row)', addr: 'CC 91 = REC (ARRANGER RECORD arm) · 92 = SONG (SES⇄ARR) · 93 = TEMPO− · 94 = TEMPO+ · 96 = PLAY (transport) · 97 = ALL (stop-all) · 95 = SHIFT (editor ×8)' },
+    { what: 'automation arm (pair mode)', addr: 'not on the pair hardware yet — the L top row is the per-lane MUTE strip and the R top row is the deck globals, so per-lane automation arm stays on the CARD (the per-lane ◉ next to each RATE control) for the two-unit rig; a pair surface is a follow-up' },
     { what: 'RESET / MONO / MUTE / RATE (R deck)', addr: 'row 1 col 2 = RESET · row 2 = MONO · row 3 = MUTE · row 4 = RATE (per lane) — identical to the single deck (single IS the R brain)' },
   ];
   const PAIR_MAP_EDITOR: MapRow[] = [
@@ -799,10 +802,14 @@
       <dt>CLIP RECORD</dt>
       <dd>
         Recording <strong>into a clip</strong>. Notes: KEYS → <strong>QUEUE-REC</strong>. Knob / control
-        moves: <strong>per-clip automation</strong> — right-click a control →
-        <em>Assign to automation lane</em> (1–8), then arm with the card's teal
-        <strong>◉ AUTO</strong> or the Control-Mode <strong>AUTO</strong> pad and move the control while
-        its lane's clip plays: the moves record into <em>that clip's own</em> automation.
+        moves: <strong>per-clip automation</strong>, Deluge-style — right-click a <strong>module's
+        card</strong> → <em>Assign to automation lane</em> (1–8; the whole module joins the lane and its
+        card gets a border in the lane's colour), launch a clip in that lane, then <strong>arm the
+        lane</strong> (the card's per-lane <strong>◉</strong> next to its RATE control, or on the
+        Launchpad <strong>SHIFT + that lane's top-row button</strong>; lane 8 = double-tap SHIFT) and just
+        move the module's controls: every touch — screen, MIDI, Electra — records into <em>that clip's
+        own</em> automation and keeps overdubbing every loop. <strong>CV is never recorded</strong>:
+        automation records your hands, a CV cable stays live modulation.
       </dd>
       <dt>ARRANGER RECORD</dt>
       <dd>
@@ -896,6 +903,17 @@
         when empty.</li>
       <li><strong>SHIFT (CC 98):</strong> the alt-layer key (next). Dim yellow off, bright yellow while held,
         solid yellow while latched.</li>
+      <li><strong>AUTOMATION ARM — SHIFT + a lane's top button (every view):</strong> while SHIFT is
+        held <em>or</em> latched, the top row becomes the <strong>per-lane automation arm map</strong>:
+        pressing <strong>column 1–7 toggles that lane's clip-automation record</strong> (red pulse =
+        armed, dim red = available), and the press is <strong>consumed</strong> — shift+▶ never touches
+        the transport, shift+GRID never switches views, shift+UNDO never undoes.
+        <strong>Lane 8's top button IS the shift button</strong>, so lane 8 is a
+        <strong>double-tap of SHIFT</strong> (the second tap toggles the arm and reverts the first tap's
+        latch, so the latch nets back to where it started). Because this lives on the global row,
+        <strong>you can arm or disarm any lane from any screen</strong> — and an ARMED lane's top button
+        <strong>red-flashes over its normal colour</strong> all the time, in every view, as the
+        always-visible record indicator.</li>
     </ul>
 
     <h3 id="single-shift">The shift layer + tap-to-arm — one-handed by design</h3>
@@ -1151,7 +1169,7 @@
     <p class="muted">
       Remember the split: ARRANGER RECORD captures <strong>launches</strong> (which clips fire, when).
       Recording <strong>into</strong> a clip — notes or knob moves — is <strong>CLIP RECORD</strong>
-      (KEYS QUEUE-REC · the teal ◉ AUTO).
+      (KEYS QUEUE-REC · the per-lane automation arm — SHIFT+top-row / the card's per-lane ◉).
     </p>
     <h4>Reference</h4>
     {@render mapTable([...SINGLE_MAP_GLOBAL, ...SINGLE_MAP_ARRANGER])}
@@ -1165,7 +1183,7 @@
       scene={controlScene}
       callouts={controlCallouts}
       accent={hex(RGB_RESET)}
-      caption="CONTROL view. RESET (row 1 col 2, steel blue) · MONO row (teal) · MUTE row (orange when muted) · RATE row (a cool→warm ramp; shown all-default '1') — one pad per channel. Right column = per-lane STOP (bright red = that channel is audible). Re-homed onto the dark top grid rows: TEMPO− · TEMPO+ · STOP-ALL, and REC · SONG · AUTO one row below."
+      caption="CONTROL view. RESET (row 1 col 2, steel blue) · MONO row (teal) · MUTE row (orange when muted) · RATE row (a cool→warm ramp; shown all-default '1') — one pad per channel. Right column = per-lane STOP (bright red = that channel is audible). Re-homed onto the dark top grid rows: TEMPO− · TEMPO+ · STOP-ALL, and REC · SONG one row below. (Automation arm is SHIFT + a lane's top-row button — every view.)"
     />
     <ul class="tight">
       <li><strong>RESET (RST, steel blue):</strong> snap every playing channel back to step 1 at one shared
@@ -1185,17 +1203,22 @@
         records your live clip <em>launches</em> — not notes, not knobs; the pad pulses red while
         recording), and <strong>SONG</strong> flips SESSION ⇄ ARRANGEMENT to replay the recorded song.
         Same synced state as the card's <strong>●</strong> and SES/ARR buttons.</li>
-      <li><strong>AUTO = automation CLIP RECORD:</strong> the pad next to SONG is the
-        <strong>global automation arm</strong> — the same toggle as the card's <strong>◉ AUTO</strong>.
-        Assign controls first (right-click a control → <em>Assign to automation lane</em> 1–8); while
-        armed, every lane with a <em>playing</em> clip and assigned controls records — continuous
-        overdub, punching in at <em>that clip's</em> next loop start, into that clip's OWN automation
-        (each clip in a lane carries its own envelopes; copy/paste and scene-duplicate carry them with
-        the clip). The pad pulses red while armed and shows the 🟡🟡🔴🔴 pre-roll countdown before the
-        soonest recording clip's wrap. Move an assigned control to record it; an unassigned control
-        records nothing. Tap AUTO again to stop. Deleting is card-side and explicit: right-click →
-        <em>Clear recorded automation</em> (per control) or the editor's CLR AUTO (per clip) —
-        <em>Remove automation assignment</em> only stops future recording.</li>
+      <li><strong>Automation CLIP RECORD = SHIFT + the lane's top-row button</strong> (not a grid pad —
+        it works from every view, including this one; lane 8 = double-tap SHIFT). Assign modules first
+        (right-click a <em>module's card</em> → <em>Assign to automation lane</em> 1–8 — the whole
+        module joins the lane, its card gets a border in the lane's colour); while a lane is
+        <strong>armed</strong> (its top-row button red-flashes; same toggle as the card's per-lane
+        <strong>◉</strong>) and its clip <em>plays</em>, every control you TOUCH on an assigned module —
+        screen, MIDI, Electra; <strong>never CV</strong> — records by continuous overdub, punching in at
+        <em>that clip's</em> next loop start, into that clip's OWN automation (each clip in a lane
+        carries its own envelopes; copy/paste and scene-duplicate carry them with the clip). The
+        recording clip's grid cell shows the 🟡🟡🔴🔴 pre-roll countdown before its wrap. Touching an
+        unassigned module's control records nothing. SHIFT+the button again stops that lane; other
+        armed lanes keep recording — and different collaborators can record different lanes at once.
+        Deleting is card-side and explicit: right-click a control → <em>Clear recorded automation</em>,
+        or the editor's CLR AUTO (per clip) — the module menu's <em>Remove automation assignment</em>
+        only stops future recording. Longer-form automation across a song is the (future) arranger
+        mode's job.</li>
     </ul>
     <h4>Control-mode colours</h4>
     {@render swatches3(SINGLE_CONTROL_COLORS)}
@@ -1310,7 +1333,7 @@
       scene={controlScene}
       callouts={controlCallouts}
       accent={hex(RGB_RESET)}
-      caption="STEP 6 — CONTROL mode. RESET · MONO row · MUTE row · RATE row (one pad per channel), per-lane STOP on the right, TEMPO± / STOP-ALL / REC · SONG · AUTO re-homed on the top grid rows. The full tour is in the Control Mode tab."
+      caption="STEP 6 — CONTROL mode. RESET · MONO row · MUTE row · RATE row (one pad per channel), per-lane STOP on the right, TEMPO± / STOP-ALL / REC · SONG re-homed on the top grid rows. The full tour is in the Control Mode tab."
     />
     <ol class="steps">
       <li><strong>Mute the kick for a breakdown:</strong> press <strong>CONTROL</strong> (top row), tap

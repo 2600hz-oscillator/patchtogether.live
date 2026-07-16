@@ -64,6 +64,10 @@ import {
   MAX_AUTOMATION_TRACKS,
   MAX_AUTOMATION_EVENTS,
   isAutomationArmed,
+  laneAutomationArmed,
+  armedAutomationLanes,
+  isLaneAutomationRecorder,
+  toggleLaneAutomationArm,
   coerceAutomationEvent,
   coerceAutoTrack,
   coerceAutoClipRecord,
@@ -72,15 +76,15 @@ import {
   automationTargetKey,
   parseAutomationTargetKey,
   coerceAutoAssign,
-  assignedLaneOf,
-  laneAssignedTargets,
+  assignedLaneOfModule,
+  laneAssignedModules,
   autoAssignCounts,
   plainCloneAutoClip,
   reverseAutoClipRecord,
   autoClipHasTracks,
   readSceneAutos,
   autoPlaybackOwners,
-  ensureArmAutoShells,
+  ensureLaneArmAutoShell,
   sameAutomationTarget,
   mergeAutomationOverdub,
   automationValueAt,
@@ -419,53 +423,94 @@ describe('automation: CLEAN BREAK — the retired stamped kind coerces away sile
     // …and reading it through readClip is equally safe.
     expect(readClip({ clips: { '448': legacy } }, 448)).toBeNull();
   });
-  it('isAutomationArmed reflects the synced arm flag', () => {
+  it('PER-LANE arm: laneAutomationArmed / armedAutomationLanes / isAutomationArmed(any)', () => {
     expect(isAutomationArmed(undefined)).toBe(false);
     expect(isAutomationArmed({})).toBe(false);
-    expect(isAutomationArmed({ automation: { arm: false } })).toBe(false);
-    expect(isAutomationArmed({ automation: { arm: true } })).toBe(true);
+    // CLEAN BREAK: the retired GLOBAL {arm} shape reads as NOT armed.
+    expect(isAutomationArmed({ automation: { arm: true } as never })).toBe(false);
+    const d = { automation: { lanes: [null, { arm: true, recorderId: 7 }, null] } };
+    expect(laneAutomationArmed(d, 1)).toBe(true);
+    expect(laneAutomationArmed(d, 0)).toBe(false);
+    expect(laneAutomationArmed(d, 5)).toBe(false); // short array → unarmed
+    expect(armedAutomationLanes(d)).toEqual([false, true, false, false, false, false, false, false]);
+    expect(isAutomationArmed(d)).toBe(true);
+  });
+  it('isLaneAutomationRecorder: per-lane single-writer gate (different peers, different lanes)', () => {
+    const d = {
+      automation: {
+        lanes: [
+          { arm: true, recorderId: 111 }, // peer A records lane 0
+          { arm: true, recorderId: 222 }, // peer B records lane 1
+          null,
+        ],
+      },
+    };
+    expect(isLaneAutomationRecorder(d, 0, 111)).toBe(true);
+    expect(isLaneAutomationRecorder(d, 0, 222)).toBe(false);
+    expect(isLaneAutomationRecorder(d, 1, 222)).toBe(true);
+    expect(isLaneAutomationRecorder(d, 1, 111)).toBe(false);
+    expect(isLaneAutomationRecorder(d, 2, 111)).toBe(false); // unarmed lane
+    expect(isLaneAutomationRecorder(undefined, 0, 111)).toBe(false);
+  });
+  it('toggleLaneAutomationArm: arm stamps the recorderId + shell; disarm nulls the slot; other lanes untouched', () => {
+    const d: ClipPlayerData = {
+      clips: { [String(clipIndex(0, 2))]: { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true } },
+      playing: [null, null, 0, null, null, null, null, null],
+      autoAssign: { modA: 2 },
+      automation: { lanes: [null, { arm: true, recorderId: 999 }, null] },
+    };
+    expect(toggleLaneAutomationArm(d, 2, 42)).toBe(true); // armed
+    expect(laneAutomationArmed(d, 2)).toBe(true);
+    expect(d.automation!.lanes![2]).toEqual({ arm: true, recorderId: 42 });
+    expect(d.automation!.lanes![1]).toEqual({ arm: true, recorderId: 999 }); // untouched
+    // Arm pre-created the playing clip's shell (container-LWW hardening).
+    expect(d.auto?.[String(clipIndex(0, 2))]).toEqual({ tracks: {} });
+    expect(toggleLaneAutomationArm(d, 2, 42)).toBe(false); // disarmed
+    expect(d.automation!.lanes![2]).toBeNull();
+    expect(laneAutomationArmed(d, 1)).toBe(true); // still armed
   });
 });
 
 // UI-CAN'T-LIE: the card's per-lane assigned-count chip row renders EXACTLY
-// autoAssignCounts(data), and the record scope is EXACTLY laneAssignedTargets —
+// autoAssignCounts(data), and the record scope is EXACTLY laneAssignedModules —
 // these pin the single source so the readout can never disagree with the stored
-// autoAssign map.
-describe('automation: autoAssign (param → lane) reads', () => {
-  it('coerceAutoAssign keeps only parsable keys with integer lanes 0..7', () => {
+// autoAssign map (MODULE → lane, the owner-locked model).
+describe('automation: autoAssign (MODULE → lane) reads', () => {
+  it('coerceAutoAssign keeps only module-id keys with integer lanes 0..7 (retired :: keys dropped)', () => {
     expect(
       coerceAutoAssign({
-        'a::x': 3,
-        'b::y': 0,
-        'bad-key': 2, // malformed key → dropped
-        'c::z': 8, // lane out of range → dropped
-        'd::w': 1.5, // non-integer → dropped
-        'e::v': '2', // numeric string → forgiving coerce (house style: Number())
-        'f::u': 'x', // non-numeric → dropped
+        modA: 3,
+        modB: 0,
+        'legacy::paramKey': 2, // retired param-level key → dropped (clean break)
+        '': 1, // empty key → dropped
+        modC: 8, // lane out of range → dropped
+        modD: 1.5, // non-integer → dropped
+        modE: '2', // numeric string → forgiving coerce (house style: Number())
+        modF: 'x', // non-numeric → dropped
       }),
-    ).toEqual({ 'a::x': 3, 'b::y': 0, 'e::v': 2 });
+    ).toEqual({ modA: 3, modB: 0, modE: 2 });
     expect(coerceAutoAssign(undefined)).toEqual({});
     expect(coerceAutoAssign(null)).toEqual({});
     expect(coerceAutoAssign('nope')).toEqual({});
   });
-  it('assignedLaneOf finds the lane for a target (or null)', () => {
-    const data = { autoAssign: { 'a::x': 3 } };
-    expect(assignedLaneOf(data, tgt('a', 'x'))).toBe(3);
-    expect(assignedLaneOf(data, tgt('a', 'y'))).toBeNull();
-    expect(assignedLaneOf(undefined, tgt('a', 'x'))).toBeNull();
+  it('assignedLaneOfModule finds the lane for a module (or null)', () => {
+    const data = { autoAssign: { modA: 3 } };
+    expect(assignedLaneOfModule(data, 'modA')).toBe(3);
+    expect(assignedLaneOfModule(data, 'modB')).toBeNull();
+    expect(assignedLaneOfModule(undefined, 'modA')).toBeNull();
   });
-  it('laneAssignedTargets groups targets per lane (length CLIP_LANES)', () => {
+  it('laneAssignedModules groups module ids per lane (length CLIP_LANES)', () => {
     const data = {
-      autoAssign: { 'a::x': 3, 'b::y': 3, 'c::z': 0 },
+      autoAssign: { modA: 3, modB: 3, modC: 0 },
     };
-    const byLane = laneAssignedTargets(data);
+    const byLane = laneAssignedModules(data);
     expect(byLane.length).toBe(CLIP_LANES);
-    expect(byLane[0]).toEqual([tgt('c', 'z')]);
-    expect(byLane[3]!.map((t) => t.nodeId).sort()).toEqual(['a', 'b']);
+    expect(byLane[0]).toEqual(['modC']);
+    expect(byLane[3]!.slice().sort()).toEqual(['modA', 'modB']);
     expect(byLane[5]).toEqual([]);
   });
   it('autoAssignCounts mirrors the map exactly (the chip-row source)', () => {
-    expect(autoAssignCounts({ autoAssign: { 'a::x': 3, 'b::y': 3, 'c::z': 0 } })).toEqual([
+    expect(autoAssignCounts({ autoAssign: { modA: 3, modB: 3, modC: 0 } })).toEqual([
       1, 0, 0, 2, 0, 0, 0, 0,
     ]);
     expect(autoAssignCounts(undefined)).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
@@ -582,22 +627,23 @@ describe('automation: single-driver playback ownership (autoPlaybackOwners)', ()
     expect(owners.get('a::x')).toBe(1);
     expect(owners.get('b::y')).toBe(2);
   });
-  it('the ASSIGNED lane wins when it is an active carrier', () => {
-    const owners = autoPlaybackOwners({ 'a::x': 2 }, [null, set('a::x'), set('a::x'), null]);
+  it('the MODULE-assigned lane wins when it is an active carrier', () => {
+    // assign is MODULE → lane: module 'a' assigned to lane 2 pulls its params.
+    const owners = autoPlaybackOwners({ a: 2 }, [null, set('a::x'), set('a::x'), null]);
     expect(owners.get('a::x')).toBe(2);
   });
   it('an assigned lane that is NOT carrying falls back to the lowest carrier', () => {
-    const owners = autoPlaybackOwners({ 'a::x': 5 }, [null, set('a::x'), set('a::x'), null]);
+    const owners = autoPlaybackOwners({ a: 5 }, [null, set('a::x'), set('a::x'), null]);
     expect(owners.get('a::x')).toBe(1); // lane 5 inactive/not carrying → lowest carrier
   });
   it('a key carried by ONE lane is owned by it regardless of assignment', () => {
-    const owners = autoPlaybackOwners({ 'a::x': 0 }, [null, null, set('a::x')]);
+    const owners = autoPlaybackOwners({ a: 0 }, [null, null, set('a::x')]);
     expect(owners.get('a::x')).toBe(2);
   });
 });
 
-describe('automation: ensureArmAutoShells (arm-time container pre-creation)', () => {
-  it('creates shells ONLY for lanes with assigned params AND a playing note clip', () => {
+describe('automation: ensureLaneArmAutoShell (per-lane arm-time container pre-creation)', () => {
+  it('creates the shell ONLY when the lane has assigned modules AND a playing note clip', () => {
     const d: ClipPlayerData = {
       clips: {
         [String(clipIndex(0, 0))]: { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true },
@@ -605,9 +651,11 @@ describe('automation: ensureArmAutoShells (arm-time container pre-creation)', ()
         [String(clipIndex(0, 3))]: { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true },
       },
       playing: [0, null, 1, null, null, null, null, null], // lane 0 + lane 2 playing; lane 3 NOT
-      autoAssign: { 'a::x': 0, 'b::y': 3 }, // lane 0 assigned+playing; lane 3 assigned+stopped
+      autoAssign: { modA: 0, modB: 3 }, // lane 0 assigned+playing; lane 3 assigned+stopped
     };
-    ensureArmAutoShells(d);
+    ensureLaneArmAutoShell(d, 0);
+    ensureLaneArmAutoShell(d, 2);
+    ensureLaneArmAutoShell(d, 3);
     expect(d.auto?.[String(clipIndex(0, 0))]).toEqual({ tracks: {} }); // lane 0 → shell
     expect(d.auto?.[String(clipIndex(1, 2))]).toBeUndefined(); // lane 2 playing but unassigned
     expect(d.auto?.[String(clipIndex(0, 3))]).toBeUndefined(); // lane 3 assigned but stopped
@@ -617,19 +665,21 @@ describe('automation: ensureArmAutoShells (arm-time container pre-creation)', ()
     const d: ClipPlayerData = {
       clips: { '0': { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true } },
       playing: [0, null, null, null, null, null, null, null],
-      autoAssign: { 'a::x': 0 },
+      autoAssign: { a: 0 },
       auto: { '0': existing },
     };
-    ensureArmAutoShells(d);
+    ensureLaneArmAutoShell(d, 0);
     expect(d.auto!['0']).toBe(existing); // untouched
   });
 });
 
-describe('automation: autoAssignCounts exists-filter (dangling targets not counted)', () => {
-  it('filters out targets whose module is gone', () => {
-    const data = { autoAssign: { 'alive::x': 2, 'gone::y': 2 } };
+describe('automation: autoAssignCounts exists-filter (dangling modules not counted)', () => {
+  it('filters out modules that are gone', () => {
+    const data = { autoAssign: { alive: 2, gone: 2 } };
     expect(autoAssignCounts(data)).toEqual([0, 0, 2, 0, 0, 0, 0, 0]);
-    expect(autoAssignCounts(data, (t) => t.nodeId === 'alive')).toEqual([0, 0, 1, 0, 0, 0, 0, 0]);
+    expect(autoAssignCounts(data, (moduleId) => moduleId === 'alive')).toEqual([
+      0, 0, 1, 0, 0, 0, 0, 0,
+    ]);
   });
 });
 

@@ -871,9 +871,12 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // CLIPPLAYER: darwin baseline (the clip-launcher card — 8×8 launch grid +
   // piano-roll note editor + transport knobs; no animated canvas) captured
   // locally; linux baseline pending a `vrt-update.yml` workflow_dispatch on
-  // this branch. (2026-07-16: the AUTO block shrank to ◉ AUTO + per-lane
-  // assigned chips — per-clip automation redesign; the darwin diff is within
-  // the 5% budget so the baseline is unchanged.) Functional coverage is
+  // this branch. (2026-07-16: per-clip automation FINAL model — the title's
+  // global ◉ AUTO button is GONE (kept: per-lane assigned-module chips +
+  // override dot + MAX badge) and a per-lane ◉ ARM row was added under the
+  // RATE row in the grid footer; the darwin diff stays within the 5% budget so
+  // the baseline is unchanged — regen both platforms via vrt-update.yml when
+  // this branch gets its owner pass.) Functional coverage is
   // clip-types.test.ts + clipplayer.test.ts (def + factory launch/
   // quantized-switch/stop via the real tick loop) + the per-clip automation
   // suite (clip-automation-*.test.ts + clipplayer-automation-seams.test.ts +

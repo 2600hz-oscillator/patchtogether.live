@@ -111,6 +111,8 @@ import {
   keysArpShiftRight,
   controlRight,
   controlRehomePad,
+  armTopLane,
+  ARM_SHIFT_LANE,
   paintPermanentTopRow,
   computeSingleGridFrame,
   computeSingleClipFrame,
@@ -157,7 +159,8 @@ import {
   readAutoClip,
   plainCloneAutoClip,
   reverseAutoClipRecord,
-  ensureArmAutoShells,
+  toggleLaneAutomationArm,
+  armedAutomationLanes,
   type AutoClipRecord,
   type ClipPlayerData,
   type ClipRecord,
@@ -169,7 +172,6 @@ import {
 import { getLanePlayhead } from '$lib/audio/modules/clip-playhead';
 import {
   getAutomationRender,
-  soonestAutomationLane,
   automationCountdownColor,
   automationCountdownOn,
 } from '$lib/audio/modules/clip-automation-render';
@@ -286,6 +288,17 @@ let shiftLatched = false;
 let shiftHeldSingle = false; // CC 98 momentary (distinct from pair's CC-95 shiftHeld)
 let shiftPressTick = 0; // tickCount snapshot on the CC-98 press (tap vs hold)
 let armConsumedSincePress = false; // an armed action consumed while shift was held?
+// LANE-8 AUTOMATION-ARM DOUBLE-TAP (owner gesture — lane 8's top button IS the
+// shift button, so a double-tap of SHFT toggles its arm). The first tap keeps
+// its normal immediate latch toggle; a second PRESS within DOUBLE_TAP_TICKS
+// reverts that latch change AND toggles lane 8's arm (no single-tap lag).
+let shiftTapTick = -1000; // tickCount of the last completed SHORT tap (the window anchor)
+let shiftLatchBeforeTap = false; // latch state BEFORE that tap's toggle (double-tap revert)
+let suppressShiftTapLatch = false; // 2nd tap of a pair: its release must not re-toggle the latch
+// A NON-shift press between two shift taps breaks the pair (it's a
+// latch → do-something → unlatch sequence, not a double-tap) — so a fast
+// "latch, arm COPY, unlatch" can never spuriously toggle lane 8's arm.
+let otherPressSinceShiftTap = false;
 let armedRightAction: GridArmAction | null = null; // Grid-shift tap-to-arm (or null)
 let armTick = 0; // tickCount snapshot for the 4s auto-disarm
 const ARM_TIMEOUT_TICKS = 160; // ~4s at 25ms/tick — auto-disarm a stale arm
@@ -480,6 +493,10 @@ function resetSingleState(): void {
   shiftHeldSingle = false;
   shiftPressTick = 0;
   armConsumedSincePress = false;
+  shiftTapTick = -1000; // clear the lane-8 double-tap window anchor
+  shiftLatchBeforeTap = false;
+  suppressShiftTapLatch = false;
+  otherPressSinceShiftTap = false;
   armedRightAction = null;
   armTick = 0;
   divPreview = null;
@@ -1018,25 +1035,15 @@ function toggleArrangeMode(nodeId: string): void {
     d.clipMode = d.clipMode === 'arrangement' ? 'session' : 'arrangement';
   });
 }
-/** AUTOMATION arm/disarm from the Launchpad Control view — the EXACT same
- *  node.data.automation write the card's ◉ AUTO button makes, so the card and
- *  the pad stay in sync via the synced flags. ONE GLOBAL arm (per-clip
- *  automation — no stamped clip to create): flip d.automation.arm, and WHEN
- *  ARMING claim single-writer by stamping this client's ydoc.clientID as
- *  recorderId (the engine only records on the matching client — see
- *  isAutomationRecorder). While armed, every lane with a playing note clip +
- *  assigned params records into ITS playing clip's sibling automation. */
-function toggleAutoArm(nodeId: string): void {
+/** PER-LANE automation arm/disarm from the Launchpad (SHIFT+top-row column /
+ *  the SHFT double-tap for lane 8) — the EXACT same write seam the card's
+ *  per-lane ◉ uses (toggleLaneAutomationArm: rebuild-and-assign the lanes
+ *  array, stamp this client as the lane's single-writer recorderId when
+ *  arming, pre-create the lane's auto shell), so pad and card stay in sync
+ *  via the synced per-lane flags. */
+function toggleLaneAutoArm(nodeId: string, lane: number): void {
   editData(nodeId, (d) => {
-    if (!d.automation) d.automation = {};
-    const arming = !d.automation.arm;
-    d.automation.arm = arming;
-    if (arming) {
-      d.automation.recorderId = ydoc.clientID;
-      // Container-LWW hardening: pre-create the playing clips' auto shells in
-      // THIS (arm) transaction, not inside the racy record-commit path.
-      ensureArmAutoShells(d);
-    }
+    toggleLaneAutomationArm(d, lane, ydoc.clientID);
   });
 }
 
@@ -1491,10 +1498,15 @@ function singleShiftEff(): boolean {
 
 function handleSingleKey(nodeId: string, e: LaunchpadKeyEvent): void {
   const ev = e.ev;
+  // Any NON-shift PRESS breaks a pending SHFT double-tap pair (lane-8 arm):
+  // "latch → do something → unlatch" must never read as a double-tap.
+  if (ev.s === 1 && !(ev.type === 'top' && topRowAction(ev.cc) === 'shift')) {
+    otherPressSinceShiftTap = true;
+  }
   // 1) PERMANENT TOP ROW — intercepted first, in every view (incl. keys/length).
   if (ev.type === 'top') {
     const action = topRowAction(ev.cc);
-    if (action !== null) handleTopRow(nodeId, action, ev.s);
+    if (action !== null) handleTopRow(nodeId, action, ev.s, ev.cc);
     return; // any top CC is owned by the permanent row (no fall-through)
   }
   // 2) length-edit takeover (scene EXIT returns to the opener's view).
@@ -1524,8 +1536,31 @@ function handleSingleKey(nodeId: string, e: LaunchpadKeyEvent): void {
 }
 
 /** The permanent top row (identical in every view). Press-only for transport /
- *  views / undo / redo; both edges for shift (the hold half of the latch/hold). */
-function handleTopRow(nodeId: string, action: ReturnType<typeof topRowAction>, s: 0 | 1): void {
+ *  views / undo / redo; both edges for shift (the hold half of the latch/hold).
+ *  PER-LANE AUTOMATION ARM (owner gesture): while shift is EFFECTIVE (held OR
+ *  latched), a top-row press on columns 1..7 toggles THAT lane's automation
+ *  arm and is CONSUMED — the button's normal function (transport / view flip /
+ *  undo / redo) must NOT fire under shift. Works from EVERY view. Lane 8 is
+ *  the SHFT double-tap (handleShift); the shift button always routes there. */
+function handleTopRow(
+  nodeId: string,
+  action: ReturnType<typeof topRowAction>,
+  s: 0 | 1,
+  cc: number,
+): void {
+  if (action !== 'shift' && singleShiftEff()) {
+    if (s === 1) {
+      const lane = armTopLane(cc);
+      if (lane !== null) {
+        toggleLaneAutoArm(nodeId, lane);
+        // A held shift acted as a MODIFIER — its release must not toggle the
+        // latch (same discipline as a consumed Grid tap-to-arm).
+        armConsumedSincePress = true;
+        renderLeds();
+      }
+    }
+    return; // consumed under shift — never the normal function
+  }
   switch (action) {
     case 'transport':
       if (s === 1) toggleTransport();
@@ -1593,12 +1628,30 @@ function forceExitKeys(nodeId: string): void {
  *  effective shift disarms any Grid tap-to-arm (committing a pending Clip-Div). */
 function handleShift(nodeId: string, s: 0 | 1): void {
   if (s === 1) {
+    // LANE-8 ARM DOUBLE-TAP (owner gesture): a second SHFT press within the
+    // window — with NOTHING else pressed in between — toggles lane 8's
+    // automation arm (detected on PRESS so it never lags) and REVERTS the
+    // first tap's latch change (this press's own release-latch is
+    // suppressed), so the latch nets back to where it started. Consumed: a
+    // third tap starts a fresh pair.
+    if (tickCount - shiftTapTick <= DOUBLE_TAP_TICKS && !otherPressSinceShiftTap) {
+      shiftTapTick = -1000;
+      toggleLaneAutoArm(nodeId, ARM_SHIFT_LANE);
+      shiftLatched = shiftLatchBeforeTap;
+      suppressShiftTapLatch = true;
+    }
     shiftHeldSingle = true;
     shiftPressTick = tickCount;
     armConsumedSincePress = false;
   } else {
     const shortTap = tickCount - shiftPressTick < DOUBLE_TAP_TICKS;
-    if (shortTap && !armConsumedSincePress) shiftLatched = !shiftLatched;
+    if (shortTap && !armConsumedSincePress && !suppressShiftTapLatch) {
+      shiftLatchBeforeTap = shiftLatched;
+      shiftLatched = !shiftLatched;
+      shiftTapTick = tickCount; // anchor the lane-8 double-tap window
+      otherPressSinceShiftTap = false; // a fresh pair starts clean
+    }
+    suppressShiftTapLatch = false;
     shiftHeldSingle = false;
   }
   // Releasing the effective shift disarms a pending SHIFT-scoped arm (Clip-Div
@@ -2257,7 +2310,6 @@ function handleSingleControl(nodeId: string, e: LaunchpadKeyEvent): void {
         return;
       case 'rec': toggleRecording(nodeId); return;
       case 'song': toggleArrangeMode(nodeId); return;
-      case 'autoArm': toggleAutoArm(nodeId); return;
       default: return;
     }
   }
@@ -2739,8 +2791,14 @@ function paintKeysRole(
   return true;
 }
 
-/** Build the PERMANENT top-row opts for the current single-mode render pass. */
+/** Build the PERMANENT top-row opts for the current single-mode render pass.
+ *  `laneArms` carries every lane's SYNCED automation arm (the always-visible
+ *  red-flash overlay + the shift-active arm map); `blinkOn` shares the render
+ *  loop's blink phase so the arm flash pulses with the other record lights. */
 function buildTopOpts(): PermanentTopOpts {
+  const data = boundNodeId
+    ? (livePatch.nodes[boundNodeId]?.data as ClipPlayerData | undefined)
+    : undefined;
   return {
     view: singleView,
     keysActive: mode === 'keys',
@@ -2748,6 +2806,8 @@ function buildTopOpts(): PermanentTopOpts {
     shift: { latched: shiftLatched, held: shiftHeldSingle },
     canUndo: lpCanUndo(),
     canRedo: lpCanRedo(),
+    laneArms: armedAutomationLanes(data),
+    blinkOn: Math.floor(tickCount / BLINK_TICKS) % 2 === 0,
   };
 }
 /** Software pulse phase for the Clip-Div preview pad (faster div → faster blink). */
@@ -2780,15 +2840,9 @@ function autoCountdownPaints(
   }
   return out.length ? out : null;
 }
-/** The SOONEST-to-wrap lane's countdown paint (or null) — the single-slot
- *  flash for the Control-view AUTO-arm pad. */
-function autoCountdownSoonest(nodeId: string): CountdownPaint | null {
-  const l = soonestAutomationLane(getAutomationRender(nodeId));
-  if (!l) return null;
-  const color = automationCountdownColor(l.beatsToLoopEnd);
-  if (!color) return null;
-  return { color, on: automationCountdownOn(l.beatPhase) };
-}
+// (The Control-view AUTO pad's soonest-lane countdown helper is retired with
+// the pad — per-lane countdowns stay on the Grid matrix cells, and the
+// permanent top row carries the per-lane ARM state in every view.)
 /** Paint the SINGLE KEYS sub-view (keyboard + scale/arp right column + permanent
  *  top row). Returns false when the KEYS clip vanished (caller drops to session). */
 function paintSingleKeys(
@@ -2948,7 +3002,6 @@ function renderLeds(): void {
             blinkOn,
             recording: recordArmed(data),
             arrangeMode: arrangeMode(data),
-            autoCountdown: autoCountdownSoonest(nodeId),
             data,
           }),
         );

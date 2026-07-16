@@ -57,10 +57,14 @@ describe('LaunchpadDocs — tabbed structure', () => {
     const out = html();
     expect(out).toContain('CLIP RECORD');
     expect(out).toContain('ARRANGER RECORD');
-    // Discoverability: both arming surfaces are named in the vocabulary box.
-    expect(out).toContain('◉ AUTO');
+    // Discoverability: the arming surfaces are named in the vocabulary box —
+    // per-lane arm (the owner-locked model): SHIFT+top-row on the hardware,
+    // the per-lane ◉ on the card; module-level assignment; CV never recorded.
+    expect(out).toContain('arm the');
+    expect(out).toContain('double-tap SHIFT');
     expect(out).toContain('QUEUE-REC');
     expect(out).toContain('Assign to automation lane');
+    expect(out).toContain('CV is never recorded');
   });
 
   it('documents copy/paste as Grid-only (no editor CPY/PST doc content)', () => {

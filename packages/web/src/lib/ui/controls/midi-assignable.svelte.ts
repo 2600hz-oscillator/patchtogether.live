@@ -48,42 +48,19 @@ import {
   assignSlotToElectra,
   clearSlot,
 } from '$lib/graph/electra-control';
-import { setNodeParam } from '$lib/graph/mutate';
 import { notifyAutomationTouch, notifyAutomationRelease } from '$lib/audio/automation-touch';
 import {
-  CLIP_LANES,
-  assignedLaneOf,
-  laneColorEff,
-  type ClipPlayerData,
-} from '$lib/audio/modules/clip-types';
-import {
-  listClipPlayers,
-  automationAssignmentFor,
-  assignAutomationLane,
-  removeAutomationAssignment,
   hasRecordedAutomation,
   clearRecordedAutomation,
 } from '$lib/graph/automation-assign';
-import { nodeVersion, nodesStructuralVersion } from '$lib/graph/node-versions.svelte';
 
 export type AssignKind = 'cc' | 'note';
 
-/** A clip-player in the rack — an "Assign to automation lane ▸ 1–8" target for
- *  the control menu (every clip-player accepts assignments; no stamped clip
- *  needed). `lanes` carries each lane's effective colour for the flyout
- *  swatches; `assignedLane` = where THIS control currently sits (or null). */
-export interface AutomationEntry {
-  nodeId: string;
-  name: string;
-  lanes: Array<{ lane: number; color: string }>;
-  assignedLane: number | null;
-}
-
-/** Display name for a clip-player node (its renamed data.label, else generic). */
-function clipPlayerName(node: { data?: unknown } | undefined): string {
-  const label = (node?.data as { label?: unknown } | undefined)?.label;
-  return typeof label === 'string' && label ? label : 'clip player';
-}
+// NOTE (owner-locked automation model): lane ASSIGNMENT is MODULE-level now —
+// it lives on the module card's right-click menu (NodeContextMenu → Canvas),
+// NOT per control. This factory keeps only the per-control DELETE affordance
+// ("Clear recorded automation" — recording is module-scoped, deleting stays
+// control-precise) and the touch-suspend cross-wire for MIDI CC streams.
 
 export interface MidiAssignableArgs {
   /** Patch-graph node id. */
@@ -131,18 +108,10 @@ export interface MidiAssignable {
   readonly surfaces: SurfaceEntry[];
   /** Snapshot of ElectraControls this control can be assigned to (recompute on open). */
   readonly electras: ElectraEntry[];
-  /** Snapshot of clip-players this control can be lane-assigned on (recompute
-   *  on open). */
-  readonly automations: AutomationEntry[];
-  /** True when this control is assigned to some player's automation lane. */
-  readonly automated: boolean;
   /** True when this control has RECORDED envelopes in some clip — surfaces the
-   *  "Clear recorded automation" menu item (remove-assignment ≠ delete-data). */
+   *  "Clear recorded automation" menu item (module-level UN-assignment lives on
+   *  the module card's menu; deleting recorded data stays control-precise). */
   readonly automationRecorded: boolean;
-  /** The ASSIGNED lane's effective colour (`#rrggbb`) or null — REACTIVE (not a
-   *  menu snapshot): the control name renders a thin border in this colour
-   *  while assigned (the owner's lane-colour cue). */
-  readonly assignedLaneColor: string | null;
   /** Recompute the surface + electra + automation snapshots (call when a menu opens). */
   refresh(): void;
   /** Enter learn mode (CC or NOTE per `kind`). */
@@ -155,15 +124,8 @@ export interface MidiAssignable {
   /** Assign/clear this control on an ElectraControl slot. */
   assignElectra(electraId: string, slot: number): void;
   clearElectra(electraId: string, slot: number): void;
-  /** Assign this control to a clip-player's automation LANE (one lane per
-   *  param — re-assigning MOVES it, atomically, across players too). */
-  assignAutomation(clipPlayerNodeId: string, lane: number): void;
-  /** Remove this control's lane assignment from whichever player holds it
-   *  (stops FUTURE recording; recorded envelopes keep playing — see
-   *  clearAutomation for deleting them). */
-  removeAutomation(): void;
-  /** DELETE this control's RECORDED envelopes — from every clip in its assigned
-   *  lane (or ALL clips when unassigned). One undoable transaction. */
+  /** DELETE this control's RECORDED envelopes — from every clip in its module's
+   *  assigned lane (or ALL clips when unassigned). One undoable transaction. */
   clearAutomation(): void;
   /** Register the live setter (call onMount). */
   register(): void;
@@ -270,8 +232,6 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
 
   let surfaces = $state<SurfaceEntry[]>([]);
   let electras = $state<ElectraEntry[]>([]);
-  let automations = $state<AutomationEntry[]>([]);
-  let automated = $state(false);
   let automationRecorded = $state(false);
 
   const binding = $derived.by<MidiBinding | undefined>(() => {
@@ -304,7 +264,7 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
   function refresh(): void {
     const m = args.moduleId, p = args.paramId;
     if (!m || !p) {
-      surfaces = []; electras = []; automations = []; automated = false; automationRecorded = false;
+      surfaces = []; electras = []; automationRecorded = false;
       return;
     }
     surfaces = listControlSurfaces(patch.nodes).map((s) => ({
@@ -317,72 +277,12 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
       name: e.name,
       assignedSlot: slotForBinding(readElectraData(patch.nodes[e.id]), m, p),
     }));
-    // AUTOMATION lane targets: EVERY clip-player node (per-clip automation
-    // needs no stamped clip). `automated`/`assignedLane` = where this control
-    // currently sits (one lane per param, globally).
-    const target = { nodeId: m, paramId: p };
-    const list: AutomationEntry[] = [];
-    for (const nid of listClipPlayers(patch.nodes)) {
-      const node = patch.nodes[nid];
-      const data = node?.data as ClipPlayerData | undefined;
-      const lanes = Array.from({ length: CLIP_LANES }, (_, lane) => ({
-        lane,
-        color: laneColorEff(data, lane),
-      }));
-      list.push({
-        nodeId: nid,
-        name: clipPlayerName(node),
-        lanes,
-        assignedLane: assignedLaneOf(data, target),
-      });
-    }
-    automations = list;
-    automated = list.some((e) => e.assignedLane !== null);
-    automationRecorded = hasRecordedAutomation(patch.nodes, target);
+    automationRecorded = hasRecordedAutomation(patch.nodes, { nodeId: m, paramId: p });
   }
 
-  // The ASSIGNED lane's colour — REACTIVE (drives the control-name border), not
-  // a menu-open snapshot. Subscribes to structural changes + each clip-player's
-  // node version so an assign/remove/lane-recolour updates the border live.
-  const assignedLaneColor = $derived.by<string | null>(() => {
-    void nodesStructuralVersion();
-    const m = args.moduleId, p = args.paramId;
-    if (!m || !p) return null;
-    const target = { nodeId: m, paramId: p };
-    for (const nid of listClipPlayers(patch.nodes)) {
-      void nodeVersion(nid); // re-derive on that player's data changes
-      const data = patch.nodes[nid]?.data as ClipPlayerData | undefined;
-      const lane = assignedLaneOf(data, target);
-      if (lane !== null) return laneColorEff(data, lane);
-    }
-    return null;
-  });
-
-  /** Assign this control to `lane` on the given clip-player — one lane per
-   *  param: the shared write seam removes it from every other player/lane in
-   *  the same transaction (an atomic MOVE + one undo step). */
-  function assignAutomation(clipPlayerNodeId: string, lane: number): void {
-    const m = args.moduleId, p = args.paramId;
-    if (!m || !p) return;
-    assignAutomationLane(clipPlayerNodeId, { nodeId: m, paramId: p }, lane);
-  }
-
-  /** Remove this control's lane assignment from whichever player holds it, then
-   *  release the param to its current store value (a one-shot no-op commit so
-   *  the engine stops seeing an automation write). Recorded envelopes are NOT
-   *  deleted (they keep playing) — that's clearAutomation's job. */
-  function removeAutomation(): void {
-    const m = args.moduleId, p = args.paramId;
-    if (!m || !p) return;
-    if (!automationAssignmentFor(patch.nodes, { nodeId: m, paramId: p })) return;
-    removeAutomationAssignment({ nodeId: m, paramId: p });
-    // Release the param to its live value (a one-shot no-op set).
-    const cur = patch.nodes[m]?.params?.[p];
-    if (typeof cur === 'number') setNodeParam(m, p, cur);
-  }
-
-  /** DELETE this control's recorded envelopes (assigned lane's clips, or every
-   *  clip when unassigned) — one undoable transaction via the shared seam. */
+  /** DELETE this control's recorded envelopes (its module's assigned lane's
+   *  clips, or every clip when unassigned) — one undoable transaction via the
+   *  shared seam. */
   function clearAutomation(): void {
     const m = args.moduleId, p = args.paramId;
     if (!m || !p) return;
@@ -461,10 +361,7 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
     get badge() { return badge; },
     get surfaces() { return surfaces; },
     get electras() { return electras; },
-    get automations() { return automations; },
-    get automated() { return automated; },
     get automationRecorded() { return automationRecorded; },
-    get assignedLaneColor() { return assignedLaneColor; },
     refresh,
     learn,
     forget,
@@ -472,8 +369,6 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
     removeFromSurface,
     assignElectra,
     clearElectra,
-    assignAutomation,
-    removeAutomation,
     clearAutomation,
     register,
     unregister,
