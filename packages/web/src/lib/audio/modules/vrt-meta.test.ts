@@ -365,7 +365,12 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // in vrt-tidy-vco.spec.ts); linux baselines pending the
       // vrt-update.yml dispatch on the PR branch, the karplus/clap
       // drum-wave precedent).
-    ).toBeLessThanOrEqual(100);
+      // 100→104 for MIRRORPOOL (2026-07-15, deliberate darwin-first new
+      // video module HELD for owner preview — its solo card + the 3
+      // deterministic composite scenes (mirrorpool-refract / -mirror / -storm
+      // in mirrorpool-composite.spec.ts); linux baselines land via
+      // vrt-update.yml once the owner approves the look.
+    ).toBeLessThanOrEqual(104);
   });
 });
 

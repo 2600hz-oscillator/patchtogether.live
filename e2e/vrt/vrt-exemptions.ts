@@ -309,6 +309,12 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // worklet wiring incl. anti-silent-poly) + ART profile + e2e/tests/
   // sixstrum-poly.spec.ts (real SEQUENCER→poly/strum→audible RMS).
   sixstrum: 'VRT baseline pending; card is static chrome — unit (sixstrum-dsp/-tuning/worklet-wiring) + ART + e2e/tests/sixstrum-poly.spec.ts provide coverage. Capture darwin/linux baselines via vrt-update.yml in a follow-up.',
+  // MIRRORPOOL — maximally look-affecting WebGL water video source, HELD for
+  // owner preview: no VRT baseline is pinned pre-approval. Coverage meanwhile:
+  // mirrorpool-core.test.ts (Fresnel/swell/normal/Poisson/PTZ) + per-port +
+  // behavioral. Capture darwin/linux baselines via vrt-update.yml once the owner
+  // approves the look (then drop the composite pairs in EXEMPT_BASELINE_PAIRS).
+  mirrorpool: 'VRT baseline pending owner look-approval (look-affecting WebGL video); mirrorpool-core.test.ts + per-port + behavioral provide coverage. Capture darwin/linux baselines via vrt-update.yml in a follow-up.',
   // SOURCERY — 2-input region shape-match recolor. v1 output is
   // source-dependent (needs A + B patched) AND shimmers/boils frame-to-frame
   // (per-frame-independent segmentation), so a solo-spawn VRT canvas is
