@@ -12,6 +12,7 @@ import {
   registerAutomationController,
   unregisterAutomationController,
   notifyAutomationTouch,
+  notifyAutomationRelease,
   overriddenKeysFor,
   reEnableAllFor,
   __resetAutomationTouchRegistry,
@@ -82,7 +83,35 @@ describe('automation-touch registry', () => {
 
   it('is a safe no-op when nothing is registered (the cheap fast path)', () => {
     expect(() => notifyAutomationTouch({ nodeId: 'z', paramId: 'w' })).not.toThrow();
+    expect(() => notifyAutomationRelease({ nodeId: 'z', paramId: 'w' })).not.toThrow();
     expect(overriddenKeysFor('missing')).toEqual([]);
     expect(() => reEnableAllFor('missing')).not.toThrow();
+  });
+
+  it('notifyAutomationRelease ends the override (touch → release round-trip)', () => {
+    const ctrl = makeController();
+    registerAutomationController('cp1', ctrl);
+    notifyAutomationTouch({ nodeId: 'synth', paramId: 'cutoff' });
+    expect(overriddenKeysFor('cp1')).toContain('synth::cutoff');
+
+    notifyAutomationRelease({ nodeId: 'synth', paramId: 'cutoff' });
+
+    expect(overriddenKeysFor('cp1')).toEqual([]);
+    expect(ctrl.isSuspended({ nodeId: 'synth', paramId: 'cutoff' })).toBe(false);
+  });
+
+  it('a grab held across a wrap keeps its suspension via the registry (release ends it)', () => {
+    // The registry seam mirrors the controller's grab-until-release semantics:
+    // a touch stays overriding through recordTick wraps until an explicit release.
+    const ctrl = makeController();
+    registerAutomationController('cp1', ctrl);
+    const t = { nodeId: 'synth', paramId: 'cutoff' };
+    notifyAutomationTouch(t);
+    ctrl.arm();
+    ctrl.recordTick({ kind: 'automation', lengthSteps: 8, loop: true, tracks: [] }, 6, 8);
+    ctrl.recordTick({ kind: 'automation', lengthSteps: 8, loop: true, tracks: [] }, 0, 8); // wrap
+    expect(ctrl.isSuspended(t)).toBe(true); // still grabbed → still overriding
+    notifyAutomationRelease(t);
+    expect(ctrl.isSuspended(t)).toBe(false);
   });
 });

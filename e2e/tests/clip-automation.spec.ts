@@ -258,21 +258,28 @@ async function assignViaMenu(page: Page, vcaId: string): Promise<void> {
   await expect(menu).toBeHidden();
 }
 
-/** A left-button pointer grab of a VCA Base fader — fires the screen touch-suspend
- *  choke point (notifyAutomationTouch on pointerdown). */
-async function grabFader(page: Page, vcaId: string): Promise<void> {
+/** A left-button pointer grab of a VCA Base fader that stays HELD (pointer DOWN,
+ *  not released) — fires the screen touch-suspend seam (notifyAutomationTouch on
+ *  pointerdown) and holds the override until `releaseFader`. Per Phase 0 the
+ *  override releases on the physical pointer-UP, NOT the loop wrap, so the caller
+ *  must hold to observe the suspended state, then release to see it resume. */
+async function grabFaderHold(page: Page, vcaId: string): Promise<void> {
   const fader = vcaBase(page, vcaId);
   await fader.scrollIntoViewIfNeeded();
   await fader.hover(); // moves to the track centre (scrolled into view)
   const box = await fader.boundingBox();
-  if (!box) throw new Error(`grabFader: no bounding box for ${vcaId}`);
+  if (!box) throw new Error(`grabFaderHold: no bounding box for ${vcaId}`);
   const cx = box.x + box.width / 2;
   const cy = box.y + box.height / 2;
   // A real press-drag on the fader track: pointerdown fires the touch-suspend
-  // seam (notifyAutomationTouch) and the drag moves the value (live wins).
+  // seam (notifyAutomationTouch) and the drag moves the value (live wins). Leave
+  // the pointer DOWN — the override holds until releaseFader.
   await page.mouse.move(cx, cy);
   await page.mouse.down();
   await page.mouse.move(cx, cy - box.height * 0.35, { steps: 5 });
+}
+/** Release a held fader grab (pointer-UP) → the override ends, playback resumes. */
+async function releaseFader(page: Page): Promise<void> {
   await page.mouse.up();
 }
 
@@ -310,6 +317,18 @@ async function sweepCcs(page: Page, ccs: number[], ms: number): Promise<void> {
       await injectCc(page, 1, ccs[i]!, Math.max(0, Math.min(127, v)));
     }
     await page.waitForTimeout(60);
+  }
+}
+
+/** Keep a bound CC HOT at a CONSTANT value for `ms` (re-inject every ~50 ms) — the
+ *  MIDI analogue of holding a fader down. The stream stays `active`, so the
+ *  ~200 ms CC-idle release never fires and the automation override holds. Run it
+ *  concurrently (don't await until done) while sampling the held param. */
+async function holdCc(page: Page, channel: number, cc: number, value: number, ms: number): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < ms) {
+    await injectCc(page, channel, cc, value);
+    await page.waitForTimeout(50);
   }
 }
 
@@ -485,7 +504,7 @@ test('automation: two params record while armed + a third untouched keeps its pr
 
 // ── Case 3: screen touch suspends only the grabbed param ─────────────────────
 
-test('automation: grabbing an on-screen knob suspends only its playback (live wins); the other keeps playing; re-enable resumes', async ({ page, rack }) => {
+test('automation: grabbing an on-screen knob suspends only its playback until RELEASE (live wins); the other keeps playing; release resumes', async ({ page, rack }) => {
   void rack;
   await spawnPatch(page, [
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
@@ -506,25 +525,81 @@ test('automation: grabbing an on-screen knob suspends only its playback (live wi
   expect((await sampleSpread(page, 'va', 'base')).spread).toBeGreaterThan(0.15);
   expect((await sampleSpread(page, 'vb', 'base')).spread).toBeGreaterThan(0.15);
 
-  // GRAB va's fader (screen) → suspend ONLY va. The override indicator lights.
-  await grabFader(page, 'va');
+  // GRAB va's fader (screen) and HOLD it down → suspend ONLY va. Phase 0: the
+  // override holds until the physical RELEASE, NOT the loop wrap, so a gesture
+  // spanning a wrap is never yanked back mid-drag. The indicator lights.
+  await grabFaderHold(page, 'va');
   await expect(page.getByTestId(`clipplayer-auto-override-${CP}`)).toBeVisible();
   await page.waitForTimeout(220); // let va settle to the grabbed value
 
+  // WHILE STILL HELD (across at least one loop wrap): va stays held, vb still plays.
   const vaHeld = await sampleSpread(page, 'va', 'base');
   const vbLive = await sampleSpread(page, 'vb', 'base');
-  expect(vaHeld.spread, 'grabbed param no longer follows the envelope').toBeLessThan(0.08);
+  expect(vaHeld.spread, 'grabbed param no longer follows the envelope (held across the wrap)').toBeLessThan(0.08);
   expect(vbLive.spread, 'the OTHER param keeps playing (per-param suspension)').toBeGreaterThan(0.15);
 
-  // RE-ENABLE via the indicator → va resumes being driven by automation.
-  await page.getByTestId(`clipplayer-auto-override-${CP}`).click();
+  // RELEASE (pointer-up) → the override ends, indicator clears, va resumes playback.
+  await releaseFader(page);
   await expect(page.getByTestId(`clipplayer-auto-override-${CP}`)).toBeHidden();
-  expect((await sampleSpread(page, 'va', 'base')).spread, 'va resumes after re-enable').toBeGreaterThan(0.15);
+  expect((await sampleSpread(page, 'va', 'base')).spread, 'va resumes after release').toBeGreaterThan(0.15);
+});
+
+// ── Param-jump policy (Phase 0): HOLD-LAST-VALUE on stop, no snap ─────────────
+
+// An envelope that stays HIGH the whole loop (all values ≫ the VCA's 0.2 default
+// and ≫ 0) — so the held value after a stop is unambiguously the last automated
+// value, never a snap to default/zero.
+const ENV_HELD_HIGH: SeedTrack['events'] = [
+  { step: 0, value: 0.6 },
+  { step: 4, value: 0.95 },
+  { step: 7, value: 0.7 },
+];
+
+test('automation: on stop the param HOLDS its last automated value — no snap to default/zero', async ({ page, rack }) => {
+  void rack;
+  await spawnPatch(page, [
+    { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
+    { id: 'va', type: 'vca', position: { x: 460, y: 80 }, domain: 'audio', params: { base: 0.2 } },
+  ]);
+  await ensureTransportRunning(page);
+  await seedAutomationClip(page, [{ nodeId: 'va', paramId: 'base', events: ENV_HELD_HIGH }]);
+  await launchAutomationClip(page);
+  await expect(page.getByTestId(`clipplayer-auto-count-${CP}`)).toHaveText('1/16', { timeout: 4000 });
+
+  // Playback drives the param HIGH (well above the 0.2 default) and it varies.
+  const playing = await sampleSpread(page, 'va', 'base');
+  expect(playing.spread, 'automation playback varies the param').toBeGreaterThan(0.15);
+  expect(Math.max(...playing.vals), 'driven to the high envelope').toBeGreaterThan(0.55);
+
+  // STOP lane 7 (where the automation clip plays) → the clip stops driving its
+  // params. Hold-last-value pins each at its deterministic last envelope value
+  // (cancels the ghost tail). Setting playing[7]=null is the real lane-stop seam:
+  // the tick adopts it (lane active → null) and the stop-detect holds the value.
+  await page.evaluate((lane) => {
+    const w = globalThis as unknown as {
+      __ydoc: { transact: (fn: () => void) => void };
+      __patch: { nodes: Record<string, { data?: { playing?: (number | null)[] } }> };
+    };
+    w.__ydoc.transact(() => {
+      const d = w.__patch.nodes['cp'].data!;
+      const playing = (Array.isArray(d.playing) ? d.playing.slice() : []) as (number | null)[];
+      playing[lane] = null;
+      d.playing = playing;
+    });
+  }, AUTO_LANE);
+  await page.waitForTimeout(400); // let the stop tick adopt + fire hold-last-value
+
+  // The param HOLDS a high value — NOT snapped to the 0.2 default, NOT to 0 — and
+  // stays STABLE (no ghost-tail drift). This is the no-jump guarantee.
+  const held = await sampleSpread(page, 'va', 'base', 8, 60);
+  expect(Math.min(...held.vals), 'holds the last automated value, not the 0.2 default / 0')
+    .toBeGreaterThan(0.5);
+  expect(held.spread, 'held value is stable (no ghost-tail drift after stop)').toBeLessThan(0.1);
 });
 
 // ── Case 4: MIDI twist suspends only the twisted param (same seam) ───────────
 
-test('automation: a MIDI CC on an automated param suspends only that param (same seam as screen); the other keeps playing; re-enable resumes', async ({ page, rack }) => {
+test('automation: a MIDI CC on an automated param suspends only that param until the twist idles (same seam as screen); the other keeps playing; CC-idle resumes', async ({ page, rack }) => {
   void rack;
   await spawnPatch(page, [
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
@@ -543,26 +618,31 @@ test('automation: a MIDI CC on an automated param suspends only that param (same
   expect((await sampleSpread(page, 'va', 'base')).spread).toBeGreaterThan(0.15);
   expect((await sampleSpread(page, 'vb', 'base')).spread).toBeGreaterThan(0.15);
 
-  // MIDI-learn va's Base fader to CC 21, then twist it: the CC binds + drives +
-  // suspends automation for va through the SAME notifyAutomationTouch seam.
+  // MIDI-learn va's Base fader to CC 21, then HOLD it hot at a constant value: the
+  // CC binds + drives + suspends automation for va through the SAME
+  // notifyAutomationTouch seam. Phase 0: the override holds WHILE the twist is
+  // active and releases on the CC-idle timeout (the MIDI analogue of pointer-up),
+  // NOT the loop wrap — so we keep the stream hot to observe the held state.
   await vcaBase(page, 'va').click({ button: 'right' });
   const menu = page.getByTestId('control-context-menu');
   await expect(menu).toBeVisible();
   await menu.getByTestId('ctx-midi-learn').click();
   await injectCc(page, 1, 21, 105); // binds + drives va toward ~0.83, suspends automation
+  const hold = holdCc(page, 1, 21, 105, 1800); // keep it hot (concurrent) so the override holds
   await expect(page.getByTestId(`clipplayer-auto-override-${CP}`)).toBeVisible();
   await page.waitForTimeout(220);
 
-  const vaHeld = await sampleSpread(page, 'va', 'base');
-  const vbLive = await sampleSpread(page, 'vb', 'base');
-  expect(vaHeld.spread, 'MIDI-twisted param no longer follows the envelope').toBeLessThan(0.08);
+  const vaHeld = await sampleSpread(page, 'va', 'base', 6, 70);
+  const vbLive = await sampleSpread(page, 'vb', 'base', 6, 70);
+  expect(vaHeld.spread, 'MIDI-twisted param no longer follows the envelope (held while hot)').toBeLessThan(0.08);
   expect(vaHeld.vals.at(-1) ?? 0, 'held near the CC value, not the envelope').toBeGreaterThan(0.6);
   expect(vbLive.spread, 'the OTHER param keeps playing (per-param suspension)').toBeGreaterThan(0.15);
+  await hold; // stop the twist → the CC stream goes idle
 
-  // RE-ENABLE → va resumes being driven by automation.
-  await page.getByTestId(`clipplayer-auto-override-${CP}`).click();
-  await expect(page.getByTestId(`clipplayer-auto-override-${CP}`)).toBeHidden();
-  expect((await sampleSpread(page, 'va', 'base')).spread, 'va resumes after re-enable').toBeGreaterThan(0.15);
+  // CC-IDLE RELEASE → after the settle timeout the override ends automatically and
+  // va resumes being driven by automation (no manual re-enable needed).
+  await expect(page.getByTestId(`clipplayer-auto-override-${CP}`)).toBeHidden({ timeout: 4000 });
+  expect((await sampleSpread(page, 'va', 'base')).spread, 'va resumes after the twist idles').toBeGreaterThan(0.15);
 });
 
 // ── Case 5: the owner's exact flow — JUST MOVE a knob while armed (auto-capture)

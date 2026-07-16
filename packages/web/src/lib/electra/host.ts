@@ -31,7 +31,7 @@ import { createCcCommit, type CcCommit } from '$lib/ui/controls/cc-commit';
 import { getCcBatcher } from '$lib/ui/controls/cc-batch-store';
 import type { AutoconfigHost } from './autoconfig';
 import type { PresetGenInput, GenParamDef, SurfaceBinding } from './preset';
-import { notifyAutomationTouch } from '$lib/audio/automation-touch';
+import { notifyAutomationTouch, notifyAutomationRelease } from '$lib/audio/automation-touch';
 
 /** Resolve the SOURCE module's current control colour (PASSTHROUGH) for a
  *  binding — read live from patch.nodes, never stored on the surface/electra
@@ -195,6 +195,12 @@ export function buildLiveHost(args: {
           } catch {
             /* no engine mapping — the settled commit still converges */
           }
+        },
+        onActiveChange: (active) => {
+          // Automation touch-RELEASE: the twist stream went cold (settleMs after
+          // the last CC = the hand off the encoder), so end this param's
+          // automation override — the mirror of the per-message grab above.
+          if (!active) notifyAutomationRelease({ nodeId: moduleId, paramId });
         },
       });
       ccPumps.set(key, pump);

@@ -11,14 +11,29 @@
   import { createDragCommit } from './drag-commit';
   import ControlContextMenu from './ControlContextMenu.svelte';
   import { makeMidiAssignable } from './midi-assignable.svelte';
-  import { notifyAutomationTouch } from '$lib/audio/automation-touch';
+  import { notifyAutomationTouch, notifyAutomationRelease } from '$lib/audio/automation-touch';
 
   // Touch-suspend cross-wire (task #183): a live grab of this control suspends
-  // its clip-automation playback until the loop wrap ("live wins"). Fires on the
-  // screen-gesture choke points below; the MIDI path notifies from
-  // makeMidiAssignable so screen + MIDI share the SAME notifyAutomationTouch seam.
+  // its clip-automation playback until the PHYSICAL RELEASE ("live wins"), not
+  // the loop wrap. Fires on the screen-gesture choke points below; the MIDI path
+  // notifies from makeMidiAssignable so screen + MIDI share the SAME seam.
   function touchAutomation() {
     if (moduleId && paramId) notifyAutomationTouch({ nodeId: moduleId, paramId });
+  }
+  // Release = pointer-up (drag) / a short idle after a wheel tick. Ends the
+  // override so playback resumes (gliding back to the envelope).
+  function releaseAutomation() {
+    if (moduleId && paramId) notifyAutomationRelease({ nodeId: moduleId, paramId });
+  }
+  let wheelReleaseTimer: ReturnType<typeof setTimeout> | null = null;
+  function wheelTouch() {
+    touchAutomation();
+    if (wheelReleaseTimer !== null) clearTimeout(wheelReleaseTimer);
+    // ~200 ms of no wheel motion = the "release" (a wheel has no pointer-up).
+    wheelReleaseTimer = setTimeout(() => {
+      wheelReleaseTimer = null;
+      releaseAutomation();
+    }, 200);
   }
 
   interface Props {
@@ -136,6 +151,7 @@
 
   onDestroy(() => {
     if (raf !== null) cancelAnimationFrame(raf);
+    if (wheelReleaseTimer !== null) clearTimeout(wheelReleaseTimer);
     dragCommit.dispose();
     midi.unregister();
   });
@@ -197,10 +213,21 @@
 
   function pointerup(e: PointerEvent) {
     dragging = false;
+    releaseAutomation(); // hand lifted → end the override (glide back to envelope)
     // Force-commit the final drag position so the patch store can't lag
     // the last visible tick angle by one frame on release.
     dragCommit.flush();
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+  }
+
+  // Safety net: if the browser revokes pointer capture without a pointerup
+  // (OS gesture, touch interruption), still end the drag + the automation
+  // override so a grabbed param can't stay suspended forever.
+  function lostcapture() {
+    if (!dragging) return;
+    dragging = false;
+    dragCommit.flush();
+    releaseAutomation();
   }
 
   function dblclick() {
@@ -209,7 +236,7 @@
 
   function wheel(e: WheelEvent) {
     e.preventDefault();
-    touchAutomation(); // wheel adjust is a live grab too
+    wheelTouch(); // wheel adjust is a live grab too (auto-releases after idle)
     // Wheel ticks: small step in normalized space.
     const step = e.shiftKey ? 0.001 : e.ctrlKey || e.metaKey ? 0.0001 : 0.005;
     const direction = e.deltaY < 0 ? 1 : -1;
@@ -255,6 +282,7 @@
     onpointerdown={pointerdown}
     onpointermove={pointermove}
     onpointerup={pointerup}
+    onlostpointercapture={lostcapture}
     ondblclick={dblclick}
     onwheel={wheel}
   >

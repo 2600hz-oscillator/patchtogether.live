@@ -20,14 +20,28 @@
   import { createDragCommit } from './drag-commit';
   import ControlContextMenu from './ControlContextMenu.svelte';
   import { makeMidiAssignable } from './midi-assignable.svelte';
-  import { notifyAutomationTouch } from '$lib/audio/automation-touch';
+  import { notifyAutomationTouch, notifyAutomationRelease } from '$lib/audio/automation-touch';
 
   // Touch-suspend cross-wire (task #183): a live grab of this fader suspends its
-  // clip-automation playback until the loop wrap ("live wins"). Fires on the
-  // screen-gesture choke points below; the MIDI path notifies from
-  // makeMidiAssignable so screen + MIDI share the SAME notifyAutomationTouch seam.
+  // clip-automation playback until the PHYSICAL RELEASE ("live wins"), not the
+  // loop wrap. Fires on the screen-gesture choke points below; the MIDI path
+  // notifies from makeMidiAssignable so screen + MIDI share the SAME seam.
   function touchAutomation() {
     if (moduleId && paramId) notifyAutomationTouch({ nodeId: moduleId, paramId });
+  }
+  // Release = pointer-up/cancel (drag) / a short idle after a wheel tick. Ends
+  // the override so playback resumes (gliding back to the envelope).
+  function releaseAutomation() {
+    if (moduleId && paramId) notifyAutomationRelease({ nodeId: moduleId, paramId });
+  }
+  let wheelReleaseTimer: ReturnType<typeof setTimeout> | null = null;
+  function wheelTouch() {
+    touchAutomation();
+    if (wheelReleaseTimer !== null) clearTimeout(wheelReleaseTimer);
+    wheelReleaseTimer = setTimeout(() => {
+      wheelReleaseTimer = null;
+      releaseAutomation();
+    }, 200);
   }
 
   /** A single inline glyph anchored at a normalized [0,1] fraction along the
@@ -192,6 +206,7 @@
 
   onDestroy(() => {
     if (raf !== null) cancelAnimationFrame(raf);
+    if (wheelReleaseTimer !== null) clearTimeout(wheelReleaseTimer);
     dragCommit.dispose();
   });
 
@@ -282,6 +297,7 @@
   }
   function pointerup(e: PointerEvent) {
     dragging = false;
+    releaseAutomation(); // hand lifted → end the override (glide back to envelope)
     // Force-commit the final drag position before the pointer is fully
     // released. Without this, a trailing rAF could be cancelled by a
     // re-render storm and the patch store would lag the last visible
@@ -294,6 +310,7 @@
     // we don't clear `dragging`, the motorized readLive loop stays gated off
     // and the thumb freezes.
     dragging = false;
+    releaseAutomation(); // gesture cancelled → end the override too
     dragCommit.flush();
     try {
       (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
@@ -306,7 +323,7 @@
   function wheel(e: WheelEvent) {
     e.preventDefault();
     e.stopPropagation();
-    touchAutomation(); // wheel adjust is a live grab too
+    wheelTouch(); // wheel adjust is a live grab too (auto-releases after idle)
     const step = e.shiftKey ? 0.001 : (e.ctrlKey || e.metaKey) ? 0.0001 : 0.01;
     const dir = e.deltaY < 0 ? 1 : -1;
     const newFrac = displayFrac + dir * step;
