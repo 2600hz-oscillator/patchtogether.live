@@ -73,9 +73,13 @@ import {
   doubleNoteClip,
   reverseClipSteps,
   copyClip,
+  readAutoClip,
+  plainCloneAutoClip,
+  reverseAutoClipRecord,
   lengthFromBlockTap,
   lengthFromStepTap,
   STEPS_PER_PAGE,
+  type AutoClipRecord,
   type ClipPlayerData,
   type NoteClipRecord,
 } from '$lib/audio/modules/clip-types';
@@ -109,7 +113,9 @@ let followOn = true;
 let copyHeld = false;
 let pasteHeld = false;
 let pasteRevHeld = false;
-let clipBuffer: NoteClipRecord | null = null;
+// The buffer also carries the source clip's sibling AUTOMATION (the envelope
+// belongs to the clip — a paste moves it with the notes; null = none).
+let clipBuffer: { clip: NoteClipRecord; auto: AutoClipRecord | null } | null = null;
 
 /** Reactive version — bump on bind/unbind so card UI re-derives. */
 let bindingVersion = $state(0);
@@ -237,6 +243,25 @@ function writeClip(nodeId: string, next: NoteClipRecord, index: number = editCli
   editData(nodeId, (d) => {
     if (!d.clips) d.clips = {};
     d.clips[String(index)] = { ...next, steps: next.steps.map((s) => ({ ...s })) };
+  });
+}
+/** PASTE-path clip write: the clip PLUS its sibling automation, atomically in
+ *  one transaction (mirrors the launchpad's writeClipWithAuto — the envelope
+ *  belongs to the clip: the destination's stale `auto[k]` is replaced/deleted). */
+function writeClipWithAuto(
+  nodeId: string,
+  next: NoteClipRecord,
+  auto: AutoClipRecord | null,
+  index: number,
+): void {
+  const plainAuto = plainCloneAutoClip(auto);
+  editData(nodeId, (d) => {
+    if (!d.clips) d.clips = {};
+    d.clips[String(index)] = { ...next, steps: next.steps.map((s) => ({ ...s })) };
+    if (!d.auto) d.auto = {};
+    const key = String(index);
+    if (plainAuto) d.auto[key] = plainAuto;
+    else if (d.auto[key] !== undefined && d.auto[key] !== null) delete d.auto[key];
   });
 }
 function timelordeNode(): { node: { params?: Record<string, number> }; id: string } | null {
@@ -435,17 +460,27 @@ function handleKey(e: GridKeyEvent): void {
     }
     if (copyHeld) {
       const c = clipAtIndex(data, clipIdx);
-      if (c) clipBuffer = copyClip(c); // → per-machine buffer (not the Y.Doc)
+      // → per-machine buffer (not the Y.Doc); the clip's sibling automation
+      // rides along (envelope-belongs-to-the-clip).
+      if (c) clipBuffer = { clip: copyClip(c), auto: readAutoClip(data, clipIdx) };
       return;
     }
     if (pasteHeld && clipBuffer) {
       // PASTE = overwrite OR create (plain assignment handles both). ONE undoable
-      // transaction with CLONED events (writeClip's discipline).
-      writeClip(nodeId, copyClip(clipBuffer), clipIdx);
+      // transaction with CLONED events (writeClip's discipline) — clip + its
+      // automation together; the destination's stale record is cleared.
+      writeClipWithAuto(nodeId, copyClip(clipBuffer.clip), clipBuffer.auto, clipIdx);
       return;
     }
     if (pasteRevHeld && clipBuffer) {
-      writeClip(nodeId, reverseClipSteps(copyClip(clipBuffer)), clipIdx);
+      writeClipWithAuto(
+        nodeId,
+        reverseClipSteps(copyClip(clipBuffer.clip)),
+        clipBuffer.auto
+          ? reverseAutoClipRecord(clipBuffer.auto, clipBuffer.clip.lengthSteps)
+          : null,
+        clipIdx,
+      );
       return;
     }
     const lane = laneOf(clipIdx);

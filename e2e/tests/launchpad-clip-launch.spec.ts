@@ -320,6 +320,23 @@ async function singleView(page: import('@playwright/test').Page) {
       .__launchpadSingleSim!.state().singleView,
   );
 }
+/** The single-mode Grid scene-scroll offset (0 = scenes 0..7 at the top). */
+async function sceneOffset(page: import('@playwright/test').Page) {
+  return page.evaluate(
+    () => (globalThis as unknown as { __launchpadSingleSim?: { state: () => { sceneScrollOffset: number } } })
+      .__launchpadSingleSim!.state().sceneScrollOffset,
+  );
+}
+/** The clipplayer's synced per-lane `queued` array (null when nothing queued). */
+async function cpQueued(page: import('@playwright/test').Page) {
+  return page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { type?: string; data?: { queued?: (number | 'stop' | null)[] } }> };
+    };
+    const cp = Object.values(w.__patch.nodes).find((n) => n.type === 'clipplayer');
+    return cp?.data?.queued ?? null;
+  });
+}
 
 async function buildSingleChain(page: import('@playwright/test').Page, prefix: string) {
   await spawnPatch(
@@ -347,8 +364,9 @@ async function buildSingleChain(page: import('@playwright/test').Page, prefix: s
   await expect(page.locator('.svelte-flow__node-clipplayer')).toHaveCount(1);
 }
 
-/** Seed note clips at the given flat indices (lane*8 + slot). Only lane-0 clips
- *  drive the audible voice (pitch1/gate1 = lane 0's poly output). */
+/** Seed note clips at the given flat indices (clipIndex = lane*64 + slot,
+ *  stride-64 schema v2). Only lane-0 clips drive the audible voice (pitch1/gate1
+ *  = lane 0's poly output). */
 async function seedClipsAt(page: import('@playwright/test').Page, nodeId: string, indices: number[]) {
   await page.evaluate(({ id, idxs }) => {
     const w = globalThis as unknown as {
@@ -371,6 +389,7 @@ async function seedClipsAt(page: import('@playwright/test').Page, nodeId: string
         };
       }
       n.data.clips = clips;
+      (n.data as { sv?: number }).sv = 2; // already stride-64 → skip legacy re-key
     });
   }, { id: nodeId, idxs: indices });
 }
@@ -386,9 +405,9 @@ async function installSingle(page: import('@playwright/test').Page, nodeId: stri
 
 test('@launchpad single-unit GRID view: transposed pad launch → audible RMS; transpose + round-trip relaunch', async ({ page, rack, errorWatch }) => {
   await buildSingleChain(page, 's');
-  // lane 0 slot 0 (index 0 — drives the voice) + lane 1 slot 0 (index 8 — a
-  // DIFFERENT channel, column 1) so the transpose is observable.
-  await seedClipsAt(page, 's-cp', [0, 8]);
+  // lane 0 slot 0 (index 0 — drives the voice) + lane 1 slot 0 (index 64,
+  // stride-64 — a DIFFERENT channel, column 1) so the transpose is observable.
+  await seedClipsAt(page, 's-cp', [0, 64]);
   await installSingle(page, 's-cp');
 
   // The lone device binds into the CLIP (note-editor) view; select GRID on the
@@ -452,4 +471,56 @@ test('@launchpad single-unit GRID scene/ROW launch fires a slot across all chann
   expect(after.rms, 'audible after the scene/row launch').toBeGreaterThan(0.03);
   expect(after.nonzeroSamples, 'structured signal, not a glitch').toBeGreaterThan(50);
   expect(after.rms, 'the row launch raised the output').toBeGreaterThan(before.rms + 0.02);
+});
+
+// Grid-shift right column: CC 98 = SHIFT; the amber scene-window UP/DOWN buttons
+// (repurposed from PASTE-REV / NOW) are scene indices 6 / 7 under shift.
+const CC_SHIFT_TOP = 98;
+const G_SCROLL_UP_CC = SCENE_CCS[6]; // 29
+const G_SCROLL_DOWN_CC = SCENE_CCS[7]; // 19
+
+test('@launchpad single-unit GRID scene-scroll: UP/DOWN slide the window; a shifted scene launches; an empty scene is dark', async ({ page, rack, errorWatch }) => {
+  await buildSingleChain(page, 'z');
+  // Clips in slots 0..7 of lane 0 (indices 0..7) → highestContentScene 7, so DOWN
+  // can reveal ONE empty scene (scene 8). Slot 1 will be the shifted launch target.
+  await seedClipsAt(page, 'z-cp', [0, 1, 2, 3, 4, 5, 6, 7]);
+  await installSingle(page, 'z-cp');
+
+  await ccTapSingle(page, CC_VIEW_GRID);
+  await expect.poll(() => singleView(page), { timeout: 5000 }).toBe('grid');
+
+  // (0) The window starts at the top.
+  expect(await sceneOffset(page), 'starts at offset 0').toBe(0);
+
+  // (1) Latch shift, then DOWN slides the window; a second DOWN clamps (lazy limit).
+  await ccTapSingle(page, CC_SHIFT_TOP); // latch shift → scene column = grid-shift palette
+  await ccTapSingle(page, G_SCROLL_DOWN_CC);
+  await expect.poll(() => sceneOffset(page), { timeout: 5000 }).toBe(1);
+  await ccTapSingle(page, G_SCROLL_DOWN_CC);
+  expect(await sceneOffset(page), 'DOWN clamps at the lazy reveal limit').toBe(1);
+
+  // (2) UP slides back and clamps at the top.
+  await ccTapSingle(page, G_SCROLL_UP_CC);
+  await expect.poll(() => sceneOffset(page), { timeout: 5000 }).toBe(0);
+  await ccTapSingle(page, G_SCROLL_UP_CC);
+  expect(await sceneOffset(page), 'UP clamps at offset 0').toBe(0);
+
+  // (3) DOWN again → offset 1, then UNLATCH shift so the scene column launches.
+  await ccTapSingle(page, G_SCROLL_DOWN_CC);
+  await expect.poll(() => sceneOffset(page), { timeout: 5000 }).toBe(1);
+  await ccTapSingle(page, CC_SHIFT_TOP); // unlatch shift
+
+  // (4) The scrolled-in EMPTY scene (bottom button = scene 8) is a DARK no-op.
+  await ccTapSingle(page, SCENE_CCS[7]);
+  expect(await cpQueued(page), 'launching the empty scene queues nothing').toBeNull();
+
+  // (5) The POSITION-RELATIVE top scene button now addresses the SHIFTED scene 1
+  //     (slot 1) → fires slot 1 across the channels. Assert the DURABLE playing
+  //     state, not `queued`: QNT is off (buildSingleChain sets quantize:0), so the
+  //     clipplayer's ~25 ms scheduler tick applies the launch IMMEDIATELY — the
+  //     `queued` entry is a sub-tick transient that flips to `playing` before a
+  //     poll can observe it (the local-pass/CI-fail race). `playing[0]===1` is the
+  //     stable truth every other launch assertion in this spec reads.
+  await ccTapSingle(page, SCENE_CCS[0]);
+  await expect.poll(() => lanePlayingSlot(page, 0), { timeout: 5000 }).toBe(1);
 });

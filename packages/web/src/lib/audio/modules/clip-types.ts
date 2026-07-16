@@ -28,15 +28,34 @@ import type { ArrangeData, ClipPlayMode } from './clip-arrange';
 
 // ---------------------------------------------------------------------------
 // Dimensions (DECIDED 2026-06-15): rows = INSTRUMENTS, columns = clip SLOTS.
-// 8 instrument lanes × 8 clip slots = 64 clips on the left 8×8 grid quadrant.
-// Each lane drives its own pitch/gate/velocity output pair (the owner's
-// "each row reflects a given instrument's materials" model). The flat index is
-// row-major (index = lane*CLIP_SLOTS + slot), i.e. identical numerics to the
-// grid's `y*8 + x` so the pad↔index mapping is unchanged.
+// 8 instrument lanes; the card shows 8 clip slots at a time (CLIP_SLOTS), but a
+// lane can hold clips in up to MAX_SCENES (= SCENE_STRIDE) SLOTS — the launchpad
+// Grid scene-scroll reaches slots ≥ 8. Each lane drives its own
+// pitch/gate/velocity output pair (the owner's "each row reflects a given
+// instrument's materials" model).
+//
+// FLAT KEY (schema v2, 2026-07-14): the sparse `clips` map is keyed by a flat
+// index `lane*SCENE_STRIDE + slot` with a FIXED stride of SCENE_STRIDE (64),
+// DECOUPLED from the card's visible column count. This lets the slot (=scene)
+// axis grow to MAX_SCENES without renumbering stored clips. Schema v1 (pre-this-
+// change) used a stride of 8 (== the old CLIP_SLOTS), so a v1 key `lane*8+slot`
+// is re-keyed to `lane*64+slot` on load by `migrateClipPlayerData` (data.sv=2).
 // ---------------------------------------------------------------------------
 export const CLIP_LANES = 8; // rows = instruments
-export const CLIP_SLOTS = 8; // columns = clip alternatives per instrument
-export const CLIP_COUNT = CLIP_LANES * CLIP_SLOTS; // 64
+export const CLIP_SLOTS = 8; // VISIBLE clip columns per instrument (the card grid)
+/** FIXED storage stride for the flat clip key (`lane*SCENE_STRIDE + slot`). The
+ *  slot axis can grow up to this many scenes without renumbering stored clips —
+ *  it is INDEPENDENT of the card's visible CLIP_SLOTS. Also the scene ceiling
+ *  (MAX_SCENES in launchpad-map re-exports this value). */
+export const SCENE_STRIDE = 64;
+/** The pre-schema-v2 (v1) flat-key stride — the OLD `CLIP_SLOTS` value baked into
+ *  legacy stored keys (`lane*8+slot`). Used only by the load migration. */
+export const LEGACY_SCENE_STRIDE = 8;
+/** node.data schema version marker (`ClipPlayerData.sv`). ABSENT/undefined = a
+ *  legacy v1 patch (stride-8 clip keys) → `migrateClipPlayerData` re-keys it and
+ *  stamps this value. Present = already stride-64 (no migration). */
+export const CLIP_SCHEMA_VERSION = 2;
+export const CLIP_COUNT = CLIP_LANES * CLIP_SLOTS; // 64 (the visible 8×8 card grid)
 export const DEFAULT_CLIP_STEPS = 16;
 // Max steps in a clip. Bumped 64→128 (DECIDED 2026-06-16): the grid edits up to
 // 128 steps via 8 pages of 16. Sparse NoteEvent[] storage doesn't grow with this
@@ -51,17 +70,98 @@ export const DEFAULT_VELOCITY = 100; // MIDI 0..127
 export const CLIP_TRACKS = CLIP_SLOTS;
 export const CLIP_SCENES = CLIP_LANES;
 
-/** Flat clip-bank index for a (slot=col, lane=row) cell, row-major. */
+/** Flat clip-bank index (schema v2) for a (slot, lane) cell: `lane*SCENE_STRIDE +
+ *  slot`. The stride is FIXED at SCENE_STRIDE (64), independent of the card's
+ *  visible CLIP_SLOTS, so `slot` may range 0..SCENE_STRIDE-1. (Note: for lane 0
+ *  the key equals the slot, so lane-0 keys are stride-invariant.) */
 export function clipIndex(slot: number, lane: number): number {
-  return lane * CLIP_SLOTS + slot;
+  return lane * SCENE_STRIDE + slot;
 }
-/** Which instrument lane (row) a flat clip index belongs to. */
+/** Which instrument lane (row) a flat clip index belongs to (stride-64 decode). */
 export function laneOf(index: number): number {
-  return Math.floor(index / CLIP_SLOTS);
+  return Math.floor(index / SCENE_STRIDE);
 }
-/** Which clip slot (column) within its lane a flat clip index is. */
+/** Which clip slot (scene column) within its lane a flat clip index is. */
 export function slotOf(index: number): number {
-  return index % CLIP_SLOTS;
+  return index % SCENE_STRIDE;
+}
+
+/** Re-key ONE legacy (schema v1) flat clip key `lane*8+slot` to the current
+ *  stride-64 key `lane*64+slot` (= `clipIndex(slot, lane)`), preserving the
+ *  (lane, slot) it addressed. PURE. */
+export function migrateLegacyClipKey(legacyKey: number): number {
+  const lane = Math.floor(legacyKey / LEGACY_SCENE_STRIDE);
+  const slot = legacyKey % LEGACY_SCENE_STRIDE;
+  return lane * SCENE_STRIDE + slot;
+}
+
+/**
+ * Bring a clip-player's persisted `data` up to CLIP_SCHEMA_VERSION IN PLACE,
+ * re-keying its sparse `clips` map from the legacy stride-8 flat key to the
+ * current stride-64 key so EVERY clip stays at the identical (lane, slot).
+ *
+ * Idempotent + storm-safe (the #1 save-compat requirement):
+ *   - a no-op returning `false` when `data` is nullish OR already `sv === 2`;
+ *   - stamps `data.sv = 2` so it runs AT MOST ONCE per player (never re-migrates);
+ *   - moves ONLY the lane-1..7 keys — lane-0 keys are stride-invariant
+ *     (`lane*8+slot === lane*64+slot` when lane=0) so they're left in place;
+ *   - the moved keys (≥ SCENE_STRIDE) are DISJOINT from every legacy key
+ *     (0..63), so an in-place delete-then-set on the SAME map never collides.
+ *   - safe on empty / absent `clips` (just stamps `sv`).
+ *
+ * Each moved value is passed through `clone` before re-insertion so a LIVE
+ * syncedStore Y child is never re-parented into a new key ("Type already
+ * integrated" — [[yjs-save-load-real-ydoc]]). The default clone is a JSON deep
+ * copy (fine for the plain-object load path); the engine passes `coerceClipRecord`
+ * to sever live Y proxies. Returns `true` iff it changed the schema version.
+ *
+ * STRUCTURAL SAFETY NET: a genuine legacy (stride-8) key is `lane*8+slot` with
+ * lane,slot ∈ 0..7, so it NEVER exceeds 63. If ANY clip key is ≥ SCENE_STRIDE the
+ * map is unambiguously ALREADY stride-64 (programmatically-built or test v2 data
+ * that just never got its `sv` stamped) — re-keying it would corrupt it, so we
+ * only stamp `sv` and leave the map untouched. `sv` remains the authoritative
+ * marker (the app stamps it at node-add via the engine factory); this net just
+ * prevents a mis-migration of unstamped current-schema data.
+ */
+export function migrateClipPlayerData(
+  data: { clips?: Record<string, ClipRecord | null>; sv?: number } | null | undefined,
+  clone: (v: ClipRecord | null) => ClipRecord | null = plainCloneClip,
+): boolean {
+  if (!data || typeof data !== 'object') return false;
+  if (data.sv === CLIP_SCHEMA_VERSION) return false; // already current — idempotent
+  const clips = data.clips;
+  if (clips && typeof clips === 'object' && !hasStride64Key(clips)) {
+    for (const key of Object.keys(clips)) {
+      const n = Number(key);
+      if (!Number.isInteger(n) || n < 0) continue; // non-numeric / bad key → leave as-is
+      const newKey = migrateLegacyClipKey(n);
+      if (newKey === n) continue; // lane 0 — stride-invariant, no move needed
+      const moved = clone(clips[key] ?? null);
+      delete clips[key];
+      clips[String(newKey)] = moved;
+    }
+  }
+  data.sv = CLIP_SCHEMA_VERSION;
+  return true;
+}
+
+/** True iff the clips map holds ANY key ≥ SCENE_STRIDE — the tell-tale of
+ *  already-stride-64 data (a legacy stride-8 key is always ≤ 63). PURE. */
+function hasStride64Key(clips: Record<string, unknown>): boolean {
+  for (const key of Object.keys(clips)) {
+    const n = Number(key);
+    if (Number.isInteger(n) && n >= SCENE_STRIDE) return true;
+  }
+  return false;
+}
+
+/** Plain JSON deep-clone of a clip value (null-safe). The default `clone` for
+ *  `migrateClipPlayerData` on the plain-object (envelope) path — and the plain,
+ *  Y-severing clone the Launchpad copy/paste buffer + scene paste reuse (a JSON
+ *  round-trip fully detaches any live syncedStore child; safe for every clip
+ *  kind, which are all pure JSON data). */
+export function plainCloneClip(v: ClipRecord | null): ClipRecord | null {
+  return v == null ? null : (JSON.parse(JSON.stringify(v)) as ClipRecord);
 }
 
 // ---------------------------------------------------------------------------
@@ -119,10 +219,105 @@ export interface SnapshotClipRecord extends ClipBase {
   snapshot: Record<string, unknown>;
 }
 
+// ---------------------------------------------------------------------------
+// PER-CLIP AUTOMATION — the sibling `auto` map (automation redesign Phase 1)
+// ---------------------------------------------------------------------------
+//
+// Every NOTE clip implicitly owns an automation object: a SIBLING record in the
+// sparse `data.auto` map keyed by the SAME stride-64 `clipIndex(slot, lane)` as
+// `data.clips` (Ableton's unlinked-envelope model, stored the way Bitwig 6
+// stores it — automation OUT of the note clip value). NEVER a field on the
+// NoteClipRecord: notes and automation must stay DISJOINT CRDT/merge/undo
+// scopes, so a peer's note edit (`clips[k]`) and an automation record commit
+// (`auto[k]`) can never last-writer-wins each other, and `coerceClipRecord`
+// ('note') has no tracks field to silently drop (the note-clobber the redesign
+// exists to prevent — see .myrobots/plans/automation-redesign-2026-07-16.md).
+//
+// An AutoClipRecord's `tracks` is keyed by TARGET KEY (`nodeId::paramId`), so a
+// record commit writes ONLY the touched track keys (`auto[k].tracks[target] =
+// plainEvents`) — never a whole-clip reassign on the recording hot path. Length
+// is LINKED to the note clip (`lengthSteps`) in this phase; playback drives the
+// mapped params TRANSIENTLY (never the Y.Doc —
+// `cv-modulation-live-store-write-storm`). Automation data is CUSTOM
+// parameter-envelope data (0..1 in the param's own domain), NOT MIDI.
+
+/** Max automated params (tracks) in one clip's automation object — a UI-sanity
+ *  cap, enforced at the coerce boundary AND at the record-commit seam. (NOT a
+ *  MIDI-channel limit: automation is CUSTOM parameter-envelope data, not MIDI
+ *  CC — owner: "automation data does not need to be midi data".) */
+export const MAX_AUTOMATION_TRACKS = 16;
+
+/** Max breakpoints PER track — the durable-size guard for a long automation
+ *  take (a slow lane rate + long clip = a multi-minute pass). The recorder's
+ *  real-time decimation gate keeps density ~30 pts/s, so this bounds a single
+ *  track's committed array (and thus the ydoc/sync payload). Enforced at the
+ *  coerce boundary; the recorder also caps before commit. */
+export const MAX_AUTOMATION_EVENTS = 4000;
+
+/** A single automation breakpoint: a normalized param value at a step position.
+ *  `step` may be fractional for sub-step resolution; `value` is 0..1 in the
+ *  param's normalized space (the same 0..1 a Fader/knob reports), so the track
+ *  is independent of the param's real min/max. */
+export interface AutomationEvent {
+  step: number; // 0..lengthSteps (fractional allowed)
+  value: number; // normalized 0..1 in param space
+}
+
+/** Stable reference to the automated control — a (nodeId, paramId) pair. */
+export interface AutomationTarget {
+  nodeId: string;
+  paramId: string;
+}
+
+/** The canonical string key for an automation target — `nodeId::paramId`. The
+ *  SINGLE key format shared by `AutoClipRecord.tracks`, `data.autoAssign`, and
+ *  the controller's client-local override sets. */
+export function automationTargetKey(t: AutomationTarget): string {
+  return t.nodeId + '::' + t.paramId;
+}
+/** Parse an `automationTargetKey` back to its (nodeId, paramId), or null for a
+ *  malformed key (the coerce boundary drops those). */
+export function parseAutomationTargetKey(key: string): AutomationTarget | null {
+  if (typeof key !== 'string') return null;
+  const i = key.indexOf('::');
+  if (i <= 0 || i + 2 >= key.length) return null;
+  return { nodeId: key.slice(0, i), paramId: key.slice(i + 2) };
+}
+
+/** One automated parameter's envelope INSIDE an AutoClipRecord — the value side
+ *  of a `tracks[targetKey]` entry (the target itself is the key). `interp`
+ *  overrides the playback interpolation: 'linear' (smooth ramp between points)
+ *  or 'hold' (stepped). Absent ⇒ auto: linear for continuous params, hold for
+ *  `curve:'discrete'` params (decided at playback from the ParamDef). */
+export interface AutoTrack {
+  events: AutomationEvent[]; // step-ordered
+  interp?: 'linear' | 'hold';
+}
+
+/** ONE note clip's automation object — the value of `data.auto[clipIndex]`.
+ *  `tracks` is keyed by `automationTargetKey` so a record commit mutates ONLY
+ *  the touched keys (disjoint from every other track AND from the note clip). */
+export interface AutoClipRecord {
+  tracks: Record<string, AutoTrack>;
+}
+
+/** RUNTIME read view of one track — the (parsed target + events) shape the
+ *  playback/record controller consumes. Built ONCE per change by the engine's
+ *  cached read view (never per tick — the historic lane-stall cause). */
+export interface AutomationTrack {
+  target: AutomationTarget;
+  events: AutomationEvent[]; // step-ordered
+  interp?: 'linear' | 'hold';
+}
+
 export type ClipRecord = NoteClipRecord | AudioClipRecord | SnapshotClipRecord;
 
 /** Persisted on node.data. Note clips are tiny so no caps in v1. */
 export interface ClipPlayerData {
+  /** Clip-key SCHEMA VERSION. Absent/undefined = legacy v1 (stride-8 flat clip
+   *  keys) → `migrateClipPlayerData` re-keys `clips` to stride-64 on load and
+   *  stamps CLIP_SCHEMA_VERSION here. Present = already stride-64. */
+  sv?: number;
   clips?: Record<string, ClipRecord | null>; // sparse; null/absent = empty
   /** Per-lane active clip SLOT (0..CLIP_SLOTS-1) or null = stopped. Length
    *  CLIP_LANES. SYNCED — the playing-set all peers + grids see (§5.2). Up to
@@ -197,7 +392,310 @@ export interface ClipPlayerData {
    *  binding while the KEYS keyboard is armed/recording a clip; peers + the card
    *  see it. Absent/null = not note-recording. v1 single-recorder per clip. */
   noteRec?: NoteRecState | null;
+  /** AUTOMATION record-arm state — PER LANE (the owner's Deluge-like model:
+   *  "we arm this per channel, not as a global"). `lanes` is a sparse RECORD
+   *  keyed by the lane digit ('0'..'7') — a PER-KEY map (like `autoAssign` and
+   *  `auto[k].tracks`), so two peers arming/disarming DIFFERENT lanes
+   *  concurrently merge key-by-key instead of last-writer-wins clobbering a
+   *  whole array. `lanes[L].arm` = lane L armed: while true, touching ANY
+   *  control of a MODULE assigned to lane L (screen / MIDI / Electra — never
+   *  CV) records into lane L's PLAYING clip's sibling `auto` object (punch-in
+   *  at that clip's own wrap; continuous overdub). `recorderId` = the arming
+   *  client's `ydoc.clientID` — the SINGLE-WRITER **per lane**: peer A can
+   *  record lane 1 while peer B records lane 2 (each lane commits on exactly
+   *  one client — see `isLaneAutomationRecorder`). SYNCED; set by the card's
+   *  per-lane ◉ / the Launchpad SHIFT+top-row gesture; the engine only READS
+   *  it. Absent key = that lane not armed. The containers (`automation` +
+   *  `lanes`) are created at the factory load seam next to `auto`/`autoAssign`
+   *  (container-LWW hardening). Readers ALSO accept the interim ARRAY shape
+   *  (81084fe9) — the branch is unreleased, so a cheap one-way read + a load-
+   *  seam migrate cover it; the retired GLOBAL `{arm, recorderId}` fields are
+   *  swept at load. */
+  automation?: { lanes?: Record<string, AutomationLaneState | null> | (AutomationLaneState | null)[] };
+  /** PER-CLIP AUTOMATION (sibling map): each note clip's automation object,
+   *  keyed by the SAME stride-64 flat `clipIndex(slot, lane)` as `clips` — a
+   *  PARALLEL key, never a field on the note clip, so note edits and automation
+   *  commits are disjoint CRDT scopes (see the AutoClipRecord block above).
+   *  Sparse; absent/null = the clip carries no automation. */
+  auto?: Record<string, AutoClipRecord | null>;
+  /** MODULE → LANE automation assignment: module node id → lane index
+   *  (0..CLIP_LANES-1). Assignment is MODULE-level (owner-locked model: "we
+   *  assign entire modules to a lane, they get the border"): ONE lane per
+   *  module (re-assigning MOVES it); while lane L is armed, touching ANY
+   *  control of a module assigned to L records that control. SYNCED (the
+   *  module card's right-click "Assign to automation lane" menu writes it);
+   *  the assigned module's CARD shows a thin border in the lane's colour.
+   *  (Clean break: the retired `nodeId::paramId` keys coerce away.) */
+  autoAssign?: Record<string, number>;
   creatorId?: string;
+}
+
+/** One lane's automation record-arm state (see ClipPlayerData.automation). */
+export interface AutomationLaneState {
+  arm?: boolean;
+  recorderId?: number;
+}
+
+/** Lane L's coerced arm state, or null when not armed/absent. Accepts BOTH
+ *  shapes: the canonical per-key RECORD ('0'..'7' → state) and the interim
+ *  81084fe9 ARRAY (one-way read; the load seam migrates it). PURE. */
+function laneAutomationState(
+  data: ClipPlayerData | undefined,
+  lane: number,
+): AutomationLaneState | null {
+  const lanes = data?.automation?.lanes;
+  if (!lanes || typeof lanes !== 'object') return null;
+  const s = Array.isArray(lanes) ? lanes[lane] : lanes[String(lane)];
+  return s && typeof s === 'object' ? (s as AutomationLaneState) : null;
+}
+
+/** SINGLE-WRITER automation record gate — PER LANE: true ONLY when lane L is
+ *  ARMED and THIS client is that lane's designated recorder
+ *  (`lanes[L].recorderId === clientId`). Every peer reads the same synced
+ *  per-lane state, but only the matching client's engine runs `recordLaneTick`
+ *  + commits for that lane — so each lane's pass writes the durable store
+ *  exactly once, while DIFFERENT peers may record DIFFERENT lanes
+ *  concurrently. The clipplayer tick and the integration test share this
+ *  predicate so the gate is one source of truth. */
+export function isLaneAutomationRecorder(
+  data: ClipPlayerData | undefined,
+  lane: number,
+  clientId: number,
+): boolean {
+  const s = laneAutomationState(data, lane);
+  return !!s && s.arm === true && s.recorderId === clientId;
+}
+
+/** True when lane L's automation record is ARMED — the SYNCED per-lane flag
+ *  every peer, the card's per-lane ◉, and the Launchpad top-row arm LEDs read.
+ *  Distinct from `isLaneAutomationRecorder`, which also requires THIS client to
+ *  be that lane's single-writer. PURE. */
+export function laneAutomationArmed(data: ClipPlayerData | undefined, lane: number): boolean {
+  return laneAutomationState(data, lane)?.arm === true;
+}
+
+/** Every lane's armed flag (length CLIP_LANES). PURE. */
+export function armedAutomationLanes(data: ClipPlayerData | undefined): boolean[] {
+  const out = new Array<boolean>(CLIP_LANES).fill(false);
+  for (let L = 0; L < CLIP_LANES; L++) out[L] = laneAutomationArmed(data, L);
+  return out;
+}
+
+/** True when ANY lane's automation record is armed on this player. PURE. */
+export function isAutomationArmed(data: ClipPlayerData | undefined): boolean {
+  for (let L = 0; L < CLIP_LANES; L++) if (laneAutomationArmed(data, L)) return true;
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// AUTOMATION ASSIGNMENT (MODULE → lane) — PURE reads over `data.autoAssign`.
+// The owner-locked model: entire MODULES are assigned to a lane; while that
+// lane is armed, touching ANY control of an assigned module records it.
+// ---------------------------------------------------------------------------
+
+/** Coerce a raw `autoAssign` map: keep only entries whose key is a plausible
+ *  MODULE node id (a non-empty string WITHOUT the retired `::` target-key
+ *  separator — clean break: legacy param-level keys coerce away) AND whose
+ *  value is an integer lane 0..CLIP_LANES-1. PURE. */
+export function coerceAutoAssign(raw: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [key, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof key !== 'string' || key.length === 0 || key.includes('::')) continue;
+    const lane = Number(v);
+    if (!Number.isInteger(lane) || lane < 0 || lane >= CLIP_LANES) continue;
+    out[key] = lane;
+  }
+  return out;
+}
+
+/** The lane MODULE `moduleId` is assigned to on this player, or null. PURE. */
+export function assignedLaneOfModule(
+  data: { autoAssign?: unknown } | undefined,
+  moduleId: string,
+): number | null {
+  const lane = coerceAutoAssign(data?.autoAssign)[moduleId];
+  return typeof lane === 'number' ? lane : null;
+}
+
+/** The assigned MODULE ids of EACH lane (length CLIP_LANES) — the per-lane
+ *  record scope: while lane L is armed, a touched control records IFF its
+ *  module is in `laneAssignedModules(d)[L]`. PURE. */
+export function laneAssignedModules(
+  data: { autoAssign?: unknown } | undefined,
+): string[][] {
+  const out: string[][] = Array.from({ length: CLIP_LANES }, () => []);
+  for (const [moduleId, lane] of Object.entries(coerceAutoAssign(data?.autoAssign))) {
+    out[lane]!.push(moduleId);
+  }
+  return out;
+}
+
+/** Per-lane assigned-MODULE counts (length CLIP_LANES) — the card's chip row
+ *  renders exactly this, so the readout can never disagree with `autoAssign`.
+ *  `exists` (optional) filters out DANGLING modules (deleted) so the chips
+ *  never count ghosts while the prune catches up. */
+export function autoAssignCounts(
+  data: { autoAssign?: unknown } | undefined,
+  exists?: (moduleId: string) => boolean,
+): number[] {
+  const out = new Array<number>(CLIP_LANES).fill(0);
+  for (const [moduleId, lane] of Object.entries(coerceAutoAssign(data?.autoAssign))) {
+    if (exists && !exists(moduleId)) continue;
+    out[lane]!++;
+  }
+  return out;
+}
+
+/**
+ * SINGLE-DRIVER playback ownership (per-clip automation, cross-lane rule): for
+ * each targetKey carried by any ACTIVE lane's automation, the ONE lane that may
+ * drive it this tick — the lane its MODULE is ASSIGNED to when that lane is an
+ * active carrier, else the LOWEST active carrier lane. Two clips in different
+ * lanes carrying the same param therefore never co-drive (no interleaved ramp
+ * fights); the module assignment resolves the tie the owner's way. PURE.
+ *
+ * `assign` = the coerced MODULE→lane map. `carriers[lane]` = the track-key set
+ * of that lane's ACTIVE clip's automation (null/undefined = lane inactive or
+ * carries none).
+ */
+export function autoPlaybackOwners(
+  assign: Record<string, number>,
+  carriers: ReadonlyArray<ReadonlySet<string> | null | undefined>,
+): Map<string, number> {
+  const owners = new Map<string, number>();
+  for (let lane = 0; lane < carriers.length; lane++) {
+    const keys = carriers[lane];
+    if (!keys) continue;
+    for (const k of keys) {
+      if (!owners.has(k)) owners.set(k, lane); // lowest active carrier
+    }
+  }
+  for (const [k] of owners) {
+    const target = parseAutomationTargetKey(k);
+    if (!target) continue;
+    const lane = assign[target.nodeId];
+    if (typeof lane === 'number' && carriers[lane]?.has(k)) {
+      owners.set(k, lane); // the module's assigned lane WINS when carrying
+    }
+  }
+  return owners;
+}
+
+/**
+ * ARM-time shell pre-creation (container-LWW hardening), PER LANE: ensure
+ * `auto[k]` exists for EVERY note clip in lane L when the lane has ≥1
+ * assigned module, so the recorder's per-key commits land in containers
+ * created OUTSIDE the racy commit path (a peer's concurrent write to a
+ * sibling key can then never be clobbered by a container-creation
+ * last-writer-wins). Shelling the WHOLE lane (bounded ≤ SCENE_STRIDE slots)
+ * covers the common arm-then-LAUNCH flow too — a clip launched after arming
+ * already has its shell. Empty `{tracks:{}}` shells are inert: the carrier
+ * probes (`autoClipHasTracks` / `readAutoClip`) require ≥1 track key, so no
+ * teal dots light and playback ignores them. Mutates `d` IN PLACE — call
+ * inside the lane-arming write's transaction. (A clip CREATED later while
+ * armed still falls back to the commit-side creation.)
+ */
+export function ensureLaneArmAutoShell(d: ClipPlayerData, lane: number): void {
+  if (laneAssignedModules(d)[lane]!.length === 0) return;
+  if (!d.clips) return;
+  let ensured = false;
+  for (let slot = 0; slot < SCENE_STRIDE; slot++) {
+    const k = String(clipIndex(slot, lane));
+    const clip = d.clips[k] as { kind?: unknown } | null | undefined;
+    if (!clip || clip.kind !== 'note') continue;
+    if (!ensured && !d.auto) d.auto = {};
+    ensured = true;
+    if (!d.auto![k] || typeof d.auto![k] !== 'object') d.auto![k] = { tracks: {} };
+  }
+}
+
+/**
+ * One-way MIGRATE of the interim 81084fe9 ARRAY `automation.lanes` shape to
+ * the canonical per-key RECORD ('0'..'7' → {arm, recorderId}) IN PLACE.
+ * No-op when already a record / absent. Plain values only (severs any live Y
+ * child — [[yjs-save-load-real-ydoc]]). Called from the factory load seam and
+ * defensively from the toggle. Returns true when it migrated.
+ */
+export function migrateAutomationLanesShape(d: ClipPlayerData): boolean {
+  const cur = d.automation?.lanes;
+  if (!Array.isArray(cur)) return false;
+  const rec: Record<string, AutomationLaneState> = {};
+  for (let i = 0; i < CLIP_LANES && i < cur.length; i++) {
+    const e = cur[i] as AutomationLaneState | null | undefined;
+    if (e && typeof e === 'object' && e.arm === true) {
+      const entry: AutomationLaneState = { arm: true };
+      if (typeof e.recorderId === 'number') entry.recorderId = e.recorderId;
+      rec[String(i)] = entry;
+    }
+  }
+  d.automation!.lanes = rec;
+  return true;
+}
+
+/**
+ * TOGGLE lane L's automation record-arm IN PLACE — the ONE write seam the
+ * card's per-lane ◉ AND the Launchpad SHIFT+top-row gesture share (so both
+ * surfaces stay in sync via the same synced field). PER-KEY set/delete on the
+ * `lanes` record (the same merge discipline as `autoAssign` /
+ * `auto[k].tracks`), so concurrent arm/disarm of DIFFERENT lanes by different
+ * peers merges key-by-key — never a whole-array LWW. The containers are
+ * created at the factory load seam; the lazy init here is only the defensive
+ * fallback for data the factory hasn't touched yet. WHEN ARMING: stamps
+ * `clientId` as that lane's single-writer recorderId and pre-creates the
+ * lane's auto shells (container-LWW hardening). Call inside the caller's
+ * transaction. Returns the NEW armed state.
+ */
+export function toggleLaneAutomationArm(
+  d: ClipPlayerData,
+  lane: number,
+  clientId: number,
+): boolean {
+  if (!d.automation || typeof d.automation !== 'object') d.automation = {};
+  migrateAutomationLanesShape(d); // interim array shape → record (one-way)
+  if (!d.automation.lanes || typeof d.automation.lanes !== 'object') d.automation.lanes = {};
+  const lanes = d.automation.lanes as Record<string, AutomationLaneState | null>;
+  const k = String(Math.max(0, Math.min(CLIP_LANES - 1, Math.trunc(lane))));
+  const cur = lanes[k];
+  const arming = !(cur && typeof cur === 'object' && cur.arm === true);
+  if (arming) {
+    lanes[k] = { arm: true, recorderId: clientId }; // single-KEY write
+    ensureLaneArmAutoShell(d, lane);
+  } else {
+    delete lanes[k]; // single-KEY delete
+  }
+  return arming;
+}
+
+// ---------------------------------------------------------------------------
+// LIVE-PERFORMANCE (transient) data fields — the DUPLICATE scrub. A duplicated
+// clip player must copy CONTENT (clips, recorded automation, per-lane
+// settings, the arrangement) but never LIVE STATE: a duplicate born ARMED
+// with the original's recorderId would double-record, a copied autoAssign
+// would double-claim modules (one lane per module is a GLOBAL invariant), and
+// copied playing/queued sets would ghost-launch. The duplicate paths (single
+// node + group) call this on the CLONE before insertion.
+// ---------------------------------------------------------------------------
+/** node.data fields that are LIVE-PERFORMANCE state, never duplicated. */
+export const CLIP_PLAYER_TRANSIENT_DATA_FIELDS = [
+  'playing', // the live playing-set
+  'queued', // pending launches
+  'queuedImmediate', // pending NOW overrides
+  'recording', // arranger record-arm
+  'noteRec', // KEYS note-record state
+  'automation', // per-lane automation arm + recorderIds
+  'autoAssign', // module→lane claims (globally exclusive — never copied)
+  'resetNonce', // reset intent counter
+] as const;
+
+/** Strip the live-performance fields from a clip-player data CLONE (in
+ *  place). Safe on any shape; a no-op for non-objects. PURE mutation of the
+ *  passed clone — callers pass the DUPLICATE's data, never the source's. */
+export function scrubClipPlayerTransientData(data: Record<string, unknown> | undefined): void {
+  if (!data || typeof data !== 'object') return;
+  for (const f of CLIP_PLAYER_TRANSIENT_DATA_FIELDS) {
+    if (f in data) delete data[f];
+  }
 }
 
 /** DUAL-LAUNCHPAD KEYS note-record state (see ClipPlayerData.noteRec). */
@@ -433,6 +931,246 @@ export function coerceClipRecord(raw: unknown): ClipRecord | null {
     return out;
   }
   if (r.kind === 'audio' || r.kind === 'snapshot') return r as unknown as ClipRecord;
+  // Unknown kinds — including the RETIRED stamped `kind:'automation'` clip from
+  // the pre-rehome model (clean break; the branch is unreleased) — coerce away
+  // silently: the cell reads as empty, the load never crashes.
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// AUTOMATION helpers — PURE (record-layer building blocks; the Y.Doc callers
+// mutate in place per `yjs-save-load-real-ydoc`, these just compute values)
+// ---------------------------------------------------------------------------
+
+/** Clamp a raw value into a valid AutomationEvent, or null. */
+export function coerceAutomationEvent(raw: unknown): AutomationEvent | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const e = raw as Record<string, unknown>;
+  const step = Number(e.step);
+  const value = Number(e.value);
+  if (!Number.isFinite(step) || step < 0) return null;
+  if (!Number.isFinite(value)) return null;
+  return { step, value: Math.max(0, Math.min(1, value)) };
+}
+
+/** Clamp a raw keyed-track VALUE ({ events, interp? }) into a valid AutoTrack,
+ *  or null. Events are coerced, filtered, step-sorted, and capped at
+ *  MAX_AUTOMATION_EVENTS (the durable-size guard for long takes). */
+export function coerceAutoTrack(raw: unknown): AutoTrack | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const t = raw as Record<string, unknown>;
+  const events = (Array.isArray(t.events) ? t.events : [])
+    .map(coerceAutomationEvent)
+    .filter((e): e is AutomationEvent => e !== null)
+    .sort((a, b) => a.step - b.step)
+    .slice(0, MAX_AUTOMATION_EVENTS);
+  const out: AutoTrack = { events };
+  if (t.interp === 'linear' || t.interp === 'hold') out.interp = t.interp;
+  return out;
+}
+
+/** Coerce ONE clip's raw automation object (`data.auto[k]`) at the boundary:
+ *  keep only tracks whose key parses as a target and whose value coerces, in
+ *  sorted-key order, capped at MAX_AUTOMATION_TRACKS. Returns a NEW plain
+ *  record (a deep, Y-severed copy) or null for an unusable value. PURE. */
+export function coerceAutoClipRecord(raw: unknown): AutoClipRecord | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const rawTracks = r.tracks;
+  const tracks: Record<string, AutoTrack> = {};
+  if (rawTracks && typeof rawTracks === 'object') {
+    let n = 0;
+    for (const key of Object.keys(rawTracks as Record<string, unknown>).sort()) {
+      if (n >= MAX_AUTOMATION_TRACKS) break; // the documented cap, at the boundary
+      if (!parseAutomationTargetKey(key)) continue; // malformed key → dropped
+      const track = coerceAutoTrack((rawTracks as Record<string, unknown>)[key]);
+      if (!track) continue;
+      tracks[key] = track;
+      n++;
+    }
+  }
+  return { tracks };
+}
+
+/** Read + coerce ONE clip's automation object from node.data, or null when the
+ *  clip carries none. Accepts any shape (the value is coerced/validated). */
+export function readAutoClip(
+  data: { auto?: Record<string, unknown> } | undefined,
+  index: string | number,
+): AutoClipRecord | null {
+  const raw = data?.auto?.[String(index)];
+  if (!raw) return null;
+  const rec = coerceAutoClipRecord(raw);
+  return rec && Object.keys(rec.tracks).length > 0 ? rec : null;
+}
+
+/** Build the RUNTIME track views (parsed target + step-sorted events) from a
+ *  coerced AutoClipRecord — the shape the playback/record controller consumes.
+ *  PURE; the engine caches the result per clip identity/revision (coerce-ONCE —
+ *  never per tick). */
+export function autoTrackViews(rec: AutoClipRecord | null | undefined): AutomationTrack[] {
+  if (!rec) return [];
+  const out: AutomationTrack[] = [];
+  for (const [key, tr] of Object.entries(rec.tracks)) {
+    const target = parseAutomationTargetKey(key);
+    if (!target) continue;
+    const view: AutomationTrack = { target, events: tr.events };
+    if (tr.interp) view.interp = tr.interp;
+    out.push(view);
+  }
+  return out;
+}
+
+/** Plain deep-clone of an AutoClipRecord (Y-severing — safe to write into the
+ *  store, and re-cloned per paste so one buffer never shares refs). Null in,
+ *  null out; a record with zero tracks also clones to null (nothing to carry). */
+export function plainCloneAutoClip(rec: AutoClipRecord | null | undefined): AutoClipRecord | null {
+  if (!rec || !rec.tracks) return null;
+  const tracks: Record<string, AutoTrack> = {};
+  let any = false;
+  for (const [key, tr] of Object.entries(rec.tracks)) {
+    const t: AutoTrack = { events: (tr.events ?? []).map((e) => ({ step: e.step, value: e.value })) };
+    if (tr.interp === 'linear' || tr.interp === 'hold') t.interp = tr.interp;
+    tracks[key] = t;
+    any = true;
+  }
+  return any ? { tracks } : null;
+}
+
+/** Mirror an automation record in TIME for PASTE-REVERSE (the envelope belongs
+ *  to the clip, so a time-reversed paste carries a time-reversed envelope):
+ *  each event's step → lengthSteps − step (clamped ≥ 0), re-sorted. PURE —
+ *  returns a NEW plain record. */
+export function reverseAutoClipRecord(
+  rec: AutoClipRecord,
+  lengthSteps: number,
+): AutoClipRecord {
+  const len = Math.max(1, lengthSteps);
+  const tracks: Record<string, AutoTrack> = {};
+  for (const [key, tr] of Object.entries(rec.tracks)) {
+    const t: AutoTrack = {
+      events: (tr.events ?? [])
+        .map((e) => ({ step: Math.max(0, len - e.step), value: e.value }))
+        .sort((a, b) => a.step - b.step),
+    };
+    if (tr.interp === 'linear' || tr.interp === 'hold') t.interp = tr.interp;
+    tracks[key] = t;
+  }
+  return { tracks };
+}
+
+/** CHEAP carrier probe: does a raw `auto[k]` value hold ≥1 track key? (No full
+ *  coerce — the card's per-cell automation dot reads this per render.) PURE. */
+export function autoClipHasTracks(raw: unknown): boolean {
+  if (!raw || typeof raw !== 'object') return false;
+  const tracks = (raw as { tracks?: unknown }).tracks;
+  if (!tracks || typeof tracks !== 'object') return false;
+  for (const key of Object.keys(tracks as Record<string, unknown>)) {
+    if (parseAutomationTargetKey(key)) return true;
+  }
+  return false;
+}
+
+/** True when two targets reference the same (nodeId, paramId) control. */
+export function sameAutomationTarget(a: AutomationTarget, b: AutomationTarget): boolean {
+  return a.nodeId === b.nodeId && a.paramId === b.paramId;
+}
+
+/**
+ * OVERDUB merge (punch-in): replace a track's events inside the re-recorded
+ * window with `incoming`, keeping every existing event OUTSIDE it. This is the
+ * owner's "overdub must work" — a second pass punches over only the time it
+ * covers, preserving the rest.
+ *
+ * The window is half-open and DIRECTIONAL to support a punch that wraps the loop
+ * boundary:
+ *   - `windowStart <= windowEnd`  → the window is `[start, end)` (drop events in it).
+ *   - `windowStart >  windowEnd`  → the punch WRAPPED the loop: the window is
+ *     `[start, ∞) ∪ [0, end)`, so KEEP the events in `[end, start)` (the middle).
+ *     (The naive min/max normalization inverts this and deletes the middle —
+ *     the exact loop-wrap bug the adversarial review caught.)
+ *
+ * Callers MUST pass a PLAIN snapshot of `existing` (e.g. from
+ * `coerceAutoClipRecord` / the engine's cached read view), NEVER the live
+ * Y.Array — `kept` retains references to `existing`'s elements, and reassigning
+ * integrated Y children throws "Type already integrated"
+ * ([[yjs-save-load-real-ydoc]]). The commit writes the merged PLAIN events into
+ * ONLY the touched track key (`auto[k].tracks[target]`). Returns a NEW
+ * step-sorted, event-capped array.
+ */
+export function mergeAutomationOverdub(
+  existing: readonly AutomationEvent[],
+  incoming: readonly AutomationEvent[],
+  windowStart: number,
+  windowEnd: number,
+): AutomationEvent[] {
+  const inWindow = (step: number): boolean =>
+    windowStart <= windowEnd
+      ? step >= windowStart && step < windowEnd // normal [start, end)
+      : step >= windowStart || step < windowEnd; // wrapped [start,∞) ∪ [0,end)
+  const kept = existing.filter((e) => !inWindow(e.step));
+  const merged = kept.concat(
+    incoming.map((e) => ({ step: e.step, value: Math.max(0, Math.min(1, e.value)) })),
+  );
+  merged.sort((a, b) => a.step - b.step);
+  return merged.slice(0, MAX_AUTOMATION_EVENTS);
+}
+
+/**
+ * PLAYBACK read — the normalized value a track holds at `step` (hold-last:
+ * the value of the most recent event with `event.step <= step`). Returns null
+ * when no event precedes `step` (the param is left at its live value until the
+ * first breakpoint). `events` must be step-sorted (coerce/merge guarantee it).
+ */
+export function automationValueAt(
+  events: readonly AutomationEvent[],
+  step: number,
+): number | null {
+  let val: number | null = null;
+  for (const e of events) {
+    if (e.step <= step) val = e.value;
+    else break;
+  }
+  return val;
+}
+
+/**
+ * PLAYBACK read — LINEAR interpolation of the value at `step` (the default for
+ * continuous params; `automationValueAt` is the hold-last variant for discrete).
+ * Returns null before the first breakpoint (param left at its live value); holds
+ * the final value after the last. `events` must be step-sorted.
+ */
+export function automationLinearAt(
+  events: readonly AutomationEvent[],
+  step: number,
+): number | null {
+  if (events.length === 0) return null;
+  if (step < events[0]!.step) return null; // before first bp — leave live value
+  let prev = events[0]!;
+  for (let i = 1; i < events.length; i++) {
+    const cur = events[i]!;
+    if (cur.step > step) {
+      const span = cur.step - prev.step;
+      if (span <= 0) return cur.value;
+      const t = (step - prev.step) / span;
+      return prev.value + (cur.value - prev.value) * t;
+    }
+    prev = cur;
+  }
+  return prev.value; // past the last bp — hold
+}
+
+/**
+ * The first breakpoint strictly AFTER `step` (or null past the last). The
+ * lookahead playback emitter ramps toward this breakpoint's value, scheduled at
+ * its audio time, giving click-free, sample-accurate automation between the
+ * 25 ms scheduler ticks.
+ */
+export function automationNextAfter(
+  events: readonly AutomationEvent[],
+  step: number,
+): AutomationEvent | null {
+  for (const e of events) if (e.step > step) return e;
   return null;
 }
 
@@ -451,6 +1189,91 @@ export function readClip(
   const clips = data?.clips;
   if (!clips) return null;
   return coerceClipRecord(clips[String(index)]);
+}
+
+// ---------------------------------------------------------------------------
+// SCENE copy/paste — a TYPED clipboard for the Launchpad clip-launcher. A
+// "scene" is all CLIP_LANES lanes' clips at ONE slot (`clipIndex(slot, lane)`).
+// The buffer holds either ONE clip OR a whole scene, always as PLAIN deep-clones
+// (never a live Y child). These helpers are PURE (the .svelte.ts owns the buffer
+// state + the origin-tagged Y writes). See launchpad-control.svelte.ts.
+// ---------------------------------------------------------------------------
+
+/** What the copy buffer holds, or what a paste targets. */
+export type CopyBufferKind = 'clip' | 'scene';
+export type CopyTargetKind = 'clip' | 'scene';
+
+/** The TYPED copy buffer: one clip, or a whole scene (all CLIP_LANES lanes'
+ *  clips at a slot; an empty lane is `null`). Held as PLAIN deep-clones. The
+ *  ENVELOPE BELONGS TO THE CLIP: the buffer also carries each source clip's
+ *  sibling automation (`auto`/`autos`, null = the source carried none), so a
+ *  paste moves the automation WITH the notes. */
+export type CopyBuffer =
+  | { kind: 'clip'; clip: NoteClipRecord; auto: AutoClipRecord | null }
+  | { kind: 'scene'; clips: (ClipRecord | null)[]; autos: (AutoClipRecord | null)[] };
+
+/** Paste TYPE-GATE (PURE): a paste applies ONLY when the buffer kind matches the
+ *  target kind — scene→scene + clip→clip apply; scene→clip + clip→scene are
+ *  NO-OPs (buffer + targets untouched, no write). The single source the surface
+ *  and its tests both consult. */
+export function pasteApplies(bufferKind: CopyBufferKind, targetKind: CopyTargetKind): boolean {
+  return bufferKind === targetKind;
+}
+
+/** COPY a whole SCENE (all CLIP_LANES lanes' clips at `slot`) as PLAIN clones —
+ *  index i = lane i's clip (coerced/severed from any live Y child) or `null` when
+ *  that lane is empty at the slot. PURE (reads only). */
+export function readScene(
+  data: { clips?: Record<string, unknown> } | undefined,
+  slot: number,
+): (ClipRecord | null)[] {
+  const out: (ClipRecord | null)[] = new Array(CLIP_LANES).fill(null);
+  for (let lane = 0; lane < CLIP_LANES; lane++) {
+    out[lane] = readClip(data, clipIndex(slot, lane));
+  }
+  return out;
+}
+
+/** COPY a scene's SIBLING AUTOMATION (all CLIP_LANES lanes' `auto[k]` records at
+ *  `slot`) as PLAIN coerced clones — index i = lane i's automation or null when
+ *  that lane's clip carries none. Paired with `readScene` when filling the
+ *  typed scene buffer (the envelope belongs to the clip). PURE. */
+export function readSceneAutos(
+  data: { auto?: Record<string, unknown> } | undefined,
+  slot: number,
+): (AutoClipRecord | null)[] {
+  const out: (AutoClipRecord | null)[] = new Array(CLIP_LANES).fill(null);
+  for (let lane = 0; lane < CLIP_LANES; lane++) {
+    out[lane] = readAutoClip(data, clipIndex(slot, lane));
+  }
+  return out;
+}
+
+/** Plan a SCENE paste (FULL REPLACE) into `targetSlot`: for EACH lane 0..7, the
+ *  flat clip index + the PLAIN-cloned clip to write — `null` MEANS delete that
+ *  lane's key so a lane the source scene left empty EMPTIES the target lane —
+ *  PLUS the clip's sibling `auto` record (`null` = delete the target's stale
+ *  automation: the envelope belongs to the clip, so replacing/emptying the clip
+ *  replaces/empties its automation too). PURE. The caller applies each entry in
+ *  ONE origin-tagged transaction (set non-null, delete null, for BOTH maps) → a
+ *  single undo step. Re-clones so pasting one buffer to many targets never
+ *  shares references. */
+export function sceneWritePlan(
+  targetSlot: number,
+  sceneClips: (ClipRecord | null)[],
+  sceneAutos?: (AutoClipRecord | null)[],
+): { index: number; value: ClipRecord | null; auto: AutoClipRecord | null }[] {
+  const plan: { index: number; value: ClipRecord | null; auto: AutoClipRecord | null }[] = [];
+  for (let lane = 0; lane < CLIP_LANES; lane++) {
+    const value = plainCloneClip(sceneClips[lane] ?? null);
+    plan.push({
+      index: clipIndex(targetSlot, lane),
+      value,
+      // No clip ⇒ no automation either (delete both target keys).
+      auto: value === null ? null : plainCloneAutoClip(sceneAutos?.[lane] ?? null),
+    });
+  }
+  return plan;
 }
 
 // ---------------------------------------------------------------------------

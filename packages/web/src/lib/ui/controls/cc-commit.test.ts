@@ -163,6 +163,18 @@ describe('createCcCommit — streaming-CC coalescer', () => {
     expect(commits).toEqual([3]);
   });
 
+  it('a push after dispose SKIPS the transient (no leaked automation grab)', () => {
+    // The transient leg fires the automation touch seam whose paired release
+    // rides the settle timer — a disposed pump never settles, so a transient
+    // here would leak a permanent 'midi' grab (playback suspended forever).
+    const { commits, transients, pump } = harness();
+    pump.dispose();
+    const before = transients.length;
+    pump.push(7);
+    expect(commits).toContain(7); // durable value still lands
+    expect(transients.length, 'no transient on a disposed pump').toBe(before);
+  });
+
   it('flushAllCcCommits() flushes every live pump (the before-save hook)', () => {
     const a = harness();
     const b = harness();

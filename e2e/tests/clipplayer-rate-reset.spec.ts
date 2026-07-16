@@ -73,13 +73,17 @@ async function seedDenseClips(page: Page, nodeId: string, lanes: number[]) {
   await page.evaluate(
     ({ id, ls }) => {
       const w = globalThis as unknown as EngineW;
+      // Flat clip key is stride-64 (schema v2): clipIndex(slot=0, lane) = lane*64.
+      // (The old stride-8 key `lane*8` only matched for lane 0 → lanes 1/2 were
+      // never found → "saw -1"; the seed must match the engine's stride.)
+      const SCENE_STRIDE = 64;
       w.__ydoc.transact(() => {
         const n = w.__patch.nodes[id];
         if (!n.data) n.data = {};
         const clips: Record<string, unknown> = {};
         const queued: (number | null)[] = new Array(8).fill(null);
         for (const lane of ls) {
-          clips[String(lane * 8)] = {
+          clips[String(lane * SCENE_STRIDE)] = {
             kind: 'note',
             lengthSteps: 128,
             root: 48,
@@ -89,6 +93,7 @@ async function seedDenseClips(page: Page, nodeId: string, lanes: number[]) {
           queued[lane] = 0;
         }
         n.data.clips = clips;
+        n.data.sv = 2; // already stride-64 → skip the legacy re-key migration
         n.data.queued = queued;
       });
     },

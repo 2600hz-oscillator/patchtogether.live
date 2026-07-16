@@ -11,6 +11,33 @@
   import { createDragCommit } from './drag-commit';
   import ControlContextMenu from './ControlContextMenu.svelte';
   import { makeMidiAssignable } from './midi-assignable.svelte';
+  import { notifyAutomationTouch, notifyAutomationRelease } from '$lib/audio/automation-touch';
+
+  // Touch-suspend cross-wire (task #183): a live grab of this control suspends
+  // its clip-automation playback until the PHYSICAL RELEASE ("live wins"), not
+  // the loop wrap. Fires on the screen-gesture choke points below; the MIDI path
+  // notifies from makeMidiAssignable so screen + MIDI share the SAME seam.
+  // PER-SURFACE holders ('pointer' vs 'wheel' here, 'midi'/'electra' elsewhere):
+  // the override ends only when the LAST holder releases, so a wheel-idle timer
+  // can't clear a concurrent pointer drag (or a MIDI twist) mid-gesture.
+  function touchAutomation() {
+    if (moduleId && paramId) notifyAutomationTouch({ nodeId: moduleId, paramId }, 'pointer');
+  }
+  // Release = pointer-up (drag) / a short idle after a wheel tick. Ends the
+  // override so playback resumes (gliding back to the envelope).
+  function releaseAutomation() {
+    if (moduleId && paramId) notifyAutomationRelease({ nodeId: moduleId, paramId }, 'pointer');
+  }
+  let wheelReleaseTimer: ReturnType<typeof setTimeout> | null = null;
+  function wheelTouch() {
+    if (moduleId && paramId) notifyAutomationTouch({ nodeId: moduleId, paramId }, 'wheel');
+    if (wheelReleaseTimer !== null) clearTimeout(wheelReleaseTimer);
+    // ~200 ms of no wheel motion = the "release" (a wheel has no pointer-up).
+    wheelReleaseTimer = setTimeout(() => {
+      wheelReleaseTimer = null;
+      if (moduleId && paramId) notifyAutomationRelease({ nodeId: moduleId, paramId }, 'wheel');
+    }, 200);
+  }
 
   interface Props {
     value: number;
@@ -127,6 +154,7 @@
 
   onDestroy(() => {
     if (raf !== null) cancelAnimationFrame(raf);
+    if (wheelReleaseTimer !== null) clearTimeout(wheelReleaseTimer);
     dragCommit.dispose();
     midi.unregister();
   });
@@ -166,6 +194,7 @@
 
   function pointerdown(e: PointerEvent) {
     if (e.button !== 0) return;
+    touchAutomation(); // grab → suspend this param's automation (live wins)
     dragging = true;
     startY = e.clientY;
     startFrac = valueToFrac(value);
@@ -187,10 +216,21 @@
 
   function pointerup(e: PointerEvent) {
     dragging = false;
+    releaseAutomation(); // hand lifted → end the override (glide back to envelope)
     // Force-commit the final drag position so the patch store can't lag
     // the last visible tick angle by one frame on release.
     dragCommit.flush();
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+  }
+
+  // Safety net: if the browser revokes pointer capture without a pointerup
+  // (OS gesture, touch interruption), still end the drag + the automation
+  // override so a grabbed param can't stay suspended forever.
+  function lostcapture() {
+    if (!dragging) return;
+    dragging = false;
+    dragCommit.flush();
+    releaseAutomation();
   }
 
   function dblclick() {
@@ -199,6 +239,7 @@
 
   function wheel(e: WheelEvent) {
     e.preventDefault();
+    wheelTouch(); // wheel adjust is a live grab too (auto-releases after idle)
     // Wheel ticks: small step in normalized space.
     const step = e.shiftKey ? 0.001 : e.ctrlKey || e.metaKey ? 0.0001 : 0.005;
     const direction = e.deltaY < 0 ? 1 : -1;
@@ -244,11 +285,15 @@
     onpointerdown={pointerdown}
     onpointermove={pointermove}
     onpointerup={pointerup}
+    onlostpointercapture={lostcapture}
     ondblclick={dblclick}
     onwheel={wheel}
   >
     <div class="tick" style:transform="rotate({angle}deg)"></div>
   </div>
+  <!-- (Automation assignment is MODULE-level now — the assigned MODULE's card
+       gets the lane-colour border via the shared node wrapper; the old
+       per-control name border is gone.) -->
   <div class="label">{label}</div>
   {#if midi.binding}
     <div class="midi-badge" title={`Bound to MIDI ${midi.bindingLabel}`}>
@@ -274,6 +319,8 @@
     electras={midi.electras}
     onassignelectra={midi.assignElectra}
     onclearelectra={midi.clearElectra}
+    automationRecorded={midi.automationRecorded}
+    onclearautomation={midi.clearAutomation}
   />
 {/if}
 

@@ -79,6 +79,25 @@
     onsetcontrolcolor?: (hex: string) => void;
     /** Clear the module's control colour → revert to the auto default. */
     onresetcontrolcolor?: () => void;
+    /** MODULE-level clip automation (owner-locked model): the clip-players
+     *  this MODULE can be lane-assigned on — "Assign to automation lane ▸
+     *  1–8" with lane-colour swatches. `assignedLane` = THIS module's current
+     *  lane on that player (✓ in the flyout). Empty/omitted → section hidden
+     *  (no clip-player in the rack, or the node isn't assignable). */
+    automationTargets?: Array<{
+      nodeId: string;
+      name: string;
+      lanes: Array<{ lane: number; color: string }>;
+      assignedLane: number | null;
+    }>;
+    /** True when THIS module is assigned to some lane → also offer
+     *  "Remove automation assignment" (assigning elsewhere MOVES it — one
+     *  lane per module). */
+    automationAssigned?: boolean;
+    /** Assign this MODULE to (clipPlayerNodeId, lane). */
+    onassignautomationlane?: (clipPlayerNodeId: string, lane: number) => void;
+    /** Remove this module's assignment from whichever player holds it. */
+    onremoveautomationlane?: () => void;
     /** DOCKING P2.5a — "Dock to …" entries (allowlisted types, workflow
      *  racks only; Canvas gates and this just renders). */
     dockable?: boolean;
@@ -118,6 +137,10 @@
     hasCustomControlColor = false,
     onsetcontrolcolor,
     onresetcontrolcolor,
+    automationTargets = [],
+    automationAssigned = false,
+    onassignautomationlane,
+    onremoveautomationlane,
     dockable = false,
     docked = false,
     ondock,
@@ -136,11 +159,16 @@
 
   // ── Control-colour submenu state ──
   let colorSubmenuOpen = $state(false);
-  // Collapse the submenu whenever the whole menu closes, so the NEXT open starts
-  // fresh (the component instance is reused via bind:open — without this reset a
-  // second open would TOGGLE the still-open submenu shut).
+  // ── Automation-lane submenu state (module-level assignment) ──
+  let autoSubmenuOpen = $state<string | null>(null); // the open player's node id
+  // Collapse the submenus whenever the whole menu closes, so the NEXT open
+  // starts fresh (the component instance is reused via bind:open — without this
+  // reset a second open would TOGGLE the still-open submenu shut).
   $effect(() => {
-    if (!open) colorSubmenuOpen = false;
+    if (!open) {
+      colorSubmenuOpen = false;
+      autoSubmenuOpen = null;
+    }
   });
   // The custom <input type=color> value, seeded from the current colour. Kept
   // as a `#rrggbb` string (the native input's format).
@@ -163,6 +191,18 @@
   }
   function pickResetColor() {
     onresetcontrolcolor?.();
+    onclose();
+  }
+
+  function toggleAutoSubmenu(playerId: string) {
+    autoSubmenuOpen = autoSubmenuOpen === playerId ? null : playerId;
+  }
+  function pickAssignAutomationLane(playerId: string, lane: number) {
+    onassignautomationlane?.(playerId, lane);
+    onclose();
+  }
+  function pickRemoveAutomationLane() {
+    onremoveautomationlane?.();
     onclose();
   }
 
@@ -392,6 +432,62 @@
           </div>
         {/if}
       {/if}
+      {#if automationTargets.length > 0}
+        <!-- MODULE-level clip automation (owner-locked model): assign this
+             MODULE to ONE of a clip-player's 8 automation lanes. The assigned
+             card gets a thin border in the lane's colour; while that lane is
+             ARMED, moving any control on this module (screen / MIDI / Electra
+             — never CV) records into the lane's playing clip. One lane per
+             module: picking another lane MOVES the assignment. -->
+        {#each automationTargets as a (a.nodeId)}
+          <button
+            class="ctx-item ctx-has-submenu"
+            onclick={() => toggleAutoSubmenu(a.nodeId)}
+            role="menuitem"
+            aria-haspopup="true"
+            aria-expanded={autoSubmenuOpen === a.nodeId}
+            data-testid={`ctx-automation-${a.nodeId}`}
+          >
+            {automationTargets.length > 1
+              ? `Assign to automation lane (${a.name})`
+              : 'Assign to automation lane'}
+            <span class="ctx-caret" aria-hidden="true">{autoSubmenuOpen === a.nodeId ? '▾' : '▸'}</span>
+          </button>
+          {#if autoSubmenuOpen === a.nodeId}
+            <div
+              class="ctx-lane-panel"
+              data-testid={`ctx-automation-${a.nodeId}-lanes`}
+              role="group"
+              aria-label="Automation lanes"
+            >
+              {#each a.lanes as l (l.lane)}
+                <button
+                  type="button"
+                  class="ctx-lane-btn"
+                  class:assigned={a.assignedLane === l.lane}
+                  style:--lane-color={l.color}
+                  title={`Lane ${l.lane + 1}${a.assignedLane === l.lane ? ' (assigned)' : ''}`}
+                  aria-label={`assign to automation lane ${l.lane + 1}`}
+                  data-testid={`ctx-automation-${a.nodeId}-lane-${l.lane}`}
+                  onclick={() => pickAssignAutomationLane(a.nodeId, l.lane)}
+                >{l.lane + 1}{a.assignedLane === l.lane ? ' ✓' : ''}</button>
+              {/each}
+            </div>
+          {/if}
+        {/each}
+        {#if automationAssigned}
+          <button
+            class="ctx-item ctx-subtle"
+            onclick={pickRemoveAutomationLane}
+            role="menuitem"
+            title="Stops FUTURE recording of this module's controls — already-recorded envelopes keep playing (Clear recorded automation lives on each control's right-click menu)"
+            data-testid="ctx-automation-remove"
+          >
+            Remove automation assignment
+          </button>
+        {/if}
+        <div class="ctx-sep" role="presentation"></div>
+      {/if}
       {#if docked && onundock}
         <!-- DOCKING P2.5a: the node's canvas presence is a DockStubCard —
              undock returns the full card to its dock-time position. NOT
@@ -606,5 +702,41 @@
   .ctx-reset:focus-visible {
     background: transparent;
     color: var(--text);
+  }
+  /* ── Automation-lane submenu (module-level assignment) ── */
+  .ctx-lane-panel {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 5px;
+    padding: 6px 12px 8px;
+    border-bottom: 1px solid #2a2f3a;
+  }
+  .ctx-lane-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    height: 22px;
+    border-radius: 4px;
+    border: 1px solid color-mix(in srgb, var(--lane-color) 70%, #000);
+    background: color-mix(in srgb, var(--lane-color) 45%, #0b0d12);
+    color: #fff;
+    font-size: 0.72rem;
+    cursor: pointer;
+    padding: 0;
+  }
+  .ctx-lane-btn:hover,
+  .ctx-lane-btn:focus-visible {
+    outline: 2px solid var(--accent, #60a5fa);
+    outline-offset: 1px;
+  }
+  .ctx-lane-btn.assigned {
+    background: var(--lane-color);
+    color: #04211f;
+    font-weight: 700;
+  }
+  .ctx-subtle {
+    color: var(--text-dim);
+    font-size: 0.78rem;
   }
 </style>

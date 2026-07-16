@@ -1,11 +1,15 @@
 // packages/web/src/lib/audio/modules/clip-types.test.ts
 import { describe, it, expect } from 'vitest';
+import { syncedStore } from '@syncedstore/core';
 import { midiToVOct, C3_MIDI } from '$lib/audio/note-entry';
 import { POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
 import {
   CLIP_COUNT,
   CLIP_LANES,
-  CLIP_TRACKS,
+  SCENE_STRIDE,
+  CLIP_SCHEMA_VERSION,
+  migrateLegacyClipKey,
+  migrateClipPlayerData,
   DEFAULT_CLIP_STEPS,
   clipIndex,
   laneOf,
@@ -57,18 +61,165 @@ import {
   isSwingCentered,
   swingStepOffset,
   MAX_SWING,
+  MAX_AUTOMATION_TRACKS,
+  MAX_AUTOMATION_EVENTS,
+  isAutomationArmed,
+  laneAutomationArmed,
+  armedAutomationLanes,
+  isLaneAutomationRecorder,
+  toggleLaneAutomationArm,
+  migrateAutomationLanesShape,
+  scrubClipPlayerTransientData,
+  coerceAutomationEvent,
+  coerceAutoTrack,
+  coerceAutoClipRecord,
+  readAutoClip,
+  autoTrackViews,
+  automationTargetKey,
+  parseAutomationTargetKey,
+  coerceAutoAssign,
+  assignedLaneOfModule,
+  laneAssignedModules,
+  autoAssignCounts,
+  plainCloneAutoClip,
+  reverseAutoClipRecord,
+  autoClipHasTracks,
+  readSceneAutos,
+  autoPlaybackOwners,
+  ensureLaneArmAutoShell,
+  sameAutomationTarget,
+  mergeAutomationOverdub,
+  automationValueAt,
+  automationLinearAt,
+  automationNextAfter,
+  pasteApplies,
+  readScene,
+  sceneWritePlan,
   type NoteClipRecord,
   type NoteEvent,
   type ClipPlayerData,
+  type AutomationEvent,
+  type AutomationTrack,
 } from './clip-types';
 
 describe('dimensions', () => {
-  it('is an 8×8 = 64 clip bank', () => {
-    expect(CLIP_COUNT).toBe(64);
+  it('has 8 lanes + 8 visible card slots (64 visible cells) at a FIXED stride of 64', () => {
+    expect(CLIP_COUNT).toBe(64); // the VISIBLE 8×8 card grid
+    expect(CLIP_LANES).toBe(8);
+    expect(SCENE_STRIDE).toBe(64); // fixed flat-key stride (decoupled from CLIP_SLOTS)
+  });
+  it('clipIndex keys the sparse map at lane*SCENE_STRIDE + slot', () => {
     expect(clipIndex(0, 0)).toBe(0);
-    expect(clipIndex(7, 0)).toBe(7);
-    expect(clipIndex(0, 1)).toBe(CLIP_TRACKS);
-    expect(clipIndex(7, 7)).toBe(63);
+    expect(clipIndex(7, 0)).toBe(7); // lane 0: slot == key (stride-invariant)
+    expect(clipIndex(0, 1)).toBe(SCENE_STRIDE); // lane 1, slot 0 = 64
+    expect(clipIndex(0, 7)).toBe(7 * SCENE_STRIDE); // 448
+    expect(clipIndex(7, 7)).toBe(7 * SCENE_STRIDE + 7); // 455
+    // slot can grow past the visible CLIP_SLOTS (scenes ≥ 8) with unique keys.
+    expect(clipIndex(8, 0)).toBe(8);
+    expect(clipIndex(63, 7)).toBe(7 * SCENE_STRIDE + 63); // 511 — the max cell
+  });
+  it('laneOf/slotOf round-trip clipIndex for every (slot 0..63, lane 0..7)', () => {
+    const seen = new Set<number>();
+    for (let lane = 0; lane < CLIP_LANES; lane++) {
+      for (let slot = 0; slot < SCENE_STRIDE; slot++) {
+        const idx = clipIndex(slot, lane);
+        expect(laneOf(idx)).toBe(lane);
+        expect(slotOf(idx)).toBe(slot);
+        expect(seen.has(idx)).toBe(false); // every (slot,lane) → a UNIQUE key
+        seen.add(idx);
+      }
+    }
+    expect(seen.size).toBe(CLIP_LANES * SCENE_STRIDE); // 512 distinct keys, no collisions
+  });
+});
+
+describe('clip-key schema migration (v1 stride-8 → v2 stride-64)', () => {
+  it('migrateLegacyClipKey re-keys every legacy key to its identical (lane, slot)', () => {
+    for (let legacy = 0; legacy < CLIP_LANES * 8; legacy++) {
+      const lane = Math.floor(legacy / 8);
+      const slot = legacy % 8;
+      // the new key must equal clipIndex(slot, lane) — i.e. the SAME (lane, slot).
+      expect(migrateLegacyClipKey(legacy)).toBe(clipIndex(slot, lane));
+      expect(laneOf(migrateLegacyClipKey(legacy))).toBe(lane);
+      expect(slotOf(migrateLegacyClipKey(legacy))).toBe(slot);
+    }
+    // lane-0 legacy keys are stride-invariant (unchanged).
+    for (let slot = 0; slot < 8; slot++) expect(migrateLegacyClipKey(slot)).toBe(slot);
+    // lane 1 slot 0 legacy key 8 → 64; lane 7 slot 7 legacy key 63 → 455.
+    expect(migrateLegacyClipKey(8)).toBe(64);
+    expect(migrateLegacyClipKey(63)).toBe(455);
+  });
+
+  it('save-compat: a LEGACY player (stride-8 keys, no sv) loads with every clip at its identical (lane, slot)', () => {
+    // Distinct clips in KNOWN (lane, slot) cells, keyed the OLD way (lane*8+slot).
+    const cells: [number, number, string][] = [
+      [0, 0, 'a'], // lane 0 slot 0 → legacy key 0
+      [3, 0, 'b'], // lane 0 slot 3 → legacy key 3  (lane-0, invariant)
+      [0, 1, 'c'], // lane 1 slot 0 → legacy key 8  → new key 64
+      [5, 2, 'd'], // lane 2 slot 5 → legacy key 21 → new key 133
+      [7, 7, 'e'], // lane 7 slot 7 → legacy key 63 → new key 455
+    ];
+    const mk = (name: string): NoteClipRecord => ({ ...defaultNoteClip(), name });
+    const legacyClips: Record<string, NoteClipRecord> = {};
+    for (const [slot, lane, name] of cells) legacyClips[String(lane * 8 + slot)] = mk(name);
+    const data = { clips: legacyClips } as unknown as ClipPlayerData; // NO sv = legacy v1
+
+    expect(migrateClipPlayerData(data)).toBe(true); // it migrated
+    expect(data.sv).toBe(CLIP_SCHEMA_VERSION);
+    // EVERY clip is now retrievable at the IDENTICAL (lane, slot) via the new key.
+    for (const [slot, lane, name] of cells) {
+      const rec = readClip(data, clipIndex(slot, lane)) as NoteClipRecord | null;
+      expect(rec, `clip at (lane ${lane}, slot ${slot})`).not.toBeNull();
+      expect(rec!.name).toBe(name);
+    }
+    // No legacy stride-8 key survives for a moved lane (lane 1's clip left key "8").
+    expect(data.clips!['8']).toBeUndefined();
+    // …but lane-0 keys are byte-identical in place (never moved/cloned).
+    expect(data.clips!['0']).toBe(legacyClips['0']);
+  });
+
+  it('idempotent: re-running the migration is a no-op (returns false, data unchanged)', () => {
+    const data = {
+      clips: { [String(1 * 8 + 2)]: { ...defaultNoteClip(), name: 'x' } },
+    } as unknown as ClipPlayerData;
+    expect(migrateClipPlayerData(data)).toBe(true);
+    const snapshot = JSON.stringify(data);
+    expect(migrateClipPlayerData(data)).toBe(false); // already sv=2 → no-op
+    expect(JSON.stringify(data)).toBe(snapshot); // byte-identical, no double re-key
+    // clip is at (lane 1, slot 2), NOT re-keyed a second time.
+    expect((readClip(data, clipIndex(2, 1)) as NoteClipRecord).name).toBe('x');
+  });
+
+  it('safe on empty / absent clips + on already-stride-64 data', () => {
+    const empty = {} as ClipPlayerData;
+    expect(migrateClipPlayerData(empty)).toBe(true); // stamps sv even with no clips
+    expect(empty.sv).toBe(CLIP_SCHEMA_VERSION);
+    const withEmptyMap = { clips: {} } as ClipPlayerData;
+    expect(migrateClipPlayerData(withEmptyMap)).toBe(true);
+    expect(withEmptyMap.sv).toBe(CLIP_SCHEMA_VERSION);
+    // A player already stamped sv=2 (new stride-64 data) is left untouched.
+    const already = { sv: CLIP_SCHEMA_VERSION, clips: { [String(clipIndex(8, 1))]: defaultNoteClip() } } as unknown as ClipPlayerData;
+    expect(migrateClipPlayerData(already)).toBe(false);
+    expect((readClip(already, clipIndex(8, 1)) as NoteClipRecord).kind).toBe('note');
+    // nullish input is a no-op.
+    expect(migrateClipPlayerData(undefined)).toBe(false);
+    expect(migrateClipPlayerData(null)).toBe(false);
+  });
+
+  it('save-compat over a REAL @syncedstore/core Y.Doc: re-keys live clips without re-parenting', () => {
+    const store = syncedStore<{ nodes: Record<string, { data?: ClipPlayerData }> }>({ nodes: {} });
+    store.nodes['n'] = { data: { clips: {} } };
+    const d = store.nodes['n']!.data!;
+    // Seed legacy stride-8 clips on the LIVE store (lane 0 slot 1 + lane 2 slot 3).
+    d.clips![String(0 * 8 + 1)] = { ...defaultNoteClip(), name: 'p' };
+    d.clips![String(2 * 8 + 3)] = { ...defaultNoteClip(), name: 'q' };
+    // Migrate in place, cloning each moved value to a PLAIN object (coerce) so a
+    // live Y child is never re-parented ("Type already integrated").
+    expect(() => migrateClipPlayerData(d, coerceClipRecord)).not.toThrow();
+    expect(d.sv).toBe(CLIP_SCHEMA_VERSION);
+    expect((readClip(d, clipIndex(1, 0)) as NoteClipRecord).name).toBe('p'); // lane 0 slot 1
+    expect((readClip(d, clipIndex(3, 2)) as NoteClipRecord).name).toBe('q'); // lane 2 slot 3
+    expect(d.clips![String(2 * 8 + 3)]).toBeUndefined(); // legacy key gone
   });
 });
 
@@ -131,6 +282,500 @@ describe('clampStepCount', () => {
     expect(clampStepCount(128)).toBe(128);
     expect(clampStepCount(999)).toBe(MAX_CLIP_STEPS);
     expect(clampStepCount(NaN)).toBe(DEFAULT_CLIP_STEPS);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AUTOMATION lane (task #183) — the fork-independent record layer
+// ---------------------------------------------------------------------------
+
+const tgt = (nodeId: string, paramId: string) => ({ nodeId, paramId });
+
+describe('automation: coerceAutomationEvent', () => {
+  it('accepts finite step≥0 and clamps value to 0..1', () => {
+    expect(coerceAutomationEvent({ step: 0, value: 0.5 })).toEqual({ step: 0, value: 0.5 });
+    expect(coerceAutomationEvent({ step: 3.5, value: 2 })).toEqual({ step: 3.5, value: 1 });
+    expect(coerceAutomationEvent({ step: 1, value: -1 })).toEqual({ step: 1, value: 0 });
+  });
+  it('rejects negative/NaN step or non-finite value', () => {
+    expect(coerceAutomationEvent({ step: -1, value: 0.5 })).toBeNull();
+    expect(coerceAutomationEvent({ step: NaN, value: 0.5 })).toBeNull();
+    expect(coerceAutomationEvent({ step: 0, value: NaN })).toBeNull();
+    expect(coerceAutomationEvent(null)).toBeNull();
+  });
+});
+
+describe('automation: coerceAutoTrack (keyed track value — no MIDI identity, no target)', () => {
+  it('normalizes a track value: step-sorts + filters events, carries interp', () => {
+    const t = coerceAutoTrack({
+      interp: 'hold',
+      events: [
+        { step: 2, value: 0.2 },
+        { step: 0, value: 0.9 },
+        { step: 1, value: 'bad' }, // dropped
+      ],
+    });
+    expect(t).not.toBeNull();
+    expect(t!.interp).toBe('hold');
+    expect((t as unknown as Record<string, unknown>).channel).toBeUndefined(); // no MIDI identity
+    expect(t!.events).toEqual([
+      { step: 0, value: 0.9 },
+      { step: 2, value: 0.2 },
+    ]);
+  });
+  it('caps events at MAX_AUTOMATION_EVENTS (long-take guard)', () => {
+    const events = Array.from({ length: MAX_AUTOMATION_EVENTS + 500 }, (_, i) => ({
+      step: i,
+      value: 0.5,
+    }));
+    const t = coerceAutoTrack({ events });
+    expect(t!.events.length).toBe(MAX_AUTOMATION_EVENTS);
+  });
+  it('ignores a bad interp value; rejects a non-object', () => {
+    expect(coerceAutoTrack({ interp: 'bogus', events: [] })!.interp).toBeUndefined();
+    expect(coerceAutoTrack(null)).toBeNull();
+    expect(coerceAutoTrack(3)).toBeNull();
+  });
+});
+
+describe('automation: targetKey round-trip', () => {
+  it('automationTargetKey ↔ parseAutomationTargetKey', () => {
+    const t = tgt('nodeA', 'cutoff');
+    expect(automationTargetKey(t)).toBe('nodeA::cutoff');
+    expect(parseAutomationTargetKey('nodeA::cutoff')).toEqual(t);
+  });
+  it('rejects malformed keys', () => {
+    expect(parseAutomationTargetKey('')).toBeNull();
+    expect(parseAutomationTargetKey('nocolons')).toBeNull();
+    expect(parseAutomationTargetKey('::param')).toBeNull();
+    expect(parseAutomationTargetKey('node::')).toBeNull();
+  });
+});
+
+describe('automation: coerceAutoClipRecord (the sibling auto[k] boundary)', () => {
+  it('normalizes a record and enforces MAX_AUTOMATION_TRACKS', () => {
+    expect(MAX_AUTOMATION_TRACKS).toBe(16);
+    const tracks: Record<string, unknown> = {};
+    for (let i = 0; i < 20; i++) tracks[`n${i}::p`] = { events: [{ step: 0, value: 0.5 }] };
+    const rec = coerceAutoClipRecord({ tracks });
+    expect(rec).not.toBeNull();
+    expect(Object.keys(rec!.tracks).length).toBe(MAX_AUTOMATION_TRACKS);
+  });
+  it('drops malformed keys + unusable values, keeps the good tracks', () => {
+    const rec = coerceAutoClipRecord({
+      tracks: {
+        'good::p': { events: [{ step: 0, value: 0.4 }] },
+        'no-separator': { events: [] }, // malformed key → dropped
+        '::param': { events: [] }, // empty nodeId → dropped
+        'bad::value': 7, // unusable value → dropped
+      },
+    });
+    expect(Object.keys(rec!.tracks)).toEqual(['good::p']);
+    expect(rec!.tracks['good::p']!.events).toEqual([{ step: 0, value: 0.4 }]);
+  });
+  it('round-trips: coerce(coerce(x)) === coerce(x) (idempotent at the boundary)', () => {
+    const raw = {
+      tracks: {
+        'a::x': { events: [{ step: 2, value: 0.2 }, { step: 0, value: 0.9 }], interp: 'hold' },
+        'b::y': { events: [{ step: 1, value: 2 }] }, // clamps to 1
+      },
+    };
+    const once = coerceAutoClipRecord(raw)!;
+    const twice = coerceAutoClipRecord(once)!;
+    expect(twice).toEqual(once);
+    expect(once.tracks['a::x']!.events[0]).toEqual({ step: 0, value: 0.9 }); // sorted
+    expect(once.tracks['b::y']!.events[0]).toEqual({ step: 1, value: 1 }); // clamped
+  });
+  it('readAutoClip returns null for absent / empty records', () => {
+    expect(readAutoClip(undefined, 3)).toBeNull();
+    expect(readAutoClip({}, 3)).toBeNull();
+    expect(readAutoClip({ auto: {} }, 3)).toBeNull();
+    expect(readAutoClip({ auto: { '3': { tracks: {} } } }, 3)).toBeNull(); // no tracks → null
+    expect(
+      readAutoClip({ auto: { '3': { tracks: { 'a::p': { events: [] } } } } }, 3),
+    ).not.toBeNull();
+  });
+  it('autoTrackViews builds the runtime (target + events) views from the keyed record', () => {
+    const rec = coerceAutoClipRecord({
+      tracks: {
+        'a::x': { events: [{ step: 0, value: 0.5 }], interp: 'linear' },
+        'b::y': { events: [] },
+      },
+    });
+    const views = autoTrackViews(rec);
+    expect(views.length).toBe(2);
+    const ax = views.find((v) => v.target.nodeId === 'a')!;
+    expect(ax.target).toEqual(tgt('a', 'x'));
+    expect(ax.interp).toBe('linear');
+    expect(ax.events).toEqual([{ step: 0, value: 0.5 }]);
+    expect(autoTrackViews(null)).toEqual([]);
+  });
+});
+
+describe('automation: CLEAN BREAK — the retired stamped kind coerces away silently', () => {
+  it('coerceClipRecord returns null for a legacy kind:"automation" clip (old saves load without crashing)', () => {
+    const legacy = {
+      kind: 'automation',
+      lengthSteps: 64,
+      loop: true,
+      div: 1,
+      tracks: [{ target: tgt('a', 'p'), events: [{ step: 0, value: 0.5 }] }],
+    };
+    expect(coerceClipRecord(legacy)).toBeNull(); // unknown kind → empty cell, no crash
+    // …and reading it through readClip is equally safe.
+    expect(readClip({ clips: { '448': legacy } }, 448)).toBeNull();
+  });
+  it('PER-LANE arm: laneAutomationArmed / armedAutomationLanes / isAutomationArmed(any)', () => {
+    expect(isAutomationArmed(undefined)).toBe(false);
+    expect(isAutomationArmed({})).toBe(false);
+    // CLEAN BREAK: the retired GLOBAL {arm} shape reads as NOT armed.
+    expect(isAutomationArmed({ automation: { arm: true } as never })).toBe(false);
+    const d = { automation: { lanes: [null, { arm: true, recorderId: 7 }, null] } };
+    expect(laneAutomationArmed(d, 1)).toBe(true);
+    expect(laneAutomationArmed(d, 0)).toBe(false);
+    expect(laneAutomationArmed(d, 5)).toBe(false); // short array → unarmed
+    expect(armedAutomationLanes(d)).toEqual([false, true, false, false, false, false, false, false]);
+    expect(isAutomationArmed(d)).toBe(true);
+  });
+  it('isLaneAutomationRecorder: per-lane single-writer gate (different peers, different lanes)', () => {
+    const d = {
+      automation: {
+        lanes: [
+          { arm: true, recorderId: 111 }, // peer A records lane 0
+          { arm: true, recorderId: 222 }, // peer B records lane 1
+          null,
+        ],
+      },
+    };
+    expect(isLaneAutomationRecorder(d, 0, 111)).toBe(true);
+    expect(isLaneAutomationRecorder(d, 0, 222)).toBe(false);
+    expect(isLaneAutomationRecorder(d, 1, 222)).toBe(true);
+    expect(isLaneAutomationRecorder(d, 1, 111)).toBe(false);
+    expect(isLaneAutomationRecorder(d, 2, 111)).toBe(false); // unarmed lane
+    expect(isLaneAutomationRecorder(undefined, 0, 111)).toBe(false);
+  });
+  it('toggleLaneAutomationArm: PER-KEY record writes — arm stamps recorderId + shells; disarm deletes the key; other lanes untouched', () => {
+    const d: ClipPlayerData = {
+      clips: { [String(clipIndex(0, 2))]: { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true } },
+      playing: [null, null, 0, null, null, null, null, null],
+      autoAssign: { modA: 2 },
+      automation: { lanes: { '1': { arm: true, recorderId: 999 } } }, // the canonical RECORD shape
+    };
+    expect(toggleLaneAutomationArm(d, 2, 42)).toBe(true); // armed
+    expect(laneAutomationArmed(d, 2)).toBe(true);
+    const lanes = d.automation!.lanes as Record<string, unknown>;
+    expect(lanes['2']).toEqual({ arm: true, recorderId: 42 }); // single-KEY write
+    expect(lanes['1']).toEqual({ arm: true, recorderId: 999 }); // untouched
+    // Arm pre-created the lane's note-clip shell (container-LWW hardening).
+    expect(d.auto?.[String(clipIndex(0, 2))]).toEqual({ tracks: {} });
+    expect(toggleLaneAutomationArm(d, 2, 42)).toBe(false); // disarmed
+    expect('2' in lanes, 'disarm DELETES the key (per-key merge discipline)').toBe(false);
+    expect(laneAutomationArmed(d, 1)).toBe(true); // still armed
+  });
+  it('interim ARRAY lanes shape: readers accept it; the toggle + migrate helper convert it one-way to the record', () => {
+    const d: ClipPlayerData = {
+      automation: { lanes: [null, { arm: true, recorderId: 7 }, null] }, // 81084fe9 shape
+    };
+    // Readers accept the array as-is (one-way read).
+    expect(laneAutomationArmed(d, 1)).toBe(true);
+    expect(isLaneAutomationRecorder(d, 1, 7)).toBe(true);
+    expect(armedAutomationLanes(d)[1]).toBe(true);
+    // The toggle migrates to the RECORD first, then per-key writes.
+    expect(toggleLaneAutomationArm(d, 3, 42)).toBe(true);
+    expect(Array.isArray(d.automation!.lanes)).toBe(false);
+    const lanes = d.automation!.lanes as Record<string, unknown>;
+    expect(lanes['1']).toEqual({ arm: true, recorderId: 7 }); // carried over
+    expect(lanes['3']).toEqual({ arm: true, recorderId: 42 });
+    // The standalone migrate is idempotent on the record shape.
+    expect(migrateAutomationLanesShape(d)).toBe(false);
+  });
+  it('scrubClipPlayerTransientData strips live-performance fields, keeps content + settings (the duplicate scrub)', () => {
+    const data: Record<string, unknown> = {
+      sv: 2,
+      clips: { '0': { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true } },
+      auto: { '0': { tracks: { 'm::p': { events: [{ step: 0, value: 0.5 }] } } } },
+      mono: [true], muted: [false], rate: [3], swing: [0.1], laneColor: ['#112233'],
+      arrangement: { events: [] }, clipMode: 'session', recordMode: 'overdub',
+      // LIVE-PERFORMANCE state — must NOT survive a duplicate:
+      playing: [0, null, null, null, null, null, null, null],
+      queued: [1, null, null, null, null, null, null, null],
+      queuedImmediate: [true],
+      recording: true,
+      noteRec: { lane: 0, slot: 0, armed: true, recording: true, overdub: false },
+      automation: { lanes: { '0': { arm: true, recorderId: 123 } } },
+      autoAssign: { modA: 0 },
+      resetNonce: 5,
+    };
+    scrubClipPlayerTransientData(data);
+    // Scrubbed (a duplicate is born disarmed, unassigned, stopped):
+    for (const f of ['playing', 'queued', 'queuedImmediate', 'recording', 'noteRec', 'automation', 'autoAssign', 'resetNonce']) {
+      expect(f in data, `${f} scrubbed`).toBe(false);
+    }
+    // Content + settings survive:
+    for (const f of ['sv', 'clips', 'auto', 'mono', 'muted', 'rate', 'swing', 'laneColor', 'arrangement', 'clipMode', 'recordMode']) {
+      expect(f in data, `${f} kept`).toBe(true);
+    }
+    expect(() => scrubClipPlayerTransientData(undefined)).not.toThrow();
+  });
+});
+
+// UI-CAN'T-LIE: the card's per-lane assigned-count chip row renders EXACTLY
+// autoAssignCounts(data), and the record scope is EXACTLY laneAssignedModules —
+// these pin the single source so the readout can never disagree with the stored
+// autoAssign map (MODULE → lane, the owner-locked model).
+describe('automation: autoAssign (MODULE → lane) reads', () => {
+  it('coerceAutoAssign keeps only module-id keys with integer lanes 0..7 (retired :: keys dropped)', () => {
+    expect(
+      coerceAutoAssign({
+        modA: 3,
+        modB: 0,
+        'legacy::paramKey': 2, // retired param-level key → dropped (clean break)
+        '': 1, // empty key → dropped
+        modC: 8, // lane out of range → dropped
+        modD: 1.5, // non-integer → dropped
+        modE: '2', // numeric string → forgiving coerce (house style: Number())
+        modF: 'x', // non-numeric → dropped
+      }),
+    ).toEqual({ modA: 3, modB: 0, modE: 2 });
+    expect(coerceAutoAssign(undefined)).toEqual({});
+    expect(coerceAutoAssign(null)).toEqual({});
+    expect(coerceAutoAssign('nope')).toEqual({});
+  });
+  it('assignedLaneOfModule finds the lane for a module (or null)', () => {
+    const data = { autoAssign: { modA: 3 } };
+    expect(assignedLaneOfModule(data, 'modA')).toBe(3);
+    expect(assignedLaneOfModule(data, 'modB')).toBeNull();
+    expect(assignedLaneOfModule(undefined, 'modA')).toBeNull();
+  });
+  it('laneAssignedModules groups module ids per lane (length CLIP_LANES)', () => {
+    const data = {
+      autoAssign: { modA: 3, modB: 3, modC: 0 },
+    };
+    const byLane = laneAssignedModules(data);
+    expect(byLane.length).toBe(CLIP_LANES);
+    expect(byLane[0]).toEqual(['modC']);
+    expect(byLane[3]!.slice().sort()).toEqual(['modA', 'modB']);
+    expect(byLane[5]).toEqual([]);
+  });
+  it('autoAssignCounts mirrors the map exactly (the chip-row source)', () => {
+    expect(autoAssignCounts({ autoAssign: { modA: 3, modB: 3, modC: 0 } })).toEqual([
+      1, 0, 0, 2, 0, 0, 0, 0,
+    ]);
+    expect(autoAssignCounts(undefined)).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
+  });
+});
+
+describe('automation: mergeAutomationOverdub (punch-in)', () => {
+  it('replaces only the [start,end) window, preserves events outside it', () => {
+    const existing: AutomationEvent[] = [
+      { step: 0, value: 0.1 },
+      { step: 1, value: 0.2 },
+      { step: 1.5, value: 0.25 },
+      { step: 2, value: 0.3 },
+      { step: 3, value: 0.4 },
+    ];
+    const incoming: AutomationEvent[] = [{ step: 1.2, value: 0.9 }];
+    const merged = mergeAutomationOverdub(existing, incoming, 1, 2);
+    expect(merged).toEqual([
+      { step: 0, value: 0.1 },
+      { step: 1.2, value: 0.9 },
+      { step: 2, value: 0.3 }, // half-open: step 2 outside, kept
+      { step: 3, value: 0.4 },
+    ]);
+  });
+  it('WRAP window (start>end) keeps the middle [end,start), replaces the wrapped ends', () => {
+    // 16-step clip; a punch from step 14 → 2 wraps: window = [14,16) ∪ [0,2).
+    const existing: AutomationEvent[] = [
+      { step: 0.5, value: 0.01 }, // in wrapped window → dropped
+      { step: 4, value: 0.4 }, // middle → KEPT
+      { step: 10, value: 0.6 }, // middle → KEPT
+      { step: 15, value: 0.99 }, // in wrapped window → dropped
+    ];
+    const incoming: AutomationEvent[] = [
+      { step: 15.5, value: 0.7 },
+      { step: 1, value: 0.8 },
+    ];
+    const merged = mergeAutomationOverdub(existing, incoming, 14, 2);
+    expect(merged).toEqual([
+      { step: 1, value: 0.8 },
+      { step: 4, value: 0.4 },
+      { step: 10, value: 0.6 },
+      { step: 15.5, value: 0.7 },
+    ]);
+  });
+  it('clamps incoming values + caps at MAX_AUTOMATION_EVENTS', () => {
+    const merged = mergeAutomationOverdub([], [{ step: 0.7, value: 3 }], 0, 16);
+    expect(merged).toEqual([{ step: 0.7, value: 1 }]);
+    const many = Array.from({ length: MAX_AUTOMATION_EVENTS + 10 }, (_, i) => ({ step: i, value: 0.5 }));
+    expect(mergeAutomationOverdub([], many, 0, 99999).length).toBe(MAX_AUTOMATION_EVENTS);
+  });
+});
+
+describe('automation lifecycle: clone / reverse / carrier probe (envelope-belongs-to-the-clip)', () => {
+  const rec = () =>
+    coerceAutoClipRecord({
+      tracks: {
+        'a::x': { events: [{ step: 0, value: 0.2 }, { step: 6, value: 0.9 }], interp: 'hold' },
+        'b::y': { events: [{ step: 2, value: 0.5 }] },
+      },
+    })!;
+  it('plainCloneAutoClip deep-clones (no shared refs) and nulls empties', () => {
+    const src = rec();
+    const clone = plainCloneAutoClip(src)!;
+    expect(clone).toEqual(src);
+    expect(clone).not.toBe(src);
+    expect(clone.tracks['a::x']).not.toBe(src.tracks['a::x']);
+    expect(clone.tracks['a::x']!.events[0]).not.toBe(src.tracks['a::x']!.events[0]);
+    clone.tracks['a::x']!.events[0]!.value = 0.99;
+    expect(src.tracks['a::x']!.events[0]!.value).toBe(0.2); // source untouched
+    expect(plainCloneAutoClip(null)).toBeNull();
+    expect(plainCloneAutoClip({ tracks: {} })).toBeNull(); // nothing to carry
+  });
+  it('reverseAutoClipRecord mirrors each event in time (step → len − step), re-sorted', () => {
+    const out = reverseAutoClipRecord(rec(), 8);
+    expect(out.tracks['a::x']!.events).toEqual([
+      { step: 2, value: 0.9 }, // 8-6
+      { step: 8, value: 0.2 }, // 8-0
+    ]);
+    expect(out.tracks['a::x']!.interp).toBe('hold'); // interp carried
+    expect(out.tracks['b::y']!.events).toEqual([{ step: 6, value: 0.5 }]);
+  });
+  it('autoClipHasTracks: cheap raw probe (valid keys only)', () => {
+    expect(autoClipHasTracks(rec())).toBe(true);
+    expect(autoClipHasTracks({ tracks: {} })).toBe(false);
+    expect(autoClipHasTracks({ tracks: { 'bad-key': { events: [] } } })).toBe(false);
+    expect(autoClipHasTracks(null)).toBe(false);
+    expect(autoClipHasTracks(7)).toBe(false);
+  });
+  it('readSceneAutos + sceneWritePlan carry each lane’s automation with its clip', () => {
+    const data = {
+      clips: { [String(clipIndex(2, 0))]: { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true } },
+      auto: { [String(clipIndex(2, 0))]: rec() },
+    };
+    const autos = readSceneAutos(data as never, 2);
+    expect(autos[0]).toEqual(rec());
+    expect(autos[1]).toBeNull();
+    const clips = readScene(data as never, 2);
+    const plan = sceneWritePlan(5, clips, autos);
+    // Lane 0: clip + its automation land at slot 5 (re-cloned, not shared).
+    expect(plan[0]!.index).toBe(clipIndex(5, 0));
+    expect(plan[0]!.value).not.toBeNull();
+    expect(plan[0]!.auto).toEqual(rec());
+    expect(plan[0]!.auto).not.toBe(autos[0]); // re-cloned per paste
+    // Lane 1: no clip → BOTH keys delete (no ghost envelope under an empty cell).
+    expect(plan[1]!.value).toBeNull();
+    expect(plan[1]!.auto).toBeNull();
+  });
+});
+
+describe('automation: single-driver playback ownership (autoPlaybackOwners)', () => {
+  const set = (...keys: string[]) => new Set(keys);
+  it('unassigned → the LOWEST active carrier lane owns the key', () => {
+    const owners = autoPlaybackOwners({}, [null, set('a::x'), set('a::x', 'b::y'), null]);
+    expect(owners.get('a::x')).toBe(1);
+    expect(owners.get('b::y')).toBe(2);
+  });
+  it('the MODULE-assigned lane wins when it is an active carrier', () => {
+    // assign is MODULE → lane: module 'a' assigned to lane 2 pulls its params.
+    const owners = autoPlaybackOwners({ a: 2 }, [null, set('a::x'), set('a::x'), null]);
+    expect(owners.get('a::x')).toBe(2);
+  });
+  it('an assigned lane that is NOT carrying falls back to the lowest carrier', () => {
+    const owners = autoPlaybackOwners({ a: 5 }, [null, set('a::x'), set('a::x'), null]);
+    expect(owners.get('a::x')).toBe(1); // lane 5 inactive/not carrying → lowest carrier
+  });
+  it('a key carried by ONE lane is owned by it regardless of assignment', () => {
+    const owners = autoPlaybackOwners({ a: 0 }, [null, null, set('a::x')]);
+    expect(owners.get('a::x')).toBe(2);
+  });
+});
+
+describe('automation: ensureLaneArmAutoShell (per-lane arm-time container pre-creation)', () => {
+  it('shells EVERY note clip of an assigned lane (arm-then-LAUNCH covered); unassigned lanes get none', () => {
+    const d: ClipPlayerData = {
+      clips: {
+        [String(clipIndex(0, 0))]: { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true },
+        [String(clipIndex(3, 0))]: { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true }, // NOT playing — shelled anyway (launch-after-arm flow)
+        [String(clipIndex(1, 2))]: { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true },
+        [String(clipIndex(0, 3))]: { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true },
+      },
+      playing: [0, null, 1, null, null, null, null, null],
+      autoAssign: { modA: 0, modB: 3 }, // lanes 0 + 3 assigned; lane 2 not
+    };
+    ensureLaneArmAutoShell(d, 0);
+    ensureLaneArmAutoShell(d, 2);
+    ensureLaneArmAutoShell(d, 3);
+    expect(d.auto?.[String(clipIndex(0, 0))]).toEqual({ tracks: {} }); // lane 0 → shell
+    // The WHOLE assigned lane is shelled — a clip LAUNCHED after arming
+    // already has its container (closes the commit-side creation LWW window).
+    expect(d.auto?.[String(clipIndex(3, 0))]).toEqual({ tracks: {} });
+    expect(d.auto?.[String(clipIndex(1, 2))]).toBeUndefined(); // lane 2 playing but unassigned
+    // Lane 3 assigned + STOPPED: its note clips shell too (arm-before-launch).
+    expect(d.auto?.[String(clipIndex(0, 3))]).toEqual({ tracks: {} });
+    // Empty shells are INERT: no carrier dot, no playback view.
+    expect(autoClipHasTracks(d.auto?.[String(clipIndex(3, 0))])).toBe(false);
+    expect(readAutoClip(d as never, clipIndex(3, 0))).toBeNull();
+  });
+  it('never replaces an EXISTING record (idempotent)', () => {
+    const existing = { tracks: { 'a::x': { events: [{ step: 0, value: 0.5 }] } } };
+    const d: ClipPlayerData = {
+      clips: { '0': { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true } },
+      playing: [0, null, null, null, null, null, null, null],
+      autoAssign: { a: 0 },
+      auto: { '0': existing },
+    };
+    ensureLaneArmAutoShell(d, 0);
+    expect(d.auto!['0']).toBe(existing); // untouched
+  });
+});
+
+describe('automation: autoAssignCounts exists-filter (dangling modules not counted)', () => {
+  it('filters out modules that are gone', () => {
+    const data = { autoAssign: { alive: 2, gone: 2 } };
+    expect(autoAssignCounts(data)).toEqual([0, 0, 2, 0, 0, 0, 0, 0]);
+    expect(autoAssignCounts(data, (moduleId) => moduleId === 'alive')).toEqual([
+      0, 0, 1, 0, 0, 0, 0, 0,
+    ]);
+  });
+});
+
+describe('automation: sameAutomationTarget', () => {
+  it('matches by (nodeId, paramId)', () => {
+    expect(sameAutomationTarget(tgt('a', 'x'), tgt('a', 'x'))).toBe(true);
+    expect(sameAutomationTarget(tgt('a', 'x'), tgt('a', 'y'))).toBe(false);
+    expect(sameAutomationTarget(tgt('a', 'x'), tgt('b', 'x'))).toBe(false);
+  });
+});
+
+describe('automation: playback reads (hold-last, linear, next-after)', () => {
+  const events: AutomationEvent[] = [
+    { step: 0, value: 0.1 },
+    { step: 2, value: 0.5 },
+    { step: 4, value: 0.9 },
+  ];
+  it('automationValueAt holds the last breakpoint at or before the step', () => {
+    expect(automationValueAt(events, 0)).toBe(0.1);
+    expect(automationValueAt(events, 1.9)).toBe(0.1);
+    expect(automationValueAt(events, 2)).toBe(0.5);
+    expect(automationValueAt(events, 100)).toBe(0.9);
+  });
+  it('automationValueAt returns null before the first breakpoint', () => {
+    expect(automationValueAt([{ step: 2, value: 0.5 }], 1)).toBeNull();
+    expect(automationValueAt([], 5)).toBeNull();
+  });
+  it('automationLinearAt interpolates between breakpoints', () => {
+    expect(automationLinearAt(events, 0)).toBe(0.1);
+    expect(automationLinearAt(events, 1)).toBeCloseTo(0.3, 9); // halfway 0.1→0.5
+    expect(automationLinearAt(events, 3)).toBeCloseTo(0.7, 9); // halfway 0.5→0.9
+    expect(automationLinearAt(events, 100)).toBe(0.9); // holds past last
+    expect(automationLinearAt(events, -1)).toBeNull(); // before first
+    expect(automationLinearAt([], 0)).toBeNull();
+  });
+  it('automationNextAfter finds the first breakpoint strictly after step', () => {
+    expect(automationNextAfter(events, 0)).toEqual({ step: 2, value: 0.5 });
+    expect(automationNextAfter(events, 2)).toEqual({ step: 4, value: 0.9 });
+    expect(automationNextAfter(events, 4)).toBeNull();
+    expect(automationNextAfter(events, 3.9)).toEqual({ step: 4, value: 0.9 });
   });
 });
 
@@ -322,10 +967,11 @@ describe('per-lane CLIP COLOR helpers', () => {
 });
 
 describe('per-lane index + state helpers', () => {
-  it('laneOf / slotOf split a flat index (row-major, lane*8+slot)', () => {
+  it('laneOf / slotOf split a flat index (lane*SCENE_STRIDE + slot)', () => {
     expect([laneOf(0), slotOf(0)]).toEqual([0, 0]);
-    expect([laneOf(9), slotOf(9)]).toEqual([1, 1]);
-    expect([laneOf(63), slotOf(63)]).toEqual([7, 7]);
+    expect([laneOf(SCENE_STRIDE + 1), slotOf(SCENE_STRIDE + 1)]).toEqual([1, 1]); // lane 1 slot 1
+    expect([laneOf(63), slotOf(63)]).toEqual([0, 63]); // stride-64: 63 is lane 0 slot 63
+    expect([laneOf(clipIndex(7, 7)), slotOf(clipIndex(7, 7))]).toEqual([7, 7]);
   });
   it('lanePlaying / laneQueued read the per-lane arrays', () => {
     const data = {
@@ -729,5 +1375,88 @@ describe('readNoteRec — KEYS note-record state normalization', () => {
   });
   it('rejects a non-numeric lane/slot', () => {
     expect(readNoteRec({ noteRec: { lane: 'x', slot: 1 } } as unknown as ClipPlayerData)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SCENE copy/paste — the typed clipboard PURE core (pasteApplies + readScene +
+// sceneWritePlan) used by the Launchpad scene copy/paste. See launchpad-control.
+// ---------------------------------------------------------------------------
+function clipWithNoteHelper(step: number, midi: number): NoteClipRecord {
+  return { ...defaultNoteClip(), steps: [{ step, midi, velocity: 100, lengthSteps: 1 }] };
+}
+describe('scene copy/paste — pasteApplies (the 4-combo type gate)', () => {
+  it('applies ONLY when the buffer kind matches the target kind', () => {
+    expect(pasteApplies('scene', 'scene')).toBe(true); // scene→scene VALID
+    expect(pasteApplies('clip', 'clip')).toBe(true); // clip→clip VALID
+    expect(pasteApplies('scene', 'clip')).toBe(false); // scene→clip NO-OP
+    expect(pasteApplies('clip', 'scene')).toBe(false); // clip→scene NO-OP
+  });
+});
+
+describe('scene copy/paste — readScene (snapshot all 8 lanes at a slot)', () => {
+  it('reads every lane at a slot as a plain clone; empty lanes are null', () => {
+    const a = clipWithNoteHelper(1, 61);
+    const b = clipWithNoteHelper(2, 62);
+    const data = {
+      clips: {
+        [clipIndex(3, 0)]: a,
+        [clipIndex(3, 2)]: b,
+        [clipIndex(4, 1)]: clipWithNoteHelper(0, 60), // a DIFFERENT slot — must be ignored
+      },
+    };
+    const scene = readScene(data, 3);
+    expect(scene).toHaveLength(CLIP_LANES);
+    expect(scene[0]).toMatchObject({ kind: 'note', steps: [{ step: 1, midi: 61 }] });
+    expect(scene[1]).toBeNull(); // empty lane
+    expect(scene[2]).toMatchObject({ kind: 'note', steps: [{ step: 2, midi: 62 }] });
+    for (let lane = 3; lane < CLIP_LANES; lane++) expect(scene[lane]).toBeNull();
+  });
+
+  it('SEVERS live Y children (a plain clone, safe to re-parent)', () => {
+    const store = syncedStore<{ nodes: Record<string, { data: ClipPlayerData }> }>({ nodes: {} });
+    store.nodes['n'] = { data: { clips: { [clipIndex(0, 0)]: clipWithNoteHelper(0, 64) } } };
+    const scene = readScene(store.nodes['n']!.data, 0);
+    // A plain object — mutating it does not touch the live store.
+    (scene[0] as NoteClipRecord).steps.push({ step: 9, midi: 70 });
+    const live = (store.nodes['n']!.data.clips as Record<string, NoteClipRecord>)[String(clipIndex(0, 0))];
+    expect(live.steps).toHaveLength(1); // untouched
+  });
+
+  it('an empty slot reads as all nulls', () => {
+    expect(readScene({ clips: {} }, 5)).toEqual(new Array(CLIP_LANES).fill(null));
+  });
+});
+
+describe('scene copy/paste — sceneWritePlan (full-replace plan incl. deletes)', () => {
+  it('maps each lane to its target flat index + a plain-cloned value (null = delete)', () => {
+    const src = readScene(
+      { clips: { [clipIndex(2, 0)]: clipWithNoteHelper(1, 61), [clipIndex(2, 3)]: clipWithNoteHelper(2, 62) } },
+      2,
+    );
+    const plan = sceneWritePlan(10, src); // paste scene 2 → target slot 10
+    expect(plan).toHaveLength(CLIP_LANES);
+    for (let lane = 0; lane < CLIP_LANES; lane++) {
+      expect(plan[lane]!.index).toBe(clipIndex(10, lane));
+    }
+    expect(plan[0]!.value).toMatchObject({ kind: 'note', steps: [{ step: 1, midi: 61 }] });
+    expect(plan[3]!.value).toMatchObject({ kind: 'note', steps: [{ step: 2, midi: 62 }] });
+    expect(plan[1]!.value).toBeNull(); // empty source lane → delete target
+    expect(plan[7]!.value).toBeNull();
+  });
+
+  it('re-clones so the plan never shares refs with the source array', () => {
+    const src = readScene({ clips: { [clipIndex(0, 0)]: clipWithNoteHelper(0, 60) } }, 0);
+    const plan = sceneWritePlan(0, src);
+    expect(plan[0]!.value).not.toBe(src[0]); // a fresh clone
+    expect(plan[0]!.value).toEqual(src[0]); // but equal by value
+  });
+
+  it('an all-empty scene plans 8 deletes (clears the target)', () => {
+    const plan = sceneWritePlan(4, new Array(CLIP_LANES).fill(null));
+    expect(plan.every((p) => p.value === null)).toBe(true);
+    expect(plan.map((p) => p.index)).toEqual(
+      Array.from({ length: CLIP_LANES }, (_, lane) => clipIndex(4, lane)),
+    );
   });
 });

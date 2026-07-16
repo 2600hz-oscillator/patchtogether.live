@@ -38,6 +38,14 @@
     onassignelectra?: (electraId: string, slot: number) => void;
     /** Clear this control from (electraId, slot). */
     onclearelectra?: (electraId: string, slot: number) => void;
+    /** True when THIS control has RECORDED envelopes in some clip → we offer
+     *  "Clear recorded automation" (deletes the recorded envelopes; lane
+     *  ASSIGNMENT is MODULE-level and lives on the module card's right-click
+     *  menu — see NodeContextMenu). */
+    automationRecorded?: boolean;
+    /** Delete this control's recorded envelopes (its module's assigned lane's
+     *  clips / all clips when unassigned). */
+    onclearautomation?: () => void;
   }
 
   let {
@@ -56,6 +64,8 @@
     electras = [],
     onassignelectra,
     onclearelectra,
+    automationRecorded = false,
+    onclearautomation,
   }: Props = $props();
 
   // Fixed 6×6 layout enumeration for the Electra "Send to … → Row → knob"
@@ -100,6 +110,7 @@
 
   function pickLearn() { onlearn(); onclose(); }
   function pickForget() { onforget(); onclose(); }
+  function pickClearAutomation() { onclearautomation?.(); onclose(); }
   function pickSurface(s: { id: string; bound: boolean }) {
     if (s.bound) onremovefromsurface?.(s.id);
     else onsendtosurface?.(s.id);
@@ -252,6 +263,21 @@
             {/if}
           </div>
         {/each}
+      {/if}
+      <!-- PER-CLIP AUTOMATION: lane ASSIGNMENT is MODULE-level (right-click the
+           MODULE card → "Assign to automation lane ▸ 1–8"). The control menu
+           keeps only the control-precise DELETE affordance below. -->
+      {#if automationRecorded}
+        <div class="ctx-divider" role="separator"></div>
+        <button
+          class="ctx-item subtle"
+          onclick={pickClearAutomation}
+          role="menuitem"
+          title="DELETES this control's recorded envelopes — from every clip in its module's assigned lane (or all clips when unassigned). Undoable."
+          data-testid="ctx-automation-clear"
+        >
+          Clear recorded automation (this control)
+        </button>
       {/if}
     </div>
   </div>

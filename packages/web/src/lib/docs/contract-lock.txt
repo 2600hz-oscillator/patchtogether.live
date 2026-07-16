@@ -468,7 +468,12 @@ clipplayer param octave -2..2 discrete default=0
 clipplayer param quantize 0..1 discrete default=1
 clipplayer param snh 0..1 discrete default=1
 clipplayer param stepDiv 0..3 discrete default=2
+clipplayer family clipplayer-auto-arm kind=other prefix=clipplayer-auto-arm
+clipplayer family clipplayer-auto-assigned kind=other prefix=clipplayer-auto-assigned
+clipplayer family clipplayer-auto-cap kind=other prefix=clipplayer-auto-cap
+clipplayer family clipplayer-auto-override kind=other prefix=clipplayer-auto-override
 clipplayer family clipplayer-cell kind=cell prefix=clipplayer-cell
+clipplayer family clipplayer-clear-auto kind=other prefix=clipplayer-clear-auto
 clipplayer family clipplayer-mono kind=other prefix=clipplayer-mono
 clipplayer family clipplayer-pad kind=cell prefix=clipplayer-pad
 clipplayer family clipplayer-rate kind=other prefix=clipplayer-rate

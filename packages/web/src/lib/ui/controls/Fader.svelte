@@ -20,6 +20,32 @@
   import { createDragCommit } from './drag-commit';
   import ControlContextMenu from './ControlContextMenu.svelte';
   import { makeMidiAssignable } from './midi-assignable.svelte';
+  import { notifyAutomationTouch, notifyAutomationRelease } from '$lib/audio/automation-touch';
+
+  // Touch-suspend cross-wire (task #183): a live grab of this fader suspends its
+  // clip-automation playback until the PHYSICAL RELEASE ("live wins"), not the
+  // loop wrap. Fires on the screen-gesture choke points below; the MIDI path
+  // notifies from makeMidiAssignable so screen + MIDI share the SAME seam.
+  // PER-SURFACE holders ('pointer' vs 'wheel' here, 'midi'/'electra' elsewhere):
+  // the override ends only when the LAST holder releases, so a wheel-idle timer
+  // can't clear a concurrent pointer drag (or a MIDI twist) mid-gesture.
+  function touchAutomation() {
+    if (moduleId && paramId) notifyAutomationTouch({ nodeId: moduleId, paramId }, 'pointer');
+  }
+  // Release = pointer-up/cancel (drag) / a short idle after a wheel tick. Ends
+  // the override so playback resumes (gliding back to the envelope).
+  function releaseAutomation() {
+    if (moduleId && paramId) notifyAutomationRelease({ nodeId: moduleId, paramId }, 'pointer');
+  }
+  let wheelReleaseTimer: ReturnType<typeof setTimeout> | null = null;
+  function wheelTouch() {
+    if (moduleId && paramId) notifyAutomationTouch({ nodeId: moduleId, paramId }, 'wheel');
+    if (wheelReleaseTimer !== null) clearTimeout(wheelReleaseTimer);
+    wheelReleaseTimer = setTimeout(() => {
+      wheelReleaseTimer = null;
+      if (moduleId && paramId) notifyAutomationRelease({ nodeId: moduleId, paramId }, 'wheel');
+    }, 200);
+  }
 
   /** A single inline glyph anchored at a normalized [0,1] fraction along the
    *  fader track. Used by the LFO-shape sliders to render sine/tri/saw/square
@@ -183,6 +209,7 @@
 
   onDestroy(() => {
     if (raf !== null) cancelAnimationFrame(raf);
+    if (wheelReleaseTimer !== null) clearTimeout(wheelReleaseTimer);
     dragCommit.dispose();
   });
 
@@ -231,6 +258,7 @@
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
+    touchAutomation(); // grab → suspend this param's automation (live wins)
     const trackEl = e.currentTarget as HTMLElement;
     mod = e.shiftKey ? 'shift' : (e.ctrlKey || e.metaKey) ? 'fine' : 'none';
 
@@ -272,6 +300,7 @@
   }
   function pointerup(e: PointerEvent) {
     dragging = false;
+    releaseAutomation(); // hand lifted → end the override (glide back to envelope)
     // Force-commit the final drag position before the pointer is fully
     // released. Without this, a trailing rAF could be cancelled by a
     // re-render storm and the patch store would lag the last visible
@@ -284,6 +313,7 @@
     // we don't clear `dragging`, the motorized readLive loop stays gated off
     // and the thumb freezes.
     dragging = false;
+    releaseAutomation(); // gesture cancelled → end the override too
     dragCommit.flush();
     try {
       (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
@@ -296,6 +326,7 @@
   function wheel(e: WheelEvent) {
     e.preventDefault();
     e.stopPropagation();
+    wheelTouch(); // wheel adjust is a live grab too (auto-releases after idle)
     const step = e.shiftKey ? 0.001 : (e.ctrlKey || e.metaKey) ? 0.0001 : 0.01;
     const dir = e.deltaY < 0 ? 1 : -1;
     const newFrac = displayFrac + dir * step;
@@ -441,6 +472,9 @@
       </div>
     {/if}
   </div>
+  <!-- (Automation assignment is MODULE-level now — the assigned MODULE's card
+       gets the lane-colour border via the shared node wrapper; the old
+       per-control name border is gone. Mirror Knob.svelte.) -->
   <div class="label">{label}</div>
   {#if midi.binding}
     <div class="midi-badge" title={`Bound to MIDI ${midi.bindingLabel}`}>
@@ -466,6 +500,8 @@
     electras={midi.electras}
     onassignelectra={midi.assignElectra}
     onclearelectra={midi.clearElectra}
+    automationRecorded={midi.automationRecorded}
+    onclearautomation={midi.clearAutomation}
   />
 {/if}
 

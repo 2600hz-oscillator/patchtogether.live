@@ -19,6 +19,23 @@
   import { patch, ydoc, undoManager, LOCAL_ORIGIN, onBindRackspace } from '$lib/graph/store';
   import { buildDuplicate } from '$lib/graph/duplicate';
   import { instanceCount, wouldExceedCap } from '$lib/graph/cap';
+  // MODULE-level clip automation: the module menu's "Assign to automation
+  // lane" + the assigned-card lane-colour border + the graph-level prune.
+  import {
+    coerceAutoAssign,
+    laneColorEff as autoLaneColorEff,
+    assignedLaneOfModule,
+    scrubClipPlayerTransientData,
+    CLIP_LANES as AUTO_CLIP_LANES,
+    type ClipPlayerData as AutoClipPlayerData,
+  } from '$lib/audio/modules/clip-types';
+  import {
+    listClipPlayers,
+    assignAutomationLane,
+    removeAutomationAssignment,
+    pruneAllAutoAssignDangling,
+    repairDuplicateAutoAssign,
+  } from '$lib/graph/automation-assign';
   import { setControlColor, setNodeLocked } from '$lib/graph/mutate';
   import { snapPositionToGrid, findFreeRackSlot, RACK_UNIT, type RackRect } from '$lib/ui/rack-grid';
   import { resolveControlColor } from '$lib/graph/control-color';
@@ -1459,6 +1476,11 @@
     /** Dock zone baked into a stub's data (re-dock to another zone must
      *  rebuild so the stub face relabels). Null when not docked. */
     dockZone: DockZone | null;
+    /** MODULE-level automation assignment border: the assigned lane's colour
+     *  hex (or null). In the guard so an assign / unassign / lane-recolour
+     *  rebuilds the wrapper even though the MODULE's own snap node is
+     *  unchanged (only the clip-player's data moved). */
+    autoColor: string | null;
     obj: FlowNode;
   }
   interface PrevFlowEdgeEntry {
@@ -1480,6 +1502,27 @@
     const next: FlowNode[] = [];
     const nextPrev = new Map<string, PrevFlowNodeEntry>();
     let rebuiltAny = false;
+    // MODULE-level automation assignment → the ASSIGNED module's card wrapper
+    // gets a thin border in its lane's colour (owner: "we assign entire
+    // modules to a lane, they get the border"). Computed once per pass from
+    // every clip-player's autoAssign at the SHARED node-wrapper seam, so it
+    // works for every module type. When TWO players assign the same module,
+    // the LOWEST player node id wins visually (deterministic; playback keeps
+    // single-driver ownership regardless).
+    const autoBorderByModule = new Map<string, string>();
+    {
+      const players = snap.nodes
+        .filter((n) => n.type === 'clipplayer')
+        .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      for (const p of players) {
+        const pdata = p.data as AutoClipPlayerData | undefined;
+        for (const [moduleId, lane] of Object.entries(coerceAutoAssign(pdata?.autoAssign))) {
+          if (!autoBorderByModule.has(moduleId)) {
+            autoBorderByModule.set(moduleId, autoLaneColorEff(pdata, lane));
+          }
+        }
+      }
+    }
     for (const n of snap.nodes) {
       // Skip children belonging to a collapsed group — the group card
       // stands in for them visually. Phase 2 will flip to inline-rendering
@@ -1517,6 +1560,7 @@
       const cur = untrack(() => flowApi?.getInternalNode(n.id))?.internals?.userNode as
         | (FlowNode & { measured?: { width?: number; height?: number } })
         | undefined;
+      const autoColor = autoBorderByModule.get(n.id) ?? null;
       const prev = prevFlowNodes.get(n.id);
       if (
         prev
@@ -1527,6 +1571,7 @@
         && prev.top === isTop
         && prev.emittedType === emittedType
         && prev.dockZone === dockZone
+        && prev.autoColor === autoColor
       ) {
         // Unchanged → reuse. Prefer xyflow's current userNode (see header
         // comment). Guard on PRIMITIVE fields only: after a writeback,
@@ -1543,7 +1588,7 @@
         // stale data payload.
         const reusable = cur && cur.id === n.id && cur.type === emittedType ? cur : prev.obj;
         next.push(reusable);
-        nextPrev.set(n.id, { snapNode: n, x: resolved.x, y: resolved.y, remoteUser, top: isTop, emittedType, dockZone, obj: reusable });
+        nextPrev.set(n.id, { snapNode: n, x: resolved.x, y: resolved.y, remoteUser, top: isTop, emittedType, dockZone, autoColor, obj: reusable });
         continue;
       }
       rebuiltAny = true;
@@ -1578,8 +1623,16 @@
         // mirrors nor hides it (its cables must stay traceable).
         node.draggable = false;
         node.class = 'dock-stub no-flip';
+        // A DOCKED assigned module keeps its lane border on the stub (its
+        // canvas presence) so the assignment cue never silently disappears
+        // when a module docks. (The dock-rail card face carries no lane
+        // treatment yet — noted follow-up.)
+        if (autoColor) {
+          node.class += ' auto-lane-assigned';
+          node.style = `${node.style ? node.style + ';' : ''}--auto-lane-color:${autoColor}`;
+        }
         next.push(node);
-        nextPrev.set(n.id, { snapNode: n, x: resolved.x, y: resolved.y, remoteUser, top: isTop, emittedType, dockZone, obj: node });
+        nextPrev.set(n.id, { snapNode: n, x: resolved.x, y: resolved.y, remoteUser, top: isTop, emittedType, dockZone, autoColor, obj: node });
         continue;
       }
       // Lift the most-recently-spawned node above its siblings so it's
@@ -1609,9 +1662,16 @@
         node.draggable = false;
         node.class = node.class ? `${String(node.class)} node-locked` : 'node-locked';
       }
+      // MODULE-level automation assignment border (shared wrapper seam — works
+      // for every module type): the assigned lane's colour as a thin outline.
+      // UI-can't-lie: the inline var IS the lane colour from the assignment.
+      if (autoColor) {
+        node.class = node.class ? `${String(node.class)} auto-lane-assigned` : 'auto-lane-assigned';
+        node.style = `${node.style ? node.style + ';' : ''}--auto-lane-color:${autoColor}`;
+      }
       if (isTop) node.zIndex = 1000;
       next.push(node);
-      nextPrev.set(n.id, { snapNode: n, x: resolved.x, y: resolved.y, remoteUser, top: isTop, emittedType, dockZone, obj: node });
+      nextPrev.set(n.id, { snapNode: n, x: resolved.x, y: resolved.y, remoteUser, top: isTop, emittedType, dockZone, autoColor, obj: node });
     }
     prevFlowNodes = nextPrev;
     // No-op short-circuit: if every entry is identity-reused AND the array
@@ -3356,6 +3416,54 @@
     return typeof (n?.data as { controlColor?: unknown } | undefined)?.controlColor === 'string';
   });
 
+  // MODULE-level clip automation (owner-locked model): the right-clicked
+  // MODULE can be assigned to one of a clip-player's 8 automation lanes.
+  // One entry per clip-player in the rack (usually one); each carries the 8
+  // lane colour swatches + THIS module's current lane on that player.
+  let ctxMenuAutomationTargets = $derived.by<
+    Array<{ nodeId: string; name: string; lanes: Array<{ lane: number; color: string }>; assignedLane: number | null }>
+  >(() => {
+    void snapshot;
+    const mid = ctxMenuNodeId;
+    if (!mid) return [];
+    const n = patch.nodes[mid];
+    // Not for groups (their params live on child modules), clip-players
+    // themselves, or dock stubs of deleted nodes.
+    if (!n || n.type === 'group' || n.type === 'clipplayer') return [];
+    const out: Array<{ nodeId: string; name: string; lanes: Array<{ lane: number; color: string }>; assignedLane: number | null }> = [];
+    for (const nid of listClipPlayers(patch.nodes).sort()) {
+      const data = patch.nodes[nid]?.data as AutoClipPlayerData | undefined;
+      const label = (patch.nodes[nid]?.data as { label?: unknown } | undefined)?.label;
+      out.push({
+        nodeId: nid,
+        name: typeof label === 'string' && label ? label : 'clip player',
+        lanes: Array.from({ length: AUTO_CLIP_LANES }, (_, lane) => ({
+          lane,
+          color: autoLaneColorEff(data, lane),
+        })),
+        assignedLane: assignedLaneOfModule(data, mid),
+      });
+    }
+    return out;
+  });
+  let ctxMenuAutomationAssigned = $derived(
+    ctxMenuAutomationTargets.some((t) => t.assignedLane !== null),
+  );
+
+  // MULTI-SURFACE JANITOR (control-surface discipline): when a module is
+  // deleted, drop its automation-lane assignment from EVERY clip-player; when
+  // a merge race (or a legacy pre-scrub duplicate) leaves the same module
+  // claimed twice, keep the LOWEST player id's claim. Runs from the
+  // graph-change seam, so it works even when no clipplayer CARD is mounted
+  // (docked / off-screen). Both are JANITOR writes (AUTO_JANITOR_ORIGIN —
+  // never undo-tracked, so a peer-driven cleanup can't plant phantom undo
+  // items) and no-ops (no transaction) when the graph is clean.
+  $effect(() => {
+    void snapshot; // re-run on any graph change (node deletes included)
+    pruneAllAutoAssignDangling();
+    repairDuplicateAutoAssign();
+  });
+
   function onNodeContextMenu({ event, node }: { event: MouseEvent | TouchEvent; node: FlowNode }) {
     event.preventDefault();
     // A right-click INSIDE the TOYBOX in-card combine-graph SVG is handled by
@@ -4983,6 +5091,13 @@
       }
     }
     const dup = buildDuplicate(source, Object.keys(patch.nodes));
+    // A duplicated CLIP PLAYER copies content (clips, recorded automation,
+    // settings, the arrangement) but never LIVE-PERFORMANCE state: playing/
+    // queued sets, arranger + KEYS record arms, the per-lane automation arms
+    // (a clone born armed with the source's recorderId would double-record),
+    // and autoAssign (one lane per module is a GLOBAL invariant — a copied
+    // claim would double-drive; the janitor repair also enforces this).
+    if (dup.type === 'clipplayer') scrubClipPlayerTransientData(dup.data);
     ydoc.transact(() => {
       patch.nodes[dup.id] = dup;
     }, LOCAL_ORIGIN);
@@ -6373,6 +6488,11 @@
   hasCustomControlColor={ctxMenuHasCustomColor}
   onsetcontrolcolor={(hex) => ctxMenuNodeId && setControlColor(ctxMenuNodeId, hex)}
   onresetcontrolcolor={() => ctxMenuNodeId && setControlColor(ctxMenuNodeId, null)}
+  automationTargets={ctxMenuAutomationTargets}
+  automationAssigned={ctxMenuAutomationAssigned}
+  onassignautomationlane={(playerId, lane) =>
+    ctxMenuNodeId && assignAutomationLane(playerId, ctxMenuNodeId, lane)}
+  onremoveautomationlane={() => ctxMenuNodeId && removeAutomationAssignment(ctxMenuNodeId)}
   dockable={ctxMenuDockable}
   docked={ctxMenuDocked}
   ondock={(zone) => ctxMenuNodeId && dockNode(ctxMenuNodeId, zone)}
@@ -6849,6 +6969,17 @@
     outline: 1px dashed var(--accent, #60a5fa);
     outline-offset: 2px;
     transition: opacity 120ms ease-out;
+  }
+  /* MODULE-level automation assignment: the ASSIGNED module's card gets a
+   * thin border in its lane's colour (--auto-lane-color, inline from the
+   * clip-player's autoAssign). Applied at the shared node WRAPPER so it works
+   * for every module type; reactive to assignment + lane-colour changes
+   * (the flowNodes guard includes autoColor). Outline, not border, so no
+   * card's own layout/border styling is disturbed. */
+  :global(.svelte-flow__node.auto-lane-assigned) {
+    outline: 2px solid var(--auto-lane-color);
+    outline-offset: 2px;
+    border-radius: 3px;
   }
   /* Lasso group-select: live highlight preview while the user drags the
    * Create-group bounding box. Solid accent outline distinguishes from

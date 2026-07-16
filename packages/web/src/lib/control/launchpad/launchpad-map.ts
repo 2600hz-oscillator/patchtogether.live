@@ -10,7 +10,8 @@
 // Owner-LOCKED layout (Plan B + Plan C's "matrix never disappears"):
 //
 //   UNIT L = the clip MATRIX, PERMANENTLY (never flips to the editor):
-//     · 8×8 pads: pad (x=slot, y=lane) ↔ clip index lane*8+slot. y is measured
+//     · 8×8 pads: pad (x=slot, y=lane) ↔ clip index lane*SCENE_STRIDE+slot
+//       (stride 64 — schema v2's fixed flat key). y is measured
 //       from the BOTTOM (programmer-mode 11=bottom-left). Tap = launch/stop the
 //       lane via node.data.queued[] (the SAME synced field the card + monome
 //       write → multiplayer-synced for free).
@@ -55,6 +56,7 @@
 import {
   CLIP_LANES,
   CLIP_SLOTS,
+  SCENE_STRIDE,
   clipIndex,
   STEPS_PER_PAGE,
   MAX_EDIT_PAGES,
@@ -68,6 +70,7 @@ import {
   velBucket,
   noteCovering,
   SCALE_NAMES,
+  type CopyBufferKind,
 } from '$lib/audio/modules/clip-types';
 import { laneRateIndex, RATE_MULTS } from '$lib/audio/modules/clip-clock';
 import type { ArpDirection } from '$lib/audio/arp-engine';
@@ -116,6 +119,7 @@ export const RGB_QUEUED_STOP: Rgb = [104, 23, 23]; // red (queued-stop) — flas
 export const RGB_RECORDING: Rgb = [127, 16, 16]; // red (record-armed / recording) — pulses
 // Control / function colours.
 export const RGB_SCENE: Rgb = [112, 81, 21]; // amber (scene launch)
+export const RGB_SCENE_DIM: Rgb = [24, 17, 4]; // dim amber (scene UP/DOWN at its scroll clamp — nothing more to reveal)
 export const RGB_STOP_IDLE: Rgb = [69, 37, 16]; // dim red (stop lane idle)
 export const RGB_STOP_ACTIVE: Rgb = [104, 23, 23]; // bright red (lane playing)
 export const RGB_FUNC: Rgb = [60, 60, 70]; // function idle (white-ish)
@@ -139,8 +143,13 @@ export const RGB_TRANSPORT_ON: Rgb = [23, 104, 53]; // green (transport running)
 export const RGB_RECORDING_DIM: Rgb = [30, 4, 4]; // down phase of the record-arm pulse
 export const RGB_SONG_SESSION: Rgb = [16, 16, 20]; // SES/ARR idle (SESSION) — dim white
 export const RGB_SONG_ARRANGE: Rgb = [90, 90, 100]; // SES/ARR in ARRANGEMENT — bright white
-export const RGB_COPY_BUFFER: Rgb = [15, 99, 99]; // turquoise (copy buffer loaded) — pulses
+export const RGB_COPY_BUFFER: Rgb = [15, 99, 99]; // turquoise (CLIP copy buffer loaded) — pulses
 export const RGB_COPY_BUFFER_DIM: Rgb = [4, 30, 30]; // down phase of the copy pulse
+// A SCENE copy buffer (all 8 lanes' clips at a slot) reads with a DISTINCT amber-
+// tinted colour so the buffer indicator + paste-target lights say "a whole scene
+// is loaded", never confused with the turquoise single-clip buffer.
+export const RGB_COPY_BUFFER_SCENE: Rgb = [110, 78, 12]; // amber (SCENE copy buffer loaded) — pulses
+export const RGB_COPY_BUFFER_SCENE_DIM: Rgb = [26, 18, 3]; // down phase of the scene copy pulse
 export const RGB_EXIT: Rgb = [104, 23, 23]; // red (EXIT)
 // SINGLE-mode CC-98 VIEW-toggle indicator — a calm cyan so the dedicated
 // view-flip button reads distinct from the function row (single mode only; in
@@ -536,12 +545,11 @@ export const EDIT_EXIT_SCENE_ROW = LP_HEIGHT - 1; // 7
 export const EDIT_DOUBLE_SCENE_ROW = LP_HEIGHT - 2; // 6
 export const EDIT_LENGTH_SCENE_ROW = LP_HEIGHT - 3; // 5
 export const EDIT_FOLLOW_SCENE_ROW = LP_HEIGHT - 4; // 4 — single mode only
-// ── EDITOR scene-column extras (P6) on the previously-dead bottom scene rows
-// (3,2,1,0). Both deployments (pair had these rows free too; single's row 4 is
-// FOLLOW, rows 3..0 were dead). COPY snapshots the edited clip, PASTE writes the
-// buffer over it, OCT ± shift the whole clip ±12 semitones (transpose).
-export const EDIT_COPY_SCENE_ROW = 3;
-export const EDIT_PASTE_SCENE_ROW = 2;
+// ── EDITOR scene-column extras on the bottom scene rows (1,0). OCT ± scroll the
+// pitch WINDOW up/down one octave (a scale's worth of rows) — they move the
+// view, not the notes (no transpose). Rows 3 + 2 are dark + inert: copy/paste
+// is a GRID-page-only feature (the sticky COPY/PASTE buttons with the typed
+// clip/scene buffer) and deliberately does not exist in the note editor.
 export const EDIT_OCT_UP_SCENE_ROW = 1;
 export const EDIT_OCT_DOWN_SCENE_ROW = 0;
 export function isEditExitSceneRow(row: number): boolean {
@@ -552,8 +560,6 @@ export type EditSceneAction =
   | 'double'
   | 'lengthEdit'
   | 'follow'
-  | 'copy'
-  | 'paste'
   | 'octUp'
   | 'octDown'
   | null;
@@ -562,8 +568,6 @@ export function editSceneAction(row: number, opts: { followButton?: boolean } = 
   if (row === EDIT_DOUBLE_SCENE_ROW) return 'double';
   if (row === EDIT_LENGTH_SCENE_ROW) return 'lengthEdit';
   if (opts.followButton && row === EDIT_FOLLOW_SCENE_ROW) return 'follow';
-  if (row === EDIT_COPY_SCENE_ROW) return 'copy';
-  if (row === EDIT_PASTE_SCENE_ROW) return 'paste';
   if (row === EDIT_OCT_UP_SCENE_ROW) return 'octUp';
   if (row === EDIT_OCT_DOWN_SCENE_ROW) return 'octDown';
   return null;
@@ -922,8 +926,6 @@ export interface REditOpts {
    *  so the single editor's FOLLOW lives on the scene column). Pair mode leaves
    *  this unset → row 4 stays dark, exactly as before. */
   followSceneButton?: boolean;
-  /** Clipboard holds a clip — lights the editor PASTE scene pad (dim otherwise). */
-  bufferLoaded?: boolean;
 }
 
 export function computeREditFrame(clip: NoteClipRecord, opts: REditOpts = {}): LaunchpadFrame {
@@ -965,9 +967,9 @@ export function computeREditFrame(clip: NoteClipRecord, opts: REditOpts = {}): L
   put(frame, CC_EDIT_SCALE, RGB_FUNC);
   put(frame, CC_EDIT_FOLLOW, opts.followOn ? RGB_TRANSPORT_ON : RGB_FUNC_ON);
   // Scene column: top = EXIT (red), row 6 = DOUBLE, row 5 = LENGTH-EDIT. SINGLE
-  // mode adds FOLLOW on row 4 (green = following, violet = frozen). Rows 3,2,1,0
-  // are the P6 extras (both modes): COPY (green) · PASTE (green when the buffer
-  // holds a clip, dim otherwise) · OCT+ / OCT− (transpose the whole clip ±12).
+  // mode adds FOLLOW on row 4 (green = following, violet = frozen). Rows 1,0 =
+  // OCT+ / OCT− (scroll the pitch window ±1 octave). Rows 3,2 are dark + inert
+  // (copy/paste lives on the GRID page only).
   for (let i = 0; i < SCENE_CCS.length; i++) {
     const row = LP_HEIGHT - 1 - i;
     let rgb: Rgb = RGB_OFF;
@@ -975,8 +977,6 @@ export function computeREditFrame(clip: NoteClipRecord, opts: REditOpts = {}): L
     else if (row === EDIT_DOUBLE_SCENE_ROW || row === EDIT_LENGTH_SCENE_ROW) rgb = RGB_FUNC;
     else if (opts.followSceneButton && row === EDIT_FOLLOW_SCENE_ROW)
       rgb = opts.followOn ? RGB_TRANSPORT_ON : RGB_FUNC_ON;
-    else if (row === EDIT_COPY_SCENE_ROW) rgb = RGB_DECK_COPY;
-    else if (row === EDIT_PASTE_SCENE_ROW) rgb = opts.bufferLoaded ? RGB_DECK_COPY : RGB_FUNC_DIM;
     else if (row === EDIT_OCT_UP_SCENE_ROW || row === EDIT_OCT_DOWN_SCENE_ROW) rgb = RGB_OCTAVE;
     put(frame, SCENE_CCS[i], rgb);
   }
@@ -1191,6 +1191,100 @@ export function gridSceneRowToSlot(sceneIndex: number): number | null {
   return sceneIndex >= 0 && sceneIndex < CLIP_SLOTS ? sceneIndex : null;
 }
 
+// ── SCENE-SCROLL WINDOW (single-mode Grid view: reach scenes beyond the 8 rows) ──
+// A "scene" is a SLOT fired across all channels. The launchpad shows an 8-row
+// WINDOW onto the scene axis; `sceneScrollOffset` (0 = scenes 0..7 at the top)
+// slides it. The stored slot axis now spans MAX_SCENES (= SCENE_STRIDE) SLOTS
+// (schema-v2 fixed-stride clip keys), so a scene 0..MAX_SCENES-1 backs a REAL,
+// populatable slot — the scroll reaches clips placed in scenes ≥ 8. An EMPTY
+// scene (no clip in any lane) paints DARK and its launch is a no-op (content-
+// gated in computeSingleGridFrame + handleSceneLaunch), and the lazy DOWN reveal
+// (maxSceneScrollOffset) still only exposes ONE empty scene past the deepest clip.
+export const SCENE_WINDOW = LP_HEIGHT; // 8 visible scene rows (the grid height)
+export const MAX_SCENES = SCENE_STRIDE; // 64 — the stored scene ceiling (= the flat-key stride)
+
+/** The GLOBAL scene addressed by a visible scene-column INDEX (0 = top row) at a
+ *  scroll offset. offset 0 → scene = sceneIndex. PURE. */
+export function sceneForWindowIndex(offset: number, sceneIndex: number): number {
+  return offset + sceneIndex;
+}
+
+/** The stored SLOT backing a global scene (scene == slot for the whole axis now),
+ *  or null when the scene is out of range (< 0 or ≥ MAX_SCENES). A scene in range
+ *  with no clips is EMPTY (dark / launch no-op) but still a real, populatable
+ *  slot — emptiness is decided by content, not by this returning null. PURE. */
+export function slotForScene(scene: number): number | null {
+  return scene >= 0 && scene < MAX_SCENES ? scene : null;
+}
+
+/** The highest scene index (= slot) that holds ANY clip across all channels, or
+ *  -1 when the player is empty. Bounds the lazy DOWN reveal. Scans the FULL
+ *  MAX_SCENES slot axis so content placed in scenes ≥ 8 is reachable. PURE. */
+export function highestContentScene(data: ClipPlayerData | undefined): number {
+  const clips = data?.clips ?? {};
+  let hi = -1;
+  for (let slot = 0; slot < MAX_SCENES; slot++) {
+    for (let lane = 0; lane < CLIP_LANES; lane++) {
+      if (clips[String(clipIndex(slot, lane))]) {
+        hi = slot;
+        break;
+      }
+    }
+  }
+  return hi;
+}
+
+/** The maximum scroll offset. DOWN lazily reveals ONE empty scene past the
+ *  highest scene that holds a clip ("reveal existing+1"), never scrolls past a
+ *  full window at the top, and never puts the bottom row past `maxScenes`. So an
+ *  empty player can't scroll; content through slot 7 reveals scene 8 (dark);
+ *  content deeper (once storage grows) reveals proportionally further. PURE. */
+export function maxSceneScrollOffset(
+  highestContent: number,
+  windowHeight: number = SCENE_WINDOW,
+  maxScenes: number = MAX_SCENES,
+): number {
+  const bottom = Math.max(windowHeight - 1, Math.min(maxScenes - 1, highestContent + 1));
+  return bottom - (windowHeight - 1);
+}
+
+/** Clamp a raw offset into [0, maxSceneScrollOffset]. Non-finite ⇒ 0. PURE. */
+export function clampSceneScrollOffset(
+  raw: number,
+  highestContent: number,
+  windowHeight: number = SCENE_WINDOW,
+  maxScenes: number = MAX_SCENES,
+): number {
+  const max = maxSceneScrollOffset(highestContent, windowHeight, maxScenes);
+  const n = Number.isFinite(raw) ? Math.trunc(raw) : 0;
+  return Math.max(0, Math.min(max, n));
+}
+
+/** SINGLE grid PAD (x = lane, y from BOTTOM) → flat clip index at a scroll
+ *  `offset`, or null when out of the matrix OR the pad's scene is out of range.
+ *  offset 0 === `gridPadToClipIndex`. Uses `clipIndex` (not clipIndexForSlotLane,
+ *  which caps at the visible CLIP_SLOTS) so a scrolled-in scene ≥ 8 maps to its
+ *  real stored slot. PURE. */
+export function gridPadToClipIndexScrolled(x: number, y: number, offset: number): number | null {
+  if (x < 0 || x >= CLIP_LANES || y < 0 || y >= LP_HEIGHT) return null;
+  const scene = offset + (LP_HEIGHT - 1 - y); // top row (y=7) = scene `offset`
+  const slot = slotForScene(scene);
+  return slot === null ? null : clipIndex(slot, x); // slot = scene, lane = x
+}
+
+/** The PHYSICAL grid pad {x = lane, y from BOTTOM} showing a stored slot at a
+ *  scroll `offset`, or null when that slot is scrolled off the window. Inverse of
+ *  gridPadToClipIndexScrolled for the loaded region (scene == slot). PURE. */
+export function gridPadForScrolledSlot(
+  slot: number,
+  lane: number,
+  offset: number,
+): { x: number; y: number } | null {
+  const row = slot - offset; // window row from the TOP (0 = top)
+  if (row < 0 || row >= LP_HEIGHT) return null;
+  return { x: lane, y: LP_HEIGHT - 1 - row };
+}
+
 // ── Right-column classifiers (per view). All take a SCENE INDEX (0 = top). ──
 export type GridShiftAction =
   | 'copy'
@@ -1199,11 +1293,12 @@ export type GridShiftAction =
   | 'swingUp'
   | 'swingDown'
   | 'len'
-  | 'pasteRev'
-  | 'now';
-/** The tap-to-ARM subset of GridShiftAction (Swing± are DIRECT nudges + NOW is a
- *  STICKY toggle — neither is armed). S2b stores one of these in armedRightAction. */
-export type GridArmAction = 'copy' | 'paste' | 'clipDiv' | 'len' | 'pasteRev';
+  | 'scrollUp'
+  | 'scrollDown';
+/** The tap-to-ARM subset of GridShiftAction (Swing± are DIRECT nudges + Scroll▲▼
+ *  slide the scene window — none of those is armed). S2b stores one of these in
+ *  armedRightAction. */
+export type GridArmAction = 'copy' | 'paste' | 'clipDiv' | 'len';
 
 const GRID_SHIFT_ACTIONS: readonly GridShiftAction[] = [
   'copy', // 0 (top)
@@ -1212,8 +1307,8 @@ const GRID_SHIFT_ACTIONS: readonly GridShiftAction[] = [
   'swingUp', // 3
   'swingDown', // 4
   'len', // 5
-  'pasteRev', // 6
-  'now', // 7 (bottom)
+  'scrollUp', // 6 — was PASTE-REV; repurposed to the amber scene-window UP button
+  'scrollDown', // 7 (bottom) — was NOW; repurposed to the amber scene-window DOWN button
 ];
 /** Grid + shift right column (scene 0..7 top→bottom): Copy · Paste · ClipDiv ·
  *  Swing+ · Swing− · Len · PasteRev · Now. Null out of range. PURE. */
@@ -1311,8 +1406,16 @@ export const CTRL_STOP_ALL_COL = 3; // (3,7)
 export const CTRL_ARRANGE_ROW = LP_HEIGHT - 2; // 6
 export const CTRL_REC_COL = 0; // (0,6)
 export const CTRL_SONG_COL = 1; // (1,6)
+// (The old single AUTOMATION-arm pad at (2,6) is RETIRED — per-lane arm lives
+// on the PERMANENT TOP ROW as SHIFT+column, reachable from EVERY view. See
+// armTopLane below.)
 
-export type ControlRehomeAction = 'tempoDown' | 'tempoUp' | 'stopAll' | 'rec' | 'song';
+export type ControlRehomeAction =
+  | 'tempoDown'
+  | 'tempoUp'
+  | 'stopAll'
+  | 'rec'
+  | 'song';
 /** Classify a CONTROL-view re-homed grid pad → its action, or null. PURE. */
 export function controlRehomePad(x: number, y: number): ControlRehomeAction | null {
   if (y === CTRL_TEMPO_ROW) {
@@ -1328,6 +1431,33 @@ export function controlRehomePad(x: number, y: number): ControlRehomeAction | nu
   }
   return null;
 }
+
+// ---------------------------------------------------------------------------
+// PER-LANE AUTOMATION ARM on the PERMANENT TOP ROW (owner gesture, single
+// mode): "for every lane except the right-most, SHIFT + the button at the very
+// top of that lane turns on automation recording … Because Lane 8's top button
+// is the shift button itself, we double-tap [SHFT] to turn it on and off.
+// Because we're using the global row, we can always turn this on and off
+// regardless of what screen we're on."
+//   · SHIFT (held OR latched) + top CC 91..97 → toggle lane 0..6's arm. The
+//     press is CONSUMED — the button's normal function (transport / view flip
+//     / undo / redo) must NOT fire under shift.
+//   · Lane 7 (the 8th) = DOUBLE-TAP of SHFT (CC 98) itself — the second tap
+//     reverts the first tap's latch change and toggles the arm (handled
+//     statefully in launchpad-control's handleShift).
+//   · LED: an ARMED lane's top button red-flashes over its base colour in
+//     EVERY view; while shift is active the whole row paints as the arm map
+//     (see paintPermanentTopRow).
+// ---------------------------------------------------------------------------
+/** SHIFT+top-row arm classifier: the LANE a top CC toggles (columns 0..6 →
+ *  lanes 1..7), or null for CC 98 (lane 8 = the SHFT double-tap special case)
+ *  and non-top CCs. PURE. */
+export function armTopLane(cc: number): number | null {
+  const col = topCcCol(cc);
+  return col !== null && col < LP_WIDTH - 1 ? col : null;
+}
+/** The lane the SHFT double-tap toggles (lane 8 — its column IS shift). */
+export const ARM_SHIFT_LANE = LP_WIDTH - 1; // 7
 
 // ---------------------------------------------------------------------------
 // SINGLE-MODE LED FRAMES (PURE). Each view's frame paints its 8×8 + right column
@@ -1370,26 +1500,63 @@ export interface PermanentTopOpts {
   /** Undo / redo stacks non-empty → the orange CC96 / CC97 light; else dim. */
   canUndo: boolean;
   canRedo: boolean;
+  /** PER-LANE automation arm states (length 8) — the always-visible arm
+   *  indicator: an ARMED lane's top button RED-FLASHES over its base colour in
+   *  every view; while shift is active the whole row paints as the ARM MAP
+   *  (red pulse = armed · dim red = available · col 8 keeps the shift LED,
+   *  red-pulsing when lane 8 is armed). Absent = none armed. */
+  laneArms?: boolean[];
+  /** Blink phase for the arm red-flash (the render loop's shared blinker).
+   *  Absent ⇒ the bright phase. */
+  blinkOn?: boolean;
 }
 
 /** Paint the permanent nav row (CC 91..98) onto a frame — identical in every
  *  view: transport (red stopped / green running), the 4 view buttons (bright
  *  purple = active; Clip bright while KEYS is open), undo/redo (orange, dim when
  *  the stack is empty), shift (yellow: dim off / bright held / solid latched).
- *  PURE. */
+ *  PER-LANE AUTOMATION ARM overlay (owner gesture — SHIFT+column / double-tap
+ *  SHFT): an armed lane's button red-flashes ALTERNATING with its base colour
+ *  (the compass stays readable); while shift is ACTIVE the row becomes the arm
+ *  map so the gesture is discoverable. PURE. */
 export function paintPermanentTopRow(frame: LaunchpadFrame, opts: PermanentTopOpts): void {
-  put(frame, CC_UP, opts.transportRunning ? RGB_TRANSPORT_ON : RGB_TRANSPORT_STOP);
-  put(frame, CC_DOWN, opts.view === 'grid' ? RGB_VIEW_ACTIVE : RGB_VIEW_IDLE);
-  put(frame, CC_LEFT, opts.view === 'clip' || opts.keysActive ? RGB_VIEW_ACTIVE : RGB_VIEW_IDLE);
-  put(frame, CC_RIGHT, opts.view === 'arranger' ? RGB_VIEW_ACTIVE : RGB_VIEW_IDLE);
-  put(frame, CC_SESSION, opts.view === 'control' ? RGB_VIEW_ACTIVE : RGB_VIEW_IDLE);
-  put(frame, CC_TOP_SPARE_6, opts.canUndo ? RGB_SYS : RGB_SYS_DIM);
-  put(frame, CC_TOP_SPARE_7, opts.canRedo ? RGB_SYS : RGB_SYS_DIM);
-  put(
-    frame,
-    CC_TOP_SPARE_8,
-    opts.shift.held ? RGB_SHIFT_HELD : opts.shift.latched ? RGB_SHIFT_LATCH : RGB_SHIFT_OFF,
-  );
+  const blinkOn = opts.blinkOn ?? true;
+  const arms = opts.laneArms ?? [];
+  const shiftActive = opts.shift.held || opts.shift.latched;
+  const shiftRgb = opts.shift.held
+    ? RGB_SHIFT_HELD
+    : opts.shift.latched
+      ? RGB_SHIFT_LATCH
+      : RGB_SHIFT_OFF;
+  // Base compass colours, column-ordered (CC 91..98).
+  const base: Rgb[] = [
+    opts.transportRunning ? RGB_TRANSPORT_ON : RGB_TRANSPORT_STOP,
+    opts.view === 'grid' ? RGB_VIEW_ACTIVE : RGB_VIEW_IDLE,
+    opts.view === 'clip' || opts.keysActive ? RGB_VIEW_ACTIVE : RGB_VIEW_IDLE,
+    opts.view === 'arranger' ? RGB_VIEW_ACTIVE : RGB_VIEW_IDLE,
+    opts.view === 'control' ? RGB_VIEW_ACTIVE : RGB_VIEW_IDLE,
+    opts.canUndo ? RGB_SYS : RGB_SYS_DIM,
+    opts.canRedo ? RGB_SYS : RGB_SYS_DIM,
+    shiftRgb,
+  ];
+  for (let col = 0; col < LP_WIDTH; col++) {
+    const armed = arms[col] === true;
+    let rgb = base[col];
+    if (shiftActive && col < LP_WIDTH - 1) {
+      // ARM MAP while shift is active: red pulse = armed, dim red = available.
+      rgb = armed ? (blinkOn ? RGB_RECORDING : RGB_RECORDING_DIM) : RGB_STOP_IDLE;
+    } else if (armed) {
+      // Always-visible arm indicator: red flash ALTERNATING with the base
+      // colour (col 8 alternates with the shift LED) — every view, all the
+      // time. CONTRAST-AWARE off phase: a RED-FAMILY base (the STOPPED
+      // transport button) can't carry a red flash legibly — alternate with
+      // the record-dim red instead so the blink still reads.
+      const b = base[col];
+      const redFamily = b[0] > 40 && b[0] >= 2 * Math.max(b[1], b[2]);
+      rgb = blinkOn ? RGB_RECORDING : redFamily ? RGB_RECORDING_DIM : b;
+    }
+    put(frame, colTopCc(col), rgb);
+  }
 }
 
 /** Effective shift = latched OR momentary-held (drives right-column alt colours). */
@@ -1405,10 +1572,19 @@ export interface SingleGridOpts {
   recording?: boolean;
   /** The armed tap-to-arm right-column action (grid+shift) → brightened. */
   armedRightAction?: GridArmAction | null;
-  /** Clip buffer holds a clip → the Paste button pulses turquoise. */
+  /** The copy buffer holds SOMETHING → the Paste button pulses. */
   bufferLoaded?: boolean;
-  /** NOW sticky toggle on → the NOW button lights orange. */
-  nowOn?: boolean;
+  /** WHICH kind the buffer holds — a CLIP buffer pulses turquoise, a SCENE buffer
+   *  amber. Also drives the paste-arm target dimming (below). Undefined/null =
+   *  empty. */
+  bufferKind?: CopyBufferKind | null;
+  /** Scene-window scroll offset (0 = scenes 0..7). Slides the matrix + scene
+   *  column so visual row r shows scene `offset + r`. Default 0. */
+  sceneScrollOffset?: number;
+  /** UP is actionable (offset > 0) → bright amber; else dim. Default true. */
+  canScrollUp?: boolean;
+  /** DOWN can reveal a further scene → bright amber; else dim. Default true. */
+  canScrollDown?: boolean;
   /** Pulse the TARGET clip pad blue in time with its chosen division (the Clip-Div
    *  arm preview — the meter is ON the pad, not the top row). S2b toggles `on` on
    *  the division's phase. */
@@ -1416,6 +1592,10 @@ export interface SingleGridOpts {
   /** Swing± meter: ramp the Swing+ (purple) / Swing− (blue) button pale→bright by
    *  level, or flash both green at dead-centre. Only rendered under shift. */
   swingMeter?: { active: boolean; dir: 'up' | 'down' | 'center'; level0to1: number };
+  /** AUTOMATION countdown flashes — one per RECORDING lane's playing clip cell
+   *  (last 4 beats before EACH clip's own wrap). Painted only when a clip's
+   *  scene is inside the current scroll window. */
+  autoCountdown?: (CountdownPaint & { clipIndex: number })[] | null;
 }
 
 /** The clip-state colour for a matrix pad — identical semantics to
@@ -1478,7 +1658,12 @@ function gridShiftRightRgb(sceneIndex: number, opts: SingleGridOpts, blinkOn: bo
       return armed === 'copy' ? RGB_PATTERN_ARMED : RGB_PATTERN;
     case 'paste':
       if (armed === 'paste') return RGB_PATTERN_ARMED;
-      return opts.bufferLoaded ? (blinkOn ? RGB_COPY_BUFFER : RGB_COPY_BUFFER_DIM) : RGB_PATTERN;
+      if (!opts.bufferLoaded) return RGB_PATTERN;
+      // A loaded buffer pulses the Paste button its buffer-kind colour: turquoise
+      // for a CLIP buffer, amber for a whole SCENE.
+      return opts.bufferKind === 'scene'
+        ? (blinkOn ? RGB_COPY_BUFFER_SCENE : RGB_COPY_BUFFER_SCENE_DIM)
+        : (blinkOn ? RGB_COPY_BUFFER : RGB_COPY_BUFFER_DIM);
     case 'clipDiv':
       return armed === 'clipDiv' ? RGB_TIMING_ARMED : RGB_TIMING;
     case 'swingUp':
@@ -1487,10 +1672,12 @@ function gridShiftRightRgb(sceneIndex: number, opts: SingleGridOpts, blinkOn: bo
       return swingButtonRgb('down', opts.swingMeter);
     case 'len':
       return armed === 'len' ? RGB_DECK_LEN_ON : RGB_DECK_LEN;
-    case 'pasteRev':
-      return armed === 'pasteRev' ? RGB_PATTERN_ARMED : RGB_PATTERN;
-    case 'now':
-      return opts.nowOn ? RGB_SYS : RGB_SYS_DIM;
+    case 'scrollUp':
+      // amber (scene colour) UP — dim when already at the top (offset 0).
+      return opts.canScrollUp === false ? RGB_SCENE_DIM : RGB_SCENE;
+    case 'scrollDown':
+      // amber (scene colour) DOWN — dim when no further scene can be revealed.
+      return opts.canScrollDown === false ? RGB_SCENE_DIM : RGB_SCENE;
     default:
       return RGB_OFF;
   }
@@ -1507,37 +1694,87 @@ export function computeSingleGridFrame(
   const blinkOn = opts.blinkOn ?? true;
   const shift = effShift(opts.top);
   const recording = !!opts.recording;
-  // Transposed clip matrix (x = lane, slot top→bottom).
+  const offset = opts.sceneScrollOffset ?? 0;
+  // PASTE-ARM target dimming (VISIBLE no-op, not silent): while a paste is armed in
+  // the no-shift matrix, only the buffer's VALID target class lights — a SCENE
+  // buffer lights the scene-launch column + dims the clip pads; a CLIP buffer keeps
+  // the clip pads + dims the scene column. So an illegal target (scene→clip /
+  // clip→scene) reads as "not a target" rather than a mystery no-op. Only under
+  // no-shift (under shift the right column is the grid-shift palette). COPY leaves
+  // both classes lit — either is a legal copy source.
+  const pasteArmed = !shift && opts.armedRightAction === 'paste' && !!opts.bufferLoaded;
+  const sceneBuffer = opts.bufferKind === 'scene';
+  const dimClipPads = pasteArmed && sceneBuffer; // clip pads are the invalid class
+  const dimSceneCol = pasteArmed && !sceneBuffer; // scene column is the invalid class
+  // Transposed clip matrix (x = lane, scene top→bottom) through the scroll window:
+  // visual row r (top = 0) shows scene `offset + r`. Each in-range scene paints its
+  // per-cell clip state (an empty cell is DARK); a scene out of range (≥ MAX_SCENES)
+  // is DARK.
   for (let lane = 0; lane < CLIP_LANES; lane++) {
-    for (let slot = 0; slot < CLIP_SLOTS; slot++) {
+    for (let row = 0; row < LP_HEIGHT; row++) {
+      const y = LP_HEIGHT - 1 - row;
+      const slot = slotForScene(offset + row);
+      if (slot === null) {
+        put(frame, padNote(lane, y), RGB_OFF);
+        continue;
+      }
       const idx = clipIndex(slot, lane);
-      const pad = clipIndexToGridPad(idx);
-      put(frame, padNote(pad.x, pad.y), singleClipStateRgb(data, idx, slot, lane, blinkOn, recording));
+      let rgb = singleClipStateRgb(data, idx, slot, lane, blinkOn, recording);
+      if (dimClipPads) rgb = scaleRgb(rgb, 0.15); // invalid target class → dimmed
+      put(frame, padNote(lane, y), rgb);
     }
   }
-  // Clip-Div preview: pulse the target clip pad blue in time with its division.
+  // Clip-Div preview: pulse the target clip pad blue in time with its division
+  // (only when that clip's scene is inside the current scroll window).
   if (opts.divPulse) {
-    const pad = clipIndexToGridPad(opts.divPulse.clipIndex);
-    put(frame, padNote(pad.x, pad.y), opts.divPulse.on ? RGB_TIMING_ARMED : RGB_TIMING);
+    const { slot, lane } = slotLaneForClipIndex(opts.divPulse.clipIndex);
+    const pad = gridPadForScrolledSlot(slot, lane, offset);
+    if (pad) put(frame, padNote(pad.x, pad.y), opts.divPulse.on ? RGB_TIMING_ARMED : RGB_TIMING);
   }
-  // Right column: no-shift = scene/row launch (amber; flash when any lane is
-  // queued that slot); +shift = the grid-shift function palette.
+  // AUTOMATION countdowns: flash EACH recording lane's playing cell 🟡🟡🔴🔴 in
+  // the last 4 beats before THAT clip's own wrap (only when its scene is in the
+  // scroll window). Per-lane — several lanes can record at once.
+  if (opts.autoCountdown) {
+    for (const cd of opts.autoCountdown) {
+      const { slot, lane } = slotLaneForClipIndex(cd.clipIndex);
+      const pad = gridPadForScrolledSlot(slot, lane, offset);
+      if (pad) put(frame, padNote(pad.x, pad.y), countdownRgb(cd));
+    }
+  }
+  // Right column: no-shift = scene/row launch (amber when the scene HAS a clip in
+  // any lane; flash when a lane is queued that slot; DARK for an EMPTY scene —
+  // content-gated so a scrolled-in empty scene reads as "nothing to launch");
+  // +shift = the grid-shift function palette (incl. the amber scene-window UP/DOWN).
+  const clips = data?.clips ?? {};
   for (let i = 0; i < SCENE_CCS.length; i++) {
     let rgb: Rgb;
     if (shift) {
       rgb = gridShiftRightRgb(i, opts, blinkOn);
     } else {
-      const slot = gridSceneRowToSlot(i);
+      const slot = slotForScene(offset + i);
       if (slot === null) rgb = RGB_OFF;
-      else {
+      else if (pasteArmed && sceneBuffer) {
+        // Scene-buffer paste armed: every in-range scene is a VALID target (even
+        // an empty one — a scene paste can FILL it), pulsing the amber scene-buffer
+        // colour so the scene column reads as "tap to paste the scene here".
+        rgb = blinkOn ? RGB_COPY_BUFFER_SCENE : RGB_COPY_BUFFER_SCENE_DIM;
+      } else if (dimSceneCol) {
+        rgb = RGB_SCENE_DIM; // clip-buffer paste: scene column is the invalid class
+      } else {
         let anyQueued = false;
+        let anyContent = false;
         for (let lane = 0; lane < CLIP_LANES; lane++) {
+          if (clips[String(clipIndex(slot, lane))]) anyContent = true;
           if (laneQueued(data, lane) === slot) {
             anyQueued = true;
             break;
           }
         }
-        rgb = anyQueued ? (blinkOn ? RGB_QUEUED : RGB_OFF) : RGB_SCENE;
+        rgb = anyQueued
+          ? (blinkOn ? RGB_QUEUED : RGB_OFF)
+          : anyContent
+          ? RGB_SCENE
+          : RGB_OFF; // empty scene → dark (content-gated)
       }
     }
     put(frame, SCENE_CCS[i], rgb);
@@ -1709,6 +1946,22 @@ export function computeSingleKeysFrame(opts: SingleKeysOpts): LaunchpadFrame {
 }
 
 // ── SINGLE Control view (session performance deck, re-homed) ──
+/** The resolved AUTOMATION COUNTDOWN flash for a pad — a colour bucket + the
+ *  on/off pulse phase, derived (in the control layer) from the published
+ *  automation render state via the pure automationCountdown* helpers. `clipIndex`
+ *  (grid view only) marks WHICH matrix cell is the automation clip. */
+export interface CountdownPaint {
+  color: 'yellow' | 'red';
+  on: boolean;
+}
+
+/** Map a countdown colour + pulse phase to an RGB (bright on-beat / dim between),
+ *  reusing the existing record/qrec palette. PURE. */
+export function countdownRgb(paint: CountdownPaint): Rgb {
+  if (paint.color === 'yellow') return paint.on ? RGB_QREC_ARMED : RGB_QREC_IDLE;
+  return paint.on ? RGB_RECORDING : RGB_RECORDING_DIM;
+}
+
 export interface SingleControlOpts {
   top: PermanentTopOpts;
   blinkOn?: boolean;
@@ -1759,6 +2012,9 @@ export function computeSingleControlFrame(opts: SingleControlOpts): LaunchpadFra
     padNote(CTRL_SONG_COL, CTRL_ARRANGE_ROW),
     opts.arrangeMode ? RGB_SONG_ARRANGE : RGB_SONG_SESSION,
   );
+  // (The old single AUTO pad at (2,6) is RETIRED — per-lane automation arm is
+  // the PERMANENT TOP ROW's SHIFT+column gesture, painted by
+  // paintPermanentTopRow's arm overlay in every view.)
   paintPermanentTopRow(frame, opts.top);
   return frame;
 }

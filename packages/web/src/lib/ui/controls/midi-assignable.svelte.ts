@@ -48,8 +48,19 @@ import {
   assignSlotToElectra,
   clearSlot,
 } from '$lib/graph/electra-control';
+import { notifyAutomationTouch, notifyAutomationRelease } from '$lib/audio/automation-touch';
+import {
+  hasRecordedAutomation,
+  clearRecordedAutomation,
+} from '$lib/graph/automation-assign';
 
 export type AssignKind = 'cc' | 'note';
+
+// NOTE (owner-locked automation model): lane ASSIGNMENT is MODULE-level now —
+// it lives on the module card's right-click menu (NodeContextMenu → Canvas),
+// NOT per control. This factory keeps only the per-control DELETE affordance
+// ("Clear recorded automation" — recording is module-scoped, deleting stays
+// control-precise) and the touch-suspend cross-wire for MIDI CC streams.
 
 export interface MidiAssignableArgs {
   /** Patch-graph node id. */
@@ -97,7 +108,11 @@ export interface MidiAssignable {
   readonly surfaces: SurfaceEntry[];
   /** Snapshot of ElectraControls this control can be assigned to (recompute on open). */
   readonly electras: ElectraEntry[];
-  /** Recompute the surface + electra snapshots (call when a menu opens). */
+  /** True when this control has RECORDED envelopes in some clip — surfaces the
+   *  "Clear recorded automation" menu item (module-level UN-assignment lives on
+   *  the module card's menu; deleting recorded data stays control-precise). */
+  readonly automationRecorded: boolean;
+  /** Recompute the surface + electra + automation snapshots (call when a menu opens). */
   refresh(): void;
   /** Enter learn mode (CC or NOTE per `kind`). */
   learn(): void;
@@ -109,6 +124,9 @@ export interface MidiAssignable {
   /** Assign/clear this control on an ElectraControl slot. */
   assignElectra(electraId: string, slot: number): void;
   clearElectra(electraId: string, slot: number): void;
+  /** DELETE this control's RECORDED envelopes — from every clip in its module's
+   *  assigned lane (or ALL clips when unassigned). One undoable transaction. */
+  clearAutomation(): void;
   /** Register the live setter (call onMount). */
   register(): void;
   /** Drop the live setter (call onDestroy). Cancels an in-flight learn for this control. */
@@ -163,6 +181,12 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
     args.onTransient?.(v);
     const m = args.moduleId, p = args.paramId;
     if (!m || !p) return;
+    // Touch-suspend cross-wire (task #183): an inbound MIDI CC is a live grab —
+    // suspend this param's clip-automation playback (CC wins) via the SAME seam
+    // a screen drag hits, under the 'midi' holder (per-surface ownership: a
+    // concurrent screen grab keeps its own grip). Fires per message so
+    // suspension is immediate; released when the stream goes cold (below).
+    notifyAutomationTouch({ nodeId: m, paramId: p }, 'midi');
     const engine = engineCtx.get();
     if (!engine) return;
     const node = patch.nodes[m] as ModuleNode | undefined;
@@ -184,7 +208,17 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
       pump = createCcCommit({
         commit: (v) => args.onchange?.(v),
         transient: (v) => pushTransient(v),
-        onActiveChange: (a) => { ccActive = a; },
+        onActiveChange: (a) => {
+          ccActive = a;
+          // Automation touch-RELEASE: the stream went cold (settleMs after the
+          // last CC = the "hand off the knob" for a device with no pointer-up),
+          // so end the 'midi' holder's grip — the mirror of the grab
+          // pushTransient fires per message. See notifyAutomationRelease.
+          if (!a) {
+            const m = args.moduleId, p = args.paramId;
+            if (m && p) notifyAutomationRelease({ nodeId: m, paramId: p }, 'midi');
+          }
+        },
         // Shared two-lane batcher: the card onchange routes to setNodeParam
         // (& friends) under LOCAL_ORIGIN — the UNDOABLE lane. N twisted
         // knobs now share ≤1 tracked transaction per 150ms window instead
@@ -198,6 +232,7 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
 
   let surfaces = $state<SurfaceEntry[]>([]);
   let electras = $state<ElectraEntry[]>([]);
+  let automationRecorded = $state(false);
 
   const binding = $derived.by<MidiBinding | undefined>(() => {
     void bindingTick;
@@ -228,7 +263,10 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
 
   function refresh(): void {
     const m = args.moduleId, p = args.paramId;
-    if (!m || !p) { surfaces = []; electras = []; return; }
+    if (!m || !p) {
+      surfaces = []; electras = []; automationRecorded = false;
+      return;
+    }
     surfaces = listControlSurfaces(patch.nodes).map((s) => ({
       id: s.id,
       name: s.name,
@@ -239,6 +277,17 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
       name: e.name,
       assignedSlot: slotForBinding(readElectraData(patch.nodes[e.id]), m, p),
     }));
+    automationRecorded = hasRecordedAutomation(patch.nodes, { nodeId: m, paramId: p });
+  }
+
+  /** DELETE this control's recorded envelopes (its module's assigned lane's
+   *  clips, or every clip when unassigned) — one undoable transaction via the
+   *  shared seam. */
+  function clearAutomation(): void {
+    const m = args.moduleId, p = args.paramId;
+    if (!m || !p) return;
+    clearRecordedAutomation({ nodeId: m, paramId: p });
+    automationRecorded = hasRecordedAutomation(patch.nodes, { nodeId: m, paramId: p });
   }
 
   function register(): void {
@@ -312,6 +361,7 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
     get badge() { return badge; },
     get surfaces() { return surfaces; },
     get electras() { return electras; },
+    get automationRecorded() { return automationRecorded; },
     refresh,
     learn,
     forget,
@@ -319,6 +369,7 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
     removeFromSurface,
     assignElectra,
     clearElectra,
+    clearAutomation,
     register,
     unregister,
     get ccActive() { return ccActive; },

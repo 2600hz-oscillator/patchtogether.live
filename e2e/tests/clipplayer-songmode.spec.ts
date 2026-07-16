@@ -31,7 +31,8 @@ const NOTE_CLIP = {
   steps: [{ step: 0, midi: 72, velocity: 127, lengthSteps: 1 }],
 };
 
-/** Seed note clips at the given flat indices (clipIndex = lane*8 + slot). */
+/** Seed note clips at the given flat indices (clipIndex = lane*64 + slot,
+ *  stride-64 schema v2). */
 async function seedClips(page: Page, nodeId: string, indices: number[]) {
   await page.evaluate(
     ({ nodeId, indices }) => {
@@ -46,6 +47,7 @@ async function seedClips(page: Page, nodeId: string, indices: number[]) {
         const clips: Record<string, unknown> = {};
         for (const i of indices) clips[String(i)] = JSON.parse(JSON.stringify(clip));
         n.data.clips = clips;
+        n.data.sv = 2; // already stride-64 → skip the legacy re-key migration
       });
     },
     { nodeId, indices },
@@ -65,7 +67,7 @@ test('song mode: arming RECORD captures clip launches into the arrangement', asy
   await spawnPatch(page, [
     { id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio', params: { quantize: 0 } },
   ]);
-  await seedClips(page, 'cp', [0, 8]); // lane0/slot0 + lane1/slot0
+  await seedClips(page, 'cp', [0, 64]); // lane0/slot0 + lane1/slot0
 
   // Arm RECORD (the engine clears the log + restarts song time on the rising edge).
   await page.getByTestId('clipplayer-record-cp').click();
@@ -75,7 +77,7 @@ test('song mode: arming RECORD captures clip launches into the arrangement', asy
   // Launch lane 0, then lane 1, spaced in time so they record at different beats.
   await page.locator('.svelte-flow__node-clipplayer [data-clip="0"]').click();
   await page.waitForTimeout(500);
-  await page.locator('.svelte-flow__node-clipplayer [data-clip="8"]').click();
+  await page.locator('.svelte-flow__node-clipplayer [data-clip="64"]').click();
   await page.waitForTimeout(500);
 
   const evs = (await readData(page, 'cp')).arrangement?.events ?? [];
@@ -100,7 +102,7 @@ test('song mode: the SES/ARR button flips clipMode', async ({ page, rack }) => {
 
 test('song mode: ARRANGEMENT playback launches lanes from the recorded log', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
-  await seedClips(page, 'cp', [0, 8]);
+  await seedClips(page, 'cp', [0, 64]);
   // Inject a pre-built arrangement (lane 0 + lane 1 both launch slot 0 at beat 0)
   // and switch to ARRANGEMENT mode. Free-run → the playback cursor fires it.
   await page.evaluate(() => {
@@ -131,7 +133,7 @@ test('song mode: ARRANGEMENT playback launches lanes from the recorded log', asy
 
 test('song view: renders blocks + select/delete edits the arrangement', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
-  await seedClips(page, 'cp', [0, 8]);
+  await seedClips(page, 'cp', [0, 64]);
   // lane 0: slot 0 [0,8) then slot 1 [8,16); lane 1: slot 0 [0,16) → 3 blocks.
   await page.evaluate(() => {
     const w = globalThis as unknown as W;
@@ -169,7 +171,7 @@ test('song mode: OVERDUB keeps the take + merges new launches (vs REPLACE wiping
   await spawnPatch(page, [
     { id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio', params: { quantize: 0 } },
   ]);
-  await seedClips(page, 'cp', [0, 8]); // lane0/slot0 + lane1/slot0
+  await seedClips(page, 'cp', [0, 64]); // lane0/slot0 + lane1/slot0
 
   // Pre-seed a lane-2 launch + set OVERDUB mode (the arm must KEEP this take).
   await page.evaluate(() => {
@@ -192,7 +194,7 @@ test('song mode: OVERDUB keeps the take + merges new launches (vs REPLACE wiping
   await page.waitForTimeout(150);
   await page.locator('.svelte-flow__node-clipplayer [data-clip="0"]').click();
   await page.waitForTimeout(400);
-  await page.locator('.svelte-flow__node-clipplayer [data-clip="8"]').click();
+  await page.locator('.svelte-flow__node-clipplayer [data-clip="64"]').click();
   await page.waitForTimeout(300);
 
   const evs = (await readData(page, 'cp')).arrangement?.events ?? [];
@@ -284,7 +286,7 @@ test('drag-to-move: dragging a block retimes its launch + persists (bar-snapped)
 
 test('pop-out editor: opens, edits the SAME synced arrangement, closes on Esc', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
-  await seedClips(page, 'cp', [0, 8]);
+  await seedClips(page, 'cp', [0, 64]);
   await page.evaluate(() => {
     const w = globalThis as unknown as W;
     w.__ydoc.transact(() => {

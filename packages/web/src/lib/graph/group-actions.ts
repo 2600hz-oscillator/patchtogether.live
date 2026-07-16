@@ -7,6 +7,7 @@
 
 import type { Edge, ModuleNode, CableType, PortDef } from './types';
 import type { ExposedPort, GroupData } from './group-projection';
+import { scrubClipPlayerTransientData } from '$lib/audio/modules/clip-types';
 
 export interface PortCandidate {
   /** The child node id this port lives on. */
@@ -536,6 +537,10 @@ export function planDuplicateGroup(args: DuplicateGroupArgs): DuplicateGroupPlan
     if (clone.data && typeof clone.data === 'object') {
       delete (clone.data as { parentGroupId?: string }).parentGroupId;
     }
+    // A duplicated CLIP PLAYER child copies content, never live-performance
+    // state (playing/queued/record arms/module claims) — same scrub as the
+    // single-node duplicate path in Canvas.
+    if (clone.type === 'clipplayer') scrubClipPlayerTransientData(clone.data);
     newChildren.push(clone);
   }
 

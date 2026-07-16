@@ -29,6 +29,7 @@ import {
   toggleNoteAt,
   rowToMidi,
   velBucket,
+  clipIndex,
   VEL_DEFAULT,
   STEPS_PER_PAGE,
   MAX_EDIT_PAGES,
@@ -41,19 +42,19 @@ const clip = (over: Partial<NoteClipRecord> = {}): NoteClipRecord => ({
 });
 
 describe('clip-index math (placement-free)', () => {
-  it('maps (slot, lane) → flat index row-major (lane*8+slot)', () => {
-    expect(clipIndexForSlotLane(0, 0)).toBe(0);
-    expect(clipIndexForSlotLane(7, 0)).toBe(7);
-    expect(clipIndexForSlotLane(0, 1)).toBe(8);
-    expect(clipIndexForSlotLane(7, 7)).toBe(63);
+  it('maps (slot, lane) → flat index (lane*SCENE_STRIDE + slot)', () => {
+    expect(clipIndexForSlotLane(0, 0)).toBe(clipIndex(0, 0)); // 0
+    expect(clipIndexForSlotLane(7, 0)).toBe(clipIndex(7, 0)); // 7
+    expect(clipIndexForSlotLane(0, 1)).toBe(clipIndex(0, 1)); // lane 1 slot 0 = 64
+    expect(clipIndexForSlotLane(7, 7)).toBe(clipIndex(7, 7)); // lane 7 slot 7 = 455
   });
-  it('returns null outside the 8×8 matrix', () => {
-    expect(clipIndexForSlotLane(8, 0)).toBeNull();
+  it('returns null outside the VISIBLE 8×8 card matrix (slot ≥ CLIP_SLOTS or lane ≥ CLIP_LANES)', () => {
+    expect(clipIndexForSlotLane(8, 0)).toBeNull(); // slot 8 is off the visible card grid
     expect(clipIndexForSlotLane(0, 8)).toBeNull();
     expect(clipIndexForSlotLane(-1, 0)).toBeNull();
   });
-  it('slotLaneForClipIndex inverts it', () => {
-    for (const i of [0, 7, 8, 33, 63]) {
+  it('slotLaneForClipIndex inverts it over the visible 8×8 quadrant', () => {
+    for (const i of [clipIndex(0, 0), clipIndex(7, 0), clipIndex(0, 1), clipIndex(1, 4), clipIndex(7, 7)]) {
       const { slot, lane } = slotLaneForClipIndex(i);
       expect(clipIndexForSlotLane(slot, lane)).toBe(i);
     }

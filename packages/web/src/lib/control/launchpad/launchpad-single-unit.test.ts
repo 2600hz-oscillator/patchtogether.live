@@ -26,7 +26,7 @@ vi.mock('$lib/audio/scheduler-clock', () => ({
   }),
 }));
 
-import { patch as livePatch } from '$lib/graph/store';
+import { patch as livePatch, ydoc } from '$lib/graph/store';
 import {
   installSimulatedLaunchpad,
   installSimulatedLaunchpadSingle,
@@ -45,6 +45,7 @@ import {
   __test_resetBinding,
   __test_setDeployment,
   __test_mode,
+  __test_copyBuffer,
 } from './launchpad-control.svelte';
 import {
   clipIndexToGridPad,
@@ -115,8 +116,8 @@ const G_CLIPDIV = 2;
 const G_SWING_UP = 3;
 const G_SWING_DOWN = 4;
 const G_LEN = 5;
-const G_PASTE_REV = 6;
-const G_NOW = 7;
+const G_SCROLL_UP = 6; // repurposed from PASTE-REV → amber scene-window UP
+const G_SCROLL_DOWN = 7; // repurposed from NOW → amber scene-window DOWN
 // Clip right-column scene indices.
 const C_DOUBLE = 0;
 const C_LENGTH = 1;
@@ -416,6 +417,12 @@ describe('SINGLE — permanent top row (transport / views / undo / redo)', () =>
     sim.cc('L', sceneCc(G_SWING_UP), 127);
     expect(laneSwing(liveData(), 0)).toBeCloseTo(0.02, 5);
     expect(__test_mode().canUndo, 'a persistent edit is undoable').toBe(true);
+    // UNLATCH first — under shift a top-row press is the per-lane automation
+    // ARM gesture (consumed), so shift+UNDO must NOT undo (asserted in the
+    // dedicated arm-gesture describe below).
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0);
+    expect(__test_mode().shiftLatched).toBe(false);
     sim.cc('L', CC_UNDO, 127);
     expect(laneSwing(liveData(), 0), 'undo reverted the swing edit').toBeCloseTo(0, 5);
     expect(__test_mode().canRedo).toBe(true);
@@ -463,10 +470,11 @@ describe('SINGLE — shift latch vs hold', () => {
 });
 
 // ===========================================================================
-// SINGLE — GRID-shift tap-to-ARM (copy / paste / paste-rev / clip-div / len) +
-// swing nudge + NOW.
+// SINGLE — GRID-shift tap-to-ARM (copy / paste / clip-div / len) + swing nudge.
+// (PASTE-REV + NOW were repurposed to the scene-window UP/DOWN — see the
+// scene-scroll describe below.)
 // ===========================================================================
-describe('SINGLE — Grid-shift tap-to-arm + swing + now', () => {
+describe('SINGLE — Grid-shift tap-to-arm + swing', () => {
   let sim: SimulatedLaunchpad;
   beforeEach(async () => {
     sim = await installSimulatedLaunchpadSingle();
@@ -504,22 +512,6 @@ describe('SINGLE — Grid-shift tap-to-arm + swing + now', () => {
     expect(dest).toBeTruthy();
     expect(dest.steps.some((st) => st.midi === 67)).toBe(true);
     expect(__test_mode().armedRightAction).toBeNull();
-  });
-
-  it('arm PASTE-REV → tap a dest → steps mirrored', () => {
-    const src = noteClip();
-    src.lengthSteps = 16;
-    src.steps = [{ step: 0, midi: 60, velocity: 100, lengthSteps: 1 }];
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: src } });
-    bindLaunchpadToClip(NODE_ID);
-    latchShift();
-    sim.cc('L', sceneCc(G_COPY), 127);
-    pressClip(sim, 0, 0); // copy
-    sim.cc('L', sceneCc(G_PASTE_REV), 127);
-    pressClip(sim, 1, 1);
-    const dest = clipsOf()[clipIndex(1, 1)];
-    expect(dest.steps).toHaveLength(1);
-    expect(dest.steps[0].step, 'reversed: 16 − 0 − 1 = 15').toBe(15);
   });
 
   it('PASTE with an EMPTY buffer does NOT arm', () => {
@@ -602,21 +594,6 @@ describe('SINGLE — Grid-shift tap-to-arm + swing + now', () => {
     expect(__test_mode().swingMeterDir, 'centered → green-flash meter dir').toBe('center');
   });
 
-  it('NOW is a sticky toggle: clip taps launch immediate', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote() } });
-    bindLaunchpadToClip(NODE_ID);
-    latchShift();
-    sim.cc('L', sceneCc(G_NOW), 127);
-    expect(__test_mode().nowHeld).toBe(true);
-    // Unlatch shift so a plain grid tap launches (shift-tap-armed clips are consumed).
-    sim.cc('L', CC_SHIFT, 127);
-    sim.cc('L', CC_SHIFT, 0);
-    pressClip(sim, 0, 0);
-    expect(queued()![0]).toBe(0);
-    const imm = liveData().queuedImmediate as boolean[] | undefined;
-    expect(imm?.[0]).toBe(true);
-  });
-
   it('leaving Grid clears a pending arm (commits a clip-div preview)', () => {
     const c = clipWithNote();
     seedClipPlayer({ clips: { [clipIndex(0, 0)]: c } });
@@ -627,6 +604,150 @@ describe('SINGLE — Grid-shift tap-to-arm + swing + now', () => {
     setLaunchpadView('clip'); // leave Grid
     expect(__test_mode().armedRightAction).toBeNull();
     expect(clipsOf()[clipIndex(0, 0)].div, 'preview committed on leaving Grid').toBe(4);
+  });
+});
+
+// ===========================================================================
+// SINGLE — GRID scene-scroll window (reach scenes beyond the 8 rows). The two
+// side buttons repurposed from PASTE-REV (→ UP) and NOW (→ DOWN) slide the
+// window; the 8 scene-launch buttons stay POSITION-RELATIVE (top = topmost
+// visible scene); a scene beyond the 8 stored slots is DARK / a launch no-op.
+// UP/DOWN live in the grid-shift palette (reached under shift); the scene launch
+// itself is no-shift. Driven through the REAL device→map→binding→Y.Doc chain.
+// ===========================================================================
+describe('SINGLE — Grid scene-scroll (>8 scenes; UP/DOWN from PASTE-REV/NOW)', () => {
+  let sim: SimulatedLaunchpad;
+  beforeEach(async () => {
+    sim = await installSimulatedLaunchpadSingle();
+    __test_setDeployment('single', 'grid');
+  });
+  const latch = () => {
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0);
+    expect(__test_mode().shiftLatched).toBe(true);
+  };
+  const unlatch = () => {
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0);
+    expect(__test_mode().shiftLatched).toBe(false);
+  };
+  // Clips through slot 7 (lane 0) → highestContentScene 7 → DOWN can reveal ONE
+  // empty scene (scene 8), so maxSceneScrollOffset = 1.
+  const seedThroughSlot7 = () =>
+    seedClipPlayer({
+      clips: Object.fromEntries([0, 1, 2, 3, 4, 5, 6, 7].map((s) => [clipIndex(s, 0), noteClip()])),
+    });
+
+  it('starts at offset 0', () => {
+    seedThroughSlot7();
+    bindLaunchpadToClip(NODE_ID);
+    expect(__test_mode().sceneScrollOffset).toBe(0);
+  });
+
+  it('DOWN slides the window; UP clamps at 0; DOWN clamps at the lazy reveal limit', () => {
+    seedThroughSlot7();
+    bindLaunchpadToClip(NODE_ID);
+    latch();
+    sim.cc('L', sceneCc(G_SCROLL_DOWN), 127); // reveal scene 8 (the one empty past content)
+    expect(__test_mode().sceneScrollOffset).toBe(1);
+    sim.cc('L', sceneCc(G_SCROLL_DOWN), 127); // clamped — nothing deeper to reveal
+    expect(__test_mode().sceneScrollOffset).toBe(1);
+    sim.cc('L', sceneCc(G_SCROLL_UP), 127); // back up
+    expect(__test_mode().sceneScrollOffset).toBe(0);
+    sim.cc('L', sceneCc(G_SCROLL_UP), 127); // clamped at the top
+    expect(__test_mode().sceneScrollOffset).toBe(0);
+  });
+
+  it('an empty player cannot scroll (DOWN is a no-op)', () => {
+    seedClipPlayer({ clips: {} });
+    bindLaunchpadToClip(NODE_ID);
+    latch();
+    sim.cc('L', sceneCc(G_SCROLL_DOWN), 127);
+    expect(__test_mode().sceneScrollOffset).toBe(0);
+  });
+
+  it('after DOWN, the POSITION-RELATIVE top scene button launches the SHIFTED scene across all lanes', () => {
+    // scene 1 (slot 1) has clips in lanes 0 + 1; slot 7 makes DOWN reachable.
+    seedClipPlayer({
+      clips: {
+        [clipIndex(1, 0)]: noteClip(),
+        [clipIndex(1, 1)]: noteClip(),
+        [clipIndex(7, 0)]: noteClip(),
+      },
+    });
+    bindLaunchpadToClip(NODE_ID);
+    latch();
+    sim.cc('L', sceneCc(G_SCROLL_DOWN), 127); // offset → 1
+    expect(__test_mode().sceneScrollOffset).toBe(1);
+    unlatch();
+    // Top scene button (index 0) now addresses scene 1 → slot 1 across all lanes.
+    sim.cc('L', sceneCc(0), 127);
+    expect(queued()![0], 'lane 0 fired slot 1').toBe(1);
+    expect(queued()![1], 'lane 1 fired slot 1').toBe(1);
+    expect(queued()![2], 'a lane with no clip in slot 1 stops').toBe('stop');
+  });
+
+  it('a scrolled-in EMPTY scene launches DARK (no-op) — scene button AND grid pad', () => {
+    seedThroughSlot7();
+    bindLaunchpadToClip(NODE_ID);
+    latch();
+    sim.cc('L', sceneCc(G_SCROLL_DOWN), 127); // offset → 1 (bottom row = scene 8, empty)
+    unlatch();
+    // Bottom scene button (index 7 → scene 8) is empty → no queued write at all.
+    sim.cc('L', sceneCc(7), 127);
+    expect(queued(), 'empty scene launch is a no-op').toBeUndefined();
+    // The bottom-row grid pad (y=0 → scene 8) is likewise a dark no-op.
+    sim.press('L', 0, 0);
+    expect(queued(), 'empty-scene grid pad is a no-op').toBeUndefined();
+    // But the TOP row (scene 1 = slot 1) still launches its clip.
+    sim.press('L', 0, 7); // clip at slot 1 lane 0 exists (seedThroughSlot7)
+    expect(queued()![0]).toBe(1);
+  });
+
+  it('scroll offset resets to 0 on re-bind (local view state, never persisted)', () => {
+    seedThroughSlot7();
+    bindLaunchpadToClip(NODE_ID);
+    latch();
+    sim.cc('L', sceneCc(G_SCROLL_DOWN), 127);
+    expect(__test_mode().sceneScrollOffset).toBe(1);
+    expect((liveData() as { sceneScrollOffset?: number }).sceneScrollOffset, 'not written to node.data').toBeUndefined();
+    bindLaunchpadToClip(NODE_ID); // re-bind
+    expect(__test_mode().sceneScrollOffset).toBe(0);
+  });
+
+  // >8-SCENE STORAGE (this PR): a scrolled-in scene ≥ 8 backs a REAL slot, so a
+  // clip placed there PERSISTS + LAUNCHES through the full device→map→Y.Doc chain.
+  it('places a clip in a scrolled-in scene ≥ 8: double-tap persists it at the high-slot stride-64 key', () => {
+    seedThroughSlot7(); // content through slot 7 → highestContentScene 7 → DOWN reveals scene 8
+    bindLaunchpadToClip(NODE_ID);
+    latch();
+    sim.cc('L', sceneCc(G_SCROLL_DOWN), 127); // offset → 1 (scene 8 = bottom row, y=0)
+    expect(__test_mode().sceneScrollOffset).toBe(1);
+    unlatch();
+    // Double-tap the empty scene-8 grid pad (x = lane 0, y = 0) → materializes a clip.
+    sim.press('L', 0, 0);
+    sim.press('L', 0, 0);
+    // It persists at clipIndex(8, 0) = 8 (lane 0, slot 8) — a scene beyond the 8.
+    expect(clipsOf()[clipIndex(8, 0)], 'a clip persists in scene 8').toBeTruthy();
+    expect(clipIndex(8, 0)).toBe(8);
+  });
+
+  it('launches a clip stored in a scene ≥ 8 — via the grid pad AND the scene button', () => {
+    // Clips in scene 8 (slot 8) on lanes 0 + 2 → highestContentScene 8 (reachable).
+    seedClipPlayer({ clips: { [clipIndex(8, 0)]: noteClip(), [clipIndex(8, 2)]: noteClip() } });
+    bindLaunchpadToClip(NODE_ID);
+    latch();
+    sim.cc('L', sceneCc(G_SCROLL_DOWN), 127); // offset → 1 (scene 8 = bottom row)
+    expect(__test_mode().sceneScrollOffset).toBe(1);
+    unlatch();
+    // Grid pad: scene 8, lane 0 (x=0, y=0) launches slot 8 on lane 0.
+    sim.press('L', 0, 0);
+    expect(queued()![0], 'grid pad launched the scene-8 clip on lane 0').toBe(8);
+    // Scene button (index 7 → scene 8) fires slot 8 across all lanes (empty lanes stop).
+    sim.cc('L', sceneCc(7), 127);
+    expect(queued()![0]).toBe(8);
+    expect(queued()![2]).toBe(8);
+    expect(queued()![1], 'a lane with no clip in scene 8 stops').toBe('stop');
   });
 });
 
@@ -888,6 +1009,15 @@ describe('SINGLE — Control view', () => {
     expect(liveData().clipMode).toBe('arrangement');
   });
 
+  it('the OLD single AUTO pad at (2,6) is RETIRED — pressing it does nothing (per-lane arm lives on the top row)', () => {
+    seedClipPlayer({ clips: {} });
+    seedTimelorde(1, 120);
+    bindLaunchpadToClip(NODE_ID);
+    expect(liveData().automation).toBeUndefined();
+    sim.press('L', 2, CTRL_ARRANGE_ROW); // the retired pad — a dark no-op now
+    expect(liveData().automation, 'no arm write from the retired pad').toBeUndefined();
+  });
+
   it('the per-lane STOP scene column stops a playing lane', () => {
     const playing: (number | null)[] = new Array(CLIP_LANES).fill(null);
     playing[0] = 0; // lane 0 playing (scene index 7 = bottom = lane 0)
@@ -904,6 +1034,188 @@ describe('SINGLE — Control view', () => {
     hoisted.tick!();
     const reset = sim.ledAt('L', padNote(DECK_RESET_COL, DECK_RESET_ROW));
     expect(reset![0] + reset![1] + reset![2]).toBeGreaterThan(0);
+  });
+});
+
+// ===========================================================================
+// SINGLE — PER-LANE AUTOMATION ARM on the permanent top row (owner gesture):
+// SHIFT + the lane's top-row button toggles that lane's arm from EVERY view;
+// lane 8 = double-tap SHFT (its column IS the shift button). The press is
+// CONSUMED under shift — the button's normal function must not fire.
+// ===========================================================================
+describe('SINGLE — per-lane automation ARM (SHIFT + top row / double-tap SHFT)', () => {
+  let sim: SimulatedLaunchpad;
+  beforeEach(async () => {
+    sim = await installSimulatedLaunchpadSingle();
+    __test_setDeployment('single', 'grid');
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    seedTimelorde(0);
+    bindLaunchpadToClip(NODE_ID);
+  });
+  const laneArm = (lane: number): boolean =>
+    ((liveData().automation as { lanes?: ({ arm?: boolean } | null)[] } | undefined)?.lanes?.[
+      lane
+    ]?.arm ?? false) === true;
+  const laneRecorder = (lane: number): number | undefined =>
+    (liveData().automation as { lanes?: ({ recorderId?: number } | null)[] } | undefined)
+      ?.lanes?.[lane]?.recorderId;
+  /** Advance past the shift double-tap window so taps don't pair up. */
+  const passWindow = () => {
+    for (let i = 0; i < 15; i++) hoisted.tick!();
+  };
+
+  it('SHIFT HELD + top col N toggles lane N’s arm (recorderId stamped) and CONSUMES the press — the normal function never fires', () => {
+    seedTimelorde(0);
+    sim.cc('L', CC_SHIFT, 127); // hold shift
+    // shift+▶ (col 0) → lane 0 arm, transport UNTOUCHED.
+    sim.cc('L', CC_TRANSPORT_TOP, 127);
+    expect(laneArm(0), 'lane 0 armed').toBe(true);
+    expect(laneRecorder(0), 'per-lane single-writer = this client').toBe(ydoc.clientID);
+    expect(tlRunning(), 'shift+transport did NOT start the transport').toBe(0);
+    // shift+CLIP (col 2) → lane 2 arm, view UNCHANGED.
+    sim.cc('L', CC_VIEW_CLIP, 127);
+    expect(laneArm(2), 'lane 2 armed').toBe(true);
+    expect(__test_mode().singleView, 'shift+CLIP did not switch views').toBe('grid');
+    // shift+UNDO (col 5) → lane 5 arm, no undo side-effect (nothing to undo,
+    // but the press must classify as an arm toggle, not an undo).
+    sim.cc('L', CC_UNDO, 127);
+    expect(laneArm(5), 'lane 5 armed').toBe(true);
+    // Release shift: the combo press consumed the hold — NO latch.
+    sim.cc('L', CC_SHIFT, 0);
+    expect(__test_mode().shiftLatched, 'a shift used as an arm modifier never latches').toBe(false);
+    // Re-toggle under a fresh hold → lane 0 disarms; others untouched.
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_TRANSPORT_TOP, 127);
+    sim.cc('L', CC_SHIFT, 0);
+    expect(laneArm(0), 'lane 0 disarmed by the same gesture').toBe(false);
+    expect(laneArm(2), 'lane 2 still armed').toBe(true);
+  });
+
+  it('works with SHIFT LATCHED and from EVERY view (control view too)', () => {
+    passWindow();
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0); // latch
+    expect(__test_mode().shiftLatched).toBe(true);
+    sim.cc('L', CC_VIEW_GRID, 127); // col 1 → lane 1 arm (NOT a view flip)
+    expect(laneArm(1)).toBe(true);
+    // Unlatch (the arm press broke the double-tap pair), flip to CONTROL view,
+    // then use the gesture there — same result (view-agnostic).
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0);
+    expect(__test_mode().shiftLatched).toBe(false);
+    passWindow();
+    sim.cc('L', CC_VIEW_CONTROL, 127);
+    expect(__test_mode().singleView).toBe('control');
+    sim.cc('L', CC_SHIFT, 127); // hold
+    sim.cc('L', CC_REDO, 127); // col 6 → lane 6 arm
+    sim.cc('L', CC_SHIFT, 0);
+    expect(laneArm(6), 'armed from the control view').toBe(true);
+    expect(__test_mode().singleView, 'still in control view').toBe('control');
+  });
+
+  it('LANE 8 = DOUBLE-TAP SHFT: fires on the SECOND TAP’S RELEASE (tap-tap only), REVERTS the latch change; a lone tap still latches', () => {
+    passWindow();
+    // Single tap: latches as always (immediate, unchanged behaviour).
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0);
+    expect(__test_mode().shiftLatched, 'first tap latched immediately').toBe(true);
+    expect(laneArm(7)).toBe(false);
+    // Second tap WITHIN the window: the pair fires on this tap's SHORT
+    // RELEASE (a press that becomes a HOLD is a modifier, never a lane-8
+    // toggle) and the first tap's latch change is REVERTED (net latch
+    // unchanged from before the pair).
+    sim.cc('L', CC_SHIFT, 127);
+    expect(laneArm(7), 'pending on the press — fires on the RELEASE').toBe(false);
+    sim.cc('L', CC_SHIFT, 0);
+    expect(laneArm(7), 'lane 8 armed on the second tap’s release').toBe(true);
+    expect(laneRecorder(7)).toBe(ydoc.clientID);
+    expect(__test_mode().shiftLatched, 'the pair nets the latch back to OFF').toBe(false);
+    // A second double-tap disarms lane 8 the same way.
+    passWindow();
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0);
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0);
+    expect(laneArm(7), 'double-tap toggles OFF').toBe(false);
+    expect(__test_mode().shiftLatched).toBe(false);
+    // A lone tap AFTER the window still just latches (the arm didn't eat it).
+    passWindow();
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0);
+    expect(__test_mode().shiftLatched, 'single tap after the window latches').toBe(true);
+    expect(laneArm(7), 'no spurious lane-8 arm from the lone tap').toBe(false);
+  });
+
+  it('LATCHED → double-tap: toggles lane 8 AND nets the latch back to ON (the other gesture direction)', () => {
+    passWindow();
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0); // latch
+    expect(__test_mode().shiftLatched).toBe(true);
+    passWindow(); // the latch tap is long past — a fresh pair starts here
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0); // tap 1 (unlatches + anchors)
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0); // tap 2 → fires
+    expect(laneArm(7), 'double-tap from the latched state arms lane 8').toBe(true);
+    expect(__test_mode().shiftLatched, 'the latch nets back to ON').toBe(true);
+  });
+
+  it('tap-then-HOLD never fires lane 8 (the second press became a modifier)', () => {
+    passWindow();
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0); // tap 1 → latched + anchored
+    expect(__test_mode().shiftLatched).toBe(true);
+    sim.cc('L', CC_SHIFT, 127); // press 2 within the window…
+    for (let i = 0; i < 15; i++) hoisted.tick!(); // …but it becomes a HOLD
+    sim.cc('L', CC_SHIFT, 0);
+    expect(laneArm(7), 'a hold is a modifier — no lane-8 toggle').toBe(false);
+    expect(__test_mode().shiftLatched, 'tap 1’s latch stands (a hold never latches)').toBe(true);
+  });
+
+  it('held-shift PALETTE use never latches on release (fast hold+tap+release)', () => {
+    // Pre-existing #1078 quirk the arm gesture escalated: any use of held
+    // shift as a MODIFIER (grid palette / arm gesture / matrix tap) must
+    // suppress the release-latch.
+    sim.cc('L', CC_SHIFT, 127); // hold
+    sim.cc('L', sceneCc(G_SWING_UP), 127); // a palette action under the hold
+    sim.cc('L', CC_SHIFT, 0); // fast release (< the tap window)
+    expect(__test_mode().shiftLatched, 'modifier use suppressed the latch').toBe(false);
+    expect(laneSwing(liveData(), 0), 'the palette action itself applied').toBeCloseTo(0.02, 5);
+  });
+
+  it('a press BETWEEN two shift taps breaks the pair — “latch → arm COPY → unlatch” never arms lane 8', () => {
+    passWindow();
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0); // latch
+    sim.cc('L', sceneCc(0), 127); // arm COPY under the latch (any other press)
+    sim.cc('L', CC_SHIFT, 127); // quick unlatch — NOT a double-tap
+    sim.cc('L', CC_SHIFT, 0);
+    expect(__test_mode().shiftLatched).toBe(false);
+    expect(laneArm(7), 'no spurious lane-8 arm from the latch/unlatch pair').toBe(false);
+  });
+
+  it('LED: an armed lane’s top button RED-FLASHES over its base colour in EVERY view; the arm map shows while shift is held', () => {
+    // Arm lane 2 (shift+CLIP column).
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_VIEW_CLIP, 127);
+    // While SHIFT is held: the row is the ARM MAP — armed col red, others dim red.
+    hoisted.tick!();
+    const armMapArmed = sim.ledAt('L', CC_VIEW_CLIP)!;
+    expect(armMapArmed[0], 'armed column reads RED in the arm map').toBeGreaterThan(60);
+    expect(armMapArmed[1]).toBeLessThan(30);
+    const armMapAvail = sim.ledAt('L', CC_TRANSPORT_TOP)!;
+    expect(armMapAvail[0], 'available column reads dim red').toBeGreaterThan(20);
+    sim.cc('L', CC_SHIFT, 0); // release
+    // No shift: the armed column flashes red on the bright blink phase…
+    hoisted.tick!();
+    const flash = sim.ledAt('L', CC_VIEW_CLIP)!;
+    expect(flash[0], 'red flash overlay while armed').toBeGreaterThan(60);
+    expect(flash[1]).toBeLessThan(30);
+    // …and alternates back to the BASE compass colour on the dim phase
+    // (blink flips every BLINK_TICKS=10 render ticks).
+    for (let i = 0; i < 10; i++) hoisted.tick!();
+    const base = sim.ledAt('L', CC_VIEW_CLIP)!;
+    expect(base[2], 'base compass colour (purple has blue) shows on the off phase').toBeGreaterThan(10);
   });
 });
 
@@ -950,5 +1262,267 @@ describe('SINGLE — unbind', () => {
     expect(boundClipNode()).toBeNull();
     pressClip(sim, 0, 0);
     expect(queued()?.[0] ?? null).toBeNull();
+  });
+});
+
+// ===========================================================================
+// SINGLE — SCENE copy/paste (Part 3). While a COPY/PASTE arm is active it is
+// STICKY across shift release, so the NO-SHIFT matrix hosts the target: a clip
+// pad (single clip) OR a scene-launch button (a whole scene = all 8 lanes at a
+// slot). The typed buffer + the 4-combo type gate (scene→scene / clip→clip apply;
+// scene→clip / clip→scene NO-OP), one-step undo, scroll-mapped copy+paste, and an
+// empty-scene clear. Driven through the REAL device→map→binding→Y.Doc chain.
+// ===========================================================================
+describe('SINGLE — SCENE copy/paste (typed buffer + 4-combo type gate)', () => {
+  let sim: SimulatedLaunchpad;
+  beforeEach(async () => {
+    sim = await installSimulatedLaunchpadSingle();
+    __test_setDeployment('single', 'grid');
+  });
+  const G_COPY_I = 0;
+  const G_PASTE_I = 1;
+  const G_SCROLL_DOWN_I = 7;
+  const latch = () => {
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0);
+    expect(__test_mode().shiftLatched).toBe(true);
+  };
+  const unlatch = () => {
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0);
+    expect(__test_mode().shiftLatched).toBe(false);
+  };
+  const sceneBtn = (idx: number) => sim.cc('L', sceneCc(idx), 127);
+  // COPY a whole scene: arm COPY under shift, release shift (COPY stays armed —
+  // sticky), then tap the no-shift SCENE-LAUNCH button for that scene.
+  const copyScene = (idx: number) => {
+    latch();
+    sim.cc('L', sceneCc(G_COPY_I), 127);
+    expect(__test_mode().armedRightAction).toBe('copy');
+    unlatch();
+    expect(__test_mode().armedRightAction, 'COPY survives shift release (sticky)').toBe('copy');
+    sceneBtn(idx);
+  };
+  // ARM paste (buffer must be loaded), release shift → paste sticky in no-shift.
+  const armPaste = () => {
+    latch();
+    sim.cc('L', sceneCc(G_PASTE_I), 127);
+    expect(__test_mode().armedRightAction).toBe('paste');
+    unlatch();
+    expect(__test_mode().armedRightAction, 'PASTE survives shift release (sticky)').toBe('paste');
+  };
+  const pasteSceneAt = (idx: number) => { armPaste(); sceneBtn(idx); };
+  // Copy a SINGLE clip (the existing under-shift clip-pad consume), leave no-shift.
+  const copyClipAt = (slot: number, lane: number) => {
+    latch();
+    sim.cc('L', sceneCc(G_COPY_I), 127);
+    pressClip(sim, slot, lane);
+    unlatch();
+  };
+  const clipAt = (slot: number, lane: number): NoteClipRecord | undefined =>
+    (clipsOf() ?? {})[String(clipIndex(slot, lane))];
+  const NOTE = (step: number, midi: number) => [{ step, midi, velocity: 100, lengthSteps: 1 }];
+
+  it('scene→scene: FULL REPLACE — source lanes land; a source-empty lane empties the target', () => {
+    seedClipPlayer({
+      clips: {
+        // source scene 2: lanes 0 + 2 have clips (lane 1 empty)
+        [clipIndex(2, 0)]: clipWithNote(1, 61),
+        [clipIndex(2, 2)]: clipWithNote(2, 62),
+        // target scene 5: PRE-EXISTING content that a full replace must clear
+        [clipIndex(5, 1)]: clipWithNote(3, 63),
+        [clipIndex(5, 3)]: clipWithNote(4, 64),
+      },
+    });
+    bindLaunchpadToClip(NODE_ID);
+    copyScene(2);
+    expect(__test_copyBuffer()?.kind).toBe('scene');
+    pasteSceneAt(5);
+    // source lanes 0 + 2 landed at slot 5
+    expect(clipAt(5, 0)?.steps).toEqual(NOTE(1, 61));
+    expect(clipAt(5, 2)?.steps).toEqual(NOTE(2, 62));
+    // lanes empty in the source → emptied in the target (full replace)
+    expect(clipAt(5, 1), 'source lane 1 empty → target lane 1 cleared').toBeUndefined();
+    expect(clipAt(5, 3), 'source lane 3 empty → target lane 3 cleared').toBeUndefined();
+    // the source scene is untouched
+    expect(clipAt(2, 0)?.steps).toEqual(NOTE(1, 61));
+  });
+
+  it('clip→clip: a single-clip copy/paste still applies (unchanged behaviour)', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote(2, 67) } });
+    bindLaunchpadToClip(NODE_ID);
+    latch();
+    sim.cc('L', sceneCc(G_COPY_I), 127);
+    pressClip(sim, 0, 0); // consume under shift → CLIP buffer
+    expect(__test_copyBuffer()?.kind).toBe('clip');
+    sim.cc('L', sceneCc(G_PASTE_I), 127); // still latched → arm paste
+    pressClip(sim, 1, 1); // clip-pad target → clip→clip applies
+    expect(clipAt(1, 1)?.steps.some((s) => s.midi === 67)).toBe(true);
+  });
+
+  it('clip→clip CARRIES THE AUTOMATION (envelope-belongs-to-the-clip) + clears the destination’s stale record', () => {
+    const AUTO_SRC = { tracks: { 'va::base': { events: [{ step: 0, value: 0.7 }] } } };
+    const AUTO_STALE = { tracks: { 'vb::base': { events: [{ step: 0, value: 0.1 }] } } };
+    seedClipPlayer({
+      clips: {
+        [clipIndex(0, 0)]: clipWithNote(2, 67), // source (carries AUTO_SRC)
+        [clipIndex(1, 1)]: clipWithNote(3, 62), // dest (carries STALE automation)
+        [clipIndex(2, 2)]: clipWithNote(4, 64), // 2nd source WITHOUT automation
+      },
+      auto: {
+        [clipIndex(0, 0)]: AUTO_SRC,
+        [clipIndex(1, 1)]: AUTO_STALE,
+      },
+    });
+    bindLaunchpadToClip(NODE_ID);
+    // Paste the automation-carrying source over the stale destination.
+    latch();
+    sim.cc('L', sceneCc(G_COPY_I), 127);
+    pressClip(sim, 0, 0);
+    sim.cc('L', sceneCc(G_PASTE_I), 127);
+    pressClip(sim, 1, 1);
+    const auto = liveData().auto as Record<string, { tracks: Record<string, unknown> }>;
+    expect(Object.keys(auto[String(clipIndex(1, 1))]!.tracks), 'source envelope landed, stale gone')
+      .toEqual(['va::base']);
+    expect(auto[String(clipIndex(0, 0))]!.tracks['va::base'], 'source untouched').toBeTruthy();
+    // Now paste a NO-automation clip over it → the carried record is CLEARED.
+    sim.cc('L', sceneCc(G_COPY_I), 127);
+    pressClip(sim, 2, 2);
+    sim.cc('L', sceneCc(G_PASTE_I), 127);
+    pressClip(sim, 1, 1);
+    expect(auto[String(clipIndex(1, 1))], 'pasting an automation-less clip clears the record')
+      .toBeUndefined();
+  });
+
+  it('scene→scene CARRIES each lane’s automation; a source-empty lane clears the target’s automation too', () => {
+    const AUTO_L0 = { tracks: { 'va::base': { events: [{ step: 1, value: 0.9 }] } } };
+    const AUTO_STALE = { tracks: { 'vb::base': { events: [{ step: 0, value: 0.2 }] } } };
+    seedClipPlayer({
+      clips: {
+        [clipIndex(2, 0)]: clipWithNote(1, 61), // source scene 2 lane 0 (carries automation)
+        [clipIndex(2, 2)]: clipWithNote(2, 62), // source lane 2 (no automation)
+        [clipIndex(5, 1)]: clipWithNote(3, 63), // target scene 5 lane 1 (will be emptied)
+      },
+      auto: {
+        [clipIndex(2, 0)]: AUTO_L0,
+        [clipIndex(5, 1)]: AUTO_STALE, // stale target automation under a lane the source empties
+      },
+    });
+    bindLaunchpadToClip(NODE_ID);
+    copyScene(2);
+    pasteSceneAt(5);
+    const auto = liveData().auto as Record<string, { tracks: Record<string, unknown> } | undefined>;
+    // Lane 0's automation landed WITH its clip at slot 5.
+    expect(Object.keys(auto[String(clipIndex(5, 0))]?.tracks ?? {})).toEqual(['va::base']);
+    // Lane 1 was empty in the source → clip AND automation cleared at the target.
+    expect(clipAt(5, 1)).toBeUndefined();
+    expect(auto[String(clipIndex(5, 1))]).toBeUndefined();
+    // Lane 2's clip landed with NO automation record.
+    expect(clipAt(5, 2)?.steps.some((s) => s.midi === 62)).toBe(true);
+    expect(auto[String(clipIndex(5, 2))]).toBeUndefined();
+    // The SOURCE scene keeps its automation (copy, not move).
+    expect(Object.keys(auto[String(clipIndex(2, 0))]?.tracks ?? {})).toEqual(['va::base']);
+  });
+
+  it('scene→clip: NO-OP — a scene buffer never pastes onto a single clip pad', () => {
+    seedClipPlayer({
+      clips: {
+        [clipIndex(2, 0)]: clipWithNote(1, 61), // scene 2 source content
+        [clipIndex(6, 3)]: clipWithNote(9, 70), // a loaded clip-pad target
+      },
+    });
+    bindLaunchpadToClip(NODE_ID);
+    copyScene(2);
+    expect(__test_copyBuffer()?.kind).toBe('scene');
+    armPaste();
+    pressClip(sim, 6, 3); // CLIP pad target → scene→clip = NO-OP
+    expect(clipAt(6, 3)?.steps, 'target clip untouched').toEqual(NOTE(9, 70));
+    expect(__test_copyBuffer()?.kind, 'buffer untouched').toBe('scene');
+  });
+
+  it('clip→scene: NO-OP — a clip buffer never pastes onto a scene', () => {
+    seedClipPlayer({
+      clips: {
+        [clipIndex(0, 0)]: clipWithNote(2, 67), // single clip to copy
+        [clipIndex(5, 1)]: clipWithNote(3, 63), // scene 5 pre-existing content
+      },
+    });
+    bindLaunchpadToClip(NODE_ID);
+    copyClipAt(0, 0);
+    expect(__test_copyBuffer()?.kind).toBe('clip');
+    pasteSceneAt(5); // SCENE target → clip→scene = NO-OP
+    expect(clipAt(5, 1)?.steps, 'scene lane 1 untouched').toEqual(NOTE(3, 63));
+    expect(clipAt(5, 0), 'scene lane 0 not created').toBeUndefined();
+    expect(__test_copyBuffer()?.kind, 'buffer untouched').toBe('clip');
+  });
+
+  it('undo reverts a scene paste in ONE step (all 8 lanes restored)', () => {
+    seedClipPlayer({
+      clips: {
+        [clipIndex(2, 0)]: clipWithNote(1, 61),
+        [clipIndex(2, 1)]: clipWithNote(2, 62),
+        [clipIndex(5, 3)]: clipWithNote(3, 63), // target pre-existing (full replace clears these)
+        [clipIndex(5, 4)]: clipWithNote(4, 64),
+      },
+    });
+    bindLaunchpadToClip(NODE_ID);
+    copyScene(2);
+    pasteSceneAt(5);
+    expect(clipAt(5, 0)).toBeTruthy();
+    expect(clipAt(5, 1)).toBeTruthy();
+    expect(clipAt(5, 3)).toBeUndefined();
+    expect(clipAt(5, 4)).toBeUndefined();
+    expect(__test_mode().canUndo).toBe(true);
+    // ONE undo → the whole scene 5 restored to its pre-paste state.
+    sim.cc('L', CC_UNDO, 127);
+    expect(clipAt(5, 0), 'lane 0 write undone').toBeUndefined();
+    expect(clipAt(5, 1), 'lane 1 write undone').toBeUndefined();
+    expect(clipAt(5, 3)?.steps, 'lane 3 restored').toEqual(NOTE(3, 63));
+    expect(clipAt(5, 4)?.steps, 'lane 4 restored').toEqual(NOTE(4, 64));
+    expect(__test_mode().canUndo, 'the paste was a single undo step').toBe(false);
+  });
+
+  it('scroll-mapped copy AND paste — copy scene 2, scroll, paste lands at slot 10', () => {
+    seedClipPlayer({
+      clips: {
+        [clipIndex(2, 0)]: clipWithNote(1, 61),
+        [clipIndex(2, 1)]: clipWithNote(2, 62),
+        [clipIndex(9, 0)]: noteClip(), // deep content so DOWN reaches offset 3 (scene 10 visible)
+      },
+    });
+    bindLaunchpadToClip(NODE_ID);
+    copyScene(2); // captured at offset 0 → scene 2
+    expect(__test_copyBuffer()?.kind).toBe('scene');
+    // scroll DOWN to offset 3 (highestContent 9 → maxOffset 3) so scene 10 = bottom row
+    latch();
+    for (let i = 0; i < 3; i++) sim.cc('L', sceneCc(G_SCROLL_DOWN_I), 127);
+    expect(__test_mode().sceneScrollOffset).toBe(3);
+    sim.cc('L', sceneCc(G_PASTE_I), 127); // arm paste (still latched)
+    expect(__test_mode().armedRightAction).toBe('paste');
+    unlatch();
+    sceneBtn(7); // sceneIndex 7 → scene offset(3)+7 = 10 → slot 10
+    expect(clipAt(10, 0)?.steps, 'scene-2 lane 0 landed at slot 10').toEqual(NOTE(1, 61));
+    expect(clipAt(10, 1)?.steps, 'scene-2 lane 1 landed at slot 10').toEqual(NOTE(2, 62));
+    expect(clipAt(10, 2), 'source lane 2 empty → target lane 2 empty').toBeUndefined();
+  });
+
+  it('copy + paste an EMPTY scene clears the target scene', () => {
+    seedClipPlayer({
+      clips: {
+        // scene 3 is EMPTY; target scene 5 has content in several lanes
+        [clipIndex(5, 0)]: clipWithNote(1, 61),
+        [clipIndex(5, 2)]: clipWithNote(2, 62),
+        [clipIndex(5, 7)]: clipWithNote(3, 63),
+      },
+    });
+    bindLaunchpadToClip(NODE_ID);
+    copyScene(3); // empty scene → a buffer of all nulls
+    const buf = __test_copyBuffer();
+    expect(buf?.kind).toBe('scene');
+    expect(buf?.kind === 'scene' && buf.clips.every((c) => c === null)).toBe(true);
+    pasteSceneAt(5); // full replace with empties → clears slot 5
+    for (let lane = 0; lane < CLIP_LANES; lane++) {
+      expect(clipAt(5, lane), `lane ${lane} cleared`).toBeUndefined();
+    }
   });
 });

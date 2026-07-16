@@ -100,14 +100,19 @@ import {
   type PermanentTopOpts,
   topRowAction,
   sceneIndexForCc,
-  gridPadToClipIndex,
-  gridSceneRowToSlot,
+  gridPadToClipIndexScrolled,
+  slotForScene,
+  highestContentScene,
+  maxSceneScrollOffset,
+  clampSceneScrollOffset,
   gridShiftRight,
   clipRight,
   keysScaleRight,
   keysArpShiftRight,
   controlRight,
   controlRehomePad,
+  armTopLane,
+  ARM_SHIFT_LANE,
   paintPermanentTopRow,
   computeSingleGridFrame,
   computeSingleClipFrame,
@@ -120,6 +125,7 @@ import { clearStep, recordNoteAt, extendRecordedNote } from '$lib/audio/modules/
 import { pushAudition } from '$lib/audio/modules/clip-audition';
 import {
   CLIP_LANES,
+  CLIP_SLOTS,
   clipIndex,
   laneOf,
   slotOf,
@@ -146,11 +152,30 @@ import {
   clampSwing,
   MAX_SWING,
   isSwingCentered,
+  pasteApplies,
+  readScene,
+  readSceneAutos,
+  sceneWritePlan,
+  readAutoClip,
+  plainCloneAutoClip,
+  reverseAutoClipRecord,
+  toggleLaneAutomationArm,
+  armedAutomationLanes,
+  type AutoClipRecord,
   type ClipPlayerData,
+  type ClipRecord,
   type NoteClipRecord,
+  type CopyBuffer,
+  type CopyBufferKind,
   type NoteRecState,
 } from '$lib/audio/modules/clip-types';
 import { getLanePlayhead } from '$lib/audio/modules/clip-playhead';
+import {
+  getAutomationRender,
+  automationCountdownColor,
+  automationCountdownOn,
+} from '$lib/audio/modules/clip-automation-render';
+import type { CountdownPaint } from './launchpad-map';
 import { laneRateIndex, coerceRateIndex, RATE_MULTS } from '$lib/audio/modules/clip-clock';
 import {
   createArpState,
@@ -219,6 +244,11 @@ let editAnchor: { step: number; midi: number } | null = null;
 let editSpanned = false;
 let editRowOffset = 0; // pitch-window scroll (scale degrees)
 let editWindowStart = 0; // absolute step of the leftmost shown column (frozen value)
+// SINGLE-mode Grid SCENE-window scroll — a LOCAL per-surface view offset (like
+// editRowOffset / editWindowStart, NEVER synced to node.data): 0 = scenes 0..7
+// at the top. The Grid-shift UP/DOWN buttons (repurposed from PASTE-REV / NOW)
+// slide it so the 8 position-relative scene-launch buttons address `offset + i`.
+let sceneScrollOffset = 0;
 let followOn = true;
 // Which mode the LENGTH-EDIT page returns to on EXIT ('edit' = the note editor,
 // the legacy pair caller; 'keys' = the KEYS view, when LEN was opened from KEYS).
@@ -241,9 +271,11 @@ let keysPrevStep = -1; // last serviced playhead step (edge-detect wrap/crossing
 let keysStopAtWrap = false; // overdub toggled OFF mid-record → finish this loop, then stop
 let keysOctaveShift = 0; // KEYS octave ± (semitones, multiples of 12) added to the keyboard root
 
-// Per-machine clip buffer (NOT synced).
-let clipBuffer: NoteClipRecord | null = null;
-let bufferSourceIndex: number | null = null; // which clip index is in the buffer (for the L turquoise glow)
+// Per-machine copy buffer (NOT synced) — a TYPED clipboard: one CLIP or a whole
+// SCENE (all 8 lanes' clips at a slot). Held as PLAIN deep-clones (never a live Y
+// child). LOCAL to this surface, exactly like the old single-clip buffer.
+let copyBuffer: CopyBuffer | null = null;
+let bufferSourceIndex: number | null = null; // clip-kind source index (L turquoise glow); null for a scene buffer
 
 // ── SINGLE-mode SHIFT (hybrid tap-latch OR hold) + tap-to-ARM (Grid-shift). ──
 // Effective shift = shiftLatched || shiftHeld. A SHORT tap of CC 98 (no armed
@@ -256,6 +288,21 @@ let shiftLatched = false;
 let shiftHeldSingle = false; // CC 98 momentary (distinct from pair's CC-95 shiftHeld)
 let shiftPressTick = 0; // tickCount snapshot on the CC-98 press (tap vs hold)
 let armConsumedSincePress = false; // an armed action consumed while shift was held?
+// LANE-8 AUTOMATION-ARM DOUBLE-TAP (owner gesture — lane 8's top button IS the
+// shift button, so a double-tap of SHFT toggles its arm). The first tap keeps
+// its normal immediate latch toggle; a second press within DOUBLE_TAP_TICKS
+// marks a PENDING pair that FIRES on that press's SHORT RELEASE (tap-tap
+// only): a second press that becomes a HOLD is a modifier, not a tap, and
+// must never toggle lane 8 (the tap-then-hold mis-fire the adversarial pass
+// caught). On fire the first tap's latch change is REVERTED, so the latch
+// nets back to its pre-pair state — the gesture works from BOTH latch states.
+let shiftTapTick = -1000; // tickCount of the last completed SHORT tap (the window anchor)
+let shiftLatchBeforeTap = false; // latch state BEFORE that tap's toggle (double-tap revert)
+let pendingShiftDoubleTap = false; // press 2 landed in the window; fire on ITS short release
+// A NON-shift press between two shift taps breaks the pair (it's a
+// latch → do-something → unlatch sequence, not a double-tap) — so a fast
+// "latch, arm COPY, unlatch" can never spuriously toggle lane 8's arm.
+let otherPressSinceShiftTap = false;
 let armedRightAction: GridArmAction | null = null; // Grid-shift tap-to-arm (or null)
 let armTick = 0; // tickCount snapshot for the 4s auto-disarm
 const ARM_TIMEOUT_TICKS = 160; // ~4s at 25ms/tick — auto-disarm a stale arm
@@ -303,8 +350,32 @@ const DOUBLE_TAP_TICKS = 11;
  *  COPY-INDICATOR. (Tapping the COPY-INDICATOR pad clears it; the buffer also
  *  survives a re-bind otherwise, so this is the way to dismiss the glow.) */
 function clearBuffer(): void {
-  clipBuffer = null;
+  copyBuffer = null;
   bufferSourceIndex = null;
+}
+
+/** The buffered CLIP (buffer kind === 'clip'), else null. The single-clip paste
+ *  paths (pair deck, clip-view, editor, grid clip-pad target) read through this,
+ *  so a SCENE buffer NEVER pastes onto a single clip (clip→scene / scene→clip are
+ *  no-ops — the type gate). */
+function bufferClip(): NoteClipRecord | null {
+  return copyBuffer?.kind === 'clip' ? copyBuffer.clip : null;
+}
+/** The buffered clip's SIBLING AUTOMATION (or null when the source carried
+ *  none / the buffer isn't a clip) — pasted WITH the clip (envelope-belongs-
+ *  to-the-clip). */
+function bufferClipAuto(): AutoClipRecord | null {
+  return copyBuffer?.kind === 'clip' ? copyBuffer.auto : null;
+}
+/** True when ANY buffer (clip OR scene) is loaded — lights the COPY-INDICATOR /
+ *  the Paste button's pulse. */
+function bufferLoaded(): boolean {
+  return copyBuffer !== null;
+}
+/** The buffer kind ('clip' | 'scene'), or null when empty — drives the distinct
+ *  paste colour + the paste-arm target dimming. */
+function bufferKindOf(): CopyBufferKind | null {
+  return copyBuffer?.kind ?? null;
 }
 
 /** Reactive version — bump on bind/unbind so card UI re-derives. */
@@ -403,7 +474,7 @@ function start(): void {
   lastTapPrevQueued = null;
   lastTapWasPlaying = false;
   resetKeysState();
-  // NOTE: clipBuffer survives a re-bind (it's the machine's clipboard).
+  // NOTE: copyBuffer survives a re-bind (it's the machine's clipboard).
   setupLaunchpadUndo(); // launchpad-scoped, origin-tagged undo/redo (single mode)
   unsubKey = onKey(handleKey);
   unsubTick = getSchedulerClock().subscribe(renderLeds);
@@ -426,9 +497,14 @@ function resetSingleState(): void {
   shiftHeldSingle = false;
   shiftPressTick = 0;
   armConsumedSincePress = false;
+  shiftTapTick = -1000; // clear the lane-8 double-tap window anchor
+  shiftLatchBeforeTap = false;
+  pendingShiftDoubleTap = false;
+  otherPressSinceShiftTap = false;
   armedRightAction = null;
   armTick = 0;
   divPreview = null;
+  sceneScrollOffset = 0;
   swingMeterActive = false;
   swingMeterDir = 'center';
   arp = createArpState();
@@ -887,6 +963,34 @@ function writeClip(
     { undoable: opts.undoable ?? true },
   );
 }
+
+/** PASTE-path clip write: the clip PLUS its sibling automation, atomically in
+ *  ONE undoable transaction. The ENVELOPE BELONGS TO THE CLIP: pasting a clip
+ *  replaces the destination's `auto[k]` with the buffer's copy — or DELETES the
+ *  destination's stale record when the source carried none — so a paste can
+ *  never leave a ghost envelope playing under foreign notes. (Plain-cloned so
+ *  pasting one buffer to many targets never shares refs.) NOTE edits to a clip
+ *  keep using `writeClip` — they must never touch the sibling automation. */
+function writeClipWithAuto(
+  nodeId: string,
+  next: NoteClipRecord,
+  auto: AutoClipRecord | null,
+  index: number,
+): void {
+  const plainAuto = plainCloneAutoClip(auto);
+  editData(
+    nodeId,
+    (d) => {
+      if (!d.clips) d.clips = {};
+      d.clips[String(index)] = { ...next, steps: next.steps.map((s) => ({ ...s })) };
+      if (!d.auto) d.auto = {};
+      const key = String(index);
+      if (plainAuto) d.auto[key] = plainAuto;
+      else if (d.auto[key] !== undefined && d.auto[key] !== null) delete d.auto[key];
+    },
+    { undoable: true },
+  );
+}
 function timelordeNode(): { node: { params?: Record<string, number> }; id: string } | null {
   for (const [id, n] of Object.entries(livePatch.nodes)) {
     if ((n as { type?: string } | undefined)?.type === 'timelorde') {
@@ -933,6 +1037,17 @@ function toggleRecording(nodeId: string): void {
 function toggleArrangeMode(nodeId: string): void {
   editData(nodeId, (d) => {
     d.clipMode = d.clipMode === 'arrangement' ? 'session' : 'arrangement';
+  });
+}
+/** PER-LANE automation arm/disarm from the Launchpad (SHIFT+top-row column /
+ *  the SHFT double-tap for lane 8) — the EXACT same write seam the card's
+ *  per-lane ◉ uses (toggleLaneAutomationArm: rebuild-and-assign the lanes
+ *  array, stamp this client as the lane's single-writer recorderId when
+ *  arming, pre-create the lane's auto shell), so pad and card stay in sync
+ *  via the synced per-lane flags. */
+function toggleLaneAutoArm(nodeId: string, lane: number): void {
+  editData(nodeId, (d) => {
+    toggleLaneAutomationArm(d, lane, ydoc.clientID);
   });
 }
 
@@ -1387,10 +1502,20 @@ function singleShiftEff(): boolean {
 
 function handleSingleKey(nodeId: string, e: LaunchpadKeyEvent): void {
   const ev = e.ev;
+  // Any NON-shift PRESS breaks a pending SHFT double-tap pair (lane-8 arm):
+  // "latch → do something → unlatch" must never read as a double-tap. And
+  // while shift is HELD, any such press means shift was used as a MODIFIER —
+  // its release must not latch (covers the grid-shift palette, keys-arp and
+  // clip-view shift actions, matrix taps under an arm — the fast
+  // hold+tap+release latch-leak the adversarial pass caught).
+  if (ev.s === 1 && !(ev.type === 'top' && topRowAction(ev.cc) === 'shift')) {
+    otherPressSinceShiftTap = true;
+    if (shiftHeldSingle) armConsumedSincePress = true;
+  }
   // 1) PERMANENT TOP ROW — intercepted first, in every view (incl. keys/length).
   if (ev.type === 'top') {
     const action = topRowAction(ev.cc);
-    if (action !== null) handleTopRow(nodeId, action, ev.s);
+    if (action !== null) handleTopRow(nodeId, action, ev.s, ev.cc);
     return; // any top CC is owned by the permanent row (no fall-through)
   }
   // 2) length-edit takeover (scene EXIT returns to the opener's view).
@@ -1420,8 +1545,31 @@ function handleSingleKey(nodeId: string, e: LaunchpadKeyEvent): void {
 }
 
 /** The permanent top row (identical in every view). Press-only for transport /
- *  views / undo / redo; both edges for shift (the hold half of the latch/hold). */
-function handleTopRow(nodeId: string, action: ReturnType<typeof topRowAction>, s: 0 | 1): void {
+ *  views / undo / redo; both edges for shift (the hold half of the latch/hold).
+ *  PER-LANE AUTOMATION ARM (owner gesture): while shift is EFFECTIVE (held OR
+ *  latched), a top-row press on columns 1..7 toggles THAT lane's automation
+ *  arm and is CONSUMED — the button's normal function (transport / view flip /
+ *  undo / redo) must NOT fire under shift. Works from EVERY view. Lane 8 is
+ *  the SHFT double-tap (handleShift); the shift button always routes there. */
+function handleTopRow(
+  nodeId: string,
+  action: ReturnType<typeof topRowAction>,
+  s: 0 | 1,
+  cc: number,
+): void {
+  if (action !== 'shift' && singleShiftEff()) {
+    if (s === 1) {
+      const lane = armTopLane(cc);
+      if (lane !== null) {
+        toggleLaneAutoArm(nodeId, lane);
+        // A held shift acted as a MODIFIER — its release must not toggle the
+        // latch (same discipline as a consumed Grid tap-to-arm).
+        armConsumedSincePress = true;
+        renderLeds();
+      }
+    }
+    return; // consumed under shift — never the normal function
+  }
   switch (action) {
     case 'transport':
       if (s === 1) toggleTransport();
@@ -1489,15 +1637,52 @@ function forceExitKeys(nodeId: string): void {
  *  effective shift disarms any Grid tap-to-arm (committing a pending Clip-Div). */
 function handleShift(nodeId: string, s: 0 | 1): void {
   if (s === 1) {
+    // LANE-8 ARM DOUBLE-TAP (owner gesture): a second SHFT press within the
+    // window — with NOTHING else pressed in between — marks a PENDING pair.
+    // It fires on this press's SHORT RELEASE below (tap-tap only): a press
+    // that turns into a HOLD is a modifier, never a lane-8 toggle.
+    pendingShiftDoubleTap =
+      tickCount - shiftTapTick <= DOUBLE_TAP_TICKS && !otherPressSinceShiftTap;
     shiftHeldSingle = true;
     shiftPressTick = tickCount;
     armConsumedSincePress = false;
   } else {
     const shortTap = tickCount - shiftPressTick < DOUBLE_TAP_TICKS;
-    if (shortTap && !armConsumedSincePress) shiftLatched = !shiftLatched;
+    if (pendingShiftDoubleTap && shortTap && !armConsumedSincePress) {
+      // FIRE the pair: toggle lane 8's arm and revert the FIRST tap's latch
+      // change, so the latch nets back to its pre-pair state (works from
+      // both latch states). Consumed — a third tap starts a fresh pair.
+      shiftTapTick = -1000;
+      toggleLaneAutoArm(nodeId, ARM_SHIFT_LANE);
+      shiftLatched = shiftLatchBeforeTap;
+    } else if (shortTap && !armConsumedSincePress) {
+      // A lone short tap: the normal immediate latch toggle (unchanged) +
+      // the double-tap window anchor.
+      shiftLatchBeforeTap = shiftLatched;
+      shiftLatched = !shiftLatched;
+      shiftTapTick = tickCount; // anchor the lane-8 double-tap window
+      otherPressSinceShiftTap = false; // a fresh pair starts clean
+    } else {
+      // A HOLD (or a consumed modifier press) never latches — and it BREAKS
+      // any pending pair (tap-then-hold = modifier use, not a double-tap).
+      shiftTapTick = -1000;
+    }
+    pendingShiftDoubleTap = false;
     shiftHeldSingle = false;
   }
-  if (!singleShiftEff() && armedRightAction) disarmGridArm(nodeId);
+  // Releasing the effective shift disarms a pending SHIFT-scoped arm (Clip-Div
+  // commits its preview; Len drops). COPY / PASTE stay armed on purpose — they
+  // are STICKY so the no-shift matrix can host the copy/paste TARGET: a clip pad
+  // (single-clip) OR a scene-launch button (whole scene). They auto-disarm on
+  // consume, the 4s timeout, or leaving Grid.
+  if (
+    !singleShiftEff() &&
+    armedRightAction &&
+    armedRightAction !== 'copy' &&
+    armedRightAction !== 'paste'
+  ) {
+    disarmGridArm(nodeId);
+  }
   renderLeds();
 }
 
@@ -1509,10 +1694,15 @@ function handleSingleGrid(nodeId: string, e: LaunchpadKeyEvent): void {
   const shift = singleShiftEff();
   if (ev.type === 'pad') {
     if (ev.s !== 1) return; // launch acts on press
-    const clipIdx = gridPadToClipIndex(ev.x, ev.y);
+    // Scrolled mapping: a pad in an EMPTY scene (scene ≥ CLIP_SLOTS) → null → a
+    // dark no-op (nothing to launch/create there).
+    const clipIdx = gridPadToClipIndexScrolled(ev.x, ev.y, sceneScrollOffset);
     if (clipIdx === null) return;
-    // A pending Grid-shift arm consumes the next clip-pad tap.
-    if (shift && armedRightAction) {
+    // A pending arm consumes the next clip-pad tap → this pad is a CLIP target.
+    // Under shift ANY arm (copy/paste/clip-div/len) consumes here; with shift
+    // released only the STICKY copy/paste arms survive (clip-div/len disarmed on
+    // release), so a no-shift pad tap while armed is a single-clip copy/paste.
+    if (armedRightAction) {
       consumeGridArm(nodeId, clipIdx, data);
       return;
     }
@@ -1523,8 +1713,16 @@ function handleSingleGrid(nodeId: string, e: LaunchpadKeyEvent): void {
     if (ev.s !== 1) return;
     const sceneIndex = sceneIndexForCc(ev.cc);
     if (sceneIndex === null) return;
-    if (shift) handleGridShiftButton(nodeId, sceneIndex);
-    else handleSceneLaunch(nodeId, sceneIndex, data);
+    // Under shift the scene column is the grid-shift palette (arm/nudge/scroll).
+    if (shift) { handleGridShiftButton(nodeId, sceneIndex); return; }
+    // No-shift + a STICKY copy/paste arm → this scene-launch button is a WHOLE-
+    // SCENE target (copy that scene, or paste a scene buffer over it). Otherwise
+    // it is the normal scene launch.
+    if (armedRightAction === 'copy' || armedRightAction === 'paste') {
+      consumeSceneArm(nodeId, sceneIndex, data);
+      return;
+    }
+    handleSceneLaunch(nodeId, sceneIndex, data);
     return;
   }
 }
@@ -1580,19 +1778,30 @@ function handleGridLaunch(nodeId: string, clipIdx: number, data: ClipPlayerData 
   // else empty: no launch, but the tap is recorded (double-tap of empty → creates + selects).
 }
 
-/** No-shift scene/row launch: a grid ROW = one clip per channel (a scene). Fire
- *  slot `sceneIndex` across ALL lanes (stop lanes with no clip in that slot). */
+/** No-shift scene/row launch: a grid ROW = one clip per channel (a scene). The 8
+ *  buttons are POSITION-RELATIVE — button `sceneIndex` (0 = top) launches the
+ *  scrolled scene `offset + sceneIndex`, firing that slot across ALL lanes (stop
+ *  lanes with no clip in it). A scene out of range OR EMPTY (no clip in any lane)
+ *  → no-op (nothing to launch; matches the dark content-gated scene button). */
 function handleSceneLaunch(nodeId: string, sceneIndex: number, data: ClipPlayerData | undefined): void {
-  const slot = gridSceneRowToSlot(sceneIndex);
-  if (slot === null) return;
+  const slot = slotForScene(sceneScrollOffset + sceneIndex);
+  if (slot === null) return; // scene out of range = dark / no launch
+  // Build the per-lane launch set FIRST; a fully-empty scene (no clip in any
+  // lane) is a no-op — we skip the write entirely so an empty scrolled-in scene
+  // never storms a stop-all across the lanes (matches the dark scene button).
+  const q = new Array<number | 'stop' | null>(CLIP_LANES).fill('stop');
+  let anyContent = false;
+  for (let lane = 0; lane < CLIP_LANES; lane++) {
+    if (data?.clips?.[String(clipIndex(slot, lane))]) {
+      q[lane] = slot;
+      anyContent = true;
+    }
+  }
+  if (!anyContent) return; // empty scene → no-op
   // Fire the whole scene in ONE transaction (all 8 lanes are addressed, so we
   // replace the queued array wholesale — same idea as stop-all) instead of 8
   // separate queueLane writes = 8 ydoc syncs per scene press.
   editData(nodeId, (d) => {
-    const q = new Array<number | 'stop' | null>(CLIP_LANES).fill('stop');
-    for (let lane = 0; lane < CLIP_LANES; lane++) {
-      if (data?.clips?.[String(clipIndex(slot, lane))]) q[lane] = slot;
-    }
     d.queued = q;
     if (nowHeld) d.queuedImmediate = new Array<boolean>(CLIP_LANES).fill(true);
   });
@@ -1604,7 +1813,6 @@ function handleGridShiftButton(nodeId: string, sceneIndex: number): void {
   switch (gridShiftRight(sceneIndex)) {
     case 'copy':
     case 'paste':
-    case 'pasteRev':
     case 'clipDiv':
     case 'len':
       toggleGridArm(nodeId, gridShiftRight(sceneIndex) as GridArmAction);
@@ -1615,26 +1823,39 @@ function handleGridShiftButton(nodeId: string, sceneIndex: number): void {
     case 'swingDown':
       nudgeSwing(nodeId, -SWING_STEP);
       break;
-    case 'now':
-      nowHeld = !nowHeld;
-      renderLeds();
+    case 'scrollUp':
+      scrollScenes(nodeId, -1); // amber UP (was PASTE-REV): toward scene 0
+      break;
+    case 'scrollDown':
+      scrollScenes(nodeId, +1); // amber DOWN (was NOW): reveal the next scene
       break;
     default:
       break;
   }
 }
 
+/** Slide the Grid scene-window by ±1 (UP = −1, toward scene 0). Clamps at the top
+ *  (offset 0) and at the lazy DOWN limit (one empty scene past the deepest clip,
+ *  capped at MAX_SCENES). LOCAL view state — never writes node.data. */
+function scrollScenes(nodeId: string, delta: number): void {
+  const data = liveData(nodeId);
+  const next = clampSceneScrollOffset(sceneScrollOffset + delta, highestContentScene(data));
+  if (next === sceneScrollOffset) return;
+  sceneScrollOffset = next;
+  renderLeds();
+}
+
 /** Tap a Grid-shift function button → arm it (or disarm on a re-tap; COPY re-tap
- *  clears the buffer). Only one arm at a time. Paste/PasteRev require a buffer. */
+ *  clears the buffer). Only one arm at a time. Paste requires a buffer. */
 function toggleGridArm(nodeId: string, action: GridArmAction): void {
   if (armedRightAction === action) {
-    if (action === 'copy' && clipBuffer !== null) clearBuffer();
+    if (action === 'copy' && bufferLoaded()) clearBuffer();
     disarmGridArm(nodeId);
     return;
   }
   // Switching arms → commit any pending Clip-Div preview from the previous arm.
   if (armedRightAction === 'clipDiv') commitDivPreview(nodeId);
-  if ((action === 'paste' || action === 'pasteRev') && clipBuffer === null) {
+  if (action === 'paste' && !bufferLoaded()) {
     // Nothing to paste → don't arm (the button stays its idle green).
     armedRightAction = null;
     divPreview = null;
@@ -1667,29 +1888,33 @@ function commitDivPreview(nodeId: string): void {
   }
 }
 
-/** Consume a Grid-shift arm on a clip-pad tap. Copy/Paste/PasteRev/Len apply +
- *  auto-disarm; Clip-Div cycles a LOCAL preview (stays armed; one write on
- *  disarm). Empty/illegal targets are no-ops that simply disarm. */
+/** Consume a Grid-shift arm on a clip-pad tap. Copy/Paste/Len apply + auto-disarm;
+ *  Clip-Div cycles a LOCAL preview (stays armed; one write on disarm).
+ *  Empty/illegal targets are no-ops that simply disarm. */
 function consumeGridArm(nodeId: string, clipIdx: number, data: ClipPlayerData | undefined): void {
   lastTapClipIndex = -1; // an armed tap isn't a launch
   armConsumedSincePress = true; // used shift → releasing it should NOT latch
   switch (armedRightAction) {
     case 'copy': {
+      // Copy a SINGLE clip onto the typed buffer (kind: 'clip') — the clip's
+      // sibling automation rides along (the envelope belongs to the clip).
       const c = clipAtIndex(data, clipIdx);
       if (c) {
-        clipBuffer = copyClip(c);
+        copyBuffer = { kind: 'clip', clip: copyClip(c), auto: readAutoClip(data, clipIdx) };
         bufferSourceIndex = clipIdx;
       }
       disarmGridArm(nodeId);
       break;
     }
     case 'paste': {
-      if (clipBuffer) writeClip(nodeId, copyClip(clipBuffer), clipIdx, { undoable: true });
-      disarmGridArm(nodeId);
-      break;
-    }
-    case 'pasteRev': {
-      if (clipBuffer) writeClip(nodeId, reverseClipSteps(copyClip(clipBuffer)), clipIdx, { undoable: true });
+      // A clip pad is a CLIP target — applies only for a CLIP buffer (a SCENE
+      // buffer → scene→clip NO-OP, gated by pasteApplies). The buffer + the other
+      // clips stay untouched on a no-op. The paste carries the buffer's
+      // automation and clears the destination's stale record (one transaction).
+      const bc = bufferClip();
+      if (bc && copyBuffer && pasteApplies(copyBuffer.kind, 'clip')) {
+        writeClipWithAuto(nodeId, copyClip(bc), bufferClipAuto(), clipIdx);
+      }
       disarmGridArm(nodeId);
       break;
     }
@@ -1727,6 +1952,76 @@ function consumeGridArm(nodeId: string, clipIdx: number, data: ClipPlayerData | 
       disarmGridArm(nodeId);
       break;
   }
+}
+
+/** Consume a STICKY copy/paste arm on a SCENE-LAUNCH button (no-shift) → this is a
+ *  WHOLE-SCENE target. COPY snapshots the scroll-mapped scene (all 8 lanes' clips)
+ *  onto the typed buffer as PLAIN clones. PASTE full-REPLACES that scene from a
+ *  SCENE buffer (clip→scene is a NO-OP, gated by pasteApplies — buffer + targets
+ *  untouched). Either way the arm auto-disarms. Scroll-aware: the target slot is
+ *  slotForScene(sceneScrollOffset + sceneIndex). */
+function consumeSceneArm(
+  nodeId: string,
+  sceneIndex: number,
+  data: ClipPlayerData | undefined,
+): void {
+  lastTapClipIndex = -1; // an armed tap isn't a launch
+  armConsumedSincePress = true; // used shift to arm → its release must NOT latch
+  const slot = slotForScene(sceneScrollOffset + sceneIndex);
+  if (slot === null) { disarmGridArm(nodeId); return; } // scene out of range
+  if (armedRightAction === 'copy') {
+    // The scene buffer carries each lane's clip AND its sibling automation
+    // (envelope-belongs-to-the-clip — a scene duplicate is a perform gesture).
+    copyBuffer = { kind: 'scene', clips: readScene(data, slot), autos: readSceneAutos(data, slot) };
+    bufferSourceIndex = null; // a scene has no single source pad
+  } else if (copyBuffer && pasteApplies(copyBuffer.kind, 'scene')) {
+    // pasteApplies(kind, 'scene') is true ONLY for a scene buffer — the `.kind`
+    // check narrows the union for TS; a clip buffer here is the clip→scene NO-OP.
+    if (copyBuffer.kind === 'scene') {
+      pasteSceneInto(nodeId, slot, copyBuffer.clips, copyBuffer.autos);
+    }
+  }
+  disarmGridArm(nodeId);
+}
+
+/** FULL-REPLACE a scene at `targetSlot` from a scene buffer's PLAIN clones, in ONE
+ *  origin-tagged transaction (→ a SINGLE undo step). Each of the 8 lanes is set to
+ *  its plain clone, or its key DELETED when the source lane was empty — so a lane
+ *  the source scene left empty EMPTIES the target lane — and the same for each
+ *  clip's SIBLING AUTOMATION (`auto[k]` set from the buffer / deleted when the
+ *  source carried none): the envelope belongs to the clip, so a full scene
+ *  replace can never leave a ghost envelope under a foreign clip. Whole-clip
+ *  plain reassigns (never a live Y splice), per the yjs-save-load discipline. */
+function pasteSceneInto(
+  nodeId: string,
+  targetSlot: number,
+  sceneClips: (ClipRecord | null)[],
+  sceneAutos?: (AutoClipRecord | null)[],
+): void {
+  const plan = sceneWritePlan(targetSlot, sceneClips, sceneAutos);
+  editData(
+    nodeId,
+    (d) => {
+      if (!d.clips) d.clips = {};
+      if (!d.auto) d.auto = {};
+      for (const { index, value, auto } of plan) {
+        const key = String(index);
+        if (value === null) {
+          // Only delete a key that EXISTS — the syncedStore proxy's deleteProperty
+          // trap throws on a missing key. An already-empty target lane is a no-op.
+          if (d.clips[key] !== undefined && d.clips[key] !== null) delete d.clips[key];
+        } else {
+          d.clips[key] = value;
+        }
+        if (auto === null) {
+          if (d.auto[key] !== undefined && d.auto[key] !== null) delete d.auto[key];
+        } else {
+          d.auto[key] = auto;
+        }
+      }
+    },
+    { undoable: true },
+  );
 }
 
 /** Nudge swing[selectedChannel] by ±SWING_STEP (clamped). selectedChannel = the
@@ -2095,17 +2390,29 @@ function handleL(nodeId: string, e: LaunchpadKeyEvent): void {
     if (copyHeld) {
       const c = clipAtIndex(data, clipIdx);
       if (c) {
-        clipBuffer = copyClip(c);
+        copyBuffer = { kind: 'clip', clip: copyClip(c), auto: readAutoClip(data, clipIdx) };
         bufferSourceIndex = clipIdx;
       }
       return;
     }
-    if (pasteHeld && clipBuffer) {
-      writeClip(nodeId, copyClip(clipBuffer), clipIdx);
+    // PASTE / PASTE-REV act only with a CLIP buffer loaded (a scene buffer is a
+    // no-op on a single clip); with no clip buffer the tap falls through to launch,
+    // exactly as before. Both carry the buffer's automation (PASTE-REV mirrors
+    // the envelope in time to match the reversed notes) and clear the
+    // destination's stale record — the envelope belongs to the clip.
+    if (pasteHeld && bufferClip()) {
+      writeClipWithAuto(nodeId, copyClip(bufferClip()!), bufferClipAuto(), clipIdx);
       return;
     }
-    if (pasteRevHeld && clipBuffer) {
-      writeClip(nodeId, reverseClipSteps(copyClip(clipBuffer)), clipIdx);
+    if (pasteRevHeld && bufferClip()) {
+      const src = bufferClip()!;
+      const auto = bufferClipAuto();
+      writeClipWithAuto(
+        nodeId,
+        reverseClipSteps(copyClip(src)),
+        auto ? reverseAutoClipRecord(auto, src.lengthSteps) : null,
+        clipIdx,
+      );
       return;
     }
     const lane = laneOf(clipIdx);
@@ -2246,9 +2553,8 @@ function handleREdit(nodeId: string, e: LaunchpadKeyEvent): void {
   // Scene column: top = EXIT · row 6 = DOUBLE · row 5 = LENGTH-EDIT. SINGLE
   // mode adds row 4 = FOLLOW (CC 98 is the view-flip on one device, so the
   // single editor's FOLLOW lives here; pair keeps row 4 dark + inert). Rows
-  // 3,2,1,0 are the P6 extras (both modes): COPY snapshots the edited clip to
-  // the machine clipboard, PASTE replaces it with the buffer, OCT ± jump the
-  // pitch window up/down a whole octave.
+  // 1,0 = OCT ± — they jump the pitch WINDOW up/down a whole octave. Rows 3,2
+  // are dark + inert (copy/paste is a Grid-page-only feature).
   if (ev.type === 'scene') {
     if (ev.s !== 1) return;
     const act = editSceneAction(ev.row, { followButton: deployment === 'single' });
@@ -2264,11 +2570,6 @@ function handleREdit(nodeId: string, e: LaunchpadKeyEvent): void {
       mode = 'lengthEdit';
     } else if (act === 'follow') {
       toggleFollow(clip);
-    } else if (act === 'copy') {
-      clipBuffer = copyClip(clip);
-      bufferSourceIndex = editClipIndex;
-    } else if (act === 'paste') {
-      if (clipBuffer) writeClip(nodeId, copyClip(clipBuffer));
     } else if (act === 'octUp') {
       editRowOffset += scaleSteps(clip.scale).length; // one octave = a scale's degrees
     } else if (act === 'octDown') {
@@ -2448,7 +2749,6 @@ function paintRRole(
         // SINGLE: FOLLOW gets a real pad on scene row 4 (CC 98 is the view
         // flip). Pair leaves row 4 dark — its FOLLOW is the CC-98 button.
         followSceneButton: deployment === 'single',
-        bufferLoaded: clipBuffer !== null, // lights the editor PASTE scene pad
       }));
       return;
     }
@@ -2462,7 +2762,7 @@ function paintRRole(
     pasteHeld,
     pasteRevHeld,
     nowHeld,
-    bufferArmed: clipBuffer !== null,
+    bufferArmed: bufferClip() !== null, // pair deck indicator = a CLIP buffer (pair can't paste a scene)
     recording: recordArmed(data),
     arrangeMode: arrangeMode(data),
     keysRecHeld,
@@ -2507,8 +2807,14 @@ function paintKeysRole(
   return true;
 }
 
-/** Build the PERMANENT top-row opts for the current single-mode render pass. */
+/** Build the PERMANENT top-row opts for the current single-mode render pass.
+ *  `laneArms` carries every lane's SYNCED automation arm (the always-visible
+ *  red-flash overlay + the shift-active arm map); `blinkOn` shares the render
+ *  loop's blink phase so the arm flash pulses with the other record lights. */
 function buildTopOpts(): PermanentTopOpts {
+  const data = boundNodeId
+    ? (livePatch.nodes[boundNodeId]?.data as ClipPlayerData | undefined)
+    : undefined;
   return {
     view: singleView,
     keysActive: mode === 'keys',
@@ -2516,6 +2822,8 @@ function buildTopOpts(): PermanentTopOpts {
     shift: { latched: shiftLatched, held: shiftHeldSingle },
     canUndo: lpCanUndo(),
     canRedo: lpCanRedo(),
+    laneArms: armedAutomationLanes(data),
+    blinkOn: Math.floor(tickCount / BLINK_TICKS) % 2 === 0,
   };
 }
 /** Software pulse phase for the Clip-Div preview pad (faster div → faster blink). */
@@ -2529,6 +2837,28 @@ function selPlayhead(nodeId: string, data: ClipPlayerData | undefined): number {
   const lane = laneOf(selectedClipIndex);
   return lanePlaying(data, lane) === slotOf(selectedClipIndex) ? getLanePlayhead(nodeId, lane) : -1;
 }
+/** The PER-LANE automation COUNTDOWN paints for the bound player — one entry
+ *  per RECORDING lane inside its 4-beat pre-roll (the clipplayer tick publishes
+ *  the per-lane render state; the pure helpers bucket each to a colour +
+ *  on-beat pulse). Each carries its clip's flat index so the Grid view can
+ *  flash EVERY recording lane's matrix cell on ITS own wrap. Null when none. */
+function autoCountdownPaints(
+  nodeId: string,
+): (CountdownPaint & { clipIndex: number })[] | null {
+  const rs = getAutomationRender(nodeId);
+  if (!rs) return null;
+  const out: (CountdownPaint & { clipIndex: number })[] = [];
+  for (const l of rs.lanes) {
+    if (!l.recording) continue;
+    const color = automationCountdownColor(l.beatsToLoopEnd);
+    if (!color) continue;
+    out.push({ color, on: automationCountdownOn(l.beatPhase), clipIndex: clipIndex(l.slot, l.lane) });
+  }
+  return out.length ? out : null;
+}
+// (The Control-view AUTO pad's soonest-lane countdown helper is retired with
+// the pad — per-lane countdowns stay on the Grid matrix cells, and the
+// permanent top row carries the per-lane ARM state in every view.)
 /** Paint the SINGLE KEYS sub-view (keyboard + scale/arp right column + permanent
  *  top row). Returns false when the KEYS clip vanished (caller drops to session). */
 function paintSingleKeys(
@@ -2641,8 +2971,11 @@ function renderLeds(): void {
             blinkOn,
             recording: recordArmed(data),
             armedRightAction,
-            bufferLoaded: clipBuffer !== null,
-            nowOn: nowHeld,
+            bufferLoaded: bufferLoaded(),
+            bufferKind: bufferKindOf(),
+            sceneScrollOffset,
+            canScrollUp: sceneScrollOffset > 0,
+            canScrollDown: sceneScrollOffset < maxSceneScrollOffset(highestContentScene(data)),
             divPulse: divPreview
               ? { clipIndex: divPreview.clipIndex, on: divPulsePhase(divPreview.divIndex) }
               : undefined,
@@ -2653,6 +2986,7 @@ function renderLeds(): void {
                   level0to1: laneSwing(data, laneOf(selectedClipIndex)) / MAX_SWING,
                 }
               : undefined,
+            autoCountdown: autoCountdownPaints(nodeId),
           }),
         );
         break;
@@ -2745,7 +3079,7 @@ export function __test_resetBinding(): void {
   lastTapTick = 0;
   lastTapPrevQueued = null;
   lastTapWasPlaying = false;
-  clipBuffer = null;
+  copyBuffer = null;
   bufferSourceIndex = null;
   resetKeysState();
 }
@@ -2766,8 +3100,10 @@ export function __test_mode(): {
   velHeld: boolean;
   editRowOffset: number;
   editWindowStart: number;
+  sceneScrollOffset: number;
   followOn: boolean;
   bufferArmed: boolean;
+  bufferKind: CopyBufferKind | null;
   bufferSourceIndex: number | null;
   armedRightAction: GridArmAction | null;
   divPreview: { clipIndex: number; divIndex: number } | null;
@@ -2805,8 +3141,10 @@ export function __test_mode(): {
     velHeld,
     editRowOffset,
     editWindowStart,
+    sceneScrollOffset,
     followOn,
-    bufferArmed: clipBuffer !== null,
+    bufferArmed: bufferLoaded(),
+    bufferKind: bufferKindOf(),
     bufferSourceIndex,
     armedRightAction,
     divPreview,
@@ -2834,4 +3172,10 @@ export function __test_mode(): {
 export function __test_setDeployment(d: 'pair' | 'single', view: SingleView = 'grid'): void {
   deployment = d;
   singleView = view;
+}
+
+/** Test seam: the current typed copy buffer (clip | scene | null) — so a test can
+ *  assert what a scene COPY captured without going through a paste. */
+export function __test_copyBuffer(): CopyBuffer | null {
+  return copyBuffer;
 }

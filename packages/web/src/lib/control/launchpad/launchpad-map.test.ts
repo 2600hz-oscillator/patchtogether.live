@@ -41,10 +41,12 @@ import {
   RGB_QUEUED,
   RGB_QUEUED_STOP,
   RGB_SCENE,
+  RGB_SCENE_DIM,
   RGB_STOP_ACTIVE,
   RGB_STOP_IDLE,
   RGB_TRANSPORT_ON,
   RGB_COPY_BUFFER,
+  RGB_COPY_BUFFER_SCENE,
   RGB_NOTE_BY_VEL,
   RGB_NOTE_PLAYHEAD,
   RGB_DECK_EDIT,
@@ -98,8 +100,6 @@ import {
   RGB_KEYS_REC_HOLD,
   RGB_KEYS_OD_HOLD_ON,
   RGB_PANIC,
-  EDIT_COPY_SCENE_ROW,
-  EDIT_PASTE_SCENE_ROW,
   EDIT_OCT_UP_SCENE_ROW,
   EDIT_OCT_DOWN_SCENE_ROW,
   RGB_KEY_ROOT,
@@ -115,12 +115,23 @@ import {
   RGB_OD_ON,
   RGB_EXIT,
   RGB_KEYS_REC_HOLD_ON,
+  RGB_RECORDING,
+  RGB_RECORDING_DIM,
 } from './launchpad-map';
 import {
   // SINGLE-mode (S2a) transpose + classifiers
   gridPadToClipIndex,
   clipIndexToGridPad,
   gridSceneRowToSlot,
+  gridPadToClipIndexScrolled,
+  gridPadForScrolledSlot,
+  slotForScene,
+  sceneForWindowIndex,
+  highestContentScene,
+  maxSceneScrollOffset,
+  clampSceneScrollOffset,
+  SCENE_WINDOW,
+  MAX_SCENES,
   sceneIndexForCc,
   topRowAction,
   gridShiftRight,
@@ -145,6 +156,9 @@ import {
   CTRL_ARRANGE_ROW,
   CTRL_REC_COL,
   CTRL_SONG_COL,
+  armTopLane,
+  ARM_SHIFT_LANE,
+  countdownRgb,
   // SINGLE-mode palette
   RGB_VIEW_IDLE,
   RGB_VIEW_ACTIVE,
@@ -574,11 +588,13 @@ describe('Performance controls — placement classifiers', () => {
     expect(lTopMuteLane(91)).toBe(0);
     expect(lTopMuteLane(98)).toBe(7);
   });
-  it('editor scene rows 3/2/1/0 classify as COPY/PASTE/OCT+/OCT− (P6)', () => {
-    expect(editSceneAction(EDIT_COPY_SCENE_ROW)).toBe('copy');
-    expect(editSceneAction(EDIT_PASTE_SCENE_ROW)).toBe('paste');
+  it('editor scene rows 1/0 classify as OCT+/OCT−; rows 3/2 are inert (copy/paste is Grid-only)', () => {
     expect(editSceneAction(EDIT_OCT_UP_SCENE_ROW)).toBe('octUp');
     expect(editSceneAction(EDIT_OCT_DOWN_SCENE_ROW)).toBe('octDown');
+    // Rows 3 + 2 (the old editor COPY/PASTE) are null — copy/paste lives on the
+    // Grid page only.
+    expect(editSceneAction(3)).toBeNull();
+    expect(editSceneAction(2)).toBeNull();
     // EXIT/DOUBLE/LENGTH unchanged.
     expect(editSceneAction(7)).toBe('exit');
   });
@@ -622,17 +638,18 @@ describe('Performance controls — LED frames', () => {
     expect(eqRgb(at(f, colTopCc(0)), RGB_MUTE_OFF)).toBe(true); // lane 0 live
     expect(eqRgb(at(f, colTopCc(1)), RGB_MUTE_ON)).toBe(true); // lane 1 muted
   });
-  it('editor frame lights COPY (green) + PASTE (buffer-gated) + OCT ± pads', () => {
+  it('editor frame lights OCT ± pads; the old COPY/PASTE rows 3/2 stay dark (Grid-only copy/paste)', () => {
     // SCENE_CCS is top→bottom (index 0 = row 7), so scene row r → SCENE_CCS[7-r].
     const sceneCc = (row: number) => SCENE_CCS[7 - row];
     const clip = defaultNoteClip();
-    const noBuf = computeREditFrame(clip, { bufferLoaded: false });
-    expect(eqRgb(at(noBuf, sceneCc(EDIT_COPY_SCENE_ROW)), RGB_DECK_COPY)).toBe(true);
+    const f = computeREditFrame(clip);
     // OCT pads lit (non-null).
-    expect(at(noBuf, sceneCc(EDIT_OCT_UP_SCENE_ROW))).not.toBeNull();
-    const withBuf = computeREditFrame(clip, { bufferLoaded: true });
-    // PASTE lights green when the buffer holds a clip.
-    expect(eqRgb(at(withBuf, sceneCc(EDIT_PASTE_SCENE_ROW)), RGB_DECK_COPY)).toBe(true);
+    expect(at(f, sceneCc(EDIT_OCT_UP_SCENE_ROW))).not.toBeNull();
+    expect(at(f, sceneCc(EDIT_OCT_DOWN_SCENE_ROW))).not.toBeNull();
+    // Rows 3 + 2 (the removed editor COPY/PASTE) are dark — copy/paste exists
+    // only on the Grid page.
+    expect(eqRgb(at(f, sceneCc(3)), RGB_OFF)).toBe(true);
+    expect(eqRgb(at(f, sceneCc(2)), RGB_OFF)).toBe(true);
   });
 });
 
@@ -694,9 +711,9 @@ describe('Single mode — classifiers', () => {
     expect(sceneIndexForCc(SCENE_CCS[7])).toBe(7);
     expect(sceneIndexForCc(91)).toBeNull();
   });
-  it('gridShiftRight: 0=copy … 7=now; out of range null', () => {
+  it('gridShiftRight: 0=copy … 5=len, 6=scrollUp, 7=scrollDown; out of range null', () => {
     expect([0, 1, 2, 3, 4, 5, 6, 7].map(gridShiftRight)).toEqual([
-      'copy', 'paste', 'clipDiv', 'swingUp', 'swingDown', 'len', 'pasteRev', 'now',
+      'copy', 'paste', 'clipDiv', 'swingUp', 'swingDown', 'len', 'scrollUp', 'scrollDown',
     ]);
     expect(gridShiftRight(8)).toBeNull();
     expect(gridShiftRight(-1)).toBeNull();
@@ -729,14 +746,148 @@ describe('Single mode — classifiers', () => {
     expect(controlRight(8)).toBeNull();
     expect(controlRight(-1)).toBeNull();
   });
-  it('controlRehomePad classifies the re-homed transport/song pads', () => {
+  it('controlRehomePad classifies the re-homed transport/song pads (the old AUTO pad at (2,6) is RETIRED)', () => {
     expect(controlRehomePad(CTRL_TEMPO_DOWN_COL, CTRL_TEMPO_ROW)).toBe('tempoDown');
     expect(controlRehomePad(CTRL_TEMPO_UP_COL, CTRL_TEMPO_ROW)).toBe('tempoUp');
     expect(controlRehomePad(CTRL_STOP_ALL_COL, CTRL_TEMPO_ROW)).toBe('stopAll');
     expect(controlRehomePad(CTRL_REC_COL, CTRL_ARRANGE_ROW)).toBe('rec');
     expect(controlRehomePad(CTRL_SONG_COL, CTRL_ARRANGE_ROW)).toBe('song');
+    // The single AUTO pad at (2,6) is retired — per-lane arm is the permanent
+    // top row's SHIFT+column gesture (armTopLane below).
+    expect(controlRehomePad(2, CTRL_ARRANGE_ROW)).toBeNull();
     expect(controlRehomePad(2, CTRL_TEMPO_ROW)).toBeNull(); // a gap column
     expect(controlRehomePad(0, 0)).toBeNull(); // not a re-home row
+  });
+  it('armTopLane: SHIFT+top CC 91..97 → lanes 0..6; CC 98 (shift itself) → null; lane 8 = ARM_SHIFT_LANE', () => {
+    expect(armTopLane(91)).toBe(0);
+    expect(armTopLane(92)).toBe(1);
+    expect(armTopLane(95)).toBe(4);
+    expect(armTopLane(97)).toBe(6);
+    expect(armTopLane(98)).toBeNull(); // the shift button — lane 8 is the double-tap
+    expect(armTopLane(90)).toBeNull();
+    expect(armTopLane(0)).toBeNull();
+    expect(ARM_SHIFT_LANE).toBe(7);
+  });
+});
+
+describe('Single mode — scene-scroll window (reach scenes beyond 8)', () => {
+  it('slotForScene: every scene 0..MAX_SCENES-1 backs a real slot (scene == slot); out of range → null', () => {
+    expect(slotForScene(0)).toBe(0);
+    expect(slotForScene(7)).toBe(7);
+    expect(slotForScene(8)).toBe(8); // scene 8+ now backs a REAL populatable slot
+    expect(slotForScene(9)).toBe(9);
+    expect(slotForScene(63)).toBe(63); // the last slot on the axis
+    expect(slotForScene(MAX_SCENES)).toBeNull(); // 64 — out of range
+    expect(slotForScene(-1)).toBeNull();
+  });
+  it('sceneForWindowIndex: window index i at offset o → global scene o+i', () => {
+    expect(sceneForWindowIndex(0, 0)).toBe(0);
+    expect(sceneForWindowIndex(0, 7)).toBe(7);
+    expect(sceneForWindowIndex(2, 0)).toBe(2); // top button at offset 2 = scene 2
+    expect(sceneForWindowIndex(2, 7)).toBe(9); // bottom button at offset 2 = scene 9
+  });
+  it('SCENE_WINDOW = LP_HEIGHT (8) and MAX_SCENES is a sane cap (64)', () => {
+    expect(SCENE_WINDOW).toBe(8);
+    expect(MAX_SCENES).toBe(64);
+  });
+  it('highestContentScene: -1 when empty; the deepest slot that holds any clip (scans the FULL MAX_SCENES axis)', () => {
+    expect(highestContentScene(undefined)).toBe(-1);
+    expect(highestContentScene({} as ClipPlayerData)).toBe(-1);
+    const d = {
+      clips: { [clipIndex(1, 0)]: defaultNoteClip(), [clipIndex(3, 2)]: defaultNoteClip() },
+    } as unknown as ClipPlayerData;
+    expect(highestContentScene(d)).toBe(3); // slot 3 (lane 2) is the deepest
+    const full = { clips: { [clipIndex(7, 5)]: defaultNoteClip() } } as unknown as ClipPlayerData;
+    expect(highestContentScene(full)).toBe(7);
+    // Content in a scene BEYOND the visible 8 is now reachable (a clip in scene 15).
+    const deep = { clips: { [clipIndex(15, 3)]: defaultNoteClip() } } as unknown as ClipPlayerData;
+    expect(highestContentScene(deep)).toBe(15);
+  });
+  it('maxSceneScrollOffset: an empty player cannot scroll; content reveals ONE empty scene past it, capped at MAX_SCENES', () => {
+    expect(maxSceneScrollOffset(-1)).toBe(0); // empty → no scroll
+    expect(maxSceneScrollOffset(0)).toBe(0); // content only at scene 0 → still a full window
+    expect(maxSceneScrollOffset(7)).toBe(1); // content through slot 7 → reveal scene 8 (dark)
+    expect(maxSceneScrollOffset(8)).toBe(2); // (once storage grows) content to scene 8 → scene 9 at bottom
+    expect(maxSceneScrollOffset(63)).toBe(MAX_SCENES - SCENE_WINDOW); // hard cap = 56
+    expect(maxSceneScrollOffset(200)).toBe(MAX_SCENES - SCENE_WINDOW); // never past the cap
+  });
+  it('clampSceneScrollOffset: clamps into [0, max]; UP clamps at 0; NaN → 0', () => {
+    expect(clampSceneScrollOffset(-5, 7)).toBe(0); // UP clamp
+    expect(clampSceneScrollOffset(5, 7)).toBe(1); // DOWN clamp (max 1 for content-through-7)
+    expect(clampSceneScrollOffset(1, 7)).toBe(1);
+    expect(clampSceneScrollOffset(3, -1)).toBe(0); // empty player: max 0
+    expect(clampSceneScrollOffset(Number.NaN, 7)).toBe(0);
+  });
+  it('gridPadToClipIndexScrolled: offset 0 === gridPadToClipIndex; offset shifts the scene onto its real slot; out of range → null', () => {
+    // offset 0 agrees with the un-scrolled mapping for every pad.
+    for (let x = 0; x < 8; x++) {
+      for (let y = 0; y < 8; y++) {
+        expect(gridPadToClipIndexScrolled(x, y, 0)).toBe(gridPadToClipIndex(x, y));
+      }
+    }
+    // offset 1: the TOP row (y=7) now addresses scene 1 (slot 1).
+    expect(gridPadToClipIndexScrolled(0, 7, 1)).toBe(clipIndex(1, 0));
+    expect(gridPadToClipIndexScrolled(3, 7, 1)).toBe(clipIndex(1, 3));
+    // offset 1: the BOTTOM row (y=0) = scene 8 → its REAL stored slot 8 (no longer null).
+    expect(gridPadToClipIndexScrolled(0, 0, 1)).toBe(clipIndex(8, 0));
+    // a scene beyond the axis (≥ MAX_SCENES) → null (offset 60, bottom row = scene 67).
+    expect(gridPadToClipIndexScrolled(0, 0, 60)).toBeNull();
+    // out of the matrix → null.
+    expect(gridPadToClipIndexScrolled(8, 0, 0)).toBeNull();
+    expect(gridPadToClipIndexScrolled(0, 8, 0)).toBeNull();
+  });
+  it('gridPadForScrolledSlot: places a stored slot in the window, or null when scrolled off; round-trips with the pad→index map', () => {
+    expect(gridPadForScrolledSlot(0, 0, 0)).toEqual({ x: 0, y: 7 }); // slot 0 = top row
+    expect(gridPadForScrolledSlot(1, 3, 0)).toEqual({ x: 3, y: 6 });
+    expect(gridPadForScrolledSlot(0, 0, 1)).toBeNull(); // scrolled off the top
+    expect(gridPadForScrolledSlot(7, 0, 1)).toEqual({ x: 0, y: 1 }); // slot 7 rises to row 6
+    for (const offset of [0, 1, 2]) {
+      for (let slot = 0; slot < 8; slot++) {
+        for (let lane = 0; lane < 8; lane++) {
+          const pad = gridPadForScrolledSlot(slot, lane, offset);
+          if (pad) expect(gridPadToClipIndexScrolled(pad.x, pad.y, offset)).toBe(clipIndex(slot, lane));
+        }
+      }
+    }
+  });
+  it('computeSingleGridFrame at an offset: the shifted scene paints its clip; the revealed empty scene is DARK', () => {
+    const data = {
+      clips: { [clipIndex(1, 0)]: defaultNoteClip() },
+      playing: [1, null, null, null, null, null, null, null], // lane 0 playing slot 1
+    } as unknown as ClipPlayerData;
+    const f = computeSingleGridFrame(data, {
+      top: mkTop('grid'),
+      blinkOn: true,
+      sceneScrollOffset: 1,
+    });
+    // At offset 1 scene 1 (slot 1) is the TOP row → lane-0 playing shows its hue at (0,7).
+    expect(eqRgb(at(f, padNote(0, 7)), hexToRgb127(defaultLaneColorHex(0)))).toBe(true);
+    // The BOTTOM row is scene 8 (empty) → DARK.
+    expect(eqRgb(at(f, padNote(0, 0)), RGB_OFF)).toBe(true);
+    // Scene column: top button (index 0 → scene 1) = amber; bottom (index 7 → scene 8) = DARK.
+    expect(eqRgb(at(f, SCENE_CCS[0]), RGB_SCENE)).toBe(true);
+    expect(eqRgb(at(f, SCENE_CCS[7]), RGB_OFF)).toBe(true);
+  });
+  it('scenes ≥ 8 hold REAL clips: scene 9 + 15 key + map + paint correctly; an empty scene past content is dark', () => {
+    // Clips stored in scene 9 (slot 9, lane 0) and scene 15 (slot 15, lane 3).
+    const data = {
+      clips: { [clipIndex(9, 0)]: defaultNoteClip(), [clipIndex(15, 3)]: defaultNoteClip() },
+      playing: [9, null, null, null, null, null, null, null], // lane 0 playing slot 9
+    } as unknown as ClipPlayerData;
+    // Stored keys are stride-64 unique + decode back to (slot, lane).
+    expect(clipIndex(9, 0)).toBe(9);
+    expect(clipIndex(15, 3)).toBe(3 * 64 + 15); // 207
+    // The scrolled grid REACHES those cells: at offset 8 the window shows scenes 8..15.
+    expect(gridPadToClipIndexScrolled(0, 6, 8)).toBe(clipIndex(9, 0)); // scene 9 → row 1 (y=6)
+    expect(gridPadToClipIndexScrolled(3, 0, 8)).toBe(clipIndex(15, 3)); // scene 15 → row 7 (y=0)
+    // Render at offset 8: scene-9 lane-0 pad is SOLID (playing) at (x=0, y=6); its
+    // scene button (index 1 → scene 9) is amber; scene 8 (index 0, empty) is dark.
+    const f = computeSingleGridFrame(data, { top: mkTop('grid'), blinkOn: true, sceneScrollOffset: 8 });
+    expect(eqRgb(at(f, padNote(0, 6)), hexToRgb127(defaultLaneColorHex(0)))).toBe(true);
+    expect(eqRgb(at(f, SCENE_CCS[1]), RGB_SCENE)).toBe(true); // scene 9 has a clip → amber
+    expect(eqRgb(at(f, SCENE_CCS[0]), RGB_OFF)).toBe(true); // scene 8 empty → dark (content-gated)
+    // A scene with NO clip in its window row is a dark pad (scene 10, row 2, y=5).
+    expect(eqRgb(at(f, padNote(0, 5)), RGB_OFF)).toBe(true);
   });
 });
 
@@ -758,15 +909,71 @@ describe('Single mode — permanent top row', () => {
     paintPermanentTopRow(f, mkTop('clip', { keysActive: true }));
     expect(eqRgb(at(f, 93), RGB_VIEW_ACTIVE)).toBe(true);
   });
-  it('undo/redo dim when the stacks are empty; shift latched vs held', () => {
+  it('undo/redo dim when the stacks are empty (no shift); shift latched vs held on CC 98', () => {
     const f = emptyLpFrame();
-    paintPermanentTopRow(f, mkTop('grid', { shift: { latched: true, held: false } }));
+    paintPermanentTopRow(f, mkTop('grid'));
     expect(eqRgb(at(f, 96), RGB_SYS_DIM)).toBe(true); // canUndo false
     expect(eqRgb(at(f, 97), RGB_SYS_DIM)).toBe(true); // canRedo false
-    expect(eqRgb(at(f, 98), RGB_SHIFT_LATCH)).toBe(true); // solid yellow
+    const latch = emptyLpFrame();
+    paintPermanentTopRow(latch, mkTop('grid', { shift: { latched: true, held: false } }));
+    expect(eqRgb(at(latch, 98), RGB_SHIFT_LATCH)).toBe(true); // solid yellow
     const held = emptyLpFrame();
     paintPermanentTopRow(held, mkTop('grid', { shift: { latched: false, held: true } }));
     expect(eqRgb(at(held, 98), RGB_SHIFT_HELD)).toBe(true); // bright yellow
+  });
+  it('ARM MAP while shift is ACTIVE: cols 0..6 = red pulse (armed) / dim red (available); CC 98 keeps the shift LED', () => {
+    // Shift LATCHED, lane 2 armed, blink bright.
+    const f = emptyLpFrame();
+    paintPermanentTopRow(
+      f,
+      mkTop('grid', { shift: { latched: true, held: false }, laneArms: [false, false, true], blinkOn: true }),
+    );
+    expect(eqRgb(at(f, 93), RGB_RECORDING)).toBe(true); // lane 2 armed → red pulse (bright)
+    expect(eqRgb(at(f, 91), RGB_STOP_IDLE)).toBe(true); // lane 0 available → dim red
+    expect(eqRgb(at(f, 97), RGB_STOP_IDLE)).toBe(true); // lane 6 available → dim red
+    expect(eqRgb(at(f, 98), RGB_SHIFT_LATCH)).toBe(true); // the shift button keeps its LED
+    // Blink-off phase: the armed lane dims to the record-dim red.
+    const dim = emptyLpFrame();
+    paintPermanentTopRow(
+      dim,
+      mkTop('grid', { shift: { latched: true, held: false }, laneArms: [false, false, true], blinkOn: false }),
+    );
+    expect(eqRgb(at(dim, 93), RGB_RECORDING_DIM)).toBe(true);
+  });
+  it('ALWAYS-VISIBLE arm overlay (no shift): an armed lane’s top button red-flashes ALTERNATING with its base colour — every view', () => {
+    // Lane 2 (the CLIP button's column) armed, grid view, blink bright → RED.
+    const on = emptyLpFrame();
+    paintPermanentTopRow(on, mkTop('grid', { laneArms: [false, false, true], blinkOn: true }));
+    expect(eqRgb(at(on, 93), RGB_RECORDING)).toBe(true);
+    // Blink-off phase → the BASE compass colour shows (the row stays readable).
+    const off = emptyLpFrame();
+    paintPermanentTopRow(off, mkTop('grid', { laneArms: [false, false, true], blinkOn: false }));
+    expect(eqRgb(at(off, 93), RGB_VIEW_IDLE)).toBe(true);
+    // Unarmed columns keep their base colours in BOTH phases.
+    expect(eqRgb(at(on, 92), RGB_VIEW_ACTIVE)).toBe(true);
+    expect(eqRgb(at(off, 92), RGB_VIEW_ACTIVE)).toBe(true);
+    // CONTRAST-AWARE off phase: the STOPPED transport button's base is
+    // red-family ([104,23,23]) — a red flash against it would be illegible,
+    // so the off phase dims to RGB_RECORDING_DIM instead of the base.
+    const redBaseOn = emptyLpFrame();
+    paintPermanentTopRow(redBaseOn, mkTop('grid', { laneArms: [true], blinkOn: true }));
+    expect(eqRgb(at(redBaseOn, 91), RGB_RECORDING)).toBe(true);
+    const redBaseOff = emptyLpFrame();
+    paintPermanentTopRow(redBaseOff, mkTop('grid', { laneArms: [true], blinkOn: false }));
+    expect(eqRgb(at(redBaseOff, 91), RGB_RECORDING_DIM), 'red-family base → dim-red off phase').toBe(true);
+    // A RUNNING transport (green base) keeps the base as the off phase.
+    const greenBaseOff = emptyLpFrame();
+    paintPermanentTopRow(greenBaseOff, mkTop('grid', { transportRunning: true, laneArms: [true], blinkOn: false }));
+    expect(eqRgb(at(greenBaseOff, 91), RGB_TRANSPORT_ON)).toBe(true);
+    // Lane 8 armed: CC 98 alternates red ↔ the shift LED.
+    const l8on = emptyLpFrame();
+    paintPermanentTopRow(l8on, mkTop('control', { laneArms: [false, false, false, false, false, false, false, true], blinkOn: true }));
+    expect(eqRgb(at(l8on, 98), RGB_RECORDING)).toBe(true);
+    const l8off = emptyLpFrame();
+    paintPermanentTopRow(l8off, mkTop('control', { laneArms: [false, false, false, false, false, false, false, true], blinkOn: false }));
+    expect(eqRgb(at(l8off, 98), RGB_SHIFT_OFF)).toBe(true);
+    // Works in EVERY view — the same overlay in control view.
+    expect(eqRgb(at(l8on, 95), RGB_VIEW_ACTIVE)).toBe(true); // the control view's own button unaffected
   });
 });
 
@@ -803,18 +1010,29 @@ describe('Single mode — frame builders', () => {
     // permanent nav: grid active.
     expect(eqRgb(at(f, 92), RGB_VIEW_ACTIVE)).toBe(true);
   });
-  it('grid + shift: the right column shows the function palette; the armed action brightens', () => {
+  it('grid + shift: the right column shows the function palette; the armed action brightens; UP/DOWN are amber', () => {
     const f = computeSingleGridFrame({} as ClipPlayerData, {
       top: mkTop('grid', { shift: { latched: true, held: false } }),
       armedRightAction: 'copy',
       bufferLoaded: false,
-      nowOn: false,
+      canScrollUp: true,
+      canScrollDown: true,
     });
     expect(eqRgb(at(f, SCENE_CCS[0]), RGB_PATTERN_ARMED)).toBe(true); // COPY armed = bright green
     expect(eqRgb(at(f, SCENE_CCS[1]), RGB_PATTERN)).toBe(true); // PASTE idle green (no buffer)
     expect(eqRgb(at(f, SCENE_CCS[2]), RGB_TIMING)).toBe(true); // CLIP DIV blue
     expect(eqRgb(at(f, SCENE_CCS[5]), RGB_DECK_LEN)).toBe(true); // LEN yellow
-    expect(eqRgb(at(f, SCENE_CCS[7]), RGB_SYS_DIM)).toBe(true); // NOW off = dim orange
+    expect(eqRgb(at(f, SCENE_CCS[6]), RGB_SCENE)).toBe(true); // scene UP (was PASTE-REV) = amber
+    expect(eqRgb(at(f, SCENE_CCS[7]), RGB_SCENE)).toBe(true); // scene DOWN (was NOW) = amber
+  });
+  it('grid + shift: UP/DOWN dim to RGB_SCENE_DIM at their scroll clamp', () => {
+    const f = computeSingleGridFrame({} as ClipPlayerData, {
+      top: mkTop('grid', { shift: { latched: true, held: false } }),
+      canScrollUp: false, // at the top (offset 0) → UP dim
+      canScrollDown: false, // nothing more to reveal → DOWN dim
+    });
+    expect(eqRgb(at(f, SCENE_CCS[6]), RGB_SCENE_DIM)).toBe(true);
+    expect(eqRgb(at(f, SCENE_CCS[7]), RGB_SCENE_DIM)).toBe(true);
   });
   it('grid + shift: the Swing buttons flash green on return-to-centre', () => {
     const f = computeSingleGridFrame({} as ClipPlayerData, {
@@ -823,6 +1041,63 @@ describe('Single mode — frame builders', () => {
     });
     expect(eqRgb(at(f, SCENE_CCS[3]), RGB_SWING_CENTER)).toBe(true); // Swing+
     expect(eqRgb(at(f, SCENE_CCS[4]), RGB_SWING_CENTER)).toBe(true); // Swing−
+  });
+  it('grid + shift: PASTE pulses the AMBER scene-buffer colour when a SCENE is buffered', () => {
+    // Turquoise for a clip buffer, amber for a scene buffer (distinct colour).
+    const clipBuf = computeSingleGridFrame({} as ClipPlayerData, {
+      top: mkTop('grid', { shift: { latched: true, held: false } }),
+      bufferLoaded: true,
+      bufferKind: 'clip',
+      blinkOn: true,
+    });
+    expect(eqRgb(at(clipBuf, SCENE_CCS[1]), RGB_COPY_BUFFER)).toBe(true); // clip → turquoise
+    const sceneBuf = computeSingleGridFrame({} as ClipPlayerData, {
+      top: mkTop('grid', { shift: { latched: true, held: false } }),
+      bufferLoaded: true,
+      bufferKind: 'scene',
+      blinkOn: true,
+    });
+    expect(eqRgb(at(sceneBuf, SCENE_CCS[1]), RGB_COPY_BUFFER_SCENE)).toBe(true); // scene → amber
+  });
+  it('grid (no shift): a SCENE-buffer PASTE arm lights the scene column + DIMS the clip pads', () => {
+    const data: ClipPlayerData = {
+      clips: { [clipIndex(3, 0)]: defaultNoteClip() }, // a loaded clip pad
+    } as ClipPlayerData;
+    const f = computeSingleGridFrame(data, {
+      top: mkTop('grid'), // NO shift → the sticky paste arm overlays the launch column
+      armedRightAction: 'paste',
+      bufferLoaded: true,
+      bufferKind: 'scene',
+      blinkOn: true,
+    });
+    // Every in-range scene lights the amber scene-buffer target colour (valid class).
+    expect(eqRgb(at(f, SCENE_CCS[0]), RGB_COPY_BUFFER_SCENE)).toBe(true);
+    expect(eqRgb(at(f, SCENE_CCS[5]), RGB_COPY_BUFFER_SCENE)).toBe(true);
+    // The loaded clip pad (invalid class) is DIMMED to ~15% of its state colour.
+    // slot 3 at offset 0 → matrix row 3 → physical y = 7 - 3 = 4.
+    const dl0 = hexToRgb127(defaultLaneColorHex(0)); // lane-0 loaded = 0.32× hue, then 0.15× dim
+    const loadedRgb = [Math.round(dl0[0] * 0.32), Math.round(dl0[1] * 0.32), Math.round(dl0[2] * 0.32)];
+    const dimmed = [Math.round(loadedRgb[0] * 0.15), Math.round(loadedRgb[1] * 0.15), Math.round(loadedRgb[2] * 0.15)];
+    expect(eqRgb(at(f, padNote(0, 4)), dimmed as unknown as typeof RGB_OFF)).toBe(true);
+  });
+  it('grid (no shift): a CLIP-buffer PASTE arm DIMS the scene column (clip pads stay lit)', () => {
+    const data: ClipPlayerData = {
+      clips: { [clipIndex(2, 0)]: defaultNoteClip(), [clipIndex(2, 1)]: defaultNoteClip() }, // scene 2 has content
+    } as ClipPlayerData;
+    const f = computeSingleGridFrame(data, {
+      top: mkTop('grid'),
+      armedRightAction: 'paste',
+      bufferLoaded: true,
+      bufferKind: 'clip',
+      blinkOn: true,
+    });
+    // Scene column dims (invalid class for a clip buffer) even where it has content.
+    expect(eqRgb(at(f, SCENE_CCS[2]), RGB_SCENE_DIM)).toBe(true);
+    // A loaded clip pad stays at its normal loaded colour (valid class, not dimmed).
+    // slot 2 at offset 0 → matrix row 2 → physical y = 7 - 2 = 5.
+    const dl0 = hexToRgb127(defaultLaneColorHex(0));
+    const loadedRgb = [Math.round(dl0[0] * 0.32), Math.round(dl0[1] * 0.32), Math.round(dl0[2] * 0.32)];
+    expect(eqRgb(at(f, padNote(0, 5)), loadedRgb as unknown as typeof RGB_OFF)).toBe(true);
   });
   it('grid: divPulse pulses the TARGET clip pad blue in time', () => {
     const shiftTop = mkTop('grid', { shift: { latched: true, held: false } });
@@ -974,5 +1249,43 @@ describe('Single mode — frame builders', () => {
     expect(eqRgb(at(f, padNote(7, 7)), RGB_ARRANGER_DIM)).toBe(true);
     expect(eqRgb(at(f, SCENE_CCS[0]), RGB_OFF)).toBe(true); // right column dark
     expect(eqRgb(at(f, 94), RGB_VIEW_ACTIVE)).toBe(true); // arranger active = bright purple
+  });
+
+  it('control: the OLD AUTO pad at (2,6) is RETIRED — dark; the top row carries the per-lane arm instead', () => {
+    const idle = computeSingleControlFrame({ top: mkTop('control'), data: {} as ClipPlayerData, blinkOn: true });
+    expect(at(idle, padNote(2, CTRL_ARRANGE_ROW)), 'unpainted = dark').toBeNull();
+    // An armed lane shows on the PERMANENT TOP ROW even in the control view
+    // (the always-visible arm overlay), not on any grid pad.
+    const armed = computeSingleControlFrame({
+      top: mkTop('control', { laneArms: [true], blinkOn: true }),
+      data: { automation: { lanes: [{ arm: true }] } } as ClipPlayerData,
+      blinkOn: true,
+    });
+    expect(at(armed, padNote(2, CTRL_ARRANGE_ROW)), 'still dark').toBeNull();
+    expect(eqRgb(at(armed, 91), RGB_RECORDING)).toBe(true); // lane 0's top button flashes red
+  });
+
+  it('countdownRgb: yellow/red map to the qrec/record palette with an on-beat pulse', () => {
+    expect(countdownRgb({ color: 'yellow', on: true })).toEqual(RGB_QREC_ARMED);
+    expect(countdownRgb({ color: 'yellow', on: false })).toEqual(RGB_QREC_IDLE);
+    expect(countdownRgb({ color: 'red', on: true })).toEqual(RGB_RECORDING);
+    expect(countdownRgb({ color: 'red', on: false })).toEqual(RGB_RECORDING_DIM);
+  });
+
+  it('grid: EACH recording lane’s clip cell flashes ITS countdown when its scene is in view (per-lane)', () => {
+    const idxA = clipIndex(0, 7); // recording clip at lane 7, slot 0 (flat, stride-64)
+    const idxB = clipIndex(1, 2); // a SECOND recording lane (lane 2, slot 1)
+    const padA = clipIndexToGridPad(idxA);
+    const padB = clipIndexToGridPad(idxB);
+    const f = computeSingleGridFrame({} as ClipPlayerData, {
+      top: mkTop('grid'),
+      blinkOn: true,
+      autoCountdown: [
+        { clipIndex: idxA, color: 'red', on: true },
+        { clipIndex: idxB, color: 'yellow', on: false },
+      ],
+    });
+    expect(eqRgb(at(f, padNote(padA.x, padA.y)), RGB_RECORDING)).toBe(true);
+    expect(eqRgb(at(f, padNote(padB.x, padB.y)), RGB_QREC_IDLE)).toBe(true);
   });
 });

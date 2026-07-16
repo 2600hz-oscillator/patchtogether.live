@@ -214,13 +214,18 @@ export function createCcCommit(opts: CcCommitOpts): CcCommit {
 
   const pump: CcCommit = {
     push(value: number): void {
-      opts.transient?.(value);
       if (disposed) {
         // Post-dispose push (setter raced an unmount): degrade to the
-        // uncoalesced direct write — never lose a value, never re-arm timers.
+        // uncoalesced direct write — never lose a value, never re-arm timers,
+        // and SKIP the transient leg: on a live pump the transient fires the
+        // automation touch seam whose paired release rides the settle timer —
+        // a disposed pump never settles, so a transient here would leak a
+        // permanent 'midi' grab (automation suspended forever). Only the
+        // durable commit matters on this path.
         opts.commit(value);
         return;
       }
+      opts.transient?.(value);
       pending = value;
       setActive(true);
       // Trailing settle flush re-arms on every message.

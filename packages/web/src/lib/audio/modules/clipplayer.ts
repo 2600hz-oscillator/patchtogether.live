@@ -21,7 +21,17 @@
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
-import { patch as livePatch } from '$lib/graph/store';
+import type { ModuleNode } from '$lib/graph/types';
+import { patch as livePatch, ydoc } from '$lib/graph/store';
+import { getActiveEngine } from '$lib/audio/engine-ref';
+import { resolveSurfaceParam } from '$lib/graph/control-surface-params';
+import { valueToFrac, fracToValue } from '$lib/electra/curve';
+import { AutomationController, type AutoTrackUpdate } from './clip-automation-controller';
+import {
+  registerAutomationController,
+  unregisterAutomationController,
+} from '$lib/audio/automation-touch';
+import { SEAM_GLIDE_S, quantizeStopStep, type RampPoint } from './clip-automation-engine';
 import { createPolySender, POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
 import { createVoiceAllocator, type VoiceAllocator } from '$lib/audio/poly-alloc';
 import { getSchedulerClock } from '$lib/audio/scheduler-clock';
@@ -29,6 +39,11 @@ import { createEdgeCounter } from '$lib/audio/edge-detect';
 import { midiToVOct } from '$lib/audio/note-entry';
 import { isInputPortConnected } from './transport-helpers';
 import { setLanePlayhead, clearPlayheads } from './clip-playhead';
+import {
+  setAutomationRender,
+  clearAutomationRender,
+  type AutomationLaneRender,
+} from './clip-automation-render';
 import { drainAudition, clearAudition } from './clip-audition';
 import {
   readClip,
@@ -39,7 +54,24 @@ import {
   laneMuted,
   laneSwing,
   swingStepOffset,
+  isLaneAutomationRecorder,
+  laneAutomationArmed,
+  migrateAutomationLanesShape,
+  migrateClipPlayerData,
+  coerceClipRecord,
+  coerceAutoClipRecord,
+  autoTrackViews,
+  automationTargetKey,
+  laneAssignedModules,
+  coerceAutoAssign,
+  autoPlaybackOwners,
+  MAX_AUTOMATION_TRACKS,
   type ClipPlayerData,
+  type ClipRecord,
+  type AutoTrack,
+  type AutoClipRecord,
+  type AutomationTarget,
+  type AutomationTrack,
 } from './clip-types';
 import { clipDivIndex, laneStepDur, RATE_DEFAULT_INDEX } from './clip-clock';
 import {
@@ -55,6 +87,11 @@ import {
 
 /** steps-per-beat for each stepDiv index (0=1/4 … 3=1/32). */
 const STEP_DIV_SPB = [1, 2, 4, 8] as const;
+
+/** Transaction ORIGIN for automation record commits — deliberately NOT the
+ *  undo-tracked LOCAL_ORIGIN (see the commit dep's rationale: per-wrap undo
+ *  flooding). Exported for tests that assert commits stay out of the undo scope. */
+export const AUTOMATION_COMMIT_ORIGIN = Symbol('automation-commit');
 
 /** Fall→rise gap (s) when an audition voice-lane changes owner (LRU-steal, or a
  *  freed lane re-taken in the same drain). Two clean setValueAtTime edges — a
@@ -104,7 +141,7 @@ export const clipplayerDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A clip launcher in the style of Ableton's Session view, with 8 instrument lanes. The grid's rows are the 8 lanes (instruments) and the columns are 8 clip slots, for 64 note clips in all; each lane independently plays whichever clip you launch out its OWN pitch/gate/velocity outputs, so up to 8 clips can sound at once (one per lane). Click a pad to launch its clip, double-click to open the piano-roll editor and draw notes into it. There's no internal clock or BPM — CLIP PLAYER is locked to TIMELORDE (the rack transport): it runs at TIMELORDE's tempo, only while TIMELORDE is running, and the STEP control sets how many steps fall per beat. Each lane also has its own clock-rate dropdown (1/8 · 1/4 · 1/2 · 1 · 2x · 4x, card-only for now) that divides or multiplies that lane's step rate off the global STEP grid — polyrhythms without leaving the card — and because the tempo comes from TIMELORDE, 2x/4x are exact from the first step. All lanes share a common phase origin (transport start or the RST button), so a 1/2 lane lands on even base steps and stays locked to the others; RST (also a MIDI-assignable button, and the reset input) snaps every active lane back to step 1 and re-anchors that shared origin. Launches can fire immediately or be quantized to snap cleanly at the playing clip's loop boundary. It also has a SONG / arrangement mode that records your launches onto a timeline for non-real-time playback, and pairs with a monome grid for hardware launching. Drive its lanes into eight voices for a full multitrack clip-based performance instrument.",
+      "A clip launcher in the style of Ableton's Session view, with 8 instrument lanes. The grid's rows are the 8 lanes (instruments) and the columns are clip slots — the card shows 8 slots per lane at a time (64 clips at a glance), while on a Launchpad the scene column scrolls through up to 64 scene slots per lane (fixed stride-64 storage; older saves migrate once on load), so clips can live in scenes past the first 8. Each lane independently plays whichever clip you launch out its OWN pitch/gate/velocity outputs, so up to 8 clips can sound at once (one per lane). Click a pad to launch its clip, double-click to open the piano-roll editor and draw notes into it. There's no internal clock or BPM — CLIP PLAYER is locked to TIMELORDE (the rack transport): it runs at TIMELORDE's tempo, only while TIMELORDE is running, and the STEP control sets how many steps fall per beat. Each lane also has its own clock-rate control (1/8 · 1/4 · 1/2 · 1 · 2x · 4x — the card dropdown, and the Launchpad deck's per-lane RATE row) that divides or multiplies that lane's step rate off the global STEP grid — polyrhythms without leaving the card — and because the tempo comes from TIMELORDE, 2x/4x are exact from the first step. All lanes share a common phase origin (transport start or the RST button), so a 1/2 lane lands on even base steps and stays locked to the others; RST (also a MIDI-assignable button, and the reset input) snaps every active lane back to step 1 and re-anchors that shared origin. Launches can fire immediately or be quantized to snap cleanly at the playing clip's loop boundary. It also has a SONG / arrangement mode that records your launches onto a timeline for non-real-time playback, and pairs with a monome grid 128 or a one- or two-unit Novation Launchpad Mini Mk3 for hardware launching. On the Launchpad the scene-launch column is a scrolling window (its shift-layer amber UP/DOWN buttons slide it), and a typed clipboard lets you COPY/PASTE whole SCENES (all 8 lanes at one slot, full-replace) as well as single clips — scene→scene and clip→clip pastes apply, while scene→clip and clip→scene are ignored (their targets dim). PER-CLIP AUTOMATION records parameter moves into the PLAYING clip by CONTINUOUS OVERDUB — Deluge-like: assign modules, launch a clip, arm the lane, twist, and it just keeps overdubbing. Assignment is MODULE-level: right-click a MODULE'S CARD → \"Assign to automation lane\" → pick lane 1–8 (one lane per module; re-assigning moves it). The assigned module's whole card gets a thin border in that lane's colour, and the AUTO block shows a per-lane assigned-module count. The ARM is PER LANE — the small teal ◉ under each channel column (next to its RATE control), distinct from the experimental red ● arranger record (which records clip LAUNCHES, not knob moves): launch a note clip in the lane, arm THAT lane's ◉, and just MOVE any control on an assigned module — the lane's recorder punches in cleanly at ITS playing clip's own next loop start and overdubs EVERY loop until you press its ◉ again (a manual stop — no auto punch-out); several lanes can record at once, each on its own loop, and different collaborators can record different lanes simultaneously (each lane is single-writer). Automation records your HANDS — screen drags, MIDI CC, Electra — never CV: a CV cable modulating a param is performance signal, not recorded automation (recording reads the modulation-free knob value, and CV never counts as a touch). Touching a control on an UNASSIGNED module while armed records nothing — assign the module first. Each clip's automation caps at 16 recorded controls (a MAX badge flashes when a touch would exceed it). Longer-form automation across a whole song is the (future) arranger mode's job — clip automation is always clip-length. DUPLICATING a clip player copies its content (clips, recorded automation, per-channel settings, the arrangement) but never its LIVE state: the copy is born stopped, disarmed and UNASSIGNED (one lane per module is a global claim — it stays with the original). Each loop, only the params you're actively MOVING are (re)recorded; every other track keeps PLAYING BACK, and a released control reverts to playback next loop; stopping mid-loop keeps the untouched tail. A 🟡🟡🔴🔴 countdown flashes each recording clip's pad (and its lane's ◉ arm) on the last four beats before that clip's own wrap. EVERY clip in the lane carries its OWN automation — THE ENVELOPE BELONGS TO THE CLIP: it's stored beside the notes (editing notes never touches the recorded envelopes), COPY/PASTE and scene-duplicate carry it with the clip (PASTE-REV pastes it time-reversed to match the reversed notes), pasting over a clip replaces its automation, and clearing/emptying a clip clears its automation too. Clips that carry automation show a small teal dot on their grid cell. Launching a clip launches its envelopes with it, looping at the clip's length; if two playing clips in different lanes automate the SAME control, exactly ONE drives it (its module's assigned lane wins, else the lowest lane — no fighting). Deleting is explicit and undoable: right-click an automated control → \"Clear recorded automation\" wipes that control's envelopes (its module's lane's clips, or everywhere when unassigned) — distinct from the module card's \"Remove automation assignment\", which only stops FUTURE recording and leaves recorded envelopes playing — and the editor's CLR AUTO button wipes the open clip's whole automation while keeping its notes. On playback it drives those params transiently on every peer (never rewriting the saved clip). Parameter moves never JUMP: when a lane stops or switches away from an automating clip the params HOLD their last automated value — recomputed from the clip data at the stop position, quantized to the step grid so collaborating peers converge on the same resting value (never a snap to zero/default) — and every unavoidable seam (the loop wrap, switching INTO an automating clip, and a quantized switch AWAY, which holds at the musical boundary rather than cutting early) is a short click-free glide rather than a hard step. Grabbing an automated control live SUSPENDS its automation (live wins) until you physically RELEASE it — a gesture that spans a loop wrap is never yanked back to the envelope mid-drag, a wrap commit only overwrites the part of the loop the gesture actually covered, and a param gripped by two surfaces at once (screen + MIDI) stays live until the last one lets go; on release the param glides back to playback (the on-card dot re-enables all at once). Two current limits are documented honestly: the on-card grid shows only the first 8 scenes (card scene-scroll is a follow-up), and the arranger records session launches of scenes 1–8 (recording launches of scene 9+ is a follow-up — session launching them already works). Drive its lanes into eight voices for a full multitrack clip-based performance instrument.",
     inputs: {
       stop_all: "Stop-all trigger: a rising edge immediately stops every lane (a panic/stop button), in both session and arrangement modes.",
       reset: "Reset trigger: a rising edge snaps every ACTIVE lane back to step 1 and re-anchors all lanes to a shared phase origin (divided/multiplied lanes restart their counting together). Queued-but-not-started launches are untouched — they still drop in at their lane's next loop boundary. Stopped lanes stay stopped; the arrangement's song position is not rewound (this is a clip-step reset, not a transport rewind).",
@@ -142,13 +179,23 @@ export const clipplayerDef: AudioModuleDef = {
       quantize: "QNT — launch quantization: on, a clip you launch waits and drops in cleanly at the playing lane's next loop boundary; off, it launches immediately. (A first launch into an empty lane is always immediate.)",
       snh: "S&H — one global sample-and-hold toggle for all 8 lanes' pitch outputs: on (default), on a rest the gate closes but each lane's pitch HOLDS its last note (latched to the gate edge); off, rests reset pitch to 0 (the legacy continuous behavior).",
       "clipplayer-mono-{n}":
-        "Lane {n}'s mono/poly toggle — switches that lane between MONO (one note per column) and POLY (up to five notes per column, played as a chord out the lane's poly pitch output).",
+        "Lane {n}'s mono/poly toggle — switches that lane between MONO (one note per column, replace-on-add) and POLY (a chord: multiple notes stacked in one column, played out the lane's poly pitch output up to the poly cable's voice width).",
       "clipplayer-rate-{n}":
-        "Lane {n}'s clock-rate dropdown (right of the lane's launch row) — divides or multiplies the lane's step rate off the global STEP grid: 1/8, 1/4 and 1/2 advance the lane every 8th/4th/2nd base step; 2x and 4x advance it 2×/4× per base step (exact, since the tempo comes from TIMELORDE); 1 (the default) runs on the STEP grid. All lanes count from a shared phase origin (transport start or RST), so divided lanes stay locked to the others. Card-only for now — no monome-grid/Launchpad surface.",
+        "Lane {n}'s clock-rate control (the per-lane dropdown under each channel column) — divides or multiplies the lane's step rate off the global STEP grid: 1/8, 1/4 and 1/2 advance the lane every 8th/4th/2nd base step; 2x and 4x advance it 2×/4× per base step (exact, since the tempo comes from TIMELORDE); 1 (the default) runs on the STEP grid. All lanes count from a shared phase origin (transport start or RST), so divided lanes stay locked to the others. Exposed on the card AND the Launchpad deck's per-lane RATE row (tap to cycle up); the monome grid has no rate surface.",
       "clipplayer-pad-{n}":
-        "A clip slot in the launch grid (one cell of the 8 lanes × 8 slots). Click to launch that lane's clip (immediately or quantized per QNT), click the playing pad to stop the lane, and double-click to open the clip in the piano-roll editor. An empty pad shows differently from a filled or playing one.",
+        "A clip slot in the launch grid (one cell of the 8 lanes × 8 slots). Click to launch that lane's clip (immediately or quantized per QNT), click the playing pad to stop the lane, and double-click to open the clip in the piano-roll editor. An empty pad shows differently from a filled or playing one; a clip that CARRIES RECORDED AUTOMATION shows a small teal dot in its corner (the envelope belongs to the clip — copy/paste moves it with the clip).",
       "clipplayer-cell-{n}":
         "A note cell in the piano-roll editor (rows are scale degrees/pitches, columns are steps). Click to toggle a note on or off at that pitch and step; right-click cycles the note's velocity. The cells make up the clip you're editing for the selected lane+slot.",
+      "clipplayer-auto-arm-{n}":
+        "Lane {n}'s ◉ automation arm (CLIP RECORD, CONTINUOUS OVERDUB) — the small teal button under channel {n}'s column, next to its RATE control; PER LANE, Deluge-like (this replaced the old single global AUTO button), and distinct from the experimental red ● arranger record. While lane {n} is armed and a note clip plays in it, the recorder punches in cleanly at THAT clip's own next loop start; then just MOVE any control of a MODULE assigned to lane {n} (screen / MIDI / Electra all count — CV never records): it records WHILE you hold it, and every OTHER track keeps playing back so the automation loops audibly/visibly. Recording lands in the clip PLAYING in the lane (each clip carries its own envelopes). Release a control and it reverts to playback next loop. It overdubs EVERY loop until you click the ◉ again — a MANUAL STOP (no auto punch-out); stopping mid-loop keeps the untouched tail. Touching a control on an UNASSIGNED module records nothing — right-click the module's card → \"Assign to automation lane\" first. A 🟡🟡🔴🔴 countdown flashes this ◉ (and the recording clip's grid cell + Launchpad pad) on the last four beats before the clip's wrap. Per-lane single-writer: the arming client records this lane (another collaborator can record a DIFFERENT lane at the same time); peers still play back. On a Launchpad, SHIFT + the top-row button of the lane's column toggles the same arm (lane 8 = double-tap SHIFT).",
+      "clipplayer-auto-assigned-{n}":
+        "Per-lane ASSIGNED-MODULE count — one tiny chip per lane, tinted the lane's colour, showing how many MODULES are assigned to that lane's automation (right-click a module's CARD → \"Assign to automation lane\"; the assigned card gets a border in the lane's colour; a deleted module is not counted). A dim chip = nothing assigned. While lane {n} is armed, moving ANY control of these modules records it (max 16 recorded controls per clip). The module menu's \"Remove automation assignment\" only stops FUTURE recording — the recorded envelopes keep playing until you \"Clear recorded automation\" (right-click the control) or CLR AUTO the clip.",
+      "clipplayer-auto-cap-{n}":
+        "MAX badge — flashes for a few seconds when a touch (or a record commit) would exceed the 16-recorded-controls cap of the recording clip's automation. Nothing is lost: the 16 existing tracks keep recording/playing; the over-cap control is simply not captured. Free a slot by clearing a recorded control (right-click → \"Clear recorded automation\") or the clip's CLR AUTO.",
+      "clipplayer-clear-auto-{n}":
+        "CLR AUTO — delete the OPEN clip's whole recorded automation (all of its envelopes) while keeping its notes. Shown in the piano-roll editor only when the clip carries automation; undoable. The editor's ⌫ clear wipes notes AND automation together; per-control deletion is right-click → \"Clear recorded automation\".",
+      "clipplayer-auto-override-{n}":
+        "Automation override dot — lights when a control this player automates is being grabbed live (screen drag / MIDI CC / Electra), which SUSPENDS that param's automation playback (live wins) until you physically RELEASE the control (pointer-up, or a short idle after the last MIDI/Electra move) — NOT the loop wrap, so a gesture spanning a loop is never interrupted. On release the param glides back to the envelope; the instant you grab it the queued automation tail is truncated so it doesn't fight your hand. Click the dot to re-enable every suspended param at once.",
     },
   },
 
@@ -157,6 +204,11 @@ export const clipplayerDef: AudioModuleDef = {
     { id: 'clipplayer-rate', label: 'Per-lane clock rate (mult/div)', kind: 'other', testidPrefix: 'clipplayer-rate' },
     { id: 'clipplayer-pad', label: 'Clip launch grid', kind: 'cell', testidPrefix: 'clipplayer-pad' },
     { id: 'clipplayer-cell', label: 'Piano-roll note cells', kind: 'cell', testidPrefix: 'clipplayer-cell' },
+    { id: 'clipplayer-auto-arm', label: 'Per-lane automation record arm', kind: 'other', testidPrefix: 'clipplayer-auto-arm' },
+    { id: 'clipplayer-auto-assigned', label: 'Per-lane automation assigned-module count', kind: 'other', testidPrefix: 'clipplayer-auto-assigned' },
+    { id: 'clipplayer-auto-cap', label: 'Automation track-cap badge', kind: 'other', testidPrefix: 'clipplayer-auto-cap' },
+    { id: 'clipplayer-clear-auto', label: 'Per-clip automation clear', kind: 'other', testidPrefix: 'clipplayer-clear-auto' },
+    { id: 'clipplayer-auto-override', label: 'Automation override indicator', kind: 'other', testidPrefix: 'clipplayer-auto-override' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
@@ -194,6 +246,11 @@ export const clipplayerDef: AudioModuleDef = {
       laneKey: (number | null)[];
       /** velocity 0..1 of the most-recent live-audition note-on. */
       audVel: number;
+      /** AUTOMATION seam flag: false until this lane's active AUTOMATION clip has
+       *  emitted its first step, so the FIRST step-0 (clip-switch INTO) anchors +
+       *  de-zipper-glides from the held value instead of hard-stepping. Reset to
+       *  false whenever the active clip changes / the lane re-anchors. */
+      autoStarted: boolean;
     }
     const lanes: Lane[] = Array.from({ length: LANES }, () => {
       const poly = createPolySender(ctx);
@@ -218,6 +275,7 @@ export const clipplayerDef: AudioModuleDef = {
         alloc: createVoiceAllocator(POLY_CHANNEL_PAIRS),
         laneKey: new Array<number | null>(POLY_CHANNEL_PAIRS).fill(null),
         audVel: 0,
+        autoStarted: false,
       };
     });
 
@@ -268,6 +326,91 @@ export const clipplayerDef: AudioModuleDef = {
     let unsubscribeTick: (() => void) | null = null;
     let prevRunning = false;
     let totalLoops = 0;
+    // ── AUTOMATION-STOP seam (param-jump policy) ────────────────────────────
+    /**
+     * HOLD-LAST-VALUE for lane L's OUTGOING clip's sibling automation at a
+     * stop/switch seam. Keyed off the lane's active NOTE clip + its `auto[k]`
+     * tracks (the same predicate playback uses), so ANY playing clip carrying
+     * automation gets its hold.
+     *
+     * ORDERING (the same-tick wipe fix): this runs BEFORE the incoming clip's
+     * step-0 anchor/glide is scheduled — from `setLaneActive` (which every
+     * switch/stop path funnels through), the peer-adopt mutation, the transport
+     * stop, and dispose — never from a post-loop stop-detect that would cancel
+     * freshly-scheduled incoming events.
+     *
+     *  - `switchAt != null` ⇒ a QUANTIZED BOUNDARY switch: the stop position is
+     *    exactly the loop end (`len`), and the hold PINS at the boundary time
+     *    (engine future-pin — no cancel, so the outgoing clip's still-audible
+     *    tail plays to the musical boundary). Params the INCOMING clip's
+     *    automation drives are SKIPPED entirely — nothing is scheduled past the
+     *    boundary and the incoming step-0 glide takes over exactly there.
+     *  - `switchAt == null` ⇒ an IMMEDIATE stop/switch (stop-all, QNT-off/NOW
+     *    launch, peer stop, transport stop, dispose): cancel-and-hold at NOW.
+     *    The stop position is the lane's audible playhead QUANTIZED to the
+     *    integer step grid (`quantizeStopStep`) so peers' resting values
+     *    converge (each peer's fractional playhead is peer-local). Params the
+     *    incoming clip's automation drives are TRUNCATE-ONLY (kill the outgoing
+     *    ~200 ms tail; the incoming anchor+glide repossesses them).
+     */
+    function holdLaneAutomation(
+      L: number,
+      outgoingSlot: number | null,
+      incomingSlot: number | null,
+      switchAt: number | null,
+    ): void {
+      if (outgoingSlot === null) return;
+      const d = liveData();
+      const oldClip = readClip(d, clipIndex(outgoingSlot, L));
+      if (oldClip?.kind !== 'note') return;
+      let tracks = autoTracksAt(clipIndex(outgoingSlot, L));
+      if (tracks.length === 0) return;
+      // SINGLE-DRIVER ownership: hold ONLY the keys THIS lane currently owns —
+      // a key another lane owns was never driven by L (shadowed), so pinning it
+      // here would stomp the owning lane's live automation. (Ownership is
+      // computed with L still active — holdLaneAutomation runs BEFORE
+      // ln.active flips.)
+      const ownersNow = computeAutoOwners(d);
+      tracks = tracks.filter((t) => ownersNow.get(automationTargetKey(t.target)) === L);
+      if (tracks.length === 0) return;
+      // Automation length is LINKED to the note clip in this phase.
+      const len = Math.max(1, oldClip.lengthSteps);
+      let stopStep: number;
+      if (switchAt !== null) {
+        stopStep = len; // boundary switch stops exactly at the loop end
+      } else {
+        const stepDur = 60 / transportBpm() / (STEP_DIV_SPB[readParam('stepDiv', 2)] ?? 4);
+        const laneDur = laneStepDur(stepDur, lanes[L].divIndex);
+        const frac = laneFracStep(L, laneDur);
+        stopStep = quantizeStopStep(frac >= 0 ? frac : lanes[L].stepIndex, len);
+      }
+      // Params another writer takes over at this seam get no resting pin:
+      //  - the INCOMING clip's own automation (this lane), and
+      //  - keys REPOSSESSED by another still-active carrier lane once L stops
+      //    (ownership recomputed excluding L).
+      // Boundary → skip (the successor's glide/steps take over at/after the
+      // seam); immediate → truncate-only (kill L's ~200 ms tail now).
+      const shared = new Set<string>();
+      const incomingTracks =
+        incomingSlot !== null ? autoTracksAt(clipIndex(incomingSlot, L)) : [];
+      for (const t of incomingTracks) shared.add(automationTargetKey(t.target));
+      const ownersAfter = computeAutoOwners(d, L);
+      for (const t of tracks) {
+        const k = automationTargetKey(t.target);
+        if (ownersAfter.has(k)) shared.add(k); // another lane repossesses it
+      }
+      let skipKeys: Set<string> | undefined;
+      let truncateKeys: Set<string> | undefined;
+      if (shared.size) {
+        if (switchAt !== null) skipKeys = shared;
+        else truncateKeys = shared;
+      }
+      controller.holdLastValue(tracks, stopStep, SEAM_GLIDE_S, {
+        atTime: switchAt ?? undefined,
+        skipKeys,
+        truncateKeys,
+      });
+    }
     // Per-lane MUTE edge-tracking — silence the moment a lane is muted (drive its
     // buses to 0 at currentTime) rather than waiting for its next scheduled step.
     const prevMuted: boolean[] = new Array(CLIP_LANES).fill(false);
@@ -296,6 +439,285 @@ export const clipplayerDef: AudioModuleDef = {
       if (!live.data) live.data = {};
       mut(live.data as ClipPlayerData);
     }
+
+    // ── ONE-TIME clip-key SCHEMA MIGRATION (v1 stride-8 → v2 stride-64) ──
+    // The persistence loader (graph/persistence.ts) is in the collab-attest
+    // basis, so the migration can't hook there; instead it runs ONCE here — the
+    // engine factory is the single per-node seam that always runs, for every
+    // load path (envelope load AND live-doc / rackspace restore). It re-keys the
+    // `clips` map so every clip stays at its original (lane, slot), then stamps
+    // `data.sv = 2`. Guarded by `sv` → runs at most once per node per client and
+    // NEVER re-migrates (storm-safe: one small write, not per-tick — see
+    // `cv-modulation-live-store-write-storm`). `coerceClipRecord` clones each
+    // moved clip to a PLAIN object so a live syncedStore Y child is never
+    // re-parented (`yjs-save-load-real-ydoc`). Stamping `sv` here for an EMPTY
+    // new player (before any clip exists) is what makes "clips-present-but-no-sv"
+    // unambiguously mean LEGACY for every later reader.
+    writeData((d) => {
+      migrateClipPlayerData(d, coerceClipRecord);
+      // CONTAINER INIT (LWW-race hardening): create the `auto` + `autoAssign`
+      // + `automation`/`automation.lanes` containers HERE — the deterministic
+      // per-node load seam — never lazily inside the racy commit/assign/arm
+      // paths, where a concurrent creation would last-writer-wins a peer's
+      // whole subtree. At load both peers write an EMPTY map (harmless either
+      // way); once present, no writer ever replaces the container. (The
+      // commit-side shell creation remains as a fallback for clips created
+      // mid-arm.)
+      if (!d.auto || typeof d.auto !== 'object') d.auto = {};
+      if (!d.autoAssign || typeof d.autoAssign !== 'object') d.autoAssign = {};
+      if (!d.automation || typeof d.automation !== 'object') d.automation = {};
+      // Interim 81084fe9 ARRAY lanes shape → the canonical per-key RECORD
+      // (one-way; per-key set/delete is what makes concurrent per-lane arms
+      // merge instead of whole-array LWW).
+      migrateAutomationLanesShape(d);
+      if (!d.automation.lanes || typeof d.automation.lanes !== 'object') d.automation.lanes = {};
+      // ZOMBIE SWEEP (clean break, made true): the retired stamped
+      // `kind:'automation'` clips coerce to null on read but their RAW values
+      // linger in `clips` — raw-truthiness readers (padState 'loaded', the
+      // materialize gates) see ghost cells. Delete them, plus the retired
+      // `automation.clip` pointer field. Idempotent + one small write only
+      // when a zombie exists.
+      if (d.clips) {
+        for (const k of Object.keys(d.clips)) {
+          const v = d.clips[k] as { kind?: unknown } | null | undefined;
+          if (v && typeof v === 'object' && v.kind === 'automation') delete d.clips[k];
+        }
+      }
+      const legacyAuto = d.automation as
+        | { clip?: unknown; arm?: unknown; recorderId?: unknown }
+        | undefined;
+      if (legacyAuto && 'clip' in legacyAuto) delete legacyAuto.clip;
+      // CLEAN BREAK (per-lane arm): the retired GLOBAL {arm, recorderId} fields
+      // coerce away — per-lane state lives in automation.lanes[] only.
+      if (legacyAuto && 'arm' in legacyAuto) delete legacyAuto.arm;
+      if (legacyAuto && 'recorderId' in legacyAuto) delete legacyAuto.recorderId;
+      // CLEAN BREAK (module-level assignment): retired param-level autoAssign
+      // keys (`nodeId::paramId`) are swept so raw readers never see them
+      // (coerceAutoAssign drops them anyway — this keeps the stored map clean).
+      if (d.autoAssign && typeof d.autoAssign === 'object') {
+        for (const k of Object.keys(d.autoAssign)) {
+          if (k.includes('::')) delete d.autoAssign[k];
+        }
+      }
+    });
+
+    // ─────────────────────── PER-CLIP AUTOMATION ────────────────────────────
+    // One AutomationController per clip-player node. It composes the pure
+    // record/playback cores with the INJECTED side effects below:
+    //   - readNorm  : the STORE tap (mount-independent, modulation-free) — the
+    //                 resolved surface param's live value, normalized curve-aware.
+    //   - curve/unitNorm: the target ParamDef's curve + one-unit size (discrete).
+    //   - drive     : PLAYBACK — schedule transient ramps via engine.scheduleParam
+    //                 (denormalized curve-aware); touches NO Y.Doc.
+    //   - readAutoTracks: the coerce-ONCE cached read view of `auto[k]` (below).
+    //   - commit    : RECORD — write ONLY the touched track keys into
+    //                 `d.auto[k].tracks` in ONE transaction (never a whole-record
+    //                 reassign; a peer's note edit at `clips[k]` is disjoint).
+    // The per-lane arm mirror lives on the controller itself (armLane /
+    // disarmLane, reconciled each tick from the synced per-lane flags on the
+    // lanes THIS client is the recorder of — isLaneAutomationRecorder).
+
+    // ── COERCE-ONCE cached read view of the sibling `auto` records ──
+    // The tick reads `auto[k]` tracks per lane per tick; re-coercing (deep-clone
+    // + step-SORT of every event array) each time is the historic lane-stall
+    // cause (the "saw -1" scheduler regression). Cache the built views keyed by
+    // clip index and invalidate on ANY Y.Doc update (cheap revision counter) +
+    // on raw-reference change. Test harnesses whose mocked store/ydoc has no
+    // `on` seam simply skip caching (correctness first, still coerce-per-call).
+    const EMPTY_TRACKS: AutomationTrack[] = [];
+    const EMPTY_KEYS: ReadonlySet<string> = new Set();
+    const EMPTY_OWNERS: Map<string, number> = new Map();
+    let autoRev = 0;
+    const autoViewCache = new Map<
+      number,
+      { rev: number; src: unknown; view: AutomationTrack[]; keys: ReadonlySet<string> }
+    >();
+    const bumpAutoRev = (): void => {
+      autoRev++;
+    };
+    const ydocEvents = ydoc as unknown as {
+      on?: (ev: string, fn: () => void) => void;
+      off?: (ev: string, fn: () => void) => void;
+    };
+    const autoCacheEnabled = typeof ydocEvents.on === 'function';
+    if (autoCacheEnabled) ydocEvents.on!('update', bumpAutoRev);
+    function readAutoCache(idx: number) {
+      const raw = (liveData() as { auto?: Record<string, unknown> } | undefined)?.auto?.[
+        String(idx)
+      ];
+      if (!raw) return null;
+      if (autoCacheEnabled) {
+        const hit = autoViewCache.get(idx);
+        if (hit && hit.rev === autoRev && hit.src === raw) return hit;
+      }
+      const view = autoTrackViews(coerceAutoClipRecord(raw));
+      const entry = {
+        rev: autoRev,
+        src: raw as unknown,
+        view,
+        keys: new Set(view.map((t) => automationTargetKey(t.target))) as ReadonlySet<string>,
+      };
+      if (autoCacheEnabled) autoViewCache.set(idx, entry);
+      return entry;
+    }
+    /** The coerced RUNTIME track views of `auto[idx]` (cached; [] when none). */
+    function autoTracksAt(idx: number): AutomationTrack[] {
+      return readAutoCache(idx)?.view ?? EMPTY_TRACKS;
+    }
+    /** The track-KEY set of `auto[idx]` (same cache entry; empty set when none). */
+    function autoKeysAt(idx: number): ReadonlySet<string> {
+      return readAutoCache(idx)?.keys ?? EMPTY_KEYS;
+    }
+
+    // ── SINGLE-DRIVER playback ownership (cross-lane rule) ──
+    // For a given targetKey at most ONE lane drives it per tick: the ASSIGNED
+    // lane when it's an active carrier, else the lowest active carrier
+    // (autoPlaybackOwners). Recomputed per tick (cheap: 8 set refs) and on
+    // demand at the stop/switch seams. `excludeLane` models "after lane L
+    // stops" for the hold seam (who repossesses L's keys).
+    function computeAutoOwners(
+      d: ClipPlayerData | undefined,
+      excludeLane: number | null = null,
+    ): Map<string, number> {
+      const carriers: (ReadonlySet<string> | null)[] = new Array(LANES).fill(null);
+      let any = false;
+      for (let L = 0; L < LANES; L++) {
+        if (L === excludeLane) continue;
+        const ln = lanes[L];
+        if (ln.active === null) continue;
+        const keys = autoKeysAt(clipIndex(ln.active, L));
+        if (keys.size) {
+          carriers[L] = keys;
+          any = true;
+        }
+      }
+      if (!any) return EMPTY_OWNERS;
+      return autoPlaybackOwners(coerceAutoAssign(d?.autoAssign), carriers);
+    }
+
+    /** The LIVE target node for an automation track's (nodeId,paramId). */
+    function targetNode(target: AutomationTarget): ModuleNode | undefined {
+      return livePatch.nodes[target.nodeId] as ModuleNode | undefined;
+    }
+    /** The resolved surface param (def + live get/set) for a target, or null. */
+    function resolveTarget(target: AutomationTarget) {
+      return resolveSurfaceParam(targetNode(target), target.paramId);
+    }
+
+    const controller = new AutomationController({
+      // STORE tap → normalized 0..1 (curve-aware). NOT engine.readParam — that
+      // double-applies live CV; recording must capture the store/knob value.
+      readNorm(target: AutomationTarget): number | null {
+        const r = resolveTarget(target);
+        if (!r) return null;
+        return valueToFrac(r.get(), r.def.min, r.def.max, r.def.curve);
+      },
+      curve(target: AutomationTarget): string | undefined {
+        return resolveTarget(target)?.def.curve;
+      },
+      unitNorm(target: AutomationTarget): number | undefined {
+        const def = resolveTarget(target)?.def;
+        if (!def) return undefined;
+        return def.curve === 'discrete' ? 1 / Math.max(1, def.max - def.min) : undefined;
+      },
+      // PLAYBACK — transient, ZERO Yjs. Denormalize each ramp point (curve-aware)
+      // and schedule it on the target param at its audio time via the engine's
+      // future-time seam. No engine / no def ⇒ silently skip (nothing to drive).
+      drive(target: AutomationTarget, points: RampPoint[]): void {
+        const engine = getActiveEngine();
+        const node = targetNode(target);
+        const def = resolveTarget(target)?.def;
+        if (!engine || !node || !def) return;
+        for (const p of points) {
+          const v = fracToValue(p.value, def.min, def.max, def.curve);
+          engine.scheduleParam(node, target.paramId, v, p.at, p.ramp);
+        }
+      },
+      // HOLD-AT-SEAM (param-jump policy) — `toValueNorm` present ⇒ pin/glide to
+      // that resting value (hold-last-value on stop / the release hand-off pin);
+      // `null` ⇒ truncate-only (touch punch-in / an immediate switch on a shared
+      // param). `atTime` names the seam: absent ⇒ now (cancel-and-hold); a FUTURE
+      // loop boundary ⇒ the engine pins there WITHOUT cancelling, so the outgoing
+      // clip's tail plays to the musical boundary. Transient — zero Y.Doc.
+      hold(target: AutomationTarget, toValueNorm: number | null, glideS: number, atTime?: number): void {
+        const engine = getActiveEngine();
+        const node = targetNode(target);
+        const def = resolveTarget(target)?.def;
+        if (!engine || !node || !def) return;
+        const toValue =
+          toValueNorm == null ? undefined : fracToValue(toValueNorm, def.min, def.max, def.curve);
+        engine.holdParam(node, target.paramId, atTime ?? ctx.currentTime, toValue, glideS);
+      },
+      // The MERGE BASE at commit time: the cached coerced view of `auto[k]`.
+      readAutoTracks(clipIdx: number): readonly AutomationTrack[] {
+        return autoTracksAt(clipIdx);
+      },
+      // RECORD commit — write ONLY the touched track keys into
+      // `d.auto[k].tracks` (plain event arrays, never a live Y child), all in
+      // ONE transaction (a single sync update per take-pass). A peer's note
+      // edit lives at `clips[k]` — a DISJOINT key — so a commit can NEVER
+      // last-writer-wins a note change (the note-clobber the sibling storage
+      // exists to prevent). New keys respect MAX_AUTOMATION_TRACKS; an existing
+      // track's `interp` survives.
+      //
+      // NON-UNDOABLE by design: continuous overdub commits once per wrap, so
+      // tracking them under LOCAL_ORIGIN would flood the undo stack (Cmd-Z
+      // regressing one wrap at a time — worse than not capturing at all, and
+      // take-scoped capture isn't cheap with Y.UndoManager's captureTimeout
+      // merging). A bad take is removed via the explicit CLEAR affordances
+      // (control-menu "Clear recorded automation" / the editor's CLR AUTO),
+      // which ARE undoable.
+      //
+      // GHOST-GUARD (lifecycle): a pass latched to a clip that has since been
+      // deleted / pasted over with a non-note value must NOT resurrect a
+      // dangling auto[k] — skip the commit when clips[k] is no longer a note
+      // clip.
+      commit(clipIdx: number, updates: AutoTrackUpdate[]): void {
+        if (updates.length === 0) return;
+        if (readClip(liveData(), clipIdx)?.kind !== 'note') return; // latched clip gone
+        const tx =
+          typeof (ydoc as { transact?: unknown }).transact === 'function'
+            ? (fn: () => void) => ydoc.transact(fn, AUTOMATION_COMMIT_ORIGIN)
+            : (fn: () => void) => fn();
+        tx(() => {
+          writeData((d) => {
+            if (!d.auto) d.auto = {};
+            if (!d.auto[String(clipIdx)] || typeof d.auto[String(clipIdx)] !== 'object') {
+              // CREATION is the only whole-record write (an empty shell).
+              d.auto[String(clipIdx)] = { tracks: {} };
+            }
+            const rec = d.auto[String(clipIdx)] as AutoClipRecord;
+            if (!rec.tracks || typeof rec.tracks !== 'object') rec.tracks = {};
+            let count = Object.keys(rec.tracks).length;
+            for (const u of updates) {
+              // DEAD-MODULE GUARD: a partial pass punched out because its
+              // MODULE was DELETED (not re-assigned) must not land an orphan
+              // track under a dead node id — it would count toward the
+              // 16-track cap forever with no control-precise clear left.
+              if (!livePatch.nodes[u.target.nodeId]) continue;
+              const isNew = !(u.key in rec.tracks);
+              if (isNew && count >= MAX_AUTOMATION_TRACKS) {
+                // The durable cap — surface it politely (client-local flag the
+                // card polls; never the Y.Doc).
+                controller.capHit = true;
+                continue;
+              }
+              const prevInterp = (rec.tracks[u.key] as AutoTrack | undefined)?.interp;
+              const plain: AutoTrack = {
+                events: u.events.map((e) => ({ step: e.step, value: e.value })),
+              };
+              if (prevInterp === 'linear' || prevInterp === 'hold') plain.interp = prevInterp;
+              rec.tracks[u.key] = plain; // per-KEY write — never the whole record
+              if (isNew) count++;
+            }
+          });
+        });
+      },
+    });
+    // Register this player's controller so a live grab of any AUTOMATED control
+    // (screen drag / MIDI CC / Electra) suspends its playback via the shared
+    // notifyAutomationTouch seam. Dropped in dispose().
+    registerAutomationController(nodeId, controller);
 
     // --- SONG MODE helpers ---
     function clipMode(): ClipPlayMode {
@@ -381,10 +803,18 @@ export const clipplayerDef: AudioModuleDef = {
       ln.lastVel = 0;
     }
 
-    function setLaneActive(L: number, slot: number | null): void {
+    /** Switch lane L's active slot. `switchAt` names the QUANTIZED loop-boundary
+     *  time when the switch was applied at a wrap (the scheduling loop passes
+     *  `nextStart`); null = an immediate switch at "now". Runs the automation
+     *  hold-last-value seam FIRST — before the incoming clip is scheduled — so a
+     *  stop/switch away from an automating clip pins its params without wiping
+     *  the incoming clip's freshly-scheduled events (the same-tick ordering fix). */
+    function setLaneActive(L: number, slot: number | null, switchAt: number | null = null): void {
       const ln = lanes[L];
+      holdLaneAutomation(L, ln.active, slot, switchAt);
       ln.active = slot;
       ln.stepIndex = 0;
+      ln.autoStarted = false; // re-entry → next step-0 glides (clip-switch seam)
       ln.nextStepTime = ctx.currentTime + 0.01;
       writeData((d) => {
         const playing = ensureArray<number | null>(d.playing, null);
@@ -417,6 +847,7 @@ export const clipplayerDef: AudioModuleDef = {
         silenceLane(L, at);
         for (const v of ln.poly.voices) v.pitchSrc.offset.cancelScheduledValues(at);
         ln.stepIndex = 0;
+        ln.autoStarted = false; // re-anchor → next step-0 glides (clip-switch seam)
         ln.nextStepTime = at + 0.01; // SAME instant for every lane → common origin
         // Drop the now-cancelled future entries so the playhead can't show them.
         ln.sched = ln.sched.filter((e) => e.t <= at);
@@ -424,8 +855,9 @@ export const clipplayerDef: AudioModuleDef = {
     }
 
     /** Apply lane L's queued launch/stop (consuming it). Returns true if the
-     *  active clip changed. */
-    function applyLaneQueued(L: number): boolean {
+     *  active clip changed. `switchAt` = the loop-boundary time when applied at a
+     *  wrap (threaded to the automation hold seam); null = immediate. */
+    function applyLaneQueued(L: number, switchAt: number | null = null): boolean {
       const d = liveData();
       const q = d?.queued?.[L];
       if (q === undefined || q === null) return false;
@@ -448,13 +880,13 @@ export const clipplayerDef: AudioModuleDef = {
       let changed = false;
       if (q === 'stop') {
         if (lanes[L].active !== null) {
-          setLaneActive(L, null);
+          setLaneActive(L, null, switchAt);
           changed = true;
         }
       } else {
         const slot = Number(q);
         if (slot !== lanes[L].active) {
-          setLaneActive(L, slot);
+          setLaneActive(L, slot, switchAt);
           changed = true;
         }
       }
@@ -635,11 +1067,24 @@ export const clipplayerDef: AudioModuleDef = {
       }
     }
 
-    function laneLength(L: number): number {
+    /** The AUDIBLE fractional-step playhead of lane L (integer display step +
+     *  the fraction elapsed into it, from the audio-time schedule). Feeds the
+     *  automation recorder its quantized punch playhead. Returns -1 when stopped
+     *  or nothing has sounded yet. `laneDur` is the lane's current step length. */
+    function laneFracStep(L: number, laneDur: number): number {
       const ln = lanes[L];
-      if (ln.active === null) return 1;
-      const clip = readClip(liveData(), clipIndex(ln.active, L));
-      return clip && clip.kind === 'note' ? Math.max(1, clip.lengthSteps) : 1;
+      if (ln.active === null) return -1;
+      let best = -1;
+      let bestT = -Infinity;
+      for (const e of ln.sched) {
+        if (e.t <= ctx.currentTime && e.t > bestT) {
+          bestT = e.t;
+          best = e.idx;
+        }
+      }
+      if (best < 0) return -1;
+      const frac = laneDur > 0 ? Math.max(0, Math.min(1, (ctx.currentTime - bestT) / laneDur)) : 0;
+      return best + frac;
     }
 
     function tick(): void {
@@ -676,10 +1121,24 @@ export const clipplayerDef: AudioModuleDef = {
           // Transport started → align all lanes to step 0 on the downbeat.
           for (let L = 0; L < LANES; L++) {
             lanes[L].stepIndex = 0;
+            lanes[L].autoStarted = false; // fresh start → step-0 glides
             lanes[L].nextStepTime = ctx.currentTime + 0.01;
           }
         } else if (!running && prevRunning) {
-          for (let L = 0; L < LANES; L++) silenceLane(L, ctx.currentTime);
+          for (let L = 0; L < LANES; L++) {
+            silenceLane(L, ctx.currentTime);
+            // Transport stopped → hold-last-value on EVERY lane playing an
+            // automation clip (an immediate seam — cancel + pin at now). Lanes
+            // keep their `active` slot (they resume on transport start).
+            holdLaneAutomation(L, lanes[L].active, null, null);
+            // PUNCH OUT armed lanes' in-flight record passes at the stop
+            // instant (the same partial-commit path a lane stop uses) — a
+            // frozen pass must not sit uncommitted in controller memory until
+            // restart/disarm/dispose, where a restart's playhead reset would
+            // read as a spurious wrap. Cheap no-op for lanes with no record
+            // state.
+            controller.laneStopped(L);
+          }
         }
         prevRunning = running;
 
@@ -721,8 +1180,12 @@ export const clipplayerDef: AudioModuleDef = {
             const sv = typeof synced === 'number' ? synced : null;
             const hasQueued = (d0?.queued?.[L] ?? null) !== null;
             if (sv !== lanes[L].active && !hasQueued) {
+              // Peer-driven switch/stop = an IMMEDIATE seam: hold the outgoing
+              // automation clip's params (cancel at now) BEFORE adopting.
+              holdLaneAutomation(L, lanes[L].active, sv, null);
               lanes[L].active = sv;
               lanes[L].stepIndex = 0;
+              lanes[L].autoStarted = false; // re-entry → next step-0 glides
               lanes[L].nextStepTime = ctx.currentTime + 0.01;
               if (sv === null) silenceLane(L, ctx.currentTime);
             }
@@ -757,11 +1220,39 @@ export const clipplayerDef: AudioModuleDef = {
         // the keys sound even with the transport STOPPED.
         serviceAudition();
 
-        if (!running) return;
+        // AUTOMATION ARM reconcile (PER-LANE single-writer): mirror each lane's
+        // synced arm flag onto the controller — but ONLY on that lane's
+        // designated recorder client (isLaneAutomationRecorder). Non-recorder
+        // peers never arm a lane, so they never record it; they still PLAY the
+        // automation (playbackStep above) — and DIFFERENT peers may record
+        // DIFFERENT lanes concurrently. Runs every tick, even stopped, so an
+        // arm/disarm toggle is honored immediately (disarm commits that lane's
+        // in-flight PARTIAL pass; other lanes keep recording).
+        for (let L = 0; L < LANES; L++) {
+          const wantRecord = isLaneAutomationRecorder(d0, L, ydoc.clientID);
+          const haveRecord = controller.laneArmed(L);
+          if (wantRecord && !haveRecord) controller.armLane(L);
+          else if (!wantRecord && haveRecord) controller.disarmLane(L);
+        }
+
+        if (!running) {
+          clearAutomationRender(nodeId); // no countdown while stopped
+          return;
+        }
 
         // Base grid from TIMELORDE bpm + the global STEP param; each lane then
         // scales it by its own clock rate (clip-clock.ts — 1/8..4x, default 1).
         const stepDur = 60 / transportBpm() / (STEP_DIV_SPB[readParam('stepDiv', 2)] ?? 4);
+
+        // Each lane's active clip snapshot from THIS tick's scheduling pass —
+        // the record/countdown block below reuses it (no re-read/re-coerce).
+        const laneClips: (ClipRecord | null)[] = new Array<ClipRecord | null>(LANES).fill(null);
+
+        // SINGLE-DRIVER ownership for this tick (cross-lane rule): a targetKey
+        // carried by several lanes' clips is driven by exactly ONE of them —
+        // the assigned lane when it carries it, else the lowest active carrier.
+        // Recomputed once per tick from the cached key sets (cheap).
+        const autoOwners = computeAutoOwners(d0);
 
         for (let L = 0; L < LANES; L++) {
           const ln = lanes[L];
@@ -770,33 +1261,96 @@ export const clipplayerDef: AudioModuleDef = {
             continue;
           }
           const swing = laneSwing(d0, L);
+          // PERF: read the active clip ONCE per lane, NOT per step. coerceClipRecord
+          // deep-clones a (dense) clip; doing it every step in this lookahead loop
+          // made the fast-clock scheduler fall behind and STALL lanes (the "saw -1"
+          // playback regression). The div-latch, loop length, and the sibling
+          // automation drive all reuse this snapshot; it's re-read only when a
+          // queued launch swaps ln.active mid-loop (below). The sibling `auto[k]`
+          // tracks come from the coerce-ONCE cached view (autoTracksAt).
+          let activeClip = readClip(d0, clipIndex(ln.active, L));
+          let laneAuto = activeClip?.kind === 'note' ? autoTracksAt(clipIndex(ln.active, L)) : EMPTY_TRACKS;
           while (ln.nextStepTime < ctx.currentTime + LOOKAHEAD_S) {
             // DIV LATCH: at each loop start (step 0) re-read the active clip's
             // effective divider (clip.div OVERRIDES the lane rate[]; else fall
             // back to it). Held for the whole loop, so a mid-loop edit only
-            // takes effect at the NEXT clip start.
+            // takes effect at the NEXT clip start. (NOTE clips carry `div`;
+            // audio/snapshot shells fall back to the lane rate via null.)
             if (ln.stepIndex === 0 && ln.active !== null) {
-              // Only a NOTE clip carries `div` (and only note clips step-play
-              // here); audio/snapshot shells fall back to the lane rate via null.
-              const ac = readClip(d0, clipIndex(ln.active, L));
-              ln.divIndex = clipDivIndex(ac?.kind === 'note' ? ac : null, d0, L);
+              ln.divIndex = clipDivIndex(activeClip?.kind === 'note' ? activeClip : null, d0, L);
             }
             const laneDur = laneStepDur(stepDur, ln.divIndex);
-            const len = laneLength(L);
+            // Loop length from the CACHED clip (a NOTE clip loops over its own
+            // lengthSteps — its sibling automation is LINKED to the same length;
+            // audio/snapshot shells fall back to 1).
+            const len = activeClip?.kind === 'note' ? Math.max(1, activeClip.lengthSteps) : 1;
             // SWING: even steps sit on the un-swung grid, odd steps push late by
             // swing*laneDur. Swing 0 ⇒ offset 0 ⇒ the emitted times are the base
             // grid (byte-identical to the un-swung schedule). The grid recurrence
             // (nextStepTime += laneDur) is unchanged so pairs stay beat-locked.
             const emitAt = ln.nextStepTime + swingStepOffset(ln.stepIndex, swing, laneDur);
             emitLaneStep(L, ln.stepIndex, emitAt, laneDur);
+            // PER-CLIP AUTOMATION: a playing NOTE clip emits its notes AND
+            // drives its sibling `auto[k]` tracks' params transiently (zero
+            // Yjs) through the SAME per-lane step schedule — sample-accurate +
+            // time-aligned to the notes, same emitAt/laneDur, LINKED length.
+            if (laneAuto.length) {
+              // DE-ZIPPER the step-0 seam (param-jump policy). Any step 0 is a
+              // discontinuity: the FIRST after (re)activation is a CLIP-SWITCH INTO
+              // this clip; a later one is a LOOP-WRAP. Both glide the anchor.
+              const isSeam = ln.stepIndex === 0;
+              if (isSeam && !ln.autoStarted) {
+                // Clip-switch INTO: anchor each param at emitAt so the first-step
+                // glide is a clean short ramp from where the param currently sits,
+                // not a stale-ramp near-jump (its last event may be an old pin far
+                // in the past — a linearRamp would back-interpolate from there).
+                // engine.holdParam with a FUTURE atTime and no toValue PINS the
+                // cached intrinsic (the held resting value after a stop; the
+                // outgoing envelope's landing value at a boundary switch) with a
+                // REAL setValueAtTime event at emitAt — identical on Chromium and
+                // the Firefox fallback, and it NEVER cancels (a future cancel
+                // would retro-delete the outgoing clip's final in-flight ramp).
+                // Wrap seams need no anchor — the previous loop's last ramp
+                // already lands exactly at emitAt. Only OWNED, un-grabbed params
+                // are anchored (a shadowed lane must not stomp the owner; a hand
+                // must not be fought — the same gates playbackStep applies).
+                const engine = getActiveEngine();
+                if (engine) {
+                  for (const track of laneAuto) {
+                    if (autoOwners.get(automationTargetKey(track.target)) !== L) continue;
+                    if (controller.isSuspended(track.target)) continue; // a hand owns it
+                    const node = targetNode(track.target);
+                    if (node) engine.holdParam(node, track.target.paramId, emitAt);
+                  }
+                }
+              }
+              const seam = isSeam ? SEAM_GLIDE_S : 0;
+              for (const track of laneAuto) {
+                // SINGLE DRIVER: only the owning lane drives this key this tick.
+                if (autoOwners.get(automationTargetKey(track.target)) !== L) continue;
+                controller.playbackStep(track, ln.stepIndex, laneDur, emitAt, seam);
+              }
+              ln.autoStarted = true;
+            }
             const nextIdx = (ln.stepIndex + 1) % len;
             const nextStart = ln.nextStepTime + laneDur;
             if (nextIdx === 0) {
               totalLoops++;
               // Boundary-apply queued launches — SESSION mode only (arrangement
-              // is driven by the cursor above, not the manual queue).
-              if (mode === 'session' && quantize && applyLaneQueued(L)) {
+              // is driven by the cursor above, not the manual queue). Pass the
+              // boundary time so the automation hold seam pins AT the boundary
+              // (not a cancel at "now" that would truncate the outgoing tail
+              // ~200 ms early — the param-jump ordering fix).
+              if (mode === 'session' && quantize && applyLaneQueued(L, nextStart)) {
                 ln.nextStepTime = nextStart;
+                // The launch swapped ln.active → refresh the cached clip + its
+                // sibling automation view (or null them on a queued STOP so the
+                // next iteration breaks cleanly).
+                activeClip = ln.active !== null ? readClip(d0, clipIndex(ln.active, L)) : null;
+                laneAuto =
+                  activeClip?.kind === 'note' && ln.active !== null
+                    ? autoTracksAt(clipIndex(ln.active, L))
+                    : EMPTY_TRACKS;
                 continue;
               }
               if (ln.active === null) break;
@@ -804,7 +1358,96 @@ export const clipplayerDef: AudioModuleDef = {
             ln.nextStepTime = nextStart;
             ln.stepIndex = nextIdx;
           }
+          laneClips[L] = ln.active !== null ? activeClip : null;
         }
+
+        // PER-LANE AUTOMATION RECORD + COUNTDOWN + DISPLAY. For EACH lane with a
+        // PLAYING note clip (the snapshot from the scheduling pass above):
+        //  - DISPLAY (every client): visual-smooth the sibling `auto[k]` tracks'
+        //    on-screen knobs with the interpolated envelope value each tick.
+        //  - RECORD (per-lane arm, per-lane single-writer): feed the controller
+        //    THAT lane's audible fractional playhead — each ARMED lane runs its
+        //    own continuous overdub (punch-in at ITS clip's wrap, commit each
+        //    wrap into the LATCHED clip, keep going) until ITS disarm. A lane
+        //    records any control the user TOUCHES on a MODULE assigned to it
+        //    (data.autoAssign, module→lane; CV fires no touch → never
+        //    recorded); a lane with assigned modules but no playing clip
+        //    records nothing (punched out below).
+        //  - COUNTDOWN (EVERY client for each SYNCED-armed lane): publish one
+        //    entry per recording lane, each with beats to ITS clip's OWN wrap,
+        //    so each lane's pad/cell flashes 🟡🟡🔴🔴 on its own boundary.
+        //    Clip-relative: coprime lengths drift by design; never the song bar.
+        const modulesByLane = laneAssignedModules(d0);
+        const laneRenders: AutomationLaneRender[] = [];
+        const secPerBeat = 60 / transportBpm();
+        for (let L = 0; L < LANES; L++) {
+          const ln = lanes[L];
+          const clip = laneClips[L];
+          const armedHere = controller.laneArmed(L); // this client records L
+          const armedSyncLane = laneAutomationArmed(d0, L); // any peer armed L
+          const playingNote = ln.active !== null && clip?.kind === 'note';
+          if (!playingNote) {
+            // A lane that stopped (or switched to a non-note clip) while armed
+            // punches OUT: its in-flight partial pass commits to the LATCHED
+            // clip now (cheap no-op when the lane holds no record state).
+            if (armedHere) controller.laneStopped(L);
+            continue;
+          }
+          const laneDur = laneStepDur(stepDur, ln.divIndex);
+          const frac = laneFracStep(L, laneDur);
+          if (frac < 0) continue;
+          const clipIdx = clipIndex(ln.active!, L);
+          const len = Math.max(1, clip.lengthSteps); // automation length LINKED to the note clip
+          const fracClamped = Math.min(frac, len);
+          // VISUAL SMOOTHING (P3): refresh each PLAYING-BACK track's on-screen
+          // knob with the CURRENT interpolated envelope value every tick
+          // (~40fps) — display-only (no audio), so a slow envelope's knob follows
+          // smoothly instead of snapping once per step. CPU-bounded to the
+          // clip's tracks (≤16); skips touched tracks (their live value shows)
+          // and tracks another lane OWNS (single driver — display mirrors audio).
+          const tracks = autoTracksAt(clipIdx).filter(
+            (t) => autoOwners.get(automationTargetKey(t.target)) === L,
+          );
+          if (tracks.length) {
+            const engine = getActiveEngine();
+            if (engine) {
+              for (const { target, value } of controller.displayValues(tracks, fracClamped)) {
+                const node = targetNode(target);
+                const def = resolveTarget(target)?.def;
+                if (node && def) {
+                  engine.setDisplayParam(
+                    node,
+                    target.paramId,
+                    fracToValue(value, def.min, def.max, def.curve),
+                  );
+                }
+              }
+            }
+          }
+          const assignedModules = modulesByLane[L]!;
+          if (assignedModules.length === 0) {
+            if (armedHere) controller.laneStopped(L); // nothing to record here
+            continue;
+          }
+          if (armedHere) {
+            controller.recordLaneTick(L, clipIdx, new Set(assignedModules), fracClamped, len);
+          }
+          if (armedSyncLane) {
+            const beatsToLoopEnd = secPerBeat > 0 ? ((len - fracClamped) * laneDur) / secPerBeat : 0;
+            laneRenders.push({
+              lane: L,
+              slot: ln.active!,
+              recording: true,
+              beatsToLoopEnd,
+              beatPhase: beatsToLoopEnd - Math.floor(beatsToLoopEnd),
+            });
+          }
+        }
+        // (The automation stop/switch hold-last-value seam runs INSIDE
+        // setLaneActive / the peer-adopt / the transport-stop paths — BEFORE any
+        // incoming clip is scheduled — never here after the scheduling loop,
+        // where a cancel-at-now would wipe freshly-scheduled incoming events.)
+        setAutomationRender(nodeId, laneRenders.length ? { lanes: laneRenders } : null);
       } catch (err) {
         console.error('[clipplayer] tick error', err);
       }
@@ -863,7 +1506,16 @@ export const clipplayerDef: AudioModuleDef = {
       },
       dispose() {
         alive = false;
+        // Param-jump policy: deleting the player while automation plays must not
+        // leave the target params riding a ~200 ms ghost tail then freezing at an
+        // arbitrary phase — hold-last-value every lane's playing automation clip
+        // (an immediate seam) BEFORE the controller unregisters.
+        for (let L = 0; L < LANES; L++) holdLaneAutomation(L, lanes[L].active, null, null);
+        controller.disarmAll(); // commit + drop any in-flight per-lane record passes
+        unregisterAutomationController(nodeId); // drop the touch-suspend hook
+        if (autoCacheEnabled) ydocEvents.off?.('update', bumpAutoRev); // drop the view-cache pump
         clearPlayheads(nodeId);
+        clearAutomationRender(nodeId);
         clearAudition(nodeId);
         if (unsubscribeTick) {
           unsubscribeTick();

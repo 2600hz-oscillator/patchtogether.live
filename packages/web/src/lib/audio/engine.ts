@@ -12,6 +12,7 @@ import type { Edge, ModuleDef, ModuleNode, CvScaleHint, ParamDef } from '$lib/gr
 import { getModuleDef, type AudioModuleDef } from './module-registry';
 import { POLY_CHANNELS, resolveConnection } from './poly';
 import { attachCvScale } from './cv-scale';
+import { holdParamAtSeam, HOLD_NOW_EPS_S } from './hold-param';
 
 /**
  * What a per-domain factory hands back: the connectable surface for one module
@@ -24,6 +25,17 @@ export interface AudioDomainNodeHandle {
   outputs: Map<string, { node: AudioNode; output: number }>;
   /** Apply a param value (fader change) to this node. Domain-specific routing. */
   setParam(paramId: string, value: number): void;
+  /**
+   * Optional: schedule a param write at a FUTURE audio time (automation
+   * playback). Unlike `setParam` — which lands at `ctx.currentTime` — this uses
+   * `setValueAtTime(value, atTime)` (hard step, `ramp=false`) or
+   * `linearRampToValueAtTime(value, atTime)` (smooth, `ramp=true`) so the
+   * clip-automation lane can queue sample-accurate ramps ahead of the scheduler
+   * tick. A module implements this when it exposes a schedulable AudioParam;
+   * when omitted the AudioEngine falls back to the param's CV-target AudioParam
+   * (`inputs[paramId].param`), else an immediate `setParam`. Touches NO Y.Doc.
+   */
+  scheduleParam?(paramId: string, value: number, atTime: number, ramp: boolean): void;
   /**
    * Read the LIVE current value of a param (D14 motorized fader convention).
    * Returns the AudioParam.value which includes any CV modulation from
@@ -106,6 +118,16 @@ export interface DomainEngine {
   addEdge(edge: Edge): void;
   removeEdge(edgeId: string): void;
   setParam(nodeId: string, paramId: string, value: number): void;
+  /** Optional: schedule a param write at a future audio time (see the handle's
+   *  `scheduleParam`). Only AudioEngine implements this today. */
+  scheduleParam?(nodeId: string, paramId: string, value: number, atTime: number, ramp: boolean): void;
+  /** Optional: CANCEL-AND-HOLD a param at a seam (clip-automation param-jump
+   *  policy — truncate the scheduled tail, optionally glide to a value). Only
+   *  AudioEngine implements this today. */
+  holdParam?(nodeId: string, paramId: string, atTime: number, toValue?: number, glideS?: number): void;
+  /** Optional: DISPLAY-ONLY knob-value refresh (no DSP) so automation playback can
+   *  smoothly animate the on-screen control between step boundaries. */
+  setDisplayParam?(nodeId: string, paramId: string, value: number): void;
   readParam(nodeId: string, paramId: string): number | undefined;
   /** Optional: most-recent sample at a per-port modulator-tap analyser.
    *  Only AudioEngine implements this today. Card visualizers call
@@ -566,6 +588,114 @@ export class AudioEngine implements DomainEngine {
     // Keep the LUT-bake knob cache in sync so a future addEdge centres the
     // sweep on the user's CURRENT knob position. (LUT hot-rebuild for
     // already-attached cables is a follow-up; cf. attachCvScale notes.)
+    this.knobValues.set(this.knobKey(nodeId, paramId), value);
+  }
+
+  /**
+   * Schedule a param write at a FUTURE audio time — the transient playback seam
+   * the clip-automation lane drives (never touches the Y.Doc). `setParam` only
+   * lands at `ctx.currentTime`, which stair-steps automation between scheduler
+   * ticks; this queues `setValueAtTime` (hard step) / `linearRampToValueAtTime`
+   * (smooth) at `atTime` so a ramp is sample-accurate + click-free.
+   *
+   * Reaches the AudioParam three ways, in order: (1) the handle's own
+   * `scheduleParam` if it exposes one; (2) the param's CV-target AudioParam
+   * (`inputs[paramId].param`) — the same node a CV cable would sum into; (3) a
+   * best-effort immediate `setParam` when neither exists (no schedulable param).
+   * Always refreshes the `knobValues` cache so the on-screen control follows the
+   * automation, exactly like `setParam`.
+   */
+  scheduleParam(
+    nodeId: string,
+    paramId: string,
+    value: number,
+    atTime: number,
+    ramp: boolean,
+  ): void {
+    const handle = this.nodes.get(nodeId);
+    if (!handle) return;
+    if (typeof handle.scheduleParam === 'function') {
+      handle.scheduleParam(paramId, value, atTime, ramp);
+    } else {
+      const param = handle.inputs.get(paramId)?.param;
+      if (param) {
+        if (ramp) param.linearRampToValueAtTime(value, atTime);
+        else param.setValueAtTime(value, atTime);
+      } else {
+        // No schedulable AudioParam exposed → immediate best-effort set.
+        handle.setParam(paramId, value);
+      }
+    }
+    this.knobValues.set(this.knobKey(nodeId, paramId), value);
+  }
+
+  /**
+   * HOLD/PIN a param at a seam — the clip-automation param-jump policy (Phase 0).
+   * Two regimes, dispatched on WHEN `atTime` is (holdParamAtSeam):
+   *
+   *  - NEAR-NOW (`atTime <= now + eps`): cancel-and-hold — truncate the ~200 ms
+   *    scheduled ramp tail (killing the ghost that keeps driving a param after an
+   *    immediate stop / a hand grab) and pin the value there; then optionally
+   *    move to `toValue` (hard set, or a short de-zipper glide over `glideS`).
+   *    Omit `toValue` to only truncate (the touch punch-in — live manual input is
+   *    the new writer). Firefox lacks `cancelAndHoldAtTime`; the util
+   *    reimplements it (read-current → cancel → re-pin).
+   *
+   *  - FUTURE (a quantized boundary switch / a switch-INTO step anchor): NEVER
+   *    cancel (a future cancel retro-deletes the outgoing clip's final in-flight
+   *    ramp in the fallback, and native `cancelAndHoldAtTime(futureT)` inserts NO
+   *    hold when nothing is scheduled after it — a silent no-op). Instead PIN an
+   *    explicit value with a real `setValueAtTime` event at `atTime`:
+   *    `toValue` when given, else the `knobValues` cached intrinsic (the
+   *    future-most scheduled value — at a boundary that IS the outgoing envelope's
+   *    landing value; after a stop it IS the deterministic held resting value).
+   *
+   * Reaches the SAME AudioParam `scheduleParam` drives — the param's CV-target
+   * AudioParam (`inputs[paramId].param`). When the module exposes no schedulable
+   * AudioParam (a Faust worklet driving its params off the message port) there is
+   * no tail to cancel: best-effort pin via `scheduleParam` / `setParam`.
+   * Refreshes `knobValues` like `scheduleParam`.
+   */
+  holdParam(
+    nodeId: string,
+    paramId: string,
+    atTime: number,
+    toValue?: number,
+    glideS = 0,
+  ): void {
+    const handle = this.nodes.get(nodeId);
+    if (!handle) return;
+    const key = this.knobKey(nodeId, paramId);
+    const now = this.ctx.currentTime;
+    // FUTURE pins need an explicit value (never a cancel): fall back to the
+    // cached intrinsic when the caller didn't pass one (the switch-INTO anchor).
+    const future = atTime > now + HOLD_NOW_EPS_S;
+    const pinValue = toValue ?? (future ? this.knobValues.get(key) : undefined);
+    const param = handle.inputs.get(paramId)?.param;
+    if (param) {
+      holdParamAtSeam(param, now, atTime, pinValue ?? null, glideS);
+    } else if (pinValue != null) {
+      // No schedulable AudioParam to cancel — best-effort pin the value.
+      if (typeof handle.scheduleParam === 'function') {
+        handle.scheduleParam(paramId, pinValue, atTime, glideS > 0);
+      } else {
+        handle.setParam(paramId, pinValue);
+      }
+    }
+    if (pinValue != null) this.knobValues.set(key, pinValue);
+  }
+
+  /**
+   * DISPLAY-ONLY param refresh — update the JS-side `knobValues` cache (what the
+   * on-screen knob polls via readParam) WITHOUT touching the DSP / scheduling any
+   * audio. Automation playback schedules smooth audio ramps but only writes
+   * knobValues at STEP boundaries, so on a slow clip the on-screen knob looks
+   * jumpy (holds a step, then snaps); the clipplayer tick calls this every tick
+   * with the CURRENT interpolated envelope value so the knob follows smoothly.
+   * Cheap (one Map set); the audio path is unaffected.
+   */
+  setDisplayParam(nodeId: string, paramId: string, value: number): void {
+    if (!this.nodes.has(nodeId)) return;
     this.knobValues.set(this.knobKey(nodeId, paramId), value);
   }
 
@@ -1598,6 +1728,46 @@ export class PatchEngine {
   setParam(node: ModuleNode, paramId: string, value: number): void {
     const engine = this.getDomain(node.domain);
     engine.setParam(node.id, paramId, value);
+  }
+
+  /**
+   * Schedule a param write at a future audio time (clip-automation playback).
+   * Delegates to the target domain's `scheduleParam` when implemented (only
+   * AudioEngine today); a no-op otherwise. Transient — never writes the Y.Doc.
+   */
+  scheduleParam(
+    node: ModuleNode,
+    paramId: string,
+    value: number,
+    atTime: number,
+    ramp: boolean,
+  ): void {
+    const engine = this.getDomain(node.domain);
+    engine.scheduleParam?.(node.id, paramId, value, atTime, ramp);
+  }
+
+  /**
+   * CANCEL-AND-HOLD a param at a seam (clip-automation param-jump policy).
+   * Truncates the scheduled ramp tail at `atTime` and optionally glides to a
+   * deterministic `toValue`. Delegates to the target domain's `holdParam` (only
+   * AudioEngine today); a no-op otherwise. Transient — never writes the Y.Doc.
+   */
+  holdParam(
+    node: ModuleNode,
+    paramId: string,
+    atTime: number,
+    toValue?: number,
+    glideS?: number,
+  ): void {
+    const engine = this.getDomain(node.domain);
+    engine.holdParam?.(node.id, paramId, atTime, toValue, glideS);
+  }
+
+  /** DISPLAY-ONLY knob-value refresh (automation visual smoothing) — delegates to
+   *  the target domain's `setDisplayParam`; a no-op otherwise. No DSP, no Y.Doc. */
+  setDisplayParam(node: ModuleNode, paramId: string, value: number): void {
+    const engine = this.getDomain(node.domain);
+    engine.setDisplayParam?.(node.id, paramId, value);
   }
 
   /** Gate inputs whose port declared no paramTarget — warned once each so a

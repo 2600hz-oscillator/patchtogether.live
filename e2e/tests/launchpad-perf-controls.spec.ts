@@ -74,14 +74,17 @@ async function seedDenseClips(page: Page, nodeId: string, lanes: number[]) {
       if (!n.data) n.data = {};
       const clips: Record<string, unknown> = {};
       const queued: (number | null)[] = new Array(8).fill(null);
+      // Flat clip key is stride-64 (schema v2): clipIndex(slot=0, lane) = lane*64.
+      // (The old `lane*8` only matched lane 0 → other lanes were never found = "saw -1".)
       for (const lane of ls) {
-        clips[String(lane * 8)] = {
+        clips[String(lane * 64)] = {
           kind: 'note', lengthSteps: 128, root: 48, loop: true,
           steps: Array.from({ length: 128 }, (_, s) => ({ step: s, midi: 72, velocity: 127, lengthSteps: 1 })),
         };
         queued[lane] = 0;
       }
       n.data.clips = clips;
+      n.data.sv = 2; // already stride-64 → skip the legacy re-key migration
       n.data.queued = queued;
     });
   }, { id: nodeId, ls: lanes });

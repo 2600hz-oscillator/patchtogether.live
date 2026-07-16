@@ -350,6 +350,41 @@ describe('planEditExposed', () => {
 // --------------------------------------------------------------------
 
 describe('planDuplicateGroup', () => {
+  it('a CLIP PLAYER child clone is scrubbed of live-performance state (arms / assignments / playing) — content survives; the SOURCE is untouched', () => {
+    const cp: ModuleNode = {
+      id: 'cp-1', type: 'clipplayer', domain: 'audio', position: { x: 0, y: 0 }, params: {},
+      data: {
+        sv: 2,
+        clips: { '0': { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true } },
+        auto: { '0': { tracks: { 'm::p': { events: [{ step: 0, value: 0.5 }] } } } },
+        rate: [3],
+        // LIVE state — must not survive the duplicate:
+        playing: [0, null, null, null, null, null, null, null],
+        queued: [1, null, null, null, null, null, null, null],
+        automation: { lanes: { '0': { arm: true, recorderId: 123 } } },
+        autoAssign: { 'vco-x': 0 },
+        recording: true,
+      } as unknown as Record<string, unknown>,
+    };
+    const group: ModuleNode = {
+      id: 'g-cp', type: 'group', domain: 'meta', position: { x: 10, y: 10 }, params: {},
+      data: { childIds: ['cp-1'], exposedPorts: [] } as unknown as Record<string, unknown>,
+    };
+    const plan = planDuplicateGroup({
+      group, children: [cp], edges: [],
+      existingNodeIds: ['cp-1', 'g-cp'], existingEdgeIds: [],
+    });
+    const clone = plan.newChildren[0]!;
+    const d = clone.data as Record<string, unknown>;
+    for (const f of ['playing', 'queued', 'automation', 'autoAssign', 'recording']) {
+      expect(f in d, `${f} scrubbed from the duplicate`).toBe(false);
+    }
+    expect('clips' in d && 'auto' in d && 'rate' in d, 'content + settings kept').toBe(true);
+    // The SOURCE node's data is untouched (the scrub runs on the clone only).
+    const src = cp.data as Record<string, unknown>;
+    expect('automation' in src && 'autoAssign' in src && 'playing' in src).toBe(true);
+  });
+
   it('mints fresh ids for group + every child + every internal edge; external edges NOT cloned', () => {
     const lfo: ModuleNode = { id: 'lfo-1', type: 'lfo', domain: 'audio', position: { x: 0, y: 0 }, params: { rate: 2 } };
     const flt: ModuleNode = { id: 'flt-1', type: 'filter', domain: 'audio', position: { x: 100, y: 0 }, params: {} };
