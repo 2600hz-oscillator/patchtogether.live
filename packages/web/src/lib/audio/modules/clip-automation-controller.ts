@@ -55,13 +55,15 @@ export interface AutomationControllerDeps {
   /** Schedule ramp points on the engine (TRANSIENT — engine.setParam, never the
    *  Y.Doc). `points` values are normalized 0..1; the dep denormalizes. */
   drive(target: AutomationTarget, points: RampPoint[]): void;
-  /** CANCEL-AND-HOLD a param at a seam (engine.holdParam — transient, zero Yjs).
-   *  Truncates the scheduled ramp tail so the ghost lookahead stops driving,
-   *  then: `toValueNorm != null` ⇒ pin/glide to that DETERMINISTIC value (the
-   *  hold-last-value on stop — normalized 0..1, the dep denormalizes);
-   *  `toValueNorm == null` ⇒ only truncate (the touch punch-in — the hand is
-   *  the new writer). Optional so inert test harnesses can omit it. */
-  hold?(target: AutomationTarget, toValueNorm: number | null, glideS: number): void;
+  /** HOLD/PIN a param at a seam (engine.holdParam — transient, zero Yjs).
+   *  `toValueNorm != null` ⇒ pin/glide to that value (the hold-last-value on
+   *  stop, or the release-handoff pin — normalized 0..1, the dep denormalizes);
+   *  `toValueNorm == null` ⇒ truncate-only (the touch punch-in — the hand is the
+   *  new writer). `atTime` names the seam instant (a future loop boundary for a
+   *  quantized switch); absent ⇒ the dep uses "now". The engine dispatches
+   *  near-now (cancel-and-hold) vs future (pin-only, never cancel) itself.
+   *  Optional so inert test harnesses can omit it. */
+  hold?(target: AutomationTarget, toValueNorm: number | null, glideS: number, atTime?: number): void;
   /** Commit a completed pass: the merged tracks for the whole automation clip
    *  (whole-clip PLAIN reassign in one Y.Doc transaction — never a live splice). */
   commit(tracks: AutomationTrack[]): void;
@@ -73,8 +75,27 @@ export interface AutomationControllerDeps {
   addTrack(target: AutomationTarget): boolean;
 }
 
-function key(t: AutomationTarget): string {
+/** The canonical override/suspension key for a target — shared with the
+ *  clipplayer's seam logic (skip/truncate sets on a clip switch). */
+export function automationTargetKey(t: AutomationTarget): string {
   return t.nodeId + '::' + t.paramId;
+}
+const key = automationTargetKey;
+
+/** Options for `holdLastValue` — how a specific stop seam applies the hold. */
+export interface HoldLastValueOpts {
+  /** The seam instant (a FUTURE loop boundary for a quantized switch). Absent ⇒
+   *  the hold dep uses "now" (immediate stop / transport stop / dispose). */
+  atTime?: number;
+  /** Keys (automationTargetKey) to leave ENTIRELY alone — params the INCOMING
+   *  clip drives from a BOUNDARY switch: nothing is scheduled past the boundary,
+   *  and the incoming step-0 seam glide takes over exactly there, so any hold
+   *  would fight it. */
+  skipKeys?: ReadonlySet<string>;
+  /** Keys to TRUNCATE-ONLY (cancel the outgoing ~200 ms tail at now, no resting
+   *  pin) — params the incoming clip drives on an IMMEDIATE mid-clip switch: the
+   *  outgoing tail must die NOW, and the incoming clip repossesses the param. */
+  truncateKeys?: ReadonlySet<string>;
 }
 
 interface PassState {
@@ -88,15 +109,29 @@ interface PassState {
    *  even if the net motion is tiny — a deliberate set-and-hold IS the automation
    *  the user intends. A pre-existing track only commits when it actually MOVED. */
   auto: boolean;
+  /** The furthest step THIS track was actually sampled at this pass — the
+   *  PER-TRACK overdub window end. A track released mid-pass merges only
+   *  `[0, lastSampledStep]`, so the untouched remainder of the loop keeps its
+   *  existing events (a gesture spanning a wrap must not erase the part of its
+   *  OWN pass-1 recording it didn't re-cover in pass 2). */
+  lastSampledStep: number;
 }
 
 export class AutomationController {
   private readonly suspended = new Set<string>(); // targets overriding automation (LOCAL)
-  // GRABBED = physically held right now (pointer down / MIDI-CC hot / Electra
-  // twist), from a touch-DOWN until its RELEASE. A grabbed param stays suspended
-  // ACROSS a loop wrap (the wrap no longer yanks a param out from under a hand
-  // mid-gesture) — the release seam, not the wrap, ends an override. Client-local.
-  private readonly grabbed = new Set<string>();
+  // GRABBED = physically held right now, keyed target → the set of HOLDER
+  // SURFACES currently gripping it ('pointer' / 'wheel' / 'midi' / 'electra').
+  // A grab lasts from a surface's touch-DOWN until ITS release, and the param
+  // stays suspended ACROSS a loop wrap (the wrap no longer yanks a param out
+  // from under a hand mid-gesture). Per-surface ownership: grabbing one param
+  // with two surfaces at once (screen drag + a MIDI twist) ends the override
+  // only when the LAST holder releases — the first release must not clear the
+  // other surface's still-live grip. Client-local.
+  private readonly grabbed = new Map<string, Set<string>>();
+  // Targets released mid-loop whose NEXT driven step should DE-ZIPPER back to
+  // the envelope (a short seam glide) instead of hard-stepping — the documented
+  // release-glide. Consumed on the first post-release drive.
+  private readonly resumeGlide = new Set<string>();
   // Keys this player is CURRENTLY driving via automation playback (refreshed as
   // playbackStep drives, cleared on stop). Scopes the touch-truncate so grabbing
   // a param only cancels THIS player's scheduled tail, not another writer's.
@@ -118,39 +153,65 @@ export class AutomationController {
   constructor(private readonly deps: AutomationControllerDeps) {}
 
   // ------------------------------------------------------------------ touch
-  /** A live grab (screen pointer-DOWN / MIDI-CC / Electra twist) of `target` —
-   *  suspend its automation (live wins) and mark it GRABBED until its physical
-   *  RELEASE, so a wrap can't clear the override mid-gesture. Client-local.
-   *  TRUNCATE: on the first grab of a param THIS player is driving, cancel-and-
-   *  hold the scheduled ramp tail at its current value so the ~200 ms lookahead
-   *  ghost stops fighting the hand. AUTO-CAPTURE: if we're recording and `target`
-   *  is NOT already an automation track, queue it to be added + captured. */
-  notifyTouch(target: AutomationTarget): void {
+  /** A live grab (screen pointer-DOWN / MIDI-CC / Electra twist) of `target` by
+   *  `holder` (the surface gripping it) — suspend its automation (live wins) and
+   *  mark it GRABBED until that holder's physical RELEASE, so a wrap can't clear
+   *  the override mid-gesture. Client-local. TRUNCATE: on the first grab of a
+   *  param THIS player is driving, cancel-and-hold the scheduled ramp tail at its
+   *  current value so the ~200 ms lookahead ghost stops fighting the hand.
+   *  AUTO-CAPTURE: if we're recording and `target` is NOT already an automation
+   *  track, queue it to be added + captured. */
+  notifyTouch(target: AutomationTarget, holder = 'default'): void {
     const k = key(target);
-    const firstGrab = !this.grabbed.has(k);
+    let holders = this.grabbed.get(k);
+    const firstGrab = !holders || holders.size === 0;
+    if (!holders) {
+      holders = new Set();
+      this.grabbed.set(k, holders);
+    }
+    holders.add(holder);
     this.suspended.add(k);
-    this.grabbed.add(k);
     if (firstGrab && this.drivenKeys.has(k)) this.deps.hold?.(target, null, 0);
     if (this.recording && !this.currentTrackKeys.has(k)) {
       this.pendingAuto.set(k, target);
     }
   }
-  /** Physical RELEASE (pointer-up / CC-idle timeout / Electra release) of a
-   *  grabbed control — end the override so automation playback resumes. Playback
-   *  glides back to the envelope on its next step (the drive path de-zippers). */
-  notifyRelease(target: AutomationTarget): void {
+  /** Physical RELEASE (pointer-up / CC-idle timeout / Electra release) of
+   *  `holder`'s grab — end the override so automation playback resumes, but ONLY
+   *  when this was the LAST holder (another surface's still-live grip keeps the
+   *  suspension; see `grabbed`). On the real release: pin the user's final value
+   *  as a REAL event (via the store tap — a handle whose setParam writes no
+   *  AudioParam event would otherwise leave the resume ramp interpolating from
+   *  the stale grab-time pin), and flag the target so its next driven step
+   *  DE-ZIPPER-glides back to the envelope instead of hard-stepping. */
+  notifyRelease(target: AutomationTarget, holder = 'default'): void {
     const k = key(target);
-    this.grabbed.delete(k);
-    this.suspended.delete(k);
+    const holders = this.grabbed.get(k);
+    if (holders) {
+      holders.delete(holder);
+      if (holders.size > 0) return; // another surface still holds it → keep the override
+      this.grabbed.delete(k);
+    }
+    const wasSuspended = this.suspended.delete(k);
+    if (!holders && !wasSuspended) return; // double-release / never grabbed → no-op
+    if (this.deps.hold && this.drivenKeys.has(k)) {
+      // Hand-off pin: the user's final value at the release instant.
+      this.deps.hold(target, this.deps.readNorm(target), 0);
+    }
+    this.resumeGlide.add(k);
   }
-  /** Manually re-enable a suspended param (the "re-enable automation" affordance). */
+  /** Manually re-enable a suspended param (the "re-enable automation"
+   *  affordance) — clears EVERY surface's grip. Resumes with a glide. */
   reEnable(target: AutomationTarget): void {
-    this.suspended.delete(key(target));
-    this.grabbed.delete(key(target));
+    const k = key(target);
+    this.suspended.delete(k);
+    if (this.grabbed.delete(k)) this.resumeGlide.add(k);
   }
   /** Re-enable ALL suspended params at once (the card's override-indicator
-   *  click clears every live override in one gesture). */
+   *  click clears every live override in one gesture). Each resumes with a glide. */
   reEnableAll(): void {
+    for (const k of this.suspended) this.resumeGlide.add(k);
+    for (const k of this.grabbed.keys()) this.resumeGlide.add(k);
     this.suspended.clear();
     this.grabbed.clear();
   }
@@ -165,7 +226,7 @@ export class AutomationController {
   /** Targets currently overriding automation (for the card's indicator) — the
    *  union of suspended + grabbed. */
   overriddenKeys(): string[] {
-    return [...new Set([...this.suspended, ...this.grabbed])];
+    return [...new Set([...this.suspended, ...this.grabbed.keys()])];
   }
 
   // ------------------------------------------------------------------ arm
@@ -185,7 +246,10 @@ export class AutomationController {
     this.pendingAuto.clear();
     // Manual stop → the take is done, so the just-recorded automation should PLAY
     // BACK: clear any lingering touch-suspensions so no param stays frozen at the
-    // value you released it on (the "I stopped and it's stuck" confusion).
+    // value you released it on (the "I stopped and it's stuck" confusion). Each
+    // resumes with a glide (the release-resume de-zipper), not a hard step.
+    for (const k of this.suspended) this.resumeGlide.add(k);
+    for (const k of this.grabbed.keys()) this.resumeGlide.add(k);
     this.suspended.clear();
     this.grabbed.clear();
   }
@@ -215,12 +279,21 @@ export class AutomationController {
     seamGlideS = 0,
   ): void {
     if (this.isSuspended(track.target)) return; // being touched → live wins (also the record gate)
+    const k = key(track.target);
+    // RELEASE-RESUME glide: the first driven step after a grab's release
+    // de-zippers back to the envelope (a short seam ramp from the release-pinned
+    // value) instead of hard-stepping — the documented release glide. The flag
+    // is consumed only when this step actually drives (an envelope with no value
+    // yet at this step keeps it for the next).
+    const resume = this.resumeGlide.has(k);
     const interp = trackInterp(track, this.deps.curve(track.target));
-    // De-zipper an unavoidable SEAM (loop-wrap / clip-switch INTO): the caller
-    // passes seamGlideS so the step-0 anchor glides instead of hard-stepping.
-    const pts = stepRampPoints(track.events, stepIndex, laneDur, emitAt, interp, seamGlideS);
+    // De-zipper an unavoidable SEAM (loop-wrap / clip-switch INTO / release-
+    // resume): the step-0 anchor glides instead of hard-stepping.
+    const seam = resume ? Math.max(seamGlideS, SEAM_GLIDE_S) : seamGlideS;
+    const pts = stepRampPoints(track.events, stepIndex, laneDur, emitAt, interp, seam);
     if (pts.length) {
-      this.drivenKeys.add(key(track.target));
+      if (resume) this.resumeGlide.delete(k);
+      this.drivenKeys.add(k);
       this.deps.drive(track.target, pts);
     }
   }
@@ -228,27 +301,48 @@ export class AutomationController {
   // --------------------------------------------------------- hold-last-value
   /**
    * HOLD-LAST-VALUE on automation stop (a lane stops, or its active clip switches
-   * away from `clip`). For each track NOT under a live hand, compute the
-   * DETERMINISTIC resting value at `stopFrac` — a PURE recompute of the clip data
-   * (`automationLinearAt` for continuous, `automationValueAt` for hold/discrete),
-   * so every collaborating peer converges to the SAME value — and hand it to
-   * `deps.hold`, which cancels the ghost tail and de-zipper-glides the param to
-   * that value. NEVER snaps to zero/default. A track with no value yet at
-   * `stopFrac` (before its first breakpoint) is left at its live value.
-   * Playback has ended, so clear the driven-key set. PURE read of the clip.
+   * away from `clip`). For each track NOT under a live hand, compute the resting
+   * value at `stopFrac` — a PURE recompute of the clip data (`automationLinearAt`
+   * for continuous, `automationValueAt` for hold/discrete). The caller QUANTIZES
+   * `stopFrac` to the integer step grid (`quantizeStopStep`), so collaborating
+   * peers — whose audible playheads are peer-local — CONVERGE on the same step
+   * and hence the same resting value in all but knife-edge stops. The value goes
+   * to `deps.hold`, which truncates any ghost tail (near-now seams) or pins at
+   * the boundary (future seams) and de-zipper-glides. NEVER snaps to
+   * zero/default. A track with no value yet at `stopFrac` (before its first
+   * breakpoint) is left at its live value.
+   *
+   * `opts` scopes the seam (see HoldLastValueOpts): `skipKeys` leaves params the
+   * INCOMING clip takes over at a boundary switch; `truncateKeys` cancel-only
+   * params the incoming clip repossesses on an IMMEDIATE switch; `atTime` names
+   * a future boundary. Only this clip's tracks leave the driven-key set — other
+   * clips this player drives (other lanes) keep their touch-truncate scoping.
    */
-  holdLastValue(clip: AutomationClipRecord, stopFrac: number, glideS = SEAM_GLIDE_S): void {
+  holdLastValue(
+    clip: AutomationClipRecord,
+    stopFrac: number,
+    glideS = SEAM_GLIDE_S,
+    opts?: HoldLastValueOpts,
+  ): void {
     if (this.deps.hold) {
       for (const tr of clip.tracks) {
+        const k = key(tr.target);
+        if (opts?.skipKeys?.has(k)) continue; // boundary switch → incoming takes over
         if (this.isSuspended(tr.target)) continue; // a hand owns it → leave it
+        if (opts?.truncateKeys?.has(k)) {
+          // Immediate switch on a shared param: kill the outgoing tail NOW; the
+          // incoming clip's own anchor+glide repossesses it. No resting pin.
+          this.deps.hold(tr.target, null, 0, opts?.atTime);
+          continue;
+        }
         const interp = trackInterp(tr, this.deps.curve(tr.target));
         const read = interp === 'hold' ? automationValueAt : automationLinearAt;
         const v = read(tr.events, stopFrac);
         if (v == null) continue; // no value yet → leave the live value
-        this.deps.hold(tr.target, v, glideS);
+        this.deps.hold(tr.target, v, glideS, opts?.atTime);
       }
     }
-    this.drivenKeys.clear();
+    for (const tr of clip.tracks) this.drivenKeys.delete(key(tr.target));
   }
 
   // ------------------------------------------------------------- display
@@ -315,7 +409,9 @@ export class AutomationController {
           const unit = this.deps.unitNorm(target);
           const gate = new RecordGate(unit != null ? { unitDelta: unit } : {});
           gate.sample(fracStep, v); // seed from the touch point (not step 0)
-          this.pass.set(k, { gate, startVal: v, maxDev: 0, target, auto: true });
+          this.pass.set(k, {
+            gate, startVal: v, maxDev: 0, target, auto: true, lastSampledStep: fracStep,
+          });
         }
         this.pendingAuto.clear();
       }
@@ -335,6 +431,9 @@ export class AutomationController {
         if (v == null) continue;
         st.gate.sample(fracStep, v);
         st.maxDev = Math.max(st.maxDev, Math.abs(v - st.startVal));
+        // Per-track overdub window end (a released track stops extending its
+        // window, so the un-recovered remainder of the loop is preserved).
+        st.lastSampledStep = Math.max(st.lastSampledStep, fracStep);
       }
     }
 
@@ -356,24 +455,28 @@ export class AutomationController {
       const startVal = this.deps.readNorm(tr.target) ?? 0;
       const gate = new RecordGate(unit != null ? { unitDelta: unit } : {});
       gate.sample(0, startVal); // seed the loop start so the pre-move hold is captured
-      this.pass.set(key(tr.target), { gate, startVal, maxDev: 0, target: tr.target, auto: false });
+      this.pass.set(key(tr.target), {
+        gate, startVal, maxDev: 0, target: tr.target, auto: false, lastSampledStep: 0,
+      });
     }
   }
 
   /**
    * Merge the current pass's captured tracks into `clip` and commit ONCE (whole-
    * clip plain reassign). Only tracks that MOVED (maxDev ≥ MOVE_EPS) are merged;
-   * the rest keep their existing automation. `windowEnd` bounds the overdub
-   * window `[0, windowEnd)`:
-   *   - a FULL loop pass passes `len` (replace the whole track loop);
-   *   - a PARTIAL pass (manual disarm mid-loop) passes the last captured step, so
-   *     existing events in the untouched TAIL `[windowEnd, len)` are preserved.
+   * the rest keep their existing automation. Each track's overdub window is
+   * `[0, min(windowEnd, its OWN lastSampledStep)]` — PER-TRACK, not one global
+   * window: a track released mid-pass (its grab ended at step R) replaces only
+   * what it actually re-covered, so existing events in `(R, len)` — including a
+   * PREVIOUS pass's recording by the same wrap-spanning gesture — survive.
+   * `windowEnd` is the global clamp: `len` at a wrap commit, the last captured
+   * step on a PARTIAL pass (manual disarm mid-loop).
    */
   private commitPass(clip: AutomationClipRecord, len: number, windowEnd: number): void {
     const pass = this.pass;
     this.pass = null;
     if (!pass) return;
-    const end = Math.max(0, Math.min(len, windowEnd));
+    const globalEnd = Math.max(0, Math.min(len, windowEnd));
     let anyMoved = false;
     const merged: AutomationTrack[] = clip.tracks.map((tr) => {
       const st = pass.get(key(tr.target));
@@ -383,6 +486,7 @@ export class AutomationController {
       if (!st || (st.maxDev < MOVE_EPS && !st.auto)) return tr;
       anyMoved = true;
       const incoming: AutomationEvent[] = st.gate.close();
+      const end = Math.max(0, Math.min(globalEnd, st.lastSampledStep));
       const events = mergeAutomationOverdub(tr.events, incoming, 0, end);
       return { ...tr, events };
     });

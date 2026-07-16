@@ -21,7 +21,12 @@ function harness(overrides: Partial<AutomationControllerDeps> = {}, maxTracks = 
   const values = new Map<string, number>();
   const drives: { target: AutomationTarget; n: number }[] = [];
   const added: AutomationTarget[] = [];
-  const holds: { target: AutomationTarget; toValueNorm: number | null; glideS: number }[] = [];
+  const holds: {
+    target: AutomationTarget;
+    toValueNorm: number | null;
+    glideS: number;
+    atTime: number | undefined;
+  }[] = [];
   let committed: AutomationTrack[] | null = null;
   const trackKeys = new Set<string>();
   const deps: AutomationControllerDeps = {
@@ -29,7 +34,7 @@ function harness(overrides: Partial<AutomationControllerDeps> = {}, maxTracks = 
     curve: () => undefined,
     unitNorm: () => undefined,
     drive: (target, points) => drives.push({ target, n: points.length }),
-    hold: (target, toValueNorm, glideS) => holds.push({ target, toValueNorm, glideS }),
+    hold: (target, toValueNorm, glideS, atTime) => holds.push({ target, toValueNorm, glideS, atTime }),
     commit: (tracks) => (committed = tracks),
     // AUTO-CAPTURE: add an empty track (respecting a MAX), like the store write.
     addTrack: (t) => {
@@ -518,5 +523,171 @@ describe('AutomationController — param-jump policy (Phase 0 seams)', () => {
     h.ctrl.recordTick(c, 0, 8); // wrap → commit pass 2 captured the held motion
     const rec = h.committed!.find((t) => t.target.paramId === 'cutoff')!;
     expect(Math.max(...rec.events.map((e) => e.value))).toBeGreaterThan(0.8); // pass-2 motion captured
+  });
+
+  // ── fix #5: per-surface grab ownership ─────────────────────────────────────
+  it('DUAL-SURFACE grab: the first surface releasing does NOT clear the other surface\'s grip', () => {
+    const h = harness();
+    h.ctrl.notifyTouch(target, 'pointer'); // screen drag grabs it
+    h.ctrl.notifyTouch(target, 'midi'); // a MIDI twist grabs it too
+    expect(h.ctrl.isSuspended(target)).toBe(true);
+    // The MIDI stream idles → its holder releases. The POINTER still grips it:
+    // the override must NOT end (the yank-mid-drag regression).
+    h.ctrl.notifyRelease(target, 'midi');
+    expect(h.ctrl.isSuspended(target)).toBe(true);
+    // ...and it still survives a wrap while the pointer holds.
+    h.ctrl.arm();
+    h.ctrl.recordTick(clip([{ target, events: [] }]), 6, 8);
+    h.ctrl.recordTick(clip([{ target, events: [] }]), 0, 8); // wrap
+    expect(h.ctrl.isSuspended(target)).toBe(true);
+    // The LAST holder releases → now the override ends.
+    h.ctrl.notifyRelease(target, 'pointer');
+    expect(h.ctrl.isSuspended(target)).toBe(false);
+  });
+
+  it('DUAL-SURFACE: releasing a holder that never grabbed is a no-op on the live grip', () => {
+    const h = harness();
+    h.ctrl.notifyTouch(target, 'pointer');
+    h.ctrl.notifyRelease(target, 'electra'); // wrong surface → grip intact
+    expect(h.ctrl.isSuspended(target)).toBe(true);
+    h.ctrl.notifyRelease(target, 'pointer');
+    expect(h.ctrl.isSuspended(target)).toBe(false);
+  });
+
+  // ── fix #6: per-track commit window ────────────────────────────────────────
+  it('a wrap-spanning gesture does NOT erase its own pass-1 recording past its pass-2 release point', () => {
+    // Pass 1: hold + move across the WHOLE loop → commit records the full loop.
+    // Pass 2 (gesture continues past the wrap): release at ~step 3 → the wrap
+    // commit must merge only [0, 3.x] and PRESERVE pass-1's events in (3.x, len)
+    // — the old single global [0,len) window wiped them.
+    const track: AutomationTrack = { target, events: [] };
+    const h = harness();
+    h.set(target, 0.1);
+    h.ctrl.arm();
+    h.ctrl.recordTick(clip([track]), 6, 8);
+    h.ctrl.recordTick(clip([track]), 0, 8); // punch-in (pass 1)
+    // PASS 1: full-loop sweep 0.1 → 0.9 while held.
+    h.move(target, 0.3); h.ctrl.recordTick(clip([track]), 2, 8);
+    h.move(target, 0.6); h.ctrl.recordTick(clip([track]), 4, 8);
+    h.move(target, 0.9); h.ctrl.recordTick(clip([track]), 7, 8);
+    h.ctrl.recordTick(clip([track]), 0, 8); // wrap → commit pass 1 (still grabbed)
+    const pass1 = h.committed!.find((t) => t.target.paramId === 'cutoff')!.events;
+    const pass1Tail = pass1.filter((e) => e.step > 4);
+    expect(pass1Tail.length, 'pass 1 recorded into the loop tail').toBeGreaterThan(0);
+    // PASS 2 (same physical gesture): keep moving until ~step 3, then RELEASE.
+    const c2 = clip([{ target, events: pass1 }]); // the store now holds pass 1
+    h.set(target, 0.2); h.ctrl.recordTick(c2, 1, 8);
+    h.set(target, 0.05); h.ctrl.recordTick(c2, 3, 8);
+    h.release(target); // hand lifts at step 3 — capture stops extending
+    h.ctrl.recordTick(c2, 5, 8);
+    h.ctrl.recordTick(c2, 0, 8); // wrap → commit pass 2
+    const pass2 = h.committed!.find((t) => t.target.paramId === 'cutoff')!.events;
+    // The re-covered window [0, ~3] holds the new downward move…
+    const head = pass2.filter((e) => e.step <= 3.001);
+    expect(Math.min(...head.map((e) => e.value))).toBeLessThan(0.1);
+    // …and pass 1's tail PAST the release point survives verbatim.
+    for (const e of pass1Tail) {
+      expect(
+        pass2.some((p) => p.step === e.step && Math.abs(p.value - e.value) < 1e-9),
+        `pass-1 tail event @${e.step} preserved`,
+      ).toBe(true);
+    }
+  });
+
+  it('DISARM partial still bounds each track to its OWN sampled window (per-track, not global)', () => {
+    // Two tracks; A sampled to step 2, B sampled to step 5. The global
+    // passLastStep is 5, but A's window must end at 2 — B's motion must not
+    // widen A's replace window over A's existing later events.
+    const A = tgt('a', 'pa');
+    const B = tgt('b', 'pb');
+    const priorA: AutomationTrack = {
+      target: A,
+      events: [{ step: 0, value: 0.5 }, { step: 4, value: 0.9 }], // step-4 must survive
+    };
+    const trB: AutomationTrack = { target: B, events: [] };
+    const c = clip([priorA, trB]);
+    const h = harness();
+    h.set(A, 0.5);
+    h.set(B, 0.1);
+    h.ctrl.arm();
+    h.ctrl.recordTick(c, 6, 8);
+    h.ctrl.recordTick(c, 0, 8); // punch-in
+    h.move(A, 0.1); h.move(B, 0.3); h.ctrl.recordTick(c, 2, 8);
+    h.release(A); // A's gesture ends at step 2
+    h.move(B, 0.8); h.ctrl.recordTick(c, 5, 8); // B keeps going to step 5
+    h.ctrl.disarm(); // partial commit (global end = 5)
+    const outA = h.committed!.find((t) => t.target.paramId === 'pa')!.events;
+    expect(
+      outA.some((e) => e.step === 4 && Math.abs(e.value - 0.9) < 1e-9),
+      "A's existing step-4 event survives (A's window ended at 2)",
+    ).toBe(true);
+  });
+
+  // ── fix #7: release-resume glide ───────────────────────────────────────────
+  it('release PINS the hand-off value and the next driven step RAMPS back (no hard snap)', () => {
+    const track: AutomationTrack = {
+      target,
+      events: [{ step: 0, value: 0.2 }, { step: 8, value: 0.9 }],
+    };
+    const drivePts: import('./clip-automation-engine').RampPoint[][] = [];
+    const h = harness({ drive: (_t, pts) => drivePts.push(pts) });
+    h.set(target, 0.55);
+    // Drive once (mid-loop, NO seam) → it's a driven key; anchor is a hard step.
+    h.ctrl.playbackStep(track, 2, 0.5, 100, 0);
+    expect(drivePts[0]![0]!.ramp).toBe(false);
+    // Grab (truncate) … then RELEASE: the hand-off pin fires with the user's
+    // final value (readNorm), a real event for the resume ramp to start from.
+    h.ctrl.notifyTouch(target, 'pointer');
+    h.holds.length = 0;
+    h.ctrl.notifyRelease(target, 'pointer');
+    expect(h.holds.length).toBe(1);
+    expect(h.holds[0]!.toValueNorm).toBeCloseTo(0.55, 9); // the released value, pinned
+    expect(h.holds[0]!.glideS).toBe(0);
+    // The FIRST driven step after the release de-zippers (anchor is a RAMP)…
+    drivePts.length = 0;
+    h.ctrl.playbackStep(track, 4, 0.5, 101, 0); // mid-loop step, caller passes NO seam
+    expect(drivePts[0]![0]!.ramp).toBe(true);
+    // …and the flag is consumed — the next step is a normal hard anchor again.
+    drivePts.length = 0;
+    h.ctrl.playbackStep(track, 5, 0.5, 102, 0);
+    expect(drivePts[0]![0]!.ramp).toBe(false);
+  });
+
+  // ── fix #1 support: holdLastValue seam options ─────────────────────────────
+  it('holdLastValue skipKeys leaves boundary-shared params entirely alone', () => {
+    const shared = tgt('s', 'p');
+    const solo = tgt('o', 'q');
+    const c = clip([
+      { target: shared, events: [{ step: 0, value: 0.4 }] },
+      { target: solo, events: [{ step: 0, value: 0.6 }] },
+    ]);
+    const h = harness();
+    h.ctrl.holdLastValue(c, 8, 0.012, { atTime: 123, skipKeys: new Set(['s::p']) });
+    expect(h.holds.map((x) => x.target.nodeId)).toEqual(['o']); // shared skipped
+    expect(h.holds[0]!.atTime).toBe(123); // the boundary time reaches the dep
+    expect(h.holds[0]!.toValueNorm).toBeCloseTo(0.6, 9);
+  });
+
+  it('holdLastValue truncateKeys cancel-only immediate-switch shared params (no resting pin)', () => {
+    const shared = tgt('s', 'p');
+    const c = clip([{ target: shared, events: [{ step: 0, value: 0.4 }] }]);
+    const h = harness();
+    h.ctrl.holdLastValue(c, 3, 0.012, { truncateKeys: new Set(['s::p']) });
+    expect(h.holds.length).toBe(1);
+    expect(h.holds[0]!.toValueNorm).toBeNull(); // truncate-only — incoming repossesses
+    expect(h.holds[0]!.glideS).toBe(0);
+  });
+
+  it('holdLastValue only releases THIS clip\'s driven keys (other lanes keep touch-truncate scoping)', () => {
+    const mine = tgt('m', 'p');
+    const other = tgt('x', 'q');
+    const myClip = clip([{ target: mine, events: [{ step: 0, value: 0.5 }] }]);
+    const otherTrack: AutomationTrack = { target: other, events: [{ step: 0, value: 0.5 }] };
+    const h = harness();
+    h.ctrl.playbackStep(otherTrack, 0, 0.5, 100); // another lane drives `other`
+    h.ctrl.holdLastValue(myClip, 8, 0.012); // stopping MY clip…
+    h.holds.length = 0;
+    h.ctrl.notifyTouch(other); // …must not un-scope the other lane's truncate
+    expect(h.holds.length).toBe(1); // grab still truncates the driven param
   });
 });

@@ -114,4 +114,19 @@ describe('automation-touch registry', () => {
     notifyAutomationRelease(t);
     expect(ctrl.isSuspended(t)).toBe(false);
   });
+
+  it('forwards the HOLDER surface — one surface releasing leaves another\'s grip live', () => {
+    // Per-surface grab ownership across the registry: a screen drag ('pointer')
+    // and a MIDI twist ('midi') both grip the same param; the MIDI idle-release
+    // must NOT clear the still-held pointer drag.
+    const ctrl = makeController();
+    registerAutomationController('cp1', ctrl);
+    const t = { nodeId: 'synth', paramId: 'cutoff' };
+    notifyAutomationTouch(t, 'pointer');
+    notifyAutomationTouch(t, 'midi');
+    notifyAutomationRelease(t, 'midi');
+    expect(ctrl.isSuspended(t)).toBe(true); // pointer still grips it
+    notifyAutomationRelease(t, 'pointer');
+    expect(ctrl.isSuspended(t)).toBe(false); // last holder released
+  });
 });

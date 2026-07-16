@@ -185,8 +185,10 @@ export function buildLiveHost(args: {
         transient: (value) => {
           // Touch-suspend cross-wire (task #183): an Electra hardware twist is a
           // live grab — suspend this param's clip-automation via the SAME seam a
-          // screen drag / MIDI CC hits, so the twist wins over playback.
-          notifyAutomationTouch({ nodeId: moduleId, paramId });
+          // screen drag / MIDI CC hits, so the twist wins over playback. The
+          // 'electra' holder gives it per-surface ownership (a concurrent screen
+          // or MIDI grab keeps its own grip).
+          notifyAutomationTouch({ nodeId: moduleId, paramId }, 'electra');
           const e = getEngine();
           const node = patch.nodes[moduleId] as ModuleNode | undefined;
           if (!e || !node) return;
@@ -198,9 +200,9 @@ export function buildLiveHost(args: {
         },
         onActiveChange: (active) => {
           // Automation touch-RELEASE: the twist stream went cold (settleMs after
-          // the last CC = the hand off the encoder), so end this param's
-          // automation override — the mirror of the per-message grab above.
-          if (!active) notifyAutomationRelease({ nodeId: moduleId, paramId });
+          // the last CC = the hand off the encoder), so end the 'electra'
+          // holder's grip — the mirror of the per-message grab above.
+          if (!active) notifyAutomationRelease({ nodeId: moduleId, paramId }, 'electra');
         },
       });
       ccPumps.set(key, pump);

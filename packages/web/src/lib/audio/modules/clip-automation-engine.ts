@@ -43,6 +43,21 @@ export interface RampPoint {
 export const SEAM_GLIDE_S = 0.012;
 
 /**
+ * Quantize an automation STOP position to the shared integer step grid, so the
+ * hold-last-value resting recompute CONVERGES across collaborating peers. Each
+ * peer's audible fractional playhead is peer-local (its own ctx.currentTime +
+ * sched ring), so an un-quantized `stopFrac` would freeze each peer at a slightly
+ * different envelope value. Rounding to the nearest integer step collapses that
+ * jitter (peers within half a step — the normal case at a ~25 ms tick — resolve
+ * to the SAME step, hence the same value; a knife-edge stop lands on adjacent
+ * steps, envelope-continuous). Clamped to `[0, len]`. PURE.
+ */
+export function quantizeStopStep(frac: number, len: number): number {
+  if (!Number.isFinite(frac) || frac < 0) return 0;
+  return Math.max(0, Math.min(len, Math.round(frac)));
+}
+
+/**
  * Ramp targets to schedule for ONE track across the integer step
  * `[stepIndex, stepIndex+1)` — emitted at audio time `emitAt`, lasting `laneDur`.
  *

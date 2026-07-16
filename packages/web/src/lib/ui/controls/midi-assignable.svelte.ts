@@ -208,9 +208,10 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
     if (!m || !p) return;
     // Touch-suspend cross-wire (task #183): an inbound MIDI CC is a live grab —
     // suspend this param's clip-automation playback (CC wins) via the SAME seam
-    // a screen drag hits. Fires per message so suspension is immediate; cleared
-    // at the loop wrap during recording / by the re-enable indicator otherwise.
-    notifyAutomationTouch({ nodeId: m, paramId: p });
+    // a screen drag hits, under the 'midi' holder (per-surface ownership: a
+    // concurrent screen grab keeps its own grip). Fires per message so
+    // suspension is immediate; released when the stream goes cold (below).
+    notifyAutomationTouch({ nodeId: m, paramId: p }, 'midi');
     const engine = engineCtx.get();
     if (!engine) return;
     const node = patch.nodes[m] as ModuleNode | undefined;
@@ -236,11 +237,11 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
           ccActive = a;
           // Automation touch-RELEASE: the stream went cold (settleMs after the
           // last CC = the "hand off the knob" for a device with no pointer-up),
-          // so end this param's automation override — the mirror of the grab
+          // so end the 'midi' holder's grip — the mirror of the grab
           // pushTransient fires per message. See notifyAutomationRelease.
           if (!a) {
             const m = args.moduleId, p = args.paramId;
-            if (m && p) notifyAutomationRelease({ nodeId: m, paramId: p });
+            if (m && p) notifyAutomationRelease({ nodeId: m, paramId: p }, 'midi');
           }
         },
         // Shared two-lane batcher: the card onchange routes to setNodeParam

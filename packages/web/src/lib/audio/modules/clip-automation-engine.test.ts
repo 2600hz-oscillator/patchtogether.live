@@ -7,6 +7,7 @@ import {
   RecordGate,
   QuantizedRecordWindow,
   SEAM_GLIDE_S,
+  quantizeStopStep,
 } from './clip-automation-engine';
 
 describe('stepRampPoints — lookahead ramp scheduling', () => {
@@ -103,6 +104,27 @@ describe('stepRampPoints — SEAM GLIDE (loop-wrap / clip-switch de-zipper)', ()
     const anchorTime = dp[0]!.at;
     const subTime = dp.find((p) => Math.abs(p.value - 0.6) < 1e-9)!.at;
     expect(anchorTime).toBeLessThan(subTime); // anchor before the sub-step point
+  });
+});
+
+describe('quantizeStopStep — multiplayer-convergent stop position', () => {
+  it('collapses peer-local playhead jitter onto the shared integer step grid', () => {
+    // Two peers stop the same clip; their audible fractional playheads differ by
+    // scheduler jitter (≪ half a step). Both resolve to the SAME integer step →
+    // the same hold-last-value resting recompute.
+    expect(quantizeStopStep(3.4, 8)).toBe(3);
+    expect(quantizeStopStep(3.2, 8)).toBe(3);
+    expect(quantizeStopStep(3.4, 8)).toBe(quantizeStopStep(3.2, 8));
+  });
+  it('rounds to nearest (not floor) and clamps to [0, len]', () => {
+    expect(quantizeStopStep(3.6, 8)).toBe(4);
+    expect(quantizeStopStep(7.9, 8)).toBe(8); // loop end
+    expect(quantizeStopStep(9.3, 8)).toBe(8); // clamped
+    expect(quantizeStopStep(0.2, 8)).toBe(0);
+  });
+  it('is defensive about invalid playheads (negative / NaN → step 0)', () => {
+    expect(quantizeStopStep(-1, 8)).toBe(0);
+    expect(quantizeStopStep(Number.NaN, 8)).toBe(0);
   });
 });
 

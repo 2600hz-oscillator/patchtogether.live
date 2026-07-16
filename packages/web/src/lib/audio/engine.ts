@@ -12,7 +12,7 @@ import type { Edge, ModuleDef, ModuleNode, CvScaleHint, ParamDef } from '$lib/gr
 import { getModuleDef, type AudioModuleDef } from './module-registry';
 import { POLY_CHANNELS, resolveConnection } from './poly';
 import { attachCvScale } from './cv-scale';
-import { holdAndGlideParam } from './hold-param';
+import { holdParamAtSeam, HOLD_NOW_EPS_S } from './hold-param';
 
 /**
  * What a per-domain factory hands back: the connectable surface for one module
@@ -630,21 +630,31 @@ export class AudioEngine implements DomainEngine {
   }
 
   /**
-   * CANCEL-AND-HOLD a param at a seam — the clip-automation param-jump policy
-   * (Phase 0). Truncates the ~200 ms scheduled ramp tail at `atTime` (killing
-   * the ghost that keeps driving a param after a lane stops / a clip switches /
-   * a hand grabs it) and pins the value there. Optionally moves to a NEW
-   * deterministic `toValue`: a hard `setValueAtTime` (`glideS <= 0`) or a short
-   * de-zipper `linearRampToValueAtTime` over `glideS` (hold-last-value on stop /
-   * clip-switch glide). Omit `toValue` (undefined) to only truncate — the touch
-   * punch-in, where live manual input is the new writer.
+   * HOLD/PIN a param at a seam — the clip-automation param-jump policy (Phase 0).
+   * Two regimes, dispatched on WHEN `atTime` is (holdParamAtSeam):
+   *
+   *  - NEAR-NOW (`atTime <= now + eps`): cancel-and-hold — truncate the ~200 ms
+   *    scheduled ramp tail (killing the ghost that keeps driving a param after an
+   *    immediate stop / a hand grab) and pin the value there; then optionally
+   *    move to `toValue` (hard set, or a short de-zipper glide over `glideS`).
+   *    Omit `toValue` to only truncate (the touch punch-in — live manual input is
+   *    the new writer). Firefox lacks `cancelAndHoldAtTime`; the util
+   *    reimplements it (read-current → cancel → re-pin).
+   *
+   *  - FUTURE (a quantized boundary switch / a switch-INTO step anchor): NEVER
+   *    cancel (a future cancel retro-deletes the outgoing clip's final in-flight
+   *    ramp in the fallback, and native `cancelAndHoldAtTime(futureT)` inserts NO
+   *    hold when nothing is scheduled after it — a silent no-op). Instead PIN an
+   *    explicit value with a real `setValueAtTime` event at `atTime`:
+   *    `toValue` when given, else the `knobValues` cached intrinsic (the
+   *    future-most scheduled value — at a boundary that IS the outgoing envelope's
+   *    landing value; after a stop it IS the deterministic held resting value).
    *
    * Reaches the SAME AudioParam `scheduleParam` drives — the param's CV-target
-   * AudioParam (`inputs[paramId].param`), where cancel-and-hold is possible.
-   * Firefox lacks `cancelAndHoldAtTime`, so the util reimplements it. When the
-   * module exposes no schedulable AudioParam (a Faust worklet driving its params
-   * off the message port) there is no tail to cancel: best-effort pin `toValue`
-   * via `scheduleParam` / `setParam`. Refreshes `knobValues` like `scheduleParam`.
+   * AudioParam (`inputs[paramId].param`). When the module exposes no schedulable
+   * AudioParam (a Faust worklet driving its params off the message port) there is
+   * no tail to cancel: best-effort pin via `scheduleParam` / `setParam`.
+   * Refreshes `knobValues` like `scheduleParam`.
    */
   holdParam(
     nodeId: string,
@@ -655,18 +665,24 @@ export class AudioEngine implements DomainEngine {
   ): void {
     const handle = this.nodes.get(nodeId);
     if (!handle) return;
+    const key = this.knobKey(nodeId, paramId);
+    const now = this.ctx.currentTime;
+    // FUTURE pins need an explicit value (never a cancel): fall back to the
+    // cached intrinsic when the caller didn't pass one (the switch-INTO anchor).
+    const future = atTime > now + HOLD_NOW_EPS_S;
+    const pinValue = toValue ?? (future ? this.knobValues.get(key) : undefined);
     const param = handle.inputs.get(paramId)?.param;
     if (param) {
-      holdAndGlideParam(param, atTime, toValue ?? null, glideS);
-    } else if (toValue != null) {
-      // No schedulable AudioParam to cancel — best-effort pin the resting value.
+      holdParamAtSeam(param, now, atTime, pinValue ?? null, glideS);
+    } else if (pinValue != null) {
+      // No schedulable AudioParam to cancel — best-effort pin the value.
       if (typeof handle.scheduleParam === 'function') {
-        handle.scheduleParam(paramId, toValue, atTime, glideS > 0);
+        handle.scheduleParam(paramId, pinValue, atTime, glideS > 0);
       } else {
-        handle.setParam(paramId, toValue);
+        handle.setParam(paramId, pinValue);
       }
     }
-    if (toValue != null) this.knobValues.set(this.knobKey(nodeId, paramId), toValue);
+    if (pinValue != null) this.knobValues.set(key, pinValue);
   }
 
   /**

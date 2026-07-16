@@ -45,29 +45,42 @@ export function unregisterAutomationController(nodeId: string): void {
   controllers.delete(nodeId);
 }
 
+/** The surface gripping a control — per-surface grab ownership, so the same
+ *  param grabbed by TWO surfaces at once (a screen drag + a MIDI twist) stays
+ *  overridden until the LAST one releases (the first release must not clear the
+ *  other's still-live grip). */
+export type AutomationTouchHolder = 'pointer' | 'wheel' | 'midi' | 'electra' | 'default';
+
 /**
- * A live user grab of `target` (screen drag / MIDI CC / Electra) — suspend that
- * param's automation on EVERY registered controller until the loop wrap. Cheap
- * no-op when nothing is registered. The controller's `notifyTouch` is a set-add,
- * so a target no clip-player automates is harmless noise (playback only checks
- * its own tracks; the card intersects with real track keys for the indicator).
+ * A live user grab of `target` by `holder` (screen drag / MIDI CC / Electra) —
+ * suspend that param's automation on EVERY registered controller until THAT
+ * holder's physical release. Cheap no-op when nothing is registered. The
+ * controller's `notifyTouch` is a set-add, so a target no clip-player automates
+ * is harmless noise (playback only checks its own tracks; the card intersects
+ * with real track keys for the indicator).
  */
-export function notifyAutomationTouch(target: AutomationTarget): void {
+export function notifyAutomationTouch(
+  target: AutomationTarget,
+  holder: AutomationTouchHolder = 'default',
+): void {
   if (controllers.size === 0) return; // fast path: no automation in the rack
-  for (const ctrl of controllers.values()) ctrl.notifyTouch(target);
+  for (const ctrl of controllers.values()) ctrl.notifyTouch(target, holder);
 }
 
 /**
- * The PHYSICAL RELEASE of a grabbed control (screen pointer-up / MIDI-CC idle
+ * The PHYSICAL RELEASE of `holder`'s grab (screen pointer-up / MIDI-CC idle
  * timeout / Electra release) — end its automation override on EVERY registered
- * controller so playback resumes (gliding back to the envelope). Paired with
- * notifyAutomationTouch: touch-DOWN suspends, release re-enables, so an override
- * ends on the hand lifting rather than at the loop wrap. Cheap no-op when
- * nothing is registered.
+ * controller so playback resumes (de-zipper-gliding back to the envelope).
+ * Paired with notifyAutomationTouch: touch-DOWN suspends, release re-enables, so
+ * an override ends on the hand lifting rather than at the loop wrap — and only
+ * when the LAST holder lifts. Cheap no-op when nothing is registered.
  */
-export function notifyAutomationRelease(target: AutomationTarget): void {
+export function notifyAutomationRelease(
+  target: AutomationTarget,
+  holder: AutomationTouchHolder = 'default',
+): void {
   if (controllers.size === 0) return; // fast path: no automation in the rack
-  for (const ctrl of controllers.values()) ctrl.notifyRelease(target);
+  for (const ctrl of controllers.values()) ctrl.notifyRelease(target, holder);
 }
 
 /** The override keys ("nodeId::paramId") currently suspended on a player's

@@ -26,21 +26,24 @@
   // clip-automation playback until the PHYSICAL RELEASE ("live wins"), not the
   // loop wrap. Fires on the screen-gesture choke points below; the MIDI path
   // notifies from makeMidiAssignable so screen + MIDI share the SAME seam.
+  // PER-SURFACE holders ('pointer' vs 'wheel' here, 'midi'/'electra' elsewhere):
+  // the override ends only when the LAST holder releases, so a wheel-idle timer
+  // can't clear a concurrent pointer drag (or a MIDI twist) mid-gesture.
   function touchAutomation() {
-    if (moduleId && paramId) notifyAutomationTouch({ nodeId: moduleId, paramId });
+    if (moduleId && paramId) notifyAutomationTouch({ nodeId: moduleId, paramId }, 'pointer');
   }
   // Release = pointer-up/cancel (drag) / a short idle after a wheel tick. Ends
   // the override so playback resumes (gliding back to the envelope).
   function releaseAutomation() {
-    if (moduleId && paramId) notifyAutomationRelease({ nodeId: moduleId, paramId });
+    if (moduleId && paramId) notifyAutomationRelease({ nodeId: moduleId, paramId }, 'pointer');
   }
   let wheelReleaseTimer: ReturnType<typeof setTimeout> | null = null;
   function wheelTouch() {
-    touchAutomation();
+    if (moduleId && paramId) notifyAutomationTouch({ nodeId: moduleId, paramId }, 'wheel');
     if (wheelReleaseTimer !== null) clearTimeout(wheelReleaseTimer);
     wheelReleaseTimer = setTimeout(() => {
       wheelReleaseTimer = null;
-      releaseAutomation();
+      if (moduleId && paramId) notifyAutomationRelease({ nodeId: moduleId, paramId }, 'wheel');
     }, 200);
   }
 
