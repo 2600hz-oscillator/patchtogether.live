@@ -20,7 +20,7 @@ import {
   MIXOLYDIAN_SCALE_STEPS,
   type ScaleName,
 } from '$lib/mike/music-theory';
-import { coerceRateIndex } from './clip-clock';
+import { coerceRateIndex, RATE_LABELS } from './clip-clock';
 import { POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
 // Type-only import (erased at runtime → no cycle with clip-arrange.ts, which
 // imports VALUES from this file). The arranger model lives in clip-arrange.ts.
@@ -426,6 +426,31 @@ export function isAutomationRecorder(
  *  requires THIS client to be the designated single-writer. PURE. */
 export function isAutomationArmed(data: ClipPlayerData | undefined): boolean {
   return data?.automation?.arm === true;
+}
+
+/** The DISPLAYED div + length of an automation clip. The SINGLE source the card's
+ *  AUTO-block DIV select + LENGTH input AND the clip-cell "div·length" badge all
+ *  render from, so the UI can NEVER disagree with the stored clip data (the class
+ *  of "I saw 1/1 but it was really 1/4" bug). `div` undefined ⇒ the clip follows
+ *  the lane rate, shown as the default rate label; length absent ⇒ the long
+ *  default. PURE. */
+export interface AutomationDisplay {
+  /** Coerced RATE index (into clip-clock RATE_LABELS/RATE_MULTS). */
+  divIndex: number;
+  /** The rate label for `divIndex` (e.g. '1/4'). */
+  divLabel: string;
+  /** The clip's loop length in steps (or DEFAULT_AUTOMATION_STEPS). */
+  lengthSteps: number;
+  /** The compact cell badge, "<divLabel>·<lengthSteps>" (e.g. "1/4·64"). */
+  badge: string;
+}
+export function automationClipDisplay(
+  clip: { div?: number; lengthSteps?: number } | null | undefined,
+): AutomationDisplay {
+  const divIndex = coerceRateIndex(clip?.div);
+  const lengthSteps = typeof clip?.lengthSteps === 'number' ? clip.lengthSteps : DEFAULT_AUTOMATION_STEPS;
+  const divLabel = RATE_LABELS[divIndex];
+  return { divIndex, divLabel, lengthSteps, badge: `${divLabel}·${lengthSteps}` };
 }
 
 /** DUAL-LAUNCHPAD KEYS note-record state (see ClipPlayerData.noteRec). */

@@ -244,36 +244,6 @@ async function launchAutomationClip(page: Page): Promise<void> {
   await waitForSoundingStep(page, CP, 3, { key: 'currentStep:7', timeoutMs: 8000 });
 }
 
-/** Continuously move (sweep) one or more params for `durationMs` — the real
- *  "turn the knob during the loop" input, as a store write (identical to a knob
- *  onchange; the recorder reads the store value each tick). */
-async function sweepParams(
-  page: Page,
-  sweeps: { id: string; param: string; mid: number; amp: number; cycles: number; phase?: number }[],
-  durationMs: number,
-): Promise<void> {
-  await page.evaluate(
-    async ({ sweeps, durationMs }) => {
-      const w = globalThis as unknown as {
-        __ydoc: { transact: (fn: () => void) => void };
-        __patch: { nodes: Record<string, { params: Record<string, number> }> };
-      };
-      const start = performance.now();
-      while (performance.now() - start < durationMs) {
-        const t = (performance.now() - start) / durationMs;
-        w.__ydoc.transact(() => {
-          for (const s of sweeps) {
-            const v = s.mid + s.amp * Math.sin(t * Math.PI * 2 * s.cycles + (s.phase ?? 0));
-            w.__patch.nodes[s.id].params[s.param] = Math.max(0, Math.min(1, v));
-          }
-        });
-        await new Promise((r) => setTimeout(r, 40));
-      }
-    },
-    { sweeps, durationMs },
-  );
-}
-
 /** Right-click a VCA's Base fader and open its control menu. */
 function vcaBase(page: Page, vcaId: string) {
   return page.locator(`.svelte-flow__node[data-id="${vcaId}"]`).getByTestId('control-base');
@@ -312,6 +282,37 @@ async function installSimMidi(page: Page): Promise<void> {
   );
   await page.evaluate(() => (globalThis as unknown as { __midiTestInstall: () => boolean }).__midiTestInstall());
 }
+/** MIDI-learn a VCA Base fader to a CC (binds the CC → param; does NOT assign
+ *  automation). The first inject completes the learn binding. */
+async function midiLearn(page: Page, vcaId: string, cc: number): Promise<void> {
+  await vcaBase(page, vcaId).click({ button: 'right' });
+  const menu = page.getByTestId('control-context-menu');
+  await expect(menu).toBeVisible();
+  await menu.getByTestId('ctx-midi-learn').click();
+  await injectCc(page, 1, cc, 64); // bind
+  await expect(menu).toBeHidden();
+}
+
+/** Sweep a bound CC (0..127) for `ms`. Each inject DRIVES the param AND fires
+ *  notifyAutomationTouch — the exact seam a screen drag uses — so while armed it
+ *  AUTO-CAPTURES the param + records it (record-while-touched). */
+async function sweepCc(page: Page, cc: number, ms: number): Promise<void> {
+  await sweepCcs(page, [cc], ms);
+}
+/** Sweep several bound CCs at once (each phase-offset so they diverge), touching +
+ *  moving each one — for multi-param auto-capture/record. */
+async function sweepCcs(page: Page, ccs: number[], ms: number): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < ms) {
+    const t = (Date.now() - start) / ms;
+    for (let i = 0; i < ccs.length; i++) {
+      const v = Math.round(64 + 58 * Math.sin(t * Math.PI * 2 * 2 + i * Math.PI));
+      await injectCc(page, 1, ccs[i]!, Math.max(0, Math.min(127, v)));
+    }
+    await page.waitForTimeout(60);
+  }
+}
+
 async function injectCc(page: Page, channel: number, cc: number, value: number): Promise<void> {
   await page.evaluate(
     ({ channel, cc, value }) =>
@@ -345,6 +346,7 @@ test('automation: create + assign via menu + arm + record + playback drives the 
     { id: 'va', type: 'vca', position: { x: 460, y: 80 }, domain: 'audio', params: { base: 0.2 } },
   ]);
   await ensureTransportRunning(page);
+  await installSimMidi(page);
   await expect(page.getByTestId('clipplayer-card')).toBeVisible();
 
   // CREATE the automation clip (+AUTO) — it comes up LONG + SLOW; shrink it to a
@@ -353,15 +355,17 @@ test('automation: create + assign via menu + arm + record + playback drives the 
   await expect(page.getByTestId(`clipplayer-auto-arm-${CP}`)).toBeVisible();
   await setAutoClip(page, CLIP_LEN, 3);
 
-  // ASSIGN the VCA Base knob via the CONTEXT MENU.
+  // ASSIGN the VCA Base knob via the CONTEXT MENU (explicit-assign path), then bind
+  // it to a CC so a "move" fires the real touch seam (record-while-touched).
   await assignViaMenu(page, 'va');
   await expect(page.getByTestId(`clipplayer-auto-count-${CP}`)).toHaveText(`1/16`);
+  await midiLearn(page, 'va', 21);
 
-  // LAUNCH + ARM, then MOVE the knob across ≥2 loops. Continuous overdub punches
-  // in at the clip's own wrap and commits each wrap while it KEEPS recording.
+  // LAUNCH + ARM, then MOVE the knob across ≥2 loops (touching it). Continuous
+  // overdub punches in at the clip's own wrap and commits each wrap while armed.
   await launchAutomationClip(page);
   await page.getByTestId(`clipplayer-auto-arm-${CP}`).click(); // arm (claims recorderId)
-  await sweepParams(page, [{ id: 'va', param: 'base', mid: 0.5, amp: 0.45, cycles: 2 }], 3500);
+  await sweepCc(page, 21, 3500);
 
   // A pass COMMITTED (breakpoints appear) while STILL ARMED (no auto-stop —
   // continuous overdub, the core of the new model).
@@ -428,6 +432,7 @@ test('automation: two params record while armed + a third untouched keeps its pr
     { id: 'vc', type: 'vca', position: { x: 460, y: 480 }, domain: 'audio', params: { base: 0.5 } },
   ]);
   await ensureTransportRunning(page);
+  await installSimMidi(page);
   await expect(page.getByTestId('clipplayer-card')).toBeVisible();
 
   // Seed: va + vb EMPTY (to be recorded), vc PRE-POPULATED (the untouched one).
@@ -440,19 +445,15 @@ test('automation: two params record while armed + a third untouched keeps its pr
     { nodeId: 'vb', paramId: 'base', events: [] },
     { nodeId: 'vc', paramId: 'base', events: VC_PRIOR },
   ]);
+  // Bind va + vb to CCs so moving them fires the touch seam; vc is NEVER touched.
+  await midiLearn(page, 'va', 21);
+  await midiLearn(page, 'vb', 22);
 
   await launchAutomationClip(page);
   await page.getByTestId(`clipplayer-auto-arm-${CP}`).click(); // arm
 
   // Move BOTH va + vb (out of phase → independent), leave vc UNTOUCHED.
-  await sweepParams(
-    page,
-    [
-      { id: 'va', param: 'base', mid: 0.5, amp: 0.45, cycles: 2, phase: 0 },
-      { id: 'vb', param: 'base', mid: 0.5, amp: 0.45, cycles: 2, phase: Math.PI },
-    ],
-    3400,
-  );
+  await sweepCcs(page, [21, 22], 3400);
 
   await expect
     .poll(async () => {
@@ -562,4 +563,65 @@ test('automation: a MIDI CC on an automated param suspends only that param (same
   await page.getByTestId(`clipplayer-auto-override-${CP}`).click();
   await expect(page.getByTestId(`clipplayer-auto-override-${CP}`)).toBeHidden();
   expect((await sampleSpread(page, 'va', 'base')).spread, 'va resumes after re-enable').toBeGreaterThan(0.15);
+});
+
+// ── Case 5: the owner's exact flow — JUST MOVE a knob while armed (auto-capture)
+//    → it records + REPLAYS every loop (continuous, not one-shot) → move another. ──
+
+test('automation: arm then JUST MOVE a knob → it auto-captures + records + replays every loop (not one-shot); then move B, A preserved', async ({ page, rack }) => {
+  void rack;
+  await spawnPatch(page, [
+    { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
+    { id: 'va', type: 'vca', position: { x: 460, y: 60 }, domain: 'audio', params: { base: 0.2 } },
+    { id: 'vb', type: 'vca', position: { x: 460, y: 320 }, domain: 'audio', params: { base: 0.5 } },
+  ]);
+  await ensureTransportRunning(page);
+  await installSimMidi(page);
+  await expect(page.getByTestId('clipplayer-card')).toBeVisible();
+
+  // ＋AUTO with NO pre-assign (count 0) + a ~3s loop (24 steps ÷ '1').
+  await page.getByTestId(`clipplayer-auto-new-${CP}`).click();
+  await expect(page.getByTestId(`clipplayer-auto-arm-${CP}`)).toBeVisible();
+  await setAutoClip(page, 24, 3);
+  await expect(page.getByTestId(`clipplayer-auto-count-${CP}`)).toHaveText('0/16'); // nothing assigned
+
+  // Bind va/vb to CCs so a "move" is scriptable through the real touch seam.
+  await midiLearn(page, 'va', 21);
+  await midiLearn(page, 'vb', 22);
+
+  // LAUNCH + ARM, then JUST MOVE va (no assign) for ~1.5 loops → auto-capture + record.
+  await launchAutomationClip(page);
+  await page.getByTestId(`clipplayer-auto-arm-${CP}`).click(); // arm
+  await sweepCc(page, 21, 4500);
+
+  // va became a track by MOVING it (auto-capture); arm STAYS LIT (not one-shot).
+  await expect(page.getByTestId(`clipplayer-auto-count-${CP}`)).toHaveText('1/16', { timeout: 8000 });
+  await expect
+    .poll(async () => (await readClipTracks(page)).find((t) => t.nodeId === 'va')?.events.length ?? 0, { timeout: 12000 })
+    .toBeGreaterThan(1);
+  expect(await isArmed(page), 'arm stays lit — continuous overdub, not one-shot').toBe(true);
+
+  // STOP moving va → over the next loops it REPLAYS (drives va.base with no input) —
+  // the fix for "it recorded one pass then appeared to stop".
+  const replay = await sampleSpread(page, 'va', 'base', 44, 100); // ~4.4s > 1 loop
+  expect(replay.spread, 'va automation REPLAYS every loop while still armed').toBeGreaterThan(0.1);
+
+  // The 🟡🟡🔴🔴 countdown flashes before each wrap while armed.
+  const seq = await collectCountdown(page, 7000);
+  expect(seq, 'countdown flashes yellow→red every loop').toContain('yellow');
+  expect(seq).toContain('red');
+
+  // Now MOVE vb on a later loop → vb overdubs; va is preserved.
+  const vaBefore = (await readClipTracks(page)).find((t) => t.nodeId === 'va')!.events.length;
+  await sweepCc(page, 22, 4500);
+  await expect
+    .poll(async () => (await readClipTracks(page)).find((t) => t.nodeId === 'vb')?.events.length ?? 0, { timeout: 12000 })
+    .toBeGreaterThan(1);
+  const tracks = await readClipTracks(page);
+  expect(tracks.find((t) => t.nodeId === 'va')!.events.length, 'va preserved while vb overdubbed')
+    .toBeGreaterThanOrEqual(Math.min(2, vaBefore));
+
+  // DISARM (manual stop).
+  await page.getByTestId(`clipplayer-auto-arm-${CP}`).click();
+  expect(await isArmed(page)).toBe(false);
 });

@@ -66,6 +66,7 @@ import {
   DEFAULT_AUTOMATION_STEPS,
   DEFAULT_AUTOMATION_DIV,
   isAutomationArmed,
+  automationClipDisplay,
   coerceAutomationEvent,
   coerceAutomationTrack,
   sameAutomationTarget,
@@ -391,6 +392,42 @@ describe('automation: div coercion + isAutomationArmed', () => {
     expect(isAutomationArmed({})).toBe(false);
     expect(isAutomationArmed({ automation: { arm: false } })).toBe(false);
     expect(isAutomationArmed({ automation: { arm: true } })).toBe(true);
+  });
+});
+
+// UI-CAN'T-LIE: the card's AUTO-block DIV select, LENGTH input, and the clip-cell
+// badge ALL render from automationClipDisplay(autoClip) — this pins that single
+// source so the shown timing can never disagree with the stored clip (the "I saw
+// 1/1 but it was really 1/4" class of bug the owner feared).
+describe('automation: automationClipDisplay (the card DIV/LEN/badge render source)', () => {
+  it('reflects the stored clip div + length exactly', () => {
+    const d = automationClipDisplay({ div: 1, lengthSteps: 64 });
+    expect(d.divIndex).toBe(1);
+    expect(d.divLabel).toBe('1/4'); // RATE_LABELS[1]
+    expect(d.lengthSteps).toBe(64);
+    expect(d.badge).toBe('1/4·64');
+  });
+  it('a fresh +AUTO clip shows 1/4 · 64 (long + slow default)', () => {
+    const d = automationClipDisplay(defaultAutomationClip());
+    expect(d.divIndex).toBe(DEFAULT_AUTOMATION_DIV);
+    expect(d.divLabel).toBe('1/4');
+    expect(d.lengthSteps).toBe(DEFAULT_AUTOMATION_STEPS);
+    expect(d.badge).toBe('1/4·64');
+  });
+  it('UPDATES when the clip div/length change (what the card re-derives)', () => {
+    expect(automationClipDisplay({ div: 0, lengthSteps: 7 }).badge).toBe('1/8·7');
+    expect(automationClipDisplay({ div: 5, lengthSteps: 128 }).badge).toBe('4x·128');
+    expect(automationClipDisplay({ div: 3, lengthSteps: 13 }).badge).toBe('1·13'); // coprime, not snapped
+  });
+  it('falls back safely: div undefined ⇒ lane-rate default label; length absent ⇒ long default', () => {
+    const d = automationClipDisplay({});
+    expect(d.divIndex).toBe(3); // RATE_DEFAULT_INDEX ('1')
+    expect(d.divLabel).toBe('1');
+    expect(d.lengthSteps).toBe(DEFAULT_AUTOMATION_STEPS);
+    expect(automationClipDisplay(null).badge).toBe('1·64');
+    expect(automationClipDisplay(undefined).lengthSteps).toBe(DEFAULT_AUTOMATION_STEPS);
+    // a corrupt/out-of-range div clamps into the rate table, never NaN/undefined.
+    expect(automationClipDisplay({ div: 99, lengthSteps: 16 }).divLabel).toBe('4x');
   });
 });
 

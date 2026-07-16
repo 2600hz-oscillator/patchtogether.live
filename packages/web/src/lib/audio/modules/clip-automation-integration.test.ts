@@ -162,6 +162,8 @@ function makeHarness(def: FakeDef) {
       if (!data.clips) data.clips = {};
       data.clips[String(clipIndex(t.slot, t.lane))] = plain;
     },
+    // Pre-seeded tracks in these tests → auto-add is never exercised here.
+    addTrack: () => true,
   };
 
   const setRecordTarget = (t: { slot: number; lane: number } | null) => {
@@ -223,6 +225,9 @@ describe('clipplayer ↔ automation integration (real Y.Doc + fake engine)', () 
     // keeps recording after).
     const drive = (frac: number) => {
       h.setRecordTarget({ slot: SLOT, lane: LANE });
+      // TOUCH-GATED: the user is actively holding the knob → mark it touched each
+      // tick so it records (untouched params only play back).
+      controller.notifyTouch({ nodeId: TARGET, paramId: PARAM });
       const clip = readClip(h.store.nodes[CLIP]!.data, IDX) as AutomationClipRecord;
       controller.recordTick(clip, frac, len);
     };
@@ -296,8 +301,11 @@ describe('clipplayer ↔ automation integration (real Y.Doc + fake engine)', () 
     const controller = new AutomationController(deps);
     expect(isAutomationRecorder(h.store.nodes[CLIP]!.data, h.ydoc.clientID)).toBe(true);
     controller.arm();
-    const drive = (frac: number) => {
+    // TOUCH-GATED: touch the param the user is holding this tick (untouched
+    // params only play back, so pass 1 records A while B keeps playing, etc.).
+    const drive = (frac: number, touchParam?: string) => {
       h.setRecordTarget({ slot: SLOT, lane: LANE });
+      if (touchParam) controller.notifyTouch({ nodeId: TARGET, paramId: touchParam });
       const clip = readClip(h.store.nodes[CLIP]!.data, IDX) as AutomationClipRecord;
       controller.recordTick(clip, frac, len);
     };
@@ -305,17 +313,15 @@ describe('clipplayer ↔ automation integration (real Y.Doc + fake engine)', () 
     // Pre-punch loop, then punch-in.
     drive(0); drive(1); drive(2); drive(3);
     drive(0); // punch-in (pass 1)
-    // PASS 1: move A (0→100), B flat.
-    live[P_A] = 25; drive(1);
-    live[P_A] = 100; drive(2); drive(3);
-    drive(0); // wrap → commit pass 1 (A recorded), keep recording
-    // PASS 2: move B (0→100), A held flat (no re-move).
-    live[P_B] = 40; drive(1);
-    live[P_B] = 100; drive(2); drive(3);
-    // DISARM mid-loop-2-boundary: stop cleanly right at the wrap-equivalent by
-    // driving one more wrap first, then disarm.
-    drive(0); // wrap → commit pass 2 (B recorded)
-    controller.disarm(); // manual stop (nothing new since the wrap → no extra commit needed)
+    // PASS 1: TOUCH + move A (0→100); B untouched → keeps playing, preserved.
+    live[P_A] = 25; drive(1, P_A);
+    live[P_A] = 100; drive(2, P_A); drive(3, P_A);
+    drive(0, P_A); // wrap → commit pass 1 (A recorded), keep recording
+    // PASS 2: TOUCH + move B (0→100); A untouched → preserved.
+    live[P_B] = 40; drive(1, P_B);
+    live[P_B] = 100; drive(2, P_B); drive(3, P_B);
+    drive(0, P_B); // wrap → commit pass 2 (B recorded)
+    controller.disarm(); // manual stop
 
     // The plain committed clip holds BOTH params' tracks with breakpoints.
     const out = readClip(h.store.nodes[CLIP]!.data, IDX) as AutomationClipRecord;

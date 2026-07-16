@@ -24,6 +24,8 @@
 
 import {
   mergeAutomationOverdub,
+  automationValueAt,
+  automationLinearAt,
   type AutomationClipRecord,
   type AutomationEvent,
   type AutomationTarget,
@@ -55,6 +57,12 @@ export interface AutomationControllerDeps {
   /** Commit a completed pass: the merged tracks for the whole automation clip
    *  (whole-clip PLAIN reassign in one Y.Doc transaction — never a live splice). */
   commit(tracks: AutomationTrack[]): void;
+  /** AUTO-CAPTURE: add an EMPTY track for `target` to the stored automation clip,
+   *  respecting MAX_AUTOMATION_TRACKS + skipping the clip-player's OWN params (no
+   *  self-capture). Returns true iff the target is now a track (added, or already
+   *  present). Called when the user MOVES an un-assigned control while recording —
+   *  the "just move knobs and it records" workflow. */
+  addTrack(target: AutomationTarget): boolean;
 }
 
 function key(t: AutomationTarget): string {
@@ -65,6 +73,13 @@ interface PassState {
   gate: RecordGate;
   startVal: number;
   maxDev: number;
+  /** The control this pass-state records (so the capture loop can sample tracks
+   *  that were AUTO-ADDED mid-pass, not only the clip's pre-existing tracks). */
+  target: AutomationTarget;
+  /** AUTO-CAPTURED this pass (the user moved an un-assigned control): commit it
+   *  even if the net motion is tiny — a deliberate set-and-hold IS the automation
+   *  the user intends. A pre-existing track only commits when it actually MOVED. */
+  auto: boolean;
 }
 
 export class AutomationController {
@@ -77,14 +92,24 @@ export class AutomationController {
   private passClip: AutomationClipRecord | null = null;
   private passLen = 0;
   private passLastStep = 0;
+  // AUTO-CAPTURE: the keys of the stored clip's tracks (refreshed each recordTick)
+  // + un-assigned controls the user TOUCHED while recording, queued to be added
+  // as tracks + captured on the next tick.
+  private currentTrackKeys = new Set<string>();
+  private readonly pendingAuto = new Map<string, AutomationTarget>();
 
   constructor(private readonly deps: AutomationControllerDeps) {}
 
   // ------------------------------------------------------------------ touch
   /** A live grab (screen/MIDI/Electra) of `target` — suspend its automation
-   *  until the loop wrap (live wins). Client-local. */
+   *  until the loop wrap (live wins). Client-local. AUTO-CAPTURE: if we're
+   *  recording and `target` is NOT already an automation track, queue it to be
+   *  added as a track + captured this pass (no mandatory pre-assign). */
   notifyTouch(target: AutomationTarget): void {
     this.suspended.add(key(target));
+    if (this.recording && !this.currentTrackKeys.has(key(target))) {
+      this.pendingAuto.set(key(target), target);
+    }
   }
   /** Manually re-enable a suspended param (the "re-enable automation" affordance). */
   reEnable(target: AutomationTarget): void {
@@ -117,6 +142,11 @@ export class AutomationController {
     }
     this.pass = null;
     this.passClip = null;
+    this.pendingAuto.clear();
+    // Manual stop → the take is done, so the just-recorded automation should PLAY
+    // BACK: clear any lingering touch-suspensions so no param stays frozen at the
+    // value you released it on (the "I stopped and it's stuck" confusion).
+    this.suspended.clear();
   }
   get recording(): boolean {
     return this.window.state === 'recording';
@@ -128,8 +158,13 @@ export class AutomationController {
   // ------------------------------------------------------------- playback
   /**
    * PLAYBACK for one track within an integer step (called from the lane
-   * while-loop). No-op while this clip is recording (self-capture) or while the
-   * param is suspended by a live grab.
+   * while-loop). TOUCH-GATED OVERDUB: a track plays back UNLESS the user is
+   * actively TOUCHING it (`isSuspended`) — even WHILE recording. So while armed,
+   * every track the user is NOT touching keeps looping (visible/audible — the fix
+   * for "it looks like it recorded one pass then stopped"), and only the touched
+   * param is live (record wins). No self-capture: playback drives the engine
+   * (scheduleParam) but never the STORE, and record reads the store, so a
+   * played-back move is never re-recorded.
    */
   playbackStep(
     track: AutomationTrack,
@@ -137,11 +172,35 @@ export class AutomationController {
     laneDur: number,
     emitAt: number,
   ): void {
-    if (this.recording) return;
-    if (this.isSuspended(track.target)) return;
+    if (this.isSuspended(track.target)) return; // being touched → live wins (also the record gate)
     const interp = trackInterp(track, this.deps.curve(track.target));
     const pts = stepRampPoints(track.events, stepIndex, laneDur, emitAt, interp);
     if (pts.length) this.deps.drive(track.target, pts);
+  }
+
+  // ------------------------------------------------------------- display
+  /**
+   * VISUAL SMOOTHING (P3): the CURRENT interpolated value (normalized 0..1) of each
+   * track that is PLAYING BACK at `fracStep`, for the on-screen knob. Automation
+   * schedules smooth AUDIO ramps but only refreshes the knob cache at step
+   * boundaries, so a slow clip looks jumpy; the tick feeds these to
+   * engine.setDisplayParam every tick (~40fps) so the knob follows the envelope.
+   * A TOUCHED track is skipped (its live value already drives the knob). CPU-bounded
+   * to the clip's tracks (≤ MAX_AUTOMATION_TRACKS). PURE read (no state change).
+   */
+  displayValues(
+    clip: AutomationClipRecord,
+    fracStep: number,
+  ): { target: AutomationTarget; value: number }[] {
+    const out: { target: AutomationTarget; value: number }[] = [];
+    for (const tr of clip.tracks) {
+      if (this.isSuspended(tr.target)) continue; // being touched → live value shows
+      const interp = trackInterp(tr, this.deps.curve(tr.target));
+      const read = interp === 'hold' ? automationValueAt : automationLinearAt;
+      const v = read(tr.events, fracStep);
+      if (v != null) out.push({ target: tr.target, value: v });
+    }
+    return out;
   }
 
   // --------------------------------------------------------------- record
@@ -166,16 +225,41 @@ export class AutomationController {
       this.beginPass(clip);
     }
 
+    // Refresh which params are already tracks (the auto-capture guard reads this).
+    this.currentTrackKeys = new Set(clip.tracks.map((t) => key(t.target)));
+
     if (this.window.state === 'recording' && this.pass) {
+      // AUTO-CAPTURE drain: every un-assigned control the user TOUCHED since the
+      // last tick becomes a track (store write via deps.addTrack) + a fresh
+      // pass-state seeded AT THE TOUCH POINT (current frac + value), so its move
+      // records from here and commits at the wrap. Capped by addTrack (MAX /
+      // own-param → skip).
+      if (this.pendingAuto.size) {
+        for (const [k, target] of this.pendingAuto) {
+          if (this.pass.has(k) || this.currentTrackKeys.has(k)) continue; // already capturing/stored
+          if (!this.deps.addTrack(target)) continue; // MAX reached or own param
+          const v = this.deps.readNorm(target) ?? 0;
+          const unit = this.deps.unitNorm(target);
+          const gate = new RecordGate(unit != null ? { unitDelta: unit } : {});
+          gate.sample(fracStep, v); // seed from the touch point (not step 0)
+          this.pass.set(k, { gate, startVal: v, maxDev: 0, target, auto: true });
+        }
+        this.pendingAuto.clear();
+      }
+
       // Remember the in-flight pass so a manual disarm can commit it partial.
       this.passClip = clip;
       this.passLen = len;
       this.passLastStep = Math.max(this.passLastStep, fracStep);
-      for (const tr of clip.tracks) {
-        const v = this.deps.readNorm(tr.target);
+      // TOUCH-GATED capture: sample ONLY the tracks the user is ACTIVELY TOUCHING
+      // this pass (in `suspended`). Untouched tracks are NOT sampled → their gate
+      // stays at its seed → not committed → their existing automation is preserved
+      // and keeps PLAYING BACK. So moving param A re-records A while B/C keep
+      // looping; releasing A reverts it to playback next loop.
+      for (const st of this.pass.values()) {
+        if (!this.suspended.has(key(st.target))) continue; // not being touched → keep playback
+        const v = this.deps.readNorm(st.target);
         if (v == null) continue;
-        const st = this.pass.get(key(tr.target));
-        if (!st) continue;
         st.gate.sample(fracStep, v);
         st.maxDev = Math.max(st.maxDev, Math.abs(v - st.startVal));
       }
@@ -195,7 +279,7 @@ export class AutomationController {
       const startVal = this.deps.readNorm(tr.target) ?? 0;
       const gate = new RecordGate(unit != null ? { unitDelta: unit } : {});
       gate.sample(0, startVal); // seed the loop start so the pre-move hold is captured
-      this.pass.set(key(tr.target), { gate, startVal, maxDev: 0 });
+      this.pass.set(key(tr.target), { gate, startVal, maxDev: 0, target: tr.target, auto: false });
     }
   }
 
@@ -216,7 +300,10 @@ export class AutomationController {
     let anyMoved = false;
     const merged: AutomationTrack[] = clip.tracks.map((tr) => {
       const st = pass.get(key(tr.target));
-      if (!st || st.maxDev < MOVE_EPS) return tr; // untouched → keep existing automation
+      // Untouched pre-existing track → keep its automation. An AUTO-CAPTURED track
+      // always commits (the user deliberately moved it — even a set-and-hold is
+      // the automation they intend), so a single move isn't lost as "no motion".
+      if (!st || (st.maxDev < MOVE_EPS && !st.auto)) return tr;
       anyMoved = true;
       const incoming: AutomationEvent[] = st.gate.close();
       const events = mergeAutomationOverdub(tr.events, incoming, 0, end);

@@ -26,6 +26,7 @@ function makeController() {
     unitNorm: () => undefined,
     drive: () => {},
     commit: () => {},
+    addTrack: () => true,
   });
 }
 

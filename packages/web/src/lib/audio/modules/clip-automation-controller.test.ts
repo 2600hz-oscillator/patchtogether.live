@@ -17,23 +17,43 @@ function clip(tracks: AutomationTrack[], lengthSteps = 8): AutomationClipRecord 
 }
 
 /** A fake harness: a value store per target, capture of drive() + commit(). */
-function harness(overrides: Partial<AutomationControllerDeps> = {}) {
+function harness(overrides: Partial<AutomationControllerDeps> = {}, maxTracks = 16) {
   const values = new Map<string, number>();
   const drives: { target: AutomationTarget; n: number }[] = [];
+  const added: AutomationTarget[] = [];
   let committed: AutomationTrack[] | null = null;
+  const trackKeys = new Set<string>();
   const deps: AutomationControllerDeps = {
     readNorm: (t) => values.get(`${t.nodeId} ${t.paramId}`) ?? null,
     curve: () => undefined,
     unitNorm: () => undefined,
     drive: (target, points) => drives.push({ target, n: points.length }),
     commit: (tracks) => (committed = tracks),
+    // AUTO-CAPTURE: add an empty track (respecting a MAX), like the store write.
+    addTrack: (t) => {
+      const k = `${t.nodeId}::${t.paramId}`;
+      if (trackKeys.has(k)) return true;
+      if (trackKeys.size >= maxTracks) return false;
+      trackKeys.add(k);
+      added.push(t);
+      return true;
+    },
     ...overrides,
   };
+  const ctrl = new AutomationController(deps);
   const set = (t: AutomationTarget, v: number) => values.set(`${t.nodeId} ${t.paramId}`, v);
   return {
-    ctrl: new AutomationController(deps),
+    ctrl,
     set,
+    /** set the store value AND mark the param actively touched (record gate). */
+    move: (t: AutomationTarget, v: number) => {
+      values.set(`${t.nodeId} ${t.paramId}`, v);
+      ctrl.notifyTouch(t);
+    },
+    /** mark a param touched WITHOUT moving it (a hold / re-touch each tick). */
+    touch: (t: AutomationTarget) => ctrl.notifyTouch(t),
     drives,
+    added,
     get committed() {
       return committed;
     },
@@ -65,7 +85,7 @@ describe('AutomationController — playback', () => {
     h.ctrl.playbackStep(track, 0, 0.5, 100);
     expect(h.drives.length).toBe(1);
   });
-  it('does NOT play back its own clip while recording (self-capture guard)', () => {
+  it('TOUCH-GATED while recording: an UNtouched track PLAYS BACK; a TOUCHED one does not (record wins)', () => {
     const h = harness();
     const track: AutomationTrack = { target: tgt('a', 'p'), events: [{ step: 0, value: 0.5 }] };
     // drive into recording state
@@ -73,8 +93,14 @@ describe('AutomationController — playback', () => {
     h.ctrl.recordTick(clip([track]), 5, 8);
     h.ctrl.recordTick(clip([track]), 0, 8); // wrap → punch-in → recording
     expect(h.ctrl.recording).toBe(true);
+    // NOT touched → it keeps PLAYING BACK even while recording (visible continuity,
+    // the fix for "looks like it recorded one pass then stopped").
     h.ctrl.playbackStep(track, 0, 0.5, 100);
-    expect(h.drives.length).toBe(0);
+    expect(h.drives.length).toBe(1);
+    // Now the user TOUCHES it → playback suppressed (live/record wins).
+    h.ctrl.notifyTouch(tgt('a', 'p'));
+    h.ctrl.playbackStep(track, 0, 0.5, 100);
+    expect(h.drives.length).toBe(1); // no new drive
   });
 });
 
@@ -93,12 +119,12 @@ describe('AutomationController — continuous overdub + move detection', () => {
     // wrap → punch-in
     h.ctrl.recordTick(c, 0, 8);
     expect(h.ctrl.recording).toBe(true);
-    // sweep the param across the loop
-    h.set(target, 0.3);
+    // sweep the param across the loop WHILE TOUCHING it (move = set + touch).
+    h.move(target, 0.3);
     h.ctrl.recordTick(c, 2, 8);
-    h.set(target, 0.7);
+    h.move(target, 0.7);
     h.ctrl.recordTick(c, 4, 8);
-    h.set(target, 0.9);
+    h.move(target, 0.9);
     h.ctrl.recordTick(c, 6, 8);
     // wrap → commit this pass — but recording CONTINUES (continuous overdub)
     h.ctrl.recordTick(c, 0, 8);
@@ -126,9 +152,9 @@ describe('AutomationController — continuous overdub + move detection', () => {
     h.ctrl.recordTick(c, 6, 8);
     h.ctrl.recordTick(c, 0, 8); // punch-in (pass 1)
 
-    // PASS 1: move A only (0 → 0.9), B flat.
-    h.set(A, 0.4); h.ctrl.recordTick(c, 3, 8);
-    h.set(A, 0.9); h.ctrl.recordTick(c, 6, 8);
+    // PASS 1: TOUCH + move A only (0 → 0.9); B untouched.
+    h.move(A, 0.4); h.ctrl.recordTick(c, 3, 8);
+    h.move(A, 0.9); h.ctrl.recordTick(c, 6, 8);
     h.ctrl.recordTick(c, 0, 8); // wrap → commit pass 1 (A moved, B not)
     const afterP1 = h.committed!;
     expect(afterP1.find((t) => t.target.paramId === 'pa')!.events.length).toBeGreaterThan(1);
@@ -139,21 +165,21 @@ describe('AutomationController — continuous overdub + move detection', () => {
     const c2 = clip(afterP1);
     const aEventsAfterP1 = afterP1.find((t) => t.target.paramId === 'pa')!.events;
 
-    // PASS 2: move B only (0.5 → 0.05); A held flat at its last value → NOT re-moved.
-    h.set(A, 0.9); // hold A where it ended (no movement)
-    h.set(B, 0.5);
+    // PASS 2: TOUCH + move B only (0.5 → 0.05); A is NOT touched → preserved + playing.
+    h.set(A, 0.9); // A's store value stays (not touched → not recorded)
+    h.move(B, 0.5);
     h.ctrl.recordTick(c2, 3, 8);
-    h.set(B, 0.05); h.ctrl.recordTick(c2, 6, 8);
+    h.move(B, 0.05); h.ctrl.recordTick(c2, 6, 8);
     h.ctrl.recordTick(c2, 0, 8); // wrap → commit pass 2 (B moved, A preserved)
     const afterP2 = h.committed!;
     expect(afterP2.find((t) => t.target.paramId === 'pb')!.events.length).toBeGreaterThan(1); // B now recorded
     expect(afterP2.find((t) => t.target.paramId === 'pa')!.events, 'A preserved across pass 2')
       .toEqual(aEventsAfterP1);
 
-    // PASS 3: re-move A (0.9 → 0.1) → A’s loop REPLACED with the new sweep.
+    // PASS 3: TOUCH + re-move A (0.9 → 0.1) → A’s loop REPLACED with the new sweep.
     const c3 = clip(afterP2);
-    h.set(A, 0.9); h.ctrl.recordTick(c3, 2, 8);
-    h.set(A, 0.1); h.ctrl.recordTick(c3, 6, 8);
+    h.move(A, 0.9); h.ctrl.recordTick(c3, 2, 8);
+    h.move(A, 0.1); h.ctrl.recordTick(c3, 6, 8);
     h.ctrl.recordTick(c3, 0, 8); // wrap → commit pass 3
     const afterP3 = h.committed!;
     const aP3 = afterP3.find((t) => t.target.paramId === 'pa')!.events;
@@ -175,10 +201,10 @@ describe('AutomationController — continuous overdub + move detection', () => {
     h.ctrl.arm();
     h.ctrl.recordTick(c, 6, 8);
     h.ctrl.recordTick(c, 0, 8); // punch-in
-    // only `moved` changes; `still` holds 0.42
-    h.set(moved, 0.5);
+    // TOUCH + move `moved`; `still` is NOT touched → preserved.
+    h.move(moved, 0.5);
     h.ctrl.recordTick(c, 3, 8);
-    h.set(moved, 0.9);
+    h.move(moved, 0.9);
     h.ctrl.recordTick(c, 6, 8);
     h.ctrl.recordTick(c, 0, 8); // wrap → commit
     const committed = h.committed!;
@@ -192,15 +218,32 @@ describe('AutomationController — continuous overdub + move detection', () => {
     expect(Math.max(...movedTrack.events.map((e) => e.value))).toBeGreaterThan(0.8);
   });
 
-  it('does not commit when NOTHING moved (flat pass = no-op)', () => {
+  it('does not commit when a touched param is held FLAT (no motion = no-op)', () => {
     const c = clip([track]);
     const h = harness();
     h.set(target, 0.5);
     h.ctrl.arm();
     h.ctrl.recordTick(c, 6, 8);
     h.ctrl.recordTick(c, 0, 8); // punch-in
-    h.ctrl.recordTick(c, 3, 8); // value stays 0.5
+    // Touch it every tick but never MOVE it (held flat) → a pre-existing track
+    // with no motion is not re-committed.
+    h.touch(target); h.ctrl.recordTick(c, 3, 8);
+    h.touch(target); h.ctrl.recordTick(c, 6, 8);
+    h.ctrl.recordTick(c, 0, 8); // wrap
+    expect(h.committed).toBeNull();
+  });
+
+  it('does not record a track the user NEVER touches (touch-gated)', () => {
+    const c = clip([track]);
+    const h = harness();
+    h.set(target, 0.5);
+    h.ctrl.arm();
     h.ctrl.recordTick(c, 6, 8);
+    h.ctrl.recordTick(c, 0, 8); // punch-in
+    // The store value even CHANGES (e.g. driven by playback), but with no TOUCH it
+    // is not captured — no self-capture feedback.
+    h.set(target, 0.9); h.ctrl.recordTick(c, 3, 8);
+    h.set(target, 0.2); h.ctrl.recordTick(c, 6, 8);
     h.ctrl.recordTick(c, 0, 8); // wrap
     expect(h.committed).toBeNull();
   });
@@ -221,9 +264,9 @@ describe('AutomationController — continuous overdub + move detection', () => {
     h.ctrl.arm();
     h.ctrl.recordTick(c, 6, 8);
     h.ctrl.recordTick(c, 0, 8); // punch-in
-    // move across the FIRST part of the loop only, then STOP mid-loop (~step 4).
-    h.set(target, 0.5); h.ctrl.recordTick(c, 2, 8);
-    h.set(target, 0.9); h.ctrl.recordTick(c, 4, 8);
+    // TOUCH + move across the FIRST part of the loop, then STOP mid-loop (~step 4).
+    h.move(target, 0.5); h.ctrl.recordTick(c, 2, 8);
+    h.move(target, 0.9); h.ctrl.recordTick(c, 4, 8);
     h.ctrl.disarm(); // manual stop mid-pass → commit partial
     expect(h.ctrl.recording).toBe(false);
     expect(h.committed).not.toBeNull();
@@ -271,6 +314,47 @@ describe('AutomationController — continuous overdub + move detection', () => {
   });
 });
 
+describe('AutomationController — auto-capture (just move a knob, no pre-assign)', () => {
+  it('touching an UN-TRACKED param while recording auto-adds it + records its move', () => {
+    const A = tgt('a', 'pa');
+    const NEW = tgt('b', 'pb');
+    const h = harness();
+    h.set(A, 0.5);
+    h.set(NEW, 0.1);
+    h.ctrl.arm();
+    const c0 = clip([{ target: A, events: [] }]);
+    h.ctrl.recordTick(c0, 6, 8);
+    h.ctrl.recordTick(c0, 0, 8); // punch-in
+    // The user GRABS an un-assigned control (NEW) mid-pass → auto-add next tick.
+    h.move(NEW, 0.3); h.ctrl.recordTick(c0, 2, 8);
+    expect(h.added.some((t) => t.paramId === 'pb'), 'NEW was auto-added as a track').toBe(true);
+    // The store now holds NEW as a track (the addTrack write) — mirror it.
+    const c1 = clip([{ target: A, events: [] }, { target: NEW, events: [] }]);
+    h.move(NEW, 0.7); h.ctrl.recordTick(c1, 4, 8);
+    h.move(NEW, 0.95); h.ctrl.recordTick(c1, 6, 8);
+    h.ctrl.recordTick(c1, 0, 8); // wrap → commit
+    const rec = h.committed!.find((t) => t.target.paramId === 'pb');
+    expect(rec, 'NEW committed to the clip').toBeTruthy();
+    expect(Math.max(...rec!.events.map((e) => e.value))).toBeGreaterThan(0.9);
+    // A was never touched → preserved (empty), not overwritten.
+    expect(h.committed!.find((t) => t.target.paramId === 'pa')!.events).toEqual([]);
+  });
+
+  it('does NOT auto-add past MAX (addTrack returns false → the param is skipped)', () => {
+    const NEW = tgt('b', 'pb');
+    const c = clip([{ target: tgt('a', 'pa'), events: [] }]);
+    const h = harness({ addTrack: () => false }); // simulate the sanity cap reached
+    h.set(NEW, 0.1);
+    h.ctrl.arm();
+    h.ctrl.recordTick(c, 6, 8);
+    h.ctrl.recordTick(c, 0, 8); // punch-in
+    h.move(NEW, 0.9); h.ctrl.recordTick(c, 3, 8);
+    h.ctrl.recordTick(c, 0, 8); // wrap
+    // NEW never became a track → nothing committed for it.
+    expect(h.committed?.find((t) => t.target.paramId === 'pb')).toBeUndefined();
+  });
+});
+
 describe('AutomationController — long/slow clip (low div, long length)', () => {
   it('records a full pass on a 64-step clip with sub-step motion, bounded events', () => {
     const target = tgt('filter', 'freq');
@@ -281,10 +365,10 @@ describe('AutomationController — long/slow clip (low div, long length)', () =>
     h.ctrl.arm();
     h.ctrl.recordTick(c, 60, 64);
     h.ctrl.recordTick(c, 0, 64); // punch-in
-    // simulate ~40 ticks across the 64-step loop with a rising sweep
+    // simulate ~40 ticks across the 64-step loop with a rising sweep (touching it)
     for (let i = 1; i <= 40; i++) {
       const frac = (i / 41) * 64;
-      h.set(target, i / 41);
+      h.move(target, i / 41);
       h.ctrl.recordTick(c, frac, 64);
     }
     h.ctrl.recordTick(c, 0, 64); // wrap → commit

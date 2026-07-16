@@ -49,10 +49,10 @@
     coerceLaneColor,
     readClip,
     defaultAutomationClip,
+    automationClipDisplay,
     clampStepCount,
     MAX_CLIP_STEPS,
     MAX_AUTOMATION_TRACKS,
-    DEFAULT_AUTOMATION_STEPS,
     type ClipPlayerData,
     type NoteClipRecord,
     type AutomationClipRecord,
@@ -373,10 +373,13 @@
   });
   let autoTrackCount = $derived(autoClip?.tracks.length ?? 0);
   let autoArmed = $derived((void cardVersion, dataObj().automation?.arm === true));
-  // Automation clip LENGTH (steps) + DIV (clock-rate index) — settable so a long,
-  // slow record window is user-tunable (the countdown makes any length usable).
-  let autoLen = $derived(autoClip?.lengthSteps ?? DEFAULT_AUTOMATION_STEPS);
-  let autoDiv = $derived(coerceRateIndex(autoClip?.div));
+  // Automation clip LENGTH (steps) + DIV (clock-rate index) — the SINGLE source
+  // (automationClipDisplay) the DIV select, LENGTH input, AND the clip-cell badge
+  // all render from, so the shown timing can never disagree with the stored clip
+  // (UI-can't-lie). Settable so a long, slow record window is user-tunable.
+  let autoDisplay = $derived((void cardVersion, automationClipDisplay(autoClip)));
+  let autoLen = $derived(autoDisplay.lengthSteps);
+  let autoDiv = $derived(autoDisplay.divIndex);
   // The real track keys ("nodeId::paramId") of THIS clip — the card intersects
   // the controller's overridden keys against these so the indicator dot only
   // lights for params THIS player actually automates (never unrelated grabs).
@@ -705,14 +708,18 @@
           data-testid={`clipplayer-transport-${id}`}
         >{transportRunning ? '■' : '▶'}</button>
       {/if}
-      <!-- SONG MODE: SESSION ⇄ ARRANGE + RECORD arm. -->
+      <!-- ARRANGER cluster (EXPERIMENTAL — SESSION ⇄ ARRANGE + arranger-LAUNCH
+           record ●). This records CLIP LAUNCHES onto a song timeline; it is NOT
+           automation recording (that's the separate teal AUTO section →). Grouped +
+           labelled so the prominent red ● isn't mistaken for "record automation". -->
+      <span class="arranger-grp" title="ARRANGER (experimental) — records clip LAUNCHES to a song timeline. Not automation.">
       <button
         class="song-mode"
         class:on={arrangeMode}
         onclick={toggleArrangeMode}
         title={arrangeMode
-          ? `ARRANGEMENT — playing the recorded song (${arrangeEvents} events). Click for SESSION.`
-          : 'SESSION — launch clips live. Click for ARRANGEMENT (play the recorded song).'}
+          ? `ARRANGEMENT (experimental) — playing the recorded song (${arrangeEvents} events). Click for SESSION.`
+          : 'SESSION — launch clips live. Click for ARRANGEMENT (experimental — play the recorded song).'}
         data-testid={`clipplayer-mode-${id}`}
       >{arrangeMode ? 'ARR' : 'SES'}</button>
       <button
@@ -720,10 +727,10 @@
         class:on={recording}
         onclick={toggleRecord}
         title={recording
-          ? 'Recording launches to the arrangement — click to stop'
+          ? 'ARRANGER record (experimental): recording clip LAUNCHES to the song timeline — click to stop. (This is NOT automation — use the teal AUTO section to record knob moves.)'
           : recordMode === 'overdub'
-            ? 'Record clip launches into the arrangement (OVERDUB — keeps the take + merges new launches)'
-            : 'Record clip launches into the arrangement (REPLACE — clears + records fresh)'}
+            ? 'ARRANGER record (experimental): record clip LAUNCHES into the arrangement (OVERDUB). NOT automation — the teal AUTO records knob moves.'
+            : 'ARRANGER record (experimental): record clip LAUNCHES into the arrangement (REPLACE). NOT automation — the teal AUTO records knob moves.'}
         aria-pressed={recording}
         data-testid={`clipplayer-record-${id}`}
       >●</button>
@@ -733,24 +740,27 @@
         class:overdub={recordMode === 'overdub'}
         onclick={toggleRecordMode}
         title={recordMode === 'overdub'
-          ? 'OVERDUB — arming keeps the take + merges new launches. Click for REPLACE.'
-          : 'REPLACE — arming clears + records fresh. Click for OVERDUB.'}
+          ? 'OVERDUB — arranger arming keeps the take + merges new launches. Click for REPLACE.'
+          : 'REPLACE — arranger arming clears + records fresh. Click for OVERDUB.'}
         aria-pressed={recordMode === 'overdub'}
         data-testid={`clipplayer-recmode-${id}`}
       >{recordMode === 'overdub' ? 'OVR' : 'RPL'}</button>
-      <!-- AUTOMATION LANE (task #183): create the designated automation clip,
-           then ARM to record live param moves; the badge shows track count and
-           the override dot lights when a grabbed control is overriding playback
-           (click it to re-enable all). -->
+      </span>
+      <span class="grp-div" aria-hidden="true"></span>
+      <!-- AUTOMATION section (distinct teal): create the automation clip, then arm
+           REC AUTO and just MOVE controls — moving any control auto-captures it and
+           records it (continuous overdub). The badge shows track count + the clip's
+           div·length; the override dot lights when a grabbed control overrides
+           playback (click to re-enable all). -->
       {#if !autoClipPtr}
         <button
           class="auto-new"
           onclick={createAutomationClip}
-          title="Create this player's automation clip (last lane) — then right-click a control to assign it, and ARM to record moves"
+          title="＋AUTO — create this player's AUTOMATION clip (records knob/control moves, NOT clip launches). Then arm ◉ AUTO and just move controls to record them. (Optional: right-click a control → Assign to automation lane.)"
           data-testid={`clipplayer-auto-new-${id}`}
         >＋AUTO</button>
       {:else}
-        <span class="auto-block">
+        <span class="auto-block" title="AUTOMATION — record live control moves (distinct from the experimental arranger ●)">
           <button
             class="auto-arm"
             class:on={autoArmed}
@@ -759,11 +769,11 @@
             class:cd-on={autoCountdown?.on}
             onclick={toggleAutoArm}
             title={autoArmed
-              ? 'Recording automation (continuous overdub) — every loop overdubs the params you move; click to stop. The 🟡🟡🔴🔴 flash counts down the last 4 beats to the loop wrap.'
-              : 'Arm automation record — punches in at the clip’s next loop start, then overdubs every loop until you click again (manual stop)'}
+              ? 'Recording AUTOMATION (continuous overdub) — just MOVE any control and it records that param; every loop the untouched params keep playing back. Click to STOP. The 🟡🟡🔴🔴 flash counts down the last 4 beats to the loop wrap.'
+              : 'Arm AUTOMATION record — punches in at the clip’s next loop start, then just MOVE controls: each moved control is auto-captured + recorded, and overdubs every loop until you click again (manual stop). NOT the arranger ●.'}
             aria-pressed={autoArmed}
             data-testid={`clipplayer-auto-arm-${id}`}
-          >AUTO</button>
+          >◉ AUTO</button>
           <span
             class="auto-count"
             title={`${autoTrackCount} automated param(s) of ${MAX_AUTOMATION_TRACKS} max`}
@@ -936,15 +946,19 @@
               {#each Array(CLIP_LANES) as _l, lane (lane)}
                 {@const idx = clipIndex(slot, lane)}
                 {@const st = padState(idx)}
-                {@const cd = autoCountdown && autoClipPtr && autoClipPtr.lane === lane && autoClipPtr.slot === slot ? autoCountdown : null}
+                {@const isAuto = !!autoClipPtr && autoClipPtr.lane === lane && autoClipPtr.slot === slot}
+                {@const cd = autoCountdown && isAuto ? autoCountdown : null}
                 <button
                   class="pad {st}"
+                  class:auto-cell={isAuto}
                   class:cd-yellow={cd?.color === 'yellow'}
                   class:cd-red={cd?.color === 'red'}
                   class:cd-on={cd?.on}
                   role="gridcell"
                   style={`--lane-color:${laneColorEff(lane)}`}
-                  aria-label={`lane ${lane + 1} slot ${slot + 1} ${st}`}
+                  aria-label={isAuto
+                    ? `automation clip, div ${RATE_LABELS[autoDiv]}, ${autoLen} steps`
+                    : `lane ${lane + 1} slot ${slot + 1} ${st}`}
                   data-clip={idx}
                   data-lane={lane}
                   data-slot={slot}
@@ -952,7 +966,10 @@
                   data-testid={`clipplayer-pad-${idx}`}
                   onclick={(e) => onPadClick(idx, e)}
                   ondblclick={() => onPadDblClick(idx)}
-                ></button>
+                >{#if isAuto}<span
+                    class="auto-cell-badge"
+                    data-testid={`clipplayer-auto-cell-badge-${id}`}
+                  >{autoDisplay.badge}</span>{/if}</button>
               {/each}
             </div>
           {/each}
@@ -1217,10 +1234,18 @@
     cursor: pointer;
   }
   .auto-new:hover { color: var(--accent, #b06cff); border-color: var(--accent, #b06cff); }
+  /* AUTOMATION arm — a distinct TEAL record affordance so it is never mistaken for
+     the arranger's red ● (they sit apart, separated by .grp-div). Idle = teal tint;
+     armed = bright teal, pulsing. */
+  .auto-arm {
+    color: #4fd6cf;
+    border-color: #1b6b66;
+  }
+  .auto-arm:hover { color: #7ff0ea; border-color: #2fb0a8; }
   .auto-arm.on {
-    color: #fff;
-    background: #7c3aed;
-    border-color: #9d5cff;
+    color: #04211f;
+    background: #14b8a6;
+    border-color: #5ff0e4;
     animation: rec-blink 1s steps(2) infinite;
   }
   /* COUNTDOWN mirror (last 4 beats before the automation clip's own wrap):
@@ -1231,6 +1256,17 @@
   .auto-arm.cd-yellow.cd-on { background: #d9c000; border-color: #fff06a; }
   .auto-arm.cd-red { animation: none; color: #fff; background: #7a1010; border-color: #b03030; }
   .auto-arm.cd-red.cd-on { background: #ff2a2a; border-color: #ff8a8a; }
+  /* Visual grouping: the experimental arranger cluster vs the AUTOMATION section,
+     separated by a divider so the red ● (arranger) reads as apart from the teal
+     ◉ AUTO (automation). */
+  .arranger-grp { display: inline-flex; align-items: center; gap: 3px; }
+  .grp-div {
+    display: inline-block;
+    width: 1px;
+    align-self: stretch;
+    margin: 1px 3px;
+    background: var(--border, #3a3a44);
+  }
   .auto-block { display: inline-flex; align-items: center; gap: 3px; }
   .auto-len {
     width: 34px;
@@ -1374,6 +1410,23 @@
   .pad.cd-yellow.cd-on { background: #d9c000; box-shadow: 0 0 6px #d9c000; }
   .pad.cd-red { background: #7a1010; box-shadow: none; }
   .pad.cd-red.cd-on { background: #ff2a2a; box-shadow: 0 0 6px #ff2a2a; }
+  /* AUTOMATION clip cell: a teal ring + a tiny div·length badge so the clip's REAL
+     timing (e.g. "1/4·64") is visible ON the clip, not just buried in the AUTO
+     block (the "I saw 1/1" confusion was the per-lane rate row, a different thing). */
+  .pad.auto-cell { outline: 1px solid #14b8a6; outline-offset: -1px; }
+  .auto-cell-badge {
+    position: absolute;
+    left: 1px;
+    bottom: 0;
+    font-size: 6px;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    color: #7ff0ea;
+    text-shadow: 0 0 2px #000, 0 0 2px #000;
+    pointer-events: none;
+    font-variant-numeric: tabular-nums;
+  }
+  .pad { position: relative; }
   @keyframes blink { 50% { opacity: 0.35; } }
 
   .editor { display: flex; flex-direction: column; gap: 6px; }

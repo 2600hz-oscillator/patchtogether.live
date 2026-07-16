@@ -120,6 +120,9 @@ export interface DomainEngine {
   /** Optional: schedule a param write at a future audio time (see the handle's
    *  `scheduleParam`). Only AudioEngine implements this today. */
   scheduleParam?(nodeId: string, paramId: string, value: number, atTime: number, ramp: boolean): void;
+  /** Optional: DISPLAY-ONLY knob-value refresh (no DSP) so automation playback can
+   *  smoothly animate the on-screen control between step boundaries. */
+  setDisplayParam?(nodeId: string, paramId: string, value: number): void;
   readParam(nodeId: string, paramId: string): number | undefined;
   /** Optional: most-recent sample at a per-port modulator-tap analyser.
    *  Only AudioEngine implements this today. Card visualizers call
@@ -618,6 +621,20 @@ export class AudioEngine implements DomainEngine {
         handle.setParam(paramId, value);
       }
     }
+    this.knobValues.set(this.knobKey(nodeId, paramId), value);
+  }
+
+  /**
+   * DISPLAY-ONLY param refresh — update the JS-side `knobValues` cache (what the
+   * on-screen knob polls via readParam) WITHOUT touching the DSP / scheduling any
+   * audio. Automation playback schedules smooth audio ramps but only writes
+   * knobValues at STEP boundaries, so on a slow clip the on-screen knob looks
+   * jumpy (holds a step, then snaps); the clipplayer tick calls this every tick
+   * with the CURRENT interpolated envelope value so the knob follows smoothly.
+   * Cheap (one Map set); the audio path is unaffected.
+   */
+  setDisplayParam(nodeId: string, paramId: string, value: number): void {
+    if (!this.nodes.has(nodeId)) return;
     this.knobValues.set(this.knobKey(nodeId, paramId), value);
   }
 
@@ -1666,6 +1683,13 @@ export class PatchEngine {
   ): void {
     const engine = this.getDomain(node.domain);
     engine.scheduleParam?.(node.id, paramId, value, atTime, ramp);
+  }
+
+  /** DISPLAY-ONLY knob-value refresh (automation visual smoothing) — delegates to
+   *  the target domain's `setDisplayParam`; a no-op otherwise. No DSP, no Y.Doc. */
+  setDisplayParam(node: ModuleNode, paramId: string, value: number): void {
+    const engine = this.getDomain(node.domain);
+    engine.setDisplayParam?.(node.id, paramId, value);
   }
 
   /** Gate inputs whose port declared no paramTarget — warned once each so a

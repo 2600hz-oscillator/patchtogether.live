@@ -364,8 +364,9 @@ async function buildSingleChain(page: import('@playwright/test').Page, prefix: s
   await expect(page.locator('.svelte-flow__node-clipplayer')).toHaveCount(1);
 }
 
-/** Seed note clips at the given flat indices (lane*8 + slot). Only lane-0 clips
- *  drive the audible voice (pitch1/gate1 = lane 0's poly output). */
+/** Seed note clips at the given flat indices (clipIndex = lane*64 + slot,
+ *  stride-64 schema v2). Only lane-0 clips drive the audible voice (pitch1/gate1
+ *  = lane 0's poly output). */
 async function seedClipsAt(page: import('@playwright/test').Page, nodeId: string, indices: number[]) {
   await page.evaluate(({ id, idxs }) => {
     const w = globalThis as unknown as {
@@ -388,6 +389,7 @@ async function seedClipsAt(page: import('@playwright/test').Page, nodeId: string
         };
       }
       n.data.clips = clips;
+      (n.data as { sv?: number }).sv = 2; // already stride-64 → skip legacy re-key
     });
   }, { id: nodeId, idxs: indices });
 }
@@ -403,9 +405,9 @@ async function installSingle(page: import('@playwright/test').Page, nodeId: stri
 
 test('@launchpad single-unit GRID view: transposed pad launch → audible RMS; transpose + round-trip relaunch', async ({ page, rack, errorWatch }) => {
   await buildSingleChain(page, 's');
-  // lane 0 slot 0 (index 0 — drives the voice) + lane 1 slot 0 (index 8 — a
-  // DIFFERENT channel, column 1) so the transpose is observable.
-  await seedClipsAt(page, 's-cp', [0, 8]);
+  // lane 0 slot 0 (index 0 — drives the voice) + lane 1 slot 0 (index 64,
+  // stride-64 — a DIFFERENT channel, column 1) so the transpose is observable.
+  await seedClipsAt(page, 's-cp', [0, 64]);
   await installSingle(page, 's-cp');
 
   // The lone device binds into the CLIP (note-editor) view; select GRID on the
