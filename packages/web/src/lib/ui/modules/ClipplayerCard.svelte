@@ -708,11 +708,12 @@
           data-testid={`clipplayer-transport-${id}`}
         >{transportRunning ? '■' : '▶'}</button>
       {/if}
-      <!-- ARRANGER cluster (EXPERIMENTAL — SESSION ⇄ ARRANGE + arranger-LAUNCH
-           record ●). This records CLIP LAUNCHES onto a song timeline; it is NOT
-           automation recording (that's the separate teal AUTO section →). Grouped +
-           labelled so the prominent red ● isn't mistaken for "record automation". -->
-      <span class="arranger-grp" title="ARRANGER (experimental) — records clip LAUNCHES to a song timeline. Not automation.">
+      <!-- ARRANGER RECORD cluster (EXPERIMENTAL — SESSION ⇄ ARRANGE + the red ●).
+           ARRANGER RECORD records CLIP LAUNCHES onto a song timeline; it is NOT
+           CLIP RECORD (recording INTO a clip — KEYS note-record / the teal AUTO
+           section →). Grouped + labelled so the prominent red ● isn't mistaken
+           for "record automation". -->
+      <span class="arranger-grp" title="ARRANGER RECORD (experimental) — records clip LAUNCHES to a song timeline. Not CLIP RECORD (recording into a clip).">
       <button
         class="song-mode"
         class:on={arrangeMode}
@@ -727,10 +728,10 @@
         class:on={recording}
         onclick={toggleRecord}
         title={recording
-          ? 'ARRANGER record (experimental): recording clip LAUNCHES to the song timeline — click to stop. (This is NOT automation — use the teal AUTO section to record knob moves.)'
+          ? 'ARRANGER RECORD (experimental): recording clip LAUNCHES to the song timeline — click to stop. (This is NOT clip record — the teal ◉ AUTO clip-records knob moves.)'
           : recordMode === 'overdub'
-            ? 'ARRANGER record (experimental): record clip LAUNCHES into the arrangement (OVERDUB). NOT automation — the teal AUTO records knob moves.'
-            : 'ARRANGER record (experimental): record clip LAUNCHES into the arrangement (REPLACE). NOT automation — the teal AUTO records knob moves.'}
+            ? 'ARRANGER RECORD (experimental): record clip LAUNCHES into the arrangement (OVERDUB). NOT clip record — the teal ◉ AUTO clip-records knob moves.'
+            : 'ARRANGER RECORD (experimental): record clip LAUNCHES into the arrangement (REPLACE). NOT clip record — the teal ◉ AUTO clip-records knob moves.'}
         aria-pressed={recording}
         data-testid={`clipplayer-record-${id}`}
       >●</button>
@@ -740,8 +741,8 @@
         class:overdub={recordMode === 'overdub'}
         onclick={toggleRecordMode}
         title={recordMode === 'overdub'
-          ? 'OVERDUB — arranger arming keeps the take + merges new launches. Click for REPLACE.'
-          : 'REPLACE — arranger arming clears + records fresh. Click for OVERDUB.'}
+          ? 'OVERDUB — arranger record keeps the take + merges new launches. Click for REPLACE.'
+          : 'REPLACE — arranger record clears + records fresh. Click for OVERDUB.'}
         aria-pressed={recordMode === 'overdub'}
         data-testid={`clipplayer-recmode-${id}`}
       >{recordMode === 'overdub' ? 'OVR' : 'RPL'}</button>
@@ -756,11 +757,11 @@
         <button
           class="auto-new"
           onclick={createAutomationClip}
-          title="＋AUTO — create this player's AUTOMATION clip (records knob/control moves, NOT clip launches). Then arm ◉ AUTO and just move controls to record them. (Optional: right-click a control → Assign to automation lane.)"
+          title="＋AUTO — create this player's AUTOMATION clip (CLIP RECORD for knob/control moves — NOT arranger record). Then arm ◉ AUTO and just move controls to record them. (Optional: right-click a control → Assign to automation lane.)"
           data-testid={`clipplayer-auto-new-${id}`}
         >＋AUTO</button>
       {:else}
-        <span class="auto-block" title="AUTOMATION — record live control moves (distinct from the experimental arranger ●)">
+        <span class="auto-block" title="AUTOMATION — CLIP RECORD for live control moves (distinct from the experimental arranger-record ●)">
           <button
             class="auto-arm"
             class:on={autoArmed}
@@ -769,8 +770,8 @@
             class:cd-on={autoCountdown?.on}
             onclick={toggleAutoArm}
             title={autoArmed
-              ? 'Recording AUTOMATION (continuous overdub) — just MOVE any control and it records that param; every loop the untouched params keep playing back. Click to STOP. The 🟡🟡🔴🔴 flash counts down the last 4 beats to the loop wrap.'
-              : 'Arm AUTOMATION record — punches in at the clip’s next loop start, then just MOVE controls: each moved control is auto-captured + recorded, and overdubs every loop until you click again (manual stop). NOT the arranger ●.'}
+              ? 'CLIP RECORD (automation, continuous overdub) — just MOVE any control and it records that param; every loop the untouched params keep playing back. Click to STOP. The 🟡🟡🔴🔴 flash counts down the last 4 beats to the loop wrap.'
+              : 'Arm CLIP RECORD (automation) — punches in at the clip’s next loop start, then just MOVE controls: each moved control is auto-captured + recorded, and overdubs every loop until you click again (manual stop). NOT the arranger-record ●.'}
             aria-pressed={autoArmed}
             data-testid={`clipplayer-auto-arm-${id}`}
           >◉ AUTO</button>
