@@ -837,10 +837,11 @@
         moves: <strong>per-clip automation</strong>, Deluge-style — right-click a <strong>module's
         card</strong> → <em>Assign to automation lane</em> (1–8; the whole module joins the lane and its
         card gets a border in the lane's colour), launch a clip in that lane, then <strong>arm the
-        lane</strong> (the card's per-lane <strong>◉</strong> next to its RATE control, or on the
-        Launchpad <strong>SHIFT + that lane's top-row button</strong>; lane 8 = double-tap SHIFT) and just
+        lane</strong> (the card's per-lane <strong>◉</strong> next to its RATE control, or on a
+        <strong>single-unit</strong> Launchpad <strong>SHIFT + that lane's top-row button</strong>; lane 8 =
+        double-tap SHIFT — the two-unit rig has no hardware arm yet, arm from the card) and just
         move the module's controls: every touch — screen, MIDI, Electra — records into <em>that clip's
-        own</em> automation and keeps overdubbing every loop. <strong>CV is never recorded</strong>:
+        own</em> automation, punching in at the clip's next loop start, then overdubbing every loop. <strong>CV is never recorded</strong>:
         automation records your hands, a CV cable stays live modulation.
       </dd>
       <dt>ARRANGER RECORD</dt>
@@ -914,7 +915,7 @@
   </details>
 
   <details class="shared">
-    <summary>Shared in every view — the permanent top row, SHIFT + the colour language</summary>
+    <summary>Shared in every view — the permanent top row, SHIFT, the colour language + the automation ARM layer</summary>
     <h3>The permanent top row — your compass</h3>
     <LaunchpadDiagram
       top={permTop('grid', { running: true, undo: true, redo: true })}
@@ -950,7 +951,7 @@
         always-visible record indicator.</li>
     </ul>
 
-    <h4>The arm layer in pictures</h4>
+    <h4 id="single-arm">The arm layer in pictures</h4>
     <LaunchpadDiagram
       top={permTop('grid', { running: true, shift: 'held', arms: ARMS_LANE3 })}
       callouts={armMapGroups}
@@ -1031,6 +1032,10 @@
       accent={hex(RGB_PATTERN_ARMED)}
       caption="GRID + shift (SHIFT latched, solid yellow). The right column becomes the function palette, top→bottom: COPY · PASTE · CLIP-DIV · SWING+ · SWING− · LENGTH · SCR▲ · SCR▼. Green = pattern, blue = timing, yellow = length, amber = scene-scroll. PASTE shows turquoise here because the clipboard holds a clip. While shift is on, the TOP ROW is the per-lane automation ARM MAP (dim red = available — none armed here)."
     />
+    <p class="muted">
+      That shift-state top row is the <strong>automation ARM MAP</strong> —
+      <a href="#single-arm">see the arm layer in pictures ↑</a> (in the shared foundation above).
+    </p>
     <ul class="tight">
       <li><strong>COPY</strong> (green): arm, then tap a loaded clip → snapshot that CLIP to the clipboard,
         OR tap a <strong>ROW / scene-launch</strong> button → snapshot the WHOLE SCENE (all 8 channels at
@@ -1412,12 +1417,14 @@
         red-flashes: same arm as the card's per-lane <strong>◉</strong>.</li>
       <li><strong>Play + twist:</strong> with the bass clip playing, move any TIDY VCO control — every
         touch (screen drag, MIDI CC, Electra; <strong>never CV</strong>) records into <em>that playing
-        clip's own</em> automation and keeps overdubbing each loop (a 🟡🟡🔴🔴 countdown flashes the
-        clip's pad before each wrap). Release the control and it replays your move every loop.</li>
+        clip's own</em> automation, punching in at the clip's <strong>next loop start</strong> (a
+        🟡🟡🔴🔴 countdown flashes the clip's pad before each wrap), then overdubbing every loop.
+        Release the control and it replays your move every loop.</li>
       <li><strong>Disarm:</strong> SHIFT + the same button. Made a mess? Right-click the control →
         <em>Clear recorded automation</em>, or <strong>CLR AUTO</strong> in the clip editor — both
-        undoable. Copy/paste and scene launches carry each clip's automation with it; long-form,
-        song-length automation is the (future) ARRANGER mode's job.</li>
+        undoable. Copy/paste — single clips or whole scenes — carries each clip's automation with it
+        (and launching a clip always plays its own envelopes); long-form, song-length automation is
+        the (future) ARRANGER mode's job.</li>
     </ol>
     <p class="muted">
       Every control you touched — the four views, the shift layer, KEYS + arp, MUTE / RATE / RESET / SWING /

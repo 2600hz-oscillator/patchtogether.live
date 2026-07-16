@@ -162,8 +162,8 @@
     <em>Assign to automation lane</em> (1–8; the assigned card gets a border in the lane's colour), launch
     a note clip in that lane, arm the lane's ◉ (red pulse; a 🟡🟡🔴🔴 countdown before the recording
     clip wraps), then every control you <em>touch</em> on an assigned module — screen, MIDI, Electra,
-    <strong>never CV</strong> — records into the <em>playing clip's own</em> envelopes by continuous
-    overdub. Clips that carry automation show a small <strong>teal dot</strong> on their cell; a
+    <strong>never CV</strong> — records into the <em>playing clip's own</em> envelopes: recording
+    punches in cleanly at that clip's <strong>next loop start</strong>, then overdubs every loop. Clips that carry automation show a small <strong>teal dot</strong> on their cell; a
     <strong>MAX</strong> badge flashes at the 16-recorded-controls cap; an override dot lights while you
     grab an automated control live (it suspends playback until you release). Clear per control
     (right-click → <em>Clear recorded automation</em>) or per clip (the editor's <strong>CLR AUTO</strong>) —

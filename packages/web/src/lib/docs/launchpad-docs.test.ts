@@ -8,6 +8,8 @@
 import { describe, expect, it } from 'vitest';
 import { render } from 'svelte/server';
 import LaunchpadDocs from './LaunchpadDocs.svelte';
+import { colTopCc, paintPermanentTopRow } from '$lib/control/launchpad/launchpad-map';
+import { emptyFrame } from '$lib/control/launchpad/launchpad-device.svelte';
 
 const html = (props: Record<string, string> = {}) =>
   render(LaunchpadDocs as never, { props } as never).body;
@@ -78,6 +80,53 @@ describe('LaunchpadDocs — tabbed structure', () => {
     expect(out).toContain('RELEASE');
     // The dim-red alternation on red-family bases is documented.
     expect(out).toContain('DIM red');
+  });
+
+  it('arm-layer diagram fills MATCH paintPermanentTopRow — the firmware paint rules cannot drift', () => {
+    // The component's permTop() hand-mirrors paintPermanentTopRow's overlay
+    // rules (shift-active col<7 gating, the col-7 shift-LED exception, the
+    // armed red phase). This runs the REAL firmware painter on the same two
+    // diagram states and asserts the rendered SVG top-row fills are identical,
+    // so a paint-rule change in launchpad-map flips this red instead of
+    // letting the pictures drift silently.
+    const rgbCss = (c: readonly number[]) =>
+      `rgb(${Math.round((c[0] / 127) * 255)},${Math.round((c[1] / 127) * 255)},${Math.round((c[2] / 127) * 255)})`;
+    const firmwareTopRow = (shiftHeld: boolean, laneArms: boolean[]): string[] => {
+      const frame = emptyFrame();
+      paintPermanentTopRow(frame, {
+        view: 'grid',
+        keysActive: false,
+        transportRunning: true,
+        shift: { held: shiftHeld, latched: false },
+        canUndo: false,
+        canRedo: false,
+        laneArms,
+        blinkOn: true, // the diagrams show the bright/red phase
+      });
+      return Array.from({ length: 8 }, (_, col) => {
+        const led = frame.leds.get(colTopCc(col));
+        if (!led) throw new Error(`no LED painted for top col ${col}`);
+        return rgbCss(led);
+      });
+    };
+    // The top CC row renders FIRST inside each figure's SVG, one rect per
+    // column in order; the dark 8×8 fills are plain hex, so the first 8
+    // rgb() fills of the figure ARE the top row, left→right.
+    const figureTopFills = (out: string, captionNeedle: string): string[] => {
+      const chunk = out.split('<figure').find((c) => c.includes(captionNeedle));
+      expect(chunk, `figure captioned “${captionNeedle}”`).toBeDefined();
+      return [...chunk!.matchAll(/fill="(rgb\([^"]+\))"/g)].map((m) => m[1]).slice(0, 8);
+    };
+    const out = html();
+    const ARMS_LANE3 = [false, false, true, false, false, false, false, false];
+    // Diagram 1: shift held → the ARM MAP (lane 3 armed).
+    expect(figureTopFills(out, 'PER-LANE ARM MAP, in EVERY view')).toEqual(
+      firmwareTopRow(true, ARMS_LANE3),
+    );
+    // Diagram 2: shift released → the compass + lane 3's red-flash (red phase).
+    expect(figureTopFills(out, 'the compass comes back')).toEqual(
+      firmwareTopRow(false, ARMS_LANE3),
+    );
   });
 
   it('has no old global/single AUTO pad anywhere (per-lane arm replaced it)', () => {
