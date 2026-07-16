@@ -1264,6 +1264,7 @@ export function buildModuleManifest(
       if (file === 'clip-automation.ts') return false;
       if (file === 'clip-automation-controller.ts') return false;
       if (file === 'clip-automation-engine.ts') return false;
+      if (file === 'clip-automation-render.ts') return false;
       // KRIA step/pattern data model + step-advance / scale / cue math — not a
       // ModuleDef (the def lives in kria.ts).
       if (file === 'kria-types.ts') return false;

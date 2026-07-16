@@ -63,6 +63,9 @@ import {
   MAX_SWING,
   MAX_AUTOMATION_TRACKS,
   MAX_AUTOMATION_EVENTS,
+  DEFAULT_AUTOMATION_STEPS,
+  DEFAULT_AUTOMATION_DIV,
+  isAutomationArmed,
   coerceAutomationEvent,
   coerceAutomationTrack,
   sameAutomationTarget,
@@ -352,12 +355,42 @@ describe('automation: coerceClipRecord kind=automation', () => {
 });
 
 describe('automation: defaultAutomationClip', () => {
-  it('is an empty looping automation clip', () => {
+  it('is an empty looping automation clip — LONG + SLOW by default (comfortable record window)', () => {
     const c = defaultAutomationClip();
     expect(c.kind).toBe('automation');
     expect(c.tracks).toEqual([]);
-    expect(c.lengthSteps).toBe(DEFAULT_CLIP_STEPS);
+    // deliberately long (vs the 16-step note default) at a slow division so a
+    // fresh ＋AUTO gives a multi-second record loop, not a ~2s scramble.
+    expect(c.lengthSteps).toBe(DEFAULT_AUTOMATION_STEPS);
+    expect(DEFAULT_AUTOMATION_STEPS).toBe(64);
+    expect(c.div).toBe(DEFAULT_AUTOMATION_DIV);
     expect(c.loop).toBe(true);
+  });
+  it('honours explicit length + div overrides (any step count — NOT snapped)', () => {
+    const c = defaultAutomationClip(7, 2);
+    expect(c.lengthSteps).toBe(7); // coprime length preserved (generative desync)
+    expect(c.div).toBe(2);
+  });
+});
+
+describe('automation: div coercion + isAutomationArmed', () => {
+  it('coerceClipRecord clamps a finite div to a valid RATE index; drops a non-numeric one', () => {
+    const withDiv = coerceClipRecord({ kind: 'automation', lengthSteps: 7, tracks: [], div: 1 }) as AutomationClipRecord;
+    expect(withDiv.div).toBe(1);
+    const clamped = coerceClipRecord({ kind: 'automation', lengthSteps: 7, tracks: [], div: 99 }) as AutomationClipRecord;
+    expect(clamped.div).toBe(5); // clamped into RATE_MULTS range (0..5)
+    const noDiv = coerceClipRecord({ kind: 'automation', lengthSteps: 7, tracks: [] }) as AutomationClipRecord;
+    expect(noDiv.div).toBeUndefined(); // absent ⇒ follow the lane rate
+  });
+  it('preserves an ARBITRARY (coprime) length — never snapped to a musical multiple', () => {
+    const c = coerceClipRecord({ kind: 'automation', lengthSteps: 13, tracks: [] }) as AutomationClipRecord;
+    expect(c.lengthSteps).toBe(13);
+  });
+  it('isAutomationArmed reflects the synced arm flag', () => {
+    expect(isAutomationArmed(undefined)).toBe(false);
+    expect(isAutomationArmed({})).toBe(false);
+    expect(isAutomationArmed({ automation: { arm: false } })).toBe(false);
+    expect(isAutomationArmed({ automation: { arm: true } })).toBe(true);
   });
 });
 

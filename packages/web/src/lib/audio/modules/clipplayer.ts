@@ -40,6 +40,7 @@ import { createEdgeCounter } from '$lib/audio/edge-detect';
 import { midiToVOct } from '$lib/audio/note-entry';
 import { isInputPortConnected } from './transport-helpers';
 import { setLanePlayhead, clearPlayheads } from './clip-playhead';
+import { setAutomationRender, clearAutomationRender } from './clip-automation-render';
 import { drainAudition, clearAudition } from './clip-audition';
 import {
   readClip,
@@ -51,6 +52,7 @@ import {
   laneSwing,
   swingStepOffset,
   isAutomationRecorder,
+  isAutomationArmed,
   migrateClipPlayerData,
   coerceClipRecord,
   type ClipPlayerData,
@@ -120,7 +122,7 @@ export const clipplayerDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A clip launcher in the style of Ableton's Session view, with 8 instrument lanes. The grid's rows are the 8 lanes (instruments) and the columns are clip slots — the card shows 8 slots per lane at a time (64 clips at a glance), while on a Launchpad the scene column scrolls through up to 64 scene slots per lane (fixed stride-64 storage; older saves migrate once on load), so clips can live in scenes past the first 8. Each lane independently plays whichever clip you launch out its OWN pitch/gate/velocity outputs, so up to 8 clips can sound at once (one per lane). Click a pad to launch its clip, double-click to open the piano-roll editor and draw notes into it. There's no internal clock or BPM — CLIP PLAYER is locked to TIMELORDE (the rack transport): it runs at TIMELORDE's tempo, only while TIMELORDE is running, and the STEP control sets how many steps fall per beat. Each lane also has its own clock-rate control (1/8 · 1/4 · 1/2 · 1 · 2x · 4x — the card dropdown, and the Launchpad deck's per-lane RATE row) that divides or multiplies that lane's step rate off the global STEP grid — polyrhythms without leaving the card — and because the tempo comes from TIMELORDE, 2x/4x are exact from the first step. All lanes share a common phase origin (transport start or the RST button), so a 1/2 lane lands on even base steps and stays locked to the others; RST (also a MIDI-assignable button, and the reset input) snaps every active lane back to step 1 and re-anchors that shared origin. Launches can fire immediately or be quantized to snap cleanly at the playing clip's loop boundary. It also has a SONG / arrangement mode that records your launches onto a timeline for non-real-time playback, and pairs with a monome grid 128 or a one- or two-unit Novation Launchpad Mini Mk3 for hardware launching. On the Launchpad the scene-launch column is a scrolling window (its shift-layer amber UP/DOWN buttons slide it), and a typed clipboard lets you COPY/PASTE whole SCENES (all 8 lanes at one slot, full-replace) as well as single clips — scene→scene and clip→clip pastes apply, while scene→clip and clip→scene are ignored (their targets dim). An AUTOMATION LANE records parameter moves into a clip: right-click any control and choose \"Assign to automation lane\", press ＋AUTO then ARM, and the next time that automation clip loops the recorder PUNCHES IN at the loop start, captures one pass of your live moves, and PUNCHES OUT at the loop end — only the params you actually moved are written, the rest keep their existing automation; on playback it drives those params transiently (never rewriting the saved clip), and grabbing an automated control live SUSPENDS its automation until the loop wraps (the on-card dot re-enables all). Two current limits are documented honestly: the on-card grid shows only the first 8 scenes (card scene-scroll is a follow-up), and the arranger records session launches of scenes 1–8 (recording launches of scene 9+ is a follow-up — session launching them already works). Drive its lanes into eight voices for a full multitrack clip-based performance instrument.",
+      "A clip launcher in the style of Ableton's Session view, with 8 instrument lanes. The grid's rows are the 8 lanes (instruments) and the columns are clip slots — the card shows 8 slots per lane at a time (64 clips at a glance), while on a Launchpad the scene column scrolls through up to 64 scene slots per lane (fixed stride-64 storage; older saves migrate once on load), so clips can live in scenes past the first 8. Each lane independently plays whichever clip you launch out its OWN pitch/gate/velocity outputs, so up to 8 clips can sound at once (one per lane). Click a pad to launch its clip, double-click to open the piano-roll editor and draw notes into it. There's no internal clock or BPM — CLIP PLAYER is locked to TIMELORDE (the rack transport): it runs at TIMELORDE's tempo, only while TIMELORDE is running, and the STEP control sets how many steps fall per beat. Each lane also has its own clock-rate control (1/8 · 1/4 · 1/2 · 1 · 2x · 4x — the card dropdown, and the Launchpad deck's per-lane RATE row) that divides or multiplies that lane's step rate off the global STEP grid — polyrhythms without leaving the card — and because the tempo comes from TIMELORDE, 2x/4x are exact from the first step. All lanes share a common phase origin (transport start or the RST button), so a 1/2 lane lands on even base steps and stays locked to the others; RST (also a MIDI-assignable button, and the reset input) snaps every active lane back to step 1 and re-anchors that shared origin. Launches can fire immediately or be quantized to snap cleanly at the playing clip's loop boundary. It also has a SONG / arrangement mode that records your launches onto a timeline for non-real-time playback, and pairs with a monome grid 128 or a one- or two-unit Novation Launchpad Mini Mk3 for hardware launching. On the Launchpad the scene-launch column is a scrolling window (its shift-layer amber UP/DOWN buttons slide it), and a typed clipboard lets you COPY/PASTE whole SCENES (all 8 lanes at one slot, full-replace) as well as single clips — scene→scene and clip→clip pastes apply, while scene→clip and clip→scene are ignored (their targets dim). An AUTOMATION LANE records parameter moves into a clip by CONTINUOUS OVERDUB: right-click any control and choose \"Assign to automation lane\", press ＋AUTO then ARM, and the recorder punches in cleanly at the automation clip's OWN next loop start and then overdubs EVERY loop until you press ARM again to stop (a manual stop — there is no auto punch-out). Each loop, only the params you actually moved that pass are merged in; the rest keep their existing automation; stopping mid-loop keeps the untouched tail. A 🟡🟡🔴🔴 countdown flashes the clip's pad (and the on-card AUTO button + its grid cell) on each of the last four beats before the loop wraps, so you can time your moves. The clip has its own settable LENGTH (any step count — a coprime length drifts against the other clips on purpose, a generative effect) and clock DIVISION, so you can make a long, slow take. On playback it drives those params transiently (never rewriting the saved clip), and grabbing an automated control live SUSPENDS its automation until the loop wraps (the on-card dot re-enables all). Two current limits are documented honestly: the on-card grid shows only the first 8 scenes (card scene-scroll is a follow-up), and the arranger records session launches of scenes 1–8 (recording launches of scene 9+ is a follow-up — session launching them already works). Drive its lanes into eight voices for a full multitrack clip-based performance instrument.",
     inputs: {
       stop_all: "Stop-all trigger: a rising edge immediately stops every lane (a panic/stop button), in both session and arrangement modes.",
       reset: "Reset trigger: a rising edge snaps every ACTIVE lane back to step 1 and re-anchors all lanes to a shared phase origin (divided/multiplied lanes restart their counting together). Queued-but-not-started launches are untouched — they still drop in at their lane's next loop boundary. Stopped lanes stay stopped; the arrangement's song position is not rewound (this is a clip-step reset, not a transport rewind).",
@@ -166,11 +168,15 @@ export const clipplayerDef: AudioModuleDef = {
       "clipplayer-cell-{n}":
         "A note cell in the piano-roll editor (rows are scale degrees/pitches, columns are steps). Click to toggle a note on or off at that pitch and step; right-click cycles the note's velocity. The cells make up the clip you're editing for the selected lane+slot.",
       "clipplayer-auto-new-{n}":
-        "＋AUTO — create THIS player's automation clip. It's stamped into the first empty slot of the last lane; from then on right-click any control → \"Assign to automation lane\" adds that param as a track, and ARM records moves into it. One automation clip per player (MVP); the button is hidden once the clip exists (the AUTO/ARM block replaces it).",
+        "＋AUTO — create THIS player's automation clip. It's stamped into the first empty slot of the last lane as a long, slow clip (a comfortable multi-second record window by default; length + division are settable below); from then on right-click any control → \"Assign to automation lane\" adds that param as a track, and ARM records moves into it. One automation clip per player (MVP); the button is hidden once the clip exists (the AUTO/ARM block replaces it).",
       "clipplayer-auto-arm-{n}":
-        "AUTO (arm) — arm automation record. While armed and the automation clip is looping, the recorder PUNCHES IN at the clip's loop start, captures one pass of your live param moves, and PUNCHES OUT at the loop end, committing once. Only params you actually MOVED that pass are written; untouched tracks keep their existing automation. Single-writer (the arming client records; peers still play the automation back). Click again to disarm.",
+        "AUTO (arm) — arm automation record (CONTINUOUS OVERDUB). The recorder punches in cleanly at the automation clip's OWN next loop start, then overdubs EVERY loop: each pass, the params you MOVED merge into the clip while untouched tracks keep their automation. It keeps going until you click again — a MANUAL STOP (there is no auto punch-out); stopping mid-loop keeps the untouched tail of the current pass. A 🟡🟡🔴🔴 countdown flashes this button (and the clip's grid cell + Launchpad pad) on each of the last four beats before the loop wraps. Single-writer (the arming client records; peers still play the automation back).",
       "clipplayer-auto-count-{n}":
         "Automation track badge — how many params this player's automation clip currently drives, shown as count/max (max 16). Right-click a control → \"Assign to automation lane\" adds one; \"Remove automation\" drops it.",
+      "clipplayer-auto-len-{n}":
+        "Automation clip LENGTH in steps. Any count is allowed (7, 13, …) — it is NOT snapped to a bar or the other clips, so a coprime length makes the automation drift against them on purpose (a generative, polymetric effect); a matching length gives lockstep, predictable automation. A longer length (with a slow DIV) makes a longer record/overdub take.",
+      "clipplayer-auto-div-{n}":
+        "Automation clip clock DIVISION (1/8 · 1/4 · 1/2 · 1 · 2x · 4x) — divides/multiplies this clip's step rate off the global STEP grid, exactly like a lane's rate but for the automation clip alone. A slow division stretches the loop into a long, gradual record window; it overrides the lane rate and latches at the clip's loop boundary.",
       "clipplayer-auto-override-{n}":
         "Automation override dot — lights when a control this player automates is being grabbed live (screen drag / MIDI CC / Electra), which SUSPENDS that param's automation playback (live wins) until the clip loops. Click it to re-enable every suspended param at once.",
     },
@@ -184,6 +190,8 @@ export const clipplayerDef: AudioModuleDef = {
     { id: 'clipplayer-auto-new', label: 'Automation clip create', kind: 'other', testidPrefix: 'clipplayer-auto-new' },
     { id: 'clipplayer-auto-arm', label: 'Automation record arm', kind: 'other', testidPrefix: 'clipplayer-auto-arm' },
     { id: 'clipplayer-auto-count', label: 'Automation track count', kind: 'other', testidPrefix: 'clipplayer-auto-count' },
+    { id: 'clipplayer-auto-len', label: 'Automation clip length', kind: 'other', testidPrefix: 'clipplayer-auto-len' },
+    { id: 'clipplayer-auto-div', label: 'Automation clip clock division', kind: 'other', testidPrefix: 'clipplayer-auto-div' },
     { id: 'clipplayer-auto-override', label: 'Automation override indicator', kind: 'other', testidPrefix: 'clipplayer-auto-override' },
   ],
 
@@ -913,11 +921,16 @@ export const clipplayerDef: AudioModuleDef = {
           controller.arm();
           autoArmed = true;
         } else if (!wantRecord && autoArmed) {
+          // Manual stop / peer disarm — commit the in-flight PARTIAL pass, then
+          // the recorder stops. (isAutomationArmed clears too → countdown clears.)
           controller.disarm();
           autoArmed = false;
         }
 
-        if (!running) return;
+        if (!running) {
+          clearAutomationRender(nodeId); // no countdown while stopped
+          return;
+        }
 
         // Base grid from TIMELORDE bpm + the global STEP param; each lane then
         // scales it by its own clock rate (clip-clock.ts — 1/8..4x, default 1).
@@ -936,10 +949,17 @@ export const clipplayerDef: AudioModuleDef = {
             // back to it). Held for the whole loop, so a mid-loop edit only
             // takes effect at the NEXT clip start.
             if (ln.stepIndex === 0 && ln.active !== null) {
-              // Only a NOTE clip carries `div` (and only note clips step-play
-              // here); audio/snapshot shells fall back to the lane rate via null.
+              // NOTE and AUTOMATION clips both carry `div` and step through this
+              // per-lane schedule, so both honour their own clock division (an
+              // automation clip's SLOW div stretches its record/playback loop);
+              // audio/snapshot shells fall back to the lane rate via null. The
+              // latched divIndex also drives the record punch playhead below.
               const ac = readClip(d0, clipIndex(ln.active, L));
-              ln.divIndex = clipDivIndex(ac?.kind === 'note' ? ac : null, d0, L);
+              ln.divIndex = clipDivIndex(
+                ac?.kind === 'note' || ac?.kind === 'automation' ? ac : null,
+                d0,
+                L,
+              );
             }
             const laneDur = laneStepDur(stepDur, ln.divIndex);
             const len = laneLength(L);
@@ -981,26 +1001,50 @@ export const clipplayerDef: AudioModuleDef = {
           }
         }
 
-        // AUTOMATION RECORD sample (single-writer). Once per tick, on the
-        // recorder client only, feed the controller the audible fractional
-        // playhead of the FIRST lane playing an automation clip. The controller
-        // owns arm→punch-in→capture→punch-out→commit; non-recorder peers never
-        // reach here (autoArmed stays false), so a pass commits exactly once.
-        if (autoArmed) {
-          for (let L = 0; L < LANES; L++) {
-            const ln = lanes[L];
-            if (ln.active === null) continue;
-            const clip = readClip(d0, clipIndex(ln.active, L));
-            if (clip?.kind !== 'automation') continue;
-            const laneDur = laneStepDur(stepDur, ln.divIndex);
-            const frac = laneFracStep(L, laneDur);
-            if (frac < 0) break; // nothing has sounded on this lane yet
-            const len = Math.max(1, clip.lengthSteps);
-            automationRecordTarget = { slot: ln.active, lane: L };
-            controller.recordTick(clip, Math.min(frac, len), len);
-            break; // MVP: one automation recorder lane per node
+        // AUTOMATION RECORD + COUNTDOWN. The designated automation clip is the
+        // (lane, slot) pointer; when it's launched (that lane playing that slot):
+        //  - RECORD (single-writer): feed the controller the clip's OWN audible
+        //    fractional playhead — it runs continuous overdub (commit each wrap,
+        //    keep going) until disarm. Non-recorder peers never arm (autoArmed
+        //    false), so a pass commits exactly once.
+        //  - COUNTDOWN (EVERY client while armed — arm is synced): publish beats
+        //    to THIS clip's OWN loop wrap so the launchpad pad + card mirror flash
+        //    🟡🟡🔴🔴. Clip-relative: a coprime length drifts against other clips
+        //    by design; the wrap NEVER realigns to the song bar.
+        const ptr = d0?.automation?.clip;
+        let publishedCountdown = false;
+        if (ptr) {
+          const L = ptr.lane;
+          const ln = LANES > L && L >= 0 ? lanes[L] : undefined;
+          if (ln && ln.active === ptr.slot) {
+            const clip = readClip(d0, clipIndex(ptr.slot, L));
+            if (clip?.kind === 'automation') {
+              const laneDur = laneStepDur(stepDur, ln.divIndex);
+              const frac = laneFracStep(L, laneDur);
+              const len = Math.max(1, clip.lengthSteps);
+              if (frac >= 0) {
+                if (autoArmed) {
+                  automationRecordTarget = { slot: ptr.slot, lane: L };
+                  controller.recordTick(clip, Math.min(frac, len), len);
+                }
+                if (isAutomationArmed(d0)) {
+                  const secPerBeat = 60 / transportBpm();
+                  const beatsToLoopEnd =
+                    secPerBeat > 0 ? ((len - frac) * laneDur) / secPerBeat : 0;
+                  setAutomationRender(nodeId, {
+                    lane: L,
+                    slot: ptr.slot,
+                    recording: true,
+                    beatsToLoopEnd,
+                    beatPhase: beatsToLoopEnd - Math.floor(beatsToLoopEnd),
+                  });
+                  publishedCountdown = true;
+                }
+              }
+            }
           }
         }
+        if (!publishedCountdown) setAutomationRender(nodeId, null);
       } catch (err) {
         console.error('[clipplayer] tick error', err);
       }
@@ -1062,6 +1106,7 @@ export const clipplayerDef: AudioModuleDef = {
         controller.disarm(); // drop any in-flight automation record pass
         unregisterAutomationController(nodeId); // drop the touch-suspend hook
         clearPlayheads(nodeId);
+        clearAutomationRender(nodeId);
         clearAudition(nodeId);
         if (unsubscribeTick) {
           unsubscribeTick();

@@ -7,15 +7,19 @@
 // it from tick(); the deps wire to `engine.setParam` (playback, zero-Yjs), the
 // store-value tap, and the whole-clip plain commit.
 //
-// Semantics (post adversarial review):
+// Semantics (owner's CONTINUOUS-OVERDUB model, 2026-07-15):
 //  - PLAYBACK drives each track's param transiently via ramps; a param the user
 //    is touching is SUSPENDED until the loop wrap (live wins), and while the clip
 //    is RECORDING its own tracks aren't played back (no self-capture).
-//  - RECORD is a QUANTIZED loop pass: arm → punch-in at the next wrap → capture
-//    one loop → punch-out at the wrap → commit ONCE. Only tracks whose value
-//    actually MOVED during the pass are committed (source-agnostic — screen /
-//    MIDI / Electra all change the store value); untouched tracks keep their
-//    existing automation. Runs only on the single recorder client.
+//  - RECORD is CONTINUOUS OVERDUB: arm → punch-in at the automation clip's OWN
+//    next loop wrap (clean first pass) → then EVERY loop is a pass. At each wrap
+//    it commits ONCE (the tracks that MOVED that pass merge into the clip; the
+//    rest keep their events) and immediately starts a fresh pass — no auto-stop.
+//  - DISARM (press ARM again) is the manual stop: commit the in-flight pass too,
+//    but a PARTIAL pass replaces only up to the last captured step (untouched tail
+//    preserved). Only tracks whose value MOVED are committed (source-agnostic —
+//    screen / MIDI / Electra all change the store value). Runs only on the single
+//    recorder client.
 //  - Touch/override state is CLIENT-LOCAL (never the Y.Doc) — no per-tick sync.
 
 import {
@@ -67,6 +71,12 @@ export class AutomationController {
   private readonly suspended = new Set<string>(); // targets touched this loop (LOCAL)
   private readonly window = new QuantizedRecordWindow();
   private pass: Map<string, PassState> | null = null;
+  // The clip + loop length + last captured step of the IN-FLIGHT pass, so a
+  // manual disarm can commit a PARTIAL pass (preserving the untouched tail)
+  // without the caller re-supplying the clip.
+  private passClip: AutomationClipRecord | null = null;
+  private passLen = 0;
+  private passLastStep = 0;
 
   constructor(private readonly deps: AutomationControllerDeps) {}
 
@@ -97,9 +107,16 @@ export class AutomationController {
   arm(): void {
     this.window.arm();
   }
+  /** Manual STOP (press ARM again). If a pass was IN FLIGHT, commit it as a
+   *  PARTIAL pass — merge only up to the last captured step so the untouched TAIL
+   *  of each track is preserved (not clobbered). Then clear the pass. */
   disarm(): void {
-    this.pass = null; // drop an in-flight (un-punched) capture
-    this.window.disarm();
+    const wasRecording = this.window.disarm();
+    if (wasRecording && this.pass && this.passClip) {
+      this.commitPass(this.passClip, this.passLen, this.passLastStep);
+    }
+    this.pass = null;
+    this.passClip = null;
   }
   get recording(): boolean {
     return this.window.state === 'recording';
@@ -130,18 +147,30 @@ export class AutomationController {
   // --------------------------------------------------------------- record
   /**
    * RECORD — called ONCE per tick, ONLY on the recorder client, with the clip's
-   * current fractional-step playhead. Drives the quantized window: punch-in at a
-   * wrap, capture each tick, punch-out one loop later → commit. Clears the touch
-   * suspensions at every wrap (the loop-boundary re-enable).
+   * current fractional-step playhead. Drives the CONTINUOUS-OVERDUB window:
+   * punch-in at the clip's own next wrap, capture each tick, and at EVERY wrap
+   * commit the just-finished pass (full loop) then immediately start a fresh one
+   * — recording continues until disarm. Clears the touch suspensions at each wrap
+   * (the loop-boundary re-enable).
    */
   recordTick(clip: AutomationClipRecord, fracStep: number, len: number): void {
     const transition = this.window.advance(fracStep);
 
+    // WRAP (continuous overdub): commit the pass that just ended (full loop
+    // window), then open a new one so recording keeps going with no gap.
+    if (transition === 'wrap') {
+      if (this.pass && this.passClip) this.commitPass(this.passClip, this.passLen, this.passLen);
+      this.beginPass(clip);
+    }
     if (transition === 'punch-in') {
       this.beginPass(clip);
     }
 
     if (this.window.state === 'recording' && this.pass) {
+      // Remember the in-flight pass so a manual disarm can commit it partial.
+      this.passClip = clip;
+      this.passLen = len;
+      this.passLastStep = Math.max(this.passLastStep, fracStep);
       for (const tr of clip.tracks) {
         const v = this.deps.readNorm(tr.target);
         if (v == null) continue;
@@ -152,16 +181,15 @@ export class AutomationController {
       }
     }
 
-    if (transition === 'punch-out') {
-      this.commitPass(clip, len);
-    }
-    if (transition === 'punch-in' || transition === 'punch-out') {
+    if (transition === 'punch-in' || transition === 'wrap') {
       this.suspended.clear(); // loop wrap → re-enable overridden params
     }
   }
 
   private beginPass(clip: AutomationClipRecord): void {
     this.pass = new Map();
+    this.passClip = clip;
+    this.passLastStep = 0;
     for (const tr of clip.tracks) {
       const unit = this.deps.unitNorm(tr.target);
       const startVal = this.deps.readNorm(tr.target) ?? 0;
@@ -171,18 +199,27 @@ export class AutomationController {
     }
   }
 
-  private commitPass(clip: AutomationClipRecord, len: number): void {
+  /**
+   * Merge the current pass's captured tracks into `clip` and commit ONCE (whole-
+   * clip plain reassign). Only tracks that MOVED (maxDev ≥ MOVE_EPS) are merged;
+   * the rest keep their existing automation. `windowEnd` bounds the overdub
+   * window `[0, windowEnd)`:
+   *   - a FULL loop pass passes `len` (replace the whole track loop);
+   *   - a PARTIAL pass (manual disarm mid-loop) passes the last captured step, so
+   *     existing events in the untouched TAIL `[windowEnd, len)` are preserved.
+   */
+  private commitPass(clip: AutomationClipRecord, len: number, windowEnd: number): void {
     const pass = this.pass;
     this.pass = null;
     if (!pass) return;
+    const end = Math.max(0, Math.min(len, windowEnd));
     let anyMoved = false;
     const merged: AutomationTrack[] = clip.tracks.map((tr) => {
       const st = pass.get(key(tr.target));
       if (!st || st.maxDev < MOVE_EPS) return tr; // untouched → keep existing automation
       anyMoved = true;
       const incoming: AutomationEvent[] = st.gate.close();
-      // Full-loop quantized pass → window [0, len): replace this track's loop.
-      const events = mergeAutomationOverdub(tr.events, incoming, 0, len);
+      const events = mergeAutomationOverdub(tr.events, incoming, 0, end);
       return { ...tr, events };
     });
     if (anyMoved) this.deps.commit(merged);

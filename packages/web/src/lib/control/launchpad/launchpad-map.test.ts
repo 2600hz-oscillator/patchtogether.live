@@ -117,6 +117,8 @@ import {
   RGB_OD_ON,
   RGB_EXIT,
   RGB_KEYS_REC_HOLD_ON,
+  RGB_RECORDING,
+  RGB_RECORDING_DIM,
 } from './launchpad-map';
 import {
   // SINGLE-mode (S2a) transpose + classifiers
@@ -156,6 +158,8 @@ import {
   CTRL_ARRANGE_ROW,
   CTRL_REC_COL,
   CTRL_SONG_COL,
+  CTRL_AUTO_ARM_COL,
+  countdownRgb,
   // SINGLE-mode palette
   RGB_VIEW_IDLE,
   RGB_VIEW_ACTIVE,
@@ -746,6 +750,7 @@ describe('Single mode — classifiers', () => {
     expect(controlRehomePad(CTRL_STOP_ALL_COL, CTRL_TEMPO_ROW)).toBe('stopAll');
     expect(controlRehomePad(CTRL_REC_COL, CTRL_ARRANGE_ROW)).toBe('rec');
     expect(controlRehomePad(CTRL_SONG_COL, CTRL_ARRANGE_ROW)).toBe('song');
+    expect(controlRehomePad(CTRL_AUTO_ARM_COL, CTRL_ARRANGE_ROW)).toBe('autoArm'); // (2,6)
     expect(controlRehomePad(2, CTRL_TEMPO_ROW)).toBeNull(); // a gap column
     expect(controlRehomePad(0, 0)).toBeNull(); // not a re-home row
   });
@@ -1174,5 +1179,49 @@ describe('Single mode — frame builders', () => {
     expect(eqRgb(at(f, padNote(7, 7)), RGB_ARRANGER_DIM)).toBe(true);
     expect(eqRgb(at(f, SCENE_CCS[0]), RGB_OFF)).toBe(true); // right column dark
     expect(eqRgb(at(f, 94), RGB_VIEW_ACTIVE)).toBe(true); // arranger active = bright purple
+  });
+
+  it('control: the AUTO-arm pad (2,6) is dim idle, pulses red when armed, and the countdown OVERRIDES it', () => {
+    const idle = computeSingleControlFrame({ top: mkTop('control'), data: {} as ClipPlayerData, blinkOn: true });
+    expect(eqRgb(at(idle, padNote(CTRL_AUTO_ARM_COL, CTRL_ARRANGE_ROW)), RGB_STOP_IDLE)).toBe(true);
+    // Armed (synced arm flag) → pulses the record-arm red (blinkOn phase).
+    const armed = computeSingleControlFrame({
+      top: mkTop('control'),
+      data: { automation: { arm: true } } as ClipPlayerData,
+      blinkOn: true,
+    });
+    expect(eqRgb(at(armed, padNote(CTRL_AUTO_ARM_COL, CTRL_ARRANGE_ROW)), RGB_RECORDING)).toBe(true);
+    const armedDim = computeSingleControlFrame({
+      top: mkTop('control'),
+      data: { automation: { arm: true } } as ClipPlayerData,
+      blinkOn: false,
+    });
+    expect(eqRgb(at(armedDim, padNote(CTRL_AUTO_ARM_COL, CTRL_ARRANGE_ROW)), RGB_RECORDING_DIM)).toBe(true);
+    // Countdown override: yellow-on paints the qrec-armed yellow regardless of arm pulse.
+    const cd = computeSingleControlFrame({
+      top: mkTop('control'),
+      data: { automation: { arm: true } } as ClipPlayerData,
+      blinkOn: false,
+      autoCountdown: { color: 'yellow', on: true },
+    });
+    expect(eqRgb(at(cd, padNote(CTRL_AUTO_ARM_COL, CTRL_ARRANGE_ROW)), RGB_QREC_ARMED)).toBe(true);
+  });
+
+  it('countdownRgb: yellow/red map to the qrec/record palette with an on-beat pulse', () => {
+    expect(countdownRgb({ color: 'yellow', on: true })).toEqual(RGB_QREC_ARMED);
+    expect(countdownRgb({ color: 'yellow', on: false })).toEqual(RGB_QREC_IDLE);
+    expect(countdownRgb({ color: 'red', on: true })).toEqual(RGB_RECORDING);
+    expect(countdownRgb({ color: 'red', on: false })).toEqual(RGB_RECORDING_DIM);
+  });
+
+  it('grid: the automation clip’s matrix cell flashes the countdown when its scene is in view', () => {
+    const idx = clipIndex(0, 7); // automation clip at lane 7, slot 0 (flat, stride-64)
+    const pad = clipIndexToGridPad(idx); // its transposed grid pad
+    const f = computeSingleGridFrame({} as ClipPlayerData, {
+      top: mkTop('grid'),
+      blinkOn: true,
+      autoCountdown: { clipIndex: idx, color: 'red', on: true },
+    });
+    expect(eqRgb(at(f, padNote(pad.x, pad.y)), RGB_RECORDING)).toBe(true);
   });
 });

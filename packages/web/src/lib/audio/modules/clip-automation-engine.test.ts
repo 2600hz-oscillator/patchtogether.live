@@ -109,8 +109,8 @@ describe('RecordGate — decimation', () => {
   });
 });
 
-describe('QuantizedRecordWindow — arm → punch-in at wrap → punch-out one loop later', () => {
-  it('the owner workflow: arm, start recording when the playhead wraps, stop at loop end', () => {
+describe('QuantizedRecordWindow — continuous overdub (arm → punch-in → wrap every loop → manual stop)', () => {
+  it('the owner workflow: arm, punch in at the clip’s own wrap, then EVERY wrap is a pass — no auto-stop', () => {
     const w = new QuantizedRecordWindow();
     // playing mid-loop, not armed yet
     expect(w.advance(3)).toBeNull();
@@ -119,27 +119,33 @@ describe('QuantizedRecordWindow — arm → punch-in at wrap → punch-out one l
     expect(w.state).toBe('armed');
     // still climbing — no punch-in until the loop wraps
     expect(w.advance(7)).toBeNull();
-    // wrap (7 → 0): PUNCH IN
+    // wrap (7 → 0): PUNCH IN (clean first pass)
     expect(w.advance(0)).toBe('punch-in');
     expect(w.state).toBe('recording');
     // one full loop of climbing
     expect(w.advance(2)).toBeNull();
     expect(w.advance(6)).toBeNull();
-    // next wrap: PUNCH OUT (one loop elapsed)
-    expect(w.advance(0)).toBe('punch-out');
-    expect(w.state).toBe('done');
-    // further advances do nothing
-    expect(w.advance(3)).toBeNull();
+    // next wrap: a pass boundary — 'wrap', and recording CONTINUES (no 'done')
+    expect(w.advance(0)).toBe('wrap');
+    expect(w.state).toBe('recording');
+    // and again — overdub keeps going every loop until disarm
+    expect(w.advance(5)).toBeNull();
+    expect(w.advance(0)).toBe('wrap');
+    expect(w.state).toBe('recording');
   });
 
-  it('disarm resets to idle', () => {
+  it('disarm returns whether a pass was in flight, and resets to idle', () => {
     const w = new QuantizedRecordWindow();
     w.arm();
     w.advance(5);
     w.advance(0); // punch-in
     expect(w.state).toBe('recording');
-    w.disarm();
+    expect(w.disarm()).toBe(true); // was recording → caller commits the partial pass
     expect(w.state).toBe('idle');
+    // disarm while merely armed (never punched in) → false (nothing to commit)
+    w.arm();
+    w.advance(4);
+    expect(w.disarm()).toBe(false);
     // re-arming works cleanly
     w.arm();
     w.advance(4);
@@ -151,5 +157,35 @@ describe('QuantizedRecordWindow — arm → punch-in at wrap → punch-out one l
     expect(w.advance(6)).toBeNull();
     expect(w.advance(0)).toBeNull(); // wrap while idle — nothing
     expect(w.state).toBe('idle');
+  });
+
+  it('CLIP-RELATIVE / polymetric: a coprime 7-step automation clip loops on its OWN period, drifting against a 16-step clip (never realigns to a bar)', () => {
+    // Shared base-step timeline. The automation clip's OWN fractional-step
+    // playhead is `baseStep mod 7`; a lockstep note clip would be `baseStep mod
+    // 16`. The window keys off the automation clip's own playhead, so it wraps
+    // every 7 base steps — NOT every 16, NOT at any shared "bar". This preserves
+    // the intended generative desync (owner: the drift IS the feature).
+    const AUTO_LEN = 7;
+    const NOTE_LEN = 16;
+    const w = new QuantizedRecordWindow();
+    w.arm();
+    const autoWraps: number[] = [];
+    const noteWraps: number[] = [];
+    let prevNote = -1;
+    for (let base = 0; base <= 112; base++) {
+      const autoStep = base % AUTO_LEN;
+      const t = w.advance(autoStep);
+      if (t === 'punch-in' || t === 'wrap') autoWraps.push(base);
+      const noteStep = base % NOTE_LEN;
+      if (prevNote >= 0 && noteStep < prevNote) noteWraps.push(base);
+      prevNote = noteStep;
+    }
+    // Automation wraps land on ITS OWN 7-grid (7,14,21,…): every wrap ≡ 0 mod 7.
+    expect(autoWraps.length).toBeGreaterThan(10);
+    for (const b of autoWraps) expect(b % AUTO_LEN).toBe(0);
+    // The note clip wraps on the 16-grid; they only ever coincide at LCM(7,16)=112
+    // — i.e. the automation does NOT realign to the note clip's bar in between.
+    const coincidences = autoWraps.filter((b) => noteWraps.includes(b));
+    expect(coincidences).toEqual([112]);
   });
 });

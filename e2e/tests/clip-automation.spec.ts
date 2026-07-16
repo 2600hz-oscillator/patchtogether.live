@@ -12,13 +12,19 @@
 // param stays put. Store writes are separate (playback is zero-Yjs), so reading
 // the store would show nothing; we read the ENGINE.
 //
+// Record model (owner, 2026-07-15): ARM punches in at the automation clip's OWN
+// next loop wrap, then OVERDUBS every loop (commit per wrap, keep going) until you
+// press ARM again to STOP. Only params you moved that pass merge in; untouched
+// tracks keep theirs. A 🟡🟡🔴🔴 countdown flashes the AUTO button + the clip cell
+// in the last four beats before the wrap.
+//
 // Cases:
-//   1. Original brief — create (+AUTO) → assign a knob via the context MENU →
-//      arm → run transport → move the knob during a loop → assert playback drives
-//      the param on the next loops.
-//   2. MULTIPLE params in ONE record pass + move-detection: move two, leave a
-//      third (with prior automation) untouched → both moved commit breakpoints
-//      and play back independently; the untouched one keeps its prior automation.
+//   1. Create (+AUTO) → assign a knob via the context MENU → arm → move the knob
+//      across ≥2 loops (continuous overdub commits each wrap; still armed) → the
+//      AUTO button flashes the 🟡→🔴 countdown → DISARM → playback drives the param.
+//   2. MULTIPLE params over passes + move-detection: move two, leave a third (with
+//      prior automation) untouched → both moved commit breakpoints and play back
+//      independently; the untouched one keeps its prior automation.
 //   3. SCREEN-touch suspends only the grabbed param ("live wins"); the other
 //      keeps playing; re-enable indicator resumes it.
 //   4. MIDI-twist suspends only the twisted param via the SAME seam; the other
@@ -32,8 +38,9 @@ import type { Page } from '@playwright/test';
 test.describe.configure({ mode: 'serial' });
 
 const CP = 'cp';
-// clipIndex(slot=0, lane=CLIP_LANES-1=7) = 7*8 + 0 = 56 — the "+AUTO" cell.
-const AUTO_IDX = 56;
+// The "+AUTO" cell is lane 7 (CLIP_LANES-1), slot 0. The flat clip key is
+// stride-64 (schema v2): clipIndex(0, 7) = 7*64 + 0 = 448.
+const AUTO_IDX = 448;
 const AUTO_LANE = 7;
 // A short clip → ~1s loops at 120bpm / 1/16 (fast, deterministic record + poll).
 const CLIP_LEN = 8;
@@ -166,21 +173,58 @@ async function readClipTracks(
   }, AUTO_IDX);
 }
 
-/** Set a clip's lengthSteps in place (speeds the +AUTO clip's loop for records). */
-async function setAutoClipLength(page: Page, len: number): Promise<void> {
+/** The synced automation arm flag (node.data.automation.arm). */
+async function isArmed(page: Page): Promise<boolean> {
+  return page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: { automation?: { arm?: boolean } } }> };
+    };
+    return w.__patch?.nodes?.['cp']?.data?.automation?.arm === true;
+  });
+}
+
+/** Set a clip's lengthSteps + div in place. The +AUTO default is LONG + SLOW (a
+ *  32s loop) — tests shrink it to a fast, deterministic loop. `div=3` = '1' (the
+ *  fastest non-multiplying rate; on the 1/16 STEP grid a step is ~125ms). */
+async function setAutoClip(page: Page, len: number, div = 3): Promise<void> {
   await page.evaluate(
-    ({ idx, len }) => {
+    ({ idx, len, div }) => {
       const w = globalThis as unknown as {
         __ydoc: { transact: (fn: () => void) => void };
-        __patch: { nodes: Record<string, { data?: { clips?: Record<string, { lengthSteps?: number }> } }> };
+        __patch: { nodes: Record<string, { data?: { clips?: Record<string, { lengthSteps?: number; div?: number }> } }> };
       };
       w.__ydoc.transact(() => {
         const clip = w.__patch.nodes['cp']?.data?.clips?.[String(idx)];
-        if (clip) clip.lengthSteps = len;
+        if (clip) { clip.lengthSteps = len; clip.div = div; }
       });
     },
-    { idx: AUTO_IDX, len },
+    { idx: AUTO_IDX, len, div },
   );
+}
+
+/** The AUTO button's live countdown colour ('yellow' | 'red' | null) — the card
+ *  mirror of the published render state (its cd-yellow / cd-red classes). */
+async function autoCountdownColor(page: Page): Promise<'yellow' | 'red' | null> {
+  return page.evaluate((cp) => {
+    const btn = document.querySelector(`[data-testid="clipplayer-auto-arm-${cp}"]`);
+    if (!btn) return null;
+    if (btn.classList.contains('cd-red')) return 'red';
+    if (btn.classList.contains('cd-yellow')) return 'yellow';
+    return null;
+  }, CP);
+}
+
+/** Poll the AUTO countdown colour for `ms`, returning the ORDERED sequence of
+ *  distinct colours observed (e.g. ['yellow','red']) — proves the 🟡→🔴 order. */
+async function collectCountdown(page: Page, ms: number): Promise<Array<'yellow' | 'red'>> {
+  const seq: Array<'yellow' | 'red'> = [];
+  const start = Date.now();
+  while (Date.now() - start < ms) {
+    const c = await autoCountdownColor(page);
+    if (c && seq[seq.length - 1] !== c) seq.push(c);
+    await page.waitForTimeout(60);
+  }
+  return seq;
 }
 
 /** Launch the automation clip (last-lane pad) and confirm the lane is playing. */
@@ -247,10 +291,18 @@ async function assignViaMenu(page: Page, vcaId: string): Promise<void> {
 /** A left-button pointer grab of a VCA Base fader — fires the screen touch-suspend
  *  choke point (notifyAutomationTouch on pointerdown). */
 async function grabFader(page: Page, vcaId: string): Promise<void> {
-  const box = await vcaBase(page, vcaId).boundingBox();
+  const fader = vcaBase(page, vcaId);
+  await fader.scrollIntoViewIfNeeded();
+  await fader.hover(); // moves to the track centre (scrolled into view)
+  const box = await fader.boundingBox();
   if (!box) throw new Error(`grabFader: no bounding box for ${vcaId}`);
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height * 0.2);
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  // A real press-drag on the fader track: pointerdown fires the touch-suspend
+  // seam (notifyAutomationTouch) and the drag moves the value (live wins).
+  await page.mouse.move(cx, cy);
   await page.mouse.down();
+  await page.mouse.move(cx, cy - box.height * 0.35, { steps: 5 });
   await page.mouse.up();
 }
 
@@ -295,37 +347,79 @@ test('automation: create + assign via menu + arm + record + playback drives the 
   await ensureTransportRunning(page);
   await expect(page.getByTestId('clipplayer-card')).toBeVisible();
 
-  // CREATE the automation clip (+AUTO), then shrink it for a fast loop.
+  // CREATE the automation clip (+AUTO) — it comes up LONG + SLOW; shrink it to a
+  // fast loop (8 steps ÷ '1' on the 1/16 grid ≈ 1s) so records commit quickly.
   await page.getByTestId(`clipplayer-auto-new-${CP}`).click();
   await expect(page.getByTestId(`clipplayer-auto-arm-${CP}`)).toBeVisible();
-  await setAutoClipLength(page, CLIP_LEN);
+  await setAutoClip(page, CLIP_LEN, 3);
 
   // ASSIGN the VCA Base knob via the CONTEXT MENU.
   await assignViaMenu(page, 'va');
   await expect(page.getByTestId(`clipplayer-auto-count-${CP}`)).toHaveText(`1/16`);
 
-  // LAUNCH + ARM, then MOVE the knob across several loops (the record pass
-  // punches in at a wrap, captures one loop, punches out + commits).
+  // LAUNCH + ARM, then MOVE the knob across ≥2 loops. Continuous overdub punches
+  // in at the clip's own wrap and commits each wrap while it KEEPS recording.
   await launchAutomationClip(page);
   await page.getByTestId(`clipplayer-auto-arm-${CP}`).click(); // arm (claims recorderId)
-  await sweepParams(page, [{ id: 'va', param: 'base', mid: 0.5, amp: 0.45, cycles: 2 }], 3200);
+  await sweepParams(page, [{ id: 'va', param: 'base', mid: 0.5, amp: 0.45, cycles: 2 }], 3500);
 
-  // Wait for the pass to COMMIT (breakpoints appear), then disarm.
+  // A pass COMMITTED (breakpoints appear) while STILL ARMED (no auto-stop —
+  // continuous overdub, the core of the new model).
   await expect
     .poll(async () => (await readClipTracks(page)).find((t) => t.nodeId === 'va')?.events.length ?? 0, {
-      timeout: 8000,
+      timeout: 12000,
     })
     .toBeGreaterThan(1);
-  await page.getByTestId(`clipplayer-auto-arm-${CP}`).click(); // disarm
+  expect(await isArmed(page), 'continuous overdub — still armed after a commit').toBe(true);
+
+  // DISARM (manual stop = press ARM again) right after a VARIED pass committed.
+  await page.getByTestId(`clipplayer-auto-arm-${CP}`).click();
+  expect(await isArmed(page), 'disarmed after the second ARM press').toBe(false);
 
   // PLAYBACK now drives the knob's param WITHOUT user input — assert it varies.
   const { spread } = await sampleSpread(page, 'va', 'base');
   expect(spread, 'automation playback varies the param over a loop').toBeGreaterThan(0.15);
 });
 
-// ── Case 2: multiple params in one pass + move-detection ─────────────────────
+// ── Case 1b: the 🟡🟡🔴🔴 countdown flashes in the last 4 beats ────────────────
 
-test('automation: two params record in one pass + a third untouched keeps its prior automation', async ({ page, rack }) => {
+test('automation: the countdown flashes yellow→red on the AUTO button in the last 4 beats before the clip wraps', async ({ page, rack }) => {
+  void rack;
+  await spawnPatch(page, [
+    { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
+  ]);
+  await ensureTransportRunning(page);
+  await expect(page.getByTestId('clipplayer-card')).toBeVisible();
+
+  // A LONGER loop so the 4-beat countdown is a distinct window: 32 steps ÷ '1' on
+  // the 1/16 grid ≈ 4s = 8 beats (countdown = the last ~2s).
+  await page.getByTestId(`clipplayer-auto-new-${CP}`).click();
+  await expect(page.getByTestId(`clipplayer-auto-arm-${CP}`)).toBeVisible();
+  await setAutoClip(page, 32, 3);
+
+  // LAUNCH + ARM — the countdown flashes while armed + looping (no moves needed).
+  await launchAutomationClip(page);
+  await page.getByTestId(`clipplayer-auto-arm-${CP}`).click(); // arm
+  expect(await isArmed(page)).toBe(true);
+
+  // Observe ≥2 loops (~9s over a 4s loop): the AUTO button flashes yellow (4,3
+  // beats) THEN red (2,1 beats) before each wrap, published from the tick.
+  const seq = await collectCountdown(page, 9500);
+  expect(seq, 'countdown flashes yellow in the last 4 beats').toContain('yellow');
+  expect(seq, 'countdown flashes red in the last 2 beats').toContain('red');
+  expect(seq.indexOf('yellow'), 'yellow precedes red on the approach to the wrap').toBeLessThan(
+    seq.lastIndexOf('red'),
+  );
+
+  // DISARM → the countdown clears (no stuck light).
+  await page.getByTestId(`clipplayer-auto-arm-${CP}`).click();
+  expect(await isArmed(page)).toBe(false);
+  await expect.poll(async () => autoCountdownColor(page), { timeout: 4000 }).toBeNull();
+});
+
+// ── Case 2: multiple params over the armed window + move-detection ───────────
+
+test('automation: two params record while armed + a third untouched keeps its prior automation', async ({ page, rack }) => {
   void rack;
   await spawnPatch(page, [
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
@@ -403,6 +497,9 @@ test('automation: grabbing an on-screen knob suspends only its playback (live wi
     { nodeId: 'vb', paramId: 'base', events: ENV_DOWN },
   ]);
   await launchAutomationClip(page);
+  // The card resolves the seeded automation clip (2 tracks) — a precondition for
+  // the override indicator (it intersects overridden keys with THIS clip's tracks).
+  await expect(page.getByTestId(`clipplayer-auto-count-${CP}`)).toHaveText('2/16', { timeout: 4000 });
 
   // Both driven by playback.
   expect((await sampleSpread(page, 'va', 'base')).spread).toBeGreaterThan(0.15);

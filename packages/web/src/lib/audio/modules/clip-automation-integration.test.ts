@@ -218,17 +218,18 @@ describe('clipplayer ↔ automation integration (real Y.Doc + fake engine)', () 
     controller.arm();
 
     // Feed the recorder the audible fractional playhead each tick (as the tick
-    // loop does), pushing a moving knob value between ticks. The pass punches in
-    // at the loop wrap, captures one full loop, punches out at the next wrap.
+    // loop does), pushing a moving knob value between ticks. It punches in at the
+    // clip's own wrap, then commits ONE pass at the NEXT wrap (continuous overdub
+    // keeps recording after).
     const drive = (frac: number) => {
       h.setRecordTarget({ slot: SLOT, lane: LANE });
       const clip = readClip(h.store.nodes[CLIP]!.data, IDX) as AutomationClipRecord;
       controller.recordTick(clip, frac, len);
     };
 
-    // The commit is the ONLY Yjs write the automation makes across the whole
-    // pass (knob moves are not synced writes here) — count from arm to punch-out
-    // and assert exactly ONE transaction fires (the whole-clip plain reassign).
+    // The commit is the ONLY Yjs write the automation makes across ONE pass (knob
+    // moves are not synced writes here) — assert exactly ONE transaction fires per
+    // wrap (the whole-clip plain reassign).
     let updates = 0;
     const onUpdate = () => { updates++; };
     h.ydoc.on('update', onUpdate);
@@ -240,10 +241,11 @@ describe('clipplayer ↔ automation integration (real Y.Doc + fake engine)', () 
     h.setLiveValue(25);  drive(1);
     h.setLiveValue(50);  drive(2);
     h.setLiveValue(100); drive(3);
-    drive(0); // wrap → punch-out → commit
+    drive(0); // wrap → commit pass 1 (recording continues)
 
     h.ydoc.off('update', onUpdate);
-    expect(updates).toBe(1); // constraint 2: commit is exactly ONE transaction
+    expect(updates).toBe(1); // constraint 2: commit is exactly ONE transaction per wrap
+    expect(controller.recording).toBe(true); // continuous overdub — still recording
 
     // The committed clip is a PLAIN automation clip with captured breakpoints.
     const out = readClip(h.store.nodes[CLIP]!.data, IDX) as AutomationClipRecord;
@@ -259,6 +261,75 @@ describe('clipplayer ↔ automation integration (real Y.Doc + fake engine)', () 
       expect(e.value).toBeGreaterThanOrEqual(0);
       expect(e.value).toBeLessThanOrEqual(1);
     }
+  });
+
+  it('CONTINUOUS OVERDUB: arm → 2 passes (each moves a DIFFERENT param) → disarm; the plain clip holds BOTH tracks', () => {
+    const def: FakeDef = { min: 0, max: 100, curve: 'linear' };
+    const h = makeHarness(def);
+    const P_A = 'pa';
+    const P_B = 'pb';
+    const len = 4;
+    // Seed TWO tracks on the target node (two params), both empty.
+    h.ydoc.transact(() => {
+      h.store.nodes[TARGET] = {
+        id: TARGET, type: 'x', domain: 'audio',
+        position: { x: 0, y: 0 }, params: { [P_A]: 0, [P_B]: 0 },
+      };
+      h.store.nodes[CLIP] = {
+        id: CLIP, type: 'clipplayer', domain: 'audio', position: { x: 0, y: 0 }, params: {},
+        data: {
+          clips: { [String(IDX)]: { kind: 'automation', lengthSteps: len, loop: true, tracks: [
+            { target: { nodeId: TARGET, paramId: P_A }, events: [] },
+            { target: { nodeId: TARGET, paramId: P_B }, events: [] },
+          ] } },
+          automation: { arm: true, recorderId: h.ydoc.clientID },
+        },
+      };
+    });
+    // The harness store-tap reads a single liveValue; override readNorm to read
+    // each param's live store value so the two tracks capture independently.
+    const live: Record<string, number> = { [P_A]: 0, [P_B]: 0 };
+    const deps: AutomationControllerDeps = {
+      ...h.deps,
+      readNorm: (t) => valueToFrac(live[t.paramId] ?? 0, 0, 100, 'linear'),
+    };
+    const controller = new AutomationController(deps);
+    expect(isAutomationRecorder(h.store.nodes[CLIP]!.data, h.ydoc.clientID)).toBe(true);
+    controller.arm();
+    const drive = (frac: number) => {
+      h.setRecordTarget({ slot: SLOT, lane: LANE });
+      const clip = readClip(h.store.nodes[CLIP]!.data, IDX) as AutomationClipRecord;
+      controller.recordTick(clip, frac, len);
+    };
+
+    // Pre-punch loop, then punch-in.
+    drive(0); drive(1); drive(2); drive(3);
+    drive(0); // punch-in (pass 1)
+    // PASS 1: move A (0→100), B flat.
+    live[P_A] = 25; drive(1);
+    live[P_A] = 100; drive(2); drive(3);
+    drive(0); // wrap → commit pass 1 (A recorded), keep recording
+    // PASS 2: move B (0→100), A held flat (no re-move).
+    live[P_B] = 40; drive(1);
+    live[P_B] = 100; drive(2); drive(3);
+    // DISARM mid-loop-2-boundary: stop cleanly right at the wrap-equivalent by
+    // driving one more wrap first, then disarm.
+    drive(0); // wrap → commit pass 2 (B recorded)
+    controller.disarm(); // manual stop (nothing new since the wrap → no extra commit needed)
+
+    // The plain committed clip holds BOTH params' tracks with breakpoints.
+    const out = readClip(h.store.nodes[CLIP]!.data, IDX) as AutomationClipRecord;
+    expect(out.kind).toBe('automation');
+    expect(out.tracks).toHaveLength(2);
+    const a = out.tracks.find((t) => t.target.paramId === P_A)!;
+    const b = out.tracks.find((t) => t.target.paramId === P_B)!;
+    expect(a.events.length).toBeGreaterThan(1);
+    expect(b.events.length).toBeGreaterThan(1);
+    expect(Math.max(...a.events.map((e) => e.value))).toBeCloseTo(1, 5);
+    expect(Math.max(...b.events.map((e) => e.value))).toBeCloseTo(1, 5);
+    // Single-writer gate still holds.
+    expect(isAutomationRecorder(h.store.nodes[CLIP]!.data, h.ydoc.clientID)).toBe(true);
+    expect(controller.recording).toBe(false); // disarmed → idle (no stuck light)
   });
 
   it('PLAYBACK: a committed automation clip schedules curve-aware ramps and writes ZERO Yjs', () => {

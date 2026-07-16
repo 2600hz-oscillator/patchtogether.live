@@ -69,6 +69,7 @@ import {
   velBucket,
   noteCovering,
   SCALE_NAMES,
+  isAutomationArmed,
   type CopyBufferKind,
 } from '$lib/audio/modules/clip-types';
 import { laneRateIndex, RATE_MULTS } from '$lib/audio/modules/clip-clock';
@@ -1414,8 +1415,21 @@ export const CTRL_STOP_ALL_COL = 3; // (3,7)
 export const CTRL_ARRANGE_ROW = LP_HEIGHT - 2; // 6
 export const CTRL_REC_COL = 0; // (0,6)
 export const CTRL_SONG_COL = 1; // (1,6)
+/** AUTOMATION record-arm — a dark deck pad on the arrange row (2,6), grouped
+ *  beside the arranger REC (0,6) + SONG (1,6). Chosen because it is UNUSED in the
+ *  Control view (RESET is (2,1); MONO/MUTE/RATE own rows 2/3/4; STOP-ALL is
+ *  (3,7); the per-lane STOP scene column + the Grid-shift copy/paste/scene-scroll
+ *  /swing/div/len palette are OTHER views) and semantically it is a record-arm,
+ *  so it sits with the other record/mode controls. */
+export const CTRL_AUTO_ARM_COL = 2; // (2,6)
 
-export type ControlRehomeAction = 'tempoDown' | 'tempoUp' | 'stopAll' | 'rec' | 'song';
+export type ControlRehomeAction =
+  | 'tempoDown'
+  | 'tempoUp'
+  | 'stopAll'
+  | 'rec'
+  | 'song'
+  | 'autoArm';
 /** Classify a CONTROL-view re-homed grid pad → its action, or null. PURE. */
 export function controlRehomePad(x: number, y: number): ControlRehomeAction | null {
   if (y === CTRL_TEMPO_ROW) {
@@ -1427,6 +1441,7 @@ export function controlRehomePad(x: number, y: number): ControlRehomeAction | nu
   if (y === CTRL_ARRANGE_ROW) {
     if (x === CTRL_REC_COL) return 'rec';
     if (x === CTRL_SONG_COL) return 'song';
+    if (x === CTRL_AUTO_ARM_COL) return 'autoArm';
     return null;
   }
   return null;
@@ -1528,6 +1543,10 @@ export interface SingleGridOpts {
   /** Swing± meter: ramp the Swing+ (purple) / Swing− (blue) button pale→bright by
    *  level, or flash both green at dead-centre. Only rendered under shift. */
   swingMeter?: { active: boolean; dir: 'up' | 'down' | 'center'; level0to1: number };
+  /** AUTOMATION countdown flash for the automation clip's matrix cell (last 4
+   *  beats before its own wrap). Painted only when that clip's scene is inside the
+   *  current scroll window. */
+  autoCountdown?: (CountdownPaint & { clipIndex: number }) | null;
 }
 
 /** The clip-state colour for a matrix pad — identical semantics to
@@ -1662,6 +1681,13 @@ export function computeSingleGridFrame(
     const { slot, lane } = slotLaneForClipIndex(opts.divPulse.clipIndex);
     const pad = gridPadForScrolledSlot(slot, lane, offset);
     if (pad) put(frame, padNote(pad.x, pad.y), opts.divPulse.on ? RGB_TIMING_ARMED : RGB_TIMING);
+  }
+  // AUTOMATION countdown: flash the automation clip's own matrix cell 🟡🟡🔴🔴 in
+  // the last 4 beats before its wrap (only when its scene is in the scroll window).
+  if (opts.autoCountdown) {
+    const { slot, lane } = slotLaneForClipIndex(opts.autoCountdown.clipIndex);
+    const pad = gridPadForScrolledSlot(slot, lane, offset);
+    if (pad) put(frame, padNote(pad.x, pad.y), countdownRgb(opts.autoCountdown));
   }
   // Right column: no-shift = scene/row launch (amber when the scene HAS a clip in
   // any lane; flash when a lane is queued that slot; DARK for an EMPTY scene —
@@ -1868,6 +1894,22 @@ export function computeSingleKeysFrame(opts: SingleKeysOpts): LaunchpadFrame {
 }
 
 // ── SINGLE Control view (session performance deck, re-homed) ──
+/** The resolved AUTOMATION COUNTDOWN flash for a pad — a colour bucket + the
+ *  on/off pulse phase, derived (in the control layer) from the published
+ *  automation render state via the pure automationCountdown* helpers. `clipIndex`
+ *  (grid view only) marks WHICH matrix cell is the automation clip. */
+export interface CountdownPaint {
+  color: 'yellow' | 'red';
+  on: boolean;
+}
+
+/** Map a countdown colour + pulse phase to an RGB (bright on-beat / dim between),
+ *  reusing the existing record/qrec palette. PURE. */
+export function countdownRgb(paint: CountdownPaint): Rgb {
+  if (paint.color === 'yellow') return paint.on ? RGB_QREC_ARMED : RGB_QREC_IDLE;
+  return paint.on ? RGB_RECORDING : RGB_RECORDING_DIM;
+}
+
 export interface SingleControlOpts {
   top: PermanentTopOpts;
   blinkOn?: boolean;
@@ -1875,6 +1917,9 @@ export interface SingleControlOpts {
   recording?: boolean;
   /** Arrangement mode (node.data.clipMode === 'arrangement') — lights re-homed SONG. */
   arrangeMode?: boolean;
+  /** AUTOMATION countdown flash for the AUTO-arm pad (last 4 beats before the
+   *  automation clip's own wrap). Overrides the steady armed/idle colour. */
+  autoCountdown?: CountdownPaint | null;
   data?: ClipPlayerData | undefined;
 }
 
@@ -1917,6 +1962,20 @@ export function computeSingleControlFrame(opts: SingleControlOpts): LaunchpadFra
     frame,
     padNote(CTRL_SONG_COL, CTRL_ARRANGE_ROW),
     opts.arrangeMode ? RGB_SONG_ARRANGE : RGB_SONG_SESSION,
+  );
+  // AUTOMATION record-arm — pulses red (the record-arm colour) while armed, dim
+  // red when idle (mirrors the arranger REC beside it). Reads the SYNCED arm flag
+  // so a card/peer arm shows on the pad. In the last 4 beats before the automation
+  // clip's own wrap the countdown OVERRIDES it (🟡🟡🔴🔴 recordist pre-roll). Same
+  // one-press create-if-none + arm the card's ＋AUTO/ARM does (handler owns write).
+  put(
+    frame,
+    padNote(CTRL_AUTO_ARM_COL, CTRL_ARRANGE_ROW),
+    opts.autoCountdown
+      ? countdownRgb(opts.autoCountdown)
+      : isAutomationArmed(data)
+        ? (blinkOn ? RGB_RECORDING : RGB_RECORDING_DIM)
+        : RGB_STOP_IDLE,
   );
   paintPermanentTopRow(frame, opts.top);
   return frame;

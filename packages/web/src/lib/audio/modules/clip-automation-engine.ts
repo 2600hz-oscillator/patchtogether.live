@@ -174,28 +174,38 @@ export class RecordGate {
 // ---------------------------------------------------------------------------
 
 /**
- * A recorder that arms, then PUNCHES IN when the clip playhead next wraps to its
- * start (loop boundary) and PUNCHES OUT one full loop later — the owner's
- * workflow: "start recording when the playhead goes off ... stop at the end of my
- * automation clip". Detects the wrap by watching the fractional-step playhead
- * decrease (len → 0). Pure state machine; the adapter feeds it the playhead each
- * tick and reacts to the returned transitions.
+ * CONTINUOUS-OVERDUB recorder (owner's chosen model, 2026-07-15). Arms, PUNCHES
+ * IN when the automation clip's OWN playhead next wraps to its start (a clean
+ * first pass, quantized to THIS clip's loop — never the song bar), then keeps
+ * recording EVERY loop: each wrap is a pass boundary (commit the just-finished
+ * pass + start a fresh one) and it KEEPS GOING until the user disarms (manual
+ * stop). There is NO auto punch-out / no 'done' phase — that stuck-light machinery
+ * is gone (the one-shot punch-out that never cleared arm was the stuck-light bug).
+ *
+ * Boundaries key off the automation clip's OWN loop period (its fractional-step
+ * playhead decreasing len → 0), so a coprime-length clip drifts against the other
+ * clips by design — the generative-desync feature; nothing realigns it to a bar.
+ *
+ * Pure state machine; the adapter feeds it the playhead each tick and reacts to
+ * the returned transitions.
  */
-export type RecordPhase = 'idle' | 'armed' | 'recording' | 'done';
+export type RecordPhase = 'idle' | 'armed' | 'recording';
 
 export class QuantizedRecordWindow {
   private phase: RecordPhase = 'idle';
   private prevStep = -1;
-  private startedAtWraps = 0;
-  private wraps = 0;
 
   arm(): void {
-    if (this.phase === 'idle' || this.phase === 'done') this.phase = 'armed';
+    if (this.phase === 'idle') this.phase = 'armed';
   }
-  disarm(): void {
+  /** Stop recording (manual stop = press ARM again). Returns true iff a pass was
+   *  IN FLIGHT (recording) so the caller commits the PARTIAL pass; false when it
+   *  was only armed/idle (nothing captured → nothing to commit). */
+  disarm(): boolean {
+    const wasRecording = this.phase === 'recording';
     this.phase = 'idle';
     this.prevStep = -1;
-    this.wraps = 0;
+    return wasRecording;
   }
   get state(): RecordPhase {
     return this.phase;
@@ -203,24 +213,22 @@ export class QuantizedRecordWindow {
 
   /**
    * Feed the current fractional-step playhead. Returns a transition:
-   *  - 'punch-in'  : recording just began (armed → recording at a loop wrap)
-   *  - 'punch-out' : one full loop elapsed (recording → done) — commit now
-   *  - null        : no transition
+   *  - 'punch-in' : recording just began (armed → recording at the clip's own wrap)
+   *  - 'wrap'     : a loop wrapped WHILE recording — commit this pass + start the
+   *                 next one (continuous overdub); recording CONTINUES
+   *  - null       : no transition
    */
-  advance(fracStep: number): 'punch-in' | 'punch-out' | null {
-    // Wrap = the playhead moved backward past the loop boundary.
+  advance(fracStep: number): 'punch-in' | 'wrap' | null {
+    // Wrap = the playhead moved backward past the clip's OWN loop boundary.
     const wrapped = this.prevStep >= 0 && fracStep < this.prevStep;
     this.prevStep = fracStep;
-    if (wrapped) this.wraps++;
 
     if (this.phase === 'armed' && wrapped) {
       this.phase = 'recording';
-      this.startedAtWraps = this.wraps;
       return 'punch-in';
     }
-    if (this.phase === 'recording' && wrapped && this.wraps > this.startedAtWraps) {
-      this.phase = 'done';
-      return 'punch-out';
+    if (this.phase === 'recording' && wrapped) {
+      return 'wrap'; // stay recording — overdub continues
     }
     return null;
   }

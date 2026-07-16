@@ -247,6 +247,18 @@ export const MAX_AUTOMATION_TRACKS = 16;
  *  at the coerce boundary; the recorder also caps before commit. */
 export const MAX_AUTOMATION_EVENTS = 4000;
 
+/** DEFAULT automation-clip length in steps — DELIBERATELY long (vs the 16-step
+ *  note default) so a fresh ＋AUTO gives a comfortable multi-second record loop
+ *  instead of a ~2s scramble. Combined with DEFAULT_AUTOMATION_DIV below. Both
+ *  the length AND the division are user-settable from the card afterward. */
+export const DEFAULT_AUTOMATION_STEPS = 64;
+/** DEFAULT automation-clip clock division — a SLOW rate ('1/4' = index 1 into
+ *  clip-clock RATE_MULTS) so the long window stretches to ~32s at the default
+ *  tempo/STEP grid (64 steps × 4× the base step duration at 120bpm/16th). The
+ *  owner's "lower clock divisions + longer beat length to maximize record time":
+ *  a fresh ＋AUTO records over many seconds, not a scramble. */
+export const DEFAULT_AUTOMATION_DIV = 1;
+
 /** A single automation breakpoint: a normalized param value at a step position.
  *  `step` may be fractional for sub-step resolution; `value` is 0..1 in the
  *  param's normalized space (the same 0..1 a Fader/knob reports), so the track
@@ -278,6 +290,13 @@ export interface AutomationClipRecord extends ClipBase {
   kind: 'automation';
   lengthSteps: number;
   tracks: AutomationTrack[];
+  /** Optional PER-CLIP clock DIVIDER — an index into clip-clock.ts RATE_MULTS
+   *  ([1/8,1/4,1/2,1,2x,4x]), mirroring NoteClipRecord.div. When set it OVERRIDES
+   *  the lane's `rate[]` for this clip's step duration; the engine LATCHES it at
+   *  the clip's loop boundary (a live edit only takes effect at the next clip
+   *  start). A SLOW default (DEFAULT_AUTOMATION_DIV) stretches the record loop so
+   *  param moves are comfortable to capture. Absent = follow the per-lane rate. */
+  div?: number;
 }
 
 export type ClipRecord =
@@ -399,6 +418,14 @@ export function isAutomationRecorder(
 ): boolean {
   const a = data?.automation;
   return !!a && a.arm === true && a.recorderId === clientId;
+}
+
+/** True when automation record is ARMED on this player — the SYNCED flag every
+ *  peer, the card, and the Launchpad AUTO-arm pad read (a card/peer arm shows on
+ *  the pad, and vice-versa). Distinct from `isAutomationRecorder`, which also
+ *  requires THIS client to be the designated single-writer. PURE. */
+export function isAutomationArmed(data: ClipPlayerData | undefined): boolean {
+  return data?.automation?.arm === true;
 }
 
 /** DUAL-LAUNCHPAD KEYS note-record state (see ClipPlayerData.noteRec). */
@@ -642,6 +669,10 @@ export function coerceClipRecord(raw: unknown): ClipRecord | null {
       // Enforce the DOCUMENTED cap at the data boundary (MAX_AUTOMATION_TRACKS).
       .slice(0, MAX_AUTOMATION_TRACKS);
     const out: AutomationClipRecord = { kind: 'automation', lengthSteps, tracks, loop };
+    // Per-clip divider: clamp a finite value to a valid RATE index; missing /
+    // non-numeric ⇒ undefined (the clip follows its lane's rate). Same discipline
+    // as the note arm above.
+    if (typeof r.div === 'number' && Number.isFinite(r.div)) out.div = coerceRateIndex(r.div);
     if (typeof r.color === 'number') out.color = r.color;
     if (typeof r.name === 'string') out.name = r.name;
     if (typeof r.gain === 'number') out.gain = r.gain;
@@ -693,9 +724,20 @@ export function sameAutomationTarget(a: AutomationTarget, b: AutomationTarget): 
   return a.nodeId === b.nodeId && a.paramId === b.paramId;
 }
 
-/** Empty automation clip of a given length (defaults to DEFAULT_CLIP_STEPS). */
-export function defaultAutomationClip(lengthSteps = DEFAULT_CLIP_STEPS): AutomationClipRecord {
-  return { kind: 'automation', lengthSteps: clampStepCount(lengthSteps), tracks: [], loop: true };
+/** Empty automation clip. Defaults to a LONG window (DEFAULT_AUTOMATION_STEPS)
+ *  at a SLOW clock division (DEFAULT_AUTOMATION_DIV) so a fresh ＋AUTO yields a
+ *  comfortable multi-second record loop (both are user-settable afterward). */
+export function defaultAutomationClip(
+  lengthSteps = DEFAULT_AUTOMATION_STEPS,
+  div = DEFAULT_AUTOMATION_DIV,
+): AutomationClipRecord {
+  return {
+    kind: 'automation',
+    lengthSteps: clampStepCount(lengthSteps),
+    tracks: [],
+    loop: true,
+    div: coerceRateIndex(div),
+  };
 }
 
 /**

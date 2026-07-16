@@ -49,11 +49,20 @@
     coerceLaneColor,
     readClip,
     defaultAutomationClip,
+    clampStepCount,
+    MAX_CLIP_STEPS,
     MAX_AUTOMATION_TRACKS,
+    DEFAULT_AUTOMATION_STEPS,
     type ClipPlayerData,
     type NoteClipRecord,
     type AutomationClipRecord,
   } from '$lib/audio/modules/clip-types';
+  import { plainAutomationClip } from '$lib/audio/modules/clip-automation';
+  import {
+    getAutomationRender,
+    automationCountdownColor,
+    automationCountdownOn,
+  } from '$lib/audio/modules/clip-automation-render';
   import { overriddenKeysFor, reEnableAllFor } from '$lib/audio/automation-touch';
   import {
     RATE_LABELS,
@@ -277,6 +286,10 @@
   let externallyClocked = $state(false);
   let curStep = $state(0);
   let songBeatLive = $state(0); // live song position for the arrangement playhead
+  // AUTOMATION countdown mirror (client-local render state, polled — not synced):
+  // 'yellow' | 'red' with an on-beat pulse in the last 4 beats before the
+  // automation clip's own wrap, else null. Mirrors the launchpad pad flash.
+  let autoCountdown = $state<{ color: 'yellow' | 'red'; on: boolean } | null>(null);
   $effect(() => {
     void node; // re-subscribe if the node identity changes
     let raf = 0;
@@ -299,6 +312,10 @@
       // player automates is currently suspended by a live grab.
       const keys = overriddenKeysFor(id);
       autoOverridden = keys.length > 0 && keys.some((k) => autoTrackKeys.has(k));
+      // Automation countdown mirror (client-local render state, polled here).
+      const rs = getAutomationRender(id);
+      const cc = rs && rs.recording ? automationCountdownColor(rs.beatsToLoopEnd) : null;
+      autoCountdown = cc ? { color: cc, on: automationCountdownOn(rs!.beatPhase) } : null;
       raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
@@ -356,6 +373,10 @@
   });
   let autoTrackCount = $derived(autoClip?.tracks.length ?? 0);
   let autoArmed = $derived((void cardVersion, dataObj().automation?.arm === true));
+  // Automation clip LENGTH (steps) + DIV (clock-rate index) — settable so a long,
+  // slow record window is user-tunable (the countdown makes any length usable).
+  let autoLen = $derived(autoClip?.lengthSteps ?? DEFAULT_AUTOMATION_STEPS);
+  let autoDiv = $derived(coerceRateIndex(autoClip?.div));
   // The real track keys ("nodeId::paramId") of THIS clip — the card intersects
   // the controller's overridden keys against these so the indicator dot only
   // lights for params THIS player actually automates (never unrelated grabs).
@@ -395,6 +416,28 @@
   /** Re-enable every param THIS player has suspended (the override-dot click). */
   function reEnableAutomation() {
     reEnableAllFor(id);
+  }
+  /** Rewrite the automation clip with a mutated copy (whole-clip PLAIN reassign,
+   *  never a live Y splice — the automation-clip commit discipline). */
+  function writeAutoClip(mut: (rec: AutomationClipRecord) => AutomationClipRecord) {
+    const ptr = autoClipPtr;
+    const rec = autoClip;
+    if (!ptr || !rec) return;
+    const next = plainAutomationClip(mut(rec));
+    writeData((d) => {
+      if (!d.clips) d.clips = {};
+      d.clips[String(clipIndex(ptr.slot, ptr.lane))] = next;
+    });
+  }
+  /** Set the automation clip's LENGTH (steps). ARBITRARY counts are allowed (7, 13,
+   *  …) — NOT snapped to musical multiples: a coprime length drifts against the
+   *  other clips by design (the generative-desync feature). */
+  function setAutoLen(steps: number) {
+    writeAutoClip((rec) => ({ ...rec, lengthSteps: clampStepCount(steps) }));
+  }
+  /** Set the automation clip's own clock DIVISION (index into RATE_LABELS). */
+  function setAutoDiv(idx: number) {
+    writeAutoClip((rec) => ({ ...rec, div: coerceRateIndex(idx) }));
   }
 
   // --- SONG VIEW timeline (shown in ARRANGEMENT mode) ---
@@ -711,10 +754,13 @@
           <button
             class="auto-arm"
             class:on={autoArmed}
+            class:cd-yellow={autoCountdown?.color === 'yellow'}
+            class:cd-red={autoCountdown?.color === 'red'}
+            class:cd-on={autoCountdown?.on}
             onclick={toggleAutoArm}
             title={autoArmed
-              ? 'Automation REC armed — captures live param moves for one loop (click to disarm)'
-              : 'Arm automation record (punches in at the loop start, captures one loop of live param moves)'}
+              ? 'Recording automation (continuous overdub) — every loop overdubs the params you move; click to stop. The 🟡🟡🔴🔴 flash counts down the last 4 beats to the loop wrap.'
+              : 'Arm automation record — punches in at the clip’s next loop start, then overdubs every loop until you click again (manual stop)'}
             aria-pressed={autoArmed}
             data-testid={`clipplayer-auto-arm-${id}`}
           >AUTO</button>
@@ -723,6 +769,30 @@
             title={`${autoTrackCount} automated param(s) of ${MAX_AUTOMATION_TRACKS} max`}
             data-testid={`clipplayer-auto-count-${id}`}
           >{autoTrackCount}/{MAX_AUTOMATION_TRACKS}</span>
+          <input
+            class="auto-len"
+            type="number"
+            min="1"
+            max={MAX_CLIP_STEPS}
+            step="1"
+            value={autoLen}
+            title="Automation clip LENGTH in steps. Any count works (7, 13, …) — it is NOT snapped to a bar, so a coprime length drifts against the other clips (generative desync)."
+            aria-label="automation clip length in steps"
+            data-testid={`clipplayer-auto-len-${id}`}
+            onchange={(e) => setAutoLen(Number((e.currentTarget as HTMLInputElement).value))}
+          />
+          <select
+            class="auto-div"
+            value={String(autoDiv)}
+            title={`Automation clip clock DIVISION (${RATE_LABELS[autoDiv]}) — a slow rate stretches the record loop; overrides the lane rate, latched at the clip's loop boundary.`}
+            aria-label="automation clip clock division"
+            data-testid={`clipplayer-auto-div-${id}`}
+            onchange={(e) => setAutoDiv(Number((e.currentTarget as HTMLSelectElement).value))}
+          >
+            {#each RATE_LABELS as lbl, ri (ri)}
+              <option value={String(ri)}>{lbl}</option>
+            {/each}
+          </select>
           {#if autoOverridden}
             <button
               class="auto-override"
@@ -866,8 +936,12 @@
               {#each Array(CLIP_LANES) as _l, lane (lane)}
                 {@const idx = clipIndex(slot, lane)}
                 {@const st = padState(idx)}
+                {@const cd = autoCountdown && autoClipPtr && autoClipPtr.lane === lane && autoClipPtr.slot === slot ? autoCountdown : null}
                 <button
                   class="pad {st}"
+                  class:cd-yellow={cd?.color === 'yellow'}
+                  class:cd-red={cd?.color === 'red'}
+                  class:cd-on={cd?.on}
                   role="gridcell"
                   style={`--lane-color:${laneColorEff(lane)}`}
                   aria-label={`lane ${lane + 1} slot ${slot + 1} ${st}`}
@@ -1149,7 +1223,33 @@
     border-color: #9d5cff;
     animation: rec-blink 1s steps(2) infinite;
   }
+  /* COUNTDOWN mirror (last 4 beats before the automation clip's own wrap):
+     yellow (4,3) → red (2,1), pulsing bright ON the beat (.cd-on), dim between.
+     Overrides the steady armed purple; no CSS animation (the pulse is driven by
+     the polled render state so it stays beat-synced to the clip, not wall time). */
+  .auto-arm.cd-yellow { animation: none; color: #1a1400; background: #6e6000; border-color: #b0a000; }
+  .auto-arm.cd-yellow.cd-on { background: #d9c000; border-color: #fff06a; }
+  .auto-arm.cd-red { animation: none; color: #fff; background: #7a1010; border-color: #b03030; }
+  .auto-arm.cd-red.cd-on { background: #ff2a2a; border-color: #ff8a8a; }
   .auto-block { display: inline-flex; align-items: center; gap: 3px; }
+  .auto-len {
+    width: 34px;
+    font-size: 8px;
+    padding: 2px 3px;
+    background: var(--control-bg, #222);
+    color: var(--text-dim, #bbb);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    font-variant-numeric: tabular-nums;
+  }
+  .auto-div {
+    font-size: 8px;
+    padding: 2px 1px;
+    background: var(--control-bg, #222);
+    color: var(--text-dim, #bbb);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+  }
   .auto-count {
     font-size: 8px;
     color: var(--text-dim, #999);
@@ -1266,6 +1366,14 @@
     background: var(--lane-color);
     box-shadow: 0 0 5px color-mix(in srgb, var(--lane-color) 70%, transparent);
   }
+  /* AUTOMATION countdown flash on the automation clip's OWN cell (mirrors the
+     launchpad pad): 🟡🟡🔴🔴 in the last 4 beats, bright ON the beat (.cd-on). The
+     pulse is driven by the polled render state (beat-synced to the clip), so no
+     CSS keyframe animation. */
+  .pad.cd-yellow { background: #6e6000; box-shadow: none; }
+  .pad.cd-yellow.cd-on { background: #d9c000; box-shadow: 0 0 6px #d9c000; }
+  .pad.cd-red { background: #7a1010; box-shadow: none; }
+  .pad.cd-red.cd-on { background: #ff2a2a; box-shadow: 0 0 6px #ff2a2a; }
   @keyframes blink { 50% { opacity: 0.35; } }
 
   .editor { display: flex; flex-direction: column; gap: 6px; }

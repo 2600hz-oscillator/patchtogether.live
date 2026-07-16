@@ -84,6 +84,10 @@ export function plainAutomationClip(rec: AutomationClipRecord): AutomationClipRe
       return t;
     }),
   };
+  // Carry the per-clip clock divider so the record punch-out commit (which
+  // reassigns the WHOLE clip through this plain shape) never DROPS the div — the
+  // slow record loop must survive each pass.
+  if (typeof rec.div === 'number') out.div = rec.div;
   if (typeof rec.color === 'number') out.color = rec.color;
   if (typeof rec.name === 'string') out.name = rec.name;
   if (typeof rec.gain === 'number') out.gain = rec.gain;
