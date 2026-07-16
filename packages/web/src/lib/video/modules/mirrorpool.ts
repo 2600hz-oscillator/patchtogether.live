@@ -32,7 +32,8 @@
 //   pool  (video)  — underwater view, mapped to the hemisphere interior.
 //   scene (video)  — surroundings, reflected on the surface.
 //   video_out (video) — the rendered scene from the PTZ camera.
-//   + a CV input per control (wind/rain/brightness/surface_mode + camera PTZ).
+//   + a CV input per control (wind/rain/brightness/surface_mode + camera PTZ +
+//     bipolar Pos X/Y/Z that translate the eye ±2R in world space).
 //
 // NOTE (owner): this def lives in the WebGL attest basis by construction
 // (resolveWebglBasis sweeps lib/video/). Its real shader/def flips
@@ -286,6 +287,11 @@ interface MirrorpoolParams {
   pan: number;
   tilt: number;
   zoom: number;
+  // Bipolar position: translates the camera EYE in world space (±1 → ±2R),
+  // ON TOP of the PTZ framing. Default 0 = current framing (unchanged).
+  pos_x: number;
+  pos_y: number;
+  pos_z: number;
 }
 
 const DEFAULTS: MirrorpoolParams = {
@@ -300,6 +306,9 @@ const DEFAULTS: MirrorpoolParams = {
   pan: 0,
   tilt: -0.6,
   zoom: 0.5,
+  pos_x: 0,
+  pos_y: 0,
+  pos_z: 0,
 };
 
 export const MIRRORPOOL_DEFAULTS: Readonly<MirrorpoolParams> = DEFAULTS;
@@ -362,6 +371,10 @@ export const mirrorpoolDef: VideoModuleDef = {
     { id: 'pan_cv', type: 'cv', paramTarget: 'pan', cvScale: { mode: 'linear' } },
     { id: 'tilt_cv', type: 'cv', paramTarget: 'tilt', cvScale: { mode: 'linear' } },
     { id: 'zoom_cv', type: 'cv', paramTarget: 'zoom', cvScale: { mode: 'linear' } },
+    // Bipolar camera POSITION CV: translate the eye ±2R per axis (on top of PTZ).
+    { id: 'pos_x_cv', type: 'cv', paramTarget: 'pos_x', cvScale: { mode: 'linear' } },
+    { id: 'pos_y_cv', type: 'cv', paramTarget: 'pos_y', cvScale: { mode: 'linear' } },
+    { id: 'pos_z_cv', type: 'cv', paramTarget: 'pos_z', cvScale: { mode: 'linear' } },
   ],
   outputs: [{ id: 'video_out', type: 'video' }],
   params: [
@@ -376,6 +389,11 @@ export const mirrorpoolDef: VideoModuleDef = {
     { id: 'pan', label: 'Pan', defaultValue: DEFAULTS.pan, min: -Math.PI, max: Math.PI, curve: 'linear' },
     { id: 'tilt', label: 'Tilt', defaultValue: DEFAULTS.tilt, min: -Math.PI, max: Math.PI, curve: 'linear' },
     { id: 'zoom', label: 'Zoom', defaultValue: DEFAULTS.zoom, min: 0, max: 1, curve: 'linear' },
+    // Bipolar position: ±1 → ±2R world translation of the eye. Default 0 = the
+    // current PTZ framing (existing patches unchanged). Pos Y+ lifts ABOVE water.
+    { id: 'pos_x', label: 'Pos X', defaultValue: DEFAULTS.pos_x, min: -1, max: 1, curve: 'linear' },
+    { id: 'pos_y', label: 'Pos Y', defaultValue: DEFAULTS.pos_y, min: -1, max: 1, curve: 'linear' },
+    { id: 'pos_z', label: 'Pos Z', defaultValue: DEFAULTS.pos_z, min: -1, max: 1, curve: 'linear' },
   ],
 
   // docs-hash-ignore:start
@@ -395,6 +413,9 @@ export const mirrorpoolDef: VideoModuleDef = {
       pan_cv: "Modulates Pan: linear CV sweeps the camera yaw over -pi..pi. Patch a slow LFO here for an orbit.",
       tilt_cv: "Modulates Tilt: linear CV sweeps the camera pitch over -pi..pi (clamped to +/-85 degrees to dodge the straight-down gimbal).",
       zoom_cv: "Modulates Zoom: linear CV narrows the field of view from 70 degrees (0) to 20 degrees (1), zooming the camera in.",
+      pos_x_cv: "Modulates Pos X: bipolar linear CV translates the camera eye left/right in world space; full-scale +/-1 moves it +/-2R (2 pool-radii = 10 ft) on top of the PTZ framing.",
+      pos_y_cv: "Modulates Pos Y: bipolar linear CV lifts/lowers the camera eye in world space; full-scale +/-1 moves it +/-2R. Positive raises the eye ABOVE the water plane so it looks down onto the pool.",
+      pos_z_cv: "Modulates Pos Z: bipolar linear CV dollies the camera eye forward/back in world space; full-scale +/-1 moves it +/-2R on top of the PTZ framing.",
     },
     outputs: {
       video_out: "The rendered pool scene from the PTZ camera (rendered at half engine resolution and LINEAR-upscaled). Always live: even with no inputs patched it shows a procedural sky + rippling water, so it doubles as a standalone generative source.",
@@ -411,6 +432,9 @@ export const mirrorpoolDef: VideoModuleDef = {
       pan: "Pan (-pi..pi, default 0): camera yaw. pan=0, tilt=0 looks straight along -z.",
       tilt: "Tilt (-pi..pi, default -0.6): camera pitch, clamped to +/-85 degrees so it never hits the straight-down gimbal degeneracy. Default looks down into the pool.",
       zoom: "Zoom (0..1, default 0.5): maps to a 70..20 degree vertical field of view; higher zooms the camera in.",
+      pos_x: "Pos X (-1..1, default 0): bipolar position that TRANSLATES the camera eye left/right in world space, on top of the PTZ framing. Full-scale +/-1 shifts the eye +/-2R (2 pool-radii = 10 ft, the pool being 5 ft in radius); the mapped shift is capped at +/-2R. 0 leaves the current framing unchanged.",
+      pos_y: "Pos Y (-1..1, default 0): bipolar position that lifts/lowers the camera eye in world space. Positive raises the eye ABOVE the water plane (out of the pool) so the default downward tilt looks straight down onto the water; full-scale +/-1 moves the eye +/-2R (capped). 0 leaves the current framing unchanged.",
+      pos_z: "Pos Z (-1..1, default 0): bipolar position that dollies the camera eye forward/back in world space, on top of the PTZ framing. Full-scale +/-1 shifts the eye +/-2R (capped). 0 leaves the current framing unchanged.",
     },
   },
   // docs-hash-ignore:end
@@ -550,9 +574,14 @@ export const mirrorpoolDef: VideoModuleDef = {
         }
 
         // ── Render pass ──
+        // cameraBasis folds the bipolar position (pos_*) into the eye (±2R per
+        // axis), so uEye already carries the translation — the render shader
+        // consumes uEye directly (no separate eye math), keeping core+shader in
+        // lockstep by construction.
         const cam = cameraBasis({
           camX: params.cam_x, camY: params.cam_y, camZ: params.cam_z,
           pan: params.pan, tilt: params.tilt, zoom: params.zoom,
+          posX: params.pos_x, posY: params.pos_y, posZ: params.pos_z,
         });
         const poolTex = frame.getInputTexture(node.id, 'pool');
         const sceneTex = frame.getInputTexture(node.id, 'scene');

@@ -21,6 +21,8 @@ import {
   WATER_ETA,
   CAM_BOX,
   TILT_CLAMP,
+  CAM_POS_REACH,
+  POOL_RADIUS,
 } from './mirrorpool-core';
 
 describe('optics: Schlick Fresnel', () => {
@@ -200,5 +202,79 @@ describe('cameraBasis: PTZ clamps + gimbal safety', () => {
     const dot = (a: number[], b: number[]) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
     expect(dot(wide.forward, wide.right)).toBeCloseTo(0, 6);
     expect(dot(wide.right, wide.up)).toBeCloseTo(0, 6);
+  });
+});
+
+describe('cameraBasis: bipolar POSITION translates the eye (±2R)', () => {
+  const R = POOL_RADIUS;
+  // A canonical mid-box PTZ eye the position tests translate from.
+  const base = { camX: 0, camY: 1.3, camZ: 1.6, pan: 0, tilt: -0.6, zoom: 0.5 } as const;
+
+  it('the reach constant is 2R (2 pool-radii = 10 ft, pool being 5 ft in radius)', () => {
+    expect(CAM_POS_REACH).toBeCloseTo(2 * R, 12);
+  });
+
+  it('default position (0,0,0) leaves the eye exactly at the PTZ eye', () => {
+    const ptz = cameraBasis(base);
+    const withZero = cameraBasis({ ...base, posX: 0, posY: 0, posZ: 0 });
+    expect(withZero.eye[0]).toBeCloseTo(ptz.eye[0], 12);
+    expect(withZero.eye[1]).toBeCloseTo(ptz.eye[1], 12);
+    expect(withZero.eye[2]).toBeCloseTo(ptz.eye[2], 12);
+    // Omitting the fields entirely (back-compat PTZ-only caller) is identical.
+    expect(cameraBasis(base).eye).toEqual(ptz.eye);
+  });
+
+  it('full-scale on each axis shifts the eye by exactly ±2R (and no other axis)', () => {
+    const ptz = cameraBasis(base).eye;
+    const px = cameraBasis({ ...base, posX: 1 }).eye;
+    expect(px[0] - ptz[0]).toBeCloseTo(2 * R, 12); // +2R on x
+    expect(px[1]).toBeCloseTo(ptz[1], 12);
+    expect(px[2]).toBeCloseTo(ptz[2], 12);
+
+    const nz = cameraBasis({ ...base, posZ: -1 }).eye;
+    expect(nz[2] - ptz[2]).toBeCloseTo(-2 * R, 12); // −2R on z
+    expect(nz[0]).toBeCloseTo(ptz[0], 12);
+    expect(nz[1]).toBeCloseTo(ptz[1], 12);
+  });
+
+  it('pos_y=+1 lifts the eye above the water plane (y>0) by ~2R and still looks DOWN', () => {
+    // Start from the lowest PTZ height (clamps to CAM_BOX.y[0]=0.15) so the lift
+    // is measured from just above the surface: 0.15 + 2R ≈ 2R above y=0.
+    const low = { ...base, camY: 0 } as const; // clamps to 0.15
+    const lifted = cameraBasis({ ...low, posY: 1 });
+    expect(lifted.eye[1]).toBeGreaterThan(0);            // above the water plane
+    expect(lifted.eye[1]).toBeCloseTo(CAM_BOX.y[0] + 2 * R, 6);
+    expect(lifted.eye[1]).toBeGreaterThan(2 * R - 0.2);  // ~2R above the surface
+    // PTZ still orients: default tilt is negative → forward points DOWN onto
+    // the water even though the eye moved up. Position does NOT re-aim.
+    expect(lifted.forward[1]).toBeLessThan(0);
+  });
+
+  it('position moves ONLY the eye — orientation stays PTZ-derived (unchanged)', () => {
+    const ptz = cameraBasis(base);
+    const moved = cameraBasis({ ...base, posX: -0.7, posY: 0.9, posZ: 0.3 });
+    for (const key of ['forward', 'right', 'up'] as const) {
+      for (let i = 0; i < 3; i++) {
+        expect(moved[key][i]).toBeCloseTo(ptz[key][i], 12);
+      }
+    }
+    expect(moved.tanHalf).toBeCloseTo(ptz.tanHalf, 12);
+    // But the eye actually moved.
+    expect(moved.eye[1]).toBeGreaterThan(ptz.eye[1]);
+  });
+
+  it('caps the mapped translation at ±2R (a hot CV cannot fling the eye further)', () => {
+    const ptz = cameraBasis(base).eye;
+    const overX = cameraBasis({ ...base, posX: 5 }).eye;   // clamps to +1 → +2R
+    const overY = cameraBasis({ ...base, posY: -9 }).eye;  // clamps to −1 → −2R
+    expect(overX[0] - ptz[0]).toBeCloseTo(2 * R, 12);
+    expect(overY[1] - ptz[1]).toBeCloseTo(-2 * R, 12);
+  });
+
+  it('position can carry the eye OUT of CAM_BOX (above the y=2.2 ceiling)', () => {
+    // From the top of the box (camY=99 clamps to 2.2), +2R lifts well past it.
+    const high = cameraBasis({ ...base, camY: 99, posY: 1 }).eye;
+    expect(high[1]).toBeGreaterThan(CAM_BOX.y[1]);
+    expect(high[1]).toBeCloseTo(CAM_BOX.y[1] + 2 * R, 6);
   });
 });

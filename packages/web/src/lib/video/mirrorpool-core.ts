@@ -43,6 +43,16 @@ export const CAM_BOX = {
 /** Tilt clamp (±~85°) dodges the straight-down gimbal degeneracy. */
 export const TILT_CLAMP = 1.48;
 
+/** Full-scale reach (world units) of each bipolar camera-POSITION axis. The
+ *  pool surface is 10 ft across (radius R = 5 ft), so 1 unit of R = 5 ft; the
+ *  camera must be able to travel 10 ft (= 2R) from the surface in EVERY
+ *  direction, INCLUDING straight up out of the pool. So a normalized pos_* of
+ *  ±1 maps to a ±2R world translation of the eye. The translation is CLAMPED
+ *  to ±2R (`clamp(pos, -1, 1) · CAM_POS_REACH`) so a hot CV can't fling the
+ *  eye arbitrarily far ("don't allow too far"). posY > 0 lifts the eye ABOVE
+ *  the water plane (y > 0), out of the pool. */
+export const CAM_POS_REACH = 2 * POOL_RADIUS;
+
 // ── Optics ─────────────────────────────────────────────────────────────────
 /** Water reflectance at normal incidence: ((1.33-1)/(1.33+1))² ≈ 0.0201. */
 export const WATER_F0 = 0.02;
@@ -253,6 +263,14 @@ export interface CameraParams {
   pan: number;
   tilt: number;
   zoom: number; // 0..1 → fov 70°..20°
+  /** Bipolar position offsets. Each normalized ±1 TRANSLATES the eye ±2R
+   *  (= ±{@link CAM_POS_REACH}) in world space ON TOP of the PTZ framing, so
+   *  the camera becomes fully movable in a box around the pool. Optional and
+   *  default 0 (⇒ the eye is exactly the PTZ eye, so existing patches are
+   *  unchanged). posY > 0 lifts the eye ABOVE the water plane. */
+  posX?: number;
+  posY?: number;
+  posZ?: number;
 }
 export interface CameraBasis {
   eye: [number, number, number];
@@ -270,16 +288,27 @@ function clamp(v: number, lo: number, hi: number): number {
 const DEG = Math.PI / 180;
 
 /**
- * Build the camera ray basis from the PTZ params. The eye is clamped into
- * CAM_BOX, tilt into ±TILT_CLAMP (gimbal-safe), and zoom maps linearly to a
- * 70°→20° vertical FOV (zoom in = narrower). pan=0,tilt=0 looks along −z.
+ * Build the camera ray basis from the PTZ params PLUS the bipolar position
+ * offsets. The PTZ eye is clamped into CAM_BOX, then TRANSLATED by
+ * (posX,posY,posZ)·2R (each axis clamped to ±2R) so the eye can move anywhere
+ * in a box around the pool — including ABOVE the water plane (posY>0 ⇒ y>0).
+ * pan/tilt/zoom still ORIENT the camera (forward is PTZ-derived, unchanged by
+ * position — the eye moves, PTZ aims), so an above-surface eye with the
+ * default downward tilt looks DOWN onto the water. Tilt is clamped into
+ * ±TILT_CLAMP (gimbal-safe); zoom maps linearly to a 70°→20° vertical FOV
+ * (zoom in = narrower); pan=0,tilt=0 looks along −z. With posX/Y/Z=0 the eye
+ * is exactly the PTZ eye, so existing behaviour is unchanged at default.
  * Matrix-inverse-free (mirrors the mandelbulb look-at basis).
  */
 export function cameraBasis(p: CameraParams): CameraBasis {
+  // PTZ eye (box-clamped) + bipolar position translation (each axis ±2R). The
+  // translation rides ON TOP of the box clamp so position can carry the eye
+  // out of CAM_BOX (e.g. above the y=2.2 ceiling), which is the point of a
+  // fully-movable camera. clamp(pos,-1,1) caps the reach at ±2R.
   const eye: [number, number, number] = [
-    clamp(p.camX, CAM_BOX.x[0], CAM_BOX.x[1]),
-    clamp(p.camY, CAM_BOX.y[0], CAM_BOX.y[1]),
-    clamp(p.camZ, CAM_BOX.z[0], CAM_BOX.z[1]),
+    clamp(p.camX, CAM_BOX.x[0], CAM_BOX.x[1]) + clamp(p.posX ?? 0, -1, 1) * CAM_POS_REACH,
+    clamp(p.camY, CAM_BOX.y[0], CAM_BOX.y[1]) + clamp(p.posY ?? 0, -1, 1) * CAM_POS_REACH,
+    clamp(p.camZ, CAM_BOX.z[0], CAM_BOX.z[1]) + clamp(p.posZ ?? 0, -1, 1) * CAM_POS_REACH,
   ];
   const tilt = clamp(p.tilt, -TILT_CLAMP, TILT_CLAMP);
   const pan = p.pan;

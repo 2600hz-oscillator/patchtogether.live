@@ -2,9 +2,10 @@
   // MirrorpoolCard — UI for MIRRORPOOL (hemisphere-pool liquid renderer).
   //
   // Two video inputs (POOL = underwater view, SCENE = reflected surroundings)
-  // → one video output. Eleven knobs, each with a matching CV input:
+  // → one video output. Fourteen knobs, each with a matching CV input:
   //   WIND / DIR (swell), RAIN (storm), BRIGHT (virtual sun), MODE
-  //   (Refract↔Mirror), and the full PTZ camera (CAM X/Y/Z + PAN/TILT/ZOOM).
+  //   (Refract↔Mirror), the full PTZ camera (CAM X/Y/Z + PAN/TILT/ZOOM), and
+  //   the bipolar camera POSITION (POS X/Y/Z — translate the eye ±2R in space).
   // A live preview of the rendered OUT is shown (the CellshadeCard blit).
   import { onMount, onDestroy } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';
@@ -89,6 +90,9 @@
     pan: 'PAN',
     tilt: 'TILT',
     zoom: 'ZOOM',
+    pos_x: 'POS X',
+    pos_y: 'POS Y',
+    pos_z: 'POS Z',
   });
   const outputs = portsFromDef(mirrorpoolDef.outputs);
 
@@ -104,6 +108,9 @@
     { id: 'pan', label: 'Pan' },
     { id: 'tilt', label: 'Tilt' },
     { id: 'zoom', label: 'Zoom' },
+    { id: 'pos_x', label: 'Pos X' },
+    { id: 'pos_y', label: 'Pos Y' },
+    { id: 'pos_z', label: 'Pos Z' },
   ];
 </script>
 
