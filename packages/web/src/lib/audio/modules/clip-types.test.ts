@@ -63,17 +63,20 @@ import {
   MAX_SWING,
   MAX_AUTOMATION_TRACKS,
   MAX_AUTOMATION_EVENTS,
-  DEFAULT_AUTOMATION_STEPS,
-  DEFAULT_AUTOMATION_DIV,
   isAutomationArmed,
-  automationClipDisplay,
   coerceAutomationEvent,
-  coerceAutomationTrack,
+  coerceAutoTrack,
+  coerceAutoClipRecord,
+  readAutoClip,
+  autoTrackViews,
+  automationTargetKey,
+  parseAutomationTargetKey,
+  coerceAutoAssign,
+  assignedLaneOf,
+  laneAssignedTargets,
+  autoAssignCounts,
   sameAutomationTarget,
-  defaultAutomationClip,
   mergeAutomationOverdub,
-  removeAutomationTrack,
-  findAutomationTrack,
   automationValueAt,
   automationLinearAt,
   automationNextAfter,
@@ -83,7 +86,6 @@ import {
   type NoteClipRecord,
   type NoteEvent,
   type ClipPlayerData,
-  type AutomationClipRecord,
   type AutomationEvent,
   type AutomationTrack,
 } from './clip-types';
@@ -291,10 +293,9 @@ describe('automation: coerceAutomationEvent', () => {
   });
 });
 
-describe('automation: coerceAutomationTrack (custom data — no MIDI identity)', () => {
-  it('normalizes a track: step-sorts + filters events, carries interp', () => {
-    const t = coerceAutomationTrack({
-      target: tgt('nodeA', 'cutoff'),
+describe('automation: coerceAutoTrack (keyed track value — no MIDI identity, no target)', () => {
+  it('normalizes a track value: step-sorts + filters events, carries interp', () => {
+    const t = coerceAutoTrack({
       interp: 'hold',
       events: [
         { step: 2, value: 0.2 },
@@ -303,7 +304,6 @@ describe('automation: coerceAutomationTrack (custom data — no MIDI identity)',
       ],
     });
     expect(t).not.toBeNull();
-    expect(t!.target).toEqual(tgt('nodeA', 'cutoff'));
     expect(t!.interp).toBe('hold');
     expect((t as unknown as Record<string, unknown>).channel).toBeUndefined(); // no MIDI identity
     expect(t!.events).toEqual([
@@ -311,81 +311,107 @@ describe('automation: coerceAutomationTrack (custom data — no MIDI identity)',
       { step: 2, value: 0.2 },
     ]);
   });
-  it('caps events at MAX_AUTOMATION_EVENTS (long-clip guard)', () => {
+  it('caps events at MAX_AUTOMATION_EVENTS (long-take guard)', () => {
     const events = Array.from({ length: MAX_AUTOMATION_EVENTS + 500 }, (_, i) => ({
       step: i,
       value: 0.5,
     }));
-    const t = coerceAutomationTrack({ target: tgt('n', 'p'), events });
+    const t = coerceAutoTrack({ events });
     expect(t!.events.length).toBe(MAX_AUTOMATION_EVENTS);
   });
-  it('ignores a bad interp value + rejects an unusable target', () => {
-    expect(coerceAutomationTrack({ target: tgt('n', 'p'), interp: 'bogus' })!.interp).toBeUndefined();
-    expect(coerceAutomationTrack({ target: { nodeId: '', paramId: 'x' } })).toBeNull();
-    expect(coerceAutomationTrack({ target: { nodeId: 'a' } })).toBeNull();
-    expect(coerceAutomationTrack({})).toBeNull();
+  it('ignores a bad interp value; rejects a non-object', () => {
+    expect(coerceAutoTrack({ interp: 'bogus', events: [] })!.interp).toBeUndefined();
+    expect(coerceAutoTrack(null)).toBeNull();
+    expect(coerceAutoTrack(3)).toBeNull();
   });
 });
 
-describe('automation: coerceClipRecord kind=automation', () => {
-  it('normalizes an automation clip and enforces MAX_AUTOMATION_TRACKS', () => {
+describe('automation: targetKey round-trip', () => {
+  it('automationTargetKey ↔ parseAutomationTargetKey', () => {
+    const t = tgt('nodeA', 'cutoff');
+    expect(automationTargetKey(t)).toBe('nodeA::cutoff');
+    expect(parseAutomationTargetKey('nodeA::cutoff')).toEqual(t);
+  });
+  it('rejects malformed keys', () => {
+    expect(parseAutomationTargetKey('')).toBeNull();
+    expect(parseAutomationTargetKey('nocolons')).toBeNull();
+    expect(parseAutomationTargetKey('::param')).toBeNull();
+    expect(parseAutomationTargetKey('node::')).toBeNull();
+  });
+});
+
+describe('automation: coerceAutoClipRecord (the sibling auto[k] boundary)', () => {
+  it('normalizes a record and enforces MAX_AUTOMATION_TRACKS', () => {
     expect(MAX_AUTOMATION_TRACKS).toBe(16);
-    const tracks = Array.from({ length: 20 }, (_, i) => ({
-      target: tgt('n' + i, 'p'),
-      events: [{ step: 0, value: 0.5 }],
-    }));
-    const c = coerceClipRecord({ kind: 'automation', lengthSteps: 32, tracks });
-    expect(c?.kind).toBe('automation');
-    const rec = c as AutomationClipRecord;
-    expect(rec.lengthSteps).toBe(32);
-    expect(rec.tracks.length).toBe(MAX_AUTOMATION_TRACKS);
-    expect(rec.loop).toBe(true);
+    const tracks: Record<string, unknown> = {};
+    for (let i = 0; i < 20; i++) tracks[`n${i}::p`] = { events: [{ step: 0, value: 0.5 }] };
+    const rec = coerceAutoClipRecord({ tracks });
+    expect(rec).not.toBeNull();
+    expect(Object.keys(rec!.tracks).length).toBe(MAX_AUTOMATION_TRACKS);
   });
-  it('drops malformed tracks before the cap', () => {
-    const c = coerceClipRecord({
+  it('drops malformed keys + unusable values, keeps the good tracks', () => {
+    const rec = coerceAutoClipRecord({
+      tracks: {
+        'good::p': { events: [{ step: 0, value: 0.4 }] },
+        'no-separator': { events: [] }, // malformed key → dropped
+        '::param': { events: [] }, // empty nodeId → dropped
+        'bad::value': 7, // unusable value → dropped
+      },
+    });
+    expect(Object.keys(rec!.tracks)).toEqual(['good::p']);
+    expect(rec!.tracks['good::p']!.events).toEqual([{ step: 0, value: 0.4 }]);
+  });
+  it('round-trips: coerce(coerce(x)) === coerce(x) (idempotent at the boundary)', () => {
+    const raw = {
+      tracks: {
+        'a::x': { events: [{ step: 2, value: 0.2 }, { step: 0, value: 0.9 }], interp: 'hold' },
+        'b::y': { events: [{ step: 1, value: 2 }] }, // clamps to 1
+      },
+    };
+    const once = coerceAutoClipRecord(raw)!;
+    const twice = coerceAutoClipRecord(once)!;
+    expect(twice).toEqual(once);
+    expect(once.tracks['a::x']!.events[0]).toEqual({ step: 0, value: 0.9 }); // sorted
+    expect(once.tracks['b::y']!.events[0]).toEqual({ step: 1, value: 1 }); // clamped
+  });
+  it('readAutoClip returns null for absent / empty records', () => {
+    expect(readAutoClip(undefined, 3)).toBeNull();
+    expect(readAutoClip({}, 3)).toBeNull();
+    expect(readAutoClip({ auto: {} }, 3)).toBeNull();
+    expect(readAutoClip({ auto: { '3': { tracks: {} } } }, 3)).toBeNull(); // no tracks → null
+    expect(
+      readAutoClip({ auto: { '3': { tracks: { 'a::p': { events: [] } } } } }, 3),
+    ).not.toBeNull();
+  });
+  it('autoTrackViews builds the runtime (target + events) views from the keyed record', () => {
+    const rec = coerceAutoClipRecord({
+      tracks: {
+        'a::x': { events: [{ step: 0, value: 0.5 }], interp: 'linear' },
+        'b::y': { events: [] },
+      },
+    });
+    const views = autoTrackViews(rec);
+    expect(views.length).toBe(2);
+    const ax = views.find((v) => v.target.nodeId === 'a')!;
+    expect(ax.target).toEqual(tgt('a', 'x'));
+    expect(ax.interp).toBe('linear');
+    expect(ax.events).toEqual([{ step: 0, value: 0.5 }]);
+    expect(autoTrackViews(null)).toEqual([]);
+  });
+});
+
+describe('automation: CLEAN BREAK — the retired stamped kind coerces away silently', () => {
+  it('coerceClipRecord returns null for a legacy kind:"automation" clip (old saves load without crashing)', () => {
+    const legacy = {
       kind: 'automation',
-      lengthSteps: 16,
-      tracks: [
-        { target: tgt('good', 'p'), events: [] },
-        { target: { nodeId: '' } }, // dropped
-      ],
-    }) as AutomationClipRecord;
-    expect(c.tracks.length).toBe(1);
-    expect(c.tracks[0]!.target.nodeId).toBe('good');
-  });
-});
-
-describe('automation: defaultAutomationClip', () => {
-  it('is an empty looping automation clip — LONG + SLOW by default (comfortable record window)', () => {
-    const c = defaultAutomationClip();
-    expect(c.kind).toBe('automation');
-    expect(c.tracks).toEqual([]);
-    // deliberately long (vs the 16-step note default) at a slow division so a
-    // fresh ＋AUTO gives a multi-second record loop, not a ~2s scramble.
-    expect(c.lengthSteps).toBe(DEFAULT_AUTOMATION_STEPS);
-    expect(DEFAULT_AUTOMATION_STEPS).toBe(64);
-    expect(c.div).toBe(DEFAULT_AUTOMATION_DIV);
-    expect(c.loop).toBe(true);
-  });
-  it('honours explicit length + div overrides (any step count — NOT snapped)', () => {
-    const c = defaultAutomationClip(7, 2);
-    expect(c.lengthSteps).toBe(7); // coprime length preserved (generative desync)
-    expect(c.div).toBe(2);
-  });
-});
-
-describe('automation: div coercion + isAutomationArmed', () => {
-  it('coerceClipRecord clamps a finite div to a valid RATE index; drops a non-numeric one', () => {
-    const withDiv = coerceClipRecord({ kind: 'automation', lengthSteps: 7, tracks: [], div: 1 }) as AutomationClipRecord;
-    expect(withDiv.div).toBe(1);
-    const clamped = coerceClipRecord({ kind: 'automation', lengthSteps: 7, tracks: [], div: 99 }) as AutomationClipRecord;
-    expect(clamped.div).toBe(5); // clamped into RATE_MULTS range (0..5)
-    const noDiv = coerceClipRecord({ kind: 'automation', lengthSteps: 7, tracks: [] }) as AutomationClipRecord;
-    expect(noDiv.div).toBeUndefined(); // absent ⇒ follow the lane rate
-  });
-  it('preserves an ARBITRARY (coprime) length — never snapped to a musical multiple', () => {
-    const c = coerceClipRecord({ kind: 'automation', lengthSteps: 13, tracks: [] }) as AutomationClipRecord;
-    expect(c.lengthSteps).toBe(13);
+      lengthSteps: 64,
+      loop: true,
+      div: 1,
+      tracks: [{ target: tgt('a', 'p'), events: [{ step: 0, value: 0.5 }] }],
+    };
+    expect(coerceClipRecord(legacy)).toBeNull(); // unknown kind → empty cell, no crash
+    // …and reading it through readClip is equally safe.
+    expect(readClip({ clips: { '448': legacy } }, 448)).toBeNull();
   });
   it('isAutomationArmed reflects the synced arm flag', () => {
     expect(isAutomationArmed(undefined)).toBe(false);
@@ -395,39 +421,48 @@ describe('automation: div coercion + isAutomationArmed', () => {
   });
 });
 
-// UI-CAN'T-LIE: the card's AUTO-block DIV select, LENGTH input, and the clip-cell
-// badge ALL render from automationClipDisplay(autoClip) — this pins that single
-// source so the shown timing can never disagree with the stored clip (the "I saw
-// 1/1 but it was really 1/4" class of bug the owner feared).
-describe('automation: automationClipDisplay (the card DIV/LEN/badge render source)', () => {
-  it('reflects the stored clip div + length exactly', () => {
-    const d = automationClipDisplay({ div: 1, lengthSteps: 64 });
-    expect(d.divIndex).toBe(1);
-    expect(d.divLabel).toBe('1/4'); // RATE_LABELS[1]
-    expect(d.lengthSteps).toBe(64);
-    expect(d.badge).toBe('1/4·64');
+// UI-CAN'T-LIE: the card's per-lane assigned-count chip row renders EXACTLY
+// autoAssignCounts(data), and the record scope is EXACTLY laneAssignedTargets —
+// these pin the single source so the readout can never disagree with the stored
+// autoAssign map.
+describe('automation: autoAssign (param → lane) reads', () => {
+  it('coerceAutoAssign keeps only parsable keys with integer lanes 0..7', () => {
+    expect(
+      coerceAutoAssign({
+        'a::x': 3,
+        'b::y': 0,
+        'bad-key': 2, // malformed key → dropped
+        'c::z': 8, // lane out of range → dropped
+        'd::w': 1.5, // non-integer → dropped
+        'e::v': '2', // numeric string → forgiving coerce (house style: Number())
+        'f::u': 'x', // non-numeric → dropped
+      }),
+    ).toEqual({ 'a::x': 3, 'b::y': 0, 'e::v': 2 });
+    expect(coerceAutoAssign(undefined)).toEqual({});
+    expect(coerceAutoAssign(null)).toEqual({});
+    expect(coerceAutoAssign('nope')).toEqual({});
   });
-  it('a fresh +AUTO clip shows 1/4 · 64 (long + slow default)', () => {
-    const d = automationClipDisplay(defaultAutomationClip());
-    expect(d.divIndex).toBe(DEFAULT_AUTOMATION_DIV);
-    expect(d.divLabel).toBe('1/4');
-    expect(d.lengthSteps).toBe(DEFAULT_AUTOMATION_STEPS);
-    expect(d.badge).toBe('1/4·64');
+  it('assignedLaneOf finds the lane for a target (or null)', () => {
+    const data = { autoAssign: { 'a::x': 3 } };
+    expect(assignedLaneOf(data, tgt('a', 'x'))).toBe(3);
+    expect(assignedLaneOf(data, tgt('a', 'y'))).toBeNull();
+    expect(assignedLaneOf(undefined, tgt('a', 'x'))).toBeNull();
   });
-  it('UPDATES when the clip div/length change (what the card re-derives)', () => {
-    expect(automationClipDisplay({ div: 0, lengthSteps: 7 }).badge).toBe('1/8·7');
-    expect(automationClipDisplay({ div: 5, lengthSteps: 128 }).badge).toBe('4x·128');
-    expect(automationClipDisplay({ div: 3, lengthSteps: 13 }).badge).toBe('1·13'); // coprime, not snapped
+  it('laneAssignedTargets groups targets per lane (length CLIP_LANES)', () => {
+    const data = {
+      autoAssign: { 'a::x': 3, 'b::y': 3, 'c::z': 0 },
+    };
+    const byLane = laneAssignedTargets(data);
+    expect(byLane.length).toBe(CLIP_LANES);
+    expect(byLane[0]).toEqual([tgt('c', 'z')]);
+    expect(byLane[3]!.map((t) => t.nodeId).sort()).toEqual(['a', 'b']);
+    expect(byLane[5]).toEqual([]);
   });
-  it('falls back safely: div undefined ⇒ lane-rate default label; length absent ⇒ long default', () => {
-    const d = automationClipDisplay({});
-    expect(d.divIndex).toBe(3); // RATE_DEFAULT_INDEX ('1')
-    expect(d.divLabel).toBe('1');
-    expect(d.lengthSteps).toBe(DEFAULT_AUTOMATION_STEPS);
-    expect(automationClipDisplay(null).badge).toBe('1·64');
-    expect(automationClipDisplay(undefined).lengthSteps).toBe(DEFAULT_AUTOMATION_STEPS);
-    // a corrupt/out-of-range div clamps into the rate table, never NaN/undefined.
-    expect(automationClipDisplay({ div: 99, lengthSteps: 16 }).divLabel).toBe('4x');
+  it('autoAssignCounts mirrors the map exactly (the chip-row source)', () => {
+    expect(autoAssignCounts({ autoAssign: { 'a::x': 3, 'b::y': 3, 'c::z': 0 } })).toEqual([
+      1, 0, 0, 2, 0, 0, 0, 0,
+    ]);
+    expect(autoAssignCounts(undefined)).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
   });
 });
 
@@ -477,30 +512,11 @@ describe('automation: mergeAutomationOverdub (punch-in)', () => {
   });
 });
 
-describe('automation: removeAutomationTrack + findAutomationTrack', () => {
-  const rec: AutomationClipRecord = {
-    kind: 'automation',
-    lengthSteps: 16,
-    loop: true,
-    tracks: [
-      { target: tgt('a', 'cutoff'), events: [] },
-      { target: tgt('b', 'res'), events: [{ step: 0, value: 0.3 }] },
-    ],
-  };
-  it('drops exactly the matching target, leaves the rest', () => {
-    const out = removeAutomationTrack(rec, tgt('a', 'cutoff'));
-    expect(out.tracks.length).toBe(1);
-    expect(out.tracks[0]!.target).toEqual(tgt('b', 'res'));
-    expect(rec.tracks.length).toBe(2); // original untouched (pure)
-  });
-  it('no-op when target not present', () => {
-    expect(removeAutomationTrack(rec, tgt('z', 'nope')).tracks.length).toBe(2);
-  });
-  it('findAutomationTrack matches by (nodeId, paramId)', () => {
-    expect(findAutomationTrack(rec, tgt('b', 'res'))?.events.length).toBe(1);
-    expect(findAutomationTrack(rec, tgt('a', 'res'))).toBeUndefined();
+describe('automation: sameAutomationTarget', () => {
+  it('matches by (nodeId, paramId)', () => {
     expect(sameAutomationTarget(tgt('a', 'x'), tgt('a', 'x'))).toBe(true);
     expect(sameAutomationTarget(tgt('a', 'x'), tgt('a', 'y'))).toBe(false);
+    expect(sameAutomationTarget(tgt('a', 'x'), tgt('b', 'x'))).toBe(false);
   });
 });
 

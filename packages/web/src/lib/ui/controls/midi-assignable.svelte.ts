@@ -48,41 +48,39 @@ import {
   assignSlotToElectra,
   clearSlot,
 } from '$lib/graph/electra-control';
-import { mutateNode, setNodeParam } from '$lib/graph/mutate';
+import { setNodeParam } from '$lib/graph/mutate';
 import { notifyAutomationTouch, notifyAutomationRelease } from '$lib/audio/automation-touch';
 import {
-  clipIndex,
-  readClip,
-  findAutomationTrack,
-  removeAutomationTrack,
+  CLIP_LANES,
+  assignedLaneOf,
+  laneColorEff,
   type ClipPlayerData,
-  type AutomationClipRecord,
 } from '$lib/audio/modules/clip-types';
-import { ensureAutomationTrack, plainAutomationClip } from '$lib/audio/modules/clip-automation';
+import {
+  listClipPlayers,
+  automationAssignmentFor,
+  assignAutomationLane,
+  removeAutomationAssignment,
+} from '$lib/graph/automation-assign';
+import { nodeVersion, nodesStructuralVersion } from '$lib/graph/node-versions.svelte';
 
 export type AssignKind = 'cc' | 'note';
 
-/** A clip-player in the rack that HAS an automation clip — a "Assign to
- *  automation lane" target for the control menu. */
+/** A clip-player in the rack — an "Assign to automation lane ▸ 1–8" target for
+ *  the control menu (every clip-player accepts assignments; no stamped clip
+ *  needed). `lanes` carries each lane's effective colour for the flyout
+ *  swatches; `assignedLane` = where THIS control currently sits (or null). */
 export interface AutomationEntry {
   nodeId: string;
   name: string;
+  lanes: Array<{ lane: number; color: string }>;
+  assignedLane: number | null;
 }
 
-/** The automation clip a clip-player node designates, resolved to its flat clip
- *  index + record + display name, or null (no pointer / not an automation clip). */
-function automationClipOf(
-  node: { data?: unknown } | undefined,
-): { idx: number; name: string; rec: AutomationClipRecord } | null {
-  const data = node?.data as ClipPlayerData | undefined;
-  const ptr = data?.automation?.clip;
-  if (!ptr || typeof ptr.lane !== 'number' || typeof ptr.slot !== 'number') return null;
-  const idx = clipIndex(ptr.slot, ptr.lane);
-  const rec = readClip(data, idx);
-  if (!rec || rec.kind !== 'automation') return null;
-  const label = (data as { label?: unknown } | undefined)?.label;
-  const name = typeof label === 'string' && label ? label : 'clip player';
-  return { idx, name, rec };
+/** Display name for a clip-player node (its renamed data.label, else generic). */
+function clipPlayerName(node: { data?: unknown } | undefined): string {
+  const label = (node?.data as { label?: unknown } | undefined)?.label;
+  return typeof label === 'string' && label ? label : 'clip player';
 }
 
 export interface MidiAssignableArgs {
@@ -131,11 +129,15 @@ export interface MidiAssignable {
   readonly surfaces: SurfaceEntry[];
   /** Snapshot of ElectraControls this control can be assigned to (recompute on open). */
   readonly electras: ElectraEntry[];
-  /** Snapshot of clip-players with an automation clip this control can be sent
-   *  to (recompute on open). */
+  /** Snapshot of clip-players this control can be lane-assigned on (recompute
+   *  on open). */
   readonly automations: AutomationEntry[];
-  /** True when this control is already a track in some automation clip. */
+  /** True when this control is assigned to some player's automation lane. */
   readonly automated: boolean;
+  /** The ASSIGNED lane's effective colour (`#rrggbb`) or null — REACTIVE (not a
+   *  menu snapshot): the control name renders a thin border in this colour
+   *  while assigned (the owner's lane-colour cue). */
+  readonly assignedLaneColor: string | null;
   /** Recompute the surface + electra + automation snapshots (call when a menu opens). */
   refresh(): void;
   /** Enter learn mode (CC or NOTE per `kind`). */
@@ -148,9 +150,10 @@ export interface MidiAssignable {
   /** Assign/clear this control on an ElectraControl slot. */
   assignElectra(electraId: string, slot: number): void;
   clearElectra(electraId: string, slot: number): void;
-  /** Add this control as a track in the given clip-player's automation clip. */
-  assignAutomation(clipPlayerNodeId: string): void;
-  /** Remove this control's track from whichever automation clip holds it. */
+  /** Assign this control to a clip-player's automation LANE (one lane per
+   *  param — re-assigning MOVES it, atomically, across players too). */
+  assignAutomation(clipPlayerNodeId: string, lane: number): void;
+  /** Remove this control's lane assignment from whichever player holds it. */
   removeAutomation(): void;
   /** Register the live setter (call onMount). */
   register(): void;
@@ -300,62 +303,66 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
       name: e.name,
       assignedSlot: slotForBinding(readElectraData(patch.nodes[e.id]), m, p),
     }));
-    // AUTOMATION targets: every clip-player node that HAS an automation clip.
-    // `automated` = this control is already a track in one of them.
+    // AUTOMATION lane targets: EVERY clip-player node (per-clip automation
+    // needs no stamped clip). `automated`/`assignedLane` = where this control
+    // currently sits (one lane per param, globally).
+    const target = { nodeId: m, paramId: p };
     const list: AutomationEntry[] = [];
-    let isAuto = false;
-    for (const [nid, node] of Object.entries(patch.nodes)) {
-      const clip = automationClipOf(node);
-      if (!clip) continue;
-      list.push({ nodeId: nid, name: clip.name });
-      if (findAutomationTrack(clip.rec, { nodeId: m, paramId: p })) isAuto = true;
+    for (const nid of listClipPlayers(patch.nodes)) {
+      const node = patch.nodes[nid];
+      const data = node?.data as ClipPlayerData | undefined;
+      const lanes = Array.from({ length: CLIP_LANES }, (_, lane) => ({
+        lane,
+        color: laneColorEff(data, lane),
+      }));
+      list.push({
+        nodeId: nid,
+        name: clipPlayerName(node),
+        lanes,
+        assignedLane: assignedLaneOf(data, target),
+      });
     }
     automations = list;
-    automated = isAuto;
+    automated = list.some((e) => e.assignedLane !== null);
   }
 
-  /** Add this control as a track in the clip-player's automation clip, then
-   *  reassign the WHOLE clip PLAIN through the graph mutate seam (never a live
-   *  Y.Array splice — [[yjs-save-load-real-ydoc]]). No-op when the player has no
-   *  automation clip, or the sanity cap (MAX_AUTOMATION_TRACKS) is already hit. */
-  function assignAutomation(clipPlayerNodeId: string): void {
+  // The ASSIGNED lane's colour — REACTIVE (drives the control-name border), not
+  // a menu-open snapshot. Subscribes to structural changes + each clip-player's
+  // node version so an assign/remove/lane-recolour updates the border live.
+  const assignedLaneColor = $derived.by<string | null>(() => {
+    void nodesStructuralVersion();
+    const m = args.moduleId, p = args.paramId;
+    if (!m || !p) return null;
+    const target = { nodeId: m, paramId: p };
+    for (const nid of listClipPlayers(patch.nodes)) {
+      void nodeVersion(nid); // re-derive on that player's data changes
+      const data = patch.nodes[nid]?.data as ClipPlayerData | undefined;
+      const lane = assignedLaneOf(data, target);
+      if (lane !== null) return laneColorEff(data, lane);
+    }
+    return null;
+  });
+
+  /** Assign this control to `lane` on the given clip-player — one lane per
+   *  param: the shared write seam removes it from every other player/lane in
+   *  the same transaction (an atomic MOVE + one undo step). */
+  function assignAutomation(clipPlayerNodeId: string, lane: number): void {
     const m = args.moduleId, p = args.paramId;
     if (!m || !p) return;
-    const node = patch.nodes[clipPlayerNodeId];
-    const clip = automationClipOf(node);
-    if (!clip) return;
-    const { rec: next, track } = ensureAutomationTrack(clip.rec, { nodeId: m, paramId: p });
-    if (!track) return; // at the sanity cap — nothing added
-    const plain = plainAutomationClip(next);
-    mutateNode(clipPlayerNodeId, (live) => {
-      if (!live.data) live.data = {};
-      const data = live.data as ClipPlayerData;
-      if (!data.clips) data.clips = {};
-      data.clips[String(clip.idx)] = plain;
-    });
+    assignAutomationLane(clipPlayerNodeId, { nodeId: m, paramId: p }, lane);
   }
 
-  /** Remove this control's track from whichever automation clip holds it, then
+  /** Remove this control's lane assignment from whichever player holds it, then
    *  release the param to its current store value (a one-shot no-op commit so
-   *  the engine stops seeing an automation write). Whole-clip PLAIN reassign. */
+   *  the engine stops seeing an automation write). */
   function removeAutomation(): void {
     const m = args.moduleId, p = args.paramId;
     if (!m || !p) return;
-    for (const [nid, node] of Object.entries(patch.nodes)) {
-      const clip = automationClipOf(node);
-      if (!clip) continue;
-      if (!findAutomationTrack(clip.rec, { nodeId: m, paramId: p })) continue;
-      const plain = plainAutomationClip(removeAutomationTrack(clip.rec, { nodeId: m, paramId: p }));
-      mutateNode(nid, (live) => {
-        const data = live.data as ClipPlayerData | undefined;
-        if (!data?.clips) return;
-        data.clips[String(clip.idx)] = plain;
-      });
-      // Release the param to its live value (MVP: a one-shot no-op set).
-      const cur = patch.nodes[m]?.params?.[p];
-      if (typeof cur === 'number') setNodeParam(m, p, cur);
-      break;
-    }
+    if (!automationAssignmentFor(patch.nodes, { nodeId: m, paramId: p })) return;
+    removeAutomationAssignment({ nodeId: m, paramId: p });
+    // Release the param to its live value (a one-shot no-op set).
+    const cur = patch.nodes[m]?.params?.[p];
+    if (typeof cur === 'number') setNodeParam(m, p, cur);
   }
 
   function register(): void {
@@ -431,6 +438,7 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
     get electras() { return electras; },
     get automations() { return automations; },
     get automated() { return automated; },
+    get assignedLaneColor() { return assignedLaneColor; },
     refresh,
     learn,
     forget,

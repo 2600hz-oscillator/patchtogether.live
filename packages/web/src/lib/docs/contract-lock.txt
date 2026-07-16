@@ -469,10 +469,7 @@ clipplayer param quantize 0..1 discrete default=1
 clipplayer param snh 0..1 discrete default=1
 clipplayer param stepDiv 0..3 discrete default=2
 clipplayer family clipplayer-auto-arm kind=other prefix=clipplayer-auto-arm
-clipplayer family clipplayer-auto-count kind=other prefix=clipplayer-auto-count
-clipplayer family clipplayer-auto-div kind=other prefix=clipplayer-auto-div
-clipplayer family clipplayer-auto-len kind=other prefix=clipplayer-auto-len
-clipplayer family clipplayer-auto-new kind=other prefix=clipplayer-auto-new
+clipplayer family clipplayer-auto-assigned kind=other prefix=clipplayer-auto-assigned
 clipplayer family clipplayer-auto-override kind=other prefix=clipplayer-auto-override
 clipplayer family clipplayer-cell kind=cell prefix=clipplayer-cell
 clipplayer family clipplayer-mono kind=other prefix=clipplayer-mono

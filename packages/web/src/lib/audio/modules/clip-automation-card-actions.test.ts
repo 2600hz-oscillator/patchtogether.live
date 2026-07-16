@@ -1,218 +1,158 @@
 // packages/web/src/lib/audio/modules/clip-automation-card-actions.test.ts
 //
-// Real-@syncedstore/core Y.Doc test for the CARD + MENU automation actions
-// (task #183). The card's +AUTO / ARM and the context-menu Assign / Remove live
-// inside Svelte components, so — like clip-automation-integration.test.ts mirrors
-// the factory deps — this replicates their EXACT Y.Doc writes (the pure shared
-// helpers do the real work; only the thin transactional wrapper is inlined) and
-// proves the HARD constraints against a real doc:
+// Real-Y.Doc test for the CARD + MENU automation actions (per-clip redesign,
+// Phase B). The context-menu "Assign to automation lane ▸ 1–8" / "Remove
+// automation assignment" writes go through the REAL shared seam
+// ($lib/graph/automation-assign — the exact functions makeMidiAssignable
+// calls), driven here against the app's live graph store; the card's ◉ AUTO
+// arm toggle is mirrored (a thin data write inside a Svelte component). Proves:
 //
-//   • create-automation-clip stamps a `kind:'automation'` clip into the first
-//     empty cell of the LAST lane + records the pointer;
-//   • assign adds a track via a WHOLE-CLIP PLAIN reassign (no live Y.Array
-//     splice → no "Type already integrated" throw);
+//   • assign writes autoAssign[targetKey] = lane (single-key, in place);
+//   • ONE lane per param: re-assigning MOVES it (same player, other lane) and
+//     assigning on ANOTHER player removes it there too — atomically;
+//   • remove drops the key from whichever player holds it;
+//   • prune drops ONLY module-absent targets (conservative), no-op otherwise;
 //   • arm sets arm + recorderId (single-writer, isAutomationRecorder true);
-//   • remove drops the track (plain reassign);
-//   • every result is a PLAIN shape and nothing throws.
+//   • the chip-row source (autoAssignCounts) mirrors the map exactly.
 
-import { describe, it, expect } from 'vitest';
-import { syncedStore, getYjsDoc } from '@syncedstore/core';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { patch, ydoc } from '$lib/graph/store';
 import {
-  CLIP_LANES,
-  CLIP_SLOTS,
-  clipIndex,
-  readClip,
-  defaultAutomationClip,
-  removeAutomationTrack,
-  findAutomationTrack,
+  assignAutomationLane,
+  removeAutomationAssignment,
+  automationAssignmentFor,
+  pruneAutoAssignDangling,
+  listClipPlayers,
+} from '$lib/graph/automation-assign';
+import {
+  coerceAutoAssign,
+  autoAssignCounts,
+  assignedLaneOf,
   isAutomationRecorder,
+  automationTargetKey,
   type ClipPlayerData,
   type AutomationTarget,
 } from './clip-types';
-import { ensureAutomationTrack, plainAutomationClip } from './clip-automation';
 
-interface StoreNode {
-  id: string;
-  type: string;
-  domain: string;
-  position: { x: number; y: number };
-  params: Record<string, number>;
-  data?: ClipPlayerData;
+const CP = 'cp-actions-1';
+const CP2 = 'cp-actions-2';
+const A: AutomationTarget = { nodeId: 'vco-x', paramId: 'freq' };
+const B: AutomationTarget = { nodeId: 'vcf-x', paramId: 'cutoff' };
+
+function clearPatch() {
+  for (const k of Object.keys(patch.nodes)) delete patch.nodes[k];
+  for (const k of Object.keys(patch.edges)) delete patch.edges[k];
 }
-type Store = { nodes: Record<string, StoreNode> };
-
-const CP = 'clipplayer-1';
-
-function makeDoc() {
-  const store = syncedStore<Store>({ nodes: {} });
-  const ydoc = getYjsDoc(store);
-  ydoc.transact(() => {
-    store.nodes[CP] = {
-      id: CP, type: 'clipplayer', domain: 'audio',
-      position: { x: 0, y: 0 }, params: {},
-    };
-  });
-  return { store, ydoc };
+function seedNode(id: string, type: string) {
+  patch.nodes[id] = {
+    id, type, domain: 'audio', position: { x: 0, y: 0 }, params: {}, data: {},
+  } as never;
 }
-/** The live syncedStore + Y.Doc pair (nodes are Partial in the mapped type). */
-type Ctx = ReturnType<typeof makeDoc>;
-
-// ── mirrors ClipplayerCard.createAutomationClip ──────────────────────────────
-function createAutomationClip(store: Ctx['store'], ydoc: Ctx['ydoc']): void {
-  ydoc.transact(() => {
-    const node = store.nodes[CP]!;
-    if (!node.data) node.data = {};
-    const data = node.data;
-    const lane = CLIP_LANES - 1;
-    let slot = -1;
-    for (let s = 0; s < CLIP_SLOTS; s++) {
-      if (!(data.clips && data.clips[String(clipIndex(s, lane))])) { slot = s; break; }
-    }
-    if (slot < 0) return;
-    if (!data.clips) data.clips = {};
-    data.clips[String(clipIndex(slot, lane))] = defaultAutomationClip();
-    if (!data.automation) data.automation = {};
-    data.automation.clip = { lane, slot };
-  });
-}
-
-// ── mirrors makeMidiAssignable.assignAutomation ──────────────────────────────
-function assignAutomation(
-  store: Ctx['store'],
-  ydoc: Ctx['ydoc'],
-  target: AutomationTarget,
-): void {
-  const data = store.nodes[CP]!.data!;
-  const ptr = data.automation!.clip!;
-  const idx = clipIndex(ptr.slot, ptr.lane);
-  const rec = readClip(data, idx);
-  if (!rec || rec.kind !== 'automation') return;
-  const { rec: next, track } = ensureAutomationTrack(rec, target);
-  if (!track) return;
-  const plain = plainAutomationClip(next);
-  ydoc.transact(() => {
-    store.nodes[CP]!.data!.clips![String(idx)] = plain; // WHOLE-CLIP plain reassign
-  });
+function cpData(id = CP): ClipPlayerData {
+  return (patch.nodes[id]?.data ?? {}) as ClipPlayerData;
 }
 
 // ── mirrors ClipplayerCard.toggleAutoArm (arming) ────────────────────────────
-function armAutomation(store: Ctx['store'], ydoc: Ctx['ydoc'], clientId: number): void {
-  ydoc.transact(() => {
-    const data = store.nodes[CP]!.data!;
-    if (!data.automation) data.automation = {};
-    data.automation.arm = true;
-    data.automation.recorderId = clientId;
-  });
+function armAutomation(clientId: number): void {
+  const live = patch.nodes[CP]!;
+  if (!live.data) live.data = {};
+  const data = live.data as ClipPlayerData;
+  if (!data.automation) data.automation = {};
+  data.automation.arm = true;
+  data.automation.recorderId = clientId;
 }
 
-// ── mirrors makeMidiAssignable.removeAutomation ──────────────────────────────
-function removeAutomation(
-  store: Ctx['store'],
-  ydoc: Ctx['ydoc'],
-  target: AutomationTarget,
-): void {
-  const data = store.nodes[CP]!.data!;
-  const ptr = data.automation!.clip!;
-  const idx = clipIndex(ptr.slot, ptr.lane);
-  const rec = readClip(data, idx);
-  if (!rec || rec.kind !== 'automation') return;
-  const plain = plainAutomationClip(removeAutomationTrack(rec, target));
-  ydoc.transact(() => {
-    store.nodes[CP]!.data!.clips![String(idx)] = plain;
-  });
-}
+beforeEach(() => {
+  clearPatch();
+  seedNode(CP, 'clipplayer');
+  seedNode(A.nodeId, 'vco');
+  seedNode(B.nodeId, 'vcf');
+});
 
-describe('clip-automation card/menu actions (real Y.Doc)', () => {
-  const A: AutomationTarget = { nodeId: 'vco-1', paramId: 'freq' };
-  const B: AutomationTarget = { nodeId: 'vcf-1', paramId: 'cutoff' };
-
-  it('+AUTO stamps a kind:automation clip in the last lane + records the pointer', () => {
-    const { store, ydoc } = makeDoc();
-    expect(() => createAutomationClip(store, ydoc)).not.toThrow();
-
-    const data = store.nodes[CP]!.data!;
-    expect(data.automation?.clip).toEqual({ lane: CLIP_LANES - 1, slot: 0 });
-    const idx = clipIndex(0, CLIP_LANES - 1);
-    const rec = readClip(data, idx);
-    expect(rec?.kind).toBe('automation');
-    expect(rec && rec.kind === 'automation' ? rec.tracks : null).toEqual([]);
+describe('clip-automation card/menu actions (real Y.Doc, shared assign seam)', () => {
+  it('assign writes autoAssign[targetKey] = lane (and the reads mirror it)', () => {
+    expect(() => assignAutomationLane(CP, A, 3)).not.toThrow();
+    expect(coerceAutoAssign(cpData().autoAssign)).toEqual({ [automationTargetKey(A)]: 3 });
+    expect(assignedLaneOf(cpData(), A)).toBe(3);
+    expect(automationAssignmentFor(patch.nodes, A)).toEqual({ nodeId: CP, lane: 3 });
+    // UI-CAN'T-LIE: the chip row renders EXACTLY this.
+    expect(autoAssignCounts(cpData())).toEqual([0, 0, 0, 1, 0, 0, 0, 0]);
   });
 
-  it('+AUTO picks the LOWEST empty slot when the last lane is partly full', () => {
-    const { store, ydoc } = makeDoc();
-    // Pre-fill slot 0 of the last lane with a note clip.
-    ydoc.transact(() => {
-      const node = store.nodes[CP]!;
-      node.data = { clips: { [String(clipIndex(0, CLIP_LANES - 1))]: { kind: 'note', steps: [], lengthSteps: 16, root: 48, loop: true } } };
-    });
-    createAutomationClip(store, ydoc);
-    expect(store.nodes[CP]!.data!.automation?.clip).toEqual({ lane: CLIP_LANES - 1, slot: 1 });
+  it('ONE lane per param: re-assigning MOVES it to the new lane (no duplicate)', () => {
+    assignAutomationLane(CP, A, 3);
+    assignAutomationLane(CP, A, 5);
+    expect(coerceAutoAssign(cpData().autoAssign)).toEqual({ [automationTargetKey(A)]: 5 });
+    expect(autoAssignCounts(cpData())).toEqual([0, 0, 0, 0, 0, 1, 0, 0]);
   });
 
-  it('assign adds a plain track; assigning a 2nd param appends (both plain, no throw)', () => {
-    const { store, ydoc } = makeDoc();
-    createAutomationClip(store, ydoc);
+  it('assigning on ANOTHER player removes it from the first (atomic cross-player move)', () => {
+    seedNode(CP2, 'clipplayer');
+    assignAutomationLane(CP, A, 2);
+    assignAutomationLane(CP2, A, 6);
+    expect(assignedLaneOf(cpData(CP), A)).toBeNull();
+    expect(assignedLaneOf(cpData(CP2), A)).toBe(6);
+    expect(automationAssignmentFor(patch.nodes, A)).toEqual({ nodeId: CP2, lane: 6 });
+  });
 
-    expect(() => assignAutomation(store, ydoc, A)).not.toThrow();
-    let rec = readClip(store.nodes[CP]!.data, clipIndex(0, CLIP_LANES - 1));
-    expect(rec?.kind).toBe('automation');
-    expect(rec && rec.kind === 'automation' ? rec.tracks.length : 0).toBe(1);
-    expect(findAutomationTrack(rec as never, A)).toBeTruthy();
+  it('two params can share a lane; counts reflect both', () => {
+    assignAutomationLane(CP, A, 1);
+    assignAutomationLane(CP, B, 1);
+    expect(autoAssignCounts(cpData())).toEqual([0, 2, 0, 0, 0, 0, 0, 0]);
+  });
 
-    // Re-assigning the SAME param is idempotent (reuses the existing track).
-    assignAutomation(store, ydoc, A);
-    rec = readClip(store.nodes[CP]!.data, clipIndex(0, CLIP_LANES - 1));
-    expect(rec && rec.kind === 'automation' ? rec.tracks.length : 0).toBe(1);
+  it('remove drops only that param’s assignment', () => {
+    assignAutomationLane(CP, A, 1);
+    assignAutomationLane(CP, B, 4);
+    removeAutomationAssignment(A);
+    expect(assignedLaneOf(cpData(), A)).toBeNull();
+    expect(assignedLaneOf(cpData(), B)).toBe(4);
+    // Removing an unassigned target is a safe no-op.
+    expect(() => removeAutomationAssignment(A)).not.toThrow();
+  });
 
-    // A DIFFERENT param appends a second track.
-    assignAutomation(store, ydoc, B);
-    rec = readClip(store.nodes[CP]!.data, clipIndex(0, CLIP_LANES - 1));
-    expect(rec && rec.kind === 'automation' ? rec.tracks.length : 0).toBe(2);
-    // The committed clip is a PLAIN shape (tracks/events are plain arrays/objects).
-    const plain = rec && rec.kind === 'automation' ? rec : null;
-    expect(Array.isArray(plain?.tracks)).toBe(true);
-    expect(plain?.tracks.every((t) => typeof t.target.nodeId === 'string' && Array.isArray(t.events))).toBe(true);
+  it('lane is clamped into 0..7; a non-clipplayer target player is a no-op', () => {
+    assignAutomationLane(CP, A, 99);
+    expect(assignedLaneOf(cpData(), A)).toBe(7);
+    assignAutomationLane(A.nodeId, B, 2); // not a clipplayer → no-op
+    expect(automationAssignmentFor(patch.nodes, B)).toBeNull();
+  });
+
+  it('prune drops ONLY module-absent targets (conservative) and is a no-op otherwise', () => {
+    assignAutomationLane(CP, A, 1);
+    assignAutomationLane(CP, B, 2);
+    expect(pruneAutoAssignDangling(CP)).toBe(0); // both modules present → no-op
+    delete patch.nodes[A.nodeId]; // the assigned module is deleted
+    expect(pruneAutoAssignDangling(CP)).toBe(1);
+    expect(assignedLaneOf(cpData(), A)).toBeNull(); // dangling assignment gone
+    expect(assignedLaneOf(cpData(), B)).toBe(2); // the live one stays
+    expect(pruneAutoAssignDangling(CP)).toBe(0); // idempotent
+  });
+
+  it('listClipPlayers finds every clipplayer (all accept assignments — no stamped clip)', () => {
+    seedNode(CP2, 'clipplayer');
+    expect(listClipPlayers(patch.nodes).sort()).toEqual([CP, CP2].sort());
   });
 
   it('arm sets arm + recorderId (single-writer gate true)', () => {
-    const { store, ydoc } = makeDoc();
-    createAutomationClip(store, ydoc);
-    assignAutomation(store, ydoc, A);
-
-    armAutomation(store, ydoc, ydoc.clientID);
-
-    const data = store.nodes[CP]!.data!;
+    assignAutomationLane(CP, A, 0);
+    armAutomation(ydoc.clientID);
+    const data = cpData();
     expect(data.automation?.arm).toBe(true);
     expect(data.automation?.recorderId).toBe(ydoc.clientID);
     expect(isAutomationRecorder(data, ydoc.clientID)).toBe(true);
     expect(isAutomationRecorder(data, ydoc.clientID + 1)).toBe(false); // only the arming client
   });
 
-  it('remove drops only that param’s track (plain reassign, no throw)', () => {
-    const { store, ydoc } = makeDoc();
-    createAutomationClip(store, ydoc);
-    assignAutomation(store, ydoc, A);
-    assignAutomation(store, ydoc, B);
-
-    expect(() => removeAutomation(store, ydoc, A)).not.toThrow();
-
-    const rec = readClip(store.nodes[CP]!.data, clipIndex(0, CLIP_LANES - 1));
-    expect(rec && rec.kind === 'automation' ? rec.tracks.length : 0).toBe(1);
-    expect(findAutomationTrack(rec as never, A)).toBeUndefined(); // A gone
-    expect(findAutomationTrack(rec as never, B)).toBeTruthy(); // B kept
-  });
-
-  it('the whole create→assign→arm→remove cycle never throws (re-integration safe)', () => {
-    const { store, ydoc } = makeDoc();
+  it('the whole assign→arm→move→remove cycle never throws (re-integration safe)', () => {
     expect(() => {
-      createAutomationClip(store, ydoc);
-      assignAutomation(store, ydoc, A);
-      assignAutomation(store, ydoc, B);
-      armAutomation(store, ydoc, ydoc.clientID);
-      removeAutomation(store, ydoc, A);
-      removeAutomation(store, ydoc, B);
+      assignAutomationLane(CP, A, 0);
+      assignAutomationLane(CP, B, 3);
+      armAutomation(ydoc.clientID);
+      assignAutomationLane(CP, A, 3); // move
+      removeAutomationAssignment(A);
+      removeAutomationAssignment(B);
     }).not.toThrow();
-    const rec = readClip(store.nodes[CP]!.data, clipIndex(0, CLIP_LANES - 1));
-    expect(rec && rec.kind === 'automation' ? rec.tracks.length : 0).toBe(0);
+    expect(coerceAutoAssign(cpData().autoAssign)).toEqual({});
   });
 });

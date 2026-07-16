@@ -1004,26 +1004,22 @@ describe('SINGLE — Control view', () => {
     expect(liveData().clipMode).toBe('arrangement');
   });
 
-  it('the AUTO-arm pad (2,6) creates the automation clip + arms + stamps recorderId; a second press disarms', () => {
+  it('the AUTO-arm pad (2,6) toggles the GLOBAL automation arm + stamps recorderId (no clip creation — per-clip model)', () => {
     seedClipPlayer({ clips: {} });
     seedTimelorde(1, 120);
     bindLaunchpadToClip(NODE_ID);
-    // No automation clip yet.
     expect(liveData().automation).toBeUndefined();
-    // Press AUTO-arm → create the clip in the last lane's first empty slot + arm.
+    // Press AUTO-arm → the same global arm the card's ◉ AUTO flips.
     sim.press('L', CTRL_AUTO_ARM_COL, CTRL_ARRANGE_ROW);
-    const auto = liveData().automation as { arm?: boolean; recorderId?: number; clip?: { lane: number; slot: number } };
+    const auto = liveData().automation as { arm?: boolean; recorderId?: number };
     expect(auto.arm, 'armed on first press').toBe(true);
     expect(auto.recorderId, 'single-writer = this client').toBe(ydoc.clientID);
-    expect(auto.clip, 'automation clip stamped into the last lane, first slot').toEqual({ lane: CLIP_LANES - 1, slot: 0 });
-    const clip = clipsOf()[String(clipIndex(0, CLIP_LANES - 1))] as unknown as { kind?: string };
-    expect(clip?.kind, 'a real automation clip was created').toBe('automation');
-    // Press again → disarm (clip pointer stays; the same synced flag the card flips).
+    // The per-clip model creates NO stamped clip — the grid stays empty.
+    expect(Object.keys(clipsOf()), 'no automation clip is stamped into the grid').toEqual([]);
+    // Press again → disarm.
     sim.press('L', CTRL_AUTO_ARM_COL, CTRL_ARRANGE_ROW);
-    const auto2 = liveData().automation as { arm?: boolean; clip?: unknown };
-    expect(auto2.arm, 'disarmed on second press').toBe(false);
-    expect(auto2.clip, 'clip pointer preserved across disarm').toEqual({ lane: CLIP_LANES - 1, slot: 0 });
-    // Third press re-arms without recreating the clip (clip already exists).
+    expect((liveData().automation as { arm?: boolean }).arm, 'disarmed on second press').toBe(false);
+    // Third press re-arms.
     sim.press('L', CTRL_AUTO_ARM_COL, CTRL_ARRANGE_ROW);
     expect((liveData().automation as { arm?: boolean }).arm).toBe(true);
   });

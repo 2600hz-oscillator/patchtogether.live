@@ -26,8 +26,8 @@ function makeController() {
     curve: () => undefined,
     unitNorm: () => undefined,
     drive: () => {},
+    readAutoTracks: () => [],
     commit: () => {},
-    addTrack: () => true,
   });
 }
 
@@ -102,14 +102,14 @@ describe('automation-touch registry', () => {
 
   it('a grab held across a wrap keeps its suspension via the registry (release ends it)', () => {
     // The registry seam mirrors the controller's grab-until-release semantics:
-    // a touch stays overriding through recordTick wraps until an explicit release.
+    // a touch stays overriding through record-lane wraps until an explicit release.
     const ctrl = makeController();
     registerAutomationController('cp1', ctrl);
     const t = { nodeId: 'synth', paramId: 'cutoff' };
     notifyAutomationTouch(t);
     ctrl.arm();
-    ctrl.recordTick({ kind: 'automation', lengthSteps: 8, loop: true, tracks: [] }, 6, 8);
-    ctrl.recordTick({ kind: 'automation', lengthSteps: 8, loop: true, tracks: [] }, 0, 8); // wrap
+    ctrl.recordLaneTick(0, 3, [t], 6, 8);
+    ctrl.recordLaneTick(0, 3, [t], 0, 8); // wrap
     expect(ctrl.isSuspended(t)).toBe(true); // still grabbed → still overriding
     notifyAutomationRelease(t);
     expect(ctrl.isSuspended(t)).toBe(false);

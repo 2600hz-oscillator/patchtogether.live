@@ -20,7 +20,7 @@ import {
   MIXOLYDIAN_SCALE_STEPS,
   type ScaleName,
 } from '$lib/mike/music-theory';
-import { coerceRateIndex, RATE_LABELS } from './clip-clock';
+import { coerceRateIndex } from './clip-clock';
 import { POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
 // Type-only import (erased at runtime → no cycle with clip-arrange.ts, which
 // imports VALUES from this file). The arranger model lives in clip-arrange.ts.
@@ -167,7 +167,7 @@ export function plainCloneClip(v: ClipRecord | null): ClipRecord | null {
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-export type ClipKind = 'note' | 'audio' | 'snapshot' | 'automation';
+export type ClipKind = 'note' | 'audio' | 'snapshot';
 
 /** One note in a note clip. Multiple events may share a `step` (a chord). */
 export interface NoteEvent {
@@ -220,44 +220,39 @@ export interface SnapshotClipRecord extends ClipBase {
 }
 
 // ---------------------------------------------------------------------------
-// AUTOMATION clip — the "automation lane" (task #183)
+// PER-CLIP AUTOMATION — the sibling `auto` map (automation redesign Phase 1)
 // ---------------------------------------------------------------------------
 //
-// An automation clip is a CLIP (kind:'automation') occupying a grid (lane, slot)
-// cell like a note clip — it LAUNCHES, LOOPS, and STOPS on its lane's playhead,
-// with its own `lengthSteps` + `div` (so it can be long + slow to maximize
-// record time). It carries MULTIPLE param tracks (each an AutomationTrack). When
-// launched it drives its params; when armed + playing it records live param moves
-// for one loop pass (quantized punch-in at the loop start, auto punch-out at the
-// loop end). Playback drives the mapped param TRANSIENTLY via engine.setParam —
-// it NEVER writes the live Y.Doc (`cv-modulation-live-store-write-storm`);
-// recording is the only writer and commits ONCE per pass. Automation data is
-// CUSTOM parameter-envelope data (0..1 in the param's own domain), NOT MIDI.
+// Every NOTE clip implicitly owns an automation object: a SIBLING record in the
+// sparse `data.auto` map keyed by the SAME stride-64 `clipIndex(slot, lane)` as
+// `data.clips` (Ableton's unlinked-envelope model, stored the way Bitwig 6
+// stores it — automation OUT of the note clip value). NEVER a field on the
+// NoteClipRecord: notes and automation must stay DISJOINT CRDT/merge/undo
+// scopes, so a peer's note edit (`clips[k]`) and an automation record commit
+// (`auto[k]`) can never last-writer-wins each other, and `coerceClipRecord`
+// ('note') has no tracks field to silently drop (the note-clobber the redesign
+// exists to prevent — see .myrobots/plans/automation-redesign-2026-07-16.md).
+//
+// An AutoClipRecord's `tracks` is keyed by TARGET KEY (`nodeId::paramId`), so a
+// record commit writes ONLY the touched track keys (`auto[k].tracks[target] =
+// plainEvents`) — never a whole-clip reassign on the recording hot path. Length
+// is LINKED to the note clip (`lengthSteps`) in this phase; playback drives the
+// mapped params TRANSIENTLY (never the Y.Doc —
+// `cv-modulation-live-store-write-storm`). Automation data is CUSTOM
+// parameter-envelope data (0..1 in the param's own domain), NOT MIDI.
 
-/** Max automated params (tracks) in one automation clip — a UI-sanity cap,
- *  enforced at the coerce boundary. (NOT a MIDI-channel limit: automation is
- *  CUSTOM parameter-envelope data, not MIDI CC — owner: "automation data does
- *  not need to be midi data".) */
+/** Max automated params (tracks) in one clip's automation object — a UI-sanity
+ *  cap, enforced at the coerce boundary AND at the record-commit seam. (NOT a
+ *  MIDI-channel limit: automation is CUSTOM parameter-envelope data, not MIDI
+ *  CC — owner: "automation data does not need to be midi data".) */
 export const MAX_AUTOMATION_TRACKS = 16;
 
-/** Max breakpoints PER track — the durable-size guard for a long/slow automation
- *  clip (low clock division + long beat length = a multi-minute pass). The
- *  recorder's real-time decimation gate keeps density ~30 pts/s, so this bounds
- *  a single track's committed array (and thus the ydoc/sync payload). Enforced
- *  at the coerce boundary; the recorder also caps before commit. */
+/** Max breakpoints PER track — the durable-size guard for a long automation
+ *  take (a slow lane rate + long clip = a multi-minute pass). The recorder's
+ *  real-time decimation gate keeps density ~30 pts/s, so this bounds a single
+ *  track's committed array (and thus the ydoc/sync payload). Enforced at the
+ *  coerce boundary; the recorder also caps before commit. */
 export const MAX_AUTOMATION_EVENTS = 4000;
-
-/** DEFAULT automation-clip length in steps — DELIBERATELY long (vs the 16-step
- *  note default) so a fresh ＋AUTO gives a comfortable multi-second record loop
- *  instead of a ~2s scramble. Combined with DEFAULT_AUTOMATION_DIV below. Both
- *  the length AND the division are user-settable from the card afterward. */
-export const DEFAULT_AUTOMATION_STEPS = 64;
-/** DEFAULT automation-clip clock division — a SLOW rate ('1/4' = index 1 into
- *  clip-clock RATE_MULTS) so the long window stretches to ~32s at the default
- *  tempo/STEP grid (64 steps × 4× the base step duration at 120bpm/16th). The
- *  owner's "lower clock divisions + longer beat length to maximize record time":
- *  a fresh ＋AUTO records over many seconds, not a scramble. */
-export const DEFAULT_AUTOMATION_DIV = 1;
 
 /** A single automation breakpoint: a normalized param value at a step position.
  *  `step` may be fractional for sub-step resolution; `value` is 0..1 in the
@@ -274,36 +269,48 @@ export interface AutomationTarget {
   paramId: string;
 }
 
-/** One automated parameter's breakpoint track. Just a target + its step-ordered
- *  breakpoints (custom envelope data — no MIDI identity). `interp` overrides the
- *  playback interpolation for this track: 'linear' (smooth ramp between points)
+/** The canonical string key for an automation target — `nodeId::paramId`. The
+ *  SINGLE key format shared by `AutoClipRecord.tracks`, `data.autoAssign`, and
+ *  the controller's client-local override sets. */
+export function automationTargetKey(t: AutomationTarget): string {
+  return t.nodeId + '::' + t.paramId;
+}
+/** Parse an `automationTargetKey` back to its (nodeId, paramId), or null for a
+ *  malformed key (the coerce boundary drops those). */
+export function parseAutomationTargetKey(key: string): AutomationTarget | null {
+  if (typeof key !== 'string') return null;
+  const i = key.indexOf('::');
+  if (i <= 0 || i + 2 >= key.length) return null;
+  return { nodeId: key.slice(0, i), paramId: key.slice(i + 2) };
+}
+
+/** One automated parameter's envelope INSIDE an AutoClipRecord — the value side
+ *  of a `tracks[targetKey]` entry (the target itself is the key). `interp`
+ *  overrides the playback interpolation: 'linear' (smooth ramp between points)
  *  or 'hold' (stepped). Absent ⇒ auto: linear for continuous params, hold for
  *  `curve:'discrete'` params (decided at playback from the ParamDef). */
+export interface AutoTrack {
+  events: AutomationEvent[]; // step-ordered
+  interp?: 'linear' | 'hold';
+}
+
+/** ONE note clip's automation object — the value of `data.auto[clipIndex]`.
+ *  `tracks` is keyed by `automationTargetKey` so a record commit mutates ONLY
+ *  the touched keys (disjoint from every other track AND from the note clip). */
+export interface AutoClipRecord {
+  tracks: Record<string, AutoTrack>;
+}
+
+/** RUNTIME read view of one track — the (parsed target + events) shape the
+ *  playback/record controller consumes. Built ONCE per change by the engine's
+ *  cached read view (never per tick — the historic lane-stall cause). */
 export interface AutomationTrack {
   target: AutomationTarget;
   events: AutomationEvent[]; // step-ordered
   interp?: 'linear' | 'hold';
 }
 
-/** The automation clip: many param tracks, looping with the clip length. */
-export interface AutomationClipRecord extends ClipBase {
-  kind: 'automation';
-  lengthSteps: number;
-  tracks: AutomationTrack[];
-  /** Optional PER-CLIP clock DIVIDER — an index into clip-clock.ts RATE_MULTS
-   *  ([1/8,1/4,1/2,1,2x,4x]), mirroring NoteClipRecord.div. When set it OVERRIDES
-   *  the lane's `rate[]` for this clip's step duration; the engine LATCHES it at
-   *  the clip's loop boundary (a live edit only takes effect at the next clip
-   *  start). A SLOW default (DEFAULT_AUTOMATION_DIV) stretches the record loop so
-   *  param moves are comfortable to capture. Absent = follow the per-lane rate. */
-  div?: number;
-}
-
-export type ClipRecord =
-  | NoteClipRecord
-  | AudioClipRecord
-  | SnapshotClipRecord
-  | AutomationClipRecord;
+export type ClipRecord = NoteClipRecord | AudioClipRecord | SnapshotClipRecord;
 
 /** Persisted on node.data. Note clips are tiny so no caps in v1. */
 export interface ClipPlayerData {
@@ -385,23 +392,28 @@ export interface ClipPlayerData {
    *  binding while the KEYS keyboard is armed/recording a clip; peers + the card
    *  see it. Absent/null = not note-recording. v1 single-recorder per clip. */
   noteRec?: NoteRecState | null;
-  /** AUTOMATION record-arm state (task #183). `arm` = record-armed; while armed
-   *  AND playing an automation clip, that clip's live param moves are captured
-   *  for one quantized loop pass. `recorderId` = the arming client's
-   *  `ydoc.clientID` — the SINGLE-WRITER: only that client's engine runs the
-   *  recorder + commits the pass, so peers never double-record (see
+  /** AUTOMATION record-arm state. `arm` = GLOBAL record-arm (CLIP RECORD):
+   *  while armed, EVERY lane with a playing note clip + assigned params records
+   *  live moves of ITS params into the PLAYING clip's sibling `auto` object
+   *  (per-lane punch-in at that clip's own wrap). `recorderId` = the arming
+   *  client's `ydoc.clientID` — the SINGLE-WRITER: only that client's engine
+   *  runs the recorder + commits passes, so peers never double-record (see
    *  `isAutomationRecorder`). SYNCED so every peer sees the armed state (their
    *  engines still PLAY the automation; only the recorder records). Set by the
-   *  card/launchpad; the engine only READS it. Playback needs no state here — it
-   *  is transient, zero-Yjs. Absent = not armed.
-   *
-   *  `clip` designates THE automation clip for this player (MVP: exactly one) —
-   *  a (lane, slot) pointer into `clips` at a `kind:'automation'` record. The
-   *  card's "+AUTO" action stamps the clip into the first empty cell of the last
-   *  lane and records the pointer here; the context-menu "Assign to automation
-   *  lane" adds tracks to it; the ARM toggle records into it. Absent = the
-   *  player has no automation clip yet. */
-  automation?: { arm?: boolean; recorderId?: number; clip?: { lane: number; slot: number } };
+   *  card/launchpad; the engine only READS it. Absent = not armed. */
+  automation?: { arm?: boolean; recorderId?: number };
+  /** PER-CLIP AUTOMATION (sibling map): each note clip's automation object,
+   *  keyed by the SAME stride-64 flat `clipIndex(slot, lane)` as `clips` — a
+   *  PARALLEL key, never a field on the note clip, so note edits and automation
+   *  commits are disjoint CRDT scopes (see the AutoClipRecord block above).
+   *  Sparse; absent/null = the clip carries no automation. */
+  auto?: Record<string, AutoClipRecord | null>;
+  /** PARAM → LANE automation assignment: `automationTargetKey` → lane index
+   *  (0..CLIP_LANES-1). ONE lane per param (re-assigning MOVES it); while
+   *  record-armed, a lane records ONLY params assigned to it that the user
+   *  touches. SYNCED (the right-click "Assign to automation lane" menu writes
+   *  it); the assigned control shows a thin border in the lane's colour. */
+  autoAssign?: Record<string, number>;
   creatorId?: string;
 }
 
@@ -428,29 +440,52 @@ export function isAutomationArmed(data: ClipPlayerData | undefined): boolean {
   return data?.automation?.arm === true;
 }
 
-/** The DISPLAYED div + length of an automation clip. The SINGLE source the card's
- *  AUTO-block DIV select + LENGTH input AND the clip-cell "div·length" badge all
- *  render from, so the UI can NEVER disagree with the stored clip data (the class
- *  of "I saw 1/1 but it was really 1/4" bug). `div` undefined ⇒ the clip follows
- *  the lane rate, shown as the default rate label; length absent ⇒ the long
- *  default. PURE. */
-export interface AutomationDisplay {
-  /** Coerced RATE index (into clip-clock RATE_LABELS/RATE_MULTS). */
-  divIndex: number;
-  /** The rate label for `divIndex` (e.g. '1/4'). */
-  divLabel: string;
-  /** The clip's loop length in steps (or DEFAULT_AUTOMATION_STEPS). */
-  lengthSteps: number;
-  /** The compact cell badge, "<divLabel>·<lengthSteps>" (e.g. "1/4·64"). */
-  badge: string;
+// ---------------------------------------------------------------------------
+// AUTOMATION ASSIGNMENT (param → lane) — PURE reads over `data.autoAssign`.
+// ---------------------------------------------------------------------------
+
+/** Coerce a raw `autoAssign` map: keep only entries whose key parses as an
+ *  automation target AND whose value is an integer lane 0..CLIP_LANES-1. PURE. */
+export function coerceAutoAssign(raw: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [key, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!parseAutomationTargetKey(key)) continue;
+    const lane = Number(v);
+    if (!Number.isInteger(lane) || lane < 0 || lane >= CLIP_LANES) continue;
+    out[key] = lane;
+  }
+  return out;
 }
-export function automationClipDisplay(
-  clip: { div?: number; lengthSteps?: number } | null | undefined,
-): AutomationDisplay {
-  const divIndex = coerceRateIndex(clip?.div);
-  const lengthSteps = typeof clip?.lengthSteps === 'number' ? clip.lengthSteps : DEFAULT_AUTOMATION_STEPS;
-  const divLabel = RATE_LABELS[divIndex];
-  return { divIndex, divLabel, lengthSteps, badge: `${divLabel}·${lengthSteps}` };
+
+/** The lane a target is assigned to on this player, or null (unassigned). */
+export function assignedLaneOf(
+  data: { autoAssign?: unknown } | undefined,
+  target: AutomationTarget,
+): number | null {
+  const lane = coerceAutoAssign(data?.autoAssign)[automationTargetKey(target)];
+  return typeof lane === 'number' ? lane : null;
+}
+
+/** The assigned targets of EACH lane (length CLIP_LANES) — the per-lane record
+ *  scope: while armed, lane L records ONLY these params when touched. PURE. */
+export function laneAssignedTargets(
+  data: { autoAssign?: unknown } | undefined,
+): AutomationTarget[][] {
+  const out: AutomationTarget[][] = Array.from({ length: CLIP_LANES }, () => []);
+  for (const [key, lane] of Object.entries(coerceAutoAssign(data?.autoAssign))) {
+    const target = parseAutomationTargetKey(key);
+    if (target) out[lane]!.push(target);
+  }
+  return out;
+}
+
+/** Per-lane assigned-param COUNTS (length CLIP_LANES) — the card's chip row
+ *  renders exactly this, so the readout can never disagree with `autoAssign`. */
+export function autoAssignCounts(data: { autoAssign?: unknown } | undefined): number[] {
+  const out = new Array<number>(CLIP_LANES).fill(0);
+  for (const lane of Object.values(coerceAutoAssign(data?.autoAssign))) out[lane]!++;
+  return out;
 }
 
 /** DUAL-LAUNCHPAD KEYS note-record state (see ClipPlayerData.noteRec). */
@@ -685,25 +720,10 @@ export function coerceClipRecord(raw: unknown): ClipRecord | null {
     if (typeof r.gain === 'number') out.gain = r.gain;
     return out;
   }
-  if (r.kind === 'automation') {
-    const lengthSteps = clampStepCount(Number(r.lengthSteps));
-    const rawTracks = Array.isArray(r.tracks) ? r.tracks : [];
-    const tracks = rawTracks
-      .map(coerceAutomationTrack)
-      .filter((t): t is AutomationTrack => t !== null)
-      // Enforce the DOCUMENTED cap at the data boundary (MAX_AUTOMATION_TRACKS).
-      .slice(0, MAX_AUTOMATION_TRACKS);
-    const out: AutomationClipRecord = { kind: 'automation', lengthSteps, tracks, loop };
-    // Per-clip divider: clamp a finite value to a valid RATE index; missing /
-    // non-numeric ⇒ undefined (the clip follows its lane's rate). Same discipline
-    // as the note arm above.
-    if (typeof r.div === 'number' && Number.isFinite(r.div)) out.div = coerceRateIndex(r.div);
-    if (typeof r.color === 'number') out.color = r.color;
-    if (typeof r.name === 'string') out.name = r.name;
-    if (typeof r.gain === 'number') out.gain = r.gain;
-    return out;
-  }
   if (r.kind === 'audio' || r.kind === 'snapshot') return r as unknown as ClipRecord;
+  // Unknown kinds — including the RETIRED stamped `kind:'automation'` clip from
+  // the pre-rehome model (clean break; the branch is unreleased) — coerce away
+  // silently: the cell reads as empty, the load never crashes.
   return null;
 }
 
@@ -723,46 +743,77 @@ export function coerceAutomationEvent(raw: unknown): AutomationEvent | null {
   return { step, value: Math.max(0, Math.min(1, value)) };
 }
 
-/** Clamp a raw object into a valid AutomationTrack, or null (a track with an
- *  unusable target is dropped). Events are coerced, filtered, step-sorted, and
- *  capped at MAX_AUTOMATION_EVENTS (the durable-size guard for long clips). */
-export function coerceAutomationTrack(raw: unknown): AutomationTrack | null {
+/** Clamp a raw keyed-track VALUE ({ events, interp? }) into a valid AutoTrack,
+ *  or null. Events are coerced, filtered, step-sorted, and capped at
+ *  MAX_AUTOMATION_EVENTS (the durable-size guard for long takes). */
+export function coerceAutoTrack(raw: unknown): AutoTrack | null {
   if (!raw || typeof raw !== 'object') return null;
   const t = raw as Record<string, unknown>;
-  const target = t.target as Record<string, unknown> | undefined;
-  const nodeId = target?.nodeId;
-  const paramId = target?.paramId;
-  if (typeof nodeId !== 'string' || !nodeId) return null;
-  if (typeof paramId !== 'string' || !paramId) return null;
   const events = (Array.isArray(t.events) ? t.events : [])
     .map(coerceAutomationEvent)
     .filter((e): e is AutomationEvent => e !== null)
     .sort((a, b) => a.step - b.step)
     .slice(0, MAX_AUTOMATION_EVENTS);
-  const out: AutomationTrack = { target: { nodeId, paramId }, events };
+  const out: AutoTrack = { events };
   if (t.interp === 'linear' || t.interp === 'hold') out.interp = t.interp;
+  return out;
+}
+
+/** Coerce ONE clip's raw automation object (`data.auto[k]`) at the boundary:
+ *  keep only tracks whose key parses as a target and whose value coerces, in
+ *  sorted-key order, capped at MAX_AUTOMATION_TRACKS. Returns a NEW plain
+ *  record (a deep, Y-severed copy) or null for an unusable value. PURE. */
+export function coerceAutoClipRecord(raw: unknown): AutoClipRecord | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const rawTracks = r.tracks;
+  const tracks: Record<string, AutoTrack> = {};
+  if (rawTracks && typeof rawTracks === 'object') {
+    let n = 0;
+    for (const key of Object.keys(rawTracks as Record<string, unknown>).sort()) {
+      if (n >= MAX_AUTOMATION_TRACKS) break; // the documented cap, at the boundary
+      if (!parseAutomationTargetKey(key)) continue; // malformed key → dropped
+      const track = coerceAutoTrack((rawTracks as Record<string, unknown>)[key]);
+      if (!track) continue;
+      tracks[key] = track;
+      n++;
+    }
+  }
+  return { tracks };
+}
+
+/** Read + coerce ONE clip's automation object from node.data, or null when the
+ *  clip carries none. Accepts any shape (the value is coerced/validated). */
+export function readAutoClip(
+  data: { auto?: Record<string, unknown> } | undefined,
+  index: string | number,
+): AutoClipRecord | null {
+  const raw = data?.auto?.[String(index)];
+  if (!raw) return null;
+  const rec = coerceAutoClipRecord(raw);
+  return rec && Object.keys(rec.tracks).length > 0 ? rec : null;
+}
+
+/** Build the RUNTIME track views (parsed target + step-sorted events) from a
+ *  coerced AutoClipRecord — the shape the playback/record controller consumes.
+ *  PURE; the engine caches the result per clip identity/revision (coerce-ONCE —
+ *  never per tick). */
+export function autoTrackViews(rec: AutoClipRecord | null | undefined): AutomationTrack[] {
+  if (!rec) return [];
+  const out: AutomationTrack[] = [];
+  for (const [key, tr] of Object.entries(rec.tracks)) {
+    const target = parseAutomationTargetKey(key);
+    if (!target) continue;
+    const view: AutomationTrack = { target, events: tr.events };
+    if (tr.interp) view.interp = tr.interp;
+    out.push(view);
+  }
   return out;
 }
 
 /** True when two targets reference the same (nodeId, paramId) control. */
 export function sameAutomationTarget(a: AutomationTarget, b: AutomationTarget): boolean {
   return a.nodeId === b.nodeId && a.paramId === b.paramId;
-}
-
-/** Empty automation clip. Defaults to a LONG window (DEFAULT_AUTOMATION_STEPS)
- *  at a SLOW clock division (DEFAULT_AUTOMATION_DIV) so a fresh ＋AUTO yields a
- *  comfortable multi-second record loop (both are user-settable afterward). */
-export function defaultAutomationClip(
-  lengthSteps = DEFAULT_AUTOMATION_STEPS,
-  div = DEFAULT_AUTOMATION_DIV,
-): AutomationClipRecord {
-  return {
-    kind: 'automation',
-    lengthSteps: clampStepCount(lengthSteps),
-    tracks: [],
-    loop: true,
-    div: coerceRateIndex(div),
-  };
 }
 
 /**
@@ -779,11 +830,13 @@ export function defaultAutomationClip(
  *     (The naive min/max normalization inverts this and deletes the middle —
  *     the exact loop-wrap bug the adversarial review caught.)
  *
- * Callers MUST pass a PLAIN snapshot of `existing` (e.g. from `coerceClipRecord`),
- * NEVER the live Y.Array — `kept` retains references to `existing`'s elements, and
- * reassigning integrated Y children throws "Type already integrated"
- * ([[yjs-save-load-real-ydoc]]). The commit reassigns the whole clip plain.
- * Returns a NEW step-sorted, event-capped array.
+ * Callers MUST pass a PLAIN snapshot of `existing` (e.g. from
+ * `coerceAutoClipRecord` / the engine's cached read view), NEVER the live
+ * Y.Array — `kept` retains references to `existing`'s elements, and reassigning
+ * integrated Y children throws "Type already integrated"
+ * ([[yjs-save-load-real-ydoc]]). The commit writes the merged PLAIN events into
+ * ONLY the touched track key (`auto[k].tracks[target]`). Returns a NEW
+ * step-sorted, event-capped array.
  */
 export function mergeAutomationOverdub(
   existing: readonly AutomationEvent[],
@@ -801,28 +854,6 @@ export function mergeAutomationOverdub(
   );
   merged.sort((a, b) => a.step - b.step);
   return merged.slice(0, MAX_AUTOMATION_EVENTS);
-}
-
-/**
- * Remove ONE param's automation from a record (owner: right-click a mapped
- * thing → "Remove automation" deletes THAT param's data only). Returns a NEW
- * record with the matching track dropped; other tracks untouched. The Y.Doc
- * caller mirrors this by splicing the track out in place.
- */
-export function removeAutomationTrack(
-  rec: AutomationClipRecord,
-  target: AutomationTarget,
-): AutomationClipRecord {
-  return { ...rec, tracks: rec.tracks.filter((t) => !sameAutomationTarget(t.target, target)) };
-}
-
-/** Find a track for a target (or undefined). Used by the recorder to reuse an
- *  existing track (overdub) vs. create a new one. */
-export function findAutomationTrack(
-  rec: AutomationClipRecord,
-  target: AutomationTarget,
-): AutomationTrack | undefined {
-  return rec.tracks.find((t) => sameAutomationTarget(t.target, target));
 }
 
 /**

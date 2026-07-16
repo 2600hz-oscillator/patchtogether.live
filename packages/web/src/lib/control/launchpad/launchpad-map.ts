@@ -1535,10 +1535,10 @@ export interface SingleGridOpts {
   /** Swing± meter: ramp the Swing+ (purple) / Swing− (blue) button pale→bright by
    *  level, or flash both green at dead-centre. Only rendered under shift. */
   swingMeter?: { active: boolean; dir: 'up' | 'down' | 'center'; level0to1: number };
-  /** AUTOMATION countdown flash for the automation clip's matrix cell (last 4
-   *  beats before its own wrap). Painted only when that clip's scene is inside the
-   *  current scroll window. */
-  autoCountdown?: (CountdownPaint & { clipIndex: number }) | null;
+  /** AUTOMATION countdown flashes — one per RECORDING lane's playing clip cell
+   *  (last 4 beats before EACH clip's own wrap). Painted only when a clip's
+   *  scene is inside the current scroll window. */
+  autoCountdown?: (CountdownPaint & { clipIndex: number })[] | null;
 }
 
 /** The clip-state colour for a matrix pad — identical semantics to
@@ -1674,12 +1674,15 @@ export function computeSingleGridFrame(
     const pad = gridPadForScrolledSlot(slot, lane, offset);
     if (pad) put(frame, padNote(pad.x, pad.y), opts.divPulse.on ? RGB_TIMING_ARMED : RGB_TIMING);
   }
-  // AUTOMATION countdown: flash the automation clip's own matrix cell 🟡🟡🔴🔴 in
-  // the last 4 beats before its wrap (only when its scene is in the scroll window).
+  // AUTOMATION countdowns: flash EACH recording lane's playing cell 🟡🟡🔴🔴 in
+  // the last 4 beats before THAT clip's own wrap (only when its scene is in the
+  // scroll window). Per-lane — several lanes can record at once.
   if (opts.autoCountdown) {
-    const { slot, lane } = slotLaneForClipIndex(opts.autoCountdown.clipIndex);
-    const pad = gridPadForScrolledSlot(slot, lane, offset);
-    if (pad) put(frame, padNote(pad.x, pad.y), countdownRgb(opts.autoCountdown));
+    for (const cd of opts.autoCountdown) {
+      const { slot, lane } = slotLaneForClipIndex(cd.clipIndex);
+      const pad = gridPadForScrolledSlot(slot, lane, offset);
+      if (pad) put(frame, padNote(pad.x, pad.y), countdownRgb(cd));
+    }
   }
   // Right column: no-shift = scene/row launch (amber when the scene HAS a clip in
   // any lane; flash when a lane is queued that slot; DARK for an EMPTY scene —
@@ -1909,8 +1912,9 @@ export interface SingleControlOpts {
   recording?: boolean;
   /** Arrangement mode (node.data.clipMode === 'arrangement') — lights re-homed SONG. */
   arrangeMode?: boolean;
-  /** AUTOMATION countdown flash for the AUTO-arm pad (last 4 beats before the
-   *  automation clip's own wrap). Overrides the steady armed/idle colour. */
+  /** AUTOMATION countdown flash for the AUTO-arm pad — the SOONEST-to-wrap
+   *  recording lane's pre-roll (last 4 beats before its clip's own wrap).
+   *  Overrides the steady armed/idle colour. */
   autoCountdown?: CountdownPaint | null;
   data?: ClipPlayerData | undefined;
 }
@@ -1955,11 +1959,12 @@ export function computeSingleControlFrame(opts: SingleControlOpts): LaunchpadFra
     padNote(CTRL_SONG_COL, CTRL_ARRANGE_ROW),
     opts.arrangeMode ? RGB_SONG_ARRANGE : RGB_SONG_SESSION,
   );
-  // AUTOMATION record-arm — pulses red (the record-arm colour) while armed, dim
-  // red when idle (mirrors the arranger REC beside it). Reads the SYNCED arm flag
-  // so a card/peer arm shows on the pad. In the last 4 beats before the automation
-  // clip's own wrap the countdown OVERRIDES it (🟡🟡🔴🔴 recordist pre-roll). Same
-  // one-press create-if-none + arm the card's ＋AUTO/ARM does (handler owns write).
+  // AUTOMATION record-arm (the GLOBAL per-clip-automation arm) — pulses red (the
+  // record-arm colour) while armed, dim red when idle (mirrors the arranger REC
+  // beside it). Reads the SYNCED arm flag so a card/peer arm shows on the pad.
+  // In the last 4 beats before the soonest recording clip's own wrap the
+  // countdown OVERRIDES it (🟡🟡🔴🔴 recordist pre-roll). Same arm toggle the
+  // card's ◉ AUTO makes (handler owns the write).
   put(
     frame,
     padNote(CTRL_AUTO_ARM_COL, CTRL_ARRANGE_ROW),

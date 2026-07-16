@@ -644,7 +644,7 @@
     { what: 'LENGTH-EDIT page', addr: 'opened from GRID+shift LENGTH or CLIP LENGTH. Bottom row = end BLOCK (1–8 ×16), next two rows = end STEP (1–8, 9–16). Length = (endBlock−1)×16 + endStep, up to 128. EXIT = top scene button' },
   ];
   const SINGLE_MAP_CONTROL: MapRow[] = [
-    { what: 'CONTROL — the performance deck', addr: 'RESET (row 1, col 2, steel blue) · MONO row (teal) · MUTE row (orange) · RATE row (rate ramp) — one pad per channel. Right column = per-lane STOP. Re-homed on dark pads: TEMPO− / TEMPO+ / STOP-ALL (top grid row); REC (arranger record) · SONG · AUTO (automation clip record) one row below' },
+    { what: 'CONTROL — the performance deck', addr: 'RESET (row 1, col 2, steel blue) · MONO row (teal) · MUTE row (orange) · RATE row (rate ramp) — one pad per channel. Right column = per-lane STOP. Re-homed on dark pads: TEMPO− / TEMPO+ / STOP-ALL (top grid row); REC (arranger record) · SONG · AUTO (automation clip-record arm) one row below' },
   ];
   const SINGLE_MAP_ARRANGER: MapRow[] = [
     { what: 'ARRANGER', addr: 'inert placeholder (faint grid, dark right column). The arrangement engine exists but has no launchpad UI yet; ARRANGER RECORD (REC) + SONG live in CONTROL for now' },
@@ -799,9 +799,10 @@
       <dt>CLIP RECORD</dt>
       <dd>
         Recording <strong>into a clip</strong>. Notes: KEYS → <strong>QUEUE-REC</strong>. Knob / control
-        moves: the <strong>automation clip</strong> — arm with the card's teal <strong>◉ AUTO</strong>, the
-        Control-Mode <strong>AUTO</strong> pad, or (optionally) right-click a control →
-        <em>Assign to automation lane</em>.
+        moves: <strong>per-clip automation</strong> — right-click a control →
+        <em>Assign to automation lane</em> (1–8), then arm with the card's teal
+        <strong>◉ AUTO</strong> or the Control-Mode <strong>AUTO</strong> pad and move the control while
+        its lane's clip plays: the moves record into <em>that clip's own</em> automation.
       </dd>
       <dt>ARRANGER RECORD</dt>
       <dd>
@@ -1182,13 +1183,14 @@
         records your live clip <em>launches</em> — not notes, not knobs; the pad pulses red while
         recording), and <strong>SONG</strong> flips SESSION ⇄ ARRANGEMENT to replay the recorded song.
         Same synced state as the card's <strong>●</strong> and SES/ARR buttons.</li>
-      <li><strong>AUTO = automation CLIP RECORD:</strong> the pad next to SONG arms the
-        <strong>automation clip</strong> — recording your live knob / control moves into a looping clip
-        (continuous overdub, punching in at the clip's next loop start; it pulses red while armed and shows
-        the 🟡🟡🔴🔴 pre-roll countdown before each loop wrap). One press creates the automation clip if
-        none exists yet — the same action as the card's <strong>＋AUTO / ◉ AUTO</strong>. Then just
-        <strong>move controls</strong>: each moved control is auto-captured and recorded (optional:
-        right-click a control → <em>Assign to automation lane</em>). Tap AUTO again to stop.</li>
+      <li><strong>AUTO = automation CLIP RECORD:</strong> the pad next to SONG is the
+        <strong>global automation arm</strong> — the same toggle as the card's <strong>◉ AUTO</strong>.
+        Assign controls first (right-click a control → <em>Assign to automation lane</em> 1–8); while
+        armed, every lane with a <em>playing</em> clip and assigned controls records — continuous
+        overdub, punching in at <em>that clip's</em> next loop start, into that clip's OWN automation
+        (each clip in a lane carries its own envelopes). The pad pulses red while armed and shows the
+        🟡🟡🔴🔴 pre-roll countdown before the soonest recording clip's wrap. Move an assigned control
+        to record it; an unassigned control records nothing. Tap AUTO again to stop.</li>
     </ul>
     <h4>Control-mode colours</h4>
     {@render swatches3(SINGLE_CONTROL_COLORS)}

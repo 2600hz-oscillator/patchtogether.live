@@ -45,7 +45,13 @@ import type { PatchEngine } from '$lib/audio/engine';
 // resolver) reads the target's ParamDef ('vca'.base) from the registry.
 import '$lib/audio/modules';
 import { clipplayerDef } from './clipplayer';
-import { clipIndex, type AutomationClipRecord, type AutomationEvent } from './clip-types';
+import {
+  clipIndex,
+  automationTargetKey,
+  type AutoClipRecord,
+  type NoteClipRecord,
+  type AutomationEvent,
+} from './clip-types';
 import { SEAM_GLIDE_S } from './clip-automation-engine';
 
 // ---- Minimal fake AudioContext (same shape as clipplayer.test.ts) ----
@@ -127,12 +133,17 @@ function lane8<T>(lane: number, val: T, fill: T): T[] {
   a[lane] = val;
   return a;
 }
-function autoClip(nodeId: string, events: AutomationEvent[], len = 8): AutomationClipRecord {
+/** A NOTE clip (empty pattern, `len` steps) + its SIBLING auto record driving
+ *  `nodeId`.base — the per-clip model: the note clip goes in `clips[k]`, the
+ *  envelope in `auto[k]` keyed by targetKey. */
+function noteWithAuto(
+  nodeId: string,
+  events: AutomationEvent[],
+  len = 8,
+): { clip: NoteClipRecord; auto: AutoClipRecord } {
   return {
-    kind: 'automation',
-    lengthSteps: len,
-    loop: true,
-    tracks: [{ target: { nodeId, paramId: 'base' }, events }],
+    clip: { kind: 'note', steps: [], lengthSteps: len, root: 48, loop: true },
+    auto: { tracks: { [automationTargetKey({ nodeId, paramId: 'base' })]: { events } } },
   };
 }
 function seedVca(id: string, base = 0.5) {
@@ -140,14 +151,23 @@ function seedVca(id: string, base = 0.5) {
     id, type: 'vca', domain: 'audio', position: { x: 0, y: 0 }, params: { base }, data: {},
   } as never;
 }
-function seedPlayer(clips: Record<string, AutomationClipRecord>, launchSlot: number) {
+function seedPlayer(
+  cells: Record<string, { clip: NoteClipRecord; auto: AutoClipRecord }>,
+  launchSlot: number,
+) {
+  const clips: Record<string, NoteClipRecord> = {};
+  const auto: Record<string, AutoClipRecord> = {};
+  for (const [k, v] of Object.entries(cells)) {
+    clips[k] = v.clip;
+    auto[k] = v.auto;
+  }
   livePatch.nodes[NODE_ID] = {
     id: NODE_ID,
     type: 'clipplayer',
     domain: 'audio',
     position: { x: 0, y: 0 },
     params: { stepDiv: 2, quantize: 1, octave: 0, gateLength: 0.5 },
-    data: { clips, queued: lane8<number | null>(0, launchSlot, null) },
+    data: { clips, auto, queued: lane8<number | null>(0, launchSlot, null) },
   } as never;
 }
 function seedTimelorde(running: number, bpm = 120) {
@@ -193,7 +213,7 @@ describe('clipplayer automation seams (factory-level, ordered engine log)', () =
   it('fix #1 ORDERING: a boundary switch between clips sharing a param never cancels after the incoming clip schedules (shared param: anchors only, no resting pin)', async () => {
     seedVca('va', 0.5);
     seedPlayer(
-      { [clipIndex(0, 0)]: autoClip('va', ENV_A), [clipIndex(1, 0)]: autoClip('va', ENV_B) },
+      { [clipIndex(0, 0)]: noteWithAuto('va', ENV_A), [clipIndex(1, 0)]: noteWithAuto('va', ENV_B) },
       0,
     );
     seedTimelorde(1);
@@ -235,7 +255,7 @@ describe('clipplayer automation seams (factory-level, ordered engine log)', () =
     seedVca('va', 0.5);
     seedVca('vb', 0.5);
     seedPlayer(
-      { [clipIndex(0, 0)]: autoClip('va', ENV_A), [clipIndex(1, 0)]: autoClip('vb', ENV_B) },
+      { [clipIndex(0, 0)]: noteWithAuto('va', ENV_A), [clipIndex(1, 0)]: noteWithAuto('vb', ENV_B) },
       0,
     );
     seedTimelorde(1);
@@ -274,7 +294,7 @@ describe('clipplayer automation seams (factory-level, ordered engine log)', () =
     seedVca('va', 0.5);
     // A linear 0→0.8 ramp over 8 steps ⇒ the value at integer step k is k*0.1 —
     // so "quantized to the step grid" is directly checkable on the pin value.
-    seedPlayer({ [clipIndex(0, 0)]: autoClip('va', [{ step: 0, value: 0 }, { step: 8, value: 0.8 }]) }, 0);
+    seedPlayer({ [clipIndex(0, 0)]: noteWithAuto('va', [{ step: 0, value: 0 }, { step: 8, value: 0.8 }]) }, 0);
     seedTimelorde(1);
     const ctx = new FakeAudioContext();
     const { engine, log } = makeFakeEngine(ctx);
@@ -302,7 +322,7 @@ describe('clipplayer automation seams (factory-level, ordered engine log)', () =
 
   it('fix #4 DISPOSE: deleting the player mid-playback holds the automated param (no ghost-tail freeze)', async () => {
     seedVca('va', 0.5);
-    seedPlayer({ [clipIndex(0, 0)]: autoClip('va', ENV_A) }, 0);
+    seedPlayer({ [clipIndex(0, 0)]: noteWithAuto('va', ENV_A) }, 0);
     seedTimelorde(1);
     const ctx = new FakeAudioContext();
     const { engine, log } = makeFakeEngine(ctx);
@@ -318,5 +338,82 @@ describe('clipplayer automation seams (factory-level, ordered engine log)', () =
     );
     expect(pins.length, 'dispose pinned the resting value').toBe(holdsBefore + 1);
     expect(pins[pins.length - 1]!.toValue).toBeGreaterThan(0.5); // A's high envelope, not zero
+  });
+
+  it('CO-DRIVE: a note clip with NOTES + sibling automation emits notes AND drives its auto tracks in the same lane', async () => {
+    seedVca('va', 0.5);
+    const cell = noteWithAuto('va', ENV_A);
+    cell.clip.steps = [{ step: 0, midi: 60 }, { step: 4, midi: 64 }]; // real notes
+    seedPlayer({ [clipIndex(0, 0)]: cell }, 0);
+    seedTimelorde(1);
+    const ctx = new FakeAudioContext();
+    const { engine, log } = makeFakeEngine(ctx);
+    setActiveEngine(engine);
+    const handle = await build(ctx);
+
+    // Poll the lane's gate output while running — a note step must fire it high.
+    let sawGateHigh = false;
+    for (let t = 0; t < 1.2; t += 0.025) {
+      ctx.currentTime = t;
+      hoisted.tick!();
+      if ((handle.read?.('gateValue:0') ?? 0) === 1) sawGateHigh = true;
+    }
+    expect(sawGateHigh, 'the NOTE path emitted (gate went high)').toBe(true);
+    // …AND the sibling automation drove the param through the same step loop.
+    const autoPoints = log.filter((e) => e.kind === 'schedule' && e.paramId === 'base');
+    expect(autoPoints.length, 'automation scheduled alongside the notes').toBeGreaterThan(3);
+    handle.dispose();
+  });
+
+  it('FULL RECORD PATH: assign → arm → touch + move → the factory commits into auto[k] (per-key, real store) + publishes the per-lane countdown', async () => {
+    const { notifyAutomationTouch, notifyAutomationRelease } = await import(
+      '$lib/audio/automation-touch'
+    );
+    const { ydoc } = await import('$lib/graph/store');
+    const { getAutomationRender } = await import('./clip-automation-render');
+    const { isAutomationArmed } = await import('./clip-types');
+    seedVca('va', 0.1);
+    // A note clip with NO pre-existing automation — recording creates auto[k].
+    seedPlayer(
+      { [clipIndex(0, 0)]: { clip: { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true }, auto: { tracks: {} } } },
+      0,
+    );
+    // Assign va.base to lane 0 + arm (this client is the single writer).
+    const data = livePatch.nodes[NODE_ID]!.data as Record<string, unknown>;
+    data.autoAssign = { 'va::base': 0 };
+    data.automation = { arm: true, recorderId: ydoc.clientID };
+    seedTimelorde(1);
+    const ctx = new FakeAudioContext();
+    const { engine } = makeFakeEngine(ctx);
+    setActiveEngine(engine);
+    const handle = await build(ctx);
+
+    // Loop 1 (armed, pre-punch): the playhead sweeps to the first wrap (~1.01 s).
+    run(ctx, 0, 1.05);
+    expect(isAutomationArmed(livePatch.nodes[NODE_ID]!.data as never)).toBe(true);
+    // While armed + playing, the per-lane countdown publishes for lane 0.
+    const rs = getAutomationRender(NODE_ID);
+    expect(rs, 'per-lane render state published while armed').not.toBeNull();
+    expect(rs!.lanes.some((l) => l.lane === 0 && l.recording)).toBe(true);
+    // Loop 2: GRAB the knob (touch) and sweep it across the loop.
+    notifyAutomationTouch({ nodeId: 'va', paramId: 'base' }, 'pointer');
+    const sweep: [number, number][] = [
+      [1.1, 0.2], [1.3, 0.4], [1.5, 0.6], [1.7, 0.8], [1.9, 0.95],
+    ];
+    let t0 = 1.05;
+    for (const [t, v] of sweep) {
+      livePatch.nodes['va']!.params.base = v; // the knob move (store value)
+      run(ctx, t0, t);
+      t0 = t;
+    }
+    // Cross the wrap (~2.01 s) → the pass commits into auto[k].
+    run(ctx, t0, 2.2);
+    notifyAutomationRelease({ nodeId: 'va', paramId: 'base' }, 'pointer');
+
+    const auto = (livePatch.nodes[NODE_ID]!.data as { auto?: Record<string, { tracks?: Record<string, { events?: unknown[] }> }> }).auto;
+    const track = auto?.[String(clipIndex(0, 0))]?.tracks?.['va::base'];
+    expect(track, 'the take committed into the sibling auto[k] under the target key').toBeTruthy();
+    expect((track!.events?.length ?? 0), 'captured breakpoints').toBeGreaterThan(1);
+    handle.dispose();
   });
 });

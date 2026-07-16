@@ -7,6 +7,7 @@ import {
   setAutomationRender,
   getAutomationRender,
   clearAutomationRender,
+  soonestAutomationLane,
   __resetAutomationRender,
 } from './clip-automation-render';
 
@@ -48,17 +49,46 @@ describe('automationCountdownOn — beat-synced pulse (bright on the beat, dim b
   });
 });
 
-describe('automation render state store', () => {
+describe('automation render state store (per-lane entries)', () => {
   it('set / get / clear a node’s render state', () => {
     expect(getAutomationRender('n1')).toBeNull();
-    setAutomationRender('n1', { lane: 7, slot: 0, recording: true, beatsToLoopEnd: 2.5, beatPhase: 0.1 });
+    setAutomationRender('n1', {
+      lanes: [{ lane: 7, slot: 0, recording: true, beatsToLoopEnd: 2.5, beatPhase: 0.1 }],
+    });
     expect(getAutomationRender('n1')).toEqual({
-      lane: 7, slot: 0, recording: true, beatsToLoopEnd: 2.5, beatPhase: 0.1,
+      lanes: [{ lane: 7, slot: 0, recording: true, beatsToLoopEnd: 2.5, beatPhase: 0.1 }],
     });
     setAutomationRender('n1', null);
     expect(getAutomationRender('n1')).toBeNull();
-    setAutomationRender('n1', { lane: 7, slot: 0, recording: true, beatsToLoopEnd: 1, beatPhase: 0 });
+    setAutomationRender('n1', {
+      lanes: [{ lane: 7, slot: 0, recording: true, beatsToLoopEnd: 1, beatPhase: 0 }],
+    });
     clearAutomationRender('n1');
     expect(getAutomationRender('n1')).toBeNull();
+  });
+
+  it('carries MULTIPLE recording lanes at once — each with its own countdown', () => {
+    setAutomationRender('n1', {
+      lanes: [
+        { lane: 0, slot: 2, recording: true, beatsToLoopEnd: 3.5, beatPhase: 0.5 },
+        { lane: 5, slot: 1, recording: true, beatsToLoopEnd: 1.2, beatPhase: 0.2 },
+      ],
+    });
+    const rs = getAutomationRender('n1')!;
+    expect(rs.lanes.length).toBe(2);
+    expect(rs.lanes.map((l) => l.lane)).toEqual([0, 5]);
+  });
+
+  it('soonestAutomationLane picks the lane closest to ITS wrap (single-slot surfaces)', () => {
+    expect(soonestAutomationLane(null)).toBeNull();
+    expect(soonestAutomationLane({ lanes: [] })).toBeNull();
+    const rs = {
+      lanes: [
+        { lane: 0, slot: 2, recording: true, beatsToLoopEnd: 3.5, beatPhase: 0.5 },
+        { lane: 5, slot: 1, recording: true, beatsToLoopEnd: 1.2, beatPhase: 0.2 },
+        { lane: 6, slot: 0, recording: false, beatsToLoopEnd: 0.1, beatPhase: 0 }, // not recording → ignored
+      ],
+    };
+    expect(soonestAutomationLane(rs)?.lane).toBe(5);
   });
 });

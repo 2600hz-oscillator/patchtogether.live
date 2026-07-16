@@ -22,7 +22,7 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch, ydoc } from '$lib/graph/store';
-  import { nodeVersion } from '$lib/graph/node-versions.svelte';
+  import { nodeVersion, nodesStructuralVersion } from '$lib/graph/node-versions.svelte';
   import { setNodeParam } from '$lib/graph/mutate';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
@@ -48,18 +48,15 @@
     laneColorEff as laneColorEffOf,
     coerceLaneColor,
     readClip,
-    defaultAutomationClip,
-    automationClipDisplay,
-    clampStepCount,
-    MAX_CLIP_STEPS,
-    MAX_AUTOMATION_TRACKS,
+    autoAssignCounts,
+    coerceAutoAssign,
     type ClipPlayerData,
     type NoteClipRecord,
-    type AutomationClipRecord,
   } from '$lib/audio/modules/clip-types';
-  import { plainAutomationClip } from '$lib/audio/modules/clip-automation';
+  import { pruneAutoAssignDangling } from '$lib/graph/automation-assign';
   import {
     getAutomationRender,
+    soonestAutomationLane,
     automationCountdownColor,
     automationCountdownOn,
   } from '$lib/audio/modules/clip-automation-render';
@@ -286,9 +283,11 @@
   let externallyClocked = $state(false);
   let curStep = $state(0);
   let songBeatLive = $state(0); // live song position for the arrangement playhead
-  // AUTOMATION countdown mirror (client-local render state, polled — not synced):
-  // 'yellow' | 'red' with an on-beat pulse in the last 4 beats before the
-  // automation clip's own wrap, else null. Mirrors the launchpad pad flash.
+  // AUTOMATION countdown mirror (client-local render state, polled — not
+  // synced): PER-LANE 'yellow' | 'red' + on-beat pulse in the last 4 beats
+  // before EACH recording lane's clip wrap (its pad flashes), plus the SOONEST
+  // lane's flash on the ◉ AUTO button. Mirrors the launchpad paint.
+  let autoCdByLane = $state<Record<number, { color: 'yellow' | 'red'; on: boolean; slot: number }>>({});
   let autoCountdown = $state<{ color: 'yellow' | 'red'; on: boolean } | null>(null);
   $effect(() => {
     void node; // re-subscribe if the node identity changes
@@ -309,13 +308,25 @@
       }
       // Automation override indicator (client-local touch state — not synced, so
       // it's polled here, not derived from cardVersion). Lit when a param THIS
-      // player automates is currently suspended by a live grab.
+      // player automates (assigned OR carried by a clip) is currently suspended
+      // by a live grab.
       const keys = overriddenKeysFor(id);
       autoOverridden = keys.length > 0 && keys.some((k) => autoTrackKeys.has(k));
-      // Automation countdown mirror (client-local render state, polled here).
+      // Automation countdown mirror (client-local render state, polled here):
+      // one entry per recording LANE (its playing pad flashes on ITS own wrap),
+      // plus the soonest lane's flash on the ◉ AUTO button.
       const rs = getAutomationRender(id);
-      const cc = rs && rs.recording ? automationCountdownColor(rs.beatsToLoopEnd) : null;
-      autoCountdown = cc ? { color: cc, on: automationCountdownOn(rs!.beatPhase) } : null;
+      const byLane: Record<number, { color: 'yellow' | 'red'; on: boolean; slot: number }> = {};
+      for (const l of rs?.lanes ?? []) {
+        if (!l.recording) continue;
+        const color = automationCountdownColor(l.beatsToLoopEnd);
+        if (!color) continue;
+        byLane[l.lane] = { color, on: automationCountdownOn(l.beatPhase), slot: l.slot };
+      }
+      autoCdByLane = byLane;
+      const soonest = soonestAutomationLane(rs);
+      const cc = soonest ? automationCountdownColor(soonest.beatsToLoopEnd) : null;
+      autoCountdown = cc && soonest ? { color: cc, on: automationCountdownOn(soonest.beatPhase) } : null;
       raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
@@ -354,60 +365,49 @@
   /** The full-window pop-out arranger editor (like the MAPPY MAP editor). */
   let arrangeEditorOpen = $state(false);
 
-  // --- AUTOMATION LANE (task #183) ---
-  // The designated automation clip pointer + its resolved record (the one clip
-  // this player records/plays param envelopes into). Derived from synced
-  // node.data; the override state is CLIENT-LOCAL (read from the touch registry).
-  let autoClipPtr = $derived.by<{ lane: number; slot: number } | null>(() => {
-    void cardVersion;
-    const c = dataObj().automation?.clip;
-    return c && typeof c.lane === 'number' && typeof c.slot === 'number'
-      ? { lane: c.lane, slot: c.slot }
-      : null;
-  });
-  let autoClip = $derived.by<AutomationClipRecord | null>(() => {
-    void cardVersion;
-    if (!autoClipPtr) return null;
-    const rec = readClip(dataObj(), clipIndex(autoClipPtr.slot, autoClipPtr.lane));
-    return rec && rec.kind === 'automation' ? rec : null;
-  });
-  let autoTrackCount = $derived(autoClip?.tracks.length ?? 0);
+  // --- PER-CLIP AUTOMATION (redesign Phases 1+2) ---
+  // Synced state: the global arm + the param→lane assignments (autoAssign) +
+  // each clip's sibling `auto[k]` record. Derived from synced node.data; the
+  // override state is CLIENT-LOCAL (read from the touch registry).
   let autoArmed = $derived((void cardVersion, dataObj().automation?.arm === true));
-  // Automation clip LENGTH (steps) + DIV (clock-rate index) — the SINGLE source
-  // (automationClipDisplay) the DIV select, LENGTH input, AND the clip-cell badge
-  // all render from, so the shown timing can never disagree with the stored clip
-  // (UI-can't-lie). Settable so a long, slow record window is user-tunable.
-  let autoDisplay = $derived((void cardVersion, automationClipDisplay(autoClip)));
-  let autoLen = $derived(autoDisplay.lengthSteps);
-  let autoDiv = $derived(autoDisplay.divIndex);
-  // The real track keys ("nodeId::paramId") of THIS clip — the card intersects
-  // the controller's overridden keys against these so the indicator dot only
-  // lights for params THIS player actually automates (never unrelated grabs).
-  let autoTrackKeys = $derived(
-    new Set((autoClip?.tracks ?? []).map((t) => `${t.target.nodeId}::${t.target.paramId}`)),
-  );
+  // Per-lane ASSIGNED counts — the chip row renders exactly autoAssignCounts()
+  // so the readout can never disagree with the stored autoAssign (UI-can't-lie).
+  let autoAssigned = $derived((void cardVersion, autoAssignCounts(dataObj())));
+  let autoAssignedTotal = $derived(autoAssigned.reduce((a, b) => a + b, 0));
+  // The automation keys ("nodeId::paramId") THIS player owns — the ASSIGNED
+  // params plus every track key any clip's sibling `auto` record carries. The
+  // card intersects the controller's overridden keys against these so the
+  // indicator dot only lights for params THIS player automates (never
+  // unrelated grabs).
+  let autoTrackKeys = $derived.by<Set<string>>(() => {
+    void cardVersion;
+    const d = dataObj();
+    const keys = new Set<string>(Object.keys(coerceAutoAssign(d.autoAssign)));
+    const auto = (d as { auto?: Record<string, unknown> }).auto;
+    if (auto && typeof auto === 'object') {
+      for (const rec of Object.values(auto)) {
+        const tracks = (rec as { tracks?: Record<string, unknown> } | null)?.tracks;
+        if (tracks && typeof tracks === 'object') {
+          for (const k of Object.keys(tracks)) keys.add(k);
+        }
+      }
+    }
+    return keys;
+  });
   let autoOverridden = $state(false);
 
-  /** Create THIS player's automation clip: stamp defaultAutomationClip() into the
-   *  FIRST EMPTY cell of the LAST lane (lowest empty slot) + record the pointer.
-   *  No-op if the last lane is full (MVP: one automation clip per player). */
-  function createAutomationClip() {
-    const lane = CLIP_LANES - 1;
-    let slot = -1;
-    for (let s = 0; s < CLIP_SLOTS; s++) {
-      if (!clips[String(clipIndex(s, lane))]) { slot = s; break; }
-    }
-    if (slot < 0) return; // last lane full — no room
-    writeData((d) => {
-      if (!d.clips) d.clips = {};
-      d.clips[String(clipIndex(slot, lane))] = defaultAutomationClip();
-      if (!d.automation) d.automation = {};
-      d.automation.clip = { lane, slot };
-    });
-  }
-  /** Flip automation record-arm. When ARMING, claim single-writer by stamping
-   *  this client's ydoc.clientID as the recorderId (the engine only records on
-   *  the matching client — see isAutomationRecorder). */
+  // AUTO-PRUNE dangling lane assignments: when an assigned control's module is
+  // deleted, drop its autoAssign key (same pattern as the control-surface
+  // binding prune — conservative, transactional only when something dangles).
+  $effect(() => {
+    void cardVersion;
+    void nodesStructuralVersion();
+    pruneAutoAssignDangling(id);
+  });
+
+  /** Flip the GLOBAL automation record-arm (CLIP RECORD). When ARMING, claim
+   *  single-writer by stamping this client's ydoc.clientID as the recorderId
+   *  (the engine only records on the matching client — isAutomationRecorder). */
   function toggleAutoArm() {
     writeData((d) => {
       if (!d.automation) d.automation = {};
@@ -419,28 +419,6 @@
   /** Re-enable every param THIS player has suspended (the override-dot click). */
   function reEnableAutomation() {
     reEnableAllFor(id);
-  }
-  /** Rewrite the automation clip with a mutated copy (whole-clip PLAIN reassign,
-   *  never a live Y splice — the automation-clip commit discipline). */
-  function writeAutoClip(mut: (rec: AutomationClipRecord) => AutomationClipRecord) {
-    const ptr = autoClipPtr;
-    const rec = autoClip;
-    if (!ptr || !rec) return;
-    const next = plainAutomationClip(mut(rec));
-    writeData((d) => {
-      if (!d.clips) d.clips = {};
-      d.clips[String(clipIndex(ptr.slot, ptr.lane))] = next;
-    });
-  }
-  /** Set the automation clip's LENGTH (steps). ARBITRARY counts are allowed (7, 13,
-   *  …) — NOT snapped to musical multiples: a coprime length drifts against the
-   *  other clips by design (the generative-desync feature). */
-  function setAutoLen(steps: number) {
-    writeAutoClip((rec) => ({ ...rec, lengthSteps: clampStepCount(steps) }));
-  }
-  /** Set the automation clip's own clock DIVISION (index into RATE_LABELS). */
-  function setAutoDiv(idx: number) {
-    writeAutoClip((rec) => ({ ...rec, div: coerceRateIndex(idx) }));
   }
 
   // --- SONG VIEW timeline (shown in ARRANGEMENT mode) ---
@@ -748,73 +726,54 @@
       >{recordMode === 'overdub' ? 'OVR' : 'RPL'}</button>
       </span>
       <span class="grp-div" aria-hidden="true"></span>
-      <!-- AUTOMATION section (distinct teal): create the automation clip, then arm
-           REC AUTO and just MOVE controls — moving any control auto-captures it and
-           records it (continuous overdub). The badge shows track count + the clip's
-           div·length; the override dot lights when a grabbed control overrides
-           playback (click to re-enable all). -->
-      {#if !autoClipPtr}
+      <!-- AUTOMATION section (distinct teal): ◉ AUTO = the GLOBAL arm (CLIP
+           RECORD — per-clip automation records into the PLAYING clip of each
+           lane with assigned controls). The chip row shows each lane's assigned
+           count (right-click a control → Assign to automation lane); the
+           override dot lights when a grabbed control overrides playback (click
+           to re-enable all). ＋AUTO / LENGTH / DIV are GONE — automation length
+           is linked to the note clip. -->
+      <span class="auto-block" title="AUTOMATION — CLIP RECORD for live control moves (distinct from the experimental arranger-record ●). Right-click any control → Assign to automation lane, launch a clip in that lane, arm, and move the control.">
         <button
-          class="auto-new"
-          onclick={createAutomationClip}
-          title="＋AUTO — create this player's AUTOMATION clip (CLIP RECORD for knob/control moves — NOT arranger record). Then arm ◉ AUTO and just move controls to record them. (Optional: right-click a control → Assign to automation lane.)"
-          data-testid={`clipplayer-auto-new-${id}`}
-        >＋AUTO</button>
-      {:else}
-        <span class="auto-block" title="AUTOMATION — CLIP RECORD for live control moves (distinct from the experimental arranger-record ●)">
-          <button
-            class="auto-arm"
-            class:on={autoArmed}
-            class:cd-yellow={autoCountdown?.color === 'yellow'}
-            class:cd-red={autoCountdown?.color === 'red'}
-            class:cd-on={autoCountdown?.on}
-            onclick={toggleAutoArm}
-            title={autoArmed
-              ? 'CLIP RECORD (automation, continuous overdub) — just MOVE any control and it records that param; every loop the untouched params keep playing back. Click to STOP. The 🟡🟡🔴🔴 flash counts down the last 4 beats to the loop wrap.'
-              : 'Arm CLIP RECORD (automation) — punches in at the clip’s next loop start, then just MOVE controls: each moved control is auto-captured + recorded, and overdubs every loop until you click again (manual stop). NOT the arranger-record ●.'}
-            aria-pressed={autoArmed}
-            data-testid={`clipplayer-auto-arm-${id}`}
-          >◉ AUTO</button>
-          <span
-            class="auto-count"
-            title={`${autoTrackCount} automated param(s) of ${MAX_AUTOMATION_TRACKS} max`}
-            data-testid={`clipplayer-auto-count-${id}`}
-          >{autoTrackCount}/{MAX_AUTOMATION_TRACKS}</span>
-          <input
-            class="auto-len"
-            type="number"
-            min="1"
-            max={MAX_CLIP_STEPS}
-            step="1"
-            value={autoLen}
-            title="Automation clip LENGTH in steps. Any count works (7, 13, …) — it is NOT snapped to a bar, so a coprime length drifts against the other clips (generative desync)."
-            aria-label="automation clip length in steps"
-            data-testid={`clipplayer-auto-len-${id}`}
-            onchange={(e) => setAutoLen(Number((e.currentTarget as HTMLInputElement).value))}
-          />
-          <select
-            class="auto-div"
-            value={String(autoDiv)}
-            title={`Automation clip clock DIVISION (${RATE_LABELS[autoDiv]}) — a slow rate stretches the record loop; overrides the lane rate, latched at the clip's loop boundary.`}
-            aria-label="automation clip clock division"
-            data-testid={`clipplayer-auto-div-${id}`}
-            onchange={(e) => setAutoDiv(Number((e.currentTarget as HTMLSelectElement).value))}
-          >
-            {#each RATE_LABELS as lbl, ri (ri)}
-              <option value={String(ri)}>{lbl}</option>
-            {/each}
-          </select>
-          {#if autoOverridden}
-            <button
-              class="auto-override"
-              onclick={reEnableAutomation}
-              title="A grabbed control is overriding automation playback (live wins) — click to re-enable all"
-              aria-label="re-enable automation"
-              data-testid={`clipplayer-auto-override-${id}`}
-            >●</button>
-          {/if}
+          class="auto-arm"
+          class:on={autoArmed}
+          class:cd-yellow={autoCountdown?.color === 'yellow'}
+          class:cd-red={autoCountdown?.color === 'red'}
+          class:cd-on={autoCountdown?.on}
+          onclick={toggleAutoArm}
+          title={autoArmed
+            ? 'CLIP RECORD (automation, continuous overdub) — MOVE an assigned control and it records into the clip PLAYING in its lane; every loop the untouched params keep playing back. Click to STOP. The 🟡🟡🔴🔴 flash counts down the last 4 beats to each recording clip’s wrap.'
+            : 'Arm CLIP RECORD (automation) — each lane with a playing clip + assigned controls punches in at that clip’s next loop start; then MOVE an assigned control to record it (overdubs every loop until you click again — manual stop). Assign via right-click → Assign to automation lane. NOT the arranger-record ●.'}
+          aria-pressed={autoArmed}
+          data-testid={`clipplayer-auto-arm-${id}`}
+        >◉ AUTO</button>
+        <span
+          class="auto-assigned-row"
+          title={`Assigned controls per lane (${autoAssignedTotal} total) — right-click a control → Assign to automation lane`}
+          data-testid={`clipplayer-auto-assigned-${id}`}
+        >
+          {#each autoAssigned as count, lane (lane)}
+            <span
+              class="auto-assigned-chip"
+              class:none={count === 0}
+              style={`--lane-color:${laneColorEff(lane)}`}
+              title={`Lane ${lane + 1}: ${count} assigned control${count === 1 ? '' : 's'}`}
+              data-lane={lane}
+              data-count={count}
+              data-testid={`clipplayer-auto-assigned-${lane}`}
+            >{count}</span>
+          {/each}
         </span>
-      {/if}
+        {#if autoOverridden}
+          <button
+            class="auto-override"
+            onclick={reEnableAutomation}
+            title="A grabbed control is overriding automation playback (live wins) — click to re-enable all"
+            aria-label="re-enable automation"
+            data-testid={`clipplayer-auto-override-${id}`}
+          >●</button>
+        {/if}
+      </span>
       <!-- Pop out the full-window arranger editor (timeline large + all ops). -->
       <button
         class="arr-open"
@@ -947,19 +906,16 @@
               {#each Array(CLIP_LANES) as _l, lane (lane)}
                 {@const idx = clipIndex(slot, lane)}
                 {@const st = padState(idx)}
-                {@const isAuto = !!autoClipPtr && autoClipPtr.lane === lane && autoClipPtr.slot === slot}
-                {@const cd = autoCountdown && isAuto ? autoCountdown : null}
+                {@const laneCd = autoCdByLane[lane]}
+                {@const cd = laneCd && laneCd.slot === slot ? laneCd : null}
                 <button
                   class="pad {st}"
-                  class:auto-cell={isAuto}
                   class:cd-yellow={cd?.color === 'yellow'}
                   class:cd-red={cd?.color === 'red'}
                   class:cd-on={cd?.on}
                   role="gridcell"
                   style={`--lane-color:${laneColorEff(lane)}`}
-                  aria-label={isAuto
-                    ? `automation clip, div ${RATE_LABELS[autoDiv]}, ${autoLen} steps`
-                    : `lane ${lane + 1} slot ${slot + 1} ${st}`}
+                  aria-label={`lane ${lane + 1} slot ${slot + 1} ${st}`}
                   data-clip={idx}
                   data-lane={lane}
                   data-slot={slot}
@@ -967,10 +923,7 @@
                   data-testid={`clipplayer-pad-${idx}`}
                   onclick={(e) => onPadClick(idx, e)}
                   ondblclick={() => onPadDblClick(idx)}
-                >{#if isAuto}<span
-                    class="auto-cell-badge"
-                    data-testid={`clipplayer-auto-cell-badge-${id}`}
-                  >{autoDisplay.badge}</span>{/if}</button>
+                ></button>
               {/each}
             </div>
           {/each}
@@ -1219,13 +1172,13 @@
     cursor: pointer;
   }
   .rec-mode.overdub { color: var(--accent, #e8b35b); border-color: var(--accent, #e8b35b); }
-  /* AUTOMATION LANE controls (task #183): +AUTO create button, then the ARM
-     toggle + track-count badge + override dot. Same pill language as the other
-     title toggles. */
-  .auto-new,
+  /* PER-CLIP AUTOMATION controls: the ◉ AUTO global arm + per-lane assigned
+     chips + override dot. Same pill language as the other title toggles.
+     AUTOMATION arm — a distinct TEAL record affordance so it is never mistaken
+     for the arranger's red ● (they sit apart, separated by .grp-div). Idle =
+     teal tint; armed = bright teal, pulsing. */
   .auto-arm {
     background: var(--control-bg, #222);
-    color: var(--text-dim, #999);
     border: 1px solid var(--border);
     border-radius: 2px;
     font-size: 9px;
@@ -1233,12 +1186,6 @@
     line-height: 1;
     padding: 3px 5px;
     cursor: pointer;
-  }
-  .auto-new:hover { color: var(--accent, #b06cff); border-color: var(--accent, #b06cff); }
-  /* AUTOMATION arm — a distinct TEAL record affordance so it is never mistaken for
-     the arranger's red ● (they sit apart, separated by .grp-div). Idle = teal tint;
-     armed = bright teal, pulsing. */
-  .auto-arm {
     color: #4fd6cf;
     border-color: #1b6b66;
   }
@@ -1249,10 +1196,11 @@
     border-color: #5ff0e4;
     animation: rec-blink 1s steps(2) infinite;
   }
-  /* COUNTDOWN mirror (last 4 beats before the automation clip's own wrap):
-     yellow (4,3) → red (2,1), pulsing bright ON the beat (.cd-on), dim between.
-     Overrides the steady armed purple; no CSS animation (the pulse is driven by
-     the polled render state so it stays beat-synced to the clip, not wall time). */
+  /* COUNTDOWN mirror (last 4 beats before the SOONEST recording clip's own
+     wrap): yellow (4,3) → red (2,1), pulsing bright ON the beat (.cd-on), dim
+     between. Overrides the steady armed teal; no CSS animation (the pulse is
+     driven by the polled render state so it stays beat-synced to the clip, not
+     wall time). */
   .auto-arm.cd-yellow { animation: none; color: #1a1400; background: #6e6000; border-color: #b0a000; }
   .auto-arm.cd-yellow.cd-on { background: #d9c000; border-color: #fff06a; }
   .auto-arm.cd-red { animation: none; color: #fff; background: #7a1010; border-color: #b03030; }
@@ -1269,30 +1217,32 @@
     background: var(--border, #3a3a44);
   }
   .auto-block { display: inline-flex; align-items: center; gap: 3px; }
-  .auto-len {
-    width: 34px;
-    font-size: 8px;
-    padding: 2px 3px;
-    background: var(--control-bg, #222);
-    color: var(--text-dim, #bbb);
-    border: 1px solid var(--border);
-    border-radius: 2px;
-    font-variant-numeric: tabular-nums;
+  /* Per-lane ASSIGNED-count chips (8-slot mini-row): each chip is tinted its
+     lane's colour; a lane with nothing assigned is dimmed. Renders EXACTLY
+     autoAssignCounts() (UI-can't-lie). */
+  .auto-assigned-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
   }
-  .auto-div {
-    font-size: 8px;
+  .auto-assigned-chip {
+    display: inline-block;
+    min-width: 9px;
+    text-align: center;
+    font-size: 7px;
+    line-height: 1;
     padding: 2px 1px;
-    background: var(--control-bg, #222);
-    color: var(--text-dim, #bbb);
-    border: 1px solid var(--border);
     border-radius: 2px;
-  }
-  .auto-count {
-    font-size: 8px;
-    color: var(--text-dim, #999);
+    color: #04211f;
+    background: var(--lane-color, #444);
     font-variant-numeric: tabular-nums;
-    letter-spacing: 0.02em;
     pointer-events: none;
+  }
+  .auto-assigned-chip.none {
+    color: var(--text-dim, #777);
+    background: transparent;
+    border: 1px solid var(--border, #3a3a44);
+    padding: 1px 0;
   }
   .auto-override {
     background: transparent;
@@ -1403,30 +1353,14 @@
     background: var(--lane-color);
     box-shadow: 0 0 5px color-mix(in srgb, var(--lane-color) 70%, transparent);
   }
-  /* AUTOMATION countdown flash on the automation clip's OWN cell (mirrors the
-     launchpad pad): 🟡🟡🔴🔴 in the last 4 beats, bright ON the beat (.cd-on). The
-     pulse is driven by the polled render state (beat-synced to the clip), so no
-     CSS keyframe animation. */
+  /* AUTOMATION countdown flash on EACH recording lane's PLAYING cell (mirrors
+     the launchpad pads): 🟡🟡🔴🔴 in the last 4 beats before THAT clip's own
+     wrap, bright ON the beat (.cd-on). The pulse is driven by the polled render
+     state (beat-synced to the clip), so no CSS keyframe animation. */
   .pad.cd-yellow { background: #6e6000; box-shadow: none; }
   .pad.cd-yellow.cd-on { background: #d9c000; box-shadow: 0 0 6px #d9c000; }
   .pad.cd-red { background: #7a1010; box-shadow: none; }
   .pad.cd-red.cd-on { background: #ff2a2a; box-shadow: 0 0 6px #ff2a2a; }
-  /* AUTOMATION clip cell: a teal ring + a tiny div·length badge so the clip's REAL
-     timing (e.g. "1/4·64") is visible ON the clip, not just buried in the AUTO
-     block (the "I saw 1/1" confusion was the per-lane rate row, a different thing). */
-  .pad.auto-cell { outline: 1px solid #14b8a6; outline-offset: -1px; }
-  .auto-cell-badge {
-    position: absolute;
-    left: 1px;
-    bottom: 0;
-    font-size: 6px;
-    line-height: 1;
-    letter-spacing: -0.02em;
-    color: #7ff0ea;
-    text-shadow: 0 0 2px #000, 0 0 2px #000;
-    pointer-events: none;
-    font-variant-numeric: tabular-nums;
-  }
   .pad { position: relative; }
   @keyframes blink { 50% { opacity: 0.35; } }
 

@@ -1,11 +1,13 @@
 // packages/web/src/lib/audio/modules/clip-automation-render.ts
 //
-// Per-machine, IN-MEMORY automation RENDER STATE for the clip player — the
-// recording node's active automation clip + a beat countdown to its OWN loop
-// wrap, for the 🟡🟡🔴🔴 recordist pre-roll flash. Render state (the launchpad
-// LED paint + the card mirror read it), so it lives here, NOT on the synced
-// Y.Doc: publishing a countdown every scheduler tick into the store would be the
-// per-frame ydoc.update storm (see cv-modulation-live-store-write). Mirrors
+// Per-machine, IN-MEMORY automation RENDER STATE for the clip player — while
+// record-armed, ONE ENTRY PER LANE that is recording (a playing note clip with
+// ≥1 assigned param): that clip's (lane, slot) + a beat countdown to ITS OWN
+// loop wrap, for the 🟡🟡🔴🔴 recordist pre-roll flash (each lane's pad/cell
+// flashes on its own wrap). Render state (the launchpad LED paint + the card
+// mirror read it), so it lives here, NOT on the synced Y.Doc: publishing a
+// countdown every scheduler tick into the store would be the per-frame
+// ydoc.update storm (see cv-modulation-live-store-write). Mirrors
 // clip-playhead.ts: the factory tick updates it; consumers read it; cleared on
 // dispose.
 //
@@ -14,19 +16,26 @@
 // paint and the card mirror derive the SAME flash from one source, and it
 // unit-tests with no engine.
 
-/** Published automation render state for a clip-player node. Absent/null = no
- *  countdown (not armed, or the automation clip isn't launched). */
-export interface AutomationRenderState {
-  /** The designated automation clip's (lane, slot) — its grid cell / arm pad. */
+/** One RECORDING lane's countdown entry. */
+export interface AutomationLaneRender {
+  /** The lane + its PLAYING clip's slot — the pad/cell that flashes. */
   lane: number;
   slot: number;
   /** Record-armed (the synced arm flag) → the countdown is active. */
   recording: boolean;
-  /** Beats until THIS clip's OWN loop wrap (from its own lengthSteps × laneDur ÷
-   *  the transport's seconds-per-beat — clip-relative, NEVER the song bar). */
+  /** Beats until THIS lane's clip's OWN loop wrap (from its lengthSteps ×
+   *  laneDur ÷ the transport's seconds-per-beat — clip-relative, NEVER the song
+   *  bar). */
   beatsToLoopEnd: number;
   /** Phase 0..1 within the current (wrap-relative) beat, for the on-beat pulse. */
   beatPhase: number;
+}
+
+/** Published automation render state for a clip-player node: one entry PER
+ *  recording lane. Absent/null = no countdown (not armed, or no lane has a
+ *  playing note clip with assigned params). */
+export interface AutomationRenderState {
+  lanes: AutomationLaneRender[];
 }
 
 const states = new Map<string, AutomationRenderState | null>();
@@ -49,6 +58,21 @@ export function clearAutomationRender(nodeId: string): void {
 /** TEST-ONLY: clear every node's render state. */
 export function __resetAutomationRender(): void {
   states.clear();
+}
+
+/** The SOONEST-to-wrap recording lane entry (or null) — what single-slot
+ *  surfaces (the card's ◉ AUTO button, the launchpad Control-view arm pad)
+ *  flash when several lanes record at once. PURE. */
+export function soonestAutomationLane(
+  state: AutomationRenderState | null,
+): AutomationLaneRender | null {
+  if (!state || state.lanes.length === 0) return null;
+  let best: AutomationLaneRender | null = null;
+  for (const l of state.lanes) {
+    if (!l.recording) continue;
+    if (!best || l.beatsToLoopEnd < best.beatsToLoopEnd) best = l;
+  }
+  return best;
 }
 
 // ---------------------------------------------------------------------------

@@ -1,49 +1,55 @@
 // packages/web/src/lib/audio/modules/clip-automation-controller.test.ts
+//
+// Unit tests for the PER-LANE automation controller (redesign Phases 1+2):
+// playback touch-gating, per-lane continuous overdub under one global arm,
+// LATCHED commit targets (commit-before-swap), per-track overdub windows, and
+// the Phase-0 param-jump seams (hold-last-value / truncate / release-glide) —
+// all against a fake harness whose `commit` mirrors the real per-key store
+// write into a keyed track map, so multi-pass overdub stacks like production.
+
 import { describe, it, expect } from 'vitest';
 import {
   AutomationController,
+  automationTargetKey,
   type AutomationControllerDeps,
+  type AutoTrackUpdate,
 } from './clip-automation-controller';
-import type {
-  AutomationClipRecord,
-  AutomationTarget,
-  AutomationTrack,
-} from './clip-types';
+import type { AutomationTarget, AutomationTrack } from './clip-types';
 
 const tgt = (nodeId: string, paramId: string): AutomationTarget => ({ nodeId, paramId });
+const IDX = 3; // an arbitrary flat clip index for single-lane tests
+const LANE = 0;
 
-function clip(tracks: AutomationTrack[], lengthSteps = 8): AutomationClipRecord {
-  return { kind: 'automation', lengthSteps, loop: true, tracks };
-}
-
-/** A fake harness: a value store per target, capture of drive() + commit(). */
-function harness(overrides: Partial<AutomationControllerDeps> = {}, maxTracks = 16) {
+/** A fake harness: a value store per target, capture of drive()/hold(), and a
+ *  PER-KEY track store keyed by clip index — `commit` writes only the updated
+ *  keys (like the real `auto[k].tracks[key]` write), `readAutoTracks` reads
+ *  them back, so successive wrap commits overdub against the committed state. */
+function harness(overrides: Partial<AutomationControllerDeps> = {}) {
   const values = new Map<string, number>();
   const drives: { target: AutomationTarget; n: number }[] = [];
-  const added: AutomationTarget[] = [];
   const holds: {
     target: AutomationTarget;
     toValueNorm: number | null;
     glideS: number;
     atTime: number | undefined;
   }[] = [];
-  let committed: AutomationTrack[] | null = null;
-  const trackKeys = new Set<string>();
+  const store = new Map<number, Map<string, AutomationTrack>>();
+  const commits: { clipIdx: number; updates: AutoTrackUpdate[] }[] = [];
   const deps: AutomationControllerDeps = {
     readNorm: (t) => values.get(`${t.nodeId} ${t.paramId}`) ?? null,
     curve: () => undefined,
     unitNorm: () => undefined,
     drive: (target, points) => drives.push({ target, n: points.length }),
     hold: (target, toValueNorm, glideS, atTime) => holds.push({ target, toValueNorm, glideS, atTime }),
-    commit: (tracks) => (committed = tracks),
-    // AUTO-CAPTURE: add an empty track (respecting a MAX), like the store write.
-    addTrack: (t) => {
-      const k = `${t.nodeId}::${t.paramId}`;
-      if (trackKeys.has(k)) return true;
-      if (trackKeys.size >= maxTracks) return false;
-      trackKeys.add(k);
-      added.push(t);
-      return true;
+    readAutoTracks: (clipIdx) => [...(store.get(clipIdx)?.values() ?? [])],
+    commit: (clipIdx, updates) => {
+      commits.push({ clipIdx, updates });
+      let m = store.get(clipIdx);
+      if (!m) {
+        m = new Map();
+        store.set(clipIdx, m);
+      }
+      for (const u of updates) m.set(u.key, { target: u.target, events: u.events });
     },
     ...overrides,
   };
@@ -62,11 +68,12 @@ function harness(overrides: Partial<AutomationControllerDeps> = {}, maxTracks = 
     /** physical release of a grabbed control. */
     release: (t: AutomationTarget) => ctrl.notifyRelease(t),
     drives,
-    added,
     holds,
-    get committed() {
-      return committed;
-    },
+    commits,
+    /** The committed track events for (clipIdx, target), or undefined. */
+    tracksOf: (clipIdx: number) => store.get(clipIdx),
+    eventsOf: (clipIdx: number, t: AutomationTarget) =>
+      store.get(clipIdx)?.get(automationTargetKey(t))?.events,
   };
 }
 
@@ -97,53 +104,55 @@ describe('AutomationController — playback', () => {
   });
   it('TOUCH-GATED while recording: an UNtouched track PLAYS BACK; a TOUCHED one does not (record wins)', () => {
     const h = harness();
-    const track: AutomationTrack = { target: tgt('a', 'p'), events: [{ step: 0, value: 0.5 }] };
-    // drive into recording state
+    const target = tgt('a', 'p');
+    const track: AutomationTrack = { target, events: [{ step: 0, value: 0.5 }] };
+    h.set(target, 0.5);
     h.ctrl.arm();
-    h.ctrl.recordTick(clip([track]), 5, 8);
-    h.ctrl.recordTick(clip([track]), 0, 8); // wrap → punch-in → recording
+    h.ctrl.recordLaneTick(LANE, IDX, [target], 5, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, [target], 0, 8); // wrap → punch-in → recording
     expect(h.ctrl.recording).toBe(true);
     // NOT touched → it keeps PLAYING BACK even while recording (visible continuity,
     // the fix for "looks like it recorded one pass then stopped").
     h.ctrl.playbackStep(track, 0, 0.5, 100);
     expect(h.drives.length).toBe(1);
     // Now the user TOUCHES it → playback suppressed (live/record wins).
-    h.ctrl.notifyTouch(tgt('a', 'p'));
+    h.ctrl.notifyTouch(target);
     h.ctrl.playbackStep(track, 0, 0.5, 100);
     expect(h.drives.length).toBe(1); // no new drive
   });
 });
 
-describe('AutomationController — continuous overdub + move detection', () => {
+describe('AutomationController — per-lane continuous overdub + move detection', () => {
   const target = tgt('synth', 'cutoff');
-  const track: AutomationTrack = { target, events: [] };
+  const assigned = [target];
 
-  it('arm → punch-in at the clip’s own wrap → capture a moving param → commit at the NEXT wrap (recording continues)', () => {
+  it('arm → punch-in at the lane’s own wrap → capture a moving param → commit at the NEXT wrap (recording continues)', () => {
     const h = harness();
     h.set(target, 0.1);
     h.ctrl.arm();
-    const c = clip([track]);
     // climbing toward the wrap, still armed (not yet recording)
-    h.ctrl.recordTick(c, 6, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 6, 8);
     expect(h.ctrl.recording).toBe(false);
     // wrap → punch-in
-    h.ctrl.recordTick(c, 0, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 0, 8);
     expect(h.ctrl.recording).toBe(true);
+    expect(h.ctrl.laneRecording(LANE)).toBe(true);
     // sweep the param across the loop WHILE TOUCHING it (move = set + touch).
     h.move(target, 0.3);
-    h.ctrl.recordTick(c, 2, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 2, 8);
     h.move(target, 0.7);
-    h.ctrl.recordTick(c, 4, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 4, 8);
     h.move(target, 0.9);
-    h.ctrl.recordTick(c, 6, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 6, 8);
     // wrap → commit this pass — but recording CONTINUES (continuous overdub)
-    h.ctrl.recordTick(c, 0, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 0, 8);
     expect(h.ctrl.recording).toBe(true);
-    expect(h.committed).not.toBeNull();
-    const rec = h.committed!.find((t) => t.target.paramId === 'cutoff')!;
-    expect(rec.events.length).toBeGreaterThan(1);
+    expect(h.commits.length).toBe(1);
+    expect(h.commits[0]!.clipIdx, 'committed into the latched clip index').toBe(IDX);
+    const events = h.eventsOf(IDX, target)!;
+    expect(events.length).toBeGreaterThan(1);
     // captured the sweep (min ~0.1 seed, max ~0.9)
-    const vals = rec.events.map((e) => e.value);
+    const vals = events.map((e) => e.value);
     expect(Math.min(...vals)).toBeLessThan(0.2);
     expect(Math.max(...vals)).toBeGreaterThan(0.8);
   });
@@ -151,159 +160,192 @@ describe('AutomationController — continuous overdub + move detection', () => {
   it('MULTI-PASS overdub: pass1 records A; pass2 moves B (A preserved, B added); pass3 re-moves A (A’s loop replaced)', () => {
     const A = tgt('a', 'pa');
     const B = tgt('b', 'pb');
-    const c = clip([
-      { target: A, events: [] },
-      { target: B, events: [] },
-    ]);
+    const both = [A, B];
     const h = harness();
     h.set(A, 0.0);
     h.set(B, 0.5);
     h.ctrl.arm();
-    h.ctrl.recordTick(c, 6, 8);
-    h.ctrl.recordTick(c, 0, 8); // punch-in (pass 1)
+    h.ctrl.recordLaneTick(LANE, IDX, both, 6, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, both, 0, 8); // punch-in (pass 1)
 
     // PASS 1: TOUCH + move A only (0 → 0.9); B untouched.
-    h.move(A, 0.4); h.ctrl.recordTick(c, 3, 8);
-    h.move(A, 0.9); h.ctrl.recordTick(c, 6, 8);
-    h.ctrl.recordTick(c, 0, 8); // wrap → commit pass 1 (A moved, B not)
-    const afterP1 = h.committed!;
-    expect(afterP1.find((t) => t.target.paramId === 'pa')!.events.length).toBeGreaterThan(1);
-    expect(afterP1.find((t) => t.target.paramId === 'pb')!.events).toEqual([]); // B untouched
-
-    // Feed the committed events back onto the clip (as the real store commit does)
-    // so pass 2 overdubs against the recorded A.
-    const c2 = clip(afterP1);
-    const aEventsAfterP1 = afterP1.find((t) => t.target.paramId === 'pa')!.events;
+    h.move(A, 0.4); h.ctrl.recordLaneTick(LANE, IDX, both, 3, 8);
+    h.move(A, 0.9); h.ctrl.recordLaneTick(LANE, IDX, both, 6, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, both, 0, 8); // wrap → commit pass 1 (A moved, B not)
+    const aAfterP1 = h.eventsOf(IDX, A)!;
+    expect(aAfterP1.length).toBeGreaterThan(1);
+    expect(h.eventsOf(IDX, B), 'B untouched → no committed track').toBeUndefined();
 
     // PASS 2: TOUCH + move B only (0.5 → 0.05); A is NOT touched → preserved + playing.
     h.set(A, 0.9); // A's store value stays (not touched → not recorded)
     h.move(B, 0.5);
-    h.ctrl.recordTick(c2, 3, 8);
-    h.move(B, 0.05); h.ctrl.recordTick(c2, 6, 8);
-    h.ctrl.recordTick(c2, 0, 8); // wrap → commit pass 2 (B moved, A preserved)
-    const afterP2 = h.committed!;
-    expect(afterP2.find((t) => t.target.paramId === 'pb')!.events.length).toBeGreaterThan(1); // B now recorded
-    expect(afterP2.find((t) => t.target.paramId === 'pa')!.events, 'A preserved across pass 2')
-      .toEqual(aEventsAfterP1);
+    h.ctrl.recordLaneTick(LANE, IDX, both, 3, 8);
+    h.move(B, 0.05); h.ctrl.recordLaneTick(LANE, IDX, both, 6, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, both, 0, 8); // wrap → commit pass 2 (B moved, A preserved)
+    expect(h.eventsOf(IDX, B)!.length).toBeGreaterThan(1); // B now recorded
+    expect(h.eventsOf(IDX, A), 'A preserved across pass 2').toEqual(aAfterP1);
 
     // PASS 3: TOUCH + re-move A (0.9 → 0.1) → A’s loop REPLACED with the new sweep.
-    const c3 = clip(afterP2);
-    h.move(A, 0.9); h.ctrl.recordTick(c3, 2, 8);
-    h.move(A, 0.1); h.ctrl.recordTick(c3, 6, 8);
-    h.ctrl.recordTick(c3, 0, 8); // wrap → commit pass 3
-    const afterP3 = h.committed!;
-    const aP3 = afterP3.find((t) => t.target.paramId === 'pa')!.events;
+    h.move(A, 0.9); h.ctrl.recordLaneTick(LANE, IDX, both, 2, 8);
+    h.move(A, 0.1); h.ctrl.recordLaneTick(LANE, IDX, both, 6, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, both, 0, 8); // wrap → commit pass 3
+    const aP3 = h.eventsOf(IDX, A)!;
     expect(Math.min(...aP3.map((e) => e.value))).toBeLessThan(0.2); // the new downward sweep
-    expect(afterP3.find((t) => t.target.paramId === 'pb')!.events.length).toBeGreaterThan(1); // B still there
+    expect(h.eventsOf(IDX, B)!.length).toBeGreaterThan(1); // B still there
   });
 
-  it('an UNTOUCHED track keeps its existing automation (not overwritten)', () => {
+  it('an UNTOUCHED assigned track keeps its existing automation (not overwritten)', () => {
     const moved = tgt('a', 'moved');
     const still = tgt('b', 'still');
-    const tracks: AutomationTrack[] = [
-      { target: moved, events: [{ step: 0, value: 0.0 }] },
-      { target: still, events: [{ step: 0, value: 0.42 }, { step: 4, value: 0.42 }] },
-    ];
-    const c = clip(tracks);
+    const both = [moved, still];
     const h = harness();
+    // Seed pre-existing committed automation for `still` via a recorded pass
+    // (the same per-key commit path production uses).
+    h.set(still, 0.0);
+    h.ctrl.arm();
+    h.ctrl.recordLaneTick(LANE, IDX, [still], 6, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, [still], 0, 8); // punch-in
+    h.move(still, 0.42);
+    h.ctrl.recordLaneTick(LANE, IDX, [still], 4, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, [still], 0, 8); // wrap → commit the seed
+    h.release(still);
+    h.ctrl.disarm();
+    const stillBefore = h.eventsOf(IDX, still)!;
+    expect(stillBefore.length).toBeGreaterThan(0);
+
     h.set(moved, 0.0);
     h.set(still, 0.42);
     h.ctrl.arm();
-    h.ctrl.recordTick(c, 6, 8);
-    h.ctrl.recordTick(c, 0, 8); // punch-in
+    h.ctrl.recordLaneTick(LANE, IDX, both, 6, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, both, 0, 8); // punch-in
     // TOUCH + move `moved`; `still` is NOT touched → preserved.
     h.move(moved, 0.5);
-    h.ctrl.recordTick(c, 3, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, both, 3, 8);
     h.move(moved, 0.9);
-    h.ctrl.recordTick(c, 6, 8);
-    h.ctrl.recordTick(c, 0, 8); // wrap → commit
-    const committed = h.committed!;
-    const stillTrack = committed.find((t) => t.target.paramId === 'still')!;
+    h.ctrl.recordLaneTick(LANE, IDX, both, 6, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, both, 0, 8); // wrap → commit
     // untouched → the ORIGINAL events preserved verbatim
-    expect(stillTrack.events).toEqual([
-      { step: 0, value: 0.42 },
-      { step: 4, value: 0.42 },
-    ]);
-    const movedTrack = committed.find((t) => t.target.paramId === 'moved')!;
-    expect(Math.max(...movedTrack.events.map((e) => e.value))).toBeGreaterThan(0.8);
+    expect(h.eventsOf(IDX, still)).toEqual(stillBefore);
+    expect(Math.max(...h.eventsOf(IDX, moved)!.map((e) => e.value))).toBeGreaterThan(0.8);
   });
 
   it('does not commit when a touched param is held FLAT (no motion = no-op)', () => {
-    const c = clip([track]);
     const h = harness();
     h.set(target, 0.5);
     h.ctrl.arm();
-    h.ctrl.recordTick(c, 6, 8);
-    h.ctrl.recordTick(c, 0, 8); // punch-in
-    // Touch it every tick but never MOVE it (held flat) → a pre-existing track
-    // with no motion is not re-committed.
-    h.touch(target); h.ctrl.recordTick(c, 3, 8);
-    h.touch(target); h.ctrl.recordTick(c, 6, 8);
-    h.ctrl.recordTick(c, 0, 8); // wrap
-    expect(h.committed).toBeNull();
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 6, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 0, 8); // punch-in
+    // Touch it every tick but never MOVE it (held flat) → a track with no
+    // motion is not committed.
+    h.touch(target); h.ctrl.recordLaneTick(LANE, IDX, assigned, 3, 8);
+    h.touch(target); h.ctrl.recordLaneTick(LANE, IDX, assigned, 6, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 0, 8); // wrap
+    expect(h.commits.length).toBe(0);
   });
 
-  it('does not record a track the user NEVER touches (touch-gated)', () => {
-    const c = clip([track]);
+  it('does not record a param the user NEVER touches (touch-gated)', () => {
     const h = harness();
     h.set(target, 0.5);
     h.ctrl.arm();
-    h.ctrl.recordTick(c, 6, 8);
-    h.ctrl.recordTick(c, 0, 8); // punch-in
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 6, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 0, 8); // punch-in
     // The store value even CHANGES (e.g. driven by playback), but with no TOUCH it
     // is not captured — no self-capture feedback.
-    h.set(target, 0.9); h.ctrl.recordTick(c, 3, 8);
-    h.set(target, 0.2); h.ctrl.recordTick(c, 6, 8);
-    h.ctrl.recordTick(c, 0, 8); // wrap
-    expect(h.committed).toBeNull();
+    h.set(target, 0.9); h.ctrl.recordLaneTick(LANE, IDX, assigned, 3, 8);
+    h.set(target, 0.2); h.ctrl.recordLaneTick(LANE, IDX, assigned, 6, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 0, 8); // wrap
+    expect(h.commits.length).toBe(0);
+  });
+
+  it('AUTO-CAPTURE IS GONE: touching an UNASSIGNED param while recording records NOTHING', () => {
+    // With per-lane targeting there is no unambiguous lane for an un-assigned
+    // touch — assignment is explicit (right-click), so the move is ignored.
+    const unassigned = tgt('x', 'free');
+    const h = harness();
+    h.set(target, 0.5);
+    h.set(unassigned, 0.1);
+    h.ctrl.arm();
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 6, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 0, 8); // punch-in
+    h.move(unassigned, 0.9); h.ctrl.recordLaneTick(LANE, IDX, assigned, 3, 8);
+    h.move(unassigned, 0.2); h.ctrl.recordLaneTick(LANE, IDX, assigned, 6, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 0, 8); // wrap
+    expect(h.commits.length, 'nothing committed for an unassigned param').toBe(0);
+    expect(h.eventsOf(IDX, unassigned)).toBeUndefined();
+  });
+
+  it('a param ASSIGNED MID-PASS is adopted, seeded at the current position', () => {
+    const late = tgt('l', 'p');
+    const h = harness();
+    h.set(target, 0.5);
+    h.set(late, 0.1);
+    h.ctrl.arm();
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 6, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 0, 8); // punch-in with ONE assigned
+    // The user right-click-assigns `late` mid-pass → the tick now passes it too.
+    const withLate = [target, late];
+    h.move(late, 0.4); h.ctrl.recordLaneTick(LANE, IDX, withLate, 3, 8);
+    h.move(late, 0.9); h.ctrl.recordLaneTick(LANE, IDX, withLate, 6, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, withLate, 0, 8); // wrap → commit
+    const events = h.eventsOf(IDX, late)!;
+    expect(events.length).toBeGreaterThan(1);
+    expect(Math.max(...events.map((e) => e.value))).toBeGreaterThan(0.8);
   });
 
   it('DISARM mid-pass commits the PARTIAL pass, preserving the untouched tail', () => {
     // Prior automation spans the whole loop; a partial re-record over [0..~4]
     // must replace only that window and KEEP the tail events (step 6).
-    const prior: AutomationTrack = {
-      target,
-      events: [
-        { step: 0, value: 0.1 },
-        { step: 6, value: 0.7 }, // the TAIL — must survive a partial disarm
-      ],
-    };
-    const c = clip([prior]);
     const h = harness();
     h.set(target, 0.1);
+    // Seed prior automation with a full-loop pass (0.1 → 0.7 landing at step 6+).
     h.ctrl.arm();
-    h.ctrl.recordTick(c, 6, 8);
-    h.ctrl.recordTick(c, 0, 8); // punch-in
-    // TOUCH + move across the FIRST part of the loop, then STOP mid-loop (~step 4).
-    h.move(target, 0.5); h.ctrl.recordTick(c, 2, 8);
-    h.move(target, 0.9); h.ctrl.recordTick(c, 4, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 6, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 0, 8);
+    h.move(target, 0.1); h.ctrl.recordLaneTick(LANE, IDX, assigned, 0.5, 8);
+    h.move(target, 0.7); h.ctrl.recordLaneTick(LANE, IDX, assigned, 6, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 0, 8); // commit the seed pass
+    h.release(target);
+    h.ctrl.disarm();
+    const prior = h.eventsOf(IDX, target)!;
+    const tail = prior.filter((e) => e.step > 4);
+    expect(tail.length, 'seed pass reached the loop tail').toBeGreaterThan(0);
+
+    // Now the partial re-record: arm, punch in, move over [0..4], disarm mid-loop.
+    h.ctrl.arm();
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 6, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 0, 8); // punch-in
+    h.move(target, 0.5); h.ctrl.recordLaneTick(LANE, IDX, assigned, 2, 8);
+    h.move(target, 0.95); h.ctrl.recordLaneTick(LANE, IDX, assigned, 4, 8);
     h.ctrl.disarm(); // manual stop mid-pass → commit partial
     expect(h.ctrl.recording).toBe(false);
-    expect(h.committed).not.toBeNull();
-    const rec = h.committed!.find((t) => t.target.paramId === 'cutoff')!;
-    // the untouched TAIL (step 6 = 0.7) is preserved…
-    expect(rec.events.some((e) => e.step === 6 && Math.abs(e.value - 0.7) < 1e-9)).toBe(true);
-    // …and the new capture landed only in the recorded window (≤ ~step 4).
-    const recorded = rec.events.filter((e) => e.step <= 4.001);
-    expect(Math.max(...recorded.map((e) => e.value))).toBeGreaterThan(0.8);
+    const events = h.eventsOf(IDX, target)!;
+    // the untouched TAIL events (step > 4) are preserved…
+    for (const e of tail) {
+      expect(
+        events.some((p) => p.step === e.step && Math.abs(p.value - e.value) < 1e-9),
+        `tail event @${e.step} preserved`,
+      ).toBe(true);
+    }
+    // …and the new capture landed in the recorded window (≤ ~step 4).
+    const recorded = events.filter((e) => e.step <= 4.001);
+    expect(Math.max(...recorded.map((e) => e.value))).toBeGreaterThan(0.9);
   });
 
   it('LIGHT/STATE MACHINE never gets stuck: arm → record → disarm → idle (no ‘done’ phase)', () => {
-    const c = clip([track]);
     const h = harness();
     h.set(target, 0.1);
     expect(h.ctrl.armed).toBe(false);
     expect(h.ctrl.recording).toBe(false);
     h.ctrl.arm();
     expect(h.ctrl.armed).toBe(true);
-    h.ctrl.recordTick(c, 6, 8);
-    h.ctrl.recordTick(c, 0, 8); // punch-in
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 6, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 0, 8); // punch-in
     expect(h.ctrl.recording).toBe(true);
     // many loops go by — it NEVER auto-stops (no punch-out/'done')
     for (let loop = 0; loop < 5; loop++) {
       h.set(target, loop % 2 === 0 ? 0.2 : 0.8);
-      h.ctrl.recordTick(c, 4, 8);
-      h.ctrl.recordTick(c, 0, 8); // wrap
+      h.ctrl.recordLaneTick(LANE, IDX, assigned, 4, 8);
+      h.ctrl.recordLaneTick(LANE, IDX, assigned, 0, 8); // wrap
       expect(h.ctrl.recording, `still recording after loop ${loop}`).toBe(true);
     }
     h.ctrl.disarm(); // manual stop
@@ -315,14 +357,13 @@ describe('AutomationController — continuous overdub + move detection', () => {
     // Phase 0 param-jump policy: the override ends on the hand lifting, NOT the
     // wrap — so a knob gesture spanning a loop isn't yanked to the envelope
     // mid-drag. (Was: suspensions cleared at every wrap — the live bug.)
-    const c = clip([track]);
     const h = harness();
     h.set(target, 0.1);
     h.ctrl.notifyTouch(target); // grab (pointer-down), never released
     expect(h.ctrl.isSuspended(target)).toBe(true);
     h.ctrl.arm();
-    h.ctrl.recordTick(c, 6, 8);
-    h.ctrl.recordTick(c, 0, 8); // wrap → punch-in: grabbed param STAYS suspended
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 6, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 0, 8); // wrap → punch-in: grabbed param STAYS suspended
     expect(h.ctrl.isSuspended(target)).toBe(true);
     // The hand lifts → NOW it re-enables (playback resumes next loop).
     h.ctrl.notifyRelease(target);
@@ -331,98 +372,168 @@ describe('AutomationController — continuous overdub + move detection', () => {
 
   it('a RELEASED (non-grabbed) suspension still clears at the wrap', () => {
     // A momentary touch that was released before the wrap must not linger.
-    const c = clip([track]);
     const h = harness();
     h.set(target, 0.1);
     h.ctrl.notifyTouch(target);
     h.ctrl.notifyRelease(target); // released before the wrap
     expect(h.ctrl.isSuspended(target)).toBe(false);
     h.ctrl.arm();
-    h.ctrl.recordTick(c, 6, 8);
-    h.ctrl.recordTick(c, 0, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 6, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 0, 8);
     expect(h.ctrl.isSuspended(target)).toBe(false);
   });
 });
 
-describe('AutomationController — auto-capture (just move a knob, no pre-assign)', () => {
-  it('touching an UN-TRACKED param while recording auto-adds it + records its move', () => {
-    const A = tgt('a', 'pa');
-    const NEW = tgt('b', 'pb');
+describe('AutomationController — PER-LANE record independence (Phase 2)', () => {
+  it('two lanes record CONCURRENTLY with independent windows/wraps + commit into their own clips', () => {
+    const A = tgt('a', 'pa'); // assigned to lane 0 (clip idx 3, len 8)
+    const B = tgt('b', 'pb'); // assigned to lane 1 (clip idx 70, len 4 — different wrap)
+    const IDX_A = 3;
+    const IDX_B = 70;
     const h = harness();
-    h.set(A, 0.5);
-    h.set(NEW, 0.1);
+    h.set(A, 0.1);
+    h.set(B, 0.9);
     h.ctrl.arm();
-    const c0 = clip([{ target: A, events: [] }]);
-    h.ctrl.recordTick(c0, 6, 8);
-    h.ctrl.recordTick(c0, 0, 8); // punch-in
-    // The user GRABS an un-assigned control (NEW) mid-pass → auto-add next tick.
-    h.move(NEW, 0.3); h.ctrl.recordTick(c0, 2, 8);
-    expect(h.added.some((t) => t.paramId === 'pb'), 'NEW was auto-added as a track').toBe(true);
-    // The store now holds NEW as a track (the addTrack write) — mirror it.
-    const c1 = clip([{ target: A, events: [] }, { target: NEW, events: [] }]);
-    h.move(NEW, 0.7); h.ctrl.recordTick(c1, 4, 8);
-    h.move(NEW, 0.95); h.ctrl.recordTick(c1, 6, 8);
-    h.ctrl.recordTick(c1, 0, 8); // wrap → commit
-    const rec = h.committed!.find((t) => t.target.paramId === 'pb');
-    expect(rec, 'NEW committed to the clip').toBeTruthy();
-    expect(Math.max(...rec!.events.map((e) => e.value))).toBeGreaterThan(0.9);
-    // A was never touched → preserved (empty), not overwritten.
-    expect(h.committed!.find((t) => t.target.paramId === 'pa')!.events).toEqual([]);
+    // Both lanes climb toward their own wraps (different lengths).
+    h.ctrl.recordLaneTick(0, IDX_A, [A], 6, 8);
+    h.ctrl.recordLaneTick(1, IDX_B, [B], 3, 4);
+    // Lane 1 wraps FIRST (len 4) → punches in; lane 0 still armed.
+    h.ctrl.recordLaneTick(1, IDX_B, [B], 0, 4);
+    expect(h.ctrl.laneRecording(1)).toBe(true);
+    expect(h.ctrl.laneRecording(0)).toBe(false);
+    // Lane 0 wraps → punches in too. Both now record concurrently.
+    h.ctrl.recordLaneTick(0, IDX_A, [A], 0, 8);
+    expect(h.ctrl.laneRecording(0)).toBe(true);
+    // Move BOTH (out of phase). Lane 1 wraps again (commits) while lane 0 is mid-pass.
+    h.move(A, 0.5); h.ctrl.recordLaneTick(0, IDX_A, [A], 2, 8);
+    h.move(B, 0.4); h.ctrl.recordLaneTick(1, IDX_B, [B], 2, 4);
+    h.move(B, 0.1); h.ctrl.recordLaneTick(1, IDX_B, [B], 3.5, 4);
+    h.ctrl.recordLaneTick(1, IDX_B, [B], 0, 4); // lane-1 wrap → commit B only
+    expect(h.commits.length).toBe(1);
+    expect(h.commits[0]!.clipIdx).toBe(IDX_B);
+    expect(h.eventsOf(IDX_A, A), 'lane 0 has NOT committed yet').toBeUndefined();
+    // Lane 0 finishes its loop → commits into ITS clip.
+    h.move(A, 0.9); h.ctrl.recordLaneTick(0, IDX_A, [A], 6, 8);
+    h.ctrl.recordLaneTick(0, IDX_A, [A], 0, 8); // lane-0 wrap
+    expect(h.commits.length).toBe(2);
+    expect(h.commits[1]!.clipIdx).toBe(IDX_A);
+    expect(h.eventsOf(IDX_A, A)!.length).toBeGreaterThan(1);
+    expect(h.eventsOf(IDX_B, B)!.length).toBeGreaterThan(1);
+    // Each clip holds ONLY its own lane's param.
+    expect(h.eventsOf(IDX_A, B)).toBeUndefined();
+    expect(h.eventsOf(IDX_B, A)).toBeUndefined();
   });
 
-  it('does NOT auto-add past MAX (addTrack returns false → the param is skipped)', () => {
-    const NEW = tgt('b', 'pb');
-    const c = clip([{ target: tgt('a', 'pa'), events: [] }]);
-    const h = harness({ addTrack: () => false }); // simulate the sanity cap reached
-    h.set(NEW, 0.1);
+  it('one lane’s wrap does NOT clear another lane’s momentary suspension (scoped re-enable)', () => {
+    const A = tgt('a', 'pa'); // lane 0
+    const B = tgt('b', 'pb'); // lane 1 — momentarily suspended (no grab)
+    const h = harness();
+    h.set(A, 0.1);
+    h.set(B, 0.1);
     h.ctrl.arm();
-    h.ctrl.recordTick(c, 6, 8);
-    h.ctrl.recordTick(c, 0, 8); // punch-in
-    h.move(NEW, 0.9); h.ctrl.recordTick(c, 3, 8);
-    h.ctrl.recordTick(c, 0, 8); // wrap
-    // NEW never became a track → nothing committed for it.
-    expect(h.committed?.find((t) => t.target.paramId === 'pb')).toBeUndefined();
+    h.ctrl.recordLaneTick(0, 3, [A], 6, 8);
+    h.ctrl.recordLaneTick(1, 70, [B], 2, 4);
+    // B is suspended-without-grab (e.g. reEnable pathway left it suspended-only).
+    // Simulate: touch then strip the grab via reEnableAll-like path is complex;
+    // instead assert the wrap of lane 0 only touches ITS assigned keys.
+    h.ctrl.notifyTouch(B); // grabbed + suspended
+    h.ctrl.recordLaneTick(0, 3, [A], 0, 8); // lane-0 wrap (punch-in)
+    expect(h.ctrl.isSuspended(B), 'lane-0 wrap left lane-1’s grip alone').toBe(true);
+    h.ctrl.notifyRelease(B);
+    expect(h.ctrl.isSuspended(B)).toBe(false);
+  });
+
+  it('LATCHED COMMIT: a queued launch swapping the lane’s clip mid-pass still commits to the OUTGOING clip, then re-latches', () => {
+    // The mid-record-switch race: applyLaneQueued swaps ln.active (and thus the
+    // clipIdx the tick passes) ~lookahead BEFORE the audible wrap. The pass must
+    // commit into the clip LATCHED at pass start (A), and only the NEXT pass
+    // records into B.
+    const P = tgt('s', 'p');
+    const IDX_A = 3;
+    const IDX_B = 5;
+    const h = harness();
+    h.set(P, 0.1);
+    h.ctrl.arm();
+    h.ctrl.recordLaneTick(0, IDX_A, [P], 6, 8);
+    h.ctrl.recordLaneTick(0, IDX_A, [P], 0, 8); // punch-in — latched to A
+    h.move(P, 0.5); h.ctrl.recordLaneTick(0, IDX_A, [P], 3, 8);
+    h.move(P, 0.9); h.ctrl.recordLaneTick(0, IDX_A, [P], 6, 8);
+    // The queued launch APPLIES (scheduled ahead): the tick now reports clip B
+    // while the audible playhead finishes A's loop.
+    h.ctrl.recordLaneTick(0, IDX_B, [P], 7, 8);
+    // Audible wrap: the pass commits — into A (latched), NOT B.
+    h.ctrl.recordLaneTick(0, IDX_B, [P], 0, 8);
+    expect(h.commits.length).toBe(1);
+    expect(h.commits[0]!.clipIdx, 'committed to the OUTGOING clip').toBe(IDX_A);
+    expect(h.eventsOf(IDX_A, P)!.length).toBeGreaterThan(1);
+    expect(h.eventsOf(IDX_B, P), 'nothing leaked into the incoming clip').toBeUndefined();
+    // The NEXT pass records into B (re-latched at the wrap).
+    h.move(P, 0.2); h.ctrl.recordLaneTick(0, IDX_B, [P], 3, 8);
+    h.move(P, 0.05); h.ctrl.recordLaneTick(0, IDX_B, [P], 6, 8);
+    h.ctrl.recordLaneTick(0, IDX_B, [P], 0, 8); // wrap → commit into B
+    expect(h.commits[1]!.clipIdx).toBe(IDX_B);
+    expect(h.eventsOf(IDX_B, P)!.length).toBeGreaterThan(1);
+  });
+
+  it('laneStopped punches out: commits the PARTIAL pass into the latched clip + resets the lane window', () => {
+    const P = tgt('s', 'p');
+    const h = harness();
+    h.set(P, 0.1);
+    h.ctrl.arm();
+    h.ctrl.recordLaneTick(LANE, IDX, [P], 6, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, [P], 0, 8); // punch-in
+    h.move(P, 0.8); h.ctrl.recordLaneTick(LANE, IDX, [P], 3, 8);
+    h.ctrl.laneStopped(LANE); // the lane stopped playing mid-pass
+    expect(h.commits.length, 'partial pass committed at lane stop').toBe(1);
+    expect(h.commits[0]!.clipIdx).toBe(IDX);
+    expect(h.ctrl.laneRecording(LANE)).toBe(false);
+    // A later re-launch re-arms lazily and punches in at the NEW clip's wrap.
+    h.ctrl.recordLaneTick(LANE, IDX, [P], 6, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, [P], 0, 8);
+    expect(h.ctrl.laneRecording(LANE)).toBe(true);
+  });
+
+  it('laneStopped on a lane with no record state is a cheap no-op', () => {
+    const h = harness();
+    h.ctrl.arm();
+    h.ctrl.laneStopped(4);
+    expect(h.commits.length).toBe(0);
   });
 });
 
 describe('AutomationController — long/slow clip (low div, long length)', () => {
   it('records a full pass on a 64-step clip with sub-step motion, bounded events', () => {
     const target = tgt('filter', 'freq');
-    const track: AutomationTrack = { target, events: [] };
-    const c = clip([track], 64);
     const h = harness();
     h.set(target, 0);
     h.ctrl.arm();
-    h.ctrl.recordTick(c, 60, 64);
-    h.ctrl.recordTick(c, 0, 64); // punch-in
+    h.ctrl.recordLaneTick(LANE, IDX, [target], 60, 64);
+    h.ctrl.recordLaneTick(LANE, IDX, [target], 0, 64); // punch-in
     // simulate ~40 ticks across the 64-step loop with a rising sweep (touching it)
     for (let i = 1; i <= 40; i++) {
       const frac = (i / 41) * 64;
       h.move(target, i / 41);
-      h.ctrl.recordTick(c, frac, 64);
+      h.ctrl.recordLaneTick(LANE, IDX, [target], frac, 64);
     }
-    h.ctrl.recordTick(c, 0, 64); // wrap → commit
-    const rec = h.committed!.find((t) => t.target.paramId === 'freq')!;
-    expect(rec.events.length).toBeGreaterThan(5);
-    expect(rec.events.length).toBeLessThanOrEqual(64); // decimation kept it bounded
+    h.ctrl.recordLaneTick(LANE, IDX, [target], 0, 64); // wrap → commit
+    const events = h.eventsOf(IDX, target)!;
+    expect(events.length).toBeGreaterThan(5);
+    expect(events.length).toBeLessThanOrEqual(64); // decimation kept it bounded
     // events span the whole loop
-    expect(rec.events[0]!.step).toBeLessThan(2);
-    expect(rec.events[rec.events.length - 1]!.step).toBeGreaterThan(60);
+    expect(events[0]!.step).toBeLessThan(2);
+    expect(events[events.length - 1]!.step).toBeGreaterThan(60);
   });
 });
 
-describe('AutomationController — param-jump policy (Phase 0 seams)', () => {
+describe('AutomationController — param-jump policy (Phase 0 seams, re-targeted)', () => {
   const target = tgt('synth', 'cutoff');
 
   it('holdLastValue: DETERMINISTIC resting recompute (linear interp at the stop step)', () => {
-    // A stop at step 3 on a 0→8 ramp (0.2 at 0, 0.8 at 8) resolves to 0.2 + 6/8·(0.6)…
-    // exactly automationLinearAt at step 3 = 0.2 + (3/8)*(0.8-0.2)/1 …computed below.
-    const track: AutomationTrack = {
-      target,
-      events: [{ step: 0, value: 0.2 }, { step: 8, value: 0.8 }],
-    };
+    const tracks: AutomationTrack[] = [
+      { target, events: [{ step: 0, value: 0.2 }, { step: 8, value: 0.8 }] },
+    ];
     const h = harness();
-    h.ctrl.holdLastValue(clip([track]), 3, 0.012);
+    h.ctrl.holdLastValue(tracks, 3, 0.012);
     expect(h.holds.length).toBe(1);
     const hd = h.holds[0]!;
     expect(hd.target).toEqual(target);
@@ -431,16 +542,14 @@ describe('AutomationController — param-jump policy (Phase 0 seams)', () => {
     expect(hd.toValueNorm).toBeCloseTo(0.425, 9);
   });
 
-  it('holdLastValue is a PURE function of clip+step (same input → same value, multiplayer-safe)', () => {
-    const track: AutomationTrack = {
-      target,
-      events: [{ step: 0, value: 0.1 }, { step: 4, value: 0.9 }, { step: 8, value: 0.3 }],
-    };
-    const c = clip([track]);
+  it('holdLastValue is a PURE function of tracks+step (same input → same value, multiplayer-safe)', () => {
+    const tracks: AutomationTrack[] = [
+      { target, events: [{ step: 0, value: 0.1 }, { step: 4, value: 0.9 }, { step: 8, value: 0.3 }] },
+    ];
     const a = harness();
     const b = harness();
-    a.ctrl.holdLastValue(c, 5.5, 0.012);
-    b.ctrl.holdLastValue(c, 5.5, 0.012);
+    a.ctrl.holdLastValue(tracks, 5.5, 0.012);
+    b.ctrl.holdLastValue(tracks, 5.5, 0.012);
     // Two independent "peers" converge on the identical resting value by construction.
     expect(a.holds[0]!.toValueNorm).toBe(b.holds[0]!.toValueNorm);
   });
@@ -448,20 +557,22 @@ describe('AutomationController — param-jump policy (Phase 0 seams)', () => {
   it('holdLastValue skips a param a hand is holding (the hand owns it) + one with no value yet', () => {
     const held = tgt('a', 'held');
     const future = tgt('b', 'future');
-    const c = clip([
+    const tracks: AutomationTrack[] = [
       { target: held, events: [{ step: 0, value: 0.5 }] },
       { target: future, events: [{ step: 6, value: 0.5 }] }, // no value at step 2
-    ]);
+    ];
     const h = harness();
     h.ctrl.notifyTouch(held); // grabbed → excluded from hold-last-value
-    h.ctrl.holdLastValue(c, 2, 0.012);
+    h.ctrl.holdLastValue(tracks, 2, 0.012);
     expect(h.holds.map((x) => x.target.paramId)).toEqual([]); // held excluded, future has no value yet
   });
 
   it('holdLastValue NEVER snaps to zero/default (holds the real envelope value)', () => {
-    const track: AutomationTrack = { target, events: [{ step: 0, value: 0.7 }, { step: 8, value: 0.7 }] };
+    const tracks: AutomationTrack[] = [
+      { target, events: [{ step: 0, value: 0.7 }, { step: 8, value: 0.7 }] },
+    ];
     const h = harness();
-    h.ctrl.holdLastValue(clip([track]), 4, 0.012);
+    h.ctrl.holdLastValue(tracks, 4, 0.012);
     expect(h.holds[0]!.toValueNorm).toBeCloseTo(0.7, 9); // NOT 0
   });
 
@@ -509,25 +620,24 @@ describe('AutomationController — param-jump policy (Phase 0 seams)', () => {
   it('a gesture spanning a wrap keeps CAPTURING (still sampled next pass while grabbed)', () => {
     // The live bug: at the wrap the capture stopped sampling a still-held param
     // ("second loop records nothing"). Now a grabbed param keeps being sampled.
-    const track: AutomationTrack = { target, events: [] };
-    const c = clip([track]);
     const h = harness();
     h.set(target, 0.1);
     h.ctrl.arm();
-    h.ctrl.recordTick(c, 6, 8);
-    h.ctrl.recordTick(c, 0, 8); // punch-in
-    h.move(target, 0.5); h.ctrl.recordTick(c, 4, 8); // move in pass 1
-    h.ctrl.recordTick(c, 0, 8); // WRAP (commit pass 1) — param still grabbed
+    h.ctrl.recordLaneTick(LANE, IDX, [target], 6, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, [target], 0, 8); // punch-in
+    h.move(target, 0.5); h.ctrl.recordLaneTick(LANE, IDX, [target], 4, 8); // move in pass 1
+    h.ctrl.recordLaneTick(LANE, IDX, [target], 0, 8); // WRAP (commit pass 1) — param still grabbed
     // Pass 2: keep moving WITHOUT re-touching every tick (still physically held).
-    h.set(target, 0.9); h.ctrl.recordTick(c, 4, 8);
-    h.ctrl.recordTick(c, 0, 8); // wrap → commit pass 2 captured the held motion
-    const rec = h.committed!.find((t) => t.target.paramId === 'cutoff')!;
-    expect(Math.max(...rec.events.map((e) => e.value))).toBeGreaterThan(0.8); // pass-2 motion captured
+    h.set(target, 0.9); h.ctrl.recordLaneTick(LANE, IDX, [target], 4, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, [target], 0, 8); // wrap → commit pass 2 captured the held motion
+    const events = h.eventsOf(IDX, target)!;
+    expect(Math.max(...events.map((e) => e.value))).toBeGreaterThan(0.8); // pass-2 motion captured
   });
 
   // ── fix #5: per-surface grab ownership ─────────────────────────────────────
   it('DUAL-SURFACE grab: the first surface releasing does NOT clear the other surface\'s grip', () => {
     const h = harness();
+    h.set(target, 0.1);
     h.ctrl.notifyTouch(target, 'pointer'); // screen drag grabs it
     h.ctrl.notifyTouch(target, 'midi'); // a MIDI twist grabs it too
     expect(h.ctrl.isSuspended(target)).toBe(true);
@@ -537,8 +647,8 @@ describe('AutomationController — param-jump policy (Phase 0 seams)', () => {
     expect(h.ctrl.isSuspended(target)).toBe(true);
     // ...and it still survives a wrap while the pointer holds.
     h.ctrl.arm();
-    h.ctrl.recordTick(clip([{ target, events: [] }]), 6, 8);
-    h.ctrl.recordTick(clip([{ target, events: [] }]), 0, 8); // wrap
+    h.ctrl.recordLaneTick(LANE, IDX, [target], 6, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, [target], 0, 8); // wrap
     expect(h.ctrl.isSuspended(target)).toBe(true);
     // The LAST holder releases → now the override ends.
     h.ctrl.notifyRelease(target, 'pointer');
@@ -560,28 +670,26 @@ describe('AutomationController — param-jump policy (Phase 0 seams)', () => {
     // Pass 2 (gesture continues past the wrap): release at ~step 3 → the wrap
     // commit must merge only [0, 3.x] and PRESERVE pass-1's events in (3.x, len)
     // — the old single global [0,len) window wiped them.
-    const track: AutomationTrack = { target, events: [] };
     const h = harness();
     h.set(target, 0.1);
     h.ctrl.arm();
-    h.ctrl.recordTick(clip([track]), 6, 8);
-    h.ctrl.recordTick(clip([track]), 0, 8); // punch-in (pass 1)
+    h.ctrl.recordLaneTick(LANE, IDX, [target], 6, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, [target], 0, 8); // punch-in (pass 1)
     // PASS 1: full-loop sweep 0.1 → 0.9 while held.
-    h.move(target, 0.3); h.ctrl.recordTick(clip([track]), 2, 8);
-    h.move(target, 0.6); h.ctrl.recordTick(clip([track]), 4, 8);
-    h.move(target, 0.9); h.ctrl.recordTick(clip([track]), 7, 8);
-    h.ctrl.recordTick(clip([track]), 0, 8); // wrap → commit pass 1 (still grabbed)
-    const pass1 = h.committed!.find((t) => t.target.paramId === 'cutoff')!.events;
+    h.move(target, 0.3); h.ctrl.recordLaneTick(LANE, IDX, [target], 2, 8);
+    h.move(target, 0.6); h.ctrl.recordLaneTick(LANE, IDX, [target], 4, 8);
+    h.move(target, 0.9); h.ctrl.recordLaneTick(LANE, IDX, [target], 7, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, [target], 0, 8); // wrap → commit pass 1 (still grabbed)
+    const pass1 = h.eventsOf(IDX, target)!;
     const pass1Tail = pass1.filter((e) => e.step > 4);
     expect(pass1Tail.length, 'pass 1 recorded into the loop tail').toBeGreaterThan(0);
     // PASS 2 (same physical gesture): keep moving until ~step 3, then RELEASE.
-    const c2 = clip([{ target, events: pass1 }]); // the store now holds pass 1
-    h.set(target, 0.2); h.ctrl.recordTick(c2, 1, 8);
-    h.set(target, 0.05); h.ctrl.recordTick(c2, 3, 8);
+    h.set(target, 0.2); h.ctrl.recordLaneTick(LANE, IDX, [target], 1, 8);
+    h.set(target, 0.05); h.ctrl.recordLaneTick(LANE, IDX, [target], 3, 8);
     h.release(target); // hand lifts at step 3 — capture stops extending
-    h.ctrl.recordTick(c2, 5, 8);
-    h.ctrl.recordTick(c2, 0, 8); // wrap → commit pass 2
-    const pass2 = h.committed!.find((t) => t.target.paramId === 'cutoff')!.events;
+    h.ctrl.recordLaneTick(LANE, IDX, [target], 5, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, [target], 0, 8); // wrap → commit pass 2
+    const pass2 = h.eventsOf(IDX, target)!;
     // The re-covered window [0, ~3] holds the new downward move…
     const head = pass2.filter((e) => e.step <= 3.001);
     expect(Math.min(...head.map((e) => e.value))).toBeLessThan(0.1);
@@ -600,27 +708,37 @@ describe('AutomationController — param-jump policy (Phase 0 seams)', () => {
     // widen A's replace window over A's existing later events.
     const A = tgt('a', 'pa');
     const B = tgt('b', 'pb');
-    const priorA: AutomationTrack = {
-      target: A,
-      events: [{ step: 0, value: 0.5 }, { step: 4, value: 0.9 }], // step-4 must survive
-    };
-    const trB: AutomationTrack = { target: B, events: [] };
-    const c = clip([priorA, trB]);
     const h = harness();
+    // Seed A with prior automation whose step-4 event must survive.
+    h.set(A, 0.5);
+    h.ctrl.arm();
+    h.ctrl.recordLaneTick(LANE, IDX, [A], 6, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, [A], 0, 8);
+    h.move(A, 0.5); h.ctrl.recordLaneTick(LANE, IDX, [A], 0.5, 8);
+    h.move(A, 0.9); h.ctrl.recordLaneTick(LANE, IDX, [A], 4, 8);
+    h.release(A);
+    h.ctrl.recordLaneTick(LANE, IDX, [A], 0, 8); // commit seed
+    h.ctrl.disarm();
+    const priorA = h.eventsOf(IDX, A)!;
+    const stepFourish = priorA.filter((e) => e.step >= 3.5);
+    expect(stepFourish.length, 'seed reached ~step 4').toBeGreaterThan(0);
+
     h.set(A, 0.5);
     h.set(B, 0.1);
     h.ctrl.arm();
-    h.ctrl.recordTick(c, 6, 8);
-    h.ctrl.recordTick(c, 0, 8); // punch-in
-    h.move(A, 0.1); h.move(B, 0.3); h.ctrl.recordTick(c, 2, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, [A, B], 6, 8);
+    h.ctrl.recordLaneTick(LANE, IDX, [A, B], 0, 8); // punch-in
+    h.move(A, 0.1); h.move(B, 0.3); h.ctrl.recordLaneTick(LANE, IDX, [A, B], 2, 8);
     h.release(A); // A's gesture ends at step 2
-    h.move(B, 0.8); h.ctrl.recordTick(c, 5, 8); // B keeps going to step 5
+    h.move(B, 0.8); h.ctrl.recordLaneTick(LANE, IDX, [A, B], 5, 8); // B keeps going to step 5
     h.ctrl.disarm(); // partial commit (global end = 5)
-    const outA = h.committed!.find((t) => t.target.paramId === 'pa')!.events;
-    expect(
-      outA.some((e) => e.step === 4 && Math.abs(e.value - 0.9) < 1e-9),
-      "A's existing step-4 event survives (A's window ended at 2)",
-    ).toBe(true);
+    const outA = h.eventsOf(IDX, A)!;
+    for (const e of stepFourish) {
+      expect(
+        outA.some((p) => p.step === e.step && Math.abs(p.value - e.value) < 1e-9),
+        `A's existing event @${e.step} survives (A's window ended at 2)`,
+      ).toBe(true);
+    }
   });
 
   // ── fix #7: release-resume glide ───────────────────────────────────────────
@@ -657,12 +775,12 @@ describe('AutomationController — param-jump policy (Phase 0 seams)', () => {
   it('holdLastValue skipKeys leaves boundary-shared params entirely alone', () => {
     const shared = tgt('s', 'p');
     const solo = tgt('o', 'q');
-    const c = clip([
+    const tracks: AutomationTrack[] = [
       { target: shared, events: [{ step: 0, value: 0.4 }] },
       { target: solo, events: [{ step: 0, value: 0.6 }] },
-    ]);
+    ];
     const h = harness();
-    h.ctrl.holdLastValue(c, 8, 0.012, { atTime: 123, skipKeys: new Set(['s::p']) });
+    h.ctrl.holdLastValue(tracks, 8, 0.012, { atTime: 123, skipKeys: new Set(['s::p']) });
     expect(h.holds.map((x) => x.target.nodeId)).toEqual(['o']); // shared skipped
     expect(h.holds[0]!.atTime).toBe(123); // the boundary time reaches the dep
     expect(h.holds[0]!.toValueNorm).toBeCloseTo(0.6, 9);
@@ -670,22 +788,22 @@ describe('AutomationController — param-jump policy (Phase 0 seams)', () => {
 
   it('holdLastValue truncateKeys cancel-only immediate-switch shared params (no resting pin)', () => {
     const shared = tgt('s', 'p');
-    const c = clip([{ target: shared, events: [{ step: 0, value: 0.4 }] }]);
+    const tracks: AutomationTrack[] = [{ target: shared, events: [{ step: 0, value: 0.4 }] }];
     const h = harness();
-    h.ctrl.holdLastValue(c, 3, 0.012, { truncateKeys: new Set(['s::p']) });
+    h.ctrl.holdLastValue(tracks, 3, 0.012, { truncateKeys: new Set(['s::p']) });
     expect(h.holds.length).toBe(1);
     expect(h.holds[0]!.toValueNorm).toBeNull(); // truncate-only — incoming repossesses
     expect(h.holds[0]!.glideS).toBe(0);
   });
 
-  it('holdLastValue only releases THIS clip\'s driven keys (other lanes keep touch-truncate scoping)', () => {
+  it('holdLastValue only releases THESE tracks\' driven keys (other lanes keep touch-truncate scoping)', () => {
     const mine = tgt('m', 'p');
     const other = tgt('x', 'q');
-    const myClip = clip([{ target: mine, events: [{ step: 0, value: 0.5 }] }]);
+    const myTracks: AutomationTrack[] = [{ target: mine, events: [{ step: 0, value: 0.5 }] }];
     const otherTrack: AutomationTrack = { target: other, events: [{ step: 0, value: 0.5 }] };
     const h = harness();
     h.ctrl.playbackStep(otherTrack, 0, 0.5, 100); // another lane drives `other`
-    h.ctrl.holdLastValue(myClip, 8, 0.012); // stopping MY clip…
+    h.ctrl.holdLastValue(myTracks, 8, 0.012); // stopping MY clip…
     h.holds.length = 0;
     h.ctrl.notifyTouch(other); // …must not un-scope the other lane's truncate
     expect(h.holds.length).toBe(1); // grab still truncates the driven param

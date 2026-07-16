@@ -1215,14 +1215,20 @@ describe('Single mode — frame builders', () => {
     expect(countdownRgb({ color: 'red', on: false })).toEqual(RGB_RECORDING_DIM);
   });
 
-  it('grid: the automation clip’s matrix cell flashes the countdown when its scene is in view', () => {
-    const idx = clipIndex(0, 7); // automation clip at lane 7, slot 0 (flat, stride-64)
-    const pad = clipIndexToGridPad(idx); // its transposed grid pad
+  it('grid: EACH recording lane’s clip cell flashes ITS countdown when its scene is in view (per-lane)', () => {
+    const idxA = clipIndex(0, 7); // recording clip at lane 7, slot 0 (flat, stride-64)
+    const idxB = clipIndex(1, 2); // a SECOND recording lane (lane 2, slot 1)
+    const padA = clipIndexToGridPad(idxA);
+    const padB = clipIndexToGridPad(idxB);
     const f = computeSingleGridFrame({} as ClipPlayerData, {
       top: mkTop('grid'),
       blinkOn: true,
-      autoCountdown: { clipIndex: idx, color: 'red', on: true },
+      autoCountdown: [
+        { clipIndex: idxA, color: 'red', on: true },
+        { clipIndex: idxB, color: 'yellow', on: false },
+      ],
     });
-    expect(eqRgb(at(f, padNote(pad.x, pad.y)), RGB_RECORDING)).toBe(true);
+    expect(eqRgb(at(f, padNote(padA.x, padA.y)), RGB_RECORDING)).toBe(true);
+    expect(eqRgb(at(f, padNote(padB.x, padB.y)), RGB_QREC_IDLE)).toBe(true);
   });
 });

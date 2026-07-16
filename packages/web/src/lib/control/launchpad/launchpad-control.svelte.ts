@@ -132,7 +132,6 @@ import {
   laneMono,
   coerceClipRecord,
   defaultNoteClip,
-  defaultAutomationClip,
   scaleSteps,
   toggleNoteAt,
   setNoteSpan,
@@ -164,6 +163,7 @@ import {
 import { getLanePlayhead } from '$lib/audio/modules/clip-playhead';
 import {
   getAutomationRender,
+  soonestAutomationLane,
   automationCountdownColor,
   automationCountdownOn,
 } from '$lib/audio/modules/clip-automation-render';
@@ -979,39 +979,20 @@ function toggleArrangeMode(nodeId: string): void {
   });
 }
 /** AUTOMATION arm/disarm from the Launchpad Control view — the EXACT same
- *  node.data.automation writes the card's ＋AUTO + ARM buttons make, so the card
- *  and the pad stay in sync via the synced flags:
- *   - if the player has NO automation clip yet, create one first (stamp
- *     defaultAutomationClip() — a long, slow record window — into the first empty
- *     slot of the LAST lane + record the pointer, exactly like createAutomationClip);
- *   - then flip d.automation.arm, and WHEN ARMING claim single-writer by stamping
- *     this client's ydoc.clientID as recorderId (the engine only records on the
- *     matching client — see isAutomationRecorder).
- *  ONE undoable transaction (the create is a persistent structural edit like a
- *  clip write); the card makes the same writes across two plain transacts. */
+ *  node.data.automation write the card's ◉ AUTO button makes, so the card and
+ *  the pad stay in sync via the synced flags. ONE GLOBAL arm (per-clip
+ *  automation — no stamped clip to create): flip d.automation.arm, and WHEN
+ *  ARMING claim single-writer by stamping this client's ydoc.clientID as
+ *  recorderId (the engine only records on the matching client — see
+ *  isAutomationRecorder). While armed, every lane with a playing note clip +
+ *  assigned params records into ITS playing clip's sibling automation. */
 function toggleAutoArm(nodeId: string): void {
-  editData(
-    nodeId,
-    (d) => {
-      if (!d.automation) d.automation = {};
-      if (!d.automation.clip) {
-        const lane = CLIP_LANES - 1;
-        let slot = -1;
-        for (let s = 0; s < CLIP_SLOTS; s++) {
-          if (!d.clips?.[String(clipIndex(s, lane))]) { slot = s; break; }
-        }
-        if (slot >= 0) {
-          if (!d.clips) d.clips = {};
-          d.clips[String(clipIndex(slot, lane))] = defaultAutomationClip();
-          d.automation.clip = { lane, slot };
-        }
-      }
-      const arming = !d.automation.arm;
-      d.automation.arm = arming;
-      if (arming) d.automation.recorderId = ydoc.clientID;
-    },
-    { undoable: true },
-  );
+  editData(nodeId, (d) => {
+    if (!d.automation) d.automation = {};
+    const arming = !d.automation.arm;
+    d.automation.arm = arming;
+    if (arming) d.automation.recorderId = ydoc.clientID;
+  });
 }
 
 // ── Performance-deck seams (P1/P4/P3/P2/P5). Each writes the SAME synced node
@@ -2710,18 +2691,33 @@ function selPlayhead(nodeId: string, data: ClipPlayerData | undefined): number {
   const lane = laneOf(selectedClipIndex);
   return lanePlaying(data, lane) === slotOf(selectedClipIndex) ? getLanePlayhead(nodeId, lane) : -1;
 }
-/** The automation COUNTDOWN paint for the bound player, or null when not inside
- *  the 4-beat pre-roll (the clipplayer tick publishes the render state; the pure
- *  helpers bucket it to a colour + on-beat pulse). Carries the automation clip's
- *  flat index so the Grid view can flash its matrix cell. */
-function autoCountdownPaint(
+/** The PER-LANE automation COUNTDOWN paints for the bound player — one entry
+ *  per RECORDING lane inside its 4-beat pre-roll (the clipplayer tick publishes
+ *  the per-lane render state; the pure helpers bucket each to a colour +
+ *  on-beat pulse). Each carries its clip's flat index so the Grid view can
+ *  flash EVERY recording lane's matrix cell on ITS own wrap. Null when none. */
+function autoCountdownPaints(
   nodeId: string,
-): (CountdownPaint & { clipIndex: number }) | null {
+): (CountdownPaint & { clipIndex: number })[] | null {
   const rs = getAutomationRender(nodeId);
-  if (!rs || !rs.recording) return null;
-  const color = automationCountdownColor(rs.beatsToLoopEnd);
+  if (!rs) return null;
+  const out: (CountdownPaint & { clipIndex: number })[] = [];
+  for (const l of rs.lanes) {
+    if (!l.recording) continue;
+    const color = automationCountdownColor(l.beatsToLoopEnd);
+    if (!color) continue;
+    out.push({ color, on: automationCountdownOn(l.beatPhase), clipIndex: clipIndex(l.slot, l.lane) });
+  }
+  return out.length ? out : null;
+}
+/** The SOONEST-to-wrap lane's countdown paint (or null) — the single-slot
+ *  flash for the Control-view AUTO-arm pad. */
+function autoCountdownSoonest(nodeId: string): CountdownPaint | null {
+  const l = soonestAutomationLane(getAutomationRender(nodeId));
+  if (!l) return null;
+  const color = automationCountdownColor(l.beatsToLoopEnd);
   if (!color) return null;
-  return { color, on: automationCountdownOn(rs.beatPhase), clipIndex: clipIndex(rs.slot, rs.lane) };
+  return { color, on: automationCountdownOn(l.beatPhase) };
 }
 /** Paint the SINGLE KEYS sub-view (keyboard + scale/arp right column + permanent
  *  top row). Returns false when the KEYS clip vanished (caller drops to session). */
@@ -2850,7 +2846,7 @@ function renderLeds(): void {
                   level0to1: laneSwing(data, laneOf(selectedClipIndex)) / MAX_SWING,
                 }
               : undefined,
-            autoCountdown: autoCountdownPaint(nodeId),
+            autoCountdown: autoCountdownPaints(nodeId),
           }),
         );
         break;
@@ -2882,7 +2878,7 @@ function renderLeds(): void {
             blinkOn,
             recording: recordArmed(data),
             arrangeMode: arrangeMode(data),
-            autoCountdown: autoCountdownPaint(nodeId),
+            autoCountdown: autoCountdownSoonest(nodeId),
             data,
           }),
         );
