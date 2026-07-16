@@ -152,7 +152,13 @@ import {
   isSwingCentered,
   pasteApplies,
   readScene,
+  readSceneAutos,
   sceneWritePlan,
+  readAutoClip,
+  plainCloneAutoClip,
+  reverseAutoClipRecord,
+  ensureArmAutoShells,
+  type AutoClipRecord,
   type ClipPlayerData,
   type ClipRecord,
   type NoteClipRecord,
@@ -337,6 +343,12 @@ function clearBuffer(): void {
  *  no-ops — the type gate). */
 function bufferClip(): NoteClipRecord | null {
   return copyBuffer?.kind === 'clip' ? copyBuffer.clip : null;
+}
+/** The buffered clip's SIBLING AUTOMATION (or null when the source carried
+ *  none / the buffer isn't a clip) — pasted WITH the clip (envelope-belongs-
+ *  to-the-clip). */
+function bufferClipAuto(): AutoClipRecord | null {
+  return copyBuffer?.kind === 'clip' ? copyBuffer.auto : null;
 }
 /** True when ANY buffer (clip OR scene) is loaded — lights the COPY-INDICATOR /
  *  the Paste button's pulse. */
@@ -930,6 +942,34 @@ function writeClip(
     { undoable: opts.undoable ?? true },
   );
 }
+
+/** PASTE-path clip write: the clip PLUS its sibling automation, atomically in
+ *  ONE undoable transaction. The ENVELOPE BELONGS TO THE CLIP: pasting a clip
+ *  replaces the destination's `auto[k]` with the buffer's copy — or DELETES the
+ *  destination's stale record when the source carried none — so a paste can
+ *  never leave a ghost envelope playing under foreign notes. (Plain-cloned so
+ *  pasting one buffer to many targets never shares refs.) NOTE edits to a clip
+ *  keep using `writeClip` — they must never touch the sibling automation. */
+function writeClipWithAuto(
+  nodeId: string,
+  next: NoteClipRecord,
+  auto: AutoClipRecord | null,
+  index: number,
+): void {
+  const plainAuto = plainCloneAutoClip(auto);
+  editData(
+    nodeId,
+    (d) => {
+      if (!d.clips) d.clips = {};
+      d.clips[String(index)] = { ...next, steps: next.steps.map((s) => ({ ...s })) };
+      if (!d.auto) d.auto = {};
+      const key = String(index);
+      if (plainAuto) d.auto[key] = plainAuto;
+      else if (d.auto[key] !== undefined && d.auto[key] !== null) delete d.auto[key];
+    },
+    { undoable: true },
+  );
+}
 function timelordeNode(): { node: { params?: Record<string, number> }; id: string } | null {
   for (const [id, n] of Object.entries(livePatch.nodes)) {
     if ((n as { type?: string } | undefined)?.type === 'timelorde') {
@@ -991,7 +1031,12 @@ function toggleAutoArm(nodeId: string): void {
     if (!d.automation) d.automation = {};
     const arming = !d.automation.arm;
     d.automation.arm = arming;
-    if (arming) d.automation.recorderId = ydoc.clientID;
+    if (arming) {
+      d.automation.recorderId = ydoc.clientID;
+      // Container-LWW hardening: pre-create the playing clips' auto shells in
+      // THIS (arm) transaction, not inside the racy record-commit path.
+      ensureArmAutoShells(d);
+    }
   });
 }
 
@@ -1782,10 +1827,11 @@ function consumeGridArm(nodeId: string, clipIdx: number, data: ClipPlayerData | 
   armConsumedSincePress = true; // used shift → releasing it should NOT latch
   switch (armedRightAction) {
     case 'copy': {
-      // Copy a SINGLE clip onto the typed buffer (kind: 'clip').
+      // Copy a SINGLE clip onto the typed buffer (kind: 'clip') — the clip's
+      // sibling automation rides along (the envelope belongs to the clip).
       const c = clipAtIndex(data, clipIdx);
       if (c) {
-        copyBuffer = { kind: 'clip', clip: copyClip(c) };
+        copyBuffer = { kind: 'clip', clip: copyClip(c), auto: readAutoClip(data, clipIdx) };
         bufferSourceIndex = clipIdx;
       }
       disarmGridArm(nodeId);
@@ -1794,10 +1840,11 @@ function consumeGridArm(nodeId: string, clipIdx: number, data: ClipPlayerData | 
     case 'paste': {
       // A clip pad is a CLIP target — applies only for a CLIP buffer (a SCENE
       // buffer → scene→clip NO-OP, gated by pasteApplies). The buffer + the other
-      // clips stay untouched on a no-op.
+      // clips stay untouched on a no-op. The paste carries the buffer's
+      // automation and clears the destination's stale record (one transaction).
       const bc = bufferClip();
       if (bc && copyBuffer && pasteApplies(copyBuffer.kind, 'clip')) {
-        writeClip(nodeId, copyClip(bc), clipIdx, { undoable: true });
+        writeClipWithAuto(nodeId, copyClip(bc), bufferClipAuto(), clipIdx);
       }
       disarmGridArm(nodeId);
       break;
@@ -1854,12 +1901,16 @@ function consumeSceneArm(
   const slot = slotForScene(sceneScrollOffset + sceneIndex);
   if (slot === null) { disarmGridArm(nodeId); return; } // scene out of range
   if (armedRightAction === 'copy') {
-    copyBuffer = { kind: 'scene', clips: readScene(data, slot) };
+    // The scene buffer carries each lane's clip AND its sibling automation
+    // (envelope-belongs-to-the-clip — a scene duplicate is a perform gesture).
+    copyBuffer = { kind: 'scene', clips: readScene(data, slot), autos: readSceneAutos(data, slot) };
     bufferSourceIndex = null; // a scene has no single source pad
   } else if (copyBuffer && pasteApplies(copyBuffer.kind, 'scene')) {
     // pasteApplies(kind, 'scene') is true ONLY for a scene buffer — the `.kind`
     // check narrows the union for TS; a clip buffer here is the clip→scene NO-OP.
-    if (copyBuffer.kind === 'scene') pasteSceneInto(nodeId, slot, copyBuffer.clips);
+    if (copyBuffer.kind === 'scene') {
+      pasteSceneInto(nodeId, slot, copyBuffer.clips, copyBuffer.autos);
+    }
   }
   disarmGridArm(nodeId);
 }
@@ -1867,19 +1918,24 @@ function consumeSceneArm(
 /** FULL-REPLACE a scene at `targetSlot` from a scene buffer's PLAIN clones, in ONE
  *  origin-tagged transaction (→ a SINGLE undo step). Each of the 8 lanes is set to
  *  its plain clone, or its key DELETED when the source lane was empty — so a lane
- *  the source scene left empty EMPTIES the target lane. Whole-clip plain reassigns
- *  (never a live Y splice), per the yjs-save-load discipline. */
+ *  the source scene left empty EMPTIES the target lane — and the same for each
+ *  clip's SIBLING AUTOMATION (`auto[k]` set from the buffer / deleted when the
+ *  source carried none): the envelope belongs to the clip, so a full scene
+ *  replace can never leave a ghost envelope under a foreign clip. Whole-clip
+ *  plain reassigns (never a live Y splice), per the yjs-save-load discipline. */
 function pasteSceneInto(
   nodeId: string,
   targetSlot: number,
   sceneClips: (ClipRecord | null)[],
+  sceneAutos?: (AutoClipRecord | null)[],
 ): void {
-  const plan = sceneWritePlan(targetSlot, sceneClips);
+  const plan = sceneWritePlan(targetSlot, sceneClips, sceneAutos);
   editData(
     nodeId,
     (d) => {
       if (!d.clips) d.clips = {};
-      for (const { index, value } of plan) {
+      if (!d.auto) d.auto = {};
+      for (const { index, value, auto } of plan) {
         const key = String(index);
         if (value === null) {
           // Only delete a key that EXISTS — the syncedStore proxy's deleteProperty
@@ -1887,6 +1943,11 @@ function pasteSceneInto(
           if (d.clips[key] !== undefined && d.clips[key] !== null) delete d.clips[key];
         } else {
           d.clips[key] = value;
+        }
+        if (auto === null) {
+          if (d.auto[key] !== undefined && d.auto[key] !== null) delete d.auto[key];
+        } else {
+          d.auto[key] = auto;
         }
       }
     },
@@ -2261,20 +2322,29 @@ function handleL(nodeId: string, e: LaunchpadKeyEvent): void {
     if (copyHeld) {
       const c = clipAtIndex(data, clipIdx);
       if (c) {
-        copyBuffer = { kind: 'clip', clip: copyClip(c) };
+        copyBuffer = { kind: 'clip', clip: copyClip(c), auto: readAutoClip(data, clipIdx) };
         bufferSourceIndex = clipIdx;
       }
       return;
     }
     // PASTE / PASTE-REV act only with a CLIP buffer loaded (a scene buffer is a
     // no-op on a single clip); with no clip buffer the tap falls through to launch,
-    // exactly as before.
+    // exactly as before. Both carry the buffer's automation (PASTE-REV mirrors
+    // the envelope in time to match the reversed notes) and clear the
+    // destination's stale record — the envelope belongs to the clip.
     if (pasteHeld && bufferClip()) {
-      writeClip(nodeId, copyClip(bufferClip()!), clipIdx);
+      writeClipWithAuto(nodeId, copyClip(bufferClip()!), bufferClipAuto(), clipIdx);
       return;
     }
     if (pasteRevHeld && bufferClip()) {
-      writeClip(nodeId, reverseClipSteps(copyClip(bufferClip()!)), clipIdx);
+      const src = bufferClip()!;
+      const auto = bufferClipAuto();
+      writeClipWithAuto(
+        nodeId,
+        reverseClipSteps(copyClip(src)),
+        auto ? reverseAutoClipRecord(auto, src.lengthSteps) : null,
+        clipIdx,
+      );
       return;
     }
     const lane = laneOf(clipIdx);

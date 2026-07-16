@@ -325,8 +325,10 @@
     onclearelectra={midi.clearElectra}
     automations={midi.automations}
     automated={midi.automated}
+    automationRecorded={midi.automationRecorded}
     onassignautomation={midi.assignAutomation}
     onremoveautomation={midi.removeAutomation}
+    onclearautomation={midi.clearAutomation}
   />
 {/if}
 

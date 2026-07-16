@@ -22,7 +22,7 @@
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import type { ModuleNode } from '$lib/graph/types';
-import { patch as livePatch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
+import { patch as livePatch, ydoc } from '$lib/graph/store';
 import { getActiveEngine } from '$lib/audio/engine-ref';
 import { resolveSurfaceParam } from '$lib/graph/control-surface-params';
 import { valueToFrac, fracToValue } from '$lib/electra/curve';
@@ -62,6 +62,8 @@ import {
   autoTrackViews,
   automationTargetKey,
   laneAssignedTargets,
+  coerceAutoAssign,
+  autoPlaybackOwners,
   MAX_AUTOMATION_TRACKS,
   type ClipPlayerData,
   type ClipRecord,
@@ -84,6 +86,11 @@ import {
 
 /** steps-per-beat for each stepDiv index (0=1/4 … 3=1/32). */
 const STEP_DIV_SPB = [1, 2, 4, 8] as const;
+
+/** Transaction ORIGIN for automation record commits — deliberately NOT the
+ *  undo-tracked LOCAL_ORIGIN (see the commit dep's rationale: per-wrap undo
+ *  flooding). Exported for tests that assert commits stay out of the undo scope. */
+export const AUTOMATION_COMMIT_ORIGIN = Symbol('automation-commit');
 
 /** Fall→rise gap (s) when an audition voice-lane changes owner (LRU-steal, or a
  *  freed lane re-taken in the same drain). Two clean setValueAtTime edges — a
@@ -133,7 +140,7 @@ export const clipplayerDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A clip launcher in the style of Ableton's Session view, with 8 instrument lanes. The grid's rows are the 8 lanes (instruments) and the columns are clip slots — the card shows 8 slots per lane at a time (64 clips at a glance), while on a Launchpad the scene column scrolls through up to 64 scene slots per lane (fixed stride-64 storage; older saves migrate once on load), so clips can live in scenes past the first 8. Each lane independently plays whichever clip you launch out its OWN pitch/gate/velocity outputs, so up to 8 clips can sound at once (one per lane). Click a pad to launch its clip, double-click to open the piano-roll editor and draw notes into it. There's no internal clock or BPM — CLIP PLAYER is locked to TIMELORDE (the rack transport): it runs at TIMELORDE's tempo, only while TIMELORDE is running, and the STEP control sets how many steps fall per beat. Each lane also has its own clock-rate control (1/8 · 1/4 · 1/2 · 1 · 2x · 4x — the card dropdown, and the Launchpad deck's per-lane RATE row) that divides or multiplies that lane's step rate off the global STEP grid — polyrhythms without leaving the card — and because the tempo comes from TIMELORDE, 2x/4x are exact from the first step. All lanes share a common phase origin (transport start or the RST button), so a 1/2 lane lands on even base steps and stays locked to the others; RST (also a MIDI-assignable button, and the reset input) snaps every active lane back to step 1 and re-anchors that shared origin. Launches can fire immediately or be quantized to snap cleanly at the playing clip's loop boundary. It also has a SONG / arrangement mode that records your launches onto a timeline for non-real-time playback, and pairs with a monome grid 128 or a one- or two-unit Novation Launchpad Mini Mk3 for hardware launching. On the Launchpad the scene-launch column is a scrolling window (its shift-layer amber UP/DOWN buttons slide it), and a typed clipboard lets you COPY/PASTE whole SCENES (all 8 lanes at one slot, full-replace) as well as single clips — scene→scene and clip→clip pastes apply, while scene→clip and clip→scene are ignored (their targets dim). PER-CLIP AUTOMATION records parameter moves into the PLAYING clip by CONTINUOUS OVERDUB — this is the teal ◉ AUTO control (CLIP RECORD), distinct from the experimental red ● arranger record (which records clip LAUNCHES, not knob moves). First ASSIGN a control to a lane: right-click any knob or fader → \"Assign to automation lane\" → pick lane 1–8 (one lane per control; re-assigning moves it; assignment is explicit — moving an unassigned control while armed records nothing). The assigned control's name gets a thin border in that lane's colour, and the AUTO block shows a per-lane assigned count. Then launch a note clip in that lane, arm ◉ AUTO, and just MOVE the control: each lane's recorder punches in cleanly at ITS playing clip's own next loop start and overdubs EVERY loop until you press ◉ AUTO again (a manual stop — no auto punch-out); several lanes can record at once, each on its own loop. Each loop, only the params you're actively MOVING are (re)recorded; every other track keeps PLAYING BACK, and a released control reverts to playback next loop; stopping mid-loop keeps the untouched tail. A 🟡🟡🔴🔴 countdown flashes each recording clip's pad (and the on-card AUTO button) on the last four beats before that clip's own wrap. EVERY clip in the lane carries its OWN automation — stored beside the notes, so editing notes never touches the recorded envelopes — and launching a clip launches its envelopes with it, looping at the clip's length. On playback it drives those params transiently on every peer (never rewriting the saved clip). Parameter moves never JUMP: when a lane stops or switches away from an automating clip the params HOLD their last automated value — recomputed from the clip data at the stop position, quantized to the step grid so collaborating peers converge on the same resting value (never a snap to zero/default) — and every unavoidable seam (the loop wrap, switching INTO an automating clip, and a quantized switch AWAY, which holds at the musical boundary rather than cutting early) is a short click-free glide rather than a hard step. Grabbing an automated control live SUSPENDS its automation (live wins) until you physically RELEASE it — a gesture that spans a loop wrap is never yanked back to the envelope mid-drag, a wrap commit only overwrites the part of the loop the gesture actually covered, and a param gripped by two surfaces at once (screen + MIDI) stays live until the last one lets go; on release the param glides back to playback (the on-card dot re-enables all at once). Two current limits are documented honestly: the on-card grid shows only the first 8 scenes (card scene-scroll is a follow-up), and the arranger records session launches of scenes 1–8 (recording launches of scene 9+ is a follow-up — session launching them already works). Drive its lanes into eight voices for a full multitrack clip-based performance instrument.",
+      "A clip launcher in the style of Ableton's Session view, with 8 instrument lanes. The grid's rows are the 8 lanes (instruments) and the columns are clip slots — the card shows 8 slots per lane at a time (64 clips at a glance), while on a Launchpad the scene column scrolls through up to 64 scene slots per lane (fixed stride-64 storage; older saves migrate once on load), so clips can live in scenes past the first 8. Each lane independently plays whichever clip you launch out its OWN pitch/gate/velocity outputs, so up to 8 clips can sound at once (one per lane). Click a pad to launch its clip, double-click to open the piano-roll editor and draw notes into it. There's no internal clock or BPM — CLIP PLAYER is locked to TIMELORDE (the rack transport): it runs at TIMELORDE's tempo, only while TIMELORDE is running, and the STEP control sets how many steps fall per beat. Each lane also has its own clock-rate control (1/8 · 1/4 · 1/2 · 1 · 2x · 4x — the card dropdown, and the Launchpad deck's per-lane RATE row) that divides or multiplies that lane's step rate off the global STEP grid — polyrhythms without leaving the card — and because the tempo comes from TIMELORDE, 2x/4x are exact from the first step. All lanes share a common phase origin (transport start or the RST button), so a 1/2 lane lands on even base steps and stays locked to the others; RST (also a MIDI-assignable button, and the reset input) snaps every active lane back to step 1 and re-anchors that shared origin. Launches can fire immediately or be quantized to snap cleanly at the playing clip's loop boundary. It also has a SONG / arrangement mode that records your launches onto a timeline for non-real-time playback, and pairs with a monome grid 128 or a one- or two-unit Novation Launchpad Mini Mk3 for hardware launching. On the Launchpad the scene-launch column is a scrolling window (its shift-layer amber UP/DOWN buttons slide it), and a typed clipboard lets you COPY/PASTE whole SCENES (all 8 lanes at one slot, full-replace) as well as single clips — scene→scene and clip→clip pastes apply, while scene→clip and clip→scene are ignored (their targets dim). PER-CLIP AUTOMATION records parameter moves into the PLAYING clip by CONTINUOUS OVERDUB — this is the teal ◉ AUTO control (CLIP RECORD), distinct from the experimental red ● arranger record (which records clip LAUNCHES, not knob moves). First ASSIGN a control to a lane: right-click any knob or fader → \"Assign to automation lane\" → pick lane 1–8 (one lane per control; re-assigning moves it; assignment is explicit — moving an unassigned control while armed records nothing). The assigned control's name gets a thin border in that lane's colour, and the AUTO block shows a per-lane assigned count. Then launch a note clip in that lane, arm ◉ AUTO, and just MOVE the control: each lane's recorder punches in cleanly at ITS playing clip's own next loop start and overdubs EVERY loop until you press ◉ AUTO again (a manual stop — no auto punch-out); several lanes can record at once, each on its own loop. Each loop, only the params you're actively MOVING are (re)recorded; every other track keeps PLAYING BACK, and a released control reverts to playback next loop; stopping mid-loop keeps the untouched tail. A 🟡🟡🔴🔴 countdown flashes each recording clip's pad (and the on-card AUTO button) on the last four beats before that clip's own wrap. EVERY clip in the lane carries its OWN automation — THE ENVELOPE BELONGS TO THE CLIP: it's stored beside the notes (editing notes never touches the recorded envelopes), COPY/PASTE and scene-duplicate carry it with the clip (PASTE-REV pastes it time-reversed to match the reversed notes), pasting over a clip replaces its automation, and clearing/emptying a clip clears its automation too. Clips that carry automation show a small teal dot on their grid cell. Launching a clip launches its envelopes with it, looping at the clip's length; if two playing clips in different lanes automate the SAME control, exactly ONE drives it (the control's assigned lane wins, else the lowest lane — no fighting). Deleting is explicit and undoable: right-click an automated control → \"Clear recorded automation\" wipes that control's envelopes (its lane's clips, or everywhere when unassigned) — distinct from \"Remove automation assignment\", which only stops FUTURE recording and leaves recorded envelopes playing — and the editor's CLR AUTO button wipes the open clip's whole automation while keeping its notes. On playback it drives those params transiently on every peer (never rewriting the saved clip). Parameter moves never JUMP: when a lane stops or switches away from an automating clip the params HOLD their last automated value — recomputed from the clip data at the stop position, quantized to the step grid so collaborating peers converge on the same resting value (never a snap to zero/default) — and every unavoidable seam (the loop wrap, switching INTO an automating clip, and a quantized switch AWAY, which holds at the musical boundary rather than cutting early) is a short click-free glide rather than a hard step. Grabbing an automated control live SUSPENDS its automation (live wins) until you physically RELEASE it — a gesture that spans a loop wrap is never yanked back to the envelope mid-drag, a wrap commit only overwrites the part of the loop the gesture actually covered, and a param gripped by two surfaces at once (screen + MIDI) stays live until the last one lets go; on release the param glides back to playback (the on-card dot re-enables all at once). Two current limits are documented honestly: the on-card grid shows only the first 8 scenes (card scene-scroll is a follow-up), and the arranger records session launches of scenes 1–8 (recording launches of scene 9+ is a follow-up — session launching them already works). Drive its lanes into eight voices for a full multitrack clip-based performance instrument.",
     inputs: {
       stop_all: "Stop-all trigger: a rising edge immediately stops every lane (a panic/stop button), in both session and arrangement modes.",
       reset: "Reset trigger: a rising edge snaps every ACTIVE lane back to step 1 and re-anchors all lanes to a shared phase origin (divided/multiplied lanes restart their counting together). Queued-but-not-started launches are untouched — they still drop in at their lane's next loop boundary. Stopped lanes stay stopped; the arrangement's song position is not rewound (this is a clip-step reset, not a transport rewind).",
@@ -175,13 +182,15 @@ export const clipplayerDef: AudioModuleDef = {
       "clipplayer-rate-{n}":
         "Lane {n}'s clock-rate control (the per-lane dropdown under each channel column) — divides or multiplies the lane's step rate off the global STEP grid: 1/8, 1/4 and 1/2 advance the lane every 8th/4th/2nd base step; 2x and 4x advance it 2×/4× per base step (exact, since the tempo comes from TIMELORDE); 1 (the default) runs on the STEP grid. All lanes count from a shared phase origin (transport start or RST), so divided lanes stay locked to the others. Exposed on the card AND the Launchpad deck's per-lane RATE row (tap to cycle up); the monome grid has no rate surface.",
       "clipplayer-pad-{n}":
-        "A clip slot in the launch grid (one cell of the 8 lanes × 8 slots). Click to launch that lane's clip (immediately or quantized per QNT), click the playing pad to stop the lane, and double-click to open the clip in the piano-roll editor. An empty pad shows differently from a filled or playing one.",
+        "A clip slot in the launch grid (one cell of the 8 lanes × 8 slots). Click to launch that lane's clip (immediately or quantized per QNT), click the playing pad to stop the lane, and double-click to open the clip in the piano-roll editor. An empty pad shows differently from a filled or playing one; a clip that CARRIES RECORDED AUTOMATION shows a small teal dot in its corner (the envelope belongs to the clip — copy/paste moves it with the clip).",
       "clipplayer-cell-{n}":
         "A note cell in the piano-roll editor (rows are scale degrees/pitches, columns are steps). Click to toggle a note on or off at that pitch and step; right-click cycles the note's velocity. The cells make up the clip you're editing for the selected lane+slot.",
       "clipplayer-auto-arm-{n}":
         "◉ AUTO (arm) — arm CLIP RECORD for automation (CONTINUOUS OVERDUB), the teal control distinct from the experimental red ● arranger record. One GLOBAL arm: while lit, EVERY lane with a playing note clip and assigned controls records — each lane punches in cleanly at ITS clip's OWN next loop start, then just MOVE an assigned control (screen / MIDI / Electra all count): it records WHILE you hold it, and every OTHER track keeps playing back so the automation loops audibly/visibly. Recording lands in the clip that is PLAYING in that lane (each clip carries its own envelopes). Release a control and it reverts to playback next loop. It overdubs EVERY loop until you click again — a MANUAL STOP (no auto punch-out); stopping mid-loop keeps the untouched tail. Moving an UNASSIGNED control records nothing — assign it first (right-click → \"Assign to automation lane\"). A 🟡🟡🔴🔴 countdown flashes this button (and each recording clip's grid cell + Launchpad pad) on the last four beats before that clip's wrap. Single-writer (the arming client records; peers still play back).",
       "clipplayer-auto-assigned-{n}":
-        "Per-lane ASSIGNED count — one tiny chip per lane, tinted the lane's colour, showing how many controls are assigned to that lane's automation (right-click a control → \"Assign to automation lane\"; max 16 tracks per clip). A dim chip = nothing assigned. While ◉ AUTO is armed, each lane with a playing clip records exactly these controls when you move them.",
+        "Per-lane ASSIGNED count — one tiny chip per lane, tinted the lane's colour, showing how many controls are assigned to that lane's automation (right-click a control → \"Assign to automation lane\"; max 16 tracks per clip; a control whose module was deleted is not counted). A dim chip = nothing assigned. While ◉ AUTO is armed, each lane with a playing clip records exactly these controls when you move them. \"Remove automation assignment\" only stops FUTURE recording — the recorded envelopes keep playing until you \"Clear recorded automation\" (right-click) or CLR AUTO the clip.",
+      "clipplayer-clear-auto-{n}":
+        "CLR AUTO — delete the OPEN clip's whole recorded automation (all of its envelopes) while keeping its notes. Shown in the piano-roll editor only when the clip carries automation; undoable. The editor's ⌫ clear wipes notes AND automation together; per-control deletion is right-click → \"Clear recorded automation\".",
       "clipplayer-auto-override-{n}":
         "Automation override dot — lights when a control this player automates is being grabbed live (screen drag / MIDI CC / Electra), which SUSPENDS that param's automation playback (live wins) until you physically RELEASE the control (pointer-up, or a short idle after the last MIDI/Electra move) — NOT the loop wrap, so a gesture spanning a loop is never interrupted. On release the param glides back to the envelope; the instant you grab it the queued automation tail is truncated so it doesn't fight your hand. Click the dot to re-enable every suspended param at once.",
     },
@@ -194,6 +203,7 @@ export const clipplayerDef: AudioModuleDef = {
     { id: 'clipplayer-cell', label: 'Piano-roll note cells', kind: 'cell', testidPrefix: 'clipplayer-cell' },
     { id: 'clipplayer-auto-arm', label: 'Automation record arm', kind: 'other', testidPrefix: 'clipplayer-auto-arm' },
     { id: 'clipplayer-auto-assigned', label: 'Per-lane automation assigned count', kind: 'other', testidPrefix: 'clipplayer-auto-assigned' },
+    { id: 'clipplayer-clear-auto', label: 'Per-clip automation clear', kind: 'other', testidPrefix: 'clipplayer-clear-auto' },
     { id: 'clipplayer-auto-override', label: 'Automation override indicator', kind: 'other', testidPrefix: 'clipplayer-auto-override' },
   ],
 
@@ -349,7 +359,15 @@ export const clipplayerDef: AudioModuleDef = {
       const d = liveData();
       const oldClip = readClip(d, clipIndex(outgoingSlot, L));
       if (oldClip?.kind !== 'note') return;
-      const tracks = autoTracksAt(clipIndex(outgoingSlot, L));
+      let tracks = autoTracksAt(clipIndex(outgoingSlot, L));
+      if (tracks.length === 0) return;
+      // SINGLE-DRIVER ownership: hold ONLY the keys THIS lane currently owns —
+      // a key another lane owns was never driven by L (shadowed), so pinning it
+      // here would stomp the owning lane's live automation. (Ownership is
+      // computed with L still active — holdLaneAutomation runs BEFORE
+      // ln.active flips.)
+      const ownersNow = computeAutoOwners(d);
+      tracks = tracks.filter((t) => ownersNow.get(automationTargetKey(t.target)) === L);
       if (tracks.length === 0) return;
       // Automation length is LINKED to the note clip in this phase.
       const len = Math.max(1, oldClip.lengthSteps);
@@ -362,16 +380,24 @@ export const clipplayerDef: AudioModuleDef = {
         const frac = laneFracStep(L, laneDur);
         stopStep = quantizeStopStep(frac >= 0 ? frac : lanes[L].stepIndex, len);
       }
-      // Params the incoming clip's sibling automation is about to drive:
-      // boundary → skip (its glide takes over at the seam); immediate →
-      // truncate-only.
-      let skipKeys: Set<string> | undefined;
-      let truncateKeys: Set<string> | undefined;
+      // Params another writer takes over at this seam get no resting pin:
+      //  - the INCOMING clip's own automation (this lane), and
+      //  - keys REPOSSESSED by another still-active carrier lane once L stops
+      //    (ownership recomputed excluding L).
+      // Boundary → skip (the successor's glide/steps take over at/after the
+      // seam); immediate → truncate-only (kill L's ~200 ms tail now).
+      const shared = new Set<string>();
       const incomingTracks =
         incomingSlot !== null ? autoTracksAt(clipIndex(incomingSlot, L)) : [];
-      if (incomingTracks.length) {
-        const shared = new Set<string>();
-        for (const t of incomingTracks) shared.add(automationTargetKey(t.target));
+      for (const t of incomingTracks) shared.add(automationTargetKey(t.target));
+      const ownersAfter = computeAutoOwners(d, L);
+      for (const t of tracks) {
+        const k = automationTargetKey(t.target);
+        if (ownersAfter.has(k)) shared.add(k); // another lane repossesses it
+      }
+      let skipKeys: Set<string> | undefined;
+      let truncateKeys: Set<string> | undefined;
+      if (shared.size) {
         if (switchAt !== null) skipKeys = shared;
         else truncateKeys = shared;
       }
@@ -425,6 +451,29 @@ export const clipplayerDef: AudioModuleDef = {
     // unambiguously mean LEGACY for every later reader.
     writeData((d) => {
       migrateClipPlayerData(d, coerceClipRecord);
+      // CONTAINER INIT (LWW-race hardening): create the `auto` + `autoAssign`
+      // containers HERE — the deterministic per-node load seam — never lazily
+      // inside the racy commit/assign paths, where a concurrent creation would
+      // last-writer-wins a peer's whole subtree. At load both peers write an
+      // EMPTY map (harmless either way); once present, no writer ever replaces
+      // the container. (The commit-side shell creation remains as a fallback
+      // for clips launched mid-arm.)
+      if (!d.auto || typeof d.auto !== 'object') d.auto = {};
+      if (!d.autoAssign || typeof d.autoAssign !== 'object') d.autoAssign = {};
+      // ZOMBIE SWEEP (clean break, made true): the retired stamped
+      // `kind:'automation'` clips coerce to null on read but their RAW values
+      // linger in `clips` — raw-truthiness readers (padState 'loaded', the
+      // materialize gates) see ghost cells. Delete them, plus the retired
+      // `automation.clip` pointer field. Idempotent + one small write only
+      // when a zombie exists.
+      if (d.clips) {
+        for (const k of Object.keys(d.clips)) {
+          const v = d.clips[k] as { kind?: unknown } | null | undefined;
+          if (v && typeof v === 'object' && v.kind === 'automation') delete d.clips[k];
+        }
+      }
+      const legacyAuto = d.automation as { clip?: unknown } | undefined;
+      if (legacyAuto && 'clip' in legacyAuto) delete legacyAuto.clip;
     });
 
     // ─────────────────────── PER-CLIP AUTOMATION ────────────────────────────
@@ -451,8 +500,13 @@ export const clipplayerDef: AudioModuleDef = {
     // on raw-reference change. Test harnesses whose mocked store/ydoc has no
     // `on` seam simply skip caching (correctness first, still coerce-per-call).
     const EMPTY_TRACKS: AutomationTrack[] = [];
+    const EMPTY_KEYS: ReadonlySet<string> = new Set();
+    const EMPTY_OWNERS: Map<string, number> = new Map();
     let autoRev = 0;
-    const autoViewCache = new Map<number, { rev: number; src: unknown; view: AutomationTrack[] }>();
+    const autoViewCache = new Map<
+      number,
+      { rev: number; src: unknown; view: AutomationTrack[]; keys: ReadonlySet<string> }
+    >();
     const bumpAutoRev = (): void => {
       autoRev++;
     };
@@ -462,19 +516,58 @@ export const clipplayerDef: AudioModuleDef = {
     };
     const autoCacheEnabled = typeof ydocEvents.on === 'function';
     if (autoCacheEnabled) ydocEvents.on!('update', bumpAutoRev);
-    /** The coerced RUNTIME track views of `auto[idx]` (cached; [] when none). */
-    function autoTracksAt(idx: number): AutomationTrack[] {
+    function readAutoCache(idx: number) {
       const raw = (liveData() as { auto?: Record<string, unknown> } | undefined)?.auto?.[
         String(idx)
       ];
-      if (!raw) return EMPTY_TRACKS;
+      if (!raw) return null;
       if (autoCacheEnabled) {
         const hit = autoViewCache.get(idx);
-        if (hit && hit.rev === autoRev && hit.src === raw) return hit.view;
+        if (hit && hit.rev === autoRev && hit.src === raw) return hit;
       }
       const view = autoTrackViews(coerceAutoClipRecord(raw));
-      if (autoCacheEnabled) autoViewCache.set(idx, { rev: autoRev, src: raw, view });
-      return view;
+      const entry = {
+        rev: autoRev,
+        src: raw as unknown,
+        view,
+        keys: new Set(view.map((t) => automationTargetKey(t.target))) as ReadonlySet<string>,
+      };
+      if (autoCacheEnabled) autoViewCache.set(idx, entry);
+      return entry;
+    }
+    /** The coerced RUNTIME track views of `auto[idx]` (cached; [] when none). */
+    function autoTracksAt(idx: number): AutomationTrack[] {
+      return readAutoCache(idx)?.view ?? EMPTY_TRACKS;
+    }
+    /** The track-KEY set of `auto[idx]` (same cache entry; empty set when none). */
+    function autoKeysAt(idx: number): ReadonlySet<string> {
+      return readAutoCache(idx)?.keys ?? EMPTY_KEYS;
+    }
+
+    // ── SINGLE-DRIVER playback ownership (cross-lane rule) ──
+    // For a given targetKey at most ONE lane drives it per tick: the ASSIGNED
+    // lane when it's an active carrier, else the lowest active carrier
+    // (autoPlaybackOwners). Recomputed per tick (cheap: 8 set refs) and on
+    // demand at the stop/switch seams. `excludeLane` models "after lane L
+    // stops" for the hold seam (who repossesses L's keys).
+    function computeAutoOwners(
+      d: ClipPlayerData | undefined,
+      excludeLane: number | null = null,
+    ): Map<string, number> {
+      const carriers: (ReadonlySet<string> | null)[] = new Array(LANES).fill(null);
+      let any = false;
+      for (let L = 0; L < LANES; L++) {
+        if (L === excludeLane) continue;
+        const ln = lanes[L];
+        if (ln.active === null) continue;
+        const keys = autoKeysAt(clipIndex(ln.active, L));
+        if (keys.size) {
+          carriers[L] = keys;
+          any = true;
+        }
+      }
+      if (!any) return EMPTY_OWNERS;
+      return autoPlaybackOwners(coerceAutoAssign(d?.autoAssign), carriers);
     }
 
     /** The LIVE target node for an automation track's (nodeId,paramId). */
@@ -536,16 +629,30 @@ export const clipplayerDef: AudioModuleDef = {
       },
       // RECORD commit — write ONLY the touched track keys into
       // `d.auto[k].tracks` (plain event arrays, never a live Y child), all in
-      // ONE LOCAL_ORIGIN transaction so a take-pass is a single undo unit and a
-      // single sync update. A peer's note edit lives at `clips[k]` — a DISJOINT
-      // key — so a commit can NEVER last-writer-wins a note change (the
-      // note-clobber the sibling storage exists to prevent). New keys respect
-      // MAX_AUTOMATION_TRACKS; an existing track's `interp` survives.
+      // ONE transaction (a single sync update per take-pass). A peer's note
+      // edit lives at `clips[k]` — a DISJOINT key — so a commit can NEVER
+      // last-writer-wins a note change (the note-clobber the sibling storage
+      // exists to prevent). New keys respect MAX_AUTOMATION_TRACKS; an existing
+      // track's `interp` survives.
+      //
+      // NON-UNDOABLE by design: continuous overdub commits once per wrap, so
+      // tracking them under LOCAL_ORIGIN would flood the undo stack (Cmd-Z
+      // regressing one wrap at a time — worse than not capturing at all, and
+      // take-scoped capture isn't cheap with Y.UndoManager's captureTimeout
+      // merging). A bad take is removed via the explicit CLEAR affordances
+      // (control-menu "Clear recorded automation" / the editor's CLR AUTO),
+      // which ARE undoable.
+      //
+      // GHOST-GUARD (lifecycle): a pass latched to a clip that has since been
+      // deleted / pasted over with a non-note value must NOT resurrect a
+      // dangling auto[k] — skip the commit when clips[k] is no longer a note
+      // clip.
       commit(clipIdx: number, updates: AutoTrackUpdate[]): void {
         if (updates.length === 0) return;
+        if (readClip(liveData(), clipIdx)?.kind !== 'note') return; // latched clip gone
         const tx =
           typeof (ydoc as { transact?: unknown }).transact === 'function'
-            ? (fn: () => void) => ydoc.transact(fn, LOCAL_ORIGIN)
+            ? (fn: () => void) => ydoc.transact(fn, AUTOMATION_COMMIT_ORIGIN)
             : (fn: () => void) => fn();
         tx(() => {
           writeData((d) => {
@@ -1100,6 +1207,12 @@ export const clipplayerDef: AudioModuleDef = {
         // the record/countdown block below reuses it (no re-read/re-coerce).
         const laneClips: (ClipRecord | null)[] = new Array<ClipRecord | null>(LANES).fill(null);
 
+        // SINGLE-DRIVER ownership for this tick (cross-lane rule): a targetKey
+        // carried by several lanes' clips is driven by exactly ONE of them —
+        // the assigned lane when it carries it, else the lowest active carrier.
+        // Recomputed once per tick from the cached key sets (cheap).
+        const autoOwners = computeAutoOwners(d0);
+
         for (let L = 0; L < LANES; L++) {
           const ln = lanes[L];
           if (ln.active === null) {
@@ -1157,10 +1270,14 @@ export const clipplayerDef: AudioModuleDef = {
                 // the Firefox fallback, and it NEVER cancels (a future cancel
                 // would retro-delete the outgoing clip's final in-flight ramp).
                 // Wrap seams need no anchor — the previous loop's last ramp
-                // already lands exactly at emitAt.
+                // already lands exactly at emitAt. Only OWNED, un-grabbed params
+                // are anchored (a shadowed lane must not stomp the owner; a hand
+                // must not be fought — the same gates playbackStep applies).
                 const engine = getActiveEngine();
                 if (engine) {
                   for (const track of laneAuto) {
+                    if (autoOwners.get(automationTargetKey(track.target)) !== L) continue;
+                    if (controller.isSuspended(track.target)) continue; // a hand owns it
                     const node = targetNode(track.target);
                     if (node) engine.holdParam(node, track.target.paramId, emitAt);
                   }
@@ -1168,6 +1285,8 @@ export const clipplayerDef: AudioModuleDef = {
               }
               const seam = isSeam ? SEAM_GLIDE_S : 0;
               for (const track of laneAuto) {
+                // SINGLE DRIVER: only the owning lane drives this key this tick.
+                if (autoOwners.get(automationTargetKey(track.target)) !== L) continue;
                 controller.playbackStep(track, ln.stepIndex, laneDur, emitAt, seam);
               }
               ln.autoStarted = true;
@@ -1240,8 +1359,11 @@ export const clipplayerDef: AudioModuleDef = {
           // knob with the CURRENT interpolated envelope value every tick
           // (~40fps) — display-only (no audio), so a slow envelope's knob follows
           // smoothly instead of snapping once per step. CPU-bounded to the
-          // clip's tracks (≤16); skips touched tracks (their live value shows).
-          const tracks = autoTracksAt(clipIdx);
+          // clip's tracks (≤16); skips touched tracks (their live value shows)
+          // and tracks another lane OWNS (single driver — display mirrors audio).
+          const tracks = autoTracksAt(clipIdx).filter(
+            (t) => autoOwners.get(automationTargetKey(t.target)) === L,
+          );
           if (tracks.length) {
             const engine = getActiveEngine();
             if (engine) {

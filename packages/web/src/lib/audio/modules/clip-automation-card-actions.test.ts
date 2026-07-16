@@ -16,13 +16,17 @@
 //   • the chip-row source (autoAssignCounts) mirrors the map exactly.
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { patch, ydoc } from '$lib/graph/store';
+import * as Y from 'yjs';
+import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
 import {
   assignAutomationLane,
   removeAutomationAssignment,
   automationAssignmentFor,
   pruneAutoAssignDangling,
   listClipPlayers,
+  hasRecordedAutomation,
+  clearRecordedAutomation,
+  clearClipAutomation,
 } from '$lib/graph/automation-assign';
 import {
   coerceAutoAssign,
@@ -30,6 +34,9 @@ import {
   assignedLaneOf,
   isAutomationRecorder,
   automationTargetKey,
+  ensureArmAutoShells,
+  clipIndex,
+  type AutoClipRecord,
   type ClipPlayerData,
   type AutomationTarget,
 } from './clip-types';
@@ -154,5 +161,100 @@ describe('clip-automation card/menu actions (real Y.Doc, shared assign seam)', (
       removeAutomationAssignment(B);
     }).not.toThrow();
     expect(coerceAutoAssign(cpData().autoAssign)).toEqual({});
+  });
+});
+
+// ── DELETE affordances (envelope-belongs-to-the-clip) + arm-time shells ──────
+
+/** Seed a note clip + a recorded auto record at (slot, lane) on CP. */
+function seedRecorded(slot: number, lane: number, targets: AutomationTarget[], id = CP) {
+  const live = patch.nodes[id]!;
+  if (!live.data) live.data = {};
+  const d = live.data as ClipPlayerData;
+  if (!d.clips) d.clips = {};
+  if (!d.auto) d.auto = {};
+  const k = String(clipIndex(slot, lane));
+  d.clips[k] = { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true };
+  const tracks: AutoClipRecord['tracks'] = {};
+  for (const t of targets) tracks[automationTargetKey(t)] = { events: [{ step: 0, value: 0.5 }] };
+  d.auto[k] = { tracks };
+}
+
+describe('clip-automation DELETE affordances (real Y.Doc, shared seam)', () => {
+  it('hasRecordedAutomation finds a recorded track anywhere', () => {
+    expect(hasRecordedAutomation(patch.nodes, A)).toBe(false);
+    seedRecorded(0, 2, [A]);
+    expect(hasRecordedAutomation(patch.nodes, A)).toBe(true);
+    expect(hasRecordedAutomation(patch.nodes, B)).toBe(false);
+  });
+
+  it('clearRecordedAutomation (ASSIGNED): wipes the key from its assigned LANE only; empty shells deleted', () => {
+    // A recorded in lane 2 (two clips) AND lane 4 (one clip); assigned to lane 2.
+    seedRecorded(0, 2, [A, B]);
+    seedRecorded(1, 2, [A]);
+    seedRecorded(0, 4, [A]);
+    assignAutomationLane(CP, A, 2);
+    const removed = clearRecordedAutomation(A);
+    expect(removed).toBe(2); // both lane-2 clips
+    const auto = cpData().auto!;
+    const keyA = automationTargetKey(A);
+    // Lane 2 slot 0: A gone, B (other track) kept.
+    expect((auto[String(clipIndex(0, 2))] as AutoClipRecord).tracks[keyA]).toBeUndefined();
+    expect((auto[String(clipIndex(0, 2))] as AutoClipRecord).tracks[automationTargetKey(B)]).toBeTruthy();
+    // Lane 2 slot 1 held ONLY A → the whole record is deleted (no empty shell).
+    expect(auto[String(clipIndex(1, 2))]).toBeUndefined();
+    // Lane 4 (NOT the assigned lane) keeps its recording.
+    expect((auto[String(clipIndex(0, 4))] as AutoClipRecord).tracks[keyA]).toBeTruthy();
+  });
+
+  it('clearRecordedAutomation (UNASSIGNED): wipes the key from EVERY clip', () => {
+    seedRecorded(0, 2, [A]);
+    seedRecorded(0, 4, [A]);
+    expect(clearRecordedAutomation(A)).toBe(2);
+    expect(hasRecordedAutomation(patch.nodes, A)).toBe(false);
+    expect(clearRecordedAutomation(A), 'idempotent — nothing left').toBe(0);
+  });
+
+  it('clearRecordedAutomation is ONE undoable step (LOCAL_ORIGIN); undo restores the take', () => {
+    seedRecorded(0, 2, [A]);
+    seedRecorded(1, 2, [A]);
+    assignAutomationLane(CP, A, 2);
+    const undo = new Y.UndoManager(ydoc.getMap('nodes'), {
+      trackedOrigins: new Set([LOCAL_ORIGIN]),
+      captureTimeout: 0, // each transaction = its own item (test isolation)
+    });
+    clearRecordedAutomation(A);
+    expect(undo.undoStack.length).toBe(1);
+    expect(hasRecordedAutomation(patch.nodes, A)).toBe(false);
+    undo.undo();
+    expect(hasRecordedAutomation(patch.nodes, A), 'undo restores the envelopes').toBe(true);
+    undo.destroy();
+  });
+
+  it('clearClipAutomation deletes ONE clip’s whole record (keeps the notes) — undoable', () => {
+    seedRecorded(0, 2, [A, B]);
+    const idx = clipIndex(0, 2);
+    expect(clearClipAutomation(CP, idx)).toBe(true);
+    expect(cpData().auto?.[String(idx)]).toBeUndefined();
+    expect(cpData().clips?.[String(idx)], 'notes kept').toBeTruthy();
+    expect(clearClipAutomation(CP, idx), 'no-op when already gone').toBe(false);
+  });
+});
+
+describe('ensureArmAutoShells via the ARM mirror (container-LWW hardening)', () => {
+  it('arming pre-creates auto[k] shells for playing lanes with assigned params', () => {
+    const live = patch.nodes[CP]!;
+    if (!live.data) live.data = {};
+    const d = live.data as ClipPlayerData;
+    d.clips = { [String(clipIndex(0, 1))]: { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true } };
+    d.playing = [null, 0, null, null, null, null, null, null];
+    assignAutomationLane(CP, A, 1);
+    // The card's toggleAutoArm (arming branch): arm + recorderId + shells.
+    const data = cpData();
+    if (!data.automation) (live.data as ClipPlayerData).automation = {};
+    (live.data as ClipPlayerData).automation!.arm = true;
+    (live.data as ClipPlayerData).automation!.recorderId = ydoc.clientID;
+    ensureArmAutoShells(live.data as ClipPlayerData);
+    expect(cpData().auto?.[String(clipIndex(0, 1))]).toEqual({ tracks: {} });
   });
 });

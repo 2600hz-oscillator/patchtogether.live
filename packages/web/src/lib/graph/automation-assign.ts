@@ -22,6 +22,7 @@ import {
   automationTargetKey,
   parseAutomationTargetKey,
   coerceAutoAssign,
+  laneOf,
   CLIP_LANES,
   type AutomationTarget,
   type ClipPlayerData,
@@ -99,6 +100,85 @@ export function removeAutomationAssignment(target: AutomationTarget): void {
       if (d?.autoAssign && key in d.autoAssign) delete d.autoAssign[key];
     }
   }, LOCAL_ORIGIN);
+}
+
+/** The raw `auto` map of a clip-player node (untyped read). */
+function autoMapOf(nid: string): Record<string, { tracks?: Record<string, unknown> } | null> | undefined {
+  const d = (patch.nodes[nid] as ModuleNode | undefined)?.data as ClipPlayerData | undefined;
+  return d?.auto as Record<string, { tracks?: Record<string, unknown> } | null> | undefined;
+}
+
+/** True when `target` has RECORDED envelopes in ANY clip of any player — the
+ *  "Clear recorded automation" menu item shows only when there is something to
+ *  clear. PURE read. */
+export function hasRecordedAutomation(
+  nodes: Record<string, { type?: string; data?: unknown } | undefined>,
+  target: AutomationTarget,
+): boolean {
+  const key = automationTargetKey(target);
+  for (const nid of listClipPlayers(nodes)) {
+    const auto = (nodes[nid]?.data as ClipPlayerData | undefined)?.auto;
+    if (!auto || typeof auto !== 'object') continue;
+    for (const rec of Object.values(auto)) {
+      const tracks = (rec as { tracks?: Record<string, unknown> } | null)?.tracks;
+      if (tracks && typeof tracks === 'object' && key in tracks) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * CLEAR `target`'s RECORDED envelopes — the DELETE affordance that pairs with
+ * "Remove automation assignment" (remove = stops future recording; CLEAR =
+ * deletes what was recorded). Scope (the owner's lane model): when the target
+ * is ASSIGNED, delete its track from every clip in its assigned lane on that
+ * player; when UNASSIGNED, delete it from EVERY clip on every player (no lane
+ * to scope by). A record left with zero tracks is deleted too (no empty-shell
+ * litter). ONE LOCAL_ORIGIN transaction (a single undo step). Returns the
+ * number of tracks removed.
+ */
+export function clearRecordedAutomation(target: AutomationTarget): number {
+  const key = automationTargetKey(target);
+  const holder = automationAssignmentFor(patch.nodes, target);
+  // Collect (player, clipKey) hits first so the transaction only opens when
+  // there is something to delete.
+  const hits: { nid: string; clipKey: string }[] = [];
+  for (const nid of listClipPlayers(patch.nodes)) {
+    if (holder && nid !== holder.nodeId) continue; // assigned → only its player
+    const auto = autoMapOf(nid);
+    if (!auto) continue;
+    for (const [clipKey, rec] of Object.entries(auto)) {
+      if (holder && laneOf(Number(clipKey)) !== holder.lane) continue; // assigned → only its lane
+      const tracks = rec?.tracks;
+      if (tracks && typeof tracks === 'object' && key in tracks) hits.push({ nid, clipKey });
+    }
+  }
+  if (hits.length === 0) return 0;
+  ydoc.transact(() => {
+    for (const { nid, clipKey } of hits) {
+      const auto = autoMapOf(nid);
+      const rec = auto?.[clipKey];
+      const tracks = rec?.tracks;
+      if (!auto || !tracks || !(key in tracks)) continue;
+      delete tracks[key];
+      if (Object.keys(tracks).length === 0) delete auto[clipKey]; // no empty shells
+    }
+  }, LOCAL_ORIGIN);
+  return hits.length;
+}
+
+/** Delete ONE clip's whole automation record (`auto[clipIndex]`) — the card
+ *  editor's per-clip "CLR AUTO". ONE LOCAL_ORIGIN transaction (undoable).
+ *  Returns true when something was deleted. */
+export function clearClipAutomation(playerId: string, clipIdx: number): boolean {
+  const auto = autoMapOf(playerId);
+  const k = String(clipIdx);
+  if (!auto || auto[k] === undefined || auto[k] === null) return false;
+  ydoc.transact(() => {
+    const live = autoMapOf(playerId);
+    if (live && live[k] !== undefined) delete live[k];
+  }, LOCAL_ORIGIN);
+  return true;
 }
 
 /** Drop every assignment on player `playerId` whose target MODULE no longer

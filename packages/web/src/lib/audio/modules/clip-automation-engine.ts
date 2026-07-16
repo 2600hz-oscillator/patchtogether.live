@@ -98,7 +98,8 @@ export function stepRampPoints(
   if (interp === 'linear' && seamGlideS > 0) {
     let earliestSub = laneDur; // next-step boundary is the hard ceiling
     for (const e of events) {
-      if (e.step > stepIndex && e.step < stepIndex + 1) {
+      if (e.step >= stepIndex + 1) break; // step-sorted → nothing later is in-window
+      if (e.step > stepIndex) {
         earliestSub = Math.min(earliestSub, (e.step - stepIndex) * laneDur);
       }
     }
@@ -108,7 +109,8 @@ export function stepRampPoints(
   if (interp === 'hold') {
     // Step to each breakpoint inside (stepIndex, stepIndex+1] at its time.
     for (const e of events) {
-      if (e.step > stepIndex && e.step <= stepIndex + 1) {
+      if (e.step > stepIndex + 1) break; // step-sorted → done with this window
+      if (e.step > stepIndex) {
         out.push({ value: e.value, at: emitAt + (e.step - stepIndex) * laneDur, ramp: false });
       }
     }
@@ -116,7 +118,8 @@ export function stepRampPoints(
   }
   // linear: ramp through each sub-step breakpoint, then to the next step's value.
   for (const e of events) {
-    if (e.step > stepIndex && e.step < stepIndex + 1) {
+    if (e.step >= stepIndex + 1) break; // step-sorted → done with this window
+    if (e.step > stepIndex) {
       out.push({ value: e.value, at: emitAt + (e.step - stepIndex) * laneDur, ramp: true });
     }
   }

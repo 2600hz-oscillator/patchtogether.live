@@ -481,11 +481,74 @@ export function laneAssignedTargets(
 }
 
 /** Per-lane assigned-param COUNTS (length CLIP_LANES) — the card's chip row
- *  renders exactly this, so the readout can never disagree with `autoAssign`. */
-export function autoAssignCounts(data: { autoAssign?: unknown } | undefined): number[] {
+ *  renders exactly this, so the readout can never disagree with `autoAssign`.
+ *  `exists` (optional) filters out DANGLING targets (assigned module deleted)
+ *  so the chips never count ghosts while the prune catches up. */
+export function autoAssignCounts(
+  data: { autoAssign?: unknown } | undefined,
+  exists?: (target: AutomationTarget) => boolean,
+): number[] {
   const out = new Array<number>(CLIP_LANES).fill(0);
-  for (const lane of Object.values(coerceAutoAssign(data?.autoAssign))) out[lane]!++;
+  for (const [key, lane] of Object.entries(coerceAutoAssign(data?.autoAssign))) {
+    if (exists) {
+      const target = parseAutomationTargetKey(key);
+      if (!target || !exists(target)) continue;
+    }
+    out[lane]!++;
+  }
   return out;
+}
+
+/**
+ * SINGLE-DRIVER playback ownership (per-clip automation, cross-lane rule): for
+ * each targetKey carried by any ACTIVE lane's automation, the ONE lane that may
+ * drive it this tick — the ASSIGNED lane when it is an active carrier, else the
+ * LOWEST active carrier lane. Two clips in different lanes carrying the same
+ * param therefore never co-drive (no interleaved ramp fights); assignment
+ * resolves the tie the owner's way. PURE.
+ *
+ * `carriers[lane]` = the track-key set of that lane's ACTIVE clip's automation
+ * (null/undefined = lane inactive or carries none).
+ */
+export function autoPlaybackOwners(
+  assign: Record<string, number>,
+  carriers: ReadonlyArray<ReadonlySet<string> | null | undefined>,
+): Map<string, number> {
+  const owners = new Map<string, number>();
+  for (let lane = 0; lane < carriers.length; lane++) {
+    const keys = carriers[lane];
+    if (!keys) continue;
+    for (const k of keys) {
+      if (!owners.has(k)) owners.set(k, lane); // lowest active carrier
+    }
+  }
+  for (const [k, lane] of Object.entries(assign)) {
+    if (carriers[lane]?.has(k)) owners.set(k, lane); // assigned lane WINS when carrying
+  }
+  return owners;
+}
+
+/**
+ * ARM-time shell pre-creation (container-LWW hardening): ensure `auto[k]`
+ * exists for every lane with ≥1 assigned param and a PLAYING note clip, so the
+ * recorder's per-key commits land in a container created OUTSIDE the racy
+ * commit path (a peer's concurrent write to a sibling key can then never be
+ * clobbered by a container-creation last-writer-wins). Mutates `d` IN PLACE —
+ * call inside the arming write's transaction. (Clips launched later while
+ * armed still fall back to the commit-side creation.)
+ */
+export function ensureArmAutoShells(d: ClipPlayerData): void {
+  const byLane = laneAssignedTargets(d);
+  for (let lane = 0; lane < CLIP_LANES; lane++) {
+    if (byLane[lane]!.length === 0) continue;
+    const slot = lanePlaying(d, lane);
+    if (slot === null) continue;
+    const k = String(clipIndex(slot, lane));
+    const clip = d.clips?.[k] as { kind?: unknown } | null | undefined;
+    if (!clip || clip.kind !== 'note') continue;
+    if (!d.auto) d.auto = {};
+    if (!d.auto[k] || typeof d.auto[k] !== 'object') d.auto[k] = { tracks: {} };
+  }
 }
 
 /** DUAL-LAUNCHPAD KEYS note-record state (see ClipPlayerData.noteRec). */
@@ -811,6 +874,56 @@ export function autoTrackViews(rec: AutoClipRecord | null | undefined): Automati
   return out;
 }
 
+/** Plain deep-clone of an AutoClipRecord (Y-severing — safe to write into the
+ *  store, and re-cloned per paste so one buffer never shares refs). Null in,
+ *  null out; a record with zero tracks also clones to null (nothing to carry). */
+export function plainCloneAutoClip(rec: AutoClipRecord | null | undefined): AutoClipRecord | null {
+  if (!rec || !rec.tracks) return null;
+  const tracks: Record<string, AutoTrack> = {};
+  let any = false;
+  for (const [key, tr] of Object.entries(rec.tracks)) {
+    const t: AutoTrack = { events: (tr.events ?? []).map((e) => ({ step: e.step, value: e.value })) };
+    if (tr.interp === 'linear' || tr.interp === 'hold') t.interp = tr.interp;
+    tracks[key] = t;
+    any = true;
+  }
+  return any ? { tracks } : null;
+}
+
+/** Mirror an automation record in TIME for PASTE-REVERSE (the envelope belongs
+ *  to the clip, so a time-reversed paste carries a time-reversed envelope):
+ *  each event's step → lengthSteps − step (clamped ≥ 0), re-sorted. PURE —
+ *  returns a NEW plain record. */
+export function reverseAutoClipRecord(
+  rec: AutoClipRecord,
+  lengthSteps: number,
+): AutoClipRecord {
+  const len = Math.max(1, lengthSteps);
+  const tracks: Record<string, AutoTrack> = {};
+  for (const [key, tr] of Object.entries(rec.tracks)) {
+    const t: AutoTrack = {
+      events: (tr.events ?? [])
+        .map((e) => ({ step: Math.max(0, len - e.step), value: e.value }))
+        .sort((a, b) => a.step - b.step),
+    };
+    if (tr.interp === 'linear' || tr.interp === 'hold') t.interp = tr.interp;
+    tracks[key] = t;
+  }
+  return { tracks };
+}
+
+/** CHEAP carrier probe: does a raw `auto[k]` value hold ≥1 track key? (No full
+ *  coerce — the card's per-cell automation dot reads this per render.) PURE. */
+export function autoClipHasTracks(raw: unknown): boolean {
+  if (!raw || typeof raw !== 'object') return false;
+  const tracks = (raw as { tracks?: unknown }).tracks;
+  if (!tracks || typeof tracks !== 'object') return false;
+  for (const key of Object.keys(tracks as Record<string, unknown>)) {
+    if (parseAutomationTargetKey(key)) return true;
+  }
+  return false;
+}
+
 /** True when two targets reference the same (nodeId, paramId) control. */
 export function sameAutomationTarget(a: AutomationTarget, b: AutomationTarget): boolean {
   return a.nodeId === b.nodeId && a.paramId === b.paramId;
@@ -944,10 +1057,13 @@ export type CopyBufferKind = 'clip' | 'scene';
 export type CopyTargetKind = 'clip' | 'scene';
 
 /** The TYPED copy buffer: one clip, or a whole scene (all CLIP_LANES lanes'
- *  clips at a slot; an empty lane is `null`). Held as PLAIN deep-clones. */
+ *  clips at a slot; an empty lane is `null`). Held as PLAIN deep-clones. The
+ *  ENVELOPE BELONGS TO THE CLIP: the buffer also carries each source clip's
+ *  sibling automation (`auto`/`autos`, null = the source carried none), so a
+ *  paste moves the automation WITH the notes. */
 export type CopyBuffer =
-  | { kind: 'clip'; clip: NoteClipRecord }
-  | { kind: 'scene'; clips: (ClipRecord | null)[] };
+  | { kind: 'clip'; clip: NoteClipRecord; auto: AutoClipRecord | null }
+  | { kind: 'scene'; clips: (ClipRecord | null)[]; autos: (AutoClipRecord | null)[] };
 
 /** Paste TYPE-GATE (PURE): a paste applies ONLY when the buffer kind matches the
  *  target kind — scene→scene + clip→clip apply; scene→clip + clip→scene are
@@ -971,21 +1087,43 @@ export function readScene(
   return out;
 }
 
+/** COPY a scene's SIBLING AUTOMATION (all CLIP_LANES lanes' `auto[k]` records at
+ *  `slot`) as PLAIN coerced clones — index i = lane i's automation or null when
+ *  that lane's clip carries none. Paired with `readScene` when filling the
+ *  typed scene buffer (the envelope belongs to the clip). PURE. */
+export function readSceneAutos(
+  data: { auto?: Record<string, unknown> } | undefined,
+  slot: number,
+): (AutoClipRecord | null)[] {
+  const out: (AutoClipRecord | null)[] = new Array(CLIP_LANES).fill(null);
+  for (let lane = 0; lane < CLIP_LANES; lane++) {
+    out[lane] = readAutoClip(data, clipIndex(slot, lane));
+  }
+  return out;
+}
+
 /** Plan a SCENE paste (FULL REPLACE) into `targetSlot`: for EACH lane 0..7, the
- *  flat clip index + the PLAIN-cloned value to write — `null` MEANS delete that
- *  lane's key so a lane the source scene left empty EMPTIES the target lane. PURE.
- *  The caller applies each entry in ONE origin-tagged transaction (set non-null,
- *  delete null) → a single undo step. Re-clones so pasting one buffer to many
- *  targets never shares references. */
+ *  flat clip index + the PLAIN-cloned clip to write — `null` MEANS delete that
+ *  lane's key so a lane the source scene left empty EMPTIES the target lane —
+ *  PLUS the clip's sibling `auto` record (`null` = delete the target's stale
+ *  automation: the envelope belongs to the clip, so replacing/emptying the clip
+ *  replaces/empties its automation too). PURE. The caller applies each entry in
+ *  ONE origin-tagged transaction (set non-null, delete null, for BOTH maps) → a
+ *  single undo step. Re-clones so pasting one buffer to many targets never
+ *  shares references. */
 export function sceneWritePlan(
   targetSlot: number,
   sceneClips: (ClipRecord | null)[],
-): { index: number; value: ClipRecord | null }[] {
-  const plan: { index: number; value: ClipRecord | null }[] = [];
+  sceneAutos?: (AutoClipRecord | null)[],
+): { index: number; value: ClipRecord | null; auto: AutoClipRecord | null }[] {
+  const plan: { index: number; value: ClipRecord | null; auto: AutoClipRecord | null }[] = [];
   for (let lane = 0; lane < CLIP_LANES; lane++) {
+    const value = plainCloneClip(sceneClips[lane] ?? null);
     plan.push({
       index: clipIndex(targetSlot, lane),
-      value: plainCloneClip(sceneClips[lane] ?? null),
+      value,
+      // No clip ⇒ no automation either (delete both target keys).
+      auto: value === null ? null : plainCloneAutoClip(sceneAutos?.[lane] ?? null),
     });
   }
   return plan;

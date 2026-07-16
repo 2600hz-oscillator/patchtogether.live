@@ -249,13 +249,17 @@ export class AutomationController {
     this.laneRec.clear();
     this.recArmed = false;
     // Manual stop → the take is done, so the just-recorded automation should PLAY
-    // BACK: clear any lingering touch-suspensions so no param stays frozen at the
-    // value you released it on (the "I stopped and it's stuck" confusion). Each
-    // resumes with a glide (the release-resume de-zipper), not a hard step.
-    for (const k of this.suspended) this.resumeGlide.add(k);
-    for (const k of this.grabbed.keys()) this.resumeGlide.add(k);
-    this.suspended.clear();
-    this.grabbed.clear();
+    // BACK: clear lingering SUSPENDED-only entries so no param stays frozen at
+    // the value it was released on (the "I stopped and it's stuck" confusion),
+    // each resuming with a glide. A param a hand is STILL PHYSICALLY HOLDING
+    // (grabbed) keeps its override — per the release-on-touch-END policy, disarm
+    // must not yank a live gesture; its own pointer-up/CC-idle release ends it.
+    for (const k of this.suspended) {
+      if (!this.grabbed.has(k)) {
+        this.suspended.delete(k);
+        this.resumeGlide.add(k);
+      }
+    }
   }
   get armed(): boolean {
     return this.recArmed;
@@ -408,6 +412,17 @@ export class AutomationController {
       lr = { window: new QuantizedRecordWindow(), pass: null, latchedClipIndex: clipIdx, passLen: len, passLastStep: 0 };
       this.laneRec.set(lane, lr);
     }
+
+    // PUNCH OUT AT THE SWAP: the lane's active clip changed mid-pass (a queued
+    // launch applied — possibly to a SHORTER clip, whose clamped playhead would
+    // otherwise read as a spurious early wrap and commit a garbage full-window
+    // pass). Commit the in-flight pass PARTIAL ([0, lastSampledStep]) into the
+    // LATCHED outgoing clip NOW, and reset the window so the next pass punches
+    // in cleanly at the INCOMING clip's own first real wrap.
+    if (lr.pass && clipIdx !== lr.latchedClipIndex) {
+      this.commitLanePass(lr, lr.passLastStep);
+      lr.window.disarm();
+    }
     if (lr.window.state === 'idle') lr.window.arm();
 
     const transition = lr.window.advance(fracStep);
@@ -425,6 +440,15 @@ export class AutomationController {
     if (lr.window.state === 'recording' && lr.pass) {
       lr.passLen = len;
       lr.passLastStep = Math.max(lr.passLastStep, fracStep);
+      // A param whose assignment LEFT this lane mid-pass (moved to another lane
+      // / removed) punches its OWN entry out: commit what it captured so far
+      // (bounded to ITS sampled window) into the latched clip and stop
+      // sampling it here — the old lane must not keep capturing it.
+      for (const [k, st] of [...lr.pass]) {
+        if (assigned.some((t) => key(t) === k)) continue;
+        lr.pass.delete(k);
+        this.commitEntries(lr.latchedClipIndex, lr.passLen, [st], st.lastSampledStep);
+      }
       // A param assigned to this lane MID-PASS joins seeded at the current
       // position (its move records from here and commits at the wrap).
       for (const target of assigned) {
@@ -513,17 +537,30 @@ export class AutomationController {
     const pass = lr.pass;
     lr.pass = null;
     if (!pass) return;
-    const globalEnd = Math.max(0, Math.min(lr.passLen, windowEnd));
-    const existing = this.deps.readAutoTracks(lr.latchedClipIndex);
+    this.commitEntries(lr.latchedClipIndex, lr.passLen, pass.values(), windowEnd);
+  }
+
+  /** Merge + commit a SET of pass entries into `clipIdx` (the whole pass at a
+   *  wrap/stop, or a single moved-away entry mid-pass). Same per-track window
+   *  discipline as always: `[0, min(passLen, windowEnd, entry.lastSampledStep)]`. */
+  private commitEntries(
+    clipIdx: number,
+    passLen: number,
+    entries: Iterable<PassState>,
+    windowEnd: number,
+  ): void {
+    const globalEnd = Math.max(0, Math.min(passLen, windowEnd));
+    const existing = this.deps.readAutoTracks(clipIdx);
     const byKey = new Map(existing.map((t) => [key(t.target), t]));
     const updates: AutoTrackUpdate[] = [];
-    for (const [k, st] of pass) {
+    for (const st of entries) {
       if (st.maxDev < MOVE_EPS) continue; // untouched/unmoved → keep existing automation
+      const k = key(st.target);
       const incoming: AutomationEvent[] = st.gate.close();
       const end = Math.max(0, Math.min(globalEnd, st.lastSampledStep));
       const events = mergeAutomationOverdub(byKey.get(k)?.events ?? [], incoming, 0, end);
       updates.push({ key: k, target: st.target, events });
     }
-    if (updates.length) this.deps.commit(lr.latchedClipIndex, updates);
+    if (updates.length) this.deps.commit(clipIdx, updates);
   }
 }

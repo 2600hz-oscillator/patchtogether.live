@@ -88,9 +88,13 @@ const LANE = 0;
 const IDX = clipIndex(SLOT, LANE); // 0
 const KEY = automationTargetKey({ nodeId: TARGET, paramId: PARAM });
 
-/** The commit ORIGIN the harness tags its transactions with (mirrors the app's
- *  LOCAL_ORIGIN discipline so the UndoManager scopes a take-pass to one step). */
-const ORIGIN = Symbol('test-local-origin');
+/** The commit ORIGIN the harness tags its transactions with — mirrors the
+ *  app's AUTOMATION_COMMIT_ORIGIN: deliberately NOT an undo-tracked origin
+ *  (per-wrap continuous-overdub commits would flood the undo stack; deleting a
+ *  take is the explicit, undoable CLEAR affordance instead). */
+const ORIGIN = Symbol('test-automation-commit-origin');
+/** The undo-TRACKED origin (mirrors the app's LOCAL_ORIGIN). */
+const TRACKED_ORIGIN = Symbol('test-local-origin');
 
 /** A fresh note clip for `clips[k]` (the sibling of the auto record). */
 function noteClip(len: number, steps: NoteClipRecord['steps'] = []): NoteClipRecord {
@@ -282,15 +286,17 @@ describe('clipplayer ↔ per-clip automation integration (real Y.Doc + fake engi
     expect(JSON.stringify(data.clips![String(IDX)])).toBe(noteBefore);
   });
 
-  it('UNDO: each record-pass commit is ONE undo step (transaction-origin scoped)', () => {
+  it('UNDO: record-pass commits are NON-UNDOABLE (untracked origin — no per-wrap Cmd-Z flooding); a tracked clear IS one undo step', () => {
     const def: FakeDef = { min: 0, max: 100, curve: 'linear' };
     const h = makeHarness(def);
     const len = 4;
     seed(h, { len, arm: true, recorderId: h.ydoc.clientID, initialParam: 0 });
 
-    // Track ONLY the harness's commit origin (the app tracks LOCAL_ORIGIN).
+    // The app's undo manager tracks ONLY LOCAL_ORIGIN — mirror that here. The
+    // record commits ride an UNTRACKED origin, so a long take never floods the
+    // stack (Cmd-Z regressing one wrap at a time was the refuted failure mode).
     const nodesMap = h.ydoc.getMap('nodes');
-    const undo = new Y.UndoManager(nodesMap, { trackedOrigins: new Set([ORIGIN]) });
+    const undo = new Y.UndoManager(nodesMap, { trackedOrigins: new Set([TRACKED_ORIGIN]) });
 
     const controller = new AutomationController(h.deps);
     controller.arm();
@@ -303,15 +309,87 @@ describe('clipplayer ↔ per-clip automation integration (real Y.Doc + fake engi
     h.setLive(T, 50); drive(1);
     h.setLive(T, 100); drive(2); drive(3);
     drive(0); // wrap → commit pass 1
-    expect(undo.undoStack.length, 'one undo step per take-pass commit').toBe(1);
+    // keep recording another pass → commit 2
+    h.setLive(T, 25); drive(1); drive(2); drive(3);
+    drive(0); // wrap → commit pass 2
+    expect(undo.undoStack.length, 'no undo items from record commits').toBe(0);
 
     const data = h.store.nodes[CLIP]!.data as ClipPlayerData;
     expect(coerceAutoClipRecord(data.auto![String(IDX)])!.tracks[KEY]!.events.length)
       .toBeGreaterThan(1);
+    // The DELETE affordance (the app's clearRecordedAutomation) is TRACKED —
+    // one undoable step that removes the take.
+    h.ydoc.transact(() => {
+      const d = h.store.nodes[CLIP]!.data as ClipPlayerData;
+      const rec = d.auto![String(IDX)]!;
+      delete rec.tracks[KEY];
+    }, TRACKED_ORIGIN);
+    expect(undo.undoStack.length, 'the clear is one undo step').toBe(1);
+    expect(coerceAutoClipRecord(
+      (h.store.nodes[CLIP]!.data as ClipPlayerData).auto![String(IDX)],
+    )?.tracks[KEY]).toBeUndefined();
     undo.undo();
-    const after = (h.store.nodes[CLIP]!.data as ClipPlayerData).auto?.[String(IDX)];
-    const events = after ? coerceAutoClipRecord(after)?.tracks[KEY]?.events : undefined;
-    expect(events == null || events.length === 0, 'undo reverts the whole take-pass').toBe(true);
+    expect(
+      coerceAutoClipRecord((h.store.nodes[CLIP]!.data as ClipPlayerData).auto![String(IDX)])!
+        .tracks[KEY]!.events.length,
+      'undoing the clear restores the take',
+    ).toBeGreaterThan(1);
+  });
+
+  it('OFFLINE MERGE (container-LWW hardening): two peers’ concurrent first-writes under pre-created containers BOTH survive', () => {
+    const def: FakeDef = { min: 0, max: 100, curve: 'linear' };
+    const a = makeHarness(def);
+    // Seed peer A with the factory-stamped containers + the ARM-time per-clip
+    // shell (the fix under test: containers exist BEFORE the racy writes).
+    seed(a, { len: 4, arm: true, recorderId: a.ydoc.clientID, initialParam: 0 });
+    a.ydoc.transact(() => {
+      const d = a.store.nodes[CLIP]!.data as ClipPlayerData;
+      d.auto = { [String(IDX)]: { tracks: {} } }; // arm-time shell
+    });
+    // Bootstrap peer B from A's full state, then go OFFLINE (no live pump —
+    // updates are buffered and exchanged only at the end).
+    const storeB = syncedStore<Store>({ nodes: {} });
+    const docB = getYjsDoc(storeB);
+    Y.applyUpdate(docB, Y.encodeStateAsUpdate(a.ydoc));
+    const KEY2 = automationTargetKey({ nodeId: TARGET, paramId: 'res' });
+
+    // OFFLINE: peer A records a take into tracks[KEY]…
+    const controller = new AutomationController(a.deps);
+    controller.arm();
+    const drive = (frac: number) => {
+      controller.notifyTouch(T);
+      controller.recordLaneTick(LANE, IDX, [T], frac, 4);
+    };
+    drive(0); drive(1); drive(2); drive(3);
+    a.setLive(T, 0); drive(0);
+    a.setLive(T, 100); drive(2); drive(3);
+    drive(0); // commit into auto[IDX].tracks[KEY]
+    // …while peer B (offline) writes a SIBLING key of the SAME clip's record
+    // (e.g. a paste/clear-era write) + its own autoAssign entry.
+    docB.transact(() => {
+      const d = storeB.nodes[CLIP]!.data as ClipPlayerData;
+      (d.auto![String(IDX)] as AutoClipRecord).tracks[KEY2] = {
+        events: [{ step: 0, value: 0.5 }],
+      };
+      d.autoAssign!['b-peer::z'] = 5;
+    });
+
+    // MERGE both ways.
+    Y.applyUpdate(a.ydoc, Y.encodeStateAsUpdate(docB));
+    Y.applyUpdate(docB, Y.encodeStateAsUpdate(a.ydoc));
+
+    for (const [name, store] of [['A', a.store] as const, ['B', storeB] as const]) {
+      const d = store.nodes[CLIP]!.data as ClipPlayerData;
+      const rec = coerceAutoClipRecord(d.auto![String(IDX)])!;
+      expect(
+        (rec.tracks[KEY]?.events.length ?? 0) > 1,
+        `peer ${name}: A's take survived the merge`,
+      ).toBe(true);
+      expect(rec.tracks[KEY2]?.events, `peer ${name}: B's concurrent track survived`).toEqual([
+        { step: 0, value: 0.5 },
+      ]);
+      expect(d.autoAssign?.['b-peer::z'], `peer ${name}: B's assignment survived`).toBe(5);
+    }
   });
 
   it('HEADLINE REGRESSION: a note toggle in clips[k] leaves auto[k] BYTE-IDENTICAL', () => {

@@ -1184,6 +1184,70 @@ describe('SINGLE — SCENE copy/paste (typed buffer + 4-combo type gate)', () =>
     expect(clipAt(1, 1)?.steps.some((s) => s.midi === 67)).toBe(true);
   });
 
+  it('clip→clip CARRIES THE AUTOMATION (envelope-belongs-to-the-clip) + clears the destination’s stale record', () => {
+    const AUTO_SRC = { tracks: { 'va::base': { events: [{ step: 0, value: 0.7 }] } } };
+    const AUTO_STALE = { tracks: { 'vb::base': { events: [{ step: 0, value: 0.1 }] } } };
+    seedClipPlayer({
+      clips: {
+        [clipIndex(0, 0)]: clipWithNote(2, 67), // source (carries AUTO_SRC)
+        [clipIndex(1, 1)]: clipWithNote(3, 62), // dest (carries STALE automation)
+        [clipIndex(2, 2)]: clipWithNote(4, 64), // 2nd source WITHOUT automation
+      },
+      auto: {
+        [clipIndex(0, 0)]: AUTO_SRC,
+        [clipIndex(1, 1)]: AUTO_STALE,
+      },
+    });
+    bindLaunchpadToClip(NODE_ID);
+    // Paste the automation-carrying source over the stale destination.
+    latch();
+    sim.cc('L', sceneCc(G_COPY_I), 127);
+    pressClip(sim, 0, 0);
+    sim.cc('L', sceneCc(G_PASTE_I), 127);
+    pressClip(sim, 1, 1);
+    const auto = liveData().auto as Record<string, { tracks: Record<string, unknown> }>;
+    expect(Object.keys(auto[String(clipIndex(1, 1))]!.tracks), 'source envelope landed, stale gone')
+      .toEqual(['va::base']);
+    expect(auto[String(clipIndex(0, 0))]!.tracks['va::base'], 'source untouched').toBeTruthy();
+    // Now paste a NO-automation clip over it → the carried record is CLEARED.
+    sim.cc('L', sceneCc(G_COPY_I), 127);
+    pressClip(sim, 2, 2);
+    sim.cc('L', sceneCc(G_PASTE_I), 127);
+    pressClip(sim, 1, 1);
+    expect(auto[String(clipIndex(1, 1))], 'pasting an automation-less clip clears the record')
+      .toBeUndefined();
+  });
+
+  it('scene→scene CARRIES each lane’s automation; a source-empty lane clears the target’s automation too', () => {
+    const AUTO_L0 = { tracks: { 'va::base': { events: [{ step: 1, value: 0.9 }] } } };
+    const AUTO_STALE = { tracks: { 'vb::base': { events: [{ step: 0, value: 0.2 }] } } };
+    seedClipPlayer({
+      clips: {
+        [clipIndex(2, 0)]: clipWithNote(1, 61), // source scene 2 lane 0 (carries automation)
+        [clipIndex(2, 2)]: clipWithNote(2, 62), // source lane 2 (no automation)
+        [clipIndex(5, 1)]: clipWithNote(3, 63), // target scene 5 lane 1 (will be emptied)
+      },
+      auto: {
+        [clipIndex(2, 0)]: AUTO_L0,
+        [clipIndex(5, 1)]: AUTO_STALE, // stale target automation under a lane the source empties
+      },
+    });
+    bindLaunchpadToClip(NODE_ID);
+    copyScene(2);
+    pasteSceneAt(5);
+    const auto = liveData().auto as Record<string, { tracks: Record<string, unknown> } | undefined>;
+    // Lane 0's automation landed WITH its clip at slot 5.
+    expect(Object.keys(auto[String(clipIndex(5, 0))]?.tracks ?? {})).toEqual(['va::base']);
+    // Lane 1 was empty in the source → clip AND automation cleared at the target.
+    expect(clipAt(5, 1)).toBeUndefined();
+    expect(auto[String(clipIndex(5, 1))]).toBeUndefined();
+    // Lane 2's clip landed with NO automation record.
+    expect(clipAt(5, 2)?.steps.some((s) => s.midi === 62)).toBe(true);
+    expect(auto[String(clipIndex(5, 2))]).toBeUndefined();
+    // The SOURCE scene keeps its automation (copy, not move).
+    expect(Object.keys(auto[String(clipIndex(2, 0))]?.tracks ?? {})).toEqual(['va::base']);
+  });
+
   it('scene→clip: NO-OP — a scene buffer never pastes onto a single clip pad', () => {
     seedClipPlayer({
       clips: {

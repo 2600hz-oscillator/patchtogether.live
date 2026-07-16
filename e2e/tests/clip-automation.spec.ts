@@ -441,6 +441,9 @@ test('per-clip automation: right-click assign to a lane → arm → record while
   const { spread } = await sampleSpread(page, 'va', 'base');
   expect(spread, 'automation playback varies the param over a loop').toBeGreaterThan(0.15);
 
+  // CARRIER DOT: the recorded clip's pad marks that it carries automation.
+  await expect(page.getByTestId(`clipplayer-pad-${IDX_L0S0}`)).toHaveAttribute('data-auto', '1');
+
   // REMOVE the assignment → the border cue clears (the chip drops to 0); the
   // recorded automation keeps playing (assignment gates RECORD, not playback).
   await vcaBase(page, 'va').click({ button: 'right' });
@@ -450,6 +453,19 @@ test('per-clip automation: right-click assign to a lane → arm → record while
   await expect(menu).toBeHidden();
   await expect.poll(async () => labelBorder(page, 'va'), { timeout: 4000 }).toBeNull();
   await expect(page.getByTestId('clipplayer-auto-assigned-0')).toHaveAttribute('data-count', '0');
+  // The recorded envelopes SURVIVE the un-assignment (remove ≠ clear).
+  expect((await readAutoEvents(page, IDX_L0S0, 'va::base')).length).toBeGreaterThan(1);
+
+  // CLEAR RECORDED AUTOMATION (the delete affordance): right-click → clear →
+  // the envelopes are gone and the carrier dot clears.
+  await vcaBase(page, 'va').click({ button: 'right' });
+  await expect(menu).toBeVisible();
+  await menu.getByTestId('ctx-automation-clear').click();
+  await expect(menu).toBeHidden();
+  await expect
+    .poll(async () => (await readAutoEvents(page, IDX_L0S0, 'va::base')).length, { timeout: 4000 })
+    .toBe(0);
+  await expect(page.getByTestId(`clipplayer-pad-${IDX_L0S0}`)).not.toHaveAttribute('data-auto', '1');
 });
 
 // ── Case 2: clip-switch swaps automation WITH the clip ───────────────────────
@@ -657,6 +673,80 @@ test('per-clip automation: a MIDI CC on an automated param suspends only that pa
   // va resumes being driven by automation (no manual re-enable needed).
   await expect(page.getByTestId(`clipplayer-auto-override-${CP}`)).toBeHidden({ timeout: 4000 });
   expect((await sampleSpread(page, 'va', 'base')).spread, 'va resumes after the twist idles').toBeGreaterThan(0.15);
+});
+
+// ── Case 8: SCENE DUPLICATE carries the automation with the clips ────────────
+// The perform gesture the lifecycle fix exists for: copying a scene to another
+// slot must carry each clip's envelopes (the envelope belongs to the clip).
+// Driven through the REAL single-unit Launchpad sim (shift palette → COPY a
+// scene → PASTE it at another slot).
+
+const CC_SHIFT = 98; // the single-unit shift (tap = latch) top-row CC
+const CC_VIEW_GRID = 92; // the permanent top-row GRID view button
+const SCENE_CC = [89, 79, 69, 59, 49, 39, 29, 19] as const; // scene idx 0..7
+const CC_G_COPY = SCENE_CC[0]; // grid-shift palette: COPY = scene index 0
+const CC_G_PASTE = SCENE_CC[1]; // PASTE = scene index 1
+
+test('per-clip automation: scene-duplicate (Launchpad copy/paste) carries the automation with the clips', async ({ page, rack }) => {
+  void rack;
+  await spawnPatch(page, [
+    { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
+    { id: 'va', type: 'vca', position: { x: 460, y: 80 }, domain: 'audio', params: { base: 0.2 } },
+  ]);
+  await expect(page.getByTestId('clipplayer-card')).toBeVisible();
+  // Scene 0: a clip in lane 0 carrying an envelope.
+  await seedClip(page, IDX_L0S0, { tracks: [{ nodeId: 'va', paramId: 'base', events: ENV_UP }] });
+
+  // Install the simulated single-unit Launchpad bound to this player.
+  const installed = await page.evaluate(async (id) => {
+    const w = globalThis as unknown as { __launchpadTestInstallSingle?: (id: string) => Promise<boolean> };
+    if (!w.__launchpadTestInstallSingle) return false;
+    return await w.__launchpadTestInstallSingle(id);
+  }, CP);
+  expect(installed, 'single-unit Launchpad install hook present (VITE_E2E_HOOKS)').toBe(true);
+  const ccTap = async (cc: number) => {
+    await page.evaluate((c) => {
+      const s = (globalThis as unknown as { __launchpadSingleSim?: { cc: (cc: number, v: number) => void } })
+        .__launchpadSingleSim!;
+      s.cc(c, 127);
+      s.cc(c, 0);
+    }, cc);
+  };
+
+  // The install hook boots in CLIP view — flip to GRID (the copy/paste home).
+  await ccTap(CC_VIEW_GRID);
+  await page.waitForFunction(() =>
+    (globalThis as unknown as { __launchpadSingleSim?: { state: () => { singleView?: string } } })
+      .__launchpadSingleSim?.state().singleView === 'grid',
+  );
+
+  // COPY scene 0: latch shift → arm COPY → unlatch (sticky) → tap scene 0.
+  await ccTap(CC_SHIFT);
+  await ccTap(CC_G_COPY);
+  await ccTap(CC_SHIFT);
+  await ccTap(SCENE_CC[0]);
+  // PASTE at scene 3: latch shift → arm PASTE → unlatch → tap scene 3.
+  await ccTap(CC_SHIFT);
+  await ccTap(CC_G_PASTE);
+  await ccTap(CC_SHIFT);
+  await ccTap(SCENE_CC[3]);
+
+  // The clip landed at slot 3 (lane 0 → flat index 3) WITH its automation.
+  const IDX_L0S3 = 3;
+  await expect
+    .poll(async () => (await readAutoEvents(page, IDX_L0S3, 'va::base')).length, { timeout: 6000 })
+    .toBeGreaterThan(1);
+  expect(await readAutoEvents(page, IDX_L0S3, 'va::base')).toEqual(
+    await readAutoEvents(page, IDX_L0S0, 'va::base'), // copied, source intact
+  );
+  // Both pads mark as carriers.
+  await expect(page.getByTestId(`clipplayer-pad-${IDX_L0S0}`)).toHaveAttribute('data-auto', '1');
+  await expect(page.getByTestId(`clipplayer-pad-${IDX_L0S3}`)).toHaveAttribute('data-auto', '1');
+  // Launching the DUPLICATE drives the param from ITS own envelope.
+  await ensureTransportRunning(page);
+  await launchClip(page, IDX_L0S3, 0, 3);
+  const { spread } = await sampleSpread(page, 'va', 'base');
+  expect(spread, 'the duplicated clip’s automation plays').toBeGreaterThan(0.15);
 });
 
 // ── Case 7: the 🟡🟡🔴🔴 countdown flashes per recording lane while armed ─────

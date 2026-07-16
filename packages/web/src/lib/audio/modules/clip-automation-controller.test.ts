@@ -499,6 +499,97 @@ describe('AutomationController — PER-LANE record independence (Phase 2)', () =
     h.ctrl.laneStopped(4);
     expect(h.commits.length).toBe(0);
   });
+
+  it('PUNCH-OUT AT SWAP: a quantized switch to a SHORTER clip mid-pass commits the partial to the OUTGOING clip; the incoming clip’s first pass starts clean at ITS own wrap', () => {
+    // The refuted corruption: applyLaneQueued swaps (clipIdx, len) up to ~200 ms
+    // before the audible wrap, so the tick feeds the NEW len with the OLD
+    // playhead — the clamp (min(frac, len)) reads as a spurious early wrap and
+    // the old flow committed a garbage full-window pass re-latched mid-stream.
+    const P = tgt('s', 'p');
+    const IDX_A = 3; // len 8 (outgoing)
+    const IDX_B = 5; // len 4 (incoming — SHORTER)
+    const h = harness();
+    h.set(P, 0.1);
+    h.ctrl.arm();
+    h.ctrl.recordLaneTick(0, IDX_A, [P], 6, 8);
+    h.ctrl.recordLaneTick(0, IDX_A, [P], 0, 8); // punch-in — latched to A (len 8)
+    h.move(P, 0.5); h.ctrl.recordLaneTick(0, IDX_A, [P], 3, 8);
+    h.move(P, 0.9); h.ctrl.recordLaneTick(0, IDX_A, [P], 6, 8);
+    // SWAP applies (scheduled ahead): the tick now reports (IDX_B, len 4) while
+    // the audible playhead still sits in A's tail — clamped to 4 by the caller.
+    h.ctrl.recordLaneTick(0, IDX_B, [P], 4, 4);
+    // Punch-out fired AT the swap: exactly one commit, into A, PARTIAL window.
+    expect(h.commits.length).toBe(1);
+    expect(h.commits[0]!.clipIdx, 'partial committed to the OUTGOING clip').toBe(IDX_A);
+    const aEvents = h.eventsOf(IDX_A, P)!;
+    expect(Math.max(...aEvents.map((e) => e.value))).toBeGreaterThan(0.8); // the real sweep
+    expect(h.eventsOf(IDX_B, P), 'nothing leaked into the incoming clip').toBeUndefined();
+    expect(h.ctrl.laneRecording(0), 'window reset — armed, not recording').toBe(false);
+    // The clamped stale playhead does NOT punch in (4 → 4: no decrease)…
+    h.ctrl.recordLaneTick(0, IDX_B, [P], 4, 4);
+    expect(h.ctrl.laneRecording(0)).toBe(false);
+    // …the incoming clip's first REAL wrap (audible playhead reaches ITS start)
+    // punches in clean, and its first pass records only its own loop.
+    h.ctrl.recordLaneTick(0, IDX_B, [P], 0.2, 4); // decrease → punch-in
+    expect(h.ctrl.laneRecording(0)).toBe(true);
+    h.move(P, 0.05); h.ctrl.recordLaneTick(0, IDX_B, [P], 2, 4);
+    h.ctrl.recordLaneTick(0, IDX_B, [P], 0, 4); // B's wrap → commit into B
+    expect(h.commits.length).toBe(2);
+    expect(h.commits[1]!.clipIdx).toBe(IDX_B);
+    const bEvents = h.eventsOf(IDX_B, P)!;
+    expect(bEvents.length).toBeGreaterThan(1);
+    expect(bEvents.every((e) => e.step <= 4), 'B’s take bounded to ITS length').toBe(true);
+    // A's committed take is unchanged by B's pass.
+    expect(h.eventsOf(IDX_A, P)).toEqual(aEvents);
+  });
+
+  it('MID-PASS MOVE: a param re-assigned AWAY from a recording lane punch-commits its entry and stops being captured there', () => {
+    const P = tgt('s', 'p');
+    const OTHER = tgt('o', 'q');
+    const h = harness();
+    h.set(P, 0.1);
+    h.set(OTHER, 0.5);
+    h.ctrl.arm();
+    h.ctrl.recordLaneTick(0, IDX, [P, OTHER], 6, 8);
+    h.ctrl.recordLaneTick(0, IDX, [P, OTHER], 0, 8); // punch-in with both assigned
+    h.move(P, 0.6); h.move(OTHER, 0.6); h.ctrl.recordLaneTick(0, IDX, [P, OTHER], 2, 8);
+    // The user MOVES P's assignment to another lane mid-pass → P leaves this
+    // lane's assigned list. Its entry punch-commits ([0, lastSampled=2]) now.
+    h.ctrl.recordLaneTick(0, IDX, [OTHER], 3, 8);
+    expect(h.commits.length, 'moved-away entry committed immediately').toBe(1);
+    expect(h.commits[0]!.clipIdx).toBe(IDX);
+    expect(h.commits[0]!.updates.map((u) => u.key)).toEqual(['s::p']);
+    const pAtMove = h.eventsOf(IDX, P)!;
+    expect(pAtMove.every((e) => e.step <= 2.001), 'bounded to its sampled window').toBe(true);
+    // P keeps "moving" (its store value changes while grabbed) — but the OLD
+    // lane no longer captures it: the wrap commit contains only OTHER.
+    h.move(P, 0.95); h.move(OTHER, 0.9); h.ctrl.recordLaneTick(0, IDX, [OTHER], 6, 8);
+    h.ctrl.recordLaneTick(0, IDX, [OTHER], 0, 8); // wrap
+    expect(h.commits.length).toBe(2);
+    expect(h.commits[1]!.updates.map((u) => u.key)).toEqual(['o::q']);
+    expect(h.eventsOf(IDX, P), 'P’s events unchanged since the move-away').toEqual(pAtMove);
+  });
+
+  it('DISARM keeps a PHYSICALLY-HELD grab (release-on-touch-END survives disarm); only suspended-only entries clear', () => {
+    const held = tgt('h', 'p');
+    const loose = tgt('l', 'q');
+    const h = harness();
+    h.ctrl.notifyTouch(held, 'pointer'); // hand still down through the disarm
+    // A suspended-only entry (grab already released → normally cleared at
+    // release; simulate a lingering suspension via reEnable-less direct state:
+    // touch with a holder then strip the holder by releasing another surface is
+    // not possible — so emulate via touch+release which clears both, then
+    // re-touch with 'default' and drop the grab through reEnable of grabbed…
+    // Simplest real path: a wrap re-enable leaves suspended-only sets empty, so
+    // here we just verify the HELD grab survives disarm.
+    h.ctrl.notifyTouch(loose);
+    h.ctrl.notifyRelease(loose); // properly released → gone before disarm
+    h.ctrl.arm();
+    h.ctrl.disarm();
+    expect(h.ctrl.isSuspended(held), 'a live hand keeps its override across disarm').toBe(true);
+    h.ctrl.notifyRelease(held, 'pointer'); // the hand lifts → NOW it ends
+    expect(h.ctrl.isSuspended(held)).toBe(false);
+  });
 });
 
 describe('AutomationController — long/slow clip (low div, long length)', () => {

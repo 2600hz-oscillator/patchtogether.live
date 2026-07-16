@@ -365,6 +365,139 @@ describe('clipplayer automation seams (factory-level, ordered engine log)', () =
     handle.dispose();
   });
 
+  it('SINGLE DRIVER: two lanes carrying the SAME param — only the owner drives; assignment moves ownership; the owner’s stop hands over (truncate, no pin)', async () => {
+    seedVca('va', 0.5);
+    // Lane 0 clip carries a HIGH envelope for va.base; lane 1 clip a LOW one.
+    const cellA = noteWithAuto('va', ENV_A, 8); // HIGH (0.6..0.8)
+    const cellB = noteWithAuto('va', ENV_B, 8); // LOW (0.2..0.3)
+    livePatch.nodes[NODE_ID] = {
+      id: NODE_ID,
+      type: 'clipplayer',
+      domain: 'audio',
+      position: { x: 0, y: 0 },
+      params: { stepDiv: 2, quantize: 1, octave: 0, gateLength: 0.5 },
+      data: {
+        clips: { [clipIndex(0, 0)]: cellA.clip, [clipIndex(0, 1)]: cellB.clip },
+        auto: { [clipIndex(0, 0)]: cellA.auto, [clipIndex(0, 1)]: cellB.auto },
+        queued: (() => { const q = lane8<number | null>(0, 0, null); q[1] = 0; return q; })(),
+      },
+    } as never;
+    seedTimelorde(1);
+    const ctx = new FakeAudioContext();
+    const { engine, log } = makeFakeEngine(ctx);
+    setActiveEngine(engine);
+    const handle = await build(ctx);
+
+    // Both lanes launch. UNASSIGNED → the LOWEST carrier (lane 0, HIGH) owns.
+    const isBaseSched = (e: EngineCall): e is Extract<EngineCall, { kind: 'schedule' }> =>
+      e.kind === 'schedule' && e.paramId === 'base';
+    const nodeData = () =>
+      (livePatch.nodes[NODE_ID] as unknown as { data: Record<string, unknown> }).data;
+    run(ctx, 0, 0.8);
+    const early = log.filter(isBaseSched);
+    expect(early.length, 'the owner drives').toBeGreaterThan(0);
+    expect(
+      early.every((e) => e.value >= 0.55),
+      'ONLY the owning lane’s (HIGH) envelope is scheduled — the shadowed lane is silent',
+    ).toBe(true);
+
+    // ASSIGN va.base to lane 1 → ownership moves; the LOW envelope takes over.
+    nodeData().autoAssign = { 'va::base': 1 };
+    const mark = log.length;
+    run(ctx, 0.8, 1.9);
+    const afterAssign = log.slice(mark).filter(isBaseSched);
+    expect(afterAssign.length).toBeGreaterThan(0);
+    expect(
+      afterAssign.every((e) => e.value <= 0.45),
+      'after assignment the LOW (assigned lane 1) envelope owns the param',
+    ).toBe(true);
+
+    // STOP the OWNING lane (peer stop) → lane 0 repossesses: the stop must be a
+    // TRUNCATE (no resting pin — the survivor takes over), then HIGH resumes.
+    const d = nodeData() as { playing?: (number | null)[] };
+    const playing = (d.playing ?? []).slice();
+    playing[1] = null;
+    d.playing = playing;
+    const mark2 = log.length;
+    run(ctx, 1.9, 3.0);
+    const pinsAfterStop = log
+      .slice(mark2)
+      .filter((e) => e.kind === 'hold' && e.nodeId === 'va' && e.toValue != null);
+    expect(pinsAfterStop.length, 'no resting pin — the surviving carrier repossesses').toBe(0);
+    const afterStop = log.slice(mark2).filter(isBaseSched);
+    expect(
+      afterStop.some((e) => e.value >= 0.55),
+      'the surviving lane (HIGH) resumed driving after the owner stopped',
+    ).toBe(true);
+    handle.dispose();
+  });
+
+  it('ZOMBIE SWEEP: a retired stamped kind:automation cell + the old pointer are deleted at factory boot; containers initialized', async () => {
+    seedVca('va', 0.5);
+    livePatch.nodes[NODE_ID] = {
+      id: NODE_ID,
+      type: 'clipplayer',
+      domain: 'audio',
+      position: { x: 0, y: 0 },
+      params: { stepDiv: 2, quantize: 1 },
+      data: {
+        sv: 2,
+        clips: {
+          '448': { kind: 'automation', lengthSteps: 64, loop: true, div: 1, tracks: [] },
+          '0': { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true },
+        },
+        automation: { arm: false, recorderId: 1, clip: { lane: 7, slot: 0 } },
+      },
+    } as never;
+    seedTimelorde(1);
+    const ctx = new FakeAudioContext();
+    const { engine } = makeFakeEngine(ctx);
+    setActiveEngine(engine);
+    const handle = await build(ctx);
+    const d = (livePatch.nodes[NODE_ID] as unknown as { data: Record<string, unknown> }).data;
+    const clips = d.clips as Record<string, unknown>;
+    expect(clips['448'], 'stamped automation zombie deleted').toBeUndefined();
+    expect(clips['0'], 'real note clip untouched').toBeTruthy();
+    expect((d.automation as Record<string, unknown>).clip, 'legacy pointer deleted').toBeUndefined();
+    expect(d.auto, 'auto container initialized at the load seam').toEqual({});
+    expect(d.autoAssign, 'autoAssign container initialized at the load seam').toEqual({});
+    handle.dispose();
+  });
+
+  it('GHOST GUARD: a pass whose latched clip was DELETED mid-record commits nothing (no resurrected auto[k])', async () => {
+    const { notifyAutomationTouch, notifyAutomationRelease } = await import(
+      '$lib/audio/automation-touch'
+    );
+    const { ydoc } = await import('$lib/graph/store');
+    seedVca('va', 0.1);
+    seedPlayer(
+      { [clipIndex(0, 0)]: { clip: { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true }, auto: { tracks: {} } } },
+      0,
+    );
+    const data = livePatch.nodes[NODE_ID]!.data as Record<string, unknown>;
+    data.autoAssign = { 'va::base': 0 };
+    data.automation = { arm: true, recorderId: ydoc.clientID };
+    seedTimelorde(1);
+    const ctx = new FakeAudioContext();
+    const { engine } = makeFakeEngine(ctx);
+    setActiveEngine(engine);
+    const handle = await build(ctx);
+    // NOTE: the factory boot sweep runs before the auto container has the shell —
+    // the seeded empty shell record survives (it has no tracks).
+    run(ctx, 0, 1.05); // punch-in at the first wrap
+    notifyAutomationTouch({ nodeId: 'va', paramId: 'base' }, 'pointer');
+    livePatch.nodes['va']!.params.base = 0.9; // a big move mid-pass
+    run(ctx, 1.05, 1.4);
+    // The clip is DELETED mid-pass (a peer wipe / paste-away).
+    delete (data.clips as Record<string, unknown>)[String(clipIndex(0, 0))];
+    run(ctx, 1.4, 1.8); // the lane stops → punch-out → commit SKIPPED (guard)
+    notifyAutomationRelease({ nodeId: 'va', paramId: 'base' }, 'pointer');
+    const auto = data.auto as Record<string, { tracks?: Record<string, unknown> }>;
+    const tracks = auto?.[String(clipIndex(0, 0))]?.tracks ?? {};
+    expect(Object.keys(tracks), 'no take resurrected onto the deleted clip').toEqual([]);
+    handle.dispose();
+  });
+
   it('FULL RECORD PATH: assign → arm → touch + move → the factory commits into auto[k] (per-key, real store) + publishes the per-lane countdown', async () => {
     const { notifyAutomationTouch, notifyAutomationRelease } = await import(
       '$lib/audio/automation-touch'

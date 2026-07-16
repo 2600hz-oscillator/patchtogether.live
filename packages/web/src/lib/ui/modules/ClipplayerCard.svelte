@@ -50,10 +50,12 @@
     readClip,
     autoAssignCounts,
     coerceAutoAssign,
+    autoClipHasTracks,
+    ensureArmAutoShells,
     type ClipPlayerData,
     type NoteClipRecord,
   } from '$lib/audio/modules/clip-types';
-  import { pruneAutoAssignDangling } from '$lib/graph/automation-assign';
+  import { pruneAutoAssignDangling, clearClipAutomation } from '$lib/graph/automation-assign';
   import {
     getAutomationRender,
     soonestAutomationLane,
@@ -173,6 +175,10 @@
     writeData((d) => {
       if (!d.clips) d.clips = {};
       d.clips[String(index)] = defaultNoteClip();
+      // A FRESH clip owns fresh automation — defensively clear any stale
+      // sibling record left in this cell (the envelope belongs to the clip).
+      const key = String(index);
+      if (d.auto && d.auto[key] !== undefined && d.auto[key] !== null) delete d.auto[key];
     });
   }
 
@@ -288,6 +294,7 @@
   // before EACH recording lane's clip wrap (its pad flashes), plus the SOONEST
   // lane's flash on the ◉ AUTO button. Mirrors the launchpad paint.
   let autoCdByLane = $state<Record<number, { color: 'yellow' | 'red'; on: boolean; slot: number }>>({});
+  let autoCdSig = ''; // change-detector for the rAF poll (no per-frame reassign)
   let autoCountdown = $state<{ color: 'yellow' | 'red'; on: boolean } | null>(null);
   $effect(() => {
     void node; // re-subscribe if the node identity changes
@@ -317,16 +324,28 @@
       // plus the soonest lane's flash on the ◉ AUTO button.
       const rs = getAutomationRender(id);
       const byLane: Record<number, { color: 'yellow' | 'red'; on: boolean; slot: number }> = {};
+      let sig = '';
       for (const l of rs?.lanes ?? []) {
         if (!l.recording) continue;
         const color = automationCountdownColor(l.beatsToLoopEnd);
         if (!color) continue;
-        byLane[l.lane] = { color, on: automationCountdownOn(l.beatPhase), slot: l.slot };
+        const on = automationCountdownOn(l.beatPhase);
+        byLane[l.lane] = { color, on, slot: l.slot };
+        sig += `${l.lane}:${l.slot}:${color}:${on ? 1 : 0};`;
       }
-      autoCdByLane = byLane;
+      // Reassign ONLY when the derived paint actually changed — a fresh object
+      // every rAF would re-render the whole 8×8 pad grid at ~60fps for nothing
+      // (the countdown changes at beat granularity).
+      if (sig !== autoCdSig) {
+        autoCdSig = sig;
+        autoCdByLane = byLane;
+      }
       const soonest = soonestAutomationLane(rs);
       const cc = soonest ? automationCountdownColor(soonest.beatsToLoopEnd) : null;
-      autoCountdown = cc && soonest ? { color: cc, on: automationCountdownOn(soonest.beatPhase) } : null;
+      const next = cc && soonest ? { color: cc, on: automationCountdownOn(soonest.beatPhase) } : null;
+      if (next?.color !== autoCountdown?.color || next?.on !== autoCountdown?.on) {
+        autoCountdown = next;
+      }
       raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
@@ -372,7 +391,13 @@
   let autoArmed = $derived((void cardVersion, dataObj().automation?.arm === true));
   // Per-lane ASSIGNED counts — the chip row renders exactly autoAssignCounts()
   // so the readout can never disagree with the stored autoAssign (UI-can't-lie).
-  let autoAssigned = $derived((void cardVersion, autoAssignCounts(dataObj())));
+  // DANGLING targets (assigned module deleted) are filtered out so the chips
+  // never count ghosts while the prune effect catches up.
+  let autoAssigned = $derived.by(() => {
+    void cardVersion;
+    void nodesStructuralVersion();
+    return autoAssignCounts(dataObj(), (t) => !!patch.nodes[t.nodeId]);
+  });
   let autoAssignedTotal = $derived(autoAssigned.reduce((a, b) => a + b, 0));
   // The automation keys ("nodeId::paramId") THIS player owns — the ASSIGNED
   // params plus every track key any clip's sibling `auto` record carries. The
@@ -413,7 +438,12 @@
       if (!d.automation) d.automation = {};
       const arming = !d.automation.arm;
       d.automation.arm = arming;
-      if (arming) d.automation.recorderId = ydoc.clientID;
+      if (arming) {
+        d.automation.recorderId = ydoc.clientID;
+        // Container-LWW hardening: pre-create the playing clips' auto shells in
+        // THIS (arm) transaction, not inside the racy record-commit path.
+        ensureArmAutoShells(d);
+      }
     });
   }
   /** Re-enable every param THIS player has suspended (the override-dot click). */
@@ -644,8 +674,34 @@
     writeData((d) => {
       const c = (d.clips ?? {})[String(selectedClip)] as NoteClipRecord | undefined;
       if (c) c.steps = [];
+      // Clearing the clip clears its automation too (the envelope belongs to
+      // the clip) — atomically, in the same transaction.
+      const key = String(selectedClip);
+      if (d.auto && d.auto[key] !== undefined && d.auto[key] !== null) delete d.auto[key];
     });
   }
+  /** Per-clip "CLR AUTO" — delete ONLY this clip's automation record (keeps the
+   *  notes). Undoable (LOCAL_ORIGIN via the shared seam). */
+  function clearAutoOnly() {
+    clearClipAutomation(id, selectedClip);
+  }
+  /** Whether the OPEN editor clip carries automation (shows the CLR AUTO button). */
+  let editorHasAuto = $derived.by(() => {
+    void cardVersion;
+    return autoClipHasTracks((dataObj().auto ?? {})[String(selectedClip)]);
+  });
+  /** Grid cells whose clip carries automation — the subtle carrier dot. */
+  let autoCarriers = $derived.by<Set<string>>(() => {
+    void cardVersion;
+    const out = new Set<string>();
+    const auto = dataObj().auto;
+    if (auto && typeof auto === 'object') {
+      for (const [k, rec] of Object.entries(auto)) {
+        if (autoClipHasTracks(rec)) out.add(k);
+      }
+    }
+    return out;
+  });
 
   let playheadCol = $derived(
     view === 'edit' && lanePlaying(dataObj(), editLane) === editSlot ? curStep : -1,
@@ -908,6 +964,7 @@
                 {@const st = padState(idx)}
                 {@const laneCd = autoCdByLane[lane]}
                 {@const cd = laneCd && laneCd.slot === slot ? laneCd : null}
+                {@const hasAuto = autoCarriers.has(String(idx))}
                 <button
                   class="pad {st}"
                   class:cd-yellow={cd?.color === 'yellow'}
@@ -915,15 +972,16 @@
                   class:cd-on={cd?.on}
                   role="gridcell"
                   style={`--lane-color:${laneColorEff(lane)}`}
-                  aria-label={`lane ${lane + 1} slot ${slot + 1} ${st}`}
+                  aria-label={`lane ${lane + 1} slot ${slot + 1} ${st}${hasAuto ? ' (has automation)' : ''}`}
                   data-clip={idx}
                   data-lane={lane}
                   data-slot={slot}
                   data-state={st}
+                  data-auto={hasAuto ? '1' : undefined}
                   data-testid={`clipplayer-pad-${idx}`}
                   onclick={(e) => onPadClick(idx, e)}
                   ondblclick={() => onPadDblClick(idx)}
-                ></button>
+                >{#if hasAuto}<span class="auto-dot" aria-hidden="true"></span>{/if}</button>
               {/each}
             </div>
           {/each}
@@ -987,7 +1045,15 @@
               <button onclick={() => (editorRow += 1)} title="Row up" aria-label="row up">↑</button>
               <button onclick={() => (editorRow += scaleLenOf(editClip))} title="Octave up" aria-label="octave up">⤒</button>
             </span>
-            <button class="clear" onclick={clearClip} title="Clear clip" data-testid="clipplayer-clear">⌫</button>
+            <button class="clear" onclick={clearClip} title="Clear clip (notes + its automation)" data-testid="clipplayer-clear">⌫</button>
+            {#if editorHasAuto}
+              <button
+                class="clear-auto"
+                onclick={clearAutoOnly}
+                title="Clear THIS clip's recorded automation (keeps the notes) — undoable"
+                data-testid={`clipplayer-clear-auto-${id}`}
+              >CLR AUTO</button>
+            {/if}
           </div>
           <div class="piano-roll" data-testid="clipplayer-pianoroll">
             {#each Array(EDIT_ROWS) as _r, row (row)}
@@ -1362,6 +1428,18 @@
   .pad.cd-red { background: #7a1010; box-shadow: none; }
   .pad.cd-red.cd-on { background: #ff2a2a; box-shadow: 0 0 6px #ff2a2a; }
   .pad { position: relative; }
+  /* AUTOMATION-CARRIER dot: a subtle teal fleck on clips that carry recorded
+     automation (the envelope belongs to the clip — carriers stay visible). */
+  .auto-dot {
+    position: absolute;
+    right: 1px;
+    bottom: 1px;
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: #14b8a6;
+    pointer-events: none;
+  }
   @keyframes blink { 50% { opacity: 0.35; } }
 
   .editor { display: flex; flex-direction: column; gap: 6px; }
@@ -1395,6 +1473,20 @@
     cursor: pointer;
   }
   .clear { margin-left: auto; }
+  /* Per-clip "CLR AUTO": delete this clip's recorded automation (teal — the
+     automation accent), shown only when the open clip carries some. */
+  .clear-auto {
+    background: var(--control-bg, #222);
+    color: #4fd6cf;
+    border: 1px solid #1b6b66;
+    border-radius: 2px;
+    font-size: 8px;
+    letter-spacing: 0.04em;
+    line-height: 1;
+    padding: 2px 4px;
+    cursor: pointer;
+  }
+  .clear-auto:hover { color: #7ff0ea; border-color: #2fb0a8; }
   .oct { display: inline-flex; }
   .oct button {
     background: var(--control-bg, #222);

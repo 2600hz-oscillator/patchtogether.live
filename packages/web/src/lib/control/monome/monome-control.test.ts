@@ -557,6 +557,41 @@ describe('grid SESSION — COPY / PASTE / PASTE-REVERSE held modifiers', () => {
     expect(clipsAt(clipIndex(3, 2)) ?? null).toBeNull();
   });
 
+  it('PASTE carries the clip’s AUTOMATION + clears the destination’s stale record (envelope-belongs-to-the-clip)', () => {
+    seedTwo();
+    const d = liveData();
+    d.auto = {
+      [String(clipIndex(0, 0))]: { tracks: { 'va::base': { events: [{ step: 2, value: 0.8 }] } } },
+      [String(clipIndex(1, 1))]: { tracks: { 'vb::base': { events: [{ step: 0, value: 0.1 }] } } },
+    };
+    (d.clips as Record<string, unknown>)[String(clipIndex(1, 1))] = { ...noteClip() };
+    bindGridToClip(NODE_ID);
+    sim.press(COPY_PAD.x, COPY_PAD.y); tap(0, 0); sim.release(COPY_PAD.x, COPY_PAD.y);
+    sim.press(PASTE_PAD.x, PASTE_PAD.y); tap(1, 1); sim.release(PASTE_PAD.x, PASTE_PAD.y);
+    const auto = liveData().auto as Record<string, { tracks: Record<string, { events: unknown[] }> }>;
+    expect(Object.keys(auto[String(clipIndex(1, 1))]!.tracks), 'carried envelope replaced the stale one')
+      .toEqual(['va::base']);
+    expect(auto[String(clipIndex(0, 0))]!.tracks['va::base'], 'source untouched (copy)').toBeTruthy();
+  });
+
+  it('PASTE-REVERSE pastes the automation TIME-REVERSED to match the reversed notes', () => {
+    seedTwo(); // source clip lengthSteps 16
+    const d = liveData();
+    d.auto = {
+      [String(clipIndex(0, 0))]: {
+        tracks: { 'va::base': { events: [{ step: 2, value: 0.2 }, { step: 12, value: 0.9 }] } },
+      },
+    };
+    bindGridToClip(NODE_ID);
+    sim.press(COPY_PAD.x, COPY_PAD.y); tap(0, 0); sim.release(COPY_PAD.x, COPY_PAD.y);
+    sim.press(PASTE_REV_PAD.x, PASTE_REV_PAD.y); tap(3, 2); sim.release(PASTE_REV_PAD.x, PASTE_REV_PAD.y);
+    const auto = liveData().auto as Record<string, { tracks: Record<string, { events: { step: number; value: number }[] }> }>;
+    expect(auto[String(clipIndex(3, 2))]!.tracks['va::base']!.events).toEqual([
+      { step: 4, value: 0.9 }, // 16-12
+      { step: 14, value: 0.2 }, // 16-2
+    ]);
+  });
+
   it('modifier precedence: editArmed > copy > paste (EDIT wins, opens the editor)', () => {
     seedTwo();
     bindGridToClip(NODE_ID);

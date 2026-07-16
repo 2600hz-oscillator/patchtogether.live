@@ -54,10 +54,16 @@
      *  ALSO offer "Remove automation assignment" (assigning to another lane
      *  MOVES it — one lane per param). */
     automated?: boolean;
+    /** True when THIS control has RECORDED envelopes in some clip → we offer
+     *  "Clear recorded automation" (remove = stops future recording; clear =
+     *  deletes the recorded envelopes — two different affordances). */
+    automationRecorded?: boolean;
     /** Assign this control to (clipPlayerNodeId, lane). */
     onassignautomation?: (clipPlayerNodeId: string, lane: number) => void;
     /** Remove this control's assignment from whichever player holds it. */
     onremoveautomation?: () => void;
+    /** Delete this control's recorded envelopes (assigned lane / all clips). */
+    onclearautomation?: () => void;
   }
 
   let {
@@ -78,8 +84,10 @@
     onclearelectra,
     automations = [],
     automated = false,
+    automationRecorded = false,
     onassignautomation,
     onremoveautomation,
+    onclearautomation,
   }: Props = $props();
 
   // Fixed 6×6 layout enumeration for the Electra "Send to … → Row → knob"
@@ -130,6 +138,7 @@
   function pickForget() { onforget(); onclose(); }
   function pickAssignAutomation(nodeId: string, lane: number) { onassignautomation?.(nodeId, lane); onclose(); }
   function pickRemoveAutomation() { onremoveautomation?.(); onclose(); }
+  function pickClearAutomation() { onclearautomation?.(); onclose(); }
   function pickSurface(s: { id: string; bound: boolean }) {
     if (s.bound) onremovefromsurface?.(s.id);
     else onsendtosurface?.(s.id);
@@ -344,9 +353,21 @@
           class="ctx-item subtle"
           onclick={pickRemoveAutomation}
           role="menuitem"
+          title="Stops FUTURE recording of this control — already-recorded envelopes keep playing (use Clear recorded automation to delete them)"
           data-testid="ctx-automation-remove"
         >
           Remove automation assignment
+        </button>
+      {/if}
+      {#if automationRecorded}
+        <button
+          class="ctx-item subtle"
+          onclick={pickClearAutomation}
+          role="menuitem"
+          title="DELETES this control's recorded envelopes — from every clip in its assigned lane (or all clips when unassigned). Undoable."
+          data-testid="ctx-automation-clear"
+        >
+          Clear recorded automation (this control)
         </button>
       {/if}
     </div>

@@ -978,10 +978,12 @@
         button (again with SHIFT released / unlatched) to full-REPLACE that whole scene from a scene
         buffer. The paste is
         <strong>type-gated</strong> — clip→clip and scene→scene apply; clip→scene and scene→clip are no-ops
-        (nothing is written). A scene paste is a single undo step.
+        (nothing is written). A scene paste is a single undo step. Copy/paste carries each clip's
+        <strong>recorded automation</strong> with it (the envelope belongs to the clip): the destination's
+        old automation is replaced — or cleared when the source clip had none.
         <em>This Grid palette is the ONLY copy/paste on the Launchpad — clips and scenes, right here; the
         note editor deliberately has none. (PASTE-REV, the time-reversed clip paste, is a pair-deck hold —
-        see 2 Launchpads.)</em></li>
+        see 2 Launchpads; it pastes the automation time-reversed to match.)</em></li>
       <li><strong>CLIP-DIV</strong> (blue): the per-clip divider. Arm, then <strong>tap a clip
         repeatedly</strong> to cycle its own clock division (1/8 · 1/4 · 1/2 · 1 · 2x · 4x). While you
         cycle, the target clip pad itself pulses in time with the chosen division. It writes once when you
@@ -1188,9 +1190,12 @@
         Assign controls first (right-click a control → <em>Assign to automation lane</em> 1–8); while
         armed, every lane with a <em>playing</em> clip and assigned controls records — continuous
         overdub, punching in at <em>that clip's</em> next loop start, into that clip's OWN automation
-        (each clip in a lane carries its own envelopes). The pad pulses red while armed and shows the
-        🟡🟡🔴🔴 pre-roll countdown before the soonest recording clip's wrap. Move an assigned control
-        to record it; an unassigned control records nothing. Tap AUTO again to stop.</li>
+        (each clip in a lane carries its own envelopes; copy/paste and scene-duplicate carry them with
+        the clip). The pad pulses red while armed and shows the 🟡🟡🔴🔴 pre-roll countdown before the
+        soonest recording clip's wrap. Move an assigned control to record it; an unassigned control
+        records nothing. Tap AUTO again to stop. Deleting is card-side and explicit: right-click →
+        <em>Clear recorded automation</em> (per control) or the editor's CLR AUTO (per clip) —
+        <em>Remove automation assignment</em> only stops future recording.</li>
     </ul>
     <h4>Control-mode colours</h4>
     {@render swatches3(SINGLE_CONTROL_COLORS)}

@@ -61,6 +61,8 @@ import {
   automationAssignmentFor,
   assignAutomationLane,
   removeAutomationAssignment,
+  hasRecordedAutomation,
+  clearRecordedAutomation,
 } from '$lib/graph/automation-assign';
 import { nodeVersion, nodesStructuralVersion } from '$lib/graph/node-versions.svelte';
 
@@ -134,6 +136,9 @@ export interface MidiAssignable {
   readonly automations: AutomationEntry[];
   /** True when this control is assigned to some player's automation lane. */
   readonly automated: boolean;
+  /** True when this control has RECORDED envelopes in some clip — surfaces the
+   *  "Clear recorded automation" menu item (remove-assignment ≠ delete-data). */
+  readonly automationRecorded: boolean;
   /** The ASSIGNED lane's effective colour (`#rrggbb`) or null — REACTIVE (not a
    *  menu snapshot): the control name renders a thin border in this colour
    *  while assigned (the owner's lane-colour cue). */
@@ -153,8 +158,13 @@ export interface MidiAssignable {
   /** Assign this control to a clip-player's automation LANE (one lane per
    *  param — re-assigning MOVES it, atomically, across players too). */
   assignAutomation(clipPlayerNodeId: string, lane: number): void;
-  /** Remove this control's lane assignment from whichever player holds it. */
+  /** Remove this control's lane assignment from whichever player holds it
+   *  (stops FUTURE recording; recorded envelopes keep playing — see
+   *  clearAutomation for deleting them). */
   removeAutomation(): void;
+  /** DELETE this control's RECORDED envelopes — from every clip in its assigned
+   *  lane (or ALL clips when unassigned). One undoable transaction. */
+  clearAutomation(): void;
   /** Register the live setter (call onMount). */
   register(): void;
   /** Drop the live setter (call onDestroy). Cancels an in-flight learn for this control. */
@@ -262,6 +272,7 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
   let electras = $state<ElectraEntry[]>([]);
   let automations = $state<AutomationEntry[]>([]);
   let automated = $state(false);
+  let automationRecorded = $state(false);
 
   const binding = $derived.by<MidiBinding | undefined>(() => {
     void bindingTick;
@@ -292,7 +303,10 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
 
   function refresh(): void {
     const m = args.moduleId, p = args.paramId;
-    if (!m || !p) { surfaces = []; electras = []; automations = []; automated = false; return; }
+    if (!m || !p) {
+      surfaces = []; electras = []; automations = []; automated = false; automationRecorded = false;
+      return;
+    }
     surfaces = listControlSurfaces(patch.nodes).map((s) => ({
       id: s.id,
       name: s.name,
@@ -324,6 +338,7 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
     }
     automations = list;
     automated = list.some((e) => e.assignedLane !== null);
+    automationRecorded = hasRecordedAutomation(patch.nodes, target);
   }
 
   // The ASSIGNED lane's colour — REACTIVE (drives the control-name border), not
@@ -354,7 +369,8 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
 
   /** Remove this control's lane assignment from whichever player holds it, then
    *  release the param to its current store value (a one-shot no-op commit so
-   *  the engine stops seeing an automation write). */
+   *  the engine stops seeing an automation write). Recorded envelopes are NOT
+   *  deleted (they keep playing) — that's clearAutomation's job. */
   function removeAutomation(): void {
     const m = args.moduleId, p = args.paramId;
     if (!m || !p) return;
@@ -363,6 +379,15 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
     // Release the param to its live value (a one-shot no-op set).
     const cur = patch.nodes[m]?.params?.[p];
     if (typeof cur === 'number') setNodeParam(m, p, cur);
+  }
+
+  /** DELETE this control's recorded envelopes (assigned lane's clips, or every
+   *  clip when unassigned) — one undoable transaction via the shared seam. */
+  function clearAutomation(): void {
+    const m = args.moduleId, p = args.paramId;
+    if (!m || !p) return;
+    clearRecordedAutomation({ nodeId: m, paramId: p });
+    automationRecorded = hasRecordedAutomation(patch.nodes, { nodeId: m, paramId: p });
   }
 
   function register(): void {
@@ -438,6 +463,7 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
     get electras() { return electras; },
     get automations() { return automations; },
     get automated() { return automated; },
+    get automationRecorded() { return automationRecorded; },
     get assignedLaneColor() { return assignedLaneColor; },
     refresh,
     learn,
@@ -448,6 +474,7 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
     clearElectra,
     assignAutomation,
     removeAutomation,
+    clearAutomation,
     register,
     unregister,
     get ccActive() { return ccActive; },

@@ -75,6 +75,12 @@ import {
   assignedLaneOf,
   laneAssignedTargets,
   autoAssignCounts,
+  plainCloneAutoClip,
+  reverseAutoClipRecord,
+  autoClipHasTracks,
+  readSceneAutos,
+  autoPlaybackOwners,
+  ensureArmAutoShells,
   sameAutomationTarget,
   mergeAutomationOverdub,
   automationValueAt,
@@ -509,6 +515,121 @@ describe('automation: mergeAutomationOverdub (punch-in)', () => {
     expect(merged).toEqual([{ step: 0.7, value: 1 }]);
     const many = Array.from({ length: MAX_AUTOMATION_EVENTS + 10 }, (_, i) => ({ step: i, value: 0.5 }));
     expect(mergeAutomationOverdub([], many, 0, 99999).length).toBe(MAX_AUTOMATION_EVENTS);
+  });
+});
+
+describe('automation lifecycle: clone / reverse / carrier probe (envelope-belongs-to-the-clip)', () => {
+  const rec = () =>
+    coerceAutoClipRecord({
+      tracks: {
+        'a::x': { events: [{ step: 0, value: 0.2 }, { step: 6, value: 0.9 }], interp: 'hold' },
+        'b::y': { events: [{ step: 2, value: 0.5 }] },
+      },
+    })!;
+  it('plainCloneAutoClip deep-clones (no shared refs) and nulls empties', () => {
+    const src = rec();
+    const clone = plainCloneAutoClip(src)!;
+    expect(clone).toEqual(src);
+    expect(clone).not.toBe(src);
+    expect(clone.tracks['a::x']).not.toBe(src.tracks['a::x']);
+    expect(clone.tracks['a::x']!.events[0]).not.toBe(src.tracks['a::x']!.events[0]);
+    clone.tracks['a::x']!.events[0]!.value = 0.99;
+    expect(src.tracks['a::x']!.events[0]!.value).toBe(0.2); // source untouched
+    expect(plainCloneAutoClip(null)).toBeNull();
+    expect(plainCloneAutoClip({ tracks: {} })).toBeNull(); // nothing to carry
+  });
+  it('reverseAutoClipRecord mirrors each event in time (step → len − step), re-sorted', () => {
+    const out = reverseAutoClipRecord(rec(), 8);
+    expect(out.tracks['a::x']!.events).toEqual([
+      { step: 2, value: 0.9 }, // 8-6
+      { step: 8, value: 0.2 }, // 8-0
+    ]);
+    expect(out.tracks['a::x']!.interp).toBe('hold'); // interp carried
+    expect(out.tracks['b::y']!.events).toEqual([{ step: 6, value: 0.5 }]);
+  });
+  it('autoClipHasTracks: cheap raw probe (valid keys only)', () => {
+    expect(autoClipHasTracks(rec())).toBe(true);
+    expect(autoClipHasTracks({ tracks: {} })).toBe(false);
+    expect(autoClipHasTracks({ tracks: { 'bad-key': { events: [] } } })).toBe(false);
+    expect(autoClipHasTracks(null)).toBe(false);
+    expect(autoClipHasTracks(7)).toBe(false);
+  });
+  it('readSceneAutos + sceneWritePlan carry each lane’s automation with its clip', () => {
+    const data = {
+      clips: { [String(clipIndex(2, 0))]: { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true } },
+      auto: { [String(clipIndex(2, 0))]: rec() },
+    };
+    const autos = readSceneAutos(data as never, 2);
+    expect(autos[0]).toEqual(rec());
+    expect(autos[1]).toBeNull();
+    const clips = readScene(data as never, 2);
+    const plan = sceneWritePlan(5, clips, autos);
+    // Lane 0: clip + its automation land at slot 5 (re-cloned, not shared).
+    expect(plan[0]!.index).toBe(clipIndex(5, 0));
+    expect(plan[0]!.value).not.toBeNull();
+    expect(plan[0]!.auto).toEqual(rec());
+    expect(plan[0]!.auto).not.toBe(autos[0]); // re-cloned per paste
+    // Lane 1: no clip → BOTH keys delete (no ghost envelope under an empty cell).
+    expect(plan[1]!.value).toBeNull();
+    expect(plan[1]!.auto).toBeNull();
+  });
+});
+
+describe('automation: single-driver playback ownership (autoPlaybackOwners)', () => {
+  const set = (...keys: string[]) => new Set(keys);
+  it('unassigned → the LOWEST active carrier lane owns the key', () => {
+    const owners = autoPlaybackOwners({}, [null, set('a::x'), set('a::x', 'b::y'), null]);
+    expect(owners.get('a::x')).toBe(1);
+    expect(owners.get('b::y')).toBe(2);
+  });
+  it('the ASSIGNED lane wins when it is an active carrier', () => {
+    const owners = autoPlaybackOwners({ 'a::x': 2 }, [null, set('a::x'), set('a::x'), null]);
+    expect(owners.get('a::x')).toBe(2);
+  });
+  it('an assigned lane that is NOT carrying falls back to the lowest carrier', () => {
+    const owners = autoPlaybackOwners({ 'a::x': 5 }, [null, set('a::x'), set('a::x'), null]);
+    expect(owners.get('a::x')).toBe(1); // lane 5 inactive/not carrying → lowest carrier
+  });
+  it('a key carried by ONE lane is owned by it regardless of assignment', () => {
+    const owners = autoPlaybackOwners({ 'a::x': 0 }, [null, null, set('a::x')]);
+    expect(owners.get('a::x')).toBe(2);
+  });
+});
+
+describe('automation: ensureArmAutoShells (arm-time container pre-creation)', () => {
+  it('creates shells ONLY for lanes with assigned params AND a playing note clip', () => {
+    const d: ClipPlayerData = {
+      clips: {
+        [String(clipIndex(0, 0))]: { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true },
+        [String(clipIndex(1, 2))]: { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true },
+        [String(clipIndex(0, 3))]: { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true },
+      },
+      playing: [0, null, 1, null, null, null, null, null], // lane 0 + lane 2 playing; lane 3 NOT
+      autoAssign: { 'a::x': 0, 'b::y': 3 }, // lane 0 assigned+playing; lane 3 assigned+stopped
+    };
+    ensureArmAutoShells(d);
+    expect(d.auto?.[String(clipIndex(0, 0))]).toEqual({ tracks: {} }); // lane 0 → shell
+    expect(d.auto?.[String(clipIndex(1, 2))]).toBeUndefined(); // lane 2 playing but unassigned
+    expect(d.auto?.[String(clipIndex(0, 3))]).toBeUndefined(); // lane 3 assigned but stopped
+  });
+  it('never replaces an EXISTING record (idempotent)', () => {
+    const existing = { tracks: { 'a::x': { events: [{ step: 0, value: 0.5 }] } } };
+    const d: ClipPlayerData = {
+      clips: { '0': { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true } },
+      playing: [0, null, null, null, null, null, null, null],
+      autoAssign: { 'a::x': 0 },
+      auto: { '0': existing },
+    };
+    ensureArmAutoShells(d);
+    expect(d.auto!['0']).toBe(existing); // untouched
+  });
+});
+
+describe('automation: autoAssignCounts exists-filter (dangling targets not counted)', () => {
+  it('filters out targets whose module is gone', () => {
+    const data = { autoAssign: { 'alive::x': 2, 'gone::y': 2 } };
+    expect(autoAssignCounts(data)).toEqual([0, 0, 2, 0, 0, 0, 0, 0]);
+    expect(autoAssignCounts(data, (t) => t.nodeId === 'alive')).toEqual([0, 0, 1, 0, 0, 0, 0, 0]);
   });
 });
 
