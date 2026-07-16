@@ -545,12 +545,11 @@ export const EDIT_EXIT_SCENE_ROW = LP_HEIGHT - 1; // 7
 export const EDIT_DOUBLE_SCENE_ROW = LP_HEIGHT - 2; // 6
 export const EDIT_LENGTH_SCENE_ROW = LP_HEIGHT - 3; // 5
 export const EDIT_FOLLOW_SCENE_ROW = LP_HEIGHT - 4; // 4 — single mode only
-// ── EDITOR scene-column extras (P6) on the previously-dead bottom scene rows
-// (3,2,1,0). Both deployments (pair had these rows free too; single's row 4 is
-// FOLLOW, rows 3..0 were dead). COPY snapshots the edited clip, PASTE writes the
-// buffer over it, OCT ± shift the whole clip ±12 semitones (transpose).
-export const EDIT_COPY_SCENE_ROW = 3;
-export const EDIT_PASTE_SCENE_ROW = 2;
+// ── EDITOR scene-column extras on the bottom scene rows (1,0). OCT ± scroll the
+// pitch WINDOW up/down one octave (a scale's worth of rows) — they move the
+// view, not the notes (no transpose). Rows 3 + 2 are dark + inert: copy/paste
+// is a GRID-page-only feature (the sticky COPY/PASTE buttons with the typed
+// clip/scene buffer) and deliberately does not exist in the note editor.
 export const EDIT_OCT_UP_SCENE_ROW = 1;
 export const EDIT_OCT_DOWN_SCENE_ROW = 0;
 export function isEditExitSceneRow(row: number): boolean {
@@ -561,8 +560,6 @@ export type EditSceneAction =
   | 'double'
   | 'lengthEdit'
   | 'follow'
-  | 'copy'
-  | 'paste'
   | 'octUp'
   | 'octDown'
   | null;
@@ -571,8 +568,6 @@ export function editSceneAction(row: number, opts: { followButton?: boolean } = 
   if (row === EDIT_DOUBLE_SCENE_ROW) return 'double';
   if (row === EDIT_LENGTH_SCENE_ROW) return 'lengthEdit';
   if (opts.followButton && row === EDIT_FOLLOW_SCENE_ROW) return 'follow';
-  if (row === EDIT_COPY_SCENE_ROW) return 'copy';
-  if (row === EDIT_PASTE_SCENE_ROW) return 'paste';
   if (row === EDIT_OCT_UP_SCENE_ROW) return 'octUp';
   if (row === EDIT_OCT_DOWN_SCENE_ROW) return 'octDown';
   return null;
@@ -931,8 +926,6 @@ export interface REditOpts {
    *  so the single editor's FOLLOW lives on the scene column). Pair mode leaves
    *  this unset → row 4 stays dark, exactly as before. */
   followSceneButton?: boolean;
-  /** Clipboard holds a clip — lights the editor PASTE scene pad (dim otherwise). */
-  bufferLoaded?: boolean;
 }
 
 export function computeREditFrame(clip: NoteClipRecord, opts: REditOpts = {}): LaunchpadFrame {
@@ -974,9 +967,9 @@ export function computeREditFrame(clip: NoteClipRecord, opts: REditOpts = {}): L
   put(frame, CC_EDIT_SCALE, RGB_FUNC);
   put(frame, CC_EDIT_FOLLOW, opts.followOn ? RGB_TRANSPORT_ON : RGB_FUNC_ON);
   // Scene column: top = EXIT (red), row 6 = DOUBLE, row 5 = LENGTH-EDIT. SINGLE
-  // mode adds FOLLOW on row 4 (green = following, violet = frozen). Rows 3,2,1,0
-  // are the P6 extras (both modes): COPY (green) · PASTE (green when the buffer
-  // holds a clip, dim otherwise) · OCT+ / OCT− (transpose the whole clip ±12).
+  // mode adds FOLLOW on row 4 (green = following, violet = frozen). Rows 1,0 =
+  // OCT+ / OCT− (scroll the pitch window ±1 octave). Rows 3,2 are dark + inert
+  // (copy/paste lives on the GRID page only).
   for (let i = 0; i < SCENE_CCS.length; i++) {
     const row = LP_HEIGHT - 1 - i;
     let rgb: Rgb = RGB_OFF;
@@ -984,8 +977,6 @@ export function computeREditFrame(clip: NoteClipRecord, opts: REditOpts = {}): L
     else if (row === EDIT_DOUBLE_SCENE_ROW || row === EDIT_LENGTH_SCENE_ROW) rgb = RGB_FUNC;
     else if (opts.followSceneButton && row === EDIT_FOLLOW_SCENE_ROW)
       rgb = opts.followOn ? RGB_TRANSPORT_ON : RGB_FUNC_ON;
-    else if (row === EDIT_COPY_SCENE_ROW) rgb = RGB_DECK_COPY;
-    else if (row === EDIT_PASTE_SCENE_ROW) rgb = opts.bufferLoaded ? RGB_DECK_COPY : RGB_FUNC_DIM;
     else if (row === EDIT_OCT_UP_SCENE_ROW || row === EDIT_OCT_DOWN_SCENE_ROW) rgb = RGB_OCTAVE;
     put(frame, SCENE_CCS[i], rgb);
   }

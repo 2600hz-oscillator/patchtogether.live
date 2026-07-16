@@ -100,8 +100,6 @@ import {
   RGB_KEYS_REC_HOLD,
   RGB_KEYS_OD_HOLD_ON,
   RGB_PANIC,
-  EDIT_COPY_SCENE_ROW,
-  EDIT_PASTE_SCENE_ROW,
   EDIT_OCT_UP_SCENE_ROW,
   EDIT_OCT_DOWN_SCENE_ROW,
   RGB_KEY_ROOT,
@@ -589,11 +587,13 @@ describe('Performance controls — placement classifiers', () => {
     expect(lTopMuteLane(91)).toBe(0);
     expect(lTopMuteLane(98)).toBe(7);
   });
-  it('editor scene rows 3/2/1/0 classify as COPY/PASTE/OCT+/OCT− (P6)', () => {
-    expect(editSceneAction(EDIT_COPY_SCENE_ROW)).toBe('copy');
-    expect(editSceneAction(EDIT_PASTE_SCENE_ROW)).toBe('paste');
+  it('editor scene rows 1/0 classify as OCT+/OCT−; rows 3/2 are inert (copy/paste is Grid-only)', () => {
     expect(editSceneAction(EDIT_OCT_UP_SCENE_ROW)).toBe('octUp');
     expect(editSceneAction(EDIT_OCT_DOWN_SCENE_ROW)).toBe('octDown');
+    // Rows 3 + 2 (the old editor COPY/PASTE) are null — copy/paste lives on the
+    // Grid page only.
+    expect(editSceneAction(3)).toBeNull();
+    expect(editSceneAction(2)).toBeNull();
     // EXIT/DOUBLE/LENGTH unchanged.
     expect(editSceneAction(7)).toBe('exit');
   });
@@ -637,17 +637,18 @@ describe('Performance controls — LED frames', () => {
     expect(eqRgb(at(f, colTopCc(0)), RGB_MUTE_OFF)).toBe(true); // lane 0 live
     expect(eqRgb(at(f, colTopCc(1)), RGB_MUTE_ON)).toBe(true); // lane 1 muted
   });
-  it('editor frame lights COPY (green) + PASTE (buffer-gated) + OCT ± pads', () => {
+  it('editor frame lights OCT ± pads; the old COPY/PASTE rows 3/2 stay dark (Grid-only copy/paste)', () => {
     // SCENE_CCS is top→bottom (index 0 = row 7), so scene row r → SCENE_CCS[7-r].
     const sceneCc = (row: number) => SCENE_CCS[7 - row];
     const clip = defaultNoteClip();
-    const noBuf = computeREditFrame(clip, { bufferLoaded: false });
-    expect(eqRgb(at(noBuf, sceneCc(EDIT_COPY_SCENE_ROW)), RGB_DECK_COPY)).toBe(true);
+    const f = computeREditFrame(clip);
     // OCT pads lit (non-null).
-    expect(at(noBuf, sceneCc(EDIT_OCT_UP_SCENE_ROW))).not.toBeNull();
-    const withBuf = computeREditFrame(clip, { bufferLoaded: true });
-    // PASTE lights green when the buffer holds a clip.
-    expect(eqRgb(at(withBuf, sceneCc(EDIT_PASTE_SCENE_ROW)), RGB_DECK_COPY)).toBe(true);
+    expect(at(f, sceneCc(EDIT_OCT_UP_SCENE_ROW))).not.toBeNull();
+    expect(at(f, sceneCc(EDIT_OCT_DOWN_SCENE_ROW))).not.toBeNull();
+    // Rows 3 + 2 (the removed editor COPY/PASTE) are dark — copy/paste exists
+    // only on the Grid page.
+    expect(eqRgb(at(f, sceneCc(3)), RGB_OFF)).toBe(true);
+    expect(eqRgb(at(f, sceneCc(2)), RGB_OFF)).toBe(true);
   });
 });
 

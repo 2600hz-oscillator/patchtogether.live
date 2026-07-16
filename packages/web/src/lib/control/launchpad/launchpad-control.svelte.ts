@@ -2434,9 +2434,8 @@ function handleREdit(nodeId: string, e: LaunchpadKeyEvent): void {
   // Scene column: top = EXIT · row 6 = DOUBLE · row 5 = LENGTH-EDIT. SINGLE
   // mode adds row 4 = FOLLOW (CC 98 is the view-flip on one device, so the
   // single editor's FOLLOW lives here; pair keeps row 4 dark + inert). Rows
-  // 3,2,1,0 are the P6 extras (both modes): COPY snapshots the edited clip to
-  // the machine clipboard, PASTE replaces it with the buffer, OCT ± jump the
-  // pitch window up/down a whole octave.
+  // 1,0 = OCT ± — they jump the pitch WINDOW up/down a whole octave. Rows 3,2
+  // are dark + inert (copy/paste is a Grid-page-only feature).
   if (ev.type === 'scene') {
     if (ev.s !== 1) return;
     const act = editSceneAction(ev.row, { followButton: deployment === 'single' });
@@ -2452,12 +2451,6 @@ function handleREdit(nodeId: string, e: LaunchpadKeyEvent): void {
       mode = 'lengthEdit';
     } else if (act === 'follow') {
       toggleFollow(clip);
-    } else if (act === 'copy') {
-      copyBuffer = { kind: 'clip', clip: copyClip(clip) };
-      bufferSourceIndex = editClipIndex;
-    } else if (act === 'paste') {
-      const bc = bufferClip();
-      if (bc) writeClip(nodeId, copyClip(bc));
     } else if (act === 'octUp') {
       editRowOffset += scaleSteps(clip.scale).length; // one octave = a scale's degrees
     } else if (act === 'octDown') {
@@ -2637,7 +2630,6 @@ function paintRRole(
         // SINGLE: FOLLOW gets a real pad on scene row 4 (CC 98 is the view
         // flip). Pair leaves row 4 dark — its FOLLOW is the CC-98 button.
         followSceneButton: deployment === 'single',
-        bufferLoaded: bufferClip() !== null, // lights the editor PASTE scene pad (CLIP buffer)
       }));
       return;
     }
