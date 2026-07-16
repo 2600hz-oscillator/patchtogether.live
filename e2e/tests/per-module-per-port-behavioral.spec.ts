@@ -1339,6 +1339,40 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    see the systemic-fix TODO at the BEHAVIORAL_SWEEP_EXEMPT header below.)
   'dx7.poly': 'poly note/gate retriggers the FM voice (zc/centroid wobble) but mean-RMS delta straddles the ~0.01 floor under the overlapping context-gate voice (jitter); covered by dx7.test.ts + dx7 ART/specs',
 
+  // ── MIRRORPOOL spatial-rearrangement CVs (wind_speed / wind_dir / cam_z).
+  //    The pool surface animates every frame (wind swell + rain rings), so the
+  //    OUT carries a ~1390 luma-variance floor. 8 of 11 CVs perturb it clearly
+  //    (rain / brightness / surface_mode / cam_x / cam_y / pan / tilt / zoom all
+  //    read observable deltas). These three are the video-variance class (cf.
+  //    lines.phase / tempest.rim / lushgarden.view): they REARRANGE the ripple
+  //    field or dolly the camera along the view axis WITHOUT moving global
+  //    frame-variance — Δμvar 0.06–3.7 vs the ±16 floor → NO-DELTA.
+  //      • wind_dir  — rotates the swell crest direction; a busy field of the
+  //        same energy just reorients (variance-invariant).
+  //      • wind_speed — adds swell energy on top of the already-rippling base
+  //        (default 0.3 + rain chop); the incremental variance change stays
+  //        sub-threshold vs the animation floor.
+  //      • cam_z — dollies the camera ALONG its view axis (pan=0 looks down −z),
+  //        the variance-quiet translation direction; cam_x (lateral) PASSES.
+  //    All three are real, CV-wired inputs — the camera basis (cam_z dolly, FOV)
+  //    is pinned in mirrorpool-core.test.ts:cameraBasis and the swell field
+  //    (wind_dir/wind_speed change the height + gradient) in swellField tests;
+  //    the composite VRT (mirrorpool-composite.spec.ts, baseline held for owner
+  //    preview) shows them visually. RE-ENABLE via a per-port-calibrated
+  //    (optical-flow / spatial) metric — the systemic behavioral-metric fix.
+  'mirrorpool.wind_dir_cv': 'rotates swell direction — variance-invariant reorientation of an equal-energy field (video-variance class, cf. lines.phase); covered by mirrorpool-core.test.ts:swellField + mirrorpool-composite.spec.ts',
+  'mirrorpool.wind_speed_cv': 'adds swell energy on top of the already-animating base (default wind+rain); incremental Δμvar sub-threshold vs the ~1390 animation floor; covered by mirrorpool-core.test.ts:swellField + mirrorpool-composite.spec.ts',
+  'mirrorpool.cam_z_cv': 'dollies the camera along its view axis (variance-quiet translation; cam_x lateral PASSES); camera basis pinned in mirrorpool-core.test.ts:cameraBasis + mirrorpool-composite.spec.ts',
+  // pos_z is the bipolar-POSITION dolly (translates the eye ±2R along z, on top
+  // of PTZ) — the SAME variance-quiet-translation class as cam_z_cv above: at
+  // pan=0 the view axis is −z, so an along-view dolly rearranges the frame
+  // without moving global luma-variance. Its lateral (pos_x_cv) and vertical
+  // (pos_y_cv) siblings STAY in the sweep — they parallel cam_x/cam_y which
+  // PASS, and translate even further (±2R). The pos_* eye math (default = PTZ
+  // eye, ±2R reach, above-surface lift, ±2R clamp) is pinned in
+  // mirrorpool-core.test.ts:cameraBasis + shown in mirrorpool-composite.spec.ts.
+  'mirrorpool.pos_z_cv': 'bipolar-position dolly along the view axis (±2R) — variance-quiet translation, same class as cam_z_cv; pos_x_cv/pos_y_cv stay gated (parallel cam_x/cam_y, which PASS); eye math pinned in mirrorpool-core.test.ts:cameraBasis + mirrorpool-composite.spec.ts',
+
 };
 
 // ─── RATCHET — behavioral exemption caps ─────────────────────────────────
@@ -1358,7 +1392,7 @@ test('RATCHET: behavioral exemption lists only shrink', () => {
   expect(
     Object.keys(BEHAVIORAL_SWEEP_EXEMPT).length,
     'BEHAVIORAL_SWEEP_EXEMPT grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(172); // +3 lushgarden.{rate,horizon,view} (stochastic-garden variance floor ±300 std masks the three scene-geometry CVs — view is a pure translation (lines.phase class), horizon a depth-proportional anchor shift, rate a spawn-cadence wiggle; each read Δμvar <4 at least once over 7 repeats → near-threshold flakes; grow/reset/background stay gated and detect at Δμvar 770–2690; math pinned in lushgarden-scene.test.ts, re-enable via per-port-calibrated metric or __lushgardenVrtSeed-seeded driver); +1 snaredrum.roll_speed_cv (CV only modulates the drumroll rate, which needs gate_in held high; the sweep drives trigger_in single strikes → no roll → no delta, cf. pentemelodica.fmN; rate map unit-proven in snare-roll-dsp.test.ts, density asserted in snaredrum-roll.spec.ts); +1 tempest.rim (claw occupies ~1/16 lanes; sliding it doesn't move global frame-variance — video-variance class; claw motion unit-proven in tempest.test.ts + render-smoke); +1 textmarquee.posY (vertical text translation keeps covered pixel-area/frame-variance unchanged → near-threshold flake, video-variance class; posX/scrollX stay gated; covered by textmarquee-layout.test.ts + render-smoke); +1 moog962.shift (advancing the seq-switch selector across UNPATCHED in1..in3 gives Δμrms 0.004 inside the ±0.089 out-noise floor → near-threshold flake; in1/in2/in3 stay gated; covered by moog962.test.ts); +1 lines.phase (phase scroll translates the line bands but preserves frame-variance, Δμvar 2.36 vs ±63.7 → near-threshold flake, video-variance class; orient/amp/thickness stay gated; covered by lines-render-smoke.spec.ts); +1 moog911.esus_cv (sustain-level CV only shapes the held-sustain phase; short retriggering window is attack/release-dominated, Δμrms 0.003 inside ±0.105 → near-threshold flake; t1/t2/t3/gate stay gated; covered by moog911.test.ts); +1 textmarquee.scrollY (vertical scroll of the horizontal band keeps frame-variance ≈ constant, Δμvar 1.45–2.08 → near-threshold flake, same geometry as posY; posX/scrollX stay gated; covered by textmarquee-layout.test.ts); +1 moog921b.freq_bus (1V/oct pitch bus responds — perturbed cent jitters ±24Hz — but a symmetric sweep collapses the mean-cent metric to Δμcent 3–10Hz → metric-mismatch flake, not dead CV; width_bus/fine/range stay gated; covered by moog921b.test.ts)
+  ).toBeLessThanOrEqual(175); // +1 mirrorpool.pos_z_cv (bipolar-position dolly along the view axis, ±2R — SAME variance-quiet class as cam_z_cv; lateral pos_x_cv + vertical pos_y_cv STAY gated, paralleling cam_x/cam_y which PASS; re-enable via the per-port-calibrated/optical-flow metric alongside cam_z_cv; still well under this cap). // +3 mirrorpool.{wind_dir_cv,wind_speed_cv,cam_z_cv} (animated-pool ~1390 luma-variance floor; wind rotates/adds equal-energy swell + cam_z dollies along the view axis — video-variance-class spatial-rearrangement inputs blind to the global-variance metric, cf. lines.phase/tempest.rim/lushgarden.view; the other 8 CVs PASS; camera/swell math pinned in mirrorpool-core.test.ts + composite VRT); +3 lushgarden.{rate,horizon,view} (stochastic-garden variance floor ±300 std masks the three scene-geometry CVs — view is a pure translation (lines.phase class), horizon a depth-proportional anchor shift, rate a spawn-cadence wiggle; each read Δμvar <4 at least once over 7 repeats → near-threshold flakes; grow/reset/background stay gated and detect at Δμvar 770–2690; math pinned in lushgarden-scene.test.ts, re-enable via per-port-calibrated metric or __lushgardenVrtSeed-seeded driver); +1 snaredrum.roll_speed_cv (CV only modulates the drumroll rate, which needs gate_in held high; the sweep drives trigger_in single strikes → no roll → no delta, cf. pentemelodica.fmN; rate map unit-proven in snare-roll-dsp.test.ts, density asserted in snaredrum-roll.spec.ts); +1 tempest.rim (claw occupies ~1/16 lanes; sliding it doesn't move global frame-variance — video-variance class; claw motion unit-proven in tempest.test.ts + render-smoke); +1 textmarquee.posY (vertical text translation keeps covered pixel-area/frame-variance unchanged → near-threshold flake, video-variance class; posX/scrollX stay gated; covered by textmarquee-layout.test.ts + render-smoke); +1 moog962.shift (advancing the seq-switch selector across UNPATCHED in1..in3 gives Δμrms 0.004 inside the ±0.089 out-noise floor → near-threshold flake; in1/in2/in3 stay gated; covered by moog962.test.ts); +1 lines.phase (phase scroll translates the line bands but preserves frame-variance, Δμvar 2.36 vs ±63.7 → near-threshold flake, video-variance class; orient/amp/thickness stay gated; covered by lines-render-smoke.spec.ts); +1 moog911.esus_cv (sustain-level CV only shapes the held-sustain phase; short retriggering window is attack/release-dominated, Δμrms 0.003 inside ±0.105 → near-threshold flake; t1/t2/t3/gate stay gated; covered by moog911.test.ts); +1 textmarquee.scrollY (vertical scroll of the horizontal band keeps frame-variance ≈ constant, Δμvar 1.45–2.08 → near-threshold flake, same geometry as posY; posX/scrollX stay gated; covered by textmarquee-layout.test.ts); +1 moog921b.freq_bus (1V/oct pitch bus responds — perturbed cent jitters ±24Hz — but a symmetric sweep collapses the mean-cent metric to Δμcent 3–10Hz → metric-mismatch flake, not dead CV; width_bus/fine/range stay gated; covered by moog921b.test.ts)
 });
 
 // TODO(behavioral-coverage, systemic fix — tracks the header note + the

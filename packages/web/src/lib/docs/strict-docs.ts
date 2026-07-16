@@ -280,6 +280,9 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'skifree',
   'spectrograph',
   'wavesculpt',
+  // MIRRORPOOL (2026-07-15): hemisphere-pool liquid renderer (2 video in +
+  // full-PTZ camera). New video source module — ships with co-located docs.
+  'mirrorpool',
   // Video batch 1 (2026-06-26): classic single-effect video processors.
   'cellshade',
   'chromakey',

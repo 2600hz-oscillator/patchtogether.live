@@ -173,6 +173,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   luma: { size: '2u', hp: 2 }, // 275×220px
   lumakey: { size: '2u', hp: 2 }, // 287×220px
   mandelbulb: { size: '2u', hp: 2 }, // 362×280px
+  mirrorpool: { size: '3u', hp: 2 }, // 250×~500px — 160×120 preview + 11-knob PTZ grid (≈ cellshade)
   mandleblot: { size: '2u', hp: 2 }, // 360×280px
   mapper: { size: '2u', hp: 1 }, // 250×200px
   mappy: { size: '3u', hp: 2 }, // ~380×300px — 320×180 (16:9) composite preview + GRID toggle + surface legend
