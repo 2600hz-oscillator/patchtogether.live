@@ -157,6 +157,19 @@
   <li><strong>Edit view</strong> — a piano-roll note editor for one clip: X = step, Y = pitch (scale-degree rows in-key, root at the bottom). Click to place a note (click again to remove); <strong>right-click to cycle its velocity</strong> through 6 levels. Cycle <em>scale</em>, set <em>root</em>, change <em>length</em> (16/32/64/128/8; up to 128 steps), scroll the pitch window by a <strong>row</strong> (<code>↑/↓</code>) or an <strong>octave</strong> (<code>⤒/⤓</code>), or <code>⌫</code> clear the clip. A playhead column tracks the beat while the lane plays. <strong>Audition the clip without leaving the editor</strong> with the <strong>NOW</strong> / <strong>QUEUE</strong> buttons at the bottom-right (see <a href="#audition">below ↓</a>).</li>
   <li><strong>Params</strong> — <code>STEP</code> (1/4 · 1/8 · 1/16 · 1/32 = steps per beat), <code>OCT</code> (transpose all lanes), <code>GATE</code> (note duty cycle), <code>QNT</code> (quantize launch to the loop boundary).</li>
   <li><strong>Transport</strong> — <code>▶/■</code> drives TIMELORDE (hidden when externally clocked); <code>■</code> in the title bar stops all lanes; <code>GRID</code> connects a monome grid.</li>
+  <li><strong>Per-clip automation (the teal AUTO cluster)</strong> — each channel column has its own
+    <strong>◉ arm</strong> (next to its RATE control): right-click a <em>module's card</em> →
+    <em>Assign to automation lane</em> (1–8; the assigned card gets a border in the lane's colour), launch
+    a note clip in that lane, arm the lane's ◉ (red pulse; a 🟡🟡🔴🔴 countdown before the recording
+    clip wraps), then every control you <em>touch</em> on an assigned module — screen, MIDI, Electra,
+    <strong>never CV</strong> — records into the <em>playing clip's own</em> envelopes by continuous
+    overdub. Clips that carry automation show a small <strong>teal dot</strong> on their cell; a
+    <strong>MAX</strong> badge flashes at the 16-recorded-controls cap; an override dot lights while you
+    grab an automated control live (it suspends playback until you release). Clear per control
+    (right-click → <em>Clear recorded automation</em>) or per clip (the editor's <strong>CLR AUTO</strong>) —
+    both undoable. Distinct from the red <strong>●</strong> ARRANGER RECORD, which records clip
+    <em>launches</em>, never knob moves. (The monome grid has no automation surface — arm from the card,
+    or a Launchpad's SHIFT+top-row.)</li>
 </ul>
 
 <h2>Connecting a monome grid</h2>

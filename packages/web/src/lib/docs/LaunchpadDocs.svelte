@@ -211,12 +211,24 @@
    *  bright held / solid latched). */
   function permTop(
     active: SView,
-    o: { running?: boolean; shift?: 'off' | 'held' | 'latch'; keys?: boolean; undo?: boolean; redo?: boolean } = {},
+    o: {
+      running?: boolean;
+      shift?: 'off' | 'held' | 'latch';
+      keys?: boolean;
+      undo?: boolean;
+      redo?: boolean;
+      /** PER-LANE automation-arm states (mirrors PermanentTopOpts.laneArms).
+       *  Faithful to paintPermanentTopRow: while shift is ACTIVE, columns 1–7
+       *  paint as the ARM MAP (red = armed · dim red = available; col 8 keeps
+       *  the shift LED); otherwise an ARMED lane's button red-flashes over its
+       *  base colour — the diagram shows the bright (red) phase. */
+      arms?: boolean[];
+    } = {},
   ) {
     const v = (view: SView) =>
       hex(active === view || (view === 'clip' && o.keys) ? RGB_VIEW_ACTIVE : RGB_VIEW_IDLE);
     const sh = o.shift === 'held' ? RGB_SHIFT_HELD : o.shift === 'latch' ? RGB_SHIFT_LATCH : RGB_SHIFT_OFF;
-    return [
+    const base = [
       { col: 0, fill: hex(o.running ? RGB_TRANSPORT_ON : RGB_TRANSPORT_STOP), label: o.running ? '▶' : '■' },
       { col: 1, fill: v('grid'), label: 'GRID' },
       { col: 2, fill: v('clip'), label: 'CLIP' },
@@ -226,12 +238,32 @@
       { col: 6, fill: hex(o.redo ? RGB_SYS : RGB_SYS_DIM), label: 'REDO' },
       { col: 7, fill: hex(sh), label: 'SHFT' },
     ];
+    // ARM LAYER (mirrors paintPermanentTopRow, so the pictures can't drift).
+    const shiftActive = o.shift === 'held' || o.shift === 'latch';
+    const arms = o.arms ?? [];
+    return base.map((cell, col) => {
+      const armed = arms[col] === true;
+      if (shiftActive && col < 7) {
+        // ARM MAP while shift is active: red = armed, dim red = available,
+        // labelled by LANE number (the compass labels come back off-shift).
+        return { col, fill: hex(armed ? RGB_RECORDING : RGB_STOP_IDLE), label: String(col + 1) };
+      }
+      // Always-visible armed indicator: the red phase of the red-flash (col 8
+      // alternates with the shift LED).
+      return armed ? { ...cell, fill: hex(RGB_RECORDING) } : cell;
+    });
   }
   const permTopGroups = [
     { label: 'TRANSPORT', fromCol: 0, tier: 0 },
     { label: 'VIEWS  ·  Grid · Clip · Arranger · Control', fromCol: 1, toCol: 4, tier: 1 },
     { label: 'UNDO / REDO', fromCol: 5, toCol: 6, tier: 0 },
     { label: 'SHIFT', fromCol: 7, tier: 1 },
+  ];
+  // The ARM-LAYER diagram states (shown: lane 3 armed).
+  const ARMS_LANE3 = [false, false, true, false, false, false, false, false];
+  const armMapGroups = [
+    { label: 'ARM MAP — press = toggle that lane (red pulse = armed · dim red = available)', fromCol: 0, toCol: 6, tier: 0 },
+    { label: 'SHFT — lane 8 = double-tap', fromCol: 7, tier: 1 },
   ];
 
   // ── GRID view — the TRANSPOSED clip matrix: x = channel/lane (0..7 left→right),
@@ -918,6 +950,20 @@
         always-visible record indicator.</li>
     </ul>
 
+    <h4>The arm layer in pictures</h4>
+    <LaunchpadDiagram
+      top={permTop('grid', { running: true, shift: 'held', arms: ARMS_LANE3 })}
+      callouts={armMapGroups}
+      accent={hex(RGB_RECORDING)}
+      caption="SHIFT held (or latched) — the top row becomes the PER-LANE ARM MAP, in EVERY view: columns 1–7 are lanes 1–7 (red pulse = armed — lane 3 here; dim red = available; the press toggles the arm and is consumed). Column 8 keeps the SHIFT LED — lane 8 is a DOUBLE-TAP of SHIFT, firing on the second tap's RELEASE (tap-tap only: a second press you keep held is just the modifier), and it red-pulses while lane 8 is armed."
+    />
+    <LaunchpadDiagram
+      top={permTop('grid', { running: true, arms: ARMS_LANE3 })}
+      callouts={permTopGroups}
+      accent={hex(RGB_RECORDING)}
+      caption="Shift released — the compass comes back, but ARMED lane 3's button keeps RED-FLASHING, alternating with its base colour (shown on the red phase), in every view, until the lane is disarmed. A RED-FAMILY base (the stopped transport button) alternates with a DIM red instead, so the blink stays legible."
+    />
+
     <h3 id="single-shift">The shift layer + tap-to-arm — one-handed by design</h3>
     <p>
       Every right-column button has a plain meaning and a <strong>shift</strong> meaning. SHIFT (CC 98) is
@@ -983,7 +1029,7 @@
       scene={gridShiftScene}
       callouts={gridCallouts}
       accent={hex(RGB_PATTERN_ARMED)}
-      caption="GRID + shift (SHIFT latched, solid yellow). The right column becomes the function palette, top→bottom: COPY · PASTE · CLIP-DIV · SWING+ · SWING− · LENGTH · SCR▲ · SCR▼. Green = pattern, blue = timing, yellow = length, amber = scene-scroll. PASTE shows turquoise here because the clipboard holds a clip."
+      caption="GRID + shift (SHIFT latched, solid yellow). The right column becomes the function palette, top→bottom: COPY · PASTE · CLIP-DIV · SWING+ · SWING− · LENGTH · SCR▲ · SCR▼. Green = pattern, blue = timing, yellow = length, amber = scene-scroll. PASTE shows turquoise here because the clipboard holds a clip. While shift is on, the TOP ROW is the per-lane automation ARM MAP (dim red = available — none armed here)."
     />
     <ul class="tight">
       <li><strong>COPY</strong> (green): arm, then tap a loaded clip → snapshot that CLIP to the clipboard,
@@ -1063,7 +1109,7 @@
       scene={clipShiftScene}
       callouts={editCallouts}
       accent={hex(RGB_TIMING_ARMED)}
-      caption="CLIP + shift. The 8×8 becomes VELOCITY-cycle (a faint purple wash over empty cells) — tap a note to cycle its velocity. ROW± brighten (they now jump a full page — 8 rows) and STEP± brighten (they jump a full block). DOUBLE / LENGTH / FOLLOW / KEYS are unchanged."
+      caption="CLIP + shift. The 8×8 becomes VELOCITY-cycle (a faint purple wash over empty cells) — tap a note to cycle its velocity. ROW± brighten (they now jump a full page — 8 rows) and STEP± brighten (they jump a full block). DOUBLE / LENGTH / FOLLOW / KEYS are unchanged. The TOP ROW is the automation ARM MAP while shift is on (dim red = available)."
     />
     <ul class="tight">
       <li><strong>Velocity:</strong> under shift, tapping a note <strong>cycles its velocity</strong>
@@ -1111,12 +1157,12 @@
     </ul>
     <h4>KEYS + shift — the arpeggiator</h4>
     <LaunchpadDiagram
-      top={permTop('clip', { running: true, keys: true })}
+      top={permTop('clip', { running: true, keys: true, shift: 'held' })}
       pads={keysSinglePads}
       scene={keysArpScene}
       callouts={keysSingleCallouts}
       accent={hex(RGB_TIMING)}
-      caption="KEYS + shift — the arp control column, top→bottom: DIV+ · DIV− (blue) · UP · DOWN · UP-AND-DOWN (green; UP selected, bright) · RANGE+ · RANGE− (orange) · LATCH (dim orange = off). The keyboard + playhead stay live; the notes you hold feed the arp."
+      caption="KEYS + shift (SHIFT held, bright yellow) — the arp control column, top→bottom: DIV+ · DIV− (blue) · UP · DOWN · UP-AND-DOWN (green; UP selected, bright) · RANGE+ · RANGE− (orange) · LATCH (dim orange = off). The keyboard + playhead stay live; the notes you hold feed the arp. As everywhere, the top row is the automation ARM MAP while shift is active."
     />
     <ul class="tight">
       <li><strong>Turn it on</strong> (ARP button, no-shift) and hold a chord — the arp sequences your held
@@ -1232,7 +1278,8 @@
     <h3>Make a patch in 1-pad mode</h3>
     <p>
       Never touched the device? This is the whole journey on <strong>one Launchpad</strong> — plug in, wire
-      three voices, clip-record a bassline in KEYS, lay clips in GRID, build scenes, and perform. By the end
+      three voices, clip-record a bassline in KEYS, lay clips in GRID, build scenes, perform, and record
+      knob automation into a clip. By the end
       you'll have a live three-voice patch: <strong>kick</strong>, <strong>snare</strong> and a poly
       <strong>TIDY VCO</strong> bassline.
     </p>
@@ -1353,6 +1400,24 @@
       <li><strong>Ride the tempo / drop everything:</strong> in CONTROL, nudge <strong>TEMPO+ / −</strong>,
         or hit <strong>STOP-ALL</strong>; the <strong>transport</strong> button (top row, CC 91) starts /
         stops the clock.</li>
+    </ol>
+
+    <h4>7 · Record knob automation (CLIP RECORD)</h4>
+    <ol class="steps">
+      <li><strong>Assign the module:</strong> right-click the <strong>TIDY VCO's card</strong> →
+        <em>Assign to automation lane</em> → <strong>lane 3</strong> (the bass channel). The whole module
+        joins the lane and its card gets a thin border in lane 3's colour.</li>
+      <li><strong>Arm lane 3:</strong> hold <strong>SHIFT</strong> and press the <strong>3rd top-row
+        button</strong> — from any view (lane 8 would be a <em>double-tap</em> of SHIFT). The button
+        red-flashes: same arm as the card's per-lane <strong>◉</strong>.</li>
+      <li><strong>Play + twist:</strong> with the bass clip playing, move any TIDY VCO control — every
+        touch (screen drag, MIDI CC, Electra; <strong>never CV</strong>) records into <em>that playing
+        clip's own</em> automation and keeps overdubbing each loop (a 🟡🟡🔴🔴 countdown flashes the
+        clip's pad before each wrap). Release the control and it replays your move every loop.</li>
+      <li><strong>Disarm:</strong> SHIFT + the same button. Made a mess? Right-click the control →
+        <em>Clear recorded automation</em>, or <strong>CLR AUTO</strong> in the clip editor — both
+        undoable. Copy/paste and scene launches carry each clip's automation with it; long-form,
+        song-length automation is the (future) ARRANGER mode's job.</li>
     </ol>
     <p class="muted">
       Every control you touched — the four views, the shift layer, KEYS + arp, MUTE / RATE / RESET / SWING /

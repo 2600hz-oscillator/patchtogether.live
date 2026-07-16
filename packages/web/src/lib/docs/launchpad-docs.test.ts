@@ -67,6 +67,28 @@ describe('LaunchpadDocs — tabbed structure', () => {
     expect(out).toContain('CV is never recorded');
   });
 
+  it('shows the automation ARM layer in the top-row diagram data, not prose alone', () => {
+    const out = html();
+    // The shift-active ARM-MAP diagram + the always-visible armed red-flash
+    // state both render in the shared foundation (visible from the default tab).
+    expect(out).toContain('ARM MAP');
+    expect(out).toContain('RED-FLASHING');
+    // Lane 8's arm is the SHFT double-tap, fired on the second tap's RELEASE.
+    expect(out).toContain('DOUBLE-TAP of SHIFT');
+    expect(out).toContain('RELEASE');
+    // The dim-red alternation on red-family bases is documented.
+    expect(out).toContain('DIM red');
+  });
+
+  it('has no old global/single AUTO pad anywhere (per-lane arm replaced it)', () => {
+    for (const { name, out } of everyPanel()) {
+      // The retired Control-view AUTO pad must not resurface as a pad label or
+      // a documented pad — the arm lives on the permanent top row under SHIFT.
+      expect(out, name).not.toContain('>AUTO<');
+      expect(out, name).not.toContain('AUTO pad');
+    }
+  });
+
   it('documents copy/paste as Grid-only (no editor CPY/PST doc content)', () => {
     const out = html();
     // The Grid tab carries the copy/paste palette…
