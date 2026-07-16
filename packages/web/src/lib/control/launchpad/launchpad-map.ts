@@ -10,7 +10,8 @@
 // Owner-LOCKED layout (Plan B + Plan C's "matrix never disappears"):
 //
 //   UNIT L = the clip MATRIX, PERMANENTLY (never flips to the editor):
-//     · 8×8 pads: pad (x=slot, y=lane) ↔ clip index lane*8+slot. y is measured
+//     · 8×8 pads: pad (x=slot, y=lane) ↔ clip index lane*SCENE_STRIDE+slot
+//       (stride 64 — schema v2's fixed flat key). y is measured
 //       from the BOTTOM (programmer-mode 11=bottom-left). Tap = launch/stop the
 //       lane via node.data.queued[] (the SAME synced field the card + monome
 //       write → multiplayer-synced for free).
