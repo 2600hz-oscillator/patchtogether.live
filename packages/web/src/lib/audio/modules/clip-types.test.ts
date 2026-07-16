@@ -68,6 +68,8 @@ import {
   armedAutomationLanes,
   isLaneAutomationRecorder,
   toggleLaneAutomationArm,
+  migrateAutomationLanesShape,
+  scrubClipPlayerTransientData,
   coerceAutomationEvent,
   coerceAutoTrack,
   coerceAutoClipRecord,
@@ -452,22 +454,68 @@ describe('automation: CLEAN BREAK — the retired stamped kind coerces away sile
     expect(isLaneAutomationRecorder(d, 2, 111)).toBe(false); // unarmed lane
     expect(isLaneAutomationRecorder(undefined, 0, 111)).toBe(false);
   });
-  it('toggleLaneAutomationArm: arm stamps the recorderId + shell; disarm nulls the slot; other lanes untouched', () => {
+  it('toggleLaneAutomationArm: PER-KEY record writes — arm stamps recorderId + shells; disarm deletes the key; other lanes untouched', () => {
     const d: ClipPlayerData = {
       clips: { [String(clipIndex(0, 2))]: { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true } },
       playing: [null, null, 0, null, null, null, null, null],
       autoAssign: { modA: 2 },
-      automation: { lanes: [null, { arm: true, recorderId: 999 }, null] },
+      automation: { lanes: { '1': { arm: true, recorderId: 999 } } }, // the canonical RECORD shape
     };
     expect(toggleLaneAutomationArm(d, 2, 42)).toBe(true); // armed
     expect(laneAutomationArmed(d, 2)).toBe(true);
-    expect(d.automation!.lanes![2]).toEqual({ arm: true, recorderId: 42 });
-    expect(d.automation!.lanes![1]).toEqual({ arm: true, recorderId: 999 }); // untouched
-    // Arm pre-created the playing clip's shell (container-LWW hardening).
+    const lanes = d.automation!.lanes as Record<string, unknown>;
+    expect(lanes['2']).toEqual({ arm: true, recorderId: 42 }); // single-KEY write
+    expect(lanes['1']).toEqual({ arm: true, recorderId: 999 }); // untouched
+    // Arm pre-created the lane's note-clip shell (container-LWW hardening).
     expect(d.auto?.[String(clipIndex(0, 2))]).toEqual({ tracks: {} });
     expect(toggleLaneAutomationArm(d, 2, 42)).toBe(false); // disarmed
-    expect(d.automation!.lanes![2]).toBeNull();
+    expect('2' in lanes, 'disarm DELETES the key (per-key merge discipline)').toBe(false);
     expect(laneAutomationArmed(d, 1)).toBe(true); // still armed
+  });
+  it('interim ARRAY lanes shape: readers accept it; the toggle + migrate helper convert it one-way to the record', () => {
+    const d: ClipPlayerData = {
+      automation: { lanes: [null, { arm: true, recorderId: 7 }, null] }, // 81084fe9 shape
+    };
+    // Readers accept the array as-is (one-way read).
+    expect(laneAutomationArmed(d, 1)).toBe(true);
+    expect(isLaneAutomationRecorder(d, 1, 7)).toBe(true);
+    expect(armedAutomationLanes(d)[1]).toBe(true);
+    // The toggle migrates to the RECORD first, then per-key writes.
+    expect(toggleLaneAutomationArm(d, 3, 42)).toBe(true);
+    expect(Array.isArray(d.automation!.lanes)).toBe(false);
+    const lanes = d.automation!.lanes as Record<string, unknown>;
+    expect(lanes['1']).toEqual({ arm: true, recorderId: 7 }); // carried over
+    expect(lanes['3']).toEqual({ arm: true, recorderId: 42 });
+    // The standalone migrate is idempotent on the record shape.
+    expect(migrateAutomationLanesShape(d)).toBe(false);
+  });
+  it('scrubClipPlayerTransientData strips live-performance fields, keeps content + settings (the duplicate scrub)', () => {
+    const data: Record<string, unknown> = {
+      sv: 2,
+      clips: { '0': { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true } },
+      auto: { '0': { tracks: { 'm::p': { events: [{ step: 0, value: 0.5 }] } } } },
+      mono: [true], muted: [false], rate: [3], swing: [0.1], laneColor: ['#112233'],
+      arrangement: { events: [] }, clipMode: 'session', recordMode: 'overdub',
+      // LIVE-PERFORMANCE state — must NOT survive a duplicate:
+      playing: [0, null, null, null, null, null, null, null],
+      queued: [1, null, null, null, null, null, null, null],
+      queuedImmediate: [true],
+      recording: true,
+      noteRec: { lane: 0, slot: 0, armed: true, recording: true, overdub: false },
+      automation: { lanes: { '0': { arm: true, recorderId: 123 } } },
+      autoAssign: { modA: 0 },
+      resetNonce: 5,
+    };
+    scrubClipPlayerTransientData(data);
+    // Scrubbed (a duplicate is born disarmed, unassigned, stopped):
+    for (const f of ['playing', 'queued', 'queuedImmediate', 'recording', 'noteRec', 'automation', 'autoAssign', 'resetNonce']) {
+      expect(f in data, `${f} scrubbed`).toBe(false);
+    }
+    // Content + settings survive:
+    for (const f of ['sv', 'clips', 'auto', 'mono', 'muted', 'rate', 'swing', 'laneColor', 'arrangement', 'clipMode', 'recordMode']) {
+      expect(f in data, `${f} kept`).toBe(true);
+    }
+    expect(() => scrubClipPlayerTransientData(undefined)).not.toThrow();
   });
 });
 
@@ -643,22 +691,30 @@ describe('automation: single-driver playback ownership (autoPlaybackOwners)', ()
 });
 
 describe('automation: ensureLaneArmAutoShell (per-lane arm-time container pre-creation)', () => {
-  it('creates the shell ONLY when the lane has assigned modules AND a playing note clip', () => {
+  it('shells EVERY note clip of an assigned lane (arm-then-LAUNCH covered); unassigned lanes get none', () => {
     const d: ClipPlayerData = {
       clips: {
         [String(clipIndex(0, 0))]: { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true },
+        [String(clipIndex(3, 0))]: { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true }, // NOT playing — shelled anyway (launch-after-arm flow)
         [String(clipIndex(1, 2))]: { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true },
         [String(clipIndex(0, 3))]: { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true },
       },
-      playing: [0, null, 1, null, null, null, null, null], // lane 0 + lane 2 playing; lane 3 NOT
-      autoAssign: { modA: 0, modB: 3 }, // lane 0 assigned+playing; lane 3 assigned+stopped
+      playing: [0, null, 1, null, null, null, null, null],
+      autoAssign: { modA: 0, modB: 3 }, // lanes 0 + 3 assigned; lane 2 not
     };
     ensureLaneArmAutoShell(d, 0);
     ensureLaneArmAutoShell(d, 2);
     ensureLaneArmAutoShell(d, 3);
     expect(d.auto?.[String(clipIndex(0, 0))]).toEqual({ tracks: {} }); // lane 0 → shell
+    // The WHOLE assigned lane is shelled — a clip LAUNCHED after arming
+    // already has its container (closes the commit-side creation LWW window).
+    expect(d.auto?.[String(clipIndex(3, 0))]).toEqual({ tracks: {} });
     expect(d.auto?.[String(clipIndex(1, 2))]).toBeUndefined(); // lane 2 playing but unassigned
-    expect(d.auto?.[String(clipIndex(0, 3))]).toBeUndefined(); // lane 3 assigned but stopped
+    // Lane 3 assigned + STOPPED: its note clips shell too (arm-before-launch).
+    expect(d.auto?.[String(clipIndex(0, 3))]).toEqual({ tracks: {} });
+    // Empty shells are INERT: no carrier dot, no playback view.
+    expect(autoClipHasTracks(d.auto?.[String(clipIndex(3, 0))])).toBe(false);
+    expect(readAutoClip(d as never, clipIndex(3, 0))).toBeNull();
   });
   it('never replaces an EXISTING record (idempotent)', () => {
     const existing = { tracks: { 'a::x': { events: [{ step: 0, value: 0.5 }] } } };

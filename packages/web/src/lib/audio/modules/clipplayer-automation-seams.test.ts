@@ -504,6 +504,43 @@ describe('clipplayer automation seams (factory-level, ordered engine log)', () =
     handle.dispose();
   });
 
+  it('TRANSPORT STOP punches out an in-flight record pass (partial commit at the stop instant — nothing left frozen in controller memory)', async () => {
+    const { notifyAutomationTouch, notifyAutomationRelease } = await import(
+      '$lib/audio/automation-touch'
+    );
+    const { ydoc } = await import('$lib/graph/store');
+    seedVca('va', 0.1);
+    seedPlayer(
+      { [clipIndex(0, 0)]: { clip: { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true }, auto: { tracks: {} } } },
+      0,
+    );
+    const data = livePatch.nodes[NODE_ID]!.data as Record<string, unknown>;
+    data.autoAssign = { va: 0 };
+    data.automation = { lanes: { '0': { arm: true, recorderId: ydoc.clientID } } };
+    seedTimelorde(1);
+    const ctx = new FakeAudioContext();
+    const { engine } = makeFakeEngine(ctx);
+    setActiveEngine(engine);
+    const handle = await build(ctx);
+
+    // Grab BEFORE the wrap → the entry seeds at pass start with the pre-move
+    // value (0.1); the mid-pass move to 0.9 is then real motion (maxDev).
+    notifyAutomationTouch({ nodeId: 'va', paramId: 'base' }, 'pointer');
+    run(ctx, 0, 1.05); // punch-in at the first wrap (~1.01 s)
+    livePatch.nodes['va']!.params.base = 0.9; // a big move mid-pass
+    run(ctx, 1.05, 1.5);
+    // STOP the transport mid-pass → the armed lane's partial pass must commit
+    // NOW (the laneStopped punch-out), not sit frozen until restart/disarm.
+    livePatch.nodes['tl']!.params.running = 0;
+    run(ctx, 1.5, 1.6); // the stop tick fires the punch-out
+    notifyAutomationRelease({ nodeId: 'va', paramId: 'base' }, 'pointer');
+    const auto = data.auto as Record<string, { tracks?: Record<string, { events?: unknown[] }> }>;
+    const track = auto?.[String(clipIndex(0, 0))]?.tracks?.['va::base'];
+    expect(track, 'the partial pass committed at the stop instant').toBeTruthy();
+    expect((track!.events?.length ?? 0)).toBeGreaterThan(0);
+    handle.dispose();
+  });
+
   it('FULL RECORD PATH: assign → arm → touch + move → the factory commits into auto[k] (per-key, real store) + publishes the per-lane countdown', async () => {
     const { notifyAutomationTouch, notifyAutomationRelease } = await import(
       '$lib/audio/automation-touch'

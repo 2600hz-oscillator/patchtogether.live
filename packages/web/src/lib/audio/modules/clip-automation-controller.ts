@@ -133,6 +133,14 @@ interface PassState {
    *  loop keeps its existing events (a gesture spanning a wrap must not erase
    *  the part of its OWN pass-1 recording it didn't re-cover in pass 2). */
   lastSampledStep: number;
+  /** The hand LIFTED after this entry sampled (window frozen). A RE-GRAB of
+   *  the same param later in the SAME pass must NOT reuse this entry — its
+   *  window would then span the untouched gap and the merge would wipe the
+   *  existing envelope between the two touches. Instead the frozen SEGMENT is
+   *  punch-committed and a FRESH entry (a new segment window) starts at the
+   *  re-grab position — per-SEGMENT windows, mirroring the mid-pass
+   *  moved-away punch-out. */
+  released?: boolean;
 }
 
 /** One lane's record state under the global arm: its own quantized window +
@@ -498,8 +506,21 @@ export class AutomationController {
       // the CURRENT position (its window starts here — the loop before the
       // touch is preserved). CV modulation can never appear here: it fires no
       // notifyAutomationTouch, so it is never in the held set.
+      //
+      // PER-SEGMENT WINDOWS (re-grab in the same pass): if the key already has
+      // an entry whose hand RELEASED earlier this pass, that frozen SEGMENT is
+      // punch-committed NOW ([first, last] of the FIRST touch only) and a
+      // FRESH entry starts at the re-grab position — one merge window per
+      // touch, so the existing envelope BETWEEN two disjoint touches of the
+      // SAME param in one pass is never wiped (mirrors the mid-pass
+      // moved-away punch-out above).
       for (const k of this.heldKeys()) {
-        if (lr.pass.has(k)) continue;
+        const prev = lr.pass.get(k);
+        if (prev && !prev.released) continue; // still held — same segment
+        if (prev && prev.released) {
+          lr.pass.delete(k);
+          this.commitEntries(lr.latchedClipIndex, lr.passLen, [prev], prev.lastSampledStep);
+        }
         const target = parseAutomationTargetKey(k);
         if (!target || !assignedModules.has(target.nodeId)) continue;
         if (lr.pass.size >= MAX_AUTOMATION_TRACKS) {
@@ -521,11 +542,15 @@ export class AutomationController {
         });
       }
       // TOUCH-GATED capture: sample ONLY the tracks the user is ACTIVELY TOUCHING
-      // (in `suspended`/`grabbed`). A released track is NOT sampled further →
-      // its window stops extending → the un-recovered remainder of the loop
-      // keeps its existing events and resumes PLAYING BACK next loop.
+      // (in `suspended`/`grabbed`). A released track is NOT sampled further —
+      // its window FREEZES (marked `released` so a later re-grab starts a new
+      // segment) and the un-recovered remainder of the loop keeps its existing
+      // events and resumes PLAYING BACK next loop.
       for (const st of lr.pass.values()) {
-        if (!this.isHeld(key(st.target))) continue; // released → window frozen
+        if (!this.isHeld(key(st.target))) {
+          st.released = true; // window frozen — a re-grab opens a NEW segment
+          continue;
+        }
         const v = this.deps.readNorm(st.target);
         if (v == null) continue;
         st.gate.sample(fracStep, v);

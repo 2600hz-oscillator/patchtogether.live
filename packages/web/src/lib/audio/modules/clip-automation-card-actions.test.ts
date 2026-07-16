@@ -27,6 +27,7 @@ import {
   automationAssignmentFor,
   pruneAutoAssignDangling,
   pruneAllAutoAssignDangling,
+  repairDuplicateAutoAssign,
   listClipPlayers,
   hasRecordedAutomation,
   clearRecordedAutomation,
@@ -159,6 +160,51 @@ describe('clip-automation card/menu actions (real Y.Doc, shared assign seam)', (
     expect(coerceAutoAssign(cpData(CP).autoAssign)).toEqual({});
     expect(coerceAutoAssign(cpData(CP2).autoAssign)).toEqual({});
     expect(pruneAllAutoAssignDangling()).toBe(0); // idempotent
+  });
+
+  it('JANITOR ORIGIN: the prune never plants undo items on the local stack (a peer-driven module deletion cannot pollute undo)', () => {
+    // The app's UndoManager tracks ONLY LOCAL_ORIGIN — mirror it here. The
+    // janitor prune must ride AUTO_JANITOR_ORIGIN (untracked): before, a
+    // peer's module deletion would sync in, the local janitor would prune
+    // under LOCAL_ORIGIN, and every OTHER client's undo stack would grow a
+    // phantom item — undoing past it livelocks (restore → re-prune → fresh
+    // item) and wipes redo.
+    const undo = new Y.UndoManager(ydoc.getMap('nodes'), {
+      trackedOrigins: new Set([LOCAL_ORIGIN]),
+      captureTimeout: 0,
+    });
+    assignAutomationLane(CP, MOD_A, 1); // a tracked USER edit
+    const userItems = undo.undoStack.length;
+    expect(userItems).toBeGreaterThan(0);
+    delete patch.nodes[MOD_A]; // the module vanishes (peer-driven — untracked)
+    expect(pruneAllAutoAssignDangling()).toBe(1);
+    expect(pruneAutoAssignDangling(CP)).toBe(0);
+    expect(undo.undoStack.length, 'janitor writes added NOTHING to undo').toBe(userItems);
+    expect(assignedLaneOfModule(cpData(), MOD_A)).toBeNull();
+    undo.destroy();
+  });
+
+  it('mid-session ::-key sweep: retired param-level keys arriving over sync are janitored (always-dangling)', () => {
+    // Simulate a legacy peer syncing a retired `nodeId::paramId` assignment
+    // into the RAW map mid-session (the factory sweep is load-only).
+    const live = patch.nodes[CP]!;
+    if (!live.data) live.data = {};
+    (live.data as ClipPlayerData).autoAssign = { [`${MOD_A}::freq`]: 3, [MOD_A]: 2 };
+    expect(pruneAllAutoAssignDangling()).toBe(1); // the ::-key retired
+    expect(coerceAutoAssign(cpData().autoAssign)).toEqual({ [MOD_A]: 2 }); // the module claim stays
+  });
+
+  it('REPAIR: the same module claimed on TWO players keeps the LOWEST player id, deterministically', () => {
+    seedNode(CP2, 'clipplayer');
+    // Bypass the assign seam (which enforces the move) to fabricate the
+    // post-merge duplicate-claim state the repair exists for.
+    (patch.nodes[CP]!.data as ClipPlayerData).autoAssign = { [MOD_A]: 1 };
+    (patch.nodes[CP2]!.data as ClipPlayerData).autoAssign = { [MOD_A]: 5, [MOD_B]: 2 };
+    expect(repairDuplicateAutoAssign()).toBe(1); // CP2's duplicate claim dropped
+    expect(assignedLaneOfModule(cpData(CP), MOD_A), 'lowest player id keeps the claim').toBe(1);
+    expect(assignedLaneOfModule(cpData(CP2), MOD_A)).toBeNull();
+    expect(assignedLaneOfModule(cpData(CP2), MOD_B), 'unrelated claim untouched').toBe(2);
+    expect(repairDuplicateAutoAssign(), 'idempotent').toBe(0);
   });
 
   it('listClipPlayers finds every clipplayer (all accept assignments — no stamped clip)', () => {

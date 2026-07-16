@@ -806,6 +806,61 @@ describe('AutomationController — param-jump policy (Phase 0 seams, re-targeted
     }
   });
 
+  it('PER-SEGMENT windows: two disjoint touches of the SAME param in ONE pass never wipe the envelope between them (blocker regression)', () => {
+    // SEED a full-loop envelope on a 12-step clip with breakpoints in the
+    // middle [4..8]. Then in ONE pass: touch A over [1,3], release, an
+    // untouched gap, touch B over [9,11]. The old single per-entry window
+    // spanned [1,11] and mergeAutomationOverdub deleted the middle; the fix
+    // punch-commits segment A on the re-grab and opens a FRESH segment, so
+    // the seed's middle breakpoints survive verbatim.
+    const assigned = modsOf(target);
+    const h = harness();
+    h.set(target, 0.5);
+    h.ctrl.armLane(LANE);
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 10, 12);
+    h.touch(target);
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 0, 12); // punch-in (seeded @0)
+    h.move(target, 0.6); h.ctrl.recordLaneTick(LANE, IDX, assigned, 4, 12);
+    h.move(target, 0.7); h.ctrl.recordLaneTick(LANE, IDX, assigned, 6, 12);
+    h.move(target, 0.8); h.ctrl.recordLaneTick(LANE, IDX, assigned, 8, 12);
+    h.move(target, 0.9); h.ctrl.recordLaneTick(LANE, IDX, assigned, 11, 12);
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 0, 12); // wrap → commit the seed
+    h.release(target);
+    h.ctrl.disarmLane(LANE);
+    const seed = h.eventsOf(IDX, target)!;
+    const middle = seed.filter((e) => e.step >= 4 && e.step <= 8);
+    expect(middle.length, 'seed put breakpoints in the middle').toBeGreaterThanOrEqual(3);
+
+    // THE PASS UNDER TEST: two disjoint touches of the SAME param.
+    h.ctrl.armLane(LANE);
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 10, 12);
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 0, 12); // punch-in (nothing held)
+    h.move(target, 0.1); h.ctrl.recordLaneTick(LANE, IDX, assigned, 1, 12); // touch A
+    h.set(target, 0.15); h.ctrl.recordLaneTick(LANE, IDX, assigned, 3, 12);
+    h.release(target); // hand lifts at step 3
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 5, 12); // untouched gap (segment A frozen)
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 7, 12);
+    h.move(target, 0.3); h.ctrl.recordLaneTick(LANE, IDX, assigned, 9, 12); // touch B (re-grab)
+    h.set(target, 0.35); h.ctrl.recordLaneTick(LANE, IDX, assigned, 11, 12);
+    h.release(target);
+    h.ctrl.recordLaneTick(LANE, IDX, assigned, 0, 12); // wrap → commit segment B
+
+    const out = h.eventsOf(IDX, target)!;
+    // Every seed breakpoint BETWEEN the touches (4..8) survives verbatim.
+    for (const e of middle) {
+      expect(
+        out.some((p) => p.step === e.step && Math.abs(p.value - e.value) < 1e-9),
+        `middle breakpoint @${e.step} survived the two-touch pass`,
+      ).toBe(true);
+    }
+    // …and BOTH touch windows hold their new motion.
+    expect(out.filter((e) => e.step >= 1 && e.step <= 3).some((e) => e.value <= 0.2)).toBe(true);
+    expect(out.filter((e) => e.step >= 9 && e.step <= 11).some((e) => e.value <= 0.4)).toBe(true);
+    // Two committed windows for the pass (segment A punch + segment B wrap),
+    // after the seed pass's single commit.
+    expect(h.commits.length).toBe(3);
+  });
+
   it('DISARM partial still bounds each track to its OWN sampled window (per-track, not global)', () => {
     // Two tracks; A sampled to step 2, B sampled to step 5. The global
     // passLastStep is 5, but A's window must end at 2 — B's motion must not

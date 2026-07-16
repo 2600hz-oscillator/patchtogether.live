@@ -909,8 +909,10 @@
         armed, dim red = available), and the press is <strong>consumed</strong> — shift+▶ never touches
         the transport, shift+GRID never switches views, shift+UNDO never undoes.
         <strong>Lane 8's top button IS the shift button</strong>, so lane 8 is a
-        <strong>double-tap of SHIFT</strong> (the second tap toggles the arm and reverts the first tap's
-        latch, so the latch nets back to where it started). Because this lives on the global row,
+        <strong>double-tap of SHIFT</strong> (the pair fires on the second tap's <em>release</em> — a
+        second press you keep HELD is just the shift modifier, never a lane-8 toggle — and it reverts
+        the first tap's latch, so the latch nets back to where it started, from either state). Because
+        this lives on the global row,
         <strong>you can arm or disarm any lane from any screen</strong> — and an ARMED lane's top button
         <strong>red-flashes over its normal colour</strong> all the time, in every view, as the
         always-visible record indicator.</li>

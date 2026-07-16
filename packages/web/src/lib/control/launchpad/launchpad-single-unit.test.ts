@@ -1113,28 +1113,30 @@ describe('SINGLE — per-lane automation ARM (SHIFT + top row / double-tap SHFT)
     expect(__test_mode().singleView, 'still in control view').toBe('control');
   });
 
-  it('LANE 8 = DOUBLE-TAP SHFT: arms on the second press, REVERTS the latch change; a lone tap still latches (no lag)', () => {
+  it('LANE 8 = DOUBLE-TAP SHFT: fires on the SECOND TAP’S RELEASE (tap-tap only), REVERTS the latch change; a lone tap still latches', () => {
     passWindow();
     // Single tap: latches as always (immediate, unchanged behaviour).
     sim.cc('L', CC_SHIFT, 127);
     sim.cc('L', CC_SHIFT, 0);
     expect(__test_mode().shiftLatched, 'first tap latched immediately').toBe(true);
     expect(laneArm(7)).toBe(false);
-    // Second tap WITHIN the window: lane 8 arm toggles ON the press, and the
-    // first tap's latch change is REVERTED (net latch unchanged from before
-    // the pair).
+    // Second tap WITHIN the window: the pair fires on this tap's SHORT
+    // RELEASE (a press that becomes a HOLD is a modifier, never a lane-8
+    // toggle) and the first tap's latch change is REVERTED (net latch
+    // unchanged from before the pair).
     sim.cc('L', CC_SHIFT, 127);
-    expect(laneArm(7), 'lane 8 armed on the second press (no lag)').toBe(true);
-    expect(laneRecorder(7)).toBe(ydoc.clientID);
+    expect(laneArm(7), 'pending on the press — fires on the RELEASE').toBe(false);
     sim.cc('L', CC_SHIFT, 0);
+    expect(laneArm(7), 'lane 8 armed on the second tap’s release').toBe(true);
+    expect(laneRecorder(7)).toBe(ydoc.clientID);
     expect(__test_mode().shiftLatched, 'the pair nets the latch back to OFF').toBe(false);
     // A second double-tap disarms lane 8 the same way.
     passWindow();
     sim.cc('L', CC_SHIFT, 127);
     sim.cc('L', CC_SHIFT, 0);
     sim.cc('L', CC_SHIFT, 127);
-    expect(laneArm(7), 'double-tap toggles OFF').toBe(false);
     sim.cc('L', CC_SHIFT, 0);
+    expect(laneArm(7), 'double-tap toggles OFF').toBe(false);
     expect(__test_mode().shiftLatched).toBe(false);
     // A lone tap AFTER the window still just latches (the arm didn't eat it).
     passWindow();
@@ -1142,6 +1144,43 @@ describe('SINGLE — per-lane automation ARM (SHIFT + top row / double-tap SHFT)
     sim.cc('L', CC_SHIFT, 0);
     expect(__test_mode().shiftLatched, 'single tap after the window latches').toBe(true);
     expect(laneArm(7), 'no spurious lane-8 arm from the lone tap').toBe(false);
+  });
+
+  it('LATCHED → double-tap: toggles lane 8 AND nets the latch back to ON (the other gesture direction)', () => {
+    passWindow();
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0); // latch
+    expect(__test_mode().shiftLatched).toBe(true);
+    passWindow(); // the latch tap is long past — a fresh pair starts here
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0); // tap 1 (unlatches + anchors)
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0); // tap 2 → fires
+    expect(laneArm(7), 'double-tap from the latched state arms lane 8').toBe(true);
+    expect(__test_mode().shiftLatched, 'the latch nets back to ON').toBe(true);
+  });
+
+  it('tap-then-HOLD never fires lane 8 (the second press became a modifier)', () => {
+    passWindow();
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0); // tap 1 → latched + anchored
+    expect(__test_mode().shiftLatched).toBe(true);
+    sim.cc('L', CC_SHIFT, 127); // press 2 within the window…
+    for (let i = 0; i < 15; i++) hoisted.tick!(); // …but it becomes a HOLD
+    sim.cc('L', CC_SHIFT, 0);
+    expect(laneArm(7), 'a hold is a modifier — no lane-8 toggle').toBe(false);
+    expect(__test_mode().shiftLatched, 'tap 1’s latch stands (a hold never latches)').toBe(true);
+  });
+
+  it('held-shift PALETTE use never latches on release (fast hold+tap+release)', () => {
+    // Pre-existing #1078 quirk the arm gesture escalated: any use of held
+    // shift as a MODIFIER (grid palette / arm gesture / matrix tap) must
+    // suppress the release-latch.
+    sim.cc('L', CC_SHIFT, 127); // hold
+    sim.cc('L', sceneCc(G_SWING_UP), 127); // a palette action under the hold
+    sim.cc('L', CC_SHIFT, 0); // fast release (< the tap window)
+    expect(__test_mode().shiftLatched, 'modifier use suppressed the latch').toBe(false);
+    expect(laneSwing(liveData(), 0), 'the palette action itself applied').toBeCloseTo(0.02, 5);
   });
 
   it('a press BETWEEN two shift taps breaks the pair — “latch → arm COPY → unlatch” never arms lane 8', () => {

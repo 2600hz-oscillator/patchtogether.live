@@ -393,19 +393,25 @@ export interface ClipPlayerData {
    *  see it. Absent/null = not note-recording. v1 single-recorder per clip. */
   noteRec?: NoteRecState | null;
   /** AUTOMATION record-arm state — PER LANE (the owner's Deluge-like model:
-   *  "we arm this per channel, not as a global"). `lanes[L]` = lane L's arm:
-   *  while `arm` is true, touching ANY control of a MODULE assigned to lane L
-   *  (screen / MIDI / Electra — never CV) records into lane L's PLAYING clip's
-   *  sibling `auto` object (punch-in at that clip's own wrap; continuous
-   *  overdub). `recorderId` = the arming client's `ydoc.clientID` — the
-   *  SINGLE-WRITER **per lane**: peer A can record lane 1 while peer B records
-   *  lane 2 (each lane commits on exactly one client — see
-   *  `isLaneAutomationRecorder`). SYNCED; set by the card's per-lane ◉ / the
-   *  Launchpad SHIFT+top-row gesture; the engine only READS it. Absent / a
-   *  null slot = that lane not armed. (Clean break from the retired GLOBAL
-   *  `{arm, recorderId}` shape — the branch is unreleased; the factory's load
-   *  sweep deletes the legacy fields.) */
-  automation?: { lanes?: (AutomationLaneState | null)[] };
+   *  "we arm this per channel, not as a global"). `lanes` is a sparse RECORD
+   *  keyed by the lane digit ('0'..'7') — a PER-KEY map (like `autoAssign` and
+   *  `auto[k].tracks`), so two peers arming/disarming DIFFERENT lanes
+   *  concurrently merge key-by-key instead of last-writer-wins clobbering a
+   *  whole array. `lanes[L].arm` = lane L armed: while true, touching ANY
+   *  control of a MODULE assigned to lane L (screen / MIDI / Electra — never
+   *  CV) records into lane L's PLAYING clip's sibling `auto` object (punch-in
+   *  at that clip's own wrap; continuous overdub). `recorderId` = the arming
+   *  client's `ydoc.clientID` — the SINGLE-WRITER **per lane**: peer A can
+   *  record lane 1 while peer B records lane 2 (each lane commits on exactly
+   *  one client — see `isLaneAutomationRecorder`). SYNCED; set by the card's
+   *  per-lane ◉ / the Launchpad SHIFT+top-row gesture; the engine only READS
+   *  it. Absent key = that lane not armed. The containers (`automation` +
+   *  `lanes`) are created at the factory load seam next to `auto`/`autoAssign`
+   *  (container-LWW hardening). Readers ALSO accept the interim ARRAY shape
+   *  (81084fe9) — the branch is unreleased, so a cheap one-way read + a load-
+   *  seam migrate cover it; the retired GLOBAL `{arm, recorderId}` fields are
+   *  swept at load. */
+  automation?: { lanes?: Record<string, AutomationLaneState | null> | (AutomationLaneState | null)[] };
   /** PER-CLIP AUTOMATION (sibling map): each note clip's automation object,
    *  keyed by the SAME stride-64 flat `clipIndex(slot, lane)` as `clips` — a
    *  PARALLEL key, never a field on the note clip, so note edits and automation
@@ -430,14 +436,16 @@ export interface AutomationLaneState {
   recorderId?: number;
 }
 
-/** Lane L's coerced arm state, or null when not armed/absent. PURE. */
+/** Lane L's coerced arm state, or null when not armed/absent. Accepts BOTH
+ *  shapes: the canonical per-key RECORD ('0'..'7' → state) and the interim
+ *  81084fe9 ARRAY (one-way read; the load seam migrates it). PURE. */
 function laneAutomationState(
   data: ClipPlayerData | undefined,
   lane: number,
 ): AutomationLaneState | null {
-  const arr = data?.automation?.lanes;
-  if (!Array.isArray(arr)) return null;
-  const s = arr[lane];
+  const lanes = data?.automation?.lanes;
+  if (!lanes || typeof lanes !== 'object') return null;
+  const s = Array.isArray(lanes) ? lanes[lane] : lanes[String(lane)];
   return s && typeof s === 'object' ? (s as AutomationLaneState) : null;
 }
 
@@ -576,34 +584,67 @@ export function autoPlaybackOwners(
 
 /**
  * ARM-time shell pre-creation (container-LWW hardening), PER LANE: ensure
- * `auto[k]` exists for lane L's PLAYING note clip when the lane has ≥1
- * assigned module, so the recorder's per-key commits land in a container
- * created OUTSIDE the racy commit path (a peer's concurrent write to a sibling
- * key can then never be clobbered by a container-creation last-writer-wins).
- * Mutates `d` IN PLACE — call inside the lane-arming write's transaction.
- * (Clips launched later while armed still fall back to the commit-side
- * creation.)
+ * `auto[k]` exists for EVERY note clip in lane L when the lane has ≥1
+ * assigned module, so the recorder's per-key commits land in containers
+ * created OUTSIDE the racy commit path (a peer's concurrent write to a
+ * sibling key can then never be clobbered by a container-creation
+ * last-writer-wins). Shelling the WHOLE lane (bounded ≤ SCENE_STRIDE slots)
+ * covers the common arm-then-LAUNCH flow too — a clip launched after arming
+ * already has its shell. Empty `{tracks:{}}` shells are inert: the carrier
+ * probes (`autoClipHasTracks` / `readAutoClip`) require ≥1 track key, so no
+ * teal dots light and playback ignores them. Mutates `d` IN PLACE — call
+ * inside the lane-arming write's transaction. (A clip CREATED later while
+ * armed still falls back to the commit-side creation.)
  */
 export function ensureLaneArmAutoShell(d: ClipPlayerData, lane: number): void {
   if (laneAssignedModules(d)[lane]!.length === 0) return;
-  const slot = lanePlaying(d, lane);
-  if (slot === null) return;
-  const k = String(clipIndex(slot, lane));
-  const clip = d.clips?.[k] as { kind?: unknown } | null | undefined;
-  if (!clip || clip.kind !== 'note') return;
-  if (!d.auto) d.auto = {};
-  if (!d.auto[k] || typeof d.auto[k] !== 'object') d.auto[k] = { tracks: {} };
+  if (!d.clips) return;
+  let ensured = false;
+  for (let slot = 0; slot < SCENE_STRIDE; slot++) {
+    const k = String(clipIndex(slot, lane));
+    const clip = d.clips[k] as { kind?: unknown } | null | undefined;
+    if (!clip || clip.kind !== 'note') continue;
+    if (!ensured && !d.auto) d.auto = {};
+    ensured = true;
+    if (!d.auto![k] || typeof d.auto![k] !== 'object') d.auto![k] = { tracks: {} };
+  }
+}
+
+/**
+ * One-way MIGRATE of the interim 81084fe9 ARRAY `automation.lanes` shape to
+ * the canonical per-key RECORD ('0'..'7' → {arm, recorderId}) IN PLACE.
+ * No-op when already a record / absent. Plain values only (severs any live Y
+ * child — [[yjs-save-load-real-ydoc]]). Called from the factory load seam and
+ * defensively from the toggle. Returns true when it migrated.
+ */
+export function migrateAutomationLanesShape(d: ClipPlayerData): boolean {
+  const cur = d.automation?.lanes;
+  if (!Array.isArray(cur)) return false;
+  const rec: Record<string, AutomationLaneState> = {};
+  for (let i = 0; i < CLIP_LANES && i < cur.length; i++) {
+    const e = cur[i] as AutomationLaneState | null | undefined;
+    if (e && typeof e === 'object' && e.arm === true) {
+      const entry: AutomationLaneState = { arm: true };
+      if (typeof e.recorderId === 'number') entry.recorderId = e.recorderId;
+      rec[String(i)] = entry;
+    }
+  }
+  d.automation!.lanes = rec;
+  return true;
 }
 
 /**
  * TOGGLE lane L's automation record-arm IN PLACE — the ONE write seam the
  * card's per-lane ◉ AND the Launchpad SHIFT+top-row gesture share (so both
- * surfaces stay in sync via the same synced field). Rebuild-and-assign the
- * whole `lanes` array as PLAIN values (SyncedStore Y.Arrays reject index
- * assignment; plain clones sever live Y children — [[yjs-save-load-real-ydoc]]).
- * WHEN ARMING: stamps `clientId` as that lane's single-writer recorderId and
- * pre-creates the lane's auto shell (container-LWW hardening). Call inside the
- * caller's transaction. Returns the NEW armed state.
+ * surfaces stay in sync via the same synced field). PER-KEY set/delete on the
+ * `lanes` record (the same merge discipline as `autoAssign` /
+ * `auto[k].tracks`), so concurrent arm/disarm of DIFFERENT lanes by different
+ * peers merges key-by-key — never a whole-array LWW. The containers are
+ * created at the factory load seam; the lazy init here is only the defensive
+ * fallback for data the factory hasn't touched yet. WHEN ARMING: stamps
+ * `clientId` as that lane's single-writer recorderId and pre-creates the
+ * lane's auto shells (container-LWW hardening). Call inside the caller's
+ * transaction. Returns the NEW armed state.
  */
 export function toggleLaneAutomationArm(
   d: ClipPlayerData,
@@ -611,23 +652,50 @@ export function toggleLaneAutomationArm(
   clientId: number,
 ): boolean {
   if (!d.automation || typeof d.automation !== 'object') d.automation = {};
-  const cur = d.automation.lanes;
-  const base: (AutomationLaneState | null)[] = new Array(CLIP_LANES).fill(null);
-  if (Array.isArray(cur)) {
-    for (let i = 0; i < CLIP_LANES && i < cur.length; i++) {
-      const e = cur[i] as AutomationLaneState | null | undefined;
-      if (e && typeof e === 'object' && e.arm === true) {
-        const entry: AutomationLaneState = { arm: true };
-        if (typeof e.recorderId === 'number') entry.recorderId = e.recorderId;
-        base[i] = entry;
-      }
-    }
+  migrateAutomationLanesShape(d); // interim array shape → record (one-way)
+  if (!d.automation.lanes || typeof d.automation.lanes !== 'object') d.automation.lanes = {};
+  const lanes = d.automation.lanes as Record<string, AutomationLaneState | null>;
+  const k = String(Math.max(0, Math.min(CLIP_LANES - 1, Math.trunc(lane))));
+  const cur = lanes[k];
+  const arming = !(cur && typeof cur === 'object' && cur.arm === true);
+  if (arming) {
+    lanes[k] = { arm: true, recorderId: clientId }; // single-KEY write
+    ensureLaneArmAutoShell(d, lane);
+  } else {
+    delete lanes[k]; // single-KEY delete
   }
-  const arming = base[lane] === null;
-  base[lane] = arming ? { arm: true, recorderId: clientId } : null;
-  d.automation.lanes = base;
-  if (arming) ensureLaneArmAutoShell(d, lane);
   return arming;
+}
+
+// ---------------------------------------------------------------------------
+// LIVE-PERFORMANCE (transient) data fields — the DUPLICATE scrub. A duplicated
+// clip player must copy CONTENT (clips, recorded automation, per-lane
+// settings, the arrangement) but never LIVE STATE: a duplicate born ARMED
+// with the original's recorderId would double-record, a copied autoAssign
+// would double-claim modules (one lane per module is a GLOBAL invariant), and
+// copied playing/queued sets would ghost-launch. The duplicate paths (single
+// node + group) call this on the CLONE before insertion.
+// ---------------------------------------------------------------------------
+/** node.data fields that are LIVE-PERFORMANCE state, never duplicated. */
+export const CLIP_PLAYER_TRANSIENT_DATA_FIELDS = [
+  'playing', // the live playing-set
+  'queued', // pending launches
+  'queuedImmediate', // pending NOW overrides
+  'recording', // arranger record-arm
+  'noteRec', // KEYS note-record state
+  'automation', // per-lane automation arm + recorderIds
+  'autoAssign', // module→lane claims (globally exclusive — never copied)
+  'resetNonce', // reset intent counter
+] as const;
+
+/** Strip the live-performance fields from a clip-player data CLONE (in
+ *  place). Safe on any shape; a no-op for non-objects. PURE mutation of the
+ *  passed clone — callers pass the DUPLICATE's data, never the source's. */
+export function scrubClipPlayerTransientData(data: Record<string, unknown> | undefined): void {
+  if (!data || typeof data !== 'object') return;
+  for (const f of CLIP_PLAYER_TRANSIENT_DATA_FIELDS) {
+    if (f in data) delete data[f];
+  }
 }
 
 /** DUAL-LAUNCHPAD KEYS note-record state (see ClipPlayerData.noteRec). */

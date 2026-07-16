@@ -45,6 +45,7 @@ import type { RampPoint } from './clip-automation-engine';
 import {
   clipIndex,
   isLaneAutomationRecorder,
+  toggleLaneAutomationArm,
   coerceAutoClipRecord,
   autoTrackViews,
   automationTargetKey,
@@ -197,7 +198,9 @@ function makeHarness(def: FakeDef) {
 }
 
 /** Seed the target node + a note clip (+ optional auto sibling) into the doc.
- *  Per-lane arm shape: `automation.lanes[LANE] = {arm, recorderId}`. */
+ *  Per-lane arm shape: the canonical per-key RECORD
+ *  `automation.lanes['<lane>'] = {arm, recorderId}` (the container exists in
+ *  the seed either way — mirroring the factory load seam). */
 function seed(
   h: ReturnType<typeof makeHarness>,
   opts: {
@@ -209,8 +212,8 @@ function seed(
     extraClips?: Record<string, NoteClipRecord>;
   },
 ): void {
-  const lanes: ({ arm?: boolean; recorderId?: number } | null)[] = new Array(8).fill(null);
-  if (opts.arm) lanes[LANE] = { arm: true, recorderId: opts.recorderId };
+  const lanes: Record<string, { arm?: boolean; recorderId?: number }> = {};
+  if (opts.arm) lanes[String(LANE)] = { arm: true, recorderId: opts.recorderId };
   h.ydoc.transact(() => {
     h.store.nodes[TARGET] = {
       id: TARGET, type: 'x', domain: 'audio',
@@ -552,11 +555,13 @@ describe('clipplayer ↔ per-clip automation integration (real Y.Doc + fake engi
     const LANE_B = 1;
     const IDX_B = clipIndex(0, LANE_B);
 
-    // Peer A seeds: two lanes' clips, module A→lane 0, module B→lane 1, lane 0
-    // armed by A. Shells pre-created for both lanes (the arm-time hardening).
+    // Peer A seeds: two lanes' clips, module A→lane 0, module B→lane 1,
+    // NOTHING armed yet — the arm race itself is under test. Containers
+    // (automation.lanes record + the auto shells) exist in the COMMON state
+    // (mirroring the factory load seam), so the per-key writes below merge.
     const a = makeHarness(def);
     seed(a, {
-      len: 4, arm: true, recorderId: a.ydoc.clientID, initialParam: 0,
+      len: 4, arm: false, recorderId: 0, initialParam: 0,
       extraClips: { [String(IDX_B)]: noteClip(4) },
     });
     a.ydoc.transact(() => {
@@ -565,22 +570,22 @@ describe('clipplayer ↔ per-clip automation integration (real Y.Doc + fake engi
       d.auto = { [String(IDX)]: { tracks: {} }, [String(IDX_B)]: { tracks: {} } };
     });
 
-    // Peer B bootstraps from A, then (still online) arms LANE_B as ITS
-    // recorder — sequential arms, so the rebuilt lanes array carries both.
+    // Peer B bootstraps from A. Then BOTH peers arm THEIR OWN lane
+    // CONCURRENTLY (offline — no pump between the writes) through the SAME
+    // shared toggle seam the card + launchpad use. The lanes record is
+    // PER-KEY, so the two arms merge key-by-key — the whole-array LWW the
+    // adversarial pass refuted would have dropped one of them.
     const b = makeHarness(def);
     Y.applyUpdate(b.ydoc, Y.encodeStateAsUpdate(a.ydoc));
-    b.ydoc.transact(() => {
-      const d = b.store.nodes[CLIP]!.data as ClipPlayerData;
-      const lanes = (d.automation!.lanes ?? []).map((e) =>
-        e && (e as { arm?: boolean }).arm === true
-          ? { arm: true, recorderId: (e as { recorderId?: number }).recorderId }
-          : null,
-      );
-      while (lanes.length < 8) lanes.push(null);
-      lanes[LANE_B] = { arm: true, recorderId: b.ydoc.clientID };
-      d.automation!.lanes = lanes;
+    a.ydoc.transact(() => {
+      toggleLaneAutomationArm(a.store.nodes[CLIP]!.data as ClipPlayerData, LANE, a.ydoc.clientID);
     });
+    b.ydoc.transact(() => {
+      toggleLaneAutomationArm(b.store.nodes[CLIP]!.data as ClipPlayerData, LANE_B, b.ydoc.clientID);
+    });
+    // MERGE the concurrent arms both ways — BOTH survive.
     Y.applyUpdate(a.ydoc, Y.encodeStateAsUpdate(b.ydoc));
+    Y.applyUpdate(b.ydoc, Y.encodeStateAsUpdate(a.ydoc));
 
     // Each peer's engine sees ITSELF as recorder of exactly one lane.
     expect(isLaneAutomationRecorder(a.store.nodes[CLIP]!.data, LANE, a.ydoc.clientID)).toBe(true);

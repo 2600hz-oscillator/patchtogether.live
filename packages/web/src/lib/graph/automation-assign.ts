@@ -21,6 +21,17 @@
 
 import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
 import type { ModuleNode } from '$lib/graph/types';
+
+/** Transaction origin for JANITOR writes (the dangling-assignment prune + the
+ *  duplicate-assignment repair). Deliberately NOT the undo-tracked
+ *  LOCAL_ORIGIN: the janitor runs on EVERY client from the graph-change seam,
+ *  so a peer-driven module deletion would otherwise plant phantom undo items
+ *  on every OTHER client's stack — and undoing past one would livelock
+ *  (restore → re-prune → a fresh item) while wiping redo. A non-tracked
+ *  origin still SYNCS (any origin does); it just never enters any client's
+ *  undo scope. Janitor writes are idempotent by construction (delete-if-
+ *  present), so every peer running them concurrently converges. */
+export const AUTO_JANITOR_ORIGIN = Symbol('automation-janitor');
 import {
   automationTargetKey,
   parseAutomationTargetKey,
@@ -188,19 +199,27 @@ export function clearClipAutomation(playerId: string, clipIdx: number): boolean 
   return true;
 }
 
-/** The dangling (module-absent) assignment keys on player `playerId`. PURE. */
+/** The dangling assignment keys on player `playerId` — iterates the RAW map
+ *  (not the coerced view) so retired `nodeId::paramId` keys arriving over
+ *  sync MID-SESSION are treated as always-dangling too (the factory sweep is
+ *  load-only; this seam retires them on running clients). PURE. */
 function danglingAssignKeys(playerId: string): string[] {
   const live = patch.nodes[playerId] as ModuleNode | undefined;
   if (live?.type !== 'clipplayer') return [];
-  const assign = coerceAutoAssign((live.data as ClipPlayerData | undefined)?.autoAssign);
-  return Object.keys(assign).filter((moduleId) => !patch.nodes[moduleId]);
+  const raw = (live.data as ClipPlayerData | undefined)?.autoAssign;
+  if (!raw || typeof raw !== 'object') return [];
+  return Object.keys(raw).filter(
+    (key) => key.length === 0 || key.includes('::') || !patch.nodes[key],
+  );
 }
 
 /** Drop every assignment on player `playerId` whose MODULE no longer exists
  *  (module-absent only — the conservative, unambiguous case; mirrors
- *  `bindingDefinitelyDangling` case 1). In-place deletes inside one
- *  LOCAL_ORIGIN transaction; NO transaction when nothing dangles. Safe to call
- *  on every graph change. Returns the number removed. */
+ *  `bindingDefinitelyDangling` case 1) plus any retired `::`-form key. JANITOR
+ *  write: in-place deletes inside one NON-undo-tracked AUTO_JANITOR_ORIGIN
+ *  transaction (never pollutes any client's undo stack); NO transaction when
+ *  nothing dangles. Safe to call on every graph change. Returns the number
+ *  removed. */
 export function pruneAutoAssignDangling(playerId: string): number {
   const dangling = danglingAssignKeys(playerId);
   if (dangling.length === 0) return 0;
@@ -212,16 +231,17 @@ export function pruneAutoAssignDangling(playerId: string): number {
     for (const key of dangling) {
       if (key in d.autoAssign) delete d.autoAssign[key];
     }
-  }, LOCAL_ORIGIN);
+  }, AUTO_JANITOR_ORIGIN);
   return dangling.length;
 }
 
 /** Sweep EVERY clip-player for dangling module assignments — the multi-surface
  *  prune (control-surface discipline): runs from the Canvas graph-change seam,
  *  so a deleted module's assignment is dropped even when no clipplayer CARD is
- *  mounted (docked, off-screen, collapsed group). ONE transaction covering all
- *  players; a no-op (no transaction) when nothing dangles anywhere. Returns
- *  the number removed. */
+ *  mounted (docked, off-screen, collapsed group). ONE JANITOR transaction
+ *  (AUTO_JANITOR_ORIGIN — never undo-tracked) covering all players; a no-op
+ *  (no transaction) when nothing dangles anywhere. Returns the number
+ *  removed. */
 export function pruneAllAutoAssignDangling(): number {
   const hits: { nid: string; keys: string[] }[] = [];
   for (const nid of listClipPlayers(patch.nodes)) {
@@ -241,7 +261,46 @@ export function pruneAllAutoAssignDangling(): number {
         }
       }
     }
-  }, LOCAL_ORIGIN);
+  }, AUTO_JANITOR_ORIGIN);
+  return removed;
+}
+
+/** REPAIR duplicate module claims: ONE lane per module is a GLOBAL invariant,
+ *  but a merge race (or a pre-scrub duplicate) can leave the same module
+ *  assigned on TWO players / twice. Deterministically keep the LOWEST player
+ *  node id's claim (the same tie-break the border + assignment reads use) and
+ *  delete the rest. JANITOR write (AUTO_JANITOR_ORIGIN — idempotent deletes,
+ *  every peer converges); a no-op (no transaction) when nothing is
+ *  duplicated. Runs from the same Canvas graph-change seam as the prune.
+ *  Returns the number of claims removed. */
+export function repairDuplicateAutoAssign(): number {
+  const players = listClipPlayers(patch.nodes).sort();
+  const seen = new Set<string>();
+  const hits: { nid: string; keys: string[] }[] = [];
+  for (const nid of players) {
+    const d = (patch.nodes[nid] as ModuleNode | undefined)?.data as ClipPlayerData | undefined;
+    const assign = coerceAutoAssign(d?.autoAssign);
+    const extras: string[] = [];
+    for (const moduleId of Object.keys(assign).sort()) {
+      if (seen.has(moduleId)) extras.push(moduleId); // a LATER player's duplicate claim
+      else seen.add(moduleId);
+    }
+    if (extras.length) hits.push({ nid, keys: extras });
+  }
+  if (hits.length === 0) return 0;
+  let removed = 0;
+  ydoc.transact(() => {
+    for (const { nid, keys } of hits) {
+      const d = (patch.nodes[nid] as ModuleNode | undefined)?.data as ClipPlayerData | undefined;
+      if (!d?.autoAssign) continue;
+      for (const key of keys) {
+        if (key in d.autoAssign) {
+          delete d.autoAssign[key];
+          removed++;
+        }
+      }
+    }
+  }, AUTO_JANITOR_ORIGIN);
   return removed;
 }
 

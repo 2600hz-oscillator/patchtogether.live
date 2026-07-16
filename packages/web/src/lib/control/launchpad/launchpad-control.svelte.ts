@@ -290,11 +290,15 @@ let shiftPressTick = 0; // tickCount snapshot on the CC-98 press (tap vs hold)
 let armConsumedSincePress = false; // an armed action consumed while shift was held?
 // LANE-8 AUTOMATION-ARM DOUBLE-TAP (owner gesture — lane 8's top button IS the
 // shift button, so a double-tap of SHFT toggles its arm). The first tap keeps
-// its normal immediate latch toggle; a second PRESS within DOUBLE_TAP_TICKS
-// reverts that latch change AND toggles lane 8's arm (no single-tap lag).
+// its normal immediate latch toggle; a second press within DOUBLE_TAP_TICKS
+// marks a PENDING pair that FIRES on that press's SHORT RELEASE (tap-tap
+// only): a second press that becomes a HOLD is a modifier, not a tap, and
+// must never toggle lane 8 (the tap-then-hold mis-fire the adversarial pass
+// caught). On fire the first tap's latch change is REVERTED, so the latch
+// nets back to its pre-pair state — the gesture works from BOTH latch states.
 let shiftTapTick = -1000; // tickCount of the last completed SHORT tap (the window anchor)
 let shiftLatchBeforeTap = false; // latch state BEFORE that tap's toggle (double-tap revert)
-let suppressShiftTapLatch = false; // 2nd tap of a pair: its release must not re-toggle the latch
+let pendingShiftDoubleTap = false; // press 2 landed in the window; fire on ITS short release
 // A NON-shift press between two shift taps breaks the pair (it's a
 // latch → do-something → unlatch sequence, not a double-tap) — so a fast
 // "latch, arm COPY, unlatch" can never spuriously toggle lane 8's arm.
@@ -495,7 +499,7 @@ function resetSingleState(): void {
   armConsumedSincePress = false;
   shiftTapTick = -1000; // clear the lane-8 double-tap window anchor
   shiftLatchBeforeTap = false;
-  suppressShiftTapLatch = false;
+  pendingShiftDoubleTap = false;
   otherPressSinceShiftTap = false;
   armedRightAction = null;
   armTick = 0;
@@ -1499,9 +1503,14 @@ function singleShiftEff(): boolean {
 function handleSingleKey(nodeId: string, e: LaunchpadKeyEvent): void {
   const ev = e.ev;
   // Any NON-shift PRESS breaks a pending SHFT double-tap pair (lane-8 arm):
-  // "latch → do something → unlatch" must never read as a double-tap.
+  // "latch → do something → unlatch" must never read as a double-tap. And
+  // while shift is HELD, any such press means shift was used as a MODIFIER —
+  // its release must not latch (covers the grid-shift palette, keys-arp and
+  // clip-view shift actions, matrix taps under an arm — the fast
+  // hold+tap+release latch-leak the adversarial pass caught).
   if (ev.s === 1 && !(ev.type === 'top' && topRowAction(ev.cc) === 'shift')) {
     otherPressSinceShiftTap = true;
+    if (shiftHeldSingle) armConsumedSincePress = true;
   }
   // 1) PERMANENT TOP ROW — intercepted first, in every view (incl. keys/length).
   if (ev.type === 'top') {
@@ -1629,29 +1638,36 @@ function forceExitKeys(nodeId: string): void {
 function handleShift(nodeId: string, s: 0 | 1): void {
   if (s === 1) {
     // LANE-8 ARM DOUBLE-TAP (owner gesture): a second SHFT press within the
-    // window — with NOTHING else pressed in between — toggles lane 8's
-    // automation arm (detected on PRESS so it never lags) and REVERTS the
-    // first tap's latch change (this press's own release-latch is
-    // suppressed), so the latch nets back to where it started. Consumed: a
-    // third tap starts a fresh pair.
-    if (tickCount - shiftTapTick <= DOUBLE_TAP_TICKS && !otherPressSinceShiftTap) {
-      shiftTapTick = -1000;
-      toggleLaneAutoArm(nodeId, ARM_SHIFT_LANE);
-      shiftLatched = shiftLatchBeforeTap;
-      suppressShiftTapLatch = true;
-    }
+    // window — with NOTHING else pressed in between — marks a PENDING pair.
+    // It fires on this press's SHORT RELEASE below (tap-tap only): a press
+    // that turns into a HOLD is a modifier, never a lane-8 toggle.
+    pendingShiftDoubleTap =
+      tickCount - shiftTapTick <= DOUBLE_TAP_TICKS && !otherPressSinceShiftTap;
     shiftHeldSingle = true;
     shiftPressTick = tickCount;
     armConsumedSincePress = false;
   } else {
     const shortTap = tickCount - shiftPressTick < DOUBLE_TAP_TICKS;
-    if (shortTap && !armConsumedSincePress && !suppressShiftTapLatch) {
+    if (pendingShiftDoubleTap && shortTap && !armConsumedSincePress) {
+      // FIRE the pair: toggle lane 8's arm and revert the FIRST tap's latch
+      // change, so the latch nets back to its pre-pair state (works from
+      // both latch states). Consumed — a third tap starts a fresh pair.
+      shiftTapTick = -1000;
+      toggleLaneAutoArm(nodeId, ARM_SHIFT_LANE);
+      shiftLatched = shiftLatchBeforeTap;
+    } else if (shortTap && !armConsumedSincePress) {
+      // A lone short tap: the normal immediate latch toggle (unchanged) +
+      // the double-tap window anchor.
       shiftLatchBeforeTap = shiftLatched;
       shiftLatched = !shiftLatched;
       shiftTapTick = tickCount; // anchor the lane-8 double-tap window
       otherPressSinceShiftTap = false; // a fresh pair starts clean
+    } else {
+      // A HOLD (or a consumed modifier press) never latches — and it BREAKS
+      // any pending pair (tap-then-hold = modifier use, not a double-tap).
+      shiftTapTick = -1000;
     }
-    suppressShiftTapLatch = false;
+    pendingShiftDoubleTap = false;
     shiftHeldSingle = false;
   }
   // Releasing the effective shift disarms a pending SHIFT-scoped arm (Clip-Div

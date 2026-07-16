@@ -952,6 +952,19 @@ describe('Single mode — permanent top row', () => {
     // Unarmed columns keep their base colours in BOTH phases.
     expect(eqRgb(at(on, 92), RGB_VIEW_ACTIVE)).toBe(true);
     expect(eqRgb(at(off, 92), RGB_VIEW_ACTIVE)).toBe(true);
+    // CONTRAST-AWARE off phase: the STOPPED transport button's base is
+    // red-family ([104,23,23]) — a red flash against it would be illegible,
+    // so the off phase dims to RGB_RECORDING_DIM instead of the base.
+    const redBaseOn = emptyLpFrame();
+    paintPermanentTopRow(redBaseOn, mkTop('grid', { laneArms: [true], blinkOn: true }));
+    expect(eqRgb(at(redBaseOn, 91), RGB_RECORDING)).toBe(true);
+    const redBaseOff = emptyLpFrame();
+    paintPermanentTopRow(redBaseOff, mkTop('grid', { laneArms: [true], blinkOn: false }));
+    expect(eqRgb(at(redBaseOff, 91), RGB_RECORDING_DIM), 'red-family base → dim-red off phase').toBe(true);
+    // A RUNNING transport (green base) keeps the base as the off phase.
+    const greenBaseOff = emptyLpFrame();
+    paintPermanentTopRow(greenBaseOff, mkTop('grid', { transportRunning: true, laneArms: [true], blinkOn: false }));
+    expect(eqRgb(at(greenBaseOff, 91), RGB_TRANSPORT_ON)).toBe(true);
     // Lane 8 armed: CC 98 alternates red ↔ the shift LED.
     const l8on = emptyLpFrame();
     paintPermanentTopRow(l8on, mkTop('control', { laneArms: [false, false, false, false, false, false, false, true], blinkOn: true }));

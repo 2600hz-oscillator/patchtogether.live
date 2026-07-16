@@ -25,6 +25,7 @@
     coerceAutoAssign,
     laneColorEff as autoLaneColorEff,
     assignedLaneOfModule,
+    scrubClipPlayerTransientData,
     CLIP_LANES as AUTO_CLIP_LANES,
     type ClipPlayerData as AutoClipPlayerData,
   } from '$lib/audio/modules/clip-types';
@@ -33,6 +34,7 @@
     assignAutomationLane,
     removeAutomationAssignment,
     pruneAllAutoAssignDangling,
+    repairDuplicateAutoAssign,
   } from '$lib/graph/automation-assign';
   import { setControlColor, setNodeLocked } from '$lib/graph/mutate';
   import { snapPositionToGrid, findFreeRackSlot, RACK_UNIT, type RackRect } from '$lib/ui/rack-grid';
@@ -1621,6 +1623,14 @@
         // mirrors nor hides it (its cables must stay traceable).
         node.draggable = false;
         node.class = 'dock-stub no-flip';
+        // A DOCKED assigned module keeps its lane border on the stub (its
+        // canvas presence) so the assignment cue never silently disappears
+        // when a module docks. (The dock-rail card face carries no lane
+        // treatment yet — noted follow-up.)
+        if (autoColor) {
+          node.class += ' auto-lane-assigned';
+          node.style = `${node.style ? node.style + ';' : ''}--auto-lane-color:${autoColor}`;
+        }
         next.push(node);
         nextPrev.set(n.id, { snapNode: n, x: resolved.x, y: resolved.y, remoteUser, top: isTop, emittedType, dockZone, autoColor, obj: node });
         continue;
@@ -3440,13 +3450,18 @@
     ctxMenuAutomationTargets.some((t) => t.assignedLane !== null),
   );
 
-  // MULTI-SURFACE PRUNE (control-surface discipline): when a module is deleted,
-  // drop its automation-lane assignment from EVERY clip-player — from the
-  // graph-change seam, so it runs even when no clipplayer CARD is mounted
-  // (docked / off-screen). No-op (no transaction) when nothing dangles.
+  // MULTI-SURFACE JANITOR (control-surface discipline): when a module is
+  // deleted, drop its automation-lane assignment from EVERY clip-player; when
+  // a merge race (or a legacy pre-scrub duplicate) leaves the same module
+  // claimed twice, keep the LOWEST player id's claim. Runs from the
+  // graph-change seam, so it works even when no clipplayer CARD is mounted
+  // (docked / off-screen). Both are JANITOR writes (AUTO_JANITOR_ORIGIN —
+  // never undo-tracked, so a peer-driven cleanup can't plant phantom undo
+  // items) and no-ops (no transaction) when the graph is clean.
   $effect(() => {
     void snapshot; // re-run on any graph change (node deletes included)
     pruneAllAutoAssignDangling();
+    repairDuplicateAutoAssign();
   });
 
   function onNodeContextMenu({ event, node }: { event: MouseEvent | TouchEvent; node: FlowNode }) {
@@ -5076,6 +5091,13 @@
       }
     }
     const dup = buildDuplicate(source, Object.keys(patch.nodes));
+    // A duplicated CLIP PLAYER copies content (clips, recorded automation,
+    // settings, the arrangement) but never LIVE-PERFORMANCE state: playing/
+    // queued sets, arranger + KEYS record arms, the per-lane automation arms
+    // (a clone born armed with the source's recorderId would double-record),
+    // and autoAssign (one lane per module is a GLOBAL invariant — a copied
+    // claim would double-drive; the janitor repair also enforces this).
+    if (dup.type === 'clipplayer') scrubClipPlayerTransientData(dup.data);
     ydoc.transact(() => {
       patch.nodes[dup.id] = dup;
     }, LOCAL_ORIGIN);

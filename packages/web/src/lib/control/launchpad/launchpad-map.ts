@@ -1547,8 +1547,13 @@ export function paintPermanentTopRow(frame: LaunchpadFrame, opts: PermanentTopOp
       rgb = armed ? (blinkOn ? RGB_RECORDING : RGB_RECORDING_DIM) : RGB_STOP_IDLE;
     } else if (armed) {
       // Always-visible arm indicator: red flash ALTERNATING with the base
-      // colour (col 8 alternates with the shift LED) — every view, all the time.
-      rgb = blinkOn ? RGB_RECORDING : base[col];
+      // colour (col 8 alternates with the shift LED) — every view, all the
+      // time. CONTRAST-AWARE off phase: a RED-FAMILY base (the STOPPED
+      // transport button) can't carry a red flash legibly — alternate with
+      // the record-dim red instead so the blink still reads.
+      const b = base[col];
+      const redFamily = b[0] > 40 && b[0] >= 2 * Math.max(b[1], b[2]);
+      rgb = blinkOn ? RGB_RECORDING : redFamily ? RGB_RECORDING_DIM : b;
     }
     put(frame, colTopCc(col), rgb);
   }
