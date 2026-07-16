@@ -36,6 +36,7 @@ import {
   QuantizedRecordWindow,
   stepRampPoints,
   trackInterp,
+  SEAM_GLIDE_S,
   type RampPoint,
 } from './clip-automation-engine';
 
@@ -54,6 +55,13 @@ export interface AutomationControllerDeps {
   /** Schedule ramp points on the engine (TRANSIENT — engine.setParam, never the
    *  Y.Doc). `points` values are normalized 0..1; the dep denormalizes. */
   drive(target: AutomationTarget, points: RampPoint[]): void;
+  /** CANCEL-AND-HOLD a param at a seam (engine.holdParam — transient, zero Yjs).
+   *  Truncates the scheduled ramp tail so the ghost lookahead stops driving,
+   *  then: `toValueNorm != null` ⇒ pin/glide to that DETERMINISTIC value (the
+   *  hold-last-value on stop — normalized 0..1, the dep denormalizes);
+   *  `toValueNorm == null` ⇒ only truncate (the touch punch-in — the hand is
+   *  the new writer). Optional so inert test harnesses can omit it. */
+  hold?(target: AutomationTarget, toValueNorm: number | null, glideS: number): void;
   /** Commit a completed pass: the merged tracks for the whole automation clip
    *  (whole-clip PLAIN reassign in one Y.Doc transaction — never a live splice). */
   commit(tracks: AutomationTrack[]): void;
@@ -83,7 +91,16 @@ interface PassState {
 }
 
 export class AutomationController {
-  private readonly suspended = new Set<string>(); // targets touched this loop (LOCAL)
+  private readonly suspended = new Set<string>(); // targets overriding automation (LOCAL)
+  // GRABBED = physically held right now (pointer down / MIDI-CC hot / Electra
+  // twist), from a touch-DOWN until its RELEASE. A grabbed param stays suspended
+  // ACROSS a loop wrap (the wrap no longer yanks a param out from under a hand
+  // mid-gesture) — the release seam, not the wrap, ends an override. Client-local.
+  private readonly grabbed = new Set<string>();
+  // Keys this player is CURRENTLY driving via automation playback (refreshed as
+  // playbackStep drives, cleared on stop). Scopes the touch-truncate so grabbing
+  // a param only cancels THIS player's scheduled tail, not another writer's.
+  private readonly drivenKeys = new Set<string>();
   private readonly window = new QuantizedRecordWindow();
   private pass: Map<string, PassState> | null = null;
   // The clip + loop length + last captured step of the IN-FLIGHT pass, so a
@@ -101,31 +118,54 @@ export class AutomationController {
   constructor(private readonly deps: AutomationControllerDeps) {}
 
   // ------------------------------------------------------------------ touch
-  /** A live grab (screen/MIDI/Electra) of `target` — suspend its automation
-   *  until the loop wrap (live wins). Client-local. AUTO-CAPTURE: if we're
-   *  recording and `target` is NOT already an automation track, queue it to be
-   *  added as a track + captured this pass (no mandatory pre-assign). */
+  /** A live grab (screen pointer-DOWN / MIDI-CC / Electra twist) of `target` —
+   *  suspend its automation (live wins) and mark it GRABBED until its physical
+   *  RELEASE, so a wrap can't clear the override mid-gesture. Client-local.
+   *  TRUNCATE: on the first grab of a param THIS player is driving, cancel-and-
+   *  hold the scheduled ramp tail at its current value so the ~200 ms lookahead
+   *  ghost stops fighting the hand. AUTO-CAPTURE: if we're recording and `target`
+   *  is NOT already an automation track, queue it to be added + captured. */
   notifyTouch(target: AutomationTarget): void {
-    this.suspended.add(key(target));
-    if (this.recording && !this.currentTrackKeys.has(key(target))) {
-      this.pendingAuto.set(key(target), target);
+    const k = key(target);
+    const firstGrab = !this.grabbed.has(k);
+    this.suspended.add(k);
+    this.grabbed.add(k);
+    if (firstGrab && this.drivenKeys.has(k)) this.deps.hold?.(target, null, 0);
+    if (this.recording && !this.currentTrackKeys.has(k)) {
+      this.pendingAuto.set(k, target);
     }
+  }
+  /** Physical RELEASE (pointer-up / CC-idle timeout / Electra release) of a
+   *  grabbed control — end the override so automation playback resumes. Playback
+   *  glides back to the envelope on its next step (the drive path de-zippers). */
+  notifyRelease(target: AutomationTarget): void {
+    const k = key(target);
+    this.grabbed.delete(k);
+    this.suspended.delete(k);
   }
   /** Manually re-enable a suspended param (the "re-enable automation" affordance). */
   reEnable(target: AutomationTarget): void {
     this.suspended.delete(key(target));
+    this.grabbed.delete(key(target));
   }
   /** Re-enable ALL suspended params at once (the card's override-indicator
    *  click clears every live override in one gesture). */
   reEnableAll(): void {
     this.suspended.clear();
+    this.grabbed.clear();
   }
+  /** Is `target`'s automation currently overridden — actively suspended OR held
+   *  by a hand that hasn't released? Both suppress playback + gate record capture. */
   isSuspended(target: AutomationTarget): boolean {
-    return this.suspended.has(key(target));
+    return this.isHeld(key(target));
   }
-  /** Targets currently overriding automation (for the card's indicator). */
+  private isHeld(k: string): boolean {
+    return this.suspended.has(k) || this.grabbed.has(k);
+  }
+  /** Targets currently overriding automation (for the card's indicator) — the
+   *  union of suspended + grabbed. */
   overriddenKeys(): string[] {
-    return [...this.suspended];
+    return [...new Set([...this.suspended, ...this.grabbed])];
   }
 
   // ------------------------------------------------------------------ arm
@@ -147,6 +187,7 @@ export class AutomationController {
     // BACK: clear any lingering touch-suspensions so no param stays frozen at the
     // value you released it on (the "I stopped and it's stuck" confusion).
     this.suspended.clear();
+    this.grabbed.clear();
   }
   get recording(): boolean {
     return this.window.state === 'recording';
@@ -171,11 +212,43 @@ export class AutomationController {
     stepIndex: number,
     laneDur: number,
     emitAt: number,
+    seamGlideS = 0,
   ): void {
     if (this.isSuspended(track.target)) return; // being touched → live wins (also the record gate)
     const interp = trackInterp(track, this.deps.curve(track.target));
-    const pts = stepRampPoints(track.events, stepIndex, laneDur, emitAt, interp);
-    if (pts.length) this.deps.drive(track.target, pts);
+    // De-zipper an unavoidable SEAM (loop-wrap / clip-switch INTO): the caller
+    // passes seamGlideS so the step-0 anchor glides instead of hard-stepping.
+    const pts = stepRampPoints(track.events, stepIndex, laneDur, emitAt, interp, seamGlideS);
+    if (pts.length) {
+      this.drivenKeys.add(key(track.target));
+      this.deps.drive(track.target, pts);
+    }
+  }
+
+  // --------------------------------------------------------- hold-last-value
+  /**
+   * HOLD-LAST-VALUE on automation stop (a lane stops, or its active clip switches
+   * away from `clip`). For each track NOT under a live hand, compute the
+   * DETERMINISTIC resting value at `stopFrac` — a PURE recompute of the clip data
+   * (`automationLinearAt` for continuous, `automationValueAt` for hold/discrete),
+   * so every collaborating peer converges to the SAME value — and hand it to
+   * `deps.hold`, which cancels the ghost tail and de-zipper-glides the param to
+   * that value. NEVER snaps to zero/default. A track with no value yet at
+   * `stopFrac` (before its first breakpoint) is left at its live value.
+   * Playback has ended, so clear the driven-key set. PURE read of the clip.
+   */
+  holdLastValue(clip: AutomationClipRecord, stopFrac: number, glideS = SEAM_GLIDE_S): void {
+    if (this.deps.hold) {
+      for (const tr of clip.tracks) {
+        if (this.isSuspended(tr.target)) continue; // a hand owns it → leave it
+        const interp = trackInterp(tr, this.deps.curve(tr.target));
+        const read = interp === 'hold' ? automationValueAt : automationLinearAt;
+        const v = read(tr.events, stopFrac);
+        if (v == null) continue; // no value yet → leave the live value
+        this.deps.hold(tr.target, v, glideS);
+      }
+    }
+    this.drivenKeys.clear();
   }
 
   // ------------------------------------------------------------- display
@@ -257,7 +330,7 @@ export class AutomationController {
       // and keeps PLAYING BACK. So moving param A re-records A while B/C keep
       // looping; releasing A reverts it to playback next loop.
       for (const st of this.pass.values()) {
-        if (!this.suspended.has(key(st.target))) continue; // not being touched → keep playback
+        if (!this.isHeld(key(st.target))) continue; // not being touched/held → keep playback
         const v = this.deps.readNorm(st.target);
         if (v == null) continue;
         st.gate.sample(fracStep, v);
@@ -266,7 +339,11 @@ export class AutomationController {
     }
 
     if (transition === 'punch-in' || transition === 'wrap') {
-      this.suspended.clear(); // loop wrap → re-enable overridden params
+      // Loop wrap → re-enable overridden params, EXCEPT ones a hand is still
+      // physically holding (grabbed): a gesture spanning the wrap keeps its
+      // suspension so the param isn't yanked to the envelope mid-drag, and its
+      // capture continues into the next pass. The release seam clears it.
+      for (const k of [...this.suspended]) if (!this.grabbed.has(k)) this.suspended.delete(k);
     }
   }
 

@@ -515,7 +515,12 @@ test('@launchpad single-unit GRID scene-scroll: UP/DOWN slide the window; a shif
   expect(await cpQueued(page), 'launching the empty scene queues nothing').toBeNull();
 
   // (5) The POSITION-RELATIVE top scene button now addresses the SHIFTED scene 1
-  //     (slot 1) → fires slot 1 across the channels.
+  //     (slot 1) → fires slot 1 across the channels. Assert the DURABLE playing
+  //     state, not `queued`: QNT is off (buildSingleChain sets quantize:0), so the
+  //     clipplayer's ~25 ms scheduler tick applies the launch IMMEDIATELY — the
+  //     `queued` entry is a sub-tick transient that flips to `playing` before a
+  //     poll can observe it (the local-pass/CI-fail race). `playing[0]===1` is the
+  //     stable truth every other launch assertion in this spec reads.
   await ccTapSingle(page, SCENE_CCS[0]);
-  await expect.poll(() => cpQueued(page).then((q) => q?.[0]), { timeout: 5000 }).toBe(1);
+  await expect.poll(() => lanePlayingSlot(page, 0), { timeout: 5000 }).toBe(1);
 });

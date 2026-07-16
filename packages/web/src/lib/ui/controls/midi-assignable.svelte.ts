@@ -49,7 +49,7 @@ import {
   clearSlot,
 } from '$lib/graph/electra-control';
 import { mutateNode, setNodeParam } from '$lib/graph/mutate';
-import { notifyAutomationTouch } from '$lib/audio/automation-touch';
+import { notifyAutomationTouch, notifyAutomationRelease } from '$lib/audio/automation-touch';
 import {
   clipIndex,
   readClip,
@@ -232,7 +232,17 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
       pump = createCcCommit({
         commit: (v) => args.onchange?.(v),
         transient: (v) => pushTransient(v),
-        onActiveChange: (a) => { ccActive = a; },
+        onActiveChange: (a) => {
+          ccActive = a;
+          // Automation touch-RELEASE: the stream went cold (settleMs after the
+          // last CC = the "hand off the knob" for a device with no pointer-up),
+          // so end this param's automation override — the mirror of the grab
+          // pushTransient fires per message. See notifyAutomationRelease.
+          if (!a) {
+            const m = args.moduleId, p = args.paramId;
+            if (m && p) notifyAutomationRelease({ nodeId: m, paramId: p });
+          }
+        },
         // Shared two-lane batcher: the card onchange routes to setNodeParam
         // (& friends) under LOCAL_ORIGIN — the UNDOABLE lane. N twisted
         // knobs now share ≤1 tracked transaction per 150ms window instead

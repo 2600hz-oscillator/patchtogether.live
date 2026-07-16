@@ -21,6 +21,7 @@ function harness(overrides: Partial<AutomationControllerDeps> = {}, maxTracks = 
   const values = new Map<string, number>();
   const drives: { target: AutomationTarget; n: number }[] = [];
   const added: AutomationTarget[] = [];
+  const holds: { target: AutomationTarget; toValueNorm: number | null; glideS: number }[] = [];
   let committed: AutomationTrack[] | null = null;
   const trackKeys = new Set<string>();
   const deps: AutomationControllerDeps = {
@@ -28,6 +29,7 @@ function harness(overrides: Partial<AutomationControllerDeps> = {}, maxTracks = 
     curve: () => undefined,
     unitNorm: () => undefined,
     drive: (target, points) => drives.push({ target, n: points.length }),
+    hold: (target, toValueNorm, glideS) => holds.push({ target, toValueNorm, glideS }),
     commit: (tracks) => (committed = tracks),
     // AUTO-CAPTURE: add an empty track (respecting a MAX), like the store write.
     addTrack: (t) => {
@@ -52,8 +54,11 @@ function harness(overrides: Partial<AutomationControllerDeps> = {}, maxTracks = 
     },
     /** mark a param touched WITHOUT moving it (a hold / re-touch each tick). */
     touch: (t: AutomationTarget) => ctrl.notifyTouch(t),
+    /** physical release of a grabbed control. */
+    release: (t: AutomationTarget) => ctrl.notifyRelease(t),
     drives,
     added,
+    holds,
     get committed() {
       return committed;
     },
@@ -301,15 +306,35 @@ describe('AutomationController — continuous overdub + move detection', () => {
     expect(h.ctrl.armed).toBe(false); // fully idle — nothing left lit
   });
 
-  it('clears touch suspensions at the loop wrap', () => {
+  it('a GRABBED gesture KEEPS its suspension across the loop wrap (released only on physical release)', () => {
+    // Phase 0 param-jump policy: the override ends on the hand lifting, NOT the
+    // wrap — so a knob gesture spanning a loop isn't yanked to the envelope
+    // mid-drag. (Was: suspensions cleared at every wrap — the live bug.)
+    const c = clip([track]);
+    const h = harness();
+    h.set(target, 0.1);
+    h.ctrl.notifyTouch(target); // grab (pointer-down), never released
+    expect(h.ctrl.isSuspended(target)).toBe(true);
+    h.ctrl.arm();
+    h.ctrl.recordTick(c, 6, 8);
+    h.ctrl.recordTick(c, 0, 8); // wrap → punch-in: grabbed param STAYS suspended
+    expect(h.ctrl.isSuspended(target)).toBe(true);
+    // The hand lifts → NOW it re-enables (playback resumes next loop).
+    h.ctrl.notifyRelease(target);
+    expect(h.ctrl.isSuspended(target)).toBe(false);
+  });
+
+  it('a RELEASED (non-grabbed) suspension still clears at the wrap', () => {
+    // A momentary touch that was released before the wrap must not linger.
     const c = clip([track]);
     const h = harness();
     h.set(target, 0.1);
     h.ctrl.notifyTouch(target);
-    expect(h.ctrl.isSuspended(target)).toBe(true);
+    h.ctrl.notifyRelease(target); // released before the wrap
+    expect(h.ctrl.isSuspended(target)).toBe(false);
     h.ctrl.arm();
     h.ctrl.recordTick(c, 6, 8);
-    h.ctrl.recordTick(c, 0, 8); // wrap → punch-in clears suspensions
+    h.ctrl.recordTick(c, 0, 8);
     expect(h.ctrl.isSuspended(target)).toBe(false);
   });
 });
@@ -378,5 +403,120 @@ describe('AutomationController — long/slow clip (low div, long length)', () =>
     // events span the whole loop
     expect(rec.events[0]!.step).toBeLessThan(2);
     expect(rec.events[rec.events.length - 1]!.step).toBeGreaterThan(60);
+  });
+});
+
+describe('AutomationController — param-jump policy (Phase 0 seams)', () => {
+  const target = tgt('synth', 'cutoff');
+
+  it('holdLastValue: DETERMINISTIC resting recompute (linear interp at the stop step)', () => {
+    // A stop at step 3 on a 0→8 ramp (0.2 at 0, 0.8 at 8) resolves to 0.2 + 6/8·(0.6)…
+    // exactly automationLinearAt at step 3 = 0.2 + (3/8)*(0.8-0.2)/1 …computed below.
+    const track: AutomationTrack = {
+      target,
+      events: [{ step: 0, value: 0.2 }, { step: 8, value: 0.8 }],
+    };
+    const h = harness();
+    h.ctrl.holdLastValue(clip([track]), 3, 0.012);
+    expect(h.holds.length).toBe(1);
+    const hd = h.holds[0]!;
+    expect(hd.target).toEqual(target);
+    expect(hd.glideS).toBe(0.012);
+    // linear at step 3: 0.2 + (3-0)/(8-0)*(0.8-0.2) = 0.2 + 0.375*0.6 = 0.425
+    expect(hd.toValueNorm).toBeCloseTo(0.425, 9);
+  });
+
+  it('holdLastValue is a PURE function of clip+step (same input → same value, multiplayer-safe)', () => {
+    const track: AutomationTrack = {
+      target,
+      events: [{ step: 0, value: 0.1 }, { step: 4, value: 0.9 }, { step: 8, value: 0.3 }],
+    };
+    const c = clip([track]);
+    const a = harness();
+    const b = harness();
+    a.ctrl.holdLastValue(c, 5.5, 0.012);
+    b.ctrl.holdLastValue(c, 5.5, 0.012);
+    // Two independent "peers" converge on the identical resting value by construction.
+    expect(a.holds[0]!.toValueNorm).toBe(b.holds[0]!.toValueNorm);
+  });
+
+  it('holdLastValue skips a param a hand is holding (the hand owns it) + one with no value yet', () => {
+    const held = tgt('a', 'held');
+    const future = tgt('b', 'future');
+    const c = clip([
+      { target: held, events: [{ step: 0, value: 0.5 }] },
+      { target: future, events: [{ step: 6, value: 0.5 }] }, // no value at step 2
+    ]);
+    const h = harness();
+    h.ctrl.notifyTouch(held); // grabbed → excluded from hold-last-value
+    h.ctrl.holdLastValue(c, 2, 0.012);
+    expect(h.holds.map((x) => x.target.paramId)).toEqual([]); // held excluded, future has no value yet
+  });
+
+  it('holdLastValue NEVER snaps to zero/default (holds the real envelope value)', () => {
+    const track: AutomationTrack = { target, events: [{ step: 0, value: 0.7 }, { step: 8, value: 0.7 }] };
+    const h = harness();
+    h.ctrl.holdLastValue(clip([track]), 4, 0.012);
+    expect(h.holds[0]!.toValueNorm).toBeCloseTo(0.7, 9); // NOT 0
+  });
+
+  it('touch TRUNCATES the scheduled tail (hold with null value) for a DRIVEN param', () => {
+    const track: AutomationTrack = { target, events: [{ step: 0, value: 0.3 }, { step: 4, value: 0.9 }] };
+    const h = harness();
+    // Drive it so it's a "currently driven" target (scopes the truncate).
+    h.ctrl.playbackStep(track, 0, 0.5, 100);
+    h.holds.length = 0; // ignore any earlier
+    h.ctrl.notifyTouch(target); // grab → truncate the tail
+    expect(h.holds.length).toBe(1);
+    expect(h.holds[0]!.toValueNorm).toBeNull(); // truncate-only (manual input is the new writer)
+    expect(h.holds[0]!.glideS).toBe(0);
+  });
+
+  it('touch does NOT truncate a param this player is NOT driving (no cross-writer cancel)', () => {
+    const other = tgt('other', 'p');
+    const h = harness();
+    // never played `other` → not in drivenKeys → grabbing it truncates nothing here.
+    h.ctrl.notifyTouch(other);
+    expect(h.holds.length).toBe(0);
+  });
+
+  it('touch truncates ONCE per grab (idempotent while held)', () => {
+    const track: AutomationTrack = { target, events: [{ step: 0, value: 0.3 }] };
+    const h = harness();
+    h.ctrl.playbackStep(track, 0, 0.5, 100);
+    h.holds.length = 0;
+    h.ctrl.notifyTouch(target);
+    h.ctrl.notifyTouch(target); // re-touch (e.g. per CC message) → no second truncate
+    expect(h.holds.length).toBe(1);
+  });
+
+  it('playbackStep passes the seam glide through to the drive points (wrap de-zipper)', () => {
+    const track: AutomationTrack = { target, events: [{ step: 0, value: 0.2 }, { step: 4, value: 0.8 }] };
+    const drivePts: import('./clip-automation-engine').RampPoint[][] = [];
+    const h = harness({ drive: (_t, pts) => drivePts.push(pts) });
+    // WRAP seam: step 0 with a glide → the anchor point is a RAMP, not a hard step.
+    h.ctrl.playbackStep(track, 0, 0.5, 10, 0.012);
+    expect(drivePts.length).toBe(1);
+    expect(drivePts[0]![0]!.ramp).toBe(true);
+    expect(drivePts[0]![0]!.at).toBeCloseTo(10.012, 9);
+  });
+
+  it('a gesture spanning a wrap keeps CAPTURING (still sampled next pass while grabbed)', () => {
+    // The live bug: at the wrap the capture stopped sampling a still-held param
+    // ("second loop records nothing"). Now a grabbed param keeps being sampled.
+    const track: AutomationTrack = { target, events: [] };
+    const c = clip([track]);
+    const h = harness();
+    h.set(target, 0.1);
+    h.ctrl.arm();
+    h.ctrl.recordTick(c, 6, 8);
+    h.ctrl.recordTick(c, 0, 8); // punch-in
+    h.move(target, 0.5); h.ctrl.recordTick(c, 4, 8); // move in pass 1
+    h.ctrl.recordTick(c, 0, 8); // WRAP (commit pass 1) — param still grabbed
+    // Pass 2: keep moving WITHOUT re-touching every tick (still physically held).
+    h.set(target, 0.9); h.ctrl.recordTick(c, 4, 8);
+    h.ctrl.recordTick(c, 0, 8); // wrap → commit pass 2 captured the held motion
+    const rec = h.committed!.find((t) => t.target.paramId === 'cutoff')!;
+    expect(Math.max(...rec.events.map((e) => e.value))).toBeGreaterThan(0.8); // pass-2 motion captured
   });
 });

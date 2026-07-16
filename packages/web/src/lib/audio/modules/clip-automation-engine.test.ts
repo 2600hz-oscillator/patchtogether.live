@@ -6,6 +6,7 @@ import {
   trackInterp,
   RecordGate,
   QuantizedRecordWindow,
+  SEAM_GLIDE_S,
 } from './clip-automation-engine';
 
 describe('stepRampPoints — lookahead ramp scheduling', () => {
@@ -56,6 +57,52 @@ describe('stepRampPoints — lookahead ramp scheduling', () => {
     const pts = stepRampPoints(events, 10, 0.5, 10, 'linear');
     expect(pts.length).toBeGreaterThan(0);
     expect(pts.every((p) => p.value === 0)).toBe(true); // past step 4 → holds 0.0
+  });
+});
+
+describe('stepRampPoints — SEAM GLIDE (loop-wrap / clip-switch de-zipper)', () => {
+  const events: AutomationEvent[] = [
+    { step: 0, value: 0.2 },
+    { step: 2, value: 0.8 },
+    { step: 4, value: 0.0 },
+  ];
+
+  it('default (seamGlideS=0): the step-0 anchor is a HARD STEP (regression guard)', () => {
+    const pts = stepRampPoints(events, 0, 0.5, 10, 'linear');
+    expect(pts[0]).toEqual({ value: 0.2, at: 10, ramp: false });
+  });
+
+  it('WRAP seam: the step-0 anchor becomes a RAMP (not a step), offset by the glide', () => {
+    // The last-step→step-0 transition: with a glide the anchor is a short
+    // linearRamp reaching v0 at emitAt+glide instead of a hard setValueAtTime.
+    const pts = stepRampPoints(events, 0, 0.5, 10, 'linear', SEAM_GLIDE_S);
+    expect(pts[0]!.ramp).toBe(true); // a RAMP, not a step → no wrap click
+    expect(pts[0]!.value).toBeCloseTo(0.2, 9);
+    expect(pts[0]!.at).toBeCloseTo(10 + SEAM_GLIDE_S, 9);
+  });
+
+  it('HOLD/discrete tracks ignore the seam glide (steps are intentional)', () => {
+    const pts = stepRampPoints(events, 0, 0.5, 10, 'hold', SEAM_GLIDE_S);
+    expect(pts[0]).toEqual({ value: 0.2, at: 10, ramp: false }); // still a hard step
+  });
+
+  it('clamps the glide below a fast step + the earliest sub-step breakpoint', () => {
+    // laneDur 0.01s → glide clamps to laneDur*0.5 = 0.005 (< SEAM_GLIDE_S=0.012),
+    // so the anchor never overruns the next-step boundary on a fast clock.
+    const pts = stepRampPoints(events, 0, 0.01, 10, 'linear', SEAM_GLIDE_S);
+    expect(pts[0]!.ramp).toBe(true);
+    expect(pts[0]!.at).toBeLessThanOrEqual(10 + 0.005 + 1e-9);
+    // A sub-step breakpoint very early in the step further clamps the glide so
+    // the anchor time stays before it (points scheduled in order).
+    const dense: AutomationEvent[] = [
+      { step: 0, value: 0.2 },
+      { step: 0.02, value: 0.6 }, // sub-step at 0.02*laneDur into the step
+      { step: 1, value: 0.4 },
+    ];
+    const dp = stepRampPoints(dense, 0, 1.0, 100, 'linear', SEAM_GLIDE_S);
+    const anchorTime = dp[0]!.at;
+    const subTime = dp.find((p) => Math.abs(p.value - 0.6) < 1e-9)!.at;
+    expect(anchorTime).toBeLessThan(subTime); // anchor before the sub-step point
   });
 });
 

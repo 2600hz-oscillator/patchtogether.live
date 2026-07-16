@@ -57,6 +57,19 @@ export function notifyAutomationTouch(target: AutomationTarget): void {
   for (const ctrl of controllers.values()) ctrl.notifyTouch(target);
 }
 
+/**
+ * The PHYSICAL RELEASE of a grabbed control (screen pointer-up / MIDI-CC idle
+ * timeout / Electra release) — end its automation override on EVERY registered
+ * controller so playback resumes (gliding back to the envelope). Paired with
+ * notifyAutomationTouch: touch-DOWN suspends, release re-enables, so an override
+ * ends on the hand lifting rather than at the loop wrap. Cheap no-op when
+ * nothing is registered.
+ */
+export function notifyAutomationRelease(target: AutomationTarget): void {
+  if (controllers.size === 0) return; // fast path: no automation in the rack
+  for (const ctrl of controllers.values()) ctrl.notifyRelease(target);
+}
+
 /** The override keys ("nodeId::paramId") currently suspended on a player's
  *  controller — for the card's override indicator. Empty when unregistered. */
 export function overriddenKeysFor(nodeId: string): string[] {

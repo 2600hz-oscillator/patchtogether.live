@@ -35,6 +35,13 @@ export interface RampPoint {
   ramp: boolean;
 }
 
+/** De-zipper glide across an unavoidable automation SEAM (loop-wrap or a
+ *  clip-switch INTO an automating clip). 12 ms — within the 8–15 ms window the
+ *  param-jump policy specifies: long enough to kill the click, short enough to
+ *  read as instant. The step-0 anchor becomes a short `linearRamp` from the
+ *  incoming value instead of a hard `setValueAtTime` step. */
+export const SEAM_GLIDE_S = 0.012;
+
 /**
  * Ramp targets to schedule for ONE track across the integer step
  * `[stepIndex, stepIndex+1)` — emitted at audio time `emitAt`, lasting `laneDur`.
@@ -47,6 +54,15 @@ export interface RampPoint {
  * Returns [] when the envelope has no value yet at this step (before the first
  * breakpoint — the param is left at its live value). All values are the stored
  * normalized 0..1; the caller denormalizes (curve-aware) before driving.
+ *
+ * SEAM GLIDE: `seamGlideS > 0` marks this step as the entry to an unavoidable
+ * discontinuity — a LOOP-WRAP (last-step→step-0) or a CLIP-SWITCH INTO an
+ * automating clip. Instead of the hard `setValueAtTime(v0, emitAt)` anchor
+ * (which clicks whenever the loop's start value != its end value — the norm with
+ * the owner's coprime/different-length loops), the anchor becomes a short
+ * `linearRamp` reaching `v0` at `emitAt + seamGlideS`, gliding from the incoming
+ * value. Only meaningful for LINEAR tracks — a discrete/hold param steps on
+ * purpose, so the flag is ignored there.
  */
 export function stepRampPoints(
   events: readonly AutomationEvent[],
@@ -54,11 +70,26 @@ export function stepRampPoints(
   laneDur: number,
   emitAt: number,
   interp: 'linear' | 'hold',
+  seamGlideS = 0,
 ): RampPoint[] {
   const read = interp === 'hold' ? automationValueAt : automationLinearAt;
   const v0 = read(events, stepIndex);
   if (v0 == null) return []; // before first breakpoint → leave live value
-  const out: RampPoint[] = [{ value: v0, at: emitAt, ramp: false }];
+  // De-zipper the seam: a short ramp to v0 instead of a hard step. Clamp the
+  // glide below half the step AND below the earliest sub-step breakpoint, so
+  // the ramp anchor never overruns a following point (which would schedule the
+  // envelope out of order).
+  let glide = 0;
+  if (interp === 'linear' && seamGlideS > 0) {
+    let earliestSub = laneDur; // next-step boundary is the hard ceiling
+    for (const e of events) {
+      if (e.step > stepIndex && e.step < stepIndex + 1) {
+        earliestSub = Math.min(earliestSub, (e.step - stepIndex) * laneDur);
+      }
+    }
+    glide = Math.min(seamGlideS, laneDur * 0.5, earliestSub * 0.5);
+  }
+  const out: RampPoint[] = [{ value: v0, at: emitAt + glide, ramp: glide > 0 }];
   if (interp === 'hold') {
     // Step to each breakpoint inside (stepIndex, stepIndex+1] at its time.
     for (const e of events) {

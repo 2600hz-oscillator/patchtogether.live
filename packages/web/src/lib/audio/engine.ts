@@ -12,6 +12,7 @@ import type { Edge, ModuleDef, ModuleNode, CvScaleHint, ParamDef } from '$lib/gr
 import { getModuleDef, type AudioModuleDef } from './module-registry';
 import { POLY_CHANNELS, resolveConnection } from './poly';
 import { attachCvScale } from './cv-scale';
+import { holdAndGlideParam } from './hold-param';
 
 /**
  * What a per-domain factory hands back: the connectable surface for one module
@@ -120,6 +121,10 @@ export interface DomainEngine {
   /** Optional: schedule a param write at a future audio time (see the handle's
    *  `scheduleParam`). Only AudioEngine implements this today. */
   scheduleParam?(nodeId: string, paramId: string, value: number, atTime: number, ramp: boolean): void;
+  /** Optional: CANCEL-AND-HOLD a param at a seam (clip-automation param-jump
+   *  policy — truncate the scheduled tail, optionally glide to a value). Only
+   *  AudioEngine implements this today. */
+  holdParam?(nodeId: string, paramId: string, atTime: number, toValue?: number, glideS?: number): void;
   /** Optional: DISPLAY-ONLY knob-value refresh (no DSP) so automation playback can
    *  smoothly animate the on-screen control between step boundaries. */
   setDisplayParam?(nodeId: string, paramId: string, value: number): void;
@@ -622,6 +627,46 @@ export class AudioEngine implements DomainEngine {
       }
     }
     this.knobValues.set(this.knobKey(nodeId, paramId), value);
+  }
+
+  /**
+   * CANCEL-AND-HOLD a param at a seam — the clip-automation param-jump policy
+   * (Phase 0). Truncates the ~200 ms scheduled ramp tail at `atTime` (killing
+   * the ghost that keeps driving a param after a lane stops / a clip switches /
+   * a hand grabs it) and pins the value there. Optionally moves to a NEW
+   * deterministic `toValue`: a hard `setValueAtTime` (`glideS <= 0`) or a short
+   * de-zipper `linearRampToValueAtTime` over `glideS` (hold-last-value on stop /
+   * clip-switch glide). Omit `toValue` (undefined) to only truncate — the touch
+   * punch-in, where live manual input is the new writer.
+   *
+   * Reaches the SAME AudioParam `scheduleParam` drives — the param's CV-target
+   * AudioParam (`inputs[paramId].param`), where cancel-and-hold is possible.
+   * Firefox lacks `cancelAndHoldAtTime`, so the util reimplements it. When the
+   * module exposes no schedulable AudioParam (a Faust worklet driving its params
+   * off the message port) there is no tail to cancel: best-effort pin `toValue`
+   * via `scheduleParam` / `setParam`. Refreshes `knobValues` like `scheduleParam`.
+   */
+  holdParam(
+    nodeId: string,
+    paramId: string,
+    atTime: number,
+    toValue?: number,
+    glideS = 0,
+  ): void {
+    const handle = this.nodes.get(nodeId);
+    if (!handle) return;
+    const param = handle.inputs.get(paramId)?.param;
+    if (param) {
+      holdAndGlideParam(param, atTime, toValue ?? null, glideS);
+    } else if (toValue != null) {
+      // No schedulable AudioParam to cancel — best-effort pin the resting value.
+      if (typeof handle.scheduleParam === 'function') {
+        handle.scheduleParam(paramId, toValue, atTime, glideS > 0);
+      } else {
+        handle.setParam(paramId, toValue);
+      }
+    }
+    if (toValue != null) this.knobValues.set(this.knobKey(nodeId, paramId), toValue);
   }
 
   /**
@@ -1683,6 +1728,23 @@ export class PatchEngine {
   ): void {
     const engine = this.getDomain(node.domain);
     engine.scheduleParam?.(node.id, paramId, value, atTime, ramp);
+  }
+
+  /**
+   * CANCEL-AND-HOLD a param at a seam (clip-automation param-jump policy).
+   * Truncates the scheduled ramp tail at `atTime` and optionally glides to a
+   * deterministic `toValue`. Delegates to the target domain's `holdParam` (only
+   * AudioEngine today); a no-op otherwise. Transient — never writes the Y.Doc.
+   */
+  holdParam(
+    node: ModuleNode,
+    paramId: string,
+    atTime: number,
+    toValue?: number,
+    glideS?: number,
+  ): void {
+    const engine = this.getDomain(node.domain);
+    engine.holdParam?.(node.id, paramId, atTime, toValue, glideS);
   }
 
   /** DISPLAY-ONLY knob-value refresh (automation visual smoothing) — delegates to
