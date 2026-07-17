@@ -205,17 +205,26 @@ test('@launchpad scene repeats: gesture sets ×2, card flair mirrors it, scene 2
   expect(before.rms, 'silent before the scene launch').toBeLessThan(0.03);
 
   await ccTapSingle(page, SCENE_CCS[0]);
-  await expect.poll(() => lanePlayingSlot(page, 0), { timeout: 5000 }).toBe(0);
+  // Audible right after the launch — the 800 ms window spans scene 0 (and,
+  // once the advance lands, scene 1); both drive the SAME lane-0 voice, so
+  // either way this proves launch → sound through the real chain.
   const during = await readScopePeakOverWindow(page, 'rp-scp', 800);
-  expect(during.rms, 'audible while scene 0 plays').toBeGreaterThan(0.03);
+  expect(during.rms, 'audible after the scene launch').toBeGreaterThan(0.03);
   expect(during.nonzeroSamples, 'structured signal, not a glitch').toBeGreaterThan(50);
 
-  // AUTO-ADVANCE: with NO further input, after 2 passes (4 steps @200 bpm 1/16
-  // ≈ 0.3 s each) lane 0 flips to slot 1 — the next content scene down,
-  // launched through the normal path (the sceneLaunch marker records it).
-  await expect.poll(() => lanePlayingSlot(page, 0), { timeout: 10000 }).toBe(1);
-  const marker = await sceneLaunchMarker(page);
-  expect(marker?.slot, 'the auto-advance went through the scene-launch seam').toBe(1);
+  // AUTO-ADVANCE — poll the STABLE terminal state only, never the transient
+  // intermediate: `playing[0] === 0` is observable for only ~0.3 s at 200 bpm
+  // (the advance write deliberately lands one anchor step + the audio
+  // lookahead early, and the synced state flips at wrap-PROCESSING time), so
+  // a loaded CI runner's first evaluate round-trip lands AFTER the advance —
+  // this exact race failed CI twice with Received: 1, i.e. the advance had
+  // already succeeded. Timeout scaled by the pass count (2 passes ≈ 0.6 s at
+  // 200 bpm) per the CI-SwiftShader standard. The intermediate scene-0 pass
+  // timing itself is pinned by the engine unit suite.
+  await expect.poll(() => lanePlayingSlot(page, 0), { timeout: 15000 }).toBe(1);
+  // Exactly ONE launch (ours, n:1) + ONE auto-advance (n:2), both through the
+  // scene-launch seam — a double-fire or a bypassed path would break this.
+  expect(await sceneLaunchMarker(page)).toEqual({ slot: 1, n: 2 });
   // Scene 1 is INFINITE → it keeps playing (the last content scene never stops).
   const after = await readScopePeakOverWindow(page, 'rp-scp', 800);
   expect(after.rms, 'still audible on the advanced scene').toBeGreaterThan(0.03);
