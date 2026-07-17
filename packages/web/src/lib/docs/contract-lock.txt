@@ -477,6 +477,7 @@ clipplayer family clipplayer-clear-auto kind=other prefix=clipplayer-clear-auto
 clipplayer family clipplayer-mono kind=other prefix=clipplayer-mono
 clipplayer family clipplayer-pad kind=cell prefix=clipplayer-pad
 clipplayer family clipplayer-rate kind=other prefix=clipplayer-rate
+clipplayer family clipplayer-scene-repeat kind=other prefix=clipplayer-scene-repeat
 clockedRunner meta domain=audio
 clouds meta domain=audio
 clouds in blend_cv cv param=blend cvScale=linear

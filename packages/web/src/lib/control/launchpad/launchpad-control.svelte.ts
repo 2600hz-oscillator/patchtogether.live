@@ -113,6 +113,8 @@ import {
   controlRehomePad,
   armTopLane,
   ARM_SHIFT_LANE,
+  repeatPadOrdinal,
+  repeatCountForOrdinal,
   paintPermanentTopRow,
   computeSingleGridFrame,
   computeSingleClipFrame,
@@ -169,6 +171,11 @@ import {
   type CopyBufferKind,
   type NoteRecState,
 } from '$lib/audio/modules/clip-types';
+import {
+  setSceneRepeat,
+  sceneRepeatCount,
+  applySceneLaunchWrite,
+} from '$lib/audio/modules/clip-scene-repeats';
 import { getLanePlayhead } from '$lib/audio/modules/clip-playhead';
 import {
   getAutomationRender,
@@ -322,6 +329,20 @@ let swingMeterDir: 'up' | 'down' | 'center' = 'center';
 let arp: ArpState = createArpState();
 let arpOn = false;
 let arpNextTime = 0; // performance.now() ms of the next arp step (0 = fire now).
+
+// ── SCENE-REPEAT COUNT VIEW (owner 3-button, 2-hands gesture — single Grid).
+// HOLD the permanent GRID button (CC 92) + HOLD a scene-launch button → the 8×8
+// becomes the orange repeat-count bar for THAT scene (launchpad-map repeatView).
+// While both are held, pad taps SET the count (pad k = k repeats, pad 64 =
+// infinite); releasing EITHER button returns to the normal grid. The scene
+// press under GRID-hold is SELECT-ONLY — it must never launch. The held button
+// is POSITION-RELATIVE through sceneScrollOffset (resolved at press time), so a
+// scrolled window edits the correct scene slot. GRID-hold detection never
+// engages under shift (SHIFT+top-row is the per-lane automation arm — that
+// gesture consumes the press before the view switch), so the two owner
+// gestures cannot collide.
+let gridHeldSingle = false; // the permanent GRID button is physically held
+let repeatViewHeld: { sceneIndex: number; slot: number } | null = null;
 
 // SINGLE-mode Grid DOUBLE-TAP → select the clip + switch to Clip view. The FIRST
 // tap launches IMMEDIATELY (no debounce/latency — owner: never slow a launch); a
@@ -507,6 +528,8 @@ function resetSingleState(): void {
   sceneScrollOffset = 0;
   swingMeterActive = false;
   swingMeterDir = 'center';
+  gridHeldSingle = false;
+  repeatViewHeld = null;
   arp = createArpState();
   arpOn = false;
   arpNextTime = 0;
@@ -1557,6 +1580,16 @@ function handleTopRow(
   s: 0 | 1,
   cc: number,
 ): void {
+  // GRID release ALWAYS ends the repeat-view hold — even if shift engaged
+  // mid-hold (the physical hold ended either way; the shift-consume branch
+  // below would otherwise swallow the release and leave the hold stuck).
+  if (action === 'grid' && s === 0) {
+    gridHeldSingle = false;
+    if (repeatViewHeld) {
+      repeatViewHeld = null;
+      renderLeds();
+    }
+  }
   if (action !== 'shift' && singleShiftEff()) {
     if (s === 1) {
       const lane = armTopLane(cc);
@@ -1575,6 +1608,16 @@ function handleTopRow(
       if (s === 1) toggleTransport();
       break;
     case 'grid':
+      // Tap-to-switch is unchanged (fires on PRESS, like every view button);
+      // the press ADDITIONALLY arms the GRID-hold so HOLD GRID + HOLD a scene
+      // button opens the repeat-count view (release clears it above). Holding
+      // GRID while already in Grid view was a no-op re-select before — the
+      // hold-arm is the only new behavior.
+      if (s === 1) {
+        selectView(nodeId, 'grid');
+        gridHeldSingle = true;
+      }
+      break;
     case 'clip':
     case 'arranger':
     case 'control':
@@ -1693,6 +1736,23 @@ function handleSingleGrid(nodeId: string, e: LaunchpadKeyEvent): void {
   const data = liveData(nodeId);
   const shift = singleShiftEff();
   if (ev.type === 'pad') {
+    // SCENE-REPEAT COUNT VIEW: while GRID + a scene button are both held, pad
+    // taps SET the held scene's repeat count — pad k (row-major from the
+    // upper-left) = k repeats, pad 64 = back to INFINITE. A persistent musical
+    // edit → undoable (launchpad-scoped undo); the LED bar updates live.
+    if (repeatViewHeld) {
+      if (ev.s !== 1) return;
+      const k = repeatPadOrdinal(ev.x, ev.y);
+      if (k !== null) {
+        const slot = repeatViewHeld.slot;
+        lastTapClipIndex = -1; // a count tap is never a launch double-tap half
+        editData(nodeId, (d) => setSceneRepeat(d, slot, repeatCountForOrdinal(k)), {
+          undoable: true,
+        });
+        renderLeds();
+      }
+      return;
+    }
     if (ev.s !== 1) return; // launch acts on press
     // Scrolled mapping: a pad in an EMPTY scene (scene ≥ CLIP_SLOTS) → null → a
     // dark no-op (nothing to launch/create there).
@@ -1710,9 +1770,30 @@ function handleSingleGrid(nodeId: string, e: LaunchpadKeyEvent): void {
     return;
   }
   if (ev.type === 'scene') {
-    if (ev.s !== 1) return;
     const sceneIndex = sceneIndexForCc(ev.cc);
     if (sceneIndex === null) return;
+    // SCENE-REPEAT COUNT VIEW: releasing the HELD scene button exits back to
+    // the normal grid (releasing GRID exits via handleTopRow).
+    if (ev.s !== 1) {
+      if (repeatViewHeld && repeatViewHeld.sceneIndex === sceneIndex) {
+        repeatViewHeld = null;
+        renderLeds();
+      }
+      return;
+    }
+    // HOLD GRID + press a scene button → open (or switch to) that scene's
+    // repeat-count view. SELECT-ONLY: the press must NOT launch the scene, hit
+    // the shift palette, or consume a copy/paste arm. POSITION-RELATIVE: the
+    // button edits the scrolled scene `offset + sceneIndex` (the owner-called-
+    // out case), resolved at press time.
+    if (gridHeldSingle) {
+      const slot = slotForScene(sceneScrollOffset + sceneIndex);
+      if (slot !== null) {
+        repeatViewHeld = { sceneIndex, slot };
+        renderLeds();
+      }
+      return;
+    }
     // Under shift the scene column is the grid-shift palette (arm/nudge/scroll).
     if (shift) { handleGridShiftButton(nodeId, sceneIndex); return; }
     // No-shift + a STICKY copy/paste arm → this scene-launch button is a WHOLE-
@@ -1784,26 +1865,16 @@ function handleGridLaunch(nodeId: string, clipIdx: number, data: ClipPlayerData 
  *  lanes with no clip in it). A scene out of range OR EMPTY (no clip in any lane)
  *  → no-op (nothing to launch; matches the dark content-gated scene button). */
 function handleSceneLaunch(nodeId: string, sceneIndex: number, data: ClipPlayerData | undefined): void {
+  void data;
   const slot = slotForScene(sceneScrollOffset + sceneIndex);
   if (slot === null) return; // scene out of range = dark / no launch
-  // Build the per-lane launch set FIRST; a fully-empty scene (no clip in any
-  // lane) is a no-op — we skip the write entirely so an empty scrolled-in scene
-  // never storms a stop-all across the lanes (matches the dark scene button).
-  const q = new Array<number | 'stop' | null>(CLIP_LANES).fill('stop');
-  let anyContent = false;
-  for (let lane = 0; lane < CLIP_LANES; lane++) {
-    if (data?.clips?.[String(clipIndex(slot, lane))]) {
-      q[lane] = slot;
-      anyContent = true;
-    }
-  }
-  if (!anyContent) return; // empty scene → no-op
-  // Fire the whole scene in ONE transaction (all 8 lanes are addressed, so we
-  // replace the queued array wholesale — same idea as stop-all) instead of 8
-  // separate queueLane writes = 8 ydoc syncs per scene press.
+  // The SHARED scene-launch seam (clip-scene-repeats): ONE transaction writes
+  // the whole per-lane queued plan (never 8 separate lane writes) AND bumps the
+  // `sceneLaunch` marker every peer's repeat tracker re-anchors from. A fully-
+  // EMPTY scene writes nothing (content-gated — matches the dark scene button;
+  // no stop-all storm).
   editData(nodeId, (d) => {
-    d.queued = q;
-    if (nowHeld) d.queuedImmediate = new Array<boolean>(CLIP_LANES).fill(true);
+    applySceneLaunchWrite(d, slot, nowHeld);
   });
 }
 
@@ -2426,10 +2497,13 @@ function handleL(nodeId: string, e: LaunchpadKeyEvent): void {
     if (ev.s !== 1) return;
     const slot = lSceneSlotForRow(ev.row);
     if (slot === null) return;
-    for (let lane = 0; lane < CLIP_LANES; lane++) {
-      const has = data?.clips?.[String(clipIndex(slot, lane))];
-      queueLane(nodeId, lane, has ? slot : 'stop', nowHeld);
-    }
+    // The SHARED scene-launch seam: one transaction for the whole scene (was 8
+    // separate queueLane writes) + the `sceneLaunch` marker bump the repeat
+    // tracker re-anchors from. Content-gated like the single-mode launch (an
+    // empty scene is a no-op, not a stop-all).
+    editData(nodeId, (d) => {
+      applySceneLaunchWrite(d, slot, nowHeld);
+    });
     return;
   }
 
@@ -2976,6 +3050,12 @@ function renderLeds(): void {
             sceneScrollOffset,
             canScrollUp: sceneScrollOffset > 0,
             canScrollDown: sceneScrollOffset < maxSceneScrollOffset(highestContentScene(data)),
+            repeatView: repeatViewHeld
+              ? {
+                  count: sceneRepeatCount(data, repeatViewHeld.slot),
+                  sceneIndex: repeatViewHeld.sceneIndex,
+                }
+              : undefined,
             divPulse: divPreview
               ? { clipIndex: divPreview.clipIndex, on: divPulsePhase(divPreview.divIndex) }
               : undefined,
@@ -3101,6 +3181,8 @@ export function __test_mode(): {
   editRowOffset: number;
   editWindowStart: number;
   sceneScrollOffset: number;
+  gridHeldSingle: boolean;
+  repeatViewSlot: number | null;
   followOn: boolean;
   bufferArmed: boolean;
   bufferKind: CopyBufferKind | null;
@@ -3142,6 +3224,8 @@ export function __test_mode(): {
     editRowOffset,
     editWindowStart,
     sceneScrollOffset,
+    gridHeldSingle,
+    repeatViewSlot: repeatViewHeld?.slot ?? null,
     followOn,
     bufferArmed: bufferLoaded(),
     bufferKind: bufferKindOf(),
