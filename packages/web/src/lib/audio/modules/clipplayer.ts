@@ -79,7 +79,7 @@ import {
   anchorSceneRepeatTrack,
   sceneRepeatsDone,
   sceneRepeatDeviates,
-  scenePrevSlotDrained,
+  drainScenePrevSlots,
   sceneAllLanesStopped,
   sceneRepeatShouldAdvance,
   sceneRepeatCount,
@@ -154,7 +154,7 @@ export const clipplayerDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A clip launcher in the style of Ableton's Session view, with 8 instrument lanes. The grid's rows are the 8 lanes (instruments) and the columns are clip slots — the card shows 8 slots per lane at a time (64 clips at a glance), while on a Launchpad the scene column scrolls through up to 64 scene slots per lane (fixed stride-64 storage; older saves migrate once on load), so clips can live in scenes past the first 8. Each lane independently plays whichever clip you launch out its OWN pitch/gate/velocity outputs, so up to 8 clips can sound at once (one per lane). Click a pad to launch its clip, double-click to open the piano-roll editor and draw notes into it. There's no internal clock or BPM — CLIP PLAYER is locked to TIMELORDE (the rack transport): it runs at TIMELORDE's tempo, only while TIMELORDE is running, and the STEP control sets how many steps fall per beat. Each lane also has its own clock-rate control (1/8 · 1/4 · 1/2 · 1 · 2x · 4x — the card dropdown, and the Launchpad deck's per-lane RATE row) that divides or multiplies that lane's step rate off the global STEP grid — polyrhythms without leaving the card — and because the tempo comes from TIMELORDE, 2x/4x are exact from the first step. All lanes share a common phase origin (transport start or the RST button), so a 1/2 lane lands on even base steps and stays locked to the others; RST (also a MIDI-assignable button, and the reset input) snaps every active lane back to step 1 and re-anchors that shared origin. Launches can fire immediately or be quantized to snap cleanly at the playing clip's loop boundary. It also has a SONG / arrangement mode that records your launches onto a timeline for non-real-time playback, and pairs with a monome grid 128 or a one- or two-unit Novation Launchpad Mini Mk3 for hardware launching. On the Launchpad the scene-launch column is a scrolling window (its shift-layer amber UP/DOWN buttons slide it), and a typed clipboard lets you COPY/PASTE whole SCENES (all 8 lanes at one slot, full-replace) as well as single clips — scene→scene and clip→clip pastes apply, while scene→clip and clip→scene are ignored (their targets dim). SCENE REPEATS (Deluge-style, Launchpad-set): by default a launched scene loops forever (repeats = infinite), but each scene can carry a repeat count 1–63 — after that many passes of the scene's LONGEST clip (its length × rate/div, frozen at launch so mid-count edits never move the scheduled boundaries) the player AUTO-LAUNCHES the next scene DOWN that has content, skipping empty rows, through the normal quantized launch path (arranger-record captures it, LEDs update, peers stay in sync); after the last content scene it keeps looping it. Setting the count is a two-hands Launchpad gesture: HOLD the GRID button + HOLD a scene-launch button → the 8×8 becomes the orange REPEAT-COUNT view (pads 1..N lit row-major from the upper-left; all 64 lit = infinite) — tap pad k to set k repeats, pad 64 for infinite; release either button to return to the grid. The buttons are position-relative through the scene scroll, so a scrolled window edits the correct scene. Manual always wins: launching another scene (or re-launching the same one) resets the count fresh, launching an individual clip outside the scene cancels the countdown until the next scene launch, and stopping every scene lane cancels it too — while MUTING lanes never voids or alters the count. The card shows a small read-only \"×N\" flair to the right of each scene row (nothing shown for infinite; while counting it shows live progress \"p/N\"); editing the count from the card is a follow-up. PER-CLIP AUTOMATION records parameter moves into the PLAYING clip by CONTINUOUS OVERDUB — Deluge-like: assign modules, launch a clip, arm the lane, twist, and it just keeps overdubbing. Assignment is MODULE-level: right-click a MODULE'S CARD → \"Assign to automation lane\" → pick lane 1–8 (one lane per module; re-assigning moves it). The assigned module's whole card gets a thin border in that lane's colour, and the AUTO block shows a per-lane assigned-module count. The ARM is PER LANE — the small teal ◉ under each channel column (next to its RATE control), distinct from the experimental red ● arranger record (which records clip LAUNCHES, not knob moves): launch a note clip in the lane, arm THAT lane's ◉, and just MOVE any control on an assigned module — the lane's recorder punches in cleanly at ITS playing clip's own next loop start and overdubs EVERY loop until you press its ◉ again (a manual stop — no auto punch-out); several lanes can record at once, each on its own loop, and different collaborators can record different lanes simultaneously (each lane is single-writer). Automation records your HANDS — screen drags, MIDI CC, Electra — never CV: a CV cable modulating a param is performance signal, not recorded automation (recording reads the modulation-free knob value, and CV never counts as a touch). Touching a control on an UNASSIGNED module while armed records nothing — assign the module first. Each clip's automation caps at 16 recorded controls (a MAX badge flashes when a touch would exceed it). Longer-form automation across a whole song is the (future) arranger mode's job — clip automation is always clip-length. DUPLICATING a clip player copies its content (clips, recorded automation, per-channel settings, the arrangement) but never its LIVE state: the copy is born stopped, disarmed and UNASSIGNED (one lane per module is a global claim — it stays with the original). Each loop, only the params you're actively MOVING are (re)recorded; every other track keeps PLAYING BACK, and a released control reverts to playback next loop; stopping mid-loop keeps the untouched tail. A 🟡🟡🔴🔴 countdown flashes each recording clip's pad (and its lane's ◉ arm) on the last four beats before that clip's own wrap. EVERY clip in the lane carries its OWN automation — THE ENVELOPE BELONGS TO THE CLIP: it's stored beside the notes (editing notes never touches the recorded envelopes), COPY/PASTE and scene-duplicate carry it with the clip (PASTE-REV pastes it time-reversed to match the reversed notes), pasting over a clip replaces its automation, and clearing/emptying a clip clears its automation too. Clips that carry automation show a small teal dot on their grid cell. Launching a clip launches its envelopes with it, looping at the clip's length; if two playing clips in different lanes automate the SAME control, exactly ONE drives it (its module's assigned lane wins, else the lowest lane — no fighting). Deleting is explicit and undoable: right-click an automated control → \"Clear recorded automation\" wipes that control's envelopes (its module's lane's clips, or everywhere when unassigned) — distinct from the module card's \"Remove automation assignment\", which only stops FUTURE recording and leaves recorded envelopes playing — and the editor's CLR AUTO button wipes the open clip's whole automation while keeping its notes. On playback it drives those params transiently on every peer (never rewriting the saved clip). Parameter moves never JUMP: when a lane stops or switches away from an automating clip the params HOLD their last automated value — recomputed from the clip data at the stop position, quantized to the step grid so collaborating peers converge on the same resting value (never a snap to zero/default) — and every unavoidable seam (the loop wrap, switching INTO an automating clip, and a quantized switch AWAY, which holds at the musical boundary rather than cutting early) is a short click-free glide rather than a hard step. Grabbing an automated control live SUSPENDS its automation (live wins) until you physically RELEASE it — a gesture that spans a loop wrap is never yanked back to the envelope mid-drag, a wrap commit only overwrites the part of the loop the gesture actually covered, and a param gripped by two surfaces at once (screen + MIDI) stays live until the last one lets go; on release the param glides back to playback (the on-card dot re-enables all at once). Two current limits are documented honestly: the on-card grid shows only the first 8 scenes (card scene-scroll is a follow-up), and the arranger records session launches of scenes 1–8 (recording launches of scene 9+ is a follow-up — session launching them already works). Drive its lanes into eight voices for a full multitrack clip-based performance instrument.",
+      "A clip launcher in the style of Ableton's Session view, with 8 instrument lanes. The grid's rows are the 8 lanes (instruments) and the columns are clip slots — the card shows 8 slots per lane at a time (64 clips at a glance), while on a Launchpad the scene column scrolls through up to 64 scene slots per lane (fixed stride-64 storage; older saves migrate once on load), so clips can live in scenes past the first 8. Each lane independently plays whichever clip you launch out its OWN pitch/gate/velocity outputs, so up to 8 clips can sound at once (one per lane). Click a pad to launch its clip, double-click to open the piano-roll editor and draw notes into it. There's no internal clock or BPM — CLIP PLAYER is locked to TIMELORDE (the rack transport): it runs at TIMELORDE's tempo, only while TIMELORDE is running, and the STEP control sets how many steps fall per beat. Each lane also has its own clock-rate control (1/8 · 1/4 · 1/2 · 1 · 2x · 4x — the card dropdown, and the Launchpad deck's per-lane RATE row) that divides or multiplies that lane's step rate off the global STEP grid — polyrhythms without leaving the card — and because the tempo comes from TIMELORDE, 2x/4x are exact from the first step. All lanes share a common phase origin (transport start or the RST button), so a 1/2 lane lands on even base steps and stays locked to the others; RST (also a MIDI-assignable button, and the reset input) snaps every active lane back to step 1 and re-anchors that shared origin. Launches can fire immediately or be quantized to snap cleanly at the playing clip's loop boundary. It also has a SONG / arrangement mode that records your launches onto a timeline for non-real-time playback, and pairs with a monome grid 128 or a one- or two-unit Novation Launchpad Mini Mk3 for hardware launching. On the Launchpad the scene-launch column is a scrolling window (its shift-layer amber UP/DOWN buttons slide it), and a typed clipboard lets you COPY/PASTE whole SCENES (all 8 lanes at one slot, full-replace) as well as single clips — scene→scene and clip→clip pastes apply, while scene→clip and clip→scene are ignored (their targets dim). SCENE REPEATS (Deluge-style, Launchpad-set): by default a launched scene loops forever (repeats = infinite), but each scene can carry a repeat count 1–63 — after that many passes of the scene's LONGEST clip (its length × rate/div, frozen at launch so mid-count edits never move the scheduled boundaries) the player AUTO-LAUNCHES the next scene DOWN that has content, skipping empty rows, through the normal quantized launch path (arranger-record captures it, LEDs update, peers stay in sync); after the last content scene it keeps looping it. Setting the count is a two-hands Launchpad gesture: HOLD the GRID button + HOLD a scene-launch button → the 8×8 becomes the orange REPEAT-COUNT view (pads 1..N lit row-major from the upper-left; all 64 lit = infinite) — tap pad k to set k repeats, pad 64 for infinite; release either button to return to the grid. The buttons are position-relative through the scene scroll, so a scrolled window edits the correct scene. Counts are content: a whole-scene COPY/PASTE carries the repeat count with the scene (a full-replace paste sets the target's count from the copied scene, clearing it when the source had none). Manual always wins: launching another scene (or re-launching the same one) resets the count fresh, launching an individual clip outside the scene cancels the countdown until the next scene launch, and stopping every scene lane cancels it too — while MUTING lanes never voids or alters the count. The card shows a small read-only \"×N\" flair to the right of each scene row (nothing shown for infinite; while counting it shows live progress \"p/N\"); editing the count from the card is a follow-up. PER-CLIP AUTOMATION records parameter moves into the PLAYING clip by CONTINUOUS OVERDUB — Deluge-like: assign modules, launch a clip, arm the lane, twist, and it just keeps overdubbing. Assignment is MODULE-level: right-click a MODULE'S CARD → \"Assign to automation lane\" → pick lane 1–8 (one lane per module; re-assigning moves it). The assigned module's whole card gets a thin border in that lane's colour, and the AUTO block shows a per-lane assigned-module count. The ARM is PER LANE — the small teal ◉ under each channel column (next to its RATE control), distinct from the experimental red ● arranger record (which records clip LAUNCHES, not knob moves): launch a note clip in the lane, arm THAT lane's ◉, and just MOVE any control on an assigned module — the lane's recorder punches in cleanly at ITS playing clip's own next loop start and overdubs EVERY loop until you press its ◉ again (a manual stop — no auto punch-out); several lanes can record at once, each on its own loop, and different collaborators can record different lanes simultaneously (each lane is single-writer). Automation records your HANDS — screen drags, MIDI CC, Electra — never CV: a CV cable modulating a param is performance signal, not recorded automation (recording reads the modulation-free knob value, and CV never counts as a touch). Touching a control on an UNASSIGNED module while armed records nothing — assign the module first. Each clip's automation caps at 16 recorded controls (a MAX badge flashes when a touch would exceed it). Longer-form automation across a whole song is the (future) arranger mode's job — clip automation is always clip-length. DUPLICATING a clip player copies its content (clips, recorded automation, per-channel settings, the arrangement) but never its LIVE state: the copy is born stopped, disarmed and UNASSIGNED (one lane per module is a global claim — it stays with the original). Each loop, only the params you're actively MOVING are (re)recorded; every other track keeps PLAYING BACK, and a released control reverts to playback next loop; stopping mid-loop keeps the untouched tail. A 🟡🟡🔴🔴 countdown flashes each recording clip's pad (and its lane's ◉ arm) on the last four beats before that clip's own wrap. EVERY clip in the lane carries its OWN automation — THE ENVELOPE BELONGS TO THE CLIP: it's stored beside the notes (editing notes never touches the recorded envelopes), COPY/PASTE and scene-duplicate carry it with the clip (PASTE-REV pastes it time-reversed to match the reversed notes), pasting over a clip replaces its automation, and clearing/emptying a clip clears its automation too. Clips that carry automation show a small teal dot on their grid cell. Launching a clip launches its envelopes with it, looping at the clip's length; if two playing clips in different lanes automate the SAME control, exactly ONE drives it (its module's assigned lane wins, else the lowest lane — no fighting). Deleting is explicit and undoable: right-click an automated control → \"Clear recorded automation\" wipes that control's envelopes (its module's lane's clips, or everywhere when unassigned) — distinct from the module card's \"Remove automation assignment\", which only stops FUTURE recording and leaves recorded envelopes playing — and the editor's CLR AUTO button wipes the open clip's whole automation while keeping its notes. On playback it drives those params transiently on every peer (never rewriting the saved clip). Parameter moves never JUMP: when a lane stops or switches away from an automating clip the params HOLD their last automated value — recomputed from the clip data at the stop position, quantized to the step grid so collaborating peers converge on the same resting value (never a snap to zero/default) — and every unavoidable seam (the loop wrap, switching INTO an automating clip, and a quantized switch AWAY, which holds at the musical boundary rather than cutting early) is a short click-free glide rather than a hard step. Grabbing an automated control live SUSPENDS its automation (live wins) until you physically RELEASE it — a gesture that spans a loop wrap is never yanked back to the envelope mid-drag, a wrap commit only overwrites the part of the loop the gesture actually covered, and a param gripped by two surfaces at once (screen + MIDI) stays live until the last one lets go; on release the param glides back to playback (the on-card dot re-enables all at once). Two current limits are documented honestly: the on-card grid shows only the first 8 scenes (card scene-scroll is a follow-up), and the arranger records session launches of scenes 1–8 (recording launches of scene 9+ is a follow-up — session launching them already works). Drive its lanes into eight voices for a full multitrack clip-based performance instrument.",
     inputs: {
       stop_all: "Stop-all trigger: a rising edge immediately stops every lane (a panic/stop button), in both session and arrangement modes.",
       reset: "Reset trigger: a rising edge snaps every ACTIVE lane back to step 1 and re-anchors all lanes to a shared phase origin (divided/multiplied lanes restart their counting together). Queued-but-not-started launches are untouched — they still drop in at their lane's next loop boundary. Stopped lanes stay stopped; the arrangement's song position is not rewound (this is a clip-step reset, not a transport rewind).",
@@ -446,14 +446,28 @@ export const clipplayerDef: AudioModuleDef = {
     // repBeatClock: beats elapsed while running — like songBeat but NEVER reset
     // (record-arm/arrangement origins don't touch it), so the frozen repeat unit
     // counts in pure musical time (a tempo change rescales, a transport stop
-    // pauses). lastSceneLaunchN mirrors the synced `sceneLaunch` marker
+    // pauses). lastSceneLaunch mirrors the synced `sceneLaunch` marker
     // (resetNonce pattern: null = adopt-without-fire on the first tick, so a
     // loaded patch never replays a launch — scenes loop infinitely until the
-    // next real scene launch). repTrack is the LIVE countdown — runtime-only,
-    // never synced/persisted; a transport restart resets its count.
+    // next real scene launch). The mirror compares the WHOLE {slot, n} pair,
+    // not n alone: two peers launching DIFFERENT scenes concurrently both
+    // write n = prev+1, and the LWW loser would otherwise never observe a
+    // change and mis-cancel instead of re-anchoring. repTrack is the LIVE
+    // countdown — runtime-only, never synced/persisted; a transport restart
+    // resets its count.
     let repBeatClock = 0;
-    let lastSceneLaunchN: number | null = null;
+    let lastSceneLaunch: { slot: number; n: number } | null = null;
     let repTrack: SceneRepeatTrack | null = null;
+    // BOUNDARY FLOOR for the auto-advance (engine-local, set only on the peer
+    // that WROTE the advance): the frozen boundary in ctx time. The write
+    // deliberately lands ~one anchor step + the lookahead EARLY (so the anchor
+    // lane's wrap-processing sees it) — without a floor, an IDLE target lane
+    // would launch immediately (off-grid, before the boundary) and an outgoing
+    // lane with a loop shorter than one anchor step would catch a wrap inside
+    // the early window. The floor clamps both to the boundary. Cleared on any
+    // manual interference (marker change / deviation), transport stop, and
+    // expiry — manual launches must never be delayed by a stale floor.
+    let advanceFloorUntil: number | null = null;
     /** The global STEP grid in steps-per-beat (frozen into a repeat unit at
      *  anchor time). */
     function stepsPerBeat(): number {
@@ -852,7 +866,13 @@ export const clipplayerDef: AudioModuleDef = {
       ln.active = slot;
       ln.stepIndex = 0;
       ln.autoStarted = false; // re-entry → next step-0 glides (clip-switch seam)
-      ln.nextStepTime = ctx.currentTime + 0.01;
+      // A FUTURE `switchAt` anchors the lane's grid AT that boundary (the wrap
+      // path always overrode nextStepTime to the same value right after; the
+      // scene-repeat boundary floor passes it for an IDLE target lane so the
+      // lane STARTS on the section boundary, on-grid, instead of at an
+      // arbitrary now+0.01). A past/absent switchAt keeps the immediate start.
+      ln.nextStepTime =
+        switchAt !== null && switchAt > ctx.currentTime ? switchAt : ctx.currentTime + 0.01;
       // SCENE REPEATS: pin the tracked scene's start to the ACTUAL audible
       // switch boundary of its (frozen) anchor lane — `switchAt` names the
       // quantized boundary (possibly in the lookahead future), so the beat
@@ -1181,11 +1201,11 @@ export const clipplayerDef: AudioModuleDef = {
           // so the LIVE countdown resets with it (runtime-only state — the SET
           // counts in data.sceneRepeats are untouched). started=false re-pins
           // startBeat at the restart boundary via the tracker maintenance below.
-          if (repTrack) {
-            repTrack.started = false;
-            repTrack.advanceQueued = false;
-          }
+          if (repTrack) repTrack.started = false;
         } else if (!running && prevRunning) {
+          // SCENE REPEATS: a stale ctx-time boundary floor must not gate the
+          // queue after a stop/start cycle re-anchors everything.
+          advanceFloorUntil = null;
           for (let L = 0; L < LANES; L++) {
             silenceLane(L, ctx.currentTime);
             // Transport stopped → hold-last-value on EVERY lane playing an
@@ -1246,20 +1266,35 @@ export const clipplayerDef: AudioModuleDef = {
         // First tick adopts without firing (a loaded patch never replays).
         {
           const sl = readSceneLaunch(d0);
-          if (lastSceneLaunchN === null) {
-            lastSceneLaunchN = sl?.n ?? 0;
-          } else if (sl && sl.n !== lastSceneLaunchN) {
-            lastSceneLaunchN = sl.n;
-            repTrack = anchorSceneRepeatTrack(d0, sl.slot, stepsPerBeat(), repTrack?.slot ?? null);
+          if (lastSceneLaunch === null) {
+            lastSceneLaunch = sl ?? { slot: -1, n: 0 };
+          } else if (sl && (sl.n !== lastSceneLaunch.n || sl.slot !== lastSceneLaunch.slot)) {
+            // Compare the WHOLE {slot, n} pair: two peers launching DIFFERENT
+            // scenes concurrently both write n = prev+1, and the LWW loser
+            // would never see an n change — the slot compare still re-anchors
+            // it to the winning launch instead of a spurious cancel.
+            lastSceneLaunch = { slot: sl.slot, n: sl.n };
+            // A marker we did not just write ourselves = a (possibly manual)
+            // launch → any pending auto-advance boundary floor is void
+            // (manual always wins; our own advance write re-sets it below).
+            advanceFloorUntil = null;
+            // TRANSITION GRACE from the ACTUAL synced playing state — never
+            // just the prior tracker's slot: a launch made while NO tracker is
+            // live (after an individual-clip cancel, an all-stopped cancel, or
+            // a reload adopt) must not read its own still-playing pre-launch
+            // lanes as deviations on the next tick.
+            repTrack = anchorSceneRepeatTrack(d0, sl.slot, stepsPerBeat(), d0?.playing);
           }
           if (mode !== 'session') {
             repTrack = null; // arrangement playback drives the lanes itself
+            advanceFloorUntil = null;
           } else if (repTrack) {
             // DELIBERATE, DETERMINISTIC CANCEL (never Deluge's silent voiding):
             //  - an individual clip launched OUTSIDE the scene cancels tracking
             //    (queued/playing deviation — synced state, so every peer agrees);
-            //  - every scene lane stopped (per-lane stops / stop-all) cancels —
-            //    a silent rack must never surprise-launch the next scene later;
+            //  - every scene lane stopped (per-lane stops / stop-all, incl.
+            //    PENDING stops) cancels — a silent rack must never
+            //    surprise-launch the next scene later;
             //  - per-lane STOPs of SOME lanes and MUTEs are NOT deviations
             //    (mute never voids the count — muted lanes keep advancing).
             if (
@@ -1267,13 +1302,11 @@ export const clipplayerDef: AudioModuleDef = {
               sceneAllLanesStopped(repTrack, d0?.queued, d0?.playing)
             ) {
               repTrack = null;
+              advanceFloorUntil = null; // manual interference — never delay the manual queue
             } else {
-              if (
-                repTrack.prevSlot !== null &&
-                scenePrevSlotDrained(repTrack.prevSlot, d0?.queued, d0?.playing)
-              ) {
-                repTrack.prevSlot = null; // transition drained — old scene is foreign again
-              }
+              // Transition drain: grace slots nothing plays/queues any more
+              // become foreign again (a later manual launch INTO them cancels).
+              drainScenePrevSlots(repTrack, d0?.queued, d0?.playing);
               // Start-pin fallback for the peer-adopt path (setLaneActive pins
               // the local-apply path boundary-accurately).
               if (!repTrack.started && lanes[repTrack.anchorLane].active === repTrack.slot) {
@@ -1281,6 +1314,11 @@ export const clipplayerDef: AudioModuleDef = {
                 repTrack.startBeat = repBeatClock;
               }
             }
+          }
+          // Floor expiry: once the boundary is comfortably past, every wrap is
+          // ≥ it anyway — drop the guard so it can never gate anything stale.
+          if (advanceFloorUntil !== null && ctx.currentTime > advanceFloorUntil + 1) {
+            advanceFloorUntil = null;
           }
         }
 
@@ -1306,8 +1344,25 @@ export const clipplayerDef: AudioModuleDef = {
           // Immediate-launch path: QNT off, a lane that isn't playing, or a
           // per-lane NOW override (mid-clip immediate switch).
           for (let L = 0; L < LANES; L++) {
-            if (!quantize || lanes[L].active === null || d0?.queuedImmediate?.[L] === true) {
-              applyLaneQueued(L);
+            const idle = lanes[L].active === null;
+            if (!quantize || idle || d0?.queuedImmediate?.[L] === true) {
+              // BOUNDARY FLOOR (auto-advance only): an IDLE target lane would
+              // otherwise start immediately — up to one anchor step + the
+              // lookahead BEFORE the frozen boundary — and anchor its grid at
+              // an arbitrary now+0.01. Passing the floor as switchAt makes
+              // setLaneActive start it exactly ON the boundary, on-grid. Never
+              // applied to a NOW override or with QNT off (user-chosen
+              // immediacy), and any manual interference already cleared the
+              // floor in the maintenance block above.
+              const floor =
+                quantize &&
+                idle &&
+                d0?.queuedImmediate?.[L] !== true &&
+                advanceFloorUntil !== null &&
+                advanceFloorUntil > ctx.currentTime
+                  ? advanceFloorUntil
+                  : null;
+              applyLaneQueued(L, floor);
             }
           }
         } else if (running) {
@@ -1382,26 +1437,41 @@ export const clipplayerDef: AudioModuleDef = {
           const lookaheadBeats =
             (secPerBeat > 0 ? (LOOKAHEAD_S + 0.05) / secPerBeat : 0) + repTrack.stepBeats;
           if (sceneRepeatShouldAdvance(repTrack, nRepeats, repBeatClock, lookaheadBeats)) {
+            // NO one-shot latch anywhere here: when no content scene exists
+            // below (the last content scene keeps looping — deliberate
+            // divergence from Deluge's stop-at-end), the decision simply
+            // re-evaluates next tick, so RAISING N (boundary moves out) or
+            // ADDING a content scene below later re-arms the advance instead
+            // of dying on a missed moment.
             const target = nextContentScene(d0, repTrack.slot);
-            if (target === null) {
-              // Last content scene: keep looping it (deliberate divergence from
-              // Deluge's stop-at-end — stage-safe). Latched: the moment passed;
-              // only a new scene launch re-anchors.
-              repTrack.advanceQueued = true;
-            } else {
-              const fromSlot = repTrack.slot;
+            if (target !== null) {
+              // The frozen boundary in ctx time — the LOCAL boundary floor for
+              // the deliberately-early write (idle target lanes start ON it;
+              // short-loop outgoing lanes can't flip before it).
+              const floorAt =
+                ctx.currentTime +
+                Math.max(
+                  0,
+                  repTrack.startBeat + nRepeats * repTrack.unitBeats - repBeatClock,
+                ) *
+                  secPerBeat;
               let wrote = false;
               writeData((d) => {
                 wrote = applySceneLaunchWrite(d, target, false);
               });
               if (wrote) {
+                advanceFloorUntil = floorAt;
                 // Re-anchor locally right away (peers re-anchor from the marker
-                // we just bumped; mirroring it here keeps this peer from
-                // double-firing on its own write next tick).
-                lastSceneLaunchN = readSceneLaunch(liveData())?.n ?? lastSceneLaunchN;
-                repTrack = anchorSceneRepeatTrack(liveData(), target, stepsPerBeat(), fromSlot);
-              } else {
-                repTrack.advanceQueued = true; // target emptied concurrently — keep looping
+                // we just bumped; mirroring the {slot,n} pair keeps this peer
+                // from re-firing on its own write next tick). Grace comes from
+                // the live playing set, like every other anchor.
+                lastSceneLaunch = readSceneLaunch(liveData()) ?? lastSceneLaunch;
+                repTrack = anchorSceneRepeatTrack(
+                  liveData(),
+                  target,
+                  stepsPerBeat(),
+                  liveData()?.playing,
+                );
               }
             }
           }
@@ -1503,8 +1573,16 @@ export const clipplayerDef: AudioModuleDef = {
               // is driven by the cursor above, not the manual queue). Pass the
               // boundary time so the automation hold seam pins AT the boundary
               // (not a cancel at "now" that would truncate the outgoing tail
-              // ~200 ms early — the param-jump ordering fix).
-              if (mode === 'session' && quantize && applyLaneQueued(L, nextStart)) {
+              // ~200 ms early — the param-jump ordering fix). BOUNDARY FLOOR
+              // (auto-advance only): a lane whose loop is shorter than one
+              // anchor step would catch a wrap inside the advance write's
+              // deliberate early window — skip wraps clearly BEFORE the frozen
+              // boundary so it applies at its first wrap AT/after it. The
+              // 25 ms epsilon (one tick) lets the boundary wrap itself through
+              // despite beat↔ctx float drift.
+              const floored =
+                advanceFloorUntil !== null && nextStart < advanceFloorUntil - 0.025;
+              if (mode === 'session' && quantize && !floored && applyLaneQueued(L, nextStart)) {
                 ln.nextStepTime = nextStart;
                 // The launch swapped ln.active → refresh the cached clip + its
                 // sibling automation view (or null them on a queued STOP so the
@@ -1650,10 +1728,20 @@ export const clipplayerDef: AudioModuleDef = {
         if (key === 'recordMode') return recordMode() === 'overdub' ? 1 : 0;
         if (key === 'arrangeEvents') return coerceArrangeData(liveData()?.arrangement).events.length;
         // SCENE REPEATS live countdown (runtime-only render reads — never
-        // synced): the STARTED tracked scene's slot (-1 = none), its completed
+        // synced): the COUNTING tracked scene's slot (-1 = none), its completed
         // passes, and its CURRENT synced count. The card's flair polls these to
-        // show "p/N" while counting.
-        if (key === 'sceneRepeat:slot') return repTrack && repTrack.started ? repTrack.slot : -1;
+        // show "p/N" while counting. FLAIR HONESTY: `slot` reports only while a
+        // countdown is genuinely in progress (finite N, done < N) — on the LAST
+        // content scene the boundary passes with no target and done grows past
+        // N, and a perpetual "N/N counting" display would promise an advance
+        // that isn't scheduled; reverting to -1 lets the card fall back to the
+        // resting "×N".
+        if (key === 'sceneRepeat:slot') {
+          if (!repTrack || !repTrack.started) return -1;
+          const total = sceneRepeatCount(liveData(), repTrack.slot);
+          if (total <= 0) return -1; // infinite — nothing counting down
+          return sceneRepeatsDone(repTrack, repBeatClock) < total ? repTrack.slot : -1;
+        }
         if (key === 'sceneRepeat:done')
           return repTrack && repTrack.started ? sceneRepeatsDone(repTrack, repBeatClock) : 0;
         if (key === 'sceneRepeat:total')

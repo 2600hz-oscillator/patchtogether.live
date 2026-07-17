@@ -1160,6 +1160,9 @@
         alters the count; stopping <em>every</em> scene lane cancels it.</li>
       <li>The count is saved with the patch and shows on the card as a small <strong>×N</strong> flair
         beside the scene's row (live <strong>p/N</strong> while counting; infinite shows nothing).</li>
+      <li><strong>Counts travel with the scene:</strong> a whole-scene <strong>COPY/PASTE</strong>
+        carries the repeat count along with the clips and their automation — a full-replace paste sets
+        the target scene's count from the copied one (and clears it when the copied scene had none).</li>
       <li>No collision with the automation arm: that gesture is <strong>SHIFT</strong> + a top-row
         button — this one is a GRID hold <strong>without</strong> shift.</li>
     </ul>

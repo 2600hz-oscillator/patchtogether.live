@@ -219,10 +219,16 @@ export function sceneRepeatAnchor(
   let best: { lane: number; unitBeats: number; stepBeats: number } | null = null;
   for (let lane = 0; lane < CLIP_LANES; lane++) {
     const clip = readClip(data, clipIndex(slot, lane));
-    if (!clip || clip.kind !== 'note') continue;
-    const mult = RATE_MULTS[clipDivIndex(clip, data, lane)];
+    if (!clip) continue;
+    // NON-NOTE clips (forward-declared 'audio'/'snapshot' shells) loop with
+    // len 1 in the engine (`len = kind === 'note' ? lengthSteps : 1`) — mirror
+    // that here so a scene whose only content is non-note still ANCHORS (the
+    // targeting set `sceneHasContent` counts it, so the repeat chain must not
+    // silently die on it). Raw junk that coerces away anchors nothing.
+    const mult = RATE_MULTS[clipDivIndex(clip.kind === 'note' ? clip : null, data, lane)];
     const stepBeats = 1 / (spb * mult);
-    const unitBeats = Math.max(1, clip.lengthSteps) * stepBeats;
+    const len = clip.kind === 'note' ? Math.max(1, clip.lengthSteps) : 1;
+    const unitBeats = len * stepBeats;
     if (!best || unitBeats > best.unitBeats) best = { lane, unitBeats, stepBeats };
   }
   return best;
@@ -238,9 +244,14 @@ export function sceneRepeatAnchor(
 export interface SceneRepeatTrack {
   /** The tracked (active) scene slot. */
   slot: number;
-  /** The PREVIOUS tracked slot during the launch transition (lanes still
-   *  playing it are not deviations), or null once the transition drains. */
-  prevSlot: number | null;
+  /** TRANSITION GRACE: every slot that was ACTUALLY PLAYING (synced `playing`)
+   *  when this tracker anchored, other than the tracked slot — those lanes
+   *  drain into the new scene at their own quantize boundaries and must not
+   *  read as deviations meanwhile. Seeded from the REAL playing state (never
+   *  just the prior tracker's slot — a launch made while no tracker was live,
+   *  e.g. after an individual-clip cancel or a reload adopt, still gets full
+   *  grace). Slots are removed as they drain; empty = full strictness. */
+  prevSlots: Set<number>;
   /** The FROZEN per-repeat unit in beats (longest clip at launch). */
   unitBeats: number;
   /** The anchor lane's STEP size in beats at launch. The engine's scheduling
@@ -257,29 +268,33 @@ export interface SceneRepeatTrack {
   started: boolean;
   /** The engine beat-clock reading at the scene's start boundary. */
   startBeat: number;
-  /** Guard: the advance for THIS scene instance was already queued. */
-  advanceQueued: boolean;
 }
 
-/** A fresh tracker anchored to a just-launched scene. `prevSlot` = the slot
- *  tracked before (transition grace), or null. PURE. */
+/** A fresh tracker anchored to a just-launched scene. `playing` = the SYNCED
+ *  per-lane playing set at anchor time — every slot still playing (≠ the new
+ *  scene) becomes transition grace, so the launch survives its own first-tick
+ *  deviation check regardless of what tracker (if any) came before. PURE. */
 export function anchorSceneRepeatTrack(
   data: ClipPlayerData | undefined,
   slot: number,
   stepsPerBeat: number,
-  prevSlot: number | null,
+  playing: readonly (number | null)[] | undefined,
 ): SceneRepeatTrack | null {
   const anchor = sceneRepeatAnchor(data, slot, stepsPerBeat);
   if (!anchor) return null; // empty scene — nothing to track
+  const prevSlots = new Set<number>();
+  for (let lane = 0; lane < CLIP_LANES; lane++) {
+    const p = playing?.[lane];
+    if (typeof p === 'number' && p !== slot) prevSlots.add(p);
+  }
   return {
     slot,
-    prevSlot: prevSlot === slot ? null : prevSlot,
+    prevSlots,
     unitBeats: anchor.unitBeats,
     stepBeats: anchor.stepBeats,
     anchorLane: anchor.lane,
     started: false,
     startBeat: 0,
-    advanceQueued: false,
   };
 }
 
@@ -303,7 +318,7 @@ export function sceneRepeatsDone(track: SceneRepeatTrack, beatClock: number): nu
  * PURE.
  */
 export function sceneRepeatDeviates(
-  track: Pick<SceneRepeatTrack, 'slot' | 'prevSlot'>,
+  track: Pick<SceneRepeatTrack, 'slot' | 'prevSlots'>,
   queued: readonly (number | 'stop' | null)[] | undefined,
   playing: readonly (number | null)[] | undefined,
 ): boolean {
@@ -311,24 +326,31 @@ export function sceneRepeatDeviates(
     const q = queued?.[lane];
     if (typeof q === 'number' && q !== track.slot) return true;
     const p = playing?.[lane];
-    if (typeof p === 'number' && p !== track.slot && p !== track.prevSlot) return true;
+    if (typeof p === 'number' && p !== track.slot && !track.prevSlots.has(p)) return true;
   }
   return false;
 }
 
-/** True when the previous-scene transition has fully drained (no lane still
- *  plays or queues `prevSlot`) — the caller then clears `prevSlot` so a later
- *  manual launch INTO the old scene reads as the deviation it is. PURE. */
-export function scenePrevSlotDrained(
-  prevSlot: number,
+/** Remove DRAINED slots from the transition grace set IN PLACE: a grace slot
+ *  no lane still plays or queues is deleted, so a later manual launch INTO an
+ *  old scene reads as the deviation it is. Call once per tick. PURE mutation
+ *  of the tracker's set. */
+export function drainScenePrevSlots(
+  track: Pick<SceneRepeatTrack, 'prevSlots'>,
   queued: readonly (number | 'stop' | null)[] | undefined,
   playing: readonly (number | null)[] | undefined,
-): boolean {
-  for (let lane = 0; lane < CLIP_LANES; lane++) {
-    if (queued?.[lane] === prevSlot) return false;
-    if (playing?.[lane] === prevSlot) return false;
+): void {
+  if (track.prevSlots.size === 0) return;
+  for (const s of [...track.prevSlots]) {
+    let live = false;
+    for (let lane = 0; lane < CLIP_LANES; lane++) {
+      if (queued?.[lane] === s || playing?.[lane] === s) {
+        live = true;
+        break;
+      }
+    }
+    if (!live) track.prevSlots.delete(s);
   }
-  return true;
 }
 
 /** True when a STARTED tracked scene has NO lane EFFECTIVELY playing it any
@@ -362,7 +384,12 @@ export function sceneAllLanesStopped(
  * that IS the section boundary, sample-accurately). N is read FRESH from the
  * synced count each evaluation — a mid-count edit applies at the next boundary
  * evaluation (latched: lowering N below the already-elapsed count advances at
- * the NEXT boundary, never retroactively). PURE.
+ * the NEXT boundary, never retroactively; raising N moves the boundary out).
+ * There is deliberately NO one-shot latch: when no content scene exists below,
+ * the caller simply finds no target and re-evaluates next tick — so raising N
+ * or ADDING a content scene later re-arms the advance instead of dying on a
+ * missed moment. A successful advance re-anchors the tracker, which naturally
+ * ends this scene's evaluations. PURE.
  */
 export function sceneRepeatShouldAdvance(
   track: SceneRepeatTrack,
@@ -372,7 +399,7 @@ export function sceneRepeatShouldAdvance(
 ): boolean {
   const n = coerceSceneRepeat(count);
   if (n === 0) return false; // infinite — never advance
-  if (!track.started || track.advanceQueued || track.unitBeats <= 0) return false;
+  if (!track.started || track.unitBeats <= 0) return false;
   const boundary = track.startBeat + n * track.unitBeats;
   return beatClock + Math.max(0, lookaheadBeats) >= boundary;
 }

@@ -1746,11 +1746,18 @@ export function computeSingleGridFrame(
   // clip→scene) reads as "not a target" rather than a mystery no-op. Only under
   // no-shift (under shift the right column is the grid-shift palette). COPY leaves
   // both classes lit — either is a legal copy source.
-  const pasteArmed = !shift && opts.armedRightAction === 'paste' && !!opts.bufferLoaded;
+  const repeatView = opts.repeatView ?? null;
+  // While the REPEAT-COUNT view is held, EVERY scene press is select-only (the
+  // control layer intercepts them before the shift palette AND the sticky
+  // copy/paste arms), so the right column must paint the plain no-shift scene
+  // paint — LED truth matches the press semantics even when shift was latched
+  // or a paste arm was pending before the hold began.
+  const sceneShift = repeatView ? false : shift;
+  const pasteArmed =
+    !shift && !repeatView && opts.armedRightAction === 'paste' && !!opts.bufferLoaded;
   const sceneBuffer = opts.bufferKind === 'scene';
   const dimClipPads = pasteArmed && sceneBuffer; // clip pads are the invalid class
   const dimSceneCol = pasteArmed && !sceneBuffer; // scene column is the invalid class
-  const repeatView = opts.repeatView ?? null;
   if (repeatView) {
     // SCENE-REPEAT COUNT VIEW: the whole 8×8 is the orange count bar — pads
     // 1..repeatLitCount(count) lit row-major from the upper-left, the rest
@@ -1808,7 +1815,7 @@ export function computeSingleGridFrame(
   const clips = data?.clips ?? {};
   for (let i = 0; i < SCENE_CCS.length; i++) {
     let rgb: Rgb;
-    if (shift) {
+    if (sceneShift) {
       rgb = gridShiftRightRgb(i, opts, blinkOn);
     } else {
       const slot = slotForScene(offset + i);

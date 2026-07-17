@@ -1229,10 +1229,19 @@ export type CopyTargetKind = 'clip' | 'scene';
  *  clips at a slot; an empty lane is `null`). Held as PLAIN deep-clones. The
  *  ENVELOPE BELONGS TO THE CLIP: the buffer also carries each source clip's
  *  sibling automation (`auto`/`autos`, null = the source carried none), so a
- *  paste moves the automation WITH the notes. */
+ *  paste moves the automation WITH the notes. A SCENE buffer also carries the
+ *  source scene's REPEAT COUNT (`repeats`; 0/absent = infinite) — counts are
+ *  content, so a full-replace scene paste sets the target's count from the
+ *  buffer (or clears it when the source had none — no ghost counts, same
+ *  discipline as the automation). */
 export type CopyBuffer =
   | { kind: 'clip'; clip: NoteClipRecord; auto: AutoClipRecord | null }
-  | { kind: 'scene'; clips: (ClipRecord | null)[]; autos: (AutoClipRecord | null)[] };
+  | {
+      kind: 'scene';
+      clips: (ClipRecord | null)[];
+      autos: (AutoClipRecord | null)[];
+      repeats?: number;
+    };
 
 /** Paste TYPE-GATE (PURE): a paste applies ONLY when the buffer kind matches the
  *  target kind — scene→scene + clip→clip apply; scene→clip + clip→scene are

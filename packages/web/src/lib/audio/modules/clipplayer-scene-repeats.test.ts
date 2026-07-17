@@ -141,6 +141,12 @@ function liveData(): ClipPlayerData {
 function playing(): (number | null)[] {
   return (liveData().playing ?? []) as (number | null)[];
 }
+/** Lane L's mono-gate FakeParam (its scheduled setValueAtTime events carry the
+ *  audible step times — the boundary-floor tests assert against those). */
+function gateOf(handle: { outputs: Map<string, { node: unknown }> }, lane: number): FakeParam {
+  return (handle.outputs.get(`gate${lane + 1}`)!.node as unknown as FakeConstantSource)
+    .offset as unknown as FakeParam;
+}
 async function build(ctx: FakeAudioContext) {
   return clipplayerDef.factory(
     ctx as unknown as AudioContext,
@@ -432,6 +438,172 @@ describe('scene repeats — auto-advance through the engine tick', () => {
     expect(playing()[0], 'the carrier scene advanced on the normal schedule').toBe(1);
     // The clips' automation records rode along untouched.
     expect(Object.keys((liveData().auto ?? {})[String(clipIndex(1, 0))]?.tracks ?? {})).toEqual(['osc::freq']);
+  });
+
+  it('BLOCKER regression: a ×N scene launched while a FOREIGN individual clip still plays tracks + advances (grace from the real playing set)', async () => {
+    // No tracker is live (no scene was ever launched) and lane 1 plays an
+    // individual clip at slot 5. Launching scene 0 (×1) must NOT read that
+    // still-playing lane as a deviation on its own first tick — the fresh
+    // tracker's transition grace comes from the ACTUAL synced playing set.
+    seed({
+      clips: {
+        [clipIndex(0, 0)]: noteClip(4),
+        [clipIndex(1, 0)]: noteClip(4), // the advance target
+        [clipIndex(5, 1)]: noteClip(4), // the individually-launched foreign clip
+      },
+      sceneRepeats: { '0': 1 },
+    });
+    const ctx = new FakeAudioContext();
+    await build(ctx);
+    run(ctx, 0, 0.06);
+    liveData().queued = [null, 5, null, null, null, null, null, null]; // individual launch
+    run(ctx, 0.06, 0.3);
+    expect(playing()[1]).toBe(5);
+    launchScene(0); // the ×1 scene, pressed while lane 1 still plays slot 5
+    run(ctx, 0.3, 1.8);
+    expect(playing()[0], 'the repeat advance fired — tracking survived the launch').toBe(1);
+    expect(readSceneLaunch(liveData())?.n, 'the advance went through the seam').toBe(2);
+  });
+
+  it('BLOCKER regression (reload-adopt): after adopting a persisted marker + playing set, the NEXT ×N launch tracks + advances', async () => {
+    // A loaded patch: lanes already playing scene 0, a stale marker present.
+    // The first tick adopts WITHOUT firing (no tracker). Launching scene 1
+    // (×1) while scene 0 still plays must track (grace = {0}) and advance.
+    seed({
+      clips: {
+        [clipIndex(0, 0)]: noteClip(4),
+        [clipIndex(1, 0)]: noteClip(4),
+        [clipIndex(2, 0)]: noteClip(4),
+      },
+      sceneRepeats: { '1': 1 },
+      playing: [0, null, null, null, null, null, null, null],
+      sceneLaunch: { slot: 0, n: 7 }, // persisted from the previous session
+    });
+    const ctx = new FakeAudioContext();
+    await build(ctx);
+    run(ctx, 0, 0.15); // adopt-without-fire; lanes resume playing slot 0
+    expect(playing()[0]).toBe(0);
+    launchScene(1);
+    run(ctx, 0.15, 2.2);
+    expect(playing()[0], 'scene 1 counted its pass and advanced to scene 2').toBe(2);
+    expect(readSceneLaunch(liveData())).toEqual({ slot: 2, n: 9 });
+  });
+
+  it('BOUNDARY FLOOR: an IDLE target lane starts ON the section boundary, on-grid (never at the early write)', async () => {
+    // Scene 0 = lane 0 only; scene 1 = lane 1 only, so lane 1 is IDLE when the
+    // deliberately-early advance write lands. Without the floor it would start
+    // immediately (~0.35 s before the boundary) at an arbitrary grid anchor.
+    seed({
+      clips: { [clipIndex(0, 0)]: noteClip(4), [clipIndex(1, 1)]: noteClip(4) },
+      sceneRepeats: { '0': 1 },
+    });
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+    run(ctx, 0, 0.06);
+    launchScene(0);
+    run(ctx, 0.06, 1.4);
+    expect(playing()[1]).toBe(1);
+    const firstHigh = (lane: number) =>
+      gateOf(handle as never, lane).events.find((e) => e.value >= 0.5)!.time;
+    const t0 = firstHigh(0); // scene 0's audible start
+    const boundary = t0 + 0.5; // unit = 4 steps × 0.125 s
+    const lane1Start = firstHigh(1);
+    expect(lane1Start, 'idle target lane waits for the boundary').toBeGreaterThanOrEqual(boundary - 0.03);
+    expect(lane1Start, 'and starts right on it (on-grid anchor)').toBeLessThanOrEqual(boundary + 0.13);
+  });
+
+  it('BOUNDARY FLOOR: an outgoing lane with a loop SHORTER than one anchor step cannot flip before the boundary', async () => {
+    // Anchor = lane 0 (8 steps at 1x → unit 1.0 s, anchor step 0.125 s).
+    // Lane 1 plays a 2-step clip at 4x (loop 62.5 ms) — its wraps land inside
+    // the advance write's early window; without the floor it would switch up
+    // to ~0.15 s before the boundary. The slot-1 clip's velocity (127 → 1.0)
+    // distinguishes it from slot 0's (100 → ~0.79) on the vel bus.
+    const fast = noteClip(2);
+    fast.div = 5; // 4x
+    fast.steps = [{ step: 0, midi: 60, velocity: 100, lengthSteps: 1 }]; // quiet (~0.79 on the vel bus)
+    const target = noteClip(4);
+    target.steps = [{ step: 0, midi: 60, velocity: 127, lengthSteps: 1 }]; // loud (1.0)
+    seed({
+      clips: {
+        [clipIndex(0, 0)]: noteClip(8),
+        [clipIndex(0, 1)]: fast,
+        [clipIndex(1, 1)]: target,
+      },
+      sceneRepeats: { '0': 1 },
+    });
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+    run(ctx, 0, 0.06);
+    launchScene(0);
+    run(ctx, 0.06, 1.8);
+    expect(playing()[1]).toBe(1);
+    const gate0 = gateOf(handle as never, 0).events.find((e) => e.value >= 0.5)!.time;
+    const boundary = gate0 + 1.0; // 8 × 0.125 s
+    const vel1 = (handle.outputs.get('vel2')!.node as unknown as { offset: { events: { value: number; time: number }[] } })
+      .offset.events;
+    const firstLoud = vel1.find((e) => e.value > 0.9)!;
+    expect(firstLoud.time, 'the short-loop lane switched AT/after the boundary').toBeGreaterThanOrEqual(boundary - 0.04);
+  });
+
+  it('marker {slot,n} PAIR compare: a same-n DIFFERENT-slot marker (the concurrent-launch LWW loser view) re-anchors instead of cancelling', async () => {
+    seed({
+      clips: {
+        [clipIndex(0, 0)]: noteClip(4),
+        [clipIndex(3, 0)]: noteClip(4),
+        [clipIndex(4, 0)]: noteClip(4),
+      },
+      sceneRepeats: { '3': 1 },
+    });
+    const ctx = new FakeAudioContext();
+    await build(ctx);
+    run(ctx, 0, 0.06);
+    launchScene(0); // marker {0, n:1}
+    run(ctx, 0.06, 0.3);
+    // The LWW result of a concurrent peer's scene-3 launch: SAME n, new slot.
+    const d = liveData();
+    d.sceneLaunch = { slot: 3, n: 1 };
+    d.queued = [3, 'stop', 'stop', 'stop', 'stop', 'stop', 'stop', 'stop'];
+    run(ctx, 0.3, 2.2);
+    // Re-anchored to scene 3 (not a spurious cancel) → its ×1 advance fired.
+    expect(playing()[0]).toBe(4);
+    expect(readSceneLaunch(liveData())?.n).toBe(2);
+  });
+
+  it('NO one-shot latch: adding a content scene BELOW after the boundary passed re-arms the advance', async () => {
+    seed({
+      clips: { [clipIndex(0, 0)]: noteClip(4) },
+      sceneRepeats: { '0': 1 },
+    });
+    const ctx = new FakeAudioContext();
+    await build(ctx);
+    run(ctx, 0, 0.06);
+    launchScene(0);
+    run(ctx, 0.06, 1.6); // boundary long past, no content below → keeps looping
+    expect(playing()[0]).toBe(0);
+    expect(readSceneLaunch(liveData())?.n).toBe(1);
+    liveData().clips![String(clipIndex(2, 1))] = noteClip(4); // content appears below
+    run(ctx, 1.6, 2.8);
+    expect(playing()[1], 'the advance re-armed and fired into the new scene').toBe(2);
+    expect(playing()[0] ?? null).toBeNull(); // scene 2 has no lane-0 clip
+    expect(readSceneLaunch(liveData())?.slot).toBe(2);
+  });
+
+  it('FLAIR honesty: on the LAST content scene the countdown read reverts to -1 once done ≥ N (never a perpetual N/N)', async () => {
+    seed({
+      clips: { [clipIndex(0, 0)]: noteClip(4) },
+      sceneRepeats: { '0': 2 },
+    });
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+    run(ctx, 0, 0.06);
+    launchScene(0);
+    run(ctx, 0.06, 0.8); // mid pass 2 — genuinely counting
+    expect(handle.read!('sceneRepeat:slot')).toBe(0);
+    expect(handle.read!('sceneRepeat:done')).toBe(1);
+    run(ctx, 0.8, 1.6); // done ≥ 2, no scene below → nothing is scheduled
+    expect(playing()[0], 'still looping (last content scene)').toBe(0);
+    expect(handle.read!('sceneRepeat:slot'), 'countdown display released').toBe(-1);
+    expect(liveData().sceneRepeats, 'the stored count is untouched').toEqual({ '0': 2 });
   });
 
   it('live progress reads: sceneRepeat:slot/done/total track the pass ordinal', async () => {

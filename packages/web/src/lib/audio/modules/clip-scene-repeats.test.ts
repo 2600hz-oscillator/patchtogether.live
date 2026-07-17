@@ -23,7 +23,7 @@ import {
   anchorSceneRepeatTrack,
   sceneRepeatsDone,
   sceneRepeatDeviates,
-  scenePrevSlotDrained,
+  drainScenePrevSlots,
   sceneAllLanesStopped,
   sceneRepeatShouldAdvance,
   type SceneRepeatTrack,
@@ -192,28 +192,40 @@ describe('sceneRepeatAnchor — the FROZEN unit (longest clip incl. rate/div)', 
   });
   it('empty scene ⇒ null anchor ⇒ null tracker', () => {
     expect(sceneRepeatAnchor(dataWith({}), 0, SPB)).toBeNull();
-    expect(anchorSceneRepeatTrack(dataWith({}), 0, SPB, null)).toBeNull();
+    expect(anchorSceneRepeatTrack(dataWith({}), 0, SPB, undefined)).toBeNull();
   });
-  it('anchorSceneRepeatTrack drops a self prevSlot (same-scene relaunch)', () => {
+  it('a NON-NOTE clip (audio/snapshot shell) still anchors with the engine len-1 fallback', () => {
+    // The targeting set (sceneHasContent) counts raw-truthy entries of any
+    // declared kind — the anchor must not silently die on a non-note-only
+    // scene (the repeat chain would end there).
+    const d = {
+      clips: { [String(clipIndex(0, 2))]: { kind: 'audio', loop: true } },
+    } as unknown as ClipPlayerData;
+    expect(sceneRepeatAnchor(d, 0, SPB)).toEqual({ lane: 2, unitBeats: 0.25, stepBeats: 0.25 });
+  });
+  it('anchorSceneRepeatTrack seeds transition GRACE from the ACTUAL playing set (never a prior tracker)', () => {
     const d = dataWith({ [clipIndex(0, 0)]: clip(16) });
-    const t = anchorSceneRepeatTrack(d, 0, SPB, 0)!;
-    expect(t.prevSlot).toBeNull();
+    // Lanes still playing slots 3 and 5 at anchor time; one lane already plays
+    // the NEW slot (0) — grace covers only the FOREIGN slots.
+    const t = anchorSceneRepeatTrack(d, 0, SPB, [3, 0, 5, null, null, null, null, null])!;
+    expect([...t.prevSlots].sort()).toEqual([3, 5]);
     expect(t.started).toBe(false);
     expect(t.unitBeats).toBe(4);
     expect(t.anchorLane).toBe(0);
+    // No lanes playing (fresh rack) ⇒ empty grace.
+    expect(anchorSceneRepeatTrack(d, 0, SPB, undefined)!.prevSlots.size).toBe(0);
   });
 });
 
 function track(over: Partial<SceneRepeatTrack> = {}): SceneRepeatTrack {
   return {
     slot: 0,
-    prevSlot: null,
+    prevSlots: new Set<number>(),
     unitBeats: 4,
     stepBeats: 0.25,
     anchorLane: 0,
     started: true,
     startBeat: 10,
-    advanceQueued: false,
     ...over,
   };
 }
@@ -239,15 +251,22 @@ describe('deviation — deliberate, deterministic cancel rules', () => {
     expect(sceneRepeatDeviates(t, [0, null, null, null, null, null, null, null], [])).toBe(false);
     expect(sceneRepeatDeviates(t, undefined, undefined)).toBe(false);
   });
-  it('a PLAYING slot outside the scene deviates — except the draining prevSlot', () => {
-    const t = track({ slot: 3, prevSlot: 0 });
-    expect(sceneRepeatDeviates(t, [], [3, 0, null, null, null, null, null, null])).toBe(false);
+  it('a PLAYING slot outside the scene deviates — except the draining grace set', () => {
+    const t = track({ slot: 3, prevSlots: new Set([0, 5]) });
+    expect(sceneRepeatDeviates(t, [], [3, 0, 5, null, null, null, null, null])).toBe(false);
     expect(sceneRepeatDeviates(t, [], [3, 7, null, null, null, null, null, null])).toBe(true);
   });
-  it('scenePrevSlotDrained — true once no lane plays or queues the old scene', () => {
-    expect(scenePrevSlotDrained(0, [0, null, null, null, null, null, null, null], [])).toBe(false);
-    expect(scenePrevSlotDrained(0, [], [null, 0, null, null, null, null, null, null])).toBe(false);
-    expect(scenePrevSlotDrained(0, ['stop', null, null, null, null, null, null, null], [3, null, null, null, null, null, null, null])).toBe(true);
+  it('drainScenePrevSlots — removes exactly the grace slots nothing plays or queues any more', () => {
+    const t = track({ slot: 3, prevSlots: new Set([0, 5]) });
+    // slot 0 still queued on a lane, slot 5 still playing → both stay.
+    drainScenePrevSlots(t, [0, null, null, null, null, null, null, null], [null, 5, null, null, null, null, null, null]);
+    expect([...t.prevSlots].sort()).toEqual([0, 5]);
+    // slot 5 gone everywhere → dropped; slot 0 still playing → kept.
+    drainScenePrevSlots(t, [], [0, null, null, null, null, null, null, null]);
+    expect([...t.prevSlots]).toEqual([0]);
+    // everything drained → empty (full strictness returns).
+    drainScenePrevSlots(t, ['stop', null, null, null, null, null, null, null], [3, null, null, null, null, null, null, null]);
+    expect(t.prevSlots.size).toBe(0);
   });
   it('sceneAllLanesStopped — every scene lane stopped OR pending-stop cancels (started only)', () => {
     const t = track();
@@ -273,10 +292,16 @@ describe('sceneRepeatShouldAdvance — the boundary decision (latched count read
     expect(sceneRepeatShouldAdvance(t, 2, 17.6, 0.5)).toBe(true);
     expect(sceneRepeatShouldAdvance(t, 2, 18.5, 0.5)).toBe(true); // past = still fires (next boundary applies it)
   });
-  it('infinite (0) never advances; unstarted / already-queued never advance', () => {
+  it('infinite (0) never advances; unstarted never advances', () => {
     expect(sceneRepeatShouldAdvance(track(), 0, 99, 1)).toBe(false);
     expect(sceneRepeatShouldAdvance(track({ started: false }), 2, 99, 1)).toBe(false);
-    expect(sceneRepeatShouldAdvance(track({ advanceQueued: true }), 2, 99, 1)).toBe(false);
+  });
+  it('NO one-shot latch: past the boundary it keeps firing each evaluation, and RAISING N moves the boundary back out (re-arm semantics)', () => {
+    const t = track(); // startBeat 10, unit 4
+    expect(sceneRepeatShouldAdvance(t, 2, 19, 0.5)).toBe(true); // boundary 18 passed
+    expect(sceneRepeatShouldAdvance(t, 2, 25, 0.5)).toBe(true); // still true later (no latch field)
+    expect(sceneRepeatShouldAdvance(t, 5, 25, 0.5)).toBe(false); // N raised → boundary 30, counting resumes
+    expect(sceneRepeatShouldAdvance(t, 5, 29.6, 0.5)).toBe(true);
   });
   it('the count is read FRESH each evaluation — lowering N below the elapsed count fires at the next evaluation (never retroactively inside a pass)', () => {
     const t = track(); // 3 passes elapsed at beat 22

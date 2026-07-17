@@ -2042,14 +2042,21 @@ function consumeSceneArm(
   if (slot === null) { disarmGridArm(nodeId); return; } // scene out of range
   if (armedRightAction === 'copy') {
     // The scene buffer carries each lane's clip AND its sibling automation
-    // (envelope-belongs-to-the-clip — a scene duplicate is a perform gesture).
-    copyBuffer = { kind: 'scene', clips: readScene(data, slot), autos: readSceneAutos(data, slot) };
+    // (envelope-belongs-to-the-clip — a scene duplicate is a perform gesture)
+    // AND the scene's REPEAT COUNT (counts are content — they travel with the
+    // scene; 0 = infinite/none).
+    copyBuffer = {
+      kind: 'scene',
+      clips: readScene(data, slot),
+      autos: readSceneAutos(data, slot),
+      repeats: sceneRepeatCount(data, slot),
+    };
     bufferSourceIndex = null; // a scene has no single source pad
   } else if (copyBuffer && pasteApplies(copyBuffer.kind, 'scene')) {
     // pasteApplies(kind, 'scene') is true ONLY for a scene buffer — the `.kind`
     // check narrows the union for TS; a clip buffer here is the clip→scene NO-OP.
     if (copyBuffer.kind === 'scene') {
-      pasteSceneInto(nodeId, slot, copyBuffer.clips, copyBuffer.autos);
+      pasteSceneInto(nodeId, slot, copyBuffer.clips, copyBuffer.autos, copyBuffer.repeats ?? 0);
     }
   }
   disarmGridArm(nodeId);
@@ -2068,6 +2075,7 @@ function pasteSceneInto(
   targetSlot: number,
   sceneClips: (ClipRecord | null)[],
   sceneAutos?: (AutoClipRecord | null)[],
+  sceneRepeats = 0,
 ): void {
   const plan = sceneWritePlan(targetSlot, sceneClips, sceneAutos);
   editData(
@@ -2090,6 +2098,11 @@ function pasteSceneInto(
           d.auto[key] = auto;
         }
       }
+      // The scene's REPEAT COUNT travels with the scene (counts are content):
+      // full-replace sets the target's count from the buffer, and a countless
+      // source CLEARS the target's key — no ghost counts, same discipline as
+      // the sibling automation above. Part of the same undo step.
+      setSceneRepeat(d, targetSlot, sceneRepeats);
     },
     { undoable: true },
   );

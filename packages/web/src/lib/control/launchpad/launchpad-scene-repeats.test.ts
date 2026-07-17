@@ -315,6 +315,86 @@ describe('SINGLE Grid — the 3-button repeat-count gesture', () => {
     expect(lit(64)).toBe(false);
   });
 
+  it('LED truth with modifiers active: the repeat view paints the plain SCENE column (no paste pulse, no palette) — presses are select-only', () => {
+    // The reachable modifier states during the hold: a STICKY paste arm left
+    // pending before the gesture, and shift engaged MID-hold. (A shift latched
+    // BEFORE the GRID press can never enter the view — that press is the
+    // SHIFT+top-row arm toggle by design.) In both states every scene press
+    // while GRID is held is select-only, so the column must not advertise the
+    // paste-target pulse or the shift palette.
+    seedAndBind({ clips: { [clipIndex(0, 0)]: noteClip(), [clipIndex(2, 0)]: noteClip() } });
+    const latch = () => { sim.cc('L', CC_SHIFT, 127); sim.cc('L', CC_SHIFT, 0); };
+    // Load a SCENE buffer + leave PASTE sticky-armed (the no-shift column would
+    // now pulse the amber scene-buffer colour on every in-range scene).
+    latch();
+    sim.cc('L', sceneCc(0), 127); // COPY arm
+    sim.cc('L', sceneCc(0), 0);
+    latch(); // unlatch — sticky
+    sim.cc('L', sceneCc(2), 127); // whole-scene copy source
+    sim.cc('L', sceneCc(2), 0);
+    latch();
+    sim.cc('L', sceneCc(1), 127); // PASTE arm
+    sim.cc('L', sceneCc(1), 0);
+    latch(); // unlatch — sticky paste, scene buffer loaded
+    expect(__test_mode().armedRightAction).toBe('paste');
+    holdGrid();
+    holdScene(0);
+    expect(__test_mode().repeatViewSlot, 'GRID-hold outranks the sticky paste arm').toBe(0);
+    expect(__test_mode().armedRightAction, 'the arm was NOT consumed by the select-only press').toBe('paste');
+    hoisted.tick!();
+    expect(sim.ledAt('L', SCENE_CCS[0]), 'held anchor = bright amber').toEqual([112, 81, 21]);
+    expect(sim.ledAt('L', SCENE_CCS[5]), 'empty scene row DARK — no paste-target pulse').toEqual([0, 0, 0]);
+    // Engage shift MID-hold: still the plain scene paint, never the palette
+    // (SCENE_CCS[5] would be the yellow LEN button under the palette).
+    sim.cc('L', CC_SHIFT, 127);
+    hoisted.tick!();
+    expect(sim.ledAt('L', SCENE_CCS[5]), 'no palette under mid-hold shift').toEqual([0, 0, 0]);
+    sim.cc('L', CC_SHIFT, 0);
+    releaseScene(0);
+    releaseGrid();
+    // The sticky paste-target pulse returns once the hold ends.
+    hoisted.tick!();
+    const after = sim.ledAt('L', SCENE_CCS[5])!;
+    expect(
+      after[0] + after[1] + after[2],
+      'paste pulse (either blink phase) returns after the hold',
+    ).toBeGreaterThan(0);
+  });
+
+  it('scene COPY/PASTE carries the repeat count with the scene (full replace; countless source clears)', () => {
+    seedAndBind({
+      clips: {
+        [clipIndex(2, 0)]: noteClip(), // source scene 2 (will carry ×5)
+        [clipIndex(3, 0)]: noteClip(), // countless source scene 3
+        [clipIndex(5, 1)]: noteClip(), // target scene 5 (pre-existing ×9)
+      },
+      sceneRepeats: { '2': 5, '5': 9 },
+    });
+    const latch = () => { sim.cc('L', CC_SHIFT, 127); sim.cc('L', CC_SHIFT, 0); };
+    const copyScene = (idx: number) => {
+      latch();
+      sim.cc('L', sceneCc(0), 127); // COPY (shift palette index 0)
+      sim.cc('L', sceneCc(0), 0);
+      latch(); // unlatch — COPY is sticky
+      sim.cc('L', sceneCc(idx), 127); // no-shift scene button = whole-scene source
+      sim.cc('L', sceneCc(idx), 0);
+    };
+    const pasteSceneAt = (idx: number) => {
+      latch();
+      sim.cc('L', sceneCc(1), 127); // PASTE (shift palette index 1)
+      sim.cc('L', sceneCc(1), 0);
+      latch(); // unlatch — PASTE is sticky
+      sim.cc('L', sceneCc(idx), 127);
+      sim.cc('L', sceneCc(idx), 0);
+    };
+    copyScene(2);
+    pasteSceneAt(5); // ×5 travels with the scene; the target's ×9 is replaced
+    expect(repeatsMap()).toEqual({ '2': 5, '5': 5 });
+    copyScene(3); // a COUNTLESS scene…
+    pasteSceneAt(5); // …full-replace CLEARS the target's count (no ghost ×5)
+    expect(repeatsMap()).toEqual({ '2': 5 });
+  });
+
   it('a plain scene launch (no GRID hold) still launches AND bumps the sceneLaunch marker', () => {
     seedAndBind();
     sim.cc('L', sceneCc(0), 127);
