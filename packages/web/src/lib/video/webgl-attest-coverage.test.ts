@@ -151,7 +151,12 @@ const FROM_TEST_ROOT = resolve(__dirname, '../../../../..');
 // PULL-EVAL REBASE (2026-07-11): #1045 (video-pull-eval, +1) reconciled onto
 // main's keyer/cellshade/posterbox wave (+4). #1056 anticipated the 2-way
 // reconcile to 52; main's +4 since then lands the final count at 56.
-const EXPECTED_HEAVY_SPEC_COUNT = 56;
+// VIDEOVARISPEED CROP (feat/videovarispeed-crop): videovarispeed-crop.spec.ts
+// matches the EXISTING `**/videovarispeed-*.spec.ts` heavy glob, so the SET
+// grows by one (the glob itself is unchanged, so this is a bookkeeping bump —
+// the hash actually moves because the new `crop` output port lands in
+// videovarispeed.ts, an in-basis file → owner re-attest at merge). 56 → 57.
+const EXPECTED_HEAVY_SPEC_COUNT = 57;
 
 describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
   const basis = resolveWebglBasis();

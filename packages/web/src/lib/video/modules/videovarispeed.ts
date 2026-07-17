@@ -76,6 +76,8 @@ import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
 import { createVideoAudioKeepAlive, type VideoAudioKeepAlive } from '$lib/video/video-audio-keepalive';
 import { createKeepAliveRegistry } from '$lib/video/video-keepalive-registry';
 import { ASSET_SLOTS } from '$lib/video/asset-select';
+import { createCropPass } from '$lib/video/crop-render';
+import type { CropRect } from '$lib/video/crop-core';
 import type { VideoboxFileMeta } from './videobox-sync';
 
 // Passthrough sample of the source texture, with an idle pattern so an empty
@@ -134,6 +136,12 @@ export interface VideoVarispeedData {
    *  slot's video; the actual bytes stay LOCAL (objectUrl / FileSystemFileHandle)
    *  exactly like the single-video model. null = empty slot. */
   slotMeta?: (VideoboxFileMeta | null)[];
+  /** CROP output rectangle — normalized (top-left origin, y-down): x,y,w in
+   *  0..1, height derived from the output aspect (see $lib/video/crop-core).
+   *  ONE per node. `active` false / absent ⇒ the CROP output passes the full
+   *  frame through. Synced + undoable; per-NODE (slot switches never touch it).
+   *  Read only through coerceCrop() (clamps + fits into the frame). */
+  crop?: { active: boolean; x: number; y: number; w: number };
 }
 
 /** Default state stamped onto a freshly spawned VIDEOVARISPEED. */
@@ -161,6 +169,11 @@ export interface VideoVarispeedHandleExtras {
    *  (only on module dispose). The card calls this for every loaded slot so a
    *  random/melodic switch pattern always lands on an already-warm element. */
   keepSlotAlive(el: HTMLVideoElement): void;
+  /** Push the current crop rect for the CROP output. `null` ⇒ passthrough (the
+   *  full frame). The card reads node.data.crop (synced), coerces + fits it via
+   *  $lib/video/crop-core, and calls this on every change / mount / aspect flip;
+   *  the engine's crop pass windows the module's own output by this rect. */
+  setCrop(rect: CropRect | null): void;
 }
 
 interface VideoVarispeedParams {
@@ -239,6 +252,11 @@ export const videoVarispeedDef: VideoModuleDef = {
   ],
   outputs: [
     { id: 'video',   type: 'video' },
+    // CROP: the boxed sub-region of the `video` output, scaled to full output
+    // resolution (a first-class zoom). Passes the full frame through until a
+    // crop is defined via the card's "add crop" overlay, so it is never black +
+    // always streams. Shared crop core: $lib/video/crop-core + crop-render.
+    { id: 'crop',    type: 'video' },
     { id: 'audio_l', type: 'audio' },
     { id: 'audio_r', type: 'audio' },
   ],
@@ -265,7 +283,7 @@ export const videoVarispeedDef: VideoModuleDef = {
 
   // docs-hash-ignore:start
   docs: {
-    explanation: "A local-file video player with a performant varispeed transport. Drop or pick a video and it decodes into the VIDEO output (rVFC-driven, so the texture streams at ANY speed without freezing). The SPEED knob is an asymmetric analog-clock face: full-left = -4x (reverse), 12 o'clock = +1x normal, full-right = +4x — forward speeds drive native <video>.playbackRate (audio pitch/tempo-shifts like tape varispeed) while reverse scrubs currentTime at a throttled ~10 Hz (audio muted in reverse). START/END sliders carve a play window into the clip; at the END edge LOOP jumps back to START while ONE-SHOT stops. The source aspect is letterboxed/pillarboxed into the 4:3 FBO so clips never stretch. DOM-only buttons (not patch params) handle file loading and transport: \"Choose video…\" / drag-drop / Chromium re-link, Play/Pause, a seek scrubber, and a LOOP↔1-SHOT toggle. Right-click the card to open the \"Load multiple…\" panel — up to 7 preloaded slots mapped to the C-major scale rows C..B; a clip player or any pitch+gate source can then switch which clip plays via the ASSET ports, each slot running its own virtual playhead so a switch jumps to that clip's live, de-synced position. Use it to scratch, reverse, freeze, and loop-window a clip live, or as a 7-clip melodic video switcher feeding BENTBOX / a CRT chain.",
+    explanation: "A local-file video player with a performant varispeed transport. Drop or pick a video and it decodes into the VIDEO output (rVFC-driven, so the texture streams at ANY speed without freezing). The SPEED knob is an asymmetric analog-clock face: full-left = -4x (reverse), 12 o'clock = +1x normal, full-right = +4x — forward speeds drive native <video>.playbackRate (audio pitch/tempo-shifts like tape varispeed) while reverse scrubs currentTime at a throttled ~10 Hz (audio muted in reverse). START/END sliders carve a play window into the clip; at the END edge LOOP jumps back to START while ONE-SHOT stops. The source aspect is letterboxed/pillarboxed into the 4:3 FBO so clips never stretch. DOM-only buttons (not patch params) handle file loading and transport: \"Choose video…\" / drag-drop / Chromium re-link, Play/Pause, a seek scrubber, and a LOOP↔1-SHOT toggle. Right-click the card to open the \"Load multiple…\" panel — up to 7 preloaded slots mapped to the C-major scale rows C..B; a clip player or any pitch+gate source can then switch which clip plays via the ASSET ports, each slot running its own virtual playhead so a switch jumps to that clip's live, de-synced position. CROP: press \"add crop\" to overlay a resizable, aspect-locked rectangle (thin red border) on the card's video screen — drag inside to move it, drag a corner to resize; the box always keeps the current output aspect (16:9 or 4:3), and the CROP output re-samples just that boxed region scaled up to the full output resolution, i.e. a live zoom into part of the frame as its own first-class video output (\"remove crop\" returns CROP to a full-frame passthrough). Use it to scratch, reverse, freeze, and loop-window a clip live, punch a zoomed detail out to a second screen, or as a 7-clip melodic video switcher feeding BENTBOX / a CRT chain.",
     inputs: {
       cv_start: "Gate (rising-edge / trigger). On the edge it (re)starts playback from the START window point and begins playing; if the window is empty (START past END) it instead seeks the current spot and stays paused.",
       cv_pause: "Gate (rising-edge / trigger). Each rising edge toggles pause/unpause — it flips the play state on the edge, it is not level-held.",
@@ -279,6 +297,7 @@ export const videoVarispeedDef: VideoModuleDef = {
     },
     outputs: {
       video: "Video. The decoded clip at the current transport state (speed, scrub, window), aspect-preserved (letterbox/pillarbox) into the engine FBO; an idle dark gradient before a file loads.",
+      crop: "Video. The CROP region of the VIDEO output — the aspect-locked rectangle set by \"add crop\" on the card, re-sampled and scaled up to fill the full output resolution (a live zoom). Until a crop is added it passes the full VIDEO frame through unchanged (never black), so it always streams; \"remove crop\" restores that passthrough. The crop rect is normalized on the node (synced + undoable) and re-fits when the output aspect (16:9↔4:3) flips.",
       audio_l: "Audio (left). Left channel of the ACTIVE slot's audio, tapped from its media-element source; varispeed pitch/tempo-shifts it on forward play and it is muted during reverse.",
       audio_r: "Audio (right). Right channel of the active slot's audio, following the same active slot as audio_l and re-pointed automatically when the asset slot switches.",
     },
@@ -307,6 +326,18 @@ export const videoVarispeedDef: VideoModuleDef = {
     const uLetterbox = gl.getUniformLocation(program, 'uLetterbox');
 
     const { fbo, texture: outTexture } = ctx.createFbo();
+
+    // ---- CROP output ----
+    // The crop rect is card-owned SYNCED state (node.data.crop); the card
+    // coerces/fits it via $lib/video/crop-core and pushes it here through
+    // extras.setCrop(). null ⇒ passthrough (full frame → the CROP output equals
+    // the VIDEO output, never black, always streaming). The pass re-samples the
+    // main output (outTexture) windowed by the rect, scaled to the full output
+    // resolution, into its own managed FBO exposed on read('outputTexture:crop').
+    // Frame aspect === region aspect === the live output aspect (ctx.res), so
+    // the aspect-locked rect is a normalized square. Reusable core: crop-render.
+    const cropPass = createCropPass(ctx);
+    let cropRect: CropRect | null = null;
 
     let sourceTexture: WebGLTexture | null = null;
     let sourceTexAllocated = false;
@@ -569,12 +600,20 @@ export const videoVarispeedDef: VideoModuleDef = {
 
         ctx.drawFullscreenQuad();
         g.bindFramebuffer(g.FRAMEBUFFER, null);
+
+        // CROP output: re-sample the main output frame windowed by the
+        // (card-owned) crop rect into the crop FBO at full output resolution.
+        // A null rect is a straight full-frame copy (passthrough), so the crop
+        // output always streams. Frame/region aspect = the live output aspect.
+        const outAspect = ctx.res.height > 0 ? ctx.res.width / ctx.res.height : 1;
+        cropPass.render(outTexture, cropRect, outAspect, outAspect);
       },
       dispose() {
         detachRvfc();
         disposeAudio();
         if (silentLeft) try { silentLeft.disconnect(); } catch { /* */ }
         if (silentRight) try { silentRight.disconnect(); } catch { /* */ }
+        cropPass.dispose();
         gl.deleteFramebuffer(fbo);
         gl.deleteTexture(outTexture);
         if (sourceTexture) gl.deleteTexture(sourceTexture);
@@ -590,6 +629,7 @@ export const videoVarispeedDef: VideoModuleDef = {
       unwireAudio,
       isAudioWired: () => audioWired,
       keepSlotAlive: (el) => { keepAlives.ensure(el); },
+      setCrop: (rect) => { cropRect = rect; },
     };
 
     return {
@@ -631,6 +671,11 @@ export const videoVarispeedDef: VideoModuleDef = {
       },
       read(key) {
         if (key === 'extras') return extras;
+        // Per-output texture for the engine's multi-output lookupInput path
+        // (mirrors OUTLINES). The `video` output stays surface.texture.
+        if (key === 'outputTexture:crop') return cropPass.texture;
+        // e2e/telemetry: whether a crop rect is currently active (non-passthrough).
+        if (key === 'cropActive') return cropRect !== null;
         if (key === 'hasVideoElement') return videoEl !== null;
         if (key === 'audioWired') return audioWired;
         // Keep-alive instrumentation: lets the e2e assert the silent
