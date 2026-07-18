@@ -393,6 +393,37 @@ function sendRaw(unit: LaunchpadUnit, bytes: Uint8Array): void {
 const rgbKey = (r: number, g: number, b: number): string =>
   `${clampRgb(r)},${clampRgb(g)},${clampRgb(b)}`;
 
+/** Every non-pad addressable CC index (top row + right scene column + logo) —
+ *  the "rest of the surface" a full blank has to cover beyond pads 11..88. */
+const ALL_SURFACE_CCS = [91, 92, 93, 94, 95, 96, 97, 98, 99, 89, 79, 69, 59, 49, 39, 29, 19] as const;
+
+/**
+ * Diff an LED frame against a prior `lastRgb` map → the changed specs to send
+ * PLUS the next lastRgb snapshot. Only CHANGED LEDs are emitted; indices lit
+ * last frame but absent this frame are blanked (RGB 0,0,0). Shared by the L/R
+ * units (setFrame) and the independent monitor bindings (setMonitorFrame).
+ */
+function diffFrameSpecs(
+  lastRgb: Map<number, string>,
+  frame: LaunchpadFrame,
+): { specs: RgbSpec[]; nextSeen: Map<number, string> } {
+  const specs: RgbSpec[] = [];
+  const nextSeen = new Map<number, string>();
+  for (const [index, [r, g, b]] of frame.leds) {
+    const key = rgbKey(r, g, b);
+    nextSeen.set(index, key);
+    if (lastRgb.get(index) !== key) specs.push({ index, r, g, b });
+  }
+  // Blank LEDs that were lit last frame but are gone now.
+  for (const index of lastRgb.keys()) {
+    if (!nextSeen.has(index)) {
+      specs.push({ index, r: 0, g: 0, b: 0 });
+      nextSeen.set(index, rgbKey(0, 0, 0));
+    }
+  }
+  return { specs, nextSeen };
+}
+
 /**
  * Push a full LED frame to a unit, diffed against the last frame so only
  * CHANGED LEDs are emitted, batched into ONE lighting SysEx (the Mini accepts a
@@ -402,22 +433,7 @@ const rgbKey = (r: number, g: number, b: number): string =>
 export function setFrame(unit: LaunchpadUnit, frame: LaunchpadFrame): void {
   const u = units[unit];
   if (!u.output) return;
-  const specs: RgbSpec[] = [];
-  const nextSeen = new Map<number, string>();
-  for (const [index, [r, g, b]] of frame.leds) {
-    const key = rgbKey(r, g, b);
-    nextSeen.set(index, key);
-    if (u.lastRgb.get(index) !== key) {
-      specs.push({ index, r, g, b });
-    }
-  }
-  // Blank LEDs that were lit last frame but are gone now.
-  for (const index of u.lastRgb.keys()) {
-    if (!nextSeen.has(index)) {
-      specs.push({ index, r: 0, g: 0, b: 0 });
-      nextSeen.set(index, rgbKey(0, 0, 0));
-    }
-  }
+  const { specs, nextSeen } = diffFrameSpecs(u.lastRgb, frame);
   if (specs.length === 0) return;
   u.lastRgb = nextSeen;
   sendRaw(unit, encodeLedRgbBatch(specs));
@@ -441,12 +457,133 @@ export function clearUnit(unit: LaunchpadUnit): void {
     for (let x = 0; x < LP_WIDTH; x++) specs.push({ index: padNote(x, y), r: 0, g: 0, b: 0 });
   }
   // Top + scene + logo CCs.
-  for (const cc of [91, 92, 93, 94, 95, 96, 97, 98, 99, 89, 79, 69, 59, 49, 39, 29, 19]) {
-    specs.push({ index: cc, r: 0, g: 0, b: 0 });
-  }
+  for (const cc of ALL_SURFACE_CCS) specs.push({ index: cc, r: 0, g: 0, b: 0 });
   units[unit].lastRgb.clear();
   for (const s of specs) units[unit].lastRgb.set(s.index, rgbKey(0, 0, 0));
   sendRaw(unit, encodeLedRgbBatch(specs));
+}
+
+// ---------------------------------------------------------------------------
+// MONITOR bindings — the "out to launch" video-monitor path. INDEPENDENT of the
+// L/R clip-launcher units: a monitor claims a Launchpad OUTPUT port (by id) and
+// owns its LEDs, reusing the SAME shared sysex `access` + the pure codec. This
+// is output-ONLY (a monitor never listens to pad presses — it takes the surface
+// over as a screen), and keyed by an opaque token (the video node id) so MANY
+// monitors on MANY devices can run at once, and so a monitor can drive a
+// DIFFERENT device than the clip-launcher pair simultaneously.
+//
+// LED OWNERSHIP is exclusive per device: a monitor claim on an output already
+// held by an L/R unit OR by another monitor is REFUSED (isOutputClaimed) — two
+// owners painting the same physical surface would fight over every LED. The
+// clip-launcher control and a monitor therefore cannot share ONE device, but
+// they run happily on two different ones.
+// ---------------------------------------------------------------------------
+
+interface MonitorBinding {
+  token: string;
+  outputId: string;
+  output: MidiOutputLike;
+  /** Last RGB we sent per index — the diff source (mirrors UnitBinding). */
+  lastRgb: Map<number, string>;
+}
+
+/** token → binding. A token (the video node id) owns at most one device. */
+const monitors = new Map<string, MonitorBinding>();
+
+/** Is an OUTPUT port currently claimed by an L/R unit? */
+function outputHeldByUnit(outputId: string): boolean {
+  return units.L.outputId === outputId || units.R.outputId === outputId;
+}
+/** Is an OUTPUT port claimed by a monitor OTHER than `exceptToken`? */
+function outputHeldByOtherMonitor(outputId: string, exceptToken?: string): boolean {
+  for (const m of monitors.values()) {
+    if (m.outputId === outputId && m.token !== exceptToken) return true;
+  }
+  return false;
+}
+
+/**
+ * Is a Launchpad output port already owned (by an L/R clip-launcher unit or a
+ * monitor other than `exceptToken`)? The card greys out claimed ports; bindMonitor
+ * refuses them. This is the "exclusive LED control" rule — one owner per surface.
+ */
+export function isOutputClaimed(outputId: string, exceptToken?: string): boolean {
+  return outputHeldByUnit(outputId) || outputHeldByOtherMonitor(outputId, exceptToken);
+}
+
+/**
+ * Bind a monitor token to a Launchpad OUTPUT port and enter programmer mode on
+ * it (the monitor now owns every LED). Idempotent for the same token+port.
+ * Returns false when: no access, the port id doesn't resolve, or the port is
+ * already claimed by a different consumer (LED-ownership conflict).
+ */
+export function bindMonitor(token: string, outputId: string): boolean {
+  if (!access) return false;
+  const existing = monitors.get(token);
+  if (existing && existing.outputId === outputId) return true; // idempotent
+  if (isOutputClaimed(outputId, token)) return false; // owned elsewhere
+  const output = access.outputs.get(outputId) ?? null;
+  if (!output) return false;
+  if (existing) unbindMonitor(token); // rebinding this token to a new device
+  const m: MonitorBinding = { token, outputId, output, lastRgb: new Map() };
+  monitors.set(token, m);
+  try {
+    output.send(encodeEnterProgrammerMode());
+  } catch {
+    /* port vanished mid-send — the card can re-bind */
+  }
+  bumpStatus();
+  return true;
+}
+
+/** Is a monitor token currently bound to a device? */
+export function isMonitorBound(token: string): boolean {
+  return monitors.has(token);
+}
+/** The output id a monitor token is bound to, or null. */
+export function monitorOutputId(token: string): string | null {
+  return monitors.get(token)?.outputId ?? null;
+}
+
+/**
+ * Push a full LED frame to a monitor, diffed + batched into ONE lighting SysEx
+ * (same whole-surface repaint the L/R units use). No-op if the token isn't
+ * bound. Indices lit last frame but absent now are blanked.
+ */
+export function setMonitorFrame(token: string, frame: LaunchpadFrame): void {
+  const m = monitors.get(token);
+  if (!m) return;
+  const { specs, nextSeen } = diffFrameSpecs(m.lastRgb, frame);
+  if (specs.length === 0) return;
+  m.lastRgb = nextSeen;
+  try {
+    m.output.send(encodeLedRgbBatch(specs));
+  } catch {
+    /* port vanished mid-send — onstatechange handling lives on the pair path */
+  }
+}
+
+/**
+ * Unbind a monitor: blank the whole surface, return the device to Live mode, and
+ * release the claim. Idempotent (no-op if the token isn't bound). Called on card
+ * unbind + on node delete so the device is never left stuck in programmer mode.
+ */
+export function unbindMonitor(token: string): void {
+  const m = monitors.get(token);
+  if (!m) return;
+  try {
+    const specs: RgbSpec[] = [];
+    for (let y = 0; y < LP_HEIGHT; y++) {
+      for (let x = 0; x < LP_WIDTH; x++) specs.push({ index: padNote(x, y), r: 0, g: 0, b: 0 });
+    }
+    for (const cc of ALL_SURFACE_CCS) specs.push({ index: cc, r: 0, g: 0, b: 0 });
+    m.output.send(encodeLedRgbBatch(specs));
+    m.output.send(encodeExitProgrammerMode());
+  } catch {
+    /* best-effort cleanup — the device may already be gone */
+  }
+  monitors.delete(token);
+  bumpStatus();
 }
 
 // ---------------------------------------------------------------------------
@@ -638,6 +775,7 @@ export function __test_resetLaunchpad(): void {
   connectFailed = false;
   simInstalled = null;
   keyListeners.clear();
+  monitors.clear();
 }
 
 /** Inject a fake access directly (advanced tests / pairing-flow tests). */

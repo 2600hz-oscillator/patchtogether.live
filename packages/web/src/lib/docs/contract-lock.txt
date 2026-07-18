@@ -2256,6 +2256,10 @@ outlines param rotation 0..1 linear default=0.5
 outlines param shape 0..1 linear default=0
 outlines param spd 0..1 linear default=0.4
 outlines param v 0..1 linear default=0.125
+outToLaunch meta domain=video
+outToLaunch in in video
+outToLaunch param bright 0..1 linear default=1
+outToLaunch param gamma 0.5..3 linear default=2.2
 painter meta domain=video
 painter out out video
 peakstate meta domain=video

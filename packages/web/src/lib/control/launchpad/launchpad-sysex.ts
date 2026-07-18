@@ -251,6 +251,102 @@ export function decodeMidiMessage(msg: Uint8Array | number[] | ArrayLike<number>
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// MONITOR mapping — the 9×9 RGB-video surface ("out to launch"). The Mini Mk3's
+// FULL addressable surface is a 9×9 grid: the 8×8 pads (11..88) PLUS the top CC
+// row (91..98), the right scene column (19..89) and the corner logo (99). In the
+// programmer-mode numbering EVERY one of those 81 buttons is exactly `row*10 +
+// col` for row/col 1..9 — so a downsampled 9×9 video frame maps DIRECTLY onto
+// the hardware with no special-casing. PURE (bytes ⇄ indices), so the whole
+// video→LED map is unit-testable with synthetic grids.
+// ---------------------------------------------------------------------------
+
+/** The monitor surface is 9 wide × 9 tall (pads + top row + scene col + logo). */
+export const LP_MONITOR_COLS = 9;
+export const LP_MONITOR_ROWS = 9;
+/** Addressable LEDs on the full surface (64 pads + 8 top + 8 scene + 1 logo). */
+export const LP_MONITOR_CELLS = LP_MONITOR_COLS * LP_MONITOR_ROWS; // 81
+
+/**
+ * Programmer-mode LED index for a monitor cell (`col` 0..8 LEFT→right, `row`
+ * 0..8 BOTTOM→top) — the natural extension of {@link padNote} to the full 9×9
+ * addressable surface. Returns `(row+1)*10 + (col+1)`:
+ *   - col/row 0..7 → the 8×8 pads (11..88, bottom-left = 11),
+ *   - row 8 (top), col 0..7 → the top CC row (91..98),
+ *   - col 8 (right), row 0..7 → the right scene column (19..89),
+ *   - col 8 & row 8 → the corner LOGO (99, top-right).
+ * Out-of-range coords clamp into the surface.
+ */
+export function lpMonitorIndex(col: number, row: number): number {
+  const c = clampCoord(col, LP_MONITOR_COLS);
+  const r = clampCoord(row, LP_MONITOR_ROWS);
+  return (r + 1) * 10 + (c + 1);
+}
+
+/** All 81 surface indices, in BOTTOM-origin readback order (i = row*9 + col of
+ *  a GL `readPixels` of a 9×9 FBO, row 0 = bottom). */
+export const LP_MONITOR_INDICES: readonly number[] = (() => {
+  const out: number[] = [];
+  for (let row = 0; row < LP_MONITOR_ROWS; row++) {
+    for (let col = 0; col < LP_MONITOR_COLS; col++) out.push(lpMonitorIndex(col, row));
+  }
+  return out;
+})();
+
+export interface MonitorMapOpts {
+  /** Overall brightness 0..1 (default 1). Scales each channel before quantising. */
+  bright?: number;
+  /** Gamma exponent applied to each 0..1 channel before scaling (default 1 =
+   *  linear). >1 deepens the mids/blacks (usually flatters the very-bright LEDs);
+   *  <1 lifts them. */
+  gamma?: number;
+  /** Include the corner logo (index 99)? Default true — it is the top-right cell
+   *  of a true 9×9. Set false to leave the odd-shaped logo LED dark. */
+  includeLogo?: boolean;
+}
+
+/**
+ * Convert ONE 8-bit colour channel (0..255) to a 7-bit Launchpad LED value
+ * (0..127) applying brightness then gamma. PURE — shared by BOTH the LED push
+ * and the on-card preview so what you see on the card matches the hardware.
+ */
+export function rgb8ToLp(v8: number, bright = 1, gamma = 1): number {
+  let x = (Number.isFinite(v8) ? v8 : 0) / 255;
+  if (x < 0) x = 0;
+  else if (x > 1) x = 1;
+  const g = Number.isFinite(gamma) && gamma > 0 ? gamma : 1;
+  const b = Number.isFinite(bright) ? Math.max(0, Math.min(1, bright)) : 1;
+  return clampRgb(Math.pow(x, g) * b * LP_RGB_MAX);
+}
+
+/**
+ * Map a BOTTOM-origin 9×9 RGBA readback (`rgba`, length ≥ 81*4 = 324, one byte
+ * per channel, row 0 = bottom, col 0 = left — exactly what a GL `readPixels` of
+ * a 9×9 FBO yields) to a per-LED colour map: programmer index → [r,g,b] each
+ * 0..127. The bottom-left pixel lands on pad 11, the top-right pixel on the logo
+ * (99). PURE — the single source of truth for the video→LED colour transform,
+ * used by the module's LED push AND its card preview.
+ */
+export function monitorGridToLeds(
+  rgba: ArrayLike<number>,
+  opts: MonitorMapOpts = {},
+): Map<number, [number, number, number]> {
+  const { bright = 1, gamma = 1, includeLogo = true } = opts;
+  const leds = new Map<number, [number, number, number]>();
+  for (let row = 0; row < LP_MONITOR_ROWS; row++) {
+    for (let col = 0; col < LP_MONITOR_COLS; col++) {
+      const index = lpMonitorIndex(col, row);
+      if (index === CC_LOGO && !includeLogo) continue;
+      const p = (row * LP_MONITOR_COLS + col) * 4;
+      const r = rgb8ToLp(Number(rgba[p]) || 0, bright, gamma);
+      const g = rgb8ToLp(Number(rgba[p + 1]) || 0, bright, gamma);
+      const b = rgb8ToLp(Number(rgba[p + 2]) || 0, bright, gamma);
+      leds.set(index, [r, g, b]);
+    }
+  }
+  return leds;
+}
+
 /**
  * Detect whether a SysEx frame is a Mini Mk3 frame addressed to our product
  * (header `F0 00 20 29 02 0D …`). Used by the device layer to ignore unrelated

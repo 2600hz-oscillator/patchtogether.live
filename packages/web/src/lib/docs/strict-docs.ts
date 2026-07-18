@@ -406,4 +406,8 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // dual RC-punch ADSRs → OTA VCA; 5-voice poly + mono 2-voice unison,
   // stereo WIDTH fan). Ships documented.
   'tidyVco',
+  // OUT TO LAUNCH (2026-07-18): Launchpad Mini Mk3 as a live 9×9 RGB video
+  // monitor — GPU box-average downsample → 81 pixels pushed to the LEDs via the
+  // batch-RGB SysEx (bind/connect + preview on the card). Ships documented.
+  'outToLaunch',
 ]);

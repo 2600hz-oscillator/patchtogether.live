@@ -276,6 +276,16 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // edge-detect). Promote into MODULES + capture darwin/linux PNGs (the
   // canvas mask above masks the live preview) in a follow-up PR.
   '4plexvid': 'VRT baseline pending; e2e/tests/4plexvid.spec.ts + plex-select unit tests provide coverage. Promote + capture darwin/linux baselines (live preview masked) in a follow-up PR.',
+  // OUT TO LAUNCH — Launchpad Mini Mk3 as a live 9×9 RGB video monitor. The
+  // card is a live MONITOR preview canvas (the 9×9 grid) driven by the module's
+  // per-frame GPU readback + a device-picker; nothing patched is a black grid,
+  // and the live render + Web-MIDI device list vary across runners. Coverage:
+  // the pure surface mapping (launchpad-monitor.test.ts: lpMonitorIndex /
+  // rgb8ToLp / monitorGridToLeds), the monitor device binding
+  // (launchpad-device.test.ts: bind/claim/setMonitorFrame diff/unbind), and the
+  // module def+factory (out-to-launch.test.ts). Promote + capture darwin/linux
+  // baselines (live preview masked) via vrt-update.yml in a follow-up PR.
+  outToLaunch: 'VRT baseline pending; live 9×9 monitor preview + Web-MIDI device list are non-deterministic. Coverage = launchpad-monitor.test.ts (surface mapping) + launchpad-device.test.ts (monitor bind/claim/diff/unbind) + out-to-launch.test.ts (def+factory). Capture darwin/linux baselines (live preview masked) in a follow-up PR.',
   // ES9 — native-bridge 16×16 hardware I/O. The card is static chrome
   // (status LED + class selectors + sectioned patch panel, no canvas), so
   // it IS baseline-able — pending the darwin/linux capture pass (4plexvid
