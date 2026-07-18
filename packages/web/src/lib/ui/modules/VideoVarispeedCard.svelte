@@ -67,6 +67,7 @@
   import { videoAspectStore } from '$lib/ui/video-aspect-store.svelte';
   import { defaultCropRect, refitCrop, type CropRect } from '$lib/video/crop-core';
   import { writeCrop as commitCrop, readCrop } from './crop-edit';
+  import { testHooksEnabled } from '$lib/dev/test-hooks';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -1071,6 +1072,32 @@
   }
   onMount(() => { displayTimer = setInterval(refreshDisplay, 100); });
   onDestroy(() => { if (displayTimer !== null) clearInterval(displayTimer); });
+
+  // ---- Test hook (gated on testHooksEnabled) --------------------------------
+  //
+  // Expose this card's PER-SLOT VIRTUAL PLAYHEAD (slotPos[]) + the active slot,
+  // keyed by node id. The switch-path e2e uses it to assert a switch-BACK lands
+  // on the engine's OWN tracked virtual position — a value on the SAME
+  // frame-time (rAF) clock the switch jump reads (selectAssetSlot does
+  // `next.currentTime = clamp(slotPos[i])`) — instead of a wall-clock
+  // projection, which the frame-time playhead legitimately lags under CI
+  // SwiftShader load (the old switch-back model's flake). Registry-keyed so
+  // multiple cards coexist; present in the prebuilt preview bundle too
+  // (VITE_E2E_HOOKS=1). The reader closure reads the LIVE slotPos/activeSlot at
+  // call time (slotPos is mutated in place; activeSlot is $state).
+  $effect(() => {
+    if (!testHooksEnabled() || typeof window === 'undefined') return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any;
+    const readers: Map<string, () => { activeSlot: number; slotPos: number[] }> =
+      w.__vvsVirtualPlayheadReaders ?? (w.__vvsVirtualPlayheadReaders = new Map());
+    readers.set(id, () => ({ activeSlot, slotPos: slotPos.slice() }));
+    if (!w.__vvsVirtualPlayhead) {
+      w.__vvsVirtualPlayhead = (nodeId: string) =>
+        w.__vvsVirtualPlayheadReaders?.get(nodeId)?.() ?? null;
+    }
+    return () => { readers.delete(id); };
+  });
 
   function formatTime(s: number): string {
     if (!Number.isFinite(s) || s < 0) return '0:00';
