@@ -16,7 +16,7 @@
   // drives the SAME actions via lib/control/monome. All ports live in the shared yellow
   // drill-down <PatchPanel> (post-#767 — NO raw side <Handle> jacks); port ids
   // are byte-identical to clipplayerDef so the CV bridge routes unchanged.
-  import { useStore, useOnSelectionChange, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import MidiAssignButton from '$lib/ui/controls/MidiAssignButton.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
@@ -126,6 +126,7 @@
     keyToStripAction,
     isHoldAction,
     shouldIgnoreDigit,
+    isEditableTarget,
     type StripAction,
   } from './clipplayer-keyboard';
   // Launchpad-STYLE origin-scoped undo/redo for the card's persistent clip edits
@@ -139,9 +140,13 @@
     clipCanRedo,
   } from '$lib/control/clip-undo';
 
-  let { id, data, selected = false }: NodeProps = $props();
+  let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
+  // The card root — bound so the keyboard capture can gate on focus-within
+  // (`cardEl.contains(document.activeElement)`), the proven BloodCard pattern
+  // (see the KEYBOARD section below). Focusable via role=application + tabindex.
+  let cardEl = $state<HTMLDivElement | null>(null);
 
   // --- monome grid connect + bind THIS clip-player. Capability-gated. ---
   const gridSupported = gridSerialAvailable();
@@ -220,7 +225,9 @@
   function writeDataUndoable(mut: (d: ClipPlayerData) => void) {
     const target = patch.nodes[id];
     if (!target) return;
-    clipUndoTransact(() => {
+    // Per-CARD undo stack (keyed by this node's id) — undoing here never reverts
+    // a sibling clip-player's edit.
+    clipUndoTransact(id, () => {
       if (!target.data) target.data = {};
       mut(target.data as ClipPlayerData);
     });
@@ -491,10 +498,10 @@
   }
   // Undo/redo availability, re-derived on any node edit so the strip buttons
   // enable/disable live.
-  let canUndo = $derived((void cardVersion, clipCanUndo()));
-  let canRedo = $derived((void cardVersion, clipCanRedo()));
-  function doUndo() { clipUndo(); }
-  function doRedo() { clipRedo(); }
+  let canUndo = $derived((void cardVersion, clipCanUndo(id)));
+  let canRedo = $derived((void cardVersion, clipCanRedo(id)));
+  function doUndo() { clipUndo(id); }
+  function doRedo() { clipRedo(id); }
 
   /** Fire strip button `n` (1..8). Shift (8) is a HOLD — for a mouse click it
    *  toggles nothing (hold is pointer-driven / keyboard-8-driven); a bare click
@@ -515,39 +522,70 @@
   function onShiftUp() { shiftHeld = false; }
 
   // ===========================================================================
-  // KEYBOARD 1..8 (Part B) — when THIS card is the SINGLE selected flow node,
-  // computer digits 1..8 drive the eight control-strip buttons, with HOLD
+  // KEYBOARD 1..8 (Part B) — computer digits 1..8 drive the eight control-strip
+  // buttons ONLY while THIS card is FOCUS-WITHIN (clicked into), with HOLD
   // semantics on 8 (=shift), key-repeat suppression, text-input coexistence, and
-  // stuck-shift guards (window blur / tab hide / deactivation force-release).
+  // stuck-shift guards (window blur / tab hide / focus-loss force-release).
+  //
+  // FOCUS-WITHIN, NOT `.selected` (adversarial-review fix, mirroring BloodCard):
+  // gating on the SvelteFlow selection made the card GLOBALLY hijack digits 1..8
+  // the moment it was (stickily) selected — the window-capture listener
+  // preventDefault + stopPropagation'd every digit, STARVING other computer-
+  // keyboard consumers (NUMPAD+, Blood, Score) and focused inputs, and leaving a
+  // freshly-spawned selected card deaf until the selection changed. Gating on
+  // focus-within instead means the card claims 1..8 only when you've clicked into
+  // it; a merely-selected-but-unfocused card lets every digit flow through. The
+  // window listeners are ALWAYS installed (they self-gate on cardIsFocused() at
+  // event time), so this works for docked cards too — no <SvelteFlow /> context
+  // probe / selection-count tracking needed.
   // ===========================================================================
-  // Track how many flow nodes are selected so "single selection" is unambiguous
-  // (0 or >1 selected → no card owns 1..8). svelte-flow calls this on any
-  // selection change.
-  let selectedCount = $state(0);
-  // useOnSelectionChange defers useStore() into an $effect, so it can't be
-  // try/caught. Probe the <SvelteFlow /> context SYNCHRONOUSLY here (useStore
-  // throws at once when absent): a DOCKED card (workflow rail / DockCardHost)
-  // renders OUTSIDE that context. Only wire selection tracking when we're a real
-  // flow node; a docked card is never a "selected flow node", so keyboard 1..8
-  // simply never activates for it (keyboardActive stays false) — its on-card
-  // strip buttons still work.
-  let inFlow = false;
-  try { useStore(); inFlow = true; } catch { inFlow = false; }
-  if (inFlow) {
-    useOnSelectionChange(({ nodes }) => {
-      selectedCount = nodes.length;
-    });
+  /** Is this card FOCUSED? focus-within ONLY (BloodCard's proven predicate) —
+   *  deliberately NOT SvelteFlow's `.selected`. The card is focusable
+   *  (role=application + tabindex + click→focus), so click it to control it;
+   *  focus an input / click away and keys flow normally. */
+  function cardIsFocused(): boolean {
+    return !!cardEl && cardEl.contains(document.activeElement);
   }
-  // Keyboard-active = this clip-player card is the LONE selection in the flow.
-  let keyboardActive = $derived(inFlow && selected && selectedCount === 1);
+  // Reactive mirror of focus-within, kept fresh by window focusin/focusout so the
+  // "1–8" chip + the accent ring reflect the CLAIM state (the keydown handler
+  // itself re-checks cardIsFocused() imperatively, so behaviour never lags this).
+  let focusWithin = $state(false);
+  let keyboardActive = $derived(focusWithin);
+  /** Click anywhere on the card (that isn't an editable control) grabs focus so
+   *  1..8 activate — but clicking a rename box / colour swatch / rate <select>
+   *  keeps ITS focus so typing/picking still works. */
+  function onCardClick(e: MouseEvent) {
+    if (isEditableTarget(e.target) || isEditableTarget(document.activeElement)) return;
+    cardEl?.focus();
+  }
 
   function releaseShiftForce() {
-    // Force-release shift on focus loss so a missing keyup can't leave it stuck.
+    // Force-release shift on focus loss / interruption so a missing keyup or
+    // pointerup can't leave it stuck (the classic stuck-modifier bug).
     if (shiftHeld) shiftHeld = false;
+  }
+  function recomputeFocusWithin() {
+    // ONLY the visual mirror (chip + accent ring). It must NOT release shift: a
+    // microtask can land in the transient gap between focusout and focusin (when
+    // document.activeElement is briefly <body>) and would spuriously drop a held
+    // shift mid-click. Stuck-shift is covered by keyup / blur / pointercancel /
+    // visibilitychange instead.
+    focusWithin = cardIsFocused();
+  }
+  // focusin/focusout can fire SYNCHRONOUSLY during a Svelte DOM-removal commit
+  // (a focused child being unmounted inside an {#if}/{#each}) — writing $state in
+  // that flush trips `state_unsafe_mutation`. Defer the recompute to a microtask
+  // (runs AFTER the flush); reading document.activeElement then is also more
+  // reliable than a focusout relatedTarget. The keydown claim re-checks
+  // cardIsFocused() imperatively, so behaviour never lags this visual mirror.
+  function onWindowFocusChange() {
+    queueMicrotask(recomputeFocusWithin);
   }
   function onWindowKeyDown(e: KeyboardEvent) {
     const action = keyToStripAction(e.key);
     if (action === null) return;
+    // FOCUS-WITHIN gate: only claim 1..8 when this card actually holds focus.
+    if (!cardIsFocused()) return;
     if (shouldIgnoreDigit(e, document.activeElement)) return;
     // Own the digit so it never reaches svelte-flow / the browser.
     e.preventDefault();
@@ -566,31 +604,34 @@
   function onWindowKeyUp(e: KeyboardEvent) {
     const action = keyToStripAction(e.key);
     if (action === null) return;
-    // A shift keyup ALWAYS releases (even if focus moved into a form control
-    // between the down + up — the guard must not strand a held shift).
+    // A shift keyup ALWAYS releases (even if focus moved between down + up — the
+    // guard must not strand a held shift).
     if (isHoldAction(action)) {
       shiftHeld = false;
     }
   }
   $effect(() => {
-    if (!keyboardActive) {
-      // Deactivating while shift is held must force-release it.
-      releaseShiftForce();
-      return;
-    }
-    // Capture phase so we win over svelte-flow's own key handlers.
+    // ALWAYS-installed (mount → destroy). Capture phase so we win over
+    // svelte-flow's own key handlers; each handler self-gates on cardIsFocused().
     window.addEventListener('keydown', onWindowKeyDown, { capture: true });
     window.addEventListener('keyup', onWindowKeyUp, { capture: true });
-    // Stuck-shift guards: blur / tab-hide force-release (a keyup that never
-    // arrives — the classic stuck-modifier bug).
+    window.addEventListener('focusin', onWindowFocusChange);
+    window.addEventListener('focusout', onWindowFocusChange);
+    // Stuck-shift guards (a keyup/pointerup that never arrives): blur / tab-hide /
+    // pointer-cancel force-release. ALWAYS on (not gated on focus) so a pointer-
+    // held ⇧ on an unfocused / docked card can't strand either.
     window.addEventListener('blur', releaseShiftForce);
+    window.addEventListener('pointercancel', releaseShiftForce);
     document.addEventListener('visibilitychange', releaseShiftForce);
     return () => {
       window.removeEventListener('keydown', onWindowKeyDown, { capture: true });
       window.removeEventListener('keyup', onWindowKeyUp, { capture: true });
+      window.removeEventListener('focusin', onWindowFocusChange);
+      window.removeEventListener('focusout', onWindowFocusChange);
       window.removeEventListener('blur', releaseShiftForce);
+      window.removeEventListener('pointercancel', releaseShiftForce);
       document.removeEventListener('visibilitychange', releaseShiftForce);
-      releaseShiftForce(); // never leave shift stuck across a deactivation
+      releaseShiftForce(); // never leave shift stuck across a teardown
     };
   });
 
@@ -1047,7 +1088,22 @@
   ]).flat();
 </script>
 
-<div class="card audio clipplayer-card" data-testid="clipplayer-card">
+<!-- role="application" + tabindex + onclick→focus: the card OWNS computer keys
+     1..8 ONLY while focused (BloodCard's pattern). Clicking in focuses it (the
+     "1–8" chip lights); focus an input / click away and digits flow to other
+     modules. Key handling is the window-level CAPTURE listener (see <script>). -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<div
+  class="card audio clipplayer-card"
+  bind:this={cardEl}
+  data-testid="clipplayer-card"
+  role="application"
+  aria-label="CLIP PLAYER — computer keys 1–8 drive the control strip while focused"
+  tabindex="0"
+  onclick={onCardClick}
+>
   <div class="stripe"></div>
   <header class="title">
     <ModuleTitle {id} {data} defaultLabel="CLIP PLAYER" inline />
@@ -1185,8 +1241,8 @@
       <!-- CONTROL STRIP (Part A group 1 / Part B anchor): 8 buttons mirroring the
            single-pad Launchpad's PERMANENT top row (CC 91..98), in the same order
            — transport · grid · clip · arranger · control · undo · redo · shift.
-           Computer keys 1..8 drive these SAME buttons while the card is the lone
-           selection (the "1–8" chip lights). -->
+           Computer keys 1..8 drive these SAME buttons while the card is
+           FOCUS-WITHIN (clicked into — the "1–8" chip lights). -->
       <div
         class="control-strip"
         class:kb-active={keyboardActive}
@@ -1257,11 +1313,12 @@
           onpointerdown={onShiftDown}
           onpointerup={onShiftUp}
           onpointerleave={onShiftUp}
+          onpointercancel={onShiftUp}
         >⇧</button>
         {#if keyboardActive}
           <span
             class="kb-chip"
-            title="Computer keys 1–8 drive this strip (this card is selected)"
+            title="Computer keys 1–8 drive this strip (this card is focused — click in to control it)"
             data-testid={`clipplayer-kb-active-${id}`}
           >1–8</span>
         {/if}
@@ -1655,6 +1712,10 @@
     flex-direction: column;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   }
+  /* The card is focusable (role=application + tabindex) so it can OWN computer
+     keys 1–8 while focused; suppress the default focus ring — the "1–8" chip +
+     the control-strip accent ring are the focus indicator. */
+  .clipplayer-card:focus { outline: none; }
   :global(.svelte-flow__node:hover) .card { border-color: var(--accent-dim); }
   :global(.svelte-flow__node.selected) .card {
     border-color: var(--accent);
@@ -2275,8 +2336,9 @@
     border: 1px solid transparent;
     border-radius: 3px;
   }
-  /* "1–8 active" — the card is the single selection, so computer keys drive the
-     strip. A subtle accent ring + the chip tell the user which card owns 1–8. */
+  /* "1–8 active" — the card is FOCUS-WITHIN (clicked into), so computer keys
+     drive the strip. A subtle accent ring + the chip tell the user which card
+     owns 1–8. */
   .control-strip.kb-active {
     border-color: var(--accent-dim, #3a6);
     box-shadow: inset 0 0 0 1px var(--accent-glow, rgba(110, 255, 153, 0.25));

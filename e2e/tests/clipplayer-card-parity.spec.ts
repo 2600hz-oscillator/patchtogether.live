@@ -124,20 +124,18 @@ test('parity: card CONTROL-deck MUTE and the single-pad Launchpad MUTE write the
   await expect.poll(async () => (await nodeData(page, 'cp'))?.muted?.[2] ?? true).toBe(false);
 });
 
-test('keyboard 1–8 drive the strip ONLY when the card is the single selection', async ({ page, rack }) => {
+test('keyboard 1–8 gate on FOCUS-WITHIN (clicked into), NOT mere selection', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
   await expect(page.getByTestId('clipplayer-card').first()).toBeVisible();
 
-  // Not selected → no "1–8" chip, digits are inert.
+  // Unfocused → no "1–8" chip, digits are inert.
   await expect(page.getByTestId('clipplayer-kb-active-cp')).toHaveCount(0);
   await page.keyboard.press('5');
   await expect(page.getByTestId('clipplayer-control-deck')).toHaveCount(0);
 
-  // Select the card (clicking a strip button selects its flow node) → chip lights.
+  // Click INTO the card (a strip button) → focus-within → chip lights + digits work.
   await page.getByTestId('clipplayer-strip-2-cp').click();
   await expect(page.getByTestId('clipplayer-kb-active-cp')).toBeVisible();
-
-  // Key 5 → CONTROL deck; key 3 → CLIP editor; key 2 → GRID.
   await page.keyboard.press('5');
   await expect(page.getByTestId('clipplayer-control-deck')).toBeVisible();
   await page.keyboard.press('3');
@@ -145,11 +143,70 @@ test('keyboard 1–8 drive the strip ONLY when the card is the single selection'
   await page.keyboard.press('2');
   await expect(page.getByTestId('clipplayer-grid')).toBeVisible();
 
-  // Deselect (click empty canvas) → chip gone + digits inert again.
+  // SELECTED-BUT-NOT-FOCUSED: blur the card WITHOUT deselecting it (SvelteFlow
+  // keeps the node .selected). The chip must vanish and digits go inert again —
+  // selection alone must NOT arm the keyboard (the global-hijack regression this
+  // whole change fixes; the exact mistake BloodCard documents against).
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await expect(page.getByTestId('clipplayer-kb-active-cp')).toHaveCount(0);
+  await page.keyboard.press('3'); // would open the CLIP editor if (wrongly) armed
+  await expect(page.getByTestId('clipplayer-editor')).toHaveCount(0);
+  await expect(page.getByTestId('clipplayer-grid')).toBeVisible();
+
+  // Re-focus by clicking the GRID strip button → chip returns; a digit works again.
+  await page.getByTestId('clipplayer-strip-2-cp').click();
+  await expect(page.getByTestId('clipplayer-kb-active-cp')).toBeVisible();
+  await page.keyboard.press('5');
+  await expect(page.getByTestId('clipplayer-control-deck')).toBeVisible();
+
+  // Deselect + blur (click empty canvas) → chip gone + digits inert again.
   await page.locator('.svelte-flow__pane').click({ position: { x: 5, y: 5 } });
   await expect(page.getByTestId('clipplayer-kb-active-cp')).toHaveCount(0);
-  await page.keyboard.press('5');
-  await expect(page.getByTestId('clipplayer-control-deck')).toHaveCount(0);
+  await page.keyboard.press('3');
+  await expect(page.getByTestId('clipplayer-editor')).toHaveCount(0);
+});
+
+test('an unfocused clip-player does NOT starve a co-present NUMPAD+ of computer keys', async ({ page, rack }) => {
+  await spawnPatch(page, [
+    { id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
+    { id: 'np', type: 'numpadPlus', position: { x: 560, y: 80 }, domain: 'audio' },
+  ]);
+  await expect(page.getByTestId('clipplayer-card').first()).toBeVisible();
+  await expect(page.getByTestId('numpad-plus-card')).toBeVisible();
+
+  // NUMPAD+ in OVERDUB: every mapped keypress writes the nearest step into
+  // node.data.layers even when stopped (the numpad's own e2e observable).
+  await page.evaluate(() => {
+    const w = globalThis as unknown as W;
+    const np = w.__patch.nodes['np'];
+    if (np?.params) np.params.overdub = 1;
+  });
+
+  // SELECT the clip-player (click a strip button), then BLUR it: now SvelteFlow-
+  // selected but NOT focused — the exact state that used to globally hijack 1..8.
+  await page.getByTestId('clipplayer-strip-2-cp').click();
+  await expect(page.getByTestId('clipplayer-kb-active-cp')).toBeVisible();
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await expect(page.getByTestId('clipplayer-kb-active-cp')).toHaveCount(0);
+
+  // Numpad3 (key '3') — a REAL KeyboardEvent so it propagates window→document
+  // like a hardware press. NUMPAD+ keys on e.code 'Numpad3'; the clip-player on
+  // e.key '3'. With the clip-player unfocused it must NOT swallow the key.
+  await page.evaluate(() => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Numpad3', key: '3', bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent('keyup',   { code: 'Numpad3', key: '3', bubbles: true }));
+  });
+
+  // NUMPAD+ recorded the note (NOT starved) …
+  await expect.poll(async () =>
+    page.evaluate(() => {
+      const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { layers?: Array<Array<{ on?: boolean }>> } }> } };
+      return w.__patch.nodes['np']?.data?.layers?.[0]?.[0]?.on ?? false;
+    }),
+  ).toBe(true);
+  // … and the clip-player did NOT switch view (digit '3' was not hijacked).
+  await expect(page.getByTestId('clipplayer-editor')).toHaveCount(0);
+  await expect(page.getByTestId('clipplayer-grid')).toBeVisible();
 });
 
 test('keyboard HOLD-8 (shift) + click a cell cycles velocity; blur force-releases the stuck shift', async ({ page, rack }) => {
@@ -223,6 +280,46 @@ test('control-strip undo / redo (keys 6/7) revert and re-apply a note edit', asy
   // Redo (button 7) → the note returns.
   await page.getByTestId('clipplayer-strip-7-cp').click();
   await expect.poll(stepCount).toBe(1);
+});
+
+test('per-card undo scope: undoing on card A does NOT revert card B', async ({ page, rack }) => {
+  await spawnPatch(page, [
+    { id: 'cpa', type: 'clipplayer', position: { x: 60, y: 80 }, domain: 'audio' },
+    { id: 'cpb', type: 'clipplayer', position: { x: 700, y: 80 }, domain: 'audio' },
+  ]);
+  await seedClip(page, 'cpa', 0);
+  await seedClip(page, 'cpb', 0);
+  await expect(page.getByTestId('clipplayer-card')).toHaveCount(2);
+
+  // Cell testids aren't node-scoped, so scope by the card's flow-node wrapper
+  // (found via its id-scoped strip button).
+  const cardOf = (nid: string) =>
+    page.locator('.svelte-flow__node').filter({ has: page.getByTestId(`clipplayer-strip-1-${nid}`) });
+  const stepCount = (nid: string, step: number) =>
+    page.evaluate(({ i, s }) => {
+      const arr = (globalThis as unknown as W).__patch.nodes[i].data?.clips?.['0']?.steps ?? [];
+      return arr.filter((n) => n.step === s).length;
+    }, { i: nid, s: step });
+
+  // Card A: open CLIP, add a note at step 9.
+  await page.getByTestId('clipplayer-strip-3-cpa').click();
+  await cardOf('cpa').getByTestId('clipplayer-cell-3-9').click();
+  await expect.poll(() => stepCount('cpa', 9)).toBe(1);
+
+  // Card B: open CLIP, add a note at step 9 (its OWN independent edit).
+  await page.getByTestId('clipplayer-strip-3-cpb').click();
+  await cardOf('cpb').getByTestId('clipplayer-cell-3-9').click();
+  await expect.poll(() => stepCount('cpb', 9)).toBe(1);
+
+  // Undo on card A (its strip ↶) reverts ONLY A — card B's note survives (the
+  // shared-stack leak this fix closes).
+  await page.getByTestId('clipplayer-strip-6-cpa').click();
+  await expect.poll(() => stepCount('cpa', 9)).toBe(0);
+  await expect.poll(() => stepCount('cpb', 9)).toBe(1);
+
+  // And card B undoes its own edit independently.
+  await page.getByTestId('clipplayer-strip-6-cpb').click();
+  await expect.poll(() => stepCount('cpb', 9)).toBe(0);
 });
 
 test('scene-launch fires a slot across content lanes; scene-repeat SET cycles the count', async ({ page, rack }) => {

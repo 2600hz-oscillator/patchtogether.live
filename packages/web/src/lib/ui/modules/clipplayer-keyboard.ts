@@ -60,33 +60,26 @@ export function isHoldAction(action: StripAction): boolean {
   return action === 'shift';
 }
 
-// The editable-target selector: focus on one of these means the user is TYPING
-// (or picking a colour / dragging a range), so the 1..8 mapping must step aside
-// and let the key through. `color` / `range` inputs don't consume digit keys
-// meaningfully, but skipping while they're focused is the safe, predictable
-// rule (matches the design doc §B.3).
-const EDITABLE_SELECTOR =
-  'input:not([type=color]):not([type=range]), textarea, select, [contenteditable=""], [contenteditable="true"]';
-
-/** Is `el` (an event target or document.activeElement) inside an editable
- *  control? Used to keep the digit mapping from hijacking typing into the
- *  module title rename, per-lane colour, or per-lane rate select. Duck-typed on
- *  `.closest` (not `instanceof Element`) so it works in the DOM-free unit
- *  environment as well as the browser. */
-export function isEditableTarget(el: EventTarget | null): boolean {
-  const closest = (el as { closest?: (sel: string) => unknown } | null)?.closest;
-  if (typeof closest !== 'function') return false;
-  return !!closest.call(el, EDITABLE_SELECTOR);
-}
+// Editable-target guard: focus on a text field means the user is TYPING, so the
+// 1..8 mapping must step aside and let the key through. We REUSE the shared
+// BLOOD guard (blood-keys.ts `isEditableTarget`) rather than a narrower local
+// selector — it also recognises ARIA textbox/searchbox/combobox roles (the
+// right-click "+Add module" SEARCH box is one), which the old local selector
+// missed, so digits headed for those now flow through untouched. Re-exported so
+// the map + guard stay a single import surface (and unit-test together).
+export { isEditableTarget } from '$lib/blood/blood-keys';
+import { isEditableTarget } from '$lib/blood/blood-keys';
 
 /** Modifier snapshot the guard reads (a subset of KeyboardEvent so it stays
  *  DOM-free and unit-testable). Shift is intentionally ABSENT — a shifted digit
  *  is still a digit here (shift-8 is not a distinct chord), so shift never
- *  excludes the mapping. */
+ *  excludes the mapping. `isComposing` guards IME composition: a digit typed
+ *  mid-composition belongs to the IME, never the strip. */
 export interface DigitGuardEvent {
   metaKey: boolean;
   ctrlKey: boolean;
   altKey: boolean;
+  isComposing: boolean;
   target: EventTarget | null;
 }
 
@@ -94,11 +87,13 @@ export interface DigitGuardEvent {
  * Whether a keydown/keyup carrying a digit should be IGNORED for the 1..8
  * mapping (let it pass through to the browser / app / a focused field):
  *   - an OS/app modifier (Cmd/Ctrl/Alt) is down (leave cmd-1 etc. alone), OR
+ *   - the keystroke is part of an IME composition (`isComposing`), OR
  *   - the event target OR the current `activeElement` is an editable control.
  * PURE — `activeEl` is passed in so this needs no DOM.
  */
 export function shouldIgnoreDigit(e: DigitGuardEvent, activeEl: EventTarget | null): boolean {
   if (e.metaKey || e.ctrlKey || e.altKey) return true;
+  if (e.isComposing) return true;
   if (isEditableTarget(e.target)) return true;
   if (isEditableTarget(activeEl)) return true;
   return false;

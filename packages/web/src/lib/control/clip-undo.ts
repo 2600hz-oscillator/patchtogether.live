@@ -10,6 +10,15 @@
 // (different origin) or a transient launch (no origin — see the card's
 // queueLane, which transacts un-tagged).
 //
+// PER-CARD SCOPE (adversarial-review fix): the manager + its tracked origin are
+// keyed by NODE id, so each clip-player card has its OWN undo stack. Undoing on
+// card A must never revert card B's edit. A single shared manager/origin (the
+// original design) leaked across sibling cards: a `Y.UndoManager` filters by
+// `trackedOrigins`, so two cards transacting under the SAME origin would each
+// capture the other's edit — undo A would pop B's change. Every card therefore
+// gets a distinct per-node origin Symbol AND its own manager tracking only that
+// origin, so the stacks are fully independent.
+//
 // DECISION (owner Q1 — "launchpad-scoped lpUndo factored to shared, if clean;
 // else global — your judgment, note it"): the card gets the SAME KIND of scoped
 // undo as the launchpad, in this shared module, rather than the global app
@@ -26,85 +35,101 @@ import * as Y from 'yjs';
 import { getYjsValue } from '@syncedstore/core';
 import { patch, ydoc } from '$lib/graph/store';
 
-/** Origin tag for card-authored persistent clip edits. A dedicated Symbol so an
- *  origin-scoped UndoManager captures ONLY these — never a peer's edit or a
- *  transient (un-tagged) launch. */
-export const CLIP_UNDO_ORIGIN = Symbol('clip-card-undo-origin');
+/** Per-node undo state: a distinct origin Symbol (so the manager captures ONLY
+ *  this card's edits — never a sibling card, a peer, or a transient launch) plus
+ *  the manager built against the live `nodes` Y.Map, and the Y type it tracks
+ *  (used to detect a rackspace rebind and rebuild against the fresh doc). */
+interface NodeUndo {
+  origin: symbol;
+  mgr: Y.UndoManager | null;
+  mgrYType: unknown;
+}
 
-let mgr: Y.UndoManager | null = null;
-// The Y type the current manager tracks — used to detect a rackspace rebind
-// (store.ts swaps `patch`/`ydoc` for a fresh doc) and rebuild against the new doc.
-let mgrYType: unknown = null;
+/** node id → its independent undo state. Created lazily on first use per card. */
+const byNode = new Map<string, NodeUndo>();
 
-/** Lazily build (or rebuild after a doc rebind) the origin-scoped manager over
- *  the live `nodes` Y.Map. Must exist BEFORE an edit transacts for it to capture
- *  it, so every write path calls this first. Null on any failure (undo simply
- *  stays unavailable — never throws into the card). */
-function ensureManager(): Y.UndoManager | null {
+function slotFor(id: string): NodeUndo {
+  let s = byNode.get(id);
+  if (!s) {
+    s = { origin: Symbol(`clip-card-undo:${id}`), mgr: null, mgrYType: null };
+    byNode.set(id, s);
+  }
+  return s;
+}
+
+/** Lazily build (or rebuild after a doc rebind) THIS node's origin-scoped
+ *  manager over the live `nodes` Y.Map. Must exist BEFORE an edit transacts for
+ *  it to capture it, so every write path calls this first. Null on any failure
+ *  (undo simply stays unavailable — never throws into the card). */
+function ensureManager(id: string): Y.UndoManager | null {
+  const s = slotFor(id);
   let yNodes: Y.AbstractType<unknown> | undefined;
   try {
     yNodes = getYjsValue(patch.nodes) as Y.AbstractType<unknown> | undefined;
   } catch {
-    return mgr;
+    return s.mgr;
   }
-  if (!yNodes) return mgr;
-  if (mgr && mgrYType === yNodes) return mgr;
+  if (!yNodes) return s.mgr;
+  if (s.mgr && s.mgrYType === yNodes) return s.mgr;
   // A fresh doc (or first use) → drop the stale manager + build against this one.
-  if (mgr) {
-    try { mgr.destroy(); } catch { /* ignore */ }
-    mgr = null;
+  if (s.mgr) {
+    try { s.mgr.destroy(); } catch { /* ignore */ }
+    s.mgr = null;
   }
   try {
-    mgr = new Y.UndoManager(yNodes, {
-      trackedOrigins: new Set<unknown>([CLIP_UNDO_ORIGIN]),
+    s.mgr = new Y.UndoManager(yNodes, {
+      trackedOrigins: new Set<unknown>([s.origin]),
       captureTimeout: 300,
     });
-    mgrYType = yNodes;
+    s.mgrYType = yNodes;
   } catch {
-    mgr = null;
-    mgrYType = null;
+    s.mgr = null;
+    s.mgrYType = null;
   }
-  return mgr;
+  return s.mgr;
 }
 
 /**
- * Run `mut` inside a ydoc transaction tagged with CLIP_UNDO_ORIGIN so this edit
- * lands on the card's undo stack. Ensures the manager exists FIRST (a manager
- * built after the edit would miss it). Use ONLY for persistent, undoable edits;
- * transient launches / view state must transact un-tagged (never undoable).
+ * Run `mut` inside a ydoc transaction tagged with node `id`'s undo origin so this
+ * edit lands on THAT card's undo stack (and no sibling's). Ensures the manager
+ * exists FIRST (a manager built after the edit would miss it). Use ONLY for
+ * persistent, undoable edits; transient launches / view state must transact
+ * un-tagged (never undoable).
  */
-export function clipUndoTransact(mut: () => void): void {
-  ensureManager();
-  ydoc.transact(mut, CLIP_UNDO_ORIGIN);
+export function clipUndoTransact(id: string, mut: () => void): void {
+  const s = slotFor(id);
+  ensureManager(id);
+  ydoc.transact(mut, s.origin);
 }
 
-/** Is there a card-authored edit to undo? */
-export function clipCanUndo(): boolean {
-  const m = ensureManager();
+/** Is there a card-authored edit to undo on node `id`? */
+export function clipCanUndo(id: string): boolean {
+  const m = ensureManager(id);
   return !!m && m.undoStack.length > 0;
 }
-/** Is there an undone card edit to redo? */
-export function clipCanRedo(): boolean {
-  const m = ensureManager();
+/** Is there an undone card edit to redo on node `id`? */
+export function clipCanRedo(id: string): boolean {
+  const m = ensureManager(id);
   return !!m && m.redoStack.length > 0;
 }
-/** Undo the last card-authored persistent clip edit (no-op if the stack empty). */
-export function clipUndo(): void {
-  const m = ensureManager();
+/** Undo node `id`'s last card-authored persistent clip edit (no-op if empty). */
+export function clipUndo(id: string): void {
+  const m = ensureManager(id);
   if (m && m.undoStack.length > 0) m.undo();
 }
-/** Redo the last undone card-authored clip edit (no-op if the stack empty). */
-export function clipRedo(): void {
-  const m = ensureManager();
+/** Redo node `id`'s last undone card-authored clip edit (no-op if empty). */
+export function clipRedo(id: string): void {
+  const m = ensureManager(id);
   if (m && m.redoStack.length > 0) m.redo();
 }
 
-/** TEST-ONLY: drop the manager so the next use rebuilds a fresh, empty stack.
- *  (The card never resets mid-session; e2e runs on a fresh page.) */
+/** TEST-ONLY: drop every node's manager so the next use rebuilds fresh, empty
+ *  stacks. (The card never resets mid-session; e2e runs on a fresh page.) */
 export function __test_resetClipUndo(): void {
-  if (mgr) {
-    try { mgr.destroy(); } catch { /* ignore */ }
+  for (const s of byNode.values()) {
+    if (s.mgr) {
+      try { s.mgr.destroy(); } catch { /* ignore */ }
+    }
   }
-  mgr = null;
-  mgrYType = null;
+  byNode.clear();
 }

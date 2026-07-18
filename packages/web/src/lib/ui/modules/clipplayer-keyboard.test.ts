@@ -49,7 +49,7 @@ describe('clipplayer-keyboard: digit → strip mapping', () => {
 });
 
 describe('clipplayer-keyboard: coexistence guard', () => {
-  const bare = { metaKey: false, ctrlKey: false, altKey: false, target: null };
+  const bare = { metaKey: false, ctrlKey: false, altKey: false, isComposing: false, target: null };
 
   it('ignores the digit when an OS/app modifier is down (cmd/ctrl/alt), but NOT for shift', () => {
     expect(shouldIgnoreDigit({ ...bare, metaKey: true }, null)).toBe(true);
@@ -59,27 +59,37 @@ describe('clipplayer-keyboard: coexistence guard', () => {
     expect(shouldIgnoreDigit(bare, null)).toBe(false);
   });
 
-  // Duck-typed "editable" stub: an element-like with a .closest that matches the
-  // editable selector (input/textarea/select/contenteditable).
-  const editable = { closest: (sel: string) => (sel.includes('input') ? {} : null) };
-  const nonEditable = { closest: () => null };
+  it('ignores the digit mid-IME-composition (isComposing)', () => {
+    expect(shouldIgnoreDigit({ ...bare, isComposing: true }, null)).toBe(true);
+  });
+
+  // Duck-typed element stubs matching the SHARED blood-keys isEditableTarget
+  // (tagName / ARIA role / contentEditable — NOT a .closest selector).
+  const inputEl = { tagName: 'INPUT' };
+  const searchboxEl = { tagName: 'DIV', getAttribute: (n: string) => (n === 'role' ? 'searchbox' : null) };
+  const plainEl = { tagName: 'DIV', getAttribute: () => null };
 
   it('ignores the digit when the event TARGET is editable', () => {
-    expect(shouldIgnoreDigit({ ...bare, target: editable as unknown as EventTarget }, null)).toBe(true);
+    expect(shouldIgnoreDigit({ ...bare, target: inputEl as unknown as EventTarget }, null)).toBe(true);
   });
 
   it('ignores the digit when document.activeElement is editable (target elsewhere)', () => {
-    expect(shouldIgnoreDigit({ ...bare, target: nonEditable as unknown as EventTarget }, editable as unknown as EventTarget)).toBe(true);
+    expect(shouldIgnoreDigit({ ...bare, target: plainEl as unknown as EventTarget }, inputEl as unknown as EventTarget)).toBe(true);
+  });
+
+  it('ignores the digit for an ARIA searchbox (the +Add module search — missed by the old narrower guard)', () => {
+    expect(shouldIgnoreDigit({ ...bare, target: searchboxEl as unknown as EventTarget }, null)).toBe(true);
   });
 
   it('does NOT ignore when neither target nor activeElement is editable', () => {
-    expect(shouldIgnoreDigit({ ...bare, target: nonEditable as unknown as EventTarget }, nonEditable as unknown as EventTarget)).toBe(false);
+    expect(shouldIgnoreDigit({ ...bare, target: plainEl as unknown as EventTarget }, plainEl as unknown as EventTarget)).toBe(false);
   });
 
-  it('isEditableTarget: null-safe and duck-typed', () => {
+  it('isEditableTarget: null-safe + recognises inputs and ARIA roles', () => {
     expect(isEditableTarget(null)).toBe(false);
-    expect(isEditableTarget({} as unknown as EventTarget)).toBe(false); // no .closest
-    expect(isEditableTarget(editable as unknown as EventTarget)).toBe(true);
-    expect(isEditableTarget(nonEditable as unknown as EventTarget)).toBe(false);
+    expect(isEditableTarget({} as unknown as EventTarget)).toBe(false); // no tagName/role
+    expect(isEditableTarget(inputEl as unknown as EventTarget)).toBe(true);
+    expect(isEditableTarget(searchboxEl as unknown as EventTarget)).toBe(true);
+    expect(isEditableTarget(plainEl as unknown as EventTarget)).toBe(false);
   });
 });
