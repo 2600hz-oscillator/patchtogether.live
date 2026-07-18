@@ -14,6 +14,7 @@ import type { MidiOutputLike } from '$lib/audio/modules/midi-out-buddy';
 import {
   enumerateLaunchpadPorts,
   isLaunchpadMidiPortName,
+  hasSecondaryInterfaceMarker,
   bindUnit,
   onKey,
   isUnitBound,
@@ -92,6 +93,68 @@ describe('enumerateLaunchpadPorts — two identical Mini Mk3 units', () => {
     expect(ports[0]).toMatchObject({ inputId: 'mIn', outputId: 'mOut' });
     expect(isLaunchpadMidiPortName('LPMiniMK3 DAW In')).toBe(false);
     expect(isLaunchpadMidiPortName('LPMiniMK3 MIDI In')).toBe(true);
+  });
+
+  // ── WINDOWS / WinMM shape (the real "lights but buttons dead" field bug). ──
+  // On Windows the Mini Mk3 exposes TWO interfaces both named "LPMiniMK3 MIDI"
+  // (NO "DAW" token): the un-numbered one is the DAW/Session control port, the
+  // "MIDIIN2/MIDIOUT2 (LPMiniMK3 MIDI)" one is the User/Programmer + pad-data
+  // port. macOS names them "DAW"/"MIDI" so the name-level exclusion sufficed;
+  // Windows needs the set-level "keep only the numbered sibling" drop. These
+  // names are copied verbatim from the owner's Windows Chrome MIDI dump.
+  it('WINDOWS: binds the numbered programmer port, not the un-numbered DAW/Session port', () => {
+    __test_setAccess(
+      fakeAccess(
+        [
+          // decoy: an unrelated Electra Controller (its own MIDIIN2/3) — must be ignored.
+          fakeInput('eIn', 'MIDIIN2 (Electra Controller)'),
+          fakeInput('dIn', 'LPMiniMK3 MIDI'), // interface 1 = DAW/Session (dead for pads)
+          fakeInput('pIn', 'MIDIIN2 (LPMiniMK3 MIDI)'), // interface 2 = programmer (pad data)
+        ],
+        [
+          fakeOutput('eOut', 'MIDIOUT2 (Electra Controller)'),
+          fakeOutput('dOut', 'LPMiniMK3 MIDI'),
+          fakeOutput('pOut', 'MIDIOUT2 (LPMiniMK3 MIDI)'),
+        ],
+      ),
+    );
+    const ports = enumerateLaunchpadPorts();
+    expect(ports).toHaveLength(1);
+    // The programmer pair — NOT the DAW primary that lit LEDs while pads stayed dead.
+    expect(ports[0]).toMatchObject({ inputId: 'pIn', outputId: 'pOut' });
+  });
+
+  it('WINDOWS: drops the DAW primary even if enumeration lists it AFTER the numbered port', () => {
+    // Guard against in/out map ordering crossing DAW-in with programmer-out.
+    __test_setAccess(
+      fakeAccess(
+        [fakeInput('pIn', 'MIDIIN2 (LPMiniMK3 MIDI)'), fakeInput('dIn', 'LPMiniMK3 MIDI')],
+        [fakeOutput('dOut', 'LPMiniMK3 MIDI'), fakeOutput('pOut', 'MIDIOUT2 (LPMiniMK3 MIDI)')],
+      ),
+    );
+    const ports = enumerateLaunchpadPorts();
+    expect(ports).toHaveLength(1);
+    expect(ports[0]).toMatchObject({ inputId: 'pIn', outputId: 'pOut' });
+  });
+
+  it('hasSecondaryInterfaceMarker: true only for the Windows numbered sibling', () => {
+    expect(hasSecondaryInterfaceMarker('MIDIIN2 (LPMiniMK3 MIDI)')).toBe(true);
+    expect(hasSecondaryInterfaceMarker('MIDIOUT2 (LPMiniMK3 MIDI)')).toBe(true);
+    expect(hasSecondaryInterfaceMarker('LPMiniMK3 MIDI')).toBe(false); // Windows DAW primary
+    expect(hasSecondaryInterfaceMarker('LPMiniMK3 MIDI In')).toBe(false); // macOS programmer port
+    expect(hasSecondaryInterfaceMarker('LPMiniMK3 DAW In')).toBe(false);
+  });
+
+  it('macOS shape is unaffected (no numeric markers → nothing dropped)', () => {
+    __test_setAccess(
+      fakeAccess(
+        [fakeInput('mIn', 'LPMiniMK3 MIDI In'), fakeInput('dIn', 'LPMiniMK3 DAW In')],
+        [fakeOutput('mOut', 'LPMiniMK3 MIDI Out'), fakeOutput('dOut', 'LPMiniMK3 DAW Out')],
+      ),
+    );
+    const ports = enumerateLaunchpadPorts();
+    expect(ports).toHaveLength(1);
+    expect(ports[0]).toMatchObject({ inputId: 'mIn', outputId: 'mOut' });
   });
 
   it('returns [] with no access', () => {
