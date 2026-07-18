@@ -314,6 +314,20 @@ async function ccTapSingle(page: import('@playwright/test').Page, cc: number) {
     s.cc(c, 0);
   }, cc);
 }
+/** Press-and-HOLD a CC (no release) — SHIFT is momentary hold-only. */
+async function ccHoldSingle(page: import('@playwright/test').Page, cc: number) {
+  await page.evaluate((c) => {
+    (globalThis as unknown as { __launchpadSingleSim?: { cc: (cc: number, v: number) => void } })
+      .__launchpadSingleSim!.cc(c, 127);
+  }, cc);
+}
+/** Release a held CC. */
+async function ccReleaseSingle(page: import('@playwright/test').Page, cc: number) {
+  await page.evaluate((c) => {
+    (globalThis as unknown as { __launchpadSingleSim?: { cc: (cc: number, v: number) => void } })
+      .__launchpadSingleSim!.cc(c, 0);
+  }, cc);
+}
 async function singleView(page: import('@playwright/test').Page) {
   return page.evaluate(
     () => (globalThis as unknown as { __launchpadSingleSim?: { state: () => { singleView: string } } })
@@ -492,23 +506,25 @@ test('@launchpad single-unit GRID scene-scroll: UP/DOWN slide the window; a shif
   // (0) The window starts at the top.
   expect(await sceneOffset(page), 'starts at offset 0').toBe(0);
 
-  // (1) Latch shift, then DOWN slides the window; a second DOWN clamps (lazy limit).
-  await ccTapSingle(page, CC_SHIFT_TOP); // latch shift → scene column = grid-shift palette
+  // (1) HOLD shift (momentary — no latch), then DOWN slides the window; a
+  //     second DOWN clamps (lazy limit). The scroll palette is the scene column
+  //     ONLY while shift is physically held.
+  await ccHoldSingle(page, CC_SHIFT_TOP); // hold shift → scene column = grid-shift palette
   await ccTapSingle(page, G_SCROLL_DOWN_CC);
   await expect.poll(() => sceneOffset(page), { timeout: 5000 }).toBe(1);
   await ccTapSingle(page, G_SCROLL_DOWN_CC);
   expect(await sceneOffset(page), 'DOWN clamps at the lazy reveal limit').toBe(1);
 
-  // (2) UP slides back and clamps at the top.
+  // (2) UP slides back and clamps at the top (shift still held).
   await ccTapSingle(page, G_SCROLL_UP_CC);
   await expect.poll(() => sceneOffset(page), { timeout: 5000 }).toBe(0);
   await ccTapSingle(page, G_SCROLL_UP_CC);
   expect(await sceneOffset(page), 'UP clamps at offset 0').toBe(0);
 
-  // (3) DOWN again → offset 1, then UNLATCH shift so the scene column launches.
+  // (3) DOWN again → offset 1, then RELEASE shift so the scene column launches.
   await ccTapSingle(page, G_SCROLL_DOWN_CC);
   await expect.poll(() => sceneOffset(page), { timeout: 5000 }).toBe(1);
-  await ccTapSingle(page, CC_SHIFT_TOP); // unlatch shift
+  await ccReleaseSingle(page, CC_SHIFT_TOP); // release shift
 
   // (4) The scrolled-in EMPTY scene (bottom button = scene 8) is a DARK no-op.
   await ccTapSingle(page, SCENE_CCS[7]);

@@ -93,7 +93,7 @@ const TOP: PermanentTopOpts = {
   view: 'grid',
   keysActive: false,
   transportRunning: true,
-  shift: { latched: false, held: false },
+  shift: { held: false },
   canUndo: false,
   canRedo: false,
 };
@@ -323,19 +323,22 @@ describe('SINGLE Grid — the 3-button repeat-count gesture', () => {
     // while GRID is held is select-only, so the column must not advertise the
     // paste-target pulse or the shift palette.
     seedAndBind({ clips: { [clipIndex(0, 0)]: noteClip(), [clipIndex(2, 0)]: noteClip() } });
-    const latch = () => { sim.cc('L', CC_SHIFT, 127); sim.cc('L', CC_SHIFT, 0); };
+    // SHIFT is momentary hold: arm under a HELD shift, then release (COPY/PASTE
+    // are sticky and survive the release for the no-shift target).
+    const holdShift = () => sim.cc('L', CC_SHIFT, 127);
+    const releaseShift = () => sim.cc('L', CC_SHIFT, 0);
     // Load a SCENE buffer + leave PASTE sticky-armed (the no-shift column would
     // now pulse the amber scene-buffer colour on every in-range scene).
-    latch();
-    sim.cc('L', sceneCc(0), 127); // COPY arm
+    holdShift();
+    sim.cc('L', sceneCc(0), 127); // COPY arm (under held shift)
     sim.cc('L', sceneCc(0), 0);
-    latch(); // unlatch — sticky
-    sim.cc('L', sceneCc(2), 127); // whole-scene copy source
+    releaseShift(); // COPY sticky
+    sim.cc('L', sceneCc(2), 127); // whole-scene copy source (no-shift)
     sim.cc('L', sceneCc(2), 0);
-    latch();
-    sim.cc('L', sceneCc(1), 127); // PASTE arm
+    holdShift();
+    sim.cc('L', sceneCc(1), 127); // PASTE arm (under held shift)
     sim.cc('L', sceneCc(1), 0);
-    latch(); // unlatch — sticky paste, scene buffer loaded
+    releaseShift(); // sticky paste, scene buffer loaded
     expect(__test_mode().armedRightAction).toBe('paste');
     holdGrid();
     holdScene(0);
@@ -370,20 +373,23 @@ describe('SINGLE Grid — the 3-button repeat-count gesture', () => {
       },
       sceneRepeats: { '2': 5, '5': 9 },
     });
-    const latch = () => { sim.cc('L', CC_SHIFT, 127); sim.cc('L', CC_SHIFT, 0); };
+    // SHIFT is momentary hold: arm under a HELD shift, release (COPY/PASTE are
+    // sticky), then tap the no-shift scene button as the whole-scene target.
+    const holdShift = () => sim.cc('L', CC_SHIFT, 127);
+    const releaseShift = () => sim.cc('L', CC_SHIFT, 0);
     const copyScene = (idx: number) => {
-      latch();
+      holdShift();
       sim.cc('L', sceneCc(0), 127); // COPY (shift palette index 0)
       sim.cc('L', sceneCc(0), 0);
-      latch(); // unlatch — COPY is sticky
+      releaseShift(); // COPY is sticky
       sim.cc('L', sceneCc(idx), 127); // no-shift scene button = whole-scene source
       sim.cc('L', sceneCc(idx), 0);
     };
     const pasteSceneAt = (idx: number) => {
-      latch();
+      holdShift();
       sim.cc('L', sceneCc(1), 127); // PASTE (shift palette index 1)
       sim.cc('L', sceneCc(1), 0);
-      latch(); // unlatch — PASTE is sticky
+      releaseShift(); // PASTE is sticky
       sim.cc('L', sceneCc(idx), 127);
       sim.cc('L', sceneCc(idx), 0);
     };

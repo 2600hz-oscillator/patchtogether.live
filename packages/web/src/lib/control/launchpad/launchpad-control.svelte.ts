@@ -113,6 +113,7 @@ import {
   controlRehomePad,
   armTopLane,
   ARM_SHIFT_LANE,
+  isLane8ArmPad,
   repeatPadOrdinal,
   repeatCountForOrdinal,
   paintPermanentTopRow,
@@ -284,32 +285,15 @@ let keysOctaveShift = 0; // KEYS octave ± (semitones, multiples of 12) added to
 let copyBuffer: CopyBuffer | null = null;
 let bufferSourceIndex: number | null = null; // clip-kind source index (L turquoise glow); null for a scene buffer
 
-// ── SINGLE-mode SHIFT (hybrid tap-latch OR hold) + tap-to-ARM (Grid-shift). ──
-// Effective shift = shiftLatched || shiftHeld. A SHORT tap of CC 98 (no armed
-// action consumed during the press) toggles the latch; a HOLD (or a consumed arm)
-// is momentary. The Grid-shift Copy/Paste/PasteRev/ClipDiv/Len functions are
-// tap-to-ARM: tap the right-column button to arm, then the next grid-clip tap
-// consumes it. Swing± are direct nudges + NOW is a sticky toggle — neither arms.
-// Pair mode never sets any of these (single-only), so pair stays byte-for-byte.
-let shiftLatched = false;
+// ── SINGLE-mode SHIFT (MOMENTARY HOLD-only) + tap-to-ARM (Grid-shift). ──
+// Effective shift = shiftHeldSingle (CC 98 physically held: s=1 → true, s=0 →
+// false). NO latch — a short tap does nothing but flicker the shift LED (owner:
+// "shift functions … should be a hold"). The Grid-shift Copy/Paste/ClipDiv/Len
+// functions are still tap-to-ARM: HOLD shift + tap the right-column button to
+// arm, then the next grid tap (shift now released) consumes it. Swing± are
+// direct nudges — neither arms. Pair mode never sets these (single-only), so
+// pair stays byte-for-byte.
 let shiftHeldSingle = false; // CC 98 momentary (distinct from pair's CC-95 shiftHeld)
-let shiftPressTick = 0; // tickCount snapshot on the CC-98 press (tap vs hold)
-let armConsumedSincePress = false; // an armed action consumed while shift was held?
-// LANE-8 AUTOMATION-ARM DOUBLE-TAP (owner gesture — lane 8's top button IS the
-// shift button, so a double-tap of SHFT toggles its arm). The first tap keeps
-// its normal immediate latch toggle; a second press within DOUBLE_TAP_TICKS
-// marks a PENDING pair that FIRES on that press's SHORT RELEASE (tap-tap
-// only): a second press that becomes a HOLD is a modifier, not a tap, and
-// must never toggle lane 8 (the tap-then-hold mis-fire the adversarial pass
-// caught). On fire the first tap's latch change is REVERTED, so the latch
-// nets back to its pre-pair state — the gesture works from BOTH latch states.
-let shiftTapTick = -1000; // tickCount of the last completed SHORT tap (the window anchor)
-let shiftLatchBeforeTap = false; // latch state BEFORE that tap's toggle (double-tap revert)
-let pendingShiftDoubleTap = false; // press 2 landed in the window; fire on ITS short release
-// A NON-shift press between two shift taps breaks the pair (it's a
-// latch → do-something → unlatch sequence, not a double-tap) — so a fast
-// "latch, arm COPY, unlatch" can never spuriously toggle lane 8's arm.
-let otherPressSinceShiftTap = false;
 let armedRightAction: GridArmAction | null = null; // Grid-shift tap-to-arm (or null)
 let armTick = 0; // tickCount snapshot for the 4s auto-disarm
 const ARM_TIMEOUT_TICKS = 160; // ~4s at 25ms/tick — auto-disarm a stale arm
@@ -514,14 +498,7 @@ function stopLoops(): void {
 }
 /** Reset the single-mode transient state (shift/arm/div-preview/swing/arp). */
 function resetSingleState(): void {
-  shiftLatched = false;
   shiftHeldSingle = false;
-  shiftPressTick = 0;
-  armConsumedSincePress = false;
-  shiftTapTick = -1000; // clear the lane-8 double-tap window anchor
-  shiftLatchBeforeTap = false;
-  pendingShiftDoubleTap = false;
-  otherPressSinceShiftTap = false;
   armedRightAction = null;
   armTick = 0;
   divPreview = null;
@@ -1520,26 +1497,36 @@ function handleKey(e: LaunchpadKeyEvent): void {
 //     control → handleSingleControl, arranger → inert.
 // ===========================================================================
 function singleShiftEff(): boolean {
-  return shiftLatched || shiftHeldSingle;
+  return shiftHeldSingle;
 }
 
 function handleSingleKey(nodeId: string, e: LaunchpadKeyEvent): void {
   const ev = e.ev;
-  // Any NON-shift PRESS breaks a pending SHFT double-tap pair (lane-8 arm):
-  // "latch → do something → unlatch" must never read as a double-tap. And
-  // while shift is HELD, any such press means shift was used as a MODIFIER —
-  // its release must not latch (covers the grid-shift palette, keys-arp and
-  // clip-view shift actions, matrix taps under an arm — the fast
-  // hold+tap+release latch-leak the adversarial pass caught).
-  if (ev.s === 1 && !(ev.type === 'top' && topRowAction(ev.cc) === 'shift')) {
-    otherPressSinceShiftTap = true;
-    if (shiftHeldSingle) armConsumedSincePress = true;
-  }
   // 1) PERMANENT TOP ROW — intercepted first, in every view (incl. keys/length).
   if (ev.type === 'top') {
     const action = topRowAction(ev.cc);
     if (action !== null) handleTopRow(nodeId, action, ev.s, ev.cc);
     return; // any top CC is owned by the permanent row (no fall-through)
+  }
+  // 1b) LANE-8 AUTOMATION ARM (owner gesture): while SHIFT is HELD, the pad
+  // directly below SHFT (LANE8_ARM_PAD, topmost 8×8 row, rightmost column)
+  // toggles lane 8's arm — the compass's col-8 is the shift button itself, so
+  // lane 8 borrows the pad beneath it (lanes 1-7 are SHIFT+top CC in
+  // handleTopRow). Intercepted HERE, before the view routing, so it works from
+  // EVERY view exactly like the top-row arm map. CONSUMED — never a grid/clip
+  // action. Only on PRESS while shift is effective. NOT while the repeat-count
+  // view owns pad taps (GRID+scene hold, which is entered without shift — the
+  // view keeps every pad for count-setting even if shift is added mid-hold).
+  if (
+    ev.type === 'pad' &&
+    ev.s === 1 &&
+    singleShiftEff() &&
+    !repeatViewHeld &&
+    isLane8ArmPad(ev.x, ev.y)
+  ) {
+    toggleLaneAutoArm(nodeId, ARM_SHIFT_LANE);
+    renderLeds();
+    return;
   }
   // 2) length-edit takeover (scene EXIT returns to the opener's view).
   if (mode === 'lengthEdit') {
@@ -1568,12 +1555,13 @@ function handleSingleKey(nodeId: string, e: LaunchpadKeyEvent): void {
 }
 
 /** The permanent top row (identical in every view). Press-only for transport /
- *  views / undo / redo; both edges for shift (the hold half of the latch/hold).
- *  PER-LANE AUTOMATION ARM (owner gesture): while shift is EFFECTIVE (held OR
- *  latched), a top-row press on columns 1..7 toggles THAT lane's automation
- *  arm and is CONSUMED — the button's normal function (transport / view flip /
- *  undo / redo) must NOT fire under shift. Works from EVERY view. Lane 8 is
- *  the SHFT double-tap (handleShift); the shift button always routes there. */
+ *  views / undo / redo; both edges for shift (the momentary hold). PER-LANE
+ *  AUTOMATION ARM (owner gesture): while shift is HELD, a top-row press on
+ *  columns 1..7 toggles THAT lane's automation arm and is CONSUMED — the
+ *  button's normal function (transport / view flip / undo / redo) must NOT fire
+ *  under shift. Works from EVERY view. Lane 8 is HOLD-SHIFT + the pad below
+ *  SHFT (LANE8_ARM_PAD, handled in handleSingleKey); the shift button routes to
+ *  handleShift. */
 function handleTopRow(
   nodeId: string,
   action: ReturnType<typeof topRowAction>,
@@ -1595,9 +1583,6 @@ function handleTopRow(
       const lane = armTopLane(cc);
       if (lane !== null) {
         toggleLaneAutoArm(nodeId, lane);
-        // A held shift acted as a MODIFIER — its release must not toggle the
-        // latch (same discipline as a consumed Grid tap-to-arm).
-        armConsumedSincePress = true;
         renderLeds();
       }
     }
@@ -1674,52 +1659,17 @@ function forceExitKeys(nodeId: string): void {
   }
 }
 
-/** SHIFT (CC 98): hybrid tap-latch OR momentary hold. A SHORT tap (no armed
- *  action consumed during the press) toggles the latch; a long hold (or a
- *  consumed arm) is momentary. Effective shift = latched || held. Clearing the
- *  effective shift disarms any Grid tap-to-arm (committing a pending Clip-Div). */
+/** SHIFT (CC 98): MOMENTARY HOLD — effective shift = held (s=1 → true, s=0 →
+ *  false). No latch: a short tap just flickers the shift LED and does nothing
+ *  else. Releasing shift disarms any Grid tap-to-arm EXCEPT the sticky
+ *  COPY/PASTE (they persist so the no-shift matrix can host the copy/paste
+ *  TARGET — a clip pad or a scene-launch button; they auto-disarm on consume,
+ *  the 4s timeout, or leaving Grid). Clip-Div commits its pending preview on
+ *  release; Len drops. */
 function handleShift(nodeId: string, s: 0 | 1): void {
-  if (s === 1) {
-    // LANE-8 ARM DOUBLE-TAP (owner gesture): a second SHFT press within the
-    // window — with NOTHING else pressed in between — marks a PENDING pair.
-    // It fires on this press's SHORT RELEASE below (tap-tap only): a press
-    // that turns into a HOLD is a modifier, never a lane-8 toggle.
-    pendingShiftDoubleTap =
-      tickCount - shiftTapTick <= DOUBLE_TAP_TICKS && !otherPressSinceShiftTap;
-    shiftHeldSingle = true;
-    shiftPressTick = tickCount;
-    armConsumedSincePress = false;
-  } else {
-    const shortTap = tickCount - shiftPressTick < DOUBLE_TAP_TICKS;
-    if (pendingShiftDoubleTap && shortTap && !armConsumedSincePress) {
-      // FIRE the pair: toggle lane 8's arm and revert the FIRST tap's latch
-      // change, so the latch nets back to its pre-pair state (works from
-      // both latch states). Consumed — a third tap starts a fresh pair.
-      shiftTapTick = -1000;
-      toggleLaneAutoArm(nodeId, ARM_SHIFT_LANE);
-      shiftLatched = shiftLatchBeforeTap;
-    } else if (shortTap && !armConsumedSincePress) {
-      // A lone short tap: the normal immediate latch toggle (unchanged) +
-      // the double-tap window anchor.
-      shiftLatchBeforeTap = shiftLatched;
-      shiftLatched = !shiftLatched;
-      shiftTapTick = tickCount; // anchor the lane-8 double-tap window
-      otherPressSinceShiftTap = false; // a fresh pair starts clean
-    } else {
-      // A HOLD (or a consumed modifier press) never latches — and it BREAKS
-      // any pending pair (tap-then-hold = modifier use, not a double-tap).
-      shiftTapTick = -1000;
-    }
-    pendingShiftDoubleTap = false;
-    shiftHeldSingle = false;
-  }
-  // Releasing the effective shift disarms a pending SHIFT-scoped arm (Clip-Div
-  // commits its preview; Len drops). COPY / PASTE stay armed on purpose — they
-  // are STICKY so the no-shift matrix can host the copy/paste TARGET: a clip pad
-  // (single-clip) OR a scene-launch button (whole scene). They auto-disarm on
-  // consume, the 4s timeout, or leaving Grid.
+  shiftHeldSingle = s === 1;
   if (
-    !singleShiftEff() &&
+    !shiftHeldSingle &&
     armedRightAction &&
     armedRightAction !== 'copy' &&
     armedRightAction !== 'paste'
@@ -1964,7 +1914,6 @@ function commitDivPreview(nodeId: string): void {
  *  Empty/illegal targets are no-ops that simply disarm. */
 function consumeGridArm(nodeId: string, clipIdx: number, data: ClipPlayerData | undefined): void {
   lastTapClipIndex = -1; // an armed tap isn't a launch
-  armConsumedSincePress = true; // used shift → releasing it should NOT latch
   switch (armedRightAction) {
     case 'copy': {
       // Copy a SINGLE clip onto the typed buffer (kind: 'clip') — the clip's
@@ -2037,7 +1986,6 @@ function consumeSceneArm(
   data: ClipPlayerData | undefined,
 ): void {
   lastTapClipIndex = -1; // an armed tap isn't a launch
-  armConsumedSincePress = true; // used shift to arm → its release must NOT latch
   const slot = slotForScene(sceneScrollOffset + sceneIndex);
   if (slot === null) { disarmGridArm(nodeId); return; } // scene out of range
   if (armedRightAction === 'copy') {
@@ -2906,7 +2854,7 @@ function buildTopOpts(): PermanentTopOpts {
     view: singleView,
     keysActive: mode === 'keys',
     transportRunning: transportRunning(),
-    shift: { latched: shiftLatched, held: shiftHeldSingle },
+    shift: { held: shiftHeldSingle },
     canUndo: lpCanUndo(),
     canRedo: lpCanRedo(),
     laneArms: armedAutomationLanes(data),
@@ -3188,7 +3136,6 @@ export function __test_mode(): {
   pasteRevHeld: boolean;
   nowHeld: boolean;
   shiftHeld: boolean;
-  shiftLatched: boolean;
   shiftHeldSingle: boolean;
   velHeld: boolean;
   editRowOffset: number;
@@ -3231,7 +3178,6 @@ export function __test_mode(): {
     pasteRevHeld,
     nowHeld,
     shiftHeld,
-    shiftLatched,
     shiftHeldSingle,
     velHeld,
     editRowOffset,

@@ -58,7 +58,6 @@
     RGB_VIEW_ACTIVE,
     RGB_SHIFT_OFF,
     RGB_SHIFT_HELD,
-    RGB_SHIFT_LATCH,
     RGB_TRANSPORT_STOP,
     RGB_SYS,
     RGB_SYS_DIM,
@@ -214,17 +213,17 @@
    *  paintPermanentTopRow: transport (red stopped / green playing), the 4 view
    *  buttons (bright purple = active; Clip also bright while KEYS is open),
    *  undo/redo (orange, dim when the stack is empty), shift (yellow: dim off /
-   *  bright held / solid latched). */
+   *  bright held — MOMENTARY, no latch). */
   function permTop(
     active: SView,
     o: {
       running?: boolean;
-      shift?: 'off' | 'held' | 'latch';
+      shift?: 'off' | 'held';
       keys?: boolean;
       undo?: boolean;
       redo?: boolean;
       /** PER-LANE automation-arm states (mirrors PermanentTopOpts.laneArms).
-       *  Faithful to paintPermanentTopRow: while shift is ACTIVE, columns 1–7
+       *  Faithful to paintPermanentTopRow: while shift is HELD, columns 1–7
        *  paint as the ARM MAP (red = armed · dim red = available; col 8 keeps
        *  the shift LED); otherwise an ARMED lane's button red-flashes over its
        *  base colour — the diagram shows the bright (red) phase. */
@@ -233,7 +232,7 @@
   ) {
     const v = (view: SView) =>
       hex(active === view || (view === 'clip' && o.keys) ? RGB_VIEW_ACTIVE : RGB_VIEW_IDLE);
-    const sh = o.shift === 'held' ? RGB_SHIFT_HELD : o.shift === 'latch' ? RGB_SHIFT_LATCH : RGB_SHIFT_OFF;
+    const sh = o.shift === 'held' ? RGB_SHIFT_HELD : RGB_SHIFT_OFF;
     const base = [
       { col: 0, fill: hex(o.running ? RGB_TRANSPORT_ON : RGB_TRANSPORT_STOP), label: o.running ? '▶' : '■' },
       { col: 1, fill: v('grid'), label: 'GRID' },
@@ -245,7 +244,7 @@
       { col: 7, fill: hex(sh), label: 'SHFT' },
     ];
     // ARM LAYER (mirrors paintPermanentTopRow, so the pictures can't drift).
-    const shiftActive = o.shift === 'held' || o.shift === 'latch';
+    const shiftActive = o.shift === 'held';
     const arms = o.arms ?? [];
     return base.map((cell, col) => {
       const armed = arms[col] === true;
@@ -269,7 +268,7 @@
   const ARMS_LANE3 = [false, false, true, false, false, false, false, false];
   const armMapGroups = [
     { label: 'ARM MAP — press = toggle that lane (red pulse = armed · dim red = available)', fromCol: 0, toCol: 6, tier: 0 },
-    { label: 'SHFT — lane 8 = double-tap', fromCol: 7, tier: 1 },
+    { label: 'SHFT — lane 8 = the pad below', fromCol: 7, tier: 1 },
   ];
 
   // ── GRID view — the TRANSPOSED clip matrix: x = channel/lane (0..7 left→right),
@@ -329,7 +328,7 @@
       view: 'grid',
       keysActive: false,
       transportRunning: true,
-      shift: { latched: false, held: false },
+      shift: { held: false },
       canUndo: false,
       canRedo: false,
     },
@@ -694,8 +693,7 @@
     { state: 'undo / redo — available', rgb: RGB_SYS, note: 'orange — CC 96 / 97; a persistent edit is on the stack' },
     { state: 'undo / redo — empty', rgb: RGB_SYS_DIM, note: 'dim orange — nothing to undo / redo' },
     { state: 'shift — off', rgb: RGB_SHIFT_OFF, note: 'dim yellow — CC 98 idle' },
-    { state: 'shift — held', rgb: RGB_SHIFT_HELD, note: 'bright yellow — momentary hold' },
-    { state: 'shift — latched', rgb: RGB_SHIFT_LATCH, note: 'solid yellow — tapped to lock the alt layer' },
+    { state: 'shift — held', rgb: RGB_SHIFT_HELD, note: 'bright yellow — momentary hold (there is no latch)' },
   ];
   const TAXONOMY_COLORS: { state: string; rgb: Rgb; note: string }[] = [
     { state: 'pattern', rgb: RGB_PATTERN, note: 'green — content: copy · paste · double · follow · scales · row-nav' },
@@ -714,14 +712,14 @@
   // ── Pad + CC reference tables, split per tab (the raw protocol is shared). ──
   type MapRow = { what: string; addr: string };
   const SINGLE_MAP_GLOBAL: MapRow[] = [
-    { what: 'permanent top row (every view)', addr: 'CC 91 = transport (red stopped / green playing) · 92 = GRID · 93 = CLIP · 94 = ARRANGER · 95 = CONTROL (purple; bright = active) · 96 = UNDO · 97 = REDO (orange) · 98 = SHIFT (yellow: dim off / bright held / solid latched). This row NEVER changes meaning per view' },
-    { what: 'SHIFT (CC 98)', addr: 'TAP = latch the alt layer (solid yellow); tap again = unlatch. HOLD = momentary (bright yellow). Effective shift = latched OR held. Grid compound functions arm on tap so nothing needs a second hand. DOUBLE-TAP = toggle lane 8’s automation arm (the latch nets back to where it was)' },
-    { what: 'AUTOMATION ARM (SHIFT + top row)', addr: 'while SHIFT is held or latched, the top row becomes the PER-LANE ARM MAP: press column 1–7 to toggle that lane’s automation record (red pulse = armed · dim red = available); lane 8 = double-tap SHIFT itself. Works from EVERY view; the press is consumed (no transport/view/undo side-effect). An armed lane’s button red-flashes over its normal colour all the time' },
+    { what: 'permanent top row (every view)', addr: 'CC 91 = transport (red stopped / green playing) · 92 = GRID · 93 = CLIP · 94 = ARRANGER · 95 = CONTROL (purple; bright = active) · 96 = UNDO · 97 = REDO (orange) · 98 = SHIFT (yellow: dim off / bright held). This row NEVER changes meaning per view' },
+    { what: 'SHIFT (CC 98)', addr: 'MOMENTARY HOLD — effective only while physically held down (bright yellow); a short tap does nothing (there is no latch). HOLD shift + tap a right-column / top-row function to use its shift meaning. Grid compound functions arm on the held tap and stay sticky for their target, so nothing needs a permanent second hand' },
+    { what: 'AUTOMATION ARM (HOLD SHIFT + top row)', addr: 'while SHIFT is HELD, the top row becomes the PER-LANE ARM MAP: press column 1–7 to toggle that lane’s automation record (red pulse = armed · dim red = available); lane 8 = the pad DIRECTLY BELOW SHFT (topmost 8×8 row, rightmost column), lit in the arm map. Works from EVERY view; the press is consumed (no transport/view/undo/launch side-effect). An armed lane’s button red-flashes over its normal colour all the time' },
     { what: 'UNDO / REDO (CC 96 / 97)', addr: 'launchpad-scoped: undoes only THIS launchpad’s persistent clip edits (div / swing / length / paste / content / scale) — never a collaborator’s edit, never a transient launch. Lit orange when the stack has something; dim otherwise. Under SHIFT these presses are the lane 6/7 arm toggles instead' },
   ];
   const SINGLE_MAP_GRID: MapRow[] = [
     { what: 'GRID — the clip matrix', addr: 'column = channel / lane (1–8 left→right), row = clip slot (top row = slot 1). Single-tap = launch / stop (queued to the boundary). DOUBLE-TAP a clip = select it + open CLIP on it (empty pad = create a clip). No-shift right column = ROW / scene launch — a SCROLLING window of position-relative buttons over up to 64 scenes (slid by Grid+shift SCR▲/SCR▼)' },
-    { what: 'GRID + shift right column', addr: 'top→bottom: COPY · PASTE · CLIP-DIV · SWING+ · SWING− · LENGTH · SCROLL▲ · SCROLL▼ (amber). Copy / Paste / Clip-Div / Length are TAP-TO-ARM (tap → arm → tap a target). Copy + a ROW/scene press grabs the WHOLE SCENE (all 8 lanes) — release/unlatch SHIFT first so the column shows the ROW ▶ buttons (clip-pad targets work under either shift state); Paste is type-gated (clip→clip + scene→scene apply, the cross-type pastes are no-ops). Swing ± are direct ±2 % nudges on the SELECTED channel. SCROLL ▲▼ slide the scene window (up to 64 scenes; each dims at its limit)' },
+    { what: 'GRID + shift right column', addr: 'top→bottom: COPY · PASTE · CLIP-DIV · SWING+ · SWING− · LENGTH · SCROLL▲ · SCROLL▼ (amber). Copy / Paste / Clip-Div / Length are TAP-TO-ARM (tap → arm → tap a target). Copy + a ROW/scene press grabs the WHOLE SCENE (all 8 lanes) — release SHIFT first so the column shows the ROW ▶ buttons (clip-pad targets work under either shift state); Paste is type-gated (clip→clip + scene→scene apply, the cross-type pastes are no-ops). Swing ± are direct ±2 % nudges on the SELECTED channel. SCROLL ▲▼ slide the scene window (up to 64 scenes; each dims at its limit)' },
     { what: 'SCENE REPEATS — HOLD GRID + HOLD a scene button', addr: 'the 8×8 becomes the orange REPEAT-COUNT view for that scene (no shift — SHIFT+top-row stays the arm map). Tap pad k (row-major from the upper-left) = k repeats (1–63) · pad 64 = INFINITE (default). Pads 1..N stay lit for count N; all 64 lit = infinite. The held button is POSITION-RELATIVE through the scene scroll (button i edits scene offset+i); the press never launches. Release either button = back to the grid. After N passes of the scene’s longest clip (frozen at launch) the next content scene down auto-launches via the normal quantized path' },
   ];
   const SINGLE_MAP_CLIP: MapRow[] = [
@@ -892,8 +890,8 @@
         card</strong> → <em>Assign to automation lane</em> (1–8; the whole module joins the lane and its
         card gets a border in the lane's colour), launch a clip in that lane, then <strong>arm the
         lane</strong> (the card's per-lane <strong>◉</strong> next to its RATE control, or on a
-        <strong>single-unit</strong> Launchpad <strong>SHIFT + that lane's top-row button</strong>; lane 8 =
-        double-tap SHIFT — the two-unit rig has no hardware arm yet, arm from the card) and just
+        <strong>single-unit</strong> Launchpad <strong>HOLD SHIFT + that lane's top-row button</strong>; lane 8 =
+        HOLD SHIFT + the pad directly below SHFT — the two-unit rig has no hardware arm yet, arm from the card) and just
         move the module's controls: every touch — screen, MIDI, Electra — records into <em>that clip's
         own</em> automation, punching in at the clip's next loop start, then overdubbing every loop. <strong>CV is never recorded</strong>:
         automation records your hands, a CV cable stays live modulation.
@@ -988,21 +986,19 @@
         launchpad's persistent clip edits (div, swing, length, paste, note content, scale), never a
         collaborator's edits and never a transient launch. Orange when there's something on the stack, dim
         when empty.</li>
-      <li><strong>SHIFT (CC 98):</strong> the alt-layer key (next). Dim yellow off, bright yellow while held,
-        solid yellow while latched.</li>
-      <li><strong>AUTOMATION ARM — SHIFT + a lane's top button (every view):</strong> while SHIFT is
-        held <em>or</em> latched, the top row becomes the <strong>per-lane automation arm map</strong>:
+      <li><strong>SHIFT (CC 98):</strong> the alt-layer key (next). Dim yellow off, bright yellow while
+        held. <strong>Momentary hold only</strong> — a short tap does nothing; there is no latch.</li>
+      <li><strong>AUTOMATION ARM — HOLD SHIFT + a lane's top button (every view):</strong> while SHIFT is
+        <strong>held</strong>, the top row becomes the <strong>per-lane automation arm map</strong>:
         pressing <strong>column 1–7 toggles that lane's clip-automation record</strong> (red pulse =
         armed, dim red = available), and the press is <strong>consumed</strong> — shift+▶ never touches
         the transport, shift+GRID never switches views, shift+UNDO never undoes.
-        <strong>Lane 8's top button IS the shift button</strong>, so lane 8 is a
-        <strong>double-tap of SHIFT</strong> (the pair fires on the second tap's <em>release</em> — a
-        second press you keep HELD is just the shift modifier, never a lane-8 toggle — and it reverts
-        the first tap's latch, so the latch nets back to where it started, from either state). Because
-        this lives on the global row,
-        <strong>you can arm or disarm any lane from any screen</strong> — and an ARMED lane's top button
-        <strong>red-flashes over its normal colour</strong> all the time, in every view, as the
-        always-visible record indicator.</li>
+        <strong>Lane 8's top button IS the shift button</strong>, so lane 8 lives on the
+        <strong>pad directly below SHFT</strong> (the topmost 8×8 row, rightmost column) — while shift
+        is held, tap it to toggle lane 8's arm (it lights in the arm map too). Because this lives on the
+        global row, <strong>you can arm or disarm any lane from any screen</strong> — and an ARMED
+        lane's top button <strong>red-flashes over its normal colour</strong> all the time, in every
+        view, as the always-visible record indicator.</li>
     </ul>
 
     <h4 id="single-arm">The arm layer in pictures</h4>
@@ -1010,7 +1006,7 @@
       top={permTop('grid', { running: true, shift: 'held', arms: ARMS_LANE3 })}
       callouts={armMapGroups}
       accent={hex(RGB_RECORDING)}
-      caption="SHIFT held (or latched) — the top row becomes the PER-LANE ARM MAP, in EVERY view: columns 1–7 are lanes 1–7 (red pulse = armed — lane 3 here; dim red = available; the press toggles the arm and is consumed). Column 8 keeps the SHIFT LED — lane 8 is a DOUBLE-TAP of SHIFT, firing on the second tap's RELEASE (tap-tap only: a second press you keep held is just the modifier), and it red-pulses while lane 8 is armed."
+      caption="SHIFT held — the top row becomes the PER-LANE ARM MAP, in EVERY view: columns 1–7 are lanes 1–7 (red pulse = armed — lane 3 here; dim red = available; the press toggles the arm and is consumed). Column 8 keeps the SHIFT LED — lane 8 lives on the PAD DIRECTLY BELOW SHFT (topmost 8×8 row, rightmost column; dim red = available, red pulse = armed), tapped while shift is held."
     />
     <LaunchpadDiagram
       top={permTop('grid', { running: true, arms: ARMS_LANE3 })}
@@ -1021,14 +1017,14 @@
 
     <h3 id="single-shift">The shift layer + tap-to-arm — one-handed by design</h3>
     <p>
-      Every right-column button has a plain meaning and a <strong>shift</strong> meaning. SHIFT (CC 98) is
-      <strong>hybrid</strong>: <strong>tap</strong> it to <em>latch</em> the alt layer (solid yellow — the
-      whole right column switches to its shift meaning and stays there), <strong>tap again</strong> to
-      unlatch. Or <strong>hold</strong> it for a momentary alt layer (bright yellow). Effective shift =
-      <strong>latched OR held</strong>. And because you can't hold a function button <em>and</em> tap a clip
-      at once, the Grid's compound functions (Copy · Paste · Clip-Div · Length) are
-      <strong>tap-to-ARM</strong>: tap the function → it arms (brightens; only one at a time) → tap a target →
-      it applies and auto-disarms. Tap the armed button again to cancel; a stale arm auto-clears after ~4 s.
+      Every right-column button has a plain meaning and a <strong>shift</strong> meaning. SHIFT (CC 98) is a
+      <strong>momentary hold</strong>: the alt layer is active <em>only while you physically hold SHIFT</em>
+      (bright yellow) — a short tap does nothing, there is no latch. And because you can't hold a function
+      button <em>and</em> tap a clip at once, the Grid's compound functions (Copy · Paste · Clip-Div ·
+      Length) are <strong>tap-to-ARM</strong>: hold SHIFT and tap the function → it arms (brightens; only one
+      at a time) → release SHIFT and tap a target → it applies and auto-disarms. Copy and Paste stay
+      <strong>sticky</strong> across the release so the no-shift matrix hosts their target; tap the armed
+      button again to cancel; a stale arm auto-clears after ~4 s.
     </p>
     <h4>Navigation palette (permanent top row)</h4>
     {@render swatches3(NAV_COLORS)}
@@ -1079,12 +1075,12 @@
 
     <h4>GRID + shift — the function palette (home of copy/paste)</h4>
     <LaunchpadDiagram
-      top={permTop('grid', { running: true, shift: 'latch' })}
+      top={permTop('grid', { running: true, shift: 'held' })}
       pads={gridPads}
       scene={gridShiftScene}
       callouts={gridCallouts}
       accent={hex(RGB_PATTERN_ARMED)}
-      caption="GRID + shift (SHIFT latched, solid yellow). The right column becomes the function palette, top→bottom: COPY · PASTE · CLIP-DIV · SWING+ · SWING− · LENGTH · SCR▲ · SCR▼. Green = pattern, blue = timing, yellow = length, amber = scene-scroll. PASTE shows turquoise here because the clipboard holds a clip. While shift is on, the TOP ROW is the per-lane automation ARM MAP (dim red = available — none armed here)."
+      caption="GRID + shift (SHIFT HELD, bright yellow). The right column becomes the function palette, top→bottom: COPY · PASTE · CLIP-DIV · SWING+ · SWING− · LENGTH · SCR▲ · SCR▼. Green = pattern, blue = timing, yellow = length, amber = scene-scroll. PASTE shows turquoise here because the clipboard holds a clip. While shift is held, the TOP ROW is the per-lane automation ARM MAP (dim red = available — none armed here)."
     />
     <p class="muted">
       That shift-state top row is the <strong>automation ARM MAP</strong> —
@@ -1093,14 +1089,14 @@
     <ul class="tight">
       <li><strong>COPY</strong> (green): arm, then tap a loaded clip → snapshot that CLIP to the clipboard,
         OR tap a <strong>ROW / scene-launch</strong> button → snapshot the WHOLE SCENE (all 8 channels at
-        that slot). <em>For a scene target, release / unlatch SHIFT first so the column shows the ROW ▶
-        buttons again — while shift is on, that column is still this function palette (clip-pad targets
+        that slot). <em>For a scene target, release SHIFT first so the column shows the ROW ▶
+        buttons again — while shift is held, that column is still this function palette (clip-pad targets
         work under either shift state).</em> The clipboard is <strong>typed</strong>: a clip buffer pulses
         turquoise, a scene buffer pulses amber. Re-tap COPY while loaded to clear it. (Copy is a snapshot —
         edit after copying? re-copy.)</li>
       <li><strong>PASTE</strong> (green; only arms when the clipboard holds something): arm, then tap a
         <strong>clip pad</strong> to drop a clip buffer there, or a <strong>ROW / scene-launch</strong>
-        button (again with SHIFT released / unlatched) to full-REPLACE that whole scene from a scene
+        button (again with SHIFT released) to full-REPLACE that whole scene from a scene
         buffer. The paste is
         <strong>type-gated</strong> — clip→clip and scene→scene apply; clip→scene and scene→clip are no-ops
         (nothing is written). A scene paste is a single undo step. Copy/paste carries each clip's
@@ -1204,12 +1200,12 @@
     </ul>
     <h4>CLIP + shift — velocity + big jumps</h4>
     <LaunchpadDiagram
-      top={permTop('clip', { running: true, shift: 'latch' })}
+      top={permTop('clip', { running: true, shift: 'held' })}
       pads={clipVelWashPads}
       scene={clipShiftScene}
       callouts={editCallouts}
       accent={hex(RGB_TIMING_ARMED)}
-      caption="CLIP + shift. The 8×8 becomes VELOCITY-cycle (a faint purple wash over empty cells) — tap a note to cycle its velocity. ROW± brighten (they now jump a full page — 8 rows) and STEP± brighten (they jump a full block). DOUBLE / LENGTH / FOLLOW / KEYS are unchanged. The TOP ROW is the automation ARM MAP while shift is on (dim red = available)."
+      caption="CLIP + shift (HELD). The 8×8 becomes VELOCITY-cycle (a faint purple wash over empty cells) — hold shift + tap a note to cycle its velocity. ROW± brighten (they now jump a full page — 8 rows) and STEP± brighten (they jump a full block). DOUBLE / LENGTH / FOLLOW / KEYS are unchanged. The TOP ROW is the automation ARM MAP while shift is held (dim red = available)."
     />
     <ul class="tight">
       <li><strong>Velocity:</strong> under shift, tapping a note <strong>cycles its velocity</strong>
@@ -1351,8 +1347,8 @@
         records your live clip <em>launches</em> — not notes, not knobs; the pad pulses red while
         recording), and <strong>SONG</strong> flips SESSION ⇄ ARRANGEMENT to replay the recorded song.
         Same synced state as the card's <strong>●</strong> and SES/ARR buttons.</li>
-      <li><strong>Automation CLIP RECORD = SHIFT + the lane's top-row button</strong> (not a grid pad —
-        it works from every view, including this one; lane 8 = double-tap SHIFT). Assign modules first
+      <li><strong>Automation CLIP RECORD = HOLD SHIFT + the lane's top-row button</strong> (not a grid pad —
+        it works from every view, including this one; lane 8 = HOLD SHIFT + the pad below SHFT). Assign modules first
         (right-click a <em>module's card</em> → <em>Assign to automation lane</em> 1–8 — the whole
         module joins the lane, its card gets a border in the lane's colour); while a lane is
         <strong>armed</strong> (its top-row button red-flashes; same toggle as the card's per-lane
@@ -1454,9 +1450,9 @@
         GRID.</li>
       <li><strong>Snare clip:</strong> double-tap <strong>channel-2, slot-1</strong> → CLIP → KEYS →
         QUEUE-REC → play the backbeat → EXIT → GRID.</li>
-      <li><strong>Variations (slots 2–3):</strong> for a fast copy, latch <strong>SHIFT</strong>, tap
-        <strong>COPY</strong> (right column, top), tap a source clip, tap <strong>PASTE</strong>, then tap
-        the empty slot below it — now tweak. Repeat so each channel has 2–3 slots.</li>
+      <li><strong>Variations (slots 2–3):</strong> for a fast copy, HOLD <strong>SHIFT</strong>, tap
+        <strong>COPY</strong> (right column, top), tap a source clip, tap <strong>PASTE</strong>, then
+        release SHIFT and tap the empty slot below it — now tweak. Repeat so each channel has 2–3 slots.</li>
       <li>Tapping any loaded pad <strong>launches just that clip</strong>; you'll launch whole rows
         next.</li>
     </ol>
@@ -1495,7 +1491,7 @@
         playhead keeps running, so it snaps back on beat). Tap again to bring it back.</li>
       <li><strong>Half-time the bass:</strong> on the <strong>RATE row</strong> (row 4), tap <strong>channel
         3's pad</strong> until it reads <strong>1/2</strong>.</li>
-      <li><strong>Add a shuffle:</strong> back in GRID, latch <strong>SHIFT</strong> and tap
+      <li><strong>Add a shuffle:</strong> back in GRID, HOLD <strong>SHIFT</strong> and tap
         <strong>SWING+</strong> a few times (it ramps purple); the button flashes green when you return to
         straight.</li>
       <li><strong>Reshape a clip's feel:</strong> in GRID + shift, arm <strong>CLIP-DIV</strong> and tap a

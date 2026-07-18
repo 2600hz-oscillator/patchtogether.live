@@ -1472,29 +1472,40 @@ export function controlRehomePad(x: number, y: number): ControlRehomeAction | nu
 // ---------------------------------------------------------------------------
 // PER-LANE AUTOMATION ARM on the PERMANENT TOP ROW (owner gesture, single
 // mode): "for every lane except the right-most, SHIFT + the button at the very
-// top of that lane turns on automation recording … Because Lane 8's top button
-// is the shift button itself, we double-tap [SHFT] to turn it on and off.
-// Because we're using the global row, we can always turn this on and off
-// regardless of what screen we're on."
-//   · SHIFT (held OR latched) + top CC 91..97 → toggle lane 0..6's arm. The
-//     press is CONSUMED — the button's normal function (transport / view flip
-//     / undo / redo) must NOT fire under shift.
-//   · Lane 7 (the 8th) = DOUBLE-TAP of SHFT (CC 98) itself — the second tap
-//     reverts the first tap's latch change and toggles the arm (handled
-//     statefully in launchpad-control's handleShift).
+// top of that lane turns on automation recording." SHIFT is a MOMENTARY HOLD
+// (no latch), so the arm map is a hold-a-modifier gesture:
+//   · HOLD SHIFT + tap top CC 91..97 → toggle lane 0..6's arm. The press is
+//     CONSUMED — the button's normal function (transport / view flip / undo /
+//     redo) must NOT fire under shift.
+//   · Lane 7 (the 8th): its top button IS the SHFT button, so — with SHIFT
+//     held — tap the pad DIRECTLY BELOW SHFT (the topmost 8×8 row, rightmost
+//     column = LANE8_ARM_PAD) to toggle lane 8's arm. (Was a double-tap of
+//     SHFT while latch existed; the latch is gone.)
 //   · LED: an ARMED lane's top button red-flashes over its base colour in
-//     EVERY view; while shift is active the whole row paints as the arm map
-//     (see paintPermanentTopRow).
+//     EVERY view; while shift is HELD the whole row paints as the arm map AND
+//     LANE8_ARM_PAD lights (red pulse = armed · dim red = available), so the
+//     hold gesture is discoverable (see paintPermanentTopRow).
 // ---------------------------------------------------------------------------
 /** SHIFT+top-row arm classifier: the LANE a top CC toggles (columns 0..6 →
- *  lanes 1..7), or null for CC 98 (lane 8 = the SHFT double-tap special case)
- *  and non-top CCs. PURE. */
+ *  lanes 1..7), or null for CC 98 (lane 8 = the LANE8_ARM_PAD gesture) and
+ *  non-top CCs. PURE. */
 export function armTopLane(cc: number): number | null {
   const col = topCcCol(cc);
   return col !== null && col < LP_WIDTH - 1 ? col : null;
 }
-/** The lane the SHFT double-tap toggles (lane 8 — its column IS shift). */
+/** The lane the LANE8_ARM_PAD toggles (lane 8 — its top button IS shift). */
 export const ARM_SHIFT_LANE = LP_WIDTH - 1; // 7
+/** The 8×8 pad DIRECTLY BELOW the SHFT button — the topmost grid row (bottom-
+ *  origin y = LP_HEIGHT-1), rightmost column (x = LP_WIDTH-1). While SHIFT is
+ *  held this pad is the lane-8 automation arm toggle (the compass's col-8 is
+ *  the shift button itself, so lane 8 borrows the pad beneath it). */
+export const LANE8_ARM_PAD = { x: LP_WIDTH - 1, y: LP_HEIGHT - 1 } as const;
+/** Is this 8×8 pad the lane-8 arm pad (below SHFT)? Consumed as the lane-8 arm
+ *  ONLY while shift is held; otherwise it is a normal pad in the active view.
+ *  PURE. */
+export function isLane8ArmPad(x: number, y: number): boolean {
+  return x === LANE8_ARM_PAD.x && y === LANE8_ARM_PAD.y;
+}
 
 // ---------------------------------------------------------------------------
 // SINGLE-MODE LED FRAMES (PURE). Each view's frame paints its 8×8 + right column
@@ -1529,11 +1540,11 @@ export interface PermanentTopOpts {
   /** In KEYS (a sub-view of Clip) → the CLIP button lights bright too. */
   keysActive: boolean;
   transportRunning: boolean;
-  /** Shift state for the CC98 LED (dim off · bright held · solid latched). The
-   *  EFFECTIVE shift (latched || held) also drives the right-column alt meanings
-   *  in every view frame (the frames read it from here — there is no separate
-   *  `shift` field to keep in sync). */
-  shift: { latched: boolean; held: boolean };
+  /** Shift state for the CC98 LED (dim off · bright held). SHIFT is a MOMENTARY
+   *  HOLD (no latch): `held` drives the shift LED AND the right-column alt
+   *  meanings + arm map in every view frame (the frames read it from here —
+   *  there is no separate `shift` field to keep in sync). */
+  shift: { held: boolean };
   /** Undo / redo stacks non-empty → the orange CC96 / CC97 light; else dim. */
   canUndo: boolean;
   canRedo: boolean;
@@ -1551,20 +1562,17 @@ export interface PermanentTopOpts {
 /** Paint the permanent nav row (CC 91..98) onto a frame — identical in every
  *  view: transport (red stopped / green running), the 4 view buttons (bright
  *  purple = active; Clip bright while KEYS is open), undo/redo (orange, dim when
- *  the stack is empty), shift (yellow: dim off / bright held / solid latched).
- *  PER-LANE AUTOMATION ARM overlay (owner gesture — SHIFT+column / double-tap
- *  SHFT): an armed lane's button red-flashes ALTERNATING with its base colour
- *  (the compass stays readable); while shift is ACTIVE the row becomes the arm
- *  map so the gesture is discoverable. PURE. */
+ *  the stack is empty), shift (yellow: dim off / bright held — MOMENTARY, no
+ *  latch). PER-LANE AUTOMATION ARM overlay (owner gesture — HOLD SHIFT + column
+ *  for lanes 1-7, HOLD SHIFT + LANE8_ARM_PAD for lane 8): an armed lane's
+ *  button red-flashes ALTERNATING with its base colour (the compass stays
+ *  readable); while shift is HELD the row becomes the arm map AND the pad below
+ *  SHFT lights as the lane-8 arm cell, so the gesture is discoverable. PURE. */
 export function paintPermanentTopRow(frame: LaunchpadFrame, opts: PermanentTopOpts): void {
   const blinkOn = opts.blinkOn ?? true;
   const arms = opts.laneArms ?? [];
-  const shiftActive = opts.shift.held || opts.shift.latched;
-  const shiftRgb = opts.shift.held
-    ? RGB_SHIFT_HELD
-    : opts.shift.latched
-      ? RGB_SHIFT_LATCH
-      : RGB_SHIFT_OFF;
+  const shiftActive = opts.shift.held;
+  const shiftRgb = shiftActive ? RGB_SHIFT_HELD : RGB_SHIFT_OFF;
   // Base compass colours, column-ordered (CC 91..98).
   const base: Rgb[] = [
     opts.transportRunning ? RGB_TRANSPORT_ON : RGB_TRANSPORT_STOP,
@@ -1580,7 +1588,7 @@ export function paintPermanentTopRow(frame: LaunchpadFrame, opts: PermanentTopOp
     const armed = arms[col] === true;
     let rgb = base[col];
     if (shiftActive && col < LP_WIDTH - 1) {
-      // ARM MAP while shift is active: red pulse = armed, dim red = available.
+      // ARM MAP while shift is HELD: red pulse = armed, dim red = available.
       rgb = armed ? (blinkOn ? RGB_RECORDING : RGB_RECORDING_DIM) : RGB_STOP_IDLE;
     } else if (armed) {
       // Always-visible arm indicator: red flash ALTERNATING with the base
@@ -1594,11 +1602,26 @@ export function paintPermanentTopRow(frame: LaunchpadFrame, opts: PermanentTopOp
     }
     put(frame, colTopCc(col), rgb);
   }
+  // LANE-8 ARM CELL — the 8×8 pad directly below SHFT. While shift is HELD it
+  // completes the arm map (the compass's col-8 is the shift button itself, so
+  // lane 8 borrows the pad beneath it): red pulse = armed · dim red = available.
+  // Painted LAST (after each view built the 8×8), so it overrides that pad's
+  // view content only while shift is held — matching the consumed press. Off
+  // shift the pad reverts to its normal view content (the lane-8 armed state
+  // still reads on the shift LED via the col-8 red-flash above).
+  if (shiftActive) {
+    const armed8 = arms[ARM_SHIFT_LANE] === true;
+    put(
+      frame,
+      padNote(LANE8_ARM_PAD.x, LANE8_ARM_PAD.y),
+      armed8 ? (blinkOn ? RGB_RECORDING : RGB_RECORDING_DIM) : RGB_STOP_IDLE,
+    );
+  }
 }
 
-/** Effective shift = latched OR momentary-held (drives right-column alt colours). */
+/** Effective shift = momentary-held (drives right-column alt colours + arm map). */
 function effShift(top: PermanentTopOpts): boolean {
-  return top.shift.latched || top.shift.held;
+  return top.shift.held;
 }
 
 // ── SINGLE Grid view ──

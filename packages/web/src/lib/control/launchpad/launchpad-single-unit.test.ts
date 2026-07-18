@@ -79,6 +79,7 @@ import {
   SCENE_CCS,
   padNote,
   LP_HEIGHT,
+  LP_WIDTH,
   CC_TOP_SPARE_8,
   CC_UP,
   CC_DOWN,
@@ -411,18 +412,15 @@ describe('SINGLE — permanent top row (transport / views / undo / redo)', () =>
     seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
     bindLaunchpadToClip(NODE_ID);
     expect(__test_mode().canUndo).toBe(false);
-    // Latch shift, nudge swing up (a persistent, undoable edit).
+    // HOLD shift, nudge swing up (a persistent, undoable edit), then RELEASE.
     sim.cc('L', CC_SHIFT, 127);
-    sim.cc('L', CC_SHIFT, 0); // short tap → latched
     sim.cc('L', sceneCc(G_SWING_UP), 127);
+    sim.cc('L', CC_SHIFT, 0);
     expect(laneSwing(liveData(), 0)).toBeCloseTo(0.02, 5);
     expect(__test_mode().canUndo, 'a persistent edit is undoable').toBe(true);
-    // UNLATCH first — under shift a top-row press is the per-lane automation
-    // ARM gesture (consumed), so shift+UNDO must NOT undo (asserted in the
-    // dedicated arm-gesture describe below).
-    sim.cc('L', CC_SHIFT, 127);
-    sim.cc('L', CC_SHIFT, 0);
-    expect(__test_mode().shiftLatched).toBe(false);
+    // Shift is released — a bare top-row press is now the normal function (under
+    // shift it would be the per-lane automation ARM gesture, consumed).
+    expect(__test_mode().shiftHeldSingle).toBe(false);
     sim.cc('L', CC_UNDO, 127);
     expect(laneSwing(liveData(), 0), 'undo reverted the swing edit').toBeCloseTo(0, 5);
     expect(__test_mode().canRedo).toBe(true);
@@ -432,9 +430,10 @@ describe('SINGLE — permanent top row (transport / views / undo / redo)', () =>
 });
 
 // ===========================================================================
-// SINGLE — SHIFT hybrid latch/hold.
+// SINGLE — SHIFT is MOMENTARY HOLD-only (owner: "shift functions … should be a
+// hold"). No tap-to-latch: effective shift = shiftHeldSingle (physically down).
 // ===========================================================================
-describe('SINGLE — shift latch vs hold', () => {
+describe('SINGLE — shift momentary hold (no latch)', () => {
   let sim: SimulatedLaunchpad;
   beforeEach(async () => {
     sim = await installSimulatedLaunchpadSingle();
@@ -443,29 +442,40 @@ describe('SINGLE — shift latch vs hold', () => {
     bindLaunchpadToClip(NODE_ID);
   });
 
-  it('a SHORT tap toggles the latch; a second tap unlatches', () => {
-    sim.cc('L', CC_SHIFT, 127);
-    sim.cc('L', CC_SHIFT, 0); // tap → latched
-    expect(__test_mode().shiftLatched).toBe(true);
+  it('a SHORT tap does NOTHING (no latch) — shift is off before and after', () => {
     expect(__test_mode().shiftHeldSingle).toBe(false);
     sim.cc('L', CC_SHIFT, 127);
-    sim.cc('L', CC_SHIFT, 0); // tap → unlatched
-    expect(__test_mode().shiftLatched).toBe(false);
-  });
-
-  it('a HOLD (ticks between press + release) is momentary — no latch on release', () => {
+    expect(__test_mode().shiftHeldSingle, 'engaged only while physically down').toBe(true);
+    sim.cc('L', CC_SHIFT, 0); // release → immediately off (no latch)
+    expect(__test_mode().shiftHeldSingle).toBe(false);
+    // A second tap likewise leaves shift OFF — nothing toggled.
     sim.cc('L', CC_SHIFT, 127);
-    expect(__test_mode().shiftHeldSingle).toBe(true);
-    for (let i = 0; i < 15; i++) hoisted.tick!(); // long hold (> DOUBLE_TAP_TICKS)
     sim.cc('L', CC_SHIFT, 0);
     expect(__test_mode().shiftHeldSingle).toBe(false);
-    expect(__test_mode().shiftLatched, 'a long hold does not latch').toBe(false);
+  });
+
+  it('a long HOLD stays engaged across ticks, then off on release', () => {
+    sim.cc('L', CC_SHIFT, 127);
+    expect(__test_mode().shiftHeldSingle).toBe(true);
+    for (let i = 0; i < 15; i++) hoisted.tick!(); // long hold
+    expect(__test_mode().shiftHeldSingle, 'still held across ticks').toBe(true);
+    sim.cc('L', CC_SHIFT, 0);
+    expect(__test_mode().shiftHeldSingle).toBe(false);
+  });
+
+  it('a short tap does NOT expose the grid-shift palette (the scene column launches, not arms)', () => {
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', CC_SHIFT, 0); // released — shift no longer effective
+    sim.cc('L', sceneCc(G_COPY), 127); // scene-launch button in no-shift = launch, NOT arm COPY
+    expect(__test_mode().armedRightAction, 'no latch → the tap did not arm COPY').toBeNull();
   });
 
   it('while shift is HELD, the scene column is the grid-shift palette (arm COPY)', () => {
-    sim.cc('L', CC_SHIFT, 127); // hold
-    sim.cc('L', sceneCc(G_COPY), 127); // arm COPY (only reachable under shift)
+    sim.cc('L', CC_SHIFT, 127); // HOLD
+    sim.cc('L', sceneCc(G_COPY), 127); // arm COPY (only reachable while shift is held)
     expect(__test_mode().armedRightAction).toBe('copy');
+    sim.cc('L', CC_SHIFT, 0); // release — COPY is STICKY, survives for the no-shift target
+    expect(__test_mode().armedRightAction, 'COPY stays armed after release (sticky)').toBe('copy');
   });
 });
 
@@ -480,11 +490,12 @@ describe('SINGLE — Grid-shift tap-to-arm + swing', () => {
     sim = await installSimulatedLaunchpadSingle();
     __test_setDeployment('single', 'grid');
   });
-  // Latch shift once so the scene column is the grid-shift palette for the test.
+  // HOLD shift so the scene column is the grid-shift palette for the test
+  // (momentary — the arm persists via the sticky COPY/PASTE / the pending
+  // clip-div preview; the tests keep shift held through the interaction).
   function latchShift() {
-    sim.cc('L', CC_SHIFT, 127);
-    sim.cc('L', CC_SHIFT, 0);
-    expect(__test_mode().shiftLatched).toBe(true);
+    sim.cc('L', CC_SHIFT, 127); // press + hold, no release
+    expect(__test_mode().shiftHeldSingle).toBe(true);
   }
 
   it('arm COPY → tap a loaded clip → buffer loaded + auto-disarm', () => {
@@ -622,14 +633,12 @@ describe('SINGLE — Grid scene-scroll (>8 scenes; UP/DOWN from PASTE-REV/NOW)',
     __test_setDeployment('single', 'grid');
   });
   const latch = () => {
-    sim.cc('L', CC_SHIFT, 127);
-    sim.cc('L', CC_SHIFT, 0);
-    expect(__test_mode().shiftLatched).toBe(true);
+    sim.cc('L', CC_SHIFT, 127); // HOLD shift (momentary)
+    expect(__test_mode().shiftHeldSingle).toBe(true);
   };
   const unlatch = () => {
-    sim.cc('L', CC_SHIFT, 127);
-    sim.cc('L', CC_SHIFT, 0);
-    expect(__test_mode().shiftLatched).toBe(false);
+    sim.cc('L', CC_SHIFT, 0); // release
+    expect(__test_mode().shiftHeldSingle).toBe(false);
   };
   // Clips through slot 7 (lane 0) → highestContentScene 7 → DOWN can reveal ONE
   // empty scene (scene 8), so maxSceneScrollOffset = 1.
@@ -806,11 +815,11 @@ describe('SINGLE — Clip view', () => {
     expect(__test_mode().editRowOffset).toBe(1);
     sim.cc('L', sceneCc(C_ROW_DOWN), 127);
     expect(__test_mode().editRowOffset).toBe(0);
-    // shift → page jump (±8).
+    // shift → page jump (±8) — HOLD shift.
     sim.cc('L', CC_SHIFT, 127);
-    sim.cc('L', CC_SHIFT, 0); // latch
     sim.cc('L', sceneCc(C_ROW_UP), 127);
     expect(__test_mode().editRowOffset).toBe(8);
+    sim.cc('L', CC_SHIFT, 0);
   });
 
   it('STEP ◀/▶ scroll the window; shift = a block jump', () => {
@@ -818,10 +827,10 @@ describe('SINGLE — Clip view', () => {
     sim.cc('L', sceneCc(C_STEP_RIGHT), 127); // +1 (freezes follow)
     expect(__test_mode().editWindowStart).toBe(1);
     expect(__test_mode().followOn).toBe(false);
-    sim.cc('L', CC_SHIFT, 127);
-    sim.cc('L', CC_SHIFT, 0); // latch shift
+    sim.cc('L', CC_SHIFT, 127); // HOLD shift
     sim.cc('L', sceneCc(C_STEP_RIGHT), 127); // +8 block
     expect(__test_mode().editWindowStart).toBe(9);
+    sim.cc('L', CC_SHIFT, 0);
   });
 
   it('the 8×8 note grid edits notes (toggle on); under shift it cycles velocity', () => {
@@ -832,10 +841,10 @@ describe('SINGLE — Clip view', () => {
     const clip = clipsOf()[clipIndex(0, 0)];
     expect(clip.steps.length, 'a note was added').toBeGreaterThan(0);
     const before = clip.steps[0].velocity;
-    // shift → velocity-cycle the same note.
+    // shift → velocity-cycle the same note (HOLD shift).
     sim.cc('L', CC_SHIFT, 127);
-    sim.cc('L', CC_SHIFT, 0); // latch
     sim.press('L', 0, 0);
+    sim.cc('L', CC_SHIFT, 0);
     const after = clipsOf()[clipIndex(0, 0)].steps[0].velocity;
     expect(after, 'shift cycled the velocity').not.toBe(before);
   });
@@ -873,9 +882,8 @@ describe('SINGLE — KEYS sub-view (scale + arp)', () => {
     expect(__test_mode().arpOn).toBe(false);
     sim.cc('L', sceneCc(K_ARP_TOGGLE), 127); // arp ON (no shift)
     expect(__test_mode().arpOn).toBe(true);
-    // shift → the arp control column.
+    // shift → the arp control column (HOLD shift through the edits).
     sim.cc('L', CC_SHIFT, 127);
-    sim.cc('L', CC_SHIFT, 0); // latch
     sim.cc('L', sceneCc(KA_DOWN), 127);
     expect(__test_mode().arpDir).toBe('down');
     sim.cc('L', sceneCc(KA_UPDOWN), 127);
@@ -1039,11 +1047,13 @@ describe('SINGLE — Control view', () => {
 
 // ===========================================================================
 // SINGLE — PER-LANE AUTOMATION ARM on the permanent top row (owner gesture):
-// SHIFT + the lane's top-row button toggles that lane's arm from EVERY view;
-// lane 8 = double-tap SHFT (its column IS the shift button). The press is
-// CONSUMED under shift — the button's normal function must not fire.
+// HOLD SHIFT + the lane's top-row button toggles that lane's arm from EVERY
+// view; lane 8 = HOLD SHIFT + the pad DIRECTLY BELOW SHFT (topmost 8×8 row,
+// rightmost column) — its top button IS the shift button. The press is
+// CONSUMED under shift — the button's normal function must not fire. SHIFT is
+// MOMENTARY HOLD-only (no latch, no double-tap).
 // ===========================================================================
-describe('SINGLE — per-lane automation ARM (SHIFT + top row / double-tap SHFT)', () => {
+describe('SINGLE — per-lane automation ARM (HOLD SHIFT + top row / pad below SHFT)', () => {
   let sim: SimulatedLaunchpad;
   beforeEach(async () => {
     sim = await installSimulatedLaunchpadSingle();
@@ -1059,14 +1069,17 @@ describe('SINGLE — per-lane automation ARM (SHIFT + top row / double-tap SHFT)
   const laneRecorder = (lane: number): number | undefined =>
     (liveData().automation as { lanes?: ({ recorderId?: number } | null)[] } | undefined)
       ?.lanes?.[lane]?.recorderId;
-  /** Advance past the shift double-tap window so taps don't pair up. */
-  const passWindow = () => {
-    for (let i = 0; i < 15; i++) hoisted.tick!();
+  // The pad directly below SHFT: topmost 8×8 row (bottom-origin y=7), rightmost
+  // column (x=7). While shift is held it is the lane-8 arm toggle.
+  const LANE8_PAD = { x: LP_WIDTH - 1, y: LP_HEIGHT - 1 };
+  const tapLane8Pad = () => {
+    sim.press('L', LANE8_PAD.x, LANE8_PAD.y);
+    sim.release('L', LANE8_PAD.x, LANE8_PAD.y);
   };
 
-  it('SHIFT HELD + top col N toggles lane N’s arm (recorderId stamped) and CONSUMES the press — the normal function never fires', () => {
+  it('HOLD SHIFT + top col N toggles lane N’s arm (recorderId stamped) and CONSUMES the press — the normal function never fires', () => {
     seedTimelorde(0);
-    sim.cc('L', CC_SHIFT, 127); // hold shift
+    sim.cc('L', CC_SHIFT, 127); // HOLD shift
     // shift+▶ (col 0) → lane 0 arm, transport UNTOUCHED.
     sim.cc('L', CC_TRANSPORT_TOP, 127);
     expect(laneArm(0), 'lane 0 armed').toBe(true);
@@ -1080,9 +1093,9 @@ describe('SINGLE — per-lane automation ARM (SHIFT + top row / double-tap SHFT)
     // but the press must classify as an arm toggle, not an undo).
     sim.cc('L', CC_UNDO, 127);
     expect(laneArm(5), 'lane 5 armed').toBe(true);
-    // Release shift: the combo press consumed the hold — NO latch.
+    // Release shift → immediately off (no latch).
     sim.cc('L', CC_SHIFT, 0);
-    expect(__test_mode().shiftLatched, 'a shift used as an arm modifier never latches').toBe(false);
+    expect(__test_mode().shiftHeldSingle, 'shift off after release (no latch)').toBe(false);
     // Re-toggle under a fresh hold → lane 0 disarms; others untouched.
     sim.cc('L', CC_SHIFT, 127);
     sim.cc('L', CC_TRANSPORT_TOP, 127);
@@ -1091,19 +1104,12 @@ describe('SINGLE — per-lane automation ARM (SHIFT + top row / double-tap SHFT)
     expect(laneArm(2), 'lane 2 still armed').toBe(true);
   });
 
-  it('works with SHIFT LATCHED and from EVERY view (control view too)', () => {
-    passWindow();
-    sim.cc('L', CC_SHIFT, 127);
-    sim.cc('L', CC_SHIFT, 0); // latch
-    expect(__test_mode().shiftLatched).toBe(true);
+  it('works from EVERY view under a hold (control view too)', () => {
+    sim.cc('L', CC_SHIFT, 127); // hold
     sim.cc('L', CC_VIEW_GRID, 127); // col 1 → lane 1 arm (NOT a view flip)
-    expect(laneArm(1)).toBe(true);
-    // Unlatch (the arm press broke the double-tap pair), flip to CONTROL view,
-    // then use the gesture there — same result (view-agnostic).
-    sim.cc('L', CC_SHIFT, 127);
     sim.cc('L', CC_SHIFT, 0);
-    expect(__test_mode().shiftLatched).toBe(false);
-    passWindow();
+    expect(laneArm(1)).toBe(true);
+    // Flip to CONTROL view, then use the gesture there — same result.
     sim.cc('L', CC_VIEW_CONTROL, 127);
     expect(__test_mode().singleView).toBe('control');
     sim.cc('L', CC_SHIFT, 127); // hold
@@ -1113,88 +1119,46 @@ describe('SINGLE — per-lane automation ARM (SHIFT + top row / double-tap SHFT)
     expect(__test_mode().singleView, 'still in control view').toBe('control');
   });
 
-  it('LANE 8 = DOUBLE-TAP SHFT: fires on the SECOND TAP’S RELEASE (tap-tap only), REVERTS the latch change; a lone tap still latches', () => {
-    passWindow();
-    // Single tap: latches as always (immediate, unchanged behaviour).
-    sim.cc('L', CC_SHIFT, 127);
-    sim.cc('L', CC_SHIFT, 0);
-    expect(__test_mode().shiftLatched, 'first tap latched immediately').toBe(true);
+  it('LANE 8 = HOLD SHIFT + the pad below SHFT toggles lane 8’s arm (recorderId stamped); tapping again disarms', () => {
+    sim.cc('L', CC_SHIFT, 127); // hold shift
     expect(laneArm(7)).toBe(false);
-    // Second tap WITHIN the window: the pair fires on this tap's SHORT
-    // RELEASE (a press that becomes a HOLD is a modifier, never a lane-8
-    // toggle) and the first tap's latch change is REVERTED (net latch
-    // unchanged from before the pair).
-    sim.cc('L', CC_SHIFT, 127);
-    expect(laneArm(7), 'pending on the press — fires on the RELEASE').toBe(false);
+    tapLane8Pad(); // → lane 8 arm ON
+    expect(laneArm(7), 'lane 8 armed via the pad below SHFT').toBe(true);
+    expect(laneRecorder(7), 'per-lane single-writer = this client').toBe(ydoc.clientID);
+    tapLane8Pad(); // → lane 8 arm OFF (toggle)
+    expect(laneArm(7), 'tapping again disarms lane 8').toBe(false);
     sim.cc('L', CC_SHIFT, 0);
-    expect(laneArm(7), 'lane 8 armed on the second tap’s release').toBe(true);
-    expect(laneRecorder(7)).toBe(ydoc.clientID);
-    expect(__test_mode().shiftLatched, 'the pair nets the latch back to OFF').toBe(false);
-    // A second double-tap disarms lane 8 the same way.
-    passWindow();
-    sim.cc('L', CC_SHIFT, 127);
-    sim.cc('L', CC_SHIFT, 0);
-    sim.cc('L', CC_SHIFT, 127);
-    sim.cc('L', CC_SHIFT, 0);
-    expect(laneArm(7), 'double-tap toggles OFF').toBe(false);
-    expect(__test_mode().shiftLatched).toBe(false);
-    // A lone tap AFTER the window still just latches (the arm didn't eat it).
-    passWindow();
-    sim.cc('L', CC_SHIFT, 127);
-    sim.cc('L', CC_SHIFT, 0);
-    expect(__test_mode().shiftLatched, 'single tap after the window latches').toBe(true);
-    expect(laneArm(7), 'no spurious lane-8 arm from the lone tap').toBe(false);
   });
 
-  it('LATCHED → double-tap: toggles lane 8 AND nets the latch back to ON (the other gesture direction)', () => {
-    passWindow();
-    sim.cc('L', CC_SHIFT, 127);
-    sim.cc('L', CC_SHIFT, 0); // latch
-    expect(__test_mode().shiftLatched).toBe(true);
-    passWindow(); // the latch tap is long past — a fresh pair starts here
-    sim.cc('L', CC_SHIFT, 127);
-    sim.cc('L', CC_SHIFT, 0); // tap 1 (unlatches + anchors)
-    sim.cc('L', CC_SHIFT, 127);
-    sim.cc('L', CC_SHIFT, 0); // tap 2 → fires
-    expect(laneArm(7), 'double-tap from the latched state arms lane 8').toBe(true);
-    expect(__test_mode().shiftLatched, 'the latch nets back to ON').toBe(true);
+  it('the pad below SHFT is a NORMAL grid pad WITHOUT shift — it launches its clip, never arms lane 8', () => {
+    // Grid pad (7,7) = lane 7, slot 0 (transposed). Seed a clip there so a
+    // no-shift press launches it (proving the pad's default role is intact).
+    seedClipPlayer({ clips: { [clipIndex(0, 7)]: noteClip() } });
+    bindLaunchpadToClip(NODE_ID);
+    tapLane8Pad(); // no shift held
+    expect(laneArm(7), 'no shift → not a lane-8 arm').toBe(false);
+    expect(queued()![7], 'no shift → the pad launched lane 7 slot 0').toBe(0);
   });
 
-  it('tap-then-HOLD never fires lane 8 (the second press became a modifier)', () => {
-    passWindow();
-    sim.cc('L', CC_SHIFT, 127);
-    sim.cc('L', CC_SHIFT, 0); // tap 1 → latched + anchored
-    expect(__test_mode().shiftLatched).toBe(true);
-    sim.cc('L', CC_SHIFT, 127); // press 2 within the window…
-    for (let i = 0; i < 15; i++) hoisted.tick!(); // …but it becomes a HOLD
+  it('the lane-8 arm press under shift is CONSUMED — it does NOT launch the grid clip beneath it', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 7)]: noteClip() } }); // a clip under the pad
+    bindLaunchpadToClip(NODE_ID);
+    sim.cc('L', CC_SHIFT, 127); // hold shift
+    tapLane8Pad(); // → lane 8 arm, NOT a launch
+    expect(laneArm(7), 'lane 8 armed').toBe(true);
+    expect(queued()?.[7] ?? null, 'the clip beneath was NOT launched (press consumed)').toBeNull();
     sim.cc('L', CC_SHIFT, 0);
-    expect(laneArm(7), 'a hold is a modifier — no lane-8 toggle').toBe(false);
-    expect(__test_mode().shiftLatched, 'tap 1’s latch stands (a hold never latches)').toBe(true);
   });
 
-  it('held-shift PALETTE use never latches on release (fast hold+tap+release)', () => {
-    // Pre-existing #1078 quirk the arm gesture escalated: any use of held
-    // shift as a MODIFIER (grid palette / arm gesture / matrix tap) must
-    // suppress the release-latch.
+  it('held-shift PALETTE use applies the action and leaves shift OFF on release (no latch)', () => {
     sim.cc('L', CC_SHIFT, 127); // hold
     sim.cc('L', sceneCc(G_SWING_UP), 127); // a palette action under the hold
-    sim.cc('L', CC_SHIFT, 0); // fast release (< the tap window)
-    expect(__test_mode().shiftLatched, 'modifier use suppressed the latch').toBe(false);
+    sim.cc('L', CC_SHIFT, 0); // release
+    expect(__test_mode().shiftHeldSingle, 'shift off after release (no latch)').toBe(false);
     expect(laneSwing(liveData(), 0), 'the palette action itself applied').toBeCloseTo(0.02, 5);
   });
 
-  it('a press BETWEEN two shift taps breaks the pair — “latch → arm COPY → unlatch” never arms lane 8', () => {
-    passWindow();
-    sim.cc('L', CC_SHIFT, 127);
-    sim.cc('L', CC_SHIFT, 0); // latch
-    sim.cc('L', sceneCc(0), 127); // arm COPY under the latch (any other press)
-    sim.cc('L', CC_SHIFT, 127); // quick unlatch — NOT a double-tap
-    sim.cc('L', CC_SHIFT, 0);
-    expect(__test_mode().shiftLatched).toBe(false);
-    expect(laneArm(7), 'no spurious lane-8 arm from the latch/unlatch pair').toBe(false);
-  });
-
-  it('LED: an armed lane’s top button RED-FLASHES over its base colour in EVERY view; the arm map shows while shift is held', () => {
+  it('LED: an armed lane’s top button RED-FLASHES over its base colour in EVERY view; the arm map (incl. the lane-8 pad) shows while shift is held', () => {
     // Arm lane 2 (shift+CLIP column).
     sim.cc('L', CC_SHIFT, 127);
     sim.cc('L', CC_VIEW_CLIP, 127);
@@ -1205,6 +1169,11 @@ describe('SINGLE — per-lane automation ARM (SHIFT + top row / double-tap SHFT)
     expect(armMapArmed[1]).toBeLessThan(30);
     const armMapAvail = sim.ledAt('L', CC_TRANSPORT_TOP)!;
     expect(armMapAvail[0], 'available column reads dim red').toBeGreaterThan(20);
+    // The pad below SHFT lights as the lane-8 arm cell — the SAME dim-red
+    // "available" colour the top-row arm map uses (RGB_STOP_IDLE).
+    const lane8Cell = sim.ledAt('L', padNote(LANE8_PAD.x, LANE8_PAD.y))!;
+    expect(lane8Cell, 'lane-8 arm pad = the arm-map available colour while shift held').toEqual(armMapAvail);
+    expect(lane8Cell[0], 'dim red — red dominates').toBeGreaterThan(lane8Cell[2]);
     sim.cc('L', CC_SHIFT, 0); // release
     // No shift: the armed column flashes red on the bright blink phase…
     hoisted.tick!();
@@ -1283,14 +1252,12 @@ describe('SINGLE — SCENE copy/paste (typed buffer + 4-combo type gate)', () =>
   const G_PASTE_I = 1;
   const G_SCROLL_DOWN_I = 7;
   const latch = () => {
-    sim.cc('L', CC_SHIFT, 127);
-    sim.cc('L', CC_SHIFT, 0);
-    expect(__test_mode().shiftLatched).toBe(true);
+    sim.cc('L', CC_SHIFT, 127); // HOLD shift (momentary)
+    expect(__test_mode().shiftHeldSingle).toBe(true);
   };
   const unlatch = () => {
-    sim.cc('L', CC_SHIFT, 127);
-    sim.cc('L', CC_SHIFT, 0);
-    expect(__test_mode().shiftLatched).toBe(false);
+    sim.cc('L', CC_SHIFT, 0); // release
+    expect(__test_mode().shiftHeldSingle).toBe(false);
   };
   const sceneBtn = (idx: number) => sim.cc('L', sceneCc(idx), 127);
   // COPY a whole scene: arm COPY under shift, release shift (COPY stays armed —
