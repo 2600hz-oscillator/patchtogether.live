@@ -209,16 +209,39 @@ export interface LaunchpadPort {
   name: string;
 }
 
-/** Is a port name a Launchpad Mini Mk3 **MIDI** port (not the DAW port)? The
- *  owner confirmed the port is named like `LPMiniMK3 MIDI`. We match the
- *  family loosely (case-insensitive `launchpad`/`lpmini`/`mk3`) AND require the
- *  word "MIDI" while EXCLUDING "DAW" — programmer mode lives on the MIDI port. */
+/** Is a port name a Launchpad Mini Mk3 candidate for the **MIDI/programmer**
+ *  side (i.e. NOT the DAW/Session control-surface port)? Matches the family
+ *  loosely (case-insensitive `launchpad`/`lpmini`/`mk3`) and excludes any port
+ *  whose NAME self-identifies as the DAW/Session port.
+ *
+ *  IMPORTANT — this is a per-NAME predicate, so it can only drop ports that
+ *  NAME THEMSELVES as DAW/Session, which is what macOS CoreMIDI / Linux ALSA do
+ *  ("LPMiniMK3 DAW In" vs "LPMiniMK3 MIDI In"). On Windows/WinMM BOTH the
+ *  Session AND the programmer port are named "LPMiniMK3 MIDI" — the programmer
+ *  one only distinguished by a "MIDIIN2/MIDIOUT2" prefix — so the un-numbered
+ *  Session primary is indistinguishable BY NAME ALONE here: it passes this
+ *  predicate and is dropped at the SET level in enumerateLaunchpadPorts (see
+ *  hasSecondaryInterfaceMarker). Programmer mode + pad data live on the MIDI
+ *  (Windows: the numbered) port, never the DAW port. */
 export function isLaunchpadMidiPortName(name: string | null | undefined): boolean {
   const n = (name ?? '').toLowerCase();
   const isLaunchpad = n.includes('launchpad') || n.includes('lpmini') || n.includes('lp mini') || n.includes('mk3');
   if (!isLaunchpad) return false;
-  if (n.includes('daw')) return false; // the DAW port — not programmer mode
-  return n.includes('midi') || (!n.includes('daw')); // prefer explicit MIDI, accept the non-DAW one
+  if (n.includes('daw') || n.includes('session')) return false; // control-surface port, not programmer mode
+  return true;
+}
+
+/** Does this port name carry a Windows/WinMM **secondary-interface** marker —
+ *  the "MIDIIN2 (...)" / "MIDIOUT2 (...)" prefix WinMM prepends to the 2nd (3rd,
+ *  …) USB-MIDI interface of a multi-port device? The Launchpad Mini Mk3 exposes
+ *  two interfaces BOTH named "LPMiniMK3 MIDI" on Windows; the FIRST (un-numbered)
+ *  is the DAW/Session control port and the SECOND ("MIDIIN2 (LPMiniMK3 MIDI)" /
+ *  "MIDIOUT2 (LPMiniMK3 MIDI)") is the User/**Programmer** port that carries the
+ *  pad data. So when numbered siblings exist we keep ONLY them. macOS CoreMIDI /
+ *  Linux ALSA use explicit "DAW"/"MIDI" names with NO numeric marker → false
+ *  there (the macOS "LPMiniMK3 MIDI In" has no trailing digit). */
+export function hasSecondaryInterfaceMarker(name: string | null | undefined): boolean {
+  return /midi\s*(in|out)\s*[2-9]/i.test(name ?? '');
 }
 
 /**
@@ -244,13 +267,29 @@ export function isLaunchpadMidiPortName(name: string | null | undefined): boolea
  */
 export function enumerateLaunchpadPorts(): LaunchpadPort[] {
   if (!access) return [];
-  const ins: MidiInputLike[] = [];
+  let ins: MidiInputLike[] = [];
   for (const inp of access.inputs.values()) {
     if (isLaunchpadMidiPortName(inp.name)) ins.push(inp);
   }
-  const outs: MidiOutputLike[] = [];
+  let outs: MidiOutputLike[] = [];
   for (const o of access.outputs.values()) {
     if (isLaunchpadMidiPortName(o.name)) outs.push(o);
+  }
+  // WINDOWS/WinMM: the Launchpad exposes TWO interfaces both named "LPMiniMK3
+  // MIDI" (no "DAW" token to exclude the control port at the name level). The
+  // programmer + pad-data port is the SECOND, numbered "MIDIIN2/MIDIOUT2 (...)";
+  // the un-numbered one is the DAW/Session port. When numbered siblings exist,
+  // keep ONLY them — otherwise the index pairing below binds the DAW input while
+  // the LED output still reaches the programmer side, so pads light but presses
+  // never arrive (the real "buttons dead on Windows, works on macOS" bug: macOS
+  // CoreMIDI names them "DAW"/"MIDI" so the name-level exclusion suffices, but
+  // Windows needs this set-level drop). macOS/Linux have no numeric markers →
+  // .some(...) is false → both stay unfiltered (no-op).
+  if (ins.some((p) => hasSecondaryInterfaceMarker(p.name))) {
+    ins = ins.filter((p) => hasSecondaryInterfaceMarker(p.name));
+  }
+  if (outs.some((p) => hasSecondaryInterfaceMarker(p.name))) {
+    outs = outs.filter((p) => hasSecondaryInterfaceMarker(p.name));
   }
   const n = Math.min(ins.length, outs.length);
   const out: LaunchpadPort[] = [];
