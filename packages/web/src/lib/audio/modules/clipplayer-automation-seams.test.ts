@@ -340,6 +340,34 @@ describe('clipplayer automation seams (factory-level, ordered engine log)', () =
     expect(pins[pins.length - 1]!.toValue).toBeGreaterThan(0.5); // A's high envelope, not zero
   });
 
+  it('SES→SONG entry pins the outgoing automated param (no ghost-tail freeze on song entry)', async () => {
+    seedVca('va', 0.5);
+    seedPlayer({ [clipIndex(0, 0)]: noteWithAuto('va', ENV_A) }, 0);
+    seedTimelorde(1);
+    const ctx = new FakeAudioContext();
+    const { engine, log } = makeFakeEngine(ctx);
+    setActiveEngine(engine);
+    const handle = await build(ctx);
+
+    run(ctx, 0, 0.6); // A playing (its automation is live mid-loop)
+    const mark = log.length;
+    // Switch SESSION → SONG. resetSongMode must HOLD-LAST-VALUE each lane's
+    // automation clip BEFORE it drops the live clip (authoritative song entry) —
+    // else the param rides a stale ~200 ms ramp then freezes at an arbitrary
+    // phase. An immediate seam ⇒ an explicit resting pin.
+    (livePatch.nodes[NODE_ID]!.data as { clipMode?: string }).clipMode = 'song';
+    run(ctx, 0.6, 0.7);
+
+    const pins = log.slice(mark).filter(
+      (e): e is Extract<EngineCall, { kind: 'hold' }> =>
+        e.kind === 'hold' && e.nodeId === 'va' && e.toValue != null,
+    );
+    expect(pins.length, 'SES→SONG entry pinned the outgoing automated param').toBe(1);
+    // A's envelope (0.6..0.8) — a real resting value, not a snap to zero/default.
+    expect(pins[0]!.toValue).toBeGreaterThan(0.5);
+    handle.dispose();
+  });
+
   it('CO-DRIVE: a note clip with NOTES + sibling automation emits notes AND drives its auto tracks in the same lane', async () => {
     seedVca('va', 0.5);
     const cell = noteWithAuto('va', ENV_A);

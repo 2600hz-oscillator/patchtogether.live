@@ -67,6 +67,13 @@ export const ENVELOPE_VERSION = 2 as const;
  * a deliberate, narrow opt-in, not a global filter. */
 const TRANSIENT_DATA_FIELDS_BY_TYPE: Readonly<Record<string, readonly string[]>> = {
   doom: ['mpMode', 'mpLive', 'players', 'pending'],
+  // CLIPPLAYER record-ARM state is per-session, never topology: a saved patch
+  // that reloaded ARMED would REPLACE-clear its own printed SONG on first Play
+  // (a legacy `songRec.armed` with no `recorderId` records for ANY client), and
+  // a reloaded arranger/KEYS arm would re-record. These mirror the ARM subset of
+  // CLIP_PLAYER_TRANSIENT_DATA_FIELDS (the duplicate-scrub); `song` itself is
+  // CONTENT and persists.
+  clipplayer: ['songRec', 'recording', 'noteRec'],
 };
 
 /** Strip transient fields from `data` for the given module type (no-op when the

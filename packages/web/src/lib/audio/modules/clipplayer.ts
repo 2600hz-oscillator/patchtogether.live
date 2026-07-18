@@ -102,6 +102,7 @@ import {
 import {
   ensureSongContainers,
   mergeSongNotes,
+  MAX_SONG_NOTE_EVENTS,
   coerceSongRecState,
   songNoteChannel,
   songNotesInRange,
@@ -479,6 +480,11 @@ export const clipplayerDef: AudioModuleDef = {
     const songNoteBuf: SongNoteEvent[][] = Array.from({ length: CLIP_LANES }, () => []);
     let songCommitAtBeat = SONG_COMMIT_BEATS;
     let prevSongArmed = false;
+    // Client-local CAP-HIT flag (mirrors controller.capHit for the automation
+    // track cap): set true when a commit would truncate a lane's printed note
+    // channel at MAX_SONG_NOTE_EVENTS, so the card can warn politely. Consumed +
+    // cleared by the card via read('songCapHit'); reset on a fresh REPLACE take.
+    let songCapHit = false;
 
     // --- SCENE REPEATS (per-peer runtime tracking; clip-scene-repeats.ts) ---
     // repBeatClock: beats elapsed while running — like songBeat but NEVER reset
@@ -855,6 +861,12 @@ export const clipplayerDef: AudioModuleDef = {
       songSchedCursor = 0;
       for (let L = 0; L < LANES; L++) {
         silenceLane(L, ctx.currentTime);
+        // Param-jump policy (SONG entry seam): a lane playing a SESSION clip with
+        // sibling automation must HOLD-LAST-VALUE before its clip is dropped —
+        // else the assigned params ride a stale ~200 ms ramp then freeze at an
+        // arbitrary phase. Immediate seam (cancel + pin at now); runs BEFORE
+        // `active` flips, matching the transport-stop / dispose guards.
+        holdLaneAutomation(L, lanes[L].active, null, null);
         lanes[L].active = null; // song time drives the printed channels, not clips
       }
     }
@@ -865,11 +877,21 @@ export const clipplayerDef: AudioModuleDef = {
      *  recorder client ever fills `songNoteBuf` (the capture path gates on
      *  isSongRecorder), so a non-recorder's buffer is always empty → this is a
      *  no-op for them. Safe to call on disarm/stop/dispose where the CURRENT
-     *  armed/recorder flags have already cleared. */
-    function flushSongNotes(): void {
+     *  armed/recorder flags have already cleared.
+     *
+     *  PRINTED == SOUNDED: the record tee captures each step at SCHEDULE time,
+     *  stamping it at its FUTURE sound-beat (up to ~LOOKAHEAD_S ahead of the
+     *  current `songBeat`). Only onsets that have ALREADY sounded (`beat <=
+     *  songBeat`) are committed here; the in-flight lookahead tail (`beat >
+     *  songBeat`) is RETAINED in the buffer for the next commit — EXCEPT when
+     *  `dropUnsounded` (a hard transport STOP / dispose), where `silenceLane`
+     *  cancels that same lookahead audio, so the un-sounded tail is DROPPED and
+     *  never printed (no phantom notes). */
+    function flushSongNotes(dropUnsounded = false): void {
       let any = false;
       for (const b of songNoteBuf) if (b.length) { any = true; break; }
       if (!any) return;
+      const soundedThrough = songBeat; // only onsets at/before now have SOUNDED
       const tx =
         typeof (ydoc as { transact?: unknown }).transact === 'function'
           ? (fn: () => void) => ydoc.transact(fn, SONG_COMMIT_ORIGIN)
@@ -881,10 +903,21 @@ export const clipplayerDef: AudioModuleDef = {
           for (let L = 0; L < LANES; L++) {
             const buf = songNoteBuf[L]!;
             if (!buf.length) continue;
-            const existing = songNoteChannel(s, L)?.events ?? [];
-            // PER-LANE key write (disjoint from other lanes + the clip maps).
-            s.notes![String(L)] = { events: mergeSongNotes(existing, buf) };
+            // Partition at the sounded watermark: commit what SOUNDED, retain the
+            // un-sounded lookahead tail (or drop it on a hard stop/teardown).
+            const sounded: SongNoteEvent[] = [];
+            const tail: SongNoteEvent[] = [];
+            for (const e of buf) (e.beat <= soundedThrough ? sounded : tail).push(e);
+            if (sounded.length) {
+              const existing = songNoteChannel(s, L)?.events ?? [];
+              // CAP surface: mergeSongNotes silently drops the newest past the
+              // ceiling — flag it (client-local) so the card can warn.
+              if (existing.length + sounded.length > MAX_SONG_NOTE_EVENTS) songCapHit = true;
+              // PER-LANE key write (disjoint from other lanes + the clip maps).
+              s.notes![String(L)] = { events: mergeSongNotes(existing, sounded) };
+            }
             buf.length = 0;
+            if (!dropUnsounded && tail.length) buf.push(...tail); // retain the lookahead
           }
         });
       });
@@ -1373,6 +1406,7 @@ export const clipplayerDef: AudioModuleDef = {
             resetSongOrigin();
           }
           for (const b of songNoteBuf) b.length = 0;
+          songCapHit = false; // fresh take → no cap warning yet
           songCommitAtBeat = songBeat + SONG_COMMIT_BEATS;
         }
         // SONG-REC disarm edge → punch out: commit the in-flight partial print.
@@ -1389,7 +1423,14 @@ export const clipplayerDef: AudioModuleDef = {
         if (mode === 'song' && (prevClipMode !== 'song' || (running && !prevRunning))) {
           resetSongMode();
         } else if (prevClipMode === 'song' && mode !== 'song') {
-          for (let L = 0; L < LANES; L++) silenceLane(L, ctx.currentTime);
+          for (let L = 0; L < LANES; L++) {
+            silenceLane(L, ctx.currentTime);
+            // Param-jump guard (SONG leave seam), matching the entry/stop/dispose
+            // seams. A no-op while song playback drove the outputs directly (lanes
+            // hold no `active` clip in SONG mode), but correct + defensive should
+            // a future path leave a lane active on the way out.
+            holdLaneAutomation(L, lanes[L].active, null, null);
+          }
           songSchedCursor = 0;
         }
         prevClipMode = mode;
@@ -1407,9 +1448,11 @@ export const clipplayerDef: AudioModuleDef = {
           // startBeat at the restart boundary via the tracker maintenance below.
           if (repTrack) repTrack.started = false;
         } else if (!running && prevRunning) {
-          // SONG-REC: a transport stop punches out the in-flight print (commit
-          // the buffered onsets at the stop instant, before the take goes idle).
-          flushSongNotes();
+          // SONG-REC: a transport stop punches out the in-flight print. DROP the
+          // un-sounded lookahead tail (`beat > songBeat`) — silenceLane below
+          // cancels that same scheduled audio, so committing it would print notes
+          // that never sounded (printed == sounded).
+          flushSongNotes(true);
           // SCENE REPEATS: a stale ctx-time boundary floor must not gate the
           // queue after a stop/start cycle re-anchors everything.
           advanceFloorUntil = null;
@@ -2003,6 +2046,15 @@ export const clipplayerDef: AudioModuleDef = {
         if (key === 'songArmed') return songArmed(liveData()) ? 1 : 0;
         if (key === 'songRecMode') return songRecMode(liveData()) === 'overdub' ? 1 : 0;
         if (key === 'songNoteCount') return songNoteCount(liveData()?.song as SongData | undefined);
+        // CAP-HIT surface (client-local, CONSUME-AND-CLEAR — mirrors the
+        // automation controller's capHit via consumeTrackCapHitFor): returns 1
+        // once when a print commit truncated a lane's note channel at
+        // MAX_SONG_NOTE_EVENTS, then clears, so the card flashes a brief warning.
+        if (key === 'songCapHit') {
+          const hit = songCapHit;
+          songCapHit = false;
+          return hit ? 1 : 0;
+        }
         if (key === 'songLengthBeats') return songLengthBeats(liveData()?.song as SongData | undefined, 4);
         if (key === 'songHasContent') return songHasContent(liveData()?.song as SongData | undefined) ? 1 : 0;
         // SCENE REPEATS live countdown (runtime-only render reads — never
@@ -2044,8 +2096,10 @@ export const clipplayerDef: AudioModuleDef = {
       },
       dispose() {
         alive = false;
-        // SONG-REC: commit any in-flight print before teardown (punch-out).
-        flushSongNotes();
+        // SONG-REC: commit any in-flight print before teardown (punch-out). Drop
+        // the un-sounded lookahead tail — teardown cancels that scheduled audio,
+        // so it must not be printed (printed == sounded).
+        flushSongNotes(true);
         // Param-jump policy: deleting the player while automation plays must not
         // leave the target params riding a ~200 ms ghost tail then freezing at an
         // arbitrary phase — hold-last-value every lane's playing automation clip

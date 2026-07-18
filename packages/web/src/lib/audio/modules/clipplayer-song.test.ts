@@ -97,7 +97,7 @@ class FakeAudioContext {
 
 import { clipplayerDef } from './clipplayer';
 import { clipIndex, type NoteClipRecord } from './clip-types';
-import { coerceSongData, type SongData } from './clip-song';
+import { coerceSongData, MAX_SONG_NOTE_EVENTS, type SongData } from './clip-song';
 
 const NODE_ID = 'cp1';
 
@@ -227,6 +227,78 @@ describe('clipplayer SONG-REC: print the emitted performance', () => {
     (livePatch.nodes[NODE_ID]!.data as { songRec?: unknown }).songRec = null;
     run(ctx, 3.5, 3.6);
     expect(songOf().notes?.['0']?.events.length ?? 0).toBeGreaterThan(0); // fresh take
+  });
+});
+
+describe('clipplayer SONG-REC punch-out: printed == sounded', () => {
+  // A DENSE clip (a note on every step) so onsets sit ~0.25 beats apart — inside
+  // the ~0.4-beat LOOKAHEAD window there is always a FUTURE onset scheduled but
+  // not-yet-sounded, i.e. the exact tail the old flush printed as a phantom.
+  function denseClip(midi = 60): NoteClipRecord {
+    return {
+      kind: 'note',
+      steps: [0, 1, 2, 3].map((step) => ({ step, midi, velocity: 100, lengthSteps: 1 })),
+      lengthSteps: 4,
+      root: 48,
+      loop: true,
+    };
+  }
+
+  it('a transport STOP prints NO onset past the stop beat (no phantom lookahead tail)', async () => {
+    seed(
+      { stepDiv: 2, quantize: 0, octave: 0, gateLength: 0.9, snh: 1 },
+      {
+        clips: { [clipIndex(0, 0)]: denseClip(60) },
+        queued: lane8(0, 0, null),
+        clipMode: 'session',
+        songRec: { armed: true, mode: 'replace' }, // no recorderId → this client records
+      },
+    );
+    seedTimelorde(1);
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+    // Under 4 beats so no per-bar commit fires — the WHOLE take (incl. the
+    // uncommitted lookahead tail) is still buffered at the stop instant.
+    run(ctx, 0, 1.55);
+    // Punch out via a REAL transport STOP (not songRec = null): silenceLane
+    // cancels the lookahead audio, so those onsets must NOT be printed.
+    (livePatch.nodes['tl']!.params as { running: number }).running = 0;
+    run(ctx, 1.55, 1.6); // the stop tick (flush(true) + silence)
+
+    const songBeatStop = handle.read!('songBeat') as number;
+    const events = songOf().notes?.['0']?.events ?? [];
+    expect(events.length, 'the sounded onsets were printed').toBeGreaterThan(4);
+    const maxBeat = Math.max(...events.map((e) => e.beat));
+    // THE FIX: every printed onset sounded (beat <= the stop beat). The old flush
+    // committed the whole buffer, printing lookahead onsets with beat > stop-beat
+    // that silenceLane had just cancelled.
+    expect(maxBeat, 'no printed onset past the stop beat').toBeLessThanOrEqual(songBeatStop + 1e-6);
+  });
+
+  it('cap-hit: a commit that would exceed MAX_SONG_NOTE_EVENTS sets songCapHit (consume-and-clear)', async () => {
+    // Pre-seed a channel AT the ceiling; OVERDUB keeps it, so the next commit's
+    // merge overflows the cap → the truncation flag surfaces.
+    const atCap = Array.from({ length: MAX_SONG_NOTE_EVENTS }, (_, i) => ({
+      beat: i * 0.001,
+      midi: 60,
+    }));
+    seed(
+      { stepDiv: 2, quantize: 0, octave: 0, gateLength: 0.9, snh: 1 },
+      {
+        clips: { [clipIndex(0, 0)]: noteClip(72) },
+        queued: lane8(0, 0, null),
+        clipMode: 'session',
+        songRec: { armed: true, mode: 'overdub' }, // keep the pre-seeded print
+        song: { v: 1, lengthBeats: 0, loop: true, notes: { '0': { events: atCap } } },
+      },
+    );
+    seedTimelorde(1);
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+    expect(handle.read!('songCapHit'), 'no cap warning before any over-cap commit').toBe(0);
+    run(ctx, 0, 4.4); // a per-bar commit merges new onsets past the ceiling
+    expect(handle.read!('songCapHit'), 'cap-hit surfaced after the over-cap commit').toBe(1);
+    expect(handle.read!('songCapHit'), 'consume-and-clear (like controller.capHit)').toBe(0);
   });
 });
 
