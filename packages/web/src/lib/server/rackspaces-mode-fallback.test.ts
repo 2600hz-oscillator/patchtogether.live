@@ -83,6 +83,37 @@ vi.mock('./db.js', async () => {
 });
 
 describe('rackspaces mode fallback (pre-005 database — the dev login 500)', () => {
+  // REGRESSION for the /r/[id] + dashboard 500 (2026-07-11 → 2026-07-18): the
+  // READ paths use qualified `r.mode`, which on a pre-005 DB (PG17, = Neon)
+  // throws 42809 "ordered-set aggregate mode" — NOT 42703. The original
+  // classifier only caught 42703, so reads 500'd on every deployed tier for a
+  // week. The pre-existing test below MASKED it by always create()-ing first
+  // (the bare-`mode` INSERT throws 42703 → latches → reads never surface 42809).
+  // THIS test does a READ FIRST with a fresh latch — exactly a cold isolate
+  // serving /r/[id] — so it exercises the real 42809 path. Pre-fix it throws
+  // (500); post-fix it latches + serves dawless.
+  it('READ-FIRST (no prior write to latch): getRackspace + list degrade, not 500', async () => {
+    if (!pgAvailable) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[mode-fallback] SKIP — no Postgres reachable (${probeError?.message}). ` +
+          'CI must run this (PG_TEST_URL); a silent skip would mask the /r/[id]-500 class.',
+      );
+      expect(process.env.CI ?? '').toBe(''); // hard-fail on CI, skip locally
+      return;
+    }
+    const { getRackspace, listRackspacesForUser, __resetModeColumnLatchForTests } =
+      await import('./rackspaces.js');
+    __resetModeColumnLatchForTests(); // fresh isolate: a READ is the first query
+
+    // The qualified `r.mode` read throws 42809 pre-fix (uncaught → 500). Both
+    // must RESOLVE (never reject): unknown rack → null, empty owner list → [].
+    await expect(
+      getRackspace('11111111-1111-1111-1111-111111111111'),
+    ).resolves.toBeNull();
+    await expect(listRackspacesForUser('nobody-user')).resolves.toEqual([]);
+  });
+
   it('create → list → get → join all serve dawless instead of throwing 42703', async () => {
     if (!pgAvailable) {
       // eslint-disable-next-line no-console
@@ -146,5 +177,34 @@ describe('rackspaces mode fallback (pre-005 database — the dev login 500)', ()
     const created = await createRackspace('user_c', 'post-005 rack', 'workflow');
     expect(created.status).toBe('ok');
     if (created.status === 'ok') expect(created.rackspace.mode).toBe('workflow');
+  });
+});
+
+// Deterministic, DB-free guard on the classifier itself — runs in the pure unit
+// lane on every machine/PG version. This is the piece that would have caught the
+// /r/[id] 500: 42809 (the qualified-`r.mode` ordered-set-aggregate error) MUST
+// classify as "mode column missing", while an UNRELATED ordered-set aggregate
+// (percentile_cont/…) must NOT be swallowed.
+describe('isMissingModeColumnError — both mode-absent SQLSTATEs, nothing else', () => {
+  it('catches 42703 (bare mode) + 42809 (r.mode→mode(r) aggregate); rejects unrelated', async () => {
+    const { isMissingModeColumnError } = await import('./rackspaces.js');
+    expect(isMissingModeColumnError({ code: '42703' })).toBe(true);
+    expect(
+      isMissingModeColumnError({
+        code: '42809',
+        message: 'WITHIN GROUP is required for ordered-set aggregate mode',
+      }),
+    ).toBe(true);
+    // An unrelated ordered-set aggregate must fall through (never swallowed).
+    expect(
+      isMissingModeColumnError({
+        code: '42809',
+        message: 'WITHIN GROUP is required for ordered-set aggregate percentile_cont',
+      }),
+    ).toBe(false);
+    expect(isMissingModeColumnError({ code: '42P01' })).toBe(false); // table missing
+    expect(isMissingModeColumnError(new Error('boom'))).toBe(false);
+    expect(isMissingModeColumnError(null)).toBe(false);
+    expect(isMissingModeColumnError('nope')).toBe(false);
   });
 });

@@ -81,19 +81,42 @@ function rackFromRow(row: RackRow): Rackspace {
 
 // ---- Pre-005 resilience (racks.mode column missing) -----------------------
 // #1050 shipped code reading `racks.mode` while 005_rackspace_mode.sql is a
-// MANUAL migration — main auto-deployed to dev ahead of the column and every
-// authenticated dashboard load threw 42703 (login appeared broken with a 500).
-// The data layer must never depend on deploy-before-migrate ordering: on the
-// first undefined-column error we LATCH legacy mode (one loud tagged log
-// line), serve `mode: 'dawless'` from column-free queries, and stay latched
-// until the process restarts after the migration lands. Same degrade doctrine
-// as the relay's `relay_journal_table_missing` (42P01) path.
+// MANUAL migration — main auto-deployed to dev ahead of the column. The data
+// layer must never depend on deploy-before-migrate ordering: on the first
+// "mode column absent" error we LATCH legacy mode (one loud tagged log line),
+// serve `mode: 'dawless'` from column-free queries, and stay latched until the
+// process restarts after the migration lands. Same degrade doctrine as the
+// relay's `relay_journal_table_missing` (42P01) path.
+//
+// TWO SQLSTATEs mean the same thing, depending on the query shape:
+//   • BARE `mode` (write column lists, e.g. INSERT ... (mode)) → 42703
+//     undefined_column.
+//   • QUALIFIED `r.mode` (EVERY read path: /r/[id], the dashboard list,
+//     api/rackspaces) → when racks.mode is absent PG applies functional-notation
+//     equivalence and rewrites `r.mode` → `mode(r)`; `mode` is a built-in
+//     ORDERED-SET AGGREGATE, so it raises 42809 "WITHIN GROUP is required …
+//     aggregate mode" (reproduced on PG 17, which Neon runs). The original
+//     42703-only check MISSED 42809 → the fallback never fired → HTTP 500 on
+//     /r/[id] + dashboard on every deployed tier for a week (the deploy stayed
+//     red the whole time on the /r/[id] live-smoke canary). Writes latched fine
+//     (bare `mode` → 42703), so only READS broke — and the pre-existing
+//     real-DB test masked it by always create()-ing first (latching via 42703
+//     before any read could surface 42809). See the read-first regression.
 let modeColumnMissing = false;
 
-function isUndefinedColumnError(err: unknown): boolean {
-  return (
-    typeof err === 'object' && err !== null && (err as { code?: unknown }).code === '42703'
-  );
+/** True when an error means "racks.mode is absent — apply 005". Covers BOTH the
+ *  bare-`mode` 42703 (writes) and the qualified-`r.mode` → `mode(r)` ordered-set
+ *  aggregate 42809 (reads). The 42809 branch is pinned to the "mode" aggregate
+ *  message so an unrelated ordered-set-aggregate error is never swallowed. */
+export function isMissingModeColumnError(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const code = (err as { code?: unknown }).code;
+  if (code === '42703') return true; // undefined_column (bare `mode`)
+  if (code === '42809') {
+    const msg = err instanceof Error ? err.message : String((err as { message?: unknown }).message ?? '');
+    return /\baggregate mode\b/i.test(msg); // `r.mode` → mode(r) ordered-set aggregate
+  }
+  return false;
 }
 
 function latchModeColumnMissing(where: string, err: unknown): void {
@@ -108,8 +131,9 @@ function latchModeColumnMissing(where: string, err: unknown): void {
   modeColumnMissing = true;
 }
 
-/** Run the mode-aware query; on 42703 latch + fall back to the column-free
- *  legacy query (rows read as mode='dawless' via normalizeRackMode(null)). */
+/** Run the mode-aware query; on a "mode column absent" error (42703 writes /
+ *  42809 reads) latch + fall back to the column-free legacy query (rows read as
+ *  mode='dawless' via normalizeRackMode(null)). */
 async function withModeFallback<T>(
   where: string,
   modern: () => Promise<T>,
@@ -119,7 +143,7 @@ async function withModeFallback<T>(
     try {
       return await modern();
     } catch (err) {
-      if (!isUndefinedColumnError(err)) throw err;
+      if (!isMissingModeColumnError(err)) throw err;
       latchModeColumnMissing(where, err);
     }
   }
