@@ -314,10 +314,11 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   shapegen: 'VRT baseline pending; first-slice PR — unit + e2e provide coverage. Capture darwin/linux baselines once the __shapegenVrtSeed deterministic scene path is wired.',
   // SIX STRUM — 6-voice guitar/bass/harp instrument (first-slice PR). The card
   // is static deterministic chrome (4 fader bands + selectors + STRUM button +
-  // per-string PatchPanel), so it IS baseline-able — pending the darwin/linux
-  // capture pass. Coverage = sixstrum-dsp/-tuning (26) + sixstrum.test (7,
-  // worklet wiring incl. anti-silent-poly) + ART profile + e2e/tests/
-  // sixstrum-poly.spec.ts (real SEQUENCER→poly/strum→audible RMS).
+  // per-string PatchPanel + per-knob CV sections), so it IS baseline-able —
+  // pending the darwin/linux capture pass. Coverage = sixstrum-dsp/-tuning (26)
+  // + sixstrum.test (12: worklet wiring incl. anti-silent-poly + the per-knob
+  // CV scaling/quantization + CV inputsMap→AudioParam routing) + ART profile +
+  // e2e/tests/sixstrum-poly.spec.ts (real SEQUENCER→poly/strum→audible RMS).
   sixstrum: 'VRT baseline pending; card is static chrome — unit (sixstrum-dsp/-tuning/worklet-wiring) + ART + e2e/tests/sixstrum-poly.spec.ts provide coverage. Capture darwin/linux baselines via vrt-update.yml in a follow-up.',
   // MIRRORPOOL — maximally look-affecting WebGL water video source, HELD for
   // owner preview: no VRT baseline is pinned pre-approval. Coverage meanwhile:

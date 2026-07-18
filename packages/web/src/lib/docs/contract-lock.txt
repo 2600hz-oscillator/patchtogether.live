@@ -2758,7 +2758,11 @@ sidecar stereo audio_l_out+audio_r_out
 sidecar stereo sc_l_in+sc_r_in
 sixstrum meta domain=audio
 sixstrum in accent cv
+sixstrum in body_cv cv param=body cvScale=linear
 sixstrum in chord pitch
+sixstrum in chord_cv cv param=quality cvScale=discrete
+sixstrum in dir_cv cv param=strumDir cvScale=discrete
+sixstrum in grain_cv cv param=pickGrain cvScale=log
 sixstrum in mute1 gate edge=gate
 sixstrum in mute2 gate edge=gate
 sixstrum in mute3 gate edge=gate
@@ -2766,12 +2770,15 @@ sixstrum in mute4 gate edge=gate
 sixstrum in mute5 gate edge=gate
 sixstrum in mute6 gate edge=gate
 sixstrum in poly polyPitchGate
+sixstrum in spread_cv cv param=spread cvScale=linear
+sixstrum in strum_cv cv param=strumSpread cvScale=linear
 sixstrum in strum1 gate edge=trigger
 sixstrum in strum2 gate edge=trigger
 sixstrum in strum3 gate edge=trigger
 sixstrum in strum4 gate edge=trigger
 sixstrum in strum5 gate edge=trigger
 sixstrum in strum6 gate edge=trigger
+sixstrum in tone_cv cv param=pickTone cvScale=linear
 sixstrum out out audio
 sixstrum param attack 0.0005..5 log default=0.003 unit=s
 sixstrum param body 0..1 linear default=0.35

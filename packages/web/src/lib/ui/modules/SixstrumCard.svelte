@@ -3,8 +3,9 @@
   // layout (karplus-family chrome) so it fits its rack tier: each band packs
   // three width-weighted groups of faders, with the TUNING / STRUM-DIR / CHORD
   // discrete selectors shown as name readouts + a STRUM audition button. The
-  // rear PatchPanel groups the 15 inputs per string (Strum+Mute) + Poly/Chord/
-  // Accent + the mono Out.
+  // rear PatchPanel groups the inputs per string (Strum+Mute) + Poly/Chord/
+  // Accent + the per-knob CV modulators (PICK: tone/grain/spread/body · STRUM:
+  // roll/dir/chord) + the mono Out.
   //
   //   ┌ STRINGS ───────────────┬ PICK ──────────┬ TUNING ┐
   //   │ Reg Ring Matl Pos Stf   │ Tone Grn Spr Bdy│ [guitar]│
@@ -97,11 +98,26 @@
     { id: 'chord', label: 'CHORD', cable: 'pitch' },
     { id: 'accent', label: 'ACC', cable: 'cv' },
   ];
+  // Per-knob CV modulators, grouped under the on-card control headers (PICK ·
+  // STRUM) they modulate — the karplus/kickdrum sectioned-rear-panel convention.
+  const pickCvInputs: PortDescriptor[] = [
+    { id: 'tone_cv', label: 'TONE', cable: 'cv' },
+    { id: 'grain_cv', label: 'GRAIN', cable: 'cv' },
+    { id: 'spread_cv', label: 'SPREAD', cable: 'cv' },
+    { id: 'body_cv', label: 'BODY', cable: 'cv' },
+  ];
+  const strumCvInputs: PortDescriptor[] = [
+    { id: 'strum_cv', label: 'ROLL', cable: 'cv' },
+    { id: 'dir_cv', label: 'DIR', cable: 'cv' },
+    { id: 'chord_cv', label: 'CHORD QUAL', cable: 'cv' },
+  ];
   const outOutputs: PortDescriptor[] = [{ id: 'out', label: 'OUT', cable: 'audio' }];
 
   const sections = [
     ...stringSections,
     { label: 'Play', inputs: playInputs },
+    { label: 'Pick', inputs: pickCvInputs },
+    { label: 'Strum', inputs: strumCvInputs },
     { label: 'Out', outputs: outOutputs },
   ];
 </script>
