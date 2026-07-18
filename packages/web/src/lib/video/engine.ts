@@ -397,6 +397,36 @@ export class VideoEngine implements DomainEngine {
   private nodeMeta = new Map<string, ModuleNode>();
   private edges = new Map<string, Edge>();
 
+  // ── Manual BASE value vs TRANSIENT modulation (clip-automation + CV) ──
+  //
+  // A video param is a SINGLE uniform value — unlike an AudioParam it has no
+  // intrinsic-plus-summed-modulation split, so a transient writer that
+  // overwrites the uniform REPLACES the value the user dialed in. MANUAL edits
+  // (VideoEngine.setParam, driven by the reconciler off node.params) are the
+  // BASE. Clip-automation PLAYBACK (scheduleParam / holdParam / setDisplayParam,
+  // newly implemented below) and cross-domain CV bridges are TRANSIENT drivers:
+  // they push a value onto the handle WITHOUT changing the base.
+  //
+  // THE STUCK-CONTROL BUG this prevents: when a transient driver stops (the
+  // automation clip is deleted / the lane stops / a CV cable is unpatched) the
+  // uniform is left at the LAST driven value. The reconciler will NOT re-push
+  // node.params — it dedups against its own applied snapshot, which never
+  // changed — so the on-screen fader is dead: moving it only recovers on a
+  // value DISTINCT from the last applied one, and against a per-frame driver it
+  // never recovers at all. Cure: every param under transient drive records the
+  // frame its modulation is valid THROUGH; each frame we RESTORE the base for
+  // any key whose modulation went stale (no driver refreshed it), so full
+  // manual control ALWAYS returns the instant a driver stops. One mechanism
+  // covers both automation and CV — the shared video-render seam.
+  private baseParams = new Map<string, number>(); // key → last manual/base value
+  private transientMods = new Map<string, { nodeId: string; paramId: string; untilFrame: number }>();
+  /** How many render frames a single transient write keeps the param under
+   *  modulation. Automation display ticks (~40fps) + CV bridges (per frame)
+   *  refresh well inside this, so an ACTIVE driver never goes stale; when it
+   *  STOPS the base restores ~this many frames later (~150ms — imperceptible,
+   *  and clear of a GC/scheduler hiccup that would otherwise flicker). */
+  private static readonly TRANSIENT_HOLD_FRAMES = 10;
+
   /**
    * Cross-domain CV bridges. Each entry samples one audio-side AnalyserNode
    * once per video frame and writes the value into a target video module's
@@ -665,6 +695,14 @@ export class VideoEngine implements DomainEngine {
     }
     this.nodes.set(node.id, handle);
     this.nodeMeta.set(node.id, node);
+    // Seed the manual BASE for every declared param (node.params where present,
+    // else the def default) so a param that gets automation/CV-modulated before
+    // the user ever touches it still has a value to restore to when the driver
+    // stops (see baseParams / sweepStaleTransients).
+    for (const p of vdef.params) {
+      const v = (node.params?.[p.id] ?? p.defaultValue) as number | undefined;
+      if (typeof v === 'number') this.baseParams.set(this.paramKey(node.id, p.id), v);
+    }
     // Pull-eval SPAWN GRACE: a fresh node starts watched for one TTL so it
     // renders from frame 1 while its card mounts and begins presenting
     // (the blit/read marks then keep it alive — or it decays if nothing
@@ -709,6 +747,11 @@ export class VideoEngine implements DomainEngine {
     handle.dispose();
     this.nodes.delete(nodeId);
     this.nodeMeta.delete(nodeId);
+    // Drop this node's base + transient param bookkeeping (keys are prefixed
+    // with the node id).
+    const prefix = `${nodeId} `;
+    for (const k of this.baseParams.keys()) if (k.startsWith(prefix)) this.baseParams.delete(k);
+    for (const k of this.transientMods.keys()) if (k.startsWith(prefix)) this.transientMods.delete(k);
     this.mouseState.delete(nodeId);
     this.managedFbos.delete(nodeId);
     this.watchedAt.delete(nodeId);
@@ -728,8 +771,102 @@ export class VideoEngine implements DomainEngine {
     if (this.edges.delete(edgeId)) this.topoStale = true;
   }
 
+  /**
+   * MANUAL param write — the reconciler's node.params → engine seam (and any
+   * card-direct engine.setParam). This is the BASE value: it's what the param
+   * returns to when no transient driver (automation / CV) is active. We record
+   * it so a stale-modulation sweep can restore it, then apply it to the handle.
+   */
   setParam(nodeId: string, paramId: string, value: number): void {
+    this.baseParams.set(this.paramKey(nodeId, paramId), value);
     this.nodes.get(nodeId)?.setParam(paramId, value);
+  }
+
+  private paramKey(nodeId: string, paramId: string): string {
+    return `${nodeId} ${paramId}`;
+  }
+
+  /**
+   * TRANSIENT drive — a NON-manual writer (clip-automation playback, a CV
+   * bridge) pushes `value` onto the param's uniform for THIS moment without
+   * disturbing the manual base. Marks the param modulated for the next
+   * TRANSIENT_HOLD_FRAMES so the per-frame sweep won't reclaim it while the
+   * driver keeps refreshing, and restores the base once it stops (no stuck
+   * control). No-op for an absent node.
+   */
+  private driveTransient(nodeId: string, paramId: string, value: number): void {
+    const handle = this.nodes.get(nodeId);
+    if (!handle) return;
+    const key = this.paramKey(nodeId, paramId);
+    // Seed the base from the live handle the first time a param is driven
+    // transiently before any manual write reached the engine — so the value it
+    // restores to is the one currently shown, never undefined.
+    if (!this.baseParams.has(key)) {
+      const cur = handle.readParam(paramId);
+      if (cur !== undefined) this.baseParams.set(key, cur);
+    }
+    this.transientMods.set(key, { nodeId, paramId, untilFrame: this.frameCount + VideoEngine.TRANSIENT_HOLD_FRAMES });
+    handle.setParam(paramId, value);
+  }
+
+  /** Restore a param's manual base onto its handle NOW and clear its transient
+   *  mark. Called when a driver ends explicitly (CV cable removed) and by the
+   *  per-frame stale sweep. No-op when there's no recorded base. */
+  private restoreBase(nodeId: string, paramId: string): void {
+    const key = this.paramKey(nodeId, paramId);
+    this.transientMods.delete(key);
+    const base = this.baseParams.get(key);
+    if (base !== undefined) this.nodes.get(nodeId)?.setParam(paramId, base);
+  }
+
+  /** Per-frame sweep (called at the top of step()): any param whose transient
+   *  modulation has gone STALE — no automation/CV write refreshed it within
+   *  TRANSIENT_HOLD_FRAMES — is returned to its manual base, so manual control
+   *  is never left dead after a driver stops. Cheap: only iterates params that
+   *  are (or recently were) modulated. */
+  private sweepStaleTransients(): void {
+    if (this.transientMods.size === 0) return;
+    for (const [key, m] of [...this.transientMods]) {
+      if (this.frameCount >= m.untilFrame) {
+        this.transientMods.delete(key);
+        const base = this.baseParams.get(key);
+        if (base !== undefined) this.nodes.get(m.nodeId)?.setParam(m.paramId, base);
+      }
+    }
+  }
+
+  /**
+   * Clip-automation PLAYBACK drive (DomainEngine.scheduleParam). Audio ramps
+   * schedule a future AudioParam event; a video uniform can't be scheduled
+   * ahead, so we apply the value immediately as a transient drive (the caller
+   * feeds per-step / per-tick values, and setDisplayParam refines between
+   * steps). atTime / ramp are audio-only and ignored here.
+   */
+  scheduleParam(nodeId: string, paramId: string, value: number, _atTime: number, _ramp: boolean): void {
+    this.driveTransient(nodeId, paramId, value);
+  }
+
+  /**
+   * Clip-automation HOLD-AT-SEAM drive (DomainEngine.holdParam). `toValue`
+   * present ⇒ pin the uniform to that resting value transiently (hold-last-
+   * value on stop / the release hand-off). `toValue` omitted ⇒ a truncate /
+   * anchor seam that has no audio-ramp tail to cancel for video and is
+   * immediately followed by the incoming clip's own drive (or the user's live
+   * input), so it's a no-op here. Either way the base restores once drive stops.
+   */
+  holdParam(nodeId: string, paramId: string, _atTime: number, toValue?: number, _glideS?: number): void {
+    if (toValue != null) this.driveTransient(nodeId, paramId, toValue);
+  }
+
+  /**
+   * Clip-automation VISUAL-SMOOTHING drive (DomainEngine.setDisplayParam). For
+   * AUDIO this is a display-cache-only refresh (the DSP already rendered the
+   * ramp); a video module has no separate DSP, so the uniform IS the render —
+   * we apply the interpolated value as a transient drive. This is the per-tick
+   * (~40fps) path that makes video automation play back smoothly.
+   */
+  setDisplayParam(nodeId: string, paramId: string, value: number): void {
+    this.driveTransient(nodeId, paramId, value);
   }
 
   /**
@@ -1188,6 +1325,12 @@ export class VideoEngine implements DomainEngine {
       return;
     }
 
+    // 0a. Reclaim any param whose clip-automation / CV modulation went stale
+    //     (the driver stopped) back to its manual base BEFORE this frame's
+    //     drivers run — so an active driver re-marks its param immediately after
+    //     and a stopped one is left at the user's value (no stuck control).
+    this.sweepStaleTransients();
+
     // 0b. Sink-driven pull evaluation: compute this frame's ACTIVE set —
     //     the reverse-reachable subgraph from the frame's roots (watched /
     //     leased / side-effect-exempt nodes). null = pull eval disabled via
@@ -1382,6 +1525,15 @@ void main() {
     if (!entry) return;
     try { entry.teardown(); } catch { /* */ }
     this.cvBridges.delete(edgeId);
+    // The cable is gone: return the param it was driving to the manual base
+    // immediately, so the control isn't stuck at the last CV value. (The
+    // per-frame stale sweep would also catch this a few frames later; this is
+    // the snappy explicit path.) Skip if ANOTHER live bridge still drives the
+    // same target param.
+    const stillDriven = [...this.cvBridges.values()].some(
+      (b) => b.targetNodeId === entry.targetNodeId && b.mapping.targetParamId === entry.mapping.targetParamId,
+    );
+    if (!stillDriven) this.restoreBase(entry.targetNodeId, entry.mapping.targetParamId);
   }
 
   private tickCvBridges(): void {
