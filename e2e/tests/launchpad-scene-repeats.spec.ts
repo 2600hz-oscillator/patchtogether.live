@@ -197,7 +197,10 @@ test('@launchpad scene repeats: gesture sets ×2, card flair mirrors it, scene 2
 
   // ── UI can't lie: the card flair shows exactly the stored count. ──
   await expect(page.getByTestId('clipplayer-scene-repeat-0')).toHaveText('×2');
-  await expect(page.getByTestId('clipplayer-scene-repeat-1')).toHaveCount(0); // infinite = no flair
+  // Infinite (unset) now renders as a clickable "∞" flair button (card-parity
+  // PR made the per-scene repeat SETTABLE on the card — was read-only + absent
+  // for infinite). The count is still mirrored: infinite = "∞".
+  await expect(page.getByTestId('clipplayer-scene-repeat-1')).toHaveText('∞');
 
   // ── Launch scene 0 and let it run: silent → audible → auto-advance. ──
   await setTransport(page, 1);
@@ -258,7 +261,7 @@ test('@launchpad scene repeats SCROLL-AWARE: with the window scrolled, the held 
 
   // The card flair sits on scene row 1 (and only there).
   await expect(page.getByTestId('clipplayer-scene-repeat-1')).toHaveText('×3');
-  await expect(page.getByTestId('clipplayer-scene-repeat-0')).toHaveCount(0);
+  await expect(page.getByTestId('clipplayer-scene-repeat-0')).toHaveText('∞'); // unset scene = "∞" flair
 
   // Pad 64 in the same scrolled hold sets it back to INFINITE (key deleted).
   await ccSingle(page, CC_VIEW_GRID, 127);
@@ -267,5 +270,5 @@ test('@launchpad scene repeats SCROLL-AWARE: with the window scrolled, the held 
   await ccSingle(page, SCENE_CCS[0], 0);
   await ccSingle(page, CC_VIEW_GRID, 0);
   await expect.poll(() => sceneRepeatsMap(page), { timeout: 5000 }).toEqual({});
-  await expect(page.getByTestId('clipplayer-scene-repeat-1')).toHaveCount(0);
+  await expect(page.getByTestId('clipplayer-scene-repeat-1')).toHaveText('∞'); // back to infinite = "∞" flair
 });
