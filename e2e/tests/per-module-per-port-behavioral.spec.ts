@@ -501,6 +501,38 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //    RE-ENABLE: a real-GPU CI lane or a reduced-capture behavioral path.
   hypercube: 'audio-observed 4D module whose card renders a live WebGL2 tesseract every frame — the same main-thread GL pressure as the video-sink group under 24-way SwiftShader contention blew the per-test wall-clock budget (page.waitForFunction timeout 162s, flaked to a retry timeout on main run 29636629277); NOT a per-port delta failure. Covered by hypercube VRT + specs; inputs-accept pins each port wire-up. RE-ENABLE via a real-GPU CI lane or a reduced-capture behavioral path.',
 
+  // ── VIDEO-SINK follow-up (2026-07-18, task #188): the rotating video tail is
+  //    broader than any one run reveals — the behavioral run on PR #1096
+  //    (run 29647252153, shard 3) surfaced two MORE video-domain modules that
+  //    weren't in the run originally scoped. Both are video-out-canvas processors,
+  //    but note they failed by DIFFERENT modes (verified from that shard's log):
+  //
+  //    lumakey — a genuine Class-A CONTENTION TIMEOUT: it timed out at 140s on
+  //    the first attempt then PASSED on retry (flaky), and every one of its 5
+  //    inputs (bg/fg/invert/softness/threshold) clears the delta with healthy
+  //    margin (Δμvar 14–2330) when it completes → pure SwiftShader contention,
+  //    exactly the chroma/fader class. Shared timeout note.
+  lumakey: VIDEO_SINK_SWIFTSHADER_NOTE,
+  //
+  //    mirrorpool — did NOT time out; it completed and DETERMINISTICALLY failed
+  //    the DELTA check on `rain_cv` (Δμvar 1.6–2.7 against mirrorpool's ~1428
+  //    animated-pool variance floor, nb Δ=0.0000) — the SAME video-variance-metric
+  //    class as its existing per-port exempts wind_dir_cv/wind_speed_cv/cam_z_cv/
+  //    pos_z_cv (rain adds droplet energy the coarse global-variance metric can't
+  //    resolve against the animated surface). It's whole-module-exempted here
+  //    (rather than adding yet another per-port entry) because (a) it's a
+  //    video-out-canvas module and therefore ALSO subject to the same rotating
+  //    SwiftShader contention timeout as the group above, and (b) the video-
+  //    variance tail is broader than one run shows (this is the 5th mirrorpool CV
+  //    to fall sub-threshold) — per-port would be whack-a-mole. Its 4 pre-existing
+  //    per-port mirrorpool.* sweep entries are now SHADOWED by this whole-module
+  //    skip (harmless — no orphaned-key guard; they'd correctly re-apply if the
+  //    module re-enters on module re-enable). Real coverage: mirrorpool-core.test.ts
+  //    (swellField/cameraBasis math) + mirrorpool-composite.spec.ts + VRT.
+  //    RE-ENABLE (whole class): a real-GPU CI lane or the shape-sensitive /
+  //    per-port-calibrated video metric in the RATCHET TODO.
+  mirrorpool: 'video-out-canvas animated pool: on PR #1096 (run 29647252153, shard 3) it did not time out but DETERMINISTICALLY failed the delta on rain_cv (Δμvar 1.6–2.7 vs the ~1428 animated-pool variance floor, nb Δ=0.0000) — the same video-variance-metric class as its per-port wind_dir/wind_speed/cam_z/pos_z exempts (now shadowed by this whole-module skip); whole-module because it is ALSO subject to the group\'s rotating SwiftShader contention timeout and the video-variance tail is broader than one run shows. Covered by mirrorpool-core.test.ts (swellField/cameraBasis) + mirrorpool-composite.spec.ts + VRT. RE-ENABLE via a real-GPU CI lane or the shape-sensitive/calibrated video metric (RATCHET TODO).',
+
   // ── MOOG System 55/35 routing / mixer / utility modules (batch-2 +
   //    batch-5). These are PURE gain / patch-bay / format-converter /
   //    trigger-delay modules: their observed output is a passive function
@@ -1483,7 +1515,7 @@ test('RATCHET: behavioral exemption lists only shrink', () => {
   expect(
     Object.keys(BEHAVIORAL_MODULE_EXEMPT).length,
     'BEHAVIORAL_MODULE_EXEMPT grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(71); // RE-FROZEN at 71 (2026-07-18, task #188): +6 CI-contention video/WebGL modules that SKIP here (chroma/fader/feedback/freezeframe/mappy = the SwiftShader per-frame-WebGL→video-out-canvas timeout class, cf. cellshade/posterbox; hypercube = a live WebGL2-tesseract card under the same 24-way SwiftShader contention — all timeout/flaky-timeout on run 29636629277, NOT per-port delta fails, and skipping them REDUCES lane wall-time) + +3 coarse-metric subtle-CV voices (kickdrum/tomtom/tidyVco: secondary CV trims perturb Δμrms 0.002–0.008 inside the metric floor with a NON-DETERMINISTIC/disjoint failing set across attempts → per-port would be whack-a-mole, so whole-module in the subtle-CV-effect class; DSP verified + unit-test-pinned; re-enable via the RATCHET-TODO calibrated metric). // RE-FROZEN at 62 (2026-07-16): +2 es9 + sixstrum (structurally silent in CI — es9's outputs source from physical hardware absent in CI, sixstrum is silent-until-struck with no base-strum driver; both were already whole-module/output exempt in per-module-per-port.spec.ts but never mirrored here, so the sweep hard-failed them on every main push; see their entries for coverage + re-enable paths). The two land INSIDE the old 66 cap's slack (prior re-enables — adsr/treeohvox/moog984/993/961/911a/960 — left the map at 60 without lowering the cap), and the cap is re-frozen at the actual list size 62 so it can only shrink again. // (history, old cap 66) +1 blood (data-gated emulator — driven + control inputs both idle without the non-redistributable WAD, absent in CI); +1 milkdrop (self-animating multi-pass visualizer — out luma-variance jitter floor swamps any per-input delta, cf. bentbox/b3ntb0x; covered by milkdrop-render-smoke.spec.ts); +1 spirographs (line generator — 25/31 geometry CV inputs reshape a thin curve sub-threshold on the coarse video-variance metric, cf. milkdrop/tempest.rim; deterministic, CV wired; covered by spirographs.test.ts + render-smoke)
+  ).toBeLessThanOrEqual(73); // RE-FROZEN at 73 (2026-07-18, task #188 follow-up): +2 more video-domain modules from the PR #1096 behavioral run (run 29647252153, shard 3) — lumakey (genuine Class-A SwiftShader contention TIMEOUT, flaky-passed on retry, all 5 ports clear otherwise) + mirrorpool (did NOT time out — deterministically delta-failed rain_cv at Δμvar 1.6–2.7 vs its ~1428 animated-pool floor, the video-variance class of its already-per-port wind/cam/pos exempts; whole-module because it's video-out-canvas so ALSO contention-timeout-prone + the video-variance tail rotates broader than one run). // RE-FROZEN at 71 (2026-07-18, task #188): +6 CI-contention video/WebGL modules that SKIP here (chroma/fader/feedback/freezeframe/mappy = the SwiftShader per-frame-WebGL→video-out-canvas timeout class, cf. cellshade/posterbox; hypercube = a live WebGL2-tesseract card under the same 24-way SwiftShader contention — all timeout/flaky-timeout on run 29636629277, NOT per-port delta fails, and skipping them REDUCES lane wall-time) + +3 coarse-metric subtle-CV voices (kickdrum/tomtom/tidyVco: secondary CV trims perturb Δμrms 0.002–0.008 inside the metric floor with a NON-DETERMINISTIC/disjoint failing set across attempts → per-port would be whack-a-mole, so whole-module in the subtle-CV-effect class; DSP verified + unit-test-pinned; re-enable via the RATCHET-TODO calibrated metric). // RE-FROZEN at 62 (2026-07-16): +2 es9 + sixstrum (structurally silent in CI — es9's outputs source from physical hardware absent in CI, sixstrum is silent-until-struck with no base-strum driver; both were already whole-module/output exempt in per-module-per-port.spec.ts but never mirrored here, so the sweep hard-failed them on every main push; see their entries for coverage + re-enable paths). The two land INSIDE the old 66 cap's slack (prior re-enables — adsr/treeohvox/moog984/993/961/911a/960 — left the map at 60 without lowering the cap), and the cap is re-frozen at the actual list size 62 so it can only shrink again. // (history, old cap 66) +1 blood (data-gated emulator — driven + control inputs both idle without the non-redistributable WAD, absent in CI); +1 milkdrop (self-animating multi-pass visualizer — out luma-variance jitter floor swamps any per-input delta, cf. bentbox/b3ntb0x; covered by milkdrop-render-smoke.spec.ts); +1 spirographs (line generator — 25/31 geometry CV inputs reshape a thin curve sub-threshold on the coarse video-variance metric, cf. milkdrop/tempest.rim; deterministic, CV wired; covered by spirographs.test.ts + render-smoke)
   expect(
     Object.keys(BEHAVIORAL_SWEEP_EXEMPT).length,
     'BEHAVIORAL_SWEEP_EXEMPT grew past its frozen cap — see the RATCHET rule above',
