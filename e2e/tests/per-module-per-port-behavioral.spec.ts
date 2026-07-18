@@ -99,6 +99,18 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // but THIS spec runs in the default `chromium` project (no camera flag).
   // Covered by e2e/tests/camera-input.spec.ts which IS in the camera project.
   cameraInput: 'requires fake-camera browser flag; covered by camera-input.spec.ts',
+  // ES9 — every output carries signal from the PHYSICAL ES-9 interface via
+  // the es9-bridge native app's localhost WebSocket; neither exists in CI, so
+  // the observed output reads rms 0.000 in BOTH the control and patched arms
+  // (the module sits in its documented "bridge not found" idle state) and no
+  // input can EVER show a delta — its out1..out8 inputs feed the physical
+  // 3.5mm jacks, not the browser-observable outputs. Mirrors the whole-module
+  // emit exemption in per-module-per-port.spec.ts (inputs-accept still pins
+  // wire-up there). Re-enable path: a mock es9-bridge WebSocket fixture
+  // feeding deterministic frames. Ring/scaling/hysteresis/underrun policy is
+  // pinned by the dsp es9-bridge-core unit suite; flow verified on hardware
+  // per the native repo plan (patchtogether.es9/docs/inet-modular-es9-module-plan.md).
+  es9: 'all outputs source from physical ES-9 hardware via the native bridge (absent in CI) — control + patched arms both read rms 0.000, so no input can show a delta; re-enable via a mock bridge WebSocket fixture; ring/scaling/policy covered by dsp es9-bridge-core tests, flow verified on hardware per the native repo plan',
 
   // ── MIDI-driven: same as hardware — no MIDI device in test browser.
   midiCvBuddy: 'requires MIDI device; covered by midi-cv-buddy.spec.ts',
@@ -209,6 +221,22 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   polyseqz:  'pattern grid needs cells toggled; covered by polyseqz specs',
   macseq:    'requires toggled steps; covered by macseq specs',
   score:     'requires play_cv high + steps; covered by score.spec.ts',
+
+  // ── Strike-gated voice: SIX STRUM is a plucked-string instrument whose
+  //    `out` is hard-silent until a strum/pluck fires. The one-input-at-a-time
+  //    harness never supplies that base strum (a generic driver would need a
+  //    gatePort append to _drivers.ts, which is a collab-attest BASIS file —
+  //    the same reason as its per-port emit exemption in
+  //    per-module-per-port.spec.ts), so the mute1..mute6 palm-mute gates (and
+  //    the accent/chord CVs) perturb an output reading rms 0.000 in BOTH
+  //    arms — a structural no-delta, not dead CV. Re-enable path: the
+  //    "provide the base signal, then perturb" pattern (hold a strum-gate
+  //    train on strum1 via a per-port TEST source while driving each
+  //    mute/CV), then split the strum rows back into the sweep per-port.
+  //    Covered by the real-chain e2e/tests/sixstrum-poly.spec.ts
+  //    (SEQUENCER.gate → strum1 → audible RMS + SEQUENCER.pitch → poly → RMS)
+  //    + the sixstrum worklet-wiring unit test.
+  sixstrum: 'plucked-string voice, silent-until-struck: the sweep never supplies the base strum (a generic driver needs an append to the collab-basis _drivers.ts), so mute1..mute6/accent/chord perturb a 0.000-rms output in both arms; re-enable via a base-signal driver (hold a strum train, then perturb) + a per-port split; covered by sixstrum-poly.spec.ts real-chain e2e (gate→strum1→RMS, pitch→poly→RMS) + the worklet-wiring unit test',
 
   // ── Modules whose ONLY outputs are gameplay/file/MIDI-conditional:
   //    score-event gates that fire on in-game events. Unpatched + patched
@@ -1388,7 +1416,7 @@ test('RATCHET: behavioral exemption lists only shrink', () => {
   expect(
     Object.keys(BEHAVIORAL_MODULE_EXEMPT).length,
     'BEHAVIORAL_MODULE_EXEMPT grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(66); // +1 blood (data-gated emulator — driven + control inputs both idle without the non-redistributable WAD, absent in CI); +1 milkdrop (self-animating multi-pass visualizer — out luma-variance jitter floor swamps any per-input delta, cf. bentbox/b3ntb0x; covered by milkdrop-render-smoke.spec.ts); +1 spirographs (line generator — 25/31 geometry CV inputs reshape a thin curve sub-threshold on the coarse video-variance metric, cf. milkdrop/tempest.rim; deterministic, CV wired; covered by spirographs.test.ts + render-smoke)
+  ).toBeLessThanOrEqual(62); // RE-FROZEN at 62 (2026-07-16): +2 es9 + sixstrum (structurally silent in CI — es9's outputs source from physical hardware absent in CI, sixstrum is silent-until-struck with no base-strum driver; both were already whole-module/output exempt in per-module-per-port.spec.ts but never mirrored here, so the sweep hard-failed them on every main push; see their entries for coverage + re-enable paths). The two land INSIDE the old 66 cap's slack (prior re-enables — adsr/treeohvox/moog984/993/961/911a/960 — left the map at 60 without lowering the cap), and the cap is re-frozen at the actual list size 62 so it can only shrink again. // (history, old cap 66) +1 blood (data-gated emulator — driven + control inputs both idle without the non-redistributable WAD, absent in CI); +1 milkdrop (self-animating multi-pass visualizer — out luma-variance jitter floor swamps any per-input delta, cf. bentbox/b3ntb0x; covered by milkdrop-render-smoke.spec.ts); +1 spirographs (line generator — 25/31 geometry CV inputs reshape a thin curve sub-threshold on the coarse video-variance metric, cf. milkdrop/tempest.rim; deterministic, CV wired; covered by spirographs.test.ts + render-smoke)
   expect(
     Object.keys(BEHAVIORAL_SWEEP_EXEMPT).length,
     'BEHAVIORAL_SWEEP_EXEMPT grew past its frozen cap — see the RATCHET rule above',
