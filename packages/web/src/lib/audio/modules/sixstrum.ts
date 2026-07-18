@@ -18,6 +18,9 @@
 //   STRUM 1..6 — edge:'trigger'; NORMALLED low→high (patch only #1 ⇒ barre all).
 //   MUTE 1..6  — edge:'gate'; palm mute that string (all six ⇒ choke the chord).
 //   ACCENT — cv 0..1 per-hit velocity (louder + brighter).
+//   {tone,grain,spread,body,strum,dir,chord}_cv — per-knob CV modulators
+//     (Pattern A: paramTarget + cvScale onto the AudioParam; dir/chord are
+//     DISCRETE selectors, so their CV quantizes to the index range).
 //   OUT    — mono.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
@@ -58,6 +61,23 @@ export const sixstrumDef: AudioModuleDef = {
     // Shared per-hit velocity (Pattern B: scaled in the core — see
     // cv-scale-registry PASSTHROUGH_BY_DESIGN).
     { id: 'accent', type: 'cv' },
+    // Per-knob CV modulators (def-only "cofefve/karplus" Pattern A): a `cv`
+    // PortDef with paramTarget + cvScale + an inputsMap `param` entry routes
+    // onto the existing AudioParam. The engine's generic getCvScaleForTarget/
+    // attachCvScale interposes a WaveShaper centred on the LIVE knob so ±1
+    // sweeps the param's full natural range; the scaled delta sums into the
+    // AudioParam at audio rate (TRANSIENT render state — never the Y.Doc). No
+    // DSP/worklet edits (numberOfInputs stays 15), so no ART re-pin.
+    { id: 'tone_cv',   type: 'cv', paramTarget: 'pickTone',    cvScale: { mode: 'linear' } },
+    { id: 'grain_cv',  type: 'cv', paramTarget: 'pickGrain',   cvScale: { mode: 'log' } },
+    { id: 'spread_cv', type: 'cv', paramTarget: 'spread',      cvScale: { mode: 'linear' } },
+    { id: 'body_cv',   type: 'cv', paramTarget: 'body',        cvScale: { mode: 'linear' } },
+    { id: 'strum_cv',  type: 'cv', paramTarget: 'strumSpread', cvScale: { mode: 'linear' } },
+    // DISCRETE selectors: cvScale 'discrete' buckets a −1..+1 CV across the
+    // integer index range (round to the exact selector index) — DIR 0..2,
+    // CHORD 0..7 — the same quantizer TIDYVCO's oct2 CV uses.
+    { id: 'dir_cv',    type: 'cv', paramTarget: 'strumDir',    cvScale: { mode: 'discrete' } },
+    { id: 'chord_cv',  type: 'cv', paramTarget: 'quality',     cvScale: { mode: 'discrete' } },
   ],
   outputs: [{ id: 'out', type: 'audio' }],
 
@@ -107,6 +127,20 @@ export const sixstrumDef: AudioModuleDef = {
       mute6: "MUTE string 6 (gate). Palm-mutes string 6 while held (see mute1).",
       accent:
         "ACCENT — per-hit velocity CV (0..1) shared by all strings, sampled at each pluck: accented strikes are louder AND brighter (harder pick). Unpatched it sits at a musical default, so strings sound normal without it; wire an accent lane or an envelope for dynamics.",
+      tone_cv:
+        "CV modulation of PICK TONE (linear): a bipolar −1..+1 CV sweeps how hard the plucking agent is across its full soft-thumb↔hard-pick range, centred on the knob. Wire an envelope or LFO for a pick that brightens per-hit or over a phrase. (Distinct from ACCENT: this drives the TONE knob continuously, not the per-hit velocity latch.)",
+      grain_cv:
+        "CV modulation of PICK GRAIN (log): ±1 moves the pluck's contact length across its full 0.1–4 period span around the knob, morphing the attack from a near-impulse nail tick to a scraped/bowed noisy onset. Log-scaled so the sweep is even in perceived grain.",
+      spread_cv:
+        "CV modulation of SPREAD (linear): ±1 sweeps the string-to-string detune/decorrelation across its full 0..1 range around the knob — from tight/unison toward a wide chorused barre. An LFO here animates the chorus width.",
+      body_cv:
+        "CV modulation of BODY (linear): ±1 sweeps the box-resonance mix across its full 0..1 range around the knob, from dry/off to a full resonant body. Modulate it for a wah-like body swell or to open the box under an envelope.",
+      strum_cv:
+        "CV modulation of STRUM (the roll amount, linear): ±1 sweeps the strum-roll timing spread across its full 0..1 range around the knob — from a block chord (all six together) to a slow rolled strum / harp gliss. Sequence it to alternate tight and rolled strums. (DIR still sets the direction.)",
+      dir_cv:
+        "CV modulation of DIR (DISCRETE): a −1..+1 CV is quantized across the three strum directions — −1 → 0 DOWN, 0 → 1 UP, +1 → 2 ALTERNATE — so a stepped source flips the strum direction. It reorders the STRUM stagger only.",
+      chord_cv:
+        "CV modulation of CHORD quality (DISCRETE): a −1..+1 CV is quantized across the eight chord qualities (−1 → 0 maj … +1 → 7 octaves; the intermediate seven land on the steps between), so a quantizer or sequencer walks the CHORD-input voicing through maj/min/dom7/maj7/min7/sus4/power5/octaves. Pure voicing selection — it picks which chord tones the strings take, not the tone.",
     },
     outputs: {
       out:
@@ -187,10 +221,20 @@ export const sixstrumDef: AudioModuleDef = {
       params.get(def.id)?.setValueAtTime(v, ctx.currentTime);
     }
 
-    const inputs = new Map<string, { node: AudioNode; input: number }>([
+    const inputs = new Map<string, { node: AudioNode; input: number; param?: AudioParam }>([
       ['poly', { node: worklet, input: 0 }],
       ['chord', { node: worklet, input: 1 }],
       ['accent', { node: worklet, input: 14 }],
+      // Per-knob CV → AudioParam routing (Pattern A). The `input` index is a
+      // placeholder — the engine connects the (cvScale-scaled) source to
+      // `param`, not to a worklet audio input, so numberOfInputs stays 15.
+      ['tone_cv',   { node: worklet, input: 0, param: params.get('pickTone')! }],
+      ['grain_cv',  { node: worklet, input: 0, param: params.get('pickGrain')! }],
+      ['spread_cv', { node: worklet, input: 0, param: params.get('spread')! }],
+      ['body_cv',   { node: worklet, input: 0, param: params.get('body')! }],
+      ['strum_cv',  { node: worklet, input: 0, param: params.get('strumSpread')! }],
+      ['dir_cv',    { node: worklet, input: 0, param: params.get('strumDir')! }],
+      ['chord_cv',  { node: worklet, input: 0, param: params.get('quality')! }],
     ]);
     for (let i = 0; i < STRINGS; i++) {
       inputs.set(`strum${i + 1}`, { node: worklet, input: 2 + i });
