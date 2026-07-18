@@ -16,8 +16,9 @@
 // CARD → "Assign to automation lane ▸ 1–8" (one lane per module; the assigned
 // card gets a thin border in the lane's colour at the shared node wrapper).
 // The ARM is PER LANE (the small ◉ under each channel column, next to its RATE
-// control; on a Launchpad, SHIFT + the lane's top-row button — lane 8 =
-// double-tap SHIFT). While a lane is armed and its note clip plays, TOUCHING
+// control; on a Launchpad, HOLD SHIFT + the lane's top-row button — lane 8 =
+// HOLD SHIFT + the pad directly below SHFT). While a lane is armed and its note
+// clip plays, TOUCHING
 // any control of a module assigned to it (screen / MIDI / Electra — NEVER CV)
 // records into the PLAYING clip's sibling `auto[k]` by continuous overdub.
 //
@@ -33,8 +34,8 @@
 //   6. MIDI-twist suspends via the SAME seam; CC-idle resumes.
 //   7. The 🟡🟡🔴🔴 countdown flashes the recording lane's ◉ while armed.
 //   8. Scene-duplicate carries the automation (Launchpad copy/paste).
-//   9. LAUNCHPAD per-lane arm: SHIFT+top-row toggles a lane; double-tap SHFT
-//      toggles lane 8; the card ◉ mirrors the same synced state.
+//   9. LAUNCHPAD per-lane arm: HOLD SHIFT + top-row toggles a lane; HOLD SHIFT +
+//      the pad below SHFT toggles lane 8; the card ◉ mirrors the same synced state.
 //  10. CV EXCLUSION: a CV cable driving the assigned module records NOTHING;
 //      a MIDI twist of the same knob records a track.
 
@@ -732,20 +733,35 @@ test('per-clip automation: a MIDI CC on an automated param suspends only that pa
 // Driven through the REAL single-unit Launchpad sim (shift palette → COPY a
 // scene → PASTE it at another slot).
 
-const CC_SHIFT = 98; // the single-unit shift (tap = latch) top-row CC
+const CC_SHIFT = 98; // the single-unit shift top-row CC — MOMENTARY HOLD (no latch)
 const CC_VIEW_GRID = 92; // the permanent top-row GRID view button
 const SCENE_CC = [89, 79, 69, 59, 49, 39, 29, 19] as const; // scene idx 0..7
 const CC_G_COPY = SCENE_CC[0]; // grid-shift palette: COPY = scene index 0
 const CC_G_PASTE = SCENE_CC[1]; // PASTE = scene index 1
+// The lane-8 arm pad: the 8×8 pad DIRECTLY BELOW the SHFT button — topmost grid
+// row (bottom-origin y = LP_HEIGHT-1 = 7), rightmost column (x = LP_WIDTH-1 = 7).
+// While SHIFT is held, tapping it toggles lane 8's arm (see launchpad-map
+// LANE8_ARM_PAD / isLane8ArmPad). Lane 8's own top button IS the shift button,
+// so lane 8 borrows the pad beneath it.
+const LANE8_ARM_PAD = { x: 7, y: 7 } as const;
 
-async function installSingleLaunchpad(page: Page): Promise<(cc: number, v?: number) => Promise<void>> {
+interface SingleLaunchpad {
+  /** Send a top-row CC. No value ⇒ tap (press 127 + release 0); a value ⇒ that
+   *  raw level (127 = press/hold, 0 = release) — the momentary-hold model. */
+  ccTap: (cc: number, v?: number) => Promise<void>;
+  /** Tap an 8×8 PAD (press + release) on the lone device, routed by the active
+   *  view — the launchpad pad path (NOT the card DOM). */
+  padTap: (x: number, y: number) => Promise<void>;
+}
+
+async function installSingleLaunchpad(page: Page): Promise<SingleLaunchpad> {
   const installed = await page.evaluate(async (id) => {
     const w = globalThis as unknown as { __launchpadTestInstallSingle?: (id: string) => Promise<boolean> };
     if (!w.__launchpadTestInstallSingle) return false;
     return await w.__launchpadTestInstallSingle(id);
   }, CP);
   expect(installed, 'single-unit Launchpad install hook present (VITE_E2E_HOOKS)').toBe(true);
-  return async (cc: number, v?: number) => {
+  const ccTap = async (cc: number, v?: number) => {
     await page.evaluate(
       ({ cc, v }) => {
         const s = (globalThis as unknown as { __launchpadSingleSim?: { cc: (cc: number, v: number) => void } })
@@ -760,6 +776,19 @@ async function installSingleLaunchpad(page: Page): Promise<(cc: number, v?: numb
       { cc, v },
     );
   };
+  const padTap = async (x: number, y: number) => {
+    await page.evaluate(
+      ({ x, y }) => {
+        const s = (globalThis as unknown as {
+          __launchpadSingleSim?: { press: (x: number, y: number) => void; release: (x: number, y: number) => void };
+        }).__launchpadSingleSim!;
+        s.press(x, y);
+        s.release(x, y);
+      },
+      { x, y },
+    );
+  };
+  return { ccTap, padTap };
 }
 
 test('per-clip automation: scene-duplicate (Launchpad copy/paste) carries the automation with the clips', async ({ page, rack }) => {
@@ -773,7 +802,7 @@ test('per-clip automation: scene-duplicate (Launchpad copy/paste) carries the au
   await seedClip(page, IDX_L0S0, { tracks: [{ nodeId: 'va', paramId: 'base', events: ENV_UP }] });
 
   // Install the simulated single-unit Launchpad bound to this player.
-  const ccTap = await installSingleLaunchpad(page);
+  const { ccTap } = await installSingleLaunchpad(page);
 
   // The install hook boots in CLIP view — flip to GRID (the copy/paste home).
   await ccTap(CC_VIEW_GRID);
@@ -782,15 +811,17 @@ test('per-clip automation: scene-duplicate (Launchpad copy/paste) carries the au
       .__launchpadSingleSim?.state().singleView === 'grid',
   );
 
-  // COPY scene 0: latch shift → arm COPY → unlatch (sticky) → tap scene 0.
-  await ccTap(CC_SHIFT);
+  // COPY scene 0: HOLD shift → arm COPY (while held) → release shift (COPY arm is
+  // STICKY, survives the release) → tap scene 0 (no shift) as the copy source.
+  await ccTap(CC_SHIFT, 127);
   await ccTap(CC_G_COPY);
-  await ccTap(CC_SHIFT);
+  await ccTap(CC_SHIFT, 0);
   await ccTap(SCENE_CC[0]);
-  // PASTE at scene 3: latch shift → arm PASTE → unlatch → tap scene 3.
-  await ccTap(CC_SHIFT);
+  // PASTE at scene 3: HOLD shift → arm PASTE (while held) → release (sticky) →
+  // tap scene 3 (no shift) as the paste target.
+  await ccTap(CC_SHIFT, 127);
   await ccTap(CC_G_PASTE);
-  await ccTap(CC_SHIFT);
+  await ccTap(CC_SHIFT, 0);
   await ccTap(SCENE_CC[3]);
 
   // The clip landed at slot 3 (lane 0 → flat index 3) WITH its automation.
@@ -811,9 +842,9 @@ test('per-clip automation: scene-duplicate (Launchpad copy/paste) carries the au
   expect(spread, 'the duplicated clip’s automation plays').toBeGreaterThan(0.15);
 });
 
-// ── Case 9: LAUNCHPAD per-lane ARM — SHIFT+top-row + the SHFT double-tap ─────
+// ── Case 9: LAUNCHPAD per-lane ARM — HOLD SHIFT+top-row + the pad below SHFT ──
 
-test('launchpad per-lane arm: SHIFT+top-row toggles a lane (view untouched), double-tap SHFT toggles lane 8; the card ◉ mirrors', async ({ page, rack }) => {
+test('launchpad per-lane arm: HOLD SHIFT+top-row toggles a lane (view untouched), HOLD SHIFT + the pad below SHFT toggles lane 8; the card ◉ mirrors', async ({ page, rack }) => {
   void rack;
   await spawnPatch(page, [
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
@@ -821,7 +852,7 @@ test('launchpad per-lane arm: SHIFT+top-row toggles a lane (view untouched), dou
   ]);
   await expect(page.getByTestId('clipplayer-card')).toBeVisible();
   await seedClip(page, IDX_L0S0, { assign: { va: 0 } });
-  const ccTap = await installSingleLaunchpad(page);
+  const { ccTap, padTap } = await installSingleLaunchpad(page);
   await ccTap(CC_VIEW_GRID);
   await page.waitForFunction(() =>
     (globalThis as unknown as { __launchpadSingleSim?: { state: () => { singleView?: string } } })
@@ -852,16 +883,21 @@ test('launchpad per-lane arm: SHIFT+top-row toggles a lane (view untouched), dou
   await expect.poll(async () => isLaneArmed(page, 0), { timeout: 4000 }).toBe(false);
   await expect(page.getByTestId('clipplayer-auto-arm-0')).toHaveAttribute('aria-pressed', 'false');
 
-  // LANE 8 = DOUBLE-TAP SHFT (its column IS the shift button): two quick taps
-  // arm lane 8 and the latch nets back to off.
-  await ccTap(CC_SHIFT);
-  await ccTap(CC_SHIFT);
+  // LANE 8 = HOLD SHIFT + tap the pad DIRECTLY BELOW SHFT (its top button IS the
+  // shift button, so lane 8 borrows the pad beneath it — LANE8_ARM_PAD, the
+  // topmost 8×8 row, rightmost column). The pad press under the hold is CONSUMED
+  // as the lane-8 arm toggle, never a clip launch.
+  await ccTap(CC_SHIFT, 127); // press + HOLD shift
+  await padTap(LANE8_ARM_PAD.x, LANE8_ARM_PAD.y); // tap the pad below SHFT → arm lane 8
+  await ccTap(CC_SHIFT, 0); // release shift
   await expect.poll(async () => isLaneArmed(page, 7), { timeout: 4000 }).toBe(true);
   await expect(page.getByTestId('clipplayer-auto-arm-7')).toHaveAttribute('aria-pressed', 'true');
-  // Two more quick taps disarm it.
-  await ccTap(CC_SHIFT);
-  await ccTap(CC_SHIFT);
+  // Same gesture again → disarm.
+  await ccTap(CC_SHIFT, 127);
+  await padTap(LANE8_ARM_PAD.x, LANE8_ARM_PAD.y);
+  await ccTap(CC_SHIFT, 0);
   await expect.poll(async () => isLaneArmed(page, 7), { timeout: 4000 }).toBe(false);
+  await expect(page.getByTestId('clipplayer-auto-arm-7')).toHaveAttribute('aria-pressed', 'false');
 });
 
 // ── Case 10: CV EXCLUSION — a CV cable never records; MIDI does ─────────────
