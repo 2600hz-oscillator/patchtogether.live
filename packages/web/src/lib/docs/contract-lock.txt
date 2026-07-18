@@ -3371,6 +3371,7 @@ videovarispeed in speedCv cv param=speedCv cvScale=linear
 videovarispeed in startCv cv param=startCv cvScale=linear
 videovarispeed out audio_l audio
 videovarispeed out audio_r audio
+videovarispeed out crop video
 videovarispeed out video video
 videovarispeed param asset_gate 0..1 linear default=0
 videovarispeed param asset_pitch -10..10 linear default=0

@@ -63,6 +63,10 @@
   } from '$lib/video/video-export-registry';
   import ModuleTitle from './ModuleTitle.svelte';
   import { cardParams, portsFromDef } from './card-kit';
+  import CropOverlay from '$lib/ui/video/CropOverlay.svelte';
+  import { videoAspectStore } from '$lib/ui/video-aspect-store.svelte';
+  import { defaultCropRect, refitCrop, type CropRect } from '$lib/video/crop-core';
+  import { writeCrop as commitCrop, readCrop } from './crop-edit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -155,6 +159,75 @@
 
   /** Track whether THIS browser has loaded a local copy of the ACTIVE slot. */
   let hasLocalFile = $derived<boolean>((slotNames[activeSlot] ?? null) !== null);
+
+  // ---- CROP output state -------------------------------------------------
+  //
+  // The crop rect is SYNCED node.data.crop (per-NODE, not per-slot — slot ops
+  // never touch it). It's aspect-locked to the live OUTPUT aspect: the crop
+  // region always has the 16:9/4:3 output shape and the CROP output re-samples
+  // it scaled to full output resolution (a zoom). Read only through coerceCrop
+  // (clamps + fits into frame). `cropEditing` is LOCAL UI state (the overlay is
+  // shown only while editing — the default card face is unchanged).
+  let outAspect = $derived<number>(
+    videoAspectStore.engineRes.height > 0
+      ? videoAspectStore.engineRes.width / videoAspectStore.engineRes.height
+      : 4 / 3,
+  );
+  let cropState = $derived(readCrop(node, outAspect, outAspect));
+  let cropActive = $derived<boolean>(cropState.active);
+  let cropEditing = $state(false);
+
+  /** "add crop" — drop a centered default rect + open the editor overlay. */
+  function addCrop(): void {
+    commitCrop(id, true, defaultCropRect(outAspect, outAspect));
+    cropEditing = true;
+  }
+  /** "remove crop" — return the CROP output to full-frame passthrough. */
+  function removeCrop(): void {
+    commitCrop(id, false, cropState.rect);
+    cropEditing = false;
+  }
+  function toggleCropEdit(): void { cropEditing = !cropEditing; }
+  /** Overlay drag/resize callback — persist the new (already-fitted) rect. */
+  function onCropChange(next: CropRect): void { commitCrop(id, true, next); }
+
+  // Push the live crop rect into the engine (null ⇒ passthrough), RETRYING
+  // until the engine materialized this node (same race ensureAudioWired guards).
+  let cropPushTimer: ReturnType<typeof setTimeout> | null = null;
+  function pushCrop(attempt = 0): void {
+    if (cropPushTimer) { clearTimeout(cropPushTimer); cropPushTimer = null; }
+    const extras = getExtras();
+    if (extras) {
+      extras.setCrop(cropState.active ? cropState.rect : null);
+      return;
+    }
+    if (attempt >= 50) return; // ~5s; give up quietly
+    cropPushTimer = setTimeout(() => pushCrop(attempt + 1), 100);
+  }
+  // Re-push whenever the crop rect / active flag changes (reactive).
+  $effect(() => {
+    void cropState.active; void cropState.rect.x; void cropState.rect.y; void cropState.rect.w;
+    pushCrop();
+  });
+  // On an OUTPUT aspect flip (16:9↔4:3): re-fit the stored rect (preserve
+  // center + width, recompute height, clamp) and persist if it actually moved,
+  // so the synced value stays valid for the new aspect. Guarded to avoid a
+  // write-storm (only writes on a real change).
+  let lastRefitAspect = 0;
+  $effect(() => {
+    const a = outAspect;
+    if (!cropActive) { lastRefitAspect = a; return; }
+    if (a === lastRefitAspect) return;
+    lastRefitAspect = a;
+    const fitted = refitCrop(cropState.rect, a, a);
+    if (
+      Math.abs(fitted.x - cropState.rect.x) > 1e-6 ||
+      Math.abs(fitted.y - cropState.rect.y) > 1e-6 ||
+      Math.abs(fitted.w - cropState.rect.w) > 1e-6
+    ) {
+      commitCrop(id, true, fitted);
+    }
+  });
 
   // ---- Transport param accessors (knob + sliders live on node.params) ----
   const { defaultFor, paramVal } = cardParams(videoVarispeedDef, () => id, () => node);
@@ -973,6 +1046,7 @@
     stopTransportLoop();
     if (audioWireTimer) { clearTimeout(audioWireTimer); audioWireTimer = null; }
     if (keepAliveTimer) { clearTimeout(keepAliveTimer); keepAliveTimer = null; }
+    if (cropPushTimer) { clearTimeout(cropPushTimer); cropPushTimer = null; }
     const ve = videoEngine();
     try { ve?.attachExternalSource(id, 'video', null); } catch { /* */ }
     const extras = getExtras();
@@ -1068,6 +1142,44 @@
           <input type="file" accept="video/*" onchange={onFileInputChange} data-testid="videovarispeed-relink-input" />
           <div class="relink-label">Re-link: drop "{fileMeta?.name}"</div>
         </label>
+      {/if}
+
+      <!-- CROP editor overlay — visible ONLY while editing (default card face
+           unchanged). Aspect-locked to the live output; drag inside to move,
+           drag a corner to resize. -->
+      {#if cropEditing && cropActive}
+        <CropOverlay rect={cropState.rect} aspect={outAspect} onchange={onCropChange} />
+      {/if}
+    </div>
+
+    <!-- CROP controls: add a crop (opens the resizable aspect-locked box), or
+         edit / remove an existing one. Passthrough until "add crop". -->
+    <div class="crop-row">
+      {#if !cropActive}
+        <button
+          type="button"
+          class="crop-btn"
+          onclick={addCrop}
+          data-testid="videovarispeed-add-crop"
+          title="Overlay a resizable, aspect-locked crop box; the CROP output zooms into it"
+        >add crop</button>
+      {:else}
+        <button
+          type="button"
+          class="crop-btn"
+          class:on={cropEditing}
+          onclick={toggleCropEdit}
+          data-testid="videovarispeed-edit-crop"
+          aria-pressed={cropEditing}
+          title="Show/hide the crop box editor"
+        >{cropEditing ? 'done' : 'edit crop'}</button>
+        <button
+          type="button"
+          class="crop-btn remove"
+          onclick={removeCrop}
+          data-testid="videovarispeed-remove-crop"
+          title="Remove the crop — the CROP output returns to the full frame"
+        >remove crop</button>
       {/if}
     </div>
 
@@ -1343,6 +1455,28 @@
 
   .seek { width: 100%; accent-color: var(--cable-video); }
   .seek:disabled { opacity: 0.5; }
+
+  /* CROP controls */
+  .crop-row { display: flex; gap: 6px; align-items: center; }
+  .crop-btn {
+    background: #1a1f2a;
+    color: var(--text-dim);
+    border: 1px solid #404652;
+    border-radius: 2px;
+    padding: 3px 9px;
+    font-size: 0.62rem;
+    cursor: pointer;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    font-family: ui-monospace, monospace;
+  }
+  .crop-btn:hover { color: var(--text); border-color: #6a7282; }
+  .crop-btn.on {
+    background: rgba(255, 59, 59, 0.16);
+    border-color: #ff3b3b;
+    color: #ff8a8a;
+  }
+  .crop-btn.remove:hover { color: #ff8a8a; border-color: #ff3b3b; }
 
   .filename {
     font-size: 0.6rem;
