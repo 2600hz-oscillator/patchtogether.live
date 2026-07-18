@@ -18,7 +18,9 @@
 // own-code 3-band EQ + tilt, the TRANSLATE harmonic exciter (small-speaker
 // sub reconstruction), DYNAMICS (transient shaper / glue compressor /
 // ceiling soft-clip), and the stereo crossover (mono <120 Hz, M/S WIDTH
-// above). Phase 1 today renders SUB + BODY with L = R.
+// above). All phases are now implemented in the worklet: the three SUB /
+// BODY / CLICK generators plus the full downstream chain (DRIVE, EQ + tilt,
+// TRANSLATE, DYNAMICS, and the stereo crossover / WIDTH).
 //
 // Trigger/gate semantics (declared, per CLAUDE.md):
 //   trigger_in edge:'trigger' — ONE strike per rising edge (phases reset,

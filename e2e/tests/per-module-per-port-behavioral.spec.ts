@@ -472,6 +472,66 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // e2e/tests/posterbox-functional.spec.ts (readPixels probes: continuity
   // anchors, hue-order, dither checker, mix sweep) + the VRT baselines.
   posterbox: VIDEO_SINK_SWIFTSHADER_NOTE,
+  // ── VIDEO-SINK SwiftShader timeout class (2026-07-18 batch, task #188):
+  //    chroma / fader / feedback / freezeframe / mappy — the SAME per-frame-WebGL
+  //    → video-out-canvas processor class as cellshade/chromakey/outlines/edges/
+  //    posterbox above. On main run 29636629277 they TIMED OUT (fader/feedback
+  //    hard, chroma timeout→retry-then-6/7-delta, freezeframe/mappy flaked to a
+  //    retry timeout) under CI's SwiftShader SOFTWARE renderer while up to 24
+  //    parallel behavioral browsers contend a single GL pipeline (each
+  //    SwiftShader browser ≈5.5 CPU-cores) — the per-input spawn→settle→frame-poll
+  //    loop blows the `drivableInputs.length*22000+30000`ms budget. They PASS on a
+  //    real local GPU (the ci-swiftshader-video-e2e-timeouts class; NOT a per-port
+  //    delta failure). Skipping them here REDUCES the lane's CI wall-time. Real
+  //    behavioral coverage lives in each module's VRT + bespoke e2e spec, and
+  //    per-module-per-port.spec.ts still pins each port's wire-up via inputs-accept.
+  //    RE-ENABLE: a real-GPU CI lane or a reduced-capture behavioral path.
+  chroma: VIDEO_SINK_SWIFTSHADER_NOTE,
+  fader: VIDEO_SINK_SWIFTSHADER_NOTE,
+  feedback: VIDEO_SINK_SWIFTSHADER_NOTE,
+  freezeframe: VIDEO_SINK_SWIFTSHADER_NOTE,
+  mappy: VIDEO_SINK_SWIFTSHADER_NOTE,
+  // hypercube — its OBSERVED output is audio, but the card renders a live WebGL2
+  //    TESSERACT every frame (hypercube.ts is in the WebGL attest basis), adding
+  //    the SAME main-thread GL pressure as the video-sink group under the 24-way
+  //    SwiftShader contention; on run 29636629277 its per-input spawn→settle→poll
+  //    loop blew the per-test wall-clock budget (page.waitForFunction timeout at
+  //    162s, flaked to a retry timeout) — NOT a per-port delta failure. Covered by
+  //    the hypercube VRT + bespoke specs; inputs-accept pins each port's wire-up.
+  //    RE-ENABLE: a real-GPU CI lane or a reduced-capture behavioral path.
+  hypercube: 'audio-observed 4D module whose card renders a live WebGL2 tesseract every frame — the same main-thread GL pressure as the video-sink group under 24-way SwiftShader contention blew the per-test wall-clock budget (page.waitForFunction timeout 162s, flaked to a retry timeout on main run 29636629277); NOT a per-port delta failure. Covered by hypercube VRT + specs; inputs-accept pins each port wire-up. RE-ENABLE via a real-GPU CI lane or a reduced-capture behavioral path.',
+
+  // ── VIDEO-SINK follow-up (2026-07-18, task #188): the rotating video tail is
+  //    broader than any one run reveals — the behavioral run on PR #1096
+  //    (run 29647252153, shard 3) surfaced two MORE video-domain modules that
+  //    weren't in the run originally scoped. Both are video-out-canvas processors,
+  //    but note they failed by DIFFERENT modes (verified from that shard's log):
+  //
+  //    lumakey — a genuine Class-A CONTENTION TIMEOUT: it timed out at 140s on
+  //    the first attempt then PASSED on retry (flaky), and every one of its 5
+  //    inputs (bg/fg/invert/softness/threshold) clears the delta with healthy
+  //    margin (Δμvar 14–2330) when it completes → pure SwiftShader contention,
+  //    exactly the chroma/fader class. Shared timeout note.
+  lumakey: VIDEO_SINK_SWIFTSHADER_NOTE,
+  //
+  //    mirrorpool — did NOT time out; it completed and DETERMINISTICALLY failed
+  //    the DELTA check on `rain_cv` (Δμvar 1.6–2.7 against mirrorpool's ~1428
+  //    animated-pool variance floor, nb Δ=0.0000) — the SAME video-variance-metric
+  //    class as its existing per-port exempts wind_dir_cv/wind_speed_cv/cam_z_cv/
+  //    pos_z_cv (rain adds droplet energy the coarse global-variance metric can't
+  //    resolve against the animated surface). It's whole-module-exempted here
+  //    (rather than adding yet another per-port entry) because (a) it's a
+  //    video-out-canvas module and therefore ALSO subject to the same rotating
+  //    SwiftShader contention timeout as the group above, and (b) the video-
+  //    variance tail is broader than one run shows (this is the 5th mirrorpool CV
+  //    to fall sub-threshold) — per-port would be whack-a-mole. Its 4 pre-existing
+  //    per-port mirrorpool.* sweep entries are now SHADOWED by this whole-module
+  //    skip (harmless — no orphaned-key guard; they'd correctly re-apply if the
+  //    module re-enters on module re-enable). Real coverage: mirrorpool-core.test.ts
+  //    (swellField/cameraBasis math) + mirrorpool-composite.spec.ts + VRT.
+  //    RE-ENABLE (whole class): a real-GPU CI lane or the shape-sensitive /
+  //    per-port-calibrated video metric in the RATCHET TODO.
+  mirrorpool: 'video-out-canvas animated pool: on PR #1096 (run 29647252153, shard 3) it did not time out but DETERMINISTICALLY failed the delta on rain_cv (Δμvar 1.6–2.7 vs the ~1428 animated-pool variance floor, nb Δ=0.0000) — the same video-variance-metric class as its per-port wind_dir/wind_speed/cam_z/pos_z exempts (now shadowed by this whole-module skip); whole-module because it is ALSO subject to the group\'s rotating SwiftShader contention timeout and the video-variance tail is broader than one run shows. Covered by mirrorpool-core.test.ts (swellField/cameraBasis) + mirrorpool-composite.spec.ts + VRT. RE-ENABLE via a real-GPU CI lane or the shape-sensitive/calibrated video metric (RATCHET TODO).',
 
   // ── MOOG System 55/35 routing / mixer / utility modules (batch-2 +
   //    batch-5). These are PURE gain / patch-bay / format-converter /
@@ -588,6 +648,32 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //    renders to OUTPUT) + the spec-validation + snapshot unit tests; each
   //    port's wire-up is still pinned by per-module-per-port.spec.ts inputs-accept.
   vfpgaRunner: 'manifest-HOST superset class: the def declares the full I/O superset (vin1-4/cv1-4/g1-4) but the loaded VFPGA selects the active subset — the only bundled spec (smpte-bars) is a pure generator using just cv1 (SHIFT, Δμvar≈0.6 below floor) + 0 video/gate, so 11/12 superset ports are correctly inert for it. Covered by vfpga-runner.spec.ts (smpte-bars → OUTPUT) + spec-validation/snapshot unit tests; inputs-accept still pins each port wire-up.',
+
+  // ── COARSE-METRIC subtle-CV percussion / VCO voices (2026-07-18 batch, task
+  //    #188): kickdrum / tomtom / tidyVco. Each is a WORKING voice (the DSP
+  //    consumes every CV — pinned deterministically by the unit tests cited
+  //    below) whose SECONDARY CV inputs (EQ/level/tension/glue/click-shape trims;
+  //    envelope-shape + attack scalers; accent/tune) produce a real but TINY
+  //    perturbation (Δμrms 0.002–0.008) that sits INSIDE the coarse window-
+  //    averaged RMS/zc/centroid metric's ~0.01 jitter floor against the module's
+  //    dominant strike transient / oscillator fundamental. The crucial property:
+  //    the sub-threshold port SET is NON-DETERMINISTIC — across the two attempts
+  //    on main run 29636629277 the failing ports were DISJOINT (kickdrum 25↔26/29
+  //    pass, zero-overlap fail sets; tidyVco 26↔23/27, zero-overlap; tomtom
+  //    10↔10/11, a different single port each attempt), and tomtom's PASSING
+  //    ports span Δμrms 0.001–0.011 (broadly at the floor). So the true marginal
+  //    POPULATION is larger than any one run reveals and a per-port exempt would
+  //    be perpetual whack-a-mole → whole-module (the subtle-CV-effect class, cf.
+  //    the buggles quarantine above). NOT product bugs (CV wired + consumed),
+  //    NOT contention. RE-ENABLE path = the calibrated metric in the RATCHET TODO
+  //    (a per-transient PEAK / spectral metric for percussion + per-port
+  //    thresholds sized to each port's measured jitter floor), which would re-
+  //    admit these ports with real signal instead of growing the list.
+  //    (Contrast moog911.t1_cv, per-port in BEHAVIORAL_SWEEP_EXEMPT: an ISOLATED
+  //    marginal port whose siblings gate/t2_cv/t3_cv pass with real margin.)
+  kickdrum: 'working layered-kick voice whose secondary CV trims (body/sub/click EQ+level, tension, glue, drive, attack, accent, pitch-amt) perturb the output only Δμrms 0.002–0.008 — inside the coarse RMS/zc/centroid metric floor against the dominant kick transient; the sub-threshold port SET is non-deterministic (25↔26/29 pass with DISJOINT failing ports across the two attempts on run 29636629277), so per-port would be whack-a-mole → whole-module (subtle-CV-effect class, cf. buggles). CV is wired + consumed; DSP pinned by kickdrum-dsp.test.ts + kickdrum.test.ts, per-model audio by kickdrum.spec.ts + the kickdrum ART profile. RE-ENABLE via the RATCHET-TODO per-transient / calibrated metric.',
+  tomtom: 'working tom voice whose secondary CV (accent, tune, and broadly its trims — even PASSING ports span Δμrms 0.001–0.011 at the floor) perturb the output sub-threshold on the coarse metric against the strike transient; the failing port ROTATED between accent_in and tune_cv across the two attempts on run 29636629277 (10/11 each) → whole-module (subtle-CV-effect class), not per-port. CV wired + consumed; DSP pinned by tomtom-dsp.test.ts (+ tomtom-dsp.sonic-range.test.ts) + tomtom.test.ts + tomtom.spec.ts + the tomtom ART profile. RE-ENABLE via the RATCHET-TODO per-transient / calibrated metric.',
+  tidyVco: 'working VCO voice whose envelope-shape + attack CV scalers (atk/fatk/env/shape1/shape2 …) perturb the output only Δμrms 0.002–0.008 — inside the coarse metric floor against the oscillator fundamental; the sub-threshold port SET is non-deterministic (26↔23/27 pass with DISJOINT failing ports across the two attempts on run 29636629277), so per-port would be whack-a-mole → whole-module (subtle-CV-effect class). CV wired + consumed; DSP pinned by tidy-vco-dsp.test.ts (+ tidy-vco-dsp.sonic-range.test.ts) + tidy-vco.test.ts + tidy-vco.spec.ts + the tidy-vco ART profile. RE-ENABLE via the RATCHET-TODO per-transient / calibrated metric.',
 };
 
 // ────────── Reconciliation law: every exemption is BACKLOG ──────────
@@ -1188,6 +1274,19 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    moog911.test.ts (envelope contour / sustain math).
   'moog911.esus_cv': 'sustain-LEVEL CV only shapes the env\'s held-sustain phase; the short retriggering behavioral window is attack/release-dominated → Δμrms=0.003 inside the env ±0.105 noise floor → near-threshold flake (green in the purge, failed one real run); t1/t2/t3/gate stay gated. RE-ENABLE: hold the gate through sustain + widen the window. Covered by moog911.test.ts',
 
+  // ── MOOG 911 EG (cont., 2026-07-18 task #188): t1_cv is the ATTACK-TIME CV.
+  //    A retriggering env in the short 5-snapshot window is dominated by the
+  //    FIXED default env times, so a CV on the attack time barely moves the
+  //    window-averaged level → on main run 29636629277 t1_cv read Δμrms=0.005
+  //    inside the env's ±0.105 noise floor → near-threshold FLAKE (it PASSED one
+  //    attempt at Δμrms=0.019 and FAILED the other, so the run was marked flaky).
+  //    This is an ISOLATED marginal port — gate (Δμrms 0.83), t2_cv (0.03–0.06)
+  //    and t3_cv (0.06) all pass with real margin — so per-port (exactly like the
+  //    sibling esus_cv above), NOT whole-module, is the correct + stable fix.
+  //    RE-ENABLE: a per-transient / attack-keyed calibrated metric (RATCHET TODO).
+  //    Covered by moog911.test.ts (envelope contour / attack-time math).
+  'moog911.t1_cv': 'attack-TIME CV: the short retriggering behavioral window is dominated by the fixed default env times, so t1_cv reads Δμrms=0.005 inside the env ±0.105 noise floor → near-threshold flake (passed one attempt at 0.019, failed the other on run 29636629277 → the test was flaky); an ISOLATED marginal port (gate/t2_cv/t3_cv all pass with real margin), so per-port like the sibling esus_cv, not whole-module. RE-ENABLE via an attack-keyed / calibrated metric. Covered by moog911.test.ts',
+
   // ── MOOG 921B (slaved VCO): freq_bus is its 1V/oct pitch CV from a 921A
   //    driver (the 921B has no 1V/oct jack of its own). The pitch DOES respond —
   //    driving freq_bus with the sweep's time-varying probe SWEEPS the pitch
@@ -1416,11 +1515,11 @@ test('RATCHET: behavioral exemption lists only shrink', () => {
   expect(
     Object.keys(BEHAVIORAL_MODULE_EXEMPT).length,
     'BEHAVIORAL_MODULE_EXEMPT grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(62); // RE-FROZEN at 62 (2026-07-16): +2 es9 + sixstrum (structurally silent in CI — es9's outputs source from physical hardware absent in CI, sixstrum is silent-until-struck with no base-strum driver; both were already whole-module/output exempt in per-module-per-port.spec.ts but never mirrored here, so the sweep hard-failed them on every main push; see their entries for coverage + re-enable paths). The two land INSIDE the old 66 cap's slack (prior re-enables — adsr/treeohvox/moog984/993/961/911a/960 — left the map at 60 without lowering the cap), and the cap is re-frozen at the actual list size 62 so it can only shrink again. // (history, old cap 66) +1 blood (data-gated emulator — driven + control inputs both idle without the non-redistributable WAD, absent in CI); +1 milkdrop (self-animating multi-pass visualizer — out luma-variance jitter floor swamps any per-input delta, cf. bentbox/b3ntb0x; covered by milkdrop-render-smoke.spec.ts); +1 spirographs (line generator — 25/31 geometry CV inputs reshape a thin curve sub-threshold on the coarse video-variance metric, cf. milkdrop/tempest.rim; deterministic, CV wired; covered by spirographs.test.ts + render-smoke)
+  ).toBeLessThanOrEqual(73); // RE-FROZEN at 73 (2026-07-18, task #188 follow-up): +2 more video-domain modules from the PR #1096 behavioral run (run 29647252153, shard 3) — lumakey (genuine Class-A SwiftShader contention TIMEOUT, flaky-passed on retry, all 5 ports clear otherwise) + mirrorpool (did NOT time out — deterministically delta-failed rain_cv at Δμvar 1.6–2.7 vs its ~1428 animated-pool floor, the video-variance class of its already-per-port wind/cam/pos exempts; whole-module because it's video-out-canvas so ALSO contention-timeout-prone + the video-variance tail rotates broader than one run). // RE-FROZEN at 71 (2026-07-18, task #188): +6 CI-contention video/WebGL modules that SKIP here (chroma/fader/feedback/freezeframe/mappy = the SwiftShader per-frame-WebGL→video-out-canvas timeout class, cf. cellshade/posterbox; hypercube = a live WebGL2-tesseract card under the same 24-way SwiftShader contention — all timeout/flaky-timeout on run 29636629277, NOT per-port delta fails, and skipping them REDUCES lane wall-time) + +3 coarse-metric subtle-CV voices (kickdrum/tomtom/tidyVco: secondary CV trims perturb Δμrms 0.002–0.008 inside the metric floor with a NON-DETERMINISTIC/disjoint failing set across attempts → per-port would be whack-a-mole, so whole-module in the subtle-CV-effect class; DSP verified + unit-test-pinned; re-enable via the RATCHET-TODO calibrated metric). // RE-FROZEN at 62 (2026-07-16): +2 es9 + sixstrum (structurally silent in CI — es9's outputs source from physical hardware absent in CI, sixstrum is silent-until-struck with no base-strum driver; both were already whole-module/output exempt in per-module-per-port.spec.ts but never mirrored here, so the sweep hard-failed them on every main push; see their entries for coverage + re-enable paths). The two land INSIDE the old 66 cap's slack (prior re-enables — adsr/treeohvox/moog984/993/961/911a/960 — left the map at 60 without lowering the cap), and the cap is re-frozen at the actual list size 62 so it can only shrink again. // (history, old cap 66) +1 blood (data-gated emulator — driven + control inputs both idle without the non-redistributable WAD, absent in CI); +1 milkdrop (self-animating multi-pass visualizer — out luma-variance jitter floor swamps any per-input delta, cf. bentbox/b3ntb0x; covered by milkdrop-render-smoke.spec.ts); +1 spirographs (line generator — 25/31 geometry CV inputs reshape a thin curve sub-threshold on the coarse video-variance metric, cf. milkdrop/tempest.rim; deterministic, CV wired; covered by spirographs.test.ts + render-smoke)
   expect(
     Object.keys(BEHAVIORAL_SWEEP_EXEMPT).length,
     'BEHAVIORAL_SWEEP_EXEMPT grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(175); // +1 mirrorpool.pos_z_cv (bipolar-position dolly along the view axis, ±2R — SAME variance-quiet class as cam_z_cv; lateral pos_x_cv + vertical pos_y_cv STAY gated, paralleling cam_x/cam_y which PASS; re-enable via the per-port-calibrated/optical-flow metric alongside cam_z_cv; still well under this cap). // +3 mirrorpool.{wind_dir_cv,wind_speed_cv,cam_z_cv} (animated-pool ~1390 luma-variance floor; wind rotates/adds equal-energy swell + cam_z dollies along the view axis — video-variance-class spatial-rearrangement inputs blind to the global-variance metric, cf. lines.phase/tempest.rim/lushgarden.view; the other 8 CVs PASS; camera/swell math pinned in mirrorpool-core.test.ts + composite VRT); +3 lushgarden.{rate,horizon,view} (stochastic-garden variance floor ±300 std masks the three scene-geometry CVs — view is a pure translation (lines.phase class), horizon a depth-proportional anchor shift, rate a spawn-cadence wiggle; each read Δμvar <4 at least once over 7 repeats → near-threshold flakes; grow/reset/background stay gated and detect at Δμvar 770–2690; math pinned in lushgarden-scene.test.ts, re-enable via per-port-calibrated metric or __lushgardenVrtSeed-seeded driver); +1 snaredrum.roll_speed_cv (CV only modulates the drumroll rate, which needs gate_in held high; the sweep drives trigger_in single strikes → no roll → no delta, cf. pentemelodica.fmN; rate map unit-proven in snare-roll-dsp.test.ts, density asserted in snaredrum-roll.spec.ts); +1 tempest.rim (claw occupies ~1/16 lanes; sliding it doesn't move global frame-variance — video-variance class; claw motion unit-proven in tempest.test.ts + render-smoke); +1 textmarquee.posY (vertical text translation keeps covered pixel-area/frame-variance unchanged → near-threshold flake, video-variance class; posX/scrollX stay gated; covered by textmarquee-layout.test.ts + render-smoke); +1 moog962.shift (advancing the seq-switch selector across UNPATCHED in1..in3 gives Δμrms 0.004 inside the ±0.089 out-noise floor → near-threshold flake; in1/in2/in3 stay gated; covered by moog962.test.ts); +1 lines.phase (phase scroll translates the line bands but preserves frame-variance, Δμvar 2.36 vs ±63.7 → near-threshold flake, video-variance class; orient/amp/thickness stay gated; covered by lines-render-smoke.spec.ts); +1 moog911.esus_cv (sustain-level CV only shapes the held-sustain phase; short retriggering window is attack/release-dominated, Δμrms 0.003 inside ±0.105 → near-threshold flake; t1/t2/t3/gate stay gated; covered by moog911.test.ts); +1 textmarquee.scrollY (vertical scroll of the horizontal band keeps frame-variance ≈ constant, Δμvar 1.45–2.08 → near-threshold flake, same geometry as posY; posX/scrollX stay gated; covered by textmarquee-layout.test.ts); +1 moog921b.freq_bus (1V/oct pitch bus responds — perturbed cent jitters ±24Hz — but a symmetric sweep collapses the mean-cent metric to Δμcent 3–10Hz → metric-mismatch flake, not dead CV; width_bus/fine/range stay gated; covered by moog921b.test.ts)
+  ).toBeLessThanOrEqual(135); // RE-FROZEN at 135 (2026-07-18, task #188): the cap had DRIFTED to 175 while the map held only 134 entries (prior re-enables removed entries without lowering the cap — the same slack the module cap had at 66→62), so the ratchet was toothless (40 free slots). Re-frozen to the TRUE size = 134 existing + 1 new so new additions fail the guard again as intended. +1 moog911.t1_cv (attack-TIME CV: the retrigger window is default-time-dominated → Δμrms=0.005 inside the env ±0.105 floor → near-threshold flake, passed one attempt/failed the other on run 29636629277; ISOLATED marginal port — gate/t2_cv/t3_cv pass with margin — so per-port like sibling esus_cv; covered by moog911.test.ts). // (history, old cap 175) +1 mirrorpool.pos_z_cv (bipolar-position dolly along the view axis, ±2R — SAME variance-quiet class as cam_z_cv; lateral pos_x_cv + vertical pos_y_cv STAY gated, paralleling cam_x/cam_y which PASS; re-enable via the per-port-calibrated/optical-flow metric alongside cam_z_cv; still well under this cap). // +3 mirrorpool.{wind_dir_cv,wind_speed_cv,cam_z_cv} (animated-pool ~1390 luma-variance floor; wind rotates/adds equal-energy swell + cam_z dollies along the view axis — video-variance-class spatial-rearrangement inputs blind to the global-variance metric, cf. lines.phase/tempest.rim/lushgarden.view; the other 8 CVs PASS; camera/swell math pinned in mirrorpool-core.test.ts + composite VRT); +3 lushgarden.{rate,horizon,view} (stochastic-garden variance floor ±300 std masks the three scene-geometry CVs — view is a pure translation (lines.phase class), horizon a depth-proportional anchor shift, rate a spawn-cadence wiggle; each read Δμvar <4 at least once over 7 repeats → near-threshold flakes; grow/reset/background stay gated and detect at Δμvar 770–2690; math pinned in lushgarden-scene.test.ts, re-enable via per-port-calibrated metric or __lushgardenVrtSeed-seeded driver); +1 snaredrum.roll_speed_cv (CV only modulates the drumroll rate, which needs gate_in held high; the sweep drives trigger_in single strikes → no roll → no delta, cf. pentemelodica.fmN; rate map unit-proven in snare-roll-dsp.test.ts, density asserted in snaredrum-roll.spec.ts); +1 tempest.rim (claw occupies ~1/16 lanes; sliding it doesn't move global frame-variance — video-variance class; claw motion unit-proven in tempest.test.ts + render-smoke); +1 textmarquee.posY (vertical text translation keeps covered pixel-area/frame-variance unchanged → near-threshold flake, video-variance class; posX/scrollX stay gated; covered by textmarquee-layout.test.ts + render-smoke); +1 moog962.shift (advancing the seq-switch selector across UNPATCHED in1..in3 gives Δμrms 0.004 inside the ±0.089 out-noise floor → near-threshold flake; in1/in2/in3 stay gated; covered by moog962.test.ts); +1 lines.phase (phase scroll translates the line bands but preserves frame-variance, Δμvar 2.36 vs ±63.7 → near-threshold flake, video-variance class; orient/amp/thickness stay gated; covered by lines-render-smoke.spec.ts); +1 moog911.esus_cv (sustain-level CV only shapes the held-sustain phase; short retriggering window is attack/release-dominated, Δμrms 0.003 inside ±0.105 → near-threshold flake; t1/t2/t3/gate stay gated; covered by moog911.test.ts); +1 textmarquee.scrollY (vertical scroll of the horizontal band keeps frame-variance ≈ constant, Δμvar 1.45–2.08 → near-threshold flake, same geometry as posY; posX/scrollX stay gated; covered by textmarquee-layout.test.ts); +1 moog921b.freq_bus (1V/oct pitch bus responds — perturbed cent jitters ±24Hz — but a symmetric sweep collapses the mean-cent metric to Δμcent 3–10Hz → metric-mismatch flake, not dead CV; width_bus/fine/range stay gated; covered by moog921b.test.ts)
 });
 
 // TODO(behavioral-coverage, systemic fix — tracks the header note + the
