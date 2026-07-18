@@ -66,10 +66,12 @@ describe('LaunchpadDocs — tabbed structure', () => {
     expect(out).toContain('CLIP RECORD');
     expect(out).toContain('ARRANGER RECORD');
     // Discoverability: the arming surfaces are named in the vocabulary box —
-    // per-lane arm (the owner-locked model): SHIFT+top-row on the hardware,
-    // the per-lane ◉ on the card; module-level assignment; CV never recorded.
+    // per-lane arm (the owner-locked model): HOLD SHIFT + top-row on the
+    // hardware, the per-lane ◉ on the card; module-level assignment; CV never
+    // recorded. SHIFT is momentary hold-only (no latch, no double-tap).
     expect(out).toContain('arm the');
-    expect(out).toContain('double-tap SHIFT');
+    expect(out).toContain('HOLD SHIFT');
+    expect(out).not.toContain('double-tap SHIFT'); // the retired latch-era gesture
     expect(out).toContain('QUEUE-REC');
     expect(out).toContain('Assign to automation lane');
     expect(out).toContain('CV is never recorded');
@@ -81,9 +83,9 @@ describe('LaunchpadDocs — tabbed structure', () => {
     // state both render in the shared foundation (visible from the default tab).
     expect(out).toContain('ARM MAP');
     expect(out).toContain('RED-FLASHING');
-    // Lane 8's arm is the SHFT double-tap, fired on the second tap's RELEASE.
-    expect(out).toContain('DOUBLE-TAP of SHIFT');
-    expect(out).toContain('RELEASE');
+    // Lane 8's arm is HOLD SHIFT + the pad directly below SHFT (no double-tap).
+    expect(out).toContain('PAD DIRECTLY BELOW SHFT');
+    expect(out).toContain('momentary hold');
     // The dim-red alternation on red-family bases is documented.
     expect(out).toContain('DIM red');
   });
@@ -103,7 +105,7 @@ describe('LaunchpadDocs — tabbed structure', () => {
         view: 'grid',
         keysActive: false,
         transportRunning: true,
-        shift: { held: shiftHeld, latched: false },
+        shift: { held: shiftHeld },
         canUndo: false,
         canRedo: false,
         laneArms,
@@ -149,7 +151,7 @@ describe('LaunchpadDocs — tabbed structure', () => {
         view: 'grid',
         keysActive: false,
         transportRunning: true,
-        shift: { latched: false, held: false },
+        shift: { held: false },
         canUndo: false,
         canRedo: false,
       },

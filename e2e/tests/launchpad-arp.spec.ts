@@ -102,7 +102,6 @@ async function arpState(page: import('@playwright/test').Page) {
           arpDivIndex: number;
           arpRangeIndex: number;
           arpLatch: boolean;
-          shiftLatched: boolean;
           keysPressedCount: number;
         };
       };
@@ -171,6 +170,17 @@ test('@launchpad single-unit ARP — a held KEYS chord is SEQUENCED to audible R
       s.cc(c, 127);
       s.cc(c, 0);
     }, cc);
+  // Press/hold + release a CC separately — SHIFT is momentary hold-only.
+  const ccDown = (cc: number) =>
+    page.evaluate((c) => {
+      (globalThis as unknown as { __launchpadSingleSim?: { cc: (cc: number, v: number) => void } })
+        .__launchpadSingleSim!.cc(c, 127);
+    }, cc);
+  const ccUp = (cc: number) =>
+    page.evaluate((c) => {
+      (globalThis as unknown as { __launchpadSingleSim?: { cc: (cc: number, v: number) => void } })
+        .__launchpadSingleSim!.cc(c, 0);
+    }, cc);
 
   await setTransport(page, 1);
 
@@ -224,15 +234,15 @@ test('@launchpad single-unit ARP — a held KEYS chord is SEQUENCED to audible R
     expect(s.arpDivIndex, 'default arp division index is 1x (3)').toBe(3);
   }
 
-  // (6) DIRECTION + DIVISION changes (KEYS + shift = the arp control column). A
-  //     short shift tap LATCHES the alt layer; then scene 4 = up-down, scene 1 =
-  //     div− (slower). Both mutate the live arp state deterministically.
-  await ccTapS(CC_SHIFT); // tap → latch the shift layer
-  await expect.poll(() => arpState(page).then((s) => s.shiftLatched)).toBe(true);
+  // (6) DIRECTION + DIVISION changes (KEYS + shift = the arp control column).
+  //     SHIFT is momentary HOLD — hold it while tapping scene 4 = up-down and
+  //     scene 1 = div− (slower), then release. Both mutate the live arp state.
+  await ccDown(CC_SHIFT); // HOLD shift → the arp control column
   await ccTapS(ARP_UPDOWN_CC);
   await expect.poll(() => arpState(page).then((s) => s.arpDir), { timeout: 5000 }).toBe('updown');
   await ccTapS(ARP_DIV_DOWN_CC);
   await expect.poll(() => arpState(page).then((s) => s.arpDivIndex), { timeout: 5000 }).toBe(4);
+  await ccUp(CC_SHIFT); // release
 
   // Still SEQUENCING after the param changes (the chord is still held).
   const still = await readScopePeakOverWindow(page, 'p-scp', 1000);

@@ -240,11 +240,12 @@ test('@launchpad scene repeats SCROLL-AWARE: with the window scrolled, the held 
   await ccTapSingle(page, CC_VIEW_GRID);
   await expect.poll(() => singleView(page), { timeout: 5000 }).toBe('grid');
 
-  // Slide the scene window down one (shift-latched palette), then unlatch.
-  await ccTapSingle(page, CC_SHIFT_TOP);
+  // Slide the scene window down one — HOLD shift (momentary) for the scroll
+  // palette, then release.
+  await ccSingle(page, CC_SHIFT_TOP, 127);
   await ccTapSingle(page, G_SCROLL_DOWN_CC);
   await expect.poll(() => sceneOffset(page), { timeout: 5000 }).toBe(1);
-  await ccTapSingle(page, CC_SHIFT_TOP);
+  await ccSingle(page, CC_SHIFT_TOP, 0);
 
   // HOLD GRID + the TOP scene button now edits scene offset+0 = SLOT 1 (the
   // owner-called-out case): tap pad 3 → sceneRepeats['1'] = 3, NOT '0'.

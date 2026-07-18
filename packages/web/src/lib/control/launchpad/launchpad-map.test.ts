@@ -164,7 +164,6 @@ import {
   RGB_VIEW_ACTIVE,
   RGB_SHIFT_OFF,
   RGB_SHIFT_HELD,
-  RGB_SHIFT_LATCH,
   RGB_TRANSPORT_STOP,
   RGB_SYS,
   RGB_SYS_DIM,
@@ -662,7 +661,7 @@ const mkTop = (view: SingleView, partial: Partial<PermanentTopOpts> = {}): Perma
   view,
   keysActive: false,
   transportRunning: false,
-  shift: { latched: false, held: false },
+  shift: { held: false },
   canUndo: false,
   canRedo: false,
   ...partial,
@@ -909,36 +908,52 @@ describe('Single mode — permanent top row', () => {
     paintPermanentTopRow(f, mkTop('clip', { keysActive: true }));
     expect(eqRgb(at(f, 93), RGB_VIEW_ACTIVE)).toBe(true);
   });
-  it('undo/redo dim when the stacks are empty (no shift); shift latched vs held on CC 98', () => {
+  it('undo/redo dim when the stacks are empty; shift CC 98 = dim off / bright held (no latch)', () => {
     const f = emptyLpFrame();
     paintPermanentTopRow(f, mkTop('grid'));
     expect(eqRgb(at(f, 96), RGB_SYS_DIM)).toBe(true); // canUndo false
     expect(eqRgb(at(f, 97), RGB_SYS_DIM)).toBe(true); // canRedo false
-    const latch = emptyLpFrame();
-    paintPermanentTopRow(latch, mkTop('grid', { shift: { latched: true, held: false } }));
-    expect(eqRgb(at(latch, 98), RGB_SHIFT_LATCH)).toBe(true); // solid yellow
+    expect(eqRgb(at(f, 98), RGB_SHIFT_OFF)).toBe(true); // not held → dim
     const held = emptyLpFrame();
-    paintPermanentTopRow(held, mkTop('grid', { shift: { latched: false, held: true } }));
-    expect(eqRgb(at(held, 98), RGB_SHIFT_HELD)).toBe(true); // bright yellow
+    paintPermanentTopRow(held, mkTop('grid', { shift: { held: true } }));
+    expect(eqRgb(at(held, 98), RGB_SHIFT_HELD)).toBe(true); // held → bright yellow
   });
-  it('ARM MAP while shift is ACTIVE: cols 0..6 = red pulse (armed) / dim red (available); CC 98 keeps the shift LED', () => {
-    // Shift LATCHED, lane 2 armed, blink bright.
+  it('ARM MAP while shift is HELD: cols 0..6 = red pulse (armed) / dim red (available); CC 98 keeps the shift LED', () => {
+    // Shift HELD, lane 2 armed, blink bright.
     const f = emptyLpFrame();
     paintPermanentTopRow(
       f,
-      mkTop('grid', { shift: { latched: true, held: false }, laneArms: [false, false, true], blinkOn: true }),
+      mkTop('grid', { shift: { held: true }, laneArms: [false, false, true], blinkOn: true }),
     );
     expect(eqRgb(at(f, 93), RGB_RECORDING)).toBe(true); // lane 2 armed → red pulse (bright)
     expect(eqRgb(at(f, 91), RGB_STOP_IDLE)).toBe(true); // lane 0 available → dim red
     expect(eqRgb(at(f, 97), RGB_STOP_IDLE)).toBe(true); // lane 6 available → dim red
-    expect(eqRgb(at(f, 98), RGB_SHIFT_LATCH)).toBe(true); // the shift button keeps its LED
+    expect(eqRgb(at(f, 98), RGB_SHIFT_HELD)).toBe(true); // the shift button keeps its held LED
     // Blink-off phase: the armed lane dims to the record-dim red.
     const dim = emptyLpFrame();
     paintPermanentTopRow(
       dim,
-      mkTop('grid', { shift: { latched: true, held: false }, laneArms: [false, false, true], blinkOn: false }),
+      mkTop('grid', { shift: { held: true }, laneArms: [false, false, true], blinkOn: false }),
     );
     expect(eqRgb(at(dim, 93), RGB_RECORDING_DIM)).toBe(true);
+  });
+  it('LANE-8 ARM PAD (below SHFT) lights ONLY while shift is HELD: dim red available / red pulse armed', () => {
+    const P = padNote(7, 7); // topmost row (y=7), rightmost col (x=7) — the pad below SHFT
+    // No shift → the pad is NOT painted by the top-row painter (view owns it).
+    const noShift = emptyLpFrame();
+    paintPermanentTopRow(noShift, mkTop('grid', { laneArms: [false, false, false, false, false, false, false, true] }));
+    expect(noShift.leds.has(P), 'lane-8 pad untouched off-shift (armed state shows on CC 98)').toBe(false);
+    // Shift held, lane 8 AVAILABLE (not armed) → dim red.
+    const avail = emptyLpFrame();
+    paintPermanentTopRow(avail, mkTop('grid', { shift: { held: true } }));
+    expect(eqRgb(at(avail, P), RGB_STOP_IDLE)).toBe(true);
+    // Shift held, lane 8 ARMED, blink bright → red pulse; off phase → dim red.
+    const armedOn = emptyLpFrame();
+    paintPermanentTopRow(armedOn, mkTop('grid', { shift: { held: true }, laneArms: [false, false, false, false, false, false, false, true], blinkOn: true }));
+    expect(eqRgb(at(armedOn, P), RGB_RECORDING)).toBe(true);
+    const armedOff = emptyLpFrame();
+    paintPermanentTopRow(armedOff, mkTop('grid', { shift: { held: true }, laneArms: [false, false, false, false, false, false, false, true], blinkOn: false }));
+    expect(eqRgb(at(armedOff, P), RGB_RECORDING_DIM)).toBe(true);
   });
   it('ALWAYS-VISIBLE arm overlay (no shift): an armed lane’s top button red-flashes ALTERNATING with its base colour — every view', () => {
     // Lane 2 (the CLIP button's column) armed, grid view, blink bright → RED.
@@ -1012,7 +1027,7 @@ describe('Single mode — frame builders', () => {
   });
   it('grid + shift: the right column shows the function palette; the armed action brightens; UP/DOWN are amber', () => {
     const f = computeSingleGridFrame({} as ClipPlayerData, {
-      top: mkTop('grid', { shift: { latched: true, held: false } }),
+      top: mkTop('grid', { shift: { held: true } }),
       armedRightAction: 'copy',
       bufferLoaded: false,
       canScrollUp: true,
@@ -1027,7 +1042,7 @@ describe('Single mode — frame builders', () => {
   });
   it('grid + shift: UP/DOWN dim to RGB_SCENE_DIM at their scroll clamp', () => {
     const f = computeSingleGridFrame({} as ClipPlayerData, {
-      top: mkTop('grid', { shift: { latched: true, held: false } }),
+      top: mkTop('grid', { shift: { held: true } }),
       canScrollUp: false, // at the top (offset 0) → UP dim
       canScrollDown: false, // nothing more to reveal → DOWN dim
     });
@@ -1036,7 +1051,7 @@ describe('Single mode — frame builders', () => {
   });
   it('grid + shift: the Swing buttons flash green on return-to-centre', () => {
     const f = computeSingleGridFrame({} as ClipPlayerData, {
-      top: mkTop('grid', { shift: { latched: true, held: false } }),
+      top: mkTop('grid', { shift: { held: true } }),
       swingMeter: { active: true, dir: 'center', level0to1: 0 },
     });
     expect(eqRgb(at(f, SCENE_CCS[3]), RGB_SWING_CENTER)).toBe(true); // Swing+
@@ -1045,14 +1060,14 @@ describe('Single mode — frame builders', () => {
   it('grid + shift: PASTE pulses the AMBER scene-buffer colour when a SCENE is buffered', () => {
     // Turquoise for a clip buffer, amber for a scene buffer (distinct colour).
     const clipBuf = computeSingleGridFrame({} as ClipPlayerData, {
-      top: mkTop('grid', { shift: { latched: true, held: false } }),
+      top: mkTop('grid', { shift: { held: true } }),
       bufferLoaded: true,
       bufferKind: 'clip',
       blinkOn: true,
     });
     expect(eqRgb(at(clipBuf, SCENE_CCS[1]), RGB_COPY_BUFFER)).toBe(true); // clip → turquoise
     const sceneBuf = computeSingleGridFrame({} as ClipPlayerData, {
-      top: mkTop('grid', { shift: { latched: true, held: false } }),
+      top: mkTop('grid', { shift: { held: true } }),
       bufferLoaded: true,
       bufferKind: 'scene',
       blinkOn: true,
@@ -1100,7 +1115,7 @@ describe('Single mode — frame builders', () => {
     expect(eqRgb(at(f, padNote(0, 5)), loadedRgb as unknown as typeof RGB_OFF)).toBe(true);
   });
   it('grid: divPulse pulses the TARGET clip pad blue in time', () => {
-    const shiftTop = mkTop('grid', { shift: { latched: true, held: false } });
+    const shiftTop = mkTop('grid', { shift: { held: true } });
     const on = computeSingleGridFrame({} as ClipPlayerData, {
       top: shiftTop,
       divPulse: { clipIndex: clipIndex(0, 0), on: true },
@@ -1169,7 +1184,7 @@ describe('Single mode — frame builders', () => {
   it('clip + shift: Step buttons brighten (block jump); Follow lights bright when on', () => {
     const clip = defaultNoteClip();
     const f = computeSingleClipFrame(clip, {
-      top: mkTop('clip', { shift: { latched: true, held: false } }),
+      top: mkTop('clip', { shift: { held: true } }),
       followOn: true,
     });
     expect(eqRgb(at(f, SCENE_CCS[6]), RGB_TIMING_ARMED)).toBe(true); // Step◀ block-jump
@@ -1196,7 +1211,7 @@ describe('Single mode — frame builders', () => {
   });
   it('keys + shift: arp control column; the selected direction + latch brighten', () => {
     const f = computeSingleKeysFrame({
-      top: mkTop('clip', { keysActive: true, shift: { latched: true, held: false } }),
+      top: mkTop('clip', { keysActive: true, shift: { held: true } }),
       keyboardRoot: 48,
       lengthSteps: 16,
       selectedScale: undefined,
