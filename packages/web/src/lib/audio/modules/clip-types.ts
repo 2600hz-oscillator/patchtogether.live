@@ -370,6 +370,27 @@ export interface ClipPlayerData {
    *  presses always re-fire. The `reset` gate INPUT is the CV equivalent
    *  (local rising edge per client). */
   resetNonce?: number;
+  // ── SCENE REPEATS (clip-scene-repeats.ts owns the model + helpers) ──
+  /** Per-SCENE repeat counts — a sparse map keyed by the scene SLOT ('0'..'63'):
+   *  an integer 1..SCENE_REPEATS_MAX plays the scene that many times then
+   *  auto-advances to the next content scene down; ABSENT/0/invalid = INFINITE
+   *  (the default — scenes loop forever). SYNCED CONTENT (duplicated with the
+   *  player); PER-KEY writes via `setSceneRepeat` (setting infinite deletes the
+   *  key), the same merge discipline as `autoAssign`. The value domain is a
+   *  PURE count (extensible: a future per-scene field like a next-scene
+   *  override would be a SIBLING map, never a mode folded into this number).
+   *  Set from the Launchpad repeat-count view (HOLD GRID + HOLD a scene-launch
+   *  button); the card shows a read-only "×N" flair. */
+  sceneRepeats?: Record<string, number>;
+  /** SCENE-LAUNCH intent marker `{slot, n}` — bumped (n+1) in the SAME
+   *  transaction as every whole-scene queued write (`applySceneLaunchWrite`:
+   *  Launchpad, monome, and the engine's repeat auto-advance). A resetNonce-
+   *  style observed counter: every peer's engine re-anchors its repeat tracker
+   *  to `slot` with a FRESH count when `n` changes (adopt-without-fire on the
+   *  first tick, so loading a patch never replays a launch; re-launching the
+   *  SAME scene resets its count — manual always wins). LIVE state, never
+   *  duplicated. */
+  sceneLaunch?: { slot: number; n: number };
   // ── SONG MODE (arranger) ──
   /** The recorded arrangement (an event log of clip launches over song time).
    *  Absent = none recorded. See clip-arrange.ts. */
@@ -686,6 +707,7 @@ export const CLIP_PLAYER_TRANSIENT_DATA_FIELDS = [
   'automation', // per-lane automation arm + recorderIds
   'autoAssign', // module→lane claims (globally exclusive — never copied)
   'resetNonce', // reset intent counter
+  'sceneLaunch', // scene-launch intent marker (sceneRepeats itself is CONTENT — copied)
 ] as const;
 
 /** Strip the live-performance fields from a clip-player data CLONE (in
@@ -1207,10 +1229,19 @@ export type CopyTargetKind = 'clip' | 'scene';
  *  clips at a slot; an empty lane is `null`). Held as PLAIN deep-clones. The
  *  ENVELOPE BELONGS TO THE CLIP: the buffer also carries each source clip's
  *  sibling automation (`auto`/`autos`, null = the source carried none), so a
- *  paste moves the automation WITH the notes. */
+ *  paste moves the automation WITH the notes. A SCENE buffer also carries the
+ *  source scene's REPEAT COUNT (`repeats`; 0/absent = infinite) — counts are
+ *  content, so a full-replace scene paste sets the target's count from the
+ *  buffer (or clears it when the source had none — no ghost counts, same
+ *  discipline as the automation). */
 export type CopyBuffer =
   | { kind: 'clip'; clip: NoteClipRecord; auto: AutoClipRecord | null }
-  | { kind: 'scene'; clips: (ClipRecord | null)[]; autos: (AutoClipRecord | null)[] };
+  | {
+      kind: 'scene';
+      clips: (ClipRecord | null)[];
+      autos: (AutoClipRecord | null)[];
+      repeats?: number;
+    };
 
 /** Paste TYPE-GATE (PURE): a paste applies ONLY when the buffer kind matches the
  *  target kind — scene→scene + clip→clip apply; scene→clip + clip→scene are

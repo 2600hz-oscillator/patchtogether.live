@@ -496,6 +496,7 @@ describe('automation: CLEAN BREAK — the retired stamped kind coerces away sile
       auto: { '0': { tracks: { 'm::p': { events: [{ step: 0, value: 0.5 }] } } } },
       mono: [true], muted: [false], rate: [3], swing: [0.1], laneColor: ['#112233'],
       arrangement: { events: [] }, clipMode: 'session', recordMode: 'overdub',
+      sceneRepeats: { '2': 4 }, // SCENE-REPEAT counts are CONTENT — duplicated
       // LIVE-PERFORMANCE state — must NOT survive a duplicate:
       playing: [0, null, null, null, null, null, null, null],
       queued: [1, null, null, null, null, null, null, null],
@@ -505,14 +506,15 @@ describe('automation: CLEAN BREAK — the retired stamped kind coerces away sile
       automation: { lanes: { '0': { arm: true, recorderId: 123 } } },
       autoAssign: { modA: 0 },
       resetNonce: 5,
+      sceneLaunch: { slot: 0, n: 3 }, // scene-launch intent marker — live state
     };
     scrubClipPlayerTransientData(data);
     // Scrubbed (a duplicate is born disarmed, unassigned, stopped):
-    for (const f of ['playing', 'queued', 'queuedImmediate', 'recording', 'noteRec', 'automation', 'autoAssign', 'resetNonce']) {
+    for (const f of ['playing', 'queued', 'queuedImmediate', 'recording', 'noteRec', 'automation', 'autoAssign', 'resetNonce', 'sceneLaunch']) {
       expect(f in data, `${f} scrubbed`).toBe(false);
     }
     // Content + settings survive:
-    for (const f of ['sv', 'clips', 'auto', 'mono', 'muted', 'rate', 'swing', 'laneColor', 'arrangement', 'clipMode', 'recordMode']) {
+    for (const f of ['sv', 'clips', 'auto', 'mono', 'muted', 'rate', 'swing', 'laneColor', 'arrangement', 'clipMode', 'recordMode', 'sceneRepeats']) {
       expect(f in data, `${f} kept`).toBe(true);
     }
     expect(() => scrubClipPlayerTransientData(undefined)).not.toThrow();

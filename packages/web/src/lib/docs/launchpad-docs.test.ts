@@ -8,8 +8,14 @@
 import { describe, expect, it } from 'vitest';
 import { render } from 'svelte/server';
 import LaunchpadDocs from './LaunchpadDocs.svelte';
-import { colTopCc, paintPermanentTopRow } from '$lib/control/launchpad/launchpad-map';
+import {
+  colTopCc,
+  paintPermanentTopRow,
+  computeSingleGridFrame,
+  repeatPadOrdinal,
+} from '$lib/control/launchpad/launchpad-map';
 import { emptyFrame } from '$lib/control/launchpad/launchpad-device.svelte';
+import { padNote, SCENE_CCS } from '$lib/control/launchpad/launchpad-sysex';
 
 const html = (props: Record<string, string> = {}) =>
   render(LaunchpadDocs as never, { props } as never).body;
@@ -127,6 +133,60 @@ describe('LaunchpadDocs — tabbed structure', () => {
     expect(figureTopFills(out, 'the compass comes back')).toEqual(
       firmwareTopRow(false, ARMS_LANE3),
     );
+  });
+
+  it('SCENE-REPEAT diagram fills MATCH computeSingleGridFrame — the count-view paint cannot drift', () => {
+    // The Grid tab's repeat-count figure is GENERATED from the real frame
+    // painter for the 16-repeats state; this re-runs the SAME painter fresh
+    // and asserts the figure's whole rgb() fill sequence (top row → lit pads
+    // bottom-row-first, the SVG render order → the held scene button) matches
+    // it byte-for-byte, extending the paintPermanentTopRow drift-guard to the
+    // 8×8 (LED truth: pads 1..16 lit orange, all else dark, HOLD button amber).
+    const rgbCss = (c: readonly number[]) =>
+      `rgb(${Math.round((c[0] / 127) * 255)},${Math.round((c[1] / 127) * 255)},${Math.round((c[2] / 127) * 255)})`;
+    const frame = computeSingleGridFrame(undefined, {
+      top: {
+        view: 'grid',
+        keysActive: false,
+        transportRunning: true,
+        shift: { latched: false, held: false },
+        canUndo: false,
+        canRedo: false,
+      },
+      repeatView: { count: 16, sceneIndex: 0 },
+    });
+    const expected: string[] = [];
+    for (let col = 0; col < 8; col++) expected.push(rgbCss(frame.leds.get(colTopCc(col))!)); // top row
+    // The 8×8 renders yy = 0 (bottom) first; unlit pads use a hex OFF fill the
+    // rgb() regex skips, so only the LIT pads contribute, in render order.
+    const litOrdinals: number[] = [];
+    for (let y = 0; y < 8; y++) {
+      for (let x = 0; x < 8; x++) {
+        const led = frame.leds.get(padNote(x, y))!;
+        if (led[0] + led[1] + led[2] > 0) {
+          expected.push(rgbCss(led));
+          litOrdinals.push(repeatPadOrdinal(x, y)!);
+        }
+      }
+    }
+    // The firmware truth itself: EXACTLY pads 1..16 lit for count 16.
+    expect(litOrdinals.sort((a, b) => a - b)).toEqual(Array.from({ length: 16 }, (_, i) => i + 1));
+    // The held scene button (index 0 = SCENE_CCS[0]) renders after the pads.
+    expected.push(rgbCss(frame.leds.get(SCENE_CCS[0])!));
+    const out = html();
+    const chunk = out.split('<figure').find((c) => c.includes('REPEAT-COUNT view while HOLDING GRID'));
+    expect(chunk, 'the repeat-count figure renders in the Grid tab').toBeDefined();
+    const fills = [...chunk!.matchAll(/fill="(rgb\([^"]+\))"/g)].map((m) => m[1]);
+    expect(fills.slice(0, expected.length)).toEqual(expected);
+  });
+
+  it('documents the repeat gesture in the Grid reference table + the walkthrough', () => {
+    const grid = html();
+    expect(grid).toContain('SCENE REPEATS — HOLD GRID + HOLD a scene button');
+    expect(grid).toContain('position-relative');
+    const walk = html({ initialTopTab: 'single', initialSingleTab: 'walkthrough' });
+    expect(walk).toContain('scene repeats');
+    expect(walk).toContain('HOLD GRID');
   });
 
   it('has no old global/single AUTO pad anywhere (per-lane arm replaced it)', () => {
