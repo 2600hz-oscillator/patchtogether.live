@@ -61,6 +61,30 @@ const OUT_ID = 'sw-out';
 const SLOT0_VOCT = (48 - 60) / 12;
 const SLOT1_VOCT = (50 - 60) / 12;
 
+// --- CI SwiftShader timeout scaling ------------------------------------------
+// Since #1095 this spec drives a REAL slot switch with actual H.264 decode (it
+// was vacuous before). That decode is CPU-heavy under the SwiftShader software
+// renderer, and CI runs this spec on the functional sharded matrix with up to
+// ~24 parallel SwiftShader browsers co-tenanting the runner, so the page main
+// thread is saturated — the render itself COMPLETES, it's just slow. The flat
+// 30s Playwright test timeout (and the tight per-poll/per-action ceilings below)
+// then aren't enough for page.click / page.evaluate to resolve under that
+// contention (the #1095 rewrite tripped the 30s test timeout on two CI runs).
+//
+// Inflate every timeout under software rendering — CI (no GPU → SwiftShader for
+// free; process.env.CI is always set on the functional shards, which do NOT set
+// E2E_SWIFTSHADER) OR a local E2E_SWIFTSHADER=1 flake-check — and keep the fast
+// ceilings on a real-GPU local dev run. Same CI-only class as the video
+// behavioral timeouts: scale, never flat (memory ci-swiftshader-video-e2e-
+// timeouts). Mirrors the per-spec `timeoutFor()` idiom (adsr-poly-midilane /
+// sixstrum-poly) but the cost driver here is renderer contention, not audio
+// capture windows, so it scales by render mode rather than window count.
+const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
+const SLOW_FACTOR = SLOW_RENDER ? 3 : 1;
+/** Scale a millisecond timeout for the software-renderer / CI-contention path;
+ *  a no-op (×1) on a real-GPU local run so interactive dev stays fast. */
+const T = (ms: number): number => ms * SLOW_FACTOR;
+
 async function setup(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
@@ -186,7 +210,7 @@ async function assertFramesAdvance(page: Page, label: string): Promise<void> {
   expect(start, `${label}: uploadCount readable`).toBeGreaterThanOrEqual(0);
   await expect
     .poll(async () => (await uploadCount(page)) - start, {
-      timeout: 8000,
+      timeout: T(8000),
       message: `${label}: engine frame uploads must climb after the switch (was ${start})`,
     })
     .toBeGreaterThanOrEqual(2);
@@ -199,17 +223,17 @@ async function loadSlot(page: Page, slot: number): Promise<void> {
   if (slot === 0) {
     await card.locator('[data-testid="videovarispeed-file-input"]').setInputFiles(AV_FIXTURE);
     await expect(card.locator('[data-testid="videovarispeed-card"]')).toHaveAttribute(
-      'data-has-local-file', 'true', { timeout: 10000 },
+      'data-has-local-file', 'true', { timeout: T(10000) },
     );
     return;
   }
   // dispatchEvent (not .click): the card repaints from its transport rAF so
   // Playwright's actionability "stable" check never settles (same as perfzip).
   await card.locator('[data-testid="videovarispeed-card"]').dispatchEvent('contextmenu');
-  await expect(card.locator('[data-testid="videovarispeed-multi-panel"]')).toBeVisible({ timeout: 5000 });
+  await expect(card.locator('[data-testid="videovarispeed-multi-panel"]')).toBeVisible({ timeout: T(5000) });
   await card.locator(`[data-testid="videovarispeed-slot-input-${slot}"]`).setInputFiles(AV_FIXTURE);
   await expect(card.locator(`[data-testid="videovarispeed-slot-${slot}"]`))
-    .toHaveAttribute('data-slot-local', 'true', { timeout: 10000 });
+    .toHaveAttribute('data-slot-local', 'true', { timeout: T(10000) });
   // Close the panel so it doesn't overlay the transport controls.
   await card.locator('[data-testid="videovarispeed-multi-close"]').dispatchEvent('click');
   // The synthetic contextmenu that opened the panel ALSO pops the global
@@ -220,12 +244,17 @@ async function loadSlot(page: Page, slot: number): Promise<void> {
   const overlay = page.locator('.ctx-overlay');
   if ((await overlay.count()) > 0) {
     await overlay.first().click();
-    await expect(overlay).toHaveCount(0, { timeout: 4000 });
+    await expect(overlay).toHaveCount(0, { timeout: T(4000) });
   }
 }
 
 test.describe('VIDEOVARISPEED 7-slot switch path (multi-slot stall regression)', () => {
   test('A → B → back-to-A keeps decoding + play/pause alive; switch-back lands on live time', async ({ page }) => {
+    // Real-H.264-decode work (2 slot loads + 3 switches + 3 frame-advance polls)
+    // under ~24-way SwiftShader contention blows the flat 30s test budget. Scale
+    // the test-level ceiling too (a ceiling only — a green run finishes far under
+    // it, so this adds ~0 CI wall-time; it just survives the contended case).
+    test.setTimeout(T(45_000)); // 135s on CI/SwiftShader, 45s on a real-GPU local run
     const errors = await setup(page);
     // Capture ONLY the smoking-gun warning separately so we can assert it never
     // fired regardless of other (benign) console noise.
@@ -274,16 +303,16 @@ test.describe('VIDEOVARISPEED 7-slot switch path (multi-slot stall regression)',
 
     // Start playback (loop default) + let slot 0 (active) advance into the window
     // before we switch away.
-    await page.click('[data-testid="videovarispeed-play-btn"]');
+    await page.click('[data-testid="videovarispeed-play-btn"]', { timeout: T(15_000) });
     await expect(page.locator('[data-testid="videovarispeed-card"]')).toHaveAttribute(
-      'data-is-playing', 'true', { timeout: 4000 },
+      'data-is-playing', 'true', { timeout: T(4000) },
     );
     await page.waitForTimeout(1200);
 
     // --- SWITCH A → B (slot 0 → slot 1) ---
     await switchToSlot(page, SLOT1_VOCT);
-    await expect.poll(async () => readEngine(page, 'hasVideoElement'), { timeout: 4000 }).toBe(true);
-    await expect.poll(async () => (await readVirtualPlayhead(page))?.activeSlot, { timeout: 4000 }).toBe(1);
+    await expect.poll(async () => readEngine(page, 'hasVideoElement'), { timeout: T(4000) }).toBe(true);
+    await expect.poll(async () => (await readVirtualPlayhead(page))?.activeSlot, { timeout: T(4000) }).toBe(1);
     await assertFramesAdvance(page, 'after A→B');
     await page.waitForTimeout(600); // let B's playhead + A's VIRTUAL playhead advance
 
@@ -311,7 +340,7 @@ test.describe('VIDEOVARISPEED 7-slot switch path (multi-slot stall regression)',
         const s = await readSwitchState(page);
         if (s.activeSlot === 0) observedA = s.time;
         return s.activeSlot;
-      }, { timeout: 4000 })
+      }, { timeout: T(4000) })
       .toBe(0);
 
     const { duration } = await page
@@ -363,15 +392,15 @@ test.describe('VIDEOVARISPEED 7-slot switch path (multi-slot stall regression)',
     await assertFramesAdvance(page, 'after B→A (re-select must NOT throw + freeze)');
 
     // (3) Play/pause works AFTER the switches: pause halts, play resumes.
-    await page.click('[data-testid="videovarispeed-play-btn"]'); // → pause
+    await page.click('[data-testid="videovarispeed-play-btn"]', { timeout: T(15_000) }); // → pause
     await expect(page.locator('[data-testid="videovarispeed-card"]')).toHaveAttribute(
-      'data-is-playing', 'false', { timeout: 4000 },
+      'data-is-playing', 'false', { timeout: T(4000) },
     );
-    await expect.poll(async () => (await activeVideoState(page)).paused, { timeout: 4000 }).toBe(true);
+    await expect.poll(async () => (await activeVideoState(page)).paused, { timeout: T(4000) }).toBe(true);
 
-    await page.click('[data-testid="videovarispeed-play-btn"]'); // → play again
+    await page.click('[data-testid="videovarispeed-play-btn"]', { timeout: T(15_000) }); // → play again
     await expect(page.locator('[data-testid="videovarispeed-card"]')).toHaveAttribute(
-      'data-is-playing', 'true', { timeout: 4000 },
+      'data-is-playing', 'true', { timeout: T(4000) },
     );
     await assertFramesAdvance(page, 'play AFTER a switch resumes frame advance');
 
@@ -383,7 +412,7 @@ test.describe('VIDEOVARISPEED 7-slot switch path (multi-slot stall regression)',
 
     // Every loaded slot kept a persistent keep-alive (none torn down on switch):
     // exactly 2 distinct elements wired across all the A↔B churn.
-    await expect.poll(async () => readEngine(page, 'keepAliveCount'), { timeout: 4000 }).toBe(2);
+    await expect.poll(async () => readEngine(page, 'keepAliveCount'), { timeout: T(4000) }).toBe(2);
 
     expect(errors, `no page errors: ${errors.join(' | ')}`).toEqual([]);
   });
