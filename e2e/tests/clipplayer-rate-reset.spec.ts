@@ -191,9 +191,18 @@ test('RST button: all active clips snap back to step 1 and keep playing', async 
   // <= 6 is unambiguous proof of the backward snap (nothing reads that low
   // before the reset) while tolerating the fast clock — the assertion's
   // meaning is unchanged, only the race is removed.
-  const snapped0 = await waitForEngine(page, 'cp', 'currentStep:0', (v) => v >= 0 && v <= 6, 2500);
+  //
+  // DETECTION TIMEOUT (5000 ms, was 2500): `currentStep` is derived from the
+  // AUDIO clock (ctx.currentTime vs pre-scheduled events) and keeps climbing
+  // even while the MAIN-THREAD scheduler tick — the only place resetNonce is
+  // consumed — is momentarily starved on a loaded CI runner. When that stall
+  // ran past 2500 ms the snap hadn't been processed yet and the poll expired at
+  // step ~43 (CI-only; passes locally + under 4-worker load). 5000 ms tolerates
+  // the stall and is still WELL under the 8 s / 128-step wrap horizon, so a
+  // natural loop wrap can never fake the low reading. Band unchanged.
+  const snapped0 = await waitForEngine(page, 'cp', 'currentStep:0', (v) => v >= 0 && v <= 6, 5000);
   expect(snapped0.ok, `lane 0 snapped back toward the top (saw ${snapped0.last})`).toBe(true);
-  const snapped1 = await waitForEngine(page, 'cp', 'currentStep:1', (v) => v >= 0 && v <= 6, 2500);
+  const snapped1 = await waitForEngine(page, 'cp', 'currentStep:1', (v) => v >= 0 && v <= 6, 5000);
   expect(snapped1.ok, `lane 1 snapped with the same reset (saw ${snapped1.last})`).toBe(true);
   // Still PLAYING (reset ≠ stop) and still advancing.
   expect(await readEngine(page, 'cp', 'activeLane:0')).toBe(0);

@@ -149,9 +149,15 @@ test('@launchpad RESET pad snaps every active lane back to step 1 (control-deck)
 
   // Snap back near the top LONG before a natural wrap. Band <=6 (the fast clock
   // keeps climbing during dispatch latency — same tolerance as the card RST test).
-  const s0 = await waitForEngine(page, 'cp', 'currentStep:0', (v) => v >= 0 && v <= 6, 2500);
+  // Timeout 5000 ms (was 2500): `currentStep` rides the AUDIO clock and climbs
+  // even while the MAIN-THREAD scheduler tick (the only consumer of resetNonce)
+  // is momentarily starved on a loaded CI runner — that stall left the snap
+  // unprocessed and the poll expired at step ~45 (CI-only; passes locally + at
+  // 4 workers). 5000 ms tolerates the stall and stays WELL under the 8 s /
+  // 128-step wrap horizon, so a loop wrap can never fake the low reading.
+  const s0 = await waitForEngine(page, 'cp', 'currentStep:0', (v) => v >= 0 && v <= 6, 5000);
   expect(s0.ok, `lane 0 snapped toward the top (saw ${s0.last})`).toBe(true);
-  const s1 = await waitForEngine(page, 'cp', 'currentStep:1', (v) => v >= 0 && v <= 6, 2500);
+  const s1 = await waitForEngine(page, 'cp', 'currentStep:1', (v) => v >= 0 && v <= 6, 5000);
   expect(s1.ok, `lane 1 snapped with the same reset (saw ${s1.last})`).toBe(true);
   // Still PLAYING (reset ≠ stop) + advancing.
   expect(await readEngine(page, 'cp', 'activeLane:0')).toBe(0);
