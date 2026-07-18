@@ -16,7 +16,7 @@
   // drives the SAME actions via lib/control/monome. All ports live in the shared yellow
   // drill-down <PatchPanel> (post-#767 — NO raw side <Handle> jacks); port ids
   // are byte-identical to clipplayerDef so the CV bridge routes unchanged.
-  import type { NodeProps } from '@xyflow/svelte';
+  import { useStore, useOnSelectionChange, type NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import MidiAssignButton from '$lib/ui/controls/MidiAssignButton.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
@@ -44,6 +44,11 @@
     noteCovering,
     velBucket,
     laneMono,
+    laneMuted,
+    laneSwing,
+    clampSwing,
+    isSwingCentered,
+    doubleNoteClip,
     laneColor,
     laneColorEff as laneColorEffOf,
     coerceLaneColor,
@@ -61,6 +66,8 @@
     sceneRepeatCount,
     sceneRepeatFlair,
     sceneRepeatProgressFlair,
+    setSceneRepeat,
+    applySceneLaunchWrite,
   } from '$lib/audio/modules/clip-scene-repeats';
   import {
     getAutomationRender,
@@ -74,9 +81,11 @@
   } from '$lib/audio/automation-touch';
   import {
     RATE_LABELS,
+    RATE_MULTS,
     RATE_DEFAULT_INDEX,
     coerceRateIndex,
     laneRateIndex,
+    clipDivIndex,
   } from '$lib/audio/modules/clip-clock';
   import {
     coerceArrangeData,
@@ -111,8 +120,26 @@
     bindingRune,
   } from '$lib/control/monome/monome-control.svelte';
   import { portsFromDef } from './card-kit';
+  // Part A/B — the control strip mirrors the single-pad Launchpad's PERMANENT
+  // top row (CC 91..98); computer keys 1..8 drive the SAME eight buttons.
+  import {
+    keyToStripAction,
+    isHoldAction,
+    shouldIgnoreDigit,
+    type StripAction,
+  } from './clipplayer-keyboard';
+  // Launchpad-STYLE origin-scoped undo/redo for the card's persistent clip edits
+  // (control-strip ↶/↷ = keys 6/7). Owner Q1 decision: scoped (not global Cmd-Z),
+  // its own stack; see clip-undo.ts.
+  import {
+    clipUndoTransact,
+    clipUndo,
+    clipRedo,
+    clipCanUndo,
+    clipCanRedo,
+  } from '$lib/control/clip-undo';
 
-  let { id, data }: NodeProps = $props();
+  let { id, data, selected = false }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
 
@@ -155,9 +182,21 @@
     return (dataObj().clips ?? {}) as Record<string, unknown>;
   });
 
-  // SESSION ⇄ EDIT view + which clip the editor is on.
-  let view = $state<'session' | 'edit'>('session');
+  // 4-VIEW body, mirroring the single-pad Launchpad's views (Part A): grid (the
+  // session launch matrix) · clip (the piano-roll editor) · arranger (the song
+  // timeline) · control (the performance deck). LOCAL to the card — the card and
+  // a connected Launchpad can be in different views at once (each surface owns
+  // its view). Persistent edits still land on the shared node.data.
+  type CardView = 'grid' | 'clip' | 'arranger' | 'control';
+  let cardView = $state<CardView>('grid');
   let selectedClip = $state(0);
+  // SHIFT modifier (Part A §A.5): momentary HOLD (no latch), set by the on-card
+  // ⇧ button (pointerdown/up) OR keyboard-8 (keydown/up). Reveals the alternate
+  // palettes (velocity-edit in Clip), exactly like the device's shift.
+  let shiftHeld = $state(false);
+  // Sticky NOW (mirrors the device's nowHeld): when on, plain pad clicks launch
+  // IMMEDIATELY (ignore QNT), matching a held shift-click.
+  let nowSticky = $state(false);
 
   const setParam = (pid: string) => (v: number) => setNodeParam(id, pid, v);
   const readLive = (pid: string) => () => {
@@ -170,6 +209,18 @@
     const target = patch.nodes[id];
     if (!target) return;
     ydoc.transact(() => {
+      if (!target.data) target.data = {};
+      mut(target.data as ClipPlayerData);
+    });
+  }
+  // PERSISTENT, UNDOABLE clip edits (notes / scale / length / clip-div / swing /
+  // double / scene-repeat) transact through the launchpad-style origin-scoped
+  // undo seam so the control-strip ↶/↷ (keys 6/7) can revert them. TRANSIENT
+  // writes (launches, view state) stay on plain writeData (never undoable).
+  function writeDataUndoable(mut: (d: ClipPlayerData) => void) {
+    const target = patch.nodes[id];
+    if (!target) return;
+    clipUndoTransact(() => {
       if (!target.data) target.data = {};
       mut(target.data as ClipPlayerData);
     });
@@ -224,7 +275,9 @@
   let clickTimer: ReturnType<typeof setTimeout> | null = null;
   // Shift-click = NOW (immediate mid-clip switch); plain click = quantized (QNT).
   function onPadClick(idx: number, ev: MouseEvent) {
-    const now = ev.shiftKey;
+    // NOW = a held Shift key (back-compat) OR the sticky NOW toggle OR the card
+    // shift modifier (mirrors the device: shift-launch on Grid rides nowHeld).
+    const now = ev.shiftKey || nowSticky || shiftHeld;
     if (clickTimer) clearTimeout(clickTimer);
     clickTimer = setTimeout(() => {
       clickTimer = null;
@@ -235,7 +288,7 @@
     if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
     ensureClip(idx);
     selectedClip = idx;
-    view = 'edit';
+    cardView = 'clip';
   }
   function launchPad(idx: number, immediate = false) {
     const lane = laneOf(idx);
@@ -340,7 +393,7 @@
         if (typeof tr === 'number') transportRunning = tr >= 0.5;
         const ec = e.read(node, 'externallyClocked');
         if (typeof ec === 'number') externallyClocked = ec >= 0.5;
-        if (view === 'edit') {
+        if (cardView === 'clip') {
           const cs = e.read(node, `currentStep:${laneOf(selectedClip)}`);
           if (typeof cs === 'number') curStep = cs;
         }
@@ -406,6 +459,237 @@
     const tid = timelordeId();
     if (!tid) return;
     setNodeParam(tid, 'running', transportRunning ? 0 : 1);
+  }
+  /** Nudge TIMELORDE bpm by ±delta (clamped 10..300) — the SAME reach + clamp the
+   *  Launchpad's nudgeTempo uses (control-view Tempo ±). No-op with no TIMELORDE. */
+  function nudgeTempo(delta: number) {
+    const tid = timelordeId();
+    if (!tid) return;
+    const n = patch.nodes[tid];
+    const cur = typeof n?.params?.bpm === 'number' ? n.params.bpm : 120;
+    setNodeParam(tid, 'bpm', Math.max(10, Math.min(300, cur + delta)));
+  }
+  let tempoBpm = $derived.by(() => {
+    void cardVersion;
+    void nodesStructuralVersion();
+    const tid = timelordeId();
+    const n = tid ? patch.nodes[tid] : null;
+    return typeof n?.params?.bpm === 'number' ? Math.round(n.params.bpm) : null;
+  });
+
+  // ===========================================================================
+  // CONTROL STRIP (Part A group 1) — the 8 buttons mirroring the single-pad
+  // Launchpad's PERMANENT top row (CC 91..98), and the anchor for keyboard 1..8
+  // (Part B). Order: transport · grid · clip · arranger · control · undo · redo
+  // · shift. selectView exits nothing (the card has no launchpad KEYS/length
+  // sub-mode); entering Clip targets selectedClip (create if empty, like the
+  // device's CLIP button opening the selected index).
+  // ===========================================================================
+  function selectView(v: CardView) {
+    if (v === 'clip') ensureClip(selectedClip);
+    cardView = v;
+  }
+  // Undo/redo availability, re-derived on any node edit so the strip buttons
+  // enable/disable live.
+  let canUndo = $derived((void cardVersion, clipCanUndo()));
+  let canRedo = $derived((void cardVersion, clipCanRedo()));
+  function doUndo() { clipUndo(); }
+  function doRedo() { clipRedo(); }
+
+  /** Fire strip button `n` (1..8). Shift (8) is a HOLD — for a mouse click it
+   *  toggles nothing (hold is pointer-driven / keyboard-8-driven); a bare click
+   *  on ⇧ is a no-op flicker, matching the device's momentary shift. */
+  function fireStripAction(action: StripAction) {
+    switch (action) {
+      case 'transport': toggleTransport(); break;
+      case 'grid': selectView('grid'); break;
+      case 'clip': selectView('clip'); break;
+      case 'arranger': selectView('arranger'); break;
+      case 'control': selectView('control'); break;
+      case 'undo': doUndo(); break;
+      case 'redo': doRedo(); break;
+      case 'shift': break; // hold-only; see onShiftDown/Up + the keyboard effect
+    }
+  }
+  function onShiftDown() { shiftHeld = true; }
+  function onShiftUp() { shiftHeld = false; }
+
+  // ===========================================================================
+  // KEYBOARD 1..8 (Part B) — when THIS card is the SINGLE selected flow node,
+  // computer digits 1..8 drive the eight control-strip buttons, with HOLD
+  // semantics on 8 (=shift), key-repeat suppression, text-input coexistence, and
+  // stuck-shift guards (window blur / tab hide / deactivation force-release).
+  // ===========================================================================
+  // Track how many flow nodes are selected so "single selection" is unambiguous
+  // (0 or >1 selected → no card owns 1..8). svelte-flow calls this on any
+  // selection change.
+  let selectedCount = $state(0);
+  // useOnSelectionChange defers useStore() into an $effect, so it can't be
+  // try/caught. Probe the <SvelteFlow /> context SYNCHRONOUSLY here (useStore
+  // throws at once when absent): a DOCKED card (workflow rail / DockCardHost)
+  // renders OUTSIDE that context. Only wire selection tracking when we're a real
+  // flow node; a docked card is never a "selected flow node", so keyboard 1..8
+  // simply never activates for it (keyboardActive stays false) — its on-card
+  // strip buttons still work.
+  let inFlow = false;
+  try { useStore(); inFlow = true; } catch { inFlow = false; }
+  if (inFlow) {
+    useOnSelectionChange(({ nodes }) => {
+      selectedCount = nodes.length;
+    });
+  }
+  // Keyboard-active = this clip-player card is the LONE selection in the flow.
+  let keyboardActive = $derived(inFlow && selected && selectedCount === 1);
+
+  function releaseShiftForce() {
+    // Force-release shift on focus loss so a missing keyup can't leave it stuck.
+    if (shiftHeld) shiftHeld = false;
+  }
+  function onWindowKeyDown(e: KeyboardEvent) {
+    const action = keyToStripAction(e.key);
+    if (action === null) return;
+    if (shouldIgnoreDigit(e, document.activeElement)) return;
+    // Own the digit so it never reaches svelte-flow / the browser.
+    e.preventDefault();
+    e.stopPropagation();
+    if (isHoldAction(action)) {
+      // 8 = shift HOLD. Ignore auto-repeat on the down edge (don't re-fire).
+      if (e.repeat) return;
+      shiftHeld = true;
+      return;
+    }
+    // 1..7 = momentary — fire ONCE per physical press (suppress key-repeat so a
+    // held key can't storm view switches / undo).
+    if (e.repeat) return;
+    fireStripAction(action);
+  }
+  function onWindowKeyUp(e: KeyboardEvent) {
+    const action = keyToStripAction(e.key);
+    if (action === null) return;
+    // A shift keyup ALWAYS releases (even if focus moved into a form control
+    // between the down + up — the guard must not strand a held shift).
+    if (isHoldAction(action)) {
+      shiftHeld = false;
+    }
+  }
+  $effect(() => {
+    if (!keyboardActive) {
+      // Deactivating while shift is held must force-release it.
+      releaseShiftForce();
+      return;
+    }
+    // Capture phase so we win over svelte-flow's own key handlers.
+    window.addEventListener('keydown', onWindowKeyDown, { capture: true });
+    window.addEventListener('keyup', onWindowKeyUp, { capture: true });
+    // Stuck-shift guards: blur / tab-hide force-release (a keyup that never
+    // arrives — the classic stuck-modifier bug).
+    window.addEventListener('blur', releaseShiftForce);
+    document.addEventListener('visibilitychange', releaseShiftForce);
+    return () => {
+      window.removeEventListener('keydown', onWindowKeyDown, { capture: true });
+      window.removeEventListener('keyup', onWindowKeyUp, { capture: true });
+      window.removeEventListener('blur', releaseShiftForce);
+      document.removeEventListener('visibilitychange', releaseShiftForce);
+      releaseShiftForce(); // never leave shift stuck across a deactivation
+    };
+  });
+
+  // ===========================================================================
+  // CONTROL DECK (Part A group 5) — per-lane MUTE + STOP, Tempo ±, RESET, REC,
+  // SES/ARR. mute/stop/tempo are the genuine card gaps; the others alias the
+  // existing header controls into the deck body. All write the SAME node.data
+  // fields the Launchpad's control view writes (parity by construction).
+  // ===========================================================================
+  function laneIsMuted(lane: number): boolean {
+    void cardVersion;
+    return laneMuted(dataObj(), lane);
+  }
+  function toggleLaneMute(lane: number) {
+    writeData((d) => {
+      const m = new Array<boolean>(CLIP_LANES).fill(false);
+      if (Array.isArray(d.muted)) for (let i = 0; i < CLIP_LANES && i < d.muted.length; i++) m[i] = !!d.muted[i];
+      m[lane] = !m[lane];
+      d.muted = m;
+    });
+  }
+  /** Stop a lane (queue 'stop') — the dedicated per-lane STOP the card lacked
+   *  (before, a lane only stopped by clicking its playing pad). */
+  function stopLane(lane: number) {
+    queueLane(lane, 'stop');
+  }
+
+  // ===========================================================================
+  // GRID additions (Part A group 2) — scene-launch (fire a slot across all
+  // lanes), scene-repeat SET, sticky NOW. All reuse the SAME pure seams the
+  // Launchpad uses (applySceneLaunchWrite / setSceneRepeat).
+  // ===========================================================================
+  /** Fire slot `slot` across every content lane (a "scene"). Immediate when NOW
+   *  is engaged (sticky / shift), else quantized — mirrors the device. */
+  function launchScene(slot: number, ev?: MouseEvent) {
+    const now = !!ev?.shiftKey || nowSticky || shiftHeld;
+    writeData((d) => { applySceneLaunchWrite(d, slot, now); });
+  }
+  // Scene-repeat SET: click the per-scene control to cycle the repeat count
+  // (0 = infinite → 2 → 3 → 4 → 8 → back to infinite). Replaces the device's
+  // HOLD-GRID + HOLD-scene gesture with a mouse-native cycle. Undoable.
+  const SCENE_REPEAT_CYCLE = [0, 2, 3, 4, 8] as const;
+  function cycleSceneRepeat(slot: number) {
+    const cur = sceneRepeatCount(dataObj(), slot);
+    const i = SCENE_REPEAT_CYCLE.indexOf(cur as (typeof SCENE_REPEAT_CYCLE)[number]);
+    const next = SCENE_REPEAT_CYCLE[(i + 1) % SCENE_REPEAT_CYCLE.length];
+    writeDataUndoable((d) => { setSceneRepeat(d, slot, next); });
+  }
+  function sceneRepeatLabel(slot: number): string {
+    void cardVersion;
+    const c = sceneRepeatCount(dataObj(), slot);
+    return c === 0 ? '∞' : `×${c}`;
+  }
+  function toggleNowSticky() { nowSticky = !nowSticky; }
+
+  // ===========================================================================
+  // CLIP additions (Part A group 3) — DOUBLE, FOLLOW, per-clip Clip-Div, per-lane
+  // Swing ±. Clip-Div + Swing reuse the SAME helpers as the device.
+  // ===========================================================================
+  function doDoubleClip() {
+    const clip = clipAt(selectedClip);
+    if (!clip) return;
+    writeClipData(doubleNoteClip(clip)); // writeClipData is undoable
+  }
+  /** The clip's EFFECTIVE division index (its own div, else the lane rate). */
+  function clipDivOf(): number {
+    void cardVersion;
+    return clipDivIndex(clipAt(selectedClip), dataObj(), laneOf(selectedClip));
+  }
+  /** Cycle the SELECTED clip's per-clip division (overrides the lane rate),
+   *  wrapping through the rate table — the same field the device's Clip-Div arm
+   *  writes (latched at the loop boundary by the engine). Undoable. */
+  function cycleClipDiv() {
+    const clip = clipAt(selectedClip);
+    if (!clip) return;
+    const next = (clipDivOf() + 1) % RATE_MULTS.length;
+    writeDataUndoable((d) => {
+      const c = (d.clips ?? {})[String(selectedClip)] as NoteClipRecord | undefined;
+      if (c) c.div = next;
+    });
+  }
+  const SWING_STEP = 0.02; // matches the launchpad SWING± nudge (coarser than 1%)
+  function laneSwingOf(): number {
+    void cardVersion;
+    return laneSwing(dataObj(), laneOf(selectedClip));
+  }
+  /** Nudge the selected clip's LANE swing by ±SWING_STEP, clamped [0, MAX_SWING].
+   *  Rebuild-and-assign the per-lane array (SyncedStore Y.Arrays reject index
+   *  assignment), like setLaneRate/setLaneColor. Undoable. */
+  function nudgeSwing(dir: 1 | -1) {
+    const lane = laneOf(selectedClip);
+    writeDataUndoable((d) => {
+      const base = new Array<number>(CLIP_LANES).fill(0);
+      if (Array.isArray(d.swing)) {
+        for (let i = 0; i < CLIP_LANES && i < d.swing.length; i++) base[i] = clampSwing(d.swing[i]);
+      }
+      base[lane] = clampSwing(base[lane] + dir * SWING_STEP);
+      d.swing = base;
+    });
   }
 
   // --- SONG MODE (arranger) — synced state on node.data ---
@@ -629,7 +913,8 @@
     return ev ? `vel${velBucket(ev.velocity)}` : '';
   }
   function writeClipData(next: NoteClipRecord) {
-    writeData((d) => {
+    // Note/velocity/double edits are persistent + undoable (control-strip ↶/↷).
+    writeDataUndoable((d) => {
       if (!d.clips) d.clips = {};
       d.clips[String(selectedClip)] = { ...next, steps: next.steps.map((s) => ({ ...s })) };
     });
@@ -701,7 +986,7 @@
     if (!clip) return;
     const i = SCALES.indexOf(clip.scale);
     const nextScale = SCALES[(i + 1) % SCALES.length];
-    writeData((d) => {
+    writeDataUndoable((d) => {
       const c = (d.clips ?? {})[String(selectedClip)] as NoteClipRecord | undefined;
       if (c) { if (nextScale) c.scale = nextScale; else delete c.scale; }
     });
@@ -712,13 +997,13 @@
     if (!clip) return;
     const i = LENGTHS.indexOf(clip.lengthSteps);
     const next = LENGTHS[(i + 1) % LENGTHS.length];
-    writeData((d) => {
+    writeDataUndoable((d) => {
       const c = (d.clips ?? {})[String(selectedClip)] as NoteClipRecord | undefined;
       if (c) c.lengthSteps = next;
     });
   }
   function clearClip() {
-    writeData((d) => {
+    writeDataUndoable((d) => {
       const c = (d.clips ?? {})[String(selectedClip)] as NoteClipRecord | undefined;
       if (c) c.steps = [];
       // Clearing the clip clears its automation too (the envelope belongs to
@@ -751,7 +1036,7 @@
   });
 
   let playheadCol = $derived(
-    view === 'edit' && lanePlaying(dataObj(), editLane) === editSlot ? curStep : -1,
+    cardView === 'clip' && lanePlaying(dataObj(), editLane) === editSlot ? curStep : -1,
   );
 
   const inputs = portsFromDef(clipplayerDef.inputs, { stop_all: 'STOP ALL', reset: 'RESET' });
@@ -897,7 +1182,133 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="body">
-      {#if view === 'session' && arrangeMode}
+      <!-- CONTROL STRIP (Part A group 1 / Part B anchor): 8 buttons mirroring the
+           single-pad Launchpad's PERMANENT top row (CC 91..98), in the same order
+           — transport · grid · clip · arranger · control · undo · redo · shift.
+           Computer keys 1..8 drive these SAME buttons while the card is the lone
+           selection (the "1–8" chip lights). -->
+      <div
+        class="control-strip"
+        class:kb-active={keyboardActive}
+        data-testid={`clipplayer-strip-${id}`}
+        role="toolbar"
+        aria-label="clip player control strip"
+      >
+        <button
+          class="strip-btn"
+          class:on={transportRunning}
+          disabled={!showTransport}
+          title="1 · Transport — start/stop TIMELORDE"
+          aria-label="transport"
+          data-testid={`clipplayer-strip-1-${id}`}
+          onclick={() => fireStripAction('transport')}
+        >{transportRunning ? '■' : '▶'}</button>
+        <button
+          class="strip-btn"
+          class:on={cardView === 'grid'}
+          title="2 · Grid — the session launch matrix"
+          data-testid={`clipplayer-strip-2-${id}`}
+          onclick={() => fireStripAction('grid')}
+        >GRID</button>
+        <button
+          class="strip-btn"
+          class:on={cardView === 'clip'}
+          title="3 · Clip — the note editor for the selected clip"
+          data-testid={`clipplayer-strip-3-${id}`}
+          onclick={() => fireStripAction('clip')}
+        >CLIP</button>
+        <button
+          class="strip-btn"
+          class:on={cardView === 'arranger'}
+          title="4 · Arranger — the song timeline"
+          data-testid={`clipplayer-strip-4-${id}`}
+          onclick={() => fireStripAction('arranger')}
+        >ARR</button>
+        <button
+          class="strip-btn"
+          class:on={cardView === 'control'}
+          title="5 · Control — the performance deck (mute / stop / tempo)"
+          data-testid={`clipplayer-strip-5-${id}`}
+          onclick={() => fireStripAction('control')}
+        >CTRL</button>
+        <button
+          class="strip-btn"
+          disabled={!canUndo}
+          title="6 · Undo the last clip edit"
+          aria-label="undo"
+          data-testid={`clipplayer-strip-6-${id}`}
+          onclick={() => fireStripAction('undo')}
+        >↶</button>
+        <button
+          class="strip-btn"
+          disabled={!canRedo}
+          title="7 · Redo the last undone clip edit"
+          aria-label="redo"
+          data-testid={`clipplayer-strip-7-${id}`}
+          onclick={() => fireStripAction('redo')}
+        >↷</button>
+        <button
+          class="strip-btn shift"
+          class:on={shiftHeld}
+          title="8 · Shift — HOLD to reveal alternate palettes (or hold key 8)"
+          aria-label="shift"
+          aria-pressed={shiftHeld}
+          data-testid={`clipplayer-strip-8-${id}`}
+          onpointerdown={onShiftDown}
+          onpointerup={onShiftUp}
+          onpointerleave={onShiftUp}
+        >⇧</button>
+        {#if keyboardActive}
+          <span
+            class="kb-chip"
+            title="Computer keys 1–8 drive this strip (this card is selected)"
+            data-testid={`clipplayer-kb-active-${id}`}
+          >1–8</span>
+        {/if}
+      </div>
+      {#if cardView === 'control'}
+        <!-- CONTROL (deck) view (Part A group 5): per-lane MUTE + STOP, Tempo ±,
+             RESET, STOP-ALL. Writes the SAME node.data fields the Launchpad's
+             control view writes. -->
+        <div class="control-deck" data-testid="clipplayer-control-deck">
+          <div class="deck-lanes" role="group" aria-label="per-lane mute and stop">
+            {#each Array(CLIP_LANES) as _l, lane (lane)}
+              <div class="deck-lane" style={`--lane-color:${laneColorEff(lane)}`}>
+                <span class="deck-lane-lbl">{lane + 1}</span>
+                <button
+                  class="deck-mute"
+                  class:on={laneIsMuted(lane)}
+                  onclick={() => toggleLaneMute(lane)}
+                  title={laneIsMuted(lane)
+                    ? `Ch ${lane + 1} MUTED — click to unmute`
+                    : `Ch ${lane + 1} MUTE — the lane keeps advancing but emits no audio`}
+                  aria-label={`channel ${lane + 1} mute`}
+                  aria-pressed={laneIsMuted(lane)}
+                  data-lane={lane}
+                  data-testid={`clipplayer-mute-${lane}`}
+                >M</button>
+                <button
+                  class="deck-stop"
+                  onclick={() => stopLane(lane)}
+                  title={`Stop Ch ${lane + 1} (queue stop)`}
+                  aria-label={`channel ${lane + 1} stop`}
+                  data-lane={lane}
+                  data-testid={`clipplayer-stop-${lane}`}
+                >■</button>
+              </div>
+            {/each}
+          </div>
+          <div class="deck-globals">
+            <span class="deck-tempo" title="TIMELORDE tempo (±2 bpm)">
+              <button onclick={() => nudgeTempo(-2)} aria-label="tempo down" data-testid={`clipplayer-tempo-down-${id}`}>−</button>
+              <span class="deck-bpm" data-testid={`clipplayer-tempo-${id}`}>{tempoBpm !== null ? tempoBpm : '—'}</span>
+              <button onclick={() => nudgeTempo(2)} aria-label="tempo up" data-testid={`clipplayer-tempo-up-${id}`}>+</button>
+            </span>
+            <button class="deck-btn" onclick={doReset} title="Reset all active clips to step 1" data-testid={`clipplayer-deck-reset-${id}`}>RST</button>
+            <button class="deck-btn stopall" onclick={stopAll} title="Stop all lanes" data-testid={`clipplayer-deck-stopall-${id}`}>STOP ALL</button>
+          </div>
+        </div>
+      {:else if cardView === 'arranger' || (cardView === 'grid' && arrangeMode)}
         <!-- SONG VIEW: arrangement timeline (8 lane rows × song-time bars). Each
              block is a recorded clip launch spanning until the next change; a
              playhead sweeps during playback. Click a block to select, then
@@ -960,7 +1371,7 @@
             </span>
           </div>
         </div>
-      {:else if view === 'session'}
+      {:else if cardView === 'grid'}
         <!-- 8×8 launch grid: COLS = instrument lanes (channels, ch1 = leftmost),
              ROWS = clip slots (slot 0 = top). Per-channel MONO header (top) +
              clock-RATE footer (bottom) sit above/below their own column. The
@@ -1025,21 +1436,32 @@
                   ondblclick={() => onPadDblClick(idx)}
                 >{#if hasAuto}<span class="auto-dot" aria-hidden="true"></span>{/if}</button>
               {/each}
-              <!-- SCENE-REPEAT flair: a read-only "×N" (live "p/N" while counting)
-                   to the RIGHT of the scene row — this row IS the scene (one slot
-                   across all channels; the card has no scene-launch button yet).
-                   Absolutely positioned so the fixed-integer pad geometry (VRT
-                   determinism) never shifts; infinite renders nothing at all. -->
-              {#if sceneFlair(slot)}
-                <span
-                  class="scene-flair"
-                  class:counting={repProgress?.slot === slot}
-                  title={sceneFlairTitle(slot)}
-                  aria-label={`scene ${slot + 1} repeats ${sceneFlair(slot)}`}
-                  data-slot={slot}
-                  data-testid={`clipplayer-scene-repeat-${slot}`}
-                >{sceneFlair(slot)}</span>
-              {/if}
+              <!-- SCENE-LAUNCH (Part A group 2, NEW): fire this slot across ALL
+                   content lanes — this grid ROW is the scene. Absolutely
+                   positioned LEFT of the row so the fixed-integer pad geometry
+                   (VRT determinism) never shifts. -->
+              <button
+                class="scene-launch"
+                title={`Launch scene ${slot + 1} (this slot across all channels)${nowSticky || shiftHeld ? ' — NOW' : ''}`}
+                aria-label={`launch scene ${slot + 1}`}
+                data-slot={slot}
+                data-testid={`clipplayer-scene-launch-${slot}`}
+                onclick={(e) => launchScene(slot, e)}
+              >▶</button>
+              <!-- SCENE-REPEAT SET (Part A group 2, was read-only): click to
+                   cycle this scene's repeat count (∞→2→3→4→8→∞) — the mouse-native
+                   replacement for the device's HOLD-GRID+HOLD-scene gesture. Shows
+                   the live "p/N" progress while the scene is counting. Absolutely
+                   positioned RIGHT of the row (pad geometry unaffected). -->
+              <button
+                class="scene-flair"
+                class:counting={repProgress?.slot === slot}
+                title={sceneFlairTitle(slot)}
+                aria-label={`scene ${slot + 1} repeats ${sceneRepeatLabel(slot)} — click to change`}
+                data-slot={slot}
+                data-testid={`clipplayer-scene-repeat-${slot}`}
+                onclick={() => cycleSceneRepeat(slot)}
+              >{repProgress?.slot === slot ? sceneFlair(slot) : sceneRepeatLabel(slot)}</button>
             </div>
           {/each}
           <!-- channel footer: per-lane clock RATE select — divide/multiply this
@@ -1103,6 +1525,11 @@
             label="GATE" curve="linear" onchange={setParam('gateLength')} moduleId={id} paramId="gateLength" readLive={readLive('gateLength')} />
           <button class="qnt" class:on={quantize} onclick={() => setParam('quantize')(quantize ? 0 : 1)}
             title="Quantize launch to clip boundary" data-testid="clipplayer-quantize">QNT</button>
+          <!-- NOW (sticky) — mirrors the device's nowHeld: while on, a plain pad
+               click launches IMMEDIATELY (ignores QNT), same as a shift-click. -->
+          <button class="qnt" class:on={nowSticky} onclick={toggleNowSticky}
+            title={nowSticky ? 'NOW on — launches drop immediately (ignore QNT)' : 'NOW off — launches follow QNT (shift-click for immediate)'}
+            aria-pressed={nowSticky} data-testid={`clipplayer-now-${id}`}>NOW</button>
           <!-- RESET: all ACTIVE clips snap to step 1 + the per-lane rate phase
                re-anchors to a common origin. MIDI-assignable (right-click). -->
           <MidiAssignButton moduleId={id} paramId="reset" label="RESET" momentary={false} onToggle={doReset}>
@@ -1114,11 +1541,11 @@
             >RST</button>
           </MidiAssignButton>
         </div>
-      {:else if editClip}
+      {:else if cardView === 'clip' && editClip}
         <!-- piano-roll note editor for the selected clip -->
         <div class="editor" data-testid="clipplayer-editor">
           <div class="editor-head">
-            <button class="back" onclick={() => (view = 'session')} title="Back to session" data-testid="clipplayer-back">‹</button>
+            <button class="back" onclick={() => selectView('grid')} title="Back to session (Grid)" data-testid="clipplayer-back">‹</button>
             <span class="sel">L{editLane + 1}·S{editSlot + 1}</span>
             <button class="tag" onclick={cycleScale} title="Cycle scale">{scaleName(editClip.scale)}</button>
             <span class="tag root">{noteNameForMidi(editClip.root)}</span>
@@ -1139,7 +1566,21 @@
               >CLR AUTO</button>
             {/if}
           </div>
-          <div class="piano-roll" data-testid="clipplayer-pianoroll">
+          <!-- CLIP OPS (Part A group 2/3): DOUBLE (×2 length), per-clip DIV
+               (overrides the lane rate), per-lane SWING ±, and the VEL-mode hint
+               (hold Shift / key 8 / ⇧ → a cell click cycles velocity instead of
+               toggling). All reuse the same helpers the Launchpad uses. -->
+          <div class="clip-ops" data-testid={`clipplayer-clip-ops-${id}`}>
+            <button class="op" onclick={doDoubleClip} title="DOUBLE — copy the clip's notes into a clip of twice the length" data-testid={`clipplayer-double-${id}`}>×2</button>
+            <button class="op" onclick={cycleClipDiv} title={`Clip-Div — this clip's own division (${RATE_LABELS[clipDivOf()]}), overrides the lane rate; latched at the loop boundary`} data-testid={`clipplayer-clipdiv-${id}`}>DIV {RATE_LABELS[clipDivOf()]}</button>
+            <span class="op-swing" title={`Swing this lane (odd steps pushed late) — ${Math.round(laneSwingOf() * 100)}%`}>
+              <button onclick={() => nudgeSwing(-1)} aria-label="swing down" data-testid={`clipplayer-swing-down-${id}`}>−</button>
+              <span class="swing-val" class:on={!isSwingCentered(laneSwingOf())} data-testid={`clipplayer-swing-${id}`}>SW {Math.round(laneSwingOf() * 100)}</span>
+              <button onclick={() => nudgeSwing(1)} aria-label="swing up" data-testid={`clipplayer-swing-up-${id}`}>+</button>
+            </span>
+            <span class="op-vel" class:on={shiftHeld} title="Hold Shift (or key 8 / ⇧) then click a cell to cycle its velocity" data-testid={`clipplayer-velmode-${id}`}>VEL</span>
+          </div>
+          <div class="piano-roll" class:vel-mode={shiftHeld} data-testid="clipplayer-pianoroll">
             {#each Array(EDIT_ROWS) as _r, row (row)}
               <div class="pr-row">
                 {#each Array(editCols) as _c, step (step)}
@@ -1151,9 +1592,9 @@
                     data-step={step}
                     data-row={row}
                     aria-label={`step ${step} row ${row}`}
-                    title="Click: note on/off · Right-click: cycle velocity"
+                    title="Click: note on/off (Shift-click: cycle velocity) · Right-click: cycle velocity"
                     data-testid={`clipplayer-cell-${row}-${step}`}
-                    onclick={() => toggleNote(step, row)}
+                    onclick={() => (shiftHeld ? cycleCellVelocity(step, row) : toggleNote(step, row))}
                     oncontextmenu={(e) => { e.preventDefault(); cycleCellVelocity(step, row); }}
                   ></button>
                 {/each}
@@ -1467,6 +1908,9 @@
      deterministic for VRT, and the default state (all scenes infinite) renders
      nothing at all — baseline-identical. */
   .grid-row { position: relative; }
+  /* SCENE-REPEAT SET — now a CLICKABLE control (was read-only). Still absolutely
+     positioned (left:100%) so it never participates in the row's flex layout and
+     the fixed-integer pad geometry stays pixel-deterministic for VRT. */
   .scene-flair {
     position: absolute;
     left: 100%;
@@ -1477,11 +1921,35 @@
     line-height: 1;
     color: #8a8f98;
     white-space: nowrap;
-    pointer-events: none;
+    background: none;
+    border: none;
+    padding: 1px 2px;
+    cursor: pointer;
   }
+  .scene-flair:hover { color: var(--text, #ddd); }
   /* Live-counting progress reads in the same system orange as the Launchpad
      repeat-count view, so "p/N" says "this is the scene counting down". */
   .scene-flair.counting { color: #dc9a24; }
+  /* SCENE-LAUNCH — a small ▶ absolutely positioned LEFT of the scene row (fires
+     the slot across every content lane). Absolute → pad geometry unaffected. */
+  .scene-launch {
+    position: absolute;
+    right: 100%;
+    top: 50%;
+    transform: translateY(-50%);
+    margin-right: 4px;
+    width: 14px;
+    height: 14px;
+    padding: 0;
+    font-size: 8px;
+    line-height: 1;
+    color: var(--text-dim, #999);
+    background: var(--control-bg, #222);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    cursor: pointer;
+  }
+  .scene-launch:hover { color: var(--accent, #6cf); border-color: var(--accent, #6cf); }
   /* Fixed INTEGER pad size (no flex:1 / aspect-ratio) so the 8-column layout is
      pixel-deterministic — sub-pixel flex rounding drifts across columns and
      flakes the VRT baseline. */
@@ -1794,4 +2262,170 @@
     cursor: pointer;
   }
   .rst:hover { color: var(--accent, #6cf); border-color: var(--accent, #6cf); }
+
+  /* ===== CONTROL STRIP (Part A group 1 / Part B) — the 8 permanent buttons
+     mirroring the single-pad Launchpad top row. Sits at the top of the body in
+     every view; the active view button lights (mirrors RGB_VIEW_ACTIVE). ===== */
+  .control-strip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 3px;
+    border: 1px solid transparent;
+    border-radius: 3px;
+  }
+  /* "1–8 active" — the card is the single selection, so computer keys drive the
+     strip. A subtle accent ring + the chip tell the user which card owns 1–8. */
+  .control-strip.kb-active {
+    border-color: var(--accent-dim, #3a6);
+    box-shadow: inset 0 0 0 1px var(--accent-glow, rgba(110, 255, 153, 0.25));
+  }
+  .strip-btn {
+    min-width: 26px;
+    height: 20px;
+    flex: none;
+    padding: 0 5px;
+    background: var(--control-bg, #222);
+    color: var(--text-dim, #999);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    font-size: 9px;
+    letter-spacing: 0.03em;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .strip-btn:hover:not(:disabled) { color: var(--text, #ddd); border-color: var(--accent-dim, #6cf); }
+  .strip-btn.on { color: var(--accent, #6cf); border-color: var(--accent, #6cf); }
+  .strip-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  /* SHIFT (button 8) — held reads bright (momentary, no latch). */
+  .strip-btn.shift.on {
+    color: #1a1400;
+    background: #e8b35b;
+    border-color: #f2c675;
+  }
+  .kb-chip {
+    font-size: 7px;
+    letter-spacing: 0.05em;
+    line-height: 1;
+    padding: 3px 3px;
+    border-radius: 2px;
+    color: #04211f;
+    background: var(--accent, #6f9);
+    pointer-events: none;
+  }
+
+  /* ===== CONTROL (deck) view (Part A group 5) ===== */
+  .control-deck { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .deck-lanes { display: flex; gap: 3px; }
+  .deck-lane {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    width: 28px;
+    flex: none;
+  }
+  .deck-lane-lbl { font-size: 8px; color: var(--text-dim, #888); line-height: 1; }
+  .deck-mute,
+  .deck-stop {
+    width: 28px;
+    height: 22px;
+    flex: none;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    background: #141414;
+    color: var(--text-dim, #888);
+    font-size: 10px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .deck-mute:hover, .deck-stop:hover { border-color: var(--accent-dim, #6cf); color: var(--text, #ddd); }
+  /* MUTE lit = the lane is silenced (amber, the "attention" language). */
+  .deck-mute.on {
+    color: #1a1400;
+    background: #e8b35b;
+    border-color: #f2c675;
+  }
+  .deck-globals { display: flex; align-items: center; gap: 8px; }
+  .deck-tempo { display: inline-flex; align-items: center; gap: 3px; }
+  .deck-tempo button {
+    width: 18px; height: 18px;
+    padding: 0;
+    background: var(--control-bg, #222);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    font-size: 11px; line-height: 1;
+    cursor: pointer;
+  }
+  .deck-bpm {
+    min-width: 26px;
+    text-align: center;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+  }
+  .deck-btn {
+    background: var(--control-bg, #222);
+    color: var(--text-dim, #999);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    padding: 4px 6px;
+    cursor: pointer;
+  }
+  .deck-btn:hover { color: var(--accent, #6cf); border-color: var(--accent, #6cf); }
+  .deck-btn.stopall:hover { color: #e6a; border-color: #e6a; }
+
+  /* ===== CLIP OPS bar (Part A group 2/3) — DOUBLE / DIV / SWING / VEL-mode ===== */
+  .clip-ops {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .clip-ops .op {
+    background: var(--control-bg, #222);
+    color: var(--text-dim, #aaa);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    font-size: 9px;
+    line-height: 1;
+    padding: 3px 5px;
+    cursor: pointer;
+  }
+  .clip-ops .op:hover { color: var(--text, #ddd); border-color: var(--accent-dim, #6cf); }
+  .op-swing { display: inline-flex; align-items: center; gap: 2px; }
+  .op-swing button {
+    width: 16px; height: 16px;
+    padding: 0;
+    background: var(--control-bg, #222);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    font-size: 10px; line-height: 1;
+    cursor: pointer;
+  }
+  .swing-val {
+    font-size: 8px;
+    color: var(--text-dim, #888);
+    min-width: 30px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .swing-val.on { color: var(--accent, #e8b35b); }
+  /* VEL-mode hint lights while Shift is held (a cell click then cycles velocity). */
+  .op-vel {
+    font-size: 8px;
+    letter-spacing: 0.05em;
+    color: var(--text-dim, #666);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 3px 4px;
+  }
+  .op-vel.on { color: #1a1400; background: #e8b35b; border-color: #f2c675; }
+  .piano-roll.vel-mode .cell { cursor: cell; }
 </style>
