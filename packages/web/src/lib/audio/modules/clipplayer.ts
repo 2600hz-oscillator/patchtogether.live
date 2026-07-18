@@ -48,6 +48,8 @@ import { drainAudition, clearAudition } from './clip-audition';
 import {
   readClip,
   lanesForStep,
+  notesStartingAt,
+  DEFAULT_VELOCITY,
   clipIndex,
   CLIP_LANES,
   CLIP_COUNT,
@@ -97,6 +99,21 @@ import {
   type ArrangeSlot,
   type ClipPlayMode,
 } from './clip-arrange';
+import {
+  ensureSongContainers,
+  mergeSongNotes,
+  coerceSongRecState,
+  songNoteChannel,
+  songNotesInRange,
+  songLengthBeats,
+  songNoteCount,
+  songHasContent,
+  songArmed,
+  songRecMode,
+  isSongRecorder,
+  type SongData,
+  type SongNoteEvent,
+} from './clip-song';
 
 /** steps-per-beat for each stepDiv index (0=1/4 … 3=1/32). */
 const STEP_DIV_SPB = [1, 2, 4, 8] as const;
@@ -105,6 +122,16 @@ const STEP_DIV_SPB = [1, 2, 4, 8] as const;
  *  undo-tracked LOCAL_ORIGIN (see the commit dep's rationale: per-wrap undo
  *  flooding). Exported for tests that assert commits stay out of the undo scope. */
 export const AUTOMATION_COMMIT_ORIGIN = Symbol('automation-commit');
+
+/** Transaction ORIGIN for SONG print commits — like AUTOMATION_COMMIT_ORIGIN,
+ *  deliberately NOT the undo-tracked LOCAL_ORIGIN (the per-bar print commits
+ *  would flood the undo stack). A bad take is cleared by re-recording (REPLACE)
+ *  or an explicit clear affordance. */
+export const SONG_COMMIT_ORIGIN = Symbol('song-commit');
+
+/** How often (in song-beats) the SONG print buffer commits to the Y.Doc during
+ *  a take — once per bar, never per step/tick ([[cv-modulation-live-store-write-storm]]). */
+const SONG_COMMIT_BEATS = 4;
 
 /** Fall→rise gap (s) when an audition voice-lane changes owner (LRU-steal, or a
  *  freed lane re-taken in the same drain). Two clean setValueAtTime edges — a
@@ -442,6 +469,17 @@ export const clipplayerDef: AudioModuleDef = {
     let prevRecording = false;
     let prevClipMode: ClipPlayMode = 'session';
 
+    // --- SONG MODE v2 (the PRINTED performance; clip-song.ts) ---
+    // songSchedCursor = the absolute song-beat the SONG PLAYBACK scheduler has
+    // scheduled notes up to (ahead of songBeat by the lookahead) — distinct from
+    // arrangeCursor (the legacy launch-log replay cursor). songNoteBuf[L] buffers
+    // this take's PRINTED note onsets for lane L until a commit boundary (the
+    // write-storm guard); songCommitAtBeat is the next song-beat to flush at.
+    let songSchedCursor = 0;
+    const songNoteBuf: SongNoteEvent[][] = Array.from({ length: CLIP_LANES }, () => []);
+    let songCommitAtBeat = SONG_COMMIT_BEATS;
+    let prevSongArmed = false;
+
     // --- SCENE REPEATS (per-peer runtime tracking; clip-scene-repeats.ts) ---
     // repBeatClock: beats elapsed while running — like songBeat but NEVER reset
     // (record-arm/arrangement origins don't touch it), so the frozen repeat unit
@@ -517,6 +555,11 @@ export const clipplayerDef: AudioModuleDef = {
       // SCENE REPEATS container (per-key writes land in a container created at
       // this deterministic load seam, same LWW-race hardening as auto/autoAssign).
       if (!d.sceneRepeats || typeof d.sceneRepeats !== 'object') d.sceneRepeats = {};
+      // SONG (arranger v2) containers — same container-LWW hardening: create
+      // song + song.notes + song.auto + song.arrangerAuto.tracks + arrangerAssign
+      // at this deterministic load seam so the per-lane/per-key print commits
+      // never LWW a peer's subtree (clip-song.ts).
+      ensureSongContainers(d);
       // Interim 81084fe9 ARRAY lanes shape → the canonical per-key RECORD
       // (one-way; per-key set/delete is what makes concurrent per-lane arms
       // merge instead of whole-array LWW).
@@ -772,7 +815,8 @@ export const clipplayerDef: AudioModuleDef = {
 
     // --- SONG MODE helpers ---
     function clipMode(): ClipPlayMode {
-      return liveData()?.clipMode === 'arrangement' ? 'arrangement' : 'session';
+      const m = liveData()?.clipMode;
+      return m === 'arrangement' || m === 'song' ? m : 'session';
     }
     function isRecording(): boolean {
       return liveData()?.recording === true;
@@ -799,6 +843,128 @@ export const clipplayerDef: AudioModuleDef = {
       songBeat = 0;
       arrangeCursor = 0;
       lastBeatAt = ctx.currentTime;
+    }
+
+    // ── SONG MODE v2 — PRINT (record) + PLAYBACK (authoritative) ──
+
+    /** Re-anchor SONG playback at the top: reset the clock + scheduler cursor,
+     *  silence every lane and drop any lingering session clip (clips do NOT
+     *  launch live in SONG mode). Called on entering SONG mode / play-from-top. */
+    function resetSongMode(): void {
+      resetSongOrigin();
+      songSchedCursor = 0;
+      for (let L = 0; L < LANES; L++) {
+        silenceLane(L, ctx.currentTime);
+        lanes[L].active = null; // song time drives the printed channels, not clips
+      }
+    }
+
+    /** COMMIT the buffered print for each lane into `song.notes[lane]` (per-lane
+     *  key writes; non-undoable — the write-storm guard commits once per bar / on
+     *  punch-out, never per tick). Commits WHATEVER is buffered: only the single
+     *  recorder client ever fills `songNoteBuf` (the capture path gates on
+     *  isSongRecorder), so a non-recorder's buffer is always empty → this is a
+     *  no-op for them. Safe to call on disarm/stop/dispose where the CURRENT
+     *  armed/recorder flags have already cleared. */
+    function flushSongNotes(): void {
+      let any = false;
+      for (const b of songNoteBuf) if (b.length) { any = true; break; }
+      if (!any) return;
+      const tx =
+        typeof (ydoc as { transact?: unknown }).transact === 'function'
+          ? (fn: () => void) => ydoc.transact(fn, SONG_COMMIT_ORIGIN)
+          : (fn: () => void) => fn();
+      tx(() => {
+        writeData((d) => {
+          ensureSongContainers(d); // defensive (the load seam already created them)
+          const s = d.song as SongData;
+          for (let L = 0; L < LANES; L++) {
+            const buf = songNoteBuf[L]!;
+            if (!buf.length) continue;
+            const existing = songNoteChannel(s, L)?.events ?? [];
+            // PER-LANE key write (disjoint from other lanes + the clip maps).
+            s.notes![String(L)] = { events: mergeSongNotes(existing, buf) };
+            buf.length = 0;
+          }
+        });
+      });
+    }
+
+    /** SONG PLAYBACK — schedule the printed note channels straight out the 8 lane
+     *  outputs, sample-accurate with the same LOOKAHEAD_S discipline the clip
+     *  scheduler uses. Absolute song-beats are mapped to the loop PHASE
+     *  (beat mod length) so a looping song plays forever; a one-shot song stops
+     *  scheduling past its length. Clips never launch (authoritative). */
+    function scheduleSongPlayback(nowAt: number): void {
+      const song = (liveData()?.song ?? undefined) as SongData | undefined;
+      const secPerBeat = 60 / transportBpm();
+      if (secPerBeat <= 0) return;
+      const octave = readParam('octave', 0);
+      const len = songLengthBeats(song, 4);
+      if (len <= 0) return;
+      const loop = song?.loop !== false;
+      const lookaheadBeats = LOOKAHEAD_S / secPerBeat;
+      const target = songBeat + lookaheadBeats;
+      let from = songSchedCursor;
+      if (from < songBeat) from = songBeat; // never re-fire the past on (re)entry
+      const to = Math.min(target, loop ? Infinity : len);
+      while (from < to) {
+        const loopStart = loop ? Math.floor(from / len) * len : 0;
+        const segEnd = Math.min(to, loopStart + len);
+        const phaseFrom = from - loopStart;
+        const phaseTo = segEnd - loopStart;
+        for (let L = 0; L < LANES; L++) {
+          const ch = songNoteChannel(song, L);
+          if (!ch) continue;
+          const evs = songNotesInRange(ch, phaseFrom, phaseTo);
+          // Group consecutive equal-beat onsets into a poly CHORD.
+          let i = 0;
+          while (i < evs.length) {
+            let j = i + 1;
+            while (j < evs.length && evs[j]!.beat === evs[i]!.beat) j++;
+            const chord = evs.slice(i, j);
+            const at = nowAt + (loopStart + chord[0]!.beat - songBeat) * secPerBeat;
+            emitSongChord(L, chord, Math.max(nowAt, at), secPerBeat, octave);
+            i = j;
+          }
+        }
+        from = segEnd;
+        if (!loop) break;
+      }
+      songSchedCursor = to;
+    }
+
+    /** Emit one printed CHORD (co-onset notes) out lane L's outputs at `at`. Gate
+     *  width = the captured sounding length (`lengthBeats`, already gate-shaped at
+     *  print time); OCT is applied live at the output. */
+    function emitSongChord(
+      L: number,
+      chord: SongNoteEvent[],
+      at: number,
+      secPerBeat: number,
+      octave: number,
+    ): void {
+      const ln = lanes[L];
+      if (laneMuted(liveData(), L)) return; // muted lane advances silently
+      const voiced = chord
+        .slice(0, POLY_CHANNEL_PAIRS)
+        .map((n) => ({ pitch: midiToVOct(n.midi) + octave, gate: 1 as 0 | 1 }));
+      if (voiced.length === 0) return;
+      let maxLen = 0;
+      let vel = 0;
+      for (const n of chord) {
+        if ((n.lengthBeats ?? 0) > maxLen) maxLen = n.lengthBeats ?? 0;
+        const v = (n.velocity ?? DEFAULT_VELOCITY) / 127;
+        if (v > vel) vel = v;
+      }
+      const gateOff = Math.max(0.001, maxLen * secPerBeat);
+      ln.poly.scheduleStep(at, voiced, gateOff, { writePitch: true, writeGate: true });
+      ln.gateSrc.offset.setValueAtTime(1, at);
+      ln.gateSrc.offset.setValueAtTime(0, at + gateOff);
+      ln.velSrc.offset.setValueAtTime(vel, at);
+      ln.lastVOct = voiced[0]?.pitch ?? ln.lastVOct;
+      ln.lastGate = 1;
+      ln.lastVel = vel;
     }
 
     // --- TIMELORDE transport (the rack clock we lock to) ---
@@ -1165,8 +1331,12 @@ export const clipplayerDef: AudioModuleDef = {
       try {
         const running = transportRunning();
         const d0 = liveData();
-        const mode = d0?.clipMode === 'arrangement' ? 'arrangement' : 'session';
+        const mode: ClipPlayMode =
+          d0?.clipMode === 'arrangement' || d0?.clipMode === 'song' ? d0.clipMode : 'session';
         const recording = d0?.recording === true;
+        // SONG-REC (arranger v2): armed + THIS client is the single-writer.
+        const songRecArmed = songArmed(d0);
+        const iAmSongRecorder = isSongRecorder(d0, ydoc.clientID);
 
         // SONG-MODE origin resets (before advancing songBeat this tick):
         //  - record ARM (replace): clear the log + restart song time at 0.
@@ -1188,6 +1358,40 @@ export const clipplayerDef: AudioModuleDef = {
           resetSongOrigin();
         }
         prevRecording = recording;
+
+        // SONG-REC arm edge (the recorder client only): REPLACE clears the print
+        // + restarts song time at bar 1; OVERDUB keeps both (new onsets merge by
+        // beat). Buffers + the commit cadence reset either way.
+        if (songRecArmed && !prevSongArmed && iAmSongRecorder) {
+          if (songRecMode(d0) === 'replace') {
+            writeData((d) => {
+              ensureSongContainers(d);
+              d.song!.notes = {};
+              d.song!.auto = {};
+              if (d.song!.arrangerAuto) d.song!.arrangerAuto.tracks = {};
+            });
+            resetSongOrigin();
+          }
+          for (const b of songNoteBuf) b.length = 0;
+          songCommitAtBeat = songBeat + SONG_COMMIT_BEATS;
+        }
+        // SONG-REC disarm edge → punch out: commit the in-flight partial print.
+        // (No recorder gate: the current `songRec`/recorder flags have already
+        // cleared on disarm; flushSongNotes commits whatever THIS client buffered
+        // and is a no-op for peers, whose buffers stay empty.)
+        if (!songRecArmed && prevSongArmed) flushSongNotes();
+        prevSongArmed = songRecArmed;
+
+        // SONG PLAYBACK origin: entering SONG mode OR pressing play in it replays
+        // from the top (silences lanes + drops lingering session clips). Leaving
+        // SONG mode is AUTHORITATIVE — silence the lookahead tail; the session
+        // adopt path below restores the live playing-set.
+        if (mode === 'song' && (prevClipMode !== 'song' || (running && !prevRunning))) {
+          resetSongMode();
+        } else if (prevClipMode === 'song' && mode !== 'song') {
+          for (let L = 0; L < LANES; L++) silenceLane(L, ctx.currentTime);
+          songSchedCursor = 0;
+        }
         prevClipMode = mode;
 
         if (running && !prevRunning) {
@@ -1203,6 +1407,9 @@ export const clipplayerDef: AudioModuleDef = {
           // startBeat at the restart boundary via the tracker maintenance below.
           if (repTrack) repTrack.started = false;
         } else if (!running && prevRunning) {
+          // SONG-REC: a transport stop punches out the in-flight print (commit
+          // the buffered onsets at the stop instant, before the take goes idle).
+          flushSongNotes();
           // SCENE REPEATS: a stale ctx-time boundary floor must not gate the
           // queue after a stop/start cycle re-anchors everything.
           advanceFloorUntil = null;
@@ -1232,6 +1439,23 @@ export const clipplayerDef: AudioModuleDef = {
         songBeat += beatAdvance;
         repBeatClock += beatAdvance;
         lastBeatAt = nowAt;
+
+        // SONG PRINT is captured in SESSION (you perform under the SONG-REC arm);
+        // the recorder commits its buffer once per bar (write-storm guard).
+        const songRecActive = songRecArmed && iAmSongRecorder && mode === 'session' && running;
+        // Per-lane NOTE-record enable for this take (coerce ONCE per tick, not
+        // per captured step). Default (no explicit map) = every channel enabled.
+        const songNoteEnabledBuf: boolean[] = new Array(LANES).fill(false);
+        if (songRecActive) {
+          const rs = coerceSongRecState(d0?.songRec);
+          for (let L = 0; L < LANES; L++) {
+            songNoteEnabledBuf[L] = rs?.noteEnable ? rs.noteEnable[String(L)] === true : true;
+          }
+        }
+        if (songRecActive && songBeat >= songCommitAtBeat) {
+          flushSongNotes();
+          songCommitAtBeat = songBeat + SONG_COMMIT_BEATS;
+        }
 
         // stop_all — stop every lane immediately (panic; both modes).
         if (stopCounter.poll(ctx.currentTime) > 0) {
@@ -1365,9 +1589,10 @@ export const clipplayerDef: AudioModuleDef = {
               applyLaneQueued(L, floor);
             }
           }
-        } else if (running) {
-          // ARRANGEMENT playback: fire the recorded log as song-time advances.
-          // The timestamps already encode the timing, so launch directly.
+        } else if (mode === 'arrangement' && running) {
+          // ARRANGEMENT playback (legacy launch-log): fire the recorded log as
+          // song-time advances. The timestamps already encode the timing, so
+          // launch directly.
           const arr = coerceArrangeData(d0?.arrangement);
           const len = arrangeLengthBeats(arr, 4);
           let from = arrangeCursor;
@@ -1378,6 +1603,12 @@ export const clipplayerDef: AudioModuleDef = {
           }
           for (const ev of eventsInRange(arr, from, songBeat)) applyArrangeEvent(ev);
           arrangeCursor = songBeat;
+        } else if (mode === 'song' && running) {
+          // SONG playback (authoritative): song time drives the PRINTED note
+          // channels straight out the 8 lane outputs. Clips do NOT launch live;
+          // the main clip-emit loop below no-ops because every ln.active is null
+          // (reset on entering SONG mode).
+          scheduleSongPlayback(nowAt);
         }
 
         // Publish each lane's audio-time playhead (render state — NOT synced;
@@ -1523,6 +1754,45 @@ export const clipplayerDef: AudioModuleDef = {
             // (nextStepTime += laneDur) is unchanged so pairs stay beat-locked.
             const emitAt = ln.nextStepTime + swingStepOffset(ln.stepIndex, swing, laneDur);
             emitLaneStep(L, ln.stepIndex, emitAt, laneDur);
+            // SONG PRINT TEE — capture the EMITTED notes (what SOUNDED: post
+            // rate/div/swing/mono/S&H) at their absolute song-beat, on the
+            // recorder client only, into the per-lane buffer (committed at the
+            // bar cadence above). Mirrors emitLaneStep's audible guards (muted /
+            // live-audition lanes emit nothing → capture nothing) and its gate
+            // math (held vs staccato) so the printed gate width == what sounded.
+            // OCT is NOT baked (a live output transform, re-applied at playback).
+            if (
+              songRecActive &&
+              songNoteEnabledBuf[L] &&
+              !laneMuted(d0, L) &&
+              ln.alloc.activeCount() === 0 &&
+              activeClip?.kind === 'note'
+            ) {
+              const starting = notesStartingAt(activeClip, ln.stepIndex).slice(0, POLY_CHANNEL_PAIRS);
+              if (starting.length) {
+                const secPerBeatCap = 60 / transportBpm();
+                if (secPerBeatCap > 0) {
+                  const beatAtEmit = Math.max(0, songBeat + (emitAt - ctx.currentTime) / secPerBeatCap);
+                  let gateSteps = 1;
+                  for (const ev of starting) gateSteps = Math.max(gateSteps, ev.lengthSteps ?? 1);
+                  const spanS = gateSteps * laneDur;
+                  const gateOffS =
+                    gateSteps > 1
+                      ? Math.max(0.001, spanS - 0.002)
+                      : Math.max(0.001, laneDur * readParam('gateLength', 0.9));
+                  const lengthBeats = gateOffS / secPerBeatCap;
+                  const buf = songNoteBuf[L]!;
+                  for (const ev of starting) {
+                    buf.push({
+                      beat: beatAtEmit,
+                      midi: ev.midi,
+                      velocity: ev.velocity ?? DEFAULT_VELOCITY,
+                      lengthBeats,
+                    });
+                  }
+                }
+              }
+            }
             // PER-CLIP AUTOMATION: a playing NOTE clip emits its notes AND
             // drives its sibling `auto[k]` tracks' params transiently (zero
             // Yjs) through the SAME per-lane step schedule — sample-accurate +
@@ -1727,6 +1997,14 @@ export const clipplayerDef: AudioModuleDef = {
         if (key === 'recording') return isRecording() ? 1 : 0;
         if (key === 'recordMode') return recordMode() === 'overdub' ? 1 : 0;
         if (key === 'arrangeEvents') return coerceArrangeData(liveData()?.arrangement).events.length;
+        // SONG MODE v2 (arranger v2): the card reads these for the compact SONG
+        // readout + the SES/SONG + SONG-REC controls.
+        if (key === 'songMode') return clipMode() === 'song' ? 1 : 0;
+        if (key === 'songArmed') return songArmed(liveData()) ? 1 : 0;
+        if (key === 'songRecMode') return songRecMode(liveData()) === 'overdub' ? 1 : 0;
+        if (key === 'songNoteCount') return songNoteCount(liveData()?.song as SongData | undefined);
+        if (key === 'songLengthBeats') return songLengthBeats(liveData()?.song as SongData | undefined, 4);
+        if (key === 'songHasContent') return songHasContent(liveData()?.song as SongData | undefined) ? 1 : 0;
         // SCENE REPEATS live countdown (runtime-only render reads — never
         // synced): the COUNTING tracked scene's slot (-1 = none), its completed
         // passes, and its CURRENT synced count. The card's flair polls these to
@@ -1766,6 +2044,8 @@ export const clipplayerDef: AudioModuleDef = {
       },
       dispose() {
         alive = false;
+        // SONG-REC: commit any in-flight print before teardown (punch-out).
+        flushSongNotes();
         // Param-jump policy: deleting the player while automation plays must not
         // leave the target params riding a ~200 ms ghost tail then freezing at an
         // arbitrary phase — hold-last-value every lane's playing automation clip

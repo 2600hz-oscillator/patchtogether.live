@@ -63,6 +63,14 @@
     sceneRepeatProgressFlair,
   } from '$lib/audio/modules/clip-scene-repeats';
   import {
+    songArmed,
+    songNoteCount,
+    songLengthBeats,
+    songHasContent,
+    coerceSongRecState,
+    type SongData,
+  } from '$lib/audio/modules/clip-song';
+  import {
     getAutomationRender,
     automationCountdownColor,
     automationCountdownOn,
@@ -432,6 +440,44 @@
   }
   /** The full-window pop-out arranger editor (like the MAPPY MAP editor). */
   let arrangeEditorOpen = $state(false);
+
+  // --- SONG MODE v2 (arranger v2 — the PRINTED performance; clip-song.ts) ---
+  // A CONCRETE recorded performance (up to 8 note channels + automation + an
+  // arranger lane) distinct from the legacy launch-log arrangement above. This
+  // card touch is intentionally minimal (Phase 1): a SES/SONG toggle + SONG-REC
+  // arm + a compact readout. The full SONG editor is a later phase.
+  let songMode = $derived((void cardVersion, dataObj().clipMode === 'song'));
+  let songRecArmedNow = $derived((void cardVersion, songArmed(dataObj())));
+  let songRecMode = $derived(
+    (void cardVersion, coerceSongRecState(dataObj().songRec)?.mode === 'overdub' ? 'overdub' : 'replace'),
+  );
+  let songNotes = $derived((void cardVersion, songNoteCount(dataObj().song as SongData | undefined)));
+  let songBars = $derived(
+    (void cardVersion, Math.max(1, Math.round(songLengthBeats(dataObj().song as SongData | undefined, 4) / 4))),
+  );
+  let songHasAny = $derived((void cardVersion, songHasContent(dataObj().song as SongData | undefined)));
+  /** SES ⇄ SONG playback. AUTHORITATIVE — entering SESSION stops the song
+   *  (the engine silences the printed channels; clips do not punch over it). */
+  function toggleSongMode() {
+    writeData((d) => { d.clipMode = d.clipMode === 'song' ? 'session' : 'song'; });
+  }
+  /** Arm/disarm SONG-REC (single-writer: stamp THIS client as the recorder, so
+   *  exactly one peer commits the print). Perform in SESSION under the arm; the
+   *  concrete result prints to the song channels. */
+  function toggleSongRec() {
+    writeData((d) => {
+      const cur = coerceSongRecState(d.songRec);
+      if (cur?.armed) d.songRec = null;
+      else d.songRec = { armed: true, mode: cur?.mode ?? 'replace', recorderId: ydoc.clientID };
+    });
+  }
+  /** REPLACE ⇄ OVERDUB for SONG-REC (REPLACE = arming clears + restarts at bar 1). */
+  function toggleSongRecMode() {
+    writeData((d) => {
+      const cur = coerceSongRecState(d.songRec) ?? {};
+      d.songRec = { ...cur, mode: cur.mode === 'overdub' ? 'replace' : 'overdub' };
+    });
+  }
 
   // --- PER-CLIP AUTOMATION (owner-locked: MODULE assignment + PER-LANE arm) ---
   // Synced state: each lane's arm + the module→lane assignments (autoAssign) +
@@ -897,6 +943,51 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="body">
+      {#if view === 'session'}
+        <!-- SONG MODE v2 (arranger v2 — the PRINTED performance). Minimal Phase-1
+             entry: SES/SONG playback toggle + SONG-REC arm + REPLACE/OVERDUB + a
+             compact readout. Perform in SESSION under SONG-REC to PRINT concrete
+             note channels; flip to SONG to play them back (authoritative). The
+             full SONG editor is a later phase. Kept separate from the header's
+             experimental launch-log arranger cluster. -->
+        <div class="song2" data-testid={`clipplayer-song2-${id}`}>
+          <button
+            class="song2-mode"
+            class:on={songMode}
+            onclick={toggleSongMode}
+            title={songMode
+              ? 'SONG playback (authoritative) — song time drives the printed channels out the lane outputs; clips do not launch live. Click for SESSION.'
+              : 'SESSION — launch clips live (perform + PRINT here under SONG-REC). Click to PLAY the recorded SONG.'}
+            aria-pressed={songMode}
+            data-testid={`clipplayer-song2-mode-${id}`}
+          >{songMode ? 'SONG' : 'SES'}</button>
+          <button
+            class="song2-rec"
+            class:on={songRecArmedNow}
+            onclick={toggleSongRec}
+            title={songRecArmedNow
+              ? 'SONG-REC armed — perform in SESSION and the concrete result PRINTS to the song channels. Click to disarm (punch out).'
+              : songRecMode === 'overdub'
+                ? 'SONG-REC (OVERDUB): arm, then perform in SESSION to PRINT into the song (merges with the existing take).'
+                : 'SONG-REC (REPLACE): arm, then perform in SESSION to PRINT a fresh song (clears the old take + restarts at bar 1).'}
+            aria-pressed={songRecArmedNow}
+            data-testid={`clipplayer-song2-rec-${id}`}
+          >● SONG</button>
+          <button
+            class="song2-recmode"
+            class:overdub={songRecMode === 'overdub'}
+            onclick={toggleSongRecMode}
+            title={songRecMode === 'overdub'
+              ? 'OVERDUB — SONG-REC keeps the take + merges new performance. Click for REPLACE.'
+              : 'REPLACE — SONG-REC clears + prints fresh. Click for OVERDUB.'}
+            aria-pressed={songRecMode === 'overdub'}
+            data-testid={`clipplayer-song2-recmode-${id}`}
+          >{songRecMode === 'overdub' ? 'OVR' : 'RPL'}</button>
+          <span class="song2-info" data-testid={`clipplayer-song2-info-${id}`}>
+            {songHasAny ? `${songNotes} notes · ${songBars} bars` : 'empty'}
+          </span>
+        </div>
+      {/if}
       {#if view === 'session' && arrangeMode}
         <!-- SONG VIEW: arrangement timeline (8 lane rows × song-time bars). Each
              block is a recorded clip launch spanning until the next change; a
@@ -1322,6 +1413,37 @@
     cursor: pointer;
   }
   .rec-mode.overdub { color: var(--accent, #e8b35b); border-color: var(--accent, #e8b35b); }
+  /* SONG MODE v2 (arranger v2) — a minimal, self-contained body strip (Phase 1):
+     SES/SONG playback toggle + SONG-REC arm + REPLACE/OVERDUB + a compact
+     readout. Deliberately separate from the header cluster's styling. */
+  .song2 {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 2px 5px;
+    margin-bottom: 3px;
+    border-bottom: 1px solid var(--border);
+  }
+  .song2 button {
+    background: var(--control-bg, #222);
+    color: var(--text-dim, #999);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    font-size: 9px;
+    letter-spacing: 0.05em;
+    line-height: 1;
+    padding: 3px 5px;
+    cursor: pointer;
+  }
+  .song2-mode.on { color: var(--accent, #6cf); border-color: var(--accent, #6cf); }
+  .song2-rec.on {
+    color: #fff;
+    background: #c0392b;
+    border-color: #e74c3c;
+    animation: rec-blink 1s steps(2) infinite;
+  }
+  .song2-recmode.overdub { color: var(--accent, #e8b35b); border-color: var(--accent, #e8b35b); }
+  .song2-info { font-size: 9px; color: var(--text-dim, #999); margin-left: auto; }
   /* PER-CLIP AUTOMATION title cluster: per-lane assigned-MODULE chips +
      override dot + the MAX cap badge (the per-lane ARM ◉ lives on each channel
      strip in the grid footer). Distinct TEAL language so the automation
