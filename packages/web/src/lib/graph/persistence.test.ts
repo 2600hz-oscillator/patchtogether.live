@@ -553,6 +553,71 @@ describe('persistence: DOOM transient-field stripping', () => {
   });
 });
 
+// ---------------- CLIPPLAYER transient-data stripping ----------------
+//
+// CLIPPLAYER persists its printed SONG (`data.song`) as CONTENT, but the
+// record-ARM state (`songRec` / `recording` / `noteRec`) is per-session. A patch
+// saved mid-take that reloaded ARMED would, on the first Play, hit the SONG-REC
+// arm edge and — for a REPLACE arm, or a legacy arm with no `recorderId` (any
+// client records) — CLEAR its own printed song. So the loader strips those arm
+// fields; the `song` content must survive.
+describe('persistence: CLIPPLAYER transient-field stripping', () => {
+  const clipplayerStub: AudioModuleDef = {
+    type: 'clipplayer',
+    domain: 'audio',
+    label: 'CLIP PLAYER',
+    category: 'sources',
+    inputs: [],
+    outputs: [],
+    params: [],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    factory: throwingFactory as any,
+  };
+
+  beforeAll(() => {
+    registerModule(clipplayerStub);
+  });
+
+  it('an armed clipplayer round-trips DISARMED, keeping its printed song', () => {
+    const src = freshPatch();
+    const song = {
+      v: 1,
+      lengthBeats: 0,
+      loop: true,
+      notes: { '0': { events: [{ beat: 0, midi: 60, velocity: 100, lengthBeats: 0.25 }] } },
+    };
+    src.ydoc.transact(() => {
+      src.store.nodes['cp'] = {
+        id: 'cp',
+        type: 'clipplayer',
+        domain: 'audio',
+        position: { x: 5, y: 6 },
+        params: { stepDiv: 2 },
+        data: {
+          song, // CONTENT — must survive
+          songRec: { armed: true, mode: 'replace' }, // transient — must vanish
+          recording: true, // transient — must vanish
+          noteRec: { lane: 0, slot: 0, armed: true, recording: true }, // transient
+        },
+      };
+    });
+    const env = makeEnvelope(src.ydoc);
+
+    const dest = freshPatch();
+    const result = loadEnvelopeIntoStore(env, dest.ydoc, dest.store);
+    expect(result.nodesLoaded).toBe(1);
+    expect(result.diagnostics).toEqual([]);
+
+    const data = dest.store.nodes['cp']!.data as Record<string, unknown>;
+    // The armed take did NOT reload armed (no self-clear on first Play).
+    expect('songRec' in data).toBe(false);
+    expect('recording' in data).toBe(false);
+    expect('noteRec' in data).toBe(false);
+    // …and the printed SONG content survived intact.
+    expect(data.song).toEqual(song);
+  });
+});
+
 // ---------------- Asset-bytes round-trip ----------------
 //
 // Regression net for the rackspace-persistence audit (see

@@ -66,6 +66,42 @@ async function waitForEngine(
   return { ok: false, last };
 }
 
+/** Poll several engine keys TOGETHER (ONE atomic read per tick) until `pred`
+ *  holds for the whole tuple. Reading lanes SEQUENTIALLY races when they change
+ *  together: a reset snaps all active lanes on the same tick, then each climbs
+ *  immediately — so a second, separate poll starts only after the first drained
+ *  the shared low window and can miss it (lane 0 caught ≤6, lane 1's later poll
+ *  already saw 87 on a starved CI shard). One combined read catches all lanes in
+ *  the same post-reset low window. */
+async function waitForEnginesAll(
+  page: Page,
+  nodeId: string,
+  keys: string[],
+  pred: (vs: number[]) => boolean,
+  timeoutMs: number,
+): Promise<{ ok: boolean; last: number[] }> {
+  const deadline = Date.now() + timeoutMs;
+  let last: number[] = [];
+  while (Date.now() < deadline) {
+    last = await page.evaluate(
+      ({ id, ks }) => {
+        const w = globalThis as unknown as EngineW;
+        const eng = w.__engine?.();
+        const node = w.__patch.nodes[id];
+        return ks.map((k) => {
+          if (!eng || !node) return NaN;
+          const v = eng.read(node, k);
+          return typeof v === 'number' ? v : NaN;
+        });
+      },
+      { id: nodeId, ks: keys },
+    );
+    if (last.every((v) => Number.isFinite(v)) && pred(last)) return { ok: true, last };
+    await page.waitForTimeout(30);
+  }
+  return { ok: false, last };
+}
+
 /** Seed DENSE 128-step note clips (a note every step, so the playhead tracks)
  *  in slot 0 of the given lanes, and queue them — via the same Y.Doc path the
  *  card/grid use. 128 steps ≫ every window here → no loop wrap. */
@@ -200,10 +236,23 @@ test('RST button: all active clips snap back to step 1 and keep playing', async 
   // step ~43 (CI-only; passes locally + under 4-worker load). 5000 ms tolerates
   // the stall and is still WELL under the 8 s / 128-step wrap horizon, so a
   // natural loop wrap can never fake the low reading. Band unchanged.
-  const snapped0 = await waitForEngine(page, 'cp', 'currentStep:0', (v) => v >= 0 && v <= 6, 5000);
-  expect(snapped0.ok, `lane 0 snapped back toward the top (saw ${snapped0.last})`).toBe(true);
-  const snapped1 = await waitForEngine(page, 'cp', 'currentStep:1', (v) => v >= 0 && v <= 6, 5000);
-  expect(snapped1.ok, `lane 1 snapped with the same reset (saw ${snapped1.last})`).toBe(true);
+  // Both active lanes snap on the SAME reset tick, then climb together. Read
+  // BOTH playheads atomically per poll (waitForEnginesAll) — a sequential
+  // lane-0-then-lane-1 poll raced: lane 0 was caught ≤6 but by the time lane 1's
+  // separate poll started, lane 1 (snapped at the same instant) had already
+  // climbed past the band on a starved CI shard (saw 87). One combined read
+  // catches the shared post-reset low window for both lanes.
+  const snapped = await waitForEnginesAll(
+    page,
+    'cp',
+    ['currentStep:0', 'currentStep:1'],
+    ([a, b]) => a >= 0 && a <= 6 && b >= 0 && b <= 6,
+    5000,
+  );
+  expect(
+    snapped.ok,
+    `both lanes snapped back toward the top on the reset (saw l0=${snapped.last[0]}, l1=${snapped.last[1]})`,
+  ).toBe(true);
   // Still PLAYING (reset ≠ stop) and still advancing.
   expect(await readEngine(page, 'cp', 'activeLane:0')).toBe(0);
   const resumed = await waitForEngine(page, 'cp', 'currentStep:0', (v) => v >= 6, 4000);

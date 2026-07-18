@@ -44,8 +44,10 @@ export interface ArrangeData {
   loop: boolean;
 }
 
-/** Which transport drives clip playback. */
-export type ClipPlayMode = 'session' | 'arrangement';
+/** Which transport drives clip playback. `'song'` is the new authoritative SONG
+ *  MODE (clip-song.ts — a concrete PRINTED performance); `'arrangement'` is the
+ *  legacy launch-log skeleton (kept intact for now, superseded by `'song'`). */
+export type ClipPlayMode = 'session' | 'arrangement' | 'song';
 
 /** A fresh, empty arrangement (open length, looping). */
 export function defaultArrangeData(): ArrangeData {

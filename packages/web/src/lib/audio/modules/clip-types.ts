@@ -25,6 +25,9 @@ import { POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
 // Type-only import (erased at runtime → no cycle with clip-arrange.ts, which
 // imports VALUES from this file). The arranger model lives in clip-arrange.ts.
 import type { ArrangeData, ClipPlayMode } from './clip-arrange';
+// Type-only import (erased at runtime → no cycle with clip-song.ts, which
+// imports VALUES from this file). The SONG model lives in clip-song.ts.
+import type { SongData, SongRecState } from './clip-song';
 
 // ---------------------------------------------------------------------------
 // Dimensions (DECIDED 2026-06-15): rows = INSTRUMENTS, columns = clip SLOTS.
@@ -407,6 +410,18 @@ export interface ClipPlayerData {
    *  launches merge into it by song-beat). Absent/unknown ⇒ 'replace'. Synced
    *  so peers see the armed mode. */
   recordMode?: 'replace' | 'overdub';
+  // ── SONG MODE (arranger v2 — the PRINTED performance; clip-song.ts) ──
+  /** The recorded SONG — up to 8 channels of concrete PRINTED notes+timing + 8
+   *  automation channels + one arranger-automation lane (clip-song.ts). CONTENT
+   *  (copied on duplicate). Distinct from the legacy launch-log `arrangement`
+   *  (kept intact for now; superseded by this). Absent = nothing recorded. The
+   *  containers are created at the factory load seam (`ensureSongContainers`,
+   *  container-LWW hardening) next to `auto`/`autoAssign`. */
+  song?: SongData;
+  /** SONG-REC arm state — LIVE/TRANSIENT (never duplicated; single-writer
+   *  commit via `recorderId`). While `armed`, the recorder client PRINTS the
+   *  performed session into `song` at the current song-beat (clip-song.ts). */
+  songRec?: SongRecState | null;
   /** DUAL-LAUNCHPAD KEYS note-record state (design: clip-record-note-mode). A
    *  DISTINCT field from `recording` above (that is the ARRANGER launch-recorder
    *  in clip-arrange.ts — sharing it would break both). Set by the launchpad
@@ -702,7 +717,8 @@ export const CLIP_PLAYER_TRANSIENT_DATA_FIELDS = [
   'playing', // the live playing-set
   'queued', // pending launches
   'queuedImmediate', // pending NOW overrides
-  'recording', // arranger record-arm
+  'recording', // arranger record-arm (legacy launch-log)
+  'songRec', // SONG-REC arm (the printed-performance recorder; `song` is CONTENT)
   'noteRec', // KEYS note-record state
   'automation', // per-lane automation arm + recorderIds
   'autoAssign', // module→lane claims (globally exclusive — never copied)

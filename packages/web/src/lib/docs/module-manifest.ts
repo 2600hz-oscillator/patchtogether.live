@@ -1256,6 +1256,10 @@ export function buildModuleManifest(
       // CLIPPLAYER song-mode arranger data model + record/replay math — not a
       // ModuleDef (the def lives in clipplayer.ts).
       if (file === 'clip-arrange.ts') return false;
+      // CLIPPLAYER SONG MODE v2 model — the PRINTED performance (concrete note +
+      // automation channels + arranger lane) + record/print/playback math. Not a
+      // ModuleDef (the def lives in clipplayer.ts).
+      if (file === 'clip-song.ts') return false;
       // CLIPPLAYER dual-Launchpad KEYS live-audition side-channel (in-memory
       // note queue) — not a ModuleDef (the def lives in clipplayer.ts).
       if (file === 'clip-audition.ts') return false;
