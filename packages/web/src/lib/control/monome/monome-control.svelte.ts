@@ -83,6 +83,7 @@ import {
   type ClipPlayerData,
   type NoteClipRecord,
 } from '$lib/audio/modules/clip-types';
+import { applySceneLaunchWrite } from '$lib/audio/modules/clip-scene-repeats';
 import { getLanePlayhead } from '$lib/audio/modules/clip-playhead';
 
 const STORAGE_KEY = 'pt.grid.boundClipNode';
@@ -498,10 +499,13 @@ function handleKey(e: GridKeyEvent): void {
 
   const sceneSlot = sceneSlotForPad(e.x, e.y);
   if (sceneSlot !== null) {
-    for (let lane = 0; lane < CLIP_LANES; lane++) {
-      const has = data?.clips?.[String(clipIndex(sceneSlot, lane))];
-      queueLane(nodeId, lane, has ? sceneSlot : 'stop');
-    }
+    // The SHARED scene-launch seam (clip-scene-repeats): one transaction for
+    // the whole scene (was 8 separate queueLane writes) + the `sceneLaunch`
+    // marker bump the repeat tracker re-anchors from. Content-gated (an empty
+    // scene is a no-op, not a stop-all).
+    editData(nodeId, (d) => {
+      applySceneLaunchWrite(d, sceneSlot, false);
+    });
     return;
   }
 

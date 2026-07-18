@@ -1285,6 +1285,43 @@ export function gridPadForScrolledSlot(
   return { x: lane, y: LP_HEIGHT - 1 - row };
 }
 
+// ── SCENE-REPEAT COUNT VIEW (single-mode Grid: HOLD GRID + HOLD a scene-launch
+// button). While both are held the 8×8 matrix becomes an ORANGE (system-colour)
+// bar counter for THAT scene's repeat count: pads 1..N lit ROW-MAJOR from the
+// upper-left of the 8×8 (the permanent top CC row is excluded — it stays the
+// nav row); ALL 64 lit = INFINITE (the default). Tapping pad k sets k repeats
+// (1..63); pad 64 (bottom-right) sets infinite. The held scene button is
+// POSITION-RELATIVE through sceneScrollOffset (button i edits scene
+// `offset + i`), exactly like the launch itself. PURE helpers — the stateful
+// hold detection lives in launchpad-control. ──
+
+/** The repeat-view colour — the system ORANGE used elsewhere (undo/redo · NOW ·
+ *  arp) so the count bar reads as a system overlay, never a clip state. */
+export const RGB_REPEAT: Rgb = RGB_SYS;
+
+/** A grid pad's 1-indexed ROW-MAJOR ordinal from the upper-left of the 8×8
+ *  (y from BOTTOM: upper-left = (0,7) → 1, (1,7) → 2 … bottom-right = (7,0) →
+ *  64), or null out of the matrix. PURE. */
+export function repeatPadOrdinal(x: number, y: number): number | null {
+  if (x < 0 || x >= LP_WIDTH || y < 0 || y >= LP_HEIGHT) return null;
+  return (LP_HEIGHT - 1 - y) * LP_WIDTH + x + 1;
+}
+
+/** The repeat COUNT a tapped ordinal sets: pad 64 → 0 (INFINITE); pads 1..63 →
+ *  that many repeats. PURE. */
+export function repeatCountForOrdinal(k: number): number {
+  return k === LP_WIDTH * LP_HEIGHT ? 0 : Math.max(1, Math.min(LP_WIDTH * LP_HEIGHT - 1, Math.trunc(k)));
+}
+
+/** How many pads light for a stored count: N ∈ 1..63 lights pads 1..N; 0
+ *  (infinite) lights ALL 64. PURE — the display truth the LED paint AND the
+ *  docs diagram both derive from (pads 1..litCount are lit, the rest dark). */
+export function repeatLitCount(count: number): number {
+  const c = Math.trunc(count);
+  if (c < 1 || c > LP_WIDTH * LP_HEIGHT - 1) return LP_WIDTH * LP_HEIGHT; // infinite → all 64
+  return c;
+}
+
 // ── Right-column classifiers (per view). All take a SCENE INDEX (0 = top). ──
 export type GridShiftAction =
   | 'copy'
@@ -1596,6 +1633,13 @@ export interface SingleGridOpts {
    *  (last 4 beats before EACH clip's own wrap). Painted only when a clip's
    *  scene is inside the current scroll window. */
   autoCountdown?: (CountdownPaint & { clipIndex: number })[] | null;
+  /** SCENE-REPEAT COUNT VIEW (HOLD GRID + HOLD a scene button): when set the
+   *  8×8 matrix paints the orange count bar for the held scene instead of the
+   *  clip matrix — pads 1..repeatLitCount(count) lit (all 64 = infinite). The
+   *  right column keeps the normal scene paint with the HELD button forced
+   *  bright amber; the permanent top row is untouched. `sceneIndex` = the held
+   *  button's visible index (0 = top). */
+  repeatView?: { count: number; sceneIndex: number } | null;
 }
 
 /** The clip-state colour for a matrix pad — identical semantics to
@@ -1702,10 +1746,32 @@ export function computeSingleGridFrame(
   // clip→scene) reads as "not a target" rather than a mystery no-op. Only under
   // no-shift (under shift the right column is the grid-shift palette). COPY leaves
   // both classes lit — either is a legal copy source.
-  const pasteArmed = !shift && opts.armedRightAction === 'paste' && !!opts.bufferLoaded;
+  const repeatView = opts.repeatView ?? null;
+  // While the REPEAT-COUNT view is held, EVERY scene press is select-only (the
+  // control layer intercepts them before the shift palette AND the sticky
+  // copy/paste arms), so the right column must paint the plain no-shift scene
+  // paint — LED truth matches the press semantics even when shift was latched
+  // or a paste arm was pending before the hold began.
+  const sceneShift = repeatView ? false : shift;
+  const pasteArmed =
+    !shift && !repeatView && opts.armedRightAction === 'paste' && !!opts.bufferLoaded;
   const sceneBuffer = opts.bufferKind === 'scene';
   const dimClipPads = pasteArmed && sceneBuffer; // clip pads are the invalid class
   const dimSceneCol = pasteArmed && !sceneBuffer; // scene column is the invalid class
+  if (repeatView) {
+    // SCENE-REPEAT COUNT VIEW: the whole 8×8 is the orange count bar — pads
+    // 1..repeatLitCount(count) lit row-major from the upper-left, the rest
+    // dark (all 64 lit = infinite). Replaces the clip matrix AND its overlays
+    // (div pulse / countdowns) while held; the LED truth is exactly the stored
+    // count, live-updating as taps land.
+    const lit = repeatLitCount(repeatView.count);
+    for (let x = 0; x < LP_WIDTH; x++) {
+      for (let y = 0; y < LP_HEIGHT; y++) {
+        const k = repeatPadOrdinal(x, y)!;
+        put(frame, padNote(x, y), k <= lit ? RGB_REPEAT : RGB_OFF);
+      }
+    }
+  } else {
   // Transposed clip matrix (x = lane, scene top→bottom) through the scroll window:
   // visual row r (top = 0) shows scene `offset + r`. Each in-range scene paints its
   // per-cell clip state (an empty cell is DARK); a scene out of range (≥ MAX_SCENES)
@@ -1741,6 +1807,7 @@ export function computeSingleGridFrame(
       if (pad) put(frame, padNote(pad.x, pad.y), countdownRgb(cd));
     }
   }
+  }
   // Right column: no-shift = scene/row launch (amber when the scene HAS a clip in
   // any lane; flash when a lane is queued that slot; DARK for an EMPTY scene —
   // content-gated so a scrolled-in empty scene reads as "nothing to launch");
@@ -1748,7 +1815,7 @@ export function computeSingleGridFrame(
   const clips = data?.clips ?? {};
   for (let i = 0; i < SCENE_CCS.length; i++) {
     let rgb: Rgb;
-    if (shift) {
+    if (sceneShift) {
       rgb = gridShiftRightRgb(i, opts, blinkOn);
     } else {
       const slot = slotForScene(offset + i);
@@ -1777,6 +1844,9 @@ export function computeSingleGridFrame(
           : RGB_OFF; // empty scene → dark (content-gated)
       }
     }
+    // REPEAT-COUNT VIEW: the HELD scene button reads bright amber regardless of
+    // content so the two-hands hold has a visible anchor.
+    if (repeatView && i === repeatView.sceneIndex) rgb = RGB_SCENE;
     put(frame, SCENE_CCS[i], rgb);
   }
   paintPermanentTopRow(frame, opts.top);

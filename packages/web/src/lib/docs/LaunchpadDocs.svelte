@@ -96,8 +96,14 @@
     RGB_TEMPO_NUDGE,
     RGB_PANIC,
     hexToRgb127,
+    // SCENE-REPEAT count view — the diagram below is generated from the REAL
+    // frame painter (computeSingleGridFrame + repeatPadOrdinal), so the picture
+    // IS the firmware paint for that state (drift-guarded in the unit test).
+    computeSingleGridFrame,
+    repeatPadOrdinal,
     type Rgb,
   } from '$lib/control/launchpad/launchpad-map';
+  import { padNote, SCENE_CCS } from '$lib/control/launchpad/launchpad-sysex';
   import { keyboardCellToMidi, noteRole } from '$lib/audio/modules/keyboard-map';
   import { defaultLaneColorHex } from '$lib/audio/modules/clip-types';
 
@@ -310,6 +316,53 @@
     { row: 1, fill: hex(RGB_SCENE), label: 'SCR▲' }, // amber scene-window UP (was P-REV)
     { row: 0, fill: hex(RGB_SCENE), label: 'SCR▼' }, // amber scene-window DOWN (was NOW)
   ];
+
+  // ── SCENE-REPEAT COUNT VIEW (HOLD GRID + HOLD a scene-launch button). The
+  // diagram is GENERATED from the REAL frame painter for the 16-repeats state
+  // (top two rows orange, held scene button bright amber), so the picture is
+  // byte-for-byte the firmware paint — the launchpad-docs unit test pins the
+  // rendered SVG fills to a fresh computeSingleGridFrame run of the SAME state
+  // (the paintPermanentTopRow drift-guard pattern, extended to the pads). ──
+  const REPEAT_DIAGRAM_COUNT = 16;
+  const repeatFrame = computeSingleGridFrame(undefined, {
+    top: {
+      view: 'grid',
+      keysActive: false,
+      transportRunning: true,
+      shift: { latched: false, held: false },
+      canUndo: false,
+      canRedo: false,
+    },
+    repeatView: { count: REPEAT_DIAGRAM_COUNT, sceneIndex: 0 },
+  });
+  const isOffLed = (c: readonly number[] | undefined): boolean =>
+    !c || (c[0] === 0 && c[1] === 0 && c[2] === 0);
+  const repeatPads = (() => {
+    const out: { x: number; y: number; fill: string; label?: string }[] = [];
+    for (let y = 0; y < 8; y++) {
+      for (let x = 0; x < 8; x++) {
+        const led = repeatFrame.leds.get(padNote(x, y));
+        if (isOffLed(led)) continue;
+        const k = repeatPadOrdinal(x, y)!;
+        out.push({
+          x,
+          y,
+          fill: hex(led as Rgb),
+          label: k === 1 ? '1' : k === REPEAT_DIAGRAM_COUNT ? String(REPEAT_DIAGRAM_COUNT) : undefined,
+        });
+      }
+    }
+    return out;
+  })();
+  const repeatScene = (() => {
+    const out: { row: number; fill: string; label?: string }[] = [];
+    for (let i = 0; i < 8; i++) {
+      const led = repeatFrame.leds.get(SCENE_CCS[i]);
+      if (isOffLed(led)) continue;
+      out.push({ row: 7 - i, fill: hex(led as Rgb), label: i === 0 ? 'HOLD' : undefined });
+    }
+    return out;
+  })();
 
   // ── The NOTE EDITOR 8×8 (an illustrative state) — both modes; declared here
   // because the CLIP view below reuses it under the velocity-edit wash. ──
@@ -669,6 +722,7 @@
   const SINGLE_MAP_GRID: MapRow[] = [
     { what: 'GRID — the clip matrix', addr: 'column = channel / lane (1–8 left→right), row = clip slot (top row = slot 1). Single-tap = launch / stop (queued to the boundary). DOUBLE-TAP a clip = select it + open CLIP on it (empty pad = create a clip). No-shift right column = ROW / scene launch — a SCROLLING window of position-relative buttons over up to 64 scenes (slid by Grid+shift SCR▲/SCR▼)' },
     { what: 'GRID + shift right column', addr: 'top→bottom: COPY · PASTE · CLIP-DIV · SWING+ · SWING− · LENGTH · SCROLL▲ · SCROLL▼ (amber). Copy / Paste / Clip-Div / Length are TAP-TO-ARM (tap → arm → tap a target). Copy + a ROW/scene press grabs the WHOLE SCENE (all 8 lanes) — release/unlatch SHIFT first so the column shows the ROW ▶ buttons (clip-pad targets work under either shift state); Paste is type-gated (clip→clip + scene→scene apply, the cross-type pastes are no-ops). Swing ± are direct ±2 % nudges on the SELECTED channel. SCROLL ▲▼ slide the scene window (up to 64 scenes; each dims at its limit)' },
+    { what: 'SCENE REPEATS — HOLD GRID + HOLD a scene button', addr: 'the 8×8 becomes the orange REPEAT-COUNT view for that scene (no shift — SHIFT+top-row stays the arm map). Tap pad k (row-major from the upper-left) = k repeats (1–63) · pad 64 = INFINITE (default). Pads 1..N stay lit for count N; all 64 lit = infinite. The held button is POSITION-RELATIVE through the scene scroll (button i edits scene offset+i); the press never launches. Release either button = back to the grid. After N passes of the scene’s longest clip (frozen at launch) the next content scene down auto-launches via the normal quantized path' },
   ];
   const SINGLE_MAP_CLIP: MapRow[] = [
     { what: 'CLIP — note-editor right column', addr: 'top→bottom: DOUBLE · LENGTH · FOLLOW · KEYS · ROW+ · ROW− · STEP◀ · STEP▶. Shift: ROW± = a full page jump (±8 rows), STEP± = block jump, and the 8×8 becomes VELOCITY-cycle (tap a note → cycle its velocity)' },
@@ -1072,6 +1126,47 @@
         its scroll limit). Direct — no arming.</li>
     </ul>
 
+    <h4 id="single-scene-repeats">Scene repeats — HOLD GRID + HOLD a scene button</h4>
+    <p>
+      Scenes <strong>loop forever by default</strong> (repeats = infinite). To make a scene play
+      <strong>N times and then auto-launch the next scene down</strong> (skipping empty rows; the last
+      content scene keeps looping), set its repeat count with a <strong>3-button, two-hands
+      gesture</strong>: <strong>HOLD the GRID button</strong> (permanent top row) <strong>+ HOLD one of
+      the 8 scene-launch buttons</strong>. The scene press under GRID-hold <strong>selects only — it
+      never launches</strong>.
+    </p>
+    <LaunchpadDiagram
+      top={permTop('grid', { running: true })}
+      pads={repeatPads}
+      scene={repeatScene}
+      accent={hex(RGB_SCENE)}
+      caption="REPEAT-COUNT view while HOLDING GRID + HOLDING the top scene button — shown: 16 repeats, so pads 1–16 (the top two rows) glow system orange, counted row-major from the upper-left. ALL 64 pads lit = INFINITE (the default). The held scene button stays bright amber. Releasing either held button returns to the normal grid."
+    />
+    <ul class="tight">
+      <li>While both buttons are held, <strong>tap pad k</strong> (1-indexed row-major: upper-left = 1,
+        second in the top row = 2, …) to set <strong>k repeats</strong> (1–63);
+        <strong>pad 64</strong> (bottom-right) sets it back to <strong>INFINITE</strong>. The bar
+        updates live as you tap, and always shows pads 1..N lit for count N.</li>
+      <li><strong>Scroll-aware:</strong> the held scene button is <strong>position-relative</strong>
+        through the scene window — with the column scrolled (SCR▲/▼), button <em>i</em> edits scene
+        <em>offset + i</em>, the same scene it would launch.</li>
+      <li>After N passes of the scene's <strong>longest clip</strong> (its length × rate/div,
+        <strong>frozen at launch</strong> — mid-count edits never move the scheduled boundaries), the
+        next content scene down launches through the <strong>normal quantized launch path</strong> —
+        arranger-record captures it, LEDs update, peers stay in sync.</li>
+      <li><strong>Manual always wins:</strong> launching any scene mid-count re-anchors the count fresh
+        (re-launching the SAME scene resets it to zero); launching an individual clip outside the scene
+        cancels the countdown until the next scene launch. <strong>Muting</strong> lanes never voids or
+        alters the count; stopping <em>every</em> scene lane cancels it.</li>
+      <li>The count is saved with the patch and shows on the card as a small <strong>×N</strong> flair
+        beside the scene's row (live <strong>p/N</strong> while counting; infinite shows nothing).</li>
+      <li><strong>Counts travel with the scene:</strong> a whole-scene <strong>COPY/PASTE</strong>
+        carries the repeat count along with the clips and their automation — a full-replace paste sets
+        the target scene's count from the copied one (and clears it when the copied scene had none).</li>
+      <li>No collision with the automation arm: that gesture is <strong>SHIFT</strong> + a top-row
+        button — this one is a GRID hold <strong>without</strong> shift.</li>
+    </ul>
+
     {@render lengthEditSection()}
     <h4>Clip-state colours (in the channel's own colour)</h4>
     {@render stateSwatches(SINGLE_GRID_COLORS)}
@@ -1378,6 +1473,11 @@
         — a one-press section change. Channels with no clip in that slot stop.</li>
       <li>That's your arrangement: each row is a section, and one button moves the whole band between
         them.</li>
+      <li><strong>Let it run itself — scene repeats:</strong> <strong>HOLD GRID + HOLD a scene
+        button</strong> → the 8×8 becomes an orange count bar; <strong>tap pad 4</strong> to make that
+        scene play <strong>4 times</strong> then auto-launch the next scene down (pad 64 = back to
+        infinite; release either button to return). Set counts on your sections and the song walks
+        itself down the rows — any manual launch takes over instantly.</li>
     </ol>
 
     <h4>6 · Perform</h4>

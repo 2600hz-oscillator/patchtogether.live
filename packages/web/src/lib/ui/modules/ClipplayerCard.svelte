@@ -58,6 +58,11 @@
   } from '$lib/audio/modules/clip-types';
   import { pruneAutoAssignDangling, clearClipAutomation } from '$lib/graph/automation-assign';
   import {
+    sceneRepeatCount,
+    sceneRepeatFlair,
+    sceneRepeatProgressFlair,
+  } from '$lib/audio/modules/clip-scene-repeats';
+  import {
     getAutomationRender,
     automationCountdownColor,
     automationCountdownOn,
@@ -244,6 +249,23 @@
     else queueLane(lane, slot, immediate);
   }
 
+  // --- SCENE REPEATS (read-only card flair; the count is SET on a Launchpad:
+  // HOLD GRID + HOLD the scene's launch button — card-side editing is a
+  // follow-up). "×N" for a set finite count; live "p/N" while that scene is
+  // actively counting; NOTHING for infinite (the quiet default). ---
+  function sceneFlair(slot: number): string {
+    void cardVersion;
+    if (repProgress && repProgress.slot === slot) {
+      return sceneRepeatProgressFlair(repProgress.done, repProgress.total);
+    }
+    return sceneRepeatFlair(sceneRepeatCount(dataObj(), slot));
+  }
+  function sceneFlairTitle(slot: number): string {
+    return repProgress?.slot === slot
+      ? `Scene ${slot + 1} is counting its repeats — auto-advances to the next content scene after the last pass`
+      : `Scene ${slot + 1} plays this many times, then auto-advances to the next content scene (set on a Launchpad: hold GRID + hold this scene's launch button)`;
+  }
+
   function padState(idx: number): 'empty' | 'loaded' | 'queued' | 'playing' {
     const lane = laneOf(idx);
     const slot = slotOf(idx);
@@ -299,6 +321,11 @@
   // flash). Mirrors the launchpad paint.
   let autoCdByLane = $state<Record<number, { color: 'yellow' | 'red'; on: boolean; slot: number }>>({});
   let autoCdSig = ''; // change-detector for the rAF poll (no per-frame reassign)
+  // SCENE-REPEAT live countdown (runtime-only engine reads — never synced):
+  // the STARTED tracked scene's slot + completed passes + its current count,
+  // for the "p/N" progress flair while a finite-repeat scene is counting.
+  let repProgress = $state<{ slot: number; done: number; total: number } | null>(null);
+  let repProgressSig = ''; // change-detector (progress moves at pass granularity)
   // Track-cap "MAX" badge: lit for a few seconds after a touch/commit hit
   // MAX_AUTOMATION_TRACKS (the polite surface — client-local, polled).
   let capHitUntil = 0;
@@ -319,6 +346,20 @@
         }
         const sb = e.read(node, 'songBeat');
         if (typeof sb === 'number') songBeatLive = sb;
+        // Scene-repeat progress (see repProgress above) — reassign only on a
+        // real change (pass granularity), like the countdown mirror below.
+        const rSlot = e.read(node, 'sceneRepeat:slot');
+        const rDone = e.read(node, 'sceneRepeat:done');
+        const rTotal = e.read(node, 'sceneRepeat:total');
+        const rp =
+          typeof rSlot === 'number' && rSlot >= 0 && typeof rTotal === 'number' && rTotal > 0
+            ? { slot: rSlot, done: typeof rDone === 'number' ? rDone : 0, total: rTotal }
+            : null;
+        const rpSig = rp ? `${rp.slot}:${rp.done}:${rp.total}` : '';
+        if (rpSig !== repProgressSig) {
+          repProgressSig = rpSig;
+          repProgress = rp;
+        }
       }
       // Automation override indicator (client-local touch state — not synced, so
       // it's polled here, not derived from cardVersion). Lit when a param THIS
@@ -984,6 +1025,21 @@
                   ondblclick={() => onPadDblClick(idx)}
                 >{#if hasAuto}<span class="auto-dot" aria-hidden="true"></span>{/if}</button>
               {/each}
+              <!-- SCENE-REPEAT flair: a read-only "×N" (live "p/N" while counting)
+                   to the RIGHT of the scene row — this row IS the scene (one slot
+                   across all channels; the card has no scene-launch button yet).
+                   Absolutely positioned so the fixed-integer pad geometry (VRT
+                   determinism) never shifts; infinite renders nothing at all. -->
+              {#if sceneFlair(slot)}
+                <span
+                  class="scene-flair"
+                  class:counting={repProgress?.slot === slot}
+                  title={sceneFlairTitle(slot)}
+                  aria-label={`scene ${slot + 1} repeats ${sceneFlair(slot)}`}
+                  data-slot={slot}
+                  data-testid={`clipplayer-scene-repeat-${slot}`}
+                >{sceneFlair(slot)}</span>
+              {/if}
             </div>
           {/each}
           <!-- channel footer: per-lane clock RATE select — divide/multiply this
@@ -1405,6 +1461,27 @@
   .grid-head,
   .grid-foot,
   .grid-arm { display: flex; gap: 3px; }
+  /* SCENE-REPEAT flair — read-only "×N" / live "p/N" floated to the RIGHT of
+     its scene row. ABSOLUTELY positioned (left:100%) so it never participates
+     in the row's flex layout: the fixed-integer pad geometry stays pixel-
+     deterministic for VRT, and the default state (all scenes infinite) renders
+     nothing at all — baseline-identical. */
+  .grid-row { position: relative; }
+  .scene-flair {
+    position: absolute;
+    left: 100%;
+    top: 50%;
+    transform: translateY(-50%);
+    margin-left: 5px;
+    font-size: 9px;
+    line-height: 1;
+    color: #8a8f98;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  /* Live-counting progress reads in the same system orange as the Launchpad
+     repeat-count view, so "p/N" says "this is the scene counting down". */
+  .scene-flair.counting { color: #dc9a24; }
   /* Fixed INTEGER pad size (no flex:1 / aspect-ratio) so the 8-column layout is
      pixel-deterministic — sub-pixel flex rounding drifts across columns and
      flakes the VRT baseline. */
