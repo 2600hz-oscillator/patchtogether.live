@@ -342,6 +342,53 @@ describe('clipplayer SONG-REC punch-out: printed == sounded', () => {
     expect(liveClip.steps.length).toBe(2);
     expect(liveClip.steps.find((s) => s.midi === 60)?.prob).toBe(0);
   });
+
+  it('BAKE clip-default: an un-overridden note under defaultProb=0 never prints; a per-note override BEATS the default', async () => {
+    // The CLIP DEFAULT gates every un-overridden note. defaultProb=0 → midi 60
+    // (no own prob) NEVER fires/prints; midi 72 carries a per-note prob=1
+    // override that BEATS the 0 default → fires+prints every bar. Deterministic
+    // (0/1 = certain rolls, no seed injection). Mirrors the per-note BAKE test
+    // above but exercises the clip-default source of the shared dice-roll.
+    const probClip: NoteClipRecord = {
+      kind: 'note',
+      defaultProb: 0, // every un-overridden note is silenced
+      steps: [
+        { step: 0, midi: 72, velocity: 100, lengthSteps: 1, prob: 1 }, // override BEATS the default
+        { step: 0, midi: 60, velocity: 100, lengthSteps: 1 }, // takes the 0 default → never fires
+      ],
+      lengthSteps: 4,
+      root: 48,
+      loop: true,
+    };
+    seed(
+      { stepDiv: 2, quantize: 0, octave: 0, gateLength: 0.9, snh: 1 },
+      {
+        clips: { [clipIndex(0, 0)]: probClip },
+        queued: lane8(0, 0, null),
+        clipMode: 'session',
+        songRec: { armed: true, mode: 'replace' }, // no recorderId → this client records
+      },
+    );
+    seedTimelorde(1);
+    const ctx = new FakeAudioContext();
+    await build(ctx);
+    run(ctx, 0, 4.4);
+    (livePatch.nodes[NODE_ID]!.data as { songRec?: unknown }).songRec = null;
+    run(ctx, 4.4, 4.5);
+
+    const events = songOf().notes?.['0']?.events ?? [];
+    expect(events.length, 'the override note printed each bar').toBeGreaterThan(4);
+    expect(events.every((e) => e.midi === 72), 'ONLY the override beat the 0 clip default').toBe(true);
+    expect(
+      events.some((e) => e.midi === 60),
+      'the clip-default note failed its 0-roll → neither sounded nor printed',
+    ).toBe(false);
+    // TRANSIENT: the live clip's defaultProb + note keys are untouched (no Y.Doc write).
+    const liveClip = (livePatch.nodes[NODE_ID]!.data as { clips: Record<string, NoteClipRecord> })
+      .clips[String(clipIndex(0, 0))]!;
+    expect(liveClip.defaultProb).toBe(0);
+    expect(liveClip.steps.find((s) => s.midi === 72)?.prob).toBe(1);
+  });
 });
 
 describe('clipplayer SONG playback (authoritative)', () => {

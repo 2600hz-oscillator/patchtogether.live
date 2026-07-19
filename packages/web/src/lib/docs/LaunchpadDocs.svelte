@@ -1228,13 +1228,21 @@
         none takes this <strong>clip default</strong>; with neither it always fires. So the default recolours
         only the un-overridden notes (they turn <strong>orange</strong> in the editor); overridden notes stay
         <strong>purple</strong>.</li>
-      <li><strong>It gates playback:</strong> a clip default of 0% silences an un-overridden clip; a per-note
-        <strong>prob = 1 override</strong> keeps that note sounding through a low clip default. Setting the
-        default to <strong>100% deletes the key</strong> (back to white, old clips byte-identical).</li>
+      <li><strong>It gates playback:</strong> a clip default of 0% silences every un-overridden note. To make
+        one note fire MORE than a low clip default, give it a <strong>high but sub-100%</strong> per-note
+        value (e.g. <strong>97.5%</strong>) — that stays a <strong>purple override</strong> and wins over the
+        default. A per-note <strong>100% deletes the note's own key</strong> (the delete-at-100% convention),
+        so that note then <em>inherits the clip default</em> and fires at the default rate (rendering orange,
+        or white if the default is 100%) — a per-note 100% does NOT pin a note above a low default. Setting
+        the clip default itself to <strong>100% deletes the default key</strong> (back to white, old clips
+        byte-identical).</li>
       <li>Under shift an <strong>armed</strong> copy / paste / clip-div / length still consumes the clip-pad
         tap (unchanged); a <strong>no-shift</strong> tap still launches. Empty pads don't open the page
         (there's no clip to carry a default). <em>Single-unit only</em> — on the card, right-click a clip
         pad → <strong>Clip probability</strong>.</li>
+      <li><strong>The bottom-right clip pad (7,7) is claimed by the lane-8 arm</strong> from every view, so a
+        SHIFT-tap there arms lane 8 rather than opening that clip's default-probability page. Set that clip's
+        default from the card instead: <strong>right-click the clip pad → Clip probability</strong>.</li>
     </ul>
 
     {@render lengthEditSection()}
@@ -1309,6 +1317,9 @@
       <li>You can also set it from the card: <strong>right-click a note cell → Probability</strong> (100%
         default … 2.5%). <em>The PROB page is single-unit only</em> — in two-Launchpad mode set per-note
         probability from the card (the pair note editor has no PROB page).</li>
+      <li><strong>The bottom-right cell (7,7) is claimed by the lane-8 arm</strong> from every view, so a
+        SHIFT-tap there arms lane 8 rather than opening that note's PROB page. Open <em>that</em> note's
+        probability from the card instead: <strong>right-click the note cell → Probability</strong>.</li>
     </ul>
 
     <h4>CLIP + shift — big jumps (and the PROB page)</h4>

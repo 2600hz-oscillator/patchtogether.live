@@ -101,6 +101,15 @@ function clipsOf() {
 function rootNoteProb(): number | undefined {
   return clipsOf()[clipIndex(0, 0)]!.steps.find((s) => s.step === 0 && s.midi === 48)?.prob;
 }
+/** Is lane 8 (index ARM_SHIFT_LANE = 7) automation-armed? The lane-8 arm pad is
+ *  (7,7) — the SAME pad as prob-bar ordinal 8 (the 20% level). A shift-HELD tap
+ *  there on a PROB page must set the probability, NOT arm lane 8. */
+function lane8Armed(): boolean {
+  const auto = (livePatch.nodes[NODE_ID]!.data as {
+    automation?: { lanes?: Record<string, unknown> };
+  }).automation;
+  return !!(auto?.lanes && auto.lanes['7']);
+}
 
 // ===========================================================================
 // PURE — the 40-level probability-bar mapping (TOP 5 rows only) + paint truth.
@@ -249,6 +258,34 @@ describe('SINGLE Clip — the SHIFT+step PROB page gesture', () => {
     sim.press('L', 3, 1); // y=1 → a bottom-3 (inert) pad → cancel
     expect(__test_mode().probEditActive).toBe(false);
     expect(rootNoteProb(), 'no write on cancel').toBeUndefined();
+  });
+
+  // FIX 1 (the masking gap): every test ABOVE releases shift before tapping a
+  // level, so none exercise a shift-HELD level tap. Pad (7,7) = prob ordinal 8
+  // (the 20% level) is ALSO the lane-8 arm pad, intercepted BEFORE the view
+  // routing. Without the `!probEditHeld` guard on that interception, a shift-HELD
+  // tap there is STOLEN to arm lane 8 and leaves the PROB page stranded.
+  it('SHIFT STILL HELD + a level tap writes the note prob then auto-clears (regression: shift-held path)', () => {
+    openClip();
+    sim.cc('L', CC_SHIFT, 127); // hold shift — and KEEP it held
+    sim.press('L', 0, 0); // open PROB for the root note
+    expect(__test_mode().probEditActive).toBe(true);
+    sim.press('L', 3, 4); // ordinal 28 = 70%, shift STILL HELD (row y=4 = ordinals 25..32)
+    expect(probPadOrdinal(3, 4)).toBe(28);
+    expect(__test_mode().probEditActive, 'auto-cleared even with shift held').toBe(false);
+    expect(rootNoteProb()).toBeCloseTo(probLevelForOrdinal(28), 6);
+  });
+
+  it('SHIFT STILL HELD + the (7,7)=20% level pad sets the note prob and does NOT arm lane 8 (the stolen level)', () => {
+    openClip();
+    sim.cc('L', CC_SHIFT, 127); // hold shift — KEEP it held (the masked case)
+    sim.press('L', 0, 0); // open PROB for the root note
+    expect(__test_mode().probEditActive).toBe(true);
+    expect(probPadOrdinal(7, 7)).toBe(8); // (7,7) = ordinal 8 = 20% AND the lane-8 arm pad
+    sim.press('L', 7, 7); // the exact stolen pad, shift STILL HELD
+    expect(__test_mode().probEditActive, 'PROB page auto-cleared (not stranded)').toBe(false);
+    expect(rootNoteProb(), 'the 20% level was written to the note').toBeCloseTo(probLevelForOrdinal(8), 6);
+    expect(lane8Armed(), 'the (7,7) tap was NOT stolen to arm lane 8').toBe(false);
   });
 });
 
@@ -432,5 +469,24 @@ describe('SINGLE Grid — the SHIFT+clip CLIP-DEFAULT PROB page gesture', () => 
     // a launch/queue was applied to lane 0 (not a prob-page open).
     const q = (livePatch.nodes[NODE_ID]!.data as { queued?: (number | 'stop' | null)[] }).queued;
     expect(Array.isArray(q)).toBe(true);
+  });
+
+  // FIX 1 symmetry: the clip-default page already carries `!clipProbEditHeld` on
+  // the lane-8 interception (commit ee35f9a3), so a shift-HELD level tap — even
+  // on the (7,7)=20% level that doubles as the lane-8 arm pad — must set the clip
+  // default and NOT arm lane 8. Mirrors the per-note regression above.
+  it('SHIFT STILL HELD + the (7,7)=20% level pad sets the clip default and does NOT arm lane 8', () => {
+    openGrid();
+    sim.cc('L', CC_SHIFT, 127); // hold shift — KEEP it held
+    pressClip00(); // open the clip-default PROB page
+    expect(__test_mode().clipProbEditActive).toBe(true);
+    expect(probPadOrdinal(7, 7)).toBe(8); // (7,7) = ordinal 8 = 20% AND the lane-8 arm pad
+    sim.press('L', 7, 7); // shift STILL HELD
+    expect(__test_mode().clipProbEditActive, 'clip-PROB page auto-cleared (not stranded)').toBe(false);
+    expect(clipDefault(), 'the 20% level was written as the clip default').toBeCloseTo(
+      probLevelForOrdinal(8),
+      6,
+    );
+    expect(lane8Armed(), 'the (7,7) tap was NOT stolen to arm lane 8').toBe(false);
   });
 });

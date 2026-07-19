@@ -870,6 +870,36 @@ describe('SINGLE — Clip view', () => {
     sim.press('L', 0, 0); // shift + the note → PROB page (no longer velocity)
     expect(__test_mode().probEditActive).toBe(true);
   });
+
+  // FIX 2 (stuck modifier): the VEL-hold (FOLLOW row, no shift) must NEVER
+  // survive a shift toggle. If shift is engaged MID-HOLD, releasing the FOLLOW
+  // row while shift is held used to skip the clear (`!shift` false), stranding
+  // velHeld=true — every later note-pad tap then cycled velocity instead of
+  // toggling. The FOLLOW release now clears velHeld regardless of shift.
+  it('VEL-hold never survives a shift toggle: FOLLOW released while shift held clears velHeld', () => {
+    openClip(16);
+    // place a note at (0,0) so a TOGGLE (removes it) is distinguishable from a
+    // velocity cycle (leaves it in place).
+    sim.press('L', 0, 0);
+    sim.release('L', 0, 0);
+    expect(clipsOf()[clipIndex(0, 0)].steps.length, 'a note is placed').toBe(1);
+    // Arm VEL by holding the FOLLOW row with NO shift.
+    sim.cc('L', sceneCc(C_FOLLOW), 127);
+    expect(__test_mode().velHeld).toBe(true);
+    // Engage shift MID-HOLD, then release the FOLLOW row while shift is STILL held.
+    sim.cc('L', CC_SHIFT, 127);
+    sim.cc('L', sceneCc(C_FOLLOW), 0); // release FOLLOW (shift held) — the masked case
+    sim.cc('L', CC_SHIFT, 0); // release shift
+    expect(__test_mode().velHeld, 'velHeld cleared on the FOLLOW release, not stranded').toBe(false);
+    // A subsequent note-pad tap must TOGGLE the note OFF (a stuck velHeld would
+    // instead cycle its velocity and leave the note in place).
+    sim.press('L', 0, 0);
+    sim.release('L', 0, 0);
+    expect(
+      clipsOf()[clipIndex(0, 0)].steps.length,
+      'the tap toggled the note OFF (not a stuck velocity cycle)',
+    ).toBe(0);
+  });
 });
 
 // ===========================================================================

@@ -1547,13 +1547,17 @@ function handleSingleKey(nodeId: string, e: LaunchpadKeyEvent): void {
   // EVERY view exactly like the top-row arm map. CONSUMED — never a grid/clip
   // action. Only on PRESS while shift is effective. NOT while the repeat-count
   // view owns pad taps (GRID+scene hold, which is entered without shift — the
-  // view keeps every pad for count-setting even if shift is added mid-hold).
+  // view keeps every pad for count-setting even if shift is added mid-hold), and
+  // NOT while EITHER latched PROB page (clip-default or per-note) owns pad taps —
+  // both are opened WITH shift held, so without this guard a shift-HELD tap on
+  // pad (7,7)=the 20% level would be stolen to arm lane 8 and strand the latch.
   if (
     ev.type === 'pad' &&
     ev.s === 1 &&
     singleShiftEff() &&
     !repeatViewHeld &&
     !clipProbEditHeld &&
+    !probEditHeld &&
     isLane8ArmPad(ev.x, ev.y)
   ) {
     toggleLaneAutoArm(nodeId, ARM_SHIFT_LANE);
@@ -2196,10 +2200,28 @@ function handleSingleClip(nodeId: string, e: LaunchpadKeyEvent): void {
     // a held VEL modifier). Single mode has no spare top-row CC (the permanent
     // compass) and a packed right column, so VEL borrows the FOLLOW row; FOLLOW
     // toggle relocates to SHIFT + this row. Both key edges tracked (hold).
-    if (clipRight(sceneIndex) === 'follow' && !shift) {
-      velHeld = ev.s === 1;
-      renderLeds();
-      return;
+    if (clipRight(sceneIndex) === 'follow') {
+      // ANY RELEASE of the FOLLOW row clears the momentary VEL-hold, regardless
+      // of shift — the physical hold ended either way. Without this, a shift
+      // engaged MID-HOLD (so the release sees shift=true) would skip the clear
+      // and strand velHeld=true, cycling velocity on every note-pad tap until a
+      // view switch (mirrors the GRID repeat-view release guard in handleTopRow).
+      if (ev.s === 0) {
+        if (velHeld) {
+          velHeld = false;
+          renderLeds();
+        }
+        return;
+      }
+      // PRESS, NO shift = arm the momentary VEL modifier.
+      if (!shift) {
+        velHeld = true;
+        renderLeds();
+        return;
+      }
+      // PRESS + shift = the FOLLOW toggle. Defensively clear any stray VEL-hold
+      // first so it can NEVER survive a shift toggle, then fall through.
+      velHeld = false;
     }
     if (ev.s !== 1) return;
     handleClipRight(nodeId, sceneIndex, shift, data);
