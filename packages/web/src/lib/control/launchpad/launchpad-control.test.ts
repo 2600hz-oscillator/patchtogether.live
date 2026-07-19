@@ -654,7 +654,7 @@ describe('Real L/R pairing handshake — LEFT unit is LIVE after a swap', () => 
 // launchpad binding is a global singleton with no engine, so the record capture
 // reads the playhead from clip-playhead (which the engine normally publishes);
 // tests set it directly via setLanePlayhead + step the LED render loop manually
-// (hoisted.tick) to drive the arm→record + true-replace state machine.
+// (hoisted.tick) to drive the arm→record (additive) state machine.
 // ===========================================================================
 describe('KEYS mode — entry (hold REC/OVERDUB on R deck + double-tap a clip on L)', () => {
   const noteRec = () => liveData().noteRec as
@@ -751,22 +751,25 @@ describe('KEYS mode — live audition + record capture', () => {
     expect(clipAt(0).steps.some((s) => s.step === 5 && s.midi === 56), 'note captured at step 5').toBe(true);
   });
 
-  it('TRUE-REPLACE (overdub OFF): the playhead crossing a step CLEARS its prior onsets', () => {
+  it('ADDITIVE (overdub OFF): the playhead crossing a step does NOT clear its onsets (replace-as-you-play removed)', () => {
+    // Owner-locked redesign 2026-07-19: recording is ALWAYS additive — the old
+    // "TRUE-REPLACE clear each crossed step" is gone (it lagged the ~200 ms
+    // scheduler by a loop = the stale-note bug). Removing a note is now a
+    // separate explicit gesture (tap-off / erase / clear), not play-over.
     seedClipPlayer({
       clips: { [clipIndex(0, 0)]: { ...noteClip(), steps: [{ step: 5, midi: 60, lengthSteps: 1 }] } },
     });
     bindLaunchpadToClip(NODE_ID);
-    enterKeysVia(); // overdub OFF
+    enterKeysVia(); // overdub OFF — now ALSO additive (no per-step replace)
     // force recording (arm + wrap).
     sim.press('L', KEYS_QREC_COL, KEYS_CTRL_ROW);
     setLanePlayhead(NODE_ID, 0, 0);
     hoisted.tick!();
     expect(noteRec()!.recording).toBe(true);
-    // playhead approaches then enters step 5 → its prior note is punched out.
+    // playhead crosses step 5 WITHOUT any keypress → the prior note is KEPT.
     setLanePlayhead(NODE_ID, 0, 4); hoisted.tick!();
-    expect(clipAt(0).steps.some((s) => s.step === 5), 'note still there before crossing').toBe(true);
     setLanePlayhead(NODE_ID, 0, 5); hoisted.tick!();
-    expect(clipAt(0).steps.some((s) => s.step === 5), 'true-replace cleared step 5').toBe(false);
+    expect(clipAt(0).steps.some((s) => s.step === 5), 'additive: crossing keeps the prior note').toBe(true);
   });
 
   it('OVERDUB ON is additive — the playhead crossing does NOT clear', () => {

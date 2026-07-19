@@ -8,12 +8,18 @@
 // from clip-types.ts `toggleNoteAt` (which TOGGLES on/off for the editor):
 // recording only ADDS/REPLACES, it never removes on a repeat press.
 //
-// Semantics locked by the owner (Q1/Q3) + the adversarial review (2026-07-01):
-//   - TRUE REPLACE (overdub OFF): as the record playhead crosses a step it is
-//     CLEARED (`clearStep`) before that pass's keypresses land — so an un-played
-//     step wipes. Overdub ON skips the clear (additive).
-//   - MONO lane: first-note-priority — the first note recorded onto a (cleared)
-//     step wins; later presses that pass are dropped.
+// Semantics (owner-LOCKED, redesign 2026-07-19 — supersedes the 2026-07-01
+// replace-as-you-play model):
+//   - ADDITIVE LAYERING (Deluge): recording ONLY ADDS notes — both plain record
+//     and overdub. There is NO per-step-crossing clear anymore; the
+//     "replace-as-you-play" mode is REMOVED (it was the source of the stale-note
+//     bug — the clear lagged the ~200 ms scheduler by a full loop). REMOVING /
+//     replacing is a SEPARATE explicit gesture: tap a lit step off in the editor,
+//     hold-to-erase, `clearClip` / `eraseRow`. `clearStep` remains as the pure
+//     erase-one-step helper those gestures build on (no longer wired into live
+//     record).
+//   - MONO lane: first-note-priority — the first note recorded onto a step wins;
+//     later presses that pass are dropped.
 //   - POLY lane: up to `maxVoices` (POLY_CHANNEL_PAIRS) notes/step; duplicate
 //     pitches + overflow are dropped.
 //   - Held-note length is captured on note-off (`extendRecordedNote`),
@@ -52,6 +58,38 @@ function clampVel(v: number | undefined): number {
 export function clearStep(clip: NoteClipRecord, step: number): NoteClipRecord {
   if (!clip.steps.some((e) => e.step === step)) return clip;
   return { ...clip, steps: clip.steps.filter((e) => e.step !== step) };
+}
+
+/**
+ * EXPLICIT ERASE — remove EVERY note in the clip (clear-clip gesture). Returns a
+ * NEW empty-steps clip (unchanged reference when already empty, so callers can
+ * skip the write). Preserves length/root/scale/div — only the notes are wiped.
+ */
+export function clearClip(clip: NoteClipRecord): NoteClipRecord {
+  if (clip.steps.length === 0) return clip;
+  return { ...clip, steps: [] };
+}
+
+/**
+ * EXPLICIT ERASE — remove every note of a given PITCH across the whole clip (the
+ * clear-row / erase-a-key gesture). Returns a NEW clip (unchanged reference when
+ * that pitch isn't present).
+ */
+export function eraseRow(clip: NoteClipRecord, midi: number): NoteClipRecord {
+  if (!clip.steps.some((e) => e.midi === midi)) return clip;
+  return { ...clip, steps: clip.steps.filter((e) => e.midi !== midi) };
+}
+
+/**
+ * EXPLICIT ERASE — remove the specific onset (`step`,`midi`) (the hold-to-erase
+ * per-note gesture / a tap-off on a lit step). Returns a NEW clip (unchanged
+ * reference when that onset isn't present). Distinct from `toggleNoteAt`, which
+ * ADDS on a miss; this only ever removes.
+ */
+export function eraseNoteAt(clip: NoteClipRecord, step: number, midi: number): NoteClipRecord {
+  const idx = clip.steps.findIndex((e) => e.step === step && e.midi === midi);
+  if (idx < 0) return clip;
+  return { ...clip, steps: clip.steps.filter((_, i) => i !== idx) };
 }
 
 export interface RecordNoteOpts {
