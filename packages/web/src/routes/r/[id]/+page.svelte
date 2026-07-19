@@ -53,6 +53,17 @@
     type SharedClockHandle,
   } from '$lib/audio/shared-clock.svelte';
   import { setActiveSharedClock } from '$lib/audio/modules/lfo';
+  // Persistence-hardening P1 + P2: the non-blocking restore/offline banner +
+  // saving indicator, driven off the pure state helpers.
+  import RackStatusBanner from '$lib/ui/RackStatusBanner.svelte';
+  import {
+    computeRackStatus,
+    computeSaveStatus,
+    shouldPromptUnsaved,
+    DEFAULT_OFFLINE_AFTER_MS,
+    type RackStatus,
+  } from '$lib/ui/rack-status';
+  import { testHooksEnabled } from '$lib/dev/test-hooks';
 
   // Audio gate — Bug 2 (B5): F5 / cold-loads land with no AudioContext
   // (autoplay policy) so we render an overlay that boots the engine and
@@ -133,6 +144,18 @@
   // Only attach for members; non-members see the join page and shouldn't
   // hold an open WebSocket.
   let provider: HocuspocusProvider | null = $state(null);
+
+  // ---- Persistence-hardening P1/P2: durability status signals ----
+  // Fed to the pure helpers in $lib/ui/rack-status; the RackStatusBanner is a
+  // non-blocking overlay driven off these. Reset per rackspace (the provider
+  // $effect re-runs on a rack change) so navigating A→B doesn't inherit A's
+  // "seeded" latch.
+  let replicaSeeded = $state(false); // replica seed resolved to 'seeded'
+  let providerSynced = $state(false); // provider.synced (latched true)
+  let hasUnsyncedChanges = $state(false); // provider.hasUnsyncedChanges
+  let offlineElapsed = $state(0); // ms; bumped to the threshold on timeout
+  let graceElapsed = $state(false); // short grace so restoring never flashes
+
   $effect(() => {
     if (!data.isMember) return;
     // LOCAL REPLICA (before the provider): seed the freshly-bound Y.Doc
@@ -141,7 +164,18 @@
     // replica-vs-server both ways (CRDT merge; no custom merge code).
     // Anon guests get a replica too; it's wiped on auth rejection below.
     // Corrupt replicas self-clear + refetch (see local-replica.ts).
+    // Reset the seed latch for THIS rack before (re)attaching — the page
+    // script survives an A→B navigation, so a stale latch would otherwise
+    // mark B "ready-from-local" on a cold load.
+    replicaSeeded = false;
     const replica = attachLocalReplica(data.rackspace.id, ydoc);
+    // P1: only a real prior local copy ('seeded') clears "restoring" locally.
+    // A 'fresh' / 'disabled' / 'cleared-corrupt' replica has nothing to
+    // restore yet, so the page keeps waiting on the relay (the exact cold-
+    // load-with-slow-relay case the banner exists for).
+    void replica.whenSeeded.then((result) => {
+      if (result === 'seeded') replicaSeeded = true;
+    });
     // PR-D: token is a callback so Hocuspocus pulls a fresh value on every
     // (re)connect. Anon users carry their HMAC-derived invite code; authed
     // users carry their Clerk session JWT. The server's onAuthenticate
@@ -199,6 +233,105 @@
       // Detach the replica listeners; the stored data STAYS (it must
       // survive navigation/reload — that's the whole point).
       void replica.destroy();
+    };
+  });
+
+  // ---- Persistence-hardening P1/P2 ----
+  // Track the provider's sync + unacked gauges. `synced` latches true (a
+  // later reconnect blip must not drop the banner back to "restoring"); the
+  // `unsyncedChanges` event drives the saving indicator. A short poll backs
+  // the events up (cheap boolean reads — no Y.Doc writes) so the gauges stay
+  // fresh across provider-internal state transitions.
+  $effect(() => {
+    const p = provider;
+    if (!p) {
+      providerSynced = false;
+      hasUnsyncedChanges = false;
+      return;
+    }
+    const refresh = () => {
+      if (p.synced) providerSynced = true;
+      hasUnsyncedChanges = p.hasUnsyncedChanges;
+    };
+    refresh();
+    p.on('synced', refresh);
+    p.on('status', refresh);
+    p.on('unsyncedChanges', refresh);
+    const poll = setInterval(refresh, 500);
+    return () => {
+      clearInterval(poll);
+      try {
+        p.off('synced', refresh);
+        p.off('status', refresh);
+        p.off('unsyncedChanges', refresh);
+      } catch {
+        /* provider torn down — listeners go with it */
+      }
+    };
+  });
+
+  // Short grace so a warm refresh (replica seeds in ms) never flashes the
+  // "restoring" toast, and the offline timeout that declares the relay
+  // unreachable. Both re-arm per rackspace (they read data.rackspace.id).
+  $effect(() => {
+    void data.rackspace.id;
+    if (!data.isMember) return;
+    graceElapsed = false;
+    offlineElapsed = 0;
+    const grace = setTimeout(() => {
+      graceElapsed = true;
+    }, 300);
+    const offline = setTimeout(() => {
+      offlineElapsed = DEFAULT_OFFLINE_AFTER_MS;
+    }, DEFAULT_OFFLINE_AFTER_MS);
+    return () => {
+      clearTimeout(grace);
+      clearTimeout(offline);
+    };
+  });
+
+  const rackStatus = $derived(
+    computeRackStatus({
+      seeded: replicaSeeded,
+      synced: providerSynced,
+      elapsedMs: offlineElapsed,
+    }),
+  );
+  // Suppress the transient "restoring" until the grace elapses (anti-flash);
+  // "offline" and "ready" always show immediately.
+  const displayStatus = $derived<RackStatus>(
+    rackStatus === 'restoring' && !graceElapsed ? 'ready' : rackStatus,
+  );
+  const saveStatus = $derived(
+    computeSaveStatus({ hasUnsyncedChanges, synced: providerSynced }),
+  );
+
+  // Strict unsaved-changes guard: prompt on unload ONLY when there are
+  // genuinely un-synced local edits (never nag a synced user). No sync flush
+  // here — WS/IDB writes are async and can't be forced in beforeunload; the
+  // prompt just gives those in-flight writes a beat and warns on a real loss.
+  $effect(() => {
+    if (!data.isMember) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!shouldPromptUnsaved({ hasUnsyncedChanges })) return;
+      event.preventDefault();
+      // Legacy Chrome/Firefox require a returnValue to trigger the prompt.
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    // Test hook (dev/e2e only): the native beforeunload dialog is brittle to
+    // assert in Playwright, so expose the registration + live predicate.
+    if (testHooksEnabled()) {
+      (window as unknown as { __rackUnsavedGuard?: unknown }).__rackUnsavedGuard = {
+        registered: true,
+        shouldPrompt: () => shouldPromptUnsaved({ hasUnsyncedChanges }),
+      };
+    }
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      if (testHooksEnabled()) {
+        delete (window as unknown as { __rackUnsavedGuard?: unknown }).__rackUnsavedGuard;
+      }
     };
   });
 
@@ -667,6 +800,9 @@
       />
     {/key}
     <AudioGate gate={audioGate} />
+    <!-- Non-blocking durability status (P1 restore/offline + P2 saving). Sits
+         OUTSIDE {#key} so it isn't torn down on a rackspace switch. -->
+    <RackStatusBanner status={displayStatus} {saveStatus} />
   </div>
 {:else}
   <!-- Non-member: prompt to join, or show "full" -->
