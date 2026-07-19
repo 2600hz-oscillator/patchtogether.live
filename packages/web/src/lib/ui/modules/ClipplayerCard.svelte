@@ -38,7 +38,9 @@
     defaultNoteClip,
     coerceClipRecord,
     rowToMidi,
-    scaleSteps,
+    editableRowRange,
+    DEFAULT_CLIP_STEPS,
+    MAX_CLIP_STEPS,
     toggleNoteAt,
     cycleVelocity,
     noteCovering,
@@ -986,26 +988,56 @@
   }
 
   // --- piano-roll note editor (selected clip) ---
-  const EDIT_ROWS = 8;
-  const MAX_EDIT_COLS = 16;
-  let editorRow = $state(0); // per-user pitch-window offset, in scale-degree ROWS (not synced)
-  function scaleLenOf(clip: NoteClipRecord): number {
-    return scaleSteps(clip.scale).length;
-  }
+  // CLIP-VIEW shows the ENTIRE editable grid AT ONCE — every editable pitch row
+  // (full range) tall × every step (up to 128) wide — so editing a clip on the
+  // computer never needs the Launchpad's pitch-window / step-page scroll to
+  // reach a note or step (owner: "we just always show the whole editable grid").
+  // The card GROWS to fit that grid: width tracks the step count (floored at the
+  // normal hp-2 width so short clips stay compact + the always-shown title/
+  // control chrome still fits); height is content-driven so the full row stack
+  // is visible with no internal scroll. Cell geometry mirrors the .cell/.pr-row
+  // CSS below (15×13px cells, 2px gaps) so the computed width matches the layout.
+  const CELL_W = 15; // .cell width (px)
+  const CELL_GAP = 2; // .pr-row / .piano-roll gap (px)
+  const CLIP_BODY_PAD_X = 12; // .body horizontal padding (px, each side)
+  const CLIP_CARD_BORDER = 1; // .card border (px, each side)
+  const CLIP_NORMAL_CARD_W = 360; // hp-2 rack width — the floor for short clips
 
   let editClip = $derived.by<NoteClipRecord | null>(() => {
     void cardVersion;
     return clipAt(selectedClip);
   });
-  let editCols = $derived(Math.min(MAX_EDIT_COLS, editClip?.lengthSteps ?? 16));
+  // The FULL editable pitch-row range for the open clip (top = highest pitch).
+  // Memoized so the per-cell pitch lookup + the row count don't rescan per cell.
+  let editRange = $derived.by(() =>
+    editClip ? editableRowRange(editClip.root, editClip.scale) : null,
+  );
+  let editRows = $derived(editRange?.count ?? 8); // ALL editable rows (no scroll)
+  // EVERY step 0..lengthSteps-1 (capped at the 128-step max) — no step paging.
+  let editCols = $derived(Math.min(MAX_CLIP_STEPS, editClip?.lengthSteps ?? DEFAULT_CLIP_STEPS));
   let editLane = $derived(laneOf(selectedClip));
   let editSlot = $derived(slotOf(selectedClip));
+  // Root pitch-class of the open clip — highlights the root ROWS as a musical
+  // guide across the (now tall) grid, replacing the meaningless every-4th-row
+  // guide that made sense only for the old 8-row window.
+  let editRootPc = $derived(editClip ? (((editClip.root % 12) + 12) % 12) : 0);
+  // Card WIDTH (px) in clip-view: fit the step grid + body padding + border,
+  // floored at the normal hp-2 width. HEIGHT is CSS-driven (height:auto) so it
+  // always fits the full row stack. Applied as an inline style ONLY in clip-view
+  // (inline beats the rack-tier clamp in _module-card.css on specificity), so
+  // outside clip-view the fixed 3u/hp-2 tier applies unchanged.
+  let editCardWidthPx = $derived.by(() => {
+    const cols = editCols;
+    const gridW = cols * CELL_W + Math.max(0, cols - 1) * CELL_GAP;
+    return Math.max(CLIP_NORMAL_CARD_W, gridW + CLIP_BODY_PAD_X * 2 + CLIP_CARD_BORDER * 2);
+  });
 
-  // Display row 0 = top (highest). editorRow scrolls the window by scale-degree
-  // rows (row buttons shift by 1, octave buttons by scaleLen).
+  // Display row 0 = TOP = the highest editable pitch (editRange.hi); rows descend
+  // to the lowest at the bottom. The FULL editable range is shown at once, so
+  // there is no pitch-window scroll — every row a note could occupy is on-card.
   function midiForDisplayRow(clip: NoteClipRecord, displayRow: number): number {
-    const logicalRow = editorRow + (EDIT_ROWS - 1 - displayRow);
-    return rowToMidi(logicalRow, clip.root, clip.scale);
+    const r = editRange ?? editableRowRange(clip.root, clip.scale);
+    return rowToMidi(r.hi - displayRow, clip.root, clip.scale);
   }
   /** The note cell's FILL colour, driven by EFFECTIVE PROBABILITY + its SOURCE
    *  (owner-spec'd, replacing the old velocity-blue): '' for an empty cell (the
@@ -1227,6 +1259,9 @@
   aria-label="CLIP PLAYER — computer keys 1–8 drive the control strip while focused"
   tabindex="0"
   onclick={onCardClick}
+  style={cardView === 'clip'
+    ? `width:${editCardWidthPx}px;height:auto;min-height:0;max-height:none`
+    : undefined}
 >
   <div class="stripe"></div>
   <header class="title">
@@ -1813,12 +1848,13 @@
             <button class="tag" onclick={cycleScale} title="Cycle scale">{scaleName(editClip.scale)}</button>
             <span class="tag root">{noteNameForMidi(editClip.root)}</span>
             <button class="tag" onclick={cycleLength} title="Cycle clip length">{editClip.lengthSteps}st</button>
-            <span class="oct">
-              <button onclick={() => (editorRow -= scaleLenOf(editClip))} title="Octave down" aria-label="octave down">⤓</button>
-              <button onclick={() => (editorRow -= 1)} title="Row down" aria-label="row down">↓</button>
-              <button onclick={() => (editorRow += 1)} title="Row up" aria-label="row up">↑</button>
-              <button onclick={() => (editorRow += scaleLenOf(editClip))} title="Octave up" aria-label="octave up">⤒</button>
-            </span>
+            <!-- The whole editable pitch range is shown at once (no pitch-window
+                 scroll), so this is a read-only span label, not a scroll control. -->
+            <span
+              class="tag range"
+              title="Full editable pitch range — every note row is shown at once (no scrolling needed)"
+              data-testid={`clipplayer-range-${id}`}
+            >{noteNameForMidi(midiForDisplayRow(editClip, editRows - 1))}–{noteNameForMidi(midiForDisplayRow(editClip, 0))}</span>
             <button class="clear" onclick={clearClip} title="Clear clip (notes + its automation)" data-testid="clipplayer-clear">⌫</button>
             {#if editorHasAuto}
               <button
@@ -1844,7 +1880,7 @@
             <span class="op-vel" class:on={shiftHeld} title="Hold Shift (or key 8 / ⇧) then click a cell to cycle its velocity" data-testid={`clipplayer-velmode-${id}`}>VEL</span>
           </div>
           <div class="piano-roll" class:vel-mode={shiftHeld} data-testid="clipplayer-pianoroll">
-            {#each Array(EDIT_ROWS) as _r, row (row)}
+            {#each Array(editRows) as _r, row (row)}
               <div class="pr-row">
                 {#each Array(editCols) as _c, step (step)}
                   {@const midi = midiForDisplayRow(editClip, row)}
@@ -1853,7 +1889,8 @@
                     class="cell"
                     class:note={fill !== ''}
                     class:playhead={step === playheadCol}
-                    class:beat={step % 4 === 0 || row % 4 === 0}
+                    class:beat={step % 4 === 0}
+                    class:rootrow={midi % 12 === editRootPc}
                     style={fill ? `background:${fill}` : undefined}
                     data-step={step}
                     data-row={row}
@@ -2379,16 +2416,9 @@
     cursor: pointer;
   }
   .clear-auto:hover { color: #7ff0ea; border-color: #2fb0a8; }
-  .oct { display: inline-flex; }
-  .oct button {
-    background: var(--control-bg, #222);
-    color: var(--text);
-    border: 1px solid var(--border);
-    width: 16px; height: 15px;
-    font-size: 10px; line-height: 1;
-    cursor: pointer;
-    margin-left: 1px;
-  }
+  /* Read-only full-range label (replaces the old pitch-window scroll buttons —
+     the whole range is always shown now, so there's nothing to scroll). */
+  .editor-head .tag.range { cursor: default; font-variant-numeric: tabular-nums; }
   .piano-roll { display: flex; flex-direction: column; align-items: center; gap: 2px; }
   /* Edit-view launch row — NOW (left) + QUEUE (right), bottom-right of the editor. */
   .editor-foot {
@@ -2437,6 +2467,12 @@
      Empty cells only — the vel/playhead rules below (later, same specificity)
      override on a placed note. */
   .cell.beat { background: #242424; }
+  /* Root-pitch rows read a touch warmer so the octaves are easy to scan on the
+     now full-height grid (replaces the old every-4th-display-row guide, which
+     was meaningless once the whole pitch range is shown). Empty cells only —
+     the note/playhead rules below win on a placed note. */
+  .cell.rootrow { background: #2a2622; }
+  .cell.beat.rootrow { background: #302b24; }
   /* note cells are coloured by PROBABILITY via an inline background (see
      cellProbFill): WHITE at 100%, deepening to PURPLE as the firing chance
      drops. The inline style wins over .beat; the playhead border still reads. */

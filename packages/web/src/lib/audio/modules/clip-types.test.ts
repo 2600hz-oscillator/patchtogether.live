@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import { syncedStore } from '@syncedstore/core';
 import { mulberry32 } from '$lib/sync/prng';
-import { midiToVOct, C3_MIDI } from '$lib/audio/note-entry';
+import { midiToVOct, C3_MIDI, MIN_MIDI, MAX_MIDI } from '$lib/audio/note-entry';
 import { POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
 import {
   CLIP_COUNT,
@@ -41,6 +41,7 @@ import {
   scaleSteps,
   rowToMidi,
   midiToRow,
+  editableRowRange,
   toggleNoteAt,
   cycleVelocity,
   noteAt,
@@ -866,6 +867,45 @@ describe('note-editor row math', () => {
     expect(midiToRow(49, 48, 'major')).toBeNull();
     // chromatic accepts everything.
     expect(midiToRow(49, 48)).toBe(1);
+  });
+});
+
+describe('editableRowRange (clip-view full editable pitch span)', () => {
+  it('spans exactly the in-range rows, top-to-bottom, for a chromatic clip', () => {
+    // Chromatic from C3 (48): rowToMidi(row) = 48 + row, so the range is
+    // MIN_MIDI(12)..MAX_MIDI(108) ⇒ rows -36..60 ⇒ 97 rows.
+    const r = editableRowRange(48, undefined);
+    expect(r.lo).toBe(MIN_MIDI - 48); // -36
+    expect(r.hi).toBe(MAX_MIDI - 48); // 60
+    expect(r.count).toBe(97);
+    expect(r.count).toBe(r.hi - r.lo + 1);
+  });
+
+  it('spans the in-range scale degrees for an in-key (major) clip', () => {
+    // C major from C3 (48): 7 degrees/octave; the full 12..108 span is 57 rows.
+    const r = editableRowRange(48, 'major');
+    expect(r.count).toBe(57);
+    expect(rowToMidi(r.hi, 48, 'major')).toBe(108); // top row = C8
+    expect(rowToMidi(r.lo, 48, 'major')).toBe(12); // bottom row = C0
+  });
+
+  it('every returned row is inside [MIN_MIDI, MAX_MIDI] and the ends are tight', () => {
+    for (const scale of [undefined, 'major', 'minor', 'pentatonic', 'dorian'] as const) {
+      const r = editableRowRange(C3_MIDI, scale);
+      // count ≥ 1 and every in-range row maps inside the playable range.
+      expect(r.count).toBeGreaterThanOrEqual(1);
+      expect(rowToMidi(r.lo, C3_MIDI, scale)).toBeGreaterThanOrEqual(MIN_MIDI);
+      expect(rowToMidi(r.hi, C3_MIDI, scale)).toBeLessThanOrEqual(MAX_MIDI);
+      // One row past either end falls OUT of the playable range (tight bounds).
+      expect(rowToMidi(r.lo - 1, C3_MIDI, scale)).toBeLessThan(MIN_MIDI);
+      expect(rowToMidi(r.hi + 1, C3_MIDI, scale)).toBeGreaterThan(MAX_MIDI);
+    }
+  });
+
+  it('shows more rows for chromatic than for a 7-note scale (denser pitch grid)', () => {
+    expect(editableRowRange(C3_MIDI, undefined).count).toBeGreaterThan(
+      editableRowRange(C3_MIDI, 'major').count,
+    );
   });
 });
 
