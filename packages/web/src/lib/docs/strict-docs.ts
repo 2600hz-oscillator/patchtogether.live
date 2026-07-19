@@ -410,4 +410,9 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // monitor — GPU box-average downsample → 81 pixels pushed to the LEDs via the
   // batch-RGB SysEx (bind/connect + preview on the card). Ships documented.
   'outToLaunch',
+  // GRAINS OF VISION (2026-07-18): granular VIDEO synthesizer — 2 video in / 2
+  // video out, a fixed grains → feedback → reverb chain with COMPOSITE modes
+  // (B modulates A's grains). Ships documented. Design:
+  // .myrobots/plans/grains-of-vision-2026-07-18.md.
+  'grainsOfVision',
 ]);

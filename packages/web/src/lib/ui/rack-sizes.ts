@@ -67,6 +67,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   frogger: { size: '2u', hp: 2 }, // 380×260px
   gamepad: { size: '2u', hp: 2 }, // 267×280px
   gatemaiden: { size: '1u', hp: 1 }, // 199×200px
+  grainsOfVision: { size: '3u', hp: 2 }, // 258×~640px — 176×132 preview + GRAIN/FEEDBACK/REVERB/COMP fader stack (≈ mirrorpool/cellshade)
   graphicEq: { size: '2u', hp: 2 }, // 360×360px — Winamp-style VU-meter video output
   hypercube: { size: '3u', hp: 4 }, // 540×720px — 2-col (viewport left, controls right)
   illogic: { size: '1u', hp: 2 }, // 154×240px

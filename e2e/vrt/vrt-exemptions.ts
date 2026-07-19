@@ -194,6 +194,15 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // before the owner approves the look). Physics coverage is
   // mirrorpool-core.test.ts + the (baseline-deferred) mirrorpool-composite.spec.ts.
   mirrorpool: [{ selector: 'canvas' }],
+  // GRAINS OF VISION — granular video synth; the OUT preview is a live,
+  // self-animating render (temporal grains + feedback trails + reverb tail), so
+  // mask the canvas and let the deterministic chrome (GRAIN/FEEDBACK/REVERB/COMP
+  // fader sections + A/B + the CV handle rows + OUT/GRAINS out) gate. NOTE: held
+  // for owner look-preview (maximally look-affecting) — no solo-spawn baseline is
+  // pinned; it is also in EXEMPT_FROM_VRT below (mirrorpool precedent). Grain /
+  // feedback / reverb / composite math is covered by grainsOfVision.test.ts + the
+  // bespoke grains-of-vision.spec.ts.
+  grainsOfVision: [{ selector: 'canvas' }],
   // SCOREBOARD — 4-digit 7-segment counter widget. The card carries a live
   // preview canvas; the counter starts at 0 on factory mount (or 1234 when
   // the VRT scene sets `__scoreboardVrtSeed`). Canvas masked here as the
@@ -327,6 +336,15 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // behavioral. Capture darwin/linux baselines via vrt-update.yml once the owner
   // approves the look (then drop the composite pairs in EXEMPT_BASELINE_PAIRS).
   mirrorpool: 'VRT baseline pending owner look-approval (look-affecting WebGL video); mirrorpool-core.test.ts + per-port + behavioral provide coverage. Capture darwin/linux baselines via vrt-update.yml in a follow-up.',
+  // GRAINS OF VISION — maximally look-affecting WebGL granular video synth, HELD
+  // for owner preview: no VRT baseline is pinned pre-approval (mirrorpool
+  // precedent). Coverage meanwhile: grainsOfVision.test.ts (grain window / hash /
+  // temporal-blend / feedback-UV / reverb-accumulate / composite-mode CPU mirror)
+  // + per-module-per-port (handle presence + ACIDWARP→in_a outputs-emit) + the
+  // bespoke grains-of-vision.spec.ts (real source→grains→OUT non-black + COMPOSITE
+  // with a 2nd source). Capture darwin/linux baselines via vrt-update.yml once the
+  // owner approves the look (the canvas mask above covers the live preview).
+  grainsOfVision: 'VRT baseline pending owner look-approval (look-affecting WebGL granular video); grainsOfVision.test.ts + per-port (ACIDWARP→in_a emit) + grains-of-vision.spec.ts provide coverage. Capture darwin/linux baselines via vrt-update.yml in a follow-up.',
   // SOURCERY — 2-input region shape-match recolor. v1 output is
   // source-dependent (needs A + B patched) AND shimmers/boils frame-to-frame
   // (per-frame-independent segmentation), so a solo-spawn VRT canvas is

@@ -1229,6 +1229,48 @@ gibribbon param cv2 0..1 linear default=0
 gibribbon param cv3 0..1 linear default=0
 gibribbon param cv4 0..1 linear default=0
 gibribbon param gate 0..1 linear default=0
+grainsOfVision meta domain=video
+grainsOfVision in comp_amount cv param=comp_amount cvScale=linear
+grainsOfVision in composite cv param=composite cvScale=discrete
+grainsOfVision in density cv param=density cvScale=linear
+grainsOfVision in fb_decay cv param=fb_decay cvScale=linear
+grainsOfVision in fb_rotate cv param=fb_rotate cvScale=linear
+grainsOfVision in fb_zoom cv param=fb_zoom cvScale=linear
+grainsOfVision in feedback cv param=feedback cvScale=linear
+grainsOfVision in grain_size cv param=grain_size cvScale=linear
+grainsOfVision in in_a video
+grainsOfVision in in_b video
+grainsOfVision in orient cv param=orient cvScale=linear
+grainsOfVision in rate cv param=rate cvScale=linear
+grainsOfVision in rev_decay cv param=rev_decay cvScale=linear
+grainsOfVision in rev_diffuse cv param=rev_diffuse cvScale=linear
+grainsOfVision in rev_mix cv param=rev_mix cvScale=linear
+grainsOfVision in rev_size cv param=rev_size cvScale=linear
+grainsOfVision in spray cv param=spray cvScale=linear
+grainsOfVision in time_spray cv param=time_spray cvScale=linear
+grainsOfVision in window cv param=window cvScale=linear
+grainsOfVision out grains video
+grainsOfVision out out video
+grainsOfVision param comp_amount 0..1 linear default=0.7
+grainsOfVision param composite 0..4 discrete default=1
+grainsOfVision param density 2..48 linear default=14
+grainsOfVision param fb_decay 0..1 linear default=0.9
+grainsOfVision param fb_dry 0..1 linear default=0
+grainsOfVision param fb_rotate -20..20 linear default=0
+grainsOfVision param fb_zoom 0.8..1.2 linear default=1
+grainsOfVision param feedback 0..0.98 linear default=0.4
+grainsOfVision param freeze 0..1 linear default=0
+grainsOfVision param grain_size 0.2..2.5 linear default=1.1
+grainsOfVision param orient 0..1 linear default=0.25
+grainsOfVision param rate 0..1 linear default=0.15
+grainsOfVision param rev_decay 0..0.99 linear default=0.85
+grainsOfVision param rev_diffuse 0..1 linear default=0.5
+grainsOfVision param rev_dry 0..1 linear default=0
+grainsOfVision param rev_mix 0..1 linear default=0.25
+grainsOfVision param rev_size 0..1 linear default=0.5
+grainsOfVision param spray 0..1 linear default=0.35
+grainsOfVision param time_spray 0..1 linear default=0.2
+grainsOfVision param window 0..1 linear default=0.6
 graphicEq meta domain=video
 graphicEq in audio_l audio
 graphicEq in audio_r audio
