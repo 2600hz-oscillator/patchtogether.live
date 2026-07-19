@@ -62,6 +62,7 @@
     type ClipPlayerData,
     type NoteClipRecord,
   } from '$lib/audio/modules/clip-types';
+  import { reconcileClipRemoval } from '$lib/audio/modules/clip-reconcile';
   import { pruneAutoAssignDangling, clearClipAutomation } from '$lib/graph/automation-assign';
   import {
     sceneRepeatCount,
@@ -1029,7 +1030,12 @@
     const midi = midiForDisplayRow(clip, displayRow);
     // Mono lanes replace-on-add; poly lanes cap at 5 voices per column.
     const mono = laneMono(dataObj(), laneOf(selectedClip));
-    writeClipData(toggleNoteAt(clip, step, midi, { mono }));
+    const next = toggleNoteAt(clip, step, midi, { mono });
+    writeClipData(next);
+    // Tap a lit cell OFF (or a mono/poly replace-on-add) = a note REMOVAL —
+    // reconcile the scheduler so the removed voice is CUT NOW on a playing clip
+    // (stale-note fix §3.1), not next loop. Shared with the Launchpad editor.
+    reconcileClipRemoval(id, clip, next, selectedClip, dataObj());
   }
   /** Shift-click a cell → cycle its velocity level (the card's velocity gesture;
    *  velocity stays editable but is no longer the note's COLOUR channel — that
@@ -1168,6 +1174,7 @@
     });
   }
   function clearClip() {
+    const prev = clipAt(selectedClip);
     writeDataUndoable((d) => {
       const c = (d.clips ?? {})[String(selectedClip)] as NoteClipRecord | undefined;
       if (c) c.steps = [];
@@ -1176,6 +1183,9 @@
       const key = String(selectedClip);
       if (d.auto && d.auto[key] !== undefined && d.auto[key] !== null) delete d.auto[key];
     });
+    // Clear-clip removes every note → reconcile the scheduler so a sounding
+    // voice on a playing clip is CUT NOW (stale-note fix §3.1), not next loop.
+    if (prev) reconcileClipRemoval(id, prev, { ...prev, steps: [] }, selectedClip, dataObj());
   }
   /** Per-clip "CLR AUTO" — delete ONLY this clip's automation record (keeps the
    *  notes). Undoable (LOCAL_ORIGIN via the shared seam). */

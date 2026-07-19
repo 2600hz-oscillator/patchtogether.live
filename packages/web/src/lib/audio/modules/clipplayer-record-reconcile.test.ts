@@ -141,10 +141,22 @@ function run(ctx: FakeAudioContext, fromS: number, toS: number, tickMs = 0.025) 
   }
 }
 type Handle = { outputs: Map<string, { node: unknown }> };
-function gateHighTimes(handle: Handle, lane: number): number[] {
-  const p = (handle.outputs.get(`gate${lane + 1}`)!.node as unknown as FakeConstantSource)
+function gateParam(handle: Handle, lane: number): FakeParam {
+  return (handle.outputs.get(`gate${lane + 1}`)!.node as unknown as FakeConstantSource)
     .offset as unknown as FakeParam;
-  return p.events.filter((e) => e.value >= 0.5).map((e) => e.time).sort((a, b) => a - b);
+}
+function gateHighTimes(handle: Handle, lane: number): number[] {
+  return gateParam(handle, lane).events.filter((e) => e.value >= 0.5).map((e) => e.time).sort((a, b) => a - b);
+}
+/** Times of the FALLING edges (gate → 0) on a lane's mono gate. */
+function gateLowTimes(handle: Handle, lane: number): number[] {
+  return gateParam(handle, lane).events.filter((e) => e.value < 0.5).map((e) => e.time).sort((a, b) => a - b);
+}
+/** Reassign a clip's steps via the plain-clone discipline (syncedStore-safe). */
+function setClipSteps(idx: number, steps: NoteClipRecord['steps']) {
+  const clip = liveClip(idx);
+  const data = livePatch.nodes[NODE_ID]!.data as { clips: Record<string, NoteClipRecord> };
+  data.clips[String(idx)] = { ...clip, steps: steps.map((s) => ({ ...s })) };
 }
 function liveClip(idx: number): NoteClipRecord {
   return (livePatch.nodes[NODE_ID]!.data as { clips: Record<string, NoteClipRecord> }).clips[String(idx)];
@@ -177,15 +189,10 @@ describe('stale-note reconcile (engine §3.1)', () => {
     const step4T = pre[0]!;
     const step6T = step4T + 2 * BASE; // step 6 = step 4 + two step durations
 
-    // ERASE step 4's note on the PLAYING clip (plain-cloned reassign — the
-    // yjs-save-load discipline) + publish a reconcile, then tick.
-    const clip = liveClip(clipIndex(0, 0));
-    const data = livePatch.nodes[NODE_ID]!.data as { clips: Record<string, NoteClipRecord> };
-    data.clips[String(clipIndex(0, 0))] = {
-      ...clip,
-      steps: clip.steps.filter((s) => s.step !== 4).map((s) => ({ ...s })),
-    };
-    pushReconcile(NODE_ID, { lane: 0 });
+    // ERASE step 4's note on the PLAYING clip + publish a reconcile (step 4 is a
+    // FUTURE step here — not the audible one), then tick.
+    setClipSteps(clipIndex(0, 0), liveClip(clipIndex(0, 0)).steps.filter((s) => s.step !== 4));
+    pushReconcile(NODE_ID, { lane: 0, steps: [4] });
     ctx.currentTime = 0.375;
     hoisted.tick!();
 
@@ -200,6 +207,106 @@ describe('stale-note reconcile (engine §3.1)', () => {
     expect(gateHighTimes(handle, 0), 'kept step 6 re-lands on-grid').toContainEqual(
       expect.closeTo(step6T, 3),
     );
+  });
+
+  it('N5: erasing the CURRENTLY-SOUNDING step forces a FALLING edge on its voice NOW', async () => {
+    // One note on step 2; run until it is AUDIBLE (gate high). Its natural
+    // gate-off is at onset + 0.9·laneDur ≈ onset + 0.1125.
+    seed({
+      clips: { [clipIndex(0, 0)]: noteClip([{ step: 2, midi: 60, velocity: 127, lengthSteps: 1 }], 8) },
+      playing: lane8({ 0: 0 }, null),
+    });
+    const ctx = new FakeAudioContext();
+    const handle = (await build(ctx)) as unknown as Handle;
+
+    // step 2 onset ≈ 0.01 + 2·0.125 = 0.26; run to 0.30 so it is mid-gate.
+    run(ctx, 0, 0.285);
+    const onset = gateHighTimes(handle, 0)[0]!; // ≈ 0.26
+    const naturalOff = onset + BASE * 0.9; // ≈ 0.3725
+
+    setClipSteps(clipIndex(0, 0), []); // erase the sounding note
+    pushReconcile(NODE_ID, { lane: 0, steps: [2] }); // step 2 == the audible step
+    const at = 0.30;
+    ctx.currentTime = at;
+    hoisted.tick!();
+
+    // A falling edge lands at `at` — EARLIER than the note's natural gate-off —
+    // so the erased voice is cut immediately, not left ringing.
+    const lows = gateLowTimes(handle, 0);
+    expect(lows.some((t) => Math.abs(t - at) < 0.01), 'forced gate-off at now').toBe(true);
+    expect(at, 'the cut is before the natural gate-off').toBeLessThan(naturalOff - 0.02);
+  });
+
+  it('N1: erasing a FUTURE note does NOT truncate the currently-gating KEPT note', async () => {
+    // Notes on step 2 (audible) + step 5 (future). Erase step 5 while step 2
+    // gates — step 2 must keep gating to its natural end.
+    seed({
+      clips: { [clipIndex(0, 0)]: noteClip([{ step: 2, midi: 60, velocity: 127, lengthSteps: 1 }, { step: 5, midi: 64, velocity: 127, lengthSteps: 1 }], 8) },
+      playing: lane8({ 0: 0 }, null),
+    });
+    const ctx = new FakeAudioContext();
+    const handle = (await build(ctx)) as unknown as Handle;
+
+    run(ctx, 0, 0.285);
+    const onset = gateHighTimes(handle, 0)[0]!; // step 2 ≈ 0.26
+    const naturalOff = onset + BASE * 0.9; // ≈ 0.3725
+    const step5T = onset + 3 * BASE; // ≈ 0.635
+
+    setClipSteps(clipIndex(0, 0), liveClip(clipIndex(0, 0)).steps.filter((s) => s.step !== 5));
+    pushReconcile(NODE_ID, { lane: 0, steps: [5] }); // FUTURE step, not the audible one
+    const at = 0.30;
+    ctx.currentTime = at;
+    hoisted.tick!();
+
+    // The kept step-2 note keeps gating: its gate-off stays at the NATURAL time,
+    // and NO premature falling edge was forced at `at`.
+    const lows = gateLowTimes(handle, 0);
+    expect(lows.some((t) => Math.abs(t - naturalOff) < 0.02), 'natural gate-off preserved').toBe(true);
+    expect(lows.some((t) => Math.abs(t - at) < 0.005), 'no forced cut at now').toBe(false);
+
+    // ...and the erased future step 5 never sounds.
+    run(ctx, 0.31, 0.8);
+    expect(gateHighTimes(handle, 0), 'erased step 5 never gates').not.toContainEqual(
+      expect.closeTo(step5T, 2),
+    );
+  });
+
+  it('B1: reconciling a COARSE-div lane whose next step is beyond the horizon preserves phase (no flam, no drift)', async () => {
+    // Lane rate 2 (1/2 → 0.25 s/step) > the 0.2 s lookahead, so between ticks the
+    // last scheduled step has elapsed and NOTHING is in the ring ahead (upIdx=-1)
+    // — the branch the committed test never exercised. Note every step.
+    seed({
+      clips: { [clipIndex(0, 0)]: allStepsClip(8) },
+      playing: lane8({ 0: 0 }, null),
+      rate: lane8({ 0: 2 }, 3), // lane 0 = 1/2 → 0.25 s/step
+    });
+    const ctx = new FakeAudioContext();
+    const handle = (await build(ctx)) as unknown as Handle;
+    const STEP = BASE * 2; // 0.25 s
+
+    // Grid (anchored at 0.01): 0.01, 0.26, 0.51, 0.76, 1.01, … Run to 0.52 — step
+    // at 0.51 has elapsed; the next (0.76) is beyond 0.52 + 0.2 = 0.72, so it is
+    // NOT scheduled yet → upIdx = -1 at the reconcile instant.
+    run(ctx, 0, 0.52);
+    const preHigh = gateHighTimes(handle, 0);
+    const lastGrid = preHigh[preHigh.length - 1]!; // ≈ 0.51
+
+    // Erase a FAR step (7 — never in the near window, not the audible one) and
+    // reconcile. cutNow=false, upIdx=-1 → the pending next step must be LEFT
+    // untouched (B1): if it were reset to now+0.01 the lane would flam `cur` at
+    // ~0.53 and drift every later step off-grid.
+    pushReconcile(NODE_ID, { lane: 0, steps: [7] });
+    ctx.currentTime = 0.52;
+    hoisted.tick!();
+
+    run(ctx, 0.53, 1.3);
+    const g = gateHighTimes(handle, 0);
+    // NO flam: nothing new between the last elapsed step and the next grid step.
+    expect(g.every((t) => t <= lastGrid + 0.02 || t >= lastGrid + STEP - 0.03), 'no re-strike of cur (flam)').toBe(true);
+    // Phase intact: the next steps land on the ORIGINAL grid (0.76, 1.01), not
+    // shifted to 0.78/1.03.
+    expect(g, 'next step on the original grid').toContainEqual(expect.closeTo(lastGrid + STEP, 2));
+    expect(g, 'step after that on the original grid').toContainEqual(expect.closeTo(lastGrid + 2 * STEP, 2));
   });
 });
 

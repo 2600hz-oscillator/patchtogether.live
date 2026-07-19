@@ -1147,22 +1147,35 @@ export const clipplayerDef: AudioModuleDef = {
     }
 
     /**
-     * STALE-NOTE RECONCILE (redesign §3.1) — a clip mutation on the PLAYING
-     * clip of lane L just REMOVED notes (an erase / tap-off / clear), so cut the
-     * lane's in-flight audio NOW and re-emit from the FRESH clip. Without this,
-     * a note the user just erased keeps sounding for the whole lookahead (or, in
-     * the old replace path, a full loop). We reuse the proven `silenceLane` +
-     * cancel pattern (RESET/audition-steal): the erased/sounding voice gets a
-     * clean falling edge at `now`, the in-lookahead scheduled gates/pitches are
-     * cancelled, and the lane RE-EMITS the upcoming steps AT THEIR ORIGINAL
-     * TIMES from the mutated clip — so the loop keeps its exact grid phase (no
-     * shift), the erased step simply schedules no gate, and every kept step
-     * re-lands identically. No-op on a stopped lane.
+     * STALE-NOTE RECONCILE (redesign §3.1) — a clip mutation on the PLAYING clip
+     * of lane L just REMOVED the onsets on `erasedSteps`, so cut the erased
+     * note's in-flight audio NOW and re-emit from the FRESH clip. Without this, a
+     * note the user just erased keeps sounding for the whole lookahead (or, in
+     * the old replace path, a full loop).
+     *
+     * Two cases, both PHASE-PRESERVING:
+     *  - A future onset was already scheduled in the lookahead (`upIdx >= 0`):
+     *    cancel from the next un-elapsed step time `upT` forward (the CURRENT
+     *    step's gate-off is < upT, so a KEPT note keeps gating — N1) and re-emit
+     *    the upcoming steps at their ORIGINAL times from the fresh clip (the
+     *    erased onset simply schedules no gate; kept onsets re-land identically).
+     *  - Nothing is scheduled ahead in the ring (`upIdx < 0`, e.g. a coarse-div
+     *    lane whose next step is beyond the horizon): the pending
+     *    `nextStepTime`/`stepIndex` ALREADY hold the correct next step at its
+     *    original grid time (T + laneDur), so DON'T touch them (B1 — overwriting
+     *    to now+0.01 re-struck `cur` and drifted the lane off-grid forever). Only
+     *    reset when the lane genuinely never emitted (`cur < 0`).
+     *
+     * The currently-SOUNDING voice is force-cut ONLY when the audible step `cur`
+     * is one of `erasedSteps` (an undefined/empty `erasedSteps` cuts it, for
+     * safety): a purely-future erase must not truncate the note you're hearing.
+     * No-op on a stopped lane.
      */
-    function reconcileLane(L: number): void {
+    function reconcileLane(L: number, erasedSteps?: number[]): void {
       const ln = lanes[L];
       if (ln.active === null) return;
       const at = ctx.currentTime;
+      const cur = laneDisplayStep(L);
       // The NEXT un-elapsed scheduled step + its time — re-emitting from here
       // (not "now") preserves the grid phase across the recut.
       let upT = Infinity;
@@ -1173,20 +1186,39 @@ export const clipplayerDef: AudioModuleDef = {
           upIdx = e.idx;
         }
       }
-      const cur = laneDisplayStep(L);
-      // Clean falling edges on gate/vel + zero the poly gates, then cancel the
-      // pending poly PITCH writes so a cancelled step's pitch can't land under a
-      // re-emitted gate (mirrors resetActiveLanes).
-      silenceLane(L, at);
-      for (const v of ln.poly.voices) v.pitchSrc.offset.cancelScheduledValues(at);
+      // Cut the currently-sounding voice ONLY when the audible step lost an
+      // onset (else a still-gating KEPT note would be truncated — N1).
+      const cutNow = !erasedSteps || erasedSteps.length === 0 || (cur >= 0 && erasedSteps.includes(cur));
       if (upIdx >= 0) {
-        ln.nextStepTime = upT; // re-emit the upcoming step at its ORIGINAL time
+        // Cancel the in-lookahead future (from `upT` on) so an already-scheduled
+        // ERASED onset can't fire; the current step's gate-off (< upT) survives,
+        // so a kept note keeps gating. Then re-emit the upcoming steps at their
+        // ORIGINAL grid times from the fresh clip.
+        ln.gateSrc.offset.cancelScheduledValues(upT);
+        ln.velSrc.offset.cancelScheduledValues(upT);
+        for (const v of ln.poly.voices) {
+          v.gateSrc.offset.cancelScheduledValues(upT);
+          v.pitchSrc.offset.cancelScheduledValues(upT);
+        }
+        ln.nextStepTime = upT;
         ln.stepIndex = upIdx;
-      } else {
-        ln.nextStepTime = at + 0.01; // nothing queued ahead — resume immediately
-        ln.stepIndex = cur >= 0 ? cur : 0;
+        ln.autoStarted = false;
+      } else if (cur < 0) {
+        // The lane genuinely never emitted — resume from scratch.
+        ln.nextStepTime = at + 0.01;
+        ln.stepIndex = 0;
+        ln.autoStarted = false;
       }
-      ln.autoStarted = false;
+      // else (upIdx < 0 && cur >= 0): the pending nextStepTime/stepIndex already
+      // hold the correct next step at its original grid time — LEAVE THEM (B1).
+      if (cutNow) {
+        // Force the erased/sounding voice silent NOW (clean falling edges); a
+        // KEPT chord-mate on the same step shares this step's gate, so an erase
+        // of the audible step cuts the whole step (mono gate is shared — the
+        // documented limit; per-pitch cut across a shared step isn't possible).
+        silenceLane(L, at);
+        for (const v of ln.poly.voices) v.pitchSrc.offset.cancelScheduledValues(at);
+      }
       // Drop now-cancelled future entries so the visual playhead can't show them.
       ln.sched = ln.sched.filter((e) => e.t <= at);
     }
@@ -1744,7 +1776,7 @@ export const clipplayerDef: AudioModuleDef = {
         // and re-emit from the fresh clip so the erased note stops immediately.
         // Drained before the transport gate so an erase lands even when stopped.
         for (const ev of drainReconcile(nodeId)) {
-          if (ev.lane >= 0 && ev.lane < LANES) reconcileLane(ev.lane);
+          if (ev.lane >= 0 && ev.lane < LANES) reconcileLane(ev.lane, ev.steps);
         }
 
         // AUTOMATION ARM reconcile (PER-LANE single-writer): mirror each lane's

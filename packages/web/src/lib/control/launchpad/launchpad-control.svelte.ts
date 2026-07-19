@@ -130,7 +130,7 @@ import { recordNoteAt, extendRecordedNote } from '$lib/audio/modules/clip-record
 import { pushAudition } from '$lib/audio/modules/clip-audition';
 import { captureStep, RECORD_GRID_STEPS_DEFAULT } from '$lib/audio/modules/clip-record-capture';
 import { getLanePhase } from '$lib/audio/modules/clip-lane-phase';
-import { pushReconcile } from '$lib/audio/modules/clip-reconcile';
+import { reconcileClipRemoval } from '$lib/audio/modules/clip-reconcile';
 import {
   punchInTransition,
   armTransition,
@@ -1407,12 +1407,10 @@ function keysPunchIn(nodeId: string, rec: NoteRecState, lane: number): void {
 
 /** After a note-REMOVING clip edit (an erase / tap-off / clear), publish a
  *  scheduler reconcile so the removed note's sounding + in-lookahead voice is
- *  CUT NOW (stale-note fix §3.1) — but only when the edited clip is the one
- *  currently PLAYING on its lane (else nothing is scheduled to cut). */
+ *  CUT NOW (stale-note fix §3.1). Delegates to the SHARED set-difference helper
+ *  (also called by the on-screen card) so both editors reconcile identically. */
 function reconcileClipEdit(nodeId: string, prev: NoteClipRecord, next: NoteClipRecord, index: number): void {
-  if (next === prev || next.steps.length >= prev.steps.length) return; // not a removal
-  const lane = laneOf(index);
-  if (lanePlaying(liveData(nodeId), lane) === slotOf(index)) pushReconcile(nodeId, { lane });
+  reconcileClipRemoval(nodeId, prev, next, index, liveData(nodeId));
 }
 
 /** Route a KEYS-mode key event on a unit (both units are the keyboard). */
