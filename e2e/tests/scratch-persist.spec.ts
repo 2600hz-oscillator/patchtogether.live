@@ -101,6 +101,22 @@ async function addNodeAndFlush(
   return scratchId;
 }
 
+/** Wait until the workflow ensure effect has spawned the given pinned nodes
+ *  (deterministic ids from graph/workflow-pins.ts, `data.pinned === true`). */
+async function waitForPinned(page: Page, ids: readonly string[]): Promise<void> {
+  await page.waitForFunction(
+    (wanted) => {
+      const w = globalThis as unknown as {
+        __patch?: { nodes: Record<string, { data?: { pinned?: boolean } } | undefined> };
+      };
+      if (!w.__patch) return false;
+      return wanted.every((id) => w.__patch!.nodes[id]?.data?.pinned === true);
+    },
+    ids as string[],
+    { timeout: 15_000 },
+  );
+}
+
 test.describe('scratch canvas persistence', () => {
   test('a node added on /rack survives a browser refresh', async ({ page }) => {
     await page.goto('/rack');
@@ -153,5 +169,79 @@ test.describe('scratch canvas persistence', () => {
     const dawlessId = await waitForScratchId(page, 'dawless');
     expect(dawlessId).not.toBe(workflowId); // distinct id → distinct replica DB
     await expect(page.locator('.svelte-flow__node[data-id="scratch-wf-marker"]')).toHaveCount(0);
+  });
+
+  // REGRESSION (workflow mount-race): on /rack?mode=workflow Canvas's "ensure"
+  // effects re-create the pinned modules at DETERMINISTIC keys on mount, with no
+  // provider to gate them. If they ran before the IndexedDB seed, the empty
+  // defaults raced the stored pinned state at the same Yjs key (clientID
+  // tiebreak) and ~half the refreshes discarded the user's saved pinned
+  // settings. The fix defers the Canvas mount until the replica seeds, so the
+  // ensures skip the already-restored nodes. (The mode-isolation test above
+  // only checks a UNIQUE-id marker node, which seeds fine either way and cannot
+  // catch this — pinned nodes are the only at-risk keys.)
+  const PINNED_TIMELORDE = 'pinned-timelorde';
+  const PINNED_MIXMSTRS = 'pinned-mixmstrs';
+
+  test('a pinned-module param on /rack?mode=workflow survives refresh', async ({ page }) => {
+    await page.goto('/rack?mode=workflow');
+    await page.waitForLoadState('networkidle');
+
+    const idbOk = await page.evaluate(
+      () => typeof indexedDB !== 'undefined' && indexedDB !== null,
+    );
+    test.skip(!idbOk, 'IndexedDB unavailable — scratch replica cannot persist');
+
+    // The ensure has spawned the pinned modules with default (empty-params) state.
+    await waitForPinned(page, [PINNED_TIMELORDE, PINNED_MIXMSTRS]);
+    const scratchId = await waitForScratchId(page, 'workflow');
+
+    // Adjust NON-DEFAULT settings on pinned modules through the REAL doc (the
+    // same Y.Doc the replica mirrors) — a mixer level + the clock BPM.
+    const before = await replicaRowCount(page, scratchId);
+    await page.evaluate(
+      ({ clockId, mixerId }) => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { params?: Record<string, unknown> }> };
+          __ydoc: { transact: (fn: () => void) => void };
+        };
+        w.__ydoc.transact(() => {
+          const clock = w.__patch.nodes[clockId];
+          const mixer = w.__patch.nodes[mixerId];
+          if (!clock.params) clock.params = {};
+          if (!mixer.params) mixer.params = {};
+          clock.params.bpm = 142;
+          mixer.params.ch1Level = 0.33;
+        });
+      },
+      { clockId: PINNED_TIMELORDE, mixerId: PINNED_MIXMSTRS },
+    );
+    await expect
+      .poll(() => replicaRowCount(page, scratchId), { timeout: 10_000 })
+      .toBeGreaterThan(before);
+
+    // Reload repeatedly: the params must persist EVERY time. A single reload
+    // only exposes the race ~50% of the time (the clientID tiebreak is
+    // symmetric) and a lost reload permanently overwrites the stored state with
+    // empty defaults — so loop to make the guard robust.
+    for (let i = 1; i <= 3; i++) {
+      await page.reload();
+      await page.waitForLoadState('networkidle');
+      await waitForPinned(page, [PINNED_TIMELORDE, PINNED_MIXMSTRS]);
+      const vals = await page.evaluate(
+        ({ clockId, mixerId }) => {
+          const w = globalThis as unknown as {
+            __patch: { nodes: Record<string, { params?: Record<string, unknown> } | undefined> };
+          };
+          return {
+            bpm: w.__patch.nodes[clockId]?.params?.bpm,
+            ch1Level: w.__patch.nodes[mixerId]?.params?.ch1Level,
+          };
+        },
+        { clockId: PINNED_TIMELORDE, mixerId: PINNED_MIXMSTRS },
+      );
+      expect(vals.bpm, `pinned-timelorde bpm after reload ${i}`).toBe(142);
+      expect(vals.ch1Level, `pinned-mixmstrs ch1Level after reload ${i}`).toBe(0.33);
+    }
   });
 });

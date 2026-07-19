@@ -40,23 +40,41 @@
   // NOT migrate the scratch patch — it simply persists locally.
   let scratchId = $derived(getOrCreateLocalScratchId(mode));
 
-  // Bind the singleton store to this device+mode scratch doc BEFORE Canvas's
-  // first render (mirrors the `/r/[id]` top-level bind), so Canvas mounts
-  // against the correctly-bound `ydoc`/`patch`. bindRackspace is idempotent
-  // for the same id; `ssr = false` on this route means this only ever runs
-  // client-side.
-  bindRackspace(scratchId);
+  // GATE the Canvas mount on the replica seed. Canvas's workflow "ensure"
+  // effects (pinned-module trio + default wires) write default state into
+  // DETERMINISTIC keys (`pinned-mixmstrs`, `pinned-timelorde`, …) on mount,
+  // and on `/rack` there is NO provider to gate them (they only skip while
+  // `provider && !providerHasSynced`). If they ran BEFORE the IndexedDB seed
+  // lands, the fresh defaults would race the STORED pinned state at the same
+  // Yjs key — a clientID tiebreak that ~half the time lets the empty defaults
+  // win and discards the user's saved pinned-module settings (and can
+  // resurrect a deleted default cable). Deferring the mount until the seed
+  // resolves makes the ensures run against the ALREADY-SEEDED doc, where their
+  // `if (patch.nodes[spec.id]) continue` correctly skips the restored nodes —
+  // no race, no clobber. This is localized to the scratch route; Canvas's
+  // shared ensure logic (which real `/r/[id]` racks rely on) is untouched.
+  // `whenSeeded` resolves seeded|fresh|cleared-corrupt|disabled — mount on ANY
+  // of them (a fresh/disabled doc has nothing to clobber). The seed is
+  // near-instant, so the blank frame before it lands is imperceptible.
+  let seeded = $state(false);
 
-  // Re-bind on a scratchId change (a `?mode=` switch) — idempotent for the
-  // same id, so the initial top-level bind above makes the first run a no-op —
-  // then attach the IndexedDB replica. Teardown detaches the replica but KEEPS
-  // the stored data (that survival across reload is the whole point). The
-  // `{#key scratchId}` wrapper below remounts Canvas whenever the id changes so
-  // its `$derived`/`$effect` subscriptions reattach to the freshly-bound doc.
+  // Bind the singleton store to this device+mode scratch doc, then attach the
+  // IndexedDB replica to seed it; flip `seeded` once the seed resolves so the
+  // `{#key scratchId}` block below mounts Canvas. Re-runs on a scratchId change
+  // (a `?mode=` switch): resets the gate, rebinds (idempotent for the same id),
+  // and re-seeds against the mode-correct doc. Teardown detaches the replica
+  // but KEEPS the stored data (that survival across reload is the whole point).
   $effect(() => {
-    bindRackspace(scratchId);
-    const replica = attachLocalReplica(scratchId, ydoc);
+    const id = scratchId;
+    seeded = false;
+    bindRackspace(id);
+    const replica = attachLocalReplica(id, ydoc);
+    let cancelled = false;
+    void replica.whenSeeded.then(() => {
+      if (!cancelled) seeded = true;
+    });
     return () => {
+      cancelled = true;
       void replica.destroy();
     };
   });
@@ -69,5 +87,7 @@
 </script>
 
 {#key scratchId}
-  <Canvas {headerAuth} {mode} rackspaceId={scratchId} />
+  {#if seeded}
+    <Canvas {headerAuth} {mode} rackspaceId={scratchId} />
+  {/if}
 {/key}
