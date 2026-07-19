@@ -129,48 +129,69 @@
   <ModuleTitle {id} {data} defaultLabel="GRAINS OF VISION" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
-    <!-- OUT live preview -->
-    <div class="preview-wrap">
-      <canvas
-        bind:this={canvasEl}
-        width={176}
-        height={132}
-        data-testid="grainsOfVision-preview"
-        data-node-id={id}
-      ></canvas>
-    </div>
+    <!-- Wide 2-column body: OUT preview on the LEFT, the GRAIN / FEEDBACK /
+         REVERB / COMPOSITE fader sections on the RIGHT (each a single row that
+         spans the section's fader count). This fits all ~19 controls inside the
+         720×540 (4hp × 3u) card with room to breathe — the old 2hp card packed
+         them into a 4-column stack that overflowed the tier's fixed height. -->
+    <div class="gov-body">
+      <div class="preview-wrap">
+        <canvas
+          bind:this={canvasEl}
+          width={176}
+          height={132}
+          data-testid="grainsOfVision-preview"
+          data-node-id={id}
+        ></canvas>
+      </div>
 
-    {#each SECTIONS as sec (sec.title)}
-      <div class="section-label">{sec.title}</div>
-      <div class="fader-grid">
-        {#each sec.knobs as k (k.id)}
-          <Fader
-            value={p(k.id)}
-            min={pmin(k.id)}
-            max={pmax(k.id)}
-            defaultValue={pdef(k.id)}
-            label={k.label}
-            curve={pcurve(k.id)}
-            formatValue={k.id === 'composite' ? formatComp : undefined}
-            onchange={setParam(k.id)}
-            moduleId={id}
-            paramId={k.id}
-          />
+      <div class="gov-sections">
+        {#each SECTIONS as sec (sec.title)}
+          <div class="gov-section">
+            <div class="section-label">{sec.title}</div>
+            <div class="fader-row" style={`--gov-cols:${sec.knobs.length}`}>
+              {#each sec.knobs as k (k.id)}
+                <Fader
+                  value={p(k.id)}
+                  min={pmin(k.id)}
+                  max={pmax(k.id)}
+                  defaultValue={pdef(k.id)}
+                  label={k.label}
+                  curve={pcurve(k.id)}
+                  formatValue={k.id === 'composite' ? formatComp : undefined}
+                  onchange={setParam(k.id)}
+                  moduleId={id}
+                  paramId={k.id}
+                />
+              {/each}
+            </div>
+          </div>
         {/each}
       </div>
-    {/each}
+    </div>
   </PatchPanel>
 </div>
 
 <style>
   .card {
-    width: 258px;
+    /* Effective size comes from the rack tier (4hp × 3u = 720×540, set in
+       rack-sizes.ts); this width is the un-racked fallback. */
+    width: 720px;
     min-height: 200px;
     padding-bottom: 9px;
   }
+  /* Two-column body: preview (auto) on the left, the fader sections (1fr) on
+     the right. align-items:start tops both columns; min-width:0 lets the
+     sections column shrink so its grids never force horizontal overflow. */
+  .gov-body {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 16px;
+    align-items: start;
+    padding: 6px 16px 0;
+    box-sizing: border-box;
+  }
   .preview-wrap {
-    margin: 6px auto 0;
-    width: 176px;
     display: flex;
     justify-content: center;
   }
@@ -182,8 +203,17 @@
     border-radius: 1px;
     display: block;
   }
+  .gov-sections {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+  .gov-section {
+    min-width: 0;
+  }
   .section-label {
-    margin: 9px 14px 0;
+    margin: 0 0 4px;
     font-size: 0.5rem;
     letter-spacing: 0.14em;
     color: var(--text-dim);
@@ -191,12 +221,14 @@
     border-bottom: 1px solid var(--panel-line, rgba(255, 255, 255, 0.08));
     padding-bottom: 2px;
   }
-  .fader-grid {
-    margin-top: 6px;
-    padding: 0 14px;
+  /* One row per section: `--gov-cols` (set inline = the section's fader count)
+     spreads the faders evenly across the section's width. minmax(0, 1fr) lets
+     each column shrink so the row never overflows the card horizontally. */
+  .fader-row {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 10px 6px;
+    grid-template-columns: repeat(var(--gov-cols, 5), minmax(0, 1fr));
+    gap: 4px;
     justify-items: center;
+    min-width: 0;
   }
 </style>
