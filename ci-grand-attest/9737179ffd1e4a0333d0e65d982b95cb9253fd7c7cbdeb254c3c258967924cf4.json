@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "grandContentHash": "9737179ffd1e4a0333d0e65d982b95cb9253fd7c7cbdeb254c3c258967924cf4",
+  "attestedAt": "2026-07-19T23:10:12.590Z",
+  "attestedBy": "tmayshark@gmail.com",
+  "gitHeadAtAttest": "57039187d6894c54d9604bd974b2890d4178b780",
+  "playwrightVersion": "1.50.0",
+  "os": "darwin 25.4.0 (arm64)",
+  "host": "2600hzs-MBP.home.local",
+  "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
+  "combinedMasterSha": "0eb101b65764dbd5",
+  "repeatEach": 1,
+  "retries": 0,
+  "run": {
+    "specFiles": 1,
+    "passed": 1,
+    "failed": 0,
+    "flaky": 0,
+    "skipped": 0
+  },
+  "durationSec": 22
+}

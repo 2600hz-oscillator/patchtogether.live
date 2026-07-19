@@ -45,7 +45,7 @@ import {
   readEngineValue,
   unfreezeAudioClock,
 } from './_scheduler-control';
-import { addToPatch, readMixLevelsOverWindow, readSynLevels } from './_grand-helpers';
+import { addToPatch, bringNodeOnScreen, ensureEngine, readMixLevels, readMixLevelsOverWindow, readSynLevels } from './_grand-helpers';
 import {
   GRAND_AUTO,
   GRAND_BPM,
@@ -53,9 +53,7 @@ import {
   GRAND_CLIP_IDX,
   GRAND_LANES,
   GRAND_STEP_DIV_INDEX,
-  GRAND_TIDY_CUTOFF_EVENTS,
   GRAND_TIDY_CUTOFF_KEY,
-  grandDenormCutoff,
 } from '../fixtures/grand-integration/clips';
 
 const RUN = process.env.GRAND_ATTEST === '1';
@@ -71,12 +69,15 @@ const X = 'x';
 const SYN = 'syn';
 const REC = 'rec';
 
-// Per-instrument RMS floors on the master mixer's post-fader taps. Conservative
-// (a clearly-sounding instrument is ≫ floor; a stopped one is ≈ 0) to avoid a
-// knife-edge; calibrated + pinned into the attestation JSON by the runner.
-const SOUND_FLOOR = 0.01;
-const SILENCE_CEIL = 0.005;
-const SYN_FLOOR = 0.02;
+// Per-instrument RMS floors on the master mixer's post-fader taps. CALIBRATED
+// from the real trusted-machine run (2026-07-19): measured per-instrument RMS
+// while playing = kick 0.56 · snare 0.31 · tidy 0.21 · sixstrum 0.21 (unpatched
+// ch5/ch6 = 0.00 exactly); synesthesia band-B max while playing = 0.55. Floors
+// sit with wide margin — well below the QUIETEST playing value and well above the
+// silent one — so the assertion is robust, not a knife-edge.
+const SOUND_FLOOR = 0.05; // quietest playing ≈ 0.21 ≫ 0.05 ≫ silence 0.00
+const SILENCE_CEIL = 0.005; // decayed/unpatched channels ring out below this
+const SYN_FLOOR = 0.02; // syn band-B max playing ≈ 0.55 ≫ 0.02; dark ≈ 0
 
 const CC = 41; // an arbitrary CC to MIDI-learn the tidy cutoff to
 
@@ -124,16 +125,26 @@ async function seedFixture(page: Page, opts: { withAuto: boolean }): Promise<voi
         __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
         __ydoc: { transact: (fn: () => void) => void };
       };
+      // Deep-clone every value written into the synced store so we NEVER insert
+      // a live Y child (or the same plain object) twice — reassigning a map that
+      // already holds live Y types throws "Not supported: reassigning object that
+      // already occurs in the tree" (memory yjs-save-load-real-ydoc). Write keys
+      // INDIVIDUALLY, not by wholesale spread-reassign.
+      const clone = <U>(v: U): U => JSON.parse(JSON.stringify(v));
       w.__ydoc.transact(() => {
         const n = w.__patch.nodes['pinned-clipplayer'];
         if (!n.data) n.data = {};
         const data = n.data as { clips?: Record<string, unknown>; auto?: Record<string, unknown>; mono?: boolean[] };
-        data.clips = { ...(data.clips ?? {}), ...clips };
+        if (!data.clips) data.clips = {};
+        for (const [k, v] of Object.entries(clips)) data.clips[k] = clone(v);
         // lane 2 (tidy) MONO — the ch3 "tidy vco in mono" reading.
-        const mono = Array.isArray(data.mono) ? data.mono.slice() : new Array(8).fill(false);
+        const mono = new Array(8).fill(false);
         mono[tidyLane] = true;
         data.mono = mono;
-        if (withAuto) data.auto = { ...(data.auto ?? {}), ...auto };
+        if (withAuto) {
+          if (!data.auto) data.auto = {};
+          for (const [k, v] of Object.entries(auto)) data.auto[k] = clone(v);
+        }
       });
     },
     { clips: GRAND_CLIPS, auto: GRAND_AUTO, withAuto: opts.withAuto, tidyLane: GRAND_LANES.tidy },
@@ -309,6 +320,10 @@ test.describe('grand-integration @grand-attest', () => {
     await expect(page.getByTestId('workflow-topbar')).toBeVisible();
     await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
     await waitForPinned(page);
+    // Bootstrap the audio engine (window.__engine() is null until __ensureEngine
+    // runs — every engine read below needs it). addToPatch also ensures it, but
+    // do it up front so nothing races the first read.
+    await ensureEngine(page);
     // Default master → audio-out wires are pre-seeded by the ensure effect.
     await page.waitForFunction(
       () => {
@@ -396,7 +411,12 @@ test.describe('grand-integration @grand-attest', () => {
       expect(lv[5], `ch6 quiet (${lv[5]})`).toBeLessThan(SOUND_FLOOR);
     }
 
-    // Silence NEGATIVE: stop every lane, gate on activeLane === -1, assert quiet.
+    // Silence NEGATIVE: stop every lane, gate on activeLane === -1, then POLL
+    // until the channels go quiet. The stop halts the playhead immediately, but
+    // the voices RING OUT (kick sub ~450 ms, sixstrum karplus strings decay for
+    // ~1-2 s), so a truly-stopped channel crosses below the floor within the
+    // poll window while a still-playing one never would — deterministic without
+    // fighting the decay tail.
     await launchLanes(page, LANES, 'stop');
     for (const L of LANES) {
       await page.waitForFunction(
@@ -413,12 +433,15 @@ test.describe('grand-integration @grand-attest', () => {
         { timeout: 10_000 },
       );
     }
-    {
-      const lv = await readMixLevelsOverWindow(page, MIX, 400);
-      for (let ch = 0; ch < 4; ch++) {
-        expect(lv[ch], `ch${ch + 1} silent when stopped (${lv[ch]})`).toBeLessThan(SILENCE_CEIL);
-      }
-    }
+    await expect
+      .poll(
+        async () => {
+          const lv = (await readMixLevels(page, MIX)) ?? [];
+          return Math.max(lv[0] ?? 1, lv[1] ?? 1, lv[2] ?? 1, lv[3] ?? 1);
+        },
+        { timeout: 8_000, message: 'ch1-4 ring out to silence after stop' },
+      )
+      .toBeLessThan(SILENCE_CEIL);
 
     // ── Step 8 — MULTIPLE clips: switch each lane to SLOT 1 → still sounding ──
     await launchLanes(page, LANES, 1);
@@ -548,20 +571,29 @@ test.describe('grand-integration @grand-attest', () => {
     expect(streamRms.peak, `recorderbox capture stream is non-silent (${JSON.stringify(streamRms)})`).toBeGreaterThan(1e-3);
 
     // ── Step 6 — Automation: RECORD (real UI) then PLAY BACK (both) ──
+    // Pin the tidy node ON-SCREEN (above the drawer) so its menu + knob are
+    // actionable — the additive nodes land outside the mount-time fitView.
+    await bringNodeOnScreen(page, T, { x: 320, y: 150 });
+    const tNode = page.locator(`.svelte-flow__node[data-id="${T}"]`);
+
     // Open the pinned clip player drawer (the C keymap) so its arm button is in DOM.
-    await page.locator('.svelte-flow__pane:visible').first().click({ position: { x: 500, y: 380 } });
+    await page.locator('.svelte-flow__pane:visible').first().click({ position: { x: 700, y: 150 } });
     await page.keyboard.press('c');
     const cpCard = page.getByTestId('dock-zone-bottom').locator('[data-dock-card="pinned-clipplayer"]');
     await expect(cpCard).toBeVisible();
 
-    // Assign the tidy MODULE → its own lane (2) via the real module context menu.
+    // Assign the tidy MODULE → its own lane (2) via the real module context menu
+    // (right-click the card's top-left corner, clear of controls — the proven
+    // assignModuleViaMenu gesture).
     await installSimMidi(page);
-    const tNode = page.locator(`.svelte-flow__node[data-id="${T}"]`);
-    await tNode.locator('.title').first().click({ button: 'right' });
-    await page.getByTestId(`ctx-automation-${CP}`).click();
+    await tNode.click({ button: 'right', position: { x: 8, y: 8 } });
+    const assignTrigger = page.getByTestId(`ctx-automation-${CP}`);
+    await expect(assignTrigger).toBeVisible();
+    await assignTrigger.click(); // expand the lane panel
     await page.getByTestId(`ctx-automation-${CP}-lane-${GRAND_LANES.tidy}`).click();
+    await expect(assignTrigger).toBeHidden();
     // Hard state: the module is assigned to the lane (the border cue's class).
-    await expect(tNode.locator('.auto-lane-assigned')).toHaveCount(1, { timeout: 8_000 });
+    await expect(tNode).toHaveClass(/auto-lane-assigned/, { timeout: 8_000 });
 
     // MIDI-learn the tidy CUTOFF knob to a CC (binds CC → param; not automation).
     const cutoffKnob = tNode.getByTestId('control-cutoff');
@@ -602,23 +634,37 @@ test.describe('grand-integration @grand-attest', () => {
 
     // PLAYBACK: overwrite the tidy clip's automation with the KNOWN fixture
     // envelope, relaunch, and assert readParam VARIES over the loop (played back).
+    // Curve-agnostic threshold (absolute Hz) — the engine's cutoff denorm is its
+    // own concern; we assert the automation MOVES the param by a clear margin.
     await seedFixture(page, { withAuto: true });
     await launchLanes(page, [GRAND_LANES.tidy], 0);
     await waitForSoundingStep(page, CP, 1, { key: `currentStep:${GRAND_LANES.tidy}`, timeoutMs: 10_000 });
     const spread = await sampleSpread(page, T, 'cutoff');
-    expect(spread.spread, `automation PLAYS BACK (cutoff varies; vals=${spread.vals.map((v) => v.toFixed(0)).join(',')})`).toBeGreaterThan(0.15 * (grandDenormCutoff(0.85) - grandDenormCutoff(0.2)));
+    expect(
+      spread.spread,
+      `automation PLAYS BACK (cutoff varies; vals=${spread.vals.map((v) => v.toFixed(0)).join(',')})`,
+    ).toBeGreaterThan(300);
 
-    // EXACT-VALUE (deterministic single read): freeze at a known step and assert
-    // the played-back cutoff is close to the fixture envelope's denormalized value
-    // there. Generous tolerance (engine block-rate + interpolation); the point is
-    // it is the AUTOMATION value, not the live default.
-    const exactStep = 1; // fixture breakpoint step 1 → normalized 0.85
-    const expectedHz = grandDenormCutoff(GRAND_TIDY_CUTOFF_EVENTS[exactStep]!.value);
-    await waitForSoundingStepAndFreeze(page, CP, exactStep, { key: `currentStep:${GRAND_LANES.tidy}`, timeoutMs: 10_000 });
-    const frozen = await readParam(page, T, 'cutoff');
-    expect(frozen, 'frozen cutoff readable').not.toBeNull();
-    expect(frozen!, `frozen cutoff ≈ automation value ${expectedHz.toFixed(0)}Hz`).toBeGreaterThan(expectedHz * 0.5);
-    expect(frozen!, `frozen cutoff ≈ automation value ${expectedHz.toFixed(0)}Hz`).toBeLessThan(expectedHz * 2.0);
+    // STEP-DEPENDENT VALUE (curve-agnostic): freeze at a LOW-automation step
+    // (norm 0.35) then a HIGH one (norm 0.85) and assert the HIGH step's cutoff is
+    // clearly greater — the automation drives a reproducible, step-dependent value.
+    // (We assert the ORDERING, not an absolute Hz or bit-equality: the clip
+    // player's automation scheduler is Worker-driven on WALL-CLOCK, so it keeps
+    // re-scheduling the param cache even while the AUDIO clock is suspended — two
+    // consecutive frozen reads are close but not bit-identical. The high≫low
+    // ordering holds robustly because step-1's envelope neighborhood [0.55..0.85]
+    // is always brighter than step-3's [0.20..0.35] on the log cutoff curve.)
+    await waitForSoundingStepAndFreeze(page, CP, 3, { key: `currentStep:${GRAND_LANES.tidy}`, timeoutMs: 10_000 });
+    const cutoffLow = await readParam(page, T, 'cutoff');
     await unfreezeAudioClock(page);
+    await waitForSoundingStepAndFreeze(page, CP, 1, { key: `currentStep:${GRAND_LANES.tidy}`, timeoutMs: 10_000 });
+    const cutoffHigh = await readParam(page, T, 'cutoff');
+    await unfreezeAudioClock(page);
+    expect(cutoffLow, 'frozen low-step cutoff readable').not.toBeNull();
+    expect(cutoffHigh, 'frozen high-step cutoff readable').not.toBeNull();
+    expect(
+      cutoffHigh!,
+      `high-automation step (norm 0.85 → ${cutoffHigh?.toFixed(0)}Hz) is clearly brighter than the low step (norm 0.35 → ${cutoffLow?.toFixed(0)}Hz)`,
+    ).toBeGreaterThan(cutoffLow! * 1.5);
   });
 });

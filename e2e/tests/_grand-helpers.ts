@@ -46,6 +46,23 @@ export interface GrandEdge {
 }
 
 /**
+ * Bootstrap the audio engine via the dev `__ensureEngine` global (the same seam
+ * spawnPatch uses). `window.__engine()` returns null until this runs, so every
+ * engine read (`read('levels')`, `currentStep:L`, `readParam`, …) needs it
+ * first. Idempotent — safe to call more than once.
+ */
+export async function ensureEngine(page: Page, timeout = 15_000): Promise<void> {
+  await page.waitForFunction(
+    () => typeof (globalThis as unknown as { __ensureEngine?: () => Promise<unknown> }).__ensureEngine === 'function',
+    undefined,
+    { timeout },
+  );
+  await page.evaluate(async () => {
+    await (globalThis as unknown as { __ensureEngine: () => Promise<unknown> }).__ensureEngine();
+  });
+}
+
+/**
  * ADDITIVELY add nodes + edges to the live patch, preserving every existing node
  * (crucially the workflow `pinned-*` singletons). Writes the SAME node/edge
  * object shapes as spawnPatch (`__patch.nodes[id] = {id,type,domain,position,
@@ -60,6 +77,10 @@ export async function addToPatch(
   opts: { mountTimeout?: number } = {},
 ): Promise<void> {
   const mountTimeout = opts.mountTimeout ?? 10_000;
+  // Bootstrap the audio engine FIRST (the same __ensureEngine seam spawnPatch
+  // uses) — `__engine()` returns null until it runs, so every engine read
+  // (read('levels'), currentStep, …) would otherwise fail. Idempotent.
+  await ensureEngine(page, mountTimeout);
   await page.evaluate(
     ({ nodes, edges }) => {
       const w = globalThis as unknown as {
@@ -151,6 +172,49 @@ export async function readMixLevelsOverWindow(
     await page.waitForTimeout(pollMs);
   }
   return held;
+}
+
+/**
+ * Move a canvas node so its top-left renders at a known-visible SCREEN point
+ * (via the `__flow.screenToFlowPosition` hook). Additively-added nodes land at
+ * arbitrary flow coords the mount-time fitView never re-fit, so a node can sit
+ * OUTSIDE the viewport — and Playwright can't scroll a CSS-transformed flow node
+ * into view. This pins it on-screen (above any bottom drawer) so its right-click
+ * menu + knobs are actionable.
+ */
+export async function bringNodeOnScreen(page: Page, nodeId: string, screen: { x: number; y: number }): Promise<void> {
+  const flowPos = await page.evaluate(
+    (p) =>
+      (
+        globalThis as unknown as {
+          __flow: { screenToFlowPosition: (q: { x: number; y: number }) => { x: number; y: number } };
+        }
+      ).__flow.screenToFlowPosition(p),
+    screen,
+  );
+  await page.evaluate(
+    ({ id, pos }) => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { position?: { x: number; y: number } }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        const n = w.__patch.nodes[id];
+        if (n) n.position = { x: pos.x, y: pos.y };
+      });
+    },
+    { id: nodeId, pos: flowPos },
+  );
+  await page.waitForFunction(
+    (id) => {
+      const el = document.querySelector(`.svelte-flow__node[data-id="${id}"]`);
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      return r.top >= 0 && r.left >= 0 && r.bottom <= window.innerHeight && r.right <= window.innerWidth && r.width > 0;
+    },
+    nodeId,
+    { timeout: 8_000 },
+  );
 }
 
 /** Read synesthesia read('snapshot') → {levelsA, levelsB}. */
