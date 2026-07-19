@@ -412,6 +412,17 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // Covered by backdraft.test.ts (per-frame trail-buffer math) +
   // backdraft.spec.ts (E2E trail-persistence assertion).
   backdraft: 'animated-video VARIANCE-FLOOR class (cf. bentbox / b3ntb0x): the HDR feedback-trail `out` has a per-frame luma-variance baseline of ~7700 with a HUGE ±4000-6000 per-frame RANGE driven by the ACIDWARP context motion + trail accumulation. Across 3 video snapshots × 2 spawns the mean-of-3 standard error (±several thousand) SWAMPS every input\'s footprint — Δμvar runs 37→1750 and ΔRvar runs 2.7→4060 with NO correlation to which port is driven, so the variance metric can\'t attribute a delta to ANY input (the 22 ports all "passed" once but only on the animation\'s own noise). Whole-module exempt (same class as bentbox). Covered by backdraft.test.ts (per-frame trail-buffer math) + backdraft.spec.ts (E2E trail-persistence with a longer window + spawn-once-perturb pattern)',
+  // GRAINS OF VISION — same animated-video VARIANCE-FLOOR class as backdraft /
+  // bentbox / milkdrop: the granular scatter + feedback trails + reverb tail all
+  // self-animate every frame (temporal grains read a moving history, the feedback
+  // + reverb accumulators evolve), so the `out` (and `grains`) luma-variance
+  // baseline has a large per-frame RANGE that swamps any single-input footprint in
+  // the short 3-snapshot × 2-spawn window — the sweep can't attribute a delta to a
+  // specific CV port. Whole-module exempt (same class as backdraft). Real coverage:
+  // grainsOfVision.test.ts (grain window / hash / temporal-blend / feedback-UV /
+  // reverb-accumulate / composite-mode CPU mirror) + the bespoke
+  // grains-of-vision.spec.ts (real source→grains→OUT non-black + COMPOSITE distinct).
+  grainsOfVision: 'animated-video variance-floor class (cf. backdraft/bentbox/milkdrop): granular scatter + feedback trails + reverb tail self-animate each frame, so the out/grains luma-variance range swamps every input footprint in the short window (no clean per-port delta). Whole-module exempt. Covered by grainsOfVision.test.ts + grains-of-vision.spec.ts',
 
 
   // (treeohvox RE-ENABLED — behavioral-recon #4. The held-note driver

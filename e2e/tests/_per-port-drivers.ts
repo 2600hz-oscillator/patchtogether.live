@@ -1079,6 +1079,32 @@ const DRIVERS: Record<string, PerPortDriver> = {
     note: 'FREEZEFRAME: drive video_in with ACIDWARP.out (gate unpatched = live passthrough); all 5 video outs ring',
   },
 
+  // ───── GRAINS OF VISION — drive in_a so both video outs emit ─────
+  //
+  // GRAINS OF VISION is a granular-video PROCESSOR (in_a → grains → feedback →
+  // reverb → out, plus a raw `grains` tap out), so it needs an upstream source.
+  // Wire ACIDWARP.out into in_a; with in_b UNPATCHED the module runs mono-source
+  // (composite off) and BOTH outputs (out = full chain, grains = the scatter tap)
+  // ring with non-blank frames. The driver's presence bypasses the effect-shape
+  // skip (hasDriverSetup) so the module goes through the normal per-output emit
+  // path (each out routed to VIDEOOUT.in by the sweep). Defaults are visible.
+  grainsOfVision: {
+    upstream: () => ({
+      nodes: [
+        { id: 'drv-acid', type: 'acidwarp', position: { x: 60, y: 60 }, domain: 'video' },
+      ],
+      edges: [
+        {
+          id: 'e-drv-acid',
+          from: { nodeId: 'drv-acid', portId: 'out' },
+          to:   { nodeId: 'sut',      portId: 'in_a' },
+          sourceType: 'video', targetType: 'video',
+        },
+      ],
+    }),
+    note: 'GRAINS OF VISION: drive in_a with ACIDWARP.out (in_b unpatched = mono-source, composite off); both outs (out + grains) ring',
+  },
+
   // ───── OUTLINES — engage the internal clock + a video source ─────
   //
   // OUTLINES is a generator: at rate=0 it spawns ONLY on a gate event, so it
