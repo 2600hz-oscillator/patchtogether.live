@@ -300,6 +300,48 @@ describe('clipplayer SONG-REC punch-out: printed == sounded', () => {
     expect(handle.read!('songCapHit'), 'cap-hit surfaced after the over-cap commit').toBe(1);
     expect(handle.read!('songCapHit'), 'consume-and-clear (like controller.capHit)').toBe(0);
   });
+
+  it('BAKE realized hits: prob=0 note never prints, prob=1 always does (decision 3)', async () => {
+    // A chord: midi 72 @ prob 1 (always fires+prints), midi 60 @ prob 0 (never).
+    // Because the print tee prints EXACTLY the notes emitLaneStep sounded (one
+    // shared dice-roll per lane-step), the printed take must contain 72 every bar
+    // and NEVER 60 — deterministic with no seed injection (0/1 are certain rolls).
+    const probClip: NoteClipRecord = {
+      kind: 'note',
+      steps: [
+        { step: 0, midi: 72, velocity: 100, lengthSteps: 1, prob: 1 },
+        { step: 0, midi: 60, velocity: 100, lengthSteps: 1, prob: 0 },
+      ],
+      lengthSteps: 4,
+      root: 48,
+      loop: true,
+    };
+    seed(
+      { stepDiv: 2, quantize: 0, octave: 0, gateLength: 0.9, snh: 1 },
+      {
+        clips: { [clipIndex(0, 0)]: probClip },
+        queued: lane8(0, 0, null),
+        clipMode: 'session',
+        songRec: { armed: true, mode: 'replace' }, // no recorderId → this client records
+      },
+    );
+    seedTimelorde(1);
+    const ctx = new FakeAudioContext();
+    await build(ctx);
+    run(ctx, 0, 4.4);
+    (livePatch.nodes[NODE_ID]!.data as { songRec?: unknown }).songRec = null;
+    run(ctx, 4.4, 4.5);
+
+    const events = songOf().notes?.['0']?.events ?? [];
+    expect(events.length, 'the prob=1 note printed each bar').toBeGreaterThan(4);
+    expect(events.every((e) => e.midi === 72), 'ONLY the prob=1 note printed').toBe(true);
+    expect(events.some((e) => e.midi === 60), 'the prob=0 note NEVER printed').toBe(false);
+    // The roll is TRANSIENT: the live clip is untouched (never written to the Y.Doc).
+    const liveClip = (livePatch.nodes[NODE_ID]!.data as { clips: Record<string, NoteClipRecord> })
+      .clips[String(clipIndex(0, 0))]!;
+    expect(liveClip.steps.length).toBe(2);
+    expect(liveClip.steps.find((s) => s.midi === 60)?.prob).toBe(0);
+  });
 });
 
 describe('clipplayer SONG playback (authoritative)', () => {

@@ -794,11 +794,22 @@ describe('SINGLE — Clip view', () => {
     expect(__test_mode().singleView).toBe('clip');
   });
 
-  it('FOLLOW (right col) toggles the follow flag', () => {
+  it('FOLLOW moved to SHIFT + its row; the row bare-held is the relocated VEL-hold', () => {
     openClip();
     expect(__test_mode().followOn).toBe(true);
+    // SHIFT + the FOLLOW row toggles FOLLOW (its displaced home — the bare row is
+    // now the VEL modifier, decision #1).
+    sim.cc('L', CC_SHIFT, 127);
     sim.cc('L', sceneCc(C_FOLLOW), 127);
+    sim.cc('L', CC_SHIFT, 0);
     expect(__test_mode().followOn).toBe(false);
+    // Held with NO shift, the FOLLOW row is a MOMENTARY velocity modifier (mirrors
+    // the pair editor's CC_EDIT_VEL) — it must NOT toggle follow.
+    sim.cc('L', sceneCc(C_FOLLOW), 127); // hold VEL
+    expect(__test_mode().velHeld).toBe(true);
+    expect(__test_mode().followOn, 'a bare VEL-hold does not toggle follow').toBe(false);
+    sim.cc('L', sceneCc(C_FOLLOW), 0); // release
+    expect(__test_mode().velHeld).toBe(false);
   });
 
   it('KEYS (right col) enters KEYS for the selected clip', () => {
@@ -833,7 +844,7 @@ describe('SINGLE — Clip view', () => {
     sim.cc('L', CC_SHIFT, 0);
   });
 
-  it('the 8×8 note grid edits notes (toggle on); under shift it cycles velocity', () => {
+  it('the 8×8 note grid edits notes (toggle on); VEL-hold cycles velocity', () => {
     openClip(16);
     // toggle a note ON at the bottom-left editor cell (press + release).
     sim.press('L', 0, 0);
@@ -841,12 +852,23 @@ describe('SINGLE — Clip view', () => {
     const clip = clipsOf()[clipIndex(0, 0)];
     expect(clip.steps.length, 'a note was added').toBeGreaterThan(0);
     const before = clip.steps[0].velocity;
-    // shift → velocity-cycle the same note (HOLD shift).
-    sim.cc('L', CC_SHIFT, 127);
+    // VEL-hold (FOLLOW row held, NO shift) + press → cycle the note's velocity
+    // (the relocated gesture — shift now opens the PROB page instead).
+    sim.cc('L', sceneCc(C_FOLLOW), 127); // hold VEL
     sim.press('L', 0, 0);
-    sim.cc('L', CC_SHIFT, 0);
+    sim.cc('L', sceneCc(C_FOLLOW), 0); // release VEL
     const after = clipsOf()[clipIndex(0, 0)].steps[0].velocity;
-    expect(after, 'shift cycled the velocity').not.toBe(before);
+    expect(after, 'VEL-hold cycled the velocity').not.toBe(before);
+  });
+
+  it('SHIFT + press a placed note opens the PROB page (velocity relocated off shift)', () => {
+    openClip(16);
+    sim.press('L', 0, 0); // place a note
+    sim.release('L', 0, 0);
+    expect(__test_mode().probEditActive).toBe(false);
+    sim.cc('L', CC_SHIFT, 127);
+    sim.press('L', 0, 0); // shift + the note → PROB page (no longer velocity)
+    expect(__test_mode().probEditActive).toBe(true);
   });
 });
 

@@ -116,6 +116,8 @@ import {
   isLane8ArmPad,
   repeatPadOrdinal,
   repeatCountForOrdinal,
+  probPadOrdinal,
+  probLevelForOrdinal,
   paintPermanentTopRow,
   computeSingleGridFrame,
   computeSingleClipFrame,
@@ -141,6 +143,9 @@ import {
   toggleNoteAt,
   setNoteSpan,
   cycleVelocity,
+  setNoteProb,
+  probEff,
+  noteCovering,
   nextScale,
   doubleNoteClip,
   reverseClipSteps,
@@ -328,6 +333,15 @@ let arpNextTime = 0; // performance.now() ms of the next arp step (0 = fire now)
 let gridHeldSingle = false; // the permanent GRID button is physically held
 let repeatViewHeld: { sceneIndex: number; slot: number } | null = null;
 
+// ── PER-NOTE PROBABILITY page (owner-spec'd — mirrors repeatViewHeld). SHIFT +
+// press a note step in the single Clip note editor LATCHES this to that note;
+// the 8×8 becomes the 40-level probability bar (launchpad-map probView). While
+// latched, the NEXT pad tap sets the note's probability (probPadOrdinal →
+// setNoteProb, an undoable edit) and clears the latch (auto-return to the clip
+// view). Reset in resetSingleState. A pure single-unit editor gesture — the
+// pair editor keeps its dedicated CC_EDIT_VEL for velocity.
+let probEditHeld: { step: number; midi: number } | null = null;
+
 // SINGLE-mode Grid DOUBLE-TAP → select the clip + switch to Clip view. The FIRST
 // tap launches IMMEDIATELY (no debounce/latency — owner: never slow a launch); a
 // SECOND tap on the SAME clip within the window instead sets selectedClipIndex +
@@ -507,6 +521,8 @@ function resetSingleState(): void {
   swingMeterDir = 'center';
   gridHeldSingle = false;
   repeatViewHeld = null;
+  probEditHeld = null;
+  velHeld = false; // the relocated single-mode VEL-hold (FOLLOW-row modifier)
   arp = createArpState();
   arpOn = false;
   arpNextTime = 0;
@@ -1629,6 +1645,11 @@ function selectView(nodeId: string, view: SingleView): void {
   if (mode === 'keys') forceExitKeys(nodeId);
   if (mode === 'lengthEdit') mode = 'session';
   if (view === 'clip') editClipIndex = selectedClipIndex;
+  // Clear the note-editor hold modifiers on any view switch so a PROB page /
+  // VEL-hold never "sticks" across views (mirrors the repeat-view GRID-release
+  // clear). Both are momentary single-Clip-view gestures.
+  probEditHeld = null;
+  velHeld = false;
   setSingleViewInternal(view);
   renderLeds();
 }
@@ -2109,13 +2130,41 @@ function handleSingleClip(nodeId: string, e: LaunchpadKeyEvent): void {
   const data = liveData(nodeId);
   const shift = singleShiftEff();
   if (ev.type === 'scene') {
-    if (ev.s !== 1) return;
     const sceneIndex = sceneIndexForCc(ev.cc);
     if (sceneIndex === null) return;
+    // VEL-HOLD (relocated velocity modifier, decision #1): the FOLLOW scene row,
+    // held with NO shift, is a MOMENTARY velocity modifier — mirrors the pair
+    // editor's dedicated CC_EDIT_VEL button (both editors now cycle velocity via
+    // a held VEL modifier). Single mode has no spare top-row CC (the permanent
+    // compass) and a packed right column, so VEL borrows the FOLLOW row; FOLLOW
+    // toggle relocates to SHIFT + this row. Both key edges tracked (hold).
+    if (clipRight(sceneIndex) === 'follow' && !shift) {
+      velHeld = ev.s === 1;
+      renderLeds();
+      return;
+    }
+    if (ev.s !== 1) return;
     handleClipRight(nodeId, sceneIndex, shift, data);
     return;
   }
   if (ev.type !== 'pad') return;
+  // PROB PAGE latched (SHIFT + step opened it): intercept pad presses BEFORE
+  // note-toggle (mirrors the repeat-view interception) — a pad tap on the top-5-
+  // row bar picks the note's probability level via an UNDOABLE write, then clears
+  // the latch (auto-return to the clip view). A bottom-3/out-of-bar tap cancels.
+  if (probEditHeld) {
+    if (ev.s === 1) {
+      const k = probPadOrdinal(ev.x, ev.y);
+      if (k !== null) {
+        const { step, midi } = probEditHeld;
+        const clip = clipAtIndex(liveData(nodeId), selectedClipIndex);
+        if (clip) writeClipSel(nodeId, setNoteProb(clip, step, midi, probLevelForOrdinal(k)));
+      }
+      probEditHeld = null;
+      renderLeds();
+    }
+    return;
+  }
   // Note grid. On press, materialize the clip if needed; on release, only act if
   // a clip already exists (don't create one from a stray release).
   const clip = ev.s === 1 ? ensureSelClip(nodeId) : clipAtIndex(data, selectedClipIndex);
@@ -2123,8 +2172,23 @@ function handleSingleClip(nodeId: string, e: LaunchpadKeyEvent): void {
   const note = editPadToNote(clip, ev.x, ev.y, { rowOffset: editRowOffset, colOffset: shownWindowStart(clip), page: 0 });
   if (!note) return;
   const mono = laneMono(liveData(nodeId), laneOf(selectedClipIndex));
-  // Under shift the note grid is VELOCITY-cycle (tap a note → cycle its velocity).
+  // SHIFT + press a step → open the PER-NOTE PROBABILITY page for the COVERING
+  // note (decision #1 — relocated off the old shift=velocity gesture). Only a
+  // cell that already holds a note opens the page (setNoteProb never creates a
+  // note); an empty cell is a no-op.
   if (shift) {
+    if (ev.s === 1) {
+      const cov = noteCovering(clip, note.step, note.midi);
+      if (cov) {
+        probEditHeld = { step: cov.step, midi: cov.midi };
+        renderLeds();
+      }
+    }
+    return;
+  }
+  // VEL-HOLD + press → cycle the note's velocity (the relocated velocity gesture,
+  // mirroring the pair editor's velHeld path).
+  if (velHeld) {
     if (ev.s === 1) writeClipSel(nodeId, cycleVelocity(clip, note.step, note.midi));
     return;
   }
@@ -3042,7 +3106,13 @@ function renderLeds(): void {
             page: 0,
             playheadStep: selPlayhead(nodeId, data),
             followOn,
-            velEditing: singleShiftEff(),
+            // VEL-hold wash (the relocated velocity modifier), not shift (shift
+            // now opens the PROB page).
+            velEditing: velHeld,
+            // PROB page: while a note is latched, the 8×8 is its probability bar.
+            probView: probEditHeld
+              ? { prob: probEff(noteCovering(clip, probEditHeld.step, probEditHeld.midi)) }
+              : null,
             blinkOn,
           }),
         );
@@ -3143,6 +3213,7 @@ export function __test_mode(): {
   sceneScrollOffset: number;
   gridHeldSingle: boolean;
   repeatViewSlot: number | null;
+  probEditActive: boolean;
   followOn: boolean;
   bufferArmed: boolean;
   bufferKind: CopyBufferKind | null;
@@ -3185,6 +3256,7 @@ export function __test_mode(): {
     sceneScrollOffset,
     gridHeldSingle,
     repeatViewSlot: repeatViewHeld?.slot ?? null,
+    probEditActive: probEditHeld !== null,
     followOn,
     bufferArmed: bufferLoaded(),
     bufferKind: bufferKindOf(),

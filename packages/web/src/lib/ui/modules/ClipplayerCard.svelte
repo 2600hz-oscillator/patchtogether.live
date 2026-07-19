@@ -42,7 +42,9 @@
     toggleNoteAt,
     cycleVelocity,
     noteCovering,
-    velBucket,
+    probEff,
+    probLevelToValue,
+    PROB_LEVELS,
     laneMono,
     laneMuted,
     laneSwing,
@@ -137,6 +139,14 @@
     isEditableTarget,
     type StripAction,
   } from './clipplayer-keyboard';
+  // Per-note PROBABILITY right-click menu — pure logic (level list, labels, the
+  // default-checked level, the write) extracted for unit tests; the DOM stays here.
+  import {
+    probMenuLevels,
+    probPctLabel,
+    probMenuCheckedLevel,
+    applyProbMenuPick,
+  } from './clipplayer-prob-menu';
   // Launchpad-STYLE origin-scoped undo/redo for the card's persistent clip edits
   // (control-strip ↶/↷ = keys 6/7). Owner Q1 decision: scoped (not global Cmd-Z),
   // its own stack; see clip-undo.ts.
@@ -993,11 +1003,19 @@
     const logicalRow = editorRow + (EDIT_ROWS - 1 - displayRow);
     return rowToMidi(logicalRow, clip.root, clip.scale);
   }
-  /** '' for empty, else `vel0`..`vel2` (the note's velocity COLOUR — 3 buckets,
-   *  2 of the 6 levels each, matching the grid's 3 note colours). */
-  function cellVel(clip: NoteClipRecord, step: number, midi: number): string {
+  /** The note cell's FILL colour, driven by PROBABILITY (owner-spec'd, replacing
+   *  the old velocity-blue): '' for an empty cell (the CSS handles dark/beat),
+   *  else WHITE at 100% (an absent `prob` key = always fires) ramping to a
+   *  deeper PURPLE as the firing probability drops. Mirrors the launchpad's
+   *  `probNoteRgb`. Returned as an inline background so it wins over the beat
+   *  guide; the playhead keeps its accent border via the `.playhead` class. */
+  function cellProbFill(clip: NoteClipRecord, step: number, midi: number): string {
     const ev = noteCovering(clip, step, midi);
-    return ev ? `vel${velBucket(ev.velocity)}` : '';
+    if (!ev) return '';
+    const p = probEff(ev);
+    if (p >= 1) return 'hsl(0 0% 96%)'; // 100% → white
+    const l = 30 + Math.round(p * 42); // 30%..72% lightness — brighter = more likely
+    return `hsl(280 72% ${l}%)`;
   }
   function writeClipData(next: NoteClipRecord) {
     // Note/velocity/double edits are persistent + undoable (control-strip ↶/↷).
@@ -1014,12 +1032,40 @@
     const mono = laneMono(dataObj(), laneOf(selectedClip));
     writeClipData(toggleNoteAt(clip, step, midi, { mono }));
   }
-  /** Right-click a cell → cycle its velocity level (mouse equivalent of the
-   *  grid's VEL-hold). Places a note at the default level if the cell is empty. */
+  /** Shift-click a cell → cycle its velocity level (the card's velocity gesture;
+   *  velocity stays editable but is no longer the note's COLOUR channel — that
+   *  now shows PROBABILITY). Places a note at the default level if the cell is
+   *  empty (matches the launchpad VEL-hold). */
   function cycleCellVelocity(step: number, displayRow: number) {
     const clip = clipAt(selectedClip);
     if (!clip) return;
     writeClipData(cycleVelocity(clip, step, midiForDisplayRow(clip, displayRow)));
+  }
+
+  // ── PER-NOTE PROBABILITY menu (right-click a note cell). A card-local context
+  // menu with a "Probability" submenu: 100% (default) … 2.5%, the note's current
+  // level checked. Each item writes setNoteProb via the undoable clip write. Only
+  // opens on a cell that HOLDS a note (setNoteProb never creates one). ──
+  let probMenu = $state<{ x: number; y: number; step: number; midi: number; row: number } | null>(null);
+  /** The note's current level (1..40), or PROB_LEVELS (100%) when it has no note
+   *  / no prob key — so 100% shows as the default-checked item. */
+  function probMenuCurrentLevel(): number {
+    if (!probMenu) return PROB_LEVELS;
+    return probMenuCheckedLevel(clipAt(selectedClip), probMenu.step, probMenu.midi);
+  }
+  function openProbMenu(e: MouseEvent, step: number, displayRow: number) {
+    e.preventDefault();
+    const clip = clipAt(selectedClip);
+    if (!clip) return;
+    const midi = midiForDisplayRow(clip, displayRow);
+    if (!noteCovering(clip, step, midi)) return; // no note here → nothing to set
+    probMenu = { x: e.clientX, y: e.clientY, step, midi, row: displayRow };
+  }
+  function pickProbLevel(level: number) {
+    if (!probMenu) return;
+    const clip = clipAt(selectedClip);
+    if (clip) writeClipData(applyProbMenuPick(clip, probMenu.step, probMenu.midi, level));
+    probMenu = null;
   }
   // --- per-lane MONO toggle (left of each launch-grid row) ---
   function laneIsMono(lane: number): boolean {
@@ -1733,22 +1779,59 @@
               <div class="pr-row">
                 {#each Array(editCols) as _c, step (step)}
                   {@const midi = midiForDisplayRow(editClip, row)}
+                  {@const fill = cellProbFill(editClip, step, midi)}
                   <button
-                    class="cell {cellVel(editClip, step, midi)}"
+                    class="cell"
+                    class:note={fill !== ''}
                     class:playhead={step === playheadCol}
                     class:beat={step % 4 === 0 || row % 4 === 0}
+                    style={fill ? `background:${fill}` : undefined}
                     data-step={step}
                     data-row={row}
                     aria-label={`step ${step} row ${row}`}
-                    title="Click: note on/off (Shift-click: cycle velocity) · Right-click: cycle velocity"
+                    title="Click: note on/off (Shift-click: cycle velocity) · Right-click: probability (colour = purple ∝ probability, white = 100%)"
                     data-testid={`clipplayer-cell-${row}-${step}`}
                     onclick={() => (shiftHeld ? cycleCellVelocity(step, row) : toggleNote(step, row))}
-                    oncontextmenu={(e) => { e.preventDefault(); cycleCellVelocity(step, row); }}
+                    oncontextmenu={(e) => openProbMenu(e, step, row)}
                   ></button>
                 {/each}
               </div>
             {/each}
           </div>
+          {#if probMenu}
+            {@const current = probMenuCurrentLevel()}
+            <!-- PER-NOTE PROBABILITY menu (right-click a note): the Probability
+                 submenu, 100% (default) … 2.5%, the note's level checked. Each
+                 item writes setNoteProb through the undoable clip write. -->
+            <button
+              type="button"
+              class="prob-menu-backdrop"
+              aria-label="close probability menu"
+              onclick={() => (probMenu = null)}
+              oncontextmenu={(e) => { e.preventDefault(); probMenu = null; }}
+            ></button>
+            <div
+              class="prob-menu"
+              role="menu"
+              aria-label="Probability"
+              style={`left:${probMenu.x}px; top:${probMenu.y}px`}
+              data-testid={`clipplayer-prob-menu-${id}`}
+            >
+              <div class="prob-menu-head">Probability ▸</div>
+              <div class="prob-menu-list">
+                {#each probMenuLevels() as level (level)}
+                  <button
+                    class="prob-menu-item"
+                    class:checked={current === level}
+                    role="menuitemcheckbox"
+                    aria-checked={current === level}
+                    data-testid={`clipplayer-prob-item-${level}`}
+                    onclick={() => pickProbLevel(level)}
+                  >{probPctLabel(probLevelToValue(level))}</button>
+                {/each}
+              </div>
+            </div>
+          {/if}
           <!-- Launch the clip you're editing without leaving the editor:
                NOW = jump straight in (immediate, ignores QNT); QUEUE = arm it to
                drop in on the lane's next loop boundary (follows QNT). Both target
@@ -2285,17 +2368,55 @@
      Empty cells only — the vel/playhead rules below (later, same specificity)
      override on a placed note. */
   .cell.beat { background: #242424; }
-  /* note cells by velocity COLOUR — 3 buckets (low/med/high), 2 of the 6
-     velocity levels each, matching the grid's 3 note colours. A placed note
-     (even 0%) always shows a colour; only an empty cell is dark. */
-  .cell.vel0 { background: hsl(200 55% 32%); }
-  .cell.vel1 { background: hsl(200 75% 48%); }
-  .cell.vel2 { background: hsl(200 92% 64%); }
-  /* the playhead lights the whole column so you see the tempo pulse cross the clip */
+  /* note cells are coloured by PROBABILITY via an inline background (see
+     cellProbFill): WHITE at 100%, deepening to PURPLE as the firing chance
+     drops. The inline style wins over .beat; the playhead border still reads. */
+  .cell.note { border-color: #0d0d0d; }
+  /* the playhead lights the whole column so you see the tempo pulse cross the
+     clip; a note keeps its prob colour (inline) but gains the accent border. */
   .cell.playhead { background: rgba(108, 170, 255, 0.22); border-color: var(--accent, #6cf); }
-  .cell.vel0.playhead,
-  .cell.vel1.playhead,
-  .cell.vel2.playhead { background: hsl(200 95% 70%); }
+  .cell.note.playhead { border-color: var(--accent, #6cf); }
+
+  /* PER-NOTE PROBABILITY right-click menu (card-local). */
+  .prob-menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: transparent;
+    border: none;
+    padding: 0;
+    cursor: default;
+  }
+  .prob-menu {
+    position: fixed;
+    z-index: 41;
+    min-width: 84px;
+    max-height: 260px;
+    overflow-y: auto;
+    background: #1b1b1b;
+    border: 1px solid var(--border, #333);
+    border-radius: 4px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+    padding: 3px;
+    font-size: 11px;
+  }
+  .prob-menu-head { padding: 3px 8px 4px; color: #9a8fb0; font-weight: 600; }
+  .prob-menu-list { display: flex; flex-direction: column; }
+  .prob-menu-item {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 3px 8px;
+    background: none;
+    border: none;
+    color: #ddd;
+    text-align: left;
+    cursor: pointer;
+    border-radius: 3px;
+  }
+  .prob-menu-item:hover { background: hsl(280 45% 32%); }
+  .prob-menu-item.checked { background: hsl(280 55% 40%); color: #fff; }
+  .prob-menu-item.checked::after { content: '✓'; }
   /* One stacked header cell per channel COLUMN: the COLOR swatch (top) over the
      MONO/POLY toggle (bottom). 28px wide to align with the pads below; the
      --lane-color set here is inherited by both children. */

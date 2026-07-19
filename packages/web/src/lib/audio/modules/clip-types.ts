@@ -1332,6 +1332,27 @@ export function notesStartingAt(clip: NoteClipRecord, step: number): NoteEvent[]
   return clip.steps.filter((e) => e.step === step);
 }
 
+/**
+ * The notes that START on `step` AND WIN their per-trigger probability dice-roll
+ * — the single source of "what actually fires this pass". The roll is PER-NOTE
+ * (probEff >= 1 always fires; else `rng() < probEff`), so a chord PARTIALLY
+ * fires. `rng` defaults to `Math.random` (live playback); tests inject a seeded
+ * `mulberry32` for deterministic pass/fail counts. Reference: Kria's
+ * `prob >= 1 || Math.random() < prob`. PURE — never mutates the clip; the caller
+ * (clipplayer's tick loop) rolls ONCE per lane-step and feeds BOTH the audio
+ * scheduling AND the song-print buffer so the printed take == what sounded.
+ */
+export function notesFiringAt(
+  clip: NoteClipRecord,
+  step: number,
+  rng: () => number = Math.random,
+): NoteEvent[] {
+  return notesStartingAt(clip, step).filter((ev) => {
+    const p = probEff(ev);
+    return p >= 1 || rng() < p;
+  });
+}
+
 export interface StepLanes {
   /** Up to POLY_CHANNEL_PAIRS lanes of {pitch V/oct, gate}. */
   lanes: { pitch: number; gate: 0 | 1 }[];
@@ -1349,8 +1370,24 @@ export interface StepLanes {
  * Pitch uses the codebase V/oct convention (midiToVOct). Chords (multiple notes
  * on the same step) fill consecutive lanes, capped at POLY_CHANNEL_PAIRS.
  */
-export function lanesForStep(clip: NoteClipRecord, step: number): StepLanes {
-  const starting = notesStartingAt(clip, step).slice(0, POLY_CHANNEL_PAIRS);
+export function lanesForStep(
+  clip: NoteClipRecord,
+  step: number,
+  rng: () => number = Math.random,
+): StepLanes {
+  return lanesFromFiring(notesFiringAt(clip, step, rng));
+}
+
+/**
+ * Build the poly output lanes + velocity + gate width from an ALREADY-ROLLED
+ * firing set (the surviving notes for this step). Split out of `lanesForStep`
+ * so the clipplayer tick can roll the dice ONCE (`notesFiringAt`) and feed the
+ * SAME survivors to both the audio scheduling and the print buffer (decision 3:
+ * printed == sounded). Chords fill consecutive lanes, capped at
+ * POLY_CHANNEL_PAIRS. PURE.
+ */
+export function lanesFromFiring(firing: NoteEvent[]): StepLanes {
+  const starting = firing.slice(0, POLY_CHANNEL_PAIRS);
   const lanes: { pitch: number; gate: 0 | 1 }[] = [];
   let velocity = 0;
   let gateSteps = 1;
@@ -1582,6 +1619,71 @@ export function noteCovering(
   return clip.steps.find(
     (e) => e.midi === midi && e.step <= step && step < e.step + (e.lengthSteps ?? 1),
   );
+}
+
+// ---------------------------------------------------------------------------
+// PER-NOTE PROBABILITY (owner-spec'd). Each note carries an optional firing
+// PROBABILITY (`NoteEvent.prob`, 0..1, default 1). At playback a per-trigger
+// dice-roll (notesFiringAt) gates whether the note sounds. The `prob` KEY IS
+// DELETED at ≥100% so "100% = the default" falls out with zero special-casing
+// and clips authored before this feature stay byte-identical (an absent key
+// reads as 1 via `probEff`). Lives entirely in node.data → NO PortDef/ParamDef,
+// schema-version, contract-lock or attest churn.
+//
+// The "40 levels × 2.5%" is a UI affordance only (the LED count bar + the card
+// menu); storage keeps the raw 0..1 float, coerced/clamped in coerceNoteEvent.
+// ---------------------------------------------------------------------------
+/** UI probability step — 2.5% per level. Storage stays a raw 0..1 float. */
+export const PROB_STEP = 0.025;
+/** Number of UI probability levels (40): level 1 = 2.5% … level 40 = 100%. */
+export const PROB_LEVELS = 40;
+/** UI level (1..PROB_LEVELS) → its 0..1 value (n*PROB_STEP; 40 → exactly 1). */
+export function probLevelToValue(n: number): number {
+  const lvl = Math.max(1, Math.min(PROB_LEVELS, Math.round(n)));
+  return lvl === PROB_LEVELS ? 1 : lvl * PROB_STEP;
+}
+/** A 0..1 probability → its UI level (1..PROB_LEVELS). Rounds to the nearest
+ *  2.5% level, clamped to ≥1 (a 0% note still shows level 1 so it stays visible). */
+export function valueToProbLevel(p: number): number {
+  const v = Math.max(0, Math.min(1, Number.isFinite(p) ? p : 1));
+  return Math.max(1, Math.min(PROB_LEVELS, Math.round(v / PROB_STEP)));
+}
+/** The EFFECTIVE firing probability of a note event — the single source used by
+ *  playback (the dice-roll), the LED paint AND the card cell colour. An absent
+ *  `prob` key (the common case + every legacy clip) reads as 1 (always fires). */
+export function probEff(ev: { prob?: number } | undefined): number {
+  const p = ev?.prob;
+  return typeof p === 'number' && Number.isFinite(p) ? Math.max(0, Math.min(1, p)) : 1;
+}
+
+/**
+ * Set the firing PROBABILITY of the note COVERING (step, midi) — the ONE write
+ * seam the Launchpad PROB page AND the card's Probability menu share (mirrors
+ * `cycleVelocity`). Pure: returns a NEW clip (callers persist via the in-place
+ * Y discipline). NEVER creates or removes a note (a plain tap does that) — a
+ * press on an empty cell is a no-op (the SAME reference is returned so the
+ * caller can skip the write). At ≥100% the `prob` KEY IS DELETED (not set to 1)
+ * so "100% = white" falls out for free and old clips round-trip byte-identical.
+ */
+export function setNoteProb(
+  clip: NoteClipRecord,
+  step: number,
+  midi: number,
+  prob: number,
+): NoteClipRecord {
+  const cov = noteCovering(clip, step, midi);
+  if (!cov) return clip; // no note here → no-op (never create)
+  const p = Math.max(0, Math.min(1, Number.isFinite(prob) ? prob : 1));
+  const steps = clip.steps.map((e) => {
+    if (e.step !== cov.step || e.midi !== cov.midi) return e;
+    if (p >= 1) {
+      // DELETE the key at 100% (the default) — old clips stay byte-identical.
+      const { prob: _drop, ...rest } = e;
+      return rest;
+    }
+    return { ...e, prob: p };
+  });
+  return { ...clip, steps };
 }
 
 /**

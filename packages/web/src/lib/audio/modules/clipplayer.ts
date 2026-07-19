@@ -47,8 +47,9 @@ import {
 import { drainAudition, clearAudition } from './clip-audition';
 import {
   readClip,
-  lanesForStep,
-  notesStartingAt,
+  notesFiringAt,
+  lanesFromFiring,
+  type NoteEvent,
   DEFAULT_VELOCITY,
   clipIndex,
   CLIP_LANES,
@@ -1171,9 +1172,16 @@ export const clipplayerDef: AudioModuleDef = {
       return changed;
     }
 
-    function emitLaneStep(L: number, idx: number, atTime: number, stepDur: number): void {
+    // Emit lane L's step + RETURN the notes that fired (won their probability
+    // dice-roll) — the SAME survivors the caller feeds to the song-print buffer,
+    // so the printed take equals what sounded (decision 3). Returns [] when the
+    // lane emitted nothing (muted / live-audition / no note clip / empty step).
+    // The roll runs HERE (once per lane-step, live Math.random) and only feeds
+    // scheduled Web Audio params — NEVER written back to the Y.Doc (transient;
+    // the CV-modulation write-storm lesson).
+    function emitLaneStep(L: number, idx: number, atTime: number, stepDur: number): NoteEvent[] {
       const ln = lanes[L];
-      if (ln.active === null) return;
+      if (ln.active === null) return [];
       // MUTE — the lane KEEPS advancing (push the step so laneDisplayStep + the
       // launchpad record-capture still track it, staying locked to the transport)
       // but emits NO audio. The falling edge was already scheduled when mute
@@ -1181,7 +1189,7 @@ export const clipplayerDef: AudioModuleDef = {
       if (laneMuted(liveData(), L)) {
         ln.sched.push({ t: atTime, idx });
         if (ln.sched.length > 32) ln.sched.shift();
-        return;
+        return [];
       }
       // LIVE AUDITION owns the lane while KEYS keys are held: advance the visual
       // playhead (push to sched so the launchpad record capture still sees the
@@ -1191,11 +1199,15 @@ export const clipplayerDef: AudioModuleDef = {
       if (ln.alloc.activeCount() > 0) {
         ln.sched.push({ t: atTime, idx });
         if (ln.sched.length > 32) ln.sched.shift();
-        return;
+        return [];
       }
       const clip = readClip(liveData(), clipIndex(ln.active, L));
-      if (!clip || clip.kind !== 'note') return;
-      const r = lanesForStep(clip, idx);
+      if (!clip || clip.kind !== 'note') return [];
+      // Roll the per-note probability dice ONCE for this lane-step; the survivors
+      // drive BOTH the audio scheduling below AND the print buffer (via the
+      // return value). A chord partially fires (per-note roll).
+      const firing = notesFiringAt(clip, idx);
+      const r = lanesFromFiring(firing);
       const octave = readParam('octave', 0);
       const gateFrac = readParam('gateLength', 0.9);
       // A held/tied note (lengthSteps > 1) keeps its gate HIGH the whole span
@@ -1240,6 +1252,7 @@ export const clipplayerDef: AudioModuleDef = {
         if (!snh) ln.lastVOct = voiced[0]?.pitch ?? 0;
         ln.lastGate = 0;
       }
+      return firing; // the notes that SOUNDED — fed to the print buffer
     }
 
     /**
@@ -1796,14 +1809,20 @@ export const clipplayerDef: AudioModuleDef = {
             // grid (byte-identical to the un-swung schedule). The grid recurrence
             // (nextStepTime += laneDur) is unchanged so pairs stay beat-locked.
             const emitAt = ln.nextStepTime + swingStepOffset(ln.stepIndex, swing, laneDur);
-            emitLaneStep(L, ln.stepIndex, emitAt, laneDur);
-            // SONG PRINT TEE — capture the EMITTED notes (what SOUNDED: post
-            // rate/div/swing/mono/S&H) at their absolute song-beat, on the
-            // recorder client only, into the per-lane buffer (committed at the
-            // bar cadence above). Mirrors emitLaneStep's audible guards (muted /
-            // live-audition lanes emit nothing → capture nothing) and its gate
-            // math (held vs staccato) so the printed gate width == what sounded.
-            // OCT is NOT baked (a live output transform, re-applied at playback).
+            // The notes that FIRED this lane-step (won their probability roll) —
+            // emitLaneStep rolled the dice ONCE and scheduled exactly these; we
+            // print the SAME survivors so the printed take == what sounded
+            // (decision 3). BAKE realized hits: a probabilistic note that lost
+            // its roll this pass is neither sounded nor printed.
+            const firedNotes = emitLaneStep(L, ln.stepIndex, emitAt, laneDur);
+            // SONG PRINT TEE — capture the FIRED notes (what SOUNDED: post
+            // rate/div/swing/mono/S&H/probability) at their absolute song-beat,
+            // on the recorder client only, into the per-lane buffer (committed at
+            // the bar cadence above). Mirrors emitLaneStep's audible guards
+            // (muted / live-audition lanes emit nothing → capture nothing) and
+            // its gate math (held vs staccato) so the printed gate width == what
+            // sounded. OCT is NOT baked (a live output transform, re-applied at
+            // playback).
             if (
               songRecActive &&
               songNoteEnabledBuf[L] &&
@@ -1811,7 +1830,7 @@ export const clipplayerDef: AudioModuleDef = {
               ln.alloc.activeCount() === 0 &&
               activeClip?.kind === 'note'
             ) {
-              const starting = notesStartingAt(activeClip, ln.stepIndex).slice(0, POLY_CHANNEL_PAIRS);
+              const starting = firedNotes.slice(0, POLY_CHANNEL_PAIRS);
               if (starting.length) {
                 const secPerBeatCap = 60 / transportBpm();
                 if (secPerBeatCap > 0) {
