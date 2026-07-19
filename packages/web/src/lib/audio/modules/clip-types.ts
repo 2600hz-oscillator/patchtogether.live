@@ -178,7 +178,7 @@ export interface NoteEvent {
   midi: number; // MIDI note int (c4 = 60), same convention as note-entry.ts
   velocity?: number; // 0..127 (default DEFAULT_VELOCITY)
   lengthSteps?: number; // gate width in steps (default 1)
-  prob?: number; // 0..1 per-step probability (default 1)
+  prob?: number; // 0..1 own firing probability; UNSET ⇒ follow the clip default (else 1)
 }
 
 export interface ClipBase {
@@ -203,6 +203,15 @@ export interface NoteClipRecord extends ClipBase {
    *  clipDivIndex in clip-clock.ts). Absent = follow the per-lane rate. Set by
    *  the Launchpad Grid-shift "Clip Div". */
   div?: number;
+  /** CLIP-DEFAULT firing PROBABILITY (0..1) used by EVERY note that has not had
+   *  its own `prob` set. Precedence at playback + paint: a note's OWN `prob` (once
+   *  set, incl 1.0) is used, else this clip default, else 1 (see `noteEffProb`).
+   *  The CLIP-level key is DELETED at ≥100% (a clip at 100% is the top default —
+   *  nothing higher to inherit) so old clips stay byte-identical; a note's own
+   *  prob, by contrast, stores 1.0. Set by the Launchpad clip-PROB page (SHIFT +
+   *  a Grid clip pad) + the card's Clip-probability right-click menu. node.data
+   *  only — NO contract/attest churn. */
+  defaultProb?: number;
 }
 
 /** LATER — audio-loop clip (reuses SAMSLOOP's bytes discipline). */
@@ -963,6 +972,12 @@ export function coerceClipRecord(raw: unknown): ClipRecord | null {
     // Per-clip divider: clamp a finite value to a valid RATE index; missing /
     // non-numeric ⇒ undefined (the clip follows its lane's rate).
     if (typeof r.div === 'number' && Number.isFinite(r.div)) out.div = coerceRateIndex(r.div);
+    // CLIP-DEFAULT probability: clamp a finite value to 0..1; missing / non-
+    // numeric ⇒ undefined (no default → notes fire at their own prob else 1).
+    // Faithful (keeps a stored 1); the delete-at-≥1 lives in setClipDefaultProb.
+    if (typeof r.defaultProb === 'number' && Number.isFinite(r.defaultProb)) {
+      out.defaultProb = Math.max(0, Math.min(1, r.defaultProb));
+    }
     if (typeof r.color === 'number') out.color = r.color;
     if (typeof r.name === 'string') out.name = r.name;
     if (typeof r.gain === 'number') out.gain = r.gain;
@@ -1332,6 +1347,32 @@ export function notesStartingAt(clip: NoteClipRecord, step: number): NoteEvent[]
   return clip.steps.filter((e) => e.step === step);
 }
 
+/**
+ * The notes that START on `step` AND WIN their per-trigger probability dice-roll
+ * — the single source of "what actually fires this pass". The roll is PER-NOTE
+ * on the EFFECTIVE probability (`noteEffProb` = the note's own `prob` else the
+ * clip's `defaultProb` else 1; ≥1 always fires, else `rng() < p`), so a chord
+ * PARTIALLY fires and the clip default applies to every note without its own
+ * `prob`. `rng`
+ * defaults to `Math.random` (live playback); tests inject a seeded `mulberry32`
+ * for deterministic pass/fail counts. Reference: Kria's
+ * `prob >= 1 || Math.random() < prob`. PURE — never mutates the clip; the caller
+ * (clipplayer's tick loop) rolls ONCE per lane-step and feeds BOTH the audio
+ * scheduling AND the song-print buffer so the printed take == what sounded.
+ * (A note whose own `prob` is set to 1.0 always fires — it sits above a lower
+ * clip default.)
+ */
+export function notesFiringAt(
+  clip: NoteClipRecord,
+  step: number,
+  rng: () => number = Math.random,
+): NoteEvent[] {
+  return notesStartingAt(clip, step).filter((ev) => {
+    const p = noteEffProb(clip, ev);
+    return p >= 1 || rng() < p;
+  });
+}
+
 export interface StepLanes {
   /** Up to POLY_CHANNEL_PAIRS lanes of {pitch V/oct, gate}. */
   lanes: { pitch: number; gate: 0 | 1 }[];
@@ -1349,8 +1390,24 @@ export interface StepLanes {
  * Pitch uses the codebase V/oct convention (midiToVOct). Chords (multiple notes
  * on the same step) fill consecutive lanes, capped at POLY_CHANNEL_PAIRS.
  */
-export function lanesForStep(clip: NoteClipRecord, step: number): StepLanes {
-  const starting = notesStartingAt(clip, step).slice(0, POLY_CHANNEL_PAIRS);
+export function lanesForStep(
+  clip: NoteClipRecord,
+  step: number,
+  rng: () => number = Math.random,
+): StepLanes {
+  return lanesFromFiring(notesFiringAt(clip, step, rng));
+}
+
+/**
+ * Build the poly output lanes + velocity + gate width from an ALREADY-ROLLED
+ * firing set (the surviving notes for this step). Split out of `lanesForStep`
+ * so the clipplayer tick can roll the dice ONCE (`notesFiringAt`) and feed the
+ * SAME survivors to both the audio scheduling and the print buffer (decision 3:
+ * printed == sounded). Chords fill consecutive lanes, capped at
+ * POLY_CHANNEL_PAIRS. PURE.
+ */
+export function lanesFromFiring(firing: NoteEvent[]): StepLanes {
+  const starting = firing.slice(0, POLY_CHANNEL_PAIRS);
   const lanes: { pitch: number; gate: 0 | 1 }[] = [];
   let velocity = 0;
   let gateSteps = 1;
@@ -1582,6 +1639,151 @@ export function noteCovering(
   return clip.steps.find(
     (e) => e.midi === midi && e.step <= step && step < e.step + (e.lengthSteps ?? 1),
   );
+}
+
+// ---------------------------------------------------------------------------
+// PER-NOTE PROBABILITY (owner-spec'd). EVERY note has a firing probability,
+// always: while a note's `prob` key is UNSET (a brand-new note that has never
+// been set) it USES THE CLIP DEFAULT (else 1); once SET it uses THAT value in
+// ALL cases — including exactly 1.0, which fires 100% and thereby sits ABOVE a
+// lower clip default. There is no "override" concept and no special-casing of
+// 100%: setting a note stores the clamped 0..1 value (`setNoteProb`), reading it
+// is `noteEffProb` (note's own `prob` else the clip default else 1). An absent
+// key on a legacy clip reads as 1 (always fires) via `probEff`/`clipDefaultProbEff`.
+// Lives entirely in node.data → NO PortDef/ParamDef, schema-version,
+// contract-lock or attest churn.
+//
+// The "40 levels × 2.5%" is a UI affordance only (the LED count bar + the card
+// menu); storage keeps the raw 0..1 float, coerced/clamped in coerceNoteEvent.
+// ---------------------------------------------------------------------------
+/** UI probability step — 2.5% per level. Storage stays a raw 0..1 float. */
+export const PROB_STEP = 0.025;
+/** Number of UI probability levels (40): level 1 = 2.5% … level 40 = 100%. */
+export const PROB_LEVELS = 40;
+/** UI level (1..PROB_LEVELS) → its 0..1 value (n*PROB_STEP; 40 → exactly 1). */
+export function probLevelToValue(n: number): number {
+  const lvl = Math.max(1, Math.min(PROB_LEVELS, Math.round(n)));
+  return lvl === PROB_LEVELS ? 1 : lvl * PROB_STEP;
+}
+/** A 0..1 probability → its UI level (1..PROB_LEVELS). Rounds to the nearest
+ *  2.5% level, clamped to ≥1 (a 0% note still shows level 1 so it stays visible). */
+export function valueToProbLevel(p: number): number {
+  const v = Math.max(0, Math.min(1, Number.isFinite(p) ? p : 1));
+  return Math.max(1, Math.min(PROB_LEVELS, Math.round(v / PROB_STEP)));
+}
+/** The EFFECTIVE firing probability of a note event — the single source used by
+ *  playback (the dice-roll), the LED paint AND the card cell colour. An absent
+ *  `prob` key (the common case + every legacy clip) reads as 1 (always fires). */
+export function probEff(ev: { prob?: number } | undefined): number {
+  const p = ev?.prob;
+  return typeof p === 'number' && Number.isFinite(p) ? Math.max(0, Math.min(1, p)) : 1;
+}
+
+/**
+ * Set the firing PROBABILITY of the note COVERING (step, midi) — the ONE write
+ * seam the Launchpad PROB page AND the card's Probability menu share (mirrors
+ * `cycleVelocity`). Pure: returns a NEW clip (callers persist via the in-place
+ * Y discipline). NEVER creates or removes a note (a plain tap does that) — a
+ * press on an empty cell is a no-op (the SAME reference is returned so the
+ * caller can skip the write). STORES the clamped 0..1 value in ALL cases,
+ * INCLUDING exactly 1.0 (no delete-at-100%, no special-casing): a note SET to
+ * 100% keeps a stored `prob` of 1 so it fires 100% and sits above a lower clip
+ * default (the pin). "Unset" = a note that has never been set (no `prob` key) —
+ * it follows the clip default. A legacy note that never had a key stays that way
+ * until it is set here.
+ */
+export function setNoteProb(
+  clip: NoteClipRecord,
+  step: number,
+  midi: number,
+  prob: number,
+): NoteClipRecord {
+  const cov = noteCovering(clip, step, midi);
+  if (!cov) return clip; // no note here → no-op (never create)
+  const p = Math.max(0, Math.min(1, Number.isFinite(prob) ? prob : 1));
+  const steps = clip.steps.map((e) =>
+    e.step === cov.step && e.midi === cov.midi ? { ...e, prob: p } : e,
+  );
+  return { ...clip, steps };
+}
+
+// ---------------------------------------------------------------------------
+// CLIP-DEFAULT PROBABILITY (owner-spec'd — extends per-note). A note clip carries
+// an optional DEFAULT firing probability (`NoteClipRecord.defaultProb`, 0..1)
+// used by EVERY note that has NOT had its OWN `prob` set. PRECEDENCE: a note's
+// OWN prob (once set, incl 1.0) is used → else the clip default → else 1. The
+// clip-level key is DELETED at ≥100% (a clip at 100% is just the top default;
+// there is no higher level to inherit) so a legacy clip stays byte-identical —
+// NOTE `prob`, by contrast, stores 1.0 (there IS a lower level — the clip
+// default — to sit above). node.data only → NO PortDef/ParamDef, schema-version,
+// contract-lock or attest churn.
+// ---------------------------------------------------------------------------
+/** The clip's DEFAULT firing probability — its clamped `defaultProb`, or 1 when
+ *  absent/invalid (every note that follows the clip always fires). PURE. */
+export function clipDefaultProbEff(clip: { defaultProb?: number } | undefined): number {
+  const p = clip?.defaultProb;
+  return typeof p === 'number' && Number.isFinite(p) ? Math.max(0, Math.min(1, p)) : 1;
+}
+
+/** The EFFECTIVE firing probability of a note = its OWN `prob` if set (incl 1.0),
+ *  ELSE the clip's `defaultProb` if set, ELSE 1. The SINGLE source playback (the
+ *  dice-roll), the LED paint AND the card cell colour all read. A note with its
+ *  own prob set therefore uses THAT value and is independent of the clip default.
+ *  PURE. */
+export function noteEffProb(
+  clip: { defaultProb?: number } | undefined,
+  ev: { prob?: number } | undefined,
+): number {
+  const own = ev?.prob;
+  if (typeof own === 'number' && Number.isFinite(own)) return Math.max(0, Math.min(1, own));
+  return clipDefaultProbEff(clip);
+}
+
+/** WHERE a note's effective probability comes from: 'note' (its own `prob` key
+ *  is set), 'clip' (follows the clip default, no own key), or 'none' (neither →
+ *  fires at 1). Drives the SOURCE-AWARE colour (purple = the note's own prob,
+ *  orange = following the clip default, white at effective 100%). PURE. */
+export type ProbSource = 'note' | 'clip' | 'none';
+export function probSource(
+  clip: { defaultProb?: number } | undefined,
+  ev: { prob?: number } | undefined,
+): ProbSource {
+  if (ev && typeof ev.prob === 'number' && Number.isFinite(ev.prob)) return 'note';
+  if (clip && typeof clip.defaultProb === 'number' && Number.isFinite(clip.defaultProb)) return 'clip';
+  return 'none';
+}
+
+/** The colour BUCKET a note paints in — the surface-agnostic decision the
+ *  Launchpad LED (`noteProbRgb`) AND the card cell (`cellProbFill`) both share:
+ *  WHITE at effective ≥1, else PURPLE for a note using its own prob or ORANGE for
+ *  a note following the clip default. (When effective < 1 the source is never
+ *  'none', so the fallthrough is exhaustive.) PURE. */
+export type ProbColorBucket = 'white' | 'purple' | 'orange';
+export function probColorBucket(
+  clip: { defaultProb?: number } | undefined,
+  ev: { prob?: number } | undefined,
+): ProbColorBucket {
+  if (noteEffProb(clip, ev) >= 1) return 'white';
+  return probSource(clip, ev) === 'note' ? 'purple' : 'orange';
+}
+
+/**
+ * Set the clip's DEFAULT firing PROBABILITY — the ONE write seam the Launchpad
+ * clip-PROB page (SHIFT + a Grid clip pad) AND the card's Clip-probability menu
+ * share (mirrors `setNoteProb`). Pure: returns a NEW clip (callers persist via
+ * the in-place Y discipline). At ≥100% the `defaultProb` KEY IS DELETED (not set
+ * to 1) so "100% = white" falls out for free and old clips round-trip byte-
+ * identical; setting 100% on a clip that already has no default returns the SAME
+ * reference (the caller can skip the write). NEVER touches the note steps.
+ */
+export function setClipDefaultProb(clip: NoteClipRecord, prob: number): NoteClipRecord {
+  const p = Math.max(0, Math.min(1, Number.isFinite(prob) ? prob : 1));
+  if (p >= 1) {
+    if (clip.defaultProb == null) return clip; // already the default → no-op
+    const { defaultProb: _drop, ...rest } = clip;
+    return rest as NoteClipRecord;
+  }
+  return { ...clip, defaultProb: p };
 }
 
 /**

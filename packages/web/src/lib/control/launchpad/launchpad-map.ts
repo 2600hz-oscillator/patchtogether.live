@@ -67,8 +67,12 @@ import {
   laneMono,
   laneMuted,
   laneColorEff,
-  velBucket,
   noteCovering,
+  noteEffProb,
+  probColorBucket,
+  valueToProbLevel,
+  probLevelToValue,
+  PROB_LEVELS,
   SCALE_NAMES,
   type CopyBufferKind,
 } from '$lib/audio/modules/clip-types';
@@ -161,6 +165,52 @@ export const RGB_NOTE_BY_VEL: readonly Rgb[] = [
   [37, 62, 96], // med
   [63, 91, 127], // high
 ];
+// NOTE COLOUR = PROBABILITY (owner-spec'd, replaces the velocity-blue above as
+// the note channel), SOURCE-AWARE: a note using its OWN prob ramps PURPLE ∝ its
+// firing probability; a note FOLLOWING the CLIP DEFAULT ramps ORANGE ∝ the
+// default; either goes WHITE at effective 100%. `noteProbRgb(clip, ev)` is the
+// single source both the launchpad note paint AND (mirrored) the card cell fill
+// derive from. Pure white reads as "always fires"; a dimmer purple/orange = a
+// lower dice-roll chance.
+export const RGB_WHITE: Rgb = [127, 127, 127]; // 100% probability — always fires
+export const RGB_PROB_PURPLE: Rgb = [110, 30, 127]; // note's-own-prob base (scaled by prob)
+export const RGB_PROB_ORANGE: Rgb = [127, 60, 0]; // clip-DEFAULT source base (scaled by prob)
+/** A note's-own-prob LED colour from its EFFECTIVE probability: WHITE at ≥100%,
+ *  else the base purple scaled by a floor-lifted ramp (so even a 2.5% note stays
+ *  legible, never near-black). PURE — the paint truth the frame + docs both use. */
+export function probNoteRgb(prob: number): Rgb {
+  if (prob >= 1) return RGB_WHITE;
+  const ramp = 0.3 + 0.7 * Math.max(0, Math.min(1, prob)); // 0.3..~1.0
+  return scaleRgb(RGB_PROB_PURPLE, ramp);
+}
+/** A clip-DEFAULT LED colour from its EFFECTIVE probability: WHITE at ≥100%, else
+ *  the base ORANGE scaled by the SAME floor-lifted ramp as the purple note ramp
+ *  (dim at 2.5% → bright at 97.5%), so a note following the default reads ORANGE
+ *  vs a note using its own prob (purple). Brightness is monotonic in prob (same
+ *  as purple). PURE. */
+export function probNoteRgbOrange(prob: number): Rgb {
+  if (prob >= 1) return RGB_WHITE;
+  const ramp = 0.3 + 0.7 * Math.max(0, Math.min(1, prob)); // 0.3..~1.0
+  return scaleRgb(RGB_PROB_ORANGE, ramp);
+}
+/** SOURCE-AWARE note LED colour, the single truth for the note channel: WHITE at
+ *  effective ≥1, PURPLE for a note using its own prob (`ev.prob` set), ORANGE for
+ *  a note following the clip default (`clip.defaultProb` set, no own key).
+ *  Effective prob = note prob else clip default else 1. PURE. */
+export function noteProbRgb(
+  clip: { defaultProb?: number } | undefined,
+  ev: { prob?: number } | undefined,
+): Rgb {
+  const eff = noteEffProb(clip, ev);
+  switch (probColorBucket(clip, ev)) {
+    case 'white':
+      return RGB_WHITE;
+    case 'orange':
+      return probNoteRgbOrange(eff);
+    default:
+      return probNoteRgb(eff);
+  }
+}
 export const RGB_NOTE_PLAYHEAD: Rgb = [127, 105, 29]; // a note under the playhead (yellow boost)
 export const RGB_PLAYHEAD_WASH: Rgb = [40, 33, 9]; // the moving playhead column wash (amber, dim)
 export const RGB_ROOT_GUIDE: Rgb = [10, 12, 16]; // faint marker on root-pitch-class rows
@@ -926,6 +976,11 @@ export interface REditOpts {
    *  so the single editor's FOLLOW lives on the scene column). Pair mode leaves
    *  this unset → row 4 stays dark, exactly as before. */
   followSceneButton?: boolean;
+  /** PER-NOTE PROBABILITY page (SHIFT + press a step): when set the 8×8 becomes
+   *  the 40-level probability bar for the held note (top 5 rows lit 1..N purple,
+   *  bottom 3 dark) instead of the note grid. `prob` = the note's current 0..1
+   *  firing probability. Absent/null = the normal note editor. */
+  probView?: { prob: number } | null;
 }
 
 export function computeREditFrame(clip: NoteClipRecord, opts: REditOpts = {}): LaunchpadFrame {
@@ -935,24 +990,33 @@ export function computeREditFrame(clip: NoteClipRecord, opts: REditOpts = {}): L
   const page = opts.page ?? 0;
   const playheadStep = opts.playheadStep ?? -1;
   const rootPc = ((clip.root % 12) + 12) % 12;
-  for (let y = 0; y < EDIT_ROWS; y++) {
-    for (let x = 0; x < EDIT_COLS; x++) {
-      const note = editPadToNote(clip, x, y, { rowOffset, colOffset, page });
-      const index = padNote(x, y);
-      if (!note) {
-        put(frame, index, RGB_OFF);
-        continue;
-      }
-      const onPlayhead = note.step === playheadStep;
-      const cov = noteCovering(clip, note.step, note.midi);
-      if (cov) {
-        put(frame, index, onPlayhead ? RGB_NOTE_PLAYHEAD : RGB_NOTE_BY_VEL[velBucket(cov.velocity)]);
-      } else if (onPlayhead) {
-        put(frame, index, RGB_PLAYHEAD_WASH);
-      } else if (((note.midi % 12) + 12) % 12 === rootPc) {
-        put(frame, index, RGB_ROOT_GUIDE);
-      } else {
-        put(frame, index, RGB_OFF);
+  if (opts.probView) {
+    // PROB page latched: the 8×8 is the probability bar (top 5 rows) for the held
+    // note; the top-row functions + scene column below still paint (so EXIT works).
+    paintProbBar(frame, opts.probView.prob);
+  } else {
+    for (let y = 0; y < EDIT_ROWS; y++) {
+      for (let x = 0; x < EDIT_COLS; x++) {
+        const note = editPadToNote(clip, x, y, { rowOffset, colOffset, page });
+        const index = padNote(x, y);
+        if (!note) {
+          put(frame, index, RGB_OFF);
+          continue;
+        }
+        const onPlayhead = note.step === playheadStep;
+        const cov = noteCovering(clip, note.step, note.midi);
+        if (cov) {
+          // NOTE COLOUR = PROBABILITY, SOURCE-AWARE (purple = the note's own prob,
+          // orange = clip default, white at 100%), replacing the old velocity-
+          // blue. Under the playhead keeps the yellow boost.
+          put(frame, index, onPlayhead ? RGB_NOTE_PLAYHEAD : noteProbRgb(clip, cov));
+        } else if (onPlayhead) {
+          put(frame, index, RGB_PLAYHEAD_WASH);
+        } else if (((note.midi % 12) + 12) % 12 === rootPc) {
+          put(frame, index, RGB_ROOT_GUIDE);
+        } else {
+          put(frame, index, RGB_OFF);
+        }
       }
     }
   }
@@ -1322,6 +1386,60 @@ export function repeatLitCount(count: number): number {
   return c;
 }
 
+// ── PER-NOTE PROBABILITY page (owner-spec'd — mirrors the repeat-count view).
+// Entered by SHIFT + press a note step in the single-unit editor: the note grid
+// becomes a 40-level probability bar for THAT note. The bar uses the TOP 5 ROWS
+// only (y = 7..3, 40 pads) — the bottom 3 rows stay dark, distinguishing this
+// page from the full-64 repeat count view. Pads 1..N light purple (N =
+// valueToProbLevel(prob)); 100% lights all 40. Tapping pad k sets k*2.5% (pad 40
+// = 100%). PURE helpers — the latched hold + the setNoteProb write live in
+// launchpad-control. ──
+
+/** The PROB purple used for the count bar (echoes the RGB_PROB_PURPLE note tint). */
+export const RGB_PROB: Rgb = RGB_PROB_PURPLE;
+/** Number of grid rows the probability bar occupies — enough for all PROB_LEVELS
+ *  (40 levels / 8 columns = the TOP 5 rows). */
+export const PROB_ROWS = Math.ceil(PROB_LEVELS / LP_WIDTH);
+
+/** A grid pad's 1-indexed PROBABILITY ordinal (1..PROB_LEVELS) over the TOP 5
+ *  rows only, row-major from the upper-left: (0,7) → 1, (7,7) → 8, (0,6) → 9 …
+ *  (7,3) → 40. The bottom 3 rows (y = 2,1,0) and out-of-grid pads → null. PURE. */
+export function probPadOrdinal(x: number, y: number): number | null {
+  if (x < 0 || x >= LP_WIDTH || y < 0 || y >= LP_HEIGHT) return null;
+  const rowFromTop = LP_HEIGHT - 1 - y; // 0 = top row
+  if (rowFromTop >= PROB_ROWS) return null; // bottom 3 rows are inert
+  return rowFromTop * LP_WIDTH + x + 1; // 1..PROB_LEVELS
+}
+
+/** The 0..1 probability a tapped ordinal (1..PROB_LEVELS) sets — k*2.5%, with
+ *  pad PROB_LEVELS = exactly 1.0 (100%). PURE. */
+export function probLevelForOrdinal(k: number): number {
+  return probLevelToValue(k);
+}
+
+/** How many pads light for a stored probability: `valueToProbLevel(prob)` ∈
+ *  1..PROB_LEVELS (pads 1..N lit; 100% = all 40). PURE — the display truth the
+ *  LED paint AND the docs diagram both derive from. */
+export function probLitCount(prob: number): number {
+  return valueToProbLevel(prob);
+}
+
+/** Paint the 40-level PROBABILITY bar for `prob` onto a frame's 8×8: pads
+ *  1..probLitCount(prob) on the TOP 5 rows light `rgb` (default RGB_PROB purple
+ *  for the per-note page; RGB_PROB_ORANGE for the clip-DEFAULT page), the rest of
+ *  the top 5 rows + ALL of the bottom 3 rows go dark. This is the single 8×8 the
+ *  note editor / grid overlays while a PROB page is latched (the scene column +
+ *  permanent top row are painted by the caller). PURE — mutates `frame`. */
+function paintProbBar(frame: LaunchpadFrame, prob: number, rgb: Rgb = RGB_PROB): void {
+  const lit = probLitCount(prob);
+  for (let x = 0; x < LP_WIDTH; x++) {
+    for (let y = 0; y < LP_HEIGHT; y++) {
+      const k = probPadOrdinal(x, y);
+      put(frame, padNote(x, y), k !== null && k <= lit ? rgb : RGB_OFF);
+    }
+  }
+}
+
 // ── Right-column classifiers (per view). All take a SCENE INDEX (0 = top). ──
 export type GridShiftAction =
   | 'copy'
@@ -1663,6 +1781,13 @@ export interface SingleGridOpts {
    *  bright amber; the permanent top row is untouched. `sceneIndex` = the held
    *  button's visible index (0 = top). */
   repeatView?: { count: number; sceneIndex: number } | null;
+  /** CLIP-DEFAULT PROBABILITY page (SHIFT + a Grid clip pad, no arm): when set the
+   *  8×8 becomes the 40-level probability bar (TOP 5 rows, ORANGE — reinforcing
+   *  the clip-default source) for the held clip's default probability, instead of
+   *  the clip matrix. `prob` = the clip's current 0..1 default. The scene column
+   *  paints its plain no-shift scene launch; the permanent top row is untouched.
+   *  Absent/null = the normal Grid matrix. */
+  clipProbView?: { prob: number } | null;
 }
 
 /** The clip-state colour for a matrix pad — identical semantics to
@@ -1770,18 +1895,26 @@ export function computeSingleGridFrame(
   // no-shift (under shift the right column is the grid-shift palette). COPY leaves
   // both classes lit — either is a legal copy source.
   const repeatView = opts.repeatView ?? null;
-  // While the REPEAT-COUNT view is held, EVERY scene press is select-only (the
-  // control layer intercepts them before the shift palette AND the sticky
-  // copy/paste arms), so the right column must paint the plain no-shift scene
-  // paint — LED truth matches the press semantics even when shift was latched
-  // or a paste arm was pending before the hold began.
-  const sceneShift = repeatView ? false : shift;
+  const clipProbView = opts.clipProbView ?? null;
+  // While the REPEAT-COUNT view OR the CLIP-PROB page is held, EVERY scene press
+  // is select-only (the control layer intercepts pad taps before the shift
+  // palette AND the sticky copy/paste arms), so the right column must paint the
+  // plain no-shift scene paint — LED truth matches the press semantics even when
+  // shift was latched (the clip-prob page is opened WITH shift held) or a paste
+  // arm was pending before the hold began.
+  const sceneShift = repeatView || clipProbView ? false : shift;
   const pasteArmed =
-    !shift && !repeatView && opts.armedRightAction === 'paste' && !!opts.bufferLoaded;
+    !shift && !repeatView && !clipProbView && opts.armedRightAction === 'paste' && !!opts.bufferLoaded;
   const sceneBuffer = opts.bufferKind === 'scene';
   const dimClipPads = pasteArmed && sceneBuffer; // clip pads are the invalid class
   const dimSceneCol = pasteArmed && !sceneBuffer; // scene column is the invalid class
-  if (repeatView) {
+  if (clipProbView) {
+    // CLIP-DEFAULT PROB page: the whole 8×8 is the ORANGE 40-level bar (top 5
+    // rows) for the held clip's default probability, replacing the clip matrix +
+    // its overlays. The orange reinforces the clip-default colour source (the
+    // per-note page is purple). Live-updates as taps land.
+    paintProbBar(frame, clipProbView.prob, RGB_PROB_ORANGE);
+  } else if (repeatView) {
     // SCENE-REPEAT COUNT VIEW: the whole 8×8 is the orange count bar — pads
     // 1..repeatLitCount(count) lit row-major from the upper-left, the rest
     // dark (all 64 lit = infinite). Replaces the clip matrix AND its overlays
@@ -1885,10 +2018,15 @@ export interface SingleClipOpts {
   /** Live playhead step (-1 when the edited clip isn't playing). */
   playheadStep?: number;
   followOn?: boolean;
-  /** Velocity-edit mode (shift in Clip) → a subtle wash over the note grid. S2b
-   *  drives this (typically = the effective shift). */
+  /** Velocity-edit mode (the relocated VEL-hold) → a subtle wash over the note
+   *  grid. Driven by the held VEL modifier (see launchpad-control). */
   velEditing?: boolean;
   blinkOn?: boolean;
+  /** PER-NOTE PROBABILITY page (SHIFT + press a step): when set the 8×8 becomes
+   *  the 40-level probability bar for the held note (top 5 rows lit 1..N purple,
+   *  bottom 3 dark) instead of the note grid. `prob` = the note's current 0..1
+   *  firing probability. Absent/null = the normal note editor. */
+  probView?: { prob: number } | null;
 }
 
 function clipRightRgb(sceneIndex: number, opts: SingleClipOpts, shift: boolean): Rgb {
@@ -1925,24 +2063,33 @@ export function computeSingleClipFrame(clip: NoteClipRecord, opts: SingleClipOpt
   const shift = effShift(opts.top);
   const rootPc = ((clip.root % 12) + 12) % 12;
   const bg: Rgb = velEditing ? RGB_VEL_WASH : RGB_OFF;
-  for (let y = 0; y < EDIT_ROWS; y++) {
-    for (let x = 0; x < EDIT_COLS; x++) {
-      const note = editPadToNote(clip, x, y, { rowOffset, colOffset, page });
-      const index = padNote(x, y);
-      if (!note) {
-        put(frame, index, bg);
-        continue;
-      }
-      const onPlayhead = note.step === playheadStep;
-      const cov = noteCovering(clip, note.step, note.midi);
-      if (cov) {
-        put(frame, index, onPlayhead ? RGB_NOTE_PLAYHEAD : RGB_NOTE_BY_VEL[velBucket(cov.velocity)]);
-      } else if (onPlayhead) {
-        put(frame, index, RGB_PLAYHEAD_WASH);
-      } else if (((note.midi % 12) + 12) % 12 === rootPc) {
-        put(frame, index, RGB_ROOT_GUIDE);
-      } else {
-        put(frame, index, bg);
+  if (opts.probView) {
+    // PROB page latched: the 8×8 becomes the probability bar (top 5 rows) for the
+    // held note; the clipRight column + permanent top row below still paint.
+    paintProbBar(frame, opts.probView.prob);
+  } else {
+    for (let y = 0; y < EDIT_ROWS; y++) {
+      for (let x = 0; x < EDIT_COLS; x++) {
+        const note = editPadToNote(clip, x, y, { rowOffset, colOffset, page });
+        const index = padNote(x, y);
+        if (!note) {
+          put(frame, index, bg);
+          continue;
+        }
+        const onPlayhead = note.step === playheadStep;
+        const cov = noteCovering(clip, note.step, note.midi);
+        if (cov) {
+          // NOTE COLOUR = PROBABILITY, SOURCE-AWARE (purple = the note's own prob,
+          // orange = clip default, white at 100%), replacing the old velocity-
+          // blue. Under the playhead keeps the yellow boost.
+          put(frame, index, onPlayhead ? RGB_NOTE_PLAYHEAD : noteProbRgb(clip, cov));
+        } else if (onPlayhead) {
+          put(frame, index, RGB_PLAYHEAD_WASH);
+        } else if (((note.midi % 12) + 12) % 12 === rootPc) {
+          put(frame, index, RGB_ROOT_GUIDE);
+        } else {
+          put(frame, index, bg);
+        }
       }
     }
   }
