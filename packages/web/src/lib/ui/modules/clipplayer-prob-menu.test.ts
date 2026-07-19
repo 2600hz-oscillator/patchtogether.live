@@ -41,21 +41,29 @@ describe('clipplayer probability menu — level list + labels', () => {
   });
 });
 
-describe('clipplayer probability menu — checked level (default = 100%)', () => {
-  it('a note with NO prob key checks 100% (level 40) by default', () => {
+describe('clipplayer probability menu — checked level (EFFECTIVE prob)', () => {
+  it('a note with no own prob in a clip with no default checks 100% (level 40)', () => {
     const clip = clipWith([{ step: 0, midi: 60, velocity: 100, lengthSteps: 1 }]);
     expect(probMenuCheckedLevel(clip, 0, 60)).toBe(PROB_LEVELS);
   });
-  it('an empty cell also reports 100% (probEff defaults to 1)', () => {
+  it('an unset note in a 95% clip checks the CLIP-DEFAULT level (its effective prob), not 100%', () => {
+    const clip: NoteClipRecord = { ...defaultNoteClip(), defaultProb: 0.95, steps: [{ step: 0, midi: 60, lengthSteps: 1 }] };
+    expect(probMenuCheckedLevel(clip, 0, 60)).toBe(38); // 95% → level 38 (the clip default)
+  });
+  it('an empty cell / no clip reports 100% (effective defaults to 1)', () => {
     const clip = clipWith([]);
     expect(probMenuCheckedLevel(clip, 3, 64)).toBe(PROB_LEVELS);
     expect(probMenuCheckedLevel(null, 0, 60)).toBe(PROB_LEVELS);
   });
-  it('a note with a sub-100% prob checks its level', () => {
+  it('a note with its OWN sub-100% prob checks that level (independent of the clip default)', () => {
     const clip = clipWith([{ step: 0, midi: 60, lengthSteps: 1, prob: 0.5 }]);
     expect(probMenuCheckedLevel(clip, 0, 60)).toBe(20); // 50% → level 20
     const covering = clipWith([{ step: 2, midi: 60, lengthSteps: 3, prob: 0.025 }]);
     expect(probMenuCheckedLevel(covering, 4, 60), 'held tail resolves the covering note').toBe(1);
+  });
+  it('a note SET to 100% in a 50% clip checks 100% (its own stored 1.0 wins)', () => {
+    const clip: NoteClipRecord = { ...defaultNoteClip(), defaultProb: 0.5, steps: [{ step: 0, midi: 60, lengthSteps: 1, prob: 1 }] };
+    expect(probMenuCheckedLevel(clip, 0, 60)).toBe(PROB_LEVELS);
   });
 });
 
@@ -66,10 +74,10 @@ describe('clipplayer probability menu — applying a pick writes via setNoteProb
     expect(next.steps[0]!.prob).toBeCloseTo(0.025, 10);
     expect(clip.steps[0]!.prob, 'immutable — original untouched').toBeUndefined();
   });
-  it('picking 100% DELETES the prob key (back to the default)', () => {
+  it('picking 100% STORES prob = 1 (no delete — the note pins at 100%)', () => {
     const clip = clipWith([{ step: 0, midi: 60, lengthSteps: 1, prob: 0.4 }]);
     const next = applyProbMenuPick(clip, 0, 60, PROB_LEVELS); // level 40 = 100%
-    expect('prob' in (next.steps[0] as object)).toBe(false);
+    expect(next.steps[0]!.prob, 'a 100% pick stores 1.0').toBe(1);
   });
   it('picking on an empty cell is a no-op (same reference — never creates a note)', () => {
     const clip = clipWith([{ step: 0, midi: 60, lengthSteps: 1 }]);
@@ -97,7 +105,7 @@ describe('clipplayer CLIP-default probability menu — applying a pick writes vi
     const clip = clipWith([{ step: 0, midi: 60, prob: 0.4 }]);
     const next = applyClipProbMenuPick(clip, 1); // level 1 = 2.5%
     expect(next.defaultProb).toBeCloseTo(0.025, 10);
-    expect(next.steps[0]!.prob, 'per-note override untouched').toBe(0.4);
+    expect(next.steps[0]!.prob, "the note's own prob untouched").toBe(0.4);
     expect(clip.defaultProb, 'immutable — original untouched').toBeUndefined();
   });
   it('picking 100% DELETES the defaultProb key (back to the default)', () => {
@@ -122,15 +130,15 @@ describe('clipplayer card cell fill — source-aware colour', () => {
   it('empty cell → "" (CSS handles the dark/beat background)', () => {
     expect(noteProbCellFill(clipDef(undefined, []), 0, 60)).toBe('');
   });
-  it('per-note override < 1 → PURPLE (hue 280)', () => {
+  it("a note's own prob < 1 → PURPLE (hue 280)", () => {
     const fill = noteProbCellFill(clipDef(undefined, [{ step: 0, midi: 60, prob: 0.5 }]), 0, 60);
     expect(fill.startsWith('hsl(280 ')).toBe(true);
   });
-  it('clip default < 1 (no override) → ORANGE (hue 30)', () => {
+  it('clip default < 1 (note has no own prob) → ORANGE (hue 30)', () => {
     const fill = noteProbCellFill(clipDef(0.5, [{ step: 0, midi: 60 }]), 0, 60);
     expect(fill.startsWith('hsl(30 ')).toBe(true);
   });
-  it('override BEATS the clip default → purple even under a set default', () => {
+  it("a note's own prob is used over the clip default → purple even under a set default", () => {
     const fill = noteProbCellFill(clipDef(0.9, [{ step: 0, midi: 60, prob: 0.2 }]), 0, 60);
     expect(fill.startsWith('hsl(280 ')).toBe(true);
   });

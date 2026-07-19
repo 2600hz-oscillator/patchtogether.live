@@ -1246,14 +1246,32 @@ describe('setNoteProb (the shared write seam)', () => {
     expect(noteAt(next, 2, 60)?.prob).toBeCloseTo(0.025, 10);
     expect(c.steps[0]!.prob).toBeUndefined(); // immutable — original untouched
   });
-  it('DELETES the prob key at ≥100% (so 100% = the default, old clips byte-identical)', () => {
+  it('STORES the value at 100% (no delete, no special-casing) — the note pins at 1.0', () => {
     const c = clipWith([{ step: 0, midi: 60, lengthSteps: 1, prob: 0.3 }]);
     const next = setNoteProb(c, 0, 60, 1); // 100%
-    expect('prob' in (noteAt(next, 0, 60) as object)).toBe(false);
-    // legacy-shaped note (never had prob) → 100% is a no-key no-op, byte-identical
+    expect(noteAt(next, 0, 60)?.prob, 'a 100% pick stores 1.0, does not delete').toBe(1);
+    // a never-set (legacy-shaped) note stays unset UNTIL setNoteProb writes it —
+    // then it stores exactly 1.0 (so it can sit above a lower clip default).
     const legacy = clipWith([{ step: 0, midi: 60, velocity: 100, lengthSteps: 1 }]);
-    const same = setNoteProb(legacy, 0, 60, 1);
-    expect(same.steps[0]).toEqual({ step: 0, midi: 60, velocity: 100, lengthSteps: 1 });
+    const set100 = setNoteProb(legacy, 0, 60, 1);
+    expect(set100.steps[0]).toEqual({ step: 0, midi: 60, velocity: 100, lengthSteps: 1, prob: 1 });
+  });
+  it('a note set to 100% in a 95% clip → effective 1.0, WHITE, source note (pins over the default)', () => {
+    const c: NoteClipRecord = { ...defaultNoteClip(), defaultProb: 0.95, steps: [{ step: 0, midi: 60, lengthSteps: 1 }] };
+    const next = setNoteProb(c, 0, 60, 1); // pin this note at 100%
+    const ev = noteAt(next, 0, 60)!;
+    expect(ev.prob).toBe(1);
+    expect(noteEffProb(next, ev), 'the stored 1.0 beats the 95% clip default').toBe(1);
+    expect(probColorBucket(next, ev)).toBe('white');
+    expect(probSource(next, ev)).toBe('note');
+  });
+  it('a note set to 95% in a 100% clip → 0.95, PURPLE (its own prob, below the clip)', () => {
+    const c = clipWith([{ step: 0, midi: 60, lengthSteps: 1 }]); // no clip default = 100%
+    const next = setNoteProb(c, 0, 60, 0.95);
+    const ev = noteAt(next, 0, 60)!;
+    expect(ev.prob).toBe(0.95);
+    expect(noteEffProb(next, ev)).toBe(0.95);
+    expect(probColorBucket(next, ev)).toBe('purple');
   });
   it('sets the COVERING held note (press anywhere in its span)', () => {
     const c = clipWith([{ step: 2, midi: 60, lengthSteps: 3 }]);
@@ -1276,6 +1294,9 @@ describe('save-compat: a legacy clip with no `prob` reads back at 1', () => {
     // a clamped prob survives the coerce
     expect(coerceNoteEvent({ step: 0, midi: 60, prob: 0.3 })?.prob).toBe(0.3);
     expect(coerceNoteEvent({ step: 0, midi: 60, prob: 5 })?.prob).toBe(1);
+    // a STORED prob of exactly 1 is a VALID value (a pinned note), NOT a
+    // to-be-deleted key — it round-trips faithfully.
+    expect(coerceNoteEvent({ step: 0, midi: 60, prob: 1 })?.prob).toBe(1);
   });
 });
 
@@ -1305,7 +1326,7 @@ describe('noteEffProb (precedence: note prob ?? clip default ?? 1)', () => {
     defaultProb === undefined ? {} : { defaultProb };
   it('a per-note prob WINS over the clip default (including 0)', () => {
     expect(noteEffProb(clip(0.9), { prob: 0.2 })).toBe(0.2);
-    expect(noteEffProb(clip(0.9), { prob: 0 })).toBe(0); // 0 override wins, not skipped
+    expect(noteEffProb(clip(0.9), { prob: 0 })).toBe(0); // a 0 own-prob wins, not skipped
   });
   it('no per-note prob → the clip default', () => {
     expect(noteEffProb(clip(0.4), {})).toBe(0.4);
@@ -1339,11 +1360,11 @@ describe('probColorBucket (white / purple / orange — shared by both surfaces)'
     expect(probColorBucket({ defaultProb: 1 }, {})).toBe('white'); // clip 1
     expect(probColorBucket({}, { prob: 1 })).toBe('white'); // note 1
   });
-  it('per-note override < 1 → purple', () => {
+  it("a note's own prob < 1 → purple", () => {
     expect(probColorBucket({}, { prob: 0.5 })).toBe('purple');
     expect(probColorBucket({ defaultProb: 0.5 }, { prob: 0.2 })).toBe('purple');
   });
-  it('clip default < 1 (no override) → orange', () => {
+  it('clip default < 1 (note has no own prob) → orange', () => {
     expect(probColorBucket({ defaultProb: 0.5 }, {})).toBe('orange');
     expect(probColorBucket({ defaultProb: 0 }, {})).toBe('orange');
   });
@@ -1378,7 +1399,7 @@ describe('setClipDefaultProb (the shared write seam — delete-at-≥1)', () => 
     const c: NoteClipRecord = { ...defaultNoteClip(), steps: [{ step: 0, midi: 60, prob: 0.4 }] };
     const next = setClipDefaultProb(c, 0.5);
     expect(next.steps).toBe(c.steps); // steps array reference unchanged (no clone)
-    expect(next.steps[0]!.prob).toBe(0.4); // per-note override intact
+    expect(next.steps[0]!.prob).toBe(0.4); // the note's own prob intact
   });
 });
 

@@ -11,7 +11,7 @@ import {
   PROB_LEVELS,
   probLevelToValue,
   valueToProbLevel,
-  probEff,
+  noteEffProb,
   noteCovering,
   setNoteProb,
   clipDefaultProbEff,
@@ -33,21 +33,23 @@ export function probPctLabel(value: number): string {
 }
 
 /** The menu level (1..PROB_LEVELS) that should read CHECKED for the note covering
- *  (step, midi): the note's current level, or PROB_LEVELS (100%) when the cell
- *  holds no note / the note has no `prob` key — so 100% is the default check.
- *  PURE. */
+ *  (step, midi): the note's EFFECTIVE probability level — its OWN `prob` once set,
+ *  ELSE the clip default (so an unset note in a 95% clip shows 95%, matching
+ *  "every note has a probability = the clip's until you set the note's own"),
+ *  ELSE 100%. PURE. */
 export function probMenuCheckedLevel(
   clip: NoteClipRecord | null | undefined,
   step: number,
   midi: number,
 ): number {
   const ev = clip ? noteCovering(clip, step, midi) : undefined;
-  return valueToProbLevel(probEff(ev));
+  return valueToProbLevel(noteEffProb(clip ?? undefined, ev));
 }
 
-/** Apply a menu pick → the NEW clip with the note's probability set to
- *  `probLevelToValue(level)` (via setNoteProb: a 100% pick DELETES the key; an
- *  empty cell is a no-op → the same clip reference). PURE. */
+/** Apply a menu pick → the NEW clip with the note's OWN probability set to
+ *  `probLevelToValue(level)` (via setNoteProb: STORES the value, incl a 100% pick
+ *  = 1.0 which pins the note above a lower clip default; an empty cell is a no-op
+ *  → the same clip reference). PURE. */
 export function applyProbMenuPick(
   clip: NoteClipRecord,
   step: number,
@@ -59,7 +61,7 @@ export function applyProbMenuPick(
 
 // ── CLIP-DEFAULT probability menu (right-click a GRID clip pad). The same 40-
 // level list + labels as the per-note menu, but it targets the CLIP's default
-// probability (applied to every note without a per-note override) via
+// probability (used by every note without its own `prob` set) via
 // setClipDefaultProb. 100% is the default check (no default set = every note
 // fires at 1). ──
 

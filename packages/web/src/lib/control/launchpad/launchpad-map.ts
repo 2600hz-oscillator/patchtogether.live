@@ -166,15 +166,16 @@ export const RGB_NOTE_BY_VEL: readonly Rgb[] = [
   [63, 91, 127], // high
 ];
 // NOTE COLOUR = PROBABILITY (owner-spec'd, replaces the velocity-blue above as
-// the note channel), SOURCE-AWARE: a per-note override ramps PURPLE ∝ its firing
-// probability; a note taking the CLIP DEFAULT ramps ORANGE ∝ the default; either
-// goes WHITE at 100%. `noteProbRgb(clip, ev)` is the single source both the
-// launchpad note paint AND (mirrored) the card cell fill derive from. Pure white
-// reads as "always fires"; a dimmer purple/orange = a lower dice-roll chance.
+// the note channel), SOURCE-AWARE: a note using its OWN prob ramps PURPLE ∝ its
+// firing probability; a note FOLLOWING the CLIP DEFAULT ramps ORANGE ∝ the
+// default; either goes WHITE at effective 100%. `noteProbRgb(clip, ev)` is the
+// single source both the launchpad note paint AND (mirrored) the card cell fill
+// derive from. Pure white reads as "always fires"; a dimmer purple/orange = a
+// lower dice-roll chance.
 export const RGB_WHITE: Rgb = [127, 127, 127]; // 100% probability — always fires
-export const RGB_PROB_PURPLE: Rgb = [110, 30, 127]; // per-note override base (scaled by prob)
+export const RGB_PROB_PURPLE: Rgb = [110, 30, 127]; // note's-own-prob base (scaled by prob)
 export const RGB_PROB_ORANGE: Rgb = [127, 60, 0]; // clip-DEFAULT source base (scaled by prob)
-/** A per-note-override LED colour from its EFFECTIVE probability: WHITE at ≥100%,
+/** A note's-own-prob LED colour from its EFFECTIVE probability: WHITE at ≥100%,
  *  else the base purple scaled by a floor-lifted ramp (so even a 2.5% note stays
  *  legible, never near-black). PURE — the paint truth the frame + docs both use. */
 export function probNoteRgb(prob: number): Rgb {
@@ -184,17 +185,18 @@ export function probNoteRgb(prob: number): Rgb {
 }
 /** A clip-DEFAULT LED colour from its EFFECTIVE probability: WHITE at ≥100%, else
  *  the base ORANGE scaled by the SAME floor-lifted ramp as the purple note ramp
- *  (dim at 2.5% → bright at 97.5%), so a defaulted note reads ORANGE vs a per-note
- *  override's purple. Brightness is monotonic in prob (same as purple). PURE. */
+ *  (dim at 2.5% → bright at 97.5%), so a note following the default reads ORANGE
+ *  vs a note using its own prob (purple). Brightness is monotonic in prob (same
+ *  as purple). PURE. */
 export function probNoteRgbOrange(prob: number): Rgb {
   if (prob >= 1) return RGB_WHITE;
   const ramp = 0.3 + 0.7 * Math.max(0, Math.min(1, prob)); // 0.3..~1.0
   return scaleRgb(RGB_PROB_ORANGE, ramp);
 }
 /** SOURCE-AWARE note LED colour, the single truth for the note channel: WHITE at
- *  effective ≥1, PURPLE for a per-note override (`ev.prob` set), ORANGE for a
- *  note taking the clip default (`clip.defaultProb` set, no own key). Effective
- *  prob = note prob else clip default else 1. PURE. */
+ *  effective ≥1, PURPLE for a note using its own prob (`ev.prob` set), ORANGE for
+ *  a note following the clip default (`clip.defaultProb` set, no own key).
+ *  Effective prob = note prob else clip default else 1. PURE. */
 export function noteProbRgb(
   clip: { defaultProb?: number } | undefined,
   ev: { prob?: number } | undefined,
@@ -1004,7 +1006,7 @@ export function computeREditFrame(clip: NoteClipRecord, opts: REditOpts = {}): L
         const onPlayhead = note.step === playheadStep;
         const cov = noteCovering(clip, note.step, note.midi);
         if (cov) {
-          // NOTE COLOUR = PROBABILITY, SOURCE-AWARE (purple = per-note override,
+          // NOTE COLOUR = PROBABILITY, SOURCE-AWARE (purple = the note's own prob,
           // orange = clip default, white at 100%), replacing the old velocity-
           // blue. Under the playhead keeps the yellow boost.
           put(frame, index, onPlayhead ? RGB_NOTE_PLAYHEAD : noteProbRgb(clip, cov));
@@ -2077,7 +2079,7 @@ export function computeSingleClipFrame(clip: NoteClipRecord, opts: SingleClipOpt
         const onPlayhead = note.step === playheadStep;
         const cov = noteCovering(clip, note.step, note.midi);
         if (cov) {
-          // NOTE COLOUR = PROBABILITY, SOURCE-AWARE (purple = per-note override,
+          // NOTE COLOUR = PROBABILITY, SOURCE-AWARE (purple = the note's own prob,
           // orange = clip default, white at 100%), replacing the old velocity-
           // blue. Under the playhead keeps the yellow boost.
           put(frame, index, onPlayhead ? RGB_NOTE_PLAYHEAD : noteProbRgb(clip, cov));

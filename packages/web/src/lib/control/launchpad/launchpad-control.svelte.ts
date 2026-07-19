@@ -146,7 +146,7 @@ import {
   setNoteProb,
   setClipDefaultProb,
   clipDefaultProbEff,
-  probEff,
+  noteEffProb,
   noteCovering,
   nextScale,
   doubleNoteClip,
@@ -3194,9 +3194,11 @@ function renderLeds(): void {
             // VEL-hold wash (the relocated velocity modifier), not shift (shift
             // now opens the PROB page).
             velEditing: velHeld,
-            // PROB page: while a note is latched, the 8×8 is its probability bar.
+            // PROB page: while a note is latched, the 8×8 is its probability bar,
+            // showing the note's EFFECTIVE probability (its own prob once set, else
+            // the clip default) so opening an unset note in a 95% clip reads 95%.
             probView: probEditHeld
-              ? { prob: probEff(noteCovering(clip, probEditHeld.step, probEditHeld.midi)) }
+              ? { prob: noteEffProb(clip, noteCovering(clip, probEditHeld.step, probEditHeld.midi)) }
               : null,
             blinkOn,
           }),

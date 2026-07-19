@@ -13,7 +13,12 @@
 //   → card cell bucket   + brightness     (noteProbCellFill → white / purple / orange)
 //   → playback firing under a SEEDED mulberry32 (notesFiringAt):
 //        p ≥ 1 ALWAYS fires · p = 0 NEVER fires · mid-p lands in a statistical
-//        band · a per-note override BEATS the clip default.
+//        band · a note's OWN prob is used as-is (incl a stored 1.0, which pins
+//        the note above a lower clip default).
+//
+// MODEL: every note has a probability, always — its OWN `prob` once set (incl
+// exactly 1.0, a REAL stored value distinct from "unset"), else the clip default,
+// else 1. There is no delete-at-100% on a note and no "override" concept.
 //
 // Precedence + colour source are the two things that could silently regress, so
 // this table asserts them together for every cell — the launchpad, the card, and
@@ -127,43 +132,59 @@ describe('clip-default probability — the full note.prob × clip.defaultProb ta
 });
 
 // ===========================================================================
-// COLOUR — a per-note override BEATS the clip default (purple vs orange), and
+// COLOUR — a note's OWN prob (purple) vs following the clip default (orange), and
 // the WHITE fallout (effective 100%, either source).
 // ===========================================================================
-describe('colour source: override → purple, default → orange, 100% → white', () => {
-  it('same effective prob, DIFFERENT source → different hue (override beats default)', () => {
+describe('colour source: own prob → purple, clip default → orange, 100% → white', () => {
+  it('same effective prob, DIFFERENT source → different hue (own prob vs clip default)', () => {
     // A note that OWNS prob 0.5 under a clip default of 0.5 → purple (source note).
-    const overridden = cell(0.5, 0.5);
+    const ownProb = cell(0.5, 0.5);
     // A note with NO own prob under a clip default of 0.5 → orange (source clip).
     const defaulted = cell(undefined, 0.5);
-    expect(noteEffProb(overridden, noteOf(overridden))).toBeCloseTo(0.5, 10);
+    expect(noteEffProb(ownProb, noteOf(ownProb))).toBeCloseTo(0.5, 10);
     expect(noteEffProb(defaulted, noteOf(defaulted))).toBeCloseTo(0.5, 10);
-    expect(ledBucket(noteProbRgb(overridden, noteOf(overridden)))).toBe('purple');
+    expect(ledBucket(noteProbRgb(ownProb, noteOf(ownProb)))).toBe('purple');
     expect(ledBucket(noteProbRgb(defaulted, noteOf(defaulted)))).toBe('orange');
-    expect(cardBucket(noteProbCellFill(overridden, 0, 60)).bucket).toBe('purple');
+    expect(cardBucket(noteProbCellFill(ownProb, 0, 60)).bucket).toBe('purple');
     expect(cardBucket(noteProbCellFill(defaulted, 0, 60)).bucket).toBe('orange');
   });
-  it('a per-note override at 100% is WHITE even under a low clip default', () => {
-    const c = cell(1, 0.1); // own prob 1 wins → effective 1 → white
+  it("a note's own prob at 100% is WHITE and PINS even under a low clip default", () => {
+    const c = cell(1, 0.1); // stored own prob 1 wins → effective 1 → white
     expect(noteEffProb(c, noteOf(c))).toBe(1);
+    expect(noteOf(c).prob, 'a stored 1.0 (not deleted)').toBe(1);
     expect(ledBucket(noteProbRgb(c, noteOf(c)))).toBe('white');
     expect(cardBucket(noteProbCellFill(c, 0, 60)).bucket).toBe('white');
   });
-  it('a clip default of 100% is WHITE for un-overridden notes (key would be deleted anyway)', () => {
+  it('a clip default of 100% is WHITE for notes with no own prob', () => {
     const c = cell(undefined, 1);
     expect(noteEffProb(c, noteOf(c))).toBe(1);
     expect(ledBucket(noteProbRgb(c, noteOf(c)))).toBe('white');
     expect(cardBucket(noteProbCellFill(c, 0, 60)).bucket).toBe('white');
   });
+  it('a STORED note prob of 1.0 is DISTINCT from unset: same effective+colour, different source', () => {
+    const stored = cell(1, 0.5); // note has its OWN stored 1.0
+    const unset = cell(undefined, 0.5); // note follows the 0.5 clip default
+    // The stored-1 note keeps a real key and pins at 100% (white, source note).
+    expect(noteOf(stored).prob).toBe(1);
+    expect(probSource(stored, noteOf(stored))).toBe('note');
+    expect(noteEffProb(stored, noteOf(stored))).toBe(1);
+    expect(ledBucket(noteProbRgb(stored, noteOf(stored)))).toBe('white');
+    // The unset note has NO key and follows the clip → 0.5, orange, source clip.
+    expect('prob' in noteOf(unset)).toBe(false);
+    expect(probSource(unset, noteOf(unset))).toBe('clip');
+    expect(noteEffProb(unset, noteOf(unset))).toBe(0.5);
+    expect(ledBucket(noteProbRgb(unset, noteOf(unset)))).toBe('orange');
+  });
 });
 
 // ===========================================================================
-// BRIGHTNESS MONOTONICITY — within EACH ramp (purple = override, orange =
-// default), a higher probability is brighter, on BOTH surfaces.
+// BRIGHTNESS MONOTONICITY — within EACH ramp (purple = the note's own prob,
+// orange = following the clip default), a higher probability is brighter, on
+// BOTH surfaces.
 // ===========================================================================
 describe('brightness monotonicity within each source ramp', () => {
   const ramp = [0.025, 0.25, 0.5, 0.75, 0.975];
-  it('LAUNCHPAD purple ramp (per-note override) brightens with probability', () => {
+  it("LAUNCHPAD purple ramp (note's own prob) brightens with probability", () => {
     let prev = -1;
     for (const p of ramp) {
       const c = cell(p, undefined);
@@ -183,7 +204,7 @@ describe('brightness monotonicity within each source ramp', () => {
       prev = luma(rgb);
     }
   });
-  it('CARD purple ramp (per-note override) lightens with probability', () => {
+  it("CARD purple ramp (note's own prob) lightens with probability", () => {
     let prev = -1;
     for (const p of ramp) {
       const c = cell(p, undefined);
@@ -207,8 +228,8 @@ describe('brightness monotonicity within each source ramp', () => {
 
 // ===========================================================================
 // PLAYBACK — the dice-roll (notesFiringAt) honours the EFFECTIVE prob for every
-// cell, seeded-deterministic. p≥1 always, p=0 never, mid-p in-band, override
-// beats default.
+// cell, seeded-deterministic. p≥1 always, p=0 never, mid-p in-band; a note's own
+// prob is used as-is (a stored 1 pins over a lower clip default).
 // ===========================================================================
 describe('playback firing under a seeded mulberry32 — the whole table', () => {
   const TRIALS = 400;
@@ -242,28 +263,28 @@ describe('playback firing under a seeded mulberry32 — the whole table', () => 
     }
   }
 
-  it('a per-note override BEATS the clip default at playback (0 note under 1 default = silent)', () => {
-    const c = cell(0, 1); // own 0 wins over clip default 1 → never fires
+  it("a note's own prob BEATS the clip default at playback (0 note under 1 default = silent)", () => {
+    const c = cell(0, 1); // own 0 used over clip default 1 → never fires
     expect(fireRate(c)).toBe(0);
   });
-  it('a per-note override BEATS the clip default at playback (1 note under 0 default = always)', () => {
-    const c = cell(1, 0); // own 1 wins over clip default 0 → always fires
+  it("a note's own prob BEATS the clip default at playback (1 note under 0 default = always)", () => {
+    const c = cell(1, 0); // stored own 1 used over clip default 0 → always fires (the pin)
     expect(fireRate(c)).toBe(1);
   });
-  it('an un-overridden note follows the CLIP default (0.5 default ≈ half)', () => {
+  it('a note with no own prob follows the CLIP default (0.5 default ≈ half)', () => {
     const c = cell(undefined, 0.5);
     const rate = fireRate(c);
     expect(rate).toBeGreaterThan(0.4);
     expect(rate).toBeLessThan(0.6);
   });
-  it('a chord: overridden voice + defaulted voice roll independently on the SAME clip default', () => {
-    // voice A owns prob 0 (never), voice B takes the clip default 1 (always).
+  it("a chord: an own-prob voice + a clip-default voice roll independently on the SAME clip default", () => {
+    // voice A owns prob 0 (never), voice B has no own prob → clip default 1 (always).
     const clip: NoteClipRecord = {
       ...defaultNoteClip(),
       defaultProb: 1,
       steps: [
-        { step: 0, midi: 60, prob: 0 }, // override → never
-        { step: 0, midi: 64 }, // takes clip default 1 → always
+        { step: 0, midi: 60, prob: 0 }, // own 0 → never
+        { step: 0, midi: 64 }, // no own prob → clip default 1 → always
       ],
     };
     const rng = mulberry32(999);
@@ -274,7 +295,7 @@ describe('playback firing under a seeded mulberry32 — the whole table', () => 
       if (fired.some((e) => e.midi === 60)) firedA++;
       if (fired.some((e) => e.midi === 64)) firedB++;
     }
-    expect(firedA, 'overridden 0% voice never fires').toBe(0);
-    expect(firedB, 'defaulted 100% voice always fires').toBe(200);
+    expect(firedA, 'own-prob 0% voice never fires').toBe(0);
+    expect(firedB, 'clip-default 100% voice always fires').toBe(200);
   });
 });

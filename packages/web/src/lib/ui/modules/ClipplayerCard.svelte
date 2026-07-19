@@ -1010,8 +1010,8 @@
   /** The note cell's FILL colour, driven by EFFECTIVE PROBABILITY + its SOURCE
    *  (owner-spec'd, replacing the old velocity-blue): '' for an empty cell (the
    *  CSS handles dark/beat), else WHITE at effective 100%, a deeper PURPLE as a
-   *  PER-NOTE override's probability drops, or a deeper ORANGE as the CLIP DEFAULT
-   *  drops (for a note with no override). Delegated to the pure `noteProbCellFill`
+   *  note's OWN probability drops, or a deeper ORANGE as the CLIP DEFAULT drops
+   *  (for a note following the clip). Delegated to the pure `noteProbCellFill`
    *  so it stays unit-tested + mirrors the launchpad's `noteProbRgb` buckets. */
   function cellProbFill(clip: NoteClipRecord, step: number, midi: number): string {
     return noteProbCellFill(clip, step, midi);
@@ -1046,8 +1046,8 @@
   // level checked. Each item writes setNoteProb via the undoable clip write. Only
   // opens on a cell that HOLDS a note (setNoteProb never creates one). ──
   let probMenu = $state<{ x: number; y: number; step: number; midi: number; row: number } | null>(null);
-  /** The note's current level (1..40), or PROB_LEVELS (100%) when it has no note
-   *  / no prob key — so 100% shows as the default-checked item. */
+  /** The note's EFFECTIVE level (1..40): its own prob once set, else the clip
+   *  default (so an unset note in a 95% clip shows 95% checked), else 100%. */
   function probMenuCurrentLevel(): number {
     if (!probMenu) return PROB_LEVELS;
     return probMenuCheckedLevel(clipAt(selectedClip), probMenu.step, probMenu.midi);

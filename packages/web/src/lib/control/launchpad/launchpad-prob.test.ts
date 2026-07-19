@@ -232,21 +232,21 @@ describe('SINGLE Clip — the SHIFT+step PROB page gesture', () => {
     expect(valueToProbLevel(rootNoteProb()!)).toBe(1);
   });
 
-  it('a selector tap on pad 40 sets 100% → the prob key is DELETED (default)', () => {
+  it('a selector tap on pad 40 sets 100% → STORES prob = 1 (the note pins at 100%, no delete)', () => {
     openClip();
-    // Drop to 2.5% first so there IS a key to delete.
+    // Drop to 2.5% first, then set it back to 100%.
     sim.cc('L', CC_SHIFT, 127);
     sim.press('L', 0, 0);
     sim.cc('L', CC_SHIFT, 0);
     sim.press('L', 0, 7); // ordinal 1 = 2.5%
     expect(rootNoteProb()).toBeCloseTo(0.025, 6);
-    // Re-open and set 100% via pad (7,3) = ordinal 40 → the key is deleted.
+    // Re-open and set 100% via pad (7,3) = ordinal 40 → STORES 1.0 (not deleted).
     sim.cc('L', CC_SHIFT, 127);
     sim.press('L', 0, 0);
     sim.cc('L', CC_SHIFT, 0);
     sim.press('L', 7, 3); // ordinal 40 = 100%
     expect(__test_mode().probEditActive).toBe(false);
-    expect(rootNoteProb(), '100% deletes the prob key').toBeUndefined();
+    expect(rootNoteProb(), '100% stores a real 1.0 value').toBe(1);
   });
 
   it('a bottom-3-row tap CANCELS (clears the latch, no write)', () => {
@@ -258,6 +258,30 @@ describe('SINGLE Clip — the SHIFT+step PROB page gesture', () => {
     sim.press('L', 3, 1); // y=1 → a bottom-3 (inert) pad → cancel
     expect(__test_mode().probEditActive).toBe(false);
     expect(rootNoteProb(), 'no write on cancel').toBeUndefined();
+  });
+
+  it('opening an UNSET note in a 95% clip lights the bar to the CLIP-DEFAULT level (effective display, not 100%)', () => {
+    // A clip carrying a 95% default + one note with NO own prob. Opening its PROB
+    // page must show the note's EFFECTIVE probability (the 95% clip default), NOT
+    // a full bar — "every note has a probability = the clip's until you set it".
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: { ...clipWithRootNote(), defaultProb: 0.95 } } });
+    bindLaunchpadToClip(NODE_ID);
+    setLaunchpadView('clip');
+    sim.cc('L', CC_SHIFT, 127);
+    sim.press('L', 0, 0); // open PROB for the unset root note
+    sim.cc('L', CC_SHIFT, 0);
+    hoisted.tick?.(); // step the render loop so the bar paints
+    expect(__test_mode().probEditActive).toBe(true);
+    let lit = 0;
+    for (let y = 0; y < 8; y++) {
+      for (let x = 0; x < 8; x++) {
+        if (probPadOrdinal(x, y) === null) continue;
+        const led = sim.ledAt('L', padNote(x, y));
+        if (led && led[0] + led[1] + led[2] > 0) lit++;
+      }
+    }
+    expect(lit, 'the bar reflects the 95% clip default, not the absent-key 100%').toBe(probLitCount(0.95));
+    expect(lit).toBe(38); // 95% → 38 of the 40 levels lit
   });
 
   // FIX 1 (the masking gap): every test ABOVE releases shift before tapping a
@@ -293,28 +317,32 @@ describe('SINGLE Clip — the SHIFT+step PROB page gesture', () => {
 // CLIP-DEFAULT PROBABILITY — the source-aware colour (noteProbRgb) + the ORANGE
 // grid PROB page frame paint.
 // ===========================================================================
-describe('PURE source-aware note colour (noteProbRgb: purple = override, orange = clip default)', () => {
+describe("PURE source-aware note colour (noteProbRgb: purple = note's own prob, orange = clip default)", () => {
   const clipWithDefault = (defaultProb: number, notePrs: (number | undefined)[]): NoteClipRecord => ({
     ...defaultNoteClip(),
     defaultProb,
     steps: notePrs.map((p, i) => (p === undefined ? { step: i, midi: 60 } : { step: i, midi: 60, prob: p })),
   });
-  it('a note WITHOUT an override under a clip default → ORANGE ramp (red dominates, blue floored)', () => {
+  it('a note with NO own prob under a clip default → ORANGE ramp (red dominates, blue floored)', () => {
     const clip = clipWithDefault(0.5, [undefined]);
     const rgb = noteProbRgb(clip, clip.steps[0]);
     expect(rgb).toEqual(probNoteRgbOrange(0.5));
     expect(rgb[0], 'red is the dominant channel').toBeGreaterThan(rgb[1]);
     expect(rgb[2], 'blue floored for orange').toBe(0);
   });
-  it('a note WITH an override → PURPLE ramp (blue dominates), beating the clip default', () => {
+  it("a note using its OWN prob → PURPLE ramp (blue dominates), independent of the clip default", () => {
     const clip = clipWithDefault(0.5, [0.25]);
     const rgb = noteProbRgb(clip, clip.steps[0]);
     expect(rgb).toEqual(probNoteRgb(0.25));
     expect(rgb[2], 'blue is the dominant channel').toBeGreaterThan(rgb[1]);
   });
+  it('a note SET to 100% under a LOW clip default → WHITE (its stored 1.0 pins over the default)', () => {
+    const clip = clipWithDefault(0.1, [1]); // note stores prob 1 over a 10% clip default
+    expect(noteProbRgb(clip, clip.steps[0])).toEqual(RGB_WHITE);
+  });
   it('effective 100% → WHITE from either source', () => {
     expect(noteProbRgb(clipWithDefault(1, [undefined]), {})).toEqual(RGB_WHITE); // clip default 1
-    expect(noteProbRgb({ ...defaultNoteClip() }, { prob: 1 })).toEqual(RGB_WHITE); // note override 1
+    expect(noteProbRgb({ ...defaultNoteClip() }, { prob: 1 })).toEqual(RGB_WHITE); // note's own prob 1
   });
 });
 

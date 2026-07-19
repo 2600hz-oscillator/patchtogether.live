@@ -404,25 +404,22 @@ describe('Unit R — editor LED frame (note colours = PROBABILITY + playhead)', 
     const after = at(f, padNote(5, 0));
     expect(eqRgb(after, RGB_WHITE)).toBe(false);
   });
-  it('SOURCE-AWARE colours through the FRAME: un-overridden = ORANGE (clip default), override = PURPLE, effective 100% = WHITE', () => {
-    // A clip carrying a DEFAULT prob + one per-note override: the un-overridden
-    // note must paint the clip-default ORANGE and the overridden note PURPLE —
+  it('SOURCE-AWARE colours through the FRAME: no-own-prob = ORANGE (clip default), own prob = PURPLE, own 100% PINS WHITE', () => {
+    // A clip carrying a DEFAULT prob + notes with/without their own prob: a note
+    // following the default paints ORANGE, a note using its own sub-100% prob
+    // paints PURPLE, and a note SET to 100% PINS to WHITE over a lower default —
     // asserted through the SHIPPED frame, not just the noteProbRgb pure boundary.
     let clip: NoteClipRecord = defaultNoteClip();
-    clip = toggleNoteAt(clip, 1, clip.root); // no override → takes the clip default
+    clip = toggleNoteAt(clip, 1, clip.root); // no own prob → follows the clip default
     clip = toggleNoteAt(clip, 3, clip.root);
-    clip = setNoteProb(clip, 3, clip.root, 0.25); // per-note 25% override → purple
-    clip = setClipDefaultProb(clip, 0.5); // clip default 50% → un-overridden = orange
+    clip = setNoteProb(clip, 3, clip.root, 0.25); // its own 25% → purple
+    clip = toggleNoteAt(clip, 5, clip.root);
+    clip = setNoteProb(clip, 5, clip.root, 1); // its own 100% (stored) → pins WHITE
+    clip = setClipDefaultProb(clip, 0.5); // clip default 50% → no-own-prob note = orange
     const f = computeREditFrame(clip, { playheadStep: -1 });
-    expect(eqRgb(at(f, padNote(1, 0)), probNoteRgbOrange(0.5)), 'un-overridden note = clip-default ORANGE').toBe(true);
-    expect(eqRgb(at(f, padNote(3, 0)), probNoteRgb(0.25)), 'per-note override = PURPLE').toBe(true);
-    // WHITE at effective 100%: a per-note 100% would DELETE its key → inherit the
-    // 0.5 default → orange, so white must come from an un-overridden note with NO
-    // clip default (effective = 1). Assert that through the frame too.
-    let plain: NoteClipRecord = defaultNoteClip();
-    plain = toggleNoteAt(plain, 5, plain.root); // no override, no default → effective 100%
-    const pf = computeREditFrame(plain, { playheadStep: -1 });
-    expect(eqRgb(at(pf, padNote(5, 0)), RGB_WHITE), 'effective 100% note = WHITE').toBe(true);
+    expect(eqRgb(at(f, padNote(1, 0)), probNoteRgbOrange(0.5)), 'no-own-prob note = clip-default ORANGE').toBe(true);
+    expect(eqRgb(at(f, padNote(3, 0)), probNoteRgb(0.25)), "the note's own prob = PURPLE").toBe(true);
+    expect(eqRgb(at(f, padNote(5, 0)), RGB_WHITE), 'own 100% pins WHITE over the 50% default').toBe(true);
   });
 });
 
@@ -1206,20 +1203,18 @@ describe('Single mode — frame builders', () => {
     expect(eqRgb(at(f, SCENE_CCS[6]), RGB_TIMING)).toBe(true); // STEP◀ blue
     expect(eqRgb(at(f, 93), RGB_VIEW_ACTIVE)).toBe(true); // clip active
   });
-  it('clip: SOURCE-AWARE note colours through the frame (clip default → ORANGE, override → PURPLE, effective 100% → WHITE)', () => {
+  it('clip: SOURCE-AWARE note colours through the frame (clip default → ORANGE, own prob → PURPLE, own 100% pins WHITE)', () => {
     let clip: NoteClipRecord = defaultNoteClip();
-    clip = toggleNoteAt(clip, 1, clip.root); // no override → takes the clip default
+    clip = toggleNoteAt(clip, 1, clip.root); // no own prob → follows the clip default
     clip = toggleNoteAt(clip, 3, clip.root);
-    clip = setNoteProb(clip, 3, clip.root, 0.25); // per-note override → purple
-    clip = setClipDefaultProb(clip, 0.5); // clip default → orange
+    clip = setNoteProb(clip, 3, clip.root, 0.25); // its own 25% → purple
+    clip = toggleNoteAt(clip, 5, clip.root);
+    clip = setNoteProb(clip, 5, clip.root, 1); // its own 100% (stored) → pins WHITE
+    clip = setClipDefaultProb(clip, 0.5); // clip default → orange for the no-own-prob note
     const f = computeSingleClipFrame(clip, { top: mkTop('clip'), playheadStep: -1 });
-    expect(eqRgb(at(f, padNote(1, 0)), probNoteRgbOrange(0.5)), 'un-overridden note = clip-default ORANGE').toBe(true);
-    expect(eqRgb(at(f, padNote(3, 0)), probNoteRgb(0.25)), 'per-note override = PURPLE').toBe(true);
-    // effective 100% = white (a no-default, no-override note) — through the frame.
-    let plain: NoteClipRecord = defaultNoteClip();
-    plain = toggleNoteAt(plain, 5, plain.root);
-    const pf = computeSingleClipFrame(plain, { top: mkTop('clip'), playheadStep: -1 });
-    expect(eqRgb(at(pf, padNote(5, 0)), RGB_WHITE), 'effective 100% note = WHITE').toBe(true);
+    expect(eqRgb(at(f, padNote(1, 0)), probNoteRgbOrange(0.5)), 'no-own-prob note = clip-default ORANGE').toBe(true);
+    expect(eqRgb(at(f, padNote(3, 0)), probNoteRgb(0.25)), "the note's own prob = PURPLE").toBe(true);
+    expect(eqRgb(at(f, padNote(5, 0)), RGB_WHITE), 'own 100% pins WHITE over the 50% default').toBe(true);
   });
   it('clip + shift: Step buttons brighten (block jump); Follow lights bright when on', () => {
     const clip = defaultNoteClip();

@@ -45,9 +45,9 @@
     RGB_DECK_NOW,
     RGB_COPY_BUFFER,
     // NOTE COLOUR = firing PROBABILITY (source-aware) — the note channel that
-    // REPLACED velocity-blue: WHITE = always fires · PURPLE = a per-note override
-    // · ORANGE = the clip default (brightness ∝ probability). Same paint truth on
-    // the Launchpad LEDs and the card cells.
+    // REPLACED velocity-blue: WHITE = always fires · PURPLE = a note's own
+    // probability · ORANGE = following the clip default (brightness ∝
+    // probability). Same paint truth on the Launchpad LEDs and the card cells.
     RGB_WHITE,
     RGB_PROB,
     RGB_PROB_ORANGE,
@@ -376,14 +376,14 @@
   // ── The NOTE EDITOR 8×8 (an illustrative state) — both modes; declared here
   // because the CLIP view below reuses it under the velocity-edit wash. NOTE
   // COLOUR = firing PROBABILITY, source-aware (mirrors noteProbRgb): white = a
-  // 100% note (always fires), purple = a per-note probability override, orange =
-  // a note taking the CLIP DEFAULT probability — dimmer = a lower dice-roll
+  // 100% note (always fires), purple = a note using its own probability, orange =
+  // a note following the CLIP DEFAULT probability — dimmer = a lower dice-roll
   // chance. (This replaced the old velocity-blue note channel; velocity stays
   // editable via the VEL-hold, it just no longer sets the pad colour.) ──
   const editorPads = [
     { x: 1, y: 2, fill: hex(RGB_WHITE) }, // a 100% note — always fires (white)
-    { x: 3, y: 4, fill: hex(probNoteRgb(0.5)) }, // a per-note 50% override (purple)
-    { x: 5, y: 1, fill: hex(probNoteRgbOrange(0.35)) }, // a clip-default note (orange)
+    { x: 3, y: 4, fill: hex(probNoteRgb(0.5)) }, // a note's own 50% probability (purple)
+    { x: 5, y: 1, fill: hex(probNoteRgbOrange(0.35)) }, // a note following the clip default (orange)
     { x: 2, y: 3, fill: hex(RGB_NOTE_PLAYHEAD) }, // note under the playhead (yellow boost)
     // playhead column wash (the rest of step-column 2)
     ...[0, 1, 4, 5, 6, 7].map((y) => ({ x: 2, y, fill: hex(RGB_PLAYHEAD_WASH) })),
@@ -411,7 +411,7 @@
   const noteProbPads = probBarPads(RGB_PROB, NOTE_PROB_DIAGRAM_PROB);
   // The clip-DEFAULT probability page (GRID: SHIFT + a clip pad) is the SAME 40-
   // level bar in ORANGE (reinforcing the clip-default colour source).
-  const CLIP_PROB_DIAGRAM_PROB = 0.5; // 50% default for every un-overridden note
+  const CLIP_PROB_DIAGRAM_PROB = 0.5; // 50% default for every note with no own prob
   const clipProbPads = probBarPads(RGB_PROB_ORANGE, CLIP_PROB_DIAGRAM_PROB);
 
   // ── CLIP view — the note editor 8×8 (reuses editorPads) + its right column. ──
@@ -701,12 +701,12 @@
     { state: 'EXIT', rgb: RGB_EXIT, note: 'leave editor / length page (top scene button)' },
   ];
   // NOTE COLOUR = firing PROBABILITY, source-aware (the note channel that
-  // replaced velocity-blue). White = always fires; a per-note override ramps
-  // PURPLE with its chance; a note on the clip default ramps ORANGE.
+  // replaced velocity-blue). White = effective 100% (always fires); a note using
+  // its OWN probability ramps PURPLE; a note following the clip default ramps ORANGE.
   const EDITOR_COLORS: { state: string; rgb: Rgb; note: string }[] = [
-    { state: 'note · 100% (always fires)', rgb: RGB_WHITE, note: 'white — the default: fires every pass (no prob stored). Effective 100% is always white, whatever the source' },
-    { state: 'note · per-note chance', rgb: probNoteRgb(0.6), note: 'purple ∝ probability — a per-note override (SHIFT + tap a note to set it); dimmer = a lower dice-roll chance' },
-    { state: 'note · clip-default chance', rgb: probNoteRgbOrange(0.6), note: 'orange ∝ probability — a note with NO override, taking the clip’s default (set on Grid: SHIFT + a clip pad)' },
+    { state: 'note · 100% (always fires)', rgb: RGB_WHITE, note: 'white — fires every pass. Effective 100% is always white, whatever the source (a note set to 100% pins white above a lower clip default)' },
+    { state: 'note · own chance', rgb: probNoteRgb(0.6), note: 'purple ∝ probability — a note using its own probability (SHIFT + tap a note to set it); dimmer = a lower dice-roll chance' },
+    { state: 'note · clip-default chance', rgb: probNoteRgbOrange(0.6), note: 'orange ∝ probability — a note with NO probability of its own, following the clip’s default (set on Grid: SHIFT + a clip pad)' },
     { state: 'note under playhead', rgb: RGB_NOTE_PLAYHEAD, note: 'yellow boost on the playing step (overrides the prob colour while it plays)' },
     { state: 'playhead column', rgb: RGB_PLAYHEAD_WASH, note: 'the moving step' },
     { state: 'root guide', rgb: RGB_ROOT_GUIDE, note: 'faint marker on every root-pitch row' },
@@ -761,14 +761,14 @@
   ];
   const SINGLE_MAP_GRID: MapRow[] = [
     { what: 'GRID — the clip matrix', addr: 'column = channel / lane (1–8 left→right), row = clip slot (top row = slot 1). Single-tap = launch / stop (queued to the boundary). DOUBLE-TAP a clip = select it + open CLIP on it (empty pad = create a clip). No-shift right column = ROW / scene launch — a SCROLLING window of position-relative buttons over up to 64 scenes (slid by Grid+shift SCR▲/SCR▼)' },
-    { what: 'CLIP-DEFAULT PROBABILITY — SHIFT + a clip pad', addr: 'SHIFT + press a clip PAD (with NO armed function) → the 8×8 becomes a 40-level ORANGE bar (top 5 rows; each pad = 2.5%) for that clip’s DEFAULT firing probability. Tap pad k = k×2.5%, pad 40 = 100% (deletes the default); the page auto-returns on the tap, a bottom-3-row tap cancels. The default applies to EVERY note with no per-note override (a per-note prob still wins). Opens only on a pad holding a clip; single-unit only. An armed copy/paste/div/len still consumes the tap; a no-shift tap still launches. Also on the card: right-click a clip pad → “Clip probability”' },
+    { what: 'CLIP-DEFAULT PROBABILITY — SHIFT + a clip pad', addr: 'SHIFT + press a clip PAD (with NO armed function) → the 8×8 becomes a 40-level ORANGE bar (top 5 rows; each pad = 2.5%) for that clip’s DEFAULT firing probability. Tap pad k = k×2.5%, pad 40 = 100% (clears the clip default); the page auto-returns on the tap, a bottom-3-row tap cancels. The default is used by EVERY note with no probability of its own (a note’s own prob is used as-is, incl 100% which pins above the default). Opens only on a pad holding a clip; single-unit only. An armed copy/paste/div/len still consumes the tap; a no-shift tap still launches. Also on the card: right-click a clip pad → “Clip probability”' },
     { what: 'GRID + shift right column', addr: 'top→bottom: COPY · PASTE · CLIP-DIV · SWING+ · SWING− · LENGTH · SCROLL▲ · SCROLL▼ (amber). Copy / Paste / Clip-Div / Length are TAP-TO-ARM (tap → arm → tap a target). Copy + a ROW/scene press grabs the WHOLE SCENE (all 8 lanes) — release SHIFT first so the column shows the ROW ▶ buttons (clip-pad targets work under either shift state); Paste is type-gated (clip→clip + scene→scene apply, the cross-type pastes are no-ops). Swing ± are direct ±2 % nudges on the SELECTED channel. SCROLL ▲▼ slide the scene window (up to 64 scenes; each dims at its limit)' },
     { what: 'SCENE REPEATS — HOLD GRID + HOLD a scene button', addr: 'the 8×8 becomes the orange REPEAT-COUNT view for that scene (no shift — SHIFT+top-row stays the arm map). Tap pad k (row-major from the upper-left) = k repeats (1–63) · pad 64 = INFINITE (default). Pads 1..N stay lit for count N; all 64 lit = infinite. The held button is POSITION-RELATIVE through the scene scroll (button i edits scene offset+i); the press never launches. Release either button = back to the grid. After N passes of the scene’s longest clip (frozen at launch) the next content scene down auto-launches via the normal quantized path' },
   ];
   const SINGLE_MAP_CLIP: MapRow[] = [
     { what: 'CLIP — note-editor right column', addr: 'top→bottom: DOUBLE · LENGTH · FOLLOW · KEYS · ROW+ · ROW− · STEP◀ · STEP▶. Shift: ROW± = a full page jump (±8 rows), STEP± = block jump. The FOLLOW row is double-duty: HOLD it (no shift) = the momentary VEL modifier (tap notes → cycle velocity); SHIFT + tap it = the FOLLOW toggle' },
-    { what: 'CLIP — note colour = firing probability', addr: 'notes glow by their EFFECTIVE firing probability, not velocity: WHITE = 100% (always fires) · PURPLE ramp = a per-note override · ORANGE ramp = a note taking the clip default (dimmer = less likely). Playback rolls a per-trigger dice-roll; a chord partially fires' },
-    { what: 'CLIP + shift — per-note PROB page', addr: 'SHIFT + tap a note → the 8×8 becomes a 40-level PURPLE bar (top 5 rows; each pad = 2.5%). Tap pad k = k×2.5%, pad 40 = 100%; the page auto-returns on the tap, a bottom-3-row tap cancels. 100% deletes the note’s prob key (→ white, or the clip default). Opens only on a cell holding a note; single-unit only' },
+    { what: 'CLIP — note colour = firing probability', addr: 'notes glow by their EFFECTIVE firing probability, not velocity: WHITE = effective 100% (always fires) · PURPLE ramp = a note using its own probability · ORANGE ramp = a note following the clip default (dimmer = less likely). Playback rolls a per-trigger dice-roll; a chord partially fires' },
+    { what: 'CLIP + shift — per-note PROB page', addr: 'SHIFT + tap a note → the 8×8 becomes a 40-level PURPLE bar (top 5 rows; each pad = 2.5%), opening at the note’s current probability (its own, else the clip default). Tap pad k = k×2.5%, pad 40 = 100%; the page auto-returns on the tap, a bottom-3-row tap cancels. Sets the note’s OWN probability, used as-is (incl 100% = white, always fires, pinning above a lower clip default). Opens only on a cell holding a note; single-unit only' },
     { what: 'KEYS — scale select (no shift)', addr: 'top→bottom: MAJOR · MINOR · PENTATONIC · DORIAN · PHRYGIAN · MIXOLYDIAN · CHROMATIC · ARP on/off. Selected scale glows bright green. The scale lights the keyboard but does NOT snap live input (pads stay chromatic)' },
     { what: 'KEYS + shift — the arp column', addr: 'top→bottom: DIV+ · DIV− · UP · DOWN · UP-AND-DOWN · RANGE+ · RANGE− · LATCH. Divisions 8x…1/8 (1x default); ranges 1 oct / +1..−1 / +2..−2 (symmetric); up-and-down is an exclusive pendulum' },
     { what: 'KEYS entry / exit', addr: 'enter from CLIP → the KEYS button (right column, bright orange) on the selected clip. In KEYS the bottom row is EXIT · QUEUE-REC (clip record) · OVERDUB · OCT− · OCT+ · PANIC · LENGTH. A view button exits KEYS; EXIT steps back (recording → armed → idle → the views)' },
@@ -1210,32 +1210,31 @@
 
     <h4 id="single-clip-prob">Clip-default probability — SHIFT + a clip pad</h4>
     <p>
-      Give a WHOLE clip a <strong>default firing probability</strong> — a chance every note without its own
-      per-note probability rolls each time it plays. <strong>HOLD SHIFT and press a clip pad</strong> (one
-      that already holds a clip, with <em>no</em> function armed) → the 8×8 becomes a <strong>40-level
-      ORANGE bar</strong> over the top 5 rows (the orange echoes the clip-default note colour). <strong>Tap
-      pad <em>k</em></strong> = <em>k</em> × 2.5%; <strong>pad 40 = 100%</strong> (which clears the default).
-      The page auto-returns to the grid on that tap; a dark-row tap cancels.
+      Every note has a firing probability, always: until you set a note's own, it <strong>uses the clip's
+      probability</strong>. Give a WHOLE clip a <strong>default firing probability</strong> — the chance every
+      note that has no probability of its own rolls each time it plays. <strong>HOLD SHIFT and press a clip
+      pad</strong> (one that already holds a clip, with <em>no</em> function armed) → the 8×8 becomes a
+      <strong>40-level ORANGE bar</strong> over the top 5 rows (the orange echoes the clip-default note
+      colour). <strong>Tap pad <em>k</em></strong> = <em>k</em> × 2.5%; <strong>pad 40 = 100%</strong> (every
+      note fires). The page auto-returns to the grid on that tap; a dark-row tap cancels.
     </p>
     <LaunchpadDiagram
       top={permTop('grid', { running: true })}
       pads={clipProbPads}
       accent={hex(RGB_PROB_ORANGE)}
-      caption="CLIP-DEFAULT PROBABILITY page (shown: 50% → pads 1–20 lit ORANGE over the top 5 rows). SHIFT + a Grid clip pad opens it; the next pad tap writes the clip’s default and returns. The default applies to every note WITHOUT a per-note override — in the note editor those notes render orange (∝ the default), a per-note override renders purple, and any effective 100% is white."
+      caption="CLIP-DEFAULT PROBABILITY page (shown: 50% → pads 1–20 lit ORANGE over the top 5 rows). SHIFT + a Grid clip pad opens it; the next pad tap writes the clip’s default and returns. The default is used by every note that has not had its own probability set — in the note editor those notes render orange (∝ the default), a note using its own probability renders purple, and any effective 100% is white."
     />
     <ul class="tight">
-      <li><strong>Precedence:</strong> a note's <strong>own per-note probability wins</strong>; a note with
-        none takes this <strong>clip default</strong>; with neither it always fires. So the default recolours
-        only the un-overridden notes (they turn <strong>orange</strong> in the editor); overridden notes stay
-        <strong>purple</strong>.</li>
-      <li><strong>It gates playback:</strong> a clip default of 0% silences every un-overridden note. To make
-        one note fire MORE than a low clip default, give it a <strong>high but sub-100%</strong> per-note
-        value (e.g. <strong>97.5%</strong>) — that stays a <strong>purple override</strong> and wins over the
-        default. A per-note <strong>100% deletes the note's own key</strong> (the delete-at-100% convention),
-        so that note then <em>inherits the clip default</em> and fires at the default rate (rendering orange,
-        or white if the default is 100%) — a per-note 100% does NOT pin a note above a low default. Setting
-        the clip default itself to <strong>100% deletes the default key</strong> (back to white, old clips
-        byte-identical).</li>
+      <li><strong>Precedence:</strong> once a note has its OWN probability it uses THAT value in all cases; a
+        note that has none <strong>follows the clip default</strong>; with neither it always fires. So the
+        default colours only the notes with no probability of their own (they turn <strong>orange</strong> in
+        the editor); notes using their own probability stay <strong>purple</strong> (white at effective 100%).</li>
+      <li><strong>It gates playback, and a note pins over it:</strong> a clip default of 0% silences every note
+        that follows it — but a note set to <strong>100% fires 100%</strong> (white) and thereby sits ABOVE a
+        lower clip default, and a note set to <strong>50% fires 50%</strong> even under a 100% clip. A note's
+        own probability is used as-is, including exactly 100% (no delete, no special-casing). Setting the
+        <em>clip</em> default to <strong>100% clears the clip default</strong> (every note then fires unless it
+        has its own lower value; old clips stay byte-identical).</li>
       <li>Under shift an <strong>armed</strong> copy / paste / clip-div / length still consumes the clip-pad
         tap (unchanged); a <strong>no-shift</strong> tap still launches. Empty pads don't open the page
         (there's no clip to carry a default). <em>Single-unit only</em> — on the card, right-click a clip
@@ -1292,28 +1291,31 @@
 
     <h4 id="single-note-prob">Per-note probability — SHIFT + tap a note (the PROB page)</h4>
     <p>
-      Give any note a <strong>firing probability</strong> so it only sounds some of the time:
-      <strong>HOLD SHIFT and tap a note</strong> → the 8×8 turns into a <strong>40-level purple bar</strong>
-      over the <strong>top 5 rows</strong> (each pad = 2.5%; the same layout as the Grid's repeat-count and
-      clip-default pages). <strong>Tap pad <em>k</em></strong> (row-major from the upper-left) to set
-      <em>k</em> × 2.5%; <strong>pad 40 = 100%</strong>. The page auto-returns to the editor on that one tap;
-      a tap in the dark bottom rows cancels without changing anything.
+      Give a note its <strong>own firing probability</strong> so it only sounds some of the time (until you
+      do, it uses the clip's probability): <strong>HOLD SHIFT and tap a note</strong> → the 8×8 turns into a
+      <strong>40-level purple bar</strong> over the <strong>top 5 rows</strong> (each pad = 2.5%; the same
+      layout as the Grid's repeat-count and clip-default pages). The bar opens at the note's <em>current</em>
+      probability — its own if set, otherwise the clip default. <strong>Tap pad <em>k</em></strong> (row-major
+      from the upper-left) to set <em>k</em> × 2.5%; <strong>pad 40 = 100%</strong>. The page auto-returns to
+      the editor on that one tap; a tap in the dark bottom rows cancels without changing anything.
     </p>
     <LaunchpadDiagram
       top={permTop('clip', { running: true })}
       pads={noteProbPads}
       scene={clipRightScene}
       accent={hex(RGB_PROB)}
-      caption="PER-NOTE PROBABILITY page (shown: 60% → pads 1–24 lit purple over the top 5 rows; the bottom 3 rows stay dark). Tap pad k = k × 2.5%; pad 40 = 100%. Setting 100% deletes the note's own probability so it goes back to WHITE (and reverts to the clip default if one is set). The right column + top row still show underneath."
+      caption="PER-NOTE PROBABILITY page (shown: 60% → pads 1–24 lit purple over the top 5 rows; the bottom 3 rows stay dark). Tap pad k = k × 2.5%; pad 40 = 100%. Setting a value gives the note its OWN probability (used as-is, incl 100% = always fires, white — which pins it above a lower clip default). The right column + top row still show underneath."
     />
     <ul class="tight">
       <li>The bar always lights pads <strong>1..N</strong> for the note's level N (all 40 = 100%). Setting a
-        note to <strong>100% clears its own probability key</strong> — it turns <strong>white</strong> again
-        (or <strong>orange</strong> if the clip carries a default, which it then falls back to).</li>
+        note to <strong>100%</strong> gives it its own 100% — it turns <strong>white</strong> and always
+        fires, sitting <strong>above</strong> a lower clip default; a sub-100% value stays
+        <strong>purple</strong>. A note you've never touched follows the clip (orange when the clip default is
+        below 100%).</li>
       <li><strong>Playback rolls the dice once per step:</strong> the note fires when a per-trigger random
-        draw beats its effective probability (a chord partially fires). A per-note chance <strong>overrides
-        the clip default</strong>. The arranger PRINT bakes the realized hits — the printed take equals what
-        actually sounded.</li>
+        draw beats its effective probability (a chord partially fires). A note's own probability is used as-is
+        — it is independent of the clip default. The arranger PRINT bakes the realized hits — the printed take
+        equals what actually sounded.</li>
       <li>You can also set it from the card: <strong>right-click a note cell → Probability</strong> (100%
         default … 2.5%). <em>The PROB page is single-unit only</em> — in two-Launchpad mode set per-note
         probability from the card (the pair note editor has no PROB page).</li>

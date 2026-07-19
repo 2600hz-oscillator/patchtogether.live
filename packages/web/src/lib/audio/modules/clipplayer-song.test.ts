@@ -343,18 +343,18 @@ describe('clipplayer SONG-REC punch-out: printed == sounded', () => {
     expect(liveClip.steps.find((s) => s.midi === 60)?.prob).toBe(0);
   });
 
-  it('BAKE clip-default: an un-overridden note under defaultProb=0 never prints; a per-note override BEATS the default', async () => {
-    // The CLIP DEFAULT gates every un-overridden note. defaultProb=0 → midi 60
-    // (no own prob) NEVER fires/prints; midi 72 carries a per-note prob=1
-    // override that BEATS the 0 default → fires+prints every bar. Deterministic
-    // (0/1 = certain rolls, no seed injection). Mirrors the per-note BAKE test
-    // above but exercises the clip-default source of the shared dice-roll.
+  it("BAKE clip-default: a note with no own prob under defaultProb=0 never prints; a note's own prob=1 PINS over the default", async () => {
+    // The CLIP DEFAULT gates every note without its own prob. defaultProb=0 → midi
+    // 60 (no own prob) NEVER fires/prints; midi 72 has its OWN stored prob=1 that
+    // sits ABOVE the 0 default → fires+prints every bar. Deterministic (0/1 =
+    // certain rolls, no seed injection). Mirrors the per-note BAKE test above but
+    // exercises the clip-default source + the own-prob-1 pin of the shared roll.
     const probClip: NoteClipRecord = {
       kind: 'note',
-      defaultProb: 0, // every un-overridden note is silenced
+      defaultProb: 0, // every note without its own prob is silenced
       steps: [
-        { step: 0, midi: 72, velocity: 100, lengthSteps: 1, prob: 1 }, // override BEATS the default
-        { step: 0, midi: 60, velocity: 100, lengthSteps: 1 }, // takes the 0 default → never fires
+        { step: 0, midi: 72, velocity: 100, lengthSteps: 1, prob: 1 }, // own prob 1 PINS over the default
+        { step: 0, midi: 60, velocity: 100, lengthSteps: 1 }, // no own prob → the 0 default → never fires
       ],
       lengthSteps: 4,
       root: 48,
@@ -377,8 +377,8 @@ describe('clipplayer SONG-REC punch-out: printed == sounded', () => {
     run(ctx, 4.4, 4.5);
 
     const events = songOf().notes?.['0']?.events ?? [];
-    expect(events.length, 'the override note printed each bar').toBeGreaterThan(4);
-    expect(events.every((e) => e.midi === 72), 'ONLY the override beat the 0 clip default').toBe(true);
+    expect(events.length, 'the pinned note printed each bar').toBeGreaterThan(4);
+    expect(events.every((e) => e.midi === 72), "ONLY the note's own prob=1 pinned over the 0 clip default").toBe(true);
     expect(
       events.some((e) => e.midi === 60),
       'the clip-default note failed its 0-roll → neither sounded nor printed',
