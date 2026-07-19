@@ -17,12 +17,31 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { setNodeParam } from '$lib/graph/mutate';
+  import { patch } from '$lib/graph/store';
   import { frametableDef } from '$lib/video/modules/frametable';
   import {
     FRAMETABLE_MODE_SMOOTH,
     FRAMETABLE_MODE_MORPH,
     FRAMETABLE_MODE_CHAOS,
   } from '$lib/video/frametable-core';
+  import {
+    FRAMETABLE_ATLAS_COLS,
+    FRAMETABLE_ATLAS_ROWS,
+    FRAMETABLE_ATLAS_TILES,
+    FRAMETABLE_FILE_ACCEPT,
+    tileRect,
+    atlasGeometry,
+    atlasDimensions,
+    flipRowsY,
+    frametableFileName,
+  } from '$lib/video/frametable-atlas';
+  import {
+    newFrametableFileId,
+    putFrametableBlob,
+    getFrametableBlob,
+    type FrametableFileMeta,
+  } from '$lib/video/frametable-file-store';
+  import { canSaveViaPicker } from '$lib/video/recorderbox-store';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
@@ -83,6 +102,207 @@
     saveResetTimer = setTimeout(() => setNodeParam(id, 'saveTrig', 0), 140);
     saveFlashTimer = setTimeout(() => { savedFlash = false; }, 600);
   }
+
+  // ═══ FILE SAVE / LOAD — real `.frametable.png` atlas files (the wavetable ═══
+  //     workflow). Separate from the in-GPU SAVE slot above (doSave): that feeds
+  //     the VideoCube + save-trigger jack and dies on reload; THIS writes/reads a
+  //     real 60-frame PNG sprite-sheet to disk + IndexedDB (survives reload).
+  let fileStatus = $state<string | null>(null);
+  let fileError = $state<string | null>(null);
+  let savingFile = $state(false);
+  // A card-held atlas canvas kept alive until the factory's next draw() detiles it.
+  let loadCanvasEl: HTMLCanvasElement | null = null;
+  // The file id already detiled into the GPU ring — guards the mount $effect from
+  // re-hydrating a table we just loaded/saved locally this session.
+  let hydratedId: string | null = null;
+
+  function getVideoEngine(): VideoEngine | null {
+    const e = engineCtx.get();
+    if (!e) return null;
+    try { return e.getDomain<VideoEngine>('video') ?? null; }
+    catch { return null; }
+  }
+  async function waitForVideoEngine(timeoutMs = 4000): Promise<VideoEngine | null> {
+    const start = Date.now();
+    for (;;) {
+      const ve = getVideoEngine();
+      if (ve) return ve;
+      if (Date.now() - start > timeoutMs) return null;
+      await new Promise((r) => setTimeout(r, 80));
+    }
+  }
+
+  // The tiny persisted descriptor (id + geometry, ~120 bytes) — the ONLY thing
+  // that touches node.data / the Y.Doc. The 45 MiB of frames live in IndexedDB.
+  let ftFile = $derived((node?.data as { frametableFile?: FrametableFileMeta } | undefined)?.frametableFile);
+
+  function writeFileMeta(meta: FrametableFileMeta): void {
+    const target = patch.nodes[id];
+    if (!target) return;
+    if (!target.data) target.data = {};
+    (target.data as Record<string, unknown>).frametableFile = meta;
+  }
+
+  // Forward the decoded atlas to the factory via the CAMERA/VIDEOBOX external-
+  // source channel (so engine.ts stays untouched) + FREEZE so the loaded table
+  // is held for morph/scan (capture would gradually overwrite it otherwise).
+  function uploadAtlas(ve: VideoEngine, bmp: ImageBitmap): void {
+    const c = document.createElement('canvas');
+    c.width = bmp.width; c.height = bmp.height;
+    const cx = c.getContext('2d');
+    if (!cx) return;
+    cx.drawImage(bmp, 0, 0);
+    loadCanvasEl = c; // keep alive until the next draw() detiles it
+    ve.attachExternalSource(id, 'image', c);
+    setNodeParam(id, 'freeze', 1);
+  }
+
+  // File input onchange — decode + validate + upload + persist (mirrors WAVECEL).
+  async function onFrametableFileChange(ev: Event) {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    fileError = null;
+    fileStatus = 'loading...';
+    try {
+      const bmp = await createImageBitmap(file);
+      const geo = atlasGeometry(bmp.width, bmp.height);
+      if (!geo.valid) {
+        bmp.close?.();
+        throw new Error(`not a ${FRAMETABLE_ATLAS_COLS}×${FRAMETABLE_ATLAS_ROWS} frametable atlas (${bmp.width}×${bmp.height})`);
+      }
+      const ve = getVideoEngine();
+      if (!ve) throw new Error('video engine not ready');
+      uploadAtlas(ve, bmp);
+      bmp.close?.();
+      // Persist the PNG bytes to THIS browser's IndexedDB (NEVER the Y.Doc), and
+      // stamp only the tiny descriptor into node.data so it survives reload.
+      const fid = newFrametableFileId();
+      const meta: FrametableFileMeta = {
+        id: fid, name: file.name, cols: geo.cols, rows: geo.rows,
+        tileW: geo.tileW, tileH: geo.tileH, frames: geo.frames, size: file.size,
+      };
+      await putFrametableBlob(fid, file, file.name);
+      hydratedId = fid;          // we just detiled it → the $effect must not redo it
+      writeFileMeta(meta);
+      fileStatus = `loaded ${geo.frames} frames ${geo.tileW}×${geo.tileH}`;
+    } catch (err) {
+      fileError = err instanceof Error ? err.message : String(err);
+      fileStatus = null;
+    } finally {
+      try { input.value = ''; } catch { /* */ }
+    }
+  }
+
+  // Save-to-disk — read the 60 ring layers back, tile into a PNG atlas, then
+  // showSaveFilePicker (Chromium) / <a download> (Firefox/Safari). Also persists
+  // to IndexedDB so the saved table survives reload even before a re-load.
+  async function doSaveFile() {
+    if (savingFile) return;
+    savingFile = true;
+    fileError = null;
+    fileStatus = 'saving...';
+    try {
+      const ve = getVideoEngine();
+      if (!ve) throw new Error('video engine not ready');
+      const rb = ve.read(id, 'ringReadback') as
+        | { w: number; h: number; layers: number; chrono: Uint8Array[] }
+        | undefined;
+      if (!rb || !rb.chrono || rb.chrono.length < FRAMETABLE_ATLAS_TILES) throw new Error('ring not ready');
+      const blob = await encodeAtlasBlob(rb.w, rb.h, rb.chrono);
+      if (!blob) throw new Error('PNG encode failed');
+      const name = frametableFileName();
+      await saveBlobToDisk(blob, name);
+      const fid = newFrametableFileId();
+      await putFrametableBlob(fid, blob, name);
+      hydratedId = fid; // the current ring already IS this table
+      writeFileMeta({
+        id: fid, name, cols: FRAMETABLE_ATLAS_COLS, rows: FRAMETABLE_ATLAS_ROWS,
+        tileW: rb.w, tileH: rb.h, frames: FRAMETABLE_ATLAS_TILES, size: blob.size,
+      });
+      fileStatus = `saved ${name}`;
+    } catch (err) {
+      // AbortError = the user cancelled the picker — not an error to surface.
+      if (err instanceof DOMException && err.name === 'AbortError') fileStatus = null;
+      else fileError = err instanceof Error ? err.message : String(err);
+    } finally {
+      savingFile = false;
+    }
+  }
+
+  // Tile the chronological readback into an UPRIGHT PNG atlas (flip each
+  // bottom-origin readback tile). Pure canvas — NO codec (CI/SwiftShader-safe).
+  function encodeAtlasBlob(w: number, h: number, chrono: Uint8Array[]): Promise<Blob | null> {
+    const { width, height } = atlasDimensions(w, h);
+    const canvas = document.createElement('canvas');
+    canvas.width = width; canvas.height = height;
+    const cx = canvas.getContext('2d');
+    if (!cx) return Promise.resolve(null);
+    for (let c = 0; c < FRAMETABLE_ATLAS_TILES; c++) {
+      const src = chrono[c];
+      if (!src || src.length < w * h * 4) continue;
+      const upright = flipRowsY(src, w, h); // GL bottom-origin → top-origin (upright)
+      const img = new ImageData(upright, w, h);
+      const { sx, sy } = tileRect(c, w, h);
+      cx.putImageData(img, sx, sy);
+    }
+    return new Promise((resolve) => canvas.toBlob((b) => resolve(b), 'image/png'));
+  }
+
+  async function saveBlobToDisk(blob: Blob, name: string): Promise<void> {
+    if (canSaveViaPicker()) {
+      const picker = (globalThis as unknown as {
+        showSaveFilePicker: (o: unknown) => Promise<{ createWritable: () => Promise<{ write: (b: Blob) => Promise<void>; close: () => Promise<void> }> }>;
+      }).showSaveFilePicker;
+      try {
+        const handle = await picker({
+          suggestedName: name,
+          types: [{ description: 'FrameTable atlas', accept: { 'image/png': ['.frametable.png', '.png'] } }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return;
+      } catch (err) {
+        // User cancel bubbles up (handled by the caller); other picker failures
+        // fall through to the <a download> blob path.
+        if (err instanceof DOMException && err.name === 'AbortError') throw err;
+      }
+    }
+    const a = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    a.href = url; a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+
+  // Re-hydrate on mount / patch-load (or when a peer loads a file): pull the PNG
+  // bytes from THIS browser's IndexedDB by id, decode, detile back into the ring.
+  // A peer WITHOUT the local copy gets null → the file input stays as the re-load
+  // drop-zone (the VIDEOBOX "peers without a local copy show the placeholder").
+  async function hydrateFromStore(fileId: string): Promise<void> {
+    if (hydratedId === fileId) return;
+    try {
+      const rec = await getFrametableBlob(fileId);
+      if (!rec) return; // no local copy — leave the re-load control
+      const bmp = await createImageBitmap(rec.blob);
+      const geo = atlasGeometry(bmp.width, bmp.height);
+      if (!geo.valid) { bmp.close?.(); return; }
+      const ve = await waitForVideoEngine();
+      if (!ve) { bmp.close?.(); return; }
+      hydratedId = fileId;
+      uploadAtlas(ve, bmp);
+      bmp.close?.();
+      fileStatus = `restored ${rec.name}`;
+    } catch { /* best-effort re-hydrate; leave the re-load control on failure */ }
+  }
+
+  $effect(() => {
+    const fid = ftFile?.id;
+    if (fid && fid !== hydratedId) void hydrateFromStore(fid);
+  });
 
   // --- Live preview of video_out (the canonical surface.texture). ---
   const ENGINE_W = VIDEO_RES.width;
@@ -329,6 +549,38 @@
       >{savedFlash ? 'SAVED' : 'SAVE'}</button>
     </div>
 
+    <!-- File row: Load / Save real .frametable.png atlas files (visible in ALL
+         modes — placed outside the per-mode extras). Separate from the in-GPU
+         SAVE above: this writes/reads real files that survive reload. -->
+    <div class="btn-row file-row" data-testid="frametable-file">
+      <label
+        class="ft-btn nodrag file-load"
+        title="Load a .frametable.png atlas file into the 60-frame ring (freezes it so you can morph/scan the loaded table)"
+      >
+        <input
+          type="file"
+          accept={FRAMETABLE_FILE_ACCEPT}
+          onchange={onFrametableFileChange}
+          data-testid="frametable-file-input"
+        />
+        <span>Load…</span>
+      </label>
+      <button
+        type="button"
+        class="ft-btn nodrag"
+        data-testid="frametable-save-file"
+        title="Save the current 60-frame ring as a .frametable.png atlas file (freeze first to hold the window before saving)"
+        onclick={doSaveFile}
+        disabled={savingFile}
+      >Save file</button>
+    </div>
+    {#if fileStatus}
+      <div class="file-status" data-testid="frametable-file-status">{fileStatus}</div>
+    {/if}
+    {#if fileError}
+      <div class="file-error" data-testid="frametable-file-error">{fileError}</div>
+    {/if}
+
     <!-- Shared faders: MORPH + SPREAD. -->
     <div class="fader-row">
       <Fader value={p('morph')} min={pmin('morph')} max={pmax('morph')} defaultValue={pdef('morph')}
@@ -466,6 +718,33 @@
     background: var(--cable-video, #3aa);
     color: #041014;
     border-color: var(--cable-video, #3aa);
+  }
+  .file-row {
+    align-items: stretch;
+  }
+  .file-load {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .file-load input[type='file'] {
+    display: none;
+  }
+  .file-status,
+  .file-error {
+    margin: 3px 14px 0;
+    font-size: 0.55rem;
+    font-family: ui-monospace, monospace;
+    letter-spacing: 0.03em;
+    text-align: center;
+    word-break: break-word;
+  }
+  .file-status {
+    color: var(--text-dim);
+  }
+  .file-error {
+    color: var(--cable-video, #e66);
   }
   .fader-row {
     margin-top: 6px;

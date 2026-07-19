@@ -175,7 +175,11 @@ describe('FRAMETABLE — def shape', () => {
 
 describe('FRAMETABLE — inverse-CDF reproduces the triangular bell (no per-fragment loop)', () => {
   const MORPHS = [0, 0.25, 0.5, 0.75, 0.99]; // 0.99 = wrap boundary
-  const SPREADS = [1, 2, 5, 7, 15, 30, 60];
+  // Sweep spread within [1, N-1] = [1, 59] — the range the shader (and now the
+  // pickLagIndex CPU mirror) actually clamps to. 59 is the widest honest bell;
+  // spread=60 (the fader max) clamps to 59 in BOTH, so testing 60 here would
+  // compare a clamped-59 empirical pick against an unclamped-60 analytic weight.
+  const SPREADS = [1, 2, 5, 7, 15, 30, 59];
   const SAMPLES = 240_000;
 
   for (const morph of MORPHS) {
@@ -188,10 +192,10 @@ describe('FRAMETABLE — inverse-CDF reproduces the triangular bell (no per-frag
         expect(totalVariation(p, w), 'TV distance').toBeLessThan(0.02);
         // Max per-bin absolute error.
         expect(maxAbs(p, w), 'max-abs per-bin error').toBeLessThan(0.01);
-        // Both distributions normalise to 1. (At the spread=60 degenerate boundary
-        // 2h=N exactly, the single antipodal frame straddles the wrap seam so the
-        // analytic weight loses ~1.4e-4 of its bin there — harmless, and well below
-        // the TV/max-abs match above; hence the looser analytic-sum tolerance.)
+        // Both distributions normalise to 1. (Near the widest spread=59 the far
+        // edge of the bell can lose a few 1e-4 of its bin to the wrap seam —
+        // harmless, and well below the TV/max-abs match above; hence the looser
+        // analytic-sum tolerance.)
         expect(sumMass(p)).toBeCloseTo(1, 3);
         expect(sumMass(w)).toBeCloseTo(1, 3);
 
@@ -773,6 +777,35 @@ describe('FRAMETABLE — MORPH periodic Hann kernel', () => {
       expect(layer).toBeGreaterThanOrEqual(0);
       expect(layer).toBeLessThan(N);
     }
+  });
+
+  it('the subsample stride is a STEP FUNCTION of spread, not the realized tap count (no 1↔2 flip at the cap boundary spread=32)', () => {
+    // At spread=32 the window holds 32 OR 33 integer frames as the centre c
+    // crosses integers during a scan. A stride derived from the realized
+    // ks.length would flip 1↔2 exactly here (32→stride 1 keeps all 32; 33→stride
+    // 2 keeps 17), so the tap COUNT would swing ~32↔17 frame-to-frame and the
+    // kept frames' weights would ~double for a single frame — a C¹ break. Basing
+    // the stride on `spread` (via floor(2h)+1) makes it CONSTANT at a fixed
+    // spread, so the count only jitters by the inherent ±1 window membership.
+    const cap = 32; // = FRAMETABLE_MORPH_TAP_CAP (the shader uWeights[] size)
+    const counts = new Set<number>();
+    for (let i = 0; i <= 400; i++) {
+      const morph = i / 400;
+      const k = morphKernel(morph, 32, 40, true, cap);
+      // Never exceeds the cap (would overrun the shader uniform arrays).
+      expect(k.count, `morph=${morph.toFixed(3)} count ≤ cap`).toBeLessThanOrEqual(cap);
+      expect(k.weights.reduce((a, b) => a + b, 0), 'Σw = 1').toBeCloseTo(1, 9);
+      counts.add(k.count);
+    }
+    // A stride flip would put both a ~32 (stride 1) and a ~17 (stride 2) count in
+    // the set. A spread-based stride keeps the tap count within a ±1 band all
+    // scan long (only the inherent window-membership jitter).
+    const lo = Math.min(...counts);
+    const hi = Math.max(...counts);
+    expect(hi - lo, `tap-count spread across the scan {${[...counts].sort((a, b) => a - b).join(',')}}`).toBeLessThanOrEqual(1);
+    // And it never falls back to stride 1 (which would keep ~32 taps) — proving
+    // the boundary spread is subsampled deterministically, not conditionally.
+    expect(hi, 'stride≥2 at spread=32 → count well under the raw ~33 window').toBeLessThan(cap);
   });
 });
 

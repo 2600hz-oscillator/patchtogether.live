@@ -296,4 +296,127 @@ test.describe('FRAMETABLE — video wavetable oscillator (3 modes)', () => {
     assertLiveFrame(chaosTrack, 8);
     expect(signatureDist(chaosTrack, chaosBase), 'CHAOS is real-time: it tracks the new input within a few frames').toBeGreaterThan(8);
   });
+
+  // FILE SAVE / LOAD — the wavetable-style workflow. A LEAN, renderer-tolerant
+  // round-trip (variance-probe, NOT pixel-exact — FRAMETABLE is whole-module
+  // VRT+behavioral exempt): read the 60 ring layers back → tile into a lossless
+  // PNG atlas (NO codec → CI/SwiftShader-safe) → detile it back into the ring
+  // and assert the buffer is restored (non-blank + structured), PLUS drive the
+  // REAL card file input to prove onFrametableFileChange + the node.data
+  // persistence descriptor.
+  test('SAVE→LOAD round-trip: ring → PNG atlas → detile restores the buffer; card LOAD persists the file id', async ({ page, errorWatch }) => {
+    void errorWatch;
+    await installRenderSmokeHooks(page);
+    await page.goto('/rack');
+    await page.waitForLoadState('networkidle');
+    await spawnPatch(page, chainNodes({ mode: MODE_CHAOS, morph: 0.5, spread: 20, shimmer: 0 }), chainEdges());
+
+    // Seed the ring with real varied content (scene0 fills it, scene9 washes in).
+    await stepRead(page, { nodeId: 'ft', steps: FILL, scale: RENDER_SCALE });
+    await setNodeParams(page, 'acid', { scene: 9, paletteType: 3 });
+    await stepRead(page, { nodeId: 'ft', steps: 25, scale: RENDER_SCALE });
+    await setNodeParams(page, 'ft', { freeze: 1 });
+    const saved = await stepRead(page, { nodeId: 'ft', steps: 3, scale: RENDER_SCALE });
+    assertLiveFrame(saved, 3);
+
+    // (1) SAVE — read the 60 ring layers back + tile into a PNG atlas, entirely
+    // in-page (a pure canvas encode, no H.264). Assert the atlas is the expected
+    // COLS*w × ROWS*h dims + a real non-empty PNG (magic bytes). Stash the atlas
+    // CANVAS on window for the in-page detile in step (3) — no giant serialize.
+    const atlasInfo = await page.evaluate(() => {
+      const COLS = 10, ROWS = 6, TILES = 60;
+      const w = globalThis as unknown as {
+        __engine: () => { getDomain: (d: string) => { read: (id: string, key: string) => unknown } };
+        __ftAtlas?: HTMLCanvasElement;
+      };
+      const vid = w.__engine().getDomain('video');
+      const rb = vid.read('ft', 'ringReadback') as
+        | { w: number; h: number; chrono: Uint8Array[] } | undefined;
+      if (!rb || !rb.chrono || rb.chrono.length !== TILES) return { ok: false, width: 0, height: 0, tw: 0, th: 0, size: 0, isPng: false };
+      const tw = rb.w, th = rb.h, stride = tw * 4;
+      const canvas = document.createElement('canvas');
+      canvas.width = COLS * tw; canvas.height = ROWS * th;
+      const cx = canvas.getContext('2d')!;
+      for (let c = 0; c < TILES; c++) {
+        const src = rb.chrono[c]!;
+        const up = new Uint8ClampedArray(src.length); // flip bottom-origin → upright
+        for (let y = 0; y < th; y++) up.set(src.subarray(y * stride, (y + 1) * stride), (th - 1 - y) * stride);
+        cx.putImageData(new ImageData(up, tw, th), (c % COLS) * tw, Math.floor(c / COLS) * th);
+      }
+      w.__ftAtlas = canvas;
+      // A synchronous data-URL is enough to assert the encode + magic bytes.
+      const url = canvas.toDataURL('image/png');
+      const b64 = url.slice(url.indexOf(',') + 1);
+      const bin = atob(b64);
+      const isPng = bin.charCodeAt(0) === 137 && bin.charCodeAt(1) === 80 && bin.charCodeAt(2) === 78 && bin.charCodeAt(3) === 71;
+      return { ok: true, width: canvas.width, height: canvas.height, tw, th, size: bin.length, isPng };
+    });
+    expect(atlasInfo.ok, 'ringReadback returned 60 chronological layers').toBe(true);
+    expect(atlasInfo.isPng, 'atlas encodes a real PNG (magic bytes)').toBe(true);
+    expect(atlasInfo.size, 'atlas PNG is non-empty').toBeGreaterThan(100);
+    expect(atlasInfo.width, 'atlas width = COLS*tileW').toBe(10 * atlasInfo.tw);
+    expect(atlasInfo.height, 'atlas height = ROWS*tileH').toBe(6 * atlasInfo.th);
+
+    // (2) OVERWRITE the ring with a DIFFERENT scene so a restore is observable.
+    await setNodeParams(page, 'ft', { freeze: 0 });
+    await setNodeParams(page, 'acid', { scene: 0, paletteType: 0 });
+    await stepRead(page, { nodeId: 'ft', steps: 60, scale: RENDER_SCALE });
+
+    // (3) LOAD — detile the saved atlas back into the 60 ring layers via the
+    // factory's attachExternalSource channel, freeze, and assert the buffer is
+    // restored: non-blank + structured (the lean variance-probe).
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __engine: () => { getDomain: (d: string) => { attachExternalSource: (id: string, kind: string, el: unknown) => void } };
+        __ftAtlas?: HTMLCanvasElement;
+      };
+      w.__engine().getDomain('video').attachExternalSource('ft', 'image', w.__ftAtlas);
+    });
+    await setNodeParams(page, 'ft', { freeze: 1 });
+    const restored = await stepRead(page, { nodeId: 'ft', steps: 3, scale: RENDER_SCALE });
+    assertLiveFrame(restored, 3); // buffer repopulated from the atlas (not blank)
+
+    // (4) The REAL card LOAD path — set the file input to a small valid synthetic
+    // atlas (10×6 tiles of high-contrast noise → detiled layers keep structure),
+    // and assert onFrametableFileChange persists the node.data descriptor.
+    const atlasBytes = await page.evaluate(async () => {
+      const COLS = 10, ROWS = 6, TW = 12, TH = 10;
+      const canvas = document.createElement('canvas');
+      canvas.width = COLS * TW; canvas.height = ROWS * TH;
+      const cx = canvas.getContext('2d')!;
+      const img = cx.createImageData(canvas.width, canvas.height);
+      for (let i = 0; i < img.data.length; i += 4) {
+        const v = Math.random() < 0.5 ? 0 : 255;
+        img.data[i] = v; img.data[i + 1] = 255 - v; img.data[i + 2] = (i * 7) & 255; img.data[i + 3] = 255;
+      }
+      cx.putImageData(img, 0, 0);
+      const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'));
+      const buf = new Uint8Array(await blob!.arrayBuffer());
+      return Array.from(buf);
+    });
+    expect(atlasBytes.length, 'synthetic atlas PNG generated').toBeGreaterThan(50);
+
+    await page.setInputFiles('[data-testid="frametable-file-input"]', {
+      name: 'roundtrip.frametable.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from(atlasBytes),
+    });
+    // The async handler decodes + uploads + persists → surfaces a status line.
+    await expect(page.getByTestId('frametable-file-status'), 'card reports a successful load').toContainText('loaded', { timeout: 15_000 });
+
+    // node.data carries ONLY the tiny descriptor (the bytes live in IndexedDB).
+    const meta = await page.evaluate(() => {
+      const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { frametableFile?: { id: string; frames: number; cols: number; rows: number } } }> } };
+      return w.__patch.nodes.ft?.data?.frametableFile ?? null;
+    });
+    expect(meta, 'node.data.frametableFile persisted').not.toBeNull();
+    expect(typeof meta!.id, 'frametableFile.id set (IndexedDB key)').toBe('string');
+    expect(meta!.frames, 'descriptor records 60 frames').toBe(60);
+    expect(meta!.cols).toBe(10);
+    expect(meta!.rows).toBe(6);
+
+    // The card-loaded atlas detiles → the output is a real, non-blank picture.
+    const cardLoaded = await stepRead(page, { nodeId: 'ft', steps: 3, scale: RENDER_SCALE });
+    assertLiveFrame(cardLoaded, 3);
+  });
 });

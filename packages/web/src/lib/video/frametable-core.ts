@@ -182,7 +182,11 @@ export function selectOffset(t: number, spread: number, shape: number): number {
  *
  * Work is in LAG SPACE relative to the write head so a moving head is transparent
  * (see lagToLayer for the head mapping). `spread = 1 → h = 0.5` collapses to the
- * centre frame (a delta); `spread = 60 → h = 30` covers all 60 as one bell.
+ * centre frame (a delta); `spread = N-1 → h = (N-1)/2` spans nearly the whole
+ * ring as one bell. Spread is clamped to `[1, N-1]` — EXACTLY matching the
+ * shader's factory-side `clamp(params.spread, 1, N-1)` (so the CPU mirror stays
+ * faithful at the boundary) and keeping `2h ≤ N-1 < N` so the ±h window never
+ * self-overlaps across the wrap seam.
  */
 export function pickLagIndex(
   morph: number,
@@ -192,7 +196,7 @@ export function pickLagIndex(
   ringFrames: number = FRAMETABLE_RING_FRAMES,
 ): number {
   const c = clamp(morph, 0, 1) * ringFrames;
-  const d = selectOffset(t, clamp(spread, 1, ringFrames), shape);
+  const d = selectOffset(t, clamp(spread, 1, ringFrames - 1), shape);
   // round(c + d) == floor(c + d + 0.5), the shader's `wrapRing(x + 0.5)`.
   return wrapIndex(Math.round(c + d), ringFrames);
 }
@@ -544,7 +548,17 @@ export function morphKernel(
   for (let k = kLo; k <= kHi; k++) ks.push(k);
 
   // Stride-subsample beyond the cap (keeps the endpoints; smooth low-pass).
-  const stride = ks.length > cap ? Math.ceil(ks.length / cap) : 1;
+  // Base the stride on the SMOOTH `spread` control via the window's WORST-CASE
+  // integer-tap count (`floor(2h)+1`, a closed interval of width 2h holds at
+  // most that many integers), NOT on the realized `ks.length` — which jitters
+  // ±1 as the centre `c` crosses integers. A `ks.length`-based stride flips
+  // 1↔2 for a single frame right at the cap boundary (spread≈32: 32→stride 1,
+  // 33→stride 2), roughly doubling the kept frames' weights for that frame — a
+  // visible C¹ break in the scan. `maxTaps` is a pure function of `spread`, so
+  // the stride is CONSTANT across a scan at fixed spread (no per-frame flip),
+  // while still bounding the tap count ≤ cap (= the shader uWeights[] size).
+  const maxTaps = Math.floor(2 * h) + 1;
+  const stride = maxTaps > cap ? Math.ceil(maxTaps / cap) : 1;
 
   const layers: number[] = [];
   const rawW: number[] = [];

@@ -57,6 +57,12 @@ import {
   FRAMETABLE_MORPH_TAP_CAP,
   morphKernel,
 } from '$lib/video/frametable-core';
+import {
+  FRAMETABLE_ATLAS_COLS,
+  FRAMETABLE_ATLAS_ROWS,
+  chronoToLayer,
+  tileUvTransform,
+} from '$lib/video/frametable-atlas';
 
 // ----------------------------------------------------------------------
 // Param model.
@@ -133,14 +139,21 @@ function clamp01(v: number): number {
 // GLSL — the two passes. Both transliterate the pure core in frametable-core.ts.
 // ----------------------------------------------------------------------
 
-// P0 — copy the live source frame into the ring layer at `head`.
+// P0 — copy a source frame into the ring layer at `head`. Two callers:
+//   • live CAPTURE — uTileScale=(1,1), uTileOffset=(0,0) ⇒ the identity copy of
+//     the whole input frame (the original behaviour);
+//   • file LOAD DETILE — a per-tile sub-rect of the uploaded atlas texture is
+//     copied into each ring layer, GL LINEAR-scaling a differently-sized saved
+//     tile to the current rw×rh for free (resolution-mismatch on load is free).
 const COPY_FRAG = `#version 300 es
 precision highp float;
 in vec2 vUv;
 out vec4 outColor;
 uniform sampler2D uTex;
 uniform float uHas;
-void main(){ outColor = vec4(uHas > 0.5 ? texture(uTex, vUv).rgb : vec3(0.0), 1.0); }`;
+uniform vec2 uTileScale;   // (1,1) for a full-frame copy; (1/COLS,1/ROWS) to detile
+uniform vec2 uTileOffset;  // (0,0) for a full-frame copy; tile origin in UV to detile
+void main(){ outColor = vec4(uHas > 0.5 ? texture(uTex, vUv * uTileScale + uTileOffset).rgb : vec3(0.0), 1.0); }`;
 
 // P1 — the SELECT pass. ONE program branching on the dynamically-uniform `uMode`
 // int (0=SMOOTH, 1=MORPH, 2=CHAOS) — the branch is divergence-free (constant
@@ -449,7 +462,7 @@ export const frametableDef: VideoModuleDef = {
   // docs-hash-ignore:start
   docs: {
     explanation:
-      'FRAMETABLE is a video WAVETABLE oscillator. It continuously records the last 60 rendered input frames into a GPU frame ring (a TEXTURE_2D_ARRAY, one layer per frame) and treats that 60-frame history like the single-cycle waves of a wavetable synth: MORPH scans a centre point through the table and SPREAD sets how wide a window around it each output draws from. A faceplate MODE selector picks one of THREE render engines. SMOOTH (the default) paints a smooth 2D field of temporal sample-centres from two morphable waveforms (one per screen axis) and outputs a CAPPED WEIGHTED TEMPORAL AVERAGE — a blend favouring the peak frame, not a single-frame pick — so the result is a flowing, liquid, recognizable-waveform distortion (sub-frame temporal positions are interpolated manually for a buttery result). MORPH is the smoothest possible cross-dissolve: a spatially-uniform, pop-free scan between temporal positions using a periodic raised-cosine (Hann) reconstruction kernel that is C¹ at its window edges AND N-periodic across the 59→0 wrap seam, so scanning MORPH loops seamlessly. CHAOS is the original per-pixel stochastic look — for every pixel the shader draws exactly ONE source frame (a whole-pixel dither/mosaic) chosen in O(1) by an analytic inverse-CDF from a static screen-space threshold, so a still input yields a stable image while moving content becomes a coherent morph-scannable time-smear. LAG MODEL: lag = (mode ≠ CHAOS) && !LIVE. CHAOS is always real-time (no lag). SMOOTH and MORPH auto-engage a ~2-second lag (they read a trailing window of the buffer) unless the LIVE control forces real-time. On the first real input frame the whole 60-layer ring is filled with that frame (buffer instantly full = a still image), then real frames wash in over ~2s — so there is no black warmup and a lagged read always hits a full buffer. LIVE (a faceplate switch OR its gate) forces real-time / no-lag in any mode; CHAOS (a momentary switch OR its gate) overrides the selector to the real-time CHAOS render while held. SPREAD is the temporal-average window (SMOOTH) / cross-dissolve width (MORPH) / bell window (CHAOS). SHIMMER is flow speed (SMOOTH field drift) / auto-scan drift (MORPH) / threshold dither (CHAOS). SHAPE morphs the CHAOS bell triangular↔gaussian (idle in SMOOTH/MORPH, which use a fixed gaussian/Hann). The X/Y waveform controls (freq, amt, shape per axis) sculpt SMOOTH\'s field. FREEZE (a toggle button, plus a freeze gate that holds the ring frozen while high) stops the ring from advancing so you can scrub a held 60-frame window; SAVE (a momentary button, also a rising edge on the save trigger) snapshots the ring into an in-GPU slot for later recall (and to feed a future video Cube). Rendered at half engine resolution (SwiftShader/CI budget); an unpatched input renders black. The mode/lag dispatch, morphable-waveform field, weighted-average blend, Hann kernel, inverse-CDF and freeze/save/first-fill reducers are a 1:1 CPU mirror unit-tested in $lib/video/frametable-core. All ports live on the yellow drill-down PATCH PANEL (no raw side jacks).',
+      'FRAMETABLE is a video WAVETABLE oscillator. It continuously records the last 60 rendered input frames into a GPU frame ring (a TEXTURE_2D_ARRAY, one layer per frame) and treats that 60-frame history like the single-cycle waves of a wavetable synth: MORPH scans a centre point through the table and SPREAD sets how wide a window around it each output draws from. A faceplate MODE selector picks one of THREE render engines. SMOOTH (the default) paints a smooth 2D field of temporal sample-centres from two morphable waveforms (one per screen axis) and outputs a CAPPED WEIGHTED TEMPORAL AVERAGE — a blend favouring the peak frame, not a single-frame pick — so the result is a flowing, liquid, recognizable-waveform distortion (sub-frame temporal positions are interpolated manually for a buttery result). MORPH is the smoothest possible cross-dissolve: a spatially-uniform, pop-free scan between temporal positions using a periodic raised-cosine (Hann) reconstruction kernel that is C¹ at its window edges AND N-periodic across the 59→0 wrap seam, so scanning MORPH loops seamlessly. CHAOS is the original per-pixel stochastic look — for every pixel the shader draws exactly ONE source frame (a whole-pixel dither/mosaic) chosen in O(1) by an analytic inverse-CDF from a static screen-space threshold, so a still input yields a stable image while moving content becomes a coherent morph-scannable time-smear. LAG MODEL: lag = (mode ≠ CHAOS) && !LIVE. CHAOS is always real-time (no lag). SMOOTH and MORPH auto-engage a ~2-second lag (they read a trailing window of the buffer) unless the LIVE control forces real-time. On the first real input frame the whole 60-layer ring is filled with that frame (buffer instantly full = a still image), then real frames wash in over ~2s — so there is no black warmup and a lagged read always hits a full buffer. LIVE (a faceplate switch OR its gate) forces real-time / no-lag in any mode; CHAOS (a momentary switch OR its gate) overrides the selector to the real-time CHAOS render while held. SPREAD is the temporal-average window (SMOOTH) / cross-dissolve width (MORPH) / bell window (CHAOS). SHIMMER is flow speed (SMOOTH field drift) / auto-scan drift (MORPH) / threshold dither (CHAOS). SHAPE morphs the CHAOS bell triangular↔gaussian (idle in SMOOTH/MORPH, which use a fixed gaussian/Hann). The X/Y waveform controls (freq, amt, shape per axis) sculpt SMOOTH\'s field. FREEZE (a toggle button, plus a freeze gate that holds the ring frozen while high) stops the ring from advancing so you can scrub a held 60-frame window; SAVE (a momentary button, also a rising edge on the save trigger) snapshots the ring into an in-GPU slot for later recall (and to feed a future video Cube). FRAMETABLE also SAVES + LOADS real FILES (the wavetable file workflow): a Save-file control writes the whole 60-frame ring to a lossless .frametable.png sprite-sheet atlas (a fixed 10x6 = 60-tile contact sheet, no video codec) on disk, and a Load control reads a .frametable.png back into the ring, freezing it so the loaded table can be morphed/scanned; the multi-megabyte frame bytes persist per-browser in IndexedDB (never the patch / Y.Doc — only a tiny file descriptor syncs), so a loaded or saved table survives a reload. Rendered at half engine resolution (SwiftShader/CI budget); an unpatched input renders black. The mode/lag dispatch, morphable-waveform field, weighted-average blend, Hann kernel, inverse-CDF and freeze/save/first-fill reducers are a 1:1 CPU mirror unit-tested in $lib/video/frametable-core. All ports live on the yellow drill-down PATCH PANEL (no raw side jacks).',
     inputs: {
       video_in: 'The source video recorded, frame by frame, into the 60-frame ring. Unpatched, the output is black.',
       morph_cv: 'CV that modulates MORPH (the centre point scanned through the 60-frame history), swept linearly over 0..1 (wraps at the ring seam).',
@@ -487,7 +500,7 @@ export const frametableDef: VideoModuleDef = {
       waveShapeY: 'Y SHAPE (0..1, default 0): morphs the SMOOTH Y-axis waveform sine→triangle→saw→square. SMOOTH mode only.',
       liveGate: 'Hidden synthetic param the live-gate CV bridge writes each frame with the live gate LEVEL; while it is HIGH (>= 0.5) the real-time / no-lag read is forced in any mode (OR-combined with the LIVE switch, so the per-frame level never stomps the button\'s latched state). Exposed only as the live gate jack, not as a knob.',
       chaosGate: 'Hidden synthetic param the chaos-gate CV bridge writes each frame with the chaos gate LEVEL; while it is HIGH (>= 0.5) the CHAOS render is forced, overriding the MODE selector (OR-combined with the momentary CHAOS switch). Exposed only as the chaos gate jack, not as a knob.',
-      freezeGate: 'Hidden synthetic param the freeze-gate CV bridge writes each frame with the live gate LEVEL; while it is HIGH (>= 0.5) the ring is held frozen (OR-combined with the FREEZE toggle, so the per-frame level never stomps the button\'s latched state). Exposed only as the freeze gate jack, not as a knob.',
+      freezeGate: 'Hidden synthetic param the freeze-gate CV bridge writes each frame with the freeze gate LEVEL; while it is HIGH (>= 0.5) the ring is held frozen (OR-combined with the FREEZE toggle, so the per-frame level never stomps the button\'s latched state). Exposed only as the freeze gate jack, not as a knob.',
       saveTrig: 'Hidden synthetic param the SAVE momentary button sets and the save-trigger CV bridge writes; a RISING edge on it snapshots the current 60-frame ring into an in-GPU slot (idempotent per edge). Exposed only as the SAVE button + save trigger jack, not as a knob.',
     },
   },
@@ -537,6 +550,7 @@ export const frametableDef: VideoModuleDef = {
     let progs: { copy: WebGLProgram; select: WebGLProgram } | null = null;
     let u: {
       copyTex: WebGLUniformLocation | null; copyHas: WebGLUniformLocation | null;
+      copyTileScale: WebGLUniformLocation | null; copyTileOffset: WebGLUniformLocation | null;
       ring: WebGLUniformLocation | null; bnSize: WebGLUniformLocation | null;
       morph: WebGLUniformLocation | null; spread: WebGLUniformLocation | null;
       shimmer: WebGLUniformLocation | null; shape: WebGLUniformLocation | null;
@@ -562,6 +576,8 @@ export const frametableDef: VideoModuleDef = {
         u = {
           copyTex: gl.getUniformLocation(copy, 'uTex'),
           copyHas: gl.getUniformLocation(copy, 'uHas'),
+          copyTileScale: gl.getUniformLocation(copy, 'uTileScale'),
+          copyTileOffset: gl.getUniformLocation(copy, 'uTileOffset'),
           ring: gl.getUniformLocation(select, 'uRing'),
           bnSize: gl.getUniformLocation(select, 'uBlueNoiseSize'),
           morph: gl.getUniformLocation(select, 'uMorph'),
@@ -641,6 +657,98 @@ export const frametableDef: VideoModuleDef = {
       snapshots.set(slot, { tex: snapTex, layers: N, w: rw, h: rh, head, newest: (head - 1 + N) % N });
     }
 
+    /**
+     * Read all N ring layers of a source array back to CPU in CHRONOLOGICAL
+     * order (chrono[0] = oldest = layer `head`, chrono[N-1] = newest). Reused for
+     * the file SAVE atlas encode (card side). `readPixels` is BOTTOM-origin — the
+     * card's atlas tiler flips Y (frametable-atlas.flipRowsY) to keep the PNG
+     * upright + round-tripping. Saves/restores the READ_FRAMEBUFFER binding (a
+     * card click can land between rAF frames — never leave a dangling bind).
+     */
+    function readbackRing(
+      srcTex: WebGLTexture,
+      srcHead: number,
+      w: number,
+      h: number,
+    ): { w: number; h: number; layers: number; newest: number; chrono: Uint8Array[] } {
+      const prevRead = gl.getParameter(gl.READ_FRAMEBUFFER_BINDING) as WebGLFramebuffer | null;
+      const readFbo = gl.createFramebuffer();
+      const chrono: Uint8Array[] = [];
+      if (!readFbo) return { w, h, layers: N, newest: (srcHead - 1 + N) % N, chrono };
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, readFbo);
+      for (let c = 0; c < N; c++) {
+        const layer = chronoToLayer(srcHead, c, N); // (head + c) % N
+        const buf = new Uint8Array(w * h * 4);
+        gl.framebufferTextureLayer(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, srcTex, 0, layer);
+        if (gl.checkFramebufferStatus(gl.READ_FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE) {
+          gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+        }
+        chrono.push(buf);
+      }
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, prevRead);
+      gl.deleteFramebuffer(readFbo);
+      return { w, h, layers: N, newest: (srcHead - 1 + N) % N, chrono };
+    }
+
+    // ── File LOAD: an atlas DOM element (canvas/img) stashed by
+    //    attachExternalSource, detiled into the 60 ring layers on the next draw
+    //    via the COPY pass with per-tile UV uniforms (see COPY_FRAG). A scratch
+    //    TEXTURE_2D holds the uploaded atlas; `atlasSeq` bumps per attach so a
+    //    re-load re-detiles even if the element identity is reused. ──
+    let pendingAtlas: TexImageSource | null = null;
+    let atlasScratch: WebGLTexture | null = null;
+
+    /** Upload the pending atlas into a scratch texture and COPY-detile each of
+     *  the 60 tiles into ring layer `c` (uTileScale=1/COLS×1/ROWS, uTileOffset=
+     *  the tile origin — GL scales a mismatched tile to rw×rh). Then head:=0,
+     *  capturedAny:=true, and snapshot the loaded table into the DEFAULT slot so
+     *  it is immediately VideoCube-consumable. Runs once per attach. */
+    function detilePendingAtlas(): void {
+      if (!pendingAtlas || !progs || !u) return;
+      const el = pendingAtlas;
+      pendingAtlas = null;
+      if (!atlasScratch) atlasScratch = gl.createTexture();
+      if (!atlasScratch) return;
+      gl.bindTexture(gl.TEXTURE_2D, atlasScratch);
+      // Upright atlas → texture: UNPACK_FLIP_Y so the round-trip is bit-exact
+      // (the SAVE tiler flipped each readback tile; these two flips compose to
+      // identity — see frametable-atlas.ts Y-ORIENTATION).
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      try {
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, el);
+      } catch {
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+        return;
+      }
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+      gl.useProgram(progs.copy);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, atlasScratch);
+      gl.uniform1i(u.copyTex, 0);
+      gl.uniform1f(u.copyHas, 1);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, ringFbo);
+      gl.viewport(0, 0, rw, rh);
+      for (let c = 0; c < N; c++) {
+        const t = tileUvTransform(c);
+        gl.uniform2f(u.copyTileScale, t.sx, t.sy);
+        gl.uniform2f(u.copyTileOffset, t.ox, t.oy);
+        // LOAD writes chronological tile c straight into ring layer c; head:=0
+        // below makes layer c the chronological frame c (symmetric round-trip).
+        gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, ringTex, 0, c);
+        ctx.drawFullscreenQuad();
+      }
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      head = 0;
+      framesElapsed = N;
+      capturedAny = true; // the loaded ring IS the content — no first-frame fill
+      snapshotRing(DEFAULT_SLOT); // loaded table is also an in-GPU SAVE slot
+    }
+
     const surface: VideoNodeSurface = {
       fbo: outTarget.fbo,
       texture: outTarget.texture,
@@ -650,6 +758,11 @@ export const frametableDef: VideoModuleDef = {
 
         // SAVE: fire ONCE per rising edge of saveTrig (idempotent per edge).
         if (detectEdge(saveEdge, params.saveTrig)?.pressed === true) snapshotRing();
+
+        // FILE LOAD: if an atlas was attached (attachExternalSource), detile it
+        // into the 60 ring layers BEFORE the SELECT so the loaded table renders
+        // this frame (sets head=0, capturedAny, and snapshots the DEFAULT slot).
+        detilePendingAtlas();
 
         // ── Effective-state resolution (§2.2) — FREEZE-pattern OR (button ‖ gate). ──
         const chaosActive = params.chaos >= 0.5 || params.chaosGate >= 0.5; // momentary CHAOS
@@ -738,6 +851,10 @@ export const frametableDef: VideoModuleDef = {
           g.bindTexture(g.TEXTURE_2D, inputTex ?? emptyTex);
           g.uniform1i(u.copyTex, 0);
           g.uniform1f(u.copyHas, inputTex ? 1 : 0);
+          // IDENTITY copy (whole frame) — reset the tile UV in case a file-load
+          // detile left it at the last tile's sub-rect.
+          g.uniform2f(u.copyTileScale, 1, 1);
+          g.uniform2f(u.copyTileOffset, 0, 0);
           g.bindFramebuffer(g.FRAMEBUFFER, ringFbo);
           g.viewport(0, 0, rw, rh);
           if (firstReal) {
@@ -775,6 +892,8 @@ export const frametableDef: VideoModuleDef = {
         gl.deleteFramebuffer(outTarget.fbo);
         gl.deleteTexture(outTarget.texture);
         gl.deleteTexture(emptyTex);
+        if (atlasScratch) { gl.deleteTexture(atlasScratch); atlasScratch = null; }
+        pendingAtlas = null;
         for (const snap of snapshots.values()) gl.deleteTexture(snap.tex);
         snapshots.clear();
         if (progs) { gl.deleteProgram(progs.copy); gl.deleteProgram(progs.select); }
@@ -791,6 +910,13 @@ export const frametableDef: VideoModuleDef = {
       readParam(paramId) {
         return (params as unknown as Record<string, number>)[paramId];
       },
+      // FILE LOAD channel (reused from the CAMERA/VIDEOBOX plumbing so engine.ts
+      // stays UNTOUCHED): the card forwards the decoded atlas as an 'image'
+      // element; the detile happens on the next draw().
+      attachExternalSource(kind, el) {
+        if (kind !== 'image') return;
+        pendingAtlas = (el as unknown as TexImageSource) ?? null;
+      },
       read(key) {
         // Canonical output (also surface.texture for single-texture consumers).
         if (key === 'outputTexture:video_out' || key === 'fboTexture') return surface.texture;
@@ -802,6 +928,15 @@ export const frametableDef: VideoModuleDef = {
         if (key === 'ringLive') return { tex: ringTex, layers: N, w: rw, h: rh, head, newest: (head - 1 + N) % N };
         if (typeof key === 'string' && key.startsWith('ringSnapshot:')) {
           return snapshots.get(key.slice('ringSnapshot:'.length));
+        }
+        // File SAVE readback: the 60 ring layers pulled to CPU in CHRONOLOGICAL
+        // order for the card's atlas encode. `ringReadback` = the LIVE ring;
+        // `ringReadback:<slot>` = a saved in-GPU snapshot slot.
+        if (key === 'ringReadback') return readbackRing(ringTex, head, rw, rh);
+        if (typeof key === 'string' && key.startsWith('ringReadback:')) {
+          const snap = snapshots.get(key.slice('ringReadback:'.length));
+          if (!snap) return undefined;
+          return readbackRing(snap.tex, snap.head, snap.w, snap.h);
         }
         return undefined;
       },
