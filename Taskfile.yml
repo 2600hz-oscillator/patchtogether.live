@@ -738,6 +738,55 @@ tasks:
     cmds:
       - bash scripts/collab-attest-verify.sh
 
+  # ---------------- GRAND-INTEGRATION local heavy attestation ("semaphore") ----------------
+  # The full workflow-mode scenario drives TWO CI-hostile workloads at once — a
+  # real GPU (SYNESTHESIA is WebGL; SwiftShader can't fairly render it) AND a real
+  # H.264 encoder (RECORDERBOX; CI has neither). So the heavy scenario NEVER runs
+  # on CI: it runs on THIS machine's real GPU under `task grand:attest`, which
+  # writes a content-hash-named attestation CI verifies cheaply. The DETERMINISTIC
+  # audio pin is the OFFLINE combined-master ART (runs on the normal ART lane).
+  # See ci-grand-attest/README.md + .myrobots/plans/grand-integration-e2e-art-2026-07-19.md.
+  grand:attest:
+    desc: |
+      [pre-PR, REAL-GPU] Run the FULL workflow-mode grand-integration scenario on
+      this machine's real GPU (synesthesia) + real H.264 encoder (recorderbox) +
+      the real clip scheduler + real automation, assert all hard state, then — only
+      on a fully-green run — REGENERATE the offline combined-master ART baseline
+      and write ci-grand-attest/<hash>.json so CI can verify cheaply. Run this
+      before a PR that touches the grand-integration scenario substance (the four
+      instrument DSP cores, the clip step math, the shared fixture, the offline ART
+      or driver), then commit the written files. REPEAT=3 flake-checks. `-- --dry-run`
+      verifies the preflight/probe/run/writer wiring without the long real run.
+      Run when the machine is otherwise idle.
+    deps: [dsp:ensure, test:emit-manifest]
+    cmds:
+      - bash scripts/grand-attest.sh {{.CLI_ARGS}}
+
+  grand:attest:check:
+    desc: |
+      [read-only] Recompute the grand-integration content-hash and report whether
+      a matching attestation already exists (so you know if a re-attest is needed
+      after a pull/rebase). Runs nothing. `-- --list` prints the full hash basis.
+    cmds:
+      - |
+        if [ "{{.CLI_ARGS}}" = "--list" ]; then
+          bash scripts/grand-attest-hash.sh --list
+          exit 0
+        fi
+        HASH="$(bash scripts/grand-attest-hash.sh)"
+        echo "grand-integration content hash: $HASH"
+        if [ -f "ci-grand-attest/$HASH.json" ]; then
+          echo "✓ A matching attestation exists (ci-grand-attest/$HASH.json). No re-attest needed."
+        else
+          echo "✗ No matching attestation. Run: flox activate -- task grand:attest"
+          exit 1
+        fi
+
+  grand:attest:verify:
+    desc: '[CI] Recompute the grand-integration content-hash + verify a matching real-GPU attestation exists (the grand-attest CI job runs this).'
+    cmds:
+      - bash scripts/grand-attest-verify.sh
+
   # ---------------- E2E (Playwright) ----------------
   e2e:
     desc: 'Run end-to-end tests (headless Chromium). Pass extra Playwright args after `--` (e.g. `task e2e -- tests/foo.spec.ts`).'
