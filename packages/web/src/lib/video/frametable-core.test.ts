@@ -22,6 +22,9 @@ import {
   FRAMETABLE_BLUE_NOISE_SIZE,
   FRAMETABLE_SHAPE_TRIANGULAR,
   FRAMETABLE_SHAPE_GAUSSIAN,
+  FRAMETABLE_MODE_SMOOTH,
+  FRAMETABLE_MODE_MORPH,
+  FRAMETABLE_MODE_CHAOS,
   wrapIndex,
   wrapNearestOffset,
   erfinv,
@@ -35,6 +38,15 @@ import {
   hash21,
   shimmerThreshold,
   advanceHead,
+  wshape,
+  smoothField,
+  sampleRingLerp,
+  smoothSample,
+  morphKernel,
+  frametableEffMode,
+  frametableLagged,
+  frametableReadCentre,
+  fillOnFirstFrame,
 } from './frametable-core';
 
 const N = FRAMETABLE_RING_FRAMES; // 60
@@ -459,5 +471,338 @@ describe('FRAMETABLE — freeze / save reducers', () => {
     // released → resumes advancing.
     for (let i = 0; i < 5; i++) head = advanceHead(head, false);
     expect(head).toBe(17);
+  });
+});
+
+// ======================================================================
+// F-2 — 3-MODE REWORK: mode dispatch, SMOOTH field/blend, MORPH Hann kernel,
+// lag + first-frame-fill reducers. Each pins the CPU mirror the shader
+// transliterates 1:1 (the SMOOTH/MORPH analogue of the CHAOS histogram test).
+// ======================================================================
+
+// ----------------------------------------------------------------------
+// F-2a — mode dispatch + lag truth table (§2.2) + read-centre bias (§2.3).
+// ----------------------------------------------------------------------
+
+describe('FRAMETABLE — mode / lag dispatch', () => {
+  it('the 0/1/2 encoding is SMOOTH(default)=0, MORPH=1, CHAOS=2', () => {
+    expect(FRAMETABLE_MODE_SMOOTH).toBe(0);
+    expect(FRAMETABLE_MODE_MORPH).toBe(1);
+    expect(FRAMETABLE_MODE_CHAOS).toBe(2);
+    // The def default is SMOOTH.
+    const modeParam = frametableDef.params.find((p) => p.id === 'mode')!;
+    expect(modeParam.defaultValue).toBe(FRAMETABLE_MODE_SMOOTH);
+    expect(modeParam.curve).toBe('discrete');
+    expect(modeParam.min).toBe(0);
+    expect(modeParam.max).toBe(2);
+  });
+
+  it('frametableEffMode: chaosActive OVERRIDES the selector; else the rounded selector wins', () => {
+    for (const m of [0, 1, 2]) {
+      expect(frametableEffMode(m, false)).toBe(m); // selector honoured
+      expect(frametableEffMode(m, true)).toBe(FRAMETABLE_MODE_CHAOS); // momentary chaos overrides
+    }
+    // rounds fractional selector values (discrete param safety).
+    expect(frametableEffMode(0.4, false)).toBe(0);
+    expect(frametableEffMode(1.6, false)).toBe(2);
+    // clamps out-of-range.
+    expect(frametableEffMode(-1, false)).toBe(0);
+    expect(frametableEffMode(5, false)).toBe(2);
+  });
+
+  it('frametableLagged: CHAOS never lags; SMOOTH/MORPH lag unless LIVE forces real-time', () => {
+    // CHAOS is always real-time in any live state.
+    expect(frametableLagged(FRAMETABLE_MODE_CHAOS, false)).toBe(false);
+    expect(frametableLagged(FRAMETABLE_MODE_CHAOS, true)).toBe(false);
+    // SMOOTH/MORPH auto-lag by default…
+    expect(frametableLagged(FRAMETABLE_MODE_SMOOTH, false)).toBe(true);
+    expect(frametableLagged(FRAMETABLE_MODE_MORPH, false)).toBe(true);
+    // …but LIVE forces real-time (no lag) in every mode.
+    expect(frametableLagged(FRAMETABLE_MODE_SMOOTH, true)).toBe(false);
+    expect(frametableLagged(FRAMETABLE_MODE_MORPH, true)).toBe(false);
+  });
+
+  it('frametableReadCentre: lagged window stays in [h, N-h]; real-time is morph·N', () => {
+    for (const spread of [1, 8, 12, 30, 59]) {
+      const h = 0.5 * Math.min(spread, N - 1);
+      for (const morph of [0, 0.25, 0.5, 0.75, 1]) {
+        const cLag = frametableReadCentre(morph, spread, true);
+        // trailing window: c ∈ [h, N-h] so c±h ∈ [0, N] (never wraps the seam).
+        expect(cLag, `lagged c(morph=${morph},spread=${spread})`).toBeGreaterThanOrEqual(h - 1e-9);
+        expect(cLag).toBeLessThanOrEqual(N - h + 1e-9);
+        // real-time is the raw morph·N centre (today's behaviour).
+        expect(frametableReadCentre(morph, spread, false)).toBeCloseTo(morph * N, 9);
+      }
+      // endpoints map to the window edges.
+      expect(frametableReadCentre(0, spread, true)).toBeCloseTo(h, 9);
+      expect(frametableReadCentre(1, spread, true)).toBeCloseTo(N - h, 9);
+    }
+  });
+});
+
+// ----------------------------------------------------------------------
+// F-2b — the morphable waveform (§3.2): continuity, zero-crossing alignment.
+// ----------------------------------------------------------------------
+
+describe('FRAMETABLE — morphable waveform wshape', () => {
+  it('stays in [-1, 1] for every shape / position', () => {
+    for (let s = 0; s <= 1.0001; s += 0.1) {
+      for (let u = 0; u <= 2; u += 0.037) {
+        const w = wshape(u, 1, 0, s);
+        expect(w).toBeGreaterThanOrEqual(-1.0000001);
+        expect(w).toBeLessThanOrEqual(1.0000001);
+      }
+    }
+  });
+
+  it('all four anchors cross ZERO at p=0 ⇒ any blend is ≈0 there (no phase cancellation)', () => {
+    // freq=1, phase=0, u=0 ⇒ p=0. Sine/tri/saw/square all pass through 0 rising,
+    // so wshape(0, …, shape) ≈ 0 for ALL shape values → blending never notches.
+    for (let s = 0; s <= 1.0001; s += 0.05) {
+      expect(Math.abs(wshape(0, 1, 0, s)), `wshape(0) at shape=${s}`).toBeLessThan(1e-6);
+    }
+  });
+
+  it('is POSITIVE (rising into the first quarter) at p=0.25 for every shape', () => {
+    // At p=0.25 all four anchors are > 0 (sine/tri/square peak at 1; saw at 0.5),
+    // so any blend is strictly positive — the waveform rises coherently, no notch.
+    for (let s = 0; s <= 1.0001; s += 0.05) {
+      expect(wshape(0.25, 1, 0, s), `wshape(0.25) at shape=${s}`).toBeGreaterThan(0.1);
+    }
+  });
+
+  it('is CONTINUOUS across the shape sweep (bounded finite difference, no anchor step)', () => {
+    // Sweeping shape 0→1 crossfades sine→tri→saw→square; the crossfade is
+    // smoothstep-blended so there is no jump at the anchor seams (S=1,2).
+    const ds = 0.005;
+    for (const u of [0.1, 0.37, 0.62, 0.88]) {
+      let prev = wshape(u, 2, 0.1, 0);
+      for (let s = ds; s <= 1.0001; s += ds) {
+        const w = wshape(u, 2, 0.1, s);
+        expect(Math.abs(w - prev), `Δwshape at u=${u}, shape≈${s.toFixed(3)}`).toBeLessThan(0.06);
+        prev = w;
+      }
+    }
+  });
+});
+
+// ----------------------------------------------------------------------
+// F-2c — the 2D temporal field (§3.3): smooth (sine default) + MORPH-flatten.
+// ----------------------------------------------------------------------
+
+describe('FRAMETABLE — smoothField', () => {
+  it('at the default SINE shape the field is spatially smooth (bounded ∂/∂uv)', () => {
+    // The DEFAULT (shape=0, sine) field is C¹ — assert a bounded finite
+    // difference across the screen. (saw/square anchors add deliberate kinks;
+    // this pins the default liquid look.)
+    const du = 1 / 128;
+    const fld = (ux: number, uy: number) =>
+      smoothField(ux, uy, 1.5, 10, 0, 0, 2, 8, 0, 0, 0.4);
+    for (let uy = 0.1; uy < 0.9; uy += 0.2) {
+      let prev = fld(0, uy);
+      for (let ux = du; ux <= 1; ux += du) {
+        const v = fld(ux, uy);
+        // per-step change bounded by amp·freq·2π·du plus the cross-term slope.
+        expect(Math.abs(v - prev), `∂field/∂x at (${ux.toFixed(3)},${uy})`).toBeLessThan(1.5);
+        prev = v;
+      }
+    }
+  });
+
+  it('MORPH-flatten (fieldGain=0) ⇒ a spatially CONSTANT (zero) field', () => {
+    for (let ux = 0; ux <= 1; ux += 0.13) {
+      for (let uy = 0; uy <= 1; uy += 0.17) {
+        // fieldGain=0 → exactly 0 (Math.abs normalises the JS -0 that 0·-x yields).
+        expect(Math.abs(smoothField(ux, uy, 3, 20, 0.2, 0.5, 5, 15, 0.7, 0.3, 0.4, 0))).toBe(0);
+      }
+    }
+  });
+
+  it('is bounded in magnitude for any shape/amp within its span', () => {
+    // |field| ≤ ampX + ampY + |cross|·0.5·(ampX+ampY) — pin it never blows up.
+    const ampX = 20, ampY = 20, cross = 0.4;
+    const bound = ampX + ampY + Math.abs(cross) * 0.5 * (ampX + ampY) + 1e-6;
+    for (const sh of [0, 0.5, 1]) {
+      for (let ux = 0; ux <= 1; ux += 0.05) {
+        for (let uy = 0; uy <= 1; uy += 0.13) {
+          const f = smoothField(ux, uy, 4, ampX, 0, sh, 4, ampY, 0, sh, cross);
+          expect(Math.abs(f)).toBeLessThanOrEqual(bound);
+        }
+      }
+    }
+  });
+});
+
+// ----------------------------------------------------------------------
+// F-2d — BLEND-not-pick (§3.4/§3.5): sampleRingLerp + the weighted average.
+// ----------------------------------------------------------------------
+
+describe('FRAMETABLE — SMOOTH is a weighted AVERAGE, not a pick', () => {
+  it('sampleRingLerp truly blends adjacent layers (a fractional lag → an interpolated value)', () => {
+    // ring layer 10 = 0.0, layer 11 = 1.0, else 0. A fractional lag lands
+    // BETWEEN them — neither frame's value (manual inter-layer lerp).
+    const ring = (layer: number) => (layer === 11 ? 1 : layer === 10 ? 0 : 0);
+    // head=11: larger lag reads OLDER layers. lag=0 → layer 11 (=1), lag=1 → layer 10 (=0),
+    // lag=0.5 → layerF=10.5 → mix(ring[10], ring[11], 0.5) = 0.5.
+    expect(sampleRingLerp(ring, 11, 0.5)).toBeCloseTo(0.5, 9);
+    expect(sampleRingLerp(ring, 11, 0.25)).toBeCloseTo(0.75, 9); // layerF=10.75, f=0.75
+    expect(sampleRingLerp(ring, 11, 0.0)).toBeCloseTo(1, 9); // exactly on layer 11
+    expect(sampleRingLerp(ring, 11, 1.0)).toBeCloseTo(0, 9); // exactly on layer 10
+  });
+
+  it('a STILL ring ⇒ output == the still value (a blend of a constant is the constant)', () => {
+    const still = () => 0.42;
+    for (const morph of [0, 0.3, 0.7, 1]) {
+      for (const lagged of [true, false]) {
+        expect(smoothSample(still, morph, 12, 8, lagged), `still, morph=${morph}`).toBeCloseTo(0.42, 9);
+      }
+    }
+  });
+
+  it('an IMPULSE ring ⇒ a value STRICTLY between 0 and 1 (an average, never a single-frame pick)', () => {
+    // One bright layer among dark. CHAOS would return exactly 0 or 1 per pixel;
+    // SMOOTH returns ONE deterministic intermediate value (the weighted mass).
+    const L = 30;
+    const impulse = (layer: number) => (layer === L ? 1 : 0);
+    // Real-time centre morph=0.5 → c=30; head=59 so the window sits on L.
+    const out = smoothSample(impulse, 0.5, 20, 8, false, 0, N - 1);
+    expect(out, 'blend, not a pick').toBeGreaterThan(0);
+    expect(out).toBeLessThan(1);
+    // deterministic — no per-pixel threshold (still-image consistency analogue).
+    expect(smoothSample(impulse, 0.5, 20, 8, false, 0, N - 1)).toBe(out);
+  });
+
+  it('equals the explicit Σ gaussian-strata reconstruction (pins the exact math)', () => {
+    // Independent re-implementation of §3.4 — the SMOOTH analogue of the CHAOS
+    // histogram certification.
+    const ring = (layer: number) => Math.sin(layer * 0.3) * 0.5 + 0.5; // arbitrary smooth ring
+    const morph = 0.4, spread = 16, taps = 8, head = N - 1, field = 3.2;
+    const c = frametableReadCentre(morph, spread, true);
+    const lagCentre = c + field;
+    let acc = 0;
+    for (let i = 0; i < taps; i++) {
+      const t = (i + 0.5) / taps;
+      const d = selectOffset(t, spread, FRAMETABLE_SHAPE_GAUSSIAN);
+      // inline sampleRingLerp reference.
+      const layerF = head - (lagCentre + d);
+      const l0 = Math.floor(layerF);
+      const f = layerF - l0;
+      const c0 = ring(wrapIndex(l0));
+      const c1 = ring(wrapIndex(l0 + 1));
+      acc += c0 + (c1 - c0) * f;
+    }
+    const ref = acc / taps;
+    expect(smoothSample(ring, morph, spread, taps, true, field, head)).toBeCloseTo(ref, 9);
+  });
+});
+
+// ----------------------------------------------------------------------
+// F-2e — MORPH Hann kernel (§4.1): Σ=1, C¹, seam periodicity, spread + cap.
+// ----------------------------------------------------------------------
+
+describe('FRAMETABLE — MORPH periodic Hann kernel', () => {
+  it('weights sum to 1 across the window (a normalised reconstruction)', () => {
+    for (const spread of [1, 2, 8, 12, 30, 59]) {
+      for (const morph of [0, 0.25, 0.5, 0.9]) {
+        const k = morphKernel(morph, spread, 40, true);
+        const s = k.weights.reduce((a, b) => a + b, 0);
+        expect(s, `Σw spread=${spread} morph=${morph}`).toBeCloseTo(1, 9);
+        expect(k.count).toBe(k.weights.length);
+        expect(k.count).toBe(k.layers.length);
+      }
+    }
+  });
+
+  it('spread=1 ⇒ ONE dominant weight (a crisp single moment / near-delta)', () => {
+    // c = h + morph·(N-2h) with h=0.5 → most morphs land the window on one integer.
+    const k = morphKernel(0.31, 1, 40, true);
+    expect(k.count).toBeLessThanOrEqual(2);
+    expect(Math.max(...k.weights)).toBeGreaterThan(0.9);
+  });
+
+  it('is C¹ in the scan position (weight-vector Δ bounded, no step as a frame enters)', () => {
+    // Map weights → their LAYER, sweep morph by a tiny step, and assert the
+    // per-layer weight change is bounded: a newly-entering frame joins at g(±h)=0
+    // (zero weight AND zero slope), so the weight vector changes with no jump.
+    const spread = 14, head = 40;
+    const asMap = (m: number): Map<number, number> => {
+      const k = morphKernel(m, spread, head, true);
+      const map = new Map<number, number>();
+      for (let i = 0; i < k.count; i++) map.set(k.layers[i]!, k.weights[i]!);
+      return map;
+    };
+    const dm = 0.002;
+    let prev = asMap(0.1);
+    for (let m = 0.1 + dm; m <= 0.9; m += dm) {
+      const cur = asMap(m);
+      const keys = new Set<number>([...prev.keys(), ...cur.keys()]);
+      let maxD = 0;
+      for (const key of keys) maxD = Math.max(maxD, Math.abs((cur.get(key) ?? 0) - (prev.get(key) ?? 0)));
+      // A jump (a frame entering with finite weight) would be O(weight) ~ 0.1+;
+      // the Hann zero-edge keeps every per-step change ≪ that.
+      expect(maxD, `weight-vector Δ at morph≈${m.toFixed(3)}`).toBeLessThan(0.02);
+      prev = cur;
+    }
+  });
+
+  it('is N-PERIODIC across the 59→0 seam (morph 0 and morph 1 give the same layer→weight map)', () => {
+    // In the full-range (real-time) scan, layer_k = mod(round(head−k), N) makes
+    // the kernel N-periodic: c=0 (morph 0) and c=N (morph 1) map to the SAME ring
+    // layers with the SAME weights → scanning morph 0→1 loops seamlessly (value).
+    const spread = 12, head = 40;
+    const map0 = new Map<number, number>();
+    const k0 = morphKernel(0, spread, head, false);
+    for (let i = 0; i < k0.count; i++) map0.set(k0.layers[i]!, (map0.get(k0.layers[i]!) ?? 0) + k0.weights[i]!);
+    const map1 = new Map<number, number>();
+    const k1 = morphKernel(1, spread, head, false);
+    for (let i = 0; i < k1.count; i++) map1.set(k1.layers[i]!, (map1.get(k1.layers[i]!) ?? 0) + k1.weights[i]!);
+    const keys = new Set<number>([...map0.keys(), ...map1.keys()]);
+    for (const key of keys) {
+      expect(map1.get(key) ?? 0, `seam periodicity at layer ${key}`).toBeCloseTo(map0.get(key) ?? 0, 9);
+    }
+  });
+
+  it('STRIDE-subsamples beyond the cap and still normalises to Σ=1', () => {
+    // spread 60 → ~60 in-window frames > cap 32 → stride-subsample; Σw stays 1.
+    const cap = 32;
+    const k = morphKernel(0.5, 60, 40, false, cap);
+    expect(k.count).toBeLessThanOrEqual(cap);
+    expect(k.weights.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 9);
+    // all layers are valid ring indices.
+    for (const layer of k.layers) {
+      expect(layer).toBeGreaterThanOrEqual(0);
+      expect(layer).toBeLessThan(N);
+    }
+  });
+});
+
+// ----------------------------------------------------------------------
+// F-2f — first-frame-fill reducer (§2.4).
+// ----------------------------------------------------------------------
+
+describe('FRAMETABLE — first-frame-fill reducer', () => {
+  it('signals FILL on the first real input frame, then never re-fills', () => {
+    // Before any input: black warmup, no fill.
+    const noInput = fillOnFirstFrame({ head: 0, capturedAny: false, framesElapsed: 0 }, false);
+    expect(noInput.filled).toBe(false);
+    expect(noInput.capturedAny).toBe(false);
+    expect(noInput.head).toBe(1); // head still advances (capture always records)
+
+    // First REAL input frame → fill ALL N layers (buffer instantly full).
+    const first = fillOnFirstFrame({ head: 3, capturedAny: false, framesElapsed: 3 }, true);
+    expect(first.filled).toBe(true);
+    expect(first.capturedAny).toBe(true);
+    expect(first.head).toBe(4);
+
+    // Subsequent real frames wash in one layer at a time — NEVER re-fill.
+    const later = fillOnFirstFrame({ head: 4, capturedAny: true, framesElapsed: 4 }, true);
+    expect(later.filled).toBe(false);
+    expect(later.capturedAny).toBe(true);
+  });
+
+  it('head wraps at the ring boundary during fill/wash-in', () => {
+    const wrap = fillOnFirstFrame({ head: N - 1, capturedAny: true, framesElapsed: 100 }, true);
+    expect(wrap.head).toBe(0);
+    expect(wrap.filled).toBe(false);
   });
 });

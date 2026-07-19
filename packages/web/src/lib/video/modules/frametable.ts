@@ -49,6 +49,13 @@ import {
   FRAMETABLE_RING_FRAMES,
   FRAMETABLE_RENDER_SCALE,
   FRAMETABLE_BLUE_NOISE_SIZE,
+  FRAMETABLE_MODE_SMOOTH,
+  FRAMETABLE_MODE_MORPH,
+  FRAMETABLE_MODE_CHAOS,
+  FRAMETABLE_SMOOTH_TAPS_GPU,
+  FRAMETABLE_SMOOTH_TAPS_SOFT,
+  FRAMETABLE_MORPH_TAP_CAP,
+  morphKernel,
 } from '$lib/video/frametable-core';
 
 // ----------------------------------------------------------------------
@@ -56,25 +63,60 @@ import {
 // ----------------------------------------------------------------------
 
 interface FrametableParams {
-  morph: number;       // 0..1 — centre lag through the 60-frame ring (wraps)
-  spread: number;      // 1..60 — bell window width (frames)
-  shimmer: number;     // 0..1 — temporal dither of the threshold (default 0 = static)
-  weightShape: number; // 0 = triangular (default), 1 = gaussian
+  // ── mode / lag dispatch ──
+  mode: number;        // 0=SMOOTH (default), 1=MORPH, 2=CHAOS (curve 'discrete')
+  live: number;        // 0/1 — LIVE switch (button-latched); forces REAL-TIME in any mode (OR'd with liveGate)
+  liveGate: number;    // hidden synthetic — raw live_gate LEVEL; forces real-time WHILE high (OR'd with `live`)
+  chaos: number;       // 0/1 — momentary CHAOS switch; overrides the selector → CHAOS while held (OR'd with chaosGate)
+  chaosGate: number;   // hidden synthetic — raw chaos_gate LEVEL; overrides to CHAOS WHILE high (OR'd with `chaos`)
+  // ── shared (all modes) ──
+  morph: number;       // 0..1 — centre scanned through the 60-frame ring (wraps)
+  spread: number;      // 1..60 — window width (frames): avg window / dissolve width / bell
+  shimmer: number;     // 0..1 — flow speed (SMOOTH) / auto-scan drift (MORPH) / threshold dither (CHAOS)
+  weightShape: number; // 0 = triangular (default), 1 = gaussian (CHAOS bell; idle in SMOOTH/MORPH)
   freeze: number;      // 0/1 — user-facing FREEZE toggle (button-latched; OR'd with the freeze-gate LEVEL)
+  // ── SMOOTH-mode morphable-waveform field (independent X/Y shape) ──
+  waveFreqX: number;   // 0..8  — cycles of the X-axis waveform across the screen
+  waveAmtX: number;    // 0..1  — X-axis temporal displacement amount (→ frames = amt·N/2)
+  waveShapeX: number;  // 0..1  — X waveform morph: sine → tri → saw → square
+  waveFreqY: number;   // 0..8  — cycles of the Y-axis waveform
+  waveAmtY: number;    // 0..1  — Y-axis displacement amount
+  waveShapeY: number;  // 0..1  — Y waveform morph
   // Hidden synthetic gate-state params (no card fader):
   freezeGate: number;  // raw freeze_gate LEVEL; ring is frozen WHILE this is high (OR'd with `freeze`)
   saveTrig: number;    // raw save_trig sample / momentary button; RISING edge → snapshot
 }
 
 const FRAMETABLE_DEFAULTS: FrametableParams = {
+  mode: FRAMETABLE_MODE_SMOOTH,
+  live: 0,
+  liveGate: 0,
+  chaos: 0,
+  chaosGate: 0,
   morph: 0,
   spread: 12,
   shimmer: 0,
   weightShape: 0,
   freeze: 0,
+  waveFreqX: 1,
+  waveAmtX: 0.35,
+  waveShapeX: 0,
+  waveFreqY: 1,
+  waveAmtY: 0.35,
+  waveShapeY: 0,
   freezeGate: 0,
   saveTrig: 0,
 };
+
+/** Cross-term coupling (§3.3 / §10.1): couples the two axis waveforms into
+ *  flowing diagonal whorls. Fixed (not exposed) to save a control. */
+const FRAMETABLE_CROSS = 0.4;
+/** FLOW rate (§3.6): cycles/second the SMOOTH field drifts at shimmer=1. The Y
+ *  axis uses an incommensurate ratio so the coupled field never loops. */
+const FRAMETABLE_FLOW_RATE = 0.15;
+const FRAMETABLE_FLOW_RATIO_Y = 0.73;
+/** MORPH auto-scan drift rate (§4.3): morph-centre cycles/second at shimmer=1. */
+const FRAMETABLE_MORPH_DRIFT_RATE = 0.05;
 
 const PARAM_IDS: ReadonlySet<string> = new Set(Object.keys(FRAMETABLE_DEFAULTS));
 
@@ -100,8 +142,17 @@ uniform sampler2D uTex;
 uniform float uHas;
 void main(){ outColor = vec4(uHas > 0.5 ? texture(uTex, vUv).rgb : vec3(0.0), 1.0); }`;
 
-// P1 — the O(1) whole-pixel SELECT pass (the analytic inverse-CDF). One
-// array fetch per fragment, no loop, no blend.
+// P1 — the SELECT pass. ONE program branching on the dynamically-uniform `uMode`
+// int (0=SMOOTH, 1=MORPH, 2=CHAOS) — the branch is divergence-free (constant
+// across all fragments), so it keeps the single uniform-cache + single deferred
+// compile intact (no per-mode program). Each mode transliterates the CPU mirror
+// in frametable-core.ts:
+//   • CHAOS  — today's per-pixel stochastic inverse-CDF single-frame PICK.
+//   • SMOOTH — 2 morphable waveforms → a 2D temporal field → a capped weighted
+//              temporal AVERAGE with manual sub-frame inter-layer interpolation.
+//   • MORPH  — a spatially-uniform, CPU-precomputed periodic Hann cross-dissolve.
+const MAX_TAPS = 16; // SMOOTH compile-time tap cap (loop unrolls; uTaps ≤ this)
+const MAX_TAPS_MORPH = FRAMETABLE_MORPH_TAP_CAP; // MORPH Hann uniform-array size
 const SELECT_FRAG = `#version 300 es
 precision highp float;
 precision highp sampler2DArray;
@@ -109,25 +160,44 @@ in vec2 vUv;
 out vec4 outColor;
 
 uniform sampler2DArray uRing;   // 60 layers (one per recorded frame)
-uniform vec2  uBlueNoiseSize;   // screen-space threshold tile period
+uniform vec2  uBlueNoiseSize;   // screen-space threshold tile period (CHAOS)
 uniform float uMorph;           // 0..1
 uniform float uSpread;          // 1..60
 uniform float uShimmer;         // 0..1 (0 = static)
-uniform float uWeightShape;     // 0 = triangular, 1 = gaussian
+uniform float uWeightShape;     // 0 = triangular, 1 = gaussian (CHAOS bell)
 uniform int   uHead;            // ring write head this frame (newest layer)
-uniform int   uFrameIndex;      // only used when uShimmer > 0
+uniform int   uFrameIndex;      // only used when uShimmer > 0 (CHAOS)
 uniform float uHasContent;      // 0 until the ring has captured a real frame
+uniform int   uMode;            // 0=SMOOTH, 1=MORPH, 2=CHAOS
+uniform float uLive;            // 1 => real-time centre (LIVE-forced / real-time modes)
+uniform int   uTaps;            // SMOOTH logical tap count (<= MAX_TAPS)
+uniform float uFreqX;           // SMOOTH X-axis waveform cycles
+uniform float uFreqY;           // SMOOTH Y-axis waveform cycles
+uniform float uAmpX;            // SMOOTH X displacement amplitude (FRAMES)
+uniform float uAmpY;            // SMOOTH Y displacement amplitude (FRAMES)
+uniform float uPhaseX;          // SMOOTH X flow phase (FLOW drift)
+uniform float uPhaseY;          // SMOOTH Y flow phase
+uniform float uShapeX;          // SMOOTH X waveform morph (sine→tri→saw→square)
+uniform float uShapeY;          // SMOOTH Y waveform morph
+uniform float uCross;           // SMOOTH axis cross-coupling
+uniform int   uTapCount;        // MORPH Hann tap count (<= MAX_TAPS_MORPH)
+uniform float uWeights[${MAX_TAPS_MORPH}]; // MORPH per-tap weights (Σ=1, spatially uniform)
+uniform float uLayers[${MAX_TAPS_MORPH}];  // MORPH per-tap ring layer (float, already round(head-k) wrapped)
 const float N = ${FRAMETABLE_RING_FRAMES}.0;
 const float PI = 3.14159265359;
+const float TWO_PI = 6.28318530718;
+const int MODE_SMOOTH = ${FRAMETABLE_MODE_SMOOTH};
+const int MODE_MORPH  = ${FRAMETABLE_MODE_MORPH};
+const int MODE_CHAOS  = ${FRAMETABLE_MODE_CHAOS};
 
-// Dave-Hoskins hash21 → [0,1). Mirrors frametable-core.hash21.
+// Dave-Hoskins hash21 → [0,1). Mirrors frametable-core.hash21 (CHAOS only).
 float hash21(vec2 p){
   vec3 p3 = fract(vec3(p.x, p.y, p.x) * 0.1031);
   p3 += dot(p3, p3.yzx + 33.33);
   return fract((p3.x + p3.y) * p3.z);
 }
 
-// Winitzki erf^-1 (a = 0.147) — gaussian "smooth" mode only.
+// Winitzki erf^-1 (a = 0.147) — gaussian bell (CHAOS smooth mode + SMOOTH taps).
 float erfinv(float x){
   float a = 0.147;
   float ln = log(max(1e-12, 1.0 - x*x)); // ln(1-x^2) < 0
@@ -139,48 +209,104 @@ float erfinv(float x){
 
 int wrapRing(float x){ float m = mod(x, N); if (m < 0.0) m += N; return int(m); }
 
+// threshold t ∈ [0,1) → temporal offset d (frames). shp<0.5 triangular, else gaussian.
+float selectOffset(float t, float spread, float shp){
+  float h = 0.5 * spread;
+  if (shp < 0.5) {
+    return (t < 0.5) ? h * (sqrt(2.0 * t) - 1.0)
+                     : h * (1.0 - sqrt(2.0 * (1.0 - t)));
+  }
+  float sigma = spread / 6.0;                 // h == 3 sigma
+  float A = 0.00135;                          // Phi(-3)
+  float p = A + t * (1.0 - 2.0 * A);
+  return clamp(sigma * 1.41421356 * erfinv(2.0 * p - 1.0), -h, h);
+}
+
+// morphable unit waveform in [-1,1] (sine→tri→saw→square, zero-crossing-aligned).
+float wshape(float u, float freq, float phase, float shape){
+  float p    = u * freq + phase;
+  float sine = sin(TWO_PI * p);
+  float tri  = 1.0 - 4.0 * abs(fract(p + 0.25) - 0.5);
+  float saw  = 2.0 * fract(p + 0.5) - 1.0;
+  float sq   = clamp(4.0 * sine, -1.0, 1.0);
+  float S = clamp(shape, 0.0, 1.0) * 3.0;
+  float w = sine;
+  w = mix(w, tri, smoothstep(0.0, 1.0, clamp(S,       0.0, 1.0)));
+  w = mix(w, saw, smoothstep(0.0, 1.0, clamp(S - 1.0, 0.0, 1.0)));
+  w = mix(w, sq,  smoothstep(0.0, 1.0, clamp(S - 2.0, 0.0, 1.0)));
+  return w;
+}
+
+// manual sub-frame inter-layer LINEAR interpolation — sampler2DArray rounds the
+// layer coord, so a fractional temporal position needs 2 fetches + mix (§3.5).
+vec3 sampleRingLerp(vec2 uv, float lag, float head){
+  float layerF = head - lag;
+  float l0 = floor(layerF);
+  float f  = layerF - l0;
+  vec3 c0 = texture(uRing, vec3(uv, float(wrapRing(l0))       )).rgb;
+  vec3 c1 = texture(uRing, vec3(uv, float(wrapRing(l0 + 1.0)) )).rgb;
+  return mix(c0, c1, f);
+}
+
+// MORPH — accumulate the CPU-precomputed periodic Hann kernel (Σw=1). Every
+// fragment reads the SAME uLayers in the SAME order → cache-warm on SwiftShader.
+vec3 morphColor(vec2 uv){
+  vec3 acc = vec3(0.0);
+  for (int j = 0; j < ${MAX_TAPS_MORPH}; ++j){
+    if (j >= uTapCount) break;             // coherent (uniform) branch
+    acc += uWeights[j] * texture(uRing, vec3(uv, uLayers[j])).rgb;
+  }
+  return acc;
+}
+
 void main(){
   if (uHasContent < 0.5){ outColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
   vec2 uv = vUv;
+  float headF = float(uHead);
 
-  // (1) STATIC per-pixel threshold — SCREEN space (gl_FragCoord), NEVER image UV,
-  //     NEVER time/frame/head. This staticness is what gives still-image
-  //     consistency (hard req #3). v1 uses a stable per-pixel HASH (screen-locked,
-  //     tiled at uBlueNoiseSize).
-  //     TODO(frametable): embed a 128x128 void-and-cluster blue-noise R8 tile
-  //     (sampled here instead of the hash) for a tighter spatial histogram + less
-  //     visible structure. The hash fully satisfies req #3; the tile is a QUALITY
-  //     upgrade only. See .myrobots/plans/frametable-2026-07-19.md §4.
-  vec2 bn = mod(gl_FragCoord.xy, uBlueNoiseSize);
-  float t = hash21(floor(bn));
-
-  // optional temporal shimmer (default 0 => fully static)
-  if (uShimmer > 0.0)
-    t = fract(t + uShimmer * fract(float(uFrameIndex) * 0.61803399)); // golden-ratio hop
-
-  // (2) params -> geometry (lag space).
-  float c = uMorph  * N;   // continuous centre lag (wraps)
-  float h = 0.5 * uSpread; // triangular half-width == window half-width
-
-  // (3) threshold -> offset. Triangular default; gaussian if uWeightShape >= 0.5.
-  float d;
-  if (uWeightShape < 0.5) {
-    d = (t < 0.5) ? h * (sqrt(2.0 * t) - 1.0)
-                  : h * (1.0 - sqrt(2.0 * (1.0 - t)));       // triangular inverse-CDF
-  } else {
-    float sigma = uSpread / 6.0;                             // h == 3 sigma
-    float A = 0.00135;                                       // Phi(-3)
-    float p = A + t * (1.0 - 2.0 * A);
-    d = clamp(sigma * 1.41421356 * erfinv(2.0 * p - 1.0), -h, h);
+  // MORPH — spatially-uniform Hann cross-dissolve (centre folded into uLayers).
+  if (uMode == MODE_MORPH){
+    outColor = vec4(morphColor(uv), 1.0);
+    return;
   }
 
-  // (4) centre lag + offset, wrap, then lag -> layer, round to nearest.
-  float lag   = mod(c + d + N, N);
-  float layer = mod(float(uHead) - lag, N);
-  int   k     = wrapRing(layer + 0.5);   // +0.5 then floor == round
+  // centre lag c (frames back from head): trailing-biased when LAGGED, near
+  // newest when real-time (CHAOS, or LIVE-forced). See core §2.3(a).
+  float h = 0.5 * uSpread;
+  bool lagged = (uMode != MODE_CHAOS) && (uLive < 0.5);
+  float c = lagged ? (h + uMorph * (N - 2.0 * h)) : (uMorph * N);
 
-  // (5) sample that SINGLE frame at this pixel — ONE random-access fetch, no blend.
-  outColor = vec4(texture(uRing, vec3(uv, float(k))).rgb, 1.0);
+  if (uMode == MODE_CHAOS){
+    // today's per-pixel PICK — static screen-space threshold → inverse-CDF → one
+    // array fetch, no blend. hash21/shimmer live ONLY in this branch.
+    vec2 bn = mod(gl_FragCoord.xy, uBlueNoiseSize);
+    float t = hash21(floor(bn));
+    if (uShimmer > 0.0)
+      t = fract(t + uShimmer * fract(float(uFrameIndex) * 0.61803399));
+    float d = selectOffset(t, uSpread, uWeightShape);
+    float lag   = mod(c + d + N, N);
+    float layer = mod(headF - lag, N);
+    int   k     = wrapRing(layer + 0.5);
+    outColor = vec4(texture(uRing, vec3(uv, float(k))).rgb, 1.0);
+    return;
+  }
+
+  // MODE_SMOOTH — 2D temporal field → capped weighted temporal AVERAGE (a BLEND).
+  float a = wshape(uv.x, uFreqX, uPhaseX, uShapeX);
+  float b = wshape(uv.y, uFreqY, uPhaseY, uShapeY);
+  float field = uAmpX * a + uAmpY * b + uCross * 0.5 * (uAmpX + uAmpY) * a * b;
+  float lagCentre = c + field;               // per-pixel temporal centre (FRAMES)
+
+  vec3  acc  = vec3(0.0);
+  float wsum = 0.0;
+  for (int i = 0; i < ${MAX_TAPS}; i++){
+    if (i >= uTaps) break;                   // coherent (uniform) branch
+    float t = (float(i) + 0.5) / float(uTaps);
+    float d = selectOffset(t, uSpread, 1.0); // fixed GAUSSIAN placement (§3.4)
+    acc  += sampleRingLerp(uv, lagCentre + d, headF);
+    wsum += 1.0;
+  }
+  outColor = vec4(acc / max(wsum, 1.0), 1.0);
 }`;
 
 // ----------------------------------------------------------------------
@@ -234,6 +360,27 @@ interface RingSnapshot {
   newest: number;    // newest COMPLETED layer = (head-1+N)%N — matches the shader's uHead
 }
 
+/**
+ * Renderer-gated SMOOTH tap count (§3.7 / §4.4). T=4 (8 array fetches) on the
+ * SwiftShader software renderer (CI), T=8 (16 fetches) on a real GPU. This is
+ * the recorderbox/edges CI failure class — a flat perf assert that passes on a
+ * GPU goes red on CI — so bound the software-renderer cost from a renderer probe.
+ * When the renderer string is masked/absent, default to the GPU count (the
+ * correct default for real users); CI reliably reports "SwiftShader".
+ */
+function detectSmoothTaps(gl: WebGL2RenderingContext): number {
+  try {
+    const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+    const renderer = String(
+      (dbg && gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)) || gl.getParameter(gl.RENDERER) || '',
+    );
+    if (/swiftshader|software|llvmpipe/i.test(renderer)) return FRAMETABLE_SMOOTH_TAPS_SOFT;
+  } catch {
+    /* extension/param unavailable — fall through to the GPU default */
+  }
+  return FRAMETABLE_SMOOTH_TAPS_GPU;
+}
+
 export const frametableDef: VideoModuleDef = {
   type: 'frametable',
   palette: { top: 'Video modules', sub: 'Processors' },
@@ -251,50 +398,95 @@ export const frametableDef: VideoModuleDef = {
     { id: 'spread_cv',      type: 'cv', paramTarget: 'spread',      cvScale: { mode: 'linear' } },
     { id: 'shimmer_cv',     type: 'cv', paramTarget: 'shimmer',     cvScale: { mode: 'linear' } },
     { id: 'weightShape_cv', type: 'cv', paramTarget: 'weightShape', cvScale: { mode: 'linear' } },
+    // SMOOTH-mode morphable-waveform CVs (continuous → cvScale REQUIRED).
+    { id: 'waveFreqX_cv',  type: 'cv', paramTarget: 'waveFreqX',  cvScale: { mode: 'linear' } },
+    { id: 'waveAmtX_cv',   type: 'cv', paramTarget: 'waveAmtX',   cvScale: { mode: 'linear' } },
+    { id: 'waveShapeX_cv', type: 'cv', paramTarget: 'waveShapeX', cvScale: { mode: 'linear' } },
+    { id: 'waveFreqY_cv',  type: 'cv', paramTarget: 'waveFreqY',  cvScale: { mode: 'linear' } },
+    { id: 'waveAmtY_cv',   type: 'cv', paramTarget: 'waveAmtY',   cvScale: { mode: 'linear' } },
+    { id: 'waveShapeY_cv', type: 'cv', paramTarget: 'waveShapeY', cvScale: { mode: 'linear' } },
     // FREEZE gate — a MOMENTARY level hold (edge:'gate'): the ring is frozen WHILE
     // the gate is held HIGH, OR'd with the persistent button toggle. Routed to a
     // synthetic `freezeGate` param so the per-frame gate LEVEL never stomps the
     // button's latched `freeze`. SAVE trigger fires a one-shot snapshot on the
-    // rising edge. Gate-typed → no cvScale.
+    // rising edge. CHAOS gate momentarily forces the CHAOS render; LIVE gate
+    // momentarily forces real-time (no-lag) in any mode — both FREEZE-pattern
+    // (synthetic-param OR'd with the faceplate switch). Gate-typed → no cvScale.
     { id: 'freeze_gate', type: 'gate', edge: 'gate',    paramTarget: 'freezeGate' },
     { id: 'save_trig',   type: 'gate', edge: 'trigger', paramTarget: 'saveTrig'   },
+    { id: 'chaos_gate',  type: 'gate', edge: 'gate',    paramTarget: 'chaosGate'  },
+    { id: 'live_gate',   type: 'gate', edge: 'gate',    paramTarget: 'liveGate'   },
   ],
   outputs: [{ id: 'video_out', type: 'video' }],
   params: [
-    { id: 'morph',       label: 'morph',   defaultValue: FRAMETABLE_DEFAULTS.morph,       min: 0, max: 1,  curve: 'linear' },
-    { id: 'spread',      label: 'spread',  defaultValue: FRAMETABLE_DEFAULTS.spread,      min: 1, max: 60, curve: 'linear' },
-    { id: 'shimmer',     label: 'shimmer', defaultValue: FRAMETABLE_DEFAULTS.shimmer,     min: 0, max: 1,  curve: 'linear' },
-    // weight-shape: 0 = triangular (default), 1 = gaussian ("smooth").
-    { id: 'weightShape', label: 'shape',   defaultValue: FRAMETABLE_DEFAULTS.weightShape, min: 0, max: 1,  curve: 'linear' },
+    // mode selector: 0=SMOOTH (default), 1=MORPH, 2=CHAOS. Discrete (faceplate-only, no CV).
+    { id: 'mode',        label: 'mode',      defaultValue: FRAMETABLE_DEFAULTS.mode,       min: 0, max: 2,  curve: 'discrete' },
+    // LIVE switch (button-latched; OR'd with the live_gate LEVEL) → forces real-time.
+    { id: 'live',        label: 'live',      defaultValue: FRAMETABLE_DEFAULTS.live,       min: 0, max: 1,  curve: 'linear' },
+    // momentary CHAOS switch (button-latched; OR'd with the chaos_gate LEVEL) → overrides to CHAOS.
+    { id: 'chaos',       label: 'chaos',     defaultValue: FRAMETABLE_DEFAULTS.chaos,      min: 0, max: 1,  curve: 'linear' },
+    { id: 'morph',       label: 'morph',     defaultValue: FRAMETABLE_DEFAULTS.morph,      min: 0, max: 1,  curve: 'linear' },
+    { id: 'spread',      label: 'spread',    defaultValue: FRAMETABLE_DEFAULTS.spread,     min: 1, max: 60, curve: 'linear' },
+    { id: 'shimmer',     label: 'shimmer',   defaultValue: FRAMETABLE_DEFAULTS.shimmer,    min: 0, max: 1,  curve: 'linear' },
+    // weight-shape: 0 = triangular (default), 1 = gaussian ("smooth"). CHAOS bell only.
+    { id: 'weightShape', label: 'shape',     defaultValue: FRAMETABLE_DEFAULTS.weightShape, min: 0, max: 1, curve: 'linear' },
     // user-facing FREEZE toggle (button-latched; OR'd with the freeze_gate LEVEL to freeze).
-    { id: 'freeze',      label: 'freeze',  defaultValue: FRAMETABLE_DEFAULTS.freeze,      min: 0, max: 1,  curve: 'linear' },
+    { id: 'freeze',      label: 'freeze',    defaultValue: FRAMETABLE_DEFAULTS.freeze,     min: 0, max: 1,  curve: 'linear' },
+    // SMOOTH-mode morphable-waveform field (independent X/Y).
+    { id: 'waveFreqX',   label: 'x freq',    defaultValue: FRAMETABLE_DEFAULTS.waveFreqX,  min: 0, max: 8,  curve: 'linear' },
+    { id: 'waveAmtX',    label: 'x amt',     defaultValue: FRAMETABLE_DEFAULTS.waveAmtX,   min: 0, max: 1,  curve: 'linear' },
+    { id: 'waveShapeX',  label: 'x shape',   defaultValue: FRAMETABLE_DEFAULTS.waveShapeX, min: 0, max: 1,  curve: 'linear' },
+    { id: 'waveFreqY',   label: 'y freq',    defaultValue: FRAMETABLE_DEFAULTS.waveFreqY,  min: 0, max: 8,  curve: 'linear' },
+    { id: 'waveAmtY',    label: 'y amt',     defaultValue: FRAMETABLE_DEFAULTS.waveAmtY,   min: 0, max: 1,  curve: 'linear' },
+    { id: 'waveShapeY',  label: 'y shape',   defaultValue: FRAMETABLE_DEFAULTS.waveShapeY, min: 0, max: 1,  curve: 'linear' },
     // hidden synthetic gate-state params (no card fader).
-    { id: 'freezeGate',  label: 'frz gate',defaultValue: FRAMETABLE_DEFAULTS.freezeGate,  min: 0, max: 1,  curve: 'linear' },
-    { id: 'saveTrig',    label: 'save',    defaultValue: FRAMETABLE_DEFAULTS.saveTrig,    min: 0, max: 1,  curve: 'linear' },
+    { id: 'liveGate',    label: 'live gate', defaultValue: FRAMETABLE_DEFAULTS.liveGate,   min: 0, max: 1,  curve: 'linear' },
+    { id: 'chaosGate',   label: 'chaos gate',defaultValue: FRAMETABLE_DEFAULTS.chaosGate,  min: 0, max: 1,  curve: 'linear' },
+    { id: 'freezeGate',  label: 'frz gate',  defaultValue: FRAMETABLE_DEFAULTS.freezeGate, min: 0, max: 1,  curve: 'linear' },
+    { id: 'saveTrig',    label: 'save',      defaultValue: FRAMETABLE_DEFAULTS.saveTrig,   min: 0, max: 1,  curve: 'linear' },
   ],
 
   // docs-hash-ignore:start
   docs: {
     explanation:
-      'FRAMETABLE is a video WAVETABLE oscillator. It continuously records the last 60 rendered input frames into a GPU frame ring (a TEXTURE_2D_ARRAY, one layer per frame), and treats that 60-frame history like the single-cycle waves of a wavetable synth: MORPH scans a centre point through the table and SPREAD sets how wide a window around that centre each pixel may draw from. For EVERY output pixel the shader draws exactly ONE source frame — a whole-pixel dither/mosaic, never an alpha-average across frames — chosen probabilistically from a bell distribution over the window (the centre frame most likely, the periphery least). The frame index is picked in O(1) by an analytic inverse-CDF (one sqrt, one branch, one array fetch — no 60-frame loop). The per-pixel choice is fixed in SCREEN space by a static per-pixel threshold with no time term, so a STILL input yields a stable image (no TV-static shimmer) even while the ring keeps refreshing, while MOVING content becomes a coherent, morph-scannable time-smear mosaic that scanning MORPH slides through like a soft crossfade. SPREAD 1 collapses to a single frame (a delta = crisp playback of one moment); wider SPREAD blends more of the history into the bell. SHAPE morphs the bell from triangular (default, compact) to gaussian (smooth). SHIMMER (default 0 = fully static) animates the threshold along a golden-ratio sequence for a gentle living grain on moving content while the time-averaged distribution stays the target bell. FREEZE (a toggle button, plus a freeze gate that holds the ring frozen while the gate is high) stops the ring from advancing so you can scrub a held 60-frame window with MORPH/SPREAD; SAVE (a momentary button, also a rising edge on the save trigger) snapshots the current 60-frame ring into an in-GPU slot for later recall (and to feed a future video Cube). Rendered at half engine resolution (SwiftShader/CI budget); an unpatched input renders black. The selection math (triangular/gaussian inverse-CDF, ring wrap, head→layer mapping, freeze/save reducers) is a 1:1 CPU mirror unit-tested in $lib/video/frametable-core. All ports live on the yellow drill-down PATCH PANEL (no raw side jacks).',
+      'FRAMETABLE is a video WAVETABLE oscillator. It continuously records the last 60 rendered input frames into a GPU frame ring (a TEXTURE_2D_ARRAY, one layer per frame) and treats that 60-frame history like the single-cycle waves of a wavetable synth: MORPH scans a centre point through the table and SPREAD sets how wide a window around it each output draws from. A faceplate MODE selector picks one of THREE render engines. SMOOTH (the default) paints a smooth 2D field of temporal sample-centres from two morphable waveforms (one per screen axis) and outputs a CAPPED WEIGHTED TEMPORAL AVERAGE — a blend favouring the peak frame, not a single-frame pick — so the result is a flowing, liquid, recognizable-waveform distortion (sub-frame temporal positions are interpolated manually for a buttery result). MORPH is the smoothest possible cross-dissolve: a spatially-uniform, pop-free scan between temporal positions using a periodic raised-cosine (Hann) reconstruction kernel that is C¹ at its window edges AND N-periodic across the 59→0 wrap seam, so scanning MORPH loops seamlessly. CHAOS is the original per-pixel stochastic look — for every pixel the shader draws exactly ONE source frame (a whole-pixel dither/mosaic) chosen in O(1) by an analytic inverse-CDF from a static screen-space threshold, so a still input yields a stable image while moving content becomes a coherent morph-scannable time-smear. LAG MODEL: lag = (mode ≠ CHAOS) && !LIVE. CHAOS is always real-time (no lag). SMOOTH and MORPH auto-engage a ~2-second lag (they read a trailing window of the buffer) unless the LIVE control forces real-time. On the first real input frame the whole 60-layer ring is filled with that frame (buffer instantly full = a still image), then real frames wash in over ~2s — so there is no black warmup and a lagged read always hits a full buffer. LIVE (a faceplate switch OR its gate) forces real-time / no-lag in any mode; CHAOS (a momentary switch OR its gate) overrides the selector to the real-time CHAOS render while held. SPREAD is the temporal-average window (SMOOTH) / cross-dissolve width (MORPH) / bell window (CHAOS). SHIMMER is flow speed (SMOOTH field drift) / auto-scan drift (MORPH) / threshold dither (CHAOS). SHAPE morphs the CHAOS bell triangular↔gaussian (idle in SMOOTH/MORPH, which use a fixed gaussian/Hann). The X/Y waveform controls (freq, amt, shape per axis) sculpt SMOOTH\'s field. FREEZE (a toggle button, plus a freeze gate that holds the ring frozen while high) stops the ring from advancing so you can scrub a held 60-frame window; SAVE (a momentary button, also a rising edge on the save trigger) snapshots the ring into an in-GPU slot for later recall (and to feed a future video Cube). Rendered at half engine resolution (SwiftShader/CI budget); an unpatched input renders black. The mode/lag dispatch, morphable-waveform field, weighted-average blend, Hann kernel, inverse-CDF and freeze/save/first-fill reducers are a 1:1 CPU mirror unit-tested in $lib/video/frametable-core. All ports live on the yellow drill-down PATCH PANEL (no raw side jacks).',
     inputs: {
       video_in: 'The source video recorded, frame by frame, into the 60-frame ring. Unpatched, the output is black.',
       morph_cv: 'CV that modulates MORPH (the centre point scanned through the 60-frame history), swept linearly over 0..1 (wraps at the ring seam).',
-      spread_cv: 'CV that modulates SPREAD (the bell window width in frames), swept linearly over 1..60.',
-      shimmer_cv: 'CV that modulates SHIMMER (temporal dither of the per-pixel threshold), swept linearly over 0..1.',
-      weightShape_cv: 'CV that modulates SHAPE (the bell shape, triangular↔gaussian), swept linearly over 0..1.',
+      spread_cv: 'CV that modulates SPREAD (the window width in frames — temporal-average width / dissolve width / bell window depending on mode), swept linearly over 1..60.',
+      shimmer_cv: 'CV that modulates SHIMMER (flow speed in SMOOTH / auto-scan drift in MORPH / threshold dither in CHAOS), swept linearly over 0..1.',
+      weightShape_cv: 'CV that modulates SHAPE (the CHAOS selection bell, triangular↔gaussian), swept linearly over 0..1.',
+      waveFreqX_cv: 'CV that modulates X FREQ (cycles of the SMOOTH X-axis waveform across the screen), swept linearly over 0..8.',
+      waveAmtX_cv: 'CV that modulates X AMT (the SMOOTH X-axis temporal-displacement amount), swept linearly over 0..1.',
+      waveShapeX_cv: 'CV that modulates X SHAPE (the SMOOTH X-axis waveform morph, sine→tri→saw→square), swept linearly over 0..1.',
+      waveFreqY_cv: 'CV that modulates Y FREQ (cycles of the SMOOTH Y-axis waveform), swept linearly over 0..8.',
+      waveAmtY_cv: 'CV that modulates Y AMT (the SMOOTH Y-axis temporal-displacement amount), swept linearly over 0..1.',
+      waveShapeY_cv: 'CV that modulates Y SHAPE (the SMOOTH Y-axis waveform morph), swept linearly over 0..1.',
       freeze_gate: 'FREEZE gate. WHILE the gate is HELD HIGH (level >= 0.5) the ring is frozen — a momentary hold, with the output staying live over the held 60 frames — and it resumes the instant the gate drops low. OR-combined with the FREEZE toggle button, so either can freeze the ring independently.',
       save_trig: 'SAVE trigger. A RISING edge fires ONCE, snapshotting the current 60-frame ring into an in-GPU slot (idempotent per edge — held high does not re-snapshot).',
+      chaos_gate: 'CHAOS gate. WHILE held HIGH (level >= 0.5) it momentarily forces the real-time per-pixel CHAOS render, overriding the MODE selector; it drops back to the selected mode the instant the gate goes low. OR-combined with the momentary CHAOS switch.',
+      live_gate: 'LIVE gate. WHILE held HIGH (level >= 0.5) it forces the real-time / no-lag read in ANY mode (SMOOTH and MORPH stop lagging and track the live input); it re-engages the ~2-second lag the instant the gate goes low. OR-combined with the LIVE switch.',
     },
     outputs: {
-      video_out: 'The selected-frame mosaic: for every pixel, the single source frame chosen by the MORPH/SPREAD bell. The card preview shows this output.',
+      video_out: 'The rendered frame: the SMOOTH weighted-average field, the MORPH cross-dissolve, or the CHAOS selected-frame mosaic, depending on the active mode. The card preview shows this output.',
     },
     controls: {
-      morph: 'MORPH (0..1, default 0): scans the centre point through the 60-frame ring (wraps at the seam). With moving content, sweeping MORPH slides the coherent time-smear through the history like a soft crossfade.',
-      spread: 'SPREAD (1..60, default 12): the width of the bell window (in frames) each pixel may draw from. 1 = a single frame (a delta, crisp playback of one moment); wider blends more of the history, the centre frame still most likely.',
-      shimmer: 'SHIMMER (0..1, default 0): temporal dither of the static per-pixel threshold along a golden-ratio (temporally blue-noise) sequence. 0 = fully static (still input → stable image). Low values add a gentle living grain to moving content; the time-averaged distribution stays the target bell.',
-      weightShape: 'SHAPE (0..1, default 0): morphs the selection bell from triangular (0, compact) to gaussian (1, smooth). Triangular is compactly supported (the window IS the support); gaussian tapers within the same window.',
-      freeze: 'FREEZE (0/1, default 0): stops the ring from advancing so the held 60-frame window can be scrubbed with MORPH/SPREAD (the select/output pass keeps running, so the controls stay live over the frozen frames). The toggle button latches it; the freeze gate additionally holds it frozen while that gate is high.',
+      mode: 'MODE (0..2, default 0 = SMOOTH): the render engine. 0 = SMOOTH (flowing 2D temporal-average field from two morphable waveforms, auto-lagged), 1 = MORPH (smoothest cross-dissolve scan of the table, auto-lagged), 2 = CHAOS (the original per-pixel inverse-CDF single-frame pick, always real-time). A faceplate selector; no CV (discrete).',
+      live: 'LIVE (0/1, default 0): forces the REAL-TIME / no-lag read in any mode. Off (default) leaves SMOOTH and MORPH auto-lagged by ~2 seconds so they read a full trailing buffer; on makes every mode track the live input. Latched by the switch; the live gate additionally forces it while that gate is high.',
+      chaos: 'CHAOS (0/1, default 0): momentarily overrides the MODE selector to the real-time CHAOS render while engaged, then reverts to the selected mode. Latched by the switch; the chaos gate additionally forces it while that gate is high.',
+      morph: 'MORPH (0..1, default 0): scans the centre point through the 60-frame ring (wraps at the seam). SMOOTH → the field DC / scan depth; MORPH → the temporal position being dissolved to; CHAOS → the centre lag of the bell.',
+      spread: 'SPREAD (1..60, default 12): the window width in frames. SMOOTH → the temporal-average window; MORPH → the cross-dissolve blend width (1 ≈ a crisp single moment, wider = a longer buttery dissolve); CHAOS → the bell window (1 = a single-frame delta).',
+      shimmer: 'SHIMMER (0..1, default 0): SMOOTH → flow SPEED (the field drifts, incommensurate X/Y rates so it never loops = liquid); MORPH → a gentle auto-scan drift of the dissolve centre; CHAOS → temporal dither of the static per-pixel threshold. 0 = fully static.',
+      weightShape: 'SHAPE (0..1, default 0): morphs the CHAOS selection bell from triangular (0, compact) to gaussian (1, smooth). Idle in SMOOTH/MORPH (which use a fixed gaussian / Hann kernel).',
+      freeze: 'FREEZE (0/1, default 0): stops the ring from advancing so the held 60-frame window can be scrubbed with MORPH/SPREAD (the render pass keeps running, so the controls stay live over the frozen frames). The toggle button latches it; the freeze gate additionally holds it frozen while that gate is high.',
+      waveFreqX: 'X FREQ (0..8, default 1): cycles of the SMOOTH X-axis morphable waveform across the screen. More cycles = finer horizontal temporal ripples in the field. SMOOTH mode only.',
+      waveAmtX: 'X AMT (0..1, default 0.35): how far the SMOOTH X-axis waveform displaces the per-pixel temporal centre (mapped to frames = amt·N/2). 0 = flat; higher = more of the history spread across the X axis. SMOOTH mode only.',
+      waveShapeX: 'X SHAPE (0..1, default 0): morphs the SMOOTH X-axis waveform sine→triangle→saw→square (zero-crossing-aligned so blending never phase-cancels). SMOOTH mode only.',
+      waveFreqY: 'Y FREQ (0..8, default 1): cycles of the SMOOTH Y-axis morphable waveform across the screen. SMOOTH mode only.',
+      waveAmtY: 'Y AMT (0..1, default 0.35): the SMOOTH Y-axis temporal-displacement amount (mapped to frames = amt·N/2). SMOOTH mode only.',
+      waveShapeY: 'Y SHAPE (0..1, default 0): morphs the SMOOTH Y-axis waveform sine→triangle→saw→square. SMOOTH mode only.',
+      liveGate: 'Hidden synthetic param the live-gate CV bridge writes each frame with the live gate LEVEL; while it is HIGH (>= 0.5) the real-time / no-lag read is forced in any mode (OR-combined with the LIVE switch, so the per-frame level never stomps the button\'s latched state). Exposed only as the live gate jack, not as a knob.',
+      chaosGate: 'Hidden synthetic param the chaos-gate CV bridge writes each frame with the chaos gate LEVEL; while it is HIGH (>= 0.5) the CHAOS render is forced, overriding the MODE selector (OR-combined with the momentary CHAOS switch). Exposed only as the chaos gate jack, not as a knob.',
       freezeGate: 'Hidden synthetic param the freeze-gate CV bridge writes each frame with the live gate LEVEL; while it is HIGH (>= 0.5) the ring is held frozen (OR-combined with the FREEZE toggle, so the per-frame level never stomps the button\'s latched state). Exposed only as the freeze gate jack, not as a knob.',
       saveTrig: 'Hidden synthetic param the SAVE momentary button sets and the save-trigger CV bridge writes; a RISING edge on it snapshots the current 60-frame ring into an in-GPU slot (idempotent per edge). Exposed only as the SAVE button + save trigger jack, not as a knob.',
     },
@@ -338,6 +530,9 @@ export const frametableDef: VideoModuleDef = {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
+    // Renderer-gated SMOOTH tap count (T=4 SwiftShader / T=8 GPU). Probed once.
+    const smoothTaps = detectSmoothTaps(gl);
+
     // Deferred program compile (mandelbulb/mirrorpool CI discipline) + cached uniforms.
     let progs: { copy: WebGLProgram; select: WebGLProgram } | null = null;
     let u: {
@@ -347,6 +542,14 @@ export const frametableDef: VideoModuleDef = {
       shimmer: WebGLUniformLocation | null; shape: WebGLUniformLocation | null;
       head: WebGLUniformLocation | null; frameIndex: WebGLUniformLocation | null;
       hasContent: WebGLUniformLocation | null;
+      mode: WebGLUniformLocation | null; live: WebGLUniformLocation | null;
+      taps: WebGLUniformLocation | null; cross: WebGLUniformLocation | null;
+      freqX: WebGLUniformLocation | null; freqY: WebGLUniformLocation | null;
+      ampX: WebGLUniformLocation | null; ampY: WebGLUniformLocation | null;
+      phaseX: WebGLUniformLocation | null; phaseY: WebGLUniformLocation | null;
+      shapeX: WebGLUniformLocation | null; shapeY: WebGLUniformLocation | null;
+      tapCount: WebGLUniformLocation | null; weights: WebGLUniformLocation | null;
+      layers: WebGLUniformLocation | null;
     } | null = null;
     let glFailed = false;
     function ensurePrograms(): boolean {
@@ -368,10 +571,36 @@ export const frametableDef: VideoModuleDef = {
           head: gl.getUniformLocation(select, 'uHead'),
           frameIndex: gl.getUniformLocation(select, 'uFrameIndex'),
           hasContent: gl.getUniformLocation(select, 'uHasContent'),
+          mode: gl.getUniformLocation(select, 'uMode'),
+          live: gl.getUniformLocation(select, 'uLive'),
+          taps: gl.getUniformLocation(select, 'uTaps'),
+          cross: gl.getUniformLocation(select, 'uCross'),
+          freqX: gl.getUniformLocation(select, 'uFreqX'),
+          freqY: gl.getUniformLocation(select, 'uFreqY'),
+          ampX: gl.getUniformLocation(select, 'uAmpX'),
+          ampY: gl.getUniformLocation(select, 'uAmpY'),
+          phaseX: gl.getUniformLocation(select, 'uPhaseX'),
+          phaseY: gl.getUniformLocation(select, 'uPhaseY'),
+          shapeX: gl.getUniformLocation(select, 'uShapeX'),
+          shapeY: gl.getUniformLocation(select, 'uShapeY'),
+          tapCount: gl.getUniformLocation(select, 'uTapCount'),
+          weights: gl.getUniformLocation(select, 'uWeights'),
+          layers: gl.getUniformLocation(select, 'uLayers'),
         };
       } catch { glFailed = true; return false; }
       return true;
     }
+
+    // CPU-side SHIMMER→FLOW phase integrators (§3.6): the SMOOTH field drifts at
+    // incommensurate X/Y rates so the coupled field wanders without looping
+    // (liquid). Kept out of the shader (which stays a pure function of uniforms).
+    let phaseX = 0;
+    let phaseY = 0;
+    // MORPH auto-scan drift (§4.3): a slow drift added to the morph centre.
+    let morphDrift = 0;
+    // Reusable MORPH kernel upload buffers (avoid per-frame allocation).
+    const morphW = new Float32Array(MAX_TAPS_MORPH);
+    const morphL = new Float32Array(MAX_TAPS_MORPH);
 
     // Merge stored params over defaults (strip stray keys).
     const raw = node.params as Record<string, unknown>;
@@ -422,18 +651,38 @@ export const frametableDef: VideoModuleDef = {
         // SAVE: fire ONCE per rising edge of saveTrig (idempotent per edge).
         if (detectEdge(saveEdge, params.saveTrig)?.pressed === true) snapshotRing();
 
-        // Frozen while the button toggle is latched OR the freeze gate is held high.
-        const frozen = params.freeze >= 0.5 || params.freezeGate >= 0.5;
+        // ── Effective-state resolution (§2.2) — FREEZE-pattern OR (button ‖ gate). ──
+        const chaosActive = params.chaos >= 0.5 || params.chaosGate >= 0.5; // momentary CHAOS
+        const liveActive = params.live >= 0.5 || params.liveGate >= 0.5;    // LIVE switch
+        const frozen = params.freeze >= 0.5 || params.freezeGate >= 0.5;    // unchanged
+        const selMode = Math.round(clamp(params.mode, 0, 2));
+        const effMode = chaosActive ? FRAMETABLE_MODE_CHAOS : selMode; // momentary chaos overrides
+        const lagged = effMode !== FRAMETABLE_MODE_CHAOS && !liveActive;
+
         const inputTex = frame.getInputTexture(node.id, 'video_in');
 
-        // ── P0: SELECT — one whole-pixel frame per fragment (O(1) inverse-CDF). ──
-        // Sample the ring as written by PRIOR frames: the newest FULLY-WRITTEN layer
-        // is (head-1) mod N. We deliberately do NOT treat the layer captured THIS
-        // frame as newest — sampling an array layer in the SAME draw it was rendered
-        // into is a same-frame read-after-write that ANGLE/some drivers return as
-        // undefined/black (it read all-black at spread=1 on Chromium). Selecting
-        // BEFORE the capture makes every sampled layer a completed prior write, and
-        // costs one imperceptible frame of "newest" latency.
+        // ── SHIMMER → FLOW (§3.6/§4.3), integrated CPU-side (shader stays a pure
+        //    function of uniforms). SMOOTH: incommensurate X/Y phase drift (liquid);
+        //    MORPH: a gentle auto-scan drift of the dissolve centre. CHAOS uses
+        //    shimmer as a per-fragment threshold dither in-shader (uShimmer). ──
+        const dt = Math.min(0.1, Math.max(0, frame.timeDelta ?? 1 / 60));
+        const shim = clamp01(params.shimmer);
+        phaseX = (phaseX + shim * FRAMETABLE_FLOW_RATE * dt) % 1;
+        phaseY = (phaseY + shim * FRAMETABLE_FLOW_RATE * FRAMETABLE_FLOW_RATIO_Y * dt) % 1;
+        morphDrift = (morphDrift + shim * FRAMETABLE_MORPH_DRIFT_RATE * dt) % 1;
+
+        const morphBase = clamp01(params.morph);
+        const spread = clamp(params.spread, 1, N - 1); // ≤ N-1 so the lagged [h,N-h] window is non-empty
+        // MORPH auto-scan: a small oscillating drift around the knob position.
+        const morphEff =
+          effMode === FRAMETABLE_MODE_MORPH
+            ? clamp01(morphBase + 0.12 * Math.sin(6.28318530718 * morphDrift))
+            : morphBase;
+
+        // ── SELECT — mode-branched (§2.5): sample the ring as written by PRIOR
+        //    frames (newest FULLY-WRITTEN layer = (head-1) mod N). Selecting BEFORE
+        //    the capture avoids the same-frame read-after-write hazard (ANGLE
+        //    returns undefined/black), at one imperceptible frame of latency. ──
         const newestHead = (head - 1 + N) % N;
         g.bindFramebuffer(g.FRAMEBUFFER, outTarget.fbo);
         g.viewport(0, 0, rw, rh);
@@ -442,29 +691,64 @@ export const frametableDef: VideoModuleDef = {
         g.bindTexture(g.TEXTURE_2D_ARRAY, ringTex);
         g.uniform1i(u.ring, 0);
         g.uniform2f(u.bnSize, FRAMETABLE_BLUE_NOISE_SIZE, FRAMETABLE_BLUE_NOISE_SIZE);
-        g.uniform1f(u.morph, clamp01(params.morph));
-        g.uniform1f(u.spread, clamp(params.spread, 1, N));
-        g.uniform1f(u.shimmer, clamp01(params.shimmer));
+        g.uniform1f(u.morph, morphBase);
+        g.uniform1f(u.spread, spread);
+        g.uniform1f(u.shimmer, shim);
         g.uniform1f(u.shape, clamp01(params.weightShape));
         g.uniform1i(u.head, newestHead);
         g.uniform1i(u.frameIndex, frame.frame | 0);
         g.uniform1f(u.hasContent, capturedAny ? 1 : 0);
+        g.uniform1i(u.mode, effMode);
+        g.uniform1f(u.live, liveActive ? 1 : 0);
+        g.uniform1i(u.taps, smoothTaps);
+        g.uniform1f(u.cross, FRAMETABLE_CROSS);
+        // SMOOTH morphable-waveform field uniforms.
+        g.uniform1f(u.freqX, clamp(params.waveFreqX, 0, 8));
+        g.uniform1f(u.freqY, clamp(params.waveFreqY, 0, 8));
+        g.uniform1f(u.ampX, clamp01(params.waveAmtX) * (N / 2));
+        g.uniform1f(u.ampY, clamp01(params.waveAmtY) * (N / 2));
+        g.uniform1f(u.phaseX, phaseX);
+        g.uniform1f(u.phaseY, phaseY);
+        g.uniform1f(u.shapeX, clamp01(params.waveShapeX));
+        g.uniform1f(u.shapeY, clamp01(params.waveShapeY));
+        // MORPH — precompute the periodic Hann kernel CPU-side (spatially uniform)
+        // and upload as uniform arrays. Only when MORPH is active (cache-warm reads).
+        if (effMode === FRAMETABLE_MODE_MORPH) {
+          const kernel = morphKernel(morphEff, spread, newestHead, lagged, MAX_TAPS_MORPH, N);
+          for (let j = 0; j < kernel.count; j++) {
+            morphW[j] = kernel.weights[j]!;
+            morphL[j] = kernel.layers[j]!;
+          }
+          g.uniform1i(u.tapCount, kernel.count);
+          g.uniform1fv(u.weights, morphW);
+          g.uniform1fv(u.layers, morphL);
+        }
         ctx.drawFullscreenQuad();
 
-        // ── P1: CAPTURE live input → ring[head] (unless FROZEN), then advance. The
-        //        just-captured frame becomes the newest for the NEXT draw's select. ──
+        // ── CAPTURE live input → ring (unless FROZEN), then advance. Capture always
+        //    records at full rate in EVERY mode (LIVE/mode only change the READ). On
+        //    the FIRST real input frame, fill ALL N layers with it (buffer instantly
+        //    FULL = a still image); real frames then wash in over ~2s. The fill/
+        //    capture bind inputTex (or the black sentinel) as sampler and a ring
+        //    LAYER as target — NEVER the reverse (GL feedback guard). ──
         if (!frozen) {
-          g.bindFramebuffer(g.FRAMEBUFFER, ringFbo);
-          g.framebufferTextureLayer(g.FRAMEBUFFER, g.COLOR_ATTACHMENT0, ringTex, 0, head);
-          g.viewport(0, 0, rw, rh);
+          const firstReal = !capturedAny && inputTex != null;
           g.useProgram(progs.copy);
           g.activeTexture(g.TEXTURE0);
-          // NEVER bind the ring layer we write as a sampler (GL feedback loop);
-          // the copy reads the upstream input (or the black sentinel).
           g.bindTexture(g.TEXTURE_2D, inputTex ?? emptyTex);
           g.uniform1i(u.copyTex, 0);
           g.uniform1f(u.copyHas, inputTex ? 1 : 0);
-          ctx.drawFullscreenQuad();
+          g.bindFramebuffer(g.FRAMEBUFFER, ringFbo);
+          g.viewport(0, 0, rw, rh);
+          if (firstReal) {
+            for (let i = 0; i < N; i++) {
+              g.framebufferTextureLayer(g.FRAMEBUFFER, g.COLOR_ATTACHMENT0, ringTex, 0, i);
+              ctx.drawFullscreenQuad();
+            }
+          } else {
+            g.framebufferTextureLayer(g.FRAMEBUFFER, g.COLOR_ATTACHMENT0, ringTex, 0, head);
+            ctx.drawFullscreenQuad();
+          }
           if (inputTex) capturedAny = true;
           head = (head + 1) % N;
           framesElapsed++;

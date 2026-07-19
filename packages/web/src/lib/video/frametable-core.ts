@@ -48,6 +48,36 @@ export const FRAMETABLE_SHAPE_TRIANGULAR = 0;
 export const FRAMETABLE_SHAPE_GAUSSIAN = 1;
 
 // ----------------------------------------------------------------------
+// Render MODE encoding (owner-decided). ONE selector param, 0/1/2, curve
+// 'discrete'. Defined ONCE here and imported into the factory (shader uMode
+// int), the card (segment order) and the tests so the encoding never drifts.
+// ----------------------------------------------------------------------
+
+/** SMOOTH — the new DEFAULT. Two morphable waveforms paint a smooth 2D field of
+ *  temporal sample-centres; each pixel is a CAPPED WEIGHTED TEMPORAL AVERAGE
+ *  (a blend, not a pick) of the ring over a ±Spread window. AUTO-LAGGED. */
+export const FRAMETABLE_MODE_SMOOTH = 0;
+/** MORPH — a spatially-uniform, buttery cross-dissolve scan of the 60-frame
+ *  table via a periodic Hann reconstruction kernel (C¹ + N-periodic seam).
+ *  AUTO-LAGGED. */
+export const FRAMETABLE_MODE_MORPH = 1;
+/** CHAOS — the ORIGINAL per-pixel stochastic inverse-CDF single-frame pick
+ *  (today's dither/mosaic look). Always REAL-TIME (no lag). Reachable via the
+ *  selector (index 2) AND a momentary CHAOS gate/switch that overrides it. */
+export const FRAMETABLE_MODE_CHAOS = 2;
+
+/** SMOOTH-mode temporal tap counts (logical taps × 2 array fetches each). T=8
+ *  on a real GPU; T=4 (8 fetches) on the SwiftShader software renderer (CI).
+ *  Gate on a renderer probe — a flat perf/pixel assert that passes on a GPU
+ *  goes red on CI (the recorderbox/edges failure class). */
+export const FRAMETABLE_SMOOTH_TAPS_GPU = 8;
+export const FRAMETABLE_SMOOTH_TAPS_SOFT = 4;
+/** MORPH Hann-kernel cap (SEPARATE from SMOOTH's compile cap — Hann taps are
+ *  single-fetch): beyond this many in-window frames the kernel stride-subsamples
+ *  + renormalises, bounding the worst-case fetch count at full spread. */
+export const FRAMETABLE_MORPH_TAP_CAP = 32;
+
+// ----------------------------------------------------------------------
 // Scalar helpers (transliterated 1:1 into GLSL).
 // ----------------------------------------------------------------------
 
@@ -287,4 +317,295 @@ export function advanceHead(
   ringFrames: number = FRAMETABLE_RING_FRAMES,
 ): number {
   return frozen ? head : wrapIndex(head + 1, ringFrames);
+}
+
+// ======================================================================
+// 3-MODE REWORK — pure CPU mirrors of the SMOOTH + MORPH shader paths and
+// the mode/lag/first-frame-fill dispatch reducers. Every function below is a
+// 1:1 transliteration of the GLSL in ./modules/frametable.ts SELECT program.
+// ======================================================================
+
+/** GLSL `mix(a,b,t) = a + (b-a)·t`. */
+function mix(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+/** GLSL `smoothstep(e0,e1,x)`. */
+function smoothstep(e0: number, e1: number, x: number): number {
+  if (e1 === e0) return x < e0 ? 0 : 1;
+  const t = clamp((x - e0) / (e1 - e0), 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
+// ----------------------------------------------------------------------
+// Mode / lag / read-centre dispatch reducers (§2.2 / §2.3).
+// ----------------------------------------------------------------------
+
+/**
+ * Resolve the EFFECTIVE render mode. The momentary CHAOS gate/switch
+ * (`chaosActive`) overrides the selector while held; otherwise the selector's
+ * rounded 0/1/2 value wins. Mirrors the factory's `effMode`.
+ */
+export function frametableEffMode(mode: number, chaosActive: boolean): number {
+  return chaosActive ? FRAMETABLE_MODE_CHAOS : Math.round(clamp(mode, 0, 2));
+}
+
+/**
+ * Is this frame LAGGED (trailing read) or REAL-TIME? `lag = (mode ≠ CHAOS) &&
+ * !LIVE`: CHAOS is always real-time; SMOOTH/MORPH auto-lag UNLESS LIVE forces
+ * real-time. Mirrors the factory's `lagged`.
+ */
+export function frametableLagged(effMode: number, liveActive: boolean): boolean {
+  return effMode !== FRAMETABLE_MODE_CHAOS && !liveActive;
+}
+
+/**
+ * The morph CENTRE `c` (frames of lag back from the head), biased per §2.3(a):
+ *   - REAL-TIME (chaos / live-forced): `c = morph·N` — today's centre (window
+ *     may sit at the newest frame; a seam straddle is invisible in a
+ *     per-pixel dither / softened by the average).
+ *   - LAGGED (smooth/morph, !live): `c = h + morph·(N − 2h)` ⇒ `c ∈ [h, N−h]`
+ *     so the ±Spread window always sits in already-populated trailing layers,
+ *     clear of the head↔head-1 write seam.
+ * `spread` is clamped to `[1, N−1]` so `h ≤ (N−1)/2` and `[h, N−h]` is non-empty.
+ */
+export function frametableReadCentre(
+  morph: number,
+  spread: number,
+  lagged: boolean,
+  ringFrames: number = FRAMETABLE_RING_FRAMES,
+): number {
+  const N = ringFrames;
+  const m = clamp(morph, 0, 1);
+  if (!lagged) return m * N;
+  const h = 0.5 * clamp(spread, 1, N - 1);
+  return h + m * (N - 2 * h);
+}
+
+/** Alias of {@link frametableReadCentre} used by the SMOOTH sampler (§2.3). */
+export function smoothCentre(
+  morph: number,
+  spread: number,
+  lagged: boolean,
+  ringFrames: number = FRAMETABLE_RING_FRAMES,
+): number {
+  return frametableReadCentre(morph, spread, lagged, ringFrames);
+}
+
+// ----------------------------------------------------------------------
+// SMOOTH — morphable waveform → 2D temporal field → weighted average (§3).
+// ----------------------------------------------------------------------
+
+/**
+ * The morphable unit waveform in [-1,1] (§3.2): one continuous `shape ∈ [0,1]`
+ * sweeps four ZERO-CROSSING-ALIGNED anchors (sine → tri → saw → square) so
+ * blending never phase-cancels. All four cross zero ascending at `p=0`, so any
+ * blend of them is ≈0 at `p=0` (the anti-cancellation guarantee).
+ *   u=axis coord, freq=cycles across axis, phase=offset (FLOW), shape 0..1.
+ */
+export function wshape(u: number, freq: number, phase: number, shape: number): number {
+  const p = u * freq + phase;
+  const sine = Math.sin(6.28318530718 * p);
+  const tri = 1 - 4 * Math.abs(fract(p + 0.25) - 0.5); // 0 rising at p=0, peak p=.25
+  const saw = 2 * fract(p + 0.5) - 1; // 0 rising at p=0
+  const sq = clamp(4 * sine, -1, 1); // soft anti-aliased square
+  const S = clamp(shape, 0, 1) * 3; // 0..3 across the 4 anchors
+  let w = sine;
+  w = mix(w, tri, smoothstep(0, 1, clamp(S, 0, 1)));
+  w = mix(w, saw, smoothstep(0, 1, clamp(S - 1, 0, 1)));
+  w = mix(w, sq, smoothstep(0, 1, clamp(S - 2, 0, 1)));
+  return w;
+}
+
+/**
+ * The 2D temporal-displacement FIELD in FRAMES (§3.3): two axis waveforms
+ * summed with a moderated ring-mod cross-term that couples the axes into
+ * flowing diagonal whorls. `ampX/ampY` are in FRAMES (the factory maps
+ * `waveAmt·(N/2)`); `cross` is the coupling (default 0.4). `fieldGain=0`
+ * FLATTENS the field (MORPH), yielding a spatially-constant 0 displacement.
+ */
+export function smoothField(
+  ux: number,
+  uy: number,
+  freqX: number,
+  ampX: number,
+  phaseX: number,
+  shapeX: number,
+  freqY: number,
+  ampY: number,
+  phaseY: number,
+  shapeY: number,
+  cross: number,
+  fieldGain = 1,
+): number {
+  const a = wshape(ux, freqX, phaseX, shapeX);
+  const b = wshape(uy, freqY, phaseY, shapeY);
+  return fieldGain * (ampX * a + ampY * b + cross * 0.5 * (ampX + ampY) * a * b);
+}
+
+/**
+ * Manual inter-layer LINEAR interpolation (§3.5). WebGL2 `sampler2DArray` does
+ * NOT filter across layers (it rounds the layer coord), so a fractional temporal
+ * position must be blended by hand: fetch the two adjacent layers and `mix`.
+ * `ringAt(layer)` models one colour channel of the ring at an integer layer;
+ * `lag` is frames back from `head` (fractional). Wrapping keeps it on the ring.
+ */
+export function sampleRingLerp(
+  ringAt: (layer: number) => number,
+  head: number,
+  lag: number,
+  ringFrames: number = FRAMETABLE_RING_FRAMES,
+): number {
+  const layerF = head - lag; // fractional layer
+  const l0 = Math.floor(layerF);
+  const f = layerF - l0; // sub-frame fraction
+  const c0 = ringAt(wrapIndex(l0, ringFrames));
+  const c1 = ringAt(wrapIndex(l0 + 1, ringFrames));
+  return mix(c0, c1, f); // TRUE adjacent-frame blend
+}
+
+/**
+ * The CAPPED WEIGHTED TEMPORAL AVERAGE (§3.4) — the SMOOTH smoothness: a BLEND,
+ * not a pick. `taps` equal-weight stratified importance samples of the fixed
+ * GAUSSIAN bell (`selectOffset` as the placement → samples auto-concentrate on
+ * the peak frame), each read with `sampleRingLerp` for sub-frame temporal
+ * blending, then averaged. `field` is the per-pixel spatial displacement (§3.3;
+ * 0 = spatially uniform). A still ring ⇒ output == that still value (constant);
+ * an impulse ring ⇒ a value STRICTLY between (an average), never a single frame.
+ */
+export function smoothSample(
+  ringAt: (layer: number) => number,
+  morph: number,
+  spread: number,
+  taps: number,
+  lagged: boolean,
+  field = 0,
+  head: number = FRAMETABLE_RING_FRAMES - 1,
+  ringFrames: number = FRAMETABLE_RING_FRAMES,
+): number {
+  const s = clamp(spread, 1, ringFrames - 1);
+  const c = frametableReadCentre(morph, s, lagged, ringFrames);
+  const lagCentre = c + field;
+  const T = Math.max(1, Math.round(taps));
+  let acc = 0;
+  let wsum = 0;
+  for (let i = 0; i < T; i++) {
+    const t = (i + 0.5) / T; // regular strata in [0,1) — no per-pixel noise
+    const d = selectOffset(t, s, FRAMETABLE_SHAPE_GAUSSIAN); // gaussian placement
+    acc += sampleRingLerp(ringAt, head, lagCentre + d, ringFrames);
+    wsum += 1;
+  }
+  return acc / Math.max(wsum, 1);
+}
+
+// ----------------------------------------------------------------------
+// MORPH — periodic raised-cosine (Hann) reconstruction kernel (§4.1).
+// ----------------------------------------------------------------------
+
+/** The Hann-kernel result: spatially-uniform per-frame weights + ring layers. */
+export interface MorphKernel {
+  /** Ring layer index per tap (integer, already `head−k` wrapped). */
+  layers: number[];
+  /** Normalised weight per tap (Σ = 1). */
+  weights: number[];
+  /** Number of taps (≤ cap). */
+  count: number;
+}
+
+/**
+ * MORPH's periodic raised-cosine (Hann) reconstruction kernel (§4.1). Computed
+ * ONCE per frame (spatially uniform) and uploaded as uniform arrays. For each
+ * integer lag `k ∈ [⌈ℓ−h⌉, ⌊ℓ+h⌋]` with `ℓ = frametableReadCentre` and
+ * `h = max(0.5, spread/2)`:
+ *   g(δ) = 0.5·(1 + cos(π·δ/h))   for |δ| ≤ h,  δ = k − ℓ
+ *   w_k  = g / Σg   (normalise)
+ *   layer_k = mod(round(head − k), N)   (PERIODIC ring index)
+ * Guarantees (a) no pop at frame boundaries — `g(±h)=0` AND `g'(±h)=0` so a
+ * frame joins/leaves with zero weight AND zero slope (C¹ in ℓ), and (b) no pop
+ * across the 59→0 wrap seam — `layer_k` is N-periodic so `R(ℓ)` is N-periodic
+ * and C¹. Beyond `cap` taps the window is STRIDE-SUBSAMPLED + renormalised
+ * (a smooth low-pass is visually identical), bounding worst-case fetch cost.
+ */
+export function morphKernel(
+  morph: number,
+  spread: number,
+  head: number,
+  lagged: boolean,
+  cap: number = FRAMETABLE_MORPH_TAP_CAP,
+  ringFrames: number = FRAMETABLE_RING_FRAMES,
+): MorphKernel {
+  const N = ringFrames;
+  const s = clamp(spread, 1, N - 1);
+  const c = frametableReadCentre(morph, s, lagged, N); // scan centre ℓ
+  const h = Math.max(0.5, 0.5 * s);
+
+  const kLo = Math.ceil(c - h);
+  const kHi = Math.floor(c + h);
+  const ks: number[] = [];
+  for (let k = kLo; k <= kHi; k++) ks.push(k);
+
+  // Stride-subsample beyond the cap (keeps the endpoints; smooth low-pass).
+  const stride = ks.length > cap ? Math.ceil(ks.length / cap) : 1;
+
+  const layers: number[] = [];
+  const rawW: number[] = [];
+  let sum = 0;
+  for (let idx = 0; idx < ks.length; idx += stride) {
+    const k = ks[idx]!;
+    const delta = k - c;
+    const g = 0.5 * (1 + Math.cos((Math.PI * delta) / h)); // Hann; g(±h)=0
+    layers.push(wrapIndex(Math.round(head - k), N));
+    rawW.push(g);
+    sum += g;
+  }
+
+  // Degenerate guard (e.g. spread=1 with c exactly on a half-integer makes both
+  // edge weights 0): fall back to a single delta at the nearest layer.
+  if (layers.length === 0 || sum <= 1e-12) {
+    return { layers: [wrapIndex(Math.round(head - c), N)], weights: [1], count: 1 };
+  }
+
+  const weights = rawW.map((w) => w / sum);
+  return { layers, weights, count: layers.length };
+}
+
+// ----------------------------------------------------------------------
+// First-frame fill reducer (§2.4).
+// ----------------------------------------------------------------------
+
+/** Capture-state the fill reducer reads + advances. */
+export interface FrametableFillState {
+  head: number;
+  capturedAny: boolean;
+  framesElapsed: number;
+}
+/** The fill transition for ONE unfrozen capture step. */
+export interface FrametableFillResult {
+  /** true on the FIRST real input frame → the factory fills ALL N ring layers
+   *  with that frame (buffer instantly FULL = a still image). */
+  filled: boolean;
+  head: number;
+  capturedAny: boolean;
+  framesElapsed: number;
+}
+
+/**
+ * First-frame-fill reducer (§2.4). On the FIRST real input frame (`!capturedAny
+ * && hasInput`) signal `filled` so the factory copies that frame into ALL 60
+ * ring layers (a full buffer, still image); real frames then wash in over ~N
+ * frames (the "2-second lag"). No-ops (never re-fills) once `capturedAny`.
+ * Head advances every unfrozen step regardless (capture always records at full
+ * rate; LIVE/mode never gate CAPTURE, only the READ centre).
+ */
+export function fillOnFirstFrame(
+  state: FrametableFillState,
+  hasInput: boolean,
+  ringFrames: number = FRAMETABLE_RING_FRAMES,
+): FrametableFillResult {
+  const firstReal = !state.capturedAny && hasInput;
+  return {
+    filled: firstReal,
+    head: wrapIndex(state.head + 1, ringFrames),
+    capturedAny: state.capturedAny || hasInput,
+    framesElapsed: state.framesElapsed + 1,
+  };
 }
