@@ -19,9 +19,10 @@ import {
   cameraBasis,
   WATER_F0,
   WATER_ETA,
-  CAM_BOX,
-  TILT_CLAMP,
-  CAM_POS_REACH,
+  ORBIT_DIST_MIN,
+  ORBIT_DIST_MAX,
+  EL_CLAMP,
+  LOOK_PITCH_CLAMP,
   POOL_RADIUS,
 } from './mirrorpool-core';
 
@@ -171,110 +172,117 @@ describe('rain scheduler', () => {
   });
 });
 
-describe('cameraBasis: PTZ clamps + gimbal safety', () => {
-  it('pan=0, tilt=0 looks along −z', () => {
-    const c = cameraBasis({ camX: 0, camY: 1, camZ: 1, pan: 0, tilt: 0, zoom: 0.5 });
+const dot3 = (a: number[], b: number[]) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+
+describe('cameraBasis: orbit POSITION (azimuth × elevation × distance)', () => {
+  // A neutral orbit pose (front, level, mid distance) the tests vary from.
+  const base = { az: 0, el: 0, dist: 2.5, lookYaw: 0, lookPitch: 0, zoom: 0.5 } as const;
+
+  it('az=0, el=0 puts the eye in FRONT (+z), aiming toward −z at the centre', () => {
+    const c = cameraBasis(base);
+    expect(c.eye[0]).toBeCloseTo(0, 6);
+    expect(c.eye[1]).toBeCloseTo(0, 6);
+    expect(c.eye[2]).toBeCloseTo(2.5, 6);
+    // aim-at-centre ⇒ forward = −eye direction = (0,0,−1)
     expect(c.forward[0]).toBeCloseTo(0, 6);
     expect(c.forward[1]).toBeCloseTo(0, 6);
     expect(c.forward[2]).toBeCloseTo(-1, 6);
   });
-  it('clamps the eye into the camera box', () => {
-    const c = cameraBasis({ camX: 99, camY: -99, camZ: 99, pan: 0, tilt: 0, zoom: 0 });
-    expect(c.eye[0]).toBe(CAM_BOX.x[1]);
-    expect(c.eye[1]).toBe(CAM_BOX.y[0]);
-    expect(c.eye[2]).toBe(CAM_BOX.z[1]);
-  });
-  it('clamps tilt to ±TILT_CLAMP (no straight-down gimbal)', () => {
-    const c = cameraBasis({ camX: 0, camY: 1, camZ: 1, pan: 0, tilt: -Math.PI, zoom: 0 });
-    // forward.y = sin(clampedTilt) — must not reach the straight-down −1.
-    expect(c.forward[1]).toBeGreaterThan(Math.sin(-TILT_CLAMP) - 1e-6);
-    expect(c.forward[1]).toBeCloseTo(Math.sin(-TILT_CLAMP), 6);
-  });
-  it('zoom maps to a narrowing FOV (70°→20°) with orthonormal basis', () => {
-    const wide = cameraBasis({ camX: 0, camY: 1, camZ: 1, pan: 0.3, tilt: -0.4, zoom: 0 });
-    const tight = cameraBasis({ camX: 0, camY: 1, camZ: 1, pan: 0.3, tilt: -0.4, zoom: 1 });
-    expect(wide.fovY).toBeGreaterThan(tight.fovY);
-    expect(tight.fovY).toBeCloseTo((20 * Math.PI) / 180, 6);
-    // basis orthonormal
-    for (const v of [wide.forward, wide.right, wide.up]) {
-      expect(Math.hypot(v[0], v[1], v[2])).toBeCloseTo(1, 6);
+
+  it('the eye rides a sphere of radius `dist` around the pool centre', () => {
+    for (const p of [
+      { ...base, az: 0.7, el: 0.3 },
+      { ...base, az: -2.1, el: -0.8, dist: 3.2 },
+      { ...base, az: 1.9, el: 1.2, dist: 1.0 },
+    ]) {
+      const c = cameraBasis(p);
+      const r = Math.hypot(c.eye[0], c.eye[1], c.eye[2]);
+      expect(r).toBeCloseTo(Math.min(ORBIT_DIST_MAX, Math.max(ORBIT_DIST_MIN, p.dist)), 6);
     }
-    const dot = (a: number[], b: number[]) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-    expect(dot(wide.forward, wide.right)).toBeCloseTo(0, 6);
-    expect(dot(wide.right, wide.up)).toBeCloseTo(0, 6);
+  });
+
+  it('positive elevation lifts the eye ABOVE the water plane; negative drops it BELOW (underwater)', () => {
+    expect(cameraBasis({ ...base, el: 0.9 }).eye[1]).toBeGreaterThan(0);
+    const under = cameraBasis({ ...base, el: -0.9 });
+    expect(under.eye[1]).toBeLessThan(0); // below the surface ⇒ underwater view
+  });
+
+  it('azimuth orbits the eye around the vertical axis (y unchanged at fixed el)', () => {
+    const front = cameraBasis({ ...base, az: 0 }).eye;
+    const side = cameraBasis({ ...base, az: Math.PI / 2 }).eye;
+    // az=+90° swings the eye onto +x, leaving +z, at the same height.
+    expect(side[0]).toBeCloseTo(2.5, 6);
+    expect(side[2]).toBeCloseTo(0, 6);
+    expect(side[1]).toBeCloseTo(front[1], 6);
+  });
+
+  it('clamps distance into [ORBIT_DIST_MIN, ORBIT_DIST_MAX]', () => {
+    expect(Math.hypot(...cameraBasis({ ...base, dist: 99 }).eye)).toBeCloseTo(ORBIT_DIST_MAX, 6);
+    expect(Math.hypot(...cameraBasis({ ...base, dist: -5 }).eye)).toBeCloseTo(ORBIT_DIST_MIN, 6);
+  });
+
+  it('clamps elevation to ±EL_CLAMP (never the exact vertical pole)', () => {
+    const up = cameraBasis({ ...base, el: Math.PI }); // asks for straight overhead
+    // |eye.y| = dist·sin(EL_CLAMP) < dist (a true pole would give |eye.y| = dist)
+    expect(Math.abs(up.eye[1])).toBeLessThan(2.5);
+    expect(up.eye[1]).toBeCloseTo(2.5 * Math.sin(EL_CLAMP), 6);
   });
 });
 
-describe('cameraBasis: bipolar POSITION translates the eye (±2R)', () => {
-  const R = POOL_RADIUS;
-  // A canonical mid-box PTZ eye the position tests translate from.
-  const base = { camX: 0, camY: 1.3, camZ: 1.6, pan: 0, tilt: -0.6, zoom: 0.5 } as const;
+describe('cameraBasis: free-LOOK offset (yaw × pitch) + framing', () => {
+  const base = { az: 0, el: 0.5, dist: 2.5, lookYaw: 0, lookPitch: 0, zoom: 0.5 } as const;
 
-  it('the reach constant is 2R (2 pool-radii = 10 ft, pool being 5 ft in radius)', () => {
-    expect(CAM_POS_REACH).toBeCloseTo(2 * R, 12);
+  it('lookYaw=lookPitch=0 AIMS AT THE POOL CENTRE (forward = −eye direction)', () => {
+    const c = cameraBasis(base);
+    const aim = [-c.eye[0], -c.eye[1], -c.eye[2]];
+    const l = Math.hypot(aim[0], aim[1], aim[2]);
+    expect(c.forward[0]).toBeCloseTo(aim[0] / l, 6);
+    expect(c.forward[1]).toBeCloseTo(aim[1] / l, 6);
+    expect(c.forward[2]).toBeCloseTo(aim[2] / l, 6);
   });
 
-  it('default position (0,0,0) leaves the eye exactly at the PTZ eye', () => {
-    const ptz = cameraBasis(base);
-    const withZero = cameraBasis({ ...base, posX: 0, posY: 0, posZ: 0 });
-    expect(withZero.eye[0]).toBeCloseTo(ptz.eye[0], 12);
-    expect(withZero.eye[1]).toBeCloseTo(ptz.eye[1], 12);
-    expect(withZero.eye[2]).toBeCloseTo(ptz.eye[2], 12);
-    // Omitting the fields entirely (back-compat PTZ-only caller) is identical.
-    expect(cameraBasis(base).eye).toEqual(ptz.eye);
+  it('lookYaw rotates the view horizontally away from the centre-aim', () => {
+    const aim = cameraBasis(base);
+    const yawed = cameraBasis({ ...base, lookYaw: 0.6 });
+    // The view direction changed (no longer aims at centre).
+    const cosAngle = dot3(aim.forward, yawed.forward);
+    expect(cosAngle).toBeLessThan(0.9999);
+    // A pure horizontal yaw off a level-ish aim mostly swings the forward's x/z.
+    expect(yawed.forward[0]).not.toBeCloseTo(aim.forward[0], 3);
   });
 
-  it('full-scale on each axis shifts the eye by exactly ±2R (and no other axis)', () => {
-    const ptz = cameraBasis(base).eye;
-    const px = cameraBasis({ ...base, posX: 1 }).eye;
-    expect(px[0] - ptz[0]).toBeCloseTo(2 * R, 12); // +2R on x
-    expect(px[1]).toBeCloseTo(ptz[1], 12);
-    expect(px[2]).toBeCloseTo(ptz[2], 12);
-
-    const nz = cameraBasis({ ...base, posZ: -1 }).eye;
-    expect(nz[2] - ptz[2]).toBeCloseTo(-2 * R, 12); // −2R on z
-    expect(nz[0]).toBeCloseTo(ptz[0], 12);
-    expect(nz[1]).toBeCloseTo(ptz[1], 12);
+  it('lookPitch>0 lifts the view UP relative to the centre-aim', () => {
+    const aim = cameraBasis(base);
+    const up = cameraBasis({ ...base, lookPitch: 0.7 });
+    expect(up.forward[1]).toBeGreaterThan(aim.forward[1]);
   });
 
-  it('pos_y=+1 lifts the eye above the water plane (y>0) by ~2R and still looks DOWN', () => {
-    // Start from the lowest PTZ height (clamps to CAM_BOX.y[0]=0.15) so the lift
-    // is measured from just above the surface: 0.15 + 2R ≈ 2R above y=0.
-    const low = { ...base, camY: 0 } as const; // clamps to 0.15
-    const lifted = cameraBasis({ ...low, posY: 1 });
-    expect(lifted.eye[1]).toBeGreaterThan(0);            // above the water plane
-    expect(lifted.eye[1]).toBeCloseTo(CAM_BOX.y[0] + 2 * R, 6);
-    expect(lifted.eye[1]).toBeGreaterThan(2 * R - 0.2);  // ~2R above the surface
-    // PTZ still orients: default tilt is negative → forward points DOWN onto
-    // the water even though the eye moved up. Position does NOT re-aim.
-    expect(lifted.forward[1]).toBeLessThan(0);
+  it('clamps lookPitch to ±LOOK_PITCH_CLAMP', () => {
+    const a = cameraBasis({ ...base, lookPitch: 9 });
+    const b = cameraBasis({ ...base, lookPitch: LOOK_PITCH_CLAMP });
+    for (let i = 0; i < 3; i++) expect(a.forward[i]).toBeCloseTo(b.forward[i], 6);
   });
 
-  it('position moves ONLY the eye — orientation stays PTZ-derived (unchanged)', () => {
-    const ptz = cameraBasis(base);
-    const moved = cameraBasis({ ...base, posX: -0.7, posY: 0.9, posZ: 0.3 });
-    for (const key of ['forward', 'right', 'up'] as const) {
-      for (let i = 0; i < 3; i++) {
-        expect(moved[key][i]).toBeCloseTo(ptz[key][i], 12);
+  it('zoom maps to a narrowing FOV (70°→20°) with an orthonormal basis', () => {
+    const wide = cameraBasis({ ...base, zoom: 0 });
+    const tight = cameraBasis({ ...base, zoom: 1 });
+    expect(wide.fovY).toBeGreaterThan(tight.fovY);
+    expect(tight.fovY).toBeCloseTo((20 * Math.PI) / 180, 6);
+    for (const c of [wide, tight]) {
+      for (const v of [c.forward, c.right, c.up]) {
+        expect(Math.hypot(v[0], v[1], v[2])).toBeCloseTo(1, 6);
       }
+      expect(dot3(c.forward, c.right)).toBeCloseTo(0, 6);
+      expect(dot3(c.right, c.up)).toBeCloseTo(0, 6);
+      expect(dot3(c.forward, c.up)).toBeCloseTo(0, 6);
     }
-    expect(moved.tanHalf).toBeCloseTo(ptz.tanHalf, 12);
-    // But the eye actually moved.
-    expect(moved.eye[1]).toBeGreaterThan(ptz.eye[1]);
   });
 
-  it('caps the mapped translation at ±2R (a hot CV cannot fling the eye further)', () => {
-    const ptz = cameraBasis(base).eye;
-    const overX = cameraBasis({ ...base, posX: 5 }).eye;   // clamps to +1 → +2R
-    const overY = cameraBasis({ ...base, posY: -9 }).eye;  // clamps to −1 → −2R
-    expect(overX[0] - ptz[0]).toBeCloseTo(2 * R, 12);
-    expect(overY[1] - ptz[1]).toBeCloseTo(-2 * R, 12);
-  });
-
-  it('position can carry the eye OUT of CAM_BOX (above the y=2.2 ceiling)', () => {
-    // From the top of the box (camY=99 clamps to 2.2), +2R lifts well past it.
-    const high = cameraBasis({ ...base, camY: 99, posY: 1 }).eye;
-    expect(high[1]).toBeGreaterThan(CAM_BOX.y[1]);
-    expect(high[1]).toBeCloseTo(CAM_BOX.y[1] + 2 * R, 6);
+  it('the default framing keeps the pool below the eye (above-water, looking down)', () => {
+    // az=0, el>0 default ⇒ eye above +z, forward aims down at the centre.
+    const c = cameraBasis({ az: 0, el: 0.55, dist: 2.6, lookYaw: 0, lookPitch: 0, zoom: 0.5 });
+    expect(c.eye[1]).toBeGreaterThan(0);       // above the water
+    expect(c.forward[1]).toBeLessThan(0);      // looking DOWN onto the pool
+    void POOL_RADIUS;
   });
 });
