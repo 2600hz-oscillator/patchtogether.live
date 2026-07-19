@@ -203,6 +203,14 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // feedback / reverb / composite math is covered by grainsOfVision.test.ts + the
   // bespoke grains-of-vision.spec.ts.
   grainsOfVision: [{ selector: 'canvas' }],
+  // FRAMETABLE — video wavetable oscillator (60-frame ring → per-pixel frame
+  // SELECT). The card carries a live video_out preview canvas; mask it so the
+  // deterministic chrome (FREEZE/SAVE buttons + MORPH/SPREAD/SHIMMER/SHAPE faders +
+  // the PatchPanel drill-down) is the regression gate. Held for owner look-preview
+  // (look-affecting WebGL) — no solo-spawn baseline is pinned; also in
+  // EXEMPT_FROM_VRT below (mirrorpool/grains precedent). The inverse-CDF selection
+  // + freeze/save math is covered by frametable-core.test.ts + frametable.spec.ts.
+  frametable: [{ selector: 'canvas' }],
   // SCOREBOARD — 4-digit 7-segment counter widget. The card carries a live
   // preview canvas; the counter starts at 0 on factory mount (or 1234 when
   // the VRT scene sets `__scoreboardVrtSeed`). Canvas masked here as the
@@ -345,6 +353,16 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // with a 2nd source). Capture darwin/linux baselines via vrt-update.yml once the
   // owner approves the look (the canvas mask above covers the live preview).
   grainsOfVision: 'VRT baseline pending owner look-approval (look-affecting WebGL granular video); grainsOfVision.test.ts + per-port (ACIDWARP→in_a emit) + grains-of-vision.spec.ts provide coverage. Capture darwin/linux baselines via vrt-update.yml in a follow-up.',
+  // FRAMETABLE — look-affecting WebGL video wavetable oscillator, HELD for owner
+  // preview: no VRT baseline pinned pre-approval (mirrorpool/grains precedent).
+  // Coverage meanwhile: frametable-core.test.ts (inverse-CDF distribution / ring
+  // wrap / still-image consistency / freeze+save reducers CPU mirror) + per-module-
+  // per-port (handle presence + ACIDWARP→video_in outputs-emit) + the bespoke
+  // frametable.spec.ts (real source→video_out non-blank variance-probe + FREEZE
+  // holds while the input changes). Capture darwin/linux baselines via
+  // vrt-update.yml once the owner approves the look (the canvas mask covers the
+  // live preview).
+  frametable: 'VRT baseline pending owner look-approval (look-affecting WebGL video wavetable); frametable-core.test.ts + per-port (ACIDWARP→video_in emit) + frametable.spec.ts provide coverage. Capture darwin/linux baselines via vrt-update.yml in a follow-up.',
   // SOURCERY — 2-input region shape-match recolor. v1 output is
   // source-dependent (needs A + B patched) AND shimmers/boils frame-to-frame
   // (per-frame-independent segmentation), so a solo-spawn VRT canvas is

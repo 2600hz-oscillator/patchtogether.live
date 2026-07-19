@@ -261,9 +261,11 @@ describe('module-docs lint — STRICT_DOCS RATCHET (only grows)', () => {
     // peaks / stages / symbiote / veils / warps / aquaTank / elements / tides2 /
     // qbert / snes9x) — a real un-promotion via module deletion, not a gate
     // dodge. (The old floor had lagged the list's actual size.)
+    // 169→170 (2026-07-19): +1 frametable (video wavetable oscillator — born
+    // strict, docs authored + verified against the source).
     expect(
       STRICT_DOCS.size,
       'STRICT_DOCS shrank below its frozen floor — see the RATCHET rule above',
-    ).toBeGreaterThanOrEqual(169);
+    ).toBeGreaterThanOrEqual(170);
   });
 });
