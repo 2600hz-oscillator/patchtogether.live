@@ -1,4 +1,4 @@
-// packages/web/src/lib/multiplayer/local-scratch.test.ts
+// packages/web/src/lib/storage/local-scratch.test.ts
 //
 // The stable per-device scratch-replica id. Covers the three contracts the
 // design names: stable across calls per mode, distinct per mode, and a

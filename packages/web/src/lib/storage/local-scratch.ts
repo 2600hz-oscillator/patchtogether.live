@@ -1,6 +1,12 @@
-// packages/web/src/lib/multiplayer/local-scratch.ts
+// packages/web/src/lib/storage/local-scratch.ts
 //
 // STABLE per-device id for the SCRATCH canvas's local IndexedDB replica.
+//
+// Lives under lib/storage (NOT lib/multiplayer) on purpose: this is a
+// client-only, single-user localStorage id helper — it has nothing to do with
+// collaboration/sync. lib/multiplayer is a whole-directory collab-attest basis
+// root (scripts/collab-attest-lib.ts COLLAB_DIR_ROOTS), so putting a non-collab
+// file there would falsely force a collab re-attest on every edit. Keep it out.
 //
 // The `/rack` scratch canvas (routes/rack/+page.svelte) has no rackspace id
 // and no relay — so before this helper it never attached the `local-replica`
