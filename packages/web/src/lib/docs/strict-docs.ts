@@ -415,4 +415,9 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // (B modulates A's grains). Ships documented. Design:
   // .myrobots/plans/grains-of-vision-2026-07-18.md.
   'grainsOfVision',
+  // FRAMETABLE (2026-07-19): video WAVETABLE oscillator — 60-frame GPU ring
+  // (TEXTURE_2D_ARRAY), per-pixel whole-frame selection via an analytic inverse-CDF
+  // bell (MORPH/SPREAD/SHIMMER/SHAPE), FREEZE gate-toggle + SAVE trigger-snapshot.
+  // Ships documented. Design: .myrobots/plans/frametable-2026-07-19.md.
+  'frametable',
 ]);

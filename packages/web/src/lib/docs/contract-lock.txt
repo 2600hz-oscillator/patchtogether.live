@@ -1147,6 +1147,22 @@ foxy param xyz_yshape 0..1 linear default=0.2
 foxy param xyz_zheight 0..1 linear default=0.5
 foxy param xyz_zoom 1..8 linear default=4
 foxy stereo out_l+out_r
+frametable meta domain=video
+frametable in freeze_gate gate param=freezeGate edge=gate
+frametable in morph_cv cv param=morph cvScale=linear
+frametable in save_trig gate param=saveTrig edge=trigger
+frametable in shimmer_cv cv param=shimmer cvScale=linear
+frametable in spread_cv cv param=spread cvScale=linear
+frametable in video_in video
+frametable in weightShape_cv cv param=weightShape cvScale=linear
+frametable out video_out video
+frametable param freeze 0..1 linear default=0
+frametable param freezeGate 0..1 linear default=0
+frametable param morph 0..1 linear default=0
+frametable param saveTrig 0..1 linear default=0
+frametable param shimmer 0..1 linear default=0
+frametable param spread 1..60 linear default=12
+frametable param weightShape 0..1 linear default=0
 freezeframe meta domain=video
 freezeframe in gate_in gate param=gateLevel
 freezeframe in video_in video
