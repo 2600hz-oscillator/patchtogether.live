@@ -17,7 +17,8 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env as privateEnv } from '$env/dynamic/private';
 import { env as publicEnv } from '$env/dynamic/public';
-import { probeHocuspocus } from './probe';
+import { probeHocuspocus, probeDatabase } from './probe';
+import { sql } from '$lib/server/db';
 
 /** SHA-256 prefix of a secret value, or null if unset. One-way; the value is
  *  never recoverable from this. Matches the fingerprint() in
@@ -43,19 +44,46 @@ export const GET: RequestHandler = async () => {
   // reflects relay reachability too. Hard 1.5s cap; never throws.
   const hocuspocus = await probeHocuspocus(buildEnv.VITE_SERVER_WS_URL);
 
+  // REAL DB read probe (not presence-only): an information_schema lookup for the
+  // racks.mode column (the migration-005 marker). Replaces the old
+  // `DATABASE_URL ? 'configured'` check that returned 200 while every racks.mode
+  // read 500'd for a week (deploy-before-migrate — the /r/[id] P0). Bounded +
+  // never throws; runs the Neon HTTP tagged template (Workers-safe).
+  const hasDb = Boolean(privateEnv.DATABASE_URL);
+  const database = await probeDatabase(hasDb, {
+    queryModeColumnCount: async () => {
+      const rows = await sql()`
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'racks' AND column_name = 'mode'
+        LIMIT 1`;
+      return (rows as unknown[]).length;
+    },
+  });
+
   return json({
     // ok + HTTP 200 stay constant for backward-compat with existing uptime
-    // monitors + @smoke; operational state lives in `status` (healthy iff the
-    // relay probe succeeded), so monitors can match on the body field.
+    // monitors + @smoke; operational state lives in `status` + `deps`, so
+    // monitors match on the body field (the live-smoke now alerts on
+    // deps.database too — see scripts/live-smoke-alert.sh).
     ok: true,
-    status: hocuspocus.ok ? 'healthy' : 'degraded',
+    // 'down' = a CONFIGURED DB is UNREACHABLE (a real outage); 'degraded' = the
+    // relay is down OR the schema is pre-005 (app runs, on the dawless
+    // fallback); 'healthy' = all green. A tier with NO DATABASE_URL (prod
+    // before launch, a DB-less dev/e2e runner) is NOT 'down' — an absent DB
+    // never drove status before, and reporting 'down' for it would false-alarm.
+    status:
+      hasDb && !database.ok
+        ? 'down'
+        : !hocuspocus.ok || (database.ok && database.schema !== 'current')
+          ? 'degraded'
+          : 'healthy',
     version: buildEnv.VITE_APP_VERSION ?? 'unknown',
     auth: hasSecret && hasPublishable ? 'configured' : 'missing',
-    // Presence-only signal that the web tier has a Postgres connection string
-    // (Phase 2a / FW1). We do NOT connect here — this just lets a deploy smoke
-    // catch a web tier missing DATABASE_URL before it 503s on the first query.
-    // The actual throw-on-missing in the web db layer lands in Phase 2b.
-    db: privateEnv.DATABASE_URL ? 'configured' : 'missing',
+    // REAL read result (was presence-only 'configured'): 'ok' = reachable +
+    // schema current; 'degraded' = reachable but pre-005 (mode column absent);
+    // 'error' = unreachable; 'missing' = no DATABASE_URL. Full probe in
+    // deps.database.
+    db: !hasDb ? 'missing' : !database.ok ? 'error' : database.schema === 'current' ? 'ok' : 'degraded',
     env: {
       CLERK_SECRET_KEY: hasSecret,
       PUBLIC_CLERK_PUBLISHABLE_KEY: hasPublishable,
@@ -63,7 +91,8 @@ export const GET: RequestHandler = async () => {
     },
     // Non-secret fingerprint of INVITE_SECRET for drift detection (see header).
     inviteSecretFingerprint,
-    // Downstream-dependency reachability. `hocuspocus.ok` drives `status` above.
-    deps: { hocuspocus },
+    // Downstream-dependency reachability. `hocuspocus.ok` + `database.ok`/schema
+    // drive `status` above; the live-smoke alerts on `database` too.
+    deps: { hocuspocus, database },
   });
 };

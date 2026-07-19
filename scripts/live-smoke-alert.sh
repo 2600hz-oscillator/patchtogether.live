@@ -74,6 +74,17 @@ if [[ "$web_status" != "200" ]]; then
 elif ! echo "$web_body" | jq -e '.ok == true' >/dev/null 2>&1; then
   failures+=("web-health-body")
   reasons+=("web /api/health body missing ok:true; got: $web_body")
+elif echo "$web_body" | jq -e '.deps.database.ok != true' >/dev/null 2>&1; then
+  # Real DB read probe: an UNREACHABLE Postgres is a P0 the presence-only db
+  # check missed (it returned ok:true while every racks.mode read 500'd).
+  failures+=("web-db-unreachable")
+  reasons+=("web /api/health database UNREACHABLE: $(echo "$web_body" | jq -r '.deps.database.error // "unknown"')")
+elif echo "$web_body" | jq -e '.deps.database.schema == "mode-missing"' >/dev/null 2>&1; then
+  # Reachable but pre-005 schema drift (deploy-before-migrate): the app runs on
+  # the dawless fallback, but this is EXACTLY the state that hid the /r/[id] 500
+  # for a week — alert until db/schema/005_rackspace_mode.sql is applied.
+  failures+=("web-db-schema-drift")
+  reasons+=("web /api/health schema=mode-missing — apply db/schema/005_rackspace_mode.sql (app degraded to dawless)")
 fi
 
 echo "[2/3] curl $RELAY_URL/health"

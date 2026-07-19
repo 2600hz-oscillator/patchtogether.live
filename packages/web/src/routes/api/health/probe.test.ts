@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { wsToHealthUrl, probeHocuspocus } from './probe';
+import { wsToHealthUrl, probeHocuspocus, probeDatabase } from './probe';
 
 describe('wsToHealthUrl', () => {
   it('wss → https + /health', () => {
@@ -62,5 +62,51 @@ describe('probeHocuspocus', () => {
     const r = await probeHocuspocus('wss://host', { fetch: hangingFetch, timeoutMs: 5 });
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/abort/i);
+  });
+});
+
+describe('probeDatabase', () => {
+  it('returns a reason (not a throw) when DATABASE_URL is unset', async () => {
+    const r = await probeDatabase(false);
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/unset/);
+  });
+
+  it('reachable + racks.mode present → ok, schema=current, ms', async () => {
+    let t = 1000;
+    const r = await probeDatabase(true, {
+      queryModeColumnCount: async () => 1, // information_schema returned the column
+      now: () => (t += 7),
+    });
+    expect(r.ok).toBe(true);
+    expect(r.schema).toBe('current');
+    expect(r.ms).toBe(7);
+    expect(r.error).toBeUndefined();
+  });
+
+  it('reachable but pre-005 (racks.mode absent) → ok, schema=mode-missing', async () => {
+    const r = await probeDatabase(true, { queryModeColumnCount: async () => 0 });
+    expect(r.ok).toBe(true);
+    expect(r.schema).toBe('mode-missing'); // the deploy-before-migrate drift signal
+  });
+
+  it('reports the error (not a throw) when the query REJECTS (db unreachable)', async () => {
+    const r = await probeDatabase(true, {
+      queryModeColumnCount: async () => {
+        throw new Error('ECONNREFUSED');
+      },
+    });
+    expect(r.ok).toBe(false);
+    expect(r.schema).toBeUndefined();
+    expect(r.error).toMatch(/ECONNREFUSED/);
+  });
+
+  it('times out and never hangs when the query stalls', async () => {
+    const r = await probeDatabase(true, {
+      queryModeColumnCount: () => new Promise<number>(() => {}), // never settles
+      timeoutMs: 5,
+    });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/timed out/);
   });
 });

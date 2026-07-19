@@ -42,14 +42,24 @@ test.describe('auth-route shape', () => {
     const r = await request.get('/api/health');
     expect(r.status(), `health 200; got ${r.status()}`).toBe(200);
     const body = await r.json();
-    // `status` reflects relay reachability; BOTH values are valid in a smoke
-    // env (the relay may legitimately be unreachable from the test runner), so
-    // assert the contract shape, not a specific health verdict.
-    expect(['healthy', 'degraded'], `status; got ${body.status}`).toContain(body.status);
+    // `status` reflects relay + DB reachability; ALL THREE are valid in a smoke
+    // env — the relay may be unreachable from the test runner (degraded), and a
+    // DB-less/unreachable-DB runner is honestly 'down'. Assert the contract
+    // shape (a known verdict), not a specific health outcome.
+    expect(['healthy', 'degraded', 'down'], `status; got ${body.status}`).toContain(body.status);
     expect(typeof body.version, 'version is a string').toBe('string');
-    // deps.hocuspocus is the cross-tier probe result that drives `status`.
+    // deps.hocuspocus is the cross-tier relay probe.
     expect(body.deps?.hocuspocus, 'deps.hocuspocus present').toBeTruthy();
     expect(typeof body.deps.hocuspocus.ok, 'deps.hocuspocus.ok is boolean').toBe('boolean');
+    // deps.database is the REAL DB read probe (the P0 blind-spot fix): a known
+    // ok boolean, and when reachable a known schema verdict.
+    expect(body.deps?.database, 'deps.database present').toBeTruthy();
+    expect(typeof body.deps.database.ok, 'deps.database.ok is boolean').toBe('boolean');
+    if (body.deps.database.ok) {
+      expect(['current', 'mode-missing'], `db schema; got ${body.deps.database.schema}`).toContain(
+        body.deps.database.schema,
+      );
+    }
   });
 
   test('responses carry an x-request-id correlation header @smoke', async ({ request }) => {

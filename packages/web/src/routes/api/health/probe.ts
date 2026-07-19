@@ -60,3 +60,66 @@ export async function probeHocuspocus(
     clearTimeout(timer);
   }
 }
+
+export interface DatabaseProbe {
+  /** True iff the DB was REACHED and the probe query returned. */
+  ok: boolean;
+  /** Migration currency (only when reachable): 'mode-missing' = the pre-005
+   *  schema-drift class that 500'd every racks.mode read for a week
+   *  (deploy-before-migrate) while `db:'configured'` still said 200. */
+  schema?: 'current' | 'mode-missing';
+  /** Round-trip time in ms (only on a completed query). */
+  ms?: number;
+  /** Human-readable failure reason (only when !ok). Never a secret. */
+  error?: string;
+}
+
+export interface DbProbeDeps {
+  /** Runs the migration-marker query and resolves to the number of rows
+   *  matching the racks.mode information_schema lookup (1 = column present /
+   *  005 applied, 0 = pre-005), or REJECTS if the DB is unreachable. The
+   *  +server.ts wires this to the real Neon `sql()`; tests inject a fake. */
+  queryModeColumnCount: () => Promise<number>;
+  now: () => number;
+  timeoutMs: number;
+}
+
+/**
+ * Probe the Postgres tier with a REAL read — an information_schema lookup for
+ * the racks.mode column (the marker for migration 005). NEVER throws: an
+ * unreachable DB is `{ ok:false, error }`; a reachable-but-pre-005 DB is
+ * `{ ok:true, schema:'mode-missing' }`. This is the signal the presence-only
+ * `DATABASE_URL ? 'configured'` check LACKED — it returned 200 while every
+ * racks.mode read 500'd for a week. Bounded so a stuck DB can't hang the health
+ * endpoint (the query may keep running in the background if the timeout wins,
+ * but the probe returns); information_schema is chosen over `SELECT mode` so the
+ * probe is data-independent and never itself trips the mode()-aggregate 42809.
+ */
+export async function probeDatabase(
+  hasUrl: boolean,
+  deps: Partial<DbProbeDeps> = {},
+): Promise<DatabaseProbe> {
+  if (!hasUrl) return { ok: false, error: 'database url unset (DATABASE_URL)' };
+  const run = deps.queryModeColumnCount;
+  if (!run) return { ok: false, error: 'db probe query not wired' };
+  const now = deps.now ?? Date.now;
+  const timeoutMs = deps.timeoutMs ?? 2000;
+  const start = now();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const count = await Promise.race<number>([
+      run(),
+      new Promise<number>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`db probe timed out after ${timeoutMs}ms`)),
+          timeoutMs,
+        );
+      }),
+    ]);
+    return { ok: true, schema: count > 0 ? 'current' : 'mode-missing', ms: now() - start };
+  } catch (e) {
+    return { ok: false, ms: now() - start, error: e instanceof Error ? e.message : 'db probe failed' };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
