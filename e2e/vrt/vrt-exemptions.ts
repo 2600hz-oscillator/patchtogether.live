@@ -184,10 +184,11 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // canvas so the deterministic chrome (6 knobs + SPIN/SCRN toggles + CV
   // handle rows + VIDEO out) is the regression gate.
   mandelbulb: [{ selector: 'canvas' }],
-  // MIRRORPOOL — live PTZ liquid-pool render (wind swell + rain rings +
-  // Fresnel reflect/refract); the preview is animated + time-based, so mask
-  // the canvas and let the deterministic chrome (11 PTZ knobs + POOL/SCENE +
-  // CV handle rows + VIDEO out) gate. NOTE: the solo-spawn baseline is DEFERRED
+  // MIRRORPOOL — live orbit/free-look liquid-pool render (wind swell + rain
+  // rings + Fresnel reflect/refract); the preview is animated + time-based, so
+  // mask the canvas and let the deterministic chrome (two camera X-Y pads +
+  // WIND/DIR/RAIN/BRIGHT/MODE/DIST/ZOOM faders + POOL/SCENE + CV handle rows +
+  // VIDEO out) gate. NOTE: the solo-spawn baseline is DEFERRED
   // on BOTH platforms via EXEMPT_BASELINE_PAIRS (mirrorpool is HELD for owner
   // look-preview — a look-affecting video module never captures a baseline
   // before the owner approves the look). Physics coverage is

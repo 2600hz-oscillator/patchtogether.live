@@ -23,7 +23,11 @@
 //   - rainLambda / dropAmplitude / spawnDrops — the deterministic (seeded)
 //     Poisson rain scheduler; each drop is a ONE-SHOT velocity impulse
 //     (review fix #6), amplitude scaling drizzle→downpour.
-//   - cameraBasis — the PTZ camera → ray basis (box-clamped, gimbal-safe).
+//   - cameraBasis — the ORBIT + FREE-LOOK camera → ray basis. The eye rides a
+//     sphere around the pool centre (azimuth × elevation × distance), aimed at
+//     the centre by default, with a yaw/pitch free-look offset so it can look
+//     ANY direction. Elevation may go NEGATIVE to drop the eye BELOW the water
+//     plane (the underwater Snell's-window view the render shader handles).
 
 // ── Geometry constants ────────────────────────────────────────────────────
 /** Pool hemisphere radius (unit hemisphere, rim on y=0, pole at y=-1). */
@@ -34,24 +38,18 @@ export const POOL_RADIUS = 1;
  *  reconstructed normal is physically scaled (review fix #4). */
 export const WORLD_SCALE = 2 * POOL_RADIUS;
 
-/** Camera box (AABB) the PTZ eye is clamped into — sits above/around the rim. */
-export const CAM_BOX = {
-  x: [-1.6, 1.6] as const,
-  y: [0.15, 2.2] as const,
-  z: [-1.6, 1.6] as const,
-};
-/** Tilt clamp (±~85°) dodges the straight-down gimbal degeneracy. */
-export const TILT_CLAMP = 1.48;
-
-/** Full-scale reach (world units) of each bipolar camera-POSITION axis. The
- *  pool surface is 10 ft across (radius R = 5 ft), so 1 unit of R = 5 ft; the
- *  camera must be able to travel 10 ft (= 2R) from the surface in EVERY
- *  direction, INCLUDING straight up out of the pool. So a normalized pos_* of
- *  ±1 maps to a ±2R world translation of the eye. The translation is CLAMPED
- *  to ±2R (`clamp(pos, -1, 1) · CAM_POS_REACH`) so a hot CV can't fling the
- *  eye arbitrarily far ("don't allow too far"). posY > 0 lifts the eye ABOVE
- *  the water plane (y > 0), out of the pool. */
-export const CAM_POS_REACH = 2 * POOL_RADIUS;
+/** Orbit distance clamp (world units) — how far the eye sits from the pool
+ *  centre. Min < R so the camera can dive INSIDE the water volume for a truly
+ *  submerged look; max = a wide framing that keeps the whole rim in view. */
+export const ORBIT_DIST_MIN = 0.4;
+export const ORBIT_DIST_MAX = 5;
+/** Elevation clamp (±~83°) — keeps the eye off the exact vertical pole above /
+ *  below the centre, where the aim-at-centre forward becomes parallel to world
+ *  up and the camera frame degenerates. NEGATIVE elevation = BELOW the surface
+ *  plane (the underwater Snell's-window view the render shader handles). */
+export const EL_CLAMP = 1.45;
+/** Free-look pitch clamp (±~83°) — the same gimbal guard for the look offset. */
+export const LOOK_PITCH_CLAMP = 1.45;
 
 // ── Optics ─────────────────────────────────────────────────────────────────
 /** Water reflectance at normal incidence: ((1.33-1)/(1.33+1))² ≈ 0.0201. */
@@ -255,22 +253,26 @@ export function spawnDrops(
   return drops;
 }
 
-// ── PTZ camera ───────────────────────────────────────────────────────────────
+// ── Orbit + free-look camera ─────────────────────────────────────────────────
 export interface CameraParams {
-  camX: number;
-  camY: number;
-  camZ: number;
-  pan: number;
-  tilt: number;
+  /** Azimuth around the pool centre (radians). 0 ⇒ the eye sits on +z (front),
+   *  aiming toward −z at the centre. */
+  az: number;
+  /** Elevation above / below the surface plane (radians). +EL ⇒ ABOVE (toward
+   *  a straight-overhead bird's-eye); 0 ⇒ level with the rim; NEGATIVE ⇒ BELOW
+   *  the water plane (the underwater view). Clamped to ±{@link EL_CLAMP}. */
+  el: number;
+  /** Distance of the eye from the pool centre (world units). Clamped to
+   *  [{@link ORBIT_DIST_MIN}, {@link ORBIT_DIST_MAX}]. */
+  dist: number;
+  /** Free-look YAW offset (radians) from the aim-at-centre direction — rotate
+   *  the view left/right so the camera can look AWAY from the pool. 0 ⇒ aim at
+   *  the centre. */
+  lookYaw: number;
+  /** Free-look PITCH offset (radians) from the aim-at-centre direction — rotate
+   *  the view up/down. 0 ⇒ aim at the centre. Clamped to ±{@link LOOK_PITCH_CLAMP}. */
+  lookPitch: number;
   zoom: number; // 0..1 → fov 70°..20°
-  /** Bipolar position offsets. Each normalized ±1 TRANSLATES the eye ±2R
-   *  (= ±{@link CAM_POS_REACH}) in world space ON TOP of the PTZ framing, so
-   *  the camera becomes fully movable in a box around the pool. Optional and
-   *  default 0 (⇒ the eye is exactly the PTZ eye, so existing patches are
-   *  unchanged). posY > 0 lifts the eye ABOVE the water plane. */
-  posX?: number;
-  posY?: number;
-  posZ?: number;
 }
 export interface CameraBasis {
   eye: [number, number, number];
@@ -287,53 +289,83 @@ function clamp(v: number, lo: number, hi: number): number {
 
 const DEG = Math.PI / 180;
 
+/** normalize a 3-vector (returns the input direction, or +x on a zero vector). */
+function norm3(v: [number, number, number]): [number, number, number] {
+  const l = Math.hypot(v[0], v[1], v[2]);
+  if (l < 1e-9) return [1, 0, 0];
+  return [v[0] / l, v[1] / l, v[2] / l];
+}
+function cross3(
+  a: [number, number, number],
+  b: [number, number, number],
+): [number, number, number] {
+  return [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ];
+}
+
 /**
- * Build the camera ray basis from the PTZ params PLUS the bipolar position
- * offsets. The PTZ eye is clamped into CAM_BOX, then TRANSLATED by
- * (posX,posY,posZ)·2R (each axis clamped to ±2R) so the eye can move anywhere
- * in a box around the pool — including ABOVE the water plane (posY>0 ⇒ y>0).
- * pan/tilt/zoom still ORIENT the camera (forward is PTZ-derived, unchanged by
- * position — the eye moves, PTZ aims), so an above-surface eye with the
- * default downward tilt looks DOWN onto the water. Tilt is clamped into
- * ±TILT_CLAMP (gimbal-safe); zoom maps linearly to a 70°→20° vertical FOV
- * (zoom in = narrower); pan=0,tilt=0 looks along −z. With posX/Y/Z=0 the eye
- * is exactly the PTZ eye, so existing behaviour is unchanged at default.
- * Matrix-inverse-free (mirrors the mandelbulb look-at basis).
+ * Build the camera ray basis for the ORBIT + FREE-LOOK camera.
+ *
+ * POSITION — the eye rides a sphere of radius `dist` (clamped) around the pool
+ * centre (the origin), parameterised by azimuth `az` and elevation `el`:
+ *   eye = dist·(cos el·sin az, sin el, cos el·cos az)
+ * so `az` orbits the eye around the vertical axis and `el` raises it from below
+ * the water plane (el<0 ⇒ y<0, underwater) up to nearly overhead. This is the
+ * "sit ABOVE / BELOW / LEFT / RIGHT of the pool" control.
+ *
+ * LOOK — the base forward AIMS AT THE POOL CENTRE (so the default framing
+ * always shows the pool, never the void), and the free-look offset (`lookYaw`,
+ * `lookPitch`) rotates that aim within the camera's own frame so the view can
+ * point ANY direction. lookYaw/lookPitch = 0 ⇒ look straight at the centre.
+ *
+ * `zoom` maps linearly to a 70°→20° vertical FOV (zoom in = narrower). The
+ * elevation + look-pitch are clamped off the exact vertical pole so the
+ * aim-at-centre frame never degenerates. Matrix-inverse-free (mirrors the
+ * mandelbulb look-at basis); the render shader consumes eye/forward/right/up
+ * directly, so an underwater eye is a pure input change (no shader camera math).
  */
 export function cameraBasis(p: CameraParams): CameraBasis {
-  // PTZ eye (box-clamped) + bipolar position translation (each axis ±2R). The
-  // translation rides ON TOP of the box clamp so position can carry the eye
-  // out of CAM_BOX (e.g. above the y=2.2 ceiling), which is the point of a
-  // fully-movable camera. clamp(pos,-1,1) caps the reach at ±2R.
-  const eye: [number, number, number] = [
-    clamp(p.camX, CAM_BOX.x[0], CAM_BOX.x[1]) + clamp(p.posX ?? 0, -1, 1) * CAM_POS_REACH,
-    clamp(p.camY, CAM_BOX.y[0], CAM_BOX.y[1]) + clamp(p.posY ?? 0, -1, 1) * CAM_POS_REACH,
-    clamp(p.camZ, CAM_BOX.z[0], CAM_BOX.z[1]) + clamp(p.posZ ?? 0, -1, 1) * CAM_POS_REACH,
-  ];
-  const tilt = clamp(p.tilt, -TILT_CLAMP, TILT_CLAMP);
-  const pan = p.pan;
+  const el = clamp(p.el, -EL_CLAMP, EL_CLAMP);
+  const dist = clamp(p.dist, ORBIT_DIST_MIN, ORBIT_DIST_MAX);
+  const ce = Math.cos(el);
+  const se = Math.sin(el);
+  const sa = Math.sin(p.az);
+  const ca = Math.cos(p.az);
+  // Eye on the orbit sphere around the pool centre (origin).
+  const eye: [number, number, number] = [dist * ce * sa, dist * se, dist * ce * ca];
+
+  // Base forward: aim at the pool centre (origin) ⇒ −eye direction.
+  const f0 = norm3([-eye[0], -eye[1], -eye[2]]);
+  // Camera frame around f0 for the free-look offset. worldUp = (0,1,0); the
+  // EL/PITCH clamps keep f0 off vertical, but guard the degenerate cross.
+  let right0 = cross3(f0, [0, 1, 0]);
+  if (Math.hypot(right0[0], right0[1], right0[2]) < 1e-5) right0 = [1, 0, 0];
+  right0 = norm3(right0);
+  const up0 = cross3(right0, f0);
+
+  // Free-look: yaw sweeps within the (f0, right0) plane, pitch lifts toward up0.
+  // At (0,0) the forward IS f0 (aim at centre); otherwise it tilts off it.
+  const yaw = p.lookYaw;
+  const pitch = clamp(p.lookPitch, -LOOK_PITCH_CLAMP, LOOK_PITCH_CLAMP);
+  const cy = Math.cos(yaw);
+  const sy = Math.sin(yaw);
+  const cp = Math.cos(pitch);
+  const sp = Math.sin(pitch);
+  const forward = norm3([
+    f0[0] * cp * cy + right0[0] * cp * sy + up0[0] * sp,
+    f0[1] * cp * cy + right0[1] * cp * sy + up0[1] * sp,
+    f0[2] * cp * cy + right0[2] * cp * sy + up0[2] * sp,
+  ]);
+
+  // right/up from the FINAL forward + worldUp (the render basis convention).
+  let right = cross3(forward, [0, 1, 0]);
+  if (Math.hypot(right[0], right[1], right[2]) < 1e-5) right = [1, 0, 0];
+  right = norm3(right);
+  const up = cross3(right, forward);
+
   const fovY = (70 - 50 * clamp(p.zoom, 0, 1)) * DEG; // 70°..20°
-  const ct = Math.cos(tilt);
-  const forward: [number, number, number] = [
-    -ct * Math.sin(pan),
-    Math.sin(tilt),
-    -ct * Math.cos(pan),
-  ];
-  // right = normalize(cross(forward, worldUp)) with worldUp=(0,1,0).
-  let rx = forward[2] * 1 - forward[1] * 0;
-  let ry = forward[0] * 0 - forward[2] * 0;
-  let rz = forward[0] * 0 - forward[0] * 1; // = -forward[0]
-  // The general cross(forward,(0,1,0)) = (forward.z, 0, -forward.x).
-  rx = forward[2];
-  ry = 0;
-  rz = -forward[0];
-  const rlen = Math.hypot(rx, ry, rz) || 1;
-  const right: [number, number, number] = [rx / rlen, ry / rlen, rz / rlen];
-  // up = cross(right, forward)
-  const up: [number, number, number] = [
-    right[1] * forward[2] - right[2] * forward[1],
-    right[2] * forward[0] - right[0] * forward[2],
-    right[0] * forward[1] - right[1] * forward[0],
-  ];
   return { eye, forward, right, up, tanHalf: Math.tan(fovY / 2), fovY };
 }
