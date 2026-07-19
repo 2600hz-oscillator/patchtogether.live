@@ -19,6 +19,7 @@ import { detectEdge, makeEdgeState } from '$lib/doom/cv-gate-edge';
 import { frametableDef } from './modules/frametable';
 import {
   FRAMETABLE_RING_FRAMES,
+  FRAMETABLE_BLUE_NOISE_SIZE,
   FRAMETABLE_SHAPE_TRIANGULAR,
   FRAMETABLE_SHAPE_GAUSSIAN,
   wrapIndex,
@@ -187,7 +188,10 @@ describe('FRAMETABLE — inverse-CDF reproduces the triangular bell (no per-frag
         for (const [k, wk] of w) {
           expect(w.get(centre)!).toBeGreaterThanOrEqual(wk - 1e-9);
         }
-        expect((p.get(centre) ?? 0), 'centre picked most').toBeGreaterThan(0);
+        // The centre frame is the empirical MODE (argmax), not merely present.
+        let pArgmax = -1, pBest = -1;
+        for (const [k, pk] of p) if (pk > pBest) { pBest = pk; pArgmax = k; }
+        expect(pArgmax, 'centre frame is the empirical mode').toBe(centre);
 
         // Empirical + analytic SUPPORT are the same frame set (no extra/missing k).
         const pSet = new Set([...p.keys()].filter((k) => (p.get(k) ?? 0) > 1e-6));
@@ -216,17 +220,27 @@ describe('FRAMETABLE — inverse-CDF reproduces the triangular bell (no per-frag
     }
   });
 
-  it('uniform-threshold precheck: a uniform sweep stays ~uniform (KS ≈ 0)', () => {
-    // The midpoint sweep is uniform by construction; assert the empirical CDF of
-    // the threshold itself matches the identity CDF (so a biased threshold could
-    // not masquerade as a distribution bug in the tests above).
-    const S = 50_000;
+  it('the v1 static threshold source (hash21) is amplitude-uniform over the screen tile', () => {
+    // The REAL per-pixel threshold in v1 is hash21(floor(gl_FragCoord mod tile)).
+    // A biased hash would skew the SPATIAL frame-selection histogram in the shader
+    // (which can't be unit-tested directly): a low-biased threshold pushes the
+    // triangular inverse-CDF toward negative offsets, lopsiding the mosaic OFF the
+    // morph centre. So pin the noise source itself — KS-test hash21 over the 128×128
+    // integer tile (the shader's floor(bn) sample domain) against the uniform CDF.
+    // (This replaced a tautological precheck that compared the uniform sweep to
+    // itself; it now actually FAILS if the hash regresses — the earlier per-component
+    // -fract hash biased the mean to ~0.37 and would trip this.)
+    const TILE = FRAMETABLE_BLUE_NOISE_SIZE; // 128
+    const vals: number[] = [];
+    for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) vals.push(hash21(x, y));
+    vals.sort((a, b) => a - b);
+    const n = vals.length;
     let ks = 0;
-    for (let i = 0; i < S; i++) {
-      const t = (i + 0.5) / S;
-      ks = Math.max(ks, Math.abs(t - (i + 0.5) / S));
-    }
-    expect(ks).toBeLessThan(1e-9);
+    for (let i = 0; i < n; i++) ks = Math.max(ks, Math.abs(vals[i] - (i + 1) / n), Math.abs(vals[i] - i / n));
+    const mean = vals.reduce((s, v) => s + v, 0) / n;
+    expect(ks, `hash21 KS vs uniform = ${ks.toFixed(4)}`).toBeLessThan(0.02);
+    expect(mean, `hash21 mean = ${mean.toFixed(4)} (want ~0.5)`).toBeGreaterThan(0.47);
+    expect(mean).toBeLessThan(0.53);
   });
 });
 

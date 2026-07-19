@@ -228,28 +228,34 @@ export function triangularWeight(
 // ----------------------------------------------------------------------
 
 /**
- * Dave-Hoskins hash21 → [0,1). The CPU mirror of the shader's `hash21`, used as
- * the STATIC per-pixel threshold when no blue-noise tile is embedded (v1). It is
- * a pure function of screen position (gl_FragCoord in the shader) with NO time /
- * frame / head term — that staticness is what gives hard requirement #3
- * (still-image consistency). The value is only ever a random-ish per-pixel number,
- * never bit-compared to the GLSL, so float64/float32 low-bit drift is irrelevant.
+ * Dave-Hoskins hash21 → [0,1). The CPU mirror (EXACT, modulo float32/float64 low
+ * bits) of the shader's `hash21`, used as the STATIC per-pixel threshold when no
+ * blue-noise tile is embedded (v1). It is a pure function of screen position
+ * (gl_FragCoord in the shader) with NO time / frame / head term — that staticness
+ * is what gives hard requirement #3 (still-image consistency).
  *
- * NOTE: this is a hash, NOT true blue noise — it clumps more than a void-and-
- * cluster tile, so the per-frame spatial histogram fidelity is slightly worse and
- * the pattern is a touch more visible. The distribution unit test sweeps the
- * threshold UNIFORMLY (not through this hash), so the inverse-CDF math is
- * certified independent of the noise source. See the shader TODO to upgrade to an
- * embedded blue-noise tile.
+ * It is amplitude-UNIFORM over the 128×128 screen tile (KS ≈ 0.007 vs the uniform
+ * CDF, mean ≈ 0.5 — pinned by the hash21-uniformity test), so the per-pixel
+ * selection histogram matches the target bell with no low/high bias. It is NOT
+ * true blue noise, though: amplitude-uniform (white) but not spectrally blue, so it
+ * clumps more than a void-and-cluster tile → the pattern is a touch more visible.
+ * Embedding a blue-noise tile (shader TODO) is a SPATIAL/spectral quality upgrade,
+ * NOT a distribution fix. The distribution unit test also sweeps the threshold
+ * UNIFORMLY (not through this hash), so the inverse-CDF math is certified
+ * independent of the noise source.
  */
 export function hash21(x: number, y: number): number {
   let p3x = fract(x * 0.1031);
   let p3y = fract(y * 0.1031);
   let p3z = fract(x * 0.1031);
+  // p3 += dot(p3, p3.yzx + 33.33) — scalar broadcast, NO per-component fract, so
+  // this is the EXACT mirror of the GLSL hash21. (The earlier per-component-fract
+  // variant both diverged from the shader AND biased the mean low to ~0.37; the one
+  // large-magnitude combine below is what actually decorrelates the bits.)
   const d = p3x * (p3y + 33.33) + p3y * (p3z + 33.33) + p3z * (p3x + 33.33);
-  p3x = fract(p3x + d);
-  p3y = fract(p3y + d);
-  p3z = fract(p3z + d);
+  p3x += d;
+  p3y += d;
+  p3z += d;
   return fract((p3x + p3y) * p3z);
 }
 

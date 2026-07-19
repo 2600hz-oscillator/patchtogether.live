@@ -60,9 +60,9 @@ interface FrametableParams {
   spread: number;      // 1..60 — bell window width (frames)
   shimmer: number;     // 0..1 — temporal dither of the threshold (default 0 = static)
   weightShape: number; // 0 = triangular (default), 1 = gaussian
-  freeze: number;      // 0/1 — user-facing FREEZE toggle (button + gate-edge toggle)
+  freeze: number;      // 0/1 — user-facing FREEZE toggle (button-latched; OR'd with the freeze-gate LEVEL)
   // Hidden synthetic gate-state params (no card fader):
-  freezeGate: number;  // raw freeze_gate sample; a RISING edge flips `freeze`
+  freezeGate: number;  // raw freeze_gate LEVEL; ring is frozen WHILE this is high (OR'd with `freeze`)
   saveTrig: number;    // raw save_trig sample / momentary button; RISING edge → snapshot
 }
 
@@ -230,7 +230,8 @@ interface RingSnapshot {
   layers: number;
   w: number;
   h: number;
-  head: number;      // the write head at save time (newest layer)
+  head: number;      // write head at save time = NEXT slot to write (oldest layer)
+  newest: number;    // newest COMPLETED layer = (head-1+N)%N — matches the shader's uHead
 }
 
 export const frametableDef: VideoModuleDef = {
@@ -265,7 +266,7 @@ export const frametableDef: VideoModuleDef = {
     { id: 'shimmer',     label: 'shimmer', defaultValue: FRAMETABLE_DEFAULTS.shimmer,     min: 0, max: 1,  curve: 'linear' },
     // weight-shape: 0 = triangular (default), 1 = gaussian ("smooth").
     { id: 'weightShape', label: 'shape',   defaultValue: FRAMETABLE_DEFAULTS.weightShape, min: 0, max: 1,  curve: 'linear' },
-    // user-facing FREEZE toggle (button + freeze_gate rising-edge both drive this).
+    // user-facing FREEZE toggle (button-latched; OR'd with the freeze_gate LEVEL to freeze).
     { id: 'freeze',      label: 'freeze',  defaultValue: FRAMETABLE_DEFAULTS.freeze,      min: 0, max: 1,  curve: 'linear' },
     // hidden synthetic gate-state params (no card fader).
     { id: 'freezeGate',  label: 'frz gate',defaultValue: FRAMETABLE_DEFAULTS.freezeGate,  min: 0, max: 1,  curve: 'linear' },
@@ -408,7 +409,7 @@ export const frametableDef: VideoModuleDef = {
       gl.deleteFramebuffer(readFbo);
       const prev = snapshots.get(slot);
       if (prev) gl.deleteTexture(prev.tex);
-      snapshots.set(slot, { tex: snapTex, layers: N, w: rw, h: rh, head });
+      snapshots.set(slot, { tex: snapTex, layers: N, w: rw, h: rh, head, newest: (head - 1 + N) % N });
     }
 
     const surface: VideoNodeSurface = {
@@ -511,7 +512,10 @@ export const frametableDef: VideoModuleDef = {
         if (key === 'outputTexture:video_out' || key === 'fboTexture') return surface.texture;
         // VideoCube readiness: the live ring + a saved snapshot slot, readable
         // through the shared GL context so a Cube face can page through the table.
-        if (key === 'ringLive') return { tex: ringTex, layers: N, w: rw, h: rh, head };
+        // `newest` is the newest COMPLETED layer (matches the shader's uHead); `head`
+        // is the raw write head (the NEXT slot to write = OLDEST layer), so a consumer
+        // that wants "the latest frame" must use `newest`, not `head`.
+        if (key === 'ringLive') return { tex: ringTex, layers: N, w: rw, h: rh, head, newest: (head - 1 + N) % N };
         if (typeof key === 'string' && key.startsWith('ringSnapshot:')) {
           return snapshots.get(key.slice('ringSnapshot:'.length));
         }

@@ -33,7 +33,9 @@
   function pmax(name: string): number { return frametableDef.params.find((d) => d.id === name)!.max; }
   function setParam(paramId: string) { return (v: number) => setNodeParam(id, paramId, v); }
 
-  // FREEZE toggle (button + a rising edge on freeze_gate both drive `freeze`).
+  // FREEZE toggle button drives `freeze`. (The freeze_gate additionally holds the
+  // ring frozen while its LEVEL is high, but that's transient engine state OR'd in
+  // by the factory — a gate-only freeze is not reflected in this button's label.)
   let freezeOn = $derived(p('freeze') >= 0.5);
   function toggleFreeze() {
     setNodeParam(id, 'freeze', freezeOn ? 0 : 1);
