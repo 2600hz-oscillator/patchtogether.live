@@ -1,6 +1,7 @@
 // packages/web/src/lib/audio/modules/clip-types.test.ts
 import { describe, it, expect } from 'vitest';
 import { syncedStore } from '@syncedstore/core';
+import { mulberry32 } from '$lib/sync/prng';
 import { midiToVOct, C3_MIDI } from '$lib/audio/note-entry';
 import { POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
 import {
@@ -24,6 +25,19 @@ import {
   readClip,
   notesStartingAt,
   lanesForStep,
+  notesFiringAt,
+  lanesFromFiring,
+  setNoteProb,
+  setClipDefaultProb,
+  clipDefaultProbEff,
+  noteEffProb,
+  probSource,
+  probColorBucket,
+  probEff,
+  probLevelToValue,
+  valueToProbLevel,
+  PROB_STEP,
+  PROB_LEVELS,
   scaleSteps,
   rowToMidi,
   midiToRow,
@@ -1191,6 +1205,282 @@ describe('VELOCITY-hold velocity cycle (6 levels)', () => {
   it('velBucket folds the 6 levels into 3 display colours (2 per colour)', () => {
     // levels {0,1}→0, {2,3}→1, {4,5}→2
     expect(VEL_LEVELS.map((v) => velBucket(v))).toEqual([0, 0, 1, 1, 2, 2]);
+  });
+});
+
+// ===========================================================================
+// PER-NOTE PROBABILITY — pure model
+// ===========================================================================
+describe('per-note probability: level ↔ value helpers', () => {
+  it('probLevelToValue: level 1 = 2.5%, level 40 = exactly 1.0', () => {
+    expect(probLevelToValue(1)).toBeCloseTo(0.025, 10);
+    expect(probLevelToValue(40)).toBe(1);
+    expect(probLevelToValue(20)).toBeCloseTo(0.5, 10);
+    // clamps out-of-range
+    expect(probLevelToValue(0)).toBeCloseTo(0.025, 10);
+    expect(probLevelToValue(99)).toBe(1);
+  });
+  it('valueToProbLevel is the inverse (round-trips every level 1..40)', () => {
+    for (let n = 1; n <= PROB_LEVELS; n++) {
+      expect(valueToProbLevel(probLevelToValue(n))).toBe(n);
+    }
+    expect(valueToProbLevel(1)).toBe(40); // 100% → top level
+    expect(valueToProbLevel(0)).toBe(1); // a 0% note still shows level 1 (visible)
+    expect(PROB_STEP).toBe(0.025);
+  });
+  it('probEff: absent/invalid prob reads as 1 (always fires); present is clamped', () => {
+    expect(probEff(undefined)).toBe(1);
+    expect(probEff({})).toBe(1); // no prob key = default
+    expect(probEff({ prob: 0.4 })).toBe(0.4);
+    expect(probEff({ prob: 0 })).toBe(0);
+    expect(probEff({ prob: 2 })).toBe(1); // clamped
+    expect(probEff({ prob: -1 })).toBe(0);
+  });
+});
+
+describe('setNoteProb (the shared write seam)', () => {
+  const clipWith = (steps: NoteEvent[]): NoteClipRecord => ({ ...defaultNoteClip(), steps });
+  it('sets a sub-100% probability on the covering note', () => {
+    const c = clipWith([{ step: 2, midi: 60, lengthSteps: 1 }]);
+    const next = setNoteProb(c, 2, 60, probLevelToValue(1)); // 2.5%
+    expect(noteAt(next, 2, 60)?.prob).toBeCloseTo(0.025, 10);
+    expect(c.steps[0]!.prob).toBeUndefined(); // immutable — original untouched
+  });
+  it('STORES the value at 100% (no delete, no special-casing) — the note pins at 1.0', () => {
+    const c = clipWith([{ step: 0, midi: 60, lengthSteps: 1, prob: 0.3 }]);
+    const next = setNoteProb(c, 0, 60, 1); // 100%
+    expect(noteAt(next, 0, 60)?.prob, 'a 100% pick stores 1.0, does not delete').toBe(1);
+    // a never-set (legacy-shaped) note stays unset UNTIL setNoteProb writes it —
+    // then it stores exactly 1.0 (so it can sit above a lower clip default).
+    const legacy = clipWith([{ step: 0, midi: 60, velocity: 100, lengthSteps: 1 }]);
+    const set100 = setNoteProb(legacy, 0, 60, 1);
+    expect(set100.steps[0]).toEqual({ step: 0, midi: 60, velocity: 100, lengthSteps: 1, prob: 1 });
+  });
+  it('a note set to 100% in a 95% clip → effective 1.0, WHITE, source note (pins over the default)', () => {
+    const c: NoteClipRecord = { ...defaultNoteClip(), defaultProb: 0.95, steps: [{ step: 0, midi: 60, lengthSteps: 1 }] };
+    const next = setNoteProb(c, 0, 60, 1); // pin this note at 100%
+    const ev = noteAt(next, 0, 60)!;
+    expect(ev.prob).toBe(1);
+    expect(noteEffProb(next, ev), 'the stored 1.0 beats the 95% clip default').toBe(1);
+    expect(probColorBucket(next, ev)).toBe('white');
+    expect(probSource(next, ev)).toBe('note');
+  });
+  it('a note set to 95% in a 100% clip → 0.95, PURPLE (its own prob, below the clip)', () => {
+    const c = clipWith([{ step: 0, midi: 60, lengthSteps: 1 }]); // no clip default = 100%
+    const next = setNoteProb(c, 0, 60, 0.95);
+    const ev = noteAt(next, 0, 60)!;
+    expect(ev.prob).toBe(0.95);
+    expect(noteEffProb(next, ev)).toBe(0.95);
+    expect(probColorBucket(next, ev)).toBe('purple');
+  });
+  it('sets the COVERING held note (press anywhere in its span)', () => {
+    const c = clipWith([{ step: 2, midi: 60, lengthSteps: 3 }]);
+    const next = setNoteProb(c, 4, 60, 0.5); // press the held tail
+    expect(noteAt(next, 2, 60)?.prob).toBe(0.5);
+  });
+  it('never CREATES or removes a note — an empty cell is a no-op (same reference)', () => {
+    const c = clipWith([{ step: 0, midi: 60, lengthSteps: 1 }]);
+    expect(setNoteProb(c, 5, 72, 0.5)).toBe(c); // identity → caller skips the write
+    expect(setNoteProb(c, 0, 60, 0.5).steps.length).toBe(1); // never adds
+  });
+});
+
+describe('save-compat: a legacy clip with no `prob` reads back at 1', () => {
+  it('coerceNoteEvent keeps a valid prob and drops the key when absent; probEff = 1', () => {
+    const legacy = { step: 0, midi: 60, velocity: 100, lengthSteps: 2 };
+    const coerced = coerceNoteEvent(legacy)!;
+    expect('prob' in coerced).toBe(false); // no phantom key added
+    expect(probEff(coerced)).toBe(1);
+    // a clamped prob survives the coerce
+    expect(coerceNoteEvent({ step: 0, midi: 60, prob: 0.3 })?.prob).toBe(0.3);
+    expect(coerceNoteEvent({ step: 0, midi: 60, prob: 5 })?.prob).toBe(1);
+    // a STORED prob of exactly 1 is a VALID value (a pinned note), NOT a
+    // to-be-deleted key — it round-trips faithfully.
+    expect(coerceNoteEvent({ step: 0, midi: 60, prob: 1 })?.prob).toBe(1);
+  });
+});
+
+// ===========================================================================
+// CLIP-DEFAULT PROBABILITY — the model (setClipDefaultProb / noteEffProb /
+// probSource / probColorBucket / clipDefaultProbEff). The permutation TABLE
+// (clip-prob-permutations.test.ts) covers the cross-product; this pins the
+// individual helpers' edge cases.
+// ===========================================================================
+describe('clipDefaultProbEff (the clip default reader)', () => {
+  it('absent/invalid default reads as 1 (every un-overridden note fires)', () => {
+    expect(clipDefaultProbEff(undefined)).toBe(1);
+    expect(clipDefaultProbEff({})).toBe(1);
+    expect(clipDefaultProbEff({ defaultProb: undefined })).toBe(1);
+    expect(clipDefaultProbEff({ defaultProb: Number.NaN })).toBe(1);
+  });
+  it('a present default is clamped to 0..1', () => {
+    expect(clipDefaultProbEff({ defaultProb: 0 })).toBe(0);
+    expect(clipDefaultProbEff({ defaultProb: 0.5 })).toBe(0.5);
+    expect(clipDefaultProbEff({ defaultProb: 2 })).toBe(1);
+    expect(clipDefaultProbEff({ defaultProb: -3 })).toBe(0);
+  });
+});
+
+describe('noteEffProb (precedence: note prob ?? clip default ?? 1)', () => {
+  const clip = (defaultProb?: number): Pick<NoteClipRecord, 'defaultProb'> =>
+    defaultProb === undefined ? {} : { defaultProb };
+  it('a per-note prob WINS over the clip default (including 0)', () => {
+    expect(noteEffProb(clip(0.9), { prob: 0.2 })).toBe(0.2);
+    expect(noteEffProb(clip(0.9), { prob: 0 })).toBe(0); // a 0 own-prob wins, not skipped
+  });
+  it('no per-note prob → the clip default', () => {
+    expect(noteEffProb(clip(0.4), {})).toBe(0.4);
+    expect(noteEffProb(clip(0), {})).toBe(0);
+  });
+  it('neither → 1 (always fires)', () => {
+    expect(noteEffProb(clip(undefined), {})).toBe(1);
+    expect(noteEffProb(undefined, undefined)).toBe(1);
+  });
+});
+
+describe('probSource (which layer supplies the effective prob)', () => {
+  it("'note' when the event has its own prob key (even 0)", () => {
+    expect(probSource({ defaultProb: 0.5 }, { prob: 0.3 })).toBe('note');
+    expect(probSource({ defaultProb: 0.5 }, { prob: 0 })).toBe('note');
+    expect(probSource({}, { prob: 0.3 })).toBe('note');
+  });
+  it("'clip' when only the clip default is set", () => {
+    expect(probSource({ defaultProb: 0.5 }, {})).toBe('clip');
+    expect(probSource({ defaultProb: 0 }, {})).toBe('clip');
+  });
+  it("'none' when neither is set", () => {
+    expect(probSource({}, {})).toBe('none');
+    expect(probSource(undefined, undefined)).toBe('none');
+  });
+});
+
+describe('probColorBucket (white / purple / orange — shared by both surfaces)', () => {
+  it('effective ≥1 → white regardless of source', () => {
+    expect(probColorBucket({}, {})).toBe('white'); // none, eff 1
+    expect(probColorBucket({ defaultProb: 1 }, {})).toBe('white'); // clip 1
+    expect(probColorBucket({}, { prob: 1 })).toBe('white'); // note 1
+  });
+  it("a note's own prob < 1 → purple", () => {
+    expect(probColorBucket({}, { prob: 0.5 })).toBe('purple');
+    expect(probColorBucket({ defaultProb: 0.5 }, { prob: 0.2 })).toBe('purple');
+  });
+  it('clip default < 1 (note has no own prob) → orange', () => {
+    expect(probColorBucket({ defaultProb: 0.5 }, {})).toBe('orange');
+    expect(probColorBucket({ defaultProb: 0 }, {})).toBe('orange');
+  });
+});
+
+describe('setClipDefaultProb (the shared write seam — delete-at-≥1)', () => {
+  const clipWith = (defaultProb?: number): NoteClipRecord =>
+    defaultProb === undefined ? defaultNoteClip() : { ...defaultNoteClip(), defaultProb };
+  it('sets a sub-100% clip default', () => {
+    const c = clipWith();
+    const next = setClipDefaultProb(c, probLevelToValue(1)); // 2.5%
+    expect(next.defaultProb).toBeCloseTo(0.025, 10);
+    expect(c.defaultProb, 'immutable — original untouched').toBeUndefined();
+  });
+  it('DELETES the key at ≥100% (100% = the default, old clips byte-identical)', () => {
+    const c = clipWith(0.3);
+    const next = setClipDefaultProb(c, 1); // 100%
+    expect('defaultProb' in (next as object)).toBe(false);
+  });
+  it('setting 100% on a clip with NO default returns the SAME reference (skip the write)', () => {
+    const c = clipWith(); // no defaultProb
+    expect(setClipDefaultProb(c, 1)).toBe(c); // identity → caller skips the write
+    expect(setClipDefaultProb(c, 1.5)).toBe(c); // clamped ≥1 → same
+  });
+  it('clamps out-of-range values into 0..1', () => {
+    expect(setClipDefaultProb(clipWith(), 0).defaultProb).toBe(0);
+    expect(setClipDefaultProb(clipWith(), -2).defaultProb).toBe(0);
+    // NaN → treated as 1 → deletes the key
+    expect('defaultProb' in (setClipDefaultProb(clipWith(0.5), Number.NaN) as object)).toBe(false);
+  });
+  it('NEVER touches the note steps (a clip-level attribute only)', () => {
+    const c: NoteClipRecord = { ...defaultNoteClip(), steps: [{ step: 0, midi: 60, prob: 0.4 }] };
+    const next = setClipDefaultProb(c, 0.5);
+    expect(next.steps).toBe(c.steps); // steps array reference unchanged (no clone)
+    expect(next.steps[0]!.prob).toBe(0.4); // the note's own prob intact
+  });
+});
+
+describe('save-compat: a legacy clip with no `defaultProb` (byte-identical)', () => {
+  it('coerceClipRecord adds no defaultProb key; noteEffProb = note-or-1', () => {
+    const legacy = { kind: 'note', lengthSteps: 4, root: 48, loop: true,
+      steps: [{ step: 0, midi: 60, velocity: 100, lengthSteps: 1 }] };
+    const coerced = coerceClipRecord(legacy) as NoteClipRecord;
+    expect('defaultProb' in (coerced as object)).toBe(false); // no phantom key
+    expect(noteEffProb(coerced, coerced.steps[0])).toBe(1); // reads as always-fires
+    // a stored defaultProb survives the coerce (clamped)
+    const withDef = coerceClipRecord({ ...legacy, defaultProb: 0.5 }) as NoteClipRecord;
+    expect(withDef.defaultProb).toBe(0.5);
+    const clamped = coerceClipRecord({ ...legacy, defaultProb: 9 }) as NoteClipRecord;
+    expect(clamped.defaultProb).toBe(1);
+    const badType = coerceClipRecord({ ...legacy, defaultProb: 'x' }) as NoteClipRecord;
+    expect('defaultProb' in (badType as object)).toBe(false); // non-numeric dropped
+  });
+});
+
+// ===========================================================================
+// PER-NOTE PROBABILITY — playback dice-roll (notesFiringAt), seeded-deterministic
+// ===========================================================================
+describe('notesFiringAt (per-trigger dice-roll)', () => {
+  const chord = (probs: (number | undefined)[]): NoteClipRecord => ({
+    ...defaultNoteClip(),
+    steps: probs.map((p, i) => (p === undefined ? { step: 0, midi: 60 + i } : { step: 0, midi: 60 + i, prob: p })),
+  });
+  it('prob >= 1 (or absent) ALWAYS fires — no-regression guard', () => {
+    const c = chord([undefined, 1]);
+    // Feed an rng that would FAIL any real roll (always returns ~1); both still fire.
+    const fired = notesFiringAt(c, 0, () => 0.999999);
+    expect(fired.map((e) => e.midi)).toEqual([60, 61]);
+  });
+  it('prob = 0 NEVER fires (even with rng → 0)', () => {
+    const c = chord([0]);
+    expect(notesFiringAt(c, 0, () => 0)).toEqual([]);
+  });
+  it('a seeded mulberry32 gives DETERMINISTIC pass/fail counts', () => {
+    // 100 single-note trials at p=0.5; the same seed → the same survivor count.
+    const p = 0.5;
+    const countPasses = (seed: number) => {
+      const rng = mulberry32(seed);
+      let passes = 0;
+      const c = chord([p]);
+      for (let t = 0; t < 100; t++) if (notesFiringAt(c, 0, rng).length === 1) passes++;
+      return passes;
+    };
+    const a = countPasses(12345);
+    const b = countPasses(12345);
+    expect(a).toBe(b); // deterministic
+    expect(a).toBeGreaterThan(30); // ~50/100 — sane spread, not degenerate
+    expect(a).toBeLessThan(70);
+    // a DIFFERENT seed generally gives a different count (decorrelated)
+    expect(countPasses(6789)).not.toBe(a);
+  });
+  it('a chord PARTIALLY fires (per-note roll, not all-or-nothing)', () => {
+    // note A p=1 always; note B p=0.5 — with a seed where B fails, only A fires.
+    const c = chord([1, 0.5]);
+    // rng returns 0.9 (> 0.5) → B fails its roll; A (p=1) still fires.
+    const fired = notesFiringAt(c, 0, () => 0.9);
+    expect(fired.map((e) => e.midi)).toEqual([60]);
+  });
+  it('the roll NEVER mutates the clip', () => {
+    const c = chord([0.5, 0.5]);
+    const snapshot = JSON.stringify(c);
+    for (let t = 0; t < 50; t++) notesFiringAt(c, 0, mulberry32(t));
+    expect(JSON.stringify(c)).toBe(snapshot);
+  });
+  it('lanesForStep(rng) builds only from the survivors; lanesFromFiring is the seam', () => {
+    const c = chord([1, 0]); // A always, B never
+    const r = lanesForStep(c, 0, () => 0.5);
+    expect(r.lanes.length).toBe(1); // only A sounded
+    expect(r.lanes[0]!.pitch).toBe(midiToVOct(60));
+    // lanesFromFiring on the same survivor set matches
+    const fired = notesFiringAt(c, 0, () => 0.5);
+    expect(lanesFromFiring(fired).lanes.length).toBe(1);
+  });
+  it('lanesForStep with default rng fires all prob-free notes (existing behaviour)', () => {
+    const c = chord([undefined, undefined]);
+    expect(lanesForStep(c, 0).lanes.length).toBe(2);
   });
 });
 

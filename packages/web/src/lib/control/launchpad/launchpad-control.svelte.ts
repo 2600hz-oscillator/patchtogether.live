@@ -116,6 +116,8 @@ import {
   isLane8ArmPad,
   repeatPadOrdinal,
   repeatCountForOrdinal,
+  probPadOrdinal,
+  probLevelForOrdinal,
   paintPermanentTopRow,
   computeSingleGridFrame,
   computeSingleClipFrame,
@@ -141,6 +143,11 @@ import {
   toggleNoteAt,
   setNoteSpan,
   cycleVelocity,
+  setNoteProb,
+  setClipDefaultProb,
+  clipDefaultProbEff,
+  noteEffProb,
+  noteCovering,
   nextScale,
   doubleNoteClip,
   reverseClipSteps,
@@ -328,6 +335,27 @@ let arpNextTime = 0; // performance.now() ms of the next arp step (0 = fire now)
 let gridHeldSingle = false; // the permanent GRID button is physically held
 let repeatViewHeld: { sceneIndex: number; slot: number } | null = null;
 
+// ── PER-NOTE PROBABILITY page (owner-spec'd — mirrors repeatViewHeld). SHIFT +
+// press a note step in the single Clip note editor LATCHES this to that note;
+// the 8×8 becomes the 40-level probability bar (launchpad-map probView). While
+// latched, the NEXT pad tap sets the note's probability (probPadOrdinal →
+// setNoteProb, an undoable edit) and clears the latch (auto-return to the clip
+// view). Reset in resetSingleState. A pure single-unit editor gesture — the
+// pair editor keeps its dedicated CC_EDIT_VEL for velocity.
+let probEditHeld: { step: number; midi: number } | null = null;
+
+// ── CLIP-DEFAULT PROBABILITY page (owner-spec'd — the clip-level sibling of
+// probEditHeld, opened from the GRID view). SHIFT + press a Grid clip pad (with
+// NO arm pending) LATCHES this to that clip; the 8×8 becomes the 40-level
+// probability bar (ORANGE, reinforcing the clip-default colour source) for the
+// clip's `defaultProb`. While latched, the NEXT pad tap sets the clip default
+// (probPadOrdinal → setClipDefaultProb, an undoable edit) and clears the latch
+// (auto-return to the grid); a bottom-3/out-of-bar tap cancels. Reset in
+// resetSingleState. Single-unit only (mirrors #1106's per-note PROB page — the
+// pair editor has no clip-default entry). Only opens on a pad that already holds
+// a clip (an empty pad is a no-op — no clip to default).
+let clipProbEditHeld: { clipIdx: number } | null = null;
+
 // SINGLE-mode Grid DOUBLE-TAP → select the clip + switch to Clip view. The FIRST
 // tap launches IMMEDIATELY (no debounce/latency — owner: never slow a launch); a
 // SECOND tap on the SAME clip within the window instead sets selectedClipIndex +
@@ -507,6 +535,9 @@ function resetSingleState(): void {
   swingMeterDir = 'center';
   gridHeldSingle = false;
   repeatViewHeld = null;
+  probEditHeld = null;
+  clipProbEditHeld = null;
+  velHeld = false; // the relocated single-mode VEL-hold (FOLLOW-row modifier)
   arp = createArpState();
   arpOn = false;
   arpNextTime = 0;
@@ -1516,12 +1547,17 @@ function handleSingleKey(nodeId: string, e: LaunchpadKeyEvent): void {
   // EVERY view exactly like the top-row arm map. CONSUMED — never a grid/clip
   // action. Only on PRESS while shift is effective. NOT while the repeat-count
   // view owns pad taps (GRID+scene hold, which is entered without shift — the
-  // view keeps every pad for count-setting even if shift is added mid-hold).
+  // view keeps every pad for count-setting even if shift is added mid-hold), and
+  // NOT while EITHER latched PROB page (clip-default or per-note) owns pad taps —
+  // both are opened WITH shift held, so without this guard a shift-HELD tap on
+  // pad (7,7)=the 20% level would be stolen to arm lane 8 and strand the latch.
   if (
     ev.type === 'pad' &&
     ev.s === 1 &&
     singleShiftEff() &&
     !repeatViewHeld &&
+    !clipProbEditHeld &&
+    !probEditHeld &&
     isLane8ArmPad(ev.x, ev.y)
   ) {
     toggleLaneAutoArm(nodeId, ARM_SHIFT_LANE);
@@ -1629,6 +1665,13 @@ function selectView(nodeId: string, view: SingleView): void {
   if (mode === 'keys') forceExitKeys(nodeId);
   if (mode === 'lengthEdit') mode = 'session';
   if (view === 'clip') editClipIndex = selectedClipIndex;
+  // Clear the note-editor hold modifiers on any view switch so a PROB page /
+  // VEL-hold never "sticks" across views (mirrors the repeat-view GRID-release
+  // clear). Both are momentary single-Clip-view gestures. The GRID-view clip-
+  // default PROB page clears the same way.
+  probEditHeld = null;
+  clipProbEditHeld = null;
+  velHeld = false;
   setSingleViewInternal(view);
   renderLeds();
 }
@@ -1686,6 +1729,24 @@ function handleSingleGrid(nodeId: string, e: LaunchpadKeyEvent): void {
   const data = liveData(nodeId);
   const shift = singleShiftEff();
   if (ev.type === 'pad') {
+    // CLIP-DEFAULT PROB page latched (SHIFT + a clip pad opened it): a pad tap on
+    // the top-5-row ORANGE bar SETS the clip's default probability (undoable) then
+    // clears the latch (auto-return to the grid); a bottom-3/out-of-bar tap
+    // cancels. Intercepted BEFORE the repeat-view + launch paths (mirrors the
+    // per-note PROB page interception in handleSingleClip).
+    if (clipProbEditHeld) {
+      if (ev.s === 1) {
+        const k = probPadOrdinal(ev.x, ev.y);
+        if (k !== null) {
+          const ci = clipProbEditHeld.clipIdx;
+          const clip = clipAtIndex(liveData(nodeId), ci);
+          if (clip) writeClip(nodeId, setClipDefaultProb(clip, probLevelForOrdinal(k)), ci, { undoable: true });
+        }
+        clipProbEditHeld = null;
+        renderLeds();
+      }
+      return;
+    }
     // SCENE-REPEAT COUNT VIEW: while GRID + a scene button are both held, pad
     // taps SET the held scene's repeat count — pad k (row-major from the
     // upper-left) = k repeats, pad 64 = back to INFINITE. A persistent musical
@@ -1708,6 +1769,15 @@ function handleSingleGrid(nodeId: string, e: LaunchpadKeyEvent): void {
     // dark no-op (nothing to launch/create there).
     const clipIdx = gridPadToClipIndexScrolled(ev.x, ev.y, sceneScrollOffset);
     if (clipIdx === null) return;
+    // SHIFT + a clip pad (with NO arm pending) → open the CLIP-DEFAULT PROB page
+    // for that clip (owner gesture). Under shift an ARMED copy/paste/div/len
+    // still CONSUMES the arm below (unchanged); a no-shift tap still launches. The
+    // only behaviour lost is the incidental "hold-shift + tap launches" (shift was
+    // ignored on the grid) — intended. Only opens on a pad that holds a clip.
+    if (shift && !armedRightAction) {
+      openClipProbPage(nodeId, clipIdx);
+      return;
+    }
     // A pending arm consumes the next clip-pad tap → this pad is a CLIP target.
     // Under shift ANY arm (copy/paste/clip-div/len) consumes here; with shift
     // released only the STICKY copy/paste arms survive (clip-div/len disarmed on
@@ -1756,6 +1826,19 @@ function handleSingleGrid(nodeId: string, e: LaunchpadKeyEvent): void {
     handleSceneLaunch(nodeId, sceneIndex, data);
     return;
   }
+}
+
+/** SHIFT + a Grid clip pad (no arm) → LATCH the CLIP-DEFAULT PROB page for that
+ *  clip: the 8×8 becomes the orange 40-level bar and the next pad tap writes
+ *  setClipDefaultProb. Only opens on a pad that already holds a clip (an empty pad
+ *  is a no-op — there is no clip to carry a default; the owner spec is "shift +
+ *  press a clip pad"). Clears any pending launch double-tap so the open never
+ *  pairs with a prior tap. */
+function openClipProbPage(nodeId: string, clipIdx: number): void {
+  if (!clipAtIndex(liveData(nodeId), clipIdx)) return; // no clip here → nothing to default
+  clipProbEditHeld = { clipIdx };
+  lastTapClipIndex = -1; // a prob-page open is never a launch double-tap half
+  renderLeds();
 }
 
 /** No-shift grid clip tap: single-tap = launch/stop; DOUBLE-TAP (same clip within
@@ -2109,13 +2192,59 @@ function handleSingleClip(nodeId: string, e: LaunchpadKeyEvent): void {
   const data = liveData(nodeId);
   const shift = singleShiftEff();
   if (ev.type === 'scene') {
-    if (ev.s !== 1) return;
     const sceneIndex = sceneIndexForCc(ev.cc);
     if (sceneIndex === null) return;
+    // VEL-HOLD (relocated velocity modifier, decision #1): the FOLLOW scene row,
+    // held with NO shift, is a MOMENTARY velocity modifier — mirrors the pair
+    // editor's dedicated CC_EDIT_VEL button (both editors now cycle velocity via
+    // a held VEL modifier). Single mode has no spare top-row CC (the permanent
+    // compass) and a packed right column, so VEL borrows the FOLLOW row; FOLLOW
+    // toggle relocates to SHIFT + this row. Both key edges tracked (hold).
+    if (clipRight(sceneIndex) === 'follow') {
+      // ANY RELEASE of the FOLLOW row clears the momentary VEL-hold, regardless
+      // of shift — the physical hold ended either way. Without this, a shift
+      // engaged MID-HOLD (so the release sees shift=true) would skip the clear
+      // and strand velHeld=true, cycling velocity on every note-pad tap until a
+      // view switch (mirrors the GRID repeat-view release guard in handleTopRow).
+      if (ev.s === 0) {
+        if (velHeld) {
+          velHeld = false;
+          renderLeds();
+        }
+        return;
+      }
+      // PRESS, NO shift = arm the momentary VEL modifier.
+      if (!shift) {
+        velHeld = true;
+        renderLeds();
+        return;
+      }
+      // PRESS + shift = the FOLLOW toggle. Defensively clear any stray VEL-hold
+      // first so it can NEVER survive a shift toggle, then fall through.
+      velHeld = false;
+    }
+    if (ev.s !== 1) return;
     handleClipRight(nodeId, sceneIndex, shift, data);
     return;
   }
   if (ev.type !== 'pad') return;
+  // PROB PAGE latched (SHIFT + step opened it): intercept pad presses BEFORE
+  // note-toggle (mirrors the repeat-view interception) — a pad tap on the top-5-
+  // row bar picks the note's probability level via an UNDOABLE write, then clears
+  // the latch (auto-return to the clip view). A bottom-3/out-of-bar tap cancels.
+  if (probEditHeld) {
+    if (ev.s === 1) {
+      const k = probPadOrdinal(ev.x, ev.y);
+      if (k !== null) {
+        const { step, midi } = probEditHeld;
+        const clip = clipAtIndex(liveData(nodeId), selectedClipIndex);
+        if (clip) writeClipSel(nodeId, setNoteProb(clip, step, midi, probLevelForOrdinal(k)));
+      }
+      probEditHeld = null;
+      renderLeds();
+    }
+    return;
+  }
   // Note grid. On press, materialize the clip if needed; on release, only act if
   // a clip already exists (don't create one from a stray release).
   const clip = ev.s === 1 ? ensureSelClip(nodeId) : clipAtIndex(data, selectedClipIndex);
@@ -2123,8 +2252,23 @@ function handleSingleClip(nodeId: string, e: LaunchpadKeyEvent): void {
   const note = editPadToNote(clip, ev.x, ev.y, { rowOffset: editRowOffset, colOffset: shownWindowStart(clip), page: 0 });
   if (!note) return;
   const mono = laneMono(liveData(nodeId), laneOf(selectedClipIndex));
-  // Under shift the note grid is VELOCITY-cycle (tap a note → cycle its velocity).
+  // SHIFT + press a step → open the PER-NOTE PROBABILITY page for the COVERING
+  // note (decision #1 — relocated off the old shift=velocity gesture). Only a
+  // cell that already holds a note opens the page (setNoteProb never creates a
+  // note); an empty cell is a no-op.
   if (shift) {
+    if (ev.s === 1) {
+      const cov = noteCovering(clip, note.step, note.midi);
+      if (cov) {
+        probEditHeld = { step: cov.step, midi: cov.midi };
+        renderLeds();
+      }
+    }
+    return;
+  }
+  // VEL-HOLD + press → cycle the note's velocity (the relocated velocity gesture,
+  // mirroring the pair editor's velHeld path).
+  if (velHeld) {
     if (ev.s === 1) writeClipSel(nodeId, cycleVelocity(clip, note.step, note.midi));
     return;
   }
@@ -3017,6 +3161,11 @@ function renderLeds(): void {
                   sceneIndex: repeatViewHeld.sceneIndex,
                 }
               : undefined,
+            // CLIP-DEFAULT PROB page: while a clip is latched, the 8×8 is its
+            // orange default-probability bar (reads the clip's current default).
+            clipProbView: clipProbEditHeld
+              ? { prob: clipDefaultProbEff(clipAtIndex(data, clipProbEditHeld.clipIdx) ?? undefined) }
+              : null,
             divPulse: divPreview
               ? { clipIndex: divPreview.clipIndex, on: divPulsePhase(divPreview.divIndex) }
               : undefined,
@@ -3042,7 +3191,15 @@ function renderLeds(): void {
             page: 0,
             playheadStep: selPlayhead(nodeId, data),
             followOn,
-            velEditing: singleShiftEff(),
+            // VEL-hold wash (the relocated velocity modifier), not shift (shift
+            // now opens the PROB page).
+            velEditing: velHeld,
+            // PROB page: while a note is latched, the 8×8 is its probability bar,
+            // showing the note's EFFECTIVE probability (its own prob once set, else
+            // the clip default) so opening an unset note in a 95% clip reads 95%.
+            probView: probEditHeld
+              ? { prob: noteEffProb(clip, noteCovering(clip, probEditHeld.step, probEditHeld.midi)) }
+              : null,
             blinkOn,
           }),
         );
@@ -3143,6 +3300,9 @@ export function __test_mode(): {
   sceneScrollOffset: number;
   gridHeldSingle: boolean;
   repeatViewSlot: number | null;
+  probEditActive: boolean;
+  clipProbEditActive: boolean;
+  clipProbClipIndex: number | null;
   followOn: boolean;
   bufferArmed: boolean;
   bufferKind: CopyBufferKind | null;
@@ -3185,6 +3345,9 @@ export function __test_mode(): {
     sceneScrollOffset,
     gridHeldSingle,
     repeatViewSlot: repeatViewHeld?.slot ?? null,
+    probEditActive: probEditHeld !== null,
+    clipProbEditActive: clipProbEditHeld !== null,
+    clipProbClipIndex: clipProbEditHeld?.clipIdx ?? null,
     followOn,
     bufferArmed: bufferLoaded(),
     bufferKind: bufferKindOf(),

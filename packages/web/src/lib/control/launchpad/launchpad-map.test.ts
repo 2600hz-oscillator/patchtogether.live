@@ -47,7 +47,9 @@ import {
   RGB_TRANSPORT_ON,
   RGB_COPY_BUFFER,
   RGB_COPY_BUFFER_SCENE,
-  RGB_NOTE_BY_VEL,
+  RGB_WHITE,
+  probNoteRgb,
+  probNoteRgbOrange,
   RGB_NOTE_PLAYHEAD,
   RGB_DECK_EDIT,
   RGB_DECK_EDIT_ON,
@@ -186,6 +188,8 @@ import {
   defaultLaneColorHex,
   toggleNoteAt,
   setNoteSpan,
+  setNoteProb,
+  setClipDefaultProb,
   type ClipPlayerData,
   type NoteClipRecord,
 } from '$lib/audio/modules/clip-types';
@@ -372,32 +376,50 @@ describe('Unit R — note editor placement (8 pitch × 8 step, bottom-origin)', 
   });
 });
 
-describe('Unit R — editor LED frame (note colours + playhead)', () => {
-  it('a placed note paints by velocity bucket; the playhead boosts it', () => {
+describe('Unit R — editor LED frame (note colours = PROBABILITY + playhead)', () => {
+  it('a placed note paints by PROBABILITY (white at 100%); the playhead boosts it', () => {
     let clip: NoteClipRecord = defaultNoteClip();
-    // place a note at step 2, the root row (y=0).
+    // place a note at step 2, the root row (y=0). No prob key → 100% → WHITE.
     clip = toggleNoteAt(clip, 2, clip.root);
     const f = computeREditFrame(clip, { playheadStep: -1 });
-    // default velocity (76) → med/high bucket; just assert it's a note colour.
     const noteCell = at(f, padNote(2, 0));
-    const isNoteColour = RGB_NOTE_BY_VEL.some((c) => eqRgb(noteCell, c));
-    expect(isNoteColour).toBe(true);
+    expect(eqRgb(noteCell, RGB_WHITE), '100% note is white').toBe(true);
+    // a sub-100% note ramps PURPLE (probNoteRgb), no longer velocity-blue.
+    clip = setNoteProb(clip, 2, clip.root, 0.5);
+    const fp = computeREditFrame(clip, { playheadStep: -1 });
+    expect(eqRgb(at(fp, padNote(2, 0)), probNoteRgb(0.5)), '50% note is purple').toBe(true);
     // with the playhead on that step, the note boosts to yellow.
     const f2 = computeREditFrame(clip, { playheadStep: 2 });
     expect(eqRgb(at(f2, padNote(2, 0)), RGB_NOTE_PLAYHEAD)).toBe(true);
   });
-  it('a held span paints across the cells it covers', () => {
+  it('a held span paints across the cells it covers (white at 100%)', () => {
     let clip: NoteClipRecord = defaultNoteClip();
-    clip = setNoteSpan(clip, 1, 4, clip.root); // steps 1..4 held
+    clip = setNoteSpan(clip, 1, 4, clip.root); // steps 1..4 held (no prob → white)
     const f = computeREditFrame(clip);
     for (let step = 1; step <= 4; step++) {
       const noteCell = at(f, padNote(step, 0));
-      const isNoteColour = RGB_NOTE_BY_VEL.some((c) => eqRgb(noteCell, c));
-      expect(isNoteColour, `step ${step}`).toBe(true);
+      expect(eqRgb(noteCell, RGB_WHITE), `step ${step}`).toBe(true);
     }
     // step 5 (outside the span) is NOT a note colour.
     const after = at(f, padNote(5, 0));
-    expect(RGB_NOTE_BY_VEL.some((c) => eqRgb(after, c))).toBe(false);
+    expect(eqRgb(after, RGB_WHITE)).toBe(false);
+  });
+  it('SOURCE-AWARE colours through the FRAME: no-own-prob = ORANGE (clip default), own prob = PURPLE, own 100% PINS WHITE', () => {
+    // A clip carrying a DEFAULT prob + notes with/without their own prob: a note
+    // following the default paints ORANGE, a note using its own sub-100% prob
+    // paints PURPLE, and a note SET to 100% PINS to WHITE over a lower default —
+    // asserted through the SHIPPED frame, not just the noteProbRgb pure boundary.
+    let clip: NoteClipRecord = defaultNoteClip();
+    clip = toggleNoteAt(clip, 1, clip.root); // no own prob → follows the clip default
+    clip = toggleNoteAt(clip, 3, clip.root);
+    clip = setNoteProb(clip, 3, clip.root, 0.25); // its own 25% → purple
+    clip = toggleNoteAt(clip, 5, clip.root);
+    clip = setNoteProb(clip, 5, clip.root, 1); // its own 100% (stored) → pins WHITE
+    clip = setClipDefaultProb(clip, 0.5); // clip default 50% → no-own-prob note = orange
+    const f = computeREditFrame(clip, { playheadStep: -1 });
+    expect(eqRgb(at(f, padNote(1, 0)), probNoteRgbOrange(0.5)), 'no-own-prob note = clip-default ORANGE').toBe(true);
+    expect(eqRgb(at(f, padNote(3, 0)), probNoteRgb(0.25)), "the note's own prob = PURPLE").toBe(true);
+    expect(eqRgb(at(f, padNote(5, 0)), RGB_WHITE), 'own 100% pins WHITE over the 50% default').toBe(true);
   });
 });
 
@@ -1175,11 +1197,24 @@ describe('Single mode — frame builders', () => {
     clip = toggleNoteAt(clip, 2, clip.root);
     const f = computeSingleClipFrame(clip, { top: mkTop('clip'), playheadStep: -1 });
     const noteCell = at(f, padNote(2, 0));
-    expect(RGB_NOTE_BY_VEL.some((c) => eqRgb(noteCell, c))).toBe(true);
+    expect(eqRgb(noteCell, RGB_WHITE), '100% note is white (probability colour)').toBe(true);
     expect(eqRgb(at(f, SCENE_CCS[3]), RGB_KEYS_ENTRY)).toBe(true); // KEYS bright orange
     expect(eqRgb(at(f, SCENE_CCS[0]), RGB_PATTERN)).toBe(true); // DOUBLE green
     expect(eqRgb(at(f, SCENE_CCS[6]), RGB_TIMING)).toBe(true); // STEP◀ blue
     expect(eqRgb(at(f, 93), RGB_VIEW_ACTIVE)).toBe(true); // clip active
+  });
+  it('clip: SOURCE-AWARE note colours through the frame (clip default → ORANGE, own prob → PURPLE, own 100% pins WHITE)', () => {
+    let clip: NoteClipRecord = defaultNoteClip();
+    clip = toggleNoteAt(clip, 1, clip.root); // no own prob → follows the clip default
+    clip = toggleNoteAt(clip, 3, clip.root);
+    clip = setNoteProb(clip, 3, clip.root, 0.25); // its own 25% → purple
+    clip = toggleNoteAt(clip, 5, clip.root);
+    clip = setNoteProb(clip, 5, clip.root, 1); // its own 100% (stored) → pins WHITE
+    clip = setClipDefaultProb(clip, 0.5); // clip default → orange for the no-own-prob note
+    const f = computeSingleClipFrame(clip, { top: mkTop('clip'), playheadStep: -1 });
+    expect(eqRgb(at(f, padNote(1, 0)), probNoteRgbOrange(0.5)), 'no-own-prob note = clip-default ORANGE').toBe(true);
+    expect(eqRgb(at(f, padNote(3, 0)), probNoteRgb(0.25)), "the note's own prob = PURPLE").toBe(true);
+    expect(eqRgb(at(f, padNote(5, 0)), RGB_WHITE), 'own 100% pins WHITE over the 50% default').toBe(true);
   });
   it('clip + shift: Step buttons brighten (block jump); Follow lights bright when on', () => {
     const clip = defaultNoteClip();
