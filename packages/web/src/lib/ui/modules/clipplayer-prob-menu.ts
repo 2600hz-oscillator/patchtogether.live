@@ -14,6 +14,8 @@ import {
   probEff,
   noteCovering,
   setNoteProb,
+  clipDefaultProbEff,
+  setClipDefaultProb,
   type NoteClipRecord,
 } from '$lib/audio/modules/clip-types';
 
@@ -53,4 +55,24 @@ export function applyProbMenuPick(
   level: number,
 ): NoteClipRecord {
   return setNoteProb(clip, step, midi, probLevelToValue(level));
+}
+
+// ── CLIP-DEFAULT probability menu (right-click a GRID clip pad). The same 40-
+// level list + labels as the per-note menu, but it targets the CLIP's default
+// probability (applied to every note without a per-note override) via
+// setClipDefaultProb. 100% is the default check (no default set = every note
+// fires at 1). ──
+
+/** The clip-default menu level (1..PROB_LEVELS) that reads CHECKED: the clip's
+ *  current default level, or PROB_LEVELS (100%) when no default is set — so 100%
+ *  is the default check. PURE. */
+export function clipProbMenuCheckedLevel(clip: NoteClipRecord | null | undefined): number {
+  return valueToProbLevel(clipDefaultProbEff(clip ?? undefined));
+}
+
+/** Apply a clip-default menu pick → the NEW clip with `defaultProb` set to
+ *  `probLevelToValue(level)` (via setClipDefaultProb: a 100% pick DELETES the key,
+ *  back to the default). PURE. */
+export function applyClipProbMenuPick(clip: NoteClipRecord, level: number): NoteClipRecord {
+  return setClipDefaultProb(clip, probLevelToValue(level));
 }

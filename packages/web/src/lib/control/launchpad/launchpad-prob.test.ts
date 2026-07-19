@@ -43,9 +43,14 @@ import {
   probLitCount,
   PROB_ROWS,
   RGB_PROB,
+  RGB_PROB_ORANGE,
   RGB_WHITE,
   probNoteRgb,
+  probNoteRgbOrange,
+  noteProbRgb,
   computeSingleClipFrame,
+  computeSingleGridFrame,
+  clipIndexToGridPad,
   type PermanentTopOpts,
 } from './launchpad-map';
 import { SCENE_CCS, padNote, CC_TOP_SPARE_8 } from './launchpad-sysex';
@@ -56,6 +61,7 @@ import {
   defaultNoteClip,
   probLevelToValue,
   valueToProbLevel,
+  clipDefaultProbEff,
   PROB_LEVELS,
   type NoteClipRecord,
 } from '$lib/audio/modules/clip-types';
@@ -243,5 +249,188 @@ describe('SINGLE Clip — the SHIFT+step PROB page gesture', () => {
     sim.press('L', 3, 1); // y=1 → a bottom-3 (inert) pad → cancel
     expect(__test_mode().probEditActive).toBe(false);
     expect(rootNoteProb(), 'no write on cancel').toBeUndefined();
+  });
+});
+
+// ===========================================================================
+// CLIP-DEFAULT PROBABILITY — the source-aware colour (noteProbRgb) + the ORANGE
+// grid PROB page frame paint.
+// ===========================================================================
+describe('PURE source-aware note colour (noteProbRgb: purple = override, orange = clip default)', () => {
+  const clipWithDefault = (defaultProb: number, notePrs: (number | undefined)[]): NoteClipRecord => ({
+    ...defaultNoteClip(),
+    defaultProb,
+    steps: notePrs.map((p, i) => (p === undefined ? { step: i, midi: 60 } : { step: i, midi: 60, prob: p })),
+  });
+  it('a note WITHOUT an override under a clip default → ORANGE ramp (red dominates, blue floored)', () => {
+    const clip = clipWithDefault(0.5, [undefined]);
+    const rgb = noteProbRgb(clip, clip.steps[0]);
+    expect(rgb).toEqual(probNoteRgbOrange(0.5));
+    expect(rgb[0], 'red is the dominant channel').toBeGreaterThan(rgb[1]);
+    expect(rgb[2], 'blue floored for orange').toBe(0);
+  });
+  it('a note WITH an override → PURPLE ramp (blue dominates), beating the clip default', () => {
+    const clip = clipWithDefault(0.5, [0.25]);
+    const rgb = noteProbRgb(clip, clip.steps[0]);
+    expect(rgb).toEqual(probNoteRgb(0.25));
+    expect(rgb[2], 'blue is the dominant channel').toBeGreaterThan(rgb[1]);
+  });
+  it('effective 100% → WHITE from either source', () => {
+    expect(noteProbRgb(clipWithDefault(1, [undefined]), {})).toEqual(RGB_WHITE); // clip default 1
+    expect(noteProbRgb({ ...defaultNoteClip() }, { prob: 1 })).toEqual(RGB_WHITE); // note override 1
+  });
+});
+
+describe('PURE clip-PROB grid frame paint — computeSingleGridFrame(clipProbView) is ORANGE', () => {
+  function litOrdinals(prob: number): { ords: number[]; allOrange: boolean } {
+    const frame = computeSingleGridFrame(undefined, { top: { ...TOP, view: 'grid' }, clipProbView: { prob } });
+    const ords: number[] = [];
+    let allOrange = true;
+    for (let y = 0; y < 8; y++) {
+      for (let x = 0; x < 8; x++) {
+        const led = frame.leds.get(padNote(x, y))!;
+        if (led[0] + led[1] + led[2] > 0) {
+          const k = probPadOrdinal(x, y);
+          expect(k, `lit pad (${x},${y}) is inside the top-5-row bar`).not.toBeNull();
+          if (JSON.stringify(led) !== JSON.stringify(RGB_PROB_ORANGE)) allOrange = false;
+          ords.push(k!);
+        }
+      }
+    }
+    return { ords: ords.sort((a, b) => a - b), allOrange };
+  }
+  it('clip default 25% → pads 1..10 lit ORANGE (top 5 rows); NOT the purple per-note colour', () => {
+    const { ords, allOrange } = litOrdinals(probLevelToValue(10));
+    expect(ords).toEqual(Array.from({ length: 10 }, (_, i) => i + 1));
+    expect(allOrange, 'every lit clip-PROB bar pad is orange, not purple').toBe(true);
+    expect(RGB_PROB_ORANGE).not.toEqual(RGB_PROB); // the two pages are distinct hues
+  });
+  it('clip default 100% → all 40 top-5-row pads lit orange', () => {
+    expect(litOrdinals(1).ords).toHaveLength(40);
+  });
+});
+
+// ===========================================================================
+// GESTURE — SHIFT + a Grid clip pad opens the CLIP-DEFAULT PROB page; a selector
+// tap writes setClipDefaultProb + auto-returns. Arm still consumes; no-shift
+// still launches.
+// ===========================================================================
+describe('SINGLE Grid — the SHIFT+clip CLIP-DEFAULT PROB page gesture', () => {
+  let sim: SimulatedLaunchpad;
+  beforeEach(async () => {
+    hoisted.tick = null;
+    __test_resetBinding();
+    __test_resetLaunchpad();
+    clearPatch();
+    clearPlayheads(NODE_ID);
+    clearAudition(NODE_ID);
+    sim = await installSimulatedLaunchpadSingle();
+    __test_setDeployment('single', 'grid');
+  });
+  /** Seed one clip at (slot 0, lane 0) and enter GRID view. */
+  function openGrid() {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithRootNote() } });
+    bindLaunchpadToClip(NODE_ID);
+    setLaunchpadView('grid');
+    expect(__test_mode().singleView).toBe('grid');
+    expect(__test_mode().clipProbEditActive).toBe(false);
+  }
+  /** Press the grid pad for clip (slot 0, lane 0). */
+  function pressClip00() {
+    const p = clipIndexToGridPad(clipIndex(0, 0));
+    sim.press('L', p.x, p.y);
+  }
+  function clipDefault(): number | undefined {
+    return clipsOf()[clipIndex(0, 0)]!.defaultProb;
+  }
+
+  it('SHIFT + press a clip pad (no arm) opens the CLIP-DEFAULT PROB page', () => {
+    openGrid();
+    sim.cc('L', CC_SHIFT, 127);
+    pressClip00();
+    expect(__test_mode().clipProbEditActive).toBe(true);
+    expect(__test_mode().clipProbClipIndex).toBe(clipIndex(0, 0));
+  });
+
+  it('SHIFT + press an EMPTY pad does NOT open the page (no clip to default)', () => {
+    openGrid();
+    sim.cc('L', CC_SHIFT, 127);
+    const p = clipIndexToGridPad(clipIndex(1, 1)); // an empty slot
+    sim.press('L', p.x, p.y);
+    expect(__test_mode().clipProbEditActive).toBe(false);
+  });
+
+  it('a selector tap writes the clip default then AUTO-RETURNS to the grid', () => {
+    openGrid();
+    sim.cc('L', CC_SHIFT, 127);
+    pressClip00(); // open the clip-PROB page
+    sim.cc('L', CC_SHIFT, 0); // release shift
+    expect(__test_mode().clipProbEditActive).toBe(true);
+    sim.press('L', 0, 7); // pad (0,7) = ordinal 1 = 2.5%
+    expect(__test_mode().clipProbEditActive).toBe(false); // auto-return
+    expect(clipDefault()).toBeCloseTo(0.025, 6);
+    expect(valueToProbLevel(clipDefault()!)).toBe(1);
+  });
+
+  it('a selector tap on pad 40 sets 100% → the defaultProb key is DELETED', () => {
+    openGrid();
+    // Drop to 2.5% first so there IS a key to delete.
+    sim.cc('L', CC_SHIFT, 127);
+    pressClip00();
+    sim.cc('L', CC_SHIFT, 0);
+    sim.press('L', 0, 7); // ordinal 1 = 2.5%
+    expect(clipDefault()).toBeCloseTo(0.025, 6);
+    // Re-open and set 100% via pad (7,3) = ordinal 40 → key deleted.
+    sim.cc('L', CC_SHIFT, 127);
+    pressClip00();
+    sim.cc('L', CC_SHIFT, 0);
+    sim.press('L', 7, 3); // ordinal 40 = 100%
+    expect(__test_mode().clipProbEditActive).toBe(false);
+    expect(clipDefault(), '100% deletes the defaultProb key').toBeUndefined();
+  });
+
+  it('a bottom-3-row tap CANCELS (clears the latch, no write)', () => {
+    openGrid();
+    sim.cc('L', CC_SHIFT, 127);
+    pressClip00();
+    sim.cc('L', CC_SHIFT, 0);
+    expect(__test_mode().clipProbEditActive).toBe(true);
+    sim.press('L', 3, 1); // y=1 → a bottom-3 inert pad → cancel
+    expect(__test_mode().clipProbEditActive).toBe(false);
+    expect(clipDefault(), 'no write on cancel').toBeUndefined();
+  });
+
+  it('the frame reflects the stored clip default (its bar lights to the level)', () => {
+    openGrid();
+    sim.cc('L', CC_SHIFT, 127);
+    pressClip00();
+    sim.cc('L', CC_SHIFT, 0);
+    sim.press('L', 0, 6); // ordinal 9 → 22.5%
+    // re-open: the bar should now light exactly probLitCount(defaultProb) pads.
+    sim.cc('L', CC_SHIFT, 127);
+    pressClip00();
+    expect(__test_mode().clipProbEditActive).toBe(true);
+    const eff = clipDefaultProbEff(clipsOf()[clipIndex(0, 0)]);
+    expect(probLitCount(eff)).toBe(9);
+  });
+
+  it('SHIFT + an ARMED copy + clip CONSUMES the arm (copies) — NOT the PROB page', () => {
+    openGrid();
+    sim.cc('L', CC_SHIFT, 127); // hold shift
+    sim.cc('L', sceneCc(0), 127); // grid-shift scene 0 = COPY → arm it
+    expect(__test_mode().armedRightAction).toBe('copy');
+    pressClip00(); // shift + armed + clip → consume the arm (copy), not open PROB
+    expect(__test_mode().clipProbEditActive, 'armed press did not open the clip-PROB page').toBe(false);
+    expect(__test_mode().bufferArmed, 'the clip was copied into the buffer').toBe(true);
+    expect(__test_mode().armedRightAction, 'auto-disarmed after applying').toBeNull();
+  });
+
+  it('NO-SHIFT + clip still LAUNCHES (the page never opens without shift)', () => {
+    openGrid();
+    pressClip00(); // no shift
+    expect(__test_mode().clipProbEditActive).toBe(false);
+    // a launch/queue was applied to lane 0 (not a prob-page open).
+    const q = (livePatch.nodes[NODE_ID]!.data as { queued?: (number | 'stop' | null)[] }).queued;
+    expect(Array.isArray(q)).toBe(true);
   });
 });

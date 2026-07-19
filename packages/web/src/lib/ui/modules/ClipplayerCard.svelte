@@ -42,7 +42,6 @@
     toggleNoteAt,
     cycleVelocity,
     noteCovering,
-    probEff,
     probLevelToValue,
     PROB_LEVELS,
     laneMono,
@@ -146,7 +145,12 @@
     probPctLabel,
     probMenuCheckedLevel,
     applyProbMenuPick,
+    clipProbMenuCheckedLevel,
+    applyClipProbMenuPick,
   } from './clipplayer-prob-menu';
+  // Pure SOURCE-AWARE cell-fill colour (white/purple/orange) — extracted so it
+  // stays unit-tested + mirrors the launchpad's noteProbRgb buckets.
+  import { noteProbCellFill } from './clipplayer-prob-color';
   // Launchpad-STYLE origin-scoped undo/redo for the card's persistent clip edits
   // (control-strip ↶/↷ = keys 6/7). Owner Q1 decision: scoped (not global Cmd-Z),
   // its own stack; see clip-undo.ts.
@@ -1003,19 +1007,14 @@
     const logicalRow = editorRow + (EDIT_ROWS - 1 - displayRow);
     return rowToMidi(logicalRow, clip.root, clip.scale);
   }
-  /** The note cell's FILL colour, driven by PROBABILITY (owner-spec'd, replacing
-   *  the old velocity-blue): '' for an empty cell (the CSS handles dark/beat),
-   *  else WHITE at 100% (an absent `prob` key = always fires) ramping to a
-   *  deeper PURPLE as the firing probability drops. Mirrors the launchpad's
-   *  `probNoteRgb`. Returned as an inline background so it wins over the beat
-   *  guide; the playhead keeps its accent border via the `.playhead` class. */
+  /** The note cell's FILL colour, driven by EFFECTIVE PROBABILITY + its SOURCE
+   *  (owner-spec'd, replacing the old velocity-blue): '' for an empty cell (the
+   *  CSS handles dark/beat), else WHITE at effective 100%, a deeper PURPLE as a
+   *  PER-NOTE override's probability drops, or a deeper ORANGE as the CLIP DEFAULT
+   *  drops (for a note with no override). Delegated to the pure `noteProbCellFill`
+   *  so it stays unit-tested + mirrors the launchpad's `noteProbRgb` buckets. */
   function cellProbFill(clip: NoteClipRecord, step: number, midi: number): string {
-    const ev = noteCovering(clip, step, midi);
-    if (!ev) return '';
-    const p = probEff(ev);
-    if (p >= 1) return 'hsl(0 0% 96%)'; // 100% → white
-    const l = 30 + Math.round(p * 42); // 30%..72% lightness — brighter = more likely
-    return `hsl(280 72% ${l}%)`;
+    return noteProbCellFill(clip, step, midi);
   }
   function writeClipData(next: NoteClipRecord) {
     // Note/velocity/double edits are persistent + undoable (control-strip ↶/↷).
@@ -1066,6 +1065,39 @@
     const clip = clipAt(selectedClip);
     if (clip) writeClipData(applyProbMenuPick(clip, probMenu.step, probMenu.midi, level));
     probMenu = null;
+  }
+
+  // ── CLIP-DEFAULT PROBABILITY menu (right-click a GRID clip pad — the card
+  // mirror of the Launchpad SHIFT+clip PROB page). A "Clip probability" submenu:
+  // 100% (default) … 2.5%, the clip's current default level checked. Each item
+  // writes setClipDefaultProb via the undoable clip write, applied to the RIGHT-
+  // CLICKED pad's clip (not the selected editor clip). Only opens on a pad that
+  // HOLDS a clip (a clip default needs a clip; an empty pad is a no-op). ──
+  let clipProbMenu = $state<{ x: number; y: number; idx: number } | null>(null);
+  /** The right-clicked clip's current default level (1..40), or PROB_LEVELS (100%)
+   *  when it has no default — so 100% shows as the default-checked item. */
+  function clipProbMenuCurrentLevel(): number {
+    void cardVersion;
+    if (!clipProbMenu) return PROB_LEVELS;
+    return clipProbMenuCheckedLevel(clipAt(clipProbMenu.idx));
+  }
+  function openClipProbMenu(e: MouseEvent, idx: number) {
+    e.preventDefault();
+    if (!clipAt(idx)) return; // empty pad → no clip to carry a default
+    clipProbMenu = { x: e.clientX, y: e.clientY, idx };
+  }
+  function pickClipProbLevel(level: number) {
+    if (!clipProbMenu) return;
+    const idx = clipProbMenu.idx;
+    const clip = clipAt(idx);
+    if (clip) {
+      const next = applyClipProbMenuPick(clip, level);
+      writeDataUndoable((d) => {
+        if (!d.clips) d.clips = {};
+        d.clips[String(idx)] = { ...next, steps: next.steps.map((s) => ({ ...s })) };
+      });
+    }
+    clipProbMenu = null;
   }
   // --- per-lane MONO toggle (left of each launch-grid row) ---
   function laneIsMono(lane: number): boolean {
@@ -1620,6 +1652,7 @@
                   role="gridcell"
                   style={`--lane-color:${laneColorEff(lane)}`}
                   aria-label={`lane ${lane + 1} slot ${slot + 1} ${st}${hasAuto ? ' (has automation)' : ''}`}
+                  title="Click: launch/stop · Double-click: edit · Right-click: clip probability (default firing chance for all notes)"
                   data-clip={idx}
                   data-lane={lane}
                   data-slot={slot}
@@ -1628,6 +1661,7 @@
                   data-testid={`clipplayer-pad-${idx}`}
                   onclick={(e) => onPadClick(idx, e)}
                   ondblclick={() => onPadDblClick(idx)}
+                  oncontextmenu={(e) => openClipProbMenu(e, idx)}
                 >{#if hasAuto}<span class="auto-dot" aria-hidden="true"></span>{/if}</button>
               {/each}
               <!-- SCENE-LAUNCH (Part A group 2, NEW): fire this slot across ALL
@@ -1706,6 +1740,41 @@
               >◉</button>
             {/each}
           </div>
+          {#if clipProbMenu}
+            {@const clipCurrent = clipProbMenuCurrentLevel()}
+            <!-- CLIP-DEFAULT PROBABILITY menu (right-click a GRID clip pad — the
+                 card mirror of the Launchpad SHIFT+clip PROB page): the "Clip
+                 probability" submenu, 100% (default) … 2.5%, the clip's default
+                 level checked. Each item writes setClipDefaultProb (undoable). -->
+            <button
+              type="button"
+              class="prob-menu-backdrop"
+              aria-label="close clip probability menu"
+              onclick={() => (clipProbMenu = null)}
+              oncontextmenu={(e) => { e.preventDefault(); clipProbMenu = null; }}
+            ></button>
+            <div
+              class="prob-menu"
+              role="menu"
+              aria-label="Clip probability"
+              style={`left:${clipProbMenu.x}px; top:${clipProbMenu.y}px`}
+              data-testid={`clipplayer-clip-prob-menu-${id}`}
+            >
+              <div class="prob-menu-head">Clip probability ▸</div>
+              <div class="prob-menu-list">
+                {#each probMenuLevels() as level (level)}
+                  <button
+                    class="prob-menu-item clip"
+                    class:checked={clipCurrent === level}
+                    role="menuitemcheckbox"
+                    aria-checked={clipCurrent === level}
+                    data-testid={`clipplayer-clip-prob-item-${level}`}
+                    onclick={() => pickClipProbLevel(level)}
+                  >{probPctLabel(probLevelToValue(level))}</button>
+                {/each}
+              </div>
+            </div>
+          {/if}
         </div>
 
         <!-- params -->
@@ -2417,6 +2486,11 @@
   .prob-menu-item:hover { background: hsl(280 45% 32%); }
   .prob-menu-item.checked { background: hsl(280 55% 40%); color: #fff; }
   .prob-menu-item.checked::after { content: '✓'; }
+  /* The CLIP-DEFAULT menu tints ORANGE (matching the clip-default note colour +
+     the Launchpad clip-PROB page's orange bar), distinct from the purple per-note
+     menu. */
+  .prob-menu-item.clip:hover { background: hsl(30 60% 32%); }
+  .prob-menu-item.clip.checked { background: hsl(30 75% 42%); color: #fff; }
   /* One stacked header cell per channel COLUMN: the COLOR swatch (top) over the
      MONO/POLY toggle (bottom). 28px wide to align with the pads below; the
      --lane-color set here is inherited by both children. */

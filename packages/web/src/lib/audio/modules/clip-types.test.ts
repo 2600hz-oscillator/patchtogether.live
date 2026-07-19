@@ -28,6 +28,11 @@ import {
   notesFiringAt,
   lanesFromFiring,
   setNoteProb,
+  setClipDefaultProb,
+  clipDefaultProbEff,
+  noteEffProb,
+  probSource,
+  probColorBucket,
   probEff,
   probLevelToValue,
   valueToProbLevel,
@@ -1271,6 +1276,126 @@ describe('save-compat: a legacy clip with no `prob` reads back at 1', () => {
     // a clamped prob survives the coerce
     expect(coerceNoteEvent({ step: 0, midi: 60, prob: 0.3 })?.prob).toBe(0.3);
     expect(coerceNoteEvent({ step: 0, midi: 60, prob: 5 })?.prob).toBe(1);
+  });
+});
+
+// ===========================================================================
+// CLIP-DEFAULT PROBABILITY — the model (setClipDefaultProb / noteEffProb /
+// probSource / probColorBucket / clipDefaultProbEff). The permutation TABLE
+// (clip-prob-permutations.test.ts) covers the cross-product; this pins the
+// individual helpers' edge cases.
+// ===========================================================================
+describe('clipDefaultProbEff (the clip default reader)', () => {
+  it('absent/invalid default reads as 1 (every un-overridden note fires)', () => {
+    expect(clipDefaultProbEff(undefined)).toBe(1);
+    expect(clipDefaultProbEff({})).toBe(1);
+    expect(clipDefaultProbEff({ defaultProb: undefined })).toBe(1);
+    expect(clipDefaultProbEff({ defaultProb: Number.NaN })).toBe(1);
+  });
+  it('a present default is clamped to 0..1', () => {
+    expect(clipDefaultProbEff({ defaultProb: 0 })).toBe(0);
+    expect(clipDefaultProbEff({ defaultProb: 0.5 })).toBe(0.5);
+    expect(clipDefaultProbEff({ defaultProb: 2 })).toBe(1);
+    expect(clipDefaultProbEff({ defaultProb: -3 })).toBe(0);
+  });
+});
+
+describe('noteEffProb (precedence: note prob ?? clip default ?? 1)', () => {
+  const clip = (defaultProb?: number): Pick<NoteClipRecord, 'defaultProb'> =>
+    defaultProb === undefined ? {} : { defaultProb };
+  it('a per-note prob WINS over the clip default (including 0)', () => {
+    expect(noteEffProb(clip(0.9), { prob: 0.2 })).toBe(0.2);
+    expect(noteEffProb(clip(0.9), { prob: 0 })).toBe(0); // 0 override wins, not skipped
+  });
+  it('no per-note prob → the clip default', () => {
+    expect(noteEffProb(clip(0.4), {})).toBe(0.4);
+    expect(noteEffProb(clip(0), {})).toBe(0);
+  });
+  it('neither → 1 (always fires)', () => {
+    expect(noteEffProb(clip(undefined), {})).toBe(1);
+    expect(noteEffProb(undefined, undefined)).toBe(1);
+  });
+});
+
+describe('probSource (which layer supplies the effective prob)', () => {
+  it("'note' when the event has its own prob key (even 0)", () => {
+    expect(probSource({ defaultProb: 0.5 }, { prob: 0.3 })).toBe('note');
+    expect(probSource({ defaultProb: 0.5 }, { prob: 0 })).toBe('note');
+    expect(probSource({}, { prob: 0.3 })).toBe('note');
+  });
+  it("'clip' when only the clip default is set", () => {
+    expect(probSource({ defaultProb: 0.5 }, {})).toBe('clip');
+    expect(probSource({ defaultProb: 0 }, {})).toBe('clip');
+  });
+  it("'none' when neither is set", () => {
+    expect(probSource({}, {})).toBe('none');
+    expect(probSource(undefined, undefined)).toBe('none');
+  });
+});
+
+describe('probColorBucket (white / purple / orange — shared by both surfaces)', () => {
+  it('effective ≥1 → white regardless of source', () => {
+    expect(probColorBucket({}, {})).toBe('white'); // none, eff 1
+    expect(probColorBucket({ defaultProb: 1 }, {})).toBe('white'); // clip 1
+    expect(probColorBucket({}, { prob: 1 })).toBe('white'); // note 1
+  });
+  it('per-note override < 1 → purple', () => {
+    expect(probColorBucket({}, { prob: 0.5 })).toBe('purple');
+    expect(probColorBucket({ defaultProb: 0.5 }, { prob: 0.2 })).toBe('purple');
+  });
+  it('clip default < 1 (no override) → orange', () => {
+    expect(probColorBucket({ defaultProb: 0.5 }, {})).toBe('orange');
+    expect(probColorBucket({ defaultProb: 0 }, {})).toBe('orange');
+  });
+});
+
+describe('setClipDefaultProb (the shared write seam — delete-at-≥1)', () => {
+  const clipWith = (defaultProb?: number): NoteClipRecord =>
+    defaultProb === undefined ? defaultNoteClip() : { ...defaultNoteClip(), defaultProb };
+  it('sets a sub-100% clip default', () => {
+    const c = clipWith();
+    const next = setClipDefaultProb(c, probLevelToValue(1)); // 2.5%
+    expect(next.defaultProb).toBeCloseTo(0.025, 10);
+    expect(c.defaultProb, 'immutable — original untouched').toBeUndefined();
+  });
+  it('DELETES the key at ≥100% (100% = the default, old clips byte-identical)', () => {
+    const c = clipWith(0.3);
+    const next = setClipDefaultProb(c, 1); // 100%
+    expect('defaultProb' in (next as object)).toBe(false);
+  });
+  it('setting 100% on a clip with NO default returns the SAME reference (skip the write)', () => {
+    const c = clipWith(); // no defaultProb
+    expect(setClipDefaultProb(c, 1)).toBe(c); // identity → caller skips the write
+    expect(setClipDefaultProb(c, 1.5)).toBe(c); // clamped ≥1 → same
+  });
+  it('clamps out-of-range values into 0..1', () => {
+    expect(setClipDefaultProb(clipWith(), 0).defaultProb).toBe(0);
+    expect(setClipDefaultProb(clipWith(), -2).defaultProb).toBe(0);
+    // NaN → treated as 1 → deletes the key
+    expect('defaultProb' in (setClipDefaultProb(clipWith(0.5), Number.NaN) as object)).toBe(false);
+  });
+  it('NEVER touches the note steps (a clip-level attribute only)', () => {
+    const c: NoteClipRecord = { ...defaultNoteClip(), steps: [{ step: 0, midi: 60, prob: 0.4 }] };
+    const next = setClipDefaultProb(c, 0.5);
+    expect(next.steps).toBe(c.steps); // steps array reference unchanged (no clone)
+    expect(next.steps[0]!.prob).toBe(0.4); // per-note override intact
+  });
+});
+
+describe('save-compat: a legacy clip with no `defaultProb` (byte-identical)', () => {
+  it('coerceClipRecord adds no defaultProb key; noteEffProb = note-or-1', () => {
+    const legacy = { kind: 'note', lengthSteps: 4, root: 48, loop: true,
+      steps: [{ step: 0, midi: 60, velocity: 100, lengthSteps: 1 }] };
+    const coerced = coerceClipRecord(legacy) as NoteClipRecord;
+    expect('defaultProb' in (coerced as object)).toBe(false); // no phantom key
+    expect(noteEffProb(coerced, coerced.steps[0])).toBe(1); // reads as always-fires
+    // a stored defaultProb survives the coerce (clamped)
+    const withDef = coerceClipRecord({ ...legacy, defaultProb: 0.5 }) as NoteClipRecord;
+    expect(withDef.defaultProb).toBe(0.5);
+    const clamped = coerceClipRecord({ ...legacy, defaultProb: 9 }) as NoteClipRecord;
+    expect(clamped.defaultProb).toBe(1);
+    const badType = coerceClipRecord({ ...legacy, defaultProb: 'x' }) as NoteClipRecord;
+    expect('defaultProb' in (badType as object)).toBe(false); // non-numeric dropped
   });
 });
 
