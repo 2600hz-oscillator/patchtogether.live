@@ -166,6 +166,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   doom: { size: '2u', hp: 2 }, // 377×360px
   edges: { size: '1u', hp: 2 }, // 180×360px — 2 faders one row beside handles
   feedback: { size: '3u', hp: 2 }, // 411×320px
+  frametable: { size: '3u', hp: 2 }, // ~288×~490px — mode selector + 176×132 preview + CHAOS/LIVE + FREEZE/SAVE + MORPH/SPREAD + (SMOOTH: 2 X-Y pads + shape knobs / CHAOS: shimmer+shape / MORPH: none)
   freezeframe: { size: '3u', hp: 2 }, // ~470×260px — enlarged preview fills the body
   gibribbon: { size: '3u', hp: 5 }, // 398×836px
   inwards: { size: '2u', hp: 2 }, // 280×220px

@@ -112,6 +112,11 @@
   } from '$lib/midi/midi-learn.svelte';
   import { getMidiClockSource } from '$lib/midi/midi-clock-source';
   import { encodeTapeBytes, decodeTapeBytes } from '$lib/audio/modules/twotracks';
+  // P4: destructive-import confirm (persistence hardening).
+  import {
+    confirmDestructiveImport,
+    IMPORT_REPLACE_CONFIRM_MESSAGE,
+  } from '$lib/ui/canvas/import-confirm';
 
   function persistenceLoad(env: unknown, ydocArg: typeof ydoc, patchArg: typeof patch) {
     // Validate via parseEnvelope when a raw object is passed; if already typed,
@@ -2069,6 +2074,20 @@
       // PRECONDITION: reject a cross-mode patch before ensureEngine / the load
       // wipe — leaves the current graph exactly as it was.
       if (!guardCrossModeLoad(patchModeOfEnvelope(env), 'import JSON')) return;
+      // P4: DESTRUCTIVE-WIPE confirm. loadEnvelopeIntoStore clears-then-re-adds
+      // the whole graph; in a shared rack that clear tombstones every peer's
+      // copy + the relay snapshot + the journal — a durable, multi-user wipe.
+      // When the current rack is NON-EMPTY, confirm first. The parse above is
+      // non-destructive, so cancelling leaves the live graph untouched. An
+      // empty rack skips the prompt and proceeds.
+      if (
+        !confirmDestructiveImport(Object.keys(patch.nodes).length, () =>
+          window.confirm(IMPORT_REPLACE_CONFIRM_MESSAGE),
+        )
+      ) {
+        trace('import JSON cancelled (kept current rack)');
+        return;
+      }
       await ensureEngine();
       const result = loadEnvelopeIntoStore(env, ydoc, patch);
       await reconciler?.reconcile();
