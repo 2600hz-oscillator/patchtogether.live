@@ -1,7 +1,11 @@
 // packages/web/src/lib/video/modules/mirrorpool.ts
 //
 // MIRRORPOOL — a WebGL2 VIDEO source: a hemisphere pool of liquid inside a
-// box, viewed by a full-PTZ camera moving within it. Looking INTO the pool,
+// box, viewed by a repositionable ORBIT + FREE-LOOK camera (the card's two X-Y
+// pads: pad 1 = position az×el on a sphere around the pool, pad 2 = look
+// yaw×pitch). The camera can sit ABOVE / BELOW / beside the surface and look in
+// any direction; a below-surface eye triggers an underwater Snell's-window
+// render path. Looking INTO the pool,
 // the underwater view (the `pool` input, surface-mapped to the inside of the
 // hemisphere) is distorted by refraction + caustics; the SURFACE carries a
 // reflection of the surroundings (the `scene` input, reflected as an overhead
@@ -31,9 +35,9 @@
 // I/O:
 //   pool  (video)  — underwater view, mapped to the hemisphere interior.
 //   scene (video)  — surroundings, reflected on the surface.
-//   video_out (video) — the rendered scene from the PTZ camera.
-//   + a CV input per control (wind/rain/brightness/surface_mode + camera PTZ +
-//     bipolar Pos X/Y/Z that translate the eye ±2R in world space).
+//   video_out (video) — the rendered scene from the orbit/free-look camera.
+//   + a CV input per control (wind/rain/brightness/surface_mode + the camera
+//     orbit az/el/dist, free-look yaw/pitch, and zoom).
 //
 // NOTE (owner): this def lives in the WebGL attest basis by construction
 // (resolveWebglBasis sweeps lib/video/). Its real shader/def flips
@@ -198,17 +202,47 @@ void rings(vec2 pos, out float height, out vec2 grad) {
 
 vec3 background(vec3 rd) { return skyTint(rd) * uBrightness; }
 
+// Pool hemisphere INTERIOR sampled along dir from a point P — the murky
+// underwater volume + the refracted-pool look. Mirrors the above-water refract
+// sampling: march the unit bowl, sample uPool by (azimuth, depth), tint by
+// Beer-Lambert absorption. Used by the below-surface (underwater) camera path.
+vec3 poolInterior(vec3 P, vec3 dir) {
+  if (dir.y > -1e-3) return skyTint(dir) * 0.3;   // not heading down into the bowl
+  float b = dot(P, dir);
+  float cc = dot(P, P) - 1.0;
+  float disc = b * b - cc;
+  if (disc < 0.0) return skyTint(dir) * 0.3;      // ray misses the bowl
+  float th = -b + sqrt(disc);
+  if (th < 0.0) return skyTint(dir) * 0.3;
+  vec3 B = P + dir * th;                            // bowl-interior hit
+  vec2 uvPool = vec2(atan(B.z, B.x) / (2.0 * PI) + 0.5, B.y + 1.0);
+  float depth = clamp(-B.y, 0.0, 1.0);
+  vec3 base = (uHasPool > 0.5)
+    ? texture(uPool, uvPool).rgb
+    : skyTint(vec3(0.0, -1.0, 0.0)) * 0.4;
+  base *= exp(-vec3(0.45, 0.15, 0.08) * depth * 0.8);
+  return base;
+}
+
+// The colour a ray gets when it does NOT cross the surface toward the pool disk:
+// above water that is the sky; below the surface it is the surrounding water.
+vec3 escapeColor(vec3 ro, vec3 rd, bool below) {
+  return below ? poolInterior(ro, rd) * uBrightness : background(rd);
+}
+
 void main() {
   vec2 ndc = vUv * 2.0 - 1.0;
   vec3 rd = normalize(uForward + ndc.x * uAspect * uTanHalf * uRight + ndc.y * uTanHalf * uUp);
   vec3 ro = uEye;
+  // Eye below the water plane ⇒ the underwater viewpoint (Snell's window).
+  bool below = ro.y < 0.0;
 
   // horizon / degenerate-ray guard (review fix #10): abs(rd.y)~0 → NaN t.
-  if (abs(rd.y) < 1e-5) { outColor = vec4(background(rd), 1.0); return; }
+  if (abs(rd.y) < 1e-5) { outColor = vec4(escapeColor(ro, rd, below), 1.0); return; }
   float t = -ro.y / rd.y;
-  if (t <= 0.0) { outColor = vec4(background(rd), 1.0); return; }
+  if (t <= 0.0) { outColor = vec4(escapeColor(ro, rd, below), 1.0); return; }
   vec3 S = ro + rd * t;
-  if (length(S.xz) > R) { outColor = vec4(background(rd), 1.0); return; }
+  if (length(S.xz) > R) { outColor = vec4(escapeColor(ro, rd, below), 1.0); return; }
 
   // ── height + gradient at the surface point S (swell + sim OR rings) ──
   float hSwell; vec2 gSwell; swell(S.xz, hSwell, gSwell);
@@ -232,6 +266,29 @@ void main() {
 
   // reconstructed normal (single sign convention — review fix #1).
   vec3 N = normalize(vec3(-dhdx, 1.0, -dhdz));
+
+  // ── UNDERWATER path: eye below the plane, looking UP at the surface ──
+  // A physical-ish Snell's WINDOW: the up-going ray refracts water→air into a
+  // bright cone of the sky/scene overhead (within the ~48.6° critical angle);
+  // beyond it the surface totally-internally-reflects the pool interior back
+  // down. Artistic (not a full spectral TIR sim) but coherent — the deliberate
+  // design fork the owner flagged for below-surface rendering.
+  if (below) {
+    vec3 Tr = refract(rd, -N, 1.0 / ETA);        // water→air (n_water/n_air = 1.33)
+    vec3 uw;
+    if (dot(Tr, Tr) < 1e-4) {
+      uw = poolInterior(S, reflect(rd, -N));      // TIR → mirror the pool interior
+    } else {
+      float cth = clamp(dot(-N, -rd), 0.0, 1.0);
+      float Fw = F0 + (1.0 - F0) * pow(1.0 - cth, 5.0);
+      vec3 win = sceneReflect(S, Tr);             // refracted sky/scene (the window)
+      vec3 tir = poolInterior(S, reflect(rd, -N));// reflected pool at the rim
+      uw = mix(win, tir, Fw);
+    }
+    outColor = vec4(clamp(uw * uBrightness, 0.0, 4.0), 1.0);
+    return;
+  }
+
   vec3 V = -rd;
   float cth = clamp(dot(N, V), 0.0, 1.0);
   float F = F0 + (1.0 - F0) * pow(1.0 - cth, 5.0);   // Schlick
@@ -281,17 +338,15 @@ interface MirrorpoolParams {
   rain: number;
   brightness: number;
   surface_mode: number;
-  cam_x: number;
-  cam_y: number;
-  cam_z: number;
-  pan: number;
-  tilt: number;
-  zoom: number;
-  // Bipolar position: translates the camera EYE in world space (±1 → ±2R),
-  // ON TOP of the PTZ framing. Default 0 = current framing (unchanged).
-  pos_x: number;
-  pos_y: number;
-  pos_z: number;
+  // ── ORBIT + FREE-LOOK camera (the two X-Y pads on the card) ──
+  // Position: the eye rides a sphere around the pool centre.
+  orbit_az: number;    // azimuth (rad) — orbit left/right         [pad 1 X]
+  orbit_el: number;    // elevation (rad) — above(+)/below(−) water [pad 1 Y]
+  orbit_dist: number;  // distance from the pool centre (world units)
+  // Look: a yaw/pitch offset from the aim-at-centre direction.
+  look_yaw: number;    // free-look yaw (rad)                       [pad 2 X]
+  look_pitch: number;  // free-look pitch (rad)                     [pad 2 Y]
+  zoom: number;        // 0..1 → FOV 70°..20°
 }
 
 const DEFAULTS: MirrorpoolParams = {
@@ -300,15 +355,13 @@ const DEFAULTS: MirrorpoolParams = {
   rain: 0.2,
   brightness: 1,
   surface_mode: 0,
-  cam_x: 0,
-  cam_y: 1.3,
-  cam_z: 1.6,
-  pan: 0,
-  tilt: -0.6,
+  // Above-and-in-front of the pool, aimed straight at the centre (pool framed).
+  orbit_az: 0,
+  orbit_el: 0.55,
+  orbit_dist: 2.6,
+  look_yaw: 0,
+  look_pitch: 0,
   zoom: 0.5,
-  pos_x: 0,
-  pos_y: 0,
-  pos_z: 0,
 };
 
 export const MIRRORPOOL_DEFAULTS: Readonly<MirrorpoolParams> = DEFAULTS;
@@ -365,16 +418,13 @@ export const mirrorpoolDef: VideoModuleDef = {
     { id: 'rain_cv', type: 'cv', paramTarget: 'rain', cvScale: { mode: 'linear' } },
     { id: 'brightness_cv', type: 'cv', paramTarget: 'brightness', cvScale: { mode: 'linear' } },
     { id: 'surface_mode_cv', type: 'cv', paramTarget: 'surface_mode', cvScale: { mode: 'linear' } },
-    { id: 'cam_x_cv', type: 'cv', paramTarget: 'cam_x', cvScale: { mode: 'linear' } },
-    { id: 'cam_y_cv', type: 'cv', paramTarget: 'cam_y', cvScale: { mode: 'linear' } },
-    { id: 'cam_z_cv', type: 'cv', paramTarget: 'cam_z', cvScale: { mode: 'linear' } },
-    { id: 'pan_cv', type: 'cv', paramTarget: 'pan', cvScale: { mode: 'linear' } },
-    { id: 'tilt_cv', type: 'cv', paramTarget: 'tilt', cvScale: { mode: 'linear' } },
+    // ORBIT + FREE-LOOK camera CV (one per pad axis + distance + zoom).
+    { id: 'orbit_az_cv', type: 'cv', paramTarget: 'orbit_az', cvScale: { mode: 'linear' } },
+    { id: 'orbit_el_cv', type: 'cv', paramTarget: 'orbit_el', cvScale: { mode: 'linear' } },
+    { id: 'orbit_dist_cv', type: 'cv', paramTarget: 'orbit_dist', cvScale: { mode: 'linear' } },
+    { id: 'look_yaw_cv', type: 'cv', paramTarget: 'look_yaw', cvScale: { mode: 'linear' } },
+    { id: 'look_pitch_cv', type: 'cv', paramTarget: 'look_pitch', cvScale: { mode: 'linear' } },
     { id: 'zoom_cv', type: 'cv', paramTarget: 'zoom', cvScale: { mode: 'linear' } },
-    // Bipolar camera POSITION CV: translate the eye ±2R per axis (on top of PTZ).
-    { id: 'pos_x_cv', type: 'cv', paramTarget: 'pos_x', cvScale: { mode: 'linear' } },
-    { id: 'pos_y_cv', type: 'cv', paramTarget: 'pos_y', cvScale: { mode: 'linear' } },
-    { id: 'pos_z_cv', type: 'cv', paramTarget: 'pos_z', cvScale: { mode: 'linear' } },
   ],
   outputs: [{ id: 'video_out', type: 'video' }],
   params: [
@@ -383,22 +433,20 @@ export const mirrorpoolDef: VideoModuleDef = {
     { id: 'rain', label: 'Rain', defaultValue: DEFAULTS.rain, min: 0, max: 1, curve: 'linear' },
     { id: 'brightness', label: 'Bright', defaultValue: DEFAULTS.brightness, min: 0, max: 2, curve: 'linear' },
     { id: 'surface_mode', label: 'Mode', defaultValue: DEFAULTS.surface_mode, min: 0, max: 1, curve: 'linear' },
-    { id: 'cam_x', label: 'Cam X', defaultValue: DEFAULTS.cam_x, min: -1.6, max: 1.6, curve: 'linear' },
-    { id: 'cam_y', label: 'Cam Y', defaultValue: DEFAULTS.cam_y, min: 0.15, max: 2.2, curve: 'linear' },
-    { id: 'cam_z', label: 'Cam Z', defaultValue: DEFAULTS.cam_z, min: -1.6, max: 1.6, curve: 'linear' },
-    { id: 'pan', label: 'Pan', defaultValue: DEFAULTS.pan, min: -Math.PI, max: Math.PI, curve: 'linear' },
-    { id: 'tilt', label: 'Tilt', defaultValue: DEFAULTS.tilt, min: -Math.PI, max: Math.PI, curve: 'linear' },
+    // ORBIT camera POSITION (pad 1): azimuth × elevation, plus a distance dial.
+    // Elevation is bipolar — negative drops the eye BELOW the surface (underwater).
+    { id: 'orbit_az', label: 'Orbit', defaultValue: DEFAULTS.orbit_az, min: -Math.PI, max: Math.PI, curve: 'linear' },
+    { id: 'orbit_el', label: 'Elev', defaultValue: DEFAULTS.orbit_el, min: -1.45, max: 1.45, curve: 'linear' },
+    { id: 'orbit_dist', label: 'Dist', defaultValue: DEFAULTS.orbit_dist, min: 0.4, max: 5, curve: 'linear' },
+    // Free-LOOK offset (pad 2): yaw × pitch from the aim-at-centre direction.
+    { id: 'look_yaw', label: 'Look X', defaultValue: DEFAULTS.look_yaw, min: -Math.PI, max: Math.PI, curve: 'linear' },
+    { id: 'look_pitch', label: 'Look Y', defaultValue: DEFAULTS.look_pitch, min: -1.45, max: 1.45, curve: 'linear' },
     { id: 'zoom', label: 'Zoom', defaultValue: DEFAULTS.zoom, min: 0, max: 1, curve: 'linear' },
-    // Bipolar position: ±1 → ±2R world translation of the eye. Default 0 = the
-    // current PTZ framing (existing patches unchanged). Pos Y+ lifts ABOVE water.
-    { id: 'pos_x', label: 'Pos X', defaultValue: DEFAULTS.pos_x, min: -1, max: 1, curve: 'linear' },
-    { id: 'pos_y', label: 'Pos Y', defaultValue: DEFAULTS.pos_y, min: -1, max: 1, curve: 'linear' },
-    { id: 'pos_z', label: 'Pos Z', defaultValue: DEFAULTS.pos_z, min: -1, max: 1, curve: 'linear' },
   ],
 
   // docs-hash-ignore:start
   docs: {
-    explanation: "mirrorpool renders a hemisphere pool of liquid sitting in a box, viewed by a full-PTZ camera you fly around inside it. Two video inputs feed the optics: POOL is surface-mapped to the INSIDE of the hemisphere (the underwater view you see refracted through the water) and SCENE is the surroundings, reflected off the surface as an overhead backdrop. A single real height field drives everything: WIND raises a set of directional swell waves (bigger waves are genuinely taller and travel faster — dispersion, not a flat normal-map trick) and RAIN spawns raindrop impacts that punch one-shot dimples which expand into propagating rings, denser and deeper from drizzle up to a downpour. The surface normal reconstructed from that height field drives a physically-based Fresnel split: in the default REFRACT mode you see the reflected scene layered over the refracted, caustic-lit, colour-absorbed pool beneath; sweep MODE toward MIRROR and the surface becomes a near-full mirror of the sky/scene that the ripples shatter and distort. BRIGHT is a virtual sun that scales overall scene light (no sun disc is drawn yet). The camera is full PTZ — Cam X/Y/Z position plus Pan/Tilt/Zoom — clamped inside the box and gimbal-safe. Every control has a matching CV input, so patch an LFO into pan_cv for a slow orbit, a noise source into rain_cv to gust the storm, or an envelope into surface_mode_cv to melt between a clear refractive pool and a hard mirror. With nothing patched it still renders a live procedural sky + water, so it works as a standalone generative source.",
+    explanation: "mirrorpool renders a hemisphere pool of liquid sitting in a box, viewed by a repositionable ORBIT camera you fly around the pool. Two video inputs feed the optics: POOL is surface-mapped to the INSIDE of the hemisphere (the underwater view you see refracted through the water) and SCENE is the surroundings, reflected off the surface as an overhead backdrop. A single real height field drives everything: WIND raises a set of directional swell waves (bigger waves are genuinely taller and travel faster — dispersion, not a flat normal-map trick) and RAIN spawns raindrop impacts that punch one-shot dimples which expand into propagating rings, denser and deeper from drizzle up to a downpour. The surface normal reconstructed from that height field drives a physically-based Fresnel split: in the default REFRACT mode you see the reflected scene layered over the refracted, caustic-lit, colour-absorbed pool beneath; sweep MODE toward MIRROR and the surface becomes a near-full mirror of the sky/scene that the ripples shatter and distort. BRIGHT is a virtual sun that scales overall scene light (no sun disc is drawn yet). The camera is the card's TWO X-Y pads: pad 1 POSITIONS the eye on a sphere around the pool (Orbit = azimuth around it, Elev = elevation from straight overhead down BELOW the surface for an underwater Snell's-window view) with a Dist dial for how far out it sits; pad 2 is the free-LOOK (Look X = yaw, Look Y = pitch) that swings the view off the default aim-at-centre so you can look any direction, and Zoom sets the field of view. Every control has a matching CV input, so patch an LFO into orbit_az_cv for a slow orbit, a noise source into rain_cv to gust the storm, or an envelope into surface_mode_cv to melt between a clear refractive pool and a hard mirror. With nothing patched it still renders a live procedural sky + water, so it works as a standalone generative source.",
     inputs: {
       pool: "The underwater view, surface-mapped to the inside of the hemisphere bowl. Sampled along the refracted ray (with Beer-Lambert depth absorption + chromatic dispersion), so it appears distorted beneath the rippling surface. Unpatched, the pool floor falls back to a murky tinted shade.",
       scene: "The surroundings, reflected on the water surface as an overhead backdrop. Sampled along the reflected ray so a camera pan slides a recognisable image and the ripples break it. Unpatched, the reflection falls back to the ambient virtual-sun sky.",
@@ -407,18 +455,15 @@ export const mirrorpoolDef: VideoModuleDef = {
       rain_cv: "Modulates Rain: linear CV sweeps the storm intensity over 0..1 — 0 is still, rising through drizzle and rainy to a dense downpour of expanding-ring impacts.",
       brightness_cv: "Modulates Bright (the virtual sun): linear CV sweeps overall scene brightness over 0..2. Higher CV brightens the reflection, caustics and glitter together (no sun disc is drawn).",
       surface_mode_cv: "Modulates Mode: linear CV blends continuously from Refract (0) to Mirror (1) by raising the surface reflectivity, so an envelope can melt a clear pool into a hard mirror.",
-      cam_x_cv: "Modulates Cam X: linear CV slides the camera left/right within the box over -1.6..1.6.",
-      cam_y_cv: "Modulates Cam Y: linear CV raises/lowers the camera height over 0.15..2.2 (kept above the pool rim).",
-      cam_z_cv: "Modulates Cam Z: linear CV dollies the camera forward/back within the box over -1.6..1.6.",
-      pan_cv: "Modulates Pan: linear CV sweeps the camera yaw over -pi..pi. Patch a slow LFO here for an orbit.",
-      tilt_cv: "Modulates Tilt: linear CV sweeps the camera pitch over -pi..pi (clamped to +/-85 degrees to dodge the straight-down gimbal).",
+      orbit_az_cv: "Modulates Orbit (pad 1 X): linear CV sweeps the camera azimuth over -pi..pi, orbiting the eye around the pool. Patch a slow LFO here for a continuous orbit.",
+      orbit_el_cv: "Modulates Elev (pad 1 Y): linear CV sweeps the camera elevation over -1.45..1.45 rad; positive lifts the eye toward straight overhead, negative drops it BELOW the surface into the underwater view.",
+      orbit_dist_cv: "Modulates Dist: linear CV sweeps the camera distance from the pool centre over 0.4..5 world units — a dolly in/out.",
+      look_yaw_cv: "Modulates Look X (pad 2 X): linear CV sweeps the free-look yaw over -pi..pi, swinging the view left/right off the default aim-at-centre.",
+      look_pitch_cv: "Modulates Look Y (pad 2 Y): linear CV sweeps the free-look pitch over -1.45..1.45 rad, tilting the view up/down off the aim-at-centre.",
       zoom_cv: "Modulates Zoom: linear CV narrows the field of view from 70 degrees (0) to 20 degrees (1), zooming the camera in.",
-      pos_x_cv: "Modulates Pos X: bipolar linear CV translates the camera eye left/right in world space; full-scale +/-1 moves it +/-2R (2 pool-radii = 10 ft) on top of the PTZ framing.",
-      pos_y_cv: "Modulates Pos Y: bipolar linear CV lifts/lowers the camera eye in world space; full-scale +/-1 moves it +/-2R. Positive raises the eye ABOVE the water plane so it looks down onto the pool.",
-      pos_z_cv: "Modulates Pos Z: bipolar linear CV dollies the camera eye forward/back in world space; full-scale +/-1 moves it +/-2R on top of the PTZ framing.",
     },
     outputs: {
-      video_out: "The rendered pool scene from the PTZ camera (rendered at half engine resolution and LINEAR-upscaled). Always live: even with no inputs patched it shows a procedural sky + rippling water, so it doubles as a standalone generative source.",
+      video_out: "The rendered pool scene from the orbit/free-look camera (rendered at half engine resolution and LINEAR-upscaled). Always live: even with no inputs patched it shows a procedural sky + rippling water, so it doubles as a standalone generative source.",
     },
     controls: {
       wind_speed: "Wind (0..1, default 0.3): the directional swell strength. 0 is a glassy pool; raising it builds a set of 4 dispersive waves whose amplitude grows with wavelength, so bigger, faster crests that tilt the surface normals and break the reflection.",
@@ -426,15 +471,12 @@ export const mirrorpoolDef: VideoModuleDef = {
       rain: "Rain (0..1, default 0.2): storm intensity from still to downpour. Drives a seeded Poisson scheduler that spawns raindrop impacts — sparse shallow dimples at drizzle, dense deep craters at downpour — each expanding into a propagating ring.",
       brightness: "Bright (0..2, default 1): the virtual-sun scene brightness. Scales the whole render (reflection, caustics, glitter and sky) uniformly. No sun disc is drawn yet.",
       surface_mode: "Mode (0..1, default 0): the continuous Refract -> Mirror blend. 0 = Fresnel refract/reflect (scene over the refracted pool); 1 = a near-full mirror of the sky/scene broken by the ripple normals.",
-      cam_x: "Cam X (-1.6..1.6, default 0): camera left/right position in the box.",
-      cam_y: "Cam Y (0.15..2.2, default 1.3): camera height, kept above the pool rim.",
-      cam_z: "Cam Z (-1.6..1.6, default 1.6): camera forward/back position in the box.",
-      pan: "Pan (-pi..pi, default 0): camera yaw. pan=0, tilt=0 looks straight along -z.",
-      tilt: "Tilt (-pi..pi, default -0.6): camera pitch, clamped to +/-85 degrees so it never hits the straight-down gimbal degeneracy. Default looks down into the pool.",
+      orbit_az: "Orbit (-pi..pi, default 0): camera AZIMUTH around the pool — the X axis of position pad 1. 0 places the eye in front (on +z) aiming toward -z; sweeping it orbits the eye all the way around the pool.",
+      orbit_el: "Elev (-1.45..1.45 rad, default 0.55): camera ELEVATION — the Y axis of position pad 1. Positive raises the eye toward a straight-overhead bird's-eye; 0 is level with the rim; NEGATIVE drops the eye BELOW the water surface for an underwater looking-up (Snell's-window) view. Clamped to about +/-83 degrees to dodge the vertical gimbal.",
+      orbit_dist: "Dist (0.4..5, default 2.6): how far the eye sits from the pool centre (world units, the pool radius being 1). Small values dive in close (or inside the water); large values pull back for a wide framing.",
+      look_yaw: "Look X (-pi..pi, default 0): free-LOOK yaw — the X axis of look pad 2. 0 aims straight at the pool centre so the pool is always framed at rest; sweeping it swings the view left/right so the camera can look away from the pool.",
+      look_pitch: "Look Y (-1.45..1.45 rad, default 0): free-LOOK pitch — the Y axis of look pad 2. 0 aims at the centre; positive tilts the view up, negative down, off the aim-at-centre. Clamped to about +/-83 degrees.",
       zoom: "Zoom (0..1, default 0.5): maps to a 70..20 degree vertical field of view; higher zooms the camera in.",
-      pos_x: "Pos X (-1..1, default 0): bipolar position that TRANSLATES the camera eye left/right in world space, on top of the PTZ framing. Full-scale +/-1 shifts the eye +/-2R (2 pool-radii = 10 ft, the pool being 5 ft in radius); the mapped shift is capped at +/-2R. 0 leaves the current framing unchanged.",
-      pos_y: "Pos Y (-1..1, default 0): bipolar position that lifts/lowers the camera eye in world space. Positive raises the eye ABOVE the water plane (out of the pool) so the default downward tilt looks straight down onto the water; full-scale +/-1 moves the eye +/-2R (capped). 0 leaves the current framing unchanged.",
-      pos_z: "Pos Z (-1..1, default 0): bipolar position that dollies the camera eye forward/back in world space, on top of the PTZ framing. Full-scale +/-1 shifts the eye +/-2R (capped). 0 leaves the current framing unchanged.",
     },
   },
   // docs-hash-ignore:end
@@ -574,14 +616,15 @@ export const mirrorpoolDef: VideoModuleDef = {
         }
 
         // ── Render pass ──
-        // cameraBasis folds the bipolar position (pos_*) into the eye (±2R per
-        // axis), so uEye already carries the translation — the render shader
-        // consumes uEye directly (no separate eye math), keeping core+shader in
-        // lockstep by construction.
+        // cameraBasis places the eye on the ORBIT sphere (az × el × dist) and
+        // aims it at the pool centre with the free-look yaw/pitch offset, so
+        // uEye/uForward already carry the full repositionable-camera pose — the
+        // render shader consumes them directly (a below-surface eye is a pure
+        // input change; the underwater branch keys off uEye.y).
         const cam = cameraBasis({
-          camX: params.cam_x, camY: params.cam_y, camZ: params.cam_z,
-          pan: params.pan, tilt: params.tilt, zoom: params.zoom,
-          posX: params.pos_x, posY: params.pos_y, posZ: params.pos_z,
+          az: params.orbit_az, el: params.orbit_el, dist: params.orbit_dist,
+          lookYaw: params.look_yaw, lookPitch: params.look_pitch,
+          zoom: params.zoom,
         });
         const poolTex = frame.getInputTexture(node.id, 'pool');
         const sceneTex = frame.getInputTexture(node.id, 'scene');

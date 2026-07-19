@@ -57,10 +57,13 @@ function scene(id: string, mp: Record<string, number>): Scene {
   };
 }
 
+// Camera = the orbit + free-look rig (orbit_az/orbit_el/orbit_dist +
+// look_yaw/look_pitch). Each scene frames the pool from above-and-in-front
+// (positive elevation, aim-at-centre) at a slight orbit for a legible angle.
 const SCENES: Scene[] = [
-  scene('mirrorpool-refract', { surface_mode: 0, wind_speed: 0.3, rain: 0.15, brightness: 1, tilt: -0.7, zoom: 0.5 }),
-  scene('mirrorpool-mirror', { surface_mode: 1, wind_speed: 0.25, rain: 0.1, brightness: 1, tilt: -0.7, zoom: 0.5 }),
-  scene('mirrorpool-storm', { surface_mode: 0.3, wind_speed: 0.9, rain: 0.95, brightness: 1.2, tilt: -0.5, zoom: 0.4 }),
+  scene('mirrorpool-refract', { surface_mode: 0, wind_speed: 0.3, rain: 0.15, brightness: 1, orbit_az: -0.5, orbit_el: 0.5, orbit_dist: 2.6, zoom: 0.5 }),
+  scene('mirrorpool-mirror', { surface_mode: 1, wind_speed: 0.25, rain: 0.1, brightness: 1, orbit_az: -0.5, orbit_el: 0.5, orbit_dist: 2.6, zoom: 0.5 }),
+  scene('mirrorpool-storm', { surface_mode: 0.3, wind_speed: 0.9, rain: 0.95, brightness: 1.2, orbit_az: 0.4, orbit_el: 0.35, orbit_dist: 2.4, zoom: 0.4 }),
 ];
 
 test.describe('VRT: MIRRORPOOL composite scenes', () => {
