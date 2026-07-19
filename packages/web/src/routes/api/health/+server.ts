@@ -66,14 +66,17 @@ export const GET: RequestHandler = async () => {
     // monitors match on the body field (the live-smoke now alerts on
     // deps.database too — see scripts/live-smoke-alert.sh).
     ok: true,
-    // 'down' = a critical dependency (DB) is UNREACHABLE; 'degraded' = the relay
-    // is down OR the schema is pre-005 (app runs, on the dawless fallback);
-    // 'healthy' = all green.
-    status: !database.ok
-      ? 'down'
-      : !hocuspocus.ok || database.schema !== 'current'
-        ? 'degraded'
-        : 'healthy',
+    // 'down' = a CONFIGURED DB is UNREACHABLE (a real outage); 'degraded' = the
+    // relay is down OR the schema is pre-005 (app runs, on the dawless
+    // fallback); 'healthy' = all green. A tier with NO DATABASE_URL (prod
+    // before launch, a DB-less dev/e2e runner) is NOT 'down' — an absent DB
+    // never drove status before, and reporting 'down' for it would false-alarm.
+    status:
+      hasDb && !database.ok
+        ? 'down'
+        : !hocuspocus.ok || (database.ok && database.schema !== 'current')
+          ? 'degraded'
+          : 'healthy',
     version: buildEnv.VITE_APP_VERSION ?? 'unknown',
     auth: hasSecret && hasPublishable ? 'configured' : 'missing',
     // REAL read result (was presence-only 'configured'): 'ok' = reachable +
