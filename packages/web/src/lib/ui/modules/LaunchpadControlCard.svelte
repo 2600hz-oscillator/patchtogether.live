@@ -138,20 +138,6 @@
   </div>
 
   <div class="lp-body">
-    <p class="lp-blurb">
-      Drives Launchpad Mini Mk3. With a <b>pair</b>: the <b>left</b> unit is the always-live
-      <b>8×8 clip matrix</b>; the <b>right</b> unit is the <b>command deck</b> and flips to the
-      <b>note editor</b>. With a <b>single</b> unit, one device runs a 4-view surface over a
-      <b>permanent top row</b> (transport · GRID · CLIP · ARRANGER · CONTROL · undo · redo · <b>shift</b>):
-      <b>GRID</b> = the channel-per-column clip matrix (tap = launch/stop, double-tap = edit;
-      <b>shift</b> = copy · paste · clip-div · swing · length · now); <b>CLIP</b> = the note editor for
-      the selected clip (double · length · follow · <b>KEYS</b> · row/step nav; shift = velocity);
-      <b>KEYS</b> = a playable keyboard that records a loop, with scale-select + a built-in arp;
-      <b>CONTROL</b> = the performance deck (reset · mono · mute · rate · per-lane stop · tempo);
-      <b>ARRANGER</b> is a placeholder. Shift taps to latch or holds momentarily; undo/redo are
-      launchpad-scoped. Switch views on the top row or the buttons below.
-    </p>
-
     {#if !supported}
       <div class="lp-warn" data-testid="launchpad-control-nomidi">
         Web MIDI isn’t available in this browser — connect a Launchpad in Chrome/Edge.
@@ -211,14 +197,11 @@
 
       {#if status === 'one-unit'}
         <div class="lp-warn" data-testid="launchpad-control-oneunit">
-          <b>Only ONE Launchpad detected.</b> For the two-device split you need BOTH units (each shows
-          up as its own “… MIDI” port). Or use <b>Connect single Launchpad</b> to run everything on the
-          one device — flip it between clip + control views.
+          One Launchpad — use <b>Connect single</b>, or plug in both for the split.
         </div>
       {:else if status === 'no-device'}
         <div class="lp-warn" data-testid="launchpad-control-nodevice">
-          <b>No Launchpad detected.</b> Plug one in (it shows up as a “… MIDI” port), then hit
-          <b>Connect single Launchpad</b> again.
+          No Launchpad detected — plug one in, then <b>Connect single</b>.
         </div>
       {:else}
         <div class="lp-status" data-testid="launchpad-control-status">
@@ -264,8 +247,6 @@
   }
   .lp-titlebar { display: flex; align-items: center; justify-content: space-between; }
   .lp-body { display: flex; flex-direction: column; gap: 5px; }
-  .lp-blurb { margin: 0; line-height: 1.28; color: #9aa0b2; font-size: 11px; }
-  .lp-blurb b { color: #cfd3df; }
   .lp-warn {
     background: #2a1b1b; border: 1px solid #5a2a2a; border-radius: 4px;
     padding: 6px 8px; color: #e8b0b0; font-size: 11px;
