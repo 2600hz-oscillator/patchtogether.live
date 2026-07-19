@@ -5,7 +5,7 @@
   import { normalizeRackMode } from '$lib/graph/rack-mode';
   import { ydoc, bindRackspace, unbindRackspace } from '$lib/graph/store';
   import { attachLocalReplica } from '$lib/multiplayer/local-replica';
-  import { getOrCreateLocalScratchId } from '$lib/multiplayer/local-scratch';
+  import { getOrCreateLocalScratchId } from '$lib/storage/local-scratch';
 
   // `homeAuth` is derived SERVER-SIDE in +layout.server.ts (the scratch
   // canvas at `/rack` doesn't mount the client <ClerkProvider> — that would
