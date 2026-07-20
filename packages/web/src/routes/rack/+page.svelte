@@ -6,6 +6,7 @@
   import { ydoc, bindRackspace, unbindRackspace } from '$lib/graph/store';
   import { attachLocalReplica } from '$lib/multiplayer/local-replica';
   import { getOrCreateLocalScratchId } from '$lib/storage/local-scratch';
+  import { testHooksEnabled } from '$lib/dev/test-hooks';
 
   // `homeAuth` is derived SERVER-SIDE in +layout.server.ts (the scratch
   // canvas at `/rack` doesn't mount the client <ClerkProvider> — that would
@@ -40,35 +41,48 @@
   // NOT migrate the scratch patch — it simply persists locally.
   let scratchId = $derived(getOrCreateLocalScratchId(mode));
 
-  // Bind the singleton store to this device+mode scratch doc BEFORE Canvas's
-  // first render (mirrors the `/r/[id]` top-level bind), so Canvas mounts
-  // against the correctly-bound `ydoc`/`patch`. bindRackspace is idempotent for
-  // the same id; `ssr = false` on this route → this only ever runs client-side.
-  bindRackspace(scratchId);
+  // E2E REPLICA OPT-OUT (default OFF under the test harness). The general
+  // e2e / per-module-per-port suite tests MODULE CORRECTNESS on `/rack`; that
+  // is ORTHOGONAL to persistence, so those runs must stay ISOLATED from the
+  // IndexedDB replica — otherwise the replica's mount-time attach can race a
+  // cross-domain module's audio-graph build (the nibbles video→audio bridge)
+  // and its cross-navigation persistence pollutes specs that re-`goto('/rack')`
+  // expecting an ephemeral canvas. Under `testHooksEnabled()` (DEV or
+  // VITE_E2E_HOOKS=1 — i.e. the dev server + the prod-preview e2e bundle) the
+  // replica is OFF so `/rack` is ephemeral exactly as before Fix A. REAL users
+  // (prod: testHooksEnabled false) always get it. The dedicated
+  // `scratch-persist.spec.ts` opts back IN via `window.__ptScratchReplica` so
+  // the real cross-refresh persistence (incl. the workflow pinned-param
+  // regression) is still covered.
+  const replicaEnabled =
+    !testHooksEnabled() ||
+    (typeof window !== 'undefined' &&
+      (window as unknown as { __ptScratchReplica?: boolean }).__ptScratchReplica === true);
 
-  // SEED GATE for the workflow ensures. Canvas mounts IMMEDIATELY (engine ready
-  // for users + e2e — do NOT block the whole canvas on the seed); we only
-  // thread a `seeded` boolean down so Canvas's two workflow "ensure" effects
-  // defer until the IndexedDB local replica has seeded. Without that, on the
-  // provider-less scratch canvas the ensures fire on mount and write default
-  // pinned state into deterministic keys BEFORE the seed lands, racing the
-  // restored state at the same Yjs key (clientID tiebreak) — ~half of refreshes
-  // discard the user's saved pinned-module settings (and can resurrect a
-  // deleted default cable). `whenSeeded` resolves seeded|fresh|cleared-corrupt|
-  // disabled — release the gate on ANY of them (a fresh/disabled doc has
-  // nothing to clobber).
+  // SEED GATE for the workflow ensures (only meaningful when the replica is ON).
+  // Canvas mounts IMMEDIATELY (engine ready for users + e2e — do NOT block the
+  // whole canvas on the seed); we thread a `seeded` boolean down so Canvas's two
+  // workflow "ensure" effects defer until the IndexedDB replica has seeded.
+  // Without that, on the provider-less scratch canvas the ensures fire on mount
+  // and write default pinned state into deterministic keys BEFORE the seed lands,
+  // racing the restored state at the same Yjs key (clientID tiebreak) — ~half of
+  // refreshes discard the user's saved pinned-module settings (and can resurrect
+  // a deleted default cable). `whenSeeded` resolves seeded|fresh|cleared-corrupt|
+  // disabled — release the gate on ANY of them. When the replica is OFF we pass
+  // `scratchSeeded={undefined}` (NOT false) so the ensures run immediately.
   let seeded = $state(false);
 
-  // Re-bind on a scratchId change (a `?mode=` switch) — idempotent for the same
-  // id, so the top-level bind above makes the first run a no-op — then attach
-  // the replica and flip `seeded` when it resolves. Teardown detaches the
-  // replica but KEEPS the stored data (that survival across reload is the whole
-  // point). The `{#key scratchId}` wrapper below remounts Canvas whenever the
-  // id changes so its subscriptions reattach to the freshly-bound doc.
+  // Bind the singleton store to this device+mode scratch doc, then (when the
+  // replica is enabled) attach it and flip `seeded` when the seed resolves.
+  // Re-runs on a scratchId change (a `?mode=` switch): idempotent rebind + a
+  // fresh replica against the mode-correct doc. Teardown detaches the replica
+  // but KEEPS the stored data. The `{#key scratchId}` wrapper below remounts
+  // Canvas whenever the id changes so its subscriptions reattach.
   $effect(() => {
     const id = scratchId;
     seeded = false;
     bindRackspace(id);
+    if (!replicaEnabled) return; // ephemeral /rack (test harness, no opt-in)
     const replica = attachLocalReplica(id, ydoc);
     let cancelled = false;
     void replica.whenSeeded.then(() => {
@@ -88,5 +102,10 @@
 </script>
 
 {#key scratchId}
-  <Canvas {headerAuth} {mode} rackspaceId={scratchId} scratchSeeded={seeded} />
+  <Canvas
+    {headerAuth}
+    {mode}
+    rackspaceId={scratchId}
+    scratchSeeded={replicaEnabled ? seeded : undefined}
+  />
 {/key}

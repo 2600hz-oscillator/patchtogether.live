@@ -118,6 +118,17 @@ async function waitForPinned(page: Page, ids: readonly string[]): Promise<void> 
 }
 
 test.describe('scratch canvas persistence', () => {
+  // OPT IN to the scratch replica. `/rack` disables the IndexedDB replica under
+  // the e2e harness by default (so the general module-correctness suite stays
+  // ephemeral + isolated from persistence); this dedicated spec is the coverage
+  // for the real feature, so it flips `window.__ptScratchReplica` on for every
+  // navigation (addInitScript runs before each document, incl. reloads + gotos).
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      (window as unknown as { __ptScratchReplica?: boolean }).__ptScratchReplica = true;
+    });
+  });
+
   test('a node added on /rack survives a browser refresh', async ({ page }) => {
     await page.goto('/rack');
     await page.waitForLoadState('networkidle');
