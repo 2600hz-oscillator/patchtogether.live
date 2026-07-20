@@ -1281,6 +1281,15 @@ export function buildModuleManifest(
       if (file === 'clip-automation-controller.ts') return false;
       if (file === 'clip-automation-engine.ts') return false;
       if (file === 'clip-automation-render.ts') return false;
+      // CLIPPLAYER live-record helpers (redesign 2026-07-19) — pure capture math,
+      // the record state machine, the per-lane capture-phase registry, and the
+      // stale-note reconcile side-channel. Not ModuleDefs (the def lives in
+      // clipplayer.ts). (clip-record.ts is already caught by the -record.ts
+      // suffix rule above.)
+      if (file === 'clip-record-capture.ts') return false;
+      if (file === 'clip-record-machine.ts') return false;
+      if (file === 'clip-lane-phase.ts') return false;
+      if (file === 'clip-reconcile.ts') return false;
       // KRIA step/pattern data model + step-advance / scale / cue math — not a
       // ModuleDef (the def lives in kria.ts).
       if (file === 'kria-types.ts') return false;

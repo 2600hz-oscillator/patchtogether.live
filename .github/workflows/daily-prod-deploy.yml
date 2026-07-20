@@ -265,8 +265,12 @@ jobs:
     permissions:
       contents: write
     steps:
+      # fetch-depth: 0 (full history) — the SHA we tag is find-green's newest
+      # fully-green commit, which is typically an ANCESTOR of main HEAD, not HEAD
+      # itself. A depth-1 checkout only has HEAD, so `git tag <olderSHA>` failed
+      # with "cannot update ref … nonexistent object" (the 2026-07-20 prod run).
       - uses: actions/checkout@v4
-        with: { ref: main, fetch-depth: 1 }
+        with: { ref: main, fetch-depth: 0 }
       - name: Move prod-deployed tag → ${{ needs.find-green.outputs.short }}
         env:
           SHA: ${{ needs.find-green.outputs.sha }}

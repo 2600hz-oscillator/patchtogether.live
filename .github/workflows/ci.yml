@@ -488,12 +488,33 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # REQUIRED: large LFS-tracked static assets (game/WASM bundles, etc.)
-          # must be materialized at build time. Without lfs:true the build bakes
-          # the LFS *pointer* (text starting `version https://git-lfs...`) into
-          # the preview artifact; loading it as a <script> throws "Unexpected
-          # identifier 'https'". Every other job already checks out lfs:true.
-          lfs: true
+          # lfs:false ON PURPOSE. build-web bakes ONLY the ~8 blood/** game
+          # assets; the other ~470 LFS objects are VRT/ART TEST fixtures the
+          # bundle never touches. Fetching all 482 in one LFS batch is fragile:
+          # a transient LFS-server 502 on the giant batch reds EVERY build — the
+          # 2026-07-20 incident stalled prod + dev + Pages for 2 days that way.
+          # We materialize just what the bundle needs, with retry, in the next
+          # step, so a slow/flaky LFS backend can't take down the deploy path.
+          lfs: false
+
+      # REQUIRED: the blood/* game data + blood.wasm are baked into the build.
+      # Without materializing them the bundle would embed the LFS *pointer* text
+      # (`version https://git-lfs...`) and a <script> load throws "Unexpected
+      # identifier 'https'". Narrow include (8 objects, not 482) + retry with
+      # backoff = resilient to the transient LFS 502s that broke the full batch.
+      - name: Materialize LFS assets the web build bakes (blood/**), retry-resilient
+        run: |
+          git lfs install --local
+          for i in 1 2 3 4 5; do
+            if git lfs pull --include="packages/web/static/blood/**"; then
+              echo "LFS blood assets materialized (attempt $i)"
+              exit 0
+            fi
+            echo "::warning::git lfs pull attempt $i failed (transient LFS server error?); retrying in $((i * 10))s"
+            sleep $((i * 10))
+          done
+          echo "::error::git lfs pull failed after 5 attempts — LFS server likely degraded"
+          exit 1
 
       - name: Install Flox
         uses: flox/install-flox-action@v2
@@ -1561,6 +1582,56 @@ jobs:
         run: flox activate -- bash scripts/collab-attest-verify.sh
 
   # -----------------------------------------------------------------------
+  # grand-attest — the LOCAL-GPU GRAND-INTEGRATION attestation VERIFY gate (the
+  # third sibling of webgl-attest + collab-attest; see
+  # .myrobots/plans/grand-integration-e2e-art-2026-07-19.md + ci-grand-attest/
+  # README.md). Recomputes the deterministic grand content-hash
+  # (scripts/grand-attest-hash.sh) and checks ci-grand-attest/<hash>.json exists.
+  # The attestation was produced by the owner's local `task grand:attest` run on a
+  # TRUSTED GPU machine (real GPU synesthesia + real H.264 recorderbox + the real
+  # clip scheduler + real automation) and committed WITH the PR; it travels through
+  # squash-merge because the hash is content-keyed, NOT git-HEAD-keyed.
+  #
+  #   match  → the grand scenario substance (the four instrument DSP cores, the
+  #            pure clip step math, the shared fixture, the offline ART + driver,
+  #            the toolchain pins) is unchanged-or-attested → CI trusts the local
+  #            heavy run. PASS.
+  #   miss   → the scenario substance changed without re-attesting on a real GPU →
+  #            FAIL with `run: flox activate -- task grand:attest`.
+  #
+  # WHY: the full scenario drives a real GPU (synesthesia is WebGL; SwiftShader
+  # can't fairly render it) AND a real H.264 encoder (recorderbox; CI has neither),
+  # so the heavy scenario NEVER runs on CI. The DETERMINISTIC audio pin is the
+  # OFFLINE combined-master ART, which DOES run on the normal `art` lane.
+  #
+  # INFORMATIONAL for now (mirrors how webgl-attest + collab-attest started): this
+  # job is in the umbrella's `needs:` + `env:` (so the umbrella WAITS + logs it)
+  # but NOT in the failing `if [[ ]]` test — $GRAND_ATTEST is deliberately absent
+  # from the failing condition. The owner arms it required later (add $GRAND_ATTEST
+  # to the failing `if`) once the pin has proven stable. See ci-grand-attest/README.md.
+  #
+  # Cheap (< 5 min: checkout + flox + one hash). No LFS, no GPU, no DB, no bundle.
+  # -----------------------------------------------------------------------
+  grand-attest:
+    name: grand-attest (local-GPU attestation gate — informational)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout (no LFS — only needs source + ci-grand-attest/)
+        uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Install workspace deps (tsx for the hash script)
+        run: flox activate -- task install
+
+      - name: Verify grand-integration attestation
+        run: flox activate -- bash scripts/grand-attest-verify.sh
+
+  # -----------------------------------------------------------------------
   # behavioral-smoke — the FAST, REQUIRED pre-merge SUBSET of the behavioral
   # input-coverage sweep. The full per-module-per-port-behavioral lane
   # (behavioral-coverage above) stays INFORMATIONAL + push/label-only (~168
@@ -1689,7 +1760,11 @@ jobs:
     # un-gated. collab-attest was armed 2026-06-20 (the final @collab de-flake
     # step) mirroring webgl-attest. See .myrobots/plans/webgl-attestation-semaphore.md
     # §7 + .myrobots/plans/collab-attest-2026-06-15.md.
-    needs: [actionlint, typecheck, unit, dsp-build, build-web, art, build, e2e, webgl-smoke, webgl-attest, collab-attest, behavioral-smoke]
+    # grand-attest is added to `needs:` (so the umbrella WAITS on it + logs its
+    # result) but is INFORMATIONAL — $GRAND_ATTEST is deliberately NOT in the
+    # failing `if` below, exactly how webgl-attest + collab-attest started. The
+    # owner arms it required later by adding $GRAND_ATTEST to the failing test.
+    needs: [actionlint, typecheck, unit, dsp-build, build-web, art, build, e2e, webgl-smoke, webgl-attest, collab-attest, grand-attest, behavioral-smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
@@ -1707,6 +1782,7 @@ jobs:
           WEBGL_SMOKE: ${{ needs.webgl-smoke.result }}
           WEBGL_ATTEST: ${{ needs.webgl-attest.result }}
           COLLAB_ATTEST: ${{ needs.collab-attest.result }}
+          GRAND_ATTEST: ${{ needs.grand-attest.result }}
           BEHAVIORAL_SMOKE: ${{ needs.behavioral-smoke.result }}
         run: |
           echo "actionlint:    $ACTIONLINT"
@@ -1720,6 +1796,7 @@ jobs:
           echo "webgl-smoke:   $WEBGL_SMOKE"
           echo "webgl-attest:  $WEBGL_ATTEST"
           echo "collab-attest: $COLLAB_ATTEST"
+          echo "grand-attest:  $GRAND_ATTEST (informational — not gating yet)"
           echo "behavioral-smoke: $BEHAVIORAL_SMOKE"
           echo "collab:        (informational — see collab job; temporarily un-gated, task #69)"
           # `e2e` is a matrix; its aggregated result is `success` only if all
@@ -1756,6 +1833,12 @@ jobs:
           # gate — the 1x gate (#562) flaked on moog911 on the next PR, so it is
           # un-gated pending a proper 3x flake-purge. `merge-reports` is likewise
           # informational and left out of this gate.
+          # $GRAND_ATTEST is INFORMATIONAL-first (2026-07-19): the grand-integration
+          # local-GPU attest verify is new test infra; it sits in `needs:`+`env:`
+          # (umbrella waits + logs it) but is deliberately NOT in the failing test
+          # below, exactly how webgl-attest + collab-attest started. Arm it required
+          # later by adding `|| "$GRAND_ATTEST" != "success"` here once the pin is
+          # stable. See ci-grand-attest/README.md.
           if [[ "$ACTIONLINT" != "success" \
              || "$TYPECHECK" != "success" \
              || "$UNIT" != "success" \
