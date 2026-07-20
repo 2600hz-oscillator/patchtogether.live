@@ -1079,6 +1079,31 @@ const DRIVERS: Record<string, PerPortDriver> = {
     note: 'FREEZEFRAME: drive video_in with ACIDWARP.out (gate unpatched = live passthrough); all 5 video outs ring',
   },
 
+  // ───── FRAMETABLE — drive video_in so video_out emits ─────
+  //
+  // FRAMETABLE is a video PROCESSOR (video in → per-pixel frame-selection mosaic
+  // out), so it needs an upstream source. Wire ACIDWARP.out into video_in; with
+  // FREEZE + SAVE unpatched the ring keeps filling live and the SELECT pass emits
+  // a non-blank frame on video_out. The driver's presence bypasses the effect-
+  // shape skip (hasDriverSetup) so the module goes through the normal per-output
+  // emit path (video_out routed to VIDEOOUT.in by the sweep).
+  frametable: {
+    upstream: () => ({
+      nodes: [
+        { id: 'drv-acid', type: 'acidwarp', position: { x: 60, y: 60 }, domain: 'video' },
+      ],
+      edges: [
+        {
+          id: 'e-drv-acid',
+          from: { nodeId: 'drv-acid', portId: 'out' },
+          to:   { nodeId: 'sut',      portId: 'video_in' },
+          sourceType: 'video', targetType: 'video',
+        },
+      ],
+    }),
+    note: 'FRAMETABLE: drive video_in with ACIDWARP.out (FREEZE/SAVE unpatched = live ring); video_out rings with the selected-frame mosaic',
+  },
+
   // ───── GRAINS OF VISION — drive in_a so both video outs emit ─────
   //
   // GRAINS OF VISION is a granular-video PROCESSOR (in_a → grains → feedback →

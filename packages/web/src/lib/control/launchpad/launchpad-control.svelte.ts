@@ -126,8 +126,17 @@ import {
   computeSingleArrangerFrame,
 } from './launchpad-map';
 import { keyboardCellToMidi } from '$lib/audio/modules/keyboard-map';
-import { clearStep, recordNoteAt, extendRecordedNote } from '$lib/audio/modules/clip-record';
+import { recordNoteAt, extendRecordedNote } from '$lib/audio/modules/clip-record';
 import { pushAudition } from '$lib/audio/modules/clip-audition';
+import { captureStep, RECORD_GRID_STEPS_DEFAULT } from '$lib/audio/modules/clip-record-capture';
+import { getLanePhase } from '$lib/audio/modules/clip-lane-phase';
+import { reconcileClipRemoval } from '$lib/audio/modules/clip-reconcile';
+import {
+  punchInTransition,
+  armTransition,
+  overdubToggle,
+  crossedLoopWrap,
+} from '$lib/audio/modules/clip-record-machine';
 import {
   CLIP_LANES,
   CLIP_SLOTS,
@@ -1321,33 +1330,33 @@ function keysExit(nodeId: string, data: ClipPlayerData | undefined): void {
   resetKeysState();
 }
 
-/** QUEUE-REC tap: arm (flashing yellow) → recording begins on the next loop wrap
- *  (auto-start the transport if stopped). Re-tap while armed cancels. Blocked
- *  while the arranger is armed or in arrangement mode (so the two never cross). */
+/** QUEUE-REC tap: ARM (flashing yellow) — capture is DECOUPLED from arming
+ *  (redesign §2.1): recording punches in on the FIRST of {a played note, a loop
+ *  wrap}, not on a poll observing step 0. Auto-starts the transport if stopped;
+ *  re-tap while armed cancels. Blocked while the arranger is armed or in
+ *  arrangement mode (so the two never cross). */
 function keysQueueRec(nodeId: string, data: ClipPlayerData | undefined): void {
   const rec = readNoteRec(data);
-  if (!rec) return;
-  if (rec.recording) return; // EXIT stops a recording, not QUEUE-REC
-  if (rec.armed) {
-    patchNoteRec(nodeId, { armed: false });
-    return;
+  const patch = armTransition(rec);
+  if (!patch) return; // recording (EXIT stops it) or no state
+  if (patch.armed === true && (recordArmed(data) || arrangeMode(data))) return; // arranger guard
+  patchNoteRec(nodeId, patch);
+  if (patch.armed) {
+    keysPrevStep = getLanePlayhead(nodeId, rec!.lane);
+    if (!transportRunning()) toggleTransport(); // auto-start at step 0
   }
-  if (recordArmed(data) || arrangeMode(data)) return; // arranger guard
-  patchNoteRec(nodeId, { armed: true });
-  keysPrevStep = getLanePlayhead(nodeId, rec.lane);
-  if (!transportRunning()) toggleTransport(); // auto-start at step 0
 }
 
-/** OVERDUB toggle (the in-view purple control). OFF→ON = additive from now; ON→
- *  OFF while recording = finish the current loop then stop (owner: overdub loops
- *  endlessly until toggled off, stopping at the loop end). */
+/** OVERDUB toggle (the in-view purple control). Both record + overdub are
+ *  ADDITIVE (owner-locked — no per-step replace); the toggle only flips the
+ *  additive-layer intent and, when turned OFF while overdubbing, finishes the
+ *  current loop then stops (owner: overdub loops endlessly until toggled off,
+ *  stopping at the loop end). */
 function keysToggleOverdub(nodeId: string, data: ClipPlayerData | undefined): void {
-  const rec = readNoteRec(data);
-  if (!rec) return;
-  const next = !rec.overdub;
-  patchNoteRec(nodeId, { overdub: next });
-  if (rec.recording && rec.overdub && !next) keysStopAtWrap = true; // ON→OFF mid-record
-  else keysStopAtWrap = false;
+  const t = overdubToggle(readNoteRec(data));
+  if (!t) return;
+  patchNoteRec(nodeId, t.patch);
+  keysStopAtWrap = t.stopAtWrap;
 }
 
 /** Open the LENGTH page from KEYS (returns to KEYS on EXIT). */
@@ -1371,6 +1380,37 @@ function finishHeldOnsets(nodeId: string, data: ClipPlayerData | undefined, lane
     if (next !== clip) writeClip(nodeId, next, keysClipIndex);
   }
   keysOnsets.clear();
+}
+
+/** The DETERMINISTIC capture step for a KEYS keypress (redesign §4.1): project
+ *  the event's own time onto the recording lane's published audio-clock phase +
+ *  round to the NEAREST 1/16 step, so a note played a hair EARLY lands on the
+ *  intended step (not floored onto the previous one) and fast tempo can't skip
+ *  the capture. Falls back to the audible integer step when no phase is
+ *  published (transport stopped / lane silent / test harness without an engine).
+ *  Returns -1 when even the fallback is unavailable. */
+function keysCaptureStep(nodeId: string, lane: number): number {
+  const q = captureStep(nowMs(), getLanePhase(nodeId, lane), RECORD_GRID_STEPS_DEFAULT);
+  if (q !== null && q >= 0) return q;
+  return getLanePlayhead(nodeId, lane);
+}
+
+/** Punch ARMED → RECORDING (redesign §2.1): make the target lane active + clear
+ *  its queue, flip the synced state, and reset the capture bookkeeping. Fired by
+ *  the FIRST of {a played note, a loop wrap}. */
+function keysPunchIn(nodeId: string, rec: NoteRecState, lane: number): void {
+  activateLaneClearQueue(nodeId, lane, rec.slot);
+  patchNoteRec(nodeId, punchInTransition(rec) ?? { armed: false, recording: true });
+  keysOnsets.clear();
+  keysPrevStep = getLanePlayhead(nodeId, lane);
+}
+
+/** After a note-REMOVING clip edit (an erase / tap-off / clear), publish a
+ *  scheduler reconcile so the removed note's sounding + in-lookahead voice is
+ *  CUT NOW (stale-note fix §3.1). Delegates to the SHARED set-difference helper
+ *  (also called by the on-screen card) so both editors reconcile identically. */
+function reconcileClipEdit(nodeId: string, prev: NoteClipRecord, next: NoteClipRecord, index: number): void {
+  reconcileClipRemoval(nodeId, prev, next, index, liveData(nodeId));
 }
 
 /** Route a KEYS-mode key event on a unit (both units are the keyboard). */
@@ -1423,10 +1463,20 @@ function handleKeysNote(nodeId: string, col: number, row: number, s: 0 | 1, velo
     keysPressed.add(midi);
     const vel = keysCaptureVel(velocity);
     pushAudition(nodeId, { lane, midi, velocity: vel, on: true });
-    if (rec?.recording) {
-      const step = getLanePlayhead(nodeId, lane);
+    // PUNCH-IN ON THE NOTE (redesign §2.1): an ARMED clip starts recording on the
+    // first played note (capture decoupled from arming), so a skipped-wrap poll
+    // can't leave arming stuck. Only when the transport is running (there's a
+    // valid position); otherwise the wrap punch-in (which also needs the clock)
+    // takes it. Re-read state after the punch write.
+    if (rec?.armed && !rec.recording && transportRunning()) {
+      keysPunchIn(nodeId, rec, lane);
+    }
+    const capturing = readNoteRec(liveData(nodeId))?.recording === true;
+    if (capturing) {
+      const step = keysCaptureStep(nodeId, lane);
       if (step >= 0) {
         const mono = laneMono(data, lane);
+        // ADDITIVE (owner-locked): recording only ADDS — no per-step replace.
         const next = recordNoteAt(clip, step, midi, { mono, velocity: vel });
         if (next !== clip) {
           writeClip(nodeId, next, keysClipIndex);
@@ -1439,7 +1489,7 @@ function handleKeysNote(nodeId: string, col: number, row: number, s: 0 | 1, velo
     pushAudition(nodeId, { lane, midi, velocity: 0, on: false });
     if (rec?.recording && keysOnsets.has(midi)) {
       const onStep = keysOnsets.get(midi)!;
-      const offStep = getLanePlayhead(nodeId, lane);
+      const offStep = keysCaptureStep(nodeId, lane);
       if (offStep >= 0) {
         const next = extendRecordedNote(clip, onStep, midi, offStep);
         if (next !== clip) writeClip(nodeId, next, keysClipIndex);
@@ -1450,38 +1500,30 @@ function handleKeysNote(nodeId: string, col: number, row: number, s: 0 | 1, velo
 }
 
 /** Per-tick KEYS record servicing (driven by the LED render loop). Handles the
- *  arm→record transition on the loop wrap, the TRUE-REPLACE clear as the playhead
- *  crosses each step (overdub OFF), and the overdub finish-at-loop-end stop. */
+ *  arm→record punch-in on the loop wrap (robust to a poll that SKIPPED step 0 at
+ *  fast tempo — redesign §2.1/§4.2) and the overdub finish-at-loop-end stop.
+ *  Recording is ADDITIVE (owner-locked) — there is NO per-step replace-clear
+ *  here anymore (its lagging-vs-the-scheduler write was the stale-note bug). */
 function serviceKeysRecord(nodeId: string, data: ClipPlayerData | undefined): void {
   const rec = readNoteRec(data);
   if (!rec) return;
   const lane = rec.lane;
   const step = getLanePlayhead(nodeId, lane);
-  const wrapped = step === 0 && keysPrevStep !== 0; // entered step 0 (start/loop)
+  // A wrap = the playhead entered step 0 OR jumped backwards (a skipped step 0
+  // at fast tempo — `crossedLoopWrap`), so the punch-in / overdub-stop never
+  // misses a loop boundary regardless of poll phase.
+  const wrapped =
+    step >= 0 && (crossedLoopWrap(keysPrevStep, step) || (step === 0 && keysPrevStep !== 0));
   if (rec.armed && !rec.recording) {
-    if (wrapped) {
-      // START: make the target active + clear queue, flip armed→recording.
-      activateLaneClearQueue(nodeId, lane, rec.slot);
-      patchNoteRec(nodeId, { armed: false, recording: true });
-      keysOnsets.clear();
-    }
+    // PUNCH-IN on the wrap (the note-driven punch in handleKeysNote is the other
+    // trigger — whichever fires first).
+    if (wrapped) keysPunchIn(nodeId, rec, lane);
   } else if (rec.recording) {
-    if (step !== keysPrevStep && step >= 0) {
-      // TRUE REPLACE (overdub OFF, not finishing): clear the step we just entered
-      // so this pass's keypresses replace its onsets; an un-played step wipes.
-      if (!rec.overdub && !keysStopAtWrap) {
-        const clip = clipAtIndex(liveData(nodeId), keysClipIndex);
-        if (clip) {
-          const next = clearStep(clip, step);
-          if (next !== clip) writeClip(nodeId, next, keysClipIndex);
-        }
-      }
-      // Overdub finished (toggled OFF mid-record): stop at the loop end.
-      if (wrapped && keysStopAtWrap) {
-        finishHeldOnsets(nodeId, liveData(nodeId), lane);
-        patchNoteRec(nodeId, { recording: false });
-        keysStopAtWrap = false;
-      }
+    // Overdub finished (toggled OFF mid-record): stop cleanly at the loop end.
+    if (wrapped && keysStopAtWrap) {
+      finishHeldOnsets(nodeId, liveData(nodeId), lane);
+      patchNoteRec(nodeId, { recording: false });
+      keysStopAtWrap = false;
     }
   }
   keysPrevStep = step;
@@ -2281,7 +2323,13 @@ function handleSingleClip(nodeId: string, e: LaunchpadKeyEvent): void {
       editSpanned = false;
     }
   } else if (editAnchor && editAnchor.step === note.step && editAnchor.midi === note.midi) {
-    if (!editSpanned) writeClipSel(nodeId, toggleNoteAt(clip, note.step, note.midi, { mono }));
+    if (!editSpanned) {
+      // Tap a lit step OFF = the explicit erase gesture (owner-locked). Reconcile
+      // the scheduler so the removed note's voice is cut NOW (§3.1), not next loop.
+      const next = toggleNoteAt(clip, note.step, note.midi, { mono });
+      writeClipSel(nodeId, next);
+      reconcileClipEdit(nodeId, clip, next, selectedClipIndex);
+    }
     editAnchor = null;
     editSpanned = false;
   }
@@ -2800,7 +2848,13 @@ function handleREdit(nodeId: string, e: LaunchpadKeyEvent): void {
       editSpanned = false;
     }
   } else if (!velHeld && editAnchor && editAnchor.step === note.step && editAnchor.midi === note.midi) {
-    if (!editSpanned) writeClip(nodeId, toggleNoteAt(clip, note.step, note.midi, { mono }));
+    if (!editSpanned) {
+      // Tap a lit step OFF = the explicit erase gesture; reconcile the scheduler
+      // so the removed note's voice is cut NOW (§3.1), not next loop.
+      const next = toggleNoteAt(clip, note.step, note.midi, { mono });
+      writeClip(nodeId, next);
+      reconcileClipEdit(nodeId, clip, next, editClipIndex);
+    }
     editAnchor = null;
     editSpanned = false;
   }
