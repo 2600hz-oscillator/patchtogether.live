@@ -39,6 +39,8 @@ import { createEdgeCounter } from '$lib/audio/edge-detect';
 import { midiToVOct } from '$lib/audio/note-entry';
 import { isInputPortConnected } from './transport-helpers';
 import { setLanePlayhead, clearPlayheads } from './clip-playhead';
+import { setLanePhase, clearLanePhases } from './clip-lane-phase';
+import { drainReconcile, clearReconcile } from './clip-reconcile';
 import {
   setAutomationRender,
   clearAutomationRender,
@@ -57,6 +59,7 @@ import {
   laneMuted,
   laneSwing,
   swingStepOffset,
+  readNoteRec,
   isLaneAutomationRecorder,
   laneAutomationArmed,
   migrateAutomationLanesShape,
@@ -260,6 +263,14 @@ export const clipplayerDef: AudioModuleDef = {
     const nodeId = node.id;
     const LANES = CLIP_LANES;
     const LOOKAHEAD_S = 0.2;
+    // STALE-NOTE FIX (redesign §3.3): while a lane is being note-RECORDED, shrink
+    // its scheduling lookahead to a few ms so a clip edit can't be out-run by
+    // audio committed a full ~200 ms ago. Kept comfortably above the ~25 ms
+    // scheduler tick (so the fast-clock loop still schedules ≥1 step ahead each
+    // tick and never starves), but 4× tighter than the play lookahead — bounding
+    // the schedule↔edit phase gap to ~one tick. Only the ACTIVE record lane uses
+    // it; every other lane keeps the full LOOKAHEAD_S safety margin.
+    const RECORD_LOOKAHEAD_S = 0.05;
 
     interface Lane {
       poly: ReturnType<typeof createPolySender>;
@@ -328,8 +339,16 @@ export const clipplayerDef: AudioModuleDef = {
      *  time has passed), or -1 when the lane is stopped. Audio-accurate (not the
      *  lookahead position) so the card + grid playhead tracks what you hear. */
     function laneDisplayStep(L: number): number {
+      return laneAnchor(L).step;
+    }
+
+    /** The current audible step of lane L AND the audio time its gate was
+     *  scheduled at (the onset the KEYS recorder projects a pad event against —
+     *  clip-lane-phase.ts / clip-record-capture.ts). `step = -1`, `time = -Inf`
+     *  when the lane is stopped or nothing has elapsed. */
+    function laneAnchor(L: number): { step: number; time: number } {
       const ln = lanes[L];
-      if (ln.active === null) return -1;
+      if (ln.active === null) return { step: -1, time: -Infinity };
       let best = -1;
       let bestT = -Infinity;
       for (const e of ln.sched) {
@@ -338,7 +357,7 @@ export const clipplayerDef: AudioModuleDef = {
           best = e.idx;
         }
       }
-      return best;
+      return { step: best, time: bestT };
     }
 
     // --- stop_all input (windowed edge counter — no whole-buffer rescan) ---
@@ -1127,6 +1146,83 @@ export const clipplayerDef: AudioModuleDef = {
       }
     }
 
+    /**
+     * STALE-NOTE RECONCILE (redesign §3.1) — a clip mutation on the PLAYING clip
+     * of lane L just REMOVED the onsets on `erasedSteps`, so cut the erased
+     * note's in-flight audio NOW and re-emit from the FRESH clip. Without this, a
+     * note the user just erased keeps sounding for the whole lookahead (or, in
+     * the old replace path, a full loop).
+     *
+     * Two cases, both PHASE-PRESERVING:
+     *  - A future onset was already scheduled in the lookahead (`upIdx >= 0`):
+     *    cancel from the next un-elapsed step time `upT` forward (the CURRENT
+     *    step's gate-off is < upT, so a KEPT note keeps gating — N1) and re-emit
+     *    the upcoming steps at their ORIGINAL times from the fresh clip (the
+     *    erased onset simply schedules no gate; kept onsets re-land identically).
+     *  - Nothing is scheduled ahead in the ring (`upIdx < 0`, e.g. a coarse-div
+     *    lane whose next step is beyond the horizon): the pending
+     *    `nextStepTime`/`stepIndex` ALREADY hold the correct next step at its
+     *    original grid time (T + laneDur), so DON'T touch them (B1 — overwriting
+     *    to now+0.01 re-struck `cur` and drifted the lane off-grid forever). Only
+     *    reset when the lane genuinely never emitted (`cur < 0`).
+     *
+     * The currently-SOUNDING voice is force-cut ONLY when the audible step `cur`
+     * is one of `erasedSteps` (an undefined/empty `erasedSteps` cuts it, for
+     * safety): a purely-future erase must not truncate the note you're hearing.
+     * No-op on a stopped lane.
+     */
+    function reconcileLane(L: number, erasedSteps?: number[]): void {
+      const ln = lanes[L];
+      if (ln.active === null) return;
+      const at = ctx.currentTime;
+      const cur = laneDisplayStep(L);
+      // The NEXT un-elapsed scheduled step + its time — re-emitting from here
+      // (not "now") preserves the grid phase across the recut.
+      let upT = Infinity;
+      let upIdx = -1;
+      for (const e of ln.sched) {
+        if (e.t > at && e.t < upT) {
+          upT = e.t;
+          upIdx = e.idx;
+        }
+      }
+      // Cut the currently-sounding voice ONLY when the audible step lost an
+      // onset (else a still-gating KEPT note would be truncated — N1).
+      const cutNow = !erasedSteps || erasedSteps.length === 0 || (cur >= 0 && erasedSteps.includes(cur));
+      if (upIdx >= 0) {
+        // Cancel the in-lookahead future (from `upT` on) so an already-scheduled
+        // ERASED onset can't fire; the current step's gate-off (< upT) survives,
+        // so a kept note keeps gating. Then re-emit the upcoming steps at their
+        // ORIGINAL grid times from the fresh clip.
+        ln.gateSrc.offset.cancelScheduledValues(upT);
+        ln.velSrc.offset.cancelScheduledValues(upT);
+        for (const v of ln.poly.voices) {
+          v.gateSrc.offset.cancelScheduledValues(upT);
+          v.pitchSrc.offset.cancelScheduledValues(upT);
+        }
+        ln.nextStepTime = upT;
+        ln.stepIndex = upIdx;
+        ln.autoStarted = false;
+      } else if (cur < 0) {
+        // The lane genuinely never emitted — resume from scratch.
+        ln.nextStepTime = at + 0.01;
+        ln.stepIndex = 0;
+        ln.autoStarted = false;
+      }
+      // else (upIdx < 0 && cur >= 0): the pending nextStepTime/stepIndex already
+      // hold the correct next step at its original grid time — LEAVE THEM (B1).
+      if (cutNow) {
+        // Force the erased/sounding voice silent NOW (clean falling edges); a
+        // KEPT chord-mate on the same step shares this step's gate, so an erase
+        // of the audible step cuts the whole step (mono gate is shared — the
+        // documented limit; per-pitch cut across a shared step isn't possible).
+        silenceLane(L, at);
+        for (const v of ln.poly.voices) v.pitchSrc.offset.cancelScheduledValues(at);
+      }
+      // Drop now-cancelled future entries so the visual playhead can't show them.
+      ln.sched = ln.sched.filter((e) => e.t <= at);
+    }
+
     /** Apply lane L's queued launch/stop (consuming it). Returns true if the
      *  active clip changed. `switchAt` = the loop-boundary time when applied at a
      *  wrap (threaded to the automation hold seam); null = immediate. */
@@ -1675,6 +1771,14 @@ export const clipplayerDef: AudioModuleDef = {
         // the keys sound even with the transport STOPPED.
         serviceAudition();
 
+        // STALE-NOTE RECONCILE (redesign §3.1) — an erase / note-removal on a
+        // PLAYING clip published a reconcile; cut the lane's in-flight audio NOW
+        // and re-emit from the fresh clip so the erased note stops immediately.
+        // Drained before the transport gate so an erase lands even when stopped.
+        for (const ev of drainReconcile(nodeId)) {
+          if (ev.lane >= 0 && ev.lane < LANES) reconcileLane(ev.lane, ev.steps);
+        }
+
         // AUTOMATION ARM reconcile (PER-LANE single-writer): mirror each lane's
         // synced arm flag onto the controller — but ONLY on that lane's
         // designated recorder client (isLaneAutomationRecorder). Non-recorder
@@ -1692,6 +1796,10 @@ export const clipplayerDef: AudioModuleDef = {
 
         if (!running) {
           clearAutomationRender(nodeId); // no countdown while stopped
+          // No capture phase while stopped — the KEYS recorder falls back to the
+          // audible step (a stale phase self-invalidates, but clear it so the
+          // launchpad never projects against a frozen anchor).
+          for (let L = 0; L < LANES; L++) setLanePhase(nodeId, L, null);
           return;
         }
 
@@ -1774,12 +1882,20 @@ export const clipplayerDef: AudioModuleDef = {
         // Recomputed once per tick from the cached key sets (cheap).
         const autoOwners = computeAutoOwners(d0);
 
+        // STALE-NOTE FIX (redesign §3.3): the ACTIVE note-record lane schedules
+        // on the SHRUNK lookahead so an erase/edit can't be out-run by audio
+        // committed a full ~200 ms ago. Read once per tick from the synced
+        // record state.
+        const recRec = readNoteRec(d0);
+        const recLane = recRec?.recording ? recRec.lane : -1;
+
         for (let L = 0; L < LANES; L++) {
           const ln = lanes[L];
           if (ln.active === null) {
             ln.nextStepTime = ctx.currentTime + 0.05;
             continue;
           }
+          const laneLookahead = L === recLane ? RECORD_LOOKAHEAD_S : LOOKAHEAD_S;
           const swing = laneSwing(d0, L);
           // PERF: read the active clip ONCE per lane, NOT per step. coerceClipRecord
           // deep-clones a (dense) clip; doing it every step in this lookahead loop
@@ -1790,7 +1906,7 @@ export const clipplayerDef: AudioModuleDef = {
           // tracks come from the coerce-ONCE cached view (autoTracksAt).
           let activeClip = readClip(d0, clipIndex(ln.active, L));
           let laneAuto = activeClip?.kind === 'note' ? autoTracksAt(clipIndex(ln.active, L)) : EMPTY_TRACKS;
-          while (ln.nextStepTime < ctx.currentTime + LOOKAHEAD_S) {
+          while (ln.nextStepTime < ctx.currentTime + laneLookahead) {
             // DIV LATCH: at each loop start (step 0) re-read the active clip's
             // effective divider (clip.div OVERRIDES the lane rate[]; else fall
             // back to it). Held for the whole loop, so a mid-loop edit only
@@ -1932,6 +2048,35 @@ export const clipplayerDef: AudioModuleDef = {
             ln.stepIndex = nextIdx;
           }
           laneClips[L] = ln.active !== null ? activeClip : null;
+        }
+
+        // CAPTURE PHASE (redesign §4.1) — publish each lane's audio-clock phase
+        // so the KEYS recorder can project a pad event's own timestamp onto the
+        // NEAREST step (clip-lane-phase.ts / clip-record-capture.ts), instead of
+        // flooring onto the 25 ms-stale audible integer step. Both `ctxTime` and
+        // `perfNow` are sampled at the SAME instant so the launchpad recovers the
+        // ctx↔perf offset. A stopped/silent lane publishes null (fall back to the
+        // audible step). Cheap (no clone) — reuses this tick's stepDur + latched
+        // divIndex + the snapshot clip length.
+        {
+          const perfNow = typeof performance !== 'undefined' ? performance.now() : 0;
+          for (let L = 0; L < LANES; L++) {
+            const ln = lanes[L];
+            const clip = laneClips[L];
+            if (ln.active === null || clip?.kind !== 'note') {
+              setLanePhase(nodeId, L, null);
+              continue;
+            }
+            const a = laneAnchor(L);
+            setLanePhase(nodeId, L, {
+              anchorStep: a.step,
+              anchorTime: a.step >= 0 ? a.time : -Infinity,
+              laneDur: laneStepDur(stepDur, ln.divIndex),
+              lengthSteps: Math.max(1, clip.lengthSteps),
+              ctxTime: ctx.currentTime,
+              perfNow,
+            });
+          }
         }
 
         // PER-LANE AUTOMATION RECORD + COUNTDOWN + DISPLAY. For EACH lane with a
@@ -2128,6 +2273,8 @@ export const clipplayerDef: AudioModuleDef = {
         unregisterAutomationController(nodeId); // drop the touch-suspend hook
         if (autoCacheEnabled) ydocEvents.off?.('update', bumpAutoRev); // drop the view-cache pump
         clearPlayheads(nodeId);
+        clearLanePhases(nodeId);
+        clearReconcile(nodeId);
         clearAutomationRender(nodeId);
         clearAudition(nodeId);
         if (unsubscribeTick) {
