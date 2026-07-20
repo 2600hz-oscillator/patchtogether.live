@@ -154,6 +154,14 @@ describe('mixer eligibility (pure)', () => {
     expect(resolveMainAudioOut(d)).toEqual({ kind: 'mono', out: 'out' });
   });
 
+  it('a main `audio` out beside a secondary tap `audio_inv` (vca shape) resolves to `audio`', () => {
+    // Both ids CONTAIN "audio", so a substring rule would see two mains and bail;
+    // the EXACT-id match picks `audio` (canonical) and ignores the invert tap.
+    const d = def([], [port('audio', 'audio'), port('audio_inv', 'audio')]);
+    expect(resolveMainAudioOut(d)).toEqual({ kind: 'mono', out: 'audio' });
+    expect(isMixerEligible(d)).toBe(true);
+  });
+
   it('a bank of equal parallel outs with NO identifiable main is NOT eligible', () => {
     const d = def([], [port('out1', 'audio'), port('out2', 'audio'), port('out3', 'audio'), port('out4', 'audio')]);
     expect(resolveMainAudioOut(d)).toBeNull();
@@ -249,7 +257,7 @@ describe('clip eligibility — live registry (absent when it should not appear)'
 });
 
 describe('mixer eligibility — live registry', () => {
-  const EXPECTED_ELIGIBLE = ['cube', 'pentemelodica', 'tidyVco', 'kickdrum', 'reverb', 'wavecel'];
+  const EXPECTED_ELIGIBLE = ['cube', 'pentemelodica', 'tidyVco', 'kickdrum', 'reverb', 'wavecel', 'vca'];
   for (const type of EXPECTED_ELIGIBLE) {
     it(`${type} is mixer-eligible (has a main audio out)`, () => {
       const d = liveDef(type);

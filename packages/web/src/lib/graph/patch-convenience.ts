@@ -54,9 +54,14 @@ const CONTROL_GATE_WORDS = new Set<string>([
   'start', 'run', 'arm', 'latch', 'sample', 'shift', 'load', 'clear',
 ]);
 
-/** Canonical MAIN-output id words — used to pick the mono main among several
- *  audio outs (e.g. macrooscillator `out` + `aux`). */
-const MAIN_OUT_WORDS = new Set<string>(['out', 'output', 'main', 'mix', 'sum', 'master']);
+/** Canonical MAIN-output ids — used to pick the mono main among SEVERAL audio
+ *  outs by EXACT id match, so a module whose primary out is `audio` plus a
+ *  secondary tap `audio_inv` (vca), or `out` plus `aux`/`mod_out`/`sum_out`
+ *  (macrooscillator / swolevco), resolves to the real main. Exact (not
+ *  substring) match is essential: `audio_inv` also *contains* "audio", so a
+ *  substring rule would see two mains and give up. `audio` is THE canonical
+ *  mono-audio output id in this codebase. */
+const MAIN_OUT_IDS = new Set<string>(['audio', 'out', 'output', 'main', 'mix', 'master']);
 
 /** L / R side words for id-token stereo detection when a def declares no
  *  stereoPairs (audioIn, stereovca, twotracks, …). */
@@ -200,8 +205,9 @@ export function resolveMainAudioOut(def: ConvenienceDef): MainAudioOut | null {
   // 3) Single mono audio out.
   if (audioOuts.length === 1) return { kind: 'mono', out: audioOuts[0].id };
 
-  // 4) One canonical main among several audio outs (out/main/mix + secondaries).
-  const mains = audioOuts.filter((p) => idWords(p.id).some((w) => MAIN_OUT_WORDS.has(w)));
+  // 4) One canonical main among several audio outs — the out whose id is EXACTLY
+  //    a main name (audio/out/main/…), with the others being secondary taps.
+  const mains = audioOuts.filter((p) => MAIN_OUT_IDS.has(p.id.toLowerCase()));
   if (mains.length === 1) return { kind: 'mono', out: mains[0].id };
 
   // 5) A bank of equal parallel outs with no identifiable main → not eligible.
