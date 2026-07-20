@@ -156,6 +156,10 @@ const PARAM_IDS: ReadonlySet<string> = new Set(Object.keys(DEFAULTS));
 const AUDIO_PARAMS: ReadonlySet<string> = new Set([
   'morph_fc', 'connect', 'connect_strength', 'crush', 'space_crush',
   'space_diffuse', 'slice_y', 'slice_rx', 'slice_ry', 'slice_rz', 'fold', 'spread',
+  // material + wrap ALSO reshape the derived wave (they pass into SliceParams),
+  // so a change must mark audio dirty — else the picture updates same-frame while
+  // the audio lags to the next throttle tick (breaks the WRAP/MATERIAL isomorphism).
+  'material', 'wrap',
 ]);
 // Params pushed straight to the oscillator worklet's AudioParams (pitch + gain).
 const OSC_PARAMS: ReadonlySet<string> = new Set(['tune', 'fine', 'level']);
@@ -497,7 +501,7 @@ export const videocubeDef: VideoModuleDef = {
     controls: {
       tune: 'TUNE (-36..36 st, default 0): coarse pitch of the derived audio oscillator in semitones. CV via the tune input. Audio-only.',
       fine: 'FINE (-100..100 cents, default 0): fine pitch trim of the derived audio between the semitone steps of TUNE. Audio-only.',
-      morph_fc: 'MORPH (0..1, default 0): cross-fades the FLOOR (ring A) ↔ CEILING (ring C) fill of the combine through the WALL (ring B). 0 = A only, 1 = C only. Drives both the picture blend and the audio field. CV via the morph input.',
+      morph_fc: 'MORPH (0..1, default 0): cross-fades the FLOOR (ring A) toward the CEILING (ring C) fill of the combine through the WALL (ring B) — 0 biases toward the floor, 1 toward the ceiling. Because the combine reads a single per-pixel occupancy position, the extremes bias the blend rather than strictly isolate one ring (some luma configurations still let the wall show through). Drives both the picture blend and the audio field. CV via the morph input.',
       connect: 'CONNECT (0..1, default 0): reshapes how the WALL (B) binds A and C in the blend interior — 0 = a rounded/soft cross-mix (circle occupancy), 1 = a hard linear ramp toward B (sawtooth-V). Same occ profile drives the image blend weights and the audio. CV via the connect input.',
       connect_strength: "CONNECT STRENGTH (0..1, default 0): over-emphasises B's contribution in the mid-band of the blend (B swells through the image / bulges the audio field). 0 = the exact CONNECT shape. CV via the connect strength input.",
       crush: 'CRUSH (0..1, default 0): posterize / colour-depth reduction of the output frame (RGB quantized) AND the amplitude crush of the derived audio (the same crush levels). 0 = clean. CV via the crush input.',
@@ -655,6 +659,7 @@ export const videocubeDef: VideoModuleDef = {
     let sinceRecompute = 0;
     let audioDirty = true;
     let lastWave: Float32Array | null = null;
+    let lastSliceSig = '';
 
     function pushOscParams(): void {
       const ac = ctx.audioCtx;
@@ -686,8 +691,27 @@ export const videocubeDef: VideoModuleDef = {
       return stripToHeightfield(strip, LUMA_COLS, N);
     }
 
-    function recomputeSlice(): void {
+    /** Quantized signature over every param that reshapes the derived wave (the
+     *  AUDIO_PARAMS set). Mirrors MANDELBULB's `lastSliceSig` — a param-change
+     *  recompute early-returns when the picture-affecting params are unchanged, so
+     *  a live CV writing the same value every frame does NOT storm the readback +
+     *  slice scan. `force` (the throttle path, for EVOLVING ring content) bypasses
+     *  it since the heightfields change even when the params don't. */
+    function sliceSig(): string {
+      const q = (v: number) => Math.round(v * 1000);
+      return [
+        q(params.slice_y), q(params.slice_rx), q(params.slice_ry), q(params.slice_rz),
+        q(params.morph_fc), q(params.connect), q(params.connect_strength), q(params.crush),
+        q(params.space_crush), q(params.space_diffuse), q(params.fold), q(params.spread),
+        params.material >= 0.5 ? 1 : 0, params.wrap >= 0.5 ? 1 : 0,
+      ].join('|');
+    }
+
+    function recomputeSlice(force = false): void {
       if (!oscNode || !progs) return;
+      const sig = sliceSig();
+      if (!force && sig === lastSliceSig) return; // param-change with nothing new → skip the scan
+      lastSliceSig = sig;
       const floorH = reduceRing('a');
       const wallH = reduceRing('b');
       const ceilH = reduceRing('c');
@@ -803,6 +827,10 @@ export const videocubeDef: VideoModuleDef = {
         }
 
         // ── CAPTURE each LIVE slot's input → its ring (unless frozen / file). ──
+        // ringsAdvanced = did any live slot with real content advance this frame?
+        // It gates the audio throttle so the recompute is idle when nothing evolves
+        // (all frozen / file / unpatched) yet still refreshes for a live source.
+        let ringsAdvanced = false;
         if (!frozen) {
           for (const s of SLOTS) {
             if (fileSlot[s]) continue;
@@ -831,15 +859,26 @@ export const videocubeDef: VideoModuleDef = {
             }
             if (inputTex) captured[s] = true;
             head[s] = (head[s] + 1) % N;
+            if (captured[s]) ringsAdvanced = true; // a live slot with content evolved
           }
           g.bindFramebuffer(g.FRAMEBUFFER, null);
         }
 
-        // ── Derived AUDIO recompute — on param-change OR the throttle cadence. ──
-        if (oscNode && (audioDirty || ++sinceRecompute >= AUDIO_RECOMPUTE_EVERY)) {
-          sinceRecompute = 0;
-          audioDirty = false;
-          recomputeSlice();
+        // ── Derived AUDIO recompute (MANDELBULB seam) ──
+        //   • PARAM change (audioDirty, value-gated in setParam): recompute, but
+        //     signature-gated inside recomputeSlice so a same-value CV write is a
+        //     no-op (B1: no per-frame readback+scan storm under a live CV).
+        //   • EVOLVING ring content: force a recompute on the throttle cadence,
+        //     but ONLY while a live ring is actually advancing — idle otherwise.
+        if (oscNode) {
+          if (audioDirty) {
+            audioDirty = false;
+            sinceRecompute = 0;
+            recomputeSlice(false);
+          } else if (ringsAdvanced && ++sinceRecompute >= AUDIO_RECOMPUTE_EVERY) {
+            sinceRecompute = 0;
+            recomputeSlice(true);
+          }
         }
       },
       resize(w, h) {
@@ -873,9 +912,13 @@ export const videocubeDef: VideoModuleDef = {
       audioSources,
       setParam(paramId, value) {
         if (!(paramId in params)) return;
+        const prev = (params as unknown as Record<string, number>)[paramId];
         (params as unknown as Record<string, number>)[paramId] = value;
         if (OSC_PARAMS.has(paramId)) pushOscParams();
-        if (AUDIO_PARAMS.has(paramId)) audioDirty = true;
+        // Gate on an ACTUAL value change: the CV bridge calls setParam every frame
+        // for any patched CV (even a constant), so an unconditional dirty flag would
+        // storm the readback + slice scan every frame under a live CV.
+        if (AUDIO_PARAMS.has(paramId) && value !== prev) audioDirty = true;
       },
       readParam(paramId) {
         return (params as unknown as Record<string, number>)[paramId];

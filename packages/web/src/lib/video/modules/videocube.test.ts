@@ -77,12 +77,21 @@ function makeCtx(audio: FakeAudio | null): VideoEngineContext {
 const mkNode = (params: Record<string, number> = {}) =>
   ({ id: 'vc-1', type: 'videocube', params, position: { x: 0, y: 0 } } as never);
 
-function mkFrame(gl: WebGL2RenderingContext): VideoFrameContext {
+function mkFrame(gl: WebGL2RenderingContext, hasInput = false): VideoFrameContext {
   return {
     gl, time: 0, frame: 0, timeDelta: 1 / 60,
-    getInputTexture: () => null,
+    // hasInput → a truthy fake texture so the rings CAPTURE + advance (captured=true),
+    // which is what the audio throttle needs to keep refreshing for a live source.
+    getInputTexture: () => (hasInput ? ({} as WebGLTexture) : null),
     isOutputConnected: () => true,
   } as unknown as VideoFrameContext;
+}
+
+/** Count the setWave port posts (the ONLY thing recomputeSlice posts). */
+function setWaveCount(audio: FakeAudio): number {
+  return audio.node!.port.postMessage.mock.calls.filter(
+    (c) => (c[0] as { type?: string })?.type === 'setWave',
+  ).length;
 }
 
 describe('videocubeDef — I/O contract', () => {
@@ -173,6 +182,57 @@ describe('videocubeDef.factory — construction + audio seam', () => {
     const setWave = posts.find((m) => m?.type === 'setWave');
     expect(setWave, 'a setWave was posted from the slice scan').toBeTruthy();
     expect(setWave!.wave?.length, '256-sample cube slice').toBe(256);
+    handle.dispose();
+  });
+
+  it('B1: no per-frame recompute STORM — unchanged params + a same-value CV do NOT rescan', async () => {
+    const audio = makeFakeAudio();
+    const ctx = makeCtx(audio);
+    const handle = videocubeDef.factory(ctx, mkNode());
+    await audio.workletReady; await Promise.resolve(); await Promise.resolve();
+    const frame = mkFrame(ctx.gl, true); // a live source so the rings advance every frame
+
+    handle.surface.draw(frame); // initial audioDirty → exactly one scan
+    const after1 = setWaveCount(audio);
+    expect(after1, 'one initial recompute').toBe(1);
+
+    // The CV bridge calls setParam EVERY frame for a patched CV; a CONSTANT CV
+    // writes the same value → must NOT re-dirty → no rescan across many frames.
+    for (let i = 0; i < 6; i++) { handle.setParam('morph_fc', 0); handle.surface.draw(frame); }
+    expect(setWaveCount(audio), 'same-value CV writes every frame → no storm').toBe(after1);
+
+    // A change that quantizes to the SAME signature is also skipped (sig gate).
+    handle.setParam('morph_fc', 0.0004);
+    handle.surface.draw(frame);
+    expect(setWaveCount(audio), 'sub-quantum param change → signature-gated, no rescan').toBe(after1);
+
+    // A REAL change DOES recompute.
+    handle.setParam('morph_fc', 0.5);
+    handle.surface.draw(frame);
+    expect(setWaveCount(audio), 'a real param change recomputes').toBe(after1 + 1);
+
+    // Evolving ring content still refreshes on the throttle cadence (~24 frames).
+    const before = setWaveCount(audio);
+    for (let i = 0; i < 30; i++) handle.surface.draw(frame);
+    expect(setWaveCount(audio), 'evolving ring content refreshes on the throttle').toBeGreaterThan(before);
+    handle.dispose();
+  });
+
+  it('B2: MATERIAL + WRAP changes re-derive the audio (they govern both image AND sound)', async () => {
+    const audio = makeFakeAudio();
+    const ctx = makeCtx(audio);
+    const handle = videocubeDef.factory(ctx, mkNode());
+    await audio.workletReady; await Promise.resolve(); await Promise.resolve();
+    const frame = mkFrame(ctx.gl, true);
+
+    handle.surface.draw(frame); // seat the initial scan
+    const base = setWaveCount(audio);
+    handle.setParam('material', 1); // SMOOTH → HARD
+    handle.surface.draw(frame);
+    expect(setWaveCount(audio), 'MATERIAL change re-derives the audio same-frame').toBe(base + 1);
+    handle.setParam('wrap', 1); // clamp → mirror-fold
+    handle.surface.draw(frame);
+    expect(setWaveCount(audio), 'WRAP change re-derives the audio same-frame').toBe(base + 2);
     handle.dispose();
   });
 
