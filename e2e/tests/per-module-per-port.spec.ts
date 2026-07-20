@@ -256,6 +256,15 @@ const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   // the slice→waveform→audio path is covered by the mandelbulb factory unit
   // tests (slice-on wiring posts a setWave) + the mandelbulb-osc worklet test.
   'mandelbulb.audio_out': 'silent until the SLICE toggle is ON (default off); covered by mandelbulb.test.ts (factory slice-on wiring) + mandelbulb-osc.test.ts',
+  // ── VIDEOCUBE.audio_out is a MONO-DRONE derived from the 3 rings' luma, stood
+  // up at spawn (MANDELBULB seam). But it stays silent through the bare-spawn
+  // sweep budget: the worklet must async-load AND the 3 rings must FILL with the
+  // driven video before the GPU-luma-reduce + cube-dsp slice scan posts a
+  // non-silent wave (recompute-on-throttle, not per sample). The PORT is pinned
+  // by the handle-presence dim; the real audio_out RMS over the live 3-source
+  // chain is covered by videocube.spec.ts, and the seam by videocube.test.ts
+  // (factory stands up the worklet + posts a non-silent setWave under a mock ctx).
+  'videocube.audio_out': 'mono drone; silent through the bare-spawn budget (async worklet load + rings must fill before the luma-slice scan posts a wave); covered by videocube.spec.ts (live 3-source chain → audio RMS) + videocube.test.ts',
   // ── DOOM: video out is fine BUT WASM init + game tic exceeds sweep budget;
   // audio + gate outputs are gameplay/forcePulse-conditional. Whole-module
   // skip is wrong because the module legitimately renders a video frame on
@@ -424,7 +433,7 @@ test('RATCHET: output-emit exemption lists only shrink', () => {
   expect(
     Object.keys(EXEMPT_OUTPUT_EMIT).length,
     'EXEMPT_OUTPUT_EMIT grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(65);
+  ).toBeLessThanOrEqual(66); // +1 videocube.audio_out (mono drone silent through the bare-spawn budget — async worklet load + rings must fill before the luma-slice scan; covered by videocube.spec.ts + videocube.test.ts)
 });
 
 // ────────── Per-port input-drive exemptions ──────────

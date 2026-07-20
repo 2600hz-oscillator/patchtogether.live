@@ -420,4 +420,10 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // bell (MORPH/SPREAD/SHIMMER/SHAPE), FREEZE gate-toggle + SAVE trigger-snapshot.
   // Ships documented. Design: .myrobots/plans/frametable-2026-07-19.md.
   'frametable',
+  // VIDEOCUBE (2026-07-19): the VIDEO isomorph of the audio CUBE oscillator —
+  // 3 60-frame video rings combined by the SAME cube-dsp occupancy field
+  // (occ / MORPH FC / CONNECT / CRUSH / SPACE / WRAP / MATERIAL), emitting BOTH a
+  // morphed video_out AND a derived cube-slice audio_out. Born strict — docs
+  // authored + verified against the source. Design: .myrobots/plans/videocube-2026-07-19.md.
+  'videocube',
 ]);
