@@ -1540,7 +1540,7 @@ export function editableRowRange(
 /**
  * A RESTRICTED clip-view row window — the sub-range of `editableRowRange` the
  * card renders when its "restrict range" toggle is ON. It is `octaves` (default
- * 4) octaves tall, STARTING at the floor octave and extending UP, then clamped
+ * 3) octaves tall, STARTING at the floor octave and extending UP, then clamped
  * so it NEVER addresses a row outside the full editable range.
  *
  * `floorOctave` is a MIDI octave number in `noteNameForMidi`'s convention
@@ -1565,7 +1565,7 @@ export function restrictedRowWindow(
   root: number,
   scale: ScaleName | undefined,
   floorOctave: number,
-  octaves = 4,
+  octaves = 3,
 ): { lo: number; hi: number; count: number } {
   const full = editableRowRange(root, scale);
   const rowsPerOctave = scaleSteps(scale).length; // in-key degrees, or 12 chromatic

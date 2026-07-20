@@ -991,6 +991,14 @@ describe('restrictedRowWindow (clip-view 4-octave display window)', () => {
     expect(full.count).toBe(57); // full editable range (unchanged from before the feature)
     expect(on.count).toBeLessThan(full.count); // ON shows fewer rows
   });
+
+  it('the DEFAULT window (no octaves arg) is 3 octaves — the card constant (owner: 3-octave)', () => {
+    // major = 7 rows/octave; a mid floor that fits fully → exactly 3 octave-blocks.
+    const def = restrictedRowWindow(48, 'major', 3);
+    expect(def.count).toBe(3 * 7);
+    // chromatic: 12 rows/octave → 3*12.
+    expect(restrictedRowWindow(48, undefined, 3).count).toBe(3 * 12);
+  });
 });
 
 describe('clip-view C/F octave-guide row detection (midi % 12)', () => {

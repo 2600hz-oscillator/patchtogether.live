@@ -212,7 +212,7 @@
   let rangeFloor = $derived(
     (void cardVersion, Math.round(node?.params.rangeFloor ?? pdef('rangeFloor').defaultValue)),
   );
-  const RESTRICT_OCTAVES = 4; // window height when restricted (matches restrictedRowWindow default)
+  const RESTRICT_OCTAVES = 3; // window height when restricted (matches restrictedRowWindow default)
 
   function dataObj(): ClipPlayerData {
     return (node?.data ?? {}) as ClipPlayerData;
