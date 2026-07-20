@@ -40,30 +40,31 @@
   // NOT migrate the scratch patch — it simply persists locally.
   let scratchId = $derived(getOrCreateLocalScratchId(mode));
 
-  // GATE the Canvas mount on the replica seed. Canvas's workflow "ensure"
-  // effects (pinned-module trio + default wires) write default state into
-  // DETERMINISTIC keys (`pinned-mixmstrs`, `pinned-timelorde`, …) on mount,
-  // and on `/rack` there is NO provider to gate them (they only skip while
-  // `provider && !providerHasSynced`). If they ran BEFORE the IndexedDB seed
-  // lands, the fresh defaults would race the STORED pinned state at the same
-  // Yjs key — a clientID tiebreak that ~half the time lets the empty defaults
-  // win and discards the user's saved pinned-module settings (and can
-  // resurrect a deleted default cable). Deferring the mount until the seed
-  // resolves makes the ensures run against the ALREADY-SEEDED doc, where their
-  // `if (patch.nodes[spec.id]) continue` correctly skips the restored nodes —
-  // no race, no clobber. This is localized to the scratch route; Canvas's
-  // shared ensure logic (which real `/r/[id]` racks rely on) is untouched.
-  // `whenSeeded` resolves seeded|fresh|cleared-corrupt|disabled — mount on ANY
-  // of them (a fresh/disabled doc has nothing to clobber). The seed is
-  // near-instant, so the blank frame before it lands is imperceptible.
+  // Bind the singleton store to this device+mode scratch doc BEFORE Canvas's
+  // first render (mirrors the `/r/[id]` top-level bind), so Canvas mounts
+  // against the correctly-bound `ydoc`/`patch`. bindRackspace is idempotent for
+  // the same id; `ssr = false` on this route → this only ever runs client-side.
+  bindRackspace(scratchId);
+
+  // SEED GATE for the workflow ensures. Canvas mounts IMMEDIATELY (engine ready
+  // for users + e2e — do NOT block the whole canvas on the seed); we only
+  // thread a `seeded` boolean down so Canvas's two workflow "ensure" effects
+  // defer until the IndexedDB local replica has seeded. Without that, on the
+  // provider-less scratch canvas the ensures fire on mount and write default
+  // pinned state into deterministic keys BEFORE the seed lands, racing the
+  // restored state at the same Yjs key (clientID tiebreak) — ~half of refreshes
+  // discard the user's saved pinned-module settings (and can resurrect a
+  // deleted default cable). `whenSeeded` resolves seeded|fresh|cleared-corrupt|
+  // disabled — release the gate on ANY of them (a fresh/disabled doc has
+  // nothing to clobber).
   let seeded = $state(false);
 
-  // Bind the singleton store to this device+mode scratch doc, then attach the
-  // IndexedDB replica to seed it; flip `seeded` once the seed resolves so the
-  // `{#key scratchId}` block below mounts Canvas. Re-runs on a scratchId change
-  // (a `?mode=` switch): resets the gate, rebinds (idempotent for the same id),
-  // and re-seeds against the mode-correct doc. Teardown detaches the replica
-  // but KEEPS the stored data (that survival across reload is the whole point).
+  // Re-bind on a scratchId change (a `?mode=` switch) — idempotent for the same
+  // id, so the top-level bind above makes the first run a no-op — then attach
+  // the replica and flip `seeded` when it resolves. Teardown detaches the
+  // replica but KEEPS the stored data (that survival across reload is the whole
+  // point). The `{#key scratchId}` wrapper below remounts Canvas whenever the
+  // id changes so its subscriptions reattach to the freshly-bound doc.
   $effect(() => {
     const id = scratchId;
     seeded = false;
@@ -87,7 +88,5 @@
 </script>
 
 {#key scratchId}
-  {#if seeded}
-    <Canvas {headerAuth} {mode} rackspaceId={scratchId} />
-  {/if}
+  <Canvas {headerAuth} {mode} rackspaceId={scratchId} scratchSeeded={seeded} />
 {/key}

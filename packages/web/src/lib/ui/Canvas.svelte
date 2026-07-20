@@ -374,6 +374,18 @@
     // (`pt.dock.v2:${rackspaceId}`). /r/[id] passes the rackspace id; the
     // scratch canvases fall back to 'scratch'.
     rackspaceId?: string;
+    // SCRATCH SEED GATE (/rack only). On the scratch canvas there is no relay
+    // provider to gate the workflow "ensure" effects (pinned trio + default
+    // wire) against, so they'd otherwise fire on mount and write default pinned
+    // state into deterministic keys BEFORE the IndexedDB local replica finishes
+    // seeding — racing the restored state at the same Yjs key (clientID
+    // tiebreak) and ~half the time discarding the user's saved pinned-module
+    // settings. /rack threads its replica-seeded boolean here (false while the
+    // seed is pending, true once resolved); the two ensures defer on
+    // `scratchSeeded === false`. UNDEFINED for real /r/[id] racks (they gate on
+    // the provider sync instead) → their ensure behavior is unchanged. Canvas
+    // otherwise mounts immediately regardless — only the ensures wait.
+    scratchSeeded?: boolean;
   }
   let {
     currentUserId,
@@ -383,6 +395,7 @@
     headerAuth = null,
     mode = 'dawless',
     rackspaceId = undefined,
+    scratchSeeded = undefined,
   }: Props = $props();
 
   /** True when this canvas renders the workflow shell. */
@@ -964,7 +977,12 @@
   // Non-tracked origin → never on the undo stack.
   $effect(() => {
     if (!workflowMode) return;
-    if (provider && !providerHasSynced) return;
+    // Wait for first sync WITH a provider (never race server state); WITHOUT a
+    // provider on the scratch canvas, wait for the local replica seed instead
+    // (scratchSeeded === false) so the ensure runs against the SEEDED doc and
+    // its `if (patch.nodes[spec.id]) continue` skips restored pins — no clobber
+    // race. scratchSeeded is undefined for real racks → guard unchanged.
+    if ((provider && !providerHasSynced) || scratchSeeded === false) return;
     const missing = planPinnedSpawns(snapshot.nodes);
     if (missing.length === 0) return;
     ydoc.transact(() => {
@@ -1000,7 +1018,11 @@
   // Same non-tracked origin → never on the undo stack.
   $effect(() => {
     if (!workflowMode) return;
-    if (provider && !providerHasSynced) return;
+    // Same seed gate as the pinned-module ensure above: defer on a pending
+    // scratch replica seed so the default-wire seed can't resurrect a cable the
+    // user deleted before their stored latch is restored. Undefined (real
+    // racks) → guard unchanged.
+    if ((provider && !providerHasSynced) || scratchSeeded === false) return;
     const plan = planDefaultWires(snapshot.nodes, snapshot.edges);
     if (!plan.latch) return;
     ydoc.transact(() => {
