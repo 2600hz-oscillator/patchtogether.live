@@ -1509,6 +1509,34 @@ export function midiToRow(midi: number, root: number, scale?: ScaleName): number
   return octave * n + deg;
 }
 
+/**
+ * The FULL editable pitch-ROW range for a clip's root+scale: the contiguous
+ * `[lo, hi]` (inclusive) whose `rowToMidi` lands within the playable MIDI range
+ * `[MIN_MIDI, MAX_MIDI]` — i.e. EVERY scale-degree row the note editor can
+ * address, top (`hi` = highest pitch) to bottom (`lo`). `rowToMidi` is strictly
+ * monotonic in `row` (a higher row is always a higher pitch: an octave wrap adds
+ * 12 semitones and the scale spans at most 11 within an octave), so the in-range
+ * rows form one unbroken block and a simple outward scan from row 0 (= root,
+ * which is in range for any sane root) finds both ends.
+ *
+ * The clip-player card's clip-view renders all `count` rows AT ONCE (no pitch-
+ * window scrolling — the whole editable grid is always visible), so this is the
+ * vertical size of that grid. PURE; the scans are bounded (the widest chromatic
+ * span is ≤ ~97 rows, and the caps below stop a pathological out-of-range root
+ * from looping). `count` is always ≥ 1.
+ */
+export function editableRowRange(
+  root: number,
+  scale?: ScaleName,
+): { lo: number; hi: number; count: number } {
+  let lo = 0;
+  for (let i = 0; i < 256 && rowToMidi(lo - 1, root, scale) >= MIN_MIDI; i++) lo--;
+  let hi = 0;
+  for (let i = 0; i < 256 && rowToMidi(hi + 1, root, scale) <= MAX_MIDI; i++) hi++;
+  if (hi < lo) hi = lo; // pathological root outside [MIN_MIDI, MAX_MIDI]
+  return { lo, hi, count: hi - lo + 1 };
+}
+
 /** Options for note entry. `mono` = one note per column (replace on add).
  *  `maxVoices` = poly cap per column (default POLY_CHANNEL_PAIRS = 5). */
 export interface NoteEntryOpts {
