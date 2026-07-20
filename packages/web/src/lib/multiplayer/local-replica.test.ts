@@ -97,6 +97,34 @@ describe('attachLocalReplica — seed across sessions', () => {
     doc2.destroy();
   });
 
+  it("a 'local-scratch-*' id (the scratch canvas) round-trips fresh → seeded", async () => {
+    // The scratch canvas keys its replica by a local-scratch-<mode>-<uuid> id
+    // rather than a real rack id. local-replica is id-agnostic (the DB name is
+    // just REPLICA_DB_PREFIX + id) — this guards against any accidental
+    // id-shape assumption creeping into the validate → seed → persist path.
+    const scratchId = `local-scratch-dawless-${freshRackId()}`;
+
+    // Session 1: fresh attach on the scratch canvas, patch, unmount.
+    const doc1 = new Y.Doc();
+    const replica1 = attachLocalReplica(scratchId, doc1);
+    expect(await replica1.whenSeeded).toBe('fresh');
+    expect(replicaDbName(scratchId)).toBe(`${REPLICA_DB_PREFIX}${scratchId}`);
+    edit(doc1, 'scratch-vco', 'analogVco');
+    await settle();
+    await replica1.destroy();
+    doc1.destroy();
+
+    // Session 2 (refresh): a fresh doc seeds from the same scratch replica.
+    const doc2 = new Y.Doc();
+    const replica2 = attachLocalReplica(scratchId, doc2);
+    expect(await replica2.whenSeeded).toBe('seeded');
+    await vi.waitFor(() => {
+      expect(nodesOf(doc2)).toEqual({ 'scratch-vco': 'analogVco' });
+    });
+    await replica2.destroy();
+    doc2.destroy();
+  });
+
   it('replicas are isolated per rack id', async () => {
     const rackA = freshRackId();
     const rackB = freshRackId();
