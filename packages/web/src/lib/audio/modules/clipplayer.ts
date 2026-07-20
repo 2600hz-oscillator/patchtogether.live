@@ -14,7 +14,9 @@
 // Inputs:  stop_all (trigger) — rising edge stops every lane.
 //          reset    (trigger) — rising edge snaps every ACTIVE lane to step 1.
 // Outputs: pitch1..8 (polyPitchGate) / gate1..8 / vel1..8 — one set per lane.
-// Params:  stepDiv (1/4..1/32), octave, gateLength, quantize (launch snap).
+// Params:  stepDiv (1/4..1/32), octave, gateLength, quantize (launch snap),
+//          snh, and the clip-view DISPLAY-only pair restrictRange + rangeFloor
+//          (piano-roll pitch window; never touches playback/CV).
 // Per-lane clock RATE (1/8..4x, card dropdown → data.rate) scales each lane's
 // step duration off the global STEP grid — see clip-clock.ts for the model +
 // phase rule (common origin at transport start / RESET).
@@ -180,6 +182,13 @@ export const clipplayerDef: AudioModuleDef = {
     // pitch=0 (the legacy continuous behavior). Default-ON changes existing
     // patches by design.
     { id: 'snh', label: 's&h', defaultValue: 1, min: 0, max: 1, curve: 'discrete' },
+    // CLIP-VIEW (note editor) DISPLAY ONLY — these two do NOT touch playback,
+    // pitch, or the emitted CV; they only change how many pitch rows the card's
+    // piano-roll draws. restrictRange OFF (default) = the full editable range
+    // (byte-identical to before this feature). ON = a 4-octave window whose
+    // LOWEST octave is rangeFloor's C, clamped inside the editable range.
+    { id: 'restrictRange', label: 'RngLim', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
+    { id: 'rangeFloor', label: 'RngFlr', defaultValue: 3, min: 0, max: 8, curve: 'discrete' },
   ],
 
   exposesSequence: true,
@@ -223,6 +232,8 @@ export const clipplayerDef: AudioModuleDef = {
       gateLength: "GATE — how much of each step the per-note gate stays high, from short staccato stabs to near-legato (held/tied notes ignore this and stay high across their full span).",
       quantize: "QNT — launch quantization: on, a clip you launch waits and drops in cleanly at the playing lane's next loop boundary; off, it launches immediately. (A first launch into an empty lane is always immediate.)",
       snh: "S&H — one global sample-and-hold toggle for all 8 lanes' pitch outputs: on (default), on a rest the gate closes but each lane's pitch HOLDS its last note (latched to the gate edge); off, rests reset pitch to 0 (the legacy continuous behavior).",
+      restrictRange: "RESTRICT RANGE (clip-view display only) — off (default) the piano-roll note editor shows the WHOLE editable pitch range at once; on, it shows a compact 4-octave window (its lowest octave set by the FLOOR control) so a tall grid stays scannable. Affects the editor view ONLY — never the played notes, pitch CV, or anything a clip emits.",
+      rangeFloor: "RANGE FLOOR (clip-view display only) — the LOWEST octave shown when RESTRICT RANGE is on: the 4-octave editor window runs from this octave's C upward, clamped so it never scrolls past the editable range's top or bottom. Display only; does not transpose or gate anything.",
       "clipplayer-mono-{n}":
         "Lane {n}'s mono/poly toggle — switches that lane between MONO (one note per column, replace-on-add) and POLY (a chord: multiple notes stacked in one column, played out the lane's poly pitch output up to the poly cable's voice width).",
       "clipplayer-rate-{n}":
