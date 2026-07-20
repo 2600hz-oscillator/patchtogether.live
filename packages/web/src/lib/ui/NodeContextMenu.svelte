@@ -98,6 +98,19 @@
     onassignautomationlane?: (clipPlayerNodeId: string, lane: number) => void;
     /** Remove this module's assignment from whichever player holds it. */
     onremoveautomationlane?: () => void;
+    /** WORKFLOW-mode "Control from ▸ Clip N": the clip-players this module can
+     *  be PLAYED from (it is an instrument — pitch+gate / poly / gate-only).
+     *  Each carries the channel count to offer. Empty/omitted → section hidden
+     *  (Canvas gates on isClipEligible + a clip-player existing). */
+    clipControlTargets?: Array<{ nodeId: string; name: string; channels: number }>;
+    /** Assign clip-control: wire (clipPlayerNodeId, channel 0-based) → this module. */
+    oncontrolfromclip?: (clipPlayerNodeId: string, channel: number) => void;
+    /** WORKFLOW-mode "Send to ▸ MixMaster chN": the mixers this module's audio
+     *  out can be sent to. Empty/omitted → section hidden (Canvas gates on
+     *  isMixerEligible + a mixmstrs existing). */
+    mixerTargets?: Array<{ nodeId: string; name: string; channels: number }>;
+    /** Send-to-mixer: wire this module's main audio out → (mixerNodeId, channel 0-based). */
+    onsendtomixer?: (mixerNodeId: string, channel: number) => void;
     /** DOCKING P2.5a — "Dock to …" entries (allowlisted types, workflow
      *  racks only; Canvas gates and this just renders). */
     dockable?: boolean;
@@ -141,6 +154,10 @@
     automationAssigned = false,
     onassignautomationlane,
     onremoveautomationlane,
+    clipControlTargets = [],
+    oncontrolfromclip,
+    mixerTargets = [],
+    onsendtomixer,
     dockable = false,
     docked = false,
     ondock,
@@ -161,6 +178,9 @@
   let colorSubmenuOpen = $state(false);
   // ── Automation-lane submenu state (module-level assignment) ──
   let autoSubmenuOpen = $state<string | null>(null); // the open player's node id
+  // ── Workflow patch-convenience submenu state ──
+  let clipSubmenuOpen = $state<string | null>(null); // the open clip-player's node id
+  let mixerSubmenuOpen = $state<string | null>(null); // the open mixer's node id
   // Collapse the submenus whenever the whole menu closes, so the NEXT open
   // starts fresh (the component instance is reused via bind:open — without this
   // reset a second open would TOGGLE the still-open submenu shut).
@@ -168,6 +188,8 @@
     if (!open) {
       colorSubmenuOpen = false;
       autoSubmenuOpen = null;
+      clipSubmenuOpen = null;
+      mixerSubmenuOpen = null;
     }
   });
   // The custom <input type=color> value, seeded from the current colour. Kept
@@ -196,6 +218,20 @@
 
   function toggleAutoSubmenu(playerId: string) {
     autoSubmenuOpen = autoSubmenuOpen === playerId ? null : playerId;
+  }
+  function toggleClipSubmenu(playerId: string) {
+    clipSubmenuOpen = clipSubmenuOpen === playerId ? null : playerId;
+  }
+  function pickControlFromClip(playerId: string, channel: number) {
+    oncontrolfromclip?.(playerId, channel);
+    onclose();
+  }
+  function toggleMixerSubmenu(mixerId: string) {
+    mixerSubmenuOpen = mixerSubmenuOpen === mixerId ? null : mixerId;
+  }
+  function pickSendToMixer(mixerId: string, channel: number) {
+    onsendtomixer?.(mixerId, channel);
+    onclose();
   }
   function pickAssignAutomationLane(playerId: string, lane: number) {
     onassignautomationlane?.(playerId, lane);
@@ -486,6 +522,82 @@
             Remove automation assignment
           </button>
         {/if}
+        <div class="ctx-sep" role="presentation"></div>
+      {/if}
+      {#if clipControlTargets.length > 0}
+        <!-- WORKFLOW patch-convenience: this module is a playable INSTRUMENT
+             (pitch+gate / poly / gate-only percussion). "Control from ▸ Clip N"
+             auto-wires a clip-player channel's pitch/poly + gate outs into it. -->
+        {#each clipControlTargets as c (c.nodeId)}
+          <button
+            class="ctx-item ctx-has-submenu"
+            onclick={() => toggleClipSubmenu(c.nodeId)}
+            role="menuitem"
+            aria-haspopup="true"
+            aria-expanded={clipSubmenuOpen === c.nodeId}
+            data-testid={`ctx-clipcontrol-${c.nodeId}`}
+          >
+            {clipControlTargets.length > 1 ? `Control from (${c.name})` : 'Control from clip'}
+            <span class="ctx-caret" aria-hidden="true">{clipSubmenuOpen === c.nodeId ? '▾' : '▸'}</span>
+          </button>
+          {#if clipSubmenuOpen === c.nodeId}
+            <div
+              class="ctx-lane-panel"
+              data-testid={`ctx-clipcontrol-${c.nodeId}-channels`}
+              role="group"
+              aria-label="Clip channels"
+            >
+              {#each Array.from({ length: c.channels }, (_, i) => i) as ch (ch)}
+                <button
+                  type="button"
+                  class="ctx-lane-btn"
+                  title={`Clip channel ${ch + 1}`}
+                  aria-label={`control from clip channel ${ch + 1}`}
+                  data-testid={`ctx-clipcontrol-${c.nodeId}-channel-${ch}`}
+                  onclick={() => pickControlFromClip(c.nodeId, ch)}
+                >{ch + 1}</button>
+              {/each}
+            </div>
+          {/if}
+        {/each}
+        <div class="ctx-sep" role="presentation"></div>
+      {/if}
+      {#if mixerTargets.length > 0}
+        <!-- WORKFLOW patch-convenience: this module has a MAIN audio out.
+             "Send to ▸ MixMaster chN" auto-wires it to a mixer channel (stereo
+             L/R, or mono filling both). -->
+        {#each mixerTargets as m (m.nodeId)}
+          <button
+            class="ctx-item ctx-has-submenu"
+            onclick={() => toggleMixerSubmenu(m.nodeId)}
+            role="menuitem"
+            aria-haspopup="true"
+            aria-expanded={mixerSubmenuOpen === m.nodeId}
+            data-testid={`ctx-sendtomixer-${m.nodeId}`}
+          >
+            {mixerTargets.length > 1 ? `Send to (${m.name})` : 'Send to mixer'}
+            <span class="ctx-caret" aria-hidden="true">{mixerSubmenuOpen === m.nodeId ? '▾' : '▸'}</span>
+          </button>
+          {#if mixerSubmenuOpen === m.nodeId}
+            <div
+              class="ctx-lane-panel"
+              data-testid={`ctx-sendtomixer-${m.nodeId}-channels`}
+              role="group"
+              aria-label="Mixer channels"
+            >
+              {#each Array.from({ length: m.channels }, (_, i) => i) as ch (ch)}
+                <button
+                  type="button"
+                  class="ctx-lane-btn"
+                  title={`Mixer channel ${ch + 1}`}
+                  aria-label={`send to mixer channel ${ch + 1}`}
+                  data-testid={`ctx-sendtomixer-${m.nodeId}-channel-${ch}`}
+                  onclick={() => pickSendToMixer(m.nodeId, ch)}
+                >{ch + 1}</button>
+              {/each}
+            </div>
+          {/if}
+        {/each}
         <div class="ctx-sep" role="presentation"></div>
       {/if}
       {#if docked && onundock}
