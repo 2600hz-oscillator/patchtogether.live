@@ -255,4 +255,71 @@ test.describe('scratch canvas persistence', () => {
       expect(vals.ch1Level, `pinned-mixmstrs ch1Level after reload ${i}`).toBe(0.33);
     }
   });
+
+  // OWNER-REPORTED BUG (the reason for the gate fix): "new workflow rack, add a
+  // module, refresh → I lose my rack." The prior tests seeded a pre-built patch
+  // (mode-isolation marker) or drove pinned params; NEITHER exercised the owner's
+  // flow of ADDING A FRESH MODULE after the workflow shell has loaded, then
+  // reloading. This asserts the user-added node id is still in the LIVE graph
+  // (`window.__patch.nodes`) after a refresh, and that the DAWLESS canvas remains
+  // a blank sandbox on its OWN id (the workflow add does not cross-load).
+  //
+  // (This bug shipped LIVE despite the earlier tests because Fix A gated the
+  // whole replica on the VITE_E2E_HOOKS *build* flag — TRUE on the dev/autotest
+  // deploys + local `npm run dev` where the owner works — so persistence was off
+  // for real users while these e2e ran. The gate now keys on `navigator.webdriver`
+  // (a real automated run) instead, so real users get persistence and this spec
+  // still opts in.)
+  const WF_USER_ADD = 'scratch-wf-useradd';
+
+  test('a user-added module on /rack?mode=workflow survives refresh (owner bug)', async ({
+    page,
+  }) => {
+    await page.goto('/rack?mode=workflow');
+    await page.waitForLoadState('networkidle');
+
+    const idbOk = await page.evaluate(
+      () => typeof indexedDB !== 'undefined' && indexedDB !== null,
+    );
+    test.skip(!idbOk, 'IndexedDB unavailable — scratch replica cannot persist');
+
+    // Let the workflow shell finish loading BEFORE the add — the owner's flow is
+    // "open the workflow rack, then add a module", not "seed a patch pre-mount".
+    await waitForPinned(page, [PINNED_TIMELORDE, PINNED_MIXMSTRS]);
+
+    // Add a module AFTER load through the real live-doc path (__patch/__ydoc, the
+    // same seam the add menu drives) and block until it flushes to IndexedDB.
+    const workflowId = await addNodeAndFlush(page, 'workflow', WF_USER_ADD);
+
+    // The refresh: full document reload = new JS context = fresh empty doc that
+    // must be rehydrated from the IndexedDB replica.
+    await page.reload();
+    await page.waitForLoadState('networkidle');
+
+    // The owner's assertion: the user-added node is STILL in the live graph.
+    await page.waitForFunction(
+      (id) => {
+        const w = globalThis as unknown as { __patch?: { nodes: Record<string, unknown> } };
+        return !!w.__patch && Object.prototype.hasOwnProperty.call(w.__patch.nodes, id);
+      },
+      WF_USER_ADD,
+      { timeout: 15_000 },
+    );
+    expect(await readScratchId(page, 'workflow')).toBe(workflowId);
+
+    // DAWLESS opens a SEPARATE blank sandbox on its OWN id — the workflow add
+    // must NOT cross-load into it (no shared replica DB).
+    await page.goto('/rack');
+    await page.waitForLoadState('networkidle');
+    const dawlessId = await waitForScratchId(page, 'dawless');
+    expect(dawlessId).not.toBe(workflowId); // distinct id → distinct replica DB
+    // The dawless canvas is a blank sandbox: the workflow-added node is absent,
+    // and none of the workflow pinned trio leaked in either.
+    await expect(page.locator(`.svelte-flow__node[data-id="${WF_USER_ADD}"]`)).toHaveCount(0);
+    const dawlessHasWorkflowNode = await page.evaluate((id) => {
+      const w = globalThis as unknown as { __patch?: { nodes: Record<string, unknown> } };
+      return !!w.__patch && Object.prototype.hasOwnProperty.call(w.__patch.nodes, id);
+    }, WF_USER_ADD);
+    expect(dawlessHasWorkflowNode).toBe(false);
+  });
 });

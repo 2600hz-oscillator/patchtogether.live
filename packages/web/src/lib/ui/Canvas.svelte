@@ -5888,10 +5888,29 @@
   // Dev-only: expose undoManager so e2e tests can assert state without
   // racing against the captureTimeout debouncer. Gated on testHooksEnabled()
   // so it's present in the preview bundle (VITE_E2E_HOOKS=1) too.
+  //
+  // Keep it FRESH across a `bindRackspace()` doc swap. `undoManager` is a
+  // module-scope `let` export that bindRackspace reassigns (a NEW manager for
+  // the new doc; the old one is destroyed) — and Svelte 5 does NOT re-run this
+  // $effect on that reassignment. store.ts's dev-hook refresh re-points
+  // __patch / __ydoc but NOT __undoManager. The /rack scratch canvas now calls
+  // bindRackspace for local persistence, so without this re-point
+  // window.__undoManager stayed on the DESTROYED mount-time manager while edits
+  // accrued on the new one — e2e reads of __undoManager.undoStack / .undo()
+  // then hit a dead manager (undo appears to no-op; matrixmix undo specs went
+  // red). Re-point through onBindRackspace, exactly like the doc-swap seam
+  // above and the snapshot bus. undoManager is reassigned BEFORE the bind
+  // listeners fire, and the named import is a live binding, so reading it here
+  // yields the fresh manager regardless of mount-effect ordering.
   if (testHooksEnabled()) {
     $effect(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__undoManager = undoManager;
+      const offBind = onBindRackspace(() => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (globalThis as any).__undoManager = undoManager;
+      });
+      return () => offBind();
     });
   }
 

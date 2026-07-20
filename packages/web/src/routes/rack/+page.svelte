@@ -6,7 +6,6 @@
   import { ydoc, bindRackspace, unbindRackspace } from '$lib/graph/store';
   import { attachLocalReplica } from '$lib/multiplayer/local-replica';
   import { getOrCreateLocalScratchId } from '$lib/storage/local-scratch';
-  import { testHooksEnabled } from '$lib/dev/test-hooks';
 
   // `homeAuth` is derived SERVER-SIDE in +layout.server.ts (the scratch
   // canvas at `/rack` doesn't mount the client <ClerkProvider> — that would
@@ -41,23 +40,32 @@
   // NOT migrate the scratch patch — it simply persists locally.
   let scratchId = $derived(getOrCreateLocalScratchId(mode));
 
-  // E2E REPLICA OPT-OUT (default OFF under the test harness). The general
-  // e2e / per-module-per-port suite tests MODULE CORRECTNESS on `/rack`; that
-  // is ORTHOGONAL to persistence, so those runs must stay ISOLATED from the
+  // E2E REPLICA OPT-OUT (default OFF only under an ACTUAL automated run). The
+  // general e2e / per-module-per-port suite tests MODULE CORRECTNESS on `/rack`;
+  // that is ORTHOGONAL to persistence, so those runs must stay ISOLATED from the
   // IndexedDB replica — otherwise the replica's mount-time attach can race a
   // cross-domain module's audio-graph build (the nibbles video→audio bridge)
   // and its cross-navigation persistence pollutes specs that re-`goto('/rack')`
-  // expecting an ephemeral canvas. Under `testHooksEnabled()` (DEV or
-  // VITE_E2E_HOOKS=1 — i.e. the dev server + the prod-preview e2e bundle) the
-  // replica is OFF so `/rack` is ephemeral exactly as before Fix A. REAL users
-  // (prod: testHooksEnabled false) always get it. The dedicated
-  // `scratch-persist.spec.ts` opts back IN via `window.__ptScratchReplica` so
-  // the real cross-refresh persistence (incl. the workflow pinned-param
+  // expecting an ephemeral canvas.
+  //
+  // We key the opt-out on `navigator.webdriver` — TRUE only inside a live
+  // Playwright/WebDriver session (nothing in e2e/playwright.config.ts disables
+  // it) — a RUNTIME signal, NOT the VITE_E2E_HOOKS BUILD flag. That flag is set
+  // on the dev + autotest DEPLOYS (dev.patchtogether.live, where the owner
+  // works, and local `npm run dev`), so gating on `testHooksEnabled()` turned
+  // persistence OFF for those REAL users too — the original Fix A regression
+  // this fix repairs (add a module, refresh → lost rack). Persistence is now ON
+  // for EVERY real user (prod AND the VITE_E2E_HOOKS=1 dev/autotest deploys AND
+  // local `npm run dev`); it is disabled ONLY under a real webdriver-driven run,
+  // where the isolation is required. Behaviour under e2e is IDENTICAL to Fix A
+  // (per-port/general = OFF, opt-in specs = ON), so this cannot regress e2e. The
+  // dedicated `scratch-persist.spec.ts` opts back IN via `window.__ptScratchReplica`
+  // so the real cross-refresh persistence (incl. the workflow pinned-param
   // regression) is still covered.
   const replicaEnabled =
-    !testHooksEnabled() ||
     (typeof window !== 'undefined' &&
-      (window as unknown as { __ptScratchReplica?: boolean }).__ptScratchReplica === true);
+      (window as unknown as { __ptScratchReplica?: boolean }).__ptScratchReplica === true) ||
+    !(typeof navigator !== 'undefined' && navigator.webdriver === true);
 
   // SEED GATE for the workflow ensures (only meaningful when the replica is ON).
   // Canvas mounts IMMEDIATELY (engine ready for users + e2e — do NOT block the
