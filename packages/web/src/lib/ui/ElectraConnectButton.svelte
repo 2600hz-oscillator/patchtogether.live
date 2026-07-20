@@ -17,7 +17,10 @@
   import { getActiveEngine } from '$lib/audio/engine-ref';
   import { ElectraAutoconfig } from '$lib/electra/autoconfig';
   import { buildLiveHost } from '$lib/electra/host';
-  import { importBindings } from '$lib/midi/midi-learn.svelte';
+  import {
+    setElectraDisplayBindings,
+    clearElectraDisplayBindings,
+  } from '$lib/midi/midi-learn.svelte';
   // The Lua layer is bundled as a raw string and uploaded to the device.
   import luaSource from '$lib/electra/lua-bundle';
 
@@ -45,9 +48,14 @@
         detail = res.reason ?? 'failed';
         return;
       }
-      // Inject the generated CC map into midi-learn so inbound CCs that the
-      // orchestrator does NOT own still resolve, and our writable controls are
-      // recognised as bound (the SAME moduleId:paramId keying MIDI uses).
+      // Register the generated CC map for the bound-BADGE only (display-only),
+      // NOT into the dispatched/persisted midi-learn namespace. The physical
+      // Electra CC is dispatched by the Electra broker/autoconfig (host.writeParam),
+      // so importing it into `bindings` double-dispatched every param AND its
+      // newest-wins collision repair silently evicted the user's manual MIDI-learn
+      // mappings that shared a channel-0 address (persisted, surviving unplug).
+      // Display-only + device-lifetime: our writable controls still show as bound,
+      // manual bindings survive, and inbound Electra CC dispatches exactly once.
       const learnable = auto.allocations
         .filter((a) => a.role === 'rw')
         .map((a) => ({
@@ -56,7 +64,7 @@
           cc: a.number,
           learnedAt: Date.now(),
         }));
-      importBindings(learnable);
+      setElectraDisplayBindings(learnable);
       status = res.isElectra ? 'ready' : 'ready'; // uploaded either way
       detail = res.isElectra ? 'Electra configured' : 'configured (device unconfirmed)';
     } catch (e) {
@@ -65,7 +73,10 @@
     }
   }
 
-  onDestroy(() => auto?.stop());
+  onDestroy(() => {
+    auto?.stop();
+    clearElectraDisplayBindings();
+  });
 </script>
 
 <button
