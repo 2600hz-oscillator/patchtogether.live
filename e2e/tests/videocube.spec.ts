@@ -208,6 +208,18 @@ test.describe('VIDEOCUBE — video isomorph of the audio CUBE', () => {
       signatureDist(rZoom, rSlice),
       `slice Y moves the cutting plane → the render changes, dist=${signatureDist(rZoom, rSlice).toFixed(1)}`,
     ).toBeGreaterThan(1.5);
+
+    // WRAP — mirror-tile the source videos across the cube (B1: WRAP was DEAD on
+    // the PICTURE — byte-identical either way because the marched coords never
+    // leave [0,1]; the fix extends the surface-uv domain so ON mirror-tiles the
+    // videos → the render must now VISIBLY change when WRAP toggles).
+    await setNodeParams(page, 'vc', { wrap: 1 });
+    const rWrap = await stepRead(page, { nodeId: 'vc', steps: 3, scale: RENDER_SCALE });
+    assertLiveFrame(rWrap, 3);
+    expect(
+      signatureDist(rSlice, rWrap),
+      `WRAP mirror-tiles the surface → the volume changes, dist=${signatureDist(rSlice, rWrap).toFixed(1)}`,
+    ).toBeGreaterThan(1.5);
   });
 
   // AUDIO derivation — the MONO-DRONE cube-slice reaches a consumer. Real engine

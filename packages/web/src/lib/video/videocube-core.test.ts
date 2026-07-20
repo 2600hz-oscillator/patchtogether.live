@@ -14,9 +14,12 @@ import {
   luma,
   posterize,
   warpCoord,
+  wrapSurfaceCoord,
+  readerLagFor,
   voxelSample,
   diffuseTargetFor,
   stripToHeightfield,
+  stripToHeightfieldInto,
   VIDEOCUBE_RING_FRAMES,
   VIDEOCUBE_RENDER_SCALE,
   VIDEOCUBE_MARCH_SCALE,
@@ -24,9 +27,12 @@ import {
   VIDEOCUBE_MARCH_GPU,
   VIDEOCUBE_MARCH_MAX,
   VIDEOCUBE_FIELD_ROWS,
+  VIDEOCUBE_READER_LAG,
   VIDEOCUBE_MODE_SMOOTH,
   VIDEOCUBE_MODE_MORPH,
   VIDEOCUBE_MODE_CHAOS,
+  VIDEOCUBE_CHAOS_REPRESENTATIVE_LAG,
+  VIDEOCUBE_WRAP_TILES,
   VIDEOCUBE_DIFFUSE_DEFAULT,
   type RGB,
   type VoxelParams,
@@ -36,6 +42,7 @@ import {
   spaceCrushCoord,
   crushCoord,
   wrapFold,
+  clamp01,
   fieldFromHeights,
   lowestInfoFace,
   type Material,
@@ -198,6 +205,63 @@ describe('warpCoord — SPACE CRUSH voxelize + CRUSH snap + WRAP fold (the field
   });
 });
 
+describe('wrapSurfaceCoord — WRAP on the PICTURE surface uv (B1: WRAP must change the render)', () => {
+  it('WRAP off = clamp (identity for the in-cube [0,1] coords the march produces)', () => {
+    // The marched surface coords are ALWAYS in [0,1]; OFF must be byte-identical
+    // to a plain read → the pre-WRAP look is preserved.
+    for (const c of [0, 0.1, 0.37, 0.5, 0.83, 1]) {
+      expect(wrapSurfaceCoord(c, false)).toBeCloseTo(clamp01(c), 6);
+      expect(wrapSurfaceCoord(c, false)).toBeCloseTo(c, 6);
+    }
+  });
+  it('WRAP on MIRROR-TILES the [0,1] domain → DIFFERENT from clamp at interior coords', () => {
+    // This is the whole B1 fix: for an in-range coord, ON ≠ OFF, so toggling WRAP
+    // visibly changes which texel the surface samples (the picture changes).
+    let anyDifferent = false;
+    for (const c of [0.1, 0.25, 0.37, 0.6, 0.75, 0.9]) {
+      const on = wrapSurfaceCoord(c, true);
+      const off = wrapSurfaceCoord(c, false);
+      expect(on).toBeCloseTo(wrapFold(c * VIDEOCUBE_WRAP_TILES), 6);
+      expect(on).toBeGreaterThanOrEqual(0);
+      expect(on).toBeLessThanOrEqual(1);
+      if (Math.abs(on - off) > 1e-3) anyDifferent = true;
+    }
+    expect(anyDifferent, 'WRAP on differs from off for interior coords → the render changes').toBe(true);
+  });
+  it('WRAP on is a true MIRROR: symmetric about the mid-plane, folds the faces to 0', () => {
+    expect(wrapSurfaceCoord(0, true)).toBeCloseTo(0, 6);   // near face
+    expect(wrapSurfaceCoord(0.5, true)).toBeCloseTo(1, 6); // mid-plane = the fold crest
+    expect(wrapSurfaceCoord(1, true)).toBeCloseTo(0, 6);   // far face folds back to 0
+    // mirror symmetry across the 0.5 crest
+    expect(wrapSurfaceCoord(0.3, true)).toBeCloseTo(wrapSurfaceCoord(0.7, true), 6);
+  });
+});
+
+describe('readerLagFor — audio + video read the SAME temporal frame per mode (B3)', () => {
+  it('MORPH reads the newest frame (lag 0) — matches the video march', () => {
+    expect(readerLagFor(VIDEOCUBE_MODE_MORPH, false)).toBe(0);
+    expect(readerLagFor(VIDEOCUBE_MODE_MORPH, true)).toBe(0);
+  });
+  it('SMOOTH reads the trailing VIDEOCUBE_READER_LAG frame (LIVE forces the newest)', () => {
+    expect(readerLagFor(VIDEOCUBE_MODE_SMOOTH, false)).toBe(VIDEOCUBE_READER_LAG);
+    expect(readerLagFor(VIDEOCUBE_MODE_SMOOTH, true)).toBe(0);
+  });
+  it('CHAOS reads the window-MEAN representative frame (per-pixel in the picture), ignoring LIVE', () => {
+    // The shader dithers a per-pixel frame regardless of LIVE; the 1-D audio scan
+    // reads the window mean, the documented representative — LIVE does not override.
+    expect(readerLagFor(VIDEOCUBE_MODE_CHAOS, false)).toBe(VIDEOCUBE_CHAOS_REPRESENTATIVE_LAG);
+    expect(readerLagFor(VIDEOCUBE_MODE_CHAOS, true)).toBe(VIDEOCUBE_CHAOS_REPRESENTATIVE_LAG);
+    // the representative is the mean of a uniform pick over [0, N-1)
+    expect(VIDEOCUBE_CHAOS_REPRESENTATIVE_LAG).toBe(Math.round((VIDEOCUBE_RING_FRAMES - 1) / 2));
+  });
+  it('the three modes select DISTINCT frames (so the picture and audio actually differ by mode)', () => {
+    const smooth = readerLagFor(VIDEOCUBE_MODE_SMOOTH, false);
+    const morph = readerLagFor(VIDEOCUBE_MODE_MORPH, false);
+    const chaos = readerLagFor(VIDEOCUBE_MODE_CHAOS, false);
+    expect(new Set([smooth, morph, chaos]).size).toBe(3);
+  });
+});
+
 describe('diffuseTargetFor — SPACE DIFFUSE gravity face (unified with the audio)', () => {
   // Build a rows×256 constant heightfield (a flat surface at physical height h).
   function flatField(h: number, rows = 4): Float32Array[] {
@@ -248,5 +312,33 @@ describe('stripToHeightfield — single-frame ring luma reduction for the audio 
     const h = stripToHeightfield(strip, cols, rows);
     expect(h[0]![0]).toBeCloseTo(1, 5);
     expect(h[0]![1]).toBeCloseTo((128 / 255) * 2 - 1, 4);
+  });
+
+  it('stripToHeightfieldInto REUSES the scratch buffer (B2 — no per-call allocation)', () => {
+    const cols = 8, rows = 4;
+    const out: Float32Array[] = Array.from({ length: rows }, () => new Float32Array(cols));
+    const rowRefs = out.map((r) => r); // identity of each persistent row
+    const white = new Uint8Array(cols * rows * 4).fill(255);
+    const black = new Uint8Array(cols * rows * 4);
+    for (let i = 3; i < black.length; i += 4) black[i] = 255;
+
+    const r1 = stripToHeightfieldInto(white, cols, rows, out);
+    expect(r1).toBe(out);                       // returns the SAME array
+    for (let f = 0; f < rows; f++) expect(r1[f]).toBe(rowRefs[f]); // SAME row buffers (no alloc)
+    expect(r1[0]![0]).toBeCloseTo(1, 5);        // white → +1
+
+    const r2 = stripToHeightfieldInto(black, cols, rows, out);
+    expect(r2).toBe(out);
+    for (let f = 0; f < rows; f++) expect(r2[f]).toBe(rowRefs[f]); // still the SAME buffers
+    expect(r2[0]![0]).toBeCloseTo(-1, 5);       // overwritten in place → black → -1
+  });
+
+  it('stripToHeightfieldInto == stripToHeightfield (same math, in-place)', () => {
+    const cols = 6, rows = 3;
+    const strip = new Uint8Array(cols * rows * 4);
+    for (let i = 0; i < strip.length; i++) strip[i] = (i * 37) % 256;
+    const want = stripToHeightfield(strip, cols, rows);
+    const got = stripToHeightfieldInto(strip, cols, rows, Array.from({ length: rows }, () => new Float32Array(cols)));
+    for (let f = 0; f < rows; f++) for (let x = 0; x < cols; x++) expect(got[f]![x]).toBeCloseTo(want[f]![x]!, 6);
   });
 });

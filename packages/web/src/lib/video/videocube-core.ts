@@ -103,6 +103,54 @@ export const VIDEOCUBE_MODE_SMOOTH = 0; // trailing single frame (sub-frame lerp
 export const VIDEOCUBE_MODE_MORPH = 1; // newest frame (crisp, no trailing)
 export const VIDEOCUBE_MODE_CHAOS = 2; // per-pixel dithered frame across the window
 
+/** CHAOS is a PER-PIXEL dithered frame in the picture (no single frame). The
+ *  audio slice is a 1-D scan of ONE reduced frame, so it can't be per-pixel —
+ *  it reads the CHAOS window's REPRESENTATIVE frame, the statistical MEAN of the
+ *  per-pixel hash lag (hash·(N−1), uniform on [0,N−1) → mean (N−1)/2). Documented
+ *  choice (B3): audio + video read the SAME field per mode; for CHAOS the audio
+ *  reads the average of what the picture dithers across. */
+export const VIDEOCUBE_CHAOS_REPRESENTATIVE_LAG = Math.round((VIDEOCUBE_RING_FRAMES - 1) / 2); // 30
+
+/**
+ * Trailing-frame LAG (frames back from the newest fully-written layer) the reader
+ * selects for a given mode — the SINGLE source of truth for BOTH the video march
+ * surface pick AND the audio reduce-frame pick, so the two read the SAME temporal
+ * frame (the "unified field" promise, B3). Matches the COMBINE shader's per-mode
+ * branch exactly:
+ *   • MORPH  → 0        (the newest crisp frame)
+ *   • SMOOTH → the trailing VIDEOCUBE_READER_LAG frame (LIVE forces 0)
+ *   • CHAOS  → the window-mean representative (per-pixel in the picture; the shader
+ *              ignores LIVE for CHAOS, so the audio does too)
+ */
+export function readerLagFor(mode: number, live: boolean): number {
+  if (mode === VIDEOCUBE_MODE_CHAOS) return VIDEOCUBE_CHAOS_REPRESENTATIVE_LAG;
+  if (live) return 0;
+  if (mode === VIDEOCUBE_MODE_MORPH) return 0;
+  return VIDEOCUBE_READER_LAG; // SMOOTH (default)
+}
+
+/** Surface-texture tiling factor when WRAP is ON — the source videos mirror-tile
+ *  this many times across the cube. 2 = one mirror fold per axis (a kaleidoscopic
+ *  seam at the cube mid-planes / faces). */
+export const VIDEOCUBE_WRAP_TILES = 2.0;
+
+/**
+ * Warp a SURFACE-texture uv coordinate by WRAP (the video analog of the audio
+ * slice's out-of-range mirror-fold). WRAP OFF clamps to the cube face (identity
+ * for an in-range coord → the pre-WRAP look is byte-identical). WRAP ON extends
+ * the sampling domain by VIDEOCUBE_WRAP_TILES and mirror-folds it, so the source
+ * videos MIRROR-TILE across the cube (visibly different at the faces) — the fix
+ * for "WRAP does nothing to the picture" (B1). Mirrors the COMBINE shader's
+ * surface-uv branch 1:1.
+ *
+ * (Distinct from `warpCoord`, which is the FIELD-lookup coord warp — the DEPTH
+ * axis z and the audio slice ray — where cube-dsp already mirror-folds coords
+ * that genuinely leave [0,1].)
+ */
+export function wrapSurfaceCoord(coord: number, wrap: boolean): number {
+  return wrap ? wrapFold(coord * VIDEOCUBE_WRAP_TILES) : clamp01(coord);
+}
+
 export interface RGB {
   r: number;
   g: number;
@@ -142,9 +190,12 @@ export function posterize(c: RGB, crushK: number): RGB {
 // WRAP mirror-folds an out-of-range coord; otherwise the coord clamps.
 // ----------------------------------------------------------------------
 
-/** Warp one field-lookup coordinate: SPACE CRUSH voxelize, then CRUSH spatial
- *  snap, then WRAP mirror-fold (or clamp). Composition order + the underlying
- *  cube-dsp functions match the GLSL 1:1. */
+/** Warp one FIELD-lookup coordinate (the DEPTH axis z, and the audio slice ray):
+ *  SPACE CRUSH voxelize, then CRUSH spatial snap, then WRAP mirror-fold (or
+ *  clamp). Composition order + the underlying cube-dsp functions match the GLSL
+ *  1:1. NOTE: the picture's SURFACE uv (x,y) uses `wrapSurfaceCoord` instead —
+ *  its in-cube coords never leave [0,1], so WRAP tiles the sampling domain there
+ *  to stay visible (B1); the depth/audio coords here genuinely can leave [0,1]. */
 export function warpCoord(
   coord: number,
   spaceCrush: number,
@@ -306,16 +357,33 @@ export function stripToHeightfield(
   rows: number,
 ): Float32Array[] {
   const out: Float32Array[] = [];
+  for (let f = 0; f < rows; f++) out.push(new Float32Array(cols));
+  return stripToHeightfieldInto(strip, cols, rows, out);
+}
+
+/**
+ * Allocation-free variant of `stripToHeightfield`: fills a PERSISTENT
+ * `Float32Array[rows]` (each length `cols`) in place and returns it, so the
+ * audio-slice readback path can reuse one scratch heightfield across recomputes
+ * instead of allocating `rows` new Float32Arrays every call (B2 — no per-frame
+ * allocation on the hot path). Rows missing from `out` are created once (first
+ * call); short rows are left untouched. Same math as `stripToHeightfield`.
+ */
+export function stripToHeightfieldInto(
+  strip: Uint8Array | Uint8ClampedArray,
+  cols: number,
+  rows: number,
+  out: Float32Array[],
+): Float32Array[] {
   for (let f = 0; f < rows; f++) {
-    const row = new Float32Array(cols);
+    let row = out[f];
+    if (!row || row.length !== cols) { row = new Float32Array(cols); out[f] = row; }
     for (let x = 0; x < cols; x++) {
       const i = (f * cols + x) * 4;
-      if (i + 2 < strip.length) {
-        const lm = luma((strip[i] ?? 0) / 255, (strip[i + 1] ?? 0) / 255, (strip[i + 2] ?? 0) / 255);
-        row[x] = lm * 2 - 1; // [0,1] → [-1,1]
-      }
+      row[x] = i + 2 < strip.length
+        ? luma((strip[i] ?? 0) / 255, (strip[i + 1] ?? 0) / 255, (strip[i + 2] ?? 0) / 255) * 2 - 1
+        : 0;
     }
-    out.push(row);
   }
   return out;
 }

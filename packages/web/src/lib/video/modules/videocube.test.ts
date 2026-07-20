@@ -7,11 +7,15 @@
 // and a draw() driving the reduce→cube-slice-scan→setWave post end to end.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { videocubeDef, VIDEOCUBE_DEFAULTS } from './videocube';
+import { videocubeDef, VIDEOCUBE_DEFAULTS, AUDIO_RECOMPUTE_EVERY } from './videocube';
 import type { VideoEngineContext, VideoFrameContext } from '$lib/video/engine';
 
+/** GL call stats the B2 throttle test reads (readPixels = the synchronous audio
+ *  readback we must NOT do every frame under a modulating CV). */
+interface GlStats { readPixels: number }
+
 // ── Fake GL: no-op every call; return sane values where the factory branches. ──
-function makeFakeGl(): WebGL2RenderingContext {
+function makeFakeGl(stats?: GlStats): WebGL2RenderingContext {
   const target: Record<string, unknown> = {
     createTexture: () => ({}),
     createFramebuffer: () => ({}),
@@ -21,7 +25,7 @@ function makeFakeGl(): WebGL2RenderingContext {
     getExtension: () => null,
     getParameter: () => '',
     getError: () => 0,
-    readPixels: () => undefined, // leaves the strip all-zero (black rings)
+    readPixels: () => { if (stats) stats.readPixels++; }, // leaves the strip all-zero (black rings)
   };
   return new Proxy(target, {
     get(t, prop: string) {
@@ -62,9 +66,9 @@ function makeFakeAudio(): FakeAudio {
   return { ctx, workletReady, get node() { return node; } };
 }
 
-function makeCtx(audio: FakeAudio | null): VideoEngineContext {
+function makeCtx(audio: FakeAudio | null, stats?: GlStats): VideoEngineContext {
   return {
-    gl: makeFakeGl(),
+    gl: makeFakeGl(stats),
     res: { width: 1024, height: 768 },
     compileFragment: () => ({}) as WebGLProgram,
     createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
@@ -205,54 +209,98 @@ describe('videocubeDef.factory — construction + audio seam', () => {
     handle.dispose();
   });
 
-  it('B1: no per-frame recompute STORM — unchanged params + a same-value CV do NOT rescan', async () => {
+  it('B2: no per-frame readback under a MODULATING CV — the recompute is THROTTLED', async () => {
+    const stats: GlStats = { readPixels: 0 };
     const audio = makeFakeAudio();
-    const ctx = makeCtx(audio);
+    const ctx = makeCtx(audio, stats);
     const handle = videocubeDef.factory(ctx, mkNode());
     await audio.workletReady; await Promise.resolve(); await Promise.resolve();
     const frame = mkFrame(ctx.gl, true); // a live source so the rings advance every frame
 
-    handle.surface.draw(frame); // initial audioDirty → exactly one scan
+    handle.surface.draw(frame); // seat the initial scan (consumes the spawn dirty flag)
     const after1 = setWaveCount(audio);
-    expect(after1, 'one initial recompute').toBe(1);
 
-    // The CV bridge calls setParam EVERY frame for a patched CV; a CONSTANT CV
-    // writes the same value → must NOT re-dirty → no rescan across many frames.
+    // A CONSTANT CV writes the same value every frame → never re-dirties → no
+    // rescan across many frames (the original B1 guarantee, preserved).
+    stats.readPixels = 0;
     for (let i = 0; i < 6; i++) { handle.setParam('morph_fc', 0); handle.surface.draw(frame); }
-    expect(setWaveCount(audio), 'same-value CV writes every frame → no storm').toBe(after1);
+    expect(setWaveCount(audio), 'constant CV → no recompute').toBe(after1);
+    expect(stats.readPixels, 'constant CV → zero GPU readback').toBe(0);
 
-    // A change that quantizes to the SAME signature is also skipped (sig gate).
-    handle.setParam('morph_fc', 0.0004);
-    handle.surface.draw(frame);
-    expect(setWaveCount(audio), 'sub-quantum param change → signature-gated, no rescan').toBe(after1);
-
-    // A REAL change DOES recompute.
-    handle.setParam('morph_fc', 0.5);
-    handle.surface.draw(frame);
-    expect(setWaveCount(audio), 'a real param change recomputes').toBe(after1 + 1);
-
-    // Evolving ring content still refreshes on the throttle cadence (~24 frames).
+    // THE HEADLINE B2 CASE: a MODULATING CV writes a NEW value every frame — the
+    // signature changes every frame, so the sig-gate alone would NOT stop a
+    // per-frame readback+alloc storm. The throttle must cap it to ~1 readback per
+    // AUDIO_RECOMPUTE_EVERY frames, NOT one per frame.
+    stats.readPixels = 0;
     const before = setWaveCount(audio);
-    for (let i = 0; i < 30; i++) handle.surface.draw(frame);
-    expect(setWaveCount(audio), 'evolving ring content refreshes on the throttle').toBeGreaterThan(before);
+    const FRAMES = AUDIO_RECOMPUTE_EVERY * 3; // 72 frames of live modulation
+    for (let i = 0; i < FRAMES; i++) {
+      handle.setParam('morph_fc', 0.1 + 0.3 * Math.sin(i)); // a distinct value each frame
+      handle.surface.draw(frame);
+    }
+    const recomputes = setWaveCount(audio) - before;
+    // A per-frame storm would be FRAMES recomputes (72) × 3 readbacks = 216.
+    // Throttled: ~FRAMES / AUDIO_RECOMPUTE_EVERY = 3 recomputes.
+    expect(recomputes, `modulating CV recompute is throttled (${recomputes} over ${FRAMES} frames)`)
+      .toBeLessThanOrEqual(Math.ceil(FRAMES / AUDIO_RECOMPUTE_EVERY) + 1);
+    expect(recomputes, 'but the drone DOES still track the sweep').toBeGreaterThanOrEqual(1);
+    expect(stats.readPixels, 'readback is NOT per-frame (≤ 3 rings × recomputes)')
+      .toBeLessThanOrEqual(3 * (Math.ceil(FRAMES / AUDIO_RECOMPUTE_EVERY) + 1));
     handle.dispose();
   });
 
-  it('B2: MATERIAL + WRAP changes re-derive the audio (they govern both image AND sound)', async () => {
+  it('B2: an IDLE module recomputes a single tweak promptly (throttle only caps a sweep)', async () => {
     const audio = makeFakeAudio();
     const ctx = makeCtx(audio);
     const handle = videocubeDef.factory(ctx, mkNode());
     await audio.workletReady; await Promise.resolve(); await Promise.resolve();
-    const frame = mkFrame(ctx.gl, true);
-
-    handle.surface.draw(frame); // seat the initial scan
+    // No live input → rings idle → `sinceRecompute` grows past the throttle, so the
+    // NEXT real param change fires on the very next frame (responsive when idle).
+    const idle = mkFrame(ctx.gl, false);
+    for (let i = 0; i < AUDIO_RECOMPUTE_EVERY + 2; i++) handle.surface.draw(idle);
     const base = setWaveCount(audio);
+    handle.setParam('morph_fc', 0.7); // a real change while idle
+    handle.surface.draw(idle);
+    expect(setWaveCount(audio), 'idle tweak recomputes next frame').toBe(base + 1);
+    handle.dispose();
+  });
+
+  it('B2: MATERIAL + WRAP mark the audio dirty (they govern both image AND sound)', async () => {
+    const audio = makeFakeAudio();
+    const ctx = makeCtx(audio);
+    const handle = videocubeDef.factory(ctx, mkNode());
+    await audio.workletReady; await Promise.resolve(); await Promise.resolve();
+    const idle = mkFrame(ctx.gl, false); // idle so each dirty change fires promptly
+
+    const drain = () => { for (let i = 0; i < AUDIO_RECOMPUTE_EVERY + 1; i++) handle.surface.draw(idle); };
+    drain(); // let the throttle open
+    let base = setWaveCount(audio);
     handle.setParam('material', 1); // SMOOTH → HARD
-    handle.surface.draw(frame);
-    expect(setWaveCount(audio), 'MATERIAL change re-derives the audio same-frame').toBe(base + 1);
+    handle.surface.draw(idle);
+    expect(setWaveCount(audio), 'MATERIAL change re-derives the audio').toBe(base + 1);
+    drain(); base = setWaveCount(audio);
     handle.setParam('wrap', 1); // clamp → mirror-fold
-    handle.surface.draw(frame);
-    expect(setWaveCount(audio), 'WRAP change re-derives the audio same-frame').toBe(base + 2);
+    handle.surface.draw(idle);
+    expect(setWaveCount(audio), 'WRAP change re-derives the audio').toBe(base + 1);
+    handle.dispose();
+  });
+
+  it('B3: READER MODE + LIVE re-derive the audio (audio reads the reader-selected frame)', async () => {
+    const audio = makeFakeAudio();
+    const ctx = makeCtx(audio);
+    const handle = videocubeDef.factory(ctx, mkNode());
+    await audio.workletReady; await Promise.resolve(); await Promise.resolve();
+    const idle = mkFrame(ctx.gl, false);
+    const drain = () => { for (let i = 0; i < AUDIO_RECOMPUTE_EVERY + 1; i++) handle.surface.draw(idle); };
+
+    drain(); let base = setWaveCount(audio);
+    handle.setParam('reader_mode', 1); // SMOOTH → MORPH: audio must re-pick the frame
+    handle.surface.draw(idle);
+    expect(setWaveCount(audio), 'reader_mode change re-derives the audio (B3)').toBe(base + 1);
+    drain(); base = setWaveCount(audio);
+    handle.setParam('live', 1); // force the no-lag frame → different reduced frame
+    handle.surface.draw(idle);
+    expect(setWaveCount(audio), 'LIVE change re-derives the audio (B3)').toBe(base + 1);
     handle.dispose();
   });
 

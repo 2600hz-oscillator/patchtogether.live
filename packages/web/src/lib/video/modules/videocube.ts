@@ -78,9 +78,11 @@ import {
   VIDEOCUBE_MODE_SMOOTH,
   VIDEOCUBE_MODE_MORPH,
   VIDEOCUBE_MODE_CHAOS,
+  VIDEOCUBE_WRAP_TILES,
   VIDEOCUBE_DIFFUSE_DEFAULT,
   diffuseTargetFor,
-  stripToHeightfield,
+  readerLagFor,
+  stripToHeightfieldInto,
   type DiffuseTarget,
 } from '$lib/video/videocube-core';
 // The audio derivation reuses the AUDIO-CUBE field/slice DSP wholesale — imported
@@ -106,8 +108,10 @@ const N = VIDEOCUBE_RING_FRAMES; // 60
 const LUMA_COLS = 256; // audio heightfield phase resolution (matches CUBE_SLICE_SIZE)
 const FIELD_ROWS = VIDEOCUBE_FIELD_ROWS; // 64 (audio field image-row resolution)
 /** Recompute the audio slice at most every this-many video frames (~2.5×/sec at
- *  60 fps) so the drone tracks the evolving video without a per-frame readback. */
-const AUDIO_RECOMPUTE_EVERY = 24;
+ *  60 fps) so the drone tracks the evolving video without a per-frame readback.
+ *  This is the SINGLE throttle for BOTH evolving ring content AND a modulating CV
+ *  (B2 — a live CV must not force a synchronous readback + alloc every frame). */
+export const AUDIO_RECOMPUTE_EVERY = 24;
 /** Camera field-of-view (radians), matching CubeCard's viz so the two cube views
  *  frame the volume identically. */
 const CAM_FOV = 1.0;
@@ -183,9 +187,7 @@ export const VIDEOCUBE_DEFAULTS: Readonly<VideocubeParams> = DEFAULTS;
 const PARAM_IDS: ReadonlySet<string> = new Set(Object.keys(DEFAULTS));
 
 // Params that reshape the AUDIO slice (a change ⇒ recompute the derived wave).
-// The reader/view/camera controls are NOT here — they only affect the PICTURE;
-// the audio reduces the reader-selected ring frame and tracks the ring content
-// via the periodic recompute.
+// The VIEW/CAMERA controls are NOT here — they only reproject the PICTURE.
 const AUDIO_PARAMS: ReadonlySet<string> = new Set([
   'morph_fc', 'connect', 'connect_strength', 'crush', 'space_crush',
   'space_diffuse', 'slice_y', 'slice_rx', 'slice_ry', 'slice_rz', 'fold', 'spread',
@@ -193,6 +195,10 @@ const AUDIO_PARAMS: ReadonlySet<string> = new Set([
   // so a change must mark audio dirty — else the picture updates same-frame while
   // the audio lags to the next throttle tick (breaks the WRAP/MATERIAL isomorphism).
   'material', 'wrap',
+  // reader_mode + live pick WHICH temporal ring frame the audio reduces (via the
+  // shared readerLagFor — the SAME frame the picture surfaces, B3), so a change
+  // re-derives the wave from a different frame → they reshape the audio too.
+  'reader_mode', 'live',
 ]);
 // Params pushed straight to the oscillator worklet's AudioParams (pitch + gain).
 const OSC_PARAMS: ReadonlySet<string> = new Set(['tune', 'fine', 'level']);
@@ -272,6 +278,7 @@ const int   MODE_MORPH = ${VIDEOCUBE_MODE_MORPH};
 const int   MODE_CHAOS = ${VIDEOCUBE_MODE_CHAOS};
 const float ABSORB = ${VIDEOCUBE_ABSORB.toFixed(2)};
 const float WIRE_W = 0.012;   // wireframe line half-width (aspect-corrected UV)
+const float WRAP_TILES = ${VIDEOCUBE_WRAP_TILES.toFixed(1)}; // WRAP surface mirror-tiling
 
 float lumaOf(vec3 c){ return clamp(0.299*c.r + 0.587*c.g + 0.114*c.b, 0.0, 1.0); }
 
@@ -432,9 +439,22 @@ void main(){
       x = crushCoord(spaceCrushCoord(x, uSpaceCrush), uCrush);
       y = crushCoord(spaceCrushCoord(y, uSpaceCrush), uCrush);
       z = crushCoord(spaceCrushCoord(z, uSpaceCrush), uCrush);
-      if (uWrap > 0.5){ x = wrapFold(x); y = wrapFold(y); z = wrapFold(z); }
-      else { x = clamp(x, 0.0, 1.0); y = clamp(y, 0.0, 1.0); z = clamp(z, 0.0, 1.0); }
-      vec2 uv = vec2(x, y);
+      // z is the DEPTH axis — a ray∩cube sample always lands in [0,1], so clamp is
+      // the identity here and WRAP is a no-op on it (matches the pre-WRAP look).
+      z = clamp(z, 0.0, 1.0);
+      // SURFACE uv (B1 — make WRAP visibly change the PICTURE). The marched (x,y)
+      // are ALWAYS in [0,1] (interior cube samples), so a plain wrapFold vs clamp
+      // is byte-identical → WRAP was DEAD. WRAP ON now EXTENDS the sampling domain
+      // (VIDEOCUBE_WRAP_TILES) and mirror-folds it, so the source videos MIRROR-
+      // TILE across the cube (a kaleidoscopic fold at the faces / mid-planes) — the
+      // visible video analog of the audio slice's out-of-range mirror-fold. OFF =
+      // the single clamped read (byte-identical to the pre-WRAP render).
+      vec2 uv;
+      if (uWrap > 0.5){
+        uv = vec2(wrapFold(x * WRAP_TILES), wrapFold(y * WRAP_TILES));
+      } else {
+        uv = vec2(clamp(x, 0.0, 1.0), clamp(y, 0.0, 1.0));
+      }
 
       vec3 cA = surfAt(uRingA, uv, layerA);
       vec3 cB = surfAt(uRingB, uv, layerB);
@@ -466,11 +486,17 @@ void main(){
       alpha += a;
 
       // Cutting slice plane injected AT ITS TRUE DEPTH (proper occlusion) — the
-      // exact plane the audio reads, tinted by the density it cuts.
+      // exact plane the audio reads, tinted by the density it cuts. The draw band
+      // scales by |rd·N| so the plane keeps a CONSTANT apparent thickness (~1.5
+      // samples) at every view angle: sdst changes by |rd·N|·dt per step, so a
+      // plain dt·0.75 band smears wide when the ray grazes the plane (small |rd·N|)
+      // — view-dependent. The |rd·N| factor (floored so an edge-on plane stays a
+      // faint sliver, not a hard vanish) makes the thickness view-independent.
       float sdst = dot(pc - uSliceCenter, uSliceN);
       float su   = dot(pc - uSliceCenter, uSliceA);
       float sv   = dot(pc - uSliceCenter, uSliceB);
-      if (abs(sdst) < dt*0.75 && abs(su) <= 0.5 && abs(sv) <= 0.5){
+      float sBand = max(abs(dot(rd, uSliceN)), 0.15) * dt * 0.75;
+      if (abs(sdst) < sBand && abs(su) <= 0.5 && abs(sv) <= 0.5){
         vec3 hot = mix(vec3(1.0, 0.55, 0.15), vec3(1.0, 0.95, 0.5), F);
         float pa = (0.35 + 0.5*F) * (1.0 - alpha);
         accum += pa * hot;
@@ -632,12 +658,12 @@ export const videocubeDef: VideoModuleDef = {
       view_rot_x: 'VIEW X (-pi..pi, default 0.6): orbit camera ELEVATION. Picture only — rotates the volumetric view up/down without touching the sound or the cutting plane.',
       view_rot_y: 'VIEW Y (-pi..pi, default 0.7): orbit camera AZIMUTH. Picture only — rotates the volumetric view left/right.',
       view_rot_z: 'VIEW Z (-pi..pi, default 0): orbit camera ROLL (a genuine roll of the view). Picture only.',
-      wrap: 'WRAP (0/1, default 0): out-of-range field-lookup coordinates are clamped to the edge (off) or mirror-folded back inside (on) — governs both the volume edge behaviour and the audio field.',
+      wrap: 'WRAP (0/1, default 0): OFF reads each source video with a single clamped sample (the plain look). ON extends the sampling domain and mirror-folds it, so the videos MIRROR-TILE across the cube — a kaleidoscopic fold at the faces/mid-planes in the volume, and the matching mirror-fold of the audio slice samples that reach beyond the cube. Governs BOTH the picture and the derived audio.',
       material: 'MATERIAL (0/1, default 0 = SMOOTH): SMOOTH renders the solid translucent, blending the three videos by their occupancy weights; HARD renders a binary solid where one surface wins per voxel (a hard-cut mosaic), and the same in the audio field.',
       screen_on: 'SCREEN (0/1, default 1 = on): perf gate for the ray-march. When off AND video_out is unpatched the render is skipped (the rings keep capturing and the audio drone keeps running).',
-      reader_mode: 'READER (0..2, default 0 = SMOOTH): which frame each ring contributes as its surface (global — all three rings). 0 = SMOOTH (a trailing frame, sub-frame smoothed), 1 = MORPH (the newest frame, crisp), 2 = CHAOS (a per-pixel dithered frame across the ring window). Affects the picture only; the audio reads the reader-selected frame.',
+      reader_mode: 'READER (0..2, default 0 = SMOOTH): which frame each ring contributes as its surface (global — all three rings), in BOTH the picture AND the derived audio — they read the SAME temporal frame (the unified-field promise). 0 = SMOOTH (a trailing frame, sub-frame smoothed), 1 = MORPH (the newest frame, crisp), 2 = CHAOS (a per-pixel dithered frame across the ring window). Because CHAOS is per-pixel in the picture, the 1-D audio scan reads its window-MEAN representative frame.',
       freeze: 'FREEZE (0/1, default 0): stops all LIVE rings from advancing so the held surfaces can be scrubbed with the slice/view controls. File-loaded rings are always frozen. Picture + (via the ring content) audio.',
-      live: 'LIVE (0/1, default 0): forces the real-time / no-lag ring read (the newest frame) in any reader mode. Picture + audio surface selection.',
+      live: 'LIVE (0/1, default 0): forces the real-time / no-lag ring read (the newest frame) for the SMOOTH reader (MORPH is already newest; CHAOS keeps its per-pixel dither). Applies to BOTH the picture and the audio surface selection.',
     },
   },
   controlFamilies: [],
@@ -783,7 +809,11 @@ export const videocubeDef: VideoModuleDef = {
     let oscGain: GainNode | null = null;
     let oscSilence: ConstantSourceNode | null = null;
     let oscLoadStarted = false;
-    let sinceRecompute = 0;
+    // Frames since the last audio-slice recompute. Seeded at the throttle so the
+    // FIRST dirty frame recomputes immediately; while IDLE it keeps growing (a
+    // later single tweak fires next frame); under continuous modulation it is
+    // reset on each recompute → capped at one readback per throttle window (B2).
+    let sinceRecompute = AUDIO_RECOMPUTE_EVERY;
     let audioDirty = true;
     let lastWave: Float32Array | null = null;
     let lastSliceSig = '';
@@ -801,13 +831,26 @@ export const videocubeDef: VideoModuleDef = {
       pmap.get('level')?.setValueAtTime(clamp(params.level, 0, 2), ac.currentTime);
     }
 
+    // Persistent audio-slice readback scratch (B2 — no per-call allocation on the
+    // hot path): one Uint8Array strip reused by every reduceRing readback, and one
+    // Float32Array[64] heightfield per slot reused across recomputes.
+    const readbackScratch = new Uint8Array(LUMA_COLS * FIELD_ROWS * 4);
+    const fieldScratch: Record<Slot, Float32Array[]> = {
+      a: Array.from({ length: FIELD_ROWS }, () => new Float32Array(LUMA_COLS)),
+      b: Array.from({ length: FIELD_ROWS }, () => new Float32Array(LUMA_COLS)),
+      c: Array.from({ length: FIELD_ROWS }, () => new Float32Array(LUMA_COLS)),
+    };
+
     /** GPU-reduce one ring's reader-selected FRAME to a 256×64 luma strip, read it
-     *  back, and build the Float32Array[64] heightfield cube-dsp scans. Cheap
-     *  (small target, gated). The reader lag/live matches the picture surface. */
+     *  back (into the persistent scratch), and fill the slot's persistent
+     *  Float32Array[64] heightfield cube-dsp scans. Cheap (small target, gated).
+     *  The reader lag/live/MODE is picked by the SHARED `readerLagFor`, so the
+     *  audio reduces the SAME temporal frame the picture march surfaces (B3). */
     function reduceRing(slot: Slot): Float32Array[] {
       if (!progs || !uReduce) return [];
+      const mode = Math.round(clamp(params.reader_mode, 0, 2));
+      const lag = readerLagFor(mode, params.live >= 0.5);
       const newest = (head[slot] - 1 + N) % N;
-      const lag = params.live >= 0.5 ? 0 : VIDEOCUBE_READER_LAG;
       const layer = ((newest - lag) % N + N) % N;
       gl.useProgram(progs.reduce);
       gl.activeTexture(gl.TEXTURE0);
@@ -817,12 +860,12 @@ export const videocubeDef: VideoModuleDef = {
       gl.bindFramebuffer(gl.FRAMEBUFFER, reduceTarget.fbo);
       gl.viewport(0, 0, LUMA_COLS, FIELD_ROWS);
       ctx.drawFullscreenQuad();
-      const strip = new Uint8Array(LUMA_COLS * FIELD_ROWS * 4);
+      readbackScratch.fill(0);
       if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE) {
-        gl.readPixels(0, 0, LUMA_COLS, FIELD_ROWS, gl.RGBA, gl.UNSIGNED_BYTE, strip);
+        gl.readPixels(0, 0, LUMA_COLS, FIELD_ROWS, gl.RGBA, gl.UNSIGNED_BYTE, readbackScratch);
       }
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      return stripToHeightfield(strip, LUMA_COLS, FIELD_ROWS);
+      return stripToHeightfieldInto(readbackScratch, LUMA_COLS, FIELD_ROWS, fieldScratch[slot]);
     }
 
     /** Quantized signature over every param that reshapes the derived wave (the
@@ -838,6 +881,8 @@ export const videocubeDef: VideoModuleDef = {
         q(params.morph_fc), q(params.connect), q(params.connect_strength), q(params.crush),
         q(params.space_crush), q(params.space_diffuse), q(params.fold), q(params.spread),
         params.material >= 0.5 ? 1 : 0, params.wrap >= 0.5 ? 1 : 0,
+        // reader_mode + live change the reduced frame (B3) → part of the signature.
+        Math.round(clamp(params.reader_mode, 0, 2)), params.live >= 0.5 ? 1 : 0,
       ].join('|');
     }
 
@@ -1087,20 +1132,30 @@ export const videocubeDef: VideoModuleDef = {
           g.bindFramebuffer(g.FRAMEBUFFER, null);
         }
 
-        // ── Derived AUDIO recompute (MANDELBULB seam) ──
-        //   • PARAM change (audioDirty, value-gated in setParam): recompute, but
-        //     signature-gated inside recomputeSlice so a same-value CV write is a
-        //     no-op (B1: no per-frame readback+scan storm under a live CV).
-        //   • EVOLVING ring content: force a recompute on the throttle cadence,
-        //     but ONLY while a live ring is actually advancing — idle otherwise.
+        // ── Derived AUDIO recompute (MANDELBULB seam) — the GPU readback + slice
+        //    scan is THROTTLED to the ring-advance cadence, NEVER per frame (B2).
+        //    A MODULATING CV writes a NEW value every frame (→ audioDirty every
+        //    frame, → a fresh signature every frame), so the earlier sig-gate alone
+        //    did NOT stop a per-frame readback+alloc storm under the headline use
+        //    case. Coalesce here: recompute at most once per AUDIO_RECOMPUTE_EVERY
+        //    frames. `sinceRecompute` is only reset when we actually recompute, so
+        //    an IDLE module (nothing dirty, no ring advancing) lets it grow past
+        //    the throttle → a later single knob tweak still fires next frame.
         if (oscNode) {
-          if (audioDirty) {
-            audioDirty = false;
-            sinceRecompute = 0;
-            recomputeSlice(false);
-          } else if (ringsAdvanced && ++sinceRecompute >= AUDIO_RECOMPUTE_EVERY) {
-            sinceRecompute = 0;
-            recomputeSlice(true);
+          sinceRecompute++;
+          if (sinceRecompute >= AUDIO_RECOMPUTE_EVERY) {
+            if (audioDirty) {
+              // A slice/field/reader param moved (value-gated in setParam);
+              // sig-gated inside recomputeSlice so a same-value CV is still a no-op.
+              audioDirty = false;
+              sinceRecompute = 0;
+              recomputeSlice(false);
+            } else if (ringsAdvanced) {
+              // EVOLVING ring content — force a rescan (the heightfields changed
+              // even though the params didn't), but only while a live ring advances.
+              sinceRecompute = 0;
+              recomputeSlice(true);
+            }
           }
         }
       },
