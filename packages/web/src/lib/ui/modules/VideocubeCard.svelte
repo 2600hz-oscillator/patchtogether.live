@@ -94,6 +94,16 @@
   function toggleFreeze() { setNodeParam(id, 'freeze', freezeOn ? 0 : 1); }
   function toggleLive() { setNodeParam(id, 'live', liveOn ? 0 : 1); }
 
+  // ── SLICE VIEW flavour — the colorize for the slice-viz output ports
+  // (slice_out + the smooth/morph/chaos triptych). Picture-only; NOT audio. ──
+  const SLICE_VIEWS = [
+    { v: 0, label: 'TEX' },
+    { v: 1, label: 'XRAY' },
+    { v: 2, label: 'WEIGHTS' },
+  ] as const;
+  let sliceView = $derived(Math.round(p('slice_view')));
+  function pickSliceView(v: number) { setNodeParam(id, 'slice_view', v); }
+
   // ── Video engine access (FrametableCard pattern). ──
   function getVideoEngine(): VideoEngine | null {
     const e = engineCtx.get();
@@ -192,7 +202,11 @@
     slice_y_cv: 'Y', slice_rx_cv: 'ROT X', slice_ry_cv: 'ROT Y', slice_rz_cv: 'ROT Z',
     fold_cv: 'FOLD', spread_cv: 'SPREAD', tune_cv: 'TUNE',
   });
-  const outputs = portsFromDef(videocubeDef.outputs, { video_out: 'VIDEO', audio_out: 'AUDIO' });
+  const outputs = portsFromDef(videocubeDef.outputs, {
+    video_out: 'VIDEO', audio_out: 'AUDIO',
+    scope_out: 'SCOPE', slice_out: 'SLICE', depth_out: 'DEPTH',
+    smooth_out: 'SMOOTH', morph_out: 'MORPH', chaos_out: 'CHAOS',
+  });
 </script>
 
 <div class="vcard card video" data-testid="videocube-card" data-node-id={id}>
@@ -264,6 +278,18 @@
             data-testid="videocube-freeze" onclick={toggleFreeze}>{freezeOn ? 'FROZEN' : 'FREEZE'}</button>
           <button type="button" class="vc-btn nodrag" class:on={liveOn}
             data-testid="videocube-live" onclick={toggleLive}>{liveOn ? 'LIVE!' : 'LIVE'}</button>
+        </div>
+
+        <!-- SLICE VIEW: the colorize flavour for the slice-viz output ports
+             (slice/smooth/morph/chaos). Each viz jack renders only when patched. -->
+        <div class="reader-row" data-testid="videocube-slice-view">
+          <span class="seg-label">SLICE</span>
+          {#each SLICE_VIEWS as sv (sv.v)}
+            <button type="button" class="vc-btn nodrag seg" class:on={sliceView === sv.v}
+              data-testid={`videocube-slice-view-${sv.label.toLowerCase()}`}
+              title="Colorize flavour for the slice/smooth/morph/chaos output jacks"
+              onclick={() => pickSliceView(sv.v)}>{sv.label}</button>
+          {/each}
         </div>
 
         <div class="knobs">
@@ -396,9 +422,16 @@
     color: var(--text);
     border-color: var(--accent, #6884d7);
   }
-  .reader-row { display: flex; gap: 5px; }
+  .reader-row { display: flex; gap: 5px; align-items: center; }
   .reader-row .vc-btn { flex: 1; text-align: center; }
   .reader-row .seg { font-size: 0.52rem; padding: 4px 2px; }
+  .seg-label {
+    font-size: 0.5rem;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    font-family: ui-monospace, monospace;
+    flex: 0 0 auto;
+  }
   .knobs {
     display: grid;
     grid-template-columns: repeat(4, 1fr);

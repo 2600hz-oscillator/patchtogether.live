@@ -28,6 +28,9 @@ import { readScopeSnapshot, summarize } from './_module-coverage-helpers';
 // VIDEOCUBE renders at half engine resolution (VIDEOCUBE_RENDER_SCALE) for the
 // 3-ring SwiftShader/CI budget; read its output FBO at the reduced size.
 const RENDER_SCALE = 0.5;
+// The 6 slice-viz output ports render at the MARCH (quarter) scale
+// (VIDEOCUBE_MARCH_SCALE) — read their FBOs at that size.
+const MARCH_SCALE = 0.25;
 // A static ACIDWARP scene fills the whole ring in one first-frame-fill step; a
 // handful of steps establishes a stable, fully-seated buffer for all 3 rings.
 const FILL = 24;
@@ -67,10 +70,12 @@ async function setNodeParams(page: Page, nodeId: string, params: Record<string, 
   }, { nodeId, params });
 }
 
-/** Step a fixed burst, then read `nodeId`'s output FBO at the reduced render res
- *  with sparse stats + a coarse 2×2 quadrant luma signature (frametable pattern). */
-async function stepRead(page: Page, opts: { nodeId: string; steps: number; scale?: number }): Promise<FrameStats> {
-  return page.evaluate(({ nodeId, steps, scale }) => {
+/** Step a fixed burst, then read `nodeId`'s output FBO (default video_out, or a
+ *  named `port`) at the reduced render res with sparse stats + a coarse 2×2
+ *  quadrant luma signature (frametable pattern). Viz ports render at the MARCH
+ *  (quarter) scale, so pass scale: MARCH_SCALE when reading them. */
+async function stepRead(page: Page, opts: { nodeId: string; steps: number; scale?: number; port?: string }): Promise<FrameStats> {
+  return page.evaluate(({ nodeId, steps, scale, port }) => {
     const w = globalThis as unknown as {
       __engine: () => {
         getDomain: (d: string) => {
@@ -91,7 +96,7 @@ async function stepRead(page: Page, opts: { nodeId: string; steps: number; scale
     const glErrors: number[] = [];
     let e: number;
     while ((e = gl.getError()) !== gl.NO_ERROR) glErrors.push(e);
-    const tex = vid.outputTexture(nodeId) as WebGLTexture | null;
+    const tex = vid.outputTexture(nodeId, port) as WebGLTexture | null;
     const s = scale ?? 1;
     const W = Math.max(1, Math.round(vid.res.width * s));
     const H = Math.max(1, Math.round(vid.res.height * s));
@@ -279,6 +284,244 @@ test.describe('VIDEOCUBE — video isomorph of the audio CUBE', () => {
       best.peak,
       `derived cube-slice drone is audible at the scope (peak=${best.peak.toFixed(4)} rms=${best.rms.toFixed(4)} nonzero=${best.nonzeroSamples})`,
     ).toBeGreaterThan(0.02);
+    expect(errors, `no page errors: ${errors.join(' | ')}`).toEqual([]);
+  });
+
+  // ── SLICE-VIZ output ports (scope/slice/depth + smooth/morph/chaos triptych):
+  //    PER-PORT gating (unpatched = zero render), the slice_view flavour + reader
+  //    + slice Y·rot response, the triptych's divergence under motion, and
+  //    depth_out brightness tracking occupancy. ONE graph (motion sources), many
+  //    cheap reads. Renderer-tolerant (variance/signature probes, not pixel-exact).
+  test('slice-viz jacks: per-port gating, slice_view/reader/Y·rot response, triptych divergence, depth occupancy', async ({ page, errorWatch }) => {
+    void errorWatch;
+    await installRenderSmokeHooks(page);
+    await page.goto('/rack');
+    await page.waitForLoadState('networkidle');
+
+    // Moving sources (speed 1) so the reader modes (SMOOTH trailing vs MORPH
+    // newest vs CHAOS per-pixel) read DIFFERENT ring frames → the triptych + a
+    // reader-mode change are observable. Mid-connect so occupancy has room to move.
+    const nodes: SpawnNode[] = [
+      { id: 'acidA', type: 'acidwarp', position: { x: 40, y: 40 }, domain: 'video', params: { scene: 0, paletteType: 0, speed: 1 } },
+      { id: 'acidB', type: 'acidwarp', position: { x: 40, y: 260 }, domain: 'video', params: { scene: 5, paletteType: 2, speed: 1 } },
+      { id: 'acidC', type: 'acidwarp', position: { x: 40, y: 480 }, domain: 'video', params: { scene: 9, paletteType: 3, speed: 1 } },
+      { id: 'vc', type: 'videocube', position: { x: 520, y: 200 }, domain: 'video', params: { connect: 0.4, morph_fc: 0.5 } },
+      { id: 'o-vid', type: 'videoOut', position: { x: 1120, y: 40 }, domain: 'video' },
+      { id: 'o-slice', type: 'videoOut', position: { x: 1120, y: 160 }, domain: 'video' },
+      { id: 'o-depth', type: 'videoOut', position: { x: 1120, y: 280 }, domain: 'video' },
+      { id: 'o-smooth', type: 'videoOut', position: { x: 1120, y: 400 }, domain: 'video' },
+      { id: 'o-morph', type: 'videoOut', position: { x: 1120, y: 520 }, domain: 'video' },
+      { id: 'o-chaos', type: 'videoOut', position: { x: 1120, y: 640 }, domain: 'video' },
+    ];
+    const vE = (id: string, from: string, to: string, port: string): SpawnEdge =>
+      ({ id, from: { nodeId: from, portId: port }, to: { nodeId: to, portId: 'in' }, sourceType: 'video', targetType: 'video' });
+    const edges: SpawnEdge[] = [
+      { id: 'e-a', from: { nodeId: 'acidA', portId: 'out' }, to: { nodeId: 'vc', portId: 'video_a' }, sourceType: 'video', targetType: 'video' },
+      { id: 'e-b', from: { nodeId: 'acidB', portId: 'out' }, to: { nodeId: 'vc', portId: 'video_b' }, sourceType: 'video', targetType: 'video' },
+      { id: 'e-c', from: { nodeId: 'acidC', portId: 'out' }, to: { nodeId: 'vc', portId: 'video_c' }, sourceType: 'video', targetType: 'video' },
+      vE('e-vid', 'vc', 'o-vid', 'video_out'),
+      // slice_out + depth_out + the FULL triptych patched; scope_out UNPATCHED (the
+      // per-port gating witness — it must stay black / unrendered).
+      vE('e-slice', 'vc', 'o-slice', 'slice_out'),
+      vE('e-depth', 'vc', 'o-depth', 'depth_out'),
+      vE('e-smooth', 'vc', 'o-smooth', 'smooth_out'),
+      vE('e-morph', 'vc', 'o-morph', 'morph_out'),
+      vE('e-chaos', 'vc', 'o-chaos', 'chaos_out'),
+    ];
+    await spawnPatch(page, nodes, edges);
+
+    // Reads step 2 frames to RE-RENDER the viz FBOs; with the rings FROZEN (below)
+    // this never advances the ring, so a param change is the only variable.
+    const readViz = (port: string, steps = 2) => stepRead(page, { nodeId: 'vc', steps, scale: MARCH_SCALE, port });
+    const assertVizStructured = (s: FrameStats, label: string): void => {
+      expect(s.fbComplete, `${label} FBO readable`).toBe(true);
+      expect(s.glErrors, `${label} GL errors: [${s.glErrors.join(',')}]`).toEqual([]);
+      expect(s.nonZeroFrac, `${label} is not all-black (patched → rendered)`).toBeGreaterThan(0.02);
+      expect(s.variance, `${label} has spatial structure`).toBeGreaterThan(2);
+    };
+
+    // The render-smoke loop is a tight deterministic step() loop (no wall-clock
+    // time passes), so a time-based source like ACIDWARP would capture the SAME
+    // frame every step → all 60 ring frames identical → the reader modes (SMOOTH
+    // trailing / MORPH newest / CHAOS dither) would be indistinguishable BY
+    // DESIGN. Inject deterministic RING MOTION by cycling each source's SCENE
+    // between captures so the ring window holds DISTINCT frames, then FREEZE the
+    // rings so the held varied window is what every subsequent read samples.
+    for (let i = 0; i < 14; i++) {
+      await setNodeParams(page, 'acidA', { scene: i % 10 });
+      await setNodeParams(page, 'acidB', { scene: (i + 3) % 10 });
+      await setNodeParams(page, 'acidC', { scene: (i + 6) % 10 });
+      await stepRead(page, { nodeId: 'vc', steps: 1, scale: MARCH_SCALE, port: 'video_out' });
+    }
+    await setNodeParams(page, 'vc', { freeze: 1 }); // hold the varied ring window
+
+    // ── PER-PORT GATING: the 5 PATCHED viz jacks render (non-black + structured);
+    //    the UNPATCHED scope_out never renders → stays black. ──
+    const slice0 = await readViz('slice_out');
+    const depth0 = await readViz('depth_out');
+    const smooth = await readViz('smooth_out');
+    const morph = await readViz('morph_out');
+    const chaos = await readViz('chaos_out');
+    assertVizStructured(slice0, 'slice_out');
+    assertVizStructured(depth0, 'depth_out');
+    assertVizStructured(smooth, 'smooth_out');
+    assertVizStructured(morph, 'morph_out');
+    assertVizStructured(chaos, 'chaos_out');
+    const scopeUnpatched = await readViz('scope_out');
+    expect(scopeUnpatched.nonZeroFrac, 'UNPATCHED scope_out is not rendered → black (per-port gate)').toBeLessThan(0.02);
+    expect(scopeUnpatched.mean, 'UNPATCHED scope_out near-zero mean').toBeLessThan(3);
+
+    // ── slice_out responds to SLICE VIEW (colorize flavour) ──
+    await setNodeParams(page, 'vc', { slice_view: 1 }); // TEXTURED → XRAY
+    const sliceXray = await readViz('slice_out');
+    assertVizStructured(sliceXray, 'slice_out (xray)');
+    expect(signatureDist(slice0, sliceXray), 'slice_view TEXTURED→XRAY recolours the cross-section').toBeGreaterThan(2);
+    await setNodeParams(page, 'vc', { slice_view: 2 }); // XRAY → WEIGHTS
+    const sliceWeights = await readViz('slice_out');
+    assertVizStructured(sliceWeights, 'slice_out (weights)');
+    expect(signatureDist(sliceXray, sliceWeights), 'slice_view XRAY→WEIGHTS recolours again').toBeGreaterThan(2);
+    await setNodeParams(page, 'vc', { slice_view: 0 }); // back to TEXTURED
+
+    // ── slice_out responds to READER mode (different ring frame under motion) ──
+    const sliceReader0 = await readViz('slice_out');
+    await setNodeParams(page, 'vc', { reader_mode: 1 }); // SMOOTH → MORPH
+    const sliceReader1 = await readViz('slice_out');
+    expect(signatureDist(sliceReader0, sliceReader1), 'reader_mode changes which ring frame slice_out reads').toBeGreaterThan(1.5);
+    await setNodeParams(page, 'vc', { reader_mode: 0 });
+
+    // ── slice_out responds to slice Y + rotation (the cut slides/tilts) ──
+    const sliceBase = await readViz('slice_out');
+    await setNodeParams(page, 'vc', { slice_y: 0.15, slice_rx: 0.8 });
+    const sliceMoved = await readViz('slice_out');
+    expect(signatureDist(sliceBase, sliceMoved), 'slice Y + ROT slide/tilt the cross-section through the solid').toBeGreaterThan(1.5);
+    await setNodeParams(page, 'vc', { slice_y: 0.5, slice_rx: 0 });
+
+    // ── TRIPTYCH: SMOOTH (trailing frame) / MORPH (newest frame) / CHAOS
+    //    (per-pixel dither) differ from each other over the varied held window
+    //    (they read different temporal frames of the SAME rings). ──
+    const t_smooth = await readViz('smooth_out');
+    const t_morph = await readViz('morph_out');
+    const t_chaos = await readViz('chaos_out');
+    expect(signatureDist(t_smooth, t_morph), 'SMOOTH (trailing) vs MORPH (newest) differ under motion').toBeGreaterThan(1.5);
+    expect(signatureDist(t_chaos, t_morph), 'CHAOS (per-pixel dither) vs MORPH differ under motion').toBeGreaterThan(1.5);
+    expect(signatureDist(t_chaos, t_smooth), 'CHAOS vs SMOOTH differ under motion').toBeGreaterThan(1.5);
+
+    // ── depth_out brightness TRACKS occupancy: swelling the connector
+    //    (CONNECT STRENGTH 0→1) adds solid → the heightmap gets BRIGHTER. ──
+    await setNodeParams(page, 'vc', { connect_strength: 0 });
+    const depthLow = await readViz('depth_out');
+    await setNodeParams(page, 'vc', { connect_strength: 1 });
+    const depthHigh = await readViz('depth_out');
+    expect(depthHigh.mean, `more occupancy → brighter depth_out (low=${depthLow.mean.toFixed(1)} high=${depthHigh.mean.toFixed(1)})`)
+      .toBeGreaterThan(depthLow.mean + 0.5);
+  });
+
+  // scope_out = a VIDEO trace of the exact 256-sample surface-height wave audio_out
+  // plays. Needs the audio worklet up (the wave is the ALREADY-COMPUTED derived
+  // wave). Assert the trace is non-black AND its per-column position CORRELATES
+  // with the wave (renderer-tolerant Pearson |r|, flip-agnostic).
+  test('scope_out: a video trace whose shape matches the audio wave', async ({ page }) => {
+    test.setTimeout(60_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await installRenderSmokeHooks(page);
+    await page.goto('/rack');
+    await page.waitForLoadState('networkidle');
+
+    await spawnPatch(
+      page,
+      [
+        { id: 'acidA', type: 'acidwarp', position: { x: 40, y: 40 }, domain: 'video', params: { scene: 0, paletteType: 0, speed: 0 } },
+        { id: 'acidB', type: 'acidwarp', position: { x: 40, y: 260 }, domain: 'video', params: { scene: 5, paletteType: 2, speed: 0 } },
+        { id: 'acidC', type: 'acidwarp', position: { x: 40, y: 480 }, domain: 'video', params: { scene: 9, paletteType: 3, speed: 0 } },
+        { id: 'vc', type: 'videocube', position: { x: 520, y: 200 }, domain: 'video', params: { morph_fc: 0.5, slice_y: 0.35, connect: 0.3 } },
+        { id: 'o-scope', type: 'videoOut', position: { x: 1120, y: 200 }, domain: 'video' },
+      ],
+      [
+        { id: 'e-a', from: { nodeId: 'acidA', portId: 'out' }, to: { nodeId: 'vc', portId: 'video_a' }, sourceType: 'video', targetType: 'video' },
+        { id: 'e-b', from: { nodeId: 'acidB', portId: 'out' }, to: { nodeId: 'vc', portId: 'video_b' }, sourceType: 'video', targetType: 'video' },
+        { id: 'e-c', from: { nodeId: 'acidC', portId: 'out' }, to: { nodeId: 'vc', portId: 'video_c' }, sourceType: 'video', targetType: 'video' },
+        { id: 'e-scope', from: { nodeId: 'vc', portId: 'scope_out' }, to: { nodeId: 'o-scope', portId: 'in' }, sourceType: 'video', targetType: 'video' },
+      ],
+    );
+
+    // Resume audio so the derived-wave recompute stands up (scope reads lastWave).
+    await page.locator('button:has-text("Tap to start")').first().click({ timeout: 2500 }).catch(() => { /* already running */ });
+
+    // Poll: step the engine (fills rings + renders scope_out) and wait until the
+    // engine has a non-silent derived wave AND scope_out is non-black.
+    const readScopeAndWave = () => page.evaluate(({ scale }) => {
+      const w = globalThis as unknown as { __engine: () => { getDomain: (d: string) => {
+        gl: WebGL2RenderingContext; step: () => void;
+        outputTexture: (id: string, port?: string) => WebGLTexture | null;
+        read: (id: string, key: string) => unknown;
+        res: { width: number; height: number };
+      } } };
+      const vid = w.__engine().getDomain('video');
+      const gl = vid.gl;
+      for (let i = 0; i < 4; i++) vid.step();
+      const wave = vid.read('vc', 'lastWave') as Float32Array | null;
+      const tex = vid.outputTexture('vc', 'scope_out') as WebGLTexture | null;
+      const W = Math.max(1, Math.round(vid.res.width * scale));
+      const H = Math.max(1, Math.round(vid.res.height * scale));
+      const fb = gl.createFramebuffer()!;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+      const complete = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+      const px = new Uint8Array(W * H * 4);
+      if (complete) gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.deleteFramebuffer(fb);
+      // For each column x, the trace row = argmax over rows of the GREEN channel.
+      let nonZero = 0;
+      const trace: number[] = [];
+      const cols = 24;
+      for (let c = 0; c < cols; c++) {
+        const x = Math.min(W - 1, Math.round((c + 0.5) / cols * W));
+        let bestG = -1, bestY = 0;
+        for (let y = 0; y < H; y++) {
+          const g = px[(y * W + x) * 4 + 1]!;
+          if (g > bestG) { bestG = g; bestY = y; }
+        }
+        trace.push(bestY / Math.max(1, H - 1));
+      }
+      for (let i = 0; i < W * H; i++) { if (px[i * 4 + 1]! > 40) nonZero++; }
+      // Sample the wave at the SAME 24 column centres → wave01 = wave*0.5+0.5.
+      const waveSamp: number[] = [];
+      if (wave) {
+        for (let c = 0; c < cols; c++) {
+          const wi = Math.min(wave.length - 1, Math.round((c + 0.5) / cols * wave.length));
+          waveSamp.push((wave[wi] ?? 0) * 0.5 + 0.5);
+        }
+      }
+      return { complete, nonZeroFrac: nonZero / (W * H), hasWave: !!wave, trace, waveSamp };
+    }, { scale: 0.25 });
+
+    // Pearson correlation (flip-agnostic via |r|).
+    const pearsonAbs = (a: number[], b: number[]): number => {
+      const n = Math.min(a.length, b.length);
+      let sa = 0, sb = 0; for (let i = 0; i < n; i++) { sa += a[i]!; sb += b[i]!; }
+      const ma = sa / n, mb = sb / n;
+      let num = 0, da = 0, db = 0;
+      for (let i = 0; i < n; i++) { const x = a[i]! - ma, y = b[i]! - mb; num += x * y; da += x * x; db += y * y; }
+      const den = Math.sqrt(da * db);
+      return den < 1e-9 ? 0 : Math.abs(num / den);
+    };
+
+    let snap = await readScopeAndWave();
+    const deadline = Date.now() + 20_000;
+    while (Date.now() < deadline && !(snap.hasWave && snap.nonZeroFrac > 0.01)) {
+      await setNodeParams(page, 'vc', { slice_y: 0.3 + 0.2 * Math.random() }); // keep the recompute alive
+      await page.waitForTimeout(200);
+      snap = await readScopeAndWave();
+    }
+
+    expect(snap.hasWave, 'the derived wave stands up (audio worklet loaded + rings filled)').toBe(true);
+    expect(snap.complete, 'scope_out FBO readable').toBe(true);
+    expect(snap.nonZeroFrac, 'scope_out trace is non-black once the wave exists').toBeGreaterThan(0.01);
+    // The trace follows the wave: its per-column position correlates with the wave.
+    const r = pearsonAbs(snap.trace, snap.waveSamp);
+    expect(r, `scope_out trace matches the audio wave shape (|r|=${r.toFixed(3)})`).toBeGreaterThan(0.4);
     expect(errors, `no page errors: ${errors.join(' | ')}`).toEqual([]);
   });
 });

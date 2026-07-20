@@ -119,6 +119,31 @@ describe('videocubeDef — I/O contract', () => {
     expect(aout?.type).toBe('audio');
   });
 
+  it('exposes the SIX dedicated slice-viz VIDEO outputs (per-port gated)', () => {
+    const vizIds = ['scope_out', 'slice_out', 'depth_out', 'smooth_out', 'morph_out', 'chaos_out'];
+    for (const id of vizIds) {
+      const o = videocubeDef.outputs.find((p) => p.id === id);
+      expect(o, id).toBeDefined();
+      expect(o!.type, id).toBe('video');
+    }
+    // The originals are still there (viz ports are ADDED, not a replacement).
+    expect(videocubeDef.outputs.find((o) => o.id === 'video_out')?.type).toBe('video');
+    expect(videocubeDef.outputs.find((o) => o.id === 'audio_out')?.type).toBe('audio');
+    expect(videocubeDef.outputs.length).toBe(8);
+  });
+
+  it('adds slice_view (discrete 0..2, default TEXTURED) — picture-only, no CV', () => {
+    const sv = videocubeDef.params.find((p) => p.id === 'slice_view');
+    expect(sv).toBeDefined();
+    expect(sv!.min).toBe(0);
+    expect(sv!.max).toBe(2);
+    expect(sv!.curve).toBe('discrete');
+    expect(VIDEOCUBE_DEFAULTS.slice_view).toBe(0);
+    // slice_view is a viz colorize flavour → NOT wired to any CV input.
+    const cvTargets = new Set(videocubeDef.inputs.filter((i) => i.type === 'cv').map((i) => i.paramTarget));
+    expect(cvTargets.has('slice_view')).toBe(false);
+  });
+
   it('every continuous CV input carries cvScale linear + a paramTarget', () => {
     const cvs = videocubeDef.inputs.filter((i) => i.type === 'cv');
     expect(cvs.length).toBeGreaterThan(10);
@@ -322,6 +347,51 @@ describe('videocubeDef.factory — construction + audio seam', () => {
       expect(handle.readParam(pid)).toBe(v);
     }
     expect(setWaveCount(audio), 'VIEW params are picture-only (no audio recompute)').toBe(base);
+    handle.dispose();
+  });
+
+  it('PER-PORT gating: each PATCHED viz port adds exactly one render pass (unpatched = ZERO)', async () => {
+    const audio = makeFakeAudio();
+    const ctx = makeCtx(audio);
+    let drawCount = 0;
+    (ctx as unknown as { drawFullscreenQuad: () => void }).drawFullscreenQuad = () => { drawCount++; };
+    const handle = videocubeDef.factory(ctx, mkNode());
+    await audio.workletReady; await Promise.resolve(); await Promise.resolve();
+
+    const frameWith = (ports: string[]) =>
+      ({ ...mkFrame(ctx.gl, true), connectedOutputPorts: () => new Set(ports) } as unknown as VideoFrameContext);
+
+    // Seat the rings first (the first-frame FILL draws 60×/slot; warm up so both
+    // measured frames are in the steady 1-draw-per-slot capture regime).
+    for (let i = 0; i < 3; i++) handle.surface.draw(frameWith(['video_out']));
+
+    // Only video_out patched → NO viz passes render (they are skipped entirely).
+    drawCount = 0;
+    handle.surface.draw(frameWith(['video_out']));
+    const none = drawCount;
+
+    // All 6 viz ports patched → 6 extra render passes vs the video_out-only frame.
+    drawCount = 0;
+    handle.surface.draw(frameWith(['video_out', 'scope_out', 'slice_out', 'depth_out', 'smooth_out', 'morph_out', 'chaos_out']));
+    const all = drawCount;
+
+    expect(all - none, 'six patched viz ports = six extra passes; unpatched = zero').toBe(6);
+    handle.dispose();
+  });
+
+  it('slice_view is PICTURE-ONLY — it does NOT recompute the derived audio', async () => {
+    const audio = makeFakeAudio();
+    const ctx = makeCtx(audio);
+    const handle = videocubeDef.factory(ctx, mkNode());
+    await audio.workletReady; await Promise.resolve(); await Promise.resolve();
+    const idle = mkFrame(ctx.gl, false);
+    const drain = () => { for (let i = 0; i < AUDIO_RECOMPUTE_EVERY + 1; i++) handle.surface.draw(idle); };
+    drain();
+    const base = setWaveCount(audio);
+    handle.setParam('slice_view', 2); // TEXTURED → WEIGHTS
+    handle.surface.draw(idle);
+    expect(handle.readParam('slice_view')).toBe(2);
+    expect(setWaveCount(audio), 'slice_view is a viz colorize only (no audio recompute)').toBe(base);
     handle.dispose();
   });
 

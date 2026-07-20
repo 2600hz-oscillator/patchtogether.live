@@ -3442,6 +3442,12 @@ videocube in video_a video
 videocube in video_b video
 videocube in video_c video
 videocube out audio_out audio
+videocube out chaos_out video
+videocube out depth_out video
+videocube out morph_out video
+videocube out scope_out video
+videocube out slice_out video
+videocube out smooth_out video
 videocube out video_out video
 videocube param connect 0..1 linear default=0
 videocube param connect_strength 0..1 linear default=0
@@ -3458,6 +3464,7 @@ videocube param screen_on 0..1 discrete default=1
 videocube param slice_rx -3.1416..3.1416 linear default=0
 videocube param slice_ry -3.1416..3.1416 linear default=0
 videocube param slice_rz -3.1416..3.1416 linear default=0
+videocube param slice_view 0..2 discrete default=0
 videocube param slice_y 0..1 linear default=0.5
 videocube param space_crush 0..1 linear default=0
 videocube param space_diffuse 0..1 linear default=0
