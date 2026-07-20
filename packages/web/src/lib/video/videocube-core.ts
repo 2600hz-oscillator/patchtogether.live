@@ -1,70 +1,107 @@
 // packages/web/src/lib/video/videocube-core.ts
 //
 // VIDEOCUBE — pure math CORE. Every function here is the CPU MIRROR of the GLSL
-// COMBINE shader in ./modules/videocube.ts (the FRAMETABLE / cube-dsp
+// ray-march COMBINE shader in ./modules/videocube.ts (the FRAMETABLE / cube-dsp
 // source-of-truth discipline): unit-testing them pins the semantics the shader
 // transliterates 1:1. NO WebGL in this file — it runs in jsdom.
 //
-// VIDEOCUBE is the VIDEO isomorph of the audio CUBE oscillator. It ingests THREE
-// 60-frame video rings (A/B/C = FLOOR/WALL/CEILING) and combines them the way
-// CUBE combines its three wavetables into one output: an OCCUPANCY-WEIGHTED
-// trilinear morph. The occupancy structure (occ / MORPH FC / CONNECT / CONNECT
-// STRENGTH / CRUSH / SPACE CRUSH / SPACE DIFFUSE / WRAP) is the EXACT audio-CUBE
-// field math from `cube-dsp.ts` — reused wholesale so a single knob drives BOTH
-// the picture (this GLSL-mirrored combine) AND the timbre (cube-dsp.sampleSlice
-// fed luma-reduced rings, see ./modules/videocube.ts §audio). This file only adds
-// what CUBE's audio field has no analog for: the per-pixel COLOUR blend and the
-// ring→luma-heightfield reduction that feeds the audio scan.
+// VIDEOCUBE is the VIDEO isomorph of the audio CUBE oscillator. It stacks THREE
+// video-luma SURFACES (A/B/C = FLOOR/WALL/CEILING — the reader-selected frame of
+// each 60-frame ring) into a GENUINE 3D scalar field over (x,y,z) ∈ [0,1]³, the
+// SAME field the audio CUBE builds from three wavetables:
 //
-// The per-slot temporal ring READ (SMOOTH weighted average / CHAOS single pick /
-// lag / first-fill) is NOT re-derived here — it is FRAMETABLE's machinery
-// (frametable-core.ts: smoothCentre, selectOffset, sampleRingLerp, advanceHead,
-// fillOnFirstFrame), reused verbatim by both the shader and its own unit tests.
+//     F(x,y,z) = cube-dsp.fieldFromHeights(z; S_A(x,y), S_B(x,y), S_C(x,y), …)
+//
+// where S_?(x,y) are the three surfaces' luma and `z` is a REAL connecting depth
+// axis — occ() fills solid density BETWEEN the surfaces exactly as it does
+// between three wavetables (the earlier v1 collapsed z = (lumaA+lumaB+lumaC)/3
+// at ONE point per pixel → a flat 2D blend, the owner-rejected bug this rebuild
+// fixes). The occupancy structure (occ / MORPH FC / CONNECT / CONNECT STRENGTH /
+// CRUSH / SPACE CRUSH / SPACE DIFFUSE / WRAP / MATERIAL) is the EXACT audio-CUBE
+// field math from `cube-dsp.ts`, reused wholesale so a single knob drives BOTH
+// the picture (a volumetric ray-march of this field) AND the timbre
+// (cube-dsp.sampleSlice through the SAME field, fed the SAME luma-reduced
+// surfaces — see ./modules/videocube.ts §audio).
+//
+// This file only adds what CUBE's audio field has no analog for: the per-voxel
+// occupancy-weighted COLOUR of the three source surfaces (so the ray-march
+// TEXTURES the solid), and the single-frame ring→luma-heightfield reduction that
+// feeds the audio scan. The per-slot temporal ring READ (frame select / lag /
+// first-fill / freeze) is FRAMETABLE's machinery (frametable-core.ts), reused
+// verbatim by the shader; the field/slice math (occ / fieldFromHeights /
+// spaceCrushCoord / crushCoord / diffusePull / wrapFold / lowestInfoFace) is
+// cube-dsp's, imported below.
 
 import {
   clamp01,
   occ,
+  fieldFromHeights,
+  lowestInfoFace,
   crushLevels,
+  crush,
+  crushCoord,
   spaceCrushCoord,
-  diffusePull,
   wrapFold,
+  HARD_THRESHOLD,
+  DIFFUSE_DEFAULT_TARGET,
+  type Material,
+  type DiffuseTarget,
+  type FieldParams,
 } from '../../../../dsp/src/lib/cube-dsp';
 import {
   FRAMETABLE_RING_FRAMES,
   FRAMETABLE_RENDER_SCALE,
 } from './frametable-core';
 
+export type { DiffuseTarget, Material } from '../../../../dsp/src/lib/cube-dsp';
+
 // ── Ring geometry — reuse FRAMETABLE's constants (VIDEOCUBE embeds 3 of its rings). ──
 /** Ring depth per slot (60 layers, one per recorded frame). */
 export const VIDEOCUBE_RING_FRAMES = FRAMETABLE_RING_FRAMES; // 60
-/** Reduced render resolution (half-res, SwiftShader/CI budget). 3 rings × 45 MiB
- *  ≈ 135 MiB at the 4:3 default — the spec's flagged memory ceiling. */
+/** video_out (+ ring) render resolution — half-res, the SwiftShader/CI budget.
+ *  3 rings × ~45 MiB ≈ 135 MiB at the 4:3 default — the spec's memory ceiling. */
 export const VIDEOCUBE_RENDER_SCALE = FRAMETABLE_RENDER_SCALE; // 0.5
 
-// ── Renderer-gated combine tap counts (§4 perf) — the FrameTable budget ×3. ──
-// The COMBINE reads all THREE rings per output pixel; each SMOOTH read is T taps
-// × 2 array fetches. T=8 GPU (48 fetches) / T=4 SwiftShader (24 fetches) — a flat
-// pixel/perf assert that passes on a GPU goes red on the CI software renderer, so
-// the software cost is bounded from a renderer probe (recorderbox/edges class).
-export const VIDEOCUBE_TAPS_GPU = 8;
-export const VIDEOCUBE_TAPS_SOFT = 4;
+/** The volumetric ray-march renders at QUARTER engine res into a small
+ *  intermediate target, then LINEAR-upscales to the half-res video_out. Marching
+ *  at quarter res quarters the per-frame shader-invocation count (the perf lever
+ *  the spec calls for — "render the volume at quarter-to-half res") while the
+ *  upscaled output keeps the half-res video_out the e2e reads. */
+export const VIDEOCUBE_MARCH_SCALE = 0.25;
 
-/** Fixed reader window (frames). VIDEOCUBE keeps CUBE's control layout, so it does
- *  NOT expose FrameTable's per-frame MORPH/SPREAD knobs — the reader scans a
- *  moderate trailing window near the newest frames and the per-pixel temporal
- *  offset comes from the SLICE Y / ROT field (videoField below). */
-export const VIDEOCUBE_READ_MORPH = 0;
-export const VIDEOCUBE_READ_SPREAD = 12;
+// ── Renderer-gated ray-march step counts (§4 perf) — the owner chose the SOLID
+// (ray-march) look, accepting the GPU cost because the heavy pixel-truth test
+// goes through the WebGL ATTEST on a trusted GPU, not the CI SwiftShader shards.
+// Still, bound the SOFTWARE cost from a renderer probe: a flat step count that is
+// affordable on a real GPU is far too slow on SwiftShader (recorderbox/edges
+// class). SOFT=32 on the software renderer (CI), GPU=64 on real hardware.
+export const VIDEOCUBE_MARCH_SOFT = 32;
+export const VIDEOCUBE_MARCH_GPU = 64;
+/** Compile-time upper bound of the shader march loop (uMarch ≤ this). */
+export const VIDEOCUBE_MARCH_MAX = VIDEOCUBE_MARCH_GPU;
+
+/** Beer-Lambert absorption for the front-to-back composite: per-step opacity is
+ *  1 − exp(−F · ABSORB · dt). Tuned so a fully-solid column (F≈1) saturates over
+ *  a handful of steps → the field reads as a real SOLID, not a faint haze. */
+export const VIDEOCUBE_ABSORB = 7.0;
+
+/** Reader trailing-frame lag (frames back from the newest) for the SMOOTH read.
+ *  MORPH reads the newest frame (lag 0); CHAOS dithers a per-pixel frame across
+ *  the ring window. Kept well inside the 60-frame ring. */
+export const VIDEOCUBE_READER_LAG = 6;
+
+/** Rows of the audio field reduction: each ring's reader-selected frame is
+ *  reduced to a `FIELD_ROWS`×256 luma heightfield (image-row × phase), stacked as
+ *  the three "wavetables" cube-dsp.sampleSlice flies its plane through. 64 =
+ *  the canonical e352 frame count, so the audio field matches CUBE's table shape
+ *  and the SAME slice-plane reads BOTH the picture volume and the sound. */
+export const VIDEOCUBE_FIELD_ROWS = 64;
 
 /** Global reader-mode encoding (one selector for all 3 rings — spec default).
  *  Mirrors FRAMETABLE's mode ints so the two share a mental model. */
-export const VIDEOCUBE_MODE_SMOOTH = 0; // weighted temporal average + per-pixel field (default)
-export const VIDEOCUBE_MODE_MORPH = 1;  // spatially-uniform temporal average (field flattened)
-export const VIDEOCUBE_MODE_CHAOS = 2;  // per-pixel single-frame pick (dither/mosaic)
-
-/** SLICE-field temporal displacement amplitude, in FRAMES (the per-pixel read
- *  centre is offset by up to ±this). N/4 keeps the shear well inside the ring. */
-export const VIDEOCUBE_FIELD_FRAMES = VIDEOCUBE_RING_FRAMES / 4; // 15
+export const VIDEOCUBE_MODE_SMOOTH = 0; // trailing single frame (sub-frame lerp), default
+export const VIDEOCUBE_MODE_MORPH = 1; // newest frame (crisp, no trailing)
+export const VIDEOCUBE_MODE_CHAOS = 2; // per-pixel dithered frame across the window
 
 export interface RGB {
   r: number;
@@ -76,78 +113,19 @@ export interface RGB {
 // Scalar helpers (transliterated 1:1 into GLSL).
 // ----------------------------------------------------------------------
 
-/** Rec.601 luma of an RGB in [0,1] → [0,1]. The occupancy coordinate the combine
- *  reads out of a colour (the video meaning of "height" in the audio field). */
+/** Rec.601 luma of an RGB in [0,1] → [0,1]. The occupancy "height" the field
+ *  reads out of a surface colour (the video meaning of a wavetable height). */
 export function luma(r: number, g: number, b: number): number {
   return clamp01(0.299 * r + 0.587 * g + 0.114 * b);
 }
-
-// ----------------------------------------------------------------------
-// SLICE field — the per-pixel temporal-offset gradient (the video meaning of the
-// slice tilt). At the defaults (sliceY=0.5, rx=ry=rz=0) the field is EXACTLY 0
-// everywhere ⇒ a uniform temporal read ⇒ a stable morphable image. Raising Y
-// tilts a vertical time-gradient across the frame; the rotations add a
-// directional temporal SHEAR. MORPH mode flattens this to 0 (spatially uniform).
-// ----------------------------------------------------------------------
-
-/**
- * Per-pixel temporal displacement (FRAMES) for output pixel (ux,uy) ∈ [0,1]²,
- * given SLICE Y ∈ [0,1] and the three plane rotations rx/ry/rz (±π). `ampFrames`
- * scales the whole field. Continuous + 0 at the neutral slice (Y=0.5, no
- * rotation), so a default VIDEOCUBE reads a clean, still combine.
- */
-export function videoField(
-  ux: number,
-  uy: number,
-  sliceY: number,
-  rx: number,
-  ry: number,
-  rz: number,
-  ampFrames: number,
-): number {
-  const gx = ux - 0.5;
-  const gy = uy - 0.5;
-  const yTilt = (sliceY - 0.5) * 2; // 0 at the centred slice
-  return (
-    ampFrames *
-    (yTilt * gy + Math.sin(rx) * gx + Math.sin(ry) * gy + Math.sin(rz) * (gx * gy) * 2)
-  );
-}
-
-// ----------------------------------------------------------------------
-// SPACE CRUSH (mosaic) + SPACE DIFFUSE (warp) — applied to the sampling UV BEFORE
-// the ring reads, EXACTLY as cube-dsp voxelizes + warps the field-lookup coords.
-// SPACE DIFFUSE for video pulls toward the LOW corner (0,0) — the fixed "emptiest
-// wall" v1 approximation of cube-dsp.lowestInfoFace (the per-frame darkest-region
-// latch is a documented follow-up). WRAP mirror-folds an out-of-range coord.
-// ----------------------------------------------------------------------
-
-/** Warp one sampling coordinate: SPACE CRUSH voxelize, then SPACE DIFFUSE pull
- *  toward 0, then (if wrap) mirror-fold back into [0,1]. Composition order + the
- *  underlying cube-dsp functions match the GLSL 1:1. */
-export function warpCoord(
-  coord: number,
-  spaceCrush: number,
-  spaceDiffuse: number,
-  wrap: boolean,
-): number {
-  let c = spaceCrushCoord(coord, spaceCrush);
-  c = diffusePull(c, spaceDiffuse, -1);
-  if (wrap) c = wrapFold(c);
-  return c;
-}
-
-// ----------------------------------------------------------------------
-// The 3-way COMBINE — the video isomorph of CUBE's 3-wavetable field morph.
-// ----------------------------------------------------------------------
 
 /**
  * Posterize an RGB to `crushLevels(k)` discrete levels per channel — the video
  * meaning of CUBE's amplitude CRUSH (the SAME `crushLevels` curve, so the picture
  * quantizes exactly as the derived audio does). k=0 = identity.
  */
-export function posterize(c: RGB, crush: number): RGB {
-  const k = clamp01(crush);
+export function posterize(c: RGB, crushK: number): RGB {
+  const k = clamp01(crushK);
   if (k <= 0) return c;
   const levels = crushLevels(k);
   if (levels >= 256) return c;
@@ -155,86 +133,180 @@ export function posterize(c: RGB, crush: number): RGB {
   return { r: q(c.r), g: q(c.g), b: q(c.b) };
 }
 
+// ----------------------------------------------------------------------
+// SPACE CRUSH (voxelize) + CRUSH (spatial coord-snap) + WRAP — applied to each
+// (x,y,z) field-lookup coordinate BEFORE the surface reads, EXACTLY as cube-dsp
+// voxelizes the field-lookup coords along a slice ray (rayDepth composes
+// crushCoord(spaceCrushCoord(coord, sc), crush)). SPACE DIFFUSE is per-AXIS
+// (toward the field's lowestInfoFace) so it is applied by the caller, not here.
+// WRAP mirror-folds an out-of-range coord; otherwise the coord clamps.
+// ----------------------------------------------------------------------
+
+/** Warp one field-lookup coordinate: SPACE CRUSH voxelize, then CRUSH spatial
+ *  snap, then WRAP mirror-fold (or clamp). Composition order + the underlying
+ *  cube-dsp functions match the GLSL 1:1. */
+export function warpCoord(
+  coord: number,
+  spaceCrush: number,
+  crushK: number,
+  wrap: boolean,
+): number {
+  const c = crushCoord(spaceCrushCoord(coord, spaceCrush), crushK);
+  return wrap ? wrapFold(c) : clamp01(c);
+}
+
+// ----------------------------------------------------------------------
+// The per-voxel FIELD SAMPLE — the heart of the volumetric ray-march. Given the
+// three SURFACE colours read at a field (x,y) and the depth z, return the field
+// DENSITY (occupancy → alpha) and the occupancy-weighted source COLOUR (→ the
+// solid's texture). This is the video isomorph of cube-dsp's field: the density
+// is byte-for-byte `fieldFromHeights`; the colour is the analog CUBE's audio has
+// no need for.
+// ----------------------------------------------------------------------
+
+export interface VoxelParams {
+  /** MORPH FC m ∈ [0,1]: cross-fade the FLOOR-fill (A) toward the CEILING-fill (C)
+   *  through the WALL (B). */
+  morphFC: number;
+  /** CONNECTION MORPH ∈ [0,1]: circle arc ↔ sawtooth-V connector profile. */
+  connect: number;
+  /** CONNECT STRENGTH ∈ [0,1]: overshoot the connector's base swell. */
+  connectStrength: number;
+  /** SMOOTH = continuous translucent density + soft A/B/C blend; HARD = binary
+   *  solid + one-surface-wins colour. */
+  material: Material;
+  /** CRUSH ∈ [0,1]: posterize the colour + amplitude-crush the density. */
+  crush: number;
+}
+
+export interface VoxelSample {
+  /** Field occupancy density ∈ [0,1] (→ the composite alpha). Byte-for-byte
+   *  cube-dsp.fieldFromHeights, then amplitude-crushed by CRUSH. */
+  density: number;
+  /** The occupancy-weighted source colour at this voxel (→ the solid's texture),
+   *  posterized by CRUSH. */
+  color: RGB;
+}
+
 /**
- * Combine the three ring colours at one output pixel into the morphed frame — the
- * OCCUPANCY-WEIGHTED trilinear blend that mirrors CUBE's field:
+ * Sample the 3D field at depth z given the three surface colours (cA/cB/cC =
+ * FLOOR/WALL/CEILING) read at one (x,y). Mirrors the GLSL ray-march step:
  *
- *   z      = luma(cB)                            occupancy position (the connector)
- *   wFloor = occ(z; lumaA, lumaB, connect, cs)   A (floor) bound to B (wall)
- *   wCeil  = occ(z; lumaC, lumaB, connect, cs)   C (ceiling) bound to B (wall)
- *   wf = wFloor·(1−m),  wc = wCeil·m             MORPH FC cross-fade A↔C
- *   wWall = clamp(1 − (wFloor + wCeil), 0, 1)    the connector's own share
- *   outc  = (wf·cA + wc·cC + wWall·cB) / Σ       SMOOTH soft blend
+ *   floorH/wallH/ceilH = luma(cA)/luma(cB)/luma(cC)      surface heights
+ *   dF = occ(z; floorH, wallH, connect, cs)              floor→wall fill
+ *   dC = occ(z; ceilH,  wallH, connect, cs)              ceiling→wall fill
+ *   density = fieldFromHeights(z; …) = (1−m)·dF + m·dC   (HARD → 0/1 @ 0.5)
+ *   wf = dF·(1−m),  wc = dC·m,  wWall = clamp(1 − (dF+dC))
+ *   colour = SMOOTH: (wf·cA + wc·cC + wWall·cB)/Σ  |  HARD: the max-weight surface
  *
- * MATERIAL HARD ⇒ a one-table-wins mosaic (the max-weight table's colour). CRUSH
- * posterizes the result. `occ`, the weights + the MORPH/CONNECT/CONNECT-STRENGTH
- * semantics are byte-for-byte the audio-CUBE field math (cube-dsp.occ).
+ * `z` is a GENUINE depth axis (0 = cube floor, 1 = ceiling), so the solid fills
+ * the volume BETWEEN the three videos — connecting them through space exactly as
+ * three wavetables connect in the audio cube. CRUSH posterizes the colour and
+ * amplitude-crushes the density.
  */
-export function combinePixel(
+export function voxelSample(
   cA: RGB,
   cB: RGB,
   cC: RGB,
-  p: {
-    morphFC: number;
-    connect: number;
-    connectStrength: number;
-    material: 'smooth' | 'hard';
-    crush: number;
-  },
-): RGB {
-  const lA = luma(cA.r, cA.g, cA.b);
-  const lB = luma(cB.r, cB.g, cB.b);
-  const lC = luma(cC.r, cC.g, cC.b);
-  // Occupancy position z = the luma of a REFERENCE BLEND (the 3-way average, the
-  // spec's "luma of a reference blend"). Using the WALL luma alone would pin z to
-  // a connector endpoint (occ collapses to 0/1 and CONNECT never engages); the
-  // average sits in the connector INTERIOR so CONNECT / CONNECT STRENGTH shape it.
-  const z = (lA + lB + lC) / 3;
+  z: number,
+  p: VoxelParams,
+): VoxelSample {
+  const floorH = luma(cA.r, cA.g, cA.b);
+  const wallH = luma(cB.r, cB.g, cB.b);
+  const ceilH = luma(cC.r, cC.g, cC.b);
   const m = clamp01(p.morphFC);
   const cs = clamp01(p.connectStrength);
-  const wFloor = occ(z, lA, lB, p.connect, cs);
-  const wCeil = occ(z, lC, lB, p.connect, cs);
-  const wf = wFloor * (1 - m);
-  const wc = wCeil * m;
-  const wWall = clamp01(1 - (wFloor + wCeil));
 
-  let out: RGB;
+  // DENSITY — byte-for-byte the audio-CUBE field (reuse fieldFromHeights so the
+  // picture's solidity and the sound's slice-depth agree exactly).
+  const fp: FieldParams = {
+    morphFC: m,
+    connect: p.connect,
+    connectStrength: cs,
+    material: p.material,
+  };
+  const densityRaw = fieldFromHeights(z, { floorH, wallH, ceilH }, fp);
+  const density = crush(densityRaw, p.crush);
+
+  // COLOUR weights — the occupancy shares of the FLOOR-fill (A), CEILING-fill (C)
+  // and the WALL/connector (B) at this depth.
+  const dF = occ(z, floorH, wallH, p.connect, cs);
+  const dC = occ(z, ceilH, wallH, p.connect, cs);
+  const wf = dF * (1 - m);
+  const wc = dC * m;
+  const wWall = clamp01(1 - (dF + dC));
+
+  let color: RGB;
   if (p.material === 'hard') {
-    // One-table-wins mosaic: the largest weight picks the whole pixel.
-    if (wWall >= wf && wWall >= wc) out = { ...cB };
-    else if (wf >= wc) out = { ...cA };
-    else out = { ...cC };
+    if (wWall >= wf && wWall >= wc) color = { ...cB };
+    else if (wf >= wc) color = { ...cA };
+    else color = { ...cC };
   } else {
     const denom = Math.max(wf + wc + wWall, 1e-3);
-    out = {
+    color = {
       r: (wf * cA.r + wc * cC.r + wWall * cB.r) / denom,
       g: (wf * cA.g + wc * cC.g + wWall * cB.g) / denom,
       b: (wf * cA.b + wc * cC.b + wWall * cB.b) / denom,
     };
   }
-  return posterize(out, p.crush);
+  return { density, color: posterize(color, p.crush) };
 }
 
 // ----------------------------------------------------------------------
-// Audio derivation — reduce a ring to a luma HEIGHTFIELD for cube-dsp.sampleSlice.
+// SPACE DIFFUSE target — the field's lowest-information face the cloud is pulled
+// toward. Computed on the reduced heightfields (the SAME field the audio reads),
+// so the picture's diffuse gravity and the sound's agree. Thin wrapper over
+// cube-dsp.lowestInfoFace, latched on the field (not the diffuse amount).
+// ----------------------------------------------------------------------
+
+/** The default gravity face when the field has no clear emptiest wall (re-export
+ *  of cube-dsp's default target: the top / z-high). */
+export const VIDEOCUBE_DIFFUSE_DEFAULT: DiffuseTarget = DIFFUSE_DEFAULT_TARGET;
+
+/**
+ * The SPACE DIFFUSE gravity face for the 3-surface field, from the reduced
+ * heightfields (FLOOR/WALL/CEILING as `Float32Array[rows]` of 256, the audio
+ * field). Deterministic; depends only on the field + morph/connect, not the
+ * diffuse amount.
+ */
+export function diffuseTargetFor(
+  floorH: readonly Float32Array[],
+  wallH: readonly Float32Array[],
+  ceilH: readonly Float32Array[],
+  p: { morphFC: number; connect: number; connectStrength: number; material: Material },
+): DiffuseTarget {
+  if (!floorH.length || !wallH.length || !ceilH.length) return VIDEOCUBE_DIFFUSE_DEFAULT;
+  return lowestInfoFace(floorH, wallH, ceilH, {
+    morphFC: clamp01(p.morphFC),
+    connect: p.connect,
+    connectStrength: clamp01(p.connectStrength),
+    material: p.material,
+  });
+}
+
+// ----------------------------------------------------------------------
+// Audio derivation — reduce ONE reader-selected ring frame to a luma HEIGHTFIELD
+// (image-row × phase) for cube-dsp.sampleSlice. The three surfaces stacked in z
+// are the SAME field the ray-march textures, so slice Y / ROT drive ONE plane
+// through BOTH the picture volume and the derived sound.
 // ----------------------------------------------------------------------
 
 /**
- * Reduce a ring's REDUCE-pass readback — a `frames`×`cols` RGBA8 strip
- * (row-major: `frames` rows of `cols` luma pixels, one row per ring layer in
- * CHRONOLOGICAL order) — to a `Float32Array[frames]` of `cols` samples in
- * [-1,1], shaped exactly like an e352 wavetable (rows = temporal/morph axis,
- * cols = phase axis). Fed straight into cube-dsp.sampleSlice so the derived
- * audio is the audio-CUBE engine sourced from video luma. Empty/short strips →
- * zero rows (silent, never NaN).
+ * Reduce a ring's single-frame REDUCE-pass readback — a `rows`×`cols` RGBA8 strip
+ * (row-major: `rows` image rows of `cols` luma pixels, sampled across ONE
+ * reader-selected frame) — to a `Float32Array[rows]` of `cols` samples in
+ * [-1,1], shaped exactly like an e352 wavetable (rows = image-y axis, cols =
+ * image-x/phase axis). Fed straight into cube-dsp.sampleSlice so the derived
+ * audio is the audio-CUBE engine sourced from the SAME video surface the picture
+ * marches. Empty/short strips → zero rows (silent, never NaN).
  */
 export function stripToHeightfield(
   strip: Uint8Array | Uint8ClampedArray,
   cols: number,
-  frames: number,
+  rows: number,
 ): Float32Array[] {
   const out: Float32Array[] = [];
-  for (let f = 0; f < frames; f++) {
+  for (let f = 0; f < rows; f++) {
     const row = new Float32Array(cols);
     for (let x = 0; x < cols; x++) {
       const i = (f * cols + x) * 4;
@@ -247,3 +319,7 @@ export function stripToHeightfield(
   }
   return out;
 }
+
+// Re-export the HARD threshold so tests can reason about the SMOOTH↔HARD cut
+// without reaching into cube-dsp.
+export { HARD_THRESHOLD };

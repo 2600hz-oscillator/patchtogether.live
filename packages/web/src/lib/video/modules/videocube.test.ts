@@ -137,6 +137,26 @@ describe('videocubeDef — I/O contract', () => {
     expect(VIDEOCUBE_DEFAULTS.screen_on).toBe(1);
   });
 
+  it('adds the orbit-camera VIEW params (zoom + 3 rotations) with sensible defaults', () => {
+    const ids = new Set(videocubeDef.params.map((p) => p.id));
+    for (const id of ['view_zoom', 'view_rot_x', 'view_rot_y', 'view_rot_z']) {
+      expect(ids.has(id), id).toBe(true);
+    }
+    const zoom = videocubeDef.params.find((p) => p.id === 'view_zoom')!;
+    expect(zoom.min).toBe(0.3);
+    expect(zoom.max).toBe(3);
+    expect(VIDEOCUBE_DEFAULTS.view_zoom).toBe(1);
+    // A default off-axis view so the volume is seen at an angle (like CubeCard).
+    expect(VIDEOCUBE_DEFAULTS.view_rot_x).toBeGreaterThan(0);
+    expect(VIDEOCUBE_DEFAULTS.view_rot_y).toBeGreaterThan(0);
+    expect(VIDEOCUBE_DEFAULTS.view_rot_z).toBe(0);
+    // The VIEW params are picture-only → NOT wired to a CV input.
+    const cvTargets = new Set(videocubeDef.inputs.filter((i) => i.type === 'cv').map((i) => i.paramTarget));
+    for (const id of ['view_zoom', 'view_rot_x', 'view_rot_y', 'view_rot_z']) {
+      expect(cvTargets.has(id), `${id} has no CV`).toBe(false);
+    }
+  });
+
   it('every port + control is documented (STRICT completeness inputs)', () => {
     const d = videocubeDef.docs!;
     for (const i of videocubeDef.inputs) expect(d.inputs?.[i.id], `input ${i.id}`).toBeTruthy();
@@ -233,6 +253,27 @@ describe('videocubeDef.factory — construction + audio seam', () => {
     handle.setParam('wrap', 1); // clamp → mirror-fold
     handle.surface.draw(frame);
     expect(setWaveCount(audio), 'WRAP change re-derives the audio same-frame').toBe(base + 2);
+    handle.dispose();
+  });
+
+  it('VIEW camera params drive the volume render + round-trip, WITHOUT recomputing audio', async () => {
+    const audio = makeFakeAudio();
+    const ctx = makeCtx(audio);
+    const handle = videocubeDef.factory(ctx, mkNode());
+    await audio.workletReady; await Promise.resolve(); await Promise.resolve();
+    const frame = mkFrame(ctx.gl, true);
+
+    handle.surface.draw(frame); // initial scan
+    const base = setWaveCount(audio);
+
+    // Moving the orbit camera drives the ray-march uniforms but is picture-only:
+    // it must NOT re-derive the audio (view params are not in AUDIO_PARAMS).
+    for (const [pid, v] of [['view_zoom', 2], ['view_rot_x', 1.2], ['view_rot_y', -0.8], ['view_rot_z', 0.5]] as const) {
+      handle.setParam(pid, v);
+      handle.surface.draw(frame); // renders the volume with the new camera; must not throw
+      expect(handle.readParam(pid)).toBe(v);
+    }
+    expect(setWaveCount(audio), 'VIEW params are picture-only (no audio recompute)').toBe(base);
     handle.dispose();
   });
 

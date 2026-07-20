@@ -7,9 +7,10 @@
 //
 //   1. VIDEO (deterministic, render-smoke clock pinned): wire 3 REAL video
 //      sources (ACIDWARP × 3, distinct scenes) → video_a/b/c → videocube →
-//      videoOut, and assert video_out is a NON-BLANK, STRUCTURED morph (variance
-//      probe, NOT pixel-exact) AND that sweeping MORPH changes the picture (the
-//      combine is live, not a static passthrough).
+//      videoOut, and assert video_out is a NON-BLANK, STRUCTURED VOLUMETRIC frame
+//      (variance probe, NOT pixel-exact) AND that the render is LIVE — MORPH, the
+//      orbit VIEW camera (rot + zoom) and slice Y each change the volume (a real
+//      ray-march of the 3D solid, not a static passthrough).
 //
 //   2. AUDIO (real engine + audio thread): wire the 3 sources → videocube, and
 //      videocube.audio_out → a SCOPE, resume audio, and poll the scope over a
@@ -159,7 +160,7 @@ test.describe('VIDEOCUBE — video isomorph of the audio CUBE', () => {
     assertLiveFrame(out, FILL);
   });
 
-  test('the MORPH knob changes the combined picture (the combine is live, not a passthrough)', async ({ page, errorWatch }) => {
+  test('the render is LIVE — MORPH, the orbit VIEW camera, and slice Y each change the volume', async ({ page, errorWatch }) => {
     void errorWatch;
     await installRenderSmokeHooks(page);
     await page.goto('/rack');
@@ -167,18 +168,46 @@ test.describe('VIDEOCUBE — video isomorph of the audio CUBE', () => {
     // A mid-connect blend so MORPH FC has a wide A↔C span to move.
     await spawnPatch(page, videoNodes({ connect: 0.4, morph_fc: 0 }), videoEdges());
 
+    // Seat the rings, then read a baseline volume.
     await stepRead(page, { nodeId: 'vc', steps: FILL, scale: RENDER_SCALE });
-    const atFloor = await stepRead(page, { nodeId: 'vc', steps: 3, scale: RENDER_SCALE });
-    assertLiveFrame(atFloor, 3);
+    const r0 = await stepRead(page, { nodeId: 'vc', steps: 3, scale: RENDER_SCALE });
+    assertLiveFrame(r0, 3);
 
+    // MORPH — cross-fade the FLOOR fill toward the CEILING fill through the volume.
     await setNodeParams(page, 'vc', { morph_fc: 1 });
-    const atCeil = await stepRead(page, { nodeId: 'vc', steps: 3, scale: RENDER_SCALE });
-    assertLiveFrame(atCeil, 3);
-
+    const rMorph = await stepRead(page, { nodeId: 'vc', steps: 3, scale: RENDER_SCALE });
+    assertLiveFrame(rMorph, 3);
     expect(
-      signatureDist(atFloor, atCeil),
-      `MORPH 0 vs 1 renders a different combine (floor→ceiling), dist=${signatureDist(atFloor, atCeil).toFixed(1)}`,
+      signatureDist(r0, rMorph),
+      `MORPH 0→1 renders a different volume, dist=${signatureDist(r0, rMorph).toFixed(1)}`,
     ).toBeGreaterThan(3);
+
+    // VIEW ROT — orbit the camera: the whole solid reprojects (a big change).
+    await setNodeParams(page, 'vc', { view_rot_y: 2.4 });
+    const rView = await stepRead(page, { nodeId: 'vc', steps: 3, scale: RENDER_SCALE });
+    assertLiveFrame(rView, 3);
+    expect(
+      signatureDist(rMorph, rView),
+      `VIEW ROT Y orbits the camera → the volume reprojects, dist=${signatureDist(rMorph, rView).toFixed(1)}`,
+    ).toBeGreaterThan(3);
+
+    // VIEW ZOOM — pull the camera in: the solid grows in frame.
+    await setNodeParams(page, 'vc', { view_zoom: 2.2 });
+    const rZoom = await stepRead(page, { nodeId: 'vc', steps: 3, scale: RENDER_SCALE });
+    assertLiveFrame(rZoom, 3);
+    expect(
+      signatureDist(rView, rZoom),
+      `VIEW ZOOM changes the framed volume, dist=${signatureDist(rView, rZoom).toFixed(1)}`,
+    ).toBeGreaterThan(2);
+
+    // SLICE Y — move the cutting plane through the solid (the plane the audio reads).
+    await setNodeParams(page, 'vc', { slice_y: 0.12 });
+    const rSlice = await stepRead(page, { nodeId: 'vc', steps: 3, scale: RENDER_SCALE });
+    assertLiveFrame(rSlice, 3);
+    expect(
+      signatureDist(rZoom, rSlice),
+      `slice Y moves the cutting plane → the render changes, dist=${signatureDist(rZoom, rSlice).toFixed(1)}`,
+    ).toBeGreaterThan(1.5);
   });
 
   // AUDIO derivation — the MONO-DRONE cube-slice reaches a consumer. Real engine

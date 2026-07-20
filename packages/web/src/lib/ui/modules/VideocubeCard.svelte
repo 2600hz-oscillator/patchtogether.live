@@ -64,6 +64,15 @@
     { pid: 'level', label: 'Level' },
   ];
 
+  // The orbit-camera VIEW bank (matches CubeCard's ZOOM / VIEW X/Y/Z group).
+  // Picture-only — flies the volumetric render around the 3D solid.
+  const VIEW_KNOBS: Array<{ pid: string; label: string }> = [
+    { pid: 'view_zoom', label: 'Zoom' },
+    { pid: 'view_rot_x', label: 'View X' },
+    { pid: 'view_rot_y', label: 'View Y' },
+    { pid: 'view_rot_z', label: 'View Z' },
+  ];
+
   // ── Toggles ──
   let wrapOn = $derived(p('wrap') >= 0.5);
   let materialHard = $derived(p('material') >= 0.5);
@@ -273,6 +282,25 @@
             />
           {/each}
         </div>
+
+        <!-- VIEW: orbit camera (picture only) — matches CubeCard's VIEW bank -->
+        <div class="view-label">VIEW</div>
+        <div class="knobs view-knobs" data-testid="videocube-view">
+          {#each VIEW_KNOBS as k (k.pid)}
+            <Knob
+              value={p(k.pid)}
+              min={pmin(k.pid)}
+              max={pmax(k.pid)}
+              defaultValue={pdef(k.pid)}
+              label={k.label}
+              units={punits(k.pid)}
+              curve="linear"
+              onchange={set(k.pid)}
+              moduleId={id}
+              paramId={k.pid}
+            />
+          {/each}
+        </div>
       </div>
     </div>
   </PatchPanel>
@@ -377,4 +405,14 @@
     gap: 4px 6px;
     margin-top: 2px;
   }
+  .view-label {
+    font-size: 0.5rem;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+    font-family: ui-monospace, monospace;
+    margin-top: 4px;
+    border-top: 1px solid var(--border);
+    padding-top: 4px;
+  }
+  .view-knobs { margin-top: 0; }
 </style>

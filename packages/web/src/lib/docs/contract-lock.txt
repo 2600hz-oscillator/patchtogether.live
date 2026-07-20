@@ -3463,6 +3463,10 @@ videocube param space_crush 0..1 linear default=0
 videocube param space_diffuse 0..1 linear default=0
 videocube param spread 0..1 linear default=0
 videocube param tune -36..36 linear default=0 unit=st
+videocube param view_rot_x -3.1416..3.1416 linear default=0.6
+videocube param view_rot_y -3.1416..3.1416 linear default=0.7
+videocube param view_rot_z -3.1416..3.1416 linear default=0
+videocube param view_zoom 0.3..3 linear default=1
 videocube param wrap 0..1 discrete default=0
 videoMixer meta domain=video
 videoMixer in amount1 cv param=amount1 cvScale=linear
