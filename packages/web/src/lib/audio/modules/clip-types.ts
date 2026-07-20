@@ -1537,6 +1537,49 @@ export function editableRowRange(
   return { lo, hi, count: hi - lo + 1 };
 }
 
+/**
+ * A RESTRICTED clip-view row window — the sub-range of `editableRowRange` the
+ * card renders when its "restrict range" toggle is ON. It is `octaves` (default
+ * 4) octaves tall, STARTING at the floor octave and extending UP, then clamped
+ * so it NEVER addresses a row outside the full editable range.
+ *
+ * `floorOctave` is a MIDI octave number in `noteNameForMidi`'s convention
+ * (C4 = MIDI 60 ⇒ octave 4), so the floor's C is MIDI `(floorOctave + 1) * 12`.
+ * `floorRow` = the LOWEST editable row whose note sits AT/ABOVE that C — found by
+ * a monotonic scan up from the full range's bottom (`rowToMidi` is strictly
+ * increasing in `row`). The raw window is `[floorRow, floorRow + octaves *
+ * rowsPerOctave)` (rows-per-octave = the scale length in-key, 12 chromatic),
+ * INTERSECTED with the full editable range:
+ *   - a floor BELOW the editable bottom pins `lo` to the bottom (shows the
+ *     lowest `octaves` octaves);
+ *   - a floor high enough that fewer than `octaves` octaves fit at the top
+ *     TRUNCATES at the ceiling — the floor stays the LOWEST octave shown, never
+ *     shifted up.
+ *
+ * PURE + unit-tested. The card feeds the result straight into the SAME
+ * `midiForDisplayRow` / row-count path the full range uses, so `restrictRange`
+ * OFF (full `editableRowRange`) and ON (this window) share one render path and
+ * OFF is byte-identical to the pre-feature card.
+ */
+export function restrictedRowWindow(
+  root: number,
+  scale: ScaleName | undefined,
+  floorOctave: number,
+  octaves = 4,
+): { lo: number; hi: number; count: number } {
+  const full = editableRowRange(root, scale);
+  const rowsPerOctave = scaleSteps(scale).length; // in-key degrees, or 12 chromatic
+  const floorMidi = (Math.round(floorOctave) + 1) * 12; // C of the floor octave
+  // First editable row at/above the floor's C (monotonic scan up from the bottom).
+  let floorRow = full.lo;
+  while (floorRow < full.hi && rowToMidi(floorRow, root, scale) < floorMidi) floorRow++;
+  const span = Math.max(1, Math.round(octaves)) * rowsPerOctave;
+  const lo = Math.max(full.lo, floorRow);
+  const hi = Math.min(full.hi, floorRow + span - 1);
+  const clampedHi = hi < lo ? lo : hi; // never invert (degenerate floor beyond the top)
+  return { lo, hi: clampedHi, count: clampedHi - lo + 1 };
+}
+
 /** Options for note entry. `mono` = one note per column (replace on add).
  *  `maxVoices` = poly cap per column (default POLY_CHANNEL_PAIRS = 5). */
 export interface NoteEntryOpts {

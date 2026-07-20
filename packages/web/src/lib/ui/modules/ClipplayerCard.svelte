@@ -39,6 +39,7 @@
     coerceClipRecord,
     rowToMidi,
     editableRowRange,
+    restrictedRowWindow,
     DEFAULT_CLIP_STEPS,
     MAX_CLIP_STEPS,
     toggleNoteAt,
@@ -203,6 +204,15 @@
   let snhOn = $derived((void cardVersion, (node?.params.snh ?? 1) >= 0.5));
   let octave = $derived((void cardVersion, node?.params.octave ?? 0));
   let gateLength = $derived((void cardVersion, node?.params.gateLength ?? 0.9));
+  // CLIP-VIEW display-only pitch-window controls. restrictRange OFF (default) =
+  // the whole editable range (byte-identical to before this feature); ON = a
+  // 4-octave window whose LOWEST octave is rangeFloor's C. Neither touches
+  // playback / pitch CV — purely how many rows the piano-roll draws.
+  let restrictRange = $derived((void cardVersion, (node?.params.restrictRange ?? 0) >= 0.5));
+  let rangeFloor = $derived(
+    (void cardVersion, Math.round(node?.params.rangeFloor ?? pdef('rangeFloor').defaultValue)),
+  );
+  const RESTRICT_OCTAVES = 4; // window height when restricted (matches restrictedRowWindow default)
 
   function dataObj(): ClipPlayerData {
     return (node?.data ?? {}) as ClipPlayerData;
@@ -234,6 +244,17 @@
     if (!e || !node) return undefined;
     return e.readParam(node, pid);
   };
+
+  // CLIP-VIEW range controls (display only). Toggle flips the boolean param;
+  // the floor stepper nudges rangeFloor within its param min/max (clamped), so
+  // the picker can never drive the window outside the octave range.
+  const toggleRestrictRange = () => setParam('restrictRange')(restrictRange ? 0 : 1);
+  function nudgeRangeFloor(dir: number) {
+    const d = pdef('rangeFloor');
+    setParam('rangeFloor')(Math.max(d.min, Math.min(d.max, rangeFloor + dir)));
+  }
+  // The floor octave's C, as a lowercase note name (e.g. "c3") for the picker.
+  let rangeFloorLabel = $derived(noteNameForMidi((rangeFloor + 1) * 12));
 
   function writeData(mut: (d: ClipPlayerData) => void) {
     const target = patch.nodes[id];
@@ -1008,20 +1029,26 @@
     void cardVersion;
     return clipAt(selectedClip);
   });
-  // The FULL editable pitch-row range for the open clip (top = highest pitch).
-  // Memoized so the per-cell pitch lookup + the row count don't rescan per cell.
-  let editRange = $derived.by(() =>
-    editClip ? editableRowRange(editClip.root, editClip.scale) : null,
-  );
-  let editRows = $derived(editRange?.count ?? 8); // ALL editable rows (no scroll)
+  // The pitch-row range shown in the open clip's editor (top = highest pitch).
+  // restrictRange OFF (default) = the FULL editable range, returned UNCHANGED so
+  // the card is byte-identical to before this feature. ON = a 4-octave window
+  // (restrictedRowWindow) whose lowest octave is rangeFloor's C, clamped inside
+  // the full range. Memoized so the per-cell pitch lookup + row count don't
+  // rescan per cell.
+  let editRange = $derived.by(() => {
+    if (!editClip) return null;
+    if (!restrictRange) return editableRowRange(editClip.root, editClip.scale);
+    return restrictedRowWindow(editClip.root, editClip.scale, rangeFloor, RESTRICT_OCTAVES);
+  });
+  let editRows = $derived(editRange?.count ?? 8); // rows shown (full range, or the window)
   // EVERY step 0..lengthSteps-1 (capped at the 128-step max) — no step paging.
   let editCols = $derived(Math.min(MAX_CLIP_STEPS, editClip?.lengthSteps ?? DEFAULT_CLIP_STEPS));
   let editLane = $derived(laneOf(selectedClip));
   let editSlot = $derived(slotOf(selectedClip));
-  // Root pitch-class of the open clip — highlights the root ROWS as a musical
-  // guide across the (now tall) grid, replacing the meaningless every-4th-row
-  // guide that made sense only for the old 8-row window.
-  let editRootPc = $derived(editClip ? (((editClip.root % 12) + 12) % 12) : 0);
+  // Pitch-row highlighting is a fixed C/F octave guide computed per rendered row
+  // from its MIDI note (midi % 12 === 0 → C row, === 5 → F row) — see the cell
+  // markup + the .cell.crow/.frow CSS + the on-card legend. This replaces the
+  // earlier root-pitch-class warmer guide (removed with editRootPc).
   // Card WIDTH (px) in clip-view: fit the step grid + body padding + border,
   // floored at the normal hp-2 width. HEIGHT is CSS-driven (height:auto) so it
   // always fits the full row stack. Applied as an inline style ONLY in clip-view
@@ -1858,11 +1885,13 @@
             <button class="tag" onclick={cycleScale} title="Cycle scale">{scaleName(editClip.scale)}</button>
             <span class="tag root">{noteNameForMidi(editClip.root)}</span>
             <button class="tag" onclick={cycleLength} title="Cycle clip length">{editClip.lengthSteps}st</button>
-            <!-- The whole editable pitch range is shown at once (no pitch-window
-                 scroll), so this is a read-only span label, not a scroll control. -->
+            <!-- Read-only span label for the rows currently shown — the whole
+                 editable range, or the restricted 4-octave window when on. -->
             <span
               class="tag range"
-              title="Full editable pitch range — every note row is shown at once (no scrolling needed)"
+              title={restrictRange
+                ? `Restricted pitch range — a ${RESTRICT_OCTAVES}-octave window from the FLOOR octave up (RngLim on)`
+                : 'Full editable pitch range — every note row is shown at once (no scrolling needed)'}
               data-testid={`clipplayer-range-${id}`}
             >{noteNameForMidi(midiForDisplayRow(editClip, editRows - 1))}–{noteNameForMidi(midiForDisplayRow(editClip, 0))}</span>
             <button class="clear" onclick={clearClip} title="Clear clip (notes + its automation)" data-testid="clipplayer-clear">⌫</button>
@@ -1889,6 +1918,47 @@
             </span>
             <span class="op-vel" class:on={shiftHeld} title="Hold Shift (or key 8 / ⇧) then click a cell to cycle its velocity" data-testid={`clipplayer-velmode-${id}`}>VEL</span>
           </div>
+          <!-- CLIP-VIEW range controls + the note-row colour KEY (feature: a
+               display-only 4-octave window + a C/F octave guide). All three are
+               view-local chrome; none touch playback or the emitted CV. -->
+          <div class="clipview-ctl" data-testid={`clipplayer-clipview-ctl-${id}`}>
+            <button
+              class="range-toggle"
+              class:on={restrictRange}
+              onclick={toggleRestrictRange}
+              aria-pressed={restrictRange}
+              title={restrictRange
+                ? `RngLim ON — the editor shows a ${RESTRICT_OCTAVES}-octave window (click for the full range)`
+                : `RngLim OFF — the editor shows the full pitch range (click to restrict to ${RESTRICT_OCTAVES} octaves)`}
+              data-testid={`clipplayer-restrict-${id}`}
+            >{RESTRICT_OCTAVES}OCT</button>
+            <span class="floor-step" class:dim={!restrictRange} title="Lowest octave shown when the range is restricted">
+              <button
+                onclick={() => nudgeRangeFloor(-1)}
+                disabled={!restrictRange || rangeFloor <= pdef('rangeFloor').min}
+                aria-label="range floor octave down"
+                data-testid={`clipplayer-floor-down-${id}`}
+              >−</button>
+              <span class="floor-val" data-testid={`clipplayer-floor-${id}`}>{rangeFloorLabel}</span>
+              <button
+                onclick={() => nudgeRangeFloor(1)}
+                disabled={!restrictRange || rangeFloor >= pdef('rangeFloor').max}
+                aria-label="range floor octave up"
+                data-testid={`clipplayer-floor-up-${id}`}
+              >+</button>
+            </span>
+            <!-- KEY: each swatch is filled with EXACTLY the row's colourisation
+                 so it reads against the grid. -->
+            <div
+              class="noterow-legend"
+              aria-label="note-row colour key: c row, f row, other rows"
+              data-testid="clipplayer-noterow-legend"
+            >
+              <span class="lg-row"><span class="lg-lbl">c</span><span class="lg-sw c" aria-hidden="true"></span></span>
+              <span class="lg-row"><span class="lg-lbl">f</span><span class="lg-sw f" aria-hidden="true"></span></span>
+              <span class="lg-row"><span class="lg-lbl">other</span><span class="lg-sw o" aria-hidden="true"></span></span>
+            </div>
+          </div>
           <div class="piano-roll" class:vel-mode={shiftHeld} data-testid="clipplayer-pianoroll">
             {#each Array(editRows) as _r, row (row)}
               <div class="pr-row">
@@ -1900,7 +1970,8 @@
                     class:note={fill !== ''}
                     class:playhead={step === playheadCol}
                     class:beat={step % 4 === 0}
-                    class:rootrow={midi % 12 === editRootPc}
+                    class:crow={midi % 12 === 0}
+                    class:frow={midi % 12 === 5}
                     style={fill ? `background:${fill}` : undefined}
                     data-step={step}
                     data-row={row}
@@ -2477,12 +2548,15 @@
      Empty cells only — the vel/playhead rules below (later, same specificity)
      override on a placed note. */
   .cell.beat { background: #242424; }
-  /* Root-pitch rows read a touch warmer so the octaves are easy to scan on the
-     now full-height grid (replaces the old every-4th-display-row guide, which
-     was meaningless once the whole pitch range is shown). Empty cells only —
-     the note/playhead rules below win on a placed note. */
-  .cell.rootrow { background: #2a2622; }
-  .cell.beat.rootrow { background: #302b24; }
+  /* OCTAVE GUIDE (replaces the old root-warmer guide): rows landing EXACTLY on a
+     C read a subtle, DISTINCT cool-gray (the prominent octave marker); rows on
+     an F read a plain, quieter gray; every other row keeps the base tint. Kept
+     subtle so placed notes (inline bg, below) stay readable — empty cells only.
+     The on-card legend swatches mirror these exact colours. */
+  .cell.crow { background: #2e343c; }
+  .cell.frow { background: #262626; }
+  .cell.beat.crow { background: #363d46; }
+  .cell.beat.frow { background: #2c2c2c; }
   /* note cells are coloured by PROBABILITY via an inline background (see
      cellProbFill): WHITE at 100%, deepening to PURPLE as the firing chance
      drops. The inline style wins over .beat; the playhead border still reads. */
@@ -2853,4 +2927,81 @@
   }
   .op-vel.on { color: #1a1400; background: #e8b35b; border-color: #f2c675; }
   .piano-roll.vel-mode .cell { cursor: cell; }
+
+  /* CLIP-VIEW range controls + the note-row colour KEY. Compact horizontal row
+     between the clip-ops and the piano-roll; well within the grid-driven card
+     width (≥360px), so no control-overflow debt is added. */
+  .clipview-ctl {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 2px 0;
+  }
+  .range-toggle {
+    font-size: 9px;
+    letter-spacing: 0.04em;
+    color: var(--text-dim, #aaa);
+    background: var(--control-bg, #222);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 3px 6px;
+    cursor: pointer;
+    line-height: 1;
+  }
+  .range-toggle:hover { color: var(--text, #ddd); border-color: var(--accent-dim, #6cf); }
+  .range-toggle.on { color: #041018; background: #6cf; border-color: #6cf; }
+  .floor-step { display: inline-flex; align-items: center; gap: 2px; }
+  .floor-step.dim { opacity: 0.45; }
+  .floor-step button {
+    width: 16px; height: 16px;
+    padding: 0;
+    background: var(--control-bg, #222);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    font-size: 10px; line-height: 1;
+    cursor: pointer;
+  }
+  .floor-step button:disabled { cursor: default; opacity: 0.5; }
+  .floor-step button:not(:disabled):hover { border-color: var(--accent-dim, #6cf); }
+  .floor-val {
+    font-size: 9px;
+    color: var(--text-dim, #aaa);
+    min-width: 22px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  /* KEY — three stacked rows (c / f / other), each with a swatch filled with the
+     EXACT row colour used in the grid (see .cell.crow/.frow above; 'other' = the
+     base empty-cell tint). aria-labelled + testid'd for assertion. */
+  .noterow-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 2px 4px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+  }
+  .noterow-legend .lg-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .noterow-legend .lg-lbl {
+    font-size: 8px;
+    color: var(--text-dim, #888);
+    letter-spacing: 0.03em;
+  }
+  .noterow-legend .lg-sw {
+    width: 12px;
+    height: 10px;
+    flex: none;
+    border: 1px solid var(--border);
+    border-radius: 1px;
+  }
+  .noterow-legend .lg-sw.c { background: #2e343c; }
+  .noterow-legend .lg-sw.f { background: #262626; }
+  .noterow-legend .lg-sw.o { background: #161616; }
 </style>

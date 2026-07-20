@@ -42,6 +42,7 @@ import {
   rowToMidi,
   midiToRow,
   editableRowRange,
+  restrictedRowWindow,
   toggleNoteAt,
   cycleVelocity,
   noteAt,
@@ -906,6 +907,111 @@ describe('editableRowRange (clip-view full editable pitch span)', () => {
     expect(editableRowRange(C3_MIDI, undefined).count).toBeGreaterThan(
       editableRowRange(C3_MIDI, 'major').count,
     );
+  });
+});
+
+describe('restrictedRowWindow (clip-view 4-octave display window)', () => {
+  // Helper: every row in the window maps inside the FULL editable range and the
+  // window is a contiguous sub-block of it.
+  function assertInsideFull(
+    win: { lo: number; hi: number; count: number },
+    root: number,
+    scale: Parameters<typeof editableRowRange>[1],
+  ) {
+    const full = editableRowRange(root, scale);
+    expect(win.lo).toBeGreaterThanOrEqual(full.lo);
+    expect(win.hi).toBeLessThanOrEqual(full.hi);
+    expect(win.count).toBe(win.hi - win.lo + 1);
+    expect(win.count).toBeGreaterThanOrEqual(1);
+  }
+
+  it('a MID floor that fits shows exactly N octaves of rows (in-key)', () => {
+    // C major from C3 (48): 7 rows/octave. Floor octave 3 (C3) fits fully →
+    // [row 0, row 28) = 28 rows, from C3 (48) up to just below C7.
+    const w = restrictedRowWindow(48, 'major', 3, 4);
+    expect(w.count).toBe(4 * 7); // 28 rows = 4 octaves × 7 degrees
+    expect(rowToMidi(w.lo, 48, 'major')).toBe(48); // lowest row = C3 (the floor's C)
+    // The window is strictly narrower than the full range (restriction happened).
+    expect(w.count).toBeLessThan(editableRowRange(48, 'major').count);
+    assertInsideFull(w, 48, 'major');
+  });
+
+  it('a MID floor that fits shows exactly N octaves of rows (chromatic = 12/oct)', () => {
+    const w = restrictedRowWindow(48, undefined, 3, 4);
+    expect(w.count).toBe(4 * 12); // 48 rows = 4 octaves × 12 semitones
+    expect(rowToMidi(w.lo, 48, undefined)).toBe(48); // C3
+    assertInsideFull(w, 48, undefined);
+  });
+
+  it('CLAMPS at the BOTTOM edge — a floor at/below the range floor pins lo to the range bottom', () => {
+    const full = editableRowRange(48, 'major');
+    const w = restrictedRowWindow(48, 'major', 0, 4); // C0 floor = the editable bottom
+    expect(w.lo).toBe(full.lo); // pinned to the very bottom row
+    expect(rowToMidi(w.lo, 48, 'major')).toBe(12); // C0 (MIN_MIDI)
+    expect(w.count).toBe(4 * 7); // still a full 4-octave window (fits above the floor)
+    assertInsideFull(w, 48, 'major');
+    // A floor BELOW the editable range (defensive; the picker clamps to >=0)
+    // still pins to the bottom, never below it.
+    const below = restrictedRowWindow(48, 'major', -5, 4);
+    expect(below.lo).toBe(full.lo);
+    assertInsideFull(below, 48, 'major');
+  });
+
+  it('CLAMPS at the TOP edge — a high floor TRUNCATES at the ceiling and never inverts', () => {
+    const full = editableRowRange(48, 'major');
+    // Floor C5 leaves fewer than 4 octaves above → truncated at C8 (the top).
+    const w = restrictedRowWindow(48, 'major', 5, 4);
+    expect(w.hi).toBe(full.hi); // top row = the editable ceiling
+    expect(rowToMidi(w.hi, 48, 'major')).toBe(108); // C8 (MAX_MIDI)
+    expect(rowToMidi(w.lo, 48, 'major')).toBe(72); // floor stays C5 (lowest shown, not shifted up)
+    expect(w.count).toBeLessThan(4 * 7); // fewer than a full 4-octave window fits
+    assertInsideFull(w, 48, 'major');
+    // Floor ABOVE the whole range → degenerate single-row window, never inverted.
+    const top = restrictedRowWindow(48, 'major', 8, 4);
+    expect(top.count).toBeGreaterThanOrEqual(1);
+    expect(top.hi).toBeGreaterThanOrEqual(top.lo);
+    assertInsideFull(top, 48, 'major');
+  });
+
+  it('the floor row is the LOWEST row at/above the floor octave C (non-C root)', () => {
+    // Root D3 (50): the C rows fall on interior rows. Floor C4 (octave 4) →
+    // lowest shown row is the first scale-degree row whose note is >= C4 (60).
+    const w = restrictedRowWindow(50, 'major', 4, 4);
+    expect(rowToMidi(w.lo, 50, 'major')).toBeGreaterThanOrEqual(60); // >= C4
+    expect(rowToMidi(w.lo - 1, 50, 'major')).toBeLessThan(60); // one below is under C4
+    assertInsideFull(w, 50, 'major');
+  });
+
+  it('restrict OFF is the FULL range; ON narrows it (the card OFF path uses editableRowRange verbatim)', () => {
+    // The card returns editableRowRange when restrictRange is OFF (byte-
+    // identical), and restrictedRowWindow only when ON — this asserts the two
+    // are distinct so turning the feature on actually changes the row set.
+    const full = editableRowRange(48, 'major');
+    const on = restrictedRowWindow(48, 'major', 3, 4);
+    expect(full.count).toBe(57); // full editable range (unchanged from before the feature)
+    expect(on.count).toBeLessThan(full.count); // ON shows fewer rows
+  });
+});
+
+describe('clip-view C/F octave-guide row detection (midi % 12)', () => {
+  // The card highlights a rendered grid row by its MIDI note class: C rows
+  // (midi % 12 === 0) get the prominent tint, F rows (midi % 12 === 5) a plain
+  // gray, everything else the base tint. This pins that mapping on real rows.
+  it('detects a C row, an F row and an "other" row (chromatic, C3 root)', () => {
+    expect(rowToMidi(0, 48) % 12).toBe(0); // row 0 = C3 → C row
+    expect(rowToMidi(5, 48) % 12).toBe(5); // row 5 = F3 → F row
+    expect(rowToMidi(2, 48) % 12).toBe(2); // row 2 = D3 → other
+    expect(rowToMidi(12, 48) % 12).toBe(0); // an octave up is a C row again
+  });
+  it('in-key rows only light C/F when a degree lands EXACTLY on them', () => {
+    // C major from C3: degrees C D E F G A B. Row 0 = C (C row),
+    // row 3 = F (F row); D/E/G/A/B rows are "other".
+    expect(rowToMidi(0, 48, 'major') % 12).toBe(0); // C
+    expect(rowToMidi(3, 48, 'major') % 12).toBe(5); // F
+    for (const other of [1, 2, 4, 5, 6]) {
+      const cls = rowToMidi(other, 48, 'major') % 12;
+      expect(cls === 0 || cls === 5).toBe(false); // D/E/G/A/B → other
+    }
   });
 });
 
