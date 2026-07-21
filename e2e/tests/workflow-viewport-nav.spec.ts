@@ -19,6 +19,7 @@
 // lane (no DB/relay).
 
 import { test, expect, type Page } from '@playwright/test';
+import { installRenderSmokeHooks } from './_render-smoke';
 
 // channel-columns.ts geometry (kept in sync with the pure module).
 const HP_UNIT = 22.5;
@@ -81,6 +82,15 @@ async function getViewport(page: Page): Promise<{ x: number; y: number; zoom: nu
 }
 
 test.describe('workflow viewport navigation (keyboard pan)', () => {
+  // The workflow video-zone defaults (videoOut + recorderbox + synesthesia,
+  // PR #1155) run a live WebGL loop that saturates CI's SwiftShader main thread
+  // and makes keyboard-pan timing flake under contention. This spec asserts the
+  // viewport transform, not video — idle the engine rAF loop before boot (the
+  // render-smoke seam; no assertion weakened).
+  test.beforeEach(async ({ page }) => {
+    await installRenderSmokeHooks(page);
+  });
+
   test("'3' centers column 3 horizontally with its baseline at the viewport bottom", async ({ page }) => {
     await page.goto('/rack?mode=workflow');
     await waitForPinnedTrio(page);

@@ -23,6 +23,7 @@
 // and timeouts generous for the CI software renderer / slow round-trips.
 
 import { test, expect, type Page } from '@playwright/test';
+import { installRenderSmokeHooks } from './_render-smoke';
 
 /** channel-columns.ts geometry (kept in sync with the pure module). */
 const COLUMN_W = 765; // 34 * HP_UNIT(22.5) — wide enough for a 720px tidyvco/sixstrum
@@ -200,6 +201,16 @@ async function pollAudio(
 }
 
 test.describe('workflow channel columns', () => {
+  // Idle the VIDEO engine rAF loop before boot: the workflow video-zone defaults
+  // (videoOut + recorderbox + synesthesia, PR #1155) plus any video module
+  // dropped below run a live WebGL loop that saturates CI's SwiftShader main
+  // thread. This spec asserts column wiring + AUDIO meter/out RMS (the audio
+  // graph is untouched by the video-engine pause), never video pixels — so the
+  // render-smoke seam removes the contention with no assertion weakened.
+  test.beforeEach(async ({ page }) => {
+    await installRenderSmokeHooks(page);
+  });
+
   test('palette-drop into columns 1/2/3 wires clip-control + tail send + automation lane', async ({ page }) => {
     await page.goto('/rack?mode=workflow');
     await waitForPinnedTrio(page);
