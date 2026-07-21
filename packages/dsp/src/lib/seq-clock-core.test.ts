@@ -119,6 +119,84 @@ describe('SeqClockCore step timing + gate + pitch', () => {
   });
 });
 
+describe('SeqClockCore block-size invariance (scheduler drift)', () => {
+  // BLIND SPOT: the coarse per-module behavioral metric is RMS/centroid over a
+  // whole render — it can't see WHERE a pulse lands, only that energy exists.
+  // A block-boundary bug (a step advanced a frame early/late depending on how
+  // many samples the audio callback happened to hand us) leaves RMS untouched
+  // yet shifts every downstream gate. This pins that the engine is a pure
+  // function of ELAPSED SAMPLES, not of block segmentation: rendering one
+  // 48000-sample block must be byte-identical to rendering 375×128-sample
+  // blocks — same pitch, same gate, same rising-edge sample indices.
+  const cfg = {
+    bpm: 128, // step = 60/128/4 = 5625 samples → boundaries land MID-block
+    length: 16,
+    steps: [
+      on(60), on(62), on(64), on(65), on(67), REST, on(69), on(71),
+      on(72), REST, on(71), on(69), on(67), on(65), on(64), on(62),
+    ],
+    gateLength: 0.5,
+    swing: 0,
+    octave: 0,
+    snh: true,
+    running: true,
+  };
+
+  const TOTAL = 48000;
+  const BLOCK = 128; // 375 * 128 = 48000 exactly
+
+  function renderOneBlock(config: typeof cfg): { pitch: Float32Array; gate: Float32Array } {
+    const core = new SeqClockCore(SR, config);
+    return render(core, TOTAL);
+  }
+
+  function renderChunked(config: typeof cfg): { pitch: Float32Array; gate: Float32Array } {
+    const core = new SeqClockCore(SR, config);
+    const pitch = new Float32Array(TOTAL);
+    const gate = new Float32Array(TOTAL);
+    for (let off = 0; off < TOTAL; off += BLOCK) {
+      // subarray VIEWS share the backing buffer — process() fills [0, BLOCK).
+      core.process(pitch.subarray(off, off + BLOCK), gate.subarray(off, off + BLOCK), BLOCK);
+    }
+    return { pitch, gate };
+  }
+
+  /** Sample indices where the gate rises 0 → 1 (the audible pulse onsets). */
+  function risingEdges(gate: Float32Array): number[] {
+    const out: number[] = [];
+    for (let i = 1; i < gate.length; i++) {
+      if (gate[i - 1]! < 0.5 && gate[i]! >= 0.5) out.push(i);
+    }
+    return out;
+  }
+
+  it('one 48000-sample block === 375×128-sample blocks (pitch + gate byte-identical)', () => {
+    const single = renderOneBlock(cfg);
+    const chunked = renderChunked(cfg);
+    expect(chunked.gate).toEqual(single.gate);
+    expect(chunked.pitch).toEqual(single.pitch);
+  });
+
+  it('pulse onset sample-indices are identical under either segmentation', () => {
+    const single = risingEdges(renderOneBlock(cfg).gate);
+    const chunked = risingEdges(renderChunked(cfg).gate);
+    // At 128 BPM, 14 gated steps/pattern over 1 s ≈ 8.53 steps → a handful of
+    // onsets; the exact indices must match to the SAMPLE regardless of blocking.
+    expect(chunked).toEqual(single);
+    expect(single.length).toBeGreaterThan(4); // genuinely fired several pulses
+  });
+
+  it('still block-invariant with SWING (uneven step durations stress boundaries)', () => {
+    // swing 0.5 → even steps 1.25×, odd 0.75×: boundaries fall at non-uniform
+    // offsets, so any per-block accumulator reset would desync immediately.
+    const swung = { ...cfg, swing: 0.5 };
+    const single = renderOneBlock(swung);
+    const chunked = renderChunked(swung);
+    expect(chunked.gate).toEqual(single.gate);
+    expect(chunked.pitch).toEqual(single.pitch);
+  });
+});
+
 describe('SeqClockCore transport', () => {
   const cfg = {
     bpm: 120,

@@ -1104,6 +1104,33 @@ const DRIVERS: Record<string, PerPortDriver> = {
     note: 'FRAMETABLE: drive video_in with ACIDWARP.out (FREEZE/SAVE unpatched = live ring); video_out rings with the selected-frame mosaic',
   },
 
+  // ───── VIDEOCUBE — drive video_a so the combine emits on video_out ─────
+  //
+  // VIDEOCUBE combines 3 video rings (A/B/C) into one occupancy-morphed frame.
+  // Wire ACIDWARP.out into video_a; the first-frame fill seeds ring A instantly,
+  // uHasContent flips, and the combine renders a non-blank frame on video_out
+  // (rings B/C read black — the occupancy blend still produces a picture). The
+  // driver's presence bypasses the effect-shape skip so the module goes through
+  // the normal per-output emit path (video_out routed to VIDEOOUT.in). audio_out
+  // is a mono drone that stays silent through the bare-spawn budget — exempted
+  // per-port in per-module-per-port.spec.ts.
+  videocube: {
+    upstream: () => ({
+      nodes: [
+        { id: 'drv-acid', type: 'acidwarp', position: { x: 60, y: 60 }, domain: 'video' },
+      ],
+      edges: [
+        {
+          id: 'e-drv-acid',
+          from: { nodeId: 'drv-acid', portId: 'out' },
+          to:   { nodeId: 'sut',      portId: 'video_a' },
+          sourceType: 'video', targetType: 'video',
+        },
+      ],
+    }),
+    note: 'VIDEOCUBE: drive video_a with ACIDWARP.out (rings B/C black = occupancy blend still renders); video_out rings with the morphed combine',
+  },
+
   // ───── GRAINS OF VISION — drive in_a so both video outs emit ─────
   //
   // GRAINS OF VISION is a granular-video PROCESSOR (in_a → grains → feedback →

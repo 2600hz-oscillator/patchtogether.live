@@ -211,6 +211,15 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // EXEMPT_FROM_VRT below (mirrorpool/grains precedent). The inverse-CDF selection
   // + freeze/save math is covered by frametable-core.test.ts + frametable.spec.ts.
   frametable: [{ selector: 'canvas' }],
+  // VIDEOCUBE — the video isomorph of the audio CUBE. The card carries a live
+  // video_out preview canvas (blitOutputToDrawingBuffer off the engine clock);
+  // mask it so the deterministic chrome (WRAP/MATERIAL/SCREEN toggles + the
+  // READER row + the 15-knob CUBE bank + the 3 slot pickers + the PatchPanel
+  // drill-down) is the regression gate. Held for owner look-preview (look-
+  // affecting WebGL) — no solo-spawn baseline pinned; also in EXEMPT_FROM_VRT
+  // below (mirrorpool/frametable precedent). The occupancy combine + luma-
+  // reduction math is covered by videocube-core.test.ts + videocube.spec.ts.
+  videocube: [{ selector: 'canvas' }],
   // SCOREBOARD — 4-digit 7-segment counter widget. The card carries a live
   // preview canvas; the counter starts at 0 on factory mount (or 1234 when
   // the VRT scene sets `__scoreboardVrtSeed`). Canvas masked here as the
@@ -363,6 +372,15 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // vrt-update.yml once the owner approves the look (the canvas mask covers the
   // live preview).
   frametable: 'VRT baseline pending owner look-approval (look-affecting WebGL video wavetable); frametable-core.test.ts + per-port (ACIDWARP→video_in emit) + frametable.spec.ts provide coverage. Capture darwin/linux baselines via vrt-update.yml in a follow-up.',
+  // VIDEOCUBE — look-affecting WebGL video isomorph of the audio CUBE, HELD for
+  // owner preview: no VRT baseline pinned pre-approval (mirrorpool/grains/
+  // frametable precedent). Coverage meanwhile: videocube-core.test.ts (occupancy
+  // combine + colour blend + luma-reduction CPU mirror) + per-module-per-port
+  // (handle presence + ACIDWARP→video_a outputs-emit) + the bespoke
+  // videocube.spec.ts (real 3-source chain → video_out non-blank variance-probe +
+  // audio_out RMS). Capture darwin/linux baselines via vrt-update.yml once the
+  // owner approves the look (the canvas mask covers the live preview).
+  videocube: 'VRT baseline pending owner look-approval (look-affecting WebGL video CUBE isomorph); videocube-core.test.ts + per-port (ACIDWARP→video_a emit) + videocube.spec.ts provide coverage. Capture darwin/linux baselines via vrt-update.yml in a follow-up.',
   // SOURCERY — 2-input region shape-match recolor. v1 output is
   // source-dependent (needs A + B patched) AND shimmers/boils frame-to-frame
   // (per-frame-independent segmentation), so a solo-spawn VRT canvas is

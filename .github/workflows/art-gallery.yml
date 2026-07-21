@@ -2,7 +2,7 @@ name: ART gallery (GitHub Pages)
 
 # Renders the ART audio-baseline gallery (waveform + spectrogram of every
 # art/baselines/**/*.f32 via art/build_gallery.py) and publishes it to GitHub
-# Pages alongside the VRT gallery + Test Reconciliation report.
+# Pages alongside the VRT gallery.
 #
 # Modeled on .github/workflows/vrt-changeset-gallery.yml (LFS-restore + render +
 # publish) but the PUBLISH is GitHub Pages — the SAME mechanism the docs/vrt
@@ -12,10 +12,9 @@ name: ART gallery (GitHub Pages)
 # WHY THIS WORKFLOW REBUILDS THE WHOLE docs/ TREE (not just docs/art):
 #   A repo has exactly ONE GitHub Pages site, and each `deploy-pages` publishes
 #   its uploaded artifact as the ENTIRE site — there is no partial deploy. If
-#   this workflow uploaded only docs/art it would wipe docs/vrt +
-#   docs/test-reconciliation from the live site. So, exactly like pages.yml, it
-#   builds the full docs/ tree (VRT gallery + ART gallery + Test Reconciliation +
-#   landing page) and deploys it once. pages.yml (VRT/reconciliation-triggered)
+#   this workflow uploaded only docs/art it would wipe docs/vrt from the live
+#   site. So, exactly like pages.yml, it builds the full docs/ tree (VRT gallery +
+#   ART gallery + landing page) and deploys it once. pages.yml (VRT-triggered)
 #   also builds the ART gallery, so whichever workflow fires, the published site
 #   stays complete. The two share the `pages` concurrency group and trigger on
 #   DISJOINT path sets (this one owns art/**), so they never double-fire.
@@ -124,9 +123,6 @@ jobs:
             --baseline-dir art/baselines \
             --output-dir   docs/art
 
-      - name: Build Test Reconciliation page (committed history + live snapshot)
-        run: flox activate -- node scripts/build-test-reconciliation-page.mjs --out docs/test-reconciliation
-
       - name: Write the docs/ landing page
         run: |
           cat > docs/index.html <<'HTML'
@@ -155,7 +151,6 @@ jobs:
               <ul>
                 <li><a href="vrt/">VRT gallery</a><br><span class="desc">per-card Playwright screenshot baselines</span></li>
                 <li><a href="art/">ART gallery</a><br><span class="desc">per-baseline waveform + spectrogram of every ART audio baseline</span></li>
-                <li><a href="test-reconciliation/">Test Reconciliation</a><br><span class="desc">per-block total / disabled test counts over time</span></li>
               </ul>
             </main>
             <img class="banner banner-footer" src="assets/footer.png" alt="patchtogether.live footer banner" loading="lazy">

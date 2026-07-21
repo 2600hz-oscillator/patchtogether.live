@@ -201,5 +201,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   vdelay: { size: '3u', hp: 2 }, // 431×220px
   vfpgaRunner: { size: '3u', hp: 3 }, // 467×420px
   videoMixer: { size: '1u', hp: 2 }, // 180×280px — 4 channel faders in one row  [LOCKED]
+  videocube: { size: '3u', hp: 4 }, // 540×~560px — 2-col: video_out preview + 3 slot pickers left, toggles/reader/15-knob bank right (matches cube/hypercube; NOT the 2u mandelbulb tier — too small for CUBE's control bank)
   videovarispeed: { size: '3u', hp: 2 }, // 452×320px
 };

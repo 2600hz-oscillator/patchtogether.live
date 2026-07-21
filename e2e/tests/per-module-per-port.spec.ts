@@ -199,6 +199,20 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   // proven by milkdrop-render-smoke.spec.ts (it polls read('ready') for the
   // preset load, then drives fixed steps with synthetic audio + a fixed delta).
   milkdrop:       'video out needs the async preset chunk loaded + butterchurn warmup before it emits, exceeding the generic emit window; deterministic non-black render proven by milkdrop-render-smoke.spec.ts',
+  // VIDEOCUBE now has EIGHT outputs — video_out + audio_out + SIX per-port-gated
+  // slice-viz jacks (scope/slice/depth/smooth/morph/chaos). Sweeping each with a
+  // fresh page-nav is the SwiftShader per-frame-WebGL→video-out-canvas timeout
+  // class ×N (the exact reason the BEHAVIORAL sweep already whole-module-exempts
+  // it), and it would add ~6 serial ~6–20 s navigations of pure CI wall-time. The
+  // audio-derived jacks (audio_out, scope_out) are silent through the bare-spawn
+  // budget (async worklet load + rings must fill), and the viz jacks are gated —
+  // an unpatched jack renders nothing. ALL are covered by the dedicated
+  // videocube.spec.ts (real 3-source chain → video_out non-blank + each viz jack
+  // non-black-only-when-patched + slice_view/reader/Y·rot response + triptych
+  // divergence + depth-brightness + audio_out RMS + scope-tracks-wave) plus the
+  // pure CPU mirror videocube-core.test.ts and the factory seam videocube.test.ts.
+  // Handle-presence still pins every output port here.
+  videocube: 'video isomorph of audio CUBE with 8 outputs (video_out + audio drone + 6 per-port-gated slice-viz jacks); the video-out-canvas SwiftShader timeout class ×N + audio-derived/gated jacks; fully covered by videocube.spec.ts + videocube-core.test.ts + videocube.test.ts',
   // ── Game modules whose outputs ONLY fire on rare in-game events ──
   // MODTRIS line clears require ~10 piece drops + a full row filled;
   // PONG scores require a ball-miss after several bounces. Both exceed
@@ -256,6 +270,9 @@ const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   // the slice→waveform→audio path is covered by the mandelbulb factory unit
   // tests (slice-on wiring posts a setWave) + the mandelbulb-osc worklet test.
   'mandelbulb.audio_out': 'silent until the SLICE toggle is ON (default off); covered by mandelbulb.test.ts (factory slice-on wiring) + mandelbulb-osc.test.ts',
+  // (VIDEOCUBE is now WHOLE-MODULE exempt in EXEMPT_OUTPUT_EMIT_MODULES above —
+  // its 8 outputs incl. the 6 slice-viz jacks are covered by videocube.spec.ts;
+  // the former per-port 'videocube.audio_out' entry folded into that.)
   // ── DOOM: video out is fine BUT WASM init + game tic exceeds sweep budget;
   // audio + gate outputs are gameplay/forcePulse-conditional. Whole-module
   // skip is wrong because the module legitimately renders a video frame on
@@ -420,11 +437,11 @@ test('RATCHET: output-emit exemption lists only shrink', () => {
   expect(
     Object.keys(EXEMPT_OUTPUT_EMIT_MODULES).length,
     'EXEMPT_OUTPUT_EMIT_MODULES grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(43); // +1 featurecv (input-conditional outputs); +1 blood (data-gated emulator — outputs idle without the non-redistributable WAD, absent in CI); +1 milkdrop (video out needs async butterchurn preset-chunk load + warmup before emit; covered by milkdrop-render-smoke.spec.ts)
+  ).toBeLessThanOrEqual(43); // videocube ADDED (8 outputs incl. 6 per-port-gated slice-viz jacks; video-out-canvas SwiftShader timeout class ×N + audio-derived/gated jacks; folds the former per-port audio_out entry; covered by videocube.spec.ts + videocube-core.test.ts + videocube.test.ts) — fits within the existing cap, no raise. // +1 featurecv (input-conditional outputs); +1 blood (data-gated emulator — outputs idle without the non-redistributable WAD, absent in CI); +1 milkdrop (video out needs async butterchurn preset-chunk load + warmup before emit; covered by milkdrop-render-smoke.spec.ts)
   expect(
     Object.keys(EXEMPT_OUTPUT_EMIT).length,
     'EXEMPT_OUTPUT_EMIT grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(65);
+  ).toBeLessThanOrEqual(65); // −1 videocube.audio_out (folded into the whole-module videocube exempt in EXEMPT_OUTPUT_EMIT_MODULES; net shrink)
 });
 
 // ────────── Per-port input-drive exemptions ──────────

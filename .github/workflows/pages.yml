@@ -1,4 +1,4 @@
-name: Deploy GitHub Pages (VRT gallery + ART gallery + Test Reconciliation)
+name: Deploy GitHub Pages (VRT gallery + ART gallery)
 
 # Builds + publishes the GitHub Pages site on every push to main. There is ONE
 # Pages site per repo, so this single workflow owns the whole `docs/` tree:
@@ -15,14 +15,12 @@ name: Deploy GitHub Pages (VRT gallery + ART gallery + Test Reconciliation)
 #                                sibling art-gallery.yml (both build the full
 #                                docs/ tree + share the `pages` concurrency lock,
 #                                so the deployed site is always complete).
-#   docs/test-reconciliation/  — Test Reconciliation report
-#                                (scripts/build-test-reconciliation-page.mjs
-#                                renders index.html from the committed
-#                                changelog.json history + a FRESH live snapshot
-#                                computed at deploy time so the counts stay
-#                                honest). The committed history is tracked;
-#                                only the generated index.html is .gitignored.
 #   docs/index.html            — landing page linking both.
+#
+# (The old dated "Test Reconciliation" Pages report was RETIRED — it replaced
+# itself with the freshness-gated, in-repo test ledger: docs/testing/README.md +
+# docs/testing/test-ledger.generated.md, which can't go stale, so it needs no
+# deploy-time render.)
 #
 # Idempotent: a green run just rewrites the generated HTML with the same inputs +
 # an updated commit short-SHA. No state on the runner survives between runs.
@@ -33,9 +31,6 @@ on:
     paths:
       - 'e2e/vrt/__screenshots__/**'
       - 'e2e/vrt/build_gallery.py'
-      - 'docs/test-reconciliation/changelog.json'
-      - 'scripts/test-reconciliation.mjs'
-      - 'scripts/build-test-reconciliation-page.mjs'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -85,14 +80,6 @@ jobs:
       - name: Install deps (npm only — no Playwright browser needed for the page build)
         run: flox activate -- npm install
 
-      - name: Emit the registry manifest (for live parametrized counts)
-        # Non-fatal: the page builder degrades gracefully (warns + parametrized
-        # counts shown as 0) if the manifest is unavailable, so a hiccup here
-        # never breaks the deploy. svelte-kit sync runs via `npm install`'s
-        # prepare hook so tsconfig resolves.
-        continue-on-error: true
-        run: flox activate -- task test:emit-manifest
-
       - name: Build VRT gallery
         run: |
           mkdir -p docs/vrt
@@ -106,9 +93,6 @@ jobs:
           python3 art/build_gallery.py \
             --baseline-dir art/baselines \
             --output-dir   docs/art
-
-      - name: Build Test Reconciliation page (committed history + live snapshot)
-        run: flox activate -- node scripts/build-test-reconciliation-page.mjs --out docs/test-reconciliation
 
       - name: Write the docs/ landing page
         run: |
@@ -140,7 +124,6 @@ jobs:
               <ul>
                 <li><a href="vrt/">VRT gallery</a><br><span class="desc">per-card Playwright screenshot baselines</span></li>
                 <li><a href="art/">ART gallery</a><br><span class="desc">per-baseline waveform + spectrogram of every ART audio baseline</span></li>
-                <li><a href="test-reconciliation/">Test Reconciliation</a><br><span class="desc">per-block total / disabled test counts over time</span></li>
               </ul>
             </main>
             <img class="banner banner-footer" src="assets/footer.png" alt="patchtogether.live footer banner" loading="lazy">

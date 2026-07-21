@@ -44,6 +44,13 @@ export const WEBGL_HEAVY_GLOBS = [
   '**/video-*.spec.ts',
   '**/videobox-*.spec.ts',
   '**/videovarispeed-*.spec.ts',
+  // VIDEOCUBE (#1136): a heavy 3-input WebGL e2e (3 video rings + a volumetric
+  // ray-march + the audio reduce). The broad `video-*` glob does NOT match
+  // `videocube` (no dash), so it was mis-binned onto the sharded SwiftShader
+  // matrix — the toybox/video contention-timeout class. Enroll it explicitly in
+  // the serialized e2e-video lane. e2e/webgl-heavy-globs.ts is in the WebGL hash
+  // basis (STANDALONE_BASIS_FILES) → folds into the same one-time re-attest.
+  '**/videocube.spec.ts',
   '**/multi-video-playback.spec.ts',
   // GPU-attest rebuild WAVESCULPT wave: narrowed `wavesculpt*` → `wavesculpt`
   // (exact). The 3 satellite specs (camera-cv/state-unity/spatial-audio) were

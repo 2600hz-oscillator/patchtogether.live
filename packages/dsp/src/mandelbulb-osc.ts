@@ -78,6 +78,18 @@ function readFrame(frame: Float32Array, phase: number): number {
   return a + (b - a) * sFrac;
 }
 
+/** Anti-click crossfade length: a wave SWAP ramps the mix from the previous
+ *  wave to the new one over ~10 ms so a BOLD change (e.g. VIDEOCUBE's chroma
+ *  reacting to a hard colour cut) doesn't step the output → a click. The ramp is
+ *  LINEAR: consecutive slice waves are highly CORRELATED (a small slice/colour
+ *  tweak), and a linear ramp of correlated waves has NO level bump — an
+ *  equal-power (cos/sin) ramp would over-shoot to +3 dB mid-fade on identical /
+ *  near-identical waves, breaking the "identical wave → no-op" contract and
+ *  MANDELBULB's behavioural identity. For truly identical waves the ramp output
+ *  equals the wave exactly (a·(1−t)+a·t = a), so re-posting the same wave is a
+ *  perfect no-op. The FIRST setWave (silent → wave) does NOT fade. */
+const XFADE_SECONDS = 0.010;
+
 // Not `export`ed at the top level by design — see the file-header note.
 class MandelbulbOscProcessor extends AudioWorkletProcessor {
   // Phase accumulator (normalized [0,1)).
@@ -87,7 +99,14 @@ class MandelbulbOscProcessor extends AudioWorkletProcessor {
   // (also Float32Array<ArrayBufferLike> under the strict web tsconfig that
   // compiles this dsp source) assigns cleanly. Silent until the first setWave.
   private wave: Float32Array<ArrayBufferLike> = new Float32Array(MB_SLICE_SIZE);
+  // The PREVIOUS wave, kept so a setWave SWAP crossfades from it to `wave`
+  // instead of hard-swapping (anti-click). Same phase read as `wave`.
+  private prevWave: Float32Array<ArrayBufferLike> = new Float32Array(MB_SLICE_SIZE);
   private haveWave = false;
+  // Remaining crossfade samples (0 = not fading). Total length is derived from
+  // the sample rate the first time it is needed (sampleRate is worklet-global).
+  private xfadeRemain = 0;
+  private xfadeLen = 0;
 
   static get parameterDescriptors() {
     return [
@@ -118,6 +137,14 @@ class MandelbulbOscProcessor extends AudioWorkletProcessor {
       if (m.type === 'setWave') {
         const next = m.wave;
         if (next && next.length > 0) {
+          if (this.haveWave) {
+            // SWAP: fade from the current wave to the new one over ~10 ms so a
+            // bold change doesn't click. The FIRST wave (silent → wave) skips
+            // the fade so playback (and MANDELBULB's ART/behaviour) is unchanged.
+            if (this.xfadeLen <= 0) this.xfadeLen = Math.max(1, Math.round(sampleRate * XFADE_SECONDS));
+            this.prevWave = this.wave;
+            this.xfadeRemain = this.xfadeLen;
+          }
           this.wave = next as Float32Array<ArrayBufferLike>;
           this.haveWave = true;
         }
@@ -165,8 +192,15 @@ class MandelbulbOscProcessor extends AudioWorkletProcessor {
       const level = levelArr
         ? (levelArr.length > 1 ? (levelArr[i] as number) : (levelArr[0] as number))
         : 1;
-      const s = readFrame(this.wave, this.phase) * level;
-      outL[i] = clampRange(s, -4, 4);
+      let sample = readFrame(this.wave, this.phase);
+      if (this.xfadeRemain > 0) {
+        // Linear crossfade from prevWave → wave (both read at THIS phase). t goes
+        // 0→1 across the ramp; correlated/identical waves keep a constant level.
+        const t = 1 - this.xfadeRemain / this.xfadeLen;
+        sample = readFrame(this.prevWave, this.phase) * (1 - t) + sample * t;
+        this.xfadeRemain--;
+      }
+      outL[i] = clampRange(sample * level, -4, 4);
     }
 
     return true;

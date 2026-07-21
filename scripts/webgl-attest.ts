@@ -486,11 +486,19 @@ function main() {
   );
 
   // Pass B — leakers/uncovered (E2E_WEBGL_HEAVY UNSET; explicit spec files).
+  // ANCHOR each leaker basename at a path-segment boundary (leading '/'):
+  // Playwright treats every positional arg as a REGEX matched against the spec's
+  // file PATH, so a SHORTER leaker basename SUBSTRING-matches a LONGER spec's
+  // filename — the bare `cube.spec.ts` also matched `videocube.spec.ts` (the
+  // heavy VIDEOCUBE spec added by #1136), so Pass B ran 5 files for 4 leakers and
+  // the count-gate refused. `/cube.spec.ts` pins the match to a path boundary
+  // (`…/videocube.spec.ts` has no `/cube` segment), while still matching
+  // `…/tests/cube.spec.ts`. Fixes the whole basename-suffix collision class.
   results.push(
     runPass({
       name: 'B-leakers',
       env: { E2E_WEBGL_HEAVY: '' }, // unset for the child (empty = treated as unset by config)
-      args: WEBGL_LEAKER_SPECS,
+      args: WEBGL_LEAKER_SPECS.map((s) => `/${s}`),
       expectedSpecFiles: expectedLeakers,
     }),
   );
