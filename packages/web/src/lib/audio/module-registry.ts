@@ -14,6 +14,7 @@ import type {
   RackSize,
   ControlFamily,
   ModuleDocs,
+  ChainWiring,
 } from '$lib/graph/types';
 import type { AudioModuleFactory } from './engine';
 
@@ -170,6 +171,12 @@ export interface AudioModuleDef {
    * the card source. See ControlFamily.
    */
   controlFamilies?: readonly ControlFamily[];
+  /**
+   * Optional workflow channel-columns chain-wiring override — declares this
+   * module's true insert IN / chain OUT ports (and role) when the default
+   * port-shape resolution is wrong for the vertical DSP chain. See ChainWiring.
+   */
+  chainWiring?: ChainWiring;
   factory: AudioModuleFactory;
 }
 

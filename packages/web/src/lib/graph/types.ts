@@ -383,6 +383,28 @@ export interface ModuleDocs {
   controls?: Record<string, string>;
 }
 
+/**
+ * OPTIONAL per-module CHAIN-WIRING override (workflow channel-columns feature,
+ * owner "fixable in code" directive). Declared on a module def; the
+ * workflow-column resolvers (resolveMainAudioIn / resolveMainAudioOut in
+ * patch-convenience.ts) consult it BEFORE their default port-shape resolution,
+ * so a module whose naive main-in/out is wrong for the vertical DSP chain is
+ * corrected by editing its DEF — never by special-casing the wiring engine.
+ * Every field optional; default (no override) = the resolved main in/out.
+ *   - role:     'source' | 'dsp' | 'both' — declared chain role (default:
+ *               inferred from whether it has a main out and/or a main in).
+ *   - inPorts:  [L, R] stereo insert input, or [mono]. Overrides main-in.
+ *   - outPorts: [L, R] or [mono]. Overrides main-out.
+ * Example: TWOTRACKS declares inPorts = its reel-A audio input, outPorts = its
+ * A-side mixed output — not the naive first-L/R-token guess across its 4 audio
+ * inputs.
+ */
+export interface ChainWiring {
+  role?: 'source' | 'dsp' | 'both';
+  inPorts?: readonly [string, string] | readonly [string];
+  outPorts?: readonly [string, string] | readonly [string];
+}
+
 // ---------------- Patch graph (D8) ----------------
 export interface ModuleNode {
   id: string;
@@ -471,4 +493,8 @@ export interface ModuleDef {
    * downcasting to a domain-specific def.
    */
   vizPassthrough?: boolean;
+  /** Optional workflow channel-columns chain-wiring override — see ChainWiring.
+   *  Mirrored on the loose ModuleDef shape so defLookup callers read it without
+   *  downcasting to a domain def. */
+  chainWiring?: ChainWiring;
 }

@@ -101,7 +101,7 @@ describe('primitive helpers', () => {
     expect(normalizeStampMode(1)).toBeNull();
   });
 
-  it('hasWorkflowMarker only trips on the three markers set to true', () => {
+  it('hasWorkflowMarker trips on the pinned/hidden/default-wire markers set to true', () => {
     expect(hasWorkflowMarker(pinned)).toBe(true);
     expect(hasWorkflowMarker(hidden)).toBe(true);
     expect(hasWorkflowMarker(defaultWired)).toBe(true);
@@ -109,6 +109,18 @@ describe('primitive helpers', () => {
     expect(hasWorkflowMarker(plainNoData)).toBe(false);
     expect(hasWorkflowMarker({ type: 'x', data: { pinned: 'yes' } })).toBe(false); // must be === true
     expect(hasWorkflowMarker(null)).toBe(false);
+  });
+
+  it('hasWorkflowMarker trips on the channel-columns markers', () => {
+    // A member node in a column / send box.
+    expect(hasWorkflowMarker({ type: 'tidyVco', data: { channel: 1 } })).toBe(true);
+    expect(hasWorkflowMarker({ type: 'reverb', data: { sendSlot: 2 } })).toBe(true);
+    // The order manifest on the pinned mixer.
+    expect(hasWorkflowMarker({ type: 'mixmstrs', data: { columns: { '1': ['a'] } } })).toBe(true);
+    expect(hasWorkflowMarker({ type: 'mixmstrs', data: { sends: { '1': [] } } })).toBe(true);
+    // A non-numeric channel / null manifest must NOT trip it.
+    expect(hasWorkflowMarker({ type: 'x', data: { channel: 'one' } })).toBe(false);
+    expect(hasWorkflowMarker({ type: 'x', data: { columns: null } })).toBe(false);
   });
 
   it('inferPatchMode short-circuits on the first marker', () => {
