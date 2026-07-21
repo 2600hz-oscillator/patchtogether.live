@@ -383,6 +383,58 @@ export interface ModuleDocs {
   controls?: Record<string, string>;
 }
 
+/**
+ * OPTIONAL per-module CHAIN-WIRING override (workflow channel-columns feature,
+ * owner "fixable in code" directive). Declared on a module def; the
+ * workflow-column resolvers (resolveMainAudioIn / resolveMainAudioOut in
+ * patch-convenience.ts) consult it BEFORE their default port-shape resolution,
+ * so a module whose naive main-in/out is wrong for the vertical DSP chain is
+ * corrected by editing its DEF — never by special-casing the wiring engine.
+ * Every field optional; default (no override) = the resolved main in/out.
+ *   - role:     'source' | 'dsp' | 'both' — declared chain role (default:
+ *               inferred from whether it has a main out and/or a main in).
+ *               PLUS 'noteSink' — a module a clip lane can DRIVE (see laneTap).
+ *   - inPorts:  [L, R] stereo insert input, or [mono]. Overrides main-in.
+ *   - outPorts: [L, R] or [mono]. Overrides main-out.
+ *   - laneTap:  present only for `role: 'noteSink'`. Names the input ports the
+ *               column reconciler taps a lane's pitch / gate / velocity CV into
+ *               (Part B of CV Buddy). A noteSink has no main audio-out, so it is
+ *               never an island/mixer member — the tap is purely additive note
+ *               CV. Carried by cvBuddy + midiOutBuddy.
+ *   - returnsAudio: present only for `role: 'noteSink'`. Marks a note-sink that
+ *               ALSO has a hardware AUDIO RETURN (CV Buddy's ES-9 input pair) —
+ *               so its return audio is the lane's HEAD SOURCE. Such a member is a
+ *               head CANDIDATE (participates in one-source-head resolution) even
+ *               though it has no audio-typed port; the reconciler wires the return
+ *               pair (from the ES-9 node) at the chain root when it is the head.
+ *               cvBuddy sets it; midiOutBuddy (no modelled return) does NOT — it
+ *               is a pure tap, never a lane head.
+ * Example: TWOTRACKS declares inPorts = its reel-A audio input, outPorts = its
+ * A-side mixed output — not the naive first-L/R-token guess across its 4 audio
+ * inputs.
+ */
+export interface ChainWiring {
+  role?: 'source' | 'dsp' | 'both' | 'noteSink';
+  inPorts?: readonly [string, string] | readonly [string];
+  outPorts?: readonly [string, string] | readonly [string];
+  /**
+   * Lane note-tap port map — present iff `role: 'noteSink'`. The reconciler
+   * wires the clip lane's pitch/gate/velocity CV into these input port ids.
+   */
+  laneTap?: {
+    /** Input port id the lane's pitch CV wires into. */
+    pitchIn: string;
+    /** Input port id the lane's gate wires into. */
+    gateIn: string;
+    /** Input port id the lane's velocity CV wires into. */
+    velIn: string;
+  };
+  /** Note-sink with a hardware audio return (CV Buddy ↔ ES-9). Makes it a lane
+   *  head-source candidate; the reconciler wires its ES-9 return pair at the
+   *  chain root when it resolves as the column head. */
+  returnsAudio?: boolean;
+}
+
 // ---------------- Patch graph (D8) ----------------
 export interface ModuleNode {
   id: string;
@@ -471,4 +523,8 @@ export interface ModuleDef {
    * downcasting to a domain-specific def.
    */
   vizPassthrough?: boolean;
+  /** Optional workflow channel-columns chain-wiring override — see ChainWiring.
+   *  Mirrored on the loose ModuleDef shape so defLookup callers read it without
+   *  downcasting to a domain def. */
+  chainWiring?: ChainWiring;
 }

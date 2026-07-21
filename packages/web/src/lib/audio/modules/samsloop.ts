@@ -849,6 +849,19 @@ export const samsloopDef: AudioModuleDef = {
   label: 'samsloop',
   category: 'sources',
 
+  // Chain-role (Design-D): SAMSLOOP is genuinely a 'both' module — a looper that
+  // PLAYS its captured buffer (source, re-triggered by clips via `trig`) OR
+  // RECORDS external audio through its stereo record inputs (insert). This pass
+  // DEFAULTS it to 'source' so it is head-eligible AND its `trig` gate receives
+  // clip note control (clip triggers playback). As a declared source its audio
+  // record inputs are NOT read as a fed chain insert.
+  // TODO(both): the "record external audio as an insert" mode needs the
+  //   context-dependent 'both' switching described on isChainSource
+  //   (patch-convenience.ts) — deferred to keep this pass correct, not half-
+  //   working. Owner may flip this to role:'both' + inPorts:['audio_l_in',
+  //   'audio_r_in'] once that context threading lands.
+  chainWiring: { role: 'source' },
+
   inputs: [
     { id: 'trig',       type: 'gate' },
     { id: 'rate_cv',    type: 'cv', paramTarget: 'rate', cvScale: { mode: 'linear' } },

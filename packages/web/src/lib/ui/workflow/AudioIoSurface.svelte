@@ -72,6 +72,34 @@
     );
     onRequestClose();
   }
+
+  // AUDIO OUT is canvas-HIDDEN, so — unlike a card ADDED on the grid, whose input
+  // jacks let the user pick a source to patch FROM — the pinned instance had NO
+  // discoverable "select a source" affordance in this panel (owner report: the
+  // default audio-out shows no source list, but audio-in does). These rows mirror
+  // audio-in's patch-out rows in reverse: clicking a channel grabs that INPUT
+  // (one-motion rewire) and opens the SAME "patch from" picker that lists every
+  // compatible source on the canvas — i.e. the pinned audio-out now behaves like
+  // an added one. Sinks patch INTO them, so this is a "receive from" list.
+  const PATCH_INS: ReadonlyArray<{ id: string; label: string }> = [
+    { id: 'L', label: 'AUDIO OUT L' },
+    { id: 'R', label: 'AUDIO OUT R' },
+  ];
+
+  function patchIn(portId: string, ev: MouseEvent): void {
+    if (!audioOut) return;
+    document.dispatchEvent(
+      new CustomEvent('patchpanel:jackclick', {
+        detail: { nodeId: audioOut.id, portId, direction: 'input', side: 'left' },
+      }),
+    );
+    document.dispatchEvent(
+      new CustomEvent('patchpanel:patchto', {
+        detail: { nodeId: audioOut.id, pos: { x: ev.clientX, y: ev.clientY } },
+      }),
+    );
+    onRequestClose();
+  }
 </script>
 
 <div
@@ -130,6 +158,19 @@
             />
           </div>
         {/key}
+        <div class="patchout" data-testid="workflow-io-patchin">
+          {#each PATCH_INS as p (p.id)}
+            <button
+              class="patchout-row"
+              data-testid={`workflow-io-patchin-${p.id}`}
+              onclick={(e) => patchIn(p.id, e)}
+              title={`Receive ${p.label} from a source on the canvas`}
+            >
+              <span class="jack"></span>
+              {p.label}
+            </button>
+          {/each}
+        </div>
       {:else}
         <div class="hint" data-testid="workflow-io-audioout-empty">audio out spawning…</div>
       {/if}

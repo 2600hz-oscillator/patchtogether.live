@@ -36,13 +36,44 @@
     pruneAllAutoAssignDangling,
     repairDuplicateAutoAssign,
   } from '$lib/graph/automation-assign';
+  import { reconcileCvBuddyEs9 } from '$lib/graph/cv-buddy-es9-reconcile';
   import {
     isClipEligible,
     isMixerEligible,
     planClipControl,
     planSendToMixer,
   } from '$lib/graph/patch-convenience';
-  import { setControlColor, setNodeLocked } from '$lib/graph/mutate';
+  import {
+    reconcileColumns,
+    PINNED_MIXER_ID as WCOL_MIXER_ID,
+    PINNED_CLIP_ID as WCOL_CLIP_ID,
+    type ColumnDefResolver,
+  } from '$lib/graph/column-reconcile';
+  import {
+    COLUMN_COUNT,
+    SEND_BOX_COUNT,
+    columnForFlowX,
+    sendBoxForFlowX,
+    indexForDropY,
+    insertBottom,
+    removeFrom,
+    reorder,
+    columnFlushPositions,
+    sendFlushPositions,
+    COLUMN_BASELINE_Y,
+    defaultLaneHeightPx,
+    computeLaneHeightPx,
+    laneTopYForHeight,
+    planLanePushUps,
+    needsDefaultVideoOut,
+    videoOutSpawnPos,
+    DEFAULT_VIDEO_OUT_ID,
+    laneCenterViewport,
+    videoAreaViewport,
+    type ModuleBoxLike,
+    type ViewportMetrics,
+  } from '$lib/graph/channel-columns';
+  import { setControlColor, setNodeLocked, setNodeParam } from '$lib/graph/mutate';
   import { snapPositionToGrid, findFreeRackSlot, RACK_UNIT, type RackRect } from '$lib/ui/rack-grid';
   import { resolveControlColor } from '$lib/graph/control-color';
   import {
@@ -273,6 +304,7 @@
   import { audioLatencyStore, type AudioLatencyMode } from '$lib/ui/audio-latency-store.svelte';
   import FlowBridge, { type FlowBridgeApi, type InternalFlowNode } from '$lib/ui/FlowBridge.svelte';
   import CadillacOverlay from '$lib/ui/CadillacOverlay.svelte';
+  import ChannelColumnsOverlay from '$lib/ui/ChannelColumnsOverlay.svelte';
   import PickupCable from '$lib/ui/PickupCable.svelte';
   import { organizeLayout, type Box } from '$lib/ui/canvas/organize';
   import type { CableType, Edge, PortDef, ModuleNode } from '$lib/graph/types';
@@ -459,6 +491,25 @@
     if (size) rackSizeByType[r.type] = { size, hp: r.hp ?? fallback?.hp };
   }
 
+  /** A module TYPE's rendered card HEIGHT in flow-space px — its rack tier
+   *  (`--rack-u` × RACK_UNIT), a per-TYPE constant. Deterministic across peers
+   *  (both derive it from the same type), so it drives the collab-safe FLUSH
+   *  column stack (columnFlushPositions). Falls back to one rack unit for an
+   *  unsized (unmigrated) type. */
+  function wcolCardHeightPx(type: string): number {
+    const size = rackSizeByType[type]?.size;
+    const u = size ? parseInt(size, 10) || 1 : 1;
+    return u * RACK_UNIT;
+  }
+
+  /** A module TYPE's rendered card WIDTH in flow-space px — its hp tier
+   *  (`--rack-hp` × RACK_UNIT, the same math _module-card.css applies). Feeds the
+   *  band-CENTERING of column/send members (columnCardX) so a card sits centered
+   *  under its channel number regardless of hp. Falls back to one tile. */
+  function wcolCardWidthPx(type: string): number {
+    return (rackSizeByType[type]?.hp ?? 1) * RACK_UNIT;
+  }
+
   let audioCtx: AudioContext | null = $state(null);
   let engine: PatchEngine | null = $state(null);
   let reconciler: { reconcile: () => Promise<void>; dispose: () => void } | null = $state(null);
@@ -512,6 +563,32 @@
       // cap-enforcement tests in particular.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__spawnFromPalette = spawnFromPalette;
+      // Workflow channel-columns e2e: set the flow-space spawn anchor so the
+      // NEXT __spawnFromPalette lands inside a specific column / send band
+      // (exercises the REAL wcolDropTarget → membership + order + reconcile
+      // path, not just a raw graph write).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__setSpawnFlowPos = (p: { x: number; y: number }) => {
+        spawnFlowPos = { x: p.x, y: p.y };
+      };
+      // Workflow channel-columns e2e: drive the SvelteFlow drag-stop seam
+      // directly (the same {targetNode, nodes} payload onnodedragstop passes)
+      // so a test can DROP a card into a column band without synthesizing a
+      // pixel-perfect pointer drag.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__handleNodeDragStop = (payload: { targetNode: FlowNode | null; nodes: FlowNode[] }) =>
+        handleNodeDragStop(payload);
+      // Workflow channel-columns e2e: drive the REAL right-click "Assign to
+      // channel N" commit for a node without synthesizing the context-menu
+      // pointer sequence (which is flaky for a card that moves into a column
+      // mid-gesture). Sets the menu target + runs the exact handler the menu
+      // fires — so the bug-3 splice/no-double behaviour is tested on the real
+      // path. `channel` is 0-based (lane N), matching the menu callback.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__assignNodeToChannel = (nodeId: string, channel: number) => {
+        ctxMenuNodeId = nodeId;
+        commitAssignToChannel(channel);
+      };
       // Drag-lock state for e2e — patch-menus-persist tests inspect this
       // to confirm the lock engaged + released at the right moments.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -617,6 +694,18 @@
       (globalThis as any).__flow = {
         screenToFlowPosition: (p: { x: number; y: number }) =>
           flowApi?.screenToFlowPosition(p) ?? p,
+        // Inverse of screenToFlowPosition — used by the workflow viewport-nav
+        // e2e to project a flow-space point (a column band center, the video
+        // zone corner) to on-screen px and assert where the pan framed it.
+        flowToScreenPosition: (p: { x: number; y: number }) =>
+          flowApi?.flowToScreenPosition(p) ?? p,
+        getViewport: () => flowApi?.getViewport?.() ?? { x: 0, y: 0, zoom: 1 },
+        // Set the viewport pan/zoom. Mirrors the flowApi seam the workflow
+        // keyboard-nav uses; e2e helpers call it to bring a directly-injected
+        // (spawnPatch) card into view when the default workflow viewport frames
+        // the far-down lanes/video-zone instead of the flow origin.
+        setViewport: (vp: { x: number; y: number; zoom: number }, opts?: { duration?: number }) =>
+          flowApi?.setViewport?.(vp, opts),
         getInternalNode: (id: string) => flowApi?.getInternalNode(id),
         // Edge-delete e2e: headless Playwright can't click the thin SVG edge,
         // so the spec selects it through xyflow's real `selected` mutation,
@@ -1112,6 +1201,46 @@
     trace('workflow: seeded default wires mixmstrs master L/R → audioOut (one-shot)');
   });
 
+  // DEFAULT VIDEO SINK (owner directive): a fresh workflow rack auto-spawns ONE
+  // videoOut inside the PURPLE video zone below the lanes — the video-domain
+  // analog of the pinned mixer's audio-out. ONE-SHOT SEED (a latch on the pinned
+  // mixer), not an invariant: once seeded a user deleting it is respected. The
+  // node is a NORMAL canvas card (NOT data.pinned) so it renders in the zone;
+  // the deterministic id converges racing clients on one Y.Map entry. Same seed
+  // gate + non-tracked origin as the pinned ensure.
+  $effect(() => {
+    if (!workflowMode) return;
+    if ((provider && !providerHasSynced) || scratchSeeded === false) return;
+    const mixer = patch.nodes[WCOL_MIXER_ID];
+    if (!mixer) return; // wait for the pinned mixer (the latch home) to land
+    const seeded = (mixer.data as { workflowVideoOutSeeded?: boolean } | undefined)?.workflowVideoOutSeeded === true;
+    if (seeded) return; // one-shot done — respect a user delete forever
+    if (!needsDefaultVideoOut(snapshot.nodes)) {
+      // A videoOut already exists (loaded rack) — just set the latch so we never
+      // add a second, without spawning.
+      ydoc.transact(() => {
+        const m = patch.nodes[WCOL_MIXER_ID];
+        if (m) { if (!m.data) m.data = {}; (m.data as Record<string, unknown>).workflowVideoOutSeeded = true; }
+      }, WORKFLOW_PIN_SPAWN_ORIGIN);
+      return;
+    }
+    const pos = videoOutSpawnPos();
+    ydoc.transact(() => {
+      if (patch.nodes[DEFAULT_VIDEO_OUT_ID]) return; // in-transact re-check
+      patch.nodes[DEFAULT_VIDEO_OUT_ID] = {
+        id: DEFAULT_VIDEO_OUT_ID,
+        type: 'videoOut',
+        domain: 'video',
+        position: { x: pos.x, y: pos.y },
+        params: {},
+        data: { name: nextDefaultName(patch.nodes, 'videoOut') },
+      };
+      const m = patch.nodes[WCOL_MIXER_ID];
+      if (m) { if (!m.data) m.data = {}; (m.data as Record<string, unknown>).workflowVideoOutSeeded = true; }
+    }, WORKFLOW_PIN_SPAWN_ORIGIN);
+    trace('workflow: spawned default videoOut sink in the video zone (one-shot)');
+  });
+
   // DOCK KEYMAP: M / E / C toggle the matching pinned card in the BOTTOM
   // dock zone ($lib/ui/dock — one card per zone, so opening another
   // replaces the current one); ESC closes. Workflow-only; inert while
@@ -1141,6 +1270,53 @@
     }
     window.addEventListener('keydown', onDockKey);
     return () => window.removeEventListener('keydown', onDockKey);
+  });
+
+  // WORKFLOW MODE — VIEWPORT NAVIGATION keys. Keeps the CURRENT zoom; only pans.
+  //  * '1'..'8' → center that channel column horizontally in the viewport with
+  //    its BASELINE (where the number sits) at the viewport BOTTOM. Numbers
+  //    beyond the active column count (COLUMN_COUNT) are ignored.
+  //  * 'v'/'V'  → snap the video zone's LOWER-LEFT corner to the viewport's
+  //    LOWER-LEFT corner.
+  // Inert while typing (isTypingTarget: input/textarea/select/contenteditable —
+  // so a card control's number entry is never hijacked) and under any modifier.
+  // The pure translate math lives in channel-columns (laneCenterViewport /
+  // videoAreaViewport); here we read the live SCREEN-space pane size + current
+  // zoom and hand the transform to xyflow's animated setViewport.
+  $effect(() => {
+    if (!workflowMode) return;
+    const PAN_MS = 220;
+    function readViewportMetrics(): ViewportMetrics | null {
+      if (!flowApi || !flowEl) return null;
+      const rect = flowEl.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return null;
+      const vp = flowApi.getViewport?.();
+      const zoom = vp?.zoom && vp.zoom > 0 ? vp.zoom : 1;
+      return { widthPx: rect.width, heightPx: rect.height, zoom };
+    }
+    function onNavKey(e: KeyboardEvent) {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isTypingTarget(e.target)) return;
+      const k = e.key;
+      if (k === 'v' || k === 'V') {
+        const vp = readViewportMetrics();
+        if (!vp || !flowApi) return;
+        e.preventDefault();
+        flowApi.setViewport(videoAreaViewport(vp), { duration: PAN_MS });
+        return;
+      }
+      // '1'..'8' → center that lane (guard against '0'/'9'+ and > column count).
+      if (k >= '1' && k <= '9') {
+        const ch = k.charCodeAt(0) - 48;
+        if (ch < 1 || ch > COLUMN_COUNT) return; // ignore > active column count
+        const vp = readViewportMetrics();
+        if (!vp || !flowApi) return;
+        e.preventDefault();
+        flowApi.setViewport(laneCenterViewport(ch, vp), { duration: PAN_MS });
+      }
+    }
+    window.addEventListener('keydown', onNavKey);
+    return () => window.removeEventListener('keydown', onNavKey);
   });
 
   // Dock hygiene + P2.5a persistence binding: each Canvas mount binds the
@@ -1394,15 +1570,90 @@
     return out;
   }
 
+  // Viewport tick for the workflow channel-columns overlay — re-projects its
+  // flow-space bands to screen on every pan/zoom (workflow racks only).
+  let wcolViewportTick = $state(0);
   function onViewportMoveStart(): void {
     dockPanTails = buildDockPanTails();
   }
   function onViewportMove(): void {
     if (dockPanTails.length > 0) dockPanTick++;
+    if (workflowMode) wcolViewportTick++;
   }
   function onViewportMoveEnd(): void {
     if (dockPanTails.length > 0) dockPanTails = [];
+    if (workflowMode) wcolViewportTick++;
   }
+
+  /** The 8 channel colours for the overlay column badges — the canonical clip-
+   *  player's per-lane automation colours (the single source of truth for
+   *  channel colour). Recomputed on graph change. */
+  let wcolColumnColors = $derived.by<string[]>(() => {
+    void snapshot;
+    const clip = wcolCanonClip();
+    const data = clip ? (patch.nodes[clip]?.data as AutoClipPlayerData | undefined) : undefined;
+    return Array.from({ length: COLUMN_COUNT }, (_, lane) => autoLaneColorEff(data, lane));
+  });
+
+  /** UNIFORM lane geometry (workflow only): the guide lines default to ~2× a
+   *  tidyvco card tall and ALL grow upward together to the tallest column/send
+   *  stack. Heights are the per-TYPE rack tiers → every peer converges. Returns
+   *  the flow-space TOP Y the overlay draws every lane line from (baseline stays
+   *  pinned at the bottom). */
+  let wcolLaneTopY = $derived.by<number>(() => {
+    void snapshot;
+    if (!workflowMode) return COLUMN_BASELINE_Y;
+    const mixer = patch.nodes[WCOL_MIXER_ID];
+    const md = mixer?.data as
+      | { columns?: Record<string, string[]>; sends?: Record<string, string[]> }
+      | undefined;
+    const cols = md?.columns ?? {};
+    const sends = md?.sends ?? {};
+    const stackH = (order: string[]) =>
+      order.reduce((sum, id) => sum + wcolCardHeightPx(patch.nodes[id]?.type ?? ''), 0);
+    const stacks: number[] = [];
+    for (let ch = 1; ch <= COLUMN_COUNT; ch++) stacks.push(stackH(cols[String(ch)] ?? []));
+    for (let s = 1; s <= SEND_BOX_COUNT; s++) stacks.push(stackH(sends[String(s)] ?? []));
+    const height = computeLaneHeightPx(stacks, defaultLaneHeightPx(wcolCardHeightPx('tidyVco')));
+    return laneTopYForHeight(height);
+  });
+
+  // GROW-UP PUSH: when the lanes grow taller, NON-lane canvas modules sitting
+  // above them that now dip into the lane region are pushed UP to clear it —
+  // even LOCKED ones (we write committed graph position, not a drag). A
+  // deterministic one-shot on the lane-top change: planLanePushUps returns an
+  // EMPTY plan once everything clears, so this is idempotent (no write storm).
+  // Lane members (data.channel/sendSlot), pinned singletons, video-domain cards
+  // and the video area's contents are excluded.
+  $effect(() => {
+    if (!workflowMode) return;
+    const laneTopY = wcolLaneTopY; // dependency: re-run when lanes grow/shrink
+    if ((provider && !providerHasSynced) || scratchSeeded === false) return;
+    const candidates: ModuleBoxLike[] = [];
+    for (const n of snapshot.nodes) {
+      if (n.type === 'cadillac') continue;
+      if (isCanvasHiddenNode(n)) continue; // pinned singletons + hidden cameras
+      if (n.domain === 'video') continue; // the video zone owns these
+      const d = n.data as { channel?: number; sendSlot?: number } | undefined;
+      if (typeof d?.channel === 'number' || typeof d?.sendSlot === 'number') continue; // lane member
+      const pos = currentNodePosition(n.id) ?? n.position;
+      if (pos.y >= COLUMN_BASELINE_Y) continue; // in/below the video area, not above the lanes
+      const size = nodeFootprintPx(n.id);
+      candidates.push({ id: n.id, x: pos.x, y: pos.y, w: size.w, h: size.h });
+    }
+    const pushes = planLanePushUps(candidates, laneTopY);
+    if (pushes.length === 0) return;
+    ydoc.transact(() => {
+      for (const p of pushes) {
+        const target = patch.nodes[p.id];
+        if (!target) continue;
+        // Move the SHARED committed position (collab-convergent; every peer
+        // computes the same target). Keep X; lift Y to the lockable row.
+        target.position = { x: target.position.x, y: p.y };
+      }
+    }, WORKFLOW_PIN_SPAWN_ORIGIN);
+    trace(`workflow: pushed ${pushes.length} module(s) up to clear grown lanes`);
+  });
 
   let bottomRailCards = $derived.by(() => {
     const docked = railCards('bottom');
@@ -1612,6 +1863,38 @@
         }
       }
     }
+    // WORKFLOW CHANNEL COLUMNS: a member's on-screen slot is COMPUTED from its
+    // index in the column/send ORDER array (position = render output). So the
+    // visual column always matches the DSP chain, a drag-nudge can never reorder
+    // it, and per-user free layouts don't apply to column members. Built once per
+    // pass from the pinned mixer's order manifest; dawless racks skip it entirely.
+    const wcolPosByNode = new Map<string, { x: number; y: number }>();
+    if (workflowMode) {
+      const mixer = snap.nodes.find((m) => m.id === WCOL_MIXER_ID);
+      const md = mixer?.data as
+        | { columns?: Record<string, string[]>; sends?: Record<string, string[]> }
+        | undefined;
+      const cols = md?.columns ?? {};
+      const sends = md?.sends ?? {};
+      // FLUSH bottom-up stacking (owner: no gaps, cards sit directly on top of
+      // each other, FIRST-added card anchored at the very bottom, newest on top).
+      // Heights are per-TYPE rack constants → deterministic + collab-convergent.
+      const typeOf = new Map(snap.nodes.map((n) => [n.id, n.type]));
+      const heightsFor = (order: string[]) =>
+        order.map((id) => wcolCardHeightPx(typeOf.get(id) ?? ''));
+      const widthsFor = (order: string[]) =>
+        order.map((id) => wcolCardWidthPx(typeOf.get(id) ?? ''));
+      for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
+        const order = cols[String(ch)] ?? [];
+        const positions = columnFlushPositions(ch, heightsFor(order), widthsFor(order));
+        order.forEach((id, i) => wcolPosByNode.set(id, positions[i]!));
+      }
+      for (let s = 1; s <= SEND_BOX_COUNT; s++) {
+        const order = sends[String(s)] ?? [];
+        const positions = sendFlushPositions(s, heightsFor(order), widthsFor(order));
+        order.forEach((id, i) => wcolPosByNode.set(id, positions[i]!));
+      }
+    }
     for (const n of snap.nodes) {
       // Skip children belonging to a collapsed group — the group card
       // stands in for them visually. Phase 2 will flip to inline-rendering
@@ -1633,7 +1916,12 @@
       // Per-user layouts: getNodePosition returns the user's override
       // (when in multiplayer) or falls back to n.position (when single-
       // user OR when this user has no entry yet).
-      const resolved = getNodePosition(ydoc, currentUserId, n.id, { x: n.position.x, y: n.position.y });
+      // Column/send members: position is DERIVED from the order array (above),
+      // overriding the free/per-user position. Non-members fall back to the
+      // normal per-user layout resolution.
+      const resolved =
+        wcolPosByNode.get(n.id) ??
+        getNodePosition(ydoc, currentUserId, n.id, { x: n.position.x, y: n.position.y });
       const isTop = top === n.id;
       // DOCKING P2.5a: a docked node renders as a small DockStubCard IN ITS
       // PLACE — same node id, so every cable stays attached natively. The
@@ -3283,7 +3571,15 @@
     if (payload.nodes.length === 0 && payload.edges.length === 0) return;
     ydoc.transact(() => {
       for (const e of payload.edges) {
-        if (patch.edges[e.id]) delete patch.edges[e.id];
+        const live = patch.edges[e.id];
+        // MAJOR 1: an EXPLICIT user deletion of a managed (wcol-) cable durably
+        // suppresses it (+ its stereo/control-pair siblings via the reconcile's
+        // all-or-nothing yield) until the next deliberate column edit.
+        if (live && workflowMode && e.id.startsWith('wcol-e-')) {
+          const colKey = wcolEdgeColumnKey(live);
+          if (colKey) wcolMarkDetached(e.id, colKey);
+        }
+        if (live) delete patch.edges[e.id];
       }
       for (const n of payload.nodes) {
         // Pinned drawer singletons never render as flow nodes, so they
@@ -3335,14 +3631,109 @@
     if (topNodeId && !moved.some((n) => n.id === topNodeId)) {
       topNodeId = null;
     }
+
+    // WORKFLOW CHANNEL COLUMNS: a drag RE-TARGETS membership + order. Because a
+    // member's position is DERIVED from its array index (position = render
+    // output), we update the ORDER array — not the free position — so a reorder
+    // snaps to list order and a cross-column drag re-assigns the channel. A drag
+    // OUT of every band unassigns (retract membership → the reconcile prunes its
+    // wcol edges). Non-member drags fall through to the normal position write.
+    if (workflowMode && patch.nodes[WCOL_MIXER_ID]) {
+      const stillMember = new Set<string>();
+      const laneReassign: { id: string; ch: number }[] = [];
+      ydoc.transact(() => {
+        for (const n of moved) {
+          const node = patch.nodes[n.id];
+          if (!node || isPinnedNode(node) || n.id === WCOL_MIXER_ID || n.id === WCOL_CLIP_ID) continue;
+          // VIDEO cards belong to the video zone, never an audio channel — the
+          // column hit-test is X-only, so without this a videoOut dragged over a
+          // column band (below the baseline) would be swept into that channel.
+          if (node.domain === 'video') continue;
+          const d = node.data as { channel?: number; sendSlot?: number } | undefined;
+          const oldCh = typeof d?.channel === 'number' ? d.channel : null;
+          const oldSlot = typeof d?.sendSlot === 'number' ? d.sendSlot : null;
+          const band = columnForFlowX(n.position.x);
+          // Drop center uses the dragged card's OWN flush height (matches the
+          // flush layout the sibling centers are computed against).
+          const dropCenterY = n.position.y + wcolCardHeightPx(node.type) / 2;
+          if (typeof band === 'number') {
+            if (oldCh === band) {
+              // Reorder within the same column: index from the drop Y, against
+              // the siblings' FLUSH slot centers.
+              const order = wcolOrder('columns', band);
+              const sibs = order.filter((id) => id !== n.id);
+              const sibH = sibs.map((id) => wcolCardHeightPx(patch.nodes[id]?.type ?? ''));
+              const sibPos = columnFlushPositions(band, sibH);
+              const centers = sibPos.map((p, i) => p.y + sibH[i]! / 2);
+              setWcolOrder('columns', band, reorder(order, n.id, indexForDropY(centers, dropCenterY)));
+              wcolClearDetached(String(band));
+            } else {
+              // Move into column `band` from another column / send / free canvas.
+              if (oldCh != null) { setWcolOrder('columns', oldCh, removeFrom(wcolOrder('columns', oldCh), n.id)); wcolClearDetached(String(oldCh)); }
+              if (oldSlot != null) { setWcolOrder('sends', oldSlot, removeFrom(wcolOrder('sends', oldSlot), n.id)); wcolClearDetached('s' + oldSlot); }
+              // Cross-column move: drop any carried head flag so it can't win head
+              // in `band` via a sort race (re-promoted only if band is headless).
+              wcolResetHead(n.id);
+              setWcolMembership(n.id, band, null);
+              setWcolOrder('columns', band, insertBottom(wcolOrder('columns', band), n.id));
+              wcolClearDetached(String(band));
+              laneReassign.push({ id: n.id, ch: band });
+            }
+            stillMember.add(n.id);
+          } else if (band === 'send') {
+            const slot = sendBoxForFlowX(n.position.x);
+            if (oldSlot === slot) {
+              const order = wcolOrder('sends', slot);
+              const sibs = order.filter((id) => id !== n.id);
+              const sibH = sibs.map((id) => wcolCardHeightPx(patch.nodes[id]?.type ?? ''));
+              const sibPos = sendFlushPositions(slot, sibH);
+              const centers = sibPos.map((p, i) => p.y + sibH[i]! / 2);
+              setWcolOrder('sends', slot, reorder(order, n.id, indexForDropY(centers, dropCenterY)));
+              wcolClearDetached('s' + slot);
+            } else {
+              if (oldCh != null) { setWcolOrder('columns', oldCh, removeFrom(wcolOrder('columns', oldCh), n.id)); wcolClearDetached(String(oldCh)); }
+              if (oldSlot != null) { setWcolOrder('sends', oldSlot, removeFrom(wcolOrder('sends', oldSlot), n.id)); wcolClearDetached('s' + oldSlot); }
+              // Into a send box → no longer a column source: drop the head flag.
+              if (oldCh != null) wcolResetHead(n.id);
+              setWcolMembership(n.id, null, slot);
+              setWcolOrder('sends', slot, insertBottom(wcolOrder('sends', slot), n.id));
+              wcolClearDetached('s' + slot);
+            }
+            stillMember.add(n.id);
+          } else {
+            // Dragged OUT to free canvas → unassign. Fall through to the position
+            // write below so the card stays where it was dropped.
+            if (oldCh != null) { setWcolOrder('columns', oldCh, removeFrom(wcolOrder('columns', oldCh), n.id)); wcolClearDetached(String(oldCh)); }
+            if (oldSlot != null) { setWcolOrder('sends', oldSlot, removeFrom(wcolOrder('sends', oldSlot), n.id)); wcolClearDetached('s' + oldSlot); }
+            // Left every column → drop the head flag (was a column source).
+            if (oldCh != null) wcolResetHead(n.id);
+            if (oldCh != null || oldSlot != null) setWcolMembership(n.id, null, null);
+          }
+        }
+      }, LOCAL_ORIGIN);
+      // A cross-column move re-assigns the automation lane to the new channel.
+      for (const { id, ch } of laneReassign) {
+        const clip = wcolCanonClip();
+        if (clip) assignAutomationLane(clip, id, ch - 1);
+      }
+      // Position writes ONLY for nodes NOT held as column/send members (theirs
+      // is derived from the array). Members that stayed members get no write.
+      const freeMoved = moved.filter((n) => !stillMember.has(n.id));
+      if (freeMoved.length) writeMovedPositions(freeMoved);
+      return;
+    }
+
+    writeMovedPositions(moved);
+  }
+
+  /** Persist dragged node positions through the dual-path (per-user layout map in
+   *  multiplayer, shared node.position single-user) — the pre-workflow behavior. */
+  function writeMovedPositions(moved: FlowNode[]): void {
     ydoc.transact(() => {
       for (const n of moved) {
         if (currentUserId) {
-          // Multi-user: write to per-user layout map only.
           setNodePosition(ydoc, currentUserId, n.id, { x: n.position.x, y: n.position.y });
         } else {
-          // Single-user: write to the shared node.position (preserves
-          // backward compat with patches saved pre-layouts-split).
           const target = patch.nodes[n.id];
           if (target) {
             target.position = { x: n.position.x, y: n.position.y };
@@ -3659,6 +4050,47 @@
     const node = patch.nodes[mid];
     const def = node && defLookup(node.type);
     if (!def) return;
+
+    // WORKFLOW CHANNEL COLUMNS: when the pinned column system is active, "Assign
+    // to channel N" means COLUMN MEMBERSHIP (channel scalar + order append), and
+    // the reconciler owns ALL wiring — clip-control on sources, source→DSP
+    // splicing on adjacent members, the tail's single send-to-mixer, and stale-
+    // edge GC. Committing flat send-to-mixer edges here (the else-branch below)
+    // would double a SECOND module straight into the same mixer channel instead
+    // of splicing it through the first (owner bug: tidyvco + cloudseed on ch1
+    // both reached the mixer, no tidyvco→cloudseed link). Route through the same
+    // membership path the palette-drop uses so both gestures converge.
+    if (workflowMode && patch.nodes[WCOL_MIXER_ID]) {
+      const ch = channel + 1; // column channels are 1-based; lanes are 0-based
+      ydoc.transact(() => {
+        const d = node.data as { channel?: number; sendSlot?: number } | undefined;
+        const oldCh = typeof d?.channel === 'number' ? d.channel : null;
+        const oldSlot = typeof d?.sendSlot === 'number' ? d.sendSlot : null;
+        if (oldCh != null && oldCh !== ch) {
+          setWcolOrder('columns', oldCh, removeFrom(wcolOrder('columns', oldCh), mid));
+          wcolClearDetached(String(oldCh));
+          // Reassigned to a DIFFERENT column: drop any carried head flag so it
+          // can't win head in the destination via a sort race.
+          wcolResetHead(mid);
+        }
+        if (oldSlot != null) {
+          setWcolOrder('sends', oldSlot, removeFrom(wcolOrder('sends', oldSlot), mid));
+          wcolClearDetached('s' + oldSlot);
+        }
+        setWcolMembership(mid, ch, null);
+        setWcolOrder('columns', ch, insertBottom(wcolOrder('columns', ch), mid));
+        wcolClearDetached(String(ch));
+      }, LOCAL_ORIGIN);
+      // Bind the automation lane immediately (the reconciler's lane heal also
+      // covers this, but do it here so the menu feedback is instant).
+      const clip = wcolCanonClip();
+      if (clip) assignAutomationLane(clip, mid, channel);
+      // Reconcile now so the wcol edge set (splice + GC) settles synchronously,
+      // not only on the next graph-change effect tick.
+      reconcileColumns(wcolResolveDef);
+      return;
+    }
+
     const player = ctxMenuCanonClipPlayer;
     const mixer = ctxMenuCanonMixer;
     // (a) automation — always (needs a clip-player to hold the assignment).
@@ -3698,7 +4130,158 @@
     void snapshot; // re-run on any graph change (node deletes included)
     pruneAllAutoAssignDangling();
     repairDuplicateAutoAssign();
+    // CV BUDDY → ES-9 janitor: wire each CV Buddy's note/transport outputs to
+    // the single ES-9 node's jacks per the slot allocator + write the per-jack
+    // classes; reset freed jacks to audio on unclaim. Idempotent + inert when
+    // there is no ES-9 (lazy resolve). Same graph-change seam as the janitors
+    // above. (NOTE: #1147 also edits this file on another branch — a merge
+    // conflict here at integration is expected; this edit is intentionally
+    // minimal + localized.)
+    reconcileCvBuddyEs9();
   });
+
+  // WORKFLOW CHANNEL-COLUMNS reconcile janitor — workflow racks only. On any
+  // graph change: heal the column/send membership ORDER arrays against each
+  // member's data.channel/sendSlot truth, then re-derive the reconciler-owned
+  // wcol- edge set (clip-control on the source, chain links on adjacent pairs,
+  // send-to-mixer on the tail). Idempotent + non-undo-tracked (AUTO_JANITOR_
+  // ORIGIN inside the reconciler), so it self-heals on every peer without ever
+  // fighting a hand-drawn cable (wcol- namespace + yield rule). Dawless racks
+  // never run it (workflowMode gate) — zero overhead + pixel-identical.
+  const wcolResolveDef: ColumnDefResolver = (t) => defLookup(t) as never;
+  $effect(() => {
+    if (!workflowMode) return;
+    void snapshot; // re-run on any graph change
+    reconcileColumns(wcolResolveDef);
+  });
+
+  // ---------------- Workflow channel-columns: membership writes ----------------
+
+  /** The pinned mixer's order arrays live at pinned-mixmstrs.data.columns /
+   *  .sends. Read one (or empty). */
+  function wcolOrder(kind: 'columns' | 'sends', key: number): string[] {
+    const m = patch.nodes[WCOL_MIXER_ID];
+    const map = (m?.data as { columns?: Record<string, string[]>; sends?: Record<string, string[]> } | undefined)?.[kind];
+    return map?.[String(key)] ?? [];
+  }
+
+  /** Write ONE column/send order array (single-key in-place) on the pinned
+   *  mixer — never a whole-map rebuild. Caller wraps in a transact. */
+  function setWcolOrder(kind: 'columns' | 'sends', key: number, ids: string[]): void {
+    const live = patch.nodes[WCOL_MIXER_ID];
+    if (!live) return;
+    if (!live.data) live.data = {};
+    const d = live.data as { columns?: Record<string, string[]>; sends?: Record<string, string[]> };
+    if (!d[kind]) d[kind] = {};
+    d[kind]![String(key)] = ids;
+  }
+
+  /** Set/clear a member node's channel/sendSlot membership scalar (the CRDT-safe
+   *  membership truth). Caller wraps in a transact. */
+  function setWcolMembership(nodeId: string, channel: number | null, sendSlot: number | null): void {
+    const live = patch.nodes[nodeId];
+    if (!live) return;
+    if (!live.data) live.data = {};
+    const d = live.data as { channel?: number; sendSlot?: number };
+    // Guard every delete with an existence check — a SyncedStore proxy THROWS on
+    // `delete` of a missing key (deleteProperty trap returns false), which would
+    // abort the whole drag transact (the drag-into-column "drop" was dead
+    // because a free node has no sendSlot to delete).
+    if (channel != null) d.channel = channel;
+    else if ('channel' in d) delete d.channel;
+    if (sendSlot != null) d.sendSlot = sendSlot;
+    else if ('sendSlot' in d) delete d.sendSlot;
+  }
+
+  /** CROSS-MOVE AIRTIGHTEN (round-3 follow-up): reset a node's persisted
+   *  `data.isColumnHead` head flag when it LEAVES its column (moved to a
+   *  DIFFERENT column, to a send, or out to free canvas). Otherwise a node that
+   *  was the head of column A carries `isColumnHead: true` into column B and can
+   *  win the head there via a resolveColumnHead sort race before the head-heal
+   *  re-classifies it. Cleared → it arrives `undefined` (fresh) and is promoted
+   *  ONLY if the destination column is headless. Guarded delete (a SyncedStore
+   *  proxy throws on delete of a missing key). Caller wraps in a transact. */
+  function wcolResetHead(nodeId: string): void {
+    const live = patch.nodes[nodeId];
+    if (!live?.data) return;
+    const d = live.data as { isColumnHead?: boolean };
+    if ('isColumnHead' in d) delete d.isColumnHead;
+  }
+
+  /** The canonical clip-player that holds column automation lanes (the pinned
+   *  one in a workflow rack; else the lowest clip-player id). */
+  function wcolCanonClip(): string | null {
+    if (patch.nodes[WCOL_CLIP_ID]) return WCOL_CLIP_ID;
+    return listClipPlayers(patch.nodes).sort()[0] ?? null;
+  }
+
+  // MAJOR 1 — durable manual override: a user-deleted managed (wcol-) cable must
+  // NOT snap back. We record the deleted edge id in a per-column suppression set
+  // on the pinned mixer (data.wcolDetached), which the reconcile respects, and
+  // clear that column's set on the next deliberate column edit (re-manage).
+
+  /** The column/send key a wcol- edge belongs to — from its member endpoint's
+   *  channel/sendSlot scalar. '1'..'8' for a column, 's1'/'s2' for a send. */
+  function wcolEdgeColumnKey(edge: Edge): string | null {
+    for (const ep of [edge.source.nodeId, edge.target.nodeId]) {
+      const d = patch.nodes[ep]?.data as { channel?: number; sendSlot?: number } | undefined;
+      if (typeof d?.channel === 'number') return String(d.channel);
+      if (typeof d?.sendSlot === 'number') return 's' + d.sendSlot;
+    }
+    return null;
+  }
+
+  /** Record a user-detached wcol- edge id under its column key (dedup). Caller
+   *  wraps in a LOCAL_ORIGIN transact (durable + undoable with the delete). */
+  function wcolMarkDetached(edgeId: string, colKey: string): void {
+    const mixer = patch.nodes[WCOL_MIXER_ID];
+    if (!mixer) return;
+    if (!mixer.data) mixer.data = {};
+    const d = mixer.data as { wcolDetached?: Record<string, string[]> };
+    if (!d.wcolDetached) d.wcolDetached = {};
+    const cur = d.wcolDetached[colKey] ?? [];
+    if (!cur.includes(edgeId)) d.wcolDetached[colKey] = [...cur, edgeId];
+  }
+
+  /** Clear a column/send key's detach suppression — a fresh structural edit of
+   *  that column re-manages all its links. Caller wraps in a transact. */
+  function wcolClearDetached(colKey: string): void {
+    const mixer = patch.nodes[WCOL_MIXER_ID];
+    const d = mixer?.data as { wcolDetached?: Record<string, string[]> } | undefined;
+    if (d?.wcolDetached && (d.wcolDetached[colKey]?.length ?? 0) > 0) d.wcolDetached[colKey] = [];
+  }
+
+  /** Owner north-star "it just works": when the FIRST FX lands in a send box,
+   *  a correctly-patched send loop is still SILENT (every ch{i}_send{n} defaults
+   *  to 0). Auto-raise the send amount to a modest 0.5 on each channel that
+   *  currently HAS a column member, so the loop is audible immediately. Only
+   *  bumps channels still at 0 (never overrides a user-set amount). */
+  function wcolAutoRaiseSend(slot: number): void {
+    const mixer = patch.nodes[WCOL_MIXER_ID];
+    if (!mixer) return;
+    for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
+      if (wcolOrder('columns', ch).length === 0) continue;
+      const pid = `ch${ch}_send${slot}`;
+      const cur = mixer.params?.[pid] ?? 0;
+      if (cur <= 0) setNodeParam(WCOL_MIXER_ID, pid, 0.5);
+    }
+  }
+
+  /**
+   * Compute the workflow-column drop target for a spawn at `flowPos`, or null
+   * when the drop is on free canvas (no band) or not a workflow rack. Returns
+   * the channel (or send slot) + whether the drop is in the TOP THIRD of an
+   * occupied column (insert-at-top-of-chain vs append-at-bottom).
+   */
+  function wcolDropTarget(
+    flowPos: { x: number; y: number },
+  ): { channel?: number; sendSlot?: number } | null {
+    if (!workflowMode || !patch.nodes[WCOL_MIXER_ID]) return null;
+    const band = columnForFlowX(flowPos.x);
+    if (typeof band === 'number') return { channel: band };
+    if (band === 'send') return { sendSlot: sendBoxForFlowX(flowPos.x) };
+    return null;
+  }
 
   function onNodeContextMenu({ event, node }: { event: MouseEvent | TouchEvent; node: FlowNode }) {
     event.preventDefault();
@@ -5541,12 +6124,42 @@
       void vp;
     }
 
+    // WORKFLOW CHANNEL COLUMNS: a drop inside a column / send band joins that
+    // channel's DSP chain (or aux-send loop). Stamp the membership scalar, place
+    // at the deterministic column slot, and SUPPRESS the cable-splice (in-band
+    // drops order by the column array, never by proximity-splice — the two
+    // splice paths must not both fire on one drop).
+    // Video cards live in the video zone, not an audio channel; the column
+    // hit-test is X-only, so exclude video-domain spawns from column membership.
+    const wcolDrop = type === 'cadillac' || domain === 'video' ? null : wcolDropTarget(spawnFlowPos);
+    // Was the target send box empty BEFORE this drop? (First-FX auto-raise.)
+    const wcolSendWasEmpty = wcolDrop?.sendSlot != null && wcolOrder('sends', wcolDrop.sendSlot).length === 0;
+    if (wcolDrop?.channel != null) {
+      initialData.channel = wcolDrop.channel;
+      // Snap FLUSH onto the TOP of the column (newest member stacks up; the
+      // first-added member stays anchored at the bottom); the flowNodes
+      // derivation re-stacks the whole column flush next render.
+      const existing = wcolOrder('columns', wcolDrop.channel);
+      const heights = [...existing.map((id) => wcolCardHeightPx(patch.nodes[id]?.type ?? '')), wcolCardHeightPx(type)];
+      const widths = [...existing.map((id) => wcolCardWidthPx(patch.nodes[id]?.type ?? '')), wcolCardWidthPx(type)];
+      const p = columnFlushPositions(wcolDrop.channel, heights, widths)[existing.length]!;
+      pos.x = p.x; pos.y = p.y;
+    } else if (wcolDrop?.sendSlot != null) {
+      initialData.sendSlot = wcolDrop.sendSlot;
+      const existing = wcolOrder('sends', wcolDrop.sendSlot);
+      const heights = [...existing.map((id) => wcolCardHeightPx(patch.nodes[id]?.type ?? '')), wcolCardHeightPx(type)];
+      const widths = [...existing.map((id) => wcolCardWidthPx(patch.nodes[id]?.type ?? '')), wcolCardWidthPx(type)];
+      const p = sendFlushPositions(wcolDrop.sendSlot, heights, widths)[existing.length]!;
+      pos.x = p.x; pos.y = p.y;
+    }
+
     // Insert-on-cable (Proposal B2): if the cursor is close to an
     // existing cable's midpoint AND the new module has a compatible
     // input + compatible output for the cable's cableType, splice the
     // new card into the cable (delete original, add src→new + new→dst).
-    // Falls back to a plain spawn-at-cursor on no match.
-    const splice = tryFindInsertSpliceTarget(spawnFlowPos, def);
+    // Falls back to a plain spawn-at-cursor on no match. Suppressed for an
+    // in-band workflow-column drop.
+    const splice = wcolDrop ? null : tryFindInsertSpliceTarget(spawnFlowPos, def);
 
     ydoc.transact(() => {
       patch.nodes[id] = {
@@ -5557,6 +6170,16 @@
         params: {},
         data: initialData,
       };
+      // WORKFLOW: append/insert the new member into the column/send order array
+      // in the SAME transact (one undo step with the spawn). A structural edit of
+      // the column re-manages its links → clear its detach suppression (MAJOR 1).
+      if (wcolDrop?.channel != null) {
+        setWcolOrder('columns', wcolDrop.channel, insertBottom(wcolOrder('columns', wcolDrop.channel), id));
+        wcolClearDetached(String(wcolDrop.channel));
+      } else if (wcolDrop?.sendSlot != null) {
+        setWcolOrder('sends', wcolDrop.sendSlot, insertBottom(wcolOrder('sends', wcolDrop.sendSlot), id));
+        wcolClearDetached('s' + wcolDrop.sendSlot);
+      }
       if (splice) {
         delete patch.edges[splice.edge.id];
         const e1id = `e-${splice.edge.source.nodeId}-${splice.edge.source.portId}-${id}-${splice.inPort.id}`;
@@ -5583,8 +6206,22 @@
     // strictly an at-spawn affordance — long-lived "always on top"
     // would surprise users who expect drag-to-front to win later.
     topNodeId = id;
+    // WORKFLOW: a column member ALSO joins automation lane N (per-module, its own
+    // undo step, exactly like Assign-to-channel). Sends carry no automation lane
+    // (a pure bus for v1). The reconcile $effect then wires the wcol- edges.
+    if (wcolDrop?.channel != null) {
+      const clip = wcolCanonClip();
+      if (clip) assignAutomationLane(clip, id, wcolDrop.channel - 1);
+    } else if (wcolDrop?.sendSlot != null && wcolSendWasEmpty) {
+      // First FX into this send box → auto-raise send amount so it's audible.
+      wcolAutoRaiseSend(wcolDrop.sendSlot);
+    }
     if (splice) {
       trace(`spliced ${type} as ${autoName} (${id}) into edge ${splice.edge.id}`);
+    } else if (wcolDrop?.channel != null) {
+      trace(`spawned ${type} as ${autoName} (${id}) into workflow column ${wcolDrop.channel}`);
+    } else if (wcolDrop?.sendSlot != null) {
+      trace(`spawned ${type} as ${autoName} (${id}) into workflow send ${wcolDrop.sendSlot}`);
     } else {
       trace(`spawned ${type} as ${autoName} (${id})`);
     }
@@ -6604,6 +7241,11 @@
         />
       {/if}
       <FlowBridge bind:api={flowApi} />
+      {#if workflowMode}
+        <!-- WORKFLOW CHANNEL COLUMNS guide: 8 numbered columns + SEND 1/2 rail,
+             pinned to flow space. Workflow racks only → dawless VRT unchanged. -->
+        <ChannelColumnsOverlay columnColors={wcolColumnColors} laneTopY={wcolLaneTopY} tick={wcolViewportTick} />
+      {/if}
       <CadillacOverlay {provider} />
       <!-- 2026-05-27: the per-node editable name label moved INSIDE every
            module card's title chrome (see ModuleTitle.svelte). The floating

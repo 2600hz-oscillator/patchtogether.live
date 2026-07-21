@@ -40,6 +40,14 @@ export interface PatchModeNode {
     hiddenCard?: unknown;
     /** The one-shot MIXMSTRS→AUDIO OUT default-wire latch (pinned audioOut). */
     workflowDefaultWired?: unknown;
+    /** Workflow CHANNEL-COLUMNS membership: a member node's column (1..8). */
+    channel?: unknown;
+    /** Workflow CHANNEL-COLUMNS membership: a send tenant's box (1|2). */
+    sendSlot?: unknown;
+    /** Workflow CHANNEL-COLUMNS order manifest on the pinned mixer. */
+    columns?: unknown;
+    /** Workflow SENDS order manifest on the pinned mixer. */
+    sends?: unknown;
   } | null;
 }
 
@@ -66,11 +74,22 @@ export function normalizeStampMode(value: unknown): RackMode | null {
 }
 
 /** True when a node carries any workflow-only marker (pinned / hiddenCard /
- *  default-wire latch). A dawless patch's nodes carry none of these. */
+ *  default-wire latch / channel-columns membership + order). A dawless patch's
+ *  nodes carry none of these. `channel` / `sendSlot` are a member node's column
+ *  membership; `columns` / `sends` are the order manifest on the pinned mixer —
+ *  any present ⇒ the patch was authored in a workflow rack. */
 export function hasWorkflowMarker(node: PatchModeNode | null | undefined): boolean {
   const d = node?.data;
   if (!d) return false;
-  return d.pinned === true || d.hiddenCard === true || d.workflowDefaultWired === true;
+  return (
+    d.pinned === true ||
+    d.hiddenCard === true ||
+    d.workflowDefaultWired === true ||
+    typeof d.channel === 'number' ||
+    typeof d.sendSlot === 'number' ||
+    (typeof d.columns === 'object' && d.columns !== null) ||
+    (typeof d.sends === 'object' && d.sends !== null)
+  );
 }
 
 /** Infer the mode from patch CONTENT (the legacy, stamp-less path): any

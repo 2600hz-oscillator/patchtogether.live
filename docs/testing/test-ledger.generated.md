@@ -11,7 +11,7 @@ source tree, so they cannot go stale. Prose + roadmap: `docs/testing/README.md`.
 | Bucket | What | Count |
 | --- | --- | ---: |
 | 1 | HARD SKIPS / QUARANTINES (backlog → drive to 0) | 6 |
-| 2 | COVERAGE EXEMPTIONS (deliberate auto-enrollment opt-outs) | 508 |
+| 2 | COVERAGE EXEMPTIONS (deliberate auto-enrollment opt-outs) | 511 |
 | 3 | INFORMATIONAL-ONLY CI LANES (run, never block merge) | 5 |
 
 ## CI gating truth (from `.github/workflows/ci.yml`)
@@ -46,14 +46,14 @@ _none_
 ### spawn-smoke QUARANTINE map (e2e/tests/modules.spec.ts) — 1
 - `toybox` — task #102: SwiftShader software-renderer timeout (heavy WebGL)
 
-## Bucket 2 — coverage exemptions (508)
+## Bucket 2 — coverage exemptions (511)
 
 Declarative auto-enrollment opt-out lists. A module opted out of a UNIVERSAL
 sweep still carries dedicated coverage (a bespoke spec / unit core / ART). These
 are DELIBERATE — but per repo doctrine the **behavioral** exemptions are ALSO
 tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 
-### `EXEMPT_FROM_VRT` (79) — modules skipped from the per-card VRT sweep
+### `EXEMPT_FROM_VRT` (80) — modules skipped from the per-card VRT sweep
 <sub>e2e/vrt/vrt-exemptions.ts</sub>
 - `4plexvid` — VRT baseline pending
 - `acidwarp` — animated palette rotation + auto scene cycler defeats deterministic capture
@@ -76,6 +76,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `cloudseed` — VRT baseline pending
 - `colourofmagic` — SOLO-spawn VRT exempt (live preview canvas
 - `controlSurface` — content is binding-dependent (proxied controls vary by patch)
+- `cvBuddy` — VRT baseline pending — hardware-facing card whose look is NOT yet owner-locked (Part A preview
 - `delay` — VRT baseline pending
 - `doom` — live game-loop framebuffer defeats deterministic capture
 - `es9` — VRT baseline pending
@@ -135,7 +136,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `videovarispeed` — live <video> element streamed at varispeed + ticking playhead readout defeat deterministic capture
 - `writeseq` — VRT baseline pending
 
-### `BEHAVIORAL_MODULE_EXEMPT` (76) — whole-module skips of the behavioral CONTROL→PATCHED delta sweep
+### `BEHAVIORAL_MODULE_EXEMPT` (77) — whole-module skips of the behavioral CONTROL→PATCHED delta sweep
 <sub>e2e/tests/per-module-per-port-behavioral.spec.ts</sub>
 - `4plexvid` — multiplex selector with per-input → per-output isolation
 - `archivist` — idle until an archive.org item loads (external network)
@@ -151,6 +152,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `chromakey`
 - `clipplayer` — TIMELORDE-locked launch output (8 lanes)
 - `colourofmagic` — parallel multi-block colorspace processor — the sweep observes only the first video output `pass` (untouched source p…
+- `cvBuddy` — separate-output-per-input passthrough (pitch→pitchCv, gate→gate, velocity→velCv) — the sweep observes only the first…
 - `doom` — gameplay-conditional outputs
 - `drumseqz` — pattern grid needs cells toggled
 - `edges`
@@ -357,12 +359,13 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `cadillac` — overlay sprite, not a flow card (zero ports)
 - `group` — requires data.children
 
-### `EXEMPT_OUTPUT_EMIT_MODULES` (39) — whole-module output-emit exemptions (asset/ROM/press-driven)
+### `EXEMPT_OUTPUT_EMIT_MODULES` (40) — whole-module output-emit exemptions (asset/ROM/press-driven)
 <sub>e2e/tests/per-module-per-port.spec.ts</sub>
 - `archivist` — all outputs (image/video/audio/gates/playhead) are idle until an archive.org item loads (external network)
 - `audioIn` — requires live mic input
 - `blood` — all outputs need user-supplied, non-redistributable Blood data (BLOOD.RFF/GUI.RFF/SOUNDS.RFF, gitignored, absent in C…
 - `bluebox` — silent until a button is pressed
+- `cvBuddy` — passthrough note outputs (silent until inputs driven) + owner-only run/clock that need a running TIMELORDE transport
 - `drumseqz` — requires toggled steps
 - `es9` — all outputs source from physical ES-9 hardware via the native bridge (absent in CI)
 - `fader` — video mixer
@@ -587,7 +590,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 
 ### Opt-IN completeness ratchets (the more members the better)
 
-- `STRICT_DOCS`: **183** — modules held to the FULL living-docs completeness bar (deny-missing-docs) <sub>(packages/web/src/lib/docs/strict-docs.ts)</sub>
+- `STRICT_DOCS`: **184** — modules held to the FULL living-docs completeness bar (deny-missing-docs) <sub>(packages/web/src/lib/docs/strict-docs.ts)</sub>
 - `STRICT_VRT_MODULES`: **48** — modules whose card MUST ship a VRT baseline (deny-missing-baseline) <sub>(e2e/vrt/vrt-exemptions.ts)</sub>
 
 ## Bucket 3 — informational-only CI lanes (5)

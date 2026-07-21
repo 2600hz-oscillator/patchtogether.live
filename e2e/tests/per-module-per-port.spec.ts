@@ -142,6 +142,14 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   // sweep documents the intentional absence. Its CV→MIDI send path + the
   // gate/pitch/velocity input handles are covered by midi-out-buddy.spec.ts.
   midiOutBuddy: 'no audio/CV outputs (emits MIDI to external gear); covered by midi-out-buddy.spec.ts',
+  // CV BUDDY — its pitchCv/gate/velCv outputs are UNITY PASSTHROUGHS (silent
+  // until a lane drives the pitch/gate/velocity inputs, which the bare-spawn
+  // emit sweep does not), and its run/clock outputs are OWNER-ONLY + only fire
+  // while a TIMELORDE transport is RUNNING (none in the solo spawn). So no
+  // output emits from a bare spawn. Handle-presence + input-drive still run.
+  // Signal logic is covered by the pure slot-alloc / clock-math / reconcile unit
+  // tests; on-hardware flow is owner-verified at the ES-9 jacks (Part A preview).
+  cvBuddy: 'passthrough note outputs (silent until inputs driven) + owner-only run/clock that need a running TIMELORDE transport; no output emits from a bare spawn. Covered by cv-buddy slot-alloc/clock-math/es9-reconcile unit tests; on-hardware flow owner-verified at the jacks',
   // ── Clock / divider / sequencer-like modules that need an upstream clock ──
   timelorde: 'clock divider; needs upstream clock; covered by timelorde-related specs',
   marbles:   'requires UI-enabled internal clock; covered by marbles-related specs',
@@ -437,7 +445,7 @@ test('RATCHET: output-emit exemption lists only shrink', () => {
   expect(
     Object.keys(EXEMPT_OUTPUT_EMIT_MODULES).length,
     'EXEMPT_OUTPUT_EMIT_MODULES grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(43); // videocube ADDED (8 outputs incl. 6 per-port-gated slice-viz jacks; video-out-canvas SwiftShader timeout class ×N + audio-derived/gated jacks; folds the former per-port audio_out entry; covered by videocube.spec.ts + videocube-core.test.ts + videocube.test.ts) — fits within the existing cap, no raise. // +1 featurecv (input-conditional outputs); +1 blood (data-gated emulator — outputs idle without the non-redistributable WAD, absent in CI); +1 milkdrop (video out needs async butterchurn preset-chunk load + warmup before emit; covered by milkdrop-render-smoke.spec.ts)
+  ).toBeLessThanOrEqual(43); // videocube ADDED (8 outputs incl. 6 per-port-gated slice-viz jacks; video-out-canvas SwiftShader timeout class ×N + audio-derived/gated jacks; folds the former per-port audio_out entry; covered by videocube.spec.ts + videocube-core.test.ts + videocube.test.ts) — fits within the existing cap, no raise. // +1 featurecv (input-conditional outputs); +1 blood (data-gated emulator — outputs idle without the non-redistributable WAD, absent in CI); +1 milkdrop (video out needs async butterchurn preset-chunk load + warmup before emit; covered by milkdrop-render-smoke.spec.ts) // +1 cvBuddy (passthrough note outputs silent until driven + owner-only run/clock need a running TIMELORDE transport; covered by cv-buddy slot-alloc/clock-math/es9-reconcile unit tests + owner hardware-verify) — count 40 ≤ 43, fits within slack, no raise
   expect(
     Object.keys(EXEMPT_OUTPUT_EMIT).length,
     'EXEMPT_OUTPUT_EMIT grew past its frozen cap — see the RATCHET rule above',

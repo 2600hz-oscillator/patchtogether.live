@@ -240,6 +240,11 @@ export const midiOutBuddyDef: AudioModuleDef = {
   // No AudioParam knobs — channel + device are discrete and live in node.data.
   params: [],
 
+  // Declarative lane-tap marker (INERT in Part A — consumed by the Part-B tap
+  // planner). MIDI-OUT-BUDDY is a lane note-sink like CV Buddy: a dropped clip
+  // lane can tap its pitch/gate/velocity into these inputs. See ChainWiring.
+  chainWiring: { role: 'noteSink', laneTap: { pitchIn: 'pitch', gateIn: 'gate', velIn: 'velocity' } },
+
   docs: {
     explanation:
       "The OUTPUT complement of MIDI-CV-BUDDY: it reads gate / pitch / velocity CV from inside the rack and SENDS MIDI notes out to a hardware synth on a chosen device + channel. Mental model: anything in the rack that produces a gate and a pitch — a SEQUENCER, an envelope, an LFO-driven gate — can now play an external instrument. On each rising edge of GATE it sends a MIDI Note On using the pitch + velocity sampled at that instant; on the falling edge it sends Note Off for whatever note it actually started, so a glide under a held gate never strands the wrong note. The output device and MIDI channel are discrete card settings saved in the patch (no audio-side knobs), and Web MIDI permission is requested only when you click Connect. It defends against stuck notes: on dispose and on a device change it sends an all-notes-off plus an explicit Note Off for any tracked note.",

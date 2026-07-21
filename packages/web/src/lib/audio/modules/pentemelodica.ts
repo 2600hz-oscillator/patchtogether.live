@@ -151,6 +151,12 @@ export const pentemelodicaDef: AudioModuleDef = {
   category: 'sources',
   stereoPairs: [['out_l', 'out_r']],
 
+  // Chain-role (Design-D declarative override): a DECLARED source. Its audio
+  // inputs (fm1..fm5) are MODULATION, not a signal-chain insert, so the workflow
+  // column classifier must treat it as a head-eligible SOURCE, not FX (it takes
+  // a poly input for clip note control).
+  chainWiring: { role: 'source' },
+
   inputs: [
     // 5-lane poly chord bus → voices. NOT a paramTarget (poly is a direct
     // node connection, never a CV→AudioParam target).

@@ -117,6 +117,13 @@ export const wavecelDef: AudioModuleDef = {
   category: 'sources',
   stereoPairs: [['out_l', 'out_r']],
 
+  // Chain-role (Design-D declarative override): a DECLARED source. Its lone
+  // audio input (fm) is MODULATION, not a signal-chain insert — WITHOUT this the
+  // port inference reads that single audio-in as a "main in" and mis-bins the
+  // oscillator as an FX. Declare 'source' so it is a head-eligible SOURCE
+  // (it also takes poly/trigger for clip note control).
+  chainWiring: { role: 'source' },
+
   inputs: [
     { id: 'pitch',     type: 'pitch' },
     { id: 'fm',        type: 'audio' },

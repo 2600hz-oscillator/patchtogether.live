@@ -265,9 +265,11 @@ describe('module-docs lint — STRICT_DOCS RATCHET (only grows)', () => {
     // strict, docs authored + verified against the source).
     // 170→171 (2026-07-19): +1 videocube (video isomorph of audio CUBE — born
     // strict, docs authored + verified against the source).
+    // 171→172 (2026-07-21): +1 cvBuddy (ES-9 note-lane sink — born strict, docs
+    // authored + verified against the source).
     expect(
       STRICT_DOCS.size,
       'STRICT_DOCS shrank below its frozen floor — see the RATCHET rule above',
-    ).toBeGreaterThanOrEqual(171);
+    ).toBeGreaterThanOrEqual(172);
   });
 });

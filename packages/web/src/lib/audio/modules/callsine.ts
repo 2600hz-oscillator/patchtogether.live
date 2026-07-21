@@ -525,6 +525,13 @@ export const callsineDef: AudioModuleDef = {
   category: 'effects',
   ossAttribution: { author: 'callsine contributors (Warren\'s Spectrum)' },
 
+  // Chain-role (Design-D declarative override): a DECLARED source. Its lone
+  // audio input (audio_in) is an EXCITER/analysis input (modulation), not a
+  // signal-chain insert — WITHOUT this the port inference reads it as a "main in"
+  // and mis-bins this pitch+gate voice as an FX. Declare 'source' so it is a
+  // head-eligible SOURCE and receives clip note control (pitch + gate).
+  chainWiring: { role: 'source' },
+
   inputs: [
     // Audio under analysis. Mono.
     { id: 'audio_in', type: 'audio' },

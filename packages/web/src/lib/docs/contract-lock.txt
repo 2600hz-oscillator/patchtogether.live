@@ -751,6 +751,17 @@ cube param view_rot_y -3.1416..3.1416 linear default=0.7
 cube param view_rot_z -3.1416..3.1416 linear default=0
 cube param view_zoom 0.3..3 log default=1
 cube param wrap 0..1 discrete default=0
+cvBuddy meta domain=audio
+cvBuddy in gate gate edge=gate
+cvBuddy in pitch cv
+cvBuddy in velocity cv
+cvBuddy out clock gate edge=trigger
+cvBuddy out gate gate edge=gate
+cvBuddy out pitchCv cv
+cvBuddy out run gate edge=gate
+cvBuddy out velCv cv
+cvBuddy param clockOffsetMs -20..20 linear default=0 unit=ms
+cvBuddy param ppqn 1..48 discrete default=24
 delay meta domain=audio
 delay in audio audio
 delay in time cv param=time cvScale=linear

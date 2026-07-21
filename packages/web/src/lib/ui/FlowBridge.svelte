@@ -59,6 +59,13 @@
     /** Current viewport: pan offset (x,y in screen px) + zoom factor. Used by
      *  Organize-modules to compute the visible region in flow-space. */
     getViewport: () => { x: number; y: number; zoom: number };
+    /** Set the viewport transform (pan + zoom). Optional `duration` ms animates
+     *  the pan (xyflow's built-in smooth setViewport). Used by the workflow
+     *  keyboard nav (1..8 center a lane, V snaps to the video zone). */
+    setViewport: (
+      vp: { x: number; y: number; zoom: number },
+      opts?: { duration?: number },
+    ) => void;
     /** Clear xyflow's internal click-connect-start handle. Used by the
      *  pickup-mode Esc handler — without this, xyflow would still think
      *  the user's mid-click-connect and a subsequent click on a handle
@@ -102,6 +109,9 @@
       getNodes: () => flow.getNodes(),
       getEdges: () => flow.getEdges(),
       getViewport: () => flow.getViewport(),
+      setViewport: (vp, opts) => {
+        void flow.setViewport(vp, opts);
+      },
       cancelClickConnect: () => {
         store.clickConnectStartHandle = null;
       },
