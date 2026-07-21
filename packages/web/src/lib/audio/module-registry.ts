@@ -170,7 +170,36 @@ export interface AudioModuleDef {
    * the card source. See ControlFamily.
    */
   controlFamilies?: readonly ControlFamily[];
+  /**
+   * DECLARATIVE lane-wiring role (workflow auto-patch). Distinct from the DEAD
+   * `chainRole` string (no consumer) — this is a structured marker the future
+   * "tap planner" reads to auto-wire a dropped clip lane's pitch/gate/velocity
+   * into this module's inputs. In Part A of CV Buddy it is INERT (its consumer
+   * is Part B, which stacks on the fixed column planner); modules just DECLARE
+   * it. `role: 'noteSink'` means "a lane can tap its note CV into me"; `laneTap`
+   * names which input ports receive the lane's pitch / gate / velocity.
+   * Carried by cvBuddy + midiOutBuddy (the two lane note-sinks).
+   */
+  chainWiring?: ChainWiring;
   factory: AudioModuleFactory;
+}
+
+/**
+ * A module's declarative lane-tap wiring (see AudioModuleDef.chainWiring). INERT
+ * in Part A — declared for the Part-B tap planner to consume. `role: 'noteSink'`
+ * marks a module a clip lane can drive; `laneTap` maps the lane's three note
+ * signals to this module's input port ids.
+ */
+export interface ChainWiring {
+  role: 'noteSink';
+  laneTap: {
+    /** Input port id the lane's pitch CV wires into. */
+    pitchIn: string;
+    /** Input port id the lane's gate wires into. */
+    gateIn: string;
+    /** Input port id the lane's velocity CV wires into. */
+    velIn: string;
+  };
 }
 
 /**

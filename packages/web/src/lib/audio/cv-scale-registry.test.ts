@@ -146,6 +146,11 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // AudioParam fast path — the CV doesn't modulate a knob, it IS the outgoing
   // MIDI note/velocity. Same shape as PONG's stepper CVs above.
   midiOutBuddy: ['pitch', 'velocity'],
+  // CV BUDDY — pitch / velocity are UNITY PASSTHROUGHS to the ES-9 note jacks,
+  // not knob modulation: the CV is the note pitch/velocity itself, scaled to
+  // volts by the ES-9 jack's class (pitch → 1 V/oct), not by a cvScale knob.
+  // Same shape as midiOutBuddy above.
+  cvBuddy: ['pitch', 'velocity'],
   // ANALOGLOGICMATHS a / b: raw bipolar signal inputs consumed directly by
   // the worklet's per-sample MIN/MAX/DIFF/SUM/PRODUCT. The module IS the
   // shaper — the user attenuverts via the attA / attB knobs (which DO carry

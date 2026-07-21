@@ -119,6 +119,18 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //  no audio/CV output for the sweep to observe → handled mechanically by the
   //  `mod.outputs.length === 0` DELETE filter in the test loop; input behavior
   //  covered by midi-out-buddy.spec.ts with a fake MIDIOutput.)
+  // CV BUDDY — a SEPARATE-OUTPUT-PER-INPUT passthrough (cf. colourofmagic /
+  //  4plexvid): the sweep observes only the FIRST scoped output (pitchCv), which
+  //  ONLY the `pitch` input feeds — the `gate`/`velocity` inputs route to the
+  //  SEPARATE gate/velCv outputs the observed pitchCv can never reflect, so those
+  //  two inputs read Δ=0 against pitchCv by construction. (The run/clock outputs
+  //  are owner-only + transport-driven, not input-driven at all.) Whole-module
+  //  exempt: no single observed output responds to all inputs. inputs-accept
+  //  still pins each wire-up. Signal logic covered by the pure cv-buddy
+  //  slot-alloc/clock-math/es9-reconcile unit tests; on-hardware flow owner-
+  //  verified at the ES-9 jacks. RE-ENABLE via a per-input-scoped sink (observe
+  //  the output the driven input actually feeds).
+  cvBuddy: 'separate-output-per-input passthrough (pitch→pitchCv, gate→gate, velocity→velCv) — the sweep observes only the first output (pitchCv), so gate/velocity inputs read Δ=0 by construction; run/clock are owner/transport-driven not input-driven. Covered by cv-buddy slot-alloc/clock-math/es9-reconcile unit tests + owner hardware-verify; re-enable via a per-input-scoped sink',
 
   // ── File-input sources: output is silent until a file is uploaded.
   //    No upstream signal can perturb that.

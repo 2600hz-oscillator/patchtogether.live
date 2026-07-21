@@ -36,6 +36,7 @@
     pruneAllAutoAssignDangling,
     repairDuplicateAutoAssign,
   } from '$lib/graph/automation-assign';
+  import { reconcileCvBuddyEs9 } from '$lib/graph/cv-buddy-es9-reconcile';
   import {
     isClipEligible,
     isMixerEligible,
@@ -3694,6 +3695,14 @@
     void snapshot; // re-run on any graph change (node deletes included)
     pruneAllAutoAssignDangling();
     repairDuplicateAutoAssign();
+    // CV BUDDY → ES-9 janitor: wire each CV Buddy's note/transport outputs to
+    // the single ES-9 node's jacks per the slot allocator + write the per-jack
+    // classes; reset freed jacks to audio on unclaim. Idempotent + inert when
+    // there is no ES-9 (lazy resolve). Same graph-change seam as the janitors
+    // above. (NOTE: #1147 also edits this file on another branch — a merge
+    // conflict here at integration is expected; this edit is intentionally
+    // minimal + localized.)
+    reconcileCvBuddyEs9();
   });
 
   function onNodeContextMenu({ event, node }: { event: MouseEvent | TouchEvent; node: FlowNode }) {
