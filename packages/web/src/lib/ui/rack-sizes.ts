@@ -25,7 +25,7 @@ import type { RackSize } from '$lib/graph/types';
 
 export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> = {
   // ── audio domain ──
-  adsr: { size: '1u', hp: 2 }, // 154×240px  [LOCKED]
+  adsr: { size: '2u', hp: 2 }, // 209×360px — env ScopeScreen glyph pushed natural height 154→209px, over the 1u tile (180px); bumped 1u→2u  [LOCKED]
   analogLogicMaths: { size: '1u', hp: 2 }, // 154×220px
   analogVco: { size: '3u', hp: 2 }, // 225×240px  [LOCKED]
   attenumix: { size: '1u', hp: 2 }, // 158×300px

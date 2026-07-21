@@ -13,6 +13,7 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import VuMeter from '$lib/ui/controls/VuMeter.svelte';
   import { setNodeParam } from '$lib/graph/mutate';
   import { moog914Def } from '$lib/audio/modules/moog914';
   import { useEngine } from '$lib/audio/engine-context';
@@ -52,36 +53,77 @@
 
   const inputs = portsFromDef(moog914Def.inputs, { audio: 'IN' });
   const outputs = portsFromDef(moog914Def.outputs, { audio: 'OUT' });
+
+  // Live OUTPUT-LEVEL for the VuMeter glyph — polled on the shared meter frame
+  // off the factory's summing-bus analyser tap (read('level'), RMS 0..1).
+  function outputLevel(): number {
+    const eng = engineCtx.get();
+    if (!eng || !node) return 0;
+    return (eng.read(node, 'level') as number | undefined) ?? 0;
+  }
 </script>
 
 <MoogPanel {id} {data} defaultLabel="914 Filter Bank" width={200}>
   <PatchPanel nodeId={id} {inputs} {outputs}>
-    <!-- Vertical column of small band-level knobs: HP, band1..12, LP. -->
-    <div class="band-column" data-testid="moog914-bands">
-      {#each paramDefs as p (p.id)}
-        <Knob
-          value={values[p.id]}
-          min={p.min}
-          max={p.max}
-          defaultValue={def(p.id).defaultValue}
-          label={p.label}
-          curve="linear"
-          onchange={setParam(p.id)}
-          moduleId={id}
-          paramId={p.id}
-          readLive={readLive(p.id)}
+    <div class="bank-row">
+      <!-- Vertical column of small band-level knobs: HP, band1..12, LP. -->
+      <div class="band-column" data-testid="moog914-bands">
+        {#each paramDefs as p (p.id)}
+          <Knob
+            value={values[p.id]}
+            min={p.min}
+            max={p.max}
+            defaultValue={def(p.id).defaultValue}
+            label={p.label}
+            curve="linear"
+            onchange={setParam(p.id)}
+            moduleId={id}
+            paramId={p.id}
+            readLive={readLive(p.id)}
+          />
+        {/each}
+      </div>
+      <!-- OUTPUT-level VuMeter glyph (segmented, warm→cool), fed live from the
+           factory's summing-bus RMS tap. -->
+      <div class="out-meter">
+        <VuMeter
+          getLevel={outputLevel}
+          segments={14}
+          length={220}
+          thickness={14}
+          testid="moog914-vumeter"
+          ariaLabel="914 output level"
         />
-      {/each}
+        <span class="out-lbl">OUT</span>
+      </div>
     </div>
   </PatchPanel>
 </MoogPanel>
 
 <style>
+  .bank-row {
+    display: flex;
+    gap: 10px;
+    padding: 8px 16px 4px;
+    align-items: flex-start;
+    justify-content: center;
+  }
   .band-column {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    padding: 8px 18px 4px;
     align-items: center;
+  }
+  .out-meter {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding-top: 4px;
+  }
+  .out-meter .out-lbl {
+    font-size: 8px;
+    letter-spacing: 1px;
+    color: var(--text-dim, #8a8f99);
   }
 </style>
