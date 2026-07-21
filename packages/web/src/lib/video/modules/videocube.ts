@@ -138,7 +138,7 @@ interface VideocubeParams {
   slice_ry: number;
   slice_rz: number;
   fold: number;   // audio-only wavefolder (no image analog)
-  spread: number; // audio slice depth-offset (mono timbre; stereo split = follow-up)
+  spread: number; // FrameTable-style TEMPORAL WINDOW width (0=single frame; opens → oozes)
   // ── derived-audio pitch / gain ──
   tune: number;
   fine: number;

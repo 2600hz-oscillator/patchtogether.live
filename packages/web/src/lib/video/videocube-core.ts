@@ -152,9 +152,13 @@ export function readerLagFor(mode: number, live: boolean): number {
 
 // ----------------------------------------------------------------------
 // SPREAD temporal window (FrameTable-style). The reader picks the window CENTRE
-// (readerLagFor); SPREAD sets its WIDTH; a Hann kernel weights the taps. This is
-// the CPU MIRROR of the shader's `surfWindow` / REDUCE window loop — unit-testing
-// it pins the "oozing through time" semantics the shaders transliterate 1:1.
+// (readerLagFor); SPREAD sets its WIDTH; a Hann kernel weights the taps. These
+// pure functions are the CPU MIRROR of the SMOOTH/MORPH window the shaders run —
+// REDUCE_FRAG (audio) transliterates them 1:1, and COMBINE/SLICE/DEPTH `surfWindow`
+// matches for SMOOTH/MORPH. (CHAOS is the one asymmetry, by design B3: the PICTURE
+// shaders early-return a single per-pixel frame for CHAOS while the audio reduce
+// reads the window MEAN — see readerLagFor's CHAOS note. Both collapse to one frame
+// at spread=0.) Unit-testing pins the "oozing through time" semantics.
 // ----------------------------------------------------------------------
 
 /**
