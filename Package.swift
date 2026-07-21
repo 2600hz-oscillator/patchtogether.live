@@ -15,9 +15,12 @@
 //
 // Both link CoreAudio + AudioToolbox + AudioUnit (system frameworks; no deps).
 //
-// Build:   swift build -c release
-// Run:     .build/release/es9-devices
+// Build:   swift build -c release          (compiles only — starts nothing)
+// Run:     swift run -c release es9-bridge --synthetic   # the bridge, no hw
+//          .build/release/es9-devices
 //          .build/release/es9-duplex --help
+//          NB: bare `swift run` is ambiguous — this package has three
+//          executables, so always name the one you want.
 //
 import PackageDescription
 

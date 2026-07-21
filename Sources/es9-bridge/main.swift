@@ -166,8 +166,44 @@ let service = BridgeService(
         outputTargetFrames: min(targetArg > 0 ? targetArg : Int(bufferFrames) * 3, 4096),
         harnessHTML: harnessHTML))
 
+/// Best-effort "who has the port?" for the EADDRINUSE message. Purely
+/// diagnostic: if lsof is missing or silent we still print the generic remedy.
+/// `-F pc` gives machine-readable output: a "p<pid>" line then a "c<command>".
+func portHolder(_ port: UInt16) -> (pid: String, command: String)? {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+    p.arguments = ["-nP", "-iTCP:\(port)", "-sTCP:LISTEN", "-Fpc"]
+    let pipe = Pipe()
+    p.standardOutput = pipe
+    p.standardError = FileHandle.nullDevice
+    guard (try? p.run()) != nil else { return nil }
+    let out = pipe.fileHandleForReading.readDataToEndOfFile()
+    p.waitUntilExit()
+    var pid: String?
+    var cmd: String?
+    for line in String(decoding: out, as: UTF8.self).split(separator: "\n") {
+        if line.hasPrefix("p"), pid == nil { pid = String(line.dropFirst()) }
+        if line.hasPrefix("c"), cmd == nil { cmd = String(line.dropFirst()) }
+    }
+    return pid.map { ($0, cmd ?? "unknown") }
+}
+
 do {
     try service.start()
+} catch WebSocketServer.ServerError.portInUse(let busy) {
+    let holder = portHolder(busy)
+    var msg = "Port \(busy) is already in use"
+    if let h = holder { msg += " by PID \(h.pid) (\(h.command))" }
+    msg += ".\n"
+    // The overwhelmingly common case: a previous es9-bridge that outlived its
+    // terminal (reparented to launchd), still holding both port and audio device.
+    if let h = holder, h.command.contains("es9-bridge") {
+        msg += "That's another es9-bridge — it also still holds the audio device.\n"
+        msg += "Stop it with:  kill \(h.pid)\n"
+    }
+    msg += "Or use a different port:  es9-bridge --port \(busy == UInt16.max ? 9210 : busy + 1)\n"
+    FileHandle.standardError.write(Data(msg.utf8))
+    exit(1)
 } catch {
     FileHandle.standardError.write(Data("failed to start bridge: \(error)\n".utf8))
     exit(1)

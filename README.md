@@ -16,17 +16,77 @@ input, and send a browser LFO out of a real ES-9 jack into the rack.
 
 ## Quick start
 
+**`swift build` only compiles — it does not start anything.** To actually run
+the bridge you must invoke the built binary (or use `swift run`):
+
 ```sh
-swift build -c release
-.build/release/es9-bridge                    # requires an ES-9 attached
-.build/release/es9-bridge --synthetic        # no hardware: test signals
-# then open http://127.0.0.1:9209/ in Chrome — the embedded harness has
-# per-channel meters, generators (sine/LFO/DC), a CV-aware scope, and a
-# loopback latency test (patch ES-9 out 1 -> in 1 with a cable).
+# No hardware needed — synthetic test signals on inputs 1-3:
+swift run -c release es9-bridge --synthetic
+
+# With an ES-9 attached:
+swift run -c release es9-bridge
 ```
 
-`es9-bridge --help` lists `--port`, `--buffer`, `--sr`, `--device`,
-`--target-frames`, `--list`.
+Then open **<http://127.0.0.1:9209/>** in Chrome and press **"start audio"**.
+The embedded harness has per-channel meters, generators (sine/LFO/DC), a
+CV-aware scope, and a loopback latency test (patch ES-9 out 1 → in 1 with a
+cable). **Ctrl-C** stops the bridge.
+
+You should see:
+
+```
+SYNTHETIC mode: inputs 1-3 carry 440 Hz sine / 0.5 Hz LFO / 1 Hz gate.
+
+Bridge running:
+  harness : http://127.0.0.1:9209/
+  protocol: ws://127.0.0.1:9209/ws
+Open the harness in Chrome, press "start audio", and patch away.
+Ctrl-C to stop.
+```
+
+Equivalent two-step form, if you'd rather build once and run the binary
+directly (faster startup, and what you'd ship):
+
+```sh
+swift build -c release          # compiles only — no server starts
+.build/release/es9-bridge --synthetic
+```
+
+> **Gotchas**
+> - Bare `swift run` fails with `error: multiple executable products
+>   available: es9-duplex, es9-devices, es9-bridge` — this package has three
+>   executables, so you must name `es9-bridge` explicitly.
+> - **"Port already in use"** almost always means an earlier `es9-bridge` is
+>   still running. Closing its terminal does *not* stop it — the process is
+>   reparented to launchd and keeps holding both the port and the ES-9, so a
+>   later run fails to bind *and* can't open the device. The bridge names the
+>   culprit and the remedy:
+>   ```
+>   Port 9209 is already in use by PID 41558 (es9-bridge).
+>   That's another es9-bridge — it also still holds the audio device.
+>   Stop it with:  kill 41558
+>   Or use a different port:  es9-bridge --port 9210
+>   ```
+>   To find a stray one yourself: `pgrep -fl es9-bridge`. Always stop the
+>   bridge with **Ctrl-C** rather than just closing the window.
+> - Piping the bridge's output to a file or another command makes stdout
+>   block-buffered, so the startup banner won't appear until it exits. That's
+>   normal shell buffering, not a hang — the server is up; check with
+>   `curl -sI http://127.0.0.1:9209/`.
+> - On first run macOS may prompt for **microphone permission** (CoreAudio
+>   input counts as "mic"); grant it or inputs stay silent.
+
+Flags (`es9-bridge --help`):
+
+| Flag | Meaning |
+| --- | --- |
+| `--port N` | HTTP/WS port (default **9209**) |
+| `--buffer N` | hardware I/O buffer frames (default **128**) |
+| `--sr RATE` | hardware sample rate (default: device nominal) |
+| `--device NAME` | match a device by name substring (default `ES-9`) |
+| `--target-frames N` | jitter-buffer target, hw frames (default 3× buffer) |
+| `--synthetic` | run without hardware: test signals on inputs 1-3 |
+| `--list` | list devices and exit |
 
 > Note: this repo previously stated the native integration would live in
 > `patchtogether.native` and that no browser companion app would exist. The

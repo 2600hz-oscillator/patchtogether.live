@@ -121,8 +121,15 @@ public final class WebSocketServer: @unchecked Sendable {
 
     public enum ServerError: Error, CustomStringConvertible {
         case bindFailed(String)
+        /// EADDRINUSE, called out separately: it's the one bind failure with an
+        /// obvious user remedy (kill the squatter, or pick another --port), so
+        /// callers can print a fix instead of an errno.
+        case portInUse(UInt16)
         public var description: String {
-            switch self { case .bindFailed(let why): return "listen failed: \(why)" }
+            switch self {
+            case .bindFailed(let why): return "listen failed: \(why)"
+            case .portInUse(let p):    return "port \(p) already in use"
+            }
         }
     }
 
@@ -139,17 +146,21 @@ public final class WebSocketServer: @unchecked Sendable {
             self?.accept(conn)
         }
         // Surface bind failures synchronously: wait for .ready / .failed.
+        // A busy port shows up as .waiting(EADDRINUSE) rather than .failed —
+        // NWListener would sit there retrying forever — so treat both as fatal
+        // and keep the NWError itself so we can classify it.
+        final class Box { var error: NWError?; var cancelled = false }
+        let box = Box()
         let ready = DispatchSemaphore(value: 0)
-        let failure = NSMutableString()
         listener.stateUpdateHandler = { state in
             switch state {
             case .ready:
                 ready.signal()
             case .failed(let error), .waiting(let error):
-                failure.setString("\(error)")
+                box.error = error
                 ready.signal()
             case .cancelled:
-                failure.setString("cancelled")
+                box.cancelled = true
                 ready.signal()
             default:
                 break
@@ -160,9 +171,14 @@ public final class WebSocketServer: @unchecked Sendable {
             listener.cancel()
             throw ServerError.bindFailed("timed out waiting for listener readiness")
         }
-        if failure.length > 0 {
+        if let error = box.error {
             listener.cancel()
-            throw ServerError.bindFailed(failure as String)
+            if case .posix(.EADDRINUSE) = error { throw ServerError.portInUse(port) }
+            throw ServerError.bindFailed("\(error)")
+        }
+        if box.cancelled {
+            listener.cancel()
+            throw ServerError.bindFailed("cancelled")
         }
         listener.stateUpdateHandler = nil
         self.listener = listener
