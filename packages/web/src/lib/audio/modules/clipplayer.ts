@@ -82,7 +82,7 @@ import {
   type AutomationTrack,
 } from './clip-types';
 import { clipDivIndex, laneStepDur, RATE_DEFAULT_INDEX } from './clip-clock';
-import { nextLaunchBoundary, type PlayingLaneClock } from './clip-launch-quantize';
+import { nextLaunchBoundary, referenceClocks, type PlayingLaneClock } from './clip-launch-quantize';
 import {
   readSceneLaunch,
   anchorSceneRepeatTrack,
@@ -372,32 +372,31 @@ export const clipplayerDef: AudioModuleDef = {
       return { step: best, time: bestT };
     }
 
-    /** The currently-SOUNDING lanes' clocks for launch quantization (Deluge) —
-     *  one entry per lane that is active AND has already emitted a step (a lane
-     *  pinned to a still-future boundary is NOT a reference bar yet, so it's
-     *  excluded — `laneAnchor(L).step < 0`). Feeds `nextLaunchBoundary`: the
-     *  clip's SYNCED loop length + the lane's own audio phase, so every peer
-     *  computes the same MUSICAL boundary. `baseStepDur` is the global STEP grid;
-     *  each lane scales it by its latched rate/div (clip-clock.ts). */
+    /** The reference-bar lane clocks for launch quantization (Deluge). COLLAB-
+     *  CRITICAL: membership + each clip's LENGTH/RATE come from the SYNCED state
+     *  (`d.playing[L]` + the synced clip at that slot), NOT a peer-local audio-
+     *  sounding probe — so a tick-ahead and a tick-behind peer always agree on
+     *  which lane is the longest reference bar and never diverge. Only the
+     *  boundary's ctx-TIME uses the lane's local `nextStepTime`/`stepIndex` (the
+     *  per-peer realization of the shared phase origin; the wrap names the same
+     *  MUSICAL instant on every peer, differing only by audio-clock skew).
+     *  `baseStepDur` is the global STEP grid; each lane scales it by its
+     *  SYNCED clip.div / lane rate (clipDivIndex). */
     function collectPlayingClocks(
       d: ClipPlayerData | undefined,
       baseStepDur: number,
     ): PlayingLaneClock[] {
-      const out: PlayingLaneClock[] = [];
-      for (let L = 0; L < LANES; L++) {
-        const ln = lanes[L];
-        if (ln.active === null) continue;
-        if (laneAnchor(L).step < 0) continue; // active but not yet SOUNDING → no bar
-        const clip = readClip(d, clipIndex(ln.active, L));
+      return referenceClocks(d?.playing, (L, slot) => {
+        const clip = readClip(d, clipIndex(slot, L)); // SYNCED clip at the synced slot
         const len = clip?.kind === 'note' ? Math.max(1, clip.lengthSteps) : 1;
-        out.push({
+        const divIdx = clipDivIndex(clip?.kind === 'note' ? clip : null, d, L); // SYNCED rate/div
+        return {
           lenSteps: len,
-          laneStepDur: laneStepDur(baseStepDur, ln.divIndex),
-          nextStepTime: ln.nextStepTime,
-          stepIndex: ln.stepIndex,
-        });
-      }
-      return out;
+          laneStepDur: laneStepDur(baseStepDur, divIdx),
+          nextStepTime: lanes[L].nextStepTime, // local phase realization
+          stepIndex: lanes[L].stepIndex,
+        };
+      });
     }
 
     // --- stop_all input (windowed edge counter — no whole-buffer rescan) ---
@@ -2106,15 +2105,22 @@ export const clipplayerDef: AudioModuleDef = {
               // boundary time so the automation hold seam pins AT the boundary
               // (not a cancel at "now" that would truncate the outgoing tail
               // ~200 ms early — the param-jump ordering fix). BOUNDARY FLOOR:
-              // skip wraps clearly BEFORE the shared launch boundary so this
-              // lane keeps looping until it — the SCENE auto-advance frozen
-              // section boundary (advanceFloorUntil) when one is pending, else
-              // the manual Deluge launch boundary (the LONGEST playing clip's
-              // wrap). A short clip therefore flips only at its first own-wrap
-              // AT/after the boundary, never at its own sooner wrap. The 25 ms
-              // epsilon (one tick) lets the boundary wrap itself through despite
-              // beat↔ctx float drift.
-              const wrapFloor = advanceFloorUntil ?? launchBoundary;
+              // skip wraps clearly BEFORE the applicable boundary so this lane
+              // keeps looping until it. WHICH boundary depends on the queued
+              // action:
+              //  · a LAUNCH/SWITCH (a slot number) → the shared boundary — the
+              //    SCENE auto-advance frozen section boundary (advanceFloorUntil)
+              //    when pending, else the manual Deluge launch boundary (the
+              //    LONGEST playing clip's wrap) — so mixed-length clips lock to
+              //    the reference bar and short clips don't flip early;
+              //  · a STOP → the LANE'S OWN next wrap (NOT launchBoundary): a clip
+              //    stops at the end of ITS OWN loop, never held audible for the
+              //    longest OTHER lane's boundary. A SCENE stop of an empty lane
+              //    still honours advanceFloorUntil (the section boundary).
+              // The 25 ms epsilon (one tick) lets the boundary wrap through
+              // despite beat↔ctx float drift.
+              const isStopQueued = d0?.queued?.[L] === 'stop';
+              const wrapFloor = isStopQueued ? advanceFloorUntil : (advanceFloorUntil ?? launchBoundary);
               const floored = wrapFloor !== null && nextStart < wrapFloor - 0.025;
               if (mode === 'session' && quantize && !floored && applyLaneQueued(L, nextStart)) {
                 ln.nextStepTime = nextStart;

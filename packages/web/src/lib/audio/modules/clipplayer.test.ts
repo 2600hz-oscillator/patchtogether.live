@@ -442,6 +442,27 @@ describe('clipplayer: Deluge launch quantization (quantize to the LONGEST playin
     expect(handle.read!('activeLane:1'), 'switched at the long boundary').toBe(3);
   });
 
+  it('a queued STOP stops at the lane’s OWN wrap — NOT the longest OTHER lane’s boundary', async () => {
+    // MAJOR-1 regression: with the LONG (lane 0, ~2 s loop) still playing, a
+    // manual stop of the SHORT lane 1 must land at lane 1's OWN next ~0.5 s wrap,
+    // not be held audible for lane 0's ~2 s boundary.
+    seedTwoPlaying();
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+    run(ctx, 0, 0.3);
+    expect(handle.read!('activeLane:0')).toBe(0);
+    expect(handle.read!('activeLane:1')).toBe(1);
+
+    // Stop lane 1 (QNT on). It quantizes — but to ITS OWN loop end.
+    (livePatch.nodes[NODE_ID]!.data as Record<string, unknown>).queued = lane8(1, 'stop', null);
+
+    // By 0.9 s — long before lane 0's 2.01 boundary — lane 1 has stopped at one
+    // of its own 0.51/1.01 wraps, while lane 0 keeps playing.
+    run(ctx, 0.3, 0.9);
+    expect(handle.read!('activeLane:1'), 'stopped at its own wrap, not the long boundary').toBe(-1);
+    expect(handle.read!('activeLane:0'), 'the long lane keeps playing').toBe(0);
+  });
+
   it('with NOTHING playing, a QNT-on launch fires immediately (start the groove now)', async () => {
     seed(
       { stepDiv: 2, quantize: 1, octave: 0, gateLength: 0.9 },

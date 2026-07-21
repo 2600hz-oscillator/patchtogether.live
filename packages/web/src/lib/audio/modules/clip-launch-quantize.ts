@@ -83,3 +83,32 @@ export function nextLaunchBoundary(
   }
   return best ? best.wrap : null;
 }
+
+/**
+ * Build the reference-bar clock set for launch quantization from the SYNCED
+ * per-lane `playing` set — one entry per lane whose `playing[L]` is a NUMBER (an
+ * active slot). MEMBERSHIP is decided PURELY by the synced playing state, NOT by
+ * any peer-local audio-sounding probe, so every peer agrees on WHICH lanes are
+ * in the reference bar (the collab-convergence requirement — a tick-ahead peer
+ * and a tick-behind peer must never disagree on the set and pick different
+ * boundaries).
+ *
+ * `laneClock(L, slot)` supplies that lane's clock: its loop length + rate (both
+ * MUST be derived from the SYNCED clip at `slot` so peers agree on the LONGEST
+ * clip) and its ctx-time phase (`nextStepTime`/`stepIndex` — the local audio
+ * realization of the shared phase origin; the boundary time is per-peer by
+ * nature but names the same MUSICAL wrap). PURE.
+ */
+export function referenceClocks(
+  playing: readonly (number | null | undefined)[] | undefined,
+  laneClock: (lane: number, slot: number) => PlayingLaneClock,
+): PlayingLaneClock[] {
+  const out: PlayingLaneClock[] = [];
+  if (!playing) return out;
+  for (let L = 0; L < playing.length; L++) {
+    const slot = playing[L];
+    if (typeof slot !== 'number') continue; // SYNCED membership — no local probe
+    out.push(laneClock(L, slot));
+  }
+  return out;
+}

@@ -6,7 +6,7 @@
 // scheduler launches immediately). No engine — deterministic + fast.
 
 import { describe, it, expect } from 'vitest';
-import { nextLaunchBoundary, type PlayingLaneClock } from './clip-launch-quantize';
+import { nextLaunchBoundary, referenceClocks, type PlayingLaneClock } from './clip-launch-quantize';
 
 describe('nextLaunchBoundary (Deluge launch quantization)', () => {
   it('returns null when NOTHING is playing (caller launches immediately)', () => {
@@ -53,7 +53,8 @@ describe('nextLaunchBoundary (Deluge launch quantization)', () => {
   });
 
   it('rolls a slipped (past) boundary forward to strictly after now', () => {
-    // Computed wrap 0.0 + (4-0)*0.1 = 0.4 sits before now=0.55 → roll one loop → 0.8.
+    // stepIndex 0 → wrap = nextStepTime + ((4-0)%4)*0.1 = 0.0 (the imminent wrap,
+    // already at/before now=0.55) → roll by whole 0.4 s loops → 0.4 → 0.8.
     const p: PlayingLaneClock = { lenSteps: 4, laneStepDur: 0.1, nextStepTime: 0.0, stepIndex: 0 };
     expect(nextLaunchBoundary([p], 0.55)).toBeCloseTo(0.8, 9);
   });
@@ -63,5 +64,38 @@ describe('nextLaunchBoundary (Deluge launch quantization)', () => {
     const good: PlayingLaneClock = { lenSteps: 4, laneStepDur: 0.1, nextStepTime: 0.1, stepIndex: 1 }; // wrap 0.4
     expect(nextLaunchBoundary([bad, good], 0)).toBeCloseTo(0.4, 9);
     expect(nextLaunchBoundary([bad], 0)).toBeNull();
+  });
+});
+
+describe('referenceClocks (reference-bar membership from SYNCED state — collab convergence)', () => {
+  // A local phase that would read "not yet sounding" (its next step is in the
+  // FUTURE) — the old peer-local probe excluded such a lane, causing tick-ahead
+  // vs tick-behind peers to disagree. Membership must NOT consult it.
+  const notYetSounding = (lane: number, slot: number): PlayingLaneClock => ({
+    lenSteps: 4 + slot, laneStepDur: 0.1, nextStepTime: 999, stepIndex: 0,
+  });
+
+  it('includes exactly the lanes whose SYNCED playing slot is a number', () => {
+    const playing = [0, null, 2, undefined, 5];
+    const clocks = referenceClocks(playing, notYetSounding);
+    expect(clocks).toHaveLength(3); // lanes 0, 2, 4 (playing) — not 1/3 (null/undefined)
+    // The accessor is consulted only for playing lanes, with (lane, slot).
+    expect(clocks.map((c) => c.lenSteps)).toEqual([4 + 0, 4 + 2, 4 + 5]);
+  });
+
+  it('counts a playing lane even when its LOCAL phase looks not-yet-sounding', () => {
+    // The one lane is playing per SYNCED state but its next step is far future
+    // (a freshly-pinned/adopted lane). It STILL anchors the bar — proving
+    // membership ignores the local sounding probe (the divergence-race fix).
+    const clocks = referenceClocks([7], notYetSounding);
+    expect(clocks).toHaveLength(1);
+    // …and it flows through nextLaunchBoundary as a valid future boundary.
+    expect(nextLaunchBoundary(clocks, 0)).toBeGreaterThan(0);
+  });
+
+  it('is empty for no synced playing (undefined / all null) → immediate launch', () => {
+    expect(referenceClocks(undefined, notYetSounding)).toEqual([]);
+    expect(referenceClocks([null, null, undefined], notYetSounding)).toEqual([]);
+    expect(nextLaunchBoundary(referenceClocks([null], notYetSounding), 0)).toBeNull();
   });
 });
