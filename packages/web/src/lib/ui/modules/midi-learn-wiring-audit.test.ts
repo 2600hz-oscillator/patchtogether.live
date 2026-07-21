@@ -14,14 +14,17 @@
 // (a) audits the whole module surface today and (b) prevents regressions:
 // any newly-added un-wired control fails this test.
 //
-// EXCEPTIONS — 2D joystick / XY pads are not single-CC params, so they are
-// NOT MIDI-learnable and don't render as <Knob>/<Fader> at all (they are
-// bespoke pad <div>s). The allowlist below is a belt-and-suspenders guard
-// so that IF someone ever expresses one of these as a Knob/Fader, the
-// exemption is explicit and reviewed — not an accidental silent skip:
-//   * JoystickCard   — the joystick pad(s) (X/Y)
-//   * WavesculptCard — camera pos x/y pad + zoom/rot pad
+// EXCEPTIONS — a 2D joystick / XY pad is not a single-CC param, so it doesn't
+// render as a <Knob>/<Fader> at all (bespoke pad <div>s). Two cases:
+//   * The shared <XyPad> control (VideoCube) exposes a PER-AXIS MIDI/Electra
+//     assign button, so its TWO axes ARE assignable — the third test below
+//     (`every <XyPad> axis is MIDI-assignable`) COVERS them: every XyPad in a
+//     card must pass moduleId + xParamId + yParamId (no silent skip).
+//   * JoystickCard / WavesculptCard are fully-custom pad <div>s (no XyPad, no
+//     Knob/Fader) — the fourth test asserts they stay that way.
 //
+// The allowlist below is a belt-and-suspenders guard so that IF someone ever
+// expresses a pad axis as a Knob/Fader, the exemption is explicit + reviewed.
 // To intentionally exempt a control, add `moduleId`/`paramId`-free Knob/Fader
 // usage to ALLOWED_UNWIRED below WITH a justification. Do not add audio/CV
 // params here — wire them instead.
@@ -105,6 +108,54 @@ function cardFiles(): string[] {
     .sort();
 }
 
+interface XyPadInstance {
+  tag: string;
+  hasModuleId: boolean;
+  hasXParamId: boolean;
+  hasYParamId: boolean;
+}
+
+/** Parse every `<XyPad ...>` opening tag (the shared draggable joystick pad),
+ *  walking to the tag's closing '>' with the SAME brace/string awareness the
+ *  Knob/Fader scan uses. The pad's two AXES are MIDI/Electra-assignable via its
+ *  per-axis assign buttons, but ONLY when the card passes moduleId + xParamId +
+ *  yParamId — so this feeds the coverage gate below. */
+function parseXyPads(src: string): XyPadInstance[] {
+  const out: XyPadInstance[] = [];
+  const re = /<XyPad[\s/>]/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src)) !== null) {
+    let i = re.lastIndex - 1;
+    let inStr: string | null = null;
+    let brace = 0;
+    let end = -1;
+    while (i < src.length) {
+      const c = src[i]!;
+      if (inStr) {
+        if (c === inStr) inStr = null;
+      } else if (c === '"' || c === "'" || c === '`') {
+        inStr = c;
+      } else if (c === '{') {
+        brace++;
+      } else if (c === '}') {
+        if (brace > 0) brace--;
+      } else if (c === '>' && brace === 0) {
+        end = i;
+        break;
+      }
+      i++;
+    }
+    const tag = src.slice(m.index, end >= 0 ? end + 1 : m.index + 400);
+    out.push({
+      tag,
+      hasModuleId: /\bmoduleId\b/.test(tag),
+      hasXParamId: /\bxParamId\b/.test(tag),
+      hasYParamId: /\byParamId\b/.test(tag),
+    });
+  }
+  return out;
+}
+
 describe('MIDI Learn wiring audit (static scan of every module card)', () => {
   it('every <Knob> / <Fader> in every card passes moduleId + paramId', () => {
     const offenders: string[] = [];
@@ -169,6 +220,42 @@ describe('MIDI Learn wiring audit (static scan of every module card)', () => {
       const unwired = parseControls(src).filter((c) => !(c.hasModuleId && c.hasParamId)).length;
       expect(unwired, `${file} allowlisted un-wired control count`).toBe(count);
     }
+  });
+
+  it('every <XyPad> axis is MIDI-assignable (moduleId + xParamId + yParamId — covers the joystick axes)', () => {
+    // The shared XyPad joystick exposes a per-axis MIDI/Electra assign button, so
+    // BOTH its axes ARE learnable — but only when the card wires the params. This
+    // gate makes those axes COVERED (no silent skip): every XyPad in a card must
+    // pass moduleId + xParamId + yParamId, or it fails here (the pad-equivalent of
+    // the Knob/Fader moduleId+paramId rule above).
+    const offenders: string[] = [];
+    let totalPads = 0;
+
+    for (const file of cardFiles()) {
+      const src = stripComments(readFileSync(join(__dirname, file), 'utf8'));
+      for (const pad of parseXyPads(src)) {
+        totalPads++;
+        const missing = [
+          pad.hasModuleId ? null : 'moduleId',
+          pad.hasXParamId ? null : 'xParamId',
+          pad.hasYParamId ? null : 'yParamId',
+        ].filter(Boolean).join(' + ');
+        if (missing) {
+          offenders.push(`${file}: <XyPad> missing ${missing} — ${pad.tag.replace(/\s+/g, ' ').slice(0, 120)}`);
+        }
+      }
+    }
+
+    // Sanity: VideoCube's 3 joystick pads (6 axes) are scanned + covered — guards
+    // against a refactor that renames/moves XyPad and makes this test vacuous.
+    expect(totalPads, 'XyPad instances scanned across the module cards').toBeGreaterThanOrEqual(3);
+
+    expect(
+      offenders,
+      `Un-covered joystick axes found. Every <XyPad> must pass moduleId={id} + ` +
+        `xParamId="…" + yParamId="…" so BOTH axes are MIDI/Electra-assignable via ` +
+        `the per-axis assign buttons.\n` + offenders.join('\n'),
+    ).toEqual([]);
   });
 
   it('confirms the joystick / XY-pad controls are NOT expressed as Knob/Fader', () => {

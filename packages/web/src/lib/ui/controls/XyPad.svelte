@@ -20,11 +20,22 @@
   //
   // a11y: the pad is focusable (role="application") and the arrow keys nudge each
   // axis (Left/Right = x, Up/Down = y; Shift = fine). Double-click resets both
-  // axes to their defaults. It is deliberately NOT a <Knob>/<Fader> (a 2-D pad
-  // isn't a single-CC param), so the midi-learn-wiring-audit correctly skips it.
+  // axes to their defaults.
+  //
+  // MIDI / Electra ASSIGN (per axis): a 2-D pad isn't a single-CC <Knob>, but its
+  // TWO axes each ARE single params, so when the caller passes `moduleId` +
+  // `xParamId`/`yParamId` the pad renders a tiny per-axis ASSIGN BUTTON (X / Y).
+  // The button doesn't change the value (the pad still drives it) — click or
+  // right-click opens the SAME shared ControlContextMenu a Knob uses (MIDI Learn /
+  // Forget / Send to Control Surface / Electra ▸ Row ▸ knob), wired through the
+  // SAME makeMidiAssignable factory (kind:'cc') against that axis's paramId, so a
+  // bound CC / surface / Electra control drives the axis exactly like a knob CC.
+  // (midi-learn-wiring-audit now COVERS these axes — see that test's XyPad scan.)
 
   import { createDragCommit } from './drag-commit';
-  import { onDestroy, untrack } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
+  import ControlContextMenu from './ControlContextMenu.svelte';
+  import { makeMidiAssignable } from './midi-assignable.svelte';
 
   interface Props {
     /** Current HORIZONTAL-axis value (already CV-modulated by the caller). */
@@ -48,8 +59,15 @@
     size?: number;
     /** Group caption drawn above the pad. */
     title?: string;
-    /** data-testid base: `<testid>-pad` / `-dot` / `-readout`. */
+    /** data-testid base: `<testid>-pad` / `-dot` / `-readout` / `-assign-x` / `-assign-y`. */
     testid?: string;
+    /** Patch-graph node id. When set together with xParamId + yParamId, the pad
+     *  renders per-axis MIDI/Electra ASSIGN buttons (the axes become learnable). */
+    moduleId?: string;
+    /** Param id the HORIZONTAL axis drives (for the X assign button). */
+    xParamId?: string;
+    /** Param id the VERTICAL axis drives (for the Y assign button). */
+    yParamId?: string;
   }
 
   let {
@@ -68,6 +86,9 @@
     size = 84,
     title,
     testid,
+    moduleId,
+    xParamId,
+    yParamId,
   }: Props = $props();
 
   function clampX(v: number): number { return Math.min(xMax, Math.max(xMin, v)); }
@@ -97,7 +118,56 @@
 
   const commitX = createDragCommit((v) => onXChange(v));
   const commitY = createDragCommit((v) => onYChange(v));
-  onDestroy(() => { commitX.dispose(); commitY.dispose(); });
+
+  // ── per-axis MIDI / Electra assign (shared makeMidiAssignable factory) ──
+  // One kind:'cc' assignable per axis, bound to that axis's paramId + range +
+  // setter. A learned CC (0..127 → [min,max]) drives the axis exactly like a
+  // knob CC; Send-to-Surface / Electra flow through the SAME menu a Knob opens.
+  // Getters keep the factory reading the CURRENT reactive props. Registration is
+  // a no-op when moduleId/paramId are absent (a pad used without assign buttons).
+  const midiX = makeMidiAssignable({
+    kind: 'cc',
+    get moduleId() { return moduleId; },
+    get paramId() { return xParamId; },
+    get min() { return xMin; },
+    get max() { return xMax; },
+    get onchange() { return onXChange; },
+  });
+  const midiY = makeMidiAssignable({
+    kind: 'cc',
+    get moduleId() { return moduleId; },
+    get paramId() { return yParamId; },
+    get min() { return yMin; },
+    get max() { return yMax; },
+    get onchange() { return onYChange; },
+  });
+  let assignable = $derived(!!(moduleId && xParamId && yParamId));
+
+  // ONE shared context menu; the active axis picks which assignable it drives.
+  let ctxOpen = $state(false);
+  let ctxX = $state(0);
+  let ctxY = $state(0);
+  let ctxAxis = $state<'x' | 'y'>('x');
+  let ctxMidi = $derived(ctxAxis === 'x' ? midiX : midiY);
+  let ctxLabel = $derived(ctxAxis === 'x' ? xLabel : yLabel);
+
+  function openAxisMenu(axis: 'x' | 'y', ev: MouseEvent): void {
+    ev.preventDefault();
+    ev.stopPropagation();
+    ctxAxis = axis;
+    (axis === 'x' ? midiX : midiY).refresh();
+    ctxX = ev.clientX;
+    ctxY = ev.clientY;
+    ctxOpen = true;
+  }
+
+  onMount(() => { midiX.register(); midiY.register(); });
+  onDestroy(() => {
+    commitX.dispose();
+    commitY.dispose();
+    midiX.unregister();
+    midiY.unregister();
+  });
 
   function writeFromPointer(ev: PointerEvent): void {
     if (!padEl) return;
@@ -208,7 +278,57 @@
     <span>{xLabel} <strong>{fmt(dispX)}</strong></span>
     <span>{yLabel} <strong>{fmt(dispY)}</strong></span>
   </div>
+
+  {#if assignable}
+    <!-- Per-axis MIDI/Electra ASSIGN handles. They do NOT change the value —
+         click or right-click opens the shared ControlContextMenu for that axis's
+         param. A learned CC (or a Surface/Electra proxy) then drives the axis. -->
+    <div class="xy-assign" role="group" aria-label="{title ?? 'axis'} MIDI assign">
+      <button
+        type="button"
+        class="xy-assign-btn nodrag"
+        class:learning={midiX.learning}
+        class:bound={!!midiX.binding}
+        title="Assign MIDI / Control Surface / Electra to {xLabel} (right-click or click)"
+        data-testid={testid ? `${testid}-assign-x` : undefined}
+        onclick={(e) => openAxisMenu('x', e)}
+        oncontextmenu={(e) => openAxisMenu('x', e)}
+      >x{#if midiX.badge}<span class="xy-badge">{midiX.badge}</span>{/if}</button>
+      <button
+        type="button"
+        class="xy-assign-btn nodrag"
+        class:learning={midiY.learning}
+        class:bound={!!midiY.binding}
+        title="Assign MIDI / Control Surface / Electra to {yLabel} (right-click or click)"
+        data-testid={testid ? `${testid}-assign-y` : undefined}
+        onclick={(e) => openAxisMenu('y', e)}
+        oncontextmenu={(e) => openAxisMenu('y', e)}
+      >y{#if midiY.badge}<span class="xy-badge">{midiY.badge}</span>{/if}</button>
+    </div>
+  {/if}
 </div>
+
+{#if assignable}
+  <ControlContextMenu
+    open={ctxOpen}
+    x={ctxX}
+    y={ctxY}
+    title={`${moduleId} · ${ctxLabel}`}
+    hasBinding={!!ctxMidi.binding}
+    bindingLabel={ctxMidi.bindingLabel}
+    onlearn={ctxMidi.learn}
+    onforget={ctxMidi.forget}
+    onclose={() => (ctxOpen = false)}
+    surfaces={ctxMidi.surfaces}
+    onsendtosurface={ctxMidi.sendToSurface}
+    onremovefromsurface={ctxMidi.removeFromSurface}
+    electras={ctxMidi.electras}
+    onassignelectra={ctxMidi.assignElectra}
+    onclearelectra={ctxMidi.clearElectra}
+    automationRecorded={ctxMidi.automationRecorded}
+    onclearautomation={ctxMidi.clearAutomation}
+  />
+{/if}
 
 <style>
   .xy-pad-wrap {
@@ -270,4 +390,46 @@
     color: var(--text-dim);
   }
   .xy-readout strong { color: var(--text); font-weight: 600; }
+
+  /* Per-axis MIDI/Electra assign handles — tiny so they stay within the card
+     control-overflow bounds. They are pure assign handles (no value change). */
+  .xy-assign {
+    display: flex;
+    gap: 4px;
+  }
+  .xy-assign-btn {
+    position: relative;
+    min-width: 15px;
+    height: 13px;
+    padding: 0 3px;
+    line-height: 1;
+    font-size: 0.5rem;
+    font-family: ui-monospace, monospace;
+    letter-spacing: 0.02em;
+    color: var(--text-dim);
+    background: var(--module-bg);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    cursor: context-menu;
+    user-select: none;
+  }
+  .xy-assign-btn:hover { border-color: var(--accent-dim); color: var(--text); }
+  .xy-assign-btn.bound {
+    color: #a8d3ff;
+    border-color: rgba(96, 165, 250, 0.5);
+  }
+  .xy-assign-btn.learning {
+    outline: 1px solid #f5c248;
+    outline-offset: 1px;
+    animation: xy-learn-pulse 1.1s ease-in-out infinite;
+  }
+  @keyframes xy-learn-pulse {
+    0%, 100% { outline-color: rgba(245, 194, 72, 1); }
+    50%      { outline-color: rgba(245, 194, 72, 0.3); }
+  }
+  .xy-badge {
+    margin-left: 2px;
+    font-size: 0.45rem;
+    color: #a8d3ff;
+  }
 </style>

@@ -404,6 +404,9 @@
             onXChange={set('slice_rx')}
             onYChange={set('slice_ry')}
             testid="videocube-slice-rot-joystick"
+            moduleId={id}
+            xParamId="slice_rx"
+            yParamId="slice_ry"
           />
           <XyPad
             title="Scan / Spread"
@@ -420,6 +423,9 @@
             onXChange={set('scan')}
             onYChange={set('spread')}
             testid="videocube-scan-spread-joystick"
+            moduleId={id}
+            xParamId="scan"
+            yParamId="spread"
           />
         </div>
       </div>
@@ -529,6 +535,9 @@
             onXChange={set('view_rot_x')}
             onYChange={set('view_rot_y')}
             testid="videocube-view-joystick"
+            moduleId={id}
+            xParamId="view_rot_x"
+            yParamId="view_rot_y"
           />
           <div class="knobs view-knobs">
             {#each VIEW_KNOBS as k (k.pid)}
