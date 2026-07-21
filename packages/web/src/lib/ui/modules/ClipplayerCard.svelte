@@ -47,6 +47,9 @@
     noteCovering,
     probLevelToValue,
     PROB_LEVELS,
+    setNotePlayEvery,
+    playEveryEff,
+    PLAY_EVERY_MAX,
     laneMono,
     laneMuted,
     laneSwing,
@@ -154,7 +157,7 @@
   } from './clipplayer-prob-menu';
   // Pure SOURCE-AWARE cell-fill colour (white/purple/orange) — extracted so it
   // stays unit-tested + mirrors the launchpad's noteProbRgb buckets.
-  import { noteProbCellFill } from './clipplayer-prob-color';
+  import { noteCellFill } from './clipplayer-prob-color';
   // Launchpad-STYLE origin-scoped undo/redo for the card's persistent clip edits
   // (control-strip ↶/↷ = keys 6/7). Owner Q1 decision: scoped (not global Cmd-Z),
   // its own stack; see clip-undo.ts.
@@ -1074,7 +1077,7 @@
    *  (for a note following the clip). Delegated to the pure `noteProbCellFill`
    *  so it stays unit-tested + mirrors the launchpad's `noteProbRgb` buckets. */
   function cellProbFill(clip: NoteClipRecord, step: number, midi: number): string {
-    return noteProbCellFill(clip, step, midi);
+    return noteCellFill(clip, step, midi);
   }
   function writeClipData(next: NoteClipRecord) {
     // Note/velocity/double edits are persistent + undoable (control-strip ↶/↷).
@@ -1129,6 +1132,23 @@
     if (!probMenu) return;
     const clip = clipAt(selectedClip);
     if (clip) writeClipData(applyProbMenuPick(clip, probMenu.step, probMenu.midi, level));
+    probMenu = null;
+  }
+  // ── PER-NOTE PLAY EVERY (same right-click menu as Probability, card↔Launchpad
+  // parity with the SHIFT+double-tap Play-Every view). A row of 1..8: "1" (every
+  // loop, the default) … "8". Writes setNotePlayEvery through the undoable clip
+  // write. The two gates STACK (a note fires only on its Nth loop AND if it wins
+  // its probability roll). ──
+  const playEveryLevels = Array.from({ length: PLAY_EVERY_MAX }, (_, i) => i + 1);
+  function playEveryMenuCurrent(): number {
+    if (!probMenu) return 1;
+    const clip = clipAt(selectedClip);
+    return clip ? playEveryEff(noteCovering(clip, probMenu.step, probMenu.midi) ?? undefined) : 1;
+  }
+  function pickPlayEvery(n: number) {
+    if (!probMenu) return;
+    const clip = clipAt(selectedClip);
+    if (clip) writeClipData(setNotePlayEvery(clip, probMenu.step, probMenu.midi, n));
     probMenu = null;
   }
 
@@ -1987,6 +2007,7 @@
           </div>
           {#if probMenu}
             {@const current = probMenuCurrentLevel()}
+            {@const curEvery = playEveryMenuCurrent()}
             <!-- PER-NOTE PROBABILITY menu (right-click a note): the Probability
                  submenu, 100% (default) … 2.5%, the note's level checked. Each
                  item writes setNoteProb through the undoable clip write. -->
@@ -2015,6 +2036,20 @@
                     data-testid={`clipplayer-prob-item-${level}`}
                     onclick={() => pickProbLevel(level)}
                   >{probPctLabel(probLevelToValue(level))}</button>
+                {/each}
+              </div>
+              <div class="prob-menu-head">Play Every ▸</div>
+              <div class="prob-menu-list">
+                {#each playEveryLevels as n (n)}
+                  <button
+                    class="prob-menu-item"
+                    class:checked={curEvery === n}
+                    role="menuitemcheckbox"
+                    aria-checked={curEvery === n}
+                    data-testid={`clipplayer-play-every-item-${n}`}
+                    title={n === 1 ? 'Every loop (default)' : `Every ${n}th loop`}
+                    onclick={() => pickPlayEvery(n)}
+                  >{n === 1 ? '1 (every)' : n}</button>
                 {/each}
               </div>
             </div>
