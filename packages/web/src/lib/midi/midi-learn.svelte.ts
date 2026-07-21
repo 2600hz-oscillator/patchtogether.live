@@ -128,6 +128,20 @@ let connectFailed = false;
  *  binding per key — CC or NOTE, never both (begin*Learn overwrites). */
 const bindings = $state<Map<string, MidiBinding>>(new Map());
 
+/** Electra-generated allocations registered for the bound-BADGE ONLY — a wholly
+ *  SEPARATE namespace from `bindings`. These are NEVER dispatched, NEVER persisted,
+ *  and NEVER participate in the one-owner-per-address invariant. Rationale: the
+ *  physical Electra CC is already dispatched by the Electra broker/autoconfig
+ *  (host.writeParam). Importing the allocation into the dispatched `bindings` map
+ *  (the old `ElectraConnectButton` behaviour) caused two real bugs — (1) DOUBLE
+ *  dispatch (autoconfig writes the param AND midi-learn's setter writes it again),
+ *  and (2) the newest-wins collision repair silently EVICTED the user's manual
+ *  bindings that shared a (channel 0) address, persisted to localStorage so it
+ *  survived unplugging the Electra. Display-only + device-lifetime fixes both:
+ *  replaced on each connect, cleared on disconnect, invisible to dispatch/evict/
+ *  storage. See `setElectraDisplayBindings`. */
+const electraDisplay = $state<Map<string, MidiBinding>>(new Map());
+
 /** Map of bindingKey → live CC setter, populated by `registerSetter` on
  *  Fader / Knob mount and read by the CC dispatch loop. Decoupled from
  *  `bindings` so a card that mounts BEFORE its binding exists (the
@@ -444,9 +458,35 @@ export function unregisterGateSetter(moduleId: string, paramId: string): void {
   noteSetters.delete(bindingKey(moduleId, paramId));
 }
 
-/** Look up the persisted binding (CC or NOTE) for a control. */
+/** Look up the binding (CC or NOTE) for a control. A real dispatched/persisted
+ *  binding always takes precedence; an Electra DISPLAY-only allocation is the
+ *  fallback so an Electra-owned control still shows the bound badge (it is driven
+ *  by the Electra broker, not by this module's dispatch). */
 export function getBinding(moduleId: string, paramId: string): MidiBinding | undefined {
-  return bindings.get(bindingKey(moduleId, paramId));
+  const key = bindingKey(moduleId, paramId);
+  return bindings.get(key) ?? electraDisplay.get(key);
+}
+
+/** Register Electra-generated allocations for the bound-BADGE ONLY, WITHOUT
+ *  entering the dispatch / eviction / persistence namespace. Replaces the whole
+ *  display set (device-lifetime). Does NOT touch `bindings`, so a user's manual
+ *  MIDI-learn mappings survive a "Send to Electra" untouched, and the physical
+ *  Electra CC dispatches exactly once (via the Electra broker/host.writeParam). */
+export function setElectraDisplayBindings(incoming: unknown[]): void {
+  electraDisplay.clear();
+  for (const raw of incoming) {
+    const b = normalizeBinding(raw);
+    if (b) electraDisplay.set(b.key, b);
+  }
+  touchBindings();
+}
+
+/** Drop all Electra display-only allocations (call on Electra disconnect). */
+export function clearElectraDisplayBindings(): void {
+  if (electraDisplay.size) {
+    electraDisplay.clear();
+    touchBindings();
+  }
 }
 
 /** Remove a binding entirely (also drops both setter maps for the key). */
@@ -531,6 +571,7 @@ export function __test_clearBindings(): void {
   bindings.clear();
   setters.clear();
   noteSetters.clear();
+  electraDisplay.clear();
   touchBindings();
   learnSpec = null;
   noteLearnSpec = null;

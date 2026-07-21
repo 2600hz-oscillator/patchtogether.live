@@ -26,6 +26,8 @@ import {
   parseCcMessage,
   importBindings,
   exportBindings,
+  setElectraDisplayBindings,
+  clearElectraDisplayBindings,
   repairBindingCollisions,
   isCcBinding,
   isNoteBinding,
@@ -749,5 +751,113 @@ describe('one-owner-per-address invariant (Electra cross-page collision fix)', (
     expect(new Set(addrs).size).toBe(3);
     // A second repair is a no-op (idempotent — nothing left to remove).
     expect(repairBindingCollisions()).toBe(0);
+  });
+});
+
+// ---------------- Regression: Electra display-only import ----------------
+//
+// The MIDI audit (2026-07-20) confirmed two real bugs in the OLD "Send to
+// Electra" path, which called importBindings() to inject the generated
+// allocation into the DISPATCHED + PERSISTED bindings map as {channel:0,
+// cc:sequential}:
+//   (1) it double-dispatched — the Electra broker/autoconfig already writes
+//       the param via host.writeParam, so midi-learn writing it again = 2×;
+//   (2) its newest-wins collision repair silently EVICTED the user's manual
+//       MIDI-learn bindings sharing a channel-0 address, persisted to storage.
+// The fix routes Electra allocations through setElectraDisplayBindings() — a
+// separate DISPLAY-ONLY namespace that never dispatches, never persists, and
+// never participates in the one-owner-per-address invariant.
+describe('regression: Electra display-only bindings (audit 2026-07-20)', () => {
+  const USER_MOD = 'filter-1';
+  const USER_PARAM = 'cutoff';
+  // Electra defaults every allocation to channel 0; a manual learn on channel 0
+  // shares the address — the collision the old path evicted.
+  const CH = 0;
+  const CC = 1;
+
+  it('a manual binding SURVIVES a Send to Electra on the same address (no eviction)', async () => {
+    const { access, sendCc } = makeFakeAccess();
+    __test_setAccess(access);
+    const received: number[] = [];
+    // User hand-learns a knob onto (ch0, cc1).
+    await beginLearn({ moduleId: USER_MOD, paramId: USER_PARAM, min: 0, max: 1, onchange: (v) => received.push(v) });
+    sendCc(CH, CC, 100); // captures the learn
+    expect(getBinding(USER_MOD, USER_PARAM)).toBeDefined();
+
+    // "Send to Electra" allocates a DIFFERENT param onto the SAME (ch0, cc1).
+    setElectraDisplayBindings([
+      { key: bindingKey('electra-orch', 'knob0'), channel: CH, cc: CC, learnedAt: Date.now() },
+    ]);
+
+    // The manual binding must still exist AND still dispatch — not evicted.
+    expect(getBinding(USER_MOD, USER_PARAM)).toBeDefined();
+    const before = received.length;
+    sendCc(CH, CC, 127);
+    expect(received[received.length - 1]).toBe(1);
+    expect(received.length).toBe(before + 1);
+  });
+
+  it('an Electra display binding does NOT dispatch through midi-learn (no double-write)', () => {
+    const { access, sendCc } = makeFakeAccess();
+    __test_setAccess(access);
+    const received: number[] = [];
+    const MOD = 'cube-1';
+    const PARAM = 'morph';
+    // The card's control is mounted (setter registered) AND the Electra alloc
+    // targets it — the exact overlap that used to double-dispatch.
+    registerSetter(MOD, PARAM, { min: 0, max: 1, onchange: (v) => received.push(v) });
+    setElectraDisplayBindings([
+      { key: bindingKey(MOD, PARAM), channel: CH, cc: CC, learnedAt: 1 },
+    ]);
+    // midi-learn must NOT dispatch — the physical Electra CC is delivered once by
+    // the broker/host.writeParam (not exercised here). So zero setter calls.
+    sendCc(CH, CC, 127);
+    expect(received).toHaveLength(0);
+  });
+
+  it('surfaces the bound BADGE for an Electra-owned control (display fallback)', () => {
+    setElectraDisplayBindings([
+      { key: bindingKey('cube-1', 'connect'), channel: CH, cc: 5, learnedAt: 1 },
+    ]);
+    const b = getBinding('cube-1', 'connect');
+    expect(b).toBeDefined();
+    expect(isCcBinding(b!) && b!.cc).toBe(5);
+  });
+
+  it('a real manual binding takes precedence over an Electra display binding on the same key', async () => {
+    const { access, sendCc } = makeFakeAccess();
+    __test_setAccess(access);
+    const received: number[] = [];
+    const MOD = 'vca-9';
+    const PARAM = 'base';
+    // Manual learn on (ch2, cc40).
+    await beginLearn({ moduleId: MOD, paramId: PARAM, min: 0, max: 1, onchange: (v) => received.push(v) });
+    sendCc(2, 40, 0);
+    // Electra later claims the SAME key on a different address.
+    setElectraDisplayBindings([{ key: bindingKey(MOD, PARAM), channel: CH, cc: CC, learnedAt: 999 }]);
+    const b = getBinding(MOD, PARAM);
+    // getBinding returns the MANUAL (dispatched) binding, not the display one.
+    expect(isCcBinding(b!) && b!.channel).toBe(2);
+    expect(isCcBinding(b!) && b!.cc).toBe(40);
+  });
+
+  it('Electra display bindings are NOT persisted / NOT exported into a performance', () => {
+    setElectraDisplayBindings([
+      { key: bindingKey('cube-1', 'morph'), channel: CH, cc: 1, learnedAt: 1 },
+      { key: bindingKey('cube-1', 'connect'), channel: CH, cc: 2, learnedAt: 1 },
+    ]);
+    // exportBindings (the performance-save snapshot) reads only the dispatched
+    // `bindings` map — display allocations must never leak into a saved set,
+    // else loading it would re-import them as dispatched (reviving the bug).
+    expect(exportBindings()).toHaveLength(0);
+  });
+
+  it('clearElectraDisplayBindings removes the display binding (device-lifetime)', () => {
+    setElectraDisplayBindings([
+      { key: bindingKey('cube-1', 'morph'), channel: CH, cc: 1, learnedAt: 1 },
+    ]);
+    expect(getBinding('cube-1', 'morph')).toBeDefined();
+    clearElectraDisplayBindings();
+    expect(getBinding('cube-1', 'morph')).toBeUndefined();
   });
 });
