@@ -8,8 +8,8 @@ There are four test layers plus two specialized lanes. All run through Flox.
 | **E2E** | Playwright | browser flows, per-port I/O sweeps | `task e2e` |
 | **VRT** | Playwright screenshots | per-card visual regression | `task vrt` / `task vrt:strict` |
 | **ART** | Vitest + `node-web-audio-api` | offline audio render fingerprints | `task art` |
-| **behavioral** | Playwright | audio fingerprint delta CONTROL→PATCHED | dedicated CI lane |
-| **collab** | Playwright (`@collab`) | multi-user Yjs sync | dedicated CI lane |
+| **behavioral** | Playwright | audio fingerprint delta CONTROL→PATCHED | `behavioral-smoke` (7-module subset) GATES; full sweep informational |
+| **collab** | Playwright (`@collab`) | multi-user Yjs sync | dedicated CI lane (informational) |
 
 ## Running everything
 
@@ -22,6 +22,14 @@ flox activate -- task vrt:strict   # deterministic VRT subset (this is the REQUI
 flox activate -- task ci       # full PR-gate chain: typecheck → test → art → e2e → vrt:strict
 flox activate -- task typecheck    # svelte-check across all workspaces
 ```
+
+**What actually gates a PR** (branch ruleset 16042163 → 2 required contexts: the
+`ci` umbrella + `vrt-strict`). The umbrella fails if ANY of these is not green:
+`actionlint, typecheck, unit, dsp-build, build-web, art, build, e2e, webgl-smoke,
+webgl-attest, behavioral-smoke`. Everything else (`behavioral-coverage`, `vrt`,
+`collab`, `collab-attest`, `grand-attest`) RUNS but never blocks merge. The live,
+generated source of truth is [`docs/testing/README.md`](../docs/testing/README.md)
++ `docs/testing/test-ledger.generated.md` — see [ci.md](ci.md) for the evidence.
 
 ## Running ONE test (fast loop)
 
@@ -114,10 +122,15 @@ This repo treats flakes as bugs to root-cause, never tolerate.
 2. **Declaration-level disablement only:** `test.skip('reason', fn)` /
    `test.fixme('reason', fn)`. Runtime guards (`test.skip(cond, …)`) are
    environment gates, not flake tolerance.
-3. **`task test:recon`** tallies per-block TOTAL + DISABLED counts (feeds a GitHub
-   Pages dashboard). **disabled → 0** is the metric. Every disabled test is
-   backlog: reconcile by fixing (assert real behavior) or deleting (worthless) —
-   there is no permanent "intentional/correct-by-design" exempt bucket.
+3. **The test ledger** (`docs/testing/test-ledger.generated.md`, GENERATED +
+   freshness-gated in the `unit` lane) is the punch-list of every hard skip /
+   quarantine (Bucket 1), coverage exemption (Bucket 2), and informational-only CI
+   lane (Bucket 3). **Bucket 1 → 0** is the metric. Every disabled test is backlog:
+   reconcile by fixing (assert real behavior) or deleting (worthless) — there is no
+   permanent "intentional/correct-by-design" exempt bucket. Check it read-only with
+   `flox activate -- task test:ledger`; after an intentional change re-pin with
+   `flox activate -- task test:ledger:accept` and review the diff. Roadmap + gating
+   truth: [`docs/testing/README.md`](../docs/testing/README.md).
 4. **Capability probes:** modules depending on a hardware H.264 encoder,
    `getUserMedia`, or WebGL precision must **gate the assertion on a runtime probe**
    (`isConfigSupported()` / `getCapabilities()` / a renderer-tolerant pixel assert)

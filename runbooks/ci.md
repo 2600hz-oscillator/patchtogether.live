@@ -16,7 +16,7 @@ thanks to DSP-artifact deduplication.
 | **E2E flake purge** | `e2e-flake-purge.yml` | push to `e2e-purge/**`, dispatch | shard×pass matrix to find unstable e2e specs |
 | **Chaos 24/7** | `chaos-24-7.yml` | cron (hourly), dispatch | fuzz autotest via invite link; findings → artifact |
 | **Deploy video branch** | `deploy-video-branch.yml` | push to `feat/video-domain` | stable dev-only URL for the long-lived video branch |
-| **Pages** | `pages.yml` | push to main (when VRT/pages sources change) | publish VRT gallery + test-reconciliation site |
+| **Pages** | `pages.yml` | push to main (when VRT/pages sources change) | publish VRT gallery + ART gallery |
 
 ## The CI gate (`ci.yml`)
 
@@ -33,34 +33,48 @@ Jobs run in parallel after the shared prep jobs (`dsp-build`, `build-web`):
 
 ### Required checks (branch protection)
 
-Branch ruleset **id 16042163** requires these **exact** status-check names:
+> The live counts + evidence are GENERATED: `docs/testing/test-ledger.generated.md`
+> (punch-list + roadmap prose: [`docs/testing/README.md`](../docs/testing/README.md)).
+> This section is the human-readable summary of that ledger's Bucket 3 + gating set.
 
-1. **`typecheck + unit + ART + E2E`** — the `ci` umbrella job. It `needs:`
-   actionlint, typecheck, unit, dsp-build, build-web, art, build, e2e. **Renaming
-   this job breaks the merge gate** unless you also PUT the ruleset.
-2. **`vrt-strict`** — the pure-DOM deterministic VRT subset (also REQUIRED).
-3. **`webgl-smoke`** — the renderer-tolerant SwiftShader WebGL floor (a few
-   `@webgl-smoke`-tagged specs: context-not-lost / shader-compiles / canvas-not-blank).
-   REQUIRED via the umbrella's aggregate `if`.
+Branch ruleset **id 16042163** requires these **2 exact** status-check names (see
+`.claude/skills/pr-workflow.md`, verified against the live ruleset):
 
-**Informational (NOT gating)** lanes:
+1. **`typecheck + unit + ART + E2E`** — the `ci` umbrella job.
+2. **`vrt-strict (visual regression — strict subset)`** — the pure-DOM
+   deterministic VRT subset.
 
-- `webgl-attest` (real-GPU attestation gate) — **PHASED: currently NON-gating.**
-  The verify job runs + is visible, but is intentionally left out of the umbrella
-  `if` because the heavy WebGL suite has ~15 rotted specs (ungated since `e2e-video`
-  was disabled) and the attestation can't bootstrap green yet. After the heavy-WebGL
-  triage campaign + the first real-GPU attestation, re-add `|| "$WEBGL_ATTEST" !=
-  "success"` to the umbrella `if` to enforce it. See
-  `.myrobots/plans/webgl-attestation-semaphore.md` §-2 + the dev flow in
-  [testing.md](testing.md).
+The umbrella is an aggregator: it fails (blocking merge) if **any** of the jobs
+in its failing `if [[ … ]]` is not `success`. Those GATING-through-the-umbrella
+jobs are: **actionlint, typecheck, unit, dsp-build, build-web, art, build, e2e,
+webgl-smoke, webgl-attest, behavioral-smoke**. So all eleven are REQUIRED even
+though only the umbrella's NAME is the branch-protection context. **Renaming the
+umbrella job (or `vrt-strict`) breaks the merge gate** unless you also PUT the
+ruleset.
 
+- `webgl-attest` (real-GPU attestation verify) is **GATING** (re-armed 2026-06-11,
+  Phase 4: `$WEBGL_ATTEST` is in the umbrella `if`) — a WebGL-path change without a
+  re-run `task webgl:attest` fails it. `webgl-smoke` (the SwiftShader WebGL floor)
+  is likewise gating.
+- `behavioral-smoke` is **GATING** — the fast REQUIRED subset of the behavioral
+  sweep, grepping 7 rock-solid core modules
+  (`adsr|analogVco|filter|lfo|noise|stereovca|vca`).
+
+**Informational (NOT gating)** lanes — run for visibility, never block merge:
+
+- `behavioral-coverage` (the FULL ~168-module behavioral sweep) —
+  `continue-on-error: true`, NOT in the umbrella `needs:`, runs only on main-push /
+  dispatch / PRs labeled `behavioral`. Per-module delta thresholds are still being
+  tuned and it needs a proper 3× flake-purge before it can re-gate; the stable
+  `behavioral-smoke` subset gates every PR in the meantime.
 - `vrt` (full canvas sweep) — `continue-on-error: true`; canvas/GPU timing may
   drift, so only `vrt-strict` is required.
 - `collab` (@collab multi-context) — un-gated pending flake-purge proof.
-- `behavioral` — `continue-on-error: true`, runs only on main-push / dispatch /
-  PRs labeled `behavioral`; per-module thresholds still being tuned.
-- `e2e-video` (WebGL-heavy) — temporarily gated to `workflow_dispatch` only;
-  pending a 3-way shard rebalance.
+- `collab-attest` — in the umbrella `needs:` + `env:` but deliberately absent from
+  the failing `if` (un-gated 2026-06-28; a local-relay re-attest treadmill made it
+  a merge-blocker on the owner's box only). Waited-on, non-blocking.
+- `grand-attest` — informational-first (2026-07-19): in `needs:` + `env:`, absent
+  from the failing `if`; the owner arms it required later once the pin is stable.
 
 ### Merge discipline
 

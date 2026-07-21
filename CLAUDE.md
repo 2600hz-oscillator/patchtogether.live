@@ -155,6 +155,10 @@ hand-maintained list files that concurrent PRs still collide on are:
   conflict, take main + re-run `flox activate -- task docs:accept` to
   regenerate — never hand-merge it. (`module-docs.generated.ts` is no longer
   committed — it's a gitignored build artifact, so it can't conflict.)
+- `docs/testing/test-ledger.generated.md` — the GENERATED 3-bucket test ledger
+  (skips/exemptions/informational-lane counts). Collides like `contract-lock.txt`:
+  on conflict, take main + re-run `flox activate -- task test:ledger:accept` —
+  never hand-merge it. (Prose/roadmap: `docs/testing/README.md`.)
 
 **Whenever a PR merges to main, look ahead: sweep the other open PRs for conflicts
 the merge just created on those files, and rebase them** before they rot into
