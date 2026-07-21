@@ -14,7 +14,11 @@ description: How the deploy pipeline works. The 3 tiers (autotest / dev / prod),
 - **autotest.patchtogether.live** — automated test tier (CF project
   `patchtogether-live-autotest`), used by chaos + live smoke runs, also
   beta-gated
-- **PR-${num} preview** — ephemeral, per-PR CF Pages preview
+- **PR-${num} preview** — ephemeral, per-PR CF Pages preview (on the autotest
+  project's *Preview* scope). Intentionally **UNGATED** (no beta basic-auth):
+  each PR is a new short-lived subdomain the browser can't remember creds for,
+  so the deploy-preview job removes `BETA_GATE_PASS` from the Preview scope
+  (`scripts/cf-clear-preview-beta-gate.sh`). dev/autotest/prod stay gated.
 
 Multiplayer Y.Doc server runs on Fly.io (separate deploy):
 - `patchtogether-server-autotest.fly.dev`

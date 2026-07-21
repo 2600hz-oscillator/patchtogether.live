@@ -1,15 +1,17 @@
 // scripts/cf-preview-cleanup.test.ts
 //
 // Unit coverage for the two CF Pages preview-pipeline scripts:
-//   - cf-preview-cleanup.sh        — delete a closed PR's preview deployments
-//   - cf-set-preview-beta-gate.sh  — set BETA_GATE_PASS on the Preview scope
+//   - cf-preview-cleanup.sh          — delete a closed PR's preview deployments
+//   - cf-clear-preview-beta-gate.sh  — REMOVE BETA_GATE_PASS from the Preview
+//                                      scope (PR previews are intentionally
+//                                      ungated).
 //
 // The load-bearing logic in each is the CF API interaction:
 //   * cleanup: LIST (paged, env=preview) → FILTER by
 //     deployment_trigger.metadata.branch == pr-<N> → DELETE ?force=true,
 //     tolerating per-deployment errors and "already gone".
-//   * set-gate: PATCH deployment_configs.preview.env_vars.BETA_GATE_PASS as a
-//     {type:"secret_text", value} object.
+//   * clear-gate: PATCH deployment_configs.preview.env_vars.BETA_GATE_PASS =
+//     null, which deletes that key on the Preview scope (partial-merge PATCH).
 //
 // We drive the real scripts against a MOCK CF API (a local http server) so the
 // branch-filter + request shapes are asserted deterministically, with no live
@@ -26,7 +28,7 @@ const execFileAsync = promisify(execFile);
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CLEANUP = join(__dirname, 'cf-preview-cleanup.sh');
-const SETGATE = join(__dirname, 'cf-set-preview-beta-gate.sh');
+const CLEARGATE = join(__dirname, 'cf-clear-preview-beta-gate.sh');
 
 type ReqLog = { method: string; url: string; body: string };
 
@@ -191,30 +193,29 @@ describe('cf-preview-cleanup.sh', () => {
   });
 });
 
-describe('cf-set-preview-beta-gate.sh', () => {
-  it('PATCHes BETA_GATE_PASS as a secret_text var on the preview scope', async () => {
+describe('cf-clear-preview-beta-gate.sh', () => {
+  it('PATCHes BETA_GATE_PASS = null to remove it from the preview scope', async () => {
     mock = await startMock({});
-    const r = await run(SETGATE, [], { ...CREDS, CF_API_BASE: mock.base, PREVIEW_BETA_GATE_PASS: '2600hz' });
+    const r = await run(CLEARGATE, [], { ...CREDS, CF_API_BASE: mock.base });
     expect(r.status).toBe(0);
     const patch = mock.reqs.find((q) => q.method === 'PATCH');
     expect(patch).toBeDefined();
     const body = JSON.parse(patch!.body);
-    expect(body.deployment_configs.preview.env_vars.BETA_GATE_PASS).toEqual({
-      type: 'secret_text',
-      value: '2600hz',
-    });
+    // null value on the Preview scope key = "delete this env var". Partial
+    // PATCH, so it targets ONLY the preview scope (not production).
+    expect(body.deployment_configs.preview.env_vars).toHaveProperty('BETA_GATE_PASS', null);
   });
 
-  it('no-ops (exit 0, no PATCH) when PREVIEW_BETA_GATE_PASS is unset', async () => {
+  it('no-ops (exit 0, no PATCH) when CF creds are unset', async () => {
     mock = await startMock({});
-    const r = await run(SETGATE, [], { ...CREDS, CF_API_BASE: mock.base });
+    const r = await run(CLEARGATE, [], { CF_API_BASE: mock.base }); // no token/acct
     expect(r.status).toBe(0);
     expect(mock.reqs.some((q) => q.method === 'PATCH')).toBe(false);
   });
 
-  it('tolerates a PATCH failure (warn + exit 0) — the assert step is the gate', async () => {
+  it('tolerates a PATCH failure (warn + exit 0) — safe default: preview stays gated', async () => {
     mock = await startMock({ patchFails: true });
-    const r = await run(SETGATE, [], { ...CREDS, CF_API_BASE: mock.base, PREVIEW_BETA_GATE_PASS: '2600hz' });
+    const r = await run(CLEARGATE, [], { ...CREDS, CF_API_BASE: mock.base });
     expect(r.status).toBe(0);
     expect(r.stdout).toMatch(/could not PATCH preview env/i);
   });

@@ -11,7 +11,10 @@ name: Deploy
 #
 # Why this shape?
 # - PR previews keep the existing per-PR isolated URL on the autotest project
-#   so test Clerk env + Hocuspocus stub still work for review.
+#   so test Clerk env + Hocuspocus stub still work for review. They are
+#   intentionally UNGATED (no beta basic-auth): each PR is a new short-lived
+#   subdomain the browser can't remember creds for, so the gate is removed from
+#   the preview scope (deploy-preview job) — dev/autotest/prod stay gated.
 # - Every merge to main fans out to autotest + dev so both stay in sync with
 #   what's about to ship — these are the dog-food / agent-testing surfaces.
 # - Prod is gated by an explicit version bump (PR that bumps `package.json:.version`)
@@ -354,23 +357,24 @@ jobs:
           # via testHooksEnabled() in lib/dev/test-hooks.ts; never set on
           # prod.
           VITE_E2E_HOOKS: '1'
-      # Ensure the PR-preview beta gate is UP *before* the deploy. PR previews
-      # deploy to branch `pr-N` on the autotest project, which reads its runtime
-      # env from the project's PREVIEW scope (NOT the Production scope that
-      # serves autotest.patchtogether.live). This sets BETA_GATE_PASS on that
-      # Preview scope as `secret_text` via the CF "edit project" API
-      # (deployment_configs.preview.env_vars) — secret_text so the following
-      # `wrangler pages deploy` does NOT clear it (the #742 plain_text-wipe bug).
-      # Idempotent + tolerant: a no-op if PREVIEW_BETA_GATE_PASS is unset or the
-      # token lacks Pages:Edit (the post-deploy assert is the real gate). Runs
-      # BEFORE deploy so the new deployment picks the secret up. User `beta`
-      # (hooks.server.ts default) + this pass = the `beta:2600hz` preview cred.
-      - name: Ensure preview beta gate (secret_text, Preview scope)
+      # PR previews are intentionally UNGATED (owner request): each PR is a new
+      # short-lived `pr-N` subdomain, so the browser can never remember the
+      # basic-auth creds and re-prompts on every preview. We therefore REMOVE
+      # BETA_GATE_PASS from the autotest project's PREVIEW scope *before* the
+      # deploy. PR previews read their runtime env from that PREVIEW scope — NOT
+      # the Production scope that serves autotest.patchtogether.live — so this
+      # opens ONLY the previews. dev/autotest/prod stay gated (separate scopes /
+      # projects; their post-deploy assert-beta-gate steps still require 401).
+      # Uses the CF "edit project" API (deployment_configs.preview.env_vars.
+      # BETA_GATE_PASS = null) because `wrangler pages secret` can't target the
+      # Preview scope in wrangler 4.x. Idempotent + tolerant: a no-op if the
+      # token lacks Pages:Edit — and SAFE by default (worst case the old secret
+      # persists and the preview stays gated; it never opens a closed tier).
+      - name: Remove preview beta gate (previews are intentionally open)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          PREVIEW_BETA_GATE_PASS: ${{ secrets.PREVIEW_BETA_GATE_PASS }}
-        run: flox activate -- bash scripts/cf-set-preview-beta-gate.sh
+        run: flox activate -- bash scripts/cf-clear-preview-beta-gate.sh
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -380,15 +384,10 @@ jobs:
           # inherit the test-instance Clerk env vars and full auth flow
           # works. URL becomes `pr-N.patchtogether-live-autotest.pages.dev`.
           command: pages deploy .svelte-kit/cloudflare --project-name=patchtogether-live-autotest --branch=pr-${{ github.event.pull_request.number }} --commit-message=deploy-${{ github.sha }}
-      # Post-deploy beta-gate assertion for the PR preview (see deploy-prod for
-      # the rationale + secret_text requirement). Previews are gated with
-      # `beta:2600hz` (same as dev) via the Preview-scope BETA_GATE_PASS set in
-      # the step above. This asserts HTTP 401 at `/` with NO creds — i.e. the
-      # gate is UP. If the preview secret was never provisioned (repo secret
-      # PREVIEW_BETA_GATE_PASS unset AND the one-time Dashboard step skipped),
-      # this fails loudly the same way it would for a wiped persistent-tier gate.
-      - name: Verify beta gate is up (preview)
-        run: flox activate -- bash scripts/assert-beta-gate.sh "https://pr-${{ github.event.pull_request.number }}.patchtogether-live-autotest.pages.dev/"
+      # NOTE: no post-deploy beta-gate assertion for PR previews — they are
+      # intentionally UNGATED (see the "Remove preview beta gate" step above).
+      # The dev/autotest/prod deploy jobs keep their "Verify beta gate is up"
+      # (HTTP 401) assertions; only the preview tier is open.
 
   # ---------------- PR-close cleanup: delete the preview deployment ----------
   # On PR close (merged OR not), delete the `pr-<N>` preview deployment(s) on
