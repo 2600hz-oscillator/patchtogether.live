@@ -21,7 +21,6 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import type { ModuleNode } from '$lib/graph/types';
 import { bandParamId } from '../../../../../dsp/src/lib/moog-filterbank-dsp';
-import { createLevelTap } from '$lib/audio/level-meter';
 
 /**
  * Build the fixed-filter-bank audio graph for one module instance.
@@ -96,11 +95,6 @@ export function buildFilterBank(
   // the LP knob controls how much of the BOTTOM of the spectrum the bank passes.
   addSection('lowpass', lpHz, q, 'lp');
 
-  // Passive OUTPUT-LEVEL tap on the summing bus — the LIVE source the card's
-  // VuMeter glyph renders via read('level'). A pure analyser sink (adds no load
-  // to the audio path).
-  const levelTap = createLevelTap(ctx, summer);
-
   return {
     domain: 'audio',
     inputs: new Map<string, { node: AudioNode; input: number; param?: AudioParam }>([
@@ -119,12 +113,6 @@ export function buildFilterBank(
       if (!g) return undefined;
       return g.gain.value;
     },
-    // The card's VuMeter polls this on the shared meter frame: the live output
-    // RMS as a 0..1 fraction.
-    read(key) {
-      if (key !== 'level') return undefined;
-      return levelTap.getLevel();
-    },
     dispose() {
       try { fan.disconnect(); } catch { /* */ }
       for (const f of filters) {
@@ -134,7 +122,6 @@ export function buildFilterBank(
         try { gainByParam[id]!.disconnect(); } catch { /* */ }
       }
       try { summer.disconnect(); } catch { /* */ }
-      levelTap.dispose();
     },
   };
 }

@@ -1,13 +1,17 @@
 <script lang="ts">
   // DEV-ONLY showcase for the live glyph primitives (VuMeter + ScopeScreen).
   // Renders every mode with DRIVEN demo data so the components can be eyeballed
-  // in isolation, off any module card. Gated to import.meta.env.DEV — a static
-  // notice replaces it in a production build.
+  // in isolation, off any module card. Gated to `testHooksEnabled()` (DEV OR
+  // VITE_E2E_HOOKS=1) — a static notice replaces it in a REAL production build,
+  // but it stays reachable in the `vite preview` bundle the CI e2e shards run
+  // against (VITE_E2E_HOOKS=1 is baked in there), so live-glyphs.spec.ts can
+  // assert the waveform trace on CI, not just against the local dev server.
   import { onMount } from 'svelte';
   import VuMeter from '$lib/ui/controls/VuMeter.svelte';
   import ScopeScreen from '$lib/ui/controls/ScopeScreen.svelte';
+  import { testHooksEnabled } from '$lib/dev/test-hooks';
 
-  const isDev = import.meta.env.DEV;
+  const isDev = testHooksEnabled();
 
   // A slowly-swept demo level (0..1) for the meters — a triangle LFO so you can
   // watch the segments climb + the peak hold trail.

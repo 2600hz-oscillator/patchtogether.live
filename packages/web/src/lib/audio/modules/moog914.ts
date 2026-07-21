@@ -40,6 +40,7 @@ import {
   bandParamId,
 } from '../../../../../dsp/src/lib/moog-filterbank-dsp';
 import { buildFilterBank } from './moog-filterbank-factory';
+import { createLevelTap } from '$lib/audio/level-meter';
 
 const CENTERS = FILTERBANK_914_CENTERS;
 
@@ -102,7 +103,7 @@ export const moog914Def: AudioModuleDef = {
   },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
-    return buildFilterBank(
+    const handle = buildFilterBank(
       ctx,
       node,
       moog914Def,
@@ -111,5 +112,32 @@ export const moog914Def: AudioModuleDef = {
       FILTERBANK_914_LP_HZ,
       FILTERBANK_914_HP_HZ,
     );
+
+    // Live OUTPUT-LEVEL for the card's VuMeter glyph. This is added HERE (the
+    // def), NOT in the shared factory, on purpose: the factory's node graph is
+    // SHA-pinned by the moog914/moog907a ART audio profiles, and a level meter
+    // must never touch the audio pin. `createLevelTap` hangs a PURE PASSIVE
+    // AnalyserNode SINK off the summing-bus output node — a side branch, never
+    // inserted into the signal path — so the rendered audio is byte-identical
+    // (verified: ART .f32 unchanged, no re-pin). Only the 914 adopts the meter;
+    // the 907A shares the factory verbatim and is untouched.
+    const outNode = handle.outputs.get('audio')?.node;
+    const levelTap = outNode
+      ? createLevelTap(ctx, outNode)
+      : { getLevel: () => 0, dispose: () => {} };
+    const baseDispose = handle.dispose.bind(handle);
+    return {
+      ...handle,
+      // The card's VuMeter polls this on the shared meter frame: the live
+      // output RMS as a 0..1 fraction.
+      read(key: string) {
+        if (key === 'level') return levelTap.getLevel();
+        return handle.read ? handle.read(key) : undefined;
+      },
+      dispose() {
+        baseDispose();
+        levelTap.dispose();
+      },
+    };
   },
 };
