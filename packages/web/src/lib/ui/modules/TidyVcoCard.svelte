@@ -16,6 +16,7 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import ScopeScreen from '$lib/ui/controls/ScopeScreen.svelte';
   import { setNodeParam } from '$lib/graph/mutate';
   import { useEngine } from '$lib/audio/engine-context';
   import { tidyVcoDef } from '$lib/audio/modules/tidy-vco';
@@ -165,6 +166,18 @@
       <div class="groups">
         <div class="group osc">
           <header>OSC</header>
+          <!-- WAVE-screen glyph: OSC1's live saw↔pulse shape morph (shape1). -->
+          <div class="wave-screen">
+            <ScopeScreen
+              mode="wave"
+              morph={shape1}
+              pw={pw}
+              width={132}
+              height={40}
+              testid="tidyvco-wave-screen"
+              ariaLabel="OSC1 wave shape"
+            />
+          </div>
           <div class="fader-row">
             <Fader value={shape1} min={0} max={1} defaultValue={defaultFor('shape1')} label="Shp1" curve="linear" onchange={set('shape1')} moduleId={id} paramId="shape1" readLive={live('shape1')} />
             <Fader value={shape2} min={0} max={1} defaultValue={defaultFor('shape2')} label="Shp2" curve="linear" onchange={set('shape2')} moduleId={id} paramId="shape2" readLive={live('shape2')} />
@@ -284,6 +297,9 @@
     padding: 0 2px;
     margin-bottom: 6px;
     align-items: flex-end;
+  }
+  .tidyvco-card .wave-screen {
+    margin: 2px 0 6px;
   }
   .tidyvco-card .hold-pad {
     align-self: center;
