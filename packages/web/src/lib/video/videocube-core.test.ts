@@ -20,6 +20,13 @@ import {
   diffuseTargetFor,
   stripToHeightfield,
   stripToHeightfieldInto,
+  windowHalfWidth,
+  temporalWindow,
+  sampleTemporalWindow,
+  VIDEOCUBE_SMOOTH_TAPS_SOFT,
+  VIDEOCUBE_SMOOTH_TAPS_GPU,
+  VIDEOCUBE_SMOOTH_TAPS_MAX,
+  VIDEOCUBE_WINDOW_EPS,
   VIDEOCUBE_RING_FRAMES,
   VIDEOCUBE_RENDER_SCALE,
   VIDEOCUBE_MARCH_SCALE,
@@ -340,5 +347,114 @@ describe('stripToHeightfield — single-frame ring luma reduction for the audio 
     const want = stripToHeightfield(strip, cols, rows);
     const got = stripToHeightfieldInto(strip, cols, rows, Array.from({ length: rows }, () => new Float32Array(cols)));
     for (let f = 0; f < rows; f++) for (let x = 0; x < cols; x++) expect(got[f]![x]).toBeCloseTo(want[f]![x]!, 6);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// SPREAD temporal window (FrameTable-style) — the CPU mirror of the shader's
+// surfWindow / REDUCE window loop. Pins: SPREAD=0 is byte-identical (single
+// centre frame), the half-width mapping, Hann weights sum to 1 + symmetric, and
+// a wider SPREAD genuinely OOZES (blends more of the ring).
+// ──────────────────────────────────────────────────────────────────────────
+describe('SPREAD temporal window', () => {
+  const N = VIDEOCUBE_RING_FRAMES;
+
+  it('windowHalfWidth: 0 → 0, 1 → (N-1)/2 (FrameTable mapping)', () => {
+    expect(windowHalfWidth(0)).toBe(0);
+    expect(windowHalfWidth(1)).toBeCloseTo((N - 1) / 2, 9);
+    expect(windowHalfWidth(0.5)).toBeCloseTo(0.25 * (N - 1), 9);
+    // clamps out-of-range spread
+    expect(windowHalfWidth(-1)).toBe(0);
+    expect(windowHalfWidth(2)).toBeCloseTo((N - 1) / 2, 9);
+  });
+
+  it('SPREAD=0 collapses to the single centre tap {offset:0, weight:1}', () => {
+    for (const taps of [VIDEOCUBE_SMOOTH_TAPS_SOFT, VIDEOCUBE_SMOOTH_TAPS_GPU]) {
+      const win = temporalWindow(0, taps);
+      expect(win).toHaveLength(1);
+      expect(win[0]!.offset).toBe(0);
+      expect(win[0]!.weight).toBe(1);
+    }
+    // a sub-EPS window also collapses
+    const tiny = temporalWindow(VIDEOCUBE_WINDOW_EPS / (N - 1), VIDEOCUBE_SMOOTH_TAPS_GPU);
+    expect(tiny).toHaveLength(1);
+  });
+
+  it('taps ≤ 1 collapses to the single centre tap regardless of SPREAD', () => {
+    for (const t of [0, 1, -3]) {
+      const win = temporalWindow(1, t);
+      expect(win).toHaveLength(1);
+      expect(win[0]!.weight).toBe(1);
+    }
+  });
+
+  it('weights are normalized (Σw = 1), all > 0, and inside ±h', () => {
+    for (const spread of [0.2, 0.5, 1]) {
+      for (const taps of [VIDEOCUBE_SMOOTH_TAPS_SOFT, VIDEOCUBE_SMOOTH_TAPS_GPU]) {
+        const win = temporalWindow(spread, taps);
+        expect(win).toHaveLength(taps);
+        const h = windowHalfWidth(spread);
+        const sum = win.reduce((a, t) => a + t.weight, 0);
+        expect(sum).toBeCloseTo(1, 9);
+        for (const t of win) {
+          expect(t.weight).toBeGreaterThan(0);
+          expect(Math.abs(t.offset)).toBeLessThan(h); // bin-centre sampling ⇒ strictly inside
+        }
+      }
+    }
+  });
+
+  it('window is symmetric (offsets mirror, matching weights)', () => {
+    const win = temporalWindow(0.7, VIDEOCUBE_SMOOTH_TAPS_GPU);
+    const T = win.length;
+    for (let k = 0; k < T; k++) {
+      const mirror = win[T - 1 - k]!;
+      expect(win[k]!.offset).toBeCloseTo(-mirror.offset, 9);
+      expect(win[k]!.weight).toBeCloseTo(mirror.weight, 9);
+    }
+  });
+
+  it('Hann weights peak at the centre (inner taps outweigh outer taps)', () => {
+    const win = temporalWindow(1, VIDEOCUBE_SMOOTH_TAPS_GPU);
+    const T = win.length;
+    // the two innermost taps must each weigh more than the two outermost
+    expect(win[T / 2]!.weight).toBeGreaterThan(win[0]!.weight);
+    expect(win[T / 2 - 1]!.weight).toBeGreaterThan(win[T - 1]!.weight);
+  });
+
+  it('SPREAD=0 sampled window == the exact centre sample (byte-identical read)', () => {
+    // synthetic ring: value = layer (mod N), read via nearest-ish sampler
+    const ring = (layer: number) => ((layer % N) + N) % N;
+    const centre = 20;
+    expect(sampleTemporalWindow(ring, centre, 0, VIDEOCUBE_SMOOTH_TAPS_GPU)).toBe(ring(centre));
+  });
+
+  it('a flat (constant) ring is unchanged by any SPREAD (window is a weighted mean)', () => {
+    const flat = () => 0.42;
+    for (const spread of [0, 0.3, 1]) {
+      expect(sampleTemporalWindow(flat, 30, spread, VIDEOCUBE_SMOOTH_TAPS_GPU)).toBeCloseTo(0.42, 9);
+    }
+  });
+
+  it('OOZE: on a smooth ramp ring the window stays centred but a wider SPREAD blends more (lower local variance)', () => {
+    // A triangular "impulse" ring: peak at the centre frame, decaying away.
+    // Averaging a wider temporal window pulls the read DOWN from the peak — the
+    // signature of "oozing": neighbouring frames bleed in.
+    const centre = 30;
+    const ring = (layer: number) => {
+      const d = Math.abs((((layer - centre) % N) + N + N / 2) % N - N / 2); // wrapped distance
+      return Math.max(0, 1 - d / 10);
+    };
+    const atZero = sampleTemporalWindow(ring, centre, 0, VIDEOCUBE_SMOOTH_TAPS_GPU);
+    const atNarrow = sampleTemporalWindow(ring, centre, 0.15, VIDEOCUBE_SMOOTH_TAPS_GPU);
+    const atWide = sampleTemporalWindow(ring, centre, 0.45, VIDEOCUBE_SMOOTH_TAPS_GPU);
+    expect(atZero).toBeCloseTo(1, 6);              // spread 0 reads the crisp peak
+    expect(atNarrow).toBeLessThan(atZero);          // a window bleeds neighbours in
+    expect(atWide).toBeLessThan(atNarrow);          // wider window bleeds MORE (oozes)
+  });
+
+  it('VIDEOCUBE_SMOOTH_TAPS_MAX bounds the shader loop (≥ both renderer tap counts)', () => {
+    expect(VIDEOCUBE_SMOOTH_TAPS_MAX).toBeGreaterThanOrEqual(VIDEOCUBE_SMOOTH_TAPS_SOFT);
+    expect(VIDEOCUBE_SMOOTH_TAPS_MAX).toBeGreaterThanOrEqual(VIDEOCUBE_SMOOTH_TAPS_GPU);
   });
 });

@@ -80,6 +80,27 @@ export const VIDEOCUBE_MARCH_GPU = 64;
 /** Compile-time upper bound of the shader march loop (uMarch ≤ this). */
 export const VIDEOCUBE_MARCH_MAX = VIDEOCUBE_MARCH_GPU;
 
+// ── SPREAD = FrameTable-style temporal WINDOW (owner 2026-07-20). SPREAD no longer
+// offsets the audio slice depth (the audio-CUBE heritage); it is now the SAMPLING
+// SIZE, TEMPORALLY, of the reader window — how many ring frames are blended into
+// each surface. A frozen ring + a widening SPREAD OOZES through time (exactly what
+// FRAMETABLE's SMOOTH spread does). The reader (SMOOTH lag / MORPH newest) picks
+// the window CENTRE; SPREAD sets its WIDTH; a Hann kernel weights the taps. Both
+// the picture surfaces AND the audio reduce read through this window, so the drone
+// oozes in lockstep with the image (the "unified field / isomorphic" promise).
+// SPREAD=0 collapses to the single centre frame → byte-identical to the pre-window
+// read (default look/sound unchanged; only the shader source hash moves). ──
+/** SMOOTH temporal-window tap counts (Hann-weighted taps across the ±window).
+ *  Renderer-gated exactly like the march steps — fewer taps on the SwiftShader
+ *  software renderer (CI), more on a real GPU. Mirrors FRAMETABLE's 4/8 split. */
+export const VIDEOCUBE_SMOOTH_TAPS_SOFT = 4;
+export const VIDEOCUBE_SMOOTH_TAPS_GPU = 8;
+/** Compile-time upper bound of the shader window loop (uWindowTaps ≤ this). */
+export const VIDEOCUBE_SMOOTH_TAPS_MAX = VIDEOCUBE_SMOOTH_TAPS_GPU;
+/** Below this half-width (frames) the window collapses to the single centre frame,
+ *  so SPREAD=0 is byte-identical to the pre-window single-frame read. */
+export const VIDEOCUBE_WINDOW_EPS = 1e-3;
+
 /** Beer-Lambert absorption for the front-to-back composite: per-step opacity is
  *  1 − exp(−F · ABSORB · dt). Tuned so a fully-solid column (F≈1) saturates over
  *  a handful of steps → the field reads as a real SOLID, not a faint haze. */
@@ -127,6 +148,81 @@ export function readerLagFor(mode: number, live: boolean): number {
   if (live) return 0;
   if (mode === VIDEOCUBE_MODE_MORPH) return 0;
   return VIDEOCUBE_READER_LAG; // SMOOTH (default)
+}
+
+// ----------------------------------------------------------------------
+// SPREAD temporal window (FrameTable-style). The reader picks the window CENTRE
+// (readerLagFor); SPREAD sets its WIDTH; a Hann kernel weights the taps. This is
+// the CPU MIRROR of the shader's `surfWindow` / REDUCE window loop — unit-testing
+// it pins the "oozing through time" semantics the shaders transliterate 1:1.
+// ----------------------------------------------------------------------
+
+/**
+ * Half-width (in ring frames) of the SPREAD temporal window. SPREAD is a
+ * normalized 0..1 knob: `h = 0.5 · spread · (N−1)`, so spread=0 → h=0 (one frame)
+ * and spread=1 → h=(N−1)/2 (the window spans nearly the whole ring as one bell) —
+ * EXACTLY FRAMETABLE's spread→half-width mapping (its spread is 1..N−1 frames with
+ * h=0.5·spread). "The sampling size, temporally, of the window."
+ */
+export function windowHalfWidth(spreadNorm: number, ringFrames: number = VIDEOCUBE_RING_FRAMES): number {
+  return 0.5 * clamp01(spreadNorm) * (ringFrames - 1);
+}
+
+/** One temporal tap: a signed frame `offset` from the window centre + its
+ *  NORMALIZED Hann weight (the taps' weights sum to 1). */
+export interface TemporalTap {
+  offset: number;
+  weight: number;
+}
+
+/**
+ * The Hann-weighted temporal window: `taps` bin-centre offsets spanning [−h, +h]
+ * (h = windowHalfWidth) with normalized Hann weights (Σw = 1). SPREAD≈0 (h <
+ * VIDEOCUBE_WINDOW_EPS) OR taps ≤ 1 collapses to the single centre tap
+ * `{offset:0, weight:1}` — the exact single-frame read the pre-window reader did,
+ * so SPREAD=0 is byte-identical. Bin-centre sampling (`off_k = −h + 2h·(k+0.5)/T`)
+ * keeps every tap weight > 0 (no wasted end taps). Deterministic + symmetric.
+ */
+export function temporalWindow(
+  spreadNorm: number,
+  taps: number,
+  ringFrames: number = VIDEOCUBE_RING_FRAMES,
+): TemporalTap[] {
+  const h = windowHalfWidth(spreadNorm, ringFrames);
+  const T = Math.floor(taps);
+  if (T <= 1 || h < VIDEOCUBE_WINDOW_EPS) return [{ offset: 0, weight: 1 }];
+  const out: TemporalTap[] = [];
+  let wsum = 0;
+  for (let k = 0; k < T; k++) {
+    const off = -h + (2 * h * (k + 0.5)) / T;
+    const w = 0.5 * (1 + Math.cos((Math.PI * off) / h)); // Hann — peak 1 at centre
+    out.push({ offset: off, weight: w });
+    wsum += w;
+  }
+  const inv = wsum > 0 ? 1 / wsum : 0;
+  for (const t of out) t.weight *= inv;
+  return out;
+}
+
+/**
+ * The windowed temporal average of a ring at one point: sum the Hann-weighted
+ * taps around `centreLayer`, reading each via the caller's `sampleAt(layer)` (a
+ * fractional, ring-wrapped layer sampler). The CPU mirror of the shader's
+ * `surfWindow`; the unit tests drive it with a synthetic ring to pin that a wide
+ * SPREAD genuinely blends more of the ring (oozes) while SPREAD=0 is the single
+ * centre sample.
+ */
+export function sampleTemporalWindow(
+  sampleAt: (layer: number) => number,
+  centreLayer: number,
+  spreadNorm: number,
+  taps: number,
+  ringFrames: number = VIDEOCUBE_RING_FRAMES,
+): number {
+  const win = temporalWindow(spreadNorm, taps, ringFrames);
+  let acc = 0;
+  for (const t of win) acc += t.weight * sampleAt(centreLayer + t.offset);
+  return acc;
 }
 
 /** Surface-texture tiling factor when WRAP is ON — the source videos mirror-tile

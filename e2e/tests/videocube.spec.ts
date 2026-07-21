@@ -227,6 +227,7 @@ test.describe('VIDEOCUBE — video isomorph of the audio CUBE', () => {
     ).toBeGreaterThan(1.5);
   });
 
+
   // AUDIO derivation — the MONO-DRONE cube-slice reaches a consumer. Real engine
   // (no render-smoke: the video rAF fills the rings + the throttled recompute
   // scans them off the audio thread), renderer-tolerant RMS poll (no pixel/fps
@@ -388,6 +389,21 @@ test.describe('VIDEOCUBE — video isomorph of the audio CUBE', () => {
     const sliceReader1 = await readViz('slice_out');
     expect(signatureDist(sliceReader0, sliceReader1), 'reader_mode changes which ring frame slice_out reads').toBeGreaterThan(1.5);
     await setNodeParams(page, 'vc', { reader_mode: 0 });
+
+    // ── SPREAD = the FrameTable-style TEMPORAL WINDOW (owner): at 0 slice_out
+    //    reads ONE crisp frame; opening it Hann-blends the varied FROZEN window
+    //    into every surface → the cross-section OOZES. This proves SPREAD actually
+    //    reaches the GPU and is NOT a silent no-op (the ring is varied+frozen, so
+    //    SPREAD is the only variable). Restore to 0 so later reads stay single-frame. ──
+    const spread0 = await readViz('slice_out');
+    await setNodeParams(page, 'vc', { spread: 1 });
+    const spreadWide = await readViz('slice_out');
+    assertVizStructured(spreadWide, 'slice_out (spread wide)');
+    expect(
+      signatureDist(spread0, spreadWide),
+      'SPREAD 0→1 Hann-blends the varied frozen window → slice_out oozes (temporal window reaches the GPU)',
+    ).toBeGreaterThan(1.5);
+    await setNodeParams(page, 'vc', { spread: 0 });
 
     // ── slice_out responds to slice Y + rotation (the cut slides/tilts) ──
     const sliceBase = await readViz('slice_out');
