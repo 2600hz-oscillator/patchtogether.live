@@ -180,8 +180,10 @@ describe('rack sizing — bulk classification coverage (RACK_SIZE_DEFAULTS)', ()
   it('respects the user-LOCKED per-module tier overrides (DECISIONS §2)', () => {
     // resolveSize must yield exactly these for the explicitly-called modules,
     // whether the tier comes from the def or the map.
-    const LOCKED: Record<string, '1u' | '3u'> = {
-      adsr: '1u', filter: '1u', sequencer: '3u', mixer: '1u', scope: '3u',
+    const LOCKED: Record<string, '1u' | '2u' | '3u'> = {
+      // adsr bumped 1u→2u: the env ScopeScreen glyph raised natural height to
+      // 209px, over the 180px 1u tile (owner-approved look → tier grows to fit).
+      adsr: '2u', filter: '1u', sequencer: '3u', mixer: '1u', scope: '3u',
       midiLane: '3u', analogVco: '3u', resofilter: '1u',
       drummergirl: '1u', charlottesEchos: '1u', audioOut: '1u',
       scoreboard: '1u', cameraInput: '3u', timelorde: '3u',

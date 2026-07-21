@@ -392,21 +392,75 @@ export function videoAreaBand(): { x0: number; x1: number; y0: number; y1: numbe
   };
 }
 
-/** Deterministic node id for the auto-spawned default video-output sink (the
- *  CRDT convergence key — like the pinned-<type> singletons). */
+/** Deterministic node ids for the auto-spawned video-zone default trio (the
+ *  CRDT convergence keys — like the pinned-<type> singletons). videoOut is the
+ *  master video SINK; recorderbox records the master A/V; synesthesia renders
+ *  audio-reactive visuals from the master mix. */
 export const DEFAULT_VIDEO_OUT_ID = 'workflow-videoOut';
+export const DEFAULT_RECORDERBOX_ID = 'workflow-recorderbox';
+export const DEFAULT_SYNESTHESIA_ID = 'workflow-synesthesia';
 
-/** Grid-snapped TOP-LEFT spawn position for the default videoOut, inside the
- *  video area near its left edge (a 360×360 videoOut fits with headroom below
- *  the 540px zone). */
-export function videoOutSpawnPos(): { x: number; y: number } {
+/** Horizontal pitch between the video-zone default cards' TOP-LEFT corners —
+ *  one channel-column width (765px). The widest default card (synesthesia,
+ *  460px) clears its neighbour with a comfortable gutter, and each slot lands
+ *  grid-snapped (COLUMN_W is a whole multiple of HP_UNIT). */
+export const VIDEO_ZONE_SLOT_PITCH_X = COLUMN_W;
+
+/** Grid-snapped TOP-LEFT position for video-zone slot `index` (0-based, laid out
+ *  left→right along the zone's top edge). Slot 0 is the historical videoOut
+ *  position (near the zone's left edge), so extending the zone never moves the
+ *  pre-existing videoOut card. */
+export function videoZoneSlotPos(index: number): { x: number; y: number } {
   return snapPositionToGrid({
-    x: COLUMN_ORIGIN_X + COLUMN_PAD_X,
+    x: COLUMN_ORIGIN_X + COLUMN_PAD_X + index * VIDEO_ZONE_SLOT_PITCH_X,
     y: COLUMN_BASELINE_Y,
   });
 }
 
-/** Minimal node view for the default-videoOut presence check. */
+/** Grid-snapped TOP-LEFT spawn position for the default videoOut, inside the
+ *  video area near its left edge (a 360×360 videoOut fits with headroom below
+ *  the 540px zone). Slot 0 of the video-zone layout. */
+export function videoOutSpawnPos(): { x: number; y: number } {
+  return videoZoneSlotPos(0);
+}
+
+/** One video-zone default module the workflow ensure auto-spawns + auto-wires.
+ *  Each carries its OWN one-shot latch key (stored on the pinned mixer) so a
+ *  user delete is respected forever, like the videoOut latch. */
+export interface VideoZoneDefaultSpec {
+  /** Deterministic node id (the CRDT convergence key). */
+  id: string;
+  /** Registered module type. */
+  type: string;
+  /** Registry domain ('video' | 'audio' — synesthesia is an audio module that
+   *  lives in the video zone). */
+  domain: 'video' | 'audio';
+  /** `node.data` latch key on the pinned mixer: "this default was seeded once". */
+  seededFlag: string;
+  /** Grid-snapped TOP-LEFT spawn position (its video-zone slot). */
+  pos: { x: number; y: number };
+  /** Nominal card width (px) — the no-overlap layout guarantee (unit-tested). */
+  nominalWidth: number;
+  /** True when this module's default wiring needs the master videoOut present
+   *  (recorderbox taps its pass-through OUT for the master video). */
+  requiresVideoOut: boolean;
+}
+
+/** The video-zone default trio, laid out left→right. videoOut (slot 0) keeps its
+ *  historical position; recorderbox (slot 1) + synesthesia (slot 2) are the P-next
+ *  additions. Card widths: videoOut 360, recorderbox 248, synesthesia 460. */
+export const VIDEO_ZONE_DEFAULTS: readonly VideoZoneDefaultSpec[] = [
+  { id: DEFAULT_VIDEO_OUT_ID, type: 'videoOut', domain: 'video', seededFlag: 'workflowVideoOutSeeded', pos: videoZoneSlotPos(0), nominalWidth: 360, requiresVideoOut: false },
+  { id: DEFAULT_RECORDERBOX_ID, type: 'recorderbox', domain: 'video', seededFlag: 'workflowRecorderboxSeeded', pos: videoZoneSlotPos(1), nominalWidth: 248, requiresVideoOut: true },
+  { id: DEFAULT_SYNESTHESIA_ID, type: 'synesthesia', domain: 'audio', seededFlag: 'workflowSynesthesiaSeeded', pos: videoZoneSlotPos(2), nominalWidth: 460, requiresVideoOut: false },
+] as const;
+
+/** The two NEW video-zone defaults the extended ensure spawns (videoOut has its
+ *  own pre-existing ensure effect). */
+export const VIDEO_ZONE_EXTRA_DEFAULTS: readonly VideoZoneDefaultSpec[] =
+  VIDEO_ZONE_DEFAULTS.filter((s) => s.id !== DEFAULT_VIDEO_OUT_ID);
+
+/** Minimal node view for the default-video-zone presence checks. */
 export interface VideoOutNodeLike {
   type: string;
 }
@@ -416,6 +470,104 @@ export interface VideoOutNodeLike {
  *  satisfies the "one default sink" invariant, so we never add a second.) */
 export function needsDefaultVideoOut(nodes: ReadonlyArray<VideoOutNodeLike>): boolean {
   return !nodes.some((n) => n.type === 'videoOut');
+}
+
+/** True when the rack has NO node of `type` yet → the ensure must spawn the
+ *  default one. Presence is by TYPE (any existing instance satisfies the "one
+ *  default" invariant), mirroring needsDefaultVideoOut. */
+export function rackLacksType(nodes: ReadonlyArray<VideoOutNodeLike>, type: string): boolean {
+  return !nodes.some((n) => n.type === type);
+}
+
+// ---------------- Video-zone default WIRING (master A/V taps) ----------------
+//
+// Owner directive: a fresh workflow rack's video zone records + reacts to the
+// MASTER bus out of the box. recorderbox captures the final master VIDEO (a tap
+// on the videoOut sink's pass-through OUT) plus the master AUDIO (mixmstrs
+// masterL/R); synesthesia renders audio-reactive visuals from the master mix
+// (masterL→A, masterR→B). Deterministic edge ids (the handleConnect
+// `e-<src>-<srcPort>-<dst>-<dstPort>` template) make two racing clients
+// converge on ONE Y.Map entry per wire — CRDT-safe like the node ids. The wires
+// are seeded in the SAME transact as the module spawn (gated by the module's
+// own seed latch), so a user delete of the module OR a wire is never re-fought.
+
+/** One video-zone default wire (a full Edge-shaped record; ids deterministic). */
+export interface VideoZoneWire {
+  id: string;
+  source: { nodeId: string; portId: string };
+  target: { nodeId: string; portId: string };
+  sourceType: 'video' | 'audio';
+  targetType: 'video' | 'audio';
+}
+
+/** Resolve the master video-out node id recorderbox taps for the master video:
+ *  the auto-spawned workflow-videoOut if present, else the first videoOut of any
+ *  origin (a user-brought sink), else null (no video sink yet → wire later). */
+export function resolveMasterVideoOutId(
+  nodes: ReadonlyArray<{ id: string; type: string }>,
+): string | null {
+  if (nodes.some((n) => n.id === DEFAULT_VIDEO_OUT_ID)) return DEFAULT_VIDEO_OUT_ID;
+  const anyVideoOut = nodes.find((n) => n.type === 'videoOut');
+  return anyVideoOut ? anyVideoOut.id : null;
+}
+
+const MASTER_MIX_ID = 'pinned-mixmstrs';
+
+/**
+ * The default wires INTO a freshly-seeded video-zone module, FROM the master
+ * buses. Pure — the caller writes them in the spawn transact (skipping occupied
+ * targets / existing edge ids). Port ids are pinned by the defs + unit contract:
+ *   - recorderbox: `in`←videoOut `out` (master video), `audio_l`/`audio_r`←
+ *     mixmstrs `masterL`/`masterR` (master audio). The video wire is omitted
+ *     when no videoOut exists yet (recorderbox still records master audio; the
+ *     spawn is gated on a videoOut existing so this is defensive).
+ *   - synesthesia: `a_in`←mixmstrs `masterL`, `b_in`←mixmstrs `masterR`.
+ */
+export function videoZoneWiresFor(
+  type: 'recorderbox' | 'synesthesia',
+  videoOutId: string | null,
+): VideoZoneWire[] {
+  if (type === 'recorderbox') {
+    const wires: VideoZoneWire[] = [];
+    if (videoOutId) {
+      wires.push({
+        id: `e-${videoOutId}-out-${DEFAULT_RECORDERBOX_ID}-in`,
+        source: { nodeId: videoOutId, portId: 'out' },
+        target: { nodeId: DEFAULT_RECORDERBOX_ID, portId: 'in' },
+        sourceType: 'video', targetType: 'video',
+      });
+    }
+    wires.push(
+      {
+        id: `e-${MASTER_MIX_ID}-masterL-${DEFAULT_RECORDERBOX_ID}-audio_l`,
+        source: { nodeId: MASTER_MIX_ID, portId: 'masterL' },
+        target: { nodeId: DEFAULT_RECORDERBOX_ID, portId: 'audio_l' },
+        sourceType: 'audio', targetType: 'audio',
+      },
+      {
+        id: `e-${MASTER_MIX_ID}-masterR-${DEFAULT_RECORDERBOX_ID}-audio_r`,
+        source: { nodeId: MASTER_MIX_ID, portId: 'masterR' },
+        target: { nodeId: DEFAULT_RECORDERBOX_ID, portId: 'audio_r' },
+        sourceType: 'audio', targetType: 'audio',
+      },
+    );
+    return wires;
+  }
+  // synesthesia
+  return [
+    {
+      id: `e-${MASTER_MIX_ID}-masterL-${DEFAULT_SYNESTHESIA_ID}-a_in`,
+      source: { nodeId: MASTER_MIX_ID, portId: 'masterL' },
+      target: { nodeId: DEFAULT_SYNESTHESIA_ID, portId: 'a_in' },
+      sourceType: 'audio', targetType: 'audio',
+    },
+    {
+      id: `e-${MASTER_MIX_ID}-masterR-${DEFAULT_SYNESTHESIA_ID}-b_in`,
+      source: { nodeId: MASTER_MIX_ID, portId: 'masterR' },
+      target: { nodeId: DEFAULT_SYNESTHESIA_ID, portId: 'b_in' },
+      sourceType: 'audio', targetType: 'audio',
+    },
+  ];
 }
 
 // ---------------- Viewport navigation (workflow keyboard pan) ----------------
