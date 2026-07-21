@@ -35,6 +35,8 @@ import {
   videoOutSpawnPos,
   needsDefaultVideoOut,
   VIDEO_AREA_HEIGHT,
+  laneCenterViewport,
+  videoAreaViewport,
   indexForDropY,
   dedup,
   reconcileColumnOrder,
@@ -339,6 +341,51 @@ describe('column geometry', () => {
     expect(indexForDropY(centers, 400)).toBe(1); // between index 0 and 1
     expect(indexForDropY(centers, 200)).toBe(2); // between index 1 and 2
     expect(indexForDropY(centers, 50)).toBe(3); // above all → top (append)
+  });
+});
+
+// ---------------- Viewport navigation (workflow keyboard pan) ----------------
+
+describe('viewport navigation (workflow keyboard pan) — keeps zoom, pure translate', () => {
+  // screen = flow*zoom + translate; these helpers return {x, y, zoom}. We verify
+  // by re-projecting the target flow point through the returned transform.
+  const project = (flow: number, t: { pan: number; zoom: number }) => flow * t.zoom + t.pan;
+
+  describe('laneCenterViewport — column centered horizontally, baseline at viewport bottom', () => {
+    it('centers the band center-x and drops the baseline to the viewport bottom at zoom 1', () => {
+      const vp = { widthPx: 1000, heightPx: 800, zoom: 1 };
+      for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
+        const t = laneCenterViewport(ch, vp);
+        expect(t.zoom).toBe(1); // zoom is kept
+        // band center-x maps to the horizontal center of the viewport
+        expect(project(columnBandCenterX(ch), { pan: t.x, zoom: t.zoom })).toBeCloseTo(vp.widthPx / 2, 6);
+        // baseline maps to the very bottom of the viewport
+        expect(project(COLUMN_BASELINE_Y, { pan: t.y, zoom: t.zoom })).toBeCloseTo(vp.heightPx, 6);
+      }
+    });
+
+    it('holds the framing at a non-unit zoom (zoom is unchanged)', () => {
+      const vp = { widthPx: 1280, heightPx: 720, zoom: 0.35 };
+      const t = laneCenterViewport(4, vp);
+      expect(t.zoom).toBe(0.35);
+      expect(project(columnBandCenterX(4), { pan: t.x, zoom: t.zoom })).toBeCloseTo(vp.widthPx / 2, 6);
+      expect(project(COLUMN_BASELINE_Y, { pan: t.y, zoom: t.zoom })).toBeCloseTo(vp.heightPx, 6);
+    });
+  });
+
+  describe('videoAreaViewport — video zone lower-left maps to viewport lower-left', () => {
+    it('maps (minX, maxY) of the video area to screen (0, heightPx), keeping zoom', () => {
+      const b = videoAreaBand();
+      for (const vp of [
+        { widthPx: 1000, heightPx: 800, zoom: 1 },
+        { widthPx: 1280, heightPx: 720, zoom: 0.5 },
+      ]) {
+        const t = videoAreaViewport(vp);
+        expect(t.zoom).toBe(vp.zoom);
+        expect(project(b.x0, { pan: t.x, zoom: t.zoom })).toBeCloseTo(0, 6); // left edge → screen x 0
+        expect(project(b.y1, { pan: t.y, zoom: t.zoom })).toBeCloseTo(vp.heightPx, 6); // bottom → screen bottom
+      }
+    });
   });
 });
 

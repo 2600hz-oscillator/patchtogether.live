@@ -68,7 +68,10 @@
     needsDefaultVideoOut,
     videoOutSpawnPos,
     DEFAULT_VIDEO_OUT_ID,
+    laneCenterViewport,
+    videoAreaViewport,
     type ModuleBoxLike,
+    type ViewportMetrics,
   } from '$lib/graph/channel-columns';
   import { setControlColor, setNodeLocked, setNodeParam } from '$lib/graph/mutate';
   import { snapPositionToGrid, findFreeRackSlot, RACK_UNIT, type RackRect } from '$lib/ui/rack-grid';
@@ -691,6 +694,12 @@
       (globalThis as any).__flow = {
         screenToFlowPosition: (p: { x: number; y: number }) =>
           flowApi?.screenToFlowPosition(p) ?? p,
+        // Inverse of screenToFlowPosition — used by the workflow viewport-nav
+        // e2e to project a flow-space point (a column band center, the video
+        // zone corner) to on-screen px and assert where the pan framed it.
+        flowToScreenPosition: (p: { x: number; y: number }) =>
+          flowApi?.flowToScreenPosition(p) ?? p,
+        getViewport: () => flowApi?.getViewport?.() ?? { x: 0, y: 0, zoom: 1 },
         getInternalNode: (id: string) => flowApi?.getInternalNode(id),
         // Edge-delete e2e: headless Playwright can't click the thin SVG edge,
         // so the spec selects it through xyflow's real `selected` mutation,
@@ -1255,6 +1264,53 @@
     }
     window.addEventListener('keydown', onDockKey);
     return () => window.removeEventListener('keydown', onDockKey);
+  });
+
+  // WORKFLOW MODE — VIEWPORT NAVIGATION keys. Keeps the CURRENT zoom; only pans.
+  //  * '1'..'8' → center that channel column horizontally in the viewport with
+  //    its BASELINE (where the number sits) at the viewport BOTTOM. Numbers
+  //    beyond the active column count (COLUMN_COUNT) are ignored.
+  //  * 'v'/'V'  → snap the video zone's LOWER-LEFT corner to the viewport's
+  //    LOWER-LEFT corner.
+  // Inert while typing (isTypingTarget: input/textarea/select/contenteditable —
+  // so a card control's number entry is never hijacked) and under any modifier.
+  // The pure translate math lives in channel-columns (laneCenterViewport /
+  // videoAreaViewport); here we read the live SCREEN-space pane size + current
+  // zoom and hand the transform to xyflow's animated setViewport.
+  $effect(() => {
+    if (!workflowMode) return;
+    const PAN_MS = 220;
+    function readViewportMetrics(): ViewportMetrics | null {
+      if (!flowApi || !flowEl) return null;
+      const rect = flowEl.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return null;
+      const vp = flowApi.getViewport?.();
+      const zoom = vp?.zoom && vp.zoom > 0 ? vp.zoom : 1;
+      return { widthPx: rect.width, heightPx: rect.height, zoom };
+    }
+    function onNavKey(e: KeyboardEvent) {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isTypingTarget(e.target)) return;
+      const k = e.key;
+      if (k === 'v' || k === 'V') {
+        const vp = readViewportMetrics();
+        if (!vp || !flowApi) return;
+        e.preventDefault();
+        flowApi.setViewport(videoAreaViewport(vp), { duration: PAN_MS });
+        return;
+      }
+      // '1'..'8' → center that lane (guard against '0'/'9'+ and > column count).
+      if (k >= '1' && k <= '9') {
+        const ch = k.charCodeAt(0) - 48;
+        if (ch < 1 || ch > COLUMN_COUNT) return; // ignore > active column count
+        const vp = readViewportMetrics();
+        if (!vp || !flowApi) return;
+        e.preventDefault();
+        flowApi.setViewport(laneCenterViewport(ch, vp), { duration: PAN_MS });
+      }
+    }
+    window.addEventListener('keydown', onNavKey);
+    return () => window.removeEventListener('keydown', onNavKey);
   });
 
   // Dock hygiene + P2.5a persistence binding: each Canvas mount binds the

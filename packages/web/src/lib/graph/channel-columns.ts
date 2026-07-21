@@ -418,6 +418,64 @@ export function needsDefaultVideoOut(nodes: ReadonlyArray<VideoOutNodeLike>): bo
   return !nodes.some((n) => n.type === 'videoOut');
 }
 
+// ---------------- Viewport navigation (workflow keyboard pan) ----------------
+//
+// The workflow keys pan the SvelteFlow viewport to FRAME a lane or the video
+// zone WITHOUT changing zoom. xyflow's viewport is the affine map
+//   screenPx = flowCoord * zoom + translate
+// so translate = desiredScreenPx − flowCoord * zoom. These PURE helpers compute
+// the {x, y, zoom} the Canvas hands straight to setViewport; the Canvas supplies
+// the live SCREEN-space pane size + current zoom, keeps zoom fixed, and animates.
+
+/** The live viewport as the pan math reads it: SCREEN-space width/height (px) of
+ *  the flow pane (getBoundingClientRect) + the current zoom factor (kept fixed). */
+export interface ViewportMetrics {
+  widthPx: number;
+  heightPx: number;
+  zoom: number;
+}
+
+/** A SvelteFlow viewport transform: {x, y} = the screen-px pan translate (where
+ *  flow-origin {0,0} lands on screen), plus the zoom factor. */
+export interface ViewportTransform {
+  x: number;
+  y: number;
+  zoom: number;
+}
+
+/**
+ * Pan so channel column `ch` is (a) HORIZONTALLY CENTERED in the viewport and
+ * (b) its BASELINE (the row where the channel number sits) at the viewport
+ * BOTTOM, at the current zoom. From screen = flow*zoom + translate:
+ *   - horizontal center: columnBandCenterX(ch)·zoom + x == widthPx/2
+ *   - baseline at bottom: COLUMN_BASELINE_Y·zoom + y == heightPx
+ */
+export function laneCenterViewport(ch: number, vp: ViewportMetrics): ViewportTransform {
+  const { widthPx, heightPx, zoom } = vp;
+  return {
+    x: widthPx / 2 - columnBandCenterX(ch) * zoom,
+    y: heightPx - COLUMN_BASELINE_Y * zoom,
+    zoom,
+  };
+}
+
+/**
+ * Pan so the video area's LOWER-LEFT corner (videoAreaBand min-x, max-y) maps to
+ * the viewport's LOWER-LEFT corner — screen (0, heightPx) — at the current zoom.
+ * From screen = flow*zoom + translate:
+ *   - left edge at screen x 0: videoAreaBand().x0·zoom + x == 0
+ *   - bottom edge at screen bottom: videoAreaBand().y1·zoom + y == heightPx
+ */
+export function videoAreaViewport(vp: ViewportMetrics): ViewportTransform {
+  const { heightPx, zoom } = vp;
+  const b = videoAreaBand();
+  return {
+    x: -b.x0 * zoom,
+    y: heightPx - b.y1 * zoom,
+    zoom,
+  };
+}
+
 // ---------------- Ordered-membership array helpers (pure, CRDT-safe) ----------------
 
 /** Minimal node view the membership reconciler reads — the id + the scalar
