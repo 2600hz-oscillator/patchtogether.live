@@ -1,9 +1,13 @@
 // packages/web/src/lib/graph/patch-convenience.ts
 //
 // PURE, framework-free eligibility + wiring planner for the workflow-mode
-// right-click convenience actions:
-//   • "Control from → Clip N"  — auto-wire a clip-player channel to an instrument
-//   • "Send to → MixMaster ch N" — auto-wire an audio module to a mixer channel
+// right-click convenience wiring, now folded into a single channel-indexed
+// action ("Assign to channel N"):
+//   • CLIP CONTROL  — auto-wire a clip-player channel to an instrument
+//   • SEND TO MIXER — auto-wire an audio module to a mixer channel
+// (The Canvas layer combines these plans with the module→automation-lane
+// assignment for "Assign to channel N"; automation itself lives in
+// automation-assign.ts.)
 //
 // DESIGN — NO ALLOW-LIST. Both actions are gated ENTIRELY by a module's port
 // DEF (its inputs/outputs/stereoPairs), computed procedurally here, so any
@@ -93,6 +97,19 @@ function isNoteGateInput(p: PortDef): boolean {
   return isGate(p) && !hasControlGateWord(p.id);
 }
 
+/** A v/oct PITCH input carried on a `cv` cable — the drum-voice convention
+ *  (`pitch_cv`, a 1V/oct transpose typed `cv`, not `pitch`). Distinguished from a
+ *  per-knob modulation CV by having NO `paramTarget` (every per-control CV
+ *  declares one) and an id that denotes v/oct pitch (a `pitch` / `voct` id
+ *  token). SHAPE-detected like every other predicate here, so any voice
+ *  following the convention (kickdrum / snaredrum / tomtom) auto-enrols — no
+ *  allow-list. */
+function isVoctCvInput(p: PortDef): boolean {
+  if (p.type !== 'cv' || p.paramTarget) return false;
+  const w = idWords(p.id);
+  return w.includes('pitch') || w.includes('voct') || (w.includes('v') && w.includes('oct'));
+}
+
 /** True if the module EMITS notes (a sequencer / keyboard / arpeggiator): it has
  *  a polyPitchGate OUTPUT, or it emits BOTH a pitch output and a gate output.
  *  Such a module drives instruments — it is never itself a clip target. */
@@ -126,9 +143,14 @@ function hasAudioOut(def: ConvenienceDef): boolean {
 /**
  * Resolve HOW a clip player should drive this module, or null if it is not a
  * clip target. Precedence: POLY (keeps the whole chord) → mono PITCH+GATE →
- * GATE-ONLY percussion (a note-gate + audio out but no v/oct pitch, e.g.
- * kickdrum/snaredrum — the clip triggers it, there is no pitch to send). A note
- * SOURCE (sequencer/keyboard) is never a target.
+ * GATE-ONLY percussion (a note-gate + audio out but no pitch input at all, e.g.
+ * clap — the clip only triggers it). A note SOURCE (sequencer/keyboard) is never
+ * a target.
+ *
+ * A percussion voice that DOES expose a 1V/oct on a `cv` cable (`pitch_cv` — the
+ * kickdrum/snaredrum/tomtom convention) is wired monoPitchGate too, mapping the
+ * clip PITCH onto the v/oct so a tuned drum tracks the clip's notes rather than
+ * only firing on the gate.
  */
 export function resolveClipWiring(def: ConvenienceDef): ClipWiring | null {
   if (isNoteSource(def)) return null;
@@ -136,13 +158,23 @@ export function resolveClipWiring(def: ConvenienceDef): ClipWiring | null {
   const polyIn = def.inputs.find(isPoly);
   if (polyIn) return { mode: 'poly', pitchInPort: polyIn.id };
 
-  const pitchIn = def.inputs.find(isPitch);
   const gateIn = def.inputs.find(isNoteGateInput);
+
+  // Native mono pitch (a `pitch` v/oct cable) + note-gate.
+  const pitchIn = def.inputs.find(isPitch);
   if (pitchIn && gateIn) {
     return { mode: 'monoPitchGate', pitchInPort: pitchIn.id, gateInPort: gateIn.id };
   }
-  // Gate-only percussion: a note-gate + audio out, but no v/oct pitch input.
+
+  // Percussion voice: a note-gate + audio out, no native `pitch` cable. If it
+  // exposes a v/oct on a `cv` cable (the drum `pitch_cv` convention) map the
+  // clip PITCH to it too (monoPitchGate); otherwise it is a pure gate-triggered
+  // voice with no pitch to send (gateOnly).
   if (gateIn && hasAudioOut(def)) {
+    const voctIn = def.inputs.find(isVoctCvInput);
+    if (voctIn) {
+      return { mode: 'monoPitchGate', pitchInPort: voctIn.id, gateInPort: gateIn.id };
+    }
     return { mode: 'gateOnly', gateInPort: gateIn.id };
   }
   return null;
@@ -235,9 +267,10 @@ export function clipChannelPorts(channel: number): { pitchOut: string; gateOut: 
   return { pitchOut: `pitch${channel}`, gateOut: `gate${channel}` };
 }
 
-/** MixMaster: 6 stereo channels (1-based). Per channel the inputs are
- *  `ch{n}L` / `ch{n}R` (audio). */
-export const MIXER_CHANNEL_COUNT = 6;
+/** MixMaster: 8 stereo channels (1-based). Per channel the inputs are
+ *  `ch{n}L` / `ch{n}R` (audio). Matches MIXMSTRS_CHANNELS (the mixmstrs def's
+ *  8-channel layout); guarded by the channel-port-map test against the live def. */
+export const MIXER_CHANNEL_COUNT = 8;
 export function mixerChannelPorts(channel: number): { leftIn: string; rightIn: string } {
   return { leftIn: `ch${channel}L`, rightIn: `ch${channel}R` };
 }

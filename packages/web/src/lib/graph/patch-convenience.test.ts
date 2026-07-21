@@ -84,13 +84,41 @@ describe('clip eligibility (pure)', () => {
     expect(isClipEligible(d)).toBe(false);
   });
 
-  it('gate-only percussion (note-gate + audio out, no v/oct pitch) is clip-eligible via gateOnly', () => {
-    // kickdrum shape: a trigger gate + CV mod params + audio out, no `pitch` cable.
+  it('gate-only percussion (note-gate + audio out, NO pitch input at all) is clip-eligible via gateOnly', () => {
+    // clap shape: a trigger gate + audio out, no v/oct — nothing to pitch-wire.
+    const clap = def(
+      [port('trigger_in', 'gate', { edge: 'trigger' }), port('tone_cv', 'cv', { paramTarget: 'tone' })],
+      [port('out', 'audio')],
+    );
+    expect(isClipEligible(clap)).toBe(true);
+    expect(resolveClipWiring(clap)).toEqual({ mode: 'gateOnly', gateInPort: 'trigger_in' });
+  });
+
+  it('a drum with a 1V/oct on a CV cable (pitch_cv) maps the clip PITCH to it (monoPitchGate)', () => {
+    // kickdrum/snaredrum/tomtom shape: a trigger gate + a `pitch_cv` (type cv,
+    // NO paramTarget — a real 1V/oct) + per-knob CV mods (paramTarget) + audio
+    // out. The v/oct is detected by shape and wired, so the drum tracks notes.
     const drum = def(
-      [port('trigger_in', 'gate', { edge: 'trigger' }), port('pitch_cv', 'cv')],
+      [
+        port('trigger_in', 'gate', { edge: 'trigger' }),
+        port('pitch_cv', 'cv'), // 1V/oct — no paramTarget
+        port('tune_cv', 'cv', { paramTarget: 'tune' }), // a per-knob CV — NOT a note pitch
+      ],
       [port('out', 'audio')],
     );
     expect(isClipEligible(drum)).toBe(true);
+    expect(resolveClipWiring(drum)).toEqual({
+      mode: 'monoPitchGate',
+      pitchInPort: 'pitch_cv',
+      gateInPort: 'trigger_in',
+    });
+  });
+
+  it('a per-knob pitch CV (paramTarget, e.g. pitch_amt_cv) is NOT treated as a v/oct → stays gate-only', () => {
+    const drum = def(
+      [port('trigger_in', 'gate', { edge: 'trigger' }), port('pitch_amt_cv', 'cv', { paramTarget: 'pitch_amt' })],
+      [port('out', 'audio')],
+    );
     expect(resolveClipWiring(drum)).toEqual({ mode: 'gateOnly', gateInPort: 'trigger_in' });
   });
 
@@ -223,6 +251,128 @@ describe('edge plans (pure)', () => {
 });
 
 // ================================================================
+// 1b. UNIFIED "Assign to channel N" wiring per module SHAPE
+// ================================================================
+//
+// The folded action does THREE things for channel N: (a) assign automation lane
+// N — ALWAYS (a synced write, modelled here by the unconditional `automation`
+// flag, not a graph edge); (b) clip-control from channel N if the module is a
+// clip target; (c) send-to-mixer channel N if it has a main audio out. The two
+// WIRING plans are the pure planner's union; a module that accepts neither just
+// gets the automation assignment.
+
+/** The pure WIRING edge set of "Assign to channel N" (channel 1-based here to
+ *  match the planner) — clip-control ∪ send-to-mixer, plus the always-on
+ *  automation flag. */
+function channelWiring(d: ConvenienceDef, channel: number) {
+  return {
+    automation: true, // unconditional in the Canvas handler
+    clip: planClipControl(d, channel), // null when not a clip target
+    mixer: planSendToMixer(d, channel), // null when no main audio out
+  };
+}
+
+describe('unified "Assign to channel N" wiring per module shape (pure)', () => {
+  it('a BOTH-directions module (clip target + audio out) → automation + clip + mixer', () => {
+    const d = def(
+      [port('poly', 'polyPitchGate')],
+      [port('outL', 'audio'), port('outR', 'audio')],
+      [['outL', 'outR']],
+    );
+    const w = channelWiring(d, 3);
+    expect(w.automation).toBe(true);
+    expect(w.clip).toEqual([
+      { fromPortId: 'pitch3', toPortId: 'poly', sourceType: 'polyPitchGate', targetType: 'polyPitchGate' },
+    ]);
+    expect(w.mixer).toEqual([
+      { fromPortId: 'outL', toPortId: 'ch3L', sourceType: 'audio', targetType: 'audio' },
+      { fromPortId: 'outR', toPortId: 'ch3R', sourceType: 'audio', targetType: 'audio' },
+    ]);
+  });
+
+  it('an AUDIO-ONLY-OUT module (no note input) → automation + mixer, NO clip', () => {
+    const d = def([port('in', 'audio')], [port('out', 'audio')]);
+    const w = channelWiring(d, 2);
+    expect(w.automation).toBe(true);
+    expect(w.clip).toBeNull();
+    expect(w.mixer).toEqual([
+      { fromPortId: 'out', toPortId: 'ch2L', sourceType: 'audio', targetType: 'audio' },
+      { fromPortId: 'out', toPortId: 'ch2R', sourceType: 'audio', targetType: 'audio' },
+    ]);
+  });
+
+  it('a CLIP-INPUT-ONLY module (instrument with no main audio out) → automation + clip, NO mixer', () => {
+    // A poly instrument whose only output is video (no audio bus to the mixer).
+    const d = def([port('poly', 'polyPitchGate')], [port('video_out', 'video')]);
+    const w = channelWiring(d, 1);
+    expect(w.automation).toBe(true);
+    expect(w.clip).toEqual([
+      { fromPortId: 'pitch1', toPortId: 'poly', sourceType: 'polyPitchGate', targetType: 'polyPitchGate' },
+    ]);
+    expect(w.mixer).toBeNull();
+  });
+
+  it('an INCOMPATIBLE module (no note input, no audio out) → automation ONLY', () => {
+    const d = def([port('cv_in', 'cv')], [port('cv_out', 'cv')]);
+    const w = channelWiring(d, 5);
+    expect(w.automation).toBe(true);
+    expect(w.clip).toBeNull();
+    expect(w.mixer).toBeNull();
+  });
+
+  it('a DRUM with a v/oct cv (pitch_cv) → clip PITCH→v/oct + gate, plus mixer', () => {
+    const drum = def(
+      [port('trigger_in', 'gate', { edge: 'trigger' }), port('pitch_cv', 'cv')],
+      [port('audio_l', 'audio'), port('audio_r', 'audio')],
+      [['audio_l', 'audio_r']],
+    );
+    const w = channelWiring(drum, 4);
+    expect(w.clip).toEqual([
+      { fromPortId: 'pitch4', toPortId: 'pitch_cv', sourceType: 'polyPitchGate', targetType: 'cv' },
+      { fromPortId: 'gate4', toPortId: 'trigger_in', sourceType: 'gate', targetType: 'gate' },
+    ]);
+    expect(w.mixer).toEqual([
+      { fromPortId: 'audio_l', toPortId: 'ch4L', sourceType: 'audio', targetType: 'audio' },
+      { fromPortId: 'audio_r', toPortId: 'ch4R', sourceType: 'audio', targetType: 'audio' },
+    ]);
+  });
+});
+
+// ================================================================
+// 1c. DRUM v/oct fix — live registry (kickdrum/snaredrum/tomtom vs clap)
+// ================================================================
+
+describe('drum pitch→v/oct fix — live registry', () => {
+  it('kickdrum / snaredrum / tomtom map the clip PITCH to their 1V/oct pitch_cv (monoPitchGate)', () => {
+    for (const type of ['kickdrum', 'snaredrum', 'tomtom']) {
+      const d = liveDef(type);
+      expect(d, `${type} not found in registry`).toBeDefined();
+      const wiring = resolveClipWiring(d!);
+      expect(wiring?.mode, `${type} must pitch-wire, not gate-only`).toBe('monoPitchGate');
+      expect(wiring?.pitchInPort, `${type} pitch → pitch_cv`).toBe('pitch_cv');
+      // The plan carries pitch{n} (polyPitchGate) → pitch_cv (cv; engine splitter).
+      const plan = planClipControl(d!, 2)!;
+      expect(plan).toContainEqual({
+        fromPortId: 'pitch2',
+        toPortId: 'pitch_cv',
+        sourceType: 'polyPitchGate',
+        targetType: 'cv',
+      });
+    }
+  });
+
+  it('clap (no v/oct input) stays gate-only — the clip only TRIGGERS it', () => {
+    const d = liveDef('clap');
+    expect(d, 'clap not found').toBeDefined();
+    expect(resolveClipWiring(d!)?.mode).toBe('gateOnly');
+    const plan = planClipControl(d!, 1)!;
+    expect(plan).toHaveLength(1);
+    expect(plan[0].fromPortId).toBe('gate1');
+    expect(plan[0].toPortId).toBe('trigger_in');
+  });
+});
+
+// ================================================================
 // 2. LIVE-REGISTRY membership — appears / absent (owner hard req)
 // ================================================================
 
@@ -306,7 +456,11 @@ describe('clip channel port map matches the live clipplayer def', () => {
 });
 
 describe('mixer channel port map matches the live mixmstrs def', () => {
-  it('mixerChannelPorts(n) resolve to real mixmstrs input ports for all 6 channels', () => {
+  it('MixMaster is 8 channels (phase-1 6→8)', () => {
+    expect(MIXER_CHANNEL_COUNT).toBe(8);
+  });
+
+  it('mixerChannelPorts(n) resolve to real mixmstrs input ports for all 8 channels', () => {
     const mx = liveDef('mixmstrs');
     expect(mx, 'mixmstrs not found').toBeDefined();
     const inIds = new Set(mx!.inputs.map((p) => p.id));

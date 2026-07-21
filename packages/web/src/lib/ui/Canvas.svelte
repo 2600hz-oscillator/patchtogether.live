@@ -24,7 +24,6 @@
   import {
     coerceAutoAssign,
     laneColorEff as autoLaneColorEff,
-    assignedLaneOfModule,
     scrubClipPlayerTransientData,
     CLIP_LANES as AUTO_CLIP_LANES,
     type ClipPlayerData as AutoClipPlayerData,
@@ -33,6 +32,7 @@
     listClipPlayers,
     assignAutomationLane,
     removeAutomationAssignment,
+    automationAssignmentFor,
     pruneAllAutoAssignDangling,
     repairDuplicateAutoAssign,
   } from '$lib/graph/automation-assign';
@@ -41,8 +41,6 @@
     isMixerEligible,
     planClipControl,
     planSendToMixer,
-    CLIP_CHANNEL_COUNT,
-    MIXER_CHANNEL_COUNT,
   } from '$lib/graph/patch-convenience';
   import { setControlColor, setNodeLocked } from '$lib/graph/mutate';
   import { snapPositionToGrid, findFreeRackSlot, RACK_UNIT, type RackRect } from '$lib/ui/rack-grid';
@@ -3465,104 +3463,87 @@
     return typeof (n?.data as { controlColor?: unknown } | undefined)?.controlColor === 'string';
   });
 
-  // MODULE-level clip automation (owner-locked model): the right-clicked
-  // MODULE can be assigned to one of a clip-player's 8 automation lanes.
-  // One entry per clip-player in the rack (usually one); each carries the 8
-  // lane colour swatches + THIS module's current lane on that player.
-  let ctxMenuAutomationTargets = $derived.by<
-    Array<{ nodeId: string; name: string; lanes: Array<{ lane: number; color: string }>; assignedLane: number | null }>
-  >(() => {
+  // WORKFLOW "Assign to channel N" (the three separate right-clicks folded into
+  // ONE channel-indexed action). The CANONICAL clip-player + mixmstrs (lowest
+  // node id — the deterministic tie-break the assignment reads use) are the
+  // targets: channel N means automation lane N + clip channel N (both on the
+  // canonical clip-player) + mixer channel N (on the canonical mixmstrs).
+  let ctxMenuCanonClipPlayer = $derived.by<string | null>(() => {
+    void snapshot;
+    return listClipPlayers(patch.nodes).sort()[0] ?? null;
+  });
+  let ctxMenuCanonMixer = $derived.by<string | null>(() => {
+    void snapshot;
+    const mid = ctxMenuNodeId;
+    const mixers = Object.entries(patch.nodes)
+      .filter(([nid, node]) => node?.type === 'mixmstrs' && nid !== mid)
+      .map(([nid]) => nid)
+      .sort();
+    return mixers[0] ?? null;
+  });
+
+  // The per-channel COLOURS (length = 8) of the canonical clip-player — each
+  // channel button is tinted by its colour, which IS the automation-lane colour
+  // (the per-channel clip colour). Empty ⇒ the whole assignment section is
+  // hidden (no clip-player in the rack to hold the automation assignment).
+  // Not offered for groups, clip-players themselves, or dock stubs.
+  let ctxMenuChannelColors = $derived.by<string[]>(() => {
     void snapshot;
     const mid = ctxMenuNodeId;
     if (!mid) return [];
     const n = patch.nodes[mid];
-    // Not for groups (their params live on child modules), clip-players
-    // themselves, or dock stubs of deleted nodes.
     if (!n || n.type === 'group' || n.type === 'clipplayer') return [];
-    const out: Array<{ nodeId: string; name: string; lanes: Array<{ lane: number; color: string }>; assignedLane: number | null }> = [];
-    for (const nid of listClipPlayers(patch.nodes).sort()) {
-      const data = patch.nodes[nid]?.data as AutoClipPlayerData | undefined;
-      const label = (patch.nodes[nid]?.data as { label?: unknown } | undefined)?.label;
-      out.push({
-        nodeId: nid,
-        name: typeof label === 'string' && label ? label : 'clip player',
-        lanes: Array.from({ length: AUTO_CLIP_LANES }, (_, lane) => ({
-          lane,
-          color: autoLaneColorEff(data, lane),
-        })),
-        assignedLane: assignedLaneOfModule(data, mid),
-      });
-    }
-    return out;
+    const player = ctxMenuCanonClipPlayer;
+    if (!player) return [];
+    const data = patch.nodes[player]?.data as AutoClipPlayerData | undefined;
+    return Array.from({ length: AUTO_CLIP_LANES }, (_, lane) => autoLaneColorEff(data, lane));
   });
-  let ctxMenuAutomationAssigned = $derived(
-    ctxMenuAutomationTargets.some((t) => t.assignedLane !== null),
-  );
-
-  // WORKFLOW patch-convenience: "Control from ▸ Clip N" appears when the
-  // right-clicked module is a playable INSTRUMENT (isClipEligible, computed
-  // procedurally from its port def — no allow-list) AND a clip-player exists.
-  let ctxMenuClipControlTargets = $derived.by<Array<{ nodeId: string; name: string; channels: number }>>(() => {
+  // THIS module's current automation lane (0-based) on ANY clip-player (lowest
+  // id wins), or null — drives the ✓ + "Remove automation assignment".
+  let ctxMenuAssignedChannel = $derived.by<number | null>(() => {
     void snapshot;
     const mid = ctxMenuNodeId;
-    if (!mid) return [];
-    const n = patch.nodes[mid];
-    if (!n || n.type === 'group') return [];
-    const def = defLookup(n.type);
-    if (!def || !isClipEligible(def)) return [];
-    const out: Array<{ nodeId: string; name: string; channels: number }> = [];
-    for (const nid of listClipPlayers(patch.nodes).sort()) {
-      const label = (patch.nodes[nid]?.data as { label?: unknown } | undefined)?.label;
-      out.push({
-        nodeId: nid,
-        name: typeof label === 'string' && label ? label : 'clip player',
-        channels: CLIP_CHANNEL_COUNT,
-      });
-    }
-    return out;
+    if (!mid) return null;
+    return automationAssignmentFor(patch.nodes, mid)?.lane ?? null;
   });
-
-  // WORKFLOW patch-convenience: "Send to ▸ MixMaster chN" appears when the
-  // module has a main audio out (isMixerEligible) AND a mixmstrs exists.
-  let ctxMenuMixerTargets = $derived.by<Array<{ nodeId: string; name: string; channels: number }>>(() => {
+  // Whether "Assign to channel N" will ALSO wire clip-control / send-to-mixer —
+  // computed procedurally from the port def (no allow-list). Gate the mixer part
+  // on a mixmstrs existing so the hint is truthful.
+  let ctxMenuClipEligible = $derived.by<boolean>(() => {
     void snapshot;
     const mid = ctxMenuNodeId;
-    if (!mid) return [];
-    const n = patch.nodes[mid];
-    if (!n || n.type === 'group') return [];
+    const n = mid ? patch.nodes[mid] : undefined;
+    if (!n || n.type === 'group') return false;
     const def = defLookup(n.type);
-    if (!def || !isMixerEligible(def)) return [];
-    const out: Array<{ nodeId: string; name: string; channels: number }> = [];
-    for (const [nid, node] of Object.entries(patch.nodes)) {
-      if (!node || node.type !== 'mixmstrs' || nid === mid) continue;
-      const label = (node.data as { label?: unknown } | undefined)?.label;
-      out.push({
-        nodeId: nid,
-        name: typeof label === 'string' && label ? label : 'mixmaster',
-        channels: MIXER_CHANNEL_COUNT,
-      });
-    }
-    return out.sort((a, b) => a.nodeId.localeCompare(b.nodeId));
+    return !!def && isClipEligible(def);
+  });
+  let ctxMenuMixerEligible = $derived.by<boolean>(() => {
+    void snapshot;
+    const mid = ctxMenuNodeId;
+    const n = mid ? patch.nodes[mid] : undefined;
+    if (!n || n.type === 'group' || !ctxMenuCanonMixer) return false;
+    const def = defLookup(n.type);
+    return !!def && isMixerEligible(def);
   });
 
-  /** Write a set of pre-planned convenience edges in ONE undo step. Each edge's
-   *  types are re-resolved from the live defs (honouring exposed ports); an
-   *  edge already present on a target port is replaced (occupancy). Unlike
+  /** Write a set of pre-planned, node-qualified convenience edges in ONE undo
+   *  step. Each edge carries its own source/target node ids (so clip-control and
+   *  send-to-mixer edges — different node pairs — batch into one transaction).
+   *  Types are re-resolved from the live defs (honouring exposed ports); an edge
+   *  already present on a target port is replaced (occupancy). Unlike
    *  commitCarriedEdge this does NOT auto-fire writeStereoSiblingEdge — the plan
    *  is already explicit (mono→mixer emits both L and R itself). */
   function commitConvenienceEdges(
-    edges: Array<{ fromPortId: string; toPortId: string }>,
-    sourceNodeId: string,
-    targetNodeId: string,
+    edges: Array<{ sourceNodeId: string; fromPortId: string; targetNodeId: string; toPortId: string }>,
   ): void {
-    const srcNode = patch.nodes[sourceNodeId];
-    const dstNode = patch.nodes[targetNodeId];
-    if (!srcNode || !dstNode) return;
-    const srcDef = defLookup(srcNode.type);
-    const dstDef = defLookup(dstNode.type);
-    if (!srcDef || !dstDef) return;
     const planned = edges
-      .map(({ fromPortId, toPortId }) => {
+      .map(({ sourceNodeId, fromPortId, targetNodeId, toPortId }): Edge | null => {
+        const srcNode = patch.nodes[sourceNodeId];
+        const dstNode = patch.nodes[targetNodeId];
+        if (!srcNode || !dstNode) return null;
+        const srcDef = defLookup(srcNode.type);
+        const dstDef = defLookup(dstNode.type);
+        if (!srcDef || !dstDef) return null;
         const srcExposed = resolveExposedPort(srcNode, fromPortId);
         const dstExposed = resolveExposedPort(dstNode, toPortId);
         const srcPort = srcDef.outputs.find((p) => p.id === fromPortId);
@@ -3570,15 +3551,15 @@
         const sourceType: CableType = srcExposed?.cableType ?? srcPort?.type ?? 'audio';
         const targetType: CableType = dstExposed?.cableType ?? dstPort?.type ?? sourceType;
         const id = `e-${sourceNodeId}-${fromPortId}-${targetNodeId}-${toPortId}`;
-        const edge: Edge = {
+        return {
           id,
           source: { nodeId: sourceNodeId, portId: fromPortId },
           target: { nodeId: targetNodeId, portId: toPortId },
           sourceType,
           targetType,
         };
-        return edge;
       })
+      .filter((edge): edge is Edge => edge !== null)
       .filter((edge) =>
         validateEdge(edge, Object.values(patch.nodes) as ModuleNode[], defLookup).ok,
       );
@@ -3600,30 +3581,53 @@
     }, LOCAL_ORIGIN);
   }
 
-  /** "Control from ▸ Clip N" — wire the clip channel's pitch/poly (+ gate) into
-   *  the right-clicked instrument, per its port shape. */
-  function commitControlFromClip(clipPlayerNodeId: string, channel: number): void {
-    const mid = ctxMenuNodeId;
-    if (!mid) return;
-    const node = patch.nodes[mid];
-    const def = node && defLookup(node.type);
-    if (!def) return;
-    const plan = planClipControl(def, channel + 1); // plan is 1-based
-    if (!plan) return;
-    commitConvenienceEdges(plan, clipPlayerNodeId, mid);
+  /** Qualify a per-plan edge list (fromPortId/toPortId) with a fixed
+   *  source→target node pair, for commitConvenienceEdges. */
+  function qualifyPlan(
+    plan: Array<{ fromPortId: string; toPortId: string }>,
+    sourceNodeId: string,
+    targetNodeId: string,
+  ): Array<{ sourceNodeId: string; fromPortId: string; targetNodeId: string; toPortId: string }> {
+    return plan.map(({ fromPortId, toPortId }) => ({ sourceNodeId, fromPortId, targetNodeId, toPortId }));
   }
 
-  /** "Send to ▸ MixMaster chN" — wire the module's main audio out into the mixer
-   *  channel (stereo L/R, or mono filling both). */
-  function commitSendToMixer(mixerNodeId: string, channel: number): void {
+  /** Unified "Assign to channel N" (0-based): (a) assign this module to
+   *  automation lane N — ALWAYS (its existing synced write / own undo step); (b)
+   *  if the module is a clip target, wire the canonical clip-player's channel N
+   *  into it; (c) if it has a main audio out and a mixmstrs is present, send its
+   *  out → the canonical mixer's channel N. Whatever the module can't accept is
+   *  skipped (graceful subset). The two wiring plans land in ONE undo step. */
+  function commitAssignToChannel(channel: number): void {
     const mid = ctxMenuNodeId;
     if (!mid) return;
     const node = patch.nodes[mid];
     const def = node && defLookup(node.type);
     if (!def) return;
-    const plan = planSendToMixer(def, channel + 1); // plan is 1-based
-    if (!plan) return;
-    commitConvenienceEdges(plan, mid, mixerNodeId);
+    const player = ctxMenuCanonClipPlayer;
+    const mixer = ctxMenuCanonMixer;
+    // (a) automation — always (needs a clip-player to hold the assignment).
+    if (player) assignAutomationLane(player, mid, channel);
+    // (b)+(c) clip-control (player → module) + send-to-mixer (module → mixer),
+    // combined into ONE convenience-edge transaction (plan is 1-based).
+    const wiring: Array<{ sourceNodeId: string; fromPortId: string; targetNodeId: string; toPortId: string }> = [];
+    if (player) {
+      const clip = planClipControl(def, channel + 1);
+      if (clip) wiring.push(...qualifyPlan(clip, player, mid));
+    }
+    if (mixer) {
+      const send = planSendToMixer(def, channel + 1);
+      if (send) wiring.push(...qualifyPlan(send, mid, mixer));
+    }
+    if (wiring.length) commitConvenienceEdges(wiring);
+  }
+
+  /** "Assign automation only ▸ N" (0-based) — assign ONLY automation lane N (no
+   *  clip/mixer wiring), so several modules can share one automation lane. */
+  function commitAssignAutomationOnly(channel: number): void {
+    const mid = ctxMenuNodeId;
+    if (!mid) return;
+    const player = ctxMenuCanonClipPlayer;
+    if (player) assignAutomationLane(player, mid, channel);
   }
 
   // MULTI-SURFACE JANITOR (control-surface discipline): when a module is
@@ -6683,15 +6687,13 @@
   hasCustomControlColor={ctxMenuHasCustomColor}
   onsetcontrolcolor={(hex) => ctxMenuNodeId && setControlColor(ctxMenuNodeId, hex)}
   onresetcontrolcolor={() => ctxMenuNodeId && setControlColor(ctxMenuNodeId, null)}
-  automationTargets={ctxMenuAutomationTargets}
-  automationAssigned={ctxMenuAutomationAssigned}
-  onassignautomationlane={(playerId, lane) =>
-    ctxMenuNodeId && assignAutomationLane(playerId, ctxMenuNodeId, lane)}
+  channelColors={ctxMenuChannelColors}
+  assignedChannel={ctxMenuAssignedChannel}
+  clipEligible={ctxMenuClipEligible}
+  mixerEligible={ctxMenuMixerEligible}
+  onassigntochannel={(channel) => commitAssignToChannel(channel)}
+  onassignautomationonly={(channel) => commitAssignAutomationOnly(channel)}
   onremoveautomationlane={() => ctxMenuNodeId && removeAutomationAssignment(ctxMenuNodeId)}
-  clipControlTargets={ctxMenuClipControlTargets}
-  oncontrolfromclip={(clipPlayerNodeId, channel) => commitControlFromClip(clipPlayerNodeId, channel)}
-  mixerTargets={ctxMenuMixerTargets}
-  onsendtomixer={(mixerNodeId, channel) => commitSendToMixer(mixerNodeId, channel)}
   dockable={ctxMenuDockable}
   docked={ctxMenuDocked}
   ondock={(zone) => ctxMenuNodeId && dockNode(ctxMenuNodeId, zone)}
