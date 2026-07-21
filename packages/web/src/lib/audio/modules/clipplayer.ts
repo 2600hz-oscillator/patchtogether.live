@@ -290,6 +290,13 @@ export const clipplayerDef: AudioModuleDef = {
       velSrc: ConstantSourceNode;
       stepIndex: number;
       nextStepTime: number;
+      // PLAY-EVERY loop counter: 0-based count of COMPLETED loops of the active
+      // clip since it was launched. Incremented at each wrap (alongside
+      // totalLoops), reset to 0 whenever the lane re-anchors from a fresh start
+      // (launch/switch, RST, transport start, peer-adopt). Deterministic from the
+      // shared transport, so every peer's counter advances in lock-step —
+      // notePlaysThisLoop reads it, so per-note play-every stays collab-safe.
+      loopCount: number;
       // LATCHED effective clock-rate index (into RATE_MULTS) for the step
       // duration — re-read from the active clip's `div` (or the lane rate) ONLY
       // at a loop boundary (stepIndex 0), so a mid-loop Clip-Div edit takes
@@ -334,6 +341,7 @@ export const clipplayerDef: AudioModuleDef = {
         velSrc,
         stepIndex: 0,
         nextStepTime: ctx.currentTime + 0.05,
+        loopCount: 0,
         divIndex: RATE_DEFAULT_INDEX,
         active: null,
         lastVOct: 0,
@@ -1123,6 +1131,7 @@ export const clipplayerDef: AudioModuleDef = {
       holdLaneAutomation(L, ln.active, slot, switchAt);
       ln.active = slot;
       ln.stepIndex = 0;
+      ln.loopCount = 0; // fresh clip launch/switch → play-every counts from 0
       ln.autoStarted = false; // re-entry → next step-0 glides (clip-switch seam)
       // A FUTURE `switchAt` anchors the lane's grid AT that boundary (the wrap
       // path always overrode nextStepTime to the same value right after; the
@@ -1178,6 +1187,7 @@ export const clipplayerDef: AudioModuleDef = {
         silenceLane(L, at);
         for (const v of ln.poly.voices) v.pitchSrc.offset.cancelScheduledValues(at);
         ln.stepIndex = 0;
+        ln.loopCount = 0; // RST re-anchors the shared origin → play-every restarts (all peers together)
         ln.autoStarted = false; // re-anchor → next step-0 glides (clip-switch seam)
         ln.nextStepTime = at + 0.01; // SAME instant for every lane → common origin
         // Drop the now-cancelled future entries so the playhead can't show them.
@@ -1342,8 +1352,12 @@ export const clipplayerDef: AudioModuleDef = {
       if (!clip || clip.kind !== 'note') return [];
       // Roll the per-note probability dice ONCE for this lane-step; the survivors
       // drive BOTH the audio scheduling below AND the print buffer (via the
-      // return value). A chord partially fires (per-note roll).
-      const firing = notesFiringAt(clip, idx);
+      // return value). A chord partially fires (per-note roll). PLAY EVERY gates
+      // FIRST (deterministic from the lane's loop count → collab-safe), so a note
+      // whose turn it isn't this loop is skipped before the dice — and, being
+      // absent from the firing set, is neither sounded NOR printed (printed ==
+      // sounded).
+      const firing = notesFiringAt(clip, idx, Math.random, ln.loopCount);
       const r = lanesFromFiring(firing);
       const octave = readParam('octave', 0);
       const gateFrac = readParam('gateLength', 0.9);
@@ -1589,6 +1603,7 @@ export const clipplayerDef: AudioModuleDef = {
           // Transport started → align all lanes to step 0 on the downbeat.
           for (let L = 0; L < LANES; L++) {
             lanes[L].stepIndex = 0;
+            lanes[L].loopCount = 0; // transport (re)start → play-every counts from 0
             lanes[L].autoStarted = false; // fresh start → step-0 glides
             lanes[L].nextStepTime = ctx.currentTime + 0.01;
           }
@@ -1761,6 +1776,7 @@ export const clipplayerDef: AudioModuleDef = {
               holdLaneAutomation(L, lanes[L].active, sv, null);
               lanes[L].active = sv;
               lanes[L].stepIndex = 0;
+              lanes[L].loopCount = 0; // peer-adopted switch → play-every counts from 0 (peers converge)
               lanes[L].autoStarted = false; // re-entry → next step-0 glides
               lanes[L].nextStepTime = ctx.currentTime + 0.01;
               if (sv === null) silenceLane(L, ctx.currentTime);
@@ -2100,6 +2116,7 @@ export const clipplayerDef: AudioModuleDef = {
             const nextStart = ln.nextStepTime + laneDur;
             if (nextIdx === 0) {
               totalLoops++;
+              ln.loopCount++; // a full loop of THIS clip completed → play-every counter
               // Boundary-apply queued launches — SESSION mode only (arrangement
               // is driven by the cursor above, not the manual queue). Pass the
               // boundary time so the automation hold seam pins AT the boundary
