@@ -261,6 +261,8 @@ describe('MIXMASTER meter feedback stream', () => {
       'mx:meter:4': 0.7,
       'mx:meter:5': 0.85,
       'mx:meter:6': 1.0,
+      'mx:meter:7': 0.35,
+      'mx:meter:8': 0.6,
       'mx:meter:master': 0.5,
     };
     const { host } = makeHost({ readMeterAmp: (k) => amps[k] });
@@ -276,7 +278,7 @@ describe('MIXMASTER meter feedback stream', () => {
     auto.stop();
 
     const meters = auto.allocations.filter((a) => a.role === 'meter');
-    expect(meters.length).toBe(7); // master + 6 channels
+    expect(meters.length).toBe(9); // master + 8 channels
     const ccs = fake.sentCtrl.map(asCc).filter((x): x is { cc: number; value: number } => !!x);
     const byNum = new Map(ccs.map((c) => [c.cc, c.value]));
 

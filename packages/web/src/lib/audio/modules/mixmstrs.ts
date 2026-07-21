@@ -1,13 +1,13 @@
 // packages/web/src/lib/audio/modules/mixmstrs.ts
 //
-// MIXMSTRS — 6-channel stereo mixer with EQ, compressor, two stereo aux sends,
+// MIXMSTRS — 8-channel stereo mixer with EQ, compressor, two stereo aux sends,
 // two stereo returns. Multiple instances are allowed (submixes / parallel
 // master buses); each instance sums its inputs to the destination additively.
 //
-// 16 audio inputs (6 ch × stereo + 2 returns × stereo) + 12 worklet audio
+// 20 audio inputs (8 ch × stereo + 2 returns × stereo) + 14 worklet audio
 // outputs: 6 patchable module ports (master L/R + send1 L/R + send2 L/R) plus
-// 6 internal POST-FADER per-channel level taps (NOT module ports) feeding the
-// VU read('levels'). 61 AudioParams (55 original + 6 per-channel `comp`
+// 8 internal POST-FADER per-channel level taps (NOT module ports) feeding the
+// VU read('levels'). 81 AudioParams (73 original + 8 per-channel `comp`
 // macro knobs).
 //
 // Per-channel `comp` macro (added in feat/audio-fidelity-mixmstrs-comp-swolevco):
@@ -35,11 +35,11 @@
 //   macro wins (it overwrites on every setParam call).
 //
 // Inputs:
-//   ch{1..6}L / ch{1..6}R (audio): six stereo channel inputs (6 × stereo = 12 ports).
+//   ch{1..8}L / ch{1..8}R (audio): eight stereo channel inputs (8 × stereo = 16 ports).
 //   ret1L / ret1R / ret2L / ret2R (audio): two stereo aux returns.
 //   ch{N}_{volume,low,mid,high,thresh,ratio,compEnable,send1,send2} (cv, linear or discrete,
 //     paramTarget=…): per-channel CV inputs for every param. Linear unless the param is discrete.
-//   comp{1..6} (cv, linear, paramTarget=…): per-channel compressor macro CV.
+//   comp{1..8} (cv, linear, paramTarget=…): per-channel compressor macro CV.
 //   master_volume (cv, linear, paramTarget=master_volume): displaces the master volume.
 //
 // Outputs:
@@ -47,9 +47,9 @@
 //   send1L / send1R (audio): stereo aux-send 1 output.
 //   send2L / send2R (audio): stereo aux-send 2 output.
 //
-// Params (61 total — built programmatically, see buildParams() below):
+// Params (81 total — built programmatically, see buildParams() below):
 //   master_volume (linear 0..1, default 0.8): bus output gain.
-//   per-channel × 6: volume / low / mid / high (linear ±12 dB) /
+//   per-channel × 8: volume / low / mid / high (linear ±12 dB) /
 //     thresh (-36..0 dB) / ratio (1..10) / compEnable (discrete) /
 //     comp (linear 0..1 macro) / send1 / send2 (linear 0..1).
 
@@ -63,9 +63,9 @@ import workletUrl from '@patchtogether.live/dsp/dist/mixmstrs.worklet.js?url';
 
 const PARAM_PREFIX = '/MIXMSTRS';
 
-// Channel count — single source of truth for the 6-channel layout. The Faust
+// Channel count — single source of truth for the 8-channel layout. The Faust
 // process() declares channels in this order, then the two stereo returns.
-export const MIXMSTRS_CHANNELS = [1, 2, 3, 4, 5, 6] as const;
+export const MIXMSTRS_CHANNELS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
 const NUM_CHANNELS = MIXMSTRS_CHANNELS.length;
 
 // ---------------- Comp macro mapping ----------------
@@ -110,8 +110,8 @@ export function rmsLevel(buf: Float32Array): number {
   return Math.sqrt(s / buf.length);
 }
 
-// Build the 61-param schema programmatically — 9 controls + 1 comp macro per
-// channel × 6 channels + 1 master.
+// Build the 81-param schema programmatically — 9 controls + 1 comp macro per
+// channel × 8 channels + 1 master.
 function buildParams(): readonly ParamDef[] {
   const params: ParamDef[] = [];
   for (const ch of MIXMSTRS_CHANNELS) {
@@ -135,7 +135,7 @@ function buildParams(): readonly ParamDef[] {
 const PARAMS = buildParams();
 
 // Audio input port ids in the exact order the Faust process() declares them:
-// 12 channel ports (ch1L..ch6R) then the 4 return ports.
+// 16 channel ports (ch1L..ch8R) then the 4 return ports.
 const AUDIO_IN_PORTS: readonly string[] = [
   ...MIXMSTRS_CHANNELS.flatMap((ch) => [`ch${ch}L`, `ch${ch}R`]),
   'ret1L', 'ret1R', 'ret2L', 'ret2R',
@@ -144,7 +144,7 @@ const AUDIO_IN_PORTS: readonly string[] = [
 // Comp-macro ids, derived from the channel list so they never drift apart.
 const COMP_MACRO_IDS: readonly string[] = MIXMSTRS_CHANNELS.map((ch) => `comp${ch}`);
 
-// Inputs: 16 audio + 61 paramTarget CV inputs (55 originals + 6 comp macros).
+// Inputs: 20 audio + 81 paramTarget CV inputs (73 originals + 8 comp macros).
 //
 // Every CV input gets a `cvScale: linear` hint per
 // .myrobots/plans/cv-range-standard.md so an LFO at ±1 sweeps the param's
@@ -227,10 +227,10 @@ export const mixmstrsDef: AudioModuleDef = {
     inputs.master_volume = 'CV that offsets the MASTER volume — modulate the overall output level of the whole mix.';
     return {
       explanation:
-        "A 6-channel stereo mixer with a channel strip on every input — the master bus of a patch. Each of the six channels takes a stereo pair, runs it through a 3-band EQ (low/mid/high, ±12 dB), an optional compressor, and a volume fader, then sums into the stereo MASTER output. Two stereo AUX SENDS tap each channel (per-channel SEND 1 / SEND 2 amounts) out to send1L/R and send2L/R — patch an external reverb/delay off a send and bring its wet signal back into the matching stereo RETURN, which sums into the master. The compressor is exposed two ways: manual THRESH / RATIO / ENABLE per channel, OR a single COMP macro knob that collapses all three into one 'amount' (0 = bypass, up to a moderate −20 dB / 4:1 at full). EVERY parameter also has a CV input (so an LFO can ride a fader, EQ band, or send), and the card shows a post-fader VU meter per channel. Multiple MIXMSTRS instances are allowed for submixes / parallel buses — each sums additively into its destination.",
+        "An 8-channel stereo mixer with a channel strip on every input — the master bus of a patch. Each of the eight channels takes a stereo pair, runs it through a 3-band EQ (low/mid/high, ±12 dB), an optional compressor, and a volume fader, then sums into the stereo MASTER output. Two stereo AUX SENDS tap each channel (per-channel SEND 1 / SEND 2 amounts) out to send1L/R and send2L/R — patch an external reverb/delay off a send and bring its wet signal back into the matching stereo RETURN, which sums into the master. The compressor is exposed two ways: manual THRESH / RATIO / ENABLE per channel, OR a single COMP macro knob that collapses all three into one 'amount' (0 = bypass, up to a moderate −20 dB / 4:1 at full). EVERY parameter also has a CV input (so an LFO can ride a fader, EQ band, or send), and the card shows a post-fader VU meter per channel. Multiple MIXMSTRS instances are allowed for submixes / parallel buses — each sums additively into its destination.",
       inputs,
       outputs: {
-        masterL: 'MASTER bus left output — all six channels (post EQ/comp/fader) plus the two aux returns, summed. The main stereo mix out.',
+        masterL: 'MASTER bus left output — all eight channels (post EQ/comp/fader) plus the two aux returns, summed. The main stereo mix out.',
         masterR: 'MASTER bus right output, the partner of masterL.',
         send1L: 'AUX SEND 1 left output — the sum of every channel scaled by its SEND 1 amount. Patch it into an external effect, then return the wet to ret1L/R.',
         send1R: 'AUX SEND 1 right output, the partner of send1L.',
@@ -247,9 +247,9 @@ export const mixmstrsDef: AudioModuleDef = {
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const f = await instantiateFaustModule(ctx, { name: 'mixmstrs', wasmUrl, metaUrl, workletUrl });
 
-    // 16 mono audio inputs into the Faust worklet (channel-merger of 16).
-    // The Faust process() takes 16 args in the same order our inputs declare.
-    const NUM_AUDIO_IN = AUDIO_IN_PORTS.length; // 16
+    // 20 mono audio inputs into the Faust worklet (channel-merger of 20).
+    // The Faust process() takes 20 args in the same order our inputs declare.
+    const NUM_AUDIO_IN = AUDIO_IN_PORTS.length; // 20
     const merger = ctx.createChannelMerger(NUM_AUDIO_IN);
     merger.connect(f);
     // Silence keeps each channel active even with nothing patched in.
@@ -262,11 +262,11 @@ export const mixmstrsDef: AudioModuleDef = {
       silenceSources.push(sil);
     }
 
-    // Output splitter: 12 channels. 0..5 are the patchable module outputs
-    // (masterL/R, send1L/R, send2L/R); 6..11 are the per-channel POST-FADER
+    // Output splitter: 14 channels. 0..5 are the patchable module outputs
+    // (masterL/R, send1L/R, send2L/R); 6..13 are the per-channel POST-FADER
     // meter taps the DSP now emits (post EQ → comp → fader). The meter taps
     // are NOT exposed as module ports — they only feed the VU analysers below.
-    const NUM_OUT = 6 + NUM_CHANNELS; // 12
+    const NUM_OUT = 6 + NUM_CHANNELS; // 14
     const splitter = ctx.createChannelSplitter(NUM_OUT);
     f.connect(splitter);
 
@@ -287,7 +287,7 @@ export const mixmstrsDef: AudioModuleDef = {
     }
 
     function applyCompMacro(macroId: string, value: number) {
-      // macroId is one of 'comp1'..'comp6'. The N is the channel number.
+      // macroId is one of 'comp1'..'comp8'. The N is the channel number.
       const ch = macroId.slice('comp'.length);
       const m = mapCompMacro(value);
       params.get(`${PARAM_PREFIX}/ch${ch}_compEnable`)?.setValueAtTime(m.enable, ctx.currentTime);
@@ -295,7 +295,7 @@ export const mixmstrsDef: AudioModuleDef = {
       params.get(`${PARAM_PREFIX}/ch${ch}_ratio`)?.setValueAtTime(m.ratio, ctx.currentTime);
     }
 
-    // ── Per-channel POST-FADER meter taps — read('levels') → number[6] ──
+    // ── Per-channel POST-FADER meter taps — read('levels') → number[8] ──
     //
     // ACCURATE VU for the Electra MIXMASTER meter row (and any on-card meter):
     // the Faust DSP emits one mono POST-FADER level per channel (post EQ →
@@ -307,7 +307,7 @@ export const mixmstrsDef: AudioModuleDef = {
     // The analysers are passive sinks — never connected onward — so they add no
     // audible signal and can't alter the mix.
     //
-    // splitter channels 6..11 = ch1..ch6 post-fader level taps.
+    // splitter channels 6..13 = ch1..ch8 post-fader level taps.
     const meterAnalysers: AnalyserNode[] = [];
     const meterBufs: Float32Array<ArrayBuffer>[] = [];
     const METER_TAP_OFFSET = 6; // outputs 0..5 are master+sends; 6..11 are taps
@@ -330,8 +330,8 @@ export const mixmstrsDef: AudioModuleDef = {
       return out;
     }
 
-    // Build inputs map: 16 audio at fixed indices, 61 CV-targets per param
-    // (55 Faust-backed + 6 comp macros).
+    // Build inputs map: 20 audio at fixed indices, 81 CV-targets per param
+    // (73 Faust-backed + 8 comp macros).
     //
     // For comp macros we still need a backing AudioParam so the engine's
     // CV → AudioParam tap analyser works (motorized fader feedback). We
@@ -397,7 +397,7 @@ export const mixmstrsDef: AudioModuleDef = {
       },
       read(key) {
         // Per-channel POST-FADER VU for the Electra MIXMASTER meter row + any
-        // on-card meters. Returns number[6] of linear RMS levels (~0..1), one
+        // on-card meters. Returns number[8] of linear RMS levels (~0..1), one
         // per channel, read off the DSP's post-fader taps. See
         // readChannelLevels() above.
         if (key === 'levels') return readChannelLevels();

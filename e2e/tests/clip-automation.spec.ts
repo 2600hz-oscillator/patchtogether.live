@@ -289,15 +289,18 @@ function vcaBase(page: Page, vcaId: string) {
 }
 
 /** Assign MODULE `vcaId` to automation LANE `lane` via the real MODULE context
- *  menu: right-click the module CARD → "Assign to automation lane" → lane N. */
+ *  menu: right-click the module CARD → "Assign automation only" → channel N.
+ *  ("Assign automation only" assigns the lane WITHOUT the clip/mixer auto-wiring
+ *  the unified "Assign to channel" also does — this spec tests automation in
+ *  isolation.) */
 async function assignModuleViaMenu(page: Page, vcaId: string, lane: number): Promise<void> {
   const node = page.locator(`.svelte-flow__node[data-id="${vcaId}"]`);
   // Right-click the card's header area (top-left corner — clear of controls).
   await node.click({ button: 'right', position: { x: 8, y: 8 } });
-  const trigger = page.getByTestId(`ctx-automation-${CP}`);
+  const trigger = page.getByTestId('ctx-assign-auto-only');
   await expect(trigger).toBeVisible();
-  await trigger.click(); // expand the lane panel
-  await page.getByTestId(`ctx-automation-${CP}-lane-${lane}`).click();
+  await trigger.click(); // expand the channel panel
+  await page.getByTestId(`ctx-assign-auto-only-${lane}`).click();
   await expect(trigger).toBeHidden();
 }
 

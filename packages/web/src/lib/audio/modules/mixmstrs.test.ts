@@ -4,7 +4,7 @@
 //   - the comp macro mapping (added in feat/audio-fidelity-mixmstrs-comp-swolevco),
 //   - the per-channel POST-FADER VU: rmsLevel() + read('levels') (added with the
 //     Electra MIXMASTER meter view — accurate post-fader Faust taps),
-//   - the 6-channel expansion (ch5/ch6 + 6 VU taps).
+//   - the 8-channel expansion (ch7/ch8 + 8 VU taps).
 // Spectral / RMS behavior of the actual Faust DSP is covered under
 // art/scenarios/mixmstrs/.
 
@@ -87,9 +87,9 @@ describe('rmsLevel: pure RMS over a sample window', () => {
 
 // ─────────────────────────────────────────────────────────────────────────
 // read('levels') — drives mixmstrsDef.factory() against a mock Web Audio env.
-// Each of the 6 post-fader meter AnalyserNodes (created in channel order) is
+// Each of the 8 post-fader meter AnalyserNodes (created in channel order) is
 // fed a KNOWN constant buffer, so read('levels') returns a deterministic,
-// ordered number[6] we can assert on (ordering + scale).
+// ordered number[8] we can assert on (ordering + scale).
 // ─────────────────────────────────────────────────────────────────────────
 
 interface FakeAnalyser {
@@ -128,7 +128,7 @@ function makeMockCtx(levels: number[]): unknown {
       disconnect: vi.fn(),
     }),
     createAnalyser: (): FakeAnalyser => {
-      // The factory creates the 6 meter analysers in ch0..ch5 order — tag each
+      // The factory creates the 8 meter analysers in ch0..ch7 order — tag each
       // with its creation index so its buffer carries that channel's level.
       const ch = analyserCount++;
       return {
@@ -162,49 +162,56 @@ describe("mixmstrs factory: read('levels') — post-fader per-channel VU", () =>
   });
   afterEach(() => vi.clearAllMocks());
 
-  it('returns number[6] of the per-channel post-fader RMS levels', async () => {
-    const ctx = makeMockCtx([0.1, 0.2, 0.3, 0.4, 0.5, 0.6]);
+  it('returns number[8] of the per-channel post-fader RMS levels', async () => {
+    const ctx = makeMockCtx([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]);
     const handle = await mixmstrsDef.factory(ctx as never, makeMixNode() as never);
     const levels = handle.read?.('levels') as number[];
     expect(Array.isArray(levels)).toBe(true);
-    expect(levels).toHaveLength(6);
+    expect(levels).toHaveLength(8);
     expect(levels[0]).toBeCloseTo(0.1, 6);
     expect(levels[1]).toBeCloseTo(0.2, 6);
     expect(levels[2]).toBeCloseTo(0.3, 6);
     expect(levels[3]).toBeCloseTo(0.4, 6);
     expect(levels[4]).toBeCloseTo(0.5, 6);
     expect(levels[5]).toBeCloseTo(0.6, 6);
+    expect(levels[6]).toBeCloseTo(0.7, 6);
+    expect(levels[7]).toBeCloseTo(0.8, 6);
     handle.dispose?.();
   });
 
   it('preserves channel ORDER (louder channel → higher level at its index)', async () => {
-    // ch5 loudest, ch1 quietest — the returned array must keep that ordering.
-    const ctx = makeMockCtx([0.05, 0.5, 0.9, 0.2, 0.95, 0.1]);
+    // ch7 loudest, ch1 quietest — the returned array must keep that ordering.
+    // Values (ch1..ch8): descending chain is ch7 > ch5 > ch3 > ch2 > ch8 > ch4 > ch6 > ch1.
+    const ctx = makeMockCtx([0.05, 0.5, 0.9, 0.2, 0.95, 0.1, 0.99, 0.3]);
     const handle = await mixmstrsDef.factory(ctx as never, makeMixNode() as never);
     const levels = handle.read?.('levels') as number[];
+    expect(levels[6]).toBeGreaterThan(levels[4]!); // ch7 > ch5
     expect(levels[4]).toBeGreaterThan(levels[2]!); // ch5 > ch3
     expect(levels[2]).toBeGreaterThan(levels[1]!); // ch3 > ch2
-    expect(levels[1]).toBeGreaterThan(levels[3]!); // ch2 > ch4
+    expect(levels[1]).toBeGreaterThan(levels[7]!); // ch2 > ch8
+    expect(levels[7]).toBeGreaterThan(levels[3]!); // ch8 > ch4
     expect(levels[3]).toBeGreaterThan(levels[5]!); // ch4 > ch6
     expect(levels[5]).toBeGreaterThan(levels[0]!); // ch6 > ch1
     handle.dispose?.();
   });
 
   it('a silent channel reads 0 (no floor / no leakage from neighbors)', async () => {
-    const ctx = makeMockCtx([0, 0.5, 0, 0.5, 0, 0.5]);
+    const ctx = makeMockCtx([0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5]);
     const handle = await mixmstrsDef.factory(ctx as never, makeMixNode() as never);
     const levels = handle.read?.('levels') as number[];
     expect(levels[0]).toBe(0);
     expect(levels[2]).toBe(0);
     expect(levels[4]).toBe(0);
+    expect(levels[6]).toBe(0);
     expect(levels[1]).toBeCloseTo(0.5, 6);
     expect(levels[3]).toBeCloseTo(0.5, 6);
     expect(levels[5]).toBeCloseTo(0.5, 6);
+    expect(levels[7]).toBeCloseTo(0.5, 6);
     handle.dispose?.();
   });
 
-  it('does NOT expose the 6 meter taps as patchable module ports (still 6 outputs)', async () => {
-    const ctx = makeMockCtx([0, 0, 0, 0, 0, 0]);
+  it('does NOT expose the 8 meter taps as patchable module ports (still 6 outputs)', async () => {
+    const ctx = makeMockCtx([0, 0, 0, 0, 0, 0, 0, 0]);
     const handle = await mixmstrsDef.factory(ctx as never, makeMixNode() as never);
     const outs = handle.outputs as Map<string, unknown>;
     expect([...outs.keys()].sort()).toEqual(
@@ -214,7 +221,7 @@ describe("mixmstrs factory: read('levels') — post-fader per-channel VU", () =>
   });
 
   it("read() of an unknown key is undefined", async () => {
-    const ctx = makeMockCtx([0, 0, 0, 0, 0, 0]);
+    const ctx = makeMockCtx([0, 0, 0, 0, 0, 0, 0, 0]);
     const handle = await mixmstrsDef.factory(ctx as never, makeMixNode() as never);
     expect(handle.read?.('nope')).toBeUndefined();
     handle.dispose?.();

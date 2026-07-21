@@ -79,38 +79,32 @@
     onsetcontrolcolor?: (hex: string) => void;
     /** Clear the module's control colour → revert to the auto default. */
     onresetcontrolcolor?: () => void;
-    /** MODULE-level clip automation (owner-locked model): the clip-players
-     *  this MODULE can be lane-assigned on — "Assign to automation lane ▸
-     *  1–8" with lane-colour swatches. `assignedLane` = THIS module's current
-     *  lane on that player (✓ in the flyout). Empty/omitted → section hidden
-     *  (no clip-player in the rack, or the node isn't assignable). */
-    automationTargets?: Array<{
-      nodeId: string;
-      name: string;
-      lanes: Array<{ lane: number; color: string }>;
-      assignedLane: number | null;
-    }>;
-    /** True when THIS module is assigned to some lane → also offer
-     *  "Remove automation assignment" (assigning elsewhere MOVES it — one
-     *  lane per module). */
-    automationAssigned?: boolean;
-    /** Assign this MODULE to (clipPlayerNodeId, lane). */
-    onassignautomationlane?: (clipPlayerNodeId: string, lane: number) => void;
-    /** Remove this module's assignment from whichever player holds it. */
+    /** WORKFLOW "Assign to channel N" (the three separate right-clicks —
+     *  automation lane / control-from-clip / send-to-mixer — folded into ONE
+     *  channel-indexed action). The per-channel COLOURS (length = channel count)
+     *  of the canonical clip-player; each channel button is tinted by its colour,
+     *  which IS the automation-lane colour (the per-channel clip colour).
+     *  Empty/omitted → the whole assignment section is hidden (no clip-player in
+     *  the rack to hold the automation assignment). */
+    channelColors?: string[];
+    /** THIS module's CURRENT automation lane (0-based) or null — drives the ✓ on
+     *  the assigned channel + gates "Remove automation assignment". One lane per
+     *  module: picking another channel MOVES the assignment. */
+    assignedChannel?: number | null;
+    /** Whether "Assign to channel N" will ALSO wire clip-control (the module is a
+     *  playable instrument — pitch+gate / poly / gate-only). For the action hint. */
+    clipEligible?: boolean;
+    /** Whether "Assign to channel N" will ALSO send-to-mixer (the module has a
+     *  main audio out AND a mixmstrs is present). For the action hint. */
+    mixerEligible?: boolean;
+    /** "Assign to channel N" (0-based): automation lane N (ALWAYS) + control-from-
+     *  clip N (if clipEligible) + send-to-mixer N (if mixerEligible), one gesture. */
+    onassigntochannel?: (channel: number) => void;
+    /** "Assign automation only ▸ N": assign ONLY automation lane N — no clip/mixer
+     *  wiring, so several modules can share one automation lane. */
+    onassignautomationonly?: (channel: number) => void;
+    /** Remove this module's automation assignment from whichever player holds it. */
     onremoveautomationlane?: () => void;
-    /** WORKFLOW-mode "Control from ▸ Clip N": the clip-players this module can
-     *  be PLAYED from (it is an instrument — pitch+gate / poly / gate-only).
-     *  Each carries the channel count to offer. Empty/omitted → section hidden
-     *  (Canvas gates on isClipEligible + a clip-player existing). */
-    clipControlTargets?: Array<{ nodeId: string; name: string; channels: number }>;
-    /** Assign clip-control: wire (clipPlayerNodeId, channel 0-based) → this module. */
-    oncontrolfromclip?: (clipPlayerNodeId: string, channel: number) => void;
-    /** WORKFLOW-mode "Send to ▸ MixMaster chN": the mixers this module's audio
-     *  out can be sent to. Empty/omitted → section hidden (Canvas gates on
-     *  isMixerEligible + a mixmstrs existing). */
-    mixerTargets?: Array<{ nodeId: string; name: string; channels: number }>;
-    /** Send-to-mixer: wire this module's main audio out → (mixerNodeId, channel 0-based). */
-    onsendtomixer?: (mixerNodeId: string, channel: number) => void;
     /** DOCKING P2.5a — "Dock to …" entries (allowlisted types, workflow
      *  racks only; Canvas gates and this just renders). */
     dockable?: boolean;
@@ -150,14 +144,13 @@
     hasCustomControlColor = false,
     onsetcontrolcolor,
     onresetcontrolcolor,
-    automationTargets = [],
-    automationAssigned = false,
-    onassignautomationlane,
+    channelColors = [],
+    assignedChannel = null,
+    clipEligible = false,
+    mixerEligible = false,
+    onassigntochannel,
+    onassignautomationonly,
     onremoveautomationlane,
-    clipControlTargets = [],
-    oncontrolfromclip,
-    mixerTargets = [],
-    onsendtomixer,
     dockable = false,
     docked = false,
     ondock,
@@ -176,22 +169,29 @@
 
   // ── Control-colour submenu state ──
   let colorSubmenuOpen = $state(false);
-  // ── Automation-lane submenu state (module-level assignment) ──
-  let autoSubmenuOpen = $state<string | null>(null); // the open player's node id
-  // ── Workflow patch-convenience submenu state ──
-  let clipSubmenuOpen = $state<string | null>(null); // the open clip-player's node id
-  let mixerSubmenuOpen = $state<string | null>(null); // the open mixer's node id
+  // ── "Assign to channel" / "Assign automation only" submenu state ──
+  let channelSubmenuOpen = $state(false);
+  let autoOnlySubmenuOpen = $state(false);
   // Collapse the submenus whenever the whole menu closes, so the NEXT open
   // starts fresh (the component instance is reused via bind:open — without this
   // reset a second open would TOGGLE the still-open submenu shut).
   $effect(() => {
     if (!open) {
       colorSubmenuOpen = false;
-      autoSubmenuOpen = null;
-      clipSubmenuOpen = null;
-      mixerSubmenuOpen = null;
+      channelSubmenuOpen = false;
+      autoOnlySubmenuOpen = false;
     }
   });
+  // What "Assign to channel N" wires beyond the always-on automation lane.
+  let channelActionHint = $derived(
+    clipEligible && mixerEligible
+      ? 'also wires clip → module + module → mixer'
+      : clipEligible
+        ? 'also wires clip → module'
+        : mixerEligible
+          ? 'also wires module → mixer'
+          : 'automation only (module accepts no clip / mixer wiring)',
+  );
   // The custom <input type=color> value, seeded from the current colour. Kept
   // as a `#rrggbb` string (the native input's format).
   let customHex = $state('#FFFFFF');
@@ -216,25 +216,20 @@
     onclose();
   }
 
-  function toggleAutoSubmenu(playerId: string) {
-    autoSubmenuOpen = autoSubmenuOpen === playerId ? null : playerId;
+  function toggleChannelSubmenu() {
+    channelSubmenuOpen = !channelSubmenuOpen;
+    if (channelSubmenuOpen) autoOnlySubmenuOpen = false;
   }
-  function toggleClipSubmenu(playerId: string) {
-    clipSubmenuOpen = clipSubmenuOpen === playerId ? null : playerId;
+  function toggleAutoOnlySubmenu() {
+    autoOnlySubmenuOpen = !autoOnlySubmenuOpen;
+    if (autoOnlySubmenuOpen) channelSubmenuOpen = false;
   }
-  function pickControlFromClip(playerId: string, channel: number) {
-    oncontrolfromclip?.(playerId, channel);
+  function pickAssignToChannel(channel: number) {
+    onassigntochannel?.(channel);
     onclose();
   }
-  function toggleMixerSubmenu(mixerId: string) {
-    mixerSubmenuOpen = mixerSubmenuOpen === mixerId ? null : mixerId;
-  }
-  function pickSendToMixer(mixerId: string, channel: number) {
-    onsendtomixer?.(mixerId, channel);
-    onclose();
-  }
-  function pickAssignAutomationLane(playerId: string, lane: number) {
-    onassignautomationlane?.(playerId, lane);
+  function pickAssignAutomationOnly(channel: number) {
+    onassignautomationonly?.(channel);
     onclose();
   }
   function pickRemoveAutomationLane() {
@@ -468,50 +463,83 @@
           </div>
         {/if}
       {/if}
-      {#if automationTargets.length > 0}
-        <!-- MODULE-level clip automation (owner-locked model): assign this
-             MODULE to ONE of a clip-player's 8 automation lanes. The assigned
-             card gets a thin border in the lane's colour; while that lane is
-             ARMED, moving any control on this module (screen / MIDI / Electra
-             — never CV) records into the lane's playing clip. One lane per
-             module: picking another lane MOVES the assignment. -->
-        {#each automationTargets as a (a.nodeId)}
-          <button
-            class="ctx-item ctx-has-submenu"
-            onclick={() => toggleAutoSubmenu(a.nodeId)}
-            role="menuitem"
-            aria-haspopup="true"
-            aria-expanded={autoSubmenuOpen === a.nodeId}
-            data-testid={`ctx-automation-${a.nodeId}`}
+      {#if channelColors.length > 0}
+        <!-- WORKFLOW "Assign to channel N" — the folded-together action. ONE
+             right-click wires channel N end-to-end: (a) assign this MODULE to
+             automation lane N (ALWAYS — automation is universal); (b) if the
+             module is a playable instrument, wire clip N → it; (c) if it has a
+             main audio out, send it → mixer channel N. Whatever the module can't
+             accept is simply skipped (graceful subset). The channel colour IS
+             the automation-lane colour (the per-channel clip colour). One lane
+             per module: picking another channel MOVES the assignment. -->
+        <button
+          class="ctx-item ctx-has-submenu"
+          onclick={toggleChannelSubmenu}
+          role="menuitem"
+          aria-haspopup="true"
+          aria-expanded={channelSubmenuOpen}
+          title={channelActionHint}
+          data-testid="ctx-assign-channel"
+        >
+          Assign to channel
+          <span class="ctx-caret" aria-hidden="true">{channelSubmenuOpen ? '▾' : '▸'}</span>
+        </button>
+        {#if channelSubmenuOpen}
+          <div
+            class="ctx-lane-panel"
+            data-testid="ctx-assign-channel-panel"
+            role="group"
+            aria-label="Assign to channel"
           >
-            {automationTargets.length > 1
-              ? `Assign to automation lane (${a.name})`
-              : 'Assign to automation lane'}
-            <span class="ctx-caret" aria-hidden="true">{autoSubmenuOpen === a.nodeId ? '▾' : '▸'}</span>
-          </button>
-          {#if autoSubmenuOpen === a.nodeId}
-            <div
-              class="ctx-lane-panel"
-              data-testid={`ctx-automation-${a.nodeId}-lanes`}
-              role="group"
-              aria-label="Automation lanes"
-            >
-              {#each a.lanes as l (l.lane)}
-                <button
-                  type="button"
-                  class="ctx-lane-btn"
-                  class:assigned={a.assignedLane === l.lane}
-                  style:--lane-color={l.color}
-                  title={`Lane ${l.lane + 1}${a.assignedLane === l.lane ? ' (assigned)' : ''}`}
-                  aria-label={`assign to automation lane ${l.lane + 1}`}
-                  data-testid={`ctx-automation-${a.nodeId}-lane-${l.lane}`}
-                  onclick={() => pickAssignAutomationLane(a.nodeId, l.lane)}
-                >{l.lane + 1}{a.assignedLane === l.lane ? ' ✓' : ''}</button>
-              {/each}
-            </div>
-          {/if}
-        {/each}
-        {#if automationAssigned}
+            {#each channelColors as color, ch (ch)}
+              <button
+                type="button"
+                class="ctx-lane-btn"
+                class:assigned={assignedChannel === ch}
+                style:--lane-color={color}
+                title={`Channel ${ch + 1} — ${channelActionHint}`}
+                aria-label={`assign to channel ${ch + 1}`}
+                data-testid={`ctx-assign-channel-${ch}`}
+                onclick={() => pickAssignToChannel(ch)}
+              >{ch + 1}{assignedChannel === ch ? ' ✓' : ''}</button>
+            {/each}
+          </div>
+        {/if}
+        <!-- "Assign automation only" — automation lane N with NO clip/mixer
+             wiring, so several modules can share one automation lane. -->
+        <button
+          class="ctx-item ctx-has-submenu"
+          onclick={toggleAutoOnlySubmenu}
+          role="menuitem"
+          aria-haspopup="true"
+          aria-expanded={autoOnlySubmenuOpen}
+          data-testid="ctx-assign-auto-only"
+        >
+          Assign automation only
+          <span class="ctx-caret" aria-hidden="true">{autoOnlySubmenuOpen ? '▾' : '▸'}</span>
+        </button>
+        {#if autoOnlySubmenuOpen}
+          <div
+            class="ctx-lane-panel"
+            data-testid="ctx-assign-auto-only-panel"
+            role="group"
+            aria-label="Assign automation only"
+          >
+            {#each channelColors as color, ch (ch)}
+              <button
+                type="button"
+                class="ctx-lane-btn"
+                class:assigned={assignedChannel === ch}
+                style:--lane-color={color}
+                title={`Automation lane ${ch + 1} only`}
+                aria-label={`assign automation only to channel ${ch + 1}`}
+                data-testid={`ctx-assign-auto-only-${ch}`}
+                onclick={() => pickAssignAutomationOnly(ch)}
+              >{ch + 1}{assignedChannel === ch ? ' ✓' : ''}</button>
+            {/each}
+          </div>
+        {/if}
+        {#if assignedChannel !== null}
           <button
             class="ctx-item ctx-subtle"
             onclick={pickRemoveAutomationLane}
@@ -522,82 +550,6 @@
             Remove automation assignment
           </button>
         {/if}
-        <div class="ctx-sep" role="presentation"></div>
-      {/if}
-      {#if clipControlTargets.length > 0}
-        <!-- WORKFLOW patch-convenience: this module is a playable INSTRUMENT
-             (pitch+gate / poly / gate-only percussion). "Control from ▸ Clip N"
-             auto-wires a clip-player channel's pitch/poly + gate outs into it. -->
-        {#each clipControlTargets as c (c.nodeId)}
-          <button
-            class="ctx-item ctx-has-submenu"
-            onclick={() => toggleClipSubmenu(c.nodeId)}
-            role="menuitem"
-            aria-haspopup="true"
-            aria-expanded={clipSubmenuOpen === c.nodeId}
-            data-testid={`ctx-clipcontrol-${c.nodeId}`}
-          >
-            {clipControlTargets.length > 1 ? `Control from (${c.name})` : 'Control from clip'}
-            <span class="ctx-caret" aria-hidden="true">{clipSubmenuOpen === c.nodeId ? '▾' : '▸'}</span>
-          </button>
-          {#if clipSubmenuOpen === c.nodeId}
-            <div
-              class="ctx-lane-panel"
-              data-testid={`ctx-clipcontrol-${c.nodeId}-channels`}
-              role="group"
-              aria-label="Clip channels"
-            >
-              {#each Array.from({ length: c.channels }, (_, i) => i) as ch (ch)}
-                <button
-                  type="button"
-                  class="ctx-lane-btn"
-                  title={`Clip channel ${ch + 1}`}
-                  aria-label={`control from clip channel ${ch + 1}`}
-                  data-testid={`ctx-clipcontrol-${c.nodeId}-channel-${ch}`}
-                  onclick={() => pickControlFromClip(c.nodeId, ch)}
-                >{ch + 1}</button>
-              {/each}
-            </div>
-          {/if}
-        {/each}
-        <div class="ctx-sep" role="presentation"></div>
-      {/if}
-      {#if mixerTargets.length > 0}
-        <!-- WORKFLOW patch-convenience: this module has a MAIN audio out.
-             "Send to ▸ MixMaster chN" auto-wires it to a mixer channel (stereo
-             L/R, or mono filling both). -->
-        {#each mixerTargets as m (m.nodeId)}
-          <button
-            class="ctx-item ctx-has-submenu"
-            onclick={() => toggleMixerSubmenu(m.nodeId)}
-            role="menuitem"
-            aria-haspopup="true"
-            aria-expanded={mixerSubmenuOpen === m.nodeId}
-            data-testid={`ctx-sendtomixer-${m.nodeId}`}
-          >
-            {mixerTargets.length > 1 ? `Send to (${m.name})` : 'Send to mixer'}
-            <span class="ctx-caret" aria-hidden="true">{mixerSubmenuOpen === m.nodeId ? '▾' : '▸'}</span>
-          </button>
-          {#if mixerSubmenuOpen === m.nodeId}
-            <div
-              class="ctx-lane-panel"
-              data-testid={`ctx-sendtomixer-${m.nodeId}-channels`}
-              role="group"
-              aria-label="Mixer channels"
-            >
-              {#each Array.from({ length: m.channels }, (_, i) => i) as ch (ch)}
-                <button
-                  type="button"
-                  class="ctx-lane-btn"
-                  title={`Mixer channel ${ch + 1}`}
-                  aria-label={`send to mixer channel ${ch + 1}`}
-                  data-testid={`ctx-sendtomixer-${m.nodeId}-channel-${ch}`}
-                  onclick={() => pickSendToMixer(m.nodeId, ch)}
-                >{ch + 1}</button>
-              {/each}
-            </div>
-          {/if}
-        {/each}
         <div class="ctx-sep" role="presentation"></div>
       {/if}
       {#if docked && onundock}
