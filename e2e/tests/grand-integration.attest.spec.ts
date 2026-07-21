@@ -587,10 +587,12 @@ test.describe('grand-integration @grand-attest', () => {
     // assignModuleViaMenu gesture).
     await installSimMidi(page);
     await tNode.click({ button: 'right', position: { x: 8, y: 8 } });
-    const assignTrigger = page.getByTestId(`ctx-automation-${CP}`);
+    // "Assign automation only" — automation lane assignment WITHOUT the
+    // clip/mixer auto-wiring, so the graph (and the attested audio) is unchanged.
+    const assignTrigger = page.getByTestId('ctx-assign-auto-only');
     await expect(assignTrigger).toBeVisible();
-    await assignTrigger.click(); // expand the lane panel
-    await page.getByTestId(`ctx-automation-${CP}-lane-${GRAND_LANES.tidy}`).click();
+    await assignTrigger.click(); // expand the channel panel
+    await page.getByTestId(`ctx-assign-auto-only-${GRAND_LANES.tidy}`).click();
     await expect(assignTrigger).toBeHidden();
     // Hard state: the module is assigned to the lane (the border cue's class).
     await expect(tNode).toHaveClass(/auto-lane-assigned/, { timeout: 8_000 });

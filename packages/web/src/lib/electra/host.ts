@@ -27,6 +27,7 @@ import {
 } from '$lib/graph/electra-control';
 import { resolveSurfaceParam } from '$lib/graph/control-surface-params';
 import { resolveControlColor } from '$lib/graph/control-color';
+import { MIXMSTRS_CHANNELS } from '$lib/audio/modules/mixmstrs';
 import { createCcCommit, type CcCommit } from '$lib/ui/controls/cc-commit';
 import { getCcBatcher } from '$lib/ui/controls/cc-batch-store';
 import type { AutoconfigHost } from './autoconfig';
@@ -247,7 +248,10 @@ export function buildLiveHost(args: {
         return Math.sqrt(s / snap.samples.length);
       }
       const ch = Number(which);
-      if (!Number.isFinite(ch) || ch < 1 || ch > 4) return undefined;
+      // The mixer exposes one post-fader VU tap per channel via read('levels').
+      // Cap to the module's live channel count so every strip (now 8) surfaces —
+      // the old hard `> 4` cap silently dropped VU5..VU8.
+      if (!Number.isFinite(ch) || ch < 1 || ch > MIXMSTRS_CHANNELS.length) return undefined;
       const mxNode = patch.nodes[mxId] as ModuleNode | undefined;
       if (!mxNode) return undefined;
       const levels = e.read(mxNode, 'levels') as number[] | undefined;

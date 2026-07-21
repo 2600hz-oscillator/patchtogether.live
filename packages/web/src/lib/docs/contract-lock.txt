@@ -1846,12 +1846,36 @@ mixmstrs in ch6_thresh cv param=ch6_thresh cvScale=linear
 mixmstrs in ch6_volume cv param=ch6_volume cvScale=linear
 mixmstrs in ch6L audio
 mixmstrs in ch6R audio
+mixmstrs in ch7_compEnable cv param=ch7_compEnable cvScale=discrete
+mixmstrs in ch7_high cv param=ch7_high cvScale=linear
+mixmstrs in ch7_low cv param=ch7_low cvScale=linear
+mixmstrs in ch7_mid cv param=ch7_mid cvScale=linear
+mixmstrs in ch7_ratio cv param=ch7_ratio cvScale=linear
+mixmstrs in ch7_send1 cv param=ch7_send1 cvScale=linear
+mixmstrs in ch7_send2 cv param=ch7_send2 cvScale=linear
+mixmstrs in ch7_thresh cv param=ch7_thresh cvScale=linear
+mixmstrs in ch7_volume cv param=ch7_volume cvScale=linear
+mixmstrs in ch7L audio
+mixmstrs in ch7R audio
+mixmstrs in ch8_compEnable cv param=ch8_compEnable cvScale=discrete
+mixmstrs in ch8_high cv param=ch8_high cvScale=linear
+mixmstrs in ch8_low cv param=ch8_low cvScale=linear
+mixmstrs in ch8_mid cv param=ch8_mid cvScale=linear
+mixmstrs in ch8_ratio cv param=ch8_ratio cvScale=linear
+mixmstrs in ch8_send1 cv param=ch8_send1 cvScale=linear
+mixmstrs in ch8_send2 cv param=ch8_send2 cvScale=linear
+mixmstrs in ch8_thresh cv param=ch8_thresh cvScale=linear
+mixmstrs in ch8_volume cv param=ch8_volume cvScale=linear
+mixmstrs in ch8L audio
+mixmstrs in ch8R audio
 mixmstrs in comp1 cv param=comp1 cvScale=linear
 mixmstrs in comp2 cv param=comp2 cvScale=linear
 mixmstrs in comp3 cv param=comp3 cvScale=linear
 mixmstrs in comp4 cv param=comp4 cvScale=linear
 mixmstrs in comp5 cv param=comp5 cvScale=linear
 mixmstrs in comp6 cv param=comp6 cvScale=linear
+mixmstrs in comp7 cv param=comp7 cvScale=linear
+mixmstrs in comp8 cv param=comp8 cvScale=linear
 mixmstrs in master_volume cv param=master_volume cvScale=linear
 mixmstrs in ret1L audio
 mixmstrs in ret1R audio
@@ -1917,12 +1941,32 @@ mixmstrs param ch6_send1 0..1 linear default=0
 mixmstrs param ch6_send2 0..1 linear default=0
 mixmstrs param ch6_thresh -36..0 linear default=-12 unit=dB
 mixmstrs param ch6_volume 0..1 linear default=0.8
+mixmstrs param ch7_compEnable 0..1 discrete default=0
+mixmstrs param ch7_high -12..12 linear default=0 unit=dB
+mixmstrs param ch7_low -12..12 linear default=0 unit=dB
+mixmstrs param ch7_mid -12..12 linear default=0 unit=dB
+mixmstrs param ch7_ratio 1..10 linear default=2
+mixmstrs param ch7_send1 0..1 linear default=0
+mixmstrs param ch7_send2 0..1 linear default=0
+mixmstrs param ch7_thresh -36..0 linear default=-12 unit=dB
+mixmstrs param ch7_volume 0..1 linear default=0.8
+mixmstrs param ch8_compEnable 0..1 discrete default=0
+mixmstrs param ch8_high -12..12 linear default=0 unit=dB
+mixmstrs param ch8_low -12..12 linear default=0 unit=dB
+mixmstrs param ch8_mid -12..12 linear default=0 unit=dB
+mixmstrs param ch8_ratio 1..10 linear default=2
+mixmstrs param ch8_send1 0..1 linear default=0
+mixmstrs param ch8_send2 0..1 linear default=0
+mixmstrs param ch8_thresh -36..0 linear default=-12 unit=dB
+mixmstrs param ch8_volume 0..1 linear default=0.8
 mixmstrs param comp1 0..1 linear default=0
 mixmstrs param comp2 0..1 linear default=0
 mixmstrs param comp3 0..1 linear default=0
 mixmstrs param comp4 0..1 linear default=0
 mixmstrs param comp5 0..1 linear default=0
 mixmstrs param comp6 0..1 linear default=0
+mixmstrs param comp7 0..1 linear default=0
+mixmstrs param comp8 0..1 linear default=0
 mixmstrs param master_volume 0..1 linear default=0.8
 mixmstrs stereo ch1L+ch1R
 mixmstrs stereo ch2L+ch2R
@@ -1930,6 +1974,8 @@ mixmstrs stereo ch3L+ch3R
 mixmstrs stereo ch4L+ch4R
 mixmstrs stereo ch5L+ch5R
 mixmstrs stereo ch6L+ch6R
+mixmstrs stereo ch7L+ch7R
+mixmstrs stereo ch8L+ch8R
 mixmstrs stereo ret1L+ret1R
 mixmstrs stereo ret2L+ret2R
 modtris meta domain=audio vizPassthrough

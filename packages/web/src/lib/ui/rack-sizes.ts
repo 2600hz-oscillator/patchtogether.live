@@ -83,7 +83,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   midiLane: { size: '3u', hp: 2 }, // 149×230px  [LOCKED]
   midiOutBuddy: { size: '1u', hp: 2 }, // 136×220px
   mixer: { size: '1u', hp: 2 }, // 150×260px  [LOCKED]
-  mixmstrs: { size: '4u', hp: 4 }, // 661×720px
+  mixmstrs: { size: '4u', hp: 5 }, // 661×900px — 8-channel expansion (was 6ch/hp4 661×720)
   modtris: { size: '3u', hp: 2 }, // 424×260px
   moog902: { size: '1u', hp: 2 }, // 152×236px
   moog903a: { size: '1u', hp: 1 }, // 124×180px

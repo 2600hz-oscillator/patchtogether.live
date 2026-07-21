@@ -243,7 +243,7 @@ const DESCRIPTIONS: Record<string, string> = {
   meowbox:
     'Gate-triggered cat-vocal synth voice (formant bank + harmonic + noise excitation).',
   mixmstrs:
-    '6xstereo mixer with EQ, per-channel compressor (single-dial macro + power-user thresh/ratio), two stereo aux sends/returns, per-channel post-fader VU taps (read(\'levels\') → number[6]). Multiple instances allowed. 61 params.',
+    '8xstereo mixer with EQ, per-channel compressor (single-dial macro + power-user thresh/ratio), two stereo aux sends/returns, per-channel post-fader VU taps (read(\'levels\') → number[8]). Multiple instances allowed. 81 params.',
   tidyVco:
     'TIDY VCO — flagship virtual-analog SUBTRACTIVE SYNTH VOICE: two polyBLEP oscillators with a continuous saw↔pulse SHAPE morph per osc, shared PW + audio-rate PWM CV, OSC2 octave switch + cents detune, and a −1-octave sub square, into an ALL-NEW nonlinear zero-delay-feedback DIODE LADDER filter (EMS VCS3 / TB-303 lineage — bidirectionally-coupled stages, soft warm knee into 24 dB/oct, feedback squelch limiter for a bounded near-sine self-oscillation, CUTOFF calibrated to the resonant pitch within 3 cents so keytracked self-osc plays in tune, DRIVE tanh saturation at 2× oversampling, part-compensated squelch bass dip). Two RC-curve "punch" ADSRs (CEM3310-style exponential segments, overshoot-target convex attack, analog resume-from-level retrigger): a filter EG with bipolar ±4-octave ENV amount + keytracking, and an amp EG into an OTA-flavored soft-knee VCA whose tanh bias blooms gentle even harmonics with level. 5-voice POLY on the polyPitchGate chord bus (lane i → voice i, release tails hold their pitch) AND a mono pitch/gate pair driving a REAL 2-voice unison (±7¢·WIDTH drift panned to opposite sides — true stereo beating); WIDTH also fans the poly voices across the stereo field (root anchored center). Stereo out_l/out_r pair (auto-wires R when L is patched), HOLD pad for droning the voice from the card, and a CV jack for EVERY control (27 inputs): the six original CVs — cutoff (4 oct/V, audio-rate), res, pwm (audio-rate), drive, fold (audio-rate), sym (audio-rate) — PLUS a GLOBAL block-rate per-knob CV for each remaining control: shape1/shape2/mix/sub/fsus/sus/track/width (0..1 full-swing), detune (±50¢), oct2 (discrete ±1 step/V), env (±4-oct bipolar), the six EG times (4 oct/V), and level (±18 dB/V). Every law is scaled in the shared core (lib/tidy-vco-dsp.ts) so cv = 0 is a byte-exact no-op. The rear patch panel groups its jacks into OSC·WAVEFOLD·DIODE FILTER·FILTER EG·AMP EG·OUT·POLY/OUT sections mirroring the card headers.',
   timelorde: 'Singleton master clock. Internal or external BPM, twelve clock-divider outputs. A TAP button sets the internal tempo by ear — tap twice in time to lock the BPM, keep tapping to refine it (median of the recent intervals, ~2s timeout starts a fresh count); the Spacebar taps it too while TIMELORDE is the selected node. TAP is greyed out and a no-op while an external clock is patched into CLOCK IN (the measured external tempo owns the BPM then). The card carries a big display of the owl painting whose YELLOW EYES and BLUE BORDER brighten in time with the beat (the body stays steady); patch a feed into VIDEO IN and the display becomes a live monitor while VIDEO OUT passes the feed through (TIMELORDE can sit inline in a video chain).',
@@ -987,7 +987,7 @@ function synthesizeFromBuildHelper(
 ): { inputs: ManifestPort[]; params: ManifestParam[] } | null {
   if (type === 'mixmstrs') {
     const params: ManifestParam[] = [];
-    for (const ch of [1, 2, 3, 4, 5, 6]) {
+    for (const ch of [1, 2, 3, 4, 5, 6, 7, 8]) {
       params.push({ id: `ch${ch}_volume`, label: `${ch}V`, defaultValue: 0.8, min: 0, max: 1, curve: 'linear' });
       params.push({ id: `ch${ch}_low`, label: `${ch}Lo`, defaultValue: 0, min: -12, max: 12, curve: 'linear', units: 'dB' });
       params.push({ id: `ch${ch}_mid`, label: `${ch}Md`, defaultValue: 0, min: -12, max: 12, curve: 'linear', units: 'dB' });
@@ -1009,6 +1009,8 @@ function synthesizeFromBuildHelper(
       { id: 'ch4L', type: 'audio' }, { id: 'ch4R', type: 'audio' },
       { id: 'ch5L', type: 'audio' }, { id: 'ch5R', type: 'audio' },
       { id: 'ch6L', type: 'audio' }, { id: 'ch6R', type: 'audio' },
+      { id: 'ch7L', type: 'audio' }, { id: 'ch7R', type: 'audio' },
+      { id: 'ch8L', type: 'audio' }, { id: 'ch8R', type: 'audio' },
       { id: 'ret1L', type: 'audio' }, { id: 'ret1R', type: 'audio' },
       { id: 'ret2L', type: 'audio' }, { id: 'ret2R', type: 'audio' },
     ];
