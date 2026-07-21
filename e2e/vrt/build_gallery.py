@@ -135,14 +135,30 @@ COMPOSITE_BLURB: dict[str, str] = {
 }
 
 
-# Spec-file basename → category id. Anything not matched falls back to
-# "modules" so a future spec auto-enrols there if someone forgets to
-# register it.
+# Spec-file basename → category id. This is an EXPLICIT OVERRIDE map only; the
+# default is CONVENTION-DRIVEN (see `category_for`): any spec whose name contains
+# "composite" auto-files under the Composite tab, everything else under Modules.
+# So a future `*-composite.spec.ts` needs NO edit here to land in the right tab
+# (this map previously listed only vrt-composite.spec.ts, so 7 other composite
+# specs mis-filed into Modules — the drift `category_for` + vrt-meta.test.ts fix).
 _SPEC_TO_CATEGORY: dict[str, str] = {
     "vrt.spec.ts": "modules",
     "vrt-wavesculpt-blink.spec.ts": "modules",
     "vrt-composite.spec.ts": "composite",
 }
+
+
+def category_for(spec_dir: str) -> str:
+    """The gallery tab a spec's cards belong in. Explicit override wins; else
+    CONVENTION: a spec whose name contains "composite" is a composite-state spec
+    → the Composite tab; otherwise the Modules tab. Convention-driven so new
+    `*-composite.spec.ts` specs auto-enrol (guarded by vrt-meta.test.ts)."""
+    override = _SPEC_TO_CATEGORY.get(spec_dir)
+    if override is not None:
+        return override
+    if "composite" in spec_dir:
+        return "composite"
+    return "modules"
 
 
 def repo_short_sha() -> str:
@@ -181,7 +197,7 @@ def list_baselines(baseline_dir: Path) -> dict[str, dict[str, Path]]:
         if len(parts) < 2:
             continue
         spec_dir = parts[0]
-        category = _SPEC_TO_CATEGORY.get(spec_dir, "modules")
+        category = category_for(spec_dir)
         found[category][png.stem] = png
     return found
 
