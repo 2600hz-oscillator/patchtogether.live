@@ -65,13 +65,17 @@
 
   // AUDIO-ONLY knobs — these change ONLY the derived sound, never the picture:
   // TUNE / FINE (pitch), FOLD (a west-coast wavefolder with no image analog),
-  // LEVEL (output gain). Grouped under the "audio only" section header so the
-  // card visibly separates picture+sound knobs from sound-only ones.
+  // LEVEL (output gain), plus the CHROMASTACK colour→sound controls CHROMA
+  // (overall colour→timbre intensity) and MOTION (frame-change "alive" drive).
+  // Grouped under the "audio only" section header so the card visibly separates
+  // picture+sound knobs from sound-only ones.
   const AUDIO_KNOBS: Array<{ pid: string; label: string }> = [
     { pid: 'tune', label: 'Tune' },
     { pid: 'fine', label: 'Fine' },
     { pid: 'fold', label: 'Fold' },
     { pid: 'level', label: 'Level' },
+    { pid: 'chroma_depth', label: 'Chroma' },
+    { pid: 'motion', label: 'Motion' },
   ];
 
   // The orbit-camera VIEW bank (matches CubeCard's ZOOM / VIEW X/Y/Z group).
@@ -113,6 +117,11 @@
   ] as const;
   let sliceView = $derived(Math.round(p('slice_view')));
   function pickSliceView(v: number) { setNodeParam(id, 'slice_view', v); }
+
+  // ── CHROMASTACK hue-character bank toggle (audio-only): MUSICAL ↔ INSTRUMENT.
+  //    A small toggle in the "audio only" group (CV-gated via hue_mode_cv). ──
+  let hueMode = $derived(Math.round(p('hue_mode'))); // 0 musical / 1 instrument
+  function toggleHueMode() { setNodeParam(id, 'hue_mode', hueMode >= 1 ? 0 : 1); }
 
   // ── Video engine access (FrametableCard pattern). ──
   function getVideoEngine(): VideoEngine | null {
@@ -413,8 +422,16 @@
         </div>
 
         <!-- AUDIO ONLY: knobs that change ONLY the derived sound, not the picture
-             (TUNE / FINE pitch, FOLD wavefolder, LEVEL gain). -->
+             (TUNE / FINE pitch, FOLD wavefolder, LEVEL gain, CHROMASTACK CHROMA +
+             MOTION), plus the HUE-character bank toggle. -->
         <div class="audio-only-label">audio only</div>
+        <div class="reader-row" data-testid="videocube-hue-mode">
+          <span class="seg-label">HUE</span>
+          <button type="button" class="vc-btn nodrag" class:on={hueMode >= 1}
+            data-testid="videocube-hue-mode-toggle" onclick={toggleHueMode}
+            title="Colour→timbre character bank: MUSICAL (tonal) or INSTRUMENT (analog↔digital)"
+            >{hueMode >= 1 ? 'INSTR' : 'MUSIC'}</button>
+        </div>
         <div class="knobs audio-only-knobs" data-testid="videocube-audio-knobs">
           {#each AUDIO_KNOBS as k (k.pid)}
             <Knob
@@ -586,6 +603,9 @@
     border-top: 1px solid var(--border);
     padding-top: 4px;
   }
-  .audio-only-knobs { margin-top: 2px; }
+  /* 6 audio-only knobs (Tune/Fine/Fold/Level + CHROMASTACK Chroma/Motion) fit on
+     ONE row in the wide right column — 6 columns keeps the card within its tier
+     height (a 4-col grid would wrap to a 2nd row and overflow the bottom edge). */
+  .audio-only-knobs { margin-top: 2px; grid-template-columns: repeat(6, 1fr); }
   .view-knobs { margin-top: 0; }
 </style>

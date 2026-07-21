@@ -86,6 +86,12 @@ import {
   diffuseTargetFor,
   readerCentreLayer,
   stripToHeightfieldInto,
+  // ── CHROMASTACK: hue → timbre derivation (pure; see videocube-core.ts) ──
+  chromaBank,
+  rgbStripToHueHist,
+  colorMorphWave,
+  combineCarrierChroma,
+  motionEnergy,
   type DiffuseTarget,
 } from '$lib/video/videocube-core';
 // The audio derivation reuses the AUDIO-CUBE field/slice DSP wholesale — imported
@@ -140,6 +146,10 @@ interface VideocubeParams {
   fold: number;   // audio-only wavefolder (no image analog)
   spread: number; // FrameTable-style TEMPORAL WINDOW width (0=single frame; opens → oozes)
   scan: number;   // FrameTable MORPH: scans the reading CENTRE through the ring (0=today's centre; wraps)
+  // ── CHROMASTACK derived-audio chroma controls (audio-only, no image analog) ──
+  chroma_depth: number; // overall colour→sound intensity (0 = pure luma carrier = today)
+  motion: number;       // frame-to-frame change → "alive" drive amount (0 = pure content)
+  hue_mode: number;     // 0 = MUSICAL bank / 1 = INSTRUMENT bank (CV-gated toggle)
   // ── derived-audio pitch / gain ──
   tune: number;
   fine: number;
@@ -173,6 +183,9 @@ const DEFAULTS: VideocubeParams = {
   fold: 0,
   spread: 0,
   scan: 0,
+  chroma_depth: 0.6,
+  motion: 0,
+  hue_mode: 0,
   tune: 0,
   fine: 0,
   level: 1,
@@ -223,6 +236,10 @@ const AUDIO_PARAMS: ReadonlySet<string> = new Set([
   // shared readerLagFor — the SAME frame the picture surfaces, B3), so a change
   // re-derives the wave from a different frame → they reshape the audio too.
   'reader_mode', 'live',
+  // CHROMASTACK chroma controls reshape ONLY the derived audio (no picture analog):
+  // chroma_depth (colour→sound intensity), motion (alive-drive amount), hue_mode
+  // (which archetype bank). A change must re-derive the wave.
+  'chroma_depth', 'motion', 'hue_mode',
 ]);
 // Params pushed straight to the oscillator worklet's AudioParams (pitch + gain).
 const OSC_PARAMS: ReadonlySet<string> = new Set(['tune', 'fine', 'level']);
@@ -277,7 +294,12 @@ void main(){
     c = acc / max(wsum, 1e-6);
   }
   float lm = clamp(0.299*c.r + 0.587*c.g + 0.114*c.b, 0.0, 1.0);
-  outColor = vec4(vec3(lm), 1.0);
+  // CHROMASTACK: carry the source COLOUR in .rgb and the Rec.601 luma in .a. The
+  // luma reduction still reads luma (Rec.601 of .rgb, identical to .a → the
+  // grayscale carrier is byte-identical), and the audio hue derivation reads .rgb.
+  // Zero extra cost — the RGB was already in the windowed sample. This is the ONE
+  // shader edit that moves the WebGL attest hash.
+  outColor = vec4(c.rgb, lm);
 }`;
 
 const COMBINE_FRAG = `#version 300 es
@@ -982,6 +1004,11 @@ export const videocubeDef: VideoModuleDef = {
     { id: 'spread_cv',           type: 'cv', paramTarget: 'spread',           cvScale: { mode: 'linear' } },
     { id: 'scan_cv',             type: 'cv', paramTarget: 'scan',             cvScale: { mode: 'linear' } },
     { id: 'tune_cv',             type: 'cv', paramTarget: 'tune',             cvScale: { mode: 'linear' } },
+    // ── CHROMASTACK CV (audio-only). hue_mode_cv is CV-GATED: a gate high toggles
+    //    to the INSTRUMENT bank (linear scale, rounded at read → 0/1). ──
+    { id: 'chroma_depth_cv',     type: 'cv', paramTarget: 'chroma_depth',     cvScale: { mode: 'linear' } },
+    { id: 'motion_cv',           type: 'cv', paramTarget: 'motion',           cvScale: { mode: 'linear' } },
+    { id: 'hue_mode_cv',         type: 'cv', paramTarget: 'hue_mode',         cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'video_out', type: 'video' }, // primary — the volumetric ray-march
@@ -1008,6 +1035,9 @@ export const videocubeDef: VideoModuleDef = {
     { id: 'fold',             label: 'fold',         defaultValue: DEFAULTS.fold,             min: 0, max: 1,      curve: 'linear' },
     { id: 'spread',           label: 'spread',       defaultValue: DEFAULTS.spread,           min: 0, max: 1,      curve: 'linear' },
     { id: 'scan',             label: 'scan',         defaultValue: DEFAULTS.scan,             min: 0, max: 1,      curve: 'linear' },
+    // CHROMASTACK chroma controls (audio-only).
+    { id: 'chroma_depth',     label: 'chroma',       defaultValue: DEFAULTS.chroma_depth,     min: 0, max: 1,      curve: 'linear' },
+    { id: 'motion',           label: 'motion',       defaultValue: DEFAULTS.motion,           min: 0, max: 1,      curve: 'linear' },
     { id: 'slice_y',          label: 'y',            defaultValue: DEFAULTS.slice_y,          min: 0, max: 1,      curve: 'linear' },
     { id: 'slice_rx',         label: 'rot x',        defaultValue: DEFAULTS.slice_rx,         min: -3.1416, max: 3.1416, curve: 'linear' },
     { id: 'slice_ry',         label: 'rot y',        defaultValue: DEFAULTS.slice_ry,         min: -3.1416, max: 3.1416, curve: 'linear' },
@@ -1028,6 +1058,9 @@ export const videocubeDef: VideoModuleDef = {
     // slice-viz colorize flavour (0 TEXTURED / 1 XRAY / 2 WEIGHTS) — drives
     // slice_out + the smooth/morph/chaos triptych; NOT an audio param.
     { id: 'slice_view',  label: 'slice view', defaultValue: DEFAULTS.slice_view, min: 0, max: 2, curve: 'discrete' },
+    // CHROMASTACK hue-character bank toggle (0 MUSICAL / 1 INSTRUMENT) — audio-only,
+    // CV-gated (a gate high switches to INSTRUMENT).
+    { id: 'hue_mode',    label: 'hue mode',   defaultValue: DEFAULTS.hue_mode,   min: 0, max: 1, curve: 'discrete' },
   ],
 
   // docs-hash-ignore:start
@@ -1052,6 +1085,9 @@ export const videocubeDef: VideoModuleDef = {
       spread_cv: 'CV that modulates SPREAD (the temporal reader window width — how far a frozen table oozes through time), swept linearly over 0..1.',
       scan_cv: 'CV that modulates SCAN (the reader-centre POSITION — moves the reading centre through the 60-frame ring / scrubs a frozen table through its ~2 seconds), swept linearly over 0..1 (wraps at the ring seam). Drives both the picture surfaces and the audio reduce.',
       tune_cv: 'CV that modulates TUNE (the derived oscillator pitch in semitones), swept linearly over -36..36. Affects the audio only, not the picture.',
+      chroma_depth_cv: 'CV that modulates CHROMA DEPTH (the overall colour→sound intensity of the CHROMASTACK hue morph), swept linearly over 0..1. Audio-only — the picture already shows full colour; this drives how much the colour reshapes the DRONE. 0 = the pure luma carrier (today’s sound).',
+      motion_cv: 'CV that modulates MOTION (how much frame-to-frame picture change adds "alive" energy/loudness to the derived audio), swept linearly over 0..1. Audio-only. 0 = pure content (a static colourful frame still sounds rich).',
+      hue_mode_cv: 'CV/GATE that toggles the HUE MODE bank (the colour→timbre character): low = MUSICAL (tonal), high = INSTRUMENT (analog↔digital). Swept linearly and rounded, so it acts as a gate. Audio-only.',
     },
     outputs: {
       video_out: 'The PRIMARY output: a VOLUMETRIC RAY-MARCH of the 3D occupancy solid, textured by the three source videos joined across a real depth axis, under an orbit camera — you look THROUGH the three videos. Includes the cutting slice plane (the plane the audio reads) and a cube wireframe. The card preview shows this output; rendered at quarter engine resolution and LINEAR-upscaled to half res.',
@@ -1074,6 +1110,9 @@ export const videocubeDef: VideoModuleDef = {
       space_diffuse: 'SPACE DIFFUSE (0..1, default 0): pulls the field sampling toward the cube’s lowest-information face (computed from the field, latched on the field, matching the audio scan) — a smear/gravity in the volume and the same coord warp in the audio. 0 = off. CV via the space diffuse input.',
       fold: 'FOLD (0..1, default 0): a west-coast wavefolder applied to the derived audio waveform (adds harmonics). Audio-only — it has no image analog. CV via the fold input.',
       spread: 'SPREAD (0..1, default 0): the TEMPORAL sampling window WIDTH of the reader (FrameTable-style). At 0 each ring surfaces one crisp frame (byte-identical to the pre-window read); opening it Hann-averages a ±window of ring frames into every surface — a wider window blends more of the ring, so a FROZEN table oozes through time. The reader mode (SMOOTH lag / MORPH newest) + SCAN pick the window CENTRE; SPREAD sets its WIDTH. Feeds BOTH the picture surfaces and the audio reduce, so image and drone flow together. CHAOS keeps its per-pixel single frame. CV via the spread input.',
+      chroma_depth: 'CHROMA DEPTH (0..1, default 0.6): the CHROMASTACK colour→sound intensity — how much the picture’s COLOUR reshapes the derived drone on top of the luma cube carrier. The reduced RGB is read as a hue histogram that blends 8 band-limited harmonic archetypes (red = dark/hollow → violet = bright/rich) with a hue-centroid spectral tilt, so a colour change AUDIBLY sweeps the timbre. 0 = the pure luma carrier (byte-identical to the old, static sound); a GRAYSCALE picture always collapses to that carrier regardless of this knob (the clean fallback). Audio-only. CV via the chroma depth input.',
+      motion: 'MOTION (0..1, default 0): how much frame-to-frame picture CHANGE adds "alive" energy/loudness to the derived audio — still = quiet, moving = alive. BLENDED with content, not a replacement: a static but colourful frame still sounds rich, and MOTION 0 is pure content. Audio-only. CV via the motion input.',
+      hue_mode: 'HUE MODE (0/1, default 0 = MUSICAL): which colour→timbre CHARACTER bank drives the chroma morph. MUSICAL = tonal harmonic archetypes (red = root/dark/hollow → violet = bright/rich); INSTRUMENT = warm colours sound analog-ish, cool colours digital-ish. A front-panel toggle; CV-GATED (a gate high selects INSTRUMENT). Audio-only.',
       scan: 'SCAN (0..1, default 0): the reader-centre POSITION — the FrameTable MORPH partner to SPREAD. It moves the reading CENTRE through the whole 60-frame (~2-second) ring: 0 = today’s per-mode centre (byte-identical to the pre-scan read), and turning it up shifts the centre scan·(N−1) frames back, wrapping at the ring seam. Where SPREAD widens the blend at a fixed centre, SCAN walks that centre (crisp or widened) THROUGH the ring — so a FROZEN table can be SCRUBBED through its captured frames and oozes through the ~2 seconds exactly like FrameTable’s MORPH. Drives BOTH the picture surfaces and the audio reduce (image + drone in lockstep). For CHAOS it shifts the per-pixel dither base. CV via the scan input.',
       slice_y: 'Y (0..1, default 0.5): the height of the CUTTING SLICE PLANE through the solid. It is the exact plane the audio surface-height scan reads AND the plane drawn (tinted) in the volumetric render. CV via the y input.',
       slice_rx: 'ROT X (-pi..pi, default 0): Euler tilt of the cutting plane about X — the same plane the audio reads and the render draws. CV via the rot x input.',
@@ -1321,9 +1360,21 @@ export const videocubeDef: VideoModuleDef = {
     }
 
     // Persistent audio-slice readback scratch (B2 — no per-call allocation on the
-    // hot path): one Uint8Array strip reused by every reduceRing readback, and one
-    // Float32Array[64] heightfield per slot reused across recomputes.
-    const readbackScratch = new Uint8Array(LUMA_COLS * FIELD_ROWS * 4);
+    // hot path): one PER-SLOT RGBA strip reused by every reduceRing readback (kept
+    // per-slot, not shared, so CHROMASTACK can read all 3 rings' COLOUR after the
+    // reduce), a Float32Array[64] luma heightfield per slot, and a PREVIOUS-strip
+    // snapshot per slot for the frame-to-frame MOTION delta.
+    const rgbScratch: Record<Slot, Uint8Array> = {
+      a: new Uint8Array(LUMA_COLS * FIELD_ROWS * 4),
+      b: new Uint8Array(LUMA_COLS * FIELD_ROWS * 4),
+      c: new Uint8Array(LUMA_COLS * FIELD_ROWS * 4),
+    };
+    const prevRgbScratch: Record<Slot, Uint8Array> = {
+      a: new Uint8Array(LUMA_COLS * FIELD_ROWS * 4),
+      b: new Uint8Array(LUMA_COLS * FIELD_ROWS * 4),
+      c: new Uint8Array(LUMA_COLS * FIELD_ROWS * 4),
+    };
+    let hasPrevStrips = false;
     const fieldScratch: Record<Slot, Float32Array[]> = {
       a: Array.from({ length: FIELD_ROWS }, () => new Float32Array(LUMA_COLS)),
       b: Array.from({ length: FIELD_ROWS }, () => new Float32Array(LUMA_COLS)),
@@ -1356,12 +1407,17 @@ export const videocubeDef: VideoModuleDef = {
       gl.bindFramebuffer(gl.FRAMEBUFFER, reduceTarget.fbo);
       gl.viewport(0, 0, LUMA_COLS, FIELD_ROWS);
       ctx.drawFullscreenQuad();
-      readbackScratch.fill(0);
+      const rgb = rgbScratch[slot];
+      rgb.fill(0);
       if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE) {
-        gl.readPixels(0, 0, LUMA_COLS, FIELD_ROWS, gl.RGBA, gl.UNSIGNED_BYTE, readbackScratch);
+        gl.readPixels(0, 0, LUMA_COLS, FIELD_ROWS, gl.RGBA, gl.UNSIGNED_BYTE, rgb);
       }
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      return stripToHeightfieldInto(readbackScratch, LUMA_COLS, FIELD_ROWS, fieldScratch[slot]);
+      // .rgb carries the source COLOUR (for CHROMASTACK) and the luma reduction
+      // reads Rec.601 luma of .rgb (identical to the shader's .a → the grayscale
+      // carrier stays byte-identical). rgbScratch[slot] holds the colour for the
+      // hue histogram + the MOTION delta after all 3 rings reduce.
+      return stripToHeightfieldInto(rgb, LUMA_COLS, FIELD_ROWS, fieldScratch[slot]);
     }
 
     /** Quantized signature over every param that reshapes the derived wave (the
@@ -1379,6 +1435,8 @@ export const videocubeDef: VideoModuleDef = {
         params.material >= 0.5 ? 1 : 0, params.wrap >= 0.5 ? 1 : 0,
         // reader_mode + live change the reduced frame (B3) → part of the signature.
         Math.round(clamp(params.reader_mode, 0, 2)), params.live >= 0.5 ? 1 : 0,
+        // CHROMASTACK chroma controls reshape the derived wave → part of the signature.
+        q(params.chroma_depth), q(params.motion), Math.round(clamp(params.hue_mode, 0, 1)),
       ].join('|');
     }
 
@@ -1418,7 +1476,28 @@ export const videocubeDef: VideoModuleDef = {
       // widens the TEMPORAL reduce window (reduceRing → REDUCE_FRAG Hann-averages
       // the ring), so floorH/wallH/ceilH already carry the oozed frame. The plane
       // reads at its true depth (offset 0) — the window lives upstream.
-      const wave = sampleSlice(floorH, wallH, ceilH, sp, 0);
+      // Ws = the luma cube CARRIER (the structural drone, unchanged).
+      const Ws = sampleSlice(floorH, wallH, ceilH, sp, 0);
+      // ── CHROMASTACK — layer the picture's COLOUR onto the carrier. Read the 3
+      //    reduced RGB strips as a hue histogram, morph the selected archetype BANK
+      //    into a chroma wave (Wc), measure frame-to-frame MOTION, and fuse:
+      //    grayscale ⇒ meanSat 0 ⇒ the chroma layer vanishes ⇒ byte-identical to Ws
+      //    (the clean fallback). The picture is unaffected (colour was always shown).
+      const strips = [rgbScratch.a, rgbScratch.b, rgbScratch.c];
+      const hist = rgbStripToHueHist(strips);
+      const wc = colorMorphWave(hist, chromaBank(params.hue_mode));
+      const motion = hasPrevStrips
+        ? motionEnergy([prevRgbScratch.a, prevRgbScratch.b, prevRgbScratch.c], strips)
+        : 0;
+      const wave = combineCarrierChroma(
+        Ws, wc, hist.meanSat, hist.meanVal, motion,
+        clamp(params.motion, 0, 1), clamp(params.chroma_depth, 0, 1),
+      );
+      // Snapshot this frame's strips for the NEXT MOTION delta.
+      prevRgbScratch.a.set(rgbScratch.a);
+      prevRgbScratch.b.set(rgbScratch.b);
+      prevRgbScratch.c.set(rgbScratch.c);
+      hasPrevStrips = true;
       applyFold(wave, clamp(params.fold, 0, 1));
       if (!isSilentWave(wave)) lastWave = wave;
       const post = isSilentWave(wave) && lastWave ? lastWave : wave;

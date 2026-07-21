@@ -529,3 +529,300 @@ export function stripToHeightfieldInto(
 // Re-export the HARD threshold so tests can reason about the SMOOTH↔HARD cut
 // without reaching into cube-dsp.
 export { HARD_THRESHOLD };
+
+// ══════════════════════════════════════════════════════════════════════════
+// CHROMASTACK — dynamic CHROMA → timbre derivation (owner 2026-07-20).
+//
+// VIDEOCUBE's audio was too static: the luma cube carrier (Ws) barely moved with
+// the picture's COLOUR ("video content doesn't change the audio much"). CHROMASTACK
+// keeps that luma ray-march as the structural CARRIER and LAYERS a HUE → TIMBRE
+// morph on top, so a colour change AUDIBLY drives the sound while a GRAYSCALE frame
+// stays byte-identical to today's luma-only drone (the clean fallback).
+//
+// The ONLY GPU change is REDUCE_FRAG writing `vec4(c.rgb, lm)` (colour in .rgb,
+// Rec.601 luma in .a) so the audio readback carries COLOUR — zero extra cost, the
+// RGB was already in the bytes. Everything below is PURE + deterministic (jsdom):
+//
+//   rgbStripToHueHist  RGB→HSV, an 8-bin hue histogram weighted by sat·val, plus
+//                      mean saturation (dry/wet), mean value (level) and the
+//                      weighted-mean hue-bin (the tilt/brightness position).
+//   colorMorphWave     blend 8 band-limited harmonic ARCHETYPES by the hue weights
+//                      + a hue-centroid spectral TILT — so a PURE hue rotation at
+//                      CONSTANT luma sweeps the spectral centroid (the axis that is
+//                      silent today; the "not-subtle" guarantee).
+//   combineCarrierChroma  fuse the chroma morph onto the carrier: mix by
+//                      saturation·depth, drive by brightness + MOTION, DC-remove.
+//   motionEnergy       frame-to-frame RGB change → an "alive" energy the MOTION
+//                      amount blends into the drive (static colourful frame still
+//                      sounds rich; MOTION 0 ⇒ pure content).
+//
+// TWO BANKS (a CV-gated toggle picks one): MUSICAL (tonal: red=root/dark/hollow →
+// violet=bright/rich) and INSTRUMENT (warm=analog-ish → cool=digital-ish). Both are
+// ordered by monotone spectral centroid so the hue axis reads as a brightness ramp.
+//
+// NOTE (attest): this file lives under lib/video/, so it IS in the WebGL attest
+// basis (resolveWebglBasis sweeps the whole tree minus *.test.ts) — these pure
+// additions fold into the SAME one-time WebGL re-attest REDUCE_FRAG already forces;
+// they are NOT shaders and add no GPU cost.
+// ══════════════════════════════════════════════════════════════════════════
+
+/** Hue bins == harmonic archetypes per bank (one archetype per hue sextant-ish). */
+export const CHROMA_HUE_BINS = 8;
+/** Archetype table length — matches CUBE_SLICE_SIZE / the posted wave length. */
+export const CHROMA_ARCH_LEN = 256;
+/** Max harmonic partials per archetype (band-limited: 32 ≪ the 128 Nyquist). */
+export const CHROMA_ARCH_PARTIALS = 32;
+/** Peak amplitude each archetype table is normalized to (kept < 1 so blends stay
+ *  bounded before shapeInto RMS-matches them to the carrier). */
+export const CHROMA_ARCH_PEAK = 0.9;
+/** Strength of the hue-centroid spectral tilt (± high-harmonic emphasis added as a
+ *  scaled circular derivative of the blend). */
+export const CHROMA_TILT_STRENGTH = 0.6;
+/** How hard full frame-to-frame MOTION drives loudness at full MOTION amount
+ *  (motionEnergy is a small mean |Δ|, so the gain makes it audible when turned up). */
+export const CHROMA_MOTION_DRIVE_GAIN = 4.0;
+
+/** The reduced-strip colour summary CHROMASTACK maps to timbre. */
+export interface HueHistogram {
+  /** Per-bin hue weight (Σ sat·val over pixels in that bin); NOT pre-normalized. */
+  hueWeights: Float32Array;
+  /** Mean HSV saturation over the strips ∈ [0,1] — the dry/wet chroma amount. */
+  meanSat: number;
+  /** Mean HSV value/brightness over the strips ∈ [0,1] — the level drive. */
+  meanVal: number;
+  /** Weighted-mean hue-BIN position ∈ [0,1] (0 = red/dark end, 1 = violet/bright
+   *  end). LINEAR (not circular): the hue axis is treated as the red→violet
+   *  brightness ramp the banks are ordered along. 0.5 (neutral) when colourless. */
+  centroidHue: number;
+}
+
+// ── Archetype bank synthesis (module-load, pure). Each table is an inverse-DFT of
+//    harmonic-series partials at phase 0 → seamlessly periodic (period 256) and
+//    exactly zero-mean (no k=0 term), then peak-normalized. ──
+function synthArchetype(amp: (k: number) => number): Float32Array {
+  const t = new Float32Array(CHROMA_ARCH_LEN);
+  for (let k = 1; k <= CHROMA_ARCH_PARTIALS; k++) {
+    const a = amp(k);
+    if (a === 0) continue;
+    const w = (2 * Math.PI * k) / CHROMA_ARCH_LEN;
+    for (let n = 0; n < CHROMA_ARCH_LEN; n++) t[n]! += a * Math.sin(w * n);
+  }
+  let peak = 0;
+  for (let n = 0; n < CHROMA_ARCH_LEN; n++) peak = Math.max(peak, Math.abs(t[n]!));
+  if (peak > 0) {
+    const g = CHROMA_ARCH_PEAK / peak;
+    for (let n = 0; n < CHROMA_ARCH_LEN; n++) t[n]! *= g;
+  }
+  return t;
+}
+
+function buildBank(spec: (bin: number, k: number) => number): Float32Array[] {
+  const bank: Float32Array[] = [];
+  for (let b = 0; b < CHROMA_HUE_BINS; b++) bank.push(synthArchetype((k) => spec(b, k)));
+  return bank;
+}
+
+/** MUSICAL bank — red (bin 0) = ROOT/DARK/HOLLOW (odd-biased, steep rolloff → few
+ *  low harmonics), violet (bin 7) = BRIGHT/RICH (full series, shallow rolloff).
+ *  Monotone spectral centroid across the 8. */
+export const CHROMA_BANK_MUSICAL: readonly Float32Array[] = buildBank((bin, k) => {
+  const bright = bin / (CHROMA_HUE_BINS - 1);         // 0 dark .. 1 bright
+  const p = 2.6 + (0.6 - 2.6) * bright;               // steep → shallow rolloff
+  const evenGain = 0.15 + (1.0 - 0.15) * bright;      // hollow(odd) → full(rich)
+  const g = k % 2 === 0 ? evenGain : 1.0;
+  return g / Math.pow(k, p);
+});
+
+/** INSTRUMENT bank — warm (bin 0) = ANALOG-ish (soft, full gentle saw series), cool
+ *  (bin 7) = DIGITAL-ish (harsher, odd-biased buzz, shallow rolloff). A distinct
+ *  character from MUSICAL; also monotone spectral centroid. */
+export const CHROMA_BANK_INSTRUMENT: readonly Float32Array[] = buildBank((bin, k) => {
+  const cool = bin / (CHROMA_HUE_BINS - 1);           // 0 warm/analog .. 1 cool/digital
+  const p = 1.4 + (0.5 - 1.4) * cool;                 // analog soft → digital flat
+  const oddBoost = k % 2 === 1 ? 1.0 + 0.7 * cool : Math.max(0, 1.0 - 0.35 * cool);
+  return oddBoost / Math.pow(k, p);
+});
+
+/** Pick a bank by mode int: 0 = MUSICAL (default), 1 = INSTRUMENT. */
+export function chromaBank(mode: number): readonly Float32Array[] {
+  return Math.round(mode) >= 1 ? CHROMA_BANK_INSTRUMENT : CHROMA_BANK_MUSICAL;
+}
+
+/**
+ * Reduce one or more RGBA readback strips (the REDUCE-pass output — `.rgb` = the
+ * source colour, `.a` = Rec.601 luma) to a hue HISTOGRAM: an 8-bin hue tally
+ * weighted by HSV sat·val (so vivid, bright pixels dominate the colour identity),
+ * plus mean saturation (dry/wet), mean value (level) and the weighted-mean hue-bin
+ * (the brightness/tilt position). A grayscale strip has saturation 0 everywhere →
+ * meanSat 0 and all-zero hue weights → the chroma layer contributes nothing (the
+ * byte-identical luma fallback). Deterministic; reads every RGB pixel of every strip.
+ */
+export function rgbStripToHueHist(
+  strips: readonly (Uint8Array | Uint8ClampedArray)[],
+): HueHistogram {
+  const hueWeights = new Float32Array(CHROMA_HUE_BINS);
+  let sumW = 0, sumS = 0, sumV = 0, count = 0;
+  for (const strip of strips) {
+    const len = strip.length - (strip.length % 4);
+    for (let i = 0; i < len; i += 4) {
+      const r = (strip[i] ?? 0) / 255;
+      const g = (strip[i + 1] ?? 0) / 255;
+      const b = (strip[i + 2] ?? 0) / 255;
+      const mx = Math.max(r, g, b);
+      const mn = Math.min(r, g, b);
+      const delta = mx - mn;
+      const v = mx;
+      const s = mx > 0 ? delta / mx : 0;
+      let h = 0;
+      if (delta > 1e-6) {
+        if (mx === r) h = ((g - b) / delta) % 6;
+        else if (mx === g) h = (b - r) / delta + 2;
+        else h = (r - g) / delta + 4;
+        h /= 6;
+        if (h < 0) h += 1; // [0,1)
+      }
+      const w = s * v;
+      const bin = Math.min(CHROMA_HUE_BINS - 1, Math.floor(h * CHROMA_HUE_BINS));
+      hueWeights[bin]! += w;
+      sumW += w;
+      sumS += s;
+      sumV += v;
+      count++;
+    }
+  }
+  const meanSat = count > 0 ? sumS / count : 0;
+  const meanVal = count > 0 ? sumV / count : 0;
+  let centroidHue = 0.5;
+  if (sumW > 1e-9) {
+    let binSum = 0;
+    for (let b = 0; b < CHROMA_HUE_BINS; b++) binSum += b * hueWeights[b]!;
+    centroidHue = binSum / sumW / (CHROMA_HUE_BINS - 1); // [0,1]
+  }
+  return { hueWeights, meanSat, meanVal, centroidHue };
+}
+
+/**
+ * The chroma MORPH wave Wc from a hue histogram + a bank: a linear blend of the 8
+ * harmonic archetypes by the normalized hue weights, PLUS a hue-centroid spectral
+ * TILT. The tilt adds a scaled CIRCULAR DERIVATIVE of the blend (which boosts each
+ * partial ∝ its harmonic number) so a brighter dominant hue lifts the spectral
+ * centroid and a darker one lowers it — this is what makes a PURE hue rotation at
+ * constant luma AUDIBLY sweep the timbre (the axis that is silent today). Zero-mean
+ * and band-limited by construction; returns all-zeros when there is no colour.
+ */
+export function colorMorphWave(hist: HueHistogram, bank: readonly Float32Array[]): Float32Array {
+  const N = CHROMA_ARCH_LEN;
+  const out = new Float32Array(N);
+  const w = hist.hueWeights;
+  let sw = 0;
+  for (let b = 0; b < w.length; b++) sw += w[b]!;
+  if (sw <= 1e-9) return out; // colourless → silent chroma (Ws-only upstream)
+  for (let b = 0; b < w.length && b < bank.length; b++) {
+    const wb = w[b]! / sw;
+    if (wb === 0) continue;
+    const tbl = bank[b]!;
+    for (let n = 0; n < N; n++) out[n]! += wb * tbl[n]!;
+  }
+  const tilt = (hist.centroidHue - 0.5) * 2 * CHROMA_TILT_STRENGTH; // [-S, +S]
+  if (tilt !== 0) {
+    const base = Float32Array.from(out);
+    for (let n = 0; n < N; n++) {
+      const d = (base[(n + 1) % N]! - base[(n - 1 + N) % N]!) * 0.5; // circular central diff
+      out[n] = base[n]! + tilt * d;
+    }
+  }
+  return out;
+}
+
+function rmsOf(wave: Float32Array): number {
+  let s = 0;
+  for (let i = 0; i < wave.length; i++) { const v = wave[i]!; s += v * v; }
+  return Math.sqrt(s / (wave.length || 1));
+}
+
+/**
+ * "Shape" the chroma morph Wc INTO the carrier Ws: RMS-match Wc to Ws so the chroma
+ * layer carries the carrier's LEVEL (the morph never jumps the loudness as it mixes
+ * in) while KEEPING its own spectral identity (RMS scaling is amplitude-only, so the
+ * hue-driven spectral centroid survives). Returns a fresh array. Wc ≈ 0 → zeros.
+ */
+export function shapeInto(wc: Float32Array, ws: Float32Array): Float32Array {
+  const out = new Float32Array(wc.length);
+  const rc = rmsOf(wc);
+  if (rc < 1e-9) return out;
+  const g = rmsOf(ws) / rc;
+  for (let i = 0; i < wc.length; i++) out[i] = wc[i]! * g;
+  return out;
+}
+
+/**
+ * Fuse the chroma morph Wc onto the luma carrier Ws into the final posted wave:
+ *
+ *   wet   = meanSat · chromaDepth            how much chroma REPLACES the carrier
+ *   body  = mix(Ws, shapeInto(Wc, Ws), wet) per-sample morph (level-matched)
+ *   drive = bright · motionDrive            brightness (gated by wet) + MOTION
+ *   final = DC-remove(body · drive)
+ *
+ * Fallback (owner-locked): a GRAYSCALE frame has meanSat 0 → wet 0 → body = Ws, and
+ * the brightness drive is gated by wet (so grayscale ≠ dimmed), so with the default
+ * MOTION amount 0 the output is BYTE-IDENTICAL to the luma-only carrier. chromaDepth
+ * 0 is the master off switch (wet 0 for any frame). DC-removal (anti-click on bold
+ * swaps) is applied ONLY when chroma is active — the pure carrier is left exactly as
+ * today (which does not DC-remove). MOTION is a SEPARATE axis (gated by motionAmt,
+ * not saturation) so a moving grayscale can still gain "alive" energy when turned up.
+ */
+export function combineCarrierChroma(
+  ws: Float32Array,
+  wc: Float32Array,
+  meanSat: number,
+  meanVal: number,
+  motion: number,
+  motionAmt: number,
+  chromaDepth: number,
+): Float32Array {
+  const N = ws.length;
+  const out = new Float32Array(N);
+  const wet = clamp01(meanSat) * clamp01(chromaDepth);
+  const motionDrive = 1 + clamp01(motionAmt) * clamp01(motion) * CHROMA_MOTION_DRIVE_GAIN;
+  if (wet <= 0) {
+    // Grayscale / chroma off → the pure luma carrier. Only the separately-gated
+    // MOTION drive applies (default motion/amt 0 → 1 → byte-identical fallback).
+    if (motionDrive === 1) { out.set(ws); return out; }
+    for (let i = 0; i < N; i++) out[i] = ws[i]! * motionDrive;
+    return out;
+  }
+  const bright = 1 + wet * (clamp01(meanVal) - 1); // grayscale-safe brightness→level
+  const drive = bright * motionDrive;
+  const shaped = shapeInto(wc, ws);
+  for (let i = 0; i < N; i++) out[i] = (ws[i]! * (1 - wet) + shaped[i]! * wet) * drive;
+  let mean = 0;
+  for (let i = 0; i < N; i++) mean += out[i]!;
+  mean /= N || 1;
+  for (let i = 0; i < N; i++) out[i]! -= mean;
+  return out;
+}
+
+/**
+ * Frame-to-frame MOTION energy: the mean absolute per-channel RGB difference
+ * between the previous and current reduced strips, normalized to [0,1] (RGB carries
+ * BOTH luma and chroma change). 0 for identical frames; grows with picture change.
+ * Deterministic. Fed to combineCarrierChroma as the "alive" drive.
+ */
+export function motionEnergy(
+  prev: readonly (Uint8Array | Uint8ClampedArray)[],
+  cur: readonly (Uint8Array | Uint8ClampedArray)[],
+): number {
+  let sum = 0, n = 0;
+  const rings = Math.min(prev.length, cur.length);
+  for (let s = 0; s < rings; s++) {
+    const a = prev[s]!, b = cur[s]!;
+    const len = Math.min(a.length, b.length);
+    for (let i = 0; i + 2 < len; i += 4) {
+      sum += Math.abs((a[i] ?? 0) - (b[i] ?? 0));
+      sum += Math.abs((a[i + 1] ?? 0) - (b[i + 1] ?? 0));
+      sum += Math.abs((a[i + 2] ?? 0) - (b[i + 2] ?? 0));
+      n += 3;
+    }
+  }
+  return n > 0 ? sum / n / 255 : 0;
+}

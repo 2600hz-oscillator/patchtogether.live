@@ -25,6 +25,18 @@ import {
   windowHalfWidth,
   temporalWindow,
   sampleTemporalWindow,
+  // CHROMASTACK
+  CHROMA_HUE_BINS,
+  CHROMA_ARCH_LEN,
+  CHROMA_ARCH_PEAK,
+  CHROMA_BANK_MUSICAL,
+  CHROMA_BANK_INSTRUMENT,
+  chromaBank,
+  rgbStripToHueHist,
+  colorMorphWave,
+  shapeInto,
+  combineCarrierChroma,
+  motionEnergy,
   VIDEOCUBE_SMOOTH_TAPS_SOFT,
   VIDEOCUBE_SMOOTH_TAPS_GPU,
   VIDEOCUBE_SMOOTH_TAPS_MAX,
@@ -554,5 +566,270 @@ describe('SCAN reader-centre position', () => {
     const widened = sampleTemporalWindow(ring, centreAtPeak, 0.3, VIDEOCUBE_SMOOTH_TAPS_GPU);
     expect(widened).toBeLessThan(readScanned);
     expect(widened).toBeGreaterThan(0);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// CHROMASTACK — the dynamic CHROMA→timbre derivation (owner 2026-07-20). Pins:
+// the archetype BANKS (zero-mean, band-limited, seamlessly periodic, MONOTONE
+// spectral centroid, both banks), rgbStripToHueHist (grayscale ⇒ colourless),
+// colorMorphWave + combineCarrierChroma (grayscale ⇒ byte-identical luma carrier
+// = the FALLBACK proof; a hue rotation at constant luma AUDIBLY sweeps the
+// spectral centroid = the owner bar; saturation = dry/wet monotone; DC ~0), and
+// motionEnergy (responds to change, 0 for identical, blends by the amount).
+// ──────────────────────────────────────────────────────────────────────────
+
+// A DFT power-weighted spectral centroid (harmonic-number units) — the audible
+// "brightness" metric. Amplitude-invariant (scale-free).
+function spectralCentroid(wave: Float32Array): number {
+  const N = wave.length;
+  let num = 0, den = 0;
+  for (let k = 1; k <= N / 2; k++) {
+    let re = 0, im = 0;
+    for (let n = 0; n < N; n++) {
+      const a = (2 * Math.PI * k * n) / N;
+      re += wave[n]! * Math.cos(a);
+      im -= wave[n]! * Math.sin(a);
+    }
+    const mag2 = re * re + im * im;
+    num += k * mag2;
+    den += mag2;
+  }
+  return den > 1e-12 ? num / den : 0;
+}
+function meanOf(w: Float32Array): number {
+  let s = 0; for (let i = 0; i < w.length; i++) s += w[i]!;
+  return s / (w.length || 1);
+}
+function rms(w: Float32Array): number {
+  let s = 0; for (let i = 0; i < w.length; i++) s += w[i]! * w[i]!;
+  return Math.sqrt(s / (w.length || 1));
+}
+// A synthetic zero-mean carrier (a couple of partials) — stands in for the luma
+// cube slice Ws in the pure-function tests.
+function synthCarrier(): Float32Array {
+  const N = CHROMA_ARCH_LEN;
+  const w = new Float32Array(N);
+  for (let n = 0; n < N; n++) w[n] = 0.6 * Math.sin((2 * Math.PI * n) / N) + 0.25 * Math.sin((2 * Math.PI * 3 * n) / N);
+  return w;
+}
+// A UNIFORM RGBA strip of a single colour scaled to a target Rec.601 luma (so hue
+// can be rotated at CONSTANT luma). Alpha (unused by the chroma path) = luma.
+function uniformStripAtLuma(hue: [number, number, number], targetLuma: number, cols = 64, rows = 8): Uint8Array {
+  const l = 0.299 * hue[0] + 0.587 * hue[1] + 0.114 * hue[2];
+  const s = l > 0 ? targetLuma / l : 0;
+  const r = Math.min(1, hue[0] * s), g = Math.min(1, hue[1] * s), b = Math.min(1, hue[2] * s);
+  const a = 0.299 * r + 0.587 * g + 0.114 * b;
+  const strip = new Uint8Array(cols * rows * 4);
+  for (let i = 0; i < cols * rows; i++) {
+    strip[i * 4] = Math.round(r * 255);
+    strip[i * 4 + 1] = Math.round(g * 255);
+    strip[i * 4 + 2] = Math.round(b * 255);
+    strip[i * 4 + 3] = Math.round(a * 255);
+  }
+  return strip;
+}
+function grayStrip(level: number, cols = 64, rows = 8): Uint8Array {
+  const v = Math.round(clamp01(level) * 255);
+  const strip = new Uint8Array(cols * rows * 4);
+  for (let i = 0; i < cols * rows; i++) { strip[i * 4] = v; strip[i * 4 + 1] = v; strip[i * 4 + 2] = v; strip[i * 4 + 3] = v; }
+  return strip;
+}
+
+describe('CHROMASTACK archetype banks', () => {
+  const banks: Array<[string, readonly Float32Array[]]> = [
+    ['MUSICAL', CHROMA_BANK_MUSICAL],
+    ['INSTRUMENT', CHROMA_BANK_INSTRUMENT],
+  ];
+
+  it('each bank has CHROMA_HUE_BINS tables of CHROMA_ARCH_LEN, chromaBank picks by mode', () => {
+    for (const [, bank] of banks) {
+      expect(bank).toHaveLength(CHROMA_HUE_BINS);
+      for (const t of bank) expect(t.length).toBe(CHROMA_ARCH_LEN);
+    }
+    expect(chromaBank(0)).toBe(CHROMA_BANK_MUSICAL);
+    expect(chromaBank(1)).toBe(CHROMA_BANK_INSTRUMENT);
+    expect(chromaBank(0.4)).toBe(CHROMA_BANK_MUSICAL);   // rounds
+    expect(chromaBank(1.2)).toBe(CHROMA_BANK_INSTRUMENT); // rounds
+  });
+
+  it('every table is ZERO-MEAN, bounded to the peak, finite (phase-0 harmonic synth)', () => {
+    for (const [name, bank] of banks) {
+      for (let b = 0; b < bank.length; b++) {
+        const t = bank[b]!;
+        expect(Math.abs(meanOf(t)), `${name}[${b}] zero-mean`).toBeLessThan(1e-6);
+        let peak = 0;
+        for (let n = 0; n < t.length; n++) { expect(Number.isFinite(t[n]!)).toBe(true); peak = Math.max(peak, Math.abs(t[n]!)); }
+        expect(peak, `${name}[${b}] peak`).toBeLessThanOrEqual(CHROMA_ARCH_PEAK + 1e-6);
+        expect(peak, `${name}[${b}] non-trivial`).toBeGreaterThan(0.05);
+      }
+    }
+  });
+
+  it('is SEAMLESSLY PERIODIC — no discontinuity at the wrap seam (band-limited, smooth)', () => {
+    for (const [name, bank] of banks) {
+      for (let b = 0; b < bank.length; b++) {
+        const t = bank[b]!;
+        // Largest neighbour delta INCLUDING the wrap (255→0). A band-limited K≤32
+        // wave has a bounded slope, so the seam is no worse than the interior.
+        let maxInterior = 0;
+        for (let n = 1; n < t.length; n++) maxInterior = Math.max(maxInterior, Math.abs(t[n]! - t[n - 1]!));
+        const seam = Math.abs(t[0]! - t[t.length - 1]!);
+        expect(seam, `${name}[${b}] seam ≤ interior slope`).toBeLessThanOrEqual(maxInterior + 1e-6);
+      }
+    }
+  });
+
+  it('spectral centroid is MONOTONE increasing across the 8 (red/warm → violet/cool), both banks', () => {
+    for (const [name, bank] of banks) {
+      const centroids = bank.map((t) => spectralCentroid(t));
+      for (let b = 1; b < centroids.length; b++) {
+        expect(centroids[b]!, `${name} centroid rises ${b - 1}→${b} (${centroids[b - 1]!.toFixed(2)}→${centroids[b]!.toFixed(2)})`)
+          .toBeGreaterThan(centroids[b - 1]!);
+      }
+      // a real spread (dark end genuinely darker than bright end)
+      expect(centroids[bank.length - 1]! - centroids[0]!, `${name} centroid span`).toBeGreaterThan(1);
+    }
+  });
+
+  it('the two banks are DISTINCT (a mode toggle actually changes the character)', () => {
+    let diff = 0;
+    for (let b = 0; b < CHROMA_HUE_BINS; b++) {
+      const m = CHROMA_BANK_MUSICAL[b]!, i = CHROMA_BANK_INSTRUMENT[b]!;
+      for (let n = 0; n < m.length; n++) diff += Math.abs(m[n]! - i[n]!);
+    }
+    expect(diff).toBeGreaterThan(1);
+  });
+});
+
+describe('rgbStripToHueHist', () => {
+  it('a GRAYSCALE strip is colourless: meanSat 0, all-zero hue weights (the fallback trigger)', () => {
+    for (const lvl of [0, 0.3, 0.5, 0.8, 1]) {
+      const h = rgbStripToHueHist([grayStrip(lvl)]);
+      expect(h.meanSat).toBeCloseTo(0, 6);
+      expect(h.hueWeights.reduce((a, w) => a + w, 0)).toBeCloseTo(0, 6);
+      expect(h.meanVal).toBeCloseTo(lvl, 2);
+    }
+  });
+
+  it('a saturated hue lands in a stable bin; meanSat high; centroidHue tracks the bin', () => {
+    const red = rgbStripToHueHist([uniformStripAtLuma([1, 0, 0], 0.2)]);       // hue 0 → bin 0
+    const magenta = rgbStripToHueHist([uniformStripAtLuma([1, 0, 1], 0.2)]);   // hue 300° → high bin
+    expect(red.meanSat).toBeGreaterThan(0.9);
+    expect(magenta.meanSat).toBeGreaterThan(0.9);
+    // red is the LOW (dark/red) end, magenta the HIGH (bright/violet) end
+    expect(red.centroidHue).toBeLessThan(0.2);
+    expect(magenta.centroidHue).toBeGreaterThan(0.7);
+    // dominant weight really sits in distinct bins
+    let redBin = 0, magBin = 0;
+    for (let b = 1; b < CHROMA_HUE_BINS; b++) {
+      if (red.hueWeights[b]! > red.hueWeights[redBin]!) redBin = b;
+      if (magenta.hueWeights[b]! > magenta.hueWeights[magBin]!) magBin = b;
+    }
+    expect(redBin).not.toBe(magBin);
+  });
+});
+
+describe('combineCarrierChroma — the carrier↔chroma fusion', () => {
+  const Ws = synthCarrier();
+
+  it('FALLBACK: a GRAYSCALE strip → the final wave is BYTE-IDENTICAL to the luma carrier', () => {
+    // Grayscale ⇒ meanSat 0 ⇒ wet 0. With the DEFAULT motion amount 0 the output
+    // is the pure carrier, byte-for-byte — the owner's "grayscale sounds like today".
+    for (const lvl of [0.2, 0.5, 0.9]) {
+      const h = rgbStripToHueHist([grayStrip(lvl)]);
+      const wc = colorMorphWave(h, CHROMA_BANK_MUSICAL);
+      const out = combineCarrierChroma(Ws, wc, h.meanSat, h.meanVal, 0.5 /*motion*/, 0 /*amt*/, 0.6 /*depth*/);
+      for (let i = 0; i < Ws.length; i++) expect(out[i]).toBe(Ws[i]);
+    }
+  });
+
+  it('MASTER OFF: chroma_depth 0 → byte-identical carrier even for a COLOURFUL strip', () => {
+    const h = rgbStripToHueHist([uniformStripAtLuma([1, 0, 1], 0.4)]);
+    const wc = colorMorphWave(h, CHROMA_BANK_MUSICAL);
+    const out = combineCarrierChroma(Ws, wc, h.meanSat, h.meanVal, 0, 0, 0 /*depth 0*/);
+    for (let i = 0; i < Ws.length; i++) expect(out[i]).toBe(Ws[i]);
+  });
+
+  it('OWNER BAR: a hue rotation at CONSTANT LUMA moves the spectral centroid (+ RMS sane), BOTH banks', () => {
+    // Same carrier Ws (constant luma), same fully-saturated meanSat, only the HUE
+    // changes red→magenta → the archetype blend + centroid tilt sweep the timbre.
+    const hRed = rgbStripToHueHist([uniformStripAtLuma([1, 0, 0], 0.2)]);
+    const hMag = rgbStripToHueHist([uniformStripAtLuma([1, 0, 1], 0.2)]);
+    for (const bank of [CHROMA_BANK_MUSICAL, CHROMA_BANK_INSTRUMENT]) {
+      const red = combineCarrierChroma(Ws, colorMorphWave(hRed, bank), hRed.meanSat, hRed.meanVal, 0, 0, 0.8);
+      const mag = combineCarrierChroma(Ws, colorMorphWave(hMag, bank), hMag.meanSat, hMag.meanVal, 0, 0, 0.8);
+      const cRed = spectralCentroid(red), cMag = spectralCentroid(mag);
+      expect(Math.abs(cMag - cRed), `centroid moves (red=${cRed.toFixed(2)} mag=${cMag.toFixed(2)})`).toBeGreaterThan(0.5);
+      for (const w of [red, mag]) {
+        expect(rms(w)).toBeGreaterThan(0.05);   // audible
+        expect(rms(w)).toBeLessThan(4);          // not exploding
+      }
+    }
+  });
+
+  it('SATURATION is dry/wet: a more-saturated frame diverges MONOTONICALLY from the carrier', () => {
+    const wc = colorMorphWave(rgbStripToHueHist([uniformStripAtLuma([1, 0, 1], 0.3)]), CHROMA_BANK_MUSICAL);
+    let prev = -1;
+    for (const sat of [0.2, 0.4, 0.6, 0.8, 1.0]) {
+      // meanVal 1 so the brightness drive is neutral (bright = 1) → isolate the MIX.
+      const out = combineCarrierChroma(Ws, wc, sat, 1, 0, 0, 1 /*depth*/);
+      let d = 0; for (let i = 0; i < Ws.length; i++) d += Math.abs(out[i]! - Ws[i]!);
+      expect(d, `sat ${sat} wetter than ${prev >= 0 ? 'the previous' : 'dry'}`).toBeGreaterThan(prev);
+      prev = d;
+    }
+  });
+
+  it('DC of the final wave is ~0 across bright, saturated inputs (anti-click DC-remove)', () => {
+    // A carrier WITH a DC offset → the chroma path must remove it.
+    const biased = Float32Array.from(Ws, (v) => v + 0.4);
+    for (const hue of [[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 0], [1, 0, 1]] as [number, number, number][]) {
+      const h = rgbStripToHueHist([uniformStripAtLuma(hue, 0.6)]);
+      const wc = colorMorphWave(h, CHROMA_BANK_INSTRUMENT);
+      const out = combineCarrierChroma(biased, wc, h.meanSat, h.meanVal, 0, 0, 0.8);
+      expect(Math.abs(meanOf(out)), `DC≈0 for hue ${hue.join(',')}`).toBeLessThan(1e-4);
+    }
+  });
+});
+
+describe('motionEnergy', () => {
+  it('is 0 for identical frames and > 0 when the picture changes', () => {
+    const a = uniformStripAtLuma([1, 0, 0], 0.4);
+    const b = uniformStripAtLuma([0, 0, 1], 0.4);
+    expect(motionEnergy([a], [a])).toBe(0);
+    expect(motionEnergy([a, b], [a, b])).toBe(0);
+    const m = motionEnergy([a], [b]);
+    expect(m).toBeGreaterThan(0);
+    expect(m).toBeLessThanOrEqual(1);
+  });
+
+  it('grows with the SIZE of the change', () => {
+    const base = grayStrip(0.5);
+    const small = grayStrip(0.55);
+    const big = grayStrip(0.95);
+    expect(motionEnergy([base], [big])).toBeGreaterThan(motionEnergy([base], [small]));
+  });
+
+  it('BLENDS by the amount: motionAmt 0 → content-only (motion does not change the wave)', () => {
+    const Ws = synthCarrier();
+    const h = rgbStripToHueHist([uniformStripAtLuma([1, 0, 1], 0.5)]);
+    const wc = colorMorphWave(h, CHROMA_BANK_MUSICAL);
+    const still = combineCarrierChroma(Ws, wc, h.meanSat, h.meanVal, 0.0, 0 /*amt*/, 0.6);
+    const moving = combineCarrierChroma(Ws, wc, h.meanSat, h.meanVal, 0.9, 0 /*amt*/, 0.6);
+    for (let i = 0; i < Ws.length; i++) expect(moving[i]).toBe(still[i]); // amt 0 ⇒ motion ignored
+    // With the amount UP, motion boosts the drive (louder) → the wave changes.
+    const alive = combineCarrierChroma(Ws, wc, h.meanSat, h.meanVal, 0.9, 1 /*amt*/, 0.6);
+    expect(rms(alive)).toBeGreaterThan(rms(still) * 1.05);
+  });
+});
+
+describe('shapeInto', () => {
+  it('RMS-matches Wc to Ws (level fusion) while preserving the chroma spectral shape', () => {
+    const Ws = Float32Array.from(synthCarrier(), (v) => v * 2); // a louder carrier
+    const wc = CHROMA_BANK_MUSICAL[5]!;
+    const shaped = shapeInto(wc, Ws);
+    expect(rms(shaped)).toBeCloseTo(rms(Ws), 6);
+    // scaling is amplitude-only → the spectral centroid is unchanged
+    expect(spectralCentroid(shaped)).toBeCloseTo(spectralCentroid(wc), 4);
   });
 });

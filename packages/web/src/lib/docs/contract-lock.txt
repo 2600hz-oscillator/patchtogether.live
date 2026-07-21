@@ -3425,11 +3425,14 @@ videobox out video video
 videobox param cv_play_trigger 0..1 linear default=0
 videobox param gain 0..2 linear default=1
 videocube meta domain=video
+videocube in chroma_depth_cv cv param=chroma_depth cvScale=linear
 videocube in connect_cv cv param=connect cvScale=linear
 videocube in connect_strength_cv cv param=connect_strength cvScale=linear
 videocube in crush_cv cv param=crush cvScale=linear
 videocube in fold_cv cv param=fold cvScale=linear
+videocube in hue_mode_cv cv param=hue_mode cvScale=linear
 videocube in morph_cv cv param=morph_fc cvScale=linear
+videocube in motion_cv cv param=motion cvScale=linear
 videocube in scan_cv cv param=scan cvScale=linear
 videocube in slice_rx_cv cv param=slice_rx cvScale=linear
 videocube in slice_ry_cv cv param=slice_ry cvScale=linear
@@ -3450,16 +3453,19 @@ videocube out scope_out video
 videocube out slice_out video
 videocube out smooth_out video
 videocube out video_out video
+videocube param chroma_depth 0..1 linear default=0.6
 videocube param connect 0..1 linear default=0
 videocube param connect_strength 0..1 linear default=0
 videocube param crush 0..1 linear default=0
 videocube param fine -100..100 linear default=0 unit=¢
 videocube param fold 0..1 linear default=0
 videocube param freeze 0..1 linear default=0
+videocube param hue_mode 0..1 discrete default=0
 videocube param level 0..2 linear default=1
 videocube param live 0..1 linear default=0
 videocube param material 0..1 discrete default=0
 videocube param morph_fc 0..1 linear default=0
+videocube param motion 0..1 linear default=0
 videocube param reader_mode 0..2 discrete default=0
 videocube param scan 0..1 linear default=0
 videocube param screen_on 0..1 discrete default=1
