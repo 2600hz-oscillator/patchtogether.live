@@ -1275,6 +1275,9 @@ export function buildModuleManifest(
       // CLIPPLAYER scene-repeats model (counts, frozen unit, launch seam,
       // repeat tracker) — not a ModuleDef (the def lives in clipplayer.ts).
       if (file === 'clip-scene-repeats.ts') return false;
+      // CLIPPLAYER launch-quantization helper (Deluge next-loop-boundary math) —
+      // not a ModuleDef (the def lives in clipplayer.ts).
+      if (file === 'clip-launch-quantize.ts') return false;
       // CLIPPLAYER per-clip automation helpers (record model, controller,
       // engine cores, render state) — not ModuleDefs (the def lives in
       // clipplayer.ts; automation is per-clip sibling DATA, not a module).

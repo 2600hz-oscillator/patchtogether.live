@@ -364,6 +364,120 @@ describe('clipplayer: quantized switch (per lane, at the loop boundary)', () => 
   });
 });
 
+describe('clipplayer: Deluge launch quantization (quantize to the LONGEST playing clip)', () => {
+  // stepDiv 2 @120bpm → 0.125 s/step. LONG = lane 0 slot 0 (16 steps → 2.0 s
+  // loop, wraps at ~0.01+2.0=2.01). SHORT = lane 1 slot 1 (4 steps → 0.5 s loop,
+  // wraps at 0.51/1.01/1.51/2.01). A launch into idle lane 2 with QNT on must
+  // wait for the LONG clip's 2.01 boundary — NOT fire immediately, NOT drop in
+  // at the short clip's sooner wraps.
+  function seedTwoPlaying() {
+    seed(
+      { stepDiv: 2, quantize: 1, octave: 0, gateLength: 0.9 },
+      {
+        clips: {
+          [clipIndex(0, 0)]: noteClip(72, 16), // LONG (16 steps)
+          [clipIndex(1, 1)]: noteClip(60, 4), // SHORT (4 steps)
+          [clipIndex(2, 2)]: noteClip(64, 4), // target for the idle launch
+          [clipIndex(3, 1)]: noteClip(50, 4), // an alternate clip for lane 1
+        },
+        // Launch the LONG (lane 0) + SHORT (lane 1) together. Nothing is playing
+        // yet → both fire immediately (the "no reference groove" escape).
+        queued: [0, 1, null, null, null, null, null, null],
+      },
+    );
+    seedTimelorde(1);
+  }
+
+  it('an idle-lane launch does NOT sound immediately — it drops in at the LONG clip’s boundary', async () => {
+    seedTwoPlaying();
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+    run(ctx, 0, 0.3);
+    // Both reference clips are genuinely playing.
+    expect(handle.read!('activeLane:0')).toBe(0);
+    expect(handle.read!('activeLane:1')).toBe(1);
+
+    // Launch the target into IDLE lane 2 (a plain per-lane queued write — QNT on,
+    // no NOW override).
+    (livePatch.nodes[NODE_ID]!.data as Record<string, unknown>).queued = lane8(2, 2, null);
+
+    // Well past the SHORT clip's 0.51/1.01/1.51 wraps but before the LONG 2.01
+    // boundary: lane 2 is still QUEUED (flashing) — not sounding, not even active.
+    run(ctx, 0.3, 1.7);
+    expect(handle.read!('currentStep:2'), 'not sounding before the long boundary').toBe(-1);
+    expect(handle.read!('activeLane:2'), 'not yet started').toBe(-1);
+    expect(
+      (livePatch.nodes[NODE_ID]!.data!.queued as (number | null)[])[2],
+      'still queued (did NOT fire at the short clip’s wrap)',
+    ).toBe(2);
+
+    // Past the LONG clip's 2.01 wrap: NOW it drops in and sounds.
+    run(ctx, 1.7, 2.3);
+    expect(handle.read!('activeLane:2'), 'started at the long boundary').toBe(2);
+    expect(handle.read!('currentStep:2'), 'sounding after the long boundary').toBeGreaterThanOrEqual(0);
+    expect(
+      (livePatch.nodes[NODE_ID]!.data!.queued as (number | null)[])[2],
+      'queue consumed',
+    ).toBeNull();
+  });
+
+  it('a SWITCH in an already-playing SHORT lane also waits for the LONG boundary (not its own sooner wrap)', async () => {
+    seedTwoPlaying();
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+    run(ctx, 0, 0.3);
+    expect(handle.read!('activeLane:1')).toBe(1);
+
+    // Switch lane 1 (the SHORT clip) to slot 3 — QNT on.
+    (livePatch.nodes[NODE_ID]!.data as Record<string, unknown>).queued = lane8(1, 3, null);
+
+    // Past the short clip's own 0.51/1.01/1.51 wraps (all skipped): it has NOT
+    // switched (pre-fix it would flip at its own first boundary). Assert before
+    // the 2.01 boundary enters the lookahead (~1.685) where ln.active flips.
+    run(ctx, 0.3, 1.5);
+    expect(handle.read!('activeLane:1'), 'still the old clip after its own sooner wraps').toBe(1);
+
+    // At the LONG clip's 2.01 boundary it switches.
+    run(ctx, 1.5, 2.3);
+    expect(handle.read!('activeLane:1'), 'switched at the long boundary').toBe(3);
+  });
+
+  it('a queued STOP stops at the lane’s OWN wrap — NOT the longest OTHER lane’s boundary', async () => {
+    // MAJOR-1 regression: with the LONG (lane 0, ~2 s loop) still playing, a
+    // manual stop of the SHORT lane 1 must land at lane 1's OWN next ~0.5 s wrap,
+    // not be held audible for lane 0's ~2 s boundary.
+    seedTwoPlaying();
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+    run(ctx, 0, 0.3);
+    expect(handle.read!('activeLane:0')).toBe(0);
+    expect(handle.read!('activeLane:1')).toBe(1);
+
+    // Stop lane 1 (QNT on). It quantizes — but to ITS OWN loop end.
+    (livePatch.nodes[NODE_ID]!.data as Record<string, unknown>).queued = lane8(1, 'stop', null);
+
+    // By 0.9 s — long before lane 0's 2.01 boundary — lane 1 has stopped at one
+    // of its own 0.51/1.01 wraps, while lane 0 keeps playing.
+    run(ctx, 0.3, 0.9);
+    expect(handle.read!('activeLane:1'), 'stopped at its own wrap, not the long boundary').toBe(-1);
+    expect(handle.read!('activeLane:0'), 'the long lane keeps playing').toBe(0);
+  });
+
+  it('with NOTHING playing, a QNT-on launch fires immediately (start the groove now)', async () => {
+    seed(
+      { stepDiv: 2, quantize: 1, octave: 0, gateLength: 0.9 },
+      { clips: { [clipIndex(2, 2)]: noteClip(64, 4) }, queued: lane8(2, 2, null) },
+    );
+    seedTimelorde(1);
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+    run(ctx, 0, 0.1);
+    // No reference bar → immediate: active + sounding within a step.
+    expect(handle.read!('activeLane:2')).toBe(2);
+    expect(handle.read!('currentStep:2')).toBeGreaterThanOrEqual(0);
+  });
+});
+
 describe('clipplayer: stop', () => {
   it('stop_all rising edge stops every lane', async () => {
     seed(
