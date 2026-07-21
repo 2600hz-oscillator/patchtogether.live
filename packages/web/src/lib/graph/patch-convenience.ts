@@ -558,6 +558,75 @@ export interface ColumnWiringCtx {
   clipPlayerId: string | null;
   /** The canonical mixmstrs node id (channel destination), or null. */
   mixerId: string | null;
+  /** The resolved HEAD source of the column — the ONE audio-source that is wired
+   *  into the chain root (or straight to the mixer with no FX). Non-head sources
+   *  are automation-only (clip control, NO audio edge). null = a headless column
+   *  (e.g. after the head was deleted) — the FX chain stays intact but nothing
+   *  feeds it. Resolved by the reconciler via resolveColumnHead (an explicit,
+   *  collab-persisted flag — NEVER "first source in order", which would auto-
+   *  promote a surviving non-head source on deletion). */
+  headNodeId: string | null;
+}
+
+// ---------------- Column head-source resolution (one-head model) ----------------
+
+/** A chain-source member + its persisted head flag, for resolveColumnHead. The
+ *  flag is `node.data.isColumnHead` (an independent CRDT key on the member node,
+ *  like `data.channel`). */
+export interface SourceHeadState {
+  nodeId: string;
+  /** node.data.isColumnHead: true = the head, false = a DELIBERATE non-head
+   *  (never auto-promoted), undefined = a freshly-added source not yet classified. */
+  isHead?: boolean;
+}
+
+/** The resolved head + the flag writes the caller must persist to converge. */
+export interface ColumnHeadResolution {
+  /** The head source node id (the ONLY source audio-wired), or null (headless). */
+  headNodeId: string | null;
+  /** The isColumnHead flag writes to persist — ONLY genuine changes (idempotent). */
+  flagWrites: { nodeId: string; isHead: boolean }[];
+}
+
+/**
+ * Resolve the ONE head source of a column DETERMINISTICALLY from its chain-source
+ * members (in column order) + their persisted head flags. The tri-state flag
+ * carries exactly the information a pure state-based reconcile needs to satisfy
+ * the owner's rule WITHOUT auto-promotion:
+ *   - a member flagged `true` is the head (on a collab race where two are `true`,
+ *     the FIRST in column order wins; the rest are demoted to `false`);
+ *   - a member with an UNDEFINED flag is freshly added → it becomes the head ONLY
+ *     if no head is present yet, else it is classified as a DELIBERATE non-head
+ *     (`false`);
+ *   - a member flagged `false` is a deliberate non-head and is NEVER auto-promoted
+ *     — so DELETING the head leaves the column HEADLESS (the surviving non-head
+ *     sources stay automation-only), while ADDING a fresh source to a headless
+ *     column promotes IT to head (it arrives undefined).
+ * PURE + deterministic: two peers with the same ordered sources + flags produce
+ * the same headNodeId and the same flagWrites, so the Y.Doc converges. `sources`
+ * must be ONLY the column's chain-source members (has a main out, no main in), in
+ * column order — the caller filters.
+ */
+export function resolveColumnHead(sources: readonly SourceHeadState[]): ColumnHeadResolution {
+  const flagWrites: { nodeId: string; isHead: boolean }[] = [];
+  // A head is present iff some source is already flagged true.
+  let head: string | null = sources.find((s) => s.isHead === true)?.nodeId ?? null;
+
+  for (const s of sources) {
+    if (s.nodeId === head) continue; // the chosen head keeps its true flag
+    if (s.isHead === true) {
+      flagWrites.push({ nodeId: s.nodeId, isHead: false }); // second head (race) → demote
+    } else if (s.isHead === undefined) {
+      if (head === null) {
+        head = s.nodeId; // freshly added into a headless column → promote to head
+        flagWrites.push({ nodeId: s.nodeId, isHead: true });
+      } else {
+        flagWrites.push({ nodeId: s.nodeId, isHead: false }); // a head exists → non-head
+      }
+    }
+    // s.isHead === false: a deliberate non-head — leave it (no auto-promotion).
+  }
+  return { headNodeId: head, flagWrites };
 }
 
 /** True when a member is a chain SOURCE — it has no identifiable main audio IN,
@@ -570,25 +639,26 @@ function isChainSource(def: ConvenienceDef): boolean {
 
 /**
  * Plan the COMPLETE reconciler-owned edge set for one column, DETERMINISTICALLY
- * (pure function of the members array + channel + endpoints). Two peers with the
- * same inputs produce byte-identical WcolEdge[] (same ids), so the Y.Map
- * converges. ROLE-BASED single-strip model — a channel column is ONE channel
- * strip = ONE audio path to the mixer, INDEPENDENT of the order members were
- * added (owner bug 3):
+ * (pure function of the members array + channel + endpoints + the resolved head).
+ * Two peers with the same inputs produce byte-identical WcolEdge[] (same ids), so
+ * the Y.Map converges. ONE-HEAD single-strip model — a channel column is ONE
+ * channel strip = ONE head source → FX chain (in column order) → mixer. It NEVER
+ * sums sources or makes wiring impossible with real patch cables (owner rule):
  *   - CLIP CONTROL: EVERY source instrument on the channel (clip-eligible + no
- *     audio-in) gets the clip's pitch{n}/gate{n} → layered play.
- *   - CHAIN: SOURCES (no main audio-in) are the chain HEADS; FX (have a main
- *     audio-in) form the post-source chain in column order. Every source feeds
- *     the FX-chain head (summed there); with NO FX the sources go straight to
- *     the mixer channel.
- *   - SEND: a SINGLE tail per column → ch{n}L/R. With FX the tail is the last FX
- *     with a main out; with no FX every source is its own tail and they SUM at
- *     the mixer channel bus (the owner's multi-source default). Deriving heads
- *     from ROLE (not raw insertion order) makes [source, FX] and [FX, source]
- *     wire IDENTICALLY — no double-send into the mixer, no missing splice.
+ *     audio-in) — HEAD and non-head alike — gets the clip's pitch{n}/gate{n}.
+ *     This is the "automation channel" a non-head source keeps.
+ *   - AUDIO CHAIN: the SINGLE HEAD source (ctx.headNodeId) is wired at the chain
+ *     ROOT — into the first FX, or straight to the mixer if there is no FX. FX
+ *     form the post-head chain in column order (fx[i]→fx[i+1]). NON-HEAD sources
+ *     get NO audio edge at all (drop a 2nd source in a column and it is
+ *     automation-only until the user manually patches it — exactly a real rack).
+ *   - SEND: a SINGLE tail → ch{n}L/R. With FX the tail is the last FX with a main
+ *     out; with NO FX the head source is the tail. A headless column (head === null,
+ *     e.g. after the head was deleted) KEEPS its FX chain intact (fx[0]→…→mixer),
+ *     just with nothing feeding it — no auto-promotion of a surviving source.
  */
 export function planColumnWiring(ctx: ColumnWiringCtx): WcolEdge[] {
-  const { channel, members, clipPlayerId, mixerId } = ctx;
+  const { channel, members, clipPlayerId, mixerId, headNodeId } = ctx;
   const out: WcolEdge[] = [];
   const seenIds = new Set<string>();
   const push = (e: WcolEdge) => {
@@ -597,7 +667,8 @@ export function planColumnWiring(ctx: ColumnWiringCtx): WcolEdge[] {
     out.push(e);
   };
 
-  // (1) CLIP CONTROL — every SOURCE instrument (clip-eligible + no audio-in).
+  // (1) CLIP CONTROL — every SOURCE instrument (clip-eligible + no audio-in),
+  //     HEAD and non-head alike (the non-head source's automation channel).
   //     A fed DSP (has audio-in) is driven by the chain, never by the clip.
   if (clipPlayerId) {
     for (const m of members) {
@@ -615,32 +686,34 @@ export function planColumnWiring(ctx: ColumnWiringCtx): WcolEdge[] {
     }
   }
 
-  // (2)+(3) ROLE-BASED CHAIN + single send. Split the audio participants by ROLE
-  // (NOT insertion order): SOURCES have no main audio-in, FX do. FX chain in
-  // column order; every source feeds the FX head (or the mixer if there is no
-  // FX); a SINGLE tail feeds ch{n}.
+  // (2)+(3) ONE-HEAD audio chain + single send. Split the audio participants by
+  // ROLE (NOT insertion order): SOURCES have no main audio-in, FX do. ONLY the
+  // resolved head source is audio-wired; non-head sources are automation-only.
   const audio = members.filter((m) => isChainAudioParticipant(m.def));
-  const sources = audio.filter((m) => isChainSource(m.def));
   const fx = audio.filter((m) => !isChainSource(m.def)); // has a main audio-in
+  const head =
+    headNodeId != null
+      ? audio.find((m) => m.nodeId === headNodeId && isChainSource(m.def)) ?? null
+      : null;
 
-  // FX internal chain: fx[i] → fx[i+1] (column order among the FX).
+  // FX internal chain: fx[i] → fx[i+1] (column order among the FX). Stays intact
+  // even when headless — a deleted head leaves the chain, not a dangling gap.
   for (let i = 0; i + 1 < fx.length; i++) {
     for (const e of planPairLink(fx[i]!.nodeId, fx[i]!.def, fx[i + 1]!.nodeId, fx[i + 1]!.def)) {
       push(toWcol(e));
     }
   }
 
-  // Every source feeds the HEAD of the FX chain (they sum into it). With no FX
-  // the sources go straight to the mixer channel (handled by the send pass).
-  if (fx.length > 0) {
-    const head = fx[0]!;
-    for (const s of sources) {
-      for (const e of planPairLink(s.nodeId, s.def, head.nodeId, head.def)) push(toWcol(e));
-    }
+  // The HEAD source feeds the ROOT of the FX chain (only the head — never a
+  // non-head source, never a sum). With no FX the head goes straight to the
+  // mixer (the send pass below).
+  if (fx.length > 0 && head) {
+    for (const e of planPairLink(head.nodeId, head.def, fx[0]!.nodeId, fx[0]!.def)) push(toWcol(e));
   }
 
   // SEND-TO-MIXER — a SINGLE tail per column. With FX: the last FX with a main
-  // out. Without FX: every source is its own tail (they sum at the ch bus).
+  // out. Without FX: ONLY the head source sends (non-head sources never reach
+  // the mixer). A headless no-FX column sends nothing.
   if (mixerId) {
     const emitSend = (m: ColumnMember) => {
       const send = planSendToMixer(m.def, channel);
@@ -657,8 +730,8 @@ export function planColumnWiring(ctx: ColumnWiringCtx): WcolEdge[] {
       let tail: ColumnMember | null = null;
       for (const m of fx) if (resolveMainAudioOut(m.def) !== null) tail = m; // last main-out FX
       if (tail) emitSend(tail);
-    } else {
-      for (const s of sources) if (resolveMainAudioOut(s.def) !== null) emitSend(s);
+    } else if (head && resolveMainAudioOut(head.def) !== null) {
+      emitSend(head);
     }
   }
 

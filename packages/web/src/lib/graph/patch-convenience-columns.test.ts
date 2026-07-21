@@ -29,6 +29,7 @@ import {
   planPairLink,
   planColumnWiring,
   planSendWiring,
+  resolveColumnHead,
   wcolEdgeId,
   type ConvenienceDef,
   type ColumnMember,
@@ -224,11 +225,18 @@ const VIDEO_ONLY: ConvenienceDef = def([port('cv_in', 'cv')], [port('video', 'vi
 const member = (nodeId: string, d: ConvenienceDef): ColumnMember => ({ nodeId, def: d });
 
 describe('planColumnWiring (deterministic full-column planner)', () => {
-  const ctx = (members: ColumnMember[]) => ({
+  // The head-source (has a main out, no main in) that the ONE-HEAD model wires at
+  // the chain root. Default = the FIRST source in column order (matches a single-
+  // strip column); tests that exercise headless / explicit heads pass it in.
+  const firstSource = (members: ColumnMember[]): string | null =>
+    members.find((m) => resolveMainAudioOut(m.def) !== null && resolveMainAudioIn(m.def) === null)
+      ?.nodeId ?? null;
+  const ctx = (members: ColumnMember[], headNodeId: string | null = firstSource(members)) => ({
     channel: 3,
     members,
     clipPlayerId: 'clip',
     mixerId: 'mix',
+    headNodeId,
   });
 
   it('a single VCO: clip control (source) + tail send-to-mixer', () => {
@@ -285,28 +293,32 @@ describe('planColumnWiring (deterministic full-column planner)', () => {
     expect(ids.has(wcolEdgeId('flt', 'out', 'mix', 'ch3L'))).toBe(true);
   });
 
-  it('multi-source PARALLEL ISLANDS: BOTH VCOs are clip-driven AND BOTH send (sum at ch bus)', () => {
+  it('multi-source no-FX: ONLY the HEAD sends; the 2nd source is AUTOMATION-ONLY (no audio edge)', () => {
+    // Owner rule: a 2nd source in a column is NOT auto-wired into the audio — it
+    // only gets its clip/automation channel. head = vco1 (first in order).
     const edges = planColumnWiring(ctx([member('vco1', VCO), member('vco2', VCO)]));
     const ids = new Set(edges.map((e) => e.id));
-    // Two source-only modules = two singleton islands: NO chain link between them.
+    // No chain link between the two sources (a source has no audio-in anyway).
     expect(ids.has(wcolEdgeId('vco1', 'out', 'vco2', 'pitch'))).toBe(false);
-    // BOTH island tails send to the channel (they sum at the mixer input bus).
+    // ONLY the head (vco1) reaches the mixer — no summing at the ch bus.
     expect(ids.has(wcolEdgeId('vco1', 'out', 'mix', 'ch3L'))).toBe(true);
-    expect(ids.has(wcolEdgeId('vco2', 'out', 'mix', 'ch3L'))).toBe(true);
-    // BOTH sources are driven by the clip's pitch3/gate3 (layered play).
+    expect(ids.has(wcolEdgeId('vco1', 'out', 'mix', 'ch3R'))).toBe(true);
+    // The 2nd source has NO audio edge at all (not to the mixer, not anywhere).
+    expect(ids.has(wcolEdgeId('vco2', 'out', 'mix', 'ch3L'))).toBe(false);
+    expect(ids.has(wcolEdgeId('vco2', 'out', 'mix', 'ch3R'))).toBe(false);
+    expect(edges.some((e) => e.source.nodeId === 'vco2' && e.sourceType === 'audio')).toBe(false);
+    // BOTH sources still get their clip pitch3/gate3 (the non-head's automation channel).
     expect(ids.has(wcolEdgeId('clip', 'pitch3', 'vco1', 'pitch'))).toBe(true);
     expect(ids.has(wcolEdgeId('clip', 'pitch3', 'vco2', 'pitch'))).toBe(true);
     expect(ids.has(wcolEdgeId('clip', 'gate3', 'vco1', 'gate'))).toBe(true);
     expect(ids.has(wcolEdgeId('clip', 'gate3', 'vco2', 'gate'))).toBe(true);
   });
 
-  it('multi-source with FX: [vco1,filter,vco2,reverb] → ONE strip, BOTH sources SUM into the FX head, SINGLE tail sends (bug 3 role model)', () => {
-    // Role-based single-strip model (owner bug 3): a column is ONE channel path.
-    // Sources are the HEADS; FX form ONE chain (filter → reverb) in column order;
-    // EVERY source sums into the FX head (filter); the SINGLE tail (reverb) is the
-    // only thing that sends to the channel. (The old model split this into two
-    // parallel islands with one source bypassing the FX — now every source is
-    // filtered + reverbed, and there is exactly ONE mixer tail.)
+  it('multi-source with FX: [vco1,filter,vco2,reverb] → HEAD (vco1)→filter→reverb→mixer; vco2 is AUTOMATION-ONLY', () => {
+    // ONE-HEAD model (owner rule): the column is ONE head source → FX chain →
+    // mixer. vco1 (head, first source) → filter → reverb → ch3. vco2 (2nd source)
+    // gets ONLY its clip control — NO audio edge (never summed into the FX, never
+    // sent to the channel). The user manually patches it in if they want it.
     const edges = planColumnWiring(ctx([
       member('vco1', VCO), member('flt', FILTER), member('vco2', VCO), member('rev', REVERB_ST),
     ]));
@@ -314,15 +326,15 @@ describe('planColumnWiring (deterministic full-column planner)', () => {
     // FX chain: filter → reverb.
     expect(ids.has(wcolEdgeId('flt', 'out', 'rev', 'inL'))).toBe(true);
     expect(ids.has(wcolEdgeId('flt', 'out', 'rev', 'inR'))).toBe(true);
-    // BOTH sources feed the FX HEAD (filter), regardless of column order.
+    // ONLY the HEAD (vco1) feeds the FX head (filter).
     expect(ids.has(wcolEdgeId('vco1', 'out', 'flt', 'in'))).toBe(true);
-    expect(ids.has(wcolEdgeId('vco2', 'out', 'flt', 'in'))).toBe(true);
+    // The 2nd source (vco2) is NOT wired into the audio at all.
+    expect(ids.has(wcolEdgeId('vco2', 'out', 'flt', 'in'))).toBe(false);
+    expect(edges.some((e) => e.source.nodeId === 'vco2' && e.sourceType === 'audio')).toBe(false);
     // The SINGLE tail (reverb) is the ONLY member that sends to the channel.
     expect(ids.has(wcolEdgeId('rev', 'outL', 'mix', 'ch3L'))).toBe(true);
     expect(ids.has(wcolEdgeId('rev', 'outR', 'mix', 'ch3R'))).toBe(true);
-    // No cross link into a source (a source has no audio-in anyway).
-    expect(ids.has(wcolEdgeId('flt', 'out', 'vco2', 'pitch'))).toBe(false);
-    // BOTH sources clip-driven.
+    // BOTH sources still clip-driven (vco2 keeps its automation channel).
     expect(ids.has(wcolEdgeId('clip', 'pitch3', 'vco1', 'pitch'))).toBe(true);
     expect(ids.has(wcolEdgeId('clip', 'pitch3', 'vco2', 'pitch'))).toBe(true);
     // NON-tail members never send to the mixer.
@@ -331,18 +343,49 @@ describe('planColumnWiring (deterministic full-column planner)', () => {
     expect(ids.has(wcolEdgeId('flt', 'out', 'mix', 'ch3L'))).toBe(false);
   });
 
+  it('DELETE HEAD keeps the FX chain intact (headless): no source feeds fx, but fx→…→mixer stays; a present non-head source is NOT promoted', () => {
+    // source→filter→reverb→mixer, then the head source is deleted. Passing
+    // headNodeId=null models the headless column (the head flag was cleared and no
+    // surviving source is auto-promoted). The FX chain STAYS; a still-present
+    // non-head source (vco2) gets no audio edge.
+    const edges = planColumnWiring(
+      ctx([member('vco2', VCO), member('flt', FILTER), member('rev', REVERB_ST)], null),
+    );
+    const ids = new Set(edges.map((e) => e.id));
+    // FX chain intact + tail still sends.
+    expect(ids.has(wcolEdgeId('flt', 'out', 'rev', 'inL'))).toBe(true);
+    expect(ids.has(wcolEdgeId('rev', 'outL', 'mix', 'ch3L'))).toBe(true);
+    expect(ids.has(wcolEdgeId('rev', 'outR', 'mix', 'ch3R'))).toBe(true);
+    // Nothing feeds the FX head (headless): the surviving source is NOT promoted.
+    expect(edges.some((e) => e.source.nodeId === 'vco2' && e.sourceType === 'audio')).toBe(false);
+    // The surviving non-head source keeps its clip control (automation-only).
+    expect(ids.has(wcolEdgeId('clip', 'pitch3', 'vco2', 'pitch'))).toBe(true);
+  });
+
+  it('ADD source to a HEADLESS column wires it at the ROOT (source→fx1→…→mixer)', () => {
+    // A headless FX chain, then a fresh source becomes the head (headNodeId=vcoNew)
+    // → wired at the chain root.
+    const edges = planColumnWiring(
+      ctx([member('vcoNew', VCO), member('flt', FILTER), member('rev', REVERB_ST)], 'vcoNew'),
+    );
+    const ids = new Set(edges.map((e) => e.id));
+    expect(ids.has(wcolEdgeId('vcoNew', 'out', 'flt', 'in'))).toBe(true); // root
+    expect(ids.has(wcolEdgeId('flt', 'out', 'rev', 'inL'))).toBe(true);
+    expect(ids.has(wcolEdgeId('rev', 'outL', 'mix', 'ch3L'))).toBe(true);
+  });
+
   it('empty column → no edges', () => {
     expect(planColumnWiring(ctx([]))).toEqual([]);
   });
 
   it('no clip player → no clip control, but chain + send still plan', () => {
-    const edges = planColumnWiring({ channel: 3, members: [member('vco', VCO)], clipPlayerId: null, mixerId: 'mix' });
+    const edges = planColumnWiring({ channel: 3, members: [member('vco', VCO)], clipPlayerId: null, mixerId: 'mix', headNodeId: 'vco' });
     expect(edges.some((e) => e.source.nodeId === 'clip')).toBe(false);
     expect(edges.some((e) => e.target.nodeId === 'mix')).toBe(true);
   });
 
   it('no mixer → no tail send, but clip + chain still plan', () => {
-    const edges = planColumnWiring({ channel: 3, members: [member('vco', VCO), member('flt', FILTER)], clipPlayerId: 'clip', mixerId: null });
+    const edges = planColumnWiring({ channel: 3, members: [member('vco', VCO), member('flt', FILTER)], clipPlayerId: 'clip', mixerId: null, headNodeId: 'vco' });
     expect(edges.some((e) => e.target.nodeId === 'mix')).toBe(false);
     expect(edges.some((e) => e.source.nodeId === 'clip')).toBe(true);
     expect(edges.some((e) => e.id === wcolEdgeId('vco', 'out', 'flt', 'in'))).toBe(true);
@@ -366,6 +409,59 @@ describe('planColumnWiring (deterministic full-column planner)', () => {
     expect(healedIds.has(wcolEdgeId('rev', 'outL', 'mix', 'ch3L'))).toBe(false);
     expect(healedIds.has(wcolEdgeId('flt', 'out', 'mix', 'ch3L'))).toBe(true);
     expect(fullIds.has(wcolEdgeId('flt', 'out', 'mix', 'ch3L'))).toBe(false);
+  });
+});
+
+// ================================================================
+// resolveColumnHead — the one-head classifier (tri-state flag)
+// ================================================================
+
+describe('resolveColumnHead (deterministic one-head classifier)', () => {
+  const s = (nodeId: string, isHead?: boolean) => ({ nodeId, isHead });
+
+  it('a single fresh source (undefined flag) becomes the head', () => {
+    const r = resolveColumnHead([s('a')]);
+    expect(r.headNodeId).toBe('a');
+    expect(r.flagWrites).toEqual([{ nodeId: 'a', isHead: true }]);
+  });
+
+  it('two fresh sources: the FIRST in order is promoted, the 2nd is a deliberate non-head', () => {
+    const r = resolveColumnHead([s('a'), s('b')]);
+    expect(r.headNodeId).toBe('a');
+    expect(r.flagWrites).toEqual([
+      { nodeId: 'a', isHead: true },
+      { nodeId: 'b', isHead: false },
+    ]);
+  });
+
+  it('an existing head is KEPT and a fresh 2nd source is classified non-head (no re-promotion)', () => {
+    const r = resolveColumnHead([s('a', true), s('b')]);
+    expect(r.headNodeId).toBe('a');
+    expect(r.flagWrites).toEqual([{ nodeId: 'b', isHead: false }]);
+  });
+
+  it('DELETE HEAD → a lone surviving non-head is NOT promoted (headless, no writes)', () => {
+    // The head 'a' was deleted; 'b' remains flagged false (deliberate non-head).
+    const r = resolveColumnHead([s('b', false)]);
+    expect(r.headNodeId).toBeNull();
+    expect(r.flagWrites).toEqual([]);
+  });
+
+  it('ADD source to a headless column (existing non-head + fresh) → the FRESH one becomes head', () => {
+    const r = resolveColumnHead([s('b', false), s('c')]);
+    expect(r.headNodeId).toBe('c');
+    expect(r.flagWrites).toEqual([{ nodeId: 'c', isHead: true }]);
+  });
+
+  it('collab race — TWO flagged heads → the FIRST in order wins, the 2nd is demoted', () => {
+    const r = resolveColumnHead([s('a', true), s('b', true)]);
+    expect(r.headNodeId).toBe('a');
+    expect(r.flagWrites).toEqual([{ nodeId: 'b', isHead: false }]);
+  });
+
+  it('IDEMPOTENT — a fully-classified column yields no writes', () => {
+    expect(resolveColumnHead([s('a', true), s('b', false)]).flagWrites).toEqual([]);
+    expect(resolveColumnHead([]).headNodeId).toBeNull();
   });
 });
 

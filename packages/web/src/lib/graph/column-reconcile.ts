@@ -51,8 +51,12 @@ import {
 import {
   planColumnWiring,
   planSendWiring,
+  resolveColumnHead,
+  resolveMainAudioIn,
+  isChainAudioParticipant,
   type ColumnMember,
   type ConvenienceDef,
+  type SourceHeadState,
   type WcolEdge,
 } from './patch-convenience';
 
@@ -174,6 +178,81 @@ function resolveMembers(order: readonly string[], resolveDef: ColumnDefResolver)
   return out;
 }
 
+/** Read the head flag off a node's data (tri-state: true / false / undefined). */
+function headFlagOf(node: ModuleNode | undefined): boolean | undefined {
+  const v = (node?.data as { isColumnHead?: unknown } | undefined)?.isColumnHead;
+  return typeof v === 'boolean' ? v : undefined;
+}
+
+/** A member is a chain SOURCE (a head CANDIDATE) when it participates in the
+ *  audio chain (has a resolvable main out) yet has NO main audio-in — so it can
+ *  only sit at the ROOT of the chain. FX (a main audio-in) and pure-video/CV
+ *  members are excluded. */
+function isColumnHeadCandidate(def: ConvenienceDef): boolean {
+  return isChainAudioParticipant(def) && resolveMainAudioIn(def) === null;
+}
+
+/** The column's chain-source members (head candidates) in order, each with its
+ *  persisted head flag — the input to resolveColumnHead. */
+function columnSourceHeadStates(
+  order: readonly string[],
+  resolveDef: ColumnDefResolver,
+): SourceHeadState[] {
+  const out: SourceHeadState[] = [];
+  for (const id of order) {
+    const n = patch.nodes[id] as ModuleNode | undefined;
+    if (!n) continue;
+    const def = resolveDef(n.type);
+    if (!def || !isColumnHeadCandidate(def)) continue;
+    out.push({ nodeId: id, isHead: headFlagOf(n) });
+  }
+  return out;
+}
+
+/**
+ * HEAD-SOURCE heal (pass 1.5). For each column, resolves the ONE head source from
+ * its chain-source members' persisted `node.data.isColumnHead` flags
+ * (resolveColumnHead) and persists the flag writes needed to converge — promoting
+ * a freshly-added source in a headless column, demoting a 2nd concurrent head on a
+ * collab race, and classifying a fresh source as a deliberate non-head when a head
+ * already exists. NEVER auto-promotes a deliberate non-head (a deleted head leaves
+ * the column headless). Idempotent (no writes once every source is classified);
+ * runs under AUTO_JANITOR_ORIGIN. Returns true when something was written.
+ *
+ * The flag is a per-source SCALAR on the member node (an independent CRDT key,
+ * like data.channel), so it does NOT last-writer-wins away when a sibling changes
+ * and is collab-deterministic. (node.data is NOT an attest basis file.)
+ */
+export function reconcileColumnHeads(resolveDef: ColumnDefResolver): boolean {
+  const mixer = patch.nodes[PINNED_MIXER_ID] as ModuleNode | undefined;
+  if (!mixer) return false;
+  const cols = ((mixer.data ?? {}) as MixerColumnsData).columns ?? {};
+
+  const writes: { nodeId: string; isHead: boolean }[] = [];
+  for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
+    const sources = columnSourceHeadStates(cols[String(ch)] ?? [], resolveDef);
+    writes.push(...resolveColumnHead(sources).flagWrites);
+  }
+  if (writes.length === 0) return false;
+
+  ydoc.transact(() => {
+    for (const w of writes) {
+      const n = patch.nodes[w.nodeId] as ModuleNode | undefined;
+      if (!n) continue;
+      if (!n.data) n.data = {};
+      const d = n.data as { isColumnHead?: boolean };
+      if (d.isColumnHead !== w.isHead) d.isColumnHead = w.isHead;
+    }
+  }, AUTO_JANITOR_ORIGIN);
+  return true;
+}
+
+/** The resolved head-source node id for a column (pure read of the persisted
+ *  flags via resolveColumnHead — no writes; the head-heal pass owns writes). */
+function columnHeadNodeId(order: readonly string[], resolveDef: ColumnDefResolver): string | null {
+  return resolveColumnHead(columnSourceHeadStates(order, resolveDef)).headNodeId;
+}
+
 /**
  * WIRING reconcile (pass 2). Plans the GLOBAL desired reconciler-owned edge set
  * across all 8 columns + 2 sends, then diffs it against the present wcol- edges.
@@ -198,9 +277,11 @@ export function reconcileColumnWiring(resolveDef: ColumnDefResolver): boolean {
   // Build the global desired edge set.
   const desired: WcolEdge[] = [];
   for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
-    const members = resolveMembers(cols[String(ch)] ?? [], resolveDef);
+    const order = cols[String(ch)] ?? [];
+    const members = resolveMembers(order, resolveDef);
     if (members.length === 0) continue;
-    desired.push(...planColumnWiring({ channel: ch, members, clipPlayerId, mixerId }));
+    const headNodeId = columnHeadNodeId(order, resolveDef);
+    desired.push(...planColumnWiring({ channel: ch, members, clipPlayerId, mixerId, headNodeId }));
   }
   for (let s = 1; s <= SEND_BOX_COUNT; s++) {
     const members = resolveMembers(sends[String(s)] ?? [], resolveDef);
@@ -310,13 +391,15 @@ export function healColumnAutomationLanes(): boolean {
 
 /**
  * The combined workflow-columns janitor the Canvas graph-change $effect calls
- * (workflow racks only). Membership heal FIRST (so the wiring reconcile sees the
- * healed order), then the automation-lane heal, then the wiring reconcile. A
+ * (workflow racks only). Membership heal FIRST (so the head + wiring reconciles
+ * see the healed order), then the head-source heal (so the wiring reconcile sees
+ * the resolved head), then the automation-lane heal, then the wiring reconcile. A
  * no-op (no transaction) when the graph is already converged.
  */
 export function reconcileColumns(resolveDef: ColumnDefResolver): void {
   if (!patch.nodes[PINNED_MIXER_ID]) return;
   reconcileColumnMembership();
+  reconcileColumnHeads(resolveDef);
   healColumnAutomationLanes();
   reconcileColumnWiring(resolveDef);
 }

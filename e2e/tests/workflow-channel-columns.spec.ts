@@ -254,7 +254,7 @@ test.describe('workflow channel columns', () => {
     expect(outMax, 'audible at the pinned AUDIO OUT').toBeGreaterThan(0.005);
   });
 
-  test('MULTI-SOURCE: two instruments in ONE column → BOTH clip-driven AND BOTH audible (summed)', async ({ page }) => {
+  test('MULTI-SOURCE: two instruments in ONE column → BOTH clip-driven, but ONLY the head sends (2nd is automation-only)', async ({ page }) => {
     await page.goto('/rack?mode=workflow');
     await waitForPinnedTrio(page);
 
@@ -265,20 +265,23 @@ test.describe('workflow channel columns', () => {
 
     const c1 = await orderOf(page, 'columns', 1);
     expect(c1, 'both instruments joined channel 1').toHaveLength(2);
-    const [a, b] = [c1[0]!, c1[1]!];
+    const [a, b] = [c1[0]!, c1[1]!]; // a = first-added = the head
 
     await expect.poll(async () => (await wcolEdges(page)).length, { timeout: 10_000 }).toBeGreaterThan(0);
     const edges = await wcolEdges(page);
-    // Parallel islands: BOTH sources clip-driven, BOTH tails send to ch1.
+    // One-head model (owner rule): BOTH sources keep their clip/automation channel…
     expect(edges).toContain(`${PINNED_CLIP}.pitch1->${a}.poly`);
     expect(edges).toContain(`${PINNED_CLIP}.pitch1->${b}.poly`);
+    // …but ONLY the head (a) is audio-wired to the mixer — no summing.
     expect(edges).toContain(`${a}.out_l->${PINNED_MIXER}.ch1L`);
-    expect(edges).toContain(`${b}.out_l->${PINNED_MIXER}.ch1L`);
+    expect(edges).toContain(`${a}.out_r->${PINNED_MIXER}.ch1R`);
+    // The 2nd source (b) has NO audio edge — automation-only until manually patched.
+    expect(edges.some((e) => e.startsWith(`${b}.out_`)), 'the 2nd source must not be audio-wired').toBe(false);
 
-    // …and the summed channel is audible end-to-end.
+    // …and the head channel is audible end-to-end.
     await seedAndRun(page, [0]);
     const { channelMax } = await pollAudio(page, 12_000);
-    expect(channelMax[0], 'the two-source channel 1 is audible at the mixer').toBeGreaterThan(0.002);
+    expect(channelMax[0], 'channel 1 (head source) is audible at the mixer').toBeGreaterThan(0.002);
   });
 
   test('SOURCE→DSP: drop tidyvco then cloudseed into the SAME column → tidyvco patched THROUGH cloudseed (one island, not two)', async ({ page }) => {

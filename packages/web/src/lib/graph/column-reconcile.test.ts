@@ -150,21 +150,75 @@ describe('reconcileColumns — a single tidyVco on channel 1', () => {
   });
 });
 
-describe('MULTI-SOURCE parallel islands (BLOCKER) — both instruments driven + both audible', () => {
-  it('two tidyVcos in one channel: BOTH get clip control AND BOTH send (sum at ch bus)', () => {
+describe('MULTI-SOURCE one-head model — 2nd source is automation-only (owner rule)', () => {
+  it('two tidyVcos in one channel: BOTH clip-driven, but ONLY the head (first) sends; the 2nd has NO audio edge', () => {
     addNode('vcoA', 'tidyVco', { channel: 5 });
     addNode('vcoB', 'tidyVco', { channel: 5 });
-    setColumn(5, ['vcoA', 'vcoB']);
+    setColumn(5, ['vcoA', 'vcoB']); // vcoA = first in order → the head
     reconcileColumns(resolveDef);
-    const ids = new Set(wcolEdges().map((e) => e.id));
-    // BOTH sources are clip-driven (layered).
+    const edges = wcolEdges();
+    const ids = new Set(edges.map((e) => e.id));
+    // BOTH sources are clip-driven (both keep their automation channel).
     expect(ids.has('wcol-e-pinned-clipplayer-pitch5-vcoA-poly')).toBe(true);
     expect(ids.has('wcol-e-pinned-clipplayer-pitch5-vcoB-poly')).toBe(true);
-    // BOTH tails send to ch5 (they sum at the mixer input bus).
+    // ONLY the head (vcoA) sends to ch5 — NO summing.
     expect(ids.has('wcol-e-vcoA-out_l-pinned-mixmstrs-ch5L')).toBe(true);
-    expect(ids.has('wcol-e-vcoB-out_l-pinned-mixmstrs-ch5L')).toBe(true);
-    // No spurious chain link between the two independent sources.
-    expect([...ids].some((id) => id.startsWith('wcol-e-vcoA-') && id.includes('vcoB'))).toBe(false);
+    expect(ids.has('wcol-e-vcoA-out_r-pinned-mixmstrs-ch5R')).toBe(true);
+    // The 2nd source (vcoB) has NO audio edge at all (automation-only).
+    expect(edges.some((e) => e.source.nodeId === 'vcoB' && e.sourceType === 'audio')).toBe(false);
+    // The head flag was persisted: vcoA = head, vcoB = deliberate non-head.
+    expect((patch.nodes['vcoA']!.data as { isColumnHead?: boolean }).isColumnHead).toBe(true);
+    expect((patch.nodes['vcoB']!.data as { isColumnHead?: boolean }).isColumnHead).toBe(false);
+  });
+
+  it('DELETE the head → the FX chain stays; the surviving non-head source is NOT promoted (headless)', () => {
+    // src (tidyVco, head) → cloudseed (FX) → mixer, PLUS a 2nd non-head source.
+    addNode('src', 'tidyVco', { channel: 3 });
+    addNode('src2', 'tidyVco', { channel: 3 });
+    addNode('fx', 'cloudseed', { channel: 3 });
+    setColumn(3, ['src', 'src2', 'fx']);
+    reconcileColumns(resolveDef);
+    let ids = new Set(wcolEdges().map((e) => e.id));
+    // Head src → fx → mixer; src2 (non-head) has no audio edge.
+    expect(ids.has('wcol-e-src-out_l-fx-in_l')).toBe(true);
+    expect(ids.has('wcol-e-fx-out_l-pinned-mixmstrs-ch3L')).toBe(true);
+    expect(wcolEdges().some((e) => e.source.nodeId === 'src2' && e.sourceType === 'audio')).toBe(false);
+    expect((patch.nodes['src']!.data as { isColumnHead?: boolean }).isColumnHead).toBe(true);
+    expect((patch.nodes['src2']!.data as { isColumnHead?: boolean }).isColumnHead).toBe(false);
+
+    // Delete the HEAD (src). Membership heal drops it; the FX chain STAYS intact
+    // and src2 (deliberate non-head) is NOT auto-promoted.
+    ydoc.transact(() => { delete patch.nodes['src']; }, LOCAL_ORIGIN);
+    reconcileColumns(resolveDef);
+    ids = new Set(wcolEdges().map((e) => e.id));
+    // The FX chain + its send survive (headless).
+    expect(ids.has('wcol-e-fx-out_l-pinned-mixmstrs-ch3L')).toBe(true);
+    expect(ids.has('wcol-e-fx-out_r-pinned-mixmstrs-ch3R')).toBe(true);
+    // src2 was NOT promoted — still no audio edge.
+    expect(wcolEdges().some((e) => e.source.nodeId === 'src2' && e.sourceType === 'audio')).toBe(false);
+    expect((patch.nodes['src2']!.data as { isColumnHead?: boolean }).isColumnHead).toBe(false);
+    // src2 keeps its clip control (automation-only).
+    expect(ids.has('wcol-e-pinned-clipplayer-pitch3-src2-poly')).toBe(true);
+  });
+
+  it('ADD a source to a HEADLESS column → the fresh source becomes the head, wired at the ROOT', () => {
+    // Reach a headless FX chain: head deleted, only FX remains.
+    addNode('src', 'tidyVco', { channel: 4 });
+    addNode('fx', 'cloudseed', { channel: 4 });
+    setColumn(4, ['src', 'fx']);
+    reconcileColumns(resolveDef);
+    ydoc.transact(() => { delete patch.nodes['src']; }, LOCAL_ORIGIN);
+    reconcileColumns(resolveDef); // now headless: fx only, nothing feeds it
+    expect(wcolEdges().some((e) => e.target.nodeId === 'fx' && e.source.nodeId !== 'pinned-mixmstrs')).toBe(false);
+
+    // Add a NEW source → it becomes the head and wires at the chain root.
+    addNode('src3', 'tidyVco', { channel: 4 });
+    reconcileColumns(resolveDef);
+    const ids = new Set(wcolEdges().map((e) => e.id));
+    expect(ids.has('wcol-e-src3-out_l-fx-in_l')).toBe(true); // root
+    expect(ids.has('wcol-e-src3-out_r-fx-in_r')).toBe(true);
+    expect(ids.has('wcol-e-fx-out_l-pinned-mixmstrs-ch4L')).toBe(true);
+    expect((patch.nodes['src3']!.data as { isColumnHead?: boolean }).isColumnHead).toBe(true);
   });
 });
 
