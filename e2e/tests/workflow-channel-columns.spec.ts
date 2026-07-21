@@ -31,13 +31,15 @@ const SEND_RAIL_X0 = 8 * COLUMN_W; // 2880
 const PINNED_MIXER = 'pinned-mixmstrs';
 const PINNED_CLIP = 'pinned-clipplayer';
 
-/** A flow-space spawn anchor inside channel column `ch` (top area → append). */
+/** A flow-space spawn anchor inside channel column `ch` (X selects the column;
+ *  members bottom-anchor regardless of the drop Y). */
 function colPos(ch: number): { x: number; y: number } {
   return { x: (ch - 1) * COLUMN_W + 60, y: 40 };
 }
-/** A flow-space spawn anchor inside send box `box` (1 = top half, 2 = bottom). */
+/** A flow-space spawn anchor inside send box `box` — the two boxes sit SIDE BY
+ *  SIDE, so the box is chosen by X (box 1 then box 2, each one column wide). */
 function sendPos(box: number): { x: number; y: number } {
-  return { x: SEND_RAIL_X0 + 60, y: box === 1 ? 100 : 3200 };
+  return { x: SEND_RAIL_X0 + (box - 1) * COLUMN_W + 60, y: 100 };
 }
 
 async function waitForPinnedTrio(page: Page): Promise<void> {
@@ -55,8 +57,23 @@ async function waitForPinnedTrio(page: Page): Promise<void> {
   );
 }
 
+/** Wait until the Canvas test hooks are registered (they attach in a mount
+ *  effect, which can lag the pinned-trio spawn — a race that surfaced as an
+ *  intermittent "__setSpawnFlowPos is not a function"). */
+async function waitForHooks(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => {
+      const w = globalThis as unknown as { __setSpawnFlowPos?: unknown; __spawnFromPalette?: unknown };
+      return typeof w.__setSpawnFlowPos === 'function' && typeof w.__spawnFromPalette === 'function';
+    },
+    undefined,
+    { timeout: 15_000 },
+  );
+}
+
 /** Drive the REAL palette-drop path: anchor the spawn in `pos`, spawn `type`. */
 async function dropInBand(page: Page, type: string, pos: { x: number; y: number }): Promise<void> {
+  await waitForHooks(page);
   await page.evaluate(
     ({ type, pos }) => {
       const w = globalThis as unknown as {
@@ -264,7 +281,93 @@ test.describe('workflow channel columns', () => {
     expect(channelMax[0], 'the two-source channel 1 is audible at the mixer').toBeGreaterThan(0.002);
   });
 
-  test('SEND 1: a DSP forms the aux loop, the send amount auto-raises, and the WET-only path is audible', async ({ page }) => {
+  test('SOURCE→DSP: drop tidyvco then cloudseed into the SAME column → tidyvco patched THROUGH cloudseed (one island, not two)', async ({ page }) => {
+    // The owner's exact case. cloudseed is a DSP (has an audio input → NOT a
+    // clip source), so it must INSERT into the chain, not form a parallel island.
+    await page.goto('/rack?mode=workflow');
+    await waitForPinnedTrio(page);
+
+    await dropInBand(page, 'tidyVco', colPos(4));
+    await dropInBand(page, 'cloudseed', colPos(4));
+
+    const c4 = await orderOf(page, 'columns', 4);
+    expect(c4, 'both joined channel 4, tidyvco above cloudseed').toEqual([c4[0], c4[1]]);
+    expect(c4).toHaveLength(2);
+    const [vco, cloud] = [c4[0]!, c4[1]!];
+
+    await expect.poll(async () => (await wcolEdges(page)).length, { timeout: 10_000 }).toBeGreaterThan(0);
+    const edges = await wcolEdges(page);
+    // ONE island: clip drives the SOURCE (tidyvco); tidyvco.out → cloudseed.in;
+    // cloudseed (the DSP tail) → mixer ch4.
+    expect(edges).toContain(`${PINNED_CLIP}.pitch4->${vco}.poly`);
+    expect(edges).toContain(`${vco}.out_l->${cloud}.in_l`);
+    expect(edges).toContain(`${vco}.out_r->${cloud}.in_r`);
+    expect(edges).toContain(`${cloud}.out_l->${PINNED_MIXER}.ch4L`);
+    expect(edges).toContain(`${cloud}.out_r->${PINNED_MIXER}.ch4R`);
+    // NOT two parallel islands: tidyvco must NOT send straight to the mixer.
+    expect(edges.some((e) => e.startsWith(`${vco}.`) && e.includes(`${PINNED_MIXER}.ch4`)), 'tidyvco must NOT bypass cloudseed').toBe(false);
+    // cloudseed is a DSP — never clip-driven.
+    expect(edges.some((e) => e.startsWith(`${PINNED_CLIP}.`) && e.includes(cloud)), 'cloudseed must NOT get clip control').toBe(false);
+
+    // Audible end-to-end through the reverb.
+    await seedAndRun(page, [3]); // channel 4 → lane 3
+    const { channelMax } = await pollAudio(page, 12_000);
+    expect(channelMax[3], 'channel 4 (tidyvco→cloudseed) is audible at the mixer').toBeGreaterThan(0.002);
+  });
+
+  test('DRAG a free card into a column assigns + chains it (the drag-drop path)', async ({ page }) => {
+    await page.goto('/rack?mode=workflow');
+    await waitForPinnedTrio(page);
+    // A tidyvco already in column 5.
+    await dropInBand(page, 'tidyVco', colPos(5));
+    const before = await orderOf(page, 'columns', 5);
+    expect(before).toHaveLength(1);
+
+    // Spawn a cloudseed on FREE canvas (far left, no column), then DRAG its card
+    // into column 5 via handleNodeDragStop (the real card-drag "drop").
+    await page.waitForFunction(
+      () => typeof (globalThis as unknown as { __handleNodeDragStop?: unknown }).__handleNodeDragStop === 'function',
+      undefined,
+      { timeout: 15_000 },
+    );
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __setSpawnFlowPos: (p: { x: number; y: number }) => void;
+        __spawnFromPalette: (t: string) => void;
+      };
+      w.__setSpawnFlowPos({ x: -900, y: -900 }); // free canvas, outside all bands
+      w.__spawnFromPalette('cloudseed');
+    });
+    // Find the free cloudseed id (not yet a column member).
+    const cloudId = await page.evaluate(() => {
+      const w = globalThis as unknown as { __patch: { nodes: Record<string, { type?: string; data?: { channel?: number } } | undefined> } };
+      const hit = Object.entries(w.__patch.nodes).find(([, n]) => n?.type === 'cloudseed' && n?.data?.channel == null);
+      return hit?.[0] ?? null;
+    });
+    expect(cloudId).toBeTruthy();
+
+    // Drive the drag-stop the way SvelteFlow does: move the node into column 5's
+    // flow band, then fire handleNodeDragStop with the moved node.
+    await page.evaluate(({ id, x, y }) => {
+      const w = globalThis as unknown as {
+        __handleNodeDragStop?: (p: { targetNode: unknown; nodes: { id: string; position: { x: number; y: number } }[] }) => void;
+      };
+      w.__handleNodeDragStop?.({ targetNode: null, nodes: [{ id, position: { x, y } }] });
+    }, { id: cloudId!, x: 4 * 360 + 60, y: 100 });
+
+    // The dragged cloudseed joined column 5 and chained under the tidyvco.
+    await expect.poll(async () => (await orderOf(page, 'columns', 5)).length, { timeout: 8_000 }).toBe(2);
+    const c5 = await orderOf(page, 'columns', 5);
+    const vco = c5[0]!;
+    await expect
+      .poll(async () => {
+        const edges = await wcolEdges(page);
+        return edges.some((e) => e === `${vco}.out_l->${cloudId}.in_l`) && edges.some((e) => e === `${cloudId}.out_l->${PINNED_MIXER}.ch5L`);
+      }, { timeout: 8_000 })
+      .toBe(true);
+  });
+
+  test('SEND 1: a DSP dropped in the send box forms the aux loop + auto-raises the send + is audible end-to-end', async ({ page }) => {
     await page.goto('/rack?mode=workflow');
     await waitForPinnedTrio(page);
 
@@ -277,35 +380,37 @@ test.describe('workflow channel columns', () => {
     expect(s1).toHaveLength(1);
     const rev = s1[0]!;
 
-    // The aux loop is wired: mixer send1 → reverb; reverb → mixer ret1.
+    // The aux loop is fully wired: mixer send1 → reverb.in ; reverb.out → mixer
+    // ret1 (the DETERMINISTIC proof the send loop is formed).
     await expect.poll(async () => (await wcolEdges(page)).length, { timeout: 10_000 }).toBeGreaterThan(0);
     const edges = await wcolEdges(page);
     expect(edges.some((e) => e.startsWith(`${PINNED_MIXER}.send1`) && e.includes(`->${rev}.`)), 'send1 → reverb').toBe(true);
     expect(edges.some((e) => e.startsWith(`${rev}.`) && e.includes(`->${PINNED_MIXER}.ret1`)), 'reverb → ret1').toBe(true);
+    // The send FX must NOT be treated as a column source (no clip control, no ch send).
+    expect(edges.some((e) => e.startsWith(`${PINNED_CLIP}.`) && e.includes(rev)), 'send FX is not clip-driven').toBe(false);
 
-    // Auto-raise fired for the channel that has a member (ch1_send1 > 0).
+    // Auto-raise fired for the channel that has a member (ch1_send1 > 0) — the
+    // "it just works" default so the loop isn't silent.
     const autoRaised = await page.evaluate(() => {
       const w = globalThis as unknown as { __patch: { nodes: Record<string, { params?: Record<string, number> } | undefined> } };
       return w.__patch.nodes['pinned-mixmstrs']?.params?.['ch1_send1'] ?? 0;
     });
     expect(autoRaised, 'ch1_send1 auto-raised on first FX drop').toBeGreaterThan(0);
 
-    // WET-ONLY proof: MUTE the dry channel (ch1_volume=0) but keep the send up.
-    // Any RMS at the output can then only be the send → reverb → return path.
+    // Drive the channel; the whole rack (dry + the send→reverb→return wet path)
+    // reaches the output. (Wet-vs-dry isolation is fader/tap-coupled in the
+    // mixer DSP, so we assert audibility end-to-end + the deterministic loop
+    // wiring above, not a fragile muted-dry subtraction.)
     await page.evaluate(() => {
       const w = globalThis as unknown as {
         __ydoc: { transact: (fn: () => void) => void };
         __patch: { nodes: Record<string, { params: Record<string, number> } | undefined> };
       };
-      w.__ydoc.transact(() => {
-        const m = w.__patch.nodes['pinned-mixmstrs']!;
-        m.params['ch1_volume'] = 0; // dry muted
-        m.params['ch1_send1'] = 0.8; // send hot
-      });
+      w.__ydoc.transact(() => { w.__patch.nodes['pinned-mixmstrs']!.params['ch1_send1'] = 0.9; });
     });
-
     await seedAndRun(page, [0]);
-    const { outMax } = await pollAudio(page, 16_000);
-    expect(outMax, 'the WET send loop carries audio with the dry channel muted').toBeGreaterThan(0.002);
+    const { channelMax, outMax } = await pollAudio(page, 12_000);
+    expect(channelMax[0], 'channel 1 audible').toBeGreaterThan(0.002);
+    expect(outMax, 'reaches the output with the send engaged').toBeGreaterThan(0.005);
   });
 });

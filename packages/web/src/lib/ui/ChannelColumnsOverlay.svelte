@@ -16,9 +16,9 @@
     COLUMN_COUNT,
     SEND_BOX_COUNT,
     columnXBand,
-    sendRailXBand,
+    sendBoxXBand,
     COLUMN_TOP_Y,
-    COLUMN_H,
+    COLUMN_BASELINE_Y,
   } from '$lib/graph/channel-columns';
 
   interface Props {
@@ -50,20 +50,19 @@
     const out: { ch: number; rect: Rect; color: string }[] = [];
     for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
       const [x0, x1] = columnXBand(ch);
-      const rect = project(x0, x1, COLUMN_TOP_Y, COLUMN_TOP_Y + COLUMN_H);
+      const rect = project(x0, x1, COLUMN_TOP_Y, COLUMN_BASELINE_Y);
       if (rect) out.push({ ch, rect, color: columnColors[ch - 1] ?? '#3a4a52' });
     }
     return out;
   });
 
+  // SEND 1 / SEND 2 sit SIDE BY SIDE (own X band each), full column height.
   let sends = $derived.by<{ slot: number; rect: Rect }[]>(() => {
     void tick;
     const out: { slot: number; rect: Rect }[] = [];
-    const [x0, x1] = sendRailXBand();
-    const boxH = COLUMN_H / SEND_BOX_COUNT;
     for (let s = 1; s <= SEND_BOX_COUNT; s++) {
-      const y0 = COLUMN_TOP_Y + (s - 1) * boxH;
-      const rect = project(x0, x1, y0, y0 + boxH);
+      const [x0, x1] = sendBoxXBand(s);
+      const rect = project(x0, x1, COLUMN_TOP_Y, COLUMN_BASELINE_Y);
       if (rect) out.push({ slot: s, rect });
     }
     return out;

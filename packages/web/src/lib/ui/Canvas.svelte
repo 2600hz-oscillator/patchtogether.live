@@ -50,12 +50,11 @@
   } from '$lib/graph/column-reconcile';
   import {
     COLUMN_COUNT,
+    SEND_BOX_COUNT,
     columnForFlowX,
-    sendBoxForFlowY,
+    sendBoxForFlowX,
     sendMemberPos,
-    isTopThirdDrop,
     indexForDropY,
-    insertTop,
     insertBottom,
     removeFrom,
     reorder,
@@ -537,6 +536,13 @@
       (globalThis as any).__setSpawnFlowPos = (p: { x: number; y: number }) => {
         spawnFlowPos = { x: p.x, y: p.y };
       };
+      // Workflow channel-columns e2e: drive the SvelteFlow drag-stop seam
+      // directly (the same {targetNode, nodes} payload onnodedragstop passes)
+      // so a test can DROP a card into a column band without synthesizing a
+      // pixel-perfect pointer drag.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__handleNodeDragStop = (payload: { targetNode: FlowNode | null; nodes: FlowNode[] }) =>
+        handleNodeDragStop(payload);
       // Drag-lock state for e2e — patch-menus-persist tests inspect this
       // to confirm the lock engaged + released at the right moments.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1615,11 +1621,11 @@
       const sends = md?.sends ?? {};
       for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
         const order = cols[String(ch)] ?? [];
-        order.forEach((id, i) => wcolPosByNode.set(id, columnMemberPos(ch, i)));
+        order.forEach((id, i) => wcolPosByNode.set(id, columnMemberPos(ch, i, order.length)));
       }
-      for (let s = 1; s <= 2; s++) {
+      for (let s = 1; s <= SEND_BOX_COUNT; s++) {
         const order = sends[String(s)] ?? [];
-        order.forEach((id, i) => wcolPosByNode.set(id, sendMemberPos(s, i)));
+        order.forEach((id, i) => wcolPosByNode.set(id, sendMemberPos(s, i, order.length)));
       }
     }
     for (const n of snap.nodes) {
@@ -3381,7 +3387,8 @@
             if (oldCh === band) {
               // Reorder within the same column: index from the drop Y.
               const order = wcolOrder('columns', band);
-              const centers = order.filter((id) => id !== n.id).map((_, i) => columnMemberPos(band, i).y + COLUMN_SLOT_H / 2);
+              const sibs = order.filter((id) => id !== n.id);
+              const centers = sibs.map((_, i) => columnMemberPos(band, i, sibs.length).y + COLUMN_SLOT_H / 2);
               setWcolOrder('columns', band, reorder(order, n.id, indexForDropY(centers, dropCenterY)));
               wcolClearDetached(String(band));
             } else {
@@ -3395,10 +3402,11 @@
             }
             stillMember.add(n.id);
           } else if (band === 'send') {
-            const slot = sendBoxForFlowY(n.position.y);
+            const slot = sendBoxForFlowX(n.position.x);
             if (oldSlot === slot) {
               const order = wcolOrder('sends', slot);
-              const centers = order.filter((id) => id !== n.id).map((_, i) => sendMemberPos(slot, i).y + COLUMN_SLOT_H / 2);
+              const sibs = order.filter((id) => id !== n.id);
+              const centers = sibs.map((_, i) => sendMemberPos(slot, i, sibs.length).y + COLUMN_SLOT_H / 2);
               setWcolOrder('sends', slot, reorder(order, n.id, indexForDropY(centers, dropCenterY)));
               wcolClearDetached('s' + slot);
             } else {
@@ -3841,10 +3849,14 @@
     if (!live) return;
     if (!live.data) live.data = {};
     const d = live.data as { channel?: number; sendSlot?: number };
+    // Guard every delete with an existence check — a SyncedStore proxy THROWS on
+    // `delete` of a missing key (deleteProperty trap returns false), which would
+    // abort the whole drag transact (the drag-into-column "drop" was dead
+    // because a free node has no sendSlot to delete).
     if (channel != null) d.channel = channel;
-    else delete d.channel;
+    else if ('channel' in d) delete d.channel;
     if (sendSlot != null) d.sendSlot = sendSlot;
-    else delete d.sendSlot;
+    else if ('sendSlot' in d) delete d.sendSlot;
   }
 
   /** The canonical clip-player that holds column automation lanes (the pinned
@@ -3914,18 +3926,11 @@
    */
   function wcolDropTarget(
     flowPos: { x: number; y: number },
-  ): { channel?: number; sendSlot?: number; insertTop?: boolean } | null {
+  ): { channel?: number; sendSlot?: number } | null {
     if (!workflowMode || !patch.nodes[WCOL_MIXER_ID]) return null;
     const band = columnForFlowX(flowPos.x);
-    if (typeof band === 'number') {
-      const order = wcolOrder('columns', band);
-      const spanTop = columnMemberPos(band, 0).y + COLUMN_SLOT_H / 2;
-      const spanBottom = columnMemberPos(band, Math.max(0, order.length - 1)).y + COLUMN_SLOT_H / 2;
-      return { channel: band, insertTop: order.length > 0 && isTopThirdDrop(flowPos.y, spanTop, spanBottom) };
-    }
-    if (band === 'send') {
-      return { sendSlot: sendBoxForFlowY(flowPos.y) };
-    }
+    if (typeof band === 'number') return { channel: band };
+    if (band === 'send') return { sendSlot: sendBoxForFlowX(flowPos.x) };
     return null;
   }
 
@@ -5780,12 +5785,14 @@
     const wcolSendWasEmpty = wcolDrop?.sendSlot != null && wcolOrder('sends', wcolDrop.sendSlot).length === 0;
     if (wcolDrop?.channel != null) {
       initialData.channel = wcolDrop.channel;
-      const idx = wcolDrop.insertTop ? 0 : wcolOrder('columns', wcolDrop.channel).length;
-      const p = columnMemberPos(wcolDrop.channel, idx);
+      // Snap to the BOTTOM of the column's occupied space (new tail slot).
+      const count = wcolOrder('columns', wcolDrop.channel).length;
+      const p = columnMemberPos(wcolDrop.channel, count, count + 1);
       pos.x = p.x; pos.y = p.y;
     } else if (wcolDrop?.sendSlot != null) {
       initialData.sendSlot = wcolDrop.sendSlot;
-      const p = sendMemberPos(wcolDrop.sendSlot, wcolOrder('sends', wcolDrop.sendSlot).length);
+      const count = wcolOrder('sends', wcolDrop.sendSlot).length;
+      const p = sendMemberPos(wcolDrop.sendSlot, count, count + 1);
       pos.x = p.x; pos.y = p.y;
     }
 
@@ -5810,8 +5817,7 @@
       // in the SAME transact (one undo step with the spawn). A structural edit of
       // the column re-manages its links → clear its detach suppression (MAJOR 1).
       if (wcolDrop?.channel != null) {
-        const order = wcolOrder('columns', wcolDrop.channel);
-        setWcolOrder('columns', wcolDrop.channel, wcolDrop.insertTop ? insertTop(order, id) : insertBottom(order, id));
+        setWcolOrder('columns', wcolDrop.channel, insertBottom(wcolOrder('columns', wcolDrop.channel), id));
         wcolClearDetached(String(wcolDrop.channel));
       } else if (wcolDrop?.sendSlot != null) {
         setWcolOrder('sends', wcolDrop.sendSlot, insertBottom(wcolOrder('sends', wcolDrop.sendSlot), id));

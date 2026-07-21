@@ -9,12 +9,15 @@ import { describe, it, expect } from 'vitest';
 import {
   COLUMN_COUNT,
   COLUMN_W,
+  COLUMN_SLOT_H,
+  COLUMN_BASELINE_Y,
   columnXBand,
+  sendBoxXBand,
   sendRailXBand,
   columnForFlowX,
-  sendBoxForFlowY,
-  isTopThirdDrop,
+  sendBoxForFlowX,
   columnMemberPos,
+  sendMemberPos,
   columnBottomFlowPos,
   indexForDropY,
   dedup,
@@ -25,8 +28,6 @@ import {
   removeFrom,
   reorder,
   moveBetween,
-  COLUMN_H,
-  COLUMN_TOP_Y,
   type ColumnNodeView,
 } from './channel-columns';
 
@@ -57,35 +58,55 @@ describe('column geometry', () => {
     expect(columnForFlowX(sendRailXBand()[1] + 50)).toBeNull();
   });
 
-  it('the sends rail sits immediately right of column 8', () => {
+  it('the sends rail sits immediately right of column 8, split into 2 side-by-side boxes', () => {
     expect(sendRailXBand()[0]).toBe(columnXBand(8)[1]);
+    // Two boxes, side by side, each one column wide.
+    expect(sendBoxXBand(1)[0]).toBe(sendRailXBand()[0]);
+    expect(sendBoxXBand(2)[0]).toBe(sendBoxXBand(1)[1]); // box 2 right of box 1
+    expect(sendBoxXBand(1)[1] - sendBoxXBand(1)[0]).toBe(COLUMN_W);
   });
 
-  it('sendBoxForFlowY splits the rail top(1)/bottom(2)', () => {
-    expect(sendBoxForFlowY(COLUMN_TOP_Y + 10)).toBe(1);
-    expect(sendBoxForFlowY(COLUMN_TOP_Y + COLUMN_H / 2 + 10)).toBe(2);
+  it('sendBoxForFlowX picks the box by X (side-by-side, not top/bottom)', () => {
+    expect(sendBoxForFlowX(sendBoxXBand(1)[0] + 10)).toBe(1);
+    expect(sendBoxForFlowX(sendBoxXBand(2)[0] + 10)).toBe(2);
   });
 
-  it('columnMemberPos is a pure ascending function of the index within a column', () => {
-    const p0 = columnMemberPos(3, 0);
-    const p1 = columnMemberPos(3, 1);
-    const p2 = columnMemberPos(3, 2);
+  it('columnMemberPos is BOTTOM-ANCHORED: the tail sits above the baseline, source above it', () => {
+    // A 3-member column: index 0 (source) is highest, index 2 (tail) is lowest,
+    // just above the baseline. y increases with index (downward).
+    const p0 = columnMemberPos(3, 0, 3);
+    const p1 = columnMemberPos(3, 1, 3);
+    const p2 = columnMemberPos(3, 2, 3);
     expect(p1.y).toBeGreaterThan(p0.y);
     expect(p2.y).toBeGreaterThan(p1.y);
-    // Same column → same X.
+    // The tail sits one slot above the baseline.
+    expect(p2.y).toBe(COLUMN_BASELINE_Y - COLUMN_SLOT_H);
+    // Same column → same X; a later column → larger X.
     expect(p1.x).toBe(p0.x);
-    // Different column → different X band.
-    expect(columnMemberPos(4, 0).x).toBeGreaterThan(p0.x);
+    expect(columnMemberPos(4, 0, 3).x).toBeGreaterThan(p0.x);
   });
 
-  it('columnBottomFlowPos(ch, n) == columnMemberPos(ch, n)', () => {
-    expect(columnBottomFlowPos(2, 3)).toEqual(columnMemberPos(2, 3));
+  it('adding a member keeps the TAIL pinned to the bottom (existing members shift UP)', () => {
+    // Single member: sits just above baseline.
+    expect(columnMemberPos(2, 0, 1).y).toBe(COLUMN_BASELINE_Y - COLUMN_SLOT_H);
+    // After a 2nd member is added, the NEW one is the tail (bottom), the old one
+    // shifts up one slot.
+    expect(columnMemberPos(2, 1, 2).y).toBe(COLUMN_BASELINE_Y - COLUMN_SLOT_H); // new tail, same bottom slot
+    expect(columnMemberPos(2, 0, 2).y).toBe(COLUMN_BASELINE_Y - 2 * COLUMN_SLOT_H); // old one moved up
+    // The tail slot is stable regardless of column depth.
+    expect(columnMemberPos(2, 4, 5).y).toBe(COLUMN_BASELINE_Y - COLUMN_SLOT_H);
   });
 
-  it('isTopThirdDrop: top third true, below false; empty span false', () => {
-    expect(isTopThirdDrop(5, 0, 300)).toBe(true); // within top 100
-    expect(isTopThirdDrop(150, 0, 300)).toBe(false);
-    expect(isTopThirdDrop(10, 0, 0)).toBe(false); // empty column
+  it('columnBottomFlowPos(ch, count) is the new bottom slot (snap to bottom)', () => {
+    expect(columnBottomFlowPos(2, 0).y).toBe(COLUMN_BASELINE_Y - COLUMN_SLOT_H); // empty → first at bottom
+    expect(columnBottomFlowPos(2, 3).y).toBe(COLUMN_BASELINE_Y - COLUMN_SLOT_H); // always the bottom slot
+  });
+
+  it('sendMemberPos is bottom-anchored inside its own side-by-side box', () => {
+    const s1 = sendMemberPos(1, 0, 1);
+    const s2 = sendMemberPos(2, 0, 1);
+    expect(s1.y).toBe(COLUMN_BASELINE_Y - COLUMN_SLOT_H);
+    expect(s2.x).toBeGreaterThan(s1.x); // box 2 is to the right of box 1
   });
 
   it('indexForDropY finds the insert slot among sibling centers', () => {

@@ -40,27 +40,38 @@ export const SEND_BOX_COUNT = 2;
 export const COLUMN_HP = 16;
 export const COLUMN_W = COLUMN_HP * HP_UNIT;
 
-/** The sends rail sits to the RIGHT of the 8 columns; its width matches one
- *  column so a wide FX module fits. */
-export const SEND_RAIL_W = COLUMN_W;
+/** Each aux-send box is one column wide; the two boxes sit SIDE BY SIDE to the
+ *  right of column 8 (owner: "the send columns should be next to each other").
+ *  (Width standardization is a deliberate follow-up.) */
+export const SEND_BOX_W = COLUMN_W;
+export const SEND_RAIL_W = SEND_BOX_W * SEND_BOX_COUNT;
 
 /** Flow-space origin of the column band (top-left). Columns and the sends rail
- *  are laid out to the right/below this point. Kept at the flow origin so the
+ *  are laid out to the right of this point. Kept at the flow origin so the
  *  overlay + hit-tests share one coordinate frame. */
 export const COLUMN_ORIGIN_X = 0;
 export const COLUMN_TOP_Y = 0;
 
-/** Vertical slot pitch — the deterministic per-index stacking height. Most
- *  workflow instruments are 3u (540px); a slot a touch taller leaves a small
- *  gap and keeps position a pure function of the array index. */
-export const COLUMN_SLOT_H = RACK_UNIT * 3 + RACK_UNIT / 3; // 600px
+/** Vertical slot pitch — the deterministic per-index stacking height. A clean
+ *  4u (RACK_UNIT × 4 = 720px) multiple so a 3u instrument fits with a 1u gap AND
+ *  every derived slot Y lands on the 180px rack grid (snap is a no-op). Keeps
+ *  position a pure function of the array index. */
+export const COLUMN_SLOT_H = RACK_UNIT * 4; // 720px (grid-aligned)
 
 /** Left padding inside a column band so cards don't butt the divider. */
 export const COLUMN_PAD_X = HP_UNIT; // 22.5px
 
-/** Total vertical extent used to lay out a column (and to split the sends rail
- *  into 2 boxes). Generous — the column scrolls with the canvas anyway. */
-export const COLUMN_H = COLUMN_SLOT_H * 8;
+/** The number of slots budgeted above the baseline before a column overflows
+ *  upward (visual band height). Columns are BOTTOM-ANCHORED: the tail (output)
+ *  sits just above the baseline near the channel number, and members stack
+ *  UPWARD, so a newly-added module lands at the BOTTOM (owner: "snap to the
+ *  bottom, not the top"). */
+export const COLUMN_MAX_SLOTS = 6;
+export const COLUMN_H = COLUMN_SLOT_H * COLUMN_MAX_SLOTS;
+
+/** The flow-space Y BASELINE the columns bottom-anchor to — where the numbered
+ *  1..8 labels sit. Member `i` of a `total`-member column is placed ABOVE it. */
+export const COLUMN_BASELINE_Y = COLUMN_TOP_Y + COLUMN_H;
 
 // ---------------- Geometry (pure) ----------------
 
@@ -70,7 +81,15 @@ export function columnXBand(ch: number): [number, number] {
   return [x0, x0 + COLUMN_W];
 }
 
-/** The `[x0, x1)` flow-space band of the sends rail (to the right of column 8). */
+/** The `[x0, x1)` flow-space band of send box `slot` (1|2) — SIDE BY SIDE right
+ *  of column 8. */
+export function sendBoxXBand(slot: number): [number, number] {
+  const railX0 = COLUMN_ORIGIN_X + COLUMN_COUNT * COLUMN_W;
+  const x0 = railX0 + (slot - 1) * SEND_BOX_W;
+  return [x0, x0 + SEND_BOX_W];
+}
+
+/** The `[x0, x1)` flow-space band of the WHOLE sends rail (both boxes). */
 export function sendRailXBand(): [number, number] {
   const x0 = COLUMN_ORIGIN_X + COLUMN_COUNT * COLUMN_W;
   return [x0, x0 + SEND_RAIL_W];
@@ -79,7 +98,7 @@ export function sendRailXBand(): [number, number] {
 /**
  * Hit-test a flow-space X to a drop target:
  *   * 1..8            — the channel column at that X.
- *   * 'send'          — the sends rail (which box is resolved by sendBoxForFlowY).
+ *   * 'send'          — the sends rail (which box is resolved by sendBoxForFlowX).
  *   * null            — outside the workflow bands (free canvas).
  */
 export function columnForFlowX(x: number): number | 'send' | null {
@@ -91,46 +110,51 @@ export function columnForFlowX(x: number): number | 'send' | null {
   return idx + 1;
 }
 
-/** Which send box (1|2) a flow-space Y lands in — the rail is split top/bottom. */
-export function sendBoxForFlowY(y: number): 1 | 2 {
-  return y < COLUMN_TOP_Y + COLUMN_H / 2 ? 1 : 2;
+/** Which send box (1|2) a flow-space X lands in — the two boxes are side by
+ *  side, so it's an X hit-test (not Y). */
+export function sendBoxForFlowX(x: number): 1 | 2 {
+  const railX0 = COLUMN_ORIGIN_X + COLUMN_COUNT * COLUMN_W;
+  return x < railX0 + SEND_BOX_W ? 1 : 2;
 }
 
-/** True when a drop Y is in the TOP THIRD of the column band region occupied by
- *  the current members — the "insert at top of chain" affordance. `spanTop` /
- *  `spanBottom` are the current members' vertical extent (top of first slot,
- *  bottom of last). An empty column always returns false (append == prepend). */
-export function isTopThirdDrop(dropY: number, spanTop: number, spanBottom: number): boolean {
-  if (spanBottom <= spanTop) return false;
-  return dropY < spanTop + (spanBottom - spanTop) / 3;
-}
-
-/** Deterministic flow-space TOP-LEFT position of the `index`-th member (0-based)
- *  of channel column `ch`. Position is a PURE function of (ch, index): the chain
- *  order IS the on-screen order. Grid-snapped so it lands on the rack grid. */
-export function columnMemberPos(ch: number, index: number): { x: number; y: number } {
+/**
+ * Deterministic flow-space TOP-LEFT position of member `index` (0-based, 0 = top
+ * / source) of a `total`-member column `ch`. BOTTOM-ANCHORED: the tail
+ * (index = total-1) sits one slot above the baseline (near the number), and
+ * earlier members stack UPWARD — so appending a member lands it at the bottom.
+ * Position is a PURE function of (ch, index, total): the chain order IS the
+ * on-screen order. Grid-snapped.
+ */
+export function columnMemberPos(ch: number, index: number, total: number): { x: number; y: number } {
   const [x0] = columnXBand(ch);
+  const n = Math.max(total, index + 1);
   return snapPositionToGrid({
     x: x0 + COLUMN_PAD_X,
-    y: COLUMN_TOP_Y + index * COLUMN_SLOT_H,
+    y: COLUMN_BASELINE_Y - (n - index) * COLUMN_SLOT_H,
   });
 }
 
-/** Deterministic flow-space TOP-LEFT position of the `index`-th send tenant of
- *  send box `slot` (1|2). The two boxes stack in the rail's vertical half. */
-export function sendMemberPos(slot: number, index: number): { x: number; y: number } {
-  const [x0] = sendRailXBand();
-  const boxTop = COLUMN_TOP_Y + (slot - 1) * (COLUMN_H / 2);
+/** Deterministic TOP-LEFT position of send-box `slot` tenant `index` of `total`
+ *  — bottom-anchored like a column, in the box's own X band. */
+export function sendMemberPos(slot: number, index: number, total: number): { x: number; y: number } {
+  const [x0] = sendBoxXBand(slot);
+  const n = Math.max(total, index + 1);
   return snapPositionToGrid({
     x: x0 + COLUMN_PAD_X,
-    y: boxTop + index * COLUMN_SLOT_H,
+    y: COLUMN_BASELINE_Y - (n - index) * COLUMN_SLOT_H,
   });
 }
 
-/** The flow-space position for appending a new member at the BOTTOM of column
- *  `ch` given the current member count. */
+/** The flow-space position for a NEW member appended at the BOTTOM of column
+ *  `ch` that currently has `currentCount` members (the new bottom slot). */
 export function columnBottomFlowPos(ch: number, currentCount: number): { x: number; y: number } {
-  return columnMemberPos(ch, currentCount);
+  return columnMemberPos(ch, currentCount, currentCount + 1);
+}
+
+/** The flow-space position for a NEW tenant appended at the BOTTOM of send box
+ *  `slot` that currently has `currentCount` tenants. */
+export function sendBottomFlowPos(slot: number, currentCount: number): { x: number; y: number } {
+  return sendMemberPos(slot, currentCount, currentCount + 1);
 }
 
 /**
