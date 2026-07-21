@@ -45,23 +45,32 @@
   function punits(name: string): string | undefined { return videocubeDef.params.find((d) => d.id === name)!.units; }
   function set(paramId: string) { return (v: number) => setNodeParam(id, paramId, v); }
 
-  // The CUBE knob bank (same order as CubeCard's KNOBS).
-  const KNOBS: Array<{ pid: string; label: string }> = [
-    { pid: 'tune', label: 'Tune' },
-    { pid: 'fine', label: 'Fine' },
+  // FIELD / SLICE knobs — these move BOTH the picture (the volumetric combine +
+  // the cutting slice) AND the derived audio, through the one shared 3-D field.
+  // (Same order as CubeCard's field/slice knobs.)
+  const FIELD_KNOBS: Array<{ pid: string; label: string }> = [
     { pid: 'morph_fc', label: 'Morph' },
     { pid: 'connect', label: 'Connect' },
     { pid: 'connect_strength', label: 'Cnct Str' },
     { pid: 'crush', label: 'Crush' },
     { pid: 'space_crush', label: 'Space Crush' },
     { pid: 'space_diffuse', label: 'Space Diffuse' },
-    { pid: 'fold', label: 'Fold' },
     { pid: 'spread', label: 'Spread' },
     { pid: 'scan', label: 'Scan' },
     { pid: 'slice_y', label: 'Y' },
     { pid: 'slice_rx', label: 'Rot X' },
     { pid: 'slice_ry', label: 'Rot Y' },
     { pid: 'slice_rz', label: 'Rot Z' },
+  ];
+
+  // AUDIO-ONLY knobs — these change ONLY the derived sound, never the picture:
+  // TUNE / FINE (pitch), FOLD (a west-coast wavefolder with no image analog),
+  // LEVEL (output gain). Grouped under the "audio only" section header so the
+  // card visibly separates picture+sound knobs from sound-only ones.
+  const AUDIO_KNOBS: Array<{ pid: string; label: string }> = [
+    { pid: 'tune', label: 'Tune' },
+    { pid: 'fine', label: 'Fine' },
+    { pid: 'fold', label: 'Fold' },
     { pid: 'level', label: 'Level' },
   ];
 
@@ -162,11 +171,79 @@
     }
   }
 
-  // ── Live preview of video_out (canonical surface.texture). ──
+  // ── Live preview of video_out + the two on-card visualizers (Cube-parity).
+  //    CubeCard's card carries a SLICE cross-section + an OUTPUT-WAVEFORM readout
+  //    beside its 3-D viz; VIDEOCUBE mirrors them here:
+  //      • SLICE  — the module's slice_out FBO (the 2-D cutting-plane readout,
+  //        renderSlicePort/sliceTarget). Blitted via the engine's per-port blit
+  //        (blitOutputPortToDrawingBuffer), which ALSO requests the port render
+  //        while unpatched, so the inline SLICE stays ALWAYS-ON. Honours the
+  //        card's SLICE VIEW / READER / Y·ROT exactly as the slice_out jack.
+  //      • WAVE   — the derived 256-sample surface-height wave (read('lastWave'),
+  //        the same wave audio_out plays + scope_out draws), traced with Canvas2D
+  //        exactly like CubeCard's OUTPUT waveform — no WebGL in the card, so the
+  //        card stays OUT of the WebGL attest basis.
+  //    All three go through the shared engine drawing buffer (Canvas2D drawImage
+  //    of engine.canvas), the SAME mechanism the existing video_out preview uses.
   const ENGINE_W = VIDEO_RES.width;
   const ENGINE_H = VIDEO_RES.height;
   let canvasEl: HTMLCanvasElement | null = $state(null);
+  let sliceCanvasEl: HTMLCanvasElement | null = $state(null);
+  let waveCanvasEl: HTMLCanvasElement | null = $state(null);
   let rafId: number | null = null;
+
+  // Aspect-fit blit of the engine's drawing buffer (holding whatever was just
+  // blitted into it) onto a target 2-D card canvas, with a small corner label.
+  function drawEngineCanvasInto(
+    target: HTMLCanvasElement,
+    src: CanvasImageSource,
+    label: string,
+  ): void {
+    const ctx2d = target.getContext('2d', { alpha: false });
+    if (!ctx2d) return;
+    const cw = target.width, ch = target.height;
+    ctx2d.fillStyle = '#050608';
+    ctx2d.fillRect(0, 0, cw, ch);
+    const srcAspect = ENGINE_W / ENGINE_H;
+    const dstAspect = cw / ch;
+    let w = cw, h = ch, x = 0, y = 0;
+    if (dstAspect > srcAspect) { h = ch; w = Math.round(h * srcAspect); x = Math.round((cw - w) / 2); }
+    else { w = cw; h = Math.round(w / srcAspect); y = Math.round((ch - h) / 2); }
+    ctx2d.drawImage(src, x, y, w, h);
+    if (label) {
+      ctx2d.fillStyle = 'rgba(255,255,255,0.55)';
+      ctx2d.font = '9px ui-monospace, monospace';
+      ctx2d.fillText(label, 4, 11);
+    }
+  }
+
+  // OUTPUT WAVEFORM trace (mirrors CubeCard.drawWave) — the derived cube-slice
+  // wave (read('lastWave')). Null/silent before the audio worklet stands up → a
+  // flat baseline (same warm-up as audio_out / scope_out).
+  function drawWave(target: HTMLCanvasElement, wave: Float32Array | null): void {
+    const ctx2d = target.getContext('2d');
+    if (!ctx2d) return;
+    const W = target.width, H = target.height;
+    ctx2d.fillStyle = '#0a0c12';
+    ctx2d.fillRect(0, 0, W, H);
+    ctx2d.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx2d.beginPath(); ctx2d.moveTo(0, H / 2); ctx2d.lineTo(W, H / 2); ctx2d.stroke();
+    if (wave && wave.length > 1) {
+      ctx2d.strokeStyle = '#5ee08a';
+      ctx2d.lineWidth = 1.4;
+      ctx2d.beginPath();
+      const n = wave.length;
+      for (let i = 0; i < n; i++) {
+        const x = (i / (n - 1)) * W;
+        const y = H / 2 - (wave[i] ?? 0) * (H / 2) * 0.92;
+        if (i === 0) ctx2d.moveTo(x, y); else ctx2d.lineTo(x, y);
+      }
+      ctx2d.stroke();
+    }
+    ctx2d.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx2d.font = '9px ui-monospace, monospace';
+    ctx2d.fillText('WAVE', 4, 11);
+  }
 
   function draw() {
     rafId = null;
@@ -176,19 +253,22 @@
     try { videoEngine = e.getDomain<VideoEngine>('video'); }
     catch { rafId = requestAnimationFrame(draw); return; }
     if (!videoEngine) { rafId = requestAnimationFrame(draw); return; }
-    const ctx2d = canvasEl.getContext('2d', { alpha: false });
-    if (ctx2d) {
-      try { videoEngine.blitOutputToDrawingBuffer(id); } catch { /* never nuke the rAF loop */ }
-      const src = videoEngine.canvas as CanvasImageSource;
-      const cw = canvasEl.width, ch = canvasEl.height;
-      ctx2d.fillStyle = '#050608';
-      ctx2d.fillRect(0, 0, cw, ch);
-      const srcAspect = ENGINE_W / ENGINE_H;
-      const dstAspect = cw / ch;
-      let w = cw, h = ch, x = 0, y = 0;
-      if (dstAspect > srcAspect) { h = ch; w = Math.round(h * srcAspect); x = Math.round((cw - w) / 2); }
-      else { w = cw; h = Math.round(w / srcAspect); y = Math.round((ch - h) / 2); }
-      ctx2d.drawImage(src, x, y, w, h);
+    const src = videoEngine.canvas as CanvasImageSource;
+    // 1) video_out preview (primary surface).
+    try { videoEngine.blitOutputToDrawingBuffer(id); } catch { /* never nuke the rAF loop */ }
+    drawEngineCanvasInto(canvasEl, src, '');
+    // 2) SLICE cross-section (slice_out FBO — per-port blit also keeps it rendering
+    //    while unpatched, so the inline viz is always-on). Blit→drawImage before
+    //    the next blit overwrites the shared drawing buffer.
+    if (sliceCanvasEl) {
+      try { videoEngine.blitOutputPortToDrawingBuffer(id, 'slice_out'); } catch { /* */ }
+      drawEngineCanvasInto(sliceCanvasEl, src, 'SLICE');
+    }
+    // 3) AUDIO WAVEFORM (derived wave, Canvas2D — no drawing-buffer read).
+    if (waveCanvasEl) {
+      let wave: Float32Array | null = null;
+      try { wave = videoEngine.read(id, 'lastWave') as Float32Array | null; } catch { /* */ }
+      drawWave(waveCanvasEl, wave);
     }
     rafId = requestAnimationFrame(draw);
   }
@@ -224,6 +304,27 @@
             width={200}
             height={150}
             data-testid="videocube-preview"
+            data-node-id={id}
+          ></canvas>
+        </div>
+
+        <!-- Cube-parity inline visualizers: the SLICE cross-section (slice_out
+             FBO) + the derived AUDIO WAVEFORM (lastWave). Both always-on. -->
+        <div class="viz-row">
+          <canvas
+            bind:this={sliceCanvasEl}
+            class="viz"
+            width={96}
+            height={72}
+            data-testid="videocube-slice-viz"
+            data-node-id={id}
+          ></canvas>
+          <canvas
+            bind:this={waveCanvasEl}
+            class="viz"
+            width={96}
+            height={72}
+            data-testid="videocube-wave-viz"
             data-node-id={id}
           ></canvas>
         </div>
@@ -293,8 +394,29 @@
           {/each}
         </div>
 
-        <div class="knobs">
-          {#each KNOBS as k (k.pid)}
+        <!-- FIELD / SLICE knobs: these change the PICTURE + the SOUND together. -->
+        <div class="knobs" data-testid="videocube-field-knobs">
+          {#each FIELD_KNOBS as k (k.pid)}
+            <Knob
+              value={p(k.pid)}
+              min={pmin(k.pid)}
+              max={pmax(k.pid)}
+              defaultValue={pdef(k.pid)}
+              label={k.label}
+              units={punits(k.pid)}
+              curve="linear"
+              onchange={set(k.pid)}
+              moduleId={id}
+              paramId={k.pid}
+            />
+          {/each}
+        </div>
+
+        <!-- AUDIO ONLY: knobs that change ONLY the derived sound, not the picture
+             (TUNE / FINE pitch, FOLD wavefolder, LEVEL gain). -->
+        <div class="audio-only-label">audio only</div>
+        <div class="knobs audio-only-knobs" data-testid="videocube-audio-knobs">
+          {#each AUDIO_KNOBS as k (k.pid)}
             <Knob
               value={p(k.pid)}
               min={pmin(k.pid)}
@@ -359,6 +481,20 @@
     border: 1px solid var(--cable-video, #3aa);
     border-radius: 1px;
     display: block;
+  }
+  .viz-row {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-start;
+  }
+  .viz {
+    width: 96px;
+    height: 72px;
+    background: #050608;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+    display: block;
+    image-rendering: auto;
   }
   .slots { display: flex; flex-direction: column; gap: 5px; }
   .slot-row {
@@ -439,14 +575,17 @@
     gap: 4px 6px;
     margin-top: 2px;
   }
-  .view-label {
+  .view-label,
+  .audio-only-label {
     font-size: 0.5rem;
     letter-spacing: 0.1em;
+    text-transform: uppercase;
     color: var(--text-dim);
     font-family: ui-monospace, monospace;
     margin-top: 4px;
     border-top: 1px solid var(--border);
     padding-top: 4px;
   }
+  .audio-only-knobs { margin-top: 2px; }
   .view-knobs { margin-top: 0; }
 </style>
