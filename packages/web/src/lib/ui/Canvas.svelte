@@ -343,6 +343,8 @@
     isTypingTarget,
   } from '$lib/graph/workflow-pins';
   import { removePatchNode } from '$lib/graph/mutate';
+  import { goto } from '$app/navigation';
+  import { resetLocalScratchId } from '$lib/storage/local-scratch';
   import type { RackMode } from '$lib/graph/rack-mode';
   import type { HocuspocusProvider } from '@hocuspocus/provider';
   import type { PresenceUser } from '$lib/multiplayer/presence';
@@ -2101,6 +2103,58 @@
     // update, and SvelteFlow now consumes a one-way `nodes` prop so it
     // can't stomp the assignment.
     trace('cleared patch');
+  }
+
+  // ---------------- File → New rack ----------------
+  //
+  // Create a FRESH rack of the CURRENT kind (mode preserved), reusing the two
+  // existing create paths rather than a parallel system:
+  //   - SIGNED IN  → POST /api/rackspaces {mode} (the dashboard's create call)
+  //                  → navigate to the new /r/{id}. A brand-new doc id keeps it
+  //                    collab-safe (a fresh Y.Doc, never a fork of this one).
+  //   - LOGGED OUT → mint a fresh anonymous scratch id for this mode
+  //                  (resetLocalScratchId) and reload the scratch route so the
+  //                    replica rehydrates an EMPTY doc. The workflow shell's
+  //                    pinned singletons re-spawn on mount either way.
+  // If the signed-in create fails (offline / rack cap), we fall through to a
+  // scratch rack rather than dead-ending the button.
+  let newRackBusy = $state(false);
+  async function newRack() {
+    if (newRackBusy) return;
+    newRackBusy = true;
+    try {
+      if (headerSignedIn) {
+        try {
+          const res = await fetch('/api/rackspaces', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ name: 'Untitled rackspace', mode }),
+          });
+          if (res.ok) {
+            const { rackspace } = (await res.json()) as { rackspace: { id: string } };
+            await goto(`/r/${rackspace.id}`);
+            return;
+          }
+          // Non-OK (cap reached / auth lapsed) → fall through to a scratch rack.
+        } catch {
+          /* network error → fall through to a scratch rack. */
+        }
+      }
+      // Logged-out (or the persisted create failed): a fresh scratch rack of the
+      // current kind. Reset the per-device id, then either hard-reload the
+      // scratch route (already here → the derived id won't re-read localStorage,
+      // so reload rebinds to the new empty doc) or navigate to it.
+      resetLocalScratchId(mode);
+      const onScratch =
+        typeof window !== 'undefined' && window.location.pathname === '/rack';
+      if (onScratch) {
+        window.location.reload();
+      } else {
+        await goto(mode === 'workflow' ? '/rack?mode=workflow' : '/rack');
+      }
+    } finally {
+      newRackBusy = false;
+    }
   }
 
   // ---------------- Raw JSON export / import ----------------
@@ -6307,6 +6361,8 @@
       {slotBusy}
       perfBusy={perfZipBusy}
       hasNodes={nodeCount > 0}
+      newRackBusy={newRackBusy}
+      onNewRack={newRack}
       onQuicksave={quicksaveSlot}
       onQuickload={loadSlot}
       onSavePerformance={exportPerformanceZip}
@@ -6391,6 +6447,12 @@
         <option value="glitches">Glitches Get Riches</option>
         <option value="gibribbon-demo">GIBRIBBON (game demo)</option>
       </select>
+      <button
+        data-testid="new-rack-btn"
+        onclick={newRack}
+        disabled={newRackBusy}
+        title="New rack — a fresh empty rack of this kind (signed in: a new saved rack; logged out: a clean scratch canvas)"
+      >New rack</button>
       <button onclick={clearPatch} disabled={nodeCount === 0}>Clear</button>
       <button
         onclick={exportPerformanceZip}

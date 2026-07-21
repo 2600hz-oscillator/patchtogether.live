@@ -5,7 +5,7 @@
   import { normalizeRackMode } from '$lib/graph/rack-mode';
   import { ydoc, bindRackspace, unbindRackspace } from '$lib/graph/store';
   import { attachLocalReplica } from '$lib/multiplayer/local-replica';
-  import { getOrCreateLocalScratchId } from '$lib/storage/local-scratch';
+  import { getOrCreateLocalScratchId, recordLastScratchMode } from '$lib/storage/local-scratch';
 
   // `homeAuth` is derived SERVER-SIDE in +layout.server.ts (the scratch
   // canvas at `/rack` doesn't mount the client <ClerkProvider> — that would
@@ -89,6 +89,11 @@
   $effect(() => {
     const id = scratchId;
     seeded = false;
+    // Stamp this as the most-recently-opened scratch kind so the landing's
+    // "Return to last rack" card knows which mode to reopen. Cheap localStorage
+    // write; runs whether or not the IndexedDB replica is enabled (the card
+    // additionally verifies the replica DB exists).
+    recordLastScratchMode(mode);
     bindRackspace(id);
     if (!replicaEnabled) return; // ephemeral /rack (test harness, no opt-in)
     const replica = attachLocalReplica(id, ydoc);
