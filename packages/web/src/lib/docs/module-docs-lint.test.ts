@@ -263,9 +263,11 @@ describe('module-docs lint — STRICT_DOCS RATCHET (only grows)', () => {
     // dodge. (The old floor had lagged the list's actual size.)
     // 169→170 (2026-07-19): +1 frametable (video wavetable oscillator — born
     // strict, docs authored + verified against the source).
+    // 170→171 (2026-07-19): +1 videocube (video isomorph of audio CUBE — born
+    // strict, docs authored + verified against the source).
     expect(
       STRICT_DOCS.size,
       'STRICT_DOCS shrank below its frozen floor — see the RATCHET rule above',
-    ).toBeGreaterThanOrEqual(170);
+    ).toBeGreaterThanOrEqual(171);
   });
 });

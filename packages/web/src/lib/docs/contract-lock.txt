@@ -3426,6 +3426,67 @@ videobox out audio_r audio
 videobox out video video
 videobox param cv_play_trigger 0..1 linear default=0
 videobox param gain 0..2 linear default=1
+videocube meta domain=video
+videocube in chroma_depth_cv cv param=chroma_depth cvScale=linear
+videocube in connect_cv cv param=connect cvScale=linear
+videocube in connect_strength_cv cv param=connect_strength cvScale=linear
+videocube in crush_cv cv param=crush cvScale=linear
+videocube in fold_cv cv param=fold cvScale=linear
+videocube in hue_mode_cv cv param=hue_mode cvScale=linear
+videocube in morph_cv cv param=morph_fc cvScale=linear
+videocube in motion_cv cv param=motion cvScale=linear
+videocube in scan_cv cv param=scan cvScale=linear
+videocube in slice_rx_cv cv param=slice_rx cvScale=linear
+videocube in slice_ry_cv cv param=slice_ry cvScale=linear
+videocube in slice_rz_cv cv param=slice_rz cvScale=linear
+videocube in slice_y_cv cv param=slice_y cvScale=linear
+videocube in space_crush_cv cv param=space_crush cvScale=linear
+videocube in space_diffuse_cv cv param=space_diffuse cvScale=linear
+videocube in spread_cv cv param=spread cvScale=linear
+videocube in tune_cv cv param=tune cvScale=linear
+videocube in video_a video
+videocube in video_b video
+videocube in video_c video
+videocube in view_x_cv cv param=view_rot_x cvScale=linear
+videocube in view_y_cv cv param=view_rot_y cvScale=linear
+videocube out audio_out audio
+videocube out chaos_out video
+videocube out depth_out video
+videocube out morph_out video
+videocube out scope_out video
+videocube out slice_out video
+videocube out smooth_out video
+videocube out video_out video
+videocube param chroma_depth 0..1 linear default=0.6
+videocube param connect 0..1 linear default=0
+videocube param connect_strength 0..1 linear default=0
+videocube param crush 0..1 linear default=0
+videocube param fine -100..100 linear default=0 unit=¢
+videocube param fold 0..1 linear default=0
+videocube param freeze 0..1 linear default=0
+videocube param hue_mode 0..1 discrete default=0
+videocube param level 0..2 linear default=1
+videocube param live 0..1 linear default=0
+videocube param material 0..1 discrete default=0
+videocube param morph_fc 0..1 linear default=0
+videocube param motion 0..1 linear default=0
+videocube param reader_mode 0..2 discrete default=0
+videocube param scan 0..1 linear default=0
+videocube param screen_on 0..1 discrete default=1
+videocube param slice_rx -3.1416..3.1416 linear default=0
+videocube param slice_ry -3.1416..3.1416 linear default=0
+videocube param slice_rz -3.1416..3.1416 linear default=0
+videocube param slice_view 0..2 discrete default=0
+videocube param slice_y 0..1 linear default=0.5
+videocube param space_crush 0..1 linear default=0
+videocube param space_diffuse 0..1 linear default=0
+videocube param spread 0..1 linear default=0
+videocube param tune -36..36 linear default=0 unit=st
+videocube param view_rot_x -3.1416..3.1416 linear default=0.6
+videocube param view_rot_y -3.1416..3.1416 linear default=0.7
+videocube param view_rot_z -3.1416..3.1416 linear default=0
+videocube param view_zoom 0.3..3 linear default=1
+videocube param wrap 0..1 discrete default=0
 videoMixer meta domain=video
 videoMixer in amount1 cv param=amount1 cvScale=linear
 videoMixer in amount2 cv param=amount2 cvScale=linear

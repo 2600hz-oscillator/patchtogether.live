@@ -56,7 +56,7 @@ const EXPECTED_NODE_TYPES = [
   'swolevco', 'synesthesia', 'tempest', 'timelorde', 'treeohvox', 'tvLibrarian',
   'launchpadControlLeft',
   'unityscalemathematik', 'vca', 'vdelay', 'vfpgaRunner', 'videoMixer', 'videoOut',
-  'videobox', 'videovarispeed', 'warrenspectrum', 'wavecel', 'wavesculpt',
+  'videobox', 'videocube', 'videovarispeed', 'warrenspectrum', 'wavecel', 'wavesculpt',
   'twotracks', 'wavetableVco', 'writeseq', 'textmarquee', 'tiler', 'spirographs',
   'milkdrop',
 

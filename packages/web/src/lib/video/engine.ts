@@ -591,6 +591,13 @@ export class VideoEngine implements DomainEngine {
    *  Used by presentation surfaces that outlive the card's viewport rect
    *  (true fullscreen, present-on-second-display). */
   private renderLeases = new Map<string, number>();
+  /** Cards previewing a SPECIFIC non-primary OUTPUT port inline (VIDEOCUBE's
+   *  on-card SLICE viz) register a short-lived request here so the module's
+   *  per-port render gate keeps that port rendering even while it is UNPATCHED.
+   *  TTL-scoped (the same WATCH_TTL as a watch mark): once the card unmounts or
+   *  goes offscreen it stops refreshing and the port returns to gated-off, so an
+   *  idle rack pays nothing. nodeId → (portId → expiry, ms on the watch clock). */
+  private previewPorts = new Map<string, Map<string, number>>();
   /** Per-node cumulative draw counter — the deterministic probe the pull-eval
    *  tests/e2e assert on (a skipped node's counter must not advance). */
   private framesDrawn = new Map<string, number>();
@@ -755,6 +762,7 @@ export class VideoEngine implements DomainEngine {
     this.mouseState.delete(nodeId);
     this.managedFbos.delete(nodeId);
     this.watchedAt.delete(nodeId);
+    this.previewPorts.delete(nodeId);
     this.cardVisible.delete(nodeId);
     this.renderLeases.delete(nodeId);
     this.framesDrawn.delete(nodeId);
@@ -1242,6 +1250,7 @@ export class VideoEngine implements DomainEngine {
     this.managedFbos.clear();
     this.topoOrder = [];
     this.watchedAt.clear();
+    this.previewPorts.clear();
     this.cardVisible.clear();
     this.renderLeases.clear();
     this.framesDrawn.clear();
@@ -1441,6 +1450,52 @@ export class VideoEngine implements DomainEngine {
     // path. Sources / effects render their own outputs to FBOs anyway.
     const tex = handle.surface.texture;
     if (!tex) return;
+    this.blitTexToDrawingBuffer(tex);
+  }
+
+  /**
+   * Blit a SPECIFIC output PORT's texture into the drawing buffer — the per-port
+   * sibling of blitOutputToDrawingBuffer (which only ever blits the primary
+   * surface / video_out). A card previewing a NON-primary output inline
+   * (VIDEOCUBE's on-card SLICE cross-section) calls this each rAF: it
+   *   (a) REQUESTS the port be rendered even while it is UNPATCHED
+   *       (requestOutputPreview → the module's per-port gate keeps drawing it), and
+   *   (b) blits the port's current FBO texture to the drawing buffer so the card's
+   *       Canvas2D `drawImage(engine.canvas)` can show it — no WebGL in the card,
+   *       so the card stays OUT of the WebGL attest basis.
+   * Resolves the texture by the same rule edge-routing uses
+   * (`read('outputTexture:<portId>')`), falling back to the primary surface for a
+   * module that doesn't expose a per-port texture. No-op if the node is absent.
+   */
+  blitOutputPortToDrawingBuffer(nodeId: string, portId: string): void {
+    const handle = this.nodes.get(nodeId);
+    if (!handle) return;
+    // Mark watched + register the preview request BEFORE any GL work (stub-GL
+    // safe, mirrors blitOutputToDrawingBuffer's ordering discipline).
+    this.requestOutputPreview(nodeId, portId);
+    const tex =
+      (handle.read?.(`outputTexture:${portId}`) as WebGLTexture | null | undefined) ??
+      handle.surface?.texture ??
+      null;
+    if (!tex) return;
+    this.blitTexToDrawingBuffer(tex);
+  }
+
+  /** Register/refresh a short-lived request that `portId` of `nodeId` be rendered
+   *  for an inline card preview even while the port is UNPATCHED (see
+   *  previewPorts). Also marks the node watched so it stays in the pull-eval
+   *  active set. */
+  private requestOutputPreview(nodeId: string, portId: string): void {
+    this.markWatched(nodeId);
+    let m = this.previewPorts.get(nodeId);
+    if (!m) { m = new Map(); this.previewPorts.set(nodeId, m); }
+    m.set(portId, this.watchNow() + VideoEngine.WATCH_TTL_MS);
+  }
+
+  /** Shared drawing-buffer blit for {blitOutputToDrawingBuffer,
+   *  blitOutputPortToDrawingBuffer}: pass-through copy `tex` fullscreen into the
+   *  default framebuffer at the engine res. */
+  private blitTexToDrawingBuffer(tex: WebGLTexture): void {
     const gl = this.gl;
     if (!this.copyProgram) {
       this.copyProgram = this.compileFragmentImpl(VideoEngine.COPY_FRAG_SRC);
@@ -1901,6 +1956,19 @@ void main() {
     }
     for (const b of this.videoTextureBridges.values()) {
       if (b.sourceNodeId === thisNodeId) ports.add(b.sourcePortId);
+    }
+    // Inline card previews of a NON-primary output (VIDEOCUBE's on-card SLICE)
+    // request the port here so the module's per-port gate keeps rendering it
+    // while it is unpatched. Prune expired requests inline (TTL-scoped) so a
+    // closed/hidden card releases the port back to gated-off.
+    const pv = this.previewPorts.get(thisNodeId);
+    if (pv) {
+      const now = this.watchNow();
+      for (const [portId, exp] of pv) {
+        if (exp >= now) ports.add(portId);
+        else pv.delete(portId);
+      }
+      if (pv.size === 0) this.previewPorts.delete(thisNodeId);
     }
     return ports;
   }

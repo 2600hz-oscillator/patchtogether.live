@@ -1,0 +1,889 @@
+// packages/web/src/lib/video/videocube-core.test.ts
+//
+// VIDEOCUBE pure-CORE certification (jsdom, no WebGL). Pins the NEW math the GLSL
+// ray-march COMBINE shader transliterates 1:1 — the per-voxel FIELD SAMPLE
+// (density + occupancy-weighted colour over a GENUINE z axis), the SPACE
+// CRUSH/CRUSH/WRAP coord warp, the SPACE-DIFFUSE gravity face, and the single-
+// frame ring→luma-heightfield reduction that feeds the audio scan. The REUSED
+// field math (occ / fieldFromHeights / crushLevels / spaceCrushCoord / crushCoord
+// / wrapFold / lowestInfoFace) is pinned by cube-dsp.test.ts; the ring READ
+// machinery by frametable-core.test.ts.
+
+import { describe, it, expect } from 'vitest';
+import {
+  luma,
+  posterize,
+  warpCoord,
+  wrapSurfaceCoord,
+  readerLagFor,
+  scanOffsetFrames,
+  readerCentreLayer,
+  voxelSample,
+  diffuseTargetFor,
+  stripToHeightfield,
+  stripToHeightfieldInto,
+  windowHalfWidth,
+  temporalWindow,
+  sampleTemporalWindow,
+  // CHROMASTACK
+  CHROMA_HUE_BINS,
+  CHROMA_ARCH_LEN,
+  CHROMA_ARCH_PEAK,
+  CHROMA_BANK_MUSICAL,
+  CHROMA_BANK_INSTRUMENT,
+  chromaBank,
+  rgbStripToHueHist,
+  colorMorphWave,
+  shapeInto,
+  combineCarrierChroma,
+  motionEnergy,
+  VIDEOCUBE_SMOOTH_TAPS_SOFT,
+  VIDEOCUBE_SMOOTH_TAPS_GPU,
+  VIDEOCUBE_SMOOTH_TAPS_MAX,
+  VIDEOCUBE_WINDOW_EPS,
+  VIDEOCUBE_RING_FRAMES,
+  VIDEOCUBE_RENDER_SCALE,
+  VIDEOCUBE_MARCH_SCALE,
+  VIDEOCUBE_MARCH_SOFT,
+  VIDEOCUBE_MARCH_GPU,
+  VIDEOCUBE_MARCH_MAX,
+  VIDEOCUBE_FIELD_ROWS,
+  VIDEOCUBE_READER_LAG,
+  VIDEOCUBE_MODE_SMOOTH,
+  VIDEOCUBE_MODE_MORPH,
+  VIDEOCUBE_MODE_CHAOS,
+  VIDEOCUBE_CHAOS_REPRESENTATIVE_LAG,
+  VIDEOCUBE_WRAP_TILES,
+  VIDEOCUBE_DIFFUSE_DEFAULT,
+  type RGB,
+  type VoxelParams,
+} from './videocube-core';
+import {
+  crushLevels,
+  spaceCrushCoord,
+  crushCoord,
+  wrapFold,
+  clamp01,
+  fieldFromHeights,
+  lowestInfoFace,
+  type Material,
+} from '../../../../dsp/src/lib/cube-dsp';
+
+const RED: RGB = { r: 1, g: 0, b: 0 };
+const BLUE: RGB = { r: 0, g: 0, b: 1 };
+const GRAY: RGB = { r: 0.5, g: 0.5, b: 0.5 };
+const smoothP: VoxelParams = { morphFC: 0, connect: 0, connectStrength: 0, material: 'smooth', crush: 0 };
+
+describe('videocube-core constants', () => {
+  it('reuse FrameTable ring geometry (60 frames, half-res video_out)', () => {
+    expect(VIDEOCUBE_RING_FRAMES).toBe(60);
+    expect(VIDEOCUBE_RENDER_SCALE).toBe(0.5);
+  });
+  it('the ray-march renders at quarter res (perf lever)', () => {
+    expect(VIDEOCUBE_MARCH_SCALE).toBe(0.25);
+    expect(VIDEOCUBE_MARCH_SCALE).toBeLessThan(VIDEOCUBE_RENDER_SCALE);
+  });
+  it('the march step count is renderer-gated (soft < gpu, gpu = the loop cap)', () => {
+    expect(VIDEOCUBE_MARCH_SOFT).toBeLessThan(VIDEOCUBE_MARCH_GPU);
+    expect(VIDEOCUBE_MARCH_SOFT).toBe(32);
+    expect(VIDEOCUBE_MARCH_GPU).toBe(64);
+    expect(VIDEOCUBE_MARCH_MAX).toBe(VIDEOCUBE_MARCH_GPU);
+  });
+  it('the audio field is a 64-row heightfield (e352 frame count) + distinct reader modes', () => {
+    expect(VIDEOCUBE_FIELD_ROWS).toBe(64);
+    expect(new Set([VIDEOCUBE_MODE_SMOOTH, VIDEOCUBE_MODE_MORPH, VIDEOCUBE_MODE_CHAOS]).size).toBe(3);
+  });
+});
+
+describe('luma', () => {
+  it('Rec.601 weights, clamped to [0,1]', () => {
+    expect(luma(0, 0, 0)).toBe(0);
+    expect(luma(1, 1, 1)).toBeCloseTo(1, 6);
+    expect(luma(1, 0, 0)).toBeCloseTo(0.299, 6);
+    expect(luma(0, 1, 0)).toBeCloseTo(0.587, 6);
+    expect(luma(0, 0, 1)).toBeCloseTo(0.114, 6);
+    expect(luma(5, 5, 5)).toBe(1); // clamps
+  });
+});
+
+describe('voxelSample — the per-voxel FIELD sample (density + occupancy colour)', () => {
+  it('THREE IDENTICAL surfaces return that colour exactly, at any depth (identity)', () => {
+    for (const c of [RED, BLUE, GRAY, { r: 0.2, g: 0.7, b: 0.4 }]) {
+      for (const z of [0, 0.3, 0.6, 1]) {
+        const out = voxelSample(c, c, c, z, smoothP).color;
+        expect(out.r).toBeCloseTo(c.r, 6);
+        expect(out.g).toBeCloseTo(c.g, 6);
+        expect(out.b).toBeCloseTo(c.b, 6);
+      }
+    }
+  });
+
+  it('density is byte-for-byte cube-dsp.fieldFromHeights (the SAME field the audio scans)', () => {
+    for (const z of [0, 0.2, 0.4, 0.6, 0.8, 1]) {
+      for (const m of [0, 0.5, 1]) {
+        for (const mat of ['smooth', 'hard'] as const) {
+          const p: VoxelParams = { morphFC: m, connect: 0.3, connectStrength: 0, material: mat, crush: 0 };
+          const got = voxelSample(RED, GRAY, BLUE, z, p).density;
+          const want = fieldFromHeights(
+            z,
+            { floorH: luma(1, 0, 0), wallH: luma(0.5, 0.5, 0.5), ceilH: luma(0, 0, 1) },
+            { morphFC: m, connect: 0.3, connectStrength: 0, material: mat },
+          );
+          expect(got, `z=${z} m=${m} ${mat}`).toBeCloseTo(want, 6);
+        }
+      }
+    }
+  });
+
+  it('the field is a GENUINE z axis — solid at the base, empty above the ceiling', () => {
+    // A/B/C distinct; at z=0 the field is fully solid, at z≈1 it is empty. (The
+    // v1 bug collapsed z to one point → this monotone-in-z fill was impossible.)
+    const base = voxelSample(RED, GRAY, BLUE, 0, { ...smoothP, morphFC: 0.5 }).density;
+    const top = voxelSample(RED, GRAY, BLUE, 0.98, { ...smoothP, morphFC: 0.5 }).density;
+    expect(base, 'solid at the floor').toBeGreaterThan(0.9);
+    expect(top, 'empty above the ceiling').toBeLessThan(0.1);
+    expect(base).toBeGreaterThan(top);
+  });
+
+  it('MORPH cross-fades FLOOR (A) → CEILING (C) through B at a connector depth', () => {
+    const z = 0.4; // inside both the floor→wall and ceiling→wall fills
+    const at0 = voxelSample(RED, GRAY, BLUE, z, { ...smoothP, morphFC: 0 }).color;
+    const at1 = voxelSample(RED, GRAY, BLUE, z, { ...smoothP, morphFC: 1 }).color;
+    expect(at0.r, 'morph 0 → red-dominant').toBeGreaterThan(at0.b);
+    expect(at1.b, 'morph 1 → blue-dominant').toBeGreaterThan(at1.r);
+    expect(at1.b, 'ceiling(blue) grows with morph').toBeGreaterThan(at0.b);
+    expect(at0.r, 'floor(red) shrinks with morph').toBeGreaterThan(at1.r);
+  });
+
+  it('CONNECT actually engages (moves the blend, not a degenerate no-op)', () => {
+    const z = 0.4;
+    const soft = voxelSample(RED, GRAY, BLUE, z, { ...smoothP, morphFC: 0.5, connect: 0 }).color;
+    const hard = voxelSample(RED, GRAY, BLUE, z, { ...smoothP, morphFC: 0.5, connect: 1 }).color;
+    const d = Math.abs(soft.r - hard.r) + Math.abs(soft.g - hard.g) + Math.abs(soft.b - hard.b);
+    expect(d, 'CONNECT changes the blend').toBeGreaterThan(1e-3);
+  });
+
+  it('output channels stay in [0,1] across a param sweep and every depth', () => {
+    for (let m = 0; m <= 1; m += 0.25) {
+      for (const con of [0, 0.5, 1]) {
+        for (const cs of [0, 1]) {
+          for (const z of [0, 0.35, 0.7, 1]) {
+            const out = voxelSample(RED, GRAY, BLUE, z, { morphFC: m, connect: con, connectStrength: cs, material: 'smooth', crush: 0 }).color;
+            for (const v of [out.r, out.g, out.b]) { expect(v).toBeGreaterThanOrEqual(0); expect(v).toBeLessThanOrEqual(1); }
+          }
+        }
+      }
+    }
+  });
+
+  it('MATERIAL HARD returns exactly one source colour (one-surface-wins) + a binary density', () => {
+    const s = voxelSample(RED, GRAY, BLUE, 0.4, { ...smoothP, morphFC: 0.5, material: 'hard' });
+    const isOne = (c: RGB) => c.r === s.color.r && c.g === s.color.g && c.b === s.color.b;
+    expect(isOne(RED) || isOne(GRAY) || isOne(BLUE)).toBe(true);
+    expect(s.density === 0 || s.density === 1, 'HARD density is binary').toBe(true);
+  });
+
+  it('CRUSH posterizes the colour AND amplitude-crushes the density (cube-dsp levels)', () => {
+    const s = voxelSample({ r: 0.4, g: 0.6, b: 0.2 }, GRAY, { r: 0.3, g: 0.1, b: 0.9 }, 0.4, { ...smoothP, morphFC: 0.5, crush: 1 });
+    const levels = crushLevels(1); // 2 at k=1
+    for (const v of [s.color.r, s.color.g, s.color.b]) {
+      const q = Math.round(v * (levels - 1)) / (levels - 1);
+      expect(v).toBeCloseTo(q, 6);
+    }
+    // density quantized to the same levels.
+    const dq = Math.round(s.density * (levels - 1)) / (levels - 1);
+    expect(s.density).toBeCloseTo(dq, 6);
+  });
+});
+
+describe('posterize', () => {
+  it('crush 0 = identity', () => {
+    const c = { r: 0.37, g: 0.62, b: 0.11 };
+    expect(posterize(c, 0)).toEqual(c);
+  });
+  it('crush 1 = 2 levels (0 or 1 per channel)', () => {
+    const out = posterize({ r: 0.3, g: 0.7, b: 0.5 }, 1);
+    for (const v of [out.r, out.g, out.b]) expect(v === 0 || v === 1).toBe(true);
+  });
+});
+
+describe('warpCoord — SPACE CRUSH voxelize + CRUSH snap + WRAP fold (the field lookup)', () => {
+  it('all off = identity', () => {
+    expect(warpCoord(0.37, 0, 0, false)).toBeCloseTo(0.37, 6);
+  });
+  it('SPACE CRUSH snaps to the cube-dsp voxel grid', () => {
+    expect(warpCoord(0.37, 1, 0, false)).toBeCloseTo(spaceCrushCoord(0.37, 1), 6);
+  });
+  it('CRUSH snaps the coord to the cube-dsp spatial grid', () => {
+    expect(warpCoord(0.37, 0, 1, false)).toBeCloseTo(crushCoord(0.37, 1), 6);
+  });
+  it('WRAP mirror-folds an out-of-range coord', () => {
+    expect(warpCoord(1.2, 0, 0, true)).toBeCloseTo(wrapFold(1.2), 6); // 0.8
+  });
+  it('WRAP off clamps an out-of-range coord to [0,1]', () => {
+    expect(warpCoord(1.2, 0, 0, false)).toBeCloseTo(1, 6);
+    expect(warpCoord(-0.2, 0, 0, false)).toBeCloseTo(0, 6);
+  });
+});
+
+describe('wrapSurfaceCoord — WRAP on the PICTURE surface uv (B1: WRAP must change the render)', () => {
+  it('WRAP off = clamp (identity for the in-cube [0,1] coords the march produces)', () => {
+    // The marched surface coords are ALWAYS in [0,1]; OFF must be byte-identical
+    // to a plain read → the pre-WRAP look is preserved.
+    for (const c of [0, 0.1, 0.37, 0.5, 0.83, 1]) {
+      expect(wrapSurfaceCoord(c, false)).toBeCloseTo(clamp01(c), 6);
+      expect(wrapSurfaceCoord(c, false)).toBeCloseTo(c, 6);
+    }
+  });
+  it('WRAP on MIRROR-TILES the [0,1] domain → DIFFERENT from clamp at interior coords', () => {
+    // This is the whole B1 fix: for an in-range coord, ON ≠ OFF, so toggling WRAP
+    // visibly changes which texel the surface samples (the picture changes).
+    let anyDifferent = false;
+    for (const c of [0.1, 0.25, 0.37, 0.6, 0.75, 0.9]) {
+      const on = wrapSurfaceCoord(c, true);
+      const off = wrapSurfaceCoord(c, false);
+      expect(on).toBeCloseTo(wrapFold(c * VIDEOCUBE_WRAP_TILES), 6);
+      expect(on).toBeGreaterThanOrEqual(0);
+      expect(on).toBeLessThanOrEqual(1);
+      if (Math.abs(on - off) > 1e-3) anyDifferent = true;
+    }
+    expect(anyDifferent, 'WRAP on differs from off for interior coords → the render changes').toBe(true);
+  });
+  it('WRAP on is a true MIRROR: symmetric about the mid-plane, folds the faces to 0', () => {
+    expect(wrapSurfaceCoord(0, true)).toBeCloseTo(0, 6);   // near face
+    expect(wrapSurfaceCoord(0.5, true)).toBeCloseTo(1, 6); // mid-plane = the fold crest
+    expect(wrapSurfaceCoord(1, true)).toBeCloseTo(0, 6);   // far face folds back to 0
+    // mirror symmetry across the 0.5 crest
+    expect(wrapSurfaceCoord(0.3, true)).toBeCloseTo(wrapSurfaceCoord(0.7, true), 6);
+  });
+});
+
+describe('readerLagFor — audio + video read the SAME temporal frame per mode (B3)', () => {
+  it('MORPH reads the newest frame (lag 0) — matches the video march', () => {
+    expect(readerLagFor(VIDEOCUBE_MODE_MORPH, false)).toBe(0);
+    expect(readerLagFor(VIDEOCUBE_MODE_MORPH, true)).toBe(0);
+  });
+  it('SMOOTH reads the trailing VIDEOCUBE_READER_LAG frame (LIVE forces the newest)', () => {
+    expect(readerLagFor(VIDEOCUBE_MODE_SMOOTH, false)).toBe(VIDEOCUBE_READER_LAG);
+    expect(readerLagFor(VIDEOCUBE_MODE_SMOOTH, true)).toBe(0);
+  });
+  it('CHAOS reads the window-MEAN representative frame (per-pixel in the picture), ignoring LIVE', () => {
+    // The shader dithers a per-pixel frame regardless of LIVE; the 1-D audio scan
+    // reads the window mean, the documented representative — LIVE does not override.
+    expect(readerLagFor(VIDEOCUBE_MODE_CHAOS, false)).toBe(VIDEOCUBE_CHAOS_REPRESENTATIVE_LAG);
+    expect(readerLagFor(VIDEOCUBE_MODE_CHAOS, true)).toBe(VIDEOCUBE_CHAOS_REPRESENTATIVE_LAG);
+    // the representative is the mean of a uniform pick over [0, N-1)
+    expect(VIDEOCUBE_CHAOS_REPRESENTATIVE_LAG).toBe(Math.round((VIDEOCUBE_RING_FRAMES - 1) / 2));
+  });
+  it('the three modes select DISTINCT frames (so the picture and audio actually differ by mode)', () => {
+    const smooth = readerLagFor(VIDEOCUBE_MODE_SMOOTH, false);
+    const morph = readerLagFor(VIDEOCUBE_MODE_MORPH, false);
+    const chaos = readerLagFor(VIDEOCUBE_MODE_CHAOS, false);
+    expect(new Set([smooth, morph, chaos]).size).toBe(3);
+  });
+});
+
+describe('diffuseTargetFor — SPACE DIFFUSE gravity face (unified with the audio)', () => {
+  // Build a rows×256 constant heightfield (a flat surface at physical height h).
+  function flatField(h: number, rows = 4): Float32Array[] {
+    const v = h * 2 - 1; // physical [0,1] → sample [-1,1]
+    const out: Float32Array[] = [];
+    for (let r = 0; r < rows; r++) out.push(new Float32Array(256).fill(v));
+    return out;
+  }
+  const fp = { morphFC: 0.5, connect: 0, connectStrength: 0, material: 'smooth' as Material };
+
+  it('empty heightfields → the default face (top / z-high)', () => {
+    expect(diffuseTargetFor([], [], [], fp)).toEqual(VIDEOCUBE_DIFFUSE_DEFAULT);
+  });
+  it('is exactly cube-dsp.lowestInfoFace over the same field (thin wrapper)', () => {
+    const floorH = flatField(0.2), wallH = flatField(0.6), ceilH = flatField(0.3);
+    const got = diffuseTargetFor(floorH, wallH, ceilH, fp);
+    const want = lowestInfoFace(floorH, wallH, ceilH, fp);
+    expect(got).toEqual(want);
+  });
+  it('returns a valid, deterministic cube face', () => {
+    const floorH = flatField(0.1), wallH = flatField(0.9), ceilH = flatField(0.4);
+    const a = diffuseTargetFor(floorH, wallH, ceilH, fp);
+    const b = diffuseTargetFor(floorH, wallH, ceilH, fp);
+    expect(a).toEqual(b);
+    expect([0, 1, 2]).toContain(a.axis);
+    expect([-1, 1]).toContain(a.dir);
+  });
+});
+
+describe('stripToHeightfield — single-frame ring luma reduction (reads the .a luma byte)', () => {
+  it('white strip (.a=255) → +1, black strip (.a=0) → -1, shape [rows][cols]', () => {
+    const cols = 8, rows = 4;
+    const white = new Uint8Array(cols * rows * 4).fill(255); // .a=255 → luma 1
+    const black = new Uint8Array(cols * rows * 4);           // .a=0 → luma 0
+    const hw = stripToHeightfield(white, cols, rows);
+    const hb = stripToHeightfield(black, cols, rows);
+    expect(hw.length).toBe(rows);
+    expect(hw[0]!.length).toBe(cols);
+    expect(hw[0]![0]).toBeCloseTo(1, 5);
+    expect(hb[0]![0]).toBeCloseTo(-1, 5);
+  });
+  it('maps the .a (luma) byte [0,255] → [-1,1] per column', () => {
+    const cols = 2, rows = 1;
+    const strip = new Uint8Array(cols * rows * 4);
+    strip.set([255, 255, 255, 255], 0);   // col0: .a=255 → +1
+    strip.set([128, 128, 128, 128], 4);   // col1: .a=128 → (128/255)*2-1
+    const h = stripToHeightfield(strip, cols, rows);
+    expect(h[0]![0]).toBeCloseTo(1, 5);
+    expect(h[0]![1]).toBeCloseTo((128 / 255) * 2 - 1, 4);
+  });
+
+  it('BYTE-IDENTITY on COLOUR: reads .a (luma-then-quantize), NOT quantize-then-luma from .rgb', () => {
+    // REDUCE_FRAG writes vec4(c.rgb, lm): .a = the shader's ONCE-quantized Rec.601
+    // luma = round(luma*255), which is EXACTLY the pre-CHROMASTACK luma-only path's
+    // effective value. Recomputing luma from the per-channel-quantized .rgb would be
+    // quantize-THEN-luma and drift up to ~0.5 LSB on colour → the byte-identity bug.
+    const cols = 8, rows = 1;
+    const colours: [number, number, number][] = [
+      [5, 153, 221], [200, 30, 90], [17, 200, 17], [250, 250, 10],
+      [0, 0, 255], [255, 0, 0], [0, 255, 0], [128, 64, 192],
+    ];
+    const strip = new Uint8Array(cols * rows * 4);
+    for (let x = 0; x < cols; x++) {
+      const [r, g, b] = colours[x]!;
+      const lm01 = (0.299 * r + 0.587 * g + 0.114 * b) / 255;        // shader luma of c
+      strip.set([r, g, b, Math.round(lm01 * 255)], x * 4);           // .a = round(lm*255)
+    }
+    const h = stripToHeightfield(strip, cols, rows);
+    let drifted = 0;
+    for (let x = 0; x < cols; x++) {
+      const i = x * 4;
+      const aByte = strip[i + 3]!; // = round(lm*255), the shader's luma byte
+      // (1)+(2) the reduction reads .a → byte-identical (Float32-exact) to the old
+      // luma-only carrier, which was round(lm*255)/255*2-1 = (aByte/255)*2-1 too.
+      const oldCarrier = Math.fround((aByte / 255) * 2 - 1);
+      expect(h[0]![x]).toBe(oldCarrier);
+      // (3) and it DIFFERS from recomputing luma from the per-channel-quantized
+      // .rgb (quantize-then-luma — the byte-identity bug the fix removes).
+      const lm01 = (0.299 * strip[i]! + 0.587 * strip[i + 1]! + 0.114 * strip[i + 2]!) / 255;
+      const quantizeThenLuma = Math.fround(lm01 * 2 - 1);
+      if (Math.abs(h[0]![x]! - quantizeThenLuma) > 1e-4) drifted++;
+    }
+    // At least one colour genuinely drifts → the fix (read .a) is load-bearing.
+    expect(drifted, 'colour genuinely drifts between .a and quantize-then-luma').toBeGreaterThan(0);
+  });
+
+  it('stripToHeightfieldInto REUSES the scratch buffer (B2 — no per-call allocation)', () => {
+    const cols = 8, rows = 4;
+    const out: Float32Array[] = Array.from({ length: rows }, () => new Float32Array(cols));
+    const rowRefs = out.map((r) => r); // identity of each persistent row
+    const white = new Uint8Array(cols * rows * 4).fill(255); // .a=255
+    const black = new Uint8Array(cols * rows * 4);           // .a=0
+
+    const r1 = stripToHeightfieldInto(white, cols, rows, out);
+    expect(r1).toBe(out);                       // returns the SAME array
+    for (let f = 0; f < rows; f++) expect(r1[f]).toBe(rowRefs[f]); // SAME row buffers (no alloc)
+    expect(r1[0]![0]).toBeCloseTo(1, 5);        // white → +1
+
+    const r2 = stripToHeightfieldInto(black, cols, rows, out);
+    expect(r2).toBe(out);
+    for (let f = 0; f < rows; f++) expect(r2[f]).toBe(rowRefs[f]); // still the SAME buffers
+    expect(r2[0]![0]).toBeCloseTo(-1, 5);       // overwritten in place → black → -1
+  });
+
+  it('stripToHeightfieldInto == stripToHeightfield (same math, in-place)', () => {
+    const cols = 6, rows = 3;
+    const strip = new Uint8Array(cols * rows * 4);
+    for (let i = 0; i < strip.length; i++) strip[i] = (i * 37) % 256;
+    const want = stripToHeightfield(strip, cols, rows);
+    const got = stripToHeightfieldInto(strip, cols, rows, Array.from({ length: rows }, () => new Float32Array(cols)));
+    for (let f = 0; f < rows; f++) for (let x = 0; x < cols; x++) expect(got[f]![x]).toBeCloseTo(want[f]![x]!, 6);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// SPREAD temporal window (FrameTable-style) — the CPU mirror of the shader's
+// surfWindow / REDUCE window loop. Pins: SPREAD=0 is byte-identical (single
+// centre frame), the half-width mapping, Hann weights sum to 1 + symmetric, and
+// a wider SPREAD genuinely OOZES (blends more of the ring).
+// ──────────────────────────────────────────────────────────────────────────
+describe('SPREAD temporal window', () => {
+  const N = VIDEOCUBE_RING_FRAMES;
+
+  it('windowHalfWidth: 0 → 0, 1 → (N-1)/2 (FrameTable mapping)', () => {
+    expect(windowHalfWidth(0)).toBe(0);
+    expect(windowHalfWidth(1)).toBeCloseTo((N - 1) / 2, 9);
+    expect(windowHalfWidth(0.5)).toBeCloseTo(0.25 * (N - 1), 9);
+    // clamps out-of-range spread
+    expect(windowHalfWidth(-1)).toBe(0);
+    expect(windowHalfWidth(2)).toBeCloseTo((N - 1) / 2, 9);
+  });
+
+  it('SPREAD=0 collapses to the single centre tap {offset:0, weight:1}', () => {
+    for (const taps of [VIDEOCUBE_SMOOTH_TAPS_SOFT, VIDEOCUBE_SMOOTH_TAPS_GPU]) {
+      const win = temporalWindow(0, taps);
+      expect(win).toHaveLength(1);
+      expect(win[0]!.offset).toBe(0);
+      expect(win[0]!.weight).toBe(1);
+    }
+    // a sub-EPS window also collapses
+    const tiny = temporalWindow(VIDEOCUBE_WINDOW_EPS / (N - 1), VIDEOCUBE_SMOOTH_TAPS_GPU);
+    expect(tiny).toHaveLength(1);
+  });
+
+  it('taps ≤ 1 collapses to the single centre tap regardless of SPREAD', () => {
+    for (const t of [0, 1, -3]) {
+      const win = temporalWindow(1, t);
+      expect(win).toHaveLength(1);
+      expect(win[0]!.weight).toBe(1);
+    }
+  });
+
+  it('weights are normalized (Σw = 1), all > 0, and inside ±h', () => {
+    for (const spread of [0.2, 0.5, 1]) {
+      for (const taps of [VIDEOCUBE_SMOOTH_TAPS_SOFT, VIDEOCUBE_SMOOTH_TAPS_GPU]) {
+        const win = temporalWindow(spread, taps);
+        expect(win).toHaveLength(taps);
+        const h = windowHalfWidth(spread);
+        const sum = win.reduce((a, t) => a + t.weight, 0);
+        expect(sum).toBeCloseTo(1, 9);
+        for (const t of win) {
+          expect(t.weight).toBeGreaterThan(0);
+          expect(Math.abs(t.offset)).toBeLessThan(h); // bin-centre sampling ⇒ strictly inside
+        }
+      }
+    }
+  });
+
+  it('window is symmetric (offsets mirror, matching weights)', () => {
+    const win = temporalWindow(0.7, VIDEOCUBE_SMOOTH_TAPS_GPU);
+    const T = win.length;
+    for (let k = 0; k < T; k++) {
+      const mirror = win[T - 1 - k]!;
+      expect(win[k]!.offset).toBeCloseTo(-mirror.offset, 9);
+      expect(win[k]!.weight).toBeCloseTo(mirror.weight, 9);
+    }
+  });
+
+  it('Hann weights peak at the centre (inner taps outweigh outer taps)', () => {
+    const win = temporalWindow(1, VIDEOCUBE_SMOOTH_TAPS_GPU);
+    const T = win.length;
+    // the two innermost taps must each weigh more than the two outermost
+    expect(win[T / 2]!.weight).toBeGreaterThan(win[0]!.weight);
+    expect(win[T / 2 - 1]!.weight).toBeGreaterThan(win[T - 1]!.weight);
+  });
+
+  it('SPREAD=0 sampled window == the exact centre sample (byte-identical read)', () => {
+    // synthetic ring: value = layer (mod N), read via nearest-ish sampler
+    const ring = (layer: number) => ((layer % N) + N) % N;
+    const centre = 20;
+    expect(sampleTemporalWindow(ring, centre, 0, VIDEOCUBE_SMOOTH_TAPS_GPU)).toBe(ring(centre));
+  });
+
+  it('a flat (constant) ring is unchanged by any SPREAD (window is a weighted mean)', () => {
+    const flat = () => 0.42;
+    for (const spread of [0, 0.3, 1]) {
+      expect(sampleTemporalWindow(flat, 30, spread, VIDEOCUBE_SMOOTH_TAPS_GPU)).toBeCloseTo(0.42, 9);
+    }
+  });
+
+  it('OOZE: on a smooth ramp ring the window stays centred but a wider SPREAD blends more (lower local variance)', () => {
+    // A triangular "impulse" ring: peak at the centre frame, decaying away.
+    // Averaging a wider temporal window pulls the read DOWN from the peak — the
+    // signature of "oozing": neighbouring frames bleed in.
+    const centre = 30;
+    const ring = (layer: number) => {
+      const d = Math.abs((((layer - centre) % N) + N + N / 2) % N - N / 2); // wrapped distance
+      return Math.max(0, 1 - d / 10);
+    };
+    const atZero = sampleTemporalWindow(ring, centre, 0, VIDEOCUBE_SMOOTH_TAPS_GPU);
+    const atNarrow = sampleTemporalWindow(ring, centre, 0.15, VIDEOCUBE_SMOOTH_TAPS_GPU);
+    const atWide = sampleTemporalWindow(ring, centre, 0.45, VIDEOCUBE_SMOOTH_TAPS_GPU);
+    expect(atZero).toBeCloseTo(1, 6);              // spread 0 reads the crisp peak
+    expect(atNarrow).toBeLessThan(atZero);          // a window bleeds neighbours in
+    expect(atWide).toBeLessThan(atNarrow);          // wider window bleeds MORE (oozes)
+  });
+
+  it('VIDEOCUBE_SMOOTH_TAPS_MAX bounds the shader loop (≥ both renderer tap counts)', () => {
+    expect(VIDEOCUBE_SMOOTH_TAPS_MAX).toBeGreaterThanOrEqual(VIDEOCUBE_SMOOTH_TAPS_SOFT);
+    expect(VIDEOCUBE_SMOOTH_TAPS_MAX).toBeGreaterThanOrEqual(VIDEOCUBE_SMOOTH_TAPS_GPU);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// SCAN — the reader-centre position (FrameTable's MORPH). Pins: scan=0 is
+// byte-identical (the exact pre-scan centre, an integer), scan sweeps the centre
+// monotonically BACK through the ring (wrapping), the linear/ clamped offset map,
+// and that SCAN + SPREAD centre-then-widen (scan MOVES which frames the window
+// reads; spread WIDENS the blend at that scanned centre).
+// ──────────────────────────────────────────────────────────────────────────
+describe('SCAN reader-centre position', () => {
+  const N = VIDEOCUBE_RING_FRAMES;
+  const MODES = [VIDEOCUBE_MODE_SMOOTH, VIDEOCUBE_MODE_MORPH, VIDEOCUBE_MODE_CHAOS];
+
+  it('scanOffsetFrames: 0 → 0, 1 → N-1, linear + clamped', () => {
+    expect(scanOffsetFrames(0)).toBe(0);
+    expect(scanOffsetFrames(1)).toBeCloseTo(N - 1, 9);
+    expect(scanOffsetFrames(0.5)).toBeCloseTo(0.5 * (N - 1), 9);
+    expect(scanOffsetFrames(-1)).toBe(0);              // clamps low
+    expect(scanOffsetFrames(2)).toBeCloseTo(N - 1, 9); // clamps high
+  });
+
+  it('scan=0 is BYTE-IDENTICAL to the pre-scan centre (integer = newest − lag, wrapped)', () => {
+    for (const newest of [0, 5, 30, 59]) {
+      for (const mode of MODES) {
+        for (const live of [false, true]) {
+          const want = (((newest - readerLagFor(mode, live)) % N) + N) % N;
+          const got = readerCentreLayer(newest, mode, live, 0);
+          expect(got, `newest=${newest} mode=${mode} live=${live}`).toBe(want);
+          expect(Number.isInteger(got), 'scan=0 centre is an integer layer').toBe(true);
+        }
+      }
+    }
+  });
+
+  it('SCAN sweeps the reader centre monotonically BACK through the ring (wraps once, near-full coverage)', () => {
+    const newest = 40;
+    const lag = readerLagFor(VIDEOCUBE_MODE_MORPH, false); // 0 → centre = newest − scan·(N−1)
+    let prevRaw = Infinity;
+    const visited = new Set<number>();
+    for (let i = 0; i <= 100; i++) {
+      const scan = i / 100;
+      const raw = newest - lag - scanOffsetFrames(scan); // unwrapped: strictly decreasing
+      expect(raw).toBeLessThanOrEqual(prevRaw + 1e-9);
+      prevRaw = raw;
+      const centre = readerCentreLayer(newest, VIDEOCUBE_MODE_MORPH, false, scan);
+      expect(centre).toBeCloseTo(((raw % N) + N) % N, 6); // matches the wrapped raw
+      expect(centre).toBeGreaterThanOrEqual(0);
+      expect(centre).toBeLessThan(N);
+      visited.add(Math.round(centre) % N);
+    }
+    // a full 0→1 sweep displaces exactly (N−1) frames → it walks nearly the whole ring
+    expect(visited.size).toBeGreaterThan(N * 0.8);
+    // scan=1 lands (N−1) frames back = one short of a full loop (wraps to newest−lag+1)
+    expect(readerCentreLayer(newest, VIDEOCUBE_MODE_MORPH, false, 1))
+      .toBeCloseTo(((newest - lag - (N - 1)) % N + N) % N, 6);
+  });
+
+  it('SCAN shifts EVERY mode (incl. CHAOS) by the same offset (base + scan·(N−1), wrapped)', () => {
+    for (const mode of MODES) {
+      const base = readerCentreLayer(30, mode, false, 0);
+      const shifted = readerCentreLayer(30, mode, false, 0.5);
+      const wantShift = ((base - scanOffsetFrames(0.5)) % N + N) % N;
+      expect(shifted).toBeCloseTo(wantShift, 6);
+    }
+  });
+
+  it('SCAN + SPREAD: scan MOVES which ring frames the window reads; SPREAD widens the blend at that scanned centre', () => {
+    const newest = 59; // MORPH lag 0 → centre = newest − scan·(N−1)
+    const peak = 30;
+    // A triangular bump ring peaking at `peak` (smooth so the Hann taps land on
+    // real content, not an aliased single-layer delta).
+    const ring = (layer: number) => {
+      const d = Math.abs(((((layer - peak) % N) + N + N / 2) % N) - N / 2); // wrapped dist to peak
+      return Math.max(0, 1 - d / 10);
+    };
+    // The scan that lands the centre exactly on the bump: 59 − scan·59 = 30.
+    const scanToPeak = (newest - peak) / (N - 1);
+    const centreAtPeak = readerCentreLayer(newest, VIDEOCUBE_MODE_MORPH, false, scanToPeak);
+    expect(centreAtPeak).toBeCloseTo(peak, 6);
+
+    // scan=0 sits at `newest` (far from the bump) → reads ~0; scanning onto the
+    // bump reads the crisp peak (~1). This is the whole point: SCAN traverses the
+    // frozen table, distinct from SPREAD.
+    const centreUnscanned = readerCentreLayer(newest, VIDEOCUBE_MODE_MORPH, false, 0);
+    const readUnscanned = sampleTemporalWindow(ring, centreUnscanned, 0, VIDEOCUBE_SMOOTH_TAPS_GPU);
+    const readScanned = sampleTemporalWindow(ring, centreAtPeak, 0, VIDEOCUBE_SMOOTH_TAPS_GPU);
+    expect(readUnscanned).toBeCloseTo(0, 6);
+    expect(readScanned).toBeCloseTo(1, 6);
+    expect(readScanned).toBeGreaterThan(readUnscanned + 0.5);
+
+    // At the scanned centre, opening SPREAD dilutes the crisp peak (neighbours bleed
+    // in) — spread WIDENS, scan already POSITIONED. Both still > 0 (peak contributes).
+    const widened = sampleTemporalWindow(ring, centreAtPeak, 0.3, VIDEOCUBE_SMOOTH_TAPS_GPU);
+    expect(widened).toBeLessThan(readScanned);
+    expect(widened).toBeGreaterThan(0);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// CHROMASTACK — the dynamic CHROMA→timbre derivation (owner 2026-07-20). Pins:
+// the archetype BANKS (zero-mean, band-limited, seamlessly periodic, MONOTONE
+// spectral centroid, both banks), rgbStripToHueHist (grayscale ⇒ colourless),
+// colorMorphWave + combineCarrierChroma (grayscale ⇒ byte-identical luma carrier
+// = the FALLBACK proof; a hue rotation at constant luma AUDIBLY sweeps the
+// spectral centroid = the owner bar; saturation = dry/wet monotone; DC ~0), and
+// motionEnergy (responds to change, 0 for identical, blends by the amount).
+// ──────────────────────────────────────────────────────────────────────────
+
+// A DFT power-weighted spectral centroid (harmonic-number units) — the audible
+// "brightness" metric. Amplitude-invariant (scale-free).
+function spectralCentroid(wave: Float32Array): number {
+  const N = wave.length;
+  let num = 0, den = 0;
+  for (let k = 1; k <= N / 2; k++) {
+    let re = 0, im = 0;
+    for (let n = 0; n < N; n++) {
+      const a = (2 * Math.PI * k * n) / N;
+      re += wave[n]! * Math.cos(a);
+      im -= wave[n]! * Math.sin(a);
+    }
+    const mag2 = re * re + im * im;
+    num += k * mag2;
+    den += mag2;
+  }
+  return den > 1e-12 ? num / den : 0;
+}
+function meanOf(w: Float32Array): number {
+  let s = 0; for (let i = 0; i < w.length; i++) s += w[i]!;
+  return s / (w.length || 1);
+}
+function rms(w: Float32Array): number {
+  let s = 0; for (let i = 0; i < w.length; i++) s += w[i]! * w[i]!;
+  return Math.sqrt(s / (w.length || 1));
+}
+// A synthetic zero-mean carrier (a couple of partials) — stands in for the luma
+// cube slice Ws in the pure-function tests.
+function synthCarrier(): Float32Array {
+  const N = CHROMA_ARCH_LEN;
+  const w = new Float32Array(N);
+  for (let n = 0; n < N; n++) w[n] = 0.6 * Math.sin((2 * Math.PI * n) / N) + 0.25 * Math.sin((2 * Math.PI * 3 * n) / N);
+  return w;
+}
+// A UNIFORM RGBA strip of a single colour scaled to a target Rec.601 luma (so hue
+// can be rotated at CONSTANT luma). Alpha (unused by the chroma path) = luma.
+function uniformStripAtLuma(hue: [number, number, number], targetLuma: number, cols = 64, rows = 8): Uint8Array {
+  const l = 0.299 * hue[0] + 0.587 * hue[1] + 0.114 * hue[2];
+  const s = l > 0 ? targetLuma / l : 0;
+  const r = Math.min(1, hue[0] * s), g = Math.min(1, hue[1] * s), b = Math.min(1, hue[2] * s);
+  const a = 0.299 * r + 0.587 * g + 0.114 * b;
+  const strip = new Uint8Array(cols * rows * 4);
+  for (let i = 0; i < cols * rows; i++) {
+    strip[i * 4] = Math.round(r * 255);
+    strip[i * 4 + 1] = Math.round(g * 255);
+    strip[i * 4 + 2] = Math.round(b * 255);
+    strip[i * 4 + 3] = Math.round(a * 255);
+  }
+  return strip;
+}
+function grayStrip(level: number, cols = 64, rows = 8): Uint8Array {
+  const v = Math.round(clamp01(level) * 255);
+  const strip = new Uint8Array(cols * rows * 4);
+  for (let i = 0; i < cols * rows; i++) { strip[i * 4] = v; strip[i * 4 + 1] = v; strip[i * 4 + 2] = v; strip[i * 4 + 3] = v; }
+  return strip;
+}
+
+describe('CHROMASTACK archetype banks', () => {
+  const banks: Array<[string, readonly Float32Array[]]> = [
+    ['MUSICAL', CHROMA_BANK_MUSICAL],
+    ['INSTRUMENT', CHROMA_BANK_INSTRUMENT],
+  ];
+
+  it('each bank has CHROMA_HUE_BINS tables of CHROMA_ARCH_LEN, chromaBank picks by mode', () => {
+    for (const [, bank] of banks) {
+      expect(bank).toHaveLength(CHROMA_HUE_BINS);
+      for (const t of bank) expect(t.length).toBe(CHROMA_ARCH_LEN);
+    }
+    expect(chromaBank(0)).toBe(CHROMA_BANK_MUSICAL);
+    expect(chromaBank(1)).toBe(CHROMA_BANK_INSTRUMENT);
+    expect(chromaBank(0.4)).toBe(CHROMA_BANK_MUSICAL);   // rounds
+    expect(chromaBank(1.2)).toBe(CHROMA_BANK_INSTRUMENT); // rounds
+  });
+
+  it('every table is ZERO-MEAN, bounded to the peak, finite (phase-0 harmonic synth)', () => {
+    for (const [name, bank] of banks) {
+      for (let b = 0; b < bank.length; b++) {
+        const t = bank[b]!;
+        expect(Math.abs(meanOf(t)), `${name}[${b}] zero-mean`).toBeLessThan(1e-6);
+        let peak = 0;
+        for (let n = 0; n < t.length; n++) { expect(Number.isFinite(t[n]!)).toBe(true); peak = Math.max(peak, Math.abs(t[n]!)); }
+        expect(peak, `${name}[${b}] peak`).toBeLessThanOrEqual(CHROMA_ARCH_PEAK + 1e-6);
+        expect(peak, `${name}[${b}] non-trivial`).toBeGreaterThan(0.05);
+      }
+    }
+  });
+
+  it('is SEAMLESSLY PERIODIC — no discontinuity at the wrap seam (band-limited, smooth)', () => {
+    for (const [name, bank] of banks) {
+      for (let b = 0; b < bank.length; b++) {
+        const t = bank[b]!;
+        // Largest neighbour delta INCLUDING the wrap (255→0). A band-limited K≤32
+        // wave has a bounded slope, so the seam is no worse than the interior.
+        let maxInterior = 0;
+        for (let n = 1; n < t.length; n++) maxInterior = Math.max(maxInterior, Math.abs(t[n]! - t[n - 1]!));
+        const seam = Math.abs(t[0]! - t[t.length - 1]!);
+        expect(seam, `${name}[${b}] seam ≤ interior slope`).toBeLessThanOrEqual(maxInterior + 1e-6);
+      }
+    }
+  });
+
+  it('spectral centroid is MONOTONE increasing across the 8 (red/warm → violet/cool), both banks', () => {
+    for (const [name, bank] of banks) {
+      const centroids = bank.map((t) => spectralCentroid(t));
+      for (let b = 1; b < centroids.length; b++) {
+        expect(centroids[b]!, `${name} centroid rises ${b - 1}→${b} (${centroids[b - 1]!.toFixed(2)}→${centroids[b]!.toFixed(2)})`)
+          .toBeGreaterThan(centroids[b - 1]!);
+      }
+      // a real spread (dark end genuinely darker than bright end)
+      expect(centroids[bank.length - 1]! - centroids[0]!, `${name} centroid span`).toBeGreaterThan(1);
+    }
+  });
+
+  it('the two banks are DISTINCT (a mode toggle actually changes the character)', () => {
+    let diff = 0;
+    for (let b = 0; b < CHROMA_HUE_BINS; b++) {
+      const m = CHROMA_BANK_MUSICAL[b]!, i = CHROMA_BANK_INSTRUMENT[b]!;
+      for (let n = 0; n < m.length; n++) diff += Math.abs(m[n]! - i[n]!);
+    }
+    expect(diff).toBeGreaterThan(1);
+  });
+});
+
+describe('rgbStripToHueHist', () => {
+  it('a GRAYSCALE strip is colourless: meanSat 0, all-zero hue weights (the fallback trigger)', () => {
+    for (const lvl of [0, 0.3, 0.5, 0.8, 1]) {
+      const h = rgbStripToHueHist([grayStrip(lvl)]);
+      expect(h.meanSat).toBeCloseTo(0, 6);
+      expect(h.hueWeights.reduce((a, w) => a + w, 0)).toBeCloseTo(0, 6);
+      expect(h.meanVal).toBeCloseTo(lvl, 2);
+    }
+  });
+
+  it('a saturated hue lands in a stable bin; meanSat high; centroidHue tracks the bin', () => {
+    const red = rgbStripToHueHist([uniformStripAtLuma([1, 0, 0], 0.2)]);       // hue 0 → bin 0
+    const magenta = rgbStripToHueHist([uniformStripAtLuma([1, 0, 1], 0.2)]);   // hue 300° → high bin
+    expect(red.meanSat).toBeGreaterThan(0.9);
+    expect(magenta.meanSat).toBeGreaterThan(0.9);
+    // red is the LOW (dark/red) end, magenta the HIGH (bright/violet) end
+    expect(red.centroidHue).toBeLessThan(0.2);
+    expect(magenta.centroidHue).toBeGreaterThan(0.7);
+    // dominant weight really sits in distinct bins
+    let redBin = 0, magBin = 0;
+    for (let b = 1; b < CHROMA_HUE_BINS; b++) {
+      if (red.hueWeights[b]! > red.hueWeights[redBin]!) redBin = b;
+      if (magenta.hueWeights[b]! > magenta.hueWeights[magBin]!) magBin = b;
+    }
+    expect(redBin).not.toBe(magBin);
+  });
+});
+
+describe('combineCarrierChroma — the carrier↔chroma fusion', () => {
+  const Ws = synthCarrier();
+
+  it('FALLBACK: a GRAYSCALE strip → the final wave is BYTE-IDENTICAL to the luma carrier', () => {
+    // Grayscale ⇒ meanSat 0 ⇒ wet 0. With the DEFAULT motion amount 0 the output
+    // is the pure carrier, byte-for-byte — the owner's "grayscale sounds like today".
+    for (const lvl of [0.2, 0.5, 0.9]) {
+      const h = rgbStripToHueHist([grayStrip(lvl)]);
+      const wc = colorMorphWave(h, CHROMA_BANK_MUSICAL);
+      const out = combineCarrierChroma(Ws, wc, h.meanSat, h.meanVal, 0.5 /*motion*/, 0 /*amt*/, 0.6 /*depth*/);
+      for (let i = 0; i < Ws.length; i++) expect(out[i]).toBe(Ws[i]);
+    }
+  });
+
+  it('MASTER OFF: chroma_depth 0 → byte-identical carrier even for a COLOURFUL strip', () => {
+    const h = rgbStripToHueHist([uniformStripAtLuma([1, 0, 1], 0.4)]);
+    const wc = colorMorphWave(h, CHROMA_BANK_MUSICAL);
+    const out = combineCarrierChroma(Ws, wc, h.meanSat, h.meanVal, 0, 0, 0 /*depth 0*/);
+    for (let i = 0; i < Ws.length; i++) expect(out[i]).toBe(Ws[i]);
+  });
+
+  it('OWNER BAR: a hue rotation at CONSTANT LUMA moves the spectral centroid (+ RMS sane), BOTH banks', () => {
+    // Same carrier Ws (constant luma), same fully-saturated meanSat, only the HUE
+    // changes red→magenta → the archetype blend + centroid tilt sweep the timbre.
+    const hRed = rgbStripToHueHist([uniformStripAtLuma([1, 0, 0], 0.2)]);
+    const hMag = rgbStripToHueHist([uniformStripAtLuma([1, 0, 1], 0.2)]);
+    for (const bank of [CHROMA_BANK_MUSICAL, CHROMA_BANK_INSTRUMENT]) {
+      const red = combineCarrierChroma(Ws, colorMorphWave(hRed, bank), hRed.meanSat, hRed.meanVal, 0, 0, 0.8);
+      const mag = combineCarrierChroma(Ws, colorMorphWave(hMag, bank), hMag.meanSat, hMag.meanVal, 0, 0, 0.8);
+      const cRed = spectralCentroid(red), cMag = spectralCentroid(mag);
+      expect(Math.abs(cMag - cRed), `centroid moves (red=${cRed.toFixed(2)} mag=${cMag.toFixed(2)})`).toBeGreaterThan(0.5);
+      for (const w of [red, mag]) {
+        expect(rms(w)).toBeGreaterThan(0.05);   // audible
+        expect(rms(w)).toBeLessThan(4);          // not exploding
+      }
+    }
+  });
+
+  it('SATURATION is dry/wet: a more-saturated frame diverges MONOTONICALLY from the carrier', () => {
+    const wc = colorMorphWave(rgbStripToHueHist([uniformStripAtLuma([1, 0, 1], 0.3)]), CHROMA_BANK_MUSICAL);
+    let prev = -1;
+    for (const sat of [0.2, 0.4, 0.6, 0.8, 1.0]) {
+      // meanVal 1 so the brightness drive is neutral (bright = 1) → isolate the MIX.
+      const out = combineCarrierChroma(Ws, wc, sat, 1, 0, 0, 1 /*depth*/);
+      let d = 0; for (let i = 0; i < Ws.length; i++) d += Math.abs(out[i]! - Ws[i]!);
+      expect(d, `sat ${sat} wetter than ${prev >= 0 ? 'the previous' : 'dry'}`).toBeGreaterThan(prev);
+      prev = d;
+    }
+  });
+
+  it('DC of the final wave is ~0 across bright, saturated inputs (anti-click DC-remove)', () => {
+    // A carrier WITH a DC offset → the chroma path must remove it.
+    const biased = Float32Array.from(Ws, (v) => v + 0.4);
+    for (const hue of [[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 0], [1, 0, 1]] as [number, number, number][]) {
+      const h = rgbStripToHueHist([uniformStripAtLuma(hue, 0.6)]);
+      const wc = colorMorphWave(h, CHROMA_BANK_INSTRUMENT);
+      const out = combineCarrierChroma(biased, wc, h.meanSat, h.meanVal, 0, 0, 0.8);
+      expect(Math.abs(meanOf(out)), `DC≈0 for hue ${hue.join(',')}`).toBeLessThan(1e-4);
+    }
+  });
+});
+
+describe('motionEnergy', () => {
+  it('is 0 for identical frames and > 0 when the picture changes', () => {
+    const a = uniformStripAtLuma([1, 0, 0], 0.4);
+    const b = uniformStripAtLuma([0, 0, 1], 0.4);
+    expect(motionEnergy([a], [a])).toBe(0);
+    expect(motionEnergy([a, b], [a, b])).toBe(0);
+    const m = motionEnergy([a], [b]);
+    expect(m).toBeGreaterThan(0);
+    expect(m).toBeLessThanOrEqual(1);
+  });
+
+  it('grows with the SIZE of the change', () => {
+    const base = grayStrip(0.5);
+    const small = grayStrip(0.55);
+    const big = grayStrip(0.95);
+    expect(motionEnergy([base], [big])).toBeGreaterThan(motionEnergy([base], [small]));
+  });
+
+  it('BLENDS by the amount: motionAmt 0 → content-only (motion does not change the wave)', () => {
+    const Ws = synthCarrier();
+    const h = rgbStripToHueHist([uniformStripAtLuma([1, 0, 1], 0.5)]);
+    const wc = colorMorphWave(h, CHROMA_BANK_MUSICAL);
+    const still = combineCarrierChroma(Ws, wc, h.meanSat, h.meanVal, 0.0, 0 /*amt*/, 0.6);
+    const moving = combineCarrierChroma(Ws, wc, h.meanSat, h.meanVal, 0.9, 0 /*amt*/, 0.6);
+    for (let i = 0; i < Ws.length; i++) expect(moving[i]).toBe(still[i]); // amt 0 ⇒ motion ignored
+    // With the amount UP, motion boosts the drive (louder) → the wave changes.
+    const alive = combineCarrierChroma(Ws, wc, h.meanSat, h.meanVal, 0.9, 1 /*amt*/, 0.6);
+    expect(rms(alive)).toBeGreaterThan(rms(still) * 1.05);
+  });
+
+  it('is SOFT-LIMITED: full motion saturates ≤ 1+MAX (2.5×), NEVER the old runaway 5× (anti-clip)', () => {
+    // Grayscale ⇒ wet 0 ⇒ combineCarrierChroma returns Ws·motionDrive exactly, so
+    // rms(out)/rms(Ws) IS the motion drive — directly observable.
+    const Ws = synthCarrier();
+    const gray = rgbStripToHueHist([grayStrip(0.5)]);
+    const wc = colorMorphWave(gray, CHROMA_BANK_MUSICAL);
+    const driveOf = (motion: number, amt: number) =>
+      rms(combineCarrierChroma(Ws, wc, gray.meanSat, gray.meanVal, motion, amt, 0.6)) / rms(Ws);
+    const full = driveOf(1, 1);
+    expect(full, `full motion drive ${full.toFixed(3)}`).toBeGreaterThan(2);
+    expect(full, 'saturates ≤ 1+MAX (2.5), not the linear 5×').toBeLessThanOrEqual(2.5 + 1e-6);
+    // Small motion stays ~linear (1 + amt·motion·GAIN ≈ 1.4 at motion 0.1).
+    const small = driveOf(0.1, 1);
+    expect(small).toBeGreaterThan(1.3);
+    expect(small).toBeLessThan(1.45);
+    // Monotone increasing in motion.
+    const mid = driveOf(0.5, 1);
+    expect(mid).toBeGreaterThan(small);
+    expect(full).toBeGreaterThan(mid);
+  });
+});
+
+describe('shapeInto', () => {
+  it('RMS-matches Wc to Ws (level fusion) while preserving the chroma spectral shape', () => {
+    const Ws = Float32Array.from(synthCarrier(), (v) => v * 2); // a louder carrier
+    const wc = CHROMA_BANK_MUSICAL[5]!;
+    const shaped = shapeInto(wc, Ws);
+    expect(rms(shaped)).toBeCloseTo(rms(Ws), 6);
+    // scaling is amplitude-only → the spectral centroid is unchanged
+    expect(spectralCentroid(shaped)).toBeCloseTo(spectralCentroid(wc), 4);
+  });
+});
