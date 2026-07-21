@@ -1122,6 +1122,7 @@
   }
   function openProbMenu(e: MouseEvent, step: number, displayRow: number) {
     e.preventDefault();
+    e.stopPropagation(); // don't also open the node's "Module actions" context menu
     const clip = clipAt(selectedClip);
     if (!clip) return;
     const midi = midiForDisplayRow(clip, displayRow);
@@ -1168,6 +1169,7 @@
   }
   function openClipProbMenu(e: MouseEvent, idx: number) {
     e.preventDefault();
+    e.stopPropagation(); // don't also open the node's "Module actions" context menu
     if (!clipAt(idx)) return; // empty pad → no clip to carry a default
     clipProbMenu = { x: e.clientX, y: e.clientY, idx };
   }
