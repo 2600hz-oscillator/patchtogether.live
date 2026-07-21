@@ -445,11 +445,11 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //  BEHAVIORAL_SWEEP_EXEMPT with measured deltas + treeohvox-dsp.test.ts
   //  citations — NOT a held-note regression.)
 
-  // mixmstrs — 6-channel stereo mixer. 77 drivable inputs (16 audio + 61 CV)
+  // mixmstrs — 8-channel stereo mixer. 101 drivable inputs (20 audio + 81 CV)
   // BLOW the per-test wall-clock at 2 spawns/input (foxy class), and each
   // per-channel CV scales ONE channel into the SUMMED masterL the sweep observes.
   // (Measured behavioral-recon #3: the read times out mid-run.)
-  mixmstrs: 'heavy-fan-out + per-channel-on-summed-mix class: mixmstrs declares 77 drivable inputs (16 audio + 61 paramTarget CV), so the sweep\'s 2-spawn-per-input loop = 154 spawns ≈ 28 min for ONE test — it BLOWS the per-test wall-clock budget (the read times out mid-run; same heavy-budget class as foxy/mandelbulb). On TOP of that, each ch{N}_{eq,comp,send,…}_cv scales ONE channel\'s contribution to the SUMMED masterL the sweep observes, so most single-channel CVs shift the summed RMS below the universal floor (the per-channel-on-mix class, cf. warrenspectrum.level*_cv). Re-enterable only with BOTH a per-channel sink driver (observe the channel under test, not the sum) AND a way to test a SUBSET of representative ports under budget. Covered by mixmstrs.test.ts (per-channel gain/pan/comp-macro unit math) + the mixmstrs VRT baseline',
+  mixmstrs: 'heavy-fan-out + per-channel-on-summed-mix class: mixmstrs declares 101 drivable inputs (20 audio + 81 paramTarget CV), so the sweep\'s 2-spawn-per-input loop = 202 spawns ≈ 37 min for ONE test — it BLOWS the per-test wall-clock budget (the read times out mid-run; same heavy-budget class as foxy/mandelbulb). On TOP of that, each ch{N}_{eq,comp,send,…}_cv scales ONE channel\'s contribution to the SUMMED masterL the sweep observes, so most single-channel CVs shift the summed RMS below the universal floor (the per-channel-on-mix class, cf. warrenspectrum.level*_cv). Re-enterable only with BOTH a per-channel sink driver (observe the channel under test, not the sum) AND a way to test a SUBSET of representative ports under budget. Covered by mixmstrs.test.ts (per-channel gain/pan/comp-macro unit math) + the mixmstrs VRT baseline',
 
   // ── FOXY — SwoleVCO + RasterPainter heavy-mount chain. The module
   //    mounts 3 SwoleBlocks + 3 RasterPainters + WAVECEL worklet + 4-page

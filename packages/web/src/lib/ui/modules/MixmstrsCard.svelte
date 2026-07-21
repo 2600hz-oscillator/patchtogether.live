@@ -19,13 +19,13 @@
     return typeof v === 'number' ? v : fallback;
   }
 
-  const CH = [1, 2, 3, 4, 5, 6] as const;
+  const CH = [1, 2, 3, 4, 5, 6, 7, 8] as const;
   type Channel = (typeof CH)[number];
 
-  // Sectioned grouping: Ch1..Ch6 + Master, so the patch panel's
+  // Sectioned grouping: Ch1..Ch8 + Master, so the patch panel's
   // click-to-expand UX kicks in (each section's row list collapses by
   // default; user clicks a header to fan out the channel's handles).
-  // Without this the 73-input column overflows even a 1366×768 viewport
+  // Without this the 101-input column overflows even a 1366×768 viewport
   // when every section is expanded simultaneously.
   //
   // The audio + CV ports for each channel live in the same section so
@@ -106,8 +106,8 @@
     panelWidth is the total open-state popover width. With the
     two-column open layout (inputs left, outputs right), 560 gives
     each column ~265px — wide enough for verbose labels like
-    "ch1 SEND 1" without truncation. MIXMSTRS has 73 inputs + 6
-    outputs across 7 sections (Ch1..Ch6 + Master); sections
+    "ch1 SEND 1" without truncation. MIXMSTRS has 101 inputs + 6
+    outputs across 9 sections (Ch1..Ch8 + Master); sections
     collapse by default via PatchPanel's click-to-expand UX so the
     panel fits on a 1366×768 laptop viewport even with one or two
     sections open.
@@ -144,7 +144,11 @@
 
 <style>
   .mixmstrs-card {
-    width: 720px;
+    /* Widened 720 → 900 for the 8-channel expansion: 8 channel strips + the
+       master column keep ~90px/column (matching the 6-channel card's spacing —
+       no cramped knobs, no control overflow past the card edge). 900 = 5×180 so
+       it lands cleanly on the rack-grid hp (rack-sizes.ts mixmstrs hp: 5). */
+    width: 900px;
   }
   .mixmstrs-card .title {
     display: flex;
@@ -167,7 +171,7 @@
   .grid {
     margin-top: 16px;
     display: grid;
-    grid-template-columns: repeat(6, 1fr) 80px;
+    grid-template-columns: repeat(8, 1fr) 80px;
     gap: 8px;
     padding: 0 18px;
   }
