@@ -285,17 +285,40 @@ describe('planColumnWiring (deterministic full-column planner)', () => {
     expect(ids.has(wcolEdgeId('flt', 'out', 'mix', 'ch3L'))).toBe(true);
   });
 
-  it('multi-source (two VCOs stacked): only the bottom-most (tail) sends', () => {
+  it('multi-source PARALLEL ISLANDS: BOTH VCOs are clip-driven AND BOTH send (sum at ch bus)', () => {
     const edges = planColumnWiring(ctx([member('vco1', VCO), member('vco2', VCO)]));
     const ids = new Set(edges.map((e) => e.id));
-    // No link between two source-only modules (neither has a main IN).
+    // Two source-only modules = two singleton islands: NO chain link between them.
     expect(ids.has(wcolEdgeId('vco1', 'out', 'vco2', 'pitch'))).toBe(false);
-    // Only the bottom source sends.
+    // BOTH island tails send to the channel (they sum at the mixer input bus).
+    expect(ids.has(wcolEdgeId('vco1', 'out', 'mix', 'ch3L'))).toBe(true);
     expect(ids.has(wcolEdgeId('vco2', 'out', 'mix', 'ch3L'))).toBe(true);
-    expect(ids.has(wcolEdgeId('vco1', 'out', 'mix', 'ch3L'))).toBe(false);
-    // Clip control goes to the TOP-most clip-eligible member.
+    // BOTH sources are driven by the clip's pitch3/gate3 (layered play).
     expect(ids.has(wcolEdgeId('clip', 'pitch3', 'vco1', 'pitch'))).toBe(true);
-    expect(ids.has(wcolEdgeId('clip', 'pitch3', 'vco2', 'pitch'))).toBe(false);
+    expect(ids.has(wcolEdgeId('clip', 'pitch3', 'vco2', 'pitch'))).toBe(true);
+    expect(ids.has(wcolEdgeId('clip', 'gate3', 'vco1', 'gate'))).toBe(true);
+    expect(ids.has(wcolEdgeId('clip', 'gate3', 'vco2', 'gate'))).toBe(true);
+  });
+
+  it('multi-source with per-island FX: [vco1,filter,vco2,reverb] → two islands, each source driven, each tail sends', () => {
+    const edges = planColumnWiring(ctx([
+      member('vco1', VCO), member('flt', FILTER), member('vco2', VCO), member('rev', REVERB_ST),
+    ]));
+    const ids = new Set(edges.map((e) => e.id));
+    // Island 1: vco1 → filter → (filter tail) → mixer.
+    expect(ids.has(wcolEdgeId('vco1', 'out', 'flt', 'in'))).toBe(true);
+    expect(ids.has(wcolEdgeId('flt', 'out', 'mix', 'ch3L'))).toBe(true);
+    // Island 2: vco2 → reverb → (reverb tail) → mixer.
+    expect(ids.has(wcolEdgeId('vco2', 'out', 'rev', 'inL'))).toBe(true);
+    expect(ids.has(wcolEdgeId('rev', 'outL', 'mix', 'ch3L'))).toBe(true);
+    // NO cross-island link (filter must not feed vco2, which has no audio-in anyway).
+    expect(ids.has(wcolEdgeId('flt', 'out', 'vco2', 'pitch'))).toBe(false);
+    // BOTH sources clip-driven.
+    expect(ids.has(wcolEdgeId('clip', 'pitch3', 'vco1', 'pitch'))).toBe(true);
+    expect(ids.has(wcolEdgeId('clip', 'pitch3', 'vco2', 'pitch'))).toBe(true);
+    // NON-tail members never send.
+    expect(ids.has(wcolEdgeId('vco1', 'out', 'mix', 'ch3L'))).toBe(false);
+    expect(ids.has(wcolEdgeId('vco2', 'out', 'mix', 'ch3L'))).toBe(false);
   });
 
   it('empty column → no edges', () => {

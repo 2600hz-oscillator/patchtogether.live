@@ -33,7 +33,12 @@
 // converged), so concurrent peers all settle to the same graph.
 
 import { patch, ydoc } from '$lib/graph/store';
-import { AUTO_JANITOR_ORIGIN } from './automation-assign';
+import {
+  AUTO_JANITOR_ORIGIN,
+  assignAutomationLane,
+  automationAssignmentFor,
+  listClipPlayers,
+} from './automation-assign';
 import type { Edge, ModuleNode } from './types';
 import { validateEdge } from './validate-edge';
 import {
@@ -63,10 +68,18 @@ const WCOL_EDGE_PREFIX = 'wcol-e-';
  *  def (with stereoPairs + chainWiring) so the wiring planners resolve correctly. */
 export type ColumnDefResolver = (type: string) => ConvenienceDef | undefined;
 
-/** The columns/sends order maps stored on the pinned-mixmstrs node.data. */
+/** The columns/sends order maps + the user-detach suppression set stored on the
+ *  pinned-mixmstrs node.data. */
 interface MixerColumnsData {
   columns?: Record<string, string[]>;
   sends?: Record<string, string[]>;
+  /** MAJOR 1 — durable manual override: wcol- edge ids the USER explicitly
+   *  deleted, keyed by column/send key ('1'..'8' | 's1' | 's2'). The reconcile
+   *  will NOT re-add a suppressed edge (nor its stereo-pair siblings, MAJOR 2).
+   *  Cleared for a key when that column's membership/order changes (a fresh
+   *  column edit re-manages it). Written under LOCAL_ORIGIN by the Canvas
+   *  edge-delete seam. */
+  wcolDetached?: Record<string, string[]>;
 }
 
 function channelOf(node: ModuleNode | undefined): number | undefined {
@@ -165,6 +178,13 @@ function resolveMembers(order: readonly string[], resolveDef: ColumnDefResolver)
  * WIRING reconcile (pass 2). Plans the GLOBAL desired reconciler-owned edge set
  * across all 8 columns + 2 sends, then diffs it against the present wcol- edges.
  * Returns true when something was written. No transaction when converged.
+ *
+ * YIELD is ALL-OR-NOTHING PER MANAGED LINK (grouped by source→target node pair,
+ * so an L/R stereo pair or a pitch+gate control pair yield together — MAJOR 2):
+ * a whole group backs off when ANY of its target ports holds a NON-wcol (hand)
+ * cable OR any of its edge ids is in the user-detach suppression set (MAJOR 1) —
+ * so a manual edit / manual removal durably overrides and never leaves a broken
+ * half-managed split image.
  */
 export function reconcileColumnWiring(resolveDef: ColumnDefResolver): boolean {
   const mixer = patch.nodes[PINNED_MIXER_ID] as ModuleNode | undefined;
@@ -214,13 +234,33 @@ export function reconcileColumnWiring(resolveDef: ColumnDefResolver): boolean {
     }
   }
 
-  // YIELD RULE: a desired link whose target port holds a hand cable backs off.
+  // The flat set of user-DETACHED wcol edge ids (MAJOR 1 durable removal).
+  const detachedSet = new Set<string>();
+  for (const arr of Object.values(data.wcolDetached ?? {})) {
+    for (const id of arr ?? []) detachedSet.add(id);
+  }
+
+  // GROUP desired edges by managed link (source→target node pair) for the
+  // all-or-nothing yield.
+  const groups = new Map<string, WcolEdge[]>();
+  for (const e of desiredById.values()) {
+    const key = `${e.source.nodeId}->${e.target.nodeId}`;
+    const g = groups.get(key);
+    if (g) g.push(e);
+    else groups.set(key, [e]);
+  }
+
   const toAdd: WcolEdge[] = [];
   const desiredIds = new Set<string>();
-  for (const e of desiredById.values()) {
-    if (handOccupied.has(`${e.target.nodeId}:${e.target.portId}`)) continue;
-    desiredIds.add(e.id);
-    if (!presentWcol.has(e.id)) toAdd.push(e);
+  for (const group of groups.values()) {
+    const blocked = group.some(
+      (e) => handOccupied.has(`${e.target.nodeId}:${e.target.portId}`) || detachedSet.has(e.id),
+    );
+    if (blocked) continue; // yield the WHOLE link (never manage it this pass)
+    for (const e of group) {
+      desiredIds.add(e.id);
+      if (!presentWcol.has(e.id)) toAdd.push(e);
+    }
   }
   const toDelete: string[] = [];
   for (const eid of presentWcol) if (!desiredIds.has(eid)) toDelete.push(eid);
@@ -242,13 +282,41 @@ export function reconcileColumnWiring(resolveDef: ColumnDefResolver): boolean {
 }
 
 /**
+ * AUTOMATION-LANE heal (MAJOR 3). Every COLUMN member must be bound to its
+ * channel's automation lane (ch-1) — but assignAutomationLane runs only in the
+ * drag/drop path, so a member whose data.channel arrives via duplicate / paste /
+ * import would otherwise have chain+clip+send but NO lane. Bind any column
+ * member missing (or mis-bound) its lane, under AUTO_JANITOR_ORIGIN (part of the
+ * heal). Idempotent — only writes on a mismatch. Send tenants get NO lane.
+ */
+export function healColumnAutomationLanes(): boolean {
+  const mixer = patch.nodes[PINNED_MIXER_ID] as ModuleNode | undefined;
+  if (!mixer) return false;
+  const clipId = patch.nodes[PINNED_CLIP_ID] ? PINNED_CLIP_ID : (listClipPlayers(patch.nodes).sort()[0] ?? null);
+  if (!clipId) return false;
+  const cols = ((mixer.data ?? {}) as MixerColumnsData).columns ?? {};
+  let wrote = false;
+  for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
+    for (const id of cols[String(ch)] ?? []) {
+      if (!patch.nodes[id]) continue;
+      const cur = automationAssignmentFor(patch.nodes, id);
+      if (cur && cur.nodeId === clipId && cur.lane === ch - 1) continue; // already bound
+      assignAutomationLane(clipId, id, ch - 1, AUTO_JANITOR_ORIGIN);
+      wrote = true;
+    }
+  }
+  return wrote;
+}
+
+/**
  * The combined workflow-columns janitor the Canvas graph-change $effect calls
  * (workflow racks only). Membership heal FIRST (so the wiring reconcile sees the
- * healed order), then the wiring reconcile. A no-op (no transaction) when the
- * graph is already converged.
+ * healed order), then the automation-lane heal, then the wiring reconcile. A
+ * no-op (no transaction) when the graph is already converged.
  */
 export function reconcileColumns(resolveDef: ColumnDefResolver): void {
   if (!patch.nodes[PINNED_MIXER_ID]) return;
   reconcileColumnMembership();
+  healColumnAutomationLanes();
   reconcileColumnWiring(resolveDef);
 }

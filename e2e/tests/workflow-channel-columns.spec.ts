@@ -237,6 +237,33 @@ test.describe('workflow channel columns', () => {
     expect(outMax, 'audible at the pinned AUDIO OUT').toBeGreaterThan(0.005);
   });
 
+  test('MULTI-SOURCE: two instruments in ONE column → BOTH clip-driven AND BOTH audible (summed)', async ({ page }) => {
+    await page.goto('/rack?mode=workflow');
+    await waitForPinnedTrio(page);
+
+    // Two tidyVcos dropped into the SAME column (channel 1). The second drop
+    // also exercises the same-column order-array REPLACE ([vco1] → [vco1,vco2]).
+    await dropInBand(page, 'tidyVco', colPos(1));
+    await dropInBand(page, 'tidyVco', colPos(1));
+
+    const c1 = await orderOf(page, 'columns', 1);
+    expect(c1, 'both instruments joined channel 1').toHaveLength(2);
+    const [a, b] = [c1[0]!, c1[1]!];
+
+    await expect.poll(async () => (await wcolEdges(page)).length, { timeout: 10_000 }).toBeGreaterThan(0);
+    const edges = await wcolEdges(page);
+    // Parallel islands: BOTH sources clip-driven, BOTH tails send to ch1.
+    expect(edges).toContain(`${PINNED_CLIP}.pitch1->${a}.poly`);
+    expect(edges).toContain(`${PINNED_CLIP}.pitch1->${b}.poly`);
+    expect(edges).toContain(`${a}.out_l->${PINNED_MIXER}.ch1L`);
+    expect(edges).toContain(`${b}.out_l->${PINNED_MIXER}.ch1L`);
+
+    // …and the summed channel is audible end-to-end.
+    await seedAndRun(page, [0]);
+    const { channelMax } = await pollAudio(page, 12_000);
+    expect(channelMax[0], 'the two-source channel 1 is audible at the mixer').toBeGreaterThan(0.002);
+  });
+
   test('SEND 1: a DSP forms the aux loop, the send amount auto-raises, and the WET-only path is audible', async ({ page }) => {
     await page.goto('/rack?mode=workflow');
     await waitForPinnedTrio(page);

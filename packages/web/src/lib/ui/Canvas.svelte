@@ -3298,7 +3298,15 @@
     if (payload.nodes.length === 0 && payload.edges.length === 0) return;
     ydoc.transact(() => {
       for (const e of payload.edges) {
-        if (patch.edges[e.id]) delete patch.edges[e.id];
+        const live = patch.edges[e.id];
+        // MAJOR 1: an EXPLICIT user deletion of a managed (wcol-) cable durably
+        // suppresses it (+ its stereo/control-pair siblings via the reconcile's
+        // all-or-nothing yield) until the next deliberate column edit.
+        if (live && workflowMode && e.id.startsWith('wcol-e-')) {
+          const colKey = wcolEdgeColumnKey(live);
+          if (colKey) wcolMarkDetached(e.id, colKey);
+        }
+        if (live) delete patch.edges[e.id];
       }
       for (const n of payload.nodes) {
         // Pinned drawer singletons never render as flow nodes, so they
@@ -3375,12 +3383,14 @@
               const order = wcolOrder('columns', band);
               const centers = order.filter((id) => id !== n.id).map((_, i) => columnMemberPos(band, i).y + COLUMN_SLOT_H / 2);
               setWcolOrder('columns', band, reorder(order, n.id, indexForDropY(centers, dropCenterY)));
+              wcolClearDetached(String(band));
             } else {
               // Move into column `band` from another column / send / free canvas.
-              if (oldCh != null) setWcolOrder('columns', oldCh, removeFrom(wcolOrder('columns', oldCh), n.id));
-              if (oldSlot != null) setWcolOrder('sends', oldSlot, removeFrom(wcolOrder('sends', oldSlot), n.id));
+              if (oldCh != null) { setWcolOrder('columns', oldCh, removeFrom(wcolOrder('columns', oldCh), n.id)); wcolClearDetached(String(oldCh)); }
+              if (oldSlot != null) { setWcolOrder('sends', oldSlot, removeFrom(wcolOrder('sends', oldSlot), n.id)); wcolClearDetached('s' + oldSlot); }
               setWcolMembership(n.id, band, null);
               setWcolOrder('columns', band, insertBottom(wcolOrder('columns', band), n.id));
+              wcolClearDetached(String(band));
               laneReassign.push({ id: n.id, ch: band });
             }
             stillMember.add(n.id);
@@ -3390,18 +3400,20 @@
               const order = wcolOrder('sends', slot);
               const centers = order.filter((id) => id !== n.id).map((_, i) => sendMemberPos(slot, i).y + COLUMN_SLOT_H / 2);
               setWcolOrder('sends', slot, reorder(order, n.id, indexForDropY(centers, dropCenterY)));
+              wcolClearDetached('s' + slot);
             } else {
-              if (oldCh != null) setWcolOrder('columns', oldCh, removeFrom(wcolOrder('columns', oldCh), n.id));
-              if (oldSlot != null) setWcolOrder('sends', oldSlot, removeFrom(wcolOrder('sends', oldSlot), n.id));
+              if (oldCh != null) { setWcolOrder('columns', oldCh, removeFrom(wcolOrder('columns', oldCh), n.id)); wcolClearDetached(String(oldCh)); }
+              if (oldSlot != null) { setWcolOrder('sends', oldSlot, removeFrom(wcolOrder('sends', oldSlot), n.id)); wcolClearDetached('s' + oldSlot); }
               setWcolMembership(n.id, null, slot);
               setWcolOrder('sends', slot, insertBottom(wcolOrder('sends', slot), n.id));
+              wcolClearDetached('s' + slot);
             }
             stillMember.add(n.id);
           } else {
             // Dragged OUT to free canvas → unassign. Fall through to the position
             // write below so the card stays where it was dropped.
-            if (oldCh != null) setWcolOrder('columns', oldCh, removeFrom(wcolOrder('columns', oldCh), n.id));
-            if (oldSlot != null) setWcolOrder('sends', oldSlot, removeFrom(wcolOrder('sends', oldSlot), n.id));
+            if (oldCh != null) { setWcolOrder('columns', oldCh, removeFrom(wcolOrder('columns', oldCh), n.id)); wcolClearDetached(String(oldCh)); }
+            if (oldSlot != null) { setWcolOrder('sends', oldSlot, removeFrom(wcolOrder('sends', oldSlot), n.id)); wcolClearDetached('s' + oldSlot); }
             if (oldCh != null || oldSlot != null) setWcolMembership(n.id, null, null);
           }
         }
@@ -3840,6 +3852,42 @@
   function wcolCanonClip(): string | null {
     if (patch.nodes[WCOL_CLIP_ID]) return WCOL_CLIP_ID;
     return listClipPlayers(patch.nodes).sort()[0] ?? null;
+  }
+
+  // MAJOR 1 — durable manual override: a user-deleted managed (wcol-) cable must
+  // NOT snap back. We record the deleted edge id in a per-column suppression set
+  // on the pinned mixer (data.wcolDetached), which the reconcile respects, and
+  // clear that column's set on the next deliberate column edit (re-manage).
+
+  /** The column/send key a wcol- edge belongs to — from its member endpoint's
+   *  channel/sendSlot scalar. '1'..'8' for a column, 's1'/'s2' for a send. */
+  function wcolEdgeColumnKey(edge: Edge): string | null {
+    for (const ep of [edge.source.nodeId, edge.target.nodeId]) {
+      const d = patch.nodes[ep]?.data as { channel?: number; sendSlot?: number } | undefined;
+      if (typeof d?.channel === 'number') return String(d.channel);
+      if (typeof d?.sendSlot === 'number') return 's' + d.sendSlot;
+    }
+    return null;
+  }
+
+  /** Record a user-detached wcol- edge id under its column key (dedup). Caller
+   *  wraps in a LOCAL_ORIGIN transact (durable + undoable with the delete). */
+  function wcolMarkDetached(edgeId: string, colKey: string): void {
+    const mixer = patch.nodes[WCOL_MIXER_ID];
+    if (!mixer) return;
+    if (!mixer.data) mixer.data = {};
+    const d = mixer.data as { wcolDetached?: Record<string, string[]> };
+    if (!d.wcolDetached) d.wcolDetached = {};
+    const cur = d.wcolDetached[colKey] ?? [];
+    if (!cur.includes(edgeId)) d.wcolDetached[colKey] = [...cur, edgeId];
+  }
+
+  /** Clear a column/send key's detach suppression — a fresh structural edit of
+   *  that column re-manages all its links. Caller wraps in a transact. */
+  function wcolClearDetached(colKey: string): void {
+    const mixer = patch.nodes[WCOL_MIXER_ID];
+    const d = mixer?.data as { wcolDetached?: Record<string, string[]> } | undefined;
+    if (d?.wcolDetached && (d.wcolDetached[colKey]?.length ?? 0) > 0) d.wcolDetached[colKey] = [];
   }
 
   /** Owner north-star "it just works": when the FIRST FX lands in a send box,
@@ -5759,12 +5807,15 @@
         data: initialData,
       };
       // WORKFLOW: append/insert the new member into the column/send order array
-      // in the SAME transact (one undo step with the spawn).
+      // in the SAME transact (one undo step with the spawn). A structural edit of
+      // the column re-manages its links → clear its detach suppression (MAJOR 1).
       if (wcolDrop?.channel != null) {
         const order = wcolOrder('columns', wcolDrop.channel);
         setWcolOrder('columns', wcolDrop.channel, wcolDrop.insertTop ? insertTop(order, id) : insertBottom(order, id));
+        wcolClearDetached(String(wcolDrop.channel));
       } else if (wcolDrop?.sendSlot != null) {
         setWcolOrder('sends', wcolDrop.sendSlot, insertBottom(wcolOrder('sends', wcolDrop.sendSlot), id));
+        wcolClearDetached('s' + wcolDrop.sendSlot);
       }
       if (splice) {
         delete patch.edges[splice.edge.id];

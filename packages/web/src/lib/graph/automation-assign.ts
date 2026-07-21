@@ -82,6 +82,7 @@ export function assignAutomationLane(
   playerId: string,
   moduleId: string,
   lane: number,
+  origin: unknown = LOCAL_ORIGIN,
 ): void {
   const L = Math.max(0, Math.min(CLIP_LANES - 1, Math.trunc(lane)));
   if (typeof moduleId !== 'string' || moduleId.length === 0 || moduleId.includes('::')) return;
@@ -102,7 +103,7 @@ export function assignAutomationLane(
         if (d?.autoAssign && moduleId in d.autoAssign) delete d.autoAssign[moduleId];
       }
     }
-  }, LOCAL_ORIGIN);
+  }, origin);
 }
 
 /** REMOVE module `moduleId`'s automation assignment from whichever player holds

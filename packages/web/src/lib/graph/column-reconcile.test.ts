@@ -101,8 +101,10 @@ describe('reconcileColumns — a single tidyVco on channel 1', () => {
     expect(wcolEdges().length).toBe(0);
   });
 
-  it('YIELD — a hand cable on ch1L makes the reconciler back off THAT link only', () => {
-    // A deliberate hand-drawn (non-wcol) cable into the mixer channel port.
+  it('YIELD is ALL-OR-NOTHING per stereo pair — a hand cable on ch1L yields the WHOLE send pair (MAJOR 2)', () => {
+    // A deliberate hand-drawn (non-wcol) cable into ONE side of the managed
+    // stereo target. The whole managed send pair must back off — never a broken
+    // split image where only ch1R stays wcol-managed.
     ydoc.transact(() => {
       patch.edges['hand-1'] = {
         id: 'hand-1',
@@ -113,13 +115,80 @@ describe('reconcileColumns — a single tidyVco on channel 1', () => {
     }, LOCAL_ORIGIN);
     reconcileColumns(resolveDef);
     const ids = new Set(wcolEdges().map((e) => e.id));
-    // The wcol edge into ch1L is NOT written (yielded to the hand cable)…
-    expect(ids.has('wcol-e-vco1-out_l-pinned-mixmstrs-ch1L')).toBe(false);
-    // …but the hand cable survives, and the OTHER managed link (ch1R) is intact.
+    // The hand cable survives; NEITHER side of the wcol send pair is managed.
     expect(patch.edges['hand-1']).toBeTruthy();
-    expect(ids.has('wcol-e-vco1-out_r-pinned-mixmstrs-ch1R')).toBe(true);
+    expect(ids.has('wcol-e-vco1-out_l-pinned-mixmstrs-ch1L')).toBe(false);
+    expect(ids.has('wcol-e-vco1-out_r-pinned-mixmstrs-ch1R')).toBe(false);
+  });
+
+  it('DURABLE REMOVAL — a user-detached wcol edge is NOT re-added, and its stereo sibling yields too (MAJOR 1)', () => {
+    reconcileColumns(resolveDef);
+    // The managed send pair exists.
+    expect(new Set(wcolEdges().map((e) => e.id)).has('wcol-e-vco1-out_l-pinned-mixmstrs-ch1L')).toBe(true);
+    // User deletes ONE side + records the durable detach (as the Canvas seam does).
+    ydoc.transact(() => {
+      delete patch.edges['wcol-e-vco1-out_l-pinned-mixmstrs-ch1L'];
+      const m = patch.nodes[PINNED_MIXER_ID]!;
+      const d = m.data as { wcolDetached?: Record<string, string[]> };
+      if (!d.wcolDetached) d.wcolDetached = {};
+      d.wcolDetached['1'] = ['wcol-e-vco1-out_l-pinned-mixmstrs-ch1L'];
+    }, LOCAL_ORIGIN);
+    reconcileColumns(resolveDef);
+    const ids = new Set(wcolEdges().map((e) => e.id));
+    // Neither side snaps back (all-or-nothing + durable suppression).
+    expect(ids.has('wcol-e-vco1-out_l-pinned-mixmstrs-ch1L')).toBe(false);
+    expect(ids.has('wcol-e-vco1-out_r-pinned-mixmstrs-ch1R')).toBe(false);
+    // Clearing the suppression (a fresh column edit) re-manages the pair.
+    ydoc.transact(() => {
+      const d = patch.nodes[PINNED_MIXER_ID]!.data as { wcolDetached?: Record<string, string[]> };
+      d.wcolDetached!['1'] = [];
+    }, LOCAL_ORIGIN);
+    reconcileColumns(resolveDef);
+    const ids2 = new Set(wcolEdges().map((e) => e.id));
+    expect(ids2.has('wcol-e-vco1-out_l-pinned-mixmstrs-ch1L')).toBe(true);
+    expect(ids2.has('wcol-e-vco1-out_r-pinned-mixmstrs-ch1R')).toBe(true);
   });
 });
+
+describe('MULTI-SOURCE parallel islands (BLOCKER) — both instruments driven + both audible', () => {
+  it('two tidyVcos in one channel: BOTH get clip control AND BOTH send (sum at ch bus)', () => {
+    addNode('vcoA', 'tidyVco', { channel: 5 });
+    addNode('vcoB', 'tidyVco', { channel: 5 });
+    setColumn(5, ['vcoA', 'vcoB']);
+    reconcileColumns(resolveDef);
+    const ids = new Set(wcolEdges().map((e) => e.id));
+    // BOTH sources are clip-driven (layered).
+    expect(ids.has('wcol-e-pinned-clipplayer-pitch5-vcoA-poly')).toBe(true);
+    expect(ids.has('wcol-e-pinned-clipplayer-pitch5-vcoB-poly')).toBe(true);
+    // BOTH tails send to ch5 (they sum at the mixer input bus).
+    expect(ids.has('wcol-e-vcoA-out_l-pinned-mixmstrs-ch5L')).toBe(true);
+    expect(ids.has('wcol-e-vcoB-out_l-pinned-mixmstrs-ch5L')).toBe(true);
+    // No spurious chain link between the two independent sources.
+    expect([...ids].some((id) => id.startsWith('wcol-e-vcoA-') && id.includes('vcoB'))).toBe(false);
+  });
+});
+
+describe('AUTOMATION-LANE heal (MAJOR 3) — non-drag membership still binds the lane', () => {
+  it('a member whose data.channel arrives WITHOUT a drag (paste/import) gets its lane on reconcile', () => {
+    // Simulate a paste: node carries data.channel + is in the column order, but
+    // NO automation assignment exists on the clip player (autoAssign is not on
+    // the node's own data).
+    addNode('pasted', 'tidyVco', { channel: 6 });
+    setColumn(6, ['pasted']);
+    // Precondition: no lane yet.
+    const before = page_autoAssign();
+    expect(before['pasted']).toBeUndefined();
+    reconcileColumns(resolveDef);
+    const after = page_autoAssign();
+    expect(after['pasted']).toBe(5); // channel 6 → lane 5 (0-based)
+  });
+});
+
+/** The clip player's autoAssign map. */
+function page_autoAssign(): Record<string, number> {
+  const d = patch.nodes[PINNED_CLIP_ID]?.data as { autoAssign?: Record<string, number> } | undefined;
+  return d?.autoAssign ?? {};
+}
 
 describe('reconcileColumns — chain + heal', () => {
   it('VCO → reverb chain: internal link + ONLY the tail sends; drop reverb re-links VCO', () => {

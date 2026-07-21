@@ -560,15 +560,46 @@ export interface ColumnWiringCtx {
   mixerId: string | null;
 }
 
+/** True when a member is a chain SOURCE — it has no identifiable main audio IN,
+ *  so it can only be the HEAD of an island (never fed by an upstream member). A
+ *  pure source (VCO), a non-audio instrument, and a video-VCO all qualify; a DSP
+ *  (filter/reverb) or a both-ports insert (twotracks override) does NOT. */
+function isChainSource(def: ConvenienceDef): boolean {
+  return resolveMainAudioIn(def) === null;
+}
+
+/**
+ * Partition the ordered AUDIO-PARTICIPATING members into PARALLEL ISLANDS. An
+ * island starts at each SOURCE member (no audio-in) and runs through the
+ * contiguous DSP members below it until the next source. So two stacked VCOs are
+ * two singleton islands; VCO→filter→VCO→reverb is [[VCO,filter],[VCO,reverb]].
+ * A lone leading DSP (no source above it) forms its own island.
+ */
+function partitionIslands(audio: readonly ColumnMember[]): ColumnMember[][] {
+  const islands: ColumnMember[][] = [];
+  let cur: ColumnMember[] = [];
+  for (const m of audio) {
+    if (isChainSource(m.def) && cur.length > 0) {
+      islands.push(cur);
+      cur = [];
+    }
+    cur.push(m);
+  }
+  if (cur.length > 0) islands.push(cur);
+  return islands;
+}
+
 /**
  * Plan the COMPLETE reconciler-owned edge set for one column, DETERMINISTICALLY
  * (pure function of the members array + channel + endpoints). Two peers with the
  * same inputs produce byte-identical WcolEdge[] (same ids), so the Y.Map
- * converges. Composed entirely of the reused planners:
- *   - SOURCE (top-most clip-eligible member): planClipControl → its note inputs.
- *   - CHAIN: planPairLink over adjacent AUDIO-PARTICIPATING members.
- *   - TAIL (bottom-most member with a main out): planSendToMixer → the channel.
- * The applicator diffs this desired set against the present wcol- edges.
+ * converges. PARALLEL-ISLAND model (owner's multi-source default):
+ *   - CLIP CONTROL: EVERY source instrument on the channel (clip-eligible + no
+ *     audio-in) gets the clip's pitch{n}/gate{n} → layered play.
+ *   - CHAIN: planPairLink over adjacent members WITHIN each island.
+ *   - SEND: each island's TAIL (its last main-out member) → ch{n}L/R. Multiple
+ *     island tails SUM at the mixer channel's input bus, so all sources are
+ *     heard. A single-source column is one island (source→FX→tail) — unchanged.
  */
 export function planColumnWiring(ctx: ColumnWiringCtx): WcolEdge[] {
   const { channel, members, clipPlayerId, mixerId } = ctx;
@@ -580,50 +611,46 @@ export function planColumnWiring(ctx: ColumnWiringCtx): WcolEdge[] {
     out.push(e);
   };
 
-  // (1) SOURCE clip control — the top-most clip-eligible member.
+  // (1) CLIP CONTROL — every SOURCE instrument (clip-eligible + no audio-in).
+  //     A fed DSP (has audio-in) is driven by the chain, never by the clip.
   if (clipPlayerId) {
-    const src = members.find((m) => resolveClipWiring(m.def) !== null);
-    if (src) {
-      const clip = planClipControl(src.def, channel);
-      if (clip) {
-        for (const e of clip) {
-          push(toWcol({
-            fromNodeId: clipPlayerId, fromPortId: e.fromPortId,
-            toNodeId: src.nodeId, toPortId: e.toPortId,
-            sourceType: e.sourceType, targetType: e.targetType,
-          }));
-        }
-      }
-    }
-  }
-
-  // (2) CHAIN — adjacent audio-participating pairs.
-  const audio = members.filter((m) => isChainAudioParticipant(m.def));
-  for (let i = 0; i + 1 < audio.length; i++) {
-    const up = audio[i]!;
-    const down = audio[i + 1]!;
-    for (const e of planPairLink(up.nodeId, up.def, down.nodeId, down.def)) {
-      push(toWcol(e));
-    }
-  }
-
-  // (3) TAIL send-to-mixer — ONLY the bottom-most member with a main out.
-  if (mixerId) {
-    let tail: ColumnMember | null = null;
     for (const m of members) {
-      if (resolveMainAudioOut(m.def) !== null) tail = m; // last one wins = bottom-most
-    }
-    if (tail) {
-      const send = planSendToMixer(tail.def, channel);
-      if (send) {
-        for (const e of send) {
-          push(toWcol({
-            fromNodeId: tail.nodeId, fromPortId: e.fromPortId,
-            toNodeId: mixerId, toPortId: e.toPortId,
-            sourceType: e.sourceType, targetType: e.targetType,
-          }));
-        }
+      if (resolveClipWiring(m.def) === null) continue;
+      if (!isChainSource(m.def)) continue;
+      const clip = planClipControl(m.def, channel);
+      if (!clip) continue;
+      for (const e of clip) {
+        push(toWcol({
+          fromNodeId: clipPlayerId, fromPortId: e.fromPortId,
+          toNodeId: m.nodeId, toPortId: e.toPortId,
+          sourceType: e.sourceType, targetType: e.targetType,
+        }));
       }
+    }
+  }
+
+  // (2)+(3) ISLANDS: internal chain links + each island's tail send-to-mixer.
+  const islands = partitionIslands(members.filter((m) => isChainAudioParticipant(m.def)));
+  for (const island of islands) {
+    for (let i = 0; i + 1 < island.length; i++) {
+      for (const e of planPairLink(island[i]!.nodeId, island[i]!.def, island[i + 1]!.nodeId, island[i + 1]!.def)) {
+        push(toWcol(e));
+      }
+    }
+    if (!mixerId) continue;
+    let tail: ColumnMember | null = null;
+    for (const m of island) {
+      if (resolveMainAudioOut(m.def) !== null) tail = m; // last main-out = island tail
+    }
+    if (!tail) continue;
+    const send = planSendToMixer(tail.def, channel);
+    if (!send) continue;
+    for (const e of send) {
+      push(toWcol({
+        fromNodeId: tail.nodeId, fromPortId: e.fromPortId,
+        toNodeId: mixerId, toPortId: e.toPortId,
+        sourceType: e.sourceType, targetType: e.targetType,
+      }));
     }
   }
 
