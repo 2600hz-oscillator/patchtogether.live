@@ -385,6 +385,17 @@ export type MainAudioIn =
  *   5) a bank of equal parallel inputs with no identifiable main → null.
  */
 export function resolveMainAudioIn(def: ConvenienceDef): MainAudioIn | null {
+  // A DECLARED chain SOURCE has NO signal-chain audio input — its audio inputs
+  // are MODULATION (FM / PM / sync / exciter), never a chain insert. It is
+  // head-only. This DECLARATIVE role OVERRIDES the port inference (Design-D):
+  // without it a lone FM/exciter `audio` input (foxy/wavecel/callsine/swolevco)
+  // is mis-read as the module's "main in", wrongly binning an oscillator as an
+  // FX/insert. Returning null here keeps EVERY consumer consistent — the planner
+  // (isChainSource) AND the reconciler head-candidate test (column-reconcile.ts,
+  // which reads resolveMainAudioIn === null directly) both then treat it as a
+  // head source.
+  if (def.chainWiring?.role === 'source') return null;
+
   // 0) chainWiring override wins.
   const ov = def.chainWiring?.inPorts;
   if (ov && ov.length > 0) {
@@ -668,11 +679,30 @@ export function resolveColumnHead(sources: readonly SourceHeadState[]): ColumnHe
   return { headNodeId: head, flagWrites };
 }
 
-/** True when a member is a chain SOURCE — it has no identifiable main audio IN,
- *  so it can only be the HEAD of an island (never fed by an upstream member). A
- *  pure source (VCO), a non-audio instrument, and a video-VCO all qualify; a DSP
- *  (filter/reverb) or a both-ports insert (twotracks override) does NOT. */
+/** True when a member is a chain SOURCE — it can only be the HEAD of an island
+ *  (never fed by an upstream member). A pure source (VCO), a non-audio
+ *  instrument, and a video-VCO all qualify; a DSP (filter/reverb) or a both-ports
+ *  insert (twotracks override) does NOT.
+ *
+ *  The DECLARATIVE chainWiring.role OVERRIDES the port inference (Design-D):
+ *   - 'source' → always a source, even with audio inputs (its inputs are
+ *     modulation: FM/PM/sync/exciter). resolveMainAudioIn already returns null
+ *     for these, so the shape path agrees; the explicit branch documents intent.
+ *   - 'dsp'    → forced FX: never a head, even if the port inference finds no
+ *     main audio-in (a module the owner wants pinned as an insert).
+ *   - 'both' / 'noteSink' / undeclared → the port inference decides. A 'both'
+ *     module (twotracks) declares its insert inPorts, so resolveMainAudioIn is
+ *     non-null and it bins as an FX insert here; its standalone "acts as a
+ *     source on an empty column" case is served by the headless-tail send path
+ *     in planColumnWiring (no head → the tail FX still sends to the mixer).
+ *     TODO(both): true context-dependent switching (source when it heads an
+ *     empty lane, insert when a head exists) needs column context threaded into
+ *     this predicate + the reconciler head-candidate test — deferred; see the
+ *     rings/samsloop notes (defaulted to 'source' this pass). */
 function isChainSource(def: ConvenienceDef): boolean {
+  const role = def.chainWiring?.role;
+  if (role === 'source') return true;
+  if (role === 'dsp') return false;
   return resolveMainAudioIn(def) === null;
 }
 

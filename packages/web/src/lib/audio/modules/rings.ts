@@ -281,6 +281,20 @@ export const ringsDef: AudioModuleDef = {
   ],
   ossAttribution: { author: 'Émilie Gillet' },
 
+  // Chain-role (Design-D): RINGS is genuinely a 'both' module — a self-
+  // oscillating resonator VOICE (source, driven by clips via its pitch + strum)
+  // OR a resonator that processes external audio through its `in` input (insert).
+  // This pass DEFAULTS it to 'source' so it is head-eligible AND receives clip
+  // note control (pitch/gate) — the primary "playable voice" use. As a declared
+  // source its audio `in` is treated as modulation (excitation), so it is NOT
+  // wired as a fed insert.
+  // TODO(both): the "resonate external audio as an insert" mode needs the
+  //   context-dependent 'both' switching described on isChainSource
+  //   (patch-convenience.ts) — deferred to keep this pass correct, not half-
+  //   working. Owner may flip this to role:'both' + inPorts:['in'] once that
+  //   context threading lands.
+  chainWiring: { role: 'source' },
+
   inputs: [
     { id: 'in',        type: 'audio' },
     { id: 'pitch',     type: 'pitch' },

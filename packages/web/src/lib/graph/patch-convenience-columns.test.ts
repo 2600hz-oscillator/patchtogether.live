@@ -145,6 +145,123 @@ describe('chainWiring override (owner "fixable in code")', () => {
 });
 
 // ================================================================
+// DECLARATIVE source / dsp / both classification override (Design-D)
+// ================================================================
+
+describe('declarative chain-role classification override', () => {
+  // The 9 FM/exciter oscillators that now DECLARE role:'source'. Their only
+  // audio input is MODULATION (FM / PM / sync / exciter), so the port inference
+  // alone (for the single-audio-in ones — foxy/wavecel/callsine/swolevco) would
+  // mis-bin them as an FX insert.
+  const DECLARED_SOURCES = [
+    'analogVco', 'moog921Vco', 'moog921b', 'wavetableVco', 'swolevco',
+    'foxy', 'wavecel', 'callsine', 'pentemelodica',
+  ];
+
+  it('every declared FM-oscillator classifies as a chain SOURCE (role source, no main audio-in)', () => {
+    for (const t of DECLARED_SOURCES) {
+      const d = liveDef(t);
+      expect(d, `${t} not found`).toBeDefined();
+      // chainRole reports the declared role.
+      expect(chainRole(d!), `${t} chainRole`).toBe('source');
+      // A source has NO signal-chain audio input (its audio inputs are
+      // modulation). resolveMainAudioIn === null is EXACTLY the reconciler
+      // head-candidate test — so it is head-eligible, never a fed FX insert.
+      expect(resolveMainAudioIn(d!), `${t} main-in`).toBeNull();
+    }
+  });
+
+  it('role:source OVERRIDES the port inference — a lone FM input is NOT read as a main-in', () => {
+    // Same ports, with and without the declaration (the foxy/wavecel/callsine/
+    // swolevco shape: a single audio input = FM/exciter).
+    const inferredFx = def([port('fm', 'audio'), port('pitch', 'pitch')], [port('out', 'audio')]);
+    const declaredSrc = def([port('fm', 'audio'), port('pitch', 'pitch')], [port('out', 'audio')], undefined, { role: 'source' });
+    // WITHOUT the override the single audio input is mis-read as the main-in → FX.
+    expect(resolveMainAudioIn(inferredFx)).toEqual({ kind: 'mono', in: 'fm' });
+    // WITH role:'source' it is head-only (no chain input).
+    expect(resolveMainAudioIn(declaredSrc)).toBeNull();
+    expect(chainRole(declaredSrc)).toBe('source');
+  });
+
+  it("role:'dsp' OVERRIDES a would-be source — it is treated as FX (no clip control, not a head)", () => {
+    // Shape (pitch+gate instrument, audio out, NO audio in) would call this a
+    // SOURCE (resolveMainAudioIn null) and give it clip control; role:'dsp' pins
+    // it as an FX insert instead — the observable difference is that an FX gets
+    // NO clip control.
+    const asSource = def([port('pitch', 'pitch'), port('gate', 'gate', { edge: 'gate' })], [port('out', 'audio')]);
+    const asDsp = def([port('pitch', 'pitch'), port('gate', 'gate', { edge: 'gate' })], [port('out', 'audio')], undefined, { role: 'dsp' });
+    expect(chainRole(asSource)).toBe('source');
+    expect(chainRole(asDsp)).toBe('dsp');
+
+    const clipIds = (d: ConvenienceDef) => new Set(planColumnWiring({
+      channel: 3, members: [member('m', d)],
+      clipPlayerId: 'clip', mixerId: 'mix', headNodeId: 'm',
+    }).map((e) => e.id));
+
+    // As a SOURCE: clip control wires pitch3/gate3 into it.
+    expect(clipIds(asSource).has(wcolEdgeId('clip', 'pitch3', 'm', 'pitch'))).toBe(true);
+    expect(clipIds(asSource).has(wcolEdgeId('clip', 'gate3', 'm', 'gate'))).toBe(true);
+    // Forced to 'dsp' (an FX): it gets NO clip control.
+    expect(clipIds(asDsp).has(wcolEdgeId('clip', 'pitch3', 'm', 'pitch'))).toBe(false);
+    expect(clipIds(asDsp).has(wcolEdgeId('clip', 'gate3', 'm', 'gate'))).toBe(false);
+  });
+
+  it("a role:'both' module (twotracks) resolves per CONTEXT: fed insert under a head, standalone tail otherwise", () => {
+    const tt = liveDef('twotracks')!;
+    const head = liveDef('swolevco')!; // a declared mono-out source
+    expect(chainRole(tt)).toBe('both');
+
+    // CONTEXT 1 — inserted UNDER a head source: the head feeds its reel-A input,
+    // and twotracks' A/B out is the tail send to the mixer.
+    const insertIds = new Set(planColumnWiring({
+      channel: 1,
+      members: [member('src', head), member('tt', tt)],
+      clipPlayerId: null, mixerId: 'mix', headNodeId: 'src',
+    }).map((e) => e.id));
+    expect(insertIds.has(wcolEdgeId('src', 'out', 'tt', 'audio_l_in_a'))).toBe(true);
+    expect(insertIds.has(wcolEdgeId('tt', 'out_l', 'mix', 'ch1L'))).toBe(true);
+
+    // CONTEXT 2 — STANDALONE (headless, e.g. dropped alone on a lane): its tape
+    // still plays out to the mixer (the headless-tail send path); nothing feeds it.
+    const soloEdges = planColumnWiring({
+      channel: 1,
+      members: [member('tt', tt)],
+      clipPlayerId: null, mixerId: 'mix', headNodeId: null,
+    });
+    expect(new Set(soloEdges.map((e) => e.id)).has(wcolEdgeId('tt', 'out_l', 'mix', 'ch1L'))).toBe(true);
+    expect(soloEdges.some((e) => e.target.nodeId === 'tt')).toBe(false); // nothing feeds it
+  });
+
+  it('dropping an oscillator (swolevco) on a lane makes it the HEAD, not a chain link', () => {
+    const osc = liveDef('swolevco')!; // a declared source with a resolvable main out
+    const fx = def([port('in', 'audio')], [port('out', 'audio')]);
+    const edges = planColumnWiring({
+      channel: 2,
+      members: [member('osc', osc), member('flt', fx)],
+      clipPlayerId: null, mixerId: 'mix', headNodeId: 'osc',
+    });
+    const ids = new Set(edges.map((e) => e.id));
+    // The oscillator feeds the FX root — it is the HEAD.
+    expect(ids.has(wcolEdgeId('osc', 'out', 'flt', 'in'))).toBe(true);
+    // Nothing feeds the oscillator — it is NEVER a fed chain link.
+    expect(edges.some((e) => e.target.nodeId === 'osc')).toBe(false);
+    // The FX tail (not the head) sends to the mixer.
+    expect(ids.has(wcolEdgeId('flt', 'out', 'mix', 'ch2L'))).toBe(true);
+  });
+
+  it('a multi-waveform VCO (analogVco) is a source but NOT auto-send-eligible — the user picks a waveform', () => {
+    const d = liveDef('analogVco')!;
+    expect(chainRole(d)).toBe('source');       // classified as a source (never an FX)
+    expect(resolveMainAudioIn(d)).toBeNull();   // never a fed FX insert
+    // A bank of parallel waveform outs has no single identifiable main → not
+    // auto-send-eligible (the deliberate multi-out exclusion). role:'source'
+    // does NOT override that — so it is not a headless audio participant either.
+    expect(resolveMainAudioOut(d)).toBeNull();
+    expect(isChainAudioParticipant(d)).toBe(false);
+  });
+});
+
+// ================================================================
 // sendPorts — against the live mixmstrs def
 // ================================================================
 

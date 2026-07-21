@@ -49,6 +49,11 @@ export const moog921bDef: AudioModuleDef = {
   label: '921b osc',
   category: 'sources',
 
+  // Chain-role (Design-D declarative override): a DECLARED source. Its audio
+  // inputs (dc_mod / ac_mod / sync) are MODULATION, not a signal-chain insert,
+  // so the workflow column classifier treats it as a head-eligible SOURCE, not FX.
+  chainWiring: { role: 'source' },
+
   inputs: [
     // freq_bus + width_bus are audio-rate CONTROL INPUTS from the 921A (the
     // worklet reads them per-sample), not CV→AudioParam routings — no cvScale
