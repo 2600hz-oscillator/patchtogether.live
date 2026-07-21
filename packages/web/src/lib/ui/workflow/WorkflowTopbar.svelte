@@ -58,6 +58,10 @@
     perfBusy: boolean;
     /** Any nodes in the rack? Gates Save performance (mirrors dawless). */
     hasNodes: boolean;
+    /** True while a New rack create/navigate is in flight — gates the row. */
+    newRackBusy: boolean;
+    /** File → New rack: fresh rack of the current kind (see Canvas.newRack). */
+    onNewRack: () => void | Promise<void>;
     onQuicksave: (index: number) => void | Promise<void>;
     onQuickload: (index: number) => void | Promise<void>;
     onSavePerformance: () => void | Promise<void>;
@@ -102,6 +106,8 @@
     slotBusy,
     perfBusy,
     hasNodes,
+    newRackBusy,
+    onNewRack,
     onQuicksave,
     onQuickload,
     onSavePerformance,
@@ -215,6 +221,19 @@
 
     {#if fileOpen}
       <div class="file-menu" data-testid="workflow-file-menu" role="menu">
+        <!-- New rack: a FRESH empty rack of the current (workflow) kind —
+             signed-in a new saved rack, logged-out a clean scratch canvas. -->
+        <button
+          class="row"
+          role="menuitem"
+          data-testid="workflow-file-new-rack"
+          disabled={newRackBusy}
+          onclick={() => fire(onNewRack)}
+          title="New rack — a fresh empty workflow rack (signed in: a new saved rack; logged out: a clean scratch canvas)"
+        >New rack</button>
+
+        <div class="divider"></div>
+
         <!-- Quicksave 1–5: store the CURRENT rack into a preset slot
              (buildPerformanceZipBytes → the same IndexedDB slot store the
              dawless preset bar uses). -->
