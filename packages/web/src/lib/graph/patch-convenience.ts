@@ -569,37 +569,23 @@ function isChainSource(def: ConvenienceDef): boolean {
 }
 
 /**
- * Partition the ordered AUDIO-PARTICIPATING members into PARALLEL ISLANDS. An
- * island starts at each SOURCE member (no audio-in) and runs through the
- * contiguous DSP members below it until the next source. So two stacked VCOs are
- * two singleton islands; VCO→filter→VCO→reverb is [[VCO,filter],[VCO,reverb]].
- * A lone leading DSP (no source above it) forms its own island.
- */
-function partitionIslands(audio: readonly ColumnMember[]): ColumnMember[][] {
-  const islands: ColumnMember[][] = [];
-  let cur: ColumnMember[] = [];
-  for (const m of audio) {
-    if (isChainSource(m.def) && cur.length > 0) {
-      islands.push(cur);
-      cur = [];
-    }
-    cur.push(m);
-  }
-  if (cur.length > 0) islands.push(cur);
-  return islands;
-}
-
-/**
  * Plan the COMPLETE reconciler-owned edge set for one column, DETERMINISTICALLY
  * (pure function of the members array + channel + endpoints). Two peers with the
  * same inputs produce byte-identical WcolEdge[] (same ids), so the Y.Map
- * converges. PARALLEL-ISLAND model (owner's multi-source default):
+ * converges. ROLE-BASED single-strip model — a channel column is ONE channel
+ * strip = ONE audio path to the mixer, INDEPENDENT of the order members were
+ * added (owner bug 3):
  *   - CLIP CONTROL: EVERY source instrument on the channel (clip-eligible + no
  *     audio-in) gets the clip's pitch{n}/gate{n} → layered play.
- *   - CHAIN: planPairLink over adjacent members WITHIN each island.
- *   - SEND: each island's TAIL (its last main-out member) → ch{n}L/R. Multiple
- *     island tails SUM at the mixer channel's input bus, so all sources are
- *     heard. A single-source column is one island (source→FX→tail) — unchanged.
+ *   - CHAIN: SOURCES (no main audio-in) are the chain HEADS; FX (have a main
+ *     audio-in) form the post-source chain in column order. Every source feeds
+ *     the FX-chain head (summed there); with NO FX the sources go straight to
+ *     the mixer channel.
+ *   - SEND: a SINGLE tail per column → ch{n}L/R. With FX the tail is the last FX
+ *     with a main out; with no FX every source is its own tail and they SUM at
+ *     the mixer channel bus (the owner's multi-source default). Deriving heads
+ *     from ROLE (not raw insertion order) makes [source, FX] and [FX, source]
+ *     wire IDENTICALLY — no double-send into the mixer, no missing splice.
  */
 export function planColumnWiring(ctx: ColumnWiringCtx): WcolEdge[] {
   const { channel, members, clipPlayerId, mixerId } = ctx;
@@ -629,28 +615,50 @@ export function planColumnWiring(ctx: ColumnWiringCtx): WcolEdge[] {
     }
   }
 
-  // (2)+(3) ISLANDS: internal chain links + each island's tail send-to-mixer.
-  const islands = partitionIslands(members.filter((m) => isChainAudioParticipant(m.def)));
-  for (const island of islands) {
-    for (let i = 0; i + 1 < island.length; i++) {
-      for (const e of planPairLink(island[i]!.nodeId, island[i]!.def, island[i + 1]!.nodeId, island[i + 1]!.def)) {
-        push(toWcol(e));
+  // (2)+(3) ROLE-BASED CHAIN + single send. Split the audio participants by ROLE
+  // (NOT insertion order): SOURCES have no main audio-in, FX do. FX chain in
+  // column order; every source feeds the FX head (or the mixer if there is no
+  // FX); a SINGLE tail feeds ch{n}.
+  const audio = members.filter((m) => isChainAudioParticipant(m.def));
+  const sources = audio.filter((m) => isChainSource(m.def));
+  const fx = audio.filter((m) => !isChainSource(m.def)); // has a main audio-in
+
+  // FX internal chain: fx[i] → fx[i+1] (column order among the FX).
+  for (let i = 0; i + 1 < fx.length; i++) {
+    for (const e of planPairLink(fx[i]!.nodeId, fx[i]!.def, fx[i + 1]!.nodeId, fx[i + 1]!.def)) {
+      push(toWcol(e));
+    }
+  }
+
+  // Every source feeds the HEAD of the FX chain (they sum into it). With no FX
+  // the sources go straight to the mixer channel (handled by the send pass).
+  if (fx.length > 0) {
+    const head = fx[0]!;
+    for (const s of sources) {
+      for (const e of planPairLink(s.nodeId, s.def, head.nodeId, head.def)) push(toWcol(e));
+    }
+  }
+
+  // SEND-TO-MIXER — a SINGLE tail per column. With FX: the last FX with a main
+  // out. Without FX: every source is its own tail (they sum at the ch bus).
+  if (mixerId) {
+    const emitSend = (m: ColumnMember) => {
+      const send = planSendToMixer(m.def, channel);
+      if (!send) return;
+      for (const e of send) {
+        push(toWcol({
+          fromNodeId: m.nodeId, fromPortId: e.fromPortId,
+          toNodeId: mixerId, toPortId: e.toPortId,
+          sourceType: e.sourceType, targetType: e.targetType,
+        }));
       }
-    }
-    if (!mixerId) continue;
-    let tail: ColumnMember | null = null;
-    for (const m of island) {
-      if (resolveMainAudioOut(m.def) !== null) tail = m; // last main-out = island tail
-    }
-    if (!tail) continue;
-    const send = planSendToMixer(tail.def, channel);
-    if (!send) continue;
-    for (const e of send) {
-      push(toWcol({
-        fromNodeId: tail.nodeId, fromPortId: e.fromPortId,
-        toNodeId: mixerId, toPortId: e.toPortId,
-        sourceType: e.sourceType, targetType: e.targetType,
-      }));
+    };
+    if (fx.length > 0) {
+      let tail: ColumnMember | null = null;
+      for (const m of fx) if (resolveMainAudioOut(m.def) !== null) tail = m; // last main-out FX
+      if (tail) emitSend(tail);
+    } else {
+      for (const s of sources) if (resolveMainAudioOut(s.def) !== null) emitSend(s);
     }
   }
 

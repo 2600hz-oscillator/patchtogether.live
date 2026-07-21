@@ -300,25 +300,35 @@ describe('planColumnWiring (deterministic full-column planner)', () => {
     expect(ids.has(wcolEdgeId('clip', 'gate3', 'vco2', 'gate'))).toBe(true);
   });
 
-  it('multi-source with per-island FX: [vco1,filter,vco2,reverb] → two islands, each source driven, each tail sends', () => {
+  it('multi-source with FX: [vco1,filter,vco2,reverb] → ONE strip, BOTH sources SUM into the FX head, SINGLE tail sends (bug 3 role model)', () => {
+    // Role-based single-strip model (owner bug 3): a column is ONE channel path.
+    // Sources are the HEADS; FX form ONE chain (filter → reverb) in column order;
+    // EVERY source sums into the FX head (filter); the SINGLE tail (reverb) is the
+    // only thing that sends to the channel. (The old model split this into two
+    // parallel islands with one source bypassing the FX — now every source is
+    // filtered + reverbed, and there is exactly ONE mixer tail.)
     const edges = planColumnWiring(ctx([
       member('vco1', VCO), member('flt', FILTER), member('vco2', VCO), member('rev', REVERB_ST),
     ]));
     const ids = new Set(edges.map((e) => e.id));
-    // Island 1: vco1 → filter → (filter tail) → mixer.
+    // FX chain: filter → reverb.
+    expect(ids.has(wcolEdgeId('flt', 'out', 'rev', 'inL'))).toBe(true);
+    expect(ids.has(wcolEdgeId('flt', 'out', 'rev', 'inR'))).toBe(true);
+    // BOTH sources feed the FX HEAD (filter), regardless of column order.
     expect(ids.has(wcolEdgeId('vco1', 'out', 'flt', 'in'))).toBe(true);
-    expect(ids.has(wcolEdgeId('flt', 'out', 'mix', 'ch3L'))).toBe(true);
-    // Island 2: vco2 → reverb → (reverb tail) → mixer.
-    expect(ids.has(wcolEdgeId('vco2', 'out', 'rev', 'inL'))).toBe(true);
+    expect(ids.has(wcolEdgeId('vco2', 'out', 'flt', 'in'))).toBe(true);
+    // The SINGLE tail (reverb) is the ONLY member that sends to the channel.
     expect(ids.has(wcolEdgeId('rev', 'outL', 'mix', 'ch3L'))).toBe(true);
-    // NO cross-island link (filter must not feed vco2, which has no audio-in anyway).
+    expect(ids.has(wcolEdgeId('rev', 'outR', 'mix', 'ch3R'))).toBe(true);
+    // No cross link into a source (a source has no audio-in anyway).
     expect(ids.has(wcolEdgeId('flt', 'out', 'vco2', 'pitch'))).toBe(false);
     // BOTH sources clip-driven.
     expect(ids.has(wcolEdgeId('clip', 'pitch3', 'vco1', 'pitch'))).toBe(true);
     expect(ids.has(wcolEdgeId('clip', 'pitch3', 'vco2', 'pitch'))).toBe(true);
-    // NON-tail members never send.
+    // NON-tail members never send to the mixer.
     expect(ids.has(wcolEdgeId('vco1', 'out', 'mix', 'ch3L'))).toBe(false);
     expect(ids.has(wcolEdgeId('vco2', 'out', 'mix', 'ch3L'))).toBe(false);
+    expect(ids.has(wcolEdgeId('flt', 'out', 'mix', 'ch3L'))).toBe(false);
   });
 
   it('empty column → no edges', () => {

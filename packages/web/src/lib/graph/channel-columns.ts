@@ -66,10 +66,10 @@ export const COLUMN_SLOT_H = RACK_UNIT * 4; // 720px (grid-aligned)
 export const COLUMN_PAD_X = HP_UNIT; // 22.5px
 
 /** The number of slots budgeted above the baseline before a column overflows
- *  upward (visual band height). Columns are BOTTOM-ANCHORED: the tail (output)
- *  sits just above the baseline near the channel number, and members stack
- *  UPWARD, so a newly-added module lands at the BOTTOM (owner: "snap to the
- *  bottom, not the top"). */
+ *  upward (visual band height). Columns are BOTTOM-ANCHORED: the FIRST-added
+ *  member sits just above the baseline near the channel number, and each later
+ *  member stacks flush UPWARD (owner: "the first module added should be at the
+ *  bottom of the column no matter where I click; adding FX stacks them on top"). */
 export const COLUMN_MAX_SLOTS = 6;
 export const COLUMN_H = COLUMN_SLOT_H * COLUMN_MAX_SLOTS;
 
@@ -157,13 +157,17 @@ export function columnBottomFlowPos(ch: number, currentCount: number): { x: numb
 
 /**
  * FLUSH bottom-up stacking (owner: "modules stack at the BOTTOM and grow UPWARD,
- * sitting directly on top of each other with NO vertical space between them").
- * Given each member's PIXEL height in array order (index 0 = TOP of the visual
- * stack, last = BOTTOM), returns the top-left flow-space position of every
- * member such that:
- *   - the LAST (bottom) member's BOTTOM edge sits exactly on COLUMN_BASELINE_Y,
- *   - each earlier member sits FLUSH directly on top of the one below it (its
- *     bottom edge == the next member's top edge — zero gap),
+ * sitting directly on top of each other with NO vertical space between them. The
+ * FIRST module added should be at the BOTTOM of the column no matter where I
+ * click; adding more FX stacks them on TOP.").
+ * Given each member's PIXEL height in ARRAY order — index 0 = the FIRST-added
+ * member, which is ANCHORED at the column BOTTOM; the last index = the NEWEST
+ * member, at the TOP — returns the top-left flow-space position of every member
+ * such that:
+ *   - the FIRST (index 0, bottom-anchored) member's BOTTOM edge sits exactly on
+ *     COLUMN_BASELINE_Y (just above the channel number),
+ *   - each LATER member sits FLUSH directly on top of the one before it (its
+ *     bottom edge == the previous member's top edge — zero gap), stacking upward,
  *   - a single member therefore lands at the very bottom of the column.
  * Position is a PURE function of (ch, heights) — heights are derived from each
  * member's rack tier (a per-TYPE constant), so every peer computes the SAME
@@ -178,16 +182,16 @@ export function columnFlushPositions(
   const x = x0 + COLUMN_PAD_X;
   const out: { x: number; y: number }[] = new Array(heightsPx.length);
   let bottom = COLUMN_BASELINE_Y;
-  for (let i = heightsPx.length - 1; i >= 0; i--) {
+  for (let i = 0; i < heightsPx.length; i++) {
     const top = bottom - (heightsPx[i] ?? COLUMN_SLOT_H);
     out[i] = { x, y: top };
-    bottom = top;
+    bottom = top; // the next member stacks flush ON TOP of this one
   }
   return out;
 }
 
 /** Send-box twin of columnFlushPositions — flush bottom-up in the box's own X
- *  band. */
+ *  band. Index 0 (first-added) is anchored at the bottom; later tenants stack up. */
 export function sendFlushPositions(
   slot: number,
   heightsPx: readonly number[],
@@ -196,10 +200,10 @@ export function sendFlushPositions(
   const x = x0 + COLUMN_PAD_X;
   const out: { x: number; y: number }[] = new Array(heightsPx.length);
   let bottom = COLUMN_BASELINE_Y;
-  for (let i = heightsPx.length - 1; i >= 0; i--) {
+  for (let i = 0; i < heightsPx.length; i++) {
     const top = bottom - (heightsPx[i] ?? COLUMN_SLOT_H);
     out[i] = { x, y: top };
-    bottom = top;
+    bottom = top; // the next tenant stacks flush ON TOP of this one
   }
   return out;
 }
@@ -211,15 +215,23 @@ export function sendBottomFlowPos(slot: number, currentCount: number): { x: numb
 }
 
 /**
- * Compute the insert INDEX for a reorder drop: where in the current member list
- * a member dropped at `dropY` should land. `memberCenters` are the current
- * members' slot-center Y positions IN ORDER (excluding the dragged member).
- * Returns the count when the drop is below every sibling (append).
+ * Compute the insert INDEX (into the ORDER array) for a reorder drop. Order index
+ * 0 = the bottom-anchored, first-added member (largest Y); index grows UPWARD
+ * (smaller Y) — see columnFlushPositions. `memberCenters` are the siblings'
+ * flush slot-center Y positions IN ORDER-ARRAY ORDER (excluding the dragged
+ * member); they descend in Y (index 0 = bottom = largest Y).
+ *
+ * The insert index = the number of siblings sitting BELOW the drop point (center
+ * Y strictly greater than dropY): those keep the low indices, the dropped member
+ * takes the next slot up. This is a pure MULTISET count, so it is independent of
+ * the array's iteration order and correct for the descending-Y layout:
+ *   - drop at the very BOTTOM (large dropY) → 0 siblings below → index 0 (bottom),
+ *   - drop at the very TOP (small dropY) → all siblings below → append (top).
  */
 export function indexForDropY(memberCenters: readonly number[], dropY: number): number {
-  let i = 0;
-  while (i < memberCenters.length && dropY > memberCenters[i]!) i++;
-  return i;
+  let below = 0;
+  for (const c of memberCenters) if (c > dropY) below++;
+  return below;
 }
 
 // ---------------- Ordered-membership array helpers (pure, CRDT-safe) ----------------

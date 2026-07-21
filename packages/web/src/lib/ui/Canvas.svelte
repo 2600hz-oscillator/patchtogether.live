@@ -1697,8 +1697,8 @@
       const cols = md?.columns ?? {};
       const sends = md?.sends ?? {};
       // FLUSH bottom-up stacking (owner: no gaps, cards sit directly on top of
-      // each other, first card at the very bottom). Heights are per-TYPE rack
-      // constants → deterministic + collab-convergent.
+      // each other, FIRST-added card anchored at the very bottom, newest on top).
+      // Heights are per-TYPE rack constants → deterministic + collab-convergent.
       const typeOf = new Map(snap.nodes.map((n) => [n.id, n.type]));
       const heightsFor = (order: string[]) =>
         order.map((id) => wcolCardHeightPx(typeOf.get(id) ?? ''));
@@ -5915,8 +5915,9 @@
     const wcolSendWasEmpty = wcolDrop?.sendSlot != null && wcolOrder('sends', wcolDrop.sendSlot).length === 0;
     if (wcolDrop?.channel != null) {
       initialData.channel = wcolDrop.channel;
-      // Snap FLUSH to the very bottom of the column (new bottom card); the
-      // flowNodes derivation re-stacks the whole column flush next render.
+      // Snap FLUSH onto the TOP of the column (newest member stacks up; the
+      // first-added member stays anchored at the bottom); the flowNodes
+      // derivation re-stacks the whole column flush next render.
       const existing = wcolOrder('columns', wcolDrop.channel);
       const heights = [...existing.map((id) => wcolCardHeightPx(patch.nodes[id]?.type ?? '')), wcolCardHeightPx(type)];
       const p = columnFlushPositions(wcolDrop.channel, heights)[existing.length]!;

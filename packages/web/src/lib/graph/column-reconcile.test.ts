@@ -210,6 +210,36 @@ describe('reconcileColumns — chain + heal', () => {
     expect(ids.has('wcol-e-vco1-out_l-pinned-mixmstrs-ch2L')).toBe(true); // vco now the tail
   });
 
+  it('REVERSE add-order (FX assigned BEFORE the source) still yields ONE strip: source spliced through, SINGLE tail send, source NOT on the mixer (owner bug 3)', () => {
+    // Owner bug 3: a column whose order array is [FX, source] (cloudseed assigned
+    // to ch1 FIRST, then tidyVco) must wire IDENTICALLY to [source, FX] — role,
+    // not insertion order, decides the chain. Old island partitioning made this
+    // TWO islands → both reached the mixer, no splice (the confirmed 3/3 repro).
+    addNode('fx', 'cloudseed', { channel: 1 });
+    addNode('src', 'tidyVco', { channel: 1 });
+    setColumn(1, ['fx', 'src']); // FX FIRST in the order array (reverse add-order)
+    reconcileColumns(resolveDef);
+    const ids = new Set(wcolEdges().map((e) => e.id));
+    // Source spliced INTO the FX (both L and R).
+    expect(ids.has('wcol-e-src-out_l-fx-in_l')).toBe(true);
+    expect(ids.has('wcol-e-src-out_r-fx-in_r')).toBe(true);
+    // The FX is the SINGLE tail → exactly one stereo pair into ch1.
+    expect(ids.has('wcol-e-fx-out_l-pinned-mixmstrs-ch1L')).toBe(true);
+    expect(ids.has('wcol-e-fx-out_r-pinned-mixmstrs-ch1R')).toBe(true);
+    // The SOURCE is NOT wired to the mixer (no double-connect).
+    expect([...ids].some((id) => id.startsWith('wcol-e-src-') && id.includes('-pinned-mixmstrs-'))).toBe(false);
+    // Exactly ONE stereo pair reaches ch1 (no doubling): 2 edges into ch1L/ch1R.
+    const intoCh1 = [...ids].filter((id) => id.includes('-pinned-mixmstrs-ch1'));
+    expect(intoCh1.length).toBe(2);
+    // Same wiring as the source-first order (role-derived, add-order-independent).
+    setColumn(1, ['src', 'fx']);
+    reconcileColumns(resolveDef);
+    const ids2 = new Set(wcolEdges().map((e) => e.id));
+    expect(ids2.has('wcol-e-src-out_l-fx-in_l')).toBe(true);
+    expect(ids2.has('wcol-e-fx-out_l-pinned-mixmstrs-ch1L')).toBe(true);
+    expect([...ids2].filter((id) => id.includes('-pinned-mixmstrs-ch1')).length).toBe(2);
+  });
+
   it('MID-CHAIN removal heals the gap: source→fx1→fx2→mixer, delete fx1 → source→fx2→mixer (no dangling)', () => {
     // Owner bug 5: removing a MIDDLE link must re-splice the adjacent survivors
     // across the gap, not leave the chain broken. source (tidyVco) → fxA

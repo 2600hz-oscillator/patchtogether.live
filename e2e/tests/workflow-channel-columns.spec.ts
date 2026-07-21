@@ -315,6 +315,82 @@ test.describe('workflow channel columns', () => {
     expect(channelMax[3], 'channel 4 (tidyvco→cloudseed) is audible at the mixer').toBeGreaterThan(0.002);
   });
 
+  test('REVERSE add-order: FX (cloudseed) added BEFORE the source (tidyvco) STILL yields ONE strip — single tail, source spliced through, source NOT on the mixer (bug 3, both paths)', async ({ page }) => {
+    // Owner bug 3 round-2 (confirmed 3/3): a column whose members were added in
+    // [FX, source] order (cloudseed assigned FIRST, then tidyvco) must wire
+    // IDENTICALLY to [source, FX] — chain order is decided by ROLE, not insertion
+    // order. The old island partitioning started a new island at the trailing
+    // source → TWO islands → BOTH reached the mixer (4 edges into ch), no splice.
+    await page.goto('/rack?mode=workflow');
+    await waitForPinnedTrio(page);
+    await waitForHooks(page);
+    await page.waitForFunction(
+      () => typeof (globalThis as unknown as { __assignNodeToChannel?: unknown }).__assignNodeToChannel === 'function',
+      undefined,
+      { timeout: 15_000 },
+    );
+
+    // --- Path A: PALETTE-DROP the FX first, then the source, into column 6. ---
+    await dropInBand(page, 'cloudseed', colPos(6)); // FX FIRST
+    await dropInBand(page, 'tidyVco', colPos(6)); // source SECOND
+    // Order array reflects add-order: [cloudseed, tidyvco] (FX first).
+    await expect.poll(async () => (await orderOf(page, 'columns', 6)).length, { timeout: 8_000 }).toBe(2);
+    const c6 = await orderOf(page, 'columns', 6);
+    const [cloudD, vcoD] = [c6[0]!, c6[1]!];
+
+    await expect
+      .poll(async () => {
+        const edges = await wcolEdges(page);
+        return edges.includes(`${vcoD}.out_l->${cloudD}.in_l`) && edges.includes(`${cloudD}.out_l->${PINNED_MIXER}.ch6L`);
+      }, { timeout: 8_000 })
+      .toBe(true);
+    let edges = await wcolEdges(page);
+    // Source spliced INTO the FX (both L and R), even though it was added last.
+    expect(edges).toContain(`${vcoD}.out_l->${cloudD}.in_l`);
+    expect(edges).toContain(`${vcoD}.out_r->${cloudD}.in_r`);
+    // EXACTLY one stereo pair reaches ch6 — from the FX tail, nothing doubled.
+    let intoCh6 = edges.filter((e) => e.includes(`->${PINNED_MIXER}.ch6L`) || e.includes(`->${PINNED_MIXER}.ch6R`));
+    expect(intoCh6.sort()).toEqual([`${cloudD}.out_l->${PINNED_MIXER}.ch6L`, `${cloudD}.out_r->${PINNED_MIXER}.ch6R`]);
+    // The source must NOT reach the mixer (no double-connect).
+    expect(edges.some((e) => e.startsWith(`${vcoD}.`) && e.includes(`${PINNED_MIXER}.`)), 'tidyvco must not bypass cloudseed').toBe(false);
+    // Role-correct clip control: source driven, FX not.
+    expect(edges).toContain(`${PINNED_CLIP}.pitch6->${vcoD}.poly`);
+    expect(edges.some((e) => e.startsWith(`${PINNED_CLIP}.`) && e.includes(cloudD)), 'cloudseed must not get clip control').toBe(false);
+
+    // --- Path B: right-click ASSIGN the FX first, then the source, to channel 7. ---
+    const spawnFreeAndAssign = async (type: string, ch0: number): Promise<string> => {
+      const id = await page.evaluate((t) => {
+        const w = globalThis as unknown as {
+          __setSpawnFlowPos: (p: { x: number; y: number }) => void;
+          __spawnFromPalette: (t: string) => void;
+          __patch: { nodes: Record<string, { type?: string; data?: { channel?: number } } | undefined> };
+        };
+        w.__setSpawnFlowPos({ x: -2200, y: -2200 }); // free canvas
+        w.__spawnFromPalette(t);
+        const hit = Object.entries(w.__patch.nodes).find(([, n]) => n?.type === t && n?.data?.channel == null);
+        return hit?.[0] ?? null;
+      }, type);
+      expect(id, `${type} spawned on free canvas`).toBeTruthy();
+      await page.evaluate(({ nid, c }) => {
+        (globalThis as unknown as { __assignNodeToChannel: (id: string, ch: number) => void }).__assignNodeToChannel(nid, c);
+      }, { nid: id!, c: ch0 });
+      return id!;
+    };
+    const cloudA = await spawnFreeAndAssign('cloudseed', 6); // FX FIRST → channel 7 (0-based 6)
+    const vcoA = await spawnFreeAndAssign('tidyVco', 6); // source SECOND → channel 7
+    await expect.poll(async () => await orderOf(page, 'columns', 7), { timeout: 8_000 }).toEqual([cloudA, vcoA]);
+    await expect
+      .poll(async () => {
+        const e = await wcolEdges(page);
+        return e.includes(`${vcoA}.out_l->${cloudA}.in_l`) && e.includes(`${cloudA}.out_l->${PINNED_MIXER}.ch7L`);
+      }, { timeout: 8_000 })
+      .toBe(true);
+    edges = await wcolEdges(page);
+    intoCh6 = edges.filter((e) => e.includes(`->${PINNED_MIXER}.ch7L`) || e.includes(`->${PINNED_MIXER}.ch7R`));
+    expect(intoCh6.sort(), 'assign path: exactly one stereo pair into ch7').toEqual([`${cloudA}.out_l->${PINNED_MIXER}.ch7L`, `${cloudA}.out_r->${PINNED_MIXER}.ch7R`]);
+    expect(edges.some((e) => e.startsWith(`${vcoA}.`) && e.includes(`${PINNED_MIXER}.`)), 'assign path: source must not bypass FX').toBe(false);
+  });
+
   test('DRAG a free card into a column assigns + chains it (the drag-drop path)', async ({ page }) => {
     await page.goto('/rack?mode=workflow');
     await waitForPinnedTrio(page);

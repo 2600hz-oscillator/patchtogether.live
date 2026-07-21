@@ -115,8 +115,9 @@ describe('column geometry', () => {
     expect(s2.x).toBeGreaterThan(s1.x); // box 2 is to the right of box 1
   });
 
-  // ---- FLUSH bottom-up stacking (owner: no gaps; first card at very bottom) ----
-  describe('columnFlushPositions — flush, bottom-anchored, no gaps', () => {
+  // ---- FLUSH bottom-up stacking (owner: no gaps; FIRST-added card at the very
+  //      bottom, each later card stacks flush ON TOP — array index 0 = bottom) --
+  describe('columnFlushPositions — flush, first-added at bottom, no gaps', () => {
     it('a single member sits at the VERY bottom (its bottom edge on the baseline)', () => {
       const [x0] = columnXBand(3);
       const h = 540; // a 3u card
@@ -126,44 +127,62 @@ describe('column geometry', () => {
       expect(p!.y + h).toBe(COLUMN_BASELINE_Y);
     });
 
-    it('stacks multiple cards FLUSH bottom-up with ZERO gaps (variable heights)', () => {
-      const heights = [720, 360, 540]; // top→bottom: tidyvco(4u), sixstrum(2u), cloudseed(3u)
+    it('array INDEX 0 (first-added) is anchored at the BOTTOM; later indices stack up, ZERO gaps', () => {
+      const heights = [720, 360, 540]; // add order: tidyvco(4u) first, sixstrum(2u), cloudseed(3u)
       const pos = columnFlushPositions(2, heights);
-      // Bottom card flush to baseline.
-      expect(pos[2]!.y + heights[2]!).toBe(COLUMN_BASELINE_Y);
-      // Each card's bottom edge == the next card's top edge (touching, no gap).
-      expect(pos[1]!.y + heights[1]!).toBe(pos[2]!.y);
-      expect(pos[0]!.y + heights[0]!).toBe(pos[1]!.y);
+      // The FIRST-added card (index 0) is flush to the baseline.
+      expect(pos[0]!.y + heights[0]!).toBe(COLUMN_BASELINE_Y);
+      // Each later card's bottom edge == the previous card's top edge (touching).
+      expect(pos[1]!.y + heights[1]!).toBe(pos[0]!.y);
+      expect(pos[2]!.y + heights[2]!).toBe(pos[1]!.y);
       // All same X (column left pad).
       expect(pos[0]!.x).toBe(pos[1]!.x);
       expect(pos[1]!.x).toBe(pos[2]!.x);
-      // Grows UPWARD: earlier index (higher in the stack) has a smaller y.
-      expect(pos[0]!.y).toBeLessThan(pos[1]!.y);
-      expect(pos[1]!.y).toBeLessThan(pos[2]!.y);
+      // Grows UPWARD: a LATER index (newer, higher in the stack) has a smaller y.
+      expect(pos[1]!.y).toBeLessThan(pos[0]!.y);
+      expect(pos[2]!.y).toBeLessThan(pos[1]!.y);
     });
 
-    it('adding a member keeps the bottom flush + pushes the rest up by exactly its height', () => {
-      const before = columnFlushPositions(1, [360, 540]); // 2 cards
-      const after = columnFlushPositions(1, [720, 360, 540]); // prepend a 720 on top
-      // The two original cards keep their positions (bottom-anchored).
-      expect(after[1]!.y).toBe(before[0]!.y);
-      expect(after[2]!.y).toBe(before[1]!.y);
+    it('adding a member keeps the FIRST-added anchored at the bottom + stacks the new one on TOP', () => {
+      const before = columnFlushPositions(1, [360, 540]); // 2 cards (index 0 = bottom)
+      const after = columnFlushPositions(1, [360, 540, 720]); // APPEND a 720 on top
+      // The two original cards keep their positions (bottom-anchored, unchanged).
+      expect(after[0]!.y).toBe(before[0]!.y);
+      expect(after[1]!.y).toBe(before[1]!.y);
+      // The new (last) card is the top-most — a smaller y than every existing one.
+      expect(after[2]!.y).toBeLessThan(after[1]!.y);
     });
 
-    it('sendFlushPositions stacks flush in its own side-by-side box', () => {
+    it('after adding 3 members the FIRST one is still at the bottom (bottom edge == baseline)', () => {
+      const heights = [540, 360, 720]; // add order 1st, 2nd, 3rd
+      const pos = columnFlushPositions(4, heights);
+      expect(pos[0]!.y + heights[0]!).toBe(COLUMN_BASELINE_Y); // first-added pinned at bottom
+      // and it is the lowest card on screen (largest y).
+      expect(pos[0]!.y).toBeGreaterThan(pos[1]!.y);
+      expect(pos[1]!.y).toBeGreaterThan(pos[2]!.y);
+    });
+
+    it('sendFlushPositions stacks flush in its own side-by-side box (first at bottom)', () => {
       const s1 = sendFlushPositions(1, [200]);
       const s2 = sendFlushPositions(2, [200]);
       expect(s1[0]!.y + 200).toBe(COLUMN_BASELINE_Y);
       expect(s2[0]!.x).toBeGreaterThan(s1[0]!.x);
+      // Two tenants: index 0 (first) at the bottom, index 1 (newer) stacked on top.
+      const two = sendFlushPositions(1, [200, 300]);
+      expect(two[0]!.y + 200).toBe(COLUMN_BASELINE_Y);
+      expect(two[1]!.y + 300).toBe(two[0]!.y);
+      expect(two[1]!.y).toBeLessThan(two[0]!.y);
     });
   });
 
-  it('indexForDropY finds the insert slot among sibling centers', () => {
-    const centers = [100, 300, 500];
-    expect(indexForDropY(centers, 50)).toBe(0); // above all
-    expect(indexForDropY(centers, 200)).toBe(1); // between 1st and 2nd
-    expect(indexForDropY(centers, 400)).toBe(2);
-    expect(indexForDropY(centers, 999)).toBe(3); // below all → append
+  it('indexForDropY returns the ORDER-array insert index (centers descend in Y: index 0 = bottom)', () => {
+    // Siblings in ORDER-array order: index 0 (first-added) is at the BOTTOM = the
+    // LARGEST Y, higher indices are higher up (smaller Y).
+    const centers = [500, 300, 100];
+    expect(indexForDropY(centers, 999)).toBe(0); // below all → bottom slot (index 0)
+    expect(indexForDropY(centers, 400)).toBe(1); // between index 0 and 1
+    expect(indexForDropY(centers, 200)).toBe(2); // between index 1 and 2
+    expect(indexForDropY(centers, 50)).toBe(3); // above all → top (append)
   });
 });
 
