@@ -253,6 +253,12 @@ export const foxyDef: AudioModuleDef = {
   // WAVECEL's stereo pair carries through unchanged.
   stereoPairs: [['out_l', 'out_r']],
 
+  // Chain-role (Design-D declarative override): a DECLARED source. Its lone
+  // audio input (fm) is MODULATION, not a signal-chain insert — WITHOUT this the
+  // port inference reads that single audio-in as a "main in" and mis-bins the
+  // oscillator as an FX. Declare 'source' so it is a head-eligible SOURCE.
+  chainWiring: { role: 'source' },
+
   inputs: [
     // ── WAVECEL IO (verbatim) ──
     { id: 'pitch',     type: 'pitch' },

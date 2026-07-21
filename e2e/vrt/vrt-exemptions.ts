@@ -303,6 +303,7 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // edge-detect). Promote into MODULES + capture darwin/linux PNGs (the
   // canvas mask above masks the live preview) in a follow-up PR.
   '4plexvid': 'VRT baseline pending; e2e/tests/4plexvid.spec.ts + plex-select unit tests provide coverage. Promote + capture darwin/linux baselines (live preview masked) in a follow-up PR.',
+  cvBuddy: 'VRT baseline pending — hardware-facing card whose look is NOT yet owner-locked (Part A preview; the slot/clock readout + ES-9 mirror will likely change on owner feedback), so a baseline now would just churn. Card behavior is covered by cv-buddy slot-alloc/clock-math/es9-reconcile unit tests; promote + capture darwin/linux baselines once the look is approved.',
   // OUT TO LAUNCH — Launchpad Mini Mk3 as a live 9×9 RGB video monitor. The
   // card is a live MONITOR preview canvas (the 9×9 grid) driven by the module's
   // per-frame GPU readback + a device-picker; nothing patched is a black grid,

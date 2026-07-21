@@ -166,6 +166,20 @@ export const twotracksDef: AudioModuleDef = {
   domain: 'audio',
   category: 'effects',
 
+  // Workflow channel-columns override (owner "fixable in code" directive):
+  // TWOTRACKS is "too weird to be a source easily" — it has FOUR audio inputs
+  // (reel A + reel B stereo pairs) and no declared stereoPairs, so the default
+  // main-in resolution would guess across them. Declare the insert IN = reel A's
+  // stereo audio input and the chain OUT = the mixed A/B stereo output. Role
+  // 'both': dropped on an EMPTY column it acts as a source (out → mixer);
+  // inserted UNDER a source (e.g. tidyvco) it takes tidyvco → reel-A-in and its
+  // A-side out → downstream, exactly the owner's TWOTRACKS scenario.
+  chainWiring: {
+    role: 'both',
+    inPorts: ['audio_l_in_a', 'audio_r_in_a'],
+    outPorts: ['out_l', 'out_r'],
+  },
+
   inputs: [
     // Reel A
     { id: 'audio_l_in_a', type: 'audio' },

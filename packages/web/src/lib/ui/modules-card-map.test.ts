@@ -37,7 +37,7 @@ const EXPECTED_NODE_TYPES = [
   'attenumix', 'audioIn', 'audioOut', 'backdraft', 'bentbox',
   'blood', 'bluebox', 'buggles', 'callsine', 'cameraInput', 'cartesian',
   'charlottesEchos', 'chroma', 'chromakey', 'clap', 'clipplayer', 'clockedRunner', 'clouds',
-  'cloudseed', 'cofefve', 'colorizer', 'colourofmagic', 'cube', 'delay', 'depolarizer', 'destroy', 'destructor',
+  'cloudseed', 'cofefve', 'colorizer', 'colourofmagic', 'cube', 'cvBuddy', 'delay', 'depolarizer', 'destroy', 'destructor',
   'dockscope',
   'doom', 'drummergirl', 'drumseqz', 'dx7', 'es9', 'fader', 'feedback', 'filter',
   'featurecv',
@@ -59,6 +59,16 @@ const EXPECTED_NODE_TYPES = [
   'videobox', 'videocube', 'videovarispeed', 'warrenspectrum', 'wavecel', 'wavesculpt',
   'twotracks', 'wavetableVco', 'writeseq', 'textmarquee', 'tiler', 'spirographs',
   'milkdrop',
+
+
+
+
+
+
+
+
+
+
 
 
 

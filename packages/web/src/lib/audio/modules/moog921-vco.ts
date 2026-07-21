@@ -53,6 +53,11 @@ export const moog921VcoDef: AudioModuleDef = {
   label: '921 vco',
   category: 'sources',
 
+  // Chain-role (Design-D declarative override): a DECLARED source. Its audio
+  // inputs (lin_fm / sync) are MODULATION, not a signal-chain insert, so the
+  // workflow column classifier must treat it as a head-eligible SOURCE, not FX.
+  chainWiring: { role: 'source' },
+
   inputs: [
     { id: 'pitch',    type: 'pitch' },
     { id: 'lin_fm',   type: 'audio' },

@@ -14,6 +14,7 @@ import type {
   RackSize,
   ControlFamily,
   ModuleDocs,
+  ChainWiring,
 } from '$lib/graph/types';
 import type { AudioModuleFactory } from './engine';
 
@@ -170,6 +171,17 @@ export interface AudioModuleDef {
    * the card source. See ControlFamily.
    */
   controlFamilies?: readonly ControlFamily[];
+  /**
+   * Optional workflow channel-columns chain-wiring override + lane note-tap
+   * declaration (see ChainWiring in graph/types.ts). Two orthogonal uses:
+   *   - CHAIN OVERRIDE: declares this module's true insert IN / chain OUT ports
+   *     (and `role: 'source'|'dsp'|'both'`) when the default port-shape
+   *     resolution is wrong for the vertical DSP chain.
+   *   - NOTE-SINK: `role: 'noteSink'` + `laneTap` marks a module a clip lane can
+   *     drive — the column reconciler (Part B) taps the lane's pitch/gate/vel CV
+   *     into `laneTap.{pitchIn,gateIn,velIn}`. Carried by cvBuddy + midiOutBuddy.
+   */
+  chainWiring?: ChainWiring;
   factory: AudioModuleFactory;
 }
 

@@ -20,6 +20,9 @@
   } from '$lib/audio/modules/es9';
   import { Es9BridgeClient, type Es9ConnectionState } from '$lib/audio/es9/bridge-client';
   import type { Es9DeviceInfo, Es9Meters } from '$lib/audio/es9/es9-protocol';
+  import { patch } from '$lib/graph/store';
+  import { nodesStructuralVersion } from '$lib/graph/node-versions.svelte';
+  import { allocateCvBuddySlots } from '$lib/audio/cv-buddy/slot-alloc';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -135,6 +138,29 @@
     { label: 'USB 1–8 (mix/S-PDIF/ES-5)', inputs: pick(inputById, [1, 2, 3, 4, 5, 6, 7, 8].map((n) => `usb${n}`)) },
   ];
 
+  // Which physical output jacks a CV Buddy is currently auto-driving (reactive
+  // over node add/remove). Purely informational; the CV-Buddy↔ES-9 reconciler
+  // owns the actual edges + class params.
+  let cvbStructuralV = $derived(nodesStructuralVersion());
+  let cvBuddyJacks = $derived.by<string>(() => {
+    void cvbStructuralV;
+    const ids: string[] = [];
+    for (const n of Object.values(patch.nodes)) {
+      if (n && (n as { type?: string }).type === 'cvBuddy') ids.push((n as { id: string }).id);
+    }
+    const slots = new Set<number>();
+    for (const a of allocateCvBuddySlots(ids).values()) {
+      slots.add(a.pitchSlot); slots.add(a.gateSlot); slots.add(a.velSlot);
+      if (a.runSlot != null) slots.add(a.runSlot);
+      if (a.clockSlot != null) slots.add(a.clockSlot);
+    }
+    if (slots.size === 0) return '';
+    return [...slots]
+      .sort((x, y) => x - y)
+      .map((s) => (s === 7 ? '7 (run)' : s === 8 ? '8 (clock)' : String(s)))
+      .join(', ');
+  });
+
   const stateLabel = $derived.by(() => {
     switch (connState) {
       case 'connected': return device ? device.name : 'connected';
@@ -175,6 +201,9 @@
         <div class="detail">SharedArrayBuffer unavailable in this context.</div>
       {:else if connState !== 'connected'}
         <div class="detail">Run the es9-bridge app (Chromium required), then connect.</div>
+      {/if}
+      {#if cvBuddyJacks}
+        <div class="detail cvb" data-testid="es9-cvbuddy-{id}">Jacks driven by CV Buddy: {cvBuddyJacks}</div>
       {/if}
 
       <div class="classes">

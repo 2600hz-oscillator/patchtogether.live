@@ -7,7 +7,17 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { getOrCreateLocalScratchId, localScratchStorageKey } from './local-scratch';
+import {
+  getOrCreateLocalScratchId,
+  localScratchStorageKey,
+  peekLocalScratchId,
+  readLastScratchMode,
+  readLastScratchRack,
+  recordLastScratchMode,
+  resetLocalScratchId,
+  resolveLastScratchRack,
+  scratchReplicaDbName,
+} from './local-scratch';
 
 /** A Map-backed Storage stand-in (jsdom's real localStorage is process-global
  *  and shared across tests; a fresh stub per test keeps them isolated). */
@@ -90,5 +100,157 @@ describe('getOrCreateLocalScratchId', () => {
       id = getOrCreateLocalScratchId('workflow');
     }).not.toThrow();
     expect(id).toMatch(/^local-scratch-workflow-.+/);
+  });
+});
+
+describe('peekLocalScratchId', () => {
+  it('returns null when no id has been minted (never side-effects one in)', () => {
+    const storage = makeMemoryStorage();
+    vi.stubGlobal('localStorage', storage);
+    expect(peekLocalScratchId('dawless')).toBeNull();
+    // Peeking must NOT create an id (unlike getOrCreate).
+    expect(storage.getItem(localScratchStorageKey('dawless'))).toBeNull();
+  });
+
+  it('returns the stored id once one exists', () => {
+    vi.stubGlobal('localStorage', makeMemoryStorage());
+    const id = getOrCreateLocalScratchId('workflow');
+    expect(peekLocalScratchId('workflow')).toBe(id);
+  });
+
+  it('null (never throws) when localStorage throws', () => {
+    vi.stubGlobal('localStorage', {
+      getItem: () => {
+        throw new DOMException('denied', 'SecurityError');
+      },
+    } as unknown as Storage);
+    expect(() => peekLocalScratchId('dawless')).not.toThrow();
+    expect(peekLocalScratchId('dawless')).toBeNull();
+  });
+});
+
+describe('resetLocalScratchId', () => {
+  it('mints a NEW id and REPLACES the stored one (fresh empty rack)', () => {
+    vi.stubGlobal('localStorage', makeMemoryStorage());
+    const first = getOrCreateLocalScratchId('dawless');
+    const reset = resetLocalScratchId('dawless');
+    expect(reset).not.toBe(first);
+    expect(reset).toMatch(/^local-scratch-dawless-.+/);
+    // The new id is now the persisted one (getOrCreate reads it back).
+    expect(getOrCreateLocalScratchId('dawless')).toBe(reset);
+  });
+
+  it('only resets the requested mode (leaves the sibling mode intact)', () => {
+    vi.stubGlobal('localStorage', makeMemoryStorage());
+    const dawless = getOrCreateLocalScratchId('dawless');
+    const workflow = getOrCreateLocalScratchId('workflow');
+    resetLocalScratchId('workflow');
+    expect(getOrCreateLocalScratchId('dawless')).toBe(dawless); // untouched
+    expect(getOrCreateLocalScratchId('workflow')).not.toBe(workflow); // reset
+  });
+
+  it('never throws under a hostile localStorage', () => {
+    vi.stubGlobal('localStorage', {
+      setItem: () => {
+        throw new DOMException('denied', 'SecurityError');
+      },
+    } as unknown as Storage);
+    let id!: string;
+    expect(() => {
+      id = resetLocalScratchId('dawless');
+    }).not.toThrow();
+    expect(id).toMatch(/^local-scratch-dawless-.+/);
+  });
+});
+
+describe('last-scratch-mode + readLastScratchRack', () => {
+  it('records and reads back the last opened mode', () => {
+    vi.stubGlobal('localStorage', makeMemoryStorage());
+    expect(readLastScratchMode()).toBeNull();
+    recordLastScratchMode('workflow');
+    expect(readLastScratchMode()).toBe('workflow');
+    recordLastScratchMode('dawless');
+    expect(readLastScratchMode()).toBe('dawless');
+  });
+
+  it('readLastScratchRack is null with no recorded session', () => {
+    vi.stubGlobal('localStorage', makeMemoryStorage());
+    expect(readLastScratchRack()).toBeNull();
+  });
+
+  it('readLastScratchRack is null when a mode is recorded but no id persisted', () => {
+    const storage = makeMemoryStorage();
+    storage.setItem('pt:last-scratch-mode', 'workflow');
+    vi.stubGlobal('localStorage', storage);
+    // No pt:local-scratch-id:workflow present.
+    expect(readLastScratchRack()).toBeNull();
+  });
+
+  it('readLastScratchRack yields the id + reopen href for the last mode', () => {
+    vi.stubGlobal('localStorage', makeMemoryStorage());
+    const wfId = getOrCreateLocalScratchId('workflow');
+    recordLastScratchMode('workflow');
+    expect(readLastScratchRack()).toEqual({
+      mode: 'workflow',
+      id: wfId,
+      href: '/rack?mode=workflow',
+    });
+
+    const dawId = getOrCreateLocalScratchId('dawless');
+    recordLastScratchMode('dawless');
+    expect(readLastScratchRack()).toEqual({ mode: 'dawless', id: dawId, href: '/rack' });
+  });
+});
+
+describe('scratchReplicaDbName', () => {
+  it('builds the pinned replica DB name (mirrors local-replica REPLICA_DB_PREFIX)', () => {
+    expect(scratchReplicaDbName('local-scratch-dawless-abc')).toBe(
+      'pt-rack-v1-local-scratch-dawless-abc',
+    );
+  });
+});
+
+describe('resolveLastScratchRack (IndexedDB-verified)', () => {
+  it('returns null with no recorded session', async () => {
+    vi.stubGlobal('localStorage', makeMemoryStorage());
+    vi.stubGlobal('indexedDB', { databases: async () => [] } as unknown as IDBFactory);
+    await expect(resolveLastScratchRack()).resolves.toBeNull();
+  });
+
+  it('returns the rack when its replica DB is present in IndexedDB', async () => {
+    vi.stubGlobal('localStorage', makeMemoryStorage());
+    const id = getOrCreateLocalScratchId('workflow');
+    recordLastScratchMode('workflow');
+    vi.stubGlobal('indexedDB', {
+      databases: async () => [{ name: scratchReplicaDbName(id) }],
+    } as unknown as IDBFactory);
+    await expect(resolveLastScratchRack()).resolves.toEqual({
+      mode: 'workflow',
+      id,
+      href: '/rack?mode=workflow',
+    });
+  });
+
+  it('returns null when the recorded id has NO replica DB (rack not in memory)', async () => {
+    vi.stubGlobal('localStorage', makeMemoryStorage());
+    getOrCreateLocalScratchId('dawless');
+    recordLastScratchMode('dawless');
+    vi.stubGlobal('indexedDB', {
+      databases: async () => [{ name: 'pt-rack-v1-some-other-rack' }],
+    } as unknown as IDBFactory);
+    await expect(resolveLastScratchRack()).resolves.toBeNull();
+  });
+
+  it('degrades to the localStorage signal when databases() is unavailable', async () => {
+    vi.stubGlobal('localStorage', makeMemoryStorage());
+    const id = getOrCreateLocalScratchId('dawless');
+    recordLastScratchMode('dawless');
+    // No databases() method → cannot enumerate → trust the recorded session.
+    vi.stubGlobal('indexedDB', {} as unknown as IDBFactory);
+    await expect(resolveLastScratchRack()).resolves.toEqual({
+      mode: 'dawless',
+      id,
+      href: '/rack',
+    });
   });
 });

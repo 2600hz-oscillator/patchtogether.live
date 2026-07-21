@@ -13,6 +13,23 @@
   // appears ONLY inside the #8 logo PNG — every CSS color here is
   // black/blue/white.
   import '$lib/styles/house.css';
+  import { onMount } from 'svelte';
+  import { resolveLastScratchRack, type LastScratchRack } from '$lib/storage/local-scratch';
+
+  // "Return to last rack" — CLIENT-ONLY (the page stays prerendered/static; this
+  // reads localStorage + IndexedDB, never auth). Hidden until hydration resolves
+  // a prior scratch session that is actually persisted in IndexedDB; stays hidden
+  // (card absent) when there is none — so the static markup + VRT are unchanged.
+  let lastRack = $state<LastScratchRack | null>(null);
+  onMount(() => {
+    let cancelled = false;
+    void resolveLastScratchRack().then((r) => {
+      if (!cancelled) lastRack = r;
+    });
+    return () => {
+      cancelled = true;
+    };
+  });
 
   // ART + VRT galleries are published to the repo's GitHub Pages site by
   // pages.yml (a SEPARATE deploy from the CF-Pages app). Per owner decision Q4
@@ -122,6 +139,29 @@
        black (CSS mask, pixelated, no animation → VRT-deterministic). -->
   <div class="band band-header" role="presentation" aria-hidden="true"></div>
 
+  {#if lastRack}
+    <!-- Resume the most recent scratch session (client-resolved; hidden when
+         there's no rack in memory). Sits above the tile grid as the first,
+         accented action. -->
+    <div class="shell">
+      <div class="module-grid resume-row">
+        <a
+          class="mod-card tile return-last"
+          href={lastRack.href}
+          data-testid="return-to-last-rack"
+          data-rack-mode={lastRack.mode}
+        >
+          <span class="tile-body">
+            <span class="tile-label">Return to last rack</span>
+            <span class="tile-blurb"
+              >reopen your last {lastRack.mode} session — right where you left it.</span
+            >
+          </span>
+        </a>
+      </div>
+    </div>
+  {/if}
+
   <div class="shell">
     <div class="module-grid tiles" data-testid="landing-tiles">
       {#each tiles as t (t.id)}
@@ -218,6 +258,15 @@
      higher specificity than house.css's global 'a' rule. --- */
   .tiles {
     margin: 20px 0 10px;
+  }
+  /* The resume row sits above the grid; its single card reads as the primary
+     action (accent border by default, not just on hover). */
+  .resume-row {
+    margin: 20px 0 0;
+  }
+  :global(.docs-root a.mod-card.tile.return-last) {
+    border-color: var(--doc-accent);
+    box-shadow: inset 0 0 24px rgba(0, 240, 255, 0.05);
   }
   :global(.docs-root a.mod-card.tile) {
     display: flex;

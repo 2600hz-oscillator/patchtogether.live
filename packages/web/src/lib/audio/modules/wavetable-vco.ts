@@ -84,6 +84,11 @@ export const wavetableVcoDef: AudioModuleDef = {
   label: 'wavetable vco',
   category: 'sources',
 
+  // Chain-role (Design-D declarative override): a DECLARED source. Its audio
+  // inputs (fm / pm) are MODULATION, not a signal-chain insert, so the workflow
+  // column classifier must treat it as a head-eligible SOURCE, not FX.
+  chainWiring: { role: 'source' },
+
   inputs: [
     { id: 'pitch',   type: 'pitch' },
     { id: 'fm',      type: 'audio' },
