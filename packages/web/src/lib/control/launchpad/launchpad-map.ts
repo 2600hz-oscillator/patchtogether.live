@@ -1014,6 +1014,11 @@ export interface REditOpts {
    *  bottom 3 dark) instead of the note grid. `prob` = the note's current 0..1
    *  firing probability. Absent/null = the normal note editor. */
   probView?: { prob: number } | null;
+  /** PER-NOTE PLAY EVERY view (SHIFT + DOUBLE-tap a note): when set the 8×8's TOP
+   *  ROW becomes 8 red pads (play-every 1..8), the current value lit; the rest of
+   *  the grid is dark. `playEvery` = the note's current 1..8 divisor. Absent/null
+   *  = the normal note editor. Takes precedence over `probView`. */
+  playEveryView?: { playEvery: number } | null;
 }
 
 export function computeREditFrame(clip: NoteClipRecord, opts: REditOpts = {}): LaunchpadFrame {
@@ -1023,7 +1028,11 @@ export function computeREditFrame(clip: NoteClipRecord, opts: REditOpts = {}): L
   const page = opts.page ?? 0;
   const playheadStep = opts.playheadStep ?? -1;
   const rootPc = ((clip.root % 12) + 12) % 12;
-  if (opts.probView) {
+  if (opts.playEveryView) {
+    // PLAY-EVERY view: the 8×8's top row is the 8-pad play-every selector; the
+    // grid below is dark. The top-row functions + scene column still paint below.
+    paintPlayEveryBar(frame, opts.playEveryView.playEvery);
+  } else if (opts.probView) {
     // PROB page latched: the 8×8 is the probability bar (top 5 rows) for the held
     // note; the top-row functions + scene column below still paint (so EXIT works).
     paintProbBar(frame, opts.probView.prob);
@@ -1455,6 +1464,29 @@ export function probLevelForOrdinal(k: number): number {
  *  LED paint AND the docs diagram both derive from. */
 export function probLitCount(prob: number): number {
   return valueToProbLevel(prob);
+}
+
+// ── PER-NOTE PLAY EVERY view (owner-spec'd — the sibling of the PROB page,
+// entered by SHIFT + DOUBLE-tap a note). The 8×8's TOP ROW becomes 8 RED pads =
+// play-every 1..8, row-major from the upper-left; the CURRENT setting is lit
+// bright, the rest a faint red so the 8 positions read. A top-row tap sets the
+// note's play-every (setNotePlayEvery); the rest of the grid is dark. ──
+/** A grid pad's 1-indexed PLAY-EVERY value (1..8) over the TOP ROW only
+ *  ((0,7)→1 … (7,7)→8). Every other pad → null. PURE. */
+export function playEveryPadOrdinal(x: number, y: number): number | null {
+  if (x < 0 || x >= LP_WIDTH || y < 0 || y >= LP_HEIGHT) return null;
+  if (LP_HEIGHT - 1 - y !== 0) return null; // top row (rowFromTop 0) only
+  return x + 1; // 1..8
+}
+/** Paint the PLAY-EVERY selector onto a frame's TOP ROW: 8 red pads (play-every
+ *  1..8), the `current` value bright, the rest a faint red; the whole grid below
+ *  stays dark. Mirrors `paintProbBar`. PURE — mutates `frame`. */
+function paintPlayEveryBar(frame: LaunchpadFrame, current: number): void {
+  const cur = Math.max(1, Math.min(LP_WIDTH, Math.round(current)));
+  for (let x = 0; x < LP_WIDTH; x++) {
+    const n = x + 1;
+    put(frame, padNote(x, LP_HEIGHT - 1), n === cur ? RGB_PLAY_EVERY_RED : scaleRgb(RGB_PLAY_EVERY_RED, 0.12));
+  }
 }
 
 /** Paint the 40-level PROBABILITY bar for `prob` onto a frame's 8×8: pads
@@ -2060,6 +2092,10 @@ export interface SingleClipOpts {
    *  bottom 3 dark) instead of the note grid. `prob` = the note's current 0..1
    *  firing probability. Absent/null = the normal note editor. */
   probView?: { prob: number } | null;
+  /** PER-NOTE PLAY EVERY view (SHIFT + DOUBLE-tap a note): when set the 8×8's TOP
+   *  ROW becomes 8 red pads (play-every 1..8), the current value lit; the rest of
+   *  the grid is dark. Takes precedence over `probView`. */
+  playEveryView?: { playEvery: number } | null;
 }
 
 function clipRightRgb(sceneIndex: number, opts: SingleClipOpts, shift: boolean): Rgb {
@@ -2096,7 +2132,11 @@ export function computeSingleClipFrame(clip: NoteClipRecord, opts: SingleClipOpt
   const shift = effShift(opts.top);
   const rootPc = ((clip.root % 12) + 12) % 12;
   const bg: Rgb = velEditing ? RGB_VEL_WASH : RGB_OFF;
-  if (opts.probView) {
+  if (opts.playEveryView) {
+    // PLAY-EVERY view: the 8×8's top row is the 8-pad play-every selector; the
+    // grid below is dark. The clipRight column + permanent top row still paint.
+    paintPlayEveryBar(frame, opts.playEveryView.playEvery);
+  } else if (opts.probView) {
     // PROB page latched: the 8×8 becomes the probability bar (top 5 rows) for the
     // held note; the clipRight column + permanent top row below still paint.
     paintProbBar(frame, opts.probView.prob);
