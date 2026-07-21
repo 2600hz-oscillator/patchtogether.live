@@ -86,12 +86,6 @@ docs/vrt-changeset/
 # GitHub Pages (.github/workflows/art-gallery.yml + pages.yml); never commit it.
 docs/art/
 
-# Test Reconciliation page output — index.html is regenerated at deploy time
-# by scripts/build-test-reconciliation-page.mjs (current counts kept honest in
-# CI). The committed history (changelog.json + CHANGELOG.md) IS tracked; only
-# the generated HTML is ignored.
-docs/test-reconciliation/index.html
-
 # Synthesised test-time artifacts (gitignored on PR #224 too)
 e2e/.generated/
 

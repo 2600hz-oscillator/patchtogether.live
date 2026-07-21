@@ -1,11 +1,18 @@
 #!/usr/bin/env node
 // scripts/test-reconciliation.mjs
 //
-// Test Reconciliation counter — emits a per-test-block tally of TOTAL tests
-// and DISABLED tests across every test block in the repo. Feeds the dated
-// "Test Reconciliation" changelog published to the GitHub Pages site
-// (docs/test-reconciliation/), the user-facing instrument for watching the
-// disabled count fall over time.
+// Test-suite counting ENGINE — a per-test-block tally of TOTAL tests and
+// DISABLED tests across every test block in the repo, plus the exemption-map /
+// Set-literal extractors (extractRecordKeys / extractSetItems) and the itemized
+// disabled inventory (disabledInventory).
+//
+// This is now consumed as a LIBRARY by scripts/test-ledger.mjs — the GENERATED
+// 3-bucket test ledger (docs/testing/test-ledger.generated.md) that replaced the
+// old dated "Test Reconciliation" changelog + its GitHub Pages site (killed in
+// the testing-ledger cleanup: a dated changelog goes stale; a generated,
+// freshness-gated artifact cannot). The standalone `node scripts/test-reconciliation.mjs`
+// CLI below still prints a live human/JSON table on demand, and this file's
+// counting logic is guarded by scripts/test-reconciliation.test.ts.
 //
 //   block        what it counts                                    kind
 //   ───────────  ───────────────────────────────────────────────  ───────────
@@ -211,6 +218,44 @@ function countTests(files) {
   };
 }
 
+/** Itemized companion to countTests(): return EVERY declaration-level disable
+ *  (test.skip / it.skip / test.fixme / test.todo / describe.skip|fixme / .only)
+ *  as { loc, kind, title } for the punch-list ledger. Applies the SAME
+ *  static-vs-runtime-guard-vs-parametrized filter as countTests (a `.skip(cond)`
+ *  runtime guard and a loop-generated interpolated-title placeholder are NOT
+ *  disables), so the itemized list and the count agree by construction.
+ *  Deterministic: files come pre-sorted from walk(), items in in-file order. */
+function disabledInventory(files) {
+  const items = [];
+  for (const file of files) {
+    const src = readFileSync(file, 'utf8');
+    const lineStart = lineStarts(src);
+    let m;
+    CALL_RE.lastIndex = 0;
+    while ((m = CALL_RE.exec(src)) !== null) {
+      const [, fn, mod, open, rest] = m;
+      const firstArgIsString = open === "'" || open === '"' || open === '`';
+      const isInterpolatedTitle = open === '`' && /\$\{/.test(rest);
+      const loc = locate(file, m.index, lineStart);
+      const title = rest.trim();
+      if (fn === 'describe') {
+        if (mod === 'skip' || mod === 'fixme') items.push({ loc, kind: `describe.${mod}`, title });
+        else if (mod === 'only') items.push({ loc, kind: 'describe.only', title });
+        continue;
+      }
+      if (mod === 'skip' || mod === 'fixme') {
+        if (!firstArgIsString) continue; // in-body runtime env-gate, not a disable
+        if (isInterpolatedTitle) continue; // loop-generated parametrized placeholder
+        items.push({ loc, kind: `test.${mod}`, title });
+        continue;
+      }
+      if (mod === 'only') items.push({ loc, kind: 'test.only', title });
+      else if (mod === 'todo') items.push({ loc, kind: 'test.todo', title });
+    }
+  }
+  return items;
+}
+
 function lineStarts(src) {
   const starts = [0];
   for (let i = 0; i < src.length; i++) {
@@ -282,6 +327,37 @@ function extractRecordKeys(src, constName) {
     keys.add(km[2] ?? km[3]);
   }
   return keys;
+}
+
+/** Extract the string members of a `new Set<...>([ 'a', 'b', … ])` literal
+ *  (`const NAME … = new Set<string>([ … ])`) from TS source. Comments are
+ *  stripped first so a quoted word inside a `// …` block comment is never
+ *  mistaken for a member (STRICT_DOCS / EXEMPT_BASELINE_PAIRS / STRICT_VRT_MODULES
+ *  all carry heavy inline commentary). Heuristic but deterministic; the
+ *  exemption files are flat Set literals so it is reliable. Returns a Set. */
+function extractSetItems(src, constName) {
+  const re = new RegExp(`\\b${constName}\\b\\s*(?::[^=]*)?=\\s*new\\s+Set\\b`);
+  const m = re.exec(src);
+  if (!m) return new Set();
+  const open = src.indexOf('[', m.index + m[0].length);
+  if (open === -1) return new Set();
+  let depth = 0;
+  let body = '';
+  for (let i = open; i < src.length; i++) {
+    const ch = src[i];
+    if (ch === '[') depth++;
+    else if (ch === ']') {
+      depth--;
+      if (depth === 0) break;
+    }
+    body += ch;
+  }
+  const clean = body.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  const out = new Set();
+  const strRe = /(['"`])((?:[^'"`\\]|\\.)*?)\1/g;
+  let sm;
+  while ((sm = strRe.exec(clean)) !== null) out.add(sm[2]);
+  return out;
 }
 
 /** VRT enrolment: registry modules minus EXEMPT_FROM_VRT (the per-card sweep
@@ -397,8 +473,10 @@ function resolveDate(argv) {
   return new Date().toISOString().slice(0, 10);
 }
 
-// Exported for the unit test (scripts/test-reconciliation.test.ts).
-export { countTests, extractRecordKeys, countCollab };
+// Exported for the unit test (scripts/test-reconciliation.test.ts) + the
+// generated 3-bucket ledger (scripts/test-ledger.mjs, which reuses this
+// counting engine rather than re-implementing it).
+export { countTests, disabledInventory, extractRecordKeys, extractSetItems, countCollab, walk };
 
 export function reconcile() {
   const unitFiles = walk(join(ROOT, 'packages'), '.test.ts');

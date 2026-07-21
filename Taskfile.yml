@@ -302,11 +302,14 @@ tasks:
       # the package's own config explicitly so the right env/alias is used.
       - |
         case "{{.PKG}}" in
-          web)    DIR=packages/web    CFG=vitest.config.ts ;;
-          dsp)    DIR=packages/dsp    CFG=vitest.config.ts ;;
-          server) DIR=packages/server CFG=vitest.config.ts ;;
-          art)    DIR=art             CFG=vitest.config.ts ;;
-          *) echo "test:one: unknown PKG '{{.PKG}}' (use web|dsp|server|art)"; exit 2 ;;
+          web)     DIR=packages/web    CFG=vitest.config.ts ;;
+          dsp)     DIR=packages/dsp    CFG=vitest.config.ts ;;
+          server)  DIR=packages/server CFG=vitest.config.ts ;;
+          art)     DIR=art             CFG=vitest.config.ts ;;
+          # repo-root scripts/ tooling tests (test-ledger, test-reconciliation,
+          # new-module scaffolder) — run from root via the scripts config, no -w.
+          scripts) DIR=.               CFG=vitest.scripts.config.ts ;;
+          *) echo "test:one: unknown PKG '{{.PKG}}' (use web|dsp|server|art|scripts)"; exit 2 ;;
         esac
         # vitest has no native --repeat-each, so loop. REPEAT defaults to 1
         # (normal single run); REPEAT=3 is the pre-MR flake-check (exit on the
@@ -315,8 +318,13 @@ tasks:
         for r in $(seq 1 "$N"); do
           [ "$N" -gt 1 ] && echo "[test:one] flake-check run $r/$N"
           echo "[test:one] $DIR vitest run {{.CLI_ARGS}}"
-          npm exec -w "$DIR" -- vitest run --config "$CFG" {{.CLI_ARGS}} \
-            || { echo "[test:one] FAILED on run $r/$N (flake or real failure)"; exit 1; }
+          if [ "{{.PKG}}" = scripts ]; then
+            npx vitest run --config "$CFG" {{.CLI_ARGS}} \
+              || { echo "[test:one] FAILED on run $r/$N (flake or real failure)"; exit 1; }
+          else
+            npm exec -w "$DIR" -- vitest run --config "$CFG" {{.CLI_ARGS}} \
+              || { echo "[test:one] FAILED on run $r/$N (flake or real failure)"; exit 1; }
+          fi
         done
 
   test:scripts:
@@ -343,31 +351,25 @@ tasks:
     cmds:
       - npx vitest run src/lib/dev/registry-manifest.test.ts
 
-  test:recon:
+  test:ledger:
     desc: |
-      Test Reconciliation — per-block TOTAL + DISABLED test counts (the
-      "watch disabled fall over time" report). Prints a human table by
-      default; pass `--json` for machine output or `--date YYYY-MM-DD` to
-      override the entry date. Depends on test:emit-manifest so the
-      parametrized (vrt/behavioral) counts reflect the live registry.
-      Examples:
-        task test:recon
-        task test:recon -- --json
-        task test:recon -- --date 2026-06-07
-    deps: [test:emit-manifest]
+      Test ledger — CHECK the generated 3-bucket punch-list
+      (docs/testing/test-ledger.generated.md) against a fresh regeneration,
+      read-only (the same freshness gate CI runs in the `unit` lane). Fails
+      if the committed artifact is stale. Prose + roadmap: docs/testing/README.md.
     cmds:
-      - node scripts/test-reconciliation.mjs {{.CLI_ARGS}}
+      - npx vitest run --config vitest.scripts.config.ts test-ledger
 
-  test:recon:page:
+  test:ledger:accept:
     desc: |
-      Render the Test Reconciliation GitHub Pages page
-      (docs/test-reconciliation/index.html) from the committed changelog
-      history + a freshly-computed live snapshot. Used by the pages.yml
-      deploy; run locally to preview the page. Depends on test:emit-manifest
-      so the live parametrized counts are accurate.
-    deps: [test:emit-manifest]
+      [accept-loop] Re-pin the GENERATED test ledger
+      (docs/testing/test-ledger.generated.md) from the current source tree —
+      run after an INTENTIONAL new skip / exemption / CI-lane change, then
+      review the git diff before committing (a diff = the punch-list moved:
+      accept it, or recognize a bug). The ART/VRT *:update analog for the ledger.
     cmds:
-      - node scripts/build-test-reconciliation-page.mjs {{.CLI_ARGS}}
+      - LEDGER_UPDATE=1 npx vitest run --config vitest.scripts.config.ts test-ledger
+      - 'echo "[test:ledger:accept] re-pinned docs/testing/test-ledger.generated.md — review the git diff before committing"'
 
   # ---------------- Audio Regression Tests ----------------
   art:
