@@ -3,17 +3,19 @@
 // PRESET GENERATOR — the pure heart of the integration.
 //
 // Given a patch snapshot (nodes + edges + a control-surface's bindings) and a
-// ParamDef resolver, produce a deterministic 3-page Electra One preset (.epr
+// ParamDef resolver, produce a deterministic 4-page Electra One preset (.epr
 // JSON) plus an allocation table (key ↔ CC/page/pot). No Web MIDI, no DOM, no
 // Yjs — so the whole thing is snapshot-unit-testable (known patch → expected
 // .epr + allocation table).
 //
-//   Page 1 CONTROL    — the Control Surface's bindings (or a generic node walk),
-//                       grouped by source module, as faders/lists. (control-surface.ts
-//                       groupBindingsByModule order = first-seen.)
-//   Page 2 MIXMASTER  — per-channel mixer controls + a read-only meter row.
-//   Page 3 SYSTEM     — TIMELORDE tempo display + BPM tweak + tap-tempo pad
-//                       (+ optional swing/mute).
+//   Page 1 CONTROL     — the Control Surface's bindings (or a generic node walk),
+//                        grouped by source module, as faders/lists. (control-surface.ts
+//                        groupBindingsByModule order = first-seen.)
+//   Page 2 MIX 1-6     — per-channel mixer controls for the mixer's channels 1..6.
+//   Page 3 MIX 7-8     — per-channel mixer controls for channels 7..8 (bank B of
+//                        the 8-channel mixer, in the page's leftmost columns).
+//   Page 4 SYSTEM      — master volume + the per-channel VU meter row + TIMELORDE
+//                        tempo display + BPM tweak + tap-tempo pad (+ swing/mute).
 //
 // CC / note allocation is sequential + deterministic so a regenerate produces a
 // stable map (feedback.ts and the inbound dispatch both consume the table). The
@@ -114,8 +116,9 @@ export const DEVICE_CTRL = 1; // PT-CTRL, port 2, throttled for meters
 export const DEVICE_PLAY = 2; // PT-PLAY, port 1, note/tap traffic
 
 export const PAGE_CONTROL = 1;
-export const PAGE_MIXMASTER = 2;
-export const PAGE_SYSTEM = 3;
+export const PAGE_MIXMASTER = 2; // MIX 1-6 (bank A)
+export const PAGE_MIXMASTER_B = 3; // MIX 7-8 (bank B) — the 8-channel expansion
+export const PAGE_SYSTEM = 4;
 
 // ── Control LAYOUT grid (FW 3.0.5+, 1024x600 mk2 display) ──────────────────
 // Every control + group REQUIRES an on-screen `bounds` [x,y,w,h]; the firmware
@@ -149,11 +152,14 @@ function boundsForSlotRange(from: number, to: number): [number, number, number, 
   return [minX, minY, maxX - minX, maxY - minY];
 }
 
-/** MIXMSTRS channel count surfaced on the Electra mixer page. The N leftmost
- *  pots of each row map to channels 1..N. NOTE: the audio module is still 4
- *  channels until the 6-channel expansion lands — ch5/ch6 controls render but
- *  are inert (read/write no-op) until then. */
-const MIX_CHANNELS = [1, 2, 3, 4, 5, 6] as const;
+/** MIXMSTRS channel count surfaced on the Electra mixer pages. Channels 1..6
+ *  live on PAGE_MIXMASTER ("MIX 1-6", bank A); channels 7..8 spill onto
+ *  PAGE_MIXMASTER_B ("MIX 7-8", bank B) in that page's leftmost columns. The N
+ *  leftmost pots of each row map to that bank's channels. Matches the audio
+ *  module's 8-channel MIXMSTRS_CHANNELS. */
+const MIX_CHANNELS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
+/** Channels 1..6 on bank A, 7..8 on bank B. */
+const CHANNELS_PER_MIX_PAGE = 6;
 
 // ──────────────────────────── formatter selection ────────────────────────────
 
@@ -348,20 +354,24 @@ export function generatePreset(input: PresetGenInput): GeneratedPreset {
   if (input.mixmstrsId) {
     const mx = input.mixmstrsId;
     // Per-channel mixer grid mapped to the Electra's 3 control sets (2 rows
-    // each). The N LEFTMOST pots of every row = channels 1..N; pots 1-6 = the
-    // top row, 7-12 = the bottom row. MID EQ + COMP are intentionally NOT on
+    // each). The N LEFTMOST pots of every row = that bank's channels; pots 1-6 =
+    // the top row, 7-12 = the bottom row. MID EQ + COMP are intentionally NOT on
     // this page; master volume + the VU meters live on the SYSTEM page.
     //   Set 1: VOL (top, pots 1-6)  | PAN (bottom, pots 7-12) — RESERVED
     //   Set 2: LOW EQ (top)         | HIGH EQ (bottom)
     //   Set 3: SEND1 (top)          | SEND2 (bottom)
+    // With 8 channels the grid spans TWO banks: channels 1..6 fill PAGE_MIXMASTER
+    // ("MIX 1-6"), channels 7..8 land in the leftmost columns of PAGE_MIXMASTER_B
+    // ("MIX 7-8"). `pushMixAt` takes the target pageId so both banks share one
+    // code path (the CC stream stays sequential + page-agnostic).
     const pushMixAt = (
-      paramId: string, label: string, csId: number, potId: number,
+      paramId: string, label: string, pageId: number, csId: number, potId: number,
       min: number, max: number, curve: KnobCurve, units?: string,
     ) => {
       const cc = alloc.nextCc();
       const def: GenParamDef = { id: paramId, label, min, max, defaultValue: 0, curve, units };
       controls.push({
-        id: nextControlId(), pageId: PAGE_MIXMASTER, controlSetId: csId, potId,
+        id: nextControlId(), pageId, controlSetId: csId, potId,
         type: 'fader', name: label,
         inputs: [{ potId, valueId: 'value' }],
         values: [{
@@ -370,17 +380,21 @@ export function generatePreset(input: PresetGenInput): GeneratedPreset {
         }],
       });
       allocations.push({
-        key: `${mx}:${paramId}`, pageId: PAGE_MIXMASTER, controlSetId: csId, potId,
+        key: `${mx}:${paramId}`, pageId, controlSetId: csId, potId,
         deviceId: DEVICE_CTRL, messageType: 'cc7', number: cc, min, max, curve, role: 'rw',
       });
     };
     for (const ch of MIX_CHANNELS) {
-      pushMixAt(`ch${ch}_volume`, `Ch${ch}`, 1, ch, 0, 1, 'linear');            // set 1 top: VOL
-      // PAN → set 1 bottom (pot 6+ch) RESERVED until the module has a pan param.
-      pushMixAt(`ch${ch}_low`, `Lo${ch}`, 2, ch, -12, 12, 'linear', 'dB');       // set 2 top: LOW EQ
-      pushMixAt(`ch${ch}_high`, `Hi${ch}`, 2, 6 + ch, -12, 12, 'linear', 'dB');  // set 2 bottom: HIGH EQ
-      pushMixAt(`ch${ch}_send1`, `S1.${ch}`, 3, ch, 0, 1, 'linear');             // set 3 top: SEND1
-      pushMixAt(`ch${ch}_send2`, `S2.${ch}`, 3, 6 + ch, 0, 1, 'linear');         // set 3 bottom: SEND2
+      // Bank A = channels 1..6 (PAGE_MIXMASTER); bank B = channels 7..8
+      // (PAGE_MIXMASTER_B), landing in columns 1..2 of the new page.
+      const pageId = ch <= CHANNELS_PER_MIX_PAGE ? PAGE_MIXMASTER : PAGE_MIXMASTER_B;
+      const col = ch <= CHANNELS_PER_MIX_PAGE ? ch : ch - CHANNELS_PER_MIX_PAGE;
+      pushMixAt(`ch${ch}_volume`, `Ch${ch}`, pageId, 1, col, 0, 1, 'linear');            // set 1 top: VOL
+      // PAN → set 1 bottom (pot 6+col) RESERVED until the module has a pan param.
+      pushMixAt(`ch${ch}_low`, `Lo${ch}`, pageId, 2, col, -12, 12, 'linear', 'dB');       // set 2 top: LOW EQ
+      pushMixAt(`ch${ch}_high`, `Hi${ch}`, pageId, 2, 6 + col, -12, 12, 'linear', 'dB');  // set 2 bottom: HIGH EQ
+      pushMixAt(`ch${ch}_send1`, `S1.${ch}`, pageId, 3, col, 0, 1, 'linear');             // set 3 top: SEND1
+      pushMixAt(`ch${ch}_send2`, `S2.${ch}`, pageId, 3, 6 + col, 0, 1, 'linear');         // set 3 bottom: SEND2
     }
   }
 
@@ -549,9 +563,10 @@ export function generatePreset(input: PresetGenInput): GeneratedPreset {
   // Per-page accent colours (valid Electra palette hex). Every control in a
   // real preset carries a colour; a colorless control can fail to render.
   const PAGE_COLOR: Record<number, string> = {
-    [PAGE_CONTROL]: '529DEC',   // blue
-    [PAGE_MIXMASTER]: '03A598', // teal
-    [PAGE_SYSTEM]: 'F49500',    // orange
+    [PAGE_CONTROL]: '529DEC',     // blue
+    [PAGE_MIXMASTER]: '03A598',   // teal
+    [PAGE_MIXMASTER_B]: '03A598', // teal (same family as bank A)
+    [PAGE_SYSTEM]: 'F49500',      // orange
   };
   for (const c of controls) {
     // Defensively clamp EVERY emitted control name to the device's ~14-char
@@ -598,7 +613,8 @@ export function generatePreset(input: PresetGenInput): GeneratedPreset {
 
   const pages: ElectraPage[] = [
     { id: PAGE_CONTROL, name: 'CONTROL', defaultControlSetId: 1 },
-    { id: PAGE_MIXMASTER, name: 'MIXMSTRS', defaultControlSetId: 1 },
+    { id: PAGE_MIXMASTER, name: 'MIX 1-6', defaultControlSetId: 1 },
+    { id: PAGE_MIXMASTER_B, name: 'MIX 7-8', defaultControlSetId: 1 },
     { id: PAGE_SYSTEM, name: 'SYSTEM', defaultControlSetId: 1 },
   ];
   const devices: ElectraDevice[] = [

@@ -18,6 +18,7 @@ import {
   DEVICE_PLAY,
   PAGE_CONTROL,
   PAGE_MIXMASTER,
+  PAGE_MIXMASTER_B,
   PAGE_SYSTEM,
   type PresetGenInput,
   type GenParamDef,
@@ -172,12 +173,12 @@ describe('generatePreset — CONTROL page control colour (source passthrough)', 
 });
 
 describe('generatePreset — pages + devices', () => {
-  it('emits version 2, three pages, two devices', () => {
+  it('emits version 2, four pages, two devices', () => {
     const { preset } = generatePreset(baseInput());
     expect(preset.version).toBe(2);
     expect(preset.name).toBe('patchtogether');
-    expect(preset.pages.map((p) => p.id)).toEqual([PAGE_CONTROL, PAGE_MIXMASTER, PAGE_SYSTEM]);
-    expect(preset.pages.map((p) => p.name)).toEqual(['CONTROL', 'MIXMSTRS', 'SYSTEM']);
+    expect(preset.pages.map((p) => p.id)).toEqual([PAGE_CONTROL, PAGE_MIXMASTER, PAGE_MIXMASTER_B, PAGE_SYSTEM]);
+    expect(preset.pages.map((p) => p.name)).toEqual(['CONTROL', 'MIX 1-6', 'MIX 7-8', 'SYSTEM']);
     const ctrl = preset.devices.find((d) => d.id === DEVICE_CTRL)!;
     expect(ctrl).toMatchObject({ name: 'PT-CTRL', port: 2, channel: 1, rate: 33 });
     const play = preset.devices.find((d) => d.id === DEVICE_PLAY)!;
@@ -336,32 +337,48 @@ describe('generatePreset — control bounds (render placement)', () => {
   });
 });
 
-describe('generatePreset — MIXMASTER page', () => {
-  it('emits a per-channel grid (vol/low/high/send1/send2 × 6 ch) on the 3 control sets', () => {
+describe('generatePreset — MIXMASTER pages (bank A 1-6 + bank B 7-8)', () => {
+  it('emits a per-channel grid (vol/low/high/send1/send2 × 8 ch) across BOTH mix banks', () => {
     const { preset, allocations } = generatePreset(baseInput());
-    const mixAll = allocations.filter((a) => a.pageId === PAGE_MIXMASTER);
+    // The mixer grid now spans two banks: MIX 1-6 (PAGE_MIXMASTER) + MIX 7-8
+    // (PAGE_MIXMASTER_B). Count both.
+    const mixAll = allocations.filter(
+      (a) => a.pageId === PAGE_MIXMASTER || a.pageId === PAGE_MIXMASTER_B,
+    );
     const rw = mixAll.filter((a) => a.role === 'rw');
-    expect(rw.length).toBe(30); // 6 ch × (vol + low + high + send1 + send2)
-    // Meters live on SYSTEM now, not the mix page.
+    expect(rw.length).toBe(40); // 8 ch × (vol + low + high + send1 + send2)
+    // Bank A holds channels 1..6 (30 rw), bank B holds channels 7..8 (10 rw).
+    expect(allocations.filter((a) => a.pageId === PAGE_MIXMASTER && a.role === 'rw')).toHaveLength(30);
+    expect(allocations.filter((a) => a.pageId === PAGE_MIXMASTER_B && a.role === 'rw')).toHaveLength(10);
+    // Meters live on SYSTEM now, not the mix pages.
     expect(mixAll.filter((a) => a.role === 'meter')).toHaveLength(0);
     // Grid placement: vol → set1 (pots 1-6); low → set2 top, high → set2 bottom;
-    // send1 → set3 top, send2 → set3 bottom (the N leftmost pots = ch 1..N).
+    // send1 → set3 top, send2 → set3 bottom (the N leftmost pots = the bank's ch).
     const byKey = Object.fromEntries(rw.map((a) => [a.key, a]));
-    expect(byKey['mx:ch1_volume']).toMatchObject({ controlSetId: 1, potId: 1 });
-    expect(byKey['mx:ch4_volume']).toMatchObject({ controlSetId: 1, potId: 4 });
-    expect(byKey['mx:ch1_low']).toMatchObject({ controlSetId: 2, potId: 1 });
-    expect(byKey['mx:ch1_high']).toMatchObject({ controlSetId: 2, potId: 7 });
-    expect(byKey['mx:ch1_send1']).toMatchObject({ controlSetId: 3, potId: 1 });
-    expect(byKey['mx:ch1_send2']).toMatchObject({ controlSetId: 3, potId: 7 });
-    // EQ controls carry the fmtDb formatter; MID EQ + COMP are NOT on this page.
+    expect(byKey['mx:ch1_volume']).toMatchObject({ pageId: PAGE_MIXMASTER, controlSetId: 1, potId: 1 });
+    expect(byKey['mx:ch4_volume']).toMatchObject({ pageId: PAGE_MIXMASTER, controlSetId: 1, potId: 4 });
+    expect(byKey['mx:ch1_low']).toMatchObject({ pageId: PAGE_MIXMASTER, controlSetId: 2, potId: 1 });
+    expect(byKey['mx:ch1_high']).toMatchObject({ pageId: PAGE_MIXMASTER, controlSetId: 2, potId: 7 });
+    expect(byKey['mx:ch1_send1']).toMatchObject({ pageId: PAGE_MIXMASTER, controlSetId: 3, potId: 1 });
+    expect(byKey['mx:ch1_send2']).toMatchObject({ pageId: PAGE_MIXMASTER, controlSetId: 3, potId: 7 });
+    // Bank B: channels 7 & 8 land in columns 1 & 2 of PAGE_MIXMASTER_B.
+    expect(byKey['mx:ch7_volume']).toMatchObject({ pageId: PAGE_MIXMASTER_B, controlSetId: 1, potId: 1 });
+    expect(byKey['mx:ch8_volume']).toMatchObject({ pageId: PAGE_MIXMASTER_B, controlSetId: 1, potId: 2 });
+    expect(byKey['mx:ch7_low']).toMatchObject({ pageId: PAGE_MIXMASTER_B, controlSetId: 2, potId: 1 });
+    expect(byKey['mx:ch7_high']).toMatchObject({ pageId: PAGE_MIXMASTER_B, controlSetId: 2, potId: 7 });
+    expect(byKey['mx:ch8_send1']).toMatchObject({ pageId: PAGE_MIXMASTER_B, controlSetId: 3, potId: 2 });
+    expect(byKey['mx:ch8_send2']).toMatchObject({ pageId: PAGE_MIXMASTER_B, controlSetId: 3, potId: 8 });
+    // EQ controls carry the fmtDb formatter; MID EQ + COMP are NOT on these pages.
     expect(preset.controls.find((c) => c.name === 'Lo1')!.values[0]!.formatter).toBe('fmtDb');
     expect(rw.some((a) => /_mid$/.test(a.key) || /:comp/.test(a.key))).toBe(false);
   });
 
-  it('omits MixMaster controls when no mixer is present (page shell only)', () => {
+  it('omits MixMaster controls when no mixer is present (page shells only)', () => {
     const { preset } = generatePreset(baseInput({ mixmstrsId: null }));
     expect(preset.controls.filter((c) => c.pageId === PAGE_MIXMASTER)).toHaveLength(0);
+    expect(preset.controls.filter((c) => c.pageId === PAGE_MIXMASTER_B)).toHaveLength(0);
     expect(preset.pages.find((p) => p.id === PAGE_MIXMASTER)).toBeDefined();
+    expect(preset.pages.find((p) => p.id === PAGE_MIXMASTER_B)).toBeDefined();
   });
 
   it('puts master volume + the VU meters on the SYSTEM page (master is the odd duck)', () => {
@@ -371,7 +388,7 @@ describe('generatePreset — MIXMASTER page', () => {
     const meters = sys.filter((a) => a.role === 'meter');
     expect(meters.map((a) => a.key)).toEqual([
       'mx:meter:master', 'mx:meter:1', 'mx:meter:2', 'mx:meter:3',
-      'mx:meter:4', 'mx:meter:5', 'mx:meter:6',
+      'mx:meter:4', 'mx:meter:5', 'mx:meter:6', 'mx:meter:7', 'mx:meter:8',
     ]);
     expect(meters.every((a) => a.controlSetId === 3)).toBe(true);
   });

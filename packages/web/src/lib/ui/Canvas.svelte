@@ -24,7 +24,6 @@
   import {
     coerceAutoAssign,
     laneColorEff as autoLaneColorEff,
-    assignedLaneOfModule,
     scrubClipPlayerTransientData,
     CLIP_LANES as AUTO_CLIP_LANES,
     type ClipPlayerData as AutoClipPlayerData,
@@ -33,6 +32,7 @@
     listClipPlayers,
     assignAutomationLane,
     removeAutomationAssignment,
+    automationAssignmentFor,
     pruneAllAutoAssignDangling,
     repairDuplicateAutoAssign,
   } from '$lib/graph/automation-assign';
@@ -41,10 +41,27 @@
     isMixerEligible,
     planClipControl,
     planSendToMixer,
-    CLIP_CHANNEL_COUNT,
-    MIXER_CHANNEL_COUNT,
   } from '$lib/graph/patch-convenience';
-  import { setControlColor, setNodeLocked } from '$lib/graph/mutate';
+  import {
+    reconcileColumns,
+    PINNED_MIXER_ID as WCOL_MIXER_ID,
+    PINNED_CLIP_ID as WCOL_CLIP_ID,
+    type ColumnDefResolver,
+  } from '$lib/graph/column-reconcile';
+  import {
+    COLUMN_COUNT,
+    SEND_BOX_COUNT,
+    columnForFlowX,
+    sendBoxForFlowX,
+    sendMemberPos,
+    indexForDropY,
+    insertBottom,
+    removeFrom,
+    reorder,
+    columnMemberPos,
+    COLUMN_SLOT_H,
+  } from '$lib/graph/channel-columns';
+  import { setControlColor, setNodeLocked, setNodeParam } from '$lib/graph/mutate';
   import { snapPositionToGrid, findFreeRackSlot, RACK_UNIT, type RackRect } from '$lib/ui/rack-grid';
   import { resolveControlColor } from '$lib/graph/control-color';
   import {
@@ -275,6 +292,7 @@
   import { audioLatencyStore, type AudioLatencyMode } from '$lib/ui/audio-latency-store.svelte';
   import FlowBridge, { type FlowBridgeApi, type InternalFlowNode } from '$lib/ui/FlowBridge.svelte';
   import CadillacOverlay from '$lib/ui/CadillacOverlay.svelte';
+  import ChannelColumnsOverlay from '$lib/ui/ChannelColumnsOverlay.svelte';
   import PickupCable from '$lib/ui/PickupCable.svelte';
   import { organizeLayout, type Box } from '$lib/ui/canvas/organize';
   import type { CableType, Edge, PortDef, ModuleNode } from '$lib/graph/types';
@@ -514,6 +532,21 @@
       // cap-enforcement tests in particular.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__spawnFromPalette = spawnFromPalette;
+      // Workflow channel-columns e2e: set the flow-space spawn anchor so the
+      // NEXT __spawnFromPalette lands inside a specific column / send band
+      // (exercises the REAL wcolDropTarget → membership + order + reconcile
+      // path, not just a raw graph write).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__setSpawnFlowPos = (p: { x: number; y: number }) => {
+        spawnFlowPos = { x: p.x, y: p.y };
+      };
+      // Workflow channel-columns e2e: drive the SvelteFlow drag-stop seam
+      // directly (the same {targetNode, nodes} payload onnodedragstop passes)
+      // so a test can DROP a card into a column band without synthesizing a
+      // pixel-perfect pointer drag.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__handleNodeDragStop = (payload: { targetNode: FlowNode | null; nodes: FlowNode[] }) =>
+        handleNodeDragStop(payload);
       // Drag-lock state for e2e — patch-menus-persist tests inspect this
       // to confirm the lock engaged + released at the right moments.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1396,15 +1429,30 @@
     return out;
   }
 
+  // Viewport tick for the workflow channel-columns overlay — re-projects its
+  // flow-space bands to screen on every pan/zoom (workflow racks only).
+  let wcolViewportTick = $state(0);
   function onViewportMoveStart(): void {
     dockPanTails = buildDockPanTails();
   }
   function onViewportMove(): void {
     if (dockPanTails.length > 0) dockPanTick++;
+    if (workflowMode) wcolViewportTick++;
   }
   function onViewportMoveEnd(): void {
     if (dockPanTails.length > 0) dockPanTails = [];
+    if (workflowMode) wcolViewportTick++;
   }
+
+  /** The 8 channel colours for the overlay column badges — the canonical clip-
+   *  player's per-lane automation colours (the single source of truth for
+   *  channel colour). Recomputed on graph change. */
+  let wcolColumnColors = $derived.by<string[]>(() => {
+    void snapshot;
+    const clip = wcolCanonClip();
+    const data = clip ? (patch.nodes[clip]?.data as AutoClipPlayerData | undefined) : undefined;
+    return Array.from({ length: COLUMN_COUNT }, (_, lane) => autoLaneColorEff(data, lane));
+  });
 
   let bottomRailCards = $derived.by(() => {
     const docked = railCards('bottom');
@@ -1614,6 +1662,28 @@
         }
       }
     }
+    // WORKFLOW CHANNEL COLUMNS: a member's on-screen slot is COMPUTED from its
+    // index in the column/send ORDER array (position = render output). So the
+    // visual column always matches the DSP chain, a drag-nudge can never reorder
+    // it, and per-user free layouts don't apply to column members. Built once per
+    // pass from the pinned mixer's order manifest; dawless racks skip it entirely.
+    const wcolPosByNode = new Map<string, { x: number; y: number }>();
+    if (workflowMode) {
+      const mixer = snap.nodes.find((m) => m.id === WCOL_MIXER_ID);
+      const md = mixer?.data as
+        | { columns?: Record<string, string[]>; sends?: Record<string, string[]> }
+        | undefined;
+      const cols = md?.columns ?? {};
+      const sends = md?.sends ?? {};
+      for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
+        const order = cols[String(ch)] ?? [];
+        order.forEach((id, i) => wcolPosByNode.set(id, columnMemberPos(ch, i, order.length)));
+      }
+      for (let s = 1; s <= SEND_BOX_COUNT; s++) {
+        const order = sends[String(s)] ?? [];
+        order.forEach((id, i) => wcolPosByNode.set(id, sendMemberPos(s, i, order.length)));
+      }
+    }
     for (const n of snap.nodes) {
       // Skip children belonging to a collapsed group — the group card
       // stands in for them visually. Phase 2 will flip to inline-rendering
@@ -1635,7 +1705,12 @@
       // Per-user layouts: getNodePosition returns the user's override
       // (when in multiplayer) or falls back to n.position (when single-
       // user OR when this user has no entry yet).
-      const resolved = getNodePosition(ydoc, currentUserId, n.id, { x: n.position.x, y: n.position.y });
+      // Column/send members: position is DERIVED from the order array (above),
+      // overriding the free/per-user position. Non-members fall back to the
+      // normal per-user layout resolution.
+      const resolved =
+        wcolPosByNode.get(n.id) ??
+        getNodePosition(ydoc, currentUserId, n.id, { x: n.position.x, y: n.position.y });
       const isTop = top === n.id;
       // DOCKING P2.5a: a docked node renders as a small DockStubCard IN ITS
       // PLACE — same node id, so every cable stays attached natively. The
@@ -3285,7 +3360,15 @@
     if (payload.nodes.length === 0 && payload.edges.length === 0) return;
     ydoc.transact(() => {
       for (const e of payload.edges) {
-        if (patch.edges[e.id]) delete patch.edges[e.id];
+        const live = patch.edges[e.id];
+        // MAJOR 1: an EXPLICIT user deletion of a managed (wcol-) cable durably
+        // suppresses it (+ its stereo/control-pair siblings via the reconcile's
+        // all-or-nothing yield) until the next deliberate column edit.
+        if (live && workflowMode && e.id.startsWith('wcol-e-')) {
+          const colKey = wcolEdgeColumnKey(live);
+          if (colKey) wcolMarkDetached(e.id, colKey);
+        }
+        if (live) delete patch.edges[e.id];
       }
       for (const n of payload.nodes) {
         // Pinned drawer singletons never render as flow nodes, so they
@@ -3337,14 +3420,91 @@
     if (topNodeId && !moved.some((n) => n.id === topNodeId)) {
       topNodeId = null;
     }
+
+    // WORKFLOW CHANNEL COLUMNS: a drag RE-TARGETS membership + order. Because a
+    // member's position is DERIVED from its array index (position = render
+    // output), we update the ORDER array — not the free position — so a reorder
+    // snaps to list order and a cross-column drag re-assigns the channel. A drag
+    // OUT of every band unassigns (retract membership → the reconcile prunes its
+    // wcol edges). Non-member drags fall through to the normal position write.
+    if (workflowMode && patch.nodes[WCOL_MIXER_ID]) {
+      const stillMember = new Set<string>();
+      const laneReassign: { id: string; ch: number }[] = [];
+      ydoc.transact(() => {
+        for (const n of moved) {
+          const node = patch.nodes[n.id];
+          if (!node || isPinnedNode(node) || n.id === WCOL_MIXER_ID || n.id === WCOL_CLIP_ID) continue;
+          const d = node.data as { channel?: number; sendSlot?: number } | undefined;
+          const oldCh = typeof d?.channel === 'number' ? d.channel : null;
+          const oldSlot = typeof d?.sendSlot === 'number' ? d.sendSlot : null;
+          const band = columnForFlowX(n.position.x);
+          const dropCenterY = n.position.y + COLUMN_SLOT_H / 2;
+          if (typeof band === 'number') {
+            if (oldCh === band) {
+              // Reorder within the same column: index from the drop Y.
+              const order = wcolOrder('columns', band);
+              const sibs = order.filter((id) => id !== n.id);
+              const centers = sibs.map((_, i) => columnMemberPos(band, i, sibs.length).y + COLUMN_SLOT_H / 2);
+              setWcolOrder('columns', band, reorder(order, n.id, indexForDropY(centers, dropCenterY)));
+              wcolClearDetached(String(band));
+            } else {
+              // Move into column `band` from another column / send / free canvas.
+              if (oldCh != null) { setWcolOrder('columns', oldCh, removeFrom(wcolOrder('columns', oldCh), n.id)); wcolClearDetached(String(oldCh)); }
+              if (oldSlot != null) { setWcolOrder('sends', oldSlot, removeFrom(wcolOrder('sends', oldSlot), n.id)); wcolClearDetached('s' + oldSlot); }
+              setWcolMembership(n.id, band, null);
+              setWcolOrder('columns', band, insertBottom(wcolOrder('columns', band), n.id));
+              wcolClearDetached(String(band));
+              laneReassign.push({ id: n.id, ch: band });
+            }
+            stillMember.add(n.id);
+          } else if (band === 'send') {
+            const slot = sendBoxForFlowX(n.position.x);
+            if (oldSlot === slot) {
+              const order = wcolOrder('sends', slot);
+              const sibs = order.filter((id) => id !== n.id);
+              const centers = sibs.map((_, i) => sendMemberPos(slot, i, sibs.length).y + COLUMN_SLOT_H / 2);
+              setWcolOrder('sends', slot, reorder(order, n.id, indexForDropY(centers, dropCenterY)));
+              wcolClearDetached('s' + slot);
+            } else {
+              if (oldCh != null) { setWcolOrder('columns', oldCh, removeFrom(wcolOrder('columns', oldCh), n.id)); wcolClearDetached(String(oldCh)); }
+              if (oldSlot != null) { setWcolOrder('sends', oldSlot, removeFrom(wcolOrder('sends', oldSlot), n.id)); wcolClearDetached('s' + oldSlot); }
+              setWcolMembership(n.id, null, slot);
+              setWcolOrder('sends', slot, insertBottom(wcolOrder('sends', slot), n.id));
+              wcolClearDetached('s' + slot);
+            }
+            stillMember.add(n.id);
+          } else {
+            // Dragged OUT to free canvas → unassign. Fall through to the position
+            // write below so the card stays where it was dropped.
+            if (oldCh != null) { setWcolOrder('columns', oldCh, removeFrom(wcolOrder('columns', oldCh), n.id)); wcolClearDetached(String(oldCh)); }
+            if (oldSlot != null) { setWcolOrder('sends', oldSlot, removeFrom(wcolOrder('sends', oldSlot), n.id)); wcolClearDetached('s' + oldSlot); }
+            if (oldCh != null || oldSlot != null) setWcolMembership(n.id, null, null);
+          }
+        }
+      }, LOCAL_ORIGIN);
+      // A cross-column move re-assigns the automation lane to the new channel.
+      for (const { id, ch } of laneReassign) {
+        const clip = wcolCanonClip();
+        if (clip) assignAutomationLane(clip, id, ch - 1);
+      }
+      // Position writes ONLY for nodes NOT held as column/send members (theirs
+      // is derived from the array). Members that stayed members get no write.
+      const freeMoved = moved.filter((n) => !stillMember.has(n.id));
+      if (freeMoved.length) writeMovedPositions(freeMoved);
+      return;
+    }
+
+    writeMovedPositions(moved);
+  }
+
+  /** Persist dragged node positions through the dual-path (per-user layout map in
+   *  multiplayer, shared node.position single-user) — the pre-workflow behavior. */
+  function writeMovedPositions(moved: FlowNode[]): void {
     ydoc.transact(() => {
       for (const n of moved) {
         if (currentUserId) {
-          // Multi-user: write to per-user layout map only.
           setNodePosition(ydoc, currentUserId, n.id, { x: n.position.x, y: n.position.y });
         } else {
-          // Single-user: write to the shared node.position (preserves
-          // backward compat with patches saved pre-layouts-split).
           const target = patch.nodes[n.id];
           if (target) {
             target.position = { x: n.position.x, y: n.position.y };
@@ -3521,104 +3681,87 @@
     return typeof (n?.data as { controlColor?: unknown } | undefined)?.controlColor === 'string';
   });
 
-  // MODULE-level clip automation (owner-locked model): the right-clicked
-  // MODULE can be assigned to one of a clip-player's 8 automation lanes.
-  // One entry per clip-player in the rack (usually one); each carries the 8
-  // lane colour swatches + THIS module's current lane on that player.
-  let ctxMenuAutomationTargets = $derived.by<
-    Array<{ nodeId: string; name: string; lanes: Array<{ lane: number; color: string }>; assignedLane: number | null }>
-  >(() => {
+  // WORKFLOW "Assign to channel N" (the three separate right-clicks folded into
+  // ONE channel-indexed action). The CANONICAL clip-player + mixmstrs (lowest
+  // node id — the deterministic tie-break the assignment reads use) are the
+  // targets: channel N means automation lane N + clip channel N (both on the
+  // canonical clip-player) + mixer channel N (on the canonical mixmstrs).
+  let ctxMenuCanonClipPlayer = $derived.by<string | null>(() => {
+    void snapshot;
+    return listClipPlayers(patch.nodes).sort()[0] ?? null;
+  });
+  let ctxMenuCanonMixer = $derived.by<string | null>(() => {
+    void snapshot;
+    const mid = ctxMenuNodeId;
+    const mixers = Object.entries(patch.nodes)
+      .filter(([nid, node]) => node?.type === 'mixmstrs' && nid !== mid)
+      .map(([nid]) => nid)
+      .sort();
+    return mixers[0] ?? null;
+  });
+
+  // The per-channel COLOURS (length = 8) of the canonical clip-player — each
+  // channel button is tinted by its colour, which IS the automation-lane colour
+  // (the per-channel clip colour). Empty ⇒ the whole assignment section is
+  // hidden (no clip-player in the rack to hold the automation assignment).
+  // Not offered for groups, clip-players themselves, or dock stubs.
+  let ctxMenuChannelColors = $derived.by<string[]>(() => {
     void snapshot;
     const mid = ctxMenuNodeId;
     if (!mid) return [];
     const n = patch.nodes[mid];
-    // Not for groups (their params live on child modules), clip-players
-    // themselves, or dock stubs of deleted nodes.
     if (!n || n.type === 'group' || n.type === 'clipplayer') return [];
-    const out: Array<{ nodeId: string; name: string; lanes: Array<{ lane: number; color: string }>; assignedLane: number | null }> = [];
-    for (const nid of listClipPlayers(patch.nodes).sort()) {
-      const data = patch.nodes[nid]?.data as AutoClipPlayerData | undefined;
-      const label = (patch.nodes[nid]?.data as { label?: unknown } | undefined)?.label;
-      out.push({
-        nodeId: nid,
-        name: typeof label === 'string' && label ? label : 'clip player',
-        lanes: Array.from({ length: AUTO_CLIP_LANES }, (_, lane) => ({
-          lane,
-          color: autoLaneColorEff(data, lane),
-        })),
-        assignedLane: assignedLaneOfModule(data, mid),
-      });
-    }
-    return out;
+    const player = ctxMenuCanonClipPlayer;
+    if (!player) return [];
+    const data = patch.nodes[player]?.data as AutoClipPlayerData | undefined;
+    return Array.from({ length: AUTO_CLIP_LANES }, (_, lane) => autoLaneColorEff(data, lane));
   });
-  let ctxMenuAutomationAssigned = $derived(
-    ctxMenuAutomationTargets.some((t) => t.assignedLane !== null),
-  );
-
-  // WORKFLOW patch-convenience: "Control from ▸ Clip N" appears when the
-  // right-clicked module is a playable INSTRUMENT (isClipEligible, computed
-  // procedurally from its port def — no allow-list) AND a clip-player exists.
-  let ctxMenuClipControlTargets = $derived.by<Array<{ nodeId: string; name: string; channels: number }>>(() => {
+  // THIS module's current automation lane (0-based) on ANY clip-player (lowest
+  // id wins), or null — drives the ✓ + "Remove automation assignment".
+  let ctxMenuAssignedChannel = $derived.by<number | null>(() => {
     void snapshot;
     const mid = ctxMenuNodeId;
-    if (!mid) return [];
-    const n = patch.nodes[mid];
-    if (!n || n.type === 'group') return [];
-    const def = defLookup(n.type);
-    if (!def || !isClipEligible(def)) return [];
-    const out: Array<{ nodeId: string; name: string; channels: number }> = [];
-    for (const nid of listClipPlayers(patch.nodes).sort()) {
-      const label = (patch.nodes[nid]?.data as { label?: unknown } | undefined)?.label;
-      out.push({
-        nodeId: nid,
-        name: typeof label === 'string' && label ? label : 'clip player',
-        channels: CLIP_CHANNEL_COUNT,
-      });
-    }
-    return out;
+    if (!mid) return null;
+    return automationAssignmentFor(patch.nodes, mid)?.lane ?? null;
   });
-
-  // WORKFLOW patch-convenience: "Send to ▸ MixMaster chN" appears when the
-  // module has a main audio out (isMixerEligible) AND a mixmstrs exists.
-  let ctxMenuMixerTargets = $derived.by<Array<{ nodeId: string; name: string; channels: number }>>(() => {
+  // Whether "Assign to channel N" will ALSO wire clip-control / send-to-mixer —
+  // computed procedurally from the port def (no allow-list). Gate the mixer part
+  // on a mixmstrs existing so the hint is truthful.
+  let ctxMenuClipEligible = $derived.by<boolean>(() => {
     void snapshot;
     const mid = ctxMenuNodeId;
-    if (!mid) return [];
-    const n = patch.nodes[mid];
-    if (!n || n.type === 'group') return [];
+    const n = mid ? patch.nodes[mid] : undefined;
+    if (!n || n.type === 'group') return false;
     const def = defLookup(n.type);
-    if (!def || !isMixerEligible(def)) return [];
-    const out: Array<{ nodeId: string; name: string; channels: number }> = [];
-    for (const [nid, node] of Object.entries(patch.nodes)) {
-      if (!node || node.type !== 'mixmstrs' || nid === mid) continue;
-      const label = (node.data as { label?: unknown } | undefined)?.label;
-      out.push({
-        nodeId: nid,
-        name: typeof label === 'string' && label ? label : 'mixmaster',
-        channels: MIXER_CHANNEL_COUNT,
-      });
-    }
-    return out.sort((a, b) => a.nodeId.localeCompare(b.nodeId));
+    return !!def && isClipEligible(def);
+  });
+  let ctxMenuMixerEligible = $derived.by<boolean>(() => {
+    void snapshot;
+    const mid = ctxMenuNodeId;
+    const n = mid ? patch.nodes[mid] : undefined;
+    if (!n || n.type === 'group' || !ctxMenuCanonMixer) return false;
+    const def = defLookup(n.type);
+    return !!def && isMixerEligible(def);
   });
 
-  /** Write a set of pre-planned convenience edges in ONE undo step. Each edge's
-   *  types are re-resolved from the live defs (honouring exposed ports); an
-   *  edge already present on a target port is replaced (occupancy). Unlike
+  /** Write a set of pre-planned, node-qualified convenience edges in ONE undo
+   *  step. Each edge carries its own source/target node ids (so clip-control and
+   *  send-to-mixer edges — different node pairs — batch into one transaction).
+   *  Types are re-resolved from the live defs (honouring exposed ports); an edge
+   *  already present on a target port is replaced (occupancy). Unlike
    *  commitCarriedEdge this does NOT auto-fire writeStereoSiblingEdge — the plan
    *  is already explicit (mono→mixer emits both L and R itself). */
   function commitConvenienceEdges(
-    edges: Array<{ fromPortId: string; toPortId: string }>,
-    sourceNodeId: string,
-    targetNodeId: string,
+    edges: Array<{ sourceNodeId: string; fromPortId: string; targetNodeId: string; toPortId: string }>,
   ): void {
-    const srcNode = patch.nodes[sourceNodeId];
-    const dstNode = patch.nodes[targetNodeId];
-    if (!srcNode || !dstNode) return;
-    const srcDef = defLookup(srcNode.type);
-    const dstDef = defLookup(dstNode.type);
-    if (!srcDef || !dstDef) return;
     const planned = edges
-      .map(({ fromPortId, toPortId }) => {
+      .map(({ sourceNodeId, fromPortId, targetNodeId, toPortId }): Edge | null => {
+        const srcNode = patch.nodes[sourceNodeId];
+        const dstNode = patch.nodes[targetNodeId];
+        if (!srcNode || !dstNode) return null;
+        const srcDef = defLookup(srcNode.type);
+        const dstDef = defLookup(dstNode.type);
+        if (!srcDef || !dstDef) return null;
         const srcExposed = resolveExposedPort(srcNode, fromPortId);
         const dstExposed = resolveExposedPort(dstNode, toPortId);
         const srcPort = srcDef.outputs.find((p) => p.id === fromPortId);
@@ -3626,15 +3769,15 @@
         const sourceType: CableType = srcExposed?.cableType ?? srcPort?.type ?? 'audio';
         const targetType: CableType = dstExposed?.cableType ?? dstPort?.type ?? sourceType;
         const id = `e-${sourceNodeId}-${fromPortId}-${targetNodeId}-${toPortId}`;
-        const edge: Edge = {
+        return {
           id,
           source: { nodeId: sourceNodeId, portId: fromPortId },
           target: { nodeId: targetNodeId, portId: toPortId },
           sourceType,
           targetType,
         };
-        return edge;
       })
+      .filter((edge): edge is Edge => edge !== null)
       .filter((edge) =>
         validateEdge(edge, Object.values(patch.nodes) as ModuleNode[], defLookup).ok,
       );
@@ -3656,30 +3799,53 @@
     }, LOCAL_ORIGIN);
   }
 
-  /** "Control from ▸ Clip N" — wire the clip channel's pitch/poly (+ gate) into
-   *  the right-clicked instrument, per its port shape. */
-  function commitControlFromClip(clipPlayerNodeId: string, channel: number): void {
-    const mid = ctxMenuNodeId;
-    if (!mid) return;
-    const node = patch.nodes[mid];
-    const def = node && defLookup(node.type);
-    if (!def) return;
-    const plan = planClipControl(def, channel + 1); // plan is 1-based
-    if (!plan) return;
-    commitConvenienceEdges(plan, clipPlayerNodeId, mid);
+  /** Qualify a per-plan edge list (fromPortId/toPortId) with a fixed
+   *  source→target node pair, for commitConvenienceEdges. */
+  function qualifyPlan(
+    plan: Array<{ fromPortId: string; toPortId: string }>,
+    sourceNodeId: string,
+    targetNodeId: string,
+  ): Array<{ sourceNodeId: string; fromPortId: string; targetNodeId: string; toPortId: string }> {
+    return plan.map(({ fromPortId, toPortId }) => ({ sourceNodeId, fromPortId, targetNodeId, toPortId }));
   }
 
-  /** "Send to ▸ MixMaster chN" — wire the module's main audio out into the mixer
-   *  channel (stereo L/R, or mono filling both). */
-  function commitSendToMixer(mixerNodeId: string, channel: number): void {
+  /** Unified "Assign to channel N" (0-based): (a) assign this module to
+   *  automation lane N — ALWAYS (its existing synced write / own undo step); (b)
+   *  if the module is a clip target, wire the canonical clip-player's channel N
+   *  into it; (c) if it has a main audio out and a mixmstrs is present, send its
+   *  out → the canonical mixer's channel N. Whatever the module can't accept is
+   *  skipped (graceful subset). The two wiring plans land in ONE undo step. */
+  function commitAssignToChannel(channel: number): void {
     const mid = ctxMenuNodeId;
     if (!mid) return;
     const node = patch.nodes[mid];
     const def = node && defLookup(node.type);
     if (!def) return;
-    const plan = planSendToMixer(def, channel + 1); // plan is 1-based
-    if (!plan) return;
-    commitConvenienceEdges(plan, mid, mixerNodeId);
+    const player = ctxMenuCanonClipPlayer;
+    const mixer = ctxMenuCanonMixer;
+    // (a) automation — always (needs a clip-player to hold the assignment).
+    if (player) assignAutomationLane(player, mid, channel);
+    // (b)+(c) clip-control (player → module) + send-to-mixer (module → mixer),
+    // combined into ONE convenience-edge transaction (plan is 1-based).
+    const wiring: Array<{ sourceNodeId: string; fromPortId: string; targetNodeId: string; toPortId: string }> = [];
+    if (player) {
+      const clip = planClipControl(def, channel + 1);
+      if (clip) wiring.push(...qualifyPlan(clip, player, mid));
+    }
+    if (mixer) {
+      const send = planSendToMixer(def, channel + 1);
+      if (send) wiring.push(...qualifyPlan(send, mid, mixer));
+    }
+    if (wiring.length) commitConvenienceEdges(wiring);
+  }
+
+  /** "Assign automation only ▸ N" (0-based) — assign ONLY automation lane N (no
+   *  clip/mixer wiring), so several modules can share one automation lane. */
+  function commitAssignAutomationOnly(channel: number): void {
+    const mid = ctxMenuNodeId;
+    if (!mid) return;
+    const player = ctxMenuCanonClipPlayer;
+    if (player) assignAutomationLane(player, mid, channel);
   }
 
   // MULTI-SURFACE JANITOR (control-surface discipline): when a module is
@@ -3695,6 +3861,134 @@
     pruneAllAutoAssignDangling();
     repairDuplicateAutoAssign();
   });
+
+  // WORKFLOW CHANNEL-COLUMNS reconcile janitor — workflow racks only. On any
+  // graph change: heal the column/send membership ORDER arrays against each
+  // member's data.channel/sendSlot truth, then re-derive the reconciler-owned
+  // wcol- edge set (clip-control on the source, chain links on adjacent pairs,
+  // send-to-mixer on the tail). Idempotent + non-undo-tracked (AUTO_JANITOR_
+  // ORIGIN inside the reconciler), so it self-heals on every peer without ever
+  // fighting a hand-drawn cable (wcol- namespace + yield rule). Dawless racks
+  // never run it (workflowMode gate) — zero overhead + pixel-identical.
+  const wcolResolveDef: ColumnDefResolver = (t) => defLookup(t) as never;
+  $effect(() => {
+    if (!workflowMode) return;
+    void snapshot; // re-run on any graph change
+    reconcileColumns(wcolResolveDef);
+  });
+
+  // ---------------- Workflow channel-columns: membership writes ----------------
+
+  /** The pinned mixer's order arrays live at pinned-mixmstrs.data.columns /
+   *  .sends. Read one (or empty). */
+  function wcolOrder(kind: 'columns' | 'sends', key: number): string[] {
+    const m = patch.nodes[WCOL_MIXER_ID];
+    const map = (m?.data as { columns?: Record<string, string[]>; sends?: Record<string, string[]> } | undefined)?.[kind];
+    return map?.[String(key)] ?? [];
+  }
+
+  /** Write ONE column/send order array (single-key in-place) on the pinned
+   *  mixer — never a whole-map rebuild. Caller wraps in a transact. */
+  function setWcolOrder(kind: 'columns' | 'sends', key: number, ids: string[]): void {
+    const live = patch.nodes[WCOL_MIXER_ID];
+    if (!live) return;
+    if (!live.data) live.data = {};
+    const d = live.data as { columns?: Record<string, string[]>; sends?: Record<string, string[]> };
+    if (!d[kind]) d[kind] = {};
+    d[kind]![String(key)] = ids;
+  }
+
+  /** Set/clear a member node's channel/sendSlot membership scalar (the CRDT-safe
+   *  membership truth). Caller wraps in a transact. */
+  function setWcolMembership(nodeId: string, channel: number | null, sendSlot: number | null): void {
+    const live = patch.nodes[nodeId];
+    if (!live) return;
+    if (!live.data) live.data = {};
+    const d = live.data as { channel?: number; sendSlot?: number };
+    // Guard every delete with an existence check — a SyncedStore proxy THROWS on
+    // `delete` of a missing key (deleteProperty trap returns false), which would
+    // abort the whole drag transact (the drag-into-column "drop" was dead
+    // because a free node has no sendSlot to delete).
+    if (channel != null) d.channel = channel;
+    else if ('channel' in d) delete d.channel;
+    if (sendSlot != null) d.sendSlot = sendSlot;
+    else if ('sendSlot' in d) delete d.sendSlot;
+  }
+
+  /** The canonical clip-player that holds column automation lanes (the pinned
+   *  one in a workflow rack; else the lowest clip-player id). */
+  function wcolCanonClip(): string | null {
+    if (patch.nodes[WCOL_CLIP_ID]) return WCOL_CLIP_ID;
+    return listClipPlayers(patch.nodes).sort()[0] ?? null;
+  }
+
+  // MAJOR 1 — durable manual override: a user-deleted managed (wcol-) cable must
+  // NOT snap back. We record the deleted edge id in a per-column suppression set
+  // on the pinned mixer (data.wcolDetached), which the reconcile respects, and
+  // clear that column's set on the next deliberate column edit (re-manage).
+
+  /** The column/send key a wcol- edge belongs to — from its member endpoint's
+   *  channel/sendSlot scalar. '1'..'8' for a column, 's1'/'s2' for a send. */
+  function wcolEdgeColumnKey(edge: Edge): string | null {
+    for (const ep of [edge.source.nodeId, edge.target.nodeId]) {
+      const d = patch.nodes[ep]?.data as { channel?: number; sendSlot?: number } | undefined;
+      if (typeof d?.channel === 'number') return String(d.channel);
+      if (typeof d?.sendSlot === 'number') return 's' + d.sendSlot;
+    }
+    return null;
+  }
+
+  /** Record a user-detached wcol- edge id under its column key (dedup). Caller
+   *  wraps in a LOCAL_ORIGIN transact (durable + undoable with the delete). */
+  function wcolMarkDetached(edgeId: string, colKey: string): void {
+    const mixer = patch.nodes[WCOL_MIXER_ID];
+    if (!mixer) return;
+    if (!mixer.data) mixer.data = {};
+    const d = mixer.data as { wcolDetached?: Record<string, string[]> };
+    if (!d.wcolDetached) d.wcolDetached = {};
+    const cur = d.wcolDetached[colKey] ?? [];
+    if (!cur.includes(edgeId)) d.wcolDetached[colKey] = [...cur, edgeId];
+  }
+
+  /** Clear a column/send key's detach suppression — a fresh structural edit of
+   *  that column re-manages all its links. Caller wraps in a transact. */
+  function wcolClearDetached(colKey: string): void {
+    const mixer = patch.nodes[WCOL_MIXER_ID];
+    const d = mixer?.data as { wcolDetached?: Record<string, string[]> } | undefined;
+    if (d?.wcolDetached && (d.wcolDetached[colKey]?.length ?? 0) > 0) d.wcolDetached[colKey] = [];
+  }
+
+  /** Owner north-star "it just works": when the FIRST FX lands in a send box,
+   *  a correctly-patched send loop is still SILENT (every ch{i}_send{n} defaults
+   *  to 0). Auto-raise the send amount to a modest 0.5 on each channel that
+   *  currently HAS a column member, so the loop is audible immediately. Only
+   *  bumps channels still at 0 (never overrides a user-set amount). */
+  function wcolAutoRaiseSend(slot: number): void {
+    const mixer = patch.nodes[WCOL_MIXER_ID];
+    if (!mixer) return;
+    for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
+      if (wcolOrder('columns', ch).length === 0) continue;
+      const pid = `ch${ch}_send${slot}`;
+      const cur = mixer.params?.[pid] ?? 0;
+      if (cur <= 0) setNodeParam(WCOL_MIXER_ID, pid, 0.5);
+    }
+  }
+
+  /**
+   * Compute the workflow-column drop target for a spawn at `flowPos`, or null
+   * when the drop is on free canvas (no band) or not a workflow rack. Returns
+   * the channel (or send slot) + whether the drop is in the TOP THIRD of an
+   * occupied column (insert-at-top-of-chain vs append-at-bottom).
+   */
+  function wcolDropTarget(
+    flowPos: { x: number; y: number },
+  ): { channel?: number; sendSlot?: number } | null {
+    if (!workflowMode || !patch.nodes[WCOL_MIXER_ID]) return null;
+    const band = columnForFlowX(flowPos.x);
+    if (typeof band === 'number') return { channel: band };
+    if (band === 'send') return { sendSlot: sendBoxForFlowX(flowPos.x) };
+    return null;
+  }
 
   function onNodeContextMenu({ event, node }: { event: MouseEvent | TouchEvent; node: FlowNode }) {
     event.preventDefault();
@@ -5537,12 +5831,34 @@
       void vp;
     }
 
+    // WORKFLOW CHANNEL COLUMNS: a drop inside a column / send band joins that
+    // channel's DSP chain (or aux-send loop). Stamp the membership scalar, place
+    // at the deterministic column slot, and SUPPRESS the cable-splice (in-band
+    // drops order by the column array, never by proximity-splice — the two
+    // splice paths must not both fire on one drop).
+    const wcolDrop = type === 'cadillac' ? null : wcolDropTarget(spawnFlowPos);
+    // Was the target send box empty BEFORE this drop? (First-FX auto-raise.)
+    const wcolSendWasEmpty = wcolDrop?.sendSlot != null && wcolOrder('sends', wcolDrop.sendSlot).length === 0;
+    if (wcolDrop?.channel != null) {
+      initialData.channel = wcolDrop.channel;
+      // Snap to the BOTTOM of the column's occupied space (new tail slot).
+      const count = wcolOrder('columns', wcolDrop.channel).length;
+      const p = columnMemberPos(wcolDrop.channel, count, count + 1);
+      pos.x = p.x; pos.y = p.y;
+    } else if (wcolDrop?.sendSlot != null) {
+      initialData.sendSlot = wcolDrop.sendSlot;
+      const count = wcolOrder('sends', wcolDrop.sendSlot).length;
+      const p = sendMemberPos(wcolDrop.sendSlot, count, count + 1);
+      pos.x = p.x; pos.y = p.y;
+    }
+
     // Insert-on-cable (Proposal B2): if the cursor is close to an
     // existing cable's midpoint AND the new module has a compatible
     // input + compatible output for the cable's cableType, splice the
     // new card into the cable (delete original, add src→new + new→dst).
-    // Falls back to a plain spawn-at-cursor on no match.
-    const splice = tryFindInsertSpliceTarget(spawnFlowPos, def);
+    // Falls back to a plain spawn-at-cursor on no match. Suppressed for an
+    // in-band workflow-column drop.
+    const splice = wcolDrop ? null : tryFindInsertSpliceTarget(spawnFlowPos, def);
 
     ydoc.transact(() => {
       patch.nodes[id] = {
@@ -5553,6 +5869,16 @@
         params: {},
         data: initialData,
       };
+      // WORKFLOW: append/insert the new member into the column/send order array
+      // in the SAME transact (one undo step with the spawn). A structural edit of
+      // the column re-manages its links → clear its detach suppression (MAJOR 1).
+      if (wcolDrop?.channel != null) {
+        setWcolOrder('columns', wcolDrop.channel, insertBottom(wcolOrder('columns', wcolDrop.channel), id));
+        wcolClearDetached(String(wcolDrop.channel));
+      } else if (wcolDrop?.sendSlot != null) {
+        setWcolOrder('sends', wcolDrop.sendSlot, insertBottom(wcolOrder('sends', wcolDrop.sendSlot), id));
+        wcolClearDetached('s' + wcolDrop.sendSlot);
+      }
       if (splice) {
         delete patch.edges[splice.edge.id];
         const e1id = `e-${splice.edge.source.nodeId}-${splice.edge.source.portId}-${id}-${splice.inPort.id}`;
@@ -5579,8 +5905,22 @@
     // strictly an at-spawn affordance — long-lived "always on top"
     // would surprise users who expect drag-to-front to win later.
     topNodeId = id;
+    // WORKFLOW: a column member ALSO joins automation lane N (per-module, its own
+    // undo step, exactly like Assign-to-channel). Sends carry no automation lane
+    // (a pure bus for v1). The reconcile $effect then wires the wcol- edges.
+    if (wcolDrop?.channel != null) {
+      const clip = wcolCanonClip();
+      if (clip) assignAutomationLane(clip, id, wcolDrop.channel - 1);
+    } else if (wcolDrop?.sendSlot != null && wcolSendWasEmpty) {
+      // First FX into this send box → auto-raise send amount so it's audible.
+      wcolAutoRaiseSend(wcolDrop.sendSlot);
+    }
     if (splice) {
       trace(`spliced ${type} as ${autoName} (${id}) into edge ${splice.edge.id}`);
+    } else if (wcolDrop?.channel != null) {
+      trace(`spawned ${type} as ${autoName} (${id}) into workflow column ${wcolDrop.channel}`);
+    } else if (wcolDrop?.sendSlot != null) {
+      trace(`spawned ${type} as ${autoName} (${id}) into workflow send ${wcolDrop.sendSlot}`);
     } else {
       trace(`spawned ${type} as ${autoName} (${id})`);
     }
@@ -6600,6 +6940,11 @@
         />
       {/if}
       <FlowBridge bind:api={flowApi} />
+      {#if workflowMode}
+        <!-- WORKFLOW CHANNEL COLUMNS guide: 8 numbered columns + SEND 1/2 rail,
+             pinned to flow space. Workflow racks only → dawless VRT unchanged. -->
+        <ChannelColumnsOverlay columnColors={wcolColumnColors} tick={wcolViewportTick} />
+      {/if}
       <CadillacOverlay {provider} />
       <!-- 2026-05-27: the per-node editable name label moved INSIDE every
            module card's title chrome (see ModuleTitle.svelte). The floating
@@ -6752,15 +7097,13 @@
   hasCustomControlColor={ctxMenuHasCustomColor}
   onsetcontrolcolor={(hex) => ctxMenuNodeId && setControlColor(ctxMenuNodeId, hex)}
   onresetcontrolcolor={() => ctxMenuNodeId && setControlColor(ctxMenuNodeId, null)}
-  automationTargets={ctxMenuAutomationTargets}
-  automationAssigned={ctxMenuAutomationAssigned}
-  onassignautomationlane={(playerId, lane) =>
-    ctxMenuNodeId && assignAutomationLane(playerId, ctxMenuNodeId, lane)}
+  channelColors={ctxMenuChannelColors}
+  assignedChannel={ctxMenuAssignedChannel}
+  clipEligible={ctxMenuClipEligible}
+  mixerEligible={ctxMenuMixerEligible}
+  onassigntochannel={(channel) => commitAssignToChannel(channel)}
+  onassignautomationonly={(channel) => commitAssignAutomationOnly(channel)}
   onremoveautomationlane={() => ctxMenuNodeId && removeAutomationAssignment(ctxMenuNodeId)}
-  clipControlTargets={ctxMenuClipControlTargets}
-  oncontrolfromclip={(clipPlayerNodeId, channel) => commitControlFromClip(clipPlayerNodeId, channel)}
-  mixerTargets={ctxMenuMixerTargets}
-  onsendtomixer={(mixerNodeId, channel) => commitSendToMixer(mixerNodeId, channel)}
   dockable={ctxMenuDockable}
   docked={ctxMenuDocked}
   ondock={(zone) => ctxMenuNodeId && dockNode(ctxMenuNodeId, zone)}

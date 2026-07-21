@@ -1,12 +1,12 @@
 // art/scenarios/mixmstrs/profile.test.ts
 //
-// AUDIO PROFILE for MIXMSTRS (6-channel stereo mixer + EQ/comp + 2 stereo aux
+// AUDIO PROFILE for MIXMSTRS (8-channel stereo mixer + EQ/comp + 2 stereo aux
 // sends) — backfill batch 6, Faust-in-Node harness (spec §5). MIXMSTRS is the
-// batch's harness STRESS TEST: a 16-input / 12-output Faust module
+// batch's harness STRESS TEST: a 20-input / 14-output Faust module
 // (packages/dsp/src/mixmstrs.dsp) rendered headless in one pass. Faust I/O
-// order is the process() signature: inputs 0,1=ch1 L/R, 2,3=ch2 L/R, …;
-// outputs 0,1=master L/R, 2,3=send1 L/R, 4,5=send2 L/R, 6..11=per-channel
-// meter taps (NOT patchable ports).
+// order is the process() signature: inputs 0,1=ch1 L/R, 2,3=ch2 L/R, … 14,15=ch8
+// L/R, 16,17=return1 L/R, 18,19=return2 L/R; outputs 0,1=master L/R, 2,3=send1
+// L/R, 4,5=send2 L/R, 6..13=per-channel meter taps (NOT patchable ports).
 //
 // Category: STEREO MIXER + AUX SENDS, driven so the ROUTING is provable:
 //   ch1 (L=R) = C4 saw @ vol 0.8, routed to SEND 1 (ch1_send1 = 0.7)
@@ -33,8 +33,9 @@ const sine = vcoTestSignal({ totalS: DURATION_S, shape: 'sine', freqHz: CH2_HZ, 
 
 async function renderProfile(): Promise<Record<string, Float32Array>> {
   const n = Math.round(SR * DURATION_S);
-  // 16 inputs: ch1 L/R = saw, ch2 L/R = sine, everything else silent.
-  const inputs: (Float32Array | null)[] = new Array(16).fill(null);
+  // 20 inputs: ch1 L/R = saw, ch2 L/R = sine, everything else silent
+  // (ch3..ch8 = idx 4..15, returns = idx 16..19 — all silent).
+  const inputs: (Float32Array | null)[] = new Array(20).fill(null);
   inputs[0] = saw; inputs[1] = saw;   // ch1 L/R
   inputs[2] = sine; inputs[3] = sine; // ch2 L/R
   return renderFaustOffline({
@@ -47,7 +48,7 @@ async function renderProfile(): Promise<Record<string, Float32Array>> {
       // EQ flat + comps bypassed are the defaults, set explicitly for clarity.
       ch1_compEnable: 0, ch2_compEnable: 0,
     },
-    // Faust output index order — capture the 6 patchable ports; the 6 trailing
+    // Faust output index order — capture the 6 patchable ports; the 8 trailing
     // meter taps are dropped.
     outputs: ['masterL', 'masterR', 'send1L', 'send1R', 'send2L', 'send2R'],
   });

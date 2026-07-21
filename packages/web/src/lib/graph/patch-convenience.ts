@@ -1,9 +1,13 @@
 // packages/web/src/lib/graph/patch-convenience.ts
 //
 // PURE, framework-free eligibility + wiring planner for the workflow-mode
-// right-click convenience actions:
-//   • "Control from → Clip N"  — auto-wire a clip-player channel to an instrument
-//   • "Send to → MixMaster ch N" — auto-wire an audio module to a mixer channel
+// right-click convenience wiring, now folded into a single channel-indexed
+// action ("Assign to channel N"):
+//   • CLIP CONTROL  — auto-wire a clip-player channel to an instrument
+//   • SEND TO MIXER — auto-wire an audio module to a mixer channel
+// (The Canvas layer combines these plans with the module→automation-lane
+// assignment for "Assign to channel N"; automation itself lives in
+// automation-assign.ts.)
 //
 // DESIGN — NO ALLOW-LIST. Both actions are gated ENTIRELY by a module's port
 // DEF (its inputs/outputs/stereoPairs), computed procedurally here, so any
@@ -30,8 +34,10 @@
 // PortDef shape + the shared findStereoSibling. The Canvas layer builds the
 // concrete edges (commitCarriedEdge + writeStereoSiblingEdge) from these plans.
 
-import type { PortDef, CableType } from './types';
+import type { PortDef, CableType, ChainWiring } from './types';
 import { findStereoSibling, type StereoDef } from './stereo-autowire';
+
+export type { ChainWiring };
 
 /** The minimal def shape these predicates read. Any AudioModuleDef / video def
  *  with an audio out is assignable. */
@@ -39,6 +45,8 @@ export interface ConvenienceDef {
   inputs: readonly PortDef[];
   outputs: readonly PortDef[];
   stereoPairs?: readonly (readonly [string, string])[];
+  /** Optional workflow-column chain-wiring override — see ChainWiring. */
+  chainWiring?: ChainWiring;
 }
 
 // ---------------- Port-role vocabulary (procedural, not a module list) ----------------
@@ -62,6 +70,13 @@ const CONTROL_GATE_WORDS = new Set<string>([
  *  substring rule would see two mains and give up. `audio` is THE canonical
  *  mono-audio output id in this codebase. */
 const MAIN_OUT_IDS = new Set<string>(['audio', 'out', 'output', 'main', 'mix', 'master']);
+
+/** Canonical MAIN-input ids — the input-side mirror of MAIN_OUT_IDS, used to
+ *  pick the mono main INPUT among several audio inputs by EXACT id match (a
+ *  filter whose primary in is `audio`/`in`/`input` plus a secondary sidechain
+ *  tap resolves to the real main). `audio` / `in` / `input` are the canonical
+ *  mono-audio input ids in this codebase. */
+const MAIN_IN_IDS = new Set<string>(['audio', 'in', 'input', 'main', 'audio_in', 'audioin']);
 
 /** L / R side words for id-token stereo detection when a def declares no
  *  stereoPairs (audioIn, stereovca, twotracks, …). */
@@ -91,6 +106,19 @@ const isGate = (p: PortDef): boolean => p.type === 'gate';
  *  Only the control-gate vocabulary excludes it. */
 function isNoteGateInput(p: PortDef): boolean {
   return isGate(p) && !hasControlGateWord(p.id);
+}
+
+/** A v/oct PITCH input carried on a `cv` cable — the drum-voice convention
+ *  (`pitch_cv`, a 1V/oct transpose typed `cv`, not `pitch`). Distinguished from a
+ *  per-knob modulation CV by having NO `paramTarget` (every per-control CV
+ *  declares one) and an id that denotes v/oct pitch (a `pitch` / `voct` id
+ *  token). SHAPE-detected like every other predicate here, so any voice
+ *  following the convention (kickdrum / snaredrum / tomtom) auto-enrols — no
+ *  allow-list. */
+function isVoctCvInput(p: PortDef): boolean {
+  if (p.type !== 'cv' || p.paramTarget) return false;
+  const w = idWords(p.id);
+  return w.includes('pitch') || w.includes('voct') || (w.includes('v') && w.includes('oct'));
 }
 
 /** True if the module EMITS notes (a sequencer / keyboard / arpeggiator): it has
@@ -126,9 +154,14 @@ function hasAudioOut(def: ConvenienceDef): boolean {
 /**
  * Resolve HOW a clip player should drive this module, or null if it is not a
  * clip target. Precedence: POLY (keeps the whole chord) → mono PITCH+GATE →
- * GATE-ONLY percussion (a note-gate + audio out but no v/oct pitch, e.g.
- * kickdrum/snaredrum — the clip triggers it, there is no pitch to send). A note
- * SOURCE (sequencer/keyboard) is never a target.
+ * GATE-ONLY percussion (a note-gate + audio out but no pitch input at all, e.g.
+ * clap — the clip only triggers it). A note SOURCE (sequencer/keyboard) is never
+ * a target.
+ *
+ * A percussion voice that DOES expose a 1V/oct on a `cv` cable (`pitch_cv` — the
+ * kickdrum/snaredrum/tomtom convention) is wired monoPitchGate too, mapping the
+ * clip PITCH onto the v/oct so a tuned drum tracks the clip's notes rather than
+ * only firing on the gate.
  */
 export function resolveClipWiring(def: ConvenienceDef): ClipWiring | null {
   if (isNoteSource(def)) return null;
@@ -136,13 +169,23 @@ export function resolveClipWiring(def: ConvenienceDef): ClipWiring | null {
   const polyIn = def.inputs.find(isPoly);
   if (polyIn) return { mode: 'poly', pitchInPort: polyIn.id };
 
-  const pitchIn = def.inputs.find(isPitch);
   const gateIn = def.inputs.find(isNoteGateInput);
+
+  // Native mono pitch (a `pitch` v/oct cable) + note-gate.
+  const pitchIn = def.inputs.find(isPitch);
   if (pitchIn && gateIn) {
     return { mode: 'monoPitchGate', pitchInPort: pitchIn.id, gateInPort: gateIn.id };
   }
-  // Gate-only percussion: a note-gate + audio out, but no v/oct pitch input.
+
+  // Percussion voice: a note-gate + audio out, no native `pitch` cable. If it
+  // exposes a v/oct on a `cv` cable (the drum `pitch_cv` convention) map the
+  // clip PITCH to it too (monoPitchGate); otherwise it is a pure gate-triggered
+  // voice with no pitch to send (gateOnly).
   if (gateIn && hasAudioOut(def)) {
+    const voctIn = def.inputs.find(isVoctCvInput);
+    if (voctIn) {
+      return { mode: 'monoPitchGate', pitchInPort: voctIn.id, gateInPort: gateIn.id };
+    }
     return { mode: 'gateOnly', gateInPort: gateIn.id };
   }
   return null;
@@ -176,6 +219,14 @@ function orderLr(a: PortDef, b: PortDef): { left: string; right: string } {
  * does not.
  */
 export function resolveMainAudioOut(def: ConvenienceDef): MainAudioOut | null {
+  // 0) chainWiring override wins — a module's def declares its true chain out.
+  const ov = def.chainWiring?.outPorts;
+  if (ov && ov.length > 0) {
+    return ov.length === 2
+      ? { kind: 'stereo', left: ov[0], right: ov[1]! }
+      : { kind: 'mono', out: ov[0] };
+  }
+
   const audioOuts = def.outputs.filter(isAudio);
   if (audioOuts.length === 0) return null;
 
@@ -235,9 +286,10 @@ export function clipChannelPorts(channel: number): { pitchOut: string; gateOut: 
   return { pitchOut: `pitch${channel}`, gateOut: `gate${channel}` };
 }
 
-/** MixMaster: 6 stereo channels (1-based). Per channel the inputs are
- *  `ch{n}L` / `ch{n}R` (audio). */
-export const MIXER_CHANNEL_COUNT = 6;
+/** MixMaster: 8 stereo channels (1-based). Per channel the inputs are
+ *  `ch{n}L` / `ch{n}R` (audio). Matches MIXMSTRS_CHANNELS (the mixmstrs def's
+ *  8-channel layout); guarded by the channel-port-map test against the live def. */
+export const MIXER_CHANNEL_COUNT = 8;
 export function mixerChannelPorts(channel: number): { leftIn: string; rightIn: string } {
   return { leftIn: `ch${channel}L`, rightIn: `ch${channel}R` };
 }
@@ -301,4 +353,369 @@ export function planSendToMixer(def: ConvenienceDef, channel: number): Convenien
     { fromPortId: main.out, toPortId: leftIn, sourceType: 'audio', targetType: 'audio' },
     { fromPortId: main.out, toPortId: rightIn, sourceType: 'audio', targetType: 'audio' },
   ];
+}
+
+// ================= WORKFLOW CHANNEL COLUMNS (net-new) =================
+//
+// The workflow-mode "channel columns" feature chains modules vertically inside
+// a column (source → filter → reverb → mixer channel). The reconciler DRIVES
+// the planners above (planClipControl on the source, planSendToMixer on the
+// tail) plus the new resolveMainAudioIn/planColumnChain here for the internal
+// adjacent-pair links — proving it is not a parallel system. Every function
+// below is PURE (no Svelte / Yjs); the Canvas applicator + the automation-assign
+// janitor commit the results.
+
+export type MainAudioIn =
+  | { kind: 'stereo'; left: string; right: string }
+  | { kind: 'mono'; in: string };
+
+/**
+ * Resolve the module's MAIN audio INPUT — the input-side mirror of
+ * resolveMainAudioOut. A stereo pair or a mono in, or null if there is no
+ * identifiable main audio input (a pure source / pure-CV / pure-video module).
+ * Precedence identical to the output resolver:
+ *   0) chainWiring.inPorts override (a module declares its true insert input).
+ *   1) declared stereoPairs among the audio inputs (authoritative).
+ *   2) an L/R id-token pair.
+ *   3) a single mono audio input.
+ *   4) one canonical main (`audio`/`in`/`input`/…) among several audio inputs.
+ *   5) a bank of equal parallel inputs with no identifiable main → null.
+ */
+export function resolveMainAudioIn(def: ConvenienceDef): MainAudioIn | null {
+  // 0) chainWiring override wins.
+  const ov = def.chainWiring?.inPorts;
+  if (ov && ov.length > 0) {
+    return ov.length === 2
+      ? { kind: 'stereo', left: ov[0], right: ov[1]! }
+      : { kind: 'mono', in: ov[0] };
+  }
+
+  const audioIns = def.inputs.filter(isAudio);
+  if (audioIns.length === 0) return null;
+
+  // 1) Stereo pair via declared stereoPairs.
+  for (const p of audioIns) {
+    const sib = findStereoSibling(def as StereoDef, p.id);
+    if (sib && audioIns.some((q) => q.id === sib)) {
+      const pair = def.stereoPairs?.find(
+        (t) => (t[0] === p.id && t[1] === sib) || (t[1] === p.id && t[0] === sib),
+      );
+      if (pair) {
+        const first = audioIns.find((q) => q.id === pair[0])!;
+        const second = audioIns.find((q) => q.id === pair[1])!;
+        return { kind: 'stereo', ...orderLr(first, second) };
+      }
+    }
+  }
+
+  // 2) Stereo pair via L/R id tokens.
+  const leftIn = audioIns.find((p) => idWords(p.id).some((w) => LEFT_WORDS.has(w)));
+  const rightIn = audioIns.find((p) => idWords(p.id).some((w) => RIGHT_WORDS.has(w)));
+  if (leftIn && rightIn && leftIn.id !== rightIn.id) {
+    return { kind: 'stereo', left: leftIn.id, right: rightIn.id };
+  }
+
+  // 3) Single mono audio in.
+  if (audioIns.length === 1) return { kind: 'mono', in: audioIns[0].id };
+
+  // 4) One canonical main among several audio ins.
+  const mains = audioIns.filter((p) => MAIN_IN_IDS.has(p.id.toLowerCase()));
+  if (mains.length === 1) return { kind: 'mono', in: mains[0].id };
+
+  // 5) No identifiable main input.
+  return null;
+}
+
+/** Declared chain ROLE for a module — the chainWiring override, else inferred
+ *  from its main-in / main-out shape. `both` = a DSP insert (has both);
+ *  `source` = emits audio but takes none; `dsp` = takes audio but the resolver
+ *  found no main out (rare). A module with neither is not audio-participating. */
+export function chainRole(def: ConvenienceDef): 'source' | 'dsp' | 'both' | null {
+  if (def.chainWiring?.role) return def.chainWiring.role;
+  const hasOut = resolveMainAudioOut(def) !== null;
+  const hasIn = resolveMainAudioIn(def) !== null;
+  if (hasOut && hasIn) return 'both';
+  if (hasOut) return 'source';
+  if (hasIn) return 'dsp';
+  return null;
+}
+
+/** True when a module participates in a column's AUDIO chain (has a resolvable
+ *  main out OR main in). A pure-video / pure-CV member does not — it stays a
+ *  visual, automation-only column member. */
+export function isChainAudioParticipant(def: ConvenienceDef): boolean {
+  return resolveMainAudioOut(def) !== null || resolveMainAudioIn(def) !== null;
+}
+
+/** MixMaster aux-send ports for send slot `n` (1|2): the send OUTPUT the loop's
+ *  head reads (send{n}L/R) and the RETURN input its tail feeds (ret{n}L/R).
+ *  Guarded against the live mixmstrs def by the channel-port-map test. */
+export const SEND_SLOT_COUNT = 2;
+export function sendPorts(slot: number): {
+  sendL: string;
+  sendR: string;
+  retL: string;
+  retR: string;
+} {
+  return { sendL: `send${slot}L`, sendR: `send${slot}R`, retL: `ret${slot}L`, retR: `ret${slot}R` };
+}
+
+/** One planned chain edge (node-qualified — chain links cross node pairs). */
+export interface ChainEdgePlan {
+  fromNodeId: string;
+  fromPortId: string;
+  toNodeId: string;
+  toPortId: string;
+  sourceType: CableType;
+  targetType: CableType;
+}
+
+/**
+ * Plan the audio-signal edges linking ONE adjacent pair (up → down):
+ * resolveMainAudioOut(up) → resolveMainAudioIn(down), emitting BOTH L and R
+ * EXPLICITLY (never relying on the engine's stereo normaling):
+ *   - stereo → stereo: L→L, R→R.
+ *   - mono   → stereo: mono fills BOTH L and R (two edges).
+ *   - stereo → mono:   L and R BOTH into the mono in (two edges → the engine
+ *                      SUMS them = a stereo→mono downmix).
+ *   - mono   → mono:   one edge (the duplicate is de-duped).
+ * Returns [] when either side has no identifiable main (skip this link).
+ */
+export function planPairLink(
+  upNodeId: string,
+  upDef: ConvenienceDef,
+  downNodeId: string,
+  downDef: ConvenienceDef,
+): ChainEdgePlan[] {
+  const out = resolveMainAudioOut(upDef);
+  const inn = resolveMainAudioIn(downDef);
+  if (!out || !inn) return [];
+  const outL = out.kind === 'stereo' ? out.left : out.out;
+  const outR = out.kind === 'stereo' ? out.right : out.out;
+  const inL = inn.kind === 'stereo' ? inn.left : inn.in;
+  const inR = inn.kind === 'stereo' ? inn.right : inn.in;
+  const raw: ChainEdgePlan[] = [
+    { fromNodeId: upNodeId, fromPortId: outL, toNodeId: downNodeId, toPortId: inL, sourceType: 'audio', targetType: 'audio' },
+    { fromNodeId: upNodeId, fromPortId: outR, toNodeId: downNodeId, toPortId: inR, sourceType: 'audio', targetType: 'audio' },
+  ];
+  // De-dup identical endpoint pairs (mono→mono yields the same edge twice).
+  const seen = new Set<string>();
+  const out2: ChainEdgePlan[] = [];
+  for (const e of raw) {
+    const k = `${e.fromPortId}->${e.toPortId}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out2.push(e);
+  }
+  return out2;
+}
+
+/** A column member for the wiring planner: its node id + its resolved def. */
+export interface ColumnMember {
+  nodeId: string;
+  def: ConvenienceDef;
+}
+
+/** Deterministic namespaced edge id for a reconciler-OWNED workflow-column
+ *  edge. The `wcol-` prefix is what makes the stale-removal pass structurally
+ *  unable to touch a hand-drawn (non-wcol) cable, and the endpoint-derived body
+ *  makes two peers computing the same wiring converge on ONE Y.Map key. */
+export function wcolEdgeId(
+  src: string,
+  srcPort: string,
+  dst: string,
+  dstPort: string,
+): string {
+  return `wcol-e-${src}-${srcPort}-${dst}-${dstPort}`;
+}
+
+/** A fully-formed reconciler-owned edge (Edge-shaped, wcol- id). */
+export interface WcolEdge {
+  id: string;
+  source: { nodeId: string; portId: string };
+  target: { nodeId: string; portId: string };
+  sourceType: CableType;
+  targetType: CableType;
+}
+
+function toWcol(p: ChainEdgePlan): WcolEdge {
+  return {
+    id: wcolEdgeId(p.fromNodeId, p.fromPortId, p.toNodeId, p.toPortId),
+    source: { nodeId: p.fromNodeId, portId: p.fromPortId },
+    target: { nodeId: p.toNodeId, portId: p.toPortId },
+    sourceType: p.sourceType,
+    targetType: p.targetType,
+  };
+}
+
+/** Context for planning a whole column's reconciler-owned wiring. */
+export interface ColumnWiringCtx {
+  /** 1-based channel number. */
+  channel: number;
+  /** Ordered members source → … → tail (columns[ch], already pruned/deduped). */
+  members: readonly ColumnMember[];
+  /** The canonical clip-player node id (source of pitch/gate), or null. */
+  clipPlayerId: string | null;
+  /** The canonical mixmstrs node id (channel destination), or null. */
+  mixerId: string | null;
+}
+
+/** True when a member is a chain SOURCE — it has no identifiable main audio IN,
+ *  so it can only be the HEAD of an island (never fed by an upstream member). A
+ *  pure source (VCO), a non-audio instrument, and a video-VCO all qualify; a DSP
+ *  (filter/reverb) or a both-ports insert (twotracks override) does NOT. */
+function isChainSource(def: ConvenienceDef): boolean {
+  return resolveMainAudioIn(def) === null;
+}
+
+/**
+ * Partition the ordered AUDIO-PARTICIPATING members into PARALLEL ISLANDS. An
+ * island starts at each SOURCE member (no audio-in) and runs through the
+ * contiguous DSP members below it until the next source. So two stacked VCOs are
+ * two singleton islands; VCO→filter→VCO→reverb is [[VCO,filter],[VCO,reverb]].
+ * A lone leading DSP (no source above it) forms its own island.
+ */
+function partitionIslands(audio: readonly ColumnMember[]): ColumnMember[][] {
+  const islands: ColumnMember[][] = [];
+  let cur: ColumnMember[] = [];
+  for (const m of audio) {
+    if (isChainSource(m.def) && cur.length > 0) {
+      islands.push(cur);
+      cur = [];
+    }
+    cur.push(m);
+  }
+  if (cur.length > 0) islands.push(cur);
+  return islands;
+}
+
+/**
+ * Plan the COMPLETE reconciler-owned edge set for one column, DETERMINISTICALLY
+ * (pure function of the members array + channel + endpoints). Two peers with the
+ * same inputs produce byte-identical WcolEdge[] (same ids), so the Y.Map
+ * converges. PARALLEL-ISLAND model (owner's multi-source default):
+ *   - CLIP CONTROL: EVERY source instrument on the channel (clip-eligible + no
+ *     audio-in) gets the clip's pitch{n}/gate{n} → layered play.
+ *   - CHAIN: planPairLink over adjacent members WITHIN each island.
+ *   - SEND: each island's TAIL (its last main-out member) → ch{n}L/R. Multiple
+ *     island tails SUM at the mixer channel's input bus, so all sources are
+ *     heard. A single-source column is one island (source→FX→tail) — unchanged.
+ */
+export function planColumnWiring(ctx: ColumnWiringCtx): WcolEdge[] {
+  const { channel, members, clipPlayerId, mixerId } = ctx;
+  const out: WcolEdge[] = [];
+  const seenIds = new Set<string>();
+  const push = (e: WcolEdge) => {
+    if (seenIds.has(e.id)) return;
+    seenIds.add(e.id);
+    out.push(e);
+  };
+
+  // (1) CLIP CONTROL — every SOURCE instrument (clip-eligible + no audio-in).
+  //     A fed DSP (has audio-in) is driven by the chain, never by the clip.
+  if (clipPlayerId) {
+    for (const m of members) {
+      if (resolveClipWiring(m.def) === null) continue;
+      if (!isChainSource(m.def)) continue;
+      const clip = planClipControl(m.def, channel);
+      if (!clip) continue;
+      for (const e of clip) {
+        push(toWcol({
+          fromNodeId: clipPlayerId, fromPortId: e.fromPortId,
+          toNodeId: m.nodeId, toPortId: e.toPortId,
+          sourceType: e.sourceType, targetType: e.targetType,
+        }));
+      }
+    }
+  }
+
+  // (2)+(3) ISLANDS: internal chain links + each island's tail send-to-mixer.
+  const islands = partitionIslands(members.filter((m) => isChainAudioParticipant(m.def)));
+  for (const island of islands) {
+    for (let i = 0; i + 1 < island.length; i++) {
+      for (const e of planPairLink(island[i]!.nodeId, island[i]!.def, island[i + 1]!.nodeId, island[i + 1]!.def)) {
+        push(toWcol(e));
+      }
+    }
+    if (!mixerId) continue;
+    let tail: ColumnMember | null = null;
+    for (const m of island) {
+      if (resolveMainAudioOut(m.def) !== null) tail = m; // last main-out = island tail
+    }
+    if (!tail) continue;
+    const send = planSendToMixer(tail.def, channel);
+    if (!send) continue;
+    for (const e of send) {
+      push(toWcol({
+        fromNodeId: tail.nodeId, fromPortId: e.fromPortId,
+        toNodeId: mixerId, toPortId: e.toPortId,
+        sourceType: e.sourceType, targetType: e.targetType,
+      }));
+    }
+  }
+
+  return out;
+}
+
+/** Context for planning a send-loop's reconciler-owned wiring. */
+export interface SendWiringCtx {
+  /** 1-based send slot (1|2). */
+  slot: number;
+  /** Ordered send tenants head → … → tail. */
+  members: readonly ColumnMember[];
+  /** The canonical mixmstrs node id (send output + return input), or null. */
+  mixerId: string | null;
+}
+
+/**
+ * Plan the reconciler-owned wiring for one aux-send loop:
+ *   mixer.send{n}L/R → HEAD.mainIn ; internal adjacent links ; TAIL.mainOut →
+ *   mixer.ret{n}L/R.
+ * No clip control, no automation lane (a send is a pure shared bus for v1).
+ * Deterministic + pure, same as planColumnWiring.
+ */
+export function planSendWiring(ctx: SendWiringCtx): WcolEdge[] {
+  const { slot, members, mixerId } = ctx;
+  const audio = members.filter((m) => isChainAudioParticipant(m.def));
+  if (!mixerId || audio.length === 0) return [];
+  const out: WcolEdge[] = [];
+  const seenIds = new Set<string>();
+  const push = (e: WcolEdge) => {
+    if (seenIds.has(e.id)) return;
+    seenIds.add(e.id);
+    out.push(e);
+  };
+  const { sendL, sendR, retL, retR } = sendPorts(slot);
+
+  // HEAD: mixer send{n}L/R → head module's main input. The mixer's send output
+  // is a real stereo pair, so drive both sides of the head's main in.
+  const head = audio[0]!;
+  const headIn = resolveMainAudioIn(head.def);
+  if (headIn) {
+    const inL = headIn.kind === 'stereo' ? headIn.left : headIn.in;
+    const inR = headIn.kind === 'stereo' ? headIn.right : headIn.in;
+    push(toWcol({ fromNodeId: mixerId, fromPortId: sendL, toNodeId: head.nodeId, toPortId: inL, sourceType: 'audio', targetType: 'audio' }));
+    if (inR !== inL) {
+      push(toWcol({ fromNodeId: mixerId, fromPortId: sendR, toNodeId: head.nodeId, toPortId: inR, sourceType: 'audio', targetType: 'audio' }));
+    }
+  }
+
+  // INTERNAL links.
+  for (let i = 0; i + 1 < audio.length; i++) {
+    for (const e of planPairLink(audio[i]!.nodeId, audio[i]!.def, audio[i + 1]!.nodeId, audio[i + 1]!.def)) {
+      push(toWcol(e));
+    }
+  }
+
+  // TAIL: tail module main out → mixer ret{n}L/R.
+  const tail = audio[audio.length - 1]!;
+  const tailOut = resolveMainAudioOut(tail.def);
+  if (tailOut) {
+    const outL = tailOut.kind === 'stereo' ? tailOut.left : tailOut.out;
+    const outR = tailOut.kind === 'stereo' ? tailOut.right : tailOut.out;
+    push(toWcol({ fromNodeId: tail.nodeId, fromPortId: outL, toNodeId: mixerId, toPortId: retL, sourceType: 'audio', targetType: 'audio' }));
+    push(toWcol({ fromNodeId: tail.nodeId, fromPortId: outR, toNodeId: mixerId, toPortId: retR, sourceType: 'audio', targetType: 'audio' }));
+  }
+
+  return out;
 }
