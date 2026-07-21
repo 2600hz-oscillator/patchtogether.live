@@ -496,6 +496,34 @@ test.describe('WORKFLOW audio I/O surface (🎧 always-on pinned AUDIO IN/OUT)',
 
     expect(errors.filter((e) => !/getUserMedia|audio/i.test(e)), errors.join('; ')).toEqual([]);
   });
+
+  test('the pinned AUDIO OUT exposes a source picker (receive-from rows) like an added one (bug 1)', async ({ page }) => {
+    // Owner bug 1: the DEFAULT (pinned) audio-out showed NO way to select a
+    // source — an audio-out ADDED on the grid does (its input jacks open the
+    // "patch from" picker). The panel now mirrors AUDIO IN's patch rows in
+    // reverse: two "receive from" rows (AUDIO OUT L / R) that open the SAME
+    // source picker, so the pinned instance behaves like an added one.
+    await page.goto('/rack?mode=workflow');
+    await page.waitForLoadState('networkidle');
+    await waitForWorkflowPins(page);
+
+    // Open the 🎧 panel.
+    await page.getByTestId('workflow-topbar-slot-audio-io').click();
+    const panel = page.getByTestId('workflow-io-panel');
+    await expect(panel).toHaveAttribute('data-open', 'true');
+
+    // The audio-out column now carries a discoverable source-selection affordance
+    // (parity with the audio-in patch-out rows it sits opposite).
+    const receiveRows = panel.getByTestId('workflow-io-patchin');
+    await expect(receiveRows).toBeVisible();
+    await expect(panel.getByTestId('workflow-io-patchin-L')).toBeVisible();
+    await expect(panel.getByTestId('workflow-io-patchin-R')).toBeVisible();
+
+    // Clicking a receive row opens the "patch from" source picker (the same one
+    // an added audio-out's input jack opens) — proving it selects a source.
+    await panel.getByTestId('workflow-io-patchin-L').click();
+    await expect(page.getByTestId('port-context-menu')).toBeVisible({ timeout: 4_000 });
+  });
 });
 
 test.describe('AUDIO OUT device dropdown', () => {

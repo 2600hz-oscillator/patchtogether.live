@@ -34,8 +34,10 @@
 // PortDef shape + the shared findStereoSibling. The Canvas layer builds the
 // concrete edges (commitCarriedEdge + writeStereoSiblingEdge) from these plans.
 
-import type { PortDef, CableType } from './types';
+import type { PortDef, CableType, ChainWiring } from './types';
 import { findStereoSibling, type StereoDef } from './stereo-autowire';
+
+export type { ChainWiring };
 
 /** The minimal def shape these predicates read. Any AudioModuleDef / video def
  *  with an audio out is assignable. */
@@ -43,6 +45,8 @@ export interface ConvenienceDef {
   inputs: readonly PortDef[];
   outputs: readonly PortDef[];
   stereoPairs?: readonly (readonly [string, string])[];
+  /** Optional workflow-column chain-wiring override — see ChainWiring. */
+  chainWiring?: ChainWiring;
 }
 
 // ---------------- Port-role vocabulary (procedural, not a module list) ----------------
@@ -66,6 +70,13 @@ const CONTROL_GATE_WORDS = new Set<string>([
  *  substring rule would see two mains and give up. `audio` is THE canonical
  *  mono-audio output id in this codebase. */
 const MAIN_OUT_IDS = new Set<string>(['audio', 'out', 'output', 'main', 'mix', 'master']);
+
+/** Canonical MAIN-input ids — the input-side mirror of MAIN_OUT_IDS, used to
+ *  pick the mono main INPUT among several audio inputs by EXACT id match (a
+ *  filter whose primary in is `audio`/`in`/`input` plus a secondary sidechain
+ *  tap resolves to the real main). `audio` / `in` / `input` are the canonical
+ *  mono-audio input ids in this codebase. */
+const MAIN_IN_IDS = new Set<string>(['audio', 'in', 'input', 'main', 'audio_in', 'audioin']);
 
 /** L / R side words for id-token stereo detection when a def declares no
  *  stereoPairs (audioIn, stereovca, twotracks, …). */
@@ -208,6 +219,14 @@ function orderLr(a: PortDef, b: PortDef): { left: string; right: string } {
  * does not.
  */
 export function resolveMainAudioOut(def: ConvenienceDef): MainAudioOut | null {
+  // 0) chainWiring override wins — a module's def declares its true chain out.
+  const ov = def.chainWiring?.outPorts;
+  if (ov && ov.length > 0) {
+    return ov.length === 2
+      ? { kind: 'stereo', left: ov[0], right: ov[1]! }
+      : { kind: 'mono', out: ov[0] };
+  }
+
   const audioOuts = def.outputs.filter(isAudio);
   if (audioOuts.length === 0) return null;
 
@@ -334,4 +353,450 @@ export function planSendToMixer(def: ConvenienceDef, channel: number): Convenien
     { fromPortId: main.out, toPortId: leftIn, sourceType: 'audio', targetType: 'audio' },
     { fromPortId: main.out, toPortId: rightIn, sourceType: 'audio', targetType: 'audio' },
   ];
+}
+
+// ================= WORKFLOW CHANNEL COLUMNS (net-new) =================
+//
+// The workflow-mode "channel columns" feature chains modules vertically inside
+// a column (source → filter → reverb → mixer channel). The reconciler DRIVES
+// the planners above (planClipControl on the source, planSendToMixer on the
+// tail) plus the new resolveMainAudioIn/planColumnChain here for the internal
+// adjacent-pair links — proving it is not a parallel system. Every function
+// below is PURE (no Svelte / Yjs); the Canvas applicator + the automation-assign
+// janitor commit the results.
+
+export type MainAudioIn =
+  | { kind: 'stereo'; left: string; right: string }
+  | { kind: 'mono'; in: string };
+
+/**
+ * Resolve the module's MAIN audio INPUT — the input-side mirror of
+ * resolveMainAudioOut. A stereo pair or a mono in, or null if there is no
+ * identifiable main audio input (a pure source / pure-CV / pure-video module).
+ * Precedence identical to the output resolver:
+ *   0) chainWiring.inPorts override (a module declares its true insert input).
+ *   1) declared stereoPairs among the audio inputs (authoritative).
+ *   2) an L/R id-token pair.
+ *   3) a single mono audio input.
+ *   4) one canonical main (`audio`/`in`/`input`/…) among several audio inputs.
+ *   5) a bank of equal parallel inputs with no identifiable main → null.
+ */
+export function resolveMainAudioIn(def: ConvenienceDef): MainAudioIn | null {
+  // 0) chainWiring override wins.
+  const ov = def.chainWiring?.inPorts;
+  if (ov && ov.length > 0) {
+    return ov.length === 2
+      ? { kind: 'stereo', left: ov[0], right: ov[1]! }
+      : { kind: 'mono', in: ov[0] };
+  }
+
+  const audioIns = def.inputs.filter(isAudio);
+  if (audioIns.length === 0) return null;
+
+  // 1) Stereo pair via declared stereoPairs.
+  for (const p of audioIns) {
+    const sib = findStereoSibling(def as StereoDef, p.id);
+    if (sib && audioIns.some((q) => q.id === sib)) {
+      const pair = def.stereoPairs?.find(
+        (t) => (t[0] === p.id && t[1] === sib) || (t[1] === p.id && t[0] === sib),
+      );
+      if (pair) {
+        const first = audioIns.find((q) => q.id === pair[0])!;
+        const second = audioIns.find((q) => q.id === pair[1])!;
+        return { kind: 'stereo', ...orderLr(first, second) };
+      }
+    }
+  }
+
+  // 2) Stereo pair via L/R id tokens.
+  const leftIn = audioIns.find((p) => idWords(p.id).some((w) => LEFT_WORDS.has(w)));
+  const rightIn = audioIns.find((p) => idWords(p.id).some((w) => RIGHT_WORDS.has(w)));
+  if (leftIn && rightIn && leftIn.id !== rightIn.id) {
+    return { kind: 'stereo', left: leftIn.id, right: rightIn.id };
+  }
+
+  // 3) Single mono audio in.
+  if (audioIns.length === 1) return { kind: 'mono', in: audioIns[0].id };
+
+  // 4) One canonical main among several audio ins.
+  const mains = audioIns.filter((p) => MAIN_IN_IDS.has(p.id.toLowerCase()));
+  if (mains.length === 1) return { kind: 'mono', in: mains[0].id };
+
+  // 5) No identifiable main input.
+  return null;
+}
+
+/** Declared chain ROLE for a module — the chainWiring override, else inferred
+ *  from its main-in / main-out shape. `both` = a DSP insert (has both);
+ *  `source` = emits audio but takes none; `dsp` = takes audio but the resolver
+ *  found no main out (rare). A module with neither is not audio-participating. */
+export function chainRole(def: ConvenienceDef): 'source' | 'dsp' | 'both' | null {
+  if (def.chainWiring?.role) return def.chainWiring.role;
+  const hasOut = resolveMainAudioOut(def) !== null;
+  const hasIn = resolveMainAudioIn(def) !== null;
+  if (hasOut && hasIn) return 'both';
+  if (hasOut) return 'source';
+  if (hasIn) return 'dsp';
+  return null;
+}
+
+/** True when a module participates in a column's AUDIO chain (has a resolvable
+ *  main out OR main in). A pure-video / pure-CV member does not — it stays a
+ *  visual, automation-only column member. */
+export function isChainAudioParticipant(def: ConvenienceDef): boolean {
+  return resolveMainAudioOut(def) !== null || resolveMainAudioIn(def) !== null;
+}
+
+/** MixMaster aux-send ports for send slot `n` (1|2): the send OUTPUT the loop's
+ *  head reads (send{n}L/R) and the RETURN input its tail feeds (ret{n}L/R).
+ *  Guarded against the live mixmstrs def by the channel-port-map test. */
+export const SEND_SLOT_COUNT = 2;
+export function sendPorts(slot: number): {
+  sendL: string;
+  sendR: string;
+  retL: string;
+  retR: string;
+} {
+  return { sendL: `send${slot}L`, sendR: `send${slot}R`, retL: `ret${slot}L`, retR: `ret${slot}R` };
+}
+
+/** One planned chain edge (node-qualified — chain links cross node pairs). */
+export interface ChainEdgePlan {
+  fromNodeId: string;
+  fromPortId: string;
+  toNodeId: string;
+  toPortId: string;
+  sourceType: CableType;
+  targetType: CableType;
+}
+
+/**
+ * Plan the audio-signal edges linking ONE adjacent pair (up → down):
+ * resolveMainAudioOut(up) → resolveMainAudioIn(down), emitting BOTH L and R
+ * EXPLICITLY (never relying on the engine's stereo normaling):
+ *   - stereo → stereo: L→L, R→R.
+ *   - mono   → stereo: mono fills BOTH L and R (two edges).
+ *   - stereo → mono:   L and R BOTH into the mono in (two edges → the engine
+ *                      SUMS them = a stereo→mono downmix).
+ *   - mono   → mono:   one edge (the duplicate is de-duped).
+ * Returns [] when either side has no identifiable main (skip this link).
+ */
+export function planPairLink(
+  upNodeId: string,
+  upDef: ConvenienceDef,
+  downNodeId: string,
+  downDef: ConvenienceDef,
+): ChainEdgePlan[] {
+  const out = resolveMainAudioOut(upDef);
+  const inn = resolveMainAudioIn(downDef);
+  if (!out || !inn) return [];
+  const outL = out.kind === 'stereo' ? out.left : out.out;
+  const outR = out.kind === 'stereo' ? out.right : out.out;
+  const inL = inn.kind === 'stereo' ? inn.left : inn.in;
+  const inR = inn.kind === 'stereo' ? inn.right : inn.in;
+  const raw: ChainEdgePlan[] = [
+    { fromNodeId: upNodeId, fromPortId: outL, toNodeId: downNodeId, toPortId: inL, sourceType: 'audio', targetType: 'audio' },
+    { fromNodeId: upNodeId, fromPortId: outR, toNodeId: downNodeId, toPortId: inR, sourceType: 'audio', targetType: 'audio' },
+  ];
+  // De-dup identical endpoint pairs (mono→mono yields the same edge twice).
+  const seen = new Set<string>();
+  const out2: ChainEdgePlan[] = [];
+  for (const e of raw) {
+    const k = `${e.fromPortId}->${e.toPortId}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out2.push(e);
+  }
+  return out2;
+}
+
+/** A column member for the wiring planner: its node id + its resolved def. */
+export interface ColumnMember {
+  nodeId: string;
+  def: ConvenienceDef;
+}
+
+/** Deterministic namespaced edge id for a reconciler-OWNED workflow-column
+ *  edge. The `wcol-` prefix is what makes the stale-removal pass structurally
+ *  unable to touch a hand-drawn (non-wcol) cable, and the endpoint-derived body
+ *  makes two peers computing the same wiring converge on ONE Y.Map key. */
+export function wcolEdgeId(
+  src: string,
+  srcPort: string,
+  dst: string,
+  dstPort: string,
+): string {
+  return `wcol-e-${src}-${srcPort}-${dst}-${dstPort}`;
+}
+
+/** A fully-formed reconciler-owned edge (Edge-shaped, wcol- id). */
+export interface WcolEdge {
+  id: string;
+  source: { nodeId: string; portId: string };
+  target: { nodeId: string; portId: string };
+  sourceType: CableType;
+  targetType: CableType;
+}
+
+function toWcol(p: ChainEdgePlan): WcolEdge {
+  return {
+    id: wcolEdgeId(p.fromNodeId, p.fromPortId, p.toNodeId, p.toPortId),
+    source: { nodeId: p.fromNodeId, portId: p.fromPortId },
+    target: { nodeId: p.toNodeId, portId: p.toPortId },
+    sourceType: p.sourceType,
+    targetType: p.targetType,
+  };
+}
+
+/** Context for planning a whole column's reconciler-owned wiring. */
+export interface ColumnWiringCtx {
+  /** 1-based channel number. */
+  channel: number;
+  /** Ordered members source → … → tail (columns[ch], already pruned/deduped). */
+  members: readonly ColumnMember[];
+  /** The canonical clip-player node id (source of pitch/gate), or null. */
+  clipPlayerId: string | null;
+  /** The canonical mixmstrs node id (channel destination), or null. */
+  mixerId: string | null;
+  /** The resolved HEAD source of the column — the ONE audio-source that is wired
+   *  into the chain root (or straight to the mixer with no FX). Non-head sources
+   *  are automation-only (clip control, NO audio edge). null = a headless column
+   *  (e.g. after the head was deleted) — the FX chain stays intact but nothing
+   *  feeds it. Resolved by the reconciler via resolveColumnHead (an explicit,
+   *  collab-persisted flag — NEVER "first source in order", which would auto-
+   *  promote a surviving non-head source on deletion). */
+  headNodeId: string | null;
+}
+
+// ---------------- Column head-source resolution (one-head model) ----------------
+
+/** A chain-source member + its persisted head flag, for resolveColumnHead. The
+ *  flag is `node.data.isColumnHead` (an independent CRDT key on the member node,
+ *  like `data.channel`). */
+export interface SourceHeadState {
+  nodeId: string;
+  /** node.data.isColumnHead: true = the head, false = a DELIBERATE non-head
+   *  (never auto-promoted), undefined = a freshly-added source not yet classified. */
+  isHead?: boolean;
+}
+
+/** The resolved head + the flag writes the caller must persist to converge. */
+export interface ColumnHeadResolution {
+  /** The head source node id (the ONLY source audio-wired), or null (headless). */
+  headNodeId: string | null;
+  /** The isColumnHead flag writes to persist — ONLY genuine changes (idempotent). */
+  flagWrites: { nodeId: string; isHead: boolean }[];
+}
+
+/**
+ * Resolve the ONE head source of a column DETERMINISTICALLY from its chain-source
+ * members (in column order) + their persisted head flags. The tri-state flag
+ * carries exactly the information a pure state-based reconcile needs to satisfy
+ * the owner's rule WITHOUT auto-promotion:
+ *   - a member flagged `true` is the head (on a collab race where two are `true`,
+ *     the FIRST in column order wins; the rest are demoted to `false`);
+ *   - a member with an UNDEFINED flag is freshly added → it becomes the head ONLY
+ *     if no head is present yet, else it is classified as a DELIBERATE non-head
+ *     (`false`);
+ *   - a member flagged `false` is a deliberate non-head and is NEVER auto-promoted
+ *     — so DELETING the head leaves the column HEADLESS (the surviving non-head
+ *     sources stay automation-only), while ADDING a fresh source to a headless
+ *     column promotes IT to head (it arrives undefined).
+ * PURE + deterministic: two peers with the same ordered sources + flags produce
+ * the same headNodeId and the same flagWrites, so the Y.Doc converges. `sources`
+ * must be ONLY the column's chain-source members (has a main out, no main in), in
+ * column order — the caller filters.
+ */
+export function resolveColumnHead(sources: readonly SourceHeadState[]): ColumnHeadResolution {
+  const flagWrites: { nodeId: string; isHead: boolean }[] = [];
+  // A head is present iff some source is already flagged true.
+  let head: string | null = sources.find((s) => s.isHead === true)?.nodeId ?? null;
+
+  for (const s of sources) {
+    if (s.nodeId === head) continue; // the chosen head keeps its true flag
+    if (s.isHead === true) {
+      flagWrites.push({ nodeId: s.nodeId, isHead: false }); // second head (race) → demote
+    } else if (s.isHead === undefined) {
+      if (head === null) {
+        head = s.nodeId; // freshly added into a headless column → promote to head
+        flagWrites.push({ nodeId: s.nodeId, isHead: true });
+      } else {
+        flagWrites.push({ nodeId: s.nodeId, isHead: false }); // a head exists → non-head
+      }
+    }
+    // s.isHead === false: a deliberate non-head — leave it (no auto-promotion).
+  }
+  return { headNodeId: head, flagWrites };
+}
+
+/** True when a member is a chain SOURCE — it has no identifiable main audio IN,
+ *  so it can only be the HEAD of an island (never fed by an upstream member). A
+ *  pure source (VCO), a non-audio instrument, and a video-VCO all qualify; a DSP
+ *  (filter/reverb) or a both-ports insert (twotracks override) does NOT. */
+function isChainSource(def: ConvenienceDef): boolean {
+  return resolveMainAudioIn(def) === null;
+}
+
+/**
+ * Plan the COMPLETE reconciler-owned edge set for one column, DETERMINISTICALLY
+ * (pure function of the members array + channel + endpoints + the resolved head).
+ * Two peers with the same inputs produce byte-identical WcolEdge[] (same ids), so
+ * the Y.Map converges. ONE-HEAD single-strip model — a channel column is ONE
+ * channel strip = ONE head source → FX chain (in column order) → mixer. It NEVER
+ * sums sources or makes wiring impossible with real patch cables (owner rule):
+ *   - CLIP CONTROL: EVERY source instrument on the channel (clip-eligible + no
+ *     audio-in) — HEAD and non-head alike — gets the clip's pitch{n}/gate{n}.
+ *     This is the "automation channel" a non-head source keeps.
+ *   - AUDIO CHAIN: the SINGLE HEAD source (ctx.headNodeId) is wired at the chain
+ *     ROOT — into the first FX, or straight to the mixer if there is no FX. FX
+ *     form the post-head chain in column order (fx[i]→fx[i+1]). NON-HEAD sources
+ *     get NO audio edge at all (drop a 2nd source in a column and it is
+ *     automation-only until the user manually patches it — exactly a real rack).
+ *   - SEND: a SINGLE tail → ch{n}L/R. With FX the tail is the last FX with a main
+ *     out; with NO FX the head source is the tail. A headless column (head === null,
+ *     e.g. after the head was deleted) KEEPS its FX chain intact (fx[0]→…→mixer),
+ *     just with nothing feeding it — no auto-promotion of a surviving source.
+ */
+export function planColumnWiring(ctx: ColumnWiringCtx): WcolEdge[] {
+  const { channel, members, clipPlayerId, mixerId, headNodeId } = ctx;
+  const out: WcolEdge[] = [];
+  const seenIds = new Set<string>();
+  const push = (e: WcolEdge) => {
+    if (seenIds.has(e.id)) return;
+    seenIds.add(e.id);
+    out.push(e);
+  };
+
+  // (1) CLIP CONTROL — every SOURCE instrument (clip-eligible + no audio-in),
+  //     HEAD and non-head alike (the non-head source's automation channel).
+  //     A fed DSP (has audio-in) is driven by the chain, never by the clip.
+  if (clipPlayerId) {
+    for (const m of members) {
+      if (resolveClipWiring(m.def) === null) continue;
+      if (!isChainSource(m.def)) continue;
+      const clip = planClipControl(m.def, channel);
+      if (!clip) continue;
+      for (const e of clip) {
+        push(toWcol({
+          fromNodeId: clipPlayerId, fromPortId: e.fromPortId,
+          toNodeId: m.nodeId, toPortId: e.toPortId,
+          sourceType: e.sourceType, targetType: e.targetType,
+        }));
+      }
+    }
+  }
+
+  // (2)+(3) ONE-HEAD audio chain + single send. Split the audio participants by
+  // ROLE (NOT insertion order): SOURCES have no main audio-in, FX do. ONLY the
+  // resolved head source is audio-wired; non-head sources are automation-only.
+  const audio = members.filter((m) => isChainAudioParticipant(m.def));
+  const fx = audio.filter((m) => !isChainSource(m.def)); // has a main audio-in
+  const head =
+    headNodeId != null
+      ? audio.find((m) => m.nodeId === headNodeId && isChainSource(m.def)) ?? null
+      : null;
+
+  // FX internal chain: fx[i] → fx[i+1] (column order among the FX). Stays intact
+  // even when headless — a deleted head leaves the chain, not a dangling gap.
+  for (let i = 0; i + 1 < fx.length; i++) {
+    for (const e of planPairLink(fx[i]!.nodeId, fx[i]!.def, fx[i + 1]!.nodeId, fx[i + 1]!.def)) {
+      push(toWcol(e));
+    }
+  }
+
+  // The HEAD source feeds the ROOT of the FX chain (only the head — never a
+  // non-head source, never a sum). With no FX the head goes straight to the
+  // mixer (the send pass below).
+  if (fx.length > 0 && head) {
+    for (const e of planPairLink(head.nodeId, head.def, fx[0]!.nodeId, fx[0]!.def)) push(toWcol(e));
+  }
+
+  // SEND-TO-MIXER — a SINGLE tail per column. With FX: the last FX with a main
+  // out. Without FX: ONLY the head source sends (non-head sources never reach
+  // the mixer). A headless no-FX column sends nothing.
+  if (mixerId) {
+    const emitSend = (m: ColumnMember) => {
+      const send = planSendToMixer(m.def, channel);
+      if (!send) return;
+      for (const e of send) {
+        push(toWcol({
+          fromNodeId: m.nodeId, fromPortId: e.fromPortId,
+          toNodeId: mixerId, toPortId: e.toPortId,
+          sourceType: e.sourceType, targetType: e.targetType,
+        }));
+      }
+    };
+    if (fx.length > 0) {
+      let tail: ColumnMember | null = null;
+      for (const m of fx) if (resolveMainAudioOut(m.def) !== null) tail = m; // last main-out FX
+      if (tail) emitSend(tail);
+    } else if (head && resolveMainAudioOut(head.def) !== null) {
+      emitSend(head);
+    }
+  }
+
+  return out;
+}
+
+/** Context for planning a send-loop's reconciler-owned wiring. */
+export interface SendWiringCtx {
+  /** 1-based send slot (1|2). */
+  slot: number;
+  /** Ordered send tenants head → … → tail. */
+  members: readonly ColumnMember[];
+  /** The canonical mixmstrs node id (send output + return input), or null. */
+  mixerId: string | null;
+}
+
+/**
+ * Plan the reconciler-owned wiring for one aux-send loop:
+ *   mixer.send{n}L/R → HEAD.mainIn ; internal adjacent links ; TAIL.mainOut →
+ *   mixer.ret{n}L/R.
+ * No clip control, no automation lane (a send is a pure shared bus for v1).
+ * Deterministic + pure, same as planColumnWiring.
+ */
+export function planSendWiring(ctx: SendWiringCtx): WcolEdge[] {
+  const { slot, members, mixerId } = ctx;
+  const audio = members.filter((m) => isChainAudioParticipant(m.def));
+  if (!mixerId || audio.length === 0) return [];
+  const out: WcolEdge[] = [];
+  const seenIds = new Set<string>();
+  const push = (e: WcolEdge) => {
+    if (seenIds.has(e.id)) return;
+    seenIds.add(e.id);
+    out.push(e);
+  };
+  const { sendL, sendR, retL, retR } = sendPorts(slot);
+
+  // HEAD: mixer send{n}L/R → head module's main input. The mixer's send output
+  // is a real stereo pair, so drive both sides of the head's main in.
+  const head = audio[0]!;
+  const headIn = resolveMainAudioIn(head.def);
+  if (headIn) {
+    const inL = headIn.kind === 'stereo' ? headIn.left : headIn.in;
+    const inR = headIn.kind === 'stereo' ? headIn.right : headIn.in;
+    push(toWcol({ fromNodeId: mixerId, fromPortId: sendL, toNodeId: head.nodeId, toPortId: inL, sourceType: 'audio', targetType: 'audio' }));
+    if (inR !== inL) {
+      push(toWcol({ fromNodeId: mixerId, fromPortId: sendR, toNodeId: head.nodeId, toPortId: inR, sourceType: 'audio', targetType: 'audio' }));
+    }
+  }
+
+  // INTERNAL links.
+  for (let i = 0; i + 1 < audio.length; i++) {
+    for (const e of planPairLink(audio[i]!.nodeId, audio[i]!.def, audio[i + 1]!.nodeId, audio[i + 1]!.def)) {
+      push(toWcol(e));
+    }
+  }
+
+  // TAIL: tail module main out → mixer ret{n}L/R.
+  const tail = audio[audio.length - 1]!;
+  const tailOut = resolveMainAudioOut(tail.def);
+  if (tailOut) {
+    const outL = tailOut.kind === 'stereo' ? tailOut.left : tailOut.out;
+    const outR = tailOut.kind === 'stereo' ? tailOut.right : tailOut.out;
+    push(toWcol({ fromNodeId: tail.nodeId, fromPortId: outL, toNodeId: mixerId, toPortId: retL, sourceType: 'audio', targetType: 'audio' }));
+    push(toWcol({ fromNodeId: tail.nodeId, fromPortId: outR, toNodeId: mixerId, toPortId: retR, sourceType: 'audio', targetType: 'audio' }));
+  }
+
+  return out;
 }

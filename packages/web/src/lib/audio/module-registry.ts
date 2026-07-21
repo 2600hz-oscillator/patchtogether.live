@@ -14,6 +14,7 @@ import type {
   RackSize,
   ControlFamily,
   ModuleDocs,
+  ChainWiring,
 } from '$lib/graph/types';
 import type { AudioModuleFactory } from './engine';
 
@@ -171,35 +172,17 @@ export interface AudioModuleDef {
    */
   controlFamilies?: readonly ControlFamily[];
   /**
-   * DECLARATIVE lane-wiring role (workflow auto-patch). Distinct from the DEAD
-   * `chainRole` string (no consumer) — this is a structured marker the future
-   * "tap planner" reads to auto-wire a dropped clip lane's pitch/gate/velocity
-   * into this module's inputs. In Part A of CV Buddy it is INERT (its consumer
-   * is Part B, which stacks on the fixed column planner); modules just DECLARE
-   * it. `role: 'noteSink'` means "a lane can tap its note CV into me"; `laneTap`
-   * names which input ports receive the lane's pitch / gate / velocity.
-   * Carried by cvBuddy + midiOutBuddy (the two lane note-sinks).
+   * Optional workflow channel-columns chain-wiring override + lane note-tap
+   * declaration (see ChainWiring in graph/types.ts). Two orthogonal uses:
+   *   - CHAIN OVERRIDE: declares this module's true insert IN / chain OUT ports
+   *     (and `role: 'source'|'dsp'|'both'`) when the default port-shape
+   *     resolution is wrong for the vertical DSP chain.
+   *   - NOTE-SINK: `role: 'noteSink'` + `laneTap` marks a module a clip lane can
+   *     drive — the column reconciler (Part B) taps the lane's pitch/gate/vel CV
+   *     into `laneTap.{pitchIn,gateIn,velIn}`. Carried by cvBuddy + midiOutBuddy.
    */
   chainWiring?: ChainWiring;
   factory: AudioModuleFactory;
-}
-
-/**
- * A module's declarative lane-tap wiring (see AudioModuleDef.chainWiring). INERT
- * in Part A — declared for the Part-B tap planner to consume. `role: 'noteSink'`
- * marks a module a clip lane can drive; `laneTap` maps the lane's three note
- * signals to this module's input port ids.
- */
-export interface ChainWiring {
-  role: 'noteSink';
-  laneTap: {
-    /** Input port id the lane's pitch CV wires into. */
-    pitchIn: string;
-    /** Input port id the lane's gate wires into. */
-    gateIn: string;
-    /** Input port id the lane's velocity CV wires into. */
-    velIn: string;
-  };
 }
 
 /**
