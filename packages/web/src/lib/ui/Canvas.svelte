@@ -66,8 +66,12 @@
     laneTopYForHeight,
     planLanePushUps,
     needsDefaultVideoOut,
+    rackLacksType,
     videoOutSpawnPos,
     DEFAULT_VIDEO_OUT_ID,
+    VIDEO_ZONE_EXTRA_DEFAULTS,
+    videoZoneWiresFor,
+    resolveMasterVideoOutId,
     laneCenterViewport,
     videoAreaViewport,
     type ModuleBoxLike,
@@ -1241,6 +1245,73 @@
       if (m) { if (!m.data) m.data = {}; (m.data as Record<string, unknown>).workflowVideoOutSeeded = true; }
     }, WORKFLOW_PIN_SPAWN_ORIGIN);
     trace('workflow: spawned default videoOut sink in the video zone (one-shot)');
+  });
+
+  // DEFAULT VIDEO-ZONE A/V DEFAULTS (owner directive): a fresh workflow rack
+  // ALSO auto-spawns a RECORDERBOX (records the master video + master audio) and
+  // a SYNESTHESIA (renders audio-reactive visuals from the master mix) beside the
+  // default videoOut, and auto-WIRES both to the master buses. Same one-shot
+  // mechanism as the videoOut seed above: each module carries its OWN latch on
+  // the pinned mixer (spec.seededFlag) so once seeded a user delete is respected
+  // forever; the wires are seeded in the SAME transact (deterministic edge ids,
+  // occupied targets skipped) so a user deleting a module OR a cable is never
+  // re-fought. Gated on the pinned mixer (the wire source + latch home); the
+  // recorderbox spec additionally waits on a videoOut existing so its master-
+  // video tap lands. Same seed gate + non-tracked origin as the pins.
+  $effect(() => {
+    if (!workflowMode) return;
+    if ((provider && !providerHasSynced) || scratchSeeded === false) return;
+    const mixer = patch.nodes[WCOL_MIXER_ID];
+    if (!mixer) return; // wait for the pinned mixer (the latch home + wire source)
+    for (const spec of VIDEO_ZONE_EXTRA_DEFAULTS) {
+      const seeded =
+        (mixer.data as Record<string, unknown> | undefined)?.[spec.seededFlag] === true;
+      if (seeded) continue; // one-shot done — respect a user delete forever
+      if (!rackLacksType(snapshot.nodes, spec.type)) {
+        // An instance already exists (loaded rack) — set the latch so we never
+        // add a second, without spawning or wiring (respect the existing patch).
+        ydoc.transact(() => {
+          const m = patch.nodes[WCOL_MIXER_ID];
+          if (m) { if (!m.data) m.data = {}; (m.data as Record<string, unknown>)[spec.seededFlag] = true; }
+        }, WORKFLOW_PIN_SPAWN_ORIGIN);
+        continue;
+      }
+      const videoOutId = resolveMasterVideoOutId(snapshot.nodes);
+      // recorderbox taps the master videoOut's pass-through for the master video
+      // — defer its seed until a videoOut exists so the video wire lands too.
+      if (spec.requiresVideoOut && !videoOutId) continue;
+      const wires = videoZoneWiresFor(spec.type as 'recorderbox' | 'synesthesia', videoOutId);
+      const occupied = new Set<string>();
+      for (const e of snapshot.edges) occupied.add(`${e.target.nodeId}:${e.target.portId}`);
+      ydoc.transact(() => {
+        if (patch.nodes[spec.id]) return; // in-transact re-check
+        patch.nodes[spec.id] = {
+          id: spec.id,
+          type: spec.type,
+          domain: spec.domain,
+          position: { x: spec.pos.x, y: spec.pos.y },
+          params: {},
+          data: { name: nextDefaultName(patch.nodes, spec.type) },
+        };
+        for (const wire of wires) {
+          if (patch.edges[wire.id]) continue;
+          const busy = Object.values(patch.edges).some(
+            (e) => e && e.target.nodeId === wire.target.nodeId && e.target.portId === wire.target.portId,
+          );
+          if (busy || occupied.has(`${wire.target.nodeId}:${wire.target.portId}`)) continue;
+          patch.edges[wire.id] = {
+            id: wire.id,
+            source: { nodeId: wire.source.nodeId, portId: wire.source.portId },
+            target: { nodeId: wire.target.nodeId, portId: wire.target.portId },
+            sourceType: wire.sourceType,
+            targetType: wire.targetType,
+          };
+        }
+        const m = patch.nodes[WCOL_MIXER_ID];
+        if (m) { if (!m.data) m.data = {}; (m.data as Record<string, unknown>)[spec.seededFlag] = true; }
+      }, WORKFLOW_PIN_SPAWN_ORIGIN);
+      trace(`workflow: spawned + wired default ${spec.type} in the video zone (one-shot)`);
+    }
   });
 
   // DOCK KEYMAP: M / E / C toggle the matching pinned card in the BOTTOM

@@ -17,6 +17,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { installRenderSmokeHooks } from './_render-smoke';
 
 /** The pinned trio's deterministic node ids (graph/workflow-pins.ts). */
 const PINNED_IDS = ['pinned-mixmstrs', 'pinned-electraControl', 'pinned-clipplayer'] as const;
@@ -87,6 +88,19 @@ test.describe('dawless is unchanged', () => {
 });
 
 test.describe('workflow shell', () => {
+  // A fresh workflow rack now auto-spawns the video-zone defaults (videoOut +
+  // recorderbox + synesthesia — PR #1155). These tests exercise the workflow
+  // SHELL (dock keymap, pins, File.. menu), NOT video rendering, so idle the
+  // engine rAF loop before boot (the established render-smoke seam — no
+  // per-frame step(), no assertion weakened): synesthesia's live WebGL loop
+  // otherwise runs on CI's SwiftShader software renderer in every shell test,
+  // adding wall-time + main-thread contention (the CI-SwiftShader video-e2e
+  // cost class) for no benefit here. The defaults' real spawn+wire is covered
+  // in workflow-video-zone-defaults.spec.ts, which boots the engine live.
+  test.beforeEach(async ({ page }) => {
+    await installRenderSmokeHooks(page);
+  });
+
   test('boots the workflow topbar + left rail, replaces the slot bar, spawns the pinned trio off-canvas', async ({ page }) => {
     await page.goto('/rack?mode=workflow');
     await expect(page.getByTestId('workflow-topbar')).toBeVisible();
@@ -173,8 +187,14 @@ test.describe('workflow shell', () => {
     await page.locator('#wf-ce-probe').click();
     await page.keyboard.type('mec');
     await expect(page.getByTestId('dock-zone-bottom')).toHaveCount(0);
-    // Blur back to the canvas → the keymap is live again.
-    await page.locator('.svelte-flow__pane:visible').first().click();
+    // Blur back to a NON-typing target → the keymap is live again. NB: don't
+    // click the flow pane CENTER — the workflow video-zone default cards
+    // (videoOut/recorderbox/synesthesia, PR #1155) now occupy it, so a center
+    // click lands on a card control (e.g. recorderbox's SIZE <select>) and
+    // focus stays in a typing target, leaving the dock keymap inert
+    // (isTypingTarget). Click an empty topbar corner instead (the proven
+    // workflow-viewport-nav pattern) → activeElement returns to <body>.
+    await page.locator('body').click({ position: { x: 5, y: 5 } });
     await page.keyboard.press('m');
     await expect(page.getByTestId('dock-zone-bottom')).toBeVisible();
   });

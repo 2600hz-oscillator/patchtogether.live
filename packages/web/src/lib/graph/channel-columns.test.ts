@@ -33,7 +33,17 @@ import {
   laneRegionXBand,
   videoAreaBand,
   videoOutSpawnPos,
+  videoZoneSlotPos,
   needsDefaultVideoOut,
+  rackLacksType,
+  VIDEO_ZONE_DEFAULTS,
+  VIDEO_ZONE_EXTRA_DEFAULTS,
+  VIDEO_ZONE_SLOT_PITCH_X,
+  DEFAULT_VIDEO_OUT_ID,
+  DEFAULT_RECORDERBOX_ID,
+  DEFAULT_SYNESTHESIA_ID,
+  videoZoneWiresFor,
+  resolveMasterVideoOutId,
   VIDEO_AREA_HEIGHT,
   laneCenterViewport,
   videoAreaViewport,
@@ -330,6 +340,113 @@ describe('column geometry', () => {
     it('needsDefaultVideoOut is true only when no videoOut exists yet', () => {
       expect(needsDefaultVideoOut([{ type: 'tidyVco' }, { type: 'mixmstrs' }])).toBe(true);
       expect(needsDefaultVideoOut([{ type: 'tidyVco' }, { type: 'videoOut' }])).toBe(false);
+    });
+
+    it('rackLacksType is true only when no node of the type exists', () => {
+      expect(rackLacksType([{ type: 'videoOut' }], 'recorderbox')).toBe(true);
+      expect(rackLacksType([{ type: 'recorderbox' }], 'recorderbox')).toBe(false);
+      expect(rackLacksType([{ type: 'synesthesia' }], 'synesthesia')).toBe(false);
+    });
+  });
+
+  // ---- VIDEO ZONE default TRIO layout (videoOut + recorderbox + synesthesia) ----
+  describe('video-zone default trio: spawn layout (no overlap, grid-snapped, in-zone)', () => {
+    it('videoOutSpawnPos is slot 0 (unchanged — the pre-existing videoOut never moves)', () => {
+      expect(videoOutSpawnPos()).toEqual(videoZoneSlotPos(0));
+    });
+
+    it('the trio lays out left→right at one-column pitch, deterministic ids + roles', () => {
+      expect(VIDEO_ZONE_DEFAULTS.map((s) => s.id)).toEqual([
+        DEFAULT_VIDEO_OUT_ID, DEFAULT_RECORDERBOX_ID, DEFAULT_SYNESTHESIA_ID,
+      ]);
+      expect(VIDEO_ZONE_DEFAULTS.map((s) => s.type)).toEqual([
+        'videoOut', 'recorderbox', 'synesthesia',
+      ]);
+      // slots ascend by exactly the pitch
+      expect(VIDEO_ZONE_DEFAULTS[1]!.pos.x - VIDEO_ZONE_DEFAULTS[0]!.pos.x).toBe(VIDEO_ZONE_SLOT_PITCH_X);
+      expect(VIDEO_ZONE_DEFAULTS[2]!.pos.x - VIDEO_ZONE_DEFAULTS[1]!.pos.x).toBe(VIDEO_ZONE_SLOT_PITCH_X);
+      // the EXTRA set (what the new ensure spawns) is exactly the two non-videoOut ones
+      expect(VIDEO_ZONE_EXTRA_DEFAULTS.map((s) => s.id)).toEqual([
+        DEFAULT_RECORDERBOX_ID, DEFAULT_SYNESTHESIA_ID,
+      ]);
+    });
+
+    it('all three fit the video zone horizontally, grid-snapped, with NO overlap', () => {
+      const b = videoAreaBand();
+      let prevRight = -Infinity;
+      for (const s of VIDEO_ZONE_DEFAULTS) {
+        // grid-snapped (HP grid on x, U grid on y)
+        expect(s.pos.x % (RACK_UNIT / 8)).toBe(0);
+        expect(s.pos.y % RACK_UNIT).toBe(0);
+        // same top edge (the zone's baseline) for all three
+        expect(s.pos.y).toBe(b.y0);
+        // inside the zone band horizontally
+        expect(s.pos.x).toBeGreaterThanOrEqual(b.x0);
+        expect(s.pos.x + s.nominalWidth).toBeLessThanOrEqual(b.x1);
+        // no overlap with the previous card (left edge clears prior right edge)
+        expect(s.pos.x).toBeGreaterThanOrEqual(prevRight);
+        prevRight = s.pos.x + s.nominalWidth;
+      }
+    });
+  });
+
+  describe('video-zone default WIRING (master A/V taps) — deterministic edge ids', () => {
+    it('resolveMasterVideoOutId prefers workflow-videoOut, then any videoOut, else null', () => {
+      expect(resolveMasterVideoOutId([{ id: DEFAULT_VIDEO_OUT_ID, type: 'videoOut' }])).toBe(DEFAULT_VIDEO_OUT_ID);
+      expect(resolveMasterVideoOutId([{ id: 'user-vo', type: 'videoOut' }])).toBe('user-vo');
+      expect(resolveMasterVideoOutId([{ id: 'x', type: 'scope' }])).toBeNull();
+      // workflow-videoOut wins even when a user videoOut is also present
+      expect(resolveMasterVideoOutId([
+        { id: 'user-vo', type: 'videoOut' },
+        { id: DEFAULT_VIDEO_OUT_ID, type: 'videoOut' },
+      ])).toBe(DEFAULT_VIDEO_OUT_ID);
+    });
+
+    it('recorderbox wires: master VIDEO ← videoOut.out, master AUDIO ← mixmstrs masterL/R', () => {
+      const wires = videoZoneWiresFor('recorderbox', DEFAULT_VIDEO_OUT_ID);
+      expect(wires).toEqual([
+        {
+          id: `e-${DEFAULT_VIDEO_OUT_ID}-out-${DEFAULT_RECORDERBOX_ID}-in`,
+          source: { nodeId: DEFAULT_VIDEO_OUT_ID, portId: 'out' },
+          target: { nodeId: DEFAULT_RECORDERBOX_ID, portId: 'in' },
+          sourceType: 'video', targetType: 'video',
+        },
+        {
+          id: `e-pinned-mixmstrs-masterL-${DEFAULT_RECORDERBOX_ID}-audio_l`,
+          source: { nodeId: 'pinned-mixmstrs', portId: 'masterL' },
+          target: { nodeId: DEFAULT_RECORDERBOX_ID, portId: 'audio_l' },
+          sourceType: 'audio', targetType: 'audio',
+        },
+        {
+          id: `e-pinned-mixmstrs-masterR-${DEFAULT_RECORDERBOX_ID}-audio_r`,
+          source: { nodeId: 'pinned-mixmstrs', portId: 'masterR' },
+          target: { nodeId: DEFAULT_RECORDERBOX_ID, portId: 'audio_r' },
+          sourceType: 'audio', targetType: 'audio',
+        },
+      ]);
+    });
+
+    it('recorderbox omits the video wire when no videoOut exists (audio still wired)', () => {
+      const wires = videoZoneWiresFor('recorderbox', null);
+      expect(wires.map((w) => w.target.portId)).toEqual(['audio_l', 'audio_r']);
+    });
+
+    it('synesthesia wires: mixmstrs masterL → A (a_in), masterR → B (b_in)', () => {
+      const wires = videoZoneWiresFor('synesthesia', null);
+      expect(wires).toEqual([
+        {
+          id: `e-pinned-mixmstrs-masterL-${DEFAULT_SYNESTHESIA_ID}-a_in`,
+          source: { nodeId: 'pinned-mixmstrs', portId: 'masterL' },
+          target: { nodeId: DEFAULT_SYNESTHESIA_ID, portId: 'a_in' },
+          sourceType: 'audio', targetType: 'audio',
+        },
+        {
+          id: `e-pinned-mixmstrs-masterR-${DEFAULT_SYNESTHESIA_ID}-b_in`,
+          source: { nodeId: 'pinned-mixmstrs', portId: 'masterR' },
+          target: { nodeId: DEFAULT_SYNESTHESIA_ID, portId: 'b_in' },
+          sourceType: 'audio', targetType: 'audio',
+        },
+      ]);
     });
   });
 
