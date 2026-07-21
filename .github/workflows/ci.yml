@@ -1333,6 +1333,341 @@ jobs:
           retention-days: 30
 
   # -----------------------------------------------------------------------
+  # behavioral-watchdog — the PUSH-ONLY main-red scream (+ optional rollback).
+  #
+  # The `behavioral-coverage` lane is `continue-on-error: true` (an informational
+  # tuning lane), so its GitHub JOB CONCLUSION always reports success even when
+  # real per-module behavioral assertions FAILED — a green umbrella LIES about
+  # behavioral health. This watchdog reads the REAL result out of the merged
+  # Playwright JSON report (scripts/behavioral-watchdog.mjs), and for @collab
+  # asserts the committed attestation was produced with a REAL DATABASE
+  # (`databaseConfirmed`) — a green attestation built WITHOUT a DB is VACUOUS
+  # (memory `feedback_collab_tests_vacuous_without_db`).
+  #
+  # Flow: aggregate the shard reports → diff against a "last-green" baseline (the
+  # `behavioral-last-green` CI artifact, seeded by the committed
+  # ci/behavioral-last-green.json) → CANDIDATE newly-failing modules → RE-RUN
+  # only those rows ONCE (a break counts only if it REPRODUCES, rejecting
+  # LFS-502 / SwiftShader-timeout blips) → on a reproduced regression (or a
+  # vacuous collab) open a p0 issue via the SAME github-script issue-create alert
+  # path used by live-smoke-alert.yml / #1105 (emails repo watchers incl.
+  # tmayshark@gmail.com) and EXIT NON-ZERO. On a clean run it refreshes the
+  # baseline artifact.
+  #
+  # PUSH-ONLY (main): it never gates PRs and is NOT in the `ci` umbrella — it is
+  # the after-the-fact main-health backstop, not a merge gate. It CANNOT be fully
+  # e2e'd until it runs on a real push (the p0/rollback branches only exercise on
+  # a genuine reproduced main break); the aggregator brain is unit-tested instead
+  # (scripts/behavioral-watchdog.test.ts).
+  #
+  # OPTIONAL auto-rollback is gated on repo var AUTO_ROLLBACK=1 and DEFAULTS OFF:
+  # it opens a `git revert` PR from `rollback/behavioral-<sha>` and NEVER
+  # auto-merges — a human still reviews + merges the revert.
+  # -----------------------------------------------------------------------
+  behavioral-watchdog:
+    name: behavioral/collab watchdog (push-only main-red scream)
+    needs: [behavioral-coverage, collab-attest]
+    runs-on: ubuntu-latest
+    # PUSH-to-main ONLY, and `always()` so it runs regardless of the upstream
+    # jobs' conclusions (behavioral-coverage's continue-on-error success is
+    # exactly what we must look past; a failed collab-attest must still be seen).
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    timeout-minutes: 30
+    permissions:
+      contents: write        # push the rollback/behavioral-<sha> branch
+      issues: write          # open the p0 alert issue (the reused alert path)
+      pull-requests: write   # open the rollback PR (never auto-merged)
+      actions: read          # cross-workflow artifact download (baseline)
+
+    services:
+      postgres:
+        # AWS ECR Public mirror (see the unit job) — avoids the flaky Docker Hub
+        # service-container pull. Needed only for the conditional re-run of
+        # failing behavioral rows, but a service container is job-scoped.
+        image: public.ecr.aws/docker/library/postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: patchtogether_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
+      # Repo var, DEFAULT OFF. Only '1' arms the auto-rollback PR.
+      AUTO_ROLLBACK: ${{ vars.AUTO_ROLLBACK }}
+
+    steps:
+      # Full history (no LFS) so `git revert -m 1 <mergeSHA>` can resolve both
+      # parents of the pushed merge commit when AUTO_ROLLBACK is armed.
+      - name: Checkout (full history, no LFS)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: false
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      - name: Install workspace deps (tsx for the collab hash + playwright merge)
+        run: flox activate -- task install
+
+      # ── Read the REAL behavioral result ────────────────────────────────
+      - name: Download behavioral blob reports
+        uses: actions/download-artifact@v4
+        with:
+          path: e2e/all-behavioral-blob-reports
+          pattern: behavioral-blob-report-*
+          merge-multiple: true
+
+      - name: Merge behavioral blobs → JSON report
+        run: |
+          # The json reporter writes the report to stdout; capture it. If the
+          # merge fails (e.g. no shard produced a blob), fall back to an EMPTY
+          # report so the aggregator sees zero failures and does NOT false-scream
+          # (a real break with corrupt reports is a separate, louder problem).
+          if flox activate -- npx --workspace e2e playwright merge-reports \
+               --reporter json ./all-behavioral-blob-reports \
+               > "$GITHUB_WORKSPACE/behavioral-report.json" 2> merge.err; then
+            echo "merged behavioral report OK"
+          else
+            echo "::warning::behavioral merge-reports failed; using empty report (see merge.err)"
+            cat merge.err || true
+            echo '{"suites":[]}' > "$GITHUB_WORKSPACE/behavioral-report.json"
+          fi
+
+      # ── Fetch the last-green baseline (artifact → committed seed fallback) ─
+      - name: Restore last-green baseline
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          name: behavioral-last-green
+          workflow: ci.yml
+          path: ./.behavioral-baseline
+          if_no_artifact_found: ignore
+
+      - name: Resolve baseline path
+        id: baseline
+        run: |
+          if [[ -f ./.behavioral-baseline/behavioral-last-green.json ]]; then
+            echo "path=./.behavioral-baseline/behavioral-last-green.json" >> "$GITHUB_OUTPUT"
+            echo "using prior baseline artifact"
+          else
+            echo "path=ci/behavioral-last-green.json" >> "$GITHUB_OUTPUT"
+            echo "no baseline artifact — bootstrapping from committed seed"
+          fi
+
+      # ── Aggregate: behavioral pass/fail + collab db_present + candidate diff ─
+      - name: Aggregate behavioral + collab result
+        id: agg
+        run: |
+          HASH="$(flox activate -- bash scripts/collab-attest-hash.sh)"
+          ATT="ci-collab-attest/${HASH}.json"
+          echo "collab content hash: ${HASH} (attestation: ${ATT})"
+          flox activate -- node scripts/behavioral-watchdog.mjs aggregate \
+            --behavioral "$GITHUB_WORKSPACE/behavioral-report.json" \
+            --collab "$ATT" \
+            --baseline "${{ steps.baseline.outputs.path }}"
+
+      # ── Re-run ONLY the candidate rows ONCE (reject infra blips) ───────
+      - name: Download DSP dist artifact (for re-run)
+        if: steps.agg.outputs.candidate_count != '0'
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-dist
+          path: packages/dsp/dist
+
+      - name: Download web preview bundle artifact (for re-run)
+        if: steps.agg.outputs.candidate_count != '0'
+        uses: actions/download-artifact@v4
+        with:
+          name: web-preview-dist
+          path: packages/web/.svelte-kit/output
+
+      - name: Install Playwright Chromium (for re-run)
+        if: steps.agg.outputs.candidate_count != '0'
+        run: flox activate -- task install:browsers
+
+      - name: Apply DB schema + emit manifest (for re-run)
+        if: steps.agg.outputs.candidate_count != '0'
+        run: |
+          flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql -f db/schema/005_rackspace_mode.sql
+          flox activate -- task test:emit-manifest
+
+      - name: Re-run failing behavioral rows (once)
+        if: steps.agg.outputs.candidate_count != '0'
+        env:
+          E2E_USE_PREVIEW: '1'
+        run: |
+          echo "re-running candidates: ${{ steps.agg.outputs.candidate_modules }}"
+          # Non-fatal: a reproduced failure is EXPECTED here — we parse the
+          # report, not the exit code.
+          flox activate -- npx --workspace e2e playwright test \
+            per-module-per-port-behavioral.spec.ts \
+            --grep "${{ steps.agg.outputs.candidate_grep }}" \
+            --workers=4 \
+            --reporter=json > "$GITHUB_WORKSPACE/behavioral-rerun.json" 2> rerun.err || true
+          if [[ ! -s "$GITHUB_WORKSPACE/behavioral-rerun.json" ]]; then
+            echo "::warning::re-run produced no JSON; treating candidates as UNreproduced"
+            cat rerun.err || true
+            echo '{"suites":[]}' > "$GITHUB_WORKSPACE/behavioral-rerun.json"
+          fi
+
+      - name: Confirm reproduced regressions
+        id: confirm
+        if: steps.agg.outputs.candidate_count != '0'
+        run: |
+          flox activate -- node scripts/behavioral-watchdog.mjs confirm \
+            --candidates "${{ steps.agg.outputs.candidate_modules }}" \
+            --rerun "$GITHUB_WORKSPACE/behavioral-rerun.json"
+
+      # ── Decide: scream? rollback? ──────────────────────────────────────
+      - name: Decide
+        id: decide
+        run: |
+          newly='${{ steps.confirm.outputs.newly_failing }}'
+          newly_count='${{ steps.confirm.outputs.newly_failing_count }}'
+          [[ -z "$newly_count" ]] && newly_count=0
+          collab_vacuous='${{ steps.agg.outputs.collab_vacuous }}'
+
+          scream=false
+          rollback=false
+          if [[ "$newly_count" -gt 0 ]]; then
+            scream=true
+            # Auto-rollback ONLY for a reproduced behavioral regression (a code
+            # break tied to this push's SHA), never for collab vacuity.
+            if [[ "$AUTO_ROLLBACK" == "1" ]]; then rollback=true; fi
+          fi
+          if [[ "$collab_vacuous" == "true" ]]; then scream=true; fi
+
+          {
+            echo "scream=$scream"
+            echo "rollback=$rollback"
+            echo "newly_failing=$newly"
+            echo "newly_count=$newly_count"
+          } >> "$GITHUB_OUTPUT"
+          echo "scream=$scream rollback=$rollback newly='$newly' collab_vacuous=$collab_vacuous"
+
+      # ── Fire the existing alert path: open a p0 issue (emails watchers) ─
+      # Reuses live-smoke-alert.yml / #1105's github-script issue-create
+      # integration (github.rest.issues.create → emails repo watchers incl.
+      # tmayshark@gmail.com). No fabricated endpoint.
+      - name: Open p0 main-red issue (scream)
+        if: steps.decide.outputs.scream == 'true'
+        uses: actions/github-script@v7
+        env:
+          NEWLY: ${{ steps.decide.outputs.newly_failing }}
+          COLLAB_VACUOUS: ${{ steps.agg.outputs.collab_vacuous }}
+          COLLAB_REASON: ${{ steps.agg.outputs.collab_reason }}
+          FAILED_MODULES: ${{ steps.agg.outputs.failed_modules }}
+        with:
+          script: |
+            const newly = (process.env.NEWLY || '').trim();
+            const collabVacuous = process.env.COLLAB_VACUOUS === 'true';
+            const lines = [
+              '**Behavioral/collab watchdog tripped on a push to `main`.**',
+              '',
+              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              `Commit: ${context.sha}`,
+              '',
+            ];
+            if (newly) {
+              lines.push(
+                '### Reproduced behavioral regression',
+                `NEWLY-failing modules (green at the last-green baseline, now failing — and failed AGAIN on the targeted re-run): **${newly.split(' ').filter(Boolean).join(', ')}**`,
+                '',
+                `All currently-failing behavioral modules: ${process.env.FAILED_MODULES || '(none)'}`,
+                '',
+              );
+            }
+            if (collabVacuous) {
+              lines.push(
+                '### @collab ran VACUOUS',
+                `The committed @collab attestation for the current collab content hash was NOT produced with a real DATABASE (${process.env.COLLAB_REASON}). A green @collab lane here proves nothing about multi-user behaviour — re-attest with a real Postgres (\`flox activate -- task collab:attest\`).`,
+                '',
+              );
+            }
+            lines.push(
+              'This issue emails repo watchers (incl. tmayshark@gmail.com) via the same alert path as `live-smoke-alert.yml` (#1105). Root-cause immediately — a red push on `main` is a P0.',
+            );
+            const title = newly
+              ? `[P0] main red: behavioral regression — ${newly.split(' ').filter(Boolean).slice(0, 4).join(', ')}`
+              : '[P0] main red: @collab attestation ran VACUOUS';
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body: lines.join('\n'),
+              labels: ['p0', 'behavioral-regression', 'main-red', 'observability', 'alert'],
+            });
+
+      # ── Optional auto-rollback PR (AUTO_ROLLBACK=1, default OFF; never merged) ─
+      - name: Open rollback PR (optional, never auto-merged)
+        if: steps.decide.outputs.rollback == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEWLY: ${{ steps.decide.outputs.newly_failing }}
+        run: |
+          set -euo pipefail
+          SHA='${{ github.sha }}'
+          SHORT="${SHA:0:12}"
+          BRANCH="rollback/behavioral-${SHORT}"
+          git config user.name  "behavioral-watchdog[bot]"
+          git config user.email "behavioral-watchdog@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          # Prefer the merge-commit revert; fall back to a plain revert if the
+          # pushed commit is not a merge (squash-merge → single parent).
+          if ! git revert --no-edit -m 1 "$SHA" 2>/dev/null; then
+            git revert --abort 2>/dev/null || true
+            git revert --no-edit "$SHA"
+          fi
+          git push origin "$BRANCH"
+          gh pr create --base main --head "$BRANCH" \
+            --title "rollback: revert ${SHORT} — reproduced behavioral regression (${NEWLY})" \
+            --body "Auto-opened by the behavioral-watchdog (AUTO_ROLLBACK=1) after a REPRODUCED behavioral regression on a push to main (modules: ${NEWLY}). This is a **draft rollback for a human to review + merge** — it is NEVER auto-merged. Close it if the break is being fixed forward instead." \
+            --label "p0,behavioral-regression,main-red" \
+            --draft
+
+      # ── Refresh the baseline on a clean run ────────────────────────────
+      - name: Refresh last-green baseline
+        if: steps.decide.outputs.scream != 'true'
+        run: |
+          flox activate -- node scripts/behavioral-watchdog.mjs snapshot \
+            --behavioral "$GITHUB_WORKSPACE/behavioral-report.json" \
+            --out ./behavioral-last-green.json \
+            --sha '${{ github.sha }}'
+
+      - name: Upload refreshed baseline artifact
+        if: steps.decide.outputs.scream != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: behavioral-last-green
+          path: ./behavioral-last-green.json
+          retention-days: 90
+          overwrite: true
+
+      # ── Exit non-zero on a real break (marks the push run red) ─────────
+      - name: Fail the run on a reproduced break / vacuous collab
+        if: steps.decide.outputs.scream == 'true'
+        run: |
+          echo "::error::behavioral-watchdog tripped — newly-failing: '${{ steps.decide.outputs.newly_failing }}', collab_vacuous: ${{ steps.agg.outputs.collab_vacuous }}"
+          exit 1
+
+  # -----------------------------------------------------------------------
   # webgl-smoke — the REQUIRED on-CI WebGL FLOOR (.myrobots/plans/webgl-
   # attestation-semaphore.md §6). CI's only WebGL renderer is SwiftShader and
   # there is no heavy WebGL e2e lane on PRs (the dead `e2e-video` lane was

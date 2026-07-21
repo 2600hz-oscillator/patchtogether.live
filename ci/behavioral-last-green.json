@@ -1,0 +1,7 @@
+{
+  "_comment": "Last-green baseline for the push-only behavioral-watchdog CI job (.github/workflows/ci.yml + scripts/behavioral-watchdog.mjs). `passing`/`failing` are the per-module behavioral outcomes from the last non-firing push-to-main run. The watchdog diffs current failures against this to name NEWLY-failing modules (a module GREEN here that now fails = a regression). At runtime the LIVE baseline is the `behavioral-last-green` CI ARTIFACT (updated every non-firing run); this committed file is only the bootstrap seed used when no artifact exists yet. Seeded EMPTY on purpose: an empty baseline can never flag a regression, so the first push-to-main run establishes state without screaming on the informational lane's known reds.",
+  "sha": null,
+  "updatedAt": null,
+  "passing": [],
+  "failing": []
+}
