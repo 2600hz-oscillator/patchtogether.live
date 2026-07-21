@@ -198,6 +198,10 @@
   // Card-viewport visibility feed for the video engine's sink-driven pull
   // evaluation (one central IntersectionObserver over the flow nodes).
   import { observeVideoCardVisibility } from '$lib/ui/video-card-visibility';
+  // Persisted-rack VIDEO boot decision (fix/video-engine-persist-reconcile):
+  // boot the engine once a restored graph with video in it has loaded, so the
+  // render loop starts WITHOUT a manual add/delete.
+  import { shouldBootEngineForRestoredVideo } from '$lib/ui/restored-video-boot';
   // Meta-domain registry — sticky notes etc. (no engine binding).
   import { listMetaModuleDefs, getMetaModuleDef } from '$lib/meta/module-registry';
   import '$lib/meta/modules'; // auto-registers stickyDef
@@ -794,6 +798,58 @@
     return () => {
       clearInterval(timer);
     };
+  });
+
+  // ── Persisted-rack VIDEO boot (fix/video-engine-persist-reconcile) ─────────
+  //
+  // Video renders with NO user gesture (unlike audio, which the browser
+  // autoplay policy legitimately gates behind a click). But the PatchEngine —
+  // and with it the VideoEngine's rAF render loop — is created lazily by
+  // ensureEngine(), which today runs ONLY from user graph-mutations (spawn /
+  // duplicate / load / import) and the audio-gate click. So a rack RESTORED from
+  // persistence (the /rack scratch IndexedDB replica, or the /r/[id] Y.Doc sync)
+  // shows its video CARDS but renders nothing: nothing booted the engine, so the
+  // restored video nodes are never instantiated and the render loop never
+  // starts. Video stays black/frozen until the user happens to add or delete a
+  // node, whose ensureEngine() call finally boots + reconciles the whole (already
+  // seeded) graph — reviving ALL restored video at once (the owner's symptoms).
+  //
+  // Fix: once the persisted graph has LOADED (scratch seed resolved, or the
+  // collab provider synced) and it holds ≥1 video node, boot the engine here.
+  // The SAME bus-driven reconciler the add/delete paths use then instantiates
+  // the restored nodes and the loop starts — no gesture required.
+  //
+  // Idempotent + leak-free: ensureEngine() memoizes the engine+reconciler and
+  // the reconciler diffs the snapshot against what it already applied, so a live
+  // node is never rebuilt or torn down. Reading `engine` keeps this reactive —
+  // it re-runs and early-returns once the boot completes (a failed boot leaves
+  // `engine` null, so a later snapshot change retries). Scoped to video-bearing
+  // RESTORED racks: an audio-only / empty rack keeps the lazy boot (no eager
+  // AudioContext per page view — audio still waits for the gesture it needs),
+  // and the ephemeral e2e /rack (replica opt-out, no provider) never trips it.
+  $effect(() => {
+    // Load-complete signal for the RESTORE path only — never the interactive
+    // spawn path, which boots the engine itself. `scratchSeeded` is a boolean on
+    // the persisted scratch canvas and undefined elsewhere; providerHasSynced
+    // covers the collab /r/[id] first sync.
+    const loaded = scratchSeeded === true || (provider != null && providerHasSynced);
+    if (
+      !shouldBootEngineForRestoredVideo({
+        loaded,
+        engineBooted: engine != null,
+        nodes: snapshot.nodes,
+      })
+    ) {
+      return;
+    }
+    void (async () => {
+      await ensureEngine();
+      // Explicit reconcile (mirrors loadExample()/handleDelete's shape) so the
+      // restored graph is materialized deterministically on this load — the
+      // reconciler also auto-runs on attach via the snapshot bus, so this is a
+      // belt-and-suspenders no-op if the bus already fired.
+      await reconciler?.reconcile();
+    })();
   });
 
   // Pre-effect marker: written once at module-script eval time. The
@@ -5625,7 +5681,20 @@
 
   let bootPromise: Promise<PatchEngine> | null = null;
   async function ensureEngine(): Promise<PatchEngine> {
-    if (engine) return engine;
+    if (engine) {
+      // The engine may have been booted EAGERLY (no user gesture) to render a
+      // restored VIDEO rack — see the persisted-rack boot effect below. That
+      // boot could not resume the AudioContext (Chrome's autoplay policy needs
+      // a gesture), so it starts suspended. Any LATER ensureEngine() call comes
+      // from a real user action (spawn / duplicate / load / import), which IS a
+      // gesture — resume a still-suspended context now so a mixed audio+video
+      // restored rack isn't left silent. Idempotent + harmless when already
+      // running or when this call isn't gesture-backed (resume() just no-ops).
+      if (audioCtx && audioCtx.state === 'suspended') {
+        void audioCtx.resume().catch(() => {});
+      }
+      return engine;
+    }
     // Memoize the in-flight boot. Without this, two parallel callers
     // (e.g. two parallel callers) each create their
     // own AudioContext, racing to overwrite the engine + reconciler bindings.
