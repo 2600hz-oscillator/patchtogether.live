@@ -179,6 +179,8 @@ export interface NoteEvent {
   velocity?: number; // 0..127 (default DEFAULT_VELOCITY)
   lengthSteps?: number; // gate width in steps (default 1)
   prob?: number; // 0..1 own firing probability; UNSET ⇒ follow the clip default (else 1)
+  playEvery?: number; // 1..8 count-divider; UNSET/1 ⇒ every loop. STACKS with prob:
+  // the note fires iff it's this loop's turn AND it wins its probability roll.
 }
 
 export interface ClipBase {
@@ -946,6 +948,13 @@ export function coerceNoteEvent(raw: unknown): NoteEvent | null {
   if (typeof r.prob === 'number' && Number.isFinite(r.prob)) {
     ev.prob = Math.max(0, Math.min(1, r.prob));
   }
+  // PLAY EVERY: an int 2..8 count-divider. A value of 1 (or unset/invalid) is
+  // the default (every loop) and is NOT stored, so legacy clips + notes reset to
+  // "every 1" stay byte-identical (mirrors defaultProb's delete-at-default).
+  if (typeof r.playEvery === 'number' && Number.isFinite(r.playEvery)) {
+    const n = coercePlayEvery(r.playEvery);
+    if (n > PLAY_EVERY_DEFAULT) ev.playEvery = n;
+  }
   return ev;
 }
 
@@ -1361,13 +1370,23 @@ export function notesStartingAt(clip: NoteClipRecord, step: number): NoteEvent[]
  * scheduling AND the song-print buffer so the printed take == what sounded.
  * (A note whose own `prob` is set to 1.0 always fires — it sits above a lower
  * clip default.)
+ *
+ * PLAY EVERY STACKS with probability: when `loopCount` is provided the
+ * DETERMINISTIC play-every gate runs FIRST (`notePlaysThisLoop` — no dice, so
+ * peers agree), and only a note whose turn it is this loop then rolls its
+ * probability. `loopCount` UNDEFINED (the default) skips the play-every gate
+ * entirely — the preview/paint callers (`lanesForStep`) want to see every note
+ * regardless of which loop; only the scheduler passes the lane's live loop
+ * count.
  */
 export function notesFiringAt(
   clip: NoteClipRecord,
   step: number,
   rng: () => number = Math.random,
+  loopCount?: number,
 ): NoteEvent[] {
   return notesStartingAt(clip, step).filter((ev) => {
+    if (loopCount !== undefined && !notePlaysThisLoop(ev, loopCount)) return false;
     const p = noteEffProb(clip, ev);
     return p >= 1 || rng() < p;
   });
@@ -1855,6 +1874,81 @@ export function setClipDefaultProb(clip: NoteClipRecord, prob: number): NoteClip
     return rest as NoteClipRecord;
   }
   return { ...clip, defaultProb: p };
+}
+
+// ---------------------------------------------------------------------------
+// PER-NOTE PLAY EVERY (owner-spec'd — a COUNT-divider that STACKS with per-note
+// PROBABILITY). Each note carries an optional `playEvery` 1..8: the note only
+// gets a chance to fire on every Nth loop of its clip. It STACKS with prob — a
+// note fires iff BOTH gates pass:
+//   (1) it's this loop's turn:  notePlaysThisLoop(ev, loopCount)   (DETERMINISTIC
+//       from the lane's loop count since launch → collab-safe, no dice), AND
+//   (2) it wins its probability roll:  effProb >= 1 || rng() < effProb.
+// PHASE (owner-tweakable): a note plays on the Nth, 2Nth, … occurrence — the
+// 1-based pass ordinal p = loopCount+1 fires when p % N === 0. So play-every-2
+// fires on passes 2,4,6 (silent on the first pass after launch) and play-every-1
+// (the default) fires on every pass. node.data only → NO PortDef/ParamDef change
+// (the note field is pure data), so no attest churn beyond the GRAND source-SHA.
+// ---------------------------------------------------------------------------
+/** Max play-every divisor (the Launchpad top-row has 8 pads). */
+export const PLAY_EVERY_MAX = 8;
+/** The default play-every — 1 = every loop (unset ⇒ this). */
+export const PLAY_EVERY_DEFAULT = 1;
+/** Coerce a raw play-every to an int 1..PLAY_EVERY_MAX; non-finite ⇒ the default
+ *  (1 = every loop). PURE. */
+export function coercePlayEvery(v: unknown): number {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return PLAY_EVERY_DEFAULT;
+  return Math.max(PLAY_EVERY_DEFAULT, Math.min(PLAY_EVERY_MAX, Math.round(n)));
+}
+/** A note's EFFECTIVE play-every: its own `playEvery` clamped to 1..8, else 1
+ *  (fires every loop). The single source playback, the LED paint AND the card
+ *  cell colour read. PURE. */
+export function playEveryEff(ev: { playEvery?: number } | undefined): number {
+  return coercePlayEvery(ev?.playEvery);
+}
+/**
+ * Does a note fire on 0-based loop `loopCount` given its play-every? The
+ * DETERMINISTIC half of the firing decision (no dice — the same on every peer
+ * because `loopCount` is driven by the shared transport). play-every-1 (default)
+ * ⇒ always; play-every-N ⇒ the Nth, 2Nth, … pass fires: 1-based pass ordinal
+ * p = loopCount+1 fires when `p % N === 0`. PURE.
+ */
+export function notePlaysThisLoop(
+  ev: { playEvery?: number } | undefined,
+  loopCount: number,
+): boolean {
+  const n = playEveryEff(ev);
+  if (n <= PLAY_EVERY_DEFAULT) return true;
+  const p = Math.floor(Number.isFinite(loopCount) ? loopCount : 0) + 1; // 1-based pass
+  return p % n === 0;
+}
+/**
+ * Set the PLAY EVERY of the note COVERING (step, midi) — the ONE write seam the
+ * Launchpad Play-Every view AND the card's Play-Every menu share (mirrors
+ * `setNoteProb`). Pure: returns a NEW clip. NEVER creates a note (a press on an
+ * empty cell is a no-op → the SAME reference so the caller can skip the write).
+ * A value of 1 (the default) DELETES the `playEvery` key so a note reset to
+ * "every 1" round-trips byte-identical; 2..8 store the clamped int.
+ */
+export function setNotePlayEvery(
+  clip: NoteClipRecord,
+  step: number,
+  midi: number,
+  playEvery: number,
+): NoteClipRecord {
+  const cov = noteCovering(clip, step, midi);
+  if (!cov) return clip; // no note here → no-op (never create)
+  const n = coercePlayEvery(playEvery);
+  const steps = clip.steps.map((e) => {
+    if (e.step !== cov.step || e.midi !== cov.midi) return e;
+    if (n <= PLAY_EVERY_DEFAULT) {
+      const { playEvery: _drop, ...rest } = e;
+      return rest as NoteEvent;
+    }
+    return { ...e, playEvery: n };
+  });
+  return { ...clip, steps };
 }
 
 /**

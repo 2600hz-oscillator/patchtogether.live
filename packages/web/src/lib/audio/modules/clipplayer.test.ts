@@ -478,6 +478,31 @@ describe('clipplayer: Deluge launch quantization (quantize to the LONGEST playin
   });
 });
 
+describe('clipplayer: per-note PLAY EVERY (count-divider through the real engine)', () => {
+  it('play-every-2: the note is SILENT on loop 0, then fires on loop 1 (audibly divides)', async () => {
+    // A 4-step clip (0.5 s loop @120bpm/1/16) with one note at step 0, playEvery=2.
+    const clip: NoteClipRecord = {
+      kind: 'note', lengthSteps: 4, root: 48, loop: true,
+      steps: [{ step: 0, midi: 72, velocity: 127, lengthSteps: 1, playEvery: 2 }],
+    };
+    seed(
+      { stepDiv: 2, quantize: 0, octave: 0, gateLength: 0.9 },
+      { clips: { [clipIndex(0, 0)]: clip }, queued: lane8(0, 0, null) },
+    );
+    seedTimelorde(1);
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+    const gate = gateOf(handle, 0);
+    run(ctx, 0, 1.1); // through loop 0 (skip) + loop 1 (fire)
+    // Loop 0's step-0 (t≈0.01) is SKIPPED by play-every → no gate HIGH before ~0.4 s.
+    expect(gate.events.filter((e) => e.time < 0.4 && e.value >= 0.5).length,
+      'silent on loop 0').toBe(0);
+    // Loop 1's step-0 (t≈0.51) FIRES → a gate HIGH in [0.4, 0.9].
+    expect(gate.events.filter((e) => e.time >= 0.4 && e.time < 0.9 && e.value >= 0.5).length,
+      'fires on loop 1').toBeGreaterThan(0);
+  });
+});
+
 describe('clipplayer: stop', () => {
   it('stop_all rising edge stops every lane', async () => {
     seed(

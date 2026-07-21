@@ -118,6 +118,7 @@ import {
   repeatCountForOrdinal,
   probPadOrdinal,
   probLevelForOrdinal,
+  playEveryPadOrdinal,
   paintPermanentTopRow,
   computeSingleGridFrame,
   computeSingleClipFrame,
@@ -153,6 +154,8 @@ import {
   setNoteSpan,
   cycleVelocity,
   setNoteProb,
+  setNotePlayEvery,
+  playEveryEff,
   setClipDefaultProb,
   clipDefaultProbEff,
   noteEffProb,
@@ -353,6 +356,18 @@ let repeatViewHeld: { sceneIndex: number; slot: number } | null = null;
 // pair editor keeps its dedicated CC_EDIT_VEL for velocity.
 let probEditHeld: { step: number; midi: number } | null = null;
 
+// ── PER-NOTE PLAY EVERY view (owner-spec'd — the count-divider sibling of
+// probEditHeld). Entered by SHIFT + DOUBLE-tap a note (the second shift-tap on
+// the SAME note, while the PROB page from the first tap is latched): the 8×8's
+// TOP ROW becomes 8 red pads (play-every 1..8), the current value lit. The NEXT
+// top-row tap sets the note's play-every (playEveryPadOrdinal → setNotePlayEvery,
+// an undoable edit) and clears the latch; any other tap cancels. Reset in
+// resetSingleState. Single-unit editor gesture — mirrors the PROB page.
+let playEveryViewHeld: { step: number; midi: number } | null = null;
+// tickCount when the PROB page opened — a second shift-tap on the SAME note
+// within DOUBLE_TAP_TICKS escalates it to the PLAY-EVERY view (the double-tap).
+let probEditTick = 0;
+
 // ── CLIP-DEFAULT PROBABILITY page (owner-spec'd — the clip-level sibling of
 // probEditHeld, opened from the GRID view). SHIFT + press a Grid clip pad (with
 // NO arm pending) LATCHES this to that clip; the 8×8 becomes the 40-level
@@ -545,6 +560,7 @@ function resetSingleState(): void {
   gridHeldSingle = false;
   repeatViewHeld = null;
   probEditHeld = null;
+  playEveryViewHeld = null;
   clipProbEditHeld = null;
   velHeld = false; // the relocated single-mode VEL-hold (FOLLOW-row modifier)
   arp = createArpState();
@@ -1600,6 +1616,7 @@ function handleSingleKey(nodeId: string, e: LaunchpadKeyEvent): void {
     !repeatViewHeld &&
     !clipProbEditHeld &&
     !probEditHeld &&
+    !playEveryViewHeld &&
     isLane8ArmPad(ev.x, ev.y)
   ) {
     toggleLaneAutoArm(nodeId, ARM_SHIFT_LANE);
@@ -2274,8 +2291,40 @@ function handleSingleClip(nodeId: string, e: LaunchpadKeyEvent): void {
   // note-toggle (mirrors the repeat-view interception) — a pad tap on the top-5-
   // row bar picks the note's probability level via an UNDOABLE write, then clears
   // the latch (auto-return to the clip view). A bottom-3/out-of-bar tap cancels.
+  // PLAY-EVERY view latched (SHIFT + double-tapped a note): a TOP-ROW tap picks
+  // the note's play-every 1..8 via an UNDOABLE write, then clears the latch; any
+  // other tap cancels (auto-return to the clip view).
+  if (playEveryViewHeld) {
+    if (ev.s === 1) {
+      const n = playEveryPadOrdinal(ev.x, ev.y);
+      if (n !== null) {
+        const { step, midi } = playEveryViewHeld;
+        const clip = clipAtIndex(liveData(nodeId), selectedClipIndex);
+        if (clip) writeClipSel(nodeId, setNotePlayEvery(clip, step, midi, n));
+      }
+      playEveryViewHeld = null;
+      renderLeds();
+    }
+    return;
+  }
   if (probEditHeld) {
     if (ev.s === 1) {
+      // SHIFT + a SECOND tap on the SAME note within the double-tap window (shift
+      // still held) → ESCALATE the PROB page to the PLAY-EVERY view instead of
+      // picking a probability level.
+      if (shift && tickCount - probEditTick <= DOUBLE_TAP_TICKS) {
+        const clip0 = clipAtIndex(liveData(nodeId), selectedClipIndex);
+        const n0 = clip0
+          ? editPadToNote(clip0, ev.x, ev.y, { rowOffset: editRowOffset, colOffset: shownWindowStart(clip0), page: 0 })
+          : null;
+        const cov0 = n0 && clip0 ? noteCovering(clip0, n0.step, n0.midi) : null;
+        if (cov0 && cov0.step === probEditHeld.step && cov0.midi === probEditHeld.midi) {
+          playEveryViewHeld = { step: probEditHeld.step, midi: probEditHeld.midi };
+          probEditHeld = null;
+          renderLeds();
+          return;
+        }
+      }
       const k = probPadOrdinal(ev.x, ev.y);
       if (k !== null) {
         const { step, midi } = probEditHeld;
@@ -2303,6 +2352,7 @@ function handleSingleClip(nodeId: string, e: LaunchpadKeyEvent): void {
       const cov = noteCovering(clip, note.step, note.midi);
       if (cov) {
         probEditHeld = { step: cov.step, midi: cov.midi };
+        probEditTick = tickCount; // start the double-tap window for the play-every escalation
         renderLeds();
       }
     }
@@ -3254,6 +3304,11 @@ function renderLeds(): void {
             probView: probEditHeld
               ? { prob: noteEffProb(clip, noteCovering(clip, probEditHeld.step, probEditHeld.midi)) }
               : null,
+            // PLAY-EVERY view: while a note is latched (shift + double-tap), the
+            // 8×8's top row is the 8-pad play-every selector, its current value lit.
+            playEveryView: playEveryViewHeld
+              ? { playEvery: playEveryEff(noteCovering(clip, playEveryViewHeld.step, playEveryViewHeld.midi) ?? undefined) }
+              : null,
             blinkOn,
           }),
         );
@@ -3355,6 +3410,7 @@ export function __test_mode(): {
   gridHeldSingle: boolean;
   repeatViewSlot: number | null;
   probEditActive: boolean;
+  playEveryViewActive: boolean;
   clipProbEditActive: boolean;
   clipProbClipIndex: number | null;
   followOn: boolean;
@@ -3400,6 +3456,7 @@ export function __test_mode(): {
     gridHeldSingle,
     repeatViewSlot: repeatViewHeld?.slot ?? null,
     probEditActive: probEditHeld !== null,
+    playEveryViewActive: playEveryViewHeld !== null,
     clipProbEditActive: clipProbEditHeld !== null,
     clipProbClipIndex: clipProbEditHeld?.clipIdx ?? null,
     followOn,

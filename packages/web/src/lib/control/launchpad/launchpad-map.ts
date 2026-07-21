@@ -69,6 +69,7 @@ import {
   laneColorEff,
   noteCovering,
   noteEffProb,
+  playEveryEff,
   probColorBucket,
   valueToProbLevel,
   probLevelToValue,
@@ -210,6 +211,38 @@ export function noteProbRgb(
     default:
       return probNoteRgb(eff);
   }
+}
+// PLAY EVERY (count-divider) overlays the probability colour: a note with
+// `playEvery` > 1 tints RED, DIMMER the higher N (brightness ∝ 1/N — play-every-2
+// is the brightest red, play-every-8 the dimmest). When a note is BOTH
+// probabilistic (< 1) AND play-every > 1 the two indicators AVERAGE (purple/
+// orange ⊕ red). `noteRgb` is the single combined truth the note channel paints.
+export const RGB_PLAY_EVERY_RED: Rgb = [127, 20, 20]; // play-every base (scaled by 1/N)
+/** Play-every RED LED for divisor N (1..8): the base scaled by 1/N so a higher N
+ *  is dimmer. N ≤ 1 (the default) has no play-every tint — the caller uses the
+ *  plain probability colour. PURE. */
+export function playEveryRgb(n: number): Rgb {
+  return scaleRgb(RGB_PLAY_EVERY_RED, 1 / Math.max(1, n));
+}
+/** Component-wise average of two LED colours (for the "both prob<1 and
+ *  play-every>1" cell). PURE. */
+export function avgRgb(a: Rgb, b: Rgb): Rgb {
+  return [Math.round((a[0] + b[0]) / 2), Math.round((a[1] + b[1]) / 2), Math.round((a[2] + b[2]) / 2)];
+}
+/** The COMBINED note LED colour: the probability colour (white / purple / orange)
+ *  when play-every is 1 (default); RED (∝ 1/N) when a note is play-every>1 but
+ *  fires at 100%; and the AVERAGE of the probability colour and the red when a
+ *  note is BOTH probabilistic AND play-every>1. The single source the note paint
+ *  uses (mirrored by the card cell fill). PURE. */
+export function noteRgb(
+  clip: { defaultProb?: number } | undefined,
+  ev: { prob?: number; playEvery?: number } | undefined,
+): Rgb {
+  const n = playEveryEff(ev);
+  const prob = noteProbRgb(clip, ev);
+  if (n <= 1) return prob; // no play-every → plain probability colour
+  const red = playEveryRgb(n);
+  return noteEffProb(clip, ev) < 1 ? avgRgb(prob, red) : red; // both → average, else red
 }
 export const RGB_NOTE_PLAYHEAD: Rgb = [127, 105, 29]; // a note under the playhead (yellow boost)
 export const RGB_PLAYHEAD_WASH: Rgb = [40, 33, 9]; // the moving playhead column wash (amber, dim)
@@ -981,6 +1014,11 @@ export interface REditOpts {
    *  bottom 3 dark) instead of the note grid. `prob` = the note's current 0..1
    *  firing probability. Absent/null = the normal note editor. */
   probView?: { prob: number } | null;
+  /** PER-NOTE PLAY EVERY view (SHIFT + DOUBLE-tap a note): when set the 8×8's TOP
+   *  ROW becomes 8 red pads (play-every 1..8), the current value lit; the rest of
+   *  the grid is dark. `playEvery` = the note's current 1..8 divisor. Absent/null
+   *  = the normal note editor. Takes precedence over `probView`. */
+  playEveryView?: { playEvery: number } | null;
 }
 
 export function computeREditFrame(clip: NoteClipRecord, opts: REditOpts = {}): LaunchpadFrame {
@@ -990,7 +1028,11 @@ export function computeREditFrame(clip: NoteClipRecord, opts: REditOpts = {}): L
   const page = opts.page ?? 0;
   const playheadStep = opts.playheadStep ?? -1;
   const rootPc = ((clip.root % 12) + 12) % 12;
-  if (opts.probView) {
+  if (opts.playEveryView) {
+    // PLAY-EVERY view: the 8×8's top row is the 8-pad play-every selector; the
+    // grid below is dark. The top-row functions + scene column still paint below.
+    paintPlayEveryBar(frame, opts.playEveryView.playEvery);
+  } else if (opts.probView) {
     // PROB page latched: the 8×8 is the probability bar (top 5 rows) for the held
     // note; the top-row functions + scene column below still paint (so EXIT works).
     paintProbBar(frame, opts.probView.prob);
@@ -1009,7 +1051,7 @@ export function computeREditFrame(clip: NoteClipRecord, opts: REditOpts = {}): L
           // NOTE COLOUR = PROBABILITY, SOURCE-AWARE (purple = the note's own prob,
           // orange = clip default, white at 100%), replacing the old velocity-
           // blue. Under the playhead keeps the yellow boost.
-          put(frame, index, onPlayhead ? RGB_NOTE_PLAYHEAD : noteProbRgb(clip, cov));
+          put(frame, index, onPlayhead ? RGB_NOTE_PLAYHEAD : noteRgb(clip, cov));
         } else if (onPlayhead) {
           put(frame, index, RGB_PLAYHEAD_WASH);
         } else if (((note.midi % 12) + 12) % 12 === rootPc) {
@@ -1422,6 +1464,29 @@ export function probLevelForOrdinal(k: number): number {
  *  LED paint AND the docs diagram both derive from. */
 export function probLitCount(prob: number): number {
   return valueToProbLevel(prob);
+}
+
+// ── PER-NOTE PLAY EVERY view (owner-spec'd — the sibling of the PROB page,
+// entered by SHIFT + DOUBLE-tap a note). The 8×8's TOP ROW becomes 8 RED pads =
+// play-every 1..8, row-major from the upper-left; the CURRENT setting is lit
+// bright, the rest a faint red so the 8 positions read. A top-row tap sets the
+// note's play-every (setNotePlayEvery); the rest of the grid is dark. ──
+/** A grid pad's 1-indexed PLAY-EVERY value (1..8) over the TOP ROW only
+ *  ((0,7)→1 … (7,7)→8). Every other pad → null. PURE. */
+export function playEveryPadOrdinal(x: number, y: number): number | null {
+  if (x < 0 || x >= LP_WIDTH || y < 0 || y >= LP_HEIGHT) return null;
+  if (LP_HEIGHT - 1 - y !== 0) return null; // top row (rowFromTop 0) only
+  return x + 1; // 1..8
+}
+/** Paint the PLAY-EVERY selector onto a frame's TOP ROW: 8 red pads (play-every
+ *  1..8), the `current` value bright, the rest a faint red; the whole grid below
+ *  stays dark. Mirrors `paintProbBar`. PURE — mutates `frame`. */
+function paintPlayEveryBar(frame: LaunchpadFrame, current: number): void {
+  const cur = Math.max(1, Math.min(LP_WIDTH, Math.round(current)));
+  for (let x = 0; x < LP_WIDTH; x++) {
+    const n = x + 1;
+    put(frame, padNote(x, LP_HEIGHT - 1), n === cur ? RGB_PLAY_EVERY_RED : scaleRgb(RGB_PLAY_EVERY_RED, 0.12));
+  }
 }
 
 /** Paint the 40-level PROBABILITY bar for `prob` onto a frame's 8×8: pads
@@ -2027,6 +2092,10 @@ export interface SingleClipOpts {
    *  bottom 3 dark) instead of the note grid. `prob` = the note's current 0..1
    *  firing probability. Absent/null = the normal note editor. */
   probView?: { prob: number } | null;
+  /** PER-NOTE PLAY EVERY view (SHIFT + DOUBLE-tap a note): when set the 8×8's TOP
+   *  ROW becomes 8 red pads (play-every 1..8), the current value lit; the rest of
+   *  the grid is dark. Takes precedence over `probView`. */
+  playEveryView?: { playEvery: number } | null;
 }
 
 function clipRightRgb(sceneIndex: number, opts: SingleClipOpts, shift: boolean): Rgb {
@@ -2063,7 +2132,11 @@ export function computeSingleClipFrame(clip: NoteClipRecord, opts: SingleClipOpt
   const shift = effShift(opts.top);
   const rootPc = ((clip.root % 12) + 12) % 12;
   const bg: Rgb = velEditing ? RGB_VEL_WASH : RGB_OFF;
-  if (opts.probView) {
+  if (opts.playEveryView) {
+    // PLAY-EVERY view: the 8×8's top row is the 8-pad play-every selector; the
+    // grid below is dark. The clipRight column + permanent top row still paint.
+    paintPlayEveryBar(frame, opts.playEveryView.playEvery);
+  } else if (opts.probView) {
     // PROB page latched: the 8×8 becomes the probability bar (top 5 rows) for the
     // held note; the clipRight column + permanent top row below still paint.
     paintProbBar(frame, opts.probView.prob);
@@ -2082,7 +2155,7 @@ export function computeSingleClipFrame(clip: NoteClipRecord, opts: SingleClipOpt
           // NOTE COLOUR = PROBABILITY, SOURCE-AWARE (purple = the note's own prob,
           // orange = clip default, white at 100%), replacing the old velocity-
           // blue. Under the playhead keeps the yellow boost.
-          put(frame, index, onPlayhead ? RGB_NOTE_PLAYHEAD : noteProbRgb(clip, cov));
+          put(frame, index, onPlayhead ? RGB_NOTE_PLAYHEAD : noteRgb(clip, cov));
         } else if (onPlayhead) {
           put(frame, index, RGB_PLAYHEAD_WASH);
         } else if (((note.midi % 12) + 12) % 12 === rootPc) {
