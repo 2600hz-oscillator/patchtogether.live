@@ -22,6 +22,19 @@ import {
   columnFlushPositions,
   sendFlushPositions,
   COLUMN_PAD_X,
+  columnBandCenterX,
+  sendBandCenterX,
+  columnCardX,
+  sendCardX,
+  defaultLaneHeightPx,
+  computeLaneHeightPx,
+  laneTopYForHeight,
+  planLanePushUps,
+  laneRegionXBand,
+  videoAreaBand,
+  videoOutSpawnPos,
+  needsDefaultVideoOut,
+  VIDEO_AREA_HEIGHT,
   indexForDropY,
   dedup,
   reconcileColumnOrder,
@@ -33,6 +46,7 @@ import {
   moveBetween,
   type ColumnNodeView,
 } from './channel-columns';
+import { RACK_UNIT } from '$lib/ui/rack-grid';
 
 // ---------------- Geometry ----------------
 
@@ -172,6 +186,148 @@ describe('column geometry', () => {
       expect(two[0]!.y + 200).toBe(COLUMN_BASELINE_Y);
       expect(two[1]!.y + 300).toBe(two[0]!.y);
       expect(two[1]!.y).toBeLessThan(two[0]!.y);
+    });
+  });
+
+  // ---- OFFSET FIX: card center == band center == channel-number center ----
+  describe('band-centering (card center aligns to the channel number + guide band)', () => {
+    it('columnCardX centers a card of ANY width so its center == columnBandCenterX', () => {
+      for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
+        const center = columnBandCenterX(ch);
+        for (const w of [360, 540, 720, 200]) {
+          const x = columnCardX(ch, w);
+          expect(x + w / 2).toBeCloseTo(center, 6); // card center == band center
+        }
+      }
+    });
+
+    it('band center is the midpoint of the guide-line pair (columnXBand)', () => {
+      for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
+        const [x0, x1] = columnXBand(ch);
+        expect(columnBandCenterX(ch)).toBe((x0 + x1) / 2);
+      }
+    });
+
+    it('columnFlushPositions with WIDTHS centers each member (card-center == band-center per column)', () => {
+      const ch = 5;
+      const heights = [720, 540, 360];
+      const widths = [720, 540, 200]; // three different-hp cards in one column
+      const pos = columnFlushPositions(ch, heights, widths);
+      const center = columnBandCenterX(ch);
+      pos.forEach((p, i) => {
+        expect(p.x + widths[i]! / 2).toBeCloseTo(center, 6);
+      });
+    });
+
+    it('a 4hp/720px card in the 765px band still lands at the historical 22.5px pad (back-compat)', () => {
+      const [x0] = columnXBand(3);
+      // columnCardX(720) == x0 + (765-720)/2 == x0 + 22.5 == x0 + COLUMN_PAD_X.
+      expect(columnCardX(3, 720)).toBe(x0 + COLUMN_PAD_X);
+    });
+
+    it('WITHOUT widths, columnFlushPositions keeps the legacy left-pad x (unchanged callers)', () => {
+      const [x0] = columnXBand(2);
+      const [p] = columnFlushPositions(2, [540]);
+      expect(p!.x).toBe(x0 + COLUMN_PAD_X);
+    });
+
+    it('sendCardX centers in its own box (center == sendBandCenterX)', () => {
+      for (let slot = 1; slot <= 2; slot++) {
+        const center = sendBandCenterX(slot);
+        expect(sendCardX(slot, 360) + 180).toBeCloseTo(center, 6);
+      }
+      // sendFlushPositions with widths centers too.
+      const sp = sendFlushPositions(1, [300], [300]);
+      expect(sp[0]!.x + 150).toBeCloseTo(sendBandCenterX(1), 6);
+    });
+  });
+
+  // ---- LANE HEIGHT: default + uniform grow-up ----
+  describe('lane height (default ~2× tidyvco, grows to the tallest stack)', () => {
+    it('defaultLaneHeightPx is 2× the reference card height', () => {
+      expect(defaultLaneHeightPx(540)).toBe(1080); // 2× a 3u tidyvco
+    });
+
+    it('computeLaneHeightPx returns the default when every stack fits under it', () => {
+      expect(computeLaneHeightPx([540, 720, 0, 360], 1080)).toBe(1080);
+    });
+
+    it('computeLaneHeightPx grows to the TALLEST stack when one exceeds the default', () => {
+      expect(computeLaneHeightPx([540, 1800, 360], 1080)).toBe(1800); // uniform max
+    });
+
+    it('laneTopYForHeight grows UPWARD (taller lane → smaller top Y), baseline pinned', () => {
+      const shortTop = laneTopYForHeight(1080);
+      const tallTop = laneTopYForHeight(1800);
+      expect(shortTop).toBe(COLUMN_BASELINE_Y - 1080);
+      expect(tallTop).toBeLessThan(shortTop); // grew up
+      expect(COLUMN_BASELINE_Y).toBeGreaterThan(tallTop); // baseline stays below the top
+    });
+  });
+
+  // ---- GROW-UP PUSH: canvas modules clear the grown lanes (incl. locked) ----
+  describe('planLanePushUps (modules over the lanes are lifted to a lockable Y)', () => {
+    const laneTop = laneTopYForHeight(1800); // a grown lane
+    const overX = laneRegionXBand()[0] + 100; // inside the lane band
+
+    it('lifts a module dipping into the lane region to a grid-snapped Y above it', () => {
+      // A 180px module whose bottom (laneTop + 90) dips 90px below the new top.
+      const m = { id: 'a', x: overX, y: laneTop - 90, w: 360, h: 180 };
+      const [push] = planLanePushUps([m], laneTop);
+      expect(push!.id).toBe('a');
+      // New Y is grid-aligned (a lockable row) …
+      expect(push!.y % RACK_UNIT).toBe(0);
+      // … and lifts the module's BOTTOM to at/above the lane top.
+      expect(push!.y + m.h).toBeLessThanOrEqual(laneTop);
+      // … moving UP (smaller Y than before).
+      expect(push!.y).toBeLessThan(m.y);
+    });
+
+    it('leaves a module that already clears the lane top untouched (idempotent)', () => {
+      const clear = { id: 'b', x: overX, y: laneTop - 180, w: 360, h: 180 }; // bottom == laneTop
+      expect(planLanePushUps([clear], laneTop)).toEqual([]);
+    });
+
+    it('ignores a module with NO horizontal overlap with the lane band', () => {
+      const rightOfLanes = laneRegionXBand()[1] + 500;
+      const m = { id: 'c', x: rightOfLanes, y: laneTop - 90, w: 360, h: 180 };
+      expect(planLanePushUps([m], laneTop)).toEqual([]);
+    });
+
+    it('re-running on the pushed positions yields an empty plan (no write storm)', () => {
+      const m = { id: 'a', x: overX, y: laneTop - 90, w: 360, h: 180 };
+      const [push] = planLanePushUps([m], laneTop);
+      const moved = { ...m, y: push!.y };
+      expect(planLanePushUps([moved], laneTop)).toEqual([]);
+    });
+  });
+
+  // ---- VIDEO AREA + default videoOut ----
+  describe('video area (purple zone) + default videoOut', () => {
+    it('videoAreaBand sits directly below the baseline, backdraft-tall, over the column band', () => {
+      const b = videoAreaBand();
+      expect(b.y0).toBe(COLUMN_BASELINE_Y);
+      expect(b.y1 - b.y0).toBe(VIDEO_AREA_HEIGHT);
+      expect(VIDEO_AREA_HEIGHT).toBe(RACK_UNIT * 3); // backdraft default = 3u/540px
+      expect(b.x0).toBe(columnXBand(1)[0]);
+      expect(b.x1).toBe(columnXBand(COLUMN_COUNT)[1]); // spans all 8 columns
+    });
+
+    it('videoOutSpawnPos is grid-snapped and INSIDE the video area', () => {
+      const p = videoOutSpawnPos();
+      const b = videoAreaBand();
+      const VIDEO_OUT = 360; // videoOut default box
+      expect(p.x).toBeGreaterThanOrEqual(b.x0);
+      expect(p.x + VIDEO_OUT).toBeLessThanOrEqual(b.x1);
+      expect(p.y).toBeGreaterThanOrEqual(b.y0);
+      expect(p.y + VIDEO_OUT).toBeLessThanOrEqual(b.y1); // fits within the 540px zone
+      expect(p.x % (RACK_UNIT / 8)).toBe(0); // on the HP grid
+      expect(p.y % RACK_UNIT).toBe(0); // on the U grid
+    });
+
+    it('needsDefaultVideoOut is true only when no videoOut exists yet', () => {
+      expect(needsDefaultVideoOut([{ type: 'tidyVco' }, { type: 'mixmstrs' }])).toBe(true);
+      expect(needsDefaultVideoOut([{ type: 'tidyVco' }, { type: 'videoOut' }])).toBe(false);
     });
   });
 

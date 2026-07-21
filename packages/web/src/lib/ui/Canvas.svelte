@@ -60,6 +60,15 @@
     reorder,
     columnFlushPositions,
     sendFlushPositions,
+    COLUMN_BASELINE_Y,
+    defaultLaneHeightPx,
+    computeLaneHeightPx,
+    laneTopYForHeight,
+    planLanePushUps,
+    needsDefaultVideoOut,
+    videoOutSpawnPos,
+    DEFAULT_VIDEO_OUT_ID,
+    type ModuleBoxLike,
   } from '$lib/graph/channel-columns';
   import { setControlColor, setNodeLocked, setNodeParam } from '$lib/graph/mutate';
   import { snapPositionToGrid, findFreeRackSlot, RACK_UNIT, type RackRect } from '$lib/ui/rack-grid';
@@ -488,6 +497,14 @@
     const size = rackSizeByType[type]?.size;
     const u = size ? parseInt(size, 10) || 1 : 1;
     return u * RACK_UNIT;
+  }
+
+  /** A module TYPE's rendered card WIDTH in flow-space px — its hp tier
+   *  (`--rack-hp` × RACK_UNIT, the same math _module-card.css applies). Feeds the
+   *  band-CENTERING of column/send members (columnCardX) so a card sits centered
+   *  under its channel number regardless of hp. Falls back to one tile. */
+  function wcolCardWidthPx(type: string): number {
+    return (rackSizeByType[type]?.hp ?? 1) * RACK_UNIT;
   }
 
   let audioCtx: AudioContext | null = $state(null);
@@ -1169,6 +1186,46 @@
     trace('workflow: seeded default wires mixmstrs master L/R → audioOut (one-shot)');
   });
 
+  // DEFAULT VIDEO SINK (owner directive): a fresh workflow rack auto-spawns ONE
+  // videoOut inside the PURPLE video zone below the lanes — the video-domain
+  // analog of the pinned mixer's audio-out. ONE-SHOT SEED (a latch on the pinned
+  // mixer), not an invariant: once seeded a user deleting it is respected. The
+  // node is a NORMAL canvas card (NOT data.pinned) so it renders in the zone;
+  // the deterministic id converges racing clients on one Y.Map entry. Same seed
+  // gate + non-tracked origin as the pinned ensure.
+  $effect(() => {
+    if (!workflowMode) return;
+    if ((provider && !providerHasSynced) || scratchSeeded === false) return;
+    const mixer = patch.nodes[WCOL_MIXER_ID];
+    if (!mixer) return; // wait for the pinned mixer (the latch home) to land
+    const seeded = (mixer.data as { workflowVideoOutSeeded?: boolean } | undefined)?.workflowVideoOutSeeded === true;
+    if (seeded) return; // one-shot done — respect a user delete forever
+    if (!needsDefaultVideoOut(snapshot.nodes)) {
+      // A videoOut already exists (loaded rack) — just set the latch so we never
+      // add a second, without spawning.
+      ydoc.transact(() => {
+        const m = patch.nodes[WCOL_MIXER_ID];
+        if (m) { if (!m.data) m.data = {}; (m.data as Record<string, unknown>).workflowVideoOutSeeded = true; }
+      }, WORKFLOW_PIN_SPAWN_ORIGIN);
+      return;
+    }
+    const pos = videoOutSpawnPos();
+    ydoc.transact(() => {
+      if (patch.nodes[DEFAULT_VIDEO_OUT_ID]) return; // in-transact re-check
+      patch.nodes[DEFAULT_VIDEO_OUT_ID] = {
+        id: DEFAULT_VIDEO_OUT_ID,
+        type: 'videoOut',
+        domain: 'video',
+        position: { x: pos.x, y: pos.y },
+        params: {},
+        data: { name: nextDefaultName(patch.nodes, 'videoOut') },
+      };
+      const m = patch.nodes[WCOL_MIXER_ID];
+      if (m) { if (!m.data) m.data = {}; (m.data as Record<string, unknown>).workflowVideoOutSeeded = true; }
+    }, WORKFLOW_PIN_SPAWN_ORIGIN);
+    trace('workflow: spawned default videoOut sink in the video zone (one-shot)');
+  });
+
   // DOCK KEYMAP: M / E / C toggle the matching pinned card in the BOTTOM
   // dock zone ($lib/ui/dock — one card per zone, so opening another
   // replaces the current one); ESC closes. Workflow-only; inert while
@@ -1476,6 +1533,66 @@
     return Array.from({ length: COLUMN_COUNT }, (_, lane) => autoLaneColorEff(data, lane));
   });
 
+  /** UNIFORM lane geometry (workflow only): the guide lines default to ~2× a
+   *  tidyvco card tall and ALL grow upward together to the tallest column/send
+   *  stack. Heights are the per-TYPE rack tiers → every peer converges. Returns
+   *  the flow-space TOP Y the overlay draws every lane line from (baseline stays
+   *  pinned at the bottom). */
+  let wcolLaneTopY = $derived.by<number>(() => {
+    void snapshot;
+    if (!workflowMode) return COLUMN_BASELINE_Y;
+    const mixer = patch.nodes[WCOL_MIXER_ID];
+    const md = mixer?.data as
+      | { columns?: Record<string, string[]>; sends?: Record<string, string[]> }
+      | undefined;
+    const cols = md?.columns ?? {};
+    const sends = md?.sends ?? {};
+    const stackH = (order: string[]) =>
+      order.reduce((sum, id) => sum + wcolCardHeightPx(patch.nodes[id]?.type ?? ''), 0);
+    const stacks: number[] = [];
+    for (let ch = 1; ch <= COLUMN_COUNT; ch++) stacks.push(stackH(cols[String(ch)] ?? []));
+    for (let s = 1; s <= SEND_BOX_COUNT; s++) stacks.push(stackH(sends[String(s)] ?? []));
+    const height = computeLaneHeightPx(stacks, defaultLaneHeightPx(wcolCardHeightPx('tidyVco')));
+    return laneTopYForHeight(height);
+  });
+
+  // GROW-UP PUSH: when the lanes grow taller, NON-lane canvas modules sitting
+  // above them that now dip into the lane region are pushed UP to clear it —
+  // even LOCKED ones (we write committed graph position, not a drag). A
+  // deterministic one-shot on the lane-top change: planLanePushUps returns an
+  // EMPTY plan once everything clears, so this is idempotent (no write storm).
+  // Lane members (data.channel/sendSlot), pinned singletons, video-domain cards
+  // and the video area's contents are excluded.
+  $effect(() => {
+    if (!workflowMode) return;
+    const laneTopY = wcolLaneTopY; // dependency: re-run when lanes grow/shrink
+    if ((provider && !providerHasSynced) || scratchSeeded === false) return;
+    const candidates: ModuleBoxLike[] = [];
+    for (const n of snapshot.nodes) {
+      if (n.type === 'cadillac') continue;
+      if (isCanvasHiddenNode(n)) continue; // pinned singletons + hidden cameras
+      if (n.domain === 'video') continue; // the video zone owns these
+      const d = n.data as { channel?: number; sendSlot?: number } | undefined;
+      if (typeof d?.channel === 'number' || typeof d?.sendSlot === 'number') continue; // lane member
+      const pos = currentNodePosition(n.id) ?? n.position;
+      if (pos.y >= COLUMN_BASELINE_Y) continue; // in/below the video area, not above the lanes
+      const size = nodeFootprintPx(n.id);
+      candidates.push({ id: n.id, x: pos.x, y: pos.y, w: size.w, h: size.h });
+    }
+    const pushes = planLanePushUps(candidates, laneTopY);
+    if (pushes.length === 0) return;
+    ydoc.transact(() => {
+      for (const p of pushes) {
+        const target = patch.nodes[p.id];
+        if (!target) continue;
+        // Move the SHARED committed position (collab-convergent; every peer
+        // computes the same target). Keep X; lift Y to the lockable row.
+        target.position = { x: target.position.x, y: p.y };
+      }
+    }, WORKFLOW_PIN_SPAWN_ORIGIN);
+    trace(`workflow: pushed ${pushes.length} module(s) up to clear grown lanes`);
+  });
+
   let bottomRailCards = $derived.by(() => {
     const docked = railCards('bottom');
     // The pinned M/E/C occupant renders FIRST, alongside docked cards —
@@ -1703,14 +1820,16 @@
       const typeOf = new Map(snap.nodes.map((n) => [n.id, n.type]));
       const heightsFor = (order: string[]) =>
         order.map((id) => wcolCardHeightPx(typeOf.get(id) ?? ''));
+      const widthsFor = (order: string[]) =>
+        order.map((id) => wcolCardWidthPx(typeOf.get(id) ?? ''));
       for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
         const order = cols[String(ch)] ?? [];
-        const positions = columnFlushPositions(ch, heightsFor(order));
+        const positions = columnFlushPositions(ch, heightsFor(order), widthsFor(order));
         order.forEach((id, i) => wcolPosByNode.set(id, positions[i]!));
       }
       for (let s = 1; s <= SEND_BOX_COUNT; s++) {
         const order = sends[String(s)] ?? [];
-        const positions = sendFlushPositions(s, heightsFor(order));
+        const positions = sendFlushPositions(s, heightsFor(order), widthsFor(order));
         order.forEach((id, i) => wcolPosByNode.set(id, positions[i]!));
       }
     }
@@ -3464,6 +3583,10 @@
         for (const n of moved) {
           const node = patch.nodes[n.id];
           if (!node || isPinnedNode(node) || n.id === WCOL_MIXER_ID || n.id === WCOL_CLIP_ID) continue;
+          // VIDEO cards belong to the video zone, never an audio channel — the
+          // column hit-test is X-only, so without this a videoOut dragged over a
+          // column band (below the baseline) would be swept into that channel.
+          if (node.domain === 'video') continue;
           const d = node.data as { channel?: number; sendSlot?: number } | undefined;
           const oldCh = typeof d?.channel === 'number' ? d.channel : null;
           const oldSlot = typeof d?.sendSlot === 'number' ? d.sendSlot : null;
@@ -5944,7 +6067,9 @@
     // at the deterministic column slot, and SUPPRESS the cable-splice (in-band
     // drops order by the column array, never by proximity-splice — the two
     // splice paths must not both fire on one drop).
-    const wcolDrop = type === 'cadillac' ? null : wcolDropTarget(spawnFlowPos);
+    // Video cards live in the video zone, not an audio channel; the column
+    // hit-test is X-only, so exclude video-domain spawns from column membership.
+    const wcolDrop = type === 'cadillac' || domain === 'video' ? null : wcolDropTarget(spawnFlowPos);
     // Was the target send box empty BEFORE this drop? (First-FX auto-raise.)
     const wcolSendWasEmpty = wcolDrop?.sendSlot != null && wcolOrder('sends', wcolDrop.sendSlot).length === 0;
     if (wcolDrop?.channel != null) {
@@ -5954,13 +6079,15 @@
       // derivation re-stacks the whole column flush next render.
       const existing = wcolOrder('columns', wcolDrop.channel);
       const heights = [...existing.map((id) => wcolCardHeightPx(patch.nodes[id]?.type ?? '')), wcolCardHeightPx(type)];
-      const p = columnFlushPositions(wcolDrop.channel, heights)[existing.length]!;
+      const widths = [...existing.map((id) => wcolCardWidthPx(patch.nodes[id]?.type ?? '')), wcolCardWidthPx(type)];
+      const p = columnFlushPositions(wcolDrop.channel, heights, widths)[existing.length]!;
       pos.x = p.x; pos.y = p.y;
     } else if (wcolDrop?.sendSlot != null) {
       initialData.sendSlot = wcolDrop.sendSlot;
       const existing = wcolOrder('sends', wcolDrop.sendSlot);
       const heights = [...existing.map((id) => wcolCardHeightPx(patch.nodes[id]?.type ?? '')), wcolCardHeightPx(type)];
-      const p = sendFlushPositions(wcolDrop.sendSlot, heights)[existing.length]!;
+      const widths = [...existing.map((id) => wcolCardWidthPx(patch.nodes[id]?.type ?? '')), wcolCardWidthPx(type)];
+      const p = sendFlushPositions(wcolDrop.sendSlot, heights, widths)[existing.length]!;
       pos.x = p.x; pos.y = p.y;
     }
 
@@ -7055,7 +7182,7 @@
       {#if workflowMode}
         <!-- WORKFLOW CHANNEL COLUMNS guide: 8 numbered columns + SEND 1/2 rail,
              pinned to flow space. Workflow racks only → dawless VRT unchanged. -->
-        <ChannelColumnsOverlay columnColors={wcolColumnColors} tick={wcolViewportTick} />
+        <ChannelColumnsOverlay columnColors={wcolColumnColors} laneTopY={wcolLaneTopY} tick={wcolViewportTick} />
       {/if}
       <CadillacOverlay {provider} />
       <!-- 2026-05-27: the per-node editable name label moved INSIDE every

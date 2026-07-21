@@ -17,17 +17,20 @@
     SEND_BOX_COUNT,
     columnXBand,
     sendBoxXBand,
-    COLUMN_TOP_Y,
     COLUMN_BASELINE_Y,
+    videoAreaBand,
   } from '$lib/graph/channel-columns';
 
   interface Props {
     /** Per-channel colours (length 8) — the automation-lane colours. */
     columnColors: string[];
+    /** Flow-space TOP Y every lane guide line is drawn from (the baseline is
+     *  pinned at the bottom). Grows UPWARD — smaller Y — as columns fill. */
+    laneTopY: number;
     /** Viewport change signal (incremented on pan/zoom) — re-projects the rects. */
     tick: number;
   }
-  let { columnColors, tick }: Props = $props();
+  let { columnColors, laneTopY, tick }: Props = $props();
 
   const flow = useSvelteFlow();
 
@@ -50,22 +53,31 @@
     const out: { ch: number; rect: Rect; color: string }[] = [];
     for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
       const [x0, x1] = columnXBand(ch);
-      const rect = project(x0, x1, COLUMN_TOP_Y, COLUMN_BASELINE_Y);
+      const rect = project(x0, x1, laneTopY, COLUMN_BASELINE_Y);
       if (rect) out.push({ ch, rect, color: columnColors[ch - 1] ?? '#3a4a52' });
     }
     return out;
   });
 
-  // SEND 1 / SEND 2 sit SIDE BY SIDE (own X band each), full column height.
+  // SEND 1 / SEND 2 sit SIDE BY SIDE (own X band each), same grown lane height.
   let sends = $derived.by<{ slot: number; rect: Rect }[]>(() => {
     void tick;
     const out: { slot: number; rect: Rect }[] = [];
     for (let s = 1; s <= SEND_BOX_COUNT; s++) {
       const [x0, x1] = sendBoxXBand(s);
-      const rect = project(x0, x1, COLUMN_TOP_Y, COLUMN_BASELINE_Y);
+      const rect = project(x0, x1, laneTopY, COLUMN_BASELINE_Y);
       if (rect) out.push({ slot: s, rect });
     }
     return out;
+  });
+
+  // The PURPLE video zone — the video-domain analog of the mixer strip — spans
+  // the column band directly BELOW the baseline (a backdraft-tall region that
+  // holds the default videoOut + any video cards).
+  let videoZone = $derived.by<Rect | null>(() => {
+    void tick;
+    const b = videoAreaBand();
+    return project(b.x0, b.x1, b.y0, b.y1);
   });
 </script>
 
@@ -86,6 +98,15 @@
       <div class="wcol-send-label" data-testid="send-box-label-{slot}">SEND {slot}</div>
     </div>
   {/each}
+  {#if videoZone}
+    <div
+      class="wcol-video"
+      data-testid="video-area"
+      style="left:{videoZone.left}px; top:{videoZone.top}px; width:{videoZone.width}px; height:{videoZone.height}px;"
+    >
+      <div class="wcol-video-label" data-testid="video-area-label">VIDEO</div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -139,5 +160,28 @@
     letter-spacing: 0.08em;
     color: #071417;
     background: rgba(0, 240, 255, 0.7);
+  }
+  .wcol-video {
+    position: absolute;
+    box-sizing: border-box;
+    border: 1.5px dashed rgba(180, 90, 255, 0.55);
+    border-radius: 10px;
+    background: linear-gradient(
+      to bottom,
+      rgba(150, 70, 240, 0.06),
+      rgba(150, 70, 240, 0.02)
+    );
+  }
+  .wcol-video-label {
+    position: absolute;
+    left: 50%;
+    top: 8px;
+    transform: translateX(-50%);
+    padding: 2px 10px;
+    border-radius: 6px;
+    font: 600 11px/1.2 system-ui, sans-serif;
+    letter-spacing: 0.12em;
+    color: #12061c;
+    background: rgba(190, 110, 255, 0.75);
   }
 </style>

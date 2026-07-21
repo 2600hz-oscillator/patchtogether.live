@@ -62,7 +62,13 @@ export const COLUMN_TOP_Y = 0;
  *  position a pure function of the array index. */
 export const COLUMN_SLOT_H = RACK_UNIT * 4; // 720px (grid-aligned)
 
-/** Left padding inside a column band so cards don't butt the divider. */
+/** Left padding inside a column band so cards don't butt the divider — the
+ *  FALLBACK gutter used only when a card's width is unknown. When the width IS
+ *  known the card is CENTERED in the band instead (columnCardX), giving equal
+ *  left/right gutters that match the band-centered channel number + guide lines
+ *  (see columnBandCenterX). For a 4hp/720px card in a 34hp/765px band the two
+ *  agree (gutter 22.5 each side); a narrower card would otherwise hug the left
+ *  edge and drift ~tens of px LEFT of its number — the offset bug this fixes. */
 export const COLUMN_PAD_X = HP_UNIT; // 22.5px
 
 /** The number of slots budgeted above the baseline before a column overflows
@@ -83,6 +89,35 @@ export const COLUMN_BASELINE_Y = COLUMN_TOP_Y + COLUMN_H;
 export function columnXBand(ch: number): [number, number] {
   const x0 = COLUMN_ORIGIN_X + (ch - 1) * COLUMN_W;
   return [x0, x0 + COLUMN_W];
+}
+
+/** The flow-space CENTER X of column `ch`'s band — where the guide-line pair
+ *  brackets and the channel NUMBER badge center. The single X that a card's own
+ *  center must match (columnCardX). */
+export function columnBandCenterX(ch: number): number {
+  const [x0, x1] = columnXBand(ch);
+  return (x0 + x1) / 2;
+}
+
+/** The flow-space CENTER X of send box `slot`'s band. */
+export function sendBandCenterX(slot: number): number {
+  const [x0, x1] = sendBoxXBand(slot);
+  return (x0 + x1) / 2;
+}
+
+/** The flow-space TOP-LEFT X that CENTERS a card of pixel width `widthPx` inside
+ *  column `ch`'s band — so the card's center lands on columnBandCenterX(ch)
+ *  (== the channel number's center). Equal left/right gutters. Falls back to the
+ *  fixed left pad when width is unknown/zero. */
+export function columnCardX(ch: number, widthPx: number): number {
+  const [x0] = columnXBand(ch);
+  return widthPx > 0 ? x0 + (COLUMN_W - widthPx) / 2 : x0 + COLUMN_PAD_X;
+}
+
+/** Send-box twin of columnCardX — centers a card of width `widthPx` in box `slot`. */
+export function sendCardX(slot: number, widthPx: number): number {
+  const [x0] = sendBoxXBand(slot);
+  return widthPx > 0 ? x0 + (SEND_BOX_W - widthPx) / 2 : x0 + COLUMN_PAD_X;
 }
 
 /** The `[x0, x1)` flow-space band of send box `slot` (1|2) — SIDE BY SIDE right
@@ -177,14 +212,19 @@ export function columnBottomFlowPos(ch: number, currentCount: number): { x: numb
 export function columnFlushPositions(
   ch: number,
   heightsPx: readonly number[],
+  widthsPx?: readonly number[],
 ): { x: number; y: number }[] {
   const [x0] = columnXBand(ch);
-  const x = x0 + COLUMN_PAD_X;
+  const padX = x0 + COLUMN_PAD_X;
   const out: { x: number; y: number }[] = new Array(heightsPx.length);
   let bottom = COLUMN_BASELINE_Y;
   for (let i = 0; i < heightsPx.length; i++) {
     const top = bottom - (heightsPx[i] ?? COLUMN_SLOT_H);
-    out[i] = { x, y: top };
+    // CENTER each card in the band by its OWN width (so card-center == band-
+    // center == channel-number center); fall back to the left pad when widths
+    // aren't supplied (back-compat: legacy callers get the historical x).
+    const w = widthsPx?.[i];
+    out[i] = { x: w != null ? columnCardX(ch, w) : padX, y: top };
     bottom = top; // the next member stacks flush ON TOP of this one
   }
   return out;
@@ -195,14 +235,16 @@ export function columnFlushPositions(
 export function sendFlushPositions(
   slot: number,
   heightsPx: readonly number[],
+  widthsPx?: readonly number[],
 ): { x: number; y: number }[] {
   const [x0] = sendBoxXBand(slot);
-  const x = x0 + COLUMN_PAD_X;
+  const padX = x0 + COLUMN_PAD_X;
   const out: { x: number; y: number }[] = new Array(heightsPx.length);
   let bottom = COLUMN_BASELINE_Y;
   for (let i = 0; i < heightsPx.length; i++) {
     const top = bottom - (heightsPx[i] ?? COLUMN_SLOT_H);
-    out[i] = { x, y: top };
+    const w = widthsPx?.[i];
+    out[i] = { x: w != null ? sendCardX(slot, w) : padX, y: top };
     bottom = top; // the next tenant stacks flush ON TOP of this one
   }
   return out;
@@ -232,6 +274,148 @@ export function indexForDropY(memberCenters: readonly number[], dropY: number): 
   let below = 0;
   for (const c of memberCenters) if (c > dropY) below++;
   return below;
+}
+
+// ---------------- Lane HEIGHT (uniform grow-up) ----------------
+//
+// The guide lines default to a SHORT band (~2× a tidyvco card) above the
+// baseline. When any column's member STACK is taller than that default, ALL 8
+// lanes grow upward TOGETHER to the same height = max(default, tallest stack) —
+// "the lines all extend upwards". The baseline (channel numbers) stays pinned at
+// the bottom; growth is upward only (a smaller top Y). Heights are the per-TYPE
+// rack-unit card heights columnFlushPositions already sums, so every peer
+// computes the SAME lane height (collab-convergent, no write needed).
+
+/** The default lane height as a MULTIPLE of a reference card height: 2× a
+ *  tidyvco (a tidyvco is 3u = 540px → default 1080px). The caller supplies the
+ *  reference card's pixel height (derived from the live rack tier), keeping this
+ *  file free of the rack-size registry. */
+export function defaultLaneHeightPx(refCardHeightPx: number): number {
+  return refCardHeightPx * 2;
+}
+
+/** The UNIFORM lane height: the LARGER of the default and the tallest column /
+ *  send stack (each stack height = the sum of its members' card heights). Pure
+ *  max — every peer feeding the same per-type heights converges. */
+export function computeLaneHeightPx(
+  stackHeightsPx: readonly number[],
+  defaultHeightPx: number,
+): number {
+  let h = defaultHeightPx;
+  for (const s of stackHeightsPx) if (s > h) h = s;
+  return h;
+}
+
+/** The flow-space TOP Y of every lane guide line for a given lane height. The
+ *  baseline is fixed at the bottom; a taller lane has a SMALLER top Y (grows
+ *  upward). */
+export function laneTopYForHeight(laneHeightPx: number): number {
+  return COLUMN_BASELINE_Y - laneHeightPx;
+}
+
+// ---------------- Grow-up push (canvas modules clear the lanes) ----------------
+//
+// When the lanes grow upward, any NON-lane canvas module sitting above them
+// whose box now dips BELOW the new line-top is PUSHED UP so it clears the lane
+// region — even a LOCKED module (the push writes committed graph position, not a
+// drag). The new Y snaps to the rack grid so the module lands at a LOCKABLE
+// position. A pure, deterministic compute (position = f(laneTop, module box)) →
+// a single-actor compute-then-commit converges across peers; re-running it once
+// the modules have cleared yields an EMPTY plan (idempotent — no write storm).
+
+/** A canvas module's flow-space box + id, as the push planner reads it. */
+export interface ModuleBoxLike {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** The full flow-space X span the lanes occupy (columns 1..8 + the sends rail) —
+ *  a module must horizontally overlap this to be considered "over the lanes". */
+export function laneRegionXBand(): [number, number] {
+  return [COLUMN_ORIGIN_X, sendRailXBand()[1]];
+}
+
+/**
+ * Plan the grow-up push. For each candidate module (the caller passes only
+ * NON-lane, non-video canvas modules) that (a) horizontally overlaps the lane
+ * region and (b) has its BOTTOM edge below the new lane top (`laneTopY`) — i.e.
+ * it dips into the lanes — return a new grid-snapped TOP Y that lifts its bottom
+ * edge to (at or above) `laneTopY`. Snapping DOWN to the grid guarantees the
+ * bottom clears the lane top AND the module lands on a lockable row. Modules
+ * that already clear the lanes (or don't overlap) get no entry → idempotent.
+ */
+export function planLanePushUps(
+  modules: readonly ModuleBoxLike[],
+  laneTopY: number,
+  gridY: number = RACK_UNIT,
+): { id: string; y: number }[] {
+  const [rx0, rx1] = laneRegionXBand();
+  const out: { id: string; y: number }[] = [];
+  for (const m of modules) {
+    const overlapsX = m.x < rx1 && m.x + m.w > rx0;
+    if (!overlapsX) continue;
+    const bottom = m.y + m.h;
+    if (bottom <= laneTopY) continue; // already clears the lane top
+    // Lift so the bottom edge sits AT/above laneTopY, snapped DOWN to the grid
+    // (floor → the new bottom is ≤ laneTopY, and the top lands on a lock row).
+    const newTop = Math.floor((laneTopY - m.h) / gridY) * gridY;
+    if (newTop < m.y) out.push({ id: m.id, y: newTop });
+  }
+  return out;
+}
+
+// ---------------- Video area (the purple video zone) ----------------
+//
+// Below the channel-lane baseline sits the VIDEO ZONE — the video-domain analog
+// of the audio mixer strip. A purple-outlined region sized to hold video cards:
+// its height matches a backdraft card (3u / 540px — backdraft's default box) and
+// it spans the FULL lane band (columns 1..8) so several video modules fit side
+// by side. A fresh workflow rack auto-spawns ONE videoOut inside it as the
+// default video sink.
+
+/** The video zone's height in flow-space px = a backdraft card's default box
+ *  (3u = 540px). */
+export const VIDEO_AREA_HEIGHT = RACK_UNIT * 3;
+
+/** The video zone's flow-space rect: full column band width (columns 1..8, NOT
+ *  the sends rail), directly below the baseline. (Width choice: the column band
+ *  — the widest natural "strip" — rather than a single backdraft width.) */
+export function videoAreaBand(): { x0: number; x1: number; y0: number; y1: number } {
+  return {
+    x0: COLUMN_ORIGIN_X,
+    x1: COLUMN_ORIGIN_X + COLUMN_COUNT * COLUMN_W,
+    y0: COLUMN_BASELINE_Y,
+    y1: COLUMN_BASELINE_Y + VIDEO_AREA_HEIGHT,
+  };
+}
+
+/** Deterministic node id for the auto-spawned default video-output sink (the
+ *  CRDT convergence key — like the pinned-<type> singletons). */
+export const DEFAULT_VIDEO_OUT_ID = 'workflow-videoOut';
+
+/** Grid-snapped TOP-LEFT spawn position for the default videoOut, inside the
+ *  video area near its left edge (a 360×360 videoOut fits with headroom below
+ *  the 540px zone). */
+export function videoOutSpawnPos(): { x: number; y: number } {
+  return snapPositionToGrid({
+    x: COLUMN_ORIGIN_X + COLUMN_PAD_X,
+    y: COLUMN_BASELINE_Y,
+  });
+}
+
+/** Minimal node view for the default-videoOut presence check. */
+export interface VideoOutNodeLike {
+  type: string;
+}
+
+/** True when the rack has NO videoOut yet → the ensure must spawn the default
+ *  one. (Presence is by TYPE: any existing videoOut — user- or auto-spawned —
+ *  satisfies the "one default sink" invariant, so we never add a second.) */
+export function needsDefaultVideoOut(nodes: ReadonlyArray<VideoOutNodeLike>): boolean {
+  return !nodes.some((n) => n.type === 'videoOut');
 }
 
 // ---------------- Ordered-membership array helpers (pure, CRDT-safe) ----------------
