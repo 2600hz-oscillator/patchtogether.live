@@ -57,6 +57,7 @@
     { pid: 'space_diffuse', label: 'Space Diffuse' },
     { pid: 'fold', label: 'Fold' },
     { pid: 'spread', label: 'Spread' },
+    { pid: 'scan', label: 'Scan' },
     { pid: 'slice_y', label: 'Y' },
     { pid: 'slice_rx', label: 'Rot X' },
     { pid: 'slice_ry', label: 'Rot Y' },
@@ -200,7 +201,7 @@
     morph_cv: 'MORPH', connect_cv: 'CONNECT', connect_strength_cv: 'CNCT STR',
     crush_cv: 'CRUSH', space_crush_cv: 'SPC CRUSH', space_diffuse_cv: 'SPC DIFF',
     slice_y_cv: 'Y', slice_rx_cv: 'ROT X', slice_ry_cv: 'ROT Y', slice_rz_cv: 'ROT Z',
-    fold_cv: 'FOLD', spread_cv: 'SPREAD', tune_cv: 'TUNE',
+    fold_cv: 'FOLD', spread_cv: 'SPREAD', scan_cv: 'SCAN', tune_cv: 'TUNE',
   });
   const outputs = portsFromDef(videocubeDef.outputs, {
     video_out: 'VIDEO', audio_out: 'AUDIO',

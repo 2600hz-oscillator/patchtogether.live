@@ -16,6 +16,8 @@ import {
   warpCoord,
   wrapSurfaceCoord,
   readerLagFor,
+  scanOffsetFrames,
+  readerCentreLayer,
   voxelSample,
   diffuseTargetFor,
   stripToHeightfield,
@@ -456,5 +458,101 @@ describe('SPREAD temporal window', () => {
   it('VIDEOCUBE_SMOOTH_TAPS_MAX bounds the shader loop (≥ both renderer tap counts)', () => {
     expect(VIDEOCUBE_SMOOTH_TAPS_MAX).toBeGreaterThanOrEqual(VIDEOCUBE_SMOOTH_TAPS_SOFT);
     expect(VIDEOCUBE_SMOOTH_TAPS_MAX).toBeGreaterThanOrEqual(VIDEOCUBE_SMOOTH_TAPS_GPU);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// SCAN — the reader-centre position (FrameTable's MORPH). Pins: scan=0 is
+// byte-identical (the exact pre-scan centre, an integer), scan sweeps the centre
+// monotonically BACK through the ring (wrapping), the linear/ clamped offset map,
+// and that SCAN + SPREAD centre-then-widen (scan MOVES which frames the window
+// reads; spread WIDENS the blend at that scanned centre).
+// ──────────────────────────────────────────────────────────────────────────
+describe('SCAN reader-centre position', () => {
+  const N = VIDEOCUBE_RING_FRAMES;
+  const MODES = [VIDEOCUBE_MODE_SMOOTH, VIDEOCUBE_MODE_MORPH, VIDEOCUBE_MODE_CHAOS];
+
+  it('scanOffsetFrames: 0 → 0, 1 → N-1, linear + clamped', () => {
+    expect(scanOffsetFrames(0)).toBe(0);
+    expect(scanOffsetFrames(1)).toBeCloseTo(N - 1, 9);
+    expect(scanOffsetFrames(0.5)).toBeCloseTo(0.5 * (N - 1), 9);
+    expect(scanOffsetFrames(-1)).toBe(0);              // clamps low
+    expect(scanOffsetFrames(2)).toBeCloseTo(N - 1, 9); // clamps high
+  });
+
+  it('scan=0 is BYTE-IDENTICAL to the pre-scan centre (integer = newest − lag, wrapped)', () => {
+    for (const newest of [0, 5, 30, 59]) {
+      for (const mode of MODES) {
+        for (const live of [false, true]) {
+          const want = (((newest - readerLagFor(mode, live)) % N) + N) % N;
+          const got = readerCentreLayer(newest, mode, live, 0);
+          expect(got, `newest=${newest} mode=${mode} live=${live}`).toBe(want);
+          expect(Number.isInteger(got), 'scan=0 centre is an integer layer').toBe(true);
+        }
+      }
+    }
+  });
+
+  it('SCAN sweeps the reader centre monotonically BACK through the ring (wraps once, near-full coverage)', () => {
+    const newest = 40;
+    const lag = readerLagFor(VIDEOCUBE_MODE_MORPH, false); // 0 → centre = newest − scan·(N−1)
+    let prevRaw = Infinity;
+    const visited = new Set<number>();
+    for (let i = 0; i <= 100; i++) {
+      const scan = i / 100;
+      const raw = newest - lag - scanOffsetFrames(scan); // unwrapped: strictly decreasing
+      expect(raw).toBeLessThanOrEqual(prevRaw + 1e-9);
+      prevRaw = raw;
+      const centre = readerCentreLayer(newest, VIDEOCUBE_MODE_MORPH, false, scan);
+      expect(centre).toBeCloseTo(((raw % N) + N) % N, 6); // matches the wrapped raw
+      expect(centre).toBeGreaterThanOrEqual(0);
+      expect(centre).toBeLessThan(N);
+      visited.add(Math.round(centre) % N);
+    }
+    // a full 0→1 sweep displaces exactly (N−1) frames → it walks nearly the whole ring
+    expect(visited.size).toBeGreaterThan(N * 0.8);
+    // scan=1 lands (N−1) frames back = one short of a full loop (wraps to newest−lag+1)
+    expect(readerCentreLayer(newest, VIDEOCUBE_MODE_MORPH, false, 1))
+      .toBeCloseTo(((newest - lag - (N - 1)) % N + N) % N, 6);
+  });
+
+  it('SCAN shifts EVERY mode (incl. CHAOS) by the same offset (base + scan·(N−1), wrapped)', () => {
+    for (const mode of MODES) {
+      const base = readerCentreLayer(30, mode, false, 0);
+      const shifted = readerCentreLayer(30, mode, false, 0.5);
+      const wantShift = ((base - scanOffsetFrames(0.5)) % N + N) % N;
+      expect(shifted).toBeCloseTo(wantShift, 6);
+    }
+  });
+
+  it('SCAN + SPREAD: scan MOVES which ring frames the window reads; SPREAD widens the blend at that scanned centre', () => {
+    const newest = 59; // MORPH lag 0 → centre = newest − scan·(N−1)
+    const peak = 30;
+    // A triangular bump ring peaking at `peak` (smooth so the Hann taps land on
+    // real content, not an aliased single-layer delta).
+    const ring = (layer: number) => {
+      const d = Math.abs(((((layer - peak) % N) + N + N / 2) % N) - N / 2); // wrapped dist to peak
+      return Math.max(0, 1 - d / 10);
+    };
+    // The scan that lands the centre exactly on the bump: 59 − scan·59 = 30.
+    const scanToPeak = (newest - peak) / (N - 1);
+    const centreAtPeak = readerCentreLayer(newest, VIDEOCUBE_MODE_MORPH, false, scanToPeak);
+    expect(centreAtPeak).toBeCloseTo(peak, 6);
+
+    // scan=0 sits at `newest` (far from the bump) → reads ~0; scanning onto the
+    // bump reads the crisp peak (~1). This is the whole point: SCAN traverses the
+    // frozen table, distinct from SPREAD.
+    const centreUnscanned = readerCentreLayer(newest, VIDEOCUBE_MODE_MORPH, false, 0);
+    const readUnscanned = sampleTemporalWindow(ring, centreUnscanned, 0, VIDEOCUBE_SMOOTH_TAPS_GPU);
+    const readScanned = sampleTemporalWindow(ring, centreAtPeak, 0, VIDEOCUBE_SMOOTH_TAPS_GPU);
+    expect(readUnscanned).toBeCloseTo(0, 6);
+    expect(readScanned).toBeCloseTo(1, 6);
+    expect(readScanned).toBeGreaterThan(readUnscanned + 0.5);
+
+    // At the scanned centre, opening SPREAD dilutes the crisp peak (neighbours bleed
+    // in) — spread WIDENS, scan already POSITIONED. Both still > 0 (peak contributes).
+    const widened = sampleTemporalWindow(ring, centreAtPeak, 0.3, VIDEOCUBE_SMOOTH_TAPS_GPU);
+    expect(widened).toBeLessThan(readScanned);
+    expect(widened).toBeGreaterThan(0);
   });
 });

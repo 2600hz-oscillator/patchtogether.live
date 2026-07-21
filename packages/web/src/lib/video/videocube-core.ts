@@ -150,6 +150,44 @@ export function readerLagFor(mode: number, live: boolean): number {
   return VIDEOCUBE_READER_LAG; // SMOOTH (default)
 }
 
+/**
+ * SCAN offset (in ring frames) — the video analog of FRAMETABLE's MORPH knob.
+ * SCAN is a normalized 0..1 knob that MOVES the reading CENTRE through the whole
+ * 60-frame ring: `scan·(N−1)` frames further back from the reader's per-mode
+ * trailing centre (readerLagFor), wrapping at the ring seam. scan=0 → 0 (NO
+ * offset ⇒ the reader centre is exactly today's, byte-identical); scan=1 →
+ * (N−1), a full sweep across the ring (wraps back to the same layer). Where
+ * SPREAD sets the WIDTH of the temporal window, SCAN sets its POSITION — together
+ * they reach FRAMETABLE's morph/spread 1:1: a FROZEN ring can be oozed AND
+ * scrubbed through its ~2 seconds of captured frames.
+ */
+export function scanOffsetFrames(scan: number, ringFrames: number = VIDEOCUBE_RING_FRAMES): number {
+  return clamp01(scan) * (ringFrames - 1);
+}
+
+/**
+ * The reader window CENTRE layer (fractional, ring-wrapped into [0, N)) for a
+ * given mode + LIVE + SCAN, from the newest fully-written layer. Composes the
+ * per-mode trailing lag (readerLagFor) with the SCAN offset (scanOffsetFrames)
+ * exactly as the shaders do inline — `centre = newest − lag(mode) − scan·(N−1)`,
+ * wrapped — and is the SINGLE source of truth for the AUDIO reduce frame pick, so
+ * SCAN moves the picture surfaces AND the derived drone through the ring in
+ * lockstep (the unified-field promise, B3). scan=0 ⇒ `newest − lag(mode)` wrapped
+ * = the pre-scan centre (byte-identical). CHAOS reduces its window-mean
+ * representative (readerLagFor), then SCAN shifts that base the same way it shifts
+ * the picture's per-pixel dither base.
+ */
+export function readerCentreLayer(
+  newest: number,
+  mode: number,
+  live: boolean,
+  scan: number,
+  ringFrames: number = VIDEOCUBE_RING_FRAMES,
+): number {
+  const lag = readerLagFor(mode, live) + scanOffsetFrames(scan, ringFrames);
+  return (((newest - lag) % ringFrames) + ringFrames) % ringFrames;
+}
+
 // ----------------------------------------------------------------------
 // SPREAD temporal window (FrameTable-style). The reader picks the window CENTRE
 // (readerLagFor); SPREAD sets its WIDTH; a Hann kernel weights the taps. These

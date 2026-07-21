@@ -405,6 +405,22 @@ test.describe('VIDEOCUBE — video isomorph of the audio CUBE', () => {
     ).toBeGreaterThan(1.5);
     await setNodeParams(page, 'vc', { spread: 0 });
 
+    // ── SCAN = the FrameTable-style reader-centre MORPH (owner): at FIXED spread it
+    //    MOVES the reading centre THROUGH the varied FROZEN ring, so slice_out reads
+    //    a DIFFERENT frame (it scrubs the ~2-second table). This is distinct from
+    //    SPREAD (which only widens the blend at a fixed centre): the ring is
+    //    varied+frozen and spread is 0, so SCAN is the ONLY variable. Proves scan
+    //    reaches the GPU and traverses the frozen table. Restore to 0 after. ──
+    const scan0 = await readViz('slice_out');
+    await setNodeParams(page, 'vc', { scan: 0.5 });
+    const scanMid = await readViz('slice_out');
+    assertVizStructured(scanMid, 'slice_out (scan 0.5)');
+    expect(
+      signatureDist(scan0, scanMid),
+      'SCAN moves the reader centre through the frozen ring → slice_out reads a different frame (traverses the table, distinct from SPREAD)',
+    ).toBeGreaterThan(1.5);
+    await setNodeParams(page, 'vc', { scan: 0 });
+
     // ── slice_out responds to slice Y + rotation (the cut slides/tilts) ──
     const sliceBase = await readViz('slice_out');
     await setNodeParams(page, 'vc', { slice_y: 0.15, slice_rx: 0.8 });

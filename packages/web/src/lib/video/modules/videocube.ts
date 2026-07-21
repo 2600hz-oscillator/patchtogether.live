@@ -84,7 +84,7 @@ import {
   VIDEOCUBE_WRAP_TILES,
   VIDEOCUBE_DIFFUSE_DEFAULT,
   diffuseTargetFor,
-  readerLagFor,
+  readerCentreLayer,
   stripToHeightfieldInto,
   type DiffuseTarget,
 } from '$lib/video/videocube-core';
@@ -139,6 +139,7 @@ interface VideocubeParams {
   slice_rz: number;
   fold: number;   // audio-only wavefolder (no image analog)
   spread: number; // FrameTable-style TEMPORAL WINDOW width (0=single frame; opens → oozes)
+  scan: number;   // FrameTable MORPH: scans the reading CENTRE through the ring (0=today's centre; wraps)
   // ── derived-audio pitch / gain ──
   tune: number;
   fine: number;
@@ -171,6 +172,7 @@ const DEFAULTS: VideocubeParams = {
   slice_rz: 0,
   fold: 0,
   spread: 0,
+  scan: 0,
   tune: 0,
   fine: 0,
   level: 1,
@@ -209,6 +211,10 @@ const PARAM_IDS: ReadonlySet<string> = new Set(Object.keys(DEFAULTS));
 const AUDIO_PARAMS: ReadonlySet<string> = new Set([
   'morph_fc', 'connect', 'connect_strength', 'crush', 'space_crush',
   'space_diffuse', 'slice_y', 'slice_rx', 'slice_ry', 'slice_rz', 'fold', 'spread',
+  // scan MOVES the reader centre through the ring (the SAME frame the audio
+  // reduces, via the shared readerCentreLayer) → a change re-derives the wave
+  // from a different frame, so it reshapes the audio too.
+  'scan',
   // material + wrap ALSO reshape the derived wave (they pass into SliceParams),
   // so a change must mark audio dirty — else the picture updates same-frame while
   // the audio lags to the next throttle tick (breaks the WRAP/MATERIAL isomorphism).
@@ -236,7 +242,7 @@ precision highp sampler2DArray;
 in vec2 vUv;
 out vec4 outColor;
 uniform sampler2DArray uRing;
-uniform float uLayer;      // reader-selected CENTRE layer (window centre)
+uniform float uLayer;      // reader-selected CENTRE layer (window centre, SCAN-shifted on the CPU)
 uniform float uSpread;     // SPREAD 0..1 → temporal window half-width (frames)
 uniform int   uWindowTaps; // renderer-gated Hann tap count (≤1 ⇒ single frame)
 const float N = ${N}.0;
@@ -293,6 +299,7 @@ uniform float uHasContent;    // 0 until at least one ring has captured a frame
 uniform int   uMarch;         // renderer-gated ray-march step count
 uniform float uSpread;        // SPREAD 0..1 → temporal window half-width (frames)
 uniform int   uWindowTaps;    // renderer-gated Hann tap count (≤1 ⇒ single frame)
+uniform float uScan;          // SCAN 0..1 → reader-centre offset scan*(N-1) frames (wraps)
 
 // Orbit camera (centered on the cube centre = origin).
 uniform vec3  uEye;
@@ -475,6 +482,11 @@ void main(){
   } else if (uMode == MODE_MORPH){
     lag = 0.0; // crisp newest frame
   }
+  // SCAN moves the reading CENTRE through the ring (FrameTable's MORPH): shift the
+  // per-mode lag a further scan*(N-1) frames back (wraps via surfWindow/wrapLayer).
+  // For CHAOS this shifts the per-pixel dither base; scan=0 leaves lag untouched
+  // → byte-identical to the pre-scan read.
+  lag += uScan * (N - 1.0);
   float layerA = float(uHeadA) - lag;
   float layerB = float(uHeadB) - lag;
   float layerC = float(uHeadC) - lag;
@@ -723,9 +735,10 @@ vec3 surfWindow(sampler2DArray ring, vec2 uv, float center, float spreadNorm, in
   return acc / max(wsum, 1e-6);
 }
 // Reader trailing-frame lag — the SAME per-mode branch COMBINE_FRAG uses inline
-// (SMOOTH trailing / MORPH newest / CHAOS per-pixel hash), so slice_out + the
-// triptych read the SAME temporal frame the ray-march + audio do.
-float readerLag(int mode, float live, float readerLag, vec2 fragCoord){
+// (SMOOTH trailing / MORPH newest / CHAOS per-pixel hash) PLUS the SCAN offset
+// (scan*(N-1) frames), so slice_out + the triptych read the SAME SCAN-shifted
+// temporal frame the ray-march + audio do. scan=0 leaves the lag untouched.
+float readerLag(int mode, float live, float readerLag, float scan, vec2 fragCoord){
   float lag = (live > 0.5) ? 0.0 : readerLag;
   if (mode == MODE_CHAOS){
     vec2 bn = mod(fragCoord, 128.0);
@@ -733,6 +746,7 @@ float readerLag(int mode, float live, float readerLag, vec2 fragCoord){
   } else if (mode == MODE_MORPH){
     lag = 0.0;
   }
+  lag += scan * (N - 1.0);
   return lag;
 }
 `;
@@ -772,6 +786,7 @@ uniform sampler2DArray uRingC;
 uniform int   uHeadA; uniform int uHeadB; uniform int uHeadC;
 uniform int   uMode; uniform float uLive; uniform float uReaderLag; uniform float uHasContent;
 uniform float uSpread; uniform int uWindowTaps; // SPREAD temporal window (Hann ±h)
+uniform float uScan; // SCAN reader-centre offset scan*(N-1) frames (wraps)
 uniform float uMorphFC; uniform float uConnect; uniform float uConnectStr;
 uniform float uCrush; uniform float uSpaceCrush; uniform float uSpaceDiffuse;
 uniform int   uDiffuseAxis; uniform float uDiffuseDir; uniform float uWrap; uniform float uMaterial;
@@ -781,7 +796,7 @@ ${VIZ_FIELD_HELPERS}
 void main(){
   vec3 bg = vec3(0.02, 0.03, 0.05);
   if (uHasContent < 0.5){ outColor = vec4(bg, 1.0); return; }
-  float lag = readerLag(uMode, uLive, uReaderLag, gl_FragCoord.xy);
+  float lag = readerLag(uMode, uLive, uReaderLag, uScan, gl_FragCoord.xy);
   float layerA = float(uHeadA) - lag;
   float layerB = float(uHeadB) - lag;
   float layerC = float(uHeadC) - lag;
@@ -853,6 +868,7 @@ uniform sampler2DArray uRingC;
 uniform int   uHeadA; uniform int uHeadB; uniform int uHeadC;
 uniform int   uMode; uniform float uLive; uniform float uReaderLag; uniform float uHasContent;
 uniform float uSpread; uniform int uWindowTaps; // SPREAD temporal window (Hann ±h)
+uniform float uScan; // SCAN reader-centre offset scan*(N-1) frames (wraps)
 uniform float uMorphFC; uniform float uConnect; uniform float uConnectStr;
 uniform float uCrush; uniform float uSpaceCrush; uniform float uSpaceDiffuse;
 uniform int   uDiffuseAxis; uniform float uDiffuseDir; uniform float uWrap; uniform float uMaterial;
@@ -872,7 +888,7 @@ vec3 depthColormap(float t){
 }
 void main(){
   if (uHasContent < 0.5){ outColor = vec4(0.0, 0.0, 0.06, 1.0); return; }
-  float lag = readerLag(uMode, uLive, uReaderLag, gl_FragCoord.xy);
+  float lag = readerLag(uMode, uLive, uReaderLag, uScan, gl_FragCoord.xy);
   float layerA = float(uHeadA) - lag;
   float layerB = float(uHeadB) - lag;
   float layerC = float(uHeadC) - lag;
@@ -964,6 +980,7 @@ export const videocubeDef: VideoModuleDef = {
     { id: 'slice_rz_cv',         type: 'cv', paramTarget: 'slice_rz',         cvScale: { mode: 'linear' } },
     { id: 'fold_cv',             type: 'cv', paramTarget: 'fold',             cvScale: { mode: 'linear' } },
     { id: 'spread_cv',           type: 'cv', paramTarget: 'spread',           cvScale: { mode: 'linear' } },
+    { id: 'scan_cv',             type: 'cv', paramTarget: 'scan',             cvScale: { mode: 'linear' } },
     { id: 'tune_cv',             type: 'cv', paramTarget: 'tune',             cvScale: { mode: 'linear' } },
   ],
   outputs: [
@@ -990,6 +1007,7 @@ export const videocubeDef: VideoModuleDef = {
     { id: 'space_diffuse',    label: 'space diffuse',defaultValue: DEFAULTS.space_diffuse,    min: 0, max: 1,      curve: 'linear' },
     { id: 'fold',             label: 'fold',         defaultValue: DEFAULTS.fold,             min: 0, max: 1,      curve: 'linear' },
     { id: 'spread',           label: 'spread',       defaultValue: DEFAULTS.spread,           min: 0, max: 1,      curve: 'linear' },
+    { id: 'scan',             label: 'scan',         defaultValue: DEFAULTS.scan,             min: 0, max: 1,      curve: 'linear' },
     { id: 'slice_y',          label: 'y',            defaultValue: DEFAULTS.slice_y,          min: 0, max: 1,      curve: 'linear' },
     { id: 'slice_rx',         label: 'rot x',        defaultValue: DEFAULTS.slice_rx,         min: -3.1416, max: 3.1416, curve: 'linear' },
     { id: 'slice_ry',         label: 'rot y',        defaultValue: DEFAULTS.slice_ry,         min: -3.1416, max: 3.1416, curve: 'linear' },
@@ -1015,7 +1033,7 @@ export const videocubeDef: VideoModuleDef = {
   // docs-hash-ignore:start
   docs: {
     explanation:
-      "VIDEOCUBE is the VIDEO version of the audio CUBE oscillator, and it works the SAME way: it stacks three video sources into a GENUINE volumetric 3D solid and lets you fly a cutting plane through it. It ingests THREE 60-frame video rings — A (FLOOR), B (WALL / connector) and C (CEILING) — each either GENERATED LIVE from a connected video input (video_a/b/c) or LOADED from a .frametable.png atlas file. Each frame the reader picks ONE frame from each ring as a SURFACE, and those three video-luma surfaces are stacked into a real 3D scalar field over (x, y, z): the depth axis z is a genuine connecting dimension, and the occupancy curve (the SAME cube-dsp occ math the audio CUBE uses) fills SOLID DENSITY between the three surfaces — so the three videos join THROUGH SPACE, exactly as three wavetables join in the audio cube. video_out is a VOLUMETRIC RAY-MARCH of that solid: every output pixel casts a camera ray and marches through the cube, compositing the occupancy-weighted colour of the three source videos (SMOOTH = a soft blend, HARD = one surface wins per voxel) with opacity set by the field density, and it draws the CUTTING SLICE PLANE (the exact plane the audio reads, tinted by the density it cuts) and a 12-edge wireframe for orientation. An orbit CAMERA (VIEW ZOOM / VIEW X / VIEW Y / VIEW Z) flies around the solid so you can look THROUGH the three videos from any angle. MORPH cross-fades the FLOOR fill toward the CEILING fill through B, CONNECT reshapes how B binds them (rounded ↔ hard ramp), CONNECT STRENGTH swells B's mid-band, CRUSH posterizes the colour and amplitude-crushes the density, SPACE CRUSH voxelizes the field lookup, SPACE DIFFUSE pulls the sampling toward the field's lowest-information face, MATERIAL switches SMOOTH↔HARD, WRAP mirror-folds out-of-range coordinates, and Y / ROT X / ROT Y / ROT Z position the cutting plane. Crucially it ALSO emits AUDIO from the SAME field: the reader-selected frame of each ring is reduced to a luma heightfield and the IDENTICAL cube-dsp surface-height slice is flown through the stack along the SAME plane (Y / ROT), so audio_out carries a mono wavetable-oscillator drone whose timbre is driven by the SAME field knobs ('isomorphic in all cases'). Pitch is set by TUNE/FINE (and the tune CV), level by LEVEL, and FOLD is a west-coast wavefolder on the derived audio (audio-only — it has no image analog); SPREAD is a FRAMETABLE-style TEMPORAL WINDOW — the sampling size, in time, of the reader: at 0 each ring surfaces a single frame (crisp), and as you open it a Hann-weighted window blends a wider span of the ring into every surface, so a FROZEN table OOZES through its captured frames (the picture AND the drone flow in lockstep — the same window feeds the audio reduce). A global READER selector (SMOOTH default / MORPH / CHAOS) sets which frame each ring contributes as its surface (SMOOTH = a trailing frame, MORPH = the newest frame, CHAOS = a per-pixel dithered frame), FREEZE holds all live rings so you can scrub a held window, and LIVE forces the real-time (no-lag) read. The ray-march runs at quarter engine resolution and LINEAR-upscales to the half-res video_out, with a renderer-gated step count; the audio slice is recomputed off the audio thread on a throttle, never per sample. VIDEOCUBE v1 ships MONO-DRONE-first (no poly / ADSR yet — a follow-up). All ports live on the yellow drill-down PATCH PANEL (no raw side jacks). The field, the per-voxel colour blend and the luma reduction are a 1:1 CPU mirror unit-tested in $lib/video/videocube-core, reusing the audio-CUBE field math (cube-dsp) wholesale. Look-affecting new WebGL shader — held for owner visual preview.",
+      "VIDEOCUBE is the VIDEO version of the audio CUBE oscillator, and it works the SAME way: it stacks three video sources into a GENUINE volumetric 3D solid and lets you fly a cutting plane through it. It ingests THREE 60-frame video rings — A (FLOOR), B (WALL / connector) and C (CEILING) — each either GENERATED LIVE from a connected video input (video_a/b/c) or LOADED from a .frametable.png atlas file. Each frame the reader picks ONE frame from each ring as a SURFACE, and those three video-luma surfaces are stacked into a real 3D scalar field over (x, y, z): the depth axis z is a genuine connecting dimension, and the occupancy curve (the SAME cube-dsp occ math the audio CUBE uses) fills SOLID DENSITY between the three surfaces — so the three videos join THROUGH SPACE, exactly as three wavetables join in the audio cube. video_out is a VOLUMETRIC RAY-MARCH of that solid: every output pixel casts a camera ray and marches through the cube, compositing the occupancy-weighted colour of the three source videos (SMOOTH = a soft blend, HARD = one surface wins per voxel) with opacity set by the field density, and it draws the CUTTING SLICE PLANE (the exact plane the audio reads, tinted by the density it cuts) and a 12-edge wireframe for orientation. An orbit CAMERA (VIEW ZOOM / VIEW X / VIEW Y / VIEW Z) flies around the solid so you can look THROUGH the three videos from any angle. MORPH cross-fades the FLOOR fill toward the CEILING fill through B, CONNECT reshapes how B binds them (rounded ↔ hard ramp), CONNECT STRENGTH swells B's mid-band, CRUSH posterizes the colour and amplitude-crushes the density, SPACE CRUSH voxelizes the field lookup, SPACE DIFFUSE pulls the sampling toward the field's lowest-information face, MATERIAL switches SMOOTH↔HARD, WRAP mirror-folds out-of-range coordinates, and Y / ROT X / ROT Y / ROT Z position the cutting plane. Crucially it ALSO emits AUDIO from the SAME field: the reader-selected frame of each ring is reduced to a luma heightfield and the IDENTICAL cube-dsp surface-height slice is flown through the stack along the SAME plane (Y / ROT), so audio_out carries a mono wavetable-oscillator drone whose timbre is driven by the SAME field knobs ('isomorphic in all cases'). Pitch is set by TUNE/FINE (and the tune CV), level by LEVEL, and FOLD is a west-coast wavefolder on the derived audio (audio-only — it has no image analog); SPREAD is a FRAMETABLE-style TEMPORAL WINDOW — the sampling size, in time, of the reader: at 0 each ring surfaces a single frame (crisp), and as you open it a Hann-weighted window blends a wider span of the ring into every surface, so a FROZEN table OOZES through its captured frames (the picture AND the drone flow in lockstep — the same window feeds the audio reduce). SCAN is the FRAMETABLE MORPH partner to SPREAD: where SPREAD sets the WIDTH of the reader window, SCAN sets its POSITION — it moves the reading CENTRE through the whole 60-frame (~2-second) ring, wrapping at the seam, so on a FROZEN table you can scrub the crisp read (or the widened window) THROUGH the captured content and it oozes through the ~2 seconds exactly as FrameTable's MORPH + SPREAD do (SPREAD alone can only widen the blend at the fixed centre; SCAN is what walks it through the ring). SCAN feeds BOTH the picture surfaces and the audio reduce (image + drone in lockstep, the same as SPREAD), and at 0 it is byte-identical to the pre-scan read — the default look/sound is unchanged. A global READER selector (SMOOTH default / MORPH / CHAOS) sets which frame each ring contributes as its surface (SMOOTH = a trailing frame, MORPH = the newest frame, CHAOS = a per-pixel dithered frame), FREEZE holds all live rings so you can scrub a held window, and LIVE forces the real-time (no-lag) read. The ray-march runs at quarter engine resolution and LINEAR-upscales to the half-res video_out, with a renderer-gated step count; the audio slice is recomputed off the audio thread on a throttle, never per sample. VIDEOCUBE v1 ships MONO-DRONE-first (no poly / ADSR yet — a follow-up). All ports live on the yellow drill-down PATCH PANEL (no raw side jacks). The field, the per-voxel colour blend and the luma reduction are a 1:1 CPU mirror unit-tested in $lib/video/videocube-core, reusing the audio-CUBE field math (cube-dsp) wholesale. Look-affecting new WebGL shader — held for owner visual preview.",
     inputs: {
       video_a: 'The LIVE source recorded, frame by frame, into ring A (FLOOR — one of the two morph ends / the bottom surface of the 3D solid). Ignored when slot A is loaded from a file. Unpatched (and no file) leaves ring A black.',
       video_b: 'The LIVE source recorded into ring B (WALL / connector — the surface that binds A and C through the middle of the solid). Ignored when slot B is loaded from a file.',
@@ -1032,6 +1050,7 @@ export const videocubeDef: VideoModuleDef = {
       slice_rz_cv: 'CV that modulates ROT Z (Euler tilt of the cutting plane about Z), swept linearly over -pi..pi.',
       fold_cv: 'CV that modulates FOLD (the west-coast wavefolder on the derived audio — audio-only, no image effect), swept linearly over 0..1.',
       spread_cv: 'CV that modulates SPREAD (the temporal reader window width — how far a frozen table oozes through time), swept linearly over 0..1.',
+      scan_cv: 'CV that modulates SCAN (the reader-centre POSITION — moves the reading centre through the 60-frame ring / scrubs a frozen table through its ~2 seconds), swept linearly over 0..1 (wraps at the ring seam). Drives both the picture surfaces and the audio reduce.',
       tune_cv: 'CV that modulates TUNE (the derived oscillator pitch in semitones), swept linearly over -36..36. Affects the audio only, not the picture.',
     },
     outputs: {
@@ -1054,7 +1073,8 @@ export const videocubeDef: VideoModuleDef = {
       space_crush: 'SPACE CRUSH (0..1, default 0): voxelize the field lookup — snaps the (x,y,z) sampling coordinates to a chunky 3D voxel grid (a blocky solid) and the identical voxelization of the audio field lookup. 0 = transparent. CV via the space crush input.',
       space_diffuse: 'SPACE DIFFUSE (0..1, default 0): pulls the field sampling toward the cube’s lowest-information face (computed from the field, latched on the field, matching the audio scan) — a smear/gravity in the volume and the same coord warp in the audio. 0 = off. CV via the space diffuse input.',
       fold: 'FOLD (0..1, default 0): a west-coast wavefolder applied to the derived audio waveform (adds harmonics). Audio-only — it has no image analog. CV via the fold input.',
-      spread: 'SPREAD (0..1, default 0): the TEMPORAL sampling window of the reader (FrameTable-style). At 0 each ring surfaces one crisp frame (byte-identical to the pre-window read); opening it Hann-averages a ±window of ring frames into every surface — a wider window blends more of the ring, so a FROZEN table oozes through time. The reader mode (SMOOTH lag / MORPH newest) picks the window CENTRE; SPREAD sets its WIDTH. Feeds BOTH the picture surfaces and the audio reduce, so image and drone flow together. CHAOS keeps its per-pixel single frame. CV via the spread input.',
+      spread: 'SPREAD (0..1, default 0): the TEMPORAL sampling window WIDTH of the reader (FrameTable-style). At 0 each ring surfaces one crisp frame (byte-identical to the pre-window read); opening it Hann-averages a ±window of ring frames into every surface — a wider window blends more of the ring, so a FROZEN table oozes through time. The reader mode (SMOOTH lag / MORPH newest) + SCAN pick the window CENTRE; SPREAD sets its WIDTH. Feeds BOTH the picture surfaces and the audio reduce, so image and drone flow together. CHAOS keeps its per-pixel single frame. CV via the spread input.',
+      scan: 'SCAN (0..1, default 0): the reader-centre POSITION — the FrameTable MORPH partner to SPREAD. It moves the reading CENTRE through the whole 60-frame (~2-second) ring: 0 = today’s per-mode centre (byte-identical to the pre-scan read), and turning it up shifts the centre scan·(N−1) frames back, wrapping at the ring seam. Where SPREAD widens the blend at a fixed centre, SCAN walks that centre (crisp or widened) THROUGH the ring — so a FROZEN table can be SCRUBBED through its captured frames and oozes through the ~2 seconds exactly like FrameTable’s MORPH. Drives BOTH the picture surfaces and the audio reduce (image + drone in lockstep). For CHAOS it shifts the per-pixel dither base. CV via the scan input.',
       slice_y: 'Y (0..1, default 0.5): the height of the CUTTING SLICE PLANE through the solid. It is the exact plane the audio surface-height scan reads AND the plane drawn (tinted) in the volumetric render. CV via the y input.',
       slice_rx: 'ROT X (-pi..pi, default 0): Euler tilt of the cutting plane about X — the same plane the audio reads and the render draws. CV via the rot x input.',
       slice_ry: 'ROT Y (-pi..pi, default 0): Euler tilt of the cutting plane about Y. CV via the rot y input.',
@@ -1188,7 +1208,7 @@ export const videocubeDef: VideoModuleDef = {
           headA: cu('uHeadA'), headB: cu('uHeadB'), headC: cu('uHeadC'),
           mode: cu('uMode'), live: cu('uLive'), readerLag: cu('uReaderLag'),
           hasContent: cu('uHasContent'), march: cu('uMarch'),
-          spread: cu('uSpread'), windowTaps: cu('uWindowTaps'),
+          spread: cu('uSpread'), windowTaps: cu('uWindowTaps'), scan: cu('uScan'),
           eye: cu('uEye'), right: cu('uRight'), up: cu('uUp'), fwd: cu('uFwd'),
           tanHalf: cu('uTanHalf'), aspect: cu('uAspect'),
           morphFC: cu('uMorphFC'), connect: cu('uConnect'), connectStr: cu('uConnectStr'),
@@ -1216,7 +1236,7 @@ export const videocubeDef: VideoModuleDef = {
             ringA: g2('uRingA'), ringB: g2('uRingB'), ringC: g2('uRingC'),
             headA: g2('uHeadA'), headB: g2('uHeadB'), headC: g2('uHeadC'),
             mode: g2('uMode'), live: g2('uLive'), readerLag: g2('uReaderLag'), hasContent: g2('uHasContent'),
-            spread: g2('uSpread'), windowTaps: g2('uWindowTaps'),
+            spread: g2('uSpread'), windowTaps: g2('uWindowTaps'), scan: g2('uScan'),
             morphFC: g2('uMorphFC'), connect: g2('uConnect'), connectStr: g2('uConnectStr'),
             crush: g2('uCrush'), spaceCrush: g2('uSpaceCrush'), spaceDiffuse: g2('uSpaceDiffuse'),
             diffuseAxis: g2('uDiffuseAxis'), diffuseDir: g2('uDiffuseDir'), wrap: g2('uWrap'), material: g2('uMaterial'),
@@ -1313,16 +1333,19 @@ export const videocubeDef: VideoModuleDef = {
     /** GPU-reduce one ring's reader-selected WINDOW to a 256×64 luma strip, read it
      *  back (into the persistent scratch), and fill the slot's persistent
      *  Float32Array[64] heightfield cube-dsp scans. Cheap (small target, gated).
-     *  The reader lag/live/MODE is picked by the SHARED `readerLagFor` (the window
-     *  CENTRE), and SPREAD (uSpread/uWindowTaps) Hann-widens it — so the audio
-     *  reduces the SAME temporal window the picture march surfaces (B3), and the
-     *  drone oozes with the image. SPREAD=0 ⇒ the single centre frame (identical). */
+     *  The window CENTRE is picked by the SHARED `readerCentreLayer` (per-mode
+     *  lag/live/MODE + the SCAN offset), and SPREAD (uSpread/uWindowTaps) Hann-
+     *  widens it — so the audio reduces the SAME SCAN-shifted temporal window the
+     *  picture march surfaces (B3), and the drone oozes/scrubs with the image.
+     *  SPREAD=0 + scan=0 ⇒ the single centre frame (identical to the pre-scan read). */
     function reduceRing(slot: Slot): Float32Array[] {
       if (!progs || !uReduce) return [];
       const mode = Math.round(clamp(params.reader_mode, 0, 2));
-      const lag = readerLagFor(mode, params.live >= 0.5);
       const newest = (head[slot] - 1 + N) % N;
-      const layer = ((newest - lag) % N + N) % N;
+      // Window CENTRE = per-mode trailing lag + SCAN offset, wrapped (the SAME
+      // readerCentreLayer the picture uses inline), so the audio reduces the SAME
+      // SCAN-shifted frame the ray-march surfaces. scan=0 ⇒ the pre-scan centre.
+      const layer = readerCentreLayer(newest, mode, params.live >= 0.5, clamp(params.scan, 0, 1));
       gl.useProgram(progs.reduce);
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D_ARRAY, ringTex[slot]);
@@ -1352,7 +1375,7 @@ export const videocubeDef: VideoModuleDef = {
       return [
         q(params.slice_y), q(params.slice_rx), q(params.slice_ry), q(params.slice_rz),
         q(params.morph_fc), q(params.connect), q(params.connect_strength), q(params.crush),
-        q(params.space_crush), q(params.space_diffuse), q(params.fold), q(params.spread),
+        q(params.space_crush), q(params.space_diffuse), q(params.fold), q(params.spread), q(params.scan),
         params.material >= 0.5 ? 1 : 0, params.wrap >= 0.5 ? 1 : 0,
         // reader_mode + live change the reduced frame (B3) → part of the signature.
         Math.round(clamp(params.reader_mode, 0, 2)), params.live >= 0.5 ? 1 : 0,
@@ -1551,6 +1574,7 @@ export const videocubeDef: VideoModuleDef = {
       g.uniform1f(u.hasContent ?? null, anyContent ? 1 : 0);
       g.uniform1f(u.spread ?? null, clamp(params.spread, 0, 1));
       g.uniform1i(u.windowTaps ?? null, smoothTaps);
+      g.uniform1f(u.scan ?? null, clamp(params.scan, 0, 1));
       g.uniform1f(u.morphFC ?? null, clamp(params.morph_fc, 0, 1));
       g.uniform1f(u.connect ?? null, clamp(params.connect, 0, 1));
       g.uniform1f(u.connectStr ?? null, clamp(params.connect_strength, 0, 1));
@@ -1680,6 +1704,7 @@ export const videocubeDef: VideoModuleDef = {
           g.uniform1i(uC.march ?? null, marchSteps);
           g.uniform1f(uC.spread ?? null, clamp(params.spread, 0, 1));
           g.uniform1i(uC.windowTaps ?? null, smoothTaps);
+          g.uniform1f(uC.scan ?? null, clamp(params.scan, 0, 1));
           g.uniform1f(uC.morphFC ?? null, clamp(params.morph_fc, 0, 1));
           g.uniform1f(uC.connect ?? null, clamp(params.connect, 0, 1));
           g.uniform1f(uC.connectStr ?? null, clamp(params.connect_strength, 0, 1));

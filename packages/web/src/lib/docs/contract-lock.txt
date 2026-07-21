@@ -3430,6 +3430,7 @@ videocube in connect_strength_cv cv param=connect_strength cvScale=linear
 videocube in crush_cv cv param=crush cvScale=linear
 videocube in fold_cv cv param=fold cvScale=linear
 videocube in morph_cv cv param=morph_fc cvScale=linear
+videocube in scan_cv cv param=scan cvScale=linear
 videocube in slice_rx_cv cv param=slice_rx cvScale=linear
 videocube in slice_ry_cv cv param=slice_ry cvScale=linear
 videocube in slice_rz_cv cv param=slice_rz cvScale=linear
@@ -3460,6 +3461,7 @@ videocube param live 0..1 linear default=0
 videocube param material 0..1 discrete default=0
 videocube param morph_fc 0..1 linear default=0
 videocube param reader_mode 0..2 discrete default=0
+videocube param scan 0..1 linear default=0
 videocube param screen_on 0..1 discrete default=1
 videocube param slice_rx -3.1416..3.1416 linear default=0
 videocube param slice_ry -3.1416..3.1416 linear default=0
