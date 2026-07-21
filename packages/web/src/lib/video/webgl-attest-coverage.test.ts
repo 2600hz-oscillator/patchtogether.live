@@ -156,7 +156,12 @@ const FROM_TEST_ROOT = resolve(__dirname, '../../../../..');
 // grows by one (the glob itself is unchanged, so this is a bookkeeping bump —
 // the hash actually moves because the new `crop` output port lands in
 // videovarispeed.ts, an in-basis file → owner re-attest at merge). 56 → 57.
-const EXPECTED_HEAVY_SPEC_COUNT = 57;
+// VIDEOCUBE CHROMASTACK (#1136): videocube.spec.ts is a heavy 3-input WebGL e2e
+// that the broad `video-*` glob does NOT match (no dash), so it was mis-binned
+// onto the sharded SwiftShader matrix; adding `**/videocube.spec.ts` to
+// WEBGL_HEAVY_GLOBS enrolls it (the glob file is a STANDALONE_BASIS_FILE → the
+// hash moves → the same one-time re-attest). 57 → 58.
+const EXPECTED_HEAVY_SPEC_COUNT = 58;
 
 describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
   const basis = resolveWebglBasis();

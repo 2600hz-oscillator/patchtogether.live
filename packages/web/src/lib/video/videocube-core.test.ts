@@ -312,12 +312,11 @@ describe('diffuseTargetFor — SPACE DIFFUSE gravity face (unified with the audi
   });
 });
 
-describe('stripToHeightfield — single-frame ring luma reduction for the audio scan', () => {
-  it('white strip → +1, black strip → -1, shape [rows][cols]', () => {
+describe('stripToHeightfield — single-frame ring luma reduction (reads the .a luma byte)', () => {
+  it('white strip (.a=255) → +1, black strip (.a=0) → -1, shape [rows][cols]', () => {
     const cols = 8, rows = 4;
-    const white = new Uint8Array(cols * rows * 4).fill(255);
-    const black = new Uint8Array(cols * rows * 4);
-    for (let i = 3; i < black.length; i += 4) black[i] = 255; // opaque alpha
+    const white = new Uint8Array(cols * rows * 4).fill(255); // .a=255 → luma 1
+    const black = new Uint8Array(cols * rows * 4);           // .a=0 → luma 0
     const hw = stripToHeightfield(white, cols, rows);
     const hb = stripToHeightfield(black, cols, rows);
     expect(hw.length).toBe(rows);
@@ -325,23 +324,57 @@ describe('stripToHeightfield — single-frame ring luma reduction for the audio 
     expect(hw[0]![0]).toBeCloseTo(1, 5);
     expect(hb[0]![0]).toBeCloseTo(-1, 5);
   });
-  it('maps luma [0,1] → [-1,1] per column', () => {
+  it('maps the .a (luma) byte [0,255] → [-1,1] per column', () => {
     const cols = 2, rows = 1;
     const strip = new Uint8Array(cols * rows * 4);
-    strip.set([255, 255, 255, 255], 0);   // col0 = white (luma 1 → +1)
-    strip.set([128, 128, 128, 255], 4);   // col1 = mid-gray 128 (luma ~0.502 → ~0.004)
+    strip.set([255, 255, 255, 255], 0);   // col0: .a=255 → +1
+    strip.set([128, 128, 128, 128], 4);   // col1: .a=128 → (128/255)*2-1
     const h = stripToHeightfield(strip, cols, rows);
     expect(h[0]![0]).toBeCloseTo(1, 5);
     expect(h[0]![1]).toBeCloseTo((128 / 255) * 2 - 1, 4);
+  });
+
+  it('BYTE-IDENTITY on COLOUR: reads .a (luma-then-quantize), NOT quantize-then-luma from .rgb', () => {
+    // REDUCE_FRAG writes vec4(c.rgb, lm): .a = the shader's ONCE-quantized Rec.601
+    // luma = round(luma*255), which is EXACTLY the pre-CHROMASTACK luma-only path's
+    // effective value. Recomputing luma from the per-channel-quantized .rgb would be
+    // quantize-THEN-luma and drift up to ~0.5 LSB on colour → the byte-identity bug.
+    const cols = 8, rows = 1;
+    const colours: [number, number, number][] = [
+      [5, 153, 221], [200, 30, 90], [17, 200, 17], [250, 250, 10],
+      [0, 0, 255], [255, 0, 0], [0, 255, 0], [128, 64, 192],
+    ];
+    const strip = new Uint8Array(cols * rows * 4);
+    for (let x = 0; x < cols; x++) {
+      const [r, g, b] = colours[x]!;
+      const lm01 = (0.299 * r + 0.587 * g + 0.114 * b) / 255;        // shader luma of c
+      strip.set([r, g, b, Math.round(lm01 * 255)], x * 4);           // .a = round(lm*255)
+    }
+    const h = stripToHeightfield(strip, cols, rows);
+    let drifted = 0;
+    for (let x = 0; x < cols; x++) {
+      const i = x * 4;
+      const aByte = strip[i + 3]!; // = round(lm*255), the shader's luma byte
+      // (1)+(2) the reduction reads .a → byte-identical (Float32-exact) to the old
+      // luma-only carrier, which was round(lm*255)/255*2-1 = (aByte/255)*2-1 too.
+      const oldCarrier = Math.fround((aByte / 255) * 2 - 1);
+      expect(h[0]![x]).toBe(oldCarrier);
+      // (3) and it DIFFERS from recomputing luma from the per-channel-quantized
+      // .rgb (quantize-then-luma — the byte-identity bug the fix removes).
+      const lm01 = (0.299 * strip[i]! + 0.587 * strip[i + 1]! + 0.114 * strip[i + 2]!) / 255;
+      const quantizeThenLuma = Math.fround(lm01 * 2 - 1);
+      if (Math.abs(h[0]![x]! - quantizeThenLuma) > 1e-4) drifted++;
+    }
+    // At least one colour genuinely drifts → the fix (read .a) is load-bearing.
+    expect(drifted, 'colour genuinely drifts between .a and quantize-then-luma').toBeGreaterThan(0);
   });
 
   it('stripToHeightfieldInto REUSES the scratch buffer (B2 — no per-call allocation)', () => {
     const cols = 8, rows = 4;
     const out: Float32Array[] = Array.from({ length: rows }, () => new Float32Array(cols));
     const rowRefs = out.map((r) => r); // identity of each persistent row
-    const white = new Uint8Array(cols * rows * 4).fill(255);
-    const black = new Uint8Array(cols * rows * 4);
-    for (let i = 3; i < black.length; i += 4) black[i] = 255;
+    const white = new Uint8Array(cols * rows * 4).fill(255); // .a=255
+    const black = new Uint8Array(cols * rows * 4);           // .a=0
 
     const r1 = stripToHeightfieldInto(white, cols, rows, out);
     expect(r1).toBe(out);                       // returns the SAME array
@@ -820,6 +853,27 @@ describe('motionEnergy', () => {
     // With the amount UP, motion boosts the drive (louder) → the wave changes.
     const alive = combineCarrierChroma(Ws, wc, h.meanSat, h.meanVal, 0.9, 1 /*amt*/, 0.6);
     expect(rms(alive)).toBeGreaterThan(rms(still) * 1.05);
+  });
+
+  it('is SOFT-LIMITED: full motion saturates ≤ 1+MAX (2.5×), NEVER the old runaway 5× (anti-clip)', () => {
+    // Grayscale ⇒ wet 0 ⇒ combineCarrierChroma returns Ws·motionDrive exactly, so
+    // rms(out)/rms(Ws) IS the motion drive — directly observable.
+    const Ws = synthCarrier();
+    const gray = rgbStripToHueHist([grayStrip(0.5)]);
+    const wc = colorMorphWave(gray, CHROMA_BANK_MUSICAL);
+    const driveOf = (motion: number, amt: number) =>
+      rms(combineCarrierChroma(Ws, wc, gray.meanSat, gray.meanVal, motion, amt, 0.6)) / rms(Ws);
+    const full = driveOf(1, 1);
+    expect(full, `full motion drive ${full.toFixed(3)}`).toBeGreaterThan(2);
+    expect(full, 'saturates ≤ 1+MAX (2.5), not the linear 5×').toBeLessThanOrEqual(2.5 + 1e-6);
+    // Small motion stays ~linear (1 + amt·motion·GAIN ≈ 1.4 at motion 0.1).
+    const small = driveOf(0.1, 1);
+    expect(small).toBeGreaterThan(1.3);
+    expect(small).toBeLessThan(1.45);
+    // Monotone increasing in motion.
+    const mid = driveOf(0.5, 1);
+    expect(mid).toBeGreaterThan(small);
+    expect(full).toBeGreaterThan(mid);
   });
 });
 

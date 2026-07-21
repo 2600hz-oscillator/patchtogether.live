@@ -482,12 +482,20 @@ export function diffuseTargetFor(
 
 /**
  * Reduce a ring's single-frame REDUCE-pass readback — a `rows`×`cols` RGBA8 strip
- * (row-major: `rows` image rows of `cols` luma pixels, sampled across ONE
- * reader-selected frame) — to a `Float32Array[rows]` of `cols` samples in
- * [-1,1], shaped exactly like an e352 wavetable (rows = image-y axis, cols =
- * image-x/phase axis). Fed straight into cube-dsp.sampleSlice so the derived
- * audio is the audio-CUBE engine sourced from the SAME video surface the picture
- * marches. Empty/short strips → zero rows (silent, never NaN).
+ * (row-major: `rows` image rows of `cols` pixels, sampled across ONE reader-
+ * selected frame) — to a `Float32Array[rows]` of `cols` samples in [-1,1], shaped
+ * exactly like an e352 wavetable (rows = image-y axis, cols = image-x/phase axis).
+ * Fed straight into cube-dsp.sampleSlice so the derived audio is the audio-CUBE
+ * engine sourced from the SAME video surface the picture marches.
+ *
+ * Reads the ALPHA channel — REDUCE_FRAG writes `vec4(c.rgb, lm)`, so `.a` carries
+ * the shader's ONCE-quantized Rec.601 luma. This is BYTE-IDENTICAL to the
+ * pre-CHROMASTACK luma-only path (which wrote `vec3(lm)` → CPU luma-of-RGB =
+ * `round(lm*255)/255`): reading `.a` is `round(lm*255)/255` too. Recomputing luma
+ * from the per-channel-quantized `.rgb` instead would be QUANTIZE-then-LUMA and
+ * drift up to ~0.5 LSB on colour — breaking the byte-identical carrier at
+ * chroma_depth=0. (`.rgb` carries the colour for the CHROMASTACK hue path only.)
+ * Empty/short strips → zero rows (silent, never NaN).
  */
 export function stripToHeightfield(
   strip: Uint8Array | Uint8ClampedArray,
@@ -505,7 +513,10 @@ export function stripToHeightfield(
  * audio-slice readback path can reuse one scratch heightfield across recomputes
  * instead of allocating `rows` new Float32Arrays every call (B2 — no per-frame
  * allocation on the hot path). Rows missing from `out` are created once (first
- * call); short rows are left untouched. Same math as `stripToHeightfield`.
+ * call); short rows are left untouched. Same math as `stripToHeightfield` — reads
+ * the ALPHA (Rec.601 luma) byte REDUCE_FRAG wrote, NOT luma recomputed from `.rgb`
+ * (see stripToHeightfield's note: `.a` keeps the carrier byte-identical to the old
+ * luma-only path on colour, `.rgb` is the CHROMASTACK hue path's colour).
  */
 export function stripToHeightfieldInto(
   strip: Uint8Array | Uint8ClampedArray,
@@ -518,9 +529,8 @@ export function stripToHeightfieldInto(
     if (!row || row.length !== cols) { row = new Float32Array(cols); out[f] = row; }
     for (let x = 0; x < cols; x++) {
       const i = (f * cols + x) * 4;
-      row[x] = i + 2 < strip.length
-        ? luma((strip[i] ?? 0) / 255, (strip[i + 1] ?? 0) / 255, (strip[i + 2] ?? 0) / 255) * 2 - 1
-        : 0;
+      // .a = the shader's once-quantized Rec.601 luma → byte-identical carrier.
+      row[x] = i + 3 < strip.length ? (strip[i + 3] ?? 0) / 255 * 2 - 1 : 0;
     }
   }
   return out;
@@ -578,9 +588,14 @@ export const CHROMA_ARCH_PEAK = 0.9;
 /** Strength of the hue-centroid spectral tilt (± high-harmonic emphasis added as a
  *  scaled circular derivative of the blend). */
 export const CHROMA_TILT_STRENGTH = 0.6;
-/** How hard full frame-to-frame MOTION drives loudness at full MOTION amount
- *  (motionEnergy is a small mean |Δ|, so the gain makes it audible when turned up). */
+/** Linear-regime slope of the MOTION drive (motionEnergy is a small mean |Δ|, so
+ *  the gain makes it audible when turned up). SOFT-LIMITED by tanh below. */
 export const CHROMA_MOTION_DRIVE_GAIN = 4.0;
+/** Max ADDITIONAL drive MOTION can add (motionDrive ∈ [1, 1+MAX]). A tanh soft-
+ *  limit saturates toward this instead of a linear 1+amt·motion·GAIN reaching 5×,
+ *  which could push body·drive·level past the worklet's ±4 clamp → hard-clip
+ *  crackle on bright, high-motion frames. Small motion stays ~linear (1+x). */
+export const CHROMA_MOTION_DRIVE_MAX = 1.5;
 
 /** The reduced-strip colour summary CHROMASTACK maps to timbre. */
 export interface HueHistogram {
@@ -783,7 +798,11 @@ export function combineCarrierChroma(
   const N = ws.length;
   const out = new Float32Array(N);
   const wet = clamp01(meanSat) * clamp01(chromaDepth);
-  const motionDrive = 1 + clamp01(motionAmt) * clamp01(motion) * CHROMA_MOTION_DRIVE_GAIN;
+  // MOTION drive, tanh SOFT-LIMITED so extremes saturate toward 1+MAX instead of
+  // hard-clipping downstream. Small motion ≈ 1 + amt·motion·GAIN (linear); amt/
+  // motion 0 → exactly 1 (tanh(0)=0) → the byte-identical fallback still holds.
+  const motionX = clamp01(motionAmt) * clamp01(motion) * CHROMA_MOTION_DRIVE_GAIN;
+  const motionDrive = 1 + CHROMA_MOTION_DRIVE_MAX * Math.tanh(motionX / CHROMA_MOTION_DRIVE_MAX);
   if (wet <= 0) {
     // Grayscale / chroma off → the pure luma carrier. Only the separately-gated
     // MOTION drive applies (default motion/amt 0 → 1 → byte-identical fallback).
