@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "collabContentHash": "01fe3c53994d4f1039f1842c67b0137d6107f3dfd609e082d41eab41de3a7c4e",
-  "attestedAt": "2026-07-18T22:39:34.088Z",
+  "collabContentHash": "c2324ef7d30a779997288aa5a3ebf480ceb8c913b1e2f5b55efc9aa2cbed5d30",
+  "attestedAt": "2026-07-21T18:34:29.031Z",
   "attestedBy": "tmayshark@gmail.com",
-  "gitHeadAtAttest": "8b9ba8fa6e69fb2d1afc7c1f07b32fab0881aa98",
+  "gitHeadAtAttest": "72843db908ee9b46297b2652f49d816c8d67da86",
   "playwrightVersion": "1.50.0",
   "hocuspocusVersion": "2.13.5",
   "os": "darwin 25.4.0 (arm64)",
@@ -23,5 +23,5 @@
     "relayVacuitySkips": 0,
     "assetSkips": 1
   },
-  "durationSec": 89
+  "durationSec": 130
 }
