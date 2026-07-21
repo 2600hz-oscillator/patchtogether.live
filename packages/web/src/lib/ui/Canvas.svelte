@@ -62,7 +62,7 @@
     columnMemberPos,
     COLUMN_SLOT_H,
   } from '$lib/graph/channel-columns';
-  import { setControlColor, setNodeLocked } from '$lib/graph/mutate';
+  import { setControlColor, setNodeLocked, setNodeParam } from '$lib/graph/mutate';
   import { snapPositionToGrid, findFreeRackSlot, RACK_UNIT, type RackRect } from '$lib/ui/rack-grid';
   import { resolveControlColor } from '$lib/graph/control-color';
   import {
@@ -529,6 +529,14 @@
       // cap-enforcement tests in particular.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__spawnFromPalette = spawnFromPalette;
+      // Workflow channel-columns e2e: set the flow-space spawn anchor so the
+      // NEXT __spawnFromPalette lands inside a specific column / send band
+      // (exercises the REAL wcolDropTarget → membership + order + reconcile
+      // path, not just a raw graph write).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__setSpawnFlowPos = (p: { x: number; y: number }) => {
+        spawnFlowPos = { x: p.x, y: p.y };
+      };
       // Drag-lock state for e2e — patch-menus-persist tests inspect this
       // to confirm the lock engaged + released at the right moments.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -3834,6 +3842,22 @@
     return listClipPlayers(patch.nodes).sort()[0] ?? null;
   }
 
+  /** Owner north-star "it just works": when the FIRST FX lands in a send box,
+   *  a correctly-patched send loop is still SILENT (every ch{i}_send{n} defaults
+   *  to 0). Auto-raise the send amount to a modest 0.5 on each channel that
+   *  currently HAS a column member, so the loop is audible immediately. Only
+   *  bumps channels still at 0 (never overrides a user-set amount). */
+  function wcolAutoRaiseSend(slot: number): void {
+    const mixer = patch.nodes[WCOL_MIXER_ID];
+    if (!mixer) return;
+    for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
+      if (wcolOrder('columns', ch).length === 0) continue;
+      const pid = `ch${ch}_send${slot}`;
+      const cur = mixer.params?.[pid] ?? 0;
+      if (cur <= 0) setNodeParam(WCOL_MIXER_ID, pid, 0.5);
+    }
+  }
+
   /**
    * Compute the workflow-column drop target for a spawn at `flowPos`, or null
    * when the drop is on free canvas (no band) or not a workflow rack. Returns
@@ -5704,6 +5728,8 @@
     // drops order by the column array, never by proximity-splice — the two
     // splice paths must not both fire on one drop).
     const wcolDrop = type === 'cadillac' ? null : wcolDropTarget(spawnFlowPos);
+    // Was the target send box empty BEFORE this drop? (First-FX auto-raise.)
+    const wcolSendWasEmpty = wcolDrop?.sendSlot != null && wcolOrder('sends', wcolDrop.sendSlot).length === 0;
     if (wcolDrop?.channel != null) {
       initialData.channel = wcolDrop.channel;
       const idx = wcolDrop.insertTop ? 0 : wcolOrder('columns', wcolDrop.channel).length;
@@ -5772,6 +5798,9 @@
     if (wcolDrop?.channel != null) {
       const clip = wcolCanonClip();
       if (clip) assignAutomationLane(clip, id, wcolDrop.channel - 1);
+    } else if (wcolDrop?.sendSlot != null && wcolSendWasEmpty) {
+      // First FX into this send box → auto-raise send amount so it's audible.
+      wcolAutoRaiseSend(wcolDrop.sendSlot);
     }
     if (splice) {
       trace(`spliced ${type} as ${autoName} (${id}) into edge ${splice.edge.id}`);
