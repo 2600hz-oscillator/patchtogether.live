@@ -570,4 +570,85 @@ test.describe('workflow channel columns', () => {
     expect(channelMax[0], 'channel 1 audible').toBeGreaterThan(0.002);
     expect(outMax, 'reaches the output with the send engaged').toBeGreaterThan(0.005);
   });
+
+  // -------- PART B: CV Buddy lane note tap + ES-9 return audio --------
+
+  test('CV BUDDY lane: REAL clip lane taps the CV Buddy inputs + (with ES-9) its return reaches the channel', async ({ page }) => {
+    await page.goto('/rack?mode=workflow');
+    await waitForPinnedTrio(page);
+
+    // An ES-9 in the rack (free canvas, NOT a column member) — the CV Buddy's
+    // hardware audio return rides its input jacks.
+    await dropInBand(page, 'es9', { x: -600, y: 400 });
+    // A CV Buddy dropped into channel 1 (the REAL palette-drop → membership →
+    // reconcile path) — it becomes the lane head source.
+    await dropInBand(page, 'cvBuddy', colPos(1));
+
+    // The CV Buddy id (the sole non-pinned, non-es9 node on channel 1).
+    const cvbId = (await orderOf(page, 'columns', 1))[0]!;
+    expect(cvbId, 'CV Buddy joined channel 1').toBeTruthy();
+    const es9Id = await page.evaluate(() => {
+      const w = globalThis as unknown as { __patch: { nodes: Record<string, { type?: string } | undefined> } };
+      return Object.entries(w.__patch.nodes).find(([, n]) => n?.type === 'es9')?.[0] ?? null;
+    });
+    expect(es9Id, 'ES-9 present').toBeTruthy();
+
+    await expect.poll(async () => (await wcolEdges(page)).length, { timeout: 10_000 }).toBeGreaterThan(0);
+    const edges = await wcolEdges(page);
+    // NOTE TAP — the REAL clip lane 1 (pitch1/gate1/vel1) is tapped ADDITIVELY
+    // into the CV Buddy's laneTap inputs (pitch/gate/velocity).
+    expect(edges).toContain(`${PINNED_CLIP}.pitch1->${cvbId}.pitch`);
+    expect(edges).toContain(`${PINNED_CLIP}.gate1->${cvbId}.gate`);
+    expect(edges).toContain(`${PINNED_CLIP}.vel1->${cvbId}.velocity`);
+    // RETURN — CV Buddy is the lane head → the ES-9 hardware-input pair (in1/in2)
+    // reaches mixmstrs channel 1 (structural: no hardware audio exists headless).
+    expect(edges).toContain(`${es9Id}.in1->${PINNED_MIXER}.ch1L`);
+    expect(edges).toContain(`${es9Id}.in2->${PINNED_MIXER}.ch1R`);
+    // The TAP edges (clip → CV Buddy) never target the mixer.
+    expect(edges.some((e) => e.startsWith(`${PINNED_CLIP}.`) && e.includes(`->${PINNED_MIXER}.`))).toBe(false);
+
+    // Drive the real transport: the clip lane feeds the CV Buddy inputs live.
+    await seedAndRun(page, [0]);
+    await page.waitForTimeout(1500); // let the chain run (CV out has no in-app RMS)
+    // The tap edges persist through a live run (no reconcile churn removes them).
+    expect(await wcolEdges(page)).toContain(`${PINNED_CLIP}.pitch1->${cvbId}.pitch`);
+  });
+
+  test('ADDITIVE: adding a CV Buddy tap to an in-app source lane leaves its audio RMS unchanged', async ({ page }) => {
+    await page.goto('/rack?mode=workflow');
+    await waitForPinnedTrio(page);
+
+    // An in-app source (tidyVco) on channel 2 — the audible lane head.
+    await dropInBand(page, 'tidyVco', colPos(2));
+    await expect.poll(async () => (await wcolEdges(page)).length, { timeout: 10_000 }).toBeGreaterThan(0);
+    const vcoId = (await orderOf(page, 'columns', 2))[0]!;
+
+    // Baseline: drive lane 2 and measure the channel-2 RMS WITHOUT any tap.
+    await seedAndRun(page, [1]);
+    const base = await pollAudio(page, 8_000);
+    expect(base.channelMax[1], 'baseline channel 2 audible').toBeGreaterThan(0.002);
+
+    // Now add an ES-9 + a CV Buddy to the SAME lane (channel 2). tidyVco stays the
+    // head (first in order); the CV Buddy is TAPPED but its return is NOT summed.
+    await dropInBand(page, 'es9', { x: -600, y: 400 });
+    await dropInBand(page, 'cvBuddy', colPos(2));
+    await expect
+      .poll(async () => (await orderOf(page, 'columns', 2)).length, { timeout: 10_000 })
+      .toBe(2);
+    const edges = await wcolEdges(page);
+    const cvbId = (await orderOf(page, 'columns', 2)).find((id) => id !== vcoId)!;
+    // The in-app source KEEPS its own clip control + send verbatim (additive).
+    expect(edges).toContain(`${vcoId}.out_l->${PINNED_MIXER}.ch2L`);
+    // The CV Buddy is tapped; its ES-9 return is NOT wired (one-source-head).
+    expect(edges).toContain(`${PINNED_CLIP}.pitch2->${cvbId}.pitch`);
+    expect(edges.some((e) => e.includes('.in1->') || e.includes('.in2->')), 'return NOT summed while an in-app head holds the lane').toBe(false);
+
+    // Re-drive lane 2; the channel-2 RMS is unchanged (the tap adds no audio).
+    await seedAndRun(page, [1]);
+    const after = await pollAudio(page, 8_000);
+    expect(after.channelMax[1], 'channel 2 still audible after the tap').toBeGreaterThan(0.002);
+    // Within a tolerant ratio of the baseline (no boost, no cut from the tap).
+    expect(after.channelMax[1]).toBeGreaterThan(base.channelMax[1] * 0.5);
+    expect(after.channelMax[1]).toBeLessThan(base.channelMax[1] * 2.0);
+  });
 });

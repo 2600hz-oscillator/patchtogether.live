@@ -401,6 +401,14 @@ export interface ModuleDocs {
  *               (Part B of CV Buddy). A noteSink has no main audio-out, so it is
  *               never an island/mixer member — the tap is purely additive note
  *               CV. Carried by cvBuddy + midiOutBuddy.
+ *   - returnsAudio: present only for `role: 'noteSink'`. Marks a note-sink that
+ *               ALSO has a hardware AUDIO RETURN (CV Buddy's ES-9 input pair) —
+ *               so its return audio is the lane's HEAD SOURCE. Such a member is a
+ *               head CANDIDATE (participates in one-source-head resolution) even
+ *               though it has no audio-typed port; the reconciler wires the return
+ *               pair (from the ES-9 node) at the chain root when it is the head.
+ *               cvBuddy sets it; midiOutBuddy (no modelled return) does NOT — it
+ *               is a pure tap, never a lane head.
  * Example: TWOTRACKS declares inPorts = its reel-A audio input, outPorts = its
  * A-side mixed output — not the naive first-L/R-token guess across its 4 audio
  * inputs.
@@ -421,6 +429,10 @@ export interface ChainWiring {
     /** Input port id the lane's velocity CV wires into. */
     velIn: string;
   };
+  /** Note-sink with a hardware audio return (CV Buddy ↔ ES-9). Makes it a lane
+   *  head-source candidate; the reconciler wires its ES-9 return pair at the
+   *  chain root when it resolves as the column head. */
+  returnsAudio?: boolean;
 }
 
 // ---------------- Patch graph (D8) ----------------

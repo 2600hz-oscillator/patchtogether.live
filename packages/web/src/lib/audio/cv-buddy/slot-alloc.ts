@@ -56,6 +56,12 @@ export interface CvBuddyAlloc {
   runSlot: number | null;
   /** ES-9 jack the clock rides (8) for the owner, else null. */
   clockSlot: number | null;
+  /** ES-9 physical INPUT jack pair (1-based) carrying this instance's hardware
+   *  AUDIO RETURN (Part B) — the modular voice the CV note drives comes BACK in
+   *  here. index 0 → [1,2], index 1 → [3,4]. The es9 node exposes these as its
+   *  OUTPUT ports `in{N}` (es9.ts). The lane reconciler wires them to the
+   *  column's chain head. Distinct jacks from the OUTPUT slots above. */
+  inPair: readonly [number, number];
 }
 
 /**
@@ -80,6 +86,7 @@ export function allocateCvBuddySlots(nodeIds: readonly string[]): Map<string, Cv
       ownsClock: true,
       runSlot: 7,
       clockSlot: 8,
+      inPair: [1, 2],
     });
   }
   if (sorted[1] !== undefined) {
@@ -90,6 +97,7 @@ export function allocateCvBuddySlots(nodeIds: readonly string[]): Map<string, Cv
       ownsClock: false,
       runSlot: null,
       clockSlot: null,
+      inPair: [3, 4],
     });
   }
   return out;

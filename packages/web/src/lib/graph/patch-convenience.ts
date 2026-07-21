@@ -280,10 +280,13 @@ export function isMixerEligible(def: ConvenienceDef): boolean {
 /** Clip player: 8 lanes (1-based). Per channel the pitch/poly source is
  *  `pitch{n}` (a polyPitchGate cable — carries the whole chord for a poly
  *  input, and the root for a mono pitch input via the engine splitter); the
- *  gate source is `gate{n}`. */
+ *  gate source is `gate{n}`; the velocity CV source is `vel{n}` (a `cv` cable,
+ *  used by the Part-B note tap into a CV Buddy / MIDI-out lane sink). */
 export const CLIP_CHANNEL_COUNT = 8;
-export function clipChannelPorts(channel: number): { pitchOut: string; gateOut: string } {
-  return { pitchOut: `pitch${channel}`, gateOut: `gate${channel}` };
+export function clipChannelPorts(
+  channel: number,
+): { pitchOut: string; gateOut: string; velOut: string } {
+  return { pitchOut: `pitch${channel}`, gateOut: `gate${channel}`, velOut: `vel${channel}` };
 }
 
 /** MixMaster: 8 stereo channels (1-based). Per channel the inputs are
@@ -431,7 +434,9 @@ export function resolveMainAudioIn(def: ConvenienceDef): MainAudioIn | null {
  *  `source` = emits audio but takes none; `dsp` = takes audio but the resolver
  *  found no main out (rare). A module with neither is not audio-participating. */
 export function chainRole(def: ConvenienceDef): 'source' | 'dsp' | 'both' | null {
-  if (def.chainWiring?.role) return def.chainWiring.role;
+  // A noteSink is not an AUDIO chain role — fall through to shape inference
+  // (which yields null for a note sink, as it has no main audio in/out).
+  if (def.chainWiring?.role && def.chainWiring.role !== 'noteSink') return def.chainWiring.role;
   const hasOut = resolveMainAudioOut(def) !== null;
   const hasIn = resolveMainAudioIn(def) !== null;
   if (hasOut && hasIn) return 'both';
@@ -445,6 +450,32 @@ export function chainRole(def: ConvenienceDef): 'source' | 'dsp' | 'both' | null
  *  visual, automation-only column member. */
 export function isChainAudioParticipant(def: ConvenienceDef): boolean {
   return resolveMainAudioOut(def) !== null || resolveMainAudioIn(def) !== null;
+}
+
+/** True when a module is a lane NOTE SINK (a clip lane can tap its pitch/gate/
+ *  velocity CV in) — cvBuddy + midiOutBuddy. Declared, not shape-inferred (a
+ *  note sink has cv/gate INPUTS but no audio, so it looks like nothing else). */
+export function isNoteSink(def: ConvenienceDef): boolean {
+  return def.chainWiring?.role === 'noteSink' && !!def.chainWiring.laneTap;
+}
+
+/** True when a note sink ALSO has a hardware AUDIO RETURN (CV Buddy ↔ ES-9): its
+ *  return audio is the lane's head source, so it is a chain-source / head
+ *  CANDIDATE even though it exposes no audio-typed port. midiOutBuddy (no
+ *  modelled return) is NOT — it is a pure tap. */
+export function isReturnSource(def: ConvenienceDef): boolean {
+  return isNoteSink(def) && def.chainWiring?.returnsAudio === true;
+}
+
+/** The ES-9 hardware-input pair carrying one CV Buddy's audio RETURN — resolved
+ *  by the reconciler from allocateCvBuddySlots + the lazy ES-9 node. The source
+ *  of the return audio edges is the ES-9 node's `in{N}` OUTPUT ports. */
+export interface CvBuddyReturn {
+  es9NodeId: string;
+  /** ES-9 output port carrying the left/mono hardware input (e.g. `in1`). */
+  inPortL: string;
+  /** ES-9 output port carrying the right hardware input (e.g. `in2`). */
+  inPortR: string;
 }
 
 /** MixMaster aux-send ports for send slot `n` (1|2): the send OUTPUT the loop's
@@ -566,6 +597,14 @@ export interface ColumnWiringCtx {
    *  collab-persisted flag — NEVER "first source in order", which would auto-
    *  promote a surviving non-head source on deletion). */
   headNodeId: string | null;
+  /** PART B — ES-9 return-audio allocation for the column's CV-Buddy (return-
+   *  source) members: nodeId → the ES-9 hardware-input pair carrying its return.
+   *  Present only when an ES-9 is in the rack AND the CV Buddy holds a slot
+   *  (1st→in1/in2, 2nd→in3/in4). A return source absent from the map emits NO
+   *  audio (inert — no ES-9, or a 3rd+ CV Buddy with no free jacks). Built by the
+   *  reconciler from allocateCvBuddySlots; omitted entirely in the pure column
+   *  tests that don't exercise return audio. */
+  returns?: ReadonlyMap<string, CvBuddyReturn>;
 }
 
 // ---------------- Column head-source resolution (one-head model) ----------------
@@ -658,7 +697,7 @@ function isChainSource(def: ConvenienceDef): boolean {
  *     just with nothing feeding it — no auto-promotion of a surviving source.
  */
 export function planColumnWiring(ctx: ColumnWiringCtx): WcolEdge[] {
-  const { channel, members, clipPlayerId, mixerId, headNodeId } = ctx;
+  const { channel, members, clipPlayerId, mixerId, headNodeId, returns } = ctx;
   const out: WcolEdge[] = [];
   const seenIds = new Set<string>();
   const push = (e: WcolEdge) => {
@@ -686,6 +725,37 @@ export function planColumnWiring(ctx: ColumnWiringCtx): WcolEdge[] {
     }
   }
 
+  // (1b) NOTE TAP (Part B) — every NOTE-SINK member (cvBuddy + midiOutBuddy) gets
+  //      the lane's pitch/gate/velocity tapped ADDITIVELY into its declared
+  //      laneTap inputs. A clip output FANS OUT, so this never redirects or mutes
+  //      an in-app source's own clip control (they coexist on the same lane). A
+  //      note sink has no main audio-out (resolveMainAudioOut === null), so it is
+  //      never a chain/mixer member — these tap edges never reach the mixer.
+  if (clipPlayerId) {
+    const { pitchOut, gateOut, velOut } = clipChannelPorts(channel);
+    for (const m of members) {
+      if (!isNoteSink(m.def)) continue;
+      const tap = m.def.chainWiring!.laneTap!;
+      const tapInType = (portId: string): CableType =>
+        m.def.inputs.find((p) => p.id === portId)?.type ?? 'cv';
+      push(toWcol({
+        fromNodeId: clipPlayerId, fromPortId: pitchOut,
+        toNodeId: m.nodeId, toPortId: tap.pitchIn,
+        sourceType: 'polyPitchGate', targetType: tapInType(tap.pitchIn),
+      }));
+      push(toWcol({
+        fromNodeId: clipPlayerId, fromPortId: gateOut,
+        toNodeId: m.nodeId, toPortId: tap.gateIn,
+        sourceType: 'gate', targetType: tapInType(tap.gateIn),
+      }));
+      push(toWcol({
+        fromNodeId: clipPlayerId, fromPortId: velOut,
+        toNodeId: m.nodeId, toPortId: tap.velIn,
+        sourceType: 'cv', targetType: tapInType(tap.velIn),
+      }));
+    }
+  }
+
   // (2)+(3) ONE-HEAD audio chain + single send. Split the audio participants by
   // ROLE (NOT insertion order): SOURCES have no main audio-in, FX do. ONLY the
   // resolved head source is audio-wired; non-head sources are automation-only.
@@ -695,6 +765,28 @@ export function planColumnWiring(ctx: ColumnWiringCtx): WcolEdge[] {
     headNodeId != null
       ? audio.find((m) => m.nodeId === headNodeId && isChainSource(m.def)) ?? null
       : null;
+
+  // PART B — the resolved head may instead be a CV-Buddy RETURN source (a
+  // hardware-instrument lane). Its audio root is the ES-9 return pair (sourced at
+  // the es9 node's `in{N}` OUTPUT ports), NOT any port on the note sink itself.
+  // Only when the head resolves to it AND an ES-9 return pair is allocated
+  // (es9 present + a free slot); otherwise the return is inert. Respects the
+  // one-source-head model: if an in-app source holds the head, `head` wins and
+  // the return is NOT summed in (returnHead stays null).
+  const returnHead =
+    headNodeId != null && head === null && returns
+      ? members.find((m) => m.nodeId === headNodeId && isReturnSource(m.def)) ?? null
+      : null;
+  const ret = returnHead ? returns!.get(returnHead.nodeId) ?? null : null;
+
+  // Wire an ES-9 return pair (audio) into a stereo/mono audio INPUT (fx root or a
+  // mixer channel). L→L, R→R; a mono input takes BOTH (engine downmix).
+  const wireReturnInto = (r: CvBuddyReturn, toNodeId: string, inL: string, inR: string) => {
+    push(toWcol({ fromNodeId: r.es9NodeId, fromPortId: r.inPortL, toNodeId, toPortId: inL, sourceType: 'audio', targetType: 'audio' }));
+    if (inR !== inL || r.inPortR !== r.inPortL) {
+      push(toWcol({ fromNodeId: r.es9NodeId, fromPortId: r.inPortR, toNodeId, toPortId: inR, sourceType: 'audio', targetType: 'audio' }));
+    }
+  };
 
   // FX internal chain: fx[i] → fx[i+1] (column order among the FX). Stays intact
   // even when headless — a deleted head leaves the chain, not a dangling gap.
@@ -706,14 +798,23 @@ export function planColumnWiring(ctx: ColumnWiringCtx): WcolEdge[] {
 
   // The HEAD source feeds the ROOT of the FX chain (only the head — never a
   // non-head source, never a sum). With no FX the head goes straight to the
-  // mixer (the send pass below).
+  // mixer (the send pass below). An in-app head uses its own main out; a CV-Buddy
+  // return head uses the ES-9 return pair.
   if (fx.length > 0 && head) {
     for (const e of planPairLink(head.nodeId, head.def, fx[0]!.nodeId, fx[0]!.def)) push(toWcol(e));
+  } else if (fx.length > 0 && ret) {
+    const inn = resolveMainAudioIn(fx[0]!.def);
+    if (inn) {
+      const inL = inn.kind === 'stereo' ? inn.left : inn.in;
+      const inR = inn.kind === 'stereo' ? inn.right : inn.in;
+      wireReturnInto(ret, fx[0]!.nodeId, inL, inR);
+    }
   }
 
   // SEND-TO-MIXER — a SINGLE tail per column. With FX: the last FX with a main
   // out. Without FX: ONLY the head source sends (non-head sources never reach
-  // the mixer). A headless no-FX column sends nothing.
+  // the mixer) — an in-app head via its main out, a CV-Buddy return head via the
+  // ES-9 return pair straight into ch{n}L/R. A headless no-FX column sends nothing.
   if (mixerId) {
     const emitSend = (m: ColumnMember) => {
       const send = planSendToMixer(m.def, channel);
@@ -732,6 +833,9 @@ export function planColumnWiring(ctx: ColumnWiringCtx): WcolEdge[] {
       if (tail) emitSend(tail);
     } else if (head && resolveMainAudioOut(head.def) !== null) {
       emitSend(head);
+    } else if (ret) {
+      const { leftIn, rightIn } = mixerChannelPorts(channel);
+      wireReturnInto(ret, mixerId, leftIn, rightIn);
     }
   }
 

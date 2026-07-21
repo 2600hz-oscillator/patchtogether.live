@@ -353,3 +353,80 @@ describe('membership heal + validate safety', () => {
     expect(reconcileColumnMembership()).toBe(false);
   });
 });
+
+describe('PART B — CV Buddy lane note tap + ES-9 return audio (real Y.Doc)', () => {
+  it('taps a REAL clip lane → cvBuddy inputs and returns es9.in1/in2 → the channel', () => {
+    addNode('es9', 'es9', {});
+    addNode('cvb', 'cvBuddy', { channel: 1 });
+    setColumn(1, ['cvb']);
+    reconcileColumns(resolveDef);
+    const ids = new Set(wcolEdges().map((e) => e.id));
+    // NOTE TAP — clip pitch1/gate1/vel1 → cvBuddy's laneTap inputs.
+    expect(ids.has('wcol-e-pinned-clipplayer-pitch1-cvb-pitch')).toBe(true);
+    expect(ids.has('wcol-e-pinned-clipplayer-gate1-cvb-gate')).toBe(true);
+    expect(ids.has('wcol-e-pinned-clipplayer-vel1-cvb-velocity')).toBe(true);
+    // RETURN — CV Buddy is the lane head → es9 hardware-input pair straight to ch1.
+    expect(ids.has('wcol-e-es9-in1-pinned-mixmstrs-ch1L')).toBe(true);
+    expect(ids.has('wcol-e-es9-in2-pinned-mixmstrs-ch1R')).toBe(true);
+    // The TAP edges never reach the mixer (only the es9 return does).
+    for (const e of wcolEdges()) {
+      if (e.source.nodeId === 'pinned-clipplayer' && e.target.nodeId === 'cvb') {
+        expect(e.target.nodeId).not.toBe(PINNED_MIXER_ID);
+      }
+    }
+  });
+
+  it('is IDEMPOTENT with the return present (a 2nd reconcile writes nothing)', () => {
+    addNode('es9', 'es9', {});
+    addNode('cvb', 'cvBuddy', { channel: 1 });
+    setColumn(1, ['cvb']);
+    reconcileColumns(resolveDef);
+    const before = wcolEdges().length;
+    expect(reconcileColumnWiring(resolveDef)).toBe(false);
+    expect(wcolEdges().length).toBe(before);
+  });
+
+  it('NO ES-9 → the tap still materializes but the return is INERT (no es9 edges)', () => {
+    addNode('cvb', 'cvBuddy', { channel: 2 });
+    setColumn(2, ['cvb']);
+    reconcileColumns(resolveDef);
+    const ids = new Set(wcolEdges().map((e) => e.id));
+    expect(ids.has('wcol-e-pinned-clipplayer-pitch2-cvb-pitch')).toBe(true);
+    expect(wcolEdges().some((e) => e.source.nodeId === 'es9')).toBe(false);
+    expect(wcolEdges().some((e) => e.target.nodeId === PINNED_MIXER_ID)).toBe(false);
+  });
+
+  it('second CV Buddy (id-sorted) takes the in3/in4 return pair', () => {
+    addNode('es9', 'es9', {});
+    addNode('cvbA', 'cvBuddy', { channel: 3 });
+    addNode('cvbB', 'cvBuddy', { channel: 4 }); // different columns; cvbA < cvbB
+    setColumn(3, ['cvbA']);
+    setColumn(4, ['cvbB']);
+    reconcileColumns(resolveDef);
+    const ids = new Set(wcolEdges().map((e) => e.id));
+    // cvbA = id-smallest → in1/in2 on ch3; cvbB = 2nd → in3/in4 on ch4.
+    expect(ids.has('wcol-e-es9-in1-pinned-mixmstrs-ch3L')).toBe(true);
+    expect(ids.has('wcol-e-es9-in3-pinned-mixmstrs-ch4L')).toBe(true);
+    expect(ids.has('wcol-e-es9-in4-pinned-mixmstrs-ch4R')).toBe(true);
+  });
+
+  it('ADDITIVE — adding a CV Buddy tap leaves an in-app tidyVco head unchanged (in-app source keeps clip control + send)', () => {
+    addNode('es9', 'es9', {});
+    addNode('vco1', 'tidyVco', { channel: 6 });
+    setColumn(6, ['vco1']);
+    reconcileColumns(resolveDef);
+    const baseIds = new Set(wcolEdges().map((e) => e.id));
+    // Now add a CV Buddy to the SAME lane.
+    addNode('cvb', 'cvBuddy', { channel: 6 });
+    setColumn(6, ['vco1', 'cvb']); // vco1 first → stays the head
+    reconcileColumns(resolveDef);
+    const ids = new Set(wcolEdges().map((e) => e.id));
+    // Every original vco1 edge survives verbatim (additive).
+    for (const id of baseIds) expect(ids.has(id), `lost ${id}`).toBe(true);
+    // The tap is net-new; the CV Buddy return is NOT summed in (vco1 holds head).
+    expect(ids.has('wcol-e-pinned-clipplayer-pitch6-cvb-pitch')).toBe(true);
+    expect(wcolEdges().some((e) => e.source.nodeId === 'es9')).toBe(false);
+    // vco1 still sends to ch6.
+    expect(ids.has('wcol-e-vco1-out_l-pinned-mixmstrs-ch6L')).toBe(true);
+  });
+});

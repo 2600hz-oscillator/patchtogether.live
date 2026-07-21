@@ -21,7 +21,7 @@ describe('allocateCvBuddySlots', () => {
     expect(allocateCvBuddySlots([]).size).toBe(0);
   });
 
-  it('index 0 gets {1,2,3} + owns RUN(7) + CLOCK(8)', () => {
+  it('index 0 gets {1,2,3} + owns RUN(7) + CLOCK(8) + return pair in{1,2}', () => {
     const m = allocateCvBuddySlots(['a']);
     expect(m.get('a')).toEqual({
       pitchSlot: 1,
@@ -30,10 +30,11 @@ describe('allocateCvBuddySlots', () => {
       ownsClock: true,
       runSlot: 7,
       clockSlot: 8,
+      inPair: [1, 2],
     });
   });
 
-  it('index 1 gets {4,5,6} and owns neither RUN nor CLOCK', () => {
+  it('index 1 gets {4,5,6}, owns neither RUN nor CLOCK, return pair in{3,4}', () => {
     const m = allocateCvBuddySlots(['a', 'b']);
     expect(m.get('b')).toEqual({
       pitchSlot: 4,
@@ -42,7 +43,14 @@ describe('allocateCvBuddySlots', () => {
       ownsClock: false,
       runSlot: null,
       clockSlot: null,
+      inPair: [3, 4],
     });
+  });
+
+  it('return input pairs are 1st→[1,2], 2nd→[3,4] (id-sorted, collab-convergent)', () => {
+    const m = allocateCvBuddySlots(['zeta', 'alpha']);
+    expect(m.get('alpha')?.inPair).toEqual([1, 2]);
+    expect(m.get('zeta')?.inPair).toEqual([3, 4]);
   });
 
   it('id-sorts ASCENDING regardless of input order (collab-convergent)', () => {
@@ -119,7 +127,7 @@ describe('slotsToReset', () => {
     // now the sole instance → index 0 → {1,2,3,7,8}. Slots 4,5,6 must reset;
     // RUN(7) + CLOCK(8) are now claimed by "b" so they are NOT freed.
     const applied = new Map<string, CvBuddyAlloc>([
-      ['b', { pitchSlot: 4, gateSlot: 5, velSlot: 6, ownsClock: false, runSlot: null, clockSlot: null }],
+      ['b', { pitchSlot: 4, gateSlot: 5, velSlot: 6, ownsClock: false, runSlot: null, clockSlot: null, inPair: [3, 4] }],
     ]);
     const desired = allocateCvBuddySlots(['b']); // {1,2,3,7,8}
     expect(slotsToReset(applied, desired)).toEqual([4, 5, 6]);
@@ -127,8 +135,8 @@ describe('slotsToReset', () => {
 
   it('removing the owner but keeping a survivor never frees the inherited RUN/CLOCK jacks', () => {
     const applied = new Map<string, CvBuddyAlloc>([
-      ['a', { pitchSlot: 1, gateSlot: 2, velSlot: 3, ownsClock: true, runSlot: 7, clockSlot: 8 }],
-      ['b', { pitchSlot: 4, gateSlot: 5, velSlot: 6, ownsClock: false, runSlot: null, clockSlot: null }],
+      ['a', { pitchSlot: 1, gateSlot: 2, velSlot: 3, ownsClock: true, runSlot: 7, clockSlot: 8, inPair: [1, 2] }],
+      ['b', { pitchSlot: 4, gateSlot: 5, velSlot: 6, ownsClock: false, runSlot: null, clockSlot: null, inPair: [3, 4] }],
     ]);
     const desired = allocateCvBuddySlots(['b']); // b inherits {1,2,3,7,8}
     expect(slotsToReset(applied, desired)).toEqual([4, 5, 6]);

@@ -122,8 +122,14 @@ export const cvBuddyDef: AudioModuleDef = {
     { id: 'clockOffsetMs', label: 'Clock offset', defaultValue: 0, min: -20, max: 20, curve: 'linear', units: 'ms' },
   ],
 
-  // Marker for the Part-B lane tap planner (INERT in Part A). See ChainWiring.
-  chainWiring: { role: 'noteSink', laneTap: { pitchIn: 'pitch', gateIn: 'gate', velIn: 'velocity' } },
+  // Lane note-sink (Part-B tap planner) + a hardware AUDIO RETURN via the ES-9
+  // input pair — `returnsAudio` makes CV Buddy a lane HEAD-source candidate so
+  // its return audio wires at the column's chain root. See ChainWiring.
+  chainWiring: {
+    role: 'noteSink',
+    laneTap: { pitchIn: 'pitch', gateIn: 'gate', velIn: 'velocity' },
+    returnsAudio: true,
+  },
 
   docs: {
     explanation:

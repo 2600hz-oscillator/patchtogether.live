@@ -413,6 +413,162 @@ describe('planColumnWiring (deterministic full-column planner)', () => {
 });
 
 // ================================================================
+// PART B — additive NOTE TAP + ES-9 RETURN AUDIO (CV Buddy lanes)
+// ================================================================
+
+// Synthetic note-sink defs mirroring the real cvBuddy / midiOutBuddy shapes:
+// cv/gate INPUTS, no audio, a noteSink laneTap. CV Buddy also declares
+// returnsAudio (its ES-9 hardware return makes it a lane head source).
+const CV_BUDDY: ConvenienceDef = def(
+  [port('gate', 'gate', { edge: 'gate' }), port('pitch', 'cv'), port('velocity', 'cv')],
+  [port('pitchCv', 'cv'), port('gate', 'gate'), port('velCv', 'cv'), port('run', 'gate'), port('clock', 'gate')],
+  undefined,
+  { role: 'noteSink', laneTap: { pitchIn: 'pitch', gateIn: 'gate', velIn: 'velocity' }, returnsAudio: true },
+);
+const MIDI_OUT: ConvenienceDef = def(
+  [port('gate', 'gate', { edge: 'gate' }), port('pitch', 'cv'), port('velocity', 'cv')],
+  [],
+  undefined,
+  { role: 'noteSink', laneTap: { pitchIn: 'pitch', gateIn: 'gate', velIn: 'velocity' } },
+);
+
+describe('planColumnWiring — PART B note tap + ES-9 return', () => {
+  const RET = (nodeId: string, inA: number, inB: number, es9 = 'es9') =>
+    new Map([[nodeId, { es9NodeId: es9, inPortL: `in${inA}`, inPortR: `in${inB}` }]]);
+  const ctxB = (
+    members: ColumnMember[],
+    headNodeId: string | null,
+    returns?: Map<string, { es9NodeId: string; inPortL: string; inPortR: string }>,
+  ) => ({ channel: 3, members, clipPlayerId: 'clip', mixerId: 'mix', headNodeId, returns });
+
+  it('NOTE TAP: clip pitch/gate/vel → the note sink laneTap inputs (additive), never the mixer', () => {
+    const edges = planColumnWiring(ctxB([member('cvb', CV_BUDDY)], 'cvb'));
+    const ids = new Set(edges.map((e) => e.id));
+    // pitch3 (polyPitchGate) → cvb.pitch (cv); gate3 → cvb.gate; vel3 → cvb.velocity
+    expect(edges).toContainEqual({
+      id: wcolEdgeId('clip', 'pitch3', 'cvb', 'pitch'),
+      source: { nodeId: 'clip', portId: 'pitch3' }, target: { nodeId: 'cvb', portId: 'pitch' },
+      sourceType: 'polyPitchGate', targetType: 'cv',
+    });
+    expect(ids.has(wcolEdgeId('clip', 'gate3', 'cvb', 'gate'))).toBe(true);
+    expect(edges).toContainEqual({
+      id: wcolEdgeId('clip', 'vel3', 'cvb', 'velocity'),
+      source: { nodeId: 'clip', portId: 'vel3' }, target: { nodeId: 'cvb', portId: 'velocity' },
+      sourceType: 'cv', targetType: 'cv',
+    });
+    // With NO ES-9 return allocation the tap is the ONLY thing wired — the sink
+    // never reaches the mixer (no audio out).
+    expect(edges.some((e) => e.target.nodeId === 'mix')).toBe(false);
+  });
+
+  it('MIDI-out is tapped too (both note sinks) and never becomes a lane head / mixer member', () => {
+    const edges = planColumnWiring(ctxB([member('mo', MIDI_OUT)], 'mo', RET('mo', 1, 2)));
+    const ids = new Set(edges.map((e) => e.id));
+    expect(ids.has(wcolEdgeId('clip', 'pitch3', 'mo', 'pitch'))).toBe(true);
+    expect(ids.has(wcolEdgeId('clip', 'gate3', 'mo', 'gate'))).toBe(true);
+    expect(ids.has(wcolEdgeId('clip', 'vel3', 'mo', 'velocity'))).toBe(true);
+    // MIDI-out has no returnsAudio → NOT a return source → no audio to the mixer,
+    // even if a (spurious) return entry is present.
+    expect(edges.some((e) => e.target.nodeId === 'mix')).toBe(false);
+    expect(edges.some((e) => e.source.nodeId === 'es9')).toBe(false);
+  });
+
+  it('RETURN (no FX): CV Buddy head + ES-9 pair → es9.in1/in2 straight into ch3L/ch3R', () => {
+    const edges = planColumnWiring(ctxB([member('cvb', CV_BUDDY)], 'cvb', RET('cvb', 1, 2)));
+    expect(edges).toContainEqual({
+      id: wcolEdgeId('es9', 'in1', 'mix', 'ch3L'),
+      source: { nodeId: 'es9', portId: 'in1' }, target: { nodeId: 'mix', portId: 'ch3L' },
+      sourceType: 'audio', targetType: 'audio',
+    });
+    expect(edges).toContainEqual({
+      id: wcolEdgeId('es9', 'in2', 'mix', 'ch3R'),
+      source: { nodeId: 'es9', portId: 'in2' }, target: { nodeId: 'mix', portId: 'ch3R' },
+      sourceType: 'audio', targetType: 'audio',
+    });
+    // The note tap coexists (additive).
+    expect(edges.some((e) => e.id === wcolEdgeId('clip', 'pitch3', 'cvb', 'pitch'))).toBe(true);
+  });
+
+  it('RETURN (with FX): es9 pair → the FX root; the FX tail sends to the mixer (not the ES-9)', () => {
+    const edges = planColumnWiring(
+      ctxB([member('cvb', CV_BUDDY), member('rev', REVERB_ST)], 'cvb', RET('cvb', 1, 2)),
+    );
+    const ids = new Set(edges.map((e) => e.id));
+    // ES-9 return pair → the stereo FX (reverb) input.
+    expect(ids.has(wcolEdgeId('es9', 'in1', 'rev', 'inL'))).toBe(true);
+    expect(ids.has(wcolEdgeId('es9', 'in2', 'rev', 'inR'))).toBe(true);
+    // The FX tail — NOT the ES-9 — reaches the mixer.
+    expect(ids.has(wcolEdgeId('rev', 'outL', 'mix', 'ch3L'))).toBe(true);
+    expect(ids.has(wcolEdgeId('es9', 'in1', 'mix', 'ch3L'))).toBe(false);
+  });
+
+  it('second CV Buddy uses the in3/in4 pair (1st→in1/2, 2nd→in3/4)', () => {
+    const edges = planColumnWiring(ctxB([member('cvb2', CV_BUDDY)], 'cvb2', RET('cvb2', 3, 4)));
+    const ids = new Set(edges.map((e) => e.id));
+    expect(ids.has(wcolEdgeId('es9', 'in3', 'mix', 'ch3L'))).toBe(true);
+    expect(ids.has(wcolEdgeId('es9', 'in4', 'mix', 'ch3R'))).toBe(true);
+  });
+
+  it('NO ES-9 (returns omitted): CV Buddy is INERT for audio — tap only, no return', () => {
+    const edges = planColumnWiring(ctxB([member('cvb', CV_BUDDY)], 'cvb', undefined));
+    expect(edges.some((e) => e.source.nodeId === 'es9')).toBe(false);
+    expect(edges.some((e) => e.target.nodeId === 'mix')).toBe(false);
+    // Still tapped.
+    expect(edges.some((e) => e.id === wcolEdgeId('clip', 'pitch3', 'cvb', 'pitch'))).toBe(true);
+  });
+
+  it('ONE-SOURCE-HEAD: an in-app VCO holds the head → the CV Buddy return is NOT summed in', () => {
+    // vco is the head (first in-app source); cvb is tapped but its ES-9 return is
+    // NOT auto-wired (the one-source rule — the return would be a 2nd source).
+    const edges = planColumnWiring(
+      ctxB([member('vco', VCO), member('cvb', CV_BUDDY)], 'vco', RET('cvb', 1, 2)),
+    );
+    const ids = new Set(edges.map((e) => e.id));
+    // vco (head) sends to the mixer.
+    expect(ids.has(wcolEdgeId('vco', 'out', 'mix', 'ch3L'))).toBe(true);
+    // The ES-9 return is NOT wired anywhere (no auto-sum).
+    expect(edges.some((e) => e.source.nodeId === 'es9')).toBe(false);
+    // The CV Buddy is still tapped (additive automation channel).
+    expect(ids.has(wcolEdgeId('clip', 'pitch3', 'cvb', 'pitch'))).toBe(true);
+  });
+
+  it('ADDITIVE: adding a CV Buddy tap leaves an in-app VCO’s own clip control + send unchanged', () => {
+    const base = planColumnWiring(ctxB([member('vco', VCO)], 'vco'));
+    const withTap = planColumnWiring(ctxB([member('vco', VCO), member('cvb', CV_BUDDY)], 'vco', RET('cvb', 1, 2)));
+    const withIds = new Set(withTap.map((e) => e.id));
+    // Every base edge (vco clip control + vco→mixer send) survives verbatim.
+    for (const e of base) expect(withIds.has(e.id), `missing ${e.id}`).toBe(true);
+    // And the tap edges are purely NET-NEW.
+    expect(withIds.has(wcolEdgeId('clip', 'pitch3', 'cvb', 'pitch'))).toBe(true);
+  });
+
+  it('DETERMINISM: byte-identical edge sets across calls (return + tap)', () => {
+    const mk = () => planColumnWiring(ctxB([member('cvb', CV_BUDDY), member('rev', REVERB_ST)], 'cvb', RET('cvb', 1, 2)));
+    expect(JSON.stringify(mk())).toBe(JSON.stringify(mk()));
+    for (const e of mk()) expect(e.id.startsWith('wcol-e-')).toBe(true);
+  });
+});
+
+describe('isReturnSource + isNoteSink (Part B classifiers)', () => {
+  it('the LIVE cvBuddy is a note sink AND a return source', async () => {
+    const { isNoteSink, isReturnSource } = await import('./patch-convenience');
+    const cvb = liveDef('cvBuddy')!;
+    expect(isNoteSink(cvb)).toBe(true);
+    expect(isReturnSource(cvb)).toBe(true);
+    // A note sink has no main audio in/out — it never joins the audio chain.
+    expect(isChainAudioParticipant(cvb)).toBe(false);
+    expect(chainRole(cvb)).toBeNull();
+  });
+
+  it('the LIVE midiOutBuddy is a note sink but NOT a return source', async () => {
+    const { isNoteSink, isReturnSource } = await import('./patch-convenience');
+    const mo = liveDef('midiOutBuddy')!;
+    expect(isNoteSink(mo)).toBe(true);
+    expect(isReturnSource(mo)).toBe(false);
+  });
+});
+
+// ================================================================
 // resolveColumnHead — the one-head classifier (tri-state flag)
 // ================================================================
 

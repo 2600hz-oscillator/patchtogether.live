@@ -62,10 +62,11 @@ describe('cvBuddy def — params + chainWiring marker', () => {
     expect(off).toMatchObject({ min: -20, max: 20, defaultValue: 0, units: 'ms' });
   });
 
-  it('carries the INERT noteSink chainWiring marker (Part-B tap planner)', () => {
+  it('carries the noteSink chainWiring marker (Part-B tap planner) + audio-return flag', () => {
     expect(cvBuddyDef.chainWiring).toEqual({
       role: 'noteSink',
       laneTap: { pitchIn: 'pitch', gateIn: 'gate', velIn: 'velocity' },
+      returnsAudio: true,
     });
   });
 });

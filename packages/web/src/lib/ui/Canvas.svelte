@@ -3486,6 +3486,9 @@
               // Move into column `band` from another column / send / free canvas.
               if (oldCh != null) { setWcolOrder('columns', oldCh, removeFrom(wcolOrder('columns', oldCh), n.id)); wcolClearDetached(String(oldCh)); }
               if (oldSlot != null) { setWcolOrder('sends', oldSlot, removeFrom(wcolOrder('sends', oldSlot), n.id)); wcolClearDetached('s' + oldSlot); }
+              // Cross-column move: drop any carried head flag so it can't win head
+              // in `band` via a sort race (re-promoted only if band is headless).
+              wcolResetHead(n.id);
               setWcolMembership(n.id, band, null);
               setWcolOrder('columns', band, insertBottom(wcolOrder('columns', band), n.id));
               wcolClearDetached(String(band));
@@ -3505,6 +3508,8 @@
             } else {
               if (oldCh != null) { setWcolOrder('columns', oldCh, removeFrom(wcolOrder('columns', oldCh), n.id)); wcolClearDetached(String(oldCh)); }
               if (oldSlot != null) { setWcolOrder('sends', oldSlot, removeFrom(wcolOrder('sends', oldSlot), n.id)); wcolClearDetached('s' + oldSlot); }
+              // Into a send box → no longer a column source: drop the head flag.
+              if (oldCh != null) wcolResetHead(n.id);
               setWcolMembership(n.id, null, slot);
               setWcolOrder('sends', slot, insertBottom(wcolOrder('sends', slot), n.id));
               wcolClearDetached('s' + slot);
@@ -3515,6 +3520,8 @@
             // write below so the card stays where it was dropped.
             if (oldCh != null) { setWcolOrder('columns', oldCh, removeFrom(wcolOrder('columns', oldCh), n.id)); wcolClearDetached(String(oldCh)); }
             if (oldSlot != null) { setWcolOrder('sends', oldSlot, removeFrom(wcolOrder('sends', oldSlot), n.id)); wcolClearDetached('s' + oldSlot); }
+            // Left every column → drop the head flag (was a column source).
+            if (oldCh != null) wcolResetHead(n.id);
             if (oldCh != null || oldSlot != null) setWcolMembership(n.id, null, null);
           }
         }
@@ -3877,6 +3884,9 @@
         if (oldCh != null && oldCh !== ch) {
           setWcolOrder('columns', oldCh, removeFrom(wcolOrder('columns', oldCh), mid));
           wcolClearDetached(String(oldCh));
+          // Reassigned to a DIFFERENT column: drop any carried head flag so it
+          // can't win head in the destination via a sort race.
+          wcolResetHead(mid);
         }
         if (oldSlot != null) {
           setWcolOrder('sends', oldSlot, removeFrom(wcolOrder('sends', oldSlot), mid));
@@ -3996,6 +4006,21 @@
     else if ('channel' in d) delete d.channel;
     if (sendSlot != null) d.sendSlot = sendSlot;
     else if ('sendSlot' in d) delete d.sendSlot;
+  }
+
+  /** CROSS-MOVE AIRTIGHTEN (round-3 follow-up): reset a node's persisted
+   *  `data.isColumnHead` head flag when it LEAVES its column (moved to a
+   *  DIFFERENT column, to a send, or out to free canvas). Otherwise a node that
+   *  was the head of column A carries `isColumnHead: true` into column B and can
+   *  win the head there via a resolveColumnHead sort race before the head-heal
+   *  re-classifies it. Cleared → it arrives `undefined` (fresh) and is promoted
+   *  ONLY if the destination column is headless. Guarded delete (a SyncedStore
+   *  proxy throws on delete of a missing key). Caller wraps in a transact. */
+  function wcolResetHead(nodeId: string): void {
+    const live = patch.nodes[nodeId];
+    if (!live?.data) return;
+    const d = live.data as { isColumnHead?: boolean };
+    if ('isColumnHead' in d) delete d.isColumnHead;
   }
 
   /** The canonical clip-player that holds column automation lanes (the pinned

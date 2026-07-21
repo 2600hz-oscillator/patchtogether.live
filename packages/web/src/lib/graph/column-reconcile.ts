@@ -54,11 +54,14 @@ import {
   resolveColumnHead,
   resolveMainAudioIn,
   isChainAudioParticipant,
+  isReturnSource,
   type ColumnMember,
   type ConvenienceDef,
+  type CvBuddyReturn,
   type SourceHeadState,
   type WcolEdge,
 } from './patch-convenience';
+import { allocateCvBuddySlots } from '$lib/audio/cv-buddy/slot-alloc';
 
 /** Deterministic ids of the workflow pinned singletons the columns anchor to. */
 export const PINNED_MIXER_ID = 'pinned-mixmstrs';
@@ -178,6 +181,39 @@ function resolveMembers(order: readonly string[], resolveDef: ColumnDefResolver)
   return out;
 }
 
+/**
+ * PART B — build the rack-wide CV-Buddy → ES-9 return-audio map. LAZY: with no
+ * ES-9 node it returns an empty map (a return source then emits no audio). The
+ * ES-9 is resolved id-min (mirrors the CV-Buddy→ES-9 janitor's single-ES-9 rule)
+ * and each CV Buddy's input pair comes from the id-sorted slot allocator, so
+ * every peer computes the identical map from the converged snapshot. Only the
+ * first two CV Buddies get a slot (allocateCvBuddySlots); a 3rd+ is absent →
+ * inert. The pair's ES-9 OUTPUT ports are `in{N}` (es9.ts).
+ */
+function buildCvBuddyReturns(): Map<string, CvBuddyReturn> {
+  const out = new Map<string, CvBuddyReturn>();
+  let es9Id: string | null = null;
+  const cvBuddyIds: string[] = [];
+  for (const [id, n] of Object.entries(patch.nodes)) {
+    if (!n) continue;
+    const type = (n as ModuleNode).type;
+    if (type === 'es9') {
+      if (es9Id === null || id < es9Id) es9Id = id;
+    } else if (type === 'cvBuddy') {
+      cvBuddyIds.push(id);
+    }
+  }
+  if (es9Id === null) return out; // no ES-9 → no return audio (inert)
+  for (const [cbId, alloc] of allocateCvBuddySlots(cvBuddyIds)) {
+    out.set(cbId, {
+      es9NodeId: es9Id,
+      inPortL: `in${alloc.inPair[0]}`,
+      inPortR: `in${alloc.inPair[1]}`,
+    });
+  }
+  return out;
+}
+
 /** Read the head flag off a node's data (tri-state: true / false / undefined). */
 function headFlagOf(node: ModuleNode | undefined): boolean | undefined {
   const v = (node?.data as { isColumnHead?: unknown } | undefined)?.isColumnHead;
@@ -187,9 +223,10 @@ function headFlagOf(node: ModuleNode | undefined): boolean | undefined {
 /** A member is a chain SOURCE (a head CANDIDATE) when it participates in the
  *  audio chain (has a resolvable main out) yet has NO main audio-in — so it can
  *  only sit at the ROOT of the chain. FX (a main audio-in) and pure-video/CV
- *  members are excluded. */
+ *  members are excluded. PLUS a CV-Buddy RETURN source (Part B) — its ES-9 return
+ *  audio is a lane head even though it exposes no audio-typed port. */
 function isColumnHeadCandidate(def: ConvenienceDef): boolean {
-  return isChainAudioParticipant(def) && resolveMainAudioIn(def) === null;
+  return (isChainAudioParticipant(def) && resolveMainAudioIn(def) === null) || isReturnSource(def);
 }
 
 /** The column's chain-source members (head candidates) in order, each with its
@@ -274,6 +311,13 @@ export function reconcileColumnWiring(resolveDef: ColumnDefResolver): boolean {
   const clipPlayerId = patch.nodes[PINNED_CLIP_ID] ? PINNED_CLIP_ID : null;
   const mixerId = PINNED_MIXER_ID;
 
+  // PART B — ES-9 return-audio allocation (rack-wide, lazy). Resolve the single
+  // ES-9 node (id-min, mirrors the CV-Buddy→ES-9 janitor) and map each CV Buddy
+  // to its hardware INPUT pair (1st→in1/in2, 2nd→in3/in4) via the id-sorted slot
+  // allocator, so every peer computes the identical returns. Inert (empty map)
+  // with no ES-9 — a return source then simply emits no audio.
+  const cvBuddyReturns = buildCvBuddyReturns();
+
   // Build the global desired edge set.
   const desired: WcolEdge[] = [];
   for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
@@ -281,7 +325,9 @@ export function reconcileColumnWiring(resolveDef: ColumnDefResolver): boolean {
     const members = resolveMembers(order, resolveDef);
     if (members.length === 0) continue;
     const headNodeId = columnHeadNodeId(order, resolveDef);
-    desired.push(...planColumnWiring({ channel: ch, members, clipPlayerId, mixerId, headNodeId }));
+    desired.push(...planColumnWiring({
+      channel: ch, members, clipPlayerId, mixerId, headNodeId, returns: cvBuddyReturns,
+    }));
   }
   for (let s = 1; s <= SEND_BOX_COUNT; s++) {
     const members = resolveMembers(sends[String(s)] ?? [], resolveDef);
