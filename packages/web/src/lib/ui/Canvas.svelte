@@ -36,6 +36,14 @@
     pruneAllAutoAssignDangling,
     repairDuplicateAutoAssign,
   } from '$lib/graph/automation-assign';
+  import {
+    isClipEligible,
+    isMixerEligible,
+    planClipControl,
+    planSendToMixer,
+    CLIP_CHANNEL_COUNT,
+    MIXER_CHANNEL_COUNT,
+  } from '$lib/graph/patch-convenience';
   import { setControlColor, setNodeLocked } from '$lib/graph/mutate';
   import { snapPositionToGrid, findFreeRackSlot, RACK_UNIT, type RackRect } from '$lib/ui/rack-grid';
   import { resolveControlColor } from '$lib/graph/control-color';
@@ -190,6 +198,10 @@
   // Card-viewport visibility feed for the video engine's sink-driven pull
   // evaluation (one central IntersectionObserver over the flow nodes).
   import { observeVideoCardVisibility } from '$lib/ui/video-card-visibility';
+  // Persisted-rack VIDEO boot decision (fix/video-engine-persist-reconcile):
+  // boot the engine once a restored graph with video in it has loaded, so the
+  // render loop starts WITHOUT a manual add/delete.
+  import { shouldBootEngineForRestoredVideo } from '$lib/ui/restored-video-boot';
   // Meta-domain registry — sticky notes etc. (no engine binding).
   import { listMetaModuleDefs, getMetaModuleDef } from '$lib/meta/module-registry';
   import '$lib/meta/modules'; // auto-registers stickyDef
@@ -374,6 +386,18 @@
     // (`pt.dock.v2:${rackspaceId}`). /r/[id] passes the rackspace id; the
     // scratch canvases fall back to 'scratch'.
     rackspaceId?: string;
+    // SCRATCH SEED GATE (/rack only). On the scratch canvas there is no relay
+    // provider to gate the workflow "ensure" effects (pinned trio + default
+    // wire) against, so they'd otherwise fire on mount and write default pinned
+    // state into deterministic keys BEFORE the IndexedDB local replica finishes
+    // seeding — racing the restored state at the same Yjs key (clientID
+    // tiebreak) and ~half the time discarding the user's saved pinned-module
+    // settings. /rack threads its replica-seeded boolean here (false while the
+    // seed is pending, true once resolved); the two ensures defer on
+    // `scratchSeeded === false`. UNDEFINED for real /r/[id] racks (they gate on
+    // the provider sync instead) → their ensure behavior is unchanged. Canvas
+    // otherwise mounts immediately regardless — only the ensures wait.
+    scratchSeeded?: boolean;
   }
   let {
     currentUserId,
@@ -383,6 +407,7 @@
     headerAuth = null,
     mode = 'dawless',
     rackspaceId = undefined,
+    scratchSeeded = undefined,
   }: Props = $props();
 
   /** True when this canvas renders the workflow shell. */
@@ -775,6 +800,58 @@
     };
   });
 
+  // ── Persisted-rack VIDEO boot (fix/video-engine-persist-reconcile) ─────────
+  //
+  // Video renders with NO user gesture (unlike audio, which the browser
+  // autoplay policy legitimately gates behind a click). But the PatchEngine —
+  // and with it the VideoEngine's rAF render loop — is created lazily by
+  // ensureEngine(), which today runs ONLY from user graph-mutations (spawn /
+  // duplicate / load / import) and the audio-gate click. So a rack RESTORED from
+  // persistence (the /rack scratch IndexedDB replica, or the /r/[id] Y.Doc sync)
+  // shows its video CARDS but renders nothing: nothing booted the engine, so the
+  // restored video nodes are never instantiated and the render loop never
+  // starts. Video stays black/frozen until the user happens to add or delete a
+  // node, whose ensureEngine() call finally boots + reconciles the whole (already
+  // seeded) graph — reviving ALL restored video at once (the owner's symptoms).
+  //
+  // Fix: once the persisted graph has LOADED (scratch seed resolved, or the
+  // collab provider synced) and it holds ≥1 video node, boot the engine here.
+  // The SAME bus-driven reconciler the add/delete paths use then instantiates
+  // the restored nodes and the loop starts — no gesture required.
+  //
+  // Idempotent + leak-free: ensureEngine() memoizes the engine+reconciler and
+  // the reconciler diffs the snapshot against what it already applied, so a live
+  // node is never rebuilt or torn down. Reading `engine` keeps this reactive —
+  // it re-runs and early-returns once the boot completes (a failed boot leaves
+  // `engine` null, so a later snapshot change retries). Scoped to video-bearing
+  // RESTORED racks: an audio-only / empty rack keeps the lazy boot (no eager
+  // AudioContext per page view — audio still waits for the gesture it needs),
+  // and the ephemeral e2e /rack (replica opt-out, no provider) never trips it.
+  $effect(() => {
+    // Load-complete signal for the RESTORE path only — never the interactive
+    // spawn path, which boots the engine itself. `scratchSeeded` is a boolean on
+    // the persisted scratch canvas and undefined elsewhere; providerHasSynced
+    // covers the collab /r/[id] first sync.
+    const loaded = scratchSeeded === true || (provider != null && providerHasSynced);
+    if (
+      !shouldBootEngineForRestoredVideo({
+        loaded,
+        engineBooted: engine != null,
+        nodes: snapshot.nodes,
+      })
+    ) {
+      return;
+    }
+    void (async () => {
+      await ensureEngine();
+      // Explicit reconcile (mirrors loadExample()/handleDelete's shape) so the
+      // restored graph is materialized deterministically on this load — the
+      // reconciler also auto-runs on attach via the snapshot bus, so this is a
+      // belt-and-suspenders no-op if the bus already fired.
+      await reconciler?.reconcile();
+    })();
+  });
+
   // Pre-effect marker: written once at module-script eval time. The
   // e2e auto-spawn spec polls for this object as the "Canvas script
   // actually ran" signal — under parallel-worker stress an HMR
@@ -964,7 +1041,12 @@
   // Non-tracked origin → never on the undo stack.
   $effect(() => {
     if (!workflowMode) return;
-    if (provider && !providerHasSynced) return;
+    // Wait for first sync WITH a provider (never race server state); WITHOUT a
+    // provider on the scratch canvas, wait for the local replica seed instead
+    // (scratchSeeded === false) so the ensure runs against the SEEDED doc and
+    // its `if (patch.nodes[spec.id]) continue` skips restored pins — no clobber
+    // race. scratchSeeded is undefined for real racks → guard unchanged.
+    if ((provider && !providerHasSynced) || scratchSeeded === false) return;
     const missing = planPinnedSpawns(snapshot.nodes);
     if (missing.length === 0) return;
     ydoc.transact(() => {
@@ -1000,7 +1082,11 @@
   // Same non-tracked origin → never on the undo stack.
   $effect(() => {
     if (!workflowMode) return;
-    if (provider && !providerHasSynced) return;
+    // Same seed gate as the pinned-module ensure above: defer on a pending
+    // scratch replica seed so the default-wire seed can't resurrect a cable the
+    // user deleted before their stored latch is restored. Undefined (real
+    // racks) → guard unchanged.
+    if ((provider && !providerHasSynced) || scratchSeeded === false) return;
     const plan = planDefaultWires(snapshot.nodes, snapshot.edges);
     if (!plan.latch) return;
     ydoc.transact(() => {
@@ -3469,6 +3555,133 @@
     ctxMenuAutomationTargets.some((t) => t.assignedLane !== null),
   );
 
+  // WORKFLOW patch-convenience: "Control from ▸ Clip N" appears when the
+  // right-clicked module is a playable INSTRUMENT (isClipEligible, computed
+  // procedurally from its port def — no allow-list) AND a clip-player exists.
+  let ctxMenuClipControlTargets = $derived.by<Array<{ nodeId: string; name: string; channels: number }>>(() => {
+    void snapshot;
+    const mid = ctxMenuNodeId;
+    if (!mid) return [];
+    const n = patch.nodes[mid];
+    if (!n || n.type === 'group') return [];
+    const def = defLookup(n.type);
+    if (!def || !isClipEligible(def)) return [];
+    const out: Array<{ nodeId: string; name: string; channels: number }> = [];
+    for (const nid of listClipPlayers(patch.nodes).sort()) {
+      const label = (patch.nodes[nid]?.data as { label?: unknown } | undefined)?.label;
+      out.push({
+        nodeId: nid,
+        name: typeof label === 'string' && label ? label : 'clip player',
+        channels: CLIP_CHANNEL_COUNT,
+      });
+    }
+    return out;
+  });
+
+  // WORKFLOW patch-convenience: "Send to ▸ MixMaster chN" appears when the
+  // module has a main audio out (isMixerEligible) AND a mixmstrs exists.
+  let ctxMenuMixerTargets = $derived.by<Array<{ nodeId: string; name: string; channels: number }>>(() => {
+    void snapshot;
+    const mid = ctxMenuNodeId;
+    if (!mid) return [];
+    const n = patch.nodes[mid];
+    if (!n || n.type === 'group') return [];
+    const def = defLookup(n.type);
+    if (!def || !isMixerEligible(def)) return [];
+    const out: Array<{ nodeId: string; name: string; channels: number }> = [];
+    for (const [nid, node] of Object.entries(patch.nodes)) {
+      if (!node || node.type !== 'mixmstrs' || nid === mid) continue;
+      const label = (node.data as { label?: unknown } | undefined)?.label;
+      out.push({
+        nodeId: nid,
+        name: typeof label === 'string' && label ? label : 'mixmaster',
+        channels: MIXER_CHANNEL_COUNT,
+      });
+    }
+    return out.sort((a, b) => a.nodeId.localeCompare(b.nodeId));
+  });
+
+  /** Write a set of pre-planned convenience edges in ONE undo step. Each edge's
+   *  types are re-resolved from the live defs (honouring exposed ports); an
+   *  edge already present on a target port is replaced (occupancy). Unlike
+   *  commitCarriedEdge this does NOT auto-fire writeStereoSiblingEdge — the plan
+   *  is already explicit (mono→mixer emits both L and R itself). */
+  function commitConvenienceEdges(
+    edges: Array<{ fromPortId: string; toPortId: string }>,
+    sourceNodeId: string,
+    targetNodeId: string,
+  ): void {
+    const srcNode = patch.nodes[sourceNodeId];
+    const dstNode = patch.nodes[targetNodeId];
+    if (!srcNode || !dstNode) return;
+    const srcDef = defLookup(srcNode.type);
+    const dstDef = defLookup(dstNode.type);
+    if (!srcDef || !dstDef) return;
+    const planned = edges
+      .map(({ fromPortId, toPortId }) => {
+        const srcExposed = resolveExposedPort(srcNode, fromPortId);
+        const dstExposed = resolveExposedPort(dstNode, toPortId);
+        const srcPort = srcDef.outputs.find((p) => p.id === fromPortId);
+        const dstPort = dstDef.inputs.find((p) => p.id === toPortId);
+        const sourceType: CableType = srcExposed?.cableType ?? srcPort?.type ?? 'audio';
+        const targetType: CableType = dstExposed?.cableType ?? dstPort?.type ?? sourceType;
+        const id = `e-${sourceNodeId}-${fromPortId}-${targetNodeId}-${toPortId}`;
+        const edge: Edge = {
+          id,
+          source: { nodeId: sourceNodeId, portId: fromPortId },
+          target: { nodeId: targetNodeId, portId: toPortId },
+          sourceType,
+          targetType,
+        };
+        return edge;
+      })
+      .filter((edge) =>
+        validateEdge(edge, Object.values(patch.nodes) as ModuleNode[], defLookup).ok,
+      );
+    if (planned.length === 0) return;
+    ydoc.transact(() => {
+      for (const edge of planned) {
+        // Replace any existing edge on this target port (single owner).
+        for (const [edgeId, existing] of Object.entries(patch.edges)) {
+          if (
+            existing &&
+            existing.target.nodeId === edge.target.nodeId &&
+            existing.target.portId === edge.target.portId
+          ) {
+            delete patch.edges[edgeId];
+          }
+        }
+        patch.edges[edge.id] = edge;
+      }
+    }, LOCAL_ORIGIN);
+  }
+
+  /** "Control from ▸ Clip N" — wire the clip channel's pitch/poly (+ gate) into
+   *  the right-clicked instrument, per its port shape. */
+  function commitControlFromClip(clipPlayerNodeId: string, channel: number): void {
+    const mid = ctxMenuNodeId;
+    if (!mid) return;
+    const node = patch.nodes[mid];
+    const def = node && defLookup(node.type);
+    if (!def) return;
+    const plan = planClipControl(def, channel + 1); // plan is 1-based
+    if (!plan) return;
+    commitConvenienceEdges(plan, clipPlayerNodeId, mid);
+  }
+
+  /** "Send to ▸ MixMaster chN" — wire the module's main audio out into the mixer
+   *  channel (stereo L/R, or mono filling both). */
+  function commitSendToMixer(mixerNodeId: string, channel: number): void {
+    const mid = ctxMenuNodeId;
+    if (!mid) return;
+    const node = patch.nodes[mid];
+    const def = node && defLookup(node.type);
+    if (!def) return;
+    const plan = planSendToMixer(def, channel + 1); // plan is 1-based
+    if (!plan) return;
+    commitConvenienceEdges(plan, mid, mixerNodeId);
+  }
+
   // MULTI-SURFACE JANITOR (control-surface discipline): when a module is
   // deleted, drop its automation-lane assignment from EVERY clip-player; when
   // a merge race (or a legacy pre-scrub duplicate) leaves the same module
@@ -5468,7 +5681,20 @@
 
   let bootPromise: Promise<PatchEngine> | null = null;
   async function ensureEngine(): Promise<PatchEngine> {
-    if (engine) return engine;
+    if (engine) {
+      // The engine may have been booted EAGERLY (no user gesture) to render a
+      // restored VIDEO rack — see the persisted-rack boot effect below. That
+      // boot could not resume the AudioContext (Chrome's autoplay policy needs
+      // a gesture), so it starts suspended. Any LATER ensureEngine() call comes
+      // from a real user action (spawn / duplicate / load / import), which IS a
+      // gesture — resume a still-suspended context now so a mixed audio+video
+      // restored rack isn't left silent. Idempotent + harmless when already
+      // running or when this call isn't gesture-backed (resume() just no-ops).
+      if (audioCtx && audioCtx.state === 'suspended') {
+        void audioCtx.resume().catch(() => {});
+      }
+      return engine;
+    }
     // Memoize the in-flight boot. Without this, two parallel callers
     // (e.g. two parallel callers) each create their
     // own AudioContext, racing to overwrite the engine + reconciler bindings.
@@ -5866,10 +6092,29 @@
   // Dev-only: expose undoManager so e2e tests can assert state without
   // racing against the captureTimeout debouncer. Gated on testHooksEnabled()
   // so it's present in the preview bundle (VITE_E2E_HOOKS=1) too.
+  //
+  // Keep it FRESH across a `bindRackspace()` doc swap. `undoManager` is a
+  // module-scope `let` export that bindRackspace reassigns (a NEW manager for
+  // the new doc; the old one is destroyed) — and Svelte 5 does NOT re-run this
+  // $effect on that reassignment. store.ts's dev-hook refresh re-points
+  // __patch / __ydoc but NOT __undoManager. The /rack scratch canvas now calls
+  // bindRackspace for local persistence, so without this re-point
+  // window.__undoManager stayed on the DESTROYED mount-time manager while edits
+  // accrued on the new one — e2e reads of __undoManager.undoStack / .undo()
+  // then hit a dead manager (undo appears to no-op; matrixmix undo specs went
+  // red). Re-point through onBindRackspace, exactly like the doc-swap seam
+  // above and the snapshot bus. undoManager is reassigned BEFORE the bind
+  // listeners fire, and the named import is a live binding, so reading it here
+  // yields the fresh manager regardless of mount-effect ordering.
   if (testHooksEnabled()) {
     $effect(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__undoManager = undoManager;
+      const offBind = onBindRackspace(() => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (globalThis as any).__undoManager = undoManager;
+      });
+      return () => offBind();
     });
   }
 
@@ -6512,6 +6757,10 @@
   onassignautomationlane={(playerId, lane) =>
     ctxMenuNodeId && assignAutomationLane(playerId, ctxMenuNodeId, lane)}
   onremoveautomationlane={() => ctxMenuNodeId && removeAutomationAssignment(ctxMenuNodeId)}
+  clipControlTargets={ctxMenuClipControlTargets}
+  oncontrolfromclip={(clipPlayerNodeId, channel) => commitControlFromClip(clipPlayerNodeId, channel)}
+  mixerTargets={ctxMenuMixerTargets}
+  onsendtomixer={(mixerNodeId, channel) => commitSendToMixer(mixerNodeId, channel)}
   dockable={ctxMenuDockable}
   docked={ctxMenuDocked}
   ondock={(zone) => ctxMenuNodeId && dockNode(ctxMenuNodeId, zone)}

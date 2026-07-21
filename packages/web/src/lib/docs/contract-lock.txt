@@ -466,6 +466,8 @@ clipplayer out vel8 cv
 clipplayer param gateLength 0.1..1 linear default=0.9
 clipplayer param octave -2..2 discrete default=0
 clipplayer param quantize 0..1 discrete default=1
+clipplayer param rangeFloor 0..8 discrete default=3
+clipplayer param restrictRange 0..1 discrete default=0
 clipplayer param snh 0..1 discrete default=1
 clipplayer param stepDiv 0..3 discrete default=2
 clipplayer family clipplayer-auto-arm kind=other prefix=clipplayer-auto-arm
