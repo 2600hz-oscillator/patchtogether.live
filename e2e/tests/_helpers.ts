@@ -52,6 +52,86 @@ function isTransientPageError(err: unknown): boolean {
 }
 
 /**
+ * WORKFLOW viewport reveal — center the viewport on the given (just-injected)
+ * nodes when they aren't already comfortably on-screen at a clickable zoom.
+ *
+ * Why: `spawnPatch` writes nodes DIRECTLY into `__patch` at their flow-space
+ * position, bypassing the palette's `screenToFlowPosition` anchor. In a WORKFLOW
+ * rack the default viewport frames the pinned lanes + purple video zone, which
+ * sit far down in flow space (large Y); a free-canvas card injected at a small-Y
+ * position is therefore scrolled OFF-SCREEN. SvelteFlow transforms the pane (no
+ * native scroll), so Playwright's click auto-scroll can't reach it and every
+ * right-click / patch-trigger on that card times out. Real users never hit this
+ * (palette spawns land at the in-view click point); this mirrors that.
+ *
+ * No-op when every target node's center already projects inside the pane at a
+ * clickable zoom (≥ 0.4) — so dawless racks and already-framed workflow spawns
+ * keep their viewport untouched.
+ */
+async function revealWorkflowNodes(page: Page, ids: string[]): Promise<void> {
+  await page
+    .evaluate((nodeIds) => {
+      const w = globalThis as unknown as {
+        __flow?: {
+          getInternalNode?: (id: string) => {
+            position?: { x: number; y: number };
+            internals?: { positionAbsolute?: { x: number; y: number } };
+            measured?: { width?: number; height?: number };
+          } | undefined;
+          getViewport?: () => { x: number; y: number; zoom: number };
+          setViewport?: (vp: { x: number; y: number; zoom: number }) => void;
+        };
+      };
+      const flow = w.__flow;
+      if (!flow?.getInternalNode || !flow.getViewport || !flow.setViewport) return;
+
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity, any = false;
+      for (const id of nodeIds) {
+        const n = flow.getInternalNode(id);
+        if (!n) continue;
+        const p = n.internals?.positionAbsolute ?? n.position;
+        if (!p) continue;
+        const width = n.measured?.width ?? 200;
+        const height = n.measured?.height ?? 120;
+        minX = Math.min(minX, p.x);
+        minY = Math.min(minY, p.y);
+        maxX = Math.max(maxX, p.x + width);
+        maxY = Math.max(maxY, p.y + height);
+        any = true;
+      }
+      if (!any) return;
+
+      const pane =
+        document.querySelector('.svelte-flow__pane') ?? document.querySelector('.svelte-flow');
+      if (!pane) return;
+      const rect = pane.getBoundingClientRect();
+      const vp = flow.getViewport();
+
+      // Pane-local projection of the union-bbox center (xyflow viewport maps
+      // flow → pane-local px: local = flow*zoom + vp).
+      const cx = (minX + maxX) / 2;
+      const cy = (minY + maxY) / 2;
+      const localX = cx * vp.zoom + vp.x;
+      const localY = cy * vp.zoom + vp.y;
+      const onScreen =
+        localX > 0 && localX < rect.width && localY > 0 && localY < rect.height;
+      if (onScreen && vp.zoom >= 0.4) return; // already interactable
+
+      // Frame the injected card(s) near the UPPER-LEFT (not dead-center): tests
+      // often open a bottom drawer (C keymap → dock-zone-bottom) that covers the
+      // lower half, and the bottom-right holds the minimap/feedback overlays. A
+      // centered card would be occluded; upper-left mirrors the historical
+      // near-origin placement these pre-lanes tests were written against.
+      const zoom = 0.6; // readable — cards render large enough to click reliably
+      flow.setViewport({ x: 220 - minX * zoom, y: 120 - minY * zoom, zoom });
+    }, ids)
+    .catch(() => {
+      /* best-effort — a missing __flow (non-dev build) just leaves the viewport
+         as-is; the subsequent interaction will surface any real problem. */
+    });
+}
+
+/**
  * Spawn a set of nodes + edges into the patch graph atomically.
  * Requires the dev-only window globals (Canvas exposes them under `import.meta.env.DEV`).
  *
@@ -153,6 +233,18 @@ export async function spawnPatch(
         nodes.map((n) => n.id),
         { timeout: mountTimeout }
       );
+
+      // WORKFLOW mode: the default viewport frames the far-down pinned lanes +
+      // video zone (large flow-Y), so a card injected DIRECTLY at a small-Y
+      // free-canvas position (real palette spawns anchor at the in-view click
+      // point; this harness bypasses that) renders OFF-SCREEN and is un-
+      // clickable — every right-click/patch-trigger on it times out. Mirror the
+      // palette's in-view spawn by centering the viewport on the just-injected
+      // nodes, but only when they aren't already comfortably on-screen (so
+      // dawless and already-framed workflow spawns are untouched).
+      if (page.url().includes('mode=workflow')) {
+        await revealWorkflowNodes(page, nodes.map((n) => n.id));
+      }
       return;
     } catch (err) {
       lastErr = err;

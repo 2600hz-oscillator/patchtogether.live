@@ -700,6 +700,12 @@
         flowToScreenPosition: (p: { x: number; y: number }) =>
           flowApi?.flowToScreenPosition(p) ?? p,
         getViewport: () => flowApi?.getViewport?.() ?? { x: 0, y: 0, zoom: 1 },
+        // Set the viewport pan/zoom. Mirrors the flowApi seam the workflow
+        // keyboard-nav uses; e2e helpers call it to bring a directly-injected
+        // (spawnPatch) card into view when the default workflow viewport frames
+        // the far-down lanes/video-zone instead of the flow origin.
+        setViewport: (vp: { x: number; y: number; zoom: number }, opts?: { duration?: number }) =>
+          flowApi?.setViewport?.(vp, opts),
         getInternalNode: (id: string) => flowApi?.getInternalNode(id),
         // Edge-delete e2e: headless Playwright can't click the thin SVG edge,
         // so the spec selects it through xyflow's real `selected` mutation,

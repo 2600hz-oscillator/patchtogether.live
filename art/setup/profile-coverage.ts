@@ -24,6 +24,7 @@
 export const ART_EXCLUDED: Readonly<Record<string, string>> = {
   audioIn: 'live getUserMedia mic — output is a pass-through of external signal; no offline source',
   es9: 'physical ES-9 hardware via the native-bridge WebSocket — outputs pass through external rack signal; no deterministic offline source (ring/scaling/policy math pinned by the dsp es9-bridge-core unit suite)',
+  cvBuddy: 'lane→ES-9 CV/gate/clock sender — its OUTPUT ports are cv/gate (auto-routed to the physical ES-9 jacks), not audio-family; the only audio is the ES-9 hardware RETURN (external rack signal, no deterministic offline source), same class as es9. Passthrough/slot/clock math pinned by the cv-buddy slot-alloc + clock-math + es9-reconcile unit suites',
   gamepad: 'HID controller CV — no deterministic offline input',
   joystick: 'HID controller CV — no deterministic offline input',
   midiLane: 'live MIDIAccess device stream — no deterministic offline source',
