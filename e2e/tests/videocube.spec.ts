@@ -165,6 +165,75 @@ test.describe('VIDEOCUBE — video isomorph of the audio CUBE', () => {
     assertLiveFrame(out, FILL);
   });
 
+  // The whole-module X/Y JOYSTICK pads (owner: "the x/y control sets should be
+  // draggable joysticks with x/ys that are cv assignable"). Dragging each pad
+  // writes BOTH its axis params through the SAME setNodeParam seam the knobs use
+  // (rAF-coalesced via createDragCommit). The CV-assignability of each axis
+  // (view_x_cv / view_y_cv / slice_rx_cv / slice_ry_cv / scan_cv / spread_cv) is
+  // covered by the auto-enrolled per-module-per-port sweep; here we prove the pad
+  // UI drives both params. Cheap: the per-frame GL draw is FROZEN, so only the pad
+  // DOM → store seam runs (SwiftShader-safe, no render budget).
+  test('the VIEW / slice-ROT / SCAN-SPREAD joystick pads each drag BOTH axis params', async ({ page, errorWatch }) => {
+    void errorWatch;
+    await page.addInitScript(() => {
+      (globalThis as unknown as { __videoEngineFreezeRender?: boolean }).__videoEngineFreezeRender = true;
+    });
+    await page.goto('/rack');
+    await page.waitForLoadState('networkidle');
+    await spawnPatch(page, [{ id: 'vc', type: 'videocube', position: { x: 420, y: 120 }, domain: 'video' }], []);
+    await expect(page.locator('[data-testid="videocube-card"]')).toHaveCount(1);
+
+    // The 3u/hp4 card is taller than the viewport, so its bottom pad (VIEW) sits
+    // off-screen where pointer events can't land. Zoom the SvelteFlow pane out
+    // (wheel over the pane centre = SvelteFlow zoomOnScroll) so every pad is on
+    // screen; the fractional drag math is zoom-independent (it uses each pad's
+    // own rendered rect).
+    const pane = page.locator('.svelte-flow__pane').first();
+    const pbox = await pane.boundingBox();
+    if (pbox) {
+      for (let i = 0; i < 2; i++) {
+        await page.mouse.move(pbox.x + pbox.width / 2, pbox.y + pbox.height / 2);
+        await page.mouse.wheel(0, 400);
+        await page.waitForTimeout(200); // d3-zoom transform settle
+      }
+    }
+
+    const params = () => page.evaluate(() => {
+      const w = globalThis as unknown as { __patch: { nodes: Record<string, { params: Record<string, number> }> } };
+      return w.__patch.nodes['vc']?.params ?? {};
+    });
+
+    // Drag a pad from its centre to a fractional target (fx,fy ∈ [0,1]) + release.
+    const dragPad = async (testid: string, fx: number, fy: number): Promise<void> => {
+      const pad = page.locator(`[data-testid="${testid}-pad"]`);
+      await expect(pad).toBeVisible();
+      const box = await pad.boundingBox();
+      expect(box, `${testid} bounding box`).not.toBeNull();
+      if (!box) return;
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width * fx, box.y + box.height * fy, { steps: 6 });
+      await page.mouse.up();
+    };
+
+    // VIEW pad — x=view_rot_x (−π..π), y=view_rot_y (−π..π). Top-RIGHT ⇒ both high
+    // (x maps →, y is flipped so UP = +y).
+    await dragPad('videocube-view-joystick', 0.92, 0.08);
+    await expect.poll(async () => (await params()).view_rot_x ?? 0, { timeout: 4000 }).toBeGreaterThan(2);
+    await expect.poll(async () => (await params()).view_rot_y ?? 0).toBeGreaterThan(2);
+
+    // slice ROT pad — x=slice_rx, y=slice_ry (−π..π). Bottom-LEFT ⇒ both low.
+    await dragPad('videocube-slice-rot-joystick', 0.08, 0.92);
+    await expect.poll(async () => (await params()).slice_rx ?? 0).toBeLessThan(-2);
+    await expect.poll(async () => (await params()).slice_ry ?? 0).toBeLessThan(-2);
+
+    // SCAN/SPREAD pad — x=scan (0..1), y=spread (0..1). Bottom-RIGHT ⇒ scan high,
+    // spread low (bottom = min on the flipped y axis).
+    await dragPad('videocube-scan-spread-joystick', 0.95, 0.95);
+    await expect.poll(async () => (await params()).scan ?? 0).toBeGreaterThan(0.8);
+    await expect.poll(async () => (await params()).spread ?? 1).toBeLessThan(0.2);
+  });
+
   test('the render is LIVE — MORPH, the orbit VIEW camera, and slice Y each change the volume', async ({ page, errorWatch }) => {
     void errorWatch;
     await installRenderSmokeHooks(page);

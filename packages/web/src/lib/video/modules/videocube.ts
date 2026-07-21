@@ -1000,6 +1000,10 @@ export const videocubeDef: VideoModuleDef = {
     { id: 'slice_rx_cv',         type: 'cv', paramTarget: 'slice_rx',         cvScale: { mode: 'linear' } },
     { id: 'slice_ry_cv',         type: 'cv', paramTarget: 'slice_ry',         cvScale: { mode: 'linear' } },
     { id: 'slice_rz_cv',         type: 'cv', paramTarget: 'slice_rz',         cvScale: { mode: 'linear' } },
+    // Orbit-camera VIEW X / VIEW Y (the joystick pad on the card) — CV-modulatable
+    // like the slice rotations. VIEW ZOOM / VIEW Z stay knob-only (no CV port).
+    { id: 'view_x_cv',           type: 'cv', paramTarget: 'view_rot_x',       cvScale: { mode: 'linear' } },
+    { id: 'view_y_cv',           type: 'cv', paramTarget: 'view_rot_y',       cvScale: { mode: 'linear' } },
     { id: 'fold_cv',             type: 'cv', paramTarget: 'fold',             cvScale: { mode: 'linear' } },
     { id: 'spread_cv',           type: 'cv', paramTarget: 'spread',           cvScale: { mode: 'linear' } },
     { id: 'scan_cv',             type: 'cv', paramTarget: 'scan',             cvScale: { mode: 'linear' } },
@@ -1081,6 +1085,8 @@ export const videocubeDef: VideoModuleDef = {
       slice_rx_cv: 'CV that modulates ROT X (Euler tilt of the cutting plane about X — the same plane the audio reads), swept linearly over -pi..pi.',
       slice_ry_cv: 'CV that modulates ROT Y (Euler tilt of the cutting plane about Y), swept linearly over -pi..pi.',
       slice_rz_cv: 'CV that modulates ROT Z (Euler tilt of the cutting plane about Z), swept linearly over -pi..pi.',
+      view_x_cv: 'CV that modulates VIEW X (orbit-camera ELEVATION — the HORIZONTAL axis of the VIEW joystick pad), swept linearly over -pi..pi. Picture only — reprojects the volumetric view without touching the sound or the cutting plane.',
+      view_y_cv: 'CV that modulates VIEW Y (orbit-camera AZIMUTH — the VERTICAL axis of the VIEW joystick pad), swept linearly over -pi..pi. Picture only — orbits the volumetric view without touching the sound or the cutting plane.',
       fold_cv: 'CV that modulates FOLD (the west-coast wavefolder on the derived audio — audio-only, no image effect), swept linearly over 0..1.',
       spread_cv: 'CV that modulates SPREAD (the temporal reader window width — how far a frozen table oozes through time), swept linearly over 0..1.',
       scan_cv: 'CV that modulates SCAN (the reader-centre POSITION — moves the reading centre through the 60-frame ring / scrubs a frozen table through its ~2 seconds), swept linearly over 0..1 (wraps at the ring seam). Drives both the picture surfaces and the audio reduce.',

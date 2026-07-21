@@ -11,6 +11,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
+  import XyPad from '$lib/ui/controls/XyPad.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { setNodeParam } from '$lib/graph/mutate';
@@ -47,7 +48,9 @@
 
   // FIELD / SLICE knobs — these move BOTH the picture (the volumetric combine +
   // the cutting slice) AND the derived audio, through the one shared 3-D field.
-  // (Same order as CubeCard's field/slice knobs.)
+  // (Same order as CubeCard's field/slice knobs.) The natural X/Y PAIRS that were
+  // knobs — slice ROT X/ROT Y, and the temporal SCAN/SPREAD — are now DRAGGABLE
+  // JOYSTICK pads (see the XyPad blocks below); ROT Z / Y stay knobs.
   const FIELD_KNOBS: Array<{ pid: string; label: string }> = [
     { pid: 'morph_fc', label: 'Morph' },
     { pid: 'connect', label: 'Connect' },
@@ -55,11 +58,7 @@
     { pid: 'crush', label: 'Crush' },
     { pid: 'space_crush', label: 'Space Crush' },
     { pid: 'space_diffuse', label: 'Space Diffuse' },
-    { pid: 'spread', label: 'Spread' },
-    { pid: 'scan', label: 'Scan' },
     { pid: 'slice_y', label: 'Y' },
-    { pid: 'slice_rx', label: 'Rot X' },
-    { pid: 'slice_ry', label: 'Rot Y' },
     { pid: 'slice_rz', label: 'Rot Z' },
   ];
 
@@ -78,14 +77,32 @@
     { pid: 'motion', label: 'Motion' },
   ];
 
-  // The orbit-camera VIEW bank (matches CubeCard's ZOOM / VIEW X/Y/Z group).
-  // Picture-only — flies the volumetric render around the 3D solid.
+  // The orbit-camera VIEW bank. VIEW X / VIEW Y are now a JOYSTICK pad (below);
+  // ZOOM and VIEW Z remain knobs (zoom has no obvious 2nd joystick axis; ROLL is
+  // rarely swept). Picture-only — flies the volumetric render around the 3D solid.
   const VIEW_KNOBS: Array<{ pid: string; label: string }> = [
     { pid: 'view_zoom', label: 'Zoom' },
-    { pid: 'view_rot_x', label: 'View X' },
-    { pid: 'view_rot_y', label: 'View Y' },
     { pid: 'view_rot_z', label: 'View Z' },
   ];
+
+  // ── JOYSTICK live-CV reflection ──
+  // Poll the effective (CV-modulated) value of each joystick axis so a patched CV
+  // cable MOVES the pad dot in real time (the motorized-Knob behaviour). readParam
+  // returns intrinsic-knob + most-recent CV sample; at rest it is constant, so the
+  // set-if-changed guard means an idle module never churns reactivity.
+  const JOY_AXES = ['slice_rx', 'slice_ry', 'scan', 'spread', 'view_rot_x', 'view_rot_y'] as const;
+  let liveAxis = $state<Record<string, number>>({});
+  function pollLiveAxes(): void {
+    const e = engineCtx.get();
+    if (!e || !node) return;
+    for (const pid of JOY_AXES) {
+      const v = e.readParam(node, pid);
+      if (typeof v === 'number' && v !== liveAxis[pid]) liveAxis = { ...liveAxis, [pid]: v };
+    }
+  }
+  // Effective value for a joystick axis: the live CV-modulated sample if we have
+  // one, else the stored param (default before the engine handle stands up).
+  function pv(pid: string): number { return liveAxis[pid] ?? p(pid); }
 
   // ── Toggles ──
   let wrapOn = $derived(p('wrap') >= 0.5);
@@ -256,6 +273,7 @@
 
   function draw() {
     rafId = null;
+    pollLiveAxes(); // move the joystick dots under a patched CV
     const e = engineCtx.get();
     if (!e || !canvasEl) { rafId = requestAnimationFrame(draw); return; }
     let videoEngine: VideoEngine | undefined;
@@ -290,6 +308,7 @@
     morph_cv: 'MORPH', connect_cv: 'CONNECT', connect_strength_cv: 'CNCT STR',
     crush_cv: 'CRUSH', space_crush_cv: 'SPC CRUSH', space_diffuse_cv: 'SPC DIFF',
     slice_y_cv: 'Y', slice_rx_cv: 'ROT X', slice_ry_cv: 'ROT Y', slice_rz_cv: 'ROT Z',
+    view_x_cv: 'VIEW X', view_y_cv: 'VIEW Y',
     fold_cv: 'FOLD', spread_cv: 'SPREAD', scan_cv: 'SCAN', tune_cv: 'TUNE',
   });
   const outputs = portsFromDef(videocubeDef.outputs, {
@@ -360,6 +379,48 @@
               {#if slotError[slot]}<span class="slot-error">{slotError[slot]}</span>{/if}
             </div>
           {/each}
+        </div>
+
+        <!-- JOYSTICK PADS (field/temporal X-Y pairs). The slice ROT X/ROT Y pair
+             and the temporal SCAN(position)/SPREAD(width) pair are draggable 2-D
+             pads; each axis is CV-assignable (slice_rx/ry_cv, scan/spread_cv) so a
+             patched cable moves the dot. Both drive PICTURE + SOUND. They live in
+             the LEFT column's spare height (the 3u tier's fixed height can't grow),
+             grouped with the VIEW joystick's sibling in the VIEW bank at right. -->
+        <div class="joy-label">joysticks</div>
+        <div class="pad-row" data-testid="videocube-field-joysticks">
+          <XyPad
+            title="ROT X / Y"
+            xLabel="rot x"
+            yLabel="rot y"
+            xValue={pv('slice_rx')}
+            yValue={pv('slice_ry')}
+            xMin={pmin('slice_rx')}
+            xMax={pmax('slice_rx')}
+            yMin={pmin('slice_ry')}
+            yMax={pmax('slice_ry')}
+            xDefault={pdef('slice_rx')}
+            yDefault={pdef('slice_ry')}
+            onXChange={set('slice_rx')}
+            onYChange={set('slice_ry')}
+            testid="videocube-slice-rot-joystick"
+          />
+          <XyPad
+            title="Scan / Spread"
+            xLabel="scan"
+            yLabel="sprd"
+            xValue={pv('scan')}
+            yValue={pv('spread')}
+            xMin={pmin('scan')}
+            xMax={pmax('scan')}
+            yMin={pmin('spread')}
+            yMax={pmax('spread')}
+            xDefault={pdef('scan')}
+            yDefault={pdef('spread')}
+            onXChange={set('scan')}
+            onYChange={set('spread')}
+            testid="videocube-scan-spread-joystick"
+          />
         </div>
       </div>
 
@@ -449,23 +510,42 @@
           {/each}
         </div>
 
-        <!-- VIEW: orbit camera (picture only) — matches CubeCard's VIEW bank -->
+        <!-- VIEW: orbit camera (picture only). VIEW X/Y is a joystick pad (each
+             axis CV-assignable via view_x_cv / view_y_cv); ZOOM + ROLL stay knobs. -->
         <div class="view-label">VIEW</div>
-        <div class="knobs view-knobs" data-testid="videocube-view">
-          {#each VIEW_KNOBS as k (k.pid)}
-            <Knob
-              value={p(k.pid)}
-              min={pmin(k.pid)}
-              max={pmax(k.pid)}
-              defaultValue={pdef(k.pid)}
-              label={k.label}
-              units={punits(k.pid)}
-              curve="linear"
-              onchange={set(k.pid)}
-              moduleId={id}
-              paramId={k.pid}
-            />
-          {/each}
+        <div class="pad-row view-row" data-testid="videocube-view">
+          <XyPad
+            title="View X / Y"
+            xLabel="view x"
+            yLabel="view y"
+            xValue={pv('view_rot_x')}
+            yValue={pv('view_rot_y')}
+            xMin={pmin('view_rot_x')}
+            xMax={pmax('view_rot_x')}
+            yMin={pmin('view_rot_y')}
+            yMax={pmax('view_rot_y')}
+            xDefault={pdef('view_rot_x')}
+            yDefault={pdef('view_rot_y')}
+            onXChange={set('view_rot_x')}
+            onYChange={set('view_rot_y')}
+            testid="videocube-view-joystick"
+          />
+          <div class="knobs view-knobs">
+            {#each VIEW_KNOBS as k (k.pid)}
+              <Knob
+                value={p(k.pid)}
+                min={pmin(k.pid)}
+                max={pmax(k.pid)}
+                defaultValue={pdef(k.pid)}
+                label={k.label}
+                units={punits(k.pid)}
+                curve="linear"
+                onchange={set(k.pid)}
+                moduleId={id}
+                paramId={k.pid}
+              />
+            {/each}
+          </div>
         </div>
       </div>
     </div>
@@ -593,7 +673,8 @@
     margin-top: 2px;
   }
   .view-label,
-  .audio-only-label {
+  .audio-only-label,
+  .joy-label {
     font-size: 0.5rem;
     letter-spacing: 0.1em;
     text-transform: uppercase;
@@ -607,5 +688,21 @@
      ONE row in the wide right column — 6 columns keeps the card within its tier
      height (a 4-col grid would wrap to a 2nd row and overflow the bottom edge). */
   .audio-only-knobs { margin-top: 2px; grid-template-columns: repeat(6, 1fr); }
-  .view-knobs { margin-top: 0; }
+  /* JOYSTICK pad rows: the draggable X/Y pads (+ the residual VIEW knobs) laid
+     out side by side. flex-wrap keeps them within the right column's width on the
+     3u/hp4 tier (the control-overflow gate). */
+  .pad-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    margin-top: 4px;
+  }
+  .view-row { align-items: center; }
+  .view-knobs {
+    margin-top: 0;
+    grid-template-columns: repeat(2, 1fr);
+    flex: 1 1 auto;
+    align-self: center;
+  }
 </style>

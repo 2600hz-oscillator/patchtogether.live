@@ -3445,6 +3445,8 @@ videocube in tune_cv cv param=tune cvScale=linear
 videocube in video_a video
 videocube in video_b video
 videocube in video_c video
+videocube in view_x_cv cv param=view_rot_x cvScale=linear
+videocube in view_y_cv cv param=view_rot_y cvScale=linear
 videocube out audio_out audio
 videocube out chaos_out video
 videocube out depth_out video

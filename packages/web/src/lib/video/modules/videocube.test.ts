@@ -179,11 +179,17 @@ describe('videocubeDef — I/O contract', () => {
     expect(VIDEOCUBE_DEFAULTS.view_rot_x).toBeGreaterThan(0);
     expect(VIDEOCUBE_DEFAULTS.view_rot_y).toBeGreaterThan(0);
     expect(VIDEOCUBE_DEFAULTS.view_rot_z).toBe(0);
-    // The VIEW params are picture-only → NOT wired to a CV input.
+    // VIEW X / VIEW Y are the orbit-camera JOYSTICK axes → CV-assignable (view_x_cv
+    // / view_y_cv). VIEW ZOOM / VIEW Z stay knob-only (picture-only, no CV input).
     const cvTargets = new Set(videocubeDef.inputs.filter((i) => i.type === 'cv').map((i) => i.paramTarget));
-    for (const id of ['view_zoom', 'view_rot_x', 'view_rot_y', 'view_rot_z']) {
+    expect(cvTargets.has('view_rot_x'), 'VIEW X has CV (joystick axis)').toBe(true);
+    expect(cvTargets.has('view_rot_y'), 'VIEW Y has CV (joystick axis)').toBe(true);
+    for (const id of ['view_zoom', 'view_rot_z']) {
       expect(cvTargets.has(id), `${id} has no CV`).toBe(false);
     }
+    // The joystick CV ports resolve to the real view params.
+    expect(videocubeDef.inputs.find((i) => i.id === 'view_x_cv')?.paramTarget).toBe('view_rot_x');
+    expect(videocubeDef.inputs.find((i) => i.id === 'view_y_cv')?.paramTarget).toBe('view_rot_y');
   });
 
   it('every port + control is documented (STRICT completeness inputs)', () => {
