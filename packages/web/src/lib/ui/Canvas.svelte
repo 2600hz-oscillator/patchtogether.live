@@ -53,13 +53,12 @@
     SEND_BOX_COUNT,
     columnForFlowX,
     sendBoxForFlowX,
-    sendMemberPos,
     indexForDropY,
     insertBottom,
     removeFrom,
     reorder,
-    columnMemberPos,
-    COLUMN_SLOT_H,
+    columnFlushPositions,
+    sendFlushPositions,
   } from '$lib/graph/channel-columns';
   import { setControlColor, setNodeLocked, setNodeParam } from '$lib/graph/mutate';
   import { snapPositionToGrid, findFreeRackSlot, RACK_UNIT, type RackRect } from '$lib/ui/rack-grid';
@@ -479,6 +478,17 @@
     if (size) rackSizeByType[r.type] = { size, hp: r.hp ?? fallback?.hp };
   }
 
+  /** A module TYPE's rendered card HEIGHT in flow-space px — its rack tier
+   *  (`--rack-u` × RACK_UNIT), a per-TYPE constant. Deterministic across peers
+   *  (both derive it from the same type), so it drives the collab-safe FLUSH
+   *  column stack (columnFlushPositions). Falls back to one rack unit for an
+   *  unsized (unmigrated) type. */
+  function wcolCardHeightPx(type: string): number {
+    const size = rackSizeByType[type]?.size;
+    const u = size ? parseInt(size, 10) || 1 : 1;
+    return u * RACK_UNIT;
+  }
+
   let audioCtx: AudioContext | null = $state(null);
   let engine: PatchEngine | null = $state(null);
   let reconciler: { reconcile: () => Promise<void>; dispose: () => void } | null = $state(null);
@@ -547,6 +557,17 @@
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__handleNodeDragStop = (payload: { targetNode: FlowNode | null; nodes: FlowNode[] }) =>
         handleNodeDragStop(payload);
+      // Workflow channel-columns e2e: drive the REAL right-click "Assign to
+      // channel N" commit for a node without synthesizing the context-menu
+      // pointer sequence (which is flaky for a card that moves into a column
+      // mid-gesture). Sets the menu target + runs the exact handler the menu
+      // fires — so the bug-3 splice/no-double behaviour is tested on the real
+      // path. `channel` is 0-based (lane N), matching the menu callback.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__assignNodeToChannel = (nodeId: string, channel: number) => {
+        ctxMenuNodeId = nodeId;
+        commitAssignToChannel(channel);
+      };
       // Drag-lock state for e2e — patch-menus-persist tests inspect this
       // to confirm the lock engaged + released at the right moments.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1675,13 +1696,21 @@
         | undefined;
       const cols = md?.columns ?? {};
       const sends = md?.sends ?? {};
+      // FLUSH bottom-up stacking (owner: no gaps, cards sit directly on top of
+      // each other, first card at the very bottom). Heights are per-TYPE rack
+      // constants → deterministic + collab-convergent.
+      const typeOf = new Map(snap.nodes.map((n) => [n.id, n.type]));
+      const heightsFor = (order: string[]) =>
+        order.map((id) => wcolCardHeightPx(typeOf.get(id) ?? ''));
       for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
         const order = cols[String(ch)] ?? [];
-        order.forEach((id, i) => wcolPosByNode.set(id, columnMemberPos(ch, i, order.length)));
+        const positions = columnFlushPositions(ch, heightsFor(order));
+        order.forEach((id, i) => wcolPosByNode.set(id, positions[i]!));
       }
       for (let s = 1; s <= SEND_BOX_COUNT; s++) {
         const order = sends[String(s)] ?? [];
-        order.forEach((id, i) => wcolPosByNode.set(id, sendMemberPos(s, i, order.length)));
+        const positions = sendFlushPositions(s, heightsFor(order));
+        order.forEach((id, i) => wcolPosByNode.set(id, positions[i]!));
       }
     }
     for (const n of snap.nodes) {
@@ -3438,13 +3467,18 @@
           const oldCh = typeof d?.channel === 'number' ? d.channel : null;
           const oldSlot = typeof d?.sendSlot === 'number' ? d.sendSlot : null;
           const band = columnForFlowX(n.position.x);
-          const dropCenterY = n.position.y + COLUMN_SLOT_H / 2;
+          // Drop center uses the dragged card's OWN flush height (matches the
+          // flush layout the sibling centers are computed against).
+          const dropCenterY = n.position.y + wcolCardHeightPx(node.type) / 2;
           if (typeof band === 'number') {
             if (oldCh === band) {
-              // Reorder within the same column: index from the drop Y.
+              // Reorder within the same column: index from the drop Y, against
+              // the siblings' FLUSH slot centers.
               const order = wcolOrder('columns', band);
               const sibs = order.filter((id) => id !== n.id);
-              const centers = sibs.map((_, i) => columnMemberPos(band, i, sibs.length).y + COLUMN_SLOT_H / 2);
+              const sibH = sibs.map((id) => wcolCardHeightPx(patch.nodes[id]?.type ?? ''));
+              const sibPos = columnFlushPositions(band, sibH);
+              const centers = sibPos.map((p, i) => p.y + sibH[i]! / 2);
               setWcolOrder('columns', band, reorder(order, n.id, indexForDropY(centers, dropCenterY)));
               wcolClearDetached(String(band));
             } else {
@@ -3462,7 +3496,9 @@
             if (oldSlot === slot) {
               const order = wcolOrder('sends', slot);
               const sibs = order.filter((id) => id !== n.id);
-              const centers = sibs.map((_, i) => sendMemberPos(slot, i, sibs.length).y + COLUMN_SLOT_H / 2);
+              const sibH = sibs.map((id) => wcolCardHeightPx(patch.nodes[id]?.type ?? ''));
+              const sibPos = sendFlushPositions(slot, sibH);
+              const centers = sibPos.map((p, i) => p.y + sibH[i]! / 2);
               setWcolOrder('sends', slot, reorder(order, n.id, indexForDropY(centers, dropCenterY)));
               wcolClearDetached('s' + slot);
             } else {
@@ -3821,6 +3857,44 @@
     const node = patch.nodes[mid];
     const def = node && defLookup(node.type);
     if (!def) return;
+
+    // WORKFLOW CHANNEL COLUMNS: when the pinned column system is active, "Assign
+    // to channel N" means COLUMN MEMBERSHIP (channel scalar + order append), and
+    // the reconciler owns ALL wiring — clip-control on sources, source→DSP
+    // splicing on adjacent members, the tail's single send-to-mixer, and stale-
+    // edge GC. Committing flat send-to-mixer edges here (the else-branch below)
+    // would double a SECOND module straight into the same mixer channel instead
+    // of splicing it through the first (owner bug: tidyvco + cloudseed on ch1
+    // both reached the mixer, no tidyvco→cloudseed link). Route through the same
+    // membership path the palette-drop uses so both gestures converge.
+    if (workflowMode && patch.nodes[WCOL_MIXER_ID]) {
+      const ch = channel + 1; // column channels are 1-based; lanes are 0-based
+      ydoc.transact(() => {
+        const d = node.data as { channel?: number; sendSlot?: number } | undefined;
+        const oldCh = typeof d?.channel === 'number' ? d.channel : null;
+        const oldSlot = typeof d?.sendSlot === 'number' ? d.sendSlot : null;
+        if (oldCh != null && oldCh !== ch) {
+          setWcolOrder('columns', oldCh, removeFrom(wcolOrder('columns', oldCh), mid));
+          wcolClearDetached(String(oldCh));
+        }
+        if (oldSlot != null) {
+          setWcolOrder('sends', oldSlot, removeFrom(wcolOrder('sends', oldSlot), mid));
+          wcolClearDetached('s' + oldSlot);
+        }
+        setWcolMembership(mid, ch, null);
+        setWcolOrder('columns', ch, insertBottom(wcolOrder('columns', ch), mid));
+        wcolClearDetached(String(ch));
+      }, LOCAL_ORIGIN);
+      // Bind the automation lane immediately (the reconciler's lane heal also
+      // covers this, but do it here so the menu feedback is instant).
+      const clip = wcolCanonClip();
+      if (clip) assignAutomationLane(clip, mid, channel);
+      // Reconcile now so the wcol edge set (splice + GC) settles synchronously,
+      // not only on the next graph-change effect tick.
+      reconcileColumns(wcolResolveDef);
+      return;
+    }
+
     const player = ctxMenuCanonClipPlayer;
     const mixer = ctxMenuCanonMixer;
     // (a) automation — always (needs a clip-player to hold the assignment).
@@ -5841,14 +5915,17 @@
     const wcolSendWasEmpty = wcolDrop?.sendSlot != null && wcolOrder('sends', wcolDrop.sendSlot).length === 0;
     if (wcolDrop?.channel != null) {
       initialData.channel = wcolDrop.channel;
-      // Snap to the BOTTOM of the column's occupied space (new tail slot).
-      const count = wcolOrder('columns', wcolDrop.channel).length;
-      const p = columnMemberPos(wcolDrop.channel, count, count + 1);
+      // Snap FLUSH to the very bottom of the column (new bottom card); the
+      // flowNodes derivation re-stacks the whole column flush next render.
+      const existing = wcolOrder('columns', wcolDrop.channel);
+      const heights = [...existing.map((id) => wcolCardHeightPx(patch.nodes[id]?.type ?? '')), wcolCardHeightPx(type)];
+      const p = columnFlushPositions(wcolDrop.channel, heights)[existing.length]!;
       pos.x = p.x; pos.y = p.y;
     } else if (wcolDrop?.sendSlot != null) {
       initialData.sendSlot = wcolDrop.sendSlot;
-      const count = wcolOrder('sends', wcolDrop.sendSlot).length;
-      const p = sendMemberPos(wcolDrop.sendSlot, count, count + 1);
+      const existing = wcolOrder('sends', wcolDrop.sendSlot);
+      const heights = [...existing.map((id) => wcolCardHeightPx(patch.nodes[id]?.type ?? '')), wcolCardHeightPx(type)];
+      const p = sendFlushPositions(wcolDrop.sendSlot, heights)[existing.length]!;
       pos.x = p.x; pos.y = p.y;
     }
 

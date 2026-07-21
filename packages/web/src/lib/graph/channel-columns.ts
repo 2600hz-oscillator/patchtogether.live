@@ -35,9 +35,13 @@ export const COLUMN_COUNT = 8;
 /** Number of aux-send boxes in the sends rail (= the 2 mixmstrs aux sends). */
 export const SEND_BOX_COUNT = 2;
 
-/** Column width in flow-space px — a FIXED 16 HP (16 × 22.5 = 360px) so a wider
- *  module fits without per-column auto-sizing. */
-export const COLUMN_HP = 16;
+/** Column width in flow-space px. A FIXED 34 HP (34 × 22.5 = 765px) so the
+ *  WIDEST workflow cards fit WITHOUT clipping: tidyvco + sixstrum are 4hp = 720px
+ *  wide, and with the 22.5px left pad (COLUMN_PAD_X) the card's right edge lands
+ *  at 742.5px, leaving a 22.5px right gutter before the divider (owner: "columns
+ *  must be wide enough to hold tidyvco AND sixstrum without clipping"). The send
+ *  boxes track this width (SEND_BOX_W = COLUMN_W). */
+export const COLUMN_HP = 34;
 export const COLUMN_W = COLUMN_HP * HP_UNIT;
 
 /** Each aux-send box is one column wide; the two boxes sit SIDE BY SIDE to the
@@ -149,6 +153,55 @@ export function sendMemberPos(slot: number, index: number, total: number): { x: 
  *  `ch` that currently has `currentCount` members (the new bottom slot). */
 export function columnBottomFlowPos(ch: number, currentCount: number): { x: number; y: number } {
   return columnMemberPos(ch, currentCount, currentCount + 1);
+}
+
+/**
+ * FLUSH bottom-up stacking (owner: "modules stack at the BOTTOM and grow UPWARD,
+ * sitting directly on top of each other with NO vertical space between them").
+ * Given each member's PIXEL height in array order (index 0 = TOP of the visual
+ * stack, last = BOTTOM), returns the top-left flow-space position of every
+ * member such that:
+ *   - the LAST (bottom) member's BOTTOM edge sits exactly on COLUMN_BASELINE_Y,
+ *   - each earlier member sits FLUSH directly on top of the one below it (its
+ *     bottom edge == the next member's top edge — zero gap),
+ *   - a single member therefore lands at the very bottom of the column.
+ * Position is a PURE function of (ch, heights) — heights are derived from each
+ * member's rack tier (a per-TYPE constant), so every peer computes the SAME
+ * layout (collab-convergent). X is the column's left pad; Y is exact (heights are
+ * rack-grid multiples, so the result is grid-aligned without a snap step).
+ */
+export function columnFlushPositions(
+  ch: number,
+  heightsPx: readonly number[],
+): { x: number; y: number }[] {
+  const [x0] = columnXBand(ch);
+  const x = x0 + COLUMN_PAD_X;
+  const out: { x: number; y: number }[] = new Array(heightsPx.length);
+  let bottom = COLUMN_BASELINE_Y;
+  for (let i = heightsPx.length - 1; i >= 0; i--) {
+    const top = bottom - (heightsPx[i] ?? COLUMN_SLOT_H);
+    out[i] = { x, y: top };
+    bottom = top;
+  }
+  return out;
+}
+
+/** Send-box twin of columnFlushPositions — flush bottom-up in the box's own X
+ *  band. */
+export function sendFlushPositions(
+  slot: number,
+  heightsPx: readonly number[],
+): { x: number; y: number }[] {
+  const [x0] = sendBoxXBand(slot);
+  const x = x0 + COLUMN_PAD_X;
+  const out: { x: number; y: number }[] = new Array(heightsPx.length);
+  let bottom = COLUMN_BASELINE_Y;
+  for (let i = heightsPx.length - 1; i >= 0; i--) {
+    const top = bottom - (heightsPx[i] ?? COLUMN_SLOT_H);
+    out[i] = { x, y: top };
+    bottom = top;
+  }
+  return out;
 }
 
 /** The flow-space position for a NEW tenant appended at the BOTTOM of send box

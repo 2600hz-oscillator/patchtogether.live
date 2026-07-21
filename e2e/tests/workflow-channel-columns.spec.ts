@@ -25,8 +25,8 @@
 import { test, expect, type Page } from '@playwright/test';
 
 /** channel-columns.ts geometry (kept in sync with the pure module). */
-const COLUMN_W = 360; // 16 * HP_UNIT(22.5)
-const SEND_RAIL_X0 = 8 * COLUMN_W; // 2880
+const COLUMN_W = 765; // 34 * HP_UNIT(22.5) — wide enough for a 720px tidyvco/sixstrum
+const SEND_RAIL_X0 = 8 * COLUMN_W; // 6120
 
 const PINNED_MIXER = 'pinned-mixmstrs';
 const PINNED_CLIP = 'pinned-clipplayer';
@@ -353,7 +353,7 @@ test.describe('workflow channel columns', () => {
         __handleNodeDragStop?: (p: { targetNode: unknown; nodes: { id: string; position: { x: number; y: number } }[] }) => void;
       };
       w.__handleNodeDragStop?.({ targetNode: null, nodes: [{ id, position: { x, y } }] });
-    }, { id: cloudId!, x: 4 * 360 + 60, y: 100 });
+    }, { id: cloudId!, x: 4 * COLUMN_W + 60, y: 100 });
 
     // The dragged cloudseed joined column 5 and chained under the tidyvco.
     await expect.poll(async () => (await orderOf(page, 'columns', 5)).length, { timeout: 8_000 }).toBe(2);
@@ -365,6 +365,84 @@ test.describe('workflow channel columns', () => {
         return edges.some((e) => e === `${vco}.out_l->${cloudId}.in_l`) && edges.some((e) => e === `${cloudId}.out_l->${PINNED_MIXER}.ch5L`);
       }, { timeout: 8_000 })
       .toBe(true);
+  });
+
+  test('ASSIGN-TO-CHANNEL (right-click path): a 2nd module on ch1 SPLICES through, never doubles into the mixer (bug 3)', async ({ page }) => {
+    // Owner bug 3: "put tidyvco on ch1, then add cloudseed to ch1" via the
+    // right-click "Assign to channel" action left BOTH modules wired straight to
+    // the mixer (double), with NO tidyvco→cloudseed link. Root cause: the assign
+    // path committed flat send-to-mixer edges, bypassing the column reconciler's
+    // source→DSP splice + stale-edge GC. The fix routes assign through column
+    // membership, so the reconciler owns the wiring deterministically. This test
+    // drives the REAL commit handler (__assignNodeToChannel = the menu callback)
+    // and is run 10× (REPEAT) to catch the reported intermittency.
+    await page.goto('/rack?mode=workflow');
+    await waitForPinnedTrio(page);
+    await waitForHooks(page);
+    await page.waitForFunction(
+      () => typeof (globalThis as unknown as { __assignNodeToChannel?: unknown }).__assignNodeToChannel === 'function',
+      undefined,
+      { timeout: 15_000 },
+    );
+
+    // Spawn tidyvco + cloudseed on FREE canvas (outside every band), then assign
+    // EACH to channel 1 via the right-click handler — tidyvco first, cloudseed
+    // second (the occupied-channel case).
+    const spawnFreeAndAssign = async (type: string): Promise<string> => {
+      const id = await page.evaluate((t) => {
+        const w = globalThis as unknown as {
+          __setSpawnFlowPos: (p: { x: number; y: number }) => void;
+          __spawnFromPalette: (t: string) => void;
+          __patch: { nodes: Record<string, { type?: string; data?: { channel?: number } } | undefined> };
+        };
+        w.__setSpawnFlowPos({ x: -1500, y: -1500 }); // free canvas
+        w.__spawnFromPalette(t);
+        const hit = Object.entries(w.__patch.nodes).find(([, n]) => n?.type === t && n?.data?.channel == null);
+        return hit?.[0] ?? null;
+      }, type);
+      expect(id, `${type} spawned on free canvas`).toBeTruthy();
+      await page.evaluate((nid) => {
+        (globalThis as unknown as { __assignNodeToChannel: (id: string, ch: number) => void }).__assignNodeToChannel(nid, 0);
+      }, id!);
+      return id!;
+    };
+
+    const vco = await spawnFreeAndAssign('tidyVco');
+    const cloud = await spawnFreeAndAssign('cloudseed');
+
+    // Membership: both joined channel 1, tidyvco above cloudseed.
+    await expect.poll(async () => await orderOf(page, 'columns', 1), { timeout: 8_000 }).toEqual([vco, cloud]);
+
+    // The reconciler settled the SPLICED chain — assert deterministically.
+    await expect
+      .poll(async () => {
+        const edges = await wcolEdges(page);
+        return (
+          edges.includes(`${vco}.out_l->${cloud}.in_l`) &&
+          edges.includes(`${cloud}.out_l->${PINNED_MIXER}.ch1L`)
+        );
+      }, { timeout: 8_000 })
+      .toBe(true);
+
+    const edges = await wcolEdges(page);
+    // tidyvco is spliced THROUGH cloudseed (both L and R).
+    expect(edges).toContain(`${vco}.out_l->${cloud}.in_l`);
+    expect(edges).toContain(`${vco}.out_r->${cloud}.in_r`);
+    // cloudseed (the DSP tail) is the ONLY thing feeding mixer ch1 — EXACTLY the
+    // stereo pair from cloudseed, nothing from tidyvco (no double).
+    const intoCh1 = edges.filter((e) => e.includes(`->${PINNED_MIXER}.ch1L`) || e.includes(`->${PINNED_MIXER}.ch1R`));
+    expect(intoCh1.sort()).toEqual([`${cloud}.out_l->${PINNED_MIXER}.ch1L`, `${cloud}.out_r->${PINNED_MIXER}.ch1R`]);
+    // tidyvco must NOT reach the mixer at all (it goes only into cloudseed).
+    expect(edges.some((e) => e.startsWith(`${vco}.`) && e.includes(`${PINNED_MIXER}.`)), 'tidyvco must not bypass cloudseed').toBe(false);
+    // cloudseed is a DSP — never clip-driven.
+    expect(edges.some((e) => e.startsWith(`${PINNED_CLIP}.`) && e.includes(cloud)), 'cloudseed must not get clip control').toBe(false);
+    // …and the source (tidyvco) IS clip-driven.
+    expect(edges).toContain(`${PINNED_CLIP}.pitch1->${vco}.poly`);
+
+    // Audible end-to-end through the reverb — the CHAINED signal (not doubled).
+    await seedAndRun(page, [0]);
+    const { channelMax } = await pollAudio(page, 12_000);
+    expect(channelMax[0], 'channel 1 (tidyvco→cloudseed) audible at the mixer').toBeGreaterThan(0.002);
   });
 
   test('SEND 1: a DSP dropped in the send box forms the aux loop + auto-raises the send + is audible end-to-end', async ({ page }) => {

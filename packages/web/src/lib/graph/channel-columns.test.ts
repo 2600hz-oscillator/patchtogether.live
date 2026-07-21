@@ -19,6 +19,9 @@ import {
   columnMemberPos,
   sendMemberPos,
   columnBottomFlowPos,
+  columnFlushPositions,
+  sendFlushPositions,
+  COLUMN_PAD_X,
   indexForDropY,
   dedup,
   reconcileColumnOrder,
@@ -34,9 +37,12 @@ import {
 // ---------------- Geometry ----------------
 
 describe('column geometry', () => {
-  it('has 8 columns, each 16 HP wide', () => {
+  it('has 8 columns, each 34 HP wide (fits a 4hp / 720px tidyvco+sixstrum card)', () => {
     expect(COLUMN_COUNT).toBe(8);
-    expect(COLUMN_W).toBe(360); // 16 × 22.5
+    expect(COLUMN_W).toBe(765); // 34 × 22.5
+    // The widest workflow cards are 4hp = 720px; with the 22.5px left pad the
+    // card's right edge (742.5) must clear the column divider (765).
+    expect(COLUMN_W).toBeGreaterThanOrEqual(720 + 22.5);
   });
 
   it('columnXBand is contiguous, non-overlapping, ascending', () => {
@@ -107,6 +113,49 @@ describe('column geometry', () => {
     const s2 = sendMemberPos(2, 0, 1);
     expect(s1.y).toBe(COLUMN_BASELINE_Y - COLUMN_SLOT_H);
     expect(s2.x).toBeGreaterThan(s1.x); // box 2 is to the right of box 1
+  });
+
+  // ---- FLUSH bottom-up stacking (owner: no gaps; first card at very bottom) ----
+  describe('columnFlushPositions — flush, bottom-anchored, no gaps', () => {
+    it('a single member sits at the VERY bottom (its bottom edge on the baseline)', () => {
+      const [x0] = columnXBand(3);
+      const h = 540; // a 3u card
+      const [p] = columnFlushPositions(3, [h]);
+      expect(p!.x).toBe(x0 + COLUMN_PAD_X);
+      // bottom edge = top + height == baseline (no gap below).
+      expect(p!.y + h).toBe(COLUMN_BASELINE_Y);
+    });
+
+    it('stacks multiple cards FLUSH bottom-up with ZERO gaps (variable heights)', () => {
+      const heights = [720, 360, 540]; // top→bottom: tidyvco(4u), sixstrum(2u), cloudseed(3u)
+      const pos = columnFlushPositions(2, heights);
+      // Bottom card flush to baseline.
+      expect(pos[2]!.y + heights[2]!).toBe(COLUMN_BASELINE_Y);
+      // Each card's bottom edge == the next card's top edge (touching, no gap).
+      expect(pos[1]!.y + heights[1]!).toBe(pos[2]!.y);
+      expect(pos[0]!.y + heights[0]!).toBe(pos[1]!.y);
+      // All same X (column left pad).
+      expect(pos[0]!.x).toBe(pos[1]!.x);
+      expect(pos[1]!.x).toBe(pos[2]!.x);
+      // Grows UPWARD: earlier index (higher in the stack) has a smaller y.
+      expect(pos[0]!.y).toBeLessThan(pos[1]!.y);
+      expect(pos[1]!.y).toBeLessThan(pos[2]!.y);
+    });
+
+    it('adding a member keeps the bottom flush + pushes the rest up by exactly its height', () => {
+      const before = columnFlushPositions(1, [360, 540]); // 2 cards
+      const after = columnFlushPositions(1, [720, 360, 540]); // prepend a 720 on top
+      // The two original cards keep their positions (bottom-anchored).
+      expect(after[1]!.y).toBe(before[0]!.y);
+      expect(after[2]!.y).toBe(before[1]!.y);
+    });
+
+    it('sendFlushPositions stacks flush in its own side-by-side box', () => {
+      const s1 = sendFlushPositions(1, [200]);
+      const s2 = sendFlushPositions(2, [200]);
+      expect(s1[0]!.y + 200).toBe(COLUMN_BASELINE_Y);
+      expect(s2[0]!.x).toBeGreaterThan(s1[0]!.x);
+    });
   });
 
   it('indexForDropY finds the insert slot among sibling centers', () => {

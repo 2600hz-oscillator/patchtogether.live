@@ -209,6 +209,39 @@ describe('reconcileColumns — chain + heal', () => {
     expect([...ids].some((id) => id.startsWith('wcol-e-rev1-'))).toBe(false); // reverb edges gone
     expect(ids.has('wcol-e-vco1-out_l-pinned-mixmstrs-ch2L')).toBe(true); // vco now the tail
   });
+
+  it('MID-CHAIN removal heals the gap: source→fx1→fx2→mixer, delete fx1 → source→fx2→mixer (no dangling)', () => {
+    // Owner bug 5: removing a MIDDLE link must re-splice the adjacent survivors
+    // across the gap, not leave the chain broken. source (tidyVco) → fxA
+    // (cloudseed) → fxB (cloudseed) → mixer ch7.
+    addNode('src', 'tidyVco', { channel: 7 });
+    addNode('fxA', 'cloudseed', { channel: 7 });
+    addNode('fxB', 'cloudseed', { channel: 7 });
+    setColumn(7, ['src', 'fxA', 'fxB']);
+    reconcileColumns(resolveDef);
+    let ids = new Set(wcolEdges().map((e) => e.id));
+    // Full chain: src→fxA→fxB→mixer; only the tail (fxB) sends.
+    expect(ids.has('wcol-e-src-out_l-fxA-in_l')).toBe(true);
+    expect(ids.has('wcol-e-fxA-out_l-fxB-in_l')).toBe(true);
+    expect(ids.has('wcol-e-fxB-out_l-pinned-mixmstrs-ch7L')).toBe(true);
+    expect([...ids].some((id) => id.startsWith('wcol-e-src-') && id.includes('-pinned-mixmstrs-'))).toBe(false);
+
+    // Delete the MIDDLE fx (fxA). Membership heal drops it from the order; the
+    // wiring reconcile must re-splice src → fxB directly.
+    ydoc.transact(() => { delete patch.nodes['fxA']; }, LOCAL_ORIGIN);
+    reconcileColumns(resolveDef);
+    ids = new Set(wcolEdges().map((e) => e.id));
+    // Gap healed: src → fxB (both L and R), fxB still the tail into the mixer.
+    expect(ids.has('wcol-e-src-out_l-fxB-in_l')).toBe(true);
+    expect(ids.has('wcol-e-src-out_r-fxB-in_r')).toBe(true);
+    expect(ids.has('wcol-e-fxB-out_l-pinned-mixmstrs-ch7L')).toBe(true);
+    expect(ids.has('wcol-e-fxB-out_r-pinned-mixmstrs-ch7R')).toBe(true);
+    // No dangling wcol edge references the deleted middle member.
+    expect([...ids].some((id) => id.includes('fxA'))).toBe(false);
+    // The order array itself was healed to drop fxA.
+    const cols = (patch.nodes[PINNED_MIXER_ID]!.data as { columns: Record<string, string[]> }).columns;
+    expect(cols['7']).toEqual(['src', 'fxB']);
+  });
 });
 
 describe('membership heal + validate safety', () => {
