@@ -625,6 +625,35 @@ tasks:
     cmds:
       - npm exec -w {{.WEB}} -- vitest run --config vitest.config.ts module-docs-ensure
 
+  face:propose:
+    desc: |
+      Auto-propose a DRAFT workflow `face` (the UI-curation ranking) for a module,
+      from its card render-order + def params — for HUMAN review. Prints a
+      `face: { … }` snippet to paste + edit into the def; NEVER mutates a def and
+      NEVER auto-accepts. `--out <dir>` writes drafts to files instead.
+        flox activate -- task face:propose -- kickdrum
+        flox activate -- task face:propose -- --all --out .myrobots/face-drafts
+    cmds:
+      - node --import tsx scripts/propose-face.ts {{.CLI_ARGS}}
+
+  face:check:
+    desc: Run the module-face curation drift gate (module-face-lint) read-only — the same check CI runs.
+    cmds:
+      - npm exec -w {{.WEB}} -- vitest run --config vitest.config.ts module-face-lint
+
+  face:accept:
+    desc: |
+      [accept-loop] The face-curation accept step (the docs:accept analog for UI
+      curation). `face` is UI metadata, NOT the I/O contract — it has NO committed
+      golden (it is kept OUT of contract-lock.txt); its pin is STRICT_FACES
+      membership + the module-face-lint gate. Run AFTER authoring/editing a `face`
+      + promoting the module into STRICT_FACES + raising the ratchet floor: this
+      re-runs the gate to confirm the curation is COMPLETE + consistent, then
+      reminds you to review the def's git diff before committing.
+    cmds:
+      - npm exec -w {{.WEB}} -- vitest run --config vitest.config.ts module-face-lint
+      - 'echo "[face:accept] module-face-lint green — review the def git diff (face + STRICT_FACES + ratchet floor) before committing"'
+
   vrt:gallery:
     desc: Build the VRT gallery HTML (docs/vrt/) from the latest baselines + last test-results
     cmds:

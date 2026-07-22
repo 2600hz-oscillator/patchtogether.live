@@ -10,8 +10,8 @@
 // then video — so users can spawn either kind from one search box.
 
 import type { ModuleType, PortDef, ParamDef, Domain } from '$lib/graph/types';
-// docs-hash-ignore:start  -- living-docs types; excluded from the attest hash so doc authoring is hash-neutral
-import type { ControlFamily, ModuleDocs } from '$lib/graph/types';
+// docs-hash-ignore:start  -- living-docs + UI-curation types; excluded from the attest hash so doc/face authoring is hash-neutral
+import type { ControlFamily, ModuleDocs, ModuleFace } from '$lib/graph/types';
 // docs-hash-ignore:end
 import type { VideoModuleFactory } from './engine';
 import type { PaletteCategory } from '$lib/audio/module-registry';
@@ -29,6 +29,15 @@ export interface VideoModuleDef {
   docs?: ModuleDocs;
   /** Living-docs: dynamic DOM-only control families. See ControlFamily. */
   controlFamilies?: readonly ControlFamily[];
+  /**
+   * Workflow UI CURATION — the ModuleShell priority ranking + dock pages +
+   * glyph (see ModuleFace, audio side). WRAPPED in docs-hash-ignore markers
+   * BECAUSE video defs live in the WebGL attest basis: authoring a `face` on a
+   * video module (a P1 concern — none carry one yet) must stay hash-neutral for
+   * the GPU attest, exactly like `docs`/`controlFamilies`. Gated by
+   * module-face-lint, resolved by the pure `curatedFace` selector.
+   */
+  face?: ModuleFace;
   // docs-hash-ignore:end
   factory: VideoModuleFactory;
   /** Optional hard cap on simultaneous instances (mirrors the audio side).

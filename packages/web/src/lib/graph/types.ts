@@ -384,6 +384,67 @@ export interface ModuleDocs {
 }
 
 /**
+ * One DOCK page (section/tab) of a module's full faceplate — a named group of
+ * controls surfaced together when the module opens its sectioned dock view
+ * (the DX7 GLOBAL + OP1-6 pattern). Every `controls` key MUST also appear in
+ * `ModuleFace.order` (the dock renders the ranked roster grouped into pages).
+ */
+export interface ModuleFacePage {
+  /** Stable page id (e.g. 'global', 'op1'). */
+  id: string;
+  /** Human tab label (e.g. 'GLOBAL', 'OP 1'). */
+  label: string;
+  /** Control keys on this page, in display order — a subset of `order`. Keys
+   *  use the same unified control-key space as `order` (see ModuleFace). */
+  controls: readonly string[];
+}
+
+/**
+ * PER-MODULE UI CURATION — the priority ranking that drives the workflow-mode
+ * ModuleShell's semantic-zoom (STRATA) tiers and its sectioned dock faceplate.
+ * Co-located on the def like `docs` so a control change and its curation edit
+ * land in the SAME PR diff (see .myrobots/plans workflow-mode UI refactor §3.6).
+ *
+ * This is UI METADATA, NOT part of the I/O contract: `face` is deliberately kept
+ * OUT of contract-signature.ts / contract-lock.txt (a re-ranking is not a
+ * contract change). It has its OWN drift gate — module-face-lint.test.ts —
+ * mirroring the living-docs ratchet (consistency for every faced module,
+ * completeness for the STRICT_FACES set).
+ *
+ * KEYS use the SAME unified control-key space the docs system defines
+ * (control-doc-resolver.ts): each entry is one of
+ *   - a `ParamDef.id`                    (a Knob/Fader-backed param), or
+ *   - a control-family TEMPLATE `<familyId>-{n}`  (one entry per declared
+ *     ControlFamily — the step grid / transport cluster as a whole), or
+ *   - a STATIC control key (a card-only `<select>`/`<button>`, keyed by the
+ *     numbered-legend staticKey — the nodeId-stripped test id).
+ *
+ * The pure `curatedFace(def, tier)` selector ($lib/ui/workflow/curated-face)
+ * resolves each key to a control descriptor and returns the top-N for a tier
+ * (mini=1 / compact=3 / full-in-lane=8 / dock=all + pages).
+ *
+ * HASH-TRANSPARENCY (video defs): VIDEO module defs live in the WebGL attest
+ * basis, so a `face` block on a VideoModuleDef MUST be wrapped in
+ * `// docs-hash-ignore:start … :end` markers (exactly like its co-located
+ * `docs`) so authoring curation stays a no-op for the GPU attest hash. Audio
+ * defs are NOT in the WebGL basis and need no markers. (P1 authoring note; no
+ * video def carries a `face` yet.)
+ */
+export interface ModuleFace {
+  /** The priority RANKING — earliest = highest priority. Keys are param ids,
+   *  control-family templates (`<familyId>-{n}`), or static control keys (see
+   *  the key-space note above). The load-bearing artifact: only `order` can
+   *  rank NON-param controls (a preset selector, a toggle button). */
+  order: readonly string[];
+  /** Optional DOCK sections/tabs for a big instrument's full faceplate. Each
+   *  page's `controls` must be a subset of `order`. Omitted = single-page dock. */
+  pages?: readonly ModuleFacePage[];
+  /** The compact live-glyph kind the shell renders in the tile's glyph slot.
+   *  Omitted / 'none' = no glyph. */
+  glyph?: 'scope' | 'meter' | 'envelope' | 'waveform' | 'none';
+}
+
+/**
  * OPTIONAL per-module CHAIN-WIRING override (workflow channel-columns feature,
  * owner "fixable in code" directive). Declared on a module def; the
  * workflow-column resolvers (resolveMainAudioIn / resolveMainAudioOut in

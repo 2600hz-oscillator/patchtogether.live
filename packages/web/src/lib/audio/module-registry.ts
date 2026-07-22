@@ -14,6 +14,7 @@ import type {
   RackSize,
   ControlFamily,
   ModuleDocs,
+  ModuleFace,
   ChainWiring,
 } from '$lib/graph/types';
 import type { AudioModuleFactory } from './engine';
@@ -171,6 +172,13 @@ export interface AudioModuleDef {
    * the card source. See ControlFamily.
    */
   controlFamilies?: readonly ControlFamily[];
+  /**
+   * Workflow UI CURATION — the priority ranking + dock pages + glyph for the
+   * RACKLINE ModuleShell's semantic-zoom tiers (see ModuleFace). UI metadata,
+   * NOT the I/O contract: kept OUT of contract-signature; gated by
+   * module-face-lint. Resolved by the pure `curatedFace` selector.
+   */
+  face?: ModuleFace;
   /**
    * Optional workflow channel-columns chain-wiring override + lane note-tap
    * declaration (see ChainWiring in graph/types.ts). Two orthogonal uses:
