@@ -14,6 +14,11 @@ import {
   domainClassForCable,
   domainClassForDef,
   SHELL_TILE_H,
+  SHELL_TILE_W,
+  SHELL_TILE_H_MINI,
+  SHELL_TILE_H_COMPACT,
+  SHELL_TILE_H_FULL,
+  shellTileHeightForTier,
   type ShellDefLike,
 } from './module-shell-model';
 import { curatedFace, type FaceDefLike } from './curated-face';
@@ -73,13 +78,38 @@ describe('offersFullView', () => {
   });
 });
 
-describe('SHELL_TILE_H — the uniform RACKLINE tile height', () => {
-  it('is 88px, mirroring the CSS --tile-h-mini token (the CSS/TS sharing lock)', () => {
-    // tokens.css: --tile-h-mini: 88px; _module-card.css pins the tile to
-    // var(--shell-tile-h, var(--tile-h-mini)); Canvas.wcolCardHeightPx returns
-    // this same constant under the preview. If either the token or this number
-    // moves, they MUST move together — a drift floats the baseline badge.
+describe('SHELL_TILE_W / SHELL_TILE_H_* — the RACKLINE tile geometry (CSS/TS lock)', () => {
+  // These mirror the tokens.css `--shell-tile-w` / `--tile-h-{mini,compact,full}`
+  // values 1:1; _module-card.css pins the shell/placeholder tile `width` to
+  // var(--shell-tile-w) and its height per `data-shell-tier` off those tokens,
+  // and Canvas (wcolCardWidthPx / wcolCardHeightPx) returns the SAME numbers under
+  // the preview so the reserved column slot == the rendered tile. If a token OR a
+  // constant moves, they MUST move together — a drift floats the baseline badge /
+  // breaks band-centering.
+  it('SHELL_TILE_W is the mock 192px uniform tile width (--shell-tile-w)', () => {
+    expect(SHELL_TILE_W).toBe(192);
+  });
+
+  it('per-tier heights grow mini→compact→full (--tile-h-{mini,compact,full})', () => {
+    expect(SHELL_TILE_H_MINI).toBe(88);
+    expect(SHELL_TILE_H_COMPACT).toBe(150);
+    expect(SHELL_TILE_H_FULL).toBe(180);
+    // strictly increasing — the tile grows as you zoom in.
+    expect(SHELL_TILE_H_MINI).toBeLessThan(SHELL_TILE_H_COMPACT);
+    expect(SHELL_TILE_H_COMPACT).toBeLessThan(SHELL_TILE_H_FULL);
+  });
+
+  it('SHELL_TILE_H is the mini floor (back-compat alias)', () => {
     expect(SHELL_TILE_H).toBe(88);
+    expect(SHELL_TILE_H).toBe(SHELL_TILE_H_MINI);
+  });
+
+  it('shellTileHeightForTier maps every lane tier to its height (dock → full)', () => {
+    expect(shellTileHeightForTier('mini')).toBe(SHELL_TILE_H_MINI);
+    expect(shellTileHeightForTier('compact')).toBe(SHELL_TILE_H_COMPACT);
+    expect(shellTileHeightForTier('full')).toBe(SHELL_TILE_H_FULL);
+    // 'dock' never reaches a lane (laneFaceTier collapses it), but map defensively.
+    expect(shellTileHeightForTier('dock')).toBe(SHELL_TILE_H_FULL);
   });
 });
 

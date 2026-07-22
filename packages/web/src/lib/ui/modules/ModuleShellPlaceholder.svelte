@@ -27,9 +27,10 @@
   import { nodeVersion } from '$lib/graph/node-versions.svelte';
   import { resolveDisplayName } from '$lib/multiplayer/module-naming';
   import { dockStore } from '$lib/ui/dock/dock-store.svelte';
+  import { getLodTier } from '$lib/ui/canvas/workflow-zoom';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { portsFromDef } from './card-kit';
-  import { spineCableVar, type ShellDefLike } from '$lib/ui/workflow/module-shell-model';
+  import { spineCableVar, laneFaceTier, type ShellDefLike } from '$lib/ui/workflow/module-shell-model';
   import type { ModuleNode, PortDef } from '$lib/graph/types';
 
   interface Props {
@@ -63,6 +64,13 @@
 
   /** Spine = the module's cable-domain hue (the reading-aid, not a new token). */
   let spine = $derived(spineCableVar(def));
+
+  // The lane FaceTier for the live LOD zoom (mini|compact|full) — drives the tile's
+  // per-tier HEIGHT via `data-shell-tier` (_module-card.css), so the un-migrated
+  // placeholder grows as you zoom in exactly like the migrated <ModuleShell>. Reads
+  // the shared context store (falls back to the singleton for a standalone mount).
+  const lodTierStore = getLodTier();
+  let effTier = $derived(laneFaceTier($lodTierStore));
   /** The type-kind badge (raw type id for now; a curated `def.badge` reads like
    *  the mock "osc"/"filter" once modules migrate). */
   let badge = $derived(node.type);
@@ -86,6 +94,7 @@
   data-testid="module-shell-placeholder"
   data-shell-node={id}
   data-shell-type={node.type}
+  data-shell-tier={effTier}
   style={`--spine:${spine};--domain:${spine}`}
 >
   <span class="rl-spine" aria-hidden="true"></span>

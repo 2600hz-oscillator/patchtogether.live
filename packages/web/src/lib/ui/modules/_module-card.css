@@ -161,28 +161,50 @@
  * mirrors/hides them — their cables must stay traceable), so they need their own
  * sizing rule.
  *
- * UNIFORM HEIGHT (re-spec): the tile height is keyed to the fixed RACKLINE TILE
- * token, NOT the module's per-module rack tier — so recorderbox (2u) /
- * synesthesia (3u) / videoOut (dynamic, carries NO --rack-u) all render at the
- * SAME 88px mini tile and the fixed baseline number badge caps every tile flush
- * (the owner "non-uniform heights + badges float mid-card" fix). The
- * `.rack-sized` gate is DROPPED so the rule also matches dynamic-sized types
- * that never get `--rack-u`. Canvas's wcolCardHeightPx short-circuits to the
- * SAME 88 (SHELL_TILE_H) under the preview so the reserved lane slot == the
- * rendered tile.  Width stays keyed to --rack-hp (the height was the complaint;
- * rendered width == the reserved wcolCardWidthPx, so band-centering stays exact).
- * Migrated modules may grow per LOD tier via `--shell-tile-h` (data-shell-tier);
- * the placeholder's --tile-h-mini fallback is the uniform tile.
+ * UNIFORM WIDTH (re-spec): every shell/placeholder tile is the SAME `--shell-tile-w`
+ * (192px, the mock's uniform tile) — NO LONGER keyed to the module's per-module
+ * `--rack-hp` (which made recorderbox/synesthesia/tidyvco render at different
+ * widths). The owner "same-size all modules HORIZONTALLY" premise. Canvas's
+ * wcolCardWidthPx short-circuits to the SAME SHELL_TILE_W under the preview, so
+ * the RESERVED column slot == the rendered tile and band-centering (card center ==
+ * channel-number center) stays exact. (NON_SHELL_LANE_TYPES — group/sticky/
+ * clipplayer/control-surfaces — keep their legacy card + native width; they never
+ * mount a .module-shell tile, so this rule never touches them.)
  *
- * Pinning the OUTER box here is load-bearing: the LOD content swap must NEVER
- * resize the measured node, or the channel-column stack recomputes (§3.1). */
+ * PER-TIER HEIGHT (re-spec): the tile grows TALLER as you zoom in, keyed off
+ * `data-shell-tier` (mini→--tile-h-mini 88 / compact→--tile-h-compact 150 /
+ * full→--tile-h-full 180, the mock's .mod/.plate design point) — instead of a flat
+ * mini height at every zoom (the owner "tiles smaller than the mock" fix). Canvas's
+ * wcolCardHeightPx returns the SAME per-tier height under the preview so the
+ * reserved lane slot tracks the rendered tile and the fixed baseline number badge
+ * caps every tile flush at every zoom. The `.rack-sized` gate is DROPPED so the
+ * rule also matches dynamic-sized types that never get `--rack-u`.
+ *
+ * Pinning the OUTER box here is load-bearing: within ONE LOD tier the content swap
+ * must NEVER resize the measured node; the box only changes when the tier itself
+ * flips (a discrete, hysteresis-debounced zoom event — not per-frame), at which
+ * point Canvas re-runs the channel-column stack at the new uniform height (§3.1). */
 .svelte-flow__node > :is(.module-shell, .module-shell-placeholder),
 .svelte-flow__node > * > :is(.module-shell, .module-shell-placeholder) {
   box-sizing: border-box;
-  width: calc(var(--rack-hp, 1) * var(--rack-unit));
-  height: var(--shell-tile-h, var(--tile-h-mini, 88px));
-  min-height: var(--shell-tile-h, var(--tile-h-mini, 88px));
-  max-height: var(--shell-tile-h, var(--tile-h-mini, 88px));
+  width: var(--shell-tile-w, 192px);
+  /* default = mini; the per-tier overrides below (attribute selectors, higher
+   * specificity) raise it for compact / full. */
+  height: var(--tile-h-mini, 88px);
+  min-height: var(--tile-h-mini, 88px);
+  max-height: var(--tile-h-mini, 88px);
+}
+.svelte-flow__node > :is(.module-shell, .module-shell-placeholder)[data-shell-tier='compact'],
+.svelte-flow__node > * > :is(.module-shell, .module-shell-placeholder)[data-shell-tier='compact'] {
+  height: var(--tile-h-compact, 150px);
+  min-height: var(--tile-h-compact, 150px);
+  max-height: var(--tile-h-compact, 150px);
+}
+.svelte-flow__node > :is(.module-shell, .module-shell-placeholder)[data-shell-tier='full'],
+.svelte-flow__node > * > :is(.module-shell, .module-shell-placeholder)[data-shell-tier='full'] {
+  height: var(--tile-h-full, 180px);
+  min-height: var(--tile-h-full, 180px);
+  max-height: var(--tile-h-full, 180px);
 }
 
 /* DOCK RAILS (P2.5a): a docked card renders in a screen-fixed rail hosted by

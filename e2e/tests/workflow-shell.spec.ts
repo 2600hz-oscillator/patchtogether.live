@@ -37,6 +37,80 @@ async function readParam(page: Page, nodeId: string, paramId: string): Promise<n
 
 const NODE = 'v1';
 
+// ── RACKLINE tile-geometry re-spec helpers ──────────────────────────────────
+// channel-columns.ts geometry (kept in sync with the pure module).
+const COLUMN_W = 765; // 34 * HP_UNIT(22.5)
+const SHELL_TILE_W = 192; // module-shell-model.ts SHELL_TILE_W / tokens --shell-tile-w
+const TILE_H = { mini: 88, compact: 150, full: 180 } as const; // --tile-h-{mini,compact,full}
+
+/** A flow-space spawn anchor inside channel column `ch` (X selects the column). */
+function colPos(ch: number): { x: number; y: number } {
+  return { x: (ch - 1) * COLUMN_W + 60, y: 40 };
+}
+
+/** Wait until the Canvas dev spawn/viewport hooks are registered. */
+async function waitForHooks(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => {
+      const w = globalThis as unknown as { __setSpawnFlowPos?: unknown; __spawnFromPalette?: unknown; __flow?: unknown };
+      return typeof w.__setSpawnFlowPos === 'function' && typeof w.__spawnFromPalette === 'function' && !!w.__flow;
+    },
+    undefined,
+    { timeout: 20_000 },
+  );
+}
+
+/** Drive the REAL palette-drop path into channel column `ch`. */
+async function dropInColumn(page: Page, type: string, ch: number): Promise<void> {
+  await page.evaluate(
+    ({ type, pos }) => {
+      const w = globalThis as unknown as {
+        __setSpawnFlowPos: (p: { x: number; y: number }) => void;
+        __spawnFromPalette: (t: string) => void;
+      };
+      w.__setSpawnFlowPos(pos);
+      w.__spawnFromPalette(type);
+    },
+    { type, pos: colPos(ch) },
+  );
+}
+
+/** UNSCALED layout metrics of every mounted shell/placeholder tile — offsetWidth/
+ *  Height are immune to the xyflow viewport zoom transform, so they are the TRUE
+ *  tile px + data-shell-tier. */
+async function measureTiles(page: Page): Promise<{ node: string | null; tier: string | null; w: number; h: number }[]> {
+  return page.evaluate(() => {
+    const tiles = Array.from(
+      document.querySelectorAll('[data-testid="module-shell-placeholder"], [data-testid="module-shell"]'),
+    ) as HTMLElement[];
+    return tiles.map((t) => ({
+      node: t.getAttribute('data-shell-node'),
+      tier: t.getAttribute('data-shell-tier'),
+      w: t.offsetWidth,
+      h: t.offsetHeight,
+    }));
+  });
+}
+
+/** Set the viewport ZOOM (keeps pan) and wait for the LOD tier to settle to the
+ *  expected string on every tile. Programmatic setViewport publishes the zoom to
+ *  the shared LOD store, so the tiles re-key their data-shell-tier + height. */
+async function setZoomTier(page: Page, zoom: number, expectTier: string): Promise<void> {
+  await page.evaluate((zoom) => {
+    const f = (globalThis as any).__flow;
+    const vp = f.getViewport();
+    f.setViewport({ x: vp.x, y: vp.y, zoom }, { duration: 0 });
+  }, zoom);
+  await page.waitForFunction(
+    (tier) => {
+      const tiles = Array.from(document.querySelectorAll('[data-shell-tier]'));
+      return tiles.length > 0 && tiles.every((t) => t.getAttribute('data-shell-tier') === tier);
+    },
+    expectTier,
+    { timeout: 10_000 },
+  );
+}
+
 test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
   test('un-migrated module → placeholder in lane + legacy card operable in the dock', async ({ page }) => {
     await gotoWorkflow(page, { shell: true });
@@ -107,11 +181,13 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     await expect(placeholder).toBeVisible();
   });
 
-  test('placeholder tiles are UNIFORM 88px height with a consistent badge anchor', async ({ page }) => {
-    // The owner "tiles are non-uniform heights + lane badges float mid-card" fix:
-    // under ?shell=1 the default video-zone trio (videoOut 'dynamic', recorderbox
-    // 2u, synesthesia 3u — three DIFFERENT rack tiers) all render as the fixed
-    // 88px RACKLINE tile, so the baseline number badges cap them flush.
+  test('placeholder tiles are UNIFORM WIDTH + uniform per-tier height with a consistent badge anchor', async ({ page }) => {
+    // The owner "same-size all modules HORIZONTALLY" + "tiles non-uniform / smaller
+    // than the mock" fix: under ?shell=1 the default video-zone trio (videoOut
+    // 'dynamic', recorderbox 2u, synesthesia 3u — three DIFFERENT rack tiers, so
+    // three different LEGACY widths) all render as the SAME uniform RACKLINE tile —
+    // identical WIDTH (SHELL_TILE_W) and identical HEIGHT (the current LOD tier),
+    // so the baseline number badges cap them flush.
     await gotoWorkflow(page, { shell: true });
     const ids = ['workflow-videoOut', 'workflow-recorderbox', 'workflow-synesthesia'];
     for (const id of ids) {
@@ -127,20 +203,98 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
         ) as HTMLElement | null;
         const badge = tile?.querySelector('.tile-badge') as HTMLElement | null;
         if (!tile || !badge) return null;
-        // offsetHeight / offsetTop are UNSCALED layout px (immune to the xyflow
-        // viewport zoom transform), so 88 is the true tile height and offsetTop
-        // is the badge's anchor within the tile.
-        return { h: tile.offsetHeight, badgeTop: badge.offsetTop };
+        // offset* are UNSCALED layout px (immune to the xyflow viewport zoom
+        // transform): the TRUE tile W/H + the badge's anchor within the tile.
+        return { w: tile.offsetWidth, h: tile.offsetHeight, tier: tile.getAttribute('data-shell-tier'), badgeTop: badge.offsetTop };
       });
     }, ids);
 
     expect(metrics.every((m) => m !== null), 'all three placeholders resolved').toBe(true);
-    // Uniform 88px height across THREE different rack tiers (the fix).
-    for (const m of metrics) expect(m!.h).toBe(88);
+    // UNIFORM WIDTH — every tile the SAME SHELL_TILE_W across three rack tiers.
+    for (const m of metrics) expect(m!.w).toBe(SHELL_TILE_W);
+    // UNIFORM HEIGHT — every tile the SAME height (the current LOD tier's value),
+    // which is one of the three per-tier design points (no longer a flat 88).
+    const h0 = metrics[0]!.h;
+    for (const m of metrics) expect(m!.h).toBe(h0);
+    expect(Object.values(TILE_H)).toContain(h0);
+    expect(TILE_H[metrics[0]!.tier as keyof typeof TILE_H]).toBe(h0);
     // The badge sits at an IDENTICAL offset from each tile's top (the anchor no
     // longer floats mid-card because the tiles are uniform).
     const badgeTops = metrics.map((m) => m!.badgeTop);
     expect(Math.max(...badgeTops) - Math.min(...badgeTops)).toBeLessThanOrEqual(1);
+  });
+
+  test('column members are UNIFORM width + FLUSH-stacked (no overlap, no gap)', async ({ page }) => {
+    // Stack a real source→fx chain in ONE channel column via the REAL palette-drop
+    // path, then prove every tile is the SAME width/height AND the stack is flush
+    // (each member's flow-space slot is exactly one tile-height above the next —
+    // no overlap, no gap), so the reserved slot == the rendered tile at every zoom.
+    await gotoWorkflow(page, { shell: true });
+    await waitForHooks(page);
+    const types = ['tidyVco', 'vca', 'delay'];
+    for (const t of types) {
+      await dropInColumn(page, t, 1);
+      await page.waitForTimeout(250);
+    }
+    // The three ch1 members are placeholders in the lane.
+    await expect(page.locator('[data-testid="module-shell-placeholder"]')).not.toHaveCount(0);
+
+    // Uniform width + height across every mounted tile.
+    const tiles = await measureTiles(page);
+    expect(tiles.length).toBeGreaterThanOrEqual(types.length);
+    expect(new Set(tiles.map((t) => t.w)).size, 'one uniform width').toBe(1);
+    expect(tiles[0].w).toBe(SHELL_TILE_W);
+    expect(new Set(tiles.map((t) => t.h)).size, 'one uniform height').toBe(1);
+
+    // FLUSH stacking: the ch1 members' flow-space TOP-Y are exactly one measured
+    // tile-height apart (immune to the viewport transform) — no overlap, no gap.
+    const stack = await page.evaluate(() => {
+      const f = (globalThis as any).__flow;
+      const patch = (globalThis as any).__patch;
+      const out: { y: number; h: number }[] = [];
+      for (const nid of Object.keys(patch.nodes)) {
+        if (patch.nodes[nid]?.data?.channel !== 1) continue;
+        const inode = f.getInternalNode(nid);
+        const y = inode?.internals?.positionAbsolute?.y ?? inode?.position?.y;
+        const h = inode?.measured?.height;
+        if (typeof y === 'number' && typeof h === 'number') out.push({ y, h });
+      }
+      return out.sort((a, b) => a.y - b.y);
+    });
+    expect(stack.length).toBe(types.length);
+    for (let i = 1; i < stack.length; i++) {
+      const gap = stack[i].y - stack[i - 1].y;
+      // gap == the previous tile's height → tiles ABUT: no overlap (gap ≥ h) AND
+      // no empty space (gap ≤ h). ±1px for sub-pixel rounding.
+      expect(gap).toBeGreaterThanOrEqual(stack[i - 1].h - 1);
+      expect(gap).toBeLessThanOrEqual(stack[i - 1].h + 1);
+    }
+  });
+
+  test('tiles PROMOTE per LOD tier: uniform height grows mini→compact→full as you zoom in', async ({ page }) => {
+    await gotoWorkflow(page, { shell: true });
+    await waitForHooks(page);
+    for (const t of ['tidyVco', 'vca']) {
+      await dropInColumn(page, t, 1);
+      await page.waitForTimeout(250);
+    }
+    await expect(page.locator('[data-testid="module-shell-placeholder"]')).not.toHaveCount(0);
+
+    // mini (zoomed way out) → compact → full (zoomed in): the tile height grows,
+    // and every tile stays UNIFORM (same width, same height) at each tier.
+    const seen: number[] = [];
+    for (const [zoom, tier] of [[0.2, 'mini'], [0.4, 'compact'], [0.7, 'full']] as const) {
+      await setZoomTier(page, zoom, tier);
+      const tiles = await measureTiles(page);
+      expect(new Set(tiles.map((t) => t.w)).size, `${tier}: uniform width`).toBe(1);
+      expect(tiles[0].w, `${tier}: SHELL_TILE_W`).toBe(SHELL_TILE_W);
+      expect(new Set(tiles.map((t) => t.h)).size, `${tier}: uniform height`).toBe(1);
+      expect(tiles[0].h, `${tier}: matches token`).toBe(TILE_H[tier]);
+      seen.push(tiles[0].h);
+    }
+    // strictly growing across the tiers (the promotion).
+    expect(seen[0]).toBeLessThan(seen[1]);
+    expect(seen[1]).toBeLessThan(seen[2]);
   });
 
   test('preview OFF (default) is a strict no-op: the legacy card renders in the lane', async ({ page }) => {
