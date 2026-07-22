@@ -12,14 +12,15 @@
 // We assert on /docs — a PUBLIC, non-canvas route (no Clerk) — so the test
 // needs no auth. /docs does not import the skin store itself; if the theme
 // shows there, it's because the root layout applied it app-wide.
-// applySkinToRoot() always mirrors the active skin id onto <html data-skin>.
+// applyPaletteToRoot() always mirrors the active palette id onto
+// <html data-palette>.
 
 import { test, expect } from '@playwright/test';
 
-const SKIN = 'vaporwave'; // any non-default in-tree skin id
+const SKIN = 'midnight'; // any non-default in-tree palette id
 
 const readDataSkin = (page: import('@playwright/test').Page) =>
-  page.evaluate(() => document.documentElement.getAttribute('data-skin'));
+  page.evaluate(() => document.documentElement.getAttribute('data-palette'));
 
 test.describe('skin persists app-wide', () => {
   test('saved skin applies on a non-canvas route after a hard reload', async ({ page }) => {
@@ -40,13 +41,13 @@ test.describe('skin persists app-wide', () => {
       .toBe(SKIN);
   });
 
-  test('default skin is the baseline when nothing is saved', async ({ page }) => {
+  test('rackline is the baseline when nothing is saved', async ({ page }) => {
     await page.goto('/docs');
     await page.evaluate(() => localStorage.removeItem('pt.skin'));
     await page.reload();
 
     await expect
       .poll(() => readDataSkin(page), { timeout: 5000 })
-      .toBe('default');
+      .toBe('rackline');
   });
 });

@@ -64,8 +64,6 @@ const FULL_MATCH = [
   'groups.spec.ts',
   'dashboard.spec.ts',
   'landing.spec.ts',
-  'skin-diner.spec.ts',
-  'skin-lcars.spec.ts',
 ];
 
 export default defineConfig({

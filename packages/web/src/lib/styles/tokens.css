@@ -1,0 +1,140 @@
+/* ─────────────────────────────────────────────────────────────────────────
+ * Design tokens — P0.1 of the workflow UI refactor (RACKLINE).
+ *
+ * TWO tiers, both declared on :root:
+ *
+ *   • STRUCTURAL tokens  — FIXED. Never themed. Type scale, spacing, radii,
+ *     tile/spine/knob/fader/meter/scope/jack/tab/dock geometry, shadows.
+ *     These are the ONE fixed dark structure the whole app renders over.
+ *     Extracted verbatim from the two canonical mockups
+ *     (scratchpad/ux-proposal-b.html + ux-fullview.html). See the plan §2.3.
+ *
+ *   • PALETTE tokens     — THEMEABLE. The ONLY layer a palette swaps. Seeded
+ *     here with the RACKLINE default (ux-proposal-b.html:3-22). The runtime
+ *     palette engine ($lib/ui/skins) re-writes these inline on
+ *     document.documentElement at boot + on every palette switch, so a
+ *     palette change recolours surfaces / ink / lines / domain-cable hues /
+ *     accent — but NEVER the structural tokens above.
+ *
+ * Imported globally in +layout.svelte BEFORE global.css so a palette (or a
+ * component's own scoped rule) can override the palette layer while the
+ * structural layer stays fixed.
+ *
+ * NOTE on cable/domain colour: per the owner decision there is NO separate
+ * "spine" token — a module's spine colour IS its cable-domain colour, so the
+ * domain hues live on the --cable-* palette tokens below (the cable is the
+ * patch language; the spine is a reading aid painted from the same hue).
+ * ────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* ===================================================================
+   * STRUCTURAL — fixed geometry / type / shadows (never themed)
+   * =================================================================== */
+
+  /* fonts */
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* type scale — on-screen target px at native zoom */
+  --t-title-full: 20px;
+  --t-title-compact: 14.5px;
+  --t-badge: 8.5px;
+  --t-label: 12px;
+  --t-label-compact: 10px;
+  --t-value: 12.5px;
+  --t-value-compact: 11px;
+
+  /* spacing / radii */
+  --gap-lane: 8px;
+  --gap-mod: 6px;
+  --r-tile: 8px;
+  --r-plate: 10px;
+  --r-dock: 11px;
+
+  /* tile geometry (compact / overview) */
+  --spine-w: 4px;
+  --tile-h-mini: 88px;
+  --tile-h-compact: 120px;
+  --plate-w: 250px;
+  --pspine-w: 6px;
+
+  /* knob (compact) — mockup .kn / .kn.lg */
+  --kn: 34px;
+  --kn-lg: 46px;
+
+  /* fader — mockup .fd / .fdbig */
+  --fd-w: 20px;
+  --fd-h: 56px;
+  --fdbig-w: 26px;
+  --fdbig-h: 96px;
+
+  /* meter / scope / jack */
+  --meter-w: 12px;
+  --meter-seg-h: 5px;
+  --scope-h: 40px;
+  --glyph-h: 52px;
+  --jk: 12px;
+  --pjk: 16px;
+
+  /* dock tab rail — mockup ux-fullview .tab / .page */
+  --dock-sidebar-w: 288px;
+  --tab-radius: 8px 8px 0 0;
+
+  /* shadows */
+  --shadow-tile: 0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 2px 5px rgba(0, 0, 0, 0.35);
+  --shadow-plate: 0 4px 18px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --shadow-dock: 0 -20px 50px -24px rgba(154, 108, 245, 0.4),
+    0 18px 44px -18px rgba(0, 0, 0, 0.75);
+
+  /* ===================================================================
+   * PALETTE — themeable colour layer (RACKLINE default seed)
+   *
+   * These use the APP-NATIVE token names (the same ones every card / the
+   * canvas / the cable legend already consume) so seeding them here
+   * recolours the whole app. The palette engine overrides them inline.
+   * Keep this block in sync with the `rackline` default palette in
+   * $lib/ui/skins/palettes/rackline.ts (guarded by skin-store.test.ts).
+   * =================================================================== */
+
+  /* surfaces */
+  --bg: #0e1013;
+  --bg-grid-dot: #20242b;
+  --surface-1: #17191d; /* rail — rack chrome behind lanes */
+  --surface-2: #26292f; /* rail-edge */
+  --surface-3: #262a31; /* panel-hi — tile gradient high */
+  --module-bg: #1c1f24; /* panel — tile base */
+  --module-bg-deep: #0a0c0f; /* inset — scope / jack wells */
+
+  /* lines */
+  --border: #2c3037;
+  --border-strong: #3a3f47;
+  --divider: #23262c;
+
+  /* ink */
+  --text: #eef1f5;
+  --text-dim: #9aa2ad;
+  --text-on-accent: #0e1013;
+
+  /* accent (chrome only — focus rings / hover glow / selection) */
+  --accent: #ffb347;
+  --accent-dim: #b3762a;
+  --accent-glow: rgba(255, 179, 71, 0.4);
+
+  /* domain / cable colour language — the MOCKUP hues (owner decision).
+   * The 5 primaries are the canonical domain hues; the 4 secondary cable
+   * types are tints of their parent domain so per-type reading survives:
+   *   audio → teal · cv/pitch → green · gate → amber
+   *   video/image/mono-video → violet · poly/keys → pink */
+  --cable-audio: #38d3c8; /* audio    — teal */
+  --cable-pitch: #9be08a; /* pitch    — light green (cv domain) */
+  --cable-gate: #f2c14e; /* gate     — amber */
+  --cable-cv: #7bd66a; /* cv       — green */
+  --cable-polyPitchGate: #ff7bc2; /* poly     — pink */
+  --cable-keys: #ff9dd4; /* keys     — light pink (poly domain) */
+  --cable-image: #c99bff; /* image    — light violet (video domain) */
+  --cable-mono-video: #a56bf0; /* m-video  — deep violet (video domain) */
+  --cable-video: #b57bff; /* video    — violet */
+}
