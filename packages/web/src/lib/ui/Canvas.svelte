@@ -87,6 +87,10 @@
     type CleanupPeer,
   } from '$lib/graph/singleton-cleanup';
   import { getDefaultSnapshotBus, type PatchSnapshot } from '$lib/graph/snapshot';
+  // STRATA semantic-zoom (P0.2): the shared workflow zoom store + the LOD tier
+  // context. `setWorkflowZoom` is fed from the onmove handlers below;
+  // `provideLodTier` publishes the derived tier on context for P0.3 cards.
+  import { setWorkflowZoom, provideLodTier } from '$lib/ui/canvas/workflow-zoom';
   import {
     makeEnvelope,
     makePortableEnvelope,
@@ -1646,16 +1650,29 @@
   // Viewport tick for the workflow channel-columns overlay — re-projects its
   // flow-space bands to screen on every pan/zoom (workflow racks only).
   let wcolViewportTick = $state(0);
+  // STRATA (P0.2): publish the derived LOD tier on context for descendant cards
+  // (P0.3 consumes it; nothing does yet). Harmless in dawless mode.
+  provideLodTier();
+  // Push the live viewport zoom into the shared workflow-zoom store from the
+  // SAME onmove tick that re-projects the channel-columns overlay — no new
+  // per-frame listener. `setWorkflowZoom` dedupes, so a pure pan is free.
+  function publishWorkflowZoom(): void {
+    if (!workflowMode) return;
+    const z = flowApi?.getViewport?.()?.zoom;
+    if (typeof z === 'number') setWorkflowZoom(z);
+  }
   function onViewportMoveStart(): void {
     dockPanTails = buildDockPanTails();
   }
   function onViewportMove(): void {
     if (dockPanTails.length > 0) dockPanTick++;
     if (workflowMode) wcolViewportTick++;
+    publishWorkflowZoom();
   }
   function onViewportMoveEnd(): void {
     if (dockPanTails.length > 0) dockPanTails = [];
     if (workflowMode) wcolViewportTick++;
+    publishWorkflowZoom();
   }
 
   /** The 8 channel colours for the overlay column badges — the canonical clip-
@@ -7283,11 +7300,18 @@
       />
     {/if}
   <div class="flow" class:rear-view={rearView} class:flip-back={flipBack} data-rear-view={rearView ? 'true' : undefined} bind:this={flowEl}>
+    <!-- STRATA (P0.2): in WORKFLOW mode drop the zoom floor to 0.2 so fit-all can
+         frame all 8 lanes + both sends (§3.4: ~0.22 at 1080p). Dawless keeps
+         xyflow's 0.5 default → dawless zoom/VRT unchanged. fitViewOptions only
+         lowers the fit floor to match; padding + maxZoom stay at xyflow defaults
+         so the initial on-load fit zoom is unchanged. maxZoom is untouched. -->
     <SvelteFlow
       nodes={flowNodes}
       edges={flowEdges}
       {nodeTypes}
       fitView
+      minZoom={workflowMode ? 0.2 : 0.5}
+      fitViewOptions={workflowMode ? { minZoom: 0.2 } : undefined}
       colorMode="dark"
       zoomOnDoubleClick={false}
       onconnect={handleConnect}
