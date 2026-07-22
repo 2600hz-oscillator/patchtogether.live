@@ -41,8 +41,9 @@ const AUTO_EXPOSE_EXCLUDE_PARAM_IDS: ReadonlySet<string> = new Set([
   'camera_x', 'camera_y', 'camera_z', 'camera_yaw', 'camera_pitch',
 ]);
 
-/** Heuristic: does the ParamDef look like a 0/1 toggle? */
-function looksLikeToggle(p: ParamDef): boolean {
+/** Heuristic: does the ParamDef look like a 0/1 toggle? (Exported so the
+ *  Toggle primitive + its detection can share the ONE definition.) */
+export function looksLikeToggle(p: ParamDef): boolean {
   return p.curve === 'discrete' && p.min === 0 && p.max === 1;
 }
 
