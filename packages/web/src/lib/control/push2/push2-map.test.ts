@@ -29,7 +29,7 @@ import {
   PUSH_CC_ENCODER_MASTER,
 } from './push2-map';
 import type { Push2RxEvent } from './push2-sysex';
-import { pushPadNote } from './push2-sysex';
+import { pushPadNote, pushColorIndex } from './push2-sysex';
 import type { LaunchpadFrame } from './push2-types';
 import { padNote, CC_UP, CC_TOP_SPARE_6, CC_TOP_SPARE_8, SCENE_CCS } from '$lib/control/launchpad/launchpad-sysex';
 
@@ -176,22 +176,64 @@ describe('push2FrameToLeds — LaunchpadFrame → Push LED specs', () => {
   it('a lit top CC lights BOTH the permanent-controls row + the dedicated button', () => {
     const frame: LaunchpadFrame = {
       leds: new Map<number, [number, number, number]>([
-        [CC_UP, [15, 0, 0]], // transport lit → Play + permanent-row button 0
-        [SCENE_CCS[0], [10, 10, 10]], // top scene lit → scene button (CC 43)
+        [CC_UP, [0, 127, 0]], // transport lit GREEN → Play + permanent-row button 0
+        [SCENE_CCS[0], [0, 127, 0]], // top scene lit GREEN → scene button (CC 43)
         [99, [10, 10, 10]], // the logo — no Push home
       ]),
     };
     const leds = push2FrameToLeds(frame);
-    expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_PLAY, value: 127 });
-    expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_PERMANENT_BASE, value: 127 });
+    // REGRESSION: RGB control buttons carry a real PALETTE INDEX (green = 126),
+    // NOT a hard-coded 127 (which is the palette's RED anchor → the "all buttons
+    // red" bug). Play (85), the permanent-controls row (20..27) and the scene
+    // column (36..43) are all full-RGB buttons.
+    expect(pushColorIndex(0, 127, 0)).toBe(126); // green anchor
+    expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_PLAY, value: 126 });
+    expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_PERMANENT_BASE, value: 126 });
     // The TOP scene (SCENE_CCS[0]) → the TOP Push scene button = CC 43.
-    expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_SCENE_BASE + 7, value: 127 });
+    expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_SCENE_BASE + 7, value: 126 });
+    // No RGB button collapses to red (127) here.
+    expect(leds.some((l) => l.kind === 'button' && l.value === 127)).toBe(false);
     // nothing maps the logo (99).
     expect(leds.some((l) => l.kind === 'button' && l.cc === 99)).toBe(false);
   });
 
-  it('a black (off) LED emits value 0', () => {
-    const frame: LaunchpadFrame = { leds: new Map([[CC_UP, [0, 0, 0]]]) };
-    expect(push2FrameToLeds(frame)).toContainEqual({ kind: 'button', cc: PUSH_CC_PLAY, value: 0 });
+  it('an RGB button lit WHITE emits the white palette index (122), not 127', () => {
+    const frame: LaunchpadFrame = { leds: new Map<number, [number, number, number]>([[CC_UP, [127, 127, 127]]]) };
+    const leds = push2FrameToLeds(frame);
+    expect(pushColorIndex(127, 127, 127)).toBe(122); // white anchor
+    expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_PLAY, value: 122 });
+    expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_PERMANENT_BASE, value: 122 });
+  });
+
+  it('the white/mono dedicated buttons (Undo 119, Shift 49) stay max-white 127', () => {
+    // The Launchpad UNDO index (96) lights the RGB permanent-row button 26 AND the
+    // white/mono Undo (119); SHIFT (98) lights RGB button 27 AND white/mono Shift (49).
+    const frame: LaunchpadFrame = {
+      leds: new Map<number, [number, number, number]>([
+        [CC_TOP_SPARE_6, [0, 127, 0]], // undo function lit GREEN
+        [CC_TOP_SPARE_8, [0, 127, 0]], // shift function lit GREEN
+      ]),
+    };
+    const leds = push2FrameToLeds(frame);
+    // White/mono → brightness 127 (unchanged; correct there).
+    expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_UNDO, value: 127 });
+    expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_SHIFT, value: 127 });
+    // …while their RGB permanent-row twins carry the palette index (green = 126).
+    // Undo function = top CC 96 → permanent CC 25 (96−91+20); Shift = 98 → CC 27.
+    expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_PERMANENT_BASE + 5, value: 126 }); // CC 25
+    expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_PERMANENT_BASE + 7, value: 126 }); // CC 27
+  });
+
+  it('a black (off) LED emits value 0 (both RGB and white/mono buttons)', () => {
+    const frame: LaunchpadFrame = {
+      leds: new Map<number, [number, number, number]>([
+        [CC_UP, [0, 0, 0]], // RGB Play/permanent-row → off
+        [CC_TOP_SPARE_8, [0, 0, 0]], // white/mono Shift → off
+      ]),
+    };
+    const leds = push2FrameToLeds(frame);
+    expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_PLAY, value: 0 });
+    expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_PERMANENT_BASE, value: 0 });
+    expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_SHIFT, value: 0 });
   });
 });

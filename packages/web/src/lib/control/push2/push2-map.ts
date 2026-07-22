@@ -241,6 +241,35 @@ export type Push2LedSpec =
   | { kind: 'pad'; note: number; palette: number }
   | { kind: 'button'; cc: number; value: number };
 
+/**
+ * The Push 2 control-button CCs that are full **RGB** (`Color:True` per
+ * `ffont/push2-python` `push2_map.py` + the Ableton "Push 2 MIDI and Display
+ * Interface" manual): their CC value is a PALETTE INDEX (same 128-entry palette
+ * the pads use), NOT a plain brightness. These must be coloured through
+ * `pushColorIndex` exactly like the pads — sending a raw `127` lights them RED
+ * (127 = the palette's red anchor). The remaining lit buttons (Undo 119, Shift
+ * 49, …) are white/mono, where the CC value IS a brightness and 127 = max white.
+ */
+const RGB_BUTTON_CCS = new Set<number>([
+  20, 21, 22, 23, 24, 25, 26, 27, // lower-row display (permanent controls)
+  36, 37, 38, 39, 40, 41, 42, 43, // scene / beat column
+  102, 103, 104, 105, 106, 107, 108, 109, // upper-row display (channel-select)
+  85, 86, 89, 29, 60, 61, // Play, Record, Automate, Stop, Mute, Solo
+]);
+
+/**
+ * The CC value to send for a lit control button. RGB buttons (see
+ * `RGB_BUTTON_CCS`) take a real palette index via `pushColorIndex` (so their
+ * colour MATCHES the pads instead of collapsing to red); white/mono buttons take
+ * a brightness where 127 = max white. Off (all-zero colour) is always 0. PURE.
+ */
+function buttonValue(cc: number, r: number, g: number, b: number): number {
+  if (r + g + b === 0) return 0; // off
+  return RGB_BUTTON_CCS.has(cc)
+    ? pushColorIndex(r, g, b) // RGB → real palette index (matches the pads)
+    : 127; // white/mono (Undo 119, Shift 49, …) → max-white brightness
+}
+
 /** The Push button CC(s) that mirror a Launchpad top-row CC 91..98. The permanent
  *  row (20..27) always mirrors it; transport / undo / shift ALSO light their
  *  dedicated Play / Undo / Shift buttons. Empty for a non-top-row index. PURE. */
@@ -266,9 +295,12 @@ function launchpadSceneCcToPushCc(cc: number): number | null {
  * Translate a LaunchpadFrame (the shipped control brain's LED output, indexed by
  * Launchpad programmer indices) into the Push LED specs the device sends. Pads
  * become palette-index colours; the top-row indices become the permanent-controls
- * row (plus the dedicated Play/Undo/Shift), and scene CCs become the scene column
- * — CC on/off (0 = off, 127 = lit; the Push function buttons are 2-state / white).
- * Indices with no Push home (the logo) are dropped. PURE.
+ * row (plus the dedicated Play/Undo/Shift), and scene CCs become the scene column.
+ * The permanent-controls row (20..27), the scene column (36..43) and Play (85) are
+ * full-RGB buttons, so their CC value is a PALETTE INDEX (via `buttonValue` →
+ * `pushColorIndex`, matching the pads); the white/mono buttons (Undo 119, Shift 49)
+ * take a brightness (127 = max white). Off = 0. Indices with no Push home (the
+ * logo) are dropped. PURE.
  */
 export function push2FrameToLeds(frame: LaunchpadFrame): Push2LedSpec[] {
   const out: Push2LedSpec[] = [];
@@ -278,15 +310,14 @@ export function push2FrameToLeds(frame: LaunchpadFrame): Push2LedSpec[] {
       out.push({ kind: 'pad', note: pushPadNote(pad.x, pad.y), palette: pushColorIndex(r, g, b) });
       continue;
     }
-    const lit = r + g + b > 0 ? 127 : 0;
     const topCcs = launchpadTopCcToPushCcs(index);
     if (topCcs.length) {
-      for (const c of topCcs) out.push({ kind: 'button', cc: c, value: lit });
+      for (const c of topCcs) out.push({ kind: 'button', cc: c, value: buttonValue(c, r, g, b) });
       continue;
     }
     const sceneCc = launchpadSceneCcToPushCc(index);
     if (sceneCc !== null) {
-      out.push({ kind: 'button', cc: sceneCc, value: lit });
+      out.push({ kind: 'button', cc: sceneCc, value: buttonValue(sceneCc, r, g, b) });
       continue;
     }
     // no Push home (logo 99) — drop.
