@@ -156,6 +156,21 @@
   max-height: calc(var(--rack-u, 1) * var(--rack-unit));
 }
 
+/* P0.3b RACKLINE lane tiles (ModuleShell / ModuleShellPlaceholder). Their roots
+ * are deliberately NOT .mod-card/.card/.moog-panel (so rear-view never
+ * mirrors/hides them — their cables must stay traceable), so they need their own
+ * rack-sizing rule pinning the tile to the tier-invariant --rack-hp × --rack-u
+ * box. Pinning the OUTER box here is load-bearing: the LOD content swap must
+ * NEVER resize the measured node, or the channel-column stack recomputes (§3.1). */
+.svelte-flow__node.rack-sized > :is(.module-shell, .module-shell-placeholder),
+.svelte-flow__node.rack-sized > * > :is(.module-shell, .module-shell-placeholder) {
+  box-sizing: border-box;
+  width: calc(var(--rack-hp, 1) * var(--rack-unit));
+  height: calc(var(--rack-u, 1) * var(--rack-unit));
+  min-height: calc(var(--rack-u, 1) * var(--rack-unit));
+  max-height: calc(var(--rack-u, 1) * var(--rack-unit));
+}
+
 /* DOCK RAILS (P2.5a): a docked card renders in a screen-fixed rail hosted by
  * DockCardHost — a classed wrapper that replicates the rack tier WITHOUT the
  * .svelte-flow__node class (which would collide with PickupCable + sweep

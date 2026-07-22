@@ -248,6 +248,12 @@
   // drops its XyzCard.svelte here (matching the PascalCase(type)+Card
   // convention, or declaring `card` on its def) and is picked up automatically.
   import { buildNodeTypes } from '$lib/ui/modules-card-map';
+  // P0.3b — the legacy-fallback MIGRATION bridge: a pure derivation deciding
+  // which node component a module renders as in its workflow lane (legacy card /
+  // curated ModuleShell / uniform placeholder / dock stub). Gated behind the
+  // `?shell=1` opt-in preview flag so it's a strict no-op until owner sign-off.
+  import { laneRenderKind, emittedTypeFor, isShellSwappable } from '$lib/ui/workflow/legacy-fallback';
+  import { migrated } from '$lib/ui/workflow/strict-faces';
   import { RACK_SIZE_DEFAULTS } from '$lib/ui/rack-sizes';
   import { computeCabinetLayout } from '$lib/ui/canvas/cabinet-layout';
   // ModuleNameLabel moved INTO every module card's title chrome (see
@@ -367,6 +373,11 @@
   // dock store. Design: .myrobots/docking-recommendation.md.
   import DockRail from '$lib/ui/dock/DockRail.svelte';
   import DockStubCard from '$lib/ui/dock/DockStubCard.svelte';
+  // P0.3b — the workflow-shell lane components: the curated skeleton (migrated
+  // modules) + the uniform placeholder (un-migrated). Registered as node types
+  // alongside dockStub; emitted only under the `?shell=1` preview.
+  import ModuleShell from '$lib/ui/modules/ModuleShell.svelte';
+  import ModuleShellPlaceholder from '$lib/ui/modules/ModuleShellPlaceholder.svelte';
   // DOCKING P2.5b: the pan-gesture screen-space cable tail (stub → rail).
   import DockPanTail, { type DockTailSpec } from '$lib/ui/dock/DockPanTail.svelte';
   import { dockStore } from '$lib/ui/dock/dock-store.svelte';
@@ -384,6 +395,7 @@
   } from '$lib/graph/workflow-pins';
   import { removePatchNode } from '$lib/graph/mutate';
   import { goto } from '$app/navigation';
+  import { page } from '$app/state';
   import { resetLocalScratchId } from '$lib/storage/local-scratch';
   import type { RackMode } from '$lib/graph/rack-mode';
   import type { HocuspocusProvider } from '@hocuspocus/provider';
@@ -453,6 +465,15 @@
   /** True when this canvas renders the workflow shell. */
   let workflowMode = $derived(mode === 'workflow');
 
+  /** P0.3b OWNER-PREVIEW FLAG — the workflow-shell rollout (uniform lane
+   *  placeholders / curated ModuleShell faces + the dock full-view legacy
+   *  fallback) is gated behind `?shell=1` so it is a strict no-op by default:
+   *  existing workflow racks render EXACTLY as today (no VRT/e2e drift), and the
+   *  owner previews the new look at `/rack?mode=workflow&shell=1`. Flipping the
+   *  default to on (+ the VRT baseline regen) is the post-preview follow-up.
+   *  Dawless never sees it (workflowMode gate). */
+  let shellPreview = $derived(workflowMode && page.url?.searchParams?.get('shell') === '1');
+
   // The header shows "Sign in" only when we're confident the user is signed
   // out. On the public `/` canvas (no client ClerkProvider) that signal is
   // server-derived via `headerAuth`; on `/r/[id]` (provider mounted) it's
@@ -485,7 +506,18 @@
     // (dock-by-default OFF is a hard invariant — nothing docks without a
     // user gesture).
     dockStub: DockStubCard as unknown as ReturnType<typeof buildNodeTypes>[string],
+    // P0.3b: the workflow-shell lane node types the legacy-fallback bridge
+    // emits under the `?shell=1` preview — the curated skeleton for MIGRATED
+    // modules + the uniform placeholder for UN-MIGRATED ones. Like dockStub,
+    // NOT module defs (never enter the registries / card-map glob / sweeps).
+    moduleShell: ModuleShell as unknown as ReturnType<typeof buildNodeTypes>[string],
+    moduleShellPlaceholder: ModuleShellPlaceholder as unknown as ReturnType<typeof buildNodeTypes>[string],
   };
+
+  /** The set of module TYPES that resolve to a real card (the glob-built map,
+   *  minus the non-def helpers above). The legacy-fallback bridge only swaps a
+   *  type that HAS a card — a defless/special node keeps its current render. */
+  const cardTypeSet = new Set(Object.keys(nodeTypes));
 
   // Rack sizing: module type → resolved { size, hp }. The flowNodes derivation
   // tags each card's SvelteFlow wrapper (rack-sized rack-{1u,3u} + an inline
@@ -1330,7 +1362,12 @@
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isTypingTarget(e.target)) return;
       if (e.key === 'Escape') {
-        if (dockStore.dockedNodeId('bottom')) {
+        // P0.3b: the transient full-view closes first (it's the most recently
+        // opened, ESC-topmost overlay), then the pinned drawer.
+        if (dockStore.fullViewNodeId) {
+          e.preventDefault();
+          dockStore.closeFullView();
+        } else if (dockStore.dockedNodeId('bottom')) {
           e.preventDefault();
           dockStore.close('bottom');
         }
@@ -1745,17 +1782,41 @@
     trace(`workflow: pushed ${pushes.length} module(s) up to clear grown lanes`);
   });
 
+  /** P0.3b — the transient EXPANDED FULL-VIEW occupant: the node whose full
+   *  faceplate is open in the bottom dock (an un-migrated module's verbatim
+   *  legacy card via DockCardHost → nodeTypes[type], or a migrated module's
+   *  faceplate). NEVER a persisted entry — it closes to dockStore.closeFullView
+   *  and keeps the module's lane placeholder/shell in place (Option #1). */
+  let fullViewCard = $derived.by(() => {
+    if (!workflowMode) return null;
+    const id = dockStore.fullViewNodeId;
+    if (!id) return null;
+    const node = snapshot.nodes.find((n) => n.id === id);
+    if (!node) return null;
+    return {
+      node,
+      title: dockDisplayName(node),
+      pinned: true,
+      onClose: () => dockStore.closeFullView(),
+    };
+  });
+
   let bottomRailCards = $derived.by(() => {
     const docked = railCards('bottom');
+    const out: Array<{ node: ModuleNode; title: string; pinned: boolean; onClose?: () => void }> = [];
     // The pinned M/E/C occupant renders FIRST, alongside docked cards —
     // the P1 drawer generalized (pinned stays drawer-only per owner Q2).
     if (dockedBottomNode && dockedBottomSpec) {
-      return [
-        { node: dockedBottomNode, title: dockedBottomSpec.label, pinned: true },
-        ...docked,
-      ];
+      out.push({ node: dockedBottomNode, title: dockedBottomSpec.label, pinned: true });
     }
-    return docked;
+    // The full-view occupant — skipped if the SAME node is already shown as the
+    // pinned occupant or a docked entry, so a node never appears twice.
+    const fv = fullViewCard;
+    if (fv && !out.some((c) => c.node.id === fv.node.id) && !docked.some((c) => c.node.id === fv.node.id)) {
+      out.push(fv);
+    }
+    out.push(...docked);
+    return out;
   });
 
   // ---------------- WORKFLOW MODE P2: topbar surface plumbing ----------------
@@ -2019,7 +2080,20 @@
       // entryFor subscribes this pass to dock/undock; dawless racks never
       // read the store (workflowMode gate) — zero tracking, zero overhead.
       const dockEntry = workflowMode ? dockStore.entryFor(n.id) : null;
-      const emittedType = dockEntry ? 'dockStub' : n.type;
+      // P0.3b LEGACY-FALLBACK BRIDGE: generalizes the docked→stub swap. A pure
+      // derivation from mode + the `?shell=1` preview + user-dock + STRICT_FACES
+      // membership — NEVER persisted. Preview OFF (default) ⇒ 'legacy' for every
+      // non-docked node ⇒ byte-identical to the old `dockEntry ? 'dockStub' :
+      // n.type`. Preview ON ⇒ un-migrated → placeholder, migrated → shell.
+      const renderKind = laneRenderKind({
+        workflowMode,
+        shellPreview,
+        userDocked: !!dockEntry,
+        type: n.type,
+        hasCard: isShellSwappable(n.type, cardTypeSet.has(n.type)),
+        migrated: migrated(n.type),
+      });
+      const emittedType = emittedTypeFor(renderKind, n.type);
       const dockZone = dockEntry?.zone ?? null;
       // xyflow's current user-node for this id. untrack: nodeLookup is a
       // plain Map today, but an xyflow upgrade to reactive lookups must
