@@ -35,13 +35,13 @@ import { getYjsValue } from '@syncedstore/core';
 import { getSchedulerClock } from '$lib/audio/scheduler-clock';
 import {
   connect as deviceConnect,
-  onKey,
-  setFrame,
+  onKey as devOnKey,
+  setFrame as devSetFrame,
   setLed,
-  isPairBound,
-  isSingleBound,
+  isPairBound as devIsPairBound,
+  isSingleBound as devIsSingleBound,
   isUnitBound,
-  clearUnit,
+  clearUnit as devClearUnit,
   bindUnit,
   enumerateLaunchpadPorts,
   type LaunchpadKeyEvent,
@@ -212,6 +212,98 @@ import {
   arpStepPeriod,
   type ArpState,
 } from '$lib/audio/arp-engine';
+
+// ---------------------------------------------------------------------------
+// INJECTABLE CONTROL SURFACE (decision A — the Push 2 adapter, plan §3). The
+// clip-launch / note-editor / arm / scene / KEYS PARITY logic in this file is a
+// module-level singleton bound to launchpad-device. To let a DIFFERENT surface
+// (the Push 2) drive that exact logic WITHOUT forking ~3500 lines, the device
+// I/O the render + inbound path uses (`setFrame` / `onKey` / `clearUnit` /
+// `isPairBound` / `isSingleBound`) routes through an INJECTABLE port. The port
+// DEFAULTS to launchpad-device (so every existing Launchpad path — and its whole
+// test suite — is byte-for-byte unchanged); the Push injects its own port that
+// remaps Push MIDI ⇄ the Launchpad event/frame vocabulary (see
+// control/push2/push2-control). The launchpad-SPECIFIC flows (pairing / single
+// bind / enumerate / the pair-prompt LED) keep talking to the device directly
+// (devOnKey / setLed / bindUnit / …) — the Push never uses them.
+export interface ControlSurfacePort {
+  onKey(cb: (e: LaunchpadKeyEvent) => void): () => void;
+  setFrame(unit: LaunchpadUnit, frame: LaunchpadFrame): void;
+  clearUnit(unit: LaunchpadUnit): void;
+  isPairBound(): boolean;
+  isSingleBound(): boolean;
+}
+/** The default surface = the Launchpad device singleton (unchanged behaviour). */
+const launchpadSurface: ControlSurfacePort = {
+  onKey: devOnKey,
+  setFrame: devSetFrame,
+  clearUnit: devClearUnit,
+  isPairBound: devIsPairBound,
+  isSingleBound: devIsSingleBound,
+};
+let surface: ControlSurfacePort = launchpadSurface;
+
+// Local wrappers over the active surface — the render + inbound path calls these
+// (unchanged call sites), so swapping the port re-targets the whole parity core.
+function onKey(cb: (e: LaunchpadKeyEvent) => void): () => void {
+  return surface.onKey(cb);
+}
+function setFrame(unit: LaunchpadUnit, frame: LaunchpadFrame): void {
+  surface.setFrame(unit, frame);
+}
+function clearUnit(unit: LaunchpadUnit): void {
+  surface.clearUnit(unit);
+}
+function isPairBound(): boolean {
+  return surface.isPairBound();
+}
+function isSingleBound(): boolean {
+  return surface.isSingleBound();
+}
+
+/**
+ * Swap the active control surface (the Push 2 adapter injects itself here). Stops
+ * the current render/key loops (so the old surface stops painting + listening);
+ * the caller re-binds via bindLaunchpadToClip afterwards. `opts.deployment`
+ * forces the deployment (the Push always drives the SINGLE-unit render path).
+ * Pass `null` to restore the default Launchpad surface.
+ */
+export function setControlSurfacePort(
+  p: ControlSurfacePort | null,
+  opts?: { deployment?: 'pair' | 'single' },
+): void {
+  stopLoops();
+  surface = p ?? launchpadSurface;
+  if (opts?.deployment) deployment = opts.deployment;
+}
+/** The active control surface (default = the Launchpad device). */
+export function getControlSurfacePort(): ControlSurfacePort {
+  return surface;
+}
+
+/**
+ * CLIP-view D-Pad navigation — the shared seam the Push 2's D-Pad drives (plan
+ * §5c: "the SAME rowUp/rowDown/stepLeft/stepRight the launchpad nav calls").
+ * Up/Down scroll the pitch window (scale-degree rows); Left/Right scroll the
+ * step window; `shift` magnifies to a full screen (±SHIFT_JUMP). Only active in
+ * the single-mode CLIP (note-editor) view — a no-op elsewhere. Renders.
+ */
+export function launchpadDpadNav(
+  dir: 'up' | 'down' | 'left' | 'right',
+  shift: boolean,
+): void {
+  const nodeId = boundNodeId;
+  if (!nodeId || !livePatch.nodes[nodeId]) return;
+  if (deployment !== 'single' || singleView !== 'clip') return;
+  const mag = shift ? SHIFT_JUMP : 1;
+  if (dir === 'up') editRowOffset += mag;
+  else if (dir === 'down') editRowOffset -= mag;
+  else {
+    const clip = ensureSelClip(nodeId);
+    scrollStep(clip, dir === 'left' ? -mag : +mag);
+  }
+  renderLeds();
+}
 
 export const STORAGE_KEY_NODE = 'pt.launchpad.boundClipNode';
 export const STORAGE_KEY_LEFT = 'pt.launchpad.portLeft';
@@ -724,7 +816,9 @@ export async function startPairing(onPaired?: () => void): Promise<boolean> {
   // Light the dice-5 centre prompt on both units.
   lightPairPrompt('L');
   lightPairPrompt('R');
-  pairUnsub = onKey((e) => {
+  // Pairing is a LAUNCHPAD-only handshake — subscribe to the device directly
+  // (not the injectable surface), since a Push never pairs.
+  pairUnsub = devOnKey((e) => {
     if (!pairing || e.ev.type !== 'pad' || e.ev.s !== 1) return;
     // The unit the user pressed becomes LEFT (the matrix).
     const leftUnit = e.unit;
@@ -3360,6 +3454,7 @@ function renderLeds(): void {
 // ---------------------------------------------------------------------------
 export function __test_resetBinding(): void {
   stopLoops();
+  surface = launchpadSurface; // restore the default control surface (drop any Push adapter)
   boundNodeId = null;
   tickCount = 0;
   deployment = 'pair';

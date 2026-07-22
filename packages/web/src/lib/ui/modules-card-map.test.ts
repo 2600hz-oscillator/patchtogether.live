@@ -54,7 +54,7 @@ const EXPECTED_NODE_TYPES = [
   'skifree', 'slewSwitch', 'snaredrum', 'stereovca', 'sticky',
   'tidyVco', 'tomtom',
   'swolevco', 'synesthesia', 'tempest', 'timelorde', 'treeohvox', 'tvLibrarian',
-  'launchpadControlLeft',
+  'launchpadControlLeft', 'push2Control',
   'unityscalemathematik', 'vca', 'vdelay', 'vfpgaRunner', 'videoMixer', 'videoOut',
   'videobox', 'videocube', 'videovarispeed', 'warrenspectrum', 'wavecel', 'wavesculpt',
   'twotracks', 'wavetableVco', 'writeseq', 'textmarquee', 'tiler', 'spirographs',

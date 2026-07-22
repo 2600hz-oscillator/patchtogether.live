@@ -391,6 +391,7 @@
   import { installSimulatedMidiDevice, installSimulatedNoteDevice } from '$lib/midi/midi-learn.svelte';
   import { installSimulatedLaunchpad, installSimulatedLaunchpadSingle } from '$lib/control/launchpad/launchpad-device.svelte';
   import { bindLaunchpadToClip, __test_setDeployment, __test_mode as __launchpadTestMode } from '$lib/control/launchpad/launchpad-control.svelte';
+  import { installSimulatedPush2AndBind, selectedChannelIndex as __push2SelectedChannel } from '$lib/control/push2/push2-control.svelte';
 
   // Stage B PR B-b: when mounted under /r/[id] (multi-user), the parent
   // passes the current user's id so per-user layouts are scoped correctly.
@@ -6761,6 +6762,28 @@
           viewFlip: () => { sim.cc('L', CC_VIEW_FLIP, 127); sim.cc('L', CC_VIEW_FLIP, 0); },
           // probe the binding's view/mode state (deployment, activeView, mode).
           state: () => __launchpadTestMode(),
+        };
+        return true;
+      };
+      // Simulated PUSH 2 for e2e: installs ONE in-memory Push (no Web MIDI
+      // prompt), injects it as the Launchpad control surface (single deployment),
+      // and binds the clip-player. Pad/CC presses route through the SAME
+      // decode/classify/dispatch path real hardware uses, so the real-source-chain
+      // spec drives a pad → clip launch → audible RMS, an encoder → MixMasters, a
+      // channel-select, and a D-Pad nav. DEV-only — stripped from prod bundles.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__push2TestInstall = async (clipNodeId: string) => {
+        const sim = await installSimulatedPush2AndBind(clipNodeId);
+        __test_setDeployment('single', 'grid');
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (globalThis as any).__push2Sim = {
+          // press/release an 8×8 pad (x = col, y from BOTTOM).
+          press: (x: number, y: number) => sim.press(x, y),
+          release: (x: number, y: number) => sim.release(x, y),
+          // any Push CC (button press/release or an encoder relative tick).
+          cc: (cc: number, value: number) => sim.cc(cc, value),
+          // probe the parity brain's view/mode state + the Push-local channel.
+          state: () => ({ ...__launchpadTestMode(), selectedChannel: __push2SelectedChannel() }),
         };
         return true;
       };
