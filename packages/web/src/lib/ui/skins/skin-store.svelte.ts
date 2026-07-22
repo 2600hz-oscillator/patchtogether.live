@@ -1,36 +1,61 @@
-// Skin store — Svelte 5 runes. Singleton per page.
+// Palette store — Svelte 5 runes. Singleton per page.
 //
-// On boot: read localStorage["pt.skin"] and apply. On setSkin(): write
-// every variable in the skin's `vars` map to document.documentElement
-// inline (so it overrides anything declared in :root) and persist the
-// new id to localStorage.
+// P0.1 re-tier: a palette is now COLOR-ONLY (see ./types.ts). The store
+// applies a palette's colour vars inline on document.documentElement and
+// CLEARS the legacy structural/sprite theme tokens that were moved out of the
+// theme surface into the ONE fixed dark structure — so a stale inline value
+// (an old persisted skin, a pre-boot :root) can never leave rounded corners /
+// neon glow / a sprite panel bleeding onto the fixed structure.
 //
-// Persistence model: localStorage only. Per-rack via Y.Doc and per-user
-// via Clerk are documented as follow-up PRs in
-// .myrobots/plans/ui-skins-v2.md §8.
+// On boot: read localStorage["pt.skin"] and apply. On setSkin(): write every
+// var in the palette's `vars` map to document.documentElement inline (so it
+// overrides anything declared in :root / tokens.css) and persist the id.
 //
-// SSR safety: the store uses `document` and `localStorage`. Construction
-// is gated on `typeof document !== 'undefined'`; under SSR the store
-// holds the default skin in memory but skips DOM writes.
-// Components import the store at module-eval time, but the .svelte.ts
-// file only constructs on the client (SvelteKit imports it once during
-// hydration).
+// SSR safety: the store uses `document` and `localStorage`. Construction is
+// gated on `typeof document !== 'undefined'`; under SSR it holds the default
+// palette in memory but skips DOM writes.
+//
+// The public API keeps its historical names (`skinStore`, `setSkin`,
+// `currentSkin`, `current`) so existing importers (SkinSwitcher, +layout,
+// window.__skinStore e2e hook) are untouched by the re-tier.
 
-import { SKINS, getSkin, isSkinId, DEFAULT_SKIN_ID, type SkinId, type Skin } from './index';
+import {
+  PALETTES,
+  getPalette,
+  isPaletteId,
+  DEFAULT_PALETTE_ID,
+  type PaletteId,
+  type Palette,
+} from './index';
 
 const STORAGE_KEY = 'pt.skin';
 
+/** Legacy structural / sprite theme tokens that a COLOR-ONLY palette no longer
+ *  sets. They were moved OUT of the theme surface into the fixed structure
+ *  (the CSS fallbacks in _module-card.css / Fader). We REMOVE them on every
+ *  apply so a previous skin's rounded/glow/sprite values don't survive a swap
+ *  or a stale :root. Listed explicitly so the clear step is auditable. */
+const LEGACY_STRUCTURAL_TOKENS = [
+  '--module-radius',
+  '--module-stripe-radius',
+  '--module-glow',
+  '--module-border-color',
+  '--control-style',
+  '--panel-bg',
+  '--fader-track-bg',
+  '--font-silkscreen',
+] as const;
+
 class SkinStore {
-  /** The currently-active skin id. Reactive — components reading this
+  /** The currently-active palette id. Reactive — components reading this
    *  re-render when setSkin is called. */
-  current = $state<SkinId>(DEFAULT_SKIN_ID);
+  current = $state<PaletteId>(DEFAULT_PALETTE_ID);
 
   constructor() {
-    // Boot: read persisted preference (if any) and apply.
     if (typeof document !== 'undefined') {
       try {
         const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
-        if (stored && isSkinId(stored)) {
+        if (stored && isPaletteId(stored)) {
           this.setSkin(stored, /*persist*/ false);
           return;
         }
@@ -38,27 +63,24 @@ class SkinStore {
         // localStorage can throw in restricted contexts (Safari private,
         // sandboxed iframes). Fall through to default.
       }
-      // Default skin — apply inline so the var values are deterministic
-      // even without :root (e.g. when something else has set vars before
-      // us). Cheap, idempotent.
-      this.setSkin(DEFAULT_SKIN_ID, /*persist*/ false);
+      this.setSkin(DEFAULT_PALETTE_ID, /*persist*/ false);
     }
   }
 
   /**
-   * Activate a skin by id.
+   * Activate a palette by id.
    *
-   * @param id   The skin id to activate. Unknown ids fall back to default.
-   * @param persist  When true (default), write to localStorage. The boot
-   *                 path passes false so reading from storage doesn't
-   *                 immediately re-write the same value.
+   * @param id   The palette id to activate. Unknown ids fall back to default.
+   * @param persist  When true (default), write to localStorage. The boot path
+   *                 passes false so reading from storage doesn't immediately
+   *                 re-write the same value.
    */
-  setSkin(id: SkinId, persist = true): void {
-    const safeId: SkinId = isSkinId(id) ? id : DEFAULT_SKIN_ID;
-    const skin = getSkin(safeId);
+  setSkin(id: PaletteId, persist = true): void {
+    const safeId: PaletteId = isPaletteId(id) ? id : DEFAULT_PALETTE_ID;
+    const palette = getPalette(safeId);
     this.current = safeId;
     if (typeof document !== 'undefined') {
-      applySkinToRoot(skin);
+      applyPaletteToRoot(palette);
     }
     if (persist && typeof localStorage !== 'undefined') {
       try {
@@ -69,87 +91,37 @@ class SkinStore {
     }
   }
 
-  /** Convenience accessor for the active Skin object (vars, label, etc.). */
-  get currentSkin(): Skin {
-    return getSkin(this.current);
+  /** Convenience accessor for the active Palette object (vars, label, etc.). */
+  get currentSkin(): Palette {
+    return getPalette(this.current);
   }
 
-  /** Read-only list of all in-tree skins. */
-  list(): readonly Skin[] {
-    return SKINS;
+  /** Read-only list of all in-tree palettes. */
+  list(): readonly Palette[] {
+    return PALETTES;
   }
 }
 
-/** Write every var in `skin.vars` to documentElement.style. Public so
- *  tests can drive the applier without going through the store.
- *
- *  Also writes the sprite-extension CSS vars (--panel-bg, --fader-track-bg,
- *  --font-silkscreen, --control-style) so components can consume them
- *  via plain CSS without importing the skin object. Each var is REMOVED
- *  rather than left stale when the new skin doesn't define it — that
- *  way switching from Vintage back to Default fully unsets the panel bg
- *  instead of leaving a vestigial overlay. */
-/** OPTIONAL shape tokens (DINER+). Unlike the required SkinVars keys, a
- *  skin MAY omit these. When the active skin doesn't set one, it must be
- *  REMOVED from documentElement (not left stale) so switching DINER ->
- *  Default fully drops the rounded corners + neon glow and `_module-card.css`
- *  falls back to its legacy hard-edged values. Listed explicitly so the
- *  clear step is auditable. */
-const OPTIONAL_SHAPE_TOKENS = [
-  '--module-radius',
-  '--module-stripe-radius',
-  '--module-glow',
-  '--module-border-color',
-] as const;
-
-export function applySkinToRoot(skin: Skin): void {
+/** Write every colour var in `palette.vars` to documentElement.style, and
+ *  CLEAR the legacy structural/sprite tokens (see LEGACY_STRUCTURAL_TOKENS).
+ *  Public so tests can drive the applier without going through the store. */
+export function applyPaletteToRoot(palette: Palette): void {
   const root = document.documentElement;
-  for (const [k, v] of Object.entries(skin.vars)) {
+  for (const [k, v] of Object.entries(palette.vars)) {
     root.style.setProperty(k, v);
   }
-  // Clear any optional shape token the incoming skin doesn't define, so a
-  // previous skin's rounded/glow values don't bleed onto a skin that wants
-  // the legacy hard-edged look.
-  for (const k of OPTIONAL_SHAPE_TOKENS) {
-    if (!(k in skin.vars)) root.style.removeProperty(k);
+  // Drop any structural/sprite token a previous (structural) skin may have
+  // left inline, so the fixed dark structure's CSS fallbacks render.
+  for (const k of LEGACY_STRUCTURAL_TOKENS) {
+    root.style.removeProperty(k);
   }
-  // Expose the active skin id as `data-skin` on <html> so skins can opt
-  // into scoped CSS overlays (e.g. MATRIXCOWBOY's CRT scanlines + flicker
-  // animation in global.css) without each skin needing to re-declare the
-  // tokens. Default + CSS-only skins ignore this attribute; only skins
-  // with a matching `html[data-skin="…"]` rule are affected.
-  root.setAttribute('data-skin', skin.id);
-  // Sprite-extension CSS vars — write or clear.
-  const ext: Array<[string, string | undefined]> = [
-    ['--control-style', skin.controlStyle],
-    ['--panel-bg', skin.panelBg],
-    ['--fader-track-bg', skin.faderTrackBg],
-    ['--font-silkscreen', skin.silkscreenFontFamily],
-  ];
-  for (const [k, v] of ext) {
-    if (v) root.style.setProperty(k, v);
-    else root.style.removeProperty(k);
-  }
-  // Optional font stylesheet — inject as a <link rel=stylesheet> tagged
-  // with data-skin-font so we can swap/remove on subsequent skin changes.
+  // Expose the active palette id as `data-palette` on <html> for any scoped
+  // CSS that wants it (none by default — the structure is fixed).
+  root.setAttribute('data-palette', palette.id);
+  // Drop any stale skin-font <link> a previous structural skin injected.
   if (typeof document !== 'undefined' && document.head) {
-    const FONT_TAG = 'data-skin-font';
-    const existing = document.head.querySelector(`link[${FONT_TAG}]`);
-    if (skin.silkscreenFontStylesheet) {
-      if (existing instanceof HTMLLinkElement) {
-        if (existing.href !== skin.silkscreenFontStylesheet) {
-          existing.href = skin.silkscreenFontStylesheet;
-        }
-      } else {
-        const link = document.createElement('link');
-        link.rel = 'stylesheet';
-        link.href = skin.silkscreenFontStylesheet;
-        link.setAttribute(FONT_TAG, '');
-        document.head.appendChild(link);
-      }
-    } else if (existing) {
-      existing.remove();
-    }
+    const existing = document.head.querySelector('link[data-skin-font]');
+    if (existing) existing.remove();
   }
 }
 
@@ -157,11 +129,7 @@ export function applySkinToRoot(skin: Skin): void {
 export const skinStore = new SkinStore();
 
 // Dev-only: expose on window so e2e tests can drive the store without
-// rendering the SkinSwitcher UI. Stripped in prod builds.
-//
-// `import.meta.env?.DEV` rather than the bare access — vitest in node env
-// without Vite's import-meta replacement leaves env undefined; the
-// optional chain keeps unit tests from crashing during module eval.
+// rendering the switcher UI. Stripped in prod builds.
 if (
   typeof import.meta !== 'undefined' &&
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

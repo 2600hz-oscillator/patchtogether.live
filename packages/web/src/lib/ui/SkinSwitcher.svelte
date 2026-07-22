@@ -13,7 +13,7 @@
   // capture-phase pointerdown listener.
   import { onMount } from 'svelte';
   import { skinStore } from '$lib/ui/skins/skin-store.svelte';
-  import { swatchColorsFor, type Skin } from '$lib/ui/skins';
+  import { swatchColorsFor, type Palette } from '$lib/ui/skins';
 
   let open = $state(false);
   let triggerEl: HTMLButtonElement | null = $state(null);
@@ -25,7 +25,7 @@
   function toggle() {
     open = !open;
   }
-  function pick(s: Skin) {
+  function pick(s: Palette) {
     skinStore.setSkin(s.id);
     open = false;
     // Return focus to the trigger so keyboard users land somewhere

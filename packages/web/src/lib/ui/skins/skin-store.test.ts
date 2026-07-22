@@ -1,15 +1,12 @@
-// Skin-store unit tests.
+// Palette-store unit tests (P0.1 color-only re-tier).
 //
-// vitest.config.ts runs in `node` (no DOM). The skin store touches
-// `document.documentElement.style` and `localStorage` — tiny surface, so
-// we polyfill both inside this file rather than pull in jsdom for one
-// test (the project deliberately keeps unit tests dependency-light;
-// browser-shaped behaviors live in the e2e Playwright suite).
+// vitest.config.ts runs in `node` (no DOM). The store touches
+// `document.documentElement.style` + `localStorage` — tiny surface, so we
+// polyfill both inside this file rather than pull in jsdom for one test.
 //
-// Filename note: deliberately `.test.ts` (not `.svelte.test.ts`) so
-// the @sveltejs/vite-plugin-svelte loader doesn't try to compile this
-// as a Svelte runes module — it's a plain test file that imports the
-// runes store from `./skin-store.svelte`.
+// Filename note: deliberately `.test.ts` (not `.svelte.test.ts`) so the
+// vite-plugin-svelte loader doesn't try to compile this as a runes module —
+// it's a plain test file that imports the runes store from `./skin-store.svelte`.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
@@ -34,9 +31,6 @@ class StorageStub {
 }
 const storageStub = new StorageStub();
 
-// Globals must be in place before the .svelte.ts module is evaluated;
-// the module's IIFE constructs the singleton, which probes both.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const attrStub: Record<string, string> = {};
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).document = {
@@ -52,91 +46,74 @@ const attrStub: Record<string, string> = {};
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).window = globalThis;
 
-// Now we can safely import the store + skins.
-const { applySkinToRoot, skinStore } = await import('./skin-store.svelte');
-const { SKINS, getSkin } = await import('./index');
-const { defaultSkin } = await import('./default');
-const { terminalGreenSkin } = await import('./terminal-green');
-const { brutalistSkin } = await import('./brutalist');
-const { vaporwaveSkin } = await import('./vaporwave');
-const { vintageSkin } = await import('./vintage');
-const { matrixcowboySkin } = await import('./matrixcowboy');
-const { dinerSkin } = await import('./diner');
-const { lcarsSkin } = await import('./lcars');
+// Now we can safely import the store + palettes.
+const { applyPaletteToRoot, skinStore } = await import('./skin-store.svelte');
+const { PALETTES, getPalette } = await import('./index');
+const { racklinePalette } = await import('./palettes/rackline');
+const { graphitePalette } = await import('./palettes/graphite');
+const { midnightPalette } = await import('./palettes/midnight');
+const { emberPalette } = await import('./palettes/ember');
+const { slatePalette } = await import('./palettes/slate');
+const { CABLE_VARS } = await import('./palettes/_cables');
 
 const STORAGE_KEY = 'pt.skin';
 
 beforeEach(() => {
   styleStub.clear();
   storageStub.clear();
-  // Re-apply default so the singleton's `current` matches what's on the
-  // root after clearing — keeps any test that reads skinStore.current
-  // honest about its initial state for THIS test.
-  skinStore.setSkin('default');
-  // Constructor wrote storage; clear it again so unrelated tests aren't
-  // polluted by the boot path.
+  skinStore.setSkin('rackline');
   storageStub.clear();
 });
 
-describe('skin types + registry', () => {
-  it('exposes 8 in-tree skins, default first', () => {
-    expect(SKINS.length).toBe(8);
-    expect(SKINS[0]?.id).toBe('default');
+describe('palette types + registry', () => {
+  it('exposes 5 in-tree palettes, rackline first', () => {
+    expect(PALETTES.length).toBe(5);
+    expect(PALETTES[0]?.id).toBe('rackline');
   });
 
-  it('every skin defines every REQUIRED token from the type', () => {
-    // defaultSkin sets exactly the required SkinVars keys (no optional
-    // shape tokens), so its key set is the required contract. Every skin
-    // must be a SUPERSET — it may add the OPTIONAL shape tokens (DINER),
-    // but it can never DROP a required one.
-    const required = Object.keys(defaultSkin.vars).sort();
-    for (const s of SKINS) {
-      const sk = new Set(Object.keys(s.vars));
+  it('every palette defines every REQUIRED colour token', () => {
+    // racklinePalette sets exactly the required PaletteVars keys, so its key
+    // set is the required contract. Every palette must be a SUPERSET.
+    const required = Object.keys(racklinePalette.vars).sort();
+    for (const p of PALETTES) {
+      const pk = new Set(Object.keys(p.vars));
       for (const k of required) {
-        expect(sk.has(k)).toBe(true);
+        expect(pk.has(k)).toBe(true);
       }
     }
   });
 
-  it('only the fancy opt-in skins set the OPTIONAL shape tokens; the six legacy skins omit them', () => {
-    // The whole point of the optional tokens: `_module-card.css` falls back
-    // to the legacy hard-edged values for any skin that doesn't set them, so
-    // the six pre-existing skins render byte-identically (VRT baselines hold).
-    // DINER + LCARS are the two opt-in skins; they set the full set.
-    const optional = [
+  it('NO palette sets a structural / sprite token (color-only contract)', () => {
+    const forbidden = [
       '--module-radius',
       '--module-stripe-radius',
       '--module-glow',
       '--module-border-color',
-    ] as const;
-    const optInIds = new Set<string>(['diner', 'lcars']);
-    for (const s of SKINS) {
-      const setsAny = optional.some((k) => k in s.vars);
-      if (optInIds.has(s.id)) {
-        expect(setsAny).toBe(true);
-        for (const k of optional) expect(s.vars).toHaveProperty(k);
-      } else {
-        expect(setsAny).toBe(false);
+      '--control-style',
+      '--panel-bg',
+      '--fader-track-bg',
+      '--font-silkscreen',
+    ];
+    for (const p of PALETTES) {
+      for (const k of forbidden) {
+        expect(p.vars).not.toHaveProperty(k);
       }
     }
   });
 
-  it('default skin values mirror :root global.css surface', () => {
-    // Critical contract: switching to `default` must reproduce the
-    // baseline visuals byte-for-byte. If this fails, default skin has
-    // drifted from global.css and existing snapshots will diverge.
-    expect(defaultSkin.vars['--bg']).toBe('#0e1116');
-    expect(defaultSkin.vars['--module-bg']).toBe('#1a1d23');
-    expect(defaultSkin.vars['--accent']).toBe('#00f0ff');
-    expect(defaultSkin.vars['--cable-audio']).toBe('#fbbf24');
-    expect(defaultSkin.vars['--cable-pitch']).toBe('#60a5fa');
-    expect(defaultSkin.vars['--cable-gate']).toBe('#f87171');
-    expect(defaultSkin.vars['--cable-cv']).toBe('#34d399');
+  it('rackline default reproduces the RACKLINE mock palette (tokens.css seed)', () => {
+    // Critical contract: rackline must mirror the tokens.css PALETTE seed so
+    // the pre-JS :root fallback matches the inline-applied default.
+    expect(racklinePalette.vars['--bg']).toBe('#0e1013');
+    expect(racklinePalette.vars['--module-bg']).toBe('#1c1f24');
+    expect(racklinePalette.vars['--module-bg-deep']).toBe('#0a0c0f');
+    expect(racklinePalette.vars['--surface-1']).toBe('#17191d');
+    expect(racklinePalette.vars['--text']).toBe('#eef1f5');
+    expect(racklinePalette.vars['--accent']).toBe('#ffb347');
   });
 
-  it('cable token NAMES are stable across all skins (Canvas contract)', () => {
+  it('cable token NAMES are stable across all palettes (Canvas contract)', () => {
     // Canvas.svelte builds edge styles via `var(--cable-${e.sourceType})`.
-    // Removing/renaming a cable var would silently break edge colouring.
     const required = [
       '--cable-audio',
       '--cable-pitch',
@@ -148,205 +125,136 @@ describe('skin types + registry', () => {
       '--cable-mono-video',
       '--cable-video',
     ] as const;
-    for (const s of SKINS) {
+    for (const p of PALETTES) {
       for (const k of required) {
-        expect(s.vars).toHaveProperty(k);
+        expect(p.vars).toHaveProperty(k);
+      }
+    }
+  });
+
+  it('cable/domain hues MATCH THE MOCKS (owner decision #1)', () => {
+    // The 5 primary domain hues are the mockup values verbatim.
+    expect(CABLE_VARS['--cable-audio']).toBe('#38d3c8'); // teal
+    expect(CABLE_VARS['--cable-cv']).toBe('#7bd66a'); // green
+    expect(CABLE_VARS['--cable-gate']).toBe('#f2c14e'); // amber
+    expect(CABLE_VARS['--cable-video']).toBe('#b57bff'); // violet
+    expect(CABLE_VARS['--cable-polyPitchGate']).toBe('#ff7bc2'); // pink
+    // Cable language is CONSTANT across every palette.
+    for (const p of PALETTES) {
+      for (const [k, v] of Object.entries(CABLE_VARS)) {
+        expect(p.vars[k as keyof typeof p.vars]).toBe(v);
       }
     }
   });
 });
 
-describe('applySkinToRoot', () => {
-  it('writes every var inline on documentElement', () => {
-    applySkinToRoot(terminalGreenSkin);
-    expect(styleStub.getPropertyValue('--bg')).toBe('#000000');
-    expect(styleStub.getPropertyValue('--text')).toBe('#7fff7f');
-    expect(styleStub.getPropertyValue('--accent')).toBe('#00ffaa');
+describe('applyPaletteToRoot', () => {
+  it('writes every colour var inline on documentElement', () => {
+    applyPaletteToRoot(graphitePalette);
+    expect(styleStub.getPropertyValue('--bg')).toBe('#101215');
+    expect(styleStub.getPropertyValue('--accent')).toBe('#38d3c8');
+    expect(styleStub.getPropertyValue('--cable-audio')).toBe('#38d3c8');
   });
 
-  it('overwrites previous skin values when called again', () => {
-    applySkinToRoot(brutalistSkin);
-    expect(styleStub.getPropertyValue('--text')).toBe('#ffffff');
-    applySkinToRoot(vaporwaveSkin);
-    expect(styleStub.getPropertyValue('--text')).toBe('#f0e8ff');
-    expect(styleStub.getPropertyValue('--accent')).toBe('#ff7ce0');
+  it('overwrites previous palette values when called again', () => {
+    applyPaletteToRoot(emberPalette);
+    expect(styleStub.getPropertyValue('--accent')).toBe('#ff8a3c');
+    applyPaletteToRoot(midnightPalette);
+    expect(styleStub.getPropertyValue('--bg')).toBe('#0b0f1a');
+    expect(styleStub.getPropertyValue('--accent')).toBe('#5cc8ff');
+  });
+
+  it('CLEARS any stale legacy structural / sprite token on apply', () => {
+    // Simulate a pre-boot :root or an old structural skin leaving these inline.
+    for (const k of [
+      '--module-radius',
+      '--module-glow',
+      '--module-border-color',
+      '--control-style',
+      '--panel-bg',
+      '--font-silkscreen',
+    ]) {
+      styleStub.setProperty(k, 'STALE');
+    }
+    applyPaletteToRoot(slatePalette);
+    expect(styleStub.getPropertyValue('--module-radius')).toBe('');
+    expect(styleStub.getPropertyValue('--module-glow')).toBe('');
+    expect(styleStub.getPropertyValue('--module-border-color')).toBe('');
+    expect(styleStub.getPropertyValue('--control-style')).toBe('');
+    expect(styleStub.getPropertyValue('--panel-bg')).toBe('');
+    expect(styleStub.getPropertyValue('--font-silkscreen')).toBe('');
+    // …but the colour layer landed.
+    expect(styleStub.getPropertyValue('--bg')).toBe('#15181c');
+  });
+
+  it('writes data-palette on documentElement', () => {
+    applyPaletteToRoot(midnightPalette);
+    expect(attrStub['data-palette']).toBe('midnight');
+    applyPaletteToRoot(racklinePalette);
+    expect(attrStub['data-palette']).toBe('rackline');
   });
 });
 
 describe('skinStore', () => {
-  it('starts with the default skin', () => {
-    // beforeEach resets to default. Verify the contract.
-    expect(skinStore.current).toBe('default');
-    expect(skinStore.currentSkin.id).toBe('default');
+  it('starts with the rackline default palette', () => {
+    expect(skinStore.current).toBe('rackline');
+    expect(skinStore.currentSkin.id).toBe('rackline');
   });
 
   it('setSkin updates current + applies vars + persists', () => {
-    skinStore.setSkin('vaporwave');
-    expect(skinStore.current).toBe('vaporwave');
-    expect(styleStub.getPropertyValue('--bg')).toBe('#0a0521');
-    expect(storageStub.getItem(STORAGE_KEY)).toBe('vaporwave');
+    skinStore.setSkin('midnight');
+    expect(skinStore.current).toBe('midnight');
+    expect(styleStub.getPropertyValue('--bg')).toBe('#0b0f1a');
+    expect(storageStub.getItem(STORAGE_KEY)).toBe('midnight');
   });
 
   it('setSkin with persist=false does not write to localStorage', () => {
     storageStub.clear();
-    skinStore.setSkin('brutalist', false);
-    expect(skinStore.current).toBe('brutalist');
+    skinStore.setSkin('ember', false);
+    expect(skinStore.current).toBe('ember');
     expect(storageStub.getItem(STORAGE_KEY)).toBeNull();
   });
 
   it('setSkin falls back to default on unknown id', () => {
     // Cast through unknown so we can pass an invalid id without TS griping.
-    skinStore.setSkin('nonexistent' as unknown as 'default');
-    expect(skinStore.current).toBe('default');
-    expect(storageStub.getItem(STORAGE_KEY)).toBe('default');
+    skinStore.setSkin('nonexistent' as unknown as 'rackline');
+    expect(skinStore.current).toBe('rackline');
+    expect(storageStub.getItem(STORAGE_KEY)).toBe('rackline');
   });
 
-  it('list() returns the same skins as the SKINS export', () => {
+  it('an old (removed) skin id in storage boots to the default palette', () => {
+    // Users who persisted a legacy skin id ('diner', 'default', …) resolve to
+    // rackline rather than crashing.
+    storageStub.setItem(STORAGE_KEY, 'diner');
+    skinStore.setSkin('diner' as unknown as 'rackline');
+    expect(skinStore.current).toBe('rackline');
+  });
+
+  it('list() returns the same palettes as the PALETTES export', () => {
     const list = skinStore.list();
-    expect(list.length).toBe(SKINS.length);
-    expect(list[0]?.id).toBe('default');
+    expect(list.length).toBe(PALETTES.length);
+    expect(list[0]?.id).toBe('rackline');
   });
 
   it('round-trips through localStorage on reload simulation', () => {
-    skinStore.setSkin('terminal-green');
-    expect(storageStub.getItem(STORAGE_KEY)).toBe('terminal-green');
-    // Simulate a reload by reading the persisted value + applying.
+    skinStore.setSkin('graphite');
+    expect(storageStub.getItem(STORAGE_KEY)).toBe('graphite');
     styleStub.clear();
     const stored = storageStub.getItem(STORAGE_KEY);
-    expect(stored).toBe('terminal-green');
-    if (stored) {
-      const skin = getSkin(stored as 'terminal-green');
-      applySkinToRoot(skin);
-    }
-    expect(styleStub.getPropertyValue('--bg')).toBe('#000000');
+    expect(stored).toBe('graphite');
+    if (stored) applyPaletteToRoot(getPalette(stored as 'graphite'));
+    expect(styleStub.getPropertyValue('--bg')).toBe('#101215');
   });
 
   it('setSkin still updates `current` even when localStorage throws', () => {
     const setItem = vi.spyOn(storageStub, 'setItem')
       .mockImplementation(() => { throw new Error('quota'); });
     try {
-      skinStore.setSkin('brutalist');
-      expect(skinStore.current).toBe('brutalist');
-      expect(styleStub.getPropertyValue('--bg')).toBe('#000000');
+      skinStore.setSkin('ember');
+      expect(skinStore.current).toBe('ember');
+      expect(styleStub.getPropertyValue('--bg')).toBe('#14110f');
     } finally {
       setItem.mockRestore();
     }
-  });
-});
-
-describe('vintage skin + sprite extension', () => {
-  it('loads cleanly with every required sprite field populated', () => {
-    expect(vintageSkin.id).toBe('vintage');
-    expect(vintageSkin.controlStyle).toBe('sprite');
-    // All sprite hooks present + non-empty.
-    expect(vintageSkin.faderHandleSvg).toMatch(/<svg/);
-    expect(vintageSkin.faderTrackBg).toMatch(/^url\(/);
-    expect(vintageSkin.panelBg).toMatch(/^url\(/);
-    expect(vintageSkin.silkscreenFontFamily).toMatch(/Plex/);
-    expect(vintageSkin.silkscreenFontStylesheet).toMatch(/^https:/);
-  });
-
-  it('legacy 4 skins keep controlStyle undefined (CSS path)', () => {
-    expect(defaultSkin.controlStyle).toBeUndefined();
-    expect(terminalGreenSkin.controlStyle).toBeUndefined();
-    expect(brutalistSkin.controlStyle).toBeUndefined();
-    expect(vaporwaveSkin.controlStyle).toBeUndefined();
-  });
-
-  it('matrixcowboy stays on the CSS path but ships a monospace font', () => {
-    // MATRIXCOWBOY reuses the silkscreen-font hook for IBM Plex Mono but
-    // does NOT opt into sprite-based controls — chrome stays CSS-rendered
-    // so the CRT scanline overlay reads cleanly across every module card.
-    expect(matrixcowboySkin.controlStyle).toBeUndefined();
-    expect(matrixcowboySkin.silkscreenFontFamily).toMatch(/Plex Mono/);
-    expect(matrixcowboySkin.silkscreenFontStylesheet).toMatch(/^https:/);
-  });
-
-  it('applying a skin writes data-skin on documentElement', () => {
-    applySkinToRoot(matrixcowboySkin);
-    expect(attrStub['data-skin']).toBe('matrixcowboy');
-    applySkinToRoot(defaultSkin);
-    expect(attrStub['data-skin']).toBe('default');
-  });
-
-  it('diner is a fancy sprite skin that ships the optional shape tokens', () => {
-    expect(dinerSkin.id).toBe('diner');
-    expect(dinerSkin.controlStyle).toBe('sprite');
-    // Sprite hooks (like Vintage).
-    expect(dinerSkin.faderHandleSvg).toMatch(/<svg/);
-    expect(dinerSkin.faderTrackBg).toMatch(/^url\(/);
-    expect(dinerSkin.panelBg).toMatch(/^url\(/);
-    expect(dinerSkin.silkscreenFontFamily).toMatch(/Orbitron/);
-    expect(dinerSkin.silkscreenFontStylesheet).toMatch(/^https:.*Orbitron/);
-    // Optional shape tokens (the curved-edges + neon-border contract).
-    expect(dinerSkin.vars['--module-radius']).toBe('14px');
-    expect(dinerSkin.vars['--module-glow']).toMatch(/rgba/);
-    expect(dinerSkin.vars['--module-border-color']).toBe('#c46af0');
-  });
-
-  it('lcars is a fancy sprite skin that ships the optional shape tokens (pushed to MAX radius)', () => {
-    expect(lcarsSkin.id).toBe('lcars');
-    expect(lcarsSkin.controlStyle).toBe('sprite');
-    // Sprite hooks (like Vintage/Diner).
-    expect(lcarsSkin.faderHandleSvg).toMatch(/<svg/);
-    expect(lcarsSkin.faderTrackBg).toMatch(/^url\(/);
-    expect(lcarsSkin.panelBg).toMatch(/^url\(/);
-    expect(lcarsSkin.silkscreenFontFamily).toMatch(/Antonio/);
-    expect(lcarsSkin.silkscreenFontStylesheet).toMatch(/^https:.*Antonio/);
-    // Optional shape tokens — pill cards (max radius) + amber neon border.
-    expect(lcarsSkin.vars['--module-radius']).toBe('22px');
-    expect(lcarsSkin.vars['--module-glow']).toMatch(/rgba/);
-    expect(lcarsSkin.vars['--module-border-color']).toBe('#FF9900');
-    // Pure-black void background.
-    expect(lcarsSkin.vars['--bg']).toBe('#000000');
-    expect(lcarsSkin.vars['--accent']).toBe('#FF9900');
-  });
-
-  it('applySkinToRoot applies LCARS shape tokens, then CLEARS them on switch-away', () => {
-    applySkinToRoot(lcarsSkin);
-    expect(styleStub.getPropertyValue('--module-radius')).toBe('22px');
-    expect(styleStub.getPropertyValue('--module-glow')).toMatch(/rgba/);
-    expect(styleStub.getPropertyValue('--module-border-color')).toBe('#FF9900');
-    expect(styleStub.getPropertyValue('--control-style')).toBe('sprite');
-    expect(styleStub.getPropertyValue('--font-silkscreen')).toMatch(/Antonio/);
-
-    applySkinToRoot(defaultSkin);
-    expect(styleStub.getPropertyValue('--module-radius')).toBe('');
-    expect(styleStub.getPropertyValue('--module-stripe-radius')).toBe('');
-    expect(styleStub.getPropertyValue('--module-glow')).toBe('');
-    expect(styleStub.getPropertyValue('--module-border-color')).toBe('');
-    expect(styleStub.getPropertyValue('--font-silkscreen')).toBe('');
-  });
-
-  it('applySkinToRoot applies DINER shape tokens, then CLEARS them on switch-away', () => {
-    applySkinToRoot(dinerSkin);
-    expect(styleStub.getPropertyValue('--module-radius')).toBe('14px');
-    expect(styleStub.getPropertyValue('--module-glow')).toMatch(/rgba/);
-    expect(styleStub.getPropertyValue('--module-border-color')).toBe('#c46af0');
-    expect(styleStub.getPropertyValue('--control-style')).toBe('sprite');
-
-    // Switching to a skin that doesn't define them must REMOVE them so the
-    // legacy CSS fallback (hard corners, no glow) kicks back in.
-    applySkinToRoot(defaultSkin);
-    expect(styleStub.getPropertyValue('--module-radius')).toBe('');
-    expect(styleStub.getPropertyValue('--module-stripe-radius')).toBe('');
-    expect(styleStub.getPropertyValue('--module-glow')).toBe('');
-    expect(styleStub.getPropertyValue('--module-border-color')).toBe('');
-  });
-
-  it('applySkinToRoot writes sprite-extension vars only for vintage', () => {
-    applySkinToRoot(vintageSkin);
-    expect(styleStub.getPropertyValue('--control-style')).toBe('sprite');
-    expect(styleStub.getPropertyValue('--panel-bg')).toMatch(/^url\(/);
-    expect(styleStub.getPropertyValue('--fader-track-bg')).toMatch(/^url\(/);
-    expect(styleStub.getPropertyValue('--font-silkscreen')).toMatch(/Plex/);
-
-    // Switching back to default CLEARS the sprite-extension vars so the
-    // legacy CSS path isn't contaminated by a stale panel texture.
-    applySkinToRoot(defaultSkin);
-    expect(styleStub.getPropertyValue('--control-style')).toBe('');
-    expect(styleStub.getPropertyValue('--panel-bg')).toBe('');
-    expect(styleStub.getPropertyValue('--fader-track-bg')).toBe('');
-    expect(styleStub.getPropertyValue('--font-silkscreen')).toBe('');
   });
 });

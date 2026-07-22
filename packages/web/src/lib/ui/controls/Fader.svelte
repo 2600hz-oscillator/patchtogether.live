@@ -16,7 +16,6 @@
   import type { KnobCurve } from '$lib/graph/types';
   import { onDestroy, onMount, untrack } from 'svelte';
   import WaveformGlyph from './WaveformGlyph.svelte';
-  import { skinStore } from '$lib/ui/skins/skin-store.svelte';
   import { createDragCommit } from './drag-commit';
   import ControlContextMenu from './ControlContextMenu.svelte';
   import { makeMidiAssignable } from './midi-assignable.svelte';
@@ -388,13 +387,14 @@
     return format(v, units);
   }
 
-  // Sprite-mode: when the active skin opts into controlStyle:'sprite',
-  // render the handle as an inline <svg> sprite + paint the track with
-  // the skin's faderTrackBg image. CSS rendering path is preserved for
-  // every other skin (controlStyle undefined => 'css').
-  let activeSkin = $derived(skinStore.currentSkin);
-  let useSprite = $derived(activeSkin.controlStyle === 'sprite');
-  let handleSvg = $derived(activeSkin.faderHandleSvg ?? '');
+  // Sprite-mode retired (P0.1 re-tier): palettes are COLOR-ONLY and the
+  // structural sprite hooks (controlStyle / faderHandleSvg / faderTrackBg)
+  // moved out of the theme surface into the ONE fixed dark structure. The
+  // fader always renders the CSS thumb; the `.sprite` class + `--fader-track-bg`
+  // fallback remain harmless (never activated). Kept as consts so the template
+  // + styles below compile unchanged.
+  const useSprite = false;
+  const handleSvg = '';
 </script>
 
 <div

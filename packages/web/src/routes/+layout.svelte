@@ -1,5 +1,8 @@
 <script lang="ts">
   import '@xyflow/svelte/dist/style.css';
+  // Design tokens FIRST: structural (fixed) + palette seed (RACKLINE). global.css
+  // + the palette engine layer their overrides on top of the palette tier.
+  import '$lib/styles/tokens.css';
   import './global.css';
   import '$lib/ui/modules/_module-card.css';
   import { onMount } from 'svelte';
