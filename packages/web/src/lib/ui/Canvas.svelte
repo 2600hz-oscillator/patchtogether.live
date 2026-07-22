@@ -54,6 +54,7 @@
     SEND_BOX_COUNT,
     columnForFlowX,
     sendBoxForFlowX,
+    columnPitch,
     indexForDropY,
     insertBottom,
     removeFrom,
@@ -68,6 +69,8 @@
     needsDefaultVideoOut,
     rackLacksType,
     videoOutSpawnPos,
+    videoZoneSlotPos,
+    VIDEO_ZONE_DEFAULTS,
     DEFAULT_VIDEO_OUT_ID,
     VIDEO_ZONE_EXTRA_DEFAULTS,
     videoZoneWiresFor,
@@ -480,6 +483,16 @@
    *  default to on (+ the VRT baseline regen) is the post-preview follow-up.
    *  Dawless never sees it (workflowMode gate). */
   let shellPreview = $derived(workflowMode && page.url?.searchParams?.get('shell') === '1');
+
+  /** The ACTIVE channel-column pitch (flow-space px): the tight 216px RACKLINE
+   *  pitch under the `?shell=1` preview, else the app-scale 765px (34hp) band.
+   *  Threaded into the RENDER-derived member positions, the drop/drag hit-tests,
+   *  the lane overlay bands, and the viewport nav so the narrowed lanes are one
+   *  coherent coordinate frame. Preview-OFF resolves to COLUMN_W → every geometry
+   *  call is byte-identical. NEVER threaded into a PERSISTED write (drop-spawn x/y,
+   *  the videoOut/A-V-defaults spawn, the grow-up push-ups all keep COLUMN_W), so
+   *  the persisted graph + collab convergence are untouched — pure render deriv. */
+  let wcolPitch = $derived(columnPitch(shellPreview));
 
   // The CURRENT lane FaceTier (mini|compact|full) for the live workflow zoom —
   // reads the SAME shared LOD store `provideLodTier()` publishes on context, so
@@ -1455,7 +1468,7 @@
         const vp = readWorkflowViewportMetrics();
         if (!vp || !flowApi) return;
         e.preventDefault();
-        flowApi.setViewport(videoAreaViewport(vp), { duration: WCOL_PAN_MS });
+        flowApi.setViewport(videoAreaViewport(vp, wcolPitch), { duration: WCOL_PAN_MS });
         return;
       }
       // '1'..'8' → center that lane (guard against '0'/'9'+ and > column count).
@@ -1465,7 +1478,7 @@
         const vp = readWorkflowViewportMetrics();
         if (!vp || !flowApi) return;
         e.preventDefault();
-        flowApi.setViewport(laneCenterViewport(ch, vp), { duration: WCOL_PAN_MS });
+        flowApi.setViewport(laneCenterViewport(ch, vp, wcolPitch), { duration: WCOL_PAN_MS });
       }
     }
     window.addEventListener('keydown', onNavKey);
@@ -1502,7 +1515,7 @@
       const vp = readWorkflowViewportMetrics();
       if (flowApi && vp && raw && raw.zoom > 0) {
         didFrameLanesOnLoad = true;
-        flowApi.setViewport(fitLanesViewport(vp), { duration: 0 });
+        flowApi.setViewport(fitLanesViewport(vp, wcolPitch), { duration: 0 });
         return;
       }
       if (++tries < 30) raf = requestAnimationFrame(tick);
@@ -2109,13 +2122,26 @@
         order.map((id) => wcolCardWidthPx(typeOf.get(id) ?? ''));
       for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
         const order = cols[String(ch)] ?? [];
-        const positions = columnFlushPositions(ch, heightsFor(order), widthsFor(order));
+        const positions = columnFlushPositions(ch, heightsFor(order), widthsFor(order), wcolPitch);
         order.forEach((id, i) => wcolPosByNode.set(id, positions[i]!));
       }
       for (let s = 1; s <= SEND_BOX_COUNT; s++) {
         const order = sends[String(s)] ?? [];
-        const positions = sendFlushPositions(s, heightsFor(order), widthsFor(order));
+        const positions = sendFlushPositions(s, heightsFor(order), widthsFor(order), wcolPitch);
         order.forEach((id, i) => wcolPosByNode.set(id, positions[i]!));
+      }
+      // SHELL PREVIEW: the video-zone default trio (videoOut / recorderbox /
+      // synesthesia) is NOT a channel member, so it renders at its PERSISTED
+      // spawn X — the wide 765px video-zone pitch. Under the narrowed lanes that
+      // strands them far right of the tight columns, so RE-DERIVE their RENDER
+      // position to the shell pitch (videoOut slot 0 is pitch-independent;
+      // recorderbox/synesthesia pack under columns 2/3). Pure render OVERRIDE
+      // (like the channel members) — the persisted x/y is untouched, so preview
+      // OFF is byte-identical and no Y.Doc write / collab divergence occurs.
+      if (shellPreview) {
+        VIDEO_ZONE_DEFAULTS.forEach((spec, i) => {
+          if (typeOf.has(spec.id)) wcolPosByNode.set(spec.id, videoZoneSlotPos(i, wcolPitch));
+        });
       }
     }
     for (const n of snap.nodes) {
@@ -3940,7 +3966,11 @@
           const d = node.data as { channel?: number; sendSlot?: number } | undefined;
           const oldCh = typeof d?.channel === 'number' ? d.channel : null;
           const oldSlot = typeof d?.sendSlot === 'number' ? d.sendSlot : null;
-          const band = columnForFlowX(n.position.x);
+          // Hit-test the DROP against the ACTIVE pitch: under `?shell=1` the lanes
+          // render at the narrow pitch, so the dragged node's flow-X lives in that
+          // narrow frame — the resolved column/send (a persisted MEMBERSHIP scalar,
+          // never a position) must match what the user visually dropped on.
+          const band = columnForFlowX(n.position.x, wcolPitch);
           // Drop center uses the dragged card's OWN flush height (matches the
           // flush layout the sibling centers are computed against).
           const dropCenterY = n.position.y + wcolCardHeightPx(node.type) / 2;
@@ -3969,7 +3999,7 @@
             }
             stillMember.add(n.id);
           } else if (band === 'send') {
-            const slot = sendBoxForFlowX(n.position.x);
+            const slot = sendBoxForFlowX(n.position.x, wcolPitch);
             if (oldSlot === slot) {
               const order = wcolOrder('sends', slot);
               const sibs = order.filter((id) => id !== n.id);
@@ -4565,9 +4595,12 @@
     flowPos: { x: number; y: number },
   ): { channel?: number; sendSlot?: number } | null {
     if (!workflowMode || !patch.nodes[WCOL_MIXER_ID]) return null;
-    const band = columnForFlowX(flowPos.x);
+    // Resolve against the ACTIVE pitch (narrow under `?shell=1`): the spawn
+    // flow-pos comes from the cursor's screen→flow projection over the RENDERED
+    // (narrowed) lanes, so the column it lands in is a pitch-relative hit-test.
+    const band = columnForFlowX(flowPos.x, wcolPitch);
     if (typeof band === 'number') return { channel: band };
-    if (band === 'send') return { sendSlot: sendBoxForFlowX(flowPos.x) };
+    if (band === 'send') return { sendSlot: sendBoxForFlowX(flowPos.x, wcolPitch) };
     return null;
   }
 
@@ -6508,8 +6541,8 @@
         const memberH = wcolCardHeightPx(type);
         const base =
           wcolDrop.channel != null
-            ? laneCenterViewport(wcolDrop.channel, vp)
-            : sendBoxCenterViewport(wcolDrop.sendSlot!, vp);
+            ? laneCenterViewport(wcolDrop.channel, vp, wcolPitch)
+            : sendBoxCenterViewport(wcolDrop.sendSlot!, vp, wcolPitch);
         flowApi.setViewport(revealMemberViewport(base, pos.y, memberH, vp), { duration: WCOL_PAN_MS });
       }
     }
@@ -7566,7 +7599,7 @@
       {#if workflowMode}
         <!-- WORKFLOW CHANNEL COLUMNS guide: 8 numbered columns + SEND 1/2 rail,
              pinned to flow space. Workflow racks only → dawless VRT unchanged. -->
-        <ChannelColumnsOverlay columnColors={wcolColumnColors} laneTopY={wcolLaneTopY} tick={wcolViewportTick} />
+        <ChannelColumnsOverlay columnColors={wcolColumnColors} laneTopY={wcolLaneTopY} tick={wcolViewportTick} pitch={wcolPitch} />
       {/if}
       <CadillacOverlay {provider} />
       <!-- 2026-05-27: the per-node editable name label moved INSIDE every

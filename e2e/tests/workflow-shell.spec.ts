@@ -271,6 +271,86 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     }
   });
 
+  test('lanes are the TIGHT ~216px shell pitch: drops land in the narrowed column + tiles fill the lane with no overlap', async ({ page }) => {
+    // The RACKLINE narrowing: under ?shell=1 the app-scale 765px band collapses to
+    // the mock's tight 216px lane pitch, so the uniform 192px tiles FILL their
+    // lanes (24px gutter) instead of floating in huge gutters. Prove (a) a real
+    // palette drop lands in the correct NARROWED column via the pitch-aware
+    // hit-test, (b) the rendered column pitch is ~216px, and (c) tiles don't
+    // overlap (clean gutter).
+    const SHELL_COLUMN_W = 216;
+    await gotoWorkflow(page, { shell: true });
+    await waitForHooks(page);
+
+    // Anchor each spawn INSIDE the narrow band of columns 1..3 (X selects the
+    // column at the tight pitch — the same frame the rendered lanes live in).
+    const shellColPos = (ch: number) => ({ x: (ch - 1) * SHELL_COLUMN_W + 30, y: 40 });
+    const types = ['tidyVco', 'vca', 'delay'];
+    for (let i = 0; i < types.length; i++) {
+      await page.evaluate(
+        ({ type, pos }) => {
+          const w = globalThis as unknown as {
+            __setSpawnFlowPos: (p: { x: number; y: number }) => void;
+            __spawnFromPalette: (t: string) => void;
+          };
+          w.__setSpawnFlowPos(pos);
+          w.__spawnFromPalette(type);
+        },
+        { type: types[i], pos: shellColPos(i + 1) },
+      );
+      await page.waitForTimeout(250);
+    }
+
+    // (a) Each drop landed in the intended narrowed column: channels 1, 2, 3 each
+    //     hold exactly one member (the pitch-aware hit-test resolved the column).
+    const counts = await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: { columns?: Record<string, string[]> } } | undefined> };
+      };
+      const cols = w.__patch.nodes['pinned-mixmstrs']?.data?.columns ?? {};
+      return [1, 2, 3].map((ch) => (cols[String(ch)] ?? []).length);
+    });
+    expect(counts, 'each drop joined its own narrowed column').toEqual([1, 1, 1]);
+
+    // (b)+(c) Read the RENDERED flow-space X + tile width of each column head.
+    const tiles = await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __flow: { getInternalNode: (id: string) => { internals?: { positionAbsolute?: { x: number } }; position?: { x: number } } | undefined };
+        __patch: { nodes: Record<string, { data?: { columns?: Record<string, string[]> } } | undefined> };
+      };
+      const cols = w.__patch.nodes['pinned-mixmstrs']?.data?.columns ?? {};
+      const out: { ch: number; x: number; w: number }[] = [];
+      for (const ch of [1, 2, 3]) {
+        const id = (cols[String(ch)] ?? [])[0];
+        if (!id) continue;
+        const inode = w.__flow.getInternalNode(id);
+        const x = inode?.internals?.positionAbsolute?.x ?? inode?.position?.x ?? NaN;
+        const el = document.querySelector(
+          `.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"], .svelte-flow__node[data-id="${id}"] [data-testid="module-shell"]`,
+        ) as HTMLElement | null;
+        out.push({ ch, x, w: el?.offsetWidth ?? 0 });
+      }
+      return out;
+    });
+    expect(tiles.length).toBe(3);
+
+    // (b) Consecutive column heads are ~SHELL_COLUMN_W (216px) apart — the tight
+    //     pitch (NOT the old 765px). ±1px for sub-pixel rounding.
+    for (let i = 1; i < tiles.length; i++) {
+      const delta = tiles[i].x - tiles[i - 1].x;
+      expect(delta, `column ${tiles[i - 1].ch}→${tiles[i].ch} pitch ≈ ${SHELL_COLUMN_W}`).toBeGreaterThanOrEqual(SHELL_COLUMN_W - 1);
+      expect(delta).toBeLessThanOrEqual(SHELL_COLUMN_W + 1);
+    }
+
+    // (c) Every tile is the uniform SHELL_TILE_W (fills the lane), and tiles do
+    //     NOT overlap: each tile's right edge sits left of the next tile's left
+    //     edge (a clean gutter, no collision).
+    for (const t of tiles) expect(t.w).toBe(SHELL_TILE_W);
+    for (let i = 1; i < tiles.length; i++) {
+      expect(tiles[i - 1].x + tiles[i - 1].w, 'no horizontal overlap between adjacent tiles').toBeLessThanOrEqual(tiles[i].x + 1);
+    }
+  });
+
   test('tiles PROMOTE per LOD tier: uniform height grows mini→compact→full as you zoom in', async ({ page }) => {
     await gotoWorkflow(page, { shell: true });
     await waitForHooks(page);

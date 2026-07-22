@@ -9,6 +9,8 @@ import { describe, it, expect } from 'vitest';
 import {
   COLUMN_COUNT,
   COLUMN_W,
+  SHELL_COLUMN_W,
+  columnPitch,
   COLUMN_SLOT_H,
   COLUMN_BASELINE_Y,
   columnXBand,
@@ -62,7 +64,7 @@ import {
   moveBetween,
   type ColumnNodeView,
 } from './channel-columns';
-import { RACK_UNIT } from '$lib/ui/rack-grid';
+import { RACK_UNIT, HP_UNIT } from '$lib/ui/rack-grid';
 
 // ---------------- Geometry ----------------
 
@@ -462,6 +464,116 @@ describe('column geometry', () => {
     expect(indexForDropY(centers, 400)).toBe(1); // between index 0 and 1
     expect(indexForDropY(centers, 200)).toBe(2); // between index 1 and 2
     expect(indexForDropY(centers, 50)).toBe(3); // above all → top (append)
+  });
+});
+
+// ---------------- Shell-preview column pitch (RACKLINE tight 8-lane rack) ----------------
+
+describe('SHELL_COLUMN_W — the ?shell=1 tight column pitch (192 tile + 24 gutter)', () => {
+  const SHELL_TILE_W = 192; // module-shell-model.ts SHELL_TILE_W (the uniform tile)
+
+  it('SHELL_COLUMN_W is the mock 216px pitch = a 192px tile + a 24px gutter', () => {
+    expect(SHELL_COLUMN_W).toBe(216);
+    expect(SHELL_COLUMN_W).toBe(SHELL_TILE_W + 24);
+    // Narrower than the app-scale 765px band it replaces under the preview.
+    expect(SHELL_COLUMN_W).toBeLessThan(COLUMN_W);
+  });
+
+  it('columnPitch resolves the active pitch by the preview flag', () => {
+    expect(columnPitch(false)).toBe(COLUMN_W); // preview OFF → 765 (unchanged)
+    expect(columnPitch(true)).toBe(SHELL_COLUMN_W); // preview ON → 216 (tight)
+  });
+
+  it('PREVIEW-OFF BYTE-IDENTICAL: every default-arg call equals the explicit COLUMN_W call', () => {
+    // The whole safety argument — a preview-off caller passes no pitch, so the
+    // math is bit-for-bit the fixed-765 behaviour. Spot-check across the surface.
+    for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
+      expect(columnXBand(ch)).toEqual(columnXBand(ch, COLUMN_W));
+      expect(columnBandCenterX(ch)).toBe(columnBandCenterX(ch, COLUMN_W));
+      expect(columnCardX(ch, 192)).toBe(columnCardX(ch, 192, COLUMN_W));
+      expect(columnFlushPositions(ch, [540], [192])).toEqual(
+        columnFlushPositions(ch, [540], [192], COLUMN_W),
+      );
+    }
+    for (const s of [1, 2]) {
+      expect(sendBoxXBand(s)).toEqual(sendBoxXBand(s, COLUMN_W));
+      expect(sendCardX(s, 192)).toBe(sendCardX(s, 192, COLUMN_W));
+    }
+    expect(sendRailXBand()).toEqual(sendRailXBand(COLUMN_W));
+    expect(laneRegionXBand()).toEqual(laneRegionXBand(COLUMN_W));
+    expect(videoAreaBand()).toEqual(videoAreaBand(COLUMN_W));
+    expect(videoZoneSlotPos(2)).toEqual(videoZoneSlotPos(2, COLUMN_W));
+    expect(columnForFlowX(2000)).toBe(columnForFlowX(2000, COLUMN_W));
+    expect(sendBoxForFlowX(COLUMN_COUNT * COLUMN_W + 5)).toBe(
+      sendBoxForFlowX(COLUMN_COUNT * COLUMN_W + 5, COLUMN_W),
+    );
+  });
+
+  it('under the shell pitch each column band is exactly SHELL_COLUMN_W wide + contiguous', () => {
+    for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
+      const [x0, x1] = columnXBand(ch, SHELL_COLUMN_W);
+      expect(x1 - x0).toBe(SHELL_COLUMN_W);
+      if (ch > 1) expect(x0).toBe(columnXBand(ch - 1, SHELL_COLUMN_W)[1]); // butts the prev
+    }
+    // The whole 8-lane band spans 8 * 216 = 1728px, and the sends rail + video
+    // zone track it.
+    expect(sendRailXBand(SHELL_COLUMN_W)[0]).toBe(COLUMN_COUNT * SHELL_COLUMN_W);
+    expect(videoAreaBand(SHELL_COLUMN_W).x1).toBe(COLUMN_COUNT * SHELL_COLUMN_W);
+  });
+
+  it('a 192px tile centers in the 216px band with a clean 12px gutter each side', () => {
+    for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
+      const [x0] = columnXBand(ch, SHELL_COLUMN_W);
+      const cardX = columnCardX(ch, SHELL_TILE_W, SHELL_COLUMN_W);
+      expect(cardX - x0).toBe(12); // left gutter
+      expect(x0 + SHELL_COLUMN_W - (cardX + SHELL_TILE_W)).toBe(12); // right gutter
+    }
+  });
+
+  it('consecutive shell-pitch tile positions are exactly SHELL_COLUMN_W apart (no overlap, tight gutter)', () => {
+    const xs = Array.from({ length: COLUMN_COUNT }, (_, i) =>
+      columnCardX(i + 1, SHELL_TILE_W, SHELL_COLUMN_W),
+    );
+    for (let i = 1; i < xs.length; i++) {
+      expect(xs[i]! - xs[i - 1]!).toBe(SHELL_COLUMN_W); // 216px pitch
+      // right edge of the previous tile < left edge of the next → no overlap.
+      expect(xs[i - 1]! + SHELL_TILE_W).toBeLessThan(xs[i]!);
+    }
+  });
+
+  it('columnForFlowX / sendBoxForFlowX hit-test against the NARROW pitch', () => {
+    // A drop at flow-X inside narrow band `ch` resolves to that column (it would
+    // resolve to a WRONG column at the wide 765 pitch — the reason the hit-test
+    // must be threaded).
+    for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
+      const midX = (ch - 1) * SHELL_COLUMN_W + SHELL_COLUMN_W / 2;
+      expect(columnForFlowX(midX, SHELL_COLUMN_W)).toBe(ch);
+    }
+    // Just past column 8 → the sends rail; box 1 then box 2, one pitch each.
+    const railX0 = COLUMN_COUNT * SHELL_COLUMN_W;
+    expect(columnForFlowX(railX0 + 5, SHELL_COLUMN_W)).toBe('send');
+    expect(sendBoxForFlowX(railX0 + 5, SHELL_COLUMN_W)).toBe(1);
+    expect(sendBoxForFlowX(railX0 + SHELL_COLUMN_W + 5, SHELL_COLUMN_W)).toBe(2);
+  });
+
+  it('videoZoneSlotPos re-derives to the narrow pitch (video defaults pack under the tight columns)', () => {
+    // Slot 0 (videoOut) is pitch-independent (index 0) — the pre-existing videoOut
+    // never moves. Slots 1/2 (recorderbox/synesthesia) step ~one narrow pitch
+    // apart (grid-SNAPPED, so within one HP grid unit of 216 — 216 is not a grid
+    // multiple), so they pack under the tight columns instead of at the old 765px
+    // X that would strand them far right of the narrowed lanes.
+    expect(videoZoneSlotPos(0, SHELL_COLUMN_W)).toEqual(videoZoneSlotPos(0, COLUMN_W));
+    const narrow = [0, 1, 2].map((i) => videoZoneSlotPos(i, SHELL_COLUMN_W).x);
+    const wide = [0, 1, 2].map((i) => videoZoneSlotPos(i, COLUMN_W).x);
+    // Monotonic left→right, each step ≈ SHELL_COLUMN_W (within one grid snap).
+    for (let i = 1; i < narrow.length; i++) {
+      const step = narrow[i]! - narrow[i - 1]!;
+      expect(step).toBeGreaterThan(0);
+      expect(Math.abs(step - SHELL_COLUMN_W)).toBeLessThanOrEqual(HP_UNIT);
+    }
+    // Packed FAR tighter than the wide pitch (each wide step is COLUMN_W = 765).
+    expect(narrow[2]!).toBeLessThan(wide[2]!);
+    expect(narrow[2]!).toBeLessThan(COLUMN_COUNT * SHELL_COLUMN_W); // inside the 8-lane band
   });
 });
 
