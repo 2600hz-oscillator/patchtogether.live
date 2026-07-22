@@ -66,6 +66,7 @@ const FULL_MATCH = [
   'landing.spec.ts',
   'skin-diner.spec.ts',
   'skin-lcars.spec.ts',
+  'mobile.spec.ts',
 ];
 
 export default defineConfig({

@@ -69,4 +69,45 @@ describe('acquireCameraStream', () => {
       expect(gum).toHaveBeenCalledTimes(1);
     }
   });
+
+  // ── facingMode (mobile glitch-cam front/back selection) ──
+
+  it('folds facingMode into the rich constraints when NO device is selected (ideal, not exact)', async () => {
+    const gum = vi.fn<GetUserMediaFn>().mockResolvedValue(FAKE_STREAM);
+    const r = await acquireCameraStream(gum, null, noSleep, 'environment');
+    expect(r.stream).toBe(FAKE_STREAM);
+    const c = gum.mock.calls[0]![0].video as MediaTrackConstraints;
+    // `ideal` so a single-webcam desktop still succeeds instead of
+    // OverconstrainedError-ing on a facing it can't report.
+    expect(c.facingMode).toEqual({ ideal: 'environment' });
+    expect(c.width).toEqual({ ideal: 640 });
+    expect(c.deviceId).toBeUndefined();
+  });
+
+  it('an explicit deviceId WINS — facingMode is not added on top of an exact device', async () => {
+    const gum = vi.fn<GetUserMediaFn>().mockResolvedValue(FAKE_STREAM);
+    await acquireCameraStream(gum, 'capture-card-1', noSleep, 'user');
+    const c = gum.mock.calls[0]![0].video as MediaTrackConstraints;
+    expect(c.deviceId).toEqual({ exact: 'capture-card-1' });
+    expect(c.facingMode).toBeUndefined();
+  });
+
+  it('omitting facingMode leaves the legacy constraint shape untouched', async () => {
+    const gum = vi.fn<GetUserMediaFn>().mockResolvedValue(FAKE_STREAM);
+    await acquireCameraStream(gum, null, noSleep);
+    const c = gum.mock.calls[0]![0].video as MediaTrackConstraints;
+    expect(c.facingMode).toBeUndefined();
+    expect(c).toEqual({ width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 30 } });
+  });
+
+  it('the bare NotReadableError retry stays deviceId-only even with a facingMode', async () => {
+    const gum = vi
+      .fn<GetUserMediaFn>()
+      .mockRejectedValueOnce(domErr('NotReadableError'))
+      .mockResolvedValueOnce(FAKE_STREAM);
+    const r = await acquireCameraStream(gum, 'dev-1', noSleep, 'environment');
+    expect(r.usedBareRetry).toBe(true);
+    const retry = gum.mock.calls[1]![0].video as MediaTrackConstraints;
+    expect(retry).toEqual({ deviceId: { exact: 'dev-1' } });
+  });
 });

@@ -32,25 +32,41 @@ export type GetUserMediaFn = (c: MediaStreamConstraints) => Promise<MediaStream>
  *  instant in the card. */
 export const BARE_RETRY_DELAY_MS = 300;
 
+/** Front/back camera selection for phones. deviceId-only selection can't do
+ *  front/back on iOS (device labels are empty pre-permission), so the mobile
+ *  glitch-cam passes an explicit facingMode instead. `ideal` (not `exact`) so
+ *  a desktop with a single webcam still succeeds. */
+export type CameraFacingMode = 'user' | 'environment';
+
 /**
  * Acquire a camera stream: rich (webcam-friendly) constraints first, then —
  * only for a specific selected device that failed with NotReadableError —
  * one bare `{ deviceId: { exact } }` retry at the device's native format.
+ *
+ * `facingMode` (optional) folds a front/back preference into the rich
+ * constraints WHEN no specific device is selected — an explicit deviceId
+ * always wins (it is already an exact selection; adding facingMode on top
+ * could over-constrain a capture card that reports no facing).
  */
 export async function acquireCameraStream(
   gum: GetUserMediaFn,
   targetDeviceId: string | null,
   sleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
+  facingMode?: CameraFacingMode,
 ): Promise<AcquireResult> {
+  const richVideo: MediaTrackConstraints = targetDeviceId
+    ? {
+        deviceId: { exact: targetDeviceId },
+        width: { ideal: 640 },
+        height: { ideal: 360 },
+        frameRate: { ideal: 30 },
+      }
+    : { width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 30 } };
+  if (!targetDeviceId && facingMode) {
+    richVideo.facingMode = { ideal: facingMode };
+  }
   const rich: MediaStreamConstraints = {
-    video: targetDeviceId
-      ? {
-          deviceId: { exact: targetDeviceId },
-          width: { ideal: 640 },
-          height: { ideal: 360 },
-          frameRate: { ideal: 30 },
-        }
-      : { width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 30 } },
+    video: richVideo,
     audio: false,
   };
 
