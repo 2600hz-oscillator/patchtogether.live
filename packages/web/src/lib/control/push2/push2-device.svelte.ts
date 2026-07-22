@@ -4,15 +4,27 @@
 // integration; the 960×160 WebUSB display is DEFERRED to Phase 2). Cloned from
 // launchpad-device: ONE sysex-capable `navigator.requestMIDIAccess({sysex:true})`
 // behind the on-demand permission flow (no eager prompt), hot-plug via
-// `onstatechange`, a port matcher for the Push 2's User port, User-mode enter on
-// bind, a diffed LED writer, an `onKey` decoded-event stream, and an
+// `onstatechange`, a port matcher for the Push 2's LIVE port, a Set-LIVE-mode
+// SysEx on bind, a diffed LED writer, an `onKey` decoded-event stream, and an
 // `installSimulatedPush2` in-memory seam so e2e/unit drive pad/CC presses + assert
 // emitted bytes with no hardware + no permission prompt.
 //
+// LIVE PORT, LIVE MODE (owner-directed, verified against the Ableton push-interface
+// manual + the proven greyivy/learn-push2-with-svelte WebMIDI reference): the Push
+// powers up in LIVE mode, and in Live mode BOTH the pad-press input AND the pad
+// LED Note-Ons flow through the LIVE port with NO per-frame SysEx. A standalone
+// browser app therefore binds the LIVE port and stays in Live mode — the User port
+// only carries pads/LEDs once the device is switched to User mode, which is the
+// finicky/unreliable path outside Ableton Live and was the cause of dark pads on a
+// fresh device. On bind we send one Set-LIVE-mode SysEx to recover a device someone
+// left in User mode; nothing else needs SysEx. (Running ALONGSIDE Ableton Live via
+// the User port is a possible future toggle, not Phase 1.)
+//
 // WHY ITS OWN ACCESS: exactly like the Launchpad + Electra — midi-learn opens a
 // `sysex:false` access and routes every inbound CC/Note into learn dispatch, so
-// a Push pad press would be mis-routed there; User mode + LED SysEx need
-// `sysex:true`. One dedicated sysex access PER controller family.
+// a Push pad press would be mis-routed there; the one Set-mode SysEx needs
+// `sysex:true` (the Note-On pad LEDs do NOT). One dedicated sysex access PER
+// controller family.
 //
 // All I/O is PER-USER LOCAL. The clip-player's clip/playing state syncs via
 // Y.Doc elsewhere (through the Launchpad control brain the Push drives); this
@@ -29,8 +41,7 @@ import type { MidiOutputLike } from '$lib/audio/modules/midi-out-buddy';
 import { webMidiAvailable } from '$lib/audio/modules/midi-cv-buddy';
 import type { MidiFullAccessLike } from '$lib/control/launchpad/launchpad-device.svelte';
 import {
-  encodeEnterUserMode,
-  encodeExitUserMode,
+  encodeSetLiveMode,
   encodePadColor,
   encodeButtonLed,
   decodePush2Message,
@@ -147,25 +158,44 @@ function dumpPortNames(): void {
 // Port matching + enumeration.
 // ---------------------------------------------------------------------------
 
-/** Is a port name a Push 2 candidate? Matches the family loosely
- *  (case-insensitive "push 2" / "push2") and EXCLUDES the Live/control-surface
- *  port (name self-identifies as "live") — User mode + pad data live on the User
- *  port. On macOS CoreMIDI the ports are named "Ableton Push 2 User Port" /
- *  "… Live Port" so this name-level exclusion suffices. PURE. */
+/**
+ * Classify a Push 2 port name as its LIVE / USER role, or 'other'. On macOS
+ * CoreMIDI the ports are named "Ableton Push 2 Live Port" / "… User Port"; some
+ * MIDI monitors truncate to "… Push 2 L…" / "… Push 2 U…", so when the full word
+ * is absent the char right after "push 2" disambiguates. On Windows both
+ * interfaces share the base name (role 'other') — the numbered-interface marker
+ * splits them there. PURE.
+ */
+export function pushPortRole(name: string | null | undefined): 'live' | 'user' | 'other' {
+  const n = (name ?? '').toLowerCase();
+  if (!/push ?2/.test(n)) return 'other';
+  if (n.includes('live')) return 'live';
+  if (n.includes('user')) return 'user';
+  const m = n.match(/push ?2\s*[-\s]?([lu])/);
+  if (m) return m[1] === 'l' ? 'live' : 'user';
+  return 'other';
+}
+
+/** Is a port name a Push 2 candidate? Matches the family (`/push ?2/i`) and
+ *  EXCLUDES the USER port (User mode is the finicky path — we drive the LIVE port
+ *  in Live mode) and any IAC / virtual bus. On macOS the name-level role suffices;
+ *  on Windows both interfaces share the base name (role 'other') and the
+ *  numbered-interface split in selectPush2Ports picks the (non-numbered) Live one.
+ *  PURE. */
 export function isPush2PortName(name: string | null | undefined): boolean {
   const n = (name ?? '').toLowerCase();
-  const isPush = n.includes('push 2') || n.includes('push2');
-  if (!isPush) return false;
-  if (n.includes('live')) return false; // the control-surface port, not User mode
+  if (!/push ?2/.test(n)) return false;
+  if (n.includes('iac')) return false; // never a virtual / IAC bus
+  if (pushPortRole(name) === 'user') return false; // the User-mode port, not Live
   return true;
 }
 
 /** Does this port name carry a Windows/WinMM secondary-interface marker
  *  ("MIDIIN2 (…)" / "MIDIOUT2 (…)")? On Windows the Push exposes two interfaces
- *  under the same base name; the User/pad-data port is the numbered second one
- *  (mirrors the Launchpad Mini Mk3 dual-port shape — memory
- *  launchpad-windows-dual-port). macOS/Linux use explicit names with no numeric
- *  marker → false. PURE. */
+ *  under the same base name. INVERTED from the Launchpad discipline: here the
+ *  LIVE (pad-data + LED) port is the NON-numbered base "Ableton Push 2"; the
+ *  numbered second interface is the USER port → dropped. macOS/Linux use explicit
+ *  names with no numeric marker → false. PURE. */
 export function hasSecondaryInterfaceMarker(name: string | null | undefined): boolean {
   return /midi\s*(in|out)\s*[2-9]/i.test(name ?? '');
 }
@@ -177,39 +207,64 @@ export interface Push2Port {
   name: string;
 }
 
+/** A minimal port reference (id + name) — the pure input to selectPush2Ports. */
+interface PortRef {
+  id: string;
+  name: string | null | undefined;
+}
+
 /**
- * Enumerate the Push 2 User port as an input/output pair (device order). Applies
- * the Windows numbered-interface set-level drop (keep ONLY the numbered siblings
- * when any exist — the un-numbered one is the Live/control port). Returns the
- * FIRST candidate pair (one Push per host). Reads the access maps only.
+ * PURE Push-2 LIVE-port selection over id/name lists (unit-testable without a
+ * MIDIAccess). Filters to Push 2 candidates (family, not IAC, not the User port),
+ * then narrows to the LIVE port across the three host name shapes:
+ *   · macOS   — explicit "Ableton Push 2 Live Port": prefer role 'live'.
+ *   · Windows — two same-named interfaces; LIVE is the NON-numbered "Ableton
+ *               Push 2", USER is the numbered "MIDIIN2 (…)" → keep non-numbered.
+ *   · Linux   — ALSA exposes "Ableton Push 2:0" (Live) / ":1" (User): prefer ":0".
+ * Returns the input/output pairs (device order); the first is the bound Push.
  */
-export function enumeratePush2Ports(): Push2Port[] {
-  if (!access) return [];
-  let ins: MidiInputLike[] = [];
-  for (const inp of access.inputs.values()) if (isPush2PortName(inp.name)) ins.push(inp);
-  let outs: MidiOutputLike[] = [];
-  for (const o of access.outputs.values()) if (isPush2PortName(o.name)) outs.push(o);
-  if (ins.some((p) => hasSecondaryInterfaceMarker(p.name))) {
-    ins = ins.filter((p) => hasSecondaryInterfaceMarker(p.name));
-  }
-  if (outs.some((p) => hasSecondaryInterfaceMarker(p.name))) {
-    outs = outs.filter((p) => hasSecondaryInterfaceMarker(p.name));
-  }
-  const n = Math.min(ins.length, outs.length);
+export function selectPush2Ports(ins: PortRef[], outs: PortRef[]): Push2Port[] {
+  const narrow = (list: PortRef[]): PortRef[] => {
+    let c = list.filter((p) => isPush2PortName(p.name));
+    if (c.some((p) => pushPortRole(p.name) === 'live')) {
+      c = c.filter((p) => pushPortRole(p.name) === 'live'); // macOS
+    } else if (c.some((p) => hasSecondaryInterfaceMarker(p.name))) {
+      c = c.filter((p) => !hasSecondaryInterfaceMarker(p.name)); // Windows — keep non-numbered
+    } else if (c.some((p) => /:0\b/.test(p.name ?? '')) && c.some((p) => !/:0\b/.test(p.name ?? ''))) {
+      c = c.filter((p) => /:0\b/.test(p.name ?? '')); // Linux ALSA — prefer sub-device 0
+    }
+    return c;
+  };
+  const inCand = narrow(ins);
+  const outCand = narrow(outs);
+  const n = Math.min(inCand.length, outCand.length);
   const out: Push2Port[] = [];
   for (let i = 0; i < n; i++) {
-    out.push({ inputId: ins[i].id, outputId: outs[i].id, name: ins[i].name ?? outs[i].name ?? ins[i].id });
+    out.push({ inputId: inCand[i].id, outputId: outCand[i].id, name: inCand[i].name ?? outCand[i].name ?? inCand[i].id });
   }
   return out;
 }
 
+/**
+ * Enumerate the Push 2 LIVE port as an input/output pair (device order). Reads the
+ * access maps only; the selection logic is the pure selectPush2Ports.
+ */
+export function enumeratePush2Ports(): Push2Port[] {
+  if (!access) return [];
+  const ins: PortRef[] = [...access.inputs.values()].map((p) => ({ id: p.id, name: p.name }));
+  const outs: PortRef[] = [...access.outputs.values()].map((p) => ({ id: p.id, name: p.name }));
+  return selectPush2Ports(ins, outs);
+}
+
 // ---------------------------------------------------------------------------
-// Bind / unbind + User-mode handshake.
+// Bind / unbind + LIVE-mode handshake.
 // ---------------------------------------------------------------------------
 
 /**
- * Bind the Push to a concrete input/output pair and enter User mode. Idempotent
- * for the same ids. Returns false if the ids don't resolve in the current access.
+ * Bind the Push to a concrete input/output pair and set LIVE mode. Idempotent for
+ * the same ids. Returns false if the ids don't resolve in the current access.
+ * Console-dumps the CHOSEN in/out port names so the owner can confirm the LIVE
+ * port was picked (the first diagnostic for a hardware MIDI bug).
  */
 export function bind(inputId: string, outputId: string): boolean {
   if (!access) return false;
@@ -224,7 +279,12 @@ export function bind(inputId: string, outputId: string): boolean {
   unit.lastSent.clear();
   input.onmidimessage = (ev: MidiEventLike) => handleInbound(ev);
   if (prevInput && prevInput !== input) prevInput.onmidimessage = null;
-  enterUserMode();
+  setLiveMode();
+  try {
+    console.info('[push2] bound — IN:', input.name ?? input.id, '· OUT:', output.name ?? output.id);
+  } catch {
+    /* non-fatal diagnostic */
+  }
   bumpStatus();
   return true;
 }
@@ -249,7 +309,7 @@ function reattachBoundPort(): void {
   if (output && output !== unit.output) {
     unit.output = output;
     unit.lastSent.clear();
-    enterUserMode();
+    setLiveMode();
   }
 }
 
@@ -262,19 +322,16 @@ function sendRaw(bytes: Uint8Array): void {
   }
 }
 
-export function enterUserMode(): void {
-  sendRaw(encodeEnterUserMode());
-}
-export function exitUserMode(): void {
-  sendRaw(encodeExitUserMode());
+/** Put the Push in LIVE mode (default; recovers a device left in User mode). The
+ *  ONLY SysEx the Phase-1 path sends — pad input + LED Note-Ons need none. */
+export function setLiveMode(): void {
+  sendRaw(encodeSetLiveMode());
 }
 
-/** Unbind: blank the surface, return the Push to Live mode, detach the input. */
+/** Unbind: blank the surface, detach the input. The device stays in LIVE mode
+ *  (no mode SysEx on release — it powered up in Live and we never left it). */
 export function unbind(): void {
-  if (unit.output) {
-    clear();
-    exitUserMode();
-  }
+  if (unit.output) clear();
   if (unit.input) unit.input.onmidimessage = null;
   unit.inputId = null;
   unit.outputId = null;
@@ -370,7 +427,7 @@ export interface SimulatedPush2 {
 
 let simInstalled: SimulatedPush2 | null = null;
 
-/** Install a fake sysex MIDIAccess holding ONE Push-2 User port pair, bind it,
+/** Install a fake sysex MIDIAccess holding ONE Push-2 LIVE port pair, bind it,
  *  and return a driver handle. Parallel to installSimulatedLaunchpadSingle. */
 export async function installSimulatedPush2(): Promise<SimulatedPush2> {
   if (simInstalled) return simInstalled;
@@ -385,7 +442,7 @@ export async function installSimulatedPush2(): Promise<SimulatedPush2> {
   handlers.set(inId, null);
   const input: MidiInputLike = {
     id: inId,
-    name: 'Ableton Push 2 User Port',
+    name: 'Ableton Push 2 Live Port',
     manufacturer: 'Ableton AG',
     state: 'connected',
     get onmidimessage() {
@@ -397,7 +454,7 @@ export async function installSimulatedPush2(): Promise<SimulatedPush2> {
   };
   const output: MidiOutputLike = {
     id: outId,
-    name: 'Ableton Push 2 User Port',
+    name: 'Ableton Push 2 Live Port',
     manufacturer: 'Ableton AG',
     state: 'connected',
     send(d: number[] | Uint8Array) {

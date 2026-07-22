@@ -164,14 +164,29 @@ function sysex(...body: number[]): Uint8Array {
   ]);
 }
 
-/** Enter User mode (the host owns the pads/LEDs): F0 00 21 1D 01 01 0A 01 F7. */
-export function encodeEnterUserMode(): Uint8Array {
-  return sysex(CMD_MODE, 0x01);
-}
-/** Return to Live mode: F0 00 21 1D 01 01 0A 00 F7 (best-effort cleanup). */
-export function encodeExitUserMode(): Uint8Array {
+/**
+ * Set the Push to LIVE mode (the DEFAULT for a standalone browser app):
+ * `F0 00 21 1D 01 01 0A 00 F7`. In Live mode the pad presses come IN and the pad
+ * LED Note-Ons go OUT on the LIVE port with NO further SysEx — the model the
+ * proven greyivy/learn-push2-with-svelte WebMIDI reference uses. Sent on bind to
+ * reliably recover a device someone left in User mode (setting LIVE is reliable;
+ * setting USER outside Ableton Live is the finicky path). PURE.
+ */
+export function encodeSetLiveMode(): Uint8Array {
   return sysex(CMD_MODE, 0x00);
 }
+/**
+ * Set the Push to USER mode (the host owns the pads/LEDs):
+ * `F0 00 21 1D 01 01 0A 01 F7`. Reserved for the future "running alongside
+ * Ableton Live" toggle — Phase 1 drives LIVE mode on the Live port. PURE.
+ */
+export function encodeSetUserMode(): Uint8Array {
+  return sysex(CMD_MODE, 0x01);
+}
+/** @deprecated alias — the USER-mode set (kept for the golden vector). */
+export const encodeEnterUserMode = encodeSetUserMode;
+/** @deprecated alias — the LIVE-mode set (kept for the golden vector). */
+export const encodeExitUserMode = encodeSetLiveMode;
 
 /** Light a PAD (by its note number) to a stock-palette index via a static
  *  Note-On on channel 1: `90 <note> <paletteIndex>`. A palette index of 0 is

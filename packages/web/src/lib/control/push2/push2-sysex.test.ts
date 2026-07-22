@@ -16,6 +16,8 @@ import {
   pushNoteToPad,
   decodeRelativeCc,
   pushColorIndex,
+  encodeSetLiveMode,
+  encodeSetUserMode,
   encodeEnterUserMode,
   encodeExitUserMode,
   encodePadColor,
@@ -95,12 +97,16 @@ describe('pushColorIndex (stock-palette nearest-anchor)', () => {
   });
 });
 
-describe('User-mode enter/exit (golden vectors)', () => {
-  it('enter = F0 00 21 1D 01 01 0A 01 F7', () => {
-    expect([...encodeEnterUserMode()]).toEqual([0xf0, 0x00, 0x21, 0x1d, 0x01, 0x01, 0x0a, 0x01, 0xf7]);
+describe('mode set (golden vectors)', () => {
+  it('LIVE = F0 00 21 1D 01 01 0A 00 F7 (last data byte 00 = Live — the default we bind)', () => {
+    expect([...encodeSetLiveMode()]).toEqual([0xf0, 0x00, 0x21, 0x1d, 0x01, 0x01, 0x0a, 0x00, 0xf7]);
   });
-  it('exit = F0 00 21 1D 01 01 0A 00 F7', () => {
-    expect([...encodeExitUserMode()]).toEqual([0xf0, 0x00, 0x21, 0x1d, 0x01, 0x01, 0x0a, 0x00, 0xf7]);
+  it('USER = F0 00 21 1D 01 01 0A 01 F7 (last data byte 01 = User — reserved future toggle)', () => {
+    expect([...encodeSetUserMode()]).toEqual([0xf0, 0x00, 0x21, 0x1d, 0x01, 0x01, 0x0a, 0x01, 0xf7]);
+  });
+  it('the deprecated aliases mirror the mode setters', () => {
+    expect([...encodeExitUserMode()]).toEqual([...encodeSetLiveMode()]);
+    expect([...encodeEnterUserMode()]).toEqual([...encodeSetUserMode()]);
   });
 });
 

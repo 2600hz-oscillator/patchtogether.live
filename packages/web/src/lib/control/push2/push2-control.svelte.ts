@@ -110,6 +110,10 @@ const pushSurface: ControlSurfacePort = {
   },
   isPairBound: () => false,
   isSingleBound: () => push2Device.isBound(),
+  // Push 2 pads ARE velocity-sensitive — note entry + the KEYS keyboard record /
+  // play the pad's real hit velocity (the Launchpad, which flattens velocity,
+  // leaves this false).
+  velocitySensitive: true,
 };
 
 // ---------------------------------------------------------------------------

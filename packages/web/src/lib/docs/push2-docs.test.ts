@@ -9,9 +9,12 @@ import Push2Docs from './Push2Docs.svelte';
 import {
   PUSH_CC_PLAY,
   PUSH_CC_SHIFT,
+  PUSH_CC_UNDO,
   PUSH_CC_DPAD_UP,
   PUSH_CC_DPAD_LEFT,
   PUSH_CC_ABOVE_DISPLAY_BASE,
+  PUSH_CC_PERMANENT_BASE,
+  PUSH_CC_SCENE_BASE,
   PUSH_CC_ENCODER_BASE,
   PUSH_CC_ENCODER_TEMPO,
   PUSH_CC_ENCODER_SWING,
@@ -51,11 +54,25 @@ describe('Push2Docs', () => {
     expect(out, 'Master CC').toContain(`CC ${PUSH_CC_ENCODER_MASTER}`);
     expect(out, 'D-Pad up CC').toContain(`CC ${PUSH_CC_DPAD_UP}`);
     expect(out, 'D-Pad left CC').toContain(`CC ${PUSH_CC_DPAD_LEFT}`);
+    // The corrected layout: permanent-controls row 20–27, scenes 36–43, undo 119.
+    expect(out, 'permanent-controls base CC').toContain(`CC ${PUSH_CC_PERMANENT_BASE}`);
+    expect(out, 'scene-launch base CC').toContain(`CC ${PUSH_CC_SCENE_BASE}`);
+    expect(out, 'Undo CC').toContain(`CC ${PUSH_CC_UNDO}`);
   });
 
-  it('flags the Phase-1 hardware-confirm + WebUSB-deferred caveats', () => {
+  it('documents the corrected control rows (permanent controls + scene column)', () => {
+    const out = html();
+    expect(out).toContain('Permanent-controls row');
+    expect(out).toContain('Scene launch');
+    // The permanent row + scenes cite their confirmed CC ranges.
+    expect(out).toContain(`CC ${PUSH_CC_PERMANENT_BASE}–${PUSH_CC_PERMANENT_BASE + 7}`);
+    expect(out).toContain(`CC ${PUSH_CC_SCENE_BASE}–${PUSH_CC_SCENE_BASE + 7}`);
+  });
+
+  it('flags the Phase-1 LIVE-port + WebUSB-deferred caveats', () => {
     const out = html();
     expect(out).toContain('data-testid="push2-hardware-note"');
+    expect(out).toContain('LIVE port'); // binds the Live port in Live mode
     expect(out).toContain('Phase 2'); // the on-device display is deferred
     expect(out).toContain('stock Push palette');
   });

@@ -232,6 +232,11 @@ export interface ControlSurfacePort {
   clearUnit(unit: LaunchpadUnit): void;
   isPairBound(): boolean;
   isSingleBound(): boolean;
+  /** VELOCITY-SENSITIVE pads (Push 2). When true, note entry + the KEYS keyboard
+   *  record/play the pad's ACTUAL hit velocity instead of the constant default.
+   *  The Launchpad omits this (its pads aren't velocity-sensitive) → unchanged
+   *  fixed-velocity behaviour. */
+  velocitySensitive?: boolean;
 }
 /** The default surface = the Launchpad device singleton (unchanged behaviour). */
 const launchpadSurface: ControlSurfacePort = {
@@ -259,6 +264,12 @@ function isPairBound(): boolean {
 }
 function isSingleBound(): boolean {
   return surface.isSingleBound();
+}
+/** Does the active surface have VELOCITY-SENSITIVE pads (Push 2)? Gates the
+ *  velocity-preserving note-entry + KEYS paths — false for the Launchpad, so its
+ *  fixed-velocity behaviour (and its whole test suite) is byte-for-byte unchanged. */
+function surfaceVelocitySensitive(): boolean {
+  return surface.velocitySensitive === true;
 }
 
 /**
@@ -359,7 +370,7 @@ let velHeld = false; // VEL pad held in editor
 // ABSOLUTE step `editWindowStart` (free per-step scroll — ◀/▶ move ±1, SHIFT
 // makes them jump a full screen ±8). The pitch window scrolls by scale-degree
 // rows. FOLLOW snaps the window to the playhead's 8-step block when playing.
-let editAnchor: { step: number; midi: number } | null = null;
+let editAnchor: { step: number; midi: number; velocity?: number } | null = null;
 let editSpanned = false;
 let editRowOffset = 0; // pitch-window scroll (scale degrees)
 let editWindowStart = 0; // absolute step of the leftmost shown column (frozen value)
@@ -1307,12 +1318,24 @@ function keysPanic(nodeId: string): void {
   }
   renderLeds();
 }
-/** Snap a note-on velocity to a stored VEL level. Velocity-insensitive pads
- *  (velocity 0/absent) fall back to VEL_DEFAULT (no device fork — a Launchpad X
- *  is expressive automatically). */
+/** Capture a KEYS note-on velocity. On a VELOCITY-SENSITIVE surface (Push 2) the
+ *  pad's ACTUAL hit velocity is preserved (clamped 1..127) so the played/recorded
+ *  note carries the real dynamics. On the fixed-velocity Launchpad the velocity is
+ *  snapped to a stored VEL level (unchanged); velocity 0/absent → VEL_DEFAULT. */
 function keysCaptureVel(velocity: number): number {
   if (!Number.isFinite(velocity) || velocity <= 0) return VEL_DEFAULT;
+  if (surfaceVelocitySensitive()) return Math.max(1, Math.min(127, Math.round(velocity)));
   return VEL_LEVELS[velLevelIndex(velocity)] ?? VEL_DEFAULT;
+}
+
+/** The velocity to WRITE for a note PLACED in the note editor: on a velocity-
+ *  sensitive surface (Push 2) the pad's captured hit velocity (clamped 1..127);
+ *  otherwise `undefined`, so clip-types places it at VEL_DEFAULT — the Launchpad's
+ *  unchanged fixed-velocity note entry. */
+function velForEntry(captured: number | undefined): number | undefined {
+  if (!surfaceVelocitySensitive()) return undefined;
+  if (!Number.isFinite(captured) || (captured as number) <= 0) return undefined;
+  return Math.max(1, Math.min(127, Math.round(captured as number)));
 }
 
 /** Write a fresh KEYS note-record state (armed/recording OFF). */
@@ -2460,17 +2483,22 @@ function handleSingleClip(nodeId: string, e: LaunchpadKeyEvent): void {
   }
   if (ev.s === 1) {
     if (editAnchor && editAnchor.midi === note.midi && editAnchor.step !== note.step) {
-      writeClipSel(nodeId, setNoteSpan(clip, editAnchor.step, note.step, note.midi, { mono }));
+      // A tie spans from the held ANCHOR — carry its captured hit velocity.
+      writeClipSel(nodeId, setNoteSpan(clip, editAnchor.step, note.step, note.midi, { mono, velocity: velForEntry(editAnchor.velocity) }));
       editSpanned = true;
     } else {
-      editAnchor = { step: note.step, midi: note.midi };
+      // Capture the pad's hit velocity at PRESS time — a velocity-sensitive Push
+      // toggles the note ON at RELEASE (release velocity is 0), so the recorded
+      // dynamics come from here.
+      editAnchor = { step: note.step, midi: note.midi, velocity: ev.velocity };
       editSpanned = false;
     }
   } else if (editAnchor && editAnchor.step === note.step && editAnchor.midi === note.midi) {
     if (!editSpanned) {
-      // Tap a lit step OFF = the explicit erase gesture (owner-locked). Reconcile
-      // the scheduler so the removed note's voice is cut NOW (§3.1), not next loop.
-      const next = toggleNoteAt(clip, note.step, note.midi, { mono });
+      // A plain tap: add the note (with the captured hit velocity) or, if it's
+      // already lit, erase it (the owner-locked toggle). Reconcile the scheduler
+      // so a removed note's voice is cut NOW (§3.1), not next loop.
+      const next = toggleNoteAt(clip, note.step, note.midi, { mono, velocity: velForEntry(editAnchor.velocity) });
       writeClipSel(nodeId, next);
       reconcileClipEdit(nodeId, clip, next, selectedClipIndex);
     }

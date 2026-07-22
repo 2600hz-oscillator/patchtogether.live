@@ -5,65 +5,47 @@
   // code (push2-docs.test asserts the rendered CC numbers equal the map). The
   // Push drives the full Launchpad clip-launch / note-editor / scene / KEYS
   // parity surface on its 8×8 pads; this page documents the moved + added
-  // controls (Play transport, D-Pad nav, channel-select, encoder→MixMasters).
+  // controls (Play transport, D-Pad nav, channel-select, encoder→MixMasters) and
+  // the LIVE-port / Live-mode binding the pads + LEDs use.
 
   import Push2Diagram from './Push2Diagram.svelte';
   import {
     PUSH_CC_PLAY,
     PUSH_CC_SHIFT,
+    PUSH_CC_UNDO,
     PUSH_CC_DPAD_UP,
     PUSH_CC_DPAD_DOWN,
     PUSH_CC_DPAD_LEFT,
     PUSH_CC_DPAD_RIGHT,
     PUSH_CC_ABOVE_DISPLAY_BASE,
-    PUSH_CC_BELOW_DISPLAY_BASE,
+    PUSH_CC_PERMANENT_BASE,
+    PUSH_CC_SCENE_BASE,
     PUSH_CC_ENCODER_BASE,
     PUSH_CC_ENCODER_TEMPO,
     PUSH_CC_ENCODER_SWING,
     PUSH_CC_ENCODER_MASTER,
-    PUSH_CC_SESSION,
-    PUSH_CC_NOTE,
-    PUSH_CC_LAYOUT,
-    PUSH_CC_DEVICE,
-    PUSH_CC_UNDO,
   } from '$lib/control/push2/push2-map';
 
   const GRID_FILL = '#243044';
-  const SEL_FILL = '#6f9bd6';
-  const DIM_FILL = '#2a3040';
 
-  // Diagram data — generated from the real map constants.
-  const pads = Array.from({ length: 64 }, (_, i) => ({
-    x: i % 8,
-    y: Math.floor(i / 8),
-    fill: GRID_FILL,
-  }));
-  const encoderLabels = ['S1', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6', 'V7', 'V8', 'S2', 'Mst'];
-  // col 0 = Tempo(→send1), 1..8 = display encoders(→vol), 9 = Swing(→send2),
-  // 10 = Master(→master). The picture spreads all 11 across the grid width.
-  const encoders = [
-    { col: 0, fill: DIM_FILL, label: encoderLabels[0] },
-    ...Array.from({ length: 8 }, (_, i) => ({ col: i + 1, fill: DIM_FILL, label: encoderLabels[i + 1] })),
-    { col: 9, fill: DIM_FILL, label: encoderLabels[9] },
-    { col: 10, fill: DIM_FILL, label: encoderLabels[10] },
-  ];
-  const top = Array.from({ length: 8 }, (_, i) => ({
-    col: i,
-    fill: i === 0 ? SEL_FILL : DIM_FILL,
-    label: `CH${i + 1}`,
-  }));
+  // Diagram data — pads default-filled; labels derived from the real controls.
+  const pads = Array.from({ length: 64 }, (_, i) => ({ x: i % 8, y: Math.floor(i / 8), fill: GRID_FILL }));
+  // 11 encoders left→right: Tempo (send1), Swing (send2), 8 track (vol1-8), Master.
+  const encoderLabels = ['S1', 'S2', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6', 'V7', 'V8', 'Mst'];
+  // 8 above-display buttons → select channel 1-8.
+  const upperLabels = ['CH1', 'CH2', 'CH3', 'CH4', 'CH5', 'CH6', 'CH7', 'CH8'];
+  // 8 below-display buttons → the Launchpad view/function top row (default order).
+  const lowerLabels = ['▶', 'GRD', 'CLP', 'ARR', 'CTL', 'UND', 'RDO', 'SFT'];
+  const sceneLabels = ['', '', '', '', '', '', '', ''];
 
   // The control→action reference (each row's CC comes from the real map).
   const parityRows = [
-    { control: '8×8 pads', cc: '36–99', action: 'Clip launch / note editor / arm — FULL Launchpad parity' },
+    { control: '8×8 pads', cc: '36–99', action: 'Clip launch / note editor / arm / KEYS — FULL Launchpad parity. Velocity-SENSITIVE: your hit velocity is recorded (note entry) + played (KEYS)' },
     { control: 'Play', cc: `CC ${PUSH_CC_PLAY}`, action: 'START / STOP the transport (moved here from the grid)' },
-    { control: 'Session', cc: `CC ${PUSH_CC_SESSION}`, action: 'GRID (clip-launch) view' },
-    { control: 'Note', cc: `CC ${PUSH_CC_NOTE}`, action: 'CLIP (note-editor) view' },
-    { control: 'Layout', cc: `CC ${PUSH_CC_LAYOUT}`, action: 'ARRANGER view' },
-    { control: 'Device', cc: `CC ${PUSH_CC_DEVICE}`, action: 'CONTROL view' },
+    { control: 'Permanent-controls row ×8', cc: `CC ${PUSH_CC_PERMANENT_BASE}–${PUSH_CC_PERMANENT_BASE + 7}`, action: 'The 8 buttons BELOW the display → the Launchpad view/function top row (91–98): session / clip-note / scene / arm / KEYS' },
+    { control: 'Scene launch ×8', cc: `CC ${PUSH_CC_SCENE_BASE}–${PUSH_CC_SCENE_BASE + 7}`, action: 'The 8 buttons RIGHT of the grid → the scene column (launch / editor functions / KEYS scale). TOP button = 43 … BOTTOM = 36' },
     { control: 'Undo', cc: `CC ${PUSH_CC_UNDO}`, action: 'Undo' },
     { control: 'Shift', cc: `CC ${PUSH_CC_SHIFT}`, action: 'SHIFT modifier — editor ×8 window + arm gestures' },
-    { control: 'Below-display ×8', cc: `CC ${PUSH_CC_BELOW_DISPLAY_BASE}–${PUSH_CC_BELOW_DISPLAY_BASE + 7}`, action: 'The Launchpad scene column (scene launch / editor / KEYS scale)' },
   ];
   const additiveRows = [
     { control: 'Above-display ×8', cc: `CC ${PUSH_CC_ABOVE_DISPLAY_BASE}–${PUSH_CC_ABOVE_DISPLAY_BASE + 7}`, action: 'Select channel 1–8 (Push-local; card shows “CH n · instrument”)' },
@@ -81,26 +63,28 @@
   <p class="lede">
     Drive the clip player from an Ableton Push 2. The 8×8 pads give you the
     <strong>full Launchpad control surface</strong> — clip launch, the note editor,
-    the arm row, scenes, and the KEYS keyboard — through the same shipped brain.
-    On top of that, the Push adds a <strong>hardware mixer</strong>: the 8 buttons
-    above the display pick a channel, and the 11 encoders drive the MixMasters
-    volume and sends. START/STOP lives on the dedicated <strong>Play</strong> button.
+    the arm row, scenes, and the KEYS keyboard — through the same shipped brain,
+    and because the Push pads are <strong>velocity-sensitive</strong>, how hard you
+    hit a pad is recorded into the clip and played through the keyboard. On top of
+    that, the Push adds a <strong>hardware mixer</strong>: the 8 buttons above the
+    display pick a channel, and the 11 encoders drive the MixMasters volume and
+    sends. START/STOP lives on the dedicated <strong>Play</strong> button.
   </p>
 
   <Push2Diagram
     {pads}
-    {top}
-    {encoders}
-    playLabel="PLAY"
-    dpadLabel="NAV"
-    caption="Push 2 — the top row selects a channel, the encoders drive the mixer, Play is transport, the D-Pad scrolls the clip window, and the 8×8 is the full clip surface."
+    {encoderLabels}
+    {upperLabels}
+    {lowerLabels}
+    {sceneLabels}
+    caption="Push 2 — encoders on top (Tempo · Swing · 8 track · Master); channel-select above the display; the permanent-controls row below it; the 8×8 grid with the scene column + NAV arrows on its right; Play is bottom-left."
   />
 
   <h2>Parity — the clip surface</h2>
   <p>
     Everything the Launchpad does on its 8×8 works here identically. START/STOP
-    moves to the Play button; view switching + undo + the SHIFT modifier live on
-    the labelled function buttons.
+    moves to the Play button; view switching lives on the permanent-controls row
+    below the display; scene launch is the column to the right of the grid.
   </p>
   <table class="p2-table" data-testid="push2-parity-table">
     <thead><tr><th>Control</th><th>MIDI</th><th>Action</th></tr></thead>
@@ -128,11 +112,16 @@
   </table>
 
   <p class="note" data-testid="push2-hardware-note">
-    <strong>Phase 1 note:</strong> the pad colours use the stock Push palette (an
-    approximate mapping refined on hardware later), and the button MIDI numbers
-    above are the standard Ableton Push 2 map — confirmed on the physical unit via
-    the console port dump on connect. The 960×160 on-device display is Phase 2; for
-    now the selected channel name shows on the card.
+    <strong>Phase 1 note:</strong> the Push binds its <strong>LIVE port</strong> and
+    stays in the device's default <strong>Live mode</strong> — both the pad presses
+    and the pad-LED Note-Ons flow there with no per-frame SysEx (the reliable
+    standalone-browser path; the User port only carries pads/LEDs once switched to
+    User mode, the finicky out-of-Ableton path, and is a possible future toggle).
+    The pad colours use the <strong>stock Push palette</strong> (an approximate
+    mapping refined on hardware later). The 960×160 on-device display is
+    <strong>Phase 2</strong>; for now the selected channel name shows on the card.
+    Which permanent-row button maps to which view is still being confirmed on
+    hardware.
   </p>
 </div>
 

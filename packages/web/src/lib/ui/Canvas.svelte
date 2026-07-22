@@ -6777,8 +6777,9 @@
         __test_setDeployment('single', 'grid');
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (globalThis as any).__push2Sim = {
-          // press/release an 8×8 pad (x = col, y from BOTTOM).
-          press: (x: number, y: number) => sim.press(x, y),
+          // press/release an 8×8 pad (x = col, y from BOTTOM). Velocity-sensitive:
+          // a hard hit is recorded/played at that velocity (defaults to 100).
+          press: (x: number, y: number, velocity?: number) => sim.press(x, y, velocity),
           release: (x: number, y: number) => sim.release(x, y),
           // any Push CC (button press/release or an encoder relative tick).
           cc: (cc: number, value: number) => sim.cc(cc, value),

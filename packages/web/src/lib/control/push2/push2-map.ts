@@ -21,68 +21,70 @@
 // differ (Push 36.., Launchpad 11..) but the codecs already resolve those to
 // (x,y), so the surfaces line up cell-for-cell.
 //
-// The button CC numbers (Play / Session / Note / Undo / Shift / Layout / Device
-// / below-display / above-display / encoders / D-Pad) are the STANDARD Ableton
-// Push 2 map. Every one is marked `// CONFIRM ON HARDWARE` — the owner has the
-// unit and confirms them via the console port dump on connect (the numbers are
-// the documented map, not guesses, but hardware is the source of truth; carry
-// the launchpad-windows-dual-port discipline: never trust a number/name matcher
-// until the real device is dumped).
+// The button CC numbers are the OWNER-CONFIRMED map (hardware-tested on the
+// owner's Push 2):
+//   · 8×8 pads               notes 36..99 (bottom-left 36, top-right 99)
+//   · Play (transport)       CC 85
+//   · Undo                   CC 119
+//   · Shift                  CC 49            (CONFIRM ON HARDWARE — unconfirmed)
+//   · D-Pad ←/→/↑/↓          CC 44 / 45 / 46 / 47
+//   · above-display ×8       CC 102..109      → select channel 1..8
+//   · permanent-controls ×8  CC 20..27        → Launchpad top row 91..98 (views)
+//   · scene-launch ×8        CC 36..43        (TOP 43 … BOTTOM 36) → scene column
+//   · encoders               CC 71..78 (vol), 14/15 (send1/2), 79 (master)
+// Only WHICH permanent-row button maps to which view stays `CONFIRM ON HARDWARE`;
+// the CC ranges themselves are confirmed. NOTE the CC↔note overlap is harmless:
+// scene CCs 36..43 are MIDI CC messages; pad notes 36..99 are MIDI NOTE messages —
+// the codec branches on the status byte, so they never collide.
 
 import type { LaunchpadRxEvent, LaunchpadFrame } from './push2-types';
 import { pushPadNote, pushColorIndex, decodeRelativeCc, type Push2RxEvent } from './push2-sysex';
 import {
   noteToPad,
   CC_UP,
-  CC_DOWN,
-  CC_LEFT,
-  CC_RIGHT,
-  CC_SESSION,
   CC_TOP_SPARE_6,
-  CC_TOP_SPARE_7,
   CC_TOP_SPARE_8,
   SCENE_CCS,
 } from '$lib/control/launchpad/launchpad-sysex';
 
 // ---------------------------------------------------------------------------
-// Push 2 physical control → MIDI CC numbers (the standard Ableton map). Every
-// one is CONFIRM ON HARDWARE (see the file header).
+// Push 2 physical control → MIDI CC numbers. These are the OWNER-CONFIRMED map
+// (hardware-tested on the owner's Push 2), except where a `// CONFIRM ON HARDWARE`
+// marker remains (WHICH permanent-row button is which view; the Shift CC).
 // ---------------------------------------------------------------------------
 
-/** Transport Play → START/STOP (moved here from the grid, per the owner spec). */
-export const PUSH_CC_PLAY = 85; // CONFIRM ON HARDWARE
-/** Session button → GRID (clip-launch) view. */
-export const PUSH_CC_SESSION = 51; // CONFIRM ON HARDWARE
-/** Note button → CLIP (note-editor) view. */
-export const PUSH_CC_NOTE = 50; // CONFIRM ON HARDWARE
-/** Layout button → ARRANGER view. */
-export const PUSH_CC_LAYOUT = 31; // CONFIRM ON HARDWARE
-/** Device button → CONTROL view. */
-export const PUSH_CC_DEVICE = 110; // CONFIRM ON HARDWARE
-/** Undo button → undo. */
-export const PUSH_CC_UNDO = 119; // CONFIRM ON HARDWARE
+/** Transport Play → START/STOP (moved here from the grid). CONFIRMED. */
+export const PUSH_CC_PLAY = 85;
+/** Undo button → undo. CONFIRMED (owner-requested mapping). */
+export const PUSH_CC_UNDO = 119;
 /** Shift button → the SHIFT modifier (editor ×8 windowing + arm gestures). */
-export const PUSH_CC_SHIFT = 49; // CONFIRM ON HARDWARE
+export const PUSH_CC_SHIFT = 49; // CONFIRM ON HARDWARE (owner did not confirm Shift)
 
-/** D-Pad arrows → CLIP-view nav (± window; +SHIFT = ×8 full screen). */
-export const PUSH_CC_DPAD_UP = 46; // CONFIRM ON HARDWARE
-export const PUSH_CC_DPAD_DOWN = 47; // CONFIRM ON HARDWARE
-export const PUSH_CC_DPAD_LEFT = 44; // CONFIRM ON HARDWARE
-export const PUSH_CC_DPAD_RIGHT = 45; // CONFIRM ON HARDWARE
+/** D-Pad arrows → CLIP-view nav (± window; +SHIFT = ×8 full screen). CONFIRMED. */
+export const PUSH_CC_DPAD_UP = 46;
+export const PUSH_CC_DPAD_DOWN = 47;
+export const PUSH_CC_DPAD_LEFT = 44;
+export const PUSH_CC_DPAD_RIGHT = 45;
 
-/** The 8 buttons ABOVE the display → select channel 1..8 (CC 102..109). */
-export const PUSH_CC_ABOVE_DISPLAY_BASE = 102; // CONFIRM ON HARDWARE
-/** The 8 buttons BELOW the display → the Launchpad SCENE column (CC 20..27). */
-export const PUSH_CC_BELOW_DISPLAY_BASE = 20; // CONFIRM ON HARDWARE
+/** The 8 buttons ABOVE the display → select channel 1..8 (CC 102..109). CONFIRMED. */
+export const PUSH_CC_ABOVE_DISPLAY_BASE = 102;
+/** The "permanent controls" row (8 buttons BELOW the display, ABOVE the grid) →
+ *  the Launchpad permanent TOP ROW (view-switch + function surface), CC 20..27
+ *  left→right = Launchpad CC 91..98. CONFIRMED range; the per-button view
+ *  assignment is CONFIRM ON HARDWARE. */
+export const PUSH_CC_PERMANENT_BASE = 20;
+/** Scene-launch column (8 buttons to the RIGHT of the 8×8 grid) → the Launchpad
+ *  SCENE column. CONFIRMED: CC 36..43, TOP button = 43 … BOTTOM = 36. */
+export const PUSH_CC_SCENE_BASE = 36;
 
-/** The 8 display encoders → MixMasters ch{1..8}_volume (relative CC 71..78). */
-export const PUSH_CC_ENCODER_BASE = 71; // CONFIRM ON HARDWARE
-/** Tempo encoder → send1 of the SELECTED channel (relative CC 14). */
-export const PUSH_CC_ENCODER_TEMPO = 14; // CONFIRM ON HARDWARE
-/** Swing encoder → send2 of the SELECTED channel (relative CC 15). */
-export const PUSH_CC_ENCODER_SWING = 15; // CONFIRM ON HARDWARE
-/** Master encoder → MixMasters master_volume (relative CC 79). */
-export const PUSH_CC_ENCODER_MASTER = 79; // CONFIRM ON HARDWARE
+/** The 8 display encoders → MixMasters ch{1..8}_volume (relative CC 71..78). CONFIRMED. */
+export const PUSH_CC_ENCODER_BASE = 71;
+/** Tempo encoder → send1 of the SELECTED channel (relative CC 14). CONFIRMED. */
+export const PUSH_CC_ENCODER_TEMPO = 14;
+/** Swing encoder → send2 of the SELECTED channel (relative CC 15). CONFIRMED. */
+export const PUSH_CC_ENCODER_SWING = 15;
+/** Master encoder → MixMasters master_volume (relative CC 79). CONFIRMED. */
+export const PUSH_CC_ENCODER_MASTER = 79;
 
 // ---------------------------------------------------------------------------
 // Inbound classification — Push2RxEvent → a typed action.
@@ -114,29 +116,35 @@ export function isEncoderCc(cc: number): boolean {
   );
 }
 
-/** The Launchpad top-row CC a mapped Push function button drives, or null. This
- *  is how the Push reaches the parity view-switching / transport / undo / shift
- *  that live on the Launchpad permanent top row (CC 91..98). PURE. */
+/** The Launchpad top-row CC a mapped Push function button drives, or null. The
+ *  Push reaches the parity view-switching / transport / undo / shift on TWO
+ *  surfaces: (1) the "permanent controls" row (CC 20..27, left→right) mirrors the
+ *  Launchpad permanent TOP ROW (CC 91..98) cell-for-cell; (2) the dedicated Play /
+ *  Undo / Shift hardware buttons ALSO reach transport / undo / shift (redundant
+ *  with the row — real Push buttons the owner will press). PURE. */
 export function pushCcToLaunchpadTopCc(cc: number): number | null {
+  // The permanent-controls row → the 8 Launchpad top-row functions, in order.
+  if (cc >= PUSH_CC_PERMANENT_BASE && cc < PUSH_CC_PERMANENT_BASE + 8) {
+    return CC_UP + (cc - PUSH_CC_PERMANENT_BASE); // 20→91 (transport) … 27→98 (shift)
+  }
+  // Dedicated hardware buttons.
   switch (cc) {
     case PUSH_CC_PLAY:
       return CC_UP; // 91 transport
-    case PUSH_CC_SESSION:
-      return CC_DOWN; // 92 GRID view
-    case PUSH_CC_NOTE:
-      return CC_LEFT; // 93 CLIP view
-    case PUSH_CC_LAYOUT:
-      return CC_RIGHT; // 94 ARRANGER view
-    case PUSH_CC_DEVICE:
-      return CC_SESSION; // 95 CONTROL view
     case PUSH_CC_UNDO:
       return CC_TOP_SPARE_6; // 96 undo
-    // 97 (redo) has no natural Push home in Phase 1 — left unmapped.
     case PUSH_CC_SHIFT:
       return CC_TOP_SPARE_8; // 98 shift
     default:
       return null;
   }
+}
+
+/** The scene-column ROW (0 = bottom, 7 = top; bottom-origin) a Push scene-launch
+ *  CC addresses, or null. Push scene CCs run 36 (BOTTOM) … 43 (TOP). PURE. */
+export function sceneRowForCc(cc: number): number | null {
+  if (cc >= PUSH_CC_SCENE_BASE && cc < PUSH_CC_SCENE_BASE + 8) return cc - PUSH_CC_SCENE_BASE;
+  return null;
 }
 
 /** The D-Pad direction a CC addresses, or null. PURE. */
@@ -204,18 +212,18 @@ export function classifyPush2(ev: Push2RxEvent): Push2Action | null {
     return { kind: 'dpad', dir };
   }
 
-  // BELOW-display buttons → the Launchpad SCENE column (scene launch / editor
-  // functions / KEYS scale). SCENE_CCS is top→bottom; below-display is left→right.
-  if (cc >= PUSH_CC_BELOW_DISPLAY_BASE && cc < PUSH_CC_BELOW_DISPLAY_BASE + 8) {
-    const idx = cc - PUSH_CC_BELOW_DISPLAY_BASE;
-    const sceneCc = SCENE_CCS[idx];
-    // The Launchpad decoder maps SCENE_CCS[i] → row = LP_HEIGHT-1-i (bottom-origin).
-    const row = SCENE_CCS.length - 1 - idx;
-    return { kind: 'launchpad', ev: { type: 'scene', row, cc: sceneCc, s: ev.s } };
+  // SCENE-launch column (CC 36..43, TOP 43 … BOTTOM 36) → the Launchpad SCENE
+  // column (scene launch / editor functions / KEYS scale). Push row is
+  // bottom-origin; SCENE_CCS is top→bottom, so row r → SCENE_CCS[len-1-r].
+  const sceneRow = sceneRowForCc(cc);
+  if (sceneRow !== null) {
+    const sceneCc = SCENE_CCS[SCENE_CCS.length - 1 - sceneRow];
+    return { kind: 'launchpad', ev: { type: 'scene', row: sceneRow, cc: sceneCc, s: ev.s } };
   }
 
-  // Mapped FUNCTION buttons → the Launchpad permanent top row (view / transport
-  // / undo / shift). This is how the Push reaches the parity view-switching.
+  // The "permanent controls" row (CC 20..27) + the dedicated Play / Undo / Shift
+  // buttons → the Launchpad permanent top row (view / transport / undo / shift).
+  // This is how the Push reaches the parity view-switching.
   const topCc = pushCcToLaunchpadTopCc(cc);
   if (topCc !== null) {
     return { kind: 'launchpad', ev: { type: 'top', cc: topCc, s: ev.s } };
@@ -233,42 +241,34 @@ export type Push2LedSpec =
   | { kind: 'pad'; note: number; palette: number }
   | { kind: 'button'; cc: number; value: number };
 
-/** The Push button CC that mirrors a Launchpad top-row CC 91..98, or null. */
-function launchpadTopCcToPushCc(cc: number): number | null {
-  switch (cc) {
-    case CC_UP:
-      return PUSH_CC_PLAY;
-    case CC_DOWN:
-      return PUSH_CC_SESSION;
-    case CC_LEFT:
-      return PUSH_CC_NOTE;
-    case CC_RIGHT:
-      return PUSH_CC_LAYOUT;
-    case CC_SESSION:
-      return PUSH_CC_DEVICE;
-    case CC_TOP_SPARE_6:
-      return PUSH_CC_UNDO;
-    case CC_TOP_SPARE_7:
-      return null; // redo — unmapped in Phase 1
-    case CC_TOP_SPARE_8:
-      return PUSH_CC_SHIFT;
-    default:
-      return null;
-  }
+/** The Push button CC(s) that mirror a Launchpad top-row CC 91..98. The permanent
+ *  row (20..27) always mirrors it; transport / undo / shift ALSO light their
+ *  dedicated Play / Undo / Shift buttons. Empty for a non-top-row index. PURE. */
+function launchpadTopCcToPushCcs(cc: number): number[] {
+  if (cc < CC_UP || cc > CC_TOP_SPARE_8) return [];
+  const out = [PUSH_CC_PERMANENT_BASE + (cc - CC_UP)]; // 91→20 … 98→27
+  if (cc === CC_UP) out.push(PUSH_CC_PLAY);
+  else if (cc === CC_TOP_SPARE_6) out.push(PUSH_CC_UNDO);
+  else if (cc === CC_TOP_SPARE_8) out.push(PUSH_CC_SHIFT);
+  return out;
 }
 
-/** The Push below-display button CC that mirrors a Launchpad scene CC, or null. */
+/** The Push scene-launch button CC that mirrors a Launchpad scene CC, or null.
+ *  SCENE_CCS is top→bottom (index 0 = top = row 7); the Push scene column is
+ *  bottom-origin base 36 (TOP 43 … BOTTOM 36). PURE. */
 function launchpadSceneCcToPushCc(cc: number): number | null {
   const i = SCENE_CCS.indexOf(cc as (typeof SCENE_CCS)[number]);
-  return i >= 0 ? PUSH_CC_BELOW_DISPLAY_BASE + i : null;
+  if (i < 0) return null;
+  return PUSH_CC_SCENE_BASE + (SCENE_CCS.length - 1 - i); // top(i0)→43 … bottom(i7)→36
 }
 
 /**
  * Translate a LaunchpadFrame (the shipped control brain's LED output, indexed by
  * Launchpad programmer indices) into the Push LED specs the device sends. Pads
- * become palette-index colours; the mapped top-row + scene buttons become CC
- * on/off (0 = off, 127 = lit — the Push function buttons are 2-state / white).
- * Indices with no Push home (the logo, redo) are dropped. PURE.
+ * become palette-index colours; the top-row indices become the permanent-controls
+ * row (plus the dedicated Play/Undo/Shift), and scene CCs become the scene column
+ * — CC on/off (0 = off, 127 = lit; the Push function buttons are 2-state / white).
+ * Indices with no Push home (the logo) are dropped. PURE.
  */
 export function push2FrameToLeds(frame: LaunchpadFrame): Push2LedSpec[] {
   const out: Push2LedSpec[] = [];
@@ -279,9 +279,9 @@ export function push2FrameToLeds(frame: LaunchpadFrame): Push2LedSpec[] {
       continue;
     }
     const lit = r + g + b > 0 ? 127 : 0;
-    const topCc = launchpadTopCcToPushCc(index);
-    if (topCc !== null) {
-      out.push({ kind: 'button', cc: topCc, value: lit });
+    const topCcs = launchpadTopCcToPushCcs(index);
+    if (topCcs.length) {
+      for (const c of topCcs) out.push({ kind: 'button', cc: c, value: lit });
       continue;
     }
     const sceneCc = launchpadSceneCcToPushCc(index);
@@ -289,7 +289,7 @@ export function push2FrameToLeds(frame: LaunchpadFrame): Push2LedSpec[] {
       out.push({ kind: 'button', cc: sceneCc, value: lit });
       continue;
     }
-    // no Push home (logo 99, redo) — drop.
+    // no Push home (logo 99) — drop.
   }
   return out;
 }

@@ -65,9 +65,11 @@ async function pushState(page: import('@playwright/test').Page) {
   });
 }
 
-// Push 2 CC map (standard Ableton map — confirmed on hardware by the owner).
+// Push 2 CC map (owner-confirmed on hardware).
 const CC_PLAY = 85;
-const CC_NOTE = 50; // → CLIP (note-editor) view
+// CLIP (note-editor) view: the permanent-controls row button 2 (CC 22) → the
+// Launchpad top-row CLIP CC (93). The dedicated "Note" button was a wrong guess.
+const CC_CLIP_VIEW = 22;
 const CC_SHIFT = 49;
 const CC_DPAD_UP = 46;
 const CC_ABOVE_DISPLAY_BASE = 102; // channel-select 1..8
@@ -195,9 +197,10 @@ test('@push2 Play toggles transport; a channel-select + encoder drives MixMaster
   await expect.poll(() => mixParam(page, 'ch1_volume'), { timeout: 3000 }).toBeGreaterThan(0.83);
   expect(await mixParam(page, 'ch1_volume')).toBeLessThan(0.87);
 
-  // (D) D-Pad → CLIP-view nav. Switch to CLIP view (Note button, CC 50), read the
-  // pitch-window offset, press D-Pad ↑ → +1; hold SHIFT (CC 49) + ↑ → +8.
-  await cc(CC_NOTE, 127); await cc(CC_NOTE, 0);
+  // (D) D-Pad → CLIP-view nav. Switch to CLIP view (permanent-row button 2,
+  // CC 22 → top CC 93), read the pitch-window offset, press D-Pad ↑ → +1; hold
+  // SHIFT (CC 49) + ↑ → +8.
+  await cc(CC_CLIP_VIEW, 127); await cc(CC_CLIP_VIEW, 0);
   await expect.poll(async () => (await pushState(page))?.singleView, { timeout: 3000 }).toBe('clip');
   const base = Number((await pushState(page))?.editRowOffset ?? 0);
   await cc(CC_DPAD_UP, 127); await cc(CC_DPAD_UP, 0);

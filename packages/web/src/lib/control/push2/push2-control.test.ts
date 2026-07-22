@@ -24,7 +24,8 @@ vi.mock('$lib/audio/scheduler-clock', () => ({
 
 import { patch as livePatch } from '$lib/graph/store';
 import { flushAllCcCommits } from '$lib/ui/controls/cc-commit';
-import { __test_resetBinding, boundClipNode } from '$lib/control/launchpad/launchpad-control.svelte';
+import { __test_resetBinding, boundClipNode, __test_mode } from '$lib/control/launchpad/launchpad-control.svelte';
+import { drainAudition, clearAudition } from '$lib/audio/modules/clip-audition';
 import { __test_resetPush2 } from './push2-device.svelte';
 import {
   installSimulatedPush2AndBind,
@@ -33,9 +34,11 @@ import {
   selectedChannelIndex,
   channelName,
   firstMixmstrs,
+  setLaunchpadView,
 } from './push2-control.svelte';
 import {
   PUSH_CC_ABOVE_DISPLAY_BASE,
+  PUSH_CC_SCENE_BASE,
   PUSH_CC_ENCODER_BASE,
   PUSH_CC_ENCODER_TEMPO,
   PUSH_CC_ENCODER_MASTER,
@@ -82,6 +85,7 @@ beforeEach(async () => {
   __test_resetPush2Control();
   __test_resetPush2();
   __test_resetBinding();
+  clearAudition(CP);
   clearPatch();
 });
 
@@ -162,14 +166,71 @@ describe('parity adapter — a Push pad drives the shipped clip brain', () => {
     expect(data.queued![0]).not.toBeUndefined();
   });
 
-  it('the sim writes User-mode + LED bytes to the Push (surface is live)', async () => {
+  it('the sim writes the Set-LIVE-mode SysEx + LED bytes to the Push (surface is live)', async () => {
     seedClipPlayer({ clips: {} });
     sim = await installSimulatedPush2AndBind(CP);
-    // Enter-User-mode SysEx (F0 00 21 1D 01 01 0A 01 F7) was sent on bind.
-    const enter = sim.writes().some((w) => w[0] === 0xf0 && w[6] === 0x0a && w[7] === 0x01);
-    expect(enter).toBe(true);
-    // Step a render tick → the surface paints LED bytes (Note-On pad colours).
+    // Set-LIVE-mode SysEx (F0 00 21 1D 01 01 0A 00 F7) was sent on bind — the
+    // default the Live-port path uses (NOT the finicky User mode).
+    const live = sim.writes().some((w) => w[0] === 0xf0 && w[6] === 0x0a && w[7] === 0x00);
+    expect(live).toBe(true);
+    // No User-mode SysEx (0A 01) is ever sent.
+    const user = sim.writes().some((w) => w[0] === 0xf0 && w[6] === 0x0a && w[7] === 0x01);
+    expect(user).toBe(false);
+    // Step a render tick → the surface paints LED bytes (Note-On pad colours) —
+    // in LIVE mode these light the grid on the Live port with no further SysEx.
     hoisted.tick?.();
     expect(sim.writes().some((w) => (w[0] & 0xf0) === 0x90)).toBe(true);
+  });
+});
+
+describe('velocity capture — the Push pads ARE velocity-sensitive', () => {
+  // Push scene CC for the KEYS button: the clip-right column index 3 = Keys →
+  // Launchpad SCENE_CCS[3]; the Push scene column is bottom-origin base 36, so
+  // that scene sits at Push CC 36 + (7-3) = 40.
+  const CC_KEYS = PUSH_CC_SCENE_BASE + 4;
+
+  function noteClip(steps: unknown[] = []) {
+    return { kind: 'note', lengthSteps: 16, root: 48, loop: true, steps };
+  }
+  function editedClipSteps(): { velocity: number }[] {
+    const d = livePatch.nodes[CP]!.data as { clips: Record<string, { steps: { velocity: number }[] }> };
+    return d.clips['0'].steps;
+  }
+
+  it('NOTE ENTRY records the pad HIT VELOCITY, not the constant default', async () => {
+    seedClipPlayer({ clips: { '0': noteClip() } });
+    sim = await installSimulatedPush2AndBind(CP);
+    setLaunchpadView('clip'); // the note editor
+    // Tap the bottom-left editor cell HARD (velocity 121). Press captures the
+    // velocity; release toggles the note ON with it.
+    sim.press(0, 0, 121);
+    sim.release(0, 0);
+    const steps = editedClipSteps();
+    expect(steps.length, 'a note was placed').toBe(1);
+    expect(steps[0].velocity, 'the recorded velocity is the pad hit, not VEL_DEFAULT (76)').toBe(121);
+  });
+
+  it('NOTE ENTRY at a SOFT hit records that softer velocity (proves it varies, not a constant)', async () => {
+    seedClipPlayer({ clips: { '0': noteClip() } });
+    sim = await installSimulatedPush2AndBind(CP);
+    setLaunchpadView('clip');
+    sim.press(0, 0, 29); // a soft hit
+    sim.release(0, 0);
+    expect(editedClipSteps()[0].velocity).toBe(29);
+  });
+
+  it('KEYS keyboard note-on plays the pad HIT VELOCITY (audition carries it)', async () => {
+    seedClipPlayer({ clips: { '0': noteClip() } });
+    sim = await installSimulatedPush2AndBind(CP);
+    setLaunchpadView('clip');
+    sim.cc(CC_KEYS, 127); // Clip → KEYS keyboard
+    sim.cc(CC_KEYS, 0);
+    expect(__test_mode().mode, 'entered KEYS mode').toBe('keys');
+    drainAudition(CP); // discard any entry noise
+    // Play a keyboard note cell at velocity 96.
+    sim.press(2, 1, 96);
+    const on = drainAudition(CP).find((e) => e.on);
+    expect(on, 'a note-on auditioned').toBeTruthy();
+    expect(on!.velocity, 'the played velocity is the pad hit, not VEL_DEFAULT (76)').toBe(96);
   });
 });

@@ -1604,6 +1604,12 @@ export function restrictedRowWindow(
 export interface NoteEntryOpts {
   mono?: boolean;
   maxVoices?: number;
+  /** Velocity (MIDI 0..127) for a note PLACED by this op; defaults to
+   *  VEL_DEFAULT. A velocity-SENSITIVE surface (e.g. Push 2) passes the pad's
+   *  real hit velocity so note entry records the played dynamics; velocity-
+   *  insensitive surfaces (Launchpad) omit it and get the constant default
+   *  (unchanged behaviour). Ignored when the op REMOVES a note. */
+  velocity?: number;
 }
 
 /**
@@ -1643,7 +1649,7 @@ export function toggleNoteAt(
       steps = steps.filter((e) => e !== oldest);
     }
   }
-  return { ...clip, steps: [...steps, { step, midi, velocity: VEL_DEFAULT, lengthSteps: 1 }] };
+  return { ...clip, steps: [...steps, { step, midi, velocity: opts.velocity ?? VEL_DEFAULT, lengthSteps: 1 }] };
 }
 
 // ---------------------------------------------------------------------------
@@ -1973,7 +1979,7 @@ export function setNoteSpan(
   const steps = opts.mono
     ? clip.steps.filter((e) => e.step + (e.lengthSteps ?? 1) - 1 < a || e.step > b)
     : clip.steps.filter((e) => e.midi !== midi || e.step < a || e.step > b);
-  steps.push({ step: a, midi, velocity: VEL_DEFAULT, lengthSteps: b - a + 1 });
+  steps.push({ step: a, midi, velocity: opts.velocity ?? VEL_DEFAULT, lengthSteps: b - a + 1 });
   return { ...clip, steps };
 }
 

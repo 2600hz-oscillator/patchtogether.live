@@ -3,7 +3,9 @@
 // The Push 2 PLACEMENT ADAPTER — the translation between Push MIDI and the shipped
 // Launchpad control vocabulary. PURE, so fully unit-testable: classify inbound
 // Push events (parity → LaunchpadRxEvent; additive → channel/encoder/dpad) and
-// translate the outbound LaunchpadFrame → Push LED specs.
+// translate the outbound LaunchpadFrame → Push LED specs. Pins the OWNER-CONFIRMED
+// map: permanent-controls row 20..27 → Launchpad top 91..98, scene column 36..43
+// (top 43 … bottom 36), Undo 119, Play 85.
 import { describe, it, expect } from 'vitest';
 import {
   classifyPush2,
@@ -12,15 +14,15 @@ import {
   encoderTarget,
   dpadDir,
   pushCcToLaunchpadTopCc,
+  sceneRowForCc,
   PUSH_CC_PLAY,
-  PUSH_CC_SESSION,
-  PUSH_CC_NOTE,
   PUSH_CC_SHIFT,
   PUSH_CC_UNDO,
   PUSH_CC_DPAD_UP,
   PUSH_CC_DPAD_LEFT,
   PUSH_CC_ABOVE_DISPLAY_BASE,
-  PUSH_CC_BELOW_DISPLAY_BASE,
+  PUSH_CC_PERMANENT_BASE,
+  PUSH_CC_SCENE_BASE,
   PUSH_CC_ENCODER_BASE,
   PUSH_CC_ENCODER_TEMPO,
   PUSH_CC_ENCODER_SWING,
@@ -29,14 +31,14 @@ import {
 import type { Push2RxEvent } from './push2-sysex';
 import { pushPadNote } from './push2-sysex';
 import type { LaunchpadFrame } from './push2-types';
-import { padNote, CC_UP, CC_LEFT, CC_TOP_SPARE_8, SCENE_CCS } from '$lib/control/launchpad/launchpad-sysex';
+import { padNote, CC_UP, CC_TOP_SPARE_6, CC_TOP_SPARE_8, SCENE_CCS } from '$lib/control/launchpad/launchpad-sysex';
 
 // A decoded pad event: a release always carries velocity 0 (mirrors the codec).
 const pad = (x: number, y: number, s: 0 | 1, velocity = 100): Push2RxEvent => ({ type: 'pad', x, y, s, velocity: s === 1 ? velocity : 0 });
 const cc = (n: number, value: number): Push2RxEvent => ({ type: 'cc', cc: n, s: value > 0 ? 1 : 0, value });
 
 describe('classifyPush2 — parity events into the Launchpad vocabulary', () => {
-  it('8×8 pads map cell-for-cell (bottom-origin ↔ bottom-origin)', () => {
+  it('8×8 pads map cell-for-cell (bottom-origin ↔ bottom-origin), carrying velocity', () => {
     expect(classifyPush2(pad(0, 0, 1, 77))).toEqual({
       kind: 'launchpad',
       ev: { type: 'pad', x: 0, y: 0, s: 1, velocity: 77 },
@@ -55,26 +57,33 @@ describe('classifyPush2 — parity events into the Launchpad vocabulary', () => 
     expect(CC_UP).toBe(91);
   });
 
-  it('Session/Note reach the GRID/CLIP view switches (top CC 92/93)', () => {
-    expect(classifyPush2(cc(PUSH_CC_SESSION, 127))).toEqual({ kind: 'launchpad', ev: { type: 'top', cc: 92, s: 1 } });
-    expect(classifyPush2(cc(PUSH_CC_NOTE, 127))).toEqual({ kind: 'launchpad', ev: { type: 'top', cc: CC_LEFT, s: 1 } });
-    expect(CC_LEFT).toBe(93);
+  it('the permanent-controls row (CC 20..27) mirrors the Launchpad top row (91..98)', () => {
+    // 20 → 91 (transport) … 27 → 98 (shift), in order.
+    for (let i = 0; i < 8; i++) {
+      expect(classifyPush2(cc(PUSH_CC_PERMANENT_BASE + i, 127))).toEqual({
+        kind: 'launchpad',
+        ev: { type: 'top', cc: 91 + i, s: 1 },
+      });
+    }
+    // Button 2 (CC 22) → CLIP (note-editor) view = top CC 93.
+    expect(classifyPush2(cc(PUSH_CC_PERMANENT_BASE + 2, 127))).toEqual({ kind: 'launchpad', ev: { type: 'top', cc: 93, s: 1 } });
   });
 
-  it('Undo/Shift reach the top row (96/98)', () => {
-    expect(classifyPush2(cc(PUSH_CC_UNDO, 127))).toEqual({ kind: 'launchpad', ev: { type: 'top', cc: 96, s: 1 } });
+  it('the dedicated Undo (119) / Shift (49) buttons reach the top row (96/98)', () => {
+    expect(classifyPush2(cc(PUSH_CC_UNDO, 127))).toEqual({ kind: 'launchpad', ev: { type: 'top', cc: CC_TOP_SPARE_6, s: 1 } });
     expect(classifyPush2(cc(PUSH_CC_SHIFT, 127))).toEqual({ kind: 'launchpad', ev: { type: 'top', cc: CC_TOP_SPARE_8, s: 1 } });
+    expect(CC_TOP_SPARE_6).toBe(96);
     expect(CC_TOP_SPARE_8).toBe(98);
   });
 
-  it('below-display buttons → the Launchpad scene column (row bottom-origin)', () => {
-    // CC 20 (index 0) → SCENE_CCS[0] = 89, which the Launchpad decodes as row 7.
-    expect(classifyPush2(cc(PUSH_CC_BELOW_DISPLAY_BASE, 127))).toEqual({
+  it('scene-launch column (CC 36..43, TOP 43 … BOTTOM 36) → the Launchpad scene column', () => {
+    // TOP button (CC 43) → row 7 → SCENE_CCS[0] = 89 (the Launchpad top scene).
+    expect(classifyPush2(cc(PUSH_CC_SCENE_BASE + 7, 127))).toEqual({
       kind: 'launchpad',
       ev: { type: 'scene', row: 7, cc: SCENE_CCS[0], s: 1 },
     });
-    // CC 27 (index 7) → SCENE_CCS[7] = 19 → row 0.
-    expect(classifyPush2(cc(PUSH_CC_BELOW_DISPLAY_BASE + 7, 127))).toEqual({
+    // BOTTOM button (CC 36) → row 0 → SCENE_CCS[7] = 19.
+    expect(classifyPush2(cc(PUSH_CC_SCENE_BASE, 127))).toEqual({
       kind: 'launchpad',
       ev: { type: 'scene', row: 0, cc: SCENE_CCS[7], s: 1 },
     });
@@ -131,12 +140,23 @@ describe('helpers', () => {
     expect(isEncoderCc(PUSH_CC_ENCODER_MASTER)).toBe(true);
     expect(isEncoderCc(PUSH_CC_ABOVE_DISPLAY_BASE)).toBe(false);
   });
-  it('encoderTarget / dpadDir / pushCcToLaunchpadTopCc classify their CCs', () => {
+  it('encoderTarget / dpadDir classify their CCs', () => {
     expect(encoderTarget(PUSH_CC_ENCODER_BASE + 2)).toEqual({ param: 'volume', channel: 2 });
     expect(dpadDir(PUSH_CC_DPAD_UP)).toBe('up');
     expect(dpadDir(999)).toBeNull();
+  });
+  it('pushCcToLaunchpadTopCc maps the permanent row + dedicated buttons; null otherwise', () => {
+    expect(pushCcToLaunchpadTopCc(PUSH_CC_PERMANENT_BASE)).toBe(CC_UP); // 20 → 91
+    expect(pushCcToLaunchpadTopCc(PUSH_CC_PERMANENT_BASE + 7)).toBe(CC_TOP_SPARE_8); // 27 → 98
     expect(pushCcToLaunchpadTopCc(PUSH_CC_PLAY)).toBe(CC_UP);
+    expect(pushCcToLaunchpadTopCc(PUSH_CC_UNDO)).toBe(CC_TOP_SPARE_6);
     expect(pushCcToLaunchpadTopCc(999)).toBeNull();
+  });
+  it('sceneRowForCc maps 36..43 to bottom-origin rows 0..7', () => {
+    expect(sceneRowForCc(PUSH_CC_SCENE_BASE)).toBe(0); // 36 → bottom
+    expect(sceneRowForCc(PUSH_CC_SCENE_BASE + 7)).toBe(7); // 43 → top
+    expect(sceneRowForCc(35)).toBeNull();
+    expect(sceneRowForCc(44)).toBeNull();
   });
 });
 
@@ -153,17 +173,19 @@ describe('push2FrameToLeds — LaunchpadFrame → Push LED specs', () => {
     expect(leds).toContainEqual({ kind: 'pad', note: pushPadNote(7, 7), palette: 127 });
   });
 
-  it('top-row + scene CCs → mapped Push buttons; the logo is dropped', () => {
+  it('a lit top CC lights BOTH the permanent-controls row + the dedicated button', () => {
     const frame: LaunchpadFrame = {
       leds: new Map<number, [number, number, number]>([
-        [CC_UP, [15, 0, 0]], // transport lit → Play button on
-        [SCENE_CCS[0], [10, 10, 10]], // scene 0 lit → below-display button on
+        [CC_UP, [15, 0, 0]], // transport lit → Play + permanent-row button 0
+        [SCENE_CCS[0], [10, 10, 10]], // top scene lit → scene button (CC 43)
         [99, [10, 10, 10]], // the logo — no Push home
       ]),
     };
     const leds = push2FrameToLeds(frame);
     expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_PLAY, value: 127 });
-    expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_BELOW_DISPLAY_BASE, value: 127 });
+    expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_PERMANENT_BASE, value: 127 });
+    // The TOP scene (SCENE_CCS[0]) → the TOP Push scene button = CC 43.
+    expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_SCENE_BASE + 7, value: 127 });
     // nothing maps the logo (99).
     expect(leds.some((l) => l.kind === 'button' && l.cc === 99)).toBe(false);
   });
