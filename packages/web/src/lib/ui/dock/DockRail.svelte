@@ -24,17 +24,14 @@
   import { dockStore } from './dock-store.svelte';
   import DockCardHost from './DockCardHost.svelte';
 
-  /** One card slot: a docked entry, the bottom drawer's pinned occupant, or the
-   *  transient full-view occupant (P0.3b). A card may carry its OWN close
-   *  callback (the full-view occupant closes to dockStore.closeFullView) —
-   *  distinct from the pinned trio's shared onClosePinned. */
+  /** One card slot: a docked entry or the bottom drawer's pinned occupant. (The
+   *  P0.3b EXPANDED full-view no longer routes through this rail — it renders its
+   *  own full-width <DockFullView> faceplate — so the per-card onClose override is
+   *  gone; the pinned occupant still uses the shared onClosePinned.) */
   interface DockRailCard {
     node: ModuleNode;
     title: string;
     pinned: boolean;
-    /** Per-card close override. Present ⇒ the card shows a ✕ wired here and no
-     *  undock affordance (it was never a persisted dock entry). */
-    onClose?: () => void;
   }
 
   interface Props {
@@ -169,8 +166,8 @@
             title={card.title}
             onStepScale={(dir) => dockStore.stepScaleOf(card.node.id, dir)}
             onResetScale={() => dockStore.setScaleOf(card.node.id, 1)}
-            onUndock={card.pinned || card.onClose ? undefined : () => onUndock(card.node.id)}
-            onClose={card.onClose ?? (card.pinned ? onClosePinned : undefined)}
+            onUndock={card.pinned ? undefined : () => onUndock(card.node.id)}
+            onClose={card.pinned ? onClosePinned : undefined}
           />
         {/each}
       </div>

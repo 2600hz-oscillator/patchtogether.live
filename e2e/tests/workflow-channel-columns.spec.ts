@@ -663,3 +663,75 @@ test.describe('workflow channel columns', () => {
     expect(after.channelMax[1]).toBeLessThan(base.channelMax[1] * 2.0);
   });
 });
+
+// P0.3b PRIMARY camera fix — the reported "add a module → nothing renders until
+// you click around" bug. Root cause (diagnosed headlessly): the tile mounts
+// correctly but lands ABOVE the viewport because a column member stacks UPWARD
+// from the baseline and the camera never re-frames on add. spawnFromPalette now
+// pans the camera to the target lane, so the newest tile is GUARANTEED in view
+// with NO intervening click. This regression-covers the exact intersection the
+// existing specs missed (they asserted only graph/DSP state, or used spawnPatch's
+// own reveal helper). Runs on BOTH mode=workflow and mode=workflow&shell=1.
+test.describe('workflow: adding a module reveals it in-view (no click)', () => {
+  test.beforeEach(async ({ page }) => {
+    await installRenderSmokeHooks(page);
+  });
+
+  /** Spawn `type` into column 1 via the REAL palette path and return the id of
+   *  the node that was added (the set-difference of __patch.nodes keys). */
+  async function spawnIntoColumnReturningId(page: Page, type: string, ch: number): Promise<string> {
+    const before = await page.evaluate(() => {
+      const w = globalThis as unknown as { __patch: { nodes: Record<string, unknown> } };
+      return Object.keys(w.__patch.nodes);
+    });
+    await dropInBand(page, type, colPos(ch));
+    return page.evaluate(
+      async (prev) => {
+        const w = globalThis as unknown as { __patch: { nodes: Record<string, unknown> } };
+        // The spawn is synchronous in the transact; poll a couple frames in case.
+        for (let i = 0; i < 30; i++) {
+          const added = Object.keys(w.__patch.nodes).filter((k) => !prev.includes(k));
+          if (added.length > 0) return added[0]!;
+          await new Promise<void>((r) => requestAnimationFrame(() => r()));
+        }
+        return '';
+      },
+      before,
+    );
+  }
+
+  for (const shell of [false, true]) {
+    const label = shell ? 'mode=workflow&shell=1' : 'mode=workflow';
+    test(`a real palette spawn into a column lands the tile WITHIN the viewport (${label})`, async ({ page }) => {
+      await page.goto(shell ? '/rack?mode=workflow&shell=1' : '/rack?mode=workflow');
+      await waitForPinnedTrio(page);
+      await waitForHooks(page);
+
+      const id = await spawnIntoColumnReturningId(page, 'tidyVco', 1);
+      expect(id, 'a new node id materialized').toBeTruthy();
+
+      const node = page.locator(`.svelte-flow__node[data-id="${id}"]`);
+      await expect(node).toHaveCount(1);
+
+      // The camera pan animates (WCOL_PAN_MS=220); wait for it to settle, then
+      // assert the tile's box lies within the viewport — with NO click/pan.
+      await expect
+        .poll(
+          async () => {
+            const box = await node.boundingBox();
+            const vh = page.viewportSize()!.height;
+            const vw = page.viewportSize()!.width;
+            if (!box) return null;
+            // Fully in-view: top >= 0, bottom <= innerHeight, and horizontally
+            // overlapping the viewport (the lane is centered horizontally).
+            return {
+              inV: box.y >= 0 && box.y + box.height <= vh + 1,
+              inH: box.x + box.width > 0 && box.x < vw,
+            };
+          },
+          { timeout: 4_000, message: 'the added tile should be revealed in-view' },
+        )
+        .toEqual({ inV: true, inH: true });
+    });
+  }
+});

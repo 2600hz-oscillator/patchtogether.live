@@ -1,0 +1,252 @@
+/* ─────────────────────────────────────────────────────────────────────────
+ * RACKLINE lane-tile vocabulary — the SHARED partial (P0.3b re-spec).
+ *
+ * The owner-approved compact `.mod` tile (scratchpad/ux-proposal-b.html:95-149),
+ * ported VERBATIM (colours mapped onto the app's --cable-* / --ink-faint /
+ * --tile-border / --jackrail-bg tokens). Both <ModuleShell> (migrated) and
+ * <ModuleShellPlaceholder> (un-migrated) put `rl-tile` on their root and consume
+ * these classes, so the lane face is IDENTICAL BY CONSTRUCTION — a real RACKLINE
+ * tile, never a stub. The styled `.jacks` rail is rendered by PatchPanel's
+ * lane-rail variant (a descendant of `.rl-tile`), honouring the
+ * "new modules use PatchPanel" standard while matching the mock look.
+ *
+ * Imported globally in +layout.svelte (after _module-card.css, which pins the
+ * OUTER tile box to the uniform --shell-tile-h height). Everything here is
+ * scoped under `.rl-tile` so the generic mock class names (.jacks/.flow/.more/
+ * .center/…) can never leak into the rest of the app.
+ * ────────────────────────────────────────────────────────────────────── */
+
+/* ---- frame (mock .mod) ---- */
+.rl-tile {
+  --_spine: var(--spine, var(--cable-audio));
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-width: 150px;
+  min-height: var(--tile-h-mini, 88px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--r-tile, 8px);
+  background: linear-gradient(180deg, var(--surface-3, #262a31), var(--module-bg, #1c1f24));
+  border: 1px solid var(--tile-border, #33383f);
+  box-shadow: var(--shadow-tile, 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 2px 5px rgba(0, 0, 0, 0.35));
+  color: var(--text, #eef1f5);
+  font-family: var(--font, sans-serif);
+}
+
+/* ---- left signal spine — absolute overlay (mock .mod .spine) ---- */
+.rl-tile .rl-spine {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--spine-w, 4px);
+  background: var(--_spine);
+  z-index: 1;
+}
+
+/* ---- header (mock .top / .name / .badge) ---- */
+.rl-tile .tile-top {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 7px 8px 3px 11px;
+  min-width: 0;
+}
+.rl-tile .tile-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--t-title-compact, 14.5px);
+  font-weight: var(--t-title-weight, 800);
+  letter-spacing: 0.01em;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rl-tile .tile-badge {
+  flex: 0 0 auto;
+  margin-left: auto;
+  max-width: 46%;
+  font-size: var(--t-badge, 8.5px);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--ink-faint, #646c77);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- body: one inline row, knob columns LEFT + scope/meter filling RIGHT
+ *      (mock .body / .body.center) ---- */
+.rl-tile .tile-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 2px 9px 2px 11px;
+}
+.rl-tile .tile-body.center {
+  justify-content: center;
+}
+
+/* knob column (mock .kcol / .lab / .val) */
+.rl-tile .kcol {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  flex: 0 0 auto;
+}
+.rl-tile .kcol .lab {
+  font-size: var(--t-label-compact, 10px);
+  color: var(--text-dim, #9aa2ad);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+.rl-tile .kcol .val {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: var(--t-value-compact, 11px);
+  color: var(--text, #eef1f5);
+}
+
+/* mini scope well (mock .scope) — the placeholder / mini glyph fills it */
+.rl-tile .tile-scope {
+  flex: 1 1 auto;
+  min-width: 40px;
+  height: var(--scope-h, 40px);
+  border-radius: 5px;
+  background: var(--module-bg-deep, #0a0c0f);
+  border: 1px solid var(--border, #2c3037);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.rl-tile .tile-scope svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+/* domain-tinted, per-frame-free signal line (un-migrated placeholder glyph) */
+.rl-tile .tile-wave {
+  stroke: var(--_spine);
+  stroke-width: 2;
+  stroke-linecap: round;
+  fill: none;
+  opacity: 0.85;
+  filter: drop-shadow(0 0 3px var(--_spine));
+  stroke-dasharray: 6 5;
+  animation: rl-scan 2.4s linear infinite;
+}
+@keyframes rl-scan {
+  to {
+    stroke-dashoffset: -22;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rl-tile .tile-wave {
+    animation: none;
+  }
+}
+/* the shell's live glyph host (ScopeScreen / VuMeter) fills the RIGHT of the body */
+.rl-tile .tile-glyph {
+  flex: 1 1 auto;
+  min-width: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---- jack rail (mock .jacks — "drill-down triggers, not raw jacks").
+ *      Rendered by PatchPanel's lane-rail variant; sits flush at the tile
+ *      bottom (PatchPanel's host is display:contents, so .jacks is a direct
+ *      flex child of .rl-tile). ---- */
+.rl-tile .jacks {
+  flex: 0 0 auto;
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px 6px 11px;
+  border-top: 1px solid var(--border, #2c3037);
+  background: var(--jackrail-bg, #141619);
+}
+/* the jack-dots cluster = the patch drill-down trigger */
+.rl-tile .jacks-trigger {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: none;
+  padding: 2px;
+  margin: -2px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.rl-tile .jacks-trigger:hover {
+  background: color-mix(in srgb, var(--_spine) 14%, transparent);
+}
+.rl-tile .jacks-trigger:focus-visible {
+  outline: 1px solid var(--_spine);
+  outline-offset: 1px;
+}
+.rl-tile .jk {
+  width: var(--jk, 12px);
+  height: var(--jk, 12px);
+  border-radius: 50%;
+  flex: none;
+  border: 2px solid var(--module-bg-deep, #0a0c0f);
+  box-sizing: border-box;
+}
+.rl-tile .jk.in {
+  background: var(--jk-color, var(--cable-audio));
+}
+.rl-tile .jk.out {
+  background: var(--module-bg-deep, #0a0c0f);
+  box-shadow: inset 0 0 0 2px var(--jk-color, var(--cable-audio));
+}
+/* expand → dock full-view (mock .more, repurposed as the "expand ⤢" affordance) */
+.rl-tile .jacks .more {
+  flex: 0 0 auto;
+  background: transparent;
+  border: none;
+  padding: 0 2px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--ink-faint, #646c77);
+  letter-spacing: 0.1em;
+  cursor: pointer;
+}
+.rl-tile .jacks .more:hover {
+  color: var(--text, #eef1f5);
+}
+.rl-tile .jacks .more:focus-visible {
+  outline: 1px solid var(--_spine);
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+/* right-aligned signal-flow label (mock .flow "▶ ch1") */
+.rl-tile .jacks .flow {
+  margin-left: auto;
+  font-size: 9px;
+  color: var(--ink-faint, #646c77);
+  font-family: var(--mono, ui-monospace, monospace);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The lane tile NEVER flips: its real card (which carries the rear-view patch
+ * jacks) opens in the dock full-view, and the tile root is deliberately not
+ * .mod-card/.card/.moog-panel so the front-inert flip rules never hide it.
+ * PatchPanel (lane-rail) still renders its back-panel in the DOM, so suppress it
+ * here — otherwise `.rear-view .card-back-panel` would overlay the tile face. */
+.rl-tile .card-back-panel {
+  display: none !important;
+}

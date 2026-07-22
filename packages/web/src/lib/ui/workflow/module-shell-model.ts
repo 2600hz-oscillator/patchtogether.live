@@ -20,11 +20,55 @@
 import type { Tier } from '$lib/ui/canvas/lod';
 import type { FaceTier } from './curated-face';
 
+/**
+ * The FIXED uniform RACKLINE lane-tile HEIGHT (px) every un-migrated placeholder
+ * (and the mini shell) renders at under the `?shell=1` preview. Shared by the CSS
+ * (`_module-card.css` pins the tile to `var(--shell-tile-h, var(--tile-h-mini))`
+ * = 88px) and by Canvas's `wcolCardHeightPx` short-circuit, so the RESERVED lane
+ * slot equals the RENDERED tile → the fixed baseline number badge caps every tile
+ * flush. Mirrors the `--tile-h-mini` token (tokens.css); a unit test locks them
+ * together so CSS/TS can never drift. */
+export const SHELL_TILE_H = 88;
+
 /** The minimal def shape the shell/placeholder model reads. */
 export interface ShellDefLike {
   domain?: string;
   inputs?: readonly { id: string; type: string }[];
   outputs?: readonly { id: string; type: string }[];
+}
+
+/** The five signal DOMAINS the RACKLINE kit colours chrome by (spine, jack dots,
+ *  faceplate accent). */
+export type SignalDomain = 'audio' | 'cv' | 'gate' | 'video' | 'poly';
+
+/** Map a live CABLE type to its signal DOMAIN class (the kit's .audio/.cv/.gate/
+ *  .video/.poly setters). Secondary cable types fold into their parent domain
+ *  (pitch→cv, keys→poly, image/mono-video→video). Unknown → audio. Pure. */
+export function domainClassForCable(cable: string | undefined): SignalDomain {
+  switch (cable) {
+    case 'gate':
+      return 'gate';
+    case 'cv':
+    case 'pitch':
+      return 'cv';
+    case 'polyPitchGate':
+    case 'keys':
+      return 'poly';
+    case 'video':
+    case 'image':
+    case 'mono-video':
+      return 'video';
+    case 'audio':
+    default:
+      return 'audio';
+  }
+}
+
+/** The module's signal DOMAIN class — derived from its primary cable type (the
+ *  same hue its spine is painted). Consumed by DockFullView to add the kit
+ *  domain setter class to the `.faceplate` root. Pure. */
+export function domainClassForDef(def: ShellDefLike | undefined): SignalDomain {
+  return domainClassForCable(cableTypeForDef(def));
 }
 
 /** Map a module DOMAIN to a representative cable type (used only when a module

@@ -47,6 +47,10 @@ import {
   VIDEO_AREA_HEIGHT,
   laneCenterViewport,
   videoAreaViewport,
+  sendBoxCenterViewport,
+  fitLanesViewport,
+  revealMemberViewport,
+  laneBandCenterX,
   indexForDropY,
   dedup,
   reconcileColumnOrder,
@@ -502,6 +506,55 @@ describe('viewport navigation (workflow keyboard pan) — keeps zoom, pure trans
         expect(project(b.x0, { pan: t.x, zoom: t.zoom })).toBeCloseTo(0, 6); // left edge → screen x 0
         expect(project(b.y1, { pan: t.y, zoom: t.zoom })).toBeCloseTo(vp.heightPx, 6); // bottom → screen bottom
       }
+    });
+  });
+
+  describe('sendBoxCenterViewport — send box centered horizontally, baseline at bottom', () => {
+    it('centers the send band center-x and drops the baseline to the viewport bottom', () => {
+      const vp = { widthPx: 1280, heightPx: 720, zoom: 0.4 };
+      for (const slot of [1, 2]) {
+        const t = sendBoxCenterViewport(slot, vp);
+        expect(t.zoom).toBe(0.4);
+        expect(project(sendBandCenterX(slot), { pan: t.x, zoom: t.zoom })).toBeCloseTo(vp.widthPx / 2, 6);
+        expect(project(COLUMN_BASELINE_Y, { pan: t.y, zoom: t.zoom })).toBeCloseTo(vp.heightPx, 6);
+      }
+    });
+  });
+
+  describe('fitLanesViewport — on-load framing centers the whole 8-column band', () => {
+    it('centers the band center-x + baseline at the viewport bottom, keeping zoom', () => {
+      const vp = { widthPx: 1280, heightPx: 720, zoom: 0.22 };
+      const t = fitLanesViewport(vp);
+      expect(t.zoom).toBe(0.22);
+      expect(project(laneBandCenterX(), { pan: t.x, zoom: t.zoom })).toBeCloseTo(vp.widthPx / 2, 6);
+      expect(project(COLUMN_BASELINE_Y, { pan: t.y, zoom: t.zoom })).toBeCloseTo(vp.heightPx, 6);
+    });
+  });
+
+  describe('revealMemberViewport — guarantees a just-added member is on screen', () => {
+    const vp = { widthPx: 1280, heightPx: 720, zoom: 0.5 };
+    // With laneCenterViewport the top visible flow-Y = BASELINE - heightPx/zoom.
+    const base = laneCenterViewport(3, vp);
+    const visibleTopFlowY = COLUMN_BASELINE_Y - vp.heightPx / vp.zoom;
+
+    it('SHORT stack (member top already visible) → returns the base unchanged', () => {
+      const memberTopY = visibleTopFlowY + 100; // comfortably in view
+      const t = revealMemberViewport(base, memberTopY, 88, vp);
+      expect(t).toEqual(base);
+    });
+
+    it('TALL stack (member top above the viewport) → re-centers on the member', () => {
+      const memberTopY = visibleTopFlowY - 500; // above the visible top → clipped
+      const t = revealMemberViewport(base, memberTopY, 180, vp);
+      // horizontal framing is preserved (lane still centered), zoom kept
+      expect(t.x).toBe(base.x);
+      expect(t.zoom).toBe(vp.zoom);
+      // the member's CENTER maps to the vertical center of the viewport
+      const memberCenterY = memberTopY + 180 / 2;
+      expect(project(memberCenterY, { pan: t.y, zoom: t.zoom })).toBeCloseTo(vp.heightPx / 2, 6);
+      // …and the member's whole box is now within [0, heightPx]
+      expect(project(memberTopY, { pan: t.y, zoom: t.zoom })).toBeGreaterThanOrEqual(0);
+      expect(project(memberTopY + 180, { pan: t.y, zoom: t.zoom })).toBeLessThanOrEqual(vp.heightPx);
     });
   });
 });

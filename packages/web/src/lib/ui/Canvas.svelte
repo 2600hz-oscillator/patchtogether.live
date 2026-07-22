@@ -74,6 +74,9 @@
     resolveMasterVideoOutId,
     laneCenterViewport,
     videoAreaViewport,
+    sendBoxCenterViewport,
+    fitLanesViewport,
+    revealMemberViewport,
     type ModuleBoxLike,
     type ViewportMetrics,
   } from '$lib/graph/channel-columns';
@@ -378,6 +381,10 @@
   // alongside dockStub; emitted only under the `?shell=1` preview.
   import ModuleShell from '$lib/ui/modules/ModuleShell.svelte';
   import ModuleShellPlaceholder from '$lib/ui/modules/ModuleShellPlaceholder.svelte';
+  // P0.3b re-spec — the bottom-drawer EXPANDED full-view faceplate (its own
+  // full-width RACKLINE faceplate, NOT routed through DockCardHost's card flex).
+  import DockFullView from '$lib/ui/dock/DockFullView.svelte';
+  import { SHELL_TILE_H } from '$lib/ui/workflow/module-shell-model';
   // DOCKING P2.5b: the pan-gesture screen-space cable tail (stub → rail).
   import DockPanTail, { type DockTailSpec } from '$lib/ui/dock/DockPanTail.svelte';
   import { dockStore } from '$lib/ui/dock/dock-store.svelte';
@@ -539,6 +546,13 @@
    *  column stack (columnFlushPositions). Falls back to one rack unit for an
    *  unsized (unmigrated) type. */
   function wcolCardHeightPx(type: string): number {
+    // UNIFORM RACKLINE TILE (P0.3b re-spec): under the `?shell=1` preview every
+    // lane node renders as a fixed-height shell/placeholder tile (88px), so the
+    // RESERVED lane slot must equal the RENDERED tile — else the baseline number
+    // badge floats mid-card (the owner "non-uniform tiles" fix). Shared with the
+    // _module-card.css --tile-h-mini pin via the SHELL_TILE_H constant so CSS/TS
+    // can't drift. Preview-OFF keeps the per-TYPE rack tier → byte-identical.
+    if (shellPreview) return SHELL_TILE_H;
     const size = rackSizeByType[type]?.size;
     const u = size ? parseInt(size, 10) || 1 : 1;
     return u * RACK_UNIT;
@@ -1386,6 +1400,22 @@
     return () => window.removeEventListener('keydown', onDockKey);
   });
 
+  // The workflow viewport-pan animation duration (ms) — shared by the nav keys,
+  // the on-add camera reveal, and the on-load lane framing.
+  const WCOL_PAN_MS = 220;
+
+  /** Read the LIVE workflow viewport metrics: the flow pane's SCREEN-space
+   *  width/height (getBoundingClientRect) + the current zoom (kept fixed by the
+   *  pan helpers). Null until the pane is laid out. Shared by every pan seam. */
+  function readWorkflowViewportMetrics(): ViewportMetrics | null {
+    if (!flowApi || !flowEl) return null;
+    const rect = flowEl.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    const vp = flowApi.getViewport?.();
+    const zoom = vp?.zoom && vp.zoom > 0 ? vp.zoom : 1;
+    return { widthPx: rect.width, heightPx: rect.height, zoom };
+  }
+
   // WORKFLOW MODE — VIEWPORT NAVIGATION keys. Keeps the CURRENT zoom; only pans.
   //  * '1'..'8' → center that channel column horizontally in the viewport with
   //    its BASELINE (where the number sits) at the viewport BOTTOM. Numbers
@@ -1399,38 +1429,70 @@
   // zoom and hand the transform to xyflow's animated setViewport.
   $effect(() => {
     if (!workflowMode) return;
-    const PAN_MS = 220;
-    function readViewportMetrics(): ViewportMetrics | null {
-      if (!flowApi || !flowEl) return null;
-      const rect = flowEl.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return null;
-      const vp = flowApi.getViewport?.();
-      const zoom = vp?.zoom && vp.zoom > 0 ? vp.zoom : 1;
-      return { widthPx: rect.width, heightPx: rect.height, zoom };
-    }
     function onNavKey(e: KeyboardEvent) {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isTypingTarget(e.target)) return;
       const k = e.key;
       if (k === 'v' || k === 'V') {
-        const vp = readViewportMetrics();
+        const vp = readWorkflowViewportMetrics();
         if (!vp || !flowApi) return;
         e.preventDefault();
-        flowApi.setViewport(videoAreaViewport(vp), { duration: PAN_MS });
+        flowApi.setViewport(videoAreaViewport(vp), { duration: WCOL_PAN_MS });
         return;
       }
       // '1'..'8' → center that lane (guard against '0'/'9'+ and > column count).
       if (k >= '1' && k <= '9') {
         const ch = k.charCodeAt(0) - 48;
         if (ch < 1 || ch > COLUMN_COUNT) return; // ignore > active column count
-        const vp = readViewportMetrics();
+        const vp = readWorkflowViewportMetrics();
         if (!vp || !flowApi) return;
         e.preventDefault();
-        flowApi.setViewport(laneCenterViewport(ch, vp), { duration: PAN_MS });
+        flowApi.setViewport(laneCenterViewport(ch, vp), { duration: WCOL_PAN_MS });
       }
     }
     window.addEventListener('keydown', onNavKey);
     return () => window.removeEventListener('keydown', onNavKey);
+  });
+
+  // WORKFLOW ON-LOAD LANE FRAMING (P0.3b camera fix, SECONDARY). A bare
+  // <SvelteFlow fitView> frames only the xyflow-VISIBLE nodes; on a fresh
+  // workflow rack the channel singletons are canvas-hidden, leaving just the
+  // bottom VIDEO-ZONE trio — so fitView anchors the camera on the video strip and
+  // the channel lanes sit ABOVE the viewport. Once the pane + flowApi are ready
+  // (and the initial fitView has set the zoom), re-frame ONCE onto the lane band
+  // (fitLanesViewport: band centered, baseline at viewport bottom) so the camera
+  // lands on the work surface.
+  //
+  // GATED TO THE `?shell=1` PREVIEW (not all workflow mode): the on-load camera
+  // is a STATIC view change, and the preview-off workflow VRT
+  // (workflow-dock-composite) captures the canvas — so gating here keeps
+  // preview-off byte-identical (the interaction-time add-pan below is unaffected;
+  // it never changes the at-rest view a VRT captures). One-shot (a latch).
+  let didFrameLanesOnLoad = false;
+  $effect(() => {
+    if (!shellPreview || didFrameLanesOnLoad) return;
+    if (!flowApi || !flowEl) return; // not mounted yet — re-runs when they bind
+    // rAF-poll (bounded) until SvelteFlow's on-init fitView has produced a real
+    // viewport, then re-frame ONCE onto the lane band (inheriting the fitted
+    // zoom). The poll avoids a race where flowApi binds a frame before fitView.
+    let raf = 0;
+    let tries = 0;
+    const tick = () => {
+      raf = 0;
+      if (didFrameLanesOnLoad) return;
+      const raw = flowApi?.getViewport?.();
+      const vp = readWorkflowViewportMetrics();
+      if (flowApi && vp && raw && raw.zoom > 0) {
+        didFrameLanesOnLoad = true;
+        flowApi.setViewport(fitLanesViewport(vp), { duration: 0 });
+        return;
+      }
+      if (++tries < 30) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+    };
   });
 
   // Dock hygiene + P2.5a persistence binding: each Canvas mount binds the
@@ -1793,27 +1855,19 @@
     if (!id) return null;
     const node = snapshot.nodes.find((n) => n.id === id);
     if (!node) return null;
-    return {
-      node,
-      title: dockDisplayName(node),
-      pinned: true,
-      onClose: () => dockStore.closeFullView(),
-    };
+    return { node, title: dockDisplayName(node) };
   });
 
   let bottomRailCards = $derived.by(() => {
     const docked = railCards('bottom');
-    const out: Array<{ node: ModuleNode; title: string; pinned: boolean; onClose?: () => void }> = [];
+    const out: Array<{ node: ModuleNode; title: string; pinned: boolean }> = [];
     // The pinned M/E/C occupant renders FIRST, alongside docked cards —
     // the P1 drawer generalized (pinned stays drawer-only per owner Q2).
+    // NOTE: the EXPANDED full-view no longer routes through this card flex — it
+    // owns its own full-width <DockFullView> faceplate below the bottom rail
+    // (P0.3b re-spec); this list holds only the pinned occupant + docked entries.
     if (dockedBottomNode && dockedBottomSpec) {
       out.push({ node: dockedBottomNode, title: dockedBottomSpec.label, pinned: true });
-    }
-    // The full-view occupant — skipped if the SAME node is already shown as the
-    // pinned occupant or a docked entry, so a node never appears twice.
-    const fv = fullViewCard;
-    if (fv && !out.some((c) => c.node.id === fv.node.id) && !docked.some((c) => c.node.id === fv.node.id)) {
-      out.push(fv);
     }
     out.push(...docked);
     return out;
@@ -6422,6 +6476,25 @@
     // strictly an at-spawn affordance — long-lived "always on top"
     // would surprise users who expect drag-to-front to win later.
     topNodeId = id;
+    // WORKFLOW CAMERA REVEAL (P0.3b PRIMARY fix — "add a module → nothing
+    // renders"): a column/send member is forced to its deterministic slot, which
+    // stacks UPWARD from the baseline — so the newest tile lands ABOVE the
+    // current viewport and only "pops in" once the user pans. Pan the camera to
+    // the target lane so the just-added tile is guaranteed IN VIEW, with no
+    // intervening click. laneCenterViewport/sendBoxCenterViewport put the baseline
+    // at the viewport bottom (revealing the upward stack); revealMemberViewport
+    // re-centers on the new member if the stack is taller than the viewport.
+    if (wcolDrop?.channel != null || wcolDrop?.sendSlot != null) {
+      const vp = readWorkflowViewportMetrics();
+      if (vp && flowApi) {
+        const memberH = wcolCardHeightPx(type);
+        const base =
+          wcolDrop.channel != null
+            ? laneCenterViewport(wcolDrop.channel, vp)
+            : sendBoxCenterViewport(wcolDrop.sendSlot!, vp);
+        flowApi.setViewport(revealMemberViewport(base, pos.y, memberH, vp), { duration: WCOL_PAN_MS });
+      }
+    }
     // WORKFLOW: a column member ALSO joins automation lane N (per-module, its own
     // undo step, exactly like Assign-to-channel). Sends carry no automation lane
     // (a pure bus for v1). The reconcile $effect then wires the wcol- edges.
@@ -7502,6 +7575,24 @@
         onClosePinned={() => dockStore.close('bottom')}
         {rearView}
       />
+      <!-- EXPANDED FULL-VIEW (P0.3b re-spec): the drawer's wide RACKLINE
+           faceplate. It OWNS the bottom drawer as a single full-width element —
+           NOT one more card in DockRail's horizontal flex — with the domain
+           accent lip, grip, title bar + window-control trio, tab-rail seam, and
+           the module's verbatim legacy card mounted at native scale in .editor
+           (or a migrated <ModuleShell view="dock-full">). ESC closes it first
+           (dock-key handler above). -->
+      {#if fullViewCard}
+        <DockFullView
+          node={fullViewCard.node}
+          nodeTypes={nodeTypes as unknown as Record<string, unknown>}
+          rackSize={rackSizeByType[fullViewCard.node.type]}
+          migrated={migrated(fullViewCard.node.type)}
+          title={fullViewCard.title}
+          onClose={() => dockStore.closeFullView()}
+          onCollapse={() => dockStore.closeFullView()}
+        />
+      {/if}
     {/if}
     <button
       type="button"

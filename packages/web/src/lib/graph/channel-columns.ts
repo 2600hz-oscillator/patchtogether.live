@@ -628,6 +628,65 @@ export function videoAreaViewport(vp: ViewportMetrics): ViewportTransform {
   };
 }
 
+/**
+ * Pan so SEND box `slot` is (a) horizontally centered and (b) its BASELINE at the
+ * viewport bottom — the send-rail twin of laneCenterViewport. Pure.
+ */
+export function sendBoxCenterViewport(slot: number, vp: ViewportMetrics): ViewportTransform {
+  const { widthPx, heightPx, zoom } = vp;
+  return {
+    x: widthPx / 2 - sendBandCenterX(slot) * zoom,
+    y: heightPx - COLUMN_BASELINE_Y * zoom,
+    zoom,
+  };
+}
+
+/** The flow-space CENTER X of the WHOLE channel-column band (columns 1..8) — the
+ *  horizontal anchor the on-load lane framing centers on. */
+export function laneBandCenterX(): number {
+  return (COLUMN_ORIGIN_X + COLUMN_COUNT * COLUMN_W) / 2;
+}
+
+/**
+ * On-LOAD lane framing: center the whole 8-column band horizontally with the
+ * lane BASELINE at the viewport bottom, at the current zoom. Lands the camera on
+ * the channel lanes (their headroom fills the viewport above the baseline)
+ * instead of the bottom video zone that a bare fitView anchors on (only the
+ * video-zone nodes are xyflow-visible on a fresh rack — the channel singletons
+ * are canvas-hidden). Pure.
+ */
+export function fitLanesViewport(vp: ViewportMetrics): ViewportTransform {
+  const { widthPx, heightPx, zoom } = vp;
+  return {
+    x: widthPx / 2 - laneBandCenterX() * zoom,
+    y: heightPx - COLUMN_BASELINE_Y * zoom,
+    zoom,
+  };
+}
+
+/**
+ * Adjust a lane/send CENTER transform (from laneCenterViewport /
+ * sendBoxCenterViewport) so a just-added member occupying flow-Y
+ * [memberTopY, memberTopY + memberHeightPx] is fully in view. The base transform
+ * already puts the baseline at the viewport bottom, so a SHORT stack's newest
+ * member is visible above it and the base is returned unchanged. When the stack
+ * is TALLER than the viewport the newest member's TOP falls above the viewport;
+ * in that case re-center the member vertically (keeping the lane centered
+ * horizontally) so the newest tile is guaranteed on screen. Pure.
+ */
+export function revealMemberViewport(
+  base: ViewportTransform,
+  memberTopY: number,
+  memberHeightPx: number,
+  vp: ViewportMetrics,
+): ViewportTransform {
+  // screen y = flowY*zoom + base.y ⇒ the top visible flow-Y (screen y === 0):
+  const visibleTopFlowY = -base.y / base.zoom;
+  if (memberTopY >= visibleTopFlowY) return base; // member fully in view
+  const memberCenterY = memberTopY + memberHeightPx / 2;
+  return { x: base.x, y: vp.heightPx / 2 - memberCenterY * base.zoom, zoom: base.zoom };
+}
+
 // ---------------- Ordered-membership array helpers (pure, CRDT-safe) ----------------
 
 /** Minimal node view the membership reconciler reads — the id + the scalar

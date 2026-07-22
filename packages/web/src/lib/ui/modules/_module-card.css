@@ -159,16 +159,30 @@
 /* P0.3b RACKLINE lane tiles (ModuleShell / ModuleShellPlaceholder). Their roots
  * are deliberately NOT .mod-card/.card/.moog-panel (so rear-view never
  * mirrors/hides them — their cables must stay traceable), so they need their own
- * rack-sizing rule pinning the tile to the tier-invariant --rack-hp × --rack-u
- * box. Pinning the OUTER box here is load-bearing: the LOD content swap must
- * NEVER resize the measured node, or the channel-column stack recomputes (§3.1). */
-.svelte-flow__node.rack-sized > :is(.module-shell, .module-shell-placeholder),
-.svelte-flow__node.rack-sized > * > :is(.module-shell, .module-shell-placeholder) {
+ * sizing rule.
+ *
+ * UNIFORM HEIGHT (re-spec): the tile height is keyed to the fixed RACKLINE TILE
+ * token, NOT the module's per-module rack tier — so recorderbox (2u) /
+ * synesthesia (3u) / videoOut (dynamic, carries NO --rack-u) all render at the
+ * SAME 88px mini tile and the fixed baseline number badge caps every tile flush
+ * (the owner "non-uniform heights + badges float mid-card" fix). The
+ * `.rack-sized` gate is DROPPED so the rule also matches dynamic-sized types
+ * that never get `--rack-u`. Canvas's wcolCardHeightPx short-circuits to the
+ * SAME 88 (SHELL_TILE_H) under the preview so the reserved lane slot == the
+ * rendered tile.  Width stays keyed to --rack-hp (the height was the complaint;
+ * rendered width == the reserved wcolCardWidthPx, so band-centering stays exact).
+ * Migrated modules may grow per LOD tier via `--shell-tile-h` (data-shell-tier);
+ * the placeholder's --tile-h-mini fallback is the uniform tile.
+ *
+ * Pinning the OUTER box here is load-bearing: the LOD content swap must NEVER
+ * resize the measured node, or the channel-column stack recomputes (§3.1). */
+.svelte-flow__node > :is(.module-shell, .module-shell-placeholder),
+.svelte-flow__node > * > :is(.module-shell, .module-shell-placeholder) {
   box-sizing: border-box;
   width: calc(var(--rack-hp, 1) * var(--rack-unit));
-  height: calc(var(--rack-u, 1) * var(--rack-unit));
-  min-height: calc(var(--rack-u, 1) * var(--rack-unit));
-  max-height: calc(var(--rack-u, 1) * var(--rack-unit));
+  height: var(--shell-tile-h, var(--tile-h-mini, 88px));
+  min-height: var(--shell-tile-h, var(--tile-h-mini, 88px));
+  max-height: var(--shell-tile-h, var(--tile-h-mini, 88px));
 }
 
 /* DOCK RAILS (P2.5a): a docked card renders in a screen-fixed rail hosted by

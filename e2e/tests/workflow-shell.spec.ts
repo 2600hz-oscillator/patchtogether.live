@@ -53,21 +53,39 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     // Cables stay attached: the node keeps its full invisible handle stack.
     await expect(laneNode.locator('.svelte-flow__handle').first()).toHaveCount(1);
 
-    // 2) Open in dock → the REAL, unchanged legacy card mounts verbatim.
+    // 2) Open in dock (the jack-rail "⤢" expand) → the RACKLINE full-view
+    //    FACEPLATE opens in the bottom drawer (NOT a generic .dock-card).
     await placeholder.getByTestId('shell-open-dock').click();
-    const dockCard = page.locator(`[data-dock-card="${NODE}"]`);
+    const faceplate = page.getByTestId('dock-full-view');
+    await expect(faceplate).toBeVisible();
+    // The spec chrome: grip, title bar (badge + name + mono sub), the window-
+    // control trio (collapse + close in P0.3b; undock omitted), the tab-rail
+    // seam with a single "MODULE" tab, and the domain-classed faceplate frame.
+    await expect(faceplate.getByTestId('faceplate-grip')).toBeVisible();
+    await expect(faceplate.locator('.faceplate-bar .face-badge')).toBeVisible();
+    await expect(faceplate.locator('.faceplate-bar .face-name')).toBeVisible();
+    // The mono sub reads "<module label> · lane N" — assert the "lane" descriptor.
+    await expect(faceplate.locator('.faceplate-bar .face-sub')).toBeVisible();
+    await expect(faceplate.getByTestId('faceplate-close')).toBeVisible();
+    await expect(faceplate.getByTestId('faceplate-collapse')).toBeVisible();
+    await expect(faceplate.getByTestId('faceplate-tab')).toHaveText('MODULE');
+    await expect(faceplate.locator('.faceplate.audio')).toHaveCount(1); // vca = audio domain
+
+    // …and the REAL, unchanged legacy card mounts verbatim in .editor at native
+    //  scale (carrying the data-dock-card anchor so PickupCable/patch-menu work).
+    const dockCard = faceplate.getByTestId('faceplate-editor').locator(`[data-dock-card="${NODE}"]`);
     await expect(dockCard).toBeVisible();
     await expect(dockCard.locator('.mod-card, .card, .moog-panel').first()).toBeVisible();
-    // The dock hosts NO xyflow handles / node wrappers (PatchPanel self-gates):
-    await expect(dockCard.locator('.svelte-flow__handle')).toHaveCount(0);
-    await expect(dockCard.locator('.svelte-flow__node')).toHaveCount(0);
+    // The faceplate hosts NO xyflow handles / node wrappers (PatchPanel self-gates):
+    await expect(faceplate.locator('.svelte-flow__handle')).toHaveCount(0);
+    await expect(faceplate.locator('.svelte-flow__node')).toHaveCount(0);
 
     // 3) The lane placeholder STILL shows (Option #1: lane face + dock faceplate
     //    coexist — the module was never persist-docked / swapped to a stub).
     await expect(placeholder).toBeVisible();
     await expect(laneNode.locator('[data-testid="dock-stub"]')).toHaveCount(0);
 
-    // 4) Drive a control in the dock card → the graph param changes (operable).
+    // 4) Drive a control in the mounted card → the graph param changes (operable).
     const before = await readParam(page, NODE, 'base');
     const track = dockCard.locator('.fader-wrap .track').first();
     const box = await track.boundingBox();
@@ -83,10 +101,46 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     const after = await readParam(page, NODE, 'base');
     expect(after, `base should change after driving the fader (was ${before}, now ${after})`).not.toBe(before);
 
-    // 5) ESC closes the full-view; the placeholder remains in the lane.
+    // 5) ESC closes the full-view faceplate; the placeholder remains in the lane.
     await page.keyboard.press('Escape');
-    await expect(dockCard).toHaveCount(0);
+    await expect(faceplate).toHaveCount(0);
     await expect(placeholder).toBeVisible();
+  });
+
+  test('placeholder tiles are UNIFORM 88px height with a consistent badge anchor', async ({ page }) => {
+    // The owner "tiles are non-uniform heights + lane badges float mid-card" fix:
+    // under ?shell=1 the default video-zone trio (videoOut 'dynamic', recorderbox
+    // 2u, synesthesia 3u — three DIFFERENT rack tiers) all render as the fixed
+    // 88px RACKLINE tile, so the baseline number badges cap them flush.
+    await gotoWorkflow(page, { shell: true });
+    const ids = ['workflow-videoOut', 'workflow-recorderbox', 'workflow-synesthesia'];
+    for (const id of ids) {
+      await expect(
+        page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`),
+      ).toBeVisible({ timeout: 15_000 });
+    }
+
+    const metrics = await page.evaluate((nodeIds) => {
+      return nodeIds.map((id) => {
+        const tile = document.querySelector(
+          `.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`,
+        ) as HTMLElement | null;
+        const badge = tile?.querySelector('.tile-badge') as HTMLElement | null;
+        if (!tile || !badge) return null;
+        // offsetHeight / offsetTop are UNSCALED layout px (immune to the xyflow
+        // viewport zoom transform), so 88 is the true tile height and offsetTop
+        // is the badge's anchor within the tile.
+        return { h: tile.offsetHeight, badgeTop: badge.offsetTop };
+      });
+    }, ids);
+
+    expect(metrics.every((m) => m !== null), 'all three placeholders resolved').toBe(true);
+    // Uniform 88px height across THREE different rack tiers (the fix).
+    for (const m of metrics) expect(m!.h).toBe(88);
+    // The badge sits at an IDENTICAL offset from each tile's top (the anchor no
+    // longer floats mid-card because the tiles are uniform).
+    const badgeTops = metrics.map((m) => m!.badgeTop);
+    expect(Math.max(...badgeTops) - Math.min(...badgeTops)).toBeLessThanOrEqual(1);
   });
 
   test('preview OFF (default) is a strict no-op: the legacy card renders in the lane', async ({ page }) => {

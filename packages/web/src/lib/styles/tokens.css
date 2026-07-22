@@ -44,6 +44,21 @@
   --t-label-compact: 10px;
   --t-value: 12.5px;
   --t-value-compact: 11px;
+  /* RACKLINE tile title weight (mock .mod .name — ux-proposal-b.html:107). The
+   * bold 800 title is what makes the lane tile read at a glance. */
+  --t-title-weight: 800;
+
+  /* RACKLINE lane-tile FIXED colours (never themed — the reading-aid layer the
+   * palette engine leaves alone; mock ux-proposal-b.html):
+   *   --tile-border  the tile frame border (.mod #33383f — the intended value
+   *                  that until now only survived as --border-strong's ignored
+   *                  fallback, resolving instead to #3a3f47).
+   *   --jackrail-bg  the jack-rail well (.jacks background #141619).
+   *   --ink-faint    the type-badge / jack-flow / "more" affordance colour
+   *                  (#646c77 — distinct from the palette's --text-dim #9aa2ad). */
+  --tile-border: #33383f;
+  --jackrail-bg: #141619;
+  --ink-faint: #646c77;
 
   /* spacing / radii */
   --gap-lane: 8px;

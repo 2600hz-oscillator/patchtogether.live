@@ -11,6 +11,9 @@ import {
   spineCableVar,
   laneFaceTier,
   offersFullView,
+  domainClassForCable,
+  domainClassForDef,
+  SHELL_TILE_H,
   type ShellDefLike,
 } from './module-shell-model';
 import { curatedFace, type FaceDefLike } from './curated-face';
@@ -67,6 +70,46 @@ describe('offersFullView', () => {
     for (const t of ['mini', 'compact', 'full', 'dock'] as Tier[]) {
       expect(offersFullView(t)).toBe(true);
     }
+  });
+});
+
+describe('SHELL_TILE_H — the uniform RACKLINE tile height', () => {
+  it('is 88px, mirroring the CSS --tile-h-mini token (the CSS/TS sharing lock)', () => {
+    // tokens.css: --tile-h-mini: 88px; _module-card.css pins the tile to
+    // var(--shell-tile-h, var(--tile-h-mini)); Canvas.wcolCardHeightPx returns
+    // this same constant under the preview. If either the token or this number
+    // moves, they MUST move together — a drift floats the baseline badge.
+    expect(SHELL_TILE_H).toBe(88);
+  });
+});
+
+describe('domainClassForCable / domainClassForDef — kit domain class', () => {
+  it('maps each cable type to its signal-domain setter', () => {
+    expect(domainClassForCable('audio')).toBe('audio');
+    expect(domainClassForCable('gate')).toBe('gate');
+    expect(domainClassForCable('cv')).toBe('cv');
+    // secondary cable types fold into their parent domain
+    expect(domainClassForCable('pitch')).toBe('cv');
+    expect(domainClassForCable('polyPitchGate')).toBe('poly');
+    expect(domainClassForCable('keys')).toBe('poly');
+    expect(domainClassForCable('video')).toBe('video');
+    expect(domainClassForCable('image')).toBe('video');
+    expect(domainClassForCable('mono-video')).toBe('video');
+  });
+
+  it('unknown / undefined cable → audio', () => {
+    expect(domainClassForCable('bananas')).toBe('audio');
+    expect(domainClassForCable(undefined)).toBe('audio');
+  });
+
+  it('domainClassForDef derives from the module primary cable (spine hue)', () => {
+    // A video sink: primary OUTPUT (or input) is video → violet domain.
+    expect(domainClassForDef({ outputs: [{ id: 'out', type: 'video' }] })).toBe('video');
+    // A gate source → amber domain.
+    expect(domainClassForDef({ inputs: [], outputs: [{ id: 'g', type: 'gate' }] })).toBe('gate');
+    // No ports → domain fallback (video domain → video; else audio).
+    expect(domainClassForDef({ domain: 'video' })).toBe('video');
+    expect(domainClassForDef(undefined)).toBe('audio');
   });
 });
 
