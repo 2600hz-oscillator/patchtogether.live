@@ -22,6 +22,20 @@ fi
 
 git commit -m "chore(vrt): regenerate ${PLATFORM} baselines [vrt-update workflow]"
 
+# `task vrt:update` runs build prereqs (dsp:build, test:emit-manifest) and the
+# Playwright capture, which can leave OTHER tracked files modified in the working
+# tree (regenerated annotations/build inputs). The baseline bot commits SCREENSHOTS
+# ONLY (staged above), so any remaining unstaged change is incidental — but it makes
+# the rebase below abort with "cannot rebase: You have unstaged changes". Log what it
+# is (so we can see if something ought to be committed too) and discard it to give
+# the rebase a clean tree.
+if ! git diff --quiet; then
+  echo "::group::vrt-baseline-bot: discarding incidental unstaged changes (not baselines)"
+  git status --short
+  echo "::endgroup::"
+  git checkout -- .
+fi
+
 # The other platform job may have pushed in the meantime; replay our commit on
 # top of the latest remote branch state (disjoint files → clean rebase).
 git fetch origin "${REF}"
