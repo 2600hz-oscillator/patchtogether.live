@@ -316,6 +316,20 @@ export function launchpadDpadNav(
   renderLeds();
 }
 
+/**
+ * Force ONE immediate LED repaint of the ACTIVE control surface, OFF the
+ * scheduler tick. The Push 2 driver (push2-control) calls this on bind + on
+ * every reactive state change (channel-select, lane colour, clip/queued, view,
+ * transport start/stop) so the surface is correct AT REST — transport STOPPED —
+ * not only while the tick loop animates a running transport. The launchpad's own
+ * render still runs from the scheduler tick + input events; this is an ADDITIVE
+ * seam that never changes those paths. Safe to call anytime: renderLeds is
+ * guarded (no-op when nothing is bound) + diffed (no redundant MIDI).
+ */
+export function renderActiveSurfaceNow(): void {
+  renderLeds();
+}
+
 export const STORAGE_KEY_NODE = 'pt.launchpad.boundClipNode';
 export const STORAGE_KEY_LEFT = 'pt.launchpad.portLeft';
 export const STORAGE_KEY_RIGHT = 'pt.launchpad.portRight';

@@ -22,7 +22,7 @@
 // name in the CARD. Binding + selected-channel are per-machine LOCAL; LED frames
 // are local render state, never synced.
 
-import { patch } from '$lib/graph/store';
+import { patch, ydoc, onBindRackspace } from '$lib/graph/store';
 import { getModuleDef } from '$lib/audio/module-registry';
 import { resolveDisplayName } from '$lib/multiplayer/module-naming';
 import type { ModuleNode } from '$lib/graph/types';
@@ -40,6 +40,7 @@ import {
   launchpadDpadNav,
   boundClipNode,
   setLaunchpadView,
+  renderActiveSurfaceNow,
   type ControlSurfacePort,
 } from '$lib/control/launchpad/launchpad-control.svelte';
 import * as push2Device from './push2-device.svelte';
@@ -62,6 +63,13 @@ const STORAGE_KEY_CHANNEL = 'pt.push2.selectedChannel';
 let selectedChannel = readSelectedChannel(); // 0..7
 let shiftHeld = false; // the Push Shift button (for the D-Pad ×8)
 let unsubDevice: (() => void) | null = null;
+// The REACTIVE REPAINT DRIVER (see repaint / startRepaintDriver): a Yjs `update`
+// observer that repaints the Push on any clip/lane-colour/queue/transport change,
+// OFF the scheduler tick, so the LEDs are correct AT REST. `unsubDoc` detaches the
+// observer from the CURRENT doc; `unsubRebind` re-points it across a rackspace swap.
+let unsubDoc: (() => void) | null = null;
+let unsubRebind: (() => void) | null = null;
+let repainting = false; // re-entrancy guard (a render that writes Y.Doc must not recurse)
 /** The cb launchpad-control's start() registered through the adapter's onKey —
  *  we hand PARITY events (translated to the Launchpad vocab) to it. */
 let launchpadCb: ((e: LaunchpadKeyEvent) => void) | null = null;
@@ -73,6 +81,78 @@ export function statusRune(): number {
 }
 function bump(): void {
   statusVersion++;
+}
+
+// ---------------------------------------------------------------------------
+// REACTIVE LED REPAINT DRIVER — the fix for the "LEDs only paint on a press /
+// while the transport runs" bug. The Push surface used to be driven ONLY by the
+// shared launchpad-control SCHEDULER-TICK render loop + launchpad INPUT events,
+// so at rest (transport STOPPED) nothing repainted: Push-LOCAL changes
+// (`selectChannel`) and CARD-driven Y.Doc changes (a lane-colour pick, a clip
+// edit, a queue/launch, a transport start/stop) never reached the device unless
+// a pad press forced a `renderLeds`. `patch`/syncedStore is NOT Svelte-rune-
+// reactive (that's WHY the launchpad polls the tick), so the reactive hook here
+// is a Yjs `update` observer — it fires SYNCHRONOUSLY on every Y.Doc write — plus
+// a direct `repaint()` from the Push-local `selectChannel`. This makes the LEDs
+// correct AT REST, independent of the transport.
+// ---------------------------------------------------------------------------
+
+/** Repaint the Push surface NOW (a full LED frame), off the scheduler tick. A
+ *  no-op unless the Push is actually bound (so this never touches a Launchpad
+ *  that happens to hold the surface). The re-entrancy guard stops a render that
+ *  writes Y.Doc (e.g. KEYS recording) from recursing through the observer. */
+function repaint(): void {
+  if (repainting || !push2Device.isBound()) return;
+  repainting = true;
+  try {
+    renderActiveSurfaceNow();
+  } finally {
+    repainting = false;
+  }
+}
+
+/** Attach the reactive repaint driver: repaint on EVERY Y.Doc `update` (lane
+ *  colour, clip edit, queue/launch, transport start/stop — all land as Y.Doc
+ *  writes) so the surface tracks state at rest. Re-attaches across a rackspace
+ *  rebind (the `ydoc` export is swapped for a fresh doc). Idempotent. */
+function startRepaintDriver(): void {
+  stopRepaintDriver();
+  attachDocObserver();
+  unsubRebind = onBindRackspace(() => {
+    // The doc was swapped — detach from the old (destroyed) doc, re-attach.
+    if (unsubDoc) {
+      unsubDoc();
+      unsubDoc = null;
+    }
+    attachDocObserver();
+  });
+}
+
+/** Subscribe the repaint observer to the CURRENT `ydoc` (captured by reference so
+ *  a later rebind detaches from the right doc). */
+function attachDocObserver(): void {
+  const doc = ydoc; // capture the current doc — the export is a rebindable `let`
+  const onUpdate = (): void => repaint();
+  doc.on('update', onUpdate);
+  unsubDoc = () => {
+    try {
+      doc.off('update', onUpdate);
+    } catch {
+      /* the doc was destroyed on rackspace teardown — nothing to detach */
+    }
+  };
+}
+
+/** Detach the repaint driver (unbind / disconnect / test reset). */
+function stopRepaintDriver(): void {
+  if (unsubDoc) {
+    unsubDoc();
+    unsubDoc = null;
+  }
+  if (unsubRebind) {
+    unsubRebind();
+    unsubRebind = null;
+  }
 }
 
 function readSelectedChannel(): number {
@@ -156,7 +236,8 @@ export function selectChannel(channel: number): void {
   } catch {
     /* private mode — session-only */
   }
-  bump(); // card re-renders the name; the LED repaints on the next render tick
+  bump(); // card re-renders the name
+  repaint(); // repaint the channel-select row NOW (don't wait for a scheduler tick)
 }
 export function selectedChannelIndex(): number {
   return selectedChannel;
@@ -322,24 +403,40 @@ export async function connectPush(): Promise<boolean> {
   if (!port) return false; // no Push detected
   if (!unsubDevice) unsubDevice = push2Device.onKey(onPushEvent);
   setControlSurfacePort(pushSurface, { deployment: 'single' });
+  // `setControlSurfacePort` STOPS the current render loop (it swaps the surface).
+  // If a clip-player was ALREADY bound (a prior session / a re-connect), the
+  // card's autoBind SKIPS re-binding (same node) and the loop would never restart
+  // — the surface would sit injected but un-driven (LEDs paint only on a press).
+  // Re-bind to restart the loop + repaint a full frame now.
+  const already = boundClipNode();
+  if (already) {
+    bindLaunchpadToClip(already);
+    startRepaintDriver();
+    repaint();
+  }
   bump();
   return true;
 }
 
-/** Bind the Push to a clip-player node (drives the parity brain). */
+/** Bind the Push to a clip-player node (drives the parity brain), start the
+ *  reactive repaint driver, and paint a FULL LED frame now (transport stopped). */
 export function bindPushToClip(nodeId: string): void {
   bindLaunchpadToClip(nodeId);
+  startRepaintDriver(); // reactive Y.Doc-driven repaint (transport-independent)
+  repaint(); // full paint on bind — every pad + permanent row + scene + channel row
   bump();
 }
 
-/** Unbind the clip-player (blanks the surface). */
+/** Unbind the clip-player (blanks the surface) + stop the repaint driver. */
 export function unbindPush(): void {
+  stopRepaintDriver();
   unbindLaunchpad();
   bump();
 }
 
 /** Full teardown — unbind the clip-player, release the surface + the Push. */
 export function disconnectPush(): void {
+  stopRepaintDriver();
   unbindLaunchpad();
   setControlSurfacePort(null); // restore the default Launchpad surface
   if (unsubDevice) {
@@ -365,12 +462,16 @@ export async function installSimulatedPush2AndBind(nodeId: string) {
   if (!unsubDevice) unsubDevice = push2Device.onKey(onPushEvent);
   setControlSurfacePort(pushSurface, { deployment: 'single' });
   bindLaunchpadToClip(nodeId);
+  startRepaintDriver(); // reactive Y.Doc-driven repaint (transport-independent)
+  repaint(); // full paint on bind
   bump();
   return sim;
 }
 
 /** Reset ALL Push-control singleton state — test isolation. */
 export function __test_resetPush2Control(): void {
+  stopRepaintDriver();
+  repainting = false;
   if (unsubDevice) {
     unsubDevice();
     unsubDevice = null;

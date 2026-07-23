@@ -22,7 +22,7 @@ vi.mock('$lib/audio/scheduler-clock', () => ({
   }),
 }));
 
-import { patch as livePatch } from '$lib/graph/store';
+import { patch as livePatch, ydoc } from '$lib/graph/store';
 import { flushAllCcCommits } from '$lib/ui/controls/cc-commit';
 import { __test_resetBinding, boundClipNode, __test_mode } from '$lib/control/launchpad/launchpad-control.svelte';
 import { drainAudition, clearAudition } from '$lib/audio/modules/clip-audition';
@@ -36,9 +36,11 @@ import {
   channelButtonValue,
   firstMixmstrs,
   setLaunchpadView,
+  unbindPush,
 } from './push2-control.svelte';
 import {
   PUSH_CC_ABOVE_DISPLAY_BASE,
+  PUSH_CC_PERMANENT_BASE,
   PUSH_CC_SCENE_BASE,
   PUSH_CC_ENCODER_BASE,
   PUSH_CC_ENCODER_TEMPO,
@@ -192,6 +194,100 @@ describe('channel-select LEDs mirror the lane colour (selected bright / others d
   it('with no bound clip every channel button is OFF (no colours to mirror)', () => {
     // beforeEach leaves the binding reset — boundClipNode() is null.
     for (let ch = 0; ch < 8; ch++) expect(channelButtonValue(ch)).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// LED-FRAME DRIVING — the owner-reported hardware bug: at rest (transport
+// STOPPED) the Push LEDs only painted on a PRESS / while the transport ran,
+// because the surface was driven solely by the shared scheduler-tick loop +
+// launchpad input events. The fix paints a FULL frame on BIND and repaints
+// REACTIVELY (Push-local selectChannel + a Yjs `update` observer for the Y.Doc
+// state: lane colour, clips, queue, transport) — INDEPENDENT of the tick. These
+// specs drive the REAL render/bind path with the SCHEDULER NEVER STEPPED
+// (`hoisted.tick` is set on bind but never called) — proving correctness at rest.
+// ---------------------------------------------------------------------------
+describe('LED-frame driving — full paint on bind + reactive repaint (NO scheduler tick)', () => {
+  const dim = (c: number) => Math.round(c * 0.3);
+  const idxFull = (hex: string) => pushColorIndex(...hexToRgb127(hex));
+  const idxDim = (hex: string) => {
+    const [r, g, b] = hexToRgb127(hex);
+    return pushColorIndex(dim(r), dim(g), dim(b));
+  };
+  const ledCh = (ch: number) => sim.ledAt('b' + (PUSH_CC_ABOVE_DISPLAY_BASE + ch));
+  /** Change a lane's colour through a Y.Doc transaction — the SAME write shape the
+   *  card's setLaneColor uses (SyncedStore Y.Arrays reject index assignment, so the
+   *  whole array is rebuilt + reassigned). Emits a synchronous `ydoc` update that
+   *  the reactive repaint driver observes. */
+  function setLaneColorViaDoc(lane: number, hex: string) {
+    ydoc.transact(() => {
+      const d = livePatch.nodes[CP]!.data as { laneColor?: (string | null)[] };
+      const base: (string | null)[] = new Array(8).fill(null);
+      if (Array.isArray(d.laneColor)) for (let i = 0; i < 8 && i < d.laneColor.length; i++) base[i] = d.laneColor[i] ?? null;
+      base[lane] = hex;
+      d.laneColor = base;
+    });
+  }
+
+  it('paints a FULL LED frame on BIND — pads + channel row — with NO input event and NO tick', async () => {
+    seedClipPlayer({
+      laneColor: ['#2040ff', '#ff8020', null],
+      clips: { '0': { kind: 'note', lengthSteps: 4, root: 48, loop: true, steps: [] } },
+    });
+    sim = await installSimulatedPush2AndBind(CP);
+    // NO hoisted.tick(), NO press. The bind alone drove a full frame to the device.
+    const writes = sim.writes();
+    expect(writes.some((w) => (w[0] & 0xf0) === 0x90), 'pad colour Note-Ons emitted on bind').toBe(true);
+    // The channel-select row reflects the lane colours at rest (ch1 selected = full).
+    expect(ledCh(0)).toBe(idxFull('#2040ff'));
+    expect(ledCh(1)).toBe(idxDim('#ff8020'));
+    // The permanent-controls row + scene column carry whatever the brain's frame
+    // populates at rest — the transport button (perm CC 20) reached the device
+    // (non-null), proving the frame's button region was painted, not just pads.
+    expect(sim.ledAt('b' + PUSH_CC_PERMANENT_BASE), 'permanent row painted on bind').not.toBeNull();
+    // The scene column's top button is populated at rest (the frame reached it).
+    expect(sim.ledAt('b' + (PUSH_CC_SCENE_BASE + 7)), 'scene column painted on bind').not.toBeNull();
+  });
+
+  it('selectChannel repaints the channel row IMMEDIATELY — no scheduler tick', async () => {
+    const c0 = '#2040ff';
+    const c1 = '#ffffff';
+    seedClipPlayer({ laneColor: [c0, c1] });
+    sim = await installSimulatedPush2AndBind(CP);
+    // Deliberately NEVER call hoisted.tick — the repaint must come from selectChannel.
+    selectChannel(1);
+    expect(ledCh(1), 'newly-selected ch2 → full, without a tick').toBe(idxFull(c1));
+    expect(ledCh(0), 'old ch1 → dim, without a tick').toBe(idxDim(c0));
+    selectChannel(0);
+    expect(ledCh(0)).toBe(idxFull(c0));
+    expect(ledCh(1)).toBe(idxDim(c1));
+  });
+
+  it('a lane-colour change repaints the affected channel button REACTIVELY — no tick', async () => {
+    seedClipPlayer({ laneColor: ['#2040ff', '#ff8020'] });
+    sim = await installSimulatedPush2AndBind(CP);
+    selectChannel(1); // ch2 (lane 1) selected → shows its colour at FULL brightness
+    const before = ledCh(1);
+    expect(before, 'ch2 starts at its seeded colour, full').toBe(idxFull('#ff8020'));
+    // The card recolours channel 2 — a Y.Doc write. The reactive driver repaints
+    // WITHOUT the scheduler tick ever firing.
+    setLaneColorViaDoc(1, '#00d0ff');
+    const after = ledCh(1);
+    expect(after, 'ch2 button now mirrors the new lane colour (full, selected)').toBe(idxFull('#00d0ff'));
+    expect(after, 'the button actually changed').not.toBe(before);
+    // The unselected channel is untouched by the other lane's recolour.
+    expect(ledCh(0)).toBe(idxDim('#2040ff'));
+  });
+
+  it('reactive repaint stops after unbind (no stale observer repaints)', async () => {
+    seedClipPlayer({ laneColor: ['#2040ff', '#101010'] });
+    sim = await installSimulatedPush2AndBind(CP);
+    selectChannel(0);
+    unbindPush();
+    const countBefore = sim.writes().length;
+    // A post-unbind lane-colour write must NOT drive any further LED bytes.
+    setLaneColorViaDoc(1, '#00ff00');
+    expect(sim.writes().length, 'no repaint after unbind').toBe(countBefore);
   });
 });
 
