@@ -26,7 +26,7 @@ import { patch } from '$lib/graph/store';
 import { getModuleDef } from '$lib/audio/module-registry';
 import { resolveDisplayName } from '$lib/multiplayer/module-naming';
 import type { ModuleNode } from '$lib/graph/types';
-import { laneAssignedModules, laneColor, type ClipPlayerData } from '$lib/audio/modules/clip-types';
+import { laneAssignedModules, laneColorEff, type ClipPlayerData } from '$lib/audio/modules/clip-types';
 import { MIXMSTRS_CHANNELS } from '$lib/audio/modules/mixmstrs';
 import { hexToRgb127 } from '$lib/control/launchpad/launchpad-map';
 import { createCcCommit, type CcCommit } from '$lib/ui/controls/cc-commit';
@@ -166,8 +166,9 @@ export function selectedChannelIndex(): number {
 // Additive 5a (LED) — the 8 channel-select buttons (CC 102..109) MIRROR each
 // channel's LANE COLOUR (owner decision, replacing the placeholder red/yellow):
 // the SELECTED channel at full brightness, the unselected channels dimmed, so
-// the Push row matches the on-screen channel colours. A channel with no picked
-// colour (or no bound clip) is OFF.
+// the Push row matches the on-screen channel colours. Every channel shows its
+// EFFECTIVE hue (the default fill for un-picked lanes) — matching Launchpad — so
+// only a channel with no bound clip at all is OFF.
 // ---------------------------------------------------------------------------
 
 /** Unselected channel-select buttons show their colour at ~30% brightness so the
@@ -176,18 +177,19 @@ export function selectedChannelIndex(): number {
 const CHANNEL_DIM = 0.3;
 
 /**
- * The CC value for channel-select button `lane` (0..7): the channel's PICKED lane
- * colour as a stock-palette index — FULL brightness for the SELECTED channel,
- * ~30% dimmed for the rest — through the SAME `hexToRgb127`→`pushColorIndex` path
- * the pads use, so a button matches its clip column. A channel with no picked
- * colour, or no bound clip, is OFF (0). Reads the live bound clip node.
+ * The CC value for channel-select button `lane` (0..7): the channel's EFFECTIVE
+ * lane colour as a stock-palette index — FULL brightness for the SELECTED
+ * channel, ~30% dimmed for the rest — through the SAME `hexToRgb127`→
+ * `pushColorIndex` path the pads use, so a button matches its clip column. An
+ * un-picked lane shows its default hue (via `laneColorEff`, mirroring the card
+ * swatch and Launchpad LEDs), NOT off; only no bound clip at all is OFF (0).
+ * Reads the live bound clip node.
  */
 export function channelButtonValue(lane: number): number {
   const nodeId = boundClipNode();
   if (!nodeId) return 0; // no bound clip → no channel colours to mirror
   const node = patch.nodes[nodeId] as ModuleNode | undefined;
-  const hex = laneColor(node?.data as ClipPlayerData | undefined, lane);
-  if (!hex) return 0; // channel has no assigned colour → off
+  const hex = laneColorEff(node?.data as ClipPlayerData | undefined, lane);
   const [r, g, b] = hexToRgb127(hex);
   if (lane === selectedChannel) return pushColorIndex(r, g, b); // selected → full brightness
   return pushColorIndex(

@@ -46,6 +46,7 @@ import {
 } from './push2-map';
 import { pushColorIndex } from './push2-sysex';
 import { hexToRgb127 } from '$lib/control/launchpad/launchpad-map';
+import { laneColorEff } from '$lib/audio/modules/clip-types';
 import type { SimulatedPush2 } from './push2-device.svelte';
 
 // The web vitest env is `node` (no localStorage) — the Push-local channel state
@@ -115,35 +116,42 @@ describe('channel select (Push-LOCAL 5a)', () => {
 
 describe('channel-select LEDs mirror the lane colour (selected bright / others dim)', () => {
   // The 8 above-display buttons (CC 102..109) are RGB: their CC value is a stock-
-  // palette index. Each shows its channel's PICKED lane colour — the selected one
-  // FULL, the rest ~30% dimmed — computed via the SAME hexToRgb127→pushColorIndex
-  // path the pads use; a channel with no picked colour is OFF.
+  // palette index. Each shows its channel's EFFECTIVE lane colour — the picked
+  // colour if set, else the lane's default hue (mirroring the card swatch and the
+  // Launchpad LEDs) — the selected one FULL, the rest ~30% dimmed, computed via the
+  // SAME hexToRgb127→pushColorIndex path the pads use. Only no bound clip at all is
+  // OFF.
   const dim = (c: number) => Math.round(c * 0.3);
   const idxFull = (hex: string) => pushColorIndex(...hexToRgb127(hex));
   const idxDim = (hex: string) => {
     const [r, g, b] = hexToRgb127(hex);
     return pushColorIndex(dim(r), dim(g), dim(b));
   };
+  /** The effective hex for an UN-picked lane: its default hue (no data ⇒ null pick
+   *  ⇒ `defaultLaneColorHex(lane)`) — the single source of truth the module uses. */
+  const effHex = (lane: number) => laneColorEff(undefined, lane);
   /** The value the device believes channel `ch`'s button LED holds. */
   const ledFor = (ch: number) => sim.ledAt('b' + (PUSH_CC_ABOVE_DISPLAY_BASE + ch));
 
-  it('selected channel = FULL palette index, an unselected channel = ~30% dim, an empty channel = OFF', async () => {
+  it('selected picked = FULL, unselected picked = ~30% dim, an un-picked lane shows its default hue (not off)', async () => {
     const c0 = '#2040ff'; // ch1 (lane 0) — a saturated colour (hue survives at full brightness)
     const c1 = '#ffffff'; // ch2 (lane 1) — a bright colour whose dim is a visible neutral
-    // ch3 (lane 2) and up: no picked colour.
+    // ch3 (lane 2) and up: no picked colour → shows its EFFECTIVE default hue.
     seedClipPlayer({ laneColor: [c0, c1, null] });
     sim = await installSimulatedPush2AndBind(CP);
     selectChannel(0);
     hoisted.tick?.(); // repaint the LED frame with the current selection
 
     // The pure per-channel value.
-    expect(channelButtonValue(0)).toBe(idxFull(c0)); // selected → full
-    expect(channelButtonValue(1)).toBe(idxDim(c1)); // unselected → ~30% dim
-    expect(channelButtonValue(2)).toBe(0); // no picked colour → off
-    for (let ch = 3; ch < 8; ch++) expect(channelButtonValue(ch)).toBe(0);
+    expect(channelButtonValue(0)).toBe(idxFull(c0)); // selected picked → full
+    expect(channelButtonValue(1)).toBe(idxDim(c1)); // unselected picked → ~30% dim
+    // An un-picked lane now renders its EFFECTIVE default hue (dimmed while
+    // unselected), NOT the forced-OFF it used to be.
+    expect(channelButtonValue(2)).toBe(idxDim(effHex(2)));
+    for (let ch = 3; ch < 8; ch++) expect(channelButtonValue(ch)).toBe(idxDim(effHex(ch)));
 
-    // The three states must be VISIBLY distinct (guards a swapped bright/dim or a
-    // missing empty case), and the selected one must be its FULL, not dimmed, index.
+    // The three states must be VISIBLY distinct (guards a swapped bright/dim), and
+    // the selected one must be its FULL, not dimmed, index.
     expect(idxFull(c0)).not.toBe(0);
     expect(idxFull(c0)).not.toBe(idxDim(c0));
     expect(new Set([channelButtonValue(0), channelButtonValue(1), channelButtonValue(2)]).size).toBe(3);
@@ -151,7 +159,18 @@ describe('channel-select LEDs mirror the lane colour (selected bright / others d
     // The REAL render path emitted those exact palette indices to the Push buttons.
     expect(ledFor(0)).toBe(idxFull(c0));
     expect(ledFor(1)).toBe(idxDim(c1));
-    expect(ledFor(2)).toBe(0);
+    expect(ledFor(2)).toBe(idxDim(effHex(2)));
+
+    // SELECTING an un-picked lane lights it at its FULL effective hue — a clearly
+    // non-off palette index. This is the crux of the owner change: a lane with no
+    // explicit colour is no longer forced OFF, it shows its default hue like the
+    // card swatch and the Launchpad LEDs (a dim un-picked hue may still snap to a
+    // near-black palette entry, but the effective hue drives it, not a hard 0).
+    selectChannel(2);
+    hoisted.tick?.();
+    expect(channelButtonValue(2)).toBe(idxFull(effHex(2))); // un-picked, selected → full default hue
+    expect(channelButtonValue(2)).not.toBe(0); // proves it is NOT the old forced-off
+    expect(ledFor(2)).toBe(idxFull(effHex(2)));
   });
 
   it('re-selecting a channel repaints: the newly-selected → full, the old → dim', async () => {
