@@ -103,6 +103,19 @@
     /** CSS width of the OPEN portaled chrome (default 280). Dense
      *  sectioned modules pass a wider value so verbose labels fit. */
     panelWidth?: number;
+    /** Trigger appearance (P0.3b RACKLINE re-spec):
+     *   - 'corner'    (default): the two top-left / top-right corner affordances
+     *     every legacy card carries — byte-identical to before this prop.
+     *   - 'lane-rail': the mock `.jacks` bottom rail (domain jack dots that open
+     *     the SAME drill-down + a "⤢" expand + a right-aligned flow label),
+     *     used by the workflow lane tiles (<ModuleShell> / placeholder). The
+     *     handle stack + portaled chrome + back panel are unchanged. */
+    variant?: 'corner' | 'lane-rail';
+    /** lane-rail only: the right-aligned signal-flow label (mock `.flow`). */
+    flowLabel?: string;
+    /** lane-rail only: the "⤢" expand affordance → opens the module's dock
+     *  full-view (routed by the shell/placeholder). Omitted ⇒ no expand shown. */
+    onExpand?: () => void;
     children?: Snippet;
   }
 
@@ -113,8 +126,15 @@
     groupingStrategy = 'auto',
     sections = [],
     panelWidth = 280,
+    variant = 'corner',
+    flowLabel,
+    onExpand,
     children,
   }: Props = $props();
+
+  /** Cap of preview jack dots per direction on the lane rail (the rail is a
+   *  drill-down TRIGGER, not the full jack list — the menu shows every port). */
+  const RAIL_DOT_CAP = 4;
 
   // ---------------- Menu state (overlay-replace reducer) ----------------
   //
@@ -154,6 +174,10 @@
 
   let hasInputs = $derived(allInputs.length > 0);
   let hasOutputs = $derived(allOutputs.length > 0);
+
+  // lane-rail preview dots (capped; the drill-down menu lists every port).
+  let railInputs = $derived<PortDescriptor[]>(allInputs.slice(0, RAIL_DOT_CAP));
+  let railOutputs = $derived<PortDescriptor[]>(allOutputs.slice(0, RAIL_DOT_CAP));
 
   // Sections that actually carry input ports — the nav rows shown at root
   // for sectioned cards.
@@ -702,34 +726,68 @@
   data-patch-panel-node={nodeId}
   bind:this={hostEl}
 >
-  <button
-    class="patch-trigger left"
-    type="button"
-    data-testid="patch-trigger"
-    aria-label="Open patch panel"
-    aria-expanded={open && menu.side === 'left'}
-    onclick={() => openMenu('left')}
-  >
-    <span class="trigger-glyph" aria-hidden="true">
-      <span class="prong"></span>
-      <span class="prong"></span>
-      <span class="stem"></span>
-    </span>
-  </button>
-  <button
-    class="patch-trigger right"
-    type="button"
-    data-testid="patch-trigger-right"
-    aria-label="Open patch panel"
-    aria-expanded={open && menu.side === 'right'}
-    onclick={() => openMenu('right')}
-  >
-    <span class="trigger-glyph" aria-hidden="true">
-      <span class="prong"></span>
-      <span class="prong"></span>
-      <span class="stem"></span>
-    </span>
-  </button>
+  {#if variant === 'lane-rail'}
+    <!-- RACKLINE lane rail (mock .jacks): the jack dots are the drill-down
+         TRIGGER (open the SAME portaled patch menu); the "⤢" more-affordance
+         opens the dock full-view; the flow label right-aligns. -->
+    <div class="jacks" data-testid="lane-jack-rail">
+      <button
+        class="jacks-trigger"
+        type="button"
+        data-testid="patch-trigger"
+        aria-label="Open patch panel"
+        aria-expanded={open}
+        onclick={() => openMenu('left')}
+      >
+        {#each railInputs as port (port.id)}
+          <span class="jk in" style:--jk-color={cableColorVar(port.cable)}></span>
+        {/each}
+        {#each railOutputs as port (port.id)}
+          <span class="jk out" style:--jk-color={cableColorVar(port.cable)}></span>
+        {/each}
+      </button>
+      {#if onExpand}
+        <button
+          class="more"
+          type="button"
+          data-testid="shell-open-dock"
+          aria-label="Open full view in the dock"
+          title="Open full view in the dock"
+          onclick={onExpand}
+        ><span class="more-glyph" aria-hidden="true">⤢</span><span class="more-label">EXPAND</span></button>
+      {/if}
+      {#if flowLabel}<span class="flow">{flowLabel}</span>{/if}
+    </div>
+  {:else}
+    <button
+      class="patch-trigger left"
+      type="button"
+      data-testid="patch-trigger"
+      aria-label="Open patch panel"
+      aria-expanded={open && menu.side === 'left'}
+      onclick={() => openMenu('left')}
+    >
+      <span class="trigger-glyph" aria-hidden="true">
+        <span class="prong"></span>
+        <span class="prong"></span>
+        <span class="stem"></span>
+      </span>
+    </button>
+    <button
+      class="patch-trigger right"
+      type="button"
+      data-testid="patch-trigger-right"
+      aria-label="Open patch panel"
+      aria-expanded={open && menu.side === 'right'}
+      onclick={() => openMenu('right')}
+    >
+      <span class="trigger-glyph" aria-hidden="true">
+        <span class="prong"></span>
+        <span class="prong"></span>
+        <span class="stem"></span>
+      </span>
+    </button>
+  {/if}
 
   <!--
     HANDLE STACK — every declared <Handle> stays in the card DOM at ALL

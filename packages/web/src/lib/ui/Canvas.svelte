@@ -54,6 +54,7 @@
     SEND_BOX_COUNT,
     columnForFlowX,
     sendBoxForFlowX,
+    columnPitch,
     indexForDropY,
     insertBottom,
     removeFrom,
@@ -68,12 +69,17 @@
     needsDefaultVideoOut,
     rackLacksType,
     videoOutSpawnPos,
+    videoZoneSlotPos,
+    VIDEO_ZONE_DEFAULTS,
     DEFAULT_VIDEO_OUT_ID,
     VIDEO_ZONE_EXTRA_DEFAULTS,
     videoZoneWiresFor,
     resolveMasterVideoOutId,
     laneCenterViewport,
     videoAreaViewport,
+    sendBoxCenterViewport,
+    fitLanesViewport,
+    revealMemberViewport,
     type ModuleBoxLike,
     type ViewportMetrics,
   } from '$lib/graph/channel-columns';
@@ -90,7 +96,7 @@
   // STRATA semantic-zoom (P0.2): the shared workflow zoom store + the LOD tier
   // context. `setWorkflowZoom` is fed from the onmove handlers below;
   // `provideLodTier` publishes the derived tier on context for P0.3 cards.
-  import { setWorkflowZoom, provideLodTier } from '$lib/ui/canvas/workflow-zoom';
+  import { setWorkflowZoom, provideLodTier, lodTierStore } from '$lib/ui/canvas/workflow-zoom';
   import {
     makeEnvelope,
     makePortableEnvelope,
@@ -248,6 +254,12 @@
   // drops its XyzCard.svelte here (matching the PascalCase(type)+Card
   // convention, or declaring `card` on its def) and is picked up automatically.
   import { buildNodeTypes } from '$lib/ui/modules-card-map';
+  // P0.3b — the legacy-fallback MIGRATION bridge: a pure derivation deciding
+  // which node component a module renders as in its workflow lane (legacy card /
+  // curated ModuleShell / uniform placeholder / dock stub). Gated behind the
+  // `?shell=1` opt-in preview flag so it's a strict no-op until owner sign-off.
+  import { laneRenderKind, emittedTypeFor, isShellSwappable, NON_SHELL_LANE_TYPES } from '$lib/ui/workflow/legacy-fallback';
+  import { migrated } from '$lib/ui/workflow/strict-faces';
   import { RACK_SIZE_DEFAULTS } from '$lib/ui/rack-sizes';
   import { computeCabinetLayout } from '$lib/ui/canvas/cabinet-layout';
   // ModuleNameLabel moved INTO every module card's title chrome (see
@@ -367,6 +379,15 @@
   // dock store. Design: .myrobots/docking-recommendation.md.
   import DockRail from '$lib/ui/dock/DockRail.svelte';
   import DockStubCard from '$lib/ui/dock/DockStubCard.svelte';
+  // P0.3b — the workflow-shell lane components: the curated skeleton (migrated
+  // modules) + the uniform placeholder (un-migrated). Registered as node types
+  // alongside dockStub; emitted only under the `?shell=1` preview.
+  import ModuleShell from '$lib/ui/modules/ModuleShell.svelte';
+  import ModuleShellPlaceholder from '$lib/ui/modules/ModuleShellPlaceholder.svelte';
+  // P0.3b re-spec — the bottom-drawer EXPANDED full-view faceplate (its own
+  // full-width RACKLINE faceplate, NOT routed through DockCardHost's card flex).
+  import DockFullView from '$lib/ui/dock/DockFullView.svelte';
+  import { SHELL_TILE_W, shellTileHeightForTier, laneFaceTier, SHELL_VIDEO_ZONE_TILE_INSET_Y } from '$lib/ui/workflow/module-shell-model';
   // DOCKING P2.5b: the pan-gesture screen-space cable tail (stub → rail).
   import DockPanTail, { type DockTailSpec } from '$lib/ui/dock/DockPanTail.svelte';
   import { dockStore } from '$lib/ui/dock/dock-store.svelte';
@@ -384,6 +405,7 @@
   } from '$lib/graph/workflow-pins';
   import { removePatchNode } from '$lib/graph/mutate';
   import { goto } from '$app/navigation';
+  import { page } from '$app/state';
   import { resetLocalScratchId } from '$lib/storage/local-scratch';
   import type { RackMode } from '$lib/graph/rack-mode';
   import type { HocuspocusProvider } from '@hocuspocus/provider';
@@ -453,6 +475,34 @@
   /** True when this canvas renders the workflow shell. */
   let workflowMode = $derived(mode === 'workflow');
 
+  /** P0.3b OWNER-PREVIEW FLAG — the workflow-shell rollout (uniform lane
+   *  placeholders / curated ModuleShell faces + the dock full-view legacy
+   *  fallback) is gated behind `?shell=1` so it is a strict no-op by default:
+   *  existing workflow racks render EXACTLY as today (no VRT/e2e drift), and the
+   *  owner previews the new look at `/rack?mode=workflow&shell=1`. Flipping the
+   *  default to on (+ the VRT baseline regen) is the post-preview follow-up.
+   *  Dawless never sees it (workflowMode gate). */
+  let shellPreview = $derived(workflowMode && page.url?.searchParams?.get('shell') === '1');
+
+  /** The ACTIVE channel-column pitch (flow-space px): the tight 216px RACKLINE
+   *  pitch under the `?shell=1` preview, else the app-scale 765px (34hp) band.
+   *  Threaded into the RENDER-derived member positions, the drop/drag hit-tests,
+   *  the lane overlay bands, and the viewport nav so the narrowed lanes are one
+   *  coherent coordinate frame. Preview-OFF resolves to COLUMN_W → every geometry
+   *  call is byte-identical. NEVER threaded into a PERSISTED write (drop-spawn x/y,
+   *  the videoOut/A-V-defaults spawn, the grow-up push-ups all keep COLUMN_W), so
+   *  the persisted graph + collab convergence are untouched — pure render deriv. */
+  let wcolPitch = $derived(columnPitch(shellPreview));
+
+  // The CURRENT lane FaceTier (mini|compact|full) for the live workflow zoom —
+  // reads the SAME shared LOD store `provideLodTier()` publishes on context, so
+  // the reserved column slot (wcolCardHeightPx) resolves the identical tier the
+  // shell/placeholder tiles render at via `data-shell-tier`. The tier flips only
+  // when the zoom crosses a hysteresis-debounced band boundary (not per-frame),
+  // so the channel-column stack recompute it drives is a discrete event. `dock`
+  // never reaches a lane (laneFaceTier collapses it to `full`). */
+  let shellTier = $derived(laneFaceTier($lodTierStore));
+
   // The header shows "Sign in" only when we're confident the user is signed
   // out. On the public `/` canvas (no client ClerkProvider) that signal is
   // server-derived via `headerAuth`; on `/r/[id]` (provider mounted) it's
@@ -485,7 +535,18 @@
     // (dock-by-default OFF is a hard invariant — nothing docks without a
     // user gesture).
     dockStub: DockStubCard as unknown as ReturnType<typeof buildNodeTypes>[string],
+    // P0.3b: the workflow-shell lane node types the legacy-fallback bridge
+    // emits under the `?shell=1` preview — the curated skeleton for MIGRATED
+    // modules + the uniform placeholder for UN-MIGRATED ones. Like dockStub,
+    // NOT module defs (never enter the registries / card-map glob / sweeps).
+    moduleShell: ModuleShell as unknown as ReturnType<typeof buildNodeTypes>[string],
+    moduleShellPlaceholder: ModuleShellPlaceholder as unknown as ReturnType<typeof buildNodeTypes>[string],
   };
+
+  /** The set of module TYPES that resolve to a real card (the glob-built map,
+   *  minus the non-def helpers above). The legacy-fallback bridge only swaps a
+   *  type that HAS a card — a defless/special node keeps its current render. */
+  const cardTypeSet = new Set(Object.keys(nodeTypes));
 
   // Rack sizing: module type → resolved { size, hp }. The flowNodes derivation
   // tags each card's SvelteFlow wrapper (rack-sized rack-{1u,3u} + an inline
@@ -507,16 +568,32 @@
    *  column stack (columnFlushPositions). Falls back to one rack unit for an
    *  unsized (unmigrated) type. */
   function wcolCardHeightPx(type: string): number {
+    // UNIFORM RACKLINE TILE (P0.3b re-spec): under the `?shell=1` preview a
+    // shell/placeholder lane node renders at the PER-TIER RACKLINE tile height
+    // (mini 88 / compact 150 / full 180) for the CURRENT LOD tier — so the tile
+    // grows as you zoom in AND the RESERVED lane slot equals the RENDERED tile
+    // (else the baseline number badge floats mid-card). Shared with the
+    // _module-card.css `data-shell-tier` height rule via shellTileHeightForTier so
+    // CSS/TS can't drift. NON_SHELL_LANE_TYPES (clipplayer / control surfaces /
+    // group / sticky) keep their LEGACY card in the lane, so they reserve their
+    // NATIVE rack tier, not the shell tile. Preview-OFF keeps the per-TYPE rack
+    // tier for every type → byte-identical.
+    if (shellPreview && !NON_SHELL_LANE_TYPES.has(type)) return shellTileHeightForTier(shellTier);
     const size = rackSizeByType[type]?.size;
     const u = size ? parseInt(size, 10) || 1 : 1;
     return u * RACK_UNIT;
   }
 
-  /** A module TYPE's rendered card WIDTH in flow-space px — its hp tier
-   *  (`--rack-hp` × RACK_UNIT, the same math _module-card.css applies). Feeds the
-   *  band-CENTERING of column/send members (columnCardX) so a card sits centered
-   *  under its channel number regardless of hp. Falls back to one tile. */
+  /** A module TYPE's rendered card WIDTH in flow-space px. Under the `?shell=1`
+   *  preview a shell/placeholder tile is the UNIFORM SHELL_TILE_W (every module the
+   *  SAME width — the owner "same-size horizontally" premise), so the reserved
+   *  column slot == the rendered tile and band-CENTERING (card center == channel-
+   *  number center) stays exact. NON_SHELL_LANE_TYPES keep their legacy card's
+   *  NATIVE hp width. Preview-OFF (and every type there) uses the per-TYPE hp tier
+   *  (`--rack-hp` × RACK_UNIT, the same math _module-card.css applies) → byte-
+   *  identical. Falls back to one tile. */
   function wcolCardWidthPx(type: string): number {
+    if (shellPreview && !NON_SHELL_LANE_TYPES.has(type)) return SHELL_TILE_W;
     return (rackSizeByType[type]?.hp ?? 1) * RACK_UNIT;
   }
 
@@ -1330,7 +1407,12 @@
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isTypingTarget(e.target)) return;
       if (e.key === 'Escape') {
-        if (dockStore.dockedNodeId('bottom')) {
+        // P0.3b: the transient full-view closes first (it's the most recently
+        // opened, ESC-topmost overlay), then the pinned drawer.
+        if (dockStore.fullViewNodeId) {
+          e.preventDefault();
+          dockStore.closeFullView();
+        } else if (dockStore.dockedNodeId('bottom')) {
           e.preventDefault();
           dockStore.close('bottom');
         }
@@ -1349,6 +1431,22 @@
     return () => window.removeEventListener('keydown', onDockKey);
   });
 
+  // The workflow viewport-pan animation duration (ms) — shared by the nav keys,
+  // the on-add camera reveal, and the on-load lane framing.
+  const WCOL_PAN_MS = 220;
+
+  /** Read the LIVE workflow viewport metrics: the flow pane's SCREEN-space
+   *  width/height (getBoundingClientRect) + the current zoom (kept fixed by the
+   *  pan helpers). Null until the pane is laid out. Shared by every pan seam. */
+  function readWorkflowViewportMetrics(): ViewportMetrics | null {
+    if (!flowApi || !flowEl) return null;
+    const rect = flowEl.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    const vp = flowApi.getViewport?.();
+    const zoom = vp?.zoom && vp.zoom > 0 ? vp.zoom : 1;
+    return { widthPx: rect.width, heightPx: rect.height, zoom };
+  }
+
   // WORKFLOW MODE — VIEWPORT NAVIGATION keys. Keeps the CURRENT zoom; only pans.
   //  * '1'..'8' → center that channel column horizontally in the viewport with
   //    its BASELINE (where the number sits) at the viewport BOTTOM. Numbers
@@ -1362,38 +1460,70 @@
   // zoom and hand the transform to xyflow's animated setViewport.
   $effect(() => {
     if (!workflowMode) return;
-    const PAN_MS = 220;
-    function readViewportMetrics(): ViewportMetrics | null {
-      if (!flowApi || !flowEl) return null;
-      const rect = flowEl.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return null;
-      const vp = flowApi.getViewport?.();
-      const zoom = vp?.zoom && vp.zoom > 0 ? vp.zoom : 1;
-      return { widthPx: rect.width, heightPx: rect.height, zoom };
-    }
     function onNavKey(e: KeyboardEvent) {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isTypingTarget(e.target)) return;
       const k = e.key;
       if (k === 'v' || k === 'V') {
-        const vp = readViewportMetrics();
+        const vp = readWorkflowViewportMetrics();
         if (!vp || !flowApi) return;
         e.preventDefault();
-        flowApi.setViewport(videoAreaViewport(vp), { duration: PAN_MS });
+        flowApi.setViewport(videoAreaViewport(vp, wcolPitch), { duration: WCOL_PAN_MS });
         return;
       }
       // '1'..'8' → center that lane (guard against '0'/'9'+ and > column count).
       if (k >= '1' && k <= '9') {
         const ch = k.charCodeAt(0) - 48;
         if (ch < 1 || ch > COLUMN_COUNT) return; // ignore > active column count
-        const vp = readViewportMetrics();
+        const vp = readWorkflowViewportMetrics();
         if (!vp || !flowApi) return;
         e.preventDefault();
-        flowApi.setViewport(laneCenterViewport(ch, vp), { duration: PAN_MS });
+        flowApi.setViewport(laneCenterViewport(ch, vp, wcolPitch), { duration: WCOL_PAN_MS });
       }
     }
     window.addEventListener('keydown', onNavKey);
     return () => window.removeEventListener('keydown', onNavKey);
+  });
+
+  // WORKFLOW ON-LOAD LANE FRAMING (P0.3b camera fix, SECONDARY). A bare
+  // <SvelteFlow fitView> frames only the xyflow-VISIBLE nodes; on a fresh
+  // workflow rack the channel singletons are canvas-hidden, leaving just the
+  // bottom VIDEO-ZONE trio — so fitView anchors the camera on the video strip and
+  // the channel lanes sit ABOVE the viewport. Once the pane + flowApi are ready
+  // (and the initial fitView has set the zoom), re-frame ONCE onto the lane band
+  // (fitLanesViewport: band centered, baseline at viewport bottom) so the camera
+  // lands on the work surface.
+  //
+  // GATED TO THE `?shell=1` PREVIEW (not all workflow mode): the on-load camera
+  // is a STATIC view change, and the preview-off workflow VRT
+  // (workflow-dock-composite) captures the canvas — so gating here keeps
+  // preview-off byte-identical (the interaction-time add-pan below is unaffected;
+  // it never changes the at-rest view a VRT captures). One-shot (a latch).
+  let didFrameLanesOnLoad = false;
+  $effect(() => {
+    if (!shellPreview || didFrameLanesOnLoad) return;
+    if (!flowApi || !flowEl) return; // not mounted yet — re-runs when they bind
+    // rAF-poll (bounded) until SvelteFlow's on-init fitView has produced a real
+    // viewport, then re-frame ONCE onto the lane band (inheriting the fitted
+    // zoom). The poll avoids a race where flowApi binds a frame before fitView.
+    let raf = 0;
+    let tries = 0;
+    const tick = () => {
+      raf = 0;
+      if (didFrameLanesOnLoad) return;
+      const raw = flowApi?.getViewport?.();
+      const vp = readWorkflowViewportMetrics();
+      if (flowApi && vp && raw && raw.zoom > 0) {
+        didFrameLanesOnLoad = true;
+        flowApi.setViewport(fitLanesViewport(vp, wcolPitch), { duration: 0 });
+        return;
+      }
+      if (++tries < 30) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+    };
   });
 
   // Dock hygiene + P2.5a persistence binding: each Canvas mount binds the
@@ -1745,17 +1875,33 @@
     trace(`workflow: pushed ${pushes.length} module(s) up to clear grown lanes`);
   });
 
+  /** P0.3b — the transient EXPANDED FULL-VIEW occupant: the node whose full
+   *  faceplate is open in the bottom dock (an un-migrated module's verbatim
+   *  legacy card via DockCardHost → nodeTypes[type], or a migrated module's
+   *  faceplate). NEVER a persisted entry — it closes to dockStore.closeFullView
+   *  and keeps the module's lane placeholder/shell in place (Option #1). */
+  let fullViewCard = $derived.by(() => {
+    if (!workflowMode) return null;
+    const id = dockStore.fullViewNodeId;
+    if (!id) return null;
+    const node = snapshot.nodes.find((n) => n.id === id);
+    if (!node) return null;
+    return { node, title: dockDisplayName(node) };
+  });
+
   let bottomRailCards = $derived.by(() => {
     const docked = railCards('bottom');
+    const out: Array<{ node: ModuleNode; title: string; pinned: boolean }> = [];
     // The pinned M/E/C occupant renders FIRST, alongside docked cards —
     // the P1 drawer generalized (pinned stays drawer-only per owner Q2).
+    // NOTE: the EXPANDED full-view no longer routes through this card flex — it
+    // owns its own full-width <DockFullView> faceplate below the bottom rail
+    // (P0.3b re-spec); this list holds only the pinned occupant + docked entries.
     if (dockedBottomNode && dockedBottomSpec) {
-      return [
-        { node: dockedBottomNode, title: dockedBottomSpec.label, pinned: true },
-        ...docked,
-      ];
+      out.push({ node: dockedBottomNode, title: dockedBottomSpec.label, pinned: true });
     }
-    return docked;
+    out.push(...docked);
+    return out;
   });
 
   // ---------------- WORKFLOW MODE P2: topbar surface plumbing ----------------
@@ -1976,13 +2122,32 @@
         order.map((id) => wcolCardWidthPx(typeOf.get(id) ?? ''));
       for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
         const order = cols[String(ch)] ?? [];
-        const positions = columnFlushPositions(ch, heightsFor(order), widthsFor(order));
+        const positions = columnFlushPositions(ch, heightsFor(order), widthsFor(order), wcolPitch);
         order.forEach((id, i) => wcolPosByNode.set(id, positions[i]!));
       }
       for (let s = 1; s <= SEND_BOX_COUNT; s++) {
         const order = sends[String(s)] ?? [];
-        const positions = sendFlushPositions(s, heightsFor(order), widthsFor(order));
+        const positions = sendFlushPositions(s, heightsFor(order), widthsFor(order), wcolPitch);
         order.forEach((id, i) => wcolPosByNode.set(id, positions[i]!));
+      }
+      // SHELL PREVIEW: the video-zone default trio (videoOut / recorderbox /
+      // synesthesia) is NOT a channel member, so it renders at its PERSISTED
+      // spawn X — the wide 765px video-zone pitch. Under the narrowed lanes that
+      // strands them far right of the tight columns, so RE-DERIVE their RENDER
+      // position to the shell pitch (videoOut slot 0 is pitch-independent;
+      // recorderbox/synesthesia pack under columns 2/3). Also nudge the tile TOP
+      // DOWN by SHELL_VIDEO_ZONE_TILE_INSET_Y so the whole tile sits INSIDE the
+      // darker video area — un-inset, the tile top lands on the zone's dashed
+      // border (drawn at COLUMN_BASELINE_Y == the slot's un-inset top) and its
+      // jack rail collides with the lane-number badges just above it. Pure render
+      // OVERRIDE (like the channel members) — the persisted x/y is untouched, so
+      // preview OFF is byte-identical and no Y.Doc write / collab divergence.
+      if (shellPreview) {
+        VIDEO_ZONE_DEFAULTS.forEach((spec, i) => {
+          if (!typeOf.has(spec.id)) return;
+          const slot = videoZoneSlotPos(i, wcolPitch);
+          wcolPosByNode.set(spec.id, { x: slot.x, y: slot.y + SHELL_VIDEO_ZONE_TILE_INSET_Y });
+        });
       }
     }
     for (const n of snap.nodes) {
@@ -2019,7 +2184,20 @@
       // entryFor subscribes this pass to dock/undock; dawless racks never
       // read the store (workflowMode gate) — zero tracking, zero overhead.
       const dockEntry = workflowMode ? dockStore.entryFor(n.id) : null;
-      const emittedType = dockEntry ? 'dockStub' : n.type;
+      // P0.3b LEGACY-FALLBACK BRIDGE: generalizes the docked→stub swap. A pure
+      // derivation from mode + the `?shell=1` preview + user-dock + STRICT_FACES
+      // membership — NEVER persisted. Preview OFF (default) ⇒ 'legacy' for every
+      // non-docked node ⇒ byte-identical to the old `dockEntry ? 'dockStub' :
+      // n.type`. Preview ON ⇒ un-migrated → placeholder, migrated → shell.
+      const renderKind = laneRenderKind({
+        workflowMode,
+        shellPreview,
+        userDocked: !!dockEntry,
+        type: n.type,
+        hasCard: isShellSwappable(n.type, cardTypeSet.has(n.type)),
+        migrated: migrated(n.type),
+      });
+      const emittedType = emittedTypeFor(renderKind, n.type);
       const dockZone = dockEntry?.zone ?? null;
       // xyflow's current user-node for this id. untrack: nodeLookup is a
       // plain Map today, but an xyflow upgrade to reactive lookups must
@@ -3794,7 +3972,11 @@
           const d = node.data as { channel?: number; sendSlot?: number } | undefined;
           const oldCh = typeof d?.channel === 'number' ? d.channel : null;
           const oldSlot = typeof d?.sendSlot === 'number' ? d.sendSlot : null;
-          const band = columnForFlowX(n.position.x);
+          // Hit-test the DROP against the ACTIVE pitch: under `?shell=1` the lanes
+          // render at the narrow pitch, so the dragged node's flow-X lives in that
+          // narrow frame — the resolved column/send (a persisted MEMBERSHIP scalar,
+          // never a position) must match what the user visually dropped on.
+          const band = columnForFlowX(n.position.x, wcolPitch);
           // Drop center uses the dragged card's OWN flush height (matches the
           // flush layout the sibling centers are computed against).
           const dropCenterY = n.position.y + wcolCardHeightPx(node.type) / 2;
@@ -3823,7 +4005,7 @@
             }
             stillMember.add(n.id);
           } else if (band === 'send') {
-            const slot = sendBoxForFlowX(n.position.x);
+            const slot = sendBoxForFlowX(n.position.x, wcolPitch);
             if (oldSlot === slot) {
               const order = wcolOrder('sends', slot);
               const sibs = order.filter((id) => id !== n.id);
@@ -4419,9 +4601,12 @@
     flowPos: { x: number; y: number },
   ): { channel?: number; sendSlot?: number } | null {
     if (!workflowMode || !patch.nodes[WCOL_MIXER_ID]) return null;
-    const band = columnForFlowX(flowPos.x);
+    // Resolve against the ACTIVE pitch (narrow under `?shell=1`): the spawn
+    // flow-pos comes from the cursor's screen→flow projection over the RENDERED
+    // (narrowed) lanes, so the column it lands in is a pitch-relative hit-test.
+    const band = columnForFlowX(flowPos.x, wcolPitch);
     if (typeof band === 'number') return { channel: band };
-    if (band === 'send') return { sendSlot: sendBoxForFlowX(flowPos.x) };
+    if (band === 'send') return { sendSlot: sendBoxForFlowX(flowPos.x, wcolPitch) };
     return null;
   }
 
@@ -6284,14 +6469,20 @@
       const existing = wcolOrder('columns', wcolDrop.channel);
       const heights = [...existing.map((id) => wcolCardHeightPx(patch.nodes[id]?.type ?? '')), wcolCardHeightPx(type)];
       const widths = [...existing.map((id) => wcolCardWidthPx(patch.nodes[id]?.type ?? '')), wcolCardWidthPx(type)];
-      const p = columnFlushPositions(wcolDrop.channel, heights, widths)[existing.length]!;
+      // PERSIST at the ACTIVE column pitch (narrow under `?shell=1`, COLUMN_W off)
+      // so the spawned tile's persisted X matches the RENDER override's X — else,
+      // under the preview, the node briefly renders at the WIDE 765px slot (far
+      // right of the tight lane, "lands off-lane") for the frame before the
+      // pitch-aware render override snaps it in. Preview OFF passes COLUMN_W →
+      // byte-identical persisted position.
+      const p = columnFlushPositions(wcolDrop.channel, heights, widths, wcolPitch)[existing.length]!;
       pos.x = p.x; pos.y = p.y;
     } else if (wcolDrop?.sendSlot != null) {
       initialData.sendSlot = wcolDrop.sendSlot;
       const existing = wcolOrder('sends', wcolDrop.sendSlot);
       const heights = [...existing.map((id) => wcolCardHeightPx(patch.nodes[id]?.type ?? '')), wcolCardHeightPx(type)];
       const widths = [...existing.map((id) => wcolCardWidthPx(patch.nodes[id]?.type ?? '')), wcolCardWidthPx(type)];
-      const p = sendFlushPositions(wcolDrop.sendSlot, heights, widths)[existing.length]!;
+      const p = sendFlushPositions(wcolDrop.sendSlot, heights, widths, wcolPitch)[existing.length]!;
       pos.x = p.x; pos.y = p.y;
     }
 
@@ -6348,6 +6539,25 @@
     // strictly an at-spawn affordance — long-lived "always on top"
     // would surprise users who expect drag-to-front to win later.
     topNodeId = id;
+    // WORKFLOW CAMERA REVEAL (P0.3b PRIMARY fix — "add a module → nothing
+    // renders"): a column/send member is forced to its deterministic slot, which
+    // stacks UPWARD from the baseline — so the newest tile lands ABOVE the
+    // current viewport and only "pops in" once the user pans. Pan the camera to
+    // the target lane so the just-added tile is guaranteed IN VIEW, with no
+    // intervening click. laneCenterViewport/sendBoxCenterViewport put the baseline
+    // at the viewport bottom (revealing the upward stack); revealMemberViewport
+    // re-centers on the new member if the stack is taller than the viewport.
+    if (wcolDrop?.channel != null || wcolDrop?.sendSlot != null) {
+      const vp = readWorkflowViewportMetrics();
+      if (vp && flowApi) {
+        const memberH = wcolCardHeightPx(type);
+        const base =
+          wcolDrop.channel != null
+            ? laneCenterViewport(wcolDrop.channel, vp, wcolPitch)
+            : sendBoxCenterViewport(wcolDrop.sendSlot!, vp, wcolPitch);
+        flowApi.setViewport(revealMemberViewport(base, pos.y, memberH, vp), { duration: WCOL_PAN_MS });
+      }
+    }
     // WORKFLOW: a column member ALSO joins automation lane N (per-module, its own
     // undo step, exactly like Assign-to-channel). Sends carry no automation lane
     // (a pure bus for v1). The reconcile $effect then wires the wcol- edges.
@@ -7401,7 +7611,7 @@
       {#if workflowMode}
         <!-- WORKFLOW CHANNEL COLUMNS guide: 8 numbered columns + SEND 1/2 rail,
              pinned to flow space. Workflow racks only → dawless VRT unchanged. -->
-        <ChannelColumnsOverlay columnColors={wcolColumnColors} laneTopY={wcolLaneTopY} tick={wcolViewportTick} />
+        <ChannelColumnsOverlay columnColors={wcolColumnColors} laneTopY={wcolLaneTopY} tick={wcolViewportTick} pitch={wcolPitch} />
       {/if}
       <CadillacOverlay {provider} />
       <!-- 2026-05-27: the per-node editable name label moved INSIDE every
@@ -7428,6 +7638,24 @@
         onClosePinned={() => dockStore.close('bottom')}
         {rearView}
       />
+      <!-- EXPANDED FULL-VIEW (P0.3b re-spec): the drawer's wide RACKLINE
+           faceplate. It OWNS the bottom drawer as a single full-width element —
+           NOT one more card in DockRail's horizontal flex — with the domain
+           accent lip, grip, title bar + window-control trio, tab-rail seam, and
+           the module's verbatim legacy card mounted at native scale in .editor
+           (or a migrated <ModuleShell view="dock-full">). ESC closes it first
+           (dock-key handler above). -->
+      {#if fullViewCard}
+        <DockFullView
+          node={fullViewCard.node}
+          nodeTypes={nodeTypes as unknown as Record<string, unknown>}
+          rackSize={rackSizeByType[fullViewCard.node.type]}
+          migrated={migrated(fullViewCard.node.type)}
+          title={fullViewCard.title}
+          onClose={() => dockStore.closeFullView()}
+          onCollapse={() => dockStore.closeFullView()}
+        />
+      {/if}
     {/if}
     <button
       type="button"

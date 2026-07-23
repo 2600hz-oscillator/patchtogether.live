@@ -1,0 +1,361 @@
+/* ─────────────────────────────────────────────────────────────────────────
+ * DOCK FULL-VIEW FACEPLATE — the bottom-drawer editing surface (P0.3b re-spec).
+ *
+ * Ported VERBATIM from the RACKLINE full-card kit (scratchpad/fullcard-mocks/
+ * index.html §1 tokens + domain setters, §3 .faceplate frame, §4 .section) and
+ * the dock DOM (ux-fullview.html:668-884). EVERYTHING is scoped under the
+ * `.dock-faceplate` root so the kit tokens (--line2/--raised2/--domain*/…) never
+ * leak into the rest of the app. The five domain hues track the app's live
+ * --cable-* palette so a skin swap recolours the faceplate too; the structural
+ * kit tokens are the mock literals.
+ *
+ * A domain class (.audio/.cv/.gate/.video/.poly) on the `.faceplate` element
+ * paints its accent lip, badge, spine, tab underline and glow — no per-module
+ * special-case (DX7 reads violet because it is a video/poly module).
+ * ────────────────────────────────────────────────────────────────────── */
+
+.dock-faceplate {
+  /* domain hues — track the live palette */
+  --audio: var(--cable-audio, #38d3c8);
+  --cv: var(--cable-cv, #7bd66a);
+  --gate: var(--cable-gate, #f2c14e);
+  --video: var(--cable-video, #b57bff);
+  --poly: var(--cable-polyPitchGate, #ff7bc2);
+
+  /* structural (mock literals) */
+  --fp-bg: #0e1013;
+  --ink: #eef1f5;
+  --ink-dim: #9aa2ad;
+  --ink-faint: #646c77;
+  --line: #2c3037;
+  --line2: #333b48;
+  --inset: #0a0c0f;
+  --raised2: #20262f;
+  --text: var(--ink);
+  --dim: var(--ink-dim);
+  --faint: var(--ink-faint);
+  --carrier: #f5b13d;
+  --mod: #7b8394;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --f-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --t-title-full: 20px;
+  --r: 9px;
+  --r-dock: 11px;
+  --pspine-w: 6px;
+  --dock-sidebar-w: 288px;
+  --tab-radius: 8px 8px 0 0;
+  --shadow: 0 18px 44px -18px rgba(0, 0, 0, 0.75);
+
+  /* DEFAULT domain block (audio) — the .audio/.cv/… setters below re-declare it.
+     Derived shades reference the palette token LITERALLY (not var(--domain)) so a
+     descendant re-declaring --domain doesn't suffer the substitution-bake gotcha. */
+  --domain: var(--audio);
+  --domain-2: color-mix(in srgb, var(--audio) 80%, #05070a);
+  --domain-d: color-mix(in srgb, var(--audio) 34%, var(--fp-bg));
+  --domain-soft: color-mix(in srgb, var(--audio) 10%, transparent);
+  --domain-wash: color-mix(in srgb, var(--audio) 20%, transparent);
+  --domain-glow: color-mix(in srgb, var(--audio) 42%, transparent);
+  --on-ink: color-mix(in srgb, var(--audio) 22%, #05070a);
+
+  color: var(--text);
+  font-family: var(--font);
+}
+
+/* ---- DOMAIN SETTERS ---- */
+.dock-faceplate .audio {
+  --domain: var(--audio);
+  --domain-2: color-mix(in srgb, var(--audio) 80%, #05070a);
+  --domain-d: color-mix(in srgb, var(--audio) 34%, var(--fp-bg));
+  --domain-soft: color-mix(in srgb, var(--audio) 10%, transparent);
+  --domain-wash: color-mix(in srgb, var(--audio) 20%, transparent);
+  --domain-glow: color-mix(in srgb, var(--audio) 42%, transparent);
+  --on-ink: color-mix(in srgb, var(--audio) 22%, #05070a);
+}
+.dock-faceplate .cv {
+  --domain: var(--cv);
+  --domain-2: color-mix(in srgb, var(--cv) 80%, #05070a);
+  --domain-d: color-mix(in srgb, var(--cv) 34%, var(--fp-bg));
+  --domain-soft: color-mix(in srgb, var(--cv) 10%, transparent);
+  --domain-wash: color-mix(in srgb, var(--cv) 20%, transparent);
+  --domain-glow: color-mix(in srgb, var(--cv) 42%, transparent);
+  --on-ink: color-mix(in srgb, var(--cv) 22%, #05070a);
+}
+.dock-faceplate .gate {
+  --domain: var(--gate);
+  --domain-2: color-mix(in srgb, var(--gate) 80%, #05070a);
+  --domain-d: color-mix(in srgb, var(--gate) 34%, var(--fp-bg));
+  --domain-soft: color-mix(in srgb, var(--gate) 10%, transparent);
+  --domain-wash: color-mix(in srgb, var(--gate) 20%, transparent);
+  --domain-glow: color-mix(in srgb, var(--gate) 42%, transparent);
+  --on-ink: color-mix(in srgb, var(--gate) 22%, #05070a);
+}
+.dock-faceplate .video {
+  --domain: var(--video);
+  --domain-2: color-mix(in srgb, var(--video) 80%, #05070a);
+  --domain-d: color-mix(in srgb, var(--video) 34%, var(--fp-bg));
+  --domain-soft: color-mix(in srgb, var(--video) 10%, transparent);
+  --domain-wash: color-mix(in srgb, var(--video) 20%, transparent);
+  --domain-glow: color-mix(in srgb, var(--video) 42%, transparent);
+  --on-ink: color-mix(in srgb, var(--video) 22%, #05070a);
+}
+.dock-faceplate .poly {
+  --domain: var(--poly);
+  --domain-2: color-mix(in srgb, var(--poly) 80%, #05070a);
+  --domain-d: color-mix(in srgb, var(--poly) 34%, var(--fp-bg));
+  --domain-soft: color-mix(in srgb, var(--poly) 10%, transparent);
+  --domain-wash: color-mix(in srgb, var(--poly) 20%, transparent);
+  --domain-glow: color-mix(in srgb, var(--poly) 42%, transparent);
+  --on-ink: color-mix(in srgb, var(--poly) 22%, #05070a);
+}
+
+/* ============================================================
+   3. FACEPLATE FRAME (kit §3 / ux-fullview Section B)
+   ============================================================ */
+
+/* wide content scrolls inside its own container; the page body never scrolls sideways */
+.dock-faceplate .faceplate-scroll {
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.dock-faceplate .faceplate {
+  position: relative;
+  min-width: 900px;
+  background: linear-gradient(180deg, #171d26 0%, #10141b 100%);
+  border: 1px solid var(--line2);
+  border-top: 2px solid var(--domain-2); /* domain accent lip */
+  border-radius: var(--r-dock) var(--r-dock) var(--r) var(--r);
+  box-shadow: 0 -20px 50px -24px var(--domain-glow), var(--shadow);
+  overflow: hidden;
+}
+
+/* optional left domain spine (RACKLINE reading aid) */
+.dock-faceplate .faceplate .spine {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--pspine-w);
+  background: var(--domain);
+  z-index: 1;
+}
+
+/* drag grip */
+.dock-faceplate .faceplate-grip {
+  display: flex;
+  justify-content: center;
+  padding: 6px 0 2px;
+}
+.dock-faceplate .faceplate-grip::after {
+  content: '';
+  width: 46px;
+  height: 4px;
+  border-radius: 3px;
+  background: var(--line2);
+}
+
+/* ---- title bar ---- */
+.dock-faceplate .faceplate-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px 12px;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.dock-faceplate .face-id {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+.dock-faceplate .face-badge {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  flex: none;
+  background: linear-gradient(180deg, var(--domain), var(--domain-2));
+  color: var(--on-ink);
+  font-weight: 800;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px -4px var(--domain-glow);
+}
+.dock-faceplate .face-who {
+  min-width: 0;
+}
+.dock-faceplate .face-name {
+  font-size: 15px;
+  font-weight: 680;
+  letter-spacing: 0.01em;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dock-faceplate .face-sub {
+  font-family: var(--f-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dock-faceplate .face-spacer {
+  flex: 1;
+}
+
+/* window controls: undock / collapse / close */
+.dock-faceplate .win-ctrls {
+  display: flex;
+  gap: 7px;
+}
+.dock-faceplate .win-ctrls button {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: var(--raised2);
+  border: 1px solid var(--line2);
+  color: var(--dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+.dock-faceplate .win-ctrls button:hover {
+  color: var(--text);
+  border-color: var(--domain);
+}
+.dock-faceplate .win-ctrls button svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* ---- TAB RAIL ---- */
+.dock-faceplate .tabrail {
+  display: flex;
+  gap: 4px;
+  padding: 9px 16px 0;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+}
+.dock-faceplate .tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 15px 10px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: var(--tab-radius);
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--dim);
+  background: transparent;
+  position: relative;
+  top: 1px;
+}
+.dock-faceplate .tab .t1 {
+  font-family: var(--f-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+.dock-faceplate .tab .t2 {
+  font-size: 9px;
+  color: var(--faint);
+  font-family: var(--f-mono);
+  letter-spacing: 0.05em;
+}
+.dock-faceplate .tab.on {
+  color: var(--text);
+  background: linear-gradient(180deg, #1b2230, #141a23);
+  border-color: var(--line2);
+  border-bottom: 1px solid #141a23;
+}
+.dock-faceplate .tab.on .t1 {
+  color: var(--domain);
+}
+.dock-faceplate .tab.on::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--domain);
+  box-shadow: 0 0 8px var(--domain);
+}
+
+/* ---- PAGE grid: main editor + optional context sidebar ---- */
+.dock-faceplate .page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+.dock-faceplate .page.has-sidebar {
+  grid-template-columns: minmax(0, 1fr) var(--dock-sidebar-w);
+}
+.dock-faceplate .editor {
+  padding: 18px 22px 22px;
+  min-width: 0;
+  overflow: auto;
+}
+.dock-faceplate .sidebar {
+  border-left: 1px solid var(--line);
+  background: linear-gradient(180deg, #12161e, #0e1219);
+  padding: 16px 15px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.dock-faceplate .side-h {
+  font-family: var(--f-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-bottom: 8px;
+}
+
+/* ============================================================
+   4. SECTION-GROUP BANDS
+   ============================================================ */
+.dock-faceplate .section {
+  padding: 16px 0 20px;
+  border-top: 1px solid var(--line);
+}
+.dock-faceplate .section:first-of-type {
+  border-top: none;
+  padding-top: 4px;
+}
+.dock-faceplate .section > header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dim);
+  font-weight: 650;
+}
+.dock-faceplate .section > header .accent {
+  color: var(--domain);
+  font-family: var(--f-mono);
+  font-size: 10px;
+  text-transform: none;
+}
+
+/* legacy-card mount host: the module's verbatim *Card.svelte at NATIVE scale. */
+.dock-faceplate .editor .fp-card-mount {
+  position: relative;
+  width: max-content;
+  max-width: 100%;
+}

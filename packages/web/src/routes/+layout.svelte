@@ -5,6 +5,10 @@
   import '$lib/styles/tokens.css';
   import './global.css';
   import '$lib/ui/modules/_module-card.css';
+  // RACKLINE lane-tile vocabulary (P0.3b) — the shared .rl-tile classes both
+  // <ModuleShell> and <ModuleShellPlaceholder> consume. After _module-card.css
+  // (which pins the uniform tile HEIGHT) so the visual frame layers on top.
+  import '$lib/ui/modules/_rackline-tile.css';
   import { onMount } from 'svelte';
   import { skinStore } from '$lib/ui/skins/skin-store.svelte';
   import { ClerkProvider } from 'svelte-clerk';

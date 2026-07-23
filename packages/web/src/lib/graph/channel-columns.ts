@@ -44,6 +44,30 @@ export const SEND_BOX_COUNT = 2;
 export const COLUMN_HP = 34;
 export const COLUMN_W = COLUMN_HP * HP_UNIT;
 
+/** The RACKLINE `?shell=1` preview column PITCH (px). The mock's tight 8-lane
+ *  rack (ux-proposal-b.html:598) is a UNIFORM 192px tile (SHELL_TILE_W in
+ *  module-shell-model.ts) on a 216px lane pitch — a clean 24px gutter (the 192
+ *  tile centered leaves 12px each side). This narrows the app-scale 765px
+ *  (34hp) band that was sized for the old FULL cards, so the uniform shell tiles
+ *  FILL their lanes instead of floating in huge gutters.
+ *
+ *  It is used ONLY under the preview: every pitch-dependent geometry fn below
+ *  takes the ACTIVE pitch as a trailing param that DEFAULTS to COLUMN_W, so a
+ *  preview-OFF call (no arg) is byte-identical to before. The Canvas resolves
+ *  the pitch once (columnPitch(shellPreview)) and threads it into the
+ *  RENDER-derived positions / drop hit-tests / overlay bands / viewport nav —
+ *  never into a PERSISTED write (spawn x/y + grow-up push-ups keep COLUMN_W), so
+ *  narrowing is a pure render derivation: collab-safe, no Y.Doc change. */
+export const SHELL_COLUMN_W = 216;
+
+/** Resolve the active column pitch for the current view: the tight shell pitch
+ *  under the `?shell=1` preview, else the app-scale COLUMN_W (34hp / 765px). The
+ *  Canvas calls this and threads the result into the pure geometry fns so those
+ *  stay flag-free (preview-off passes COLUMN_W → identical math). */
+export function columnPitch(shellPreview: boolean): number {
+  return shellPreview ? SHELL_COLUMN_W : COLUMN_W;
+}
+
 /** Each aux-send box is one column wide; the two boxes sit SIDE BY SIDE to the
  *  right of column 8 (owner: "the send columns should be next to each other").
  *  (Width standardization is a deliberate follow-up.) */
@@ -85,53 +109,61 @@ export const COLUMN_BASELINE_Y = COLUMN_TOP_Y + COLUMN_H;
 
 // ---------------- Geometry (pure) ----------------
 
+// Every X-layout fn below takes the active column `pitch` as a trailing param
+// that DEFAULTS to COLUMN_W — a preview-OFF call (no arg) is byte-identical to
+// the fixed-765 behaviour; the Canvas passes SHELL_COLUMN_W under `?shell=1`. The
+// send box + rail track the column pitch (SEND_BOX_W === COLUMN_W by design), so
+// one `pitch` scalar drives the whole horizontal layout.
+
 /** The `[x0, x1)` flow-space horizontal band of channel column `ch` (1-based). */
-export function columnXBand(ch: number): [number, number] {
-  const x0 = COLUMN_ORIGIN_X + (ch - 1) * COLUMN_W;
-  return [x0, x0 + COLUMN_W];
+export function columnXBand(ch: number, pitch: number = COLUMN_W): [number, number] {
+  const x0 = COLUMN_ORIGIN_X + (ch - 1) * pitch;
+  return [x0, x0 + pitch];
 }
 
 /** The flow-space CENTER X of column `ch`'s band — where the guide-line pair
  *  brackets and the channel NUMBER badge center. The single X that a card's own
  *  center must match (columnCardX). */
-export function columnBandCenterX(ch: number): number {
-  const [x0, x1] = columnXBand(ch);
+export function columnBandCenterX(ch: number, pitch: number = COLUMN_W): number {
+  const [x0, x1] = columnXBand(ch, pitch);
   return (x0 + x1) / 2;
 }
 
 /** The flow-space CENTER X of send box `slot`'s band. */
-export function sendBandCenterX(slot: number): number {
-  const [x0, x1] = sendBoxXBand(slot);
+export function sendBandCenterX(slot: number, pitch: number = COLUMN_W): number {
+  const [x0, x1] = sendBoxXBand(slot, pitch);
   return (x0 + x1) / 2;
 }
 
 /** The flow-space TOP-LEFT X that CENTERS a card of pixel width `widthPx` inside
  *  column `ch`'s band — so the card's center lands on columnBandCenterX(ch)
  *  (== the channel number's center). Equal left/right gutters. Falls back to the
- *  fixed left pad when width is unknown/zero. */
-export function columnCardX(ch: number, widthPx: number): number {
-  const [x0] = columnXBand(ch);
-  return widthPx > 0 ? x0 + (COLUMN_W - widthPx) / 2 : x0 + COLUMN_PAD_X;
+ *  fixed left pad when width is unknown/zero. (Under the shell pitch a 192px tile
+ *  in the 216px band lands with a clean 12px gutter each side.) */
+export function columnCardX(ch: number, widthPx: number, pitch: number = COLUMN_W): number {
+  const [x0] = columnXBand(ch, pitch);
+  return widthPx > 0 ? x0 + (pitch - widthPx) / 2 : x0 + COLUMN_PAD_X;
 }
 
-/** Send-box twin of columnCardX — centers a card of width `widthPx` in box `slot`. */
-export function sendCardX(slot: number, widthPx: number): number {
-  const [x0] = sendBoxXBand(slot);
-  return widthPx > 0 ? x0 + (SEND_BOX_W - widthPx) / 2 : x0 + COLUMN_PAD_X;
+/** Send-box twin of columnCardX — centers a card of width `widthPx` in box `slot`
+ *  (the box is one pitch wide). */
+export function sendCardX(slot: number, widthPx: number, pitch: number = COLUMN_W): number {
+  const [x0] = sendBoxXBand(slot, pitch);
+  return widthPx > 0 ? x0 + (pitch - widthPx) / 2 : x0 + COLUMN_PAD_X;
 }
 
 /** The `[x0, x1)` flow-space band of send box `slot` (1|2) — SIDE BY SIDE right
- *  of column 8. */
-export function sendBoxXBand(slot: number): [number, number] {
-  const railX0 = COLUMN_ORIGIN_X + COLUMN_COUNT * COLUMN_W;
-  const x0 = railX0 + (slot - 1) * SEND_BOX_W;
-  return [x0, x0 + SEND_BOX_W];
+ *  of column 8. Each box is one pitch wide. */
+export function sendBoxXBand(slot: number, pitch: number = COLUMN_W): [number, number] {
+  const railX0 = COLUMN_ORIGIN_X + COLUMN_COUNT * pitch;
+  const x0 = railX0 + (slot - 1) * pitch;
+  return [x0, x0 + pitch];
 }
 
 /** The `[x0, x1)` flow-space band of the WHOLE sends rail (both boxes). */
-export function sendRailXBand(): [number, number] {
-  const x0 = COLUMN_ORIGIN_X + COLUMN_COUNT * COLUMN_W;
-  return [x0, x0 + SEND_RAIL_W];
+export function sendRailXBand(pitch: number = COLUMN_W): [number, number] {
+  const x0 = COLUMN_ORIGIN_X + COLUMN_COUNT * pitch;
+  return [x0, x0 + pitch * SEND_BOX_COUNT];
 }
 
 /**
@@ -140,20 +172,20 @@ export function sendRailXBand(): [number, number] {
  *   * 'send'          — the sends rail (which box is resolved by sendBoxForFlowX).
  *   * null            — outside the workflow bands (free canvas).
  */
-export function columnForFlowX(x: number): number | 'send' | null {
-  const [railX0, railX1] = sendRailXBand();
+export function columnForFlowX(x: number, pitch: number = COLUMN_W): number | 'send' | null {
+  const [railX0, railX1] = sendRailXBand(pitch);
   if (x >= railX0 && x < railX1) return 'send';
   if (x < COLUMN_ORIGIN_X) return null;
-  const idx = Math.floor((x - COLUMN_ORIGIN_X) / COLUMN_W);
+  const idx = Math.floor((x - COLUMN_ORIGIN_X) / pitch);
   if (idx < 0 || idx >= COLUMN_COUNT) return null;
   return idx + 1;
 }
 
 /** Which send box (1|2) a flow-space X lands in — the two boxes are side by
  *  side, so it's an X hit-test (not Y). */
-export function sendBoxForFlowX(x: number): 1 | 2 {
-  const railX0 = COLUMN_ORIGIN_X + COLUMN_COUNT * COLUMN_W;
-  return x < railX0 + SEND_BOX_W ? 1 : 2;
+export function sendBoxForFlowX(x: number, pitch: number = COLUMN_W): 1 | 2 {
+  const railX0 = COLUMN_ORIGIN_X + COLUMN_COUNT * pitch;
+  return x < railX0 + pitch ? 1 : 2;
 }
 
 /**
@@ -164,8 +196,8 @@ export function sendBoxForFlowX(x: number): 1 | 2 {
  * Position is a PURE function of (ch, index, total): the chain order IS the
  * on-screen order. Grid-snapped.
  */
-export function columnMemberPos(ch: number, index: number, total: number): { x: number; y: number } {
-  const [x0] = columnXBand(ch);
+export function columnMemberPos(ch: number, index: number, total: number, pitch: number = COLUMN_W): { x: number; y: number } {
+  const [x0] = columnXBand(ch, pitch);
   const n = Math.max(total, index + 1);
   return snapPositionToGrid({
     x: x0 + COLUMN_PAD_X,
@@ -175,8 +207,8 @@ export function columnMemberPos(ch: number, index: number, total: number): { x: 
 
 /** Deterministic TOP-LEFT position of send-box `slot` tenant `index` of `total`
  *  — bottom-anchored like a column, in the box's own X band. */
-export function sendMemberPos(slot: number, index: number, total: number): { x: number; y: number } {
-  const [x0] = sendBoxXBand(slot);
+export function sendMemberPos(slot: number, index: number, total: number, pitch: number = COLUMN_W): { x: number; y: number } {
+  const [x0] = sendBoxXBand(slot, pitch);
   const n = Math.max(total, index + 1);
   return snapPositionToGrid({
     x: x0 + COLUMN_PAD_X,
@@ -186,8 +218,8 @@ export function sendMemberPos(slot: number, index: number, total: number): { x: 
 
 /** The flow-space position for a NEW member appended at the BOTTOM of column
  *  `ch` that currently has `currentCount` members (the new bottom slot). */
-export function columnBottomFlowPos(ch: number, currentCount: number): { x: number; y: number } {
-  return columnMemberPos(ch, currentCount, currentCount + 1);
+export function columnBottomFlowPos(ch: number, currentCount: number, pitch: number = COLUMN_W): { x: number; y: number } {
+  return columnMemberPos(ch, currentCount, currentCount + 1, pitch);
 }
 
 /**
@@ -213,8 +245,9 @@ export function columnFlushPositions(
   ch: number,
   heightsPx: readonly number[],
   widthsPx?: readonly number[],
+  pitch: number = COLUMN_W,
 ): { x: number; y: number }[] {
-  const [x0] = columnXBand(ch);
+  const [x0] = columnXBand(ch, pitch);
   const padX = x0 + COLUMN_PAD_X;
   const out: { x: number; y: number }[] = new Array(heightsPx.length);
   let bottom = COLUMN_BASELINE_Y;
@@ -224,7 +257,7 @@ export function columnFlushPositions(
     // center == channel-number center); fall back to the left pad when widths
     // aren't supplied (back-compat: legacy callers get the historical x).
     const w = widthsPx?.[i];
-    out[i] = { x: w != null ? columnCardX(ch, w) : padX, y: top };
+    out[i] = { x: w != null ? columnCardX(ch, w, pitch) : padX, y: top };
     bottom = top; // the next member stacks flush ON TOP of this one
   }
   return out;
@@ -236,15 +269,16 @@ export function sendFlushPositions(
   slot: number,
   heightsPx: readonly number[],
   widthsPx?: readonly number[],
+  pitch: number = COLUMN_W,
 ): { x: number; y: number }[] {
-  const [x0] = sendBoxXBand(slot);
+  const [x0] = sendBoxXBand(slot, pitch);
   const padX = x0 + COLUMN_PAD_X;
   const out: { x: number; y: number }[] = new Array(heightsPx.length);
   let bottom = COLUMN_BASELINE_Y;
   for (let i = 0; i < heightsPx.length; i++) {
     const top = bottom - (heightsPx[i] ?? COLUMN_SLOT_H);
     const w = widthsPx?.[i];
-    out[i] = { x: w != null ? sendCardX(slot, w) : padX, y: top };
+    out[i] = { x: w != null ? sendCardX(slot, w, pitch) : padX, y: top };
     bottom = top; // the next tenant stacks flush ON TOP of this one
   }
   return out;
@@ -252,8 +286,8 @@ export function sendFlushPositions(
 
 /** The flow-space position for a NEW tenant appended at the BOTTOM of send box
  *  `slot` that currently has `currentCount` tenants. */
-export function sendBottomFlowPos(slot: number, currentCount: number): { x: number; y: number } {
-  return sendMemberPos(slot, currentCount, currentCount + 1);
+export function sendBottomFlowPos(slot: number, currentCount: number, pitch: number = COLUMN_W): { x: number; y: number } {
+  return sendMemberPos(slot, currentCount, currentCount + 1, pitch);
 }
 
 /**
@@ -334,8 +368,8 @@ export interface ModuleBoxLike {
 
 /** The full flow-space X span the lanes occupy (columns 1..8 + the sends rail) —
  *  a module must horizontally overlap this to be considered "over the lanes". */
-export function laneRegionXBand(): [number, number] {
-  return [COLUMN_ORIGIN_X, sendRailXBand()[1]];
+export function laneRegionXBand(pitch: number = COLUMN_W): [number, number] {
+  return [COLUMN_ORIGIN_X, sendRailXBand(pitch)[1]];
 }
 
 /**
@@ -351,8 +385,9 @@ export function planLanePushUps(
   modules: readonly ModuleBoxLike[],
   laneTopY: number,
   gridY: number = RACK_UNIT,
+  pitch: number = COLUMN_W,
 ): { id: string; y: number }[] {
-  const [rx0, rx1] = laneRegionXBand();
+  const [rx0, rx1] = laneRegionXBand(pitch);
   const out: { id: string; y: number }[] = [];
   for (const m of modules) {
     const overlapsX = m.x < rx1 && m.x + m.w > rx0;
@@ -383,10 +418,10 @@ export const VIDEO_AREA_HEIGHT = RACK_UNIT * 3;
 /** The video zone's flow-space rect: full column band width (columns 1..8, NOT
  *  the sends rail), directly below the baseline. (Width choice: the column band
  *  — the widest natural "strip" — rather than a single backdraft width.) */
-export function videoAreaBand(): { x0: number; x1: number; y0: number; y1: number } {
+export function videoAreaBand(pitch: number = COLUMN_W): { x0: number; x1: number; y0: number; y1: number } {
   return {
     x0: COLUMN_ORIGIN_X,
-    x1: COLUMN_ORIGIN_X + COLUMN_COUNT * COLUMN_W,
+    x1: COLUMN_ORIGIN_X + COLUMN_COUNT * pitch,
     y0: COLUMN_BASELINE_Y,
     y1: COLUMN_BASELINE_Y + VIDEO_AREA_HEIGHT,
   };
@@ -410,9 +445,9 @@ export const VIDEO_ZONE_SLOT_PITCH_X = COLUMN_W;
  *  left→right along the zone's top edge). Slot 0 is the historical videoOut
  *  position (near the zone's left edge), so extending the zone never moves the
  *  pre-existing videoOut card. */
-export function videoZoneSlotPos(index: number): { x: number; y: number } {
+export function videoZoneSlotPos(index: number, pitch: number = VIDEO_ZONE_SLOT_PITCH_X): { x: number; y: number } {
   return snapPositionToGrid({
-    x: COLUMN_ORIGIN_X + COLUMN_PAD_X + index * VIDEO_ZONE_SLOT_PITCH_X,
+    x: COLUMN_ORIGIN_X + COLUMN_PAD_X + index * pitch,
     y: COLUMN_BASELINE_Y,
   });
 }
@@ -602,10 +637,10 @@ export interface ViewportTransform {
  *   - horizontal center: columnBandCenterX(ch)·zoom + x == widthPx/2
  *   - baseline at bottom: COLUMN_BASELINE_Y·zoom + y == heightPx
  */
-export function laneCenterViewport(ch: number, vp: ViewportMetrics): ViewportTransform {
+export function laneCenterViewport(ch: number, vp: ViewportMetrics, pitch: number = COLUMN_W): ViewportTransform {
   const { widthPx, heightPx, zoom } = vp;
   return {
-    x: widthPx / 2 - columnBandCenterX(ch) * zoom,
+    x: widthPx / 2 - columnBandCenterX(ch, pitch) * zoom,
     y: heightPx - COLUMN_BASELINE_Y * zoom,
     zoom,
   };
@@ -618,14 +653,73 @@ export function laneCenterViewport(ch: number, vp: ViewportMetrics): ViewportTra
  *   - left edge at screen x 0: videoAreaBand().x0·zoom + x == 0
  *   - bottom edge at screen bottom: videoAreaBand().y1·zoom + y == heightPx
  */
-export function videoAreaViewport(vp: ViewportMetrics): ViewportTransform {
+export function videoAreaViewport(vp: ViewportMetrics, pitch: number = COLUMN_W): ViewportTransform {
   const { heightPx, zoom } = vp;
-  const b = videoAreaBand();
+  const b = videoAreaBand(pitch);
   return {
     x: -b.x0 * zoom,
     y: heightPx - b.y1 * zoom,
     zoom,
   };
+}
+
+/**
+ * Pan so SEND box `slot` is (a) horizontally centered and (b) its BASELINE at the
+ * viewport bottom — the send-rail twin of laneCenterViewport. Pure.
+ */
+export function sendBoxCenterViewport(slot: number, vp: ViewportMetrics, pitch: number = COLUMN_W): ViewportTransform {
+  const { widthPx, heightPx, zoom } = vp;
+  return {
+    x: widthPx / 2 - sendBandCenterX(slot, pitch) * zoom,
+    y: heightPx - COLUMN_BASELINE_Y * zoom,
+    zoom,
+  };
+}
+
+/** The flow-space CENTER X of the WHOLE channel-column band (columns 1..8) — the
+ *  horizontal anchor the on-load lane framing centers on. */
+export function laneBandCenterX(pitch: number = COLUMN_W): number {
+  return (COLUMN_ORIGIN_X + COLUMN_COUNT * pitch) / 2;
+}
+
+/**
+ * On-LOAD lane framing: center the whole 8-column band horizontally with the
+ * lane BASELINE at the viewport bottom, at the current zoom. Lands the camera on
+ * the channel lanes (their headroom fills the viewport above the baseline)
+ * instead of the bottom video zone that a bare fitView anchors on (only the
+ * video-zone nodes are xyflow-visible on a fresh rack — the channel singletons
+ * are canvas-hidden). Pure.
+ */
+export function fitLanesViewport(vp: ViewportMetrics, pitch: number = COLUMN_W): ViewportTransform {
+  const { widthPx, heightPx, zoom } = vp;
+  return {
+    x: widthPx / 2 - laneBandCenterX(pitch) * zoom,
+    y: heightPx - COLUMN_BASELINE_Y * zoom,
+    zoom,
+  };
+}
+
+/**
+ * Adjust a lane/send CENTER transform (from laneCenterViewport /
+ * sendBoxCenterViewport) so a just-added member occupying flow-Y
+ * [memberTopY, memberTopY + memberHeightPx] is fully in view. The base transform
+ * already puts the baseline at the viewport bottom, so a SHORT stack's newest
+ * member is visible above it and the base is returned unchanged. When the stack
+ * is TALLER than the viewport the newest member's TOP falls above the viewport;
+ * in that case re-center the member vertically (keeping the lane centered
+ * horizontally) so the newest tile is guaranteed on screen. Pure.
+ */
+export function revealMemberViewport(
+  base: ViewportTransform,
+  memberTopY: number,
+  memberHeightPx: number,
+  vp: ViewportMetrics,
+): ViewportTransform {
+  // screen y = flowY*zoom + base.y ⇒ the top visible flow-Y (screen y === 0):
+  const visibleTopFlowY = -base.y / base.zoom;
+  if (memberTopY >= visibleTopFlowY) return base; // member fully in view
+  const memberCenterY = memberTopY + memberHeightPx / 2;
+  return { x: base.x, y: vp.heightPx / 2 - memberCenterY * base.zoom, zoom: base.zoom };
 }
 
 // ---------------- Ordered-membership array helpers (pure, CRDT-safe) ----------------

@@ -15,6 +15,7 @@
   import {
     COLUMN_COUNT,
     SEND_BOX_COUNT,
+    COLUMN_W,
     columnXBand,
     sendBoxXBand,
     COLUMN_BASELINE_Y,
@@ -29,8 +30,13 @@
     laneTopY: number;
     /** Viewport change signal (incremented on pan/zoom) — re-projects the rects. */
     tick: number;
+    /** The ACTIVE column pitch (flow-space px): the tight RACKLINE pitch under the
+     *  `?shell=1` preview, else COLUMN_W (34hp / 765px). Threaded so the lane
+     *  bands + number badges + video zone track the narrowed columns 1:1 with the
+     *  RENDER-derived tile positions. Defaults to COLUMN_W (preview-off identical). */
+    pitch?: number;
   }
-  let { columnColors, laneTopY, tick }: Props = $props();
+  let { columnColors, laneTopY, tick, pitch = COLUMN_W }: Props = $props();
 
   const flow = useSvelteFlow();
 
@@ -52,7 +58,7 @@
     void tick; // re-project on viewport change
     const out: { ch: number; rect: Rect; color: string }[] = [];
     for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
-      const [x0, x1] = columnXBand(ch);
+      const [x0, x1] = columnXBand(ch, pitch);
       const rect = project(x0, x1, laneTopY, COLUMN_BASELINE_Y);
       if (rect) out.push({ ch, rect, color: columnColors[ch - 1] ?? '#3a4a52' });
     }
@@ -64,7 +70,7 @@
     void tick;
     const out: { slot: number; rect: Rect }[] = [];
     for (let s = 1; s <= SEND_BOX_COUNT; s++) {
-      const [x0, x1] = sendBoxXBand(s);
+      const [x0, x1] = sendBoxXBand(s, pitch);
       const rect = project(x0, x1, laneTopY, COLUMN_BASELINE_Y);
       if (rect) out.push({ slot: s, rect });
     }
@@ -76,7 +82,7 @@
   // holds the default videoOut + any video cards).
   let videoZone = $derived.by<Rect | null>(() => {
     void tick;
-    const b = videoAreaBand();
+    const b = videoAreaBand(pitch);
     return project(b.x0, b.x1, b.y0, b.y1);
   });
 </script>

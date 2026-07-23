@@ -44,6 +44,21 @@
   --t-label-compact: 10px;
   --t-value: 12.5px;
   --t-value-compact: 11px;
+  /* RACKLINE tile title weight (mock .mod .name — ux-proposal-b.html:107). The
+   * bold 800 title is what makes the lane tile read at a glance. */
+  --t-title-weight: 800;
+
+  /* RACKLINE lane-tile FIXED colours (never themed — the reading-aid layer the
+   * palette engine leaves alone; mock ux-proposal-b.html):
+   *   --tile-border  the tile frame border (.mod #33383f — the intended value
+   *                  that until now only survived as --border-strong's ignored
+   *                  fallback, resolving instead to #3a3f47).
+   *   --jackrail-bg  the jack-rail well (.jacks background #141619).
+   *   --ink-faint    the type-badge / jack-flow / "more" affordance colour
+   *                  (#646c77 — distinct from the palette's --text-dim #9aa2ad). */
+  --tile-border: #33383f;
+  --jackrail-bg: #141619;
+  --ink-faint: #646c77;
 
   /* spacing / radii */
   --gap-lane: 8px;
@@ -52,10 +67,20 @@
   --r-plate: 10px;
   --r-dock: 11px;
 
-  /* tile geometry (compact / overview) */
+  /* tile geometry (compact / overview) — RACKLINE lane-tile SIZE (P0.3b re-spec).
+   * The uniform shell/placeholder tile is `--shell-tile-w` WIDE (every module the
+   * SAME width — the owner "same-size horizontally" premise) and grows TALLER as
+   * you zoom in across the LOD tiers: mini (zoomed-out overview) → compact →
+   * full-in-lane (the mock's 180px .mod/.plate design point). The per-tier heights
+   * mirror the TS SHELL_TILE_H_* constants (module-shell-model.ts); a unit gate
+   * locks CSS↔TS so a drift can't float the baseline number badge. Only the
+   * `.module-shell`/`.module-shell-placeholder` tiles read these (preview-only
+   * elements) — preview-off never mounts them, so this is inert by default. */
   --spine-w: 4px;
+  --shell-tile-w: 192px;
   --tile-h-mini: 88px;
-  --tile-h-compact: 120px;
+  --tile-h-compact: 150px;
+  --tile-h-full: 180px;
   --plate-w: 250px;
   --pspine-w: 6px;
 

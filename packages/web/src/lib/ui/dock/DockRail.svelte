@@ -24,7 +24,10 @@
   import { dockStore } from './dock-store.svelte';
   import DockCardHost from './DockCardHost.svelte';
 
-  /** One card slot: a docked entry, or the bottom drawer's pinned occupant. */
+  /** One card slot: a docked entry or the bottom drawer's pinned occupant. (The
+   *  P0.3b EXPANDED full-view no longer routes through this rail — it renders its
+   *  own full-width <DockFullView> faceplate — so the per-card onClose override is
+   *  gone; the pinned occupant still uses the shared onClosePinned.) */
   interface DockRailCard {
     node: ModuleNode;
     title: string;
