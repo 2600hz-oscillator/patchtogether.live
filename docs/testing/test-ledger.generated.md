@@ -11,7 +11,7 @@ source tree, so they cannot go stale. Prose + roadmap: `docs/testing/README.md`.
 | Bucket | What | Count |
 | --- | --- | ---: |
 | 1 | HARD SKIPS / QUARANTINES (backlog → drive to 0) | 6 |
-| 2 | COVERAGE EXEMPTIONS (deliberate auto-enrollment opt-outs) | 511 |
+| 2 | COVERAGE EXEMPTIONS (deliberate auto-enrollment opt-outs) | 512 |
 | 3 | INFORMATIONAL-ONLY CI LANES (run, never block merge) | 5 |
 
 ## CI gating truth (from `.github/workflows/ci.yml`)
@@ -46,14 +46,14 @@ _none_
 ### spawn-smoke QUARANTINE map (e2e/tests/modules.spec.ts) — 1
 - `toybox` — task #102: SwiftShader software-renderer timeout (heavy WebGL)
 
-## Bucket 2 — coverage exemptions (511)
+## Bucket 2 — coverage exemptions (512)
 
 Declarative auto-enrollment opt-out lists. A module opted out of a UNIVERSAL
 sweep still carries dedicated coverage (a bespoke spec / unit core / ART). These
 are DELIBERATE — but per repo doctrine the **behavioral** exemptions are ALSO
 tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 
-### `EXEMPT_FROM_VRT` (80) — modules skipped from the per-card VRT sweep
+### `EXEMPT_FROM_VRT` (81) — modules skipped from the per-card VRT sweep
 <sub>e2e/vrt/vrt-exemptions.ts</sub>
 - `4plexvid` — VRT baseline pending
 - `acidwarp` — animated palette rotation + auto scene cycler defeats deterministic capture
@@ -117,6 +117,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `painter` — VRT baseline pending — interactive MS-Paint canvas (op-driven, non-deterministic first paint)
 - `peertube` — live external PeerTube HLS <video> + runtime-fetched, ever-changing Sepia-Search results + live thumbnails defeat det…
 - `pong` — animated game state defeats deterministic capture
+- `push2Control` — meta control-surface card (Ableton Push 2)
 - `quadralogical` — SOLO-spawn VRT exempt (live MIX preview canvas with nothing patched).
 - `rings` — VRT baseline pending
 - `scoreboard` — VRT baseline pending

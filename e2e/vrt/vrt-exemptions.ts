@@ -457,6 +457,7 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // e2e launchpad-clip-launch.spec.ts (TIMELORDE → clipplayer → simulated pad →
   // audible RMS). Same treatment as controlSurface/matrixMix (fully exempt).
   launchpadControlLeft: 'meta control-surface card (consolidated launchpad-control pair); body is device/binding-dependent (Pair/Bind state + status absent in CI), like controlSurface/electraControl. Covered by launchpad-sysex/map/control unit suites + the real-source-chain launchpad-clip-launch e2e (pad → audible RMS).',
+  push2Control: 'meta control-surface card (Ableton Push 2); body is device/binding-dependent (Connect/Bind state + channel-select + view segment absent in CI), like launchpadControlLeft/electraControl. Covered by push2-sysex/map/control unit suites + the real-source-chain push2-clip-launch e2e (sim pad → audible RMS + encoder→MixMasters + channel-select + D-Pad nav).',
   // CLOUDS first-slice PR (#166): VRT baseline pending; ART + unit + E2E
   // provide coverage. Promote into MODULES + capture baselines on both
   // platforms in a follow-up PR.

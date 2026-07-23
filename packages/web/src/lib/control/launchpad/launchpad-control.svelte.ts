@@ -35,13 +35,13 @@ import { getYjsValue } from '@syncedstore/core';
 import { getSchedulerClock } from '$lib/audio/scheduler-clock';
 import {
   connect as deviceConnect,
-  onKey,
-  setFrame,
+  onKey as devOnKey,
+  setFrame as devSetFrame,
   setLed,
-  isPairBound,
-  isSingleBound,
+  isPairBound as devIsPairBound,
+  isSingleBound as devIsSingleBound,
   isUnitBound,
-  clearUnit,
+  clearUnit as devClearUnit,
   bindUnit,
   enumerateLaunchpadPorts,
   type LaunchpadKeyEvent,
@@ -213,6 +213,109 @@ import {
   type ArpState,
 } from '$lib/audio/arp-engine';
 
+// ---------------------------------------------------------------------------
+// INJECTABLE CONTROL SURFACE (decision A — the Push 2 adapter, plan §3). The
+// clip-launch / note-editor / arm / scene / KEYS PARITY logic in this file is a
+// module-level singleton bound to launchpad-device. To let a DIFFERENT surface
+// (the Push 2) drive that exact logic WITHOUT forking ~3500 lines, the device
+// I/O the render + inbound path uses (`setFrame` / `onKey` / `clearUnit` /
+// `isPairBound` / `isSingleBound`) routes through an INJECTABLE port. The port
+// DEFAULTS to launchpad-device (so every existing Launchpad path — and its whole
+// test suite — is byte-for-byte unchanged); the Push injects its own port that
+// remaps Push MIDI ⇄ the Launchpad event/frame vocabulary (see
+// control/push2/push2-control). The launchpad-SPECIFIC flows (pairing / single
+// bind / enumerate / the pair-prompt LED) keep talking to the device directly
+// (devOnKey / setLed / bindUnit / …) — the Push never uses them.
+export interface ControlSurfacePort {
+  onKey(cb: (e: LaunchpadKeyEvent) => void): () => void;
+  setFrame(unit: LaunchpadUnit, frame: LaunchpadFrame): void;
+  clearUnit(unit: LaunchpadUnit): void;
+  isPairBound(): boolean;
+  isSingleBound(): boolean;
+  /** VELOCITY-SENSITIVE pads (Push 2). When true, note entry + the KEYS keyboard
+   *  record/play the pad's ACTUAL hit velocity instead of the constant default.
+   *  The Launchpad omits this (its pads aren't velocity-sensitive) → unchanged
+   *  fixed-velocity behaviour. */
+  velocitySensitive?: boolean;
+}
+/** The default surface = the Launchpad device singleton (unchanged behaviour). */
+const launchpadSurface: ControlSurfacePort = {
+  onKey: devOnKey,
+  setFrame: devSetFrame,
+  clearUnit: devClearUnit,
+  isPairBound: devIsPairBound,
+  isSingleBound: devIsSingleBound,
+};
+let surface: ControlSurfacePort = launchpadSurface;
+
+// Local wrappers over the active surface — the render + inbound path calls these
+// (unchanged call sites), so swapping the port re-targets the whole parity core.
+function onKey(cb: (e: LaunchpadKeyEvent) => void): () => void {
+  return surface.onKey(cb);
+}
+function setFrame(unit: LaunchpadUnit, frame: LaunchpadFrame): void {
+  surface.setFrame(unit, frame);
+}
+function clearUnit(unit: LaunchpadUnit): void {
+  surface.clearUnit(unit);
+}
+function isPairBound(): boolean {
+  return surface.isPairBound();
+}
+function isSingleBound(): boolean {
+  return surface.isSingleBound();
+}
+/** Does the active surface have VELOCITY-SENSITIVE pads (Push 2)? Gates the
+ *  velocity-preserving note-entry + KEYS paths — false for the Launchpad, so its
+ *  fixed-velocity behaviour (and its whole test suite) is byte-for-byte unchanged. */
+function surfaceVelocitySensitive(): boolean {
+  return surface.velocitySensitive === true;
+}
+
+/**
+ * Swap the active control surface (the Push 2 adapter injects itself here). Stops
+ * the current render/key loops (so the old surface stops painting + listening);
+ * the caller re-binds via bindLaunchpadToClip afterwards. `opts.deployment`
+ * forces the deployment (the Push always drives the SINGLE-unit render path).
+ * Pass `null` to restore the default Launchpad surface.
+ */
+export function setControlSurfacePort(
+  p: ControlSurfacePort | null,
+  opts?: { deployment?: 'pair' | 'single' },
+): void {
+  stopLoops();
+  surface = p ?? launchpadSurface;
+  if (opts?.deployment) deployment = opts.deployment;
+}
+/** The active control surface (default = the Launchpad device). */
+export function getControlSurfacePort(): ControlSurfacePort {
+  return surface;
+}
+
+/**
+ * CLIP-view D-Pad navigation — the shared seam the Push 2's D-Pad drives (plan
+ * §5c: "the SAME rowUp/rowDown/stepLeft/stepRight the launchpad nav calls").
+ * Up/Down scroll the pitch window (scale-degree rows); Left/Right scroll the
+ * step window; `shift` magnifies to a full screen (±SHIFT_JUMP). Only active in
+ * the single-mode CLIP (note-editor) view — a no-op elsewhere. Renders.
+ */
+export function launchpadDpadNav(
+  dir: 'up' | 'down' | 'left' | 'right',
+  shift: boolean,
+): void {
+  const nodeId = boundNodeId;
+  if (!nodeId || !livePatch.nodes[nodeId]) return;
+  if (deployment !== 'single' || singleView !== 'clip') return;
+  const mag = shift ? SHIFT_JUMP : 1;
+  if (dir === 'up') editRowOffset += mag;
+  else if (dir === 'down') editRowOffset -= mag;
+  else {
+    const clip = ensureSelClip(nodeId);
+    scrollStep(clip, dir === 'left' ? -mag : +mag);
+  }
+  renderLeds();
+}
+
 export const STORAGE_KEY_NODE = 'pt.launchpad.boundClipNode';
 export const STORAGE_KEY_LEFT = 'pt.launchpad.portLeft';
 export const STORAGE_KEY_RIGHT = 'pt.launchpad.portRight';
@@ -267,7 +370,7 @@ let velHeld = false; // VEL pad held in editor
 // ABSOLUTE step `editWindowStart` (free per-step scroll — ◀/▶ move ±1, SHIFT
 // makes them jump a full screen ±8). The pitch window scrolls by scale-degree
 // rows. FOLLOW snaps the window to the playhead's 8-step block when playing.
-let editAnchor: { step: number; midi: number } | null = null;
+let editAnchor: { step: number; midi: number; velocity?: number } | null = null;
 let editSpanned = false;
 let editRowOffset = 0; // pitch-window scroll (scale degrees)
 let editWindowStart = 0; // absolute step of the leftmost shown column (frozen value)
@@ -724,7 +827,9 @@ export async function startPairing(onPaired?: () => void): Promise<boolean> {
   // Light the dice-5 centre prompt on both units.
   lightPairPrompt('L');
   lightPairPrompt('R');
-  pairUnsub = onKey((e) => {
+  // Pairing is a LAUNCHPAD-only handshake — subscribe to the device directly
+  // (not the injectable surface), since a Push never pairs.
+  pairUnsub = devOnKey((e) => {
     if (!pairing || e.ev.type !== 'pad' || e.ev.s !== 1) return;
     // The unit the user pressed becomes LEFT (the matrix).
     const leftUnit = e.unit;
@@ -1213,12 +1318,24 @@ function keysPanic(nodeId: string): void {
   }
   renderLeds();
 }
-/** Snap a note-on velocity to a stored VEL level. Velocity-insensitive pads
- *  (velocity 0/absent) fall back to VEL_DEFAULT (no device fork — a Launchpad X
- *  is expressive automatically). */
+/** Capture a KEYS note-on velocity. On a VELOCITY-SENSITIVE surface (Push 2) the
+ *  pad's ACTUAL hit velocity is preserved (clamped 1..127) so the played/recorded
+ *  note carries the real dynamics. On the fixed-velocity Launchpad the velocity is
+ *  snapped to a stored VEL level (unchanged); velocity 0/absent → VEL_DEFAULT. */
 function keysCaptureVel(velocity: number): number {
   if (!Number.isFinite(velocity) || velocity <= 0) return VEL_DEFAULT;
+  if (surfaceVelocitySensitive()) return Math.max(1, Math.min(127, Math.round(velocity)));
   return VEL_LEVELS[velLevelIndex(velocity)] ?? VEL_DEFAULT;
+}
+
+/** The velocity to WRITE for a note PLACED in the note editor: on a velocity-
+ *  sensitive surface (Push 2) the pad's captured hit velocity (clamped 1..127);
+ *  otherwise `undefined`, so clip-types places it at VEL_DEFAULT — the Launchpad's
+ *  unchanged fixed-velocity note entry. */
+function velForEntry(captured: number | undefined): number | undefined {
+  if (!surfaceVelocitySensitive()) return undefined;
+  if (!Number.isFinite(captured) || (captured as number) <= 0) return undefined;
+  return Math.max(1, Math.min(127, Math.round(captured as number)));
 }
 
 /** Write a fresh KEYS note-record state (armed/recording OFF). */
@@ -2397,17 +2514,22 @@ function handleSingleClip(nodeId: string, e: LaunchpadKeyEvent): void {
   }
   if (ev.s === 1) {
     if (editAnchor && editAnchor.midi === note.midi && editAnchor.step !== note.step) {
-      writeClipSel(nodeId, setNoteSpan(clip, editAnchor.step, note.step, note.midi, { mono }));
+      // A tie spans from the held ANCHOR — carry its captured hit velocity.
+      writeClipSel(nodeId, setNoteSpan(clip, editAnchor.step, note.step, note.midi, { mono, velocity: velForEntry(editAnchor.velocity) }));
       editSpanned = true;
     } else {
-      editAnchor = { step: note.step, midi: note.midi };
+      // Capture the pad's hit velocity at PRESS time — a velocity-sensitive Push
+      // toggles the note ON at RELEASE (release velocity is 0), so the recorded
+      // dynamics come from here.
+      editAnchor = { step: note.step, midi: note.midi, velocity: ev.velocity };
       editSpanned = false;
     }
   } else if (editAnchor && editAnchor.step === note.step && editAnchor.midi === note.midi) {
     if (!editSpanned) {
-      // Tap a lit step OFF = the explicit erase gesture (owner-locked). Reconcile
-      // the scheduler so the removed note's voice is cut NOW (§3.1), not next loop.
-      const next = toggleNoteAt(clip, note.step, note.midi, { mono });
+      // A plain tap: add the note (with the captured hit velocity) or, if it's
+      // already lit, erase it (the owner-locked toggle). Reconcile the scheduler
+      // so a removed note's voice is cut NOW (§3.1), not next loop.
+      const next = toggleNoteAt(clip, note.step, note.midi, { mono, velocity: velForEntry(editAnchor.velocity) });
       writeClipSel(nodeId, next);
       reconcileClipEdit(nodeId, clip, next, selectedClipIndex);
     }
@@ -3391,6 +3513,7 @@ function renderLeds(): void {
 // ---------------------------------------------------------------------------
 export function __test_resetBinding(): void {
   stopLoops();
+  surface = launchpadSurface; // restore the default control surface (drop any Push adapter)
   boundNodeId = null;
   tickCount = 0;
   deployment = 'pair';
