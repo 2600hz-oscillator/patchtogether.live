@@ -33,6 +33,7 @@ import {
   selectChannel,
   selectedChannelIndex,
   channelName,
+  channelButtonValue,
   firstMixmstrs,
   setLaunchpadView,
 } from './push2-control.svelte';
@@ -43,6 +44,8 @@ import {
   PUSH_CC_ENCODER_TEMPO,
   PUSH_CC_ENCODER_MASTER,
 } from './push2-map';
+import { pushColorIndex } from './push2-sysex';
+import { hexToRgb127 } from '$lib/control/launchpad/launchpad-map';
 import type { SimulatedPush2 } from './push2-device.svelte';
 
 // The web vitest env is `node` (no localStorage) — the Push-local channel state
@@ -107,6 +110,69 @@ describe('channel select (Push-LOCAL 5a)', () => {
     expect(channelName(CP, 0)).toBe('CH 1 · mybass');
     // a lane with no assigned instrument = just "CH n"
     expect(channelName(CP, 1)).toBe('CH 2');
+  });
+});
+
+describe('channel-select LEDs mirror the lane colour (selected bright / others dim)', () => {
+  // The 8 above-display buttons (CC 102..109) are RGB: their CC value is a stock-
+  // palette index. Each shows its channel's PICKED lane colour — the selected one
+  // FULL, the rest ~30% dimmed — computed via the SAME hexToRgb127→pushColorIndex
+  // path the pads use; a channel with no picked colour is OFF.
+  const dim = (c: number) => Math.round(c * 0.3);
+  const idxFull = (hex: string) => pushColorIndex(...hexToRgb127(hex));
+  const idxDim = (hex: string) => {
+    const [r, g, b] = hexToRgb127(hex);
+    return pushColorIndex(dim(r), dim(g), dim(b));
+  };
+  /** The value the device believes channel `ch`'s button LED holds. */
+  const ledFor = (ch: number) => sim.ledAt('b' + (PUSH_CC_ABOVE_DISPLAY_BASE + ch));
+
+  it('selected channel = FULL palette index, an unselected channel = ~30% dim, an empty channel = OFF', async () => {
+    const c0 = '#2040ff'; // ch1 (lane 0) — a saturated colour (hue survives at full brightness)
+    const c1 = '#ffffff'; // ch2 (lane 1) — a bright colour whose dim is a visible neutral
+    // ch3 (lane 2) and up: no picked colour.
+    seedClipPlayer({ laneColor: [c0, c1, null] });
+    sim = await installSimulatedPush2AndBind(CP);
+    selectChannel(0);
+    hoisted.tick?.(); // repaint the LED frame with the current selection
+
+    // The pure per-channel value.
+    expect(channelButtonValue(0)).toBe(idxFull(c0)); // selected → full
+    expect(channelButtonValue(1)).toBe(idxDim(c1)); // unselected → ~30% dim
+    expect(channelButtonValue(2)).toBe(0); // no picked colour → off
+    for (let ch = 3; ch < 8; ch++) expect(channelButtonValue(ch)).toBe(0);
+
+    // The three states must be VISIBLY distinct (guards a swapped bright/dim or a
+    // missing empty case), and the selected one must be its FULL, not dimmed, index.
+    expect(idxFull(c0)).not.toBe(0);
+    expect(idxFull(c0)).not.toBe(idxDim(c0));
+    expect(new Set([channelButtonValue(0), channelButtonValue(1), channelButtonValue(2)]).size).toBe(3);
+
+    // The REAL render path emitted those exact palette indices to the Push buttons.
+    expect(ledFor(0)).toBe(idxFull(c0));
+    expect(ledFor(1)).toBe(idxDim(c1));
+    expect(ledFor(2)).toBe(0);
+  });
+
+  it('re-selecting a channel repaints: the newly-selected → full, the old → dim', async () => {
+    const c0 = '#2040ff';
+    const c1 = '#ffffff';
+    seedClipPlayer({ laneColor: [c0, c1] });
+    sim = await installSimulatedPush2AndBind(CP);
+    selectChannel(0);
+    hoisted.tick?.();
+    expect(ledFor(0)).toBe(idxFull(c0)); // ch1 full
+    expect(ledFor(1)).toBe(idxDim(c1)); // ch2 dim
+
+    selectChannel(1);
+    hoisted.tick?.();
+    expect(ledFor(1)).toBe(idxFull(c1)); // ch2 now full
+    expect(ledFor(0)).toBe(idxDim(c0)); // ch1 now dim
+  });
+
+  it('with no bound clip every channel button is OFF (no colours to mirror)', () => {
+    // beforeEach leaves the binding reset — boundClipNode() is null.
+    for (let ch = 0; ch < 8; ch++) expect(channelButtonValue(ch)).toBe(0);
   });
 });
 
