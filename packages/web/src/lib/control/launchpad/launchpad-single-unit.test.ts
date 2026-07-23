@@ -368,6 +368,93 @@ describe('SINGLE — Grid view (transposed clip matrix + scene/row launch)', () 
 });
 
 // ===========================================================================
+// SINGLE — GRID(held) + clip pad = ENTER the clip's editor WITHOUT launching it.
+// Owner bug: entering a clip (to view/edit its notes) used to change the clip's
+// play/stop status. The fix DECOUPLES the two — a plain tap still launches/stops;
+// a GRID-held tap opens Clip view on that clip and leaves play/stop untouched.
+// GRID = the permanent grid-view button (CC_VIEW_GRID) held as a modifier.
+// ===========================================================================
+describe('SINGLE — GRID(held)+clip ENTERs a clip without changing its play/stop', () => {
+  let sim: SimulatedLaunchpad;
+  beforeEach(async () => {
+    sim = await installSimulatedLaunchpadSingle();
+    __test_setDeployment('single', 'grid');
+  });
+
+  const holdGrid = () => sim.cc('L', CC_VIEW_GRID, 127);
+  const releaseGrid = () => sim.cc('L', CC_VIEW_GRID, 0);
+  const playingOf = () => liveData().playing as (number | null)[] | undefined;
+
+  it('a plain single-tap LAUNCHES the clip and does NOT enter the editor', () => {
+    const idx = clipIndex(1, 1);
+    seedClipPlayer({ clips: { [idx]: noteClip() } });
+    seedTimelorde(1);
+    bindLaunchpadToClip(NODE_ID);
+    pressClip(sim, 1, 1);
+    expect(queued()![1], 'plain tap queued the launch').toBe(1);
+    expect(launchpadActiveView(), 'plain tap stays in Grid — never enters the editor').toBe('grid');
+  });
+
+  it('GRID(held)+clip ENTERS Clip view on that clip and leaves queued UNCHANGED', () => {
+    const idx = clipIndex(1, 1);
+    seedClipPlayer({ clips: { [idx]: noteClip() } });
+    seedTimelorde(1);
+    bindLaunchpadToClip(NODE_ID);
+    const before = [...(queued() ?? [])];
+    holdGrid();
+    expect(__test_mode().gridHeldSingle, 'GRID is held').toBe(true);
+    pressClip(sim, 1, 1); // GRID + clip → ENTER (no launch)
+    expect(__test_mode().singleView, 'GRID+clip entered Clip view').toBe('clip');
+    expect(__test_mode().selectedClipIndex, 'entered the pressed clip').toBe(idx);
+    expect(queued() ?? [], 'play/stop is UNCHANGED — no queued write on enter').toEqual(before);
+    releaseGrid();
+  });
+
+  it('GRID(held)+clip on a PLAYING clip enters it WITHOUT queuing a stop', () => {
+    const idx = clipIndex(1, 1);
+    seedClipPlayer({ clips: { [idx]: noteClip() }, playing: [null, 1, null, null, null, null, null, null] });
+    seedTimelorde(1);
+    bindLaunchpadToClip(NODE_ID);
+    const beforeQueued = [...(queued() ?? [])];
+    const beforePlaying = [...(playingOf() ?? [])];
+    holdGrid();
+    pressClip(sim, 1, 1);
+    expect(__test_mode().singleView, 'entered Clip view').toBe('clip');
+    expect(queued() ?? [], 'a playing clip is NOT queued-stopped by entering it').toEqual(beforeQueued);
+    expect(playingOf() ?? [], 'the clip keeps playing — play state identical').toEqual(beforePlaying);
+    releaseGrid();
+  });
+
+  it('GRID(held)+EMPTY pad enters + materializes a default clip, still no launch', () => {
+    seedClipPlayer({ clips: {} });
+    seedTimelorde(1);
+    bindLaunchpadToClip(NODE_ID);
+    const idx = clipIndex(2, 3);
+    const before = [...(queued() ?? [])];
+    holdGrid();
+    pressClip(sim, 2, 3);
+    expect(__test_mode().singleView, 'entered Clip view on the empty pad').toBe('clip');
+    expect(__test_mode().selectedClipIndex).toBe(idx);
+    expect(clipsOf()[idx], 'a default clip was materialized to edit').toBeTruthy();
+    expect(queued() ?? [], 'entering an empty pad never launches').toEqual(before);
+    releaseGrid();
+  });
+
+  it('GRID RELEASED, then a clip tap → back to LAUNCH behavior (queued changes, stays in Grid)', () => {
+    const idx = clipIndex(1, 1);
+    seedClipPlayer({ clips: { [idx]: noteClip() } });
+    seedTimelorde(1);
+    bindLaunchpadToClip(NODE_ID);
+    holdGrid();
+    releaseGrid();
+    expect(__test_mode().gridHeldSingle, 'GRID no longer held').toBe(false);
+    pressClip(sim, 1, 1); // plain tap again
+    expect(queued()![1], 'after GRID released a tap launches again').toBe(1);
+    expect(launchpadActiveView(), 'a plain launch stays in Grid').toBe('grid');
+  });
+});
+
+// ===========================================================================
 // SINGLE — the PERMANENT TOP ROW is intercepted first in every view.
 // ===========================================================================
 describe('SINGLE — permanent top row (transport / views / undo / redo)', () => {

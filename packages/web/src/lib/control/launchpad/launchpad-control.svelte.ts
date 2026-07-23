@@ -1945,6 +1945,20 @@ function handleSingleGrid(nodeId: string, e: LaunchpadKeyEvent): void {
     // dark no-op (nothing to launch/create there).
     const clipIdx = gridPadToClipIndexScrolled(ev.x, ev.y, sceneScrollOffset);
     if (clipIdx === null) return;
+    // GRID (held) + a clip pad → ENTER that clip's note editor (open Clip view on
+    // it for editing) WITHOUT touching its play/stop — a DECOUPLED navigation
+    // gesture (owner rule: entering a clip must not change whether it plays).
+    // GRID is a pure modifier here: no queueLane / `queued` write and no
+    // double-tap tap recording, so a plain (no-GRID) tap keeps launching. GRID +
+    // a HELD scene (repeatViewHeld) already returned above; a pending copy/paste
+    // arm or the SHIFT clip-default gesture still win (checked below), so this
+    // only fires on a bare GRID-held clip tap. Reusable in the shared brain →
+    // the Push adapter drives the same path (press its GRID button = gridHeldSingle,
+    // then a clip pad). See enterClipEditor. */
+    if (gridHeldSingle && !shift && !armedRightAction) {
+      enterClipEditor(nodeId, clipIdx, data);
+      return;
+    }
     // SHIFT + a clip pad (with NO arm pending) → open the CLIP-DEFAULT PROB page
     // for that clip (owner gesture). Under shift an ARMED copy/paste/div/len
     // still CONSUMES the arm below (unchanged); a no-shift tap still launches. The
@@ -2017,9 +2031,43 @@ function openClipProbPage(nodeId: string, clipIdx: number): void {
   renderLeds();
 }
 
+/** ENTER a clip's note editor: select it + open Clip view on it with a fresh
+ *  editor window, materializing a default clip if the pad was empty so there is
+ *  something to edit. NAVIGATION ONLY — never touches `queued` / calls queueLane,
+ *  so entering a clip cannot change whether it plays (owner rule). This is the
+ *  shared seam BOTH enter gestures route through: the GRID-held clip tap (clean,
+ *  no launch at all) and the double-tap (which first reverts its own launch tap,
+ *  then enters). A future Push adapter enters a clip by calling THIS via the same
+ *  gridHeldSingle-modifier path in handleSingleGrid. */
+function enterClipEditor(nodeId: string, clipIdx: number, data: ClipPlayerData | undefined): void {
+  lastTapClipIndex = -1; // an ENTER is never half of a launch double-tap
+  setSelectedClip(clipIdx);
+  // Materialize a default clip if the pad was empty so Clip view can edit it.
+  if (!data?.clips?.[String(clipIdx)]) {
+    editData(
+      nodeId,
+      (d) => {
+        if (!d.clips) d.clips = {};
+        if (!d.clips[String(clipIdx)]) d.clips[String(clipIdx)] = defaultNoteClip();
+      },
+      { undoable: true },
+    );
+  }
+  // Fresh editor window for the newly-selected clip.
+  editAnchor = null;
+  editSpanned = false;
+  editRowOffset = 0;
+  editWindowStart = 0;
+  followOn = true;
+  setSingleViewInternal('clip');
+  renderLeds();
+}
+
 /** No-shift grid clip tap: single-tap = launch/stop; DOUBLE-TAP (same clip within
  *  the window) = select it + open Clip view on it (reverting the lane's play/queue
- *  state so the double-tap never changes whether it plays — owner rule). */
+ *  state so the double-tap never changes whether it plays — owner rule). The
+ *  GRID-held clip tap is the explicit decoupled way in (handleSingleGrid, no
+ *  launch tap at all); this double-tap keeps the legacy path by reverting first. */
 function handleGridLaunch(nodeId: string, clipIdx: number, data: ClipPlayerData | undefined): void {
   const lane = laneOf(clipIdx);
   const slot = slotOf(clipIdx);
@@ -2036,26 +2084,9 @@ function handleGridLaunch(nodeId: string, clipIdx: number, data: ClipPlayerData 
     } else if (lastTapWasPlaying && !nowPlaying) {
       queueLane(nodeId, lane, slot, /* immediate */ true); // first tap stopped it → restart
     }
-    setSelectedClip(clipIdx);
-    // Materialize a default clip if the pad was empty so Clip view can edit it.
-    if (!data?.clips?.[String(clipIdx)]) {
-      editData(
-        nodeId,
-        (d) => {
-          if (!d.clips) d.clips = {};
-          if (!d.clips[String(clipIdx)]) d.clips[String(clipIdx)] = defaultNoteClip();
-        },
-        { undoable: true },
-      );
-    }
-    // Fresh editor window for the newly-selected clip.
-    editAnchor = null;
-    editSpanned = false;
-    editRowOffset = 0;
-    editWindowStart = 0;
-    followOn = true;
-    setSingleViewInternal('clip');
-    renderLeds();
+    // Now ENTER (select + Clip view) via the shared navigation seam — the revert
+    // above already restored play/stop, so the enter itself changes nothing.
+    enterClipEditor(nodeId, clipIdx, data);
     return;
   }
   // First tap: snapshot prior intent, record the tap, then launch/stop.
