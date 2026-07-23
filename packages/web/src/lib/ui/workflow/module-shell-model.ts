@@ -58,6 +58,20 @@ export const SHELL_TILE_H_FULL = 180;
 export const SHELL_TILE_H = SHELL_TILE_H_MINI;
 
 /**
+ * Flow-space Y inset (px) applied to a VIDEO-ZONE default tile's TOP under the
+ * `?shell=1` preview so the whole tile sits INSIDE the darker video area instead
+ * of straddling its top edge. The zone's dashed border + "VIDEO" label are drawn
+ * AT `COLUMN_BASELINE_Y` (`videoAreaBand` y0 == the tile's un-inset top), so a
+ * tile anchored flush at the baseline puts its top jack-rail on the dashed line
+ * and collides with the lane-number badges just above it. Nudging the tile down
+ * by this inset clears the label + border with room to spare (the tallest tile is
+ * SHELL_TILE_H_FULL = 180, and 48 + 180 << the 540px video area). Applied ONLY in
+ * the Canvas render override under the preview — the pure `videoZoneSlotPos`
+ * default (used by the persisted spawn geometry) is UNCHANGED, so preview-OFF is
+ * byte-identical and no Y.Doc position moves. */
+export const SHELL_VIDEO_ZONE_TILE_INSET_Y = 48;
+
+/**
  * The lane tile's pixel height for a given lane FaceTier. mini→88 / compact→150 /
  * full→180; the LOD 'dock' band never reaches the lane (laneFaceTier collapses it
  * to 'full'), but map it to the full height defensively. Pure — Canvas's

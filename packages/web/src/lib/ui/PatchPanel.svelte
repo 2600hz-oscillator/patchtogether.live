@@ -754,7 +754,7 @@
           aria-label="Open full view in the dock"
           title="Open full view in the dock"
           onclick={onExpand}
-        >⤢</button>
+        ><span class="more-glyph" aria-hidden="true">⤢</span><span class="more-label">EXPAND</span></button>
       {/if}
       {#if flowLabel}<span class="flow">{flowLabel}</span>{/if}
     </div>

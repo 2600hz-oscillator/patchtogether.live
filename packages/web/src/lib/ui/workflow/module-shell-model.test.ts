@@ -18,6 +18,7 @@ import {
   SHELL_TILE_H_MINI,
   SHELL_TILE_H_COMPACT,
   SHELL_TILE_H_FULL,
+  SHELL_VIDEO_ZONE_TILE_INSET_Y,
   shellTileHeightForTier,
   type ShellDefLike,
 } from './module-shell-model';
@@ -110,6 +111,14 @@ describe('SHELL_TILE_W / SHELL_TILE_H_* — the RACKLINE tile geometry (CSS/TS l
     expect(shellTileHeightForTier('full')).toBe(SHELL_TILE_H_FULL);
     // 'dock' never reaches a lane (laneFaceTier collapses it), but map defensively.
     expect(shellTileHeightForTier('dock')).toBe(SHELL_TILE_H_FULL);
+  });
+
+  it('SHELL_VIDEO_ZONE_TILE_INSET_Y nudges a video tile fully inside the video area', () => {
+    // A positive inset (so the tile top clears the zone's dashed border + VIDEO
+    // label at COLUMN_BASELINE_Y), with room for the tallest tile inside the
+    // 540px video area (inset + full height stays well under the zone height).
+    expect(SHELL_VIDEO_ZONE_TILE_INSET_Y).toBeGreaterThan(0);
+    expect(SHELL_VIDEO_ZONE_TILE_INSET_Y + SHELL_TILE_H_FULL).toBeLessThan(540);
   });
 });
 

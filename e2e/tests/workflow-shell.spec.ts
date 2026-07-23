@@ -40,8 +40,17 @@ const NODE = 'v1';
 // ── RACKLINE tile-geometry re-spec helpers ──────────────────────────────────
 // channel-columns.ts geometry (kept in sync with the pure module).
 const COLUMN_W = 765; // 34 * HP_UNIT(22.5)
+const SHELL_COLUMN_W = 216; // channel-columns.ts SHELL_COLUMN_W (tight ?shell=1 pitch)
 const SHELL_TILE_W = 192; // module-shell-model.ts SHELL_TILE_W / tokens --shell-tile-w
 const TILE_H = { mini: 88, compact: 150, full: 180 } as const; // --tile-h-{mini,compact,full}
+// channel-columns.ts vertical geometry: RACK_UNIT 180 → COLUMN_SLOT_H 720 →
+// COLUMN_H 4320 → the baseline the lanes bottom-anchor to; the video zone is the
+// backdraft-tall (3u = 540px) band directly BELOW it.
+const COLUMN_BASELINE_Y = 4320; // COLUMN_TOP_Y(0) + COLUMN_SLOT_H(720) * COLUMN_MAX_SLOTS(6)
+const VIDEO_AREA_HEIGHT = 540; // RACK_UNIT(180) * 3
+/** Flow-space top-left X that CENTERS the uniform 192px tile in column `ch`'s tight
+ *  216px band (columnCardX at the shell pitch) — the value the drop must persist. */
+const shellColCardX = (ch: number) => (ch - 1) * SHELL_COLUMN_W + (SHELL_COLUMN_W - SHELL_TILE_W) / 2;
 
 /** A flow-space spawn anchor inside channel column `ch` (X selects the column). */
 function colPos(ch: number): { x: number; y: number } {
@@ -387,5 +396,141 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     await expect(laneNode.locator('[data-testid="control-base"]')).toBeVisible();
     // …and NO placeholder is emitted.
     await expect(laneNode.locator('[data-testid="module-shell-placeholder"]')).toHaveCount(0);
+  });
+});
+
+// ─── P0.3b ?shell=1 bug fixes (video-zone inset · lane-snap · expand button) ──
+test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
+  const VZONE_IDS = ['workflow-videoOut', 'workflow-recorderbox', 'workflow-synesthesia'];
+
+  /** Drop `type` at the tight SHELL pitch so the pitch-aware hit-test resolves the
+   *  intended narrowed column `ch` (the wide COLUMN_W anchor would land elsewhere). */
+  async function dropInShellColumn(page: Page, type: string, ch: number): Promise<void> {
+    await page.evaluate(
+      ({ type, pos }) => {
+        const w = globalThis as unknown as {
+          __setSpawnFlowPos: (p: { x: number; y: number }) => void;
+          __spawnFromPalette: (t: string) => void;
+        };
+        w.__setSpawnFlowPos(pos);
+        w.__spawnFromPalette(type);
+      },
+      { type, pos: { x: (ch - 1) * SHELL_COLUMN_W + 30, y: 40 } },
+    );
+  }
+
+  /** Flow-space top-left of a node (immune to the xyflow viewport transform). */
+  async function flowPos(page: Page, id: string): Promise<{ x: number; y: number; h: number } | null> {
+    return page.evaluate((id) => {
+      const f = (globalThis as any).__flow;
+      const n = f?.getInternalNode(id);
+      if (!n) return null;
+      const x = n.internals?.positionAbsolute?.x ?? n.position?.x;
+      const y = n.internals?.positionAbsolute?.y ?? n.position?.y;
+      const h = n.measured?.height ?? 0;
+      return typeof x === 'number' && typeof y === 'number' ? { x, y, h } : null;
+    }, id);
+  }
+
+  // BUG 1 — the video-zone default tiles used to anchor their TOP flush on
+  // COLUMN_BASELINE_Y (== the zone's dashed top edge / "VIDEO" label), so the top
+  // jack rail straddled the line + collided with the lane-number badges. The shell
+  // render override now insets them DOWN, fully inside the darker video area.
+  test('video-zone tiles sit INSIDE the video area (below COLUMN_BASELINE_Y)', async ({ page }) => {
+    await gotoWorkflow(page, { shell: true });
+    for (const id of VZONE_IDS) {
+      await expect(
+        page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`),
+      ).toBeVisible({ timeout: 15_000 });
+    }
+    for (const id of VZONE_IDS) {
+      const p = await flowPos(page, id);
+      expect(p, `${id} internal node resolved`).not.toBeNull();
+      // TOP strictly BELOW the baseline (the dashed video line) — pre-fix it sat
+      // exactly ON it (p.y === COLUMN_BASELINE_Y). ±1px sub-pixel tolerance.
+      expect(p!.y, `${id} tile top is below the video-zone baseline`).toBeGreaterThan(COLUMN_BASELINE_Y + 1);
+      // …and the whole tile stays INSIDE the 540px video area (top well within it).
+      expect(p!.y, `${id} tile top is inside the video area`).toBeLessThan(COLUMN_BASELINE_Y + VIDEO_AREA_HEIGHT);
+    }
+  });
+
+  // BUG 2 — a palette drop into a lane persisted its X at the WIDE 765px slot
+  // (columnFlushPositions with no pitch), while the render override used the tight
+  // 216px pitch — so for the frame before the override snapped it, the tile landed
+  // far right of the lane ("off-lane"). The persisted X now uses the active pitch,
+  // so persisted + rendered both equal the tight column centre, flush-stacked.
+  test('a lane drop persists + renders at the tight column centre, flush-stacked, no invalid state', async ({ page }) => {
+    await gotoWorkflow(page, { shell: true });
+    await waitForHooks(page);
+    for (const t of ['tidyVco', 'vca']) {
+      await dropInShellColumn(page, t, 1);
+      await page.waitForTimeout(250);
+    }
+
+    // No invalid state: both drops joined channel 1's order (the membership truth).
+    const order = await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: { columns?: Record<string, string[]> } } | undefined> };
+      };
+      return w.__patch.nodes['pinned-mixmstrs']?.data?.columns?.['1'] ?? [];
+    });
+    expect(order.length, 'both modules joined channel 1').toBe(2);
+
+    // PERSISTED position (the BUG-2 regression): each member's stored top-left X is
+    // the TIGHT column-card X (12px), NOT the wide 765-band value (286.5) it was.
+    const persisted = await page.evaluate((ids) => {
+      const w = globalThis as unknown as { __patch: { nodes: Record<string, { position?: { x: number } } | undefined> } };
+      return ids.map((id) => w.__patch.nodes[id]?.position?.x ?? NaN);
+    }, order);
+    for (const x of persisted) expect(Math.abs(x - shellColCardX(1)), `persisted X == tight column-card X (${shellColCardX(1)})`).toBeLessThanOrEqual(1);
+
+    // RENDERED position: same tight X, and the tile CENTRE lands on the column band
+    // centre (card-centre == channel-number centre) — the "renders at the column
+    // centre" guarantee.
+    const bandCenter = (1 - 1) * SHELL_COLUMN_W + SHELL_COLUMN_W / 2; // 108
+    const tiles: { x: number; y: number; h: number }[] = [];
+    for (const id of order) {
+      const p = await flowPos(page, id);
+      expect(p, `${id} internal node resolved`).not.toBeNull();
+      expect(Math.abs(p!.x - shellColCardX(1)), 'rendered X == tight column-card X').toBeLessThanOrEqual(1);
+      expect(Math.abs(p!.x + SHELL_TILE_W / 2 - bandCenter), 'tile centre == column band centre').toBeLessThanOrEqual(1);
+      tiles.push(p!);
+    }
+
+    // FLUSH stack (no overlap, no gap): the two members' flow-space tops are exactly
+    // one measured tile-height apart.
+    tiles.sort((a, b) => a.y - b.y);
+    const gap = tiles[1].y - tiles[0].y;
+    expect(gap).toBeGreaterThanOrEqual(tiles[0].h - 1);
+    expect(gap).toBeLessThanOrEqual(tiles[0].h + 1);
+  });
+
+  // BUG 3 — the "open full module in the dock" affordance was a tiny faint glyph-
+  // only button (undiscoverable). It is now a clear, LABELLED pill; the wired path
+  // (onExpand → dockStore.openFullView → the .dock-faceplate full view) is unchanged.
+  test('the EXPAND affordance is a labelled button that opens the dock faceplate + ESC closes', async ({ page }) => {
+    await gotoWorkflow(page, { shell: true });
+    await spawnPatch(page, [{ id: NODE, type: 'vca', position: { x: 460, y: 240 } }]);
+
+    const laneNode = page.locator(`.svelte-flow__node[data-id="${NODE}"]`);
+    const placeholder = laneNode.locator('[data-testid="module-shell-placeholder"]');
+    await expect(placeholder).toBeVisible();
+
+    const expandBtn = placeholder.getByTestId('shell-open-dock');
+    await expect(expandBtn).toBeVisible();
+    // DISCOVERABILITY: the button carries a readable text LABEL (not a bare glyph),
+    // so it reads as a clear "expand" action.
+    await expect(expandBtn).toContainText('EXPAND');
+
+    // The wired full path still works: click → the RACKLINE .dock-faceplate opens.
+    await expandBtn.click();
+    const faceplate = page.getByTestId('dock-full-view');
+    await expect(faceplate).toBeVisible();
+    await expect(faceplate).toHaveClass(/dock-faceplate/);
+
+    // ESC closes it; the lane placeholder remains.
+    await page.keyboard.press('Escape');
+    await expect(faceplate).toHaveCount(0);
+    await expect(placeholder).toBeVisible();
   });
 });

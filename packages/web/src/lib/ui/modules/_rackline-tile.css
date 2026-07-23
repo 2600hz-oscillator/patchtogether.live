@@ -211,25 +211,42 @@
   background: var(--module-bg-deep, #0a0c0f);
   box-shadow: inset 0 0 0 2px var(--jk-color, var(--cable-audio));
 }
-/* expand → dock full-view (mock .more, repurposed as the "expand ⤢" affordance) */
+/* expand → dock full-view (mock .more, promoted to a CLEAR, LABELLED pill so the
+ * "open the full module in the dock" affordance is discoverable — the tiny faint
+ * glyph-only button read as undiscoverable chrome). Spine-tinted to match the
+ * RACKLINE kit; still routes onExpand → dockStore.openFullView. */
 .rl-tile .jacks .more {
   flex: 0 0 auto;
-  background: transparent;
-  border: none;
-  padding: 0 2px;
-  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: color-mix(in srgb, var(--_spine) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--_spine) 45%, var(--border, #2c3037));
+  border-radius: 5px;
+  padding: 2px 7px;
   line-height: 1;
-  color: var(--ink-faint, #646c77);
-  letter-spacing: 0.1em;
+  color: var(--text-dim, #9aa2ad);
   cursor: pointer;
 }
+.rl-tile .jacks .more .more-glyph {
+  font-size: 12px;
+  line-height: 1;
+}
+.rl-tile .jacks .more .more-label {
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
 .rl-tile .jacks .more:hover {
+  background: color-mix(in srgb, var(--_spine) 24%, transparent);
+  border-color: var(--_spine);
   color: var(--text, #eef1f5);
 }
 .rl-tile .jacks .more:focus-visible {
   outline: 1px solid var(--_spine);
   outline-offset: 1px;
-  border-radius: 3px;
+  border-radius: 5px;
 }
 /* right-aligned signal-flow label (mock .flow "▶ ch1") */
 .rl-tile .jacks .flow {
