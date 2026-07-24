@@ -16,20 +16,33 @@
   // State scopes:
   //   - Card state (connection, device list, active note) lives on the engine
   //     handle and is read via the 'card-api' subscription.
-  //   - channel / lastDeviceId persist in node.data (synced across
+  //   - midiOutChannel / lastDeviceId persist in node.data (synced across
   //     collaborators via Yjs).
+  //
+  // CHANNEL vs LANE (#1168): `node.data.channel` belongs to the WORKFLOW
+  // CHANNEL-COLUMN system (lane membership, 1..8) — this card must NEVER write
+  // it, or the column reconciler moves the module to another lane and drops its
+  // clip assignment. The MIDI-out channel is its own key, `midiOutChannel`, and
+  // is only *defaulted* from the lane (see effectiveMidiOutChannel). When the
+  // two differ the card is highlighted VIOLET so a divergent MIDI route reads
+  // at a glance.
 
   import { onDestroy } from 'svelte';
+  import type * as Y from 'yjs';
+  import { getYjsValue } from '@syncedstore/core';
   import type { NodeProps } from '@xyflow/svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
-  import type {
-    MidiOutBuddyApi,
-    MidiOutBuddyCardState,
-    MidiOutBuddyData,
+  import {
+    effectiveMidiOutChannel,
+    isMidiOutChannelOverridden,
+    laneChannelOf,
+    type MidiOutBuddyApi,
+    type MidiOutBuddyCardState,
+    type MidiOutBuddyData,
   } from '$lib/audio/modules/midi-out-buddy';
   import { noteNameForMidi } from '$lib/audio/note-entry';
   import ModuleTitle from './ModuleTitle.svelte';
@@ -47,8 +60,49 @@
     activeNote: null,
   });
 
-  let savedData = $derived(((node?.data ?? {}) as Partial<MidiOutBuddyData>));
-  let channel = $derived<number>(savedData.channel ?? 1);
+  // node.data is a LIVE SyncedStore/Yjs proxy, NOT a Svelte signal, so neither
+  // our own writes, a peer's, nor the column reconciler's lane move can wake a
+  // $derived on their own. Bump a real $state from a Yjs observer scoped to
+  // THIS node's entry (the BackdraftCard / toybox pattern) and read it in every
+  // channel derivation below, so both channel scalars stay live.
+  let dataVersion = $state(0);
+  $effect(() => {
+    const nodeId = id;
+    const yNodes = getYjsValue(patch.nodes) as Y.Map<unknown> | undefined;
+    if (!yNodes || typeof yNodes.observeDeep !== 'function') return;
+    const handler = (events: Array<Y.YEvent<Y.AbstractType<unknown>>>): void => {
+      for (const ev of events) {
+        // path[0] is the node id for a nested write (data/params); a root-level
+        // event is a wholesale entry add/replace/remove.
+        const hit = ev.path.length === 0 ? ev.changes.keys.has(nodeId) : ev.path[0] === nodeId;
+        if (hit) {
+          dataVersion++;
+          return;
+        }
+      }
+    };
+    yNodes.observeDeep(handler);
+    return () => yNodes.unobserveDeep(handler);
+  });
+
+  function readData(): Partial<MidiOutBuddyData> {
+    return (node?.data ?? {}) as Partial<MidiOutBuddyData>;
+  }
+  /** The channel MIDI is SENT on: explicit override, else the lane's channel. */
+  let channel = $derived.by<number>(() => {
+    void dataVersion;
+    return effectiveMidiOutChannel(readData());
+  });
+  /** The lane/column this module belongs to (null = not in a lane). */
+  let laneChannel = $derived.by<number | null>(() => {
+    void dataVersion;
+    return laneChannelOf(readData());
+  });
+  /** In a lane AND routing somewhere else → violet "overridden" highlight. */
+  let channelOverridden = $derived.by<boolean>(() => {
+    void dataVersion;
+    return isMidiOutChannelOverridden(readData());
+  });
 
   function getApi(): MidiOutBuddyApi | null {
     const e = engineCtx.get();
@@ -95,8 +149,18 @@
   function onChangeChannel(ev: Event): void {
     const ch = Number.parseInt((ev.currentTarget as HTMLSelectElement).value, 10);
     getApi()?.setChannel(ch);
-    writeData({ channel: ch });
+    // ONLY `midiOutChannel` — writing `channel` would hand the value to the
+    // channel-column reconciler as a LANE REASSIGNMENT (#1168).
+    writeData({ midiOutChannel: ch });
   }
+
+  // Keep the engine's send-channel in step with the derived effective channel,
+  // so a module that has NOT been overridden still follows its lane when it is
+  // moved between columns (setChannel is idempotent — a no-op when unchanged).
+  $effect(() => {
+    const ch = channel;
+    getApi()?.setChannel(ch);
+  });
 
   // Three CV/gate inputs, no outputs (terminal MIDI sink).
   const inputs: PortDescriptor[] = [
@@ -111,7 +175,9 @@
   );
 </script>
 
-<div class="mod-card midi-out-buddy-card">
+<!-- data-ch-override is BOTH the styling hook and the state the e2e reads: one
+     source of truth for "this module routes MIDI off its lane". -->
+<div class="mod-card midi-out-buddy-card" data-ch-override={channelOverridden ? 'true' : 'false'}>
   <div class="stripe" style="background: var(--cable-gate);"></div>
   <ModuleTitle {id} {data} defaultLabel="MIDI CV BUDDY OUT" />
 
@@ -137,7 +203,7 @@
           </select>
         </label>
 
-        <label class="row">
+        <label class="row ch">
           <span class="lbl">CH</span>
           <select onchange={onChangeChannel} value={String(channel)}>
             {#each Array(16) as _, i (i)}
@@ -145,6 +211,16 @@
             {/each}
           </select>
         </label>
+
+        {#if channelOverridden}
+          <div
+            class="ch-badge"
+            data-testid="midiout-ch-override-badge"
+            title={`MIDI is sent on channel ${channel}, but this module lives in lane ${laneChannel}. Set CH back to ${laneChannel} to follow the lane.`}
+          >
+            ↯ CH {channel} ≠ LANE {laneChannel}
+          </div>
+        {/if}
 
         <div class="readout">
           <div class="readout-row">
@@ -160,6 +236,34 @@
 
 <style>
   .midi-out-buddy-card { width: 220px; }
+  /* CHANNEL OVERRIDE — the module is in a lane but sends MIDI on a DIFFERENT
+     channel. Violet (the app's --cable-video domain hue, the only purple in the
+     token set) so a divergent route is unmistakable next to the amber gate
+     stripe. Outline + shadow only, so the card's geometry never shifts. */
+  .midi-out-buddy-card[data-ch-override='true'] {
+    outline: 1px solid var(--cable-video, #b57bff);
+    outline-offset: -1px;
+    box-shadow: 0 0 10px -2px var(--cable-video, #b57bff);
+  }
+  .midi-out-buddy-card[data-ch-override='true'] .row.ch .lbl,
+  .midi-out-buddy-card[data-ch-override='true'] .row.ch select {
+    color: var(--cable-video, #b57bff);
+  }
+  .midi-out-buddy-card[data-ch-override='true'] .row.ch select {
+    border-color: var(--cable-video, #b57bff);
+  }
+  .midi-out-buddy-card .ch-badge {
+    align-self: flex-start;
+    font-size: 9px;
+    line-height: 1;
+    letter-spacing: 0.05em;
+    color: var(--cable-video, #b57bff);
+    border: 1px solid var(--cable-video, #b57bff);
+    border-radius: 2px;
+    padding: 2px 3px;
+    font-family: var(--mono, ui-monospace, monospace);
+    pointer-events: none;
+  }
   .midi-out-buddy-card .body {
     padding: 10px 14px 8px;
     display: flex;
