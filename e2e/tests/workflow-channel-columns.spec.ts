@@ -113,6 +113,46 @@ async function wcolEdges(page: Page): Promise<string[]> {
   });
 }
 
+/** A member node's two channel scalars: the COLUMN membership truth
+ *  (`data.channel`) and MIDI-OUT-BUDDY's independent MIDI send channel
+ *  (`data.midiOutChannel`) — the pair #1168 decoupled. */
+async function moData(
+  page: Page,
+  moduleId: string,
+): Promise<{ channel: number | undefined; midiOutChannel: number | undefined }> {
+  return page.evaluate((mid) => {
+    const w = globalThis as unknown as {
+      __patch: {
+        nodes: Record<string, { data?: { channel?: number; midiOutChannel?: number } } | undefined>;
+      };
+    };
+    const d = w.__patch.nodes[mid]?.data;
+    return { channel: d?.channel, midiOutChannel: d?.midiOutChannel ?? undefined };
+  }, moduleId);
+}
+
+/** A fake Web MIDI with ONE output, so MIDI-OUT-BUDDY's card renders its OUT +
+ *  CH selectors headlessly (no hardware in CI). Mirrors the fake in
+ *  midi-out-buddy.spec.ts; this spec only needs the card UI, not the bytes. */
+const FAKE_MIDI_OUT = `
+(() => {
+  if (window.__fakeMidiOutInstalled) return;
+  window.__fakeMidiOutInstalled = true;
+  window.__midiOutSent = [];
+  const output = {
+    id: 'fake-midi-out-0',
+    name: 'Fake MIDI Out (Playwright)',
+    state: 'connected',
+    connection: 'open',
+    type: 'output',
+    send(data) { window.__midiOutSent.push(Array.from(data)); },
+    clear() {},
+  };
+  const access = { sysexEnabled: false, inputs: new Map(), outputs: new Map([[output.id, output]]), onstatechange: null };
+  navigator.requestMIDIAccess = async () => access;
+})();
+`;
+
 /** The clip player's automation-lane assignment for a module (or null). */
 async function laneOf(page: Page, moduleId: string): Promise<number | null> {
   return page.evaluate((mid) => {
@@ -661,5 +701,62 @@ test.describe('workflow channel columns', () => {
     // Within a tolerant ratio of the baseline (no boost, no cut from the tap).
     expect(after.channelMax[1]).toBeGreaterThan(base.channelMax[1] * 0.5);
     expect(after.channelMax[1]).toBeLessThan(base.channelMax[1] * 2.0);
+  });
+
+  test('MIDI-OUT-BUDDY: changing the MIDI out channel keeps its lane + clip assignment (violet override badge)', async ({ page }) => {
+    // #1168 — `node.data.channel` is the COLUMN MEMBERSHIP scalar, and the card
+    // used to write it to set the MIDI output channel: the reconciler read that
+    // as a lane reassignment and pruned the module out of its column (dropping
+    // the clip note-taps entirely for a channel > 8). The MIDI channel now lives
+    // on `data.midiOutChannel` and only DEFAULTS from the lane. This drives the
+    // REAL palette-drop + the REAL card <select>, and asserts the lane +
+    // clip-tap edge set is BYTE-IDENTICAL across the change.
+    await page.addInitScript({ content: FAKE_MIDI_OUT });
+    await page.goto('/rack?mode=workflow');
+    await waitForPinnedTrio(page);
+
+    await dropInBand(page, 'midiOutBuddy', colPos(3));
+    await expect.poll(async () => (await orderOf(page, 'columns', 3)).length, { timeout: 10_000 }).toBe(1);
+    const mo = (await orderOf(page, 'columns', 3))[0]!;
+
+    // BEFORE — lane 3 membership, automation lane 2 (0-based), the reconciler's
+    // channel-3 note taps, and a MIDI channel DEFAULTED to the lane's channel.
+    expect(await laneOf(page, mo)).toBe(2);
+    const taps = [
+      `${PINNED_CLIP}.pitch3->${mo}.pitch`,
+      `${PINNED_CLIP}.gate3->${mo}.gate`,
+      `${PINNED_CLIP}.vel3->${mo}.velocity`,
+    ];
+    const edgesBefore = (await wcolEdges(page)).sort();
+    for (const t of taps) expect(edgesBefore).toContain(t);
+    expect(await moData(page, mo)).toEqual({ channel: 3, midiOutChannel: undefined });
+
+    const card = page.locator(`.svelte-flow__node-midiOutBuddy .midi-out-buddy-card`);
+    await expect(card).toBeVisible();
+    await expect(card).toHaveAttribute('data-ch-override', 'false');
+
+    // THE ACTION — connect (fake Web MIDI) then pick MIDI channel 11 on the card.
+    await card.getByRole('button', { name: /connect midi/i }).click();
+    const chSelect = card.getByRole('combobox', { name: 'CH', exact: true });
+    await expect(chSelect).toBeVisible();
+    // The lane's channel is what the card OFFERS by default — no write needed.
+    await expect(chSelect).toHaveValue('3');
+    await chSelect.selectOption('11');
+
+    // AFTER — the override is persisted + highlighted, and NOTHING about the
+    // lane moved: same membership, same automation lane, same wcol edge set.
+    await expect(card).toHaveAttribute('data-ch-override', 'true');
+    await expect(card.getByTestId('midiout-ch-override-badge')).toBeVisible();
+    expect(await moData(page, mo)).toEqual({ channel: 3, midiOutChannel: 11 });
+    expect(await orderOf(page, 'columns', 3)).toEqual([mo]);
+    expect(await laneOf(page, mo)).toBe(2);
+    const edgesAfter = (await wcolEdges(page)).sort();
+    for (const t of taps) expect(edgesAfter).toContain(t);
+    expect(edgesAfter).toEqual(edgesBefore);
+
+    // And setting it BACK to the lane's channel clears the highlight.
+    await chSelect.selectOption('3');
+    await expect(card).toHaveAttribute('data-ch-override', 'false');
+    expect(await orderOf(page, 'columns', 3)).toEqual([mo]);
   });
 });
