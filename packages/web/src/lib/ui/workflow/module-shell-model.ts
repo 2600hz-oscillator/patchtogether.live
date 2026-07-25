@@ -38,24 +38,23 @@ import type { FaceTier } from './curated-face';
 export const SHELL_TILE_W = 192;
 
 /**
- * The RACKLINE lane-tile HEIGHT (px) PER LOD TIER. The tile grows TALLER as you
- * zoom in — mini (the zoomed-out "read the whole rack" overview) → compact →
- * full-in-lane (the mock's 180px .mod/.plate design point) — instead of a flat
- * mini height at every zoom (the owner "tiles smaller than the mock" fix). Shared
- * by the CSS (`_module-card.css` keys the tile height off `data-shell-tier`) and
- * by Canvas's `wcolCardHeightPx` (returns the SAME per-tier height under the
- * preview so the RESERVED lane slot tracks the rendered tile → the fixed baseline
- * number badge caps every tile flush at every zoom). Mirror the `--tile-h-*`
- * tokens (tokens.css); a unit gate locks CSS↔TS. */
-export const SHELL_TILE_H_MINI = 88;
-export const SHELL_TILE_H_COMPACT = 150;
-export const SHELL_TILE_H_FULL = 180;
+ * The RACKLINE lane-slot HEIGHT (px) — ONE FIXED height at EVERY LOD tier (the
+ * owner zoom-reposition fix, roundup option (c)). The OUTER slot box never
+ * changes with zoom: only the CONTENT INSIDE the tile varies per tier (mini =
+ * name + glyph centred in the fixed box; compact = the body knob row; full = the
+ * denser face). A per-tier box height made flush-stack Y positions cascade-shift
+ * whenever the zoom crossed a tier boundary; a tier-invariant slot means the
+ * flow POSITIONS are byte-identical at every zoom. Pinned to the compact/full
+ * design height — the mock's 180px .mod/.plate tile (ux-proposal-b.html).
+ * Shared by the CSS (`_module-card.css` pins the tile box to `--shell-tile-h`,
+ * tier-invariant) and by Canvas's `wcolCardHeightPx` (returns this SAME constant
+ * at every zoom under the preview, so the RESERVED lane slot == the rendered
+ * tile and the baseline number badge caps every tile flush). Mirrors the
+ * `--shell-tile-h` token (tokens.css); a unit gate locks CSS↔TS. */
+export const SHELL_TILE_H_SLOT = 180;
 
-/**
- * The uniform mini-tier tile height — kept as the historical `SHELL_TILE_H` name
- * (= `SHELL_TILE_H_MINI`) for back-compat call sites + the CSS `--tile-h-mini`
- * fallback. Prefer `shellTileHeightForTier` for the per-tier value. */
-export const SHELL_TILE_H = SHELL_TILE_H_MINI;
+/** Back-compat alias for the fixed slot height (historical `SHELL_TILE_H` name). */
+export const SHELL_TILE_H = SHELL_TILE_H_SLOT;
 
 /**
  * Flow-space Y inset (px) applied to a VIDEO-ZONE default tile's TOP under the
@@ -64,30 +63,12 @@ export const SHELL_TILE_H = SHELL_TILE_H_MINI;
  * AT `COLUMN_BASELINE_Y` (`videoAreaBand` y0 == the tile's un-inset top), so a
  * tile anchored flush at the baseline puts its top jack-rail on the dashed line
  * and collides with the lane-number badges just above it. Nudging the tile down
- * by this inset clears the label + border with room to spare (the tallest tile is
- * SHELL_TILE_H_FULL = 180, and 48 + 180 << the 540px video area). Applied ONLY in
+ * by this inset clears the label + border with room to spare (the fixed slot is
+ * SHELL_TILE_H_SLOT = 180, and 48 + 180 << the 540px video area). Applied ONLY in
  * the Canvas render override under the preview — the pure `videoZoneSlotPos`
  * default (used by the persisted spawn geometry) is UNCHANGED, so preview-OFF is
  * byte-identical and no Y.Doc position moves. */
 export const SHELL_VIDEO_ZONE_TILE_INSET_Y = 48;
-
-/**
- * The lane tile's pixel height for a given lane FaceTier. mini→88 / compact→150 /
- * full→180; the LOD 'dock' band never reaches the lane (laneFaceTier collapses it
- * to 'full'), but map it to the full height defensively. Pure — Canvas's
- * `wcolCardHeightPx` calls this so the reserved slot == the CSS-rendered tile. */
-export function shellTileHeightForTier(tier: FaceTier): number {
-  switch (tier) {
-    case 'compact':
-      return SHELL_TILE_H_COMPACT;
-    case 'full':
-    case 'dock':
-      return SHELL_TILE_H_FULL;
-    case 'mini':
-    default:
-      return SHELL_TILE_H_MINI;
-  }
-}
 
 /** The minimal def shape the shell/placeholder model reads. */
 export interface ShellDefLike {

@@ -15,11 +15,8 @@ import {
   domainClassForDef,
   SHELL_TILE_H,
   SHELL_TILE_W,
-  SHELL_TILE_H_MINI,
-  SHELL_TILE_H_COMPACT,
-  SHELL_TILE_H_FULL,
+  SHELL_TILE_H_SLOT,
   SHELL_VIDEO_ZONE_TILE_INSET_Y,
-  shellTileHeightForTier,
   type ShellDefLike,
 } from './module-shell-model';
 import { curatedFace, type FaceDefLike } from './curated-face';
@@ -79,46 +76,35 @@ describe('offersFullView', () => {
   });
 });
 
-describe('SHELL_TILE_W / SHELL_TILE_H_* — the RACKLINE tile geometry (CSS/TS lock)', () => {
-  // These mirror the tokens.css `--shell-tile-w` / `--tile-h-{mini,compact,full}`
-  // values 1:1; _module-card.css pins the shell/placeholder tile `width` to
-  // var(--shell-tile-w) and its height per `data-shell-tier` off those tokens,
-  // and Canvas (wcolCardWidthPx / wcolCardHeightPx) returns the SAME numbers under
-  // the preview so the reserved column slot == the rendered tile. If a token OR a
-  // constant moves, they MUST move together — a drift floats the baseline badge /
-  // breaks band-centering.
+describe('SHELL_TILE_W / SHELL_TILE_H_SLOT — the RACKLINE tile geometry (CSS/TS lock)', () => {
+  // These mirror the tokens.css `--shell-tile-w` / `--shell-tile-h` values 1:1;
+  // _module-card.css pins the shell/placeholder tile box to those tokens — the
+  // SAME height at EVERY LOD tier — and Canvas (wcolCardWidthPx /
+  // wcolCardHeightPx) returns the SAME numbers under the preview so the reserved
+  // column slot == the rendered tile. If a token OR a constant moves, they MUST
+  // move together — a drift floats the baseline badge / breaks band-centering.
   it('SHELL_TILE_W is the mock 192px uniform tile width (--shell-tile-w)', () => {
     expect(SHELL_TILE_W).toBe(192);
   });
 
-  it('per-tier heights grow mini→compact→full (--tile-h-{mini,compact,full})', () => {
-    expect(SHELL_TILE_H_MINI).toBe(88);
-    expect(SHELL_TILE_H_COMPACT).toBe(150);
-    expect(SHELL_TILE_H_FULL).toBe(180);
-    // strictly increasing — the tile grows as you zoom in.
-    expect(SHELL_TILE_H_MINI).toBeLessThan(SHELL_TILE_H_COMPACT);
-    expect(SHELL_TILE_H_COMPACT).toBeLessThan(SHELL_TILE_H_FULL);
+  it('SHELL_TILE_H_SLOT is the ONE fixed slot height — the mock 180px tile (--shell-tile-h)', () => {
+    // The zoom-reposition fix (option (c)): the OUTER lane-slot box keeps ONE
+    // FIXED height across every LOD tier (only the CONTENT varies), so
+    // flush-stack Y positions are byte-identical at every zoom. Pinned to the
+    // compact/full design height — the mock's 180px .mod/.plate tile.
+    expect(SHELL_TILE_H_SLOT).toBe(180);
   });
 
-  it('SHELL_TILE_H is the mini floor (back-compat alias)', () => {
-    expect(SHELL_TILE_H).toBe(88);
-    expect(SHELL_TILE_H).toBe(SHELL_TILE_H_MINI);
-  });
-
-  it('shellTileHeightForTier maps every lane tier to its height (dock → full)', () => {
-    expect(shellTileHeightForTier('mini')).toBe(SHELL_TILE_H_MINI);
-    expect(shellTileHeightForTier('compact')).toBe(SHELL_TILE_H_COMPACT);
-    expect(shellTileHeightForTier('full')).toBe(SHELL_TILE_H_FULL);
-    // 'dock' never reaches a lane (laneFaceTier collapses it), but map defensively.
-    expect(shellTileHeightForTier('dock')).toBe(SHELL_TILE_H_FULL);
+  it('SHELL_TILE_H is the fixed slot (back-compat alias)', () => {
+    expect(SHELL_TILE_H).toBe(SHELL_TILE_H_SLOT);
   });
 
   it('SHELL_VIDEO_ZONE_TILE_INSET_Y nudges a video tile fully inside the video area', () => {
     // A positive inset (so the tile top clears the zone's dashed border + VIDEO
-    // label at COLUMN_BASELINE_Y), with room for the tallest tile inside the
-    // 540px video area (inset + full height stays well under the zone height).
+    // label at COLUMN_BASELINE_Y), with room for the fixed-slot tile inside the
+    // 540px video area (inset + slot height stays well under the zone height).
     expect(SHELL_VIDEO_ZONE_TILE_INSET_Y).toBeGreaterThan(0);
-    expect(SHELL_VIDEO_ZONE_TILE_INSET_Y + SHELL_TILE_H_FULL).toBeLessThan(540);
+    expect(SHELL_VIDEO_ZONE_TILE_INSET_Y + SHELL_TILE_H_SLOT).toBeLessThan(540);
   });
 });
 

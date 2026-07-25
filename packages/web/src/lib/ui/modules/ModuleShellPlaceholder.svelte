@@ -65,10 +65,11 @@
   /** Spine = the module's cable-domain hue (the reading-aid, not a new token). */
   let spine = $derived(spineCableVar(def));
 
-  // The lane FaceTier for the live LOD zoom (mini|compact|full) — drives the tile's
-  // per-tier HEIGHT via `data-shell-tier` (_module-card.css), so the un-migrated
-  // placeholder grows as you zoom in exactly like the migrated <ModuleShell>. Reads
-  // the shared context store (falls back to the singleton for a standalone mount).
+  // The lane FaceTier for the live LOD zoom (mini|compact|full), stamped as
+  // `data-shell-tier`. The OUTER box is TIER-INVARIANT (--shell-tile-h,
+  // _module-card.css — the zoom-reposition fix): the tier only keys what renders
+  // INSIDE the fixed box, exactly like the migrated <ModuleShell>. Reads the
+  // shared context store (falls back to the singleton for a standalone mount).
   const lodTierStore = getLodTier();
   let effTier = $derived(laneFaceTier($lodTierStore));
   /** The type-kind badge (raw type id for now; a curated `def.badge` reads like
@@ -99,8 +100,13 @@
 >
   <span class="rl-spine" aria-hidden="true"></span>
 
+  <!-- Header redesign: row 1 = domain-colour rule ── gap ── full-width NAME
+       (no truncation for long names); row 2 = the faint type badge. -->
   <div class="tile-top">
+    <span class="tile-rule" aria-hidden="true"></span>
     <span class="tile-name" title={displayName}>{displayName}</span>
+  </div>
+  <div class="tile-kind">
     <span class="tile-badge">{badge}</span>
   </div>
 

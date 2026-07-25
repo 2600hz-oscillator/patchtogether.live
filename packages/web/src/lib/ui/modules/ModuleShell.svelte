@@ -117,8 +117,13 @@
 >
   <span class="rl-spine" aria-hidden="true"></span>
 
+  <!-- Header redesign: row 1 = domain-colour rule ── gap ── full-width NAME
+       (no truncation for long names); row 2 = the faint type badge. -->
   <div class="tile-top">
+    <span class="tile-rule" aria-hidden="true"></span>
     <span class="tile-name" title={displayName}>{displayName}</span>
+  </div>
+  <div class="tile-kind">
     <span class="tile-badge">{node.type}</span>
   </div>
 

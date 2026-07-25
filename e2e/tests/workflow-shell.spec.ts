@@ -42,7 +42,10 @@ const NODE = 'v1';
 const COLUMN_W = 765; // 34 * HP_UNIT(22.5)
 const SHELL_COLUMN_W = 216; // channel-columns.ts SHELL_COLUMN_W (tight ?shell=1 pitch)
 const SHELL_TILE_W = 192; // module-shell-model.ts SHELL_TILE_W / tokens --shell-tile-w
-const TILE_H = { mini: 88, compact: 150, full: 180 } as const; // --tile-h-{mini,compact,full}
+// The ONE fixed lane-slot height at EVERY LOD tier (zoom-reposition fix option
+// (c)): module-shell-model.ts SHELL_TILE_H_SLOT / tokens --shell-tile-h. Zoom
+// swaps only the CONTENT inside the box, never the box.
+const SHELL_TILE_H_SLOT = 180;
 // channel-columns.ts vertical geometry: RACK_UNIT 180 → COLUMN_SLOT_H 720 →
 // COLUMN_H 4320 → the baseline the lanes bottom-anchor to; the video zone is the
 // backdraft-tall (3u = 540px) band directly BELOW it.
@@ -190,13 +193,14 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     await expect(placeholder).toBeVisible();
   });
 
-  test('placeholder tiles are UNIFORM WIDTH + uniform per-tier height with a consistent badge anchor', async ({ page }) => {
+  test('placeholder tiles are UNIFORM WIDTH + the FIXED slot height with a consistent badge anchor', async ({ page }) => {
     // The owner "same-size all modules HORIZONTALLY" + "tiles non-uniform / smaller
     // than the mock" fix: under ?shell=1 the default video-zone trio (videoOut
     // 'dynamic', recorderbox 2u, synesthesia 3u — three DIFFERENT rack tiers, so
     // three different LEGACY widths) all render as the SAME uniform RACKLINE tile —
-    // identical WIDTH (SHELL_TILE_W) and identical HEIGHT (the current LOD tier),
-    // so the baseline number badges cap them flush.
+    // identical WIDTH (SHELL_TILE_W) and the ONE fixed slot HEIGHT
+    // (SHELL_TILE_H_SLOT — tier-invariant, the zoom-reposition fix), so the
+    // baseline number badges cap them flush.
     await gotoWorkflow(page, { shell: true });
     const ids = ['workflow-videoOut', 'workflow-recorderbox', 'workflow-synesthesia'];
     for (const id of ids) {
@@ -221,12 +225,8 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     expect(metrics.every((m) => m !== null), 'all three placeholders resolved').toBe(true);
     // UNIFORM WIDTH — every tile the SAME SHELL_TILE_W across three rack tiers.
     for (const m of metrics) expect(m!.w).toBe(SHELL_TILE_W);
-    // UNIFORM HEIGHT — every tile the SAME height (the current LOD tier's value),
-    // which is one of the three per-tier design points (no longer a flat 88).
-    const h0 = metrics[0]!.h;
-    for (const m of metrics) expect(m!.h).toBe(h0);
-    expect(Object.values(TILE_H)).toContain(h0);
-    expect(TILE_H[metrics[0]!.tier as keyof typeof TILE_H]).toBe(h0);
+    // FIXED HEIGHT — every tile the ONE slot height regardless of the LOD tier.
+    for (const m of metrics) expect(m!.h).toBe(SHELL_TILE_H_SLOT);
     // The badge sits at an IDENTICAL offset from each tile's top (the anchor no
     // longer floats mid-card because the tiles are uniform).
     const badgeTops = metrics.map((m) => m!.badgeTop);
@@ -360,7 +360,13 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     }
   });
 
-  test('tiles PROMOTE per LOD tier: uniform height grows mini→compact→full as you zoom in', async ({ page }) => {
+  test('zoom NEVER repositions tiles: fixed slot box at every LOD tier, positions byte-identical', async ({ page }) => {
+    // The owner zoom-reposition fix (option (c)): the per-tier box height made
+    // flush-stack Y positions cascade-shift at every tier boundary. Now the OUTER
+    // slot box keeps ONE FIXED height (SHELL_TILE_H_SLOT) across tiers — only the
+    // CONTENT inside the tile swaps (data-shell-tier still promotes mini →
+    // compact → full) — so every node's flow position is BYTE-IDENTICAL across
+    // zoom levels that cross BOTH tier boundaries (0.30 and 0.52).
     await gotoWorkflow(page, { shell: true });
     await waitForHooks(page);
     for (const t of ['tidyVco', 'vca']) {
@@ -369,21 +375,110 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     }
     await expect(page.locator('[data-testid="module-shell-placeholder"]')).not.toHaveCount(0);
 
-    // mini (zoomed way out) → compact → full (zoomed in): the tile height grows,
-    // and every tile stays UNIFORM (same width, same height) at each tier.
-    const seen: number[] = [];
-    for (const [zoom, tier] of [[0.2, 'mini'], [0.4, 'compact'], [0.7, 'full']] as const) {
+    /** EVERY patch node's absolute flow-space position, keyed by id — the full
+     *  layout, not just the ch1 stack (a cascade-shift anywhere must fail). */
+    const snapshotPositions = () =>
+      page.evaluate(() => {
+        const f = (globalThis as any).__flow;
+        const patch = (globalThis as any).__patch;
+        const out: Record<string, { x: number; y: number }> = {};
+        for (const id of Object.keys(patch.nodes)) {
+          const inode = f.getInternalNode(id);
+          const x = inode?.internals?.positionAbsolute?.x ?? inode?.position?.x;
+          const y = inode?.internals?.positionAbsolute?.y ?? inode?.position?.y;
+          if (typeof x === 'number' && typeof y === 'number') out[id] = { x, y };
+        }
+        return out;
+      });
+
+    const positionsByTier: Record<string, Record<string, { x: number; y: number }>> = {};
+    for (const [zoom, tier] of [[0.25, 'mini'], [0.45, 'compact'], [0.7, 'full']] as const) {
       await setZoomTier(page, zoom, tier);
       const tiles = await measureTiles(page);
+      // The CONTENT tier still promotes as you zoom in…
+      expect(tiles.every((t) => t.tier === tier), `${tier}: every tile at the tier`).toBe(true);
+      // …but the BOX never changes: uniform SHELL_TILE_W × the ONE fixed slot height.
       expect(new Set(tiles.map((t) => t.w)).size, `${tier}: uniform width`).toBe(1);
       expect(tiles[0].w, `${tier}: SHELL_TILE_W`).toBe(SHELL_TILE_W);
-      expect(new Set(tiles.map((t) => t.h)).size, `${tier}: uniform height`).toBe(1);
-      expect(tiles[0].h, `${tier}: matches token`).toBe(TILE_H[tier]);
-      seen.push(tiles[0].h);
+      for (const t of tiles) expect(t.h, `${tier}: fixed slot height`).toBe(SHELL_TILE_H_SLOT);
+      positionsByTier[tier] = await snapshotPositions();
     }
-    // strictly growing across the tiers (the promotion).
-    expect(seen[0]).toBeLessThan(seen[1]);
-    expect(seen[1]).toBeLessThan(seen[2]);
+
+    // BYTE-IDENTICAL node positions across all three zooms (both boundaries
+    // crossed): zooming must never move a tile.
+    expect(positionsByTier.compact, 'compact positions == mini positions').toEqual(positionsByTier.mini);
+    expect(positionsByTier.full, 'full positions == mini positions').toEqual(positionsByTier.mini);
+  });
+
+  test('tile header: domain-colour rule ── gap ── FULL long name, type badge on row 2', async ({ page }) => {
+    // The owner tile-header redesign: the module NAME no longer shares its row
+    // with the type badge (long names truncated as "RECORDE…"/"SYNESTH…"). Row 1
+    // is a decorative 2px RULE in the DOMAIN colour (the spine/cable hue) from
+    // the tile's LEFT edge, vertically centred on the name text, stopping at a
+    // set gap BEFORE the name; the NAME then takes the full remaining width. The
+    // faint uppercase type badge moved DOWN to row 2.
+    await gotoWorkflow(page, { shell: true });
+    const ids = ['workflow-recorderbox', 'workflow-synesthesia'];
+    for (const id of ids) {
+      await expect(
+        page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`),
+      ).toBeVisible({ timeout: 15_000 });
+    }
+    // The compact tier (the truncation report's tier) — the tile is 192px wide.
+    await setZoomTier(page, 0.45, 'compact');
+
+    const metrics = await page.evaluate((nodeIds) => {
+      return nodeIds.map((id) => {
+        const tile = document.querySelector(
+          `.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`,
+        ) as HTMLElement | null;
+        const rule = tile?.querySelector('.tile-rule') as HTMLElement | null;
+        const name = tile?.querySelector('.tile-name') as HTMLElement | null;
+        const badge = tile?.querySelector('.tile-badge') as HTMLElement | null;
+        const spine = tile?.querySelector('.rl-spine') as HTMLElement | null;
+        if (!tile || !rule || !name || !badge || !spine) return null;
+        // offset*/scroll*/client* are UNSCALED layout px (immune to the xyflow
+        // zoom transform). offsetParent for all of these is the relative .rl-tile.
+        return {
+          id,
+          tileW: tile.offsetWidth,
+          nameText: (name.textContent ?? '').trim(),
+          nameScrollW: name.scrollWidth,
+          nameClientW: name.clientWidth,
+          ruleLeft: rule.offsetLeft,
+          ruleW: rule.offsetWidth,
+          ruleH: rule.offsetHeight,
+          ruleCenterY: rule.offsetTop + rule.offsetHeight / 2,
+          nameLeft: name.offsetLeft,
+          nameCenterY: name.offsetTop + name.offsetHeight / 2,
+          nameTop: name.offsetTop,
+          badgeTop: badge.offsetTop,
+          ruleBg: getComputedStyle(rule).backgroundColor,
+          spineBg: getComputedStyle(spine).backgroundColor,
+        };
+      });
+    }, ids);
+
+    expect(metrics.every((m) => m !== null), 'both long-name placeholders resolved').toBe(true);
+    for (const m of metrics) {
+      // (b) the FULL long name renders — no ellipsis: the auto-namer's bare
+      // prefix (RECORDERBOX / SYNESTHESIA) fits the 192px tile un-truncated.
+      expect(m!.nameText, `${m!.id}: the full long name is present`).toMatch(/^(RECORDERBOX|SYNESTHESIA)$/);
+      expect(m!.nameScrollW, `${m!.id}: name does not overflow (no …)`).toBeLessThanOrEqual(m!.nameClientW);
+      // (c) the decorative rule: 2px thick, DOMAIN colour (== the spine hue),
+      // from the tile's LEFT edge, with a clean set gap BEFORE the name.
+      expect(m!.ruleH, `${m!.id}: 2px rule`).toBe(2);
+      expect(m!.ruleLeft, `${m!.id}: rule starts at the tile's left edge`).toBe(0);
+      expect(m!.ruleW, `${m!.id}: rule has real length`).toBeGreaterThan(0);
+      expect(m!.ruleBg, `${m!.id}: rule is the DOMAIN colour (spine hue)`).toBe(m!.spineBg);
+      const gap = m!.nameLeft - (m!.ruleLeft + m!.ruleW);
+      expect(gap, `${m!.id}: set gap between rule and name (~9px)`).toBeGreaterThanOrEqual(6);
+      expect(gap, `${m!.id}: set gap between rule and name (~9px)`).toBeLessThanOrEqual(14);
+      // …vertically aligned with the middle of the name text (±2px rounding).
+      expect(Math.abs(m!.ruleCenterY - m!.nameCenterY), `${m!.id}: rule centred on the name`).toBeLessThanOrEqual(2);
+      // The type badge moved DOWN to a second row under the name.
+      expect(m!.badgeTop, `${m!.id}: badge sits on a row BELOW the name`).toBeGreaterThan(m!.nameTop + 8);
+    }
   });
 
   test('preview OFF (default) is a strict no-op: the legacy card renders in the lane', async ({ page }) => {

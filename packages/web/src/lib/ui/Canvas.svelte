@@ -96,7 +96,7 @@
   // STRATA semantic-zoom (P0.2): the shared workflow zoom store + the LOD tier
   // context. `setWorkflowZoom` is fed from the onmove handlers below;
   // `provideLodTier` publishes the derived tier on context for P0.3 cards.
-  import { setWorkflowZoom, provideLodTier, lodTierStore } from '$lib/ui/canvas/workflow-zoom';
+  import { setWorkflowZoom, provideLodTier } from '$lib/ui/canvas/workflow-zoom';
   import {
     makeEnvelope,
     makePortableEnvelope,
@@ -387,7 +387,7 @@
   // P0.3b re-spec — the bottom-drawer EXPANDED full-view faceplate (its own
   // full-width RACKLINE faceplate, NOT routed through DockCardHost's card flex).
   import DockFullView from '$lib/ui/dock/DockFullView.svelte';
-  import { SHELL_TILE_W, shellTileHeightForTier, laneFaceTier, SHELL_VIDEO_ZONE_TILE_INSET_Y } from '$lib/ui/workflow/module-shell-model';
+  import { SHELL_TILE_W, SHELL_TILE_H_SLOT, SHELL_VIDEO_ZONE_TILE_INSET_Y } from '$lib/ui/workflow/module-shell-model';
   // DOCKING P2.5b: the pan-gesture screen-space cable tail (stub → rail).
   import DockPanTail, { type DockTailSpec } from '$lib/ui/dock/DockPanTail.svelte';
   import { dockStore } from '$lib/ui/dock/dock-store.svelte';
@@ -495,15 +495,6 @@
    *  the persisted graph + collab convergence are untouched — pure render deriv. */
   let wcolPitch = $derived(columnPitch(shellPreview));
 
-  // The CURRENT lane FaceTier (mini|compact|full) for the live workflow zoom —
-  // reads the SAME shared LOD store `provideLodTier()` publishes on context, so
-  // the reserved column slot (wcolCardHeightPx) resolves the identical tier the
-  // shell/placeholder tiles render at via `data-shell-tier`. The tier flips only
-  // when the zoom crosses a hysteresis-debounced band boundary (not per-frame),
-  // so the channel-column stack recompute it drives is a discrete event. `dock`
-  // never reaches a lane (laneFaceTier collapses it to `full`). */
-  let shellTier = $derived(laneFaceTier($lodTierStore));
-
   // The header shows "Sign in" only when we're confident the user is signed
   // out. On the public `/` canvas (no client ClerkProvider) that signal is
   // server-derived via `headerAuth`; on `/r/[id]` (provider mounted) it's
@@ -570,16 +561,18 @@
    *  unsized (unmigrated) type. */
   function wcolCardHeightPx(type: string): number {
     // UNIFORM RACKLINE TILE (P0.3b re-spec): under the `?shell=1` preview a
-    // shell/placeholder lane node renders at the PER-TIER RACKLINE tile height
-    // (mini 88 / compact 150 / full 180) for the CURRENT LOD tier — so the tile
-    // grows as you zoom in AND the RESERVED lane slot equals the RENDERED tile
-    // (else the baseline number badge floats mid-card). Shared with the
-    // _module-card.css `data-shell-tier` height rule via shellTileHeightForTier so
-    // CSS/TS can't drift. NON_SHELL_LANE_TYPES (clipplayer / control surfaces /
-    // group / sticky) keep their LEGACY card in the lane, so they reserve their
-    // NATIVE rack tier, not the shell tile. Preview-OFF keeps the per-TYPE rack
-    // tier for every type → byte-identical.
-    if (shellPreview && !NON_SHELL_LANE_TYPES.has(type)) return shellTileHeightForTier(shellTier);
+    // shell/placeholder lane node reserves the ONE FIXED slot height
+    // (SHELL_TILE_H_SLOT = 180) at EVERY zoom — the LOD tier swaps only the
+    // CONTENT inside the box, never the box itself, so flush-stack Y positions
+    // are byte-identical across zoom levels (the owner zoom-reposition fix,
+    // option (c)). Shared with the tier-invariant _module-card.css height rule
+    // (--shell-tile-h) so CSS/TS can't drift, and the RESERVED lane slot equals
+    // the RENDERED tile (else the baseline number badge floats mid-card).
+    // NON_SHELL_LANE_TYPES (clipplayer / control surfaces / group / sticky) keep
+    // their LEGACY card in the lane, so they reserve their NATIVE rack tier, not
+    // the shell tile. Preview-OFF keeps the per-TYPE rack tier for every type →
+    // byte-identical.
+    if (shellPreview && !NON_SHELL_LANE_TYPES.has(type)) return SHELL_TILE_H_SLOT;
     const size = rackSizeByType[type]?.size;
     const u = size ? parseInt(size, 10) || 1 : 1;
     return u * RACK_UNIT;
