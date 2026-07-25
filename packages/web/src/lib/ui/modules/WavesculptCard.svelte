@@ -30,8 +30,7 @@
   // synth formula (mix of saw/sine/triangle morph).
 
   import { onMount, onDestroy } from 'svelte';
-  import { type NodeProps } from '@xyflow/svelte';
-  import { captureFlowStore } from './card-kit';
+  import { useStore, type NodeProps } from '@xyflow/svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
@@ -79,7 +78,7 @@
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
-  const flowStore = captureFlowStore();
+  const flowStore = useStore();
 
   // ----- Resize plumbing (mirror BentboxCard) -----
   // Rounded to whole-u (180px) rack tiles (#759) so default + min land on the
