@@ -21,6 +21,10 @@ import {
   reconcileColumns,
   reconcileColumnWiring,
   reconcileColumnMembership,
+  columnReconcileBudgetTripped,
+  __resetColumnReconcileBudget,
+  RECONCILE_MAX_WRITE_PASSES_PER_WINDOW,
+  RECONCILE_WINDOW_MS,
   PINNED_MIXER_ID,
   PINNED_CLIP_ID,
   type ColumnDefResolver,
@@ -53,6 +57,9 @@ function wcolEdges(): Edge[] {
 beforeEach(() => {
   for (const id of Object.keys(patch.nodes)) delete patch.nodes[id];
   for (const id of Object.keys(patch.edges)) delete patch.edges[id];
+  // Fresh convergence-budget window per test (the whole file runs inside one
+  // real-clock second, so accumulated writing passes would trip it spuriously).
+  __resetColumnReconcileBudget();
   // The always-on pinned singletons the columns anchor to.
   addNode(PINNED_MIXER_ID, 'mixmstrs', { pinned: true });
   addNode(PINNED_CLIP_ID, 'clipplayer', { pinned: true });
@@ -74,6 +81,8 @@ describe('reconcileColumns — a single tidyVco on channel 1', () => {
     const ids = new Set(wcolEdges().map((e) => e.id));
     // clip: pitch1 (polyPitchGate) → vco1.poly
     expect(ids.has('wcol-e-pinned-clipplayer-pitch1-vco1-poly')).toBe(true);
+    // BUG-B: the mono note-gate is patched TOO (pitch AND gate — owner rule).
+    expect(ids.has('wcol-e-pinned-clipplayer-gate1-vco1-gate')).toBe(true);
     // tail send: out_l → ch1L, out_r → ch1R
     expect(ids.has('wcol-e-vco1-out_l-pinned-mixmstrs-ch1L')).toBe(true);
     expect(ids.has('wcol-e-vco1-out_r-pinned-mixmstrs-ch1R')).toBe(true);
@@ -428,5 +437,111 @@ describe('PART B — CV Buddy lane note tap + ES-9 return audio (real Y.Doc)', (
     expect(wcolEdges().some((e) => e.source.nodeId === 'es9')).toBe(false);
     // vco1 still sends to ch6.
     expect(ids.has('wcol-e-vco1-out_l-pinned-mixmstrs-ch6L')).toBe(true);
+  });
+});
+
+// ================================================================
+// BUG-A — a VIDEO module in an AUDIO channel lane: unwired-but-functional,
+// reconcile CONVERGES (no write loop), and the convergence budget makes a
+// hypothetical non-converging heal structurally unable to freeze the UI.
+// ================================================================
+
+describe('BUG-A — video module as a channel member (cellshade-in-a-lane)', () => {
+  // Mirror the Canvas defLookup chain shape WITHOUT importing the video
+  // registry barrel: a cellshade-shaped ConvenienceDef (video in/out + per-knob
+  // CVs) resolved for the 'cellshade' type; everything else through the live
+  // audio registry.
+  const CELLSHADE_DEF = {
+    inputs: [
+      { id: 'in', type: 'video' },
+      { id: 'threshold', type: 'cv', paramTarget: 'threshold' },
+      { id: 'ink', type: 'cv', paramTarget: 'ink' },
+    ],
+    outputs: [{ id: 'out', type: 'video' }],
+  };
+  const resolveWithVideo: ColumnDefResolver = (t) =>
+    t === 'cellshade' ? (CELLSHADE_DEF as never) : (getModuleDef(t) as never);
+
+  it('plans ZERO wcol edges for the video member (unwired, never nonsense)', () => {
+    addNode('cell1', 'cellshade', { channel: 3 });
+    setColumn(3, ['cell1']);
+    reconcileColumns(resolveWithVideo);
+    expect(wcolEdges()).toEqual([]);
+  });
+
+  it('CONVERGES: after the first reconcile, further passes write NOTHING (no update loop)', () => {
+    addNode('cell1', 'cellshade', { channel: 3 });
+    addNode('vco1', 'tidyVco', { channel: 3 });
+    setColumn(3, ['cell1', 'vco1']);
+    reconcileColumns(resolveWithVideo); // settle
+    // Count real Y.Doc updates across repeated janitor passes — the exact
+    // effect↔write cycle the Canvas graph-change seam runs. Zero = converged.
+    let updates = 0;
+    const onUpdate = () => updates++;
+    ydoc.on('update', onUpdate);
+    try {
+      for (let i = 0; i < 10; i++) reconcileColumns(resolveWithVideo);
+    } finally {
+      ydoc.off('update', onUpdate);
+    }
+    expect(updates).toBe(0);
+    expect(columnReconcileBudgetTripped()).toBe(false);
+    // The audio member beside it is fully wired (the video member changed nothing).
+    const ids = new Set(wcolEdges().map((e) => e.id));
+    expect(ids.has('wcol-e-pinned-clipplayer-pitch3-vco1-poly')).toBe(true);
+    expect(ids.has('wcol-e-pinned-clipplayer-gate3-vco1-gate')).toBe(true);
+    expect(ids.has('wcol-e-vco1-out_l-pinned-mixmstrs-ch3L')).toBe(true);
+  });
+
+  it('membership + heads + lanes stay stable for the video member (sane state, no churn)', () => {
+    addNode('cell1', 'cellshade', { channel: 5 });
+    setColumn(5, ['cell1']);
+    reconcileColumns(resolveWithVideo);
+    const mixer = patch.nodes[PINNED_MIXER_ID] as ModuleNode;
+    const cols = (mixer.data as { columns?: Record<string, string[]> }).columns ?? {};
+    expect(cols['5']).toEqual(['cell1']);
+    // Not a head candidate: no isColumnHead flag is ever planted on it.
+    const cell = patch.nodes['cell1'] as ModuleNode;
+    expect((cell.data as { isColumnHead?: boolean }).isColumnHead).toBeUndefined();
+  });
+});
+
+describe('BUG-A — the reconcile convergence budget (anti-freeze guard)', () => {
+  it('a persistent external fighter is BOUNDED: the janitor stops writing within one window', () => {
+    addNode('vco1', 'tidyVco', { channel: 1 });
+    setColumn(1, ['vco1']);
+    const t0 = 1_000_000;
+    reconcileColumns(resolveDef, t0);
+    const managed = wcolEdges()[0]!.id;
+    // Fight the janitor: delete one managed edge before every pass — the
+    // degenerate non-converging cycle (another janitor/peer fighting wcol
+    // edges). Same-window passes must stop writing at the budget.
+    let passes = 0;
+    for (let i = 0; i < RECONCILE_MAX_WRITE_PASSES_PER_WINDOW + 10; i++) {
+      ydoc.transact(() => {
+        delete patch.edges[managed];
+      }, LOCAL_ORIGIN);
+      reconcileColumns(resolveDef, t0 + i); // all inside ONE window
+      if (patch.edges[managed]) passes++;
+      else break; // budget tripped — the janitor paused, edge stays deleted
+    }
+    expect(columnReconcileBudgetTripped()).toBe(true);
+    expect(passes).toBeLessThanOrEqual(RECONCILE_MAX_WRITE_PASSES_PER_WINDOW);
+    expect(patch.edges[managed]).toBeUndefined(); // paused: no more re-adds this window
+
+    // The NEXT window heals normally again (state-based self-repair).
+    reconcileColumns(resolveDef, t0 + RECONCILE_WINDOW_MS + 1);
+    expect(columnReconcileBudgetTripped()).toBe(false);
+    expect(patch.edges[managed]).toBeDefined();
+  });
+
+  it('normal converged reconciles NEVER trip the budget', () => {
+    addNode('vco1', 'tidyVco', { channel: 2 });
+    setColumn(2, ['vco1']);
+    const t0 = 2_000_000;
+    for (let i = 0; i < RECONCILE_MAX_WRITE_PASSES_PER_WINDOW * 3; i++) {
+      reconcileColumns(resolveDef, t0 + i);
+    }
+    expect(columnReconcileBudgetTripped()).toBe(false);
   });
 });
