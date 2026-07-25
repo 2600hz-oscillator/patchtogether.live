@@ -156,6 +156,46 @@
   max-height: calc(var(--rack-u, 1) * var(--rack-unit));
 }
 
+/* P0.3b RACKLINE lane tiles (ModuleShell / ModuleShellPlaceholder). Their roots
+ * are deliberately NOT .mod-card/.card/.moog-panel (so rear-view never
+ * mirrors/hides them — their cables must stay traceable), so they need their own
+ * sizing rule.
+ *
+ * UNIFORM WIDTH (re-spec): every shell/placeholder tile is the SAME `--shell-tile-w`
+ * (192px, the mock's uniform tile) — NO LONGER keyed to the module's per-module
+ * `--rack-hp` (which made recorderbox/synesthesia/tidyvco render at different
+ * widths). The owner "same-size all modules HORIZONTALLY" premise. Canvas's
+ * wcolCardWidthPx short-circuits to the SAME SHELL_TILE_W under the preview, so
+ * the RESERVED column slot == the rendered tile and band-centering (card center ==
+ * channel-number center) stays exact. (NON_SHELL_LANE_TYPES — group/sticky/
+ * clipplayer/control-surfaces — keep their legacy card + native width; they never
+ * mount a .module-shell tile, so this rule never touches them.)
+ *
+ * TIER-INVARIANT HEIGHT (zoom-reposition fix, option (c)): the OUTER slot box is
+ * ONE FIXED height (--shell-tile-h 180, the mock's .mod/.plate design point) at
+ * EVERY LOD tier — zooming swaps only the CONTENT inside the tile (mini = name +
+ * glyph centred in the fixed box / compact = the body knob row / full = the
+ * denser face, keyed off `data-shell-tier` in the components), never the box
+ * itself. A per-tier box height made every flush-stack Y position cascade-shift
+ * whenever the zoom crossed a tier boundary; a fixed slot keeps flow positions
+ * byte-identical across zoom. Canvas's wcolCardHeightPx returns the SAME
+ * constant (SHELL_TILE_H_SLOT) under the preview so the reserved lane slot ==
+ * the rendered tile and the fixed baseline number badge caps every tile flush at
+ * every zoom. The `.rack-sized` gate is DROPPED so the rule also matches
+ * dynamic-sized types that never get `--rack-u`.
+ *
+ * Pinning the OUTER box here is load-bearing: the content swap must NEVER resize
+ * the measured node — at ANY tier — so the channel-column stack math never
+ * recomputes / thrashes on zoom (§3.1 / §9). */
+.svelte-flow__node > :is(.module-shell, .module-shell-placeholder),
+.svelte-flow__node > * > :is(.module-shell, .module-shell-placeholder) {
+  box-sizing: border-box;
+  width: var(--shell-tile-w, 192px);
+  height: var(--shell-tile-h, 180px);
+  min-height: var(--shell-tile-h, 180px);
+  max-height: var(--shell-tile-h, 180px);
+}
+
 /* DOCK RAILS (P2.5a): a docked card renders in a screen-fixed rail hosted by
  * DockCardHost — a classed wrapper that replicates the rack tier WITHOUT the
  * .svelte-flow__node class (which would collide with PickupCable + sweep

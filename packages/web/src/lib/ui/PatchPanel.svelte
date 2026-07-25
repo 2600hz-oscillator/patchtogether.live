@@ -103,6 +103,19 @@
     /** CSS width of the OPEN portaled chrome (default 280). Dense
      *  sectioned modules pass a wider value so verbose labels fit. */
     panelWidth?: number;
+    /** Trigger appearance (P0.3b RACKLINE re-spec):
+     *   - 'corner'    (default): the two top-left / top-right corner affordances
+     *     every legacy card carries — byte-identical to before this prop.
+     *   - 'lane-rail': the mock `.jacks` bottom rail (domain jack dots that open
+     *     the SAME drill-down + a "⤢" expand + a right-aligned flow label),
+     *     used by the workflow lane tiles (<ModuleShell> / placeholder). The
+     *     handle stack + portaled chrome + back panel are unchanged. */
+    variant?: 'corner' | 'lane-rail';
+    /** lane-rail only: the right-aligned signal-flow label (mock `.flow`). */
+    flowLabel?: string;
+    /** lane-rail only: the "⤢" expand affordance → opens the module's dock
+     *  full-view (routed by the shell/placeholder). Omitted ⇒ no expand shown. */
+    onExpand?: () => void;
     children?: Snippet;
   }
 
@@ -113,8 +126,15 @@
     groupingStrategy = 'auto',
     sections = [],
     panelWidth = 280,
+    variant = 'corner',
+    flowLabel,
+    onExpand,
     children,
   }: Props = $props();
+
+  /** Cap of preview jack dots per direction on the lane rail (the rail is a
+   *  drill-down TRIGGER, not the full jack list — the menu shows every port). */
+  const RAIL_DOT_CAP = 4;
 
   // ---------------- Menu state (overlay-replace reducer) ----------------
   //
@@ -154,6 +174,68 @@
 
   let hasInputs = $derived(allInputs.length > 0);
   let hasOutputs = $derived(allOutputs.length > 0);
+
+  // lane-rail preview dots (capped; the drill-down menu lists every port).
+  let railInputs = $derived<PortDescriptor[]>(allInputs.slice(0, RAIL_DOT_CAP));
+  let railOutputs = $derived<PortDescriptor[]>(allOutputs.slice(0, RAIL_DOT_CAP));
+
+  // ---- lane-rail FIT (P0.3b overflow fix) ---------------------------------
+  // Port-heavy tiles overflowed the fixed 192px tile: 8 preview dots pushed
+  // the labelled EXPAND pill past the tile edge (clipped to "EXPA…") and
+  // collapsed the flow label to 0 width. The rail must fit its tile at ANY
+  // port count with the precedence  EXPAND pill > jack dots > flow label:
+  //   1. EXPAND is always fully visible — its measured width is reserved
+  //      before any dot is placed;
+  //   2. as many preview dots as fit render; the surplus collapses into the
+  //      mock's own "···" overflow treatment INSIDE the drill-down trigger
+  //      (the menu lists every port, so no functionality is lost);
+  //   3. the flow label renders only when a readable width remains — it is
+  //      the first thing to DROP on tight tiles, never a 0-width collapse.
+  // Widths come from Svelte dimension bindings (ResizeObserver → UNSCALED
+  // layout px, immune to the xyflow zoom transform). The constants mirror
+  // _rackline-tile.css. The math is loop-free by construction: the budget
+  // reads only the rail + pill widths, which the dot count never changes.
+  const RAIL_PAD_X = 20; //   .jacks padding: 11 left + 9 right
+  const RAIL_GAP = 5; //      .jacks flex gap == the dot gap in .jacks-trigger
+  const RAIL_DOT_W = 12; //   .jk fixed box (--jk)
+  const RAIL_OVERFLOW_W = 14; // the "···" indicator's fixed CSS width
+  const RAIL_FLOW_MIN_W = 32; // smallest readable .flow ("▶ ch1" ≈ 30px)
+  const RAIL_EXPAND_EST_W = 76; // pre-measurement estimate of the EXPAND pill
+
+  let railW = $state(0); //   .jacks clientWidth (includes its padding)
+  let railExpandW = $state(0); // the EXPAND pill's offsetWidth
+
+  const railDotsW = (n: number) => (n <= 0 ? 0 : n * RAIL_DOT_W + (n - 1) * RAIL_GAP);
+
+  let railFit = $derived.by(() => {
+    const total = railInputs.length + railOutputs.length;
+    // Unmeasured (SSR / first paint): render everything, settle on measure.
+    if (railW <= 0) return { dots: total, overflow: false, flow: true };
+    const budget =
+      railW -
+      RAIL_PAD_X -
+      (onExpand ? (railExpandW > 0 ? railExpandW : RAIL_EXPAND_EST_W) + RAIL_GAP : 0);
+    if (railDotsW(total) <= budget) {
+      // Every dot fits; the flow label renders only into READABLE leftover.
+      return {
+        dots: total,
+        overflow: false,
+        flow: budget - railDotsW(total) - RAIL_GAP >= RAIL_FLOW_MIN_W,
+      };
+    }
+    // Not all fit: the flow label drops first; surplus dots collapse to "···"
+    // (dots + trailing gap + the indicator must fit the remaining budget).
+    const dots = Math.max(0, Math.floor((budget - RAIL_OVERFLOW_W) / (RAIL_DOT_W + RAIL_GAP)));
+    const used = railDotsW(dots) + (dots > 0 ? RAIL_GAP : 0) + RAIL_OVERFLOW_W;
+    return { dots, overflow: true, flow: budget - used - RAIL_GAP >= RAIL_FLOW_MIN_W };
+  });
+
+  // The first N preview dots that fit — inputs first, then outputs (the same
+  // order the rail renders them in).
+  let shownRailInputs = $derived<PortDescriptor[]>(railInputs.slice(0, railFit.dots));
+  let shownRailOutputs = $derived<PortDescriptor[]>(
+    railOutputs.slice(0, Math.max(0, railFit.dots - railInputs.length)),
+  );
 
   // Sections that actually carry input ports — the nav rows shown at root
   // for sectioned cards.
@@ -702,34 +784,75 @@
   data-patch-panel-node={nodeId}
   bind:this={hostEl}
 >
-  <button
-    class="patch-trigger left"
-    type="button"
-    data-testid="patch-trigger"
-    aria-label="Open patch panel"
-    aria-expanded={open && menu.side === 'left'}
-    onclick={() => openMenu('left')}
-  >
-    <span class="trigger-glyph" aria-hidden="true">
-      <span class="prong"></span>
-      <span class="prong"></span>
-      <span class="stem"></span>
-    </span>
-  </button>
-  <button
-    class="patch-trigger right"
-    type="button"
-    data-testid="patch-trigger-right"
-    aria-label="Open patch panel"
-    aria-expanded={open && menu.side === 'right'}
-    onclick={() => openMenu('right')}
-  >
-    <span class="trigger-glyph" aria-hidden="true">
-      <span class="prong"></span>
-      <span class="prong"></span>
-      <span class="stem"></span>
-    </span>
-  </button>
+  {#if variant === 'lane-rail'}
+    <!-- RACKLINE lane rail (mock .jacks): the jack dots are the drill-down
+         TRIGGER (open the SAME portaled patch menu); the "⤢" more-affordance
+         opens the dock full-view; the flow label right-aligns. Content is
+         FIT to the fixed tile (railFit): EXPAND always fully visible > as
+         many dots as fit (surplus → the "···" overflow, still the same
+         drill-down trigger) > the flow label (dropped first when tight). -->
+    <div class="jacks" data-testid="lane-jack-rail" bind:clientWidth={railW}>
+      <button
+        class="jacks-trigger"
+        type="button"
+        data-testid="patch-trigger"
+        aria-label="Open patch panel"
+        aria-expanded={open}
+        onclick={() => openMenu('left')}
+      >
+        {#each shownRailInputs as port (port.id)}
+          <span class="jk in" style:--jk-color={cableColorVar(port.cable)}></span>
+        {/each}
+        {#each shownRailOutputs as port (port.id)}
+          <span class="jk out" style:--jk-color={cableColorVar(port.cable)}></span>
+        {/each}
+        {#if railFit.overflow}
+          <span class="jk-more" data-testid="rail-overflow" aria-hidden="true">···</span>
+        {/if}
+      </button>
+      {#if onExpand}
+        <button
+          class="more"
+          type="button"
+          data-testid="shell-open-dock"
+          aria-label="Open full view in the dock"
+          title="Open full view in the dock"
+          bind:offsetWidth={railExpandW}
+          onclick={onExpand}
+        ><span class="more-glyph" aria-hidden="true">⤢</span><span class="more-label">EXPAND</span></button>
+      {/if}
+      {#if flowLabel && railFit.flow}<span class="flow">{flowLabel}</span>{/if}
+    </div>
+  {:else}
+    <button
+      class="patch-trigger left"
+      type="button"
+      data-testid="patch-trigger"
+      aria-label="Open patch panel"
+      aria-expanded={open && menu.side === 'left'}
+      onclick={() => openMenu('left')}
+    >
+      <span class="trigger-glyph" aria-hidden="true">
+        <span class="prong"></span>
+        <span class="prong"></span>
+        <span class="stem"></span>
+      </span>
+    </button>
+    <button
+      class="patch-trigger right"
+      type="button"
+      data-testid="patch-trigger-right"
+      aria-label="Open patch panel"
+      aria-expanded={open && menu.side === 'right'}
+      onclick={() => openMenu('right')}
+    >
+      <span class="trigger-glyph" aria-hidden="true">
+        <span class="prong"></span>
+        <span class="prong"></span>
+        <span class="stem"></span>
+      </span>
+    </button>
+  {/if}
 
   <!--
     HANDLE STACK — every declared <Handle> stays in the card DOM at ALL

@@ -57,6 +57,18 @@ class DockStore {
   // ---- P1 pinned-drawer occupancy (transient) ----
   #docked = $state<Partial<Record<DockZone, string | null>>>({});
 
+  // ---- P0.3b EXPANDED FULL-VIEW occupancy (transient, per tab) ----
+  //
+  // The bottom drawer's "expanded full-view" occupant: the ONE node whose FULL
+  // faceplate is currently open in the dock ALONGSIDE the pinned drawer occupant
+  // (modeled on #docked, one-per-bottom-zone, ESC-closable). This is the shell-
+  // preview legacy-fallback's dock half — an UN-MIGRATED module's "open in dock"
+  // and a MIGRATED module's "Expand" both set it. It is NEVER a persisted dock
+  // ENTRY (so it doesn't swap the lane tile to a stub — the module keeps its
+  // curated/placeholder lane face) and is NEVER written to the Y.Doc: pure
+  // transient view furniture, lost on reload exactly like the pinned drawer.
+  #fullView = $state<string | null>(null);
+
   // ---- P2.5a entries (persisted per rackspace) ----
   #entries = $state<Record<string, DockEntry>>({});
   #tombstones: Record<string, DockTombstone> = {};
@@ -80,6 +92,7 @@ class DockStore {
   bind(rackspaceKey: string): void {
     this.#rackKey = rackspaceKey;
     this.#docked = {};
+    this.#fullView = null;
     const parsed = parsePersistedDockState(
       this.#storage?.getItem(DOCK_STORAGE_PREFIX + rackspaceKey) ?? null,
     );
@@ -94,6 +107,7 @@ class DockStore {
   unbind(): void {
     this.#rackKey = null;
     this.#docked = {};
+    this.#fullView = null;
     this.#entries = {};
     this.#tombstones = {};
     this.#railSize = {};
@@ -143,6 +157,30 @@ class DockStore {
   /** Close every pinned drawer (rack mount/unmount hygiene). */
   closeAll(): void {
     this.#docked = {};
+    this.#fullView = null;
+  }
+
+  // ---------------- P0.3b expanded full-view occupancy (transient) ----------------
+
+  /** The node whose full faceplate is open in the bottom dock full-view, or
+   *  null. Reactive — the bottom rail's card list reads this. */
+  get fullViewNodeId(): string | null {
+    return this.#fullView;
+  }
+
+  /** Open `nodeId`'s full faceplate in the bottom dock full-view (transient —
+   *  never a persisted entry). Un-collapses the bottom rail so the card shows.
+   *  Opening a different node REPLACES the occupant (one-per-bottom-zone). */
+  openFullView(nodeId: string): void {
+    this.#fullView = nodeId;
+    if (this.#railCollapsed.bottom) {
+      this.#railCollapsed = { ...this.#railCollapsed, bottom: false };
+    }
+  }
+
+  /** Close the full-view (no-op when already closed). */
+  closeFullView(): void {
+    if (this.#fullView !== null) this.#fullView = null;
   }
 
   // ---------------- P2.5a dock entries ----------------

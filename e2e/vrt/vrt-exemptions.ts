@@ -968,6 +968,18 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // cellshade-composite precedent).
   'linux/workflow-audio-io',
   'linux/workflow-dock-patch',
+  // WORKFLOW `?shell=1` ZOOM scenes (2026-07-25, deliberate darwin-first): the
+  // same framed RACKLINE rack region (lane 1..3 + one ch1 member + the
+  // video-zone trio) pinned at zoom 0.40 / 0.80 / 1.30
+  // (workflow-shell-zoom.spec.ts) — the pixel gate for the owner-reported
+  // zoom-reposition bug (tiles must hold position vs the lane lines / number
+  // badges / dashed video band at every zoom; the overlay's flow→screen
+  // projection double-counted the pane offset). Darwin baselines captured
+  // locally + visually inspected; linux baselines pending a vrt-update.yml
+  // workflow_dispatch on the PR branch (the workflow-dock-composite precedent).
+  'linux/workflow-shell-zoom-040',
+  'linux/workflow-shell-zoom-080',
+  'linux/workflow-shell-zoom-130',
   // CLIPPLAYER: darwin baseline (the clip-launcher card — 8×8 launch grid +
   // piano-roll note editor + transport knobs; no animated canvas) captured
   // locally; linux baseline pending a `vrt-update.yml` workflow_dispatch on

@@ -15,6 +15,7 @@
   import {
     COLUMN_COUNT,
     SEND_BOX_COUNT,
+    COLUMN_W,
     columnXBand,
     sendBoxXBand,
     COLUMN_BASELINE_Y,
@@ -29,8 +30,29 @@
     laneTopY: number;
     /** Viewport change signal (incremented on pan/zoom) — re-projects the rects. */
     tick: number;
+    /** The ACTIVE column pitch (flow-space px): the tight RACKLINE pitch under the
+     *  `?shell=1` preview, else COLUMN_W (34hp / 765px). Threaded so the lane
+     *  bands + number badges + video zone track the narrowed columns 1:1 with the
+     *  RENDER-derived tile positions. Defaults to COLUMN_W (preview-off identical). */
+    pitch?: number;
+    /** `?shell=1` ZOOM-REPOSITION FIX (P0.3b): project flow→PANE-LOCAL coords via
+     *  the raw viewport affine map (screen = flow·zoom + translate) instead of
+     *  `flowToScreenPosition`. The overlay's children are absolutely positioned
+     *  INSIDE the `.svelte-flow` container, but `flowToScreenPosition` returns
+     *  WINDOW client coords (it adds the container's own bounding rect), so the
+     *  legacy path double-counts the pane's client offset (the topbar + left
+     *  rail, e.g. 44,41px) — a constant SCREEN-px shift of the whole grid that,
+     *  normalized by zoom, made the lanes/badges/video-band DRIFT relative to
+     *  the (correctly-placed) tiles as the zoom changed: offset/zoom flow-px of
+     *  error, so tiles poke above the dashed video line at low zoom and sit
+     *  below it at high zoom. The pane-local map is the EXACT transform xyflow
+     *  applies to the node layer, so grid and tiles agree BY CONSTRUCTION at
+     *  every zoom. Gated to the shell preview so preview-OFF pixels stay
+     *  byte-identical (existing VRT baselines untouched); folding the corrected
+     *  projection into preview-off is the flagged follow-up. */
+    paneLocalProjection?: boolean;
   }
-  let { columnColors, laneTopY, tick }: Props = $props();
+  let { columnColors, laneTopY, tick, pitch = COLUMN_W, paneLocalProjection = false }: Props = $props();
 
   const flow = useSvelteFlow();
 
@@ -39,6 +61,16 @@
   /** Screen-space rect for a flow-space band, via two-corner projection. */
   function project(x0: number, x1: number, y0: number, y1: number): Rect | null {
     try {
+      if (paneLocalProjection) {
+        // Pane-local: the node layer's own affine map (no container offset).
+        const { x: tx, y: ty, zoom } = flow.getViewport();
+        return {
+          left: x0 * zoom + tx,
+          top: y0 * zoom + ty,
+          width: (x1 - x0) * zoom,
+          height: (y1 - y0) * zoom,
+        };
+      }
       const tl = flow.flowToScreenPosition({ x: x0, y: y0 });
       const br = flow.flowToScreenPosition({ x: x1, y: y1 });
       return { left: tl.x, top: tl.y, width: br.x - tl.x, height: br.y - tl.y };
@@ -52,7 +84,7 @@
     void tick; // re-project on viewport change
     const out: { ch: number; rect: Rect; color: string }[] = [];
     for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
-      const [x0, x1] = columnXBand(ch);
+      const [x0, x1] = columnXBand(ch, pitch);
       const rect = project(x0, x1, laneTopY, COLUMN_BASELINE_Y);
       if (rect) out.push({ ch, rect, color: columnColors[ch - 1] ?? '#3a4a52' });
     }
@@ -64,7 +96,7 @@
     void tick;
     const out: { slot: number; rect: Rect }[] = [];
     for (let s = 1; s <= SEND_BOX_COUNT; s++) {
-      const [x0, x1] = sendBoxXBand(s);
+      const [x0, x1] = sendBoxXBand(s, pitch);
       const rect = project(x0, x1, laneTopY, COLUMN_BASELINE_Y);
       if (rect) out.push({ slot: s, rect });
     }
@@ -76,7 +108,7 @@
   // holds the default videoOut + any video cards).
   let videoZone = $derived.by<Rect | null>(() => {
     void tick;
-    const b = videoAreaBand();
+    const b = videoAreaBand(pitch);
     return project(b.x0, b.x1, b.y0, b.y1);
   });
 </script>

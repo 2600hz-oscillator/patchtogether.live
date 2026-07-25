@@ -370,7 +370,13 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // deterministic composite scenes (mirrorpool-refract / -mirror / -storm
       // in mirrorpool-composite.spec.ts); linux baselines land via
       // vrt-update.yml once the owner approves the look.
-    ).toBeLessThanOrEqual(104);
+      // 104→107 for the WORKFLOW `?shell=1` ZOOM scenes (2026-07-25,
+      // deliberate darwin-first — the same framed RACKLINE rack region pinned
+      // at zoom 0.40/0.80/1.30 in workflow-shell-zoom.spec.ts, the pixel gate
+      // for the owner-reported zoom-reposition bug; linux baselines pending
+      // the vrt-update.yml dispatch on the PR branch, the
+      // workflow-dock-composite precedent).
+    ).toBeLessThanOrEqual(107);
   });
 });
 
