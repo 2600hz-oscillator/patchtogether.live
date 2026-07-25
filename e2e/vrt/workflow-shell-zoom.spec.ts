@@ -36,6 +36,23 @@ const SCENES = [
   { id: 'workflow-shell-zoom-130', zoom: 1.3, faceTier: 'full' },
 ] as const;
 
+/** TIGHTENED per-scene diff budget (absolute pixels), overriding the global
+ *  ratio budget in vrt.config.ts (0.05 of 1280×720 = 46_080 px — far too
+ *  loose to gate THIS bug class). Measured with the paneLocalProjection fix
+ *  REVERTED, the whole-grid 44/41px overlay drift changes only 9162 / 7640 /
+ *  5528 px at zoom 0.40 / 0.80 / 1.30 — i.e. the scenes would still PASS
+ *  under the default ratio budget. 1500 px flips all three RED on that
+ *  drift (min observed 5528) while sitting far above run-to-run noise:
+ *  the tiles are static (animations are killed via the style tag below +
+ *  `animations: 'disabled'`), and 3× re-runs per scene reported 0 diff
+ *  pixels. Playwright combines per-call maxDiffPixels with the config's
+ *  maxDiffPixelRatio by taking the MIN, so this is the effective budget. */
+const SCENE_MAX_DIFF_PIXELS: Record<(typeof SCENES)[number]['id'], number> = {
+  'workflow-shell-zoom-040': 1500,
+  'workflow-shell-zoom-080': 1500,
+  'workflow-shell-zoom-130': 1500,
+};
+
 /** Wait until the Canvas dev spawn/viewport hooks are registered. */
 async function waitForHooks(page: Page): Promise<void> {
   await page.waitForFunction(
@@ -134,6 +151,7 @@ test.describe('VRT: ?shell=1 rack holds position vs the lane grid at fixed zooms
       );
 
       await expect(page).toHaveScreenshot(`${id}.png`, {
+        maxDiffPixels: SCENE_MAX_DIFF_PIXELS[id],
         mask: [
           // Live status text (ctx/sr/lat readouts + the trace counter) —
           // environment/timing-dependent; the rack-vs-grid geometry is the
