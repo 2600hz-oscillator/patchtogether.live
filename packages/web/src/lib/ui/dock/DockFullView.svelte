@@ -88,6 +88,14 @@
 
 <div class="dock-faceplate" data-testid="dock-full-view" data-fullview-node={node.id}>
   <div class="faceplate-scroll">
+    <!-- OCCUPANT SWAP = REMOUNT ({#key node.id}): opening module B while A is
+         expanded must tear A's subtree down and mount B's fresh — never morph
+         A's mounted card/shell in place with B's node. In-place morphing
+         updated the OLD subtree's deriveds with the NEW node mid-flush
+         (curated-face closures over the previous def) and, combined with a
+         throwing legacy-card init, wedged the faceplate on the previous
+         occupant (the "expand B switched nothing" bug). -->
+    {#key node.id}
     <div class={`faceplate ${domain}`} data-fullview-domain={domain}>
       <span class="spine" aria-hidden="true"></span>
 
@@ -149,6 +157,7 @@
         </div>
       </div>
     </div>
+    {/key}
   </div>
 </div>
 

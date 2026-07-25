@@ -28,7 +28,8 @@
   // the same item + can drive play/seek. Each peer loads the URL locally.
 
   import { onMount, onDestroy } from 'svelte';
-  import { useStore, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
+  import { captureFlowStore } from './card-kit';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
@@ -69,7 +70,7 @@
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
-  const flowStore = useStore();
+  const flowStore = captureFlowStore();
 
   // ---- Sizing ----
   const DEFAULT_WIDTH = 360;
