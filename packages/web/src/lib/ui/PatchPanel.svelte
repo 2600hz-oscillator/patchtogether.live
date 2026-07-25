@@ -179,6 +179,64 @@
   let railInputs = $derived<PortDescriptor[]>(allInputs.slice(0, RAIL_DOT_CAP));
   let railOutputs = $derived<PortDescriptor[]>(allOutputs.slice(0, RAIL_DOT_CAP));
 
+  // ---- lane-rail FIT (P0.3b overflow fix) ---------------------------------
+  // Port-heavy tiles overflowed the fixed 192px tile: 8 preview dots pushed
+  // the labelled EXPAND pill past the tile edge (clipped to "EXPA…") and
+  // collapsed the flow label to 0 width. The rail must fit its tile at ANY
+  // port count with the precedence  EXPAND pill > jack dots > flow label:
+  //   1. EXPAND is always fully visible — its measured width is reserved
+  //      before any dot is placed;
+  //   2. as many preview dots as fit render; the surplus collapses into the
+  //      mock's own "···" overflow treatment INSIDE the drill-down trigger
+  //      (the menu lists every port, so no functionality is lost);
+  //   3. the flow label renders only when a readable width remains — it is
+  //      the first thing to DROP on tight tiles, never a 0-width collapse.
+  // Widths come from Svelte dimension bindings (ResizeObserver → UNSCALED
+  // layout px, immune to the xyflow zoom transform). The constants mirror
+  // _rackline-tile.css. The math is loop-free by construction: the budget
+  // reads only the rail + pill widths, which the dot count never changes.
+  const RAIL_PAD_X = 20; //   .jacks padding: 11 left + 9 right
+  const RAIL_GAP = 5; //      .jacks flex gap == the dot gap in .jacks-trigger
+  const RAIL_DOT_W = 12; //   .jk fixed box (--jk)
+  const RAIL_OVERFLOW_W = 14; // the "···" indicator's fixed CSS width
+  const RAIL_FLOW_MIN_W = 32; // smallest readable .flow ("▶ ch1" ≈ 30px)
+  const RAIL_EXPAND_EST_W = 76; // pre-measurement estimate of the EXPAND pill
+
+  let railW = $state(0); //   .jacks clientWidth (includes its padding)
+  let railExpandW = $state(0); // the EXPAND pill's offsetWidth
+
+  const railDotsW = (n: number) => (n <= 0 ? 0 : n * RAIL_DOT_W + (n - 1) * RAIL_GAP);
+
+  let railFit = $derived.by(() => {
+    const total = railInputs.length + railOutputs.length;
+    // Unmeasured (SSR / first paint): render everything, settle on measure.
+    if (railW <= 0) return { dots: total, overflow: false, flow: true };
+    const budget =
+      railW -
+      RAIL_PAD_X -
+      (onExpand ? (railExpandW > 0 ? railExpandW : RAIL_EXPAND_EST_W) + RAIL_GAP : 0);
+    if (railDotsW(total) <= budget) {
+      // Every dot fits; the flow label renders only into READABLE leftover.
+      return {
+        dots: total,
+        overflow: false,
+        flow: budget - railDotsW(total) - RAIL_GAP >= RAIL_FLOW_MIN_W,
+      };
+    }
+    // Not all fit: the flow label drops first; surplus dots collapse to "···"
+    // (dots + trailing gap + the indicator must fit the remaining budget).
+    const dots = Math.max(0, Math.floor((budget - RAIL_OVERFLOW_W) / (RAIL_DOT_W + RAIL_GAP)));
+    const used = railDotsW(dots) + (dots > 0 ? RAIL_GAP : 0) + RAIL_OVERFLOW_W;
+    return { dots, overflow: true, flow: budget - used - RAIL_GAP >= RAIL_FLOW_MIN_W };
+  });
+
+  // The first N preview dots that fit — inputs first, then outputs (the same
+  // order the rail renders them in).
+  let shownRailInputs = $derived<PortDescriptor[]>(railInputs.slice(0, railFit.dots));
+  let shownRailOutputs = $derived<PortDescriptor[]>(
+    railOutputs.slice(0, Math.max(0, railFit.dots - railInputs.length)),
+  );
+
   // Sections that actually carry input ports — the nav rows shown at root
   // for sectioned cards.
   let inputSections = $derived<SectionedGroup[]>(
@@ -729,8 +787,11 @@
   {#if variant === 'lane-rail'}
     <!-- RACKLINE lane rail (mock .jacks): the jack dots are the drill-down
          TRIGGER (open the SAME portaled patch menu); the "⤢" more-affordance
-         opens the dock full-view; the flow label right-aligns. -->
-    <div class="jacks" data-testid="lane-jack-rail">
+         opens the dock full-view; the flow label right-aligns. Content is
+         FIT to the fixed tile (railFit): EXPAND always fully visible > as
+         many dots as fit (surplus → the "···" overflow, still the same
+         drill-down trigger) > the flow label (dropped first when tight). -->
+    <div class="jacks" data-testid="lane-jack-rail" bind:clientWidth={railW}>
       <button
         class="jacks-trigger"
         type="button"
@@ -739,12 +800,15 @@
         aria-expanded={open}
         onclick={() => openMenu('left')}
       >
-        {#each railInputs as port (port.id)}
+        {#each shownRailInputs as port (port.id)}
           <span class="jk in" style:--jk-color={cableColorVar(port.cable)}></span>
         {/each}
-        {#each railOutputs as port (port.id)}
+        {#each shownRailOutputs as port (port.id)}
           <span class="jk out" style:--jk-color={cableColorVar(port.cable)}></span>
         {/each}
+        {#if railFit.overflow}
+          <span class="jk-more" data-testid="rail-overflow" aria-hidden="true">···</span>
+        {/if}
       </button>
       {#if onExpand}
         <button
@@ -753,10 +817,11 @@
           data-testid="shell-open-dock"
           aria-label="Open full view in the dock"
           title="Open full view in the dock"
+          bind:offsetWidth={railExpandW}
           onclick={onExpand}
         ><span class="more-glyph" aria-hidden="true">⤢</span><span class="more-label">EXPAND</span></button>
       {/if}
-      {#if flowLabel}<span class="flow">{flowLabel}</span>{/if}
+      {#if flowLabel && railFit.flow}<span class="flow">{flowLabel}</span>{/if}
     </div>
   {:else}
     <button

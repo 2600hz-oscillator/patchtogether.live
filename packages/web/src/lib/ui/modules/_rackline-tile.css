@@ -232,14 +232,30 @@
   background: var(--module-bg-deep, #0a0c0f);
   box-shadow: inset 0 0 0 2px var(--jk-color, var(--cable-audio));
 }
+/* rail overflow ("···" — the mock's own treatment): surplus preview dots
+ * collapse into it when the fixed tile can't fit every dot alongside the
+ * EXPAND pill (PatchPanel's railFit). It sits INSIDE .jacks-trigger, so it
+ * opens the same drill-down — which lists every port, so nothing is lost.
+ * Fixed 14px box: PatchPanel's RAIL_OVERFLOW_W mirrors this number. */
+.rl-tile .jk-more {
+  flex: none;
+  width: 14px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.5px;
+  text-align: center;
+  color: var(--ink-faint, #646c77);
+}
 /* expand → dock full-view (mock .more, promoted to a CLEAR, LABELLED pill so the
  * "open the full module in the dock" affordance is discoverable — the tiny faint
  * glyph-only button read as undiscoverable chrome). Spine-tinted to match the
  * RACKLINE kit; still routes onExpand → dockStore.openFullView. */
 .rl-tile .jacks .more {
-  flex: 0 0 auto;
+  flex: 0 0 auto; /* the pill NEVER shrinks — highest fit priority */
   display: inline-flex;
   align-items: center;
+  white-space: nowrap;
   gap: 4px;
   background: color-mix(in srgb, var(--_spine) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--_spine) 45%, var(--border, #2c3037));
@@ -269,7 +285,10 @@
   outline-offset: 1px;
   border-radius: 5px;
 }
-/* right-aligned signal-flow label (mock .flow "▶ ch1") */
+/* right-aligned signal-flow label (mock .flow "▶ ch1"). PatchPanel renders it
+ * only when a READABLE width remains (railFit — it is the first thing to drop
+ * on a tight tile), so it never flex-collapses to 0 mid-render; the shrink +
+ * ellipsis below stay as a graceful backstop for an unusually long label. */
 .rl-tile .jacks .flow {
   margin-left: auto;
   font-size: 9px;

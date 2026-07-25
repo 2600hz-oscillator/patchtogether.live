@@ -628,4 +628,114 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
     await expect(faceplate).toHaveCount(0);
     await expect(placeholder).toBeVisible();
   });
+
+  // BUG 4 — port-heavy tiles overflowed the fixed 192px rail: synesthesia's 8
+  // preview dots (4 in + 4 out) pushed the labelled EXPAND pill 43px past the
+  // tile's right edge (label clipped to "EXPA…") and flex-collapsed the .flow
+  // label to 0 width. The rail now FITS the tile at ANY port count with the
+  // precedence EXPAND pill > jack dots > flow label: surplus dots collapse
+  // into the mock's own "···" overflow treatment, which is part of the same
+  // drill-down trigger (the menu lists every port — nothing is lost).
+  test('port-heavy rail FITS the tile: EXPAND fully visible, surplus dots collapse into "···" that opens the drill-down', async ({ page }) => {
+    await gotoWorkflow(page, { shell: true });
+    const tile = page.locator(
+      '.svelte-flow__node[data-id="workflow-synesthesia"] [data-testid="module-shell-placeholder"]',
+    );
+    await expect(tile).toBeVisible({ timeout: 15_000 });
+    const expand = tile.getByTestId('shell-open-dock');
+    await expect(expand).toBeVisible();
+
+    // The fit settles once the ResizeObserver measurements land: the rail's
+    // content no longer overflows its box (pre-fix: scrollWidth 215 > 190).
+    await page.waitForFunction(() => {
+      const r = document.querySelector(
+        '.svelte-flow__node[data-id="workflow-synesthesia"] [data-testid="lane-jack-rail"]',
+      );
+      return !!r && r.scrollWidth <= r.clientWidth;
+    });
+
+    // EXPAND pill FULLY inside the tile (screen space): both edges contained.
+    const tileBox = await tile.boundingBox();
+    const expandBox = await expand.boundingBox();
+    expect(tileBox, 'tile bounding box resolved').toBeTruthy();
+    expect(expandBox, 'EXPAND bounding box resolved').toBeTruthy();
+    expect(expandBox!.x, 'EXPAND left edge inside the tile').toBeGreaterThanOrEqual(tileBox!.x - 0.5);
+    expect(
+      expandBox!.x + expandBox!.width,
+      'EXPAND right edge inside the tile (pre-fix: 43px past it)',
+    ).toBeLessThanOrEqual(tileBox!.x + tileBox!.width + 0.5);
+
+    // UNSCALED layout metrics (immune to the xyflow zoom transform).
+    const m = await page.evaluate(() => {
+      const tile = document.querySelector(
+        '.svelte-flow__node[data-id="workflow-synesthesia"] [data-testid="module-shell-placeholder"]',
+      ) as HTMLElement;
+      const rail = tile.querySelector('[data-testid="lane-jack-rail"]') as HTMLElement;
+      const expand = tile.querySelector('[data-testid="shell-open-dock"]') as HTMLElement;
+      const flow = rail.querySelector('.flow') as HTMLElement | null;
+      // .more's offsetParent is the relative .rl-tile → offsetLeft is tile-relative.
+      return {
+        tileW: tile.offsetWidth,
+        railScrollW: rail.scrollWidth,
+        railClientW: rail.clientWidth,
+        expandRight: expand.offsetLeft + expand.offsetWidth,
+        expandScrollW: expand.scrollWidth,
+        expandClientW: expand.clientWidth,
+        dots: rail.querySelectorAll('.jk').length,
+        hasOverflow: !!rail.querySelector('[data-testid="rail-overflow"]'),
+        flowW: flow ? flow.offsetWidth : null,
+      };
+    });
+    expect(m.railScrollW, 'rail content fits — no horizontal overflow/clip').toBeLessThanOrEqual(m.railClientW);
+    expect(m.expandRight, 'EXPAND right edge ≤ tile width (unscaled)').toBeLessThanOrEqual(m.tileW);
+    expect(m.expandScrollW, 'the EXPAND label itself is not clipped').toBeLessThanOrEqual(m.expandClientW);
+    // Only a FITTING SUBSET of synesthesia's 8 preview dots renders; the
+    // surplus is collapsed into the "···" affordance.
+    expect(m.dots, 'some jack dots still preview').toBeGreaterThan(0);
+    expect(m.dots, 'surplus dots were collapsed').toBeLessThan(8);
+    expect(m.hasOverflow, 'the "···" overflow affordance renders').toBe(true);
+    // The flow label either renders READABLY or is dropped (fit precedence) —
+    // never the pre-fix 0-width flex collapse.
+    if (m.flowW !== null) expect(m.flowW, 'flow label never a 0-width sliver').toBeGreaterThan(20);
+
+    // The "···" affordance opens the SAME PatchPanel drill-down (it is part
+    // of the jacks trigger), so every collapsed port stays reachable.
+    await tile.getByTestId('rail-overflow').click();
+    await expect(page.getByTestId('patch-panel')).toBeVisible();
+  });
+
+  // BUG 4 counterpart — a low-port tile (vca: 2 in + 2 out) is untouched by
+  // the fit: EVERY preview dot renders and no "···" overflow appears.
+  test('low-port rail (vca) shows ALL jack dots with no "···" and EXPAND inside the tile', async ({ page }) => {
+    await gotoWorkflow(page, { shell: true });
+    await spawnPatch(page, [{ id: NODE, type: 'vca', position: { x: 460, y: 240 } }]);
+    const tile = page.locator(`.svelte-flow__node[data-id="${NODE}"] [data-testid="module-shell-placeholder"]`);
+    await expect(tile).toBeVisible();
+    await page.waitForFunction((nodeId) => {
+      const r = document.querySelector(
+        `.svelte-flow__node[data-id="${nodeId}"] [data-testid="lane-jack-rail"]`,
+      );
+      return !!r && r.scrollWidth <= r.clientWidth;
+    }, NODE);
+
+    const m = await page.evaluate((nodeId) => {
+      const tile = document.querySelector(
+        `.svelte-flow__node[data-id="${nodeId}"] [data-testid="module-shell-placeholder"]`,
+      ) as HTMLElement;
+      const rail = tile.querySelector('[data-testid="lane-jack-rail"]') as HTMLElement;
+      const expand = tile.querySelector('[data-testid="shell-open-dock"]') as HTMLElement;
+      return {
+        tileW: tile.offsetWidth,
+        railScrollW: rail.scrollWidth,
+        railClientW: rail.clientWidth,
+        expandRight: expand.offsetLeft + expand.offsetWidth,
+        dots: rail.querySelectorAll('.jk').length,
+        hasOverflow: !!rail.querySelector('[data-testid="rail-overflow"]'),
+      };
+    }, NODE);
+    expect(m.dots, 'ALL 4 vca preview dots render').toBe(4);
+    expect(m.hasOverflow, 'no "···" on a low-port tile').toBe(false);
+    expect(m.railScrollW, 'rail fits').toBeLessThanOrEqual(m.railClientW);
+    expect(m.expandRight, 'EXPAND inside the tile').toBeLessThanOrEqual(m.tileW);
+  });
 });
