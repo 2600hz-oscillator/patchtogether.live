@@ -96,6 +96,10 @@
   });
   const effWidth = $derived(fluid ? Math.max(1, Math.round(hostW)) : width);
 
+  /** The idle (no-source) waveform trace: a flat centerline, identical to a
+   *  silent buffer. */
+  const FLAT_TRACE = [0, 0];
+
   const CYAN = '#38e0d4';
   const AMBER = '#f5b642';
   const BG_TOP = '#0d1013';
@@ -188,9 +192,14 @@
       }
       return { pts: morphWavePoints(morph, effWidth, height, 128, pw), peak: 1 };
     }
-    // waveform (live)
+    // waveform (live). No source / not-yet-attached tap draws the SAME flat
+    // centerline a silent (all-zero) buffer draws, so "engine not booted" and
+    // "module silent" are byte-identical pixels (VRT determinism for the
+    // shell's live glyphs) and the trace only moves when signal really flows.
     const data = asArray(getSamples?.());
-    if (!data || data.length === 0) return { pts: [], peak: 0 };
+    if (!data || data.length === 0) {
+      return { pts: samplesToPoints(FLAT_TRACE, effWidth, height), peak: 0 };
+    }
     return { pts: samplesToPoints(data, effWidth, height), peak: peakAmplitude(data) };
   }
 

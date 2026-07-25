@@ -120,6 +120,40 @@ export function morphWavePoints(
   return pts;
 }
 
+/**
+ * One sample (−1..1) of the LFO's 3-anchor morph at phase `phase01` (0..1):
+ * shape 0 = sine, 1 = rising saw, 2 = square, with LINEAR crossfades between
+ * adjacent anchors (0.5 = halfway sine↔saw) — the lfo def's documented shape
+ * law. `amp` scales the swing (the lfo card's depth: 0.5 = unity ±1, so pass
+ * min(1, 2·depth) for the display). Pure.
+ */
+export function triMorphWaveSample(phase01: number, shape: number, amp = 1): number {
+  // Clamped to ONE display cycle [0,1] (no wrap): the endpoint keeps the
+  // saw's full ramp / the square's second half instead of snapping back to
+  // phase 0, so the drawn cycle reads cleanly edge to edge.
+  const ph = phase01 < 0 ? 0 : phase01 > 1 ? 1 : phase01;
+  const s = shape < 0 ? 0 : shape > 2 ? 2 : shape;
+  const sine = Math.sin(ph * 2 * Math.PI);
+  const saw = 2 * ph - 1;
+  const square = ph < 0.5 ? 1 : -1;
+  const v = s <= 1 ? (1 - s) * sine + s * saw : (2 - s) * saw + (s - 1) * square;
+  return v * amp;
+}
+
+/**
+ * One cycle of the LFO tri-morph as a sample buffer (−1..1) for ScopeScreen's
+ * explicit-buffer `wave` mode — the lfo face's PARAM-REACTIVE live glyph
+ * (recomputed whenever shape/depth change). Deterministic + pure.
+ */
+export function triMorphWaveSamples(shape: number, amp = 1, samples = 128): Float32Array {
+  const n = Math.max(2, Math.floor(samples));
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    out[i] = triMorphWaveSample(i / (n - 1), shape, amp);
+  }
+  return out;
+}
+
 // ---- WAVEFORM mode (live trace) + explicit single-cycle buffers ------------
 
 /** Vertical inset (fraction of height) for bipolar (−1..1) traces. */

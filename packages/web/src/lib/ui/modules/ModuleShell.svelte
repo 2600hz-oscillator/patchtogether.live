@@ -41,16 +41,26 @@
     laneFaceTier,
     laneBodyPlan,
     roleLineForDef,
+    DOCK_HERO_GLYPH_W,
     type ShellDefLike,
   } from '$lib/ui/workflow/module-shell-model';
-  import { sineWaveSamples, burstWaveSamples } from '$lib/ui/controls/scope-screen-model';
+  import {
+    glyphBinding,
+    createShellGlyphTap,
+    type ShellGlyphTap,
+  } from '$lib/ui/workflow/shell-glyph-live';
+  import {
+    sineWaveSamples,
+    burstWaveSamples,
+    triMorphWaveSamples,
+  } from '$lib/ui/controls/scope-screen-model';
   import type { ModuleNode, ParamDef, PortDef } from '$lib/graph/types';
   import type { Tier } from '$lib/ui/canvas/lod';
 
-  // Static glyph traces (no live taps in this pass): 'waveform' faces draw a
-  // generic single-cycle sine (LFO's default shape), 'scope' faces a decaying
-  // burst (a struck source at rest) — never the tidyVco saw morph, which read
-  // as "this module is an oscillator" on non-oscillators.
+  // Static FALLBACK glyph traces — only for a face whose glyph has no live
+  // seam yet (glyphBinding 'static'): 'waveform' draws a generic single-cycle
+  // sine, 'scope' a decaying burst. The P1 batch-1 faces all bind LIVE (an
+  // analyser tap on the primary audio output, or a param-reactive curve).
   const SINE_TRACE = sineWaveSamples();
   const BURST_TRACE = burstWaveSamples();
 
@@ -103,6 +113,12 @@
   let controls = $derived<FaceControl[]>(face?.controls ?? []);
   let glyphKind = $derived(face?.glyph ?? 'none');
 
+  // ── LIVE glyph binding (owner P1 feedback: "LIVE, not static") ──
+  // Resolved PURELY from the def: an analyser tap on the primary audio output
+  // (tidyVco/kickdrum trace, vca/cloudseed RMS), a param-reactive envelope
+  // (adsr) or wave-morph (lfo) curve, else the deterministic static fallback.
+  let binding = $derived(glyphBinding(def));
+
   // The LANE body plan — the no-clip guarantee (fixed 192×180 tile ⇒ fit is a
   // design-time constant): which layout (row/plate), how many WHOLE cells, and
   // whether the glyph fits. Lane views only — the dock faceplate wraps freely
@@ -110,6 +126,48 @@
   let lanePlan = $derived(
     view === 'lane' ? laneBodyPlan(controls.length, glyphKind !== 'none', effTier) : null,
   );
+
+  // Whether the glyph cell RENDERS in the current view/tier — the dock hero
+  // always shows it; the lane obeys the fit plan. Mirrors the render branches
+  // below; the live tap's lifecycle is keyed to this (mount face → mount tap).
+  let glyphShown = $derived(glyphKind !== 'none' && (view === 'dock-full' || (lanePlan?.glyph ?? true)));
+
+  // The live-audio tap: created when a live-bound glyph cell mounts, disposed
+  // when it unmounts (tier drop / dock close). While mounted, actual analyser
+  // ATTACH is lazy + visibility-driven (reads arrive via the IO-gated shared
+  // meter frame) and the tap self-releases after an idle window off-screen —
+  // see shell-glyph-live.ts (the stated perf policy).
+  let tap = $state<ShellGlyphTap | null>(null);
+  $effect(() => {
+    if (!glyphShown || binding.kind !== 'live-audio') return;
+    const t = createShellGlyphTap(() => params.engineCtx.get(), id, binding.portId);
+    tap = t;
+    return () => {
+      t.dispose();
+      tap = null;
+    };
+  });
+
+  // Param-REACTIVE glyph data (adsr envelope / lfo wave morph): recomputed on
+  // the node's version tick, so a knob move or remote param change redraws.
+  let envParams = $derived.by(() => {
+    if (binding.kind !== 'env-params') return null;
+    void nodeVersion(id);
+    return {
+      attack: params.paramVal(binding.attack),
+      decay: params.paramVal(binding.decay),
+      sustain: params.paramVal(binding.sustain),
+      release: params.paramVal(binding.release),
+    };
+  });
+  let morphTrace = $derived.by(() => {
+    if (binding.kind !== 'wave-morph') return null;
+    void nodeVersion(id);
+    const shape = params.paramVal(binding.shapeParamId);
+    // depth 0.5 = unity ±1 swing (the lfo law); display clamps at full scale.
+    const amp = binding.depthParamId ? Math.min(1, 2 * params.paramVal(binding.depthParamId)) : 1;
+    return triMorphWaveSamples(shape, amp);
+  });
 
   // Header row 2 — the ROLE line for a migrated face (the def's own concise
   // category metadata), not a repeat of the type the name row already shows.
@@ -200,15 +258,36 @@
 
   <!-- The glyph sizes to its CELL (fluid width — never a fixed canvas clipped
        by a shrinking host) and strokes in the module's DOMAIN hue (the spine
-       cable colour), so an adsr/lfo trace reads in its domain, not default
-       cyan. Static traces only in this pass (no live taps). -->
+       cable colour). LIVE per the resolved binding: an analyser trace / RMS
+       meter off the module's primary audio output, or a param-reactive
+       envelope / wave-morph curve; static traces only as the last-resort
+       fallback for a face with no live seam. -->
   {#snippet glyphCell()}
-    <div class="tile-glyph" data-glyph-kind={glyphKind}>
+    <div class="tile-glyph" data-glyph-kind={glyphKind} data-glyph-binding={binding.kind}>
       {#if glyphKind === 'meter'}
-        <VuMeter />
+        <VuMeter
+          getLevel={tap ? tap.getLevel : undefined}
+          orientation={view === 'dock-full' ? 'horizontal' : 'vertical'}
+          length={view === 'dock-full' ? DOCK_HERO_GLYPH_W : 84}
+          thickness={view === 'dock-full' ? 16 : 12}
+          testid="shell-glyph-meter"
+        />
       {:else if glyphKind === 'envelope'}
         <ScopeScreen
           mode="envelope"
+          attack={envParams?.attack}
+          decay={envParams?.decay}
+          sustain={envParams?.sustain}
+          release={envParams?.release}
+          fluid
+          height={view === 'dock-full' ? 64 : 40}
+          color={spine}
+          testid="shell-glyph"
+        />
+      {:else if binding.kind === 'live-audio'}
+        <ScopeScreen
+          mode="waveform"
+          getSamples={tap ? tap.getSamples : undefined}
           fluid
           height={view === 'dock-full' ? 64 : 40}
           color={spine}
@@ -217,7 +296,7 @@
       {:else}
         <ScopeScreen
           mode="wave"
-          waveform={glyphKind === 'waveform' ? SINE_TRACE : BURST_TRACE}
+          waveform={morphTrace ?? (glyphKind === 'waveform' ? SINE_TRACE : BURST_TRACE)}
           fluid
           height={view === 'dock-full' ? 64 : 40}
           color={spine}
@@ -230,9 +309,11 @@
   {#if pages && pages.length}
     <!-- DOCK FACEPLATE (view='dock-full' + declared pages): the glyph is the
          hero band, then one labeled SECTION BAND per curated page, then a
-         trailing band for any ranked-but-unpaged controls (dock = all). -->
+         trailing band for any ranked-but-unpaged controls (dock = all).
+         The hero glyph is CAPPED to the first four knob columns of the
+         control grid (owner feedback), left-aligned with blank space right. -->
     {#if glyphKind !== 'none'}
-      <div class="tile-body center dock-hero">
+      <div class="tile-body dock-hero" style={`--dock-hero-glyph-w:${DOCK_HERO_GLYPH_W}px`}>
         {@render glyphCell()}
       </div>
     {/if}
@@ -308,9 +389,20 @@
   }
 
   /* Dock faceplate SECTION BANDS (view='dock-full'): the glyph hero, then one
-     labeled band per curated page. Bands stack; controls wrap inside a band. */
+     labeled band per curated page. Bands stack; controls wrap inside a band.
+     The hero glyph does NOT span the faceplate: it is capped to the first
+     four knob columns (--dock-hero-glyph-w, module-shell-model.ts) and
+     left-aligned on the .dock-pages 10px grid edge — blank space to its
+     right (the gallery-mock proportion). */
   .dock-hero {
     flex: 0 0 auto;
+    justify-content: flex-start;
+    padding: 4px 10px 0;
+  }
+  .dock-hero .tile-glyph {
+    flex: 0 0 auto;
+    width: min(var(--dock-hero-glyph-w, 214px), 100%);
+    min-width: 0;
   }
   .dock-pages {
     display: flex;
