@@ -198,14 +198,16 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
 
   test('placeholder tiles are UNIFORM WIDTH + the FIXED slot height with a consistent badge anchor', async ({ page }) => {
     // The owner "same-size all modules HORIZONTALLY" + "tiles non-uniform / smaller
-    // than the mock" fix: under ?shell=1 the default video-zone trio (videoOut
-    // 'dynamic', recorderbox 2u, synesthesia 3u — three DIFFERENT rack tiers, so
-    // three different LEGACY widths) all render as the SAME uniform RACKLINE tile —
-    // identical WIDTH (SHELL_TILE_W) and the ONE fixed slot HEIGHT
-    // (SHELL_TILE_H_SLOT — tier-invariant, the zoom-reposition fix), so the
-    // baseline number badges cap them flush.
+    // than the mock" fix: under ?shell=1 the tile-swapped video-zone defaults
+    // (recorderbox 2u, synesthesia 3u — DIFFERENT rack tiers, so different
+    // LEGACY widths) render as the SAME uniform RACKLINE tile — identical WIDTH
+    // (SHELL_TILE_W) and the ONE fixed slot HEIGHT (SHELL_TILE_H_SLOT —
+    // tier-invariant, the zoom-reposition fix), so the baseline number badges
+    // cap them flush. (videoOut is EXEMPT since the video-visibility fix — a
+    // NON_SHELL video-surface snowflake whose real resizable card stays in the
+    // lane; covered by workflow-shell-video.spec.ts.)
     await gotoWorkflow(page, { shell: true });
-    const ids = ['workflow-videoOut', 'workflow-recorderbox', 'workflow-synesthesia'];
+    const ids = ['workflow-recorderbox', 'workflow-synesthesia'];
     for (const id of ids) {
       await expect(
         page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`),
@@ -503,6 +505,14 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
 test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   const VZONE_IDS = ['workflow-videoOut', 'workflow-recorderbox', 'workflow-synesthesia'];
 
+  /** The video-zone default's LANE FACE under ?shell=1: videoOut renders its
+   *  verbatim LEGACY card (NON_SHELL video-surface snowflake — the shell
+   *  video-visibility fix); recorderbox/synesthesia render placeholder tiles. */
+  const vzFaceSelector = (id: string) =>
+    id === 'workflow-videoOut'
+      ? `.svelte-flow__node[data-id="${id}"] [data-testid="video-out-card"]`
+      : `.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`;
+
   /** Drop `type` at the tight SHELL pitch so the pitch-aware hit-test resolves the
    *  intended narrowed column `ch` (the wide COLUMN_W anchor would land elsewhere). */
   async function dropInShellColumn(page: Page, type: string, ch: number): Promise<void> {
@@ -539,9 +549,7 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   test('video-zone tiles sit INSIDE the video area (below COLUMN_BASELINE_Y)', async ({ page }) => {
     await gotoWorkflow(page, { shell: true });
     for (const id of VZONE_IDS) {
-      await expect(
-        page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`),
-      ).toBeVisible({ timeout: 15_000 });
+      await expect(page.locator(vzFaceSelector(id))).toBeVisible({ timeout: 15_000 });
     }
     for (const id of VZONE_IDS) {
       const p = await flowPos(page, id);
@@ -730,9 +738,7 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
     await gotoWorkflow(page, { shell: true });
     await waitForHooks(page);
     for (const id of VZONE_IDS) {
-      await expect(
-        page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`),
-      ).toBeVisible({ timeout: 15_000 });
+      await expect(page.locator(vzFaceSelector(id))).toBeVisible({ timeout: 15_000 });
     }
     await dropInShellColumn(page, 'vca', 1);
     await page.waitForTimeout(300);

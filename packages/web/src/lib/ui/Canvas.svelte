@@ -670,6 +670,13 @@
         ctxMenuNodeId = nodeId;
         commitAssignToChannel(channel);
       };
+      // Dock full-view e2e: open a node's TRANSIENT dock full-view faceplate
+      // directly — the same dockStore.openFullView call the shell tiles'
+      // EXPAND buttons make. Needed because a NON_SHELL legacy lane card
+      // (videoOut) has no tile/EXPAND affordance, yet the dock path for it
+      // must still render live video (the owner dock regression).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__openDockFullView = (nodeId: string) => dockStore.openFullView(nodeId);
       // Drag-lock state for e2e — patch-menus-persist tests inspect this
       // to confirm the lock engaged + released at the right moments.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
