@@ -36,7 +36,15 @@
     /** CSS pixel size of the screen. */
     width?: number;
     height?: number;
-    /** Trace stroke color. Defaults per-mode (cyan for wave/waveform, amber for envelope). */
+    /** FLUID width: the screen fills its parent cell (width: 100%) and the
+     *  canvas backing store tracks the measured box, so the trace is never
+     *  clipped by a fixed `width` inside a smaller flex/grid cell (the
+     *  ModuleShell tile-glyph fix). `height` stays as given. */
+    fluid?: boolean;
+    /** Trace stroke color. Defaults per-mode (cyan for wave/waveform, amber for
+     *  envelope). Accepts a `var(--…)` reference (e.g. the shell's domain/spine
+     *  hue): it is applied as the root's CSS `color` and resolved via computed
+     *  style at paint time (canvas strokeStyle can't consume var() directly). */
     color?: string;
     // ── waveform mode ──
     /** Live sample source, polled each frame. */
@@ -61,6 +69,7 @@
     mode,
     width = 120,
     height = 64,
+    fluid = false,
     color,
     getSamples,
     attack = 0.01,
@@ -75,7 +84,17 @@
   }: Props = $props();
 
   let canvasEl: HTMLCanvasElement | null = $state(null);
+  let hostEl: HTMLDivElement | null = $state(null);
   let tracePeak = $state(0);
+
+  // Fluid width: track the host box (Svelte's clientWidth binding = a
+  // ResizeObserver) and seed it synchronously on mount so the first static
+  // paint already uses the real cell width.
+  let hostW = $state(0);
+  $effect(() => {
+    if (fluid && hostEl) hostW = hostEl.clientWidth;
+  });
+  const effWidth = $derived(fluid ? Math.max(1, Math.round(hostW)) : width);
 
   const CYAN = '#38e0d4';
   const AMBER = '#f5b642';
@@ -83,6 +102,17 @@
   const BG_BOTTOM = '#060809';
   const GRID = '#1b2026';
   const traceColor = $derived(color ?? (mode === 'envelope' ? AMBER : CYAN));
+
+  /** The concrete stroke color for the canvas: a `var(--…)` trace color is
+   *  mirrored onto the root's CSS `color` (see markup) and resolved here via
+   *  computed style; anything else passes through untouched. */
+  function paintColor(): string {
+    if (traceColor.includes('var(') && hostEl) {
+      const resolved = getComputedStyle(hostEl).color;
+      if (resolved) return resolved;
+    }
+    return traceColor;
+  }
 
   function asArray(
     s: Float32Array | { data: Float32Array } | ArrayLike<number> | undefined,
@@ -97,7 +127,7 @@
    *  already scaled to CSS pixels, or null. */
   function prepCtx(c: HTMLCanvasElement): CanvasRenderingContext2D | null {
     const dpr = typeof devicePixelRatio === 'number' && devicePixelRatio > 0 ? devicePixelRatio : 1;
-    const bw = Math.max(1, Math.round(width * dpr));
+    const bw = Math.max(1, Math.round(effWidth * dpr));
     const bh = Math.max(1, Math.round(height * dpr));
     if (c.width !== bw) c.width = bw;
     if (c.height !== bh) c.height = bh;
@@ -113,32 +143,33 @@
     grad.addColorStop(0, BG_TOP);
     grad.addColorStop(1, BG_BOTTOM);
     ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, width, height);
+    ctx.fillRect(0, 0, effWidth, height);
     // Zero / mid reference line.
     ctx.strokeStyle = GRID;
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(0, height / 2);
-    ctx.lineTo(width, height / 2);
+    ctx.lineTo(effWidth, height / 2);
     ctx.stroke();
     // Inner bevel: a faint light top-edge + dark inset frame.
     ctx.strokeStyle = 'rgba(255,255,255,0.05)';
     ctx.beginPath();
     ctx.moveTo(0.5, 0.5);
-    ctx.lineTo(width - 0.5, 0.5);
+    ctx.lineTo(effWidth - 0.5, 0.5);
     ctx.stroke();
     ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-    ctx.strokeRect(0.5, 0.5, width - 1, height - 1);
+    ctx.strokeRect(0.5, 0.5, effWidth - 1, height - 1);
   }
 
   function strokePath(ctx: CanvasRenderingContext2D, pts: ScreenPoint[]): void {
     if (pts.length < 2) return;
+    const stroke = paintColor();
     ctx.save();
-    ctx.strokeStyle = traceColor;
+    ctx.strokeStyle = stroke;
     ctx.lineWidth = 1.6;
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
-    ctx.shadowColor = traceColor;
+    ctx.shadowColor = stroke;
     ctx.shadowBlur = 4;
     ctx.beginPath();
     ctx.moveTo(pts[0]!.x, pts[0]!.y);
@@ -149,18 +180,18 @@
 
   function pointsFor(): { pts: ScreenPoint[]; peak: number } {
     if (mode === 'envelope') {
-      return { pts: envelopeCurvePoints({ attack, decay, sustain, release }, width, height), peak: 0 };
+      return { pts: envelopeCurvePoints({ attack, decay, sustain, release }, effWidth, height), peak: 0 };
     }
     if (mode === 'wave') {
       if (waveform && waveform.length > 0) {
-        return { pts: samplesToPoints(waveform, width, height), peak: peakAmplitude(waveform) };
+        return { pts: samplesToPoints(waveform, effWidth, height), peak: peakAmplitude(waveform) };
       }
-      return { pts: morphWavePoints(morph, width, height, 128, pw), peak: 1 };
+      return { pts: morphWavePoints(morph, effWidth, height, 128, pw), peak: 1 };
     }
     // waveform (live)
     const data = asArray(getSamples?.());
     if (!data || data.length === 0) return { pts: [], peak: 0 };
-    return { pts: samplesToPoints(data, width, height), peak: peakAmplitude(data) };
+    return { pts: samplesToPoints(data, effWidth, height), peak: peakAmplitude(data) };
   }
 
   function paint(): void {
@@ -185,14 +216,18 @@
   $effect(() => {
     if (mode === 'waveform') return;
     // touch deps
-    void [mode, width, height, traceColor, attack, decay, sustain, release, morph, pw, waveform, canvasEl];
+    void [mode, effWidth, height, traceColor, attack, decay, sustain, release, morph, pw, waveform, canvasEl];
     paint();
   });
 </script>
 
 <div
   class="scope-screen"
-  style="width:{width}px; height:{height}px;"
+  bind:this={hostEl}
+  bind:clientWidth={hostW}
+  style="width:{fluid ? '100%' : `${width}px`}; height:{height}px;{traceColor.includes('var(')
+    ? ` color:${traceColor};`
+    : ''}"
   data-testid={testid}
   data-mode={mode}
   data-trace-peak={mode === 'waveform' ? tracePeak.toFixed(4) : undefined}

@@ -5,8 +5,10 @@
 // `?shell=1`. Two PINNED baselines per module:
 //
 //   face-<type>-compact — the COMPACT LANE TILE (zoom 0.45, LOD 'compact'):
-//     the design-point tile — top-3 curated knobs + the live glyph inside the
-//     uniform RACKLINE frame, exactly as the lane shows it.
+//     the design-point tile — the fit-planned curated knobs (laneBodyPlan:
+//     WHOLE cells only — top-2 + the fluid domain-hued glyph for glyph faces,
+//     top-3 for glyph-less) inside the uniform RACKLINE frame, exactly as the
+//     lane shows it.
 //   face-<type>-dock    — the DOCK FULL-VIEW faceplate (view='dock-full',
 //     face tier 'dock'): the glyph hero + one labeled SECTION BAND per curated
 //     `face.pages` page, ALL controls rendered.

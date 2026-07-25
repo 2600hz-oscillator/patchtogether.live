@@ -10,8 +10,10 @@
   // the top-N controls for the current LOD tier.
   //
   // SEMANTIC ZOOM: it reads the current LOD tier from the shared getLodTier()
-  // context (P0.2) and swaps only the INNER content across tiers — mini (glyph
-  // only) → compact (~3 knobs + glyph) → full-in-lane (~8). The OUTER box stays
+  // context (P0.2) and swaps only the INNER content across tiers — mini (hero
+  // knob + glyph) → compact (row) → full-in-lane (row or plate grid). The
+  // rendered cell count per tier is fit-PLANNED (laneBodyPlan): only WHOLE
+  // cells ever render inside the fixed tile — never a clipped one. The OUTER box stays
   // pinned to the UNIFORM RACKLINE tile height (_module-card.css forces
   // --shell-tile-h); a tier swap NEVER resizes the measured node box, so the
   // channel-column stack math never recomputes / thrashes (plan §3.1 / §9).
@@ -34,9 +36,23 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { KnobConic, ScopeScreen, VuMeter } from '$lib/ui/controls';
   import { curatedFace, type FaceControl, type FaceTier } from '$lib/ui/workflow/curated-face';
-  import { spineCableVar, laneFaceTier, type ShellDefLike } from '$lib/ui/workflow/module-shell-model';
+  import {
+    spineCableVar,
+    laneFaceTier,
+    laneBodyPlan,
+    roleLineForDef,
+    type ShellDefLike,
+  } from '$lib/ui/workflow/module-shell-model';
+  import { sineWaveSamples, burstWaveSamples } from '$lib/ui/controls/scope-screen-model';
   import type { ModuleNode, ParamDef, PortDef } from '$lib/graph/types';
   import type { Tier } from '$lib/ui/canvas/lod';
+
+  // Static glyph traces (no live taps in this pass): 'waveform' faces draw a
+  // generic single-cycle sine (LFO's default shape), 'scope' faces a decaying
+  // burst (a struck source at rest) — never the tidyVco saw morph, which read
+  // as "this module is an oscillator" on non-oscillators.
+  const SINE_TRACE = sineWaveSamples();
+  const BURST_TRACE = burstWaveSamples();
 
   interface Props {
     id: string;
@@ -87,6 +103,18 @@
   let controls = $derived<FaceControl[]>(face?.controls ?? []);
   let glyphKind = $derived(face?.glyph ?? 'none');
 
+  // The LANE body plan — the no-clip guarantee (fixed 192×180 tile ⇒ fit is a
+  // design-time constant): which layout (row/plate), how many WHOLE cells, and
+  // whether the glyph fits. Lane views only — the dock faceplate wraps freely
+  // and always shows everything.
+  let lanePlan = $derived(
+    view === 'lane' ? laneBodyPlan(controls.length, glyphKind !== 'none', effTier) : null,
+  );
+
+  // Header row 2 — the ROLE line for a migrated face (the def's own concise
+  // category metadata), not a repeat of the type the name row already shows.
+  let roleLine = $derived(roleLineForDef(def) ?? node.type);
+
   // Dock faceplate SECTION BANDS (P1): at the 'dock' tier the curated face
   // resolves the declared `face.pages`; the full-view renders one labeled band
   // per page. Any ranked control NOT claimed by a page falls into a trailing
@@ -129,16 +157,17 @@
   <span class="rl-spine" aria-hidden="true"></span>
 
   <!-- Header redesign: row 1 = domain-colour rule ── gap ── full-width NAME
-       (no truncation for long names); row 2 = the faint type badge. -->
+       (no truncation for long names); row 2 = the faint ROLE line (the def's
+       concise category — the type would just repeat the name row). -->
   <div class="tile-top">
     <span class="tile-rule" aria-hidden="true"></span>
     <span class="tile-name" title={displayName}>{displayName}</span>
   </div>
   <div class="tile-kind">
-    <span class="tile-badge">{node.type}</span>
+    <span class="tile-badge">{roleLine}</span>
   </div>
 
-  {#snippet controlCell(ctl: FaceControl)}
+  {#snippet controlCell(ctl: FaceControl, knobSize: 'sm' | 'md' = 'md')}
     {#if ctl.kind === 'param'}
       {@const pd = paramDef(ctl.paramId ?? ctl.key)}
       {#if pd}
@@ -155,7 +184,7 @@
             readLive={params.live(pd.id)}
             moduleId={id}
             paramId={pd.id}
-            size={effTier === 'mini' ? 'lg' : 'md'}
+            size={effTier === 'mini' ? 'lg' : knobSize}
             accent={spine}
           />
         </div>
@@ -169,15 +198,29 @@
     {/if}
   {/snippet}
 
+  <!-- The glyph sizes to its CELL (fluid width — never a fixed canvas clipped
+       by a shrinking host) and strokes in the module's DOMAIN hue (the spine
+       cable colour), so an adsr/lfo trace reads in its domain, not default
+       cyan. Static traces only in this pass (no live taps). -->
   {#snippet glyphCell()}
     <div class="tile-glyph" data-glyph-kind={glyphKind}>
       {#if glyphKind === 'meter'}
         <VuMeter />
+      {:else if glyphKind === 'envelope'}
+        <ScopeScreen
+          mode="envelope"
+          fluid
+          height={view === 'dock-full' ? 64 : 40}
+          color={spine}
+          testid="shell-glyph"
+        />
       {:else}
         <ScopeScreen
-          mode={glyphKind === 'envelope' ? 'envelope' : 'wave'}
-          width={110}
-          height={40}
+          mode="wave"
+          waveform={glyphKind === 'waveform' ? SINE_TRACE : BURST_TRACE}
+          fluid
+          height={view === 'dock-full' ? 64 : 40}
+          color={spine}
           testid="shell-glyph"
         />
       {/if}
@@ -216,14 +259,25 @@
       {/if}
     </div>
   {:else}
-    <!-- One inline body row (mock .body): curated knob columns LEFT, the live
-         glyph filling RIGHT; a lone glyph centres (.body.center). -->
-    <div class="tile-body" class:center={controls.length === 0}>
-      {#each controls as ctl (ctl.key)}
-        {@render controlCell(ctl)}
+    <!-- The lane body, FIT-PLANNED (laneBodyPlan — the no-clip guarantee):
+         either the mock .body row (whole knob columns LEFT + the fluid glyph
+         filling RIGHT; a lone glyph centres) or, at the full tier when the
+         face outgrows the row, the mock full-'plate' 3-col grid — WHOLE cells
+         only, anything that can't fit entirely is not rendered in-lane (the
+         dock faceplate has everything). -->
+    {@const cells = lanePlan ? controls.slice(0, lanePlan.cellCount) : controls}
+    {@const showGlyph = glyphKind !== 'none' && (lanePlan ? lanePlan.glyph : true)}
+    <div
+      class="tile-body"
+      class:center={cells.length === 0}
+      class:plate={lanePlan?.layout === 'plate'}
+      data-body-layout={lanePlan?.layout ?? 'row'}
+    >
+      {#each cells as ctl (ctl.key)}
+        {@render controlCell(ctl, lanePlan?.knobSize ?? 'md')}
       {/each}
 
-      {#if glyphKind !== 'none'}
+      {#if showGlyph}
         {@render glyphCell()}
       {/if}
     </div>

@@ -168,3 +168,43 @@ export function peakAmplitude(data: ArrayLike<number>): number {
   }
   return peak;
 }
+
+// ---- STATIC glyph buffers (ModuleShell face glyphs) -------------------------
+//
+// The shell's tile glyphs are STATIC in this pass (no live taps): each
+// `face.glyph` kind maps to a deterministic single-buffer trace rendered via
+// the existing `wave`-mode explicit-buffer path (samplesToPoints). Pure + cheap
+// (computed once at module scope by the consumer), so the VRT scenes stay
+// pixel-deterministic.
+
+/**
+ * One (or `cycles`) full sine cycle(s), −1..1 — the generic "this module emits
+ * a wave" glyph. Used for `glyph: 'waveform'` faces (LFO's default shape IS a
+ * sine; for other oscillators it reads as a neutral wave placeholder until a
+ * live trace is wired). Starts and ends at 0 for a seam-free trace.
+ */
+export function sineWaveSamples(samples = 128, cycles = 1): Float32Array {
+  const n = Math.max(2, Math.floor(samples));
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    out[i] = Math.sin((i / (n - 1)) * cycles * 2 * Math.PI);
+  }
+  return out;
+}
+
+/**
+ * A decaying oscillation burst — sin(2π·cycles·t) · e^(−decay·t) — the
+ * "struck/percussive source at rest" glyph for `glyph: 'scope'` faces (e.g.
+ * kickdrum): a transient that rings down to idle, unlike the tidyVco saw morph
+ * (which reads as a continuous oscillator). Deterministic; peak ≈ the first
+ * quarter-cycle, tail → ~e^(−decay).
+ */
+export function burstWaveSamples(samples = 256, cycles = 3, decay = 5): Float32Array {
+  const n = Math.max(2, Math.floor(samples));
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    out[i] = Math.sin(t * cycles * 2 * Math.PI) * Math.exp(-decay * t);
+  }
+  return out;
+}

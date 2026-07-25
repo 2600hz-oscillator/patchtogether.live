@@ -75,6 +75,11 @@ export interface ShellDefLike {
   domain?: string;
   inputs?: readonly { id: string; type: string }[];
   outputs?: readonly { id: string; type: string }[];
+  /** The def's concise role string ('modulation' / 'effects' / 'sources' …) —
+   *  every Audio/Video/MetaModuleDef carries one. */
+  category?: string;
+  /** The def's palette classification (top/sub) — the role-line fallback. */
+  palette?: { top: string; sub: string };
 }
 
 /** The five signal DOMAINS the RACKLINE kit colours chrome by (spine, jack dots,
@@ -159,4 +164,81 @@ export function laneFaceTier(tier: Tier): FaceTier {
  *  kept as a named predicate so the policy has one home if it tightens. */
 export function offersFullView(_tier: Tier): boolean {
   return true;
+}
+
+/**
+ * The MIGRATED tile's header ROLE line — what the badge row says instead of
+ * repeating the type (the name row already identifies the module; "VCA / vca"
+ * was redundant). Uses the def's own concise metadata, no new field: the
+ * `category` role string ('modulation', 'effects', 'sources', 'utilities' …),
+ * falling back to the palette sub-category ('Utility', 'VCOs', …). Returns
+ * undefined for a def with neither — the caller keeps its current fallback
+ * (the type). The un-migrated placeholder is NOT routed through this: it keeps
+ * showing the raw type. Pure.
+ */
+export function roleLineForDef(def: ShellDefLike | undefined): string | undefined {
+  const category = def?.category?.trim();
+  if (category) return category;
+  const sub = def?.palette?.sub?.trim();
+  if (sub) return sub;
+  return undefined;
+}
+
+// ── The LANE BODY PLAN — the no-clip guarantee ──────────────────────────────
+//
+// The RACKLINE lane tile is a FIXED 192×180 box (zoom no-op invariant), so how
+// many WHOLE control cells fit is a design-time constant, not a runtime
+// measurement. The plan renders ONLY whole cells — a ranked control (or the
+// glyph) that cannot fit entirely inside the tile is simply not rendered
+// in-lane (the dock faceplate always shows everything). Derivation, from the
+// tile vocabulary (_rackline-tile.css):
+//
+//   body inner width = 192 − 11 (left pad) − 9 (right pad) = 172px
+//   ROW  (mini/compact + small full faces): md knob columns capped at 46px
+//     (--kcol-max), 9px gaps, glyph min 40px (the mock .tile-scope floor):
+//       with glyph: n·46 + n·9 + 40 ≤ 172 → n ≤ 2  (glyph then FILLS the rest)
+//       no glyph:   n·46 + (n−1)·9 ≤ 172 → n ≤ 3
+//   PLATE (the 'full' tier when the row can't hold the face): the mock full
+//     'plate' 3-col grid of sm knob cells, 42px rows (26 knob + 5 gap + 11
+//     label), 4px row gaps in a ~112px body → 2 whole rows = 6 cells max; the
+//     full-width glyph strip renders only when a whole 42px strip still fits
+//     (i.e. the cells needed ≤ one row).
+export const LANE_ROW_MAX_CELLS_WITH_GLYPH = 2;
+export const LANE_ROW_MAX_CELLS = 3;
+export const PLATE_COLS = 3;
+export const PLATE_MAX_ROWS = 2;
+
+export interface LaneBodyPlan {
+  /** 'row' = the mock .mod inline body; 'plate' = the full-tier 3-col grid. */
+  layout: 'row' | 'plate';
+  /** How many ranked controls render in-lane (a prefix of the curated list). */
+  cellCount: number;
+  /** Whether the glyph renders in-lane at this tier. */
+  glyph: boolean;
+  /** Knob size for the rendered cells (mini's lg override stays a view concern). */
+  knobSize: 'sm' | 'md';
+}
+
+/**
+ * The lane body plan for a curated face: which layout, how many WHOLE cells,
+ * and whether the glyph fits. `controlCount` is the tier-curated control count
+ * (curatedFace().controls.length); `hasGlyph` = face.glyph !== 'none'. Pure —
+ * geometry constants only, so the guarantee is unit-testable. The 'dock' tier
+ * never reaches this (the dock faceplate renders pages / wraps freely).
+ */
+export function laneBodyPlan(controlCount: number, hasGlyph: boolean, tier: FaceTier): LaneBodyPlan {
+  const rowMax = hasGlyph ? LANE_ROW_MAX_CELLS_WITH_GLYPH : LANE_ROW_MAX_CELLS;
+  if (tier === 'mini') {
+    return { layout: 'row', cellCount: Math.min(controlCount, 1), glyph: hasGlyph, knobSize: 'md' };
+  }
+  if (tier === 'compact' || controlCount <= rowMax) {
+    // The design-point row: whole md cells + the glyph filling the remainder.
+    return { layout: 'row', cellCount: Math.min(controlCount, rowMax), glyph: hasGlyph, knobSize: 'md' };
+  }
+  // 'full' with a face too big for the row → the 3-col plate grid, whole rows
+  // only. Ranked controls outrank the glyph: the strip renders only when the
+  // cells need just one row, leaving a whole strip-row free.
+  const cellCount = Math.min(controlCount, PLATE_COLS * PLATE_MAX_ROWS);
+  const rows = Math.ceil(cellCount / PLATE_COLS);
+  return { layout: 'plate', cellCount, glyph: hasGlyph && rows <= 1, knobSize: 'sm' };
 }

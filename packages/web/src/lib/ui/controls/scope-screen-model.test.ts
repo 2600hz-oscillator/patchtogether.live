@@ -7,6 +7,8 @@ import {
   samplesToPoints,
   bipolarToY,
   peakAmplitude,
+  sineWaveSamples,
+  burstWaveSamples,
   ENV_V_PAD,
 } from './scope-screen-model';
 
@@ -135,5 +137,61 @@ describe('peakAmplitude', () => {
   it('is 0 for silence and the max abs otherwise', () => {
     expect(peakAmplitude(new Float32Array(64))).toBe(0);
     expect(peakAmplitude([0.1, -0.7, 0.3])).toBeCloseTo(0.7, 6);
+  });
+});
+
+describe('sineWaveSamples — the static generic-wave glyph trace', () => {
+  it('is one full bipolar cycle: 0 at the ends, ±1 at the quarter points', () => {
+    const buf = sineWaveSamples(129, 1); // odd count → exact quarter indices
+    expect(buf.length).toBe(129);
+    expect(buf[0]).toBeCloseTo(0, 6);
+    expect(buf[128]).toBeCloseTo(0, 6);
+    expect(buf[32]).toBeCloseTo(1, 6); // t = 0.25
+    expect(buf[96]).toBeCloseTo(-1, 6); // t = 0.75
+    expect(peakAmplitude(buf)).toBeCloseTo(1, 6);
+  });
+
+  it('honours the cycle count and never exceeds ±1', () => {
+    const buf = sineWaveSamples(257, 2);
+    expect(buf[64]).toBeCloseTo(0, 5); // end of cycle 1 at t = 0.25 → sin(π)
+    for (const v of buf) expect(Math.abs(v)).toBeLessThanOrEqual(1 + 1e-9);
+  });
+
+  it('clamps a degenerate sample count to a drawable buffer', () => {
+    expect(sineWaveSamples(1).length).toBe(2);
+  });
+});
+
+describe('burstWaveSamples — the decaying-burst (scope-at-rest) glyph trace', () => {
+  it('starts at 0, rings, and decays toward silence (never a steady oscillator)', () => {
+    const buf = burstWaveSamples(256, 3, 5);
+    expect(buf.length).toBe(256);
+    expect(buf[0]).toBeCloseTo(0, 6);
+    // The trace PEAKS early (first quarter of the buffer)…
+    const peak = peakAmplitude(buf);
+    const firstQuarterPeak = peakAmplitude(Array.from(buf.slice(0, 64)));
+    expect(firstQuarterPeak).toBeCloseTo(peak, 6);
+    expect(peak).toBeGreaterThan(0.5);
+    // …and the tail is DECAYED to near-zero (e^-decay), unlike a saw/sine cycle.
+    const tailPeak = peakAmplitude(Array.from(buf.slice(224)));
+    expect(tailPeak).toBeLessThan(0.05);
+    expect(tailPeak).toBeLessThan(peak / 10);
+  });
+
+  it('is bipolar (rings both ways) and bounded by ±1', () => {
+    const buf = burstWaveSamples();
+    let min = 0;
+    let max = 0;
+    for (const v of buf) {
+      if (v < min) min = v;
+      if (v > max) max = v;
+      expect(Math.abs(v)).toBeLessThanOrEqual(1 + 1e-9);
+    }
+    expect(max).toBeGreaterThan(0.1);
+    expect(min).toBeLessThan(-0.1);
+  });
+
+  it('clamps a degenerate sample count to a drawable buffer', () => {
+    expect(burstWaveSamples(0).length).toBe(2);
   });
 });

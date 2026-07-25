@@ -123,12 +123,23 @@
   gap: 3px;
   flex: 0 0 auto;
 }
+/* In the LANE body the column is CAPPED (--kcol-max mirrors laneBodyPlan's
+ * 46px fit constant): a long param label ellipsizes inside the cap instead of
+ * widening the column and pushing later cells past the fixed tile edge. */
+.rl-tile .tile-body .kcol {
+  max-width: var(--kcol-max, 46px);
+  min-width: 0;
+}
 .rl-tile .kcol .lab {
   font-size: var(--t-label-compact, 10px);
   color: var(--text-dim, #9aa2ad);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   font-weight: 600;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .rl-tile .kcol .val {
   font-family: var(--mono, ui-monospace, monospace);
@@ -175,13 +186,42 @@
     animation: none;
   }
 }
-/* the shell's live glyph host (ScopeScreen / VuMeter) fills the RIGHT of the body */
+/* the shell's live glyph host (ScopeScreen / VuMeter) fills the RIGHT of the
+ * body. The ScopeScreen inside is FLUID (width:100% of this cell), so the
+ * trace sizes to whatever remains of the row — laneBodyPlan guarantees at
+ * least the 40px floor — and can never overflow the tile (overflow:hidden is
+ * the belt-and-braces, not the mechanism). */
 .rl-tile .tile-glyph {
   flex: 1 1 auto;
   min-width: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
+}
+
+/* ---- FULL-tier PLATE (mock full 'plate'): when the face outgrows the row,
+ *      the body becomes a 3-col grid of small knob cells — laneBodyPlan slices
+ *      to WHOLE rows only (max 2), so no cell is ever clipped by the fixed
+ *      tile. The glyph (when it fits — single-row faces) is a full-width strip
+ *      on its own grid row. ---- */
+.rl-tile .tile-body.plate {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: var(--plate-row-h, 42px);
+  gap: 4px 6px;
+  align-content: center;
+  align-items: start;
+  justify-items: center;
+  overflow: hidden;
+}
+.rl-tile .tile-body.plate .kcol {
+  max-width: 100%;
+}
+.rl-tile .tile-body.plate .tile-glyph {
+  grid-column: 1 / -1;
+  justify-self: stretch;
+  min-width: 0;
 }
 
 /* ---- jack rail (mock .jacks — "drill-down triggers, not raw jacks").

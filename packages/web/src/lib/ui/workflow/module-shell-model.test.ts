@@ -10,9 +10,15 @@ import {
   cableTypeForDef,
   spineCableVar,
   laneFaceTier,
+  laneBodyPlan,
+  roleLineForDef,
   offersFullView,
   domainClassForCable,
   domainClassForDef,
+  LANE_ROW_MAX_CELLS,
+  LANE_ROW_MAX_CELLS_WITH_GLYPH,
+  PLATE_COLS,
+  PLATE_MAX_ROWS,
   SHELL_TILE_H,
   SHELL_TILE_W,
   SHELL_TILE_H_SLOT,
@@ -135,6 +141,89 @@ describe('domainClassForCable / domainClassForDef — kit domain class', () => {
     // No ports → domain fallback (video domain → video; else audio).
     expect(domainClassForDef({ domain: 'video' })).toBe('video');
     expect(domainClassForDef(undefined)).toBe('audio');
+  });
+});
+
+describe('roleLineForDef — the migrated header role line', () => {
+  it('prefers the def category role string', () => {
+    expect(roleLineForDef({ category: 'modulation' })).toBe('modulation');
+    expect(
+      roleLineForDef({ category: 'effects', palette: { top: 'Audio modules', sub: 'Effects' } }),
+    ).toBe('effects');
+  });
+
+  it('falls back to the palette sub-category, then undefined (caller keeps the type)', () => {
+    expect(roleLineForDef({ palette: { top: 'Audio modules', sub: 'Utility' } })).toBe('Utility');
+    expect(roleLineForDef({})).toBeUndefined();
+    expect(roleLineForDef(undefined)).toBeUndefined();
+  });
+
+  it('ignores blank strings (a whitespace category never renders an empty badge)', () => {
+    expect(roleLineForDef({ category: '   ', palette: { top: 'Audio modules', sub: 'VCOs' } })).toBe(
+      'VCOs',
+    );
+    expect(roleLineForDef({ category: ' ', palette: { top: 'x', sub: '  ' } })).toBeUndefined();
+  });
+});
+
+describe('laneBodyPlan — the fixed-tile no-clip guarantee', () => {
+  it('mini: one hero cell + the glyph', () => {
+    expect(laneBodyPlan(8, true, 'mini')).toEqual({ layout: 'row', cellCount: 1, glyph: true, knobSize: 'md' });
+    expect(laneBodyPlan(0, true, 'mini')).toEqual({ layout: 'row', cellCount: 0, glyph: true, knobSize: 'md' });
+    expect(laneBodyPlan(5, false, 'mini')).toEqual({ layout: 'row', cellCount: 1, glyph: false, knobSize: 'md' });
+  });
+
+  it('compact row: whole md cells only — 2 with a glyph (which fills the rest), 3 without', () => {
+    expect(laneBodyPlan(3, true, 'compact')).toEqual({
+      layout: 'row',
+      cellCount: LANE_ROW_MAX_CELLS_WITH_GLYPH,
+      glyph: true,
+      knobSize: 'md',
+    });
+    expect(laneBodyPlan(3, false, 'compact')).toEqual({
+      layout: 'row',
+      cellCount: LANE_ROW_MAX_CELLS,
+      glyph: false,
+      knobSize: 'md',
+    });
+    // A small face keeps every cell.
+    expect(laneBodyPlan(2, true, 'compact')).toEqual({ layout: 'row', cellCount: 2, glyph: true, knobSize: 'md' });
+  });
+
+  it('full keeps the ROW (md cells, glyph) while the whole face fits it — the vca case', () => {
+    expect(laneBodyPlan(2, true, 'full')).toEqual({ layout: 'row', cellCount: 2, glyph: true, knobSize: 'md' });
+    expect(laneBodyPlan(3, false, 'full')).toEqual({ layout: 'row', cellCount: 3, glyph: false, knobSize: 'md' });
+  });
+
+  it('full switches to the 3-col PLATE when the face outgrows the row: whole rows only, max 6 cells', () => {
+    // kickdrum/tidyVco/cloudseed: 8 ranked at full → 2 whole rows = 6 cells,
+    // ranks 7-8 not rendered in-lane, no room for a whole glyph strip.
+    expect(laneBodyPlan(8, true, 'full')).toEqual({ layout: 'plate', cellCount: 6, glyph: false, knobSize: 'sm' });
+    expect(laneBodyPlan(8, true, 'full').cellCount).toBe(PLATE_COLS * PLATE_MAX_ROWS);
+    // adsr: 4 ranked → 2 rows (3+1), all four render, glyph strip doesn't fit.
+    expect(laneBodyPlan(4, true, 'full')).toEqual({ layout: 'plate', cellCount: 4, glyph: false, knobSize: 'sm' });
+  });
+
+  it('full PLATE keeps the glyph strip when the cells need only one row — the lfo case', () => {
+    // lfo: 3 ranked with a glyph → 3 > row max (2) → plate, one row of cells +
+    // a whole full-width glyph strip.
+    expect(laneBodyPlan(3, true, 'full')).toEqual({ layout: 'plate', cellCount: 3, glyph: true, knobSize: 'sm' });
+  });
+
+  it('never plans more cells than exist, and never a partial row beyond the plate cap', () => {
+    for (const tier of ['mini', 'compact', 'full'] as const) {
+      for (const glyph of [true, false]) {
+        for (let n = 0; n <= 12; n++) {
+          const plan = laneBodyPlan(n, glyph, tier);
+          expect(plan.cellCount).toBeLessThanOrEqual(n);
+          expect(plan.cellCount).toBeLessThanOrEqual(PLATE_COLS * PLATE_MAX_ROWS);
+          if (plan.layout === 'plate' && plan.glyph) {
+            // A plate glyph strip only ever coexists with a single cell row.
+            expect(Math.ceil(plan.cellCount / PLATE_COLS)).toBeLessThanOrEqual(1);
+          }
+        }
+      }
+    }
   });
 });
 
