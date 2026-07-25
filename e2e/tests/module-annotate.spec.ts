@@ -55,8 +55,8 @@ test('documented module (adsr): Annotate entry toggles a hover popover over a co
   const popover = page.getByTestId('annotate-popover');
   await expect(popover).toBeVisible();
   await expect(popover.getByTestId('annotate-name')).toHaveText('A'); // ParamDef label
-  // Authored desc text (adsr attack: "...rise from 0 to its peak...").
-  await expect(popover.getByTestId('annotate-desc')).toContainText(/rise/i);
+  // Authored desc text (adsr attack, revised P1 batch 1: "...ramp from 0 to its peak...").
+  await expect(popover.getByTestId('annotate-desc')).toContainText(/ramp/i);
 
   // 4) Toggle OFF → the popover stops appearing.
   menu = await openModuleMenu(page, 'adsr');

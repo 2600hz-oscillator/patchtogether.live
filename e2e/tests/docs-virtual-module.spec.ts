@@ -35,7 +35,8 @@ const PROBES: Probe[] = [
     id: 'adsr',
     heading: /adsr/i,
     controlParam: 'attack',
-    controlDescIncludes: /rise|attack/i,
+    // Revised authored prose (P1 batch 1): "ramp from 0 to its peak (1.0)".
+    controlDescIncludes: /ramp|peak/i,
     cvPort: 'attack',
     modulates: /modulates/i,
   },
