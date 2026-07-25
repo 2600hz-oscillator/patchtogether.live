@@ -31,7 +31,8 @@
   // joystick exactly like MIDI/CV does.
 
   import { onMount, onDestroy } from 'svelte';
-  import { useStore, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
+  import { captureFlowStore } from './card-resize';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import Fader from '$lib/ui/controls/Fader.svelte';
@@ -81,9 +82,11 @@
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const { set, live, engineCtx } = cardParams(quadralogicalDef, () => id, () => node);
-  // useStore() is intentionally read so the card participates in SvelteFlow's
-  // node context (parity with the other video cards); not otherwise used yet.
-  useStore();
+  // The flow store is intentionally read so the card participates in
+  // SvelteFlow's node context (parity with the other video cards); not
+  // otherwise used yet. GUARDED capture: the dock full-view plain-mounts this
+  // card OUTSIDE the provider, where a bare useStore() throws at init.
+  captureFlowStore();
 
   function defaultFor(key: string): number {
     return quadralogicalDef.params.find((p) => p.id === key)!.defaultValue;

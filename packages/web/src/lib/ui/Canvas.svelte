@@ -387,7 +387,7 @@
   // P0.3b re-spec — the bottom-drawer EXPANDED full-view faceplate (its own
   // full-width RACKLINE faceplate, NOT routed through DockCardHost's card flex).
   import DockFullView from '$lib/ui/dock/DockFullView.svelte';
-  import { SHELL_TILE_W, SHELL_TILE_H_SLOT, SHELL_VIDEO_ZONE_TILE_INSET_Y } from '$lib/ui/workflow/module-shell-model';
+  import { SHELL_TILE_W, SHELL_TILE_H_SLOT, SHELL_VIDEO_ZONE_TILE_INSET_Y, videoZonePackedXs } from '$lib/ui/workflow/module-shell-model';
   // DOCKING P2.5b: the pan-gesture screen-space cable tail (stub → rail).
   import DockPanTail, { type DockTailSpec } from '$lib/ui/dock/DockPanTail.svelte';
   import { dockStore } from '$lib/ui/dock/dock-store.svelte';
@@ -1883,6 +1883,30 @@
     return { node, title: dockDisplayName(node) };
   });
 
+  // A VIDEO-domain module expanded in the dock full-view holds a HARD render
+  // lease for as long as the faceplate is open: the dock mount is a live
+  // presentation surface OUTSIDE the flow pane, but the central card-visibility
+  // observer only tracks the node's LANE element — pan the lane copy off-screen
+  // and pull-eval would demote the chain (~1.5s TTL), freezing the dock's
+  // preview mid-view. Exactly the surface class acquireRenderLease exists for
+  // (VideoOutCard's fullscreen/present modes use the same seam). Refcounted +
+  // released the moment the full-view closes ($effect cleanup); non-video
+  // occupants and dawless racks never reach the acquire.
+  $effect(() => {
+    const fv = fullViewCard;
+    const e = engine;
+    if (!fv || !e) return;
+    if (!getVideoModuleDef(fv.node.type)) return;
+    let ve: VideoEngine | undefined;
+    try {
+      ve = e.getDomain<VideoEngine>('video');
+    } catch {
+      return;
+    }
+    if (!ve) return;
+    return ve.acquireRenderLease(fv.node.id);
+  });
+
   let bottomRailCards = $derived.by(() => {
     const docked = railCards('bottom');
     const out: Array<{ node: ModuleNode; title: string; pinned: boolean }> = [];
@@ -2128,19 +2152,34 @@
       // synesthesia) is NOT a channel member, so it renders at its PERSISTED
       // spawn X — the wide 765px video-zone pitch. Under the narrowed lanes that
       // strands them far right of the tight columns, so RE-DERIVE their RENDER
-      // position to the shell pitch (videoOut slot 0 is pitch-independent;
-      // recorderbox/synesthesia pack under columns 2/3). Also nudge the tile TOP
-      // DOWN by SHELL_VIDEO_ZONE_TILE_INSET_Y so the whole tile sits INSIDE the
-      // darker video area — un-inset, the tile top lands on the zone's dashed
-      // border (drawn at COLUMN_BASELINE_Y == the slot's un-inset top) and its
-      // jack rail collides with the lane-number badges just above it. Pure render
-      // OVERRIDE (like the channel members) — the persisted x/y is untouched, so
-      // preview OFF is byte-identical and no Y.Doc write / collab divergence.
+      // position to the shell pitch, PACKED left-to-right (videoZonePackedXs):
+      // a tile-swapped default reserves one uniform SHELL_TILE_W slot (an
+      // all-tile zone packs to EXACTLY the historic fixed 216px slots), while a
+      // LEGACY-rendered default — videoOut, the video-surface snowflake whose
+      // real card stays in the lane — reserves its ACTUAL live width
+      // (node.data.width, the freely-resizable card), so it never overlaps its
+      // tile neighbours and a corner-drag resize simply pushes them right. The
+      // override anchors POSITION only; the card sizes itself. Also nudge each
+      // TOP DOWN by SHELL_VIDEO_ZONE_TILE_INSET_Y so the whole tile sits INSIDE
+      // the darker video area — un-inset, the tile top lands on the zone's
+      // dashed border (drawn at COLUMN_BASELINE_Y == the slot's un-inset top)
+      // and its jack rail collides with the lane-number badges just above it.
+      // Pure render OVERRIDE (like the channel members) — the persisted x/y is
+      // untouched, so preview OFF is byte-identical and no Y.Doc write / collab
+      // divergence.
       if (shellPreview) {
-        VIDEO_ZONE_DEFAULTS.forEach((spec, i) => {
-          if (!typeOf.has(spec.id)) return;
-          const slot = videoZoneSlotPos(i, wcolPitch);
-          wcolPosByNode.set(spec.id, { x: slot.x, y: slot.y + SHELL_VIDEO_ZONE_TILE_INSET_Y });
+        const present = VIDEO_ZONE_DEFAULTS.filter((spec) => typeOf.has(spec.id));
+        const widths = present.map((spec) => {
+          if (!NON_SHELL_LANE_TYPES.has(spec.type)) return SHELL_TILE_W;
+          // Legacy in-lane card (videoOut): its live resizable width.
+          const n = snap.nodes.find((m) => m.id === spec.id);
+          const w = (n?.data as { width?: number } | undefined)?.width;
+          return typeof w === 'number' && w > 0 ? w : spec.nominalWidth;
+        });
+        const origin = videoZoneSlotPos(0, wcolPitch);
+        const xs = videoZonePackedXs(origin.x, widths, wcolPitch);
+        present.forEach((spec, i) => {
+          wcolPosByNode.set(spec.id, { x: xs[i]!, y: origin.y + SHELL_VIDEO_ZONE_TILE_INSET_Y });
         });
       }
     }

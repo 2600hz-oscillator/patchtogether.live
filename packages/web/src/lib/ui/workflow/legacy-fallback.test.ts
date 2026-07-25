@@ -89,4 +89,16 @@ describe('isShellSwappable — eligibility', () => {
     expect(NON_SHELL_LANE_TYPES.has('clipplayer')).toBe(true);
     expect(NON_SHELL_LANE_TYPES.has('tidyvco')).toBe(false);
   });
+
+  it('videoOut is a VIDEO-SURFACE snowflake: its legacy card (the live, freely-resizable output screen) stays in the lane', () => {
+    // The owner ?shell=1 regression: swapping videoOut for a placeholder tile
+    // removed the only user-viewable video output. It must render legacy.
+    expect(NON_SHELL_LANE_TYPES.has('videoOut')).toBe(true);
+    expect(isShellSwappable('videoOut', true)).toBe(false);
+    expect(laneRenderKind({ ...base, type: 'videoOut', hasCard: isShellSwappable('videoOut', true) })).toBe('legacy');
+    // …while the other video-domain modules (recorderbox / backdraft / …) still
+    // swap to tiles — they get the LIVE THUMBNAIL glyph instead.
+    expect(NON_SHELL_LANE_TYPES.has('recorderbox')).toBe(false);
+    expect(NON_SHELL_LANE_TYPES.has('backdraft')).toBe(false);
+  });
 });

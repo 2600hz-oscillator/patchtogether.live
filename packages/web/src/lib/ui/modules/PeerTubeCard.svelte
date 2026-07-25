@@ -25,13 +25,13 @@
   // unavailable" + auto-skips to the next result (never crashes / hangs).
 
   import { onMount, onDestroy } from 'svelte';
-  import { type NodeProps, useStore } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
   import Hls from 'hls.js';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
-  import { startCornerResize } from './card-resize';
+  import { startCornerResize, captureFlowStore } from './card-resize';
   import ModuleTitle from './ModuleTitle.svelte';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
@@ -51,7 +51,11 @@
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
-  const flowStore = useStore();
+  // Guarded: the dock full-view plain-mounts this card OUTSIDE the
+  // SvelteFlow provider, where a bare useStore() throws and killed the
+  // card at init (no video in the expanded faceplate). Inside the
+  // provider this is byte-identical; outside it's null -> zoom 1.
+  const flowStore = captureFlowStore();
 
   // ---- Sizing (mirror VIDEOBOX / TV-LIBRARIAN; 180-multiple defaults) ----
   const DEFAULT_WIDTH = 360;

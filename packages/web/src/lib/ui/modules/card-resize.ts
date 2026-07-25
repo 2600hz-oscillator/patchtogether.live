@@ -5,16 +5,40 @@
 // via the supplied `apply` callback so Y.Doc syncs them to other
 // collaborators in the same rackspace.
 
-import type { useStore } from '@xyflow/svelte';
+import { useStore } from '@xyflow/svelte';
 
 type FlowStore = ReturnType<typeof useStore>;
+
+/**
+ * Capture the SvelteFlow store at card init, GUARDED for plain-mounts OUTSIDE
+ * the provider — the dock full-view (DockFullView) mounts an un-migrated
+ * module's verbatim legacy card outside <SvelteFlow>, where a bare `useStore()`
+ * THROWS ("wrap your component in a <SvelteFlowProvider />") and killed the
+ * whole card at init (the owner-reported "expanded videoOut shows no video"
+ * dock regression — every resizable video card was affected; DOOM worked only
+ * because it never calls useStore). Same discipline as PatchPanel's internal
+ * captureFlowStore: inside the provider (every canvas card, dawless and
+ * workflow alike) the try succeeds and behavior is byte-identical; outside it
+ * returns null and the zoom-dependent resize math falls back to zoom 1 — which
+ * IS the dock's native scale, so corner-drag resize stays correct there too.
+ * MUST be called during component init (it reads Svelte context).
+ */
+export function captureFlowStore(): FlowStore | null {
+  try {
+    return useStore();
+  } catch {
+    return null; // outside the provider (dock full-view plain-mount)
+  }
+}
 
 /** The rack grid tile (px). Resizable cards snap to whole-tile (Nu) multiples
  *  so they stay on the 1u×1u rack grid — see _module-card.css `--rack-unit`. */
 const RACK_UNIT = 180;
 
 export interface ResizeOptions {
-  flowStore: FlowStore;
+  /** The captured flow store, or null when the card is plain-mounted outside
+   *  the provider (dock full-view) — zoom then falls back to 1 (native scale). */
+  flowStore: FlowStore | null;
   minWidth: number;
   minHeight: number;
   /** Read the card's current width at the moment the drag starts. */
@@ -51,7 +75,7 @@ export function startCornerResize(ev: PointerEvent, opts: ResizeOptions): AbortC
     return snap > 1 ? Math.ceil(v / snap) * snap : v;
   };
   const onMove = (mev: PointerEvent) => {
-    const zoom = opts.flowStore.viewport.zoom || 1;
+    const zoom = opts.flowStore?.viewport.zoom || 1;
     const dx = (mev.clientX - startX) / zoom;
     const dy = (mev.clientY - startY) / zoom;
     const w = quantize(startW + dx, opts.minWidth);
