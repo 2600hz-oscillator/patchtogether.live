@@ -376,7 +376,13 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // for the owner-reported zoom-reposition bug; linux baselines pending
       // the vrt-update.yml dispatch on the PR branch, the
       // workflow-dock-composite precedent).
-    ).toBeLessThanOrEqual(107);
+      // 107→119 for the P1 BATCH-1 CURATED FACES (2026-07-25, deliberate
+      // darwin-first — per migrated module (adsr/cloudseed/kickdrum/lfo/
+      // tidyVco/vca) the compact lane tile + the dock full-view faceplate
+      // under `?shell=1` in workflow-shell-faces.spec.ts; linux baselines
+      // pending the vrt-update.yml dispatch on the PR branch, the
+      // workflow-shell-zoom precedent).
+    ).toBeLessThanOrEqual(119);
   });
 });
 

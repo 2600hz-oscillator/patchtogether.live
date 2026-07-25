@@ -980,6 +980,26 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/workflow-shell-zoom-040',
   'linux/workflow-shell-zoom-080',
   'linux/workflow-shell-zoom-130',
+  // P1 BATCH-1 CURATED FACES (2026-07-25, deliberate darwin-first): the first
+  // six migrated modules' faces under `?shell=1` — per module, the COMPACT
+  // lane tile (zoom 0.45) + the DOCK full-view faceplate with its curated
+  // section bands (workflow-shell-faces.spec.ts). Static glyphs + default
+  // params → mask-free deterministic captures. Darwin baselines captured
+  // locally (3× stable) + visually inspected; linux baselines pending a
+  // vrt-update.yml workflow_dispatch on the PR branch (the
+  // workflow-shell-zoom precedent).
+  'linux/face-tidyVco-compact',
+  'linux/face-tidyVco-dock',
+  'linux/face-kickdrum-compact',
+  'linux/face-kickdrum-dock',
+  'linux/face-adsr-compact',
+  'linux/face-adsr-dock',
+  'linux/face-vca-compact',
+  'linux/face-vca-dock',
+  'linux/face-lfo-compact',
+  'linux/face-lfo-dock',
+  'linux/face-cloudseed-compact',
+  'linux/face-cloudseed-dock',
   // CLIPPLAYER: darwin baseline (the clip-launcher card — 8×8 launch grid +
   // piano-roll note editor + transport knobs; no animated canvas) captured
   // locally; linux baseline pending a `vrt-update.yml` workflow_dispatch on

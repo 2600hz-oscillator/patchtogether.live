@@ -87,6 +87,17 @@
   let controls = $derived<FaceControl[]>(face?.controls ?? []);
   let glyphKind = $derived(face?.glyph ?? 'none');
 
+  // Dock faceplate SECTION BANDS (P1): at the 'dock' tier the curated face
+  // resolves the declared `face.pages`; the full-view renders one labeled band
+  // per page. Any ranked control NOT claimed by a page falls into a trailing
+  // un-labeled band so the dock still shows EVERY control (dock = all).
+  let pages = $derived(view === 'dock-full' ? (face?.pages ?? null) : null);
+  let unpaged = $derived.by<FaceControl[]>(() => {
+    if (!pages || !pages.length) return [];
+    const claimed = new Set(pages.flatMap((p) => p.controls.map((c) => c.key)));
+    return controls.filter((c) => !claimed.has(c.key));
+  });
+
   function paramDef(pid: string): ParamDef | undefined {
     return (def?.params ?? []).find((p) => p.id === pid);
   }
@@ -127,55 +138,96 @@
     <span class="tile-badge">{node.type}</span>
   </div>
 
-  <!-- One inline body row (mock .body): curated knob columns LEFT, the live
-       glyph filling RIGHT; a lone glyph centres (.body.center). -->
-  <div class="tile-body" class:center={controls.length === 0}>
-    {#each controls as ctl (ctl.key)}
-      {#if ctl.kind === 'param'}
-        {@const pd = paramDef(ctl.paramId ?? ctl.key)}
-        {#if pd}
-          <div class="kcol">
-            <KnobConic
-              value={params.paramVal(pd.id)}
-              min={pd.min}
-              max={pd.max}
-              defaultValue={pd.defaultValue}
-              label={pd.label}
-              units={pd.units ?? ''}
-              curve={pd.curve}
-              onchange={params.set(pd.id)}
-              readLive={params.live(pd.id)}
-              moduleId={id}
-              paramId={pd.id}
-              size={effTier === 'mini' ? 'lg' : 'md'}
-              accent={spine}
-            />
-          </div>
-        {/if}
-      {:else}
-        <!-- family / static cell — the shell frames + labels it; the rich
-             grid/cluster/select render is a P1 per-module concern. -->
-        <div class="kcol ms-cell-other" data-cell-kind={ctl.kind}>
-          <span class="lab">{ctl.label}</span>
+  {#snippet controlCell(ctl: FaceControl)}
+    {#if ctl.kind === 'param'}
+      {@const pd = paramDef(ctl.paramId ?? ctl.key)}
+      {#if pd}
+        <div class="kcol">
+          <KnobConic
+            value={params.paramVal(pd.id)}
+            min={pd.min}
+            max={pd.max}
+            defaultValue={pd.defaultValue}
+            label={pd.label}
+            units={pd.units ?? ''}
+            curve={pd.curve}
+            onchange={params.set(pd.id)}
+            readLive={params.live(pd.id)}
+            moduleId={id}
+            paramId={pd.id}
+            size={effTier === 'mini' ? 'lg' : 'md'}
+            accent={spine}
+          />
         </div>
       {/if}
-    {/each}
-
-    {#if glyphKind !== 'none'}
-      <div class="tile-glyph" data-glyph-kind={glyphKind}>
-        {#if glyphKind === 'meter'}
-          <VuMeter />
-        {:else}
-          <ScopeScreen
-            mode={glyphKind === 'envelope' ? 'envelope' : 'wave'}
-            width={110}
-            height={40}
-            testid="shell-glyph"
-          />
-        {/if}
+    {:else}
+      <!-- family / static cell — the shell frames + labels it; the rich
+           grid/cluster/select render is a P1 per-module concern. -->
+      <div class="kcol ms-cell-other" data-cell-kind={ctl.kind}>
+        <span class="lab">{ctl.label}</span>
       </div>
     {/if}
-  </div>
+  {/snippet}
+
+  {#snippet glyphCell()}
+    <div class="tile-glyph" data-glyph-kind={glyphKind}>
+      {#if glyphKind === 'meter'}
+        <VuMeter />
+      {:else}
+        <ScopeScreen
+          mode={glyphKind === 'envelope' ? 'envelope' : 'wave'}
+          width={110}
+          height={40}
+          testid="shell-glyph"
+        />
+      {/if}
+    </div>
+  {/snippet}
+
+  {#if pages && pages.length}
+    <!-- DOCK FACEPLATE (view='dock-full' + declared pages): the glyph is the
+         hero band, then one labeled SECTION BAND per curated page, then a
+         trailing band for any ranked-but-unpaged controls (dock = all). -->
+    {#if glyphKind !== 'none'}
+      <div class="tile-body center dock-hero">
+        {@render glyphCell()}
+      </div>
+    {/if}
+    <div class="dock-pages" data-testid="face-pages">
+      {#each pages as page (page.id)}
+        <section class="dock-page" data-testid="face-page" data-face-page={page.id}>
+          <h4 class="page-label">{page.label}</h4>
+          <div class="page-controls">
+            {#each page.controls as ctl (ctl.key)}
+              {@render controlCell(ctl)}
+            {/each}
+          </div>
+        </section>
+      {/each}
+      {#if unpaged.length}
+        <section class="dock-page" data-testid="face-page" data-face-page="__unpaged">
+          <h4 class="page-label">more</h4>
+          <div class="page-controls">
+            {#each unpaged as ctl (ctl.key)}
+              {@render controlCell(ctl)}
+            {/each}
+          </div>
+        </section>
+      {/if}
+    </div>
+  {:else}
+    <!-- One inline body row (mock .body): curated knob columns LEFT, the live
+         glyph filling RIGHT; a lone glyph centres (.body.center). -->
+    <div class="tile-body" class:center={controls.length === 0}>
+      {#each controls as ctl (ctl.key)}
+        {@render controlCell(ctl)}
+      {/each}
+
+      {#if glyphKind !== 'none'}
+        {@render glyphCell()}
+      {/if}
+    </div>
+  {/if}
 
   <!-- Jack rail = PatchPanel (lane-rail variant): domain jack dots open the
        drill-down; the "⤢" more-affordance opens the dock full-view. -->
@@ -199,5 +251,36 @@
     justify-content: center;
     border: 1px dashed var(--border, #2c3037);
     border-radius: 4px;
+  }
+
+  /* Dock faceplate SECTION BANDS (view='dock-full'): the glyph hero, then one
+     labeled band per curated page. Bands stack; controls wrap inside a band. */
+  .dock-hero {
+    flex: 0 0 auto;
+  }
+  .dock-pages {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 4px 10px 10px;
+    min-width: 0;
+  }
+  .dock-page {
+    border-top: 1px solid var(--border, #2c3037);
+    padding-top: 6px;
+  }
+  .page-label {
+    margin: 0 0 6px;
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-dim, #9aa3ad);
+  }
+  .page-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px 10px;
   }
 </style>

@@ -199,12 +199,11 @@ describe('module-face lint — STRICT_FACES RATCHET (only grows)', () => {
   //   module (the P1 reskin waves). Only LOWER it for a real, justified
   //   un-promotion — NEVER to make a red face gate go green.
   it('STRICT_FACES never shrinks below its frozen floor', () => {
-    // 0 (2026-07-21): seeded EMPTY at P0.4 — the schema + selector + gate land
-    // before any module is faced. The first faced-module batch (dx7, kickdrum,
-    // tidyvco, …) lands in P1 and raises this floor.
+    // 6 (2026-07-25): P1 batch 1 — the first faced-module wave (adsr, cloudseed,
+    // kickdrum, lfo, tidyVco, vca) raised the floor from the P0.4 empty seed.
     expect(
       STRICT_FACES.size,
       'STRICT_FACES shrank below its frozen floor — see the RATCHET rule above',
-    ).toBeGreaterThanOrEqual(0);
+    ).toBeGreaterThanOrEqual(6);
   });
 });

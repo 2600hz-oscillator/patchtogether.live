@@ -125,8 +125,10 @@ async function setZoomTier(page: Page, zoom: number, expectTier: string): Promis
 
 test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
   test('un-migrated module → placeholder in lane + legacy card operable in the dock', async ({ page }) => {
+    // 'delay' — a still-UN-migrated module (vca joined STRICT_FACES in P1
+    // batch 1, so it now renders the curated ModuleShell, not the placeholder).
     await gotoWorkflow(page, { shell: true });
-    await spawnPatch(page, [{ id: NODE, type: 'vca', position: { x: 460, y: 240 } }]);
+    await spawnPatch(page, [{ id: NODE, type: 'delay', position: { x: 460, y: 240 } }]);
 
     const laneNode = page.locator(`.svelte-flow__node[data-id="${NODE}"]`);
     await expect(laneNode).toHaveCount(1);
@@ -155,7 +157,7 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     await expect(faceplate.getByTestId('faceplate-close')).toBeVisible();
     await expect(faceplate.getByTestId('faceplate-collapse')).toBeVisible();
     await expect(faceplate.getByTestId('faceplate-tab')).toHaveText('MODULE');
-    await expect(faceplate.locator('.faceplate.audio')).toHaveCount(1); // vca = audio domain
+    await expect(faceplate.locator('.faceplate.audio')).toHaveCount(1); // delay = audio domain
 
     // …and the REAL, unchanged legacy card mounts verbatim in .editor at native
     //  scale (carrying the data-dock-card anchor so PickupCable/patch-menu work).
@@ -172,7 +174,8 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     await expect(laneNode.locator('[data-testid="dock-stub"]')).toHaveCount(0);
 
     // 4) Drive a control in the mounted card → the graph param changes (operable).
-    const before = await readParam(page, NODE, 'base');
+    //    (The first fader on the delay card is Time.)
+    const before = await readParam(page, NODE, 'time');
     const track = dockCard.locator('.fader-wrap .track').first();
     const box = await track.boundingBox();
     expect(box, 'a fader track should be present in the docked card').toBeTruthy();
@@ -184,8 +187,8 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     await page.mouse.move(cx, cy - 34, { steps: 6 });
     await page.mouse.up();
     await page.waitForTimeout(120);
-    const after = await readParam(page, NODE, 'base');
-    expect(after, `base should change after driving the fader (was ${before}, now ${after})`).not.toBe(before);
+    const after = await readParam(page, NODE, 'time');
+    expect(after, `time should change after driving the fader (was ${before}, now ${after})`).not.toBe(before);
 
     // 5) ESC closes the full-view faceplate; the placeholder remains in the lane.
     await page.keyboard.press('Escape');
@@ -245,8 +248,10 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
       await dropInColumn(page, t, 1);
       await page.waitForTimeout(250);
     }
-    // The three ch1 members are placeholders in the lane.
+    // Tiles mounted (tidyVco/vca render the migrated shell as of P1 batch 1;
+    // delay + the video-zone trio stay placeholders).
     await expect(page.locator('[data-testid="module-shell-placeholder"]')).not.toHaveCount(0);
+    await expect(page.locator('[data-testid="module-shell"]')).not.toHaveCount(0);
 
     // Uniform width + height across every mounted tile.
     const tiles = await measureTiles(page);
@@ -604,8 +609,11 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   // only button (undiscoverable). It is now a clear, LABELLED pill; the wired path
   // (onExpand → dockStore.openFullView → the .dock-faceplate full view) is unchanged.
   test('the EXPAND affordance is a labelled button that opens the dock faceplate + ESC closes', async ({ page }) => {
+    // 'delay' — a still-UN-migrated module (vca is migrated as of P1 batch 1),
+    // so this stays the PLACEHOLDER's expand path; the migrated shell's expand
+    // is covered by workflow-shell-faces.spec.ts.
     await gotoWorkflow(page, { shell: true });
-    await spawnPatch(page, [{ id: NODE, type: 'vca', position: { x: 460, y: 240 } }]);
+    await spawnPatch(page, [{ id: NODE, type: 'delay', position: { x: 460, y: 240 } }]);
 
     const laneNode = page.locator(`.svelte-flow__node[data-id="${NODE}"]`);
     const placeholder = laneNode.locator('[data-testid="module-shell-placeholder"]');
@@ -838,9 +846,12 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   // BUG 4 counterpart — a low-port tile (vca: 2 in + 2 out) is untouched by
   // the fit: EVERY preview dot renders and no "···" overflow appears.
   test('low-port rail (vca) shows ALL jack dots with no "···" and EXPAND inside the tile', async ({ page }) => {
+    // vca is MIGRATED as of P1 batch 1 — the lane tile is the curated
+    // ModuleShell, which carries the SAME PatchPanel lane-rail contract the
+    // placeholder does (all 4 dots, no overflow, EXPAND inside the tile).
     await gotoWorkflow(page, { shell: true });
     await spawnPatch(page, [{ id: NODE, type: 'vca', position: { x: 460, y: 240 } }]);
-    const tile = page.locator(`.svelte-flow__node[data-id="${NODE}"] [data-testid="module-shell-placeholder"]`);
+    const tile = page.locator(`.svelte-flow__node[data-id="${NODE}"] [data-testid="module-shell"]`);
     await expect(tile).toBeVisible();
     await page.waitForFunction((nodeId) => {
       const r = document.querySelector(
@@ -851,7 +862,7 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
 
     const m = await page.evaluate((nodeId) => {
       const tile = document.querySelector(
-        `.svelte-flow__node[data-id="${nodeId}"] [data-testid="module-shell-placeholder"]`,
+        `.svelte-flow__node[data-id="${nodeId}"] [data-testid="module-shell"]`,
       ) as HTMLElement;
       const rail = tile.querySelector('[data-testid="lane-jack-rail"]') as HTMLElement;
       const expand = tile.querySelector('[data-testid="shell-open-dock"]') as HTMLElement;
