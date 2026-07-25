@@ -208,6 +208,25 @@ export const LANE_ROW_MAX_CELLS = 3;
 export const PLATE_COLS = 3;
 export const PLATE_MAX_ROWS = 2;
 
+// ── The DOCK HERO GLYPH width — owner P1 batch-1 feedback ───────────────────
+//
+// The dock faceplate's hero glyph must NOT span the full faceplate width: it
+// spans roughly the FIRST FOUR KNOB COLUMNS of the control grid, leaving blank
+// space to its right (the gallery-mock proportion). Derived from the shared
+// knob-column vocabulary so the cap stays aligned to the grid the section
+// bands lay out below it.
+/** Knob columns the dock hero glyph spans. */
+export const DOCK_HERO_GLYPH_COLS = 4;
+/** The knob-column design width (px) — mirrors --kcol-max / laneBodyPlan's
+ *  46px fit constant (_rackline-tile.css). */
+export const DOCK_KCOL_W = 46;
+/** The dock page-controls column gap (px) — mirrors `.page-controls` gap. */
+export const DOCK_PAGE_GAP_X = 10;
+/** The dock hero glyph width cap (px): 4 knob columns + the 3 gaps between
+ *  them = 214. Applied by ModuleShell as `--dock-hero-glyph-w`. */
+export const DOCK_HERO_GLYPH_W =
+  DOCK_HERO_GLYPH_COLS * DOCK_KCOL_W + (DOCK_HERO_GLYPH_COLS - 1) * DOCK_PAGE_GAP_X;
+
 export interface LaneBodyPlan {
   /** 'row' = the mock .mod inline body; 'plate' = the full-tier 3-col grid. */
   layout: 'row' | 'plate';

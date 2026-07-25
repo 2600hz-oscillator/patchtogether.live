@@ -13,12 +13,14 @@
 //     face tier 'dock'): the glyph hero + one labeled SECTION BAND per curated
 //     `face.pages` page, ALL controls rendered.
 //
-// The glyphs are STATIC here (no live level/sample feed is wired in the shell
-// yet — VuMeter unlit, ScopeScreen drawing its deterministic default curve),
-// and every knob sits at its ParamDef default, so the scenes are
-// pixel-deterministic without masks (animations killed via the style tag +
-// `animations: 'disabled'`). Tight per-scene budgets, the
-// workflow-shell-zoom precedent.
+// The glyphs are LIVE-BOUND (shell-glyph-live.ts) but render DETERMINISTIC
+// pixels here: no audio flows in these scenes, and ScopeScreen's live
+// waveform mode draws the SAME flat centerline whether the tap is unattached
+// or reading silence (VuMeter unlit at level 0; the adsr envelope / lfo
+// wave-morph curves derive from the ParamDef defaults). Every knob sits at
+// its default, so the scenes are pixel-deterministic without masks
+// (animations killed via the style tag + `animations: 'disabled'`). Tight
+// per-scene budgets, the workflow-shell-zoom precedent.
 //
 // darwin-first: darwin baselines are captured locally (3× stable); the linux
 // pairs are EXEMPT_BASELINE_PAIRS-deferred until a vrt-update.yml dispatch

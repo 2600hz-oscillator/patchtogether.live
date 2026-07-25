@@ -1,0 +1,179 @@
+// e2e/tests/workflow-shell-live-glyphs.spec.ts
+//
+// LIVE shell-face glyphs (P1 batch-1 owner feedback: "LIVE, not static") —
+// the tidyVco DOCK HERO glyph proven end to end under `?shell=1`:
+//
+//   1. The dock glyph mounts in ScopeScreen's LIVE 'waveform' mode (an
+//      analyser tap on the module's primary audio output) — not the old
+//      static 'wave' buffer.
+//   2. SILENT (the REAL source chain present but its transport stopped): the
+//      trace stays flat (data-trace-peak ≈ 0) and the canvas is STATIC —
+//      byte-identical frames over time.
+//   3. DRIVEN via the REAL default-mode source chain (POLYSEQZ's own
+//      transport → tidyVco poly chord bus → AUDIOOUT, the tidy-vco.spec
+//      pattern): the trace goes non-flat AND the canvas pixels CHANGE
+//      frame to frame.
+//   4. The dock hero LAYOUT: the glyph is capped to the first four knob
+//      columns (214px) and does NOT span the faceplate width.
+//
+// Liveness is asserted through the DOM-mirrored `data-trace-peak` seam
+// (capability-safe — no GPU read); the canvas-change assertion reads the 2D
+// canvas via toDataURL (plain CPU canvas — identical on CI's SwiftShader).
+
+import { test, expect, type Page } from '@playwright/test';
+import { spawnPatch } from './_helpers';
+import { setNodeParams } from './_module-coverage-helpers';
+
+/** The dock hero glyph width cap (mirrors DOCK_HERO_GLYPH_W). */
+const DOCK_HERO_GLYPH_W = 214;
+
+async function gotoWorkflowShell(page: Page): Promise<void> {
+  await page.goto('/rack?mode=workflow&shell=1');
+  await expect(page.getByTestId('workflow-topbar')).toBeVisible();
+  await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
+}
+
+/** Set the viewport ZOOM and wait for the LOD tier to settle on the shell. */
+async function setZoomTier(page: Page, nodeId: string, zoom: number, tier: string): Promise<void> {
+  await page.evaluate((z) => {
+    const f = (globalThis as unknown as { __flow: { getViewport: () => { x: number; y: number; zoom: number }; setViewport: (vp: { x: number; y: number; zoom: number }, o?: { duration?: number }) => void } }).__flow;
+    const vp = f.getViewport();
+    f.setViewport({ x: vp.x, y: vp.y, zoom: z }, { duration: 0 });
+  }, zoom);
+  await page.waitForFunction(
+    ({ nodeId, tier }) => {
+      const el = document.querySelector(
+        `.svelte-flow__node[data-id="${nodeId}"] [data-testid="module-shell"]`,
+      );
+      return !!el && el.getAttribute('data-shell-tier') === tier;
+    },
+    { nodeId, tier },
+    { timeout: 10_000 },
+  );
+}
+
+/** data-trace-peak of the DOCK full-view glyph (NaN → 0). */
+async function dockTracePeak(page: Page): Promise<number> {
+  const raw = await page
+    .getByTestId('dock-full-view')
+    .getByTestId('shell-glyph')
+    .getAttribute('data-trace-peak');
+  const n = raw ? Number(raw) : 0;
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Snapshot the dock glyph canvas as a data URL after two settled rAFs. */
+async function dockGlyphFrame(page: Page): Promise<string> {
+  return await page.evaluate(async () => {
+    await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+    const c = document.querySelector(
+      '[data-testid="dock-full-view"] [data-testid="shell-glyph"] canvas',
+    ) as HTMLCanvasElement | null;
+    return c ? c.toDataURL() : '';
+  });
+}
+
+test.describe('LIVE shell glyphs (?shell=1)', () => {
+  test('tidyVco dock hero glyph: static-silent, then MOVES when the real POLYSEQZ chain drives audio', async ({ page }) => {
+    await gotoWorkflowShell(page);
+
+    // The REAL default-mode poly chain (tidy-vco.spec pattern) with the
+    // transport STOPPED — the silent control state.
+    await spawnPatch(
+      page,
+      [
+        { id: 'p-seq', type: 'polyseqz', position: { x: 40, y: 60 }, domain: 'audio',
+          params: { isPlaying: 0, length: 4, bpm: 240, gateLength: 0.6 } },
+        { id: 'p-tv', type: 'tidyVco', position: { x: 460, y: 240 }, domain: 'audio', params: {} },
+        { id: 'p-out', type: 'audioOut', position: { x: 1050, y: 60 }, domain: 'audio',
+          params: { master: 0.2 } },
+      ],
+      [
+        { id: 'pe1', from: { nodeId: 'p-seq', portId: 'poly' }, to: { nodeId: 'p-tv', portId: 'poly' },
+          sourceType: 'polyPitchGate', targetType: 'polyPitchGate' },
+        { id: 'pe2', from: { nodeId: 'p-tv', portId: 'out_l' }, to: { nodeId: 'p-out', portId: 'L' },
+          sourceType: 'audio', targetType: 'audio' },
+        { id: 'pe3', from: { nodeId: 'p-tv', portId: 'out_r' }, to: { nodeId: 'p-out', portId: 'R' },
+          sourceType: 'audio', targetType: 'audio' },
+      ],
+    );
+
+    // Seed gated chord steps (they only play once the transport starts).
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        const seq = w.__patch.nodes['p-seq'];
+        if (!seq) return;
+        if (!seq.data) seq.data = {};
+        seq.data.steps = [
+          { on: true, root: 60, quality: 'maj', inversion: 0, voicing: 'closed' },
+          { on: true, root: 57, quality: 'min', inversion: 0, voicing: 'closed' },
+          { on: true, root: 65, quality: 'maj', inversion: 0, voicing: 'closed' },
+          { on: true, root: 62, quality: 'min', inversion: 0, voicing: 'closed' },
+        ];
+      });
+    });
+
+    // Open the tidyVco dock full-view from the lane tile's expand pill.
+    await setZoomTier(page, 'p-tv', 0.6, 'full');
+    const shell = page.locator('.svelte-flow__node[data-id="p-tv"] [data-testid="module-shell"]');
+    await shell.getByTestId('shell-open-dock').click();
+    const faceplate = page.getByTestId('dock-full-view');
+    await expect(faceplate).toBeVisible();
+
+    // 1) LIVE mode mounted: the hero glyph is ScopeScreen's live 'waveform'
+    //    mode bound to the audio tap — not the old static 'wave' buffer.
+    const glyph = faceplate.getByTestId('shell-glyph');
+    await expect(glyph).toBeVisible();
+    await expect(glyph).toHaveAttribute('data-mode', 'waveform');
+    await expect(
+      faceplate.locator('[data-glyph-kind="waveform"]'),
+    ).toHaveAttribute('data-glyph-binding', 'live-audio');
+
+    // 4) The dock hero LAYOUT: capped to the 4-knob-column width, well short
+    //    of the faceplate span (blank space to its right).
+    const glyphBox = (await glyph.boundingBox())!;
+    const plateBox = (await faceplate.boundingBox())!;
+    expect(glyphBox.width, 'hero glyph spans the first 4 knob columns').toBeLessThanOrEqual(DOCK_HERO_GLYPH_W + 2);
+    expect(glyphBox.width).toBeGreaterThanOrEqual(DOCK_HERO_GLYPH_W - 2);
+    expect(
+      glyphBox.x + glyphBox.width,
+      'blank space remains to the glyph’s right',
+    ).toBeLessThan(plateBox.x + plateBox.width * 0.5);
+
+    // 2) SILENT: the live trace is present but FLAT and the canvas is STATIC.
+    //    (Wait until the glyph has painted at least one live frame first —
+    //    the peak attribute is mirrored per painted frame.)
+    await expect
+      .poll(async () => (await glyph.getAttribute('data-trace-peak')) !== null, {
+        timeout: 5000,
+        message: 'live glyph painted a frame',
+      })
+      .toBe(true);
+    expect(await dockTracePeak(page), 'silent chain → flat trace').toBeLessThan(0.005);
+    const silentA = await dockGlyphFrame(page);
+    await page.waitForTimeout(300);
+    const silentB = await dockGlyphFrame(page);
+    expect(silentA.length, 'canvas snapshot resolved').toBeGreaterThan(0);
+    expect(silentB, 'silent glyph canvas is static (byte-identical frames)').toBe(silentA);
+    expect(await dockTracePeak(page), 'still flat after the window').toBeLessThan(0.005);
+
+    // 3) DRIVE the real chain: start POLYSEQZ's own transport.
+    await setNodeParams(page, 'p-seq', { isPlaying: 1 });
+    await expect
+      .poll(() => dockTracePeak(page), { timeout: 8000, message: 'driven trace goes non-flat' })
+      .toBeGreaterThan(0.05);
+
+    // …and the canvas pixels actually CHANGE frame to frame.
+    const drivenA = await dockGlyphFrame(page);
+    await expect
+      .poll(async () => (await dockGlyphFrame(page)) !== drivenA, {
+        timeout: 5000,
+        message: 'driven glyph canvas repaints a different frame',
+      })
+      .toBe(true);
+  });
+});

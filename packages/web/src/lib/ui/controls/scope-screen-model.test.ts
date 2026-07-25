@@ -9,6 +9,8 @@ import {
   peakAmplitude,
   sineWaveSamples,
   burstWaveSamples,
+  triMorphWaveSample,
+  triMorphWaveSamples,
   ENV_V_PAD,
 } from './scope-screen-model';
 
@@ -193,5 +195,55 @@ describe('burstWaveSamples — the decaying-burst (scope-at-rest) glyph trace', 
 
   it('clamps a degenerate sample count to a drawable buffer', () => {
     expect(burstWaveSamples(0).length).toBe(2);
+  });
+});
+
+describe('triMorphWaveSample / triMorphWaveSamples — the lfo shape law (0=sine, 1=saw, 2=square)', () => {
+  it('shape 0 is a sine: quarter-phase anchors', () => {
+    expect(triMorphWaveSample(0, 0)).toBeCloseTo(0, 9);
+    expect(triMorphWaveSample(0.25, 0)).toBeCloseTo(1, 9);
+    expect(triMorphWaveSample(0.5, 0)).toBeCloseTo(0, 9);
+    expect(triMorphWaveSample(0.75, 0)).toBeCloseTo(-1, 9);
+  });
+
+  it('shape 1 is a rising saw: −1 at phase 0 up to +1 at phase 1', () => {
+    expect(triMorphWaveSample(0, 1)).toBeCloseTo(-1, 9);
+    expect(triMorphWaveSample(0.5, 1)).toBeCloseTo(0, 9);
+    expect(triMorphWaveSample(1, 1)).toBeCloseTo(1, 9);
+  });
+
+  it('shape 2 is a square: +1 first half, −1 second half', () => {
+    expect(triMorphWaveSample(0.25, 2)).toBe(1);
+    expect(triMorphWaveSample(0.75, 2)).toBe(-1);
+  });
+
+  it('crossfades linearly between adjacent anchors (0.5 = halfway sine↔saw)', () => {
+    const ph = 0.25;
+    const sine = triMorphWaveSample(ph, 0);
+    const saw = triMorphWaveSample(ph, 1);
+    expect(triMorphWaveSample(ph, 0.5)).toBeCloseTo((sine + saw) / 2, 9);
+    const square = triMorphWaveSample(ph, 2);
+    expect(triMorphWaveSample(ph, 1.5)).toBeCloseTo((saw + square) / 2, 9);
+  });
+
+  it('clamps shape outside 0..2 and scales by amp (the depth swing)', () => {
+    expect(triMorphWaveSample(0.25, -1)).toBeCloseTo(triMorphWaveSample(0.25, 0), 9);
+    expect(triMorphWaveSample(0.25, 5)).toBe(triMorphWaveSample(0.25, 2));
+    expect(triMorphWaveSample(0.25, 0, 0.5)).toBeCloseTo(0.5, 9);
+    expect(triMorphWaveSample(0.25, 2, 0)).toBe(0);
+  });
+
+  it('triMorphWaveSamples draws one clean cycle (no wrap snap at the endpoint)', () => {
+    const saw = triMorphWaveSamples(1, 1, 65);
+    expect(saw[0]).toBeCloseTo(-1, 9);
+    expect(saw[64]).toBeCloseTo(1, 9); // endpoint keeps the ramp — no reset to −1
+    for (let i = 1; i < saw.length; i++) expect(saw[i]!).toBeGreaterThan(saw[i - 1]!);
+    const sine = triMorphWaveSamples(0, 1, 129);
+    expect(sine[0]).toBeCloseTo(0, 9);
+    expect(sine[128]).toBeCloseTo(0, 9);
+  });
+
+  it('clamps a degenerate sample count to a drawable buffer', () => {
+    expect(triMorphWaveSamples(0, 1, 0).length).toBe(2);
   });
 });

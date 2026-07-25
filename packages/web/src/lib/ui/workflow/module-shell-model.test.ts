@@ -23,6 +23,10 @@ import {
   SHELL_TILE_W,
   SHELL_TILE_H_SLOT,
   SHELL_VIDEO_ZONE_TILE_INSET_Y,
+  DOCK_HERO_GLYPH_COLS,
+  DOCK_KCOL_W,
+  DOCK_PAGE_GAP_X,
+  DOCK_HERO_GLYPH_W,
   type ShellDefLike,
 } from './module-shell-model';
 import { curatedFace, type FaceDefLike } from './curated-face';
@@ -260,5 +264,25 @@ describe('ModuleShell tier-swap contract (fixture — no real module is faced ye
 
   it('an un-faced def yields no curated face (the shell falls back to placeholder upstream)', () => {
     expect(curatedFace({ params: [{ id: 'x' }] }, 'compact')).toBeNull();
+  });
+});
+
+describe('DOCK_HERO_GLYPH_W — the dock hero glyph width cap (owner batch-1 feedback)', () => {
+  it('spans exactly the first FOUR knob columns of the control grid (+ their gaps)', () => {
+    expect(DOCK_HERO_GLYPH_COLS).toBe(4);
+    expect(DOCK_HERO_GLYPH_W).toBe(
+      DOCK_HERO_GLYPH_COLS * DOCK_KCOL_W + (DOCK_HERO_GLYPH_COLS - 1) * DOCK_PAGE_GAP_X,
+    );
+    expect(DOCK_HERO_GLYPH_W).toBe(214);
+  });
+
+  it('stays well under the uniform faceplate width vocabulary (blank space remains to the right)', () => {
+    // The dock faceplate is far wider than a lane tile; even against the
+    // 192px lane-tile vocabulary the cap can never exceed ~2 tiles — the
+    // point is a BOUNDED hero, not a full-width strip.
+    expect(DOCK_HERO_GLYPH_W).toBeLessThan(SHELL_TILE_W * 2);
+    // Aligned to the shared knob-column design constant (--kcol-max mirror).
+    expect(DOCK_KCOL_W).toBe(46);
+    expect(DOCK_PAGE_GAP_X).toBe(10);
   });
 });
