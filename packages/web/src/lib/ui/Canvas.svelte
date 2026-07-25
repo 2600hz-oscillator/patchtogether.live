@@ -77,9 +77,8 @@
     resolveMasterVideoOutId,
     laneCenterViewport,
     videoAreaViewport,
-    sendBoxCenterViewport,
     fitLanesViewport,
-    revealMemberViewport,
+    spawnRevealViewport,
     type ModuleBoxLike,
     type ViewportMetrics,
   } from '$lib/graph/channel-columns';
@@ -6535,21 +6534,26 @@
     topNodeId = id;
     // WORKFLOW CAMERA REVEAL (P0.3b PRIMARY fix — "add a module → nothing
     // renders"): a column/send member is forced to its deterministic slot, which
-    // stacks UPWARD from the baseline — so the newest tile lands ABOVE the
-    // current viewport and only "pops in" once the user pans. Pan the camera to
-    // the target lane so the just-added tile is guaranteed IN VIEW, with no
-    // intervening click. laneCenterViewport/sendBoxCenterViewport put the baseline
-    // at the viewport bottom (revealing the upward stack); revealMemberViewport
-    // re-centers on the new member if the stack is taller than the viewport.
+    // stacks UPWARD from the baseline — so the newest tile can land ABOVE the
+    // current viewport and only "pop in" once the user pans. The reveal decision
+    // is made against the CURRENT viewport (spawnRevealViewport, pure):
+    //   * tile already fully visible → null → NO camera move at all;
+    //   * tile off-screen → the MINIMAL translate that tucks it just inside the
+    //     violated edge(s), zoom kept, untouched axes unmoved.
+    // The original P0.3b pan re-framed the whole lane (laneCenterViewport →
+    // revealMemberViewport) on EVERY add — a 600-750px cross-canvas jump even
+    // when the tile was already on screen (or 16px off one edge): the "adding a
+    // module scrolls the viewport wildly" bug this replaces.
     if (wcolDrop?.channel != null || wcolDrop?.sendSlot != null) {
       const vp = readWorkflowViewportMetrics();
-      if (vp && flowApi) {
-        const memberH = wcolCardHeightPx(type);
-        const base =
-          wcolDrop.channel != null
-            ? laneCenterViewport(wcolDrop.channel, vp, wcolPitch)
-            : sendBoxCenterViewport(wcolDrop.sendSlot!, vp, wcolPitch);
-        flowApi.setViewport(revealMemberViewport(base, pos.y, memberH, vp), { duration: WCOL_PAN_MS });
+      const cur = flowApi?.getViewport?.();
+      if (vp && flowApi && cur && cur.zoom > 0) {
+        const target = spawnRevealViewport(
+          { x: cur.x, y: cur.y, zoom: cur.zoom },
+          { x: pos.x, y: pos.y, w: wcolCardWidthPx(type), h: wcolCardHeightPx(type) },
+          vp,
+        );
+        if (target) flowApi.setViewport(target, { duration: WCOL_PAN_MS });
       }
     }
     // WORKFLOW: a column member ALSO joins automation lane N (per-module, its own

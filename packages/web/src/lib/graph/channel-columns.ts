@@ -699,27 +699,70 @@ export function fitLanesViewport(vp: ViewportMetrics, pitch: number = COLUMN_W):
   };
 }
 
+/** A just-spawned member's flow-space rectangle (top-left + size in flow px). */
+export interface FlowRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Screen-px comfort margin the spawn-reveal pan tucks an off-screen tile
+ *  inside — a scrollIntoView-style breathing gap, small enough that the pan
+ *  stays minimal. Visibility itself is judged EDGE-INCLUSIVE against the raw
+ *  viewport bounds (margin 0), so a tile sitting flush at an edge — e.g. the
+ *  baseline row under the on-load lane framing — never triggers a pan. */
+export const SPAWN_REVEAL_MARGIN_PX = 16;
+
 /**
- * Adjust a lane/send CENTER transform (from laneCenterViewport /
- * sendBoxCenterViewport) so a just-added member occupying flow-Y
- * [memberTopY, memberTopY + memberHeightPx] is fully in view. The base transform
- * already puts the baseline at the viewport bottom, so a SHORT stack's newest
- * member is visible above it and the base is returned unchanged. When the stack
- * is TALLER than the viewport the newest member's TOP falls above the viewport;
- * in that case re-center the member vertically (keeping the lane centered
- * horizontally) so the newest tile is guaranteed on screen. Pure.
+ * SPAWN-CAMERA pan decision (the P0.3b reveal, re-seamed): given the CURRENT
+ * viewport transform and the just-spawned member's flow-space rect, decide the
+ * camera move.
+ *
+ *   * Member already FULLY VISIBLE (edge-inclusive) → `null`: NO pan at all.
+ *     The camera must never move under a user who can already see the tile —
+ *     re-centering the lane on every add is the "viewport scrolls wildly" bug
+ *     this replaces (the old path always panned to laneCenterViewport, a
+ *     cross-canvas jump from any other framing).
+ *   * Member (partly) OFF-SCREEN → the MINIMAL translate that tucks it
+ *     SPAWN_REVEAL_MARGIN_PX inside the nearest violated edge(s). Axis-
+ *     independent: an axis already in view does not move. Zoom is NEVER
+ *     changed.
+ *   * Member LARGER than the viewport on an axis (deep zoom-in) → align its
+ *     MIN edge (top/left — where the tile header sits) to the margin.
+ *
+ * Pure. screen = flow*zoom + translate, so the member's screen rect under the
+ * current transform is rect*zoom + {x,y}; the returned transform only shifts
+ * the translate by the screen-px correction.
  */
-export function revealMemberViewport(
-  base: ViewportTransform,
-  memberTopY: number,
-  memberHeightPx: number,
+export function spawnRevealViewport(
+  current: ViewportTransform,
+  rect: FlowRect,
   vp: ViewportMetrics,
-): ViewportTransform {
-  // screen y = flowY*zoom + base.y ⇒ the top visible flow-Y (screen y === 0):
-  const visibleTopFlowY = -base.y / base.zoom;
-  if (memberTopY >= visibleTopFlowY) return base; // member fully in view
-  const memberCenterY = memberTopY + memberHeightPx / 2;
-  return { x: base.x, y: vp.heightPx / 2 - memberCenterY * base.zoom, zoom: base.zoom };
+  marginPx: number = SPAWN_REVEAL_MARGIN_PX,
+): ViewportTransform | null {
+  const z = current.zoom;
+  // The member's SCREEN-space rect under the current transform.
+  const sx0 = rect.x * z + current.x;
+  const sx1 = (rect.x + rect.w) * z + current.x;
+  const sy0 = rect.y * z + current.y;
+  const sy1 = (rect.y + rect.h) * z + current.y;
+  // Already fully visible (edge-inclusive, margin 0) → identity: no pan.
+  if (sx0 >= 0 && sx1 <= vp.widthPx && sy0 >= 0 && sy1 <= vp.heightPx) return null;
+  // Effective margin: never so large the margined window can't hold the rect
+  // (a tiny pane) — degrade toward 0 instead of oscillating.
+  const mx = Math.max(0, Math.min(marginPx, (vp.widthPx - (sx1 - sx0)) / 2));
+  const my = Math.max(0, Math.min(marginPx, (vp.heightPx - (sy1 - sy0)) / 2));
+  // Per-axis minimal correction (0 when the axis is already in view).
+  let dx = 0;
+  if (sx1 - sx0 > vp.widthPx) dx = mx - sx0; // wider than the pane → align LEFT edge
+  else if (sx0 < 0) dx = mx - sx0; // off the left → tuck left edge inside
+  else if (sx1 > vp.widthPx) dx = vp.widthPx - mx - sx1; // off the right
+  let dy = 0;
+  if (sy1 - sy0 > vp.heightPx) dy = my - sy0; // taller than the pane → align TOP edge
+  else if (sy0 < 0) dy = my - sy0; // off the top
+  else if (sy1 > vp.heightPx) dy = vp.heightPx - my - sy1; // off the bottom
+  return { x: current.x + dx, y: current.y + dy, zoom: z };
 }
 
 // ---------------- Ordered-membership array helpers (pure, CRDT-safe) ----------------
