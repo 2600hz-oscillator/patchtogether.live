@@ -704,6 +704,137 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
     await expect(page.getByTestId('patch-panel')).toBeVisible();
   });
 
+  // ZOOM-REPOSITION (owner rejection of the model-only fix) — the earlier test
+  // below ("zoom NEVER repositions tiles") asserts xyflow MODEL positions are
+  // zoom-invariant, and it PASSED while the USER-VISIBLE geometry still drifted:
+  // the ChannelColumnsOverlay projected flow→screen through flowToScreenPosition
+  // (WINDOW client coords — container offset included) but its bands are
+  // absolutely positioned INSIDE the pane, so the whole lane grid (column lines,
+  // number badges, the dashed video-zone band) sat a constant SCREEN offset
+  // (the pane's client left/top) away from the tiles. Normalized by zoom that
+  // offset is offset/zoom FLOW px — so tiles poked ABOVE the dashed video line
+  // at low zoom and sat below it at high zoom, and every tile↔grid pair drifted
+  // as the zoom changed. THIS test is the one that catches it: it measures
+  // SCREEN bboxes of tiles AND overlay features at zooms crossing every LOD
+  // tier boundary (0.30 / 0.52 / 0.95) plus the owner's repro range, normalizes
+  // by zoom, and asserts every relative pair is identical within 2 flow px.
+  test('zoom is a geometric NO-OP on SCREEN: tiles hold position vs lane lines, badges, the video band, and each other', async ({ page }) => {
+    await gotoWorkflow(page, { shell: true });
+    await waitForHooks(page);
+    for (const id of VZONE_IDS) {
+      await expect(
+        page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`),
+      ).toBeVisible({ timeout: 15_000 });
+    }
+    await dropInShellColumn(page, 'vca', 1);
+    await page.waitForTimeout(300);
+    const memberId = await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: { columns?: Record<string, string[]> } } | undefined> };
+      };
+      return (w.__patch.nodes['pinned-mixmstrs']?.data?.columns?.['1'] ?? [])[0] ?? '';
+    });
+    expect(memberId, 'the ch1 member spawned').not.toBe('');
+
+    // Zooms crossing ALL LOD tier boundaries + the owner's repro range. The
+    // expected data-shell-tier is the lane FACE tier (LOD 'dock' → 'full').
+    const steps = [
+      { zoom: 0.25, faceTier: 'mini' },
+      { zoom: 0.45, faceTier: 'compact' },
+      { zoom: 0.7, faceTier: 'full' },
+      { zoom: 0.98, faceTier: 'full' }, // LOD 'dock' band (≥0.95 + hysteresis)
+      { zoom: 1.4, faceTier: 'full' }, // deep dock band — the owner repro point
+    ] as const;
+
+    /** Flow-normalized relative offsets of every user-visible pair, measured
+     *  from live SCREEN bounding rects (drift anywhere ⇒ the pair moves). */
+    const measurePairs = () =>
+      page.evaluate((memberId) => {
+        const f = (globalThis as any).__flow;
+        const vp = f.getViewport();
+        const r = (el: Element | null) => (el ? el.getBoundingClientRect() : null);
+        const node = (id: string) => r(document.querySelector(`.svelte-flow__node[data-id="${id}"]`));
+        const member = node(memberId);
+        const videoOut = node('workflow-videoOut');
+        const recorderbox = node('workflow-recorderbox');
+        const videoArea = r(document.querySelector('[data-testid="video-area"]'));
+        const badge1 = r(document.querySelector('[data-testid="channel-column-label-1"]'));
+        const band1 = r(document.querySelector('[data-testid="channel-column-label-1"]')?.closest('.wcol-band') ?? null);
+        if (!member || !videoOut || !recorderbox || !videoArea || !badge1 || !band1) return null;
+        const flow = (screenPx: number) => screenPx / vp.zoom; // deltas: pan/pane offset cancels
+        return {
+          zoom: vp.zoom,
+          // tile ↔ the dashed VIDEO-ZONE band top edge
+          memberBottomToVideoTop: flow(videoArea.top - member.bottom),
+          videoOutTopToVideoTop: flow(videoOut.top - videoArea.top),
+          // tile ↔ its own COLUMN LINE (band 1's left guide line)
+          memberLeftToBand1Left: flow(member.left - band1.left),
+          // tile ↔ the LANE-NUMBER BADGE anchor (band-centered X)
+          memberCenterToBadge1Center: flow(member.left + member.width / 2 - (badge1.left + badge1.width / 2)),
+          // tile ↔ tile (the node layer itself)
+          memberBottomToVideoOutTop: flow(videoOut.top - member.bottom),
+          recorderboxLeftToVideoOutLeft: flow(recorderbox.left - videoOut.left),
+        };
+      }, memberId);
+
+    const rows: NonNullable<Awaited<ReturnType<typeof measurePairs>>>[] = [];
+    for (const { zoom, faceTier } of steps) {
+      // Keep the measured rack region (lane 1..3 + the video-zone top) centered
+      // so xyflow never culls the nodes at low zoom.
+      await page.evaluate((z) => {
+        const f = (globalThis as any).__flow;
+        const pane = document.querySelector('.svelte-flow') as HTMLElement;
+        const pr = pane.getBoundingClientRect();
+        const cx = 300;
+        const cy = 4200;
+        f.setViewport({ x: pr.width / 2 - cx * z, y: pr.height / 2 - cy * z, zoom: z }, { duration: 0 });
+      }, zoom);
+      await page.waitForFunction(
+        (t) => {
+          const tiles = Array.from(document.querySelectorAll('[data-shell-tier]'));
+          return tiles.length > 0 && tiles.every((el) => el.getAttribute('data-shell-tier') === t);
+        },
+        faceTier,
+        { timeout: 10_000 },
+      );
+      // Two rAFs so the overlay re-projection + any tier content swap settle.
+      await page.evaluate(() => new Promise<void>((res) => requestAnimationFrame(() => requestAnimationFrame(() => res()))));
+      const m = await measurePairs();
+      expect(m, `all measured features resolved at zoom ${zoom}`).not.toBeNull();
+      rows.push(m!);
+    }
+
+    // EVERY pair is IDENTICAL (≤ 2 flow px — subpixel) across every zoom.
+    const pairs = [
+      'memberBottomToVideoTop',
+      'videoOutTopToVideoTop',
+      'memberLeftToBand1Left',
+      'memberCenterToBadge1Center',
+      'memberBottomToVideoOutTop',
+      'recorderboxLeftToVideoOutLeft',
+    ] as const;
+    for (const key of pairs) {
+      const values = rows.map((row) => row[key]);
+      const spread = Math.max(...values) - Math.min(...values);
+      expect(
+        spread,
+        `${key} must be zoom-invariant (values across zooms: ${values.map((v) => v.toFixed(1)).join(', ')})`,
+      ).toBeLessThanOrEqual(2);
+    }
+
+    // …and the ABSOLUTE user-visible invariants hold at every zoom (not just
+    // "consistent"): the ch1 stack bottoms exactly ON the dashed video line,
+    // the video tiles sit INSIDE the zone (the +48px inset — pre-fix they poked
+    // ABOVE the line at low zoom), and the tile keeps the clean 12px lane gutter.
+    for (const row of rows) {
+      expect(Math.abs(row.memberBottomToVideoTop), `ch1 stack bottom ON the video line @z${row.zoom}`).toBeLessThanOrEqual(2);
+      expect(row.videoOutTopToVideoTop, `video tile INSIDE the zone @z${row.zoom}`).toBeGreaterThanOrEqual(46);
+      expect(row.videoOutTopToVideoTop, `video tile inset ≈48 @z${row.zoom}`).toBeLessThanOrEqual(50);
+      expect(Math.abs(row.memberLeftToBand1Left - 12), `12px lane gutter @z${row.zoom}`).toBeLessThanOrEqual(2);
+      expect(Math.abs(row.memberCenterToBadge1Center), `tile centre == badge centre @z${row.zoom}`).toBeLessThanOrEqual(2);
+    }
+  });
+
   // BUG 4 counterpart — a low-port tile (vca: 2 in + 2 out) is untouched by
   // the fit: EVERY preview dot renders and no "···" overflow appears.
   test('low-port rail (vca) shows ALL jack dots with no "···" and EXPAND inside the tile', async ({ page }) => {

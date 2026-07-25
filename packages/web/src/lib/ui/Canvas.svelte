@@ -7628,7 +7628,7 @@
       {#if workflowMode}
         <!-- WORKFLOW CHANNEL COLUMNS guide: 8 numbered columns + SEND 1/2 rail,
              pinned to flow space. Workflow racks only → dawless VRT unchanged. -->
-        <ChannelColumnsOverlay columnColors={wcolColumnColors} laneTopY={wcolLaneTopY} tick={wcolViewportTick} pitch={wcolPitch} />
+        <ChannelColumnsOverlay columnColors={wcolColumnColors} laneTopY={wcolLaneTopY} tick={wcolViewportTick} pitch={wcolPitch} paneLocalProjection={shellPreview} />
       {/if}
       <CadillacOverlay {provider} />
       <!-- 2026-05-27: the per-node editable name label moved INSIDE every
