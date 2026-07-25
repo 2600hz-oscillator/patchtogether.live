@@ -34,6 +34,7 @@
   import { dockStore } from '$lib/ui/dock/dock-store.svelte';
   import { cardParams, portsFromDef } from './card-kit';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import VideoTileThumb from './VideoTileThumb.svelte';
   import { KnobConic, ScopeScreen, VuMeter } from '$lib/ui/controls';
   import { curatedFace, type FaceControl, type FaceTier } from '$lib/ui/workflow/curated-face';
   import {
@@ -42,6 +43,7 @@
     laneBodyPlan,
     roleLineForDef,
     DOCK_HERO_GLYPH_W,
+    hasVideoSurface,
     type ShellDefLike,
   } from '$lib/ui/workflow/module-shell-model';
   import {
@@ -119,12 +121,18 @@
   // (adsr) or wave-morph (lfo) curve, else the deterministic static fallback.
   let binding = $derived(glyphBinding(def));
 
+  // VIDEO-domain module → the glyph slot shows a LIVE THUMBNAIL of its actual
+  // output (the legacy preview seam via VideoTileThumb), never a static trace:
+  // a migrated video face gets the same live picture the placeholder tiles do.
+  let videoThumb = $derived(hasVideoSurface(def));
+  let hasGlyph = $derived(glyphKind !== 'none' || videoThumb);
+
   // The LANE body plan — the no-clip guarantee (fixed 192×180 tile ⇒ fit is a
   // design-time constant): which layout (row/plate), how many WHOLE cells, and
   // whether the glyph fits. Lane views only — the dock faceplate wraps freely
   // and always shows everything.
   let lanePlan = $derived(
-    view === 'lane' ? laneBodyPlan(controls.length, glyphKind !== 'none', effTier) : null,
+    view === 'lane' ? laneBodyPlan(controls.length, hasGlyph, effTier) : null,
   );
 
   // Whether the glyph cell RENDERS in the current view/tier — the dock hero
@@ -270,8 +278,16 @@
        envelope / wave-morph curve; static traces only as the last-resort
        fallback for a face with no live seam. -->
   {#snippet glyphCell()}
-    <div class="tile-glyph" data-glyph-kind={glyphKind} data-glyph-binding={binding.kind}>
-      {#if glyphKind === 'meter'}
+    <div
+      class="tile-glyph"
+      data-glyph-kind={videoThumb ? 'video' : glyphKind}
+      data-glyph-binding={binding.kind}
+    >
+      {#if videoThumb}
+        <!-- LIVE video thumbnail — the legacy preview seam (visibility-gated,
+             thumb-res; see VideoTileThumb). -->
+        <VideoTileThumb nodeId={id} />
+      {:else if glyphKind === 'meter'}
         <VuMeter
           getLevel={tap ? tap.getLevel : undefined}
           orientation={view === 'dock-full' ? 'horizontal' : 'vertical'}
@@ -318,8 +334,9 @@
          hero band, then one labeled SECTION BAND per curated page, then a
          trailing band for any ranked-but-unpaged controls (dock = all).
          The hero glyph is CAPPED to the first four knob columns of the
-         control grid (owner feedback), left-aligned with blank space right. -->
-    {#if glyphKind !== 'none'}
+         control grid (owner feedback), left-aligned with blank space right;
+         a video face's thumbnail rides the same capped hero band. -->
+    {#if hasGlyph}
       <div class="tile-body dock-hero" style={`--dock-hero-glyph-w:${DOCK_HERO_GLYPH_W}px`}>
         {@render glyphCell()}
       </div>
@@ -354,7 +371,7 @@
          only, anything that can't fit entirely is not rendered in-lane (the
          dock faceplate has everything). -->
     {@const cells = lanePlan ? controls.slice(0, lanePlan.cellCount) : controls}
-    {@const showGlyph = glyphKind !== 'none' && (lanePlan ? lanePlan.glyph : true)}
+    {@const showGlyph = hasGlyph && (lanePlan ? lanePlan.glyph : true)}
     <div
       class="tile-body"
       class:center={cells.length === 0}

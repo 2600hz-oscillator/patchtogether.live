@@ -52,6 +52,10 @@
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
+  // Guarded: the dock full-view plain-mounts this card OUTSIDE the
+  // SvelteFlow provider, where a bare useStore() throws and killed the
+  // card at init (no video in the expanded faceplate). Inside the
+  // provider this is byte-identical; outside it's null -> zoom 1.
   const flowStore = captureFlowStore();
 
   // ---- Sizing (mirror VIDEOBOX / TV-LIBRARIAN; 180-multiple defaults) ----

@@ -71,6 +71,10 @@
   // Read viewport reactively so resize math always uses the live zoom
   // factor. The store is provided by <SvelteFlow>; this card is
   // rendered inside it, so the call always succeeds.
+  // Guarded: the dock full-view plain-mounts this card OUTSIDE the
+  // SvelteFlow provider, where a bare useStore() throws and killed the
+  // card at init (no video in the expanded faceplate). Inside the
+  // provider this is byte-identical; outside it's null -> zoom 1.
   const flowStore = captureFlowStore();
 
   // Defaults: card-size defaults (engine 4:3 output aspect-fits inside).

@@ -165,6 +165,15 @@
   width: 100%;
   height: 100%;
 }
+/* LIVE VIDEO THUMBNAIL well (video-domain tiles — VideoTileThumb): the same
+ * scope-well chrome, but TALLER so the 4:3 engine frame reads as a picture
+ * instead of a 40px letterbox sliver. 72px fits the fixed 180px tile with the
+ * header rows + jack rail (placeholder body ≈ 90px free) and keeps the well
+ * height TIER-INVARIANT like everything else inside the fixed box. */
+.rl-tile .tile-scope.video-thumb-well {
+  height: var(--video-thumb-h, 72px);
+  padding: 0;
+}
 /* domain-tinted, per-frame-free signal line (un-migrated placeholder glyph) */
 .rl-tile .tile-wave {
   stroke: var(--_spine);
@@ -198,6 +207,20 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
+}
+/* LIVE VIDEO THUMBNAIL inside a migrated shell's glyph cell (VideoTileThumb —
+ * video-domain modules): the canvas is fluid-width like every glyph, but needs
+ * an explicit height (it has no intrinsic one): the same 72px picture well as
+ * the placeholder; in the full-tier plate it fills its fixed 42px strip row,
+ * and the dock faceplate hero gets a taller viewing pane. */
+.rl-tile .tile-glyph .video-tile-thumb {
+  height: var(--video-thumb-h, 72px);
+}
+.rl-tile .tile-body.plate .tile-glyph .video-tile-thumb {
+  height: 100%;
+}
+.rl-tile.dock-full .tile-glyph .video-tile-thumb {
+  height: 180px;
 }
 
 /* ---- FULL-tier PLATE (mock full 'plate'): when the face outgrows the row,

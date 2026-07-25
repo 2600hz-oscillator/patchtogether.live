@@ -27,6 +27,12 @@ import {
   DOCK_KCOL_W,
   DOCK_PAGE_GAP_X,
   DOCK_HERO_GLYPH_W,
+  hasVideoSurface,
+  thumbFitRect,
+  videoZonePackedXs,
+  VIDEO_THUMB_W,
+  VIDEO_THUMB_H,
+  VIDEO_THUMB_FPS,
   type ShellDefLike,
 } from './module-shell-model';
 import { curatedFace, type FaceDefLike } from './curated-face';
@@ -228,6 +234,79 @@ describe('laneBodyPlan — the fixed-tile no-clip guarantee', () => {
         }
       }
     }
+  });
+});
+
+describe('hasVideoSurface — which tiles carry the LIVE video thumbnail', () => {
+  it('true exactly for VIDEO-domain defs (the ones VideoEngine.addNode registers a surface FBO for)', () => {
+    expect(hasVideoSurface({ domain: 'video' })).toBe(true);
+    expect(hasVideoSurface({ domain: 'audio' })).toBe(false);
+    expect(hasVideoSurface({})).toBe(false);
+    expect(hasVideoSurface(undefined)).toBe(false);
+  });
+
+  it('an AUDIO-domain module with cross-domain video PORTS (synesthesia) has NO engine surface → static glyph', () => {
+    const synesthesiaLike: ShellDefLike = {
+      domain: 'audio',
+      inputs: [
+        { id: 'a_in', type: 'audio' },
+        { id: 'a_video_in', type: 'video' },
+      ],
+      outputs: [
+        { id: 'a_band1_audio', type: 'audio' },
+        { id: 'a_band1_raster', type: 'mono-video' },
+      ],
+    };
+    expect(hasVideoSurface(synesthesiaLike)).toBe(false);
+  });
+
+  it('thumb policy constants: small buffer, throttled fps', () => {
+    expect(VIDEO_THUMB_W).toBe(160);
+    expect(VIDEO_THUMB_H).toBe(120);
+    expect(VIDEO_THUMB_FPS).toBe(15);
+  });
+});
+
+describe('thumbFitRect — aspect-fit blit rect (the legacy preview fit rule)', () => {
+  it('pillarboxes a 4:3 engine frame into a wide well', () => {
+    // 4:3 source into a 2:1 well → height-fill, centred horizontally.
+    expect(thumbFitRect(1024, 768, 200, 100)).toEqual({ x: Math.round((200 - 133) / 2), y: 0, w: 133, h: 100 });
+  });
+
+  it('letterboxes into a tall well', () => {
+    expect(thumbFitRect(1024, 768, 100, 200)).toEqual({ x: 0, y: Math.round((200 - 75) / 2), w: 100, h: 75 });
+  });
+
+  it('exact-aspect fills edge-to-edge', () => {
+    expect(thumbFitRect(1024, 768, 160, 120)).toEqual({ x: 0, y: 0, w: 160, h: 120 });
+  });
+
+  it('degenerate source dims fall back to 4:3 (never NaN)', () => {
+    expect(thumbFitRect(0, 0, 160, 120)).toEqual({ x: 0, y: 0, w: 160, h: 120 });
+  });
+});
+
+describe('videoZonePackedXs — the shell video-zone render override packing', () => {
+  const PITCH = 216; // SHELL_COLUMN_W (the tight ?shell=1 pitch)
+
+  it('an all-tile zone packs to EXACTLY the historic fixed slots (originX + i*pitch)', () => {
+    const xs = videoZonePackedXs(1000, [SHELL_TILE_W, SHELL_TILE_W, SHELL_TILE_W], PITCH);
+    expect(xs).toEqual([1000, 1000 + PITCH, 1000 + 2 * PITCH]);
+  });
+
+  it('a LEGACY-width head (videoOut 360) pushes its tile neighbours right — no overlap', () => {
+    const xs = videoZonePackedXs(1000, [360, SHELL_TILE_W, SHELL_TILE_W], PITCH);
+    const gap = PITCH - SHELL_TILE_W; // 24
+    expect(xs).toEqual([1000, 1000 + 360 + gap, 1000 + 360 + gap + SHELL_TILE_W + gap]);
+    // no-overlap invariant: each next x clears the previous card's right edge
+    expect(xs[1]! - (xs[0]! + 360)).toBe(gap);
+    expect(xs[2]! - (xs[1]! + SHELL_TILE_W)).toBe(gap);
+  });
+
+  it('a RESIZED videoOut repacks the zone (pure render — widths in, xs out)', () => {
+    const wide = videoZonePackedXs(0, [720, SHELL_TILE_W], PITCH);
+    const narrow = videoZonePackedXs(0, [360, SHELL_TILE_W], PITCH);
+    expect(wide[1]! - narrow[1]!).toBe(360);
   });
 });
 

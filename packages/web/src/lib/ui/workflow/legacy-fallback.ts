@@ -40,7 +40,13 @@ export type LaneRenderKind = 'legacy' | 'shell' | 'placeholder' | 'stub';
  *   - clipplayer + the MIDI control surfaces — SNOWFLAKES whose lane face is a
  *     grid / launcher / mapper, not a ranked-knob skeleton (plan §6): they get
  *     bespoke faces in a later spike, and stay on the verbatim legacy card until
- *     then rather than a lossy placeholder.
+ *     then rather than a lossy placeholder,
+ *   - videoOut — the VIDEO SURFACE snowflake: its legacy card BODY IS the live,
+ *     freely-resizable output screen (the monitor at the end of every video
+ *     chain). Swapping it for a placeholder tile removed the ONLY user-viewable
+ *     video output from the shell (the owner-reported ?shell=1 regression), so
+ *     it keeps its real card verbatim in the video zone — position anchored by
+ *     the zone's render override, size its own (node.data.width/height resize).
  * Everything else with a resolvable card swaps.
  */
 export const NON_SHELL_LANE_TYPES: ReadonlySet<string> = new Set<string>([
@@ -51,6 +57,7 @@ export const NON_SHELL_LANE_TYPES: ReadonlySet<string> = new Set<string>([
   'controlSurface',
   'electraControl',
   'launchpadControl',
+  'videoOut',
 ]);
 
 /** Inputs to the pure lane-render decision. */

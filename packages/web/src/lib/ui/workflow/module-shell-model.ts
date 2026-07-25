@@ -149,6 +149,86 @@ export function spineCableVar(def: ShellDefLike | undefined): string {
   return `var(--cable-${cableTypeForDef(def)})`;
 }
 
+// ── LIVE VIDEO THUMBNAILS (the shell video-visibility fix) ──────────────────
+//
+// Under the shell preview every video-DOMAIN module's lane tile shows a LIVE
+// ANIMATED THUMBNAIL of its actual output in the glyph slot — the same picture
+// its legacy card's on-card preview loop shows — instead of the generic static
+// wave glyph (which read as "fake" on a video module and left no video visible
+// anywhere). The thumbnail REUSES the exact legacy preview seam: each tick it
+// asks the engine to blit THIS node's surface FBO into the shared drawing
+// buffer (`videoEngine.blitOutputToDrawingBuffer(nodeId)`) and drawImage()s the
+// engine canvas into a small 2D thumb canvas — no WebGL in the component, so
+// the shell stays OUT of the WebGL attest basis. See VideoTileThumb.svelte.
+
+/**
+ * True when a module def renders the LIVE VIDEO THUMBNAIL in its lane tile's
+ * glyph slot: exactly the VIDEO-domain defs — the ones the VideoEngine
+ * registers a per-node surface FBO for (VideoEngine.addNode rejects any other
+ * domain), so blitOutputToDrawingBuffer has something real to show. An
+ * AUDIO-domain module with video-family PORTS (synesthesia's cross-domain
+ * a_video_in / mono-video rasters) has NO engine surface — blitting it would
+ * show a stale/black well — so it keeps the static domain glyph. Pure.
+ */
+export function hasVideoSurface(def: ShellDefLike | undefined): boolean {
+  return def?.domain === 'video';
+}
+
+/** Thumbnail render policy: a SMALL fixed-res 2D canvas (aspect-fit blit of the
+ *  engine frame, engine is 1024×768 4:3 by default) at a THROTTLED fps. The
+ *  legacy cards run their previews at full rAF over card-sized buffers; the
+ *  lane tile is a ~170px-wide well, so quarter-ish res at 15fps reads
+ *  identically and keeps 30+ tiles cheap. Visibility-gating (tap released when
+ *  the tile is off-screen) lives in the component via IntersectionObserver;
+ *  engine-side the blit's markWatched TTL (~1.5s) + the central card-visibility
+ *  feed already decay unwatched chains (the synesthesia lazy-render lesson). */
+export const VIDEO_THUMB_W = 160;
+export const VIDEO_THUMB_H = 120;
+export const VIDEO_THUMB_FPS = 15;
+
+/** Aspect-fit `src` into `dst` (letterbox/pillarbox, centred) — the same fit
+ *  rule every legacy video card's preview blit uses. Pure. */
+export function thumbFitRect(
+  srcW: number,
+  srcH: number,
+  dstW: number,
+  dstH: number,
+): { x: number; y: number; w: number; h: number } {
+  const srcAspect = srcW > 0 && srcH > 0 ? srcW / srcH : 4 / 3;
+  const dstAspect = dstW / dstH;
+  if (dstAspect > srcAspect) {
+    const h = dstH;
+    const w = Math.round(h * srcAspect);
+    return { x: Math.round((dstW - w) / 2), y: 0, w, h };
+  }
+  const w = dstW;
+  const h = Math.round(w / srcAspect);
+  return { x: 0, y: Math.round((dstH - h) / 2), w, h };
+}
+
+/**
+ * The shell VIDEO-ZONE render-override X positions, PACKED left-to-right so a
+ * LEGACY-rendered default (videoOut's real, freely-resizable card) gets its
+ * ACTUAL width of room instead of one fixed tile slot. `widths` are the
+ * rendered widths of the PRESENT video-zone defaults in spec order (a swapped
+ * tile passes SHELL_TILE_W; legacy videoOut passes its live node.data.width);
+ * `pitch` is the active shell column pitch — the inter-slot GAP is derived as
+ * `pitch - SHELL_TILE_W` (24px at the 216 pitch), so an all-tile zone packs to
+ * EXACTLY the historic fixed slots (originX + i*pitch, byte-identical), and a
+ * resized videoOut simply pushes its neighbours right (pure render — nothing
+ * persisted). Pure.
+ */
+export function videoZonePackedXs(originX: number, widths: readonly number[], pitch: number): number[] {
+  const gap = pitch - SHELL_TILE_W;
+  const xs: number[] = [];
+  let x = originX;
+  for (const w of widths) {
+    xs.push(x);
+    x += w + gap;
+  }
+  return xs;
+}
+
 /**
  * The FaceTier a module shows in its LANE for a given LOD tier. Identity for
  * mini/compact/full; the richest LOD band 'dock' collapses to 'full' in the lane
