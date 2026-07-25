@@ -29,6 +29,10 @@ import { test, expect, type Page } from '@playwright/test';
 const COLUMN_W = 765; // legacy pitch: 34 × HP_UNIT(22.5)
 const SHELL_COLUMN_W = 216; // tight ?shell=1 pitch
 const COLUMN_BASELINE_Y = 4320; // COLUMN_SLOT_H(720) × COLUMN_MAX_SLOTS(6)
+// `?shell=1` badge-clearance lift (channel-columns.ts SHELL_LANE_BADGE_CLEARANCE_Y):
+// stack bottoms anchor 90 flow px ABOVE the baseline so the lane-number badge
+// stays visible below the bottom tile. Legacy (shell off) anchors ON the baseline.
+const SHELL_BADGE_CLEARANCE_Y = 90;
 const SPAWN_REVEAL_MARGIN_PX = 16; // channel-columns.ts SPAWN_REVEAL_MARGIN_PX
 const WCOL_PAN_MS = 220; // Canvas.svelte pan animation duration
 
@@ -41,11 +45,13 @@ const pitchOf = (shell: boolean) => (shell ? SHELL_COLUMN_W : COLUMN_W);
 
 /** columnCardX — the persisted X of a width-w card centered in lane ch. */
 const cardX = (ch: number, w: number, pitch: number) => (ch - 1) * pitch + (pitch - w) / 2;
-/** First member of an empty lane: bottom edge exactly on the baseline. */
+/** First member of an empty lane: bottom edge on the ACTIVE stack anchor —
+ *  the baseline legacy, the badge-clearance lift (baseline − 90) under ?shell=1. */
 const firstSlotRect = (ch: number, shell: boolean) => {
   const w = tileW(shell);
   const h = tileH(shell);
-  return { x: cardX(ch, w, pitchOf(shell)), y: COLUMN_BASELINE_Y - h, w, h };
+  const anchorY = COLUMN_BASELINE_Y - (shell ? SHELL_BADGE_CLEARANCE_Y : 0);
+  return { x: cardX(ch, w, pitchOf(shell)), y: anchorY - h, w, h };
 };
 /** A flow-space spawn anchor inside lane ch at the ACTIVE pitch (X-only hit-test). */
 const colPos = (ch: number, shell: boolean) => ({ x: (ch - 1) * pitchOf(shell) + 60, y: 40 });
