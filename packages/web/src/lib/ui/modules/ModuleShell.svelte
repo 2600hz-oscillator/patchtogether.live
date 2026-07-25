@@ -140,8 +140,15 @@
     return '▶ out';
   });
 
+  /** TRUE while THIS module occupies the dock full-view — the rail pill flips
+   *  to "✕ CLOSE" (reactive on dockStore.fullViewNodeId). */
+  let isExpanded = $derived(dockStore.fullViewNodeId === id);
+
+  /** EXPAND ↔ CLOSE toggle: open this module's dock full-view; when it is
+   *  already the occupant, close it instead. */
   function expand(): void {
-    dockStore.openFullView(id);
+    if (dockStore.fullViewNodeId === id) dockStore.closeFullView();
+    else dockStore.openFullView(id);
   }
 </script>
 
@@ -292,6 +299,7 @@
     variant="lane-rail"
     {flowLabel}
     onExpand={view === 'lane' ? expand : undefined}
+    expanded={view === 'lane' && isExpanded}
   />
 </div>
 

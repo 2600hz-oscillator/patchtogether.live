@@ -14,7 +14,10 @@ type FlowStore = ReturnType<typeof useStore>;
 const RACK_UNIT = 180;
 
 export interface ResizeOptions {
-  flowStore: FlowStore;
+  /** Null when the card is plain-mounted OUTSIDE the SvelteFlow provider (the
+   *  dock full-view / rail — captureFlowStore self-gate): screen px are card
+   *  px there (no viewport transform), so the zoom divisor falls back to 1. */
+  flowStore: FlowStore | null;
   minWidth: number;
   minHeight: number;
   /** Read the card's current width at the moment the drag starts. */
@@ -51,7 +54,7 @@ export function startCornerResize(ev: PointerEvent, opts: ResizeOptions): AbortC
     return snap > 1 ? Math.ceil(v / snap) * snap : v;
   };
   const onMove = (mev: PointerEvent) => {
-    const zoom = opts.flowStore.viewport.zoom || 1;
+    const zoom = opts.flowStore?.viewport.zoom || 1;
     const dx = (mev.clientX - startX) / zoom;
     const dy = (mev.clientY - startY) / zoom;
     const w = quantize(startW + dx, opts.minWidth);

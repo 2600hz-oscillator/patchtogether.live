@@ -25,7 +25,8 @@
   // unavailable" + auto-skips to the next result (never crashes / hangs).
 
   import { onMount, onDestroy } from 'svelte';
-  import { type NodeProps, useStore } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
+  import { captureFlowStore } from './card-kit';
   import Hls from 'hls.js';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
@@ -51,7 +52,7 @@
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
-  const flowStore = useStore();
+  const flowStore = captureFlowStore();
 
   // ---- Sizing (mirror VIDEOBOX / TV-LIBRARIAN; 180-multiple defaults) ----
   const DEFAULT_WIDTH = 360;

@@ -39,7 +39,8 @@
   // other preview cards, which shared the same blit) render right-side-up.
 
   import { onMount, onDestroy } from 'svelte';
-  import { useStore, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
+  import { captureFlowStore } from './card-kit';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
@@ -70,7 +71,7 @@
   // Read viewport reactively so resize math always uses the live zoom
   // factor. The store is provided by <SvelteFlow>; this card is
   // rendered inside it, so the call always succeeds.
-  const flowStore = useStore();
+  const flowStore = captureFlowStore();
 
   // Defaults: card-size defaults (engine 4:3 output aspect-fits inside).
   // Stored in node.data so they sync via Y.Doc. Rounded to whole-u (180px) rack

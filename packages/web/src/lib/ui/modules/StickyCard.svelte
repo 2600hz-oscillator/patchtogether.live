@@ -6,14 +6,15 @@
   // elements (PR-130's click-pickup is gated on handle clicks).
 
   import { onDestroy } from 'svelte';
-  import { useStore, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
+  import { captureFlowStore } from './card-kit';
   import { patch } from '$lib/graph/store';
   import { startCornerResize } from './card-resize';
   import type { ModuleNode } from '$lib/graph/types';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const flowStore = useStore();
+  const flowStore = captureFlowStore();
 
   const MIN_WIDTH = 140;
   const MIN_HEIGHT = 80;

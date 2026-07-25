@@ -20,7 +20,7 @@
   // hosted here") + dataset attribution; geo-blocked channels are MARKED;
   // dead/unavailable streams fail cleanly → auto-skip, never hang.
   import { onMount, onDestroy } from 'svelte';
-  import { type NodeProps, useStore } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
   import Hls from 'hls.js';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { useEngine } from '$lib/audio/engine-context';
@@ -48,12 +48,12 @@
     type Channel,
   } from '$lib/video/modules/tv-librarian-data';
   import { countryMarkers, nearestCountry } from '$lib/video/modules/tv-librarian-geo';
-  import { portsFromDef } from './card-kit';
+  import { captureFlowStore, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
-  const flowStore = useStore();
+  const flowStore = captureFlowStore();
 
   // ---- Resize (mirror VIDEOBOX: user-resizable, 180-multiple defaults) ----
   const DEFAULT_WIDTH = 360;
