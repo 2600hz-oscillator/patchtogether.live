@@ -232,7 +232,9 @@ export function columnBottomFlowPos(ch: number, currentCount: number, pitch: num
  * member, at the TOP — returns the top-left flow-space position of every member
  * such that:
  *   - the FIRST (index 0, bottom-anchored) member's BOTTOM edge sits exactly on
- *     COLUMN_BASELINE_Y (just above the channel number),
+ *     `anchorY` (default COLUMN_BASELINE_Y — just above the channel number; the
+ *     `?shell=1` preview passes shellStackAnchorY() so the lane-number badge
+ *     stays visible in the gap below the bottom tile),
  *   - each LATER member sits FLUSH directly on top of the one before it (its
  *     bottom edge == the previous member's top edge — zero gap), stacking upward,
  *   - a single member therefore lands at the very bottom of the column.
@@ -246,11 +248,12 @@ export function columnFlushPositions(
   heightsPx: readonly number[],
   widthsPx?: readonly number[],
   pitch: number = COLUMN_W,
+  anchorY: number = COLUMN_BASELINE_Y,
 ): { x: number; y: number }[] {
   const [x0] = columnXBand(ch, pitch);
   const padX = x0 + COLUMN_PAD_X;
   const out: { x: number; y: number }[] = new Array(heightsPx.length);
-  let bottom = COLUMN_BASELINE_Y;
+  let bottom = anchorY;
   for (let i = 0; i < heightsPx.length; i++) {
     const top = bottom - (heightsPx[i] ?? COLUMN_SLOT_H);
     // CENTER each card in the band by its OWN width (so card-center == band-
@@ -270,11 +273,12 @@ export function sendFlushPositions(
   heightsPx: readonly number[],
   widthsPx?: readonly number[],
   pitch: number = COLUMN_W,
+  anchorY: number = COLUMN_BASELINE_Y,
 ): { x: number; y: number }[] {
   const [x0] = sendBoxXBand(slot, pitch);
   const padX = x0 + COLUMN_PAD_X;
   const out: { x: number; y: number }[] = new Array(heightsPx.length);
-  let bottom = COLUMN_BASELINE_Y;
+  let bottom = anchorY;
   for (let i = 0; i < heightsPx.length; i++) {
     const top = bottom - (heightsPx[i] ?? COLUMN_SLOT_H);
     const w = widthsPx?.[i];
@@ -345,6 +349,62 @@ export function computeLaneHeightPx(
  *  upward). */
 export function laneTopYForHeight(laneHeightPx: number): number {
   return COLUMN_BASELINE_Y - laneHeightPx;
+}
+
+// ---------------- `?shell=1` LANE HEADROOM + BADGE CLEARANCE ----------------
+//
+// Owner rule (RACKLINE preview only — legacy keeps the fixed-top math above):
+// the lane band must GROW with its contents, always keeping at least HALF a
+// module of EMPTY band above the TOP tile of the FULLEST lane, and the BOTTOM
+// tile of every lane must sit ABOVE the lane-number badge (the badge renders
+// fully visible in the gap between the bottom tile and the video-zone border).
+// All 8 lanes share ONE band top (they are one rack):
+//   bandTop = min over lanes(top of that lane's stack) − headroom,
+// clamped to never sit LOWER than the default top (short stacks keep today's
+// look). Pure flow-px math — preview-OFF callers never reach these.
+
+/** HALF a shell module of EMPTY band kept above the fullest lane's top tile
+ *  (0.5 × the 180px RACKLINE tile — module-shell-model.ts SHELL_TILE_H_SLOT;
+ *  a unit gate locks the two constants together). */
+export const SHELL_LANE_HEADROOM_Y = 90;
+
+/** Flow-px gap between the flush stack's BOTTOM edge and COLUMN_BASELINE_Y
+ *  under `?shell=1`, so the lane-number badge (a screen-fixed ~28px box: ~20px
+ *  pill + its 8px bottom offset — ChannelColumnsOverlay `.wcol-label`) renders
+ *  fully visible below the bottom tile. Half a shell tile: a clean flow
+ *  constant that covers the badge at every zoom ≥ ~0.32 (the compact/full LOD
+ *  bands where lane work happens; 90 × 0.32 ≈ 29 screen px ≥ the 28px badge). */
+export const SHELL_LANE_BADGE_CLEARANCE_Y = 90;
+
+/** The flow-space Y the `?shell=1` flush stacks bottom-anchor to: the badge
+ *  clearance above the baseline. Passed as `anchorY` into
+ *  columnFlushPositions / sendFlushPositions by the preview render path. */
+export function shellStackAnchorY(): number {
+  return COLUMN_BASELINE_Y - SHELL_LANE_BADGE_CLEARANCE_Y;
+}
+
+/**
+ * The `?shell=1` UNIFORM lane height — the band-top derivation behind the
+ * headroom rule. Each stack needs its summed tile height + the bottom badge
+ * clearance + the top headroom; the shared lane height is the LARGEST need,
+ * clamped to never drop below `defaultHeightPx` (an empty/short lane keeps
+ * today's default band). Equivalent band-top form: bandTop = min over
+ * lanes(stackTop) − headroom, stackTop = BASELINE − clearance − stackHeight.
+ * Pure max — every peer feeding the same per-type heights converges.
+ */
+export function computeShellLaneHeightPx(
+  stackHeightsPx: readonly number[],
+  defaultHeightPx: number,
+  headroomPx: number = SHELL_LANE_HEADROOM_Y,
+  bottomClearancePx: number = SHELL_LANE_BADGE_CLEARANCE_Y,
+): number {
+  let h = defaultHeightPx;
+  for (const s of stackHeightsPx) {
+    if (s <= 0) continue; // an EMPTY lane contributes nothing (keeps the default)
+    const needed = s + bottomClearancePx + headroomPx;
+    if (needed > h) h = needed;
+  }
+  return h;
 }
 
 // ---------------- Grow-up push (canvas modules clear the lanes) ----------------

@@ -64,6 +64,8 @@
     COLUMN_BASELINE_Y,
     defaultLaneHeightPx,
     computeLaneHeightPx,
+    computeShellLaneHeightPx,
+    shellStackAnchorY,
     laneTopYForHeight,
     planLanePushUps,
     needsDefaultVideoOut,
@@ -494,6 +496,16 @@
    *  the videoOut/A-V-defaults spawn, the grow-up push-ups all keep COLUMN_W), so
    *  the persisted graph + collab convergence are untouched — pure render deriv. */
   let wcolPitch = $derived(columnPitch(shellPreview));
+
+  /** The flow-space Y the flush lane/send stacks bottom-anchor to. Under the
+   *  `?shell=1` preview the stacks lift SHELL_LANE_BADGE_CLEARANCE_Y above the
+   *  baseline so the lane-number badge renders fully visible below the bottom
+   *  tile (owner rule); preview-OFF stays COLUMN_BASELINE_Y → every flush call
+   *  is byte-identical. Threaded into the render-derived member positions, the
+   *  drag-reorder sibling centers, and the in-lane drop-spawn position (which,
+   *  like the pitch, persists the RENDERED frame under the preview so the tile
+   *  never flashes at the un-lifted slot). */
+  let wcolStackAnchorY = $derived(shellPreview ? shellStackAnchorY() : COLUMN_BASELINE_Y);
 
   // The header shows "Sign in" only when we're confident the user is signed
   // out. On the public `/` canvas (no client ClerkProvider) that signal is
@@ -1828,7 +1840,14 @@
     const stacks: number[] = [];
     for (let ch = 1; ch <= COLUMN_COUNT; ch++) stacks.push(stackH(cols[String(ch)] ?? []));
     for (let s = 1; s <= SEND_BOX_COUNT; s++) stacks.push(stackH(sends[String(s)] ?? []));
-    const height = computeLaneHeightPx(stacks, defaultLaneHeightPx(wcolCardHeightPx('tidyVco')));
+    // `?shell=1` LANE HEADROOM (owner rule): the band top derives from the
+    // TALLEST stack + the bottom badge clearance + half a module of EMPTY
+    // headroom above the fullest lane's top tile, clamped to the default top
+    // (short stacks keep today's look). Legacy (preview OFF) keeps the exact
+    // max(default, tallest-stack) math → byte-identical.
+    const height = shellPreview
+      ? computeShellLaneHeightPx(stacks, defaultLaneHeightPx(wcolCardHeightPx('tidyVco')))
+      : computeLaneHeightPx(stacks, defaultLaneHeightPx(wcolCardHeightPx('tidyVco')));
     return laneTopYForHeight(height);
   });
 
@@ -2116,12 +2135,12 @@
         order.map((id) => wcolCardWidthPx(typeOf.get(id) ?? ''));
       for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
         const order = cols[String(ch)] ?? [];
-        const positions = columnFlushPositions(ch, heightsFor(order), widthsFor(order), wcolPitch);
+        const positions = columnFlushPositions(ch, heightsFor(order), widthsFor(order), wcolPitch, wcolStackAnchorY);
         order.forEach((id, i) => wcolPosByNode.set(id, positions[i]!));
       }
       for (let s = 1; s <= SEND_BOX_COUNT; s++) {
         const order = sends[String(s)] ?? [];
-        const positions = sendFlushPositions(s, heightsFor(order), widthsFor(order), wcolPitch);
+        const positions = sendFlushPositions(s, heightsFor(order), widthsFor(order), wcolPitch, wcolStackAnchorY);
         order.forEach((id, i) => wcolPosByNode.set(id, positions[i]!));
       }
       // SHELL PREVIEW: the video-zone default trio (videoOut / recorderbox /
@@ -3981,7 +4000,11 @@
               const order = wcolOrder('columns', band);
               const sibs = order.filter((id) => id !== n.id);
               const sibH = sibs.map((id) => wcolCardHeightPx(patch.nodes[id]?.type ?? ''));
-              const sibPos = columnFlushPositions(band, sibH);
+              // Anchor-aware: under `?shell=1` the rendered stack bottoms sit
+              // the badge clearance above the baseline, so the reorder centers
+              // must live in the SAME lifted frame as the drop Y (preview OFF
+              // passes the baseline → byte-identical). X is unused here.
+              const sibPos = columnFlushPositions(band, sibH, undefined, wcolPitch, wcolStackAnchorY);
               const centers = sibPos.map((p, i) => p.y + sibH[i]! / 2);
               setWcolOrder('columns', band, reorder(order, n.id, indexForDropY(centers, dropCenterY)));
               wcolClearDetached(String(band));
@@ -4004,7 +4027,8 @@
               const order = wcolOrder('sends', slot);
               const sibs = order.filter((id) => id !== n.id);
               const sibH = sibs.map((id) => wcolCardHeightPx(patch.nodes[id]?.type ?? ''));
-              const sibPos = sendFlushPositions(slot, sibH);
+              // Anchor-aware like the column reorder above (send-box twin).
+              const sibPos = sendFlushPositions(slot, sibH, undefined, wcolPitch, wcolStackAnchorY);
               const centers = sibPos.map((p, i) => p.y + sibH[i]! / 2);
               setWcolOrder('sends', slot, reorder(order, n.id, indexForDropY(centers, dropCenterY)));
               wcolClearDetached('s' + slot);
@@ -6469,14 +6493,16 @@
       // right of the tight lane, "lands off-lane") for the frame before the
       // pitch-aware render override snaps it in. Preview OFF passes COLUMN_W →
       // byte-identical persisted position.
-      const p = columnFlushPositions(wcolDrop.channel, heights, widths, wcolPitch)[existing.length]!;
+      // …and at the ACTIVE stack anchor (the badge-clearance lift under
+      // `?shell=1`) for the same reason: persisted Y == the render override's Y.
+      const p = columnFlushPositions(wcolDrop.channel, heights, widths, wcolPitch, wcolStackAnchorY)[existing.length]!;
       pos.x = p.x; pos.y = p.y;
     } else if (wcolDrop?.sendSlot != null) {
       initialData.sendSlot = wcolDrop.sendSlot;
       const existing = wcolOrder('sends', wcolDrop.sendSlot);
       const heights = [...existing.map((id) => wcolCardHeightPx(patch.nodes[id]?.type ?? '')), wcolCardHeightPx(type)];
       const widths = [...existing.map((id) => wcolCardWidthPx(patch.nodes[id]?.type ?? '')), wcolCardWidthPx(type)];
-      const p = sendFlushPositions(wcolDrop.sendSlot, heights, widths, wcolPitch)[existing.length]!;
+      const p = sendFlushPositions(wcolDrop.sendSlot, heights, widths, wcolPitch, wcolStackAnchorY)[existing.length]!;
       pos.x = p.x; pos.y = p.y;
     }
 

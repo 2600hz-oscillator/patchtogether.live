@@ -30,6 +30,10 @@ import {
   sendCardX,
   defaultLaneHeightPx,
   computeLaneHeightPx,
+  computeShellLaneHeightPx,
+  SHELL_LANE_HEADROOM_Y,
+  SHELL_LANE_BADGE_CLEARANCE_Y,
+  shellStackAnchorY,
   laneTopYForHeight,
   planLanePushUps,
   laneRegionXBand,
@@ -65,6 +69,7 @@ import {
   type ColumnNodeView,
 } from './channel-columns';
 import { RACK_UNIT, HP_UNIT } from '$lib/ui/rack-grid';
+import { SHELL_TILE_H_SLOT } from '$lib/ui/workflow/module-shell-model';
 
 // ---------------- Geometry ----------------
 
@@ -280,6 +285,86 @@ describe('column geometry', () => {
       expect(shortTop).toBe(COLUMN_BASELINE_Y - 1080);
       expect(tallTop).toBeLessThan(shortTop); // grew up
       expect(COLUMN_BASELINE_Y).toBeGreaterThan(tallTop); // baseline stays below the top
+    });
+  });
+
+  // ---- `?shell=1` LANE HEADROOM + BADGE CLEARANCE (owner rule) ----
+  describe('shell lane headroom (band grows with content, ≥ half a tile above the fullest stack)', () => {
+    // Under the preview every lane tile is the uniform 180px shell slot, and
+    // the default lane height is 2× that reference (defaultLaneHeightPx(180)).
+    const TILE = SHELL_TILE_H_SLOT; // 180
+    const SHELL_DEFAULT = defaultLaneHeightPx(TILE); // 360
+
+    it('the constants are locked to HALF the shell tile (0.5 × 180 = 90)', () => {
+      expect(SHELL_LANE_HEADROOM_Y).toBe(SHELL_TILE_H_SLOT / 2);
+      expect(SHELL_LANE_BADGE_CLEARANCE_Y).toBe(SHELL_TILE_H_SLOT / 2);
+      expect(shellStackAnchorY()).toBe(COLUMN_BASELINE_Y - SHELL_LANE_BADGE_CLEARANCE_Y);
+    });
+
+    it('0 members everywhere → the DEFAULT top (short/empty lanes keep today\'s look)', () => {
+      expect(computeShellLaneHeightPx([], SHELL_DEFAULT)).toBe(SHELL_DEFAULT);
+      expect(computeShellLaneHeightPx([0, 0, 0, 0, 0, 0, 0, 0, 0, 0], SHELL_DEFAULT)).toBe(SHELL_DEFAULT);
+      expect(laneTopYForHeight(computeShellLaneHeightPx([], SHELL_DEFAULT))).toBe(
+        COLUMN_BASELINE_Y - SHELL_DEFAULT,
+      );
+    });
+
+    it('a 1-tile stack still fits the default band (clamp: never lower than the default top)', () => {
+      // 180 + 90 clearance + 90 headroom == the 360 default → top unchanged.
+      expect(computeShellLaneHeightPx([TILE], SHELL_DEFAULT)).toBe(SHELL_DEFAULT);
+    });
+
+    it('N members → bandTop = baseline − N×180 − clearance − headroom once that exceeds the default', () => {
+      for (const n of [2, 3, 4, 6]) {
+        const stack = n * TILE;
+        const h = computeShellLaneHeightPx([stack], SHELL_DEFAULT);
+        expect(h).toBe(stack + SHELL_LANE_BADGE_CLEARANCE_Y + SHELL_LANE_HEADROOM_Y);
+        expect(laneTopYForHeight(h)).toBe(
+          COLUMN_BASELINE_Y - n * TILE - SHELL_LANE_BADGE_CLEARANCE_Y - SHELL_LANE_HEADROOM_Y,
+        );
+      }
+    });
+
+    it('all 8 lanes share ONE top: the FULLEST stack drives it (uniform max)', () => {
+      const h = computeShellLaneHeightPx([TILE, 4 * TILE, 0, 2 * TILE], SHELL_DEFAULT);
+      expect(h).toBe(4 * TILE + SHELL_LANE_BADGE_CLEARANCE_Y + SHELL_LANE_HEADROOM_Y);
+    });
+
+    it('END TO END: the fullest lane keeps EXACTLY the headroom above its top tile', () => {
+      // 4 uniform shell tiles anchored at the badge-clearance bottom.
+      const heights = [TILE, TILE, TILE, TILE];
+      const pos = columnFlushPositions(1, heights, undefined, SHELL_COLUMN_W, shellStackAnchorY());
+      // Bottom tile's BOTTOM edge sits the badge clearance above the baseline…
+      expect(pos[0]!.y + TILE).toBe(COLUMN_BASELINE_Y - SHELL_LANE_BADGE_CLEARANCE_Y);
+      // …and the band top sits exactly the headroom above the TOP tile.
+      const bandTop = laneTopYForHeight(computeShellLaneHeightPx([4 * TILE], SHELL_DEFAULT));
+      const topTileY = pos[heights.length - 1]!.y;
+      expect(topTileY - bandTop).toBe(SHELL_LANE_HEADROOM_Y);
+    });
+
+    it('anchorY DEFAULTS to the baseline: 4-arg calls are byte-identical (preview-off no-op)', () => {
+      const heights = [540, 360, 720];
+      expect(columnFlushPositions(2, heights)).toEqual(
+        columnFlushPositions(2, heights, undefined, COLUMN_W, COLUMN_BASELINE_Y),
+      );
+      expect(sendFlushPositions(1, heights)).toEqual(
+        sendFlushPositions(1, heights, undefined, COLUMN_W, COLUMN_BASELINE_Y),
+      );
+    });
+
+    it('sendFlushPositions honours the anchor too (send boxes share the lifted bottom)', () => {
+      const pos = sendFlushPositions(1, [TILE, TILE], undefined, SHELL_COLUMN_W, shellStackAnchorY());
+      expect(pos[0]!.y + TILE).toBe(COLUMN_BASELINE_Y - SHELL_LANE_BADGE_CLEARANCE_Y);
+      expect(pos[1]!.y + TILE).toBe(pos[0]!.y); // still flush, zero gap
+    });
+
+    it('the band grows with CONTENT only — the derivation has no zoom/viewport input', () => {
+      // Same stacks → same height, whatever "zoom" a caller might be at: the
+      // function signature admits no viewport term (compile-time guarantee),
+      // and repeated evaluation is pure.
+      const a = computeShellLaneHeightPx([3 * TILE], SHELL_DEFAULT);
+      const b = computeShellLaneHeightPx([3 * TILE], SHELL_DEFAULT);
+      expect(a).toBe(b);
     });
   });
 
