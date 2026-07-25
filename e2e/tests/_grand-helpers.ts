@@ -175,12 +175,19 @@ export async function readMixLevelsOverWindow(
 }
 
 /**
- * Move a canvas node so its top-left renders at a known-visible SCREEN point
- * (via the `__flow.screenToFlowPosition` hook). Additively-added nodes land at
- * arbitrary flow coords the mount-time fitView never re-fit, so a node can sit
- * OUTSIDE the viewport — and Playwright can't scroll a CSS-transformed flow node
- * into view. This pins it on-screen (above any bottom drawer) so its right-click
- * menu + knobs are actionable.
+ * Move a canvas node so its top-left renders at a known-visible SCREEN point.
+ * Additively-added nodes land at arbitrary flow coords the mount-time fitView
+ * never re-fit, so a node can sit OUTSIDE the viewport — and Playwright can't
+ * scroll a CSS-transformed flow node into view. This pins it on-screen (above
+ * any bottom drawer) so its right-click menu + knobs are actionable.
+ *
+ * We first write the node's flow position under the requested screen point, then
+ * PAN THE VIEWPORT so the node's ACTUAL post-write flow position maps to that
+ * screen anchor. The pan step matters because workflow-mode lane geometry CLAMPS
+ * a manual position write (a free canvas module can't be dropped below the
+ * video-zone baseline — the position setter caps its Y), so the raw write alone
+ * can leave the node parked off-screen. Panning to wherever the node is actually
+ * allowed to sit reproduces the intended on-screen layout regardless of the clamp.
  */
 export async function bringNodeOnScreen(page: Page, nodeId: string, screen: { x: number; y: number }): Promise<void> {
   const flowPos = await page.evaluate(
@@ -204,6 +211,25 @@ export async function bringNodeOnScreen(page: Page, nodeId: string, screen: { x:
       });
     },
     { id: nodeId, pos: flowPos },
+  );
+  // Pan the viewport so the node's actual (possibly clamped) flow position lands
+  // at the requested screen anchor: screenTL = flowPos * zoom + viewport ⇒
+  // viewport = anchor − flowPos * zoom.
+  await page.evaluate(
+    ({ id, anchor }) => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { position?: { x: number; y: number } }> };
+        __flow: {
+          getViewport: () => { x: number; y: number; zoom: number };
+          setViewport: (vp: { x: number; y: number; zoom: number }) => void;
+        };
+      };
+      const n = w.__patch?.nodes?.[id];
+      if (!n?.position) return;
+      const zoom = w.__flow.getViewport().zoom || 1;
+      w.__flow.setViewport({ x: anchor.x - n.position.x * zoom, y: anchor.y - n.position.y * zoom, zoom });
+    },
+    { id: nodeId, anchor: screen },
   );
   await page.waitForFunction(
     (id) => {

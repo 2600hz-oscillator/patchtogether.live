@@ -36,6 +36,12 @@ export const MODULE_GUIDES: Record<string, ModuleGuide> = {
     blurb:
       'Drive the clip player from a pair of Novation Launchpad Mini Mk3 units — the always-live 8×8 matrix on the left, the command deck + note editor on the right. Pairing, pad/CC map, SHIFT windowing, and the full RGB colour language.',
   },
+  push2Control: {
+    href: '/docs/modules/push2Control',
+    title: 'Push 2 control (clip launcher)',
+    blurb:
+      'Drive the clip player from an Ableton Push 2 — full Launchpad parity on the 8×8 pads, START/STOP on Play, D-Pad clip nav, the 8 above-display buttons select channel 1-8, and the 11 encoders drive the MixMasters volume + sends.',
+  },
   vfpgaRunner: {
     href: '/docs/modules/vfpga-runner',
     title: 'VFPGA runner guide',
@@ -82,6 +88,12 @@ export const GUIDE_PAGES: GuidePage[] = [
     title: 'Launchpad control (clip launcher)',
     blurb:
       'Drive the clip player from a pair of Novation Launchpad Mini Mk3 units — pairing, the pad/CC map, SHIFT windowing, and the full RGB colour language.',
+  },
+  {
+    slug: 'push2Control',
+    title: 'Push 2 control (clip launcher)',
+    blurb:
+      'Drive the clip player from an Ableton Push 2 — Launchpad parity on the pads, Play transport, D-Pad nav, channel-select buttons, and the encoder→MixMasters map.',
   },
   {
     slug: 'mappy',

@@ -15,8 +15,13 @@
 //                     clamp the floor to 1.)
 //
 // Params (discrete, live on node.data — NOT AudioParams):
-//   output device — MIDIAccess.outputs picker (persisted by device NAME).
-//   channel       — 1..16.
+//   output device  — MIDIAccess.outputs picker (persisted by device NAME).
+//   midiOutChannel — 1..16, INDEPENDENT of the module's lane. Absent = follow
+//                    the lane's `data.channel` (so add-to-lane defaults the
+//                    MIDI channel to the lane's channel), set = an explicit
+//                    override that leaves lane membership + the clip
+//                    assignment completely untouched. The card highlights the
+//                    module violet while the two differ.
 //
 // Behavior:
 //   * On gate rising edge → send NoteOn [0x90|(ch-1), note, vel].
@@ -187,19 +192,85 @@ export interface MidiOutBuddyCardState {
   activeNote: number | null;
 }
 
-/** Per-instance persisted data (node.data). Channel + device name. */
+/** Per-instance persisted data (node.data). Channel + device name.
+ *
+ *  CHANNEL OWNERSHIP (the #1168 split — read this before touching either key):
+ *  `data.channel` is NOT ours. It is the WORKFLOW CHANNEL-COLUMN membership
+ *  scalar (`$lib/graph/channel-columns`: "MEMBERSHIP truth = a scalar on the
+ *  member node: data.channel: 1..8"). The column reconciler prunes any node
+ *  whose `data.channel !== ch` out of column `ch`'s order array and adopts it
+ *  into the column matching the new value — which also re-plans the lane's
+ *  clip note-tap edges and re-binds the automation lane. So a card that wrote
+ *  `data.channel` to set its MIDI output channel was silently REASSIGNING ITS
+ *  LANE (and losing its clip assignment) on every channel change.
+ *
+ *  The MIDI-out channel therefore lives on its OWN key, `midiOutChannel`, and
+ *  this module NEVER writes `data.channel`. Absent/null override = "follow the
+ *  lane", which is how add-to-lane still defaults the MIDI channel to the
+ *  lane's channel with no write at all. */
 export interface MidiOutBuddyData {
-  /** 1..16 MIDI channel. */
-  channel: number;
+  /** LANE / COLUMN membership channel (1..8) — owned by the channel-column
+   *  system, READ-ONLY here. It seeds the MIDI-out channel default. */
+  channel?: number;
+  /** EXPLICIT MIDI output channel override (1..16). null/absent = follow the
+   *  lane channel (`channel`), else `DEFAULT_MIDI_OUT_CHANNEL`. This is the
+   *  ONLY channel key this module's card writes. */
+  midiOutChannel?: number | null;
   /** Last-used OUTPUT device id (unstable MIDIOutput.id). Restored on
    *  reconnect; the performance bundle keys the stable name off this id. */
   lastDeviceId: string | null;
 }
 
+/** MIDI channel used when the module is neither in a lane nor overridden. */
+export const DEFAULT_MIDI_OUT_CHANNEL = 1;
+
 export const DEFAULT_DATA: MidiOutBuddyData = {
-  channel: 1,
+  midiOutChannel: null,
   lastDeviceId: null,
 };
+
+/** Clamp any value to a legal 1..16 MIDI channel. */
+export function clampMidiChannel(c: unknown): number {
+  const n = typeof c === 'number' && Number.isFinite(c) ? c : DEFAULT_MIDI_OUT_CHANNEL;
+  return Math.max(1, Math.min(16, Math.round(n)));
+}
+
+/** The lane/column channel this module sits in (`data.channel`), or null when
+ *  it is not a column member (free canvas / dawless rack). NEVER written here. */
+export function laneChannelOf(data: Partial<MidiOutBuddyData> | undefined | null): number | null {
+  const raw = data?.channel;
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return null;
+  return clampMidiChannel(raw);
+}
+
+/** The user's EXPLICIT channel override, or null when they never set one. */
+export function midiOutChannelOverrideOf(
+  data: Partial<MidiOutBuddyData> | undefined | null,
+): number | null {
+  const raw = data?.midiOutChannel;
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return null;
+  return clampMidiChannel(raw);
+}
+
+/** The channel MIDI is actually SENT on: the explicit override, else the lane
+ *  channel (the add-to-lane default), else channel 1. */
+export function effectiveMidiOutChannel(
+  data: Partial<MidiOutBuddyData> | undefined | null,
+): number {
+  return midiOutChannelOverrideOf(data) ?? laneChannelOf(data) ?? DEFAULT_MIDI_OUT_CHANNEL;
+}
+
+/** True when the module sits in a lane but sends MIDI on a DIFFERENT channel —
+ *  the condition the card highlights (violet) so a divergent route is obvious.
+ *  False with no lane (nothing to diverge from) and false when the override
+ *  happens to equal the lane channel. */
+export function isMidiOutChannelOverridden(
+  data: Partial<MidiOutBuddyData> | undefined | null,
+): boolean {
+  const lane = laneChannelOf(data);
+  if (lane === null) return false;
+  return effectiveMidiOutChannel(data) !== lane;
+}
 
 /** Card-callable API surface (engine.read(node, 'card-api')). */
 export interface MidiOutBuddyApi {
@@ -247,7 +318,7 @@ export const midiOutBuddyDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "The OUTPUT complement of MIDI-CV-BUDDY: it reads gate / pitch / velocity CV from inside the rack and SENDS MIDI notes out to a hardware synth on a chosen device + channel. Mental model: anything in the rack that produces a gate and a pitch — a SEQUENCER, an envelope, an LFO-driven gate — can now play an external instrument. On each rising edge of GATE it sends a MIDI Note On using the pitch + velocity sampled at that instant; on the falling edge it sends Note Off for whatever note it actually started, so a glide under a held gate never strands the wrong note. The output device and MIDI channel are discrete card settings saved in the patch (no audio-side knobs), and Web MIDI permission is requested only when you click Connect. It defends against stuck notes: on dispose and on a device change it sends an all-notes-off plus an explicit Note Off for any tracked note.",
+      "The OUTPUT complement of MIDI-CV-BUDDY: it reads gate / pitch / velocity CV from inside the rack and SENDS MIDI notes out to a hardware synth on a chosen device + channel. Mental model: anything in the rack that produces a gate and a pitch — a SEQUENCER, an envelope, an LFO-driven gate — can now play an external instrument. On each rising edge of GATE it sends a MIDI Note On using the pitch + velocity sampled at that instant; on the falling edge it sends Note Off for whatever note it actually started, so a glide under a held gate never strands the wrong note. The output device and MIDI channel are discrete card settings saved in the patch (no audio-side knobs), and Web MIDI permission is requested only when you click Connect. Dropped into a workflow channel lane, CH DEFAULTS to that lane's channel — but it is an INDEPENDENT setting: changing it re-routes the MIDI only, leaving the module in its lane with its clip assignment intact, and the card turns violet with a CH ≠ LANE badge while the two differ (set CH back to the lane's number to follow it again). It defends against stuck notes: on dispose and on a device change it sends an all-notes-off plus an explicit Note Off for any tracked note.",
     inputs: {
       gate:
         "The note trigger: a rising edge sends a MIDI Note On (sampling PITCH and VELOCITY at that instant), and the following falling edge sends the matching Note Off. Patch a SEQUENCER's gate or an envelope's gate here to drive notes out to the external synth.",
@@ -284,8 +355,12 @@ export const midiOutBuddyDef: AudioModuleDef = {
     const gateEdge = createRisingEdgeDetector(GATE_THRESHOLD);
 
     // ---------------- Saved data ----------------
+    // The MIDI-out channel is DERIVED, never a second copy of the lane scalar:
+    // explicit `midiOutChannel` override → else the lane's `data.channel` (the
+    // add-to-lane default) → else 1. See MidiOutBuddyData for why the two keys
+    // must stay separate.
     const savedData = (node.data ?? {}) as Partial<MidiOutBuddyData>;
-    let channel: number = clampChannel(savedData.channel ?? DEFAULT_DATA.channel);
+    let channel: number = effectiveMidiOutChannel(savedData);
     let selectedDeviceId: string | null = savedData.lastDeviceId ?? DEFAULT_DATA.lastDeviceId;
 
     // ---------------- Mutable runtime state ----------------
@@ -299,10 +374,6 @@ export const midiOutBuddyDef: AudioModuleDef = {
      *  detector only counts rises). */
     let lastGateLevel = 0;
     let lastPollTime = ctx.currentTime;
-
-    function clampChannel(c: number): number {
-      return Math.max(1, Math.min(16, Math.round(Number.isFinite(c) ? c : 1)));
-    }
 
     function out(): MidiOutputLike | null {
       if (!access || selectedDeviceId === null) return null;
@@ -464,7 +535,7 @@ export const midiOutBuddyDef: AudioModuleDef = {
     }
 
     function setChannel(c: number): void {
-      const next = clampChannel(c);
+      const next = clampMidiChannel(c);
       if (next === channel) return;
       // Flush on the old channel so a held note isn't stranded there.
       panic();

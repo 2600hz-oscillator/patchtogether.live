@@ -1,0 +1,321 @@
+// packages/web/src/lib/control/push2/push2-control.test.ts
+//
+// Integration test for the Push 2 control layer — the ADDITIVE features
+// (channel-select, encoder→MixMasters, channel name) + the PARITY adapter (a
+// simulated Push pad press flows through the injected control surface into the
+// shipped launchpad-control brain and launches a clip). Driven through the REAL
+// push2-device (simulated transport), the REAL launchpad-control singleton, and
+// the REAL graph store; only the scheduler-clock is mocked so the LED render loop
+// can be stepped manually.
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+const hoisted = vi.hoisted(() => ({ tick: null as null | (() => void) }));
+vi.mock('$lib/audio/scheduler-clock', () => ({
+  SCHEDULER_TICK_MS: 25,
+  getSchedulerClock: () => ({
+    subscribe: (fn: () => void) => {
+      hoisted.tick = fn;
+      return () => { hoisted.tick = null; };
+    },
+    usingWorker: false,
+    dispose: () => {},
+  }),
+}));
+
+import { patch as livePatch } from '$lib/graph/store';
+import { flushAllCcCommits } from '$lib/ui/controls/cc-commit';
+import { __test_resetBinding, boundClipNode, __test_mode } from '$lib/control/launchpad/launchpad-control.svelte';
+import { drainAudition, clearAudition } from '$lib/audio/modules/clip-audition';
+import { __test_resetPush2 } from './push2-device.svelte';
+import {
+  installSimulatedPush2AndBind,
+  __test_resetPush2Control,
+  selectChannel,
+  selectedChannelIndex,
+  channelName,
+  channelButtonValue,
+  firstMixmstrs,
+  setLaunchpadView,
+} from './push2-control.svelte';
+import {
+  PUSH_CC_ABOVE_DISPLAY_BASE,
+  PUSH_CC_SCENE_BASE,
+  PUSH_CC_ENCODER_BASE,
+  PUSH_CC_ENCODER_TEMPO,
+  PUSH_CC_ENCODER_MASTER,
+} from './push2-map';
+import { pushColorIndex } from './push2-sysex';
+import { hexToRgb127 } from '$lib/control/launchpad/launchpad-map';
+import { laneColorEff } from '$lib/audio/modules/clip-types';
+import type { SimulatedPush2 } from './push2-device.svelte';
+
+// The web vitest env is `node` (no localStorage) — the Push-local channel state
+// persists there, so provide a minimal stub for the persistence assertions.
+if (typeof localStorage === 'undefined') {
+  const store = new Map<string, string>();
+  (globalThis as unknown as { localStorage: Storage }).localStorage = {
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => void store.set(k, String(v)),
+    removeItem: (k: string) => void store.delete(k),
+    clear: () => store.clear(),
+    key: () => null,
+    length: 0,
+  } as Storage;
+}
+
+const CP = 'cp1';
+const MIX = 'mx1';
+
+function clearPatch() {
+  for (const k of Object.keys(livePatch.nodes)) delete livePatch.nodes[k];
+  for (const k of Object.keys(livePatch.edges)) delete livePatch.edges[k];
+}
+function seedClipPlayer(data: Record<string, unknown> = {}) {
+  livePatch.nodes[CP] = {
+    id: CP, type: 'clipplayer', domain: 'audio', position: { x: 0, y: 0 }, params: {}, data,
+  } as never;
+}
+function seedMixmstrs(params: Record<string, number> = {}) {
+  livePatch.nodes[MIX] = {
+    id: MIX, type: 'mixmstrs', domain: 'audio', position: { x: 0, y: 0 },
+    params: { ch1_volume: 0.8, ch3_send1: 0, master_volume: 0.8, ...params }, data: {},
+  } as never;
+}
+
+let sim: SimulatedPush2;
+beforeEach(async () => {
+  hoisted.tick = null;
+  localStorage.clear();
+  __test_resetPush2Control();
+  __test_resetPush2();
+  __test_resetBinding();
+  clearAudition(CP);
+  clearPatch();
+});
+
+describe('channel select (Push-LOCAL 5a)', () => {
+  it('selectChannel updates the index + persists to localStorage', () => {
+    selectChannel(4);
+    expect(selectedChannelIndex()).toBe(4);
+    expect(localStorage.getItem('pt.push2.selectedChannel')).toBe('4');
+    // out-of-range is ignored
+    selectChannel(99);
+    expect(selectedChannelIndex()).toBe(4);
+  });
+
+  it('channelName = "CH n · <instrument label>" via laneAssignedModules', () => {
+    seedClipPlayer({ autoAssign: { vco1: 0, vco2: 2 } });
+    livePatch.nodes['vco1'] = {
+      id: 'vco1', type: 'analogVco', domain: 'audio', position: { x: 0, y: 0 }, params: {}, data: { name: 'mybass' },
+    } as never;
+    expect(channelName(CP, 0)).toBe('CH 1 · mybass');
+    // a lane with no assigned instrument = just "CH n"
+    expect(channelName(CP, 1)).toBe('CH 2');
+  });
+});
+
+describe('channel-select LEDs mirror the lane colour (selected bright / others dim)', () => {
+  // The 8 above-display buttons (CC 102..109) are RGB: their CC value is a stock-
+  // palette index. Each shows its channel's EFFECTIVE lane colour — the picked
+  // colour if set, else the lane's default hue (mirroring the card swatch and the
+  // Launchpad LEDs) — the selected one FULL, the rest ~30% dimmed, computed via the
+  // SAME hexToRgb127→pushColorIndex path the pads use. Only no bound clip at all is
+  // OFF.
+  const dim = (c: number) => Math.round(c * 0.3);
+  const idxFull = (hex: string) => pushColorIndex(...hexToRgb127(hex));
+  const idxDim = (hex: string) => {
+    const [r, g, b] = hexToRgb127(hex);
+    return pushColorIndex(dim(r), dim(g), dim(b));
+  };
+  /** The effective hex for an UN-picked lane: its default hue (no data ⇒ null pick
+   *  ⇒ `defaultLaneColorHex(lane)`) — the single source of truth the module uses. */
+  const effHex = (lane: number) => laneColorEff(undefined, lane);
+  /** The value the device believes channel `ch`'s button LED holds. */
+  const ledFor = (ch: number) => sim.ledAt('b' + (PUSH_CC_ABOVE_DISPLAY_BASE + ch));
+
+  it('selected picked = FULL, unselected picked = ~30% dim, an un-picked lane shows its default hue (not off)', async () => {
+    const c0 = '#2040ff'; // ch1 (lane 0) — a saturated colour (hue survives at full brightness)
+    const c1 = '#ffffff'; // ch2 (lane 1) — a bright colour whose dim is a visible neutral
+    // ch3 (lane 2) and up: no picked colour → shows its EFFECTIVE default hue.
+    seedClipPlayer({ laneColor: [c0, c1, null] });
+    sim = await installSimulatedPush2AndBind(CP);
+    selectChannel(0);
+    hoisted.tick?.(); // repaint the LED frame with the current selection
+
+    // The pure per-channel value.
+    expect(channelButtonValue(0)).toBe(idxFull(c0)); // selected picked → full
+    expect(channelButtonValue(1)).toBe(idxDim(c1)); // unselected picked → ~30% dim
+    // An un-picked lane now renders its EFFECTIVE default hue (dimmed while
+    // unselected), NOT the forced-OFF it used to be.
+    expect(channelButtonValue(2)).toBe(idxDim(effHex(2)));
+    for (let ch = 3; ch < 8; ch++) expect(channelButtonValue(ch)).toBe(idxDim(effHex(ch)));
+
+    // The three states must be VISIBLY distinct (guards a swapped bright/dim), and
+    // the selected one must be its FULL, not dimmed, index.
+    expect(idxFull(c0)).not.toBe(0);
+    expect(idxFull(c0)).not.toBe(idxDim(c0));
+    expect(new Set([channelButtonValue(0), channelButtonValue(1), channelButtonValue(2)]).size).toBe(3);
+
+    // The REAL render path emitted those exact palette indices to the Push buttons.
+    expect(ledFor(0)).toBe(idxFull(c0));
+    expect(ledFor(1)).toBe(idxDim(c1));
+    expect(ledFor(2)).toBe(idxDim(effHex(2)));
+
+    // SELECTING an un-picked lane lights it at its FULL effective hue — a clearly
+    // non-off palette index. This is the crux of the owner change: a lane with no
+    // explicit colour is no longer forced OFF, it shows its default hue like the
+    // card swatch and the Launchpad LEDs (a dim un-picked hue may still snap to a
+    // near-black palette entry, but the effective hue drives it, not a hard 0).
+    selectChannel(2);
+    hoisted.tick?.();
+    expect(channelButtonValue(2)).toBe(idxFull(effHex(2))); // un-picked, selected → full default hue
+    expect(channelButtonValue(2)).not.toBe(0); // proves it is NOT the old forced-off
+    expect(ledFor(2)).toBe(idxFull(effHex(2)));
+  });
+
+  it('re-selecting a channel repaints: the newly-selected → full, the old → dim', async () => {
+    const c0 = '#2040ff';
+    const c1 = '#ffffff';
+    seedClipPlayer({ laneColor: [c0, c1] });
+    sim = await installSimulatedPush2AndBind(CP);
+    selectChannel(0);
+    hoisted.tick?.();
+    expect(ledFor(0)).toBe(idxFull(c0)); // ch1 full
+    expect(ledFor(1)).toBe(idxDim(c1)); // ch2 dim
+
+    selectChannel(1);
+    hoisted.tick?.();
+    expect(ledFor(1)).toBe(idxFull(c1)); // ch2 now full
+    expect(ledFor(0)).toBe(idxDim(c0)); // ch1 now dim
+  });
+
+  it('with no bound clip every channel button is OFF (no colours to mirror)', () => {
+    // beforeEach leaves the binding reset — boundClipNode() is null.
+    for (let ch = 0; ch < 8; ch++) expect(channelButtonValue(ch)).toBe(0);
+  });
+});
+
+describe('encoders → MixMasters (additive 5b)', () => {
+  it('a display encoder nudges the matching channel volume through the pump', async () => {
+    seedClipPlayer();
+    seedMixmstrs({ ch1_volume: 0.8 });
+    sim = await installSimulatedPush2AndBind(CP);
+    // Encoder 1 (CC 71) +5 detents → ch1_volume = 0.8 + 5*0.01 = 0.85.
+    sim.cc(PUSH_CC_ENCODER_BASE, 5);
+    flushAllCcCommits();
+    expect(livePatch.nodes[MIX]!.params!.ch1_volume).toBeCloseTo(0.85, 5);
+  });
+
+  it('the Tempo encoder drives the SELECTED channel send1', async () => {
+    seedClipPlayer();
+    seedMixmstrs({ ch3_send1: 0 });
+    sim = await installSimulatedPush2AndBind(CP);
+    selectChannel(2); // channel index 2 → ch3
+    sim.cc(PUSH_CC_ENCODER_TEMPO, 4); // +4 → ch3_send1 = 0.04
+    flushAllCcCommits();
+    expect(livePatch.nodes[MIX]!.params!.ch3_send1).toBeCloseTo(0.04, 5);
+  });
+
+  it('the Master encoder drives master_volume, clamped to [0,1]', async () => {
+    seedClipPlayer();
+    seedMixmstrs({ master_volume: 0.98 });
+    sim = await installSimulatedPush2AndBind(CP);
+    sim.cc(PUSH_CC_ENCODER_MASTER, 10); // +10 → 1.08, clamps to 1
+    flushAllCcCommits();
+    expect(livePatch.nodes[MIX]!.params!.master_volume).toBeCloseTo(1, 5);
+  });
+
+  it('with no mixmstrs node the encoder is a harmless no-op', async () => {
+    seedClipPlayer();
+    sim = await installSimulatedPush2AndBind(CP);
+    expect(firstMixmstrs()).toBeNull();
+    expect(() => { sim.cc(PUSH_CC_ENCODER_BASE, 5); flushAllCcCommits(); }).not.toThrow();
+  });
+});
+
+describe('parity adapter — a Push pad drives the shipped clip brain', () => {
+  it('a simulated pad press in GRID view launches a clip (queued written)', async () => {
+    // A clip in lane 0 / slot 0 (grid pad top-left = x0,y7 → lane 0, slot 0).
+    seedClipPlayer({
+      clips: {
+        '0': { kind: 'note', lengthSteps: 4, root: 48, loop: true, steps: [{ step: 0, midi: 72, velocity: 100, lengthSteps: 1 }] },
+      },
+    });
+    sim = await installSimulatedPush2AndBind(CP);
+    expect(boundClipNode()).toBe(CP);
+    // Press the top-left pad → grid view maps it to lane 0.
+    sim.press(0, 7);
+    const data = livePatch.nodes[CP]!.data as { queued?: (number | 'stop' | null)[] };
+    expect(Array.isArray(data.queued)).toBe(true);
+    expect(data.queued![0]).not.toBeNull();
+    expect(data.queued![0]).not.toBeUndefined();
+  });
+
+  it('the sim writes the Set-LIVE-mode SysEx + LED bytes to the Push (surface is live)', async () => {
+    seedClipPlayer({ clips: {} });
+    sim = await installSimulatedPush2AndBind(CP);
+    // Set-LIVE-mode SysEx (F0 00 21 1D 01 01 0A 00 F7) was sent on bind — the
+    // default the Live-port path uses (NOT the finicky User mode).
+    const live = sim.writes().some((w) => w[0] === 0xf0 && w[6] === 0x0a && w[7] === 0x00);
+    expect(live).toBe(true);
+    // No User-mode SysEx (0A 01) is ever sent.
+    const user = sim.writes().some((w) => w[0] === 0xf0 && w[6] === 0x0a && w[7] === 0x01);
+    expect(user).toBe(false);
+    // Step a render tick → the surface paints LED bytes (Note-On pad colours) —
+    // in LIVE mode these light the grid on the Live port with no further SysEx.
+    hoisted.tick?.();
+    expect(sim.writes().some((w) => (w[0] & 0xf0) === 0x90)).toBe(true);
+  });
+});
+
+describe('velocity capture — the Push pads ARE velocity-sensitive', () => {
+  // Push scene CC for the KEYS button: the clip-right column index 3 = Keys →
+  // Launchpad SCENE_CCS[3]; the Push scene column is bottom-origin base 36, so
+  // that scene sits at Push CC 36 + (7-3) = 40.
+  const CC_KEYS = PUSH_CC_SCENE_BASE + 4;
+
+  function noteClip(steps: unknown[] = []) {
+    return { kind: 'note', lengthSteps: 16, root: 48, loop: true, steps };
+  }
+  function editedClipSteps(): { velocity: number }[] {
+    const d = livePatch.nodes[CP]!.data as { clips: Record<string, { steps: { velocity: number }[] }> };
+    return d.clips['0'].steps;
+  }
+
+  it('NOTE ENTRY records the pad HIT VELOCITY, not the constant default', async () => {
+    seedClipPlayer({ clips: { '0': noteClip() } });
+    sim = await installSimulatedPush2AndBind(CP);
+    setLaunchpadView('clip'); // the note editor
+    // Tap the bottom-left editor cell HARD (velocity 121). Press captures the
+    // velocity; release toggles the note ON with it.
+    sim.press(0, 0, 121);
+    sim.release(0, 0);
+    const steps = editedClipSteps();
+    expect(steps.length, 'a note was placed').toBe(1);
+    expect(steps[0].velocity, 'the recorded velocity is the pad hit, not VEL_DEFAULT (76)').toBe(121);
+  });
+
+  it('NOTE ENTRY at a SOFT hit records that softer velocity (proves it varies, not a constant)', async () => {
+    seedClipPlayer({ clips: { '0': noteClip() } });
+    sim = await installSimulatedPush2AndBind(CP);
+    setLaunchpadView('clip');
+    sim.press(0, 0, 29); // a soft hit
+    sim.release(0, 0);
+    expect(editedClipSteps()[0].velocity).toBe(29);
+  });
+
+  it('KEYS keyboard note-on plays the pad HIT VELOCITY (audition carries it)', async () => {
+    seedClipPlayer({ clips: { '0': noteClip() } });
+    sim = await installSimulatedPush2AndBind(CP);
+    setLaunchpadView('clip');
+    sim.cc(CC_KEYS, 127); // Clip → KEYS keyboard
+    sim.cc(CC_KEYS, 0);
+    expect(__test_mode().mode, 'entered KEYS mode').toBe('keys');
+    drainAudition(CP); // discard any entry noise
+    // Play a keyboard note cell at velocity 96.
+    sim.press(2, 1, 96);
+    const on = drainAudition(CP).find((e) => e.on);
+    expect(on, 'a note-on auditioned').toBeTruthy();
+    expect(on!.velocity, 'the played velocity is the pad hit, not VEL_DEFAULT (76)').toBe(96);
+  });
+});

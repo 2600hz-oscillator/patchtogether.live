@@ -2530,6 +2530,7 @@ posterbox out out video
 posterbox param depth 0..4 discrete default=2
 posterbox param dither 0..1 linear default=0
 posterbox param mix 0..1 linear default=1
+push2Control meta domain=meta maxInstances=1
 qbrt meta domain=audio
 qbrt in cutoff cv param=cutoff cvScale=log
 qbrt in L audio

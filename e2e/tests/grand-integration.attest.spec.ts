@@ -19,10 +19,12 @@
 // collab+webgl attest bases; editing it would force an unrelated re-attest).
 //
 // DETERMINISM (owner's hard bar): every wait is on ENGINE STATE, never a sleep —
-// waitForSoundingStep / waitForSoundingStepAndFreeze on `currentStep:L` +
-// ctx.suspend() freeze for exact reads; max-hold-over-window for percussive RMS;
-// expect.poll for the video reads. Aria/`data-*`-first selectors, numeric/state
-// assertions — NEVER a bare toBeVisible() as an assertion.
+// waitForSoundingStep on `currentStep:L` for step-targeted playback; for the
+// automation step-ordering read we sample (step, cutoff) pairs while the clock
+// RUNS and compare per-step medians (freezing the audio clock does NOT freeze
+// the wall-clock automation param cache, so a frozen read is racy); max-hold-
+// over-window for percussive RMS; expect.poll for the video reads. Aria/`data-*`-
+// first selectors, numeric/state assertions — NEVER a bare toBeVisible().
 //
 // The DETERMINISTIC AUDIO PIN is NOT here — it is the offline combined-master ART
 // (art/scenarios/grand-integration/). This spec asserts the LIVE combined stream
@@ -39,12 +41,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 
-import {
-  waitForSoundingStep,
-  waitForSoundingStepAndFreeze,
-  readEngineValue,
-  unfreezeAudioClock,
-} from './_scheduler-control';
+import { waitForSoundingStep, readEngineValue } from './_scheduler-control';
 import { addToPatch, bringNodeOnScreen, ensureEngine, readMixLevels, readMixLevelsOverWindow, readSynLevels } from './_grand-helpers';
 import {
   GRAND_AUTO,
@@ -647,26 +644,58 @@ test.describe('grand-integration @grand-attest', () => {
       `automation PLAYS BACK (cutoff varies; vals=${spread.vals.map((v) => v.toFixed(0)).join(',')})`,
     ).toBeGreaterThan(300);
 
-    // STEP-DEPENDENT VALUE (curve-agnostic): freeze at a LOW-automation step
-    // (norm 0.35) then a HIGH one (norm 0.85) and assert the HIGH step's cutoff is
-    // clearly greater — the automation drives a reproducible, step-dependent value.
-    // (We assert the ORDERING, not an absolute Hz or bit-equality: the clip
-    // player's automation scheduler is Worker-driven on WALL-CLOCK, so it keeps
-    // re-scheduling the param cache even while the AUDIO clock is suspended — two
-    // consecutive frozen reads are close but not bit-identical. The high≫low
-    // ordering holds robustly because step-1's envelope neighborhood [0.55..0.85]
-    // is always brighter than step-3's [0.20..0.35] on the log cutoff curve.)
-    await waitForSoundingStepAndFreeze(page, CP, 3, { key: `currentStep:${GRAND_LANES.tidy}`, timeoutMs: 10_000 });
-    const cutoffLow = await readParam(page, T, 'cutoff');
-    await unfreezeAudioClock(page);
-    await waitForSoundingStepAndFreeze(page, CP, 1, { key: `currentStep:${GRAND_LANES.tidy}`, timeoutMs: 10_000 });
-    const cutoffHigh = await readParam(page, T, 'cutoff');
-    await unfreezeAudioClock(page);
-    expect(cutoffLow, 'frozen low-step cutoff readable').not.toBeNull();
-    expect(cutoffHigh, 'frozen high-step cutoff readable').not.toBeNull();
+    // STEP-DEPENDENT VALUE (curve-agnostic): assert the HIGH-automation step
+    // (norm 0.85) reads clearly brighter than the LOW step (norm 0.35) — the
+    // automation drives a reproducible, step-dependent value.
+    //
+    // We do NOT freeze the clock to read a single step here. `ctx.suspend()`
+    // freezes the AUDIO clock (so the STEP counter stops) but NOT the clip
+    // player's automation param cache — that is fed every ~25 ms Worker tick and,
+    // once the audio clock is stationary, DRIFTS away from the frozen step, so a
+    // single frozen read is racy and its high-vs-low ORDERING can invert (seen
+    // as a 1/3 flake). Instead we sample (currentStep, cutoff) pairs WHILE both
+    // clocks run — each pair in ONE round-trip so step and cutoff reflect the
+    // same instant — then bucket by step and compare MEDIANS, which rejects the
+    // ~1-tick step-boundary samples. With the log cutoff curve (40 Hz…14 kHz)
+    // the step-1 vs step-3 envelope neighborhoods differ by ~12×, far above the
+    // 1.5× margin, so the ordering holds robustly.
+    const stepCutoff: Array<{ step: number; cutoff: number }> = [];
+    for (let i = 0; i < 60; i++) {
+      const pair = await page.evaluate(
+        ({ cpId, tId, stepKey }) => {
+          const w = globalThis as unknown as {
+            __engine?: () => {
+              read: (n: unknown, k: string) => unknown;
+              readParam: (n: unknown, p: string) => number | undefined;
+            } | null;
+            __patch: { nodes: Record<string, unknown> };
+          };
+          const eng = w.__engine?.();
+          const cp = w.__patch?.nodes?.[cpId];
+          const t = w.__patch?.nodes?.[tId];
+          if (!eng || !cp || !t) return null;
+          const step = eng.read(cp, stepKey);
+          const cutoff = eng.readParam(t, 'cutoff');
+          return typeof step === 'number' && typeof cutoff === 'number' ? { step, cutoff } : null;
+        },
+        { cpId: CP, tId: T, stepKey: `currentStep:${GRAND_LANES.tidy}` },
+      );
+      if (pair) stepCutoff.push(pair);
+      await page.waitForTimeout(30);
+    }
+    const median = (a: number[]): number => {
+      const s = [...a].sort((x, y) => x - y);
+      return s.length ? s[Math.floor(s.length / 2)]! : NaN;
+    };
+    const highSamples = stepCutoff.filter((p) => p.step === 1).map((p) => p.cutoff);
+    const lowSamples = stepCutoff.filter((p) => p.step === 3).map((p) => p.cutoff);
+    expect(highSamples.length, `sampled the HIGH-automation step (1) [${stepCutoff.length} pairs total]`).toBeGreaterThan(0);
+    expect(lowSamples.length, `sampled the LOW-automation step (3) [${stepCutoff.length} pairs total]`).toBeGreaterThan(0);
+    const cutoffHigh = median(highSamples);
+    const cutoffLow = median(lowSamples);
     expect(
-      cutoffHigh!,
-      `high-automation step (norm 0.85 → ${cutoffHigh?.toFixed(0)}Hz) is clearly brighter than the low step (norm 0.35 → ${cutoffLow?.toFixed(0)}Hz)`,
-    ).toBeGreaterThan(cutoffLow! * 1.5);
+      cutoffHigh,
+      `high-automation step (norm 0.85 → ${cutoffHigh.toFixed(0)}Hz, n=${highSamples.length}) is clearly brighter than the low step (norm 0.35 → ${cutoffLow.toFixed(0)}Hz, n=${lowSamples.length})`,
+    ).toBeGreaterThan(cutoffLow * 1.5);
   });
 });
