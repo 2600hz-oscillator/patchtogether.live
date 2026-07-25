@@ -35,6 +35,7 @@ import {
   type ColumnMember,
 } from './patch-convenience';
 import { listModuleDefs } from '$lib/audio/module-registry';
+import { getVideoModuleDef } from '$lib/video/module-registry';
 
 const port = (id: string, type: PortDef['type'], extra: Partial<PortDef> = {}): PortDef =>
   ({ id, type, ...extra });
@@ -548,6 +549,101 @@ const MIDI_OUT: ConvenienceDef = def(
   undefined,
   { role: 'noteSink', laneTap: { pitchIn: 'pitch', gateIn: 'gate', velIn: 'velocity' } },
 );
+
+// ================================================================
+// BUG-B — lane note wiring: poly+gate for instruments, the SHAPE note-tap
+// for pure-CV note consumers (adsr-class), and video members stay unwired.
+// ================================================================
+
+describe('planColumnWiring — BUG-B lane note wiring', () => {
+  const laneCtx = (members: ColumnMember[], headNodeId: string | null = null) => ({
+    channel: 3,
+    members,
+    clipPlayerId: 'clip',
+    mixerId: 'mix',
+    headNodeId,
+  });
+
+  // The tidyVco shape: poly chord bus + mono pitch/gate fallback + stereo out.
+  const TIDY: ConvenienceDef = def(
+    [port('poly', 'polyPitchGate'), port('pitch', 'cv'), port('gate', 'gate', { edge: 'gate' })],
+    [port('out_l', 'audio'), port('out_r', 'audio')],
+    [['out_l', 'out_r']],
+  );
+  // The adsr shape: a note gate in, CV envelope outs, NO audio ports at all.
+  const ADSR: ConvenienceDef = def(
+    [port('gate', 'gate', { edge: 'gate' }), port('attack', 'cv', { paramTarget: 'attack' })],
+    [port('env', 'cv'), port('env_inv', 'cv')],
+  );
+  // The lfo shape: only a CONTROL gate (clock) — must NOT be note-tapped.
+  const LFO: ConvenienceDef = def(
+    [port('clock', 'gate', { edge: 'trigger' }), port('rate', 'cv', { paramTarget: 'rate' })],
+    [port('phase0', 'cv'), port('phase90', 'cv')],
+  );
+  // A video processor shape (cellshade): video in/out + per-knob CVs.
+  const VIDEO_FX: ConvenienceDef = def(
+    [port('in', 'video'), port('ink', 'cv', { paramTarget: 'ink' })],
+    [port('out', 'video')],
+  );
+
+  it('tidyVco lane-add plans pitch AND gate edges (poly bus + the mono note-gate)', () => {
+    const edges = planColumnWiring(laneCtx([member('vco', TIDY)], 'vco'));
+    const ids = new Set(edges.map((e) => e.id));
+    expect(ids.has(wcolEdgeId('clip', 'pitch3', 'vco', 'poly'))).toBe(true);
+    expect(ids.has(wcolEdgeId('clip', 'gate3', 'vco', 'gate'))).toBe(true);
+    // Sends stay intact (stereo tail → ch3L/R).
+    expect(ids.has(wcolEdgeId('vco', 'out_l', 'mix', 'ch3L'))).toBe(true);
+    expect(ids.has(wcolEdgeId('vco', 'out_r', 'mix', 'ch3R'))).toBe(true);
+  });
+
+  it('the LIVE tidyVco def in a lane plans pitch AND gate edges', () => {
+    const live = liveDef('tidyVco');
+    expect(live, 'tidyVco not found in registry').toBeDefined();
+    const edges = planColumnWiring(laneCtx([member('vco', live!)], 'vco'));
+    const ids = new Set(edges.map((e) => e.id));
+    expect(ids.has(wcolEdgeId('clip', 'pitch3', 'vco', 'poly'))).toBe(true);
+    expect(ids.has(wcolEdgeId('clip', 'gate3', 'vco', 'gate'))).toBe(true);
+  });
+
+  it('adsr-class (noteSink-shaped: note gate, no audio role) gets the gate tap', () => {
+    const edges = planColumnWiring(laneCtx([member('env', ADSR)]));
+    const ids = new Set(edges.map((e) => e.id));
+    expect(ids.has(wcolEdgeId('clip', 'gate3', 'env', 'gate'))).toBe(true);
+    // No pitch/vel tap (no matching inputs), and never a mixer edge.
+    for (const e of edges) expect(e.target.nodeId).not.toBe('mix');
+  });
+
+  it('the LIVE adsr def in a lane gets gate{n} → gate', () => {
+    const live = liveDef('adsr');
+    expect(live, 'adsr not found in registry').toBeDefined();
+    const edges = planColumnWiring(laneCtx([member('env', live!)]));
+    const ids = new Set(edges.map((e) => e.id));
+    expect(ids.has(wcolEdgeId('clip', 'gate3', 'env', 'gate'))).toBe(true);
+  });
+
+  it('a CONTROL-gate-only module (lfo clock) is NOT note-tapped', () => {
+    const edges = planColumnWiring(laneCtx([member('mod', LFO)]));
+    expect(edges).toEqual([]);
+  });
+
+  it('a video processor in an audio lane stays COMPLETELY unwired (never nonsense)', () => {
+    const edges = planColumnWiring(laneCtx([member('vid', VIDEO_FX)]));
+    expect(edges).toEqual([]);
+  });
+
+  it('BUG-A wiring sanity: LIVE video-zone defs (cellshade / backdraft / synesthesia) in a lane plan ZERO edges', () => {
+    // Resolve through the SAME audio→video chain the Canvas defLookup uses.
+    // (synesthesia is an AUDIO-registry def living in the video zone — it
+    // consumes MASTER audio via its own video-zone default wires; in a LANE it
+    // must not be classified into the chain either: no resolvable main out.)
+    for (const type of ['cellshade', 'backdraft', 'synesthesia']) {
+      const d = (liveDef(type) ?? getVideoModuleDef(type) ?? undefined) as ConvenienceDef | undefined;
+      expect(d, `${type} not found in any registry`).toBeDefined();
+      const edges = planColumnWiring(laneCtx([member('v1', d!)], 'v1'));
+      expect(edges, `${type} must plan no lane edges`).toEqual([]);
+    }
+  });
+});
 
 describe('planColumnWiring — PART B note tap + ES-9 return', () => {
   const RET = (nodeId: string, inA: number, inB: number, es9 = 'es9') =>
