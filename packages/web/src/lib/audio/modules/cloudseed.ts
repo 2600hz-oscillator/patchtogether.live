@@ -23,9 +23,9 @@
 // Inputs:
 //   in_l / in_r (audio): stereo input feeding the reverb tank.
 //   dry_cv / early_cv / late_cv (cv, linear, paramTarget=…_out): displaces the dry / early-reflections / late-reverb mix.
-//   input_mix_cv (cv, linear, paramTarget=input_mix): displaces input mid/side mix.
-//   low_cut_cv / high_cut_cv (cv, linear, paramTarget=…): displaces the input HPF / output LPF.
-//   cross_seed_cv (cv, linear, paramTarget=cross_seed): displaces the inter-channel seed offset.
+//   input_mix_cv (cv, linear, paramTarget=input_mix): displaces the input stereo cross-feed.
+//   low_cut_cv / high_cut_cv (cv, linear, paramTarget=…): displaces the wet-path input HPF / input LPF corners.
+//   cross_seed_cv (cv, linear, paramTarget=cross_seed): displaces the L/R layout convergence.
 //
 // Outputs:
 //   out_l / out_r (audio): wet+dry stereo output.
@@ -34,10 +34,10 @@
 //   dry_out (linear 0..1, default 0.87): dry-signal mix.
 //   early_out (linear 0..1, default 0): early-reflections mix.
 //   late_out (linear 0..1, default 0.66): late-tank mix.
-//   input_mix (linear 0..1, default 0.23): pre-tank mid/side mix.
-//   low_cut (linear 0..1, default 0.64): input HPF (mapped to CloudSeed's frequency curve).
-//   high_cut (linear 0..1, default 0.29): output LPF.
-//   cross_seed (linear 0..1, default 0): inter-channel seed offset (wider stereo image).
+//   input_mix (linear 0..1, default 0.23): pre-tank stereo cross-feed (1 = both tanks get the mono sum).
+//   low_cut (linear 0..1, default 0.64): wet-path input HPF (mapped to CloudSeed's frequency curve).
+//   high_cut (linear 0..1, default 0.29): wet-path input LPF.
+//   cross_seed (linear 0..1, default 0): L/R random-layout convergence (0 = independent layouts = widest).
 //   preset_index (discrete 0..CLOUDSEED_PRESETS.length, default 0): preset bank picker.
 //   38 message-port params (toggles / integer counts / seeds / per-EQ-band freq + gain /
 //     modulation knobs) — mutated via port.postMessage; see the worklet header.
@@ -472,79 +472,162 @@ export const cloudseedDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "An algorithmic reverb — an exact port of Ghost Note Audio's open-source CloudSeed. Audio fed into the stereo inputs runs through three stages whose levels you blend at the output: a TAPS multitap layer (sparse early echoes), an EARLY diffusion network (smearing those into a denser cloud), and a LATE reflections tank (a bank of modulated, decaying delay lines that build the long reverberant tail) — with a per-channel EQ shaping the wet signal and input/output filters trimming the lows and highs. The character is set by the four panels' knobs: TAP count/decay/predelay/length, DIFFUSION stages/feedback/modulation, LATE line size/count/decay/modulation, and the EQ shelves + lowpass. Because the delay-line layout is built from a random SEED, raising CROSS SEED de-correlates the left and right tanks for a wider stereo image. Seven 'macro' knobs (the output mix faders + input mix + the two cut filters + cross seed) are CV-able AudioParams; the rest of the algorithm's parameters live on the card and are pushed to the worklet over its message port. A footer preset bank lets you jump between bundled spaces (DIVINE INSPIRATION / SHORT ROOM / BRIGHT HALL / INFINITE PAD).",
+      "An algorithmic reverb — an exact port of Ghost Note Audio's open-source CloudSeed. The wet path is one serial chain: the stereo input (optionally cross-fed toward mono by INPUT MIX) passes the input LOW CUT high-pass and HIGH CUT low-pass (when enabled), then the PRE-DELAY, then TAPS (a seeded multitap layer of sparse early echoes, when enabled), then EARLY DIFFUSION (cascaded all-passes that smear the echoes into a cloud, when enabled), and finally feeds the LATE tank — up to 12 parallel modulated delay lines whose feedback is tuned so the tail dies 60 dB in exactly the DECAY seconds (the RT60 hero readout). The output blend is three faders: DRY (the untouched input), EARLY (the wet path tapped just before the tank), and LATE (the tank sum). The EQ shelves + lowpass sit INSIDE each tank line's feedback loop, so their cut compounds with every recirculation — progressive damping that only shapes the late tail. Every stage's layout is rolled from a SEED (tap / diffusion / delay / post-diffusion), and CROSS SEED sets how much the two channels' layouts converge: 0 keeps L and R fully independent (widest), 100% makes both tanks identical. Seven macros (the three output faders, input mix, both cut corners, cross seed) are CV-able AudioParams; the other 38 parameters travel over the worklet's message port. A bundled preset bank jumps between four spaces (DIVINE INSPIRATION / SHORT ROOM / BRIGHT HALL / INFINITE PAD).",
     inputs: {
-      in_l: 'Left audio input into the reverb tank. Pairs with IN R as the stereo source; patch a mono signal into either to feed both via the input-mix stage.',
-      in_r: 'Right audio input into the reverb tank, partnering IN L for the stereo source.',
+      in_l: 'Left audio input into the reverb. Pairs with IN R as the stereo source; a signal patched into only one side is mirrored to both channels, so a mono source still excites both stereo tanks.',
+      in_r: 'Right audio input into the reverb, partnering IN L for the stereo source (same mono-mirroring when patched alone).',
       dry_cv: 'CV that offsets the DRY output-mix macro (0..1, ±1 CV sweeps the full span around the knob): raise the level of the unprocessed signal in the output blend.',
-      early_cv: 'CV that offsets the EARLY output-mix macro: raise the level of the early-reflections/diffusion layer in the blend.',
+      early_cv: 'CV that offsets the EARLY output-mix macro: raise the level of the pre-tank stage (pre-delay + taps + diffusion) in the blend.',
       late_cv: 'CV that offsets the LATE output-mix macro: raise the level of the long reverberant tank in the blend — modulate it for swells.',
-      input_mix_cv: 'CV that offsets the INPUT MIX macro (pre-tank mid/side balance), shifting how the stereo source is summed into the reverb.',
-      low_cut_cv: 'CV that offsets the LOW CUT macro — the input high-pass corner — to thin or thicken the lows entering the tank.',
-      high_cut_cv: 'CV that offsets the HIGH CUT macro — the output low-pass corner — to darken or brighten the wet signal.',
-      cross_seed_cv: 'CV that offsets the CROSS SEED macro, de-correlating the left/right tank layouts for a wider (or narrower) stereo image as it moves.',
+      input_mix_cv: 'CV that offsets the INPUT MIX macro — the pre-tank stereo cross-feed — sliding the two tank feeds from fully independent L/R toward a shared mono sum.',
+      low_cut_cv: 'CV that offsets the LOW CUT macro — the wet-path input high-pass corner — to thin or thicken the lows entering the reverb.',
+      high_cut_cv: 'CV that offsets the HIGH CUT macro — the wet-path input low-pass corner — to darken or brighten what enters the reverb.',
+      cross_seed_cv: 'CV that offsets the CROSS SEED macro, sweeping the L/R tank layouts between fully independent (wide, de-correlated tail) and identical (centered).',
     },
     outputs: {
-      out_l: 'Left channel of the wet+dry reverb mix (dry + early + late, post-EQ and post-high-cut). Pair with OUT R to keep the stereo width.',
-      out_r: 'Right channel of the wet+dry reverb mix, the partner of OUT L.',
+      out_l: 'Left channel of the output blend — the DRY, EARLY, and LATE faders summed. Pair with OUT R to keep the stereo width.',
+      out_r: 'Right channel of the output blend, the partner of OUT L.',
     },
     controls: (() => {
       const controls: Record<string, string> = {
         // 7 macro AudioParams.
-        dry_out: 'DRY output level — how much of the unprocessed input is in the blend (0 = fully wet/muted dry, up = louder dry). Internally a dB fader (−30 dB..0 dB; the bottom reads MUTED). CV via the DRY input.',
-        early_out: 'EARLY output level — the early-reflections/diffusion layer in the blend (dB fader, MUTED at the bottom). CV via the EARLY input.',
-        late_out: 'LATE output level — the long reverberant tank in the blend, the main "reverb" you hear (dB fader, MUTED at the bottom). CV via the LATE input.',
-        input_mix: 'INPUT MIX — the pre-tank mid/side balance of the stereo source feeding the reverb (0..1). CV via the IN MIX input.',
-        low_cut: 'LOW CUT — the input high-pass filter corner (mapped along CloudSeed\'s frequency curve, ~20 Hz–1 kHz); rolls off lows before they enter the tank. Engaged by the LOC ON/OFF toggle. CV via the LO CUT input.',
-        high_cut: 'HIGH CUT — the output low-pass filter corner (~400 Hz–20 kHz); darkens the wet signal. Engaged by the HIC ON/OFF toggle. CV via the HI CUT input.',
-        cross_seed: 'CROSS SEED — inter-channel seed offset: blends the left tank\'s random layout toward an inverted seed so the two channels de-correlate, widening the stereo image (0 = identical L/R, up = wider). CV via the X-SEED input.',
+        dry_out: 'DRY output level — how much of the untouched input is in the blend (it taps the raw input, ahead of even the cut filters). Internally a dB fader (−30 dB..0 dB; the bottom reads MUTED). CV via the DRY input.',
+        early_out: 'EARLY output level — the wet path tapped just before the tank: the pre-delayed input plus TAPS and EARLY DIFFUSION when those stages are on (dB fader, MUTED at the bottom). CV via the EARLY input.',
+        late_out: 'LATE output level — the tank sum in the blend, the main "reverb" you hear (dB fader, MUTED at the bottom). CV via the LATE input.',
+        input_mix: 'INPUT MIX — the pre-tank stereo cross-feed (0..1): at 0 the L and R tanks are fed their own channels untouched; raising it feeds each tank more of the opposite channel until at 1 both receive the same mono L+R sum. CV via the IN MIX input.',
+        low_cut: 'LOW CUT — the wet-path input high-pass corner (mapped along CloudSeed\'s frequency curve, ~20 Hz–1 kHz); rolls off lows before they enter the reverb (the dry path is untouched). In circuit only while LOW CUT ENABLE is on. CV via the LO CUT input.',
+        high_cut: 'HIGH CUT — the wet-path input low-pass corner (~400 Hz–20 kHz); darkens everything entering the reverb (the dry path is untouched). In circuit only while HIGH CUT ENABLE is on. CV via the HI CUT input.',
+        cross_seed: 'CROSS SEED — L/R layout convergence: at 0 each channel rolls a fully independent seeded layout (the widest, most de-correlated tail); raising it blends both channels toward one shared layout until at 100% the L and R tanks are identical (a centered, mono-correlated wet). CV via the X-SEED input.',
         // Preset.
-        preset_index: 'The active preset slot in the bundled bank (DIVINE INSPIRATION / SHORT ROOM / BRIGHT HALL / INFINITE PAD). Clicking a footer slot, or the ‹ / › arrows, writes that whole preset (every macro + message-port value) into the module so all collaborators see the same space.',
+        preset_index: 'The active preset slot in the bundled bank (DIVINE INSPIRATION / SHORT ROOM / BRIGHT HALL / INFINITE PAD). Selecting a slot writes that whole preset (every macro + message-port value) into the module as one undoable edit, so all collaborators see the same space.',
       };
-      // 38 message-port params — described by function. Grouped: TAPS / EARLY
-      // DIFFUSION / LATE / EQ / global + SEEDS.
+      // 38 message-port params — described by function. Grouped: input stage /
+      // TAPS / EARLY DIFFUSION / LATE tank / EQ / SEEDS.
       const msg: Record<string, string> = {
-        interpolation: 'INTERPOLATION on/off — enables fractional-delay interpolation in the tank for smoother modulation (cleaner pitch movement) at a small CPU cost.',
-        low_cut_enabled: 'LOW CUT enable (the LOC pill) — switches the input high-pass filter (set by LOW CUT) in or out of circuit.',
-        high_cut_enabled: 'HIGH CUT enable (the HIC pill) — switches the output low-pass filter (set by HIGH CUT) in or out of circuit.',
-        tap_enabled: 'TAPS enable (the panel ON/OFF) — switches the multitap early-echo layer in or out.',
+        interpolation: 'INTERPOLATION on/off — enables smooth fractional-delay reads in the late tank\'s diffusers for cleaner modulation (less zipper/pitch grit) at a small CPU cost.',
+        low_cut_enabled: 'LOW CUT enable — switches the wet-path input high-pass (set by LOW CUT) in or out of circuit.',
+        high_cut_enabled: 'HIGH CUT enable — switches the wet-path input low-pass (set by HIGH CUT) in or out of circuit.',
+        tap_enabled: 'TAPS enable — switches the seeded multitap early-echo stage in or out (when on it colors both the EARLY output and what feeds the tank).',
         tap_count: 'TAP COUNT — how many discrete early taps the multitap layer fires (1..256); more taps = denser early reflections.',
-        tap_decay: 'TAP DECAY — how quickly successive taps fall in level (0..100%); higher = the early taps die away faster.',
-        tap_predelay: 'TAP PRE-DELAY — a gap (ms) before the first tap, pushing the early reflections later for a sense of a larger or more distant space.',
-        tap_length: 'TAP LENGTH — the total time span (ms) the taps are spread across; longer = the early-reflection cluster lasts longer.',
-        early_diffuse_enabled: 'DIFFUSION enable (the panel ON/OFF) — switches the early all-pass diffusion network (which smears the taps into a denser cloud) in or out.',
-        early_diffuse_count: 'DIFFUSION STAGES — number of cascaded all-pass diffusers (1..12); more stages smear the early reflections into a smoother, denser cloud.',
-        early_diffuse_delay: 'DIFFUSION DELAY — the per-stage all-pass delay length (ms), setting the grain/texture of the early diffusion.',
-        early_diffuse_mod_amt: 'DIFFUSION MOD AMT — how much the early diffusers\' delays are modulated, adding chorusing/shimmer to the early field.',
-        early_diffuse_feedback: 'DIFFUSION FEEDBACK — the all-pass feedback coefficient (0..100%); higher thickens and lengthens the early diffusion.',
-        early_diffuse_mod_rate: 'DIFFUSION MOD RATE — the LFO rate (Hz) of the early-diffusion modulation.',
-        late_mode: 'LATE MODE (PRE/POST) — whether the late tank\'s diffusion sits before (PRE) or after (POST) its delay lines, changing how the tail builds.',
+        tap_decay: 'TAP DECAY — the level slope across the tap cluster (0..100%): at 0% every tap is equal; raising it makes later taps fall away exponentially.',
+        tap_predelay: 'PRE-DELAY — a 0..500 ms gap ahead of the entire wet path (taps, early AND late; dry is unaffected) — the classic reverb pre-delay that pushes the space back behind the source.',
+        tap_length: 'TAP LENGTH — the total time span (10..1000 ms) the taps are spread across; longer = the early-reflection cluster lasts longer.',
+        early_diffuse_enabled: 'EARLY DIFFUSION enable — switches the cascaded all-pass network (which smears the taps into a denser cloud) in or out.',
+        early_diffuse_count: 'EARLY DIFFUSION STAGES — number of cascaded all-pass diffusers (1..12); more stages smear the early reflections into a smoother, denser cloud.',
+        early_diffuse_delay: 'EARLY DIFFUSION DELAY — the base all-pass delay (10..100 ms); each stage sits at a seeded fraction of it, setting the grain/texture of the early diffusion.',
+        early_diffuse_mod_amt: 'EARLY DIFFUSION MOD AMT — how deeply the diffusers\' delays are modulated, adding chorusing/shimmer to the early field (modulation engages once the depth clears a small threshold).',
+        early_diffuse_feedback: 'EARLY DIFFUSION FEEDBACK — the all-pass feedback coefficient (0..100%); higher thickens and lengthens the early diffusion.',
+        early_diffuse_mod_rate: 'EARLY DIFFUSION MOD RATE — the LFO rate (0..5 Hz, per-stage seeded variation) of the early-diffusion modulation.',
+        late_mode: 'LATE MODE (PRE/POST) — where each tank line\'s output is tapped: PRE taps straight off the delay line (its diffuser + EQ shape only the recirculating feedback); POST taps after the diffuser + EQ, so you hear them directly on every echo.',
         late_line_count: 'LATE LINE COUNT — number of parallel delay lines in the reverb tank (1..12); more lines = a denser, smoother tail.',
-        late_diffuse_enabled: 'LATE DIFFUSION enable (the panel ON/OFF) — switches the all-pass diffusion stage inside the late tank in or out.',
-        late_diffuse_count: 'LATE DIFFUSION COUNT — number of all-pass diffusers in the late tank (1..8); more = a smoother, more washed-out tail.',
-        late_line_size: 'LATE LINE SIZE — the delay-line length (ms) of the tank, i.e. the perceived size of the space (short = small room, long = big hall).',
-        late_line_mod_amt: 'LATE LINE MOD AMT — how much the tank delay lines are modulated, adding movement and de-metallizing long tails.',
-        late_diffuse_delay: 'LATE DIFFUSION DELAY — the per-stage all-pass delay (ms) inside the late tank, shaping its texture.',
-        late_diffuse_mod_amt: 'LATE DIFFUSION MOD AMT — modulation depth of the late-tank diffusers, adding shimmer to the tail.',
-        late_line_decay: 'LATE LINE DECAY — the reverb time / RT60 of the tank (the live DECAY readout): how long the tail takes to die away, from a short room to the near-infinite pad.',
-        late_line_mod_rate: 'LATE LINE MOD RATE — the LFO rate (Hz) of the tank delay-line modulation.',
-        late_diffuse_feedback: 'LATE DIFFUSION FEEDBACK — feedback coefficient of the late-tank diffusers (0..100%); higher lengthens and thickens the diffuse tail.',
-        late_diffuse_mod_rate: 'LATE DIFFUSION MOD RATE — the LFO rate (Hz) of the late-diffusion modulation.',
-        eq_low_shelf_enabled: 'EQ LOW SHELF enable (the LS pill) — switches the wet-path low shelf in or out.',
-        eq_high_shelf_enabled: 'EQ HIGH SHELF enable (the HS pill) — switches the wet-path high shelf in or out.',
-        eq_lowpass_enabled: 'EQ LOWPASS enable (the LP pill) — switches the wet-path lowpass (set by EQ CUTOFF) in or out.',
-        eq_low_freq: 'EQ LO FREQ — the corner frequency (Hz) of the wet-path low shelf.',
-        eq_high_freq: 'EQ HI FREQ — the corner frequency (Hz) of the wet-path high shelf.',
-        eq_cutoff: 'EQ CUTOFF — the corner frequency (Hz) of the wet-path lowpass.',
-        eq_low_gain: 'EQ LO GAIN — boost/cut (dB) of the low shelf, warming or thinning the reverb tail.',
-        eq_high_gain: 'EQ HI GAIN — boost/cut (dB) of the high shelf, brightening or darkening the tail.',
-        seed_tap: 'TAP SEED — the random seed for the multitap layout; change it to audition a different early-reflection pattern at the same settings.',
-        seed_diffusion: 'DIFFUSION SEED — the random seed for the diffusion all-pass layout; reshapes the diffuse texture without changing the macro settings.',
-        seed_delay: 'DELAY SEED — the random seed for the late tank\'s delay-line lengths; reshapes the tail\'s modal structure.',
-        seed_post_diffusion: 'POST-DIFFUSION SEED — the random seed for the post-tank diffusion stage; another knob for re-rolling the late texture.',
+        late_diffuse_enabled: 'LATE DIFFUSION enable — switches the all-pass diffuser inside each tank line\'s feedback loop in or out.',
+        late_diffuse_count: 'LATE DIFFUSION COUNT — number of all-pass stages inside each tank line (1..8); more = a smoother, more washed-out tail.',
+        late_line_size: 'LATE LINE SIZE — the base delay-line length (20..1000 ms), i.e. the perceived size of the space; each of the 12 lines rolls a seeded 0.5×..1.5× of it.',
+        late_line_mod_amt: 'LATE LINE MOD AMT — how deeply the tank delay lines are modulated, adding movement and de-metallizing long tails.',
+        late_diffuse_delay: 'LATE DIFFUSION DELAY — the base all-pass delay (10..100 ms) inside each tank line, shaping the tail\'s texture.',
+        late_diffuse_mod_amt: 'LATE DIFFUSION MOD AMT — modulation depth of the in-line diffusers, adding shimmer to the tail.',
+        late_line_decay: 'DECAY — the reverb time / RT60 (0.05 s..60 s, the hero readout): each line\'s feedback is computed so the tail falls 60 dB in exactly this many seconds, from a tight room to a near-infinite pad.',
+        late_line_mod_rate: 'LATE LINE MOD RATE — the LFO rate (0..5 Hz, per-line seeded variation) of the tank delay-line modulation.',
+        late_diffuse_feedback: 'LATE DIFFUSION FEEDBACK — feedback coefficient of the in-line diffusers (0..100%); higher lengthens and thickens the diffuse tail.',
+        late_diffuse_mod_rate: 'LATE DIFFUSION MOD RATE — the LFO rate (0..5 Hz) of the late-diffusion modulation.',
+        eq_low_shelf_enabled: 'EQ LOW SHELF enable — switches the low shelf inside each tank line\'s feedback loop in or out; its cut compounds with every recirculation (late tail only — dry/early are untouched).',
+        eq_high_shelf_enabled: 'EQ HIGH SHELF enable — switches the in-loop high shelf in or out; per-pass high damping is the classic dark-tail move.',
+        eq_lowpass_enabled: 'EQ LOWPASS enable — switches the in-loop lowpass (set by EQ CUTOFF) in or out for the steepest progressive darkening.',
+        eq_low_freq: 'EQ LO FREQ — the corner frequency (~20 Hz–1 kHz) of the in-loop low shelf.',
+        eq_high_freq: 'EQ HI FREQ — the corner frequency (~400 Hz–20 kHz) of the in-loop high shelf.',
+        eq_cutoff: 'EQ CUTOFF — the corner frequency (~400 Hz–20 kHz) of the in-loop lowpass.',
+        eq_low_gain: 'EQ LO GAIN — cut-only shelf gain (−20..0 dB; 0 = no cut) applied to the lows on every pass through the loop, progressively thinning the tail\'s bottom as it decays.',
+        eq_high_gain: 'EQ HI GAIN — cut-only shelf gain (−20..0 dB; 0 = no cut) applied to the highs on every pass, progressively darkening the tail as it decays.',
+        seed_tap: 'TAP SEED (000–999) — the random seed for the multitap layout; change it to audition a different early-reflection pattern at the same settings.',
+        seed_diffusion: 'DIFFUSION SEED (000–999) — the random seed for the early all-pass layout; reshapes the diffuse texture without changing the knob settings.',
+        seed_delay: 'DELAY SEED (000–999) — the random seed for the tank\'s delay-line lengths; reshapes the tail\'s modal structure.',
+        seed_post_diffusion: 'POST-DIFFUSION SEED (000–999) — the random seed for the diffusers inside the tank lines (each line derives its own from it); another dial for re-rolling the late texture.',
       };
       return { ...controls, ...msg };
     })(),
+  },
+
+  // RACKLINE face — the FX-archetype rework (fullcard-mocks/cloudseed.html):
+  // wet/dry blend center-stage, RT60 as the hero stat, everything else
+  // re-grouped by signal flow (input → taps → early → late → EQ → output).
+  //
+  //   mini (1):    LATE — the one knob that IS "how much reverb".
+  //   compact (3): LATE / DRY / DECAY — the output blend + the RT60 hero,
+  //                the mock's hero band distilled.
+  //   full (8):    + EARLY (completing the 3-fader blend), SIZE (the space's
+  //                other defining dimension), HIGH CUT + LOW CUT (the wet
+  //                tone trims), PRESET (jump between bundled spaces).
+  //   dock:        every control, paged by the mock's section bands.
+  //
+  // glyph 'meter': an FX processor reads I/O level, not a waveform.
+  face: {
+    order: [
+      // hero ranks (mini→compact→full)
+      'late_out',
+      'dry_out',
+      'late_line_decay',
+      'early_out',
+      'late_line_size',
+      'high_cut',
+      'low_cut',
+      'preset_index',
+      // input stage
+      'input_mix',
+      'low_cut_enabled',
+      'interpolation',
+      // taps
+      'tap_enabled',
+      'tap_count',
+      'tap_decay',
+      'tap_predelay',
+      'tap_length',
+      // early diffusion
+      'early_diffuse_enabled',
+      'early_diffuse_count',
+      'early_diffuse_delay',
+      'early_diffuse_feedback',
+      'early_diffuse_mod_amt',
+      'early_diffuse_mod_rate',
+      // late reflections — delay lines, then in-line diffusion
+      'late_mode',
+      'late_line_count',
+      'late_line_mod_amt',
+      'late_line_mod_rate',
+      'late_diffuse_enabled',
+      'late_diffuse_count',
+      'late_diffuse_delay',
+      'late_diffuse_feedback',
+      'late_diffuse_mod_amt',
+      'late_diffuse_mod_rate',
+      // EQ (in-loop, late tail only)
+      'eq_low_shelf_enabled',
+      'eq_low_freq',
+      'eq_low_gain',
+      'eq_high_shelf_enabled',
+      'eq_high_freq',
+      'eq_high_gain',
+      'eq_lowpass_enabled',
+      'eq_cutoff',
+      // output stage
+      'high_cut_enabled',
+      'cross_seed',
+      // seeds
+      'seed_tap',
+      'seed_diffusion',
+      'seed_delay',
+      'seed_post_diffusion',
+    ],
+    pages: [
+      { id: 'blend', label: 'output blend', controls: ['dry_out', 'early_out', 'late_out', 'preset_index'] },
+      { id: 'input', label: 'input stage', controls: ['input_mix', 'low_cut', 'low_cut_enabled', 'interpolation'] },
+      { id: 'taps', label: 'taps', controls: ['tap_enabled', 'tap_count', 'tap_decay', 'tap_predelay', 'tap_length'] },
+      { id: 'early', label: 'early diffusion', controls: ['early_diffuse_enabled', 'early_diffuse_count', 'early_diffuse_delay', 'early_diffuse_feedback', 'early_diffuse_mod_amt', 'early_diffuse_mod_rate'] },
+      { id: 'late', label: 'late reflections', controls: ['late_mode', 'late_line_size', 'late_line_count', 'late_line_decay', 'late_line_mod_amt', 'late_line_mod_rate', 'late_diffuse_enabled', 'late_diffuse_count', 'late_diffuse_delay', 'late_diffuse_feedback', 'late_diffuse_mod_amt', 'late_diffuse_mod_rate'] },
+      { id: 'eq', label: 'equalisation', controls: ['eq_low_shelf_enabled', 'eq_low_freq', 'eq_low_gain', 'eq_high_shelf_enabled', 'eq_high_freq', 'eq_high_gain', 'eq_lowpass_enabled', 'eq_cutoff'] },
+      { id: 'output', label: 'output stage', controls: ['high_cut_enabled', 'high_cut', 'cross_seed'] },
+      { id: 'seeds', label: 'seeds', controls: ['seed_tap', 'seed_diffusion', 'seed_delay', 'seed_post_diffusion'] },
+    ],
+    glyph: 'meter',
   },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
