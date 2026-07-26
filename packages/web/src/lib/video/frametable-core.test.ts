@@ -297,17 +297,25 @@ describe('FRAMETABLE — still-image consistency (static screen-space selection)
     const morph = 0.5, spread = 15, shimmer = 0.08;
     const FRAMES = 64, PIX = 4000;
     const counts = new Map<number, number>();
+    // Track the bounds across the sweep and assert ONCE after it. Asserting
+    // inside the loop is 2 * FRAMES * PIX = 512k `expect()` calls, and building
+    // a matcher context that many times — not the arithmetic — was ~90% of this
+    // test's runtime, leaving it a hair under vitest's 5s default and blowing it
+    // on a loaded machine. min/max over every k is the SAME guarantee.
+    let minK = Infinity, maxK = -Infinity;
     for (let f = 0; f < FRAMES; f++) {
       for (let i = 0; i < PIX; i++) {
         const base = (i + 0.5) / PIX;
         const t = shimmerThreshold(base, shimmer, f);
         const k = pickLagIndex(morph, spread, t);
         counts.set(k, (counts.get(k) ?? 0) + 1);
-        // bounded: never leaves the ring index range.
-        expect(k).toBeGreaterThanOrEqual(0);
-        expect(k).toBeLessThan(N);
+        if (k < minK) minK = k;
+        if (k > maxK) maxK = k;
       }
     }
+    // bounded: never leaves the ring index range.
+    expect(minK, 'lowest lag index over the sweep').toBeGreaterThanOrEqual(0);
+    expect(maxK, 'highest lag index over the sweep').toBeLessThan(N);
     const total = FRAMES * PIX;
     const p = new Map<number, number>();
     for (const [k, n] of counts) p.set(k, n / total);
