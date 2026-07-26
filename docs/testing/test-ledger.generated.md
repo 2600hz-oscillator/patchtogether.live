@@ -11,7 +11,7 @@ source tree, so they cannot go stale. Prose + roadmap: `docs/testing/README.md`.
 | Bucket | What | Count |
 | --- | --- | ---: |
 | 1 | HARD SKIPS / QUARANTINES (backlog → drive to 0) | 6 |
-| 2 | COVERAGE EXEMPTIONS (deliberate auto-enrollment opt-outs) | 526 |
+| 2 | COVERAGE EXEMPTIONS (deliberate auto-enrollment opt-outs) | 536 |
 | 3 | INFORMATIONAL-ONLY CI LANES (run, never block merge) | 5 |
 
 ## CI gating truth (from `.github/workflows/ci.yml`)
@@ -46,7 +46,7 @@ _none_
 ### spawn-smoke QUARANTINE map (e2e/tests/modules.spec.ts) — 1
 - `toybox` — task #102: SwiftShader software-renderer timeout (heavy WebGL)
 
-## Bucket 2 — coverage exemptions (526)
+## Bucket 2 — coverage exemptions (536)
 
 Declarative auto-enrollment opt-out lists. A module opted out of a UNIVERSAL
 sweep still carries dedicated coverage (a bespoke spec / unit core / ART). These
@@ -474,7 +474,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `toybox.inA` — video input only drives output when a layer selects it as its source
 - `toybox.inB` — video input only drives output when a layer selects it as its source
 
-### `EXEMPT_BASELINE_PAIRS` (126) — per-<platform>/<scene> VRT baseline pairs deferred (pending a vrt-update capture)
+### `EXEMPT_BASELINE_PAIRS` (136) — per-<platform>/<scene> VRT baseline pairs deferred (pending a vrt-update capture)
 <sub>e2e/vrt/vrt-exemptions.ts</sub>
 - `darwin/mirrorpool`
 - `darwin/mirrorpool-mirror`
@@ -513,10 +513,20 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `linux/edge-wipe`
 - `linux/edges`
 - `linux/electraControl`
+- `linux/face-delay-compact`
+- `linux/face-delay-dock`
 - `linux/face-dx7-compact`
 - `linux/face-dx7-dock`
+- `linux/face-filter-compact`
+- `linux/face-filter-dock`
+- `linux/face-karplus-compact`
+- `linux/face-karplus-dock`
+- `linux/face-mixer-compact`
+- `linux/face-mixer-dock`
 - `linux/face-qbrt-compact`
 - `linux/face-qbrt-dock`
+- `linux/face-reverb-compact`
+- `linux/face-reverb-dock`
 - `linux/face-shimmershine-compact`
 - `linux/face-shimmershine-dock`
 - `linux/face-sixstrum-compact`
