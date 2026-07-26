@@ -60,6 +60,7 @@ const FACES = [
   { type: 'filter', pages: 2 },
   { type: 'mixer', pages: 2 },
   { type: 'delay', pages: 2 },
+  { type: 'reverb', pages: 2 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

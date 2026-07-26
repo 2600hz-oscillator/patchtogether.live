@@ -51,6 +51,7 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'filter',
   'karplus',
   'mixer',
+  'reverb',
 ]);
 
 /**
