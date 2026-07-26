@@ -168,6 +168,33 @@
     );
   }
 
+  /** RIGHT-CLICK → UNPATCH. A rear hole is the ONLY affordance a lane-hosted
+   *  card has for a cable it never drew by hand (the lane auto-wires a poly
+   *  instrument's POLY input, and there is no clickable cable object in the
+   *  dock view), so a PATCHED hole opens the shared unpatch menu — Canvas owns
+   *  the menu + the removal, exactly like the carry seam above. An UNPATCHED
+   *  hole is left completely alone (no preventDefault) so its right-click
+   *  behaviour is byte-identical to before. */
+  function onHoleContextMenu(e: MouseEvent, hole: RearHole): void {
+    if (remotesFor(hole).length === 0) return;
+    const host = hostEl;
+    if (!host) return;
+    e.preventDefault();
+    e.stopPropagation();
+    host.dispatchEvent(
+      new CustomEvent('patchpanel:jackcontextmenu', {
+        bubbles: true,
+        detail: {
+          nodeId,
+          portId: hole.portId,
+          direction: hole.direction,
+          x: e.clientX,
+          y: e.clientY,
+        },
+      }),
+    );
+  }
+
   // ---- band collapse (pathology fallback only — spec §1.5) ----
   // Session-scoped per-band expansion; bands start collapsed only when the
   // field exceeds the threshold. State resets with the component (per-open).
@@ -206,6 +233,7 @@
     title={holeTitle(hole, remotes)}
     aria-label={`patch ${hole.label} ${hole.direction}`}
     onclick={() => onHoleClick(hole)}
+    oncontextmenu={(e) => onHoleContextMenu(e, hole)}
   >
     {#if hole.direction === 'output'}
       <span class="hole" aria-hidden="true"></span>

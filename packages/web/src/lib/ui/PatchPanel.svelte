@@ -354,6 +354,51 @@
       : `→ TO ${remotes.join(', ')}`;
   }
 
+  // ---------------- Right-click → UNPATCH (every patch point) --------------
+  //
+  // A cable is only a clickable object on the free-rack EDGE LAYER. The panel's
+  // port rows and the back-panel jacks show a cable is SEATED (the filled jack
+  // indicator) but had no way to pull it out — fatal for a patch the app made
+  // FOR you (a workflow lane auto-wires an instrument's POLY input, and lanes
+  // render no cable at all). Right-clicking a PATCHED point now opens the ONE
+  // shared unpatch menu: we dispatch a bubbling event and Canvas owns the menu
+  // + the removal (the same LOCAL_ORIGIN edge-delete transact the Backspace
+  // path uses, so undo + multiplayer convergence are inherited).
+  //
+  // Returns true when it claimed the event. An UNPATCHED point is left ENTIRELY
+  // alone (no preventDefault, no stopPropagation) so every pre-existing
+  // right-click behaviour on that point — the gate-input MIDI assign menu, the
+  // card's own node menu behind a back jack — still fires exactly as before.
+  function dispatchUnpatchMenu(
+    e: MouseEvent,
+    portId: string,
+    direction: 'input' | 'output',
+  ): boolean {
+    if (!isPatched(portId, direction)) return false;
+    const host = hostEl;
+    if (!host) return false;
+    e.preventDefault();
+    e.stopPropagation();
+    host.dispatchEvent(
+      new CustomEvent('patchpanel:jackcontextmenu', {
+        bubbles: true,
+        detail: { nodeId, portId, direction, x: e.clientX, y: e.clientY },
+      }),
+    );
+    return true;
+  }
+
+  /** Drill-down port ROW right-click. Patched → unpatch menu; otherwise fall
+   *  through to the gate-input MIDI assign menu (unchanged). */
+  function onPortRowContextMenu(
+    e: MouseEvent,
+    port: PortDescriptor,
+    direction: 'input' | 'output',
+  ): void {
+    if (dispatchUnpatchMenu(e, port.id, direction)) return;
+    if (direction === 'input' && port.cable === 'gate') openGateMidiMenu(e, port);
+  }
+
   // ---------------- Gate-input MIDI assign (WORKSTREAM B) ----------------
   //
   // EVERY gate/trigger INPUT row (cable === 'gate') is right-clickable to bind a
@@ -656,6 +701,12 @@
       // Inside our own chrome (portaled) or our host → keep open.
       if (target.closest(`[data-patch-panel-chrome="${nodeId}"]`)) return;
       if (target.closest(`[data-patch-panel-node="${nodeId}"]`)) return;
+      // The Canvas-owned UNPATCH menu is portaled to <body>, so a click on one
+      // of its items reads as "outside" — but it was opened FROM a row in this
+      // chrome and acts on it, so it counts as inside. Without this the panel
+      // vanishes the moment the user picks "Unpatch", hiding the jack they
+      // just emptied.
+      if (target.closest('[data-testid="unpatch-menu"]')) return;
       // A carry/patch-to picker owned by Canvas counts as "inside" — don't
       // dismiss the chrome out from under an in-flight patch.
       if (cascadeLockEngaged) return;
@@ -953,6 +1004,7 @@
               aria-label={`patch ${resolveVerboseLabel(port)} input`}
               style:--jack-color={cableColorVar(port.cable)}
               onclick={() => onBackJackClick(port.id, 'input')}
+              oncontextmenu={(e) => dispatchUnpatchMenu(e, port.id, 'input')}
             >
               <span class="jack-hole" data-patched={patched ? 'true' : 'false'} aria-hidden="true"></span>
               <span class="jack-label">{resolveVerboseLabel(port)}</span>
@@ -978,6 +1030,7 @@
               aria-label={`patch ${resolveVerboseLabel(port)} output`}
               style:--jack-color={cableColorVar(port.cable)}
               onclick={() => onBackJackClick(port.id, 'output')}
+              oncontextmenu={(e) => dispatchUnpatchMenu(e, port.id, 'output')}
             >
               <span class="jack-hole" data-patched={patched ? 'true' : 'false'} aria-hidden="true"></span>
               <span class="jack-label">{resolveVerboseLabel(port)}</span>
@@ -1119,7 +1172,7 @@
                   class="panel-row"
                   class:gate-assignable={port.cable === 'gate'}
                   style:--row-cable={cableColorVar(port.cable)}
-                  oncontextmenu={port.cable === 'gate' ? (e) => openGateMidiMenu(e, port) : undefined}
+                  oncontextmenu={(e) => onPortRowContextMenu(e, port, 'input')}
                   data-gate-midi-bound={port.cable === 'gate' && !!gateBound(port.id) ? 'true' : undefined}
                 >
                   {@render portButton(port, 'input')}
@@ -1135,7 +1188,11 @@
             <div class="row-group-label">{group.label}</div>
             <ul class="row-list">
               {#each group.ports as port (port.id)}
-                <li class="panel-row" style:--row-cable={cableColorVar(port.cable)}>
+                <li
+                  class="panel-row"
+                  style:--row-cable={cableColorVar(port.cable)}
+                  oncontextmenu={(e) => onPortRowContextMenu(e, port, 'output')}
+                >
                   {@render portButton(port, 'output')}
                 </li>
               {/each}
@@ -1145,7 +1202,11 @@
             <!-- Sectioned cards funnel outputs into the flat list. -->
             <ul class="row-list">
               {#each allOutputs as port (port.id)}
-                <li class="panel-row" style:--row-cable={cableColorVar(port.cable)}>
+                <li
+                  class="panel-row"
+                  style:--row-cable={cableColorVar(port.cable)}
+                  oncontextmenu={(e) => onPortRowContextMenu(e, port, 'output')}
+                >
                   {@render portButton(port, 'output')}
                 </li>
               {/each}
@@ -1168,7 +1229,7 @@
                   class="panel-row"
                   class:gate-assignable={port.cable === 'gate'}
                   style:--row-cable={cableColorVar(port.cable)}
-                  oncontextmenu={port.cable === 'gate' ? (e) => openGateMidiMenu(e, port) : undefined}
+                  oncontextmenu={(e) => onPortRowContextMenu(e, port, 'input')}
                   data-gate-midi-bound={port.cable === 'gate' && !!gateBound(port.id) ? 'true' : undefined}
                 >
                   {@render portButton(port, 'input')}

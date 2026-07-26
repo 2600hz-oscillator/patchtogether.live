@@ -276,6 +276,8 @@
   import { MODULE_DOCS } from '$lib/docs/module-docs.generated';
   import { isAnnotating, toggleAnnotate, clearAnnotate } from '$lib/ui/annotate-mode.svelte';
   import PortContextMenu from '$lib/ui/PortContextMenu.svelte';
+  import UnpatchMenu from '$lib/ui/UnpatchMenu.svelte';
+  import { buildUnpatchPlan, type UnpatchPlan, type UnpatchTarget } from '$lib/ui/unpatch-menu';
   import SelectionContextMenu from '$lib/ui/SelectionContextMenu.svelte';
   import GroupBuilderModal from '$lib/ui/GroupBuilderModal.svelte';
   import ExposedControlsModal from '$lib/ui/ExposedControlsModal.svelte';
@@ -5971,6 +5973,67 @@
     connectDragState.beginCascade(info.nodeId);
   }
 
+  // ---------------- Right-click → UNPATCH (every patch point) --------------
+  //
+  // Owner report: "there's no way to break a patch right now if i put six strum
+  // in a lane and then want to unpatch poly." A cable is only a selectable
+  // object on the free-rack EDGE LAYER; the workflow lanes and the flip-side
+  // jack fields (legacy back panel + the dock full-view / bare-TAB RearCard)
+  // render patch POINTS, not cables — so an auto-wired lane link had NO removal
+  // affordance at all. Every jack field now dispatches a bubbling
+  // `patchpanel:jackcontextmenu` for a PATCHED point and Canvas owns the ONE
+  // menu + the ONE removal, so the behaviour is identical in every view.
+  //
+  // The removal REUSES the existing edge-delete seam VERBATIM — the same
+  // LOCAL_ORIGIN `delete patch.edges[id]` transact handleDelete (Backspace)
+  // runs, including the MAJOR-1 wcol detach suppression — so undo/redo
+  // (the LOCAL_ORIGIN-tracked UndoManager) and multiplayer convergence are
+  // INHERITED rather than re-implemented, and a reconciler-owned lane cable
+  // stays gone instead of snapping straight back on the next reconcile pass.
+  let unpatchOpen = $state(false);
+  let unpatchPos = $state({ x: 0, y: 0 });
+  let unpatchTarget = $state<UnpatchTarget | null>(null);
+
+  let unpatchPlan = $derived.by<UnpatchPlan>(() => {
+    void snapshot;
+    const t = unpatchTarget;
+    if (!unpatchOpen || !t) return { title: '', items: [], allLabel: null };
+    return buildUnpatchPlan(patch.edges, patch.nodes, defLookup, t);
+  });
+
+  // A peer (or a reconcile) removing the last cable under an OPEN menu leaves
+  // it empty — close rather than strand a menu with nothing to act on.
+  $effect(() => {
+    if (unpatchOpen && unpatchPlan.items.length === 0) closeUnpatchMenu();
+  });
+
+  function closeUnpatchMenu(): void {
+    unpatchOpen = false;
+    unpatchTarget = null;
+  }
+
+  /** Delete edges through the SHARED removal seam. Identical to handleDelete's
+   *  edge branch: one LOCAL_ORIGIN transact (undoable + synced), with the
+   *  managed-cable detach suppression so a user-removed wcol- lane link is not
+   *  re-added by the next column reconcile. */
+  function unpatchEdges(edgeIds: string[]): void {
+    if (edgeIds.length === 0) return;
+    let removed = 0;
+    ydoc.transact(() => {
+      for (const id of edgeIds) {
+        const live = patch.edges[id];
+        if (!live) continue;
+        if (workflowMode && id.startsWith('wcol-e-')) {
+          const colKey = wcolEdgeColumnKey(live);
+          if (colKey) wcolMarkDetached(id, colKey);
+        }
+        delete patch.edges[id];
+        removed++;
+      }
+    }, LOCAL_ORIGIN);
+    if (removed > 0) trace(`unpatched ${removed} cable(s) via patch-point menu`);
+  }
+
   // ---------------- Jack-click → carry → patch-to picker ----------------
   //
   // PatchPanel dispatches two CustomEvents up the DOM:
@@ -6105,13 +6168,30 @@
       connectDragState.endCascade();
       commitCarriedEdge(from, to);
     };
+    const onJackContextMenu = (e: Event) => {
+      const detail = (e as CustomEvent).detail as
+        | { nodeId: string; portId: string; direction: 'input' | 'output'; x: number; y: number }
+        | null;
+      if (!detail) return;
+      // A right-click never carries a cable — drop any in-flight carry so the
+      // menu can't act on a half-finished gesture.
+      if (connectDragState.mode === 'pickup') {
+        connectDragState.discard();
+        connectDragState.endCascade();
+      }
+      unpatchTarget = { nodeId: detail.nodeId, portId: detail.portId, direction: detail.direction };
+      unpatchPos = { x: detail.x, y: detail.y };
+      unpatchOpen = true;
+    };
     document.addEventListener('patchpanel:jackclick', onJackClick);
     document.addEventListener('patchpanel:patchto', onPatchTo);
     document.addEventListener('patchpanel:carrycommit', onCarryCommit);
+    document.addEventListener('patchpanel:jackcontextmenu', onJackContextMenu);
     return () => {
       document.removeEventListener('patchpanel:jackclick', onJackClick);
       document.removeEventListener('patchpanel:patchto', onPatchTo);
       document.removeEventListener('patchpanel:carrycommit', onCarryCommit);
+      document.removeEventListener('patchpanel:jackcontextmenu', onJackContextMenu);
     };
   });
 
@@ -8099,6 +8179,20 @@
     // any cable that was carried into it — silently, no patch made.
     if (connectDragState.mode === 'pickup') connectDragState.discard();
   }}
+/>
+
+<!-- Right-click → UNPATCH on a patched patch point, in EVERY jack field
+     (legacy PatchPanel rows + back panel, the RearCard in the dock full-view
+     and the bare-TAB rear view). ONE menu, ONE removal seam. -->
+<UnpatchMenu
+  bind:open={unpatchOpen}
+  x={unpatchPos.x}
+  y={unpatchPos.y}
+  title={unpatchPlan.title}
+  items={unpatchPlan.items}
+  allLabel={unpatchPlan.allLabel}
+  onunpatch={unpatchEdges}
+  onclose={closeUnpatchMenu}
 />
 
 <style>
