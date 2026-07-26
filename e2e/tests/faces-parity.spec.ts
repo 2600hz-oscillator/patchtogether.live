@@ -190,6 +190,13 @@ async function renderedCells(dockShell: Locator): Promise<RenderedCell[]> {
  * own step count, and the direction runs AWAY from whichever end the value
  * currently sits at (a param resting at its max, e.g. dx7 `voiceCount`, cannot
  * go up) while staying inside the viewport.
+ *
+ * That direction rule is load-bearing, not a nicety: a FIXED upward drag is a
+ * guaranteed FALSE FAILURE on any param already at its ceiling — nothing moves,
+ * nothing commits, and a perfectly operable control reads as LOST. Batch 3's
+ * MIXER is the sharpest case (it ships all four channel levels AND the master
+ * at max — a summing mixer is a unity pass-through out of the box), and the
+ * same bite recurs on every attenuator-shaped module.
  */
 async function dragKnob(page: Page, knob: Locator, p: SpecParam, current: number): Promise<void> {
   await knob.scrollIntoViewIfNeeded();
