@@ -14,7 +14,7 @@
 // workflow-dock.spec.ts. Shell state is transient/local (never in the Y.Doc).
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, UNMIGRATED_AUDIO_MODULE } from './_helpers';
 
 async function gotoWorkflow(page: Page, opts: { shell: boolean }): Promise<void> {
   await page.goto(opts.shell ? '/rack?mode=workflow&shell=1' : '/rack?mode=workflow');
@@ -33,6 +33,19 @@ async function readParam(page: Page, nodeId: string, paramId: string): Promise<n
     },
     { nodeId, paramId },
   );
+}
+
+/** The node's WHOLE param map. The legacy-fallback test drives the docked
+ *  card's first fader and asserts *some* param moved — module-agnostic, since
+ *  the fixture module is derived (UNMIGRATED_AUDIO_MODULE) rather than named,
+ *  so no specific param id like delay's 'time' can be assumed. */
+async function readParams(page: Page, nodeId: string): Promise<Record<string, number>> {
+  return page.evaluate((nodeId) => {
+    const w = globalThis as unknown as {
+      __patch?: { nodes: Record<string, { params?: Record<string, number> } | undefined> };
+    };
+    return { ...(w.__patch?.nodes?.[nodeId]?.params ?? {}) };
+  }, nodeId);
 }
 
 const NODE = 'v1';
@@ -131,10 +144,14 @@ async function setZoomTier(page: Page, zoom: number, expectTier: string): Promis
 
 test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
   test('un-migrated module → placeholder in lane + legacy card operable in the dock', async ({ page }) => {
-    // 'delay' — a still-UN-migrated module (vca joined STRICT_FACES in P1
-    // batch 1, so it now renders the curated ModuleShell, not the placeholder).
+    // A still-UN-migrated module, DERIVED from STRICT_FACES rather than named:
+    // a hard-coded fixture rots as each P1 wave promotes more modules (vca was
+    // consumed by batch 1, delay by batch 3 — both turned this red for a
+    // non-bug). See UNMIGRATED_AUDIO_MODULE in _helpers.ts.
     await gotoWorkflow(page, { shell: true });
-    await spawnPatch(page, [{ id: NODE, type: 'delay', position: { x: 460, y: 240 } }]);
+    await spawnPatch(page, [
+      { id: NODE, type: UNMIGRATED_AUDIO_MODULE, position: { x: 460, y: 240 } },
+    ]);
 
     const laneNode = page.locator(`.svelte-flow__node[data-id="${NODE}"]`);
     await expect(laneNode).toHaveCount(1);
@@ -163,7 +180,7 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     await expect(faceplate.getByTestId('faceplate-close')).toBeVisible();
     await expect(faceplate.getByTestId('faceplate-collapse')).toBeVisible();
     await expect(faceplate.getByTestId('faceplate-tab')).toHaveText('MODULE');
-    await expect(faceplate.locator('.faceplate.audio')).toHaveCount(1); // delay = audio domain
+    await expect(faceplate.locator('.faceplate.audio')).toHaveCount(1); // fixture is audio-domain
 
     // …and the REAL, unchanged legacy card mounts verbatim in .editor at native
     //  scale (carrying the data-dock-card anchor so PickupCable/patch-menu work).
@@ -179,9 +196,10 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     await expect(placeholder).toBeVisible();
     await expect(laneNode.locator('[data-testid="dock-stub"]')).toHaveCount(0);
 
-    // 4) Drive a control in the mounted card → the graph param changes (operable).
-    //    (The first fader on the delay card is Time.)
-    const before = await readParam(page, NODE, 'time');
+    // 4) Drive a control in the mounted card → the graph params change
+    //    (operable). Module-AGNOSTIC: the fixture is derived, so we diff the
+    //    whole param map rather than naming one id.
+    const before = await readParams(page, NODE);
     const track = dockCard.locator('.fader-wrap .track').first();
     const box = await track.boundingBox();
     expect(box, 'a fader track should be present in the docked card').toBeTruthy();
@@ -190,11 +208,16 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     const cy = box.y + box.height / 2;
     await page.mouse.move(cx, cy);
     await page.mouse.down();
+    // The grab lands on the track's MIDPOINT, so there is guaranteed travel in
+    // both directions — a fixed drag off a rail-parked fader is the
+    // false-failure class faces-parity's dragKnob guards against.
     await page.mouse.move(cx, cy - 34, { steps: 6 });
     await page.mouse.up();
-    await page.waitForTimeout(120);
-    const after = await readParam(page, NODE, 'time');
-    expect(after, `time should change after driving the fader (was ${before}, now ${after})`).not.toBe(before);
+    await expect
+      .poll(async () => JSON.stringify(await readParams(page, NODE)), {
+        message: `${UNMIGRATED_AUDIO_MODULE}: driving the docked card's first fader commits a param change`,
+      })
+      .not.toBe(JSON.stringify(before));
 
     // 5) ESC closes the full-view faceplate; the placeholder remains in the lane.
     await page.keyboard.press('Escape');
@@ -623,11 +646,13 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   // only button (undiscoverable). It is now a clear, LABELLED pill; the wired path
   // (onExpand → dockStore.openFullView → the .dock-faceplate full view) is unchanged.
   test('the EXPAND affordance is a labelled button that opens the dock faceplate + ESC closes', async ({ page }) => {
-    // 'delay' — a still-UN-migrated module (vca is migrated as of P1 batch 1),
-    // so this stays the PLACEHOLDER's expand path; the migrated shell's expand
-    // is covered by workflow-shell-faces.spec.ts.
+    // A still-UN-migrated module (DERIVED — see UNMIGRATED_AUDIO_MODULE), so
+    // this stays the PLACEHOLDER's expand path; the migrated shell's expand is
+    // covered by workflow-shell-faces.spec.ts.
     await gotoWorkflow(page, { shell: true });
-    await spawnPatch(page, [{ id: NODE, type: 'delay', position: { x: 460, y: 240 } }]);
+    await spawnPatch(page, [
+      { id: NODE, type: UNMIGRATED_AUDIO_MODULE, position: { x: 460, y: 240 } },
+    ]);
 
     const laneNode = page.locator(`.svelte-flow__node[data-id="${NODE}"]`);
     const placeholder = laneNode.locator('[data-testid="module-shell-placeholder"]');
