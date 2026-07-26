@@ -1,0 +1,228 @@
+# patchtogether.live — THE Performance Plan
+
+Date: 2026-07-01 · Author: lead perf engineer (Fable synthesis of 5 domain audits: audio / video / main-thread / stability / startup, each adversarially verified)
+Verification legend: **[V]** = adversarially verified true · **[V↓]** = verified but impact downgraded by the verifier · **[U]** = verifier did not rule (evidence cited but unadjudicated — re-check citations before building) · Refuted items live ONLY in §5.
+
+---
+
+## 1. Executive summary — the five biggest wins
+
+1. **Finish the #996 rAF coalescing everywhere** — migrate the ~55 remaining audio/meter card loops **and** the 29 video-preview present loops (full-res GL blit + drawImage sync each frame, zero off-screen gating) onto the shared `onMeterFrame` ticker. Single largest remaining slice of the SHOES1 main-thread contention → output-underrun class. [V / P0]
+2. **Split the 5 MB boot mega-chunk** — `/` ships 1.96 MB compressed JS (one 1.45 MB-br chunk: all 191 cards + 271 defs + doc prose, eagerly globbed) before ANY pixel or sound. Lazy per-card imports + docs-prose dedupe target boot < 700 KB compressed. [V / P0]
+3. **Actually terminate AudioWorklet processors on module delete** — 0 of 69 processors ever `return false`, Faust `destroy()` has zero call sites; every delete/preset-slot cycle permanently accumulates live processors on the render thread. Monotonic render-budget drain compounding the underrun class. [U / P0]
+4. **Kill the per-Yjs-update full-graph cascade** — every doc update synchronously rebuilds the whole snapshot, hands xyflow all-new flowNodes/flowEdges identities, re-walks the reconciler, and fans out to per-card `ydoc.on('update')` observers doing O(E) proxy walks. The still-open #719 memoization TODO. [V(partial)/U / P1]
+5. **Make underruns visible and self-mitigating** — zero runtime underrun detection today (grep `renderCapacity|playoutStats` = 0) with a Tight-12 ms default; add the detector + "switch to Stable" nudge + an audio-first video frame governor (video halves to 30 fps under audio pressure). [V / P1]
+
+---
+
+## 2. Current state — already fixed; do NOT relitigate
+
+- **#996 meter-frame ticker** shipped and works (`packages/web/src/lib/ui/meter-frame.ts:86-103`, IntersectionObserver + document.hidden gating, per-subscriber error guards). Only 5 cards adopted (Drumseqz/Kria/Macseq/Polyseqz/Scope) — and KriaCard's migration is incomplete (dead `onMeterFrame` import at KriaCard.svelte:17; raw playhead loop still at :214-224). The remaining ~55 audio + 29 video card loops are §3's P0-1.
+- **#996 also fixed** the MACSEQ stall/edge correctness (macseq now uses `createEdgeCounter`).
+- **#719 write-storm fix** landed (render-local CV clone) — but only the **store→render** direction. The read-side (per-tick SyncedStore proxy scans) and the render-loop→store reflect writes (Backdraft family) are still open (P1-3, P2-7).
+- **Drag input paths are already correct** — knob/fader writes rAF-coalesced via `drag-commit.ts:73-117`; node positions write on dragstop only (Canvas.svelte:2275-2298). Prior measurement proved the clock/graph survive the storm; remaining drag cost is downstream fan-out. **Do not re-optimize input handlers.**
+- **Fix-E worker co-processor**: shipped flag-OFF (`worker-bridge.ts:~29-49`; `renderLocus:'worker'` at acidwarp.ts:134 / toybox.ts:303 / vfpga-runner.ts:136; transparent fallback in worker-proxy-handle.ts). **Owner PARKED 2026-07-01** — default flip requires explicit un-park + Phase-A A/B measurement + the currently-blocked webgl re-attest. Only the worker was parked; per-card present coalescing was explicitly NOT parked (folded into P0-1).
+- **A4 DSP oversampler is IN PROGRESS on this branch** (`feat/dsp-oversampler`, untracked `packages/dsp/src/lib/oversample.ts`) — do not re-propose.
+- **#991 LRU voice allocator / #990 held-note gates** are sound; only a P3 lane-write dedup remains.
+- **Verified-good surfaces (anti-churn guardrail — spend nothing here):** CF Pages immutable + brotli caching (`cache-control: public, max-age=31536000, immutable` verified live); lazy per-module worklet/wasm loading with per-context dedupe (faust-runtime.ts:21,47-50; clouds.ts:322-325); save/quicksave one-shots (persistence.ts:178,252; IndexedDB preset slots); relay store debounce 2 s/5 s; docs fully prerendered (the 7.6 MB server manifest chunk is build-time only, no `?raw` leakage into client chunks); scheduler-clock design (worker ticker, 25 ms tick, 200 ms lookahead, per-subscriber guards); cross-domain CV bridges (32-sample tail reads — cheap); OUTLINES trig hoisting (#699); milkdrop already allocate-once + texSubImage2D (see §5!).
+- **Unshipped from the prior dsp-stack audit, tracked THERE not here:** A1 limiter pump (audio-out.ts:133-140) and A2a 48 kHz pin (Canvas.svelte:4414). Owner question in §6.
+
+---
+
+## 3. Ranked improvement backlog
+
+Format per item: What / Evidence / Expected win / Effort / Risk + test-gate churn / How to MEASURE.
+
+### P0
+
+#### P0-1 · Finish the rAF coalescing program: ALL remaining per-card loops onto `onMeterFrame` [V — audio#1 P0, video#1+mainthread#1 (U), mainthread#6, stability#5]
+- **What:** Mechanically migrate every remaining self-rescheduling card rAF onto the shared ticker, classifying each loop: **paint-only** → `onMeterFrame(cardEl, draw)` (visibility-gated); **stateful** (input polls, WASM pumps, capture, engine→store sync) → `onMeterFrame(null, cb)` (never gated). Three populations:
+  - ~55 audio/meter/playhead card loops (e.g. AnalogVco, GraphicEq, Sequencer, Moog960, Spectrograph, Score, Writeseq, Cartesian, Featurecv, Twotracks, Clipplayer; KriaCard leftover loop at KriaCard.svelte:214-226 — 2-line fix, it already imports the ticker).
+  - 29 video-preview present loops doing `videoEngine.blitOutputToDrawingBuffer(id)` (full-res pass, engine.ts:1033-1055) + `ctx2d.drawImage(engine.canvas)` (a GPU pipeline sync) per frame with **zero** IntersectionObserver adoption (VideoOutCard.svelte:107,213-272; BackdraftCard.svelte:245-291; Milkdrop, Recorderbox, Toybox, B3ntb0x, …). An off-screen video card today still costs a full-res blit + GL sync every frame.
+  - Split-outs that must NOT be gated: BackdraftCard.svelte:289 `syncMirrorFromEngine`, RecorderboxCard capture drawImage + `recorder.frame()` (:207-242), Gamepad/Doom/game polls (Doom’s loop includes a 1 MB BGRA swap + putImageData). Also delete the busy-poll retry branches (e.g. GraphicEqCard.svelte:100-113) — the ticker re-invokes next frame.
+- **Evidence:** meter-frame.ts:86-103; forensics plan §2 C1#2 ("63 per-card rAF loops" = the underrun driver); PR #996 body defers "~50 cards fast-follow"; Fix-E plan §3 names the per-card present sync "a separate, cheaper win" (unparked).
+- **Expected win:** N−1 rAF callbacks/frame; ALL present/paint work stops for off-screen cards; for video cards this also removes N full-res GL syncs/frame when scrolled away. Direct reduction of the measured underrun surface.
+- **Effort:** M (mechanical, wide). ~6 batches of ~10 cards/PR.
+- **Risk + gates:** Mis-classifying a stateful loop as paint-only silently breaks off-screen behavior (recordings drop frames, gamepads stop calibrating, games pause) — classification review per card. VRT should be paint-identical (driver changes, not paint code) — run `task vrt` per batch and inspect; flake-check animated cards 3×; no ART/attest churn (cards are lib/ui, not in any attest basis). ~29-file video diff will conflict with in-flight card PRs — sweep after each merge.
+- **Measure:** Headed-Chrome longtask counter (forensics plan §3-D) + count rAF callbacks/frame via a debug counter in the ticker, on a 20-card mixed patch, before/after each batch; DevTools Performance trace main-thread self-time of `Animation Frame Fired`.
+
+#### P0-2 · Split the landing-route boot mega-chunk (lazy cards) [V — startup#1 P0]
+- **What:** Convert `modules-card-map.ts:26-28` from an eager glob of all 191 `*Card.svelte` (2.8 MB source) to non-eager `() => import()` loaders behind a `LazyCard` wrapper registered per type in SvelteFlow nodeTypes (placeholder sized by existing rack-size tags). Keep def registries (audio index.ts:35-38, video :19-22, meta :16-19; 271 files) **eager** — graph semantics need port shapes synchronously.
+- **Evidence:** Live-verified: `/` Link header = 43 modulepreloads totaling 1,961,168 B compressed; dominant chunk B4GYW3O4.js = 1,447,168 B br (local twin ChGKs5oR.js = 4,971,896 B raw / 1,510,136 B gz; contains 71 `AudioWorkletNode` hits + 182 docs blobs). routes/+page.svelte:22 renders Canvas → the chunk gates first paint AND first sound. Neither modules-card-map.ts nor Canvas.svelte is in any attest basis (verifier checked resolveWebglBasis + collab-attest-lib).
+- **Expected win:** ~2.8 MB card source (+ per-card deps) off the critical path; with P1-5 docs dedupe, boot JS from 1.96 MB → target < 700 KB compressed. Directly cuts time-to-first-canvas and time-to-first-sound.
+- **Effort:** L.
+- **Risk + gates:** Cards mount one microtask later → possible VRT baseline churn (settle-loop should absorb; regen linux+darwin via vrt-update.yml if not); 3×-flake-check the lazy-mount path against per-module-per-port + behavioral rows (awaited locators → low churn). Worklet `?url` imports live in defs, not cards — unaffected.
+- **Measure:** `du`/gzip of `.svelte-kit/output/client/_app/immutable/chunks/*` before/after + curl the dev-deploy `/` Link-header byte total; Lighthouse TTI/FCP on dev.patchtogether.live.
+
+#### P0-3 · Terminate AudioWorklet processors on module delete (Faust destroy + shared lifecycle) [U — stability#1; verifier did not rule — re-verify the greps before building]
+- **What:** Two phases. **Phase 1 (S):** call `FaustAudioWorkletNode.destroy()` in the ~15 Faust module disposes (or centralize in faust-runtime's returned handle) — faustwasm's destroy() closes the port and makes process() return false (faustwasm esm/index.js:529-531, 621-625). **Phase 2 (L):** shared `lib/worklet-lifecycle` — port message `{type:'dispose'}` → processor frees state and `return !this.disposed`; wire into every own-code handle dispose.
+- **Evidence:** 136 unconditional `return true` across packages/dsp/src, zero lifecycle port messages, zero production `.destroy()` call sites; module disposes only stop+disconnect (adsr.ts:157-166, reverb.ts:85-89); Web Audio lifetime rules keep a `return true` processor alive for the context's lifetime regardless of connections. Preset-slot switches rebuild the whole patch against the SAME context → 20-module patch × N switches = 20N orphaned processors.
+- **Expected win:** Flat (instead of monotonic) audio-thread CPU/memory across a session with deletes/slot switches; removes a whole underrun-compounding class for long live sets.
+- **Effort:** Phase 1 S · Phase 2 L.
+- **Risk + gates:** Phase 1: post-dispose setParam on a closed port → try/catch; web-package only, **no ART churn**. Phase 2 touches all 69 worklet sources → re-pins ~48 ART `.sha` files (audio unchanged — re-pin LAST, confirm only `.sha` moved, per art-sha-pin-regenerate-last) + must respect the no-top-level-export worklet rule. Unit-pin: disposed processor's process() returns false.
+- **Measure:** `chrome://tracing` audio thread CPU% + a debug live-processor counter, over a scripted 10× add-20-modules/delete-all soak; DevTools heap snapshot of the AudioWorkletGlobalScope before/after.
+
+### P1
+
+#### P1-1 · Coalesce the 691 `readLive` Knob/Fader rAF loops through the shared ticker [V↓ — audio#2 downgraded P0→P1; mainthread#2 (U) concurs on mechanism]
+- **What:** Knob.svelte:91-108 / Fader.svelte:~137-155 each spin a permanent private rAF when `readLive` is passed (691 `readLive={` sites across 115 card files → ~100-250 live loops on a real patch), each calling `engine.readParam` (engine.ts:588-599: map lookups + key-string alloc + 32-sample analyser read when CV-tapped) with no visibility gate. Move the poll onto `onMeterFrame` (subscription per control, el = knob root) and short-circuit to prop-reflect when the engine reports no modulator tap for (nodeId,paramId).
+- **Verifier corrections baked in:** meters still dominate per-tick cost (a knob tick is µs of lookups vs a 2048-float copy + canvas repaint) — hence P1 not P0; and the proposed epsilon-skip is redundant (Svelte 5 `$state` already no-ops equal primitive writes) — the real win is rAF-entry coalescing + visibility gating + killing per-frame key-string GC churn. Occurrence count is 691, not 757.
+- **Expected win:** Hundreds of rAF dispatches/frame collapse to one; off-screen knobs free; unmodulated knobs stop polling entirely.
+- **Effort:** M (2 shared controls, not 691 sites).
+- **Risk + gates:** LFO-patched knobs must still rotate (keep polling when `engine.paramTaps` has an entry — engine.ts:592-598); preserve the knobValues-cache "dead knob on load" semantics (engine.ts:570-587). Drag path keeps bypassing the ticker. Unit + one VRT pass; no ART/attest.
+- **Measure:** rAF-callback counter + DevTools allocation sampling (key-string churn) on a 30-node patch, before/after; longtask delta.
+
+#### P1-2 · Runtime underrun detection + surfacing + patch-aware buffer default [V — audio#3]
+- **What:** (a) Capability-gated poll of `ctx.playoutStats`/`renderCapacity` ('playoutStats' in ctx; fallback longtask heuristic), an "underruns: N" counter next to the footer latency readout, and a one-tap "switch to Stable + reload" nudge after repeated events. (b) Patch-aware boot default: video-domain nodes present → default Balanced/Stable instead of Tight (the AudioContext boots on user gesture after patch sync, so the patch is known).
+- **Evidence:** Zero uses of renderCapacity/playoutStats/onprocessorerror in packages/web/src; ladder defaults 'tight' 0.012 s (audio-latency-store.svelte.ts:44-76), applied only at construction (Canvas.svelte:4414); footer readout is static (Canvas.svelte:5227). Forensics §3-B3 proposed the nudge; never shipped. Owner's SHOES1 underrun happened at Balanced with only a manual selector as mitigation.
+- **Expected win:** The recurring owner symptom becomes observable + self-mitigating; also the sensor that gates P1-4's governor.
+- **Effort:** S.
+- **Risk + gates:** Chromium-only APIs — feature-detect; Playwright can't see device underruns (null sink) → gate = unit tests on the store logic + owner hardware verify. Zero ART/VRT/attest churn.
+- **Measure:** The feature IS the measurement: underrun counter over a 10-min heavy-patch session on owner hardware, Tight vs Stable, before/after other waves land.
+
+#### P1-3 · Snapshot-derived index for per-tick SyncedStore proxy scans [V — audio#5]
+- **What:** 19 module files under audio/modules enumerate `Object.values(livePatch.nodes|edges)` (the SyncedStore proxy over Yjs, graph/store.ts) at 40 Hz inside scheduler ticks — clipplayer.ts:304-309 (×2/tick via transportRunning :582 + transportBpm :622), timelorde.ts pollWizardGate scans ALL edges every tick, sequencer.ts:337/340, etc. Add a tiny snapshot-bus-derived index (timelorde node id, per-node inbound-port sets, bpm/running as plain numbers) recomputed once per snapshot emission; tick() reads plain objects.
+- **Expected win:** Removes proxy-materialization × 19 subscribers × 40 Hz from the main thread on large patches; unblocks P2-1 (transport-CV gating uses the same connectivity set).
+- **Effort:** M.
+- **Risk + gates:** Staleness on node add/remove + rackspace rebind — invalidate from the snapshot bus (one Yjs subscription already exists). Failure mode is benign (wrong transport button/BPM). Behavioral + sequencer e2e cover; no ART/VRT churn. The optional microtask-coalesce of snapshot.ts:282-286 (sync rebuild per ydoc update) belongs to P1-6 — coordinate.
+- **Measure:** DevTools Performance trace: self-time of tick handlers on a 30-node patch during 60 s playback, before/after; count of proxy `get` traps via a temporary instrumented wrapper.
+
+#### P1-4 · Audio-first video governor + present-path coalescing [V — audio#8; present-coalescing largely lands via P0-1]
+- **What:** (1) Off-screen present skipping = P0-1's video batch (coordinate, don't double-build). (2) Governor: when P1-2's detector (or longtask rate) trips, halve `video/engine.ts` step() to 30 fps until pressure clears (ensureLoop :1328-1349 currently steps every rAF unconditionally while nodes.size > 0).
+- **Evidence:** SHOES1 correction: the video half (5 video modules + qbert + recorderbox encode) starves the audio output buffer; worker offload owner-parked; tickCvBridges verified cheap (honest negative).
+- **Expected win:** Degraded video instead of glitched audio under pressure — for a music instrument, the correct trade.
+- **Effort:** M. **OWNER REVIEW-BEFORE-MERGE** (visible frame-rate change; governor also halves game-module tick rates — pong/modtris/doom run in step(); the preview must cover that). Ship flag-gated, OFF in test mode.
+- **Risk + gates:** VRT frame-timing specs — governor off under test flags; scheduling-only changes don't churn the WebGL attest basis logic, but verify with computeWebglHash before assuming.
+- **Measure:** Underrun counter (P1-2) + `ctx.frameRate` EMA (engine.ts:983-986) on the owner's SHOES1-class patch, governor on/off.
+
+#### P1-5 · De-duplicate + lazy the docs prose (~350 KB compressed off boot) [V — startup#2]
+- **What:** Step 1 (ship now): drop the `MODULE_DOCS` import from Canvas.svelte:130 / NodeContextMenu.svelte:27 — its ONLY runtime use is a boolean at Canvas.svelte:2421; derive from the def registry. Step 2: keep ONE client copy of the prose and make it lazy — strip `docs:` from client def bundles via an AST/marker-based build transform (source stays co-located per the living-docs directive) and `await import('$lib/docs/module-docs.generated')` on first annotate/panel open. **Verifier catch:** after step 2 strips def.docs, step 1's boolean must come from a tiny generated documented-type-id Set, not def.docs.
+- **Evidence:** module-docs.generated.ts = 809,805 B in the boot path; prose ships TWICE (Canvas chunk BrdavWVg.js 991 KB with 182 'explanation' blobs + the def mega-chunk with the co-located copy; 183 def files carry `docs:` ≈ 0.66 MB); PatchPanel actually reads def.docs (PatchPanel.svelte:81/236).
+- **Effort:** S (step 1) + M (step 2). Attest-free (Canvas in neither basis; vite.config.ts not in the webgl basis; video def sources unmodified → docs-hash-transparency honored).
+- **Measure:** Bundle-size diff of the two chunks (gzip bytes) + Link-header total.
+
+#### P1-6 · Kill the per-update full-graph cascade: memoize flowNodes/flowEdges + structural-share the snapshot + scope per-card observers [U (mainthread#3, #4; startup#4) — highest-value unadjudicated item; re-verify citations first]
+- **What:** Three coordinated seams:
+  - (a) **Canvas-side (attest-free, do first):** flowNodes/flowEdges $effects (Canvas.svelte:821-917) rebuild ALL FlowNode/FlowEdge objects with fresh identities on every snapshot → xyflow re-diffs everything and every card's `$derived(data.node)` tree wakes. Reuse prior objects when inputs are reference-equal.
+  - (b) **Bus-side:** structural sharing in buildPatchSnapshot (snapshot.ts:145-186 clones every node + 2 sorts per update; doc.on('update') → synchronous recompute at :283-286) with per-node dirty tracking; optionally coalesce emits to ≤1/frame with trailing flush. **snapshot.ts IS in the collab-attest basis (collab-attest-lib.ts:73) → one-time DB+relay re-attest.** Reconciler param-diff (reconciler.ts:168-180) becomes skippable for reference-equal nodes.
+  - (c) **Observer scoping:** PatchPanel.svelte:182-203 registers a per-card `ydoc.on('update')` walking ALL edges through proxies per update (O(E) × 30 cards × 60/s during a drag ≈ 72k proxy reads/s); scope to an edges-map observer + memoize portConnections. ModuleTitle.svelte:73-91 (164 cards) reads from the node prop instead. Extract the 17 sequencer cardVersion pumps into one snapshot-bus subscription.
+- **Expected win:** One knob write wakes ONE card instead of 30; remote drags stop replaying a full O(N+E) cascade on every peer at frame rate. Feeds the underrun CPU budget directly.
+- **Effort:** L (this is the riskiest item in the plan).
+- **Risk + gates:** Snapshot identity/ordering is load-bearing for the B3 "heard but didn't see" fix and collab convergence — never leak Yjs proxies, preserve id-sorted determinism; cover with @collab param-sync specs (the DOOM gate) + behavioral + per-module e2e, 3× flake-check; verify with the perf-node-drag / perf-glitches-drag suites (feat/seq-clock-wire) before/after. Sequence: (a)+(c) first (attest-free), (b) last (accept the re-attest).
+- **Measure:** Longtask count + trace self-time during a 10 s remote-knob-drag replay on a 30-card/40-edge patch; count of card re-renders via a $effect counter.
+
+#### P1-7 · Close the AudioContext on rack switch; lose the GL context [U — stability#2]
+- **What:** Canvas onDestroy (:4921-4931) disposes reconciler + engine but never `audioCtx.close()` (grep = 0 hits) while `{#key data.rackspace.id}` (+page.svelte:622) remounts Canvas per rack navigation → each switch leaks a whole running audio graph + render thread (compounded by P0-3: worklets never die). VideoEngine.dispose (engine.ts:868-907) never calls `WEBGL_lose_context.loseContext()` (~16-context browser cap). Fix: `void audioCtx?.close().catch(()=>{})` after engine.dispose(); loseContext() in VideoEngine.dispose.
+- **Effort:** S. **Risk:** ordering (close AFTER disposes); churns rack-switch e2e rows — run 3×; no ART/VRT/attest.
+- **Measure:** e2e/unit assert old ctx `state==='closed'` after switch; chrome://media-internals audio stream count + heap snapshot across 5 rack switches.
+
+#### P1-8 · Per-module error containment in the video engine loop [U — stability#3]
+- **What:** engine.ts:998-1002 calls `surface.draw(ctx)` unguarded; the rAF driver (:1328-1350) schedules the next frame at the loop TAIL — one throw freezes ALL video permanently. Contrast: scheduler-clock.ts:79-91 and meter-frame.ts both guard per-subscriber. Wrap per-node draw + cv/texture bridge ticks in try/catch with a per-node consecutive-failure counter → quarantine-after-N (skip + console.error + surfaced state); schedule rAF in a finally.
+- **Effort:** S. **Risk:** masking real bugs — the quarantine counter is mandatory, not optional. engine.ts is plausibly in the WebGL attest basis → legitimate one-time re-attest; **local `task webgl:attest` is currently blocked by the 2 unrelated video-orientation camera failures — clear that first** (also blocks P2-3/P2-4/P2-5). Unit: a throwing module must not stop a sibling's frames.
+- **Measure:** Unit test + manual: inject a throwing draw, confirm sibling FPS unaffected.
+
+#### P1-9 · Recorderbox capture path: encode from the engine canvas, drop the captureEl hop [U — video#2]
+- **What:** While recording, every frame does blit + preview drawImage + a FULL-ENGINE-RES drawImage(engine.canvas → captureEl) at RecorderboxCard.svelte:237 + mediabunny CanvasSource(captureEl) (recorderbox-recorder.ts:754) → two full-res copies + two GL syncs per frame at 1024×768 (~3.1 MB each) on top of the H.264 encode. Replace with a custom sample source doing `new VideoFrame(videoEngine.canvas, {timestamp})` right after the blit (GPU-backed), captureEl as fallback.
+- **Effort:** M. **Risk:** CFR catch-up duplicates the current canvas when behind (recorderbox-recorder.ts:897-899) — must snapshot per call, not alias; real-hardware verify (CI lacks H.264 — capability-gated); churns recorderbox unit suite only.
+- **Measure:** Trace: per-recorded-frame main-thread ms during a 60 s 1024×768 recording, before/after; frame-drop count from the recorder stats.
+
+#### P1-10 · Synesthesia video-in: replace the getImageData pipeline stall with the shapegen FBO-readback pattern [U — video#3]
+- **What:** SynesthesiaCard.svelte:144-171 per channel per frame: full-res blit → drawImage → **ctx2d.getImageData** = full GL pipeline flush + CPU readback, up to 120×/s. Port shapegen.ts:295-315: render source texture into a persistent 64×48 FBO, readPixels off that (~14 KB); optionally PIXEL_PACK_BUFFER + fenceSync for zero-stall 1-frame-latent reads.
+- **Effort:** S. **Risk:** ±1 frame meter lag (imperceptible); card file → no attest churn; synesthesia behavioral rows flake-check 3×.
+- **Measure:** Trace: getImageData/GL-flush time gone from the frame profile with a video source patched into both channels.
+
+#### P1-11 · Zero-JS branded splash in the empty app shell [V — startup#3]
+- **What:** `/` is ssr=false (routes/+page.ts:4-6) and the live HTML is a 1,236-byte contentless shell → blank white until the whole bundle parses. Add a pure-CSS splash/skeleton removed on hydration. **Verifier caveat:** app.html is shared with the PRERENDERED /docs pages which ship real SSR content — gate the splash on an empty body or scope it to the canvas route.
+- **Effort:** S. **Risk:** pre-hydration VRT/e2e frames — check waits. Perceived-latency mitigation only; P0-2 is the real fix.
+- **Measure:** First-contentful-paint on a cold throttled load, before/after.
+
+### P2
+
+#### P2-1 · Transport-CV drains: skip unpatched ports via the P1-3 connectivity set [V↓ — audio#4 downgraded P1→P2]
+transport-cv.ts:112-122 unconditionally copies a 2048-float analyser buffer per port per 25 ms tick (drain() :131-149 hits all 13 ids; **verifier correction:** non-extended consumers early-return 7 of them → realistic worst case ~62-104 copies/tick ≈ 100-200 µs, <1% of a core — a tidy, not an underrun lever). timelorde start/stop reads (:482-483) same treatment; its pollWizardGate ALREADY early-returns (don't "fix" that). Skip drainOne for edge-less ports using the snapshot-bus connectivity set. Effort S; gates = transport-cv unit + per-port e2e rows; detector state safe (silence ConstantSource holds 0). **Measure:** memcpy count/tick via counter; trace delta.
+
+#### P2-2 · Audio-thread hygiene: hoist per-block allocations + finish the denormal-floor sweep [V — audio#6]
+Hoist twotracks.ts:884-887 (4× Float32Array/block), elements.ts:919, synesthesia.ts:275-285 (~8 arrays/block) to instance scratch (chowkick-dsp idiom). Extend the (not-yet-shipped) A5 denormal pass to ALL recursive cores: moog-ladder/resofilter (still zero floors), aquatank (zero), spring-reverb-dsp (:254 comment says denormal but only checks isFinite — denormals ARE finite, no actual flush), pentemelodica filter states, cloudseed/treeohvox remainders. Effort S. Gates: hoists are behavior-identical → only ART `.sha` re-pins (re-pin LAST, confirm no `.f32` moved); denormal floors gated by new "states never denormal" unit tests (no .f32 goldens exist for most). **Measure:** long-tail CPU spike test: feed a decaying tail, sample worklet render time (or tracing audio-thread CPU) at t+10 s.
+
+#### P2-3 · Generalize the step() dead-branch gate (reachability culling) [V — video#5]
+engine.ts:998-1002 draws EVERY node every frame; isOutputConnected (:1463-1474) has exactly ONE adopter (mandelbulb.ts:617-618). Backdraft maintains a 31-slot engine-res feedback ring (:138-142) even unwired + off-screen. On topoStale compute reverse reachability from consumers + a card-registered "watching" set; skip draw() for unreachable nodes whose def opts in (`pausableWhenUnobserved`). **Verifier corrections:** the watching set is load-bearing (all 29 preview cards blit their own module — without P0-1's gating, reachability culls almost nothing); culling freezes time-evolving state → keep it opt-in (games/feedback/S&H excluded); engine.ts + defs are in the WebGL attest basis → **legitimate re-attest, plan for it** (after the attest blocker clears). Effort M. Sequence AFTER P0-1. **Measure:** `ctx.frameRate` EMA + GPU frame time with 3 unwired sources off-screen.
+
+#### P2-4 · SCOPE/2D texture bridges: half-res canvas + dead-bridge gate [V — video#7]
+engine.ts:1194 allocates bridge canvases at full 1024×768; tickVideoTextureBridges (:1296-1326) re-uploads the whole canvas via texSubImage2D EVERY frame per drawFrame bridge (~3.1 MB/frame ≈ 189 MB/s per scope edge) — the exact class video-frame-upload.ts:5-9 was built to kill. Half-res (512×384) + LINEAR upscale. **Verifier corrections:** the dead-bridge gate is near-worthless until P2-3's reachability exists (bridges only exist while their edge does) — sequence accordingly; half-res is a visible look change → **OWNER REVIEW-BEFORE-MERGE** + VRT churn on scope-input baselines (classify diffs, don't rubber-stamp) + engine.ts re-attest. Effort M. **Measure:** texSubImage2D bytes/s via a counter; GPU trace.
+
+#### P2-5 · Fix-E worker co-processor default flip — MEASUREMENT-GATED, OWNER-PARKED [V — video#6]
+Sequence if un-parked: (1) plan Phase A headed-Chrome longtask/outputLatency A/B (copy-back ≈1.7 ms/frame/module real-GPU can eat the win); (2) clear the video-orientation webgl:attest blocker (worker-bridge.ts is in the basis → re-attest is mandatory, not optional); (3) if A pays, flip default with fallback intact, review-before-merge draft + real-Safari check. Do NOT extend to input-consuming modules (backdraft) until the plan §2 input-transfer economics are answered. Effort L.
+
+#### P2-6 · B3NTB0X dynamic oversample downshift [U — video#9]
+OVERSAMPLE=8 → RGBA16F passes at 8192×768 (b3ntb0x.ts:86,94-102,154,461) — largest single-module fill cost; cannot take the worker path (consumes video input). Read the engine frameRate EMA in draw(); below ~45 fps sustained, reallocate FBOs at OVERSAMPLE=4 with hysteresis (or a static quality param). **OWNER REVIEW-BEFORE-MERGE** (NTSC artifact character changes) + VRT churn + webgl-attest basis; keep DRS deterministic paths pinned at 8. Effort M. **Measure:** frame time with b3ntb0x + one source, 8 vs 4.
+
+#### P2-7 · Throttle engine→store reflect writes in video draw loops (Backdraft family) [U — mainthread#5]
+BackdraftCard.svelte:286-318 reads 4 params through the live proxy per frame and writes the live store on gate flips ('guard:allow-raw-write', :306/:315) — a fast LFO = up to 60 Yjs transactions/s, each triggering the FULL P1-6 cascade. The #719 storm class in the reverse direction. Throttle the reflect to 250-500 ms trailing (store copy is for persistence/collab, not frame-accurate display); audit B3ntb0x/Bentbox same pattern. Effort S; mirror-sync unit churn only. **Measure:** Yjs update count/s with a square LFO on shape, before/after.
+
+#### P2-8 · Recorderbox capture queue: fail loud, cap depth [U — stability#4]
+recorderbox-recorder.ts:838-839 swallows drain rejection → drain exits permanently, worklet stays armed, CaptureDrainQueue grows unbounded (~20+ MB/min) while the UI looks live (recorderbox-capture-drain.ts:71-77 "never drops" by design). On rejection: disarm postMessage + captureDrain.close() + flip the existing audio-failed state; belt-and-suspenders 30 s queue cap. Effort S; recorderbox unit tests only. **Measure:** unit — reject from add(), assert queue stops growing + failure surfaced.
+
+#### P2-9 · BLOOD wasm rooted by glue listeners; dispose is a no-op [U — stability#6]
+BloodRuntime.dispose() only flips a flag (blood-runtime.ts:294-296); emcc glue registers ~7 document/global listeners with 3 removals → the whole instance (wasm + MEMFS RFF/ART/SOUNDS ≈ 40-80 MB) stays reachable per delete/re-add. **Verify FIRST with 3-cycle heap snapshots** (listeners may be lazy); then wrap glue registration for removal on dispose, or cache one Module singleton per session. Same one-time check for snes9x (snes9x.ts:528-540). DOOM is fine (0 glue addEventListener; documented ref-drop, doom-runtime.ts:857-870). Effort M; keep the def hash-neutral (verify before merge).
+
+#### P2-10 · Wire-rate floor for cursor awareness + drag commits (ProMotion 120 Hz → ~30 Hz) [V — startup#5]
+Both schedule via rAF = display rate (Canvas.svelte:4519-4534 cursor flush; drag-commit.ts:94-98 pump; the "~60Hz" comment at :4466 is wrong on 120 Hz screens). Min-interval floor ~33 ms with trailing flush → wire rate decoupled from monitor Hz; each remote message currently triggers the full P1-6 cascade on ≤3 peers. Effort S; drag-commit has injectable raf seams for tests; no attest basis files. **Verifier note:** ear-check local param stepping during fast sweeps. **Measure:** Yjs update + awareness msg counts/s on a 120 Hz display during a drag.
+
+#### P2-11 · Media bytes in the Y.Doc → content-addressed R2 (DEFERRED unless multi-user media racks matter) [V — startup#8]
+picturebox images (picturebox-limits.ts:3-5, ≤8/rack) + samsloop samples (~4.21 MB/instance measured, mostly CRDT proxy overhead — which R2 also fixes) ride the doc → multi-MB initial sync through the single-process relay. Store {hash,size,mime} in the doc, bytes in R2 over HTTP. Touches mutate.ts + multiplayer → **collab re-attest**; export/import must stay lossless. Interim cheap win: per-image byte cap + WebP re-encode. Effort L. Counterpoint verified: Yjs GC means param history does NOT bloat docs (54-81 B after 10k overwrites — independently reproduced).
+
+### P3 (opportunistic — fold into adjacent work, never a dedicated PR)
+
+- **P3-1 Poly lane write dedup** [V — audio#9]: poly.ts:208-218 writes pitch+gate setValueAtTime for all 5 lanes/step even on mono content (≤15 events/step). Per-lane last-written cache inside PolySender; MUST invalidate on silence() (cancelScheduledValues + set 0) and never regress the #990 writeGate:false held-note path. Do when next touching poly.ts.
+- **P3-2 Faust factory memoization** [V↓ — audio#7 downgraded P2→P3; stability#7 concurs]: faust-runtime.ts:53 runs loadDSPFactory unconditionally per instantiation (addModule IS cached, :43-51). ~5-line `Map<string, Promise<Factory>>` keyed by artifact name (factory is context-independent; structured-cloned into processorOptions so sharing is safe). Verifier: assets are immutably HTTP-cached + wasm compiles off-main-thread → churn, not a stall; 14 files route through it, not ~30.
+- **P3-3 lookupInput/isOutputConnected caching** [U — video#10]: engine.ts:1406-1449 allocates + sorts a hits array per input per frame; :1463-1474 O(edges) per gated draw. Precompute a Map on recomputeTopo (invalidate exactly where topoStale is set). Pure refactor; engine.test.ts covers.
+- **P3-4 flowEdges hover churn** [V — mainthread#8, rec corrected by verifier]: Canvas.svelte:890-917 rebuilds ALL FlowEdge identities on hover enter/leave to class 1-3 edges. **Pure-CSS via xyflow attrs is NOT implementable** (edges expose only data-id; CSS can't compare attr values across elements; note data-hovered-node already exists on the flow root, Canvas.svelte:4810-4822). Use a small JS effect toggling the class on matching `[data-id]` edge elements, or fold into P1-6(a) delta for free. Respect the cables-on-top-during-drag z-order rule.
+- **P3-5 Y.UndoManager stack cap** [U — stability#8]: store.ts:65-73 UndoManager has no stack cap → marathon sessions grow monotonically. On 'stack-item-added', splice beyond ~500 items; pin with a unit test. (doc.gc verified true under syncedstore — the doc itself is fine.)
+- **P3-6 /docs/modules index trim — corrected scope only** [startup#6 was REFUTED as written, see §5]: drop only the `io` + `docs` fields from the index page load (grep: the page never references m.io/m.docs); KEEP inputs/outputs/params (IoDiagram + tables render them). Savings well under the original ~2.4 MB claim; one-time cacheable static HTML → P3.
+- **P3-7 Relay WS preconnect** [V — startup#9]: `<link rel='preconnect'>` for the Fly relay origin on /r routes. 5-minute nicety.
+
+---
+
+## 4. Sequencing — dependency-ordered waves (shippable PRs)
+
+**Cross-cutting first:** clear the **webgl:attest blocker** (2 video-orientation camera-spec failures block ANY local re-attest) before Wave D/E items that touch the video-engine basis (P1-8, P2-3, P2-4, P2-5, P2-6).
+
+- **Wave A — quick wins, safe-to-automerge when green + reviewed + covered** (each S, independent):
+  A1 KriaCard leftover loop (2 lines, P0-1 down-payment) · A2 P1-2 underrun detector + nudge (buffer-default change = flag for owner) · A3 P0-3 Phase 1 Faust destroy() · A4 P1-5 step 1 (drop MODULE_DOCS from Canvas) · A5 P1-7 AudioContext close + loseContext · A6 P2-8 recorderbox drain fail-loud · A7 P1-11 splash (gated for prerendered docs routes) · A8 P3-2 Faust factory memo (fold into A3's PR) · A9 P2-10 wire-rate floor.
+- **Wave B — the rAF coalescing program (P0-1 + P1-1):** ~6 batch PRs of ~10 cards (start: VideoOut, Recorderbox, Backdraft, Milkdrop, Toybox, B3ntb0x, GraphicEq, Sequencer playheads), then the Knob/Fader ticker PR. Per batch: classification review, `task vrt`, 3× flake on animated cards. Add the lint guard against new raw `requestAnimationFrame` in cards at the end. Safe-to-automerge per batch.
+- **Wave C — startup split (P0-2 + P1-5 step 2):** LazyCard wrapper + non-eager card glob; then the docs-strip build transform + lazy annotate import + documented-type Set. VRT regen if needed via vrt-update.yml. Safe-to-automerge on green.
+- **Wave D — the Yjs cascade (P1-3 → P1-6a/c → P1-6b → P2-1, P2-7):** snapshot index first (unblocks transport-CV gating), then Canvas memoization + observer scoping (attest-free), then bus-side structural sharing/coalescing (**accepts the one-time collab re-attest — schedule with DB+relay access**), then the P2-1/P2-7 tidies that consume the new index. Gate: @collab suite + perf-drag suites before/after. Merge-on-green but slow and careful — this touches the DOOM gate's surface.
+- **Wave E — video present/readback + pressure (OWNER-REVIEW-BEFORE-MERGE cluster):** P1-9 recorderbox capture (owner hardware verify) · P1-10 synesthesia readback (safe, can automerge) · P1-8 error containment (re-attest) · P1-4 governor (owner preview incl. game tick rates) · then look-changing items P2-4 SCOPE half-res, P2-6 B3ntb0x downshift, and (only if un-parked + Phase A pays) P2-5 worker flip. Every look change: preview session + VRT classify, never auto-merge.
+- **Wave F — long-session stability:** P0-3 Phase 2 worklet lifecycle (**the big ART `.sha` re-pin — do as ONE PR, re-pin LAST, confirm only `.sha` moved**) · P2-9 BLOOD (heap-snapshot verify first) · P2-2 alloc hoists + denormal sweep (small ART re-pin for the hoists) · P3 items opportunistically.
+- **Deferred pending owner:** P2-11 media→R2 (collab re-attest + format change) · P2-5 un-park.
+
+CI discipline throughout: front-load locally (typecheck + targeted `*:one` + REPEAT=3), batch PRs, post-merge `task pr:conflict-sweep` after every Wave-B/C merge (wide card diffs WILL collide with in-flight module PRs).
+
+---
+
+## 5. Explicitly rejected / refuted — do NOT re-propose
+
+1. **Milkdrop "per-frame texImage2D re-allocation" — REFUTED.** milkdrop.ts:511 sits inside `if (!srcAllocated)`; the full alloc runs ONCE, every later frame takes texSubImage2D (:514). The module already implements the recommended pattern (shipped that way in #939 — never a live cost). The residual bcCanvas double-hop is a 640×480 blit whose removal is speculative (internal GL canvas not exposed; size deliberately modest for SwiftShader CI). Drop entirely.
+2. **/docs/modules index slim-down AS PROPOSED — REFUTED.** The rec ("drop io/docs/params/inputs/outputs") would gut the prerendered catalog: the page renders IoDiagram + full port/param tables from exactly those fields (docs/modules/+page.svelte:74-135) and breaks its module-grid tests. Only the corrected micro-scope survives as P3-6. Also not a startup cost (one-time cacheable static HTML).
+3. **"readLive knobs outweigh the card meters" — refuted framing.** Knob ticks are µs-scale lookups; unmigrated meters (2048-float copy + canvas repaint) still dominate. The epsilon-skip rec was also redundant (Svelte 5 $state no-ops equal primitive writes). The coalescing itself survives as P1-1.
+4. **Transport-CV drains as an underrun lever — downgraded.** Worst case ~100-200 µs per 25 ms tick (<1% of a core); most consumers drain 6 ports, not 13. P2 tidy only. Also: timelorde pollWizardGate ALREADY early-returns — the ":540 unconditional gate read" claim was wrong.
+5. **Faust factory re-fetch as a "mid-performance stall" — downgraded.** Hash-named assets are immutably HTTP-cached; wasm compiles off the main thread; 14 files route through the path, not ~30 modules. P3 five-liner.
+6. **Re-optimizing drag input handlers — anti-goal.** Already correctly coalesced (drag-commit.ts, dragstop-only positions, CSS-only cable z-order). Any "optimize the handlers" work churns interaction e2e for zero gain; drag latency effort goes to Wave D fan-out.
+7. **Pure-CSS hover targeting of related edges via xyflow attrs — not implementable.** Edge elements expose only data-id; CSS cannot compare a per-edge attr against the container's data-hovered-node value. Use the JS class-toggle or the post-memoization delta (P3-4).
+8. **Re-proposing already-landed/in-flight work:** #996 ticker, #719 render-local clone, the A4 oversampler (this branch), #990/#991 poly correctness — all done or in progress.
+9. **Un-parking the Fix-E worker by default without the owner:** explicitly parked 2026-07-01; flip is measurement-gated (Phase A), attest-gated, Safari-unverified, and never-auto-merge (P2-5 records the sequence if/when un-parked).
+10. **Spending on verified-good surfaces:** CF caching, lazy worklet/wasm, save/quicksave, relay debounce, prerendered docs pipeline, scheduler-clock, CV bridges (§2 list).
+
+---
+
+## 6. Open questions for the owner
+
+1. **Buffer default:** OK to make the boot default patch-aware (video nodes present → Balanced/Stable instead of Tight 12 ms)? And should the underrun nudge be allowed to one-tap reload?
+2. **Video degradation governor:** acceptable that under audio pressure video (AND game modules — pong/modtris/doom tick in step()) halves to 30 fps until pressure clears? Preview session planned either way.
+3. **Look-change preview cluster:** SCOPE half-res bridge, B3ntb0x oversample-4 performance mode, and (if built) preview-res presents — can we schedule ONE review session for the batch?
+4. **Fix-E:** leave parked, or green-light the Phase-A A/B measurement only (no default flip) so the decision is data-driven when you're ready?
+5. **A1 limiter pump (audio-out.ts DynamicsCompressor -6 dB/4:1) and A2a 48 kHz pin** from the dsp-stack audit are still unshipped — ship, re-scope, or drop? (Master-bus tone = owner-ears territory.)
+6. **webgl:attest blocker:** several Wave-D/E items need a re-attest; OK to prioritize fixing the 2 video-orientation camera-spec failures ahead of feature work?
+7. **Undo depth:** is a ~500-item cap (hours of edits) acceptable for the marathon-session fix (P3-5)?
+8. **Multi-user media racks:** do picturebox/samsloop-heavy shared racks matter this quarter? That decides whether P2-11 (R2 offload, collab re-attest) gets scheduled or stays deferred.
+9. **Rackspace-switch soak:** after Wave A lands, a 10-switch + 10-preset-cycle session on your hardware to confirm the leak fixes register audibly — can we book it?
