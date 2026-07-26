@@ -30,6 +30,25 @@
 
 import { test, expect, type Page } from '@playwright/test';
 
+// CI (and a local E2E_SWIFTSHADER=1 flake-check) rasterize WebGL on the
+// SwiftShader SOFTWARE renderer: every live video engine steals raster/main-
+// thread time from the rAF-gated click-actionability checks, so the BUG-A
+// responsiveness probe slows roughly LINEARLY with the engine count. Measured
+// on CI shard 10 (run 30179147114, both attempts): the File-trigger click took
+// ~1.45s with one engine (cellshade), ~2.4s with two (+backdraft), and blew a
+// flat 5s bound with three (+synesthesia) — while `evaluate(() => 1+1)` kept
+// answering (35ms → 317ms → 989ms), i.e. SLOW, not frozen. Repo rule
+// (ci-swiftshader-video-e2e-timeouts): scale timeouts by the video-engine
+// count, never flat. The guard stays REAL — a genuine reconcile freeze NEVER
+// recovers, so the scaled bound still fails deterministically; it just stops
+// reading "slow software raster" as "dead UI". A real-GPU local run keeps the
+// tight 5s. (Mirrors the SLOW_RENDER idiom in videovarispeed-switch.spec.ts.)
+const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
+/** BUG-A probe bound with `videoEngines` SwiftShader engines churning. */
+function probeTimeoutMs(videoEngines: number): number {
+  return SLOW_RENDER ? 5_000 + videoEngines * 10_000 : 5_000;
+}
+
 /** channel-columns.ts geometry under `?shell=1` (SHELL_COLUMN_W). */
 const SHELL_COLUMN_W = 216;
 
@@ -43,7 +62,10 @@ function colPos(ch: number): { x: number; y: number } {
 
 async function gotoShellWorkflow(page: Page): Promise<void> {
   await page.goto('/rack?mode=workflow&shell=1');
-  await expect(page.getByTestId('workflow-topbar')).toBeVisible();
+  // 15s: first paint pays SvelteKit's on-demand route compile on a cold dev
+  // server (and SwiftShader contention on CI) — same budget the sibling
+  // first-visibility asserts use.
+  await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 15_000 });
   await page.waitForFunction(
     () => {
       const w = globalThis as unknown as {
@@ -102,22 +124,25 @@ async function wcolEdges(page: Page): Promise<string[]> {
   });
 }
 
-/** BUG-A watchdog: the UI must answer a REAL interaction within `timeout` —
- *  the palette must open on a pane right-click, then close on Escape. A frozen
- *  main thread or a dead reactive tree fails this within the bound instead of
- *  hanging the run. */
-async function expectUiResponsive(page: Page): Promise<void> {
+/** BUG-A watchdog: the UI must answer a REAL interaction within a bounded
+ *  timeout — the File menu must open on a real click, then close on Escape. A
+ *  frozen main thread or a dead reactive tree fails this within the bound
+ *  instead of hanging the run. `videoEngines` = how many video engines are
+ *  live at this point in the test; the bound scales with it under SwiftShader
+ *  (see SLOW_RENDER above) and stays a tight 5s on a real GPU. */
+async function expectUiResponsive(page: Page, videoEngines: number): Promise<void> {
+  const bound = probeTimeoutMs(videoEngines);
   // Main thread answers.
   const t0 = Date.now();
   expect(await page.evaluate(() => 1 + 1)).toBe(2);
-  expect(Date.now() - t0, 'main thread must answer fast (not wedged)').toBeLessThan(5_000);
+  expect(Date.now() - t0, 'main thread must answer fast (not wedged)').toBeLessThan(bound);
   // The reactive tree answers: a real click opens the File menu (state flip +
   // render), Escape closes it. A dead reactive tree (the owner-reported freeze
   // symptom) fails this within the bound instead of hanging the run.
-  await page.getByTestId('workflow-file-trigger').click({ timeout: 5_000 });
-  await expect(page.getByTestId('workflow-file-menu')).toBeVisible({ timeout: 5_000 });
+  await page.getByTestId('workflow-file-trigger').click({ timeout: bound });
+  await expect(page.getByTestId('workflow-file-menu')).toBeVisible({ timeout: bound });
   await page.keyboard.press('Escape');
-  await expect(page.getByTestId('workflow-file-menu')).toBeHidden({ timeout: 5_000 });
+  await expect(page.getByTestId('workflow-file-menu')).toBeHidden({ timeout: bound });
 }
 
 /** BUG-A quiescence probe: after settling, the Y.Doc must not be churning (a
@@ -138,6 +163,10 @@ async function expectDocQuiescent(page: Page): Promise<void> {
 
 test.describe('BUG A — video modules added to an audio lane: unwired-but-functional, never a freeze', () => {
   test('cellshade / backdraft / synesthesia via palette-drop AND assign-to-channel stay sane', async ({ page }) => {
+    // Three engines' worth of scaled probe bounds don't fit the default 30s
+    // budget on the software renderer; a REAL freeze still fails at the FIRST
+    // probe (≤ ~40s in), long before this ceiling.
+    test.setTimeout(SLOW_RENDER ? 150_000 : 30_000);
     await gotoShellWorkflow(page);
 
     const videoTypes = ['cellshade', 'backdraft', 'synesthesia'];
@@ -163,8 +192,8 @@ test.describe('BUG A — video modules added to an audio lane: unwired-but-funct
       );
 
       // The UI must remain fully alive after EACH add (the owner-reported
-      // freeze was immediate).
-      await expectUiResponsive(page);
+      // freeze was immediate). i+1 video engines are churning by now.
+      await expectUiResponsive(page, i + 1);
     }
 
     // Membership landed (sane state)…
@@ -192,9 +221,11 @@ test.describe('BUG A — video modules added to an audio lane: unwired-but-funct
     await expectDocQuiescent(page);
 
     // Export stays available (the owner-reported symptom was a dead, export-
-    // disabled app): File → Save performance is enabled.
-    await page.getByTestId('workflow-file-trigger').click();
-    await expect(page.getByTestId('workflow-file-save-performance')).toBeEnabled();
+    // disabled app): File → Save performance is enabled. All three engines
+    // still churn here — same scaled bound as the probes.
+    const finalBound = probeTimeoutMs(videoTypes.length);
+    await page.getByTestId('workflow-file-trigger').click({ timeout: finalBound });
+    await expect(page.getByTestId('workflow-file-save-performance')).toBeEnabled({ timeout: finalBound });
     await page.keyboard.press('Escape');
   });
 });

@@ -31,6 +31,18 @@
 
 import { test, expect, type Page } from '@playwright/test';
 
+// CI (and a local E2E_SWIFTSHADER=1 flake-check) rasterize WebGL on the
+// SwiftShader SOFTWARE renderer. With several live video surfaces churning
+// (lines → backdraft → videoOut + the dock full-view's render lease), EVERY
+// step crawls — CI shard 10 (run 30179147114) measured 8.8s for the EXPAND
+// click and ~1s per page.evaluate, so the dock full-view test starved its flat
+// default 30s TEST budget mid-way (both attempts) while every individual step
+// kept completing. Repo rule (ci-swiftshader-video-e2e-timeouts): scale by the
+// render load, never flat. The per-step budgets below are already generous and
+// renderer-tolerant; only the whole-test ceiling needs the software-renderer
+// scale. Real-GPU local runs keep the default 30s.
+const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
+
 const VIDEO_OUT = 'workflow-videoOut';
 const RECORDERBOX = 'workflow-recorderbox';
 const SYNESTHESIA = 'workflow-synesthesia';
@@ -39,7 +51,10 @@ const VIDEO_ZONE_GAP = 24; // shell pitch 216 − tile 192 (videoZonePackedXs)
 
 async function gotoShell(page: Page): Promise<void> {
   await page.goto('/rack?mode=workflow&shell=1');
-  await expect(page.getByTestId('workflow-topbar')).toBeVisible();
+  // 15s: first paint pays SvelteKit's on-demand route compile on a cold dev
+  // server (and SwiftShader contention on CI) — same budget the sibling
+  // first-visibility asserts use.
+  await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 15_000 });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
 
@@ -193,6 +208,9 @@ async function expectCanvasChanges(page: Page, selector: string, before: string,
 
 test.describe('?shell=1 video visibility', () => {
   test('videoOut renders its LEGACY resizable card in the video zone; corner-resize works and repacks the tile neighbours', async ({ page }) => {
+    // Software-renderer scale (see SLOW_RENDER): the resize-drag + repack polls
+    // run against live video-zone tiles.
+    test.setTimeout(SLOW_RENDER ? 60_000 : 30_000);
     // Collect the exact failure class the dock/useStore regression produced —
     // a provider-context throw must never fire anywhere in this flow.
     const providerErrors: string[] = [];
@@ -278,6 +296,9 @@ test.describe('?shell=1 video visibility', () => {
   });
 
   test('video-domain tiles show LIVE ANIMATED thumbnails via the real chain; the fake wave glyph is GONE for them', async ({ page }) => {
+    // Software-renderer scale (see SLOW_RENDER): the frames-drawn + pixel-
+    // change polls (20s budgets each) don't fit a flat 30s under contention.
+    test.setTimeout(SLOW_RENDER ? 90_000 : 30_000);
     await gotoShell(page);
     await expect(videoOutCard(page)).toBeVisible({ timeout: 15_000 });
 
@@ -332,6 +353,10 @@ test.describe('?shell=1 video visibility', () => {
   });
 
   test('dock full-view renders LIVE video for expanded video legacy cards (backdraft via EXPAND; videoOut via the dev seam) with a render lease', async ({ page }) => {
+    // Software-renderer scale (see SLOW_RENDER): TWO sequential dock full-views
+    // with pixel-change polls + lease polls starved the flat 30s budget on CI
+    // shard 10 (run 30179147114, both attempts) while every step completed.
+    test.setTimeout(SLOW_RENDER ? 120_000 : 30_000);
     const providerErrors: string[] = [];
     page.on('pageerror', (e) => {
       if (/useStore|SvelteFlowProvider/i.test(e.message)) providerErrors.push(e.message);
@@ -415,7 +440,7 @@ test.describe('?shell=1 video visibility', () => {
 
   test('preview OFF (default) stays a strict no-op: no tiles, no thumbs, videoOut legacy card as today', async ({ page }) => {
     await page.goto('/rack?mode=workflow');
-    await expect(page.getByTestId('workflow-topbar')).toBeVisible();
+    await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 15_000 });
     await expect(videoOutCard(page)).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('[data-testid="module-shell-placeholder"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="module-shell"]')).toHaveCount(0);
