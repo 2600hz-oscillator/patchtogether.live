@@ -42,6 +42,8 @@ const FACES = [
   { type: 'vca', pages: 1 },
   { type: 'lfo', pages: 2 },
   { type: 'cloudseed', pages: 8 },
+  // batch 3 — the core summing utility (4 channel levels + master bus)
+  { type: 'mixer', pages: 2 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

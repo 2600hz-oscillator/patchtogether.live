@@ -36,7 +36,7 @@ import { STRICT_FACES } from '../../packages/web/src/lib/ui/workflow/strict-face
 
 interface SpecShape {
   type: string;
-  params: { id: string; curve: string; defaultValue: number }[];
+  params: { id: string; curve: string; defaultValue: number; min: number; max: number }[];
   controlFamilies?: string[];
   strictFace?: boolean;
 }
@@ -115,10 +115,23 @@ test.describe('faces render-parity: every STRICT_FACES dock full-view carries th
         },
         { pid: target!.id },
       );
+      // DRAG DIRECTION — always AWAY from the nearer rail. A knob drag up
+      // RAISES the value, so a fixed upward drag is a guaranteed FALSE FAILURE
+      // on any param that already sits at its ceiling: it cannot move, nothing
+      // commits, and a perfectly operable control reads as lost. MIXER is the
+      // first promoted face where that bites (it ships every channel level and
+      // the master at 1.0 = max — a summing mixer is a unity pass-through out
+      // of the box), and it will recur on every attenuator-shaped module. Pick
+      // the direction with headroom from the LIVE spec range instead.
+      const current = before ?? target!.defaultValue;
+      const midpoint = (target!.min + target!.max) / 2;
+      // Screen-down = lower value: push down when the knob sits in the upper
+      // half of its range, up otherwise.
+      const dragDy = current > midpoint ? 48 : -48;
       const box = (await knob.boundingBox())!;
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
       await page.mouse.down();
-      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 - 48, { steps: 6 });
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + dragDy, { steps: 6 });
       await page.mouse.up();
       await expect
         .poll(

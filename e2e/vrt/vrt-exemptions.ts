@@ -977,6 +977,16 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // CAPTURES them (the skip is unconditional, so a pair still listed means
   // `--update-snapshots` writes nothing — the #1064 drum-wave drain ordering).
   // Their linux baselines land on this branch in the bot's regen commit.
+  //
+  // P1 BATCH 3 (2026-07-26, deliberate darwin-first — the batch-1/2 pattern
+  // above at the point in its lifecycle BEFORE the drain): the 2 CURATED FACE
+  // scenes for MIXER (compact lane tile + dock full-view faceplate,
+  // workflow-shell-faces.spec.ts). darwin baselines captured locally and
+  // flake-checked 3×; the linux pair below is pending a vrt-update.yml
+  // `platform=linux` dispatch on the integration branch, at which point it is
+  // DRAINED exactly like batch 1's was.
+  'linux/face-mixer-compact',
+  'linux/face-mixer-dock',
   // CLIPPLAYER: darwin baseline (the clip-launcher card — 8×8 launch grid +
   // piano-roll note editor + transport knobs; no animated canvas) captured
   // locally; linux baseline pending a `vrt-update.yml` workflow_dispatch on

@@ -220,7 +220,7 @@ const DESCRIPTIONS: Record<string, string> = {
   audioIn:
     'System audio input source. Stream from a user-selected mic/line-in/interface via getUserMedia; L+R outputs are fanned out from mono sources or split from stereo. Card owns the permission prompt + device dropdown + devicechange refresh.',
   vca: 'Voltage-controlled amplifier. Multiplies the audio input by base + (cv * cvAmount).',
-  mixer: 'Four-channel mono summing mixer with master gain.',
+  mixer: 'Four-channel mono summing mixer: out = (in1×Ch1 + in2×Ch2 + in3×Ch3 + in4×Ch4) × Master. Levels are LINEAR AMPLITUDE 0..1 (0.5 = −6 dB, 0.1 = −20 dB — fine fades live near the bottom of the travel), all default to unity, and all five are one-pole smoothed (≈23 ms) so moves are click-free but control-rate — never a VCA. The sum is NOT limited, clamped or headroom-compensated and Master maxes at 1.0 (attenuate only, no make-up gain), so four hot unity channels can leave at up to 4× full scale (+12 dB) and clip downstream: trim the channels or pull Master, and watch the face level meter. Audio cables only (the inputs declare no CV widening) — for per-channel CV, direct outs and soft-clip use ATTENUMIX; for stereo with EQ and aux sends use MIXMSTRS.',
   adsr: 'Gate-triggered attack-decay-sustain-release envelope. Outputs CV.',
   filter:
     'Multi-mode resonant filter (low / band / high). CV inputs sum into cutoff and resonance.',
