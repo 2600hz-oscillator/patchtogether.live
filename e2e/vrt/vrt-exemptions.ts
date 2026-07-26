@@ -1513,4 +1513,11 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/tidyvco-acid',
   'linux/tidyvco-pad',
   'linux/tidyvco-bass',
+  // P1 BATCH-3 curated FACE scenes (2026-07-26, deliberate darwin-first, the
+  // batch-1 workflow-shell-faces precedent): darwin baselines captured +
+  // 3x-verified locally; the linux pair is left PENDING for the batch
+  // integrator to DRAIN before one vrt-update.yml `platform=linux` dispatch
+  // (the pending-pair skip is unconditional, so drain-then-dispatch).
+  'linux/face-filter-compact',
+  'linux/face-filter-dock',
 ]);

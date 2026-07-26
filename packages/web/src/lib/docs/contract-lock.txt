@@ -1091,7 +1091,9 @@ filter in cutoff cv param=cutoff
 filter in res cv
 filter out audio audio
 filter param cutoff 20..20000 log default=1000 unit=Hz
+filter param cutoff_cv_amt -1..1 linear default=1
 filter param mode 0..2 discrete default=0
+filter param res_cv_amt -1..1 linear default=1
 filter param resonance 0..0.99 linear default=0.1
 flipper meta domain=audio
 flipper in in1 gate

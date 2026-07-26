@@ -27,6 +27,7 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'lfo',
   'tidyVco',
   'vca',
+  'filter', // P1 batch 3 — the core VCF (total rework + CV-depth attenuverters)
 ]);
 
 /**

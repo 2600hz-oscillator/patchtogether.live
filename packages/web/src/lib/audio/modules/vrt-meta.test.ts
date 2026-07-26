@@ -396,7 +396,14 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // out (the #1064 drum-wave drain precedent: drop the pairs FIRST, then
       // dispatch, because the pending-pair skip is unconditional and
       // `--update-snapshots` writes nothing for a skipped test).
-    ).toBeLessThanOrEqual(104);
+      // 104→106 (2026-07-26): the P1 BATCH-3 `filter` face pair
+      // (linux/face-filter-compact + linux/face-filter-dock) — a deliberate,
+      // commented darwin-first capture, same shape as the batch-1 faces that
+      // were drained above. NOTE for the batch-3 integrator: each of the five
+      // parallel face branches raises this by 2, so the assembled batch lands
+      // at 114 — then drain all ten pairs with ONE vrt-update.yml
+      // `platform=linux` dispatch and take it back to 104.
+    ).toBeLessThanOrEqual(106);
   });
 });
 
