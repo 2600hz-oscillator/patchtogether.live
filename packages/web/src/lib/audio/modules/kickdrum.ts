@@ -164,6 +164,34 @@ export const kickdrumDef: AudioModuleDef = {
       { id: 'output',   label: 'output · stereo',   controls: ['width', 'level'] },
     ],
     glyph: 'scope',
+    // REAR CARD curation (rear-card-model) — the flip-side jack field.
+    //  * The four performance inputs are PINNED into the leading band and it
+    //    is headed 'strike': that is their function (hit it, accent the hit,
+    //    transpose the voice, choke the tail) — 'voice' would suggest a pitch/
+    //    gate note pair this drum does not have. Pinning also nails `pitch_cv`
+    //    down: its `_cv` stem is 'pitch', so the day a param named `pitch` is
+    //    added, derivation would silently file it into that param's page band.
+    //  * The 'body · punch' page carries SEVEN CV holes — the widest band on
+    //    the card — so it splits into the two things the body layer really is:
+    //    the PITCH ENVELOPE that makes the punch (amount / time / tension) and
+    //    the TONE that follows it (decay / level / shape / EQ). Every other
+    //    band mirrors its dock page 1:1.
+    //  * `~` on PITCH only. The worklet's four node inputs are read RAW
+    //    per-sample, but only pitch is a continuous audio-rate destination
+    //    (per-sample 1 V/oct → real FM of the whole voice); TRIGGER and CHOKE
+    //    are edge/level jacks already glyphed ▲/▬, and ACCENT is LATCHED at
+    //    the strike edge (per-hit, not per-sample). Every per-param CV lands on
+    //    an 80 Hz-smoothed AudioParam — control-rate by construction.
+    rear: {
+      groups: [
+        { id: 'voice', label: 'strike', ports: ['trigger_in', 'accent_in', 'pitch_cv', 'choke_in'] },
+      ],
+      clusters: [
+        { group: 'body', label: 'pitch envelope', ports: ['pitch_amt_cv', 'pitch_time_cv', 'tension_cv'] },
+        { group: 'body', label: 'tone', ports: ['body_decay_cv', 'body_level_cv', 'body_shape_cv', 'body_eq_cv'] },
+      ],
+      audioRate: ['pitch_cv'],
+    },
   },
 
   docs: {

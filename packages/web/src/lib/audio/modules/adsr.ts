@@ -97,6 +97,27 @@ export const adsrDef: AudioModuleDef = {
       { id: 'stages', label: 'stages', controls: ['attack', 'decay', 'sustain', 'release'] },
     ],
     glyph: 'envelope',
+    // REAR CARD curation (rear-card-model) — the flip-side jack field.
+    //  * The leading band is this module's DRIVE input, and an envelope is not
+    //    a voice: it is labeled 'gate' so the field reads gate → stages →
+    //    outputs, which is exactly the signal path.
+    //  * The 'stages' band mirrors the dock's single stages page (same four
+    //    holes, canonical A/D/S/R order), but splits into two clusters by CV
+    //    LAW — the one thing the rear can teach that the front cannot. The
+    //    param labels are single letters (A/D/S/R), so the cluster headers are
+    //    also what tells you WHICH of the four holes is a level: ATTACK/DECAY/
+    //    RELEASE are log-scaled TIME jacks (±1 V = ×100 / ÷100 of the knob
+    //    time), SUSTAIN is a linear LEVEL displacement (±0.5 of the 0..1 span).
+    //  * No `~` ticks: the gate drives the Faust worklet's audio input, and the
+    //    four CVs land on smoothed AudioParams — nothing here is an audio-rate
+    //    modulation destination (contrast tidyVco's per-sample filter CVs).
+    rear: {
+      groups: [{ id: 'voice', label: 'gate', ports: ['gate'] }],
+      clusters: [
+        { group: 'stages', label: 'times', ports: ['attack', 'decay', 'release'] },
+        { group: 'stages', label: 'level', ports: ['sustain'] },
+      ],
+    },
   },
 
   docs: {
