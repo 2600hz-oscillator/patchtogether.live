@@ -14,7 +14,8 @@
 // workflow-dock.spec.ts. Shell state is transient/local (never in the Y.Doc).
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch, UNMIGRATED_AUDIO_MODULE } from './_helpers';
+import { spawnPatch } from './_helpers';
+import { UNMIGRATED_AUDIO_MODULE } from './_face-fixtures';
 
 async function gotoWorkflow(page: Page, opts: { shell: boolean }): Promise<void> {
   await page.goto(opts.shell ? '/rack?mode=workflow&shell=1' : '/rack?mode=workflow');

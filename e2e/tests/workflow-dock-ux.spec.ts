@@ -30,7 +30,8 @@
 // workflow-shell.spec.ts. All fixed behavior is ?shell=1-gated.
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch, UNMIGRATED_AUDIO_MODULE } from './_helpers';
+import { spawnPatch } from './_helpers';
+import { UNMIGRATED_AUDIO_MODULE } from './_face-fixtures';
 
 async function gotoWorkflow(page: Page): Promise<void> {
   await page.goto('/rack?mode=workflow&shell=1');
