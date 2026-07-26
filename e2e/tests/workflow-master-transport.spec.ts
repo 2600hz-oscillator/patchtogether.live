@@ -29,13 +29,32 @@ import { readScopePeakOverWindow } from './_module-coverage-helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
+// CI (and a local E2E_SWIFTSHADER=1 flake-check) rasterizes on the SwiftShader
+// SOFTWARE renderer with 4 workers per shard. The MEASUREMENT windows below
+// cost up to ~14.1s of pure wall-clock — 2× `distinctSteps(4_000)` (early-exits
+// on the 2nd distinct step, so it stretches toward 4s exactly when the clock is
+// slow) + 2× `readScopePeakOverWindow(…, 2_500)` (a FULL 2.5s each, no early
+// exit) + ~1.1s stop-drain waits — BEFORE bootWorkflow, the 10s reconciler-edge
+// poll, the clip seed, the drawer open and four click/assert round-trips (each
+// a ~1s page.evaluate under CI contention). That fits a warm dev box inside the
+// flat 30s default; it does NOT fit shard 10 (242 tests / 4 workers), where it
+// timed out 4/4 attempts (both `label` variants × 2 retries) mid-RESTART leg —
+// always still PROGRESSING, never a failed assertion. Repo rule
+// (ci-swiftshader-video-e2e-timeouts): scale the budget by render load, never
+// flat, and never shrink the measurement windows — the windows ARE the test.
+// Mirrors the SLOW_RENDER idiom in workflow-shell-video / videovarispeed-switch.
+const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
+
 const PINNED_CLIP = 'pinned-clipplayer';
 const PINNED_MIXER = 'pinned-mixmstrs';
 const PINNED_TL = 'pinned-timelorde';
 
 async function bootWorkflow(page: Page, url: string): Promise<void> {
   await page.goto(url);
-  await expect(page.getByTestId('workflow-topbar')).toBeVisible();
+  // 15s: first paint pays SvelteKit's on-demand route compile on a cold dev
+  // server (and SwiftShader contention on CI) — the sibling workflow specs'
+  // first-visibility budget (workflow-shell-video / workflow-lane-add-safety).
+  await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 15_000 });
   await page.waitForFunction(
     () => {
       const w = globalThis as unknown as {
@@ -53,7 +72,9 @@ async function bootWorkflow(page: Page, url: string): Promise<void> {
       );
     },
     undefined,
-    { timeout: 20_000 },
+    // The pinned-node boot poll rides the same cold-compile / software-renderer
+    // cost as the paint above (a COLD local run blew the flat 20s here).
+    { timeout: SLOW_RENDER ? 45_000 : 30_000 },
   );
 }
 
@@ -191,6 +212,13 @@ for (const [label, url] of [
   ['shell', '/rack?mode=workflow&shell=1'],
 ] as const) {
   test(`master transport drives audible clip playback through the real lane chain (${label})`, async ({ page }) => {
+    // Software-renderer scale (see SLOW_RENDER): up to ~14.1s of measurement
+    // windows + boot + the reconciler-edge poll + four click/assert round-trips.
+    // The local (real-GPU) ceiling still gets headroom over the flat 30s default
+    // because a COLD dev server pays SvelteKit's on-demand route compile on the
+    // first `/rack?mode=workflow` boot (measured: the flat 20s bootWorkflow poll
+    // blown on the first COLD run, 9.6s per test once warm).
+    test.setTimeout(SLOW_RENDER ? 90_000 : 60_000);
     const budgetWarns: string[] = [];
     page.on('console', (m) => {
       if (m.text().includes('reconcile budget tripped')) budgetWarns.push(m.text());

@@ -114,6 +114,36 @@ always compiles via the dedicated `dsp-build` job.)
 > `task dsp:build` after, not `dsp:fetch-dist`, so you're testing this worktree's
 > actual sources.
 
+### VRT baselines: DRAIN the pending pairs BEFORE you dispatch the regen
+
+Ordering is load-bearing when you capture missing platform baselines with the
+`vrt-update.yml` workflow. A scene still listed in `EXEMPT_BASELINE_PAIRS`
+(`e2e/vrt/vrt-exemptions.ts`) is `test.skip()`-ed **UNCONDITIONALLY**, so a
+`--update-snapshots` run **writes NOTHING for it** — the dispatch comes back
+green having captured exactly zero of the baselines you wanted. **Drain first,
+dispatch second:**
+
+1. Remove the pending `<platform>/<scene>` pairs from `EXEMPT_BASELINE_PAIRS`
+   **and** lower the vrt-meta linux-deficit ratchet by the same count
+   (`packages/web/src/lib/audio/modules/vrt-meta.test.ts` — the ceiling only
+   shrinks, so it moves in the SAME commit). Push that commit.
+2. *Then* dispatch against the branch that now has the pairs removed:
+   `flox activate -- gh workflow run vrt-update.yml -f ref=<branch> -f
+   platform=linux` (pick the ONE platform you need — the other runner is
+   redundant CI wall-time).
+3. The bot commits the PNGs onto the branch and close+reopens the PR so a real
+   `pull_request` run re-validates them (a GITHUB_TOKEN push doesn't fire CI,
+   and a `workflow_dispatch` run doesn't count toward required checks).
+
+Two dispatch gotchas, both confirmed on real runs:
+
+- **Never pass `-f grep=…`.** The run dies as `startup_failure` before any job
+  starts. Dispatch **unscoped** — the full-scene capture is the fast path, and
+  a skipped-because-still-exempt scene is untouched anyway.
+- The bot's push lands the follow-on runs in **`action_required`** (awaiting
+  manual approval), not `queued`. Check `gh run list` and approve rather than
+  assuming CI is merely slow.
+
 ## Worktrees: hard cap of 10
 
 This repo accumulates abandoned `isolation: worktree` agent checkouts fast — each
