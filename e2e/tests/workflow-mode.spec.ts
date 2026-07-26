@@ -123,7 +123,7 @@ test.describe('workflow shell', () => {
     }
   });
 
-  test('M / E / C toggle the bottom dock drawers with the FULL pinned card; one at a time; ESC closes', async ({ page }) => {
+  test('M / E toggle the bottom dock drawers with the FULL pinned card; one at a time; C opens the clip PANE; ESC closes', async ({ page }) => {
     await page.goto('/rack?mode=workflow');
     await waitForPinnedTrio(page);
     // :visible — the workflow topbar's always-mounted audio-I/O card hosts
@@ -156,14 +156,20 @@ test.describe('workflow shell', () => {
     await page.keyboard.press('e');
     await expect(drawer).toHaveCount(0);
 
-    // C → clipplayer drawer; ESC closes it.
+    // C → the built-in CLIP PLAYER as a dock FULL-VIEW PANE, not the pinned
+    // drawer (owner 2026-07-26: "opening clip player with c is same as
+    // expanding any other module" — so it can sit side-by-side with a module;
+    // the full behavior sweep lives in workflow-dock-occupancy.spec.ts). The
+    // same real card mounts, just in the faceplate frame. ESC still closes it.
     await page.keyboard.press('c');
-    await expect(drawer).toHaveAttribute('data-dock-type', 'clipplayer');
-    await expect(
-      drawer.locator('[data-dock-card="pinned-clipplayer"]'),
-    ).toBeVisible();
+    const clipPane = page.locator(
+      '[data-testid="dock-fullview-pane"][data-pane-node="pinned-clipplayer"]',
+    );
+    await expect(clipPane).toBeVisible();
+    await expect(clipPane.locator('[data-dock-card="pinned-clipplayer"]')).toBeVisible();
+    await expect(drawer).toHaveCount(0); // NOT the exclusive pinned drawer
     await page.keyboard.press('Escape');
-    await expect(drawer).toHaveCount(0);
+    await expect(page.getByTestId('dock-fullview-drawer')).toHaveCount(0);
   });
 
   test('M/E/C are inert while typing in an input / contenteditable', async ({ page }) => {
@@ -181,12 +187,17 @@ test.describe('workflow shell', () => {
       ce.textContent = 'edit me';
       document.body.appendChild(ce);
     });
+    // NB both bottom surfaces are asserted absent: `m`/`e` would open the
+    // pinned drawer, `c` the clip player's full-view pane — the typing guard
+    // has to silence ALL THREE.
     await page.locator('#wf-typing-probe').click();
     await page.keyboard.type('mec');
     await expect(page.getByTestId('dock-zone-bottom')).toHaveCount(0);
+    await expect(page.getByTestId('dock-fullview-drawer')).toHaveCount(0);
     await page.locator('#wf-ce-probe').click();
     await page.keyboard.type('mec');
     await expect(page.getByTestId('dock-zone-bottom')).toHaveCount(0);
+    await expect(page.getByTestId('dock-fullview-drawer')).toHaveCount(0);
     // Blur back to a NON-typing target → the keymap is live again. NB: don't
     // click the flow pane CENTER — the workflow video-zone default cards
     // (videoOut/recorderbox/synesthesia, PR #1155) now occupy it, so a center

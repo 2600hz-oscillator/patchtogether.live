@@ -968,6 +968,17 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // cellshade-composite precedent).
   'linux/workflow-audio-io',
   'linux/workflow-dock-patch',
+  // CLIP PLAYER AS A DOCK PANE (2026-07-26, deliberate darwin-first): the
+  // owner ask "need to be able to have clip player (built in) open along side
+  // a module in drawer" as pixels — a module pane + the clip player pane
+  // SIDE-BY-SIDE 50/50 in the dock full-view
+  // (workflow-dock-composite.spec.ts). Darwin baseline captured locally +
+  // flake-checked 3×; the linux baseline is pending a vrt-update.yml
+  // workflow_dispatch on the PR branch (the workflow-dock-patch precedent
+  // directly above). Functional coverage until then:
+  // workflow-dock-occupancy.spec.ts asserts the SCREEN geometry of the split
+  // (equal widths, open order, gap, independent scroll) on both platforms.
+  'linux/workflow-dock-clip-split',
   // NOTE (2026-07-26): the `?shell=1` WORKFLOW-SHELL family — the 3 ZOOM
   // scenes (workflow-shell-zoom.spec.ts), the 12 P1 BATCH-1 CURATED FACE
   // scenes (compact lane tile + dock full-view faceplate per migrated module,

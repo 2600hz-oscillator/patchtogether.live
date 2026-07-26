@@ -40,6 +40,27 @@ describe('WORKFLOW_PINNED_MODULES — the M/E/C trio contract', () => {
     expect(DRAWER_KEY_TO_PINNED.get('c')?.type).toBe('clipplayer');
     expect(DRAWER_KEY_TO_PINNED.get('M')).toBeUndefined(); // callers lowercase first
   });
+
+  // OWNER 2026-07-26: "opening clip player with c is same as expanding any
+  // other module" — C targets the dock FULL-VIEW (a pane that can sit
+  // side-by-side with a module), M/E keep the mutually-exclusive pinned
+  // drawer. Canvas's dock keymap branches on exactly this field, so pinning it
+  // here is the cheap gate against a silent regression to the old
+  // one-drawer-occupancy behavior.
+  it('C opens a FULL-VIEW pane; M/E open the pinned drawer', () => {
+    expect(WORKFLOW_PINNED_MODULES.map((s) => [s.key, s.surface])).toEqual([
+      ['m', 'drawer'],
+      ['e', 'drawer'],
+      ['c', 'fullView'],
+    ]);
+    expect(DRAWER_KEY_TO_PINNED.get('c')?.surface).toBe('fullView');
+  });
+
+  it('every hotkey spec declares a surface (no undefined fall-through)', () => {
+    for (const s of WORKFLOW_PINNED_MODULES) {
+      expect(['drawer', 'fullView']).toContain(s.surface);
+    }
+  });
 });
 
 describe('WORKFLOW_PINNED_SURFACES — the P2 topbar surface contract', () => {

@@ -77,14 +77,19 @@ class DockStore {
   // pane returns the other to full width.
   //
   // ONE BOTTOM OCCUPANT (owner design call, dock-unification): the pinned
-  // M/E/C occupant and the expanded full-view share a SINGLE bottom-drawer
+  // M/E occupant and the expanded full-view share a SINGLE bottom-drawer
   // slot — pinned XOR full-view, never both. openFullView() closes the pinned
   // bottom occupant; toggle('bottom', …) closes the ENTIRE full-view (both
   // panes) and OPENS the requested pinned drawer (replace, not stack). The
   // invariant lives HERE so every entry point (hotkeys, tile EXPAND pills,
   // e2e hooks) inherits it — Canvas renders the two occupants from one
-  // {#if}/{:else} container on top. Preview-off (?shell=1 absent) nothing
-  // ever fills #fullView, so the shipped pinned-drawer behavior is untouched.
+  // {#if}/{:else} container on top.
+  //
+  // THE BUILT-IN CLIP PLAYER IS A PANE, NOT A DRAWER (owner 2026-07-26,
+  // superseding the earlier "c must not open behind the faceplate" fix): `c`
+  // routes through toggleFullView('pinned-clipplayer'), so it joins the split
+  // 50/50 beside a module exactly like a second EXPAND. Only M/E still take
+  // the pinned-drawer branch.
   #fullView = $state<string[]>([]);
 
   // FLIP SEAM (follow-up rear-card feature): TAB flips the open full-view to
@@ -172,7 +177,10 @@ class DockStore {
    *  replaces — one pinned card per zone). BOTTOM zone: when the expanded
    *  full-view is open it is the CURRENT bottom occupant — the toggle closes
    *  it and OPENS the requested pinned drawer (replace, not stack; the XOR
-   *  invariant means no pinned occupant can be open alongside it). */
+   *  invariant means no pinned occupant can be open alongside it).
+   *
+   *  The M/E hotkeys route here. The clip player's `c` does NOT — it is a
+   *  full-view PANE (see toggleFullView). */
   toggle(zone: DockZone, nodeId: string): void {
     if (!isImplementedDockZone(zone)) return;
     if (zone === 'bottom' && this.#fullView.length > 0) {
@@ -227,6 +235,21 @@ class DockStore {
     if (this.#railCollapsed.bottom) {
       this.#railCollapsed = { ...this.#railCollapsed, bottom: false };
     }
+  }
+
+  /** TOGGLE `nodeId`'s full-view pane: open it when absent (full openFullView
+   *  semantics — LRU replacement at capacity + the pinned-drawer handoff),
+   *  close JUST that pane when it's already an occupant (any sibling pane
+   *  survives and returns to full width).
+   *
+   *  This is the seam the built-in CLIP PLAYER's `c` hotkey uses (owner
+   *  2026-07-26: "opening clip player with c is same as expanding any other
+   *  module") — one press opens the pane, a second closes it, and pressing it
+   *  twice can never stack two panes for the same node. Module EXPAND pills
+   *  drive the same pair of primitives from the tile side. */
+  toggleFullView(nodeId: string): void {
+    if (this.#fullView.includes(nodeId)) this.closeFullView(nodeId);
+    else this.openFullView(nodeId);
   }
 
   /** Close ONE full-view pane (`nodeId`) or — with no argument — the ENTIRE
