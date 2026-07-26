@@ -38,6 +38,11 @@ import {
   loadDx7SyxFile,
   selectDx7Preset,
 } from '$lib/ui/modules/dx7-patch-actions';
+import {
+  selectSixstrumPreset,
+  sixstrumPresetName,
+  sixstrumSelectorOptions,
+} from '$lib/ui/modules/sixstrum-preset-actions';
 
 /** A dropdown over a NAMED roster that lives in node.data (not a param). */
 export interface ShellSelectorCell {
@@ -105,6 +110,22 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       title: 'Import a Yamaha DX7 cartridge dump (voices are APPENDED to the roster)',
       accept: DX7_SYX_ACCEPT,
       onFile: (nodeId, file) => loadDx7SyxFile(nodeId, file),
+    },
+  },
+  sixstrum: {
+    // The guitar / bass / harp PRESET RECALL. Unlike dx7's, its state is not a
+    // `node.data` slot — the three modes ARE knob states, so a pick stamps all
+    // fourteen calibrated params through the normal commit path and the chip
+    // reads back off the `tuning` the instrument ended up in
+    // (sixstrum-preset-actions, the SAME stamp the classic card's MODE knob
+    // fires). The raw `tuning` param keeps its own cell right below: the
+    // recall moves the whole panel, the param only swaps the string set.
+    'sixstrum-preset-{n}': {
+      kind: 'selector',
+      tag: 'preset',
+      options: () => sixstrumSelectorOptions(),
+      value: (node) => sixstrumPresetName(node),
+      onchange: (nodeId, value) => selectSixstrumPreset(nodeId, value),
     },
   },
 };

@@ -481,3 +481,73 @@ test.describe('dx7 hero controls are REACHABLE in the shell (the inert-cell P0)'
     expect(want, 'and it is a DIFFERENT voice than before').not.toBe(before);
   });
 });
+
+test.describe('sixstrum PRESET is a RECALL, not a relabelled tuning switch', () => {
+  // The sibling gap to dx7's: the batch-2 face carried the raw `tuning` param
+  // (which only swaps the open-string set) but NOT the guitar/bass/harp PRESET
+  // RECALL that the classic card's MODE knob fires — so the three calibrated
+  // knob states were unreachable under `?shell=1`. The param survived the
+  // redesign; the affordance did not.
+  //
+  // The generic per-cell sweep above already proves the cell is a real,
+  // operable Selector. What it CANNOT tell apart is a recall from a renamed
+  // tuning knob — both move `tuning`. So this pins the thing that makes it a
+  // preset: picking BASS moves `tuning` AND the OTHER stamped params with it.
+  // Then it twists one of them back, because a preset is a starting point, not
+  // a lock (the classic card keeps every knob editable after a recall).
+  test('picking BASS stamps the whole calibrated knob state, and the knobs stay editable', async ({ page }) => {
+    test.setTimeout(FACE_FIXED_MS);
+    await gotoShell(page);
+    await spawnPatch(page, [{ id: 'ss', type: 'sixstrum', position: { x: 460, y: 240 } }]);
+    const dockShell = await openDock(page, 'ss');
+
+    const preset = dockShell.locator('[data-cell-key="sixstrum-preset-{n}"]');
+    await expect(preset, 'the preset cell renders').toBeVisible();
+    await expect(preset, 'and is a real Selector, not a dead label').toHaveAttribute(
+      'data-cell-control',
+      'selector',
+    );
+
+    // GUITAR is the default knob state (tuning 0 / register 0).
+    const chip = preset.locator('[role="button"][aria-haspopup="listbox"]');
+    await expect(chip.locator('.val'), 'starts on the default mode').toHaveText('guitar');
+
+    await chip.click();
+    const bass = page.locator('[role="listbox"] [role="option"]', { hasText: 'bass' });
+    await expect(bass, 'the roster offers BASS').toBeVisible();
+    await bass.click();
+    await expect(chip.locator('.val'), 'the chip follows the recall').toHaveText('bass');
+
+    // 1. the tuning it names…
+    await expect
+      .poll(() => readParam(page, 'ss', 'tuning'), {
+        message: 'BASS recalls the bass string set (tuning → 1)',
+      })
+      .toBe(1);
+    // 2. …AND the rest of the calibrated state. `register` is the sharpest
+    //    witness (0 → −12: the bass sits an octave down), and `ring` proves it
+    //    is the whole preset rather than a two-value special case.
+    await expect
+      .poll(() => readParam(page, 'ss', 'register'), {
+        message: 'a RECALL, not a tuning switch: register moves with it (→ −12 st)',
+      })
+      .toBe(-12);
+    await expect
+      .poll(() => readParam(page, 'ss', 'ring'), {
+        message: 'and the string ring too (→ 6 s, the bass long/dark decay)',
+      })
+      .toBe(6);
+
+    // RECALL-THEN-EDIT: nothing is locked by the stamp. Twist RING and confirm
+    // the edit commits over the recalled value.
+    const spec = await readSpec(page, 'sixstrum');
+    const ringDef = spec.params.find((p) => p.id === 'ring')!;
+    const ringCell = dockShell.locator('[data-cell-key="ring"] [data-testid="control-ring"]');
+    await dragKnob(page, ringCell, ringDef, 6);
+    await expect
+      .poll(() => readParam(page, 'ss', 'ring'), {
+        message: 'a preset is a STARTING POINT: a knob still commits after the recall',
+      })
+      .not.toBe(6);
+  });
+});
