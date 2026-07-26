@@ -18,6 +18,13 @@
 // the gallery spec (see .myrobots/plans, workflow-mode UI refactor §3.6 + §5).
 // Each entry below carries a complete co-located `face` (order + pages + glyph)
 // authored against its fullcard mock.
+//
+// P1 BATCH 2 (2026-07-26): the second wave — the two pitched voices (dx7,
+// sixstrum), the two percussion voices (snaredrum, tomtom) and the two
+// processors (shimmershine, qbrt). Same bar: a complete co-located `face`
+// (order + pages + glyph + `rear`), authored from what each module ACTUALLY
+// is rather than transcribed from its legacy card. The two pitched voices are
+// additionally enrolled in default-pitch-accuracy (unit + e2e).
 
 export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // P1 batch 1 — first 6 module faces
@@ -27,6 +34,13 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'lfo',
   'tidyVco',
   'vca',
+  // P1 batch 2 — 6 more faces (2 pitched voices, 2 drums, 2 processors)
+  'dx7',
+  'qbrt',
+  'shimmershine',
+  'sixstrum',
+  'snaredrum',
+  'tomtom',
 ]);
 
 /**

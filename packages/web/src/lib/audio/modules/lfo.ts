@@ -104,8 +104,10 @@ const baseDef: AudioModuleDef = {
   // live `waveform` glyph already SHOWING the current shape + swing, the mini
   // tier pairs the one knob you actually ride with a picture of everything
   // else. `shape` (the mock's hero band: waveform-morph selector + live shape
-  // screen) ranks second, `depth` (swing amount) third — so the compact tier's
-  // three knobs are exactly the mock's ENGINE row (rate · morph · depth).
+  // screen) ranks second, `depth` (swing amount) third — so the compact tile
+  // pairs rate · morph with the live shape screen (a glyph-bearing face fits
+  // TWO whole knob columns — faceTierCap) and the full-in-lane face completes
+  // the mock's ENGINE row (rate · morph · depth).
   // DOCK PAGES mirror the mock's two editor bands: 'shape' (the waveform-morph
   // hero) and 'engine' (speed + swing).
   face: {
@@ -115,6 +117,20 @@ const baseDef: AudioModuleDef = {
       { id: 'engine', label: 'engine', controls: ['rate', 'depth'] },
     ],
     glyph: 'waveform',
+    // REAR CARD curation (rear-card-model) — the flip-side jack field.
+    //  * The leading band holds `clock`, and derivation would head it 'voice'
+    //    (any gate-cable input claims the voice slot). An LFO is a MODULATION
+    //    SOURCE, not a voice: the band is labeled 'sync' — the function of the
+    //    hole, a rising edge that hard-resets phase to 0, not a note trigger.
+    //    Pinning the port also fixes it there if a note-ish input is ever added.
+    //  * The two CV bands mirror the dock pages exactly — 'shape' (the morph
+    //    axis) then 'engine' (RATE + DEPTH) — so the rear reads like the front.
+    //  * No `~` ticks: every CV here is sample-and-held ONCE per ~128-sample
+    //    block (deliberate — it keeps multiplayer clients phase-aligned), so
+    //    none of these holes is an audio-rate destination.
+    rear: {
+      groups: [{ id: 'voice', label: 'sync', ports: ['clock'] }],
+    },
   },
 
   docs: {

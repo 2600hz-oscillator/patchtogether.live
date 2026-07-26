@@ -169,8 +169,10 @@ export const tidyVcoDef: AudioModuleDef = {
   // picker + a live wave-shape screen — so the SHAPE 1 morph leads and the
   // 'waveform' glyph draws exactly what shape1 + pw sculpt:
   //   mini    (1) shape1 — the oscillator identity next to the glyph.
-  //   compact (3) + pw (the mock's tune-cluster hero) + cutoff (the diode
-  //               ladder's front door — the one always-hot filter control).
+  //   compact (2 cells + glyph) + pw (the mock's tune-cluster hero). A
+  //               glyph-bearing face fits TWO whole knob columns beside the
+  //               wave screen (faceTierCap); cutoff (the diode ladder's front
+  //               door — the one always-hot filter control) joins at 'full'.
   //   full    (6 whole plate cells — laneBodyPlan's no-clip cap) + detune and
   //               oct2 (the mock's TUNE CLUSTER — the owner control-loss fix:
   //               the tuning controls must stay visible in the full face, so
@@ -184,7 +186,7 @@ export const tidyVcoDef: AudioModuleDef = {
   // envelopes → output), lowercase labels.
   face: {
     order: [
-      // the hero ladder (mini = 1 / compact = 3 / full-in-lane plate = 6)
+      // the hero ladder (mini = 1 / compact = 2 + glyph / full-in-lane plate = 6)
       'shape1',
       'pw',
       'cutoff',
@@ -235,7 +237,16 @@ export const tidyVcoDef: AudioModuleDef = {
     // REAR CARD curation (rear-card-model). Only the exceptions: pwm_cv's
     // stem ('pwm') doesn't match its param id ('pw'), so the oscillator band
     // is pinned explicitly; the envelopes band splits into the two EG
-    // clusters; the six worklet audio-rate CVs get the `~` tick.
+    // clusters; the worklet's audio-rate CVs get the `~` tick.
+    //
+    // AUDIT (P1 batch-2 rear sweep): the tick list said SIX, but the worklet
+    // reads only FOUR of them per sample — `this.bus.cutoffCv/pwmCv/foldCv/
+    // symCv = inputs[i]?.[0]` (whole block) vs `resCv/driveCv =
+    // inputs[i]?.[0]?.[0]` (first sample only, "they re-derive solver
+    // coefficients"; packages/dsp/src/tidy-vco.ts). The authored docs agree —
+    // cutoff/pwm/fold/sym say "audio-rate", res/drive do not. RES + DRIVE
+    // dropped: a `~` promising per-sample FM on a block-rate hole is a lie
+    // that sends a patcher hunting growl that cannot exist.
     rear: {
       groups: [
         {
@@ -248,7 +259,7 @@ export const tidyVcoDef: AudioModuleDef = {
         { group: 'envelopes', label: 'filter eg', ports: ['fatk_cv', 'fdec_cv', 'fsus_cv', 'frel_cv'] },
         { group: 'envelopes', label: 'amp eg', ports: ['atk_cv', 'dec_cv', 'sus_cv', 'rel_cv'] },
       ],
-      audioRate: ['cutoff_cv', 'res_cv', 'pwm_cv', 'drive_cv', 'fold_cv', 'sym_cv'],
+      audioRate: ['cutoff_cv', 'pwm_cv', 'fold_cv', 'sym_cv'],
     },
   },
 

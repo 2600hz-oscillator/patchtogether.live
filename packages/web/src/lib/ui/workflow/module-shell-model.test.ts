@@ -323,9 +323,12 @@ describe('ModuleShell tier-swap contract (fixture — no real module is faced ye
     return curatedFace(fixture, laneFaceTier(lodTier))?.controls.length ?? -1;
   }
 
-  it('swaps CONTENT across LOD tiers: mini=1 / compact=3 / full=8', () => {
+  it('swaps CONTENT across LOD tiers: mini=1 / compact=2 (glyph face) / full=8', () => {
     expect(laneControlCount('mini')).toBe(1);
-    expect(laneControlCount('compact')).toBe(3);
+    // The fixture declares glyph 'scope', so compact is the fit-reconciled
+    // two cells + glyph (faceTierCap) — the SAME number laneBodyPlan renders.
+    expect(laneControlCount('compact')).toBe(2);
+    expect(laneBodyPlan(laneControlCount('compact'), true, 'compact').cellCount).toBe(2);
     expect(laneControlCount('full')).toBe(8);
   });
 

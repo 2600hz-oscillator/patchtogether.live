@@ -1,7 +1,7 @@
 // e2e/vrt/workflow-rear-card.spec.ts
 //
 // VRT: the REAR CARD — the dock full-view's TAB flip side (rear-card-spec.md).
-// Two PINNED scenes bracket the range:
+// PINNED scenes bracket the range and pin the curation shapes:
 //
 //   rear-tidyVco — the BUSIEST prototype (27 in + 2 out): voice band + the
 //     five face-page bands (oscillator curated, EG clusters, audio-rate `~`
@@ -9,6 +9,21 @@
 //     auto-wire seats real plugs (endpoint chips) deterministically.
 //   rear-vca — the SIMPLEST (2 in + 2 out): the curated signal → gain-stage
 //     split and a 2-hole rail; pins the frame/hatch/footer at minimum density.
+//
+// P1 batch 2 adds the two rears the batch's most complex module pair needs —
+// the axes tidyVco/vca do NOT already cover:
+//
+//   rear-dx7 — the batch's most complex FACE (4 pages, 10 ranked controls, a
+//     preset selector + a file-input family) has the SIMPLEST possible rear:
+//     3 note-source inputs and 1 output, ZERO per-param CV. It is the only
+//     pinned scene where the whole field is ONE curated band with an inline
+//     CLUSTER inside it (the mono PITCH CV + GATE legacy pair split out of
+//     the poly bus) — a shape derivation cannot produce, on a card with no
+//     CV bands at all to dilute it.
+//   rear-sixstrum — the batch's genuinely busiest FIELD (22 in + 1 out): a
+//     curated leading band with TWO sub-header clusters of six (the strum
+//     triggers, the mute gates), seven derived per-param CV bands, and 14
+//     audio-rate `~` ticks — by far the widest tick set on any pinned scene.
 //
 // Deterministic by construction: the rear card renders NO live glyphs and NO
 // knobs — labels, recessed holes, domain rings and seated plugs only; the
@@ -32,6 +47,9 @@ test.describe.configure({ mode: 'default' });
 const SCENES = [
   { type: 'tidyVco', holes: 29 },
   { type: 'vca', holes: 4 },
+  // P1 batch 2
+  { type: 'dx7', holes: 4 },
+  { type: 'sixstrum', holes: 23 },
 ] as const;
 
 /** Full-width faceplate element capture (workflow-shell-faces budget). */

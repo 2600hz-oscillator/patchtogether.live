@@ -30,6 +30,9 @@
     /** MIDI-Learn addressing — both set ⇒ right-click binds a NOTE. */
     moduleId?: string;
     paramId?: string;
+    /** Explicit test id — for a NON-param action (a shell family cell: an
+     *  import, a load) that has no paramId to derive `control-<id>` from. */
+    testid?: string;
   }
 
   let {
@@ -43,6 +46,7 @@
     disabled = false,
     moduleId,
     paramId,
+    testid,
   }: Props = $props();
 
   const midiEnabled = $derived(!!(moduleId && paramId));
@@ -114,12 +118,12 @@
 
 <span class="btn-wrap" class:midi-learning={midi.learning} class:midi-bound={!!midi.binding}>
   <button
-    class="btn {variant}"
+    class="btn {variant} nodrag"
     class:pressed
     type="button"
     {disabled}
     {title}
-    data-testid={paramId ? `control-${paramId}` : undefined}
+    data-testid={testid ?? (paramId ? `control-${paramId}` : undefined)}
     aria-pressed={momentary ? pressed : undefined}
     onpointerdown={pointerdown}
     onpointerup={pointerup}

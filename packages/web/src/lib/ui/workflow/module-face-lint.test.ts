@@ -31,16 +31,18 @@ import '$lib/meta/modules';
 import { listModuleDefs } from '$lib/audio/module-registry';
 import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { listMetaModuleDefs } from '$lib/meta/module-registry';
-import type { ControlFamily, ModuleFace } from '$lib/graph/types';
+import type { ControlFamily, ModuleFace, ParamDef } from '$lib/graph/types';
 import { staticKey, type LegendEntry } from '$lib/docs/control-doc-resolver';
 import { STRICT_FACES } from './strict-faces';
-import { dockFacePlan } from './curated-face';
+import { curatedFace, dockFacePlan } from './curated-face';
+import { laneBodyPlan } from './module-shell-model';
+import { looksLikeSwitch } from './shell-control-kind';
 
 interface FaceDef {
   type: string;
   inputs?: readonly { id: string }[];
   outputs?: readonly { id: string }[];
-  params?: readonly { id: string; label?: string }[];
+  params?: readonly ParamDef[];
   controlFamilies?: readonly ControlFamily[];
   face?: ModuleFace;
 }
@@ -269,6 +271,100 @@ describe('module-face lint — DOCK RENDER-PLAN parity (STRICT_FACES set)', () =
   });
 });
 
+describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
+  // The functional regression this closes: tomtom's momentary STRIKE rendered
+  // as a LATCHING rotary in the shell — dragging it to 1 held the pad down,
+  // masked the module's own TRIG jack and persisted a stuck value into the
+  // Y.Doc. A press-pad and a latching switch have the IDENTICAL ParamDef shape
+  // (`0..1 discrete default 0`), so the intent must be DECLARED, and a promoted
+  // module that grows a NEW switch-shaped param must classify it here.
+
+  /** Switch-shaped params on promoted modules that are LATCHING BY INTENT (a
+   *  state the user leaves on), acknowledged so the ratchet below can tell
+   *  "deliberately latching" from "nobody looked at it yet". RATCHET RULE: add
+   *  an id here ONLY after confirming against the module's DSP/card that the
+   *  control latches; a press-pad goes on `face.momentary` instead. */
+  const ACKNOWLEDGED_LATCHING = new Set<string>([
+    'kickdrum:hard',   // hard-clip mode switch — a bus state you leave engaged
+    'snaredrum:hard',  // same clipper switch, the KICK sibling's precedent
+    'tidyVco:hold',    // sample-and-hold ENGAGE — held on while you want it
+  ]);
+
+  it('every declared momentary id is a real param with the press-pad shape', () => {
+    const problems: string[] = [];
+    for (const def of allDefs()) {
+      const declared = def.face?.momentary ?? [];
+      const byId = new Map((def.params ?? []).map((p) => [p.id, p]));
+      const seen = new Set<string>();
+      for (const pid of declared) {
+        if (seen.has(pid)) problems.push(`${def.type}: face.momentary lists '${pid}' twice`);
+        seen.add(pid);
+        const p = byId.get(pid);
+        if (!p) {
+          problems.push(`${def.type}: face.momentary '${pid}' is not a declared param`);
+          continue;
+        }
+        if (!looksLikeSwitch(p)) {
+          problems.push(
+            `${def.type}: face.momentary '${pid}' is ${p.min}..${p.max} ${p.curve} ` +
+              `default=${p.defaultValue} — a press-pad must be 0..1 discrete resting at 0`,
+          );
+        }
+        if (!(def.face?.order ?? []).includes(pid)) {
+          problems.push(`${def.type}: face.momentary '${pid}' is not ranked in face.order`);
+        }
+      }
+    }
+    expect(problems.join('\n'), 'face.momentary drifted from the params — fix the ids').toBe('');
+  });
+
+  it('STRICT_FACES: every switch-shaped param is classified momentary OR acknowledged latching', () => {
+    const unclassified: string[] = [];
+    for (const def of allDefs()) {
+      if (!STRICT_FACES.has(def.type)) continue;
+      const declared = new Set(def.face?.momentary ?? []);
+      for (const p of def.params ?? []) {
+        if (!looksLikeSwitch(p)) continue;
+        if (declared.has(p.id)) continue;
+        if (ACKNOWLEDGED_LATCHING.has(`${def.type}:${p.id}`)) continue;
+        unclassified.push(
+          `${def.type}: param '${p.id}' has the 0/1 press-pad SHAPE but nobody said which it is. ` +
+            `If it fires on a rising edge (a strike/trigger pad) add it to face.momentary; ` +
+            `if it latches, add '${def.type}:${p.id}' to ACKNOWLEDGED_LATCHING here.`,
+        );
+      }
+    }
+    expect(
+      unclassified.join('\n'),
+      'unclassified switch-shaped param(s) — a momentary pad would render as a latching rotary',
+    ).toBe('');
+  });
+});
+
+describe('module-face lint — compact cap ↔ lane fit plan (authored intent === render)', () => {
+  // The mismatch this closes: FACE_TIER_CAPS.compact promised 3 while
+  // laneBodyPlan rendered 2 next to a glyph, so six faces documented a
+  // 3-control compact tile the shell could never paint. faceTierCap now
+  // follows the plan; this pins them together over the LIVE registry.
+  it('every faced module SELECTS exactly the cells the compact tile RENDERS', () => {
+    const drift: string[] = [];
+    for (const def of allDefs()) {
+      if (!def.face) continue;
+      const face = curatedFace(def, 'compact');
+      if (!face) continue;
+      const hasGlyph = face.glyph !== 'none';
+      const rendered = laneBodyPlan(face.controls.length, hasGlyph, 'compact').cellCount;
+      if (rendered !== face.controls.length) {
+        drift.push(
+          `${def.type}: compact selects ${face.controls.length} control(s) but the tile ` +
+            `renders ${rendered} (glyph=${face.glyph}) — the cap and the fit plan disagree`,
+        );
+      }
+    }
+    expect(drift.join('\n'), 'compact cap ↔ fit-plan drift — reconcile faceTierCap/laneBodyPlan').toBe('');
+  });
+});
+
 describe('module-face lint — rear-card curation (face.rear) + derivation totality', () => {
   // The rear card (rear-card-model.ts) renders EVERY declared port as exactly
   // one hole. Two pure gates hold that line (rear-card-spec.md §5):
@@ -363,9 +459,11 @@ describe('module-face lint — STRICT_FACES RATCHET (only grows)', () => {
   it('STRICT_FACES never shrinks below its frozen floor', () => {
     // 6 (2026-07-25): P1 batch 1 — the first faced-module wave (adsr, cloudseed,
     // kickdrum, lfo, tidyVco, vca) raised the floor from the P0.4 empty seed.
+    // 12 (2026-07-26): P1 batch 2 — dx7, qbrt, shimmershine, sixstrum,
+    // snaredrum, tomtom.
     expect(
       STRICT_FACES.size,
       'STRICT_FACES shrank below its frozen floor — see the RATCHET rule above',
-    ).toBeGreaterThanOrEqual(6);
+    ).toBeGreaterThanOrEqual(12);
   });
 });

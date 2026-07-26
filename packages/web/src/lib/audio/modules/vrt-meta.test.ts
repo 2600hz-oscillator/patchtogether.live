@@ -396,7 +396,14 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // out (the #1064 drum-wave drain precedent: drop the pairs FIRST, then
       // dispatch, because the pending-pair skip is unconditional and
       // `--update-snapshots` writes nothing for a skipped test).
-    ).toBeLessThanOrEqual(104);
+      // 104→118 for P1 BATCH 2 (2026-07-26, deliberate darwin-first — the
+      // SAME lifecycle batch 1 just completed, entering at its start): 12
+      // curated-face scenes for the six newly-migrated modules (compact +
+      // dock per module) + 2 new rear-card scenes (rear-dx7, rear-sixstrum).
+      // darwin baselines captured locally and flake-checked 3× (42/42 clean);
+      // a vrt-update.yml `platform=linux` dispatch on this branch drains the
+      // 14 pairs and brings this back to 104.
+    ).toBeLessThanOrEqual(118);
   });
 });
 

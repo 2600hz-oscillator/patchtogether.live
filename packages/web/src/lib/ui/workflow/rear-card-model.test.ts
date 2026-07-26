@@ -98,10 +98,16 @@ describe('rear-card derivation — the six P1 prototypes (spec §4)', () => {
     expect(env.clusters[0].holes.map((h) => h.portId)).toEqual(['fatk_cv', 'fdec_cv', 'fsus_cv', 'frel_cv']);
     expect(env.clusters[1].holes.map((h) => h.portId)).toEqual(['atk_cv', 'dec_cv', 'sus_cv', 'rel_cv']);
 
-    // the six worklet audio-rate CVs tick; a block-rate CV does not.
+    // the four worklet audio-rate CVs tick; a block-rate CV does not. RES and
+    // DRIVE are deliberately NOT ticked: the worklet reads them once per block
+    // (`inputs[i]?.[0]?.[0]` — they re-derive solver coefficients), unlike
+    // cutoff/pwm/fold/sym which it reads over the whole block.
     const filter = plan.bands[3];
     expect(filter.holes.find((h) => h.portId === 'cutoff_cv')!.audioRate).toBe(true);
+    expect(filter.holes.find((h) => h.portId === 'res_cv')!.audioRate).toBe(false);
+    expect(filter.holes.find((h) => h.portId === 'drive_cv')!.audioRate).toBe(false);
     expect(filter.holes.find((h) => h.portId === 'track_cv')!.audioRate).toBe(false);
+    expect(plan.bands[2].holes.every((h) => h.audioRate)).toBe(true); // wavefolder: fold + sym
 
     // OUTPUTS rail: stereo pair tie on out_r; audio domain; no pathology.
     expect(plan.outputs.map((h) => h.portId)).toEqual(['out_l', 'out_r']);
@@ -111,12 +117,15 @@ describe('rear-card derivation — the six P1 prototypes (spec §4)', () => {
     expect(plan.denseRail).toBe(false);
   });
 
-  it('kickdrum: pure derivation — voice band (trigger/accent/pitch/choke) + the 6 face pages', () => {
+  it('kickdrum: curated STRIKE band + the 6 face pages, body split into two clusters', () => {
     const def = kickdrumDef as unknown as RearDefLike;
     expectTotal(def);
     expect(bandIds(def)).toEqual(['voice', 'sub', 'body', 'click', 'drive', 'dynamics', 'output']);
     const plan = rearFieldPlan(def);
-    // pitch_cv's stem ('pitch') matches NO param → a VOICE port, not a CV.
+    // the four performance inputs are PINNED (pitch_cv's `_cv` stem would
+    // otherwise follow any future `pitch` param into a page band) and the band
+    // is headed by FUNCTION — 'strike', not the derived 'voice'.
+    expect(plan.bands[0].label).toBe('strike');
     expect(plan.bands[0].holes.map((h) => h.portId)).toEqual([
       'trigger_in',
       'accent_in',
@@ -125,19 +134,44 @@ describe('rear-card derivation — the six P1 prototypes (spec §4)', () => {
     ]);
     expect(plan.bands[0].holes[0].edge).toBe('trigger');
     expect(plan.bands[0].holes[3].edge).toBe('gate');
+    // `~` on PITCH alone: the worklet reads it raw per sample (1 V/oct FM),
+    // while every per-param CV lands on an 80 Hz-smoothed AudioParam.
+    expect(plan.bands[0].holes.filter((h) => h.audioRate).map((h) => h.portId)).toEqual(['pitch_cv']);
     // page bands hold the paramTarget CVs in page-control order.
     expect(bandPorts(def, 'sub')).toEqual(['tune_cv', 'sub_decay_cv', 'sub_level_cv', 'sub_eq_cv', 'translate_cv']);
     expect(bandPorts(def, 'dynamics')).toEqual(['attack_cv', 'sustain_cv', 'glue_cv', 'ceiling_cv']);
+    // the widest band (7 holes) splits into the pitch envelope + the tone.
+    const body = plan.bands.find((b) => b.id === 'body')!;
+    expect(body.holes).toEqual([]);
+    expect(body.clusters.map((c) => c.label)).toEqual(['pitch envelope', 'tone']);
+    expect(body.clusters[0].holes.map((h) => h.portId)).toEqual(['pitch_amt_cv', 'pitch_time_cv', 'tension_cv']);
+    expect(body.clusters[1].holes.map((h) => h.portId)).toEqual([
+      'body_decay_cv',
+      'body_level_cv',
+      'body_shape_cv',
+      'body_eq_cv',
+    ]);
     // FUNCTION labels: the target param's label, uppercased.
     expect(plan.bands[1].holes[0].label).toBe(kickdrumDef.params!.find((p) => p.id === 'tune')!.label!.toUpperCase());
   });
 
-  it('adsr: voice(gate) + stages; env/env_inv rail without a stereo tie', () => {
+  it('adsr: curated GATE band + stages clustered by CV law; env/env_inv rail without a stereo tie', () => {
     const def = adsrDef as unknown as RearDefLike;
     expectTotal(def);
     expect(bandIds(def)).toEqual(['voice', 'stages']);
-    expect(bandPorts(def, 'stages')).toEqual(['attack', 'decay', 'sustain', 'release']);
     const plan = rearFieldPlan(def);
+    // an envelope is driven, not voiced — the leading band says 'gate'.
+    expect(plan.bands[0].label).toBe('gate');
+    expect(plan.bands[0].holes.map((h) => h.portId)).toEqual(['gate']);
+    // stages mirrors the dock page but clusters the log TIME jacks apart from
+    // the linear SUSTAIN level (the param labels are bare letters A/D/S/R).
+    expect(bandPorts(def, 'stages')).toEqual(['attack', 'decay', 'release', 'sustain']);
+    const stages = plan.bands[1];
+    expect(stages.holes).toEqual([]);
+    expect(stages.clusters.map((c) => c.label)).toEqual(['times', 'level']);
+    expect(stages.clusters[1].holes.map((h) => h.portId)).toEqual(['sustain']);
+    // nothing on an ADSR is an audio-rate destination.
+    expect(plan.bands.flatMap((b) => [...b.holes, ...b.clusters.flatMap((c) => c.holes)]).some((h) => h.audioRate)).toBe(false);
     expect(plan.outputs.map((h) => [h.portId, h.domain])).toEqual([
       ['env', 'cv'],
       ['env_inv', 'cv'],
@@ -158,12 +192,17 @@ describe('rear-card derivation — the six P1 prototypes (spec §4)', () => {
     expect(plan.outputs.map((h) => h.label)).toEqual(['AUDIO', 'AUDIO INV']);
   });
 
-  it('lfo: voice(clock) + shape/engine page bands; 4-phase cv rail', () => {
+  it('lfo: curated SYNC band + shape/engine page bands; 4-phase cv rail', () => {
     const def = lfoDef as unknown as RearDefLike;
     expectTotal(def);
     expect(bandIds(def)).toEqual(['voice', 'shape', 'engine']);
     expect(bandPorts(def, 'engine')).toEqual(['rate', 'depth_cv']);
     const plan = rearFieldPlan(def);
+    // a modulation source, not a voice: the clock hole's band says 'sync'.
+    expect(plan.bands[0].label).toBe('sync');
+    expect(plan.bands[0].holes.map((h) => h.portId)).toEqual(['clock']);
+    // every LFO CV is sample-and-held once per block — no `~` anywhere.
+    expect(plan.bands.flatMap((b) => b.holes).some((h) => h.audioRate)).toBe(false);
     expect(plan.outputs.map((h) => h.portId)).toEqual(['phase0', 'phase90', 'phase180', 'phase270']);
     expect(plan.denseRail).toBe(false); // 4 ≤ 8 — single-column rail
   });
@@ -172,8 +211,9 @@ describe('rear-card derivation — the six P1 prototypes (spec §4)', () => {
     const def = cloudseedDef as unknown as RearDefLike;
     expectTotal(def);
     // 8 declared pages, but only blend/input/output have CV targets; the
-    // signal band leads with the stereo audio ins.
+    // curated stereo-insert band leads with the two audio ins.
     expect(bandIds(def)).toEqual(['signal', 'blend', 'input', 'output']);
+    expect(rearFieldPlan(def).bands[0].label).toBe('stereo in');
     expect(bandPorts(def, 'signal')).toEqual(['in_l', 'in_r']);
     expect(bandPorts(def, 'blend')).toEqual(['dry_cv', 'early_cv', 'late_cv']);
     expect(bandPorts(def, 'input')).toEqual(['input_mix_cv', 'low_cut_cv']);

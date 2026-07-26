@@ -977,6 +977,32 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // CAPTURES them (the skip is unconditional, so a pair still listed means
   // `--update-snapshots` writes nothing — the #1064 drum-wave drain ordering).
   // Their linux baselines land on this branch in the bot's regen commit.
+  //
+  // P1 BATCH 2 (2026-07-26, deliberate darwin-first — the batch-1 pattern
+  // above, at the point in its lifecycle BEFORE the drain): the 12 CURATED
+  // FACE scenes for the six newly-migrated modules (compact lane tile + dock
+  // full-view faceplate per module, workflow-shell-faces.spec.ts) and the 2
+  // new REAR CARD scenes (workflow-rear-card.spec.ts — dx7, the batch's most
+  // complex face on the simplest possible rear, and sixstrum, its busiest
+  // field at 23 holes). darwin baselines captured locally and flake-checked
+  // 3× (42/42 clean); the linux pairs below are pending a vrt-update.yml
+  // `platform=linux` dispatch on this branch, at which point they get DRAINED
+  // exactly like batch 1's did and the vrt-meta linux-deficit ceiling comes
+  // back down by 14.
+  'linux/face-dx7-compact',
+  'linux/face-dx7-dock',
+  'linux/face-sixstrum-compact',
+  'linux/face-sixstrum-dock',
+  'linux/face-snaredrum-compact',
+  'linux/face-snaredrum-dock',
+  'linux/face-tomtom-compact',
+  'linux/face-tomtom-dock',
+  'linux/face-shimmershine-compact',
+  'linux/face-shimmershine-dock',
+  'linux/face-qbrt-compact',
+  'linux/face-qbrt-dock',
+  'linux/rear-dx7',
+  'linux/rear-sixstrum',
   // CLIPPLAYER: darwin baseline (the clip-launcher card — 8×8 launch grid +
   // piano-roll note editor + transport knobs; no animated canvas) captured
   // locally; linux baseline pending a `vrt-update.yml` workflow_dispatch on
