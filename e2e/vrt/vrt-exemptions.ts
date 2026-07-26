@@ -968,6 +968,14 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // cellshade-composite precedent).
   'linux/workflow-audio-io',
   'linux/workflow-dock-patch',
+  // P1 BATCH-3 CURATED FACE — delay (2026-07-26, deliberate darwin-first, the
+  // batch-1 workflow-shell-faces precedent). Darwin baselines captured +
+  // inspected locally; the linux pair lands via a vrt-update.yml
+  // `platform=linux` dispatch when the integrator DRAINS these (drop the pairs
+  // FIRST — the pending-pair skip is unconditional, so `--update-snapshots`
+  // writes nothing for a still-listed scene).
+  'linux/face-delay-compact',
+  'linux/face-delay-dock',
   // NOTE (2026-07-26): the `?shell=1` WORKFLOW-SHELL family — the 3 ZOOM
   // scenes (workflow-shell-zoom.spec.ts), the 12 P1 BATCH-1 CURATED FACE
   // scenes (compact lane tile + dock full-view faceplate per migrated module,
