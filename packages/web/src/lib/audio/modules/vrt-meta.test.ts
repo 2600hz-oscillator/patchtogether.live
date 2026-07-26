@@ -396,7 +396,14 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // out (the #1064 drum-wave drain precedent: drop the pairs FIRST, then
       // dispatch, because the pending-pair skip is unconditional and
       // `--update-snapshots` writes nothing for a skipped test).
-    ).toBeLessThanOrEqual(104);
+      // 104→106 for the P1 BATCH-3 KARPLUS face (2026-07-26, deliberate
+      // darwin-first — the SAME lifecycle batch 1 just completed, entering at
+      // its start): the compact lane tile + the dock full-view faceplate under
+      // `?shell=1` in workflow-shell-faces.spec.ts. darwin baselines captured
+      // locally and flake-checked 3×; a vrt-update.yml `platform=linux`
+      // dispatch on the integrated batch-3 branch drains the 2 pairs and
+      // brings this back to 104.
+    ).toBeLessThanOrEqual(106);
   });
 });
 
