@@ -112,15 +112,20 @@
    3. FACEPLATE FRAME (kit §3 / ux-fullview Section B)
    ============================================================ */
 
-/* wide content scrolls inside its own container; the page body never scrolls sideways */
+/* wide content scrolls inside its own container; the page body never scrolls
+   sideways. The scroll region sits BELOW the pane-fixed chrome (grip + title
+   bar + .win-ctrls) inside the frame — the kit's 900px min-width lives on
+   .faceplate-body, so only the CONTENT travels sideways in a half-width
+   split pane; the title bar (and its ✕) hugs the pane. */
 .dock-faceplate .faceplate-scroll {
-  overflow-x: auto;
-  padding-bottom: 4px;
+  overflow: auto;
+}
+.dock-faceplate .faceplate-body {
+  min-width: 900px;
 }
 
 .dock-faceplate .faceplate {
   position: relative;
-  min-width: 900px;
   background: linear-gradient(180deg, #171d26 0%, #10141b 100%);
   border: 1px solid var(--line2);
   border-top: 2px solid var(--domain-2); /* domain accent lip */
@@ -154,14 +159,17 @@
   background: var(--line2);
 }
 
-/* ---- title bar ---- */
+/* ---- title bar ----
+   Pane-fixed chrome: ONE row, never wraps — the name (and the flip-state
+   chip) truncate with ellipsis before the .win-ctrls trio (flex: none)
+   loses a pixel, so the pane ✕ stays visible + clickable at split width. */
 .dock-faceplate .faceplate-bar {
   display: flex;
   align-items: center;
   gap: 16px;
   padding: 10px 16px 12px;
   border-bottom: 1px solid var(--line);
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 .dock-faceplate .face-id {
   display: flex;
@@ -209,10 +217,12 @@
   flex: 1;
 }
 
-/* window controls: undock / collapse / close */
+/* window controls: undock / collapse / close — incompressible (the ✕ is the
+   owner-required per-pane close; it must never shrink, wrap, or clip). */
 .dock-faceplate .win-ctrls {
   display: flex;
   gap: 7px;
+  flex: none;
 }
 .dock-faceplate .win-ctrls button {
   width: 26px;

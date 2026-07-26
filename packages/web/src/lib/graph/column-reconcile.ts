@@ -435,17 +435,77 @@ export function healColumnAutomationLanes(): boolean {
   return wrote;
 }
 
+// ---------------- Convergence budget (the anti-freeze guard) ----------------
+//
+// The janitor runs from the Canvas graph-change $effect, and every write it
+// makes re-triggers that effect. Each pass above is idempotent BY CONSTRUCTION
+// (a clean pass opens no transaction) — but nothing used to ENFORCE that: one
+// non-idempotent heal (a def added to a lane that some pass keeps re-writing,
+// or another janitor fighting a wcol edge) turns the effect↔write cycle into an
+// UNBOUNDED reactive loop — the UI freezes, nothing responds, only a refresh
+// recovers (the BUG-A symptom class). The budget makes that failure mode
+// STRUCTURALLY impossible: at most RECONCILE_MAX_WRITE_PASSES_PER_WINDOW
+// writing passes are allowed per RECONCILE_WINDOW_MS window; beyond that the
+// janitor SKIPS (with one loud console.warn per trip) until the window rolls
+// over — a diverging heal degrades to bounded churn + a visible warning
+// instead of a frozen tab. Normal use never comes close: one user gesture
+// settles in 1-2 writing passes, and the heal is state-based, so anything the
+// paused window missed is re-derived from the converged snapshot on the next
+// window. Test seam: `now` is injectable and `__resetColumnReconcileBudget`
+// restores a fresh window.
+export const RECONCILE_WINDOW_MS = 1000;
+// 64 writing passes/second: a hook-driven e2e burst assigning ~20 modules in
+// under a second stays comfortably inside (≤2 writing passes per gesture); a
+// genuinely non-converging heal re-fires per Y.Doc update — hundreds/sec —
+// and trips within the first window.
+export const RECONCILE_MAX_WRITE_PASSES_PER_WINDOW = 64;
+let budgetWindowStart = Number.NEGATIVE_INFINITY;
+let budgetWritePasses = 0;
+let budgetTripLogged = false;
+
+/** TEST-ONLY: reset the convergence budget to a fresh window. */
+export function __resetColumnReconcileBudget(): void {
+  budgetWindowStart = Number.NEGATIVE_INFINITY;
+  budgetWritePasses = 0;
+  budgetTripLogged = false;
+}
+
+/** True when the budget is currently tripped (the janitor is paused for the
+ *  rest of its window). Exposed for tests + diagnostics. */
+export function columnReconcileBudgetTripped(): boolean {
+  return budgetWritePasses >= RECONCILE_MAX_WRITE_PASSES_PER_WINDOW;
+}
+
 /**
  * The combined workflow-columns janitor the Canvas graph-change $effect calls
  * (workflow racks only). Membership heal FIRST (so the head + wiring reconciles
  * see the healed order), then the head-source heal (so the wiring reconcile sees
  * the resolved head), then the automation-lane heal, then the wiring reconcile. A
- * no-op (no transaction) when the graph is already converged.
+ * no-op (no transaction) when the graph is already converged. Guarded by the
+ * convergence budget above so a non-converging heal can NEVER freeze the UI.
  */
-export function reconcileColumns(resolveDef: ColumnDefResolver): void {
+export function reconcileColumns(resolveDef: ColumnDefResolver, now: number = Date.now()): void {
   if (!patch.nodes[PINNED_MIXER_ID]) return;
-  reconcileColumnMembership();
-  reconcileColumnHeads(resolveDef);
-  healColumnAutomationLanes();
-  reconcileColumnWiring(resolveDef);
+  if (now - budgetWindowStart >= RECONCILE_WINDOW_MS) {
+    budgetWindowStart = now;
+    budgetWritePasses = 0;
+    budgetTripLogged = false;
+  }
+  if (budgetWritePasses >= RECONCILE_MAX_WRITE_PASSES_PER_WINDOW) {
+    if (!budgetTripLogged) {
+      budgetTripLogged = true;
+      console.warn(
+        `[workflow-columns] reconcile budget tripped (${RECONCILE_MAX_WRITE_PASSES_PER_WINDOW} writing passes ` +
+          `in ${RECONCILE_WINDOW_MS}ms) — pausing the janitor for this window. A heal pass is not converging; ` +
+          'the graph state that triggered this needs a bug report.',
+      );
+    }
+    return;
+  }
+  let wrote = false;
+  wrote = reconcileColumnMembership() || wrote;
+  wrote = reconcileColumnHeads(resolveDef) || wrote;
+  wrote = healColumnAutomationLanes() || wrote;
+  wrote = reconcileColumnWiring(resolveDef) || wrote;
+  if (wrote) budgetWritePasses++;
 }

@@ -120,6 +120,85 @@ export function morphWavePoints(
   return pts;
 }
 
+/**
+ * One cycle of TIDY VCO's CORE WAVEFORM as a sample buffer (−1..1) for
+ * ScopeScreen's explicit-buffer `wave` mode — the PARAM-DERIVED half of the
+ * dual glyph (owner spec: the oscillator's ASSIGNED shape, always visible
+ * regardless of gate). Mirrors the voice's osc section: OSC1 and OSC2 are
+ * each a saw↔pulse morph (`morphWaveSample` — the def's "0 = saw, 1 = pulse"
+ * law) sharing one PW, crossfaded by the equal-power MIX law (0 = OSC1 only,
+ * 1 = OSC2 only). The mixed cycle is peak-normalized (display identity — the
+ * screen shows the SHAPE at full scale, not the mix's level sag). Pure +
+ * deterministic so the derivation is unit-testable and the ungated VRT scenes
+ * stay pixel-stable.
+ */
+export function sawPulseMixWaveSamples(
+  shape1: number,
+  shape2 = 0,
+  pw = 0.5,
+  mix = 0,
+  samples = 128,
+): Float32Array {
+  const n = Math.max(2, Math.floor(samples));
+  const m = clamp01(mix);
+  // Equal-power crossfade gains (the def's documented MIX law).
+  const g1 = Math.cos((m * Math.PI) / 2);
+  const g2 = Math.sin((m * Math.PI) / 2);
+  const out = new Float32Array(n);
+  let peak = 0;
+  for (let i = 0; i < n; i++) {
+    // Clamped to ONE display cycle [0,1] (no wrap) — same edge-to-edge
+    // convention as triMorphWaveSamples, so the saw keeps its full ramp.
+    const ph = i / (n - 1);
+    const v =
+      g1 * morphWaveSample(Math.min(ph, 1 - 1e-9), shape1, pw) +
+      g2 * morphWaveSample(Math.min(ph, 1 - 1e-9), shape2, pw);
+    out[i] = v;
+    const a = Math.abs(v);
+    if (a > peak) peak = a;
+  }
+  // Peak-normalize DOWN only (a correlated equal-power sum can exceed 1);
+  // a sub-unity cycle keeps its true amplitude.
+  if (peak > 1) {
+    for (let i = 0; i < n; i++) out[i] = out[i]! / peak;
+  }
+  return out;
+}
+
+/**
+ * One sample (−1..1) of the LFO's 3-anchor morph at phase `phase01` (0..1):
+ * shape 0 = sine, 1 = rising saw, 2 = square, with LINEAR crossfades between
+ * adjacent anchors (0.5 = halfway sine↔saw) — the lfo def's documented shape
+ * law. `amp` scales the swing (the lfo card's depth: 0.5 = unity ±1, so pass
+ * min(1, 2·depth) for the display). Pure.
+ */
+export function triMorphWaveSample(phase01: number, shape: number, amp = 1): number {
+  // Clamped to ONE display cycle [0,1] (no wrap): the endpoint keeps the
+  // saw's full ramp / the square's second half instead of snapping back to
+  // phase 0, so the drawn cycle reads cleanly edge to edge.
+  const ph = phase01 < 0 ? 0 : phase01 > 1 ? 1 : phase01;
+  const s = shape < 0 ? 0 : shape > 2 ? 2 : shape;
+  const sine = Math.sin(ph * 2 * Math.PI);
+  const saw = 2 * ph - 1;
+  const square = ph < 0.5 ? 1 : -1;
+  const v = s <= 1 ? (1 - s) * sine + s * saw : (2 - s) * saw + (s - 1) * square;
+  return v * amp;
+}
+
+/**
+ * One cycle of the LFO tri-morph as a sample buffer (−1..1) for ScopeScreen's
+ * explicit-buffer `wave` mode — the lfo face's PARAM-REACTIVE live glyph
+ * (recomputed whenever shape/depth change). Deterministic + pure.
+ */
+export function triMorphWaveSamples(shape: number, amp = 1, samples = 128): Float32Array {
+  const n = Math.max(2, Math.floor(samples));
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    out[i] = triMorphWaveSample(i / (n - 1), shape, amp);
+  }
+  return out;
+}
+
 // ---- WAVEFORM mode (live trace) + explicit single-cycle buffers ------------
 
 /** Vertical inset (fraction of height) for bipolar (−1..1) traces. */
@@ -167,4 +246,44 @@ export function peakAmplitude(data: ArrayLike<number>): number {
     if (a > peak) peak = a;
   }
   return peak;
+}
+
+// ---- STATIC glyph buffers (ModuleShell face glyphs) -------------------------
+//
+// The shell's tile glyphs are STATIC in this pass (no live taps): each
+// `face.glyph` kind maps to a deterministic single-buffer trace rendered via
+// the existing `wave`-mode explicit-buffer path (samplesToPoints). Pure + cheap
+// (computed once at module scope by the consumer), so the VRT scenes stay
+// pixel-deterministic.
+
+/**
+ * One (or `cycles`) full sine cycle(s), −1..1 — the generic "this module emits
+ * a wave" glyph. Used for `glyph: 'waveform'` faces (LFO's default shape IS a
+ * sine; for other oscillators it reads as a neutral wave placeholder until a
+ * live trace is wired). Starts and ends at 0 for a seam-free trace.
+ */
+export function sineWaveSamples(samples = 128, cycles = 1): Float32Array {
+  const n = Math.max(2, Math.floor(samples));
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    out[i] = Math.sin((i / (n - 1)) * cycles * 2 * Math.PI);
+  }
+  return out;
+}
+
+/**
+ * A decaying oscillation burst — sin(2π·cycles·t) · e^(−decay·t) — the
+ * "struck/percussive source at rest" glyph for `glyph: 'scope'` faces (e.g.
+ * kickdrum): a transient that rings down to idle, unlike the tidyVco saw morph
+ * (which reads as a continuous oscillator). Deterministic; peak ≈ the first
+ * quarter-cycle, tail → ~e^(−decay).
+ */
+export function burstWaveSamples(samples = 256, cycles = 3, decay = 5): Float32Array {
+  const n = Math.max(2, Math.floor(samples));
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    out[i] = Math.sin(t * cycles * 2 * Math.PI) * Math.exp(-decay * t);
+  }
+  return out;
 }

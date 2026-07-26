@@ -14,7 +14,7 @@
   // a new user sees them last.
 
   import { onMount, onDestroy } from 'svelte';
-  import { Handle, Position, useStore, type NodeProps } from '@xyflow/svelte';
+  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
   import { patch } from '$lib/graph/store';
   import { setNodeParam, mutateNode } from '$lib/graph/mutate';
   import { startCornerResize } from './card-resize';
@@ -32,12 +32,16 @@
   import { fullscreenCanvasDims } from './fullscreen-canvas-dims';
   import { liveEngineAspect } from './video-card-aspect';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { cardParams, portsFromDef } from './card-kit';
+  import { captureFlowStore, cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const { set, live, engineCtx } = cardParams(bentboxDef, () => id, () => node);
-  const flowStore = useStore();
+  // Guarded: the dock full-view plain-mounts this card OUTSIDE the
+  // SvelteFlow provider, where a bare useStore() throws and killed the
+  // card at init (no video in the expanded faceplate). Inside the
+  // provider this is byte-identical; outside it's null -> zoom 1.
+  const flowStore = captureFlowStore();
 
   // ---------------- Resize (mirror VideoOutCard) ----------------
 

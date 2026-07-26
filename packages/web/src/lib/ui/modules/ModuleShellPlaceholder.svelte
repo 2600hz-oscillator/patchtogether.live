@@ -29,8 +29,9 @@
   import { dockStore } from '$lib/ui/dock/dock-store.svelte';
   import { getLodTier } from '$lib/ui/canvas/workflow-zoom';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import VideoTileThumb from './VideoTileThumb.svelte';
   import { portsFromDef } from './card-kit';
-  import { spineCableVar, laneFaceTier, type ShellDefLike } from '$lib/ui/workflow/module-shell-model';
+  import { spineCableVar, laneFaceTier, hasVideoSurface, type ShellDefLike } from '$lib/ui/workflow/module-shell-model';
   import type { ModuleNode, PortDef } from '$lib/graph/types';
 
   interface Props {
@@ -65,6 +66,12 @@
   /** Spine = the module's cable-domain hue (the reading-aid, not a new token). */
   let spine = $derived(spineCableVar(def));
 
+  /** VIDEO-domain module → the glyph slot shows a LIVE THUMBNAIL of its actual
+   *  output (the legacy preview seam via VideoTileThumb) instead of the generic
+   *  static wave, which read as fake on a video module and left no video
+   *  visible anywhere under the shell (the owner regression). */
+  let videoThumb = $derived(hasVideoSurface(def));
+
   // The lane FaceTier for the live LOD zoom (mini|compact|full), stamped as
   // `data-shell-tier`. The OUTER box is TIER-INVARIANT (--shell-tile-h,
   // _module-card.css — the zoom-reposition fix): the tier only keys what renders
@@ -84,9 +91,17 @@
     return '▶ out';
   });
 
-  /** Open the module's REAL card in the bottom dock full-view (transient). */
+  /** TRUE while THIS module occupies a dock full-view pane — the rail pill
+   *  flips to "✕ CLOSE" (reactive on dockStore.fullViewNodeIds; per-module
+   *  presence in the side-by-side split). */
+  let isExpanded = $derived(dockStore.isFullView(id));
+
+  /** EXPAND ↔ CLOSE toggle: open the module's REAL card in a bottom dock
+   *  full-view pane (transient); when it already occupies one, close JUST
+   *  that pane. */
   function openInDock(): void {
-    dockStore.openFullView(id);
+    if (dockStore.isFullView(id)) dockStore.closeFullView(id);
+    else dockStore.openFullView(id);
   }
 </script>
 
@@ -110,16 +125,24 @@
     <span class="tile-badge">{badge}</span>
   </div>
 
-  <!-- Un-migrated body: just the domain glyph filling the centred body (no ranked
-       knobs until the module gets a `face`). A per-frame-free, domain-tinted
-       signal line in the mock `.scope` well — a placeholder renders for EVERY
-       un-migrated module, so no per-node analyser tap. -->
+  <!-- Un-migrated body. VIDEO-domain modules: a LIVE THUMBNAIL of the module's
+       actual output in the scope well (the legacy preview seam — visibility-
+       gated + thumb-res, see VideoTileThumb). Everything else keeps the
+       per-frame-free, domain-tinted signal line in the mock `.scope` well — a
+       placeholder renders for EVERY un-migrated module, so no per-node
+       analyser tap. -->
   <div class="tile-body center">
-    <div class="tile-scope" aria-hidden="true">
-      <svg viewBox="0 0 100 40" preserveAspectRatio="none">
-        <path class="tile-wave" d="M0 20 Q 8 4 16 20 T 32 20 T 48 20 T 64 20 T 80 20 T 100 20" />
-      </svg>
-    </div>
+    {#if videoThumb}
+      <div class="tile-scope video-thumb-well">
+        <VideoTileThumb nodeId={id} />
+      </div>
+    {:else}
+      <div class="tile-scope" aria-hidden="true">
+        <svg viewBox="0 0 100 40" preserveAspectRatio="none">
+          <path class="tile-wave" d="M0 20 Q 8 4 16 20 T 32 20 T 48 20 T 64 20 T 80 20 T 100 20" />
+        </svg>
+      </div>
+    {/if}
   </div>
 
   <!-- Jack rail = PatchPanel (lane-rail variant): domain jack dots open the
@@ -132,5 +155,6 @@
     variant="lane-rail"
     {flowLabel}
     onExpand={openInDock}
+    expanded={isExpanded}
   />
 </div>

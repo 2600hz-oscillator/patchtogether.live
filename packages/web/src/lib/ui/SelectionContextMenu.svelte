@@ -3,6 +3,8 @@
   // Phase 1). Single action: "Group modules…" → opens the group builder
   // modal. Greyed out + non-clickable when selection.size < 2.
 
+  import { clampMenu } from '$lib/ui/menu-viewport-action';
+
   interface Props {
     open: boolean;
     /** Screen-space anchor (cursor position). */
@@ -60,8 +62,7 @@
   ></div>
   <div
     class="ctx-menu"
-    style:left="{x}px"
-    style:top="{y}px"
+    use:clampMenu={{ x, y }}
     role="menu"
     aria-label="Selection actions"
     data-testid="selection-context-menu"

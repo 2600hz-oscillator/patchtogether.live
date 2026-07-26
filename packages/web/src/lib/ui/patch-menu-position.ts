@@ -112,3 +112,61 @@ export function computeEdgeAlignedRect(args: ComputeEdgeAlignedRectArgs): { left
 
   return { left, top };
 }
+
+export interface ComputeAdjacentRectArgs {
+  /** The invoking TILE/rail's bounding rect in viewport (screen) coordinates. */
+  anchorRect: Rect;
+  /** Measured width of the menu chrome (px). */
+  menuWidth: number;
+  /** Measured height of the menu chrome (px). Optional — when provided, the
+   *  vertical clamp keeps the menu's bottom on-screen. */
+  menuHeight?: number;
+  /** The viewport size (px). */
+  viewport: Viewport;
+  /** Gap between the tile edge and the menu (default 8). */
+  gap?: number;
+  /** Minimum on-screen margin kept on every side when clamping (default 4). */
+  margin?: number;
+}
+
+/**
+ * Compute the {left, top} for a menu anchored ADJACENT to a small tile (the
+ * RACKLINE lane-rail variant): beside the tile — to its RIGHT by default,
+ * FLIPPING to its LEFT when the right side would run off-screen — top-aligned
+ * with the tile, then viewport-clamped. Unlike computeEdgeAlignedRect (which
+ * overlays the big legacy cards), the menu never covers the invoking tile
+ * unless neither side has room, and it always opens NEXT TO the tile that
+ * spawned it — never at a stale/degenerate anchor (the "menu at the viewport
+ * origin while the tile is at the right edge" bug).
+ */
+export function computeAdjacentRect(args: ComputeAdjacentRectArgs): { left: number; top: number } {
+  const { anchorRect, menuWidth, menuHeight, viewport, gap = 8, margin = 4 } = args;
+
+  // --- Horizontal: prefer the tile's RIGHT side; flip LEFT when it overflows.
+  const rightSide = anchorRect.right + gap;
+  const leftSide = anchorRect.left - gap - menuWidth;
+  let left: number;
+  if (rightSide + menuWidth + margin <= viewport.width) {
+    left = rightSide; // fits on the right
+  } else if (leftSide >= margin) {
+    left = leftSide; // flip to the left
+  } else {
+    // Neither side fits (tiny viewport / huge menu) — clamp fully on-screen,
+    // biased toward the side with more room so the tile stays visible.
+    const roomRight = viewport.width - anchorRect.right;
+    const roomLeft = anchorRect.left;
+    left = roomRight >= roomLeft ? viewport.width - menuWidth - margin : margin;
+  }
+  left = Math.max(margin, Math.min(left, viewport.width - menuWidth - margin));
+
+  // --- Vertical: top-align with the tile, clamp the bottom on-screen.
+  let top = anchorRect.top;
+  if (menuHeight !== undefined) {
+    const maxTop = viewport.height - menuHeight - margin;
+    top = maxTop >= margin ? Math.max(margin, Math.min(top, maxTop)) : margin;
+  } else {
+    top = Math.max(margin, top);
+  }
+
+  return { left, top };
+}

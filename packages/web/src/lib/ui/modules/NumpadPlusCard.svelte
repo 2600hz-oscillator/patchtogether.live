@@ -176,13 +176,9 @@
 
   // Portal the floating remap menu to <body>: it's position:fixed but the card
   // lives inside SvelteFlow's transformed/zoomed node, so a transformed ancestor
-  // would anchor the menu to itself (wrong spot, drifts on pan/zoom). Appending
-  // to <body> removes that ancestor so it spawns under the cursor. Mirrors
-  // ControlContextMenu.svelte.
-  function portal(node: HTMLElement) {
-    document.body.appendChild(node);
-    return { destroy() { node.remove(); } };
-  }
+  // would anchor the menu to itself (wrong spot, drifts on pan/zoom). clampMenu
+  // keeps the whole menu inside the viewport (flip/clamp at window edges).
+  import { clampMenu, portal } from '$lib/ui/menu-viewport-action';
 
   // While listening, capture the next physical keydown (ANY key) and bind it to
   // the target note. ESC cancels. Capture-phase + stopImmediatePropagation so
@@ -352,7 +348,7 @@
       onpointerdown={() => (menuSemitone = null)}
       oncontextmenu={(e) => { e.preventDefault(); menuSemitone = null; }}
     ></div>
-    <div class="kmap-menu nodrag" role="menu" style="left:{menuX}px; top:{menuY}px;" data-testid="numpad-key-menu">
+    <div class="kmap-menu nodrag" role="menu" use:clampMenu={{ x: menuX, y: menuY }} data-testid="numpad-key-menu">
       <button type="button" role="menuitem" class="kmap-menu-item"
         onclick={() => beginRemap(menuSemitone!)} data-testid="numpad-remap-item">Remap…</button>
       <button type="button" role="menuitem" class="kmap-menu-item"

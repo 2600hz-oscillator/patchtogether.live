@@ -67,6 +67,7 @@
     return db ? dbfsToUnit(v) : v < 0 ? 0 : v > 1 ? 1 : v;
   }
 
+  let rootEl: HTMLDivElement | null = $state(null);
   let reduced = $state(false);
   onMount(() => {
     if (typeof matchMedia !== 'function') return;
@@ -97,7 +98,10 @@
       if (u > peakLevel) peakLevel = u;
       return;
     }
-    const h = onMeterFrame(null, () => {
+    // Gate the poll on the meter's own on-screen visibility (the shared
+    // ticker's IntersectionObserver seam): an off-screen meter reads nothing —
+    // no per-frame getLevel() for tiles scrolled out of view.
+    const h = onMeterFrame(rootEl, () => {
       const target = toUnit(getLevel());
       if (reduced) {
         displayLevel = target;
@@ -131,6 +135,7 @@
 </script>
 
 <div
+  bind:this={rootEl}
   class="vu"
   class:horizontal={orientation === 'horizontal'}
   class:reduced

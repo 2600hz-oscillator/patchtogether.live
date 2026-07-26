@@ -28,9 +28,10 @@ describe('buildDocIndex — adsr (the CV/control overlap demo)', () => {
     // Range is the numeric span from the def.
     expect(attack.range).toContain('0.001');
     expect(attack.range).toContain('10');
-    // Authored prose is carried through from docs.controls.attack.
+    // Authored prose is carried through from docs.controls.attack (the P1 adsr
+    // docs revision reworded "rise" → "ramp").
     expect(attack.desc).toBeTruthy();
-    expect(attack.desc).toMatch(/rise/i);
+    expect(attack.desc).toMatch(/ramp/i);
   });
 
   it('has an `attack` CV INPUT whose paramTarget resolves to the attack control', () => {

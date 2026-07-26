@@ -158,6 +158,12 @@
   // Pure SOURCE-AWARE cell-fill colour (white/purple/orange) — extracted so it
   // stays unit-tested + mirrors the launchpad's noteProbRgb buckets.
   import { noteCellFill } from './clipplayer-prob-color';
+  // Prob menus portal to <body> (escapes the SvelteFlow pan/zoom transform,
+  // which silently turns position:fixed into pane-local coords) and position
+  // through the shared viewport clamp so the WHOLE menu stays in view even
+  // when the right-click lands at the window's right/bottom edge (owner
+  // screenshot: clip-editor grid menu clipped at the right edge of the dock).
+  import { clampMenu, portal } from '$lib/ui/menu-viewport-action';
   // Launchpad-STYLE origin-scoped undo/redo for the card's persistent clip edits
   // (control-strip ↶/↷ = keys 6/7). Owner Q1 decision: scoped (not global Cmd-Z),
   // its own stack; see clip-undo.ts.
@@ -1839,33 +1845,37 @@
             <!-- CLIP-DEFAULT PROBABILITY menu (right-click a GRID clip pad — the
                  card mirror of the Launchpad SHIFT+clip PROB page): the "Clip
                  probability" submenu, 100% (default) … 2.5%, the clip's default
-                 level checked. Each item writes setClipDefaultProb (undoable). -->
-            <button
-              type="button"
-              class="prob-menu-backdrop"
-              aria-label="close clip probability menu"
-              onclick={() => (clipProbMenu = null)}
-              oncontextmenu={(e) => { e.preventDefault(); clipProbMenu = null; }}
-            ></button>
-            <div
-              class="prob-menu"
-              role="menu"
-              aria-label="Clip probability"
-              style={`left:${clipProbMenu.x}px; top:${clipProbMenu.y}px`}
-              data-testid={`clipplayer-clip-prob-menu-${id}`}
-            >
-              <div class="prob-menu-head">Clip probability ▸</div>
-              <div class="prob-menu-list">
-                {#each probMenuLevels() as level (level)}
-                  <button
-                    class="prob-menu-item clip"
-                    class:checked={clipCurrent === level}
-                    role="menuitemcheckbox"
-                    aria-checked={clipCurrent === level}
-                    data-testid={`clipplayer-clip-prob-item-${level}`}
-                    onclick={() => pickClipProbLevel(level)}
-                  >{probPctLabel(probLevelToValue(level))}</button>
-                {/each}
+                 level checked. Each item writes setClipDefaultProb (undoable).
+                 Portaled to <body> + viewport-clamped so the menu is FULLY in
+                 view even at the window's right/bottom edge. -->
+            <div use:portal>
+              <button
+                type="button"
+                class="prob-menu-backdrop"
+                aria-label="close clip probability menu"
+                onclick={() => (clipProbMenu = null)}
+                oncontextmenu={(e) => { e.preventDefault(); clipProbMenu = null; }}
+              ></button>
+              <div
+                class="prob-menu"
+                role="menu"
+                aria-label="Clip probability"
+                use:clampMenu={{ x: clipProbMenu.x, y: clipProbMenu.y }}
+                data-testid={`clipplayer-clip-prob-menu-${id}`}
+              >
+                <div class="prob-menu-head">Clip probability ▸</div>
+                <div class="prob-menu-list">
+                  {#each probMenuLevels() as level (level)}
+                    <button
+                      class="prob-menu-item clip"
+                      class:checked={clipCurrent === level}
+                      role="menuitemcheckbox"
+                      aria-checked={clipCurrent === level}
+                      data-testid={`clipplayer-clip-prob-item-${level}`}
+                      onclick={() => pickClipProbLevel(level)}
+                    >{probPctLabel(probLevelToValue(level))}</button>
+                  {/each}
+                </div>
               </div>
             </div>
           {/if}
@@ -2012,47 +2022,52 @@
             {@const curEvery = playEveryMenuCurrent()}
             <!-- PER-NOTE PROBABILITY menu (right-click a note): the Probability
                  submenu, 100% (default) … 2.5%, the note's level checked. Each
-                 item writes setNoteProb through the undoable clip write. -->
-            <button
-              type="button"
-              class="prob-menu-backdrop"
-              aria-label="close probability menu"
-              onclick={() => (probMenu = null)}
-              oncontextmenu={(e) => { e.preventDefault(); probMenu = null; }}
-            ></button>
-            <div
-              class="prob-menu"
-              role="menu"
-              aria-label="Probability"
-              style={`left:${probMenu.x}px; top:${probMenu.y}px`}
-              data-testid={`clipplayer-prob-menu-${id}`}
-            >
-              <div class="prob-menu-head">Probability ▸</div>
-              <div class="prob-menu-list">
-                {#each probMenuLevels() as level (level)}
-                  <button
-                    class="prob-menu-item"
-                    class:checked={current === level}
-                    role="menuitemcheckbox"
-                    aria-checked={current === level}
-                    data-testid={`clipplayer-prob-item-${level}`}
-                    onclick={() => pickProbLevel(level)}
-                  >{probPctLabel(probLevelToValue(level))}</button>
-                {/each}
-              </div>
-              <div class="prob-menu-head">Play Every ▸</div>
-              <div class="prob-menu-list">
-                {#each playEveryLevels as n (n)}
-                  <button
-                    class="prob-menu-item"
-                    class:checked={curEvery === n}
-                    role="menuitemcheckbox"
-                    aria-checked={curEvery === n}
-                    data-testid={`clipplayer-play-every-item-${n}`}
-                    title={n === 1 ? 'Every loop (default)' : `Every ${n}th loop`}
-                    onclick={() => pickPlayEvery(n)}
-                  >{n === 1 ? '1 (every)' : n}</button>
-                {/each}
+                 item writes setNoteProb through the undoable clip write.
+                 Portaled to <body> + viewport-clamped so the menu is FULLY in
+                 view even when the right-clicked cell sits at the window's
+                 right/bottom edge (the owner's clipped-menu screenshot). -->
+            <div use:portal>
+              <button
+                type="button"
+                class="prob-menu-backdrop"
+                aria-label="close probability menu"
+                onclick={() => (probMenu = null)}
+                oncontextmenu={(e) => { e.preventDefault(); probMenu = null; }}
+              ></button>
+              <div
+                class="prob-menu"
+                role="menu"
+                aria-label="Probability"
+                use:clampMenu={{ x: probMenu.x, y: probMenu.y }}
+                data-testid={`clipplayer-prob-menu-${id}`}
+              >
+                <div class="prob-menu-head">Probability ▸</div>
+                <div class="prob-menu-list">
+                  {#each probMenuLevels() as level (level)}
+                    <button
+                      class="prob-menu-item"
+                      class:checked={current === level}
+                      role="menuitemcheckbox"
+                      aria-checked={current === level}
+                      data-testid={`clipplayer-prob-item-${level}`}
+                      onclick={() => pickProbLevel(level)}
+                    >{probPctLabel(probLevelToValue(level))}</button>
+                  {/each}
+                </div>
+                <div class="prob-menu-head">Play Every ▸</div>
+                <div class="prob-menu-list">
+                  {#each playEveryLevels as n (n)}
+                    <button
+                      class="prob-menu-item"
+                      class:checked={curEvery === n}
+                      role="menuitemcheckbox"
+                      aria-checked={curEvery === n}
+                      data-testid={`clipplayer-play-every-item-${n}`}
+                      title={n === 1 ? 'Every loop (default)' : `Every ${n}th loop`}
+                      onclick={() => pickPlayEvery(n)}
+                    >{n === 1 ? '1 (every)' : n}</button>
+                  {/each}
+                </div>
               </div>
             </div>
           {/if}
@@ -2537,13 +2552,26 @@
   /* Read-only full-range label (replaces the old pitch-window scroll buttons —
      the whole range is always shown now, so there's nothing to scroll). */
   .editor-head .tag.range { cursor: default; font-variant-numeric: tabular-nums; }
-  .piano-roll { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  /* flex-shrink: 0 — the roll's box must NEVER be squeezed below its content
+     by a height-constrained ancestor (dock drawer / rack tier): a shrunken box
+     lets the overflowing rows PAINT OVER the .editor-foot below it, and the
+     NOW/QUEUE launch clicks then hit piano-roll cells instead of the buttons
+     (the CI-Linux clipplayer-edit-launch intercept — metric-dependent, so it
+     passed on macOS while red on CI). Un-shrinkable, the footer is pushed
+     below the full roll in normal flow and can never sit under it. */
+  .piano-roll { display: flex; flex-direction: column; align-items: center; gap: 2px; flex-shrink: 0; }
   /* Edit-view launch row — NOW (left) + QUEUE (right), bottom-right of the editor. */
   .editor-foot {
     display: flex;
     justify-content: flex-end;
     gap: 6px;
     margin-top: 4px;
+    /* Belt-and-suspenders vs the intercept class above: keep the launch row
+       un-shrinkable and stacked ABOVE any (future) overlapping grid content
+       so its clicks always land on the buttons. */
+    flex-shrink: 0;
+    position: relative;
+    z-index: 1;
   }
   .editor-foot .launch {
     background: var(--control-bg, #222);
@@ -2607,7 +2635,10 @@
   .prob-menu-backdrop {
     position: fixed;
     inset: 0;
-    z-index: 40;
+    /* Portaled to <body>: sit above the dock drawer + patch-panel chrome
+       (1001) + pickup cable (1002), below global modals/toasts (9000+) —
+       same band as ControlContextMenu. */
+    z-index: 2000;
     background: transparent;
     border: none;
     padding: 0;
@@ -2615,7 +2646,7 @@
   }
   .prob-menu {
     position: fixed;
-    z-index: 41;
+    z-index: 2001; /* above its own backdrop (2000) — see .prob-menu-backdrop */
     min-width: 84px;
     max-height: 260px;
     overflow-y: auto;

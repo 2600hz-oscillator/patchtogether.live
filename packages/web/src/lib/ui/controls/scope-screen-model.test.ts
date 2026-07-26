@@ -7,6 +7,11 @@ import {
   samplesToPoints,
   bipolarToY,
   peakAmplitude,
+  sineWaveSamples,
+  burstWaveSamples,
+  triMorphWaveSample,
+  triMorphWaveSamples,
+  sawPulseMixWaveSamples,
   ENV_V_PAD,
 } from './scope-screen-model';
 
@@ -135,5 +140,172 @@ describe('peakAmplitude', () => {
   it('is 0 for silence and the max abs otherwise', () => {
     expect(peakAmplitude(new Float32Array(64))).toBe(0);
     expect(peakAmplitude([0.1, -0.7, 0.3])).toBeCloseTo(0.7, 6);
+  });
+});
+
+describe('sineWaveSamples — the static generic-wave glyph trace', () => {
+  it('is one full bipolar cycle: 0 at the ends, ±1 at the quarter points', () => {
+    const buf = sineWaveSamples(129, 1); // odd count → exact quarter indices
+    expect(buf.length).toBe(129);
+    expect(buf[0]).toBeCloseTo(0, 6);
+    expect(buf[128]).toBeCloseTo(0, 6);
+    expect(buf[32]).toBeCloseTo(1, 6); // t = 0.25
+    expect(buf[96]).toBeCloseTo(-1, 6); // t = 0.75
+    expect(peakAmplitude(buf)).toBeCloseTo(1, 6);
+  });
+
+  it('honours the cycle count and never exceeds ±1', () => {
+    const buf = sineWaveSamples(257, 2);
+    expect(buf[64]).toBeCloseTo(0, 5); // end of cycle 1 at t = 0.25 → sin(π)
+    for (const v of buf) expect(Math.abs(v)).toBeLessThanOrEqual(1 + 1e-9);
+  });
+
+  it('clamps a degenerate sample count to a drawable buffer', () => {
+    expect(sineWaveSamples(1).length).toBe(2);
+  });
+});
+
+describe('burstWaveSamples — the decaying-burst (scope-at-rest) glyph trace', () => {
+  it('starts at 0, rings, and decays toward silence (never a steady oscillator)', () => {
+    const buf = burstWaveSamples(256, 3, 5);
+    expect(buf.length).toBe(256);
+    expect(buf[0]).toBeCloseTo(0, 6);
+    // The trace PEAKS early (first quarter of the buffer)…
+    const peak = peakAmplitude(buf);
+    const firstQuarterPeak = peakAmplitude(Array.from(buf.slice(0, 64)));
+    expect(firstQuarterPeak).toBeCloseTo(peak, 6);
+    expect(peak).toBeGreaterThan(0.5);
+    // …and the tail is DECAYED to near-zero (e^-decay), unlike a saw/sine cycle.
+    const tailPeak = peakAmplitude(Array.from(buf.slice(224)));
+    expect(tailPeak).toBeLessThan(0.05);
+    expect(tailPeak).toBeLessThan(peak / 10);
+  });
+
+  it('is bipolar (rings both ways) and bounded by ±1', () => {
+    const buf = burstWaveSamples();
+    let min = 0;
+    let max = 0;
+    for (const v of buf) {
+      if (v < min) min = v;
+      if (v > max) max = v;
+      expect(Math.abs(v)).toBeLessThanOrEqual(1 + 1e-9);
+    }
+    expect(max).toBeGreaterThan(0.1);
+    expect(min).toBeLessThan(-0.1);
+  });
+
+  it('clamps a degenerate sample count to a drawable buffer', () => {
+    expect(burstWaveSamples(0).length).toBe(2);
+  });
+});
+
+describe('triMorphWaveSample / triMorphWaveSamples — the lfo shape law (0=sine, 1=saw, 2=square)', () => {
+  it('shape 0 is a sine: quarter-phase anchors', () => {
+    expect(triMorphWaveSample(0, 0)).toBeCloseTo(0, 9);
+    expect(triMorphWaveSample(0.25, 0)).toBeCloseTo(1, 9);
+    expect(triMorphWaveSample(0.5, 0)).toBeCloseTo(0, 9);
+    expect(triMorphWaveSample(0.75, 0)).toBeCloseTo(-1, 9);
+  });
+
+  it('shape 1 is a rising saw: −1 at phase 0 up to +1 at phase 1', () => {
+    expect(triMorphWaveSample(0, 1)).toBeCloseTo(-1, 9);
+    expect(triMorphWaveSample(0.5, 1)).toBeCloseTo(0, 9);
+    expect(triMorphWaveSample(1, 1)).toBeCloseTo(1, 9);
+  });
+
+  it('shape 2 is a square: +1 first half, −1 second half', () => {
+    expect(triMorphWaveSample(0.25, 2)).toBe(1);
+    expect(triMorphWaveSample(0.75, 2)).toBe(-1);
+  });
+
+  it('crossfades linearly between adjacent anchors (0.5 = halfway sine↔saw)', () => {
+    const ph = 0.25;
+    const sine = triMorphWaveSample(ph, 0);
+    const saw = triMorphWaveSample(ph, 1);
+    expect(triMorphWaveSample(ph, 0.5)).toBeCloseTo((sine + saw) / 2, 9);
+    const square = triMorphWaveSample(ph, 2);
+    expect(triMorphWaveSample(ph, 1.5)).toBeCloseTo((saw + square) / 2, 9);
+  });
+
+  it('clamps shape outside 0..2 and scales by amp (the depth swing)', () => {
+    expect(triMorphWaveSample(0.25, -1)).toBeCloseTo(triMorphWaveSample(0.25, 0), 9);
+    expect(triMorphWaveSample(0.25, 5)).toBe(triMorphWaveSample(0.25, 2));
+    expect(triMorphWaveSample(0.25, 0, 0.5)).toBeCloseTo(0.5, 9);
+    expect(triMorphWaveSample(0.25, 2, 0)).toBe(0);
+  });
+
+  it('triMorphWaveSamples draws one clean cycle (no wrap snap at the endpoint)', () => {
+    const saw = triMorphWaveSamples(1, 1, 65);
+    expect(saw[0]).toBeCloseTo(-1, 9);
+    expect(saw[64]).toBeCloseTo(1, 9); // endpoint keeps the ramp — no reset to −1
+    for (let i = 1; i < saw.length; i++) expect(saw[i]!).toBeGreaterThan(saw[i - 1]!);
+    const sine = triMorphWaveSamples(0, 1, 129);
+    expect(sine[0]).toBeCloseTo(0, 9);
+    expect(sine[128]).toBeCloseTo(0, 9);
+  });
+
+  it('clamps a degenerate sample count to a drawable buffer', () => {
+    expect(triMorphWaveSamples(0, 1, 0).length).toBe(2);
+  });
+});
+
+describe('sawPulseMixWaveSamples — the tidyVco DUAL-glyph core-waveform derivation', () => {
+  it('defaults (shape1 0, mix 0) draw a full-scale rising saw, edge to edge', () => {
+    const saw = sawPulseMixWaveSamples(0, 0, 0.5, 0, 65);
+    expect(saw.length).toBe(65);
+    expect(saw[0]).toBeCloseTo(-1, 6);
+    expect(saw[64]).toBeCloseTo(1, 3); // endpoint keeps the ramp — no wrap snap
+    for (let i = 1; i < saw.length; i++) expect(saw[i]!).toBeGreaterThan(saw[i - 1]!);
+    expect(peakAmplitude(saw)).toBeLessThanOrEqual(1 + 1e-9);
+  });
+
+  it('a shape1 sweep CHANGES the trace samples (saw → pulse at pw 0.5)', () => {
+    const saw = sawPulseMixWaveSamples(0, 0, 0.5, 0);
+    const square = sawPulseMixWaveSamples(1, 0, 0.5, 0);
+    expect(Array.from(square)).not.toEqual(Array.from(saw));
+    // Full pulse at pw 0.5: high through the first half, low through the second.
+    expect(square[10]).toBeCloseTo(1, 6);
+    expect(square[100]).toBeCloseTo(-1, 6);
+    // A mid-morph is a genuine crossfade — strictly between the two legs.
+    const mid = sawPulseMixWaveSamples(0.5, 0, 0.5, 0);
+    expect(mid[10]!).toBeGreaterThan(saw[10]!);
+    expect(mid[10]!).toBeLessThan(square[10]!);
+  });
+
+  it('a pw sweep CHANGES the pulse leg (duty moves the falling edge)', () => {
+    const wide = sawPulseMixWaveSamples(1, 0, 0.5, 0, 128);
+    const thin = sawPulseMixWaveSamples(1, 0, 0.1, 0, 128);
+    expect(Array.from(thin)).not.toEqual(Array.from(wide));
+    // Phase ~0.3: inside the 0.5 duty (high) but past the 0.1 duty (low).
+    expect(wide[38]).toBeCloseTo(1, 6);
+    expect(thin[38]).toBeCloseTo(-1, 6);
+    // …and pw is irrelevant while both oscs sit on the saw leg.
+    expect(Array.from(sawPulseMixWaveSamples(0, 0, 0.1, 0))).toEqual(
+      Array.from(sawPulseMixWaveSamples(0, 0, 0.5, 0)),
+    );
+  });
+
+  it('mix crossfades to OSC2 equal-power: 1 = pure shape2, 0.5 blends both', () => {
+    // mix 1 → OSC2 only: shape2's pulse regardless of shape1's setting.
+    const osc2Only = sawPulseMixWaveSamples(0, 1, 0.5, 1);
+    const osc2OnlyB = sawPulseMixWaveSamples(0.7, 1, 0.5, 1);
+    for (let i = 0; i < osc2Only.length; i++) expect(osc2Only[i]!).toBeCloseTo(osc2OnlyB[i]!, 6);
+    expect(osc2Only[10]).toBeCloseTo(1, 6);
+    // mix 0.5 of two IDENTICAL saws: the correlated equal-power sum peaks at
+    // √2 and is normalized back DOWN to exactly the unit saw (display identity).
+    const blended = sawPulseMixWaveSamples(0, 0, 0.5, 0.5, 65);
+    const saw = sawPulseMixWaveSamples(0, 0, 0.5, 0, 65);
+    for (let i = 0; i < saw.length; i++) expect(blended[i]!).toBeCloseTo(saw[i]!, 6);
+    // A saw↔pulse blend differs from both legs and stays bounded.
+    const hybrid = sawPulseMixWaveSamples(0, 1, 0.5, 0.5);
+    expect(Array.from(hybrid)).not.toEqual(Array.from(sawPulseMixWaveSamples(0, 1, 0.5, 0)));
+    expect(peakAmplitude(hybrid)).toBeLessThanOrEqual(1 + 1e-9);
+  });
+
+  it('is deterministic and clamps a degenerate sample count', () => {
+    expect(Array.from(sawPulseMixWaveSamples(0.3, 0.8, 0.25, 0.4))).toEqual(
+      Array.from(sawPulseMixWaveSamples(0.3, 0.8, 0.25, 0.4)),
+    );
+    expect(sawPulseMixWaveSamples(0, 0, 0.5, 0, 0).length).toBe(2);
   });
 });

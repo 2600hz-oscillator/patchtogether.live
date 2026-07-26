@@ -70,9 +70,6 @@
 
   let search = $state('');
   let inputEl: HTMLInputElement | null = $state(null);
-  let paletteEl: HTMLDivElement | null = $state(null);
-  let clampedX = $state(0);
-  let clampedY = $state(0);
 
   // Which top + sub the user has drilled into. `null` means "show the
   // top-level list with all groups collapsed". Re-typed on every open
@@ -80,19 +77,10 @@
   let openTop: TopCategory | null = $state(null);
   let openSub: string | null = $state(null);
 
-  // Clamp the popup into the viewport so right-click near the right or bottom
-  // edge doesn't push the palette off-screen.
-  $effect(() => {
-    if (!open || !paletteEl) {
-      clampedX = x;
-      clampedY = y;
-      return;
-    }
-    const w = paletteEl.offsetWidth;
-    const h = paletteEl.offsetHeight;
-    clampedX = Math.min(Math.max(0, x), Math.max(0, window.innerWidth - w));
-    clampedY = Math.min(Math.max(0, y), Math.max(0, window.innerHeight - h));
-  });
+  // Viewport clamp: the shared clampMenu action keeps the WHOLE palette
+  // in view (flip/clamp at the right/bottom edges, re-clamp when drilling
+  // into a category resizes the box — the old one-shot effect missed that).
+  import { clampMenu } from '$lib/ui/menu-viewport-action';
 
   // Re-read defs each open in case modules were registered after first
   // import. Also drop any module at its `maxInstances` cap — first-line UI
@@ -214,10 +202,8 @@
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
   <div class="palette-overlay" onclick={onclose} role="presentation"></div>
   <div
-    bind:this={paletteEl}
     class="module-palette"
-    style:left="{clampedX}px"
-    style:top="{clampedY}px"
+    use:clampMenu={{ x, y }}
     onkeydown={onKeydown}
     role="dialog"
     aria-label="Add module"

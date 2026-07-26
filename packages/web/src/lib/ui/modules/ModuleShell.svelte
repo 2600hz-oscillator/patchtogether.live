@@ -10,8 +10,10 @@
   // the top-N controls for the current LOD tier.
   //
   // SEMANTIC ZOOM: it reads the current LOD tier from the shared getLodTier()
-  // context (P0.2) and swaps only the INNER content across tiers — mini (glyph
-  // only) → compact (~3 knobs + glyph) → full-in-lane (~8). The OUTER box stays
+  // context (P0.2) and swaps only the INNER content across tiers — mini (hero
+  // knob + glyph) → compact (row) → full-in-lane (row or plate grid). The
+  // rendered cell count per tier is fit-PLANNED (laneBodyPlan): only WHOLE
+  // cells ever render inside the fixed tile — never a clipped one. The OUTER box stays
   // pinned to the UNIFORM RACKLINE tile height (_module-card.css forces
   // --shell-tile-h); a tier swap NEVER resizes the measured node box, so the
   // channel-column stack math never recomputes / thrashes (plan §3.1 / §9).
@@ -32,11 +34,39 @@
   import { dockStore } from '$lib/ui/dock/dock-store.svelte';
   import { cardParams, portsFromDef } from './card-kit';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import VideoTileThumb from './VideoTileThumb.svelte';
   import { KnobConic, ScopeScreen, VuMeter } from '$lib/ui/controls';
-  import { curatedFace, type FaceControl, type FaceTier } from '$lib/ui/workflow/curated-face';
-  import { spineCableVar, laneFaceTier, type ShellDefLike } from '$lib/ui/workflow/module-shell-model';
+  import { curatedFace, dockFacePlan, type FaceControl, type FaceTier } from '$lib/ui/workflow/curated-face';
+  import {
+    spineCableVar,
+    laneFaceTier,
+    laneBodyPlan,
+    roleLineForDef,
+    DOCK_HERO_GLYPH_W,
+    hasVideoSurface,
+    type ShellDefLike,
+  } from '$lib/ui/workflow/module-shell-model';
+  import {
+    glyphBinding,
+    createShellGlyphTap,
+    createLiveWaveSource,
+    type ShellGlyphTap,
+  } from '$lib/ui/workflow/shell-glyph-live';
+  import {
+    sineWaveSamples,
+    burstWaveSamples,
+    triMorphWaveSamples,
+    sawPulseMixWaveSamples,
+  } from '$lib/ui/controls/scope-screen-model';
   import type { ModuleNode, ParamDef, PortDef } from '$lib/graph/types';
   import type { Tier } from '$lib/ui/canvas/lod';
+
+  // Static FALLBACK glyph traces — only for a face whose glyph has no live
+  // seam yet (glyphBinding 'static'): 'waveform' draws a generic single-cycle
+  // sine, 'scope' a decaying burst. The P1 batch-1 faces all bind LIVE (an
+  // analyser tap on the primary audio output, or a param-reactive curve).
+  const SINE_TRACE = sineWaveSamples();
+  const BURST_TRACE = burstWaveSamples();
 
   interface Props {
     id: string;
@@ -87,6 +117,125 @@
   let controls = $derived<FaceControl[]>(face?.controls ?? []);
   let glyphKind = $derived(face?.glyph ?? 'none');
 
+  // ── LIVE glyph binding (owner P1 feedback: "LIVE, not static") ──
+  // Resolved PURELY from the def: an analyser tap on the primary audio output
+  // (tidyVco/kickdrum trace, vca/cloudseed RMS), a param-reactive envelope
+  // (adsr) or wave-morph (lfo) curve, else the deterministic static fallback.
+  let binding = $derived(glyphBinding(def));
+
+  // VIDEO-domain module → the glyph slot shows a LIVE THUMBNAIL of its actual
+  // output (the legacy preview seam via VideoTileThumb), never a static trace:
+  // a migrated video face gets the same live picture the placeholder tiles do.
+  let videoThumb = $derived(hasVideoSurface(def));
+  let hasGlyph = $derived(glyphKind !== 'none' || videoThumb);
+
+  // The LANE body plan — the no-clip guarantee (fixed 192×180 tile ⇒ fit is a
+  // design-time constant): which layout (row/plate), how many WHOLE cells, and
+  // whether the glyph fits. Lane views only — the dock faceplate wraps freely
+  // and always shows everything.
+  let lanePlan = $derived(
+    view === 'lane' ? laneBodyPlan(controls.length, hasGlyph, effTier) : null,
+  );
+
+  // Whether the glyph cell RENDERS in the current view/tier — the dock hero
+  // always shows it; the lane obeys the fit plan. Mirrors the render branches
+  // below; the live tap's lifecycle is keyed to this (mount face → mount tap).
+  let glyphShown = $derived(glyphKind !== 'none' && (view === 'dock-full' || (lanePlan?.glyph ?? true)));
+
+  // DUAL glyph (owner spec — tidyVco): the param-derived STATIC CORE WAVEFORM
+  // is the identity and renders EVERYWHERE the glyph fits; the live analyser
+  // trace rides ALONGSIDE it only where BOTH panes fit WHOLE — the dock hero
+  // band (split inside the 4-knob-column cap) and the full-in-lane plate's
+  // full-width strip. A lane ROW cell shows just the morph (the compact tile
+  // prefers the identity; two 40px-floor wells can't both fit next to the
+  // knob columns — the no-clip rule).
+  let dualShowsTrace = $derived(
+    binding.kind === 'dual' && (view === 'dock-full' || lanePlan?.layout === 'plate'),
+  );
+
+  // The live-audio tap: created when a live-trace glyph cell mounts, disposed
+  // when it unmounts (tier drop / dock close / dual tile without the trace
+  // pane). While mounted, actual analyser ATTACH is lazy + visibility-driven
+  // (reads arrive via the IO-gated shared meter frame) and the tap
+  // self-releases after an idle window off-screen — see shell-glyph-live.ts
+  // (the stated perf policy).
+  let tapWanted = $derived(
+    glyphShown && (binding.kind === 'live-audio' || dualShowsTrace),
+  );
+  let tap = $state<ShellGlyphTap | null>(null);
+  $effect(() => {
+    const b = binding;
+    if (!tapWanted || (b.kind !== 'live-audio' && b.kind !== 'dual')) return;
+    const t = createShellGlyphTap(() => params.engineCtx.get(), id, b.portId);
+    tap = t;
+    return () => {
+      t.dispose();
+      tap = null;
+    };
+  });
+
+  // Param-REACTIVE glyph data (adsr envelope): recomputed on the node's
+  // version tick, so a knob move or remote param change redraws.
+  let envParams = $derived.by(() => {
+    if (binding.kind !== 'env-params') return null;
+    void nodeVersion(id);
+    return {
+      attack: params.paramVal(binding.attack),
+      decay: params.paramVal(binding.decay),
+      sustain: params.paramVal(binding.sustain),
+      release: params.paramVal(binding.release),
+    };
+  });
+
+  // ── LIVE-WHILE-TWISTING param waves (dual + lfo wave-morph) ──
+  // Knob gestures write TRANSIENT-FIRST (the durable node.params commit
+  // coalesces behind the gesture), so a display derived from COMMITTED params
+  // looks dead mid-drag. These read the SAME live seam the motorized knobs
+  // read — cardParams.live → engine.readParam (committed paramVal fallback
+  // while the engine isn't booted, keeping the ungated VRT scenes at the
+  // deterministic defaults) — and are POLLED by ScopeScreen's shared-frame
+  // wave mode. createLiveWaveSource memoizes on the tuple: identity only
+  // changes when a value moved, so idle frames repaint nothing.
+  const liveParam = (pid: string): number => params.live(pid)() ?? params.paramVal(pid);
+  let liveWave = $derived.by<(() => Float32Array) | null>(() => {
+    const b = binding;
+    if (b.kind === 'dual') {
+      const w = b.wave;
+      return createLiveWaveSource(
+        () => [
+          liveParam(w.shape1),
+          w.shape2 ? liveParam(w.shape2) : 0,
+          w.pw ? liveParam(w.pw) : 0.5,
+          w.mix ? liveParam(w.mix) : 0,
+        ],
+        (v) => sawPulseMixWaveSamples(v[0] ?? 0, v[1], v[2], v[3]),
+      );
+    }
+    if (b.kind === 'wave-morph') {
+      return createLiveWaveSource(
+        () => [
+          liveParam(b.shapeParamId),
+          // depth 0.5 = unity ±1 swing (the lfo law); display clamps at full scale.
+          b.depthParamId ? Math.min(1, 2 * liveParam(b.depthParamId)) : 1,
+        ],
+        (v) => triMorphWaveSamples(v[0] ?? 0, v[1]),
+      );
+    }
+    return null;
+  });
+
+  // Header row 2 — the ROLE line for a migrated face (the def's own concise
+  // category metadata), not a repeat of the type the name row already shows.
+  let roleLine = $derived(roleLineForDef(def) ?? node.type);
+
+  // Dock faceplate SECTION BANDS (P1): the PURE dockFacePlan seam — one band
+  // per declared `face.pages` page + the '__unpaged' defensive tail (or the
+  // single '__all' band for a page-less face), so the dock still shows EVERY
+  // control (dock = all). The render-parity gates (module-face-lint unit +
+  // the faces-parity e2e) pin this plan to the def's full control surface —
+  // the tidyVco tune-cluster loss class can't silently recur at this seam.
+  let dockBands = $derived(view === 'dock-full' && def ? dockFacePlan(def) : null);
+
   function paramDef(pid: string): ParamDef | undefined {
     return (def?.params ?? []).find((p) => p.id === pid);
   }
@@ -101,8 +250,16 @@
     return '▶ out';
   });
 
+  /** TRUE while THIS module occupies a dock full-view pane — the rail pill
+   *  flips to "✕ CLOSE" (reactive on dockStore.fullViewNodeIds; per-module
+   *  presence in the side-by-side split). */
+  let isExpanded = $derived(dockStore.isFullView(id));
+
+  /** EXPAND ↔ CLOSE toggle: open this module's dock full-view pane; when it
+   *  already occupies one, close JUST that pane. */
   function expand(): void {
-    dockStore.openFullView(id);
+    if (dockStore.isFullView(id)) dockStore.closeFullView(id);
+    else dockStore.openFullView(id);
   }
 </script>
 
@@ -118,64 +275,190 @@
   <span class="rl-spine" aria-hidden="true"></span>
 
   <!-- Header redesign: row 1 = domain-colour rule ── gap ── full-width NAME
-       (no truncation for long names); row 2 = the faint type badge. -->
+       (no truncation for long names); row 2 = the faint ROLE line (the def's
+       concise category — the type would just repeat the name row). -->
   <div class="tile-top">
     <span class="tile-rule" aria-hidden="true"></span>
     <span class="tile-name" title={displayName}>{displayName}</span>
   </div>
   <div class="tile-kind">
-    <span class="tile-badge">{node.type}</span>
+    <span class="tile-badge">{roleLine}</span>
   </div>
 
-  <!-- One inline body row (mock .body): curated knob columns LEFT, the live
-       glyph filling RIGHT; a lone glyph centres (.body.center). -->
-  <div class="tile-body" class:center={controls.length === 0}>
-    {#each controls as ctl (ctl.key)}
-      {#if ctl.kind === 'param'}
-        {@const pd = paramDef(ctl.paramId ?? ctl.key)}
-        {#if pd}
-          <div class="kcol">
-            <KnobConic
-              value={params.paramVal(pd.id)}
-              min={pd.min}
-              max={pd.max}
-              defaultValue={pd.defaultValue}
-              label={pd.label}
-              units={pd.units ?? ''}
-              curve={pd.curve}
-              onchange={params.set(pd.id)}
-              readLive={params.live(pd.id)}
-              moduleId={id}
-              paramId={pd.id}
-              size={effTier === 'mini' ? 'lg' : 'md'}
-              accent={spine}
-            />
-          </div>
-        {/if}
-      {:else}
-        <!-- family / static cell — the shell frames + labels it; the rich
-             grid/cluster/select render is a P1 per-module concern. -->
-        <div class="kcol ms-cell-other" data-cell-kind={ctl.kind}>
-          <span class="lab">{ctl.label}</span>
+  {#snippet controlCell(ctl: FaceControl, knobSize: 'sm' | 'md' = 'md')}
+    {#if ctl.kind === 'param'}
+      {@const pd = paramDef(ctl.paramId ?? ctl.key)}
+      {#if pd}
+        <div class="kcol">
+          <KnobConic
+            value={params.paramVal(pd.id)}
+            min={pd.min}
+            max={pd.max}
+            defaultValue={pd.defaultValue}
+            label={pd.label}
+            units={pd.units ?? ''}
+            curve={pd.curve}
+            onchange={params.set(pd.id)}
+            readLive={params.live(pd.id)}
+            moduleId={id}
+            paramId={pd.id}
+            size={effTier === 'mini' ? 'lg' : knobSize}
+            accent={spine}
+          />
         </div>
       {/if}
-    {/each}
-
-    {#if glyphKind !== 'none'}
-      <div class="tile-glyph" data-glyph-kind={glyphKind}>
-        {#if glyphKind === 'meter'}
-          <VuMeter />
-        {:else}
-          <ScopeScreen
-            mode={glyphKind === 'envelope' ? 'envelope' : 'wave'}
-            width={110}
-            height={40}
-            testid="shell-glyph"
-          />
-        {/if}
+    {:else}
+      <!-- family / static cell — the shell frames + labels it; the rich
+           grid/cluster/select render is a P1 per-module concern. -->
+      <div class="kcol ms-cell-other" data-cell-kind={ctl.kind}>
+        <span class="lab">{ctl.label}</span>
       </div>
     {/if}
-  </div>
+  {/snippet}
+
+  <!-- The glyph sizes to its CELL (fluid width — never a fixed canvas clipped
+       by a shrinking host) and strokes in the module's DOMAIN hue (the spine
+       cable colour). LIVE per the resolved binding: an analyser trace / RMS
+       meter off the module's primary audio output, or a param-reactive
+       envelope / wave-morph curve; static traces only as the last-resort
+       fallback for a face with no live seam. -->
+  {#snippet glyphCell()}
+    <div
+      class="tile-glyph"
+      data-glyph-kind={videoThumb ? 'video' : glyphKind}
+      data-glyph-binding={binding.kind}
+    >
+      {#if videoThumb}
+        <!-- LIVE video thumbnail — the legacy preview seam (visibility-gated,
+             thumb-res; see VideoTileThumb). -->
+        <VideoTileThumb nodeId={id} />
+      {:else if glyphKind === 'meter'}
+        <VuMeter
+          getLevel={tap ? tap.getLevel : undefined}
+          orientation={view === 'dock-full' ? 'horizontal' : 'vertical'}
+          length={view === 'dock-full' ? DOCK_HERO_GLYPH_W : 84}
+          thickness={view === 'dock-full' ? 16 : 12}
+          testid="shell-glyph-meter"
+        />
+      {:else if glyphKind === 'envelope'}
+        <ScopeScreen
+          mode="envelope"
+          attack={envParams?.attack}
+          decay={envParams?.decay}
+          sustain={envParams?.sustain}
+          release={envParams?.release}
+          fluid
+          height={view === 'dock-full' ? 64 : 40}
+          color={spine}
+          testid="shell-glyph"
+        />
+      {:else if binding.kind === 'dual'}
+        <!-- DUAL DISPLAY (owner spec): the param-derived STATIC core waveform
+             (always visible — no gate needed) + the LIVE output trace side by
+             side where both fit whole (dock hero / plate strip); a lane row
+             shows the morph alone (the identity). Both live-update: the morph
+             re-derives from the TRANSIENT param stream while a knob twists
+             (ScopeScreen's polled wave mode), the trace off the analyser tap. -->
+        <div class="dual-glyph" data-testid="shell-glyph-dual">
+          <div class="dual-pane">
+            <ScopeScreen
+              mode="wave"
+              getWaveform={liveWave ?? undefined}
+              fluid
+              height={view === 'dock-full' ? 64 : 40}
+              color={spine}
+              testid="shell-glyph-wave"
+              ariaLabel="core waveform (from shape controls)"
+            />
+          </div>
+          {#if dualShowsTrace}
+            <div class="dual-pane">
+              <ScopeScreen
+                mode="waveform"
+                getSamples={tap ? tap.getSamples : undefined}
+                fluid
+                height={view === 'dock-full' ? 64 : 40}
+                color={spine}
+                testid="shell-glyph"
+                ariaLabel="live output trace"
+              />
+            </div>
+          {/if}
+        </div>
+      {:else if binding.kind === 'live-audio'}
+        <ScopeScreen
+          mode="waveform"
+          getSamples={tap ? tap.getSamples : undefined}
+          fluid
+          height={view === 'dock-full' ? 64 : 40}
+          color={spine}
+          testid="shell-glyph"
+        />
+      {:else}
+        <ScopeScreen
+          mode="wave"
+          getWaveform={liveWave ?? undefined}
+          waveform={liveWave ? undefined : glyphKind === 'waveform' ? SINE_TRACE : BURST_TRACE}
+          fluid
+          height={view === 'dock-full' ? 64 : 40}
+          color={spine}
+          testid="shell-glyph"
+        />
+      {/if}
+    </div>
+  {/snippet}
+
+  {#if dockBands}
+    <!-- DOCK FACEPLATE (view='dock-full'): the glyph is the hero band, then
+         the dockFacePlan SECTION BANDS — one labeled band per curated page +
+         the '__unpaged' tail for any ranked-but-unpaged controls (dock = all;
+         a page-less face renders one unlabeled '__all' band). The hero glyph
+         is CAPPED to the first four knob columns of the control grid (owner
+         feedback), left-aligned with blank space right; a video face's
+         thumbnail rides the same capped hero band. -->
+    {#if hasGlyph}
+      <div class="tile-body dock-hero" style={`--dock-hero-glyph-w:${DOCK_HERO_GLYPH_W}px`}>
+        {@render glyphCell()}
+      </div>
+    {/if}
+    <div class="dock-pages" data-testid="face-pages">
+      {#each dockBands as band (band.id)}
+        <section class="dock-page" data-testid="face-page" data-face-page={band.id}>
+          {#if band.label}
+            <h4 class="page-label">{band.label}</h4>
+          {/if}
+          <div class="page-controls">
+            {#each band.controls as ctl (ctl.key)}
+              {@render controlCell(ctl)}
+            {/each}
+          </div>
+        </section>
+      {/each}
+    </div>
+  {:else}
+    <!-- The lane body, FIT-PLANNED (laneBodyPlan — the no-clip guarantee):
+         either the mock .body row (whole knob columns LEFT + the fluid glyph
+         filling RIGHT; a lone glyph centres) or, at the full tier when the
+         face outgrows the row, the mock full-'plate' 3-col grid — WHOLE cells
+         only, anything that can't fit entirely is not rendered in-lane (the
+         dock faceplate has everything). -->
+    {@const cells = lanePlan ? controls.slice(0, lanePlan.cellCount) : controls}
+    {@const showGlyph = hasGlyph && (lanePlan ? lanePlan.glyph : true)}
+    <div
+      class="tile-body"
+      class:center={cells.length === 0}
+      class:plate={lanePlan?.layout === 'plate'}
+      data-body-layout={lanePlan?.layout ?? 'row'}
+    >
+      {#each cells as ctl (ctl.key)}
+        {@render controlCell(ctl, lanePlan?.knobSize ?? 'md')}
+      {/each}
+
+      {#if showGlyph}
+        {@render glyphCell()}
+      {/if}
+    </div>
+  {/if}
 
   <!-- Jack rail = PatchPanel (lane-rail variant): domain jack dots open the
        drill-down; the "⤢" more-affordance opens the dock full-view. -->
@@ -186,6 +469,7 @@
     variant="lane-rail"
     {flowLabel}
     onExpand={view === 'lane' ? expand : undefined}
+    expanded={view === 'lane' && isExpanded}
   />
 </div>
 
@@ -199,5 +483,64 @@
     justify-content: center;
     border: 1px dashed var(--border, #2c3037);
     border-radius: 4px;
+  }
+
+  /* DUAL glyph (param-wave + live trace, owner spec): the two screens split
+     the glyph cell — the dock hero's 4-knob-column cap or the plate strip —
+     side by side on the dock page-grid gap; each pane is fluid and floors at
+     the 40px scope minimum (both always WHOLE — the no-clip rule). A lane row
+     renders the morph pane alone, so it just fills the cell. */
+  .dual-glyph {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+  }
+  .dual-pane {
+    flex: 1 1 0;
+    min-width: 40px;
+  }
+
+  /* Dock faceplate SECTION BANDS (view='dock-full'): the glyph hero, then one
+     labeled band per curated page. Bands stack; controls wrap inside a band.
+     The hero glyph does NOT span the faceplate: it is capped to the first
+     four knob columns (--dock-hero-glyph-w, module-shell-model.ts) and
+     left-aligned on the .dock-pages 10px grid edge — blank space to its
+     right (the gallery-mock proportion). */
+  .dock-hero {
+    flex: 0 0 auto;
+    justify-content: flex-start;
+    padding: 4px 10px 0;
+  }
+  .dock-hero .tile-glyph {
+    flex: 0 0 auto;
+    width: min(var(--dock-hero-glyph-w, 214px), 100%);
+    min-width: 0;
+  }
+  .dock-pages {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 4px 10px 10px;
+    min-width: 0;
+  }
+  .dock-page {
+    border-top: 1px solid var(--border, #2c3037);
+    padding-top: 6px;
+  }
+  .page-label {
+    margin: 0 0 6px;
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-dim, #9aa3ad);
+  }
+  .page-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px 10px;
   }
 </style>

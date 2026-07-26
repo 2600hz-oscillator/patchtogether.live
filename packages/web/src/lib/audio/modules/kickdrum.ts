@@ -32,7 +32,7 @@
 // stereo worklet output fanned through a ChannelSplitter) so the stereo
 // width survives downstream patching; stereoPairs lets the engine auto-pair
 // them. Level spans −24..+12 dB (deliberate headroom), guarded by the
-// voice's own ceiling stage when Phase 4 lands.
+// voice's own true-peak ceiling stage.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -131,18 +131,53 @@ export const kickdrumDef: AudioModuleDef = {
     { id: 'level',       label: 'Level',     defaultValue: 0,    min: -24, max: 12,   curve: 'linear',   units: 'dB' },
   ],
 
+  // ── RACKLINE face (P1 total-rework — UI curation only, NOT the I/O
+  // contract; see ModuleFace in $lib/graph/types). Designed from the voice's
+  // INTENT + the approved mock (fullcard-mocks/kickdrum.html): the lane leads
+  // with the PLAYER knobs — TUNE (the kick's identity), SUB DEC (pulse
+  // length), DRIVE (aggression) — then the punch cluster (P AMT / BODY LVL /
+  // CLK LVL / P TIME) + LEVEL complete the full-in-lane eight. The dock
+  // groups by producer intent: the three GENERATOR LAYERS over the serial
+  // BUS, with each band-EQ folded into the layer it shapes (sub also owns
+  // TRANSLATE, its small-speaker reconstructor; TILT rides with DRIVE).
+  // glyph 'scope' = the mock's amp+pitch envelope hero.
+  face: {
+    order: [
+      // top-3 → the compact lane tile: tune it, size the pulse, drive it.
+      'tune', 'sub_decay', 'drive',
+      // ranks 4–8 → the full-in-lane face: the punch cluster + output gain.
+      'pitch_amt', 'body_level', 'click_level', 'pitch_time', 'level',
+      // dock roster, mock reading order — the layers, then the bus.
+      'sub_level', 'sub_eq', 'translate',
+      'tension', 'body_decay', 'body_shape', 'body_eq',
+      'click_len', 'click_tone', 'attack_eq',
+      'hard', 'tilt',
+      'attack', 'sustain', 'glue', 'ceiling',
+      'width',
+    ],
+    pages: [
+      { id: 'sub',      label: 'sub · depth',       controls: ['tune', 'sub_decay', 'sub_level', 'sub_eq', 'translate'] },
+      { id: 'body',     label: 'body · punch',      controls: ['pitch_amt', 'pitch_time', 'tension', 'body_decay', 'body_level', 'body_shape', 'body_eq'] },
+      { id: 'click',    label: 'click · transient', controls: ['click_len', 'click_tone', 'click_level', 'attack_eq'] },
+      { id: 'drive',    label: 'drive · character', controls: ['drive', 'hard', 'tilt'] },
+      { id: 'dynamics', label: 'dynamics · glue',   controls: ['attack', 'sustain', 'glue', 'ceiling'] },
+      { id: 'output',   label: 'output · stereo',   controls: ['width', 'level'] },
+    ],
+    glyph: 'scope',
+  },
+
   docs: {
     explanation:
-      "A super-deep, pulsing stereo kick VOICE — built to shake the room, not just tick. Instead of one oscillator + envelope, KICK DRUM layers three decoupled generators so depth and punch live on separate knobs: a pure-sine SUB (the air-moving fundamental at Tune, with a long decay — the 'pulse'), a BODY an octave above with a fast downward pitch sweep (the 909-style 'dooo' that reads as punch on mid-size speakers), and a short filtered-noise CLICK (the leading-edge transient the ear locks onto). The summed layers then run a serial bus: a DRIVE saturator with a single HARD character switch (clean-warm vs aggressive), an internal 3-band kick EQ (sub shelf / body bell / attack bell, plus a spectral TILT), and the TRANSLATE harmonic exciter — it synthesizes the sub's 2nd/3rd/4th harmonics so the kick still reads deep on laptop and phone speakers that can't reproduce a 40–50 Hz fundamental. A DYNAMICS section (transient ATTACK/SUSTAIN shaper, a GLUE compressor whose detector ignores the sub so the low end never pumps, and a CEILING soft-clip that true-peak-bounds the voice) lets it sit hot safely, and the stereo stage keeps everything below ~120 Hz strictly MONO while WIDTH spreads only the upper body/click band — phase-safe sub, wide top. Strike it from any trigger/gate source; ACCENT sets per-hit intensity, PITCH CV tracks 1V/oct, and CHOKE damps the tail while held (hi-hat-style choke groups). The default patch is a clean, deep club kick; push Drive/Hard/Translate for aggression.",
+      "A super-deep, pulsing stereo kick VOICE — built to shake the room, not just tick. Instead of one oscillator + envelope, KICK DRUM layers three decoupled GENERATOR LAYERS so depth and punch live on separate knobs: a pure-sine SUB (the air-moving fundamental at Tune, with a long decay — the 'pulse'), a BODY one octave above with a fast downward pitch sweep (the 909-style 'dooo' that reads as punch on mid-size speakers), and a short band-passed noise CLICK (the leading-edge transient the ear locks onto — seeded-deterministic, so every hit is bit-identical). The summed layers then hit the BUS: first a DRIVE saturator with a single HARD character switch (clean-warm tanh vs an aggressive wavefolder whose bite rides the body envelope); then the TRANSLATE harmonic exciter joins as a PARALLEL branch — it taps a copy of the raw sub layer (pre-drive), synthesizes the sub's 2nd/3rd/4th harmonics, and sums them into the bus just ahead of the EQ, so the kick still reads deep on laptop and phone speakers that can't reproduce a 40–50 Hz fundamental; finally the combined signal runs the internal 3-band kick EQ (sub shelf ~50 Hz / body bell ~150 Hz / attack bell ~2.8 kHz, plus a spectral TILT). A DYNAMICS section (threshold-free ATTACK/SUSTAIN transient shaper, a GLUE compressor whose detector ignores everything under ~100 Hz so the sub never pumps, and a CEILING lean-in stage that keeps the voice true-peak-bounded however hot it runs) lets it sit hot safely, and the stereo stage is mono-safe by construction: the sub AND body are identical on both channels — WIDTH spreads only the click's decorrelated noise above ~120 Hz. Phase-safe low end, wide top. Strike it from any trigger/gate source; ACCENT is latched per hit and deepens the pitch sweep, drive, and level together; PITCH CV tracks 1V/oct; CHOKE damps the tail while held (drum-machine choke groups). The default patch is a clean, deep club kick; push Drive/Hard/Translate for aggression.",
     inputs: {
       trigger_in:
         "The STRIKE: each rising edge fires one kick — oscillator phases reset (click-free and deterministic), every envelope retriggers, and the accent input is sampled at that instant. How long the signal stays high doesn't matter; it's a trigger, not a hold. Patch a sequencer gate, drum-seq lane, or clock here.",
       accent_in:
-        "Per-hit intensity CV (0..1), LATCHED at the strike edge only — between hits it's ignored, so an LFO here gives each kick its own velocity. Accented hits sweep the pitch envelope deeper and land louder (the plan's accent macro: pitch-depth + level move together).",
+        "Per-hit intensity CV (0..1), LATCHED at the strike edge only — between hits it's ignored, so an LFO here gives each kick its own velocity. One accent macro moves three things together: the body's pitch sweep dives up to 50 % deeper, DRIVE pushes up to 30 % harder, and the hit lands up to +4 dB louder — the boost leans into the CEILING stage, so accents stay true-peak-safe.",
       pitch_cv:
         "1V/oct pitch input: transposes the whole voice — sub fundamental and body together — as a true frequency multiplier (tune × 2^volts), so melodic kick lines track across octaves. Patch a sequencer pitch output here for tuned kicks.",
       choke_in:
-        "Choke group input (level-sensitive gate): WHILE the level is high the voice is damped through a short ~30 ms ramp toward silence, and on the falling edge it releases and recovers — both edges matter, like an open-hat choke. Hold it high to duck the kick's tail; it does not fire hits.",
+        "Choke group input (level-sensitive gate): WHILE the level is high the voice is damped through a fast ~30 ms ramp toward silence, and on the falling edge it recovers through a short ~10 ms lag so the release is click-free — both edges matter, like an open-hat choke. Hold it high to duck the kick's tail; it does not fire hits.",
       tune_cv:
         "CV modulation of TUNE (log): ±1 sweeps the sub fundamental across its full 20–120 Hz range centred on the knob — tuned kicks or per-step pitch. (Distinct from pitch_cv, which transposes the whole voice at 1V/oct; this sets the SUB's own base.)",
       sub_decay_cv:
@@ -170,7 +205,7 @@ export const kickdrumDef: AudioModuleDef = {
       drive_cv:
         "CV modulation of DRIVE (linear): ±1 sweeps the saturation amount across its full 0–1 range around the knob — pump the perceived loudness live.",
       hard_cv:
-        "CV modulation of HARD (discrete): a positive CV flips the drive character to the aggressive mode and a negative CV to clean-warm — the character switch under CV.",
+        "CV modulation of HARD (discrete): the CV is bucketed straight to the switch by round-half-up, so the flip point sits exactly at CV = 0 — CV ≥ 0 (the midpoint itself included) selects the aggressive mode, and only CV < 0 selects clean-warm — the character switch under CV.",
       translate_cv:
         "CV modulation of TRANSLATE (linear): ±1 sweeps the harmonic exciter across its full 0–1 range around the knob — reconstruct the sub for small speakers dynamically.",
       sub_eq_cv:
@@ -188,17 +223,17 @@ export const kickdrumDef: AudioModuleDef = {
       glue_cv:
         "CV modulation of GLUE (linear): ±1 sweeps the compressor amount across its full 0–1 range around the knob.",
       ceiling_cv:
-        "CV modulation of CEILING (linear): ±1 sweeps the soft-clip ceiling across its full 0–1 range around the knob — earlier or cleaner clipping.",
+        "CV modulation of CEILING (linear): ±1 sweeps the clip lean across its full 0–1 range around the knob — from near-transparent to slammed into the soft-clip.",
       width_cv:
-        "CV modulation of WIDTH (linear): ±1 sweeps the upper-band stereo width across its full 0–1 range around the knob (the sub stays mono).",
+        "CV modulation of WIDTH (linear): ±1 sweeps the click band's stereo width across its full 0–1 range around the knob (the sub and body stay mono).",
       level_cv:
         "CV modulation of LEVEL (linear): ±1 sweeps the output gain across its full −24..+12 dB range around the knob — tremolo or dynamic swells.",
     },
     outputs: {
       audio_l:
-        "Left output of the stereo voice. Everything below ~120 Hz is identical on both sides (mono-safe sub — full speaker excursion, no phase cancellation on a mono fold-down); WIDTH only decorrelates the upper body/click band. Patch L alone for a mono kick — the stereo pair auto-pairs when the target accepts it.",
+        "Left output of the stereo voice. The sub AND body are identical on both sides — the only stereo content is the click's decorrelated noise, high-passed at ~120 Hz and scaled by WIDTH — so a mono fold-down never thins the low end (the side term cancels to first order). Patch L alone for a mono kick — the stereo pair auto-pairs when the target accepts it.",
       audio_r:
-        "Right output — the other half of the stereo pair. Carries the same mono sub as the left; only the >120 Hz band differs when WIDTH is up.",
+        "Right output — the other half of the stereo pair. Carries the same mono sub and body as the left; only the click's >120 Hz side content differs when WIDTH is up (at WIDTH 0 the channels are identical).",
     },
     controls: {
       tune: "SUB: the kick's fundamental (20–120 Hz, log). 50 Hz default = deep club kick; below ~40 Hz you're into feel-more-than-hear territory (raise TRANSLATE so small speakers keep up); 80–120 Hz reads as a tight punchy thump. Tracks pitch_cv at 1V/oct.",
@@ -207,25 +242,25 @@ export const kickdrumDef: AudioModuleDef = {
       tension: "BODY: amplitude→pitch glide (0–0.6). Above zero, the body's pitch rides its own loudness envelope — loud onset bends sharp then relaxes as it decays, the drum-skin tension effect borrowed from modal drums. Subtle values (0.1–0.2) add organic movement.",
       sub_decay: "SUB: the sub layer's decay to −60 dB (50–800 ms, log). This is the 'pulse length' — long settings make the room breathe between hits; short settings tighten the low end for fast patterns.",
       body_decay: "BODY: the body layer's decay to −60 dB (20–400 ms, log). Keep it shorter than Sub Dec so the punch snaps and the sub carries the tail.",
-      click_len: "CLICK: length of the noise transient (2–60 ms, log). A few ms is a subtle tick; tens of ms becomes an audible slap. (Click layer lands in the next DSP phase — the knob is live and wired through.)",
+      click_len: "CLICK: length of the noise transient (2–60 ms, log; time to −60 dB). A few ms is a subtle tick; tens of ms becomes an audible slap. The burst is seeded-deterministic — every strike reseeds the noise, so hit N clicks bit-identically to hit 1.",
       sub_level: "SUB: level of the sine sub layer (0–1). The mix is headroom-normalized, so maxing sub + body together won't clip the pre-drive bus.",
       body_level: "BODY: level of the swept body layer (0–1) — the punch-vs-depth balance against Sub.",
       click_level: "CLICK: level of the noise transient layer (0–1). More = a harder leading edge that cuts through a dense mix.",
       body_shape: "BODY: waveform morph (0–1): 0 = pure sine, 0.5 = triangle, 1 = rectangle — band-limited throughout. Higher shapes add harmonics and grit to the punch before the drive stage even engages.",
       click_tone: "CLICK: band-pass center of the noise burst (500–6000 Hz, log) — dark knock at the bottom of the range, bright snap at the top.",
       drive: "DRIVE: saturation amount on the summed voice (0–1). Adds harmonics and perceived loudness at the same peak level — the 'louder without clipping' stage. Its character is set by HARD.",
-      hard: "DRIVE character switch: OFF = clean-warm saturation (smooth, odd harmonics — the shipping default's deep clean kick); ON = the aggressive mode (harder folding/edge for distorted, techno-leaning kicks). One switch instead of a mode menu — owner-decided.",
-      translate: "TRANSLATE: the harmonic exciter (0–1). Synthesizes the sub's 2nd/3rd/4th harmonics (e.g. 80/120/160 Hz for a 40 Hz fundamental) so small speakers reconstruct the missing fundamental — the kick stays 'deep' on a phone. Raise it when Tune is very low.",
-      sub_eq: "EQ: sub shelf gain (±12 dB, ~50 Hz) — weight control for the very bottom without touching the punch band.",
-      body_eq: "EQ: body bell gain (±12 dB, ~150 Hz) — the chest-thump band. Default +3 dB leans the voice punchy.",
-      attack_eq: "EQ: attack bell gain (±12 dB, ~2.8 kHz) — presence of the click/beater band; boost to cut through, cut to soften.",
-      tilt: "EQ: spectral tilt (−1..+1): negative tips energy toward the lows (darker, deeper), positive toward the highs (brighter, clickier), pivoting around the body band.",
+      hard: "DRIVE character switch: OFF = clean-warm tanh saturation, oversampled 2× (smooth, odd harmonics — the shipping default's deep clean kick); ON = an aggressive wavefolder + asymmetric shaper, oversampled 4× and run hotter, its fold depth riding the body envelope so the bite follows the punch — distorted, techno-leaning kicks. One switch instead of a mode menu — owner-decided.",
+      translate: "SUB: the TRANSLATE harmonic exciter (0–1) — the sub layer's small-speaker reconstructor, a parallel branch summed into the bus just ahead of the EQ. It saturates a copy of the sub (an asymmetric shaper, so even harmonics appear) and then low-passes the result at 300 Hz — keeping the synthesized 2nd/3rd/4th harmonics (e.g. 80/120/160 Hz for a 40 Hz fundamental) while discarding the fizz above — so speakers that can't reproduce the fundamental still read the kick as deep. Raise it when Tune is very low.",
+      sub_eq: "SUB: sub shelf gain (±12 dB shelf at ~50 Hz) — weight control for the very bottom without touching the punch band.",
+      body_eq: "BODY: body bell gain (±12 dB bell at ~150 Hz) — the chest-thump band. Default +3 dB leans the voice punchy.",
+      attack_eq: "CLICK: attack bell gain (±12 dB bell at ~2.8 kHz) — presence of the click/beater band; boost to cut through, cut to soften.",
+      tilt: "DRIVE: spectral tilt (−1..+1) — opposing ±4 dB shelves at 250 Hz / 2.5 kHz. Negative tips energy toward the lows (darker, deeper); positive toward the highs (brighter, clickier).",
       attack: "DYNAMICS: transient-shaper attack (−1..+1). Positive sharpens the onset slope (more crack at the same peak), negative rounds it off. Threshold-free — level-independent.",
       sustain: "DYNAMICS: transient-shaper sustain (−1..+1). Positive brings the tail up (longer, fuller body), negative tucks it away for a tighter, drier kick.",
       glue: "DYNAMICS: the in-voice compressor amount (0–1). Its detector high-passes at ~100 Hz, so the sub NEVER pumps the compression — glue tightens the body/click while the low end stays untouched.",
-      ceiling: "DYNAMICS: soft-knee output clip (0–1) that true-peak-bounds the voice — lets you run Level hot into the rack safely. Lower = earlier, more audible clipping; higher = cleaner headroom.",
-      width: "STEREO: width of the upper band ONLY (0–1, M/S). Everything under ~120 Hz stays strictly mono (phase-safe, mono-fold-proof); width spreads the body/click above it. 0 = fully mono voice.",
-      level: "OUT: output level in dB (−24..+12). The +12 dB makeup headroom is deliberate (vs older voices capped at 0 dB) — the ceiling stage keeps a hot setting true-peak-safe.",
+      ceiling: "DYNAMICS: how hard the voice leans into its true-peak soft-clip (0–1). The output stage is ALWAYS tanh-bounded below digital full-scale; CEILING sets the gain into that curve — low keeps the stage nearly transparent (clean headroom), high slams the voice into the clip for a denser, louder, more saturated hit. A lean-in control, not a threshold.",
+      width: "OUTPUT: stereo width of the click band ONLY (0–1, mid/side). The sub AND body are identical on both channels, and the side signal is high-passed at ~120 Hz — phase-safe, mono-fold-proof by construction. What spreads is the click's decorrelated noise; 0 = a fully mono voice (L and R identical).",
+      level: "OUTPUT: output level in dB (−24..+12), applied BEFORE the ceiling so hot settings lean into the clip instead of escaping it. The +12 dB makeup headroom is deliberate (vs older voices capped at 0 dB) — the ceiling keeps it true-peak-safe.",
     },
   },
 

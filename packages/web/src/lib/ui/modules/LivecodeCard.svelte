@@ -17,7 +17,8 @@
   // commits debounced to keep Yjs traffic bounded.
 
   import { onDestroy, onMount } from 'svelte';
-  import { useStore, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
+  import { captureFlowStore } from './card-kit';
   import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
   import { run, type RunResult } from '$lib/livecode/runtime';
   import { applyMutations } from '$lib/livecode/apply';
@@ -31,7 +32,11 @@
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
 
-  const flowStore = useStore();
+  // Guarded: the dock full-view plain-mounts this card OUTSIDE the
+  // SvelteFlow provider, where a bare useStore() throws and killed the
+  // card at init (no video in the expanded faceplate). Inside the
+  // provider this is byte-identical; outside it's null -> zoom 1.
+  const flowStore = captureFlowStore();
 
   // ───── Resize state (unchanged from v1) ─────────────────────────
   // Rounded to whole-u (180px) rack tiles (#759) so default + min land on the
@@ -60,7 +65,7 @@
     resizeAbort = new AbortController();
     const sig = resizeAbort.signal;
     const onMove = (mev: PointerEvent) => {
-      const zoom = flowStore.viewport.zoom || 1;
+      const zoom = flowStore?.viewport.zoom || 1;
       const dx = (mev.clientX - startX) / zoom;
       const dy = (mev.clientY - startY) / zoom;
       const w = Math.max(MIN_WIDTH, Math.round(startW + dx));

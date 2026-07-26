@@ -1,0 +1,403 @@
+// shell-glyph-live.test.ts — the LIVE glyph binding gates:
+//   1. glyphBinding rules (pure): the six P1 batch-1 face shapes resolve to
+//      the right live source (audio tap / env params / wave morph), and the
+//      DUAL capability (param-wave + live trace) for shape-identity
+//      oscillators (tidyVco's saw↔pulse morph set).
+//   2. createShellGlyphTap lifecycle: VISIBLE (reads happening) → the tap
+//      attaches a passive analyser to the module's output; HIDDEN (no reads
+//      for the idle window) → the tap RELEASES itself; a later read
+//      re-attaches; dispose() is terminal. Deterministic via fake timers.
+//   3. createLiveWaveSource — the TRANSIENT-READ binding: a change in what
+//      the live reader returns (no store commit anywhere) yields a NEW
+//      derived buffer; an unchanged tuple returns the SAME buffer identity
+//      (the consumer's repaint gate).
+
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  glyphBinding,
+  primaryAudioOutPortId,
+  createShellGlyphTap,
+  createLiveWaveSource,
+  GLYPH_TAP_IDLE_RELEASE_MS,
+  GLYPH_TAP_FFT_SIZE,
+  type GlyphDefLike,
+  type GlyphTapEngineLike,
+} from './shell-glyph-live';
+import { sawPulseMixWaveSamples } from '$lib/ui/controls/scope-screen-model';
+import { tidyVcoDef } from '$lib/audio/modules/tidy-vco';
+import { kickdrumDef } from '$lib/audio/modules/kickdrum';
+import { adsrDef } from '$lib/audio/modules/adsr';
+import { vcaDef } from '$lib/audio/modules/vca';
+import { lfoDef } from '$lib/audio/modules/lfo';
+import { cloudseedDef } from '$lib/audio/modules/cloudseed';
+
+// ── 1. binding rules ─────────────────────────────────────────────────────────
+
+function faceDef(partial: Partial<GlyphDefLike> & { glyph: 'scope' | 'meter' | 'envelope' | 'waveform' | 'none' }): GlyphDefLike {
+  return {
+    face: { order: [], glyph: partial.glyph },
+    outputs: partial.outputs ?? [],
+    params: partial.params ?? [],
+  };
+}
+
+describe('glyphBinding — pure live-source resolution', () => {
+  it('waveform glyph + audio output WITHOUT the full morph set → live-audio on the PRIMARY audio port', () => {
+    // shape1 alone (no pw/mix) is not a saw↔pulse osc identity — plain trace.
+    const def = faceDef({
+      glyph: 'waveform',
+      outputs: [
+        { id: 'out_l', type: 'audio' },
+        { id: 'out_r', type: 'audio' },
+      ],
+      params: [{ id: 'shape1', min: 0, max: 1 }],
+    });
+    expect(glyphBinding(def)).toEqual({ kind: 'live-audio', portId: 'out_l' });
+  });
+
+  it('waveform glyph + audio output + the saw↔pulse morph set → DUAL (param-wave + live trace)', () => {
+    const def = faceDef({
+      glyph: 'waveform',
+      outputs: [
+        { id: 'out_l', type: 'audio' },
+        { id: 'out_r', type: 'audio' },
+      ],
+      params: [
+        { id: 'shape1', min: 0, max: 1 },
+        { id: 'shape2', min: 0, max: 1 },
+        { id: 'pw', min: 0.05, max: 0.5 },
+        { id: 'mix', min: 0, max: 1 },
+      ],
+    });
+    expect(glyphBinding(def)).toEqual({
+      kind: 'dual',
+      portId: 'out_l',
+      wave: { law: 'saw-pulse-mix', shape1: 'shape1', shape2: 'shape2', pw: 'pw', mix: 'mix' },
+    });
+    // shape2 is optional (a single-osc morph voice still gets the dual face)…
+    const singleOsc = faceDef({
+      glyph: 'waveform',
+      outputs: [{ id: 'out', type: 'audio' }],
+      params: [
+        { id: 'shape1', min: 0, max: 1 },
+        { id: 'pw', min: 0.05, max: 0.5 },
+        { id: 'mix', min: 0, max: 1 },
+      ],
+    });
+    expect(glyphBinding(singleOsc)).toEqual({
+      kind: 'dual',
+      portId: 'out',
+      wave: { law: 'saw-pulse-mix', shape1: 'shape1', shape2: undefined, pw: 'pw', mix: 'mix' },
+    });
+    // …but a non-0..1 shape1 (not the saw↔pulse law) stays a plain live trace.
+    const wrongLaw = faceDef({
+      glyph: 'waveform',
+      outputs: [{ id: 'out', type: 'audio' }],
+      params: [
+        { id: 'shape1', min: 0, max: 2 },
+        { id: 'pw', min: 0.05, max: 0.5 },
+        { id: 'mix', min: 0, max: 1 },
+      ],
+    });
+    expect(glyphBinding(wrongLaw)).toEqual({ kind: 'live-audio', portId: 'out' });
+    // …and a non-'waveform' glyph never goes dual even with the params (scope/meter faces).
+    const scopeGlyph = faceDef({
+      glyph: 'scope',
+      outputs: [{ id: 'out', type: 'audio' }],
+      params: [
+        { id: 'shape1', min: 0, max: 1 },
+        { id: 'pw', min: 0.05, max: 0.5 },
+        { id: 'mix', min: 0, max: 1 },
+      ],
+    });
+    expect(glyphBinding(scopeGlyph)).toEqual({ kind: 'live-audio', portId: 'out' });
+  });
+
+  it('scope glyph + audio output → live-audio (kickdrum)', () => {
+    const def = faceDef({
+      glyph: 'scope',
+      outputs: [
+        { id: 'audio_l', type: 'audio' },
+        { id: 'audio_r', type: 'audio' },
+      ],
+    });
+    expect(glyphBinding(def)).toEqual({ kind: 'live-audio', portId: 'audio_l' });
+  });
+
+  it('meter glyph + audio output → live-audio RMS (vca / cloudseed)', () => {
+    const def = faceDef({
+      glyph: 'meter',
+      outputs: [
+        { id: 'audio', type: 'audio' },
+        { id: 'audio_inv', type: 'audio' },
+      ],
+    });
+    expect(glyphBinding(def)).toEqual({ kind: 'live-audio', portId: 'audio' });
+  });
+
+  it('envelope glyph + real A/D/S/R params → env-params, even with CV-only outputs (adsr)', () => {
+    const def = faceDef({
+      glyph: 'envelope',
+      outputs: [
+        { id: 'env', type: 'cv' },
+        { id: 'env_inv', type: 'cv' },
+      ],
+      params: [
+        { id: 'attack', min: 0.001, max: 10 },
+        { id: 'decay', min: 0.001, max: 10 },
+        { id: 'sustain', min: 0, max: 1 },
+        { id: 'release', min: 0.001, max: 10 },
+      ],
+    });
+    expect(glyphBinding(def)).toEqual({
+      kind: 'env-params',
+      attack: 'attack',
+      decay: 'decay',
+      sustain: 'sustain',
+      release: 'release',
+    });
+  });
+
+  it('waveform glyph, CV-only outputs, a 0..2 shape morph param → wave-morph + depth swing (lfo)', () => {
+    const def = faceDef({
+      glyph: 'waveform',
+      outputs: [{ id: 'phase0', type: 'cv' }],
+      params: [
+        { id: 'rate', min: 0.01, max: 100 },
+        { id: 'shape', min: 0, max: 2 },
+        { id: 'depth', min: 0, max: 1 },
+      ],
+    });
+    expect(glyphBinding(def)).toEqual({ kind: 'wave-morph', shapeParamId: 'shape', depthParamId: 'depth' });
+  });
+
+  it('falls back to static for a glyph with no live seam, and none without a glyph', () => {
+    expect(glyphBinding(faceDef({ glyph: 'waveform', outputs: [{ id: 'x', type: 'cv' }] }))).toEqual({ kind: 'static' });
+    expect(glyphBinding(faceDef({ glyph: 'envelope' }))).toEqual({ kind: 'static' });
+    expect(glyphBinding(faceDef({ glyph: 'none' }))).toEqual({ kind: 'none' });
+    expect(glyphBinding(undefined)).toEqual({ kind: 'none' });
+    expect(glyphBinding({ outputs: [{ id: 'out', type: 'audio' }] })).toEqual({ kind: 'none' });
+  });
+
+  it('locks the REAL P1 batch-1 defs to their intended live bindings', () => {
+    expect(glyphBinding(tidyVcoDef)).toEqual({
+      kind: 'dual',
+      portId: 'out_l',
+      wave: { law: 'saw-pulse-mix', shape1: 'shape1', shape2: 'shape2', pw: 'pw', mix: 'mix' },
+    });
+    expect(glyphBinding(kickdrumDef)).toEqual({ kind: 'live-audio', portId: 'audio_l' });
+    expect(glyphBinding(vcaDef)).toEqual({ kind: 'live-audio', portId: 'audio' });
+    expect(glyphBinding(cloudseedDef)).toEqual({ kind: 'live-audio', portId: 'out_l' });
+    expect(glyphBinding(adsrDef)).toEqual({
+      kind: 'env-params',
+      attack: 'attack',
+      decay: 'decay',
+      sustain: 'sustain',
+      release: 'release',
+    });
+    expect(glyphBinding(lfoDef)).toEqual({ kind: 'wave-morph', shapeParamId: 'shape', depthParamId: 'depth' });
+  });
+
+  it('primaryAudioOutPortId picks the first AUDIO output, skipping CV', () => {
+    expect(
+      primaryAudioOutPortId({ outputs: [{ id: 'env', type: 'cv' }, { id: 'out', type: 'audio' }] }),
+    ).toBe('out');
+    expect(primaryAudioOutPortId({ outputs: [{ id: 'env', type: 'cv' }] })).toBeNull();
+    expect(primaryAudioOutPortId(undefined)).toBeNull();
+  });
+});
+
+// ── 2. tap lifecycle ─────────────────────────────────────────────────────────
+
+interface FakeSource {
+  connect: ReturnType<typeof vi.fn>;
+  disconnect: ReturnType<typeof vi.fn>;
+}
+
+function makeFakeEngine(fill = 0.5) {
+  const source: FakeSource = { connect: vi.fn(), disconnect: vi.fn() };
+  const analysers: Array<{ fftSize: number; smoothingTimeConstant: number }> = [];
+  const audio = {
+    ctx: {
+      createAnalyser() {
+        const a = {
+          fftSize: 0,
+          smoothingTimeConstant: 1,
+          getFloatTimeDomainData(b: Float32Array) {
+            b.fill(fill);
+          },
+        };
+        analysers.push(a);
+        return a as unknown as AnalyserNode;
+      },
+    } as unknown as BaseAudioContext,
+    getOutputNode: vi.fn(
+      (): { node: AudioNode; output: number } | null => ({ node: source as unknown as AudioNode, output: 0 }),
+    ),
+  };
+  const engine: GlyphTapEngineLike = {
+    hasDomain: (d: string) => d === 'audio',
+    getDomain: <T,>() => audio as unknown as T,
+  };
+  return { engine, source, audio, analysers };
+}
+
+describe('createShellGlyphTap — visible→mounted, hidden→released', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('attaches LAZILY on the first read (a passive analyser on the output), not at construction', () => {
+    const { engine, source } = makeFakeEngine();
+    const tap = createShellGlyphTap(() => engine, 'n1', 'out_l');
+    expect(tap.attached()).toBe(false);
+    expect(source.connect).not.toHaveBeenCalled();
+
+    const samples = tap.getSamples();
+    expect(tap.attached()).toBe(true);
+    expect(source.connect).toHaveBeenCalledTimes(1);
+    expect(samples).toBeInstanceOf(Float32Array);
+    expect(samples!.length).toBe(GLYPH_TAP_FFT_SIZE);
+    expect(samples![0]).toBeCloseTo(0.5);
+    tap.dispose();
+  });
+
+  it('releases itself after the idle window with no reads (hidden tile), and re-attaches on the next read', () => {
+    const { engine, source } = makeFakeEngine();
+    const tap = createShellGlyphTap(() => engine, 'n1', 'out_l');
+    tap.getSamples();
+    expect(tap.attached()).toBe(true);
+
+    // Hidden: the visibility-gated ticker stops reading → idle release.
+    vi.advanceTimersByTime(GLYPH_TAP_IDLE_RELEASE_MS * 2);
+    expect(tap.attached()).toBe(false);
+    expect(source.disconnect).toHaveBeenCalledTimes(1);
+
+    // Visible again: the next read re-attaches a fresh tap.
+    tap.getSamples();
+    expect(tap.attached()).toBe(true);
+    expect(source.connect).toHaveBeenCalledTimes(2);
+    tap.dispose();
+  });
+
+  it('stays attached while reads keep arriving (visible tile)', () => {
+    const { engine, source } = makeFakeEngine();
+    const tap = createShellGlyphTap(() => engine, 'n1', 'out_l');
+    for (let i = 0; i < 8; i++) {
+      tap.getLevel();
+      vi.advanceTimersByTime(GLYPH_TAP_IDLE_RELEASE_MS / 4);
+    }
+    expect(tap.attached()).toBe(true);
+    expect(source.disconnect).not.toHaveBeenCalled();
+    tap.dispose();
+  });
+
+  it('getLevel reads the RMS of the analyser window', () => {
+    const { engine } = makeFakeEngine(0.5);
+    const tap = createShellGlyphTap(() => engine, 'n1', 'out_l');
+    expect(tap.getLevel()).toBeCloseTo(0.5, 5); // RMS of a constant 0.5 buffer
+    tap.dispose();
+  });
+
+  it('returns undefined/0 without an engine, then attaches once the engine appears', () => {
+    const { engine } = makeFakeEngine();
+    let booted: GlyphTapEngineLike | null = null;
+    const tap = createShellGlyphTap(() => booted, 'n1', 'out_l');
+    expect(tap.getSamples()).toBeUndefined();
+    expect(tap.getLevel()).toBe(0);
+    expect(tap.attached()).toBe(false);
+
+    booted = engine;
+    expect(tap.getSamples()).toBeInstanceOf(Float32Array);
+    expect(tap.attached()).toBe(true);
+    tap.dispose();
+  });
+
+  it('returns undefined while the node is not materialized (getOutputNode null)', () => {
+    const { engine, audio } = makeFakeEngine();
+    audio.getOutputNode.mockReturnValueOnce(null);
+    const tap = createShellGlyphTap(() => engine, 'n1', 'out_l');
+    expect(tap.getSamples()).toBeUndefined();
+    expect(tap.attached()).toBe(false);
+    // Materialized on a later reconcile pass → attaches.
+    expect(tap.getSamples()).toBeInstanceOf(Float32Array);
+    tap.dispose();
+  });
+
+  it('re-taps when the node is re-materialized under the same id (output node identity change)', () => {
+    const { engine, source, audio } = makeFakeEngine();
+    const tap = createShellGlyphTap(() => engine, 'n1', 'out_l');
+    tap.getSamples();
+    expect(source.connect).toHaveBeenCalledTimes(1);
+
+    const source2: FakeSource = { connect: vi.fn(), disconnect: vi.fn() };
+    audio.getOutputNode.mockReturnValue({ node: source2 as unknown as AudioNode, output: 0 });
+    tap.getSamples();
+    expect(source.disconnect).toHaveBeenCalledTimes(1); // old tap released
+    expect(source2.connect).toHaveBeenCalledTimes(1); // new node tapped
+    tap.dispose();
+  });
+
+  it('dispose() releases the analyser + idle timer and is terminal (no re-attach)', () => {
+    const { engine, source } = makeFakeEngine();
+    const tap = createShellGlyphTap(() => engine, 'n1', 'out_l');
+    tap.getSamples();
+    tap.dispose();
+    expect(tap.attached()).toBe(false);
+    expect(source.disconnect).toHaveBeenCalledTimes(1);
+
+    expect(tap.getSamples()).toBeUndefined();
+    expect(tap.getLevel()).toBe(0);
+    expect(tap.attached()).toBe(false);
+    expect(source.connect).toHaveBeenCalledTimes(1); // never re-attached
+    expect(vi.getTimerCount()).toBe(0); // idle timer cleared
+  });
+});
+
+// ── 3. the transient-read wave source (live-while-twisting) ────────────────
+
+describe('createLiveWaveSource — the dual glyph’s TRANSIENT-READ binding', () => {
+  it('a transient value change re-derives the samples WITHOUT any commit', () => {
+    // The "engine" here is a bare mutable value — the live seam the reader
+    // polls. Nothing ever writes a store/node.params: the changed READ alone
+    // must re-render (a knob mid-gesture streams transients exactly like this).
+    const live = { shape1: 0, shape2: 0, pw: 0.5, mix: 0 };
+    const get = createLiveWaveSource(
+      () => [live.shape1, live.shape2, live.pw, live.mix],
+      (v) => sawPulseMixWaveSamples(v[0] ?? 0, v[1], v[2], v[3]),
+    );
+
+    const before = get();
+    expect(Array.from(before)).toEqual(
+      Array.from(sawPulseMixWaveSamples(0, 0, 0.5, 0)),
+    );
+
+    live.shape1 = 0.8; // transient twist — no commit anywhere
+    const during = get();
+    expect(during).not.toBe(before);
+    expect(Array.from(during)).not.toEqual(Array.from(before));
+    expect(Array.from(during)).toEqual(
+      Array.from(sawPulseMixWaveSamples(0.8, 0, 0.5, 0)),
+    );
+  });
+
+  it('an unchanged tuple returns the SAME buffer identity (the repaint gate)', () => {
+    const live = { shape1: 0.3, depth: 0.5 };
+    const compute = vi.fn((v: readonly number[]) => sawPulseMixWaveSamples(v[0] ?? 0));
+    const get = createLiveWaveSource(() => [live.shape1, live.depth], compute);
+
+    const a = get();
+    const b = get();
+    const c = get();
+    expect(b).toBe(a); // identity-stable → the polled consumer skips the repaint
+    expect(c).toBe(a);
+    expect(compute).toHaveBeenCalledTimes(1); // memoized — one derivation
+
+    live.depth = 0.9; // ANY tuple member moving re-derives
+    expect(get()).not.toBe(a);
+    expect(compute).toHaveBeenCalledTimes(2);
+  });
+});

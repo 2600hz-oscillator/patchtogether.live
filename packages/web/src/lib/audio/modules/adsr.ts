@@ -4,13 +4,14 @@
 //
 // Gate-driven unipolar 0..1 envelope. Rising gate opens the attack stage;
 // the envelope decays to the sustain level while the gate is held; the
-// gate falling triggers the release stage back to 0. Faust-compiled DSP
-// (packages/dsp/src/adsr.dsp). All four stage times respond to CV input
-// scaled per the project CV-range standard (see .myrobots/plans/cv-range-
-// standard.md): attack/decay/release use log scaling so a -1..+1 sweep
-// covers two log decades of stage time; sustain uses linear because the
-// param is already 0..1 native. An inverted envelope output (1 - env)
-// makes ducking / sidechain-style modulation a one-cable patch.
+// gate falling triggers the release stage back to 0. All segments are
+// LINEAR ramps (Faust stdlib en.adsr — see packages/dsp/src/adsr.dsp).
+// All four stage params respond to CV input scaled per the project
+// CV-range standard (see .myrobots/plans/cv-range-standard.md):
+// attack/decay/release use log scaling so cv=±1 multiplies/divides the
+// stage time by 100x (two decades either way); sustain uses linear
+// because the param is already 0..1 native. An inverted envelope output
+// (1 - env) makes ducking / sidechain-style modulation a one-cable patch.
 //
 // Inputs:
 //   gate (gate): triggers the envelope. Rising edge = attack; falling edge = release.
@@ -77,24 +78,45 @@ export const adsrDef: AudioModuleDef = {
     { id: 'release', label: 'R', defaultValue: 0.3,   min: 0.001, max: 10, curve: 'log', units: 's' },
   ],
 
+  // UI CURATION (RACKLINE face) — a DESIGNED rework, not a transcription of the
+  // old card (the dock spec is fullcard-mocks/adsr.html: the live envelope
+  // contour IS the hero, four stage controls beneath, deliberately minimal —
+  // no tabs, no sidebar). The 'envelope' glyph carries the module's identity at
+  // every tier, so the RANKING orders the stage controls by how often a player
+  // actually grabs them, not by canonical A-D-S-R reading order:
+  //   attack  — pluck ↔ swell; the single most-played envelope control
+  //   release — the note's tail; the other temporal edge a player rides live
+  //   sustain — the held body level
+  //   decay   — the sculptor's control; inaudible whenever sustain sits at 1.0
+  // So mini = attack + contour glyph; compact adds release + sustain; the
+  // full-in-lane face shows all four. The dock mirrors the mock's single
+  // 'stages' band, in canonical A/D/S/R order beneath the big contour.
+  face: {
+    order: ['attack', 'release', 'sustain', 'decay'],
+    pages: [
+      { id: 'stages', label: 'stages', controls: ['attack', 'decay', 'sustain', 'release'] },
+    ],
+    glyph: 'envelope',
+  },
+
   docs: {
-    explanation: "A classic gate-driven envelope generator: a held gate runs the level up to peak over the attack time, falls to the sustain level over the decay time, holds there for as long as the gate stays high, then falls back to zero over the release time when the gate drops. It outputs a unipolar 0..1 control signal (env) plus its inverse (env_inv = 1 - env) for ducking; patch it into any CV input (a VCA's gain, a filter's cutoff) to shape that destination over the life of each note.",
+    explanation: "A classic gate-driven envelope generator: a held gate ramps the level from 0 up to peak (1.0) over the attack time, falls to the sustain level over the decay time, holds there for as long as the gate stays high, then fades back to zero over the release time when the gate drops. All the timed stages are straight linear ramps, and if the gate falls early (mid-attack or mid-decay) the level freezes where it is and the release fades from there. It outputs a unipolar 0..1 control signal (env) plus its inverse (env_inv = 1 - env) for ducking; patch either into any CV input (a VCA's gain, a filter's cutoff) to shape that destination over the life of each note.",
     inputs: {
-      gate: "The note signal that drives the whole envelope: a rising edge (gate goes high) starts the attack stage, then it decays to and holds at the sustain level WHILE the gate stays high (this input is level-sensitive, not just edge-triggered), and the falling edge (gate goes low) starts the release stage back to 0. Re-gating is a hard retrigger — a new rising edge snaps the output back to 0 and ramps the attack again from zero, it does NOT continue from the level it was at.",
-      attack: "CV that modulates the attack-time fader: a -1..+1 signal sweeps the attack symmetrically in log time around your fader setting (±1 multiplies/divides the time by 100x), so an LFO here covers two log decades of attack speed centered on the knob (clamped to the 1 ms..10 s range).",
-      decay: "CV that modulates the decay-time fader the same way — a -1..+1 signal scales decay symmetrically in log time (±1 = 100x faster/slower) around your fader setting, clamped to 1 ms..10 s.",
-      sustain: "CV that displaces the sustain level — linear, since the param is already a native 0..1 level, so the signal pushes the held level up or down by up to half the range around your fader setting (clamped to 0..1).",
-      release: "CV that modulates the release-time fader — a -1..+1 signal scales release symmetrically in log time (±1 = 100x faster/slower) around your fader setting, clamped to 1 ms..10 s.",
+      gate: "The note signal that drives the whole envelope: a rising edge (gate goes high) starts the attack stage, the level then decays to and holds at the sustain level WHILE the gate stays high (this input is level-sensitive, not just edge-triggered), and the falling edge (gate goes low) starts the release stage back to 0 — from wherever the level currently is, even mid-attack. Re-gating is a hard retrigger: a new rising edge snaps the output back to 0 and ramps the attack again from zero, it does NOT continue from the level it was at.",
+      attack: "CV that modulates the attack time: a -1..+1 signal scales it symmetrically in log time around your set value — ±1 multiplies or divides the time by 100x (two decades either way, clamped to the 1 ms..10 s range) — so an LFO here sweeps the attack from snap to swell centered on the control.",
+      decay: "CV that modulates the decay time the same way — a -1..+1 signal scales it symmetrically in log time (±1 = 100x faster or slower, two decades either way) around your set value, clamped to 1 ms..10 s.",
+      sustain: "CV that displaces the sustain level — linear, since the param is already a native 0..1 level: ±1 pushes the held level up or down by up to half the range (±0.5) around your set value, clamped to 0..1.",
+      release: "CV that modulates the release time — a -1..+1 signal scales it symmetrically in log time (±1 = 100x faster or slower, two decades either way) around your set value, clamped to 1 ms..10 s.",
     },
     outputs: {
-      env: "The envelope itself as a unipolar 0..1 control signal — 0 at rest, ramping to 1 at the attack peak, holding at the sustain level while gated, then falling to 0 on release. Patch into a VCA gain, filter cutoff, or any CV destination to shape it over each note.",
+      env: "The envelope itself as a unipolar 0..1 control signal — 0 at rest, ramping linearly to 1 at the attack peak, holding at the sustain level while gated, then fading to 0 on release. Patch into a VCA gain, filter cutoff, or any CV destination to shape it over each note.",
       env_inv: "The inverted envelope, 1 - env: it sits at 1 at rest and dips toward 0 as the envelope rises (full env peak = 0 out). Patch into a VCA or filter to duck / reverse-modulate that destination on every note, sidechain-style.",
     },
     controls: {
-      attack: "How long the envelope takes to rise from 0 to its peak (1.0) after the gate goes high — 1 ms at the bottom up to 10 s at the top, on a log fader so most of the travel lives in the short, snappy times.",
-      decay: "How long the envelope takes to fall from the peak down to the sustain level once the attack finishes — 1 ms to 10 s, log fader. Has no audible effect if sustain is already at 1.0 (nothing to decay to).",
-      sustain: "The level the envelope holds at for as long as the gate stays high, after attack and decay complete — 0 (no sustain, decays all the way to silence) up to 1.0 (holds at full peak); linear fader.",
-      release: "How long the envelope takes to fall from wherever it currently is back to 0 once the gate goes low — 1 ms to 10 s, log fader.",
+      attack: "How long the envelope takes to ramp from 0 to its peak (1.0) after the gate goes high — 1 ms up to 10 s on a log-scaled control, so most of the travel lives in the short, snappy times. The first stage of the contour: short reads as a click or pluck, long as a slow swell.",
+      decay: "How long the envelope takes to fall from the peak down to the sustain level once the attack finishes — 1 ms to 10 s, log-scaled. Has no audible effect if sustain is at 1.0 (there is nothing to decay to).",
+      sustain: "The level the envelope holds for as long as the gate stays high, after attack and decay complete — 0 (no hold, decays all the way to silence) up to 1.0 (holds at full peak). A level, not a time — the only linear control of the four stages.",
+      release: "How long the envelope takes to fade from wherever it currently is back to 0 once the gate goes low — 1 ms to 10 s, log-scaled. The note's tail; it applies even when the gate drops mid-attack.",
     },
   },
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {

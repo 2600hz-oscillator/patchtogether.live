@@ -17,6 +17,7 @@
 import { listModuleDefs } from '$lib/audio/module-registry';
 import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { listMetaModuleDefs } from '$lib/meta/module-registry';
+import { STRICT_FACES } from '$lib/ui/workflow/strict-faces';
 import { testHooksEnabled } from './test-hooks';
 
 export interface ModuleSpecPort {
@@ -63,6 +64,15 @@ export interface ModuleSpec {
    *  normaling note. Optional (a def may declare no params / no pairs). */
   params: ModuleSpecParam[];
   stereoPairs?: [string, string][];
+  /** Declared dynamic control-family ids (`def.controlFamilies[].id`) — the
+   *  faces-parity e2e counts one rendered family cell per entry. Emitted only
+   *  when the def declares families. */
+  controlFamilies?: string[];
+  /** True when the type is in STRICT_FACES (a MIGRATED curated face) — the
+   *  registry key the faces-parity e2e enumerates, so every future promoted
+   *  module auto-enrolls in the dock render-parity sweep. Emitted only when
+   *  true. */
+  strictFace?: boolean;
   /** Derived hints used by manifest-driven test generators (per-module
    *  spec stamper, pair-patch integration, full-system render). Set
    *  here so every downstream test layer sees the same answer for
@@ -141,6 +151,10 @@ export function getAllModuleSpecs(): ModuleSpec[] {
       const stereoPairs: [string, string][] | undefined = rawPairs
         ? rawPairs.map(([l, r]) => [l, r] as [string, string])
         : undefined;
+      const rawFamilies = (def as { controlFamilies?: readonly { id: string }[] }).controlFamilies;
+      const controlFamilies: string[] | undefined =
+        rawFamilies && rawFamilies.length ? rawFamilies.map((f) => f.id) : undefined;
+      const strictFace = STRICT_FACES.has(def.type as string);
       return {
         type: def.type as string,
         label: (def.label as string) ?? (def.type as string),
@@ -150,6 +164,8 @@ export function getAllModuleSpecs(): ModuleSpec[] {
         outputs,
         params,
         ...(stereoPairs ? { stereoPairs } : {}),
+        ...(controlFamilies ? { controlFamilies } : {}),
+        ...(strictFace ? { strictFace } : {}),
         hasAudioOutput: hasOutputType(outputs, 'audio'),
         hasCvOutput: hasOutputType(outputs, 'cv'),
         hasGateOutput: hasOutputType(outputs, 'gate'),

@@ -93,37 +93,9 @@
   // whose canvas sits low/right in the viewport (e.g. BENTBOX, whose screen
   // area is high in a tall card so the click Y is deep down the page), the
   // menu would extend past the viewport edge and its items become
-  // unclickable / off-screen. Measure the menu and clamp the anchor so the
-  // whole menu always stays on-screen (shift up/left when it would overflow).
-  let menuEl: HTMLDivElement | null = $state(null);
-  // Seed with the raw cursor anchor so the first paint is already close;
-  // the $effect below corrects it to the clamped position post-mount.
-  let posX = $state(x);
-  let posY = $state(y);
-
-  function clampToViewport() {
-    if (!menuEl) {
-      posX = x;
-      posY = y;
-      return;
-    }
-    const MARGIN = 8;
-    const { width, height } = menuEl.getBoundingClientRect();
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    posX = Math.max(MARGIN, Math.min(x, vw - width - MARGIN));
-    posY = Math.max(MARGIN, Math.min(y, vh - height - MARGIN));
-  }
-
-  // Recompute whenever the menu opens or the anchor moves. The menu element
-  // exists (bind:this resolved) by the time this effect runs after render.
-  $effect(() => {
-    if (!open) return;
-    // Touch x/y so the effect re-runs if the anchor changes while open.
-    void x;
-    void y;
-    clampToViewport();
-  });
+  // unclickable / off-screen. The shared clampMenu action measures the real
+  // menu box and flips/clamps so the whole menu always stays on-screen
+  // (re-clamping on anchor change, content resize, and window resize).
 
   // Opening the menu is a user gesture — the only moment we may invoke the
   // Window Management API (it can prompt for permission). Ask the parent to
@@ -147,12 +119,9 @@
         onclose();
       }
     };
-    const onResize = () => clampToViewport();
     window.addEventListener('keydown', onKey);
-    window.addEventListener('resize', onResize);
     return () => {
       window.removeEventListener('keydown', onKey);
-      window.removeEventListener('resize', onResize);
     };
   });
 
@@ -188,14 +157,7 @@
   // the BENTBOX card that pushed it fully off the right edge, making the
   // Fullscreen item unclickable). Portaling to body restores true
   // viewport-fixed positioning so the cursor anchor + clamp are correct.
-  function portal(node: HTMLElement) {
-    document.body.appendChild(node);
-    return {
-      destroy() {
-        node.remove();
-      },
-    };
-  }
+  import { clampMenu, portal } from '$lib/ui/menu-viewport-action';
 </script>
 
 {#if open}
@@ -211,10 +173,8 @@
       role="presentation"
     ></div>
     <div
-      bind:this={menuEl}
       class="ctx-menu"
-      style:left="{posX}px"
-      style:top="{posY}px"
+      use:clampMenu={{ x, y }}
       role="menu"
       aria-label="Video actions"
       data-testid="video-canvas-context-menu"

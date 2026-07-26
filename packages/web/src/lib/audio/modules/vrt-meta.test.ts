@@ -376,7 +376,27 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // for the owner-reported zoom-reposition bug; linux baselines pending
       // the vrt-update.yml dispatch on the PR branch, the
       // workflow-dock-composite precedent).
-    ).toBeLessThanOrEqual(107);
+      // 107→119 for the P1 BATCH-1 CURATED FACES (2026-07-25, deliberate
+      // darwin-first — per migrated module (adsr/cloudseed/kickdrum/lfo/
+      // tidyVco/vca) the compact lane tile + the dock full-view faceplate
+      // under `?shell=1` in workflow-shell-faces.spec.ts; linux baselines
+      // pending the vrt-update.yml dispatch on the PR branch, the
+      // workflow-shell-zoom precedent).
+      // 119→121 for the REAR CARD scenes (2026-07-25, deliberate darwin-first
+      // — the dock full-view's TAB flip-side jack field for the busiest +
+      // simplest prototypes (rear-tidyVco / rear-vca in
+      // workflow-rear-card.spec.ts); linux baselines pending the
+      // vrt-update.yml dispatch on the PR branch, the workflow-shell-faces
+      // precedent).
+      // 121→104 DRAIN (2026-07-26): the whole `?shell=1` WORKFLOW-SHELL
+      // pending set — the 3 zoom scenes, the 12 P1 batch-1 curated faces
+      // (compact + dock per migrated module) and the 2 rear-card scenes —
+      // got real linux baselines via a single vrt-update.yml dispatch
+      // (platform=linux) on this branch, so their 17 exemption pairs came
+      // out (the #1064 drum-wave drain precedent: drop the pairs FIRST, then
+      // dispatch, because the pending-pair skip is unconditional and
+      // `--update-snapshots` writes nothing for a skipped test).
+    ).toBeLessThanOrEqual(104);
   });
 });
 

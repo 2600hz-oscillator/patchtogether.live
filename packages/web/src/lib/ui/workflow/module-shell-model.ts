@@ -75,6 +75,11 @@ export interface ShellDefLike {
   domain?: string;
   inputs?: readonly { id: string; type: string }[];
   outputs?: readonly { id: string; type: string }[];
+  /** The def's concise role string ('modulation' / 'effects' / 'sources' …) —
+   *  every Audio/Video/MetaModuleDef carries one. */
+  category?: string;
+  /** The def's palette classification (top/sub) — the role-line fallback. */
+  palette?: { top: string; sub: string };
 }
 
 /** The five signal DOMAINS the RACKLINE kit colours chrome by (spine, jack dots,
@@ -144,6 +149,86 @@ export function spineCableVar(def: ShellDefLike | undefined): string {
   return `var(--cable-${cableTypeForDef(def)})`;
 }
 
+// ── LIVE VIDEO THUMBNAILS (the shell video-visibility fix) ──────────────────
+//
+// Under the shell preview every video-DOMAIN module's lane tile shows a LIVE
+// ANIMATED THUMBNAIL of its actual output in the glyph slot — the same picture
+// its legacy card's on-card preview loop shows — instead of the generic static
+// wave glyph (which read as "fake" on a video module and left no video visible
+// anywhere). The thumbnail REUSES the exact legacy preview seam: each tick it
+// asks the engine to blit THIS node's surface FBO into the shared drawing
+// buffer (`videoEngine.blitOutputToDrawingBuffer(nodeId)`) and drawImage()s the
+// engine canvas into a small 2D thumb canvas — no WebGL in the component, so
+// the shell stays OUT of the WebGL attest basis. See VideoTileThumb.svelte.
+
+/**
+ * True when a module def renders the LIVE VIDEO THUMBNAIL in its lane tile's
+ * glyph slot: exactly the VIDEO-domain defs — the ones the VideoEngine
+ * registers a per-node surface FBO for (VideoEngine.addNode rejects any other
+ * domain), so blitOutputToDrawingBuffer has something real to show. An
+ * AUDIO-domain module with video-family PORTS (synesthesia's cross-domain
+ * a_video_in / mono-video rasters) has NO engine surface — blitting it would
+ * show a stale/black well — so it keeps the static domain glyph. Pure.
+ */
+export function hasVideoSurface(def: ShellDefLike | undefined): boolean {
+  return def?.domain === 'video';
+}
+
+/** Thumbnail render policy: a SMALL fixed-res 2D canvas (aspect-fit blit of the
+ *  engine frame, engine is 1024×768 4:3 by default) at a THROTTLED fps. The
+ *  legacy cards run their previews at full rAF over card-sized buffers; the
+ *  lane tile is a ~170px-wide well, so quarter-ish res at 15fps reads
+ *  identically and keeps 30+ tiles cheap. Visibility-gating (tap released when
+ *  the tile is off-screen) lives in the component via IntersectionObserver;
+ *  engine-side the blit's markWatched TTL (~1.5s) + the central card-visibility
+ *  feed already decay unwatched chains (the synesthesia lazy-render lesson). */
+export const VIDEO_THUMB_W = 160;
+export const VIDEO_THUMB_H = 120;
+export const VIDEO_THUMB_FPS = 15;
+
+/** Aspect-fit `src` into `dst` (letterbox/pillarbox, centred) — the same fit
+ *  rule every legacy video card's preview blit uses. Pure. */
+export function thumbFitRect(
+  srcW: number,
+  srcH: number,
+  dstW: number,
+  dstH: number,
+): { x: number; y: number; w: number; h: number } {
+  const srcAspect = srcW > 0 && srcH > 0 ? srcW / srcH : 4 / 3;
+  const dstAspect = dstW / dstH;
+  if (dstAspect > srcAspect) {
+    const h = dstH;
+    const w = Math.round(h * srcAspect);
+    return { x: Math.round((dstW - w) / 2), y: 0, w, h };
+  }
+  const w = dstW;
+  const h = Math.round(w / srcAspect);
+  return { x: 0, y: Math.round((dstH - h) / 2), w, h };
+}
+
+/**
+ * The shell VIDEO-ZONE render-override X positions, PACKED left-to-right so a
+ * LEGACY-rendered default (videoOut's real, freely-resizable card) gets its
+ * ACTUAL width of room instead of one fixed tile slot. `widths` are the
+ * rendered widths of the PRESENT video-zone defaults in spec order (a swapped
+ * tile passes SHELL_TILE_W; legacy videoOut passes its live node.data.width);
+ * `pitch` is the active shell column pitch — the inter-slot GAP is derived as
+ * `pitch - SHELL_TILE_W` (24px at the 216 pitch), so an all-tile zone packs to
+ * EXACTLY the historic fixed slots (originX + i*pitch, byte-identical), and a
+ * resized videoOut simply pushes its neighbours right (pure render — nothing
+ * persisted). Pure.
+ */
+export function videoZonePackedXs(originX: number, widths: readonly number[], pitch: number): number[] {
+  const gap = pitch - SHELL_TILE_W;
+  const xs: number[] = [];
+  let x = originX;
+  for (const w of widths) {
+    xs.push(x);
+    x += w + gap;
+  }
+  return xs;
+}
+
 /**
  * The FaceTier a module shows in its LANE for a given LOD tier. Identity for
  * mini/compact/full; the richest LOD band 'dock' collapses to 'full' in the lane
@@ -159,4 +244,100 @@ export function laneFaceTier(tier: Tier): FaceTier {
  *  kept as a named predicate so the policy has one home if it tightens. */
 export function offersFullView(_tier: Tier): boolean {
   return true;
+}
+
+/**
+ * The MIGRATED tile's header ROLE line — what the badge row says instead of
+ * repeating the type (the name row already identifies the module; "VCA / vca"
+ * was redundant). Uses the def's own concise metadata, no new field: the
+ * `category` role string ('modulation', 'effects', 'sources', 'utilities' …),
+ * falling back to the palette sub-category ('Utility', 'VCOs', …). Returns
+ * undefined for a def with neither — the caller keeps its current fallback
+ * (the type). The un-migrated placeholder is NOT routed through this: it keeps
+ * showing the raw type. Pure.
+ */
+export function roleLineForDef(def: ShellDefLike | undefined): string | undefined {
+  const category = def?.category?.trim();
+  if (category) return category;
+  const sub = def?.palette?.sub?.trim();
+  if (sub) return sub;
+  return undefined;
+}
+
+// ── The LANE BODY PLAN — the no-clip guarantee ──────────────────────────────
+//
+// The RACKLINE lane tile is a FIXED 192×180 box (zoom no-op invariant), so how
+// many WHOLE control cells fit is a design-time constant, not a runtime
+// measurement. The plan renders ONLY whole cells — a ranked control (or the
+// glyph) that cannot fit entirely inside the tile is simply not rendered
+// in-lane (the dock faceplate always shows everything). Derivation, from the
+// tile vocabulary (_rackline-tile.css):
+//
+//   body inner width = 192 − 11 (left pad) − 9 (right pad) = 172px
+//   ROW  (mini/compact + small full faces): md knob columns capped at 46px
+//     (--kcol-max), 9px gaps, glyph min 40px (the mock .tile-scope floor):
+//       with glyph: n·46 + n·9 + 40 ≤ 172 → n ≤ 2  (glyph then FILLS the rest)
+//       no glyph:   n·46 + (n−1)·9 ≤ 172 → n ≤ 3
+//   PLATE (the 'full' tier when the row can't hold the face): the mock full
+//     'plate' 3-col grid of sm knob cells, 42px rows (26 knob + 5 gap + 11
+//     label), 4px row gaps in a ~112px body → 2 whole rows = 6 cells max; the
+//     full-width glyph strip renders only when a whole 42px strip still fits
+//     (i.e. the cells needed ≤ one row).
+export const LANE_ROW_MAX_CELLS_WITH_GLYPH = 2;
+export const LANE_ROW_MAX_CELLS = 3;
+export const PLATE_COLS = 3;
+export const PLATE_MAX_ROWS = 2;
+
+// ── The DOCK HERO GLYPH width — owner P1 batch-1 feedback ───────────────────
+//
+// The dock faceplate's hero glyph must NOT span the full faceplate width: it
+// spans roughly the FIRST FOUR KNOB COLUMNS of the control grid, leaving blank
+// space to its right (the gallery-mock proportion). Derived from the shared
+// knob-column vocabulary so the cap stays aligned to the grid the section
+// bands lay out below it.
+/** Knob columns the dock hero glyph spans. */
+export const DOCK_HERO_GLYPH_COLS = 4;
+/** The knob-column design width (px) — mirrors --kcol-max / laneBodyPlan's
+ *  46px fit constant (_rackline-tile.css). */
+export const DOCK_KCOL_W = 46;
+/** The dock page-controls column gap (px) — mirrors `.page-controls` gap. */
+export const DOCK_PAGE_GAP_X = 10;
+/** The dock hero glyph width cap (px): 4 knob columns + the 3 gaps between
+ *  them = 214. Applied by ModuleShell as `--dock-hero-glyph-w`. */
+export const DOCK_HERO_GLYPH_W =
+  DOCK_HERO_GLYPH_COLS * DOCK_KCOL_W + (DOCK_HERO_GLYPH_COLS - 1) * DOCK_PAGE_GAP_X;
+
+export interface LaneBodyPlan {
+  /** 'row' = the mock .mod inline body; 'plate' = the full-tier 3-col grid. */
+  layout: 'row' | 'plate';
+  /** How many ranked controls render in-lane (a prefix of the curated list). */
+  cellCount: number;
+  /** Whether the glyph renders in-lane at this tier. */
+  glyph: boolean;
+  /** Knob size for the rendered cells (mini's lg override stays a view concern). */
+  knobSize: 'sm' | 'md';
+}
+
+/**
+ * The lane body plan for a curated face: which layout, how many WHOLE cells,
+ * and whether the glyph fits. `controlCount` is the tier-curated control count
+ * (curatedFace().controls.length); `hasGlyph` = face.glyph !== 'none'. Pure —
+ * geometry constants only, so the guarantee is unit-testable. The 'dock' tier
+ * never reaches this (the dock faceplate renders pages / wraps freely).
+ */
+export function laneBodyPlan(controlCount: number, hasGlyph: boolean, tier: FaceTier): LaneBodyPlan {
+  const rowMax = hasGlyph ? LANE_ROW_MAX_CELLS_WITH_GLYPH : LANE_ROW_MAX_CELLS;
+  if (tier === 'mini') {
+    return { layout: 'row', cellCount: Math.min(controlCount, 1), glyph: hasGlyph, knobSize: 'md' };
+  }
+  if (tier === 'compact' || controlCount <= rowMax) {
+    // The design-point row: whole md cells + the glyph filling the remainder.
+    return { layout: 'row', cellCount: Math.min(controlCount, rowMax), glyph: hasGlyph, knobSize: 'md' };
+  }
+  // 'full' with a face too big for the row → the 3-col plate grid, whole rows
+  // only. Ranked controls outrank the glyph: the strip renders only when the
+  // cells need just one row, leaving a whole strip-row free.
+  const cellCount = Math.min(controlCount, PLATE_COLS * PLATE_MAX_ROWS);
+  const rows = Math.ceil(cellCount / PLATE_COLS);
+  return { layout: 'plate', cellCount, glyph: hasGlyph && rows <= 1, knobSize: 'sm' };
 }

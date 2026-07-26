@@ -89,4 +89,28 @@ describe('isShellSwappable — eligibility', () => {
     expect(NON_SHELL_LANE_TYPES.has('clipplayer')).toBe(true);
     expect(NON_SHELL_LANE_TYPES.has('tidyvco')).toBe(false);
   });
+
+  it('videoOut is a VIDEO-SURFACE snowflake: its legacy card (the live, freely-resizable output screen) stays in the lane', () => {
+    // The owner ?shell=1 regression: swapping videoOut for a placeholder tile
+    // removed the only user-viewable video output. It must render legacy.
+    expect(NON_SHELL_LANE_TYPES.has('videoOut')).toBe(true);
+    expect(isShellSwappable('videoOut', true)).toBe(false);
+    expect(laneRenderKind({ ...base, type: 'videoOut', hasCard: isShellSwappable('videoOut', true) })).toBe('legacy');
+    // …while the other video-domain modules (recorderbox / backdraft / …) still
+    // swap to tiles — they get the LIVE THUMBNAIL glyph instead.
+    expect(NON_SHELL_LANE_TYPES.has('recorderbox')).toBe(false);
+    expect(NON_SHELL_LANE_TYPES.has('backdraft')).toBe(false);
+  });
+
+  it('cameraInput is a CAPTURE-SOURCE snowflake: its legacy card (the live source + the device picker) stays in the lane', () => {
+    // The owner ?shell=1 P0: the card owns getUserMedia + the <video> it hands
+    // to the engine (attachExternalSource), AND the device <select> — neither is
+    // a ParamDef, so a tile made camera → OUTPUT patched-but-black with no way
+    // to pick a source. See ./dom-source-modules for the full rationale + gate.
+    expect(NON_SHELL_LANE_TYPES.has('cameraInput')).toBe(true);
+    expect(isShellSwappable('cameraInput', true)).toBe(false);
+    expect(
+      laneRenderKind({ ...base, type: 'cameraInput', hasCard: isShellSwappable('cameraInput', true) }),
+    ).toBe('legacy');
+  });
 });

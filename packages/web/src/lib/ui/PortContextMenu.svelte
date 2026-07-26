@@ -69,15 +69,11 @@
   let menuEl: HTMLDivElement | null = $state(null);
 
   // Portal to <body> so position:fixed resolves against the real viewport,
-  // escaping the SvelteFlow viewport transform. Mirrors ControlContextMenu.
-  function portal(node: HTMLElement) {
-    document.body.appendChild(node);
-    return {
-      destroy() {
-        node.remove();
-      },
-    };
-  }
+  // escaping the SvelteFlow viewport transform. clampMenu keeps the whole
+  // menu inside the viewport with the REAL measured box (the caller's x/y is
+  // an edge-aligned top-left estimated at width 200 — flip:false so an
+  // overflow slides the menu into view instead of jumping across the anchor).
+  import { clampMenu, portal } from '$lib/ui/menu-viewport-action';
 
   $effect(() => {
     if (!open) return;
@@ -125,8 +121,7 @@
     <div
       bind:this={menuEl}
       class="ctx-menu"
-      style:left="{x}px"
-      style:top="{y}px"
+      use:clampMenu={{ x, y, flip: false }}
       role="menu"
       aria-label="Port actions"
       data-testid="port-context-menu"

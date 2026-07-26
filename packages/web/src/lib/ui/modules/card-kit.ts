@@ -12,10 +12,33 @@
 // run when the cards migrated). Do not "improve" semantics here without
 // treating it as a real rendering/behavior change.
 
+import { useStore } from '@xyflow/svelte';
 import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
 import type { ModuleNode, ParamDef, PortDef } from '$lib/graph/types';
 import { setNodeParam } from '$lib/graph/mutate';
 import { useEngine, type EngineContext } from '$lib/audio/engine-context';
+
+/** The SvelteFlow store handle (the plain context object `useStore` returns). */
+export type CardFlowStore = ReturnType<typeof useStore>;
+
+/**
+ * Capture the SvelteFlow store when the card mounts INSIDE the provider (every
+ * canvas card — identical behavior to a bare `useStore()`), else NULL: a card
+ * PLAIN-MOUNTED outside the provider (the dock full-view / dock rail verbatim
+ * mounts) must self-gate, not throw. An un-guarded `useStore()` in a card
+ * init THREW during the DockFullView occupant swap, aborting the Svelte flush
+ * mid-render — the faceplate kept showing the PREVIOUS module ("expand B while
+ * A is open switched nothing"). Mirror of PatchPanel's captureFlowStore
+ * self-gate. MUST be called during component init (it reads component
+ * context). Zoom-aware consumers treat null as zoom 1 (card-resize.ts).
+ */
+export function captureFlowStore(): CardFlowStore | null {
+  try {
+    return useStore();
+  } catch {
+    return null; // outside the provider (dock full-view / rail plain-mount)
+  }
+}
 
 /**
  * Derive PatchPanel PortDescriptors straight from a def's port list, so the

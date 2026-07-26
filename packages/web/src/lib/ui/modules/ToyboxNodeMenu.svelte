@@ -89,37 +89,11 @@
     if (!open) addOpen = false;
   });
 
-  // Viewport-clamped position. The raw cursor (x, y) is the desired anchor, but
-  // a `position: fixed` menu opened near the bottom/right edge would overflow the
-  // viewport and render UNDER the canvas bottombar footer (which then intercepts
-  // pointer events on the lower items — e.g. "Reset to default" becomes
-  // unclickable). After the menu mounts we measure it and flip/clamp so it always
-  // stays fully on-screen. Falls back to (x, y) until measured.
-  let menuEl = $state<HTMLDivElement | null>(null);
-  let posX = $state(0);
-  let posY = $state(0);
-  $effect(() => {
-    if (!open) return;
-    // Seed at the cursor, then clamp once the DOM (incl. an expanded cascade) is
-    // laid out. Re-runs when x/y/addOpen change so the submenu growth is covered.
-    void x; void y; void addOpen;
-    posX = x;
-    posY = y;
-    const el = menuEl;
-    if (!el) return;
-    const clamp = () => {
-      const rect = el.getBoundingClientRect();
-      const margin = 6;
-      const maxX = window.innerWidth - rect.width - margin;
-      const maxY = window.innerHeight - rect.height - margin;
-      posX = Math.max(margin, Math.min(x, maxX));
-      posY = Math.max(margin, Math.min(y, maxY));
-    };
-    clamp();
-    // A second pass after layout settles (fonts/cascade) keeps it pinned.
-    const raf = requestAnimationFrame(clamp);
-    return () => cancelAnimationFrame(raf);
-  });
+  // Viewport-clamped position: the raw cursor (x, y) is the anchor; the shared
+  // clampMenu action measures the real menu box and flips/clamps so the WHOLE
+  // menu stays on-screen (its ResizeObserver re-clamps when the "Add node ▸"
+  // cascade grows the box) — pre-fix, a menu near the bottom/right edge
+  // rendered under the canvas bottombar footer, which intercepted clicks.
 
   // Window-level Escape handler (context menus don't take focus — Esc must
   // dismiss regardless of where focus sits). Mirrors NodeContextMenu.
@@ -170,14 +144,7 @@
   // intercepts clicks on the lower items). Re-parenting to <body> escapes the
   // transform so fixed-positioning matches the cursor. Mirrors
   // ControlContextMenu / VideoCanvasContextMenu.
-  function portal(node: HTMLElement) {
-    document.body.appendChild(node);
-    return {
-      destroy() {
-        node.remove();
-      },
-    };
-  }
+  import { clampMenu, portal } from '$lib/ui/menu-viewport-action';
 </script>
 
 {#if open}
@@ -190,10 +157,8 @@
     role="presentation"
   ></div>
   <div
-    bind:this={menuEl}
     class="ctx-menu"
-    style:left="{posX}px"
-    style:top="{posY}px"
+    use:clampMenu={{ x, y }}
     role="menu"
     aria-label="Node map actions"
     data-testid="toybox-node-menu"

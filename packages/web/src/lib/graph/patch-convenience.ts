@@ -130,19 +130,37 @@ export function isNoteSource(def: ConvenienceDef): boolean {
   return outs.some(isPitch) && outs.some(isGate);
 }
 
+/** A per-note VELOCITY input carried on a `cv` cable: no `paramTarget` (a real
+ *  performance input, not a knob-mod CV) and a `vel`/`velocity` id token. The
+ *  input-side mirror of the clip's `vel{n}` output — SHAPE-detected, no
+ *  allow-list, so any def following the convention auto-enrols. */
+function isVelCvInput(p: PortDef): boolean {
+  if (p.type !== 'cv' || p.paramTarget) return false;
+  const w = idWords(p.id);
+  return w.includes('vel') || w.includes('velocity');
+}
+
 // ---------------- CLIP eligibility ----------------
 
 export interface ClipWiring {
   /** How this instrument accepts clip control.
-   *  - poly:          one edge, clip poly out → the poly input (whole chord).
+   *  - poly:          clip poly out → the poly input (whole chord), PLUS the
+   *                   clip gate out → the mono note-gate input when the module
+   *                   exposes one (the owner lane rule: the clip's pitch AND
+   *                   gate are both patched — the mono gate is the poly bus's
+   *                   designed fallback, and poly lanes win while gated, so
+   *                   driving both is safe by construction).
    *  - monoPitchGate: two edges, pitch out → v/oct in AND gate out → gate in.
    *  - gateOnly:      one edge, gate out → the note-gate in (percussion — a
    *                   triggered instrument with no v/oct pitch, e.g. kickdrum). */
   mode: 'poly' | 'monoPitchGate' | 'gateOnly';
   /** The instrument INPUT port for the clip pitch/poly out (poly + mono modes). */
   pitchInPort?: string;
-  /** The instrument INPUT port for the clip gate out (mono + gateOnly modes). */
+  /** The instrument INPUT port for the clip gate out (all modes when present). */
   gateInPort?: string;
+  /** The instrument INPUT port for the clip velocity CV out (`vel{n}`) — any
+   *  mode, only when the def exposes a vel-shaped cv input (isVelCvInput). */
+  velInPort?: string;
 }
 
 /** Does the module produce an audio output? (An instrument makes sound — used to
@@ -166,15 +184,23 @@ function hasAudioOut(def: ConvenienceDef): boolean {
 export function resolveClipWiring(def: ConvenienceDef): ClipWiring | null {
   if (isNoteSource(def)) return null;
 
-  const polyIn = def.inputs.find(isPoly);
-  if (polyIn) return { mode: 'poly', pitchInPort: polyIn.id };
-
   const gateIn = def.inputs.find(isNoteGateInput);
+  const velIn = def.inputs.find(isVelCvInput);
+
+  // POLY — the whole chord into the poly bus. BUG-B fix: the mono note-gate
+  // (when the def exposes one, e.g. tidyVco's `gate`) is patched TOO — the
+  // owner lane rule is "the clip's pitch AND gate are wired". Safe by the
+  // poly/mono fallback design: poly lanes take precedence while any lane is
+  // gated, so the extra mono gate never double-triggers a poly voice.
+  const polyIn = def.inputs.find(isPoly);
+  if (polyIn) {
+    return { mode: 'poly', pitchInPort: polyIn.id, gateInPort: gateIn?.id, velInPort: velIn?.id };
+  }
 
   // Native mono pitch (a `pitch` v/oct cable) + note-gate.
   const pitchIn = def.inputs.find(isPitch);
   if (pitchIn && gateIn) {
-    return { mode: 'monoPitchGate', pitchInPort: pitchIn.id, gateInPort: gateIn.id };
+    return { mode: 'monoPitchGate', pitchInPort: pitchIn.id, gateInPort: gateIn.id, velInPort: velIn?.id };
   }
 
   // Percussion voice: a note-gate + audio out, no native `pitch` cable. If it
@@ -184,9 +210,9 @@ export function resolveClipWiring(def: ConvenienceDef): ClipWiring | null {
   if (gateIn && hasAudioOut(def)) {
     const voctIn = def.inputs.find(isVoctCvInput);
     if (voctIn) {
-      return { mode: 'monoPitchGate', pitchInPort: voctIn.id, gateInPort: gateIn.id };
+      return { mode: 'monoPitchGate', pitchInPort: voctIn.id, gateInPort: gateIn.id, velInPort: velIn?.id };
     }
-    return { mode: 'gateOnly', gateInPort: gateIn.id };
+    return { mode: 'gateOnly', gateInPort: gateIn.id, velInPort: velIn?.id };
   }
   return null;
 }
@@ -309,29 +335,49 @@ export interface ConvenienceEdge {
 
 /**
  * Plan the edges for "Control from → Clip {channel}" on an instrument.
- * - poly instrument: one edge, clip `pitch{n}` (polyPitchGate) → the poly input.
+ * - poly instrument: clip `pitch{n}` (polyPitchGate) → the poly input, PLUS
+ *   `gate{n}` → the mono note-gate input when the def exposes one (BUG-B fix —
+ *   the owner lane rule wires pitch AND gate; poly lanes win while gated so
+ *   the extra mono gate is the designed fallback, never a double-trigger).
  * - mono instrument: two edges, `pitch{n}` → pitch input AND `gate{n}` → gate input.
+ * Any mode additionally taps `vel{n}` → a vel-shaped cv input where one exists.
  * Returns null if the module is not a clip target.
  */
 export function planClipControl(def: ConvenienceDef, channel: number): ConvenienceEdge[] | null {
   const wiring = resolveClipWiring(def);
   if (!wiring) return null;
-  const { pitchOut, gateOut } = clipChannelPorts(channel);
+  const { pitchOut, gateOut, velOut } = clipChannelPorts(channel);
+  const out: ConvenienceEdge[] = [];
+  const velEdge = (): void => {
+    if (!wiring.velInPort) return;
+    const velIn = def.inputs.find((p) => p.id === wiring.velInPort)!;
+    out.push({ fromPortId: velOut, toPortId: velIn.id, sourceType: 'cv', targetType: velIn.type });
+  };
 
   if (wiring.mode === 'poly') {
     const polyIn = def.inputs.find((p) => p.id === wiring.pitchInPort)!;
-    return [{ fromPortId: pitchOut, toPortId: polyIn.id, sourceType: 'polyPitchGate', targetType: polyIn.type }];
+    out.push({ fromPortId: pitchOut, toPortId: polyIn.id, sourceType: 'polyPitchGate', targetType: polyIn.type });
+    if (wiring.gateInPort) {
+      const gateIn = def.inputs.find((p) => p.id === wiring.gateInPort)!;
+      out.push({ fromPortId: gateOut, toPortId: gateIn.id, sourceType: 'gate', targetType: gateIn.type });
+    }
+    velEdge();
+    return out;
   }
   if (wiring.mode === 'gateOnly') {
     const gateIn = def.inputs.find((p) => p.id === wiring.gateInPort)!;
-    return [{ fromPortId: gateOut, toPortId: gateIn.id, sourceType: 'gate', targetType: gateIn.type }];
+    out.push({ fromPortId: gateOut, toPortId: gateIn.id, sourceType: 'gate', targetType: gateIn.type });
+    velEdge();
+    return out;
   }
   const pitchIn = def.inputs.find((p) => p.id === wiring.pitchInPort)!;
   const gateIn = def.inputs.find((p) => p.id === wiring.gateInPort)!;
-  return [
+  out.push(
     { fromPortId: pitchOut, toPortId: pitchIn.id, sourceType: 'polyPitchGate', targetType: pitchIn.type },
     { fromPortId: gateOut, toPortId: gateIn.id, sourceType: 'gate', targetType: gateIn.type },
-  ];
+  );
+  velEdge();
+  return out;
 }
 
 /**
@@ -783,6 +829,49 @@ export function planColumnWiring(ctx: ColumnWiringCtx): WcolEdge[] {
         toNodeId: m.nodeId, toPortId: tap.velIn,
         sourceType: 'cv', targetType: tapInType(tap.velIn),
       }));
+    }
+  }
+
+  // (1c) SHAPE NOTE-TAP (BUG-B fix) — a lane member that CONSUMES notes but has
+  //      NO audio-chain role and NO clip wiring of its own (a pure-CV note
+  //      consumer: adsr, a gate utility, a quantizer) still gets the lane's
+  //      note signals tapped into its note-shaped inputs: `gate{n}` → its note
+  //      gate, `pitch{n}` → a bare `pitch`-typed input, `vel{n}` → a vel-shaped
+  //      cv input. SHAPE-inferred (no allow-list), additive fan-out like (1b),
+  //      and never for a note SOURCE (a sequencer is a driver, not a tappee),
+  //      a declared note sink ((1b) owns those), or an audio participant (the
+  //      chain drives those). Deterministic ids → peers converge.
+  if (clipPlayerId) {
+    const { pitchOut, gateOut, velOut } = clipChannelPorts(channel);
+    for (const m of members) {
+      if (isNoteSink(m.def)) continue; // declared sinks: pass (1b)
+      if (isChainAudioParticipant(m.def)) continue; // chain members: passes (2)+(3)
+      if (isNoteSource(m.def)) continue; // emitters are never tapped
+      if (resolveClipWiring(m.def) !== null) continue; // instruments: pass (1)
+      const gateIn = m.def.inputs.find(isNoteGateInput);
+      const pitchIn = m.def.inputs.find(isPitch);
+      const velIn = m.def.inputs.find(isVelCvInput);
+      if (pitchIn) {
+        push(toWcol({
+          fromNodeId: clipPlayerId, fromPortId: pitchOut,
+          toNodeId: m.nodeId, toPortId: pitchIn.id,
+          sourceType: 'polyPitchGate', targetType: pitchIn.type,
+        }));
+      }
+      if (gateIn) {
+        push(toWcol({
+          fromNodeId: clipPlayerId, fromPortId: gateOut,
+          toNodeId: m.nodeId, toPortId: gateIn.id,
+          sourceType: 'gate', targetType: gateIn.type,
+        }));
+      }
+      if (velIn) {
+        push(toWcol({
+          fromNodeId: clipPlayerId, fromPortId: velOut,
+          toNodeId: m.nodeId, toPortId: velIn.id,
+          sourceType: 'cv', targetType: velIn.type,
+        }));
+      }
     }
   }
 

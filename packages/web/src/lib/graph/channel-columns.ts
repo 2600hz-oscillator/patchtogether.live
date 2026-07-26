@@ -232,7 +232,9 @@ export function columnBottomFlowPos(ch: number, currentCount: number, pitch: num
  * member, at the TOP — returns the top-left flow-space position of every member
  * such that:
  *   - the FIRST (index 0, bottom-anchored) member's BOTTOM edge sits exactly on
- *     COLUMN_BASELINE_Y (just above the channel number),
+ *     `anchorY` (default COLUMN_BASELINE_Y — just above the channel number; the
+ *     `?shell=1` preview passes shellStackAnchorY() so the lane-number badge
+ *     stays visible in the gap below the bottom tile),
  *   - each LATER member sits FLUSH directly on top of the one before it (its
  *     bottom edge == the previous member's top edge — zero gap), stacking upward,
  *   - a single member therefore lands at the very bottom of the column.
@@ -246,11 +248,12 @@ export function columnFlushPositions(
   heightsPx: readonly number[],
   widthsPx?: readonly number[],
   pitch: number = COLUMN_W,
+  anchorY: number = COLUMN_BASELINE_Y,
 ): { x: number; y: number }[] {
   const [x0] = columnXBand(ch, pitch);
   const padX = x0 + COLUMN_PAD_X;
   const out: { x: number; y: number }[] = new Array(heightsPx.length);
-  let bottom = COLUMN_BASELINE_Y;
+  let bottom = anchorY;
   for (let i = 0; i < heightsPx.length; i++) {
     const top = bottom - (heightsPx[i] ?? COLUMN_SLOT_H);
     // CENTER each card in the band by its OWN width (so card-center == band-
@@ -270,11 +273,12 @@ export function sendFlushPositions(
   heightsPx: readonly number[],
   widthsPx?: readonly number[],
   pitch: number = COLUMN_W,
+  anchorY: number = COLUMN_BASELINE_Y,
 ): { x: number; y: number }[] {
   const [x0] = sendBoxXBand(slot, pitch);
   const padX = x0 + COLUMN_PAD_X;
   const out: { x: number; y: number }[] = new Array(heightsPx.length);
-  let bottom = COLUMN_BASELINE_Y;
+  let bottom = anchorY;
   for (let i = 0; i < heightsPx.length; i++) {
     const top = bottom - (heightsPx[i] ?? COLUMN_SLOT_H);
     const w = widthsPx?.[i];
@@ -345,6 +349,62 @@ export function computeLaneHeightPx(
  *  upward). */
 export function laneTopYForHeight(laneHeightPx: number): number {
   return COLUMN_BASELINE_Y - laneHeightPx;
+}
+
+// ---------------- `?shell=1` LANE HEADROOM + BADGE CLEARANCE ----------------
+//
+// Owner rule (RACKLINE preview only — legacy keeps the fixed-top math above):
+// the lane band must GROW with its contents, always keeping at least HALF a
+// module of EMPTY band above the TOP tile of the FULLEST lane, and the BOTTOM
+// tile of every lane must sit ABOVE the lane-number badge (the badge renders
+// fully visible in the gap between the bottom tile and the video-zone border).
+// All 8 lanes share ONE band top (they are one rack):
+//   bandTop = min over lanes(top of that lane's stack) − headroom,
+// clamped to never sit LOWER than the default top (short stacks keep today's
+// look). Pure flow-px math — preview-OFF callers never reach these.
+
+/** HALF a shell module of EMPTY band kept above the fullest lane's top tile
+ *  (0.5 × the 180px RACKLINE tile — module-shell-model.ts SHELL_TILE_H_SLOT;
+ *  a unit gate locks the two constants together). */
+export const SHELL_LANE_HEADROOM_Y = 90;
+
+/** Flow-px gap between the flush stack's BOTTOM edge and COLUMN_BASELINE_Y
+ *  under `?shell=1`, so the lane-number badge (a screen-fixed ~28px box: ~20px
+ *  pill + its 8px bottom offset — ChannelColumnsOverlay `.wcol-label`) renders
+ *  fully visible below the bottom tile. Half a shell tile: a clean flow
+ *  constant that covers the badge at every zoom ≥ ~0.32 (the compact/full LOD
+ *  bands where lane work happens; 90 × 0.32 ≈ 29 screen px ≥ the 28px badge). */
+export const SHELL_LANE_BADGE_CLEARANCE_Y = 90;
+
+/** The flow-space Y the `?shell=1` flush stacks bottom-anchor to: the badge
+ *  clearance above the baseline. Passed as `anchorY` into
+ *  columnFlushPositions / sendFlushPositions by the preview render path. */
+export function shellStackAnchorY(): number {
+  return COLUMN_BASELINE_Y - SHELL_LANE_BADGE_CLEARANCE_Y;
+}
+
+/**
+ * The `?shell=1` UNIFORM lane height — the band-top derivation behind the
+ * headroom rule. Each stack needs its summed tile height + the bottom badge
+ * clearance + the top headroom; the shared lane height is the LARGEST need,
+ * clamped to never drop below `defaultHeightPx` (an empty/short lane keeps
+ * today's default band). Equivalent band-top form: bandTop = min over
+ * lanes(stackTop) − headroom, stackTop = BASELINE − clearance − stackHeight.
+ * Pure max — every peer feeding the same per-type heights converges.
+ */
+export function computeShellLaneHeightPx(
+  stackHeightsPx: readonly number[],
+  defaultHeightPx: number,
+  headroomPx: number = SHELL_LANE_HEADROOM_Y,
+  bottomClearancePx: number = SHELL_LANE_BADGE_CLEARANCE_Y,
+): number {
+  let h = defaultHeightPx;
+  for (const s of stackHeightsPx) {
+    if (s <= 0) continue; // an EMPTY lane contributes nothing (keeps the default)
+    const needed = s + bottomClearancePx + headroomPx;
+    if (needed > h) h = needed;
+  }
+  return h;
 }
 
 // ---------------- Grow-up push (canvas modules clear the lanes) ----------------
@@ -699,27 +759,70 @@ export function fitLanesViewport(vp: ViewportMetrics, pitch: number = COLUMN_W):
   };
 }
 
+/** A just-spawned member's flow-space rectangle (top-left + size in flow px). */
+export interface FlowRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Screen-px comfort margin the spawn-reveal pan tucks an off-screen tile
+ *  inside — a scrollIntoView-style breathing gap, small enough that the pan
+ *  stays minimal. Visibility itself is judged EDGE-INCLUSIVE against the raw
+ *  viewport bounds (margin 0), so a tile sitting flush at an edge — e.g. the
+ *  baseline row under the on-load lane framing — never triggers a pan. */
+export const SPAWN_REVEAL_MARGIN_PX = 16;
+
 /**
- * Adjust a lane/send CENTER transform (from laneCenterViewport /
- * sendBoxCenterViewport) so a just-added member occupying flow-Y
- * [memberTopY, memberTopY + memberHeightPx] is fully in view. The base transform
- * already puts the baseline at the viewport bottom, so a SHORT stack's newest
- * member is visible above it and the base is returned unchanged. When the stack
- * is TALLER than the viewport the newest member's TOP falls above the viewport;
- * in that case re-center the member vertically (keeping the lane centered
- * horizontally) so the newest tile is guaranteed on screen. Pure.
+ * SPAWN-CAMERA pan decision (the P0.3b reveal, re-seamed): given the CURRENT
+ * viewport transform and the just-spawned member's flow-space rect, decide the
+ * camera move.
+ *
+ *   * Member already FULLY VISIBLE (edge-inclusive) → `null`: NO pan at all.
+ *     The camera must never move under a user who can already see the tile —
+ *     re-centering the lane on every add is the "viewport scrolls wildly" bug
+ *     this replaces (the old path always panned to laneCenterViewport, a
+ *     cross-canvas jump from any other framing).
+ *   * Member (partly) OFF-SCREEN → the MINIMAL translate that tucks it
+ *     SPAWN_REVEAL_MARGIN_PX inside the nearest violated edge(s). Axis-
+ *     independent: an axis already in view does not move. Zoom is NEVER
+ *     changed.
+ *   * Member LARGER than the viewport on an axis (deep zoom-in) → align its
+ *     MIN edge (top/left — where the tile header sits) to the margin.
+ *
+ * Pure. screen = flow*zoom + translate, so the member's screen rect under the
+ * current transform is rect*zoom + {x,y}; the returned transform only shifts
+ * the translate by the screen-px correction.
  */
-export function revealMemberViewport(
-  base: ViewportTransform,
-  memberTopY: number,
-  memberHeightPx: number,
+export function spawnRevealViewport(
+  current: ViewportTransform,
+  rect: FlowRect,
   vp: ViewportMetrics,
-): ViewportTransform {
-  // screen y = flowY*zoom + base.y ⇒ the top visible flow-Y (screen y === 0):
-  const visibleTopFlowY = -base.y / base.zoom;
-  if (memberTopY >= visibleTopFlowY) return base; // member fully in view
-  const memberCenterY = memberTopY + memberHeightPx / 2;
-  return { x: base.x, y: vp.heightPx / 2 - memberCenterY * base.zoom, zoom: base.zoom };
+  marginPx: number = SPAWN_REVEAL_MARGIN_PX,
+): ViewportTransform | null {
+  const z = current.zoom;
+  // The member's SCREEN-space rect under the current transform.
+  const sx0 = rect.x * z + current.x;
+  const sx1 = (rect.x + rect.w) * z + current.x;
+  const sy0 = rect.y * z + current.y;
+  const sy1 = (rect.y + rect.h) * z + current.y;
+  // Already fully visible (edge-inclusive, margin 0) → identity: no pan.
+  if (sx0 >= 0 && sx1 <= vp.widthPx && sy0 >= 0 && sy1 <= vp.heightPx) return null;
+  // Effective margin: never so large the margined window can't hold the rect
+  // (a tiny pane) — degrade toward 0 instead of oscillating.
+  const mx = Math.max(0, Math.min(marginPx, (vp.widthPx - (sx1 - sx0)) / 2));
+  const my = Math.max(0, Math.min(marginPx, (vp.heightPx - (sy1 - sy0)) / 2));
+  // Per-axis minimal correction (0 when the axis is already in view).
+  let dx = 0;
+  if (sx1 - sx0 > vp.widthPx) dx = mx - sx0; // wider than the pane → align LEFT edge
+  else if (sx0 < 0) dx = mx - sx0; // off the left → tuck left edge inside
+  else if (sx1 > vp.widthPx) dx = vp.widthPx - mx - sx1; // off the right
+  let dy = 0;
+  if (sy1 - sy0 > vp.heightPx) dy = my - sy0; // taller than the pane → align TOP edge
+  else if (sy0 < 0) dy = my - sy0; // off the top
+  else if (sy1 > vp.heightPx) dy = vp.heightPx - my - sy1; // off the bottom
+  return { x: current.x + dx, y: current.y + dy, zoom: z };
 }
 
 // ---------------- Ordered-membership array helpers (pure, CRDT-safe) ----------------

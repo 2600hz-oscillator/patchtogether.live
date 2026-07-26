@@ -13,7 +13,8 @@
   //   - Status line showing fires-since-mount + last error if any
 
   import { onDestroy, onMount } from 'svelte';
-  import { useStore, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
+  import { captureFlowStore } from './card-kit';
   import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
   import { useEngine } from '$lib/audio/engine-context';
   import { makeEditor, type EditorHandle } from '$lib/livecode/editor';
@@ -26,7 +27,11 @@
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
-  const flowStore = useStore();
+  // Guarded: the dock full-view plain-mounts this card OUTSIDE the
+  // SvelteFlow provider, where a bare useStore() throws and killed the
+  // card at init (no video in the expanded faceplate). Inside the
+  // provider this is byte-identical; outside it's null -> zoom 1.
+  const flowStore = captureFlowStore();
 
   // ───── Sizing ─────────────────────────────────────────────────
   // Rounded to whole-u (180px) rack tiles (#759) so the default + min land on
@@ -49,7 +54,7 @@
     resizeAbort = new AbortController();
     const sig = resizeAbort.signal;
     const onMove = (mev: PointerEvent) => {
-      const zoom = flowStore.viewport.zoom || 1;
+      const zoom = flowStore?.viewport.zoom || 1;
       const w = Math.max(MIN_WIDTH, Math.round(startW + (mev.clientX - startX) / zoom));
       const h = Math.max(MIN_HEIGHT, Math.round(startH + (mev.clientY - startY) / zoom));
       const target = patch.nodes[id];

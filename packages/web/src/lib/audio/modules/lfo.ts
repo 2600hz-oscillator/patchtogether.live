@@ -10,7 +10,8 @@
 // resync loop keeps the phase aligned despite hardware-clock drift.
 //
 // Inputs:
-//   clock (gate): external clock; when patched, rate is locked to the measured period.
+//   clock (gate): external clock; each rising edge hard-resets phase to 0
+//     (it re-zeros phase only — the period is NOT measured and rate is unchanged).
 //   rate (cv, log, paramTarget=rate): scales the LFO rate (log).
 //   shape (cv, linear, paramTarget=shape): displaces the waveform-shape crossfade.
 //   depth_cv (cv, linear, paramTarget=depth): displaces the output depth.
@@ -20,8 +21,8 @@
 //
 // Params:
 //   rate (log 0.01..100 Hz, default 1): LFO frequency.
-//   shape (linear 0..2, default 0): morph across sine ↔ tri ↔ saw.
-//   depth (linear 0..1, default 0.5): output amplitude (0..1 scales the ±1 bipolar swing).
+//   shape (linear 0..2, default 0): morph across sine → saw → square.
+//   depth (linear 0..1, default 0.5): output amplitude (0 = still, 0.5 = unity ±1, 1 = ±2).
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef, SyncedModuleDef } from '$lib/audio/module-registry';
@@ -97,23 +98,42 @@ const baseDef: AudioModuleDef = {
     { id: 'depth', label: 'Depth', defaultValue: 0.5, min: 0,    max: 1,   curve: 'linear' },
   ],
 
+  // RACKLINE face curation (P1 total rework — see the approved fullcard mock,
+  // scratchpad/fullcard-mocks/lfo.html). RANKING: `rate` leads — the LFO's
+  // played control and the faceplate's headline readout (the Hz chip); with the
+  // live `waveform` glyph already SHOWING the current shape + swing, the mini
+  // tier pairs the one knob you actually ride with a picture of everything
+  // else. `shape` (the mock's hero band: waveform-morph selector + live shape
+  // screen) ranks second, `depth` (swing amount) third — so the compact tier's
+  // three knobs are exactly the mock's ENGINE row (rate · morph · depth).
+  // DOCK PAGES mirror the mock's two editor bands: 'shape' (the waveform-morph
+  // hero) and 'engine' (speed + swing).
+  face: {
+    order: ['rate', 'shape', 'depth'],
+    pages: [
+      { id: 'shape',  label: 'shape',  controls: ['shape'] },
+      { id: 'engine', label: 'engine', controls: ['rate', 'depth'] },
+    ],
+    glyph: 'waveform',
+  },
+
   docs: {
-    explanation: "A low-frequency modulation source: one oscillator emits the same wave at four phase taps (0°/90°/180°/270°) so a single LFO can sweep several voices in stereo or quadrature without re-tuning. Rate sets the cycle speed, Shape continuously morphs the waveform (sine → saw → square), and Depth scales the swing. In a shared/multiplayer rack the phase is anchored to the rack's shared clock so every client sees the same value at the same moment; solo on the public canvas it simply free-runs from phase 0.",
+    explanation: "A low-frequency modulation source: one oscillator emits the same wave at four quadrature phase taps (0°/90°/180°/270°) so a single LFO can sweep several destinations in stereo or round-robin without re-tuning. The engine is three controls — Rate sets the cycle speed (0.01–100 Hz), Shape continuously morphs the waveform along one axis (sine → saw → square), and Depth scales the bipolar swing (0.5 = unity ±1). A rising edge on the clock input hard-resets phase to 0 — a true pulse-train lock when the LFO is free-running (solo on the public canvas, where it starts from phase 0 and each reset persists). In a shared/multiplayer rack the phase is instead anchored to the rack's shared clock (drift corrections smoothed over ~200 ms) so every client sees the same value at the same moment — and that anchor outranks the clock input between pulses: a clock edge still snaps phase to 0 at that instant, but the anchor then glides it back to the shared-clock-derived phase.",
     inputs: {
-      clock: "External clock — each rising edge (crossing above 0.5) hard-resets the oscillator to phase 0, locking the LFO to an incoming pulse train (e.g. a shared sequencer's tempo). The reset is intentionally hard with no smoothing, so a click on the edge is expected; Rate still sets the speed between pulses — the clock only re-zeros the phase, it does not measure the period or change the rate.",
-      rate: "CV that scales the Rate knob on a logarithmic axis — ±1 multiplies the rate by about 100× / one-hundredth (≈ ±6.6 octaves of speed). Sample-and-held once at the start of each audio block so multiple clients stay phase-aligned despite sub-block CV latency differences.",
-      shape: "CV that displaces the Shape control, sliding the waveform morph (sine → saw → square) up or down. Read per-sample (a-rate) so the morph stays smooth.",
-      depth_cv: "CV that sums into the Depth control, modulating the output swing amount the same way the Rate/Shape CV inputs offset their params (labeled DEPTH on the panel).",
+      clock: "External clock — each rising edge (crossing above 0.5) hard-resets the oscillator to phase 0. The reset only re-zeros the phase (the period is NOT measured; Rate still sets the speed between pulses), and it is intentionally hard: it snaps at the edge sample and cancels any in-flight shared-clock correction ramp, so a click on the edge is expected. Locking to an incoming pulse train is really a free-running feature: with no shared clock anchored (e.g. solo on the public canvas) each reset persists until the next pulse. In a shared/multiplayer rack the shared-clock anchor takes precedence between pulses — after a reset, its next divergence check schedules a ~200 ms glide back to the shared-clock-derived phase (the check runs once the anchor's periodic resync is active, within ~5 s of the clock attaching) — so there a clock edge is a momentary re-zero, not a lasting re-lock.",
+      rate: "CV that scales the Rate knob on a logarithmic axis — ±1 multiplies the rate by about 100× / one-hundredth (≈ ±6.6 octaves of speed). Sample-and-held once at the start of each ~128-sample audio block so multiple clients stay phase-aligned despite sub-block CV latency differences.",
+      shape: "CV that displaces the Shape control, sliding the waveform morph (sine → saw → square) up or down around the knob position. Read per-sample (a-rate) so the morph stays smooth.",
+      depth_cv: "CV that sums into the Depth control, modulating the swing amount the same way the rate/shape CV inputs offset their params. ±1 sweeps depth across half its 0–1 range around the knob position.",
     },
     outputs: {
       phase0: "The LFO at 0° (the reference phase). Bipolar wave centered on 0; its swing magnitude is set by Depth (0 = flat/still, 0.5 = unity ±1, 1 = ±2).",
       phase90: "The same LFO advanced a quarter cycle (phase + 0.25) — the 90° tap, useful as the offset partner for quadrature/stereo modulation.",
-      phase180: "The same LFO advanced half a cycle (phase + 0.5) — the 180° tap; for the sine shape this is a polarity inversion (moves opposite phase0), useful for ping-pong / push-pull modulation.",
+      phase180: "The same LFO advanced half a cycle (phase + 0.5) — the 180° tap; for the sine and square shapes this is a polarity inversion (moves opposite phase0), useful for ping-pong / push-pull modulation (the saw instead restarts its ramp half a cycle early).",
       phase270: "The same LFO advanced three-quarters of a cycle (phase + 0.75) — the 270° tap, completing the 0/90/180/270 quadrature set off one shared oscillator.",
     },
     controls: {
-      rate: "How fast the LFO cycles, from 0.01 Hz (one sweep per ~100 s) to 100 Hz (audio-rate for FM-style use), on a log fader. Sets the speed shared by all four phase outputs; the clock input overrides phase, not rate.",
-      shape: "Continuously morphs the waveform across the 0–2 range: 0 = sine, 1 = saw, 2 = square, with smooth crossfades in between (e.g. value 0.5 = halfway sine↔saw). The fader's glyphs mark sine / saw / square.",
+      rate: "How fast the LFO cycles, from 0.01 Hz (one sweep per ~100 s) to 100 Hz (audio-rate for FM-style use) on a logarithmic dial — the faceplate's headline Hz readout. Sets the one speed shared by all four phase outputs; the clock input overrides phase, not rate.",
+      shape: "Continuously morphs the waveform along the 0–2 axis: 0 = sine, 1 = saw, 2 = square, with smooth linear crossfades between adjacent anchors (e.g. 0.5 = halfway sine↔saw). The face's live waveform glyph tracks the morph as you move it.",
       depth: "Output amplitude / swing, applied as gain = depth × 2 and not clamped: 0 = still (flat at the 0 center, no modulation), 0.5 = unity ±1 (the default, matches legacy patches), 1 = ±2 (deliberately beyond the normal ±1 range). Orthogonal to shape — it only scales the swing, never shifts the center.",
     },
   },

@@ -51,6 +51,12 @@ const SHELL_TILE_H_SLOT = 180;
 // backdraft-tall (3u = 540px) band directly BELOW it.
 const COLUMN_BASELINE_Y = 4320; // COLUMN_TOP_Y(0) + COLUMN_SLOT_H(720) * COLUMN_MAX_SLOTS(6)
 const VIDEO_AREA_HEIGHT = 540; // RACK_UNIT(180) * 3
+// `?shell=1` LANE HEADROOM rule (channel-columns.ts): the band top derives from
+// the FULLEST stack; ≥ half a tile (90) of EMPTY band stays above its top tile,
+// and every stack's BOTTOM edge floats half a tile (90) above the baseline so
+// the lane-number badge renders fully visible below the bottom tile.
+const SHELL_LANE_HEADROOM_Y = 90; // channel-columns.ts SHELL_LANE_HEADROOM_Y
+const SHELL_BADGE_CLEARANCE_Y = 90; // channel-columns.ts SHELL_LANE_BADGE_CLEARANCE_Y
 /** Flow-space top-left X that CENTERS the uniform 192px tile in column `ch`'s tight
  *  216px band (columnCardX at the shell pitch) — the value the drop must persist. */
 const shellColCardX = (ch: number) => (ch - 1) * SHELL_COLUMN_W + (SHELL_COLUMN_W - SHELL_TILE_W) / 2;
@@ -125,8 +131,10 @@ async function setZoomTier(page: Page, zoom: number, expectTier: string): Promis
 
 test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
   test('un-migrated module → placeholder in lane + legacy card operable in the dock', async ({ page }) => {
+    // 'delay' — a still-UN-migrated module (vca joined STRICT_FACES in P1
+    // batch 1, so it now renders the curated ModuleShell, not the placeholder).
     await gotoWorkflow(page, { shell: true });
-    await spawnPatch(page, [{ id: NODE, type: 'vca', position: { x: 460, y: 240 } }]);
+    await spawnPatch(page, [{ id: NODE, type: 'delay', position: { x: 460, y: 240 } }]);
 
     const laneNode = page.locator(`.svelte-flow__node[data-id="${NODE}"]`);
     await expect(laneNode).toHaveCount(1);
@@ -155,7 +163,7 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     await expect(faceplate.getByTestId('faceplate-close')).toBeVisible();
     await expect(faceplate.getByTestId('faceplate-collapse')).toBeVisible();
     await expect(faceplate.getByTestId('faceplate-tab')).toHaveText('MODULE');
-    await expect(faceplate.locator('.faceplate.audio')).toHaveCount(1); // vca = audio domain
+    await expect(faceplate.locator('.faceplate.audio')).toHaveCount(1); // delay = audio domain
 
     // …and the REAL, unchanged legacy card mounts verbatim in .editor at native
     //  scale (carrying the data-dock-card anchor so PickupCable/patch-menu work).
@@ -172,7 +180,8 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     await expect(laneNode.locator('[data-testid="dock-stub"]')).toHaveCount(0);
 
     // 4) Drive a control in the mounted card → the graph param changes (operable).
-    const before = await readParam(page, NODE, 'base');
+    //    (The first fader on the delay card is Time.)
+    const before = await readParam(page, NODE, 'time');
     const track = dockCard.locator('.fader-wrap .track').first();
     const box = await track.boundingBox();
     expect(box, 'a fader track should be present in the docked card').toBeTruthy();
@@ -184,8 +193,8 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     await page.mouse.move(cx, cy - 34, { steps: 6 });
     await page.mouse.up();
     await page.waitForTimeout(120);
-    const after = await readParam(page, NODE, 'base');
-    expect(after, `base should change after driving the fader (was ${before}, now ${after})`).not.toBe(before);
+    const after = await readParam(page, NODE, 'time');
+    expect(after, `time should change after driving the fader (was ${before}, now ${after})`).not.toBe(before);
 
     // 5) ESC closes the full-view faceplate; the placeholder remains in the lane.
     await page.keyboard.press('Escape');
@@ -195,14 +204,16 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
 
   test('placeholder tiles are UNIFORM WIDTH + the FIXED slot height with a consistent badge anchor', async ({ page }) => {
     // The owner "same-size all modules HORIZONTALLY" + "tiles non-uniform / smaller
-    // than the mock" fix: under ?shell=1 the default video-zone trio (videoOut
-    // 'dynamic', recorderbox 2u, synesthesia 3u — three DIFFERENT rack tiers, so
-    // three different LEGACY widths) all render as the SAME uniform RACKLINE tile —
-    // identical WIDTH (SHELL_TILE_W) and the ONE fixed slot HEIGHT
-    // (SHELL_TILE_H_SLOT — tier-invariant, the zoom-reposition fix), so the
-    // baseline number badges cap them flush.
+    // than the mock" fix: under ?shell=1 the tile-swapped video-zone defaults
+    // (recorderbox 2u, synesthesia 3u — DIFFERENT rack tiers, so different
+    // LEGACY widths) render as the SAME uniform RACKLINE tile — identical WIDTH
+    // (SHELL_TILE_W) and the ONE fixed slot HEIGHT (SHELL_TILE_H_SLOT —
+    // tier-invariant, the zoom-reposition fix), so the baseline number badges
+    // cap them flush. (videoOut is EXEMPT since the video-visibility fix — a
+    // NON_SHELL video-surface snowflake whose real resizable card stays in the
+    // lane; covered by workflow-shell-video.spec.ts.)
     await gotoWorkflow(page, { shell: true });
-    const ids = ['workflow-videoOut', 'workflow-recorderbox', 'workflow-synesthesia'];
+    const ids = ['workflow-recorderbox', 'workflow-synesthesia'];
     for (const id of ids) {
       await expect(
         page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`),
@@ -245,8 +256,10 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
       await dropInColumn(page, t, 1);
       await page.waitForTimeout(250);
     }
-    // The three ch1 members are placeholders in the lane.
+    // Tiles mounted (tidyVco/vca render the migrated shell as of P1 batch 1;
+    // delay + the video-zone trio stay placeholders).
     await expect(page.locator('[data-testid="module-shell-placeholder"]')).not.toHaveCount(0);
+    await expect(page.locator('[data-testid="module-shell"]')).not.toHaveCount(0);
 
     // Uniform width + height across every mounted tile.
     const tiles = await measureTiles(page);
@@ -498,6 +511,14 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
 test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   const VZONE_IDS = ['workflow-videoOut', 'workflow-recorderbox', 'workflow-synesthesia'];
 
+  /** The video-zone default's LANE FACE under ?shell=1: videoOut renders its
+   *  verbatim LEGACY card (NON_SHELL video-surface snowflake — the shell
+   *  video-visibility fix); recorderbox/synesthesia render placeholder tiles. */
+  const vzFaceSelector = (id: string) =>
+    id === 'workflow-videoOut'
+      ? `.svelte-flow__node[data-id="${id}"] [data-testid="video-out-card"]`
+      : `.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`;
+
   /** Drop `type` at the tight SHELL pitch so the pitch-aware hit-test resolves the
    *  intended narrowed column `ch` (the wide COLUMN_W anchor would land elsewhere). */
   async function dropInShellColumn(page: Page, type: string, ch: number): Promise<void> {
@@ -534,9 +555,7 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   test('video-zone tiles sit INSIDE the video area (below COLUMN_BASELINE_Y)', async ({ page }) => {
     await gotoWorkflow(page, { shell: true });
     for (const id of VZONE_IDS) {
-      await expect(
-        page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`),
-      ).toBeVisible({ timeout: 15_000 });
+      await expect(page.locator(vzFaceSelector(id))).toBeVisible({ timeout: 15_000 });
     }
     for (const id of VZONE_IDS) {
       const p = await flowPos(page, id);
@@ -604,8 +623,11 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   // only button (undiscoverable). It is now a clear, LABELLED pill; the wired path
   // (onExpand → dockStore.openFullView → the .dock-faceplate full view) is unchanged.
   test('the EXPAND affordance is a labelled button that opens the dock faceplate + ESC closes', async ({ page }) => {
+    // 'delay' — a still-UN-migrated module (vca is migrated as of P1 batch 1),
+    // so this stays the PLACEHOLDER's expand path; the migrated shell's expand
+    // is covered by workflow-shell-faces.spec.ts.
     await gotoWorkflow(page, { shell: true });
-    await spawnPatch(page, [{ id: NODE, type: 'vca', position: { x: 460, y: 240 } }]);
+    await spawnPatch(page, [{ id: NODE, type: 'delay', position: { x: 460, y: 240 } }]);
 
     const laneNode = page.locator(`.svelte-flow__node[data-id="${NODE}"]`);
     const placeholder = laneNode.locator('[data-testid="module-shell-placeholder"]');
@@ -722,9 +744,7 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
     await gotoWorkflow(page, { shell: true });
     await waitForHooks(page);
     for (const id of VZONE_IDS) {
-      await expect(
-        page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`),
-      ).toBeVisible({ timeout: 15_000 });
+      await expect(page.locator(vzFaceSelector(id))).toBeVisible({ timeout: 15_000 });
     }
     await dropInShellColumn(page, 'vca', 1);
     await page.waitForTimeout(300);
@@ -823,11 +843,17 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
     }
 
     // …and the ABSOLUTE user-visible invariants hold at every zoom (not just
-    // "consistent"): the ch1 stack bottoms exactly ON the dashed video line,
-    // the video tiles sit INSIDE the zone (the +48px inset — pre-fix they poked
-    // ABOVE the line at low zoom), and the tile keeps the clean 12px lane gutter.
+    // "consistent"): the ch1 stack bottom floats EXACTLY the badge clearance
+    // (90 flow px — the owner lane-number-badge rule) above the dashed video
+    // line, the video tiles sit INSIDE the zone (the +48px inset — pre-fix they
+    // poked ABOVE the line at low zoom), and the tile keeps the clean 12px lane
+    // gutter. The clearance is CONTENT geometry, so it is zoom-invariant like
+    // every other pair here (the band grows with content, never with zoom).
     for (const row of rows) {
-      expect(Math.abs(row.memberBottomToVideoTop), `ch1 stack bottom ON the video line @z${row.zoom}`).toBeLessThanOrEqual(2);
+      expect(
+        Math.abs(row.memberBottomToVideoTop - SHELL_BADGE_CLEARANCE_Y),
+        `ch1 stack bottom floats the ${SHELL_BADGE_CLEARANCE_Y}px badge clearance above the video line @z${row.zoom}`,
+      ).toBeLessThanOrEqual(2);
       expect(row.videoOutTopToVideoTop, `video tile INSIDE the zone @z${row.zoom}`).toBeGreaterThanOrEqual(46);
       expect(row.videoOutTopToVideoTop, `video tile inset ≈48 @z${row.zoom}`).toBeLessThanOrEqual(50);
       expect(Math.abs(row.memberLeftToBand1Left - 12), `12px lane gutter @z${row.zoom}`).toBeLessThanOrEqual(2);
@@ -838,9 +864,12 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   // BUG 4 counterpart — a low-port tile (vca: 2 in + 2 out) is untouched by
   // the fit: EVERY preview dot renders and no "···" overflow appears.
   test('low-port rail (vca) shows ALL jack dots with no "···" and EXPAND inside the tile', async ({ page }) => {
+    // vca is MIGRATED as of P1 batch 1 — the lane tile is the curated
+    // ModuleShell, which carries the SAME PatchPanel lane-rail contract the
+    // placeholder does (all 4 dots, no overflow, EXPAND inside the tile).
     await gotoWorkflow(page, { shell: true });
     await spawnPatch(page, [{ id: NODE, type: 'vca', position: { x: 460, y: 240 } }]);
-    const tile = page.locator(`.svelte-flow__node[data-id="${NODE}"] [data-testid="module-shell-placeholder"]`);
+    const tile = page.locator(`.svelte-flow__node[data-id="${NODE}"] [data-testid="module-shell"]`);
     await expect(tile).toBeVisible();
     await page.waitForFunction((nodeId) => {
       const r = document.querySelector(
@@ -851,7 +880,7 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
 
     const m = await page.evaluate((nodeId) => {
       const tile = document.querySelector(
-        `.svelte-flow__node[data-id="${nodeId}"] [data-testid="module-shell-placeholder"]`,
+        `.svelte-flow__node[data-id="${nodeId}"] [data-testid="module-shell"]`,
       ) as HTMLElement;
       const rail = tile.querySelector('[data-testid="lane-jack-rail"]') as HTMLElement;
       const expand = tile.querySelector('[data-testid="shell-open-dock"]') as HTMLElement;
@@ -868,5 +897,144 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
     expect(m.hasOverflow, 'no "···" on a low-port tile').toBe(false);
     expect(m.railScrollW, 'rail fits').toBeLessThanOrEqual(m.railClientW);
     expect(m.expandRight, 'EXPAND inside the tile').toBeLessThanOrEqual(m.tileW);
+  });
+});
+
+// ─── LANE HEADROOM + badge clearance (owner rule, `?shell=1` only) ──────────
+//
+// The lane band GROWS with its contents: the shared band top derives from the
+// FULLEST lane's stack, keeping ≥ half a module (90 flow px) of EMPTY band above
+// its top tile — pre-fix the band top was FIXED, so a tall flush stack poked
+// ABOVE the band edge (the owner's COFEFVE screenshot). And every stack's
+// BOTTOM edge floats the badge clearance (90 flow px) above the baseline, so
+// the lane-number badge renders fully visible below the bottom tile (pre-fix
+// the bottom tile sat ON the baseline, over the badge row).
+test.describe('LANE HEADROOM: the band grows with the fullest stack (?shell=1)', () => {
+  /** Drop `type` into the tight shell column `ch` via the real palette path. */
+  async function dropInShellColumn(page: Page, type: string, ch: number): Promise<void> {
+    await page.evaluate(
+      ({ type, pos }) => {
+        const w = globalThis as unknown as {
+          __setSpawnFlowPos: (p: { x: number; y: number }) => void;
+          __spawnFromPalette: (t: string) => void;
+        };
+        w.__setSpawnFlowPos(pos);
+        w.__spawnFromPalette(type);
+      },
+      { type, pos: { x: (ch - 1) * SHELL_COLUMN_W + 30, y: 40 } },
+    );
+  }
+
+  test('4-stack lane: ≥90px headroom above the top tile, ONE shared band top, badges fully visible', async ({ page }) => {
+    await gotoWorkflow(page, { shell: true });
+    await waitForHooks(page);
+
+    // Lane 1 = the FULLEST lane (4 uniform tiles); lane 2 = a 1-tile lane (its
+    // band must FOLLOW lane 1's grown top, and its badge must stay visible too).
+    for (const t of ['tidyVco', 'vca', 'delay', 'lfo']) {
+      await dropInShellColumn(page, t, 1);
+      await page.waitForTimeout(250);
+    }
+    await dropInShellColumn(page, 'adsr', 2);
+    await page.waitForTimeout(250);
+    const orders = await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: { columns?: Record<string, string[]> } } | undefined> };
+      };
+      const cols = w.__patch.nodes['pinned-mixmstrs']?.data?.columns ?? {};
+      return { c1: cols['1'] ?? [], c2: cols['2'] ?? [] };
+    });
+    expect(orders.c1.length, 'lane 1 holds the 4-stack').toBe(4);
+    expect(orders.c2.length, 'lane 2 holds one member').toBe(1);
+
+    // A deterministic mid zoom (compact tier): 90 flow px of clearance ≈ 40
+    // screen px — comfortably larger than the ~28px screen-fixed badge box.
+    await page.evaluate((z) => {
+      const f = (globalThis as any).__flow;
+      const pane = document.querySelector('.svelte-flow') as HTMLElement;
+      const r = pane.getBoundingClientRect();
+      const cx = 300; // mid lane 1..3 at the tight pitch
+      const cy = 3900; // the grown band + baseline both in frame
+      f.setViewport({ x: r.width / 2 - cx * z, y: r.height / 2 - cy * z, zoom: z }, { duration: 0 });
+    }, 0.45);
+    await page.evaluate(
+      () => new Promise<void>((res) => requestAnimationFrame(() => requestAnimationFrame(() => res()))),
+    );
+
+    const geo = await page.evaluate(
+      ({ c1, c2 }) => {
+        const f = (globalThis as any).__flow;
+        const vp = f.getViewport();
+        const pane = (document.querySelector('.svelte-flow') as HTMLElement).getBoundingClientRect();
+        // Window screen px → flow-space Y (the overlay's pane-local projection:
+        // screen = pane.top + flow·zoom + translateY).
+        const toFlowY = (screenY: number) => (screenY - pane.top - vp.y) / vp.zoom;
+        const bandTops = Array.from(document.querySelectorAll('.wcol-band')).map((b) =>
+          toFlowY(b.getBoundingClientRect().top),
+        );
+        const sendTops = Array.from(document.querySelectorAll('.wcol-send')).map((b) =>
+          toFlowY(b.getBoundingClientRect().top),
+        );
+        const nodeRect = (id: string) =>
+          document.querySelector(`.svelte-flow__node[data-id="${id}"]`)?.getBoundingClientRect() ?? null;
+        const stack1 = c1.map(nodeRect);
+        const member2 = nodeRect(c2[0]);
+        const badge = (ch: number) =>
+          document.querySelector(`[data-testid="channel-column-label-${ch}"]`)?.getBoundingClientRect() ?? null;
+        return {
+          zoom: vp.zoom as number,
+          bandTops,
+          sendTops,
+          stack1Tops: stack1.map((r) => (r ? toFlowY(r.top) : null)),
+          stack1BottomScreen: stack1.length ? Math.max(...stack1.map((r) => (r ? r.bottom : -Infinity))) : null,
+          member2TopFlow: member2 ? toFlowY(member2.top) : null,
+          member2BottomScreen: member2 ? member2.bottom : null,
+          badge1: badge(1) ? { top: badge(1)!.top, height: badge(1)!.height } : null,
+          badge2: badge(2) ? { top: badge(2)!.top, height: badge(2)!.height } : null,
+        };
+      },
+      { c1: orders.c1, c2: orders.c2 },
+    );
+
+    // (a) The band GREW to the derivation: baseline − (4×180 + 90 + 90) = 3420
+    //     (pre-fix: max(360 default, 4×180) → 3600 — the top tile flush with it).
+    const expectedTop = COLUMN_BASELINE_Y - (4 * SHELL_TILE_H_SLOT + SHELL_BADGE_CLEARANCE_Y + SHELL_LANE_HEADROOM_Y);
+    expect(geo.bandTops.length, 'all 8 lane bands render').toBe(8);
+    for (const t of geo.bandTops) expect(Math.abs(t - expectedTop), `band top == ${expectedTop}`).toBeLessThanOrEqual(2);
+
+    // (b) ONE shared top: every lane band (and both send boxes — one rack) agrees.
+    const spread = Math.max(...geo.bandTops) - Math.min(...geo.bandTops);
+    expect(spread, 'all 8 lanes share one band top').toBeLessThanOrEqual(1);
+    for (const t of geo.sendTops) expect(Math.abs(t - expectedTop), 'send boxes share the band top').toBeLessThanOrEqual(2);
+
+    // (c) HEADROOM: the FULLEST lane's top tile sits ≥ ~90 flow px BELOW the
+    //     band top (screen-measured, flow-normalized; exactly 90 by derivation).
+    const stack1Tops = geo.stack1Tops.filter((t): t is number => t !== null);
+    expect(stack1Tops.length, 'all 4 lane-1 tiles measured').toBe(4);
+    const topTile = Math.min(...stack1Tops);
+    expect(topTile - expectedTop, '≥ ~90px empty band above the top tile').toBeGreaterThanOrEqual(SHELL_LANE_HEADROOM_Y - 2);
+    expect(topTile - expectedTop, 'exactly the headroom (the band hugs content + 90)').toBeLessThanOrEqual(SHELL_LANE_HEADROOM_Y + 2);
+
+    // (d) The 1-tile lane keeps its bottom anchor (clearance above the baseline)
+    //     — the shared top does NOT re-anchor short stacks.
+    expect(
+      Math.abs(geo.member2TopFlow! + SHELL_TILE_H_SLOT - (COLUMN_BASELINE_Y - SHELL_BADGE_CLEARANCE_Y)),
+      'lane 2 bottom edge == baseline − clearance',
+    ).toBeLessThanOrEqual(2);
+
+    // (e) BADGE VISIBLE below the bottom tile for EVERY populated lane: the
+    //     bottom tile's bbox bottom sits ABOVE the badge's top (screen space —
+    //     the badge is a screen-fixed pill; no occlusion at this zoom).
+    for (const [lane, tileBottom, badge] of [
+      [1, geo.stack1BottomScreen, geo.badge1],
+      [2, geo.member2BottomScreen, geo.badge2],
+    ] as const) {
+      expect(badge, `lane ${lane} badge rendered`).not.toBeNull();
+      expect(tileBottom, `lane ${lane} bottom tile measured`).not.toBeNull();
+      expect(
+        tileBottom!,
+        `lane ${lane}: bottom tile ends ABOVE the badge (badge fully visible)`,
+      ).toBeLessThanOrEqual(badge!.top + 0.5);
+    }
   });
 });

@@ -220,6 +220,47 @@ describe('edge plans (pure)', () => {
     ]);
   });
 
+  it('BUG-B: poly instrument WITH a mono note-gate → pitch{n}→poly AND gate{n}→gate (both patched)', () => {
+    // The tidyVco shape: a poly chord bus + the mono pitch/gate fallback pair.
+    const d = def(
+      [port('poly', 'polyPitchGate'), port('pitch', 'cv'), port('gate', 'gate', { edge: 'gate' })],
+      [port('out_l', 'audio'), port('out_r', 'audio')],
+      [['out_l', 'out_r']],
+    );
+    expect(planClipControl(d, 3)).toEqual([
+      { fromPortId: 'pitch3', toPortId: 'poly', sourceType: 'polyPitchGate', targetType: 'polyPitchGate' },
+      { fromPortId: 'gate3', toPortId: 'gate', sourceType: 'gate', targetType: 'gate' },
+    ]);
+  });
+
+  it('BUG-B: the LIVE tidyVco def plans pitch AND gate edges on a lane-add', () => {
+    const d = liveDef('tidyVco');
+    expect(d, 'tidyVco not found in registry').toBeDefined();
+    const plan = planClipControl(d!, 3)!;
+    expect(plan).toContainEqual({
+      fromPortId: 'pitch3', toPortId: 'poly', sourceType: 'polyPitchGate', targetType: 'polyPitchGate',
+    });
+    expect(plan).toContainEqual({
+      fromPortId: 'gate3', toPortId: 'gate', sourceType: 'gate', targetType: 'gate',
+    });
+  });
+
+  it('vel tap: a vel-shaped cv input (no paramTarget) gets vel{n} in every mode', () => {
+    const mono = def(
+      [port('vc_pitch', 'pitch'), port('trig', 'gate', { edge: 'trigger' }), port('vel_in', 'cv')],
+      [port('out', 'audio')],
+    );
+    expect(planClipControl(mono, 2)).toContainEqual({
+      fromPortId: 'vel2', toPortId: 'vel_in', sourceType: 'cv', targetType: 'cv',
+    });
+    // A per-knob CV that merely MENTIONS vel via paramTarget is NOT a vel tap.
+    const knob = def(
+      [port('vc_pitch', 'pitch'), port('trig', 'gate', { edge: 'trigger' }), port('vel_cv', 'cv', { paramTarget: 'vel' })],
+      [port('out', 'audio')],
+    );
+    expect(planClipControl(knob, 2)!.some((e) => e.fromPortId === 'vel2')).toBe(false);
+  });
+
   it('gate-only percussion → one edge: clip gate{n} → the note-gate input', () => {
     const drum = def([port('trigger_in', 'gate', { edge: 'trigger' })], [port('out', 'audio')]);
     expect(planClipControl(drum, 4)).toEqual([

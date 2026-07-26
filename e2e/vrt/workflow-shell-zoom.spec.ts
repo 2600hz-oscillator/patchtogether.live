@@ -92,7 +92,15 @@ test.describe('VRT: ?shell=1 rack holds position vs the lane grid at fixed zooms
 
       // The default video-zone trio + ONE deterministic ch1 member (a vca —
       // auto-named VCA1) so the tile↔lane-line relationship is in frame.
-      for (const vz of ['workflow-videoOut', 'workflow-recorderbox', 'workflow-synesthesia']) {
+      // videoOut renders its verbatim LEGACY card (NON_SHELL video-surface
+      // snowflake — the shell video-visibility fix); the other two are tiles
+      // whose glyph slot is the LIVE-THUMB well (static dark here: VRT never
+      // boots the engine, so the thumb canvas stays its deterministic idle
+      // background — no masking needed).
+      await page
+        .locator('.svelte-flow__node[data-id="workflow-videoOut"] [data-testid="video-out-card"]')
+        .waitFor({ state: 'attached', timeout: 15_000 });
+      for (const vz of ['workflow-recorderbox', 'workflow-synesthesia']) {
         await page
           .locator(`.svelte-flow__node[data-id="${vz}"] [data-testid="module-shell-placeholder"]`)
           .waitFor({ state: 'attached', timeout: 15_000 });

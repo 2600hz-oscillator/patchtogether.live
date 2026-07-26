@@ -31,7 +31,7 @@
   // joystick exactly like MIDI/CV does.
 
   import { onMount, onDestroy } from 'svelte';
-  import { useStore, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import Fader from '$lib/ui/controls/Fader.svelte';
@@ -76,14 +76,16 @@
     setSlotName,
   } from '$lib/graph/electra-control';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { cardParams, portsFromDef } from './card-kit';
+  import { captureFlowStore, cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const { set, live, engineCtx } = cardParams(quadralogicalDef, () => id, () => node);
-  // useStore() is intentionally read so the card participates in SvelteFlow's
-  // node context (parity with the other video cards); not otherwise used yet.
-  useStore();
+  // The flow store is intentionally read so the card participates in
+  // SvelteFlow's node context (parity with the other video cards); not
+  // otherwise used yet. GUARDED (captureFlowStore): a plain-mount outside the
+  // provider (dock full-view / rail) must not throw.
+  captureFlowStore();
 
   function defaultFor(key: string): number {
     return quadralogicalDef.params.find((p) => p.id === key)!.defaultValue;
@@ -308,10 +310,8 @@
 
   // Portal the menu to <body> so position:fixed resolves against the viewport,
   // not the transformed SvelteFlow viewport (same rationale as ControlContextMenu).
-  function portal(el: HTMLElement) {
-    document.body.appendChild(el);
-    return { destroy() { el.remove(); } };
-  }
+  // clampMenu keeps the whole menu (incl. the Electra cascade growth) in view.
+  import { clampMenu, portal } from '$lib/ui/menu-viewport-action';
 
   // ---- on-card MIX preview canvas ----
   const ENGINE_W = VIDEO_RES.width;
@@ -560,8 +560,7 @@
     ></div>
     <div
       class="ctx-menu"
-      style:left="{menuX}px"
-      style:top="{menuY}px"
+      use:clampMenu={{ x: menuX, y: menuY }}
       role="menu"
       aria-label="Quadralogical axis MIDI actions"
       data-testid="quadralogical-axis-menu"

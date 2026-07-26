@@ -36,6 +36,7 @@
   import { assetModuleSpecFor } from '$lib/media/asset-modules';
   import { connectDragState } from '$lib/ui/connect-drag-state.svelte';
   import type { MediaKind } from '$lib/media/ingest';
+  import { clampMenu } from '$lib/ui/menu-viewport-action';
 
   interface Props {
     /** Multiplayer user id (cap checks + creatorId) — Canvas's. */
@@ -242,7 +243,7 @@
     <div
       class="row-ctx"
       data-testid="workflow-asset-context"
-      style={`left: ${ctxMenu.x}px; top: ${ctxMenu.y}px;`}
+      use:clampMenu={{ x: ctxMenu.x, y: ctxMenu.y }}
       role="menu"
     >
       <button

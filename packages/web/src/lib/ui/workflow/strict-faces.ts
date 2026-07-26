@@ -14,13 +14,19 @@
 //  - a module incidentally reskinned for a fix is brought up + added (boy-scout),
 //  - background batches promote the tail.
 //
-// SEEDED EMPTY (P0.4): no module carries a `face` yet — P1 is the first reskin
-// wave (dx7, kickdrum, tidyvco, …). The gate + ratchet floor are live now so the
-// FIRST faced module lands green-gated. See the workflow-mode UI refactor plan
-// (§3.6 + §5) in .myrobots/plans.
+// P1 BATCH 1 (2026-07-25): the first faced-module wave — six total reworks to
+// the gallery spec (see .myrobots/plans, workflow-mode UI refactor §3.6 + §5).
+// Each entry below carries a complete co-located `face` (order + pages + glyph)
+// authored against its fullcard mock.
 
 export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
-  // (empty — the first faced-module batch lands in P1)
+  // P1 batch 1 — first 6 module faces
+  'adsr',
+  'cloudseed',
+  'kickdrum',
+  'lfo',
+  'tidyVco',
+  'vca',
 ]);
 
 /**

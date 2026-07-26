@@ -30,6 +30,10 @@ import {
   sendCardX,
   defaultLaneHeightPx,
   computeLaneHeightPx,
+  computeShellLaneHeightPx,
+  SHELL_LANE_HEADROOM_Y,
+  SHELL_LANE_BADGE_CLEARANCE_Y,
+  shellStackAnchorY,
   laneTopYForHeight,
   planLanePushUps,
   laneRegionXBand,
@@ -51,7 +55,8 @@ import {
   videoAreaViewport,
   sendBoxCenterViewport,
   fitLanesViewport,
-  revealMemberViewport,
+  spawnRevealViewport,
+  SPAWN_REVEAL_MARGIN_PX,
   laneBandCenterX,
   indexForDropY,
   dedup,
@@ -65,6 +70,7 @@ import {
   type ColumnNodeView,
 } from './channel-columns';
 import { RACK_UNIT, HP_UNIT } from '$lib/ui/rack-grid';
+import { SHELL_TILE_H_SLOT } from '$lib/ui/workflow/module-shell-model';
 
 // ---------------- Geometry ----------------
 
@@ -280,6 +286,86 @@ describe('column geometry', () => {
       expect(shortTop).toBe(COLUMN_BASELINE_Y - 1080);
       expect(tallTop).toBeLessThan(shortTop); // grew up
       expect(COLUMN_BASELINE_Y).toBeGreaterThan(tallTop); // baseline stays below the top
+    });
+  });
+
+  // ---- `?shell=1` LANE HEADROOM + BADGE CLEARANCE (owner rule) ----
+  describe('shell lane headroom (band grows with content, ≥ half a tile above the fullest stack)', () => {
+    // Under the preview every lane tile is the uniform 180px shell slot, and
+    // the default lane height is 2× that reference (defaultLaneHeightPx(180)).
+    const TILE = SHELL_TILE_H_SLOT; // 180
+    const SHELL_DEFAULT = defaultLaneHeightPx(TILE); // 360
+
+    it('the constants are locked to HALF the shell tile (0.5 × 180 = 90)', () => {
+      expect(SHELL_LANE_HEADROOM_Y).toBe(SHELL_TILE_H_SLOT / 2);
+      expect(SHELL_LANE_BADGE_CLEARANCE_Y).toBe(SHELL_TILE_H_SLOT / 2);
+      expect(shellStackAnchorY()).toBe(COLUMN_BASELINE_Y - SHELL_LANE_BADGE_CLEARANCE_Y);
+    });
+
+    it('0 members everywhere → the DEFAULT top (short/empty lanes keep today\'s look)', () => {
+      expect(computeShellLaneHeightPx([], SHELL_DEFAULT)).toBe(SHELL_DEFAULT);
+      expect(computeShellLaneHeightPx([0, 0, 0, 0, 0, 0, 0, 0, 0, 0], SHELL_DEFAULT)).toBe(SHELL_DEFAULT);
+      expect(laneTopYForHeight(computeShellLaneHeightPx([], SHELL_DEFAULT))).toBe(
+        COLUMN_BASELINE_Y - SHELL_DEFAULT,
+      );
+    });
+
+    it('a 1-tile stack still fits the default band (clamp: never lower than the default top)', () => {
+      // 180 + 90 clearance + 90 headroom == the 360 default → top unchanged.
+      expect(computeShellLaneHeightPx([TILE], SHELL_DEFAULT)).toBe(SHELL_DEFAULT);
+    });
+
+    it('N members → bandTop = baseline − N×180 − clearance − headroom once that exceeds the default', () => {
+      for (const n of [2, 3, 4, 6]) {
+        const stack = n * TILE;
+        const h = computeShellLaneHeightPx([stack], SHELL_DEFAULT);
+        expect(h).toBe(stack + SHELL_LANE_BADGE_CLEARANCE_Y + SHELL_LANE_HEADROOM_Y);
+        expect(laneTopYForHeight(h)).toBe(
+          COLUMN_BASELINE_Y - n * TILE - SHELL_LANE_BADGE_CLEARANCE_Y - SHELL_LANE_HEADROOM_Y,
+        );
+      }
+    });
+
+    it('all 8 lanes share ONE top: the FULLEST stack drives it (uniform max)', () => {
+      const h = computeShellLaneHeightPx([TILE, 4 * TILE, 0, 2 * TILE], SHELL_DEFAULT);
+      expect(h).toBe(4 * TILE + SHELL_LANE_BADGE_CLEARANCE_Y + SHELL_LANE_HEADROOM_Y);
+    });
+
+    it('END TO END: the fullest lane keeps EXACTLY the headroom above its top tile', () => {
+      // 4 uniform shell tiles anchored at the badge-clearance bottom.
+      const heights = [TILE, TILE, TILE, TILE];
+      const pos = columnFlushPositions(1, heights, undefined, SHELL_COLUMN_W, shellStackAnchorY());
+      // Bottom tile's BOTTOM edge sits the badge clearance above the baseline…
+      expect(pos[0]!.y + TILE).toBe(COLUMN_BASELINE_Y - SHELL_LANE_BADGE_CLEARANCE_Y);
+      // …and the band top sits exactly the headroom above the TOP tile.
+      const bandTop = laneTopYForHeight(computeShellLaneHeightPx([4 * TILE], SHELL_DEFAULT));
+      const topTileY = pos[heights.length - 1]!.y;
+      expect(topTileY - bandTop).toBe(SHELL_LANE_HEADROOM_Y);
+    });
+
+    it('anchorY DEFAULTS to the baseline: 4-arg calls are byte-identical (preview-off no-op)', () => {
+      const heights = [540, 360, 720];
+      expect(columnFlushPositions(2, heights)).toEqual(
+        columnFlushPositions(2, heights, undefined, COLUMN_W, COLUMN_BASELINE_Y),
+      );
+      expect(sendFlushPositions(1, heights)).toEqual(
+        sendFlushPositions(1, heights, undefined, COLUMN_W, COLUMN_BASELINE_Y),
+      );
+    });
+
+    it('sendFlushPositions honours the anchor too (send boxes share the lifted bottom)', () => {
+      const pos = sendFlushPositions(1, [TILE, TILE], undefined, SHELL_COLUMN_W, shellStackAnchorY());
+      expect(pos[0]!.y + TILE).toBe(COLUMN_BASELINE_Y - SHELL_LANE_BADGE_CLEARANCE_Y);
+      expect(pos[1]!.y + TILE).toBe(pos[0]!.y); // still flush, zero gap
+    });
+
+    it('the band grows with CONTENT only — the derivation has no zoom/viewport input', () => {
+      // Same stacks → same height, whatever "zoom" a caller might be at: the
+      // function signature admits no viewport term (compile-time guarantee),
+      // and repeated evaluation is pure.
+      const a = computeShellLaneHeightPx([3 * TILE], SHELL_DEFAULT);
+      const b = computeShellLaneHeightPx([3 * TILE], SHELL_DEFAULT);
+      expect(a).toBe(b);
     });
   });
 
@@ -643,30 +729,145 @@ describe('viewport navigation (workflow keyboard pan) — keeps zoom, pure trans
     });
   });
 
-  describe('revealMemberViewport — guarantees a just-added member is on screen', () => {
-    const vp = { widthPx: 1280, heightPx: 720, zoom: 0.5 };
-    // With laneCenterViewport the top visible flow-Y = BASELINE - heightPx/zoom.
-    const base = laneCenterViewport(3, vp);
-    const visibleTopFlowY = COLUMN_BASELINE_Y - vp.heightPx / vp.zoom;
-
-    it('SHORT stack (member top already visible) → returns the base unchanged', () => {
-      const memberTopY = visibleTopFlowY + 100; // comfortably in view
-      const t = revealMemberViewport(base, memberTopY, 88, vp);
-      expect(t).toEqual(base);
+  describe('spawnRevealViewport — the spawn-camera pan decision (add-a-module must NEVER scroll wildly)', () => {
+    const M = SPAWN_REVEAL_MARGIN_PX;
+    // Screen rect of a flow rect under a transform (screen = flow*zoom + pan).
+    const screenRect = (r: { x: number; y: number; w: number; h: number }, t: { x: number; y: number; zoom: number }) => ({
+      x0: r.x * t.zoom + t.x,
+      y0: r.y * t.zoom + t.y,
+      x1: (r.x + r.w) * t.zoom + t.x,
+      y1: (r.y + r.h) * t.zoom + t.y,
     });
 
-    it('TALL stack (member top above the viewport) → re-centers on the member', () => {
-      const memberTopY = visibleTopFlowY - 500; // above the visible top → clipped
-      const t = revealMemberViewport(base, memberTopY, 180, vp);
-      // horizontal framing is preserved (lane still centered), zoom kept
-      expect(t.x).toBe(base.x);
-      expect(t.zoom).toBe(vp.zoom);
-      // the member's CENTER maps to the vertical center of the viewport
-      const memberCenterY = memberTopY + 180 / 2;
-      expect(project(memberCenterY, { pan: t.y, zoom: t.zoom })).toBeCloseTo(vp.heightPx / 2, 6);
-      // …and the member's whole box is now within [0, heightPx]
-      expect(project(memberTopY, { pan: t.y, zoom: t.zoom })).toBeGreaterThanOrEqual(0);
-      expect(project(memberTopY + 180, { pan: t.y, zoom: t.zoom })).toBeLessThanOrEqual(vp.heightPx);
+    describe('ALREADY VISIBLE → identity (null): the camera never moves under a user who can see the tile', () => {
+      it('returns null for a rect fully inside, across zooms and positions', () => {
+        for (const zoom of [0.25, 0.5947, 1, 1.8144]) {
+          const vp = { widthPx: 1280, heightPx: 700, zoom };
+          const cur = { x: 640 - 500 * zoom, y: 350 - 300 * zoom, zoom }; // flow (500,300) at pane center
+          const rect = { x: 500 - 60 / zoom, y: 300 - 60 / zoom, w: 120 / zoom, h: 120 / zoom };
+          expect(spawnRevealViewport(cur, rect, vp)).toBeNull();
+        }
+      });
+
+      it('EDGE-INCLUSIVE: a tile flush at the viewport bottom edge (the baseline row under lane framing) does NOT pan', () => {
+        // laneCenterViewport puts COLUMN_BASELINE_Y exactly at the pane bottom;
+        // the first member's bottom edge sits ON it. margin must not turn that
+        // into a pointless micro-pan.
+        const vp = { widthPx: 1280, heightPx: 700, zoom: 0.5947 };
+        const cur = laneCenterViewport(1, vp);
+        const h = RACK_UNIT * 3; // a 3u tidyvco
+        const rect = { x: columnCardX(1, 720), y: COLUMN_BASELINE_Y - h, w: 720, h };
+        // sanity: bottom edge is exactly the pane bottom
+        expect(screenRect(rect, cur).y1).toBeCloseTo(vp.heightPx, 6);
+        expect(spawnRevealViewport(cur, rect, vp)).toBeNull();
+      });
+
+      it('INTEGRATION (both pitches): first member of the CENTERED lane is visible from that lane framing → null', () => {
+        // The exact spawn geometry Canvas persists (columnFlushPositions) seen
+        // from the lane-center framing — adding to the lane you are LOOKING at
+        // must be a camera no-op, at the legacy 765 AND the tight 216 shell pitch.
+        for (const pitch of [COLUMN_W, SHELL_COLUMN_W]) {
+          const zoom = 0.35;
+          const vp = { widthPx: 1280, heightPx: 700, zoom };
+          const cur = laneCenterViewport(4, vp, pitch);
+          const w = pitch === SHELL_COLUMN_W ? 192 : 720;
+          const h = pitch === SHELL_COLUMN_W ? 180 : RACK_UNIT * 3;
+          const [pos] = columnFlushPositions(4, [h], [w], pitch);
+          expect(spawnRevealViewport(cur, { x: pos!.x, y: pos!.y, w, h }, vp)).toBeNull();
+        }
+      });
+    });
+
+    describe('OFF-SCREEN → the MINIMAL translate, per axis, zoom kept', () => {
+      const vp = { widthPx: 1280, heightPx: 700, zoom: 1 };
+
+      it('16px past the RIGHT edge → pans left just enough (edge + margin), Y and zoom untouched', () => {
+        const cur = { x: 0, y: 0, zoom: 1 };
+        const rect = { x: 1280 - 174 + 16, y: 200, w: 174, h: 163 }; // 16px overhang right
+        const t = spawnRevealViewport(cur, rect, vp)!;
+        expect(t).not.toBeNull();
+        expect(t.zoom).toBe(1);
+        expect(t.y).toBe(cur.y); // vertical axis already in view → unmoved
+        expect(t.x).toBeCloseTo(cur.x - 16 - M, 6); // exactly the overhang + margin
+        // the tile now sits flush at margin inside the right edge
+        expect(screenRect(rect, t).x1).toBeCloseTo(vp.widthPx - M, 6);
+      });
+
+      it('above the TOP edge → pans down minimally, X untouched', () => {
+        const cur = { x: 0, y: 0, zoom: 1 };
+        const rect = { x: 300, y: -50, w: 200, h: 180 }; // 50px above
+        const t = spawnRevealViewport(cur, rect, vp)!;
+        expect(t.x).toBe(cur.x);
+        expect(t.y).toBeCloseTo(cur.y + 50 + M, 6);
+        expect(screenRect(rect, t).y0).toBeCloseTo(M, 6);
+      });
+
+      it('off BOTH axes → each axis corrected independently and minimally', () => {
+        const vpHalf = { widthPx: 1280, heightPx: 700, zoom: 0.5 };
+        const cur = { x: 0, y: 0, zoom: 0.5 };
+        const rect = { x: -80, y: 1500, w: 200, h: 300 }; // left overhang 40px, bottom overhang (1500+300)*0.5-700=200px
+        const t = spawnRevealViewport(cur, rect, vpHalf)!;
+        const s = screenRect(rect, t);
+        expect(s.x0).toBeCloseTo(M, 6);
+        expect(s.y1).toBeCloseTo(700 - M, 6);
+        expect(t.zoom).toBe(0.5);
+      });
+
+      it('is a FIXPOINT: after the returned pan the tile is fully visible → a second call is null (no oscillation)', () => {
+        for (const [cur, rect, zoom] of [
+          [{ x: 15.2, y: -7737.4, zoom: 1.8144 }, { x: 456, y: 4140, w: 192, h: 180 }, 1.8144], // the measured SHELL repro
+          [{ x: 43.6, y: -2378.7, zoom: 0.5947 }, { x: 22.5, y: 3780, w: 720, h: 540 }, 0.5947], // the measured LEGACY repro
+          [{ x: 0, y: 0, zoom: 1 }, { x: 5000, y: 5000, w: 200, h: 200 }, 1], // far off-screen
+        ] as const) {
+          const vpz = { widthPx: 1280, heightPx: 700, zoom };
+          const t = spawnRevealViewport(cur, rect, vpz);
+          expect(t).not.toBeNull();
+          expect(spawnRevealViewport(t!, rect, vpz)).toBeNull();
+        }
+      });
+
+      it('is BOUNDED: the pan is never larger than the old lane-recenter jump (the measured 600-750px wild scroll)', () => {
+        // The exact measured repro: SHELL on-load camera (video-zone fitView),
+        // tile in lane 3. Old behavior jumped |d|=709px; the minimal reveal must
+        // move strictly less on each axis than re-framing the lane would.
+        const zoom = 1.8144;
+        const vpz = { widthPx: 1280, heightPx: 700, zoom };
+        const cur = { x: 15.2, y: -7737.4, zoom };
+        const w = 192, h = 180;
+        const [pos] = columnFlushPositions(3, [h], [w], SHELL_COLUMN_W);
+        const rect = { x: pos!.x, y: pos!.y, w, h };
+        const t = spawnRevealViewport(cur, rect, vpz)!;
+        const old = laneCenterViewport(3, vpz, SHELL_COLUMN_W);
+        const dNew = Math.hypot(t.x - cur.x, t.y - cur.y);
+        const dOld = Math.hypot(old.x - cur.x, old.y - cur.y);
+        expect(dNew).toBeLessThan(dOld);
+        // …and the tile ends fully in view
+        const s = screenRect(rect, t);
+        expect(s.x0).toBeGreaterThanOrEqual(0);
+        expect(s.y0).toBeGreaterThanOrEqual(0);
+        expect(s.x1).toBeLessThanOrEqual(vpz.widthPx);
+        expect(s.y1).toBeLessThanOrEqual(vpz.heightPx);
+      });
+    });
+
+    describe('degenerate sizes', () => {
+      it('tile LARGER than the pane on an axis → aligns the top/left edge at the margin (header visible)', () => {
+        const vp = { widthPx: 400, heightPx: 300, zoom: 1 };
+        const cur = { x: 0, y: 0, zoom: 1 };
+        const rect = { x: 500, y: 500, w: 600, h: 500 }; // wider AND taller than the pane
+        const t = spawnRevealViewport(cur, rect, vp)!;
+        const s = screenRect(rect, t);
+        expect(s.x0).toBeCloseTo(0, 6); // margin degrades to 0 (rect can't fit with margins)
+        expect(s.y0).toBeCloseTo(0, 6);
+      });
+
+      it('tiny pane: margin degrades instead of oscillating (still a fixpoint)', () => {
+        const vp = { widthPx: 200, heightPx: 180, zoom: 1 };
+        const cur = { x: 0, y: 0, zoom: 1 };
+        const rect = { x: 300, y: 300, w: 180, h: 160 }; // fits, but not with 16px margins
+        const t = spawnRevealViewport(cur, rect, vp)!;
+        expect(spawnRevealViewport(t, rect, vp)).toBeNull();
+      });
     });
   });
 });

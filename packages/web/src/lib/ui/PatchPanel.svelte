@@ -64,7 +64,7 @@
     type PatchMenuState,
     type PatchMenuView,
   } from '$lib/ui/patch-menu-state';
-  import { computeEdgeAlignedRect, type Rect, type Viewport } from '$lib/ui/patch-menu-position';
+  import { computeAdjacentRect, computeEdgeAlignedRect, type Rect, type Viewport } from '$lib/ui/patch-menu-position';
   import ControlContextMenu from '$lib/ui/controls/ControlContextMenu.svelte';
   import { makeMidiAssignable } from '$lib/ui/controls/midi-assignable.svelte';
   import {
@@ -116,6 +116,10 @@
     /** lane-rail only: the "⤢" expand affordance → opens the module's dock
      *  full-view (routed by the shell/placeholder). Omitted ⇒ no expand shown. */
     onExpand?: () => void;
+    /** lane-rail only: TRUE while this module IS the dock full-view occupant —
+     *  the expand affordance flips to a "✕ CLOSE" toggle (onExpand then closes;
+     *  the shell/placeholder owns that routing). */
+    expanded?: boolean;
     children?: Snippet;
   }
 
@@ -129,6 +133,7 @@
     variant = 'corner',
     flowLabel,
     onExpand,
+    expanded = false,
     children,
   }: Props = $props();
 
@@ -564,8 +569,21 @@
     // the menu opens at the viewport origin. Inside the canvas no
     // [data-dock-card-frame] ancestor exists, so the resolved element is
     // identical to the pre-dock behavior.
+    //
+    // LANE-RAIL (P1 dock-UX fix): the invoking TILE is the anchor — `.rl-tile`
+    // resolves BOTH in a lane (where it fills the flow-node wrapper, so the
+    // rect is identical to the node's) AND in the dock full-view's migrated
+    // <ModuleShell view='dock-full'> (which has NEITHER a .svelte-flow__node
+    // NOR a [data-dock-card-frame] ancestor — pre-fix the `?? el` branch
+    // measured the display:contents host → a 0×0 rect at the origin → the
+    // drill-down opened at the viewport TOP-LEFT CORNER, disconnected from
+    // the tile that spawned it).
     const card =
-      (el.closest('.svelte-flow__node, [data-dock-card-frame]') as HTMLElement | null) ?? el;
+      (el.closest(
+        variant === 'lane-rail'
+          ? '.rl-tile, .svelte-flow__node, [data-dock-card-frame]'
+          : '.svelte-flow__node, [data-dock-card-frame]',
+      ) as HTMLElement | null) ?? el;
     const r = card.getBoundingClientRect();
     return {
       left: r.left,
@@ -585,13 +603,26 @@
     };
     const measuredWidth = chromeEl?.offsetWidth || panelWidth;
     const measuredHeight = chromeEl?.offsetHeight;
-    chromePos = computeEdgeAlignedRect({
-      cardRect: cardRectOf(hostEl),
-      side: menu.side,
-      menuWidth: measuredWidth,
-      menuHeight: measuredHeight,
-      viewport,
-    });
+    // LANE-RAIL (P1 dock-UX fix): the small RACKLINE tiles anchor the menu
+    // ADJACENT to the invoking tile (right side, flipping left at the screen
+    // edge) instead of the legacy-card edge-align + overlay model — the menu
+    // opens visually attached to the tile that spawned it. The corner variant
+    // (every legacy card, preview off) keeps the edge-aligned math unchanged.
+    chromePos =
+      variant === 'lane-rail'
+        ? computeAdjacentRect({
+            anchorRect: cardRectOf(hostEl),
+            menuWidth: measuredWidth,
+            menuHeight: measuredHeight,
+            viewport,
+          })
+        : computeEdgeAlignedRect({
+            cardRect: cardRectOf(hostEl),
+            side: menu.side,
+            menuWidth: measuredWidth,
+            menuHeight: measuredHeight,
+            viewport,
+          });
   }
 
   // Re-position the chrome whenever it opens / the view changes (height
@@ -811,15 +842,19 @@
         {/if}
       </button>
       {#if onExpand}
+        <!-- EXPAND ↔ CLOSE toggle: while this module occupies the dock
+             full-view the pill flips to "✕ CLOSE" and the click closes it
+             (the shell/placeholder routes the toggle through dockStore). -->
         <button
           class="more"
           type="button"
           data-testid="shell-open-dock"
-          aria-label="Open full view in the dock"
-          title="Open full view in the dock"
+          data-expanded={expanded ? 'true' : 'false'}
+          aria-label={expanded ? 'Close the dock full view' : 'Open full view in the dock'}
+          title={expanded ? 'Close the dock full view' : 'Open full view in the dock'}
           bind:offsetWidth={railExpandW}
           onclick={onExpand}
-        ><span class="more-glyph" aria-hidden="true">⤢</span><span class="more-label">EXPAND</span></button>
+        ><span class="more-glyph" aria-hidden="true">{expanded ? '✕' : '⤢'}</span><span class="more-label">{expanded ? 'CLOSE' : 'EXPAND'}</span></button>
       {/if}
       {#if flowLabel && railFit.flow}<span class="flow">{flowLabel}</span>{/if}
     </div>

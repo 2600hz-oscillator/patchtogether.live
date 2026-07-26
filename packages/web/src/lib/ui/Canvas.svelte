@@ -64,6 +64,8 @@
     COLUMN_BASELINE_Y,
     defaultLaneHeightPx,
     computeLaneHeightPx,
+    computeShellLaneHeightPx,
+    shellStackAnchorY,
     laneTopYForHeight,
     planLanePushUps,
     needsDefaultVideoOut,
@@ -77,9 +79,8 @@
     resolveMasterVideoOutId,
     laneCenterViewport,
     videoAreaViewport,
-    sendBoxCenterViewport,
     fitLanesViewport,
-    revealMemberViewport,
+    spawnRevealViewport,
     type ModuleBoxLike,
     type ViewportMetrics,
   } from '$lib/graph/channel-columns';
@@ -260,6 +261,9 @@
   // `?shell=1` opt-in preview flag so it's a strict no-op until owner sign-off.
   import { laneRenderKind, emittedTypeFor, isShellSwappable, NON_SHELL_LANE_TYPES } from '$lib/ui/workflow/legacy-fallback';
   import { migrated } from '$lib/ui/workflow/strict-faces';
+  // DOM-SOURCE seam: a video module whose source lives on its CARD stays alive
+  // in an off-screen host when the shell swaps its lane card away.
+  import { DOM_SOURCE_LANE_TYPES, needsHeadlessSourceMount } from '$lib/ui/workflow/dom-source-modules';
   import { RACK_SIZE_DEFAULTS } from '$lib/ui/rack-sizes';
   import { computeCabinetLayout } from '$lib/ui/canvas/cabinet-layout';
   // ModuleNameLabel moved INTO every module card's title chrome (see
@@ -387,7 +391,9 @@
   // P0.3b re-spec — the bottom-drawer EXPANDED full-view faceplate (its own
   // full-width RACKLINE faceplate, NOT routed through DockCardHost's card flex).
   import DockFullView from '$lib/ui/dock/DockFullView.svelte';
-  import { SHELL_TILE_W, SHELL_TILE_H_SLOT, SHELL_VIDEO_ZONE_TILE_INSET_Y } from '$lib/ui/workflow/module-shell-model';
+  // Off-screen lifecycle host for DOM-source video modules the shell swapped out.
+  import HeadlessSourceHost from '$lib/ui/workflow/HeadlessSourceHost.svelte';
+  import { SHELL_TILE_W, SHELL_TILE_H_SLOT, SHELL_VIDEO_ZONE_TILE_INSET_Y, videoZonePackedXs } from '$lib/ui/workflow/module-shell-model';
   // DOCKING P2.5b: the pan-gesture screen-space cable tail (stub → rail).
   import DockPanTail, { type DockTailSpec } from '$lib/ui/dock/DockPanTail.svelte';
   import { dockStore } from '$lib/ui/dock/dock-store.svelte';
@@ -494,6 +500,16 @@
    *  the videoOut/A-V-defaults spawn, the grow-up push-ups all keep COLUMN_W), so
    *  the persisted graph + collab convergence are untouched — pure render deriv. */
   let wcolPitch = $derived(columnPitch(shellPreview));
+
+  /** The flow-space Y the flush lane/send stacks bottom-anchor to. Under the
+   *  `?shell=1` preview the stacks lift SHELL_LANE_BADGE_CLEARANCE_Y above the
+   *  baseline so the lane-number badge renders fully visible below the bottom
+   *  tile (owner rule); preview-OFF stays COLUMN_BASELINE_Y → every flush call
+   *  is byte-identical. Threaded into the render-derived member positions, the
+   *  drag-reorder sibling centers, and the in-lane drop-spawn position (which,
+   *  like the pitch, persists the RENDERED frame under the preview so the tile
+   *  never flashes at the un-lifted slot). */
+  let wcolStackAnchorY = $derived(shellPreview ? shellStackAnchorY() : COLUMN_BASELINE_Y);
 
   // The header shows "Sign in" only when we're confident the user is signed
   // out. On the public `/` canvas (no client ClerkProvider) that signal is
@@ -670,6 +686,13 @@
         ctxMenuNodeId = nodeId;
         commitAssignToChannel(channel);
       };
+      // Dock full-view e2e: open a node's TRANSIENT dock full-view faceplate
+      // directly — the same dockStore.openFullView call the shell tiles'
+      // EXPAND buttons make. Needed because a NON_SHELL legacy lane card
+      // (videoOut) has no tile/EXPAND affordance, yet the dock path for it
+      // must still render live video (the owner dock regression).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__openDockFullView = (nodeId: string) => dockStore.openFullView(nodeId);
       // Drag-lock state for e2e — patch-menus-persist tests inspect this
       // to confirm the lock engaged + released at the right moments.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1401,14 +1424,34 @@
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isTypingTarget(e.target)) return;
       if (e.key === 'Escape') {
-        // P0.3b: the transient full-view closes first (it's the most recently
-        // opened, ESC-topmost overlay), then the pinned drawer.
-        if (dockStore.fullViewNodeId) {
+        // ONE bottom occupant (dock unification): pinned XOR full-view — ESC
+        // closes whichever is open. The full-view closes AS A WHOLE (both
+        // split panes at once — the chosen ESC semantics; per-pane close is
+        // the faceplate's own ✕). (The order below is belt-and-braces; the
+        // store invariant means at most one branch can ever be live.)
+        if (dockStore.fullViewNodeIds.length > 0) {
           e.preventDefault();
           dockStore.closeFullView();
         } else if (dockStore.dockedNodeId('bottom')) {
           e.preventDefault();
           dockStore.close('bottom');
+        }
+        return;
+      }
+      if (e.key === 'Tab') {
+        // FLIP SEAM (rear card): BARE Tab flips the OPEN full-view to its
+        // rear/patch face — both panes together (global flip). Only hijack Tab
+        // while the full-view is open (focus nav is untouched otherwise — and
+        // while typing / with Cmd-Ctrl-Alt we never get here).
+        //
+        // SHIFT-Tab is explicitly NOT a flip: the guard at the top of this
+        // handler only screens meta/ctrl/alt, so Shift-Tab used to reach here
+        // and both flipped the view AND stole reverse focus traversal. Bare Tab
+        // is the ONLY flip key (matching the canvas `isFlip` predicate below).
+        if (e.shiftKey) return;
+        if (dockStore.fullViewNodeIds.length > 0) {
+          e.preventDefault();
+          dockStore.toggleFullViewFlipped();
         }
         return;
       }
@@ -1419,6 +1462,8 @@
       // show yet).
       if (!patch.nodes[spec.id]) return;
       e.preventDefault();
+      // toggle() owns the occupancy handoff: while the full-view is open it
+      // closes and the requested pinned drawer OPENS (replace, not stack).
       dockStore.toggle('bottom', spec.id);
     }
     window.addEventListener('keydown', onDockKey);
@@ -1828,7 +1873,14 @@
     const stacks: number[] = [];
     for (let ch = 1; ch <= COLUMN_COUNT; ch++) stacks.push(stackH(cols[String(ch)] ?? []));
     for (let s = 1; s <= SEND_BOX_COUNT; s++) stacks.push(stackH(sends[String(s)] ?? []));
-    const height = computeLaneHeightPx(stacks, defaultLaneHeightPx(wcolCardHeightPx('tidyVco')));
+    // `?shell=1` LANE HEADROOM (owner rule): the band top derives from the
+    // TALLEST stack + the bottom badge clearance + half a module of EMPTY
+    // headroom above the fullest lane's top tile, clamped to the default top
+    // (short stacks keep today's look). Legacy (preview OFF) keeps the exact
+    // max(default, tallest-stack) math → byte-identical.
+    const height = shellPreview
+      ? computeShellLaneHeightPx(stacks, defaultLaneHeightPx(wcolCardHeightPx('tidyVco')))
+      : computeLaneHeightPx(stacks, defaultLaneHeightPx(wcolCardHeightPx('tidyVco')));
     return laneTopYForHeight(height);
   });
 
@@ -1869,18 +1921,94 @@
     trace(`workflow: pushed ${pushes.length} module(s) up to clear grown lanes`);
   });
 
-  /** P0.3b — the transient EXPANDED FULL-VIEW occupant: the node whose full
-   *  faceplate is open in the bottom dock (an un-migrated module's verbatim
-   *  legacy card via DockCardHost → nodeTypes[type], or a migrated module's
-   *  faceplate). NEVER a persisted entry — it closes to dockStore.closeFullView
-   *  and keeps the module's lane placeholder/shell in place (Option #1). */
-  let fullViewCard = $derived.by(() => {
-    if (!workflowMode) return null;
-    const id = dockStore.fullViewNodeId;
-    if (!id) return null;
-    const node = snapshot.nodes.find((n) => n.id === id);
-    if (!node) return null;
-    return { node, title: dockDisplayName(node) };
+  /** P0.3b — the transient EXPANDED FULL-VIEW occupants (owner extension: up
+   *  to TWO side-by-side 50/50 panes, open order = left→right): each is a
+   *  node whose full faceplate is open in the bottom dock (an un-migrated
+   *  module's verbatim legacy card via nodeTypes[type], or a migrated
+   *  module's shell face). NEVER persisted entries — a pane closes to
+   *  dockStore.closeFullView(id) and keeps the module's lane
+   *  placeholder/shell in place (Option #1). */
+  let fullViewCards = $derived.by(() => {
+    if (!workflowMode) return [];
+    const out: Array<{ node: ModuleNode; title: string }> = [];
+    for (const id of dockStore.fullViewNodeIds) {
+      const node = snapshot.nodes.find((n) => n.id === id);
+      if (node) out.push({ node, title: dockDisplayName(node) });
+    }
+    return out;
+  });
+
+  /** DOM-SOURCE video modules the shell swapped out of their lane — the nodes
+   *  <HeadlessSourceHost> must keep mounted so their card-owned `<video>`/`<img>`
+   *  source stays ATTACHED to the engine handle (see
+   *  $lib/ui/workflow/dom-source-modules for the whole rationale: node
+   *  registration is graph-driven and already UI-independent, but SOURCE
+   *  attachment was card-mount-driven, so camera/videobox/… → OUTPUT was
+   *  patched-but-black under `?shell=1`).
+   *
+   *  Uses the SAME pure lane decision the flowNodes derivation uses, so the two
+   *  can never disagree: 'legacy' (dawless, preview-off, or a NON_SHELL carve-out
+   *  like cameraInput/videoOut) and 'stub' (real card in the dock rail) both
+   *  render the card SOMEWHERE and are excluded — only 'shell'/'placeholder'
+   *  qualify. Preview-off can never produce those, so this is a strict no-op
+   *  there ⇒ byte-identical behaviour. Additionally excluded:
+   *    - a node whose full faceplate is OPEN in the dock (DockFullView already
+   *      mounts its real card — a second mount would run two media elements for
+   *      one node and the first to unmount would detach the survivor's source),
+   *    - canvas-hidden nodes (pinned drawer / hiddenCard cameras) and collapsed-
+   *      group children: those render no lane card in preview-off EITHER, so
+   *      hosting them would ADD engine state the shell-off rack doesn't have —
+   *      the opposite of the parity this fix exists to guarantee. */
+  let headlessSourceNodes = $derived.by<ModuleNode[]>(() => {
+    if (!shellPreview) return [];
+    const collapsed = collapsedGroupIds;
+    const out: ModuleNode[] = [];
+    for (const n of snapshot.nodes) {
+      if (!DOM_SOURCE_LANE_TYPES.has(n.type)) continue;
+      if (isCanvasHiddenNode(n)) continue;
+      const parentGroupId = (n.data as { parentGroupId?: string } | undefined)?.parentGroupId;
+      if (parentGroupId && collapsed.has(parentGroupId)) continue;
+      if (dockStore.isFullView(n.id)) continue;
+      const kind = laneRenderKind({
+        workflowMode,
+        shellPreview,
+        userDocked: !!dockStore.entryFor(n.id),
+        type: n.type,
+        hasCard: isShellSwappable(n.type, cardTypeSet.has(n.type)),
+        migrated: migrated(n.type),
+      });
+      if (needsHeadlessSourceMount({ kind, type: n.type })) out.push(n);
+    }
+    return out;
+  });
+
+  // A VIDEO-domain module expanded in the dock full-view holds a HARD render
+  // lease for as long as the faceplate is open: the dock mount is a live
+  // presentation surface OUTSIDE the flow pane, but the central card-visibility
+  // observer only tracks the node's LANE element — pan the lane copy off-screen
+  // and pull-eval would demote the chain (~1.5s TTL), freezing the dock's
+  // preview mid-view. Exactly the surface class acquireRenderLease exists for
+  // (VideoOutCard's fullscreen/present modes use the same seam). Refcounted +
+  // released the moment the full-view closes ($effect cleanup); non-video
+  // occupants and dawless racks never reach the acquire.
+  $effect(() => {
+    const fvs = fullViewCards;
+    const e = engine;
+    if (fvs.length === 0 || !e) return;
+    const videoFvs = fvs.filter((fv) => getVideoModuleDef(fv.node.type));
+    if (videoFvs.length === 0) return;
+    let ve: VideoEngine | undefined;
+    try {
+      ve = e.getDomain<VideoEngine>('video');
+    } catch {
+      return;
+    }
+    if (!ve) return;
+    // One lease per VIDEO-domain pane (both split panes can be video).
+    const releases = videoFvs.map((fv) => ve!.acquireRenderLease(fv.node.id));
+    return () => {
+      for (const release of releases) release();
+    };
   });
 
   let bottomRailCards = $derived.by(() => {
@@ -2116,31 +2244,46 @@
         order.map((id) => wcolCardWidthPx(typeOf.get(id) ?? ''));
       for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
         const order = cols[String(ch)] ?? [];
-        const positions = columnFlushPositions(ch, heightsFor(order), widthsFor(order), wcolPitch);
+        const positions = columnFlushPositions(ch, heightsFor(order), widthsFor(order), wcolPitch, wcolStackAnchorY);
         order.forEach((id, i) => wcolPosByNode.set(id, positions[i]!));
       }
       for (let s = 1; s <= SEND_BOX_COUNT; s++) {
         const order = sends[String(s)] ?? [];
-        const positions = sendFlushPositions(s, heightsFor(order), widthsFor(order), wcolPitch);
+        const positions = sendFlushPositions(s, heightsFor(order), widthsFor(order), wcolPitch, wcolStackAnchorY);
         order.forEach((id, i) => wcolPosByNode.set(id, positions[i]!));
       }
       // SHELL PREVIEW: the video-zone default trio (videoOut / recorderbox /
       // synesthesia) is NOT a channel member, so it renders at its PERSISTED
       // spawn X — the wide 765px video-zone pitch. Under the narrowed lanes that
       // strands them far right of the tight columns, so RE-DERIVE their RENDER
-      // position to the shell pitch (videoOut slot 0 is pitch-independent;
-      // recorderbox/synesthesia pack under columns 2/3). Also nudge the tile TOP
-      // DOWN by SHELL_VIDEO_ZONE_TILE_INSET_Y so the whole tile sits INSIDE the
-      // darker video area — un-inset, the tile top lands on the zone's dashed
-      // border (drawn at COLUMN_BASELINE_Y == the slot's un-inset top) and its
-      // jack rail collides with the lane-number badges just above it. Pure render
-      // OVERRIDE (like the channel members) — the persisted x/y is untouched, so
-      // preview OFF is byte-identical and no Y.Doc write / collab divergence.
+      // position to the shell pitch, PACKED left-to-right (videoZonePackedXs):
+      // a tile-swapped default reserves one uniform SHELL_TILE_W slot (an
+      // all-tile zone packs to EXACTLY the historic fixed 216px slots), while a
+      // LEGACY-rendered default — videoOut, the video-surface snowflake whose
+      // real card stays in the lane — reserves its ACTUAL live width
+      // (node.data.width, the freely-resizable card), so it never overlaps its
+      // tile neighbours and a corner-drag resize simply pushes them right. The
+      // override anchors POSITION only; the card sizes itself. Also nudge each
+      // TOP DOWN by SHELL_VIDEO_ZONE_TILE_INSET_Y so the whole tile sits INSIDE
+      // the darker video area — un-inset, the tile top lands on the zone's
+      // dashed border (drawn at COLUMN_BASELINE_Y == the slot's un-inset top)
+      // and its jack rail collides with the lane-number badges just above it.
+      // Pure render OVERRIDE (like the channel members) — the persisted x/y is
+      // untouched, so preview OFF is byte-identical and no Y.Doc write / collab
+      // divergence.
       if (shellPreview) {
-        VIDEO_ZONE_DEFAULTS.forEach((spec, i) => {
-          if (!typeOf.has(spec.id)) return;
-          const slot = videoZoneSlotPos(i, wcolPitch);
-          wcolPosByNode.set(spec.id, { x: slot.x, y: slot.y + SHELL_VIDEO_ZONE_TILE_INSET_Y });
+        const present = VIDEO_ZONE_DEFAULTS.filter((spec) => typeOf.has(spec.id));
+        const widths = present.map((spec) => {
+          if (!NON_SHELL_LANE_TYPES.has(spec.type)) return SHELL_TILE_W;
+          // Legacy in-lane card (videoOut): its live resizable width.
+          const n = snap.nodes.find((m) => m.id === spec.id);
+          const w = (n?.data as { width?: number } | undefined)?.width;
+          return typeof w === 'number' && w > 0 ? w : spec.nominalWidth;
+        });
+        const origin = videoZoneSlotPos(0, wcolPitch);
+        const xs = videoZonePackedXs(origin.x, widths, wcolPitch);
+        present.forEach((spec, i) => {
+          wcolPosByNode.set(spec.id, { x: xs[i]!, y: origin.y + SHELL_VIDEO_ZONE_TILE_INSET_Y });
         });
       }
     }
@@ -3981,7 +4124,11 @@
               const order = wcolOrder('columns', band);
               const sibs = order.filter((id) => id !== n.id);
               const sibH = sibs.map((id) => wcolCardHeightPx(patch.nodes[id]?.type ?? ''));
-              const sibPos = columnFlushPositions(band, sibH);
+              // Anchor-aware: under `?shell=1` the rendered stack bottoms sit
+              // the badge clearance above the baseline, so the reorder centers
+              // must live in the SAME lifted frame as the drop Y (preview OFF
+              // passes the baseline → byte-identical). X is unused here.
+              const sibPos = columnFlushPositions(band, sibH, undefined, wcolPitch, wcolStackAnchorY);
               const centers = sibPos.map((p, i) => p.y + sibH[i]! / 2);
               setWcolOrder('columns', band, reorder(order, n.id, indexForDropY(centers, dropCenterY)));
               wcolClearDetached(String(band));
@@ -4004,7 +4151,8 @@
               const order = wcolOrder('sends', slot);
               const sibs = order.filter((id) => id !== n.id);
               const sibH = sibs.map((id) => wcolCardHeightPx(patch.nodes[id]?.type ?? ''));
-              const sibPos = sendFlushPositions(slot, sibH);
+              // Anchor-aware like the column reorder above (send-box twin).
+              const sibPos = sendFlushPositions(slot, sibH, undefined, wcolPitch, wcolStackAnchorY);
               const centers = sibPos.map((p, i) => p.y + sibH[i]! / 2);
               setWcolOrder('sends', slot, reorder(order, n.id, indexForDropY(centers, dropCenterY)));
               wcolClearDetached('s' + slot);
@@ -6469,14 +6617,16 @@
       // right of the tight lane, "lands off-lane") for the frame before the
       // pitch-aware render override snaps it in. Preview OFF passes COLUMN_W →
       // byte-identical persisted position.
-      const p = columnFlushPositions(wcolDrop.channel, heights, widths, wcolPitch)[existing.length]!;
+      // …and at the ACTIVE stack anchor (the badge-clearance lift under
+      // `?shell=1`) for the same reason: persisted Y == the render override's Y.
+      const p = columnFlushPositions(wcolDrop.channel, heights, widths, wcolPitch, wcolStackAnchorY)[existing.length]!;
       pos.x = p.x; pos.y = p.y;
     } else if (wcolDrop?.sendSlot != null) {
       initialData.sendSlot = wcolDrop.sendSlot;
       const existing = wcolOrder('sends', wcolDrop.sendSlot);
       const heights = [...existing.map((id) => wcolCardHeightPx(patch.nodes[id]?.type ?? '')), wcolCardHeightPx(type)];
       const widths = [...existing.map((id) => wcolCardWidthPx(patch.nodes[id]?.type ?? '')), wcolCardWidthPx(type)];
-      const p = sendFlushPositions(wcolDrop.sendSlot, heights, widths, wcolPitch)[existing.length]!;
+      const p = sendFlushPositions(wcolDrop.sendSlot, heights, widths, wcolPitch, wcolStackAnchorY)[existing.length]!;
       pos.x = p.x; pos.y = p.y;
     }
 
@@ -6535,21 +6685,26 @@
     topNodeId = id;
     // WORKFLOW CAMERA REVEAL (P0.3b PRIMARY fix — "add a module → nothing
     // renders"): a column/send member is forced to its deterministic slot, which
-    // stacks UPWARD from the baseline — so the newest tile lands ABOVE the
-    // current viewport and only "pops in" once the user pans. Pan the camera to
-    // the target lane so the just-added tile is guaranteed IN VIEW, with no
-    // intervening click. laneCenterViewport/sendBoxCenterViewport put the baseline
-    // at the viewport bottom (revealing the upward stack); revealMemberViewport
-    // re-centers on the new member if the stack is taller than the viewport.
+    // stacks UPWARD from the baseline — so the newest tile can land ABOVE the
+    // current viewport and only "pop in" once the user pans. The reveal decision
+    // is made against the CURRENT viewport (spawnRevealViewport, pure):
+    //   * tile already fully visible → null → NO camera move at all;
+    //   * tile off-screen → the MINIMAL translate that tucks it just inside the
+    //     violated edge(s), zoom kept, untouched axes unmoved.
+    // The original P0.3b pan re-framed the whole lane (laneCenterViewport →
+    // revealMemberViewport) on EVERY add — a 600-750px cross-canvas jump even
+    // when the tile was already on screen (or 16px off one edge): the "adding a
+    // module scrolls the viewport wildly" bug this replaces.
     if (wcolDrop?.channel != null || wcolDrop?.sendSlot != null) {
       const vp = readWorkflowViewportMetrics();
-      if (vp && flowApi) {
-        const memberH = wcolCardHeightPx(type);
-        const base =
-          wcolDrop.channel != null
-            ? laneCenterViewport(wcolDrop.channel, vp, wcolPitch)
-            : sendBoxCenterViewport(wcolDrop.sendSlot!, vp, wcolPitch);
-        flowApi.setViewport(revealMemberViewport(base, pos.y, memberH, vp), { duration: WCOL_PAN_MS });
+      const cur = flowApi?.getViewport?.();
+      if (vp && flowApi && cur && cur.zoom > 0) {
+        const target = spawnRevealViewport(
+          { x: cur.x, y: cur.y, zoom: cur.zoom },
+          { x: pos.x, y: pos.y, w: wcolCardWidthPx(type), h: wcolCardHeightPx(type) },
+          vp,
+        );
+        if (target) flowApi.setViewport(target, { duration: WCOL_PAN_MS });
       }
     }
     // WORKFLOW: a column member ALSO joins automation lane N (per-module, its own
@@ -7071,7 +7226,18 @@
       // Plain Tab toggles rear view. We deliberately ignore any modifier combo
       // (Cmd/Ctrl/Alt/Shift-Tab) so OS/browser tab-switching + Shift-Tab focus
       // traversal are untouched — only a bare Tab is the rack-flip shortcut.
-      return e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
+      if (e.key !== 'Tab' || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return false;
+      // SINGLE-OWNER Tab (double-handler fix): while the dock full-view is OPEN
+      // the DOCK owns bare Tab — onDockKey (above) flips the full-view panes to
+      // their rear cards. Both handlers are plain `window` keydown listeners, so
+      // preventDefault in one does NOT stop the other: one keystroke used to
+      // toggle BOTH `dockStore.fullViewFlipped` AND this canvas-wide `rearView`.
+      // Two independent flip states then PHASE-DIVERGE (flip in the dock, close
+      // it, press Tab on the canvas → the canvas came up already inverted).
+      // Guarding on occupancy (not event ordering) makes exactly one handler act
+      // per keystroke, whichever listener happens to be registered first. With
+      // the full-view CLOSED, Tab keeps its original canvas-wide behavior.
+      return dockStore.fullViewNodeIds.length === 0;
     }
     function onKey(e: KeyboardEvent) {
       if (shouldIgnore(e.target)) return;
@@ -7642,35 +7808,59 @@
            'name-label-error') so existing e2e selectors still resolve. -->
     </SvelteFlow>
     {#if workflowMode}
-      <!-- The BOTTOM dock zone: the P1 M/E/C drawer GENERALIZED (P2.5a) —
-           one overlay drawer holding the toggled pinned occupant (drawer-
-           only forever, owner Q2) ALONGSIDE any cards docked to 'bottom'.
-           Renders zero pixels when nothing is pinned-open or docked. -->
-      <DockRail
-        zone="bottom"
-        cards={bottomRailCards}
-        nodeTypes={nodeTypes as unknown as Record<string, unknown>}
-        {rackSizeByType}
-        onUndock={undockNode}
-        onClosePinned={() => dockStore.close('bottom')}
-        {rearView}
-      />
-      <!-- EXPANDED FULL-VIEW (P0.3b re-spec): the drawer's wide RACKLINE
-           faceplate. It OWNS the bottom drawer as a single full-width element —
-           NOT one more card in DockRail's horizontal flex — with the domain
-           accent lip, grip, title bar + window-control trio, tab-rail seam, and
-           the module's verbatim legacy card mounted at native scale in .editor
-           (or a migrated <ModuleShell view="dock-full">). ESC closes it first
-           (dock-key handler above). -->
-      {#if fullViewCard}
-        <DockFullView
-          node={fullViewCard.node}
+      <!-- THE BOTTOM DRAWER — ONE container, ONE occupant (dock unification,
+           owner design call): EITHER the expanded full-view faceplate OR the
+           P2.5a rail (the toggled pinned M/E/C occupant + cards docked to
+           'bottom'). The {#if}/{:else} makes the exclusivity STRUCTURAL — the
+           two bottom elements can never coexist in the DOM, so there is no
+           z-fight for hotkeys to lose (the "c behind the full-view" bug). The
+           dockStore occupancy invariant (pinned XOR full-view) keeps the state
+           side equally exclusive; ESC closes whichever is open (dock-key
+           handler above). Preview-off, fullViewCards is always empty → the
+           rail renders exactly as shipped. -->
+      {#if fullViewCards.length > 0}
+        <!-- EXPANDED FULL-VIEW (P0.3b re-spec + owner split extension): up to
+             TWO RACKLINE faceplates SIDE-BY-SIDE (50/50, open order =
+             left→right), each an independently scrollable pane (its own
+             overflow container — no shared scrollbar). A pane's ✕ closes just
+             that pane (the survivor returns to full width); ESC / the M-E-C
+             handoff close the whole view. data-fullview-flipped is the TAB
+             rear-card seam: ONE view-global flag, so with the 50/50 split
+             BOTH panes flip together — each pane renders its RearCard (the
+             flip-side patch field) while flipped. -->
+        <div
+          class="dock-fullview-drawer"
+          data-testid="dock-fullview-drawer"
+          data-pane-count={fullViewCards.length}
+          data-fullview-flipped={dockStore.fullViewFlipped}
+        >
+          {#each fullViewCards as fv (fv.node.id)}
+            <div class="dock-fullview-pane" data-testid="dock-fullview-pane" data-pane-node={fv.node.id}>
+              <DockFullView
+                node={fv.node}
+                nodeTypes={nodeTypes as unknown as Record<string, unknown>}
+                rackSize={rackSizeByType[fv.node.type]}
+                migrated={migrated(fv.node.type)}
+                title={fv.title}
+                onClose={() => dockStore.closeFullView(fv.node.id)}
+                onCollapse={() => dockStore.closeFullView(fv.node.id)}
+                flipped={dockStore.fullViewFlipped}
+              />
+            </div>
+          {/each}
+        </div>
+      {:else}
+        <!-- The P1 M/E/C drawer GENERALIZED (P2.5a): the pinned occupant
+             (drawer-only forever, owner Q2) alongside docked cards. Renders
+             zero pixels when nothing is pinned-open or docked. -->
+        <DockRail
+          zone="bottom"
+          cards={bottomRailCards}
           nodeTypes={nodeTypes as unknown as Record<string, unknown>}
-          rackSize={rackSizeByType[fullViewCard.node.type]}
-          migrated={migrated(fullViewCard.node.type)}
-          title={fullViewCard.title}
-          onClose={() => dockStore.closeFullView()}
-          onCollapse={() => dockStore.closeFullView()}
+          {rackSizeByType}
+          onUndock={undockNode}
+          onClosePinned={() => dockStore.close('bottom')}
+          {rearView}
         />
       {/if}
     {/if}
@@ -7686,6 +7876,17 @@
       {minimapOpen ? '▾ map' : '▴ map'}
     </button>
     <AwarenessLayer {provider} />
+    <!-- `?shell=1` DOM-SOURCE LIFECYCLE: a video module whose pixels come from a
+         card-owned <video>/<img> (camera / videobox / archivist / …) loses its
+         SOURCE when the shell swaps its lane card for a tile — the engine node
+         exists but emits nothing, so the whole downstream chain is black. Keep
+         those cards mounted OFF-SCREEN so `attachExternalSource` still runs and
+         the engine's source set matches preview-off exactly. Renders NOTHING
+         when the list is empty (always, preview-off). -->
+    <HeadlessSourceHost
+      nodes={headlessSourceNodes}
+      nodeTypes={nodeTypes as unknown as Record<string, unknown>}
+    />
     <PickupCable />
     {#if workflowMode && dockPanTails.length > 0 && flowApi}
       <!-- DOCKING P2.5b: gesture-scoped stub→rail tail (presentation-only;
@@ -7927,6 +8128,28 @@
   .canvas-row > .flow {
     flex: 1 1 auto;
     min-width: 0;
+  }
+  /* DOCK UNIFICATION + owner split extension: the bottom drawer's full-view
+   * container — the ONE bottom overlay while any faceplate is expanded (the
+   * DockRail branch renders instead when it's closed). Up to two panes share
+   * it 50/50; each pane is its OWN scroll context (DockFullView's
+   * .faceplate-scroll), so the panes scroll independently in both axes. */
+  .dock-fullview-drawer {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 31;
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+    padding: 0 8px 8px;
+    max-height: min(60vh, 680px);
+  }
+  .dock-fullview-pane {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
   }
   .topbar {
     display: flex;
