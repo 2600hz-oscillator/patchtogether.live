@@ -27,6 +27,7 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'lfo',
   'tidyVco',
   'vca',
+  'reverb', // P1 batch 3
 ]);
 
 /**

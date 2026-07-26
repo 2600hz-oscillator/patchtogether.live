@@ -1513,4 +1513,11 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/tidyvco-acid',
   'linux/tidyvco-pad',
   'linux/tidyvco-bass',
+  // P1 BATCH-3 CURATED FACE — REVERB (2026-07-26): the compact lane tile +
+  // the dock full-view faceplate under `?shell=1`
+  // (e2e/vrt/workflow-shell-faces.spec.ts). darwin captured locally (3x
+  // stable); linux pending a vrt-update.yml workflow_dispatch once the batch
+  // is assembled — the batch-1 face-scene precedent, drained the same way.
+  'linux/face-reverb-compact',
+  'linux/face-reverb-dock',
 ]);

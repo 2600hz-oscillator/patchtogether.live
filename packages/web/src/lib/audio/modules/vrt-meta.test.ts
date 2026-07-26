@@ -396,7 +396,12 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // out (the #1064 drum-wave drain precedent: drop the pairs FIRST, then
       // dispatch, because the pending-pair skip is unconditional and
       // `--update-snapshots` writes nothing for a skipped test).
-    ).toBeLessThanOrEqual(104);
+      // 104→106 for the P1 BATCH-3 REVERB face (2026-07-26, deliberate
+      // darwin-first — the compact lane tile + the dock full-view faceplate
+      // under `?shell=1` in workflow-shell-faces.spec.ts; linux baselines
+      // pending the vrt-update.yml dispatch once the batch-3 branches are
+      // assembled, the batch-1 face-scene precedent).
+    ).toBeLessThanOrEqual(106);
   });
 });
 

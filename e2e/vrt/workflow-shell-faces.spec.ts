@@ -42,6 +42,7 @@ const FACES = [
   { type: 'vca', pages: 1 },
   { type: 'lfo', pages: 2 },
   { type: 'cloudseed', pages: 8 },
+  { type: 'reverb', pages: 2 }, // P1 batch 3
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of
