@@ -2537,13 +2537,26 @@
   /* Read-only full-range label (replaces the old pitch-window scroll buttons —
      the whole range is always shown now, so there's nothing to scroll). */
   .editor-head .tag.range { cursor: default; font-variant-numeric: tabular-nums; }
-  .piano-roll { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  /* flex-shrink: 0 — the roll's box must NEVER be squeezed below its content
+     by a height-constrained ancestor (dock drawer / rack tier): a shrunken box
+     lets the overflowing rows PAINT OVER the .editor-foot below it, and the
+     NOW/QUEUE launch clicks then hit piano-roll cells instead of the buttons
+     (the CI-Linux clipplayer-edit-launch intercept — metric-dependent, so it
+     passed on macOS while red on CI). Un-shrinkable, the footer is pushed
+     below the full roll in normal flow and can never sit under it. */
+  .piano-roll { display: flex; flex-direction: column; align-items: center; gap: 2px; flex-shrink: 0; }
   /* Edit-view launch row — NOW (left) + QUEUE (right), bottom-right of the editor. */
   .editor-foot {
     display: flex;
     justify-content: flex-end;
     gap: 6px;
     margin-top: 4px;
+    /* Belt-and-suspenders vs the intercept class above: keep the launch row
+       un-shrinkable and stacked ABOVE any (future) overlapping grid content
+       so its clicks always land on the buttons. */
+    flex-shrink: 0;
+    position: relative;
+    z-index: 1;
   }
   .editor-foot .launch {
     background: var(--control-bg, #222);
