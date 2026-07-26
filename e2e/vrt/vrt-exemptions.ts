@@ -1000,6 +1000,14 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/face-lfo-dock',
   'linux/face-cloudseed-compact',
   'linux/face-cloudseed-dock',
+  // REAR CARD (2026-07-25, deliberate darwin-first): the dock full-view's TAB
+  // flip side (workflow-rear-card.spec.ts) — the busiest (tidyVco) + simplest
+  // (vca) prototypes' jack fields. No live glyphs/knobs on the rear → mask-free
+  // deterministic captures. Darwin baselines captured locally (3× stable) +
+  // visually inspected; linux baselines pending a vrt-update.yml
+  // workflow_dispatch on the PR branch (the workflow-shell-faces precedent).
+  'linux/rear-tidyVco',
+  'linux/rear-vca',
   // CLIPPLAYER: darwin baseline (the clip-launcher card — 8×8 launch grid +
   // piano-roll note editor + transport knobs; no animated canvas) captured
   // locally; linux baseline pending a `vrt-update.yml` workflow_dispatch on

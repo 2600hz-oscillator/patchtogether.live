@@ -44,9 +44,27 @@ export interface GlyphDefLike {
   params?: readonly { id: string; min?: number; max?: number }[];
 }
 
+/** The PARAM-DERIVED core-waveform law behind a 'dual' binding: which pure
+ *  scope-screen-model derivation draws the module's ASSIGNED shape, and which
+ *  param ids feed it (read through the LIVE/transient seam — see
+ *  createLiveWaveSource). 'saw-pulse-mix' = tidyVco's two-osc law
+ *  (sawPulseMixWaveSamples: shape1/shape2 morphs + shared PW, equal-power MIX). */
+export type DualWaveSpec = {
+  law: 'saw-pulse-mix';
+  shape1: string;
+  shape2?: string;
+  pw?: string;
+  mix?: string;
+};
+
 /** How a face glyph binds to live data — see the header. */
 export type GlyphBinding =
   | { kind: 'live-audio'; portId: string }
+  /** DUAL DISPLAY (owner spec): a PARAM-DERIVED static core waveform (always
+   *  visible, gate or no gate) ALONGSIDE the live analyser trace on the
+   *  primary audio output. For oscillators whose identity IS an assigned
+   *  shape (tidyVco); other shape-identity sources can adopt it. */
+  | { kind: 'dual'; portId: string; wave: DualWaveSpec }
   | { kind: 'env-params'; attack: string; decay: string; sustain: string; release: string }
   | { kind: 'wave-morph'; shapeParamId: string; depthParamId?: string }
   | { kind: 'static' }
@@ -62,6 +80,9 @@ export function primaryAudioOutPortId(def: GlyphDefLike | undefined): string | n
  * Resolve the LIVE binding for a def's face glyph. Rules (pure, in order):
  *   - no face / glyph 'none'                 → none
  *   - glyph 'envelope' + real A/D/S/R params → env-params
+ *   - glyph 'waveform' + a primary AUDIO output + the saw↔pulse morph param
+ *     set (a 0..1 `shape1` + `pw` + `mix` — the tidyVco osc law)
+ *                                            → DUAL (param-wave + live trace)
  *   - any glyph + a primary AUDIO output     → live-audio (trace or RMS)
  *   - glyph 'waveform' + a 0..2 `shape` morph param (the lfo law)
  *                                            → wave-morph (+ depth swing)
@@ -82,6 +103,26 @@ export function glyphBinding(def: GlyphDefLike | undefined): GlyphBinding {
   }
 
   const audioOut = primaryAudioOutPortId(def);
+  if (audioOut && glyph === 'waveform') {
+    // The DUAL-display capability: the module's identity is an ASSIGNED wave
+    // shape (a 0..1 saw↔pulse morph + shared PW + osc mix), so the face shows
+    // the param-derived core waveform ALWAYS (the live trace alone flatlines
+    // when ungated) next to the live output trace.
+    const shape1 = params.find((p) => p.id === 'shape1' && p.min === 0 && p.max === 1);
+    if (shape1 && has('pw') && has('mix')) {
+      return {
+        kind: 'dual',
+        portId: audioOut,
+        wave: {
+          law: 'saw-pulse-mix',
+          shape1: 'shape1',
+          shape2: has('shape2') ? 'shape2' : undefined,
+          pw: 'pw',
+          mix: 'mix',
+        },
+      };
+    }
+  }
   if (audioOut) return { kind: 'live-audio', portId: audioOut };
 
   if (glyph === 'waveform') {
@@ -91,6 +132,48 @@ export function glyphBinding(def: GlyphDefLike | undefined): GlyphBinding {
     }
   }
   return { kind: 'static' };
+}
+
+// ── The LIVE param-wave source (the dual/wave-morph transient-read seam) ────
+//
+// LIVE-WHILE-TWISTING (owner spec, critical): knob gestures are written
+// TRANSIENT-FIRST — the engine handle carries the moving value during the
+// gesture while the DURABLE node.params commit coalesces/settles behind it
+// (drag-commit / cc-commit) — so a param-derived display that re-renders off
+// COMMITTED params looks dead mid-drag. The wave source therefore reads the
+// SAME live seam the motorized knobs read (cardParams.live → engine.readParam,
+// falling back to the committed value while the engine isn't booted), and is
+// POLLED on the shared visibility-gated meter frame (rAF-coalesced by
+// construction). The derivation memoizes on the read TUPLE: an unchanged
+// tuple returns the SAME buffer identity, so the consumer (ScopeScreen's
+// polled wave mode) repaints ONLY on identity change — idle tiles cost one
+// tuple compare per frame, no canvas work.
+
+/**
+ * A memoized live→samples pump: `read()` samples the CURRENT param tuple
+ * (live/transient-first), `compute(vals)` derives the single-cycle buffer
+ * (a pure scope-screen-model law). Returns a `get()` for ScopeScreen's
+ * polled `getWaveform` seam — same tuple ⇒ same buffer identity.
+ */
+export function createLiveWaveSource(
+  read: () => readonly number[],
+  compute: (vals: readonly number[]) => Float32Array,
+): () => Float32Array {
+  let lastVals: readonly number[] | null = null;
+  let buf: Float32Array | null = null;
+  return () => {
+    const vals = read();
+    if (
+      !buf ||
+      !lastVals ||
+      vals.length !== lastVals.length ||
+      vals.some((v, i) => v !== lastVals![i])
+    ) {
+      lastVals = [...vals];
+      buf = compute(vals);
+    }
+    return buf;
+  };
 }
 
 // ── The live-audio tap ───────────────────────────────────────────────────────

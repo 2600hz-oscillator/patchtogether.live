@@ -121,6 +121,51 @@ export function morphWavePoints(
 }
 
 /**
+ * One cycle of TIDY VCO's CORE WAVEFORM as a sample buffer (−1..1) for
+ * ScopeScreen's explicit-buffer `wave` mode — the PARAM-DERIVED half of the
+ * dual glyph (owner spec: the oscillator's ASSIGNED shape, always visible
+ * regardless of gate). Mirrors the voice's osc section: OSC1 and OSC2 are
+ * each a saw↔pulse morph (`morphWaveSample` — the def's "0 = saw, 1 = pulse"
+ * law) sharing one PW, crossfaded by the equal-power MIX law (0 = OSC1 only,
+ * 1 = OSC2 only). The mixed cycle is peak-normalized (display identity — the
+ * screen shows the SHAPE at full scale, not the mix's level sag). Pure +
+ * deterministic so the derivation is unit-testable and the ungated VRT scenes
+ * stay pixel-stable.
+ */
+export function sawPulseMixWaveSamples(
+  shape1: number,
+  shape2 = 0,
+  pw = 0.5,
+  mix = 0,
+  samples = 128,
+): Float32Array {
+  const n = Math.max(2, Math.floor(samples));
+  const m = clamp01(mix);
+  // Equal-power crossfade gains (the def's documented MIX law).
+  const g1 = Math.cos((m * Math.PI) / 2);
+  const g2 = Math.sin((m * Math.PI) / 2);
+  const out = new Float32Array(n);
+  let peak = 0;
+  for (let i = 0; i < n; i++) {
+    // Clamped to ONE display cycle [0,1] (no wrap) — same edge-to-edge
+    // convention as triMorphWaveSamples, so the saw keeps its full ramp.
+    const ph = i / (n - 1);
+    const v =
+      g1 * morphWaveSample(Math.min(ph, 1 - 1e-9), shape1, pw) +
+      g2 * morphWaveSample(Math.min(ph, 1 - 1e-9), shape2, pw);
+    out[i] = v;
+    const a = Math.abs(v);
+    if (a > peak) peak = a;
+  }
+  // Peak-normalize DOWN only (a correlated equal-power sum can exceed 1);
+  // a sub-unity cycle keeps its true amplitude.
+  if (peak > 1) {
+    for (let i = 0; i < n; i++) out[i] = out[i]! / peak;
+  }
+  return out;
+}
+
+/**
  * One sample (−1..1) of the LFO's 3-anchor morph at phase `phase01` (0..1):
  * shape 0 = sine, 1 = rising saw, 2 = square, with LINEAR crossfades between
  * adjacent anchors (0.5 = halfway sine↔saw) — the lfo def's documented shape
