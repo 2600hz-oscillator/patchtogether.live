@@ -84,6 +84,71 @@
 // frame edge by the transform read the edge pixel (the tunnel reads cleanly
 // — no wrap-around tiling, no black seam mid-frame).
 //
+// ── FLICKER (the display's pulsed emission, as our camera sees it) ────
+// A real camera-into-monitor loop has NO constant per-pass gain. The display
+// emits light in PULSES (one per refresh); the camera INTEGRATES over an
+// exposure window shorter than the pulse period and SAMPLES at its own frame
+// rate. Emission and sampling BEAT, so the fraction of each pulse the camera
+// catches cycles above and below its own average — the instantaneous loop gain
+// oscillates around unity. That is what lets light BUILD over several frames
+// and then FADE, instead of racing to the clip ceiling and staying pinned.
+//
+// Without it (FLICKER = OFF, the default) the composite
+//   out = clamp(source + fb*FEEDBACK*effectScale, 0, 1)
+// has every coefficient non-negative and a monotone-increasing clamp, i.e. it
+// is a MONOTONE POSITIVE MAP. Such a map has only fixed-point attractors:
+// gain < 1 decays to equilibrium, gain > 1 climbs to white and stays. DELAY
+// cannot change that — a delay only oscillates when the loop has a sign
+// inversion or a level-dependent correction, and this one has neither.
+//
+// The model (derivation + sources:
+// .myrobots/plans/backdraft-flicker-research-2026-07-26.md):
+//
+//   emission     e(t) = 1 + m*cos(2*pi*f*t)      (mean-normalised to 1)
+//   exposure     integrate e over T_e  =>  depth *= sinc(f*T_e)
+//   rolling sh.  row v starts at t + v*T_ro  =>  phase varies DOWN the frame
+//   sampling     evaluate at t_n = floor(t*f_cam)/f_cam  =>  beat = alias of f
+//
+//   g(t, v) = A * [ 1 + m*sinc(f*T_e) * cos(2*pi*f*(t_n + T_e/2) + 2*pi*f*T_ro*v) ]
+//
+// The exposure boxcar contributes EXACTLY a sinc(f*T_e) attenuation — so
+// sinc(1) = 0 reproduces the flicker-free shutter rule (shoot 1/50s under
+// 50Hz) for free, and we unit-test that. A is an operating-point normaliser
+// that keeps the frame-mean gain's GEOMETRIC mean at 1 (a multiplicative loop
+// cares about the geometric mean, and an arithmetic-mean-1 gain has geometric
+// mean < 1 by AM-GM), so switching FLICKER on does not silently damp the loop
+// and re-tuning FEEDBACK is unnecessary. Crutchfield (Physica D 10, 1984)
+// legitimately DROPPED this term because a vidicon tube integrates ~1/3 s and
+// smears 10 refreshes flat; every modern CMOS sensor has a ~1/50-1/500 s
+// exposure and no inter-frame storage, so the term he neglected is the one
+// that dominates a present-day loop.
+//
+// Sampling is quantised onto a FIXED 60Hz virtual-camera grid. That is
+// load-bearing for determinism: without it a 120Hz display would sample the
+// 50Hz emission at 120Hz and see a 50Hz beat instead of a 10Hz one — the same
+// knob settings, a completely different look.
+//
+// The gain multiplies the feedback tap IMMEDIATELY AFTER SAMPLING — it is the
+// light the CAMERA captured, and the per-channel/luma/chroma gains are the
+// ELECTRONICS downstream of the sensor — so both the additive accumulator and
+// the hall-of-mirrors path inherit it with no special-casing. The row
+// coordinate is the raw SCREEN vUv.y (the sensor scans the screen, not the
+// feedback geometry), so bands are fixed in screen space and CRAWL at the beat
+// rate.
+//
+// Because g is a function of ABSOLUTE simulation time (not a per-tap counter),
+// the DELAY path composes the gains that really occurred at those times:
+//   I_{n+1} = source + g(t_n) * FEEDBACK * effectScale * I_{n-d}
+// so k passes multiply g at instants (d+1) frames apart. Commensurate beat and
+// delay reinforce (locked pulsing / subharmonics); incommensurate precess
+// (long non-repeating evolution). That coherence is free, and is where the
+// network richness comes from.
+//
+// OFF is the DEFAULT and is BIT-IDENTICAL to the pre-FLICKER path: the whole
+// block sits behind `if (uFlickerOn > 0.5)` in the shader (the same
+// load-bearing-gate idiom as PIXELATE's `if (uPixelate > 0.0)`), so at OFF not
+// one extra float operation executes.
+//
 // ── FREEZE (VRT determinism) ──────────────────────────────────────────
 // `freeze` param (0/1): when >=0.5, draw() is a no-op — the ring + output
 // hold their last contents, so the on-card / output pixels are stable
@@ -188,6 +253,43 @@ export const BACKDRAFT_SHAPE_COUNT = BACKDRAFT_SHAPES.length; // 5
  *  the SHAPE mask makes. */
 export const BACKDRAFT_SHAPE_RADIUS = 0.5;
 
+/** FLICKER — the display's pulse rate, in the EXACT order the knob's 4
+ *  positions sit in. Index 0 is OFF (the no-op identity), so the DEFAULT
+ *  output is bit-identical to pre-FLICKER backdraft. */
+export const BACKDRAFT_FLICKER_OPTIONS = ['off', '24', '50', '60'] as const;
+export type BackdraftFlickerOption = (typeof BACKDRAFT_FLICKER_OPTIONS)[number];
+export const BACKDRAFT_FLICKER_COUNT = BACKDRAFT_FLICKER_OPTIONS.length; // 4
+
+/** Emission frequency in Hz for each knob position. 0 = OFF (no flicker).
+ *
+ *  The "60" position is 60000/1001 = 59.94 Hz, the REAL NTSC field rate — not
+ *  60.000. Against a 60.00 Hz camera that beats at 0.06 Hz: the famously slow
+ *  crawling hum bar you get pointing a camera at a television. Modelling it as
+ *  exactly 60.000 would GENLOCK it — the camera would sample one identical
+ *  phase forever, the gain would be a CONSTANT, and the position would behave
+ *  as a dumb attenuator with no motion at all. 24 = cinema, 50 = PAL/SECAM
+ *  field rate + 50 Hz mains. Beats against the 60 Hz virtual camera:
+ *    24    -> |24 - 0*60| = 24 Hz    (2.5 frames/cycle — a hard strobe)
+ *    50    -> |50 - 1*60| = 10 Hz    (6 frames/cycle — the best pulse)
+ *    59.94 -> |59.94 - 60| = 0.06 Hz (~1000 frames/cycle — a slow breathe) */
+export const BACKDRAFT_FLICKER_HZ: readonly number[] = [0, 24, 50, 60000 / 1001];
+
+/** Display emission modulation depth (0..1). Not 1.0 — a real display does not
+ *  reach exactly zero between pulses; phosphor persistence / backlight tail
+ *  leave a floor. 0.85 leaves a 15% floor. */
+export const BACKDRAFT_FLICKER_DEPTH = 0.85;
+/** Camera exposure time as a fraction of the virtual camera's frame period.
+ *  0.5 = a 180-degree shutter (1/120 s at 60 fps), the cinema/video convention. */
+export const BACKDRAFT_FLICKER_SHUTTER = 0.5;
+/** Rolling-shutter readout time as a fraction of the frame period — how far
+ *  the flicker phase drifts DOWN the frame. 0.5 = mid-range CMOS (real sensors
+ *  span ~0.15 for fast stacked sensors to ~1.0 for cheap ones). It is a genuine
+ *  trade-off: 0 is a global shutter (full mean pulsing, no bands), while
+ *  readout = f_cam/f zeroes the mean-gain sinc and gives pure STANDING bands
+ *  with no pulsing at all. 0.5 keeps a strong mean pulse AND a visible
+ *  ~0.42-cycle gradient that crawls at the beat rate. */
+export const BACKDRAFT_FLICKER_READOUT = 0.5;
+
 const FRAG_SRC = `#version 300 es
 precision highp float;
 
@@ -246,6 +348,18 @@ uniform float uRes;      // source resolution in cells (e.g. fbo width)
 uniform float uShape;
 uniform float uPureGeo;
 uniform float uAspect;
+
+// FLICKER — the virtual camera's per-pixel CAPTURE GAIN for a display that
+// emits in pulses. All four scalars are precomputed on the CPU by
+// backdraftFlickerTerms() (see the header): the exposure-window integral and
+// the rolling-shutter row spread are closed-form sincs, so the shader is one
+// cos. uFlickerOn is 0 at the OFF default and the block is branch-gated, so
+// OFF executes not one extra float op (the PIXELATE precedent).
+uniform float uFlickerOn;    // 0 = off (identity), 1 = on
+uniform float uFlickerGain;  // A — operating-point normaliser (geometric mean 1)
+uniform float uFlickerDepth; // A * depth * sinc(f*T_exposure)
+uniform float uFlickerPhase; // 2*pi*f*(t_virtualFrame + T_exposure/2), wrapped
+uniform float uFlickerRow;   // 2*pi*f*T_readout — phase spread DOWN the frame
 
 const float MAX_EFFECT_SCALE = ${BACKDRAFT_MAX_EFFECT_SCALE.toFixed(1)};
 const float BD_PI = 3.14159265359;
@@ -344,6 +458,20 @@ void main() {
   // past the edge reading the edge pixel. Zero on cold start.
   vec2 fbUv = feedbackUv(uv);
   vec3 fb = uHasFb > 0.5 ? texture(uFb, fbUv).rgb : vec3(0.0);
+
+  // FLICKER — scale the fed-back light by what the camera's exposure window
+  // actually caught of the display's pulse this frame. Applied HERE, straight
+  // after the tap and BEFORE the colour processing, because this is the light
+  // the SENSOR captured and the R/G/B/luma/chroma gains are the ELECTRONICS
+  // downstream of it; both the additive accumulator and the hall of mirrors
+  // then inherit it with no special-casing. The row term uses the raw SCREEN
+  // vUv.y (not the mirror-folded/feedback uv) because the rolling shutter
+  // scans the SCREEN — so bands stay fixed in screen space and crawl at the
+  // beat rate. The IF GATE is LOAD-BEARING: at OFF the output is bit-identical
+  // to the pre-FLICKER path.
+  if (uFlickerOn > 0.5) {
+    fb *= uFlickerGain + uFlickerDepth * cos(uFlickerPhase + vUv.y * uFlickerRow);
+  }
 
   // SHAPE mask in the ZOOMED feedback space (used by PURE GEO OFF) — the shape
   // SCALES with ZOOM (and follows the rotate/offset of the feedback geometry).
@@ -461,6 +589,9 @@ export interface BackdraftParams {
   // CYCLE shape / TOGGLE pureGeo.
   shapeGate: number;   // 0..1 raw gate sample
   pureGeoGate: number; // 0..1 raw gate sample
+  // FLICKER — a DISCRETE index into BACKDRAFT_FLICKER_OPTIONS
+  // (0=off, 1=24Hz, 2=50Hz, 3=60Hz). 0 is the no-op identity.
+  flicker: number;   // 0..BACKDRAFT_FLICKER_COUNT-1 (discrete)
   freeze: number;    // 0/1 (VRT determinism)
 }
 
@@ -495,6 +626,9 @@ const DEFAULTS: BackdraftParams = {
   pureGeo: 0,
   shapeGate: 0,
   pureGeoGate: 0,
+  // FLICKER neutral = OFF (index 0) → the capture-gain block is branch-skipped
+  // entirely, so out-of-box output is bit-identical to pre-FLICKER backdraft.
+  flicker: 0,
   freeze: 0,
 };
 
@@ -759,6 +893,145 @@ export function backdraftShapeMask(
 }
 
 /**
+ * Normalised sinc, sinc(x) = sin(pi*x)/(pi*x), with sinc(0) = 1.
+ *
+ * This is the frequency response of a BOXCAR integrator of unit width, and it
+ * is why both of the FLICKER model's attenuations are exact rather than fudged:
+ * a camera's exposure window and a rolling shutter's readout window are both
+ * boxcars in time. sinc(1) = 0 is the flicker-free shutter rule (an exposure
+ * exactly one flicker period long sees no flicker at all — shoot 1/50s under
+ * 50Hz mains, 1/60s under 60Hz).
+ */
+export function backdraftSinc(x: number): number {
+  const ax = Math.abs(x);
+  if (ax < 1e-9) return 1;
+  return Math.sin(Math.PI * x) / (Math.PI * x);
+}
+
+/** The precomputed per-frame FLICKER scalars handed to the shader. The shader
+ *  evaluates exactly one cosine from them:
+ *
+ *    g(row v) = gain + depth * cos(phase + v * rowPhase)
+ */
+export interface BackdraftFlickerTerms {
+  /** False at the OFF position — the shader branch is skipped entirely. */
+  enabled: boolean;
+  /** The display's emission frequency in Hz (0 when disabled). */
+  hz: number;
+  /** A — the operating-point normaliser. Exactly 1 when disabled. */
+  gain: number;
+  /** A * depth * sinc(f*T_exposure) — the per-ROW modulation amplitude.
+   *  Exactly 0 when disabled. */
+  depth: number;
+  /** 2*pi*f*(t_virtualFrame + T_exposure/2), wrapped into [0, 2*pi).
+   *  Wrapped on the CPU (float64) so the shader's float32 cos never loses
+   *  precision as the simulation clock grows. */
+  phase: number;
+  /** 2*pi*f*T_readout — how far the flicker phase drifts from the bottom row
+   *  to the top row (the rolling-shutter band spread, in radians). */
+  rowPhase: number;
+  /** The FRAME-MEAN gain this frame (the row average of g). The CPU mirror of
+   *  what the shader's per-row gain averages to; the extra sinc(f*T_readout)
+   *  factor is the rolling shutter partially washing the whole-frame pulse out.
+   *  Exactly 1 when disabled. */
+  meanGain: number;
+}
+
+/**
+ * THE FLICKER MODEL — pure, deterministic, frame-rate independent.
+ *
+ * Given the discrete FLICKER knob index and the accumulated SIMULATION time,
+ * return the scalars the shader needs to reproduce
+ *
+ *   g(t, v) = A * [ 1 + m*sinc(f*T_e) * cos(2*pi*f*(t_n + T_e/2) + 2*pi*f*T_ro*v) ]
+ *
+ * where
+ *   f    = the display's emission frequency (BACKDRAFT_FLICKER_HZ[index]),
+ *   m    = BACKDRAFT_FLICKER_DEPTH (emission modulation depth),
+ *   T_e  = BACKDRAFT_FLICKER_SHUTTER / fps  (exposure window; 180-degree shutter),
+ *   T_ro = BACKDRAFT_FLICKER_READOUT / fps  (rolling-shutter readout),
+ *   t_n  = floor(t*fps)/fps  — the VIRTUAL CAMERA frame grid,
+ *   A    = 2/(1 + sqrt(1 - a^2)),  a = m*sinc(f*T_e)*sinc(f*T_ro).
+ *
+ * Three properties this function is unit-tested for, each load-bearing:
+ *
+ *  1. OFF is EXACT. index 0 returns { enabled:false, gain:1, depth:0,
+ *     meanGain:1 } with no float slop, and the shader branch-skips it, so the
+ *     default output is bit-identical to pre-FLICKER backdraft.
+ *  2. The BEAT is quantised to the fixed `fps` virtual-camera grid, NOT to the
+ *     real render rate. Without this a 120Hz ProMotion display would sample the
+ *     50Hz emission at 120Hz and see a 50Hz beat instead of a 10Hz one — same
+ *     knob, different look, and tests would diverge from users.
+ *  3. The exposure boxcar contributes exactly sinc(f*T_e), so an exposure that
+ *     is a whole number of flicker periods kills the flicker completely — the
+ *     real flicker-free-shutter rule, reproduced rather than approximated.
+ *
+ * `A` exists because a multiplicative loop cares about the GEOMETRIC mean of
+ * its gain, and a gain with arithmetic mean 1 has geometric mean < 1 (AM-GM).
+ * Without A, switching FLICKER on would silently damp the loop and the user
+ * would have to re-hunt their FEEDBACK setting; a real operator compensates by
+ * reopening the iris, and A is that compensation folded in. It is the exact
+ * closed form of exp(-mean(log(1 + a*cos))).
+ *
+ * @param flicker  the FLICKER param (a discrete index; rounded + clamped).
+ * @param timeSec  accumulated SIMULATION time in seconds (frame.time).
+ * @param fps      the virtual camera's FIXED frame rate.
+ */
+export function backdraftFlickerTerms(
+  flicker: number,
+  timeSec: number,
+  fps: number = BACKDRAFT_FPS,
+): BackdraftFlickerTerms {
+  const OFF: BackdraftFlickerTerms = {
+    enabled: false, hz: 0, gain: 1, depth: 0, phase: 0, rowPhase: 0, meanGain: 1,
+  };
+  const idx = Math.max(0, Math.min(BACKDRAFT_FLICKER_COUNT - 1, Math.round(flicker)));
+  const hz = BACKDRAFT_FLICKER_HZ[idx] ?? 0;
+  if (idx <= 0 || hz <= 0 || !(fps > 0)) return OFF;
+
+  const expose = BACKDRAFT_FLICKER_SHUTTER / fps; // T_e
+  const readout = BACKDRAFT_FLICKER_READOUT / fps; // T_ro
+  const sExpose = backdraftSinc(hz * expose);
+  const sReadout = backdraftSinc(hz * readout);
+
+  // Per-row modulation depth (exposure boxcar only) and the FRAME-MEAN depth
+  // (the rolling shutter's row average adds the second sinc).
+  const rowDepth = BACKDRAFT_FLICKER_DEPTH * sExpose;
+  const meanDepth = BACKDRAFT_FLICKER_DEPTH * sExpose * sReadout;
+
+  // Operating-point normaliser: geometric mean of the frame-mean gain == 1.
+  const a = Math.min(0.999999, Math.abs(meanDepth));
+  const gain = 2 / (1 + Math.sqrt(1 - a * a));
+
+  // VIRTUAL CAMERA sampling grid — quantise simulation time to whole frames
+  // before taking the phase. This is what fixes the beat frequency on every
+  // machine regardless of the real render rate (property 2 above).
+  const n = Math.floor(Math.max(0, timeSec) * fps);
+  const tn = n / fps;
+
+  // Phase at the CENTRE of the exposure window (the boxcar's group delay),
+  // wrapped in float64 so the shader's float32 cos stays precise forever.
+  const TWO_PI = Math.PI * 2;
+  const raw = TWO_PI * hz * (tn + expose / 2);
+  const phase = raw - TWO_PI * Math.floor(raw / TWO_PI);
+  const rowPhase = TWO_PI * hz * readout;
+
+  // The row average of gain + gain*rowDepth*cos(phase + v*rowPhase) over
+  // v in [0,1] is gain*(1 + meanDepth*cos(phase + rowPhase/2)).
+  const meanGain = gain * (1 + meanDepth * Math.cos(phase + rowPhase / 2));
+
+  return {
+    enabled: true,
+    hz,
+    gain,
+    depth: gain * rowDepth,
+    phase,
+    rowPhase,
+    meanGain,
+  };
+}
+
+/**
  * Per-instance DELAY-CLOCK tracker state. A rising edge on the (hysteresis)
  * gate timestamps `time` (wall-clock seconds from the engine frame); the
  * period is the interval between the last two rising edges. We keep only the
@@ -925,13 +1198,17 @@ export const backdraftDef: VideoModuleDef = {
     // (no card knob); the module edge-detects a rising edge to CYCLE / TOGGLE.
     { id: 'shapeGate',   label: 'Shape Gate',   defaultValue: DEFAULTS.shapeGate,   min: 0, max: 1, curve: 'linear' },
     { id: 'pureGeoGate', label: 'PureGeo Gate', defaultValue: DEFAULTS.pureGeoGate, min: 0, max: 1, curve: 'linear' },
+    // FLICKER — a DISCRETE 4-position index (0=off, 1=24Hz, 2=50Hz, 3=60Hz)
+    // modelling the display's pulsed emission as our virtual camera captures
+    // it. 0 = OFF is the bit-identical no-op default.
+    { id: 'flicker', label: 'Flicker', defaultValue: DEFAULTS.flicker, min: 0, max: BACKDRAFT_FLICKER_COUNT - 1, curve: 'discrete' },
     // freeze is a hidden VRT/determinism toggle — no card control.
     { id: 'freeze',   label: 'Freeze',   defaultValue: DEFAULTS.freeze,   min: 0,  max: 1,                     curve: 'linear' },
   ],
 
   // docs-hash-ignore:start
   docs: {
-    explanation: `BACKDRAFT is a video feedback generator. It builds a "source" image by crossfading two video inputs (IN A / IN B) with MIX, then composites that against a processed copy of its OWN previous output, read from an internal ring of past frames so there is no live GL feedback loop (downstream sees frame N while the tap reads N-1..N-30). The fed-back frame is delayed (DELAY, 0-500ms or a clock pulse), colour-processed (per-channel R/G/B gain, then LUMA brightness, then CHROMA saturation), scaled per-pixel by two key masks (KEY+ lightens / KEY- darkens the effect), and geometrically warped a little each pass (ZOOM/ROTATE/OFF X/OFF Y) so the transform COMPOUNDS into tunnels, spirals, and directional trails. Two MIRROR buttons fold the whole composited frame into a kaleidoscope. A SHAPE button cuts the frame to a geometric mask (square = full frame, then circle / pentagon / triangle / octagon), and a PURE GEO button picks the masking SPACE: ON masks the FINAL OUTPUT in screen space (a fixed shape that cuts everything outside it at all zooms), OFF masks the SOURCE in the zoomed feedback space so the shape scales with ZOOM and its content spills out through the feedback tunnel (zoom-in pushes it toward the corners, zoom-out shrinks it). As FEEDBACK approaches its max (and a spatial transform is active) the additive trail-accumulator ramps into a pure recursive hall of mirrors. Usage: patch a camera or generator into IN A, raise FEEDBACK toward ~1 and nudge ZOOM off 1.0 (with a little ROTATE) for the classic infinite-tunnel look; add OFF X/Y for smear, PIXELATE for blocky lo-fi, a SHAPE for a geometric vignette, and clock DELAY CLK for rhythmic echo. Output is the OUT video jack. The card shows a large live video preview on the left that is resizable via the bottom-right corner-drag handle (width/height persist, snapped to rack tiles); right-click the preview for Full Frame / Full Screen / Present-on-another-display.`,
+    explanation: `BACKDRAFT is a video feedback generator. It builds a "source" image by crossfading two video inputs (IN A / IN B) with MIX, then composites that against a processed copy of its OWN previous output, read from an internal ring of past frames so there is no live GL feedback loop (downstream sees frame N while the tap reads N-1..N-30). The fed-back frame is delayed (DELAY, 0-500ms or a clock pulse), colour-processed (per-channel R/G/B gain, then LUMA brightness, then CHROMA saturation), scaled per-pixel by two key masks (KEY+ lightens / KEY- darkens the effect), and geometrically warped a little each pass (ZOOM/ROTATE/OFF X/OFF Y) so the transform COMPOUNDS into tunnels, spirals, and directional trails. Two MIRROR buttons fold the whole composited frame into a kaleidoscope. A SHAPE button cuts the frame to a geometric mask (square = full frame, then circle / pentagon / triangle / octagon), and a PURE GEO button picks the masking SPACE: ON masks the FINAL OUTPUT in screen space (a fixed shape that cuts everything outside it at all zooms), OFF masks the SOURCE in the zoomed feedback space so the shape scales with ZOOM and its content spills out through the feedback tunnel (zoom-in pushes it toward the corners, zoom-out shrinks it). As FEEDBACK approaches its max (and a spatial transform is active) the additive trail-accumulator ramps into a pure recursive hall of mirrors. A FLICKER control (OFF / 24 / 50 / 60 Hz) models the display's pulsed emission as the virtual camera actually captures it: the emission rate beats against the camera's 60 fps sampling, so the per-frame loop gain oscillates around unity instead of being constant, and light can build up over several frames and then fade away rather than pinning at white — with a rolling-shutter band crawling down the frame at the beat rate. Usage: patch a camera or generator into IN A, raise FEEDBACK toward ~1 and nudge ZOOM off 1.0 (with a little ROTATE) for the classic infinite-tunnel look; add OFF X/Y for smear, PIXELATE for blocky lo-fi, a SHAPE for a geometric vignette, and clock DELAY CLK for rhythmic echo. Output is the OUT video jack. The card shows a large live video preview on the left that is resizable via the bottom-right corner-drag handle (width/height persist, snapped to rack tiles); right-click the preview for Full Frame / Full Screen / Present-on-another-display.`,
     inputs: {
       in_a: "Video source A. Crossfaded against IN B by MIX to form the live 'source' image that is re-injected each frame; unpatched it reads black.",
       in_b: "Video source B. The other end of the MIX crossfade (MIX=1 selects this input fully); unpatched it reads black.",
@@ -986,6 +1263,7 @@ export const backdraftDef: VideoModuleDef = {
       pureGeo: "Pure Geo (0/1, default 0 = off): the SHAPE masking SPACE. ON masks the FINAL OUTPUT in screen space (a fixed shape that cuts content outside it at all zooms); OFF masks the SOURCE in the zoomed feedback space, so the shape scales with Zoom and its content spills out through the feedback tunnel. The PURE GEO button toggles it; pure_geo_gate toggles it on a rising edge.",
       shapeGate: "Shape Gate (0..1, default 0): hidden synthetic param the shape_gate CV bridge writes (raw gate swing). No card knob; a rising edge cycles Shape.",
       pureGeoGate: "PureGeo Gate (0..1, default 0): hidden synthetic param the pure_geo_gate CV bridge writes (raw gate swing). No card knob; a rising edge toggles Pure Geo.",
+      flicker: "Flicker (discrete OFF / 24 / 50 / 60, default OFF): models the fact that a real display emits light in PULSES rather than continuously, and that the camera integrates over an exposure window shorter than the pulse period and samples at its own frame rate. The two rates BEAT, so the per-frame loop gain cycles above and below its own average instead of being constant — which is what lets pulses of light build up over several frames and then fade away rather than saturating to white and staying there. OFF is the exact no-op (the shader branch is skipped, output is bit-identical). The virtual camera runs at a fixed 60 fps, so the beat against it is 24 Hz at the 24 position (2.5 frames per cycle — a hard strobe), 10 Hz at 50 (6 frames per cycle — the cleanest build-and-fade pulsing, and the classic look of filming a PAL monitor with an NTSC camera), and 0.06 Hz at 60 (the 60 position is the true NTSC field rate 60000/1001 = 59.94 Hz, giving a ~16.7-second slow breathe — the slowly crawling hum bar you see filming a television; exactly 60.000 would genlock to a constant gain and not move at all). A 180-degree shutter (1/120 s) sets how much of each pulse is caught, and a rolling shutter spreads the flicker phase down the frame, so a soft light/dark band crawls vertically at the beat rate and feeds back through the loop. The loop's average gain is held constant as you switch positions, so the FB control keeps meaning the same thing.",
       freeze: "Freeze (0/1, default 0): hidden determinism toggle. At ≥0.5 draw() is a no-op so the ring + output hold their last frame for deterministic VRT capture. No card control.",
     },
   },
@@ -1026,6 +1304,11 @@ export const backdraftDef: VideoModuleDef = {
     const uShape = u('uShape');
     const uPureGeo = u('uPureGeo');
     const uAspect = u('uAspect');
+    const uFlickerOn = u('uFlickerOn');
+    const uFlickerGain = u('uFlickerGain');
+    const uFlickerDepth = u('uFlickerDepth');
+    const uFlickerPhase = u('uFlickerPhase');
+    const uFlickerRow = u('uFlickerRow');
 
     // Ring buffer of OUTPUT frames + a dedicated current-output FBO. We
     // render the composite into ring[head] (which IS this frame's output),
@@ -1204,6 +1487,21 @@ export const backdraftDef: VideoModuleDef = {
         g.uniform1f(uShape, Math.max(0, Math.min(BACKDRAFT_SHAPE_COUNT - 1, Math.round(params.shape))));
         g.uniform1f(uPureGeo, params.pureGeo >= 0.5 ? 1.0 : 0.0);
         g.uniform1f(uAspect, ctx.res.height > 0 ? ctx.res.width / ctx.res.height : 1.0);
+
+        // FLICKER — the virtual camera's capture gain for this frame. Derived
+        // from `frame.time` (the engine's accumulated SIMULATION clock, the
+        // repo's Idiom-A pattern and the one clock `__videoEngineFreezeTime`
+        // pins) and quantised inside backdraftFlickerTerms() onto the FIXED
+        // BACKDRAFT_FPS virtual-camera grid — so the beat is the same on a
+        // 60Hz panel, a 120Hz ProMotion panel, and SwiftShader on CI. At OFF
+        // this is { on: 0, gain: 1, depth: 0 } and the shader branch-skips the
+        // whole block, so the output stays bit-identical.
+        const flick = backdraftFlickerTerms(params.flicker, frame.time);
+        g.uniform1f(uFlickerOn, flick.enabled ? 1.0 : 0.0);
+        g.uniform1f(uFlickerGain, flick.gain);
+        g.uniform1f(uFlickerDepth, flick.depth);
+        g.uniform1f(uFlickerPhase, flick.phase);
+        g.uniform1f(uFlickerRow, flick.rowPhase);
 
         ctx.drawFullscreenQuad();
         g.bindFramebuffer(g.FRAMEBUFFER, null);

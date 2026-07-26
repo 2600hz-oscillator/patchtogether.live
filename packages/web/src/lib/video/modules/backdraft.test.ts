@@ -22,6 +22,14 @@ import {
   BACKDRAFT_SHAPES,
   BACKDRAFT_SHAPE_COUNT,
   BACKDRAFT_SHAPE_RADIUS,
+  BACKDRAFT_FLICKER_OPTIONS,
+  BACKDRAFT_FLICKER_COUNT,
+  BACKDRAFT_FLICKER_HZ,
+  BACKDRAFT_FLICKER_DEPTH,
+  BACKDRAFT_FLICKER_SHUTTER,
+  BACKDRAFT_FLICKER_READOUT,
+  backdraftSinc,
+  backdraftFlickerTerms,
   backdraftDef,
   backdraftNextShape,
   backdraftShapeMask,
@@ -635,5 +643,340 @@ describe('backdraftHallComposite — additive ↔ ring-gated hall of mirrors', (
       hasTransform: true,
     });
     for (let i = 0; i < 3; i++) expect(out[i]).toBeCloseTo(0, 6);
+  });
+});
+
+// ── FLICKER ─────────────────────────────────────────────────────────────
+// The display's pulsed emission as the virtual camera captures it. Model +
+// sources: .myrobots/plans/backdraft-flicker-research-2026-07-26.md.
+//
+//   g(t, v) = A * [ 1 + m*sinc(f*T_e) * cos(2*pi*f*(t_n + T_e/2) + 2*pi*f*T_ro*v) ]
+//
+// Everything below pins a property the FEATURE depends on, not just a number.
+
+describe('backdraftSinc — the boxcar response both FLICKER windows share', () => {
+  it('sinc(0) = 1 (a zero-width window sees the instantaneous emission)', () => {
+    expect(backdraftSinc(0)).toBe(1);
+    expect(backdraftSinc(1e-12)).toBe(1);
+  });
+
+  it('sinc(n) = 0 for every nonzero integer — THE flicker-free shutter rule', () => {
+    // An exposure exactly a whole number of flicker periods long integrates a
+    // whole number of cycles and therefore sees NO flicker. This is why you
+    // shoot 1/50s under 50Hz mains and 1/60s under 60Hz.
+    for (const n of [1, 2, 3, 4, -1, -2]) {
+      expect(backdraftSinc(n), `sinc(${n})`).toBeCloseTo(0, 12);
+    }
+  });
+
+  it('is even, and decays monotonically over the first lobe', () => {
+    expect(backdraftSinc(0.37)).toBeCloseTo(backdraftSinc(-0.37), 12);
+    let prev = backdraftSinc(0);
+    for (let x = 0.05; x <= 1; x += 0.05) {
+      const cur = backdraftSinc(x);
+      expect(cur).toBeLessThan(prev);
+      prev = cur;
+    }
+  });
+
+  it('matches sin(pi x)/(pi x) at a hand-checked point', () => {
+    // sinc(0.5) = sin(pi/2)/(pi/2) = 2/pi
+    expect(backdraftSinc(0.5)).toBeCloseTo(2 / Math.PI, 12);
+  });
+});
+
+describe('backdraftFlickerTerms — OFF is the EXACT identity', () => {
+  it('index 0 disables with gain exactly 1 and depth exactly 0 (no float slop)', () => {
+    for (const t of [0, 0.0166, 1, 7.5, 1234.567]) {
+      const f = backdraftFlickerTerms(0, t);
+      expect(f.enabled).toBe(false);
+      // Hard equality, not toBeCloseTo: OFF must be BIT-identical to the
+      // pre-FLICKER path, and the shader branch-gates on `enabled`.
+      expect(f.gain).toBe(1);
+      expect(f.depth).toBe(0);
+      expect(f.meanGain).toBe(1);
+      expect(f.hz).toBe(0);
+      expect(f.phase).toBe(0);
+      expect(f.rowPhase).toBe(0);
+    }
+  });
+
+  it('rounds + clamps a fractional / out-of-range index (CV or a stale patch)', () => {
+    expect(backdraftFlickerTerms(0.4, 1).enabled).toBe(false); // rounds to 0
+    expect(backdraftFlickerTerms(-5, 1).enabled).toBe(false);  // clamps low
+    expect(backdraftFlickerTerms(0.6, 1).hz).toBe(BACKDRAFT_FLICKER_HZ[1]);
+    expect(backdraftFlickerTerms(99, 1).hz).toBe(
+      BACKDRAFT_FLICKER_HZ[BACKDRAFT_FLICKER_COUNT - 1],
+    );
+  });
+
+  it('a degenerate fps disables rather than dividing by zero', () => {
+    expect(backdraftFlickerTerms(2, 1, 0).enabled).toBe(false);
+    expect(backdraftFlickerTerms(2, 1, -60).enabled).toBe(false);
+  });
+});
+
+describe('backdraftFlickerTerms — the BEAT against the virtual camera', () => {
+  // The whole point of the feature: the emission rate and the camera's
+  // sampling rate beat, so the per-frame gain oscillates at |f - k*f_cam|.
+  const beatHz = (hz: number, fps = BACKDRAFT_FPS): number =>
+    Math.abs(hz - Math.round(hz / fps) * fps);
+
+  it('50Hz beats at 10Hz against the 60fps camera = a 6-frame gain cycle', () => {
+    expect(beatHz(BACKDRAFT_FLICKER_HZ[2]!)).toBeCloseTo(10, 9);
+    // Walk 12 virtual frames and confirm the mean gain repeats with period 6.
+    const g = (n: number): number =>
+      backdraftFlickerTerms(2, n / BACKDRAFT_FPS).meanGain;
+    for (let n = 0; n < 6; n++) {
+      expect(g(n + 6), `frame ${n}`).toBeCloseTo(g(n), 9);
+    }
+    // ...and is NOT constant within the cycle (it genuinely oscillates).
+    const cycle = [0, 1, 2, 3, 4, 5].map(g);
+    expect(Math.max(...cycle) - Math.min(...cycle)).toBeGreaterThan(0.5);
+  });
+
+  it('24Hz beats at 24Hz = a 5-frame repeat (2.5 frames/cycle — a hard strobe)', () => {
+    expect(beatHz(BACKDRAFT_FLICKER_HZ[1]!)).toBeCloseTo(24, 9);
+    const g = (n: number): number =>
+      backdraftFlickerTerms(1, n / BACKDRAFT_FPS).meanGain;
+    for (let n = 0; n < 5; n++) expect(g(n + 5)).toBeCloseTo(g(n), 9);
+  });
+
+  it('the 60 position is the NTSC 59.94Hz field rate, beating at 0.06Hz', () => {
+    // NOT 60.000: that would genlock to a constant gain and never move. The
+    // real field rate gives the slowly crawling hum bar (~16.7s per cycle).
+    expect(BACKDRAFT_FLICKER_HZ[3]).toBeCloseTo(60000 / 1001, 9);
+    expect(BACKDRAFT_FLICKER_HZ[3]).not.toBe(60);
+    expect(beatHz(BACKDRAFT_FLICKER_HZ[3]!)).toBeCloseTo(0.06, 3);
+
+    // Over a few frames it barely moves; over half a beat cycle it fully swings.
+    const g = (t: number): number => backdraftFlickerTerms(3, t).meanGain;
+    expect(Math.abs(g(0) - g(5 / BACKDRAFT_FPS))).toBeLessThan(0.01);
+    const half = 0.5 / beatHz(BACKDRAFT_FLICKER_HZ[3]!);
+    expect(Math.abs(g(0) - g(half))).toBeGreaterThan(0.5);
+  });
+});
+
+describe('backdraftFlickerTerms — frame-rate independence + determinism', () => {
+  it('QUANTISES to the virtual-camera grid: sub-frame times share one gain', () => {
+    // This is what keeps a 120Hz ProMotion display (two renders per virtual
+    // camera frame) on the SAME 10Hz beat as a 60Hz panel instead of a 50Hz
+    // one. Without it the same knob would look completely different per machine.
+    const base = backdraftFlickerTerms(2, 3 / BACKDRAFT_FPS);
+    for (const eps of [0, 0.001, 0.5, 0.99]) {
+      const t = (3 + eps) / BACKDRAFT_FPS;
+      expect(backdraftFlickerTerms(2, t).phase, `eps=${eps}`).toBeCloseTo(base.phase, 12);
+    }
+    // ...and the NEXT virtual frame is a different phase.
+    expect(backdraftFlickerTerms(2, 4 / BACKDRAFT_FPS).phase).not.toBeCloseTo(base.phase, 6);
+  });
+
+  it('is a pure function of (index, time): identical inputs, identical output', () => {
+    const a = backdraftFlickerTerms(2, 12.345);
+    const b = backdraftFlickerTerms(2, 12.345);
+    expect(a).toEqual(b);
+  });
+
+  it('wraps phase into [0, 2pi) so a long-running clock keeps float32 precision', () => {
+    for (const t of [0, 1, 60, 3600, 86400]) {
+      const f = backdraftFlickerTerms(2, t);
+      expect(f.phase, `t=${t}`).toBeGreaterThanOrEqual(0);
+      expect(f.phase, `t=${t}`).toBeLessThan(Math.PI * 2 + 1e-12);
+    }
+    // The wrap is exact: gains at t and t + one whole beat period agree.
+    const period = 1 / 10; // 50Hz beats at 10Hz
+    expect(backdraftFlickerTerms(2, 600 + period).meanGain).toBeCloseTo(
+      backdraftFlickerTerms(2, 600).meanGain,
+      9,
+    );
+  });
+
+  it('negative / zero time is handled without NaN', () => {
+    for (const t of [-1, -0.001, 0]) {
+      const f = backdraftFlickerTerms(2, t);
+      expect(Number.isFinite(f.gain)).toBe(true);
+      expect(Number.isFinite(f.phase)).toBe(true);
+      expect(Number.isFinite(f.meanGain)).toBe(true);
+    }
+  });
+});
+
+describe('backdraftFlickerTerms — the physics of the two boxcar windows', () => {
+  it('depth carries exactly the exposure sinc; meanGain adds the readout sinc', () => {
+    const fps = BACKDRAFT_FPS;
+    for (let idx = 1; idx < BACKDRAFT_FLICKER_COUNT; idx++) {
+      const hz = BACKDRAFT_FLICKER_HZ[idx]!;
+      const sE = backdraftSinc(hz * (BACKDRAFT_FLICKER_SHUTTER / fps));
+      const sR = backdraftSinc(hz * (BACKDRAFT_FLICKER_READOUT / fps));
+      const f = backdraftFlickerTerms(idx, 0, fps);
+      // depth = A * m * sinc(f*T_e)
+      expect(f.depth, `idx=${idx}`).toBeCloseTo(f.gain * BACKDRAFT_FLICKER_DEPTH * sE, 12);
+      // meanGain = A * (1 + m*sinc(f*T_e)*sinc(f*T_ro)*cos(phase + rowPhase/2))
+      expect(f.meanGain, `idx=${idx}`).toBeCloseTo(
+        f.gain *
+          (1 +
+            BACKDRAFT_FLICKER_DEPTH * sE * sR * Math.cos(f.phase + f.rowPhase / 2)),
+        12,
+      );
+      // The rolling shutter can only REDUCE the whole-frame pulse (|sinc| <= 1):
+      // it trades mean modulation for a spatial band. Both must survive.
+      expect(Math.abs(sR)).toBeLessThanOrEqual(1);
+      expect(Math.abs(BACKDRAFT_FLICKER_DEPTH * sE * sR)).toBeGreaterThan(0.3);
+    }
+  });
+
+  it('rowPhase is a real but sub-cycle band spread (one broad crawling bar)', () => {
+    // bands across the frame = f * T_readout. With f ~ f_cam this is < 1, i.e.
+    // one broad gradient rather than a stack of stripes — which is exactly what
+    // filming a TV looks like.
+    for (let idx = 1; idx < BACKDRAFT_FLICKER_COUNT; idx++) {
+      const bands = BACKDRAFT_FLICKER_HZ[idx]! * (BACKDRAFT_FLICKER_READOUT / BACKDRAFT_FPS);
+      expect(bands, `idx=${idx}`).toBeGreaterThan(0.1);
+      expect(bands, `idx=${idx}`).toBeLessThan(1);
+      expect(backdraftFlickerTerms(idx, 0).rowPhase).toBeCloseTo(2 * Math.PI * bands, 12);
+    }
+  });
+
+  it('the per-row gain never goes NEGATIVE (light cannot be un-emitted)', () => {
+    for (let idx = 1; idx < BACKDRAFT_FLICKER_COUNT; idx++) {
+      const f = backdraftFlickerTerms(idx, 0);
+      expect(f.gain - Math.abs(f.depth), `idx=${idx}`).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('backdraftFlickerTerms — the operating point is preserved', () => {
+  it('the frame-mean gain has GEOMETRIC mean ~1 over a beat cycle', () => {
+    // A multiplicative loop compounds gains, so it is the geometric mean that
+    // decides growth vs decay. An arithmetic-mean-1 gain has geometric mean < 1
+    // (AM-GM) and would silently damp the loop when FLICKER is switched on,
+    // forcing the user to re-hunt their FEEDBACK setting. `A` cancels that.
+    for (const idx of [1, 2] as const) {
+      let logSum = 0;
+      const frames = 600;
+      for (let n = 0; n < frames; n++) {
+        logSum += Math.log(backdraftFlickerTerms(idx, n / BACKDRAFT_FPS).meanGain);
+      }
+      expect(Math.exp(logSum / frames), `idx=${idx}`).toBeCloseTo(1, 2);
+    }
+  });
+
+  it('the gain genuinely CROSSES unity in both directions (build AND fade)', () => {
+    // The single property the whole feature rests on: a constant gain can only
+    // decay or pin, so the model is only useful if the gain spends real time
+    // both above and below 1.
+    for (const idx of [1, 2, 3]) {
+      let above = 0;
+      let below = 0;
+      // 60s of virtual frames covers >=1 full cycle even for the 0.06Hz beat.
+      for (let n = 0; n < 60 * BACKDRAFT_FPS; n += 7) {
+        const g = backdraftFlickerTerms(idx, n / BACKDRAFT_FPS).meanGain;
+        if (g > 1) above++;
+        else below++;
+      }
+      expect(above, `idx=${idx} frames with gain>1`).toBeGreaterThan(0);
+      expect(below, `idx=${idx} frames with gain<1`).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('backdraft FLICKER — the loop actually pulses (0-D CPU mirror)', () => {
+  // The frame-mean recursion the shader realises per pixel:
+  //   I[n+1] = clamp(source + g(t_n) * FEEDBACK * I[n-d], 0, 1)
+  // This is the CPU proof of the acceptance bar; the e2e proves it on the GPU.
+  function runLoop(opts: {
+    flicker: number;
+    feedback: number;
+    source: number;
+    delayFrames: number;
+    steps: number;
+  }): number[] {
+    const out: number[] = [];
+    for (let n = 0; n < opts.steps; n++) {
+      const g = backdraftFlickerTerms(opts.flicker, n / BACKDRAFT_FPS).meanGain;
+      const tap = n - opts.delayFrames >= 0 ? out[n - opts.delayFrames]! : 0;
+      out.push(Math.min(1, Math.max(0, opts.source + g * opts.feedback * tap)));
+    }
+    return out;
+  }
+
+  const BASE = { feedback: 1.0, source: 0.06, delayFrames: 1, steps: 240 };
+
+  it('FLICKER OFF saturates to the ceiling and STAYS (today’s behaviour, pinned)', () => {
+    // Every coefficient is non-negative and the clamp is monotone, so the map
+    // is monotone-positive: with gain >= 1 it can only climb and pin. DELAY
+    // cannot break that. This is the control the feature is measured against.
+    const tail = runLoop({ ...BASE, flicker: 0 }).slice(120);
+    expect(Math.min(...tail)).toBeCloseTo(1, 6);
+    expect(Math.max(...tail)).toBeCloseTo(1, 6);
+  });
+
+  it('FLICKER 50Hz builds AND fades, and never pins for the whole window', () => {
+    const tail = runLoop({ ...BASE, flicker: 2 }).slice(120);
+    const hi = Math.max(...tail);
+    const lo = Math.min(...tail);
+    expect(hi, 'pulses build').toBeGreaterThan(0.9);
+    expect(lo, 'pulses fade back down').toBeLessThan(0.7);
+    expect(hi - lo, 'the excursion is large, not a dither').toBeGreaterThan(0.3);
+    const pinned = tail.filter((v) => v > 0.99).length / tail.length;
+    expect(pinned, 'not pinned at the ceiling for the whole window').toBeLessThan(0.9);
+    expect(pinned, 'but it DOES reach the ceiling — real pulses, not a slow decay').toBeGreaterThan(0);
+  });
+
+  it('every ON position oscillates; 50Hz gives the biggest excursion', () => {
+    const swing = (flicker: number, steps: number): number => {
+      const tail = runLoop({ ...BASE, flicker, steps }).slice(Math.floor(steps / 2));
+      return Math.max(...tail) - Math.min(...tail);
+    };
+    // 24 and 50 beat fast; 59.94 needs a ~16.7s window to complete a cycle.
+    const s24 = swing(1, 240);
+    const s50 = swing(2, 240);
+    const s60 = swing(3, 40 * BACKDRAFT_FPS);
+    for (const [name, s] of [['24', s24], ['50', s50], ['60', s60]] as const) {
+      expect(s, `${name}Hz oscillates`).toBeGreaterThan(0.2);
+    }
+    // 6 virtual frames per beat gives the loop the most room to integrate up
+    // and drain back down — 24Hz's 2.5-frame cycle reverses before it travels.
+    expect(s50).toBeGreaterThan(s24);
+  });
+
+  it('the excursion survives a longer DELAY (flicker composes through the tap)', () => {
+    // g is a function of ABSOLUTE simulation time, so a tap d frames back
+    // composes the gain that really occurred then — the delayed path stays
+    // phase-coherent instead of re-running one arbitrary sequence.
+    for (const delayFrames of [1, 3, 6, 12]) {
+      const tail = runLoop({ ...BASE, flicker: 2, delayFrames, steps: 360 }).slice(180);
+      const swing = Math.max(...tail) - Math.min(...tail);
+      expect(swing, `delay=${delayFrames}`).toBeGreaterThan(0.15);
+    }
+  });
+});
+
+describe('backdraft module def — FLICKER param', () => {
+  it('is a DISCRETE 4-position selector defaulting to OFF', () => {
+    const byId = Object.fromEntries(backdraftDef.params.map((p) => [p.id, p]));
+    expect(byId.flicker).toMatchObject({
+      min: 0,
+      max: BACKDRAFT_FLICKER_COUNT - 1,
+      defaultValue: 0, // OFF — the bit-identical no-op
+      curve: 'discrete',
+    });
+  });
+
+  it('the option list, the Hz table and the count agree', () => {
+    expect(BACKDRAFT_FLICKER_OPTIONS).toEqual(['off', '24', '50', '60']);
+    expect(BACKDRAFT_FLICKER_COUNT).toBe(4);
+    expect(BACKDRAFT_FLICKER_HZ).toHaveLength(BACKDRAFT_FLICKER_COUNT);
+    expect(BACKDRAFT_FLICKER_HZ[0]).toBe(0); // OFF
+    expect(BACKDRAFT_FLICKER_HZ[1]).toBe(24);
+    expect(BACKDRAFT_FLICKER_HZ[2]).toBe(50);
+  });
+
+  it('is documented (backdraft is in STRICT_DOCS)', () => {
+    expect(backdraftDef.docs?.controls?.flicker).toBeTruthy();
+  });
+
+  it('has NO cv/gate port — it is a knob-only control (contract stays minimal)', () => {
+    expect(backdraftDef.inputs.some((p) => p.paramTarget === 'flicker')).toBe(false);
   });
 });
