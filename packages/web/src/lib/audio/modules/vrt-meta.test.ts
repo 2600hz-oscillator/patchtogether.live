@@ -403,7 +403,15 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // darwin baselines captured locally and flake-checked 3× (42/42 clean);
       // a vrt-update.yml `platform=linux` dispatch on this branch drains the
       // 14 pairs and brings this back to 104.
-    ).toBeLessThanOrEqual(118);
+      // 118→128 for P1 BATCH 3 (2026-07-26, deliberate darwin-first — the SAME
+      // lifecycle, entering at its start): 10 curated-face scenes for the five
+      // newly-migrated modules (compact + dock per module) — karplus, filter,
+      // mixer, delay, reverb. This is the SUM of the five module branches'
+      // independent +2s on top of batch 2's landed 118, NOT any one branch's
+      // 104→106. darwin baselines captured locally and flake-checked 3×; a
+      // vrt-update.yml `platform=linux` dispatch on this branch drains the 10
+      // pairs and brings this back to 118.
+    ).toBeLessThanOrEqual(128);
   });
 });
 

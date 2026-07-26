@@ -1003,6 +1003,17 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/face-qbrt-dock',
   'linux/rear-dx7',
   'linux/rear-sixstrum',
+  //
+  // P1 BATCH 3 (2026-07-26, deliberate darwin-first — the batch-1/2 pattern
+  // above, at the point BEFORE the drain): the 10 CURATED FACE scenes for the
+  // five newly-migrated modules (compact lane tile + dock full-view faceplate
+  // per module, workflow-shell-faces.spec.ts) — karplus, filter, mixer, delay
+  // and reverb. darwin baselines captured locally and flake-checked 3×; the
+  // linux pairs below are pending a vrt-update.yml `platform=linux` dispatch
+  // on this integrated batch-3 branch, at which point they DRAIN exactly like
+  // batch 1's did and the vrt-meta linux-deficit ceiling comes back down by 10.
+  'linux/face-karplus-compact',
+  'linux/face-karplus-dock',
   // CLIPPLAYER: darwin baseline (the clip-launcher card — 8×8 launch grid +
   // piano-roll note editor + transport knobs; no animated canvas) captured
   // locally; linux baseline pending a `vrt-update.yml` workflow_dispatch on

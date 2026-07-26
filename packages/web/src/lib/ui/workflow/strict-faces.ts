@@ -25,6 +25,11 @@
 // (order + pages + glyph + `rear`), authored from what each module ACTUALLY
 // is rather than transcribed from its legacy card. The two pitched voices are
 // additionally enrolled in default-pitch-accuracy (unit + e2e).
+//
+// P1 BATCH 3 (2026-07-26): the third wave — the plucked-string voice (karplus)
+// and the four workhorse processors/utilities (filter, mixer, delay, reverb) a
+// rack reaches for on every patch. Same bar: a complete co-located `face`
+// (order + pages + glyph + `rear`).
 
 export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // P1 batch 1 — first 6 module faces
@@ -41,6 +46,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'sixstrum',
   'snaredrum',
   'tomtom',
+  // P1 batch 3 — 5 more faces (1 voice, 4 processors/utility)
+  'karplus',
 ]);
 
 /**
