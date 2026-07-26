@@ -45,6 +45,8 @@
     BACKDRAFT_OFFSET_MIN,
     BACKDRAFT_OFFSET_MAX,
     BACKDRAFT_SHAPES,
+    BACKDRAFT_FLICKER_OPTIONS,
+    BACKDRAFT_FLICKER_HZ,
     backdraftNextShape,
   } from '$lib/video/modules/backdraft';
   import type { VideoEngine } from '$lib/video/engine';
@@ -100,6 +102,32 @@
   }
   function togglePureGeo() {
     setNodeParam(id, 'pureGeo', pureGeoOn ? 0 : 1);
+  }
+
+  // ---- FLICKER (4-position discrete: OFF / 24 / 50 / 60 Hz) ----
+  // A labelled button row rather than a detent Fader, so all four positions
+  // read at a glance (the FrametableCard MODE idiom, reusing this card's
+  // existing .mirror-row/.mirror-btn styling). The shell's separate
+  // unlabelled-detent gap for discrete params is a known batch-4 item and is
+  // deliberately NOT addressed here.
+  const FLICKERS = BACKDRAFT_FLICKER_OPTIONS.map((key, v) => ({
+    v,
+    key,
+    label: key === 'off' ? 'OFF' : key,
+    // Tooltip carries the physics: what beats against the 60fps virtual camera.
+    title:
+      key === 'off'
+        ? 'FLICKER OFF — constant loop gain (feedback saturates to white and stays there). The exact pre-FLICKER behaviour.'
+        : `FLICKER ${key}Hz — the display emits pulses at ${(BACKDRAFT_FLICKER_HZ[v] ?? 0).toFixed(2)}Hz; ` +
+          `beating against the 60fps virtual camera at ` +
+          `${Math.abs((BACKDRAFT_FLICKER_HZ[v] ?? 0) - Math.round((BACKDRAFT_FLICKER_HZ[v] ?? 0) / 60) * 60).toFixed(2)}Hz, ` +
+          `so the loop gain cycles above and below unity and pulses of light build up and fade away.`,
+  }));
+  let flickerIdx = $derived(
+    Math.max(0, Math.min(FLICKERS.length - 1, Math.round(p('flicker')))),
+  );
+  function pickFlicker(v: number) {
+    setNodeParam(id, 'flicker', v);
   }
 
   // ---- DELAY CLOCK override indicator ----
@@ -473,6 +501,20 @@
           >PURE GEO</button>
         </div>
 
+        <div class="mirror-row" data-testid="backdraft-flicker-row">
+          <span class="row-label">FLICKER</span>
+          {#each FLICKERS as f (f.v)}
+            <button
+              type="button"
+              class="mirror-btn nodrag seg"
+              class:on={flickerIdx === f.v}
+              data-testid={`backdraft-flicker-${f.key}`}
+              title={f.title}
+              onclick={() => pickFlicker(f.v)}
+            >{f.label}</button>
+          {/each}
+        </div>
+
         <div class="fader-grid" data-testid="backdraft-controls">
           <Fader value={p('mix')}      min={0}  max={1}                     defaultValue={pdef('mix')}      label="Mix"  curve="linear" onchange={setParam('mix')}      moduleId={id} paramId="mix" />
           <Fader value={p('feedback')} min={0}  max={BACKDRAFT_MAX_FEEDBACK} defaultValue={pdef('feedback')} label="FB"   curve="linear" onchange={setParam('feedback')} moduleId={id} paramId="feedback" />
@@ -672,6 +714,16 @@
     border-color: var(--accent, #6884d7);
   }
   .mirror-btn:hover { border-color: var(--accent-dim); }
+  /* FLICKER row: a small leading label + 4 equal-width position buttons. */
+  .row-label {
+    flex: 0 0 auto;
+    align-self: center;
+    color: var(--text-dim);
+    font-size: 0.55rem;
+    letter-spacing: 0.09em;
+    font-family: ui-monospace, monospace;
+  }
+  .mirror-btn.seg { padding: 4px 2px; font-size: 0.58rem; letter-spacing: 0.04em; }
   .delay-cell {
     position: relative;
     display: flex;

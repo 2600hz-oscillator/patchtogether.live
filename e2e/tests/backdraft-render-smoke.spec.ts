@@ -120,6 +120,96 @@ async function setNodeParams(page: Page, nodeId: string, params: Record<string, 
   }, { nodeId, params });
 }
 
+/** Drive the engine `steps` frames SYNCHRONOUSLY while ADVANCING the pinned
+ *  engine clock by exactly one virtual camera frame (1/fps) per step, reading a
+ *  full-height centre COLUMN of `nodeId`'s output each step.
+ *
+ *  Why advance the frozen clock instead of using the wall clock: FLICKER is a
+ *  time-domain model, so a fixed `__videoEngineFreezeTime` would freeze it
+ *  solid, while the real clock would make the sampled beat depend on how fast
+ *  the renderer happens to run — the exact SwiftShader-vs-real-GPU divergence
+ *  the DRS exists to kill. Stepping the pinned clock in exact 1/fps increments
+ *  gives a bit-reproducible gain sequence at ANY render speed. The `+0.5`
+ *  offset lands each sample mid-frame so float rounding can never push
+ *  floor(t*fps) across a virtual-frame boundary and stutter the beat.
+ *
+ *  Returns, per step, the mean luma (0..255) of the whole column plus its TOP
+ *  and BOTTOM thirds — the column mean tracks the loop's build/fade, and the
+ *  top-vs-bottom split exposes the rolling-shutter band. */
+async function stepLumaSeries(
+  page: Page,
+  opts: { nodeId: string; steps: number; startTimeSec: number; fps: number },
+): Promise<{ framesDelta: number; glErrors: number[]; mean: number[]; top: number[]; bottom: number[] }> {
+  return page.evaluate(({ nodeId, steps, startTimeSec, fps }) => {
+    const w = globalThis as unknown as {
+      __videoEngineFreezeTime?: number;
+      __engine: () => {
+        getDomain: (d: string) => {
+          gl: WebGL2RenderingContext;
+          step: () => void;
+          currentFrameCount: () => number;
+          outputTexture: (id: string, port?: string) => WebGLTexture | null;
+          res: { width: number; height: number };
+        };
+      };
+    };
+    const vid = w.__engine().getDomain('video');
+    const gl = vid.gl;
+    while (gl.getError() !== gl.NO_ERROR) { /* drain pre-existing */ }
+
+    const { width: W, height: H } = vid.res;
+    const bw = Math.max(4, Math.floor(W * 0.2));
+    const x0 = Math.floor((W - bw) / 2);
+    const px = new Uint8Array(bw * H * 4);
+    const fb = gl.createFramebuffer()!;
+
+    const before = vid.currentFrameCount();
+    const mean: number[] = [];
+    const top: number[] = [];
+    const bottom: number[] = [];
+
+    for (let n = 0; n < steps; n++) {
+      // Advance the PINNED simulation clock by exactly one virtual camera frame.
+      w.__videoEngineFreezeTime = startTimeSec + (n + 0.5) / fps;
+      vid.step();
+
+      const tex = vid.outputTexture(nodeId) as WebGLTexture | null;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+      px.fill(0);
+      if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE) {
+        gl.readPixels(x0, 0, bw, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      }
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+      // readPixels is bottom-left origin; "top"/"bottom" here are just the two
+      // opposite thirds of the column — which one is visually up is irrelevant,
+      // we only ever compare them to each other.
+      let sAll = 0, nAll = 0, sTop = 0, nTop = 0, sBot = 0, nBot = 0;
+      const third = Math.max(1, Math.floor(H / 3));
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < bw; x += 4) {
+          const i = (y * bw + x) * 4;
+          const v = (px[i]! + px[i + 1]! + px[i + 2]!) / 3;
+          sAll += v; nAll++;
+          if (y < third) { sBot += v; nBot++; }
+          else if (y >= H - third) { sTop += v; nTop++; }
+        }
+      }
+      mean.push(nAll ? sAll / nAll : 0);
+      top.push(nTop ? sTop / nTop : 0);
+      bottom.push(nBot ? sBot / nBot : 0);
+    }
+
+    gl.deleteFramebuffer(fb);
+    const framesDelta = vid.currentFrameCount() - before;
+    const glErrors: number[] = [];
+    let e: number;
+    while ((e = gl.getError()) !== gl.NO_ERROR) glErrors.push(e);
+    return { framesDelta, glErrors, mean, top, bottom };
+  }, opts);
+}
+
 const FIXED_STEPS = 6;
 // Enough unfrozen frames to fill the feedback ring + let the tunnel transform
 // compound into a deep, structured frame before we pin it. (The ring is
@@ -253,6 +343,151 @@ test.describe('BACKDRAFT — deterministic render smoke', () => {
     // OFF corners fill from the zoom-in spill → strictly brighter than the ON
     // corners (which are hard-masked to black). A small margin keeps it robust.
     expect(off.corners, `OFF corners should spill brighter than ON corners (OFF ${off.corners.toFixed(1)} vs ON ${on.corners.toFixed(1)})`).toBeGreaterThan(on.corners + 2);
+
+    expect(errors, 'no console / page errors during render').toEqual([]);
+  });
+
+  // ── FLICKER acceptance ────────────────────────────────────────────────
+  // The owner's bar, verbatim: "it is possible to find settings where pulses of
+  // light build up and fade away with zero or extremely subtle variations in
+  // camera position, orientation, etc."
+  //
+  // So: IDENTITY spatial transform (zoom 1, rotate 0, offset 0 — literally zero
+  // camera movement), a flat uniform source, high feedback.
+  //
+  //   CONTROL  FLICKER OFF -> the loop is a monotone positive map, so it can
+  //            only climb to the clip ceiling and STAY there. That is today's
+  //            behaviour and this test pins it as intentional.
+  //   FEATURE  FLICKER 50Hz -> the emission beats against the 60fps virtual
+  //            camera at 10Hz (6 frames/cycle), the per-frame gain crosses
+  //            unity in both directions, and light builds AND fades.
+  //
+  // Everything is asserted RELATIVE to the run's own measured levels (ratios,
+  // never absolute pixel values), so SwiftShader and a real GPU both clear it.
+  test('FLICKER: 50Hz makes light build up and fade away with a static camera; OFF saturates and stays', async ({ page }) => {
+    // 2 phases x (settle + measure) synchronous steps, each measure step doing a
+    // sub-rect readPixels. Budget generously for the CI software renderer.
+    test.setTimeout(180_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    const T0 = 2.0;
+    const FPS = 60;          // the virtual camera rate (BACKDRAFT_FPS)
+    const SETTLE = 60;       // enough for the OFF loop to climb to the ceiling
+    const MEASURE = 72;      // 12 full beat cycles at 50Hz (6 frames each)
+
+    await installRenderSmokeHooks(page, T0);
+    await page.goto('/rack');
+    await page.waitForLoadState('networkidle');
+
+    // SOURCE: a SHAPES square zoomed until it overflows the frame = a flat white
+    // field with no time dependence (so advancing the pinned clock animates
+    // nothing but the flicker itself). BACKDRAFT's MIX then dims it: in_b is
+    // unpatched (black), so mix=0.94 gives source = 0.06*white — a uniform, dim
+    // re-injection that lets the loop integrate up instead of starting clipped.
+    // Uniform field + identity transform => the frame mean IS the loop level,
+    // which is the cleanest possible signal for a build/fade assertion.
+    await spawnPatch(
+      page,
+      [
+        { id: 'src', type: 'shapes',    position: { x: 40,  y: 40 }, domain: 'video',
+          params: { shape: 1 /* square */, tile: 0, zoom: 10 } },
+        { id: 'm',   type: 'backdraft', position: { x: 460, y: 80 }, domain: 'video',
+          params: {
+            freeze: 0,
+            mix: 0.94,          // source = 0.06 * white
+            feedback: 1.0,      // at/above unity -> OFF must run away and pin
+            delay: 16,          // ~1 frame
+            // ZERO camera movement — the owner's constraint, literally.
+            zoom: 1, rotate: 0, offsetX: 0, offsetY: 0,
+            flicker: 0,         // CONTROL first
+          } },
+        { id: 'out', type: 'videoOut',  position: { x: 980, y: 80 }, domain: 'video' },
+      ],
+      [
+        { id: 'e_a', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'm',   portId: 'in_a' }, sourceType: 'mono-video', targetType: 'video' },
+        { id: 'e_o', from: { nodeId: 'm',   portId: 'out' }, to: { nodeId: 'out', portId: 'in'   }, sourceType: 'video',      targetType: 'video' },
+      ],
+    );
+
+    // ── CONTROL: FLICKER OFF ────────────────────────────────────────────
+    await stepLumaSeries(page, { nodeId: 'm', steps: SETTLE, startTimeSec: T0, fps: FPS });
+    const off = await stepLumaSeries(page, {
+      nodeId: 'm', steps: MEASURE, startTimeSec: T0 + SETTLE / FPS, fps: FPS,
+    });
+    expect(off.framesDelta, 'OFF measure burst advanced the exact frame count').toBe(MEASURE);
+    expect(off.glErrors, `GL errors (OFF): [${off.glErrors.join(',')}]`).toEqual([]);
+
+    const offHi = Math.max(...off.mean);
+    const offLo = Math.min(...off.mean);
+    // (a) it really did saturate — the loop ran away, it is not merely quiet.
+    expect(offHi, `OFF must saturate (peak ${offHi.toFixed(1)}/255)`).toBeGreaterThan(200);
+    // (b) and it STAYS there: no build, no fade, a flat line for the whole window.
+    expect(
+      (offHi - offLo) / offHi,
+      `OFF must stay pinned — no pulsing (hi ${offHi.toFixed(1)} lo ${offLo.toFixed(1)})`,
+    ).toBeLessThan(0.02);
+
+    // ── FEATURE: FLICKER 50Hz, everything else identical ────────────────
+    await setNodeParams(page, 'm', { flicker: 2 });
+    const RESETTLE = 30;
+    await stepLumaSeries(page, {
+      nodeId: 'm', steps: RESETTLE, startTimeSec: T0 + (SETTLE + MEASURE) / FPS, fps: FPS,
+    });
+    const on = await stepLumaSeries(page, {
+      nodeId: 'm', steps: MEASURE, startTimeSec: T0 + (SETTLE + MEASURE + RESETTLE) / FPS, fps: FPS,
+    });
+    expect(on.framesDelta, 'ON measure burst advanced the exact frame count').toBe(MEASURE);
+    expect(on.glErrors, `GL errors (ON): [${on.glErrors.join(',')}]`).toEqual([]);
+
+    const onHi = Math.max(...on.mean);
+    const onLo = Math.min(...on.mean);
+    if (process.env.FLICKER_DEBUG === '1') {
+      console.log('OFF mean:', off.mean.slice(0, 24).map((v) => v.toFixed(1)).join(' '));
+      console.log('ON  mean:', on.mean.slice(0, 24).map((v) => v.toFixed(1)).join(' '));
+      console.log('ON  split:', on.top.slice(0, 24).map((v, i) => (v - on.bottom[i]!).toFixed(1)).join(' '));
+      console.log('OFF split:', off.top.slice(0, 24).map((v, i) => (v - off.bottom[i]!).toFixed(1)).join(' '));
+    }
+
+    // (a) PULSES BUILD — the level reaches a real peak.
+    expect(onHi, `ON must still reach bright peaks (peak ${onHi.toFixed(1)}/255)`).toBeGreaterThan(120);
+    // (b) PULSES FADE — and it comes back DOWN, well below its own peak.
+    expect(
+      onLo / onHi,
+      `ON must fade back down (lo ${onLo.toFixed(1)} vs hi ${onHi.toFixed(1)})`,
+    ).toBeLessThan(0.75);
+    // (c) NOT PINNED for the whole window — the excursion is a real pulse train,
+    // not a clipped line with a wobble.
+    const nearCeiling = on.mean.filter((v) => v >= offHi * 0.98).length / on.mean.length;
+    expect(
+      nearCeiling,
+      `ON must not sit at the ceiling for the whole window (${(nearCeiling * 100).toFixed(0)}% of frames did)`,
+    ).toBeLessThan(0.9);
+
+    // (d) The DIFFERENCE from the control is unambiguous: the ON swing is at
+    // least an order of magnitude larger than the OFF swing.
+    const onSwing = (onHi - onLo) / onHi;
+    const offSwing = (offHi - offLo) / offHi;
+    expect(
+      onSwing,
+      `ON swing ${(onSwing * 100).toFixed(1)}% must dwarf OFF swing ${(offSwing * 100).toFixed(1)}%`,
+    ).toBeGreaterThan(Math.max(0.2, offSwing * 10));
+
+    // (e) ROLLING SHUTTER — with a perfectly uniform source and no camera
+    // movement, OFF leaves the frame spatially flat (top third == bottom third
+    // forever). ON spreads the flicker phase down the frame, so the top/bottom
+    // split becomes a band that MOVES. Compare the ranges of that split.
+    const splitRange = (s: { top: number[]; bottom: number[] }): number => {
+      const d = s.top.map((v, i) => v - s.bottom[i]!);
+      return Math.max(...d) - Math.min(...d);
+    };
+    const onSplit = splitRange(on);
+    const offSplit = splitRange(off);
+    expect(
+      onSplit,
+      `ON must show a MOVING rolling-shutter band (range ${onSplit.toFixed(2)}) vs a flat OFF frame (range ${offSplit.toFixed(2)})`,
+    ).toBeGreaterThan(offSplit + 2);
 
     expect(errors, 'no console / page errors during render').toEqual([]);
   });
