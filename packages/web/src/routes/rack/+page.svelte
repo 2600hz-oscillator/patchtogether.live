@@ -1,11 +1,15 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { page } from '$app/state';
   import Canvas from '$lib/ui/Canvas.svelte';
   import { normalizeRackMode } from '$lib/graph/rack-mode';
   import { ydoc, bindRackspace, unbindRackspace } from '$lib/graph/store';
   import { attachLocalReplica } from '$lib/multiplayer/local-replica';
-  import { getOrCreateLocalScratchId, recordLastScratchMode } from '$lib/storage/local-scratch';
+  import {
+    getOrCreateLocalScratchId,
+    recordLastScratchMode,
+    resetLocalScratchId,
+  } from '$lib/storage/local-scratch';
 
   // `homeAuth` is derived SERVER-SIDE in +layout.server.ts (the scratch
   // canvas at `/rack` doesn't mount the client <ClerkProvider> — that would
@@ -29,6 +33,20 @@
   // seam the non-collab e2e lane uses to exercise the shell. Anything except
   // exactly 'workflow' is the dawless scratch canvas, unchanged.
   let mode = $derived(normalizeRackMode(page.url.searchParams.get('mode')));
+
+  // FRESH-SANDBOX ENTRY (?new=1) — the landing "new … rack" tiles link here with
+  // `?new=1` because they must NOT resume the last session ("Return to last rack"
+  // is the resume affordance). Mint a NEW per-device scratch id for this mode UP
+  // FRONT — synchronously, before `scratchId` below is derived — so the canvas
+  // binds an EMPTY doc instead of rehydrating the previous one from IndexedDB
+  // (the same reset the in-app File → New rack performs via resetLocalScratchId).
+  // Client-only + once per mount (a plain init statement, not reactive). The flag
+  // is then stripped from the address bar in onMount below so a later REFRESH
+  // reopens THIS fresh rack — getOrCreateLocalScratchId reads the now persisted
+  // fresh id — rather than resetting to yet another empty doc.
+  const freshScratchRequested =
+    typeof window !== 'undefined' && page.url.searchParams.get('new') === '1';
+  if (freshScratchRequested) resetLocalScratchId(mode);
 
   // SCRATCH PERSISTENCE — the scratch canvas has no rackspace id and no relay,
   // so it never attached a durable sink and a refresh threw the whole patch
@@ -105,6 +123,27 @@
       cancelled = true;
       void replica.destroy();
     };
+  });
+
+  onMount(() => {
+    if (!freshScratchRequested) return;
+    // The fresh id is already minted (synchronous init above). Now drop `?new=1`
+    // from the ADDRESS BAR — keeping `mode=` intact — so a REFRESH rehydrates
+    // THIS rack (getOrCreateLocalScratchId reads the persisted fresh id) instead
+    // of minting yet another empty doc on every reload. Native history.replaceState
+    // (NOT SvelteKit's shallow replaceState, which throws depending on router
+    // state — it did in workflow mode) with the existing history.state preserved
+    // so back/forward tracking survives. We're only tidying the URL, not
+    // navigating: page.url stays as-is, but nothing reactive here reads `new`
+    // (mode is unchanged, so scratchId is stable and Canvas does not remount).
+    try {
+      const url = new URL(window.location.href);
+      if (!url.searchParams.has('new')) return;
+      url.searchParams.delete('new');
+      history.replaceState(history.state, '', url.pathname + url.search);
+    } catch {
+      /* history unavailable → harmless: worst case a refresh re-mints an empty rack. */
+    }
   });
 
   onDestroy(() => {

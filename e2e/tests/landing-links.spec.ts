@@ -24,8 +24,11 @@ test.describe('landing links', () => {
     // WORKFLOW MODE: the unauthenticated front door offers BOTH shells
     // (owner directive 2026-07-11 — the dashboard-only card left anonymous
     // users with no path into workflow mode).
-    await expect(page.getByTestId('tile-new-rack')).toHaveAttribute('href', '/rack');
-    await expect(page.getByTestId('tile-new-workflow-rack')).toHaveAttribute('href', '/rack?mode=workflow');
+    // The "new … rack" tiles carry ?new=1 — a FRESH sandbox, never a resume of
+    // the last session (that is "Return to last rack"'s job). /rack mints a new
+    // scratch id on that flag, then strips it from the URL (asserted below).
+    await expect(page.getByTestId('tile-new-rack')).toHaveAttribute('href', '/rack?new=1');
+    await expect(page.getByTestId('tile-new-workflow-rack')).toHaveAttribute('href', '/rack?mode=workflow&new=1');
     await expect(page.getByTestId('tile-rackspaces')).toHaveAttribute('href', '/dashboard');
     await expect(page.getByTestId('tile-modules')).toHaveAttribute('href', '/docs/modules');
     await expect(page.getByTestId('tile-art')).toHaveAttribute('href', `${GH_PAGES}/art/`);

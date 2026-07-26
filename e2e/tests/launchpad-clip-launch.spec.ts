@@ -540,3 +540,283 @@ test('@launchpad single-unit GRID scene-scroll: UP/DOWN slide the window; a shif
   await ccTapSingle(page, SCENE_CCS[0]);
   await expect.poll(() => lanePlayingSlot(page, 0), { timeout: 5000 }).toBe(1);
 });
+
+// ===========================================================================
+// SINGLE-UNIT two-handed ARM ROW — the real cross-view-combo proof the owner
+// needs. ONE device: arm-NEW → tap empty → edit (place a note) → arm-COPY → tap
+// the new clip → arm-PASTE → tap a second slot → LAUNCH the pasted clip → it
+// PLAYS (audible RMS). All on the clip view's top-row arm strip (CCs 91..97),
+// never touching the pair's two-device cross-hold. Same decode/dispatch path as
+// hardware (installSimulatedLaunchpadSingle + the CC-98 view flip).
+// ===========================================================================
+const CC_NEW = 91; // CC_UP   — arm NEW
+const CC_COPY = 92; // CC_DOWN — arm COPY
+const CC_PASTE = 93; // CC_LEFT — arm PASTE
+
+/** Read the number of steps (notes) in a clip slot of the single clipplayer. */
+async function clipStepCount(page: import('@playwright/test').Page, slotIdx: number) {
+  return page.evaluate((idx) => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { type?: string; data?: { clips?: Record<string, { steps?: unknown[] }> } }> };
+    };
+    const cp = Object.values(w.__patch.nodes).find((n) => n.type === 'clipplayer');
+    const c = cp?.data?.clips?.[String(idx)];
+    return Array.isArray(c?.steps) ? c!.steps!.length : -1; // -1 = no clip at all
+  }, slotIdx);
+}
+
+test('@launchpad SINGLE: arm NEW→edit→COPY→PASTE on one device, the pasted clip launches → audible RMS', async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(m.text());
+  });
+
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+
+  await spawnPatch(
+    page,
+    [
+      { id: 's-cp', type: 'clipplayer', position: { x: 60, y: 60 }, domain: 'audio',
+        params: { quantize: 0, stepDiv: 2, gateLength: 0.9, octave: 0 } },
+      { id: 's-vco', type: 'analogVco', position: { x: 360, y: 60 }, domain: 'audio' },
+      { id: 's-vca', type: 'vca', position: { x: 640, y: 60 }, domain: 'audio',
+        params: { base: 0, cvAmount: 1 } },
+      { id: 's-scp', type: 'scope', position: { x: 920, y: 60 }, domain: 'audio',
+        params: { timeMs: 200 } },
+    ],
+    [
+      { id: 'g1', from: { nodeId: 's-cp', portId: 'pitch1' }, to: { nodeId: 's-vco', portId: 'pitch' },
+        sourceType: 'polyPitchGate', targetType: 'pitch' },
+      { id: 'g2', from: { nodeId: 's-vco', portId: 'sine' }, to: { nodeId: 's-vca', portId: 'audio' },
+        sourceType: 'audio', targetType: 'audio' },
+      { id: 'g3', from: { nodeId: 's-cp', portId: 'gate1' }, to: { nodeId: 's-vca', portId: 'cv' },
+        sourceType: 'gate', targetType: 'cv' },
+      { id: 'g4', from: { nodeId: 's-vca', portId: 'audio' }, to: { nodeId: 's-scp', portId: 'ch1' },
+        sourceType: 'audio', targetType: 'audio' },
+    ],
+  );
+
+  await expect(page.locator('.svelte-flow__node-clipplayer')).toHaveCount(1);
+
+  // Install the SINGLE simulated Launchpad (clip view) + bind it to s-cp.
+  const installed = await page.evaluate(async () => {
+    const w = globalThis as unknown as { __launchpadTestInstallSingle?: (id: string) => Promise<boolean> };
+    if (!w.__launchpadTestInstallSingle) return false;
+    return await w.__launchpadTestInstallSingle('s-cp');
+  });
+  expect(installed, 'single simulated Launchpad install hook present').toBe(true);
+
+  // Drive the single-device sim by command name (avoids closure-capture issues in
+  // page.evaluate). cmd ∈ {cc,press,release,viewFlip}; a/b = args.
+  const drive = (cmd: 'cc' | 'press' | 'release' | 'viewFlip', a = 0, b = 0) =>
+    page.evaluate(({ cmd, a, b }) => {
+      const sim = (globalThis as unknown as { __launchpadSingleSim?: Record<string, (...n: number[]) => void> })
+        .__launchpadSingleSim;
+      if (!sim) return;
+      if (cmd === 'viewFlip') sim.viewFlip();
+      else sim[cmd](a, b);
+    }, { cmd, a, b });
+  const simState = () =>
+    page.evaluate(() =>
+      (globalThis as unknown as {
+        __launchpadSingleSim?: { state: () => { activeView: string; mode: string; armedAction: string | null } };
+      }).__launchpadSingleSim!.state(),
+    );
+
+  // (1) Clip view: arm NEW (CC 91) → tap the TOP-LEFT pad (slot 0, lane 0 = y=7).
+  // The arm path writes a default clip there + flips to CONTROL (the editor).
+  await drive('cc', CC_NEW, 127);
+  await expect.poll(() => simState().then((s) => s.armedAction)).toBe('new');
+  await drive('press', 0, 7);
+  await expect.poll(() => simState().then((s) => s.mode)).toBe('edit');
+  await expect.poll(() => simState().then((s) => s.activeView)).toBe('control');
+  // a NEW empty clip exists at index 0.
+  await expect.poll(() => clipStepCount(page, 0)).toBe(0);
+
+  // (2) In the editor (control view) tap a grid pad to PLACE a note. Press +
+  // release the same pad toggles a note on. Bottom-left grid pad = step 0, the
+  // lowest shown pitch — reliably in-window for a fresh default clip.
+  await drive('press', 0, 0);
+  await drive('release', 0, 0);
+  await expect.poll(() => clipStepCount(page, 0), { timeout: 5000 }).toBeGreaterThan(0);
+
+  // (3) Back to CLIP view (CC 98). Arm COPY (CC 92) → tap the new clip (0,7).
+  await drive('viewFlip');
+  await expect.poll(() => simState().then((s) => s.activeView)).toBe('clip');
+  await drive('cc', CC_COPY, 127);
+  await expect.poll(() => simState().then((s) => s.armedAction)).toBe('copy');
+  await drive('press', 0, 7);
+
+  // (4) Arm PASTE (CC 93) → tap a SECOND slot (slot 1, lane 0 = x=1, y=7).
+  await drive('cc', CC_PASTE, 127);
+  await expect.poll(() => simState().then((s) => s.armedAction)).toBe('paste');
+  await drive('press', 1, 7);
+  // the pasted clip (index 1) now carries the note.
+  await expect.poll(() => clipStepCount(page, 1), { timeout: 5000 }).toBeGreaterThan(0);
+
+  // (5) Silent before launching the pasted clip; transport runs.
+  await setTransport(page, 1);
+  const before = await readScopePeakOverWindow(page, 's-scp', 500);
+  expect(before.rms, 'silent before the pasted clip launches').toBeLessThan(0.03);
+
+  // (6) LAUNCH the pasted clip (slot 1, lane 0 = x=1, y=7) from the matrix.
+  await drive('press', 1, 7);
+  await expect
+    .poll(() => page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { type?: string; data?: { playing?: unknown[] } }> };
+      };
+      const cp = Object.values(w.__patch.nodes).find((n) => n.type === 'clipplayer');
+      return cp?.data?.playing?.[0] ?? null;
+    }), { timeout: 5000 })
+    .toBe(1);
+
+  // (7) The pasted clip RUNS → AUDIBLE structured RMS (the cross-view-combo proof).
+  const after = await readScopePeakOverWindow(page, 's-scp', 1500);
+  expect(after.polls, 'SCOPE polled').toBeGreaterThan(0);
+  expect(after.rms, 'audible RMS after launching the pasted clip').toBeGreaterThan(0.03);
+  expect(after.rms, 'the pasted-clip launch raised the output').toBeGreaterThan(before.rms + 0.02);
+
+  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
+});
+
+// ===========================================================================
+// SINGLE-UNIT two-handed ARM ROW — the cross-view-combo proof the owner needs.
+// ONE device, clip view top-row arm strip (CCs 91..97): arm-NEW → tap empty →
+// edit (place a note) → arm-COPY → tap the new clip → arm-PASTE → tap a second
+// slot → LAUNCH the pasted clip → it PLAYS (audible RMS). Never touches the
+// pair's two-device cross-hold; same decode/dispatch path as hardware.
+// ===========================================================================
+const CC_ARM_NEW = 91; // CC_UP   — arm NEW
+const CC_ARM_COPY = 92; // CC_DOWN — arm COPY
+const CC_ARM_PASTE = 93; // CC_LEFT — arm PASTE
+
+/** Steps (notes) in a clip slot of the single clipplayer (-1 = no clip). */
+async function clipStepCount(page: import('@playwright/test').Page, slotIdx: number) {
+  return page.evaluate((idx) => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { type?: string; data?: { clips?: Record<string, { steps?: unknown[] }> } }> };
+    };
+    const cp = Object.values(w.__patch.nodes).find((n) => n.type === 'clipplayer');
+    const c = cp?.data?.clips?.[String(idx)];
+    return Array.isArray(c?.steps) ? c!.steps!.length : -1;
+  }, slotIdx);
+}
+
+test('@launchpad single-unit ARM ROW: NEW→edit→COPY→PASTE on one device, the pasted clip launches → audible RMS', async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(m.text());
+  });
+
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+
+  await spawnPatch(
+    page,
+    [
+      { id: 'r-cp', type: 'clipplayer', position: { x: 60, y: 60 }, domain: 'audio',
+        params: { quantize: 0, stepDiv: 2, gateLength: 0.9, octave: 0 } },
+      { id: 'r-vco', type: 'analogVco', position: { x: 360, y: 60 }, domain: 'audio' },
+      { id: 'r-vca', type: 'vca', position: { x: 640, y: 60 }, domain: 'audio',
+        params: { base: 0, cvAmount: 1 } },
+      { id: 'r-scp', type: 'scope', position: { x: 920, y: 60 }, domain: 'audio',
+        params: { timeMs: 200 } },
+    ],
+    [
+      { id: 'h1', from: { nodeId: 'r-cp', portId: 'pitch1' }, to: { nodeId: 'r-vco', portId: 'pitch' },
+        sourceType: 'polyPitchGate', targetType: 'pitch' },
+      { id: 'h2', from: { nodeId: 'r-vco', portId: 'sine' }, to: { nodeId: 'r-vca', portId: 'audio' },
+        sourceType: 'audio', targetType: 'audio' },
+      { id: 'h3', from: { nodeId: 'r-cp', portId: 'gate1' }, to: { nodeId: 'r-vca', portId: 'cv' },
+        sourceType: 'gate', targetType: 'cv' },
+      { id: 'h4', from: { nodeId: 'r-vca', portId: 'audio' }, to: { nodeId: 'r-scp', portId: 'ch1' },
+        sourceType: 'audio', targetType: 'audio' },
+    ],
+  );
+
+  await expect(page.locator('.svelte-flow__node-clipplayer')).toHaveCount(1);
+
+  const installed = await page.evaluate(async () => {
+    const w = globalThis as unknown as { __launchpadTestInstallSingle?: (id: string) => Promise<boolean> };
+    if (!w.__launchpadTestInstallSingle) return false;
+    return await w.__launchpadTestInstallSingle('r-cp');
+  });
+  expect(installed, 'single simulated Launchpad install hook present').toBe(true);
+
+  // Drive the single-device sim by command name (no closure capture in evaluate).
+  const drive = (cmd: 'cc' | 'press' | 'release' | 'viewFlip', a = 0, b = 0) =>
+    page.evaluate(({ cmd, a, b }) => {
+      const sim = (globalThis as unknown as { __launchpadSingleSim?: Record<string, (...n: number[]) => void> })
+        .__launchpadSingleSim;
+      if (!sim) return;
+      if (cmd === 'viewFlip') sim.viewFlip();
+      else sim[cmd](a, b);
+    }, { cmd, a, b });
+  const simState = () =>
+    page.evaluate(() =>
+      (globalThis as unknown as {
+        __launchpadSingleSim?: { state: () => { activeView: string; mode: string; armedAction: string | null } };
+      }).__launchpadSingleSim!.state(),
+    );
+
+  // (1) Clip view: arm NEW (CC 91) → tap the TOP-LEFT pad (slot 0, lane 0 = y=7).
+  await drive('cc', CC_ARM_NEW, 127);
+  await expect.poll(() => simState().then((s) => s.armedAction)).toBe('new');
+  await drive('press', 0, 7);
+  await expect.poll(() => simState().then((s) => s.mode)).toBe('edit');
+  await expect.poll(() => simState().then((s) => s.activeView)).toBe('control');
+  await expect.poll(() => clipStepCount(page, 0)).toBe(0); // a NEW empty clip
+
+  // (2) Editor (control view): tap a grid pad (step 0, lowest pitch) to add a note.
+  await drive('press', 0, 0);
+  await drive('release', 0, 0);
+  await expect.poll(() => clipStepCount(page, 0), { timeout: 5000 }).toBeGreaterThan(0);
+
+  // (3) Back to CLIP view; arm COPY (CC 92) → tap the new clip.
+  await drive('viewFlip');
+  await expect.poll(() => simState().then((s) => s.activeView)).toBe('clip');
+  await drive('cc', CC_ARM_COPY, 127);
+  await expect.poll(() => simState().then((s) => s.armedAction)).toBe('copy');
+  await drive('press', 0, 7);
+
+  // (4) Arm PASTE (CC 93) → tap a SECOND slot (slot 1, lane 0 = x=1, y=7).
+  await drive('cc', CC_ARM_PASTE, 127);
+  await expect.poll(() => simState().then((s) => s.armedAction)).toBe('paste');
+  await drive('press', 1, 7);
+  await expect.poll(() => clipStepCount(page, 1), { timeout: 5000 }).toBeGreaterThan(0);
+
+  // (5) Silent before launching the pasted clip; transport runs.
+  await setTransport(page, 1);
+  const before = await readScopePeakOverWindow(page, 'r-scp', 500);
+  expect(before.rms, 'silent before the pasted clip launches').toBeLessThan(0.03);
+
+  // (6) LAUNCH the pasted clip (slot 1, lane 0) from the matrix.
+  await drive('press', 1, 7);
+  await expect
+    .poll(() => page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { type?: string; data?: { playing?: unknown[] } }> };
+      };
+      const cp = Object.values(w.__patch.nodes).find((n) => n.type === 'clipplayer');
+      return cp?.data?.playing?.[0] ?? null;
+    }), { timeout: 5000 })
+    .toBe(1);
+
+  // (7) The pasted clip RUNS → AUDIBLE structured RMS.
+  const after = await readScopePeakOverWindow(page, 'r-scp', 1500);
+  expect(after.polls, 'SCOPE polled').toBeGreaterThan(0);
+  expect(after.rms, 'audible RMS after launching the pasted clip').toBeGreaterThan(0.03);
+  expect(after.rms, 'the pasted-clip launch raised the output').toBeGreaterThan(before.rms + 0.02);
+
+  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
+});
+
+// ARM-ROW single-unit cross-view-combo proof appended below.

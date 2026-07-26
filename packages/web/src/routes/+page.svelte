@@ -47,17 +47,23 @@
     external?: boolean;
   }
 
+  // The two "new … rack" tiles carry `?new=1`: they must open a FRESH sandbox,
+  // never resume the last session (that is what "Return to last rack" below is
+  // for). `/rack` reads the flag on mount and mints a new per-device scratch id
+  // so the canvas binds an EMPTY doc — the same reset the in-app File → New rack
+  // performs. Without it, `/rack` rehydrated the stable per-mode scratch id and
+  // "new … rack" reopened your last patch, indistinguishable from resuming.
   const tiles: Tile[] = [
     {
       id: 'new-rack',
       label: 'new dawless rack',
-      href: '/rack',
+      href: '/rack?new=1',
       blurb: 'open a fresh scratch canvas — patch modules, make sound.',
     },
     {
       id: 'new-workflow-rack',
       label: 'new workflow rack',
-      href: '/rack?mode=workflow',
+      href: '/rack?mode=workflow&new=1',
       blurb: 'the toolbar-driven shell — media loader, dock rails, always-on mixer/electra/clips.',
     },
     {

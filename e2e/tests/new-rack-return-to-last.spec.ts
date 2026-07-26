@@ -167,6 +167,60 @@ test.describe('File → New rack (scratch / logged-out)', () => {
   });
 });
 
+test.describe('landing: "new … rack" tiles open a FRESH rack (do not resume)', () => {
+  // OWNER-REPORTED BUG: the landing "new workflow rack" card had the SAME effect
+  // as "Return to last rack" — it reopened the previous session. Root cause: the
+  // tile linked to `/rack?mode=workflow`, and `/rack` rehydrated the stable
+  // per-mode scratch id from IndexedDB. Fix: the "new …" tiles carry `?new=1`,
+  // and `/rack` mints a fresh scratch id on that flag (empty doc), then strips
+  // the flag so a later refresh still resumes THIS fresh rack. This asserts the
+  // fresh behaviour AND that it is DISTINCT from resuming.
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      (window as unknown as { __ptScratchReplica?: boolean }).__ptScratchReplica = true;
+    });
+  });
+
+  test('new workflow rack: a persisted prior workflow session is NOT resumed', async ({
+    page,
+  }) => {
+    // 1) Build + persist a prior workflow scratch session with a user module.
+    await page.goto('/rack?mode=workflow');
+    await page.waitForLoadState('networkidle');
+    const idbOk = await page.evaluate(
+      () => typeof indexedDB !== 'undefined' && indexedDB !== null,
+    );
+    test.skip(!idbOk, 'IndexedDB unavailable — scratch replica cannot persist');
+
+    await waitForPinnedTrio(page);
+    const idBefore = await waitForScratchId(page, 'workflow');
+    await addMarker(page, 'landing-fresh-wf-marker');
+    await expect.poll(() => replicaDbExists(page, idBefore), { timeout: 10_000 }).toBe(true);
+
+    // 2) From the landing, click the "new workflow rack" tile (?new=1).
+    await page.goto('/');
+    await page.getByTestId('tile-new-workflow-rack').click();
+
+    // 3) A FRESH workflow rack: shell present, pinned trio respawned, the prior
+    //    module GONE, and the scratch id rotated (⇒ a new, empty replica DB).
+    await expect(page.getByTestId('workflow-topbar')).toBeVisible();
+    await waitForPinnedTrio(page);
+    await expect(
+      page.locator('.svelte-flow__node[data-id="landing-fresh-wf-marker"]'),
+    ).toHaveCount(0);
+    const idAfter = await waitForScratchId(page, 'workflow');
+    expect(idAfter).not.toBe(idBefore);
+
+    // 4) The `?new=1` flag is stripped — so a refresh resumes THIS fresh rack
+    //    rather than minting another empty one.
+    await expect(page).toHaveURL(/\/rack\?mode=workflow$/);
+    await page.reload();
+    await page.waitForLoadState('networkidle');
+    await waitForPinnedTrio(page);
+    expect(await readScratchId(page, 'workflow')).toBe(idAfter);
+  });
+});
+
 test.describe('landing: Return to last rack', () => {
   test('HIDDEN when there is no rack in memory', async ({ page }) => {
     // Fresh context → no localStorage last-mode → the card must not render.

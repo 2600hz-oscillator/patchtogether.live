@@ -100,11 +100,12 @@ export function peekLocalScratchId(mode: RackMode): string | null {
 
 /**
  * Mint a FRESH scratch id for `mode` and persist it, REPLACING any existing
- * one. This is the "File → New rack" (logged-out) primitive: a new id ⇒ a new
- * replica DB name ⇒ the reloaded scratch canvas rehydrates an EMPTY doc instead
- * of the old one (the previous id's IndexedDB rows are simply orphaned — the
- * documented "reset scratch" affordance this file's header anticipated). Falls
- * back to a returned-but-unpersisted ephemeral id when localStorage throws.
+ * one. The "reset scratch" primitive shared by BOTH fresh-rack entry points:
+ * the in-app "File → New rack" (logged-out) button, and the landing "new … rack"
+ * tiles (which route to `/rack?new=1`, handled on mount in routes/rack). A new
+ * id ⇒ a new replica DB name ⇒ the scratch canvas rehydrates an EMPTY doc
+ * instead of the old one (the previous id's IndexedDB rows are simply orphaned).
+ * Falls back to a returned-but-unpersisted ephemeral id when localStorage throws.
  */
 export function resetLocalScratchId(mode: RackMode): string {
   const fresh = `local-scratch-${mode}-${cryptoRandomId()}`;
