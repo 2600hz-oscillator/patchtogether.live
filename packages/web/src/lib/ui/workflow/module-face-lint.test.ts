@@ -363,9 +363,11 @@ describe('module-face lint — STRICT_FACES RATCHET (only grows)', () => {
   it('STRICT_FACES never shrinks below its frozen floor', () => {
     // 6 (2026-07-25): P1 batch 1 — the first faced-module wave (adsr, cloudseed,
     // kickdrum, lfo, tidyVco, vca) raised the floor from the P0.4 empty seed.
+    // 12 (2026-07-26): P1 batch 2 — dx7, qbrt, shimmershine, sixstrum,
+    // snaredrum, tomtom.
     expect(
       STRICT_FACES.size,
       'STRICT_FACES shrank below its frozen floor — see the RATCHET rule above',
-    ).toBeGreaterThanOrEqual(6);
+    ).toBeGreaterThanOrEqual(12);
   });
 });
