@@ -62,9 +62,6 @@ npm-debug.log*
 !.claude/skills/
 !.claude/skills/**
 
-# Local agent / planning notes (treated like a scratchpad — never commit)
-.myrobots/
-
 # Playwright artifacts that aren't already covered above
 e2e/.last-run.json
 **/playwright-report/
@@ -140,3 +137,10 @@ packages/web/static/blood/*
 packages/web/native/nblood/.upstream/
 # Phase-1 link object cache (build-blood-wasm.sh BLOOD_LINK=1).
 packages/web/native/nblood/.objcache/
+
+# .myrobots is COMMITTED in this repo (owner decision 2026-07-26): agent plans /
+# roundups / owner-decision docs are part of the project record. The user-level
+# ~/.gitignore_global still ignores .myrobots/ in OTHER repos; these negations
+# override it here (repo .gitignore outranks core.excludesFile).
+!.myrobots/
+!.myrobots/**
