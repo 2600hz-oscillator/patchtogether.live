@@ -116,9 +116,15 @@ export const sixstrumDef: AudioModuleDef = {
   //             muteDepth (how dead the MUTE gates go) and register (the
   //             octave that places the instrument): strum · damp · pluck ·
   //             pitch, the four things a player actually works.
-  //   ranks 7–8 strumDir + tuning — the two selectors you SET rather than ride
-  //             (they only reach the dock, where a discrete cell can show its
-  //             step; a name readout for them is a shell follow-up).
+  //   ranks 7–9 the PRESET recall + strumDir + tuning — the controls you SET
+  //             rather than ride (they only reach the dock, where a discrete
+  //             cell can show its step; a name readout for the two discrete
+  //             params is a shell follow-up). PRESET leads them: it is the
+  //             "make it a guitar / bass / harp" lever — one pick stamps the
+  //             whole calibrated knob state — where `tuning` below it only
+  //             swaps the string set. It is deliberately NOT in the hero
+  //             ladder: the plate is what a player's HANDS ride, and a preset
+  //             is chosen once, then edited.
   // The dock tail then runs page by page in faceplate reading order, so the
   // flat roster still reads as the instrument: hand → string → pick → tuning →
   // envelope → body/out. Pages are the player's sections (lowercase labels),
@@ -136,7 +142,8 @@ export const sixstrumDef: AudioModuleDef = {
       'pickTone',
       'muteDepth',
       'register',
-      // ranks 7–8: the selectors (dock-only in the lane's 6-cell plate)
+      // ranks 7–9: the set-it controls (dock-only past the lane's 6-cell plate)
+      'sixstrum-preset-{n}',
       'strumDir',
       'tuning',
       // dock tail — page order, so the roster reads as the instrument
@@ -161,8 +168,10 @@ export const sixstrumDef: AudioModuleDef = {
       { id: 'string', label: 'string', controls: ['ring', 'material', 'stiffness', 'spread'] },
       // the plucking agent: how hard, how long, where along the string.
       { id: 'pick', label: 'pick', controls: ['pickTone', 'pickGrain', 'pickPos'] },
-      // what the strings are tuned to and what chord they voice.
-      { id: 'tuning', label: 'tuning · chord', controls: ['tuning', 'register', 'quality'] },
+      // what the strings are tuned to and what chord they voice. PRESET leads
+      // the page: it is the whole-instrument recall, and TUNING sits right
+      // under it as the one value of that preset you can still swap alone.
+      { id: 'tuning', label: 'tuning · chord', controls: ['sixstrum-preset-{n}', 'tuning', 'register', 'quality'] },
       { id: 'envelope', label: 'envelope', controls: ['attack', 'envDecay', 'sustain', 'release'] },
       { id: 'output', label: 'body · out', controls: ['body', 'level'] },
     ],
@@ -207,7 +216,7 @@ export const sixstrumDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A six-string plucked instrument: SIX of our KARPLUS extended-Karplus-Strong string voices side by side — each with its own amplitude ADSR and its own excitation seed, so a simultaneous barre decorrelates instead of phase-combing — summed to ONE mono output, the sum scaled by 1/√(sounding strings) so a six-string chord doesn't pump against a single note, then LEVEL, then a small resonant BODY across the finished mix. Play it three ways. STRUM it by hand: six TRIGGER inputs, NORMALLED low→high, so patching only #1 barres all six (one clock strums the whole chord, staggered by STRUM and DIR). Play it POLYPHONICALLY: the POLY input's first six lanes drive strings 1–6, each lane's 1 V/oct pitch tuning its string and each note-on plucking it. Or feed one root into CHORD and SIX STRUM voices that chord across the strings as a real fretboard shape — every string takes the LOWEST chord tone at or above its own open pitch. Six MUTE gates are a finger laid loosely on a string: while a gate is high that string's ring collapses to a ~50 ms thud and the MUTE knob chokes its level on top; hold all six to choke the chord. It is deliberately a MONO-out instrument (a guitar-amp out) with one shared panel — no per-voice knobs. GUITAR, BASS and HARP are not hidden DSP branches: TUNING picks which open-string set (and which body resonances) the SAME engine uses — E A D G B E, a low six-string B E A D G C, or a C-major C D E G A C harp run — and everything else is knob state: REGISTER (transpose), RING (how long a string sustains), MATERIAL (nylon↔steel), STIFF (inharmonicity), PICK POS / TONE / GRAIN (where and how it is plucked), STRUM + DIR (how rolled the strum is, and from which end), SPREAD (string-to-string detune), BODY (box resonance), and the per-string A/D/S/R — fast ATTACK, SUSTAIN at 1.0 so the STRING's own ring is the sustain, RELEASE on note-off or mute. ACCENT is latched at each strike for per-hit dynamics: louder and brighter. (On the classic card this selector is the MODE knob, which writes TUNING and stamps a calibrated preset of the other knobs with it; the param itself only switches the string set + body.)",
+      "A six-string plucked instrument: SIX of our KARPLUS extended-Karplus-Strong string voices side by side — each with its own amplitude ADSR and its own excitation seed, so a simultaneous barre decorrelates instead of phase-combing — summed to ONE mono output, the sum scaled by 1/√(sounding strings) so a six-string chord doesn't pump against a single note, then LEVEL, then a small resonant BODY across the finished mix. Play it three ways. STRUM it by hand: six TRIGGER inputs, NORMALLED low→high, so patching only #1 barres all six (one clock strums the whole chord, staggered by STRUM and DIR). Play it POLYPHONICALLY: the POLY input's first six lanes drive strings 1–6, each lane's 1 V/oct pitch tuning its string and each note-on plucking it. Or feed one root into CHORD and SIX STRUM voices that chord across the strings as a real fretboard shape — every string takes the LOWEST chord tone at or above its own open pitch. Six MUTE gates are a finger laid loosely on a string: while a gate is high that string's ring collapses to a ~50 ms thud and the MUTE knob chokes its level on top; hold all six to choke the chord. It is deliberately a MONO-out instrument (a guitar-amp out) with one shared panel — no per-voice knobs. GUITAR, BASS and HARP are not hidden DSP branches: TUNING picks which open-string set (and which body resonances) the SAME engine uses — E A D G B E, a low six-string B E A D G C, or a C-major C D E G A C harp run — and everything else is knob state: REGISTER (transpose), RING (how long a string sustains), MATERIAL (nylon↔steel), STIFF (inharmonicity), PICK POS / TONE / GRAIN (where and how it is plucked), STRUM + DIR (how rolled the strum is, and from which end), SPREAD (string-to-string detune), BODY (box resonance), and the per-string A/D/S/R — fast ATTACK, SUSTAIN at 1.0 so the STRING's own ring is the sustain, RELEASE on note-off or mute. ACCENT is latched at each strike for per-hit dynamics: louder and brighter. The PRESET control is how you get the three modes in one move: it stamps the whole calibrated knob state — TUNING included — onto the panel, where TUNING on its own only switches the string set + body. (On the classic card that recall is the MODE knob.)",
     inputs: {
       poly:
         "POLY note source (the 16-lane polyPitchGate cable): its first six lanes drive strings 1–6 — each lane's pitch tunes its string at 1 V/oct (0 V = C4) and each note-on plucks it, note-off releasing that string's amp envelope. Wire MIDI LANE (poly mode) or a poly sequencer here to play SIX STRUM as a 6-voice instrument. While POLY is patched it OWNS pitch and plucking: the STRUM triggers and the CHORD voicer stand down (the MUTE gates still damp their strings).",
@@ -284,11 +293,22 @@ export const sixstrumDef: AudioModuleDef = {
       level:
         "LEVEL — output gain in dB (−24..+12), applied to the active-voice-normalized string sum just before the BODY mix. The instrument is already amplitude-bounded by its own string physics and that normalization; use LEVEL to sit it in the mix.",
       tuning:
-        "TUNING — which open-string set (and which body) the engine uses, a 3-way selector: 0 GUITAR (E2 A2 D3 G3 B3 E4), 1 BASS (a low six-string B0 E1 A1 D2 G2 C3), 2 HARP (a C-major run C3 D3 E3 G3 A3 C4). It sets the pitches a bare strum rings, the shape the CHORD voicer walks, and the BODY resonances — the one lever that makes the SAME engine a guitar, a bass or a harp. (On the classic card this is the MODE knob, which also stamps a calibrated preset of the other knobs; the param alone just switches the set.)",
+        "TUNING — which open-string set (and which body) the engine uses, a 3-way selector: 0 GUITAR (E2 A2 D3 G3 B3 E4), 1 BASS (a low six-string B0 E1 A1 D2 G2 C3), 2 HARP (a C-major run C3 D3 E3 G3 A3 C4). It sets the pitches a bare strum rings, the shape the CHORD voicer walks, and the BODY resonances. On its own it swaps ONLY that string set + body and leaves every other knob untouched — reach for the PRESET recall above it when you want the whole calibrated guitar / bass / harp knob state, and for this when you want (say) harp strings with the guitar's pick and ring.",
       quality:
         "CHORD — which chord quality the CHORD input's root is voiced into, an 8-way selector: 0 maj, 1 min, 2 dom7, 3 maj7, 4 min7, 5 sus4, 6 power(5), 7 octaves. Pure voicing: it decides which chord tones the six strings take (each takes the lowest one at or above its own open pitch), not the tone. It does nothing while CHORD is unpatched — bare strings ring their open tuning.",
+      "sixstrum-preset-{n}":
+        "PRESET — the guitar / bass / harp recall, and the one control that makes this the instrument you meant. Picking a mode STAMPS its whole calibrated knob state onto the panel — all fourteen values: tuning, register, ring, material, pickPos, stiffness, pickTone, pickGrain, strumSpread, strumDir, muteDepth, quality, body and spread — so GUITAR lands a ~2.5 s ring on standard tuning at concert pitch, BASS a long dark 6 s ring an octave down with a near-block strum and a power-chord voicing, HARP a 9 s bright ring seven semitones up with a wide upward gliss. Nothing is hidden: these are knob STATES of the same engine, not DSP branches, so every stamped knob stays visible and editable the moment the recall lands — a starting point, never a lock — and each write is a normal param change (undoable, shared with everyone in the rackspace). Distinct from TUNING below it, which alone only switches WHICH open strings and body resonances the engine uses and leaves the rest of the panel exactly where you left it. (On the classic card this same recall is the MODE knob.)",
     },
   },
+
+  // The PRESET RECALL, declared as a one-member control family: it is a real
+  // control with no backing ParamDef (its state IS the params it stamps), so
+  // this is what lets the face rank it, the docs key prose to it, and the
+  // RACKLINE shell paint it as a Selector (shell-cells.ts). testidPrefix is
+  // grep-verified against SixstrumCard's MODE cell by the docs gate.
+  controlFamilies: [
+    { id: 'sixstrum-preset', label: 'Preset — guitar / bass / harp', kind: 'other', testidPrefix: 'sixstrum-preset' },
+  ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
