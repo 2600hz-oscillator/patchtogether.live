@@ -55,6 +55,48 @@ import { test, expect, type Locator, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { STRICT_FACES } from '../../packages/web/src/lib/ui/workflow/strict-faces';
 
+// CI (and a local E2E_SWIFTSHADER=1 flake-check) rasterizes on the SwiftShader
+// SOFTWARE renderer with 4 workers on a 4-vCPU runner. Mirrors the SLOW_RENDER
+// idiom in workflow-shell-video / workflow-lane-add-safety / videovarispeed-
+// switch / workflow-master-transport.
+const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
+
+// ── THE BUDGET IS PER-FACE AND SCALES WITH THAT FACE'S CELL COUNT ──
+//
+// This sweep's cost is DOMINATED by the per-cell operability loop: every cell
+// costs a `scrollIntoViewIfNeeded` + a `boundingBox` + ~11 CDP input dispatches
+// (`mouse.move`/`down`/`move{steps:8}`/`up`) + a graph poll — ~14 protocol
+// round-trips EACH, against a live SvelteFlow rack whose video zone is being
+// software-rasterized the whole time. So a face's wall-clock is essentially
+// `fixed boot/spawn/dock + k × cells`, and the flat 30s default was a budget
+// for the SMALLEST face applied to the LARGEST one.
+//
+// Measured (this worktree, warm dev server, 1 worker):
+//   real GPU     ≈ 1.2s + 0.12s/cell   (cloudseed's 46 cells → 6.7s)
+//   SwiftShader  ≈ 2.0s + 0.19s/cell   (cloudseed → 10.8s)
+// CI run 30190844866 (shard 3/10) failed EXACTLY the four biggest faces —
+// cloudseed (46 cells), kickdrum (25), tidyVco (25), snaredrum (22) — on both
+// attempts, always mid-`dragKnob` and always still PROGRESSING, never on a
+// failed assertion; sixstrum (19) was the largest to squeak through. That
+// cutoff pins CI at roughly `10s + 0.8s/cell`, i.e. ~4× the local software-
+// renderer per-cell cost.
+//
+// The FIXED term is sized off the COLD boot, not the warm one: on a freshly
+// started dev server (vite cache cleared) under SwiftShader the 4-cell `adsr`
+// row — the alphabetically first, so the one that pays SvelteKit's on-demand
+// /rack compile — measured 13.2s all-in vs 3.2s warm.
+//
+// So the ceiling is DERIVED from the cells the face actually rendered rather
+// than bumped by a flat constant: batch 3 adds five more faces (and any face
+// can grow params) without re-breaking this, and a face that shrinks gives its
+// budget back. Costs NOTHING on the green path — a raised ceiling is only ever
+// spent by a test that was going to fail anyway.
+//
+// Repo rule (ci-swiftshader-video-e2e-timeouts / CLAUDE.md): scale by the work,
+// never flat; grow failure bounds only — no assertion or window below moves.
+const FACE_FIXED_MS = SLOW_RENDER ? 45_000 : 30_000;
+const FACE_PER_CELL_MS = SLOW_RENDER ? 1_800 : 600;
+
 interface SpecParam {
   id: string;
   curve: string;
@@ -85,8 +127,12 @@ async function gotoShell(page: Page): Promise<void> {
   // chrome mounts — which overran 5 s on a cold dev server and failed only the
   // alphabetically-first module. The sibling workflow specs (camera-input,
   // dock-pane-close-chrome, workflow-dock-occupancy) already carry this exact
-  // bound; it still fails hard if the topbar genuinely never mounts.
-  await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 15_000 });
+  // bound; it still fails hard if the topbar genuinely never mounts. Doubled
+  // under SLOW_RENDER: on CI that cold compile lands on a 4-vCPU runner already
+  // running three other workers' software-rasterized racks.
+  await expect(page.getByTestId('workflow-topbar')).toBeVisible({
+    timeout: SLOW_RENDER ? 30_000 : 15_000,
+  });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
 
@@ -292,6 +338,10 @@ async function driveCell(
 test.describe('faces render-parity: every STRICT_FACES dock full-view carries the def’s FULL control surface', () => {
   for (const type of [...STRICT_FACES].sort()) {
     test(`${type}: dock control set === def param set (+families, no extras) and EVERY cell operates`, async ({ page }) => {
+      // Stage 1 of the derived budget (see FACE_FIXED_MS): covers boot + spawn
+      // + dock open + the parity reads, i.e. everything before the cell count
+      // is even knowable.
+      test.setTimeout(FACE_FIXED_MS);
       await gotoShell(page);
       await spawnPatch(page, [{ id: 'm', type, position: { x: 460, y: 240 } }]);
 
@@ -341,6 +391,13 @@ test.describe('faces render-parity: every STRICT_FACES dock full-view carries th
       const keys = cells.map((c) => c.key);
       expect(new Set(keys).size, `${type}: every rendered cell carries a UNIQUE data-cell-key`).toBe(keys.length);
 
+      // Stage 2: now that the face's REAL size is known, extend the ceiling by
+      // its own cell count (Playwright counts a re-`setTimeout` from the test's
+      // start, so this SUPERSEDES stage 1 rather than stacking on it). The
+      // per-cell loop below is the whole cost — a 46-cell reverb gets ~7× the
+      // driving budget of a 2-cell VCA because it does ~7× the driving.
+      test.setTimeout(FACE_FIXED_MS + FACE_PER_CELL_MS * cells.length);
+
       for (const cell of cells) {
         await driveCell(page, dockShell, 'm', spec, cell);
       }
@@ -350,6 +407,9 @@ test.describe('faces render-parity: every STRICT_FACES dock full-view carries th
 
 test.describe('tidyVco tune-cluster regression (the owner control-loss report)', () => {
   test('the tune cluster (detune + oct2) renders in the LANE full face AND the dock oscillator band', async ({ page }) => {
+    // Same boot + spawn + dock-open fixed cost as a face row (it drives no
+    // cells, so it needs no per-cell term).
+    test.setTimeout(FACE_FIXED_MS);
     await gotoShell(page);
     await spawnPatch(page, [{ id: 'tv', type: 'tidyVco', position: { x: 460, y: 240 } }]);
 
@@ -378,6 +438,9 @@ test.describe('dx7 hero controls are REACHABLE in the shell (the inert-cell P0)'
   // under `?shell=1`, so the DX7's voice could not be changed. This pins the
   // fix at the level the user experiences it: pick a voice, the graph loads it.
   test('the dock PRESET cell actually loads a different voice into node.data', async ({ page }) => {
+    // Same boot + spawn + dock-open fixed cost as a face row; the one selector
+    // it drives is well inside the fixed term.
+    test.setTimeout(FACE_FIXED_MS);
     await gotoShell(page);
     await spawnPatch(page, [{ id: 'dx', type: 'dx7', position: { x: 460, y: 240 } }]);
     const dockShell = await openDock(page, 'dx');
