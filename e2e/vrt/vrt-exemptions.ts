@@ -1014,6 +1014,8 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // batch 1's did and the vrt-meta linux-deficit ceiling comes back down by 10.
   'linux/face-karplus-compact',
   'linux/face-karplus-dock',
+  'linux/face-filter-compact',
+  'linux/face-filter-dock',
   // CLIPPLAYER: darwin baseline (the clip-launcher card — 8×8 launch grid +
   // piano-roll note editor + transport knobs; no animated canvas) captured
   // locally; linux baseline pending a `vrt-update.yml` workflow_dispatch on

@@ -47,6 +47,7 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'snaredrum',
   'tomtom',
   // P1 batch 3 — 5 more faces (1 voice, 4 processors/utility)
+  'filter',
   'karplus',
 ]);
 

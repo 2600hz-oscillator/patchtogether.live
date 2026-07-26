@@ -57,6 +57,7 @@ const FACES = [
   { type: 'qbrt', pages: 2 },
   // batch 3 — the plucked-string voice + the four workhorse processors
   { type: 'karplus', pages: 3 },
+  { type: 'filter', pages: 2 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of
