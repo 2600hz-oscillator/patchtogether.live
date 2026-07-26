@@ -461,9 +461,14 @@ describe('module-face lint — STRICT_FACES RATCHET (only grows)', () => {
     // kickdrum, lfo, tidyVco, vca) raised the floor from the P0.4 empty seed.
     // 12 (2026-07-26): P1 batch 2 — dx7, qbrt, shimmershine, sixstrum,
     // snaredrum, tomtom.
+    // 17 (2026-07-26): P1 batch 3 — delay, filter, karplus, mixer, reverb (the
+    // plucked-string voice + the four workhorse processors/utilities). The five
+    // module branches each deliberately LEFT this at their base value to avoid
+    // a five-way conflict, so the batch integrator bumps it ONCE to the true
+    // final |STRICT_FACES|.
     expect(
       STRICT_FACES.size,
       'STRICT_FACES shrank below its frozen floor — see the RATCHET rule above',
-    ).toBeGreaterThanOrEqual(12);
+    ).toBeGreaterThanOrEqual(17);
   });
 });

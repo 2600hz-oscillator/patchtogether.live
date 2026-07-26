@@ -31,6 +31,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { UNMIGRATED_AUDIO_MODULE } from './_face-fixtures';
 
 async function gotoWorkflow(page: Page): Promise<void> {
   await page.goto('/rack?mode=workflow&shell=1');
@@ -75,7 +76,9 @@ test.describe('P1 dock/expand UX fixes (?shell=1)', () => {
     await gotoWorkflow(page);
     await spawnPatch(page, [
       { id: 'm1', type: 'vca', position: { x: 30, y: 40 } }, // migrated
-      { id: 'u1', type: 'delay', position: { x: 250, y: 40 } }, // un-migrated
+      // DERIVED, not named — a hard-coded un-migrated fixture rots as each P1
+      // wave promotes more modules (delay was consumed by batch 3).
+      { id: 'u1', type: UNMIGRATED_AUDIO_MODULE, position: { x: 250, y: 40 } }, // un-migrated
     ]);
     const shellTile = page.locator('.svelte-flow__node[data-id="m1"] [data-testid="module-shell"]');
     const placeholderTile = page.locator('.svelte-flow__node[data-id="u1"] [data-testid="module-shell-placeholder"]');

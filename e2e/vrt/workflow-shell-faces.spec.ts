@@ -3,6 +3,7 @@
 // VRT: the P1 CURATED FACES — the pixel gate for every migrated module under
 // `?shell=1`. Batch 1: adsr / cloudseed / kickdrum / lfo / tidyVco / vca.
 // Batch 2: dx7 / qbrt / shimmershine / sixstrum / snaredrum / tomtom.
+// Batch 3: delay / filter / karplus / mixer / reverb.
 // Two PINNED baselines per module:
 //
 //   face-<type>-compact — the COMPACT LANE TILE (zoom 0.45, LOD 'compact'):
@@ -26,8 +27,8 @@
 // darwin-first: darwin baselines are captured locally (3× stable); the linux
 // pairs are EXEMPT_BASELINE_PAIRS-deferred until a vrt-update.yml dispatch
 // lands them (vrt-meta's linux-deficit ratchet accounts for the pairs). Batch
-// 1's 12 linux baselines have already landed that way; batch 2's 12 are the
-// currently-pending set.
+// 1's 12 linux baselines have already landed that way; batch 2's 12 and batch
+// 3's 10 are the currently-pending set.
 
 import { test, expect, type Page } from '@playwright/test';
 import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
@@ -54,6 +55,12 @@ const FACES = [
   { type: 'tomtom', pages: 4 },
   { type: 'shimmershine', pages: 3 },
   { type: 'qbrt', pages: 2 },
+  // batch 3 — the plucked-string voice + the four workhorse processors
+  { type: 'karplus', pages: 3 },
+  { type: 'filter', pages: 2 },
+  { type: 'mixer', pages: 2 },
+  { type: 'delay', pages: 2 },
+  { type: 'reverb', pages: 2 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

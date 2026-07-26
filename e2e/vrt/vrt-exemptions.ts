@@ -1003,6 +1003,18 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/face-qbrt-dock',
   'linux/rear-dx7',
   'linux/rear-sixstrum',
+  //
+  // P1 BATCH 3 (2026-07-26) was DRAINED here: the 10 CURATED FACE scenes for
+  // the five newly-migrated modules (compact lane tile + dock full-view
+  // faceplate per module, workflow-shell-faces.spec.ts — karplus, filter,
+  // mixer, delay, reverb) had their pairs REMOVED so the vrt-update.yml
+  // `platform=linux` dispatch on this branch actually CAPTURES them. The
+  // pending-pair skip is UNCONDITIONAL, so a pair still listed here means
+  // `--update-snapshots` writes nothing for it and the dispatch comes back
+  // green having captured zero baselines (the #1064 drum-wave + batch-1/2
+  // drain ordering: drop the pairs FIRST, then dispatch). The vrt-meta
+  // linux-deficit ceiling drops 128 → 118 in this same commit.
+  //
   // CLIPPLAYER: darwin baseline (the clip-launcher card — 8×8 launch grid +
   // piano-roll note editor + transport knobs; no animated canvas) captured
   // locally; linux baseline pending a `vrt-update.yml` workflow_dispatch on

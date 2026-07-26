@@ -15,10 +15,19 @@
 // Rendering path: the REAL def factory (delay is a native DelayNode + a
 // feedback GainNode loop — no worklet) under node-web-audio-api's
 // OfflineAudioContext via the shared renderOfflineDef helper (plan §1.3
-// path #3). NOTE: renderOfflineDef applies params at CONSTRUCTION (no
-// setParam), so the dry/wet split is the factory's linear construction-time
-// mix (dry = 1−mix, wet = mix), not the equal-power setParam crossfade — a
+// path #3). renderOfflineDef applies params at CONSTRUCTION (no setParam), so
+// this profile captures the factory's construction-time dry/wet split — a
 // fixed, fully deterministic graph.
+//
+// BASELINE RE-PIN (2026-07-26, P1 batch 3): that construction-time split used
+// to be LINEAR (dry = 1−mix, wet = mix) while setParam('mix') and
+// readParam('mix') both used the EQUAL-POWER √ law — so the first touch of MIX
+// jumped the level with no knob movement, and readParam returned wet² (0.1225
+// instead of 0.35 at the default). The factory now uses √ in all three places.
+// At this scenario's mix = 0.5 that scales dry and wet by the SAME
+// √0.5 / 0.5 = √2, so the re-pinned .f32 is the old buffer × √2 EXACTLY:
+// identical tap timing (onsets every 7200 samples), identical 0.6× decay,
+// identical waveform shape (residual after rescale = 0), only ~+3 dB of level.
 //
 // SIGNATURE output (owner decision §6b.2): the single `audio` out (dry + the
 // feedback echo tail).
