@@ -190,6 +190,89 @@ describe('module-face lint — completeness (STRICT_FACES set)', () => {
   });
 });
 
+describe('module-face lint — rear-card curation (face.rear) + derivation totality', () => {
+  // The rear card (rear-card-model.ts) renders EVERY declared port as exactly
+  // one hole. Two pure gates hold that line (rear-card-spec.md §5):
+  //   1. CONSISTENCY: every `face.rear` key resolves to a DECLARED port, no
+  //      port is claimed by two groups, clusters point at a real band and only
+  //      at ports of that band, audioRate lists INPUT ports only.
+  //   2. TOTALITY (STRICT_FACES): the derivation over every promoted module is
+  //      TOTAL — every declared port lands in exactly one band/rail hole (the
+  //      no-orphan-holes guarantee behind "exposes ALL patch points").
+  it('every face.rear key resolves to a declared port (groups/clusters/audioRate)', () => {
+    const problems: string[] = [];
+    for (const def of allDefs()) {
+      const rear = def.face?.rear;
+      if (!rear) continue;
+      const inputIds = new Set((def.inputs ?? []).map((p) => p.id));
+      const outputIds = new Set((def.outputs ?? []).map((p) => p.id));
+      const claimed = new Set<string>();
+      const groupIds = new Set<string>();
+      const pageIds = new Set((def.face?.pages ?? []).map((p) => p.id));
+      for (const g of rear.groups ?? []) {
+        if (groupIds.has(g.id)) problems.push(`${def.type}: face.rear duplicate group id '${g.id}'`);
+        groupIds.add(g.id);
+        for (const pid of g.ports) {
+          if (!inputIds.has(pid) && !outputIds.has(pid)) {
+            problems.push(`${def.type}: face.rear.groups['${g.id}'] port '${pid}' is not a declared port`);
+          }
+          if (claimed.has(pid)) {
+            problems.push(`${def.type}: face.rear port '${pid}' claimed by two groups`);
+          }
+          claimed.add(pid);
+        }
+      }
+      for (const c of rear.clusters ?? []) {
+        if (!groupIds.has(c.group) && !pageIds.has(c.group) && c.group !== 'voice' && c.group !== 'signal' && c.group !== 'cv') {
+          problems.push(`${def.type}: face.rear.clusters group '${c.group}' matches no page/group/derived band`);
+        }
+        for (const pid of c.ports) {
+          if (!inputIds.has(pid) && !outputIds.has(pid)) {
+            problems.push(`${def.type}: face.rear.clusters['${c.label}'] port '${pid}' is not a declared port`);
+          }
+        }
+      }
+      for (const pid of rear.audioRate ?? []) {
+        if (!inputIds.has(pid)) {
+          problems.push(`${def.type}: face.rear.audioRate '${pid}' is not a declared INPUT port`);
+        }
+      }
+    }
+    expect(problems.join('\n'), 'face.rear drifted from the declared ports — fix the keys').toBe('');
+  });
+
+  it('STRICT_FACES: the rear derivation is TOTAL — every declared port = exactly one hole', async () => {
+    const { rearFieldPlan } = await import('./rear-card-model');
+    const missing: string[] = [];
+    for (const def of allDefs()) {
+      if (!STRICT_FACES.has(def.type)) continue;
+      const plan = rearFieldPlan(def as unknown as import('./rear-card-model').RearDefLike);
+      const rendered = [
+        ...plan.bands.flatMap((b) => [
+          ...b.holes.map((h) => `input:${h.portId}`),
+          ...b.clusters.flatMap((c) => c.holes.map((h) => `input:${h.portId}`)),
+        ]),
+        ...plan.outputs.map((h) => `output:${h.portId}`),
+      ];
+      const declared = [
+        ...(def.inputs ?? []).map((p) => `input:${p.id}`),
+        ...(def.outputs ?? []).map((p) => `output:${p.id}`),
+      ];
+      const renderedSet = new Set(rendered);
+      if (rendered.length !== renderedSet.size) {
+        missing.push(`${def.type}: rear derivation rendered a port TWICE`);
+      }
+      for (const d of declared) {
+        if (!renderedSet.has(d)) missing.push(`${def.type}: rear derivation dropped ${d}`);
+      }
+      if (rendered.length !== declared.length) {
+        missing.push(`${def.type}: hole count ${rendered.length} ≠ declared port count ${declared.length}`);
+      }
+    }
+    expect(missing.join('\n'), 'rear derivation not total — a hole went missing').toBe('');
+  });
+});
+
 describe('module-face lint — STRICT_FACES RATCHET (only grows)', () => {
   // STRICT_FACES is an OPT-IN allowlist: a module is promoted once its co-located
   // `face` is authored + verified (see strict-faces.ts). This cap FREEZES the set

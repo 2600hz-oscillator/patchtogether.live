@@ -58,6 +58,7 @@ const FULL_MATCH = [
   'workflow-dock-composite.spec.ts',
   'workflow-shell-zoom.spec.ts',
   'workflow-shell-faces.spec.ts',
+  'workflow-rear-card.spec.ts',
   'vrt-toybox.spec.ts',
   'vrt-aspect-16x9.spec.ts',
   'topbar.spec.ts',

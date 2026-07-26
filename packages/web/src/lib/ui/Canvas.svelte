@@ -7760,7 +7760,9 @@
              overflow container — no shared scrollbar). A pane's ✕ closes just
              that pane (the survivor returns to full width); ESC / the M-E-C
              handoff close the whole view. data-fullview-flipped is the TAB
-             rear-card seam (state only — renderer is follow-up work). -->
+             rear-card seam: ONE view-global flag, so with the 50/50 split
+             BOTH panes flip together — each pane renders its RearCard (the
+             flip-side patch field) while flipped. -->
         <div
           class="dock-fullview-drawer"
           data-testid="dock-fullview-drawer"
@@ -7777,6 +7779,7 @@
                 title={fv.title}
                 onClose={() => dockStore.closeFullView(fv.node.id)}
                 onCollapse={() => dockStore.closeFullView(fv.node.id)}
+                flipped={dockStore.fullViewFlipped}
               />
             </div>
           {/each}

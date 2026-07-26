@@ -41,6 +41,8 @@
   import { getMetaModuleDef } from '$lib/meta/module-registry';
   import { domainClassForDef, type ShellDefLike } from '$lib/ui/workflow/module-shell-model';
   import ModuleShell from '$lib/ui/modules/ModuleShell.svelte';
+  import RearCard from '$lib/ui/workflow/RearCard.svelte';
+  import type { RearDefLike } from '$lib/ui/workflow/rear-card-model';
 
   interface Props {
     /** The full-view node (live snapshot entry — `data` is the live proxy). */
@@ -60,8 +62,13 @@
     /** Undock → promote to a persisted entry. Omitted in P0.3b (the full-view
      *  was never a persisted entry); shown disabled-free when it lands. */
     onUndock?: () => void;
+    /** REAR CARD (rear-card-spec.md): TRUE flips this pane to the flip-side
+     *  patch field. Canvas feeds dockStore.fullViewFlipped — the view-global
+     *  TAB flip seam — so with the 50/50 split BOTH panes flip together; the
+     *  per-pane surface is this prop + the `data-flipped` attr. */
+    flipped?: boolean;
   }
-  let { node, nodeTypes, rackSize, migrated, title, onClose, onCollapse, onUndock }: Props = $props();
+  let { node, nodeTypes, rackSize, migrated, title, onClose, onCollapse, onUndock, flipped = false }: Props = $props();
 
   function defLookup(type: string) {
     return getModuleDef(type) ?? getVideoModuleDef(type) ?? getMetaModuleDef(type);
@@ -90,7 +97,12 @@
   let rackHp = $derived(rackSize?.hp ?? 1);
 </script>
 
-<div class="dock-faceplate" data-testid="dock-full-view" data-fullview-node={node.id}>
+<div
+  class="dock-faceplate"
+  data-testid="dock-full-view"
+  data-fullview-node={node.id}
+  data-flipped={flipped && def ? 'true' : 'false'}
+>
   <div class="faceplate-scroll">
     <!-- OCCUPANT SWAP = REMOUNT ({#key node.id}): opening module B while A is
          expanded must tear A's subtree down and mount B's fresh — never morph
@@ -114,6 +126,11 @@
           </div>
         </div>
         <div class="face-spacer"></div>
+        {#if flipped && def}
+          <!-- REAR state chip — the title bar's only swap on the flip side
+               (the frame reads as the same object, turned around). -->
+          <span class="rear-chip" data-testid="rear-chip">REAR · PATCH</span>
+        {/if}
         <div class="win-ctrls" data-testid="faceplate-win-ctrls">
           {#if onUndock}
             <button type="button" data-testid="faceplate-undock" title="Undock" aria-label="Undock" onclick={onUndock}>
@@ -129,6 +146,17 @@
         </div>
       </div>
 
+      {#if flipped && def}
+        <!-- REAR CARD (TAB flip): the flip-side patch field replaces the
+             tab-rail + control page — patch points only, zero UI controls.
+             The front stays MOUNTED (hidden below) so flipping back never
+             reboots the occupant (scroll/knob state, video previews). -->
+        <RearCard nodeId={node.id} def={def as unknown as RearDefLike} />
+      {/if}
+
+      <!-- FRONT face: hidden (not unmounted) while flipped. display:contents
+           when visible keeps the layout byte-identical to pre-rear-card. -->
+      <div class="fp-front" class:fp-front-hidden={flipped && def} data-testid="faceplate-front">
       <!-- Tab-rail seam: legacy content is one active "MODULE" tab; real per-op
            / per-section tabs are P1. -->
       <div class="tabrail" data-testid="faceplate-tabrail">
@@ -159,6 +187,7 @@
             </section>
           {/if}
         </div>
+      </div>
       </div>
     </div>
     {/key}
@@ -193,6 +222,28 @@
     position: relative;
     width: max-content;
     max-width: 100%;
+  }
+  /* FRONT face wrapper: layout-transparent when visible (display:contents —
+     the pre-rear-card DOM shape is preserved pixel-for-pixel), display:none
+     while the rear card is up (state kept, controls GONE). */
+  .fp-front {
+    display: contents;
+  }
+  .fp-front.fp-front-hidden {
+    display: none;
+  }
+  /* REAR · PATCH state chip (kit .state-chip.ghost vocabulary). */
+  .rear-chip {
+    font-family: var(--f-mono, ui-monospace, 'SF Mono', Menlo, Consolas, monospace);
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--domain);
+    background: transparent;
+    border: 1px solid var(--domain-d);
+    border-radius: 5px;
+    padding: 4px 10px;
   }
   .dock-natural-sized,
   :global(.dock-faceplate .dock-rack-sized) {

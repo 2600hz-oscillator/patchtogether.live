@@ -73,6 +73,15 @@ export const vcaDef: AudioModuleDef = {
     order: ['base', 'cvAmount'],
     pages: [{ id: 'gain', label: 'gain stage', controls: ['base', 'cvAmount'] }],
     glyph: 'meter',
+    // REAR CARD curation: neither input is a per-param CV (the worklet owns
+    // the gain law), so derivation would fold both into one 'signal' band —
+    // the spec's vca table reads better as signal → gain stage.
+    rear: {
+      groups: [
+        { id: 'signal', label: 'signal', ports: ['audio'] },
+        { id: 'gain', label: 'gain stage', ports: ['cv'] },
+      ],
+    },
   },
 
   docs: {

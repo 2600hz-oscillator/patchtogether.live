@@ -442,6 +442,31 @@ export interface ModuleFace {
   /** The compact live-glyph kind the shell renders in the tile's glyph slot.
    *  Omitted / 'none' = no glyph. */
   glyph?: 'scope' | 'meter' | 'envelope' | 'waveform' | 'none';
+  /** OPTIONAL rear-card curation (the dock flip-side jack field). Derivation
+   *  covers most modules — voice/signal band + one band per `pages` page (the
+   *  CV holes targeting that page's params) + the OUTPUTS rail — so this is
+   *  only for the exceptions (see $lib/ui/workflow/rear-card-model). Keys are
+   *  PORT ids; ports not listed anywhere fall back to derivation. UI metadata
+   *  exactly like the rest of `face`: OUT of contract-signature/contract-lock,
+   *  linted by module-face-lint.test.ts. */
+  rear?: ModuleFaceRear;
+}
+
+/** Rear-card curation block (see ModuleFace.rear). */
+export interface ModuleFaceRear {
+  /** Explicit input group bands. A group whose id is 'voice'/'signal' claims
+   *  the leading voice/signal slot; an id matching a `pages` page id claims
+   *  that page's slot (its label wins); any other id appends after the page
+   *  bands. Ports listed here are exempt from derivation. */
+  groups?: readonly { id: string; label: string; ports: readonly string[] }[];
+  /** Cluster sub-headers INSIDE a band (e.g. envelopes → filter eg / amp eg).
+   *  `group` names the band (a page id or a curated group id); listed ports
+   *  must belong to that band. */
+  clusters?: readonly { group: string; label: string; ports: readonly string[] }[];
+  /** INPUT ports consumed at audio rate — rendered with the `~` tick. Curated
+   *  (spec §6 Q5): there is no PortDef.rate field, and adding one would churn
+   *  the I/O contract, so v1 ticks from this list. */
+  audioRate?: readonly string[];
 }
 
 /**

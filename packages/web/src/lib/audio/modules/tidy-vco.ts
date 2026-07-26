@@ -228,6 +228,24 @@ export const tidyVcoDef: AudioModuleDef = {
       { id: 'output', label: 'output', controls: ['width', 'level', 'hold'] },
     ],
     glyph: 'waveform',
+    // REAR CARD curation (rear-card-model). Only the exceptions: pwm_cv's
+    // stem ('pwm') doesn't match its param id ('pw'), so the oscillator band
+    // is pinned explicitly; the envelopes band splits into the two EG
+    // clusters; the six worklet audio-rate CVs get the `~` tick.
+    rear: {
+      groups: [
+        {
+          id: 'oscillator',
+          label: 'oscillator',
+          ports: ['shape1_cv', 'shape2_cv', 'pwm_cv', 'detune_cv', 'oct2_cv', 'mix_cv', 'sub_cv'],
+        },
+      ],
+      clusters: [
+        { group: 'envelopes', label: 'filter eg', ports: ['fatk_cv', 'fdec_cv', 'fsus_cv', 'frel_cv'] },
+        { group: 'envelopes', label: 'amp eg', ports: ['atk_cv', 'dec_cv', 'sus_cv', 'rel_cv'] },
+      ],
+      audioRate: ['cutoff_cv', 'res_cv', 'pwm_cv', 'drive_cv', 'fold_cv', 'sym_cv'],
+    },
   },
 
   docs: {

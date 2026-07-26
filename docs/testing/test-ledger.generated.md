@@ -11,7 +11,7 @@ source tree, so they cannot go stale. Prose + roadmap: `docs/testing/README.md`.
 | Bucket | What | Count |
 | --- | --- | ---: |
 | 1 | HARD SKIPS / QUARANTINES (backlog → drive to 0) | 6 |
-| 2 | COVERAGE EXEMPTIONS (deliberate auto-enrollment opt-outs) | 527 |
+| 2 | COVERAGE EXEMPTIONS (deliberate auto-enrollment opt-outs) | 529 |
 | 3 | INFORMATIONAL-ONLY CI LANES (run, never block merge) | 5 |
 
 ## CI gating truth (from `.github/workflows/ci.yml`)
@@ -46,7 +46,7 @@ _none_
 ### spawn-smoke QUARANTINE map (e2e/tests/modules.spec.ts) — 1
 - `toybox` — task #102: SwiftShader software-renderer timeout (heavy WebGL)
 
-## Bucket 2 — coverage exemptions (527)
+## Bucket 2 — coverage exemptions (529)
 
 Declarative auto-enrollment opt-out lists. A module opted out of a UNIVERSAL
 sweep still carries dedicated coverage (a bespoke spec / unit core / ART). These
@@ -474,7 +474,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `toybox.inA` — video input only drives output when a layer selects it as its source
 - `toybox.inB` — video input only drives output when a layer selects it as its source
 
-### `EXEMPT_BASELINE_PAIRS` (127) — per-<platform>/<scene> VRT baseline pairs deferred (pending a vrt-update capture)
+### `EXEMPT_BASELINE_PAIRS` (129) — per-<platform>/<scene> VRT baseline pairs deferred (pending a vrt-update capture)
 <sub>e2e/vrt/vrt-exemptions.ts</sub>
 - `darwin/mirrorpool`
 - `darwin/mirrorpool-mirror`
@@ -560,6 +560,8 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `linux/posterbox-dither-hatch`
 - `linux/posterbox-subtle-565`
 - `linux/rasterize`
+- `linux/rear-tidyVco`
+- `linux/rear-vca`
 - `linux/recorderbox`
 - `linux/reshaper`
 - `linux/resofilter`

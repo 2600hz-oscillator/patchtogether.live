@@ -382,7 +382,13 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // under `?shell=1` in workflow-shell-faces.spec.ts; linux baselines
       // pending the vrt-update.yml dispatch on the PR branch, the
       // workflow-shell-zoom precedent).
-    ).toBeLessThanOrEqual(119);
+      // 119→121 for the REAR CARD scenes (2026-07-25, deliberate darwin-first
+      // — the dock full-view's TAB flip-side jack field for the busiest +
+      // simplest prototypes (rear-tidyVco / rear-vca in
+      // workflow-rear-card.spec.ts); linux baselines pending the
+      // vrt-update.yml dispatch on the PR branch, the workflow-shell-faces
+      // precedent).
+    ).toBeLessThanOrEqual(121);
   });
 });
 
