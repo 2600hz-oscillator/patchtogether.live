@@ -125,15 +125,9 @@
   // transformed/scaled canvas space and land in the wrong spot (drifting as
   // you pan/zoom). Appending to <body> removes the transformed ancestor so
   // fixed-positioning resolves against the real viewport → menu spawns under
-  // the cursor. Mirrors VideoCanvasContextMenu.svelte.
-  function portal(node: HTMLElement) {
-    document.body.appendChild(node);
-    return {
-      destroy() {
-        node.remove();
-      },
-    };
-  }
+  // the cursor. clampMenu then keeps the WHOLE menu inside the viewport
+  // (flip/clamp at edges + re-clamp when the Electra cascade grows the box).
+  import { clampMenu, portal } from '$lib/ui/menu-viewport-action';
 </script>
 
 {#if open}
@@ -147,8 +141,7 @@
     ></div>
     <div
       class="ctx-menu"
-      style:left="{x}px"
-      style:top="{y}px"
+      use:clampMenu={{ x, y }}
       role="menu"
       aria-label="Control actions"
       data-testid="control-context-menu"

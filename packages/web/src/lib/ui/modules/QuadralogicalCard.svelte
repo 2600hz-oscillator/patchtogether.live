@@ -310,10 +310,8 @@
 
   // Portal the menu to <body> so position:fixed resolves against the viewport,
   // not the transformed SvelteFlow viewport (same rationale as ControlContextMenu).
-  function portal(el: HTMLElement) {
-    document.body.appendChild(el);
-    return { destroy() { el.remove(); } };
-  }
+  // clampMenu keeps the whole menu (incl. the Electra cascade growth) in view.
+  import { clampMenu, portal } from '$lib/ui/menu-viewport-action';
 
   // ---- on-card MIX preview canvas ----
   const ENGINE_W = VIDEO_RES.width;
@@ -562,8 +560,7 @@
     ></div>
     <div
       class="ctx-menu"
-      style:left="{menuX}px"
-      style:top="{menuY}px"
+      use:clampMenu={{ x: menuX, y: menuY }}
       role="menu"
       aria-label="Quadralogical axis MIDI actions"
       data-testid="quadralogical-axis-menu"

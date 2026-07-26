@@ -15,6 +15,7 @@
     normalizeHex,
   } from '$lib/graph/control-color';
   import type { DockZone } from '$lib/ui/dock/dock';
+  import { clampMenu } from '$lib/ui/menu-viewport-action';
 
   interface Props {
     open: boolean;
@@ -310,8 +311,7 @@
   <div class="ctx-overlay" onclick={onclose} oncontextmenu={(e) => { e.preventDefault(); onclose(); }} role="presentation"></div>
   <div
     class="ctx-menu"
-    style:left="{x}px"
-    style:top="{y}px"
+    use:clampMenu={{ x, y }}
     role="menu"
     aria-label="Module actions"
   >
