@@ -80,7 +80,13 @@ interface RenderedCell {
 
 async function gotoShell(page: Page): Promise<void> {
   await page.goto('/rack?mode=workflow&shell=1');
-  await expect(page.getByTestId('workflow-topbar')).toBeVisible();
+  // 15 s (not the 5 s default): this is the BOOT wait, and the FIRST test of a
+  // run pays SvelteKit's on-demand /rack route compilation before the workflow
+  // chrome mounts — which overran 5 s on a cold dev server and failed only the
+  // alphabetically-first module. The sibling workflow specs (camera-input,
+  // dock-pane-close-chrome, workflow-dock-occupancy) already carry this exact
+  // bound; it still fails hard if the topbar genuinely never mounts.
+  await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 15_000 });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
 
