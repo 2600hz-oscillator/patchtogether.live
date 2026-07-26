@@ -375,16 +375,52 @@ async function sweepCc(page: Page, cc: number, ms: number): Promise<void> {
   }
 }
 
-/** Keep a bound CC HOT at a CONSTANT value for `ms` (re-inject every ~50 ms) — the
- *  MIDI analogue of holding a fader down. The stream stays `active`, so the
- *  ~200 ms CC-idle release never fires and the automation override holds. Run it
- *  concurrently (don't await until done) while sampling the held param. */
-async function holdCc(page: Page, channel: number, cc: number, value: number, ms: number): Promise<void> {
-  const start = Date.now();
-  while (Date.now() - start < ms) {
-    await injectCc(page, channel, cc, value);
-    await page.waitForTimeout(50);
-  }
+/** Keep a bound CC HOT at a CONSTANT value (re-inject every ~50 ms) UNTIL the
+ *  caller RELEASES it — the MIDI analogue of holding a fader down. The stream
+ *  stays `active`, so the ~200 ms CC-idle release never fires and the automation
+ *  override holds. Starts immediately and runs CONCURRENTLY; sample the held
+ *  param, then `await release()`.
+ *
+ *  WHY A STOP SIGNAL AND NOT A DURATION (measured 2026-07): this used to hold
+ *  for a fixed 1800 ms of WALL CLOCK, which made "the twist is still hot" a RACE
+ *  — every step after it (a `toBeVisible()` with a 5 s default budget, a 220 ms
+ *  settle, then two 6×70 ms samples) had to finish inside that window or the CC
+ *  went idle, the override released, and the param resumed following the
+ *  envelope mid-sample. Warm margin was thin: the `vb` sample finished at
+ *  +1176 ms of the 1800 ms. Injecting only the pre-sample latency CI load adds
+ *  reproduced CI's exact failure as a clean dose-response (`vaHeld.spread`,
+ *  threshold < 0.08): +0 ms → 0.000 pass, +1400 ms → 0.141 fail, +2400 ms →
+ *  0.408 fail, +3000 ms → 0.340 fail; CI observed 0.6027. Growing 1800 → N
+ *  would only move the cliff AND add fixed wall time to every green run; a stop
+ *  signal makes the invariant STRUCTURAL — the CC is hot for exactly as long as
+ *  the test needs it, however slow the machine is — and releases immediately
+ *  when done, so the healthy path gets FASTER (it no longer waits out the
+ *  ~600 ms remainder of the fixed hold). */
+function holdCcUntilReleased(
+  page: Page,
+  channel: number,
+  cc: number,
+  value: number,
+): { release: () => Promise<void> } {
+  let hot = true;
+  let failure: unknown;
+  const loop = (async () => {
+    while (hot) {
+      await injectCc(page, channel, cc, value);
+      await page.waitForTimeout(50);
+    }
+  })().catch((e: unknown) => {
+    // The page went away (a failing assertion tore the test down) — remember it
+    // for release(); never leave an unhandled rejection behind.
+    failure = e;
+  });
+  return {
+    release: async () => {
+      hot = false;
+      await loop;
+      if (failure) throw failure;
+    },
+  };
 }
 
 async function injectCc(page: Page, channel: number, cc: number, value: number): Promise<void> {
@@ -713,16 +749,19 @@ test('per-clip automation: a MIDI CC on an automated param suspends only that pa
   await expect(menu).toBeVisible();
   await menu.getByTestId('ctx-midi-learn').click();
   await injectCc(page, 1, 21, 105); // binds + drives va toward ~0.83, suspends automation
-  const hold = holdCc(page, 1, 21, 105, 1800); // keep it hot (concurrent) so the override holds
+  // Hold it hot until WE let go (concurrent) — the CC stays active for exactly
+  // as long as the sampling below takes, however slow the machine is, so "the
+  // override is still held" is structural rather than a wall-clock race.
+  const twist = holdCcUntilReleased(page, 1, 21, 105);
   await expect(page.getByTestId(`clipplayer-auto-override-${CP}`)).toBeVisible();
   await page.waitForTimeout(220);
 
   const vaHeld = await sampleSpread(page, 'va', 'base', 6, 70);
   const vbLive = await sampleSpread(page, 'vb', 'base', 6, 70);
+  await twist.release(); // only NOW let the twist stop → the CC stream goes idle
   expect(vaHeld.spread, 'MIDI-twisted param no longer follows the envelope (held while hot)').toBeLessThan(0.08);
   expect(vaHeld.vals.at(-1) ?? 0, 'held near the CC value, not the envelope').toBeGreaterThan(0.6);
   expect(vbLive.spread, 'the OTHER param keeps playing (per-param suspension)').toBeGreaterThan(0.15);
-  await hold; // stop the twist → the CC stream goes idle
 
   // CC-IDLE RELEASE → after the settle timeout the override ends automatically and
   // va resumes being driven by automation (no manual re-enable needed).
