@@ -1,29 +1,38 @@
 // packages/web/src/lib/audio/modules/qbrt.ts
 //
-// QBRT — stereo resonant state-variable filter with a PING excitation jack.
+// QBRT — stereo resonant multimode filter with a PING excitation jack.
 // The project's "big-knob" stereo VCF, and — when triggered — a pluck /
 // drum resonator that needs no oscillator. Faust DSP: packages/dsp/src/
 // qbrt.dsp.
 //
-// Per channel, one two-pole resonant section whose response MORPHS
-// continuously across FOUR taps as `mode` sweeps 0..1 (0 = low-pass,
-// 1/3 = band-pass, 2/3 = high-pass, 1 = the input-minus-band-pass tap),
-// linearly crossfading between neighbours. `resonance` maps 0..0.99 onto
+// Per channel, FOUR two-pole responses computed in PARALLEL (Faust's
+// fi.resonlp / fi.resonbp / fi.resonhp — note resonhp is itself `x − lp` —
+// plus `x − bp`), crossfaded by `mode` 0..1 (0 = low-pass, 1/3 = band-pass,
+// 2/3 = high-pass, 1 = the input-minus-band-pass tap), linearly between
+// neighbours. It is NOT a state-variable topology despite the `svf` name in
+// the .dsp and the module's original description string; each channel is a
+// bank of parallel biquads. `resonance` maps 0..0.99 onto
 // an internal Q of 0.7..20.5 — no gain compensation, and (being a plain
 // two-pole section) never self-oscillating. PING is how you make it sing:
 // each rising edge injects a ~1 ms broadband click into BOTH channels'
 // filter inputs AND jumps Q by +30, that boost decaying with a time
 // constant of `pingDecay`, so the filter rings at `cutoff` and settles.
 //
-// All four knobs (and therefore the CV summed onto them) are one-pole
-// smoothed inside the DSP by `si.smoo` (≈7 Hz corner / ~23 ms), so the CV
-// jacks track at envelope/LFO rate, not audio rate.
+// All four knobs (and therefore the CV summed onto them) are read ONCE per
+// 128-frame render quantum by the Faust worklet wrapper (`parameters[path][0]`
+// — ~375 Hz at 48 kHz) and then one-pole smoothed inside the DSP by `si.smoo`
+// (≈7 Hz corner / ~23 ms), so the CV jacks track at envelope/LFO rate, not
+// audio rate.
 //
 // Inputs:
 //   L (audio): left-channel signal (the ping click sums in here too).
 //   R (audio): right-channel signal (likewise).
 //   ping (gate cable, consumed as a TRIGGER): rising edge across 0.5 fires
 //     the click + Q-boost excitation. Level while high is ignored.
+//     CONTRACT GAP: the PortDef below does NOT yet declare `edge: 'trigger'`
+//     even though qbrt.dsp:14 is a textbook rising-edge detector, so the jack
+//     renders without the trigger glyph. Fixing it re-pins contract-lock.txt,
+//     so it belongs in its own (contract) PR, not a docs-accuracy pass.
 //   cutoff (cv, log, paramTarget=cutoff): ±1 = ×/÷ ~31 (≈ ±5 octaves).
 //   resonance (cv, linear, paramTarget=resonance): ±1 = ±0.495 (half range).
 //   mode (cv, discrete, paramTarget=mode): BUCKETED to the two ends of the
@@ -145,12 +154,12 @@ export const qbrtDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A stereo resonant filter with a PING excitation jack — the project's big-knob stereo VCF, and, the moment you trigger it, a pluck/drum resonator that needs no oscillator at all. Left and right run identical two-pole state-variable sections off one shared set of controls, so the module is a true stereo pair (not a mid/side or dual-mono processor). MODE is a single continuous MORPH across FOUR filter taps rather than a switch — low-pass, band-pass, high-pass, and an input-minus-band-pass tap — linearly crossfaded between neighbours, so one knob walks the whole response family. RESONANCE maps its 0–0.99 range onto an internal Q of 0.7 (essentially maximally-flat, no peak) up to 20.5, and it is NOT gain-compensated: the peak at CUTOFF grows roughly in step with Q, so a high setting is both sharper and markedly louder around the corner. It never self-oscillates — a plain two-pole section is unconditionally stable however hard you push Q — and that is exactly what PING is for. Each rising edge on PING does two things at once: it injects a fixed ~1 ms broadband click into BOTH channels' filter inputs, and it slams the internal Q up by +30 (to ~50 at the top of the RESONANCE range), that boost then decaying exponentially with a time constant of PING DEC. The filter rings at CUTOFF and settles — a pluck. Patch a drum-sequencer lane into PING and sweep CUTOFF for kick / tom / laser-pew hits with no oscillator in the patch; leave PING unpatched and it is an ordinary stereo filter you run audio through. One caveat worth knowing before you reach for a modulator: every knob is one-pole smoothed inside the DSP at about a 7 Hz corner, so the four CV jacks track at envelope/LFO rate and audio-rate signals patched into them are filtered away rather than heard — this is a clean filter, not an FM or ring-mod front end.",
+      "A stereo resonant filter with a PING excitation jack — the project's big-knob stereo VCF, and, the moment you trigger it, a pluck/drum resonator that needs no oscillator at all. Left and right run identical two-pole filter banks off one shared set of controls: strictly DUAL-MONO — no cross-feed, no mid/side matrix — so the stereo image you patch in survives untouched while both sides answer to the same knobs. MODE is a single continuous MORPH rather than a switch: four responses are computed in parallel — a resonant low-pass, a resonant band-pass, a high-pass (which is itself input-minus-low-pass), and an input-minus-band-pass tap — and linearly crossfaded between neighbours, so one knob walks the whole response family. RESONANCE maps its 0–0.99 range onto an internal Q of 0.7 (essentially maximally-flat, no peak) up to 20.5, and it is NOT gain-compensated: the peak at CUTOFF grows roughly in step with Q, so a high setting is both sharper and markedly louder around the corner. It never self-oscillates — a plain two-pole section is unconditionally stable however hard you push Q — and that is exactly what PING is for. Each rising edge on PING does two things at once: it injects a broadband click into BOTH channels' filter inputs — a one-pole decay from an amplitude of 1.5, so it starts hotter than unity, and it is ~1 ms long at 44.1/48 kHz (the per-sample coefficient is a fixed 0.98, so the click halves in length at 96 kHz) — and it slams the internal Q up by +30 (to ~50 at the top of the RESONANCE range), that boost then decaying exponentially with a time constant of PING DEC. The filter rings at CUTOFF and settles — a pluck. Patch a drum-sequencer lane into PING and sweep CUTOFF for kick / tom / laser-pew hits with no oscillator in the patch; leave PING unpatched and it is an ordinary stereo filter you run audio through. One caveat worth knowing before you reach for a modulator: the Faust wrapper reads each knob (and the CV summed onto it) ONCE per 128-sample block — about 375 Hz at 48 kHz — and the DSP then one-pole smooths it at about a 7 Hz corner, so the four CV jacks track at envelope/LFO rate and an audio-rate signal patched into one is block-sampled and smoothed into a vague drift rather than heard as modulation. This is a clean filter, not an FM or ring-mod front end.",
     inputs: {
       L: "Left audio input — the signal the left filter section processes. The PING excitation click is summed in at this same point, so your signal and the ring pass through one and the same filter (the ring is not a parallel voice).",
       R: "Right audio input — the signal the right filter section processes, with the same shared controls and the same PING click summed in. The ping excitation is identical on both channels, so a ping alone is dead-centre mono however you patch L/R.",
       ping:
-        "The excitation TRIGGER. Each rising edge across 0.5 fires two things at once: a fixed ~1 ms broadband click into both channels' filter inputs, and a +30 jump in the filter's internal Q on top of whatever RESONANCE is set to, which then decays with PING DEC's time constant. The filter rings at CUTOFF as a result — a pluck. Only the RISING edge matters: how long the signal stays high changes nothing, so drive it from a clock, a drum-sequencer lane, or any trigger source. Because the Q boost is added on top of the knob, PING still plucks convincingly with RESONANCE at zero — and the ring is not level-compensated, so at high RESONANCE it can be far hotter than the dry signal.",
+        "The excitation TRIGGER. Each rising edge across 0.5 fires two things at once: a broadband click into both channels' filter inputs (peak amplitude 1.5, decaying to nothing in ~1 ms at 44.1/48 kHz — its 0.98-per-sample coefficient is not sample-rate compensated, so it is half as long at 96 kHz), and a +30 jump in the filter's internal Q on top of whatever RESONANCE is set to, which then decays with PING DEC's time constant. The filter rings at CUTOFF as a result — a pluck. Only the RISING edge matters: how long the signal stays high changes nothing, so drive it from a clock, a drum-sequencer lane, or any trigger source. Because the Q boost is added on top of the knob, PING still plucks convincingly with RESONANCE at zero — and the ring is not level-compensated, so at high RESONANCE it can be far hotter than the dry signal.",
       cutoff:
         "CV for CUTOFF, log-scaled: ±1 multiplies or divides the knob frequency by about 31×, i.e. a roughly ±5-octave sweep centred on wherever you left the knob and pinned at the 20 Hz / 20 kHz ends. Patch an envelope for filter sweeps, or a sequencer/pitch CV to play the ping's ring as a melody. It is control-rate (the knob is internally smoothed at ~7 Hz), so this jack does filter sweeps, not filter FM.",
       resonance:
@@ -161,16 +170,16 @@ export const qbrtDef: AudioModuleDef = {
         "CV for PING DEC, log-scaled: ±1 multiplies or divides the knob time by 10 (the 5 ms–0.5 s range spans 100×, so a full swing covers a decade either way), clamped at the ends. Modulate it per hit to make plucks shorter or longer without touching the resonance.",
     },
     outputs: {
-      L: "Left filtered output — the left input after the filter, including whatever the PING excitation is currently ringing. Unity through the passband; the resonant peak at CUTOFF is NOT gain-compensated, so high RESONANCE, or a fresh ping, can push this well above the level going in.",
+      L: "Left filtered output — the left input after the filter, including whatever the PING excitation is currently ringing. Unity in the passband for the taps that HAVE one (low-pass at DC, high-pass up top, the 4th tap at both ends); the band-pass tap at MODE ⅓ has none — it is silent at DC and at the top and only its Q-scaled peak survives. The resonant peak at CUTOFF is NOT gain-compensated in any mode, so high RESONANCE, or a fresh ping, can push this well above the level going in.",
       R: "Right filtered output — the right channel of the same stereo pair, identical processing and identical ping excitation. Take L and R together to keep the stereo image of whatever you fed in; a bare ping appears equally on both.",
     },
     controls: {
       cutoff:
         "CUTOFF — the filter's corner / centre frequency, 20 Hz to 20 kHz on a log dial (default 1 kHz). It is doing two jobs: it sets where the filter acts on the signal you patch through, and it IS the pitch the filter rings at when PING fires, so on a ping patch this knob is effectively the tuning control. Internally smoothed, so sweeps are click-free.",
       resonance:
-        "RESONANCE — the filter's Q, mapping the 0–0.99 control onto Q 0.7 to 20.5. At 0 the response is flat and clean with no peak at all; as you climb, the peak at CUTOFF sharpens, the ring after a ping lasts longer, and — since there is no gain compensation — the filter also gets substantially louder around CUTOFF (about +26 dB at the top). It never reaches self-oscillation, no matter how far you push it: PING is how you make this filter sing.",
+        "RESONANCE — the filter's Q, mapping the 0–0.99 control onto Q 0.7 to 20.5. At 0 the low-pass and high-pass ends are flat and clean with no peak at all (Q 0.7 is a hair under Butterworth) — the MODE = 1 tap is the exception, where a Q below 1 leaves a dip at CUTOFF instead (about −10.5 dB at RESONANCE 0). As you climb, the peak at CUTOFF sharpens, the ring after a ping lasts longer, and — since there is no gain compensation — the filter also gets substantially louder around CUTOFF (about +26 dB at the top). It never reaches self-oscillation, no matter how far you push it: PING is how you make this filter sing.",
       mode:
-        "MODE — one continuous morph across four filter taps rather than a mode switch: 0 = low-pass, ⅓ = band-pass, ⅔ = high-pass, 1 = the input-minus-band-pass tap, with a linear crossfade between each adjacent pair (0.5 sits half band-pass, half high-pass). Low-pass and high-pass pass their band at unity with the resonant peak riding on top at CUTOFF; band-pass keeps only the region around CUTOFF, and its level rises with Q too. The fourth tap is intended as a notch, but the band-pass it subtracts is itself Q-scaled, so it only truly nulls with RESONANCE around 0.015 — by about 0.065 the dip has closed to flat, and above that it inverts into a large resonant PEAK at CUTOFF (≈ +23 dB at the default RESONANCE) sitting on an otherwise unity-flat signal. Read the top of the sweep as a 'dry plus resonant bell' colour unless you deliberately park RESONANCE near zero for a real notch.",
+        "MODE — one continuous morph across four filter taps rather than a mode switch: 0 = low-pass, ⅓ = band-pass, ⅔ = high-pass, 1 = the input-minus-band-pass tap, with a linear crossfade between each adjacent pair (0.5 sits half band-pass, half high-pass). Low-pass and high-pass pass their band at unity with the resonant peak riding on top at CUTOFF; band-pass keeps only the region around CUTOFF, and its level rises with Q too. One structural quirk worth knowing: the high-pass tap is built as input-minus-low-pass, which puts a second zero at CUTOFF/Q rather than a double zero at DC — so it falls at 12 dB/oct only between CUTOFF/Q and CUTOFF and flattens to 6 dB/oct below that, leaking noticeably more bass than a textbook 2-pole high-pass at high RESONANCE (at Q 20.5 that knee sits around CUTOFF/20). The fourth tap is intended as a notch, but the band-pass it subtracts is itself Q-scaled, so it only truly nulls with RESONANCE around 0.015 — by about 0.065 the dip has closed to flat, and above that it inverts into a large resonant PEAK at CUTOFF (≈ +23 dB at the default RESONANCE) sitting on an otherwise unity-flat signal. Read the top of the sweep as a 'dry plus resonant bell' colour unless you deliberately park RESONANCE near zero for a real notch.",
       pingDecay:
         "PING DEC — the time constant (5 ms to 0.5 s, log, default 0.15 s) of the Q-boost envelope that PING fires: the +30 of extra Q falls to about a third of its peak after this long, and is essentially spent after roughly five times it. Short reads as a clicky percussive pluck, long as a sustained 'peeeew'. Two things it does NOT do: it leaves the ~1 ms excitation click itself untouched, and it is not the only thing setting the tail — the ring's own decay is governed by RESONANCE and CUTOFF, so a high-Q low-frequency ping rings on well past a short PING DEC.",
     },

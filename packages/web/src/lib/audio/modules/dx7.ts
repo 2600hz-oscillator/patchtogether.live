@@ -6,7 +6,8 @@
 //
 // I/O:
 //   inputs:
-//     poly      — polyPitchGate (5 voice pairs of pitch+gate). Preferred.
+//     poly      — polyPitchGate (16 lanes of pitch+gate = 32 channels; this
+//                 module reads the first `voiceCount` ≤ 5). Preferred.
 //     pitch_cv  — mono V/oct (legacy single-voice use).
 //     gate      — mono gate  (legacy single-voice use).
 //   outputs:
@@ -37,7 +38,8 @@
 // worklet which rebuilds its internal patch state.
 //
 // Inputs:
-//   poly (polyPitchGate): polyphonic pitch+gate (preferred — up to 5 voices).
+//   poly (polyPitchGate): polyphonic pitch+gate (preferred — the cable carries
+//     16 lanes; this module plays up to 5 of them).
 //   pitch_cv (cv): mono V/oct (legacy single-voice route).
 //   gate (gate): mono gate (legacy single-voice route).
 //
@@ -166,19 +168,19 @@ export const dx7Def: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A 6-operator FM synthesizer modeled on the Yamaha DX7. Each of its six operators is a sine oscillator with its own frequency ratio (or a fixed frequency) and its own 4-rate/4-level DX7 envelope; instead of filtering a rich waveform, operators modulate each other's phase — one of 32 fixed ALGORITHM wiring diagrams decides which operators are CARRIERS (summed to the output) and which are MODULATORS bending a carrier faster than you can hear, which is what sculpts FM's metallic, bell-like and electric-piano timbres. Operator 6 also feeds back into itself, at the depth stored in the patch. This is a PATCH-DRIVEN instrument: the ratios, levels, envelopes, feedback and stored transpose all come from the loaded voice — nine built-in patches written to evoke the classic factory sounds (E.PIANO 1, TUB BELLS, BRASS 1 …; they are original patches, not Yamaha's data), plus every voice of any .syx cartridge you import. The panel's live controls are therefore which voice is loaded, which algorithm wires it, how it plays (polyphony, transpose, level) and a per-voice master ADSR layered over the patch's own operator envelopes. It plays 5 voices from the POLY bus, or monophonically from the PITCH CV + GATE pair. Not modelled from the SYX: the DX7's LFO, pitch envelope, keyboard level/rate scaling and velocity sensitivity are parsed but unused.",
+      "A 6-operator FM synthesizer modeled on the Yamaha DX7. Each of its six operators is a sine oscillator with its own frequency ratio (or a fixed frequency) and its own 4-rate/4-level DX7 envelope; instead of filtering a rich waveform, operators modulate each other's phase — one of 32 fixed ALGORITHM wiring diagrams decides which operators are CARRIERS (summed to the output) and which are MODULATORS bending a carrier faster than you can hear, which is what sculpts FM's metallic, bell-like and electric-piano timbres. Operator 6 also feeds back into itself, at the depth stored in the patch. This is a PATCH-DRIVEN instrument: the ratios, levels, envelopes, feedback and stored transpose all come from the loaded voice — nine built-in patches written to evoke the classic factory sounds (E.PIANO 1, TUB BELLS, BRASS 1 …; they are original patches, not Yamaha's data), plus every voice of any .syx cartridge you import. The panel's live controls are therefore which voice is loaded, which algorithm wires it, how it plays (polyphony, transpose, level) and a per-voice master ADSR layered over the patch's own operator envelopes. It plays up to 5 voices from the POLY bus — the first VOICES of that cable's 16 lanes — or monophonically from the PITCH CV + GATE pair. What a cartridge actually drives here: each operator's four envelope rates and levels, its frequency ratio (or fixed-frequency mode), its detune and its output level, plus the voice's algorithm, feedback depth and stored transpose. What it does NOT: the LFO and the pitch envelope are unpacked into the parsed voice but never sent to the engine, per-operator velocity sensitivity is sent and then ignored (nothing upstream carries velocity — the poly cable is pitch and gate only), and keyboard level scaling, rate scaling, amp-mod sensitivity and oscillator sync are not unpacked from the cartridge bytes at all.",
     inputs: {
-      poly: "The polyphonic note source and the preferred way to play this synth: a poly cable carrying 5 pitch+gate voice pairs (patch POLYSEQZ, MIDI LANE, or another poly source here). Only the first VOICES lanes are read. A rising gate on a lane triggers a fresh note-on at that lane's pitch, the falling gate releases it, and while a lane's gate stays high its pitch keeps being tracked so the note glides. A lane keeps its own voice for as long as its note lasts; when every voice slot is still busy a new note steals the oldest. Pitch and gate are sampled once per render block, so block-quantized sequencer writes land exactly.",
+      poly: "The polyphonic note source and the preferred way to play this synth: the 16-lane polyPitchGate cable (32 channels — a pitch and a gate per lane; patch POLYSEQZ, MIDI LANE, or another poly source here). DX7 has five voice slots, so only the first VOICES lanes are read and anything on lanes 6-16 is ignored. A rising gate on a lane triggers a fresh note-on at that lane's pitch, the falling gate releases it, and while a lane's gate stays high its pitch keeps being tracked so the note glides. A lane keeps its own voice for as long as its note lasts; when every voice slot is still busy a new note steals the oldest. Pitch and gate are sampled once per render block, so block-quantized sequencer writes land exactly.",
       pitch_cv: "Mono V/oct pitch for single-voice playing — read only when nothing is patched into POLY, and only for the first lane, so this route is monophonic. 0 V is middle C (C4) and 1 V is an octave; TRANSPOSE and the loaded patch's own stored transpose add on top.",
       gate: "Mono note-on/off gate for the single-voice (PITCH CV) route — level-sensitive, not edge-only: crossing above half a volt triggers a note-on, the note is held for as long as the level stays high (tracking PITCH CV, so it glides), and the falling edge releases it. Read only when nothing is patched into POLY; patch a keyboard or envelope gate here.",
     },
     outputs: {
-      out: "Mono audio: every active voice's carrier operators summed, each voice scaled by its own master ADSR, then by LEVEL and a fixed headroom trim of about 1/√5 so five voices sounding at once stay clear of clipping. Patch it into a VCA, filter, mixer, or straight to the output.",
+      out: "Mono audio: every active voice's carrier operators summed, each voice scaled by its own master ADSR, then the whole bus scaled by LEVEL and by a fixed headroom trim of 0.4 so five voices sounding at once stay clear of clipping. Patch it into a VCA, filter, mixer, or straight to the output.",
     },
     controls: {
       algorithm: "Which of the 32 DX7 algorithms wires the six operators together (1–32) — each one fixes the carrier/modulator routing, from the deep single-carrier stacks (16–18) through the classic 3-carrier electric-piano layouts (5) to the fully parallel additive organ (32, where all six operators are carriers). It is the biggest single shaper of a patch's character. Loading a preset adopts that voice's own stored algorithm and the readout follows it; turning the knob overrides it. Because a change is applied by re-sending the whole patch to the engine, it also RESETS the voices — anything sounding at that moment stops, so treat it as a between-notes control.",
-      voiceCount: "How many of the POLY cable's five lanes are read, 1 to 5. Lanes above the setting are ignored, so 1 gives a strictly monophonic instrument (the same first lane the mono PITCH CV + GATE pair drives) and 5 lets full chords through. Five voice slots exist either way; a note arriving while all of them are still busy steals the oldest.",
-      level: "Master output gain for the whole synth, 0 to 2 (1 = unity, 0.7 default); scales the summed voice bus feeding OUT, after the internal headroom trim.",
+      voiceCount: "How many of the POLY cable's lanes are read, 1 to 5 — the cable itself carries 16, but DX7 has five voice slots and never looks past lane 5. Lanes above the setting are ignored, so 1 gives a strictly monophonic instrument (the same first lane the mono PITCH CV + GATE pair drives) and 5 lets full chords through. Five voice slots exist either way; a note arriving while all of them are still busy steals the oldest.",
+      level: "Master output gain for the whole synth, 0 to 2 (0.7 default); it scales the summed voice bus feeding OUT. The fixed 0.4 headroom trim is applied on top of it either way, so LEVEL 1 is the knob's own unity rather than unity gain end to end.",
       transpose: "Global pitch offset in semitones (-24 to +24) added to every voice on top of the loaded patch's own stored transpose (BASS 1, for instance, already sits an octave down). It is continuous rather than stepped, so fractional settings detune the whole instrument. It is re-applied while a gate is held — turning it retunes sounding notes live — but a note already released keeps the pitch it ended on.",
       attack: "Master output-VCA attack, per voice, layered on top of the patch's own operator envelopes: a linear ramp to full level taking this long, 0.001 to 5 s. At the 0.001 s default the master VCA is open instantly, so you hear the patch's own attack; raise it for a swell. Retrigger is click-safe — a re-gated voice ramps up from wherever it was instead of resetting to zero.",
       decay: "Master-VCA decay: once the attack has reached full level, the master envelope slides exponentially toward SUSTAIN with this time constant (about 99 % of the way in five times the setting). With SUSTAIN at its default of 1 there is nothing to slide toward and this has no effect — lower SUSTAIN first to hear it.",
@@ -187,7 +189,7 @@ export const dx7Def: AudioModuleDef = {
       // Card controls with no param/family of their own — each declared as a
       // single-member control family below and keyed here as `<familyId>-{n}`.
       "dx7-preset-select-{n}": "The voice selector, and the single control that defines the sound: pick one of the nine built-in patches (E.PIANO 1, BASS 1, HARMONICA, STRINGS 1, MARIMBA, TUB BELLS, BRASS 1, CALLIOPE, WIRE LEAD) or, once you have imported a cartridge, any voice from it. Choosing a voice loads its six operators, their envelopes, its feedback depth, its stored transpose and its stored algorithm — so the ALGORITHM readout jumps to the patch's own value. Like an algorithm change it re-sends the patch and resets the voices, so notes sounding at that moment stop.",
-      "dx7-syx-input-{n}": "Load .syx bank — import a real Yamaha DX7 cartridge dump. It accepts the standard 4104-byte 32-voice SysEx bank, a bare 4096-byte payload, or a single 128-byte packed voice; a bank's 32 voices are APPENDED to the selector (never replacing what is already there, so several cartridges can be stacked) and the first voice of the new bank is selected for you. A status line reports how many voices loaded plus any warnings — a bad header byte or a checksum mismatch is reported, not rejected. Imported voices ride in the module's data, so they are saved with the rack and reach everyone in the rackspace.",
+      "dx7-syx-input-{n}": "Load .syx bank — import a real Yamaha DX7 cartridge dump. It accepts the standard 4104-byte 32-voice SysEx bank, a bare 4096-byte payload, or a single 128-byte packed voice; a bank's 32 voices are APPENDED to the selector (never replacing what is already there, so several cartridges can be stacked) and the first voice of the new bank is selected for you. A status line reports how many voices loaded plus a count of any warnings — a bad header byte or a checksum mismatch is warned about, not rejected; only a file whose SIZE matches none of the three shapes is refused outright. Imported voices ride in the module's data, so they are saved with the rack and reach everyone in the rackspace.",
     },
   },
 
@@ -206,10 +208,12 @@ export const dx7Def: AudioModuleDef = {
     }
 
     const workletNode = new AudioWorkletNode(ctx, 'dx7', {
-      // 3 inputs: poly (10ch) + pitch_cv (mono) + gate (mono).
-      // The poly input port is 10 channels; mono inputs are 1 channel each.
+      // 3 inputs: poly (the 32-channel polyPitchGate cable) + pitch_cv (mono)
+      // + gate (mono). Mono inputs are 1 channel each; the poly cable is
+      // POLY_CHANNEL_PAIRS(16) × (pitch, gate) = 32 channels, of which this
+      // worklet only ever reads the first 5 lanes (channels 0..9).
       // Web Audio honors per-input channelCount via the source's connection
-      // shape (the engine connects a 10-channel source to input 0). The
+      // shape (the engine connects the multi-channel source to input 0). The
       // worklet reads inputs[0][channel] for each lane, so no special config
       // needed here — channelCountMode on AudioWorkletNode defaults to
       // 'max' which lets multi-channel sources pass through cleanly.
