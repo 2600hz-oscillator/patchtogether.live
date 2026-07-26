@@ -36,7 +36,7 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import VideoTileThumb from './VideoTileThumb.svelte';
   import { KnobConic, ScopeScreen, VuMeter } from '$lib/ui/controls';
-  import { curatedFace, type FaceControl, type FaceTier } from '$lib/ui/workflow/curated-face';
+  import { curatedFace, dockFacePlan, type FaceControl, type FaceTier } from '$lib/ui/workflow/curated-face';
   import {
     spineCableVar,
     laneFaceTier,
@@ -181,16 +181,13 @@
   // category metadata), not a repeat of the type the name row already shows.
   let roleLine = $derived(roleLineForDef(def) ?? node.type);
 
-  // Dock faceplate SECTION BANDS (P1): at the 'dock' tier the curated face
-  // resolves the declared `face.pages`; the full-view renders one labeled band
-  // per page. Any ranked control NOT claimed by a page falls into a trailing
-  // un-labeled band so the dock still shows EVERY control (dock = all).
-  let pages = $derived(view === 'dock-full' ? (face?.pages ?? null) : null);
-  let unpaged = $derived.by<FaceControl[]>(() => {
-    if (!pages || !pages.length) return [];
-    const claimed = new Set(pages.flatMap((p) => p.controls.map((c) => c.key)));
-    return controls.filter((c) => !claimed.has(c.key));
-  });
+  // Dock faceplate SECTION BANDS (P1): the PURE dockFacePlan seam — one band
+  // per declared `face.pages` page + the '__unpaged' defensive tail (or the
+  // single '__all' band for a page-less face), so the dock still shows EVERY
+  // control (dock = all). The render-parity gates (module-face-lint unit +
+  // the faces-parity e2e) pin this plan to the def's full control surface —
+  // the tidyVco tune-cluster loss class can't silently recur at this seam.
+  let dockBands = $derived(view === 'dock-full' && def ? dockFacePlan(def) : null);
 
   function paramDef(pid: string): ParamDef | undefined {
     return (def?.params ?? []).find((p) => p.id === pid);
@@ -330,39 +327,32 @@
     </div>
   {/snippet}
 
-  {#if pages && pages.length}
-    <!-- DOCK FACEPLATE (view='dock-full' + declared pages): the glyph is the
-         hero band, then one labeled SECTION BAND per curated page, then a
-         trailing band for any ranked-but-unpaged controls (dock = all).
-         The hero glyph is CAPPED to the first four knob columns of the
-         control grid (owner feedback), left-aligned with blank space right;
-         a video face's thumbnail rides the same capped hero band. -->
+  {#if dockBands}
+    <!-- DOCK FACEPLATE (view='dock-full'): the glyph is the hero band, then
+         the dockFacePlan SECTION BANDS — one labeled band per curated page +
+         the '__unpaged' tail for any ranked-but-unpaged controls (dock = all;
+         a page-less face renders one unlabeled '__all' band). The hero glyph
+         is CAPPED to the first four knob columns of the control grid (owner
+         feedback), left-aligned with blank space right; a video face's
+         thumbnail rides the same capped hero band. -->
     {#if hasGlyph}
       <div class="tile-body dock-hero" style={`--dock-hero-glyph-w:${DOCK_HERO_GLYPH_W}px`}>
         {@render glyphCell()}
       </div>
     {/if}
     <div class="dock-pages" data-testid="face-pages">
-      {#each pages as page (page.id)}
-        <section class="dock-page" data-testid="face-page" data-face-page={page.id}>
-          <h4 class="page-label">{page.label}</h4>
+      {#each dockBands as band (band.id)}
+        <section class="dock-page" data-testid="face-page" data-face-page={band.id}>
+          {#if band.label}
+            <h4 class="page-label">{band.label}</h4>
+          {/if}
           <div class="page-controls">
-            {#each page.controls as ctl (ctl.key)}
+            {#each band.controls as ctl (ctl.key)}
               {@render controlCell(ctl)}
             {/each}
           </div>
         </section>
       {/each}
-      {#if unpaged.length}
-        <section class="dock-page" data-testid="face-page" data-face-page="__unpaged">
-          <h4 class="page-label">more</h4>
-          <div class="page-controls">
-            {#each unpaged as ctl (ctl.key)}
-              {@render controlCell(ctl)}
-            {/each}
-          </div>
-        </section>
-      {/if}
     </div>
   {:else}
     <!-- The lane body, FIT-PLANNED (laneBodyPlan — the no-clip guarantee):

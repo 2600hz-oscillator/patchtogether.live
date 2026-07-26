@@ -142,3 +142,53 @@ export function curatedFace(def: FaceDefLike, tier: FaceTier): CuratedFace | nul
   }
   return out;
 }
+
+// ── The DOCK RENDER PLAN — the "dock shows ALL" seam, made pure ─────────────
+//
+// ModuleShell's dock full-view renders EXACTLY this plan (one labeled section
+// band per declared page + the defensive '__unpaged' tail band for any ranked
+// control no page claimed; a page-less face renders one unlabeled '__all'
+// band). Extracting the derivation makes the CONTROL-LOSS guarantee unit-
+// testable WITHOUT a browser: the render-parity gate asserts the flattened
+// plan covers every param + declared control family EXACTLY once (the tidyVco
+// tune/fine loss class — a control that exists in the schema but silently
+// never renders). The e2e faces-parity spec is the authoritative DOM-level
+// twin of this seam.
+
+/** The '__unpaged' defensive tail band id + the page-less '__all' band id. */
+export const DOCK_UNPAGED_BAND_ID = '__unpaged';
+export const DOCK_ALL_BAND_ID = '__all';
+
+/** One dock section band: a declared face page, the '__unpaged' tail, or the
+ *  page-less '__all' roster. `label` may be '' (rendered without a header). */
+export interface DockFaceBand {
+  id: string;
+  label: string;
+  controls: FaceControl[];
+}
+
+/**
+ * The dock full-view SECTION-BAND plan for a module face — the exact bands
+ * ModuleShell renders at view='dock-full'. Returns `null` for an un-faced def
+ * (the caller falls back to the legacy card). INVARIANT (gated by
+ * module-face-lint's render-parity test): the flattened plan contains every
+ * `face.order` key exactly once — pages claim their keys, the tail sweeps the
+ * rest, so nothing ranked can silently drop out of the dock.
+ */
+export function dockFacePlan(def: FaceDefLike): DockFaceBand[] | null {
+  const dock = curatedFace(def, 'dock');
+  if (!dock) return null;
+
+  const pages = dock.pages ?? [];
+  if (!pages.length) {
+    return [{ id: DOCK_ALL_BAND_ID, label: '', controls: dock.controls }];
+  }
+
+  const bands: DockFaceBand[] = pages.map((p) => ({ id: p.id, label: p.label, controls: p.controls }));
+  const claimed = new Set(pages.flatMap((p) => p.controls.map((c) => c.key)));
+  const unpaged = dock.controls.filter((c) => !claimed.has(c.key));
+  if (unpaged.length) {
+    bands.push({ id: DOCK_UNPAGED_BAND_ID, label: 'more', controls: unpaged });
+  }
+  return bands;
+}

@@ -34,6 +34,7 @@ import { listMetaModuleDefs } from '$lib/meta/module-registry';
 import type { ControlFamily, ModuleFace } from '$lib/graph/types';
 import { staticKey, type LegendEntry } from '$lib/docs/control-doc-resolver';
 import { STRICT_FACES } from './strict-faces';
+import { dockFacePlan } from './curated-face';
 
 interface FaceDef {
   type: string;
@@ -187,6 +188,84 @@ describe('module-face lint — completeness (STRICT_FACES set)', () => {
       }
     }
     expect(missing.join('\n'), 'STRICT_FACES module(s) missing required ranks — rank them or unpromote').toBe('');
+  });
+});
+
+describe('module-face lint — DOCK RENDER-PLAN parity (STRICT_FACES set)', () => {
+  // The RENDER-side twin of the completeness gate above (the tidyVco
+  // tune/fine control-loss lesson): schema coverage alone proved a control
+  // can be ranked in `face.order` yet still never REACH the user, so this
+  // gate pins the actual DOCK RENDER PLAN — dockFacePlan(def), the exact
+  // section-band derivation ModuleShell renders at view='dock-full' — to the
+  // def's full control surface. For every promoted module the flattened plan
+  // must contain:
+  //   * every ParamDef id EXACTLY ONCE, resolved kind 'param' (a face key
+  //     that stops resolving would render as a dead 'static' placeholder —
+  //     an interactive control silently replaced by a label);
+  //   * every declared control family exactly once (kind 'family');
+  //   * NOTHING else beyond legend-legitimized statics (extras with no def
+  //     backing fail — a phantom key renders a dead cell).
+  // The authoritative DOM-level twin is the faces-parity e2e spec
+  // (e2e/tests/faces-parity.spec.ts) — this is its browser-free pre-gate.
+  it('dockFacePlan renders every param + family exactly once, nothing unbacked', () => {
+    const problems: string[] = [];
+    for (const def of allDefs()) {
+      if (!STRICT_FACES.has(def.type)) continue;
+      const plan = dockFacePlan(def);
+      if (!plan) {
+        problems.push(`${def.type}: in STRICT_FACES but dockFacePlan() is null (no face)`);
+        continue;
+      }
+      const flat = plan.flatMap((band) => band.controls);
+
+      // Param parity: exactly-once, and resolved as an INTERACTIVE param cell.
+      const paramCounts = new Map<string, number>();
+      for (const c of flat) {
+        if (c.kind === 'param' && c.paramId) {
+          paramCounts.set(c.paramId, (paramCounts.get(c.paramId) ?? 0) + 1);
+        }
+      }
+      for (const p of def.params ?? []) {
+        const n = paramCounts.get(p.id) ?? 0;
+        if (n !== 1) {
+          problems.push(`${def.type}: param '${p.id}' renders ${n}× in the dock plan (must be exactly 1)`);
+        }
+        paramCounts.delete(p.id);
+      }
+      for (const [pid, n] of paramCounts) {
+        problems.push(`${def.type}: dock plan renders unknown param '${pid}' ${n}× (no such ParamDef)`);
+      }
+
+      // Family parity: each declared family exactly once.
+      const famCounts = new Map<string, number>();
+      for (const c of flat) {
+        if (c.kind === 'family' && c.familyId) {
+          famCounts.set(c.familyId, (famCounts.get(c.familyId) ?? 0) + 1);
+        }
+      }
+      for (const f of def.controlFamilies ?? []) {
+        const n = famCounts.get(f.id) ?? 0;
+        if (n !== 1) {
+          problems.push(`${def.type}: control family '${f.id}' renders ${n}× in the dock plan (must be exactly 1)`);
+        }
+        famCounts.delete(f.id);
+      }
+      for (const [fid, n] of famCounts) {
+        problems.push(`${def.type}: dock plan renders undeclared family '${fid}' ${n}× `);
+      }
+
+      // Statics: only legend-legitimized keys may render as static cells.
+      const legit = legendStaticKeys(def);
+      for (const c of flat) {
+        if (c.kind === 'static' && !legit.has(c.key)) {
+          problems.push(`${def.type}: dock plan renders '${c.key}' as a DEAD static cell — no param/family/legend backs it`);
+        }
+      }
+    }
+    expect(
+      problems.join('\n'),
+      'dock render-plan parity broken — a control would silently drop out of (or double into) the dock full-view',
+    ).toBe('');
   });
 });
 

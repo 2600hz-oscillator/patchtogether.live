@@ -171,27 +171,30 @@ export const tidyVcoDef: AudioModuleDef = {
   //   mini    (1) shape1 — the oscillator identity next to the glyph.
   //   compact (3) + pw (the mock's tune-cluster hero) + cutoff (the diode
   //               ladder's front door — the one always-hot filter control).
-  //   full    (8) + res (the squelch), fold (the West-Coast hero; bypass at
-  //               its 0 default), env (the filter-EG sweep = the voice's
-  //               movement), detune (the two-osc shimmer), level (the
-  //               practical out knob).
+  //   full    (6 whole plate cells — laneBodyPlan's no-clip cap) + detune and
+  //               oct2 (the mock's TUNE CLUSTER — the owner control-loss fix:
+  //               the tuning controls must stay visible in the full face, so
+  //               they rank INSIDE the 6-cell plate) + res (the squelch).
+  //   ranks 7+ fold (the West-Coast hero; bypass at its 0 default) and env
+  //               (the filter-EG sweep) — reachable in the dock faceplate,
+  //               which always renders EVERY control.
   // The tail stays grouped by section so the flat dock roster still reads as
-  // signal flow. Pages mirror the mock's section bands (oscillator →
-  // wavefolder → diode filter → envelopes → output), lowercase labels.
+  // signal flow (level sits with the output cluster at the end). Pages mirror
+  // the mock's section bands (oscillator → wavefolder → diode filter →
+  // envelopes → output), lowercase labels.
   face: {
     order: [
-      // the hero ladder (mini = 1 / compact = 3 / full-in-lane = 8)
+      // the hero ladder (mini = 1 / compact = 3 / full-in-lane plate = 6)
       'shape1',
       'pw',
       'cutoff',
+      'detune',
+      'oct2',
       'res',
       'fold',
       'env',
-      'detune',
-      'level',
       // dock tail — grouped by section, signal-flow order
       'shape2',
-      'oct2',
       'mix',
       'sub',
       'sym',
@@ -206,6 +209,7 @@ export const tidyVcoDef: AudioModuleDef = {
       'sus',
       'rel',
       'width',
+      'level',
       'hold',
     ],
     pages: [
