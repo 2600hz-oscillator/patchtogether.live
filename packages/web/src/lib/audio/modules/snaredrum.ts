@@ -119,22 +119,104 @@ export const snaredrumDef: AudioModuleDef = {
     { id: 'level',       label: 'Level',   defaultValue: 0,    min: -24,  max: 12,   curve: 'linear',   units: 'dB' },
   ],
 
+  // ── RACKLINE face (P1 total-rework — UI CURATION only, NOT the I/O
+  // contract; see ModuleFace in $lib/graph/types). DESIGNED from the voice's
+  // intent + the KICK DRUM sibling's producer-intent banding, not transcribed
+  // from the legacy card.
+  //
+  // THE LANE. A snare is chosen by three knobs; the top TWO of them are the
+  // compact tile (a glyph-bearing face fits two whole knob columns beside the
+  // trace — faceTierCap), and the third joins from the full tier on:
+  // TUNE (the drum's size/pitch — the modal bank AND the noise body track it),
+  // WIRES (the sizzle that separates a snare from a tom — and the master of a
+  // roll's sustain, since it also sets how hard each stroke re-excites the
+  // shared bed) and TONE (the whole-drum bright↔fat tilt: it scales the tonal
+  // voice against the wire bed AND crossfades head↔body). Ranks 4–8 complete
+  // the full-in-lane face: HEAD (ring length), CRACK (the stick attack), then
+  // the module's headline pair ROLL + BOUNCE (the two-hand drumroll's rate and
+  // type — the one thing this voice has that KICK doesn't), and LEVEL closes
+  // the eight (the KICK precedent). DRIVE deliberately ranks BELOW the identity
+  // set: at its 0.2 default it is seasoning on the bus, not the voice.
+  //
+  // THE DOCK BANDS follow producer intent, not the signal graph: the two tonal
+  // layers (modal head + noise body) read as ONE drum, so they share a band
+  // with the whole-drum GLOBAL DAMP towel; the wires and the stick transient
+  // are the noise/snap half; the ROLL gets its own band — SPREAD rides there
+  // because it is a ROLL control (the DSP centres every single trigger hit, so
+  // spread only ever moves the two hands, their detune and the wire bed's
+  // ping-pong); DRIVE·HARD·CEILING are the shared bus; WIDTH + LEVEL the output.
+  //
+  // glyph 'scope' = the live analyser trace on audio_l — for a percussion voice
+  // that IS the hero image: each strike's amp/noise envelope (crack spike →
+  // modal thunk → wire tail) drawn from the real output, the KICK-family hero.
+  // (No 'dual' binding: this voice has no assigned-shape morph to draw from
+  // params — its identity is the envelope, and the envelope is only real live.)
+  face: {
+    order: [
+      // top-2 → the compact lane tile: which drum, how snappy (TONE joins the
+      // full-in-lane plate — a glyph tile fits two whole cells).
+      'tune', 'wire', 'tone',
+      // ranks 4–8 → the full-in-lane face: length, attack, the roll pair, gain.
+      'head_decay', 'crack', 'roll_speed', 'bounce', 'level',
+      // dock roster, band reading order — the drum, the snap, the roll, the bus.
+      'pitch_amt', 'pitch_time', 'damping', 'body_decay', 'damp',
+      'wire_tone', 'wire_decay', 'crack_tone',
+      'humanize', 'spread',
+      'drive', 'hard', 'ceiling',
+      'width',
+    ],
+    pages: [
+      { id: 'drum',   label: 'tone · body',      controls: ['tune', 'tone', 'head_decay', 'body_decay', 'damping', 'pitch_amt', 'pitch_time', 'damp'] },
+      { id: 'snap',   label: 'noise · snap',     controls: ['wire', 'wire_tone', 'wire_decay', 'crack', 'crack_tone'] },
+      { id: 'roll',   label: 'roll · two hands', controls: ['roll_speed', 'bounce', 'humanize', 'spread'] },
+      { id: 'drive',  label: 'drive · bus',      controls: ['drive', 'hard', 'ceiling'] },
+      { id: 'output', label: 'output · stereo',  controls: ['width', 'level'] },
+    ],
+    glyph: 'scope',
+    // REAR CARD curation (rear-card-model). Derivation already files every
+    // per-control CV under the page band of the knob it moves (incl.
+    // roll_speed_cv → 'roll · two hands', whose `_cv` stem resolves to the
+    // roll_speed param); curated here are the exceptions:
+    //   • the leading band is renamed from the derived generic 'voice' and
+    //     SPLIT into the two ways to hit this drum (TRIGGER = one hit, the
+    //     ROLL gate = the two-hand engine) vs the three per-hit modifiers;
+    //   • audioRate ticks the SIX dedicated worklet node inputs — they are
+    //     read RAW from the input buffers every sample (sample-accurate strike
+    //     edges, 1 V/oct, per-stroke accent), whereas every per-control CV
+    //     lands on an AudioParam the worklet reads through an 80 Hz one-pole
+    //     smoother, so those are deliberately NOT ticked.
+    rear: {
+      groups: [
+        {
+          id: 'voice',
+          label: 'strike · performance',
+          ports: ['trigger_in', 'gate_in', 'accent_in', 'pitch_cv', 'choke_in'],
+        },
+      ],
+      clusters: [
+        { group: 'voice', label: 'strike', ports: ['trigger_in', 'gate_in'] },
+        { group: 'voice', label: 'per hit', ports: ['accent_in', 'pitch_cv', 'choke_in'] },
+      ],
+      audioRate: ['trigger_in', 'gate_in', 'roll_speed_cv', 'accent_in', 'pitch_cv', 'choke_in'],
+    },
+  },
+
   docs: {
     explanation:
-      "A deep, flexible stereo SNARE VOICE — the mate to KICK DRUM — with a true polyphonic two-hand DRUMROLL. Instead of a single oscillator, it layers four decoupled acoustic generators the way a real snare works: a HEAD modal bank tuned to inharmonic Bessel-zero ratios (the pitchless membrane 'thunk', with a short downward pitch-drop at the strike — the snare 'pit'), a band-passed noise BODY around the head (the drum's noisy tone; the TONE knob tilts the whole drum bright/sizzle-forward ↔ fat/head-forward, scaling the tonal voice against the wire bed and crossfading head↔body), the SNARE-WIRE buzz — the defining timbre — modeled as bright HP-tunable noise on a shared re-excitable bed that breathes with the head and rings out between strokes, and a short CRACK stick-contact transient. It has TWO strike inputs into the one synth: TRIGGER fires a single hit per rising edge, and GATE runs the drumroll. The roll is genuinely polyphonic — two alternating hands 180° out of phase, each stroke allocating its own voice from a pool while the shared wire bed sustains the sizzle, so overlapping decaying tails superpose into a continuous roll (NOT a pulsed one-shot retrigger). ROLL SPEED sets the rate (4–24 strokes/hand, plus roll_speed_cv at 1V/oct), BOUNCE morphs the roll type from a machine-gun single-stroke roll through the classic double/open roll to a dense multi-bounce buzz/press roll (a coefficient-of-restitution bounce train), and HUMANIZE adds seeded timing/velocity/detune jitter for a live feel. The summed pool + bed run one shared bus: a DRIVE saturator with a single HARD character switch (clean-warm vs aggressive), a per-channel true-peak CEILING soft-clip so it can sit hot, and a stereo stage where SPREAD pans the two hands and WIDTH decorrelates only the bright wire sizzle — head and body stay centered so a mono fold-down never thins (width=0 AND spread=0 → dead-centre mono). ACCENT sets per-hit intensity, PITCH CV tracks 1V/oct, and CHOKE mutes the tail while held. Strike it from any trigger/gate/clock/sequencer source.",
+      "A deep, flexible stereo SNARE VOICE — the mate to KICK DRUM — with a genuinely polyphonic two-hand DRUMROLL. Four decoupled generators layer the way a real snare works. HEAD is a four-mode membrane bank at inharmonic Bessel-zero ratios (1 : 1.03 : 1.59 : 2.14) — self-ringing state-variable resonators struck by an impulse, with the fundamental pair damped hardest, so the 'thunk' reads pitchless rather than as a note — plus a downward pitch-drop at the strike (the snare 'pit'). BODY is seeded noise band-passed around the head pitch (the drop bends its centre too, so the whole attack chirps), with a slice of high-passed noise blended in so its decay reads broadband instead of hiding under the wires. WIRE is the defining timbre: bright high-passed noise on a SHARED, re-excitable bed — every strike, trigger or roll stroke, tops the bed up by wire × velocity, and a contact term rides the rectified head displacement on top of that, so the buzz breathes with the membrane and rings on BETWEEN strokes. That shared bed, not the voice count, is what makes a roll continuous. CRACK is a fixed ~6 ms band-passed stick tick, summed above the head onset so the leading edge always pokes through. TONE tilts the whole drum: the tonal voice's gain and the wire bed's move in opposition (0.6×…1.4×) while the head modes crossfade with the noise body — low = bright and sizzle-forward, high = fat and head-forward, 0.5 = neutral. TWO strike inputs feed the one synth: TRIGGER fires exactly one (always centred) hit per rising edge; GATE runs the roll. The roll engine advances two hand phases 180° apart at ROLL SPEED (4–24 strokes/s per hand; the hands interleave, so the composite sticking rate is about double), and each hand-beat schedules a bounce train set by BOUNCE — one stroke, the classic double/open roll, or a dense multi-bounce buzz of up to six sub-strokes with geometric velocity decay and shrinking (4 ms-floored) spacing, with slower hands automatically growing more bounces to fill the gap. Every fired sub-stroke re-excites the wire bed and, within a 70-per-second new-voice budget, takes its own voice from a ten-voice pool (lowest-energy steal), so overlapping decaying tails SUPERPOSE into a continuous roll instead of one mono voice being retriggered into a pulsed 'brap'; past that budget the extra sub-strokes drive the bed alone, which is what a dense buzz sounds like anyway. HUMANIZE adds seeded timing/velocity/detune jitter, and both hand phases and the jitter PRNG reset on the gate's rising edge — a roll is repeatable relative to its gate, and nothing here ever reads a wall clock. The pool sum and the bed then share ONE bus: the mono MID runs a DRIVE saturator (bypassed outright at Drive 0; 2× oversampled tanh, or a 4× oversampled wavefolder + asymmetric shaper when HARD is on, its fold depth riding the head displacement and bed energy), a DC blocker, then LEVEL — while the SIDE signal (the two hands' constant-power pan and the decorrelated wire sizzle) bypasses the shaper and rejoins at the output matrix, where a per-channel tanh CEILING bounds L = mid + side and R = mid − side true-peak-safe however hot it runs. Head, body and crack are identical on both channels for a centred hit, so a mono fold-down never thins: only SPREAD (the two-hand pan — roll-only, since a single trigger hit is always centred) and WIDTH (the wire's L/R decorrelation) put content on the sides, and with both at 0 the channels are exactly equal. ACCENT lifts drive and level continuously and scales stroke velocity, PITCH CV transposes the whole voice at 1V/oct, and CHOKE damps the output while held. Strike it from any trigger/gate/clock/sequencer source.",
     inputs: {
       trigger_in:
-        "The STRIKE: each rising edge fires exactly ONE snare hit — the voice is allocated from the pool, its envelopes retrigger, and accent is sampled at that instant. How long the signal stays high doesn't matter; it's a trigger, not a hold. Patch a sequencer gate, drum-seq lane, or clock here for individual hits.",
+        "The STRIKE: each rising edge (crossing 0.5) fires exactly ONE snare hit — a voice is taken from the pool, its modal impulse and envelopes retrigger, the shared wire bed is re-excited, and accent is read at that instant. How long the signal stays high doesn't matter; it's a trigger, not a hold. A trigger hit is always CENTRED and un-detuned (SPREAD only moves the two roll hands), and consecutive hits into an idle pool reuse the same slot and its seed, so they are bit-identical. Patch a sequencer gate, drum-seq lane, or clock here for individual hits.",
       gate_in:
-        "The DRUMROLL: WHILE this level is high, the internal two-hand roll engine generates a continuous roll at ROLL SPEED — two alternating hands whose overlapping strokes (and, in buzz mode, multi-bounce trains) keep the snare re-excited faster than it decays. The rising edge resets the roll to a repeatable phase; on the falling edge scheduling stops and the in-flight voices + wire bed ring out naturally. Hold a long gate here (a sequencer gate with a long gate length, a held clock, an LFO pulse) for a snare roll.",
+        "The DRUMROLL: WHILE this level is high, the internal two-hand roll engine generates a continuous roll at ROLL SPEED — two alternating hands whose overlapping strokes (and, in buzz mode, multi-bounce trains) keep the snare re-excited faster than it decays. The rising edge resets both hand phases and the jitter PRNG and fires an immediate left-hand stroke, so the roll starts with no initial gap and replays identically for a given gate; on the falling edge scheduling stops and the in-flight voices + wire bed ring out naturally. Hold a long gate here (a sequencer gate with a long gate length, a held clock, an LFO pulse) for a snare roll.",
       roll_speed_cv:
-        "Roll-rate CV — a 1V/oct multiply on ROLL SPEED (+1 V doubles the strokes/second, −1 V halves it), so you can crescendo a roll from a control source or sequence its density.",
+        "Roll-rate CV — a 1V/oct multiply on ROLL SPEED (+1 V doubles the strokes/second, −1 V halves it; the input is clamped to ±4 V and the resulting rate to 1–40 strokes/s per hand), so you can crescendo a roll from a control source or sequence its density. This is the roll's own rate jack, read per sample straight off the input — not a per-control CV centred on the knob.",
       accent_in:
-        "Per-hit intensity CV (0..1), sampled at each strike (trigger and every roll stroke). Higher accent lands a hotter hit — it scales the strike velocity and, like KICK's accent macro, lifts drive and level so the accented stroke leans into the ceiling. Patch an LFO or velocity lane for dynamics.",
+        "Per-hit intensity CV (0..1) doing two things at once. At each strike (the trigger edge and every roll sub-stroke) the stroke velocity is multiplied by 1 + 0.5 × accent and clamped at 1 — a full-velocity primary stroke already sits at that ceiling, so the velocity term mostly lifts the quieter REBOUND strokes of a double/buzz roll — while continuously, per sample, accent also pushes DRIVE up to 30 % harder and LEVEL up to +4 dB, so an accented hit leans into the CEILING clip. Patch a velocity lane or an LFO for dynamics; at 0 it is a no-op.",
       pitch_cv:
-        "1V/oct pitch input: transposes the whole voice — head modes and body together — as a true frequency multiplier (tune × 2^volts), so a snare line can track a melody or be tuned per step.",
+        "1V/oct pitch input: transposes the whole voice — head modes and body noise together — as a true frequency multiplier (tune × 2^volts), so a snare line can track a melody or be tuned per step. It is read per sample, so an audio-rate signal here FMs the drum rather than merely transposing it.",
       choke_in:
-        "Choke group input (level-sensitive gate): WHILE the level is high the output is damped toward silence through a short ~30 ms ramp (a hand on the head), and on the falling edge it releases and recovers — both edges matter. Hold it high to duck the snare's ring/roll; it does not fire hits.",
+        "Choke group input (level-sensitive gate): WHILE the level is high the output is damped toward silence through a short ~30 ms ramp (a hand on the head), and on the falling edge it releases and recovers through a ~15 Hz one-pole — both edges matter. It multiplies both channels AFTER the ceiling, so a choked voice stays bounded. Hold it high to duck the snare's ring/roll; it does not fire hits.",
       tune_cv:
         "CV modulation of TUNE (log): ±1 sweeps the head fundamental across its full 90–400 Hz range centred on the knob — the modes and body noise track it. (Distinct from pitch_cv, which transposes the whole voice at 1V/oct.)",
       head_decay_cv:
@@ -164,15 +246,15 @@ export const snaredrumDef: AudioModuleDef = {
       bounce_cv:
         "CV modulation of BOUNCE (linear): ±1 sweeps the roll type across its full 0–1 range around the knob — single-stroke → double/open → dense multi-bounce buzz.",
       humanize_cv:
-        "CV modulation of HUMANIZE (linear): ±1 sweeps the seeded roll jitter across its full 0–1 range around the knob — machine-perfect to loose and human.",
+        "CV modulation of HUMANIZE (linear): ±1 sweeps the seeded roll jitter across its full 0–1 range around the knob — machine-perfect to loose and human (the detune share of that jitter is scaled by SPREAD).",
       drive_cv:
-        "CV modulation of DRIVE (linear): ±1 sweeps the bus saturation across its full 0–1 range around the knob — pump the perceived loudness live.",
+        "CV modulation of DRIVE (linear): ±1 sweeps the mid-bus saturation across its full 0–1 range around the knob — pump the perceived loudness live.",
       hard_cv:
-        "CV modulation of HARD (discrete): a positive CV flips the drive character to the aggressive wavefold and a negative CV to clean-warm tanh — the character switch under CV (only audible when Drive > 0).",
+        "CV modulation of HARD (discrete): the CV is bucketed straight onto the switch by round-half-up, so the flip point sits exactly at CV = 0 — CV ≥ 0 (the midpoint itself included) selects the aggressive wavefold and only CV < 0 selects clean-warm tanh, whatever the knob says. The character switch under CV; only audible while Drive > 0.",
       ceiling_cv:
         "CV modulation of CEILING (linear): ±1 sweeps how hard the bus is pushed into the true-peak soft-clip across its full 0–1 range around the knob — cleaner/quieter to hotter/more clipped.",
       spread_cv:
-        "CV modulation of SPREAD (linear): ±1 sweeps the two-hand pan/detune across its full 0–1 range around the knob — mono-centred to hard L/R hands.",
+        "CV modulation of SPREAD (linear): ±1 sweeps the two-hand pan/detune across its full 0–1 range around the knob — mono-centred to hard L/R hands. It shapes ROLLS only; a single trigger hit is centred whatever this reads.",
       width_cv:
         "CV modulation of WIDTH (linear): ±1 sweeps the decorrelated wire-sizzle width across its full 0–1 range around the knob (head and body stay centred).",
       level_cv:
@@ -180,33 +262,33 @@ export const snaredrumDef: AudioModuleDef = {
     },
     outputs: {
       audio_l:
-        "Left output of the stereo voice. The head and body of a single (centered) hit are identical on both sides — only SPREAD (the two-hand pan) and WIDTH (the decorrelated wire sizzle) put content on the sides — so a mono fold-down never phase-cancels. Patch L alone for a mono snare; the pair auto-pairs when the target accepts it.",
+        "Left output of the stereo voice — the mid + side sum through the channel's own true-peak tanh ceiling (DRIVE and the DC blocker run on the MID only; the side rejoins here). The head, body and crack of a single centred hit are identical on both sides — only SPREAD (the two-hand roll pan) and WIDTH (the decorrelated wire sizzle) put content on the sides — so a mono fold-down never phase-cancels. Patch L alone for a mono snare; the pair auto-pairs when the target accepts it.",
       audio_r:
-        "Right output — the other half of the stereo pair. Carries the same centered head/body as the left; the two-hand roll and the bright wire band differ from L when SPREAD / WIDTH are up.",
+        "Right output — the other half of the stereo pair, the mid − side difference through its own ceiling. Carries the same centred head/body/crack as the left; the two-hand roll and the bright wire band differ from L when SPREAD / WIDTH are up, and at Spread 0 with Width 0 the two channels are exactly equal.",
     },
     controls: {
-      tune: "HEAD: the snare's fundamental pitch (90–400 Hz, log). The inharmonic modes track it at their Bessel ratios, and the body noise centers on it. Low = deep/fat snare, high = tight/piccolo. Tracks pitch_cv at 1V/oct.",
-      tone: "Overall tonal TILT of the drum (0 = bright, wire/noise-forward sizzle; 1 = fat, head/body-forward). It scales the tonal VOICE against the bright wire BED — the dominant part of the sound — and crossfades the head modes with the body noise, so low leans snappy/sizzly and high leans deep/tonal. 0.5 is centered — the everyday balance and the shipped default.",
-      damping: "HEAD: mode Q / ring character (0 = open and ringy, 1 = tight and muted). Independent of Head Dec: this shapes how resonant the membrane rings, that shapes how long the amplitude lasts.",
-      head_decay: "HEAD: the modal ring's decay to −60 dB (30–600 ms, log). Short = a dry tick; long = a ringing, resonant head. Scaled shorter by Global Damp.",
+      tune: "HEAD: the snare's fundamental pitch (90–400 Hz, log). The four inharmonic modes track it at their Bessel ratios, and the body noise centres on it. Low = deep/fat snare, high = tight/piccolo. Tracks pitch_cv at 1V/oct.",
+      tone: "Overall tonal TILT of the drum (0 = bright, wire/noise-forward sizzle; 1 = fat, head/body-forward). Two things move in opposition: the tonal VOICE's gain rides 0.6→1.4 while the bright wire BED's rides 1.4→0.6, and inside the voice the head modes crossfade with the body noise (the crack tick rides with the voice, not against it). 0.5 leaves both gains at unity — the everyday balance and the shipped default.",
+      damping: "HEAD: mode Q / ring character (0 = open and ringy, 1 = tight and muted) — the RELATIVE resonance of the modal bank, applied on top of the damping Head Dec sets, so the knob keeps its full range at any decay length. The (0,1) fundamental pair is damped hardest by design — that is what keeps the thunk pitchless while the upper inharmonic modes carry it.",
+      head_decay: "HEAD: the modal ring's decay to −60 dB (30–600 ms, log). It drives the amp envelope AND the resonators' damping — a longer setting lowers their loss so the modes really do ring that long (at short settings the bank self-terminates and the envelope does the work). Short = a dry tick; long = a ringing, resonant head. Scaled shorter by Global Damp.",
       body_decay: "BODY: the noise-body decay to −60 dB (20–300 ms, log) — the length of the drum's noisy tone. Scaled shorter by Global Damp.",
-      pitch_amt: "HEAD: depth of the downward pitch-drop at the strike, in semitones (0–12) — the snare 'pit'. 0 = static pitch; higher = a more pronounced pitched-down attack.",
+      pitch_amt: "HEAD: depth of the downward pitch-drop at the strike, in semitones (0–12) — the snare 'pit'. The voice starts this far ABOVE its settled pitch and falls, bending the four modes AND the noise body's centre together so the whole attack chirps. 0 = static pitch; higher = a more pronounced pitched-down attack.",
       pitch_time: "HEAD: how fast the pitch-drop settles (3–80 ms, log). Short = a quick chirp; long = an audible falling attack.",
-      wire: "WIRE: snare-wire buzz amount (0–1) — the defining sizzle. It sets both the wire level AND how hard every strike re-excites the shared wire bed, so it's the master of the roll's continuous sustain. 0 = a wireless tom-like drum.",
+      wire: "WIRE: snare-wire buzz amount (0–1) — the defining sizzle. It sets both the wire level AND how hard every strike tops up the shared wire bed (bed += wire × velocity, clamped at full), so it is the master of a roll's continuous sustain. 0 = a wireless, tom-like drum.",
       wire_tone: "WIRE: the high-pass corner of the wire noise (1500–9000 Hz, log). Lower = a darker, fuller rattle; higher = a bright, papery sizzle that sits on top of the mix.",
       wire_decay: "WIRE: the wire bed's decay to −60 dB (40–700 ms, log) — the sustain of the buzz between strokes. This is what makes a roll continuous: set longer than the stroke interval and the bed never returns to silence mid-roll. Scaled shorter by Global Damp.",
-      crack: "CRACK: level of the short stick-contact transient (0–1) — the leading-edge tick the ear locks onto. More = a harder, snappier attack.",
+      crack: "CRACK: level of the stick-contact transient (0–1) — a fixed ~6 ms band-passed noise tick, the leading edge the ear locks onto. It is summed ABOVE the head onset (outside the voice's normalization trim, with its own weight) so it always pokes through instead of being averaged away, and it scales with the stroke's velocity. More = a harder, snappier attack.",
       crack_tone: "CRACK: band-pass center of the stick transient (800–7000 Hz, log) — dark knock at the bottom, bright snap at the top.",
-      damp: "GLOBAL DAMP: scales the head, body, and wire decays DOWN together (0 = full length, 1 = heavily muted) — a single 'towel on the drum' choke without touching the tuning.",
-      roll_speed: "ROLL: strokes per hand while GATE is held (0 → 4 Hz, 1 → 24 Hz, exponential; composite two-hand rate ≈ 2×). Below ~15–20 Hz composite the individual strokes are audible (a machine-gun/open roll); above it they fuse into a roar. Modulated by roll_speed_cv (1V/oct).",
-      bounce: "ROLL type: 0 = a single-stroke roll (one stroke per hand-beat, granular), ~0.2–0.4 = the classic double/open roll (a primary stroke + a softer rebound), → 1 = a dense multi-bounce buzz / press roll (a bouncing-ball train of up to 6 sub-strokes with geometric decay). Slower hands automatically add more bounces to fill the gap.",
-      humanize: "ROLL: seeded (deterministic) timing, velocity, and per-hand detune jitter (0 = machine-perfect, 1 = loose and human). Adds the constantly-shifting sizzle of a real roll without ever using wall-clock randomness.",
-      spread: "STEREO: two-hand pan + per-hand detune (0 = mono/centered, 1 = hard L/R hands). The left hand pans left, the right pans right, each striking a slightly different spot (small membrane detune) — a genuine stereo roll image, not a decorrelation trick. At 0 the voice is dead-centre.",
-      drive: "DRIVE: saturation on the summed bus (0–1) — adds harmonics and perceived loudness at the same peak level. Character set by HARD; oversampled so it stays clean.",
-      hard: "DRIVE character switch: OFF = clean-warm tanh saturation (smooth, the shipping default); ON = an aggressive wavefold + asymmetric shaper (harder, gated/distorted snares). It only engages when DRIVE > 0 — at Drive = 0 the shaper is bypassed, so the switch has no effect until you add drive. One switch instead of a mode menu.",
-      ceiling: "OUTPUT: how hard the summed bus is pushed into the per-channel true-peak soft-clip (0–1). HIGHER = hotter — more gain into the clip tanh, so louder and more aggressively clipped/compressed; LOWER = cleaner and quieter with more headroom before the clip. The tanh always bounds each channel true-peak-safe, so you can run Level hot regardless.",
-      width: "STEREO: M/S width of the decorrelated wire SIZZLE only (0–1). Head and body stay centered/mono-safe; width spreads just the bright wire band. 0 = a mono wire (combine with Spread=0 for a fully mono voice).",
-      level: "OUTPUT: output level in dB (−24..+12). The +12 dB makeup headroom is deliberate — the ceiling stage keeps a hot setting true-peak-safe.",
+      damp: "GLOBAL DAMP: scales the head, body and wire-bed decays DOWN together — ×(1 − 0.6 × damp), so at full every tail runs at 40 % of its set time — and, through the head's ring law, tightens the modal resonance with them. A single 'towel on the drum' choke that never touches the tuning.",
+      roll_speed: "ROLL: strokes per hand while the roll GATE is held (0 → 4 Hz, 1 → 24 Hz, exponential; the hands interleave 180° apart, so the composite sticking rate is ≈ 2×). Below ~15–20 Hz composite the individual strokes are audible (a machine-gun/open roll); above it they fuse into a roar. roll_speed_cv multiplies this at 1V/oct and the result is clamped to 1–40 Hz per hand.",
+      bounce: "ROLL type: below 0.05 it is a single-stroke roll (one stroke per hand-beat, granular); up to about 0.29 at the default ROLL SPEED it is the classic double/open roll (a primary stroke + one softer rebound); from 0.3 up — the 0.35 default included — a third sub-stroke joins; and → 1 it is a dense multi-bounce buzz / press roll (a bouncing-ball train of up to 6 sub-strokes with geometric decay). The count is set by the knob AND the hand rate together (slower hands add bounces to fill the wider gap), so the same setting reads differently at either end of ROLL SPEED: at the 24 Hz-per-hand top even Bounce 1.0 stays a plain double, while at 4 Hz per hand Bounce 0.6 already schedules four.",
+      humanize: "ROLL: seeded (deterministic) jitter on stroke timing (±8 % of the hand period), stroke velocity (±15 %) and per-hand detune (±1.5 semitones) — 0 = machine-perfect, 1 = loose and human. The detune share is scaled by SPREAD, so at Spread 0 the hands stay in tune with each other. The generator reseeds on every roll-gate rising edge, so the same roll replays identically — the constantly-shifting sizzle of a real roll without ever using wall-clock randomness.",
+      spread: "ROLL/STEREO: two-hand pan + per-hand detune (0 = mono/centred, 1 = hard L/R hands, each detuned ¾ of a semitone off centre in opposite directions). The drum voices pan properly — the left hand's stroke goes left, the right hand's right, each striking a slightly different spot on the membrane — and the loud wire bed's placement slews (~5 ms per stroke) so the sizzle ping-pongs with the sticking rather than sitting still: a genuine stereo roll image, not a decorrelation trick. One thing to trust your ears about: the bed's pan term is summed with the OPPOSITE sign to the voices' constant-power pan, so the sizzle currently lands on the side away from the hand that struck (a left-hand stroke throws its sizzle right). With WIRE up that reads as a wide alternation rather than one coherent hand image — a known DSP sign bug, not something a knob can correct. It is a ROLL control either way: a single trigger hit is always dead-centre, so Spread does nothing until the roll gate runs.",
+      drive: "DRIVE: saturation on the summed MID — the mono sum of the voice pool plus the wire bed (0–1); the stereo side signal bypasses it. It adds harmonics and perceived loudness at the same peak level. At 0 the shaper is bypassed outright (no oversampling cost); character is set by HARD, and both modes are oversampled (2× clean / 4× hard) so they stay clean.",
+      hard: "DRIVE character switch: OFF = clean-warm tanh saturation, 2× oversampled (smooth, the shipping default); ON = a wavefolder + bounded asymmetric shaper, 4× oversampled and driven harder, with its fold depth riding the head displacement and the wire bed's energy so the bite follows the hit — gated/distorted snares. It only engages when DRIVE > 0 — at Drive = 0 the shaper is bypassed, so the switch has no effect until you add drive. One switch instead of a mode menu.",
+      ceiling: "OUTPUT: how hard the voice is pushed into the per-channel true-peak soft-clip (0–1) — the gain into the clip tanh is 1 + 2 × ceiling. HIGHER = hotter: louder and more aggressively clipped/compressed; LOWER = cleaner and quieter with more headroom before the clip. The tanh always bounds each channel below full scale, so you can run Level hot regardless.",
+      width: "STEREO: M/S width of the decorrelated wire SIZZLE only (0–1). The bed is generated as two independent noise streams and this sets how much of their difference reaches the sides; head, body and crack stay centred/mono-safe. 0 = a mono wire (combine with Spread = 0 for an exactly mono voice, L == R).",
+      level: "OUTPUT: output level in dB (−24..+12), applied to mid and side alike BEFORE the ceiling, so hot settings lean into the clip instead of escaping it (an ACCENT adds up to a further +4 dB). The +12 dB of makeup headroom is deliberate — the ceiling stage keeps a hot setting true-peak-safe.",
     },
   },
 

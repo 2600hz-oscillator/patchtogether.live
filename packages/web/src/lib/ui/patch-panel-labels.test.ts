@@ -12,6 +12,7 @@ import {
   groupPortsByCableType,
   type PortDescriptor,
 } from './patch-panel-labels';
+import { qbrtDef } from '$lib/audio/modules/qbrt';
 
 describe('resolveVerboseLabel', () => {
   it('expands ADSR ids verbatim', () => {
@@ -71,6 +72,21 @@ describe('resolveVerboseLabel', () => {
     expect(resolveVerboseLabel({ id: 'wavePos' })).toBe('WAVE POS');
     expect(resolveVerboseLabel({ id: 'cvAmount' })).toBe('CV AMOUNT');
     expect(resolveVerboseLabel({ id: 'gateLength' })).toBe('GATE LENGTH');
+  });
+
+  it('labels QBRT’s two ping jacks DISTINCTLY (trigger vs decay time)', () => {
+    // QBRT declares BOTH `ping` (the excitation TRIGGER) and `pingDecay` (CV
+    // for the Q-boost decay TIME). While the bare `ping` stem expanded to
+    // 'PING DECAY', the panel printed the SAME label on both jacks and named
+    // the trigger after the knob. Pin both, and pin that they DIFFER.
+    const ids = qbrtDef.inputs.map((p) => p.id);
+    expect(ids).toContain('ping');
+    expect(ids).toContain('pingDecay');
+    expect(resolveVerboseLabel({ id: 'ping' })).toBe('PING');
+    expect(resolveVerboseLabel({ id: 'pingDecay' })).toBe('PING DECAY');
+    expect(resolveVerboseLabel({ id: 'ping' })).not.toBe(
+      resolveVerboseLabel({ id: 'pingDecay' }),
+    );
   });
 
   it('respects an explicit label override', () => {

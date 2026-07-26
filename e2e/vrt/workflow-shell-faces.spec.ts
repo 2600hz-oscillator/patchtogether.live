@@ -1,8 +1,9 @@
 // e2e/vrt/workflow-shell-faces.spec.ts
 //
-// VRT: the P1 BATCH-1 CURATED FACES — the pixel gate for the first six
-// migrated modules (adsr / cloudseed / kickdrum / lfo / tidyVco / vca) under
-// `?shell=1`. Two PINNED baselines per module:
+// VRT: the P1 CURATED FACES — the pixel gate for every migrated module under
+// `?shell=1`. Batch 1: adsr / cloudseed / kickdrum / lfo / tidyVco / vca.
+// Batch 2: dx7 / qbrt / shimmershine / sixstrum / snaredrum / tomtom.
+// Two PINNED baselines per module:
 //
 //   face-<type>-compact — the COMPACT LANE TILE (zoom 0.45, LOD 'compact'):
 //     the design-point tile — the fit-planned curated knobs (laneBodyPlan:
@@ -24,7 +25,9 @@
 //
 // darwin-first: darwin baselines are captured locally (3× stable); the linux
 // pairs are EXEMPT_BASELINE_PAIRS-deferred until a vrt-update.yml dispatch
-// lands them (vrt-meta's linux-deficit ratchet accounts for the 12 pairs).
+// lands them (vrt-meta's linux-deficit ratchet accounts for the pairs). Batch
+// 1's 12 linux baselines have already landed that way; batch 2's 12 are the
+// currently-pending set.
 
 import { test, expect, type Page } from '@playwright/test';
 import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
@@ -33,15 +36,24 @@ import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 test.describe.configure({ mode: 'default' });
 
-/** The P1 batch-1 migrated set. `pages` = the declared face.pages count the
- *  dock scene must render as labeled section bands. */
+/** The P1 migrated set (= STRICT_FACES). `pages` = the declared face.pages
+ *  count the dock scene must render as labeled section bands — a per-scene
+ *  structural gate that fails BEFORE the pixel pin if a page is dropped. */
 const FACES = [
+  // batch 1
   { type: 'tidyVco', pages: 5 },
   { type: 'kickdrum', pages: 6 },
   { type: 'adsr', pages: 1 },
   { type: 'vca', pages: 1 },
   { type: 'lfo', pages: 2 },
   { type: 'cloudseed', pages: 8 },
+  // batch 2 — the two pitched voices, the two drums, the two processors
+  { type: 'dx7', pages: 4 },
+  { type: 'sixstrum', pages: 6 },
+  { type: 'snaredrum', pages: 5 },
+  { type: 'tomtom', pages: 4 },
+  { type: 'shimmershine', pages: 3 },
+  { type: 'qbrt', pages: 2 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of
@@ -153,7 +165,7 @@ async function frameMember(page: Page, memberId: string, zoom: number, tier: str
   );
 }
 
-test.describe('VRT: P1 batch-1 curated faces (?shell=1) — compact lane tile + dock full-view', () => {
+test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock full-view', () => {
   for (const { type, pages } of FACES) {
     test(`face-${type}-compact: the compact lane tile matches baseline`, async ({ page }) => {
       test.skip(

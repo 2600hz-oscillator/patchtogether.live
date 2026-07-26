@@ -555,8 +555,10 @@ export const cloudseedDef: AudioModuleDef = {
   // re-grouped by signal flow (input → taps → early → late → EQ → output).
   //
   //   mini (1):    LATE — the one knob that IS "how much reverb".
-  //   compact (3): LATE / DRY / DECAY — the output blend + the RT60 hero,
-  //                the mock's hero band distilled.
+  //   compact (2 cells + glyph): LATE / DRY — the output blend, the mock's
+  //                hero band distilled. (A glyph-bearing face fits TWO whole
+  //                knob columns beside the meter — faceTierCap; DECAY joins at
+  //                the full tier.)
   //   full (8):    + EARLY (completing the 3-fader blend), SIZE (the space's
   //                other defining dimension), HIGH CUT + LOW CUT (the wet
   //                tone trims), PRESET (jump between bundled spaces).
@@ -631,6 +633,25 @@ export const cloudseedDef: AudioModuleDef = {
       { id: 'seeds', label: 'seeds', controls: ['seed_tap', 'seed_diffusion', 'seed_delay', 'seed_post_diffusion'] },
     ],
     glyph: 'meter',
+    // REAR CARD curation (rear-card-model) — the flip-side jack field.
+    //  * The leading band is PINNED as the stereo insert and headed 'stereo in'
+    //    rather than the derived 'signal': IN L / IN R are one two-hole port
+    //    pair (see `stereoPairs`), and the rear only draws the pair tie on the
+    //    OUTPUT rail, so the band header is where that has to be said. Pinning
+    //    them also keeps a future non-audio input out of the insert band.
+    //  * The CV bands mirror the dock pages 1:1 and in page order — 'output
+    //    blend' (the three faders), 'input stage' (IN MIX + LO CUT), 'output
+    //    stage' (HI CUT + X-SEED). Five of the eight pages render NO band on
+    //    purpose: taps / early diffusion / late reflections / equalisation /
+    //    seeds are message-port params with no CV inputs, and the rear card's
+    //    job is to show what you can PATCH — an empty band would advertise
+    //    holes this reverb does not have.
+    //  * No `~` ticks: the seven macros are smoothed AudioParams read by the
+    //    reverb per block, not audio-rate modulation destinations, and the two
+    //    audio inputs are the signal itself (the tick would be noise).
+    rear: {
+      groups: [{ id: 'signal', label: 'stereo in', ports: ['in_l', 'in_r'] }],
+    },
   },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {

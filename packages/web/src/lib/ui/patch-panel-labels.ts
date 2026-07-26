@@ -82,7 +82,12 @@ const ABBREV_TO_VERBOSE: Record<string, string> = {
   rate: 'RATE',
   clk: 'CLOCK',
   clock: 'CLOCK',
-  ping: 'PING DECAY',
+  // A port called `ping` is the TRIGGER that excites a resonator (qbrt's
+  // only consumer); the DECAY TIME is a separate `pingDecay` port, which
+  // camelCase-splits to 'PING DECAY' on its own. Mapping the bare stem to
+  // 'PING DECAY' printed the same label on both jacks and named the trigger
+  // after the knob.
+  ping: 'PING',
   png: 'PING DECAY',
   mod: 'MODE',
   mode: 'MODE',

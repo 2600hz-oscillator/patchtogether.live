@@ -76,6 +76,12 @@ export const vcaDef: AudioModuleDef = {
     // REAR CARD curation: neither input is a per-param CV (the worklet owns
     // the gain law), so derivation would fold both into one 'signal' band —
     // the spec's vca table reads better as signal → gain stage.
+    //
+    // AUDIT (P1 batch-2 rear sweep): re-checked against the DSP and left as
+    // authored. No `~` tick is correct here — the Faust gain sum runs through
+    // si.smoo BEFORE the multiply, so CV tracks at envelope/LFO rate, not
+    // audio rate (patching audio in is filtered, not ring-modulated); and the
+    // `audio` hole is the signal itself, where a rate tick would be noise.
     rear: {
       groups: [
         { id: 'signal', label: 'signal', ports: ['audio'] },

@@ -6,7 +6,8 @@
 // a lightweight descriptor and returns the first N controls for that tier:
 //
 //   mini    → 1   (the hero control + live glyph)
-//   compact → 3   (the design-point lane tile)
+//   compact → 2 with a glyph / 3 without  (the design-point lane tile — the
+//                 cap RECONCILED with laneBodyPlan's fit, see faceTierCap)
 //   full    → 8   (the full-in-lane face)
 //   dock    → ALL (the sectioned dock faceplate — order + pages)
 //
@@ -22,6 +23,7 @@
 // an unrecognized key as a humanized static control so it stays pure.
 
 import type { ModuleFace, ModuleFacePage } from '$lib/graph/types';
+import { LANE_ROW_MAX_CELLS, LANE_ROW_MAX_CELLS_WITH_GLYPH } from './module-shell-model';
 
 /** The curation LADDER — the tiers a face is sliced into. Distinct from the
  *  LOD zoom tiers (mini/compact/full/native in lod.ts): 'dock' is the sectioned
@@ -29,13 +31,35 @@ import type { ModuleFace, ModuleFacePage } from '$lib/graph/types';
  *  LOD 'native' tier maps to 'full' or 'dock' at the call site (a P1 concern). */
 export type FaceTier = 'mini' | 'compact' | 'full' | 'dock';
 
-/** How many controls each tier surfaces. `dock` = every ranked control. */
+/**
+ * How many controls each tier surfaces. `dock` = every ranked control.
+ *
+ * `compact` is the GLYPH-LESS ceiling. The compact tile is the one tier whose
+ * cap is decided by GEOMETRY rather than by the curation ladder: the fixed
+ * 192×180 lane tile fits three whole md knob columns, or TWO plus the glyph
+ * (laneBodyPlan's LANE_ROW_MAX_CELLS / LANE_ROW_MAX_CELLS_WITH_GLYPH). Use
+ * `faceTierCap(tier, hasGlyph)` — never `FACE_TIER_CAPS.compact` directly — so
+ * the SELECTED count and the RENDERED count are the same number by
+ * construction (the authored-intent mismatch: faces documented a 3-control
+ * compact tile the shell then truncated to 2, silently).
+ */
 export const FACE_TIER_CAPS: Record<FaceTier, number> = {
   mini: 1,
-  compact: 3,
+  compact: LANE_ROW_MAX_CELLS,
   full: 8,
   dock: Infinity,
 };
+
+/**
+ * The EFFECTIVE cap for a tier — the ladder, reconciled with the lane fit plan
+ * at 'compact': a glyph-bearing face surfaces two cells there (the glyph takes
+ * the third column's room), a glyph-less face three. Every other tier is the
+ * plain ladder value. Pure.
+ */
+export function faceTierCap(tier: FaceTier, hasGlyph: boolean): number {
+  if (tier === 'compact') return hasGlyph ? LANE_ROW_MAX_CELLS_WITH_GLYPH : LANE_ROW_MAX_CELLS;
+  return FACE_TIER_CAPS[tier];
+}
 
 export type FaceControlKind = 'param' | 'family' | 'static';
 
@@ -77,7 +101,7 @@ export interface CuratedFace {
 export interface FaceDefLike {
   face?: ModuleFace;
   params?: readonly { id: string; label?: string }[];
-  controlFamilies?: readonly { id: string }[];
+  controlFamilies?: readonly { id: string; label?: string }[];
 }
 
 const FAMILY_TEMPLATE = /^(.+)-\{n\}$/;
@@ -96,11 +120,23 @@ function humanize(key: string): string {
  *  lint gate, not here). */
 export function resolveFaceControl(key: string, def: FaceDefLike): FaceControl {
   const params = def.params ?? [];
-  const familyIds = new Set((def.controlFamilies ?? []).map((f) => f.id));
+  const families = def.controlFamilies ?? [];
 
   const fam = key.match(FAMILY_TEMPLATE);
-  if (fam && familyIds.has(fam[1])) {
-    return { key, kind: 'family', familyId: fam[1], label: humanize(fam[1]) };
+  if (fam) {
+    // The DECLARED family label is the authored name ('Preset / voice
+    // selector'); humanizing the id would print the raw key back at the user
+    // ('Dx7 preset select'). Fall back to humanize only for a family with no
+    // label (the type makes it optional for hand-built fixtures).
+    const declared = families.find((f) => f.id === fam[1]);
+    if (declared) {
+      return {
+        key,
+        kind: 'family',
+        familyId: fam[1],
+        label: declared.label?.trim() || humanize(fam[1]),
+      };
+    }
   }
   const param = params.find((p) => p.id === key);
   if (param) {
@@ -128,14 +164,15 @@ export function curatedFace(def: FaceDefLike, tier: FaceTier): CuratedFace | nul
   const face = def.face;
   if (!face) return null;
 
-  const cap = FACE_TIER_CAPS[tier];
+  const glyph = face.glyph ?? 'none';
+  const cap = faceTierCap(tier, glyph !== 'none');
   const ranked = face.order.map((k) => resolveFaceControl(k, def));
   const controls = Number.isFinite(cap) ? ranked.slice(0, cap) : ranked;
 
   const out: CuratedFace = {
     tier,
     controls,
-    glyph: face.glyph ?? 'none',
+    glyph,
   };
   if (tier === 'dock' && face.pages && face.pages.length) {
     out.pages = face.pages.map((p) => resolvePage(p, def));

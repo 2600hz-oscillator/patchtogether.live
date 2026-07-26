@@ -421,7 +421,10 @@ export interface ModuleFacePage {
  *
  * The pure `curatedFace(def, tier)` selector ($lib/ui/workflow/curated-face)
  * resolves each key to a control descriptor and returns the top-N for a tier
- * (mini=1 / compact=3 / full-in-lane=8 / dock=all + pages).
+ * (mini=1 / compact=2 with a glyph or 3 without / full-in-lane=8 / dock=all +
+ * pages). The compact number comes from `faceTierCap`, which reconciles the
+ * ladder with laneBodyPlan's whole-cell fit so the SELECTED and the RENDERED
+ * counts are the same number.
  *
  * HASH-TRANSPARENCY (video defs): VIDEO module defs live in the WebGL attest
  * basis, so a `face` block on a VideoModuleDef MUST be wrapped in
@@ -442,6 +445,19 @@ export interface ModuleFace {
   /** The compact live-glyph kind the shell renders in the tile's glyph slot.
    *  Omitted / 'none' = no glyph. */
   glyph?: 'scope' | 'meter' | 'envelope' | 'waveform' | 'none';
+  /**
+   * Param ids that are MOMENTARY PADS, not values — the "press-param" pattern
+   * (tomtom/clap `strike`): the worklet ORs the param with its trigger input
+   * and fires on the RISING EDGE, so the control must PRESS and RELEASE, never
+   * latch. Shape alone cannot tell them apart from a LATCHING switch (both are
+   * `0..1 discrete default 0` — kickdrum/snaredrum `hard`, tidyVco `hold`), so
+   * the intent is DECLARED here and the shell renders a momentary <Button>
+   * instead of a KnobConic. UI metadata like the rest of `face`: OUT of
+   * contract-signature/contract-lock (declaring it is not an I/O change) and
+   * linted by module-face-lint.test.ts, which also fails when a promoted
+   * module grows a NEW switch-shaped param that nobody classified.
+   */
+  momentary?: readonly string[];
   /** OPTIONAL rear-card curation (the dock flip-side jack field). Derivation
    *  covers most modules — voice/signal band + one band per `pages` page (the
    *  CV holes targeting that page's params) + the OUTPUTS rail — so this is

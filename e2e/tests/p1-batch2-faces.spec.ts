@@ -1,0 +1,146 @@
+// e2e/tests/p1-batch2-faces.spec.ts
+//
+// P1 BATCH 2 — the MIGRATION sanity check for the newly promoted faces, on the
+// three surfaces a migration actually has to land on. The registry-driven
+// faces-parity sweep already proves the dock renders the def's FULL control
+// surface for every STRICT_FACES module (and auto-enrolled all six of these);
+// what it does NOT prove is that the bridge actually SWAPPED — a module can be
+// in STRICT_FACES, render a perfect dock faceplate, and still show the uniform
+// un-migrated PLACEHOLDER in its lane. That is the bug this spec exists for:
+//
+//   1. LANE — the curated ModuleShell renders in the lane under `?shell=1`,
+//      NOT `module-shell-placeholder`, and the legacy card's controls are gone
+//      from the lane (they live in the dock now).
+//   2. DOCK — the full-view faceplate mounts at the 'dock' face tier and
+//      renders exactly the module's declared `face.pages` as labeled section
+//      bands, in order.
+//   3. REAR — bare TAB flips the faceplate and the rear jack field renders one
+//      hole per declared port, with the front control face gone.
+//
+// TWO representative modules rather than all six (the sweep covers the rest):
+//   dx7      — the batch's most complex FACE (4 pages, a control FAMILY in the
+//              ranking: the preset selector) on the SIMPLEST rear (4 holes,
+//              zero per-param CV).
+//   sixstrum — the inverse: the batch's busiest REAR (23 holes, two curated
+//              sub-header clusters) and its widest page set (6).
+//
+// Plus the NO-OP guarantee re-asserted for the newly migrated types: with the
+// preview OFF (the default) a batch-2 module still renders its REAL legacy
+// card in the lane. Promotion to STRICT_FACES must not leak out of `?shell=1`.
+//
+// Runs on /rack?mode=workflow (no DB/relay) — the normal e2e lane.
+
+import { test, expect, type Page } from '@playwright/test';
+import { spawnPatch } from './_helpers';
+
+/** The two representative migrations. `pages` = declared face.pages; `holes` =
+ *  declared inputs + outputs (the rear renders exactly one hole per port). */
+const BATCH2 = [
+  {
+    type: 'dx7',
+    pages: ['patch', 'performance', 'master adsr', 'cartridge'],
+    holes: 4,
+    /** A param the lane face must NOT be showing as a legacy card control. */
+    laneParam: 'algorithm',
+  },
+  {
+    type: 'sixstrum',
+    pages: ['strum · damp', 'string', 'pick', 'tuning · chord', 'envelope', 'body · out'],
+    holes: 23,
+    laneParam: 'ring',
+  },
+] as const;
+
+const NODE = 'b2';
+
+async function gotoWorkflow(page: Page, opts: { shell: boolean }): Promise<void> {
+  await page.goto(opts.shell ? '/rack?mode=workflow&shell=1' : '/rack?mode=workflow');
+  await expect(page.getByTestId('workflow-topbar')).toBeVisible();
+  await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
+}
+
+test.describe('P1 batch 2 — the migrated faces land on lane + dock + rear', () => {
+  for (const { type, pages, holes, laneParam } of BATCH2) {
+    test(`${type}: curated shell in the lane, ${pages.length} dock pages, ${holes}-hole rear field`, async ({ page }) => {
+      await gotoWorkflow(page, { shell: true });
+      await spawnPatch(page, [{ id: NODE, type, position: { x: 460, y: 240 } }]);
+
+      const laneNode = page.locator(`.svelte-flow__node[data-id="${NODE}"]`);
+      await expect(laneNode).toHaveCount(1);
+
+      // ── 1) LANE: the curated shell, NOT the un-migrated placeholder. ──
+      const shell = laneNode.locator('[data-testid="module-shell"]');
+      await expect(shell).toBeVisible();
+      await expect(
+        laneNode.locator('[data-testid="module-shell-placeholder"]'),
+        `${type} is in STRICT_FACES, so the bridge must swap it — a placeholder here means ` +
+          'the face was authored + promoted but never actually reached the lane',
+      ).toHaveCount(0);
+      // The LEGACY CARD itself is gone from the lane — the shell replaced it,
+      // it did not wrap it. (Scoped to the card ROOT, not `control-*`: the
+      // shell's own curated cells carry the same `control-<paramId>` testids,
+      // so a testid-based negative would be vacuous. The preview-OFF case
+      // below asserts the positive on this exact selector, which is what keeps
+      // this one honest.)
+      await expect(laneNode.locator('.mod-card, .card, .moog-panel')).toHaveCount(0);
+      // Cables stay attached through the swap.
+      await expect(laneNode.locator('.svelte-flow__handle').first()).toHaveCount(1);
+
+      // ── 2) DOCK: the faceplate mounts at the 'dock' tier with the declared
+      //       pages as labeled section bands, in order. ──
+      await shell.getByTestId('shell-open-dock').click();
+      const faceplate = page.getByTestId('dock-full-view');
+      await expect(faceplate).toBeVisible();
+      await expect(
+        faceplate.locator('[data-testid="module-shell"][data-shell-tier="dock"]'),
+        `${type}: the dock mounts the CURATED shell (not the legacy card fallback)`,
+      ).toBeVisible();
+      const bands = faceplate.locator('[data-testid="face-page"]');
+      await expect(bands).toHaveCount(pages.length);
+      for (const [i, label] of pages.entries()) {
+        await expect(
+          bands.nth(i),
+          `${type}: dock band ${i} is the declared page '${label}'`,
+        ).toContainText(label, { ignoreCase: true });
+      }
+      // The curated control the lane face does not surface is reachable here.
+      await expect(faceplate.locator(`[data-testid="control-${laneParam}"]`)).toHaveCount(1);
+
+      // ── 3) REAR: bare TAB flips to the jack field — one hole per port. ──
+      await page.keyboard.press('Tab');
+      await expect(faceplate).toHaveAttribute('data-flipped', 'true');
+      const rear = faceplate.getByTestId('rear-card');
+      await expect(rear).toBeVisible();
+      await expect(
+        rear.locator('[data-testid="back-jack"]'),
+        `${type}: the rear exposes EVERY declared patch point, exactly once`,
+      ).toHaveCount(holes);
+      // The front control face is gone while flipped.
+      await expect(faceplate.getByTestId('faceplate-editor')).toBeHidden();
+
+      // TAB flips back to the control face.
+      await page.keyboard.press('Tab');
+      await expect(faceplate).toHaveAttribute('data-flipped', 'false');
+      await expect(faceplate.locator('[data-testid="face-page"]')).toHaveCount(pages.length);
+    });
+  }
+
+  test('preview OFF (default) stays a strict no-op for the batch-2 types', async ({ page }) => {
+    await gotoWorkflow(page, { shell: false });
+    await spawnPatch(page, [
+      { id: 'off-dx7', type: 'dx7', position: { x: 200, y: 240 } },
+      { id: 'off-ss', type: 'sixstrum', position: { x: 1100, y: 240 } },
+    ]);
+
+    for (const id of ['off-dx7', 'off-ss']) {
+      const laneNode = page.locator(`.svelte-flow__node[data-id="${id}"]`);
+      await expect(laneNode).toHaveCount(1);
+      // The REAL card renders in the lane, exactly as before the promotion…
+      await expect(laneNode.locator('.mod-card, .card, .moog-panel').first()).toBeVisible();
+      await expect(laneNode.locator('[data-testid^="control-"]').first()).toBeVisible();
+      // …and NEITHER shell surface is emitted.
+      await expect(laneNode.locator('[data-testid="module-shell"]')).toHaveCount(0);
+      await expect(laneNode.locator('[data-testid="module-shell-placeholder"]')).toHaveCount(0);
+    }
+  });
+});
