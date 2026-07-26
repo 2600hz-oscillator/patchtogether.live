@@ -1018,6 +1018,8 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/face-filter-dock',
   'linux/face-mixer-compact',
   'linux/face-mixer-dock',
+  'linux/face-delay-compact',
+  'linux/face-delay-dock',
   // CLIPPLAYER: darwin baseline (the clip-launcher card — 8×8 launch grid +
   // piano-roll note editor + transport knobs; no animated canvas) captured
   // locally; linux baseline pending a `vrt-update.yml` workflow_dispatch on
