@@ -103,15 +103,23 @@
   data-fullview-node={node.id}
   data-flipped={flipped && def ? 'true' : 'false'}
 >
-  <div class="faceplate-scroll">
-    <!-- OCCUPANT SWAP = REMOUNT ({#key node.id}): opening module B while A is
-         expanded must tear A's subtree down and mount B's fresh — never morph
-         A's mounted card/shell in place with B's node. In-place morphing
-         updated the OLD subtree's deriveds with the NEW node mid-flush
-         (curated-face closures over the previous def) and, combined with a
-         throwing legacy-card init, wedged the faceplate on the previous
-         occupant (the "expand B switched nothing" bug). -->
-    {#key node.id}
+  <!-- OCCUPANT SWAP = REMOUNT ({#key node.id}): opening module B while A is
+       expanded must tear A's subtree down and mount B's fresh — never morph
+       A's mounted card/shell in place with B's node. In-place morphing
+       updated the OLD subtree's deriveds with the NEW node mid-flush
+       (curated-face closures over the previous def) and, combined with a
+       throwing legacy-card init, wedged the faceplate on the previous
+       occupant (the "expand B switched nothing" bug). -->
+  {#key node.id}
+    <!-- CHROME-FIXED FRAME (owner: per-pane ✕ ALWAYS visible): the faceplate
+         frame is a column — grip + title bar (with the .win-ctrls trio, incl.
+         the pane ✕) are PANE-FIXED chrome, and ONLY the content region below
+         them (.faceplate-scroll > .faceplate-body, min-width 900px) scrolls,
+         both axes. Pre-fix the WHOLE faceplate lived inside the scroll
+         container, so in a 50/50 split pane (~half the 900px kit width) the
+         bar scrolled sideways with the content and the ✕ sat past the pane's
+         right edge — invisible in BOTH the front and the flipped rear state
+         (the owner screenshot: clipped "REA…" chip, no close anywhere). -->
     <div class={`faceplate ${domain}`} data-fullview-domain={domain}>
       <span class="spine" aria-hidden="true"></span>
 
@@ -146,52 +154,60 @@
         </div>
       </div>
 
-      {#if flipped && def}
-        <!-- REAR CARD (TAB flip): the flip-side patch field replaces the
-             tab-rail + control page — patch points only, zero UI controls.
-             The front stays MOUNTED (hidden below) so flipping back never
-             reboots the occupant (scroll/knob state, video previews). -->
-        <RearCard nodeId={node.id} def={def as unknown as RearDefLike} />
-      {/if}
-
-      <!-- FRONT face: hidden (not unmounted) while flipped. display:contents
-           when visible keeps the layout byte-identical to pre-rear-card. -->
-      <div class="fp-front" class:fp-front-hidden={flipped && def} data-testid="faceplate-front">
-      <!-- Tab-rail seam: legacy content is one active "MODULE" tab; real per-op
-           / per-section tabs are P1. -->
-      <div class="tabrail" data-testid="faceplate-tabrail">
-        <div class="tab on" data-testid="faceplate-tab"><span class="t1">MODULE</span></div>
-      </div>
-
-      <div class="page">
-        <div class="editor" data-testid="faceplate-editor">
-          {#if migrated}
-            <ModuleShell id={node.id} data={{ node, view: 'dock-full' }} />
-          {:else}
-            <!-- Verbatim legacy card, plain-mount (data-dock-card* anchors +
-                 node.id keying carried so PickupCable/cardRectOf + patch menu
-                 resolve; PatchPanel self-gates outside the provider). -->
-            <section class="fp-card-mount" data-dock-card={node.id} data-dock-type={node.type} data-dock-full="true">
-              <div class="fp-card-frame" data-dock-card-frame>
-                <div
-                  class={rackU != null ? 'dock-rack-sized' : 'dock-natural-sized'}
-                  style={rackU != null ? `--rack-hp:${rackHp};--rack-u:${rackU}` : undefined}
-                >
-                  {#if CardComponent}
-                    <CardComponent id={node.id} data={{ node }} />
-                  {:else}
-                    <div class="fp-missing">unknown module type: {node.type}</div>
-                  {/if}
-                </div>
-              </div>
-            </section>
+      <!-- CONTENT SCROLL REGION: everything BELOW the chrome — the rear patch
+           field or the front tab-rail + control page — scrolls here, both
+           axes (the kit's 900px min-width now lives on .faceplate-body, so a
+           half-width split pane gets sideways travel WITHOUT taking the title
+           bar / ✕ along for the ride). -->
+      <div class="faceplate-scroll">
+        <div class="faceplate-body">
+          {#if flipped && def}
+            <!-- REAR CARD (TAB flip): the flip-side patch field replaces the
+                 tab-rail + control page — patch points only, zero UI controls.
+                 The front stays MOUNTED (hidden below) so flipping back never
+                 reboots the occupant (scroll/knob state, video previews). -->
+            <RearCard nodeId={node.id} def={def as unknown as RearDefLike} />
           {/if}
+
+          <!-- FRONT face: hidden (not unmounted) while flipped. display:contents
+               when visible keeps the layout byte-identical to pre-rear-card. -->
+          <div class="fp-front" class:fp-front-hidden={flipped && def} data-testid="faceplate-front">
+          <!-- Tab-rail seam: legacy content is one active "MODULE" tab; real per-op
+               / per-section tabs are P1. -->
+          <div class="tabrail" data-testid="faceplate-tabrail">
+            <div class="tab on" data-testid="faceplate-tab"><span class="t1">MODULE</span></div>
+          </div>
+
+          <div class="page">
+            <div class="editor" data-testid="faceplate-editor">
+              {#if migrated}
+                <ModuleShell id={node.id} data={{ node, view: 'dock-full' }} />
+              {:else}
+                <!-- Verbatim legacy card, plain-mount (data-dock-card* anchors +
+                     node.id keying carried so PickupCable/cardRectOf + patch menu
+                     resolve; PatchPanel self-gates outside the provider). -->
+                <section class="fp-card-mount" data-dock-card={node.id} data-dock-type={node.type} data-dock-full="true">
+                  <div class="fp-card-frame" data-dock-card-frame>
+                    <div
+                      class={rackU != null ? 'dock-rack-sized' : 'dock-natural-sized'}
+                      style={rackU != null ? `--rack-hp:${rackHp};--rack-u:${rackU}` : undefined}
+                    >
+                      {#if CardComponent}
+                        <CardComponent id={node.id} data={{ node }} />
+                      {:else}
+                        <div class="fp-missing">unknown module type: {node.type}</div>
+                      {/if}
+                    </div>
+                  </div>
+                </section>
+              {/if}
+            </div>
+          </div>
+          </div>
         </div>
       </div>
-      </div>
     </div>
-    {/key}
-  </div>
+  {/key}
 </div>
 
 <style>
@@ -202,21 +218,32 @@
      occupant closed while a full-view is up: pinned XOR full-view). Each
      faceplate's .faceplate-scroll is its pane's OWN overflow container —
      both axes — so split panes scroll independently (the kit's 900px
-     .faceplate min-width guarantees sideways travel in a half-width pane). */
+     min-width — now on .faceplate-body — guarantees sideways travel in a
+     half-width pane). The FRAME is a column: grip + title bar (with the
+     pane ✕) are pane-fixed chrome ABOVE the scroll region, so the ✕ is
+     visible + clickable at any pane width and any scroll position, front
+     AND flipped (the owner split-view close-button fix). The 4px root
+     padding preserves the pre-fix breathing strip below the frame (the old
+     .faceplate-scroll padding-bottom — keeps short-content scenes
+     pixel-identical). */
   .dock-faceplate {
     flex: 1 1 auto;
     min-width: 0;
     max-height: min(60vh, 680px);
     display: flex;
+    padding-bottom: 4px;
+  }
+  .faceplate {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
   }
   .faceplate-scroll {
     flex: 1 1 auto;
     min-width: 0;
-    max-height: min(60vh, 680px);
-    overflow: auto;
-  }
-  .faceplate {
-    width: 100%;
+    min-height: 0;
   }
   .fp-card-frame {
     position: relative;
@@ -232,7 +259,10 @@
   .fp-front.fp-front-hidden {
     display: none;
   }
-  /* REAR · PATCH state chip (kit .state-chip.ghost vocabulary). */
+  /* REAR · PATCH state chip (kit .state-chip.ghost vocabulary). Shrinkable
+     with ellipsis so at split width the CHIP truncates before the ✕ trio
+     (flex:none in the kit) ever loses a pixel — the bar never wraps or
+     clips its window controls. */
   .rear-chip {
     font-family: var(--f-mono, ui-monospace, 'SF Mono', Menlo, Consolas, monospace);
     font-size: 11px;
@@ -244,6 +274,11 @@
     border: 1px solid var(--domain-d);
     border-radius: 5px;
     padding: 4px 10px;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .dock-natural-sized,
   :global(.dock-faceplate .dock-rack-sized) {

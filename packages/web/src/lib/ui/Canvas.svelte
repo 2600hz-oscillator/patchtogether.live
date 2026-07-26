@@ -1434,11 +1434,16 @@
         return;
       }
       if (e.key === 'Tab') {
-        // FLIP SEAM (rear-card follow-up): TAB flips the OPEN full-view to its
-        // rear/patch face — both panes together (global flip). State + a
-        // data-attr only today; the rear renderer is separate work. Only
-        // hijack TAB while the full-view is open (focus nav is untouched
-        // otherwise — and while typing / with modifiers we never get here).
+        // FLIP SEAM (rear card): BARE Tab flips the OPEN full-view to its
+        // rear/patch face — both panes together (global flip). Only hijack Tab
+        // while the full-view is open (focus nav is untouched otherwise — and
+        // while typing / with Cmd-Ctrl-Alt we never get here).
+        //
+        // SHIFT-Tab is explicitly NOT a flip: the guard at the top of this
+        // handler only screens meta/ctrl/alt, so Shift-Tab used to reach here
+        // and both flipped the view AND stole reverse focus traversal. Bare Tab
+        // is the ONLY flip key (matching the canvas `isFlip` predicate below).
+        if (e.shiftKey) return;
         if (dockStore.fullViewNodeIds.length > 0) {
           e.preventDefault();
           dockStore.toggleFullViewFlipped();
@@ -7172,7 +7177,18 @@
       // Plain Tab toggles rear view. We deliberately ignore any modifier combo
       // (Cmd/Ctrl/Alt/Shift-Tab) so OS/browser tab-switching + Shift-Tab focus
       // traversal are untouched — only a bare Tab is the rack-flip shortcut.
-      return e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
+      if (e.key !== 'Tab' || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return false;
+      // SINGLE-OWNER Tab (double-handler fix): while the dock full-view is OPEN
+      // the DOCK owns bare Tab — onDockKey (above) flips the full-view panes to
+      // their rear cards. Both handlers are plain `window` keydown listeners, so
+      // preventDefault in one does NOT stop the other: one keystroke used to
+      // toggle BOTH `dockStore.fullViewFlipped` AND this canvas-wide `rearView`.
+      // Two independent flip states then PHASE-DIVERGE (flip in the dock, close
+      // it, press Tab on the canvas → the canvas came up already inverted).
+      // Guarding on occupancy (not event ordering) makes exactly one handler act
+      // per keystroke, whichever listener happens to be registered first. With
+      // the full-view CLOSED, Tab keeps its original canvas-wide behavior.
+      return dockStore.fullViewNodeIds.length === 0;
     }
     function onKey(e: KeyboardEvent) {
       if (shouldIgnore(e.target)) return;

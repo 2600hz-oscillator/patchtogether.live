@@ -17,6 +17,10 @@
 //      pickup (connectDragState + PickupCable ghost), incompatible holes DIM
 //      while carrying (the Bitwig pre-highlight, inverted), click a lit hole
 //      → the SAME validated edge a front-view patch creates.
+//   4) SINGLE-OWNER TAB: exactly ONE flip handler acts per keystroke. The dock
+//      owns bare TAB while the full-view is open, the canvas-wide "Flip rack"
+//      rear view owns it when it's closed, and Shift-TAB owns neither — so the
+//      two flip states can never phase-diverge.
 //
 // Runs on /rack?mode=workflow&shell=1 (no DB/relay) — the normal e2e lane,
 // same recipe as workflow-shell-faces.spec.ts.
@@ -51,7 +55,20 @@ function domainOf(cable: string): string {
 
 async function gotoWorkflow(page: Page): Promise<void> {
   await page.goto('/rack?mode=workflow&shell=1');
-  await expect(page.getByTestId('workflow-topbar')).toBeVisible();
+  // 15s FIRST-LOAD budget — the SAME number workflow-shell.spec.ts and
+  // workflow-dock-occupancy.spec.ts already use for this exact route, so it is
+  // CI-validated rather than guessed.
+  //
+  // ROOT CAUSE of the cold-server flake this replaces: SvelteKit dev compiles
+  // /rack ON DEMAND. The very FIRST navigation of a run — a fresh
+  // `task e2e:serve`, or a cleared node_modules/.vite — pays that compile
+  // before the topbar can mount, blowing the 5s expect default; every later
+  // load hits the warm module graph, which is why ONLY the first invocation
+  // ever reddened. Measured on a cleared-.vite cold server: first test 14.8s
+  // wall (~12s of it the compile) vs 2.6-3.3s for each subsequent test.
+  //
+  // A budget, not a retry: a genuine regression still fails, just 10s later.
+  await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 15_000 });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
 
@@ -77,6 +94,29 @@ function paneOf(page: Page, nodeId: string) {
 /** Bare TAB — the rack-flip shortcut (Canvas consumes it; no modifiers). */
 async function pressTab(page: Page): Promise<void> {
   await page.keyboard.press('Tab');
+}
+
+/** SHIFT-TAB — reverse focus traversal. Must flip NOTHING, in either state. */
+async function pressShiftTab(page: Page): Promise<void> {
+  await page.keyboard.press('Shift+Tab');
+}
+
+/** The CANVAS-wide rear view container ("Flip rack"): `div.flow.rear-view`.
+ *  `div.` qualified because PatchPanel's rail also renders a `span.flow`. */
+function canvasFlow(page: Page) {
+  return page.locator('div.flow');
+}
+
+/** The canvas rear view's semantic surface — the Controls "Flip rack" toggle. */
+function flipRackBtn(page: Page) {
+  return page.getByTestId('flip-rack-btn');
+}
+
+/** Drop focus back to <body>. A Shift-TAB that (correctly) flips nothing DOES
+ *  move focus, and a later bare TAB read as "typing" if it landed in an input
+ *  would silently pass for the wrong reason. */
+async function resetFocus(page: Page): Promise<void> {
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
 }
 
 function faceplate(page: Page) {
@@ -335,4 +375,106 @@ test('50/50 split: TAB flips BOTH panes to their rear cards together (one global
   for (const nodeId of ['tv', 'env'] as const) {
     await expect(paneOf(page, nodeId).getByTestId('faceplate-editor')).toBeVisible();
   }
+});
+
+// ── (5) SINGLE-OWNER TAB: exactly ONE flip handler acts per keystroke ───────
+//
+// Bare TAB has TWO consumers in Canvas: the dock keymap (flips the open
+// full-view to its rear card) and the older canvas-wide "Flip rack" rear view.
+// Both are plain `window` keydown listeners, so preventDefault in one does NOT
+// stop the other — ONE keystroke used to toggle BOTH flip states, and the two
+// then phase-diverged (flip in the dock, close it, TAB on the canvas → the
+// canvas came up already inverted, i.e. TAB appeared to do nothing). And the
+// dock branch screened only meta/ctrl/alt, so SHIFT-TAB flipped it too while
+// stealing reverse focus traversal. Ownership is now decided by full-view
+// OCCUPANCY, not by listener-registration order:
+//
+//   full-view OPEN   → the DOCK owns bare TAB; the canvas rear view is inert.
+//   full-view CLOSED → the CANVAS owns bare TAB (original behavior, unchanged).
+//   Shift-TAB        → neither; native focus traversal.
+
+test('full-view OPEN: bare TAB flips ONLY the dock panes — the canvas rear view never moves', async ({
+  page,
+}) => {
+  await gotoWorkflow(page);
+  await spawnPatch(page, [{ id: 'tv', type: 'tidyVco', position: { x: 460, y: 240 } }]);
+
+  const drawer = page.getByTestId('dock-fullview-drawer');
+  await expect(canvasFlow(page), 'canvas starts front-side').not.toHaveClass(/rear-view/);
+  await expect(flipRackBtn(page)).toHaveAttribute('aria-pressed', 'false');
+
+  await openFullView(page, 'tv');
+  await pressTab(page);
+
+  // The DOCK flipped…
+  await expect(drawer).toHaveAttribute('data-fullview-flipped', 'true');
+  await expect(rearCard(page)).toBeVisible();
+  // …and the canvas did NOT flip behind it (the double-handler bug: the whole
+  // rack silently turned around under the open drawer).
+  await expect(canvasFlow(page)).not.toHaveClass(/rear-view/);
+  await expect(flipRackBtn(page)).toHaveAttribute('aria-pressed', 'false');
+
+  // TAB back — still only the dock moves, so the two states can't drift apart.
+  await pressTab(page);
+  await expect(drawer).toHaveAttribute('data-fullview-flipped', 'false');
+  await expect(rearCard(page)).toHaveCount(0);
+  await expect(canvasFlow(page)).not.toHaveClass(/rear-view/);
+  await expect(flipRackBtn(page)).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('Shift-TAB flips NOTHING — full-view open or closed (reverse focus nav is not hijacked)', async ({
+  page,
+}) => {
+  await gotoWorkflow(page);
+  await spawnPatch(page, [{ id: 'tv', type: 'tidyVco', position: { x: 460, y: 240 } }]);
+  const drawer = page.getByTestId('dock-fullview-drawer');
+
+  // (a) full-view CLOSED — the canvas predicate already excluded shift; pinned
+  //     so a regression there can't slip in either.
+  await pressShiftTab(page);
+  await expect(canvasFlow(page)).not.toHaveClass(/rear-view/);
+  await expect(flipRackBtn(page)).toHaveAttribute('aria-pressed', 'false');
+
+  // (b) full-view OPEN — ONE press is the whole assertion: pre-fix a single
+  //     Shift-TAB set fullViewFlipped=true (a second would have masked it).
+  await resetFocus(page);
+  await openFullView(page, 'tv');
+  await expect(drawer).toHaveAttribute('data-fullview-flipped', 'false');
+  await pressShiftTab(page);
+  await expect(drawer).toHaveAttribute('data-fullview-flipped', 'false');
+  await expect(rearCard(page)).toHaveCount(0);
+  await expect(faceplate(page).getByTestId('faceplate-editor')).toBeVisible();
+  await expect(canvasFlow(page)).not.toHaveClass(/rear-view/);
+});
+
+test('no phase divergence: open → flip → close → bare TAB flips the canvas ON (not pre-inverted)', async ({
+  page,
+}) => {
+  await gotoWorkflow(page);
+  await spawnPatch(page, [{ id: 'tv', type: 'tidyVco', position: { x: 460, y: 240 } }]);
+  const drawer = page.getByTestId('dock-fullview-drawer');
+
+  await openFullView(page, 'tv');
+  await pressTab(page); // flip the DOCK
+  await expect(drawer).toHaveAttribute('data-fullview-flipped', 'true');
+  await expect(canvasFlow(page)).not.toHaveClass(/rear-view/);
+
+  // ESC closes the whole full-view (which also resets the dock's own flip).
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('dock-full-view')).toHaveCount(0);
+
+  // The canvas rear view was never touched by any of the above, so the very
+  // next bare TAB flips it ON — the direction the user expects. Pre-fix the
+  // dock flip had silently flipped the canvas too, so this TAB flipped it OFF
+  // and the rack appeared unresponsive.
+  await resetFocus(page);
+  await pressTab(page);
+  await expect(canvasFlow(page)).toHaveClass(/rear-view/);
+  await expect(flipRackBtn(page)).toHaveAttribute('aria-pressed', 'true');
+
+  // And the canvas-owned TAB still toggles cleanly from there (unchanged
+  // legacy behavior once the full-view is out of the way).
+  await pressTab(page);
+  await expect(canvasFlow(page)).not.toHaveClass(/rear-view/);
+  await expect(flipRackBtn(page)).toHaveAttribute('aria-pressed', 'false');
 });
