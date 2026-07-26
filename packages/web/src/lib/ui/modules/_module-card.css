@@ -356,6 +356,24 @@
 .rear-view .card-back-panel * {
   visibility: visible;
 }
+/* The dock FULL-VIEW never inherits the canvas-wide flip. Its panes own their
+ * front↔rear state (dockStore.fullViewFlipped → RearCard, single-owner TAB) —
+ * but the drawer sits inside .flow, so a canvas rear view left ON before
+ * docking painted the legacy back panel over the pane front while the
+ * dock-sized front-inert mirror above hid the front, and with TAB dock-owned
+ * there was NO route back to the front (owner P0 2026-07-26). Same class of
+ * exemption as .rl-tile's in _rackline-tile.css. Scoped to the drawer only:
+ * the pinned DockRail keeps its deliberate rear-view patching. */
+.dock-fullview-drawer .card-back-panel {
+  display: none !important;
+}
+.rear-view .dock-fullview-drawer .dock-rack-sized > :is(.mod-card, .card, .moog-panel) > :not(.card-back-panel),
+.rear-view .dock-fullview-drawer .dock-rack-sized > * > :is(.mod-card, .card, .moog-panel) > :not(.card-back-panel),
+.rear-view .dock-fullview-drawer .dock-natural-sized > :is(.mod-card, .card, .moog-panel) > :not(.card-back-panel),
+.rear-view .dock-fullview-drawer .dock-natural-sized > * > :is(.mod-card, .card, .moog-panel) > :not(.card-back-panel) {
+  visibility: visible;
+  pointer-events: auto;
+}
 /* Front view: the back panel is display:none, but keep it fully inert as a
  * belt-and-braces guard so it can never steal a click from the live card. */
 .card-back-panel,
