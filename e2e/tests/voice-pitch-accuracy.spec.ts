@@ -27,8 +27,19 @@
 // the unit tier (packages/web/src/lib/audio/default-pitch-accuracy.test.ts,
 // byte-reproducible render → zero flake); this browser tier proves the LIVE
 // chain lands on the SAME center, with 2¢ of margin for the 2048-window
-// estimator spread on top of it. Measured here: dx7 ≈ +0.1¢ / −0.1¢ (C4/C5),
-// sixstrum ≈ −3.6¢ / −3.5¢ (its designed SPREAD detune on the low string).
+// estimator spread on top of it. Measured here across 3 repeats: dx7 +0.28¢ /
+// +0.21¢ (C4/C5, inter-quartile spread 0.00¢), sixstrum −3.56¢ / −3.49¢ (its
+// designed SPREAD detune on the low string; IQR 0.26¢) — both landing on the
+// SAME centers the deterministic unit tier renders offline.
+//
+// NOTE-ON CADENCE is per voice (`seqBpm`). The default BPM 240 re-gates every
+// 250 ms, which puts an AM component at 4 Hz on the output — ±26¢ of sidebands
+// at C4, right where a 42 ms window is trying to resolve a 6¢ question — and
+// for a PLUCKED voice it also means the window almost never sees a rung-out
+// string. Both batch-2 voices therefore sequence at BPM 60 (a note per second);
+// it tightened dx7's inter-quartile spread from ~35¢ to 0¢ and moved
+// sixstrum's median from a transient-dragged −7.8¢ onto its true −3.56¢.
+// tidyVco is a sustained oscillator and keeps the original 240.
 //
 // TWO NOTES per voice: C4 (MIDI 60 = 0 V) is the reality anchor — but 0 V
 // is indistinguishable from an unpatched pitch input, so C5 (MIDI 72 = 1 V)
@@ -69,6 +80,10 @@ interface PitchedVoice {
   /** How "the pitch" is read off a 2048-sample terminal window. See the
    *  TWO ESTIMATORS note below. Defaults to 'period'. */
   estimator?: 'period' | 'fundamental';
+  /** Sequencer BPM override (default 240 = a note-on every 250 ms). A
+   *  PLUCKED voice needs its note to actually RING before the next strike:
+   *  the 42 ms analyser window is measuring a transient otherwise. */
+  seqBpm?: number;
 }
 
 // TWO ESTIMATORS, because "the pitch" of a 42 ms window is only unambiguous
@@ -96,7 +111,10 @@ interface PitchedVoice {
 //     of tune: the FUNDAMENTAL is rock-steady at −3.56 ¢ (SPREAD's designed
 //     detune on the low string) for the whole decay, and at +0.02 ¢ with SPREAD
 //     zeroed. So the string's tuning is the fundamental, and this is the tier
-//     that has to say so.
+//     that has to say so. (Worth knowing when playing it: a PERIOD-tracking
+//     tuner or a pitch-tracker patched to SIX STRUM will read the attack of a
+//     plucked note ~10-15 ¢ flat. That is the instrument's inharmonicity, not
+//     a tuning error — the same thing happens to a tuner on a real guitar.)
 //   * DX7 at its default E.PIANO 1 preset is a high-index FM voice; on a 42 ms
 //     window YIN periodically locks onto a competing minimum ~100 ¢ up (its
 //     confidence collapses from ~0.001 to ~0.08 when it does, which is the
@@ -113,10 +131,10 @@ const PITCHED_VOICES: PitchedVoice[] = [
   // dx7: the mono PITCH CV + GATE pair (POLY left unpatched, which is what
   // makes the worklet read it). Its shipped default preset carries the
   // patch's own stored transpose, so this also pins "a fresh dx7 is in tune".
-  { type: 'dx7', wiring: { kind: 'mono', pitchPort: 'pitch_cv', gatePort: 'gate' }, outs: ['out'], estimator: 'fundamental' },
+  { type: 'dx7', wiring: { kind: 'mono', pitchPort: 'pitch_cv', gatePort: 'gate' }, outs: ['out'], estimator: 'fundamental', seqBpm: 60 },
   // sixstrum: POLY lane 0 → string 1 (see the two-wirings note). Each gate
   // rising edge re-plucks the string, so the tap stays voiced across the poll.
-  { type: 'sixstrum', wiring: { kind: 'poly', polyPort: 'poly' }, outs: ['out'], estimator: 'fundamental' },
+  { type: 'sixstrum', wiring: { kind: 'poly', polyPort: 'poly' }, outs: ['out'], estimator: 'fundamental', seqBpm: 60 },
 ];
 
 const REAL_CHAIN_TOLERANCE_CENTS = 6;
@@ -195,10 +213,11 @@ for (const voice of PITCHED_VOICES) {
         [
           // The REAL default-mode mono source: the sequencer's internal
           // clock; length 1 so the latched (S&H) pitch is constant and the
-          // gate re-opens every 250 ms at BPM 240 (gateLength 0.95 keeps
-          // the voice sounding through nearly the whole cycle).
+          // gate re-opens every step (gateLength 0.95 keeps the voice
+          // sounding through nearly the whole cycle). BPM 240 = a step every
+          // 250 ms; a voice that needs longer between note-ons overrides it.
           { id: 'p-seq', type: 'sequencer', position: { x: 60, y: 60 }, domain: 'audio',
-            params: { bpm: 240, length: 1, isPlaying: 1, gateLength: 0.95 } },
+            params: { bpm: voice.seqBpm ?? 240, length: 1, isPlaying: 1, gateLength: 0.95 } },
           // THE VOICE — NO param overrides: factory-default tuning is the
           // system under test.
           { id: 'p-voice', type: voice.type, position: { x: 420, y: 60 }, domain: 'audio' },
