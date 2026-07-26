@@ -416,7 +416,16 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // had its pairs REMOVED so a single vrt-update.yml `platform=linux`
       // dispatch on this branch captures them (the skip is unconditional, so
       // drain-then-dispatch; the batch-1/2 precedent).
-    ).toBeLessThanOrEqual(118);
+      // 118→119 for the CLIP-PLAYER-AS-A-DOCK-PANE split scene (2026-07-26,
+      // deliberate darwin-first — ONE new scene, workflow-dock-clip-split:
+      // the owner's "clip player open along side a module in drawer" as a
+      // 50/50 pixel gate in workflow-dock-composite.spec.ts). darwin baseline
+      // captured locally and flake-checked 3×; a vrt-update.yml
+      // `platform=linux` dispatch on this branch drains the pair and brings
+      // this back to 118. (The pre-existing linux/workflow-dock-patch pair is
+      // unchanged — that scene's darwin baseline was RE-captured in place
+      // because `c` now opens the clip player as a pane, not a drawer.)
+    ).toBeLessThanOrEqual(119);
   });
 });
 

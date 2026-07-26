@@ -66,20 +66,40 @@ export interface PinnedSpawnSpec {
   presence?: 'pinned' | 'type';
 }
 
-/** One pinned DRAWER singleton spec (the M/E/C trio): a spawn spec plus
- *  its bottom-drawer toggle key + header label. */
+/**
+ * WHICH bottom-dock SURFACE a pinned singleton's hotkey opens.
+ *
+ *  - 'drawer'   — the P1 pinned M/E/C drawer (DockRail 'bottom'): ONE occupant,
+ *    the shipped behavior for MIXMSTRS + ELECTRA CONTROL.
+ *  - 'fullView' — a dock FULL-VIEW PANE, exactly like a module's EXPAND pill
+ *    (owner directive 2026-07-26: "opening clip player with c is same as
+ *    expanding any other module" — so the built-in clip player can sit
+ *    SIDE-BY-SIDE 50/50 with a module instead of being mutually exclusive with
+ *    it). The pane is backed by the REAL `pinned-clipplayer` NODE, so it rides
+ *    the existing dockStore.fullViewNodeIds machinery with zero synthetic-pane
+ *    plumbing: same faceplate frame, same per-pane ✕, same LRU third-expand
+ *    replacement, same TAB rear-card flip.
+ */
+export type PinnedSurface = 'drawer' | 'fullView';
+
+/** One pinned singleton spec with a HOTKEY (the M/E/C trio): a spawn spec plus
+ *  its toggle key, header label, and which bottom-dock surface it opens. */
 export interface PinnedModuleSpec extends PinnedSpawnSpec {
-  /** Drawer toggle key (lowercase). */
+  /** Toggle key (lowercase). */
   key: 'm' | 'e' | 'c';
   /** Drawer header label. */
   label: string;
+  /** Which bottom-dock surface `key` toggles (see PinnedSurface). */
+  surface: PinnedSurface;
 }
 
 /** The workflow trio, in M / E / C order. */
 export const WORKFLOW_PINNED_MODULES: readonly PinnedModuleSpec[] = [
-  { type: 'mixmstrs', domain: 'audio', id: 'pinned-mixmstrs', key: 'm', label: 'mixmstrs' },
-  { type: 'electraControl', domain: 'meta', id: 'pinned-electraControl', key: 'e', label: 'electra control' },
-  { type: 'clipplayer', domain: 'audio', id: 'pinned-clipplayer', key: 'c', label: 'clipplayer' },
+  { type: 'mixmstrs', domain: 'audio', id: 'pinned-mixmstrs', key: 'm', label: 'mixmstrs', surface: 'drawer' },
+  { type: 'electraControl', domain: 'meta', id: 'pinned-electraControl', key: 'e', label: 'electra control', surface: 'drawer' },
+  // C = EXPAND (owner 2026-07-26): the built-in clip player is a first-class
+  // dock PANE, not a mutually-exclusive drawer.
+  { type: 'clipplayer', domain: 'audio', id: 'pinned-clipplayer', key: 'c', label: 'clipplayer', surface: 'fullView' },
 ] as const;
 
 /**

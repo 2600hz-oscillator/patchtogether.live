@@ -573,10 +573,15 @@ test.describe('grand-integration @grand-attest', () => {
     await bringNodeOnScreen(page, T, { x: 320, y: 150 });
     const tNode = page.locator(`.svelte-flow__node[data-id="${T}"]`);
 
-    // Open the pinned clip player drawer (the C keymap) so its arm button is in DOM.
+    // Open the pinned clip player (the C keymap) so its arm button is in DOM.
+    // Since 2026-07-26 `c` opens it as a dock FULL-VIEW PANE rather than the
+    // exclusive pinned drawer (owner: "opening clip player with c is same as
+    // expanding any other module") — the SAME verbatim card mounts, carrying
+    // the same `data-dock-card` anchor, so the locator is left UNSCOPED to the
+    // container and every interaction below is unchanged.
     await page.locator('.svelte-flow__pane:visible').first().click({ position: { x: 700, y: 150 } });
     await page.keyboard.press('c');
-    const cpCard = page.getByTestId('dock-zone-bottom').locator('[data-dock-card="pinned-clipplayer"]');
+    const cpCard = page.locator('[data-dock-card="pinned-clipplayer"]');
     await expect(cpCard).toBeVisible();
 
     // Assign the tidy MODULE → its own lane (2) via the real module context menu
