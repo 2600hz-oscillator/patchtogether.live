@@ -9,8 +9,8 @@
 //
 //   1. rate ratio — lanes at 1/2 : 1 : 2x advance in a 1:2:4 step ratio (read
 //      atomically off the engine's audio-accurate per-lane playhead).
-//   2. RST button — all ACTIVE clips snap back to step 1 (128-step clip → a
-//      loop wrap cannot fake the snap).
+//   2. RST button — all ACTIVE clips snap back to step 1, proved from an
+//      in-page playhead trace as a BACKWARD JUMP too fast to be a loop wrap.
 //   3. reset gate input — clock edges into `reset` hold the playhead near the
 //      top; removing them lets it climb again (proves the cable, not a stall).
 
@@ -66,48 +66,20 @@ async function waitForEngine(
   return { ok: false, last };
 }
 
-/** Poll several engine keys TOGETHER (ONE atomic read per tick) until `pred`
- *  holds for the whole tuple. Reading lanes SEQUENTIALLY races when they change
- *  together: a reset snaps all active lanes on the same tick, then each climbs
- *  immediately — so a second, separate poll starts only after the first drained
- *  the shared low window and can miss it (lane 0 caught ≤6, lane 1's later poll
- *  already saw 87 on a starved CI shard). One combined read catches all lanes in
- *  the same post-reset low window. */
-async function waitForEnginesAll(
-  page: Page,
-  nodeId: string,
-  keys: string[],
-  pred: (vs: number[]) => boolean,
-  timeoutMs: number,
-): Promise<{ ok: boolean; last: number[] }> {
-  const deadline = Date.now() + timeoutMs;
-  let last: number[] = [];
-  while (Date.now() < deadline) {
-    last = await page.evaluate(
-      ({ id, ks }) => {
-        const w = globalThis as unknown as EngineW;
-        const eng = w.__engine?.();
-        const node = w.__patch.nodes[id];
-        return ks.map((k) => {
-          if (!eng || !node) return NaN;
-          const v = eng.read(node, k);
-          return typeof v === 'number' ? v : NaN;
-        });
-      },
-      { id: nodeId, ks: keys },
-    );
-    if (last.every((v) => Number.isFinite(v)) && pred(last)) return { ok: true, last };
-    await page.waitForTimeout(30);
-  }
-  return { ok: false, last };
-}
+/** The seeded clip length. This is `MAX_CLIP_STEPS` (clip-types.ts): the engine
+ *  coerces every clip through `clampStepCount`, so a longer clip CANNOT be
+ *  seeded to push the loop-wrap horizon further out — see the reset test, which
+ *  excludes a wrap arithmetically instead of by out-running it. */
+const CLIP_STEPS = 128;
+/** Nominal lane clock: stepDiv 2 = a 1/16 grid, @240 bpm = 62.5 ms/step. */
+const NOMINAL_STEPS_PER_S = 16;
 
 /** Seed DENSE 128-step note clips (a note every step, so the playhead tracks)
  *  in slot 0 of the given lanes, and queue them — via the same Y.Doc path the
- *  card/grid use. 128 steps ≫ every window here → no loop wrap. */
+ *  card/grid use. */
 async function seedDenseClips(page: Page, nodeId: string, lanes: number[]) {
   await page.evaluate(
-    ({ id, ls }) => {
+    ({ id, ls, len }) => {
       const w = globalThis as unknown as EngineW;
       // Flat clip key is stride-64 (schema v2): clipIndex(slot=0, lane) = lane*64.
       // (The old stride-8 key `lane*8` only matched for lane 0 → lanes 1/2 were
@@ -121,10 +93,10 @@ async function seedDenseClips(page: Page, nodeId: string, lanes: number[]) {
         for (const lane of ls) {
           clips[String(lane * SCENE_STRIDE)] = {
             kind: 'note',
-            lengthSteps: 128,
+            lengthSteps: len,
             root: 48,
             loop: true,
-            steps: Array.from({ length: 128 }, (_, s) => ({ step: s, midi: 72, velocity: 127, lengthSteps: 1 })),
+            steps: Array.from({ length: len }, (_, s) => ({ step: s, midi: 72, velocity: 127, lengthSteps: 1 })),
           };
           queued[lane] = 0;
         }
@@ -133,8 +105,134 @@ async function seedDenseClips(page: Page, nodeId: string, lanes: number[]) {
         n.data.queued = queued;
       });
     },
-    { id: nodeId, ls: lanes },
+    { id: nodeId, ls: lanes, len: CLIP_STEPS },
   );
+}
+
+// ── RESET PROOF: an IN-PAGE playhead trace, not a CDP poll ──────────────────
+//
+// WHY (measured 2026-07, after two failed hardenings): the RST test used to
+// click reset and then POLL the engine over CDP for an ABSOLUTE "step <= 6"
+// band. Under load a single `page.evaluate` round-trip costs ~1.5 s, so the
+// FIRST read after `click()` landed long after the reset had already fired and
+// the playhead had climbed back OUT of the band. Back-projecting a failing
+// run's own numbers (15.65 steps/s — the nominal 16 for a 1/16 grid @240 bpm)
+// put the playhead at ≈22 when `click()` returned, i.e. the reset had fired
+// ~1.4 s earlier. Widening the band (2→6) and then the timeout (2500→5000)
+// both failed because NEITHER is the binding constraint: the constraint is the
+// latency between the reset FIRING and the first READ, and a longer timeout
+// only buys more chances to read a playhead that is now climbing AWAY.
+//
+// The absolute band is not even SOUND under load. Injecting pre-read latency
+// on an idle machine (the old assertion, same patch):
+//     +0 ms    pass          +6000 ms  "pass" — on a natural LOOP WRAP
+//     +1500 ms FAIL (103)    +9000 ms  FAIL (95)
+//     +3000 ms FAIL (127)    +14000 ms "pass" — on a natural LOOP WRAP
+// i.e. past the 8 s / 128-step wrap horizon it can go green WITHOUT the reset
+// happening at all. A longer clip cannot fix that: `MAX_CLIP_STEPS` = 128 and
+// the engine coerces every clip through `clampStepCount`, so a 512-step seed
+// is silently clamped back to 128.
+//
+// So: record the playheads INSIDE the page on a 10 ms interval (no CDP in the
+// detection path — measured max sampler gap ~30 ms even with 14 s of injected
+// latency) and prove a BACKWARD JUMP that is arithmetically TOO FAST to be a
+// loop wrap. `currentStep` is monotone between wraps and resets, so a decrease
+// has exactly two causes and the wrap is EXCLUDED BY ARITHMETIC rather than by
+// hoping the observation window is short. Strictly stronger than "happened to
+// read low", and it has no wall-clock race left to widen.
+
+type TraceDrop = { dt: number; prev: number[]; cur: number[]; wrapMs: number };
+type TraceSummary = { samples: number; spanMs: number; maxGapMs: number; rate: number; drops: TraceDrop[] };
+type TraceW = { __cpTrace?: { stop: () => void; read: () => TraceSummary } };
+
+/** Start the in-page recorder for `keys` on `nodeId`. Each tick also classifies
+ *  a backward jump: `wrapMs` is the MINIMUM time a free-running playhead would
+ *  need to read `cur` after reading `prev` via a natural wrap, so `dt ≪ wrapMs`
+ *  means the jump cannot be a wrap. */
+async function startStepTrace(page: Page, nodeId: string, keys: string[]): Promise<void> {
+  await page.evaluate(
+    ({ id, ks, len, nominal }) => {
+      const w = globalThis as unknown as EngineW & TraceW;
+      const t: number[] = [];
+      const s: number[][] = [];
+      const drops: TraceDrop[] = [];
+      let runStart = 0; // index of the first sample of the current drop-free run
+      let rate = nominal;
+      let maxGapMs = 0;
+      const h = setInterval(() => {
+        const eng = w.__engine?.();
+        const node = w.__patch.nodes[id];
+        if (!eng || !node || t.length >= 5000) return;
+        const now = performance.now();
+        const cur = ks.map((k) => {
+          const v = eng.read(node, k);
+          return typeof v === 'number' ? v : NaN;
+        });
+        if (t.length) {
+          const dt = now - t[t.length - 1];
+          if (dt > maxGapMs) maxGapMs = dt;
+          const prev = s[s.length - 1];
+          const finite = prev.every(Number.isFinite) && cur.every(Number.isFinite);
+          if (finite && prev.every((p, L) => cur[L] < p)) {
+            // `- 1` is ONE STEP of read quantization: `prev` may have been read
+            // at the very END of its step and `cur` at the very START of its
+            // own. Without it a tight 127→0 wrap looks instantaneous and is
+            // misread as a reset (verified against a real wrap).
+            const wrapMs = Math.min(
+              ...prev.map((p, L) => (Math.max(0, len - p - 1 + Math.max(0, cur[L])) / rate) * 1000),
+            );
+            drops.push({ dt, prev, cur, wrapMs });
+            runStart = t.length; // a fresh drop-free run starts at THIS sample
+          } else if (finite && runStart < t.length) {
+            // Re-measure the FREE-RUNNING rate over the current drop-free run,
+            // so the wrap exclusion never trusts a hard-coded tempo. Only ever
+            // raised above nominal: a FASTER assumed clock shrinks `wrapMs`,
+            // which is the conservative direction (harder to call a wrap a reset).
+            const dS = cur[0] - s[runStart][0];
+            const dT = (now - t[runStart]) / 1000;
+            if (dT > 0.4 && dS > 0) rate = Math.max(rate, dS / dT);
+          }
+        }
+        t.push(now);
+        s.push(cur);
+      }, 10);
+      w.__cpTrace = {
+        stop: () => clearInterval(h),
+        read: () => ({ samples: t.length, spanMs: t.length ? t[t.length - 1] - t[0] : 0, maxGapMs, rate, drops }),
+      };
+    },
+    { id: nodeId, ks: keys, len: CLIP_STEPS, nominal: NOMINAL_STEPS_PER_S },
+  );
+}
+
+/** Wait until the trace holds a backward jump too fast to be a wrap, that lands
+ *  near the top. Polls IN-PAGE (`waitForFunction`), so no CDP round-trip sits in
+ *  the detection path — that latency IS the bug this replaces. Returns on the
+ *  first qualifying jump (~50 ms on a healthy run: no added wall time). */
+async function waitForResetSnap(page: Page, timeoutMs: number): Promise<boolean> {
+  try {
+    await page.waitForFunction(
+      () => {
+        const drops = (globalThis as unknown as TraceW).__cpTrace?.read().drops ?? [];
+        return drops.some((d) => d.dt < d.wrapMs * 0.5 && d.cur.every((c) => c <= 6));
+      },
+      undefined,
+      { timeout: timeoutMs, polling: 25 },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Stop the recorder and return everything it saw (the failure message). */
+async function stopStepTrace(page: Page): Promise<TraceSummary> {
+  return await page.evaluate(() => {
+    const tr = (globalThis as unknown as TraceW).__cpTrace;
+    if (!tr) return { samples: 0, spanMs: 0, maxGapMs: 0, rate: 0, drops: [] };
+    tr.stop();
+    return tr.read();
+  });
 }
 
 /** Flip every TIMELORDE's running (creating one if absent) at a fast bpm. */
@@ -213,45 +311,31 @@ test('RST button: all active clips snap back to step 1 and keep playing', async 
   await seedDenseClips(page, 'cp', [0, 1]);
   await setTransport(page, 1);
 
-  // Both lanes well past the top (128-step clip → no wrap inside this window).
+  // Both lanes well past the top, so a snap back to step 1 is a real jump.
   const l0 = await waitForEngine(page, 'cp', 'currentStep:0', (v) => v >= 8, 6000);
   expect(l0.ok, `lane 0 mid-clip before reset (saw ${l0.last})`).toBe(true);
 
+  // Record BOTH playheads in-page across the click (see the RESET PROOF block
+  // above for why this replaced the post-click CDP poll). The recorder is
+  // running before the click and keeps running regardless of how long `click()`
+  // itself takes — under load it has burned 2.2-6.3 s, and the reset fires
+  // somewhere INSIDE that, which is exactly what the old poll kept missing.
+  await startStepTrace(page, 'cp', ['currentStep:0', 'currentStep:1']);
   await page.getByTestId('clipplayer-reset').click();
 
-  // Snap: the playhead jumps back near the top LONG before a natural wrap (8 s).
-  // The acceptance band is <=6, not <=2: at 240 bpm the clock keeps CLIMBING
-  // during the reset's dispatch latency, so a [0,2] window is a race the poll
-  // can miss (it caught the playhead already back up at 28 on a loaded CI
-  // shard). The pre-reset gate above required step >= 8, so ANY observation
-  // <= 6 is unambiguous proof of the backward snap (nothing reads that low
-  // before the reset) while tolerating the fast clock — the assertion's
-  // meaning is unchanged, only the race is removed.
-  //
-  // DETECTION TIMEOUT (5000 ms, was 2500): `currentStep` is derived from the
-  // AUDIO clock (ctx.currentTime vs pre-scheduled events) and keeps climbing
-  // even while the MAIN-THREAD scheduler tick — the only place resetNonce is
-  // consumed — is momentarily starved on a loaded CI runner. When that stall
-  // ran past 2500 ms the snap hadn't been processed yet and the poll expired at
-  // step ~43 (CI-only; passes locally + under 4-worker load). 5000 ms tolerates
-  // the stall and is still WELL under the 8 s / 128-step wrap horizon, so a
-  // natural loop wrap can never fake the low reading. Band unchanged.
-  // Both active lanes snap on the SAME reset tick, then climb together. Read
-  // BOTH playheads atomically per poll (waitForEnginesAll) — a sequential
-  // lane-0-then-lane-1 poll raced: lane 0 was caught ≤6 but by the time lane 1's
-  // separate poll started, lane 1 (snapped at the same instant) had already
-  // climbed past the band on a starved CI shard (saw 87). One combined read
-  // catches the shared post-reset low window for both lanes.
-  const snapped = await waitForEnginesAll(
-    page,
-    'cp',
-    ['currentStep:0', 'currentStep:1'],
-    ([a, b]) => a >= 0 && a <= 6 && b >= 0 && b <= 6,
-    5000,
-  );
+  // PROOF: both lanes jump BACKWARD, together, to the top of the clip, in far
+  // less time than a natural 128-step loop wrap would need to land them there.
+  // `currentStep` only ever decreases via a wrap or a reset, and the wrap is
+  // ruled out arithmetically — so this is the RST button and nothing else.
+  // Resolves in ~50 ms when healthy; the 8 s ceiling only pays out on a real
+  // failure and absorbs a starved main-thread scheduler tick (the only place
+  // resetNonce is consumed) without widening any acceptance window.
+  const proved = await waitForResetSnap(page, 8000);
+  const trace = await stopStepTrace(page);
   expect(
-    snapped.ok,
-    `both lanes snapped back toward the top on the reset (saw l0=${snapped.last[0]}, l1=${snapped.last[1]})`,
+    proved,
+    `both lanes snapped BACKWARD to the top on the reset, too fast to be a loop wrap — ` +
+      `trace: ${JSON.stringify(trace)}`,
   ).toBe(true);
   // Still PLAYING (reset ≠ stop) and still advancing.
   expect(await readEngine(page, 'cp', 'activeLane:0')).toBe(0);
