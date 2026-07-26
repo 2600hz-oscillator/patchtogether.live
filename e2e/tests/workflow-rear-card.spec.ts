@@ -478,3 +478,53 @@ test('no phase divergence: open → flip → close → bare TAB flips the canvas
   await expect(canvasFlow(page)).not.toHaveClass(/rear-view/);
   await expect(flipRackBtn(page)).toHaveAttribute('aria-pressed', 'false');
 });
+
+// ── (5) Canvas rear view must NOT hijack the dock full-view (owner P0) ──────
+//
+// The drawer sits inside `.flow`, so with the canvas-wide rear view left ON a
+// docked LEGACY card inherited `.rear-view`: the ancestor-generic reveal rule
+// painted its OLD back panel (`.card-back-panel`, absolute inset:0 z-index:8)
+// OVER the pane front while the dock-sized front-inert mirror hid the front —
+// and with TAB dock-owned while the full-view is open, there was NO route back
+// to the front ("no way to see the front of the panel", 2026-07-26). The fix
+// scopes a drawer exemption in _module-card.css (the .rl-tile precedent): the
+// full-view's ONLY rear is the RearCard, driven by dockStore.fullViewFlipped.
+test('canvas rear view left ON: a docked LEGACY pane still shows its FRONT, and dock-TAB round-trips front⇄RearCard', async ({
+  page,
+}) => {
+  await gotoWorkflow(page);
+  // scope: NOT in STRICT_FACES ⇒ the un-migrated/legacy dock path under test.
+  await spawnPatch(page, [{ id: 'sc', type: 'scope', position: { x: 460, y: 240 } }]);
+
+  // Arm the trap: flip the CANVAS to rear view BEFORE docking.
+  await resetFocus(page);
+  await pressTab(page);
+  await expect(canvasFlow(page)).toHaveClass(/rear-view/);
+
+  await openFullView(page, 'sc');
+
+  // THE FIX — the pane shows its FRONT even though an ancestor is .rear-view:
+  // the legacy card's front content is visible (not visibility:hidden'd by the
+  // dock-sized mirror rule) and its OLD back panel is suppressed entirely.
+  await expect(faceplate(page)).toHaveAttribute('data-flipped', 'false');
+  const frontCard = faceplate(page).locator(
+    '.fp-card-mount :is(.mod-card, .card, .moog-panel)',
+  ).first();
+  await expect(frontCard).toBeVisible();
+  await expect(faceplate(page).locator('.card-back-panel')).toBeHidden();
+
+  // TAB (dock-owned): the flip side is the NEW RearCard — never the old panel.
+  await resetFocus(page);
+  await pressTab(page);
+  await expect(faceplate(page)).toHaveAttribute('data-flipped', 'true');
+  await expect(rearCard(page)).toBeVisible();
+  await expect(faceplate(page).locator('.card-back-panel')).toBeHidden();
+
+  // TAB again: the round trip the bug made impossible — FRONT restored.
+  await pressTab(page);
+  await expect(faceplate(page)).toHaveAttribute('data-flipped', 'false');
+  await expect(frontCard).toBeVisible();
+
+  // Single-owner intact: none of that touched the canvas flip state.
+  await expect(canvasFlow(page)).toHaveClass(/rear-view/);
+});

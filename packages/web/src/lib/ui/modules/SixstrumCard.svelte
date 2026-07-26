@@ -21,6 +21,7 @@
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import { cardParams } from './card-kit';
+  import { applySixstrumPreset, sixstrumModeName } from './sixstrum-preset-actions';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -46,10 +47,9 @@
   let tuning      = $derived(paramVal('tuning'));
   let quality     = $derived(paramVal('quality'));
 
-  const TUNING_NAMES = ['guitar', 'bass', 'harp'];
   const DIR_NAMES = ['down', 'up', 'alt'];
   const QUALITY_NAMES = ['maj', 'min', 'dom7', 'maj7', 'min7', 'sus4', 'pow5', 'oct'];
-  let tuningName  = $derived(TUNING_NAMES[Math.round(tuning)] ?? 'guitar');
+  let tuningName  = $derived(sixstrumModeName(tuning));
   let dirName     = $derived(DIR_NAMES[Math.round(strumDir)] ?? 'down');
   let qualityName = $derived(QUALITY_NAMES[Math.round(quality)] ?? 'maj');
 
@@ -58,17 +58,16 @@
   // three modes ARE knob states — "presets reflect knob states, no magic").
   // Includes `tuning` (which open strings) as one of the stamped values. After
   // a recall every knob is visible + tweakable; the modes are reachable, then
-  // editable. (register/ring/material calibrated to the plucked-string decay
-  // research; guitar ~2.5s, bass long+dark −1 oct, harp long+bright +7 st.)
-  const MODE_PRESETS: Record<string, number>[] = [
-    { tuning: 0, register: 0,   ring: 2.5, material: 0.55, pickPos: 0.17, stiffness: 0.06, pickTone: 0.60, pickGrain: 1.0,  strumSpread: 0.28, strumDir: 0, muteDepth: 0.5, quality: 0, body: 0.35, spread: 0.25 },
-    { tuning: 1, register: -12, ring: 6,   material: 0.32, pickPos: 0.11, stiffness: 0.22, pickTone: 0.40, pickGrain: 1.5,  strumSpread: 0.07, strumDir: 0, muteDepth: 0.6, quality: 6, body: 0.50, spread: 0.15 },
-    { tuning: 2, register: 7,   ring: 9,   material: 0.85, pickPos: 0.28, stiffness: 0.02, pickTone: 0.72, pickGrain: 0.55, strumSpread: 0.70, strumDir: 1, muteDepth: 0.3, quality: 3, body: 0.45, spread: 0.40 },
-  ];
+  // editable.
+  //
+  // The roster + the stamp now live in sixstrum-preset-actions (the dx7
+  // precedent), so this knob and the RACKLINE shell's PRESET cell run the SAME
+  // implementation — the shell face carried `tuning` but had no recall to call,
+  // which left the three modes unreachable under `?shell=1`.
+  // The `${testidPrefix}` for the declared `sixstrum-preset` control family is
+  // emitted on the cell below (the docs gate greps the card for it).
   function setMode(v: number): void {
-    const idx = Math.max(0, Math.min(MODE_PRESETS.length - 1, Math.round(v)));
-    const preset = MODE_PRESETS[idx]!;
-    for (const [k, val] of Object.entries(preset)) set(k)(val);
+    applySixstrumPreset(id, v);
   }
 
   // STRUM audition — barres all six strings (fires strum #1 via the manualTrigger seam).
@@ -151,7 +150,9 @@
         </div>
         <div class="group g-sel">
           <header>MODE</header>
-          <div class="sel-cell">
+          <!-- The `sixstrum-preset` control family (one member): the PRESET
+               RECALL knob. Same stamp the shell's PRESET selector fires. -->
+          <div class="sel-cell" data-testid={`sixstrum-preset-${id}-1`}>
             <div class="sel-readout" data-testid="sixstrum-tuning-name">{tuningName}</div>
             <Fader value={tuning} min={0} max={2} defaultValue={defaultFor('tuning')} label="Mode" curve="discrete" onchange={setMode} moduleId={id} paramId="tuning" readLive={live('tuning')} />
           </div>

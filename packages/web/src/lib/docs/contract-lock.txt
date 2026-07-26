@@ -2932,6 +2932,7 @@ sixstrum param strumDir 0..2 discrete default=0
 sixstrum param strumSpread 0..1 linear default=0.28
 sixstrum param sustain 0..1 linear default=1
 sixstrum param tuning 0..2 discrete default=0
+sixstrum family sixstrum-preset kind=other prefix=sixstrum-preset
 skifree meta domain=audio maxInstances=1 vizPassthrough
 skifree in x cv
 skifree in y cv
