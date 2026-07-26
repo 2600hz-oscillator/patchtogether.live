@@ -1004,24 +1004,17 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/rear-dx7',
   'linux/rear-sixstrum',
   //
-  // P1 BATCH 3 (2026-07-26, deliberate darwin-first — the batch-1/2 pattern
-  // above, at the point BEFORE the drain): the 10 CURATED FACE scenes for the
-  // five newly-migrated modules (compact lane tile + dock full-view faceplate
-  // per module, workflow-shell-faces.spec.ts) — karplus, filter, mixer, delay
-  // and reverb. darwin baselines captured locally and flake-checked 3×; the
-  // linux pairs below are pending a vrt-update.yml `platform=linux` dispatch
-  // on this integrated batch-3 branch, at which point they DRAIN exactly like
-  // batch 1's did and the vrt-meta linux-deficit ceiling comes back down by 10.
-  'linux/face-karplus-compact',
-  'linux/face-karplus-dock',
-  'linux/face-filter-compact',
-  'linux/face-filter-dock',
-  'linux/face-mixer-compact',
-  'linux/face-mixer-dock',
-  'linux/face-delay-compact',
-  'linux/face-delay-dock',
-  'linux/face-reverb-compact',
-  'linux/face-reverb-dock',
+  // P1 BATCH 3 (2026-07-26) was DRAINED here: the 10 CURATED FACE scenes for
+  // the five newly-migrated modules (compact lane tile + dock full-view
+  // faceplate per module, workflow-shell-faces.spec.ts — karplus, filter,
+  // mixer, delay, reverb) had their pairs REMOVED so the vrt-update.yml
+  // `platform=linux` dispatch on this branch actually CAPTURES them. The
+  // pending-pair skip is UNCONDITIONAL, so a pair still listed here means
+  // `--update-snapshots` writes nothing for it and the dispatch comes back
+  // green having captured zero baselines (the #1064 drum-wave + batch-1/2
+  // drain ordering: drop the pairs FIRST, then dispatch). The vrt-meta
+  // linux-deficit ceiling drops 128 → 118 in this same commit.
+  //
   // CLIPPLAYER: darwin baseline (the clip-launcher card — 8×8 launch grid +
   // piano-roll note editor + transport knobs; no animated canvas) captured
   // locally; linux baseline pending a `vrt-update.yml` workflow_dispatch on

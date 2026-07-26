@@ -411,7 +411,12 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // 104→106. darwin baselines captured locally and flake-checked 3×; a
       // vrt-update.yml `platform=linux` dispatch on this branch drains the 10
       // pairs and brings this back to 118.
-    ).toBeLessThanOrEqual(128);
+      // 128→118 DRAIN (2026-07-26): the batch-3 pending set — the 10 curated
+      // face scenes (compact + dock for karplus/filter/mixer/delay/reverb) —
+      // had its pairs REMOVED so a single vrt-update.yml `platform=linux`
+      // dispatch on this branch captures them (the skip is unconditional, so
+      // drain-then-dispatch; the batch-1/2 precedent).
+    ).toBeLessThanOrEqual(118);
   });
 });
 
