@@ -261,6 +261,9 @@
   // `?shell=1` opt-in preview flag so it's a strict no-op until owner sign-off.
   import { laneRenderKind, emittedTypeFor, isShellSwappable, NON_SHELL_LANE_TYPES } from '$lib/ui/workflow/legacy-fallback';
   import { migrated } from '$lib/ui/workflow/strict-faces';
+  // DOM-SOURCE seam: a video module whose source lives on its CARD stays alive
+  // in an off-screen host when the shell swaps its lane card away.
+  import { DOM_SOURCE_LANE_TYPES, needsHeadlessSourceMount } from '$lib/ui/workflow/dom-source-modules';
   import { RACK_SIZE_DEFAULTS } from '$lib/ui/rack-sizes';
   import { computeCabinetLayout } from '$lib/ui/canvas/cabinet-layout';
   // ModuleNameLabel moved INTO every module card's title chrome (see
@@ -388,6 +391,8 @@
   // P0.3b re-spec — the bottom-drawer EXPANDED full-view faceplate (its own
   // full-width RACKLINE faceplate, NOT routed through DockCardHost's card flex).
   import DockFullView from '$lib/ui/dock/DockFullView.svelte';
+  // Off-screen lifecycle host for DOM-source video modules the shell swapped out.
+  import HeadlessSourceHost from '$lib/ui/workflow/HeadlessSourceHost.svelte';
   import { SHELL_TILE_W, SHELL_TILE_H_SLOT, SHELL_VIDEO_ZONE_TILE_INSET_Y, videoZonePackedXs } from '$lib/ui/workflow/module-shell-model';
   // DOCKING P2.5b: the pan-gesture screen-space cable tail (stub → rail).
   import DockPanTail, { type DockTailSpec } from '$lib/ui/dock/DockPanTail.svelte';
@@ -1929,6 +1934,50 @@
     for (const id of dockStore.fullViewNodeIds) {
       const node = snapshot.nodes.find((n) => n.id === id);
       if (node) out.push({ node, title: dockDisplayName(node) });
+    }
+    return out;
+  });
+
+  /** DOM-SOURCE video modules the shell swapped out of their lane — the nodes
+   *  <HeadlessSourceHost> must keep mounted so their card-owned `<video>`/`<img>`
+   *  source stays ATTACHED to the engine handle (see
+   *  $lib/ui/workflow/dom-source-modules for the whole rationale: node
+   *  registration is graph-driven and already UI-independent, but SOURCE
+   *  attachment was card-mount-driven, so camera/videobox/… → OUTPUT was
+   *  patched-but-black under `?shell=1`).
+   *
+   *  Uses the SAME pure lane decision the flowNodes derivation uses, so the two
+   *  can never disagree: 'legacy' (dawless, preview-off, or a NON_SHELL carve-out
+   *  like cameraInput/videoOut) and 'stub' (real card in the dock rail) both
+   *  render the card SOMEWHERE and are excluded — only 'shell'/'placeholder'
+   *  qualify. Preview-off can never produce those, so this is a strict no-op
+   *  there ⇒ byte-identical behaviour. Additionally excluded:
+   *    - a node whose full faceplate is OPEN in the dock (DockFullView already
+   *      mounts its real card — a second mount would run two media elements for
+   *      one node and the first to unmount would detach the survivor's source),
+   *    - canvas-hidden nodes (pinned drawer / hiddenCard cameras) and collapsed-
+   *      group children: those render no lane card in preview-off EITHER, so
+   *      hosting them would ADD engine state the shell-off rack doesn't have —
+   *      the opposite of the parity this fix exists to guarantee. */
+  let headlessSourceNodes = $derived.by<ModuleNode[]>(() => {
+    if (!shellPreview) return [];
+    const collapsed = collapsedGroupIds;
+    const out: ModuleNode[] = [];
+    for (const n of snapshot.nodes) {
+      if (!DOM_SOURCE_LANE_TYPES.has(n.type)) continue;
+      if (isCanvasHiddenNode(n)) continue;
+      const parentGroupId = (n.data as { parentGroupId?: string } | undefined)?.parentGroupId;
+      if (parentGroupId && collapsed.has(parentGroupId)) continue;
+      if (dockStore.isFullView(n.id)) continue;
+      const kind = laneRenderKind({
+        workflowMode,
+        shellPreview,
+        userDocked: !!dockStore.entryFor(n.id),
+        type: n.type,
+        hasCard: isShellSwappable(n.type, cardTypeSet.has(n.type)),
+        migrated: migrated(n.type),
+      });
+      if (needsHeadlessSourceMount({ kind, type: n.type })) out.push(n);
     }
     return out;
   });
@@ -7827,6 +7876,17 @@
       {minimapOpen ? '▾ map' : '▴ map'}
     </button>
     <AwarenessLayer {provider} />
+    <!-- `?shell=1` DOM-SOURCE LIFECYCLE: a video module whose pixels come from a
+         card-owned <video>/<img> (camera / videobox / archivist / …) loses its
+         SOURCE when the shell swaps its lane card for a tile — the engine node
+         exists but emits nothing, so the whole downstream chain is black. Keep
+         those cards mounted OFF-SCREEN so `attachExternalSource` still runs and
+         the engine's source set matches preview-off exactly. Renders NOTHING
+         when the list is empty (always, preview-off). -->
+    <HeadlessSourceHost
+      nodes={headlessSourceNodes}
+      nodeTypes={nodeTypes as unknown as Record<string, unknown>}
+    />
     <PickupCable />
     {#if workflowMode && dockPanTails.length > 0 && flowApi}
       <!-- DOCKING P2.5b: gesture-scoped stub→rail tail (presentation-only;

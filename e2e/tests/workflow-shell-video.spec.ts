@@ -445,5 +445,186 @@ test.describe('?shell=1 video visibility', () => {
     await expect(page.locator('[data-testid="module-shell-placeholder"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="module-shell"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="video-tile-thumb"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="headless-source-host"]')).toHaveCount(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE CHAIN ITSELF (owner P0 follow-up: "no video AT ALL under ?shell=1 —
+// camera → output and acidwarp → output render nothing").
+//
+// The earlier describe proves the SURFACES exist under the shell (videoOut's
+// real card, live tile thumbs, the dock full-view). This one proves the ENGINE
+// CHAIN behind them is identical to preview-off — the part that was still dead:
+//
+//   1. A pure-GPU chain (ACIDWARP → OUTPUT) is LIVE under the shell, and the
+//      engine's materialized node set is EXACTLY the preview-off set for the
+//      same rack (the parity invariant: which UI renders a module must not
+//      change what the engine has).
+//   2. A DOM-SOURCE module — one whose pixels come from a card-owned
+//      <video>/<img> handed over with `attachExternalSource` — keeps its REAL
+//      card mounted in the off-screen <HeadlessSourceHost> when the shell swaps
+//      its lane card for a tile. That attach is the whole reason camera /
+//      videobox / archivist / … → OUTPUT was patched-but-black.
+//   3. cameraInput's DEVICE PICKER is reachable in the lane under the shell
+//      (its `<select>` is card-only DOM, not a ParamDef, so no face can render
+//      it — hence the NON_SHELL carve-out). The "lists real devices" half is
+//      CAPABILITY-GATED on a runtime enumerateDevices() probe: the default CI
+//      project has no camera and no permission, so an ungated assert would be
+//      green locally and red on CI (the capability-dependent-e2e discipline).
+//      The LIVE camera → OUTPUT pixel chain is asserted in camera-input.spec.ts
+//      (@camera-integration), which runs under the fake-device project.
+//
+// Renderer-tolerant throughout: engine probes + canvas INEQUALITY, never exact
+// pixels; no new spec file, so no shard re-binning and no heavy-glob edit (that
+// file is in the WebGL attest basis).
+// ---------------------------------------------------------------------------
+
+/** Every node the video engine has MATERIALIZED this frame (evaluated ∪ skipped
+ *  covers the whole topo order, whatever pull-eval decided to draw). The
+ *  registration probe — deliberately independent of what rendered. */
+async function engineNodeIds(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __engine?: () => { getDomain: (d: string) => { pullStats: () => { evaluated: string[]; skipped: string[] } } };
+    };
+    try {
+      const s = w.__engine!().getDomain('video').pullStats();
+      return [...new Set([...s.evaluated, ...s.skipped])].sort();
+    } catch {
+      return [];
+    }
+  });
+}
+
+test.describe('?shell=1 video CHAIN parity', () => {
+  test('ACIDWARP → OUTPUT is LIVE under the shell, and the engine node set matches preview-off exactly', async ({ page }) => {
+    // Software-renderer scale (see SLOW_RENDER): two full rack boots, each with
+    // a live acidwarp→videoOut chain and a pixel-change poll.
+    test.setTimeout(SLOW_RENDER ? 120_000 : 60_000);
+
+    /** Build the SAME rack in a given mode and report what the engine has +
+     *  whether the OUTPUT surface is actually painting moving pixels. */
+    async function buildAndProbe(url: string): Promise<{ nodes: string[] }> {
+      await page.goto(url);
+      await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 15_000 });
+      await expect(videoOutCard(page), `${url}: videoOut card mounts`).toBeVisible({ timeout: 15_000 });
+
+      await injectPatch(
+        page,
+        [{ id: 'aw1', type: 'acidwarp', position: { x: -1200, y: 4500 } }],
+        [{ id: 'e-aw-out', from: { nodeId: 'aw1', portId: 'out' }, to: { nodeId: VIDEO_OUT, portId: 'in' }, sourceType: 'video', targetType: 'video' }],
+      );
+
+      // The engine MATERIALIZED both ends of the chain (graph-driven — this is
+      // what must not depend on the lane renderer).
+      await expect
+        .poll(async () => await engineNodeIds(page), {
+          message: `${url}: engine materializes the acidwarp → videoOut chain`,
+          timeout: 20_000,
+        })
+        .toEqual(expect.arrayContaining(['aw1', VIDEO_OUT]));
+
+      // The chain RUNS: acidwarp's draw counter advances…
+      const base = await framesDrawn(page, 'aw1');
+      expect(base, `${url}: video engine reachable`).toBeGreaterThanOrEqual(0);
+      await expect
+        .poll(async () => (await framesDrawn(page, 'aw1')) - base, {
+          message: `${url}: acidwarp draws frames while the OUTPUT is watching it`,
+          timeout: 20_000,
+        })
+        .toBeGreaterThanOrEqual(2);
+
+      // …and the user-viewable OUTPUT surface actually paints MOVING pixels
+      // (not a black canvas — the owner's "nothing renders").
+      const outSel = `.svelte-flow__node[data-id="${VIDEO_OUT}"] [data-testid="video-out-canvas"]`;
+      const first = await canvasData(page, outSel);
+      expect(first, `${url}: OUTPUT canvas snapshot captured`).not.toBe('');
+      await expectCanvasChanges(page, outSel, first, `${url}: OUTPUT surface`);
+
+      return { nodes: await engineNodeIds(page) };
+    }
+
+    const shell = await buildAndProbe('/rack?mode=workflow&shell=1');
+    const off = await buildAndProbe('/rack?mode=workflow');
+
+    // THE PARITY INVARIANT: which UI renders a module must not change what the
+    // engine has materialized for the same rack.
+    expect(shell.nodes, 'shell engine node set === preview-off engine node set').toEqual(off.nodes);
+  });
+
+  test('a DOM-SOURCE video module keeps its REAL card alive off-screen when the shell swaps its lane card', async ({ page }) => {
+    test.setTimeout(SLOW_RENDER ? 90_000 : 30_000);
+    await gotoShell(page);
+    await expect(videoOutCard(page)).toBeVisible({ timeout: 15_000 });
+
+    // VIDEOBOX: its picture comes from a card-owned <video> handed to the engine
+    // via attachExternalSource — the class that went dark under the shell.
+    await injectPatch(page, [{ id: 'vb1', type: 'videobox', position: { x: -1200, y: 5100 } }]);
+
+    // The LANE still shows the uniform tile (the shell look is preserved — this
+    // fix is NOT "give every source module the legacy card back")…
+    await expect(
+      page.locator(`.svelte-flow__node[data-id="vb1"] [data-testid="module-shell-placeholder"]`),
+      'videobox still renders the uniform RACKLINE tile in its lane',
+    ).toHaveCount(1);
+
+    // …while its REAL card is mounted in the off-screen lifecycle host, so its
+    // source attach/detach still runs.
+    const host = page.locator('[data-testid="headless-source-host"][data-node-id="vb1"]');
+    await expect(host, 'videobox gets an off-screen lifecycle host').toHaveCount(1);
+    await expect(host, 'the host mounts the REAL videobox card').toHaveAttribute('data-node-type', 'videobox');
+    await expect(
+      host.locator('[data-testid="videobox-card"]'),
+      "the hosted card is the module's real card, not a stub",
+    ).toHaveCount(1);
+    await expect(
+      host.locator('[data-testid="videobox-video"]'),
+      '…including the <video> element it hands to the engine (attachExternalSource)',
+    ).toHaveCount(1);
+
+    // Exactly ONE mount for the node: a second live <video> would double
+    // getUserMedia/decode and the first to unmount would detach the survivor.
+    await expect(page.locator('[data-testid="headless-source-host"]')).toHaveCount(1);
+
+    // cameraInput must NEVER be hosted — it keeps its real card IN the lane
+    // (carve-out), so hosting it would be the double-mount above.
+    await injectPatch(page, [{ id: 'cam1', type: 'cameraInput', position: { x: -700, y: 5100 } }]);
+    await expect(page.locator('[data-testid="headless-source-host"][data-node-id="cam1"]')).toHaveCount(0);
+  });
+
+  test('the CAMERA source picker is reachable in the lane under the shell (device list capability-gated)', async ({ page }) => {
+    test.setTimeout(SLOW_RENDER ? 90_000 : 30_000);
+    await gotoShell(page);
+    await expect(videoOutCard(page)).toBeVisible({ timeout: 15_000 });
+
+    await injectPatch(page, [{ id: 'cam1', type: 'cameraInput', position: { x: -1200, y: 5100 } }]);
+
+    const laneNode = page.locator('.svelte-flow__node[data-id="cam1"]');
+    // The REAL card, not the tile — the carve-out (like videoOut).
+    await expect(laneNode.locator('[data-testid="module-shell-placeholder"]')).toHaveCount(0);
+    const picker = laneNode.locator('[data-testid="camera-device-select"]');
+    await expect(picker, 'the device picker is present + usable in the shell lane').toBeVisible({ timeout: 15_000 });
+
+    // CAPABILITY GATE (ci-capability discipline): only assert "lists a real
+    // device" where a videoinput actually exists. CI's default project has no
+    // camera and no permission — there the picker correctly shows "(no cameras)"
+    // and the presence assert above is the whole contract.
+    const cameraCount = await page.evaluate(async () => {
+      if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) return 0;
+      try {
+        return (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput').length;
+      } catch {
+        return 0;
+      }
+    });
+    test.skip(cameraCount === 0, 'no videoinput device in this runtime — device-list assert not applicable');
+    await expect
+      .poll(async () => picker.locator('option').count(), {
+        message: 'the picker lists at least one real camera',
+        timeout: 15_000,
+      })
+      .toBeGreaterThanOrEqual(1);
+    await expect(picker).toBeEnabled();
   });
 });

@@ -101,4 +101,16 @@ describe('isShellSwappable — eligibility', () => {
     expect(NON_SHELL_LANE_TYPES.has('recorderbox')).toBe(false);
     expect(NON_SHELL_LANE_TYPES.has('backdraft')).toBe(false);
   });
+
+  it('cameraInput is a CAPTURE-SOURCE snowflake: its legacy card (the live source + the device picker) stays in the lane', () => {
+    // The owner ?shell=1 P0: the card owns getUserMedia + the <video> it hands
+    // to the engine (attachExternalSource), AND the device <select> — neither is
+    // a ParamDef, so a tile made camera → OUTPUT patched-but-black with no way
+    // to pick a source. See ./dom-source-modules for the full rationale + gate.
+    expect(NON_SHELL_LANE_TYPES.has('cameraInput')).toBe(true);
+    expect(isShellSwappable('cameraInput', true)).toBe(false);
+    expect(
+      laneRenderKind({ ...base, type: 'cameraInput', hasCard: isShellSwappable('cameraInput', true) }),
+    ).toBe('legacy');
+  });
 });

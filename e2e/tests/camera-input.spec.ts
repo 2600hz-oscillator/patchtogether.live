@@ -288,4 +288,83 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
       timeout: 5_000,
     });
   });
+
+  // THE OWNER P0 (`/rack?mode=workflow&shell=1`: "camera → output renders
+  // nothing"). The camera's SOURCE lives on its card: CameraInputCard owns
+  // getUserMedia + the <video> element and hands it to the engine handle via
+  // `attachExternalSource` (and DETACHES it on unmount). Under the shell preview
+  // the lane rendered a uniform tile INSTEAD of the card, so the attach never
+  // ran: the engine node existed, the cable existed, and the OUTPUT was black.
+  //
+  // cameraInput is now a NON_SHELL_LANE_TYPE ($lib/ui/workflow/legacy-fallback)
+  // — its real card renders in the lane exactly like videoOut's, which also
+  // keeps the device <select> (card-only DOM, not a ParamDef) usable in the new
+  // view. This test is the end-to-end pin: SAME rack, shell ON, real
+  // getUserMedia → the OUTPUT surface paints MOVING pixels.
+  //
+  // Lives HERE because only this file's `chromium-camera` project has the fake
+  // webcam + pre-granted permission (playwright.config.ts is in the collab
+  // attest basis — adding a project for one test would force a re-attest).
+  // Renderer-tolerant: canvas INEQUALITY between two frames, never exact pixels.
+  test('under ?shell=1 the camera card + picker stay in the lane and camera → OUTPUT paints moving pixels', async ({ page }) => {
+    test.setTimeout(90_000);
+
+    await page.goto('/rack?mode=workflow&shell=1');
+    await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 15_000 });
+
+    await spawnPatch(
+      page,
+      [
+        { id: 'v-cam', type: 'cameraInput', position: { x: 80, y: 60 }, domain: 'video', params: { enabled: 1 } },
+        { id: 'v-out', type: 'videoOut', position: { x: 480, y: 60 }, domain: 'video' },
+      ],
+      [
+        {
+          id: 'e-cam-out',
+          from: { nodeId: 'v-cam', portId: 'out' },
+          to: { nodeId: 'v-out', portId: 'in' },
+          sourceType: 'video',
+          targetType: 'video',
+        },
+      ],
+    );
+
+    // The CARVE-OUT: the real card in the lane, never the uniform tile…
+    const camLane = page.locator('.svelte-flow__node[data-id="v-cam"]');
+    await expect(camLane.locator('[data-testid="module-shell-placeholder"]')).toHaveCount(0);
+    // …so the DEVICE PICKER is reachable + lists the fake device.
+    const select = camLane.locator('[data-testid="camera-device-select"]');
+    await expect(select, 'device picker usable in the shell lane').toBeVisible({ timeout: 15_000 });
+    await page.waitForFunction(
+      () => {
+        const el = document.querySelector('[data-testid="camera-device-select"]') as HTMLSelectElement | null;
+        return el ? el.options.length > 0 : false;
+      },
+      undefined,
+      { timeout: 10_000 },
+    );
+    await expect(select).toBeEnabled();
+
+    // The SOURCE actually reached the engine: the card streams…
+    await expect(camLane.locator('[data-testid="camera-status"]'))
+      .toHaveAttribute('data-state', 'streaming', { timeout: 20_000 });
+
+    // …and the OUTPUT surface paints MOVING pixels (the fake device's animated
+    // pattern). Pre-fix this canvas stayed black — "no video at all".
+    const outSel = '.svelte-flow__node[data-id="v-out"] [data-testid="video-out-canvas"]';
+    await expect(page.locator(outSel)).toBeVisible({ timeout: 15_000 });
+    const snap = async () =>
+      page.evaluate((sel) => {
+        const c = document.querySelector(sel) as HTMLCanvasElement | null;
+        return c ? c.toDataURL() : '';
+      }, outSel);
+    const first = await snap();
+    expect(first, 'OUTPUT canvas snapshot captured').not.toBe('');
+    await expect
+      .poll(async () => (await snap()) !== first, {
+        message: 'camera → OUTPUT paints changing pixels under ?shell=1',
+        timeout: 25_000,
+      })
+      .toBe(true);
+  });
 });

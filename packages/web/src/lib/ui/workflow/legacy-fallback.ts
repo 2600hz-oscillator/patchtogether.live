@@ -47,6 +47,20 @@ export type LaneRenderKind = 'legacy' | 'shell' | 'placeholder' | 'stub';
  *     video output from the shell (the owner-reported ?shell=1 regression), so
  *     it keeps its real card verbatim in the video zone — position anchored by
  *     the zone's render override, size its own (node.data.width/height resize).
+ *   - cameraInput — the CAPTURE-SOURCE snowflake, for the SAME reason videoOut
+ *     is one, at the other end of the chain. Two things live ONLY on its card:
+ *       (a) the live SOURCE — the card owns getUserMedia + the `<video>` element
+ *           and hands it to the engine via `attachExternalSource` (see
+ *           ./dom-source-modules). Swapped for a tile, camera → OUTPUT is
+ *           patched-but-black, and switching an already-running rack INTO the
+ *           shell actively DETACHES the live camera on the card's onDestroy;
+ *       (b) the DEVICE PICKER — a `<select>` populated from
+ *           `enumerateDevices()`, persisted to `node.data.deviceId`. It is NOT
+ *           a ParamDef, so no shell face can render it (a `static` face cell is
+ *           a dead dashed label by design — ModuleShell's controlCell), and the
+ *           owner must be able to pick + switch cameras in the new view.
+ *     The carve-out fixes both with the mechanism already proven for videoOut,
+ *     instead of inventing an interactive-static face seam.
  * Everything else with a resolvable card swaps.
  */
 export const NON_SHELL_LANE_TYPES: ReadonlySet<string> = new Set<string>([
@@ -58,6 +72,7 @@ export const NON_SHELL_LANE_TYPES: ReadonlySet<string> = new Set<string>([
   'electraControl',
   'launchpadControl',
   'videoOut',
+  'cameraInput',
 ]);
 
 /** Inputs to the pure lane-render decision. */
