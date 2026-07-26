@@ -17,14 +17,17 @@ auto-deployed to dev:
 
 **12 modules are faced and live on dev.**
 
-### Still open at shutdown
+### Update (later on 2026-07-26): EVERYTHING IN FLIGHT LANDED
 
-- **#1174 — batch 3** (karplus, filter, mixer, delay, reverb). Built, all five individually green.
-  Its integrator agent was still working the attest gates: ART re-pinned (delay's fix moved the
-  baseline, expected), collab re-attest in progress, and it needed `origin/main` merged in to pick up
-  #1173. **DO NOT MERGE — the owner reviews the faces.**
-- **#1172 — the frametable hot-loop fix.** Main merged in at `05dd23a6` to pick up the flake fixes;
-  its only failures were the two specs #1173 fixed. Should go green; safe to merge on green.
+- **#1174 — batch 3 MERGED** (`b127c029`), main CI green, attests unchanged, linux baselines drained →
+  dispatched → captured (vrt-meta ceiling back to 118; STRICT_FACES floor 17). **17 modules faced.**
+  The owner authorized merging in-flight work at shutdown; NOTE the five batch-3 faces merged
+  **without a visual preview** (the owner approved delay's + filter's BEHAVIOUR changes, not the look)
+  — worth a look on dev. CI wall-time delta ≈ +2.0 min, right at the sign-off threshold.
+  Integration also fixed two rotting test fixtures (the "un-migrated" fixture is now DERIVED from
+  STRICT_FACES instead of hard-coded) and avoided a spurious collab re-attest (the hash driver was a
+  test-helper edit in the hand-listed basis, not filter's params — fixture moved to a non-basis file).
+- **#1172 merged** (`af46ef4f`) once main's flake fixes were merged in.
 - **#1008** — `feat/mobile-view`, a draft untouched since 2026-07-03, CONFLICTING. Revive or close.
 
 ---
@@ -78,8 +81,7 @@ dock renders the legacy card. **VRT would not have caught this** — faced modul
 
 ## NEXT UP
 
-1. **Land #1174** once its agent finishes (main merged, collab re-attested, CI green on the final
-   commit). Owner previews the faces first.
+1. **Owner previews the 5 batch-3 faces on dev** (merged without visual preview — see above).
 2. **Revisit the dx7 face — owner: "looks nothing like its mock."** The mock was produced as part of
    this process. Known gap: the mock's OP1–6 pages need ~78 new params, which is a MODULE REWORK, not a
    face. Decide: ship patch-driven with a preset picker, or schedule the rework. The mocks themselves
