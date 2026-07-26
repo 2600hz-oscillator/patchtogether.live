@@ -1419,14 +1419,29 @@
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isTypingTarget(e.target)) return;
       if (e.key === 'Escape') {
-        // P0.3b: the transient full-view closes first (it's the most recently
-        // opened, ESC-topmost overlay), then the pinned drawer.
-        if (dockStore.fullViewNodeId) {
+        // ONE bottom occupant (dock unification): pinned XOR full-view — ESC
+        // closes whichever is open. The full-view closes AS A WHOLE (both
+        // split panes at once — the chosen ESC semantics; per-pane close is
+        // the faceplate's own ✕). (The order below is belt-and-braces; the
+        // store invariant means at most one branch can ever be live.)
+        if (dockStore.fullViewNodeIds.length > 0) {
           e.preventDefault();
           dockStore.closeFullView();
         } else if (dockStore.dockedNodeId('bottom')) {
           e.preventDefault();
           dockStore.close('bottom');
+        }
+        return;
+      }
+      if (e.key === 'Tab') {
+        // FLIP SEAM (rear-card follow-up): TAB flips the OPEN full-view to its
+        // rear/patch face — both panes together (global flip). State + a
+        // data-attr only today; the rear renderer is separate work. Only
+        // hijack TAB while the full-view is open (focus nav is untouched
+        // otherwise — and while typing / with modifiers we never get here).
+        if (dockStore.fullViewNodeIds.length > 0) {
+          e.preventDefault();
+          dockStore.toggleFullViewFlipped();
         }
         return;
       }
@@ -1437,6 +1452,8 @@
       // show yet).
       if (!patch.nodes[spec.id]) return;
       e.preventDefault();
+      // toggle() owns the occupancy handoff: while the full-view is open it
+      // closes and the requested pinned drawer OPENS (replace, not stack).
       dockStore.toggle('bottom', spec.id);
     }
     window.addEventListener('keydown', onDockKey);
@@ -1894,18 +1911,21 @@
     trace(`workflow: pushed ${pushes.length} module(s) up to clear grown lanes`);
   });
 
-  /** P0.3b — the transient EXPANDED FULL-VIEW occupant: the node whose full
-   *  faceplate is open in the bottom dock (an un-migrated module's verbatim
-   *  legacy card via DockCardHost → nodeTypes[type], or a migrated module's
-   *  faceplate). NEVER a persisted entry — it closes to dockStore.closeFullView
-   *  and keeps the module's lane placeholder/shell in place (Option #1). */
-  let fullViewCard = $derived.by(() => {
-    if (!workflowMode) return null;
-    const id = dockStore.fullViewNodeId;
-    if (!id) return null;
-    const node = snapshot.nodes.find((n) => n.id === id);
-    if (!node) return null;
-    return { node, title: dockDisplayName(node) };
+  /** P0.3b — the transient EXPANDED FULL-VIEW occupants (owner extension: up
+   *  to TWO side-by-side 50/50 panes, open order = left→right): each is a
+   *  node whose full faceplate is open in the bottom dock (an un-migrated
+   *  module's verbatim legacy card via nodeTypes[type], or a migrated
+   *  module's shell face). NEVER persisted entries — a pane closes to
+   *  dockStore.closeFullView(id) and keeps the module's lane
+   *  placeholder/shell in place (Option #1). */
+  let fullViewCards = $derived.by(() => {
+    if (!workflowMode) return [];
+    const out: Array<{ node: ModuleNode; title: string }> = [];
+    for (const id of dockStore.fullViewNodeIds) {
+      const node = snapshot.nodes.find((n) => n.id === id);
+      if (node) out.push({ node, title: dockDisplayName(node) });
+    }
+    return out;
   });
 
   // A VIDEO-domain module expanded in the dock full-view holds a HARD render
@@ -1918,10 +1938,11 @@
   // released the moment the full-view closes ($effect cleanup); non-video
   // occupants and dawless racks never reach the acquire.
   $effect(() => {
-    const fv = fullViewCard;
+    const fvs = fullViewCards;
     const e = engine;
-    if (!fv || !e) return;
-    if (!getVideoModuleDef(fv.node.type)) return;
+    if (fvs.length === 0 || !e) return;
+    const videoFvs = fvs.filter((fv) => getVideoModuleDef(fv.node.type));
+    if (videoFvs.length === 0) return;
     let ve: VideoEngine | undefined;
     try {
       ve = e.getDomain<VideoEngine>('video');
@@ -1929,7 +1950,11 @@
       return;
     }
     if (!ve) return;
-    return ve.acquireRenderLease(fv.node.id);
+    // One lease per VIDEO-domain pane (both split panes can be video).
+    const releases = videoFvs.map((fv) => ve!.acquireRenderLease(fv.node.id));
+    return () => {
+      for (const release of releases) release();
+    };
   });
 
   let bottomRailCards = $derived.by(() => {
@@ -7718,35 +7743,56 @@
            'name-label-error') so existing e2e selectors still resolve. -->
     </SvelteFlow>
     {#if workflowMode}
-      <!-- The BOTTOM dock zone: the P1 M/E/C drawer GENERALIZED (P2.5a) —
-           one overlay drawer holding the toggled pinned occupant (drawer-
-           only forever, owner Q2) ALONGSIDE any cards docked to 'bottom'.
-           Renders zero pixels when nothing is pinned-open or docked. -->
-      <DockRail
-        zone="bottom"
-        cards={bottomRailCards}
-        nodeTypes={nodeTypes as unknown as Record<string, unknown>}
-        {rackSizeByType}
-        onUndock={undockNode}
-        onClosePinned={() => dockStore.close('bottom')}
-        {rearView}
-      />
-      <!-- EXPANDED FULL-VIEW (P0.3b re-spec): the drawer's wide RACKLINE
-           faceplate. It OWNS the bottom drawer as a single full-width element —
-           NOT one more card in DockRail's horizontal flex — with the domain
-           accent lip, grip, title bar + window-control trio, tab-rail seam, and
-           the module's verbatim legacy card mounted at native scale in .editor
-           (or a migrated <ModuleShell view="dock-full">). ESC closes it first
-           (dock-key handler above). -->
-      {#if fullViewCard}
-        <DockFullView
-          node={fullViewCard.node}
+      <!-- THE BOTTOM DRAWER — ONE container, ONE occupant (dock unification,
+           owner design call): EITHER the expanded full-view faceplate OR the
+           P2.5a rail (the toggled pinned M/E/C occupant + cards docked to
+           'bottom'). The {#if}/{:else} makes the exclusivity STRUCTURAL — the
+           two bottom elements can never coexist in the DOM, so there is no
+           z-fight for hotkeys to lose (the "c behind the full-view" bug). The
+           dockStore occupancy invariant (pinned XOR full-view) keeps the state
+           side equally exclusive; ESC closes whichever is open (dock-key
+           handler above). Preview-off, fullViewCards is always empty → the
+           rail renders exactly as shipped. -->
+      {#if fullViewCards.length > 0}
+        <!-- EXPANDED FULL-VIEW (P0.3b re-spec + owner split extension): up to
+             TWO RACKLINE faceplates SIDE-BY-SIDE (50/50, open order =
+             left→right), each an independently scrollable pane (its own
+             overflow container — no shared scrollbar). A pane's ✕ closes just
+             that pane (the survivor returns to full width); ESC / the M-E-C
+             handoff close the whole view. data-fullview-flipped is the TAB
+             rear-card seam (state only — renderer is follow-up work). -->
+        <div
+          class="dock-fullview-drawer"
+          data-testid="dock-fullview-drawer"
+          data-pane-count={fullViewCards.length}
+          data-fullview-flipped={dockStore.fullViewFlipped}
+        >
+          {#each fullViewCards as fv (fv.node.id)}
+            <div class="dock-fullview-pane" data-testid="dock-fullview-pane" data-pane-node={fv.node.id}>
+              <DockFullView
+                node={fv.node}
+                nodeTypes={nodeTypes as unknown as Record<string, unknown>}
+                rackSize={rackSizeByType[fv.node.type]}
+                migrated={migrated(fv.node.type)}
+                title={fv.title}
+                onClose={() => dockStore.closeFullView(fv.node.id)}
+                onCollapse={() => dockStore.closeFullView(fv.node.id)}
+              />
+            </div>
+          {/each}
+        </div>
+      {:else}
+        <!-- The P1 M/E/C drawer GENERALIZED (P2.5a): the pinned occupant
+             (drawer-only forever, owner Q2) alongside docked cards. Renders
+             zero pixels when nothing is pinned-open or docked. -->
+        <DockRail
+          zone="bottom"
+          cards={bottomRailCards}
           nodeTypes={nodeTypes as unknown as Record<string, unknown>}
-          rackSize={rackSizeByType[fullViewCard.node.type]}
-          migrated={migrated(fullViewCard.node.type)}
-          title={fullViewCard.title}
-          onClose={() => dockStore.closeFullView()}
-          onCollapse={() => dockStore.closeFullView()}
+          {rackSizeByType}
+          onUndock={undockNode}
+          onClosePinned={() => dockStore.close('bottom')}
+          {rearView}
         />
       {/if}
     {/if}
@@ -8003,6 +8049,28 @@
   .canvas-row > .flow {
     flex: 1 1 auto;
     min-width: 0;
+  }
+  /* DOCK UNIFICATION + owner split extension: the bottom drawer's full-view
+   * container — the ONE bottom overlay while any faceplate is expanded (the
+   * DockRail branch renders instead when it's closed). Up to two panes share
+   * it 50/50; each pane is its OWN scroll context (DockFullView's
+   * .faceplate-scroll), so the panes scroll independently in both axes. */
+  .dock-fullview-drawer {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 31;
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+    padding: 0 8px 8px;
+    max-height: min(60vh, 680px);
+  }
+  .dock-fullview-pane {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
   }
   .topbar {
     display: flex;

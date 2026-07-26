@@ -6,16 +6,17 @@
 //     lane tile's "⤢ EXPAND" pill reads "✕ CLOSE" and clicking it CLOSES the
 //     full-view (wired to dockStore.fullViewNodeId).
 //
-//  2. Expanding module B while module A is open SWITCHES the dock to B — for
-//     BOTH migrated (curated shell face) and un-migrated (verbatim legacy
-//     card) modules. The owner repro (tidyvco expanded → expand backdraft →
-//     NOTHING switched) was a mid-flush crash: 18 legacy cards called
-//     `useStore()` un-guarded at init, which THROWS outside the SvelteFlow
-//     provider (the dock full-view is a plain-mount), aborting the Svelte
-//     flush and wedging the faceplate on the previous occupant. Fixed by the
-//     guarded captureFlowStore seam (card-kit) + a `{#key node.id}` remount
-//     per occupant in DockFullView. The pageerror assertions here pin the
-//     crash class shut.
+//  2. Expanding module B while module A is open JOINS the dock (owner split
+//     extension: up to two side-by-side panes; a third replaces the
+//     least-recently-opened) — for BOTH migrated (curated shell face) and
+//     un-migrated (verbatim legacy card) modules. The original owner repro
+//     (tidyvco expanded → expand backdraft → NOTHING switched) was a
+//     mid-flush crash: 18 legacy cards called `useStore()` un-guarded at
+//     init, which THROWS outside the SvelteFlow provider (the dock full-view
+//     is a plain-mount), aborting the Svelte flush and wedging the faceplate
+//     on the previous occupant. Fixed by the guarded captureFlowStore seam
+//     (card-kit) + a `{#key node.id}` remount per occupant in DockFullView.
+//     The pageerror assertions here pin the crash class shut.
 //
 //  3. The PATCH drill-down opens ADJACENT to the invoking tile — the
 //     lane-rail variant anchors beside the tile (right side, flipping left at
@@ -111,11 +112,13 @@ test.describe('P1 dock/expand UX fixes (?shell=1)', () => {
     await expect(uBtn).toContainText('EXPAND');
   });
 
-  // FIX 2 — the owner repro: expand migrated A, then un-migrated B (its
-  // verbatim LEGACY card — backdraft is one of the 18 useStore()-at-init
-  // cards that crashed the swap), then migrated C; ESC closes. Every step is
-  // a REAL click on the lane pill; zero pageerrors allowed.
-  test('expanding B while A is open SWITCHES the dock — migrated AND legacy cards', async ({ page }) => {
+  // FIX 2 (re-specced for the owner SPLIT extension) — expand migrated A,
+  // then un-migrated B (its verbatim LEGACY card — backdraft is one of the 18
+  // useStore()-at-init cards that crashed the old swap): A+B sit SIDE-BY-SIDE.
+  // Then migrated C: it replaces the least-recently-opened pane (A). ESC
+  // closes the whole view. Every step is a REAL click on the lane pill; zero
+  // pageerrors allowed (the crash class stays shut across pane mounts).
+  test('expanding B while A is open SPLITS the dock; a third replaces the oldest — migrated AND legacy cards', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
     await gotoWorkflow(page);
@@ -132,36 +135,43 @@ test.describe('P1 dock/expand UX fixes (?shell=1)', () => {
     await expect(tileC).toBeVisible();
     await panTileTo(page, 'a1', { top: 90 });
 
-    // Expand A (migrated) → its curated dock face.
-    await tileA.getByTestId('shell-open-dock').click();
-    const faceplate = page.getByTestId('dock-full-view');
-    await expect(faceplate).toBeVisible();
-    await expect(faceplate).toHaveAttribute('data-fullview-node', 'a1');
-    await expect(faceplate.locator('[data-testid="module-shell"][data-shell-tier="dock"]')).toBeVisible();
+    const drawer = page.getByTestId('dock-fullview-drawer');
+    const paneOf = (id: string) => page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${id}"]`);
 
-    // Expand B (un-migrated) while A is open → the dock SWITCHES to B's
-    // verbatim LEGACY card (A closes, B opens); the pills follow.
+    // Expand A (migrated) → one full-width pane with its curated dock face.
+    await tileA.getByTestId('shell-open-dock').click();
+    await expect(drawer).toHaveAttribute('data-pane-count', '1');
+    await expect(paneOf('a1').locator('[data-testid="module-shell"][data-shell-tier="dock"]')).toBeVisible();
+
+    // Expand B (un-migrated) while A is open → SIDE-BY-SIDE: A keeps its
+    // shell pane, B's verbatim LEGACY card joins in its own pane; both pills
+    // read CLOSE.
     await tileB.getByTestId('shell-open-dock').click();
-    await expect(faceplate).toHaveAttribute('data-fullview-node', 'b1');
-    await expect(faceplate.locator('[data-dock-card="b1"]')).toBeVisible();
-    await expect(faceplate.locator('[data-testid="module-shell"][data-shell-tier="dock"]')).toHaveCount(0);
-    await expect(tileA.getByTestId('shell-open-dock')).toContainText('EXPAND');
+    await expect(drawer).toHaveAttribute('data-pane-count', '2');
+    await expect(paneOf('a1').locator('[data-testid="module-shell"][data-shell-tier="dock"]')).toBeVisible();
+    await expect(paneOf('b1').locator('[data-dock-card="b1"]')).toBeVisible();
+    await expect(tileA.getByTestId('shell-open-dock')).toContainText('CLOSE');
     await expect(tileB.getByTestId('shell-open-dock')).toContainText('CLOSE');
 
-    // Expand C (migrated) while B is open → switches to C's shell face.
+    // Expand C (migrated) while A+B are open → C replaces the LEAST-RECENTLY-
+    // OPENED pane (A); B stays; A's pill returns to EXPAND.
     await tileC.getByTestId('shell-open-dock').click();
-    await expect(faceplate).toHaveAttribute('data-fullview-node', 'c1');
-    await expect(faceplate.locator('[data-testid="module-shell"][data-shell-tier="dock"]')).toBeVisible();
-    await expect(faceplate.locator('[data-dock-card="b1"]')).toHaveCount(0);
+    await expect(drawer).toHaveAttribute('data-pane-count', '2');
+    await expect(paneOf('a1')).toHaveCount(0);
+    await expect(paneOf('b1').locator('[data-dock-card="b1"]')).toBeVisible();
+    await expect(paneOf('c1').locator('[data-testid="module-shell"][data-shell-tier="dock"]')).toBeVisible();
+    await expect(tileA.getByTestId('shell-open-dock')).toContainText('EXPAND');
+    await expect(tileC.getByTestId('shell-open-dock')).toContainText('CLOSE');
 
-    // ESC closes; every pill reads EXPAND again.
+    // ESC closes the WHOLE view; every pill reads EXPAND again.
     await page.keyboard.press('Escape');
-    await expect(faceplate).toHaveCount(0);
+    await expect(drawer).toHaveCount(0);
+    await expect(tileB.getByTestId('shell-open-dock')).toContainText('EXPAND');
     await expect(tileC.getByTestId('shell-open-dock')).toContainText('EXPAND');
 
     // The crash class stays shut: no useStore-outside-provider throw, no
     // torn-flush TypeError loop.
-    expect(errors, `pageerrors during the switch flow: ${errors.join(' | ')}`).toEqual([]);
+    expect(errors, `pageerrors during the split flow: ${errors.join(' | ')}`).toEqual([]);
   });
 
   // FIX 3 — the drill-down anchors ADJACENT to the invoking tile: beside its

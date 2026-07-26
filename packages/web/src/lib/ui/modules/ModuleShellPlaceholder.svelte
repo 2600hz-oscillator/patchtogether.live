@@ -91,14 +91,16 @@
     return '▶ out';
   });
 
-  /** TRUE while THIS module occupies the dock full-view — the rail pill flips
-   *  to "✕ CLOSE" (reactive on dockStore.fullViewNodeId). */
-  let isExpanded = $derived(dockStore.fullViewNodeId === id);
+  /** TRUE while THIS module occupies a dock full-view pane — the rail pill
+   *  flips to "✕ CLOSE" (reactive on dockStore.fullViewNodeIds; per-module
+   *  presence in the side-by-side split). */
+  let isExpanded = $derived(dockStore.isFullView(id));
 
-  /** EXPAND ↔ CLOSE toggle: open the module's REAL card in the bottom dock
-   *  full-view (transient); when it is already the occupant, close it. */
+  /** EXPAND ↔ CLOSE toggle: open the module's REAL card in a bottom dock
+   *  full-view pane (transient); when it already occupies one, close JUST
+   *  that pane. */
   function openInDock(): void {
-    if (dockStore.fullViewNodeId === id) dockStore.closeFullView();
+    if (dockStore.isFullView(id)) dockStore.closeFullView(id);
     else dockStore.openFullView(id);
   }
 </script>

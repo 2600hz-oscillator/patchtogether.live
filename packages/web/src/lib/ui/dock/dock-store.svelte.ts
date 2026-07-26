@@ -45,6 +45,9 @@ export interface DockStorage {
   setItem(key: string, value: string): void;
 }
 
+/** Max side-by-side full-view panes (owner extension: 50/50 split of two). */
+export const MAX_FULLVIEW_PANES = 2;
+
 function defaultStorage(): DockStorage | null {
   try {
     return typeof localStorage !== 'undefined' ? localStorage : null;
@@ -59,15 +62,36 @@ class DockStore {
 
   // ---- P0.3b EXPANDED FULL-VIEW occupancy (transient, per tab) ----
   //
-  // The bottom drawer's "expanded full-view" occupant: the ONE node whose FULL
-  // faceplate is currently open in the dock ALONGSIDE the pinned drawer occupant
-  // (modeled on #docked, one-per-bottom-zone, ESC-closable). This is the shell-
-  // preview legacy-fallback's dock half — an UN-MIGRATED module's "open in dock"
-  // and a MIGRATED module's "Expand" both set it. It is NEVER a persisted dock
-  // ENTRY (so it doesn't swap the lane tile to a stub — the module keeps its
-  // curated/placeholder lane face) and is NEVER written to the Y.Doc: pure
+  // The bottom drawer's "expanded full-view" occupants: the nodes whose FULL
+  // faceplates are currently open in the dock (ESC-closable). This is the
+  // shell-preview legacy-fallback's dock half — an UN-MIGRATED module's "open
+  // in dock" and a MIGRATED module's "Expand" both add here. NEVER a persisted
+  // dock ENTRY (so it doesn't swap the lane tile to a stub — the module keeps
+  // its curated/placeholder lane face) and NEVER written to the Y.Doc: pure
   // transient view furniture, lost on reload exactly like the pinned drawer.
-  #fullView = $state<string | null>(null);
+  //
+  // SIDE-BY-SIDE SPLIT (owner extension): the full-view holds UP TO TWO
+  // modules, 50/50 — an ordered list in OPEN order (index 0 = opened first =
+  // rendered LEFT). Expanding a third replaces the LEAST-RECENTLY-OPENED of
+  // the two (owner's "sensible default", pending confirmation). Closing one
+  // pane returns the other to full width.
+  //
+  // ONE BOTTOM OCCUPANT (owner design call, dock-unification): the pinned
+  // M/E/C occupant and the expanded full-view share a SINGLE bottom-drawer
+  // slot — pinned XOR full-view, never both. openFullView() closes the pinned
+  // bottom occupant; toggle('bottom', …) closes the ENTIRE full-view (both
+  // panes) and OPENS the requested pinned drawer (replace, not stack). The
+  // invariant lives HERE so every entry point (hotkeys, tile EXPAND pills,
+  // e2e hooks) inherits it — Canvas renders the two occupants from one
+  // {#if}/{:else} container on top. Preview-off (?shell=1 absent) nothing
+  // ever fills #fullView, so the shipped pinned-drawer behavior is untouched.
+  #fullView = $state<string[]>([]);
+
+  // FLIP SEAM (follow-up rear-card feature): TAB flips the open full-view to
+  // a rear/patch view — GLOBAL for the view (both panes flip together, per
+  // owner). Today it is state + a data-attr only; the rear-card renderer is
+  // separate work. Reset when the full-view empties.
+  #fullViewFlipped = $state(false);
 
   // ---- P2.5a entries (persisted per rackspace) ----
   #entries = $state<Record<string, DockEntry>>({});
@@ -92,7 +116,8 @@ class DockStore {
   bind(rackspaceKey: string): void {
     this.#rackKey = rackspaceKey;
     this.#docked = {};
-    this.#fullView = null;
+    this.#fullView = [];
+    this.#fullViewFlipped = false;
     const parsed = parsePersistedDockState(
       this.#storage?.getItem(DOCK_STORAGE_PREFIX + rackspaceKey) ?? null,
     );
@@ -107,7 +132,8 @@ class DockStore {
   unbind(): void {
     this.#rackKey = null;
     this.#docked = {};
-    this.#fullView = null;
+    this.#fullView = [];
+    this.#fullViewFlipped = false;
     this.#entries = {};
     this.#tombstones = {};
     this.#railSize = {};
@@ -143,9 +169,18 @@ class DockStore {
   }
 
   /** Toggle the pinned occupant of `zone` (same id closes; different id
-   *  replaces — one pinned card per zone). */
+   *  replaces — one pinned card per zone). BOTTOM zone: when the expanded
+   *  full-view is open it is the CURRENT bottom occupant — the toggle closes
+   *  it and OPENS the requested pinned drawer (replace, not stack; the XOR
+   *  invariant means no pinned occupant can be open alongside it). */
   toggle(zone: DockZone, nodeId: string): void {
     if (!isImplementedDockZone(zone)) return;
+    if (zone === 'bottom' && this.#fullView.length > 0) {
+      this.#fullView = []; // the WHOLE split closes (both panes)
+      this.#fullViewFlipped = false;
+      this.#docked[zone] = nodeId; // deterministic OPEN — never "both closed"
+      return;
+    }
     this.#docked[zone] = toggleDockedId(this.dockedNodeId(zone), nodeId);
   }
 
@@ -157,30 +192,75 @@ class DockStore {
   /** Close every pinned drawer (rack mount/unmount hygiene). */
   closeAll(): void {
     this.#docked = {};
-    this.#fullView = null;
+    this.#fullView = [];
+    this.#fullViewFlipped = false;
   }
 
   // ---------------- P0.3b expanded full-view occupancy (transient) ----------------
 
-  /** The node whose full faceplate is open in the bottom dock full-view, or
-   *  null. Reactive — the bottom rail's card list reads this. */
-  get fullViewNodeId(): string | null {
+  /** The nodes whose full faceplates are open in the bottom dock full-view,
+   *  in OPEN order (index 0 = opened first = rendered LEFT; max
+   *  MAX_FULLVIEW_PANES). Empty when the full-view is closed. Reactive. */
+  get fullViewNodeIds(): readonly string[] {
     return this.#fullView;
+  }
+
+  /** True while `nodeId` occupies a full-view pane (the tile's EXPAND↔CLOSE
+   *  pill tracks per-module presence in the split). Reactive. */
+  isFullView(nodeId: string): boolean {
+    return this.#fullView.includes(nodeId);
   }
 
   /** Open `nodeId`'s full faceplate in the bottom dock full-view (transient —
    *  never a persisted entry). Un-collapses the bottom rail so the card shows.
-   *  Opening a different node REPLACES the occupant (one-per-bottom-zone). */
+   *  SPLIT semantics (owner extension): a second module joins SIDE-BY-SIDE
+   *  (50/50); a third replaces the LEAST-RECENTLY-OPENED pane; re-opening a
+   *  current occupant is a no-op (the tile pill closes it instead). Any open
+   *  pinned M/E/C drawer CLOSES — one bottom occupant, never both. */
   openFullView(nodeId: string): void {
-    this.#fullView = nodeId;
+    if (!this.#fullView.includes(nodeId)) {
+      const next = [...this.#fullView, nodeId];
+      // Over capacity → drop from the FRONT (index 0 = least-recently-opened).
+      this.#fullView = next.slice(Math.max(0, next.length - MAX_FULLVIEW_PANES));
+    }
+    if (this.#docked.bottom != null) this.#docked.bottom = null;
     if (this.#railCollapsed.bottom) {
       this.#railCollapsed = { ...this.#railCollapsed, bottom: false };
     }
   }
 
-  /** Close the full-view (no-op when already closed). */
-  closeFullView(): void {
-    if (this.#fullView !== null) this.#fullView = null;
+  /** Close ONE full-view pane (`nodeId`) or — with no argument — the ENTIRE
+   *  full-view (ESC / the M-E-C handoff close the whole thing; a pane's ✕
+   *  closes just that pane, returning the survivor to full width). No-op when
+   *  already closed / not an occupant. */
+  closeFullView(nodeId?: string): void {
+    if (this.#fullView.length === 0) return;
+    this.#fullView =
+      nodeId === undefined ? [] : this.#fullView.filter((id) => id !== nodeId);
+    if (this.#fullView.length === 0) this.#fullViewFlipped = false;
+  }
+
+  /** The FLIP seam (rear-card follow-up): TAB flips the whole open full-view
+   *  to a rear/patch face — state + data-attr only for now. Reactive. */
+  get fullViewFlipped(): boolean {
+    return this.#fullViewFlipped;
+  }
+
+  /** Toggle the flip (no-op while the full-view is closed — nothing to flip). */
+  toggleFullViewFlipped(): void {
+    if (this.#fullView.length === 0) return;
+    this.#fullViewFlipped = !this.#fullViewFlipped;
+  }
+
+  /** The ONE bottom-drawer occupant (pinned XOR full-view — the unification
+   *  invariant, reactive). Null when the bottom drawer is closed. */
+  get bottomOccupant():
+    | { kind: 'fullView'; nodeIds: readonly string[] }
+    | { kind: 'pinned'; nodeId: string }
+    | null {
+    if (this.#fullView.length > 0) return { kind: 'fullView', nodeIds: this.#fullView };
+    const pinned = this.#docked.bottom ?? null;
+    return pinned !== null ? { kind: 'pinned', nodeId: pinned } : null;
   }
 
   // ---------------- P2.5a dock entries ----------------

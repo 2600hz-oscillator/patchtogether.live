@@ -25,9 +25,13 @@
   // (dock-rack-sized) that mirrors .svelte-flow__node.rack-sized WITHOUT the
   // .svelte-flow__node class. NO transform/ResizeObserver zoom — native scale.
   //
-  // Close / collapse-to-lane both call dockStore.closeFullView() (the module's
-  // lane placeholder/shell stays in place — Option #1). ESC closes it first
-  // (Canvas's dock-key handler). Transient: never a persisted dock ENTRY.
+  // Close / collapse-to-lane both call dockStore.closeFullView(node.id) —
+  // closing THIS pane only; a split survivor returns to full width (the
+  // module's lane placeholder/shell stays in place — Option #1). The full-view
+  // (up to TWO side-by-side panes, owner extension) is the ONE bottom-drawer
+  // occupant while open (dock unification: pinned XOR full-view) — ESC closes
+  // the whole view, M/E/C REPLACE it with the pinned drawer (Canvas's dock-key
+  // handler → dockStore occupancy). Transient: never a persisted dock ENTRY.
 
   import './_dock-faceplate.css';
   import type { Component } from 'svelte';
@@ -162,24 +166,25 @@
 </div>
 
 <style>
-  /* The full-view faceplate OWNS the bottom drawer: a full-width overlay pinned
-     to the canvas bottom, above the flow. Sits alongside DockRail's bottom zone
-     (which now holds only pinned + docked thumbnails). */
+  /* The full-view faceplate fills ONE pane of Canvas's .dock-fullview-drawer
+     (the bottom overlay + 50/50 split container live THERE — dock
+     unification: Canvas mounts EITHER that drawer OR the bottom DockRail
+     ({#if}/{:else}), never both, and dockStore keeps the pinned M/E/C
+     occupant closed while a full-view is up: pinned XOR full-view). Each
+     faceplate's .faceplate-scroll is its pane's OWN overflow container —
+     both axes — so split panes scroll independently (the kit's 900px
+     .faceplate min-width guarantees sideways travel in a half-width pane). */
   .dock-faceplate {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 31;
+    flex: 1 1 auto;
+    min-width: 0;
     max-height: min(60vh, 680px);
     display: flex;
-    padding: 0 8px 8px;
   }
   .faceplate-scroll {
     flex: 1 1 auto;
     min-width: 0;
     max-height: min(60vh, 680px);
-    overflow-y: auto;
+    overflow: auto;
   }
   .faceplate {
     width: 100%;
