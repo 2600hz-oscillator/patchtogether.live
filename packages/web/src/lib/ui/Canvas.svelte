@@ -1414,12 +1414,19 @@
     }
   });
 
-  // DOCK KEYMAP: M / E / C toggle the matching pinned card in the BOTTOM
-  // dock zone ($lib/ui/dock — one card per zone, so opening another
-  // replaces the current one); ESC closes. Workflow-only; inert while
-  // typing (input/textarea/select/contenteditable — isTypingTarget) and
-  // under any modifier. Plain listener (not capture) so capture-phase ESC
-  // consumers (pickup-cancel, lasso, the File.. menu) win first.
+  // DOCK KEYMAP: M / E / C toggle their pinned singleton's bottom-dock
+  // surface — WHICH surface is declared per spec (workflow-pins.ts
+  // `PinnedSurface`):
+  //   * M / E ('drawer')   → the pinned M/E drawer (one card per zone, so
+  //     opening the other replaces it);
+  //   * C     ('fullView') → the built-in CLIP PLAYER as a dock FULL-VIEW
+  //     PANE, exactly like a module's EXPAND pill (owner 2026-07-26) — so it
+  //     sits SIDE-BY-SIDE 50/50 with a module instead of being mutually
+  //     exclusive with it.
+  // ESC closes whichever occupant is open. Workflow-only; inert while typing
+  // (input/textarea/select/contenteditable — isTypingTarget) and under any
+  // modifier. Plain listener (not capture) so capture-phase ESC consumers
+  // (pickup-cancel, lasso, the File.. menu) win first.
   $effect(() => {
     if (!workflowMode) return;
     function onDockKey(e: KeyboardEvent) {
@@ -1464,8 +1471,22 @@
       // show yet).
       if (!patch.nodes[spec.id]) return;
       e.preventDefault();
-      // toggle() owns the occupancy handoff: while the full-view is open it
-      // closes and the requested pinned drawer OPENS (replace, not stack).
+      if (spec.surface === 'fullView') {
+        // C = EXPAND (owner 2026-07-26, superseding the one-drawer-occupancy
+        // rule for the clip player): the built-in CLIP PLAYER opens as a dock
+        // FULL-VIEW PANE, identical to a module's EXPAND pill — so it can sit
+        // SIDE-BY-SIDE 50/50 with a module instead of replacing it. It is a
+        // REAL node (`pinned-clipplayer`), so it rides the SAME
+        // fullViewNodeIds machinery: same faceplate + per-pane ✕, LRU
+        // third-expand replacement, TAB flips it with its sibling. Toggling is
+        // idempotent-by-construction (openFullView de-dupes), so two presses
+        // can never stack two clip-player panes.
+        dockStore.toggleFullView(spec.id);
+        return;
+      }
+      // M/E (surface 'drawer'): toggle() owns the occupancy handoff — while
+      // the full-view is open it closes and the requested pinned drawer OPENS
+      // (replace, not stack).
       dockStore.toggle('bottom', spec.id);
     }
     window.addEventListener('keydown', onDockKey);

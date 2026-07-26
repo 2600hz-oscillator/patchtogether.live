@@ -30,8 +30,13 @@
   // module's lane placeholder/shell stays in place — Option #1). The full-view
   // (up to TWO side-by-side panes, owner extension) is the ONE bottom-drawer
   // occupant while open (dock unification: pinned XOR full-view) — ESC closes
-  // the whole view, M/E/C REPLACE it with the pinned drawer (Canvas's dock-key
+  // the whole view, M/E REPLACE it with the pinned drawer (Canvas's dock-key
   // handler → dockStore occupancy). Transient: never a persisted dock ENTRY.
+  //
+  // The built-in CLIP PLAYER (`pinned-clipplayer`) is one of these panes too
+  // (owner 2026-07-26: `c` = expand): a real node with a real def, so it takes
+  // the un-migrated branch below (verbatim ClipplayerCard) and TAB flips it to
+  // its def-driven RearCard jack field like any other un-migrated occupant.
 
   import './_dock-faceplate.css';
   import type { Component } from 'svelte';

@@ -379,13 +379,37 @@ test.describe('dock drawer patch menu + rear-view patching (owner fixes 2026-07-
     );
   }
 
-  /** Open the bottom drawer on the pinned CLIPPLAYER via the C keymap. */
+  /** Open the pinned CLIPPLAYER's bottom-dock surface via the C keymap.
+   *
+   *  Since 2026-07-26 `c` opens it as a dock FULL-VIEW PANE (owner: "opening
+   *  clip player with c is same as expanding any other module") rather than
+   *  the exclusive pinned drawer — but the mount contract these tests depend
+   *  on is IDENTICAL either way: the un-migrated branch of DockFullView plain-
+   *  mounts the verbatim card with the same `data-dock-card` /
+   *  `data-dock-card-frame` anchors DockCardHost uses, which is exactly what
+   *  Canvas.cardRectFor resolves. So the patch-menu + rear-view contracts
+   *  below are unchanged; only the container moved. */
   async function openClipplayerDrawer(page: Page) {
     await page.locator('.svelte-flow__pane:visible').first().click({ position: { x: 500, y: 380 } });
     await page.keyboard.press('c');
+    const pane = page.locator(
+      '[data-testid="dock-fullview-pane"][data-pane-node="pinned-clipplayer"]',
+    );
+    await expect(pane).toBeVisible();
+    const card = pane.locator('[data-dock-card="pinned-clipplayer"]');
+    await expect(card).toBeVisible();
+    return card;
+  }
+
+  /** Open the pinned MIXMSTRS in the exclusive bottom DRAWER via the M keymap
+   *  — the DockRail/DockCardHost host the rear-view CSS regression below is
+   *  about (M/E kept the drawer semantics when `c` became EXPAND). */
+  async function openMixmstrsDrawer(page: Page) {
+    await page.locator('.svelte-flow__pane:visible').first().click({ position: { x: 500, y: 380 } });
+    await page.keyboard.press('m');
     const drawer = page.getByTestId('dock-zone-bottom');
     await expect(drawer).toBeVisible();
-    const card = drawer.locator('[data-dock-card="pinned-clipplayer"]');
+    const card = drawer.locator('[data-dock-card="pinned-mixmstrs"]');
     await expect(card).toBeVisible();
     return card;
   }
@@ -449,18 +473,28 @@ test.describe('dock drawer patch menu + rear-view patching (owner fixes 2026-07-
     // rear-view front-inert CSS was .svelte-flow__node-scoped, so a
     // dock-hosted card's live FRONT stayed painted over its back panel and
     // swallowed the jack clicks. Fixed by the .dock-*-sized mirror rules.
+    //
+    // DRIVEN THROUGH THE M DRAWER (2026-07-26): the clip player moved to a
+    // dock full-view PANE (`c` = expand), and while the full-view is open the
+    // DOCK owns bare TAB (the single-owner guard) — so the canvas rear view
+    // never flips and this canvas-commit scenario is structurally impossible
+    // there. The regression this test exists for is the DRAWER-hosted card's
+    // rear surface (`.dock-*-sized` mirror rules in DockCardHost), which
+    // MIXMSTRS exercises identically. The clip player's new rear surface (the
+    // full-view RearCard jack field + its carry seam) is covered by
+    // workflow-rear-card.spec.ts and workflow-dock-occupancy.spec.ts.
     const errors = collectErrors(page);
     await gotoWorkflow(page);
-    await waitForPin(page, 'pinned-clipplayer');
-    // A canvas destination with a gate input (ADSR.gate).
-    await spawnPatch(page, [{ id: 'env', type: 'adsr', position: { x: 420, y: 120 } }]);
-    await waitForPin(page, 'pinned-clipplayer'); // spawnPatch wiped; ensure re-spawned
-    const card = await openClipplayerDrawer(page);
+    await waitForPin(page, 'pinned-mixmstrs');
+    // A canvas destination with an audio input (VCA.audio).
+    await spawnPatch(page, [{ id: 'amp', type: 'vca', position: { x: 420, y: 120 } }]);
+    await waitForPin(page, 'pinned-mixmstrs'); // spawnPatch wiped; ensure re-spawned
+    const card = await openMixmstrsDrawer(page);
 
     // Tab → rear view; the DOCKED card's back panel becomes the live
     // patch surface (jacks visible + clickable).
     await page.keyboard.press('Tab');
-    const outJack = card.locator('[data-testid="back-jack"][data-port-id="gate1"][data-direction="output"]');
+    const outJack = card.locator('[data-testid="back-jack"][data-port-id="masterL"][data-direction="output"]');
     await expect(outJack).toBeVisible({ timeout: 5_000 });
     await page.waitForTimeout(450); // flip-in keyframe settles
 
@@ -468,13 +502,13 @@ test.describe('dock drawer patch menu + rear-view patching (owner fixes 2026-07-
     await outJack.click();
     await expect.poll(() => pickupState(page)).toEqual({
       mode: 'pickup',
-      source: expect.objectContaining({ nodeId: 'pinned-clipplayer', portId: 'gate1' }),
+      source: expect.objectContaining({ nodeId: 'pinned-mixmstrs', portId: 'masterL' }),
     });
 
-    // Commit on the canvas ADSR's back GATE jack → the SAME validated edge
+    // Commit on the canvas VCA's back AUDIO jack → the SAME validated edge
     // a front-view patch writes.
     await page
-      .locator('.svelte-flow__node[data-id="env"] [data-testid="back-jack"][data-port-id="gate"][data-direction="input"]')
+      .locator('.svelte-flow__node[data-id="amp"] [data-testid="back-jack"][data-port-id="audio"][data-direction="input"]')
       .click();
     await expect
       .poll(async () =>
@@ -490,10 +524,10 @@ test.describe('dock drawer patch menu + rear-view patching (owner fixes 2026-07-
           return Object.values(w.__patch.edges).some(
             (e) =>
               !!e &&
-              e.source.nodeId === 'pinned-clipplayer' &&
-              e.source.portId === 'gate1' &&
-              e.target.nodeId === 'env' &&
-              e.target.portId === 'gate',
+              e.source.nodeId === 'pinned-mixmstrs' &&
+              e.source.portId === 'masterL' &&
+              e.target.nodeId === 'amp' &&
+              e.target.portId === 'audio',
           );
         }),
       { timeout: 5_000 })
@@ -504,29 +538,29 @@ test.describe('dock drawer patch menu + rear-view patching (owner fixes 2026-07-
 
   test('REAR VIEW (Tab): patch INTO the docked card — pickup from its input back jack, commit on a canvas output', async ({ page }) => {
     // The other direction: grabbing the docked card's INPUT back jack
-    // (stop_all) starts a reverse pickup; the commit lands on a canvas
-    // card's OUTPUT back jack — clipplayer receives the cable.
+    // (ch1L) starts a reverse pickup; the commit lands on a canvas
+    // card's OUTPUT back jack — the drawer card receives the cable.
     const errors = collectErrors(page);
     await gotoWorkflow(page);
-    await waitForPin(page, 'pinned-clipplayer');
-    await spawnPatch(page, [{ id: 'env', type: 'adsr', position: { x: 420, y: 120 } }]);
-    await waitForPin(page, 'pinned-clipplayer');
-    const card = await openClipplayerDrawer(page);
+    await waitForPin(page, 'pinned-mixmstrs');
+    await spawnPatch(page, [{ id: 'amp', type: 'vca', position: { x: 420, y: 120 } }]);
+    await waitForPin(page, 'pinned-mixmstrs');
+    const card = await openMixmstrsDrawer(page);
 
     await page.keyboard.press('Tab');
-    const inJack = card.locator('[data-testid="back-jack"][data-port-id="stop_all"][data-direction="input"]');
+    const inJack = card.locator('[data-testid="back-jack"][data-port-id="ch1L"][data-direction="input"]');
     await expect(inJack).toBeVisible({ timeout: 5_000 });
     await page.waitForTimeout(450);
 
     await inJack.click();
     await expect.poll(() => pickupState(page)).toEqual({
       mode: 'pickup',
-      source: expect.objectContaining({ nodeId: 'pinned-clipplayer', portId: 'stop_all' }),
+      source: expect.objectContaining({ nodeId: 'pinned-mixmstrs', portId: 'ch1L' }),
     });
 
-    // Commit on ADSR's ENV output back jack (cv → gate: CV-family legal).
+    // Commit on the VCA's AUDIO output back jack (audio → audio).
     await page
-      .locator('.svelte-flow__node[data-id="env"] [data-testid="back-jack"][data-port-id="env"][data-direction="output"]')
+      .locator('.svelte-flow__node[data-id="amp"] [data-testid="back-jack"][data-port-id="audio"][data-direction="output"]')
       .click();
     await expect
       .poll(async () =>
@@ -542,10 +576,10 @@ test.describe('dock drawer patch menu + rear-view patching (owner fixes 2026-07-
           return Object.values(w.__patch.edges).some(
             (e) =>
               !!e &&
-              e.source.nodeId === 'env' &&
-              e.source.portId === 'env' &&
-              e.target.nodeId === 'pinned-clipplayer' &&
-              e.target.portId === 'stop_all',
+              e.source.nodeId === 'amp' &&
+              e.source.portId === 'audio' &&
+              e.target.nodeId === 'pinned-mixmstrs' &&
+              e.target.portId === 'ch1L',
           );
         }),
       { timeout: 5_000 })

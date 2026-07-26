@@ -5,13 +5,16 @@
 // rebind/unbind/closeAll, and NEVER persisted (the un-migrated auto-fallback
 // must not touch storage / the Y.Doc) — and pins two owner design calls:
 //
-//  * DOCK UNIFICATION: the pinned M/E/C occupant and the full-view share ONE
+//  * DOCK UNIFICATION: the pinned M/E occupant and the full-view share ONE
 //    bottom-drawer slot — pinned XOR full-view, never both.
 //  * SIDE-BY-SIDE SPLIT: the full-view holds up to TWO modules in OPEN order
 //    (index 0 = opened first = rendered left); a third replaces the
 //    least-recently-opened; closing one pane keeps the other; ESC / the
-//    M-E-C handoff close the WHOLE view. Plus the TAB rear-card flip seam
+//    M-E handoff close the WHOLE view. Plus the TAB rear-card flip seam
 //    (state only).
+//  * THE BUILT-IN CLIP PLAYER IS A PANE (owner 2026-07-26): `c` routes through
+//    toggleFullView('pinned-clipplayer'), so it side-by-sides with a module
+//    instead of replacing it. Only M/E still take the drawer branch.
 //
 // Uses the same runes-store-in-vitest pattern as skin-store.test.ts (a plain
 // test file dynamically importing the `.svelte` runes module).
@@ -129,6 +132,70 @@ describe('dockStore full-view SPLIT (up to two side-by-side panes)', () => {
   });
 });
 
+// The CLIP PLAYER's `c` hotkey seam (owner 2026-07-26: "opening clip player
+// with c is same as expanding any other module"). `pinned-clipplayer` is a
+// REAL node, so the pane is an ordinary fullViewNodeIds occupant — the only
+// new primitive is the idempotent toggle.
+describe('dockStore toggleFullView (the C hotkey / EXPAND-pill seam)', () => {
+  const CLIP = 'pinned-clipplayer';
+
+  it('opens when closed and closes when open', () => {
+    dockStore.toggleFullView(CLIP);
+    expect(dockStore.fullViewNodeIds).toEqual([CLIP]);
+    dockStore.toggleFullView(CLIP);
+    expect(dockStore.fullViewNodeIds).toEqual([]);
+  });
+
+  it('NEVER stacks two panes for the same node (c pressed twice, then a third)', () => {
+    dockStore.toggleFullView(CLIP);
+    dockStore.toggleFullView(CLIP); // closed
+    dockStore.toggleFullView(CLIP); // open again
+    expect(dockStore.fullViewNodeIds).toEqual([CLIP]);
+    expect(dockStore.fullViewNodeIds.filter((id) => id === CLIP)).toHaveLength(1);
+  });
+
+  it('joins a module SIDE-BY-SIDE (50/50) rather than replacing it', () => {
+    dockStore.openFullView('mod-A');
+    dockStore.toggleFullView(CLIP);
+    expect(dockStore.fullViewNodeIds).toEqual(['mod-A', CLIP]);
+    // …and a module expanded AFTER the clip player sits beside it too.
+    dockStore.toggleFullView(CLIP); // reset
+    dockStore.closeFullView();
+    dockStore.toggleFullView(CLIP);
+    dockStore.openFullView('mod-B');
+    expect(dockStore.fullViewNodeIds).toEqual([CLIP, 'mod-B']);
+  });
+
+  it('at capacity it replaces the LEAST-RECENTLY-OPENED pane (the shared LRU policy)', () => {
+    dockStore.openFullView('mod-A');
+    dockStore.openFullView('mod-B');
+    dockStore.toggleFullView(CLIP);
+    expect(dockStore.fullViewNodeIds).toEqual(['mod-B', CLIP]);
+  });
+
+  it('closing the clip player pane leaves its sibling module open (per-pane close)', () => {
+    dockStore.openFullView('mod-A');
+    dockStore.toggleFullView(CLIP);
+    dockStore.toggleFullView(CLIP);
+    expect(dockStore.fullViewNodeIds).toEqual(['mod-A']);
+  });
+
+  it('CLOSES an open pinned M/E drawer (still one bottom occupant)', () => {
+    dockStore.toggle('bottom', 'pinned-mixmstrs');
+    dockStore.toggleFullView(CLIP);
+    expect(dockStore.dockedNodeId('bottom')).toBeNull();
+    expect(dockStore.bottomOccupant).toEqual({ kind: 'fullView', nodeIds: [CLIP] });
+  });
+
+  it('is transient like every other pane — a rebind clears it', () => {
+    dockStore.toggleFullView(CLIP);
+    dockStore.dock('other', 'bottom', { x: 0, y: 0 }); // triggers #persist
+    expect(storage.getItem('pt.dock.v2:rack-A') ?? '').not.toContain(CLIP);
+    dockStore.bind('rack-A');
+    expect(dockStore.fullViewNodeIds).toEqual([]);
+  });
+});
+
 describe('dockStore full-view FLIP seam (TAB rear-card follow-up)', () => {
   it('starts un-flipped; toggling while CLOSED is a no-op', () => {
     expect(dockStore.fullViewFlipped).toBe(false);
@@ -149,11 +216,22 @@ describe('dockStore full-view FLIP seam (TAB rear-card follow-up)', () => {
     expect(dockStore.fullViewFlipped).toBe(false);
   });
 
-  it('resets on the M/E/C handoff too (the whole view closes)', () => {
+  it('resets on the M/E handoff too (the whole view closes)', () => {
     dockStore.openFullView('mod-A');
     dockStore.toggleFullViewFlipped();
-    dockStore.toggle('bottom', 'pinned-clipplayer');
+    dockStore.toggle('bottom', 'pinned-mixmstrs');
     expect(dockStore.fullViewFlipped).toBe(false);
+  });
+
+  // The clip player is a PANE, so `c` does NOT trigger the drawer handoff —
+  // the flip survives it joining/leaving the split while a sibling remains.
+  it('SURVIVES the clip player joining/leaving the split (it is a pane, not a handoff)', () => {
+    dockStore.openFullView('mod-A');
+    dockStore.toggleFullViewFlipped();
+    dockStore.toggleFullView('pinned-clipplayer');
+    expect(dockStore.fullViewFlipped).toBe(true);
+    dockStore.toggleFullView('pinned-clipplayer');
+    expect(dockStore.fullViewFlipped).toBe(true); // mod-A still open
   });
 });
 
@@ -173,18 +251,18 @@ describe('dockStore bottom occupancy: pinned XOR full-view (dock unification)', 
   it("toggle('bottom') while the full-view is open CLOSES the WHOLE split and OPENS the pinned drawer", () => {
     dockStore.openFullView('mod-1');
     dockStore.openFullView('mod-2'); // split
-    dockStore.toggle('bottom', 'pinned-clipplayer'); // the C hotkey path
+    dockStore.toggle('bottom', 'pinned-mixmstrs'); // the M hotkey path
     expect(dockStore.fullViewNodeIds).toEqual([]);
-    expect(dockStore.dockedNodeId('bottom')).toBe('pinned-clipplayer');
-    expect(dockStore.bottomOccupant).toEqual({ kind: 'pinned', nodeId: 'pinned-clipplayer' });
+    expect(dockStore.dockedNodeId('bottom')).toBe('pinned-mixmstrs');
+    expect(dockStore.bottomOccupant).toEqual({ kind: 'pinned', nodeId: 'pinned-mixmstrs' });
   });
 
   it('the handoff ALWAYS opens the requested drawer — even re-toggling the id the full-view replaced', () => {
-    dockStore.toggle('bottom', 'pinned-clipplayer'); // C open
+    dockStore.toggle('bottom', 'pinned-mixmstrs'); // M open
     dockStore.openFullView('mod-1'); // EXPAND closes it
-    dockStore.toggle('bottom', 'pinned-clipplayer'); // C again → reopens, never "both closed"
+    dockStore.toggle('bottom', 'pinned-mixmstrs'); // M again → reopens, never "both closed"
     expect(dockStore.fullViewNodeIds).toEqual([]);
-    expect(dockStore.dockedNodeId('bottom')).toBe('pinned-clipplayer');
+    expect(dockStore.dockedNodeId('bottom')).toBe('pinned-mixmstrs');
   });
 
   it('non-bottom zones never touch the full-view occupants', () => {
