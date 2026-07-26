@@ -13,8 +13,11 @@
 //      transport → tidyVco poly chord bus → AUDIOOUT, the tidy-vco.spec
 //      pattern): the trace goes non-flat AND the canvas pixels CHANGE
 //      frame to frame.
-//   4. The dock hero LAYOUT: the glyph is capped to the first four knob
-//      columns (214px) and does NOT span the faceplate width.
+//   4. The dock hero LAYOUT: the DUAL pair (param-derived core waveform +
+//      live trace — tidyVco's 'dual' binding) is capped to the first four
+//      knob columns (214px, split between the panes) and does NOT span the
+//      faceplate width. (The dual behavior itself — static morph always-on,
+//      live-while-twisting — is workflow-shell-dual-glyph.spec.ts.)
 //
 // Liveness is asserted through the DOM-mirrored `data-trace-peak` seam
 // (capability-safe — no GPU read); the canvas-change assertion reads the 2D
@@ -124,24 +127,28 @@ test.describe('LIVE shell glyphs (?shell=1)', () => {
     const faceplate = page.getByTestId('dock-full-view');
     await expect(faceplate).toBeVisible();
 
-    // 1) LIVE mode mounted: the hero glyph is ScopeScreen's live 'waveform'
-    //    mode bound to the audio tap — not the old static 'wave' buffer.
+    // 1) LIVE mode mounted: tidyVco binds DUAL (param-wave + live trace) —
+    //    the LIVE TRACE pane is ScopeScreen's 'waveform' mode bound to the
+    //    audio tap, riding next to the param-derived core-waveform pane.
     const glyph = faceplate.getByTestId('shell-glyph');
     await expect(glyph).toBeVisible();
     await expect(glyph).toHaveAttribute('data-mode', 'waveform');
     await expect(
       faceplate.locator('[data-glyph-kind="waveform"]'),
-    ).toHaveAttribute('data-glyph-binding', 'live-audio');
+    ).toHaveAttribute('data-glyph-binding', 'dual');
 
-    // 4) The dock hero LAYOUT: capped to the 4-knob-column width, well short
-    //    of the faceplate span (blank space to its right).
+    // 4) The dock hero LAYOUT: the dual pair still fits the 4-knob-column cap
+    //    (the panes SPLIT it), well short of the faceplate span (blank space
+    //    to its right).
+    const dualBox = (await faceplate.getByTestId('shell-glyph-dual').boundingBox())!;
     const glyphBox = (await glyph.boundingBox())!;
     const plateBox = (await faceplate.boundingBox())!;
-    expect(glyphBox.width, 'hero glyph spans the first 4 knob columns').toBeLessThanOrEqual(DOCK_HERO_GLYPH_W + 2);
-    expect(glyphBox.width).toBeGreaterThanOrEqual(DOCK_HERO_GLYPH_W - 2);
+    expect(dualBox.width, 'dual hero spans the first 4 knob columns').toBeLessThanOrEqual(DOCK_HERO_GLYPH_W + 2);
+    expect(dualBox.width).toBeGreaterThanOrEqual(DOCK_HERO_GLYPH_W - 2);
+    expect(glyphBox.width, 'the trace pane keeps the 40px scope floor').toBeGreaterThanOrEqual(40);
     expect(
-      glyphBox.x + glyphBox.width,
-      'blank space remains to the glyph’s right',
+      dualBox.x + dualBox.width,
+      'blank space remains to the hero’s right',
     ).toBeLessThan(plateBox.x + plateBox.width * 0.5);
 
     // 2) SILENT: the live trace is present but FLAT and the canvas is STATIC.

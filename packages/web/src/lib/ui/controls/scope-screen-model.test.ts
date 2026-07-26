@@ -11,6 +11,7 @@ import {
   burstWaveSamples,
   triMorphWaveSample,
   triMorphWaveSamples,
+  sawPulseMixWaveSamples,
   ENV_V_PAD,
 } from './scope-screen-model';
 
@@ -245,5 +246,66 @@ describe('triMorphWaveSample / triMorphWaveSamples — the lfo shape law (0=sine
 
   it('clamps a degenerate sample count to a drawable buffer', () => {
     expect(triMorphWaveSamples(0, 1, 0).length).toBe(2);
+  });
+});
+
+describe('sawPulseMixWaveSamples — the tidyVco DUAL-glyph core-waveform derivation', () => {
+  it('defaults (shape1 0, mix 0) draw a full-scale rising saw, edge to edge', () => {
+    const saw = sawPulseMixWaveSamples(0, 0, 0.5, 0, 65);
+    expect(saw.length).toBe(65);
+    expect(saw[0]).toBeCloseTo(-1, 6);
+    expect(saw[64]).toBeCloseTo(1, 3); // endpoint keeps the ramp — no wrap snap
+    for (let i = 1; i < saw.length; i++) expect(saw[i]!).toBeGreaterThan(saw[i - 1]!);
+    expect(peakAmplitude(saw)).toBeLessThanOrEqual(1 + 1e-9);
+  });
+
+  it('a shape1 sweep CHANGES the trace samples (saw → pulse at pw 0.5)', () => {
+    const saw = sawPulseMixWaveSamples(0, 0, 0.5, 0);
+    const square = sawPulseMixWaveSamples(1, 0, 0.5, 0);
+    expect(Array.from(square)).not.toEqual(Array.from(saw));
+    // Full pulse at pw 0.5: high through the first half, low through the second.
+    expect(square[10]).toBeCloseTo(1, 6);
+    expect(square[100]).toBeCloseTo(-1, 6);
+    // A mid-morph is a genuine crossfade — strictly between the two legs.
+    const mid = sawPulseMixWaveSamples(0.5, 0, 0.5, 0);
+    expect(mid[10]!).toBeGreaterThan(saw[10]!);
+    expect(mid[10]!).toBeLessThan(square[10]!);
+  });
+
+  it('a pw sweep CHANGES the pulse leg (duty moves the falling edge)', () => {
+    const wide = sawPulseMixWaveSamples(1, 0, 0.5, 0, 128);
+    const thin = sawPulseMixWaveSamples(1, 0, 0.1, 0, 128);
+    expect(Array.from(thin)).not.toEqual(Array.from(wide));
+    // Phase ~0.3: inside the 0.5 duty (high) but past the 0.1 duty (low).
+    expect(wide[38]).toBeCloseTo(1, 6);
+    expect(thin[38]).toBeCloseTo(-1, 6);
+    // …and pw is irrelevant while both oscs sit on the saw leg.
+    expect(Array.from(sawPulseMixWaveSamples(0, 0, 0.1, 0))).toEqual(
+      Array.from(sawPulseMixWaveSamples(0, 0, 0.5, 0)),
+    );
+  });
+
+  it('mix crossfades to OSC2 equal-power: 1 = pure shape2, 0.5 blends both', () => {
+    // mix 1 → OSC2 only: shape2's pulse regardless of shape1's setting.
+    const osc2Only = sawPulseMixWaveSamples(0, 1, 0.5, 1);
+    const osc2OnlyB = sawPulseMixWaveSamples(0.7, 1, 0.5, 1);
+    for (let i = 0; i < osc2Only.length; i++) expect(osc2Only[i]!).toBeCloseTo(osc2OnlyB[i]!, 6);
+    expect(osc2Only[10]).toBeCloseTo(1, 6);
+    // mix 0.5 of two IDENTICAL saws: the correlated equal-power sum peaks at
+    // √2 and is normalized back DOWN to exactly the unit saw (display identity).
+    const blended = sawPulseMixWaveSamples(0, 0, 0.5, 0.5, 65);
+    const saw = sawPulseMixWaveSamples(0, 0, 0.5, 0, 65);
+    for (let i = 0; i < saw.length; i++) expect(blended[i]!).toBeCloseTo(saw[i]!, 6);
+    // A saw↔pulse blend differs from both legs and stays bounded.
+    const hybrid = sawPulseMixWaveSamples(0, 1, 0.5, 0.5);
+    expect(Array.from(hybrid)).not.toEqual(Array.from(sawPulseMixWaveSamples(0, 1, 0.5, 0)));
+    expect(peakAmplitude(hybrid)).toBeLessThanOrEqual(1 + 1e-9);
+  });
+
+  it('is deterministic and clamps a degenerate sample count', () => {
+    expect(Array.from(sawPulseMixWaveSamples(0.3, 0.8, 0.25, 0.4))).toEqual(
+      Array.from(sawPulseMixWaveSamples(0.3, 0.8, 0.25, 0.4)),
+    );
+    expect(sawPulseMixWaveSamples(0, 0, 0.5, 0, 0).length).toBe(2);
   });
 });
