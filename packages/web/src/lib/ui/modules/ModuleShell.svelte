@@ -49,12 +49,14 @@
   import {
     glyphBinding,
     createShellGlyphTap,
+    createLiveWaveSource,
     type ShellGlyphTap,
   } from '$lib/ui/workflow/shell-glyph-live';
   import {
     sineWaveSamples,
     burstWaveSamples,
     triMorphWaveSamples,
+    sawPulseMixWaveSamples,
   } from '$lib/ui/controls/scope-screen-model';
   import type { ModuleNode, ParamDef, PortDef } from '$lib/graph/types';
   import type { Tier } from '$lib/ui/canvas/lod';
@@ -140,15 +142,31 @@
   // below; the live tap's lifecycle is keyed to this (mount face → mount tap).
   let glyphShown = $derived(glyphKind !== 'none' && (view === 'dock-full' || (lanePlan?.glyph ?? true)));
 
-  // The live-audio tap: created when a live-bound glyph cell mounts, disposed
-  // when it unmounts (tier drop / dock close). While mounted, actual analyser
-  // ATTACH is lazy + visibility-driven (reads arrive via the IO-gated shared
-  // meter frame) and the tap self-releases after an idle window off-screen —
-  // see shell-glyph-live.ts (the stated perf policy).
+  // DUAL glyph (owner spec — tidyVco): the param-derived STATIC CORE WAVEFORM
+  // is the identity and renders EVERYWHERE the glyph fits; the live analyser
+  // trace rides ALONGSIDE it only where BOTH panes fit WHOLE — the dock hero
+  // band (split inside the 4-knob-column cap) and the full-in-lane plate's
+  // full-width strip. A lane ROW cell shows just the morph (the compact tile
+  // prefers the identity; two 40px-floor wells can't both fit next to the
+  // knob columns — the no-clip rule).
+  let dualShowsTrace = $derived(
+    binding.kind === 'dual' && (view === 'dock-full' || lanePlan?.layout === 'plate'),
+  );
+
+  // The live-audio tap: created when a live-trace glyph cell mounts, disposed
+  // when it unmounts (tier drop / dock close / dual tile without the trace
+  // pane). While mounted, actual analyser ATTACH is lazy + visibility-driven
+  // (reads arrive via the IO-gated shared meter frame) and the tap
+  // self-releases after an idle window off-screen — see shell-glyph-live.ts
+  // (the stated perf policy).
+  let tapWanted = $derived(
+    glyphShown && (binding.kind === 'live-audio' || dualShowsTrace),
+  );
   let tap = $state<ShellGlyphTap | null>(null);
   $effect(() => {
-    if (!glyphShown || binding.kind !== 'live-audio') return;
-    const t = createShellGlyphTap(() => params.engineCtx.get(), id, binding.portId);
+    const b = binding;
+    if (!tapWanted || (b.kind !== 'live-audio' && b.kind !== 'dual')) return;
+    const t = createShellGlyphTap(() => params.engineCtx.get(), id, b.portId);
     tap = t;
     return () => {
       t.dispose();
@@ -156,8 +174,8 @@
     };
   });
 
-  // Param-REACTIVE glyph data (adsr envelope / lfo wave morph): recomputed on
-  // the node's version tick, so a knob move or remote param change redraws.
+  // Param-REACTIVE glyph data (adsr envelope): recomputed on the node's
+  // version tick, so a knob move or remote param change redraws.
   let envParams = $derived.by(() => {
     if (binding.kind !== 'env-params') return null;
     void nodeVersion(id);
@@ -168,13 +186,42 @@
       release: params.paramVal(binding.release),
     };
   });
-  let morphTrace = $derived.by(() => {
-    if (binding.kind !== 'wave-morph') return null;
-    void nodeVersion(id);
-    const shape = params.paramVal(binding.shapeParamId);
-    // depth 0.5 = unity ±1 swing (the lfo law); display clamps at full scale.
-    const amp = binding.depthParamId ? Math.min(1, 2 * params.paramVal(binding.depthParamId)) : 1;
-    return triMorphWaveSamples(shape, amp);
+
+  // ── LIVE-WHILE-TWISTING param waves (dual + lfo wave-morph) ──
+  // Knob gestures write TRANSIENT-FIRST (the durable node.params commit
+  // coalesces behind the gesture), so a display derived from COMMITTED params
+  // looks dead mid-drag. These read the SAME live seam the motorized knobs
+  // read — cardParams.live → engine.readParam (committed paramVal fallback
+  // while the engine isn't booted, keeping the ungated VRT scenes at the
+  // deterministic defaults) — and are POLLED by ScopeScreen's shared-frame
+  // wave mode. createLiveWaveSource memoizes on the tuple: identity only
+  // changes when a value moved, so idle frames repaint nothing.
+  const liveParam = (pid: string): number => params.live(pid)() ?? params.paramVal(pid);
+  let liveWave = $derived.by<(() => Float32Array) | null>(() => {
+    const b = binding;
+    if (b.kind === 'dual') {
+      const w = b.wave;
+      return createLiveWaveSource(
+        () => [
+          liveParam(w.shape1),
+          w.shape2 ? liveParam(w.shape2) : 0,
+          w.pw ? liveParam(w.pw) : 0.5,
+          w.mix ? liveParam(w.mix) : 0,
+        ],
+        (v) => sawPulseMixWaveSamples(v[0] ?? 0, v[1], v[2], v[3]),
+      );
+    }
+    if (b.kind === 'wave-morph') {
+      return createLiveWaveSource(
+        () => [
+          liveParam(b.shapeParamId),
+          // depth 0.5 = unity ±1 swing (the lfo law); display clamps at full scale.
+          b.depthParamId ? Math.min(1, 2 * liveParam(b.depthParamId)) : 1,
+        ],
+        (v) => triMorphWaveSamples(v[0] ?? 0, v[1]),
+      );
+    }
+    return null;
   });
 
   // Header row 2 — the ROLE line for a migrated face (the def's own concise
@@ -308,6 +355,39 @@
           color={spine}
           testid="shell-glyph"
         />
+      {:else if binding.kind === 'dual'}
+        <!-- DUAL DISPLAY (owner spec): the param-derived STATIC core waveform
+             (always visible — no gate needed) + the LIVE output trace side by
+             side where both fit whole (dock hero / plate strip); a lane row
+             shows the morph alone (the identity). Both live-update: the morph
+             re-derives from the TRANSIENT param stream while a knob twists
+             (ScopeScreen's polled wave mode), the trace off the analyser tap. -->
+        <div class="dual-glyph" data-testid="shell-glyph-dual">
+          <div class="dual-pane">
+            <ScopeScreen
+              mode="wave"
+              getWaveform={liveWave ?? undefined}
+              fluid
+              height={view === 'dock-full' ? 64 : 40}
+              color={spine}
+              testid="shell-glyph-wave"
+              ariaLabel="core waveform (from shape controls)"
+            />
+          </div>
+          {#if dualShowsTrace}
+            <div class="dual-pane">
+              <ScopeScreen
+                mode="waveform"
+                getSamples={tap ? tap.getSamples : undefined}
+                fluid
+                height={view === 'dock-full' ? 64 : 40}
+                color={spine}
+                testid="shell-glyph"
+                ariaLabel="live output trace"
+              />
+            </div>
+          {/if}
+        </div>
       {:else if binding.kind === 'live-audio'}
         <ScopeScreen
           mode="waveform"
@@ -320,7 +400,8 @@
       {:else}
         <ScopeScreen
           mode="wave"
-          waveform={morphTrace ?? (glyphKind === 'waveform' ? SINE_TRACE : BURST_TRACE)}
+          getWaveform={liveWave ?? undefined}
+          waveform={liveWave ? undefined : glyphKind === 'waveform' ? SINE_TRACE : BURST_TRACE}
           fluid
           height={view === 'dock-full' ? 64 : 40}
           color={spine}
@@ -412,6 +493,23 @@
     justify-content: center;
     border: 1px dashed var(--border, #2c3037);
     border-radius: 4px;
+  }
+
+  /* DUAL glyph (param-wave + live trace, owner spec): the two screens split
+     the glyph cell — the dock hero's 4-knob-column cap or the plate strip —
+     side by side on the dock page-grid gap; each pane is fluid and floors at
+     the 40px scope minimum (both always WHOLE — the no-clip rule). A lane row
+     renders the morph pane alone, so it just fills the cell. */
+  .dual-glyph {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+  }
+  .dual-pane {
+    flex: 1 1 0;
+    min-width: 40px;
   }
 
   /* Dock faceplate SECTION BANDS (view='dock-full'): the glyph hero, then one

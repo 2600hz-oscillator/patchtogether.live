@@ -61,6 +61,14 @@
     pw?: number;
     /** Explicit single-cycle buffer (overrides `morph` when present). */
     waveform?: ArrayLike<number>;
+    /** LIVE single-cycle source for `wave` mode: polled on the SHARED
+     *  onMeterFrame ticker (visibility-gated, rAF-coalesced) so a
+     *  param-derived shape keeps updating WHILE a knob gesture streams
+     *  transient values (the dual-glyph live-while-twisting seam). The
+     *  source memoizes on its input tuple (createLiveWaveSource), so the
+     *  screen repaints ONLY when the buffer IDENTITY changes — an idle
+     *  poll costs one identity compare. Overrides `waveform`/`morph`. */
+    getWaveform?: () => ArrayLike<number> | undefined;
     testid?: string;
     ariaLabel?: string;
   }
@@ -79,6 +87,7 @@
     morph = 0,
     pw = 0.5,
     waveform,
+    getWaveform,
     testid,
     ariaLabel,
   }: Props = $props();
@@ -86,6 +95,7 @@
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let hostEl: HTMLDivElement | null = $state(null);
   let tracePeak = $state(0);
+  let wavePeak = $state(0);
 
   // Fluid width: track the host box (Svelte's clientWidth binding = a
   // ResizeObserver) and seed it synchronously on mount so the first static
@@ -187,8 +197,9 @@
       return { pts: envelopeCurvePoints({ attack, decay, sustain, release }, effWidth, height), peak: 0 };
     }
     if (mode === 'wave') {
-      if (waveform && waveform.length > 0) {
-        return { pts: samplesToPoints(waveform, effWidth, height), peak: peakAmplitude(waveform) };
+      const buf = getWaveform?.() ?? waveform;
+      if (buf && buf.length > 0) {
+        return { pts: samplesToPoints(buf, effWidth, height), peak: peakAmplitude(buf) };
       }
       return { pts: morphWavePoints(morph, effWidth, height, 128, pw), peak: 1 };
     }
@@ -211,6 +222,7 @@
     const { pts, peak } = pointsFor();
     strokePath(ctx, pts);
     if (mode === 'waveform') tracePeak = peak;
+    if (mode === 'wave') wavePeak = peak;
   }
 
   // LIVE waveform: repaint on the shared frame, gated by on-screen visibility.
@@ -220,12 +232,29 @@
     return () => h.stop();
   });
 
+  // LIVE-polled wave (the dual glyph's param-derived display): poll the wave
+  // source on the SAME shared visibility-gated ticker, but repaint ONLY when
+  // the buffer IDENTITY changes — the source memoizes on its param tuple, so
+  // a knob gesture (transient stream) repaints per frame while an idle tile
+  // costs one compare. The static effect below still handles resize/color.
+  $effect(() => {
+    if (mode !== 'wave' || !getWaveform || !canvasEl) return;
+    let last: ArrayLike<number> | undefined;
+    const h = onMeterFrame(canvasEl, () => {
+      const buf = getWaveform();
+      if (buf === last) return;
+      last = buf;
+      paint();
+    });
+    return () => h.stop();
+  });
+
   // Static modes (envelope / wave): repaint whenever a driving prop changes.
   // Referencing the reactive inputs here registers the dependency.
   $effect(() => {
     if (mode === 'waveform') return;
     // touch deps
-    void [mode, effWidth, height, traceColor, attack, decay, sustain, release, morph, pw, waveform, canvasEl];
+    void [mode, effWidth, height, traceColor, attack, decay, sustain, release, morph, pw, waveform, getWaveform, canvasEl];
     paint();
   });
 </script>
@@ -240,6 +269,7 @@
   data-testid={testid}
   data-mode={mode}
   data-trace-peak={mode === 'waveform' ? tracePeak.toFixed(4) : undefined}
+  data-wave-peak={mode === 'wave' ? wavePeak.toFixed(4) : undefined}
   role="img"
   aria-label={ariaLabel ?? `${mode} display`}
 >
