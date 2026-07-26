@@ -19,8 +19,9 @@
 // spread — so single-window reads wobble by design; the median is the honest
 // center).
 //
-// REGISTRY: add a row to PITCHED_VOICES to enroll a voice (batch-2 pitched
-// voices — dx7, sixstrum, karplus — enroll the same check when they migrate).
+// REGISTRY: add a row to PITCHED_VOICES to enroll a voice (the remaining
+// batch-2 pitched voices — dx7, karplus — enroll the same check when they
+// migrate; sixstrum enrolled with its P1 face).
 // Each row provides:
 //   * renderDefault — the voice at FACTORY DEFAULTS, driven at V/oct 0
 //     (0 V = C4, house convention) with the gate held: the shipped tuning.
@@ -30,7 +31,9 @@
 //
 // Bounds: default ≤ DEFAULT_TOLERANCE_CENTS (the owner's "≤ ~5 cents" — the
 // measured tidyVco default center is ≈ +4.0¢, the one-sided OSC2 detune
-// default of +6¢; documented, inside spec). Pure core ≤ 1 cent.
+// default of +6¢; sixstrum's is ≈ −3.5¢, its SPREAD detune on the low string;
+// both documented, inside spec). Pure core ≤ 1 cent (measured: tidyVco
+// +0.02¢, sixstrum −0.01¢ — the karplus V/oct law is exact).
 
 import { describe, it, expect } from 'vitest';
 
@@ -41,6 +44,14 @@ import {
   renderTidyVco,
   type TidyVcoParams,
 } from '../../../../dsp/src/lib/tidy-vco-dsp';
+import {
+  SIXSTRUM_DEFAULTS,
+  SS_STRINGS,
+  makeSixStrumState,
+  prepSixStrumBlock,
+  sixStrumStep,
+  type SixStrumParams,
+} from '../../../../dsp/src/lib/sixstrum-dsp';
 
 const SR = 48000;
 const C4_HZ = 261.6256; // equal temperament, A4 = 440
@@ -64,6 +75,47 @@ function renderTidy(params: TidyVcoParams, voct: number, seconds: number): Float
   return mono;
 }
 
+/** Render SIX STRUM's pure math mirror: string 1 driven from POLY lane 0 at
+ *  `voct` with its note-on gate held — the voice's REAL V/oct path (its mono
+ *  CHORD input is pitch-CLASS only, so POLY is where 1 V/oct lives). One
+ *  rising edge plucks the string once; the karplus loop then rings on its own
+ *  RING decay, which is the pitch under test. The other five lanes stay
+ *  ungated, so exactly one string sounds.
+ *
+ *  MEASUREMENT MAKEUP GAIN: unlike a sustained oscillator, a plucked string
+ *  DECAYS (RING = 2.5 s to −60 dB), and YIN refuses any window under RMS
+ *  0.001 — so a raw render goes unvoiced ~1.1 s in and yields barely the 8
+ *  windows the median needs. We therefore undo the string's own decay
+ *  (10^(3t/ring), the exact inverse of −60 dB per RING seconds, capped) so the
+ *  estimator sees a steady level. Pure gain: it scales amplitude only and
+ *  cannot move a measured frequency — it just keeps the whole tail voiced.
+ *  Re-striking instead is NOT equivalent: each strike's broadband excitation
+ *  transient sits inside a 170 ms YIN window and skews the reading flat. */
+function renderSixStrum(params: SixStrumParams, voct: number, seconds: number): Float32Array {
+  const n = SR * seconds;
+  const out = new Float32Array(n);
+  const state = makeSixStrumState(SR);
+  const frame = {
+    strum: new Float32Array(SS_STRINGS),
+    mute: new Float32Array(SS_STRINGS),
+    polyPitch: new Float32Array(SS_STRINGS),
+    polyGate: new Float32Array(SS_STRINGS),
+    accent: 0.6, // the worklet's unpatched-ACCENT default
+  };
+  frame.polyPitch[0] = voct;
+  const p: SixStrumParams = { ...params, polyConnected: 1, chordConnected: 0 };
+  for (let i = 0; i < n; i += 128) {
+    prepSixStrumBlock(p, 60, SR, state);
+    const end = Math.min(i + 128, n);
+    for (let s = i; s < end; s++) {
+      frame.polyGate[0] = s === 0 ? 0 : 1; // rising edge at s = 1 → one pluck, then held
+      const makeup = Math.min(1e3, Math.pow(10, (3 * (s / SR)) / p.ring));
+      out[s] = sixStrumStep(frame, p, SR, state) * makeup;
+    }
+  }
+  return out;
+}
+
 interface PitchedVoice {
   name: string;
   /** The voice at FACTORY DEFAULTS, V/oct 0 (C4), gate held. */
@@ -74,12 +126,23 @@ interface PitchedVoice {
 }
 
 /** ── THE REGISTRY — enroll every pitched voice here ─────────────────────
- *  Batch 2 (dx7 / sixstrum / karplus) add rows when their faces migrate. */
+ *  Batch 2 (dx7 / karplus) add rows when their faces migrate. */
 const PITCHED_VOICES: PitchedVoice[] = [
   {
     name: 'tidyVco',
     renderDefault: () => renderTidy({ ...TIDY_VCO_DEFAULTS }, 0, 3),
     renderPure: () => renderTidy({ ...TIDY_VCO_DEFAULTS, detune: 0, width: 0, sub: 0 }, 0, 3),
+  },
+  {
+    // SIX STRUM (P1 batch-2 face migration). Its DESIGNED per-string character
+    // is SPREAD — a symmetric detune whose low-string end sits at −1 of the
+    // pattern, so the default 0.25 puts string 1 at −3.5 cents (inside the
+    // 5-cent bound); zeroing SPREAD leaves the bare karplus V/oct core. Two
+    // seconds is plenty: RING's 2.5 s decay keeps the string voiced across the
+    // whole measurement window.
+    name: 'sixstrum',
+    renderDefault: () => renderSixStrum({ ...SIXSTRUM_DEFAULTS }, 0, 3),
+    renderPure: () => renderSixStrum({ ...SIXSTRUM_DEFAULTS, spread: 0 }, 0, 3),
   },
 ];
 
