@@ -103,8 +103,10 @@ export const qbrtDef: AudioModuleDef = {
   //
   //   mini (1):    CUTOFF — the big knob, and the only one that is two things
   //                at once: the filter's corner AND the pitch it rings at.
-  //   compact (3): + RESONANCE (how hard it sings / how long it rings) and
-  //                MODE (which of the four responses you are hearing).
+  //   compact (2 cells + glyph): + RESONANCE (how hard it sings / how long it
+  //                rings). A glyph-bearing face fits TWO whole knob columns
+  //                beside the trace (faceTierCap), so MODE (which of the four
+  //                responses you are hearing) joins at the full tier.
   //   full (8):    all four — PING DEC joins last; it is inert until a cable
   //                reaches the PING jack.
   //   dock:        two section bands that read as the signal flow — the

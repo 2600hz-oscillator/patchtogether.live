@@ -10,6 +10,7 @@
   import { onDestroy, onMount, untrack } from 'svelte';
   import ControlContextMenu from './ControlContextMenu.svelte';
   import { makeMidiAssignable } from './midi-assignable.svelte';
+  import { clampMenu, portal } from '$lib/ui/menu-viewport-action';
   import {
     currentOption,
     selectorLabel,
@@ -36,6 +37,14 @@
     paramId?: string;
     /** Hero-sized preset chip (DX7). */
     hero?: boolean;
+    /** LANE-TILE chip: shrinks to its host knob column (the 46px `--kcol-max`
+     *  cap), drops the tag row and ellipsizes the value. The dropdown itself is
+     *  portaled + viewport-clamped, so the full roster stays readable even when
+     *  the chip is only a few characters wide. */
+    compact?: boolean;
+    /** Explicit test id (a NON-param roster has no paramId to derive one
+     *  from — e.g. the shell's family cells). */
+    testid?: string;
     disabled?: boolean;
   }
 
@@ -48,6 +57,8 @@
     moduleId,
     paramId,
     hero = false,
+    compact = false,
+    testid,
     disabled = false,
   }: Props = $props();
 
@@ -102,8 +113,27 @@
   onDestroy(() => { if (raf !== null) cancelAnimationFrame(raf); midi.unregister(); });
 
   // ── dropdown open/close ──
+  //
+  // The menu is PORTALED to <body> and viewport-clamped (the shared
+  // ControlContextMenu recipe). It used to be `position: absolute` inside the
+  // chip, which is fine on a wide card but is CLIPPED to nothing inside a
+  // RACKLINE tile (`.rl-tile { overflow: hidden }`) and mis-positions under
+  // SvelteFlow's transformed pane. Portaling makes the roster reachable from a
+  // lane tile, the dock faceplate and a plain card alike.
   let open = $state(false);
-  function toggleOpen() { if (!disabled) open = !open; }
+  let chipEl = $state<HTMLElement | null>(null);
+  let menuX = $state(0);
+  let menuY = $state(0);
+  function anchorMenu(): void {
+    const r = chipEl?.getBoundingClientRect();
+    menuX = r ? r.left : 0;
+    menuY = r ? r.bottom + 4 : 0;
+  }
+  function toggleOpen() {
+    if (disabled) return;
+    if (!open) anchorMenu();
+    open = !open;
+  }
   function choose(v: Val) { open = false; if (v !== value) onchange(v); }
   function onKeydown(e: KeyboardEvent) {
     if (disabled) return;
@@ -134,44 +164,48 @@
 <div class="selector-wrap" class:midi-learning={midi.learning} class:midi-bound={!!midi.binding}>
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div
-    class="selector"
+    bind:this={chipEl}
+    class="selector nodrag"
     class:hero
+    class:compact
     class:disabled
     role="button"
     tabindex={disabled ? -1 : 0}
     aria-haspopup="listbox"
     aria-expanded={open}
     aria-label={label ? `${label}: ${shownLabel}` : shownLabel}
-    data-testid={paramId ? `control-${paramId}` : undefined}
-    title={shownTitle}
+    data-testid={testid ?? (paramId ? `control-${paramId}` : undefined)}
+    title={shownTitle ?? (compact && label ? `${label}: ${shownLabel}` : shownTitle)}
     onclick={toggleOpen}
     onkeydown={onKeydown}
     onwheel={onWheel}
     oncontextmenu={openContextMenu}
   >
-    {#if label}<span class="lab">{label}</span>{/if}
+    {#if label && !compact}<span class="lab">{label}</span>{/if}
     <span class="val">{shownLabel}</span>
     <span class="chev" class:up={open}>▾</span>
   </div>
 
   {#if open}
-    <!-- transparent backdrop closes the menu on any outside click -->
-    <button class="backdrop" type="button" aria-label="close" onclick={() => (open = false)}></button>
-    <ul class="menu" role="listbox">
-      {#each options as opt (opt.value)}
-        <li>
-          <button
-            class="item"
-            type="button"
-            class:on={opt.value === value}
-            role="option"
-            aria-selected={opt.value === value}
-            title={opt.title}
-            onclick={() => choose(opt.value)}
-          >{opt.label}</button>
-        </li>
-      {/each}
-    </ul>
+    <div use:portal>
+      <!-- transparent backdrop closes the menu on any outside click -->
+      <button class="backdrop" type="button" aria-label="close" onclick={() => (open = false)}></button>
+      <ul class="menu" use:clampMenu={{ x: menuX, y: menuY, flip: false }} role="listbox">
+        {#each options as opt (opt.value)}
+          <li>
+            <button
+              class="item"
+              type="button"
+              class:on={opt.value === value}
+              role="option"
+              aria-selected={opt.value === value}
+              title={opt.title}
+              onclick={() => choose(opt.value)}
+            >{opt.label}</button>
+          </li>
+        {/each}
+      </ul>
+    </div>
   {/if}
 
   {#if midi.binding}
@@ -220,6 +254,18 @@
     outline: none;
   }
   .selector.hero { padding: 8px 12px; min-width: 168px; font-size: 13px; }
+  /* LANE chip: fits the 46px `--kcol-max` knob column (the no-clip rule) —
+     the value ellipsizes and the portaled dropdown carries the full names. */
+  .selector.compact {
+    min-width: 0;
+    width: 100%;
+    gap: 2px;
+    padding: 4px 4px;
+    font-size: 9px;
+    border-radius: 4px;
+  }
+  .selector.compact .val { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .selector.compact .chev { margin-left: 0; font-size: 8px; }
   .selector:hover { border-color: var(--domain, var(--accent)); }
   .selector:focus-visible { outline: 2px solid var(--domain, var(--accent)); outline-offset: 2px; }
   .selector.disabled { opacity: 0.5; cursor: default; }
@@ -236,17 +282,20 @@
   .backdrop {
     position: fixed;
     inset: 0;
-    z-index: 40;
+    z-index: 2001;
     background: transparent;
     border: none;
     cursor: default;
   }
   .menu {
-    position: absolute;
-    top: calc(100% + 4px);
+    /* PORTALED to <body> + `use:clampMenu` (see the open/close block): fixed
+       so it escapes `.rl-tile { overflow: hidden }` and SvelteFlow's
+       transformed pane. Above the context-menu chrome's 2000/2001 band. */
+    position: fixed;
+    top: 0;
     left: 0;
-    z-index: 41;
-    min-width: 100%;
+    z-index: 2002;
+    min-width: 120px;
     max-height: 240px;
     overflow-y: auto;
     margin: 0;

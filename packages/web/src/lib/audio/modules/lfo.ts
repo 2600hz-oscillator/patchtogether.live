@@ -104,8 +104,10 @@ const baseDef: AudioModuleDef = {
   // live `waveform` glyph already SHOWING the current shape + swing, the mini
   // tier pairs the one knob you actually ride with a picture of everything
   // else. `shape` (the mock's hero band: waveform-morph selector + live shape
-  // screen) ranks second, `depth` (swing amount) third — so the compact tier's
-  // three knobs are exactly the mock's ENGINE row (rate · morph · depth).
+  // screen) ranks second, `depth` (swing amount) third — so the compact tile
+  // pairs rate · morph with the live shape screen (a glyph-bearing face fits
+  // TWO whole knob columns — faceTierCap) and the full-in-lane face completes
+  // the mock's ENGINE row (rate · morph · depth).
   // DOCK PAGES mirror the mock's two editor bands: 'shape' (the waveform-morph
   // hero) and 'engine' (speed + swing).
   face: {

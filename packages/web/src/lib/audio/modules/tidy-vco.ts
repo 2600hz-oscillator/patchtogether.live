@@ -169,8 +169,10 @@ export const tidyVcoDef: AudioModuleDef = {
   // picker + a live wave-shape screen — so the SHAPE 1 morph leads and the
   // 'waveform' glyph draws exactly what shape1 + pw sculpt:
   //   mini    (1) shape1 — the oscillator identity next to the glyph.
-  //   compact (3) + pw (the mock's tune-cluster hero) + cutoff (the diode
-  //               ladder's front door — the one always-hot filter control).
+  //   compact (2 cells + glyph) + pw (the mock's tune-cluster hero). A
+  //               glyph-bearing face fits TWO whole knob columns beside the
+  //               wave screen (faceTierCap); cutoff (the diode ladder's front
+  //               door — the one always-hot filter control) joins at 'full'.
   //   full    (6 whole plate cells — laneBodyPlan's no-clip cap) + detune and
   //               oct2 (the mock's TUNE CLUSTER — the owner control-loss fix:
   //               the tuning controls must stay visible in the full face, so
@@ -184,7 +186,7 @@ export const tidyVcoDef: AudioModuleDef = {
   // envelopes → output), lowercase labels.
   face: {
     order: [
-      // the hero ladder (mini = 1 / compact = 3 / full-in-lane plate = 6)
+      // the hero ladder (mini = 1 / compact = 2 + glyph / full-in-lane plate = 6)
       'shape1',
       'pw',
       'cutoff',

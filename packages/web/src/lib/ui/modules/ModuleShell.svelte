@@ -35,8 +35,10 @@
   import { cardParams, portsFromDef } from './card-kit';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import VideoTileThumb from './VideoTileThumb.svelte';
-  import { KnobConic, ScopeScreen, VuMeter } from '$lib/ui/controls';
+  import { Button, KnobConic, ScopeScreen, Selector, Toggle, VuMeter } from '$lib/ui/controls';
   import { curatedFace, dockFacePlan, type FaceControl, type FaceTier } from '$lib/ui/workflow/curated-face';
+  import { shellCellFor } from '$lib/ui/workflow/shell-cells';
+  import { momentaryParamIds, momentaryValue, paramCellKind } from '$lib/ui/workflow/shell-control-kind';
   import {
     spineCableVar,
     laneFaceTier,
@@ -112,7 +114,8 @@
   // menu'd exactly like a hand-built card.
   const params = cardParams({ params: (def?.params ?? []) as readonly ParamDef[] }, () => id, () => node);
 
-  // The tier-curated controls (top-N: mini=1 / compact=3 / full=8 / dock=all).
+  // The tier-curated controls (top-N: mini=1 / compact=2 with a glyph, 3
+  // without / full=8 / dock=all — faceTierCap, reconciled with laneBodyPlan).
   let face = $derived(def ? curatedFace(def, effTier) : null);
   let controls = $derived<FaceControl[]>(face?.controls ?? []);
   let glyphKind = $derived(face?.glyph ?? 'none');
@@ -240,6 +243,74 @@
     return (def?.params ?? []).find((p) => p.id === pid);
   }
 
+  // ── CELL PLUMBING (the P1 batch-2 INERT-CELL fix) ───────────────────────
+  //
+  // Three cell kinds, all REAL controls. `param` is generic (KnobConic, or a
+  // momentary Button for a DECLARED press-pad); `family`/`static` resolve to a
+  // declarative spec in shell-cells.ts and paint with the shared primitive
+  // library. A family/static key with NO registered spec renders an explicitly
+  // INERT cell — which module-face-lint and the faces-parity e2e both FAIL on,
+  // so a dead label can never quietly ship again.
+
+  /** Declared momentary (press-pad) params — see ModuleFace.momentary. */
+  let momentary = $derived(momentaryParamIds(def as { face?: { momentary?: readonly string[] } } | undefined));
+
+  /**
+   * The LIVE node (the Y.Doc entry, not the flow-node snapshot) + its version
+   * tick, so a cell reading `node.data` (a preset roster, an imported bank)
+   * re-derives on a local OR remote change exactly like the legacy card.
+   *
+   * The version is CARRIED IN THE RESULT on purpose: `patch.nodes[id]` is a
+   * stable SyncedStore proxy, so a derived that returns it bare is `===` to its
+   * previous value and Svelte suppresses the invalidation — the cell would
+   * never see a `data` change (the DX7 preset chip kept showing E.PIANO 1 after
+   * loading another voice). Returning a fresh wrapper makes the tick the
+   * identity, so reading `.n` re-runs the cell's projection every bump.
+   */
+  let liveCell = $derived.by<{ v: number; n: ModuleNode | undefined }>(() => ({
+    v: nodeVersion(id),
+    n: (patch.nodes[id] as ModuleNode | undefined) ?? node,
+  }));
+
+  /**
+   * Fire a MOMENTARY press-param: high on press, back to REST on release. Same
+   * two writes the legacy pad does (TomtomCard/ClapCard) — the durable param so
+   * the state is shared + the UI reflects the hold, and a direct engine push so
+   * the hit is immediate rather than waiting on the commit path. Because the
+   * release always writes REST back, nothing latched survives in the Y.Doc.
+   */
+  function firePressParam(pd: ParamDef, high: boolean): void {
+    const v = momentaryValue(high, pd.defaultValue);
+    params.set(pd.id)(v);
+    const e = params.engineCtx.get();
+    const live = patch.nodes[id] as ModuleNode | undefined;
+    if (e && live) e.setParam(live, pd.id, v);
+  }
+
+  /** Per-cell status/error line for a FILE cell (keyed by the face key). */
+  let cellStatus = $state<Record<string, { status: string | null; error: string | null }>>({});
+
+  async function onCellFile(
+    ctlKey: string,
+    load: (nodeId: string, file: File) => Promise<{ status: string | null; error: string | null }>,
+    ev: Event,
+  ): Promise<void> {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    cellStatus = { ...cellStatus, [ctlKey]: { status: 'parsing...', error: null } };
+    const res = await load(id, file);
+    cellStatus = { ...cellStatus, [ctlKey]: res };
+    try { input.value = ''; } catch { /* some browsers disallow the reset */ }
+  }
+
+  /** A stable, collision-free test id for a family/static cell's interactive
+   *  element. Deliberately NOT the family's own `testidPrefix` (that id belongs
+   *  to the legacy card and is grep-pinned to it by the docs gate). */
+  function cellTestId(ctl: FaceControl): string {
+    return `shell-cell-${ctl.familyId ?? ctl.key.replace(/[{}]/g, '')}`;
+  }
+
   let ports = $derived(def ? { inputs: portsFromDef(def.inputs ?? []), outputs: portsFromDef(def.outputs ?? []) } : { inputs: [], outputs: [] });
 
   /** Signal-flow label (mock `.flow` "▶ ch1"): the module's lane membership. */
@@ -289,30 +360,113 @@
     {#if ctl.kind === 'param'}
       {@const pd = paramDef(ctl.paramId ?? ctl.key)}
       {#if pd}
-        <div class="kcol">
-          <KnobConic
-            value={params.paramVal(pd.id)}
-            min={pd.min}
-            max={pd.max}
-            defaultValue={pd.defaultValue}
-            label={pd.label}
-            units={pd.units ?? ''}
-            curve={pd.curve}
-            onchange={params.set(pd.id)}
-            readLive={params.live(pd.id)}
-            moduleId={id}
-            paramId={pd.id}
-            size={effTier === 'mini' ? 'lg' : knobSize}
-            accent={spine}
-          />
-        </div>
+        {#if paramCellKind(pd.id, momentary) === 'momentary'}
+          <!-- MOMENTARY press-pad (declared on face.momentary): fires on the
+               press edge and RETURNS TO REST on release. It must never be a
+               rotary — dragging a latching knob to 1 held the pad down, masked
+               the module's own TRIG jack and persisted the stuck value. -->
+          <div class="kcol ms-cell-act" data-cell-kind="param" data-cell-control="momentary" data-cell-key={ctl.key}>
+            <Button
+              label={pd.label}
+              momentary
+              variant={view === 'dock-full' ? 'accent' : 'sm'}
+              title={`${pd.label}: hold to fire (the press edge is the hit)`}
+              onGate={(high) => firePressParam(pd, high)}
+              moduleId={id}
+              paramId={pd.id}
+            />
+          </div>
+        {:else}
+          <div class="kcol" data-cell-kind="param" data-cell-control="knob" data-cell-key={ctl.key}>
+            <KnobConic
+              value={params.paramVal(pd.id)}
+              min={pd.min}
+              max={pd.max}
+              defaultValue={pd.defaultValue}
+              label={pd.label}
+              units={pd.units ?? ''}
+              curve={pd.curve}
+              onchange={params.set(pd.id)}
+              readLive={params.live(pd.id)}
+              moduleId={id}
+              paramId={pd.id}
+              size={effTier === 'mini' ? 'lg' : knobSize}
+              accent={spine}
+            />
+          </div>
+        {/if}
       {/if}
     {:else}
-      <!-- family / static cell — the shell frames + labels it; the rich
-           grid/cluster/select render is a P1 per-module concern. -->
-      <div class="kcol ms-cell-other" data-cell-kind={ctl.kind}>
-        <span class="lab">{ctl.label}</span>
-      </div>
+      <!-- FAMILY / STATIC cell — a REAL control from the shared primitive
+           library, driven by the module's declarative spec (shell-cells.ts) so
+           it runs the SAME action/state the legacy card runs. -->
+      {@const cell = shellCellFor(node.type, ctl)}
+      {#if cell?.kind === 'selector'}
+        <div class="kcol ms-cell-sel" data-cell-kind={ctl.kind} data-cell-control="selector" data-cell-key={ctl.key}>
+          <Selector
+            value={cell.value(liveCell.n)}
+            options={cell.options(liveCell.n)}
+            onchange={(v) => cell.onchange(id, String(v))}
+            label={view === 'dock-full' ? cell.tag : ctl.label}
+            compact={view !== 'dock-full'}
+            hero={view === 'dock-full'}
+            testid={cellTestId(ctl)}
+          />
+          {#if view === 'dock-full'}<span class="cell-cap">{ctl.label}</span>{/if}
+        </div>
+      {:else if cell?.kind === 'toggle'}
+        <div class="kcol ms-cell-act" data-cell-kind={ctl.kind} data-cell-control="toggle" data-cell-key={ctl.key}>
+          <Toggle
+            value={cell.value(liveCell.n) ? 1 : 0}
+            label={cell.label}
+            onchange={(v) => cell.onchange(id, v >= 0.5)}
+            testid={cellTestId(ctl)}
+          />
+        </div>
+      {:else if cell?.kind === 'action'}
+        <div class="kcol ms-cell-act" data-cell-kind={ctl.kind} data-cell-control="action" data-cell-key={ctl.key}>
+          <Button
+            label={view === 'dock-full' ? cell.label : '▸'}
+            title={cell.title ?? cell.label}
+            variant={view === 'dock-full' ? 'default' : 'sm'}
+            onTrigger={() => cell.onFire(id)}
+            testid={cellTestId(ctl)}
+          />
+        </div>
+      {:else if cell?.kind === 'file'}
+        <div class="kcol ms-cell-act" data-cell-kind={ctl.kind} data-cell-control="file" data-cell-key={ctl.key}>
+          <label class="file-btn" title={cell.title ?? cell.label}>
+            <input
+              type="file"
+              accept={cell.accept}
+              data-testid={cellTestId(ctl)}
+              onchange={(e) => onCellFile(ctl.key, cell.onFile, e)}
+            />
+            <span>{view === 'dock-full' ? cell.label : '⇩'}</span>
+          </label>
+          {#if view === 'dock-full' && cellStatus[ctl.key]}
+            <span
+              class="cell-cap"
+              class:err={!!cellStatus[ctl.key]?.error}
+              data-testid={`${cellTestId(ctl)}-status`}
+            >{cellStatus[ctl.key]?.error ?? cellStatus[ctl.key]?.status}</span>
+          {/if}
+        </div>
+      {:else}
+        <!-- NO registered cell spec → an explicitly INERT cell. Both gates
+             (module-face-lint's shell-cell coverage + the faces-parity e2e)
+             FAIL on `data-cell-inert`, so this is a loud placeholder for a
+             missing hook, never a shippable render. -->
+        <div
+          class="kcol ms-cell-other"
+          data-cell-kind={ctl.kind}
+          data-cell-control="inert"
+          data-cell-inert="true"
+          data-cell-key={ctl.key}
+        >
+          <span class="lab">{ctl.label}</span>
+        </div>
+      {/if}
     {/if}
   {/snippet}
 
@@ -474,8 +628,10 @@
 </div>
 
 <style>
-  /* Family / static curated cell (P1 render is per-module) — a small dashed
-     placeholder inside the shared .kcol column. */
+  /* INERT family/static cell — a family/static face key with NO registered
+     shell-cell spec (shell-cells.ts). It is a LOUD FAILURE MARKER, not a
+     render: `data-cell-inert` fails module-face-lint's coverage gate and the
+     faces-parity e2e, so this dashed box only ever appears mid-development. */
   .ms-cell-other {
     min-width: 44px;
     min-height: 40px;
@@ -484,6 +640,55 @@
     border: 1px dashed var(--border, #2c3037);
     border-radius: 4px;
   }
+
+  /* SELECTOR + ACTION cells: the shared .kcol column, but sized to the control
+     rather than to a knob. In the LANE both stay INSIDE the 46px --kcol-max
+     cap (the no-clip rule — the chip ellipsizes and its dropdown is portaled);
+     the dock faceplate lets them take their natural width. */
+  .ms-cell-sel,
+  .ms-cell-act {
+    justify-content: center;
+    min-width: 0;
+  }
+  .rl-tile.dock-full .ms-cell-sel,
+  .rl-tile.dock-full .ms-cell-act {
+    max-width: none;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  /* The cell's own caption under a dock-tier selector/import (the DECLARED
+     ControlFamily label — "Preset / voice selector", never the humanized id). */
+  .cell-cap {
+    font-size: 0.55rem;
+    letter-spacing: 0.04em;
+    color: var(--text-dim, #9aa3ad);
+    max-width: 220px;
+  }
+  .cell-cap.err { color: #ff6b6b; }
+
+  /* File-import cell: a real <input type="file"> inside a styled label, the
+     same affordance the legacy card carries (so the picker, the accept filter
+     and drag-drop all behave identically). */
+  .file-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    background: var(--surface-2, #20262f);
+    color: var(--text, #eef1f5);
+    border: 1px solid var(--border-strong, #333b48);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .file-btn:hover { border-color: var(--domain, var(--accent)); }
+  .file-btn input[type='file'] { display: none; }
+  .rl-tile:not(.dock-full) .file-btn { padding: 2px 4px; font-size: 10px; }
 
   /* DUAL glyph (param-wave + live trace, owner spec): the two screens split
      the glyph cell — the dock hero's 4-knob-column cap or the plate strip —

@@ -124,7 +124,9 @@ export const snaredrumDef: AudioModuleDef = {
   // intent + the KICK DRUM sibling's producer-intent banding, not transcribed
   // from the legacy card.
   //
-  // THE LANE. A snare is chosen by three knobs, so they are the compact tile:
+  // THE LANE. A snare is chosen by three knobs; the top TWO of them are the
+  // compact tile (a glyph-bearing face fits two whole knob columns beside the
+  // trace — faceTierCap), and the third joins from the full tier on:
   // TUNE (the drum's size/pitch — the modal bank AND the noise body track it),
   // WIRES (the sizzle that separates a snare from a tom — and the master of a
   // roll's sustain, since it also sets how hard each stroke re-excites the
@@ -151,7 +153,8 @@ export const snaredrumDef: AudioModuleDef = {
   // params — its identity is the envelope, and the envelope is only real live.)
   face: {
     order: [
-      // top-3 → the compact lane tile: which drum, how snappy, how bright.
+      // top-2 → the compact lane tile: which drum, how snappy (TONE joins the
+      // full-in-lane plate — a glyph tile fits two whole cells).
       'tune', 'wire', 'tone',
       // ranks 4–8 → the full-in-lane face: length, attack, the roll pair, gain.
       'head_decay', 'crack', 'roll_speed', 'bounce', 'level',

@@ -555,8 +555,10 @@ export const cloudseedDef: AudioModuleDef = {
   // re-grouped by signal flow (input → taps → early → late → EQ → output).
   //
   //   mini (1):    LATE — the one knob that IS "how much reverb".
-  //   compact (3): LATE / DRY / DECAY — the output blend + the RT60 hero,
-  //                the mock's hero band distilled.
+  //   compact (2 cells + glyph): LATE / DRY — the output blend, the mock's
+  //                hero band distilled. (A glyph-bearing face fits TWO whole
+  //                knob columns beside the meter — faceTierCap; DECAY joins at
+  //                the full tier.)
   //   full (8):    + EARLY (completing the 3-fader blend), SIZE (the space's
   //                other defining dimension), HIGH CUT + LOW CUT (the wet
   //                tone trims), PRESET (jump between bundled spaces).

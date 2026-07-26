@@ -121,6 +121,13 @@ export const tomtomDef: AudioModuleDef = {
       // dock-only tail — the momentary pad
       'strike',
     ],
+    // STRIKE is a PAD, not a value: the worklet ORs this param with trigger_in
+    // and fires on the RISING EDGE, so the control must press-and-release.
+    // Its ParamDef shape (0..1 discrete, default 0) is IDENTICAL to a latching
+    // switch's (kickdrum/snaredrum `hard`), so the intent is declared here —
+    // the shell renders a momentary Button instead of a rotary that would
+    // otherwise hold the pad down, mask the TRIG jack and persist a stuck 1.
+    momentary: ['strike'],
     pages: [
       { id: 'sweep', label: 'membrane · sweep', controls: ['tune', 'bend_amt', 'bend_time'] },
       { id: 'ring',  label: 'membrane · ring',  controls: ['decay', 'tone'] },

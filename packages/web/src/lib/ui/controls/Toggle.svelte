@@ -21,9 +21,12 @@
     readLive?: () => number | undefined;
     moduleId?: string;
     paramId?: string;
+    /** Explicit test id — for a NON-param switch (a shell family cell backed by
+     *  node.data) that has no paramId to derive `control-<id>` from. */
+    testid?: string;
   }
 
-  let { value, onchange, label, hint, readLive, moduleId, paramId }: Props = $props();
+  let { value, onchange, label, hint, readLive, moduleId, paramId, testid }: Props = $props();
 
   const midiEnabled = $derived(!!(moduleId && paramId));
 
@@ -77,13 +80,13 @@
 
 <div class="toggle-ctl" class:midi-learning={midi.learning} class:midi-bound={!!midi.binding} title={hint}>
   <div
-    class="switch"
+    class="switch nodrag"
     class:on
     role="switch"
     tabindex="0"
     aria-checked={on}
     aria-label={label}
-    data-testid={paramId ? `control-${paramId}` : undefined}
+    data-testid={testid ?? (paramId ? `control-${paramId}` : undefined)}
     onclick={flip}
     onkeydown={onKeydown}
     oncontextmenu={openContextMenu}

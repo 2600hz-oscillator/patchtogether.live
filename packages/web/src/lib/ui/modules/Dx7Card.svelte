@@ -3,13 +3,20 @@
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
-  import { DX7_DEFAULT_PRESET } from '$lib/audio/modules/dx7';
   import { DX7_BUILTIN_BANK } from '$lib/audio/dx7-banks';
-  import { parseSyxBank, type DX7Voice } from '$lib/audio/dx7-syx';
+  // The preset roster + the .syx import are SHARED with the RACKLINE
+  // ModuleShell's family cells (dx7-patch-actions) — one implementation, so
+  // the card and the shell can never drift into two different behaviours.
+  import {
+    DX7_SYX_ACCEPT,
+    dx7PresetName,
+    dx7UserPatches,
+    loadDx7SyxFile,
+    selectDx7Preset,
+  } from './dx7-patch-actions';
   import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
@@ -26,32 +33,14 @@
     return e.readParam(node, k);
   };
 
-  // ---------------- Preset state ----------------
-  let presetName = $derived.by(() => {
-    const d = node?.data as Record<string, unknown> | undefined;
-    return typeof d?.preset === 'string' ? d.preset : DX7_DEFAULT_PRESET;
-  });
-  let userPatches = $derived.by((): DX7Voice[] => {
-    const d = node?.data as Record<string, unknown> | undefined;
-    return Array.isArray(d?.userPatches) ? (d.userPatches as DX7Voice[]) : [];
-  });
-  let allPatchNames = $derived.by(() => {
-    const builtin = DX7_BUILTIN_BANK.map((p) => ({ name: p.name, kind: 'builtin' as const }));
-    const user = userPatches.map((p) => ({ name: p.name, kind: 'user' as const }));
-    return [...builtin, ...user];
-  });
-
-  function selectPreset(name: string) {
-    const t = patch.nodes[id];
-    if (!t) return;
-    if (!t.data) t.data = {};
-    (t.data as Record<string, unknown>).preset = name;
-  }
+  // ---------------- Preset state (shared: dx7-patch-actions) ----------------
+  let presetName = $derived(dx7PresetName(node));
+  let userPatches = $derived(dx7UserPatches(node));
 
   function onPresetChange(ev: Event) {
-    const sel = ev.target as HTMLSelectElement;
-    selectPreset(sel.value);
+    selectPreset((ev.target as HTMLSelectElement).value);
   }
+  const selectPreset = (name: string) => selectDx7Preset(id, name);
 
   let syxError = $state<string | null>(null);
   let syxStatus = $state<string | null>(null);
@@ -62,27 +51,10 @@
     if (!file) return;
     syxError = null;
     syxStatus = 'parsing...';
-    try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const result = parseSyxBank(bytes);
-      const t = patch.nodes[id];
-      if (!t) return;
-      if (!t.data) t.data = {};
-      const existing = Array.isArray((t.data as Record<string, unknown>).userPatches)
-        ? ((t.data as Record<string, unknown>).userPatches as DX7Voice[])
-        : [];
-      // Append (don't replace) so the user can stack multiple cartridges.
-      const merged = [...existing, ...result.voices];
-      (t.data as Record<string, unknown>).userPatches = merged;
-      syxStatus = `loaded ${result.voices.length} voices${result.warnings.length ? ` (${result.warnings.length} warnings)` : ''}`;
-      // Auto-select the first newly-loaded patch.
-      if (result.voices[0]) selectPreset(result.voices[0].name);
-    } catch (err) {
-      syxError = err instanceof Error ? err.message : String(err);
-      syxStatus = null;
-    } finally {
-      try { input.value = ''; } catch { /* */ }
-    }
+    const res = await loadDx7SyxFile(id, file);
+    syxStatus = res.status;
+    syxError = res.error;
+    try { input.value = ''; } catch { /* some browsers disallow the reset */ }
   }
 
   // ---------------- Algorithm cycle (visual aid for the discrete knob) ----------------
@@ -152,7 +124,7 @@
       <!-- SYX upload -->
       <div class="syx-row">
         <label class="syx-btn">
-          <input type="file" accept=".syx,application/octet-stream" onchange={onFileChange} data-testid="dx7-syx-input" />
+          <input type="file" accept={DX7_SYX_ACCEPT} onchange={onFileChange} data-testid="dx7-syx-input" />
           <span>Load .syx bank...</span>
         </label>
         {#if syxStatus}

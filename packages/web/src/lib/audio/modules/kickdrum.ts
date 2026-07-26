@@ -143,7 +143,9 @@ export const kickdrumDef: AudioModuleDef = {
   // glyph 'scope' = the mock's amp+pitch envelope hero.
   face: {
     order: [
-      // top-3 → the compact lane tile: tune it, size the pulse, drive it.
+      // top-2 → the compact lane tile beside the glyph (faceTierCap: a
+      // glyph-bearing face fits two whole knob columns): tune it, size the
+      // pulse. DRIVE completes the trio from the full tier on.
       'tune', 'sub_decay', 'drive',
       // ranks 4–8 → the full-in-lane face: the punch cluster + output gain.
       'pitch_amt', 'body_level', 'click_level', 'pitch_time', 'level',

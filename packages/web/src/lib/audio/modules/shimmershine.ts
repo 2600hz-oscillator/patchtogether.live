@@ -245,8 +245,10 @@ export const shimmershineDef: AudioModuleDef = {
   //                  from "plain Schroeder room" to "self-sustaining
   //                  crystalline drone", so it is the one control that has to
   //                  survive down to the smallest tile.
-  //   compact (3) → + mix, decay — how much of it you hear, how long it rings
-  //                  (the cloudseed FX archetype's wet/dry blend at rank 2).
+  //   compact (2 cells + glyph) → + mix — how much of it you hear (the
+  //                  cloudseed FX archetype's wet/dry blend at rank 2). A
+  //                  glyph-bearing face fits TWO whole knob columns beside the
+  //                  meter (faceTierCap), so decay joins at the full tier.
   //   full    (8) → + size, damp — the tank completed.
   //
   // Dock bands follow SIGNAL FLOW, the same way the cloudseed face does: the

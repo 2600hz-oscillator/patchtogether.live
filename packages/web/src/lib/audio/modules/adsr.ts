@@ -88,7 +88,8 @@ export const adsrDef: AudioModuleDef = {
   //   release — the note's tail; the other temporal edge a player rides live
   //   sustain — the held body level
   //   decay   — the sculptor's control; inaudible whenever sustain sits at 1.0
-  // So mini = attack + contour glyph; compact adds release + sustain; the
+  // So mini = attack + contour glyph; compact adds release (a glyph-bearing
+  // face fits TWO whole knob columns beside the contour — faceTierCap); the
   // full-in-lane face shows all four. The dock mirrors the mock's single
   // 'stages' band, in canonical A/D/S/R order beneath the big contour.
   face: {
