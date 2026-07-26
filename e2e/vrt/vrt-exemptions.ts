@@ -968,46 +968,15 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // cellshade-composite precedent).
   'linux/workflow-audio-io',
   'linux/workflow-dock-patch',
-  // WORKFLOW `?shell=1` ZOOM scenes (2026-07-25, deliberate darwin-first): the
-  // same framed RACKLINE rack region (lane 1..3 + one ch1 member + the
-  // video-zone trio) pinned at zoom 0.40 / 0.80 / 1.30
-  // (workflow-shell-zoom.spec.ts) — the pixel gate for the owner-reported
-  // zoom-reposition bug (tiles must hold position vs the lane lines / number
-  // badges / dashed video band at every zoom; the overlay's flow→screen
-  // projection double-counted the pane offset). Darwin baselines captured
-  // locally + visually inspected; linux baselines pending a vrt-update.yml
-  // workflow_dispatch on the PR branch (the workflow-dock-composite precedent).
-  'linux/workflow-shell-zoom-040',
-  'linux/workflow-shell-zoom-080',
-  'linux/workflow-shell-zoom-130',
-  // P1 BATCH-1 CURATED FACES (2026-07-25, deliberate darwin-first): the first
-  // six migrated modules' faces under `?shell=1` — per module, the COMPACT
-  // lane tile (zoom 0.45) + the DOCK full-view faceplate with its curated
-  // section bands (workflow-shell-faces.spec.ts). Static glyphs + default
-  // params → mask-free deterministic captures. Darwin baselines captured
-  // locally (3× stable) + visually inspected; linux baselines pending a
-  // vrt-update.yml workflow_dispatch on the PR branch (the
-  // workflow-shell-zoom precedent).
-  'linux/face-tidyVco-compact',
-  'linux/face-tidyVco-dock',
-  'linux/face-kickdrum-compact',
-  'linux/face-kickdrum-dock',
-  'linux/face-adsr-compact',
-  'linux/face-adsr-dock',
-  'linux/face-vca-compact',
-  'linux/face-vca-dock',
-  'linux/face-lfo-compact',
-  'linux/face-lfo-dock',
-  'linux/face-cloudseed-compact',
-  'linux/face-cloudseed-dock',
-  // REAR CARD (2026-07-25, deliberate darwin-first): the dock full-view's TAB
-  // flip side (workflow-rear-card.spec.ts) — the busiest (tidyVco) + simplest
-  // (vca) prototypes' jack fields. No live glyphs/knobs on the rear → mask-free
-  // deterministic captures. Darwin baselines captured locally (3× stable) +
-  // visually inspected; linux baselines pending a vrt-update.yml
-  // workflow_dispatch on the PR branch (the workflow-shell-faces precedent).
-  'linux/rear-tidyVco',
-  'linux/rear-vca',
+  // NOTE (2026-07-26): the `?shell=1` WORKFLOW-SHELL family — the 3 ZOOM
+  // scenes (workflow-shell-zoom.spec.ts), the 12 P1 BATCH-1 CURATED FACE
+  // scenes (compact lane tile + dock full-view faceplate per migrated module,
+  // workflow-shell-faces.spec.ts) and the 2 REAR CARD scenes
+  // (workflow-rear-card.spec.ts) — was DRAINED here: the pairs are removed so
+  // the vrt-update.yml `platform=linux` dispatch on this branch actually
+  // CAPTURES them (the skip is unconditional, so a pair still listed means
+  // `--update-snapshots` writes nothing — the #1064 drum-wave drain ordering).
+  // Their linux baselines land on this branch in the bot's regen commit.
   // CLIPPLAYER: darwin baseline (the clip-launcher card — 8×8 launch grid +
   // piano-roll note editor + transport knobs; no animated canvas) captured
   // locally; linux baseline pending a `vrt-update.yml` workflow_dispatch on

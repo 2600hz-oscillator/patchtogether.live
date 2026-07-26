@@ -388,7 +388,15 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // workflow-rear-card.spec.ts); linux baselines pending the
       // vrt-update.yml dispatch on the PR branch, the workflow-shell-faces
       // precedent).
-    ).toBeLessThanOrEqual(121);
+      // 121→104 DRAIN (2026-07-26): the whole `?shell=1` WORKFLOW-SHELL
+      // pending set — the 3 zoom scenes, the 12 P1 batch-1 curated faces
+      // (compact + dock per migrated module) and the 2 rear-card scenes —
+      // got real linux baselines via a single vrt-update.yml dispatch
+      // (platform=linux) on this branch, so their 17 exemption pairs came
+      // out (the #1064 drum-wave drain precedent: drop the pairs FIRST, then
+      // dispatch, because the pending-pair skip is unconditional and
+      // `--update-snapshots` writes nothing for a skipped test).
+    ).toBeLessThanOrEqual(104);
   });
 });
 
