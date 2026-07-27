@@ -13,8 +13,13 @@ import {
   dx7Ratio,
   dx7DetuneFactor,
   computeChecksum,
-  dx7RateToCoef,
   dx7LevelToAmp,
+  dx7LevelToDb,
+  dx7RateToDbPerSec,
+  dx7EgAmpFromDb,
+  dx7EgTick,
+  dx7FixedHz,
+  dx7FixedHzFromRatio,
 } from './dx7-syx';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -145,23 +150,196 @@ describe('dx7DetuneFactor', () => {
   });
 });
 
-describe('dx7RateToCoef', () => {
-  it('rate 99 produces a fast time-constant', () => {
-    const coef = dx7RateToCoef(99);
-    expect(coef).toBeGreaterThan(500); // very fast
+describe('dx7RateToDbPerSec — the authentic linear-in-dB rate law', () => {
+  /** Seconds for a full-scale (level 99 → 0) segment at this rate. */
+  const fullScaleS = (rate: number) => -dx7LevelToDb(0) / dx7RateToDbPerSec(rate);
+
+  // hexter's `dx7_voice_eg_rate_decay_duration[]` — seconds for a full-scale
+  // decay, MEASURED on real DX7/TX7 hardware (dx7_voice_data.c). We derive our
+  // law from msfa's closed form and calibrate it on the rate-0 entry alone;
+  // every other row is then a genuine cross-check of the two sources.
+  const HEXTER_FULL_SCALE_S: Record<number, number> = {
+    0: 317.487, 5: 181.487, 10: 105.810, 15: 63.504, 20: 39.677,
+    25: 19.848, 30: 11.339, 35: 6.614, 40: 3.968, 45: 2.481,
+    50: 1.240, 55: 0.709, 60: 0.414, 65: 0.248, 70: 0.1558,
+    75: 0.078200, 80: 0.044800, 85: 0.026100, 90: 0.015640,
+  };
+
+  it.each(Object.entries(HEXTER_FULL_SCALE_S))(
+    "rate %s matches hexter's hardware-measured full-scale duration",
+    (rateStr, measured) => {
+      const ours = fullScaleS(Number(rateStr));
+      // Within 2 % across a 20 000:1 span, calibrated on rate 0 only.
+      expect(Math.abs(ours - measured) / measured, `rate ${rateStr}: ${ours}s vs ${measured}s`)
+        .toBeLessThan(0.02);
+    },
+  );
+
+  it('rate 99 is ~5.5 ms full-scale, rate 0 is ~317 s', () => {
+    expect(fullScaleS(99)).toBeLessThan(0.007);
+    expect(fullScaleS(99)).toBeGreaterThan(0.004);
+    expect(fullScaleS(0)).toBeCloseTo(317.487, 3);
   });
 
-  it('rate 0 produces a slow time-constant', () => {
-    const coef = dx7RateToCoef(0);
-    expect(coef).toBeLessThan(1); // slow
+  it('doubles every 4 steps of the quantised rate (msfa `qrate >> 2`)', () => {
+    // q = (rate * 41) >> 6; rates 12 and 18 are q = 7 and q = 11 → exactly 2×.
+    expect(dx7RateToDbPerSec(18) / dx7RateToDbPerSec(12)).toBeCloseTo(2, 12);
   });
 
-  it('monotonic (rate ↑ → coef ↑)', () => {
+  it('QUANTISED — 99 rate bytes collapse onto 64 distinct speeds', () => {
+    const distinct = new Set<number>();
+    for (let r = 0; r <= 99; r++) distinct.add(dx7RateToDbPerSec(r));
+    expect(distinct.size).toBe(64);
+    // Rates 0 and 1 both quantise to q = 0 — that is the hardware, not a bug.
+    expect(dx7RateToDbPerSec(0)).toBe(dx7RateToDbPerSec(1));
+  });
+
+  it('monotonic non-decreasing, and strictly increasing every 10 steps', () => {
     let prev = -Infinity;
-    for (let r = 0; r <= 99; r += 10) {
-      const c = dx7RateToCoef(r);
-      expect(c).toBeGreaterThan(prev);
-      prev = c;
+    for (let r = 0; r <= 99; r++) {
+      const v = dx7RateToDbPerSec(r);
+      expect(v, `rate ${r}`).toBeGreaterThanOrEqual(prev);
+      prev = v;
+    }
+    for (let r = 10; r <= 99; r += 10) {
+      expect(dx7RateToDbPerSec(r)).toBeGreaterThan(dx7RateToDbPerSec(r - 10));
+    }
+  });
+});
+
+describe('dx7LevelToDb / dx7EgAmpFromDb', () => {
+  it('agrees with dx7LevelToAmp on every level byte', () => {
+    for (let l = 0; l <= 99; l++) {
+      expect(dx7EgAmpFromDb(dx7LevelToDb(l)), `level ${l}`).toBeCloseTo(dx7LevelToAmp(l), 12);
+    }
+  });
+
+  it('level 99 is 0 dB (unity) and level 0 is the hard floor', () => {
+    expect(dx7LevelToDb(99)).toBe(0);
+    expect(dx7LevelToDb(0)).toBe(-74.25);
+    expect(dx7EgAmpFromDb(-74.25)).toBe(0);
+    expect(dx7EgAmpFromDb(-100)).toBe(0);
+  });
+});
+
+describe('dx7EgTick — the DX7 segment machine', () => {
+  const SR = 48000;
+  const dt = 1 / SR;
+
+  /** Run `seconds` of envelope; returns the final {db, seg}. */
+  function run(
+    l: [number, number, number, number],
+    r: [number, number, number, number],
+    seconds: number,
+    releasing = false,
+  ): { db: number; seg: number } {
+    const levelsDb = l.map(dx7LevelToDb);
+    const rates = r.map(dx7RateToDbPerSec);
+    const envDb = new Float64Array(1);
+    const envSeg = new Int32Array(1);
+    envDb[0] = levelsDb[3]!; // idle at L4
+    if (releasing) envSeg[0] = 3;
+    for (let i = 0; i < Math.round(seconds * SR); i++) {
+      dx7EgTick(envDb, envSeg, 0, levelsDb, rates, releasing, dt);
+    }
+    return { db: envDb[0]!, seg: envSeg[0]! };
+  }
+
+  it('IDLES at L4, not at silence', () => {
+    const levelsDb = [0, 0, 0, dx7LevelToDb(60)];
+    const envDb = new Float64Array(1);
+    envDb[0] = levelsDb[3]!;
+    expect(envDb[0]).toBe(dx7LevelToDb(60));
+    expect(dx7EgAmpFromDb(envDb[0]!)).toBeGreaterThan(0);
+  });
+
+  it('HOLDS at L3 for as long as the gate is high', () => {
+    // Fast rates: 3 segments are long done by 0.5 s; L3 = 60.
+    const a = run([99, 80, 60, 0], [99, 99, 99, 60], 0.5);
+    const b = run([99, 80, 60, 0], [99, 99, 99, 60], 5.0);
+    expect(a.seg, 'parked in the release segment, frozen').toBe(3);
+    expect(a.db).toBeCloseTo(dx7LevelToDb(60), 9);
+    expect(b.db, 'ten times longer and it has not moved a dB').toBe(a.db);
+  });
+
+  it('RELEASES to L4 only once the gate falls', () => {
+    const held = run([99, 80, 60, 20], [99, 99, 99, 80], 2.0, false);
+    expect(held.db).toBeCloseTo(dx7LevelToDb(60), 9);
+    const released = run([99, 80, 60, 20], [99, 99, 99, 80], 2.0, true);
+    expect(released.db).toBeCloseTo(dx7LevelToDb(20), 9);
+    expect(released.seg).toBe(4); // finished
+  });
+
+  // hexter's `dx7_voice_eg_rate_rise_duration[]` — MEASURED seconds for a
+  // full attack (level 0 → 99) at each rate. Independent of the decay table
+  // and of msfa: only the flat 8.01 decay/rise RATIO is used to calibrate the
+  // attack ceiling, so every row here is a real cross-check of the curve.
+  const HEXTER_ATTACK_S: Record<number, number> = {
+    0: 39.638, 5: 22.658, 10: 13.206, 15: 7.929, 20: 4.958,
+    25: 2.477, 30: 1.416, 35: 0.827, 40: 0.496, 45: 0.310,
+    50: 0.1549, 55: 0.0885, 60: 0.0516, 65: 0.0309, 70: 0.019430,
+  };
+
+  /** Simulated seconds for the attack segment to reach L1 = 99 from idle. */
+  function attackSeconds(rate: number): number {
+    const levelsDb = [dx7LevelToDb(99), 0, 0, dx7LevelToDb(0)];
+    const rates = [dx7RateToDbPerSec(rate), 0, 0, 0];
+    const envDb = new Float64Array(1);
+    const envSeg = new Int32Array(1);
+    envDb[0] = levelsDb[3]!;
+    let n = 0;
+    while (envSeg[0]! === 0 && n < SR * 200) {
+      dx7EgTick(envDb, envSeg, 0, levelsDb, rates, false, dt);
+      n++;
+    }
+    return n / SR;
+  }
+
+  it.each(Object.entries(HEXTER_ATTACK_S))(
+    "ATTACK at rate %s matches hexter's hardware-measured rise duration",
+    (rateStr, measured) => {
+      const ours = attackSeconds(Number(rateStr));
+      expect(Math.abs(ours - measured) / measured, `rate ${rateStr}: ${ours}s vs ${measured}s`)
+        .toBeLessThan(0.02);
+    },
+  );
+
+  it('ATTACK is ~8× faster than a DECAY at the same rate byte', () => {
+    const rate = 50;
+    const decayS = -dx7LevelToDb(0) / dx7RateToDbPerSec(rate);
+    const ratio = decayS / attackSeconds(rate);
+    expect(ratio).toBeGreaterThan(7.8);
+    expect(ratio).toBeLessThan(8.2);
+  });
+
+  it('a segment already at its target advances immediately', () => {
+    // L1 = L2 = L3 = L4: nothing to traverse, so a held gate parks at seg 3
+    // within a handful of samples rather than stalling.
+    const out = run([50, 50, 50, 50], [0, 0, 0, 0], 0.001);
+    expect(out.seg).toBe(3);
+    expect(out.db).toBe(dx7LevelToDb(50));
+  });
+});
+
+describe('dx7FixedHz — the fixed-frequency law', () => {
+  it('is 10^((coarse & 3) + fine/100) Hz', () => {
+    expect(dx7FixedHz(0, 0)).toBeCloseTo(1, 9);
+    expect(dx7FixedHz(1, 0)).toBeCloseTo(10, 9);
+    expect(dx7FixedHz(2, 0)).toBeCloseTo(100, 9);
+    expect(dx7FixedHz(3, 0)).toBeCloseTo(1000, 9);
+    expect(dx7FixedHz(3, 99)).toBeCloseTo(9772.372209558107, 6);
+  });
+
+  it('coarse wraps every 4 (only the low 2 bits matter)', () => {
+    for (let c = 0; c < 32; c++) {
+      expect(dx7FixedHz(c, 37), `coarse ${c}`).toBe(dx7FixedHz(c & 3, 37));
+    }
+  });
+
+  it('legacy ratio fallback is exact for fine = 0', () => {
+    // dx7Ratio(coarse, 0) === coarse (or 0.5 for coarse 0).
+    for (const c of [0, 1, 2, 3, 5, 8, 14, 31]) {
+      expect(dx7FixedHzFromRatio(dx7Ratio(c, 0)), `coarse ${c}`).toBeCloseTo(dx7FixedHz(c, 0), 9);
     }
   });
 });
