@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "columnCount": 48,
   "freqRange": [
     20,
@@ -31,6 +31,7 @@
   },
   "fingerprints": {
     "adsr/env": {
+      "sourceSha256": "0a88d3bf80d5e2d4a48e1320a79fc179f67cff2e71650a6a67b8ae8fcc26ccc4",
       "spectrum": [
         255,
         243,
@@ -94,6 +95,7 @@
       }
     },
     "analog-logic-maths/diff": {
+      "sourceSha256": "9b021916c991ab6b82ac10e1ff542527aa66628f9312410c539d3f1179869f77",
       "spectrum": [
         255,
         243,
@@ -157,6 +159,7 @@
       }
     },
     "analog-logic-maths/max": {
+      "sourceSha256": "6ea4948b99d0bf2e66a05178f8ebee123525e32e4ff6f34b6a48cdf4b21b8c65",
       "spectrum": [
         255,
         243,
@@ -220,6 +223,7 @@
       }
     },
     "analog-logic-maths/min": {
+      "sourceSha256": "53d40f31493a45473db0219d2f76f361b23c1d259c7b8d7021cbf54ec485d8b6",
       "spectrum": [
         255,
         243,
@@ -283,6 +287,7 @@
       }
     },
     "analog-logic-maths/product": {
+      "sourceSha256": "a01587bd270cb86a9f3931b59271ddfab5361a569c1b49ac6043865a97d00157",
       "spectrum": [
         1,
         1,
@@ -346,6 +351,7 @@
       }
     },
     "analog-logic-maths/sum": {
+      "sourceSha256": "a4a4ecec8695888464f380f6dbee26fdd51592d228d1c83eca44cabf017e2846",
       "spectrum": [
         255,
         243,
@@ -409,6 +415,7 @@
       }
     },
     "analog-vco/fm-morph-sine": {
+      "sourceSha256": "da4183343ae2394da6713f9f4efd7c7a667fa9bbf5e703117f0003bd68df39a0",
       "spectrum": [
         1,
         1,
@@ -472,6 +479,7 @@
       }
     },
     "analog-vco/fm-sync-c1-bsaw": {
+      "sourceSha256": "1e1b7a99baf17a671b19163e2b1078936d5e83f6fd9a75a4ba34cdd5074ffea0",
       "spectrum": [
         28,
         27,
@@ -535,6 +543,7 @@
       }
     },
     "analog-vco/fm-sync-c1-bsine": {
+      "sourceSha256": "16b6844918bbc33a6477ac1b6cf464860d15b9d8e9083e2ff39bcf501443ec65",
       "spectrum": [
         44,
         42,
@@ -598,6 +607,7 @@
       }
     },
     "analog-vco/fm-sync-c1-bsquare": {
+      "sourceSha256": "76cfdaed55117535e8920153b79be3f54a33227c634fdcc7640ad3ff33d34e4f",
       "spectrum": [
         53,
         50,
@@ -661,6 +671,7 @@
       }
     },
     "analog-vco/fm-sync-c1-vibrato": {
+      "sourceSha256": "111408f1be923fbaedad0ebd3c577417660fc371881c43ad100abfb3c93973c1",
       "spectrum": [
         9,
         9,
@@ -724,6 +735,7 @@
       }
     },
     "analog-vco/fm-sync-c2-bmaster": {
+      "sourceSha256": "0f570f40fead45af20d07dd03e2814c4fe3b7b6b8fb0595f534d7f72e0f0b095",
       "spectrum": [
         65,
         62,
@@ -787,6 +799,7 @@
       }
     },
     "analog-vco/fm-sync-c3-feedback-a": {
+      "sourceSha256": "211787ea38c3dde6c6fb3d35f4bf84ddf0744aec5afea9db04036d4052db8563",
       "spectrum": [
         62,
         59,
@@ -850,6 +863,7 @@
       }
     },
     "analog-vco/fm-sync-c3-feedback-b": {
+      "sourceSha256": "21fedeaf53f32287b208a2810a7734a0d705fabf176d6c870882c5b91bc6815f",
       "spectrum": [
         4,
         4,
@@ -913,6 +927,7 @@
       }
     },
     "analog-vco/fm-sync-c4-mutual-a": {
+      "sourceSha256": "09dd1389f805a5aa1579d104b92aefd4a9bba6c7c5b964b16aca3bf7ec6ee0ba",
       "spectrum": [
         255,
         243,
@@ -976,6 +991,7 @@
       }
     },
     "analog-vco/fm-sync-c4-mutual-b": {
+      "sourceSha256": "45e855059ec6c21af9846b0ad7b632cc1489a50b795823c0bb8f400150e96a20",
       "spectrum": [
         255,
         243,
@@ -1039,6 +1055,7 @@
       }
     },
     "analog-vco/hard-sync": {
+      "sourceSha256": "f6b7d8721cd931aa0f6a8391324c133a980068448c75628c0b8550bf724b7148",
       "spectrum": [
         3,
         3,
@@ -1102,6 +1119,7 @@
       }
     },
     "analog-vco/pm-morph-saw": {
+      "sourceSha256": "1be4c1f850e10d60bdaf4e7889cbbd3b651330c2233fedf6cb33fa8b8204ddf9",
       "spectrum": [
         5,
         5,
@@ -1165,6 +1183,7 @@
       }
     },
     "analog-vco/pm-morph-sine": {
+      "sourceSha256": "b3cb6706f9d102e970105409761995303e02c4d3e791f9e68ceadba22b33211b",
       "spectrum": [
         5,
         6,
@@ -1228,6 +1247,7 @@
       }
     },
     "analog-vco/pm-morph-square": {
+      "sourceSha256": "289784bdabfcfb7e99925db58e2995d15424fa25eb2c2a908dbf0c2c32afddae",
       "spectrum": [
         5,
         6,
@@ -1291,6 +1311,7 @@
       }
     },
     "analog-vco/pw-sweep-50": {
+      "sourceSha256": "6aef3aed6a6a3b01ea4a7ef670ea35a60ed091675d36510431a24484f9591784",
       "spectrum": [
         1,
         1,
@@ -1354,6 +1375,7 @@
       }
     },
     "analog-vco/pw-sweep-narrow": {
+      "sourceSha256": "f4f0f3c063ab87d1d097c3baed66fc297bece2d728e4d05aab240964c900dd0b",
       "spectrum": [
         255,
         243,
@@ -1417,6 +1439,7 @@
       }
     },
     "analog-vco/pw-sweep-wide": {
+      "sourceSha256": "8fc5f2ef7a9a0c2956f95b50fe47e14235ed63369fb8307eabc1f0181ab2d849",
       "spectrum": [
         255,
         243,
@@ -1480,6 +1503,7 @@
       }
     },
     "attenumix/mix": {
+      "sourceSha256": "c0de72c8fc3cdcd06cf3ee0fd807d98053b31c4bcc950d89133639e6783b20db",
       "spectrum": [
         6,
         6,
@@ -1543,6 +1567,7 @@
       }
     },
     "attenumix/out2": {
+      "sourceSha256": "a000d60118a1a3eea6b0a9a7f38d5fa8ffcd29dab18a7fd76e42ac6ee97e42b0",
       "spectrum": [
         0,
         0,
@@ -1606,6 +1631,7 @@
       }
     },
     "bluebox/out": {
+      "sourceSha256": "f58056a83ab749f9a4a036e62c4443e1ddd120c65fea8dcefab2034fb2f87dc3",
       "spectrum": [
         0,
         0,
@@ -1669,6 +1695,7 @@
       }
     },
     "charlottes-echos/L": {
+      "sourceSha256": "45b26d19f1245b951f0473e4ffc025ec28e090a9726bc9686ac175308377ac85",
       "spectrum": [
         15,
         15,
@@ -1732,6 +1759,7 @@
       }
     },
     "clap/audio_out": {
+      "sourceSha256": "e4ff6d42aa90c1de4d09b089ff1765a633fbe8702bb95076a922e2fc3c690b3f",
       "spectrum": [
         33,
         35,
@@ -1795,6 +1823,7 @@
       }
     },
     "cofefve/out": {
+      "sourceSha256": "adfb92130ccdc59087f4638bcd08cdbe5902d9b0e7dbdfe272ad201a527aed51",
       "spectrum": [
         8,
         8,
@@ -1858,6 +1887,7 @@
       }
     },
     "cube/axis-aligned": {
+      "sourceSha256": "7d438f0bef532a4621e76694a1a6ed6f5fd5e2db8085792b54123316e762b922",
       "spectrum": [
         255,
         254,
@@ -1921,6 +1951,7 @@
       }
     },
     "cube/connect-strength-circle": {
+      "sourceSha256": "371ce3b0e33d90bc764586d910d18708a9518ca2a209c3fcbace2e85f9e8797f",
       "spectrum": [
         255,
         254,
@@ -1984,6 +2015,7 @@
       }
     },
     "cube/connect-strength-hard": {
+      "sourceSha256": "eafe046bbc79a6fb5e50d6f36bbd76595a8e3cbc8c58be30fc39dead561143ab",
       "spectrum": [
         255,
         254,
@@ -2047,6 +2079,7 @@
       }
     },
     "cube/connect-strength-vee": {
+      "sourceSha256": "4701d6d64f9ebc46ee46c96c02740303657ffaebb0bd970b05b904c0bd66dd61",
       "spectrum": [
         255,
         254,
@@ -2110,6 +2143,7 @@
       }
     },
     "cube/connect-vee": {
+      "sourceSha256": "7d03b975cd5535973b0e5066b7f432d08449b5d4a5f90c8fef4aac7c44af0a4d",
       "spectrum": [
         255,
         254,
@@ -2173,6 +2207,7 @@
       }
     },
     "cube/hard-material": {
+      "sourceSha256": "ea8aab8259299865277beb7f3392ddfb523f2e9b25bd92879a66006489946a87",
       "spectrum": [
         255,
         254,
@@ -2236,6 +2271,7 @@
       }
     },
     "cube/morph-ceiling": {
+      "sourceSha256": "acc92e6183aae0022cd3c1a847a94a845dcc92c74a375b2ad0be4188bf9f09a1",
       "spectrum": [
         255,
         254,
@@ -2299,6 +2335,7 @@
       }
     },
     "cube/rotated": {
+      "sourceSha256": "9ea65410e350702371e63ae35dfc409c54b121f7a614c76b48031497f99b8dd8",
       "spectrum": [
         255,
         254,
@@ -2362,6 +2399,7 @@
       }
     },
     "cube/space-crush-and-crush": {
+      "sourceSha256": "acd9ce2d519be64b795f9ff50e98de3a96aed8c1c232243cb156bab2a11ec313",
       "spectrum": [
         255,
         254,
@@ -2425,6 +2463,7 @@
       }
     },
     "cube/space-crush-max": {
+      "sourceSha256": "ac1628f1c4703c6d73a4cc4046a7f67f35f720970d3f3f6f20363d1e7cd20036",
       "spectrum": [
         255,
         254,
@@ -2488,6 +2527,7 @@
       }
     },
     "cube/space-crush-mid": {
+      "sourceSha256": "e3838ba21c7deb99aae449a1cc43f04e2b0b7ea490314db6999be5c324301fea",
       "spectrum": [
         255,
         254,
@@ -2551,6 +2591,7 @@
       }
     },
     "cube/space-diffuse-mid": {
+      "sourceSha256": "cdc66374ae43320a827e495060ed19bc50c011b405d79e2804ecff009aa1e8c9",
       "spectrum": [
         255,
         254,
@@ -2614,6 +2655,7 @@
       }
     },
     "cube/space-diffuse-rotated": {
+      "sourceSha256": "1568ebfc3dc30bea45e698fdd539730e1a14b8f1c0e8ccfac5d2d53d0b8048cc",
       "spectrum": [
         255,
         254,
@@ -2677,6 +2719,7 @@
       }
     },
     "cube/space-diffuse-wrap": {
+      "sourceSha256": "4271b683b44f3ca6be11e7aa29f3967033ad47bfe30e0148c43a1d556e68d02a",
       "spectrum": [
         255,
         254,
@@ -2740,6 +2783,7 @@
       }
     },
     "cube/spread-right": {
+      "sourceSha256": "bb03f2087afc778eb039ca19759c32225ef70ccb655e587ae77ebeb88db71007",
       "spectrum": [
         255,
         254,
@@ -2803,6 +2847,7 @@
       }
     },
     "cube/wrap-outside": {
+      "sourceSha256": "786f55bd5e289f2352eb08ba3f3036199f0d5a89900a5badae889d895ebc5b79",
       "spectrum": [
         255,
         254,
@@ -2866,6 +2911,7 @@
       }
     },
     "delay/audio": {
+      "sourceSha256": "587a3f4fbeb13ad3dd9b8fc8036152b0701b416887f0e439fc91481b8a7bafe5",
       "spectrum": [
         19,
         19,
@@ -2922,13 +2968,14 @@
         "centroid": 202
       },
       "labels": {
-        "peakDb": -10.46,
-        "rmsDb": -25.11,
+        "peakDb": -7.45,
+        "rmsDb": -22.1,
         "durS": 1.0,
         "samples": 48000
       }
     },
     "depolarizer/out": {
+      "sourceSha256": "46ef867727c7fcd0652d4b14db34779536e8fcf759ac85abdada49ef34e405a9",
       "spectrum": [
         255,
         243,
@@ -2992,6 +3039,7 @@
       }
     },
     "destroy/audio": {
+      "sourceSha256": "78678e5680f67191995ef1a59e118c15a1b282c6924121fbc5c7c206405c4ca7",
       "spectrum": [
         2,
         2,
@@ -3055,6 +3103,7 @@
       }
     },
     "featurecv/noise-bright": {
+      "sourceSha256": "42fec6f50e44224bd0de4c6d8469845c0b77e4b2becca102eabdb73affdf0264",
       "spectrum": [
         255,
         243,
@@ -3118,6 +3167,7 @@
       }
     },
     "featurecv/ramp-loud": {
+      "sourceSha256": "db9f7fd689bc43c7afca5a5b055f29ec2184fbdbba88b9d7145ed1934b7f5fe6",
       "spectrum": [
         255,
         243,
@@ -3181,6 +3231,7 @@
       }
     },
     "featurecv/sine-punch": {
+      "sourceSha256": "973833b59e8418cfdbf481f544840e744734c54fe3836cfcb52339b758088ddf",
       "spectrum": [
         255,
         243,
@@ -3244,6 +3295,7 @@
       }
     },
     "featurecv/transient-onset": {
+      "sourceSha256": "59b9220281f1082e9415b95e2d7c7af6135caf1bad2872a0c39d8bf7fd32bceb",
       "spectrum": [
         255,
         254,
@@ -3307,6 +3359,7 @@
       }
     },
     "filter/audio": {
+      "sourceSha256": "f7c0801c5d5a0dd7e59a4b3a5e2da6b25eb3c1143045505b650dd72d814a9d0d",
       "spectrum": [
         16,
         16,
@@ -3370,6 +3423,7 @@
       }
     },
     "flipper/flip": {
+      "sourceSha256": "be02e248267e299fd95e847466777d681d86000e655e328f11c1f7cd574c24ad",
       "spectrum": [
         255,
         254,
@@ -3433,6 +3487,7 @@
       }
     },
     "flipper/flop": {
+      "sourceSha256": "a4678e43a2ae5135cd0cc93faa90dd597884c87f128e1643682f1519215bd98a",
       "spectrum": [
         255,
         254,
@@ -3496,6 +3551,7 @@
       }
     },
     "fourplexer/out1": {
+      "sourceSha256": "a741dd4295d15bf5a9ef50a1110035624bc39a8ce9f83641223ea28db9156f9f",
       "spectrum": [
         7,
         7,
@@ -3559,6 +3615,7 @@
       }
     },
     "gatemaiden/gate": {
+      "sourceSha256": "93867d48ac5d8eb87eacecba32ae86108b5904ff5d5aa4e03d234a5bea98c2fb",
       "spectrum": [
         255,
         244,
@@ -3622,6 +3679,7 @@
       }
     },
     "gatemaiden/trig": {
+      "sourceSha256": "708c00b7979aef8639f0c5e23be6b82531a2a6dd416979dc6b62cf26e4db9bbd",
       "spectrum": [
         255,
         254,
@@ -3685,6 +3743,7 @@
       }
     },
     "grand-integration/combined-master": {
+      "sourceSha256": "6cb84440d70c83de2f7564150095ac5201fead3c428648e3f323fd61b4e2fd59",
       "spectrum": [
         189,
         198,
@@ -3748,6 +3807,7 @@
       }
     },
     "hypercube/alpha-max": {
+      "sourceSha256": "fe19e0fe45ba87c667e721646fcf88e2f60da076dbfff33b3a48f58ff7446ebd",
       "spectrum": [
         255,
         254,
@@ -3811,6 +3871,7 @@
       }
     },
     "hypercube/alpha-mid": {
+      "sourceSha256": "9dbbfd8a765d6516a75b65a1c79efd508bb83f8e48fd1e74914af38fde2a31b9",
       "spectrum": [
         255,
         254,
@@ -3874,6 +3935,7 @@
       }
     },
     "hypercube/alpha-rotated": {
+      "sourceSha256": "3d5a0ae9be6b43d75434a2346b522f5d605af5260dd16ae0af1ff43ab99ca356",
       "spectrum": [
         253,
         253,
@@ -3937,6 +3999,7 @@
       }
     },
     "hypercube/alpha-zero": {
+      "sourceSha256": "06628c960d82c9fb2e9c54d84a8b78a623a3166a31f04b6acdc3bb770c0b4760",
       "spectrum": [
         255,
         254,
@@ -4000,6 +4063,7 @@
       }
     },
     "illogic/and": {
+      "sourceSha256": "fbd999b8bf043f7151bd1a1f30572cbc9451ad4cf4551ac8d043d68e229f9f86",
       "spectrum": [
         255,
         243,
@@ -4063,6 +4127,7 @@
       }
     },
     "illogic/diff": {
+      "sourceSha256": "6e1795c556b5fba73bf85f62db45968fabd6aacd2928fb3a92dafa535712eaf5",
       "spectrum": [
         255,
         244,
@@ -4126,6 +4191,7 @@
       }
     },
     "illogic/or": {
+      "sourceSha256": "92e65b3ebbe40d292a569e020cfeb4bb10828304a241e3a7edfaa02f69359498",
       "spectrum": [
         255,
         243,
@@ -4189,6 +4255,7 @@
       }
     },
     "illogic/sum": {
+      "sourceSha256": "51ef45ee26a7cbba22e2b4c59af6b8f181aa1e7c0d6c2d9d12ef6272873d9818",
       "spectrum": [
         255,
         244,
@@ -4252,6 +4319,7 @@
       }
     },
     "karplus/melody": {
+      "sourceSha256": "abe844680f41f3a93afefa256fc9053cae7354a09f130a8fd807eb9688b393a9",
       "spectrum": [
         6,
         6,
@@ -4315,6 +4383,7 @@
       }
     },
     "karplus/out": {
+      "sourceSha256": "41ae80aefbe2ec29ffcf51c02d2d04190eb0659f026c95346ff74c1b45e56f35",
       "spectrum": [
         5,
         5,
@@ -4378,6 +4447,7 @@
       }
     },
     "kickdrum/audio_l": {
+      "sourceSha256": "ab702e948dcfea43cfed1be191e174e0325f59fb13805ddd21a43f57a47b63b7",
       "spectrum": [
         193,
         202,
@@ -4441,6 +4511,7 @@
       }
     },
     "mixer/audio": {
+      "sourceSha256": "215faa4be27c7fd6abc80a8f76303239c583063af967c4473932c00df2d0571d",
       "spectrum": [
         1,
         1,
@@ -4504,6 +4575,7 @@
       }
     },
     "mixmstrs/masterL": {
+      "sourceSha256": "f12a69c00817c7d3c703ef694e45c7a3ec1df0363e23dea5481ce7c5487e0ff5",
       "spectrum": [
         1,
         1,
@@ -4567,6 +4639,7 @@
       }
     },
     "mixmstrs/send1L": {
+      "sourceSha256": "6bd36f65e939e5f306d89593a547ab9d9190f328f8abfd5cec46ad76fddd13b2",
       "spectrum": [
         1,
         1,
@@ -4630,6 +4703,7 @@
       }
     },
     "mixmstrs/send2L": {
+      "sourceSha256": "9a40dabbe4ece8a3ccf212acb1652587e693b214c2e239a562216262a19b9f53",
       "spectrum": [
         0,
         0,
@@ -4693,6 +4767,7 @@
       }
     },
     "moog-cp3/out_positive": {
+      "sourceSha256": "8d8f0335425d03395039c5a7717c61df95c98a5d0f67cfae1c605f41d1de048d",
       "spectrum": [
         255,
         243,
@@ -4756,6 +4831,7 @@
       }
     },
     "moog904a/audio": {
+      "sourceSha256": "b9ea347a6eb2aebe7e84cf676e049389733ee1a8a924caf130d2a6809a5fa0ed",
       "spectrum": [
         1,
         1,
@@ -4819,6 +4895,7 @@
       }
     },
     "moog904b/audio": {
+      "sourceSha256": "e07d11128b90b08482421904114a27bc78e31c7acc72ac57f9c62a18180f4d2c",
       "spectrum": [
         1,
         1,
@@ -4882,6 +4959,7 @@
       }
     },
     "moog904c/audio": {
+      "sourceSha256": "c17a6b241c13b8c1c3f59c92889c1562b3edb7fc0d2908a08403bcfc2cf9dcff",
       "spectrum": [
         1,
         1,
@@ -4945,6 +5023,7 @@
       }
     },
     "moog905/audio": {
+      "sourceSha256": "1a52cce6280531024936a4148e2163f9383ba9039be82ef5497ce5e5a8578531",
       "spectrum": [
         15,
         15,
@@ -5008,6 +5087,7 @@
       }
     },
     "moog907a/audio": {
+      "sourceSha256": "21dbc3c23d284b5fade12e87a481ef10b4a7ec09eed6db3fcf2621eb5a704a77",
       "spectrum": [
         170,
         172,
@@ -5071,6 +5151,7 @@
       }
     },
     "moog911/env": {
+      "sourceSha256": "c1ac2bcb9a6ebd980cb7d559503ed35ebe72c1dca122364ce398aa4679552bdd",
       "spectrum": [
         255,
         243,
@@ -5134,6 +5215,7 @@
       }
     },
     "moog911a/out1": {
+      "sourceSha256": "31fc4216bbf3bfed50d7721868a727ae1cbcb91e82c383efced58ea96e0d3ba7",
       "spectrum": [
         255,
         255,
@@ -5197,6 +5279,7 @@
       }
     },
     "moog911a/out2": {
+      "sourceSha256": "c8c1900cefd9dbba2e425ce49135c17c8caf94350cc146aca6224ea77c005fb3",
       "spectrum": [
         255,
         255,
@@ -5260,6 +5343,7 @@
       }
     },
     "moog914/audio": {
+      "sourceSha256": "7cd274e87969335f17de058dd92e8f48ec641eec889cd447d3254db0066194c2",
       "spectrum": [
         192,
         195,
@@ -5323,6 +5407,7 @@
       }
     },
     "moog921-vco/rectangular": {
+      "sourceSha256": "fa288e51017b20f34d95f61b79730d0d6f45fa0d99aff27d2d182768246c210d",
       "spectrum": [
         1,
         1,
@@ -5386,6 +5471,7 @@
       }
     },
     "moog921-vco/sawtooth": {
+      "sourceSha256": "142317112beaf116efd907152af7d4ff36310baac279df342fedae09c8a8aa8e",
       "spectrum": [
         1,
         1,
@@ -5449,6 +5535,7 @@
       }
     },
     "moog921-vco/sine": {
+      "sourceSha256": "784798ab02437767c9fd3dde3b359198e4f7c6b424ba8b5c3aa3cba69c287783",
       "spectrum": [
         1,
         1,
@@ -5512,6 +5599,7 @@
       }
     },
     "moog921-vco/triangle": {
+      "sourceSha256": "1f97ce6f93610b9efedfb2ec244ab8ed6b4540bb05d672f895da26e6d44f6709",
       "spectrum": [
         1,
         1,
@@ -5575,6 +5663,7 @@
       }
     },
     "moog960/row1": {
+      "sourceSha256": "620ad8b61adbe683d9490d38f5325aea5aad8977ae3704e3d061b6b6c61ad14c",
       "spectrum": [
         255,
         243,
@@ -5638,6 +5727,7 @@
       }
     },
     "moog960/row2": {
+      "sourceSha256": "169fd8bcceaba7028071c267c125cb40395419945664b3ee65fda4bccf616945",
       "spectrum": [
         255,
         243,
@@ -5701,6 +5791,7 @@
       }
     },
     "moog960/row3": {
+      "sourceSha256": "1c44d9e483f9beef3013525428cbc37d5fd84b7ba5ba6d6e2b07564da225623f",
       "spectrum": [
         255,
         243,
@@ -5764,6 +5855,7 @@
       }
     },
     "moog962/out": {
+      "sourceSha256": "a67fcb297315b860713e4af65560068d1ba9e140538eb0f2236f42c621c060e2",
       "spectrum": [
         1,
         1,
@@ -5827,6 +5919,7 @@
       }
     },
     "ninelives/out1": {
+      "sourceSha256": "cc9e91f22a046870ba1e71a32ffc09ff019d903abd9a95b29a57f2cfe6b6127c",
       "spectrum": [
         255,
         244,
@@ -5890,6 +5983,7 @@
       }
     },
     "ninelives/out2": {
+      "sourceSha256": "5e47961dbe62cc0ae14487b69dd97e8546ccd5e7129e88b4fbcd69af0146d0db",
       "spectrum": [
         255,
         243,
@@ -5953,6 +6047,7 @@
       }
     },
     "ninelives/out3": {
+      "sourceSha256": "e88d01b061d8c2c012fefce5be739cae99211f92902e1c4f7ff8bd18b1fedadb",
       "spectrum": [
         255,
         243,
@@ -6016,6 +6111,7 @@
       }
     },
     "noise/brown": {
+      "sourceSha256": "e5551dcb69bdd72512e6f380eea5ebd2a7b35e885ba2505f571ccd7827879e13",
       "spectrum": [
         255,
         253,
@@ -6079,6 +6175,7 @@
       }
     },
     "noise/pink": {
+      "sourceSha256": "d238eb3bba8ca79395800a5c9c762a1a62bf102c8b6f1b5b02fd4c4d90d81b09",
       "spectrum": [
         255,
         249,
@@ -6142,6 +6239,7 @@
       }
     },
     "noise/white": {
+      "sourceSha256": "c8fe50c7d3336813deb0675c65a232b8a4062fa9a46b23aada62f64b0b415c28",
       "spectrum": [
         227,
         229,
@@ -6205,6 +6303,7 @@
       }
     },
     "polarizer/out": {
+      "sourceSha256": "7047a3845b0198252c74c6ad925550b647d17f9d729d003dd9932d24674dcfd6",
       "spectrum": [
         255,
         243,
@@ -6268,6 +6367,7 @@
       }
     },
     "resofilter/out": {
+      "sourceSha256": "0d7dc50f82b24d2ce823240e7b2cd1ee0ca3529ed50b8bfe26f0f7a8f6698fd3",
       "spectrum": [
         1,
         1,
@@ -6331,6 +6431,7 @@
       }
     },
     "reverb/audio": {
+      "sourceSha256": "208fc84182ff845a596c665032e5b18f6fdfb6dba519d6f1736edefd5abef8dc",
       "spectrum": [
         18,
         17,
@@ -6394,6 +6495,7 @@
       }
     },
     "ringback/out": {
+      "sourceSha256": "c51192368b4ff9e25ddbb182c80979607b0b1fb515f694e0ad8c21b6170fd2c2",
       "spectrum": [
         3,
         3,
@@ -6457,6 +6559,7 @@
       }
     },
     "sample-hold/continuous-quant-curve": {
+      "sourceSha256": "84e6bd77a31238b46c73bd9d9c77bd0a0b2a26b09bc93526723364d70b20180e",
       "spectrum": [
         255,
         243,
@@ -6520,6 +6623,7 @@
       }
     },
     "sample-hold/gated-quant-steps": {
+      "sourceSha256": "c716e00fa3a0946a10cdb9a90f9dc5da0fa87c18de9f68a0b5738ac2071fa060",
       "spectrum": [
         255,
         243,
@@ -6583,6 +6687,7 @@
       }
     },
     "scaler/out": {
+      "sourceSha256": "ec7f6afe45d0604d7df3ebaee265b201a72537973ed056e3c8c15e9b541c5966",
       "spectrum": [
         1,
         1,
@@ -6646,6 +6751,7 @@
       }
     },
     "scope/ch1_out": {
+      "sourceSha256": "999530bc7af78c96d26f070ae4613cdef0092cbdb258dd903c55b0faf3d4dd1c",
       "spectrum": [
         1,
         1,
@@ -6709,6 +6815,7 @@
       }
     },
     "scope/ch2_out": {
+      "sourceSha256": "ba669e7e1dd13f13a92814c4a355ef53a794bb088693c693dad9e5d85ffc2255",
       "spectrum": [
         0,
         0,
@@ -6772,6 +6879,7 @@
       }
     },
     "sidecar/audio_l_out": {
+      "sourceSha256": "ca351b87123544bc47a73b687b0248be3a7e41d9e766943c055899ba6446a2b1",
       "spectrum": [
         138,
         146,
@@ -6835,6 +6943,7 @@
       }
     },
     "sidecar/env_out": {
+      "sourceSha256": "e03b4876548d97ab792caf7d2cdf8d49b5228769bac2d98e42195a4a1087fc63",
       "spectrum": [
         255,
         243,
@@ -6898,6 +7007,7 @@
       }
     },
     "sixstrum/out": {
+      "sourceSha256": "cebb88a8bab53ceb532a05196a3492a57f816f3126642ca8fc391b5f87d07a50",
       "spectrum": [
         35,
         39,
@@ -6961,6 +7071,7 @@
       }
     },
     "sixstrum/poly": {
+      "sourceSha256": "689ff7485640eddcc9d2326344886a2689712792925c3aa381a0b3b79818182c",
       "spectrum": [
         4,
         4,
@@ -7024,6 +7135,7 @@
       }
     },
     "slew-switch/out2": {
+      "sourceSha256": "a55350347b8ecfaf7e25d01259a5f49afd86994c8f85726b6fbaac76eb94a9d9",
       "spectrum": [
         255,
         243,
@@ -7087,6 +7199,7 @@
       }
     },
     "slew-switch/switched": {
+      "sourceSha256": "40834d1c9fd364336900730481cb5b1abb31c5b833fa924230f00c3931771666",
       "spectrum": [
         255,
         243,
@@ -7150,6 +7263,7 @@
       }
     },
     "snaredrum/hit_l": {
+      "sourceSha256": "59f88b226db8dc4b30bdc97c5be36a6734063e3c90b992978824b09b0e9ca3af",
       "spectrum": [
         38,
         38,
@@ -7213,6 +7327,7 @@
       }
     },
     "snaredrum/roll_l": {
+      "sourceSha256": "d902d9a8e28b6e8e0a498b3e17bbed2123f785d9905ded143f3cdf0f666d25d7",
       "spectrum": [
         40,
         41,
@@ -7276,6 +7391,7 @@
       }
     },
     "snaredrum/roll_r": {
+      "sourceSha256": "8c17c5c56284fa26f485ca15af152b87763f856b658e02411159fd958f36a143",
       "spectrum": [
         33,
         34,
@@ -7339,6 +7455,7 @@
       }
     },
     "stereovca/out_l": {
+      "sourceSha256": "45b7dd32c256f91f3291b181c0484fb77138725a93dff2f4acd30ad4e85874e0",
       "spectrum": [
         1,
         1,
@@ -7402,6 +7519,7 @@
       }
     },
     "stereovca/out_r": {
+      "sourceSha256": "fe67522ae8aeca6fe7abdc1b0ff2fd972ed630a8bffc07d80e80a275e2bb0912",
       "spectrum": [
         231,
         235,
@@ -7465,6 +7583,7 @@
       }
     },
     "synesthesia/band1-65hz": {
+      "sourceSha256": "30329ec76e94805169fc8d096295cf8ee119a777c46658d46f268be55258d5db",
       "spectrum": [
         161,
         173,
@@ -7528,6 +7647,7 @@
       }
     },
     "synesthesia/band2-400hz": {
+      "sourceSha256": "8317c9f675bdd3e075b33e3785dd98e52f0fff7a4b2de6bc6fb43f079cf9d69c",
       "spectrum": [
         0,
         0,
@@ -7591,6 +7711,7 @@
       }
     },
     "synesthesia/band3-2000hz": {
+      "sourceSha256": "d7361dc83c3ddfaea7244da06db236b0604f8b2a1443bd02f47f6c559764b4c9",
       "spectrum": [
         0,
         0,
@@ -7654,6 +7775,7 @@
       }
     },
     "synesthesia/band4-8000hz": {
+      "sourceSha256": "a6ac1a8828d935bf36b34aaa47be2b31c68f8c4c022c57c3718e9925d50ce3d2",
       "spectrum": [
         0,
         0,
@@ -7717,6 +7839,7 @@
       }
     },
     "tidy-vco/out_l": {
+      "sourceSha256": "50fd7bd03981b66486c8cdc3e62ed573775486f16fd4f37752239e59608b7ce8",
       "spectrum": [
         60,
         64,
@@ -7780,6 +7903,7 @@
       }
     },
     "tidy-vco/out_r": {
+      "sourceSha256": "118b83c0068fbcca4213cd44dd67ef41d27895db9d8935e773cd686fdf7422b8",
       "spectrum": [
         60,
         63,
@@ -7843,6 +7967,7 @@
       }
     },
     "tomtom/audio_out": {
+      "sourceSha256": "26b56d5afadacf08b22bf786e051035b2c25e07324800cb499dbf8d1d7d18143",
       "spectrum": [
         38,
         42,
@@ -7906,6 +8031,7 @@
       }
     },
     "tomtom/tune_spread": {
+      "sourceSha256": "cfcce4e73c90447b11c0e4e19f91ef495d82f3885172baf53069f20217eb55f0",
       "spectrum": [
         68,
         75,
@@ -7969,6 +8095,7 @@
       }
     },
     "treeohvox/c-d-eb-f-eb-d-c": {
+      "sourceSha256": "516e811b3bcd39067f58c958c1d6d40d1896a84b0df6e3f43680cbb6d9fa9072",
       "spectrum": [
         138,
         132,
@@ -8032,6 +8159,7 @@
       }
     },
     "unityscalemathematik/a_out": {
+      "sourceSha256": "ea3dfafd51cf9b1ea4cf806478672e9c7916f490024dfc85c09c20708727e157",
       "spectrum": [
         255,
         243,
@@ -8095,6 +8223,7 @@
       }
     },
     "unityscalemathematik/b_out": {
+      "sourceSha256": "93ccf384568d98622d5c98ade787b46dc8d7f488fe6a90a1fd7617ad8871b210",
       "spectrum": [
         255,
         244,
@@ -8158,6 +8287,7 @@
       }
     },
     "unityscalemathematik/u_out": {
+      "sourceSha256": "12c40c9a60dcdc854e9085f4f4a9344464e9574785842024432bf703526bf638",
       "spectrum": [
         255,
         243,
@@ -8221,6 +8351,7 @@
       }
     },
     "vca/audio": {
+      "sourceSha256": "1076ea9df8a3aa11755d7e04c01e42342ebafb3f934400ab2be5b95c0d4c2d27",
       "spectrum": [
         1,
         1,

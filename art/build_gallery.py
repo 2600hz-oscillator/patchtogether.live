@@ -36,6 +36,7 @@ Deps: numpy + matplotlib (both in the flox env). No git, no LFS smudge — the
 from __future__ import annotations
 
 import argparse
+import hashlib
 import html
 import json
 import math
@@ -71,7 +72,14 @@ SAMPLE_RATE = 48000  # matches art/setup/render.ts SAMPLE_RATE
 # small uint8 fingerprint. Emitted to the committed
 # `packages/web/src/lib/art/fingerprints.generated.json` (a GENERATED/PINNED
 # artifact — never hand-edited; regenerate via `task art:fingerprints:accept`).
-FP_VERSION = 1
+#
+# VERSION 2 adds `sourceSha256` — the sha256 of the exact `.f32` bytes each
+# entry was computed from. That is the PROVENANCE BINDING that stops the two
+# halves of one truth (the LFS baselines and this manifest) from drifting apart
+# silently: git-LFS oids ARE the sha256 of the content, so a checkout WITHOUT
+# LFS can read the same identity straight out of the ~130-byte pointer file and
+# still verify the binding. See fingerprints.consistency.test.ts check (d).
+FP_VERSION = 2
 FP_COLUMN_COUNT = 48  # log-spaced spectrum columns per baseline
 FP_FREQ_LO = 20.0  # Hz — low edge of the shared log-frequency range
 FP_FREQ_HI = 24000.0  # Hz — Nyquist at SAMPLE_RATE=48000
@@ -335,13 +343,30 @@ def compute_fingerprint(x: np.ndarray) -> dict:
     return {"spectrum": spectrum, "features": features, "labels": labels}
 
 
+def source_sha256(path: Path) -> str:
+    """The sha256 of a baseline's raw bytes — the manifest's PROVENANCE key.
+
+    Deliberately identical to the git-LFS oid for the same file (LFS oids are
+    sha256-of-content by spec), so a consumer on an `lfs: false` checkout can
+    parse `oid sha256:<hex>` out of the pointer file and compare against this
+    WITHOUT ever materializing the audio. That is what lets the pure-fs
+    consistency guard catch "baseline re-pinned, manifest not" on the plain
+    `unit` CI lane.
+    """
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def build_fingerprints(grouped: dict[str, list[Path]]) -> dict:
     """Compute the whole manifest (keyed `<scenario>/<name>`, sorted)."""
     fingerprints: dict[str, dict] = {}
     for scenario, files in grouped.items():
         for f32 in files:
             key = f"{scenario}/{f32.stem}"
-            fingerprints[key] = compute_fingerprint(read_f32(f32))
+            # sourceSha256 FIRST so a re-pin diff leads with the provenance line.
+            fingerprints[key] = {
+                "sourceSha256": source_sha256(f32),
+                **compute_fingerprint(read_f32(f32)),
+            }
     return {
         "version": FP_VERSION,
         "columnCount": FP_COLUMN_COUNT,

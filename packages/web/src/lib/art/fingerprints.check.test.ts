@@ -9,11 +9,28 @@
 // and reviews the diff.
 //
 // Unlike contract-lock (pure-TS), regenerating needs python3 + numpy AND the
-// materialized (not git-LFS-pointer) `.f32` bytes. Those live in the flox env
-// locally + the ART CI lane, but NOT the plain `unit` CI lane — so this test
-// PROBES for them and SKIPS cleanly where absent (per the plan: "numpy/scipy are
-// in the flox env → runs locally, not CI-only"). The pure-fs honesty guard in
-// fingerprints.consistency.test.ts still runs everywhere.
+// materialized (not git-LFS-pointer) `.f32` bytes, so this test PROBES for them
+// and skips where absent (a plain `unit`-lane checkout has neither).
+//
+// THAT SKIP IS WHY #1174's DRIFT SHIPPED. This gate self-skipped on EVERY CI
+// lane — `unit` checks out `lfs: false` (pointer stubs) and had no numpy — so
+// the manifest went stale against a re-pinned delay baseline while CI stayed
+// green, and only fresh LOCAL checkouts went red. A gate that cannot fail on CI
+// is decoration. Two things fixed that, and both must stay true:
+//
+//   1. The `art` CI job (which already materializes the LFS baselines) now
+//      installs numpy and runs this gate with ART_FINGERPRINTS_REQUIRED=1.
+//   2. ART_FINGERPRINTS_REQUIRED makes the skip LOUD — if the environment that
+//      was SUPPOSED to run this gate can't, we FAIL instead of skip-passing,
+//      mirroring rackspaces-capacity.test.ts's "refusing to skip-pass" guard
+//      (feedback_collab_tests_vacuous_without_db). So silently dropping the LFS
+//      pull or the numpy install turns this gate red rather than re-decorative.
+//
+// The cheap half of the coverage — "a baseline moved but the manifest didn't" —
+// is enforced everywhere with no deps at all by fingerprints.consistency.test.ts
+// check (d), which compares each entry's pinned sourceSha256 against the git-LFS
+// oid in the pointer stub. This test is the deeper half: it also catches COMPUTE
+// drift (build_gallery.py's math changing without a re-pin).
 
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
@@ -74,12 +91,32 @@ function probe(): { canRun: boolean; reason: string } {
 }
 
 const p = probe();
-if (!p.canRun) {
+
+// VACUITY GUARD. `ART_FINGERPRINTS_REQUIRED=1` is set by the environment that
+// promises this gate CAN run (today: the ci.yml `art` job, which pulls the LFS
+// baselines and installs numpy). If it is set and the probe still can't run,
+// that is a broken promise — the gate would silently revert to decoration, which
+// is exactly how #1174's drift reached main. Fail loudly instead of skip-passing.
+const REQUIRED = !!process.env.ART_FINGERPRINTS_REQUIRED;
+
+if (!p.canRun && !REQUIRED) {
 	// eslint-disable-next-line no-console
 	console.info(`[fingerprints.check] SKIP drift gate: ${p.reason}`);
 }
 
 describe('ART fingerprint manifest — byte-exact drift gate', () => {
+	it.runIf(REQUIRED)('is NOT vacuous where it was promised to run', () => {
+		expect(
+			p.canRun,
+			`ART_FINGERPRINTS_REQUIRED=1 says this environment must RUN the ART fingerprint ` +
+				`drift gate, but it cannot: ${p.reason}. Refusing to skip-pass — a gate that ` +
+				`silently self-skips on CI is how #1174's manifest drift reached main. Fix the ` +
+				`environment (materialize the LFS baselines with \`git lfs pull --include ` +
+				`"art/baselines/**"\` and install numpy), or drop ART_FINGERPRINTS_REQUIRED if ` +
+				`this lane is genuinely not meant to gate.`,
+		).toBe(true);
+	});
+
 	it.skipIf(!p.canRun)(
 		'committed fingerprints.generated.json == a fresh python regen',
 		() => {

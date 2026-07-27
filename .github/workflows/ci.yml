@@ -294,6 +294,39 @@ jobs:
       - name: Run ART (Audio Regression Tests; dsp:build dep no-ops on restored dist)
         run: flox activate -- task art
 
+      # ---------------------------------------------------------------------
+      # ART fingerprint DRIFT GATE. This job is the ONLY lane that materializes
+      # the LFS `.f32` baselines, so it is the only place the byte-exact
+      # regen==committed gate can actually run. It previously ran NOWHERE on CI
+      # (the `unit` lane checks out lfs:false → pointer stubs → the gate
+      # self-skipped), which is how #1174 shipped a re-pinned delay baseline
+      # without re-pinning the manifest: green CI, red on every fresh local
+      # checkout. numpy is NOT in the flox env (see .flox/env/manifest.toml), so
+      # provision it here the same way art-gallery.yml does.
+      # Cost: ~20-30 s (setup-python is a cached tool; the regen itself is 0.2 s).
+      # ---------------------------------------------------------------------
+      - name: Set up Python (ART fingerprint drift gate)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install numpy (fingerprint compute only — no matplotlib, no render)
+        run: python3 -m pip install --upgrade numpy
+
+      # Fail here, with an obvious message, if flox's PATH shadows the numpy
+      # python — rather than letting the gate below report it as a vacuity error.
+      - name: Verify numpy is importable from inside flox
+        run: flox activate -- python3 -c "import numpy; print('numpy', numpy.__version__)"
+
+      # ART_FINGERPRINTS_REQUIRED=1 makes the gate REFUSE TO SKIP-PASS here: if
+      # the baselines or numpy ever go missing from this job, it goes red instead
+      # of quietly reverting to decoration (the rackspaces-capacity.test.ts
+      # "refusing to skip-pass" precedent).
+      - name: ART fingerprint drift gate (byte-exact regen == committed manifest)
+        env:
+          ART_FINGERPRINTS_REQUIRED: '1'
+        run: flox activate -- task art:fingerprints:check
+
   # -----------------------------------------------------------------------
   # build — the PRODUCTION bundle gate. Runs `task build` (dsp:build +
   # `vite build` for the web app) on a clean runner with NO deploy and NO
