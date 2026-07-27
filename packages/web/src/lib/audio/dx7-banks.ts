@@ -111,8 +111,9 @@ const BASS_1: DX7Voice = {
 
 // ---------------- HARMONICA — breathy reed timbre ----------------
 //
-// Inspired by ROM 1A "HARMONICA". Algorithm 19 (3 carriers, op4 stack on op3,
-// op6 modulates op5). Slow attack to simulate "breath".
+// Inspired by ROM 1A "HARMONICA". Algorithm 19: carriers op1, op4 and op5,
+// with op3 → op2 → op1 and op6 modulating BOTH op4 and op5; feedback on op6.
+// Slow attack to simulate "breath".
 const HARMONICA: DX7Voice = {
   name: 'HARMONICA',
   algorithm: 19,
@@ -132,8 +133,8 @@ const HARMONICA: DX7Voice = {
 
 // ---------------- STRINGS 1 — lush evolving pad ----------------
 //
-// Inspired by ROM 1A "STRINGS 1". Algorithm 22 (4 carriers feeding from
-// modulator op5). Slow attack + slow release.
+// Inspired by ROM 1A "STRINGS 1". Algorithm 22 (4 carriers; op6 modulates
+// op3, op4 and op5, and op2 modulates op1). Slow attack + slow release.
 const STRINGS_1: DX7Voice = {
   name: 'STRINGS 1',
   algorithm: 22,
@@ -173,7 +174,9 @@ const MARIMBA: DX7Voice = {
 
 // ---------------- TUB BELLS — hammered bell tone ----------------
 //
-// Algorithm 8 — short attack + long bell-like decay with inharmonic ratios.
+// Algorithm 8 (carriers op1 + op3; op4 and op5 stack into op3, op6 → op5) —
+// short attack + long bell-like decay with inharmonic ratios. Note that this
+// algorithm's feedback loop sits on OP4, not op6.
 const TUB_BELLS: DX7Voice = {
   name: 'TUB BELLS',
   algorithm: 8,
