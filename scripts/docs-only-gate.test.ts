@@ -28,7 +28,9 @@
 //      it is proven at the decision function rather than by CI experiment.
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as gate from './docs-only-gate.mjs';
@@ -170,6 +172,69 @@ describe('docs-only bypass: the posted contexts match the required checks', () =
     expect(BYPASS_YML).toMatch(/if:\s*steps\.decide\.outputs\.post == 'true'/);
     // ...and the statuses permission exists, or the post would 403.
     expect(BYPASS_YML).toMatch(/statuses:\s*write/);
+  });
+
+  it('the posting step takes its contexts from the decide step, not a dynamic import', () => {
+    // github-script evaluates `script:` inside a `new AsyncFunction(...)` body,
+    // where dynamic `import()` has no reliable module referrer. The contexts
+    // therefore travel as a step output — docs-only-gate.mjs stays the single
+    // source of truth (pinned to ci.yml's job names by the tests above) without
+    // that fragile ESM-in-vm dependency.
+    expect(BYPASS_YML).toMatch(/CONTEXTS: \$\{\{ steps\.decide\.outputs\.contexts \}\}/);
+    expect(BYPASS_YML).toContain('JSON.parse(process.env.CONTEXTS)');
+    expect(BYPASS_YML).not.toMatch(/await import\(/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The CLI seam the workflow actually invokes — run it for real.
+// ---------------------------------------------------------------------------
+
+describe('docs-only bypass: the `decide` CLI writes the outputs the workflow reads', () => {
+  function runDecide(env: Record<string, string>) {
+    const out = join(mkdtempSync(join(tmpdir(), 'docs-only-gate-')), 'GITHUB_OUTPUT');
+    writeFileSync(out, '');
+    execFileSync(process.execPath, [join(ROOT, 'scripts/docs-only-gate.mjs'), 'decide'], {
+      env: { ...process.env, ...env, GITHUB_OUTPUT: out },
+      encoding: 'utf8',
+    });
+    return Object.fromEntries(
+      readFileSync(out, 'utf8')
+        .split('\n')
+        .filter(Boolean)
+        .map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]),
+    );
+  }
+
+  it('docs-only → post=true and contexts parse back to REQUIRED_CONTEXTS', () => {
+    const o = runDecide({
+      CHANGED_FILES: '.myrobots/26-07-22-roundup.md',
+      CI_RUN_EXISTS: 'false',
+      SAME_REPO: 'true',
+    });
+    expect(o.post).toBe('true');
+    // The exact round-trip the workflow performs: JSON.parse(process.env.CONTEXTS).
+    expect(JSON.parse(o.contexts)).toEqual(REQUIRED_CONTEXTS);
+  });
+
+  it('a code file → post=false (the workflow step never fires)', () => {
+    const o = runDecide({
+      CHANGED_FILES: '.myrobots/a.md\npackages/dsp/src/cube.ts',
+      CI_RUN_EXISTS: 'false',
+      SAME_REPO: 'true',
+    });
+    expect(o.post).toBe('false');
+    expect(o.reason).toContain('G1 FAILED');
+  });
+
+  it('a real CI run → post=false', () => {
+    const o = runDecide({
+      CHANGED_FILES: '.myrobots/a.md',
+      CI_RUN_EXISTS: 'true',
+      SAME_REPO: 'true',
+    });
+    expect(o.post).toBe('false');
+    expect(o.reason).toContain('G2 FAILED');
   });
 });
 

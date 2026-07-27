@@ -235,6 +235,11 @@ if (isMain && process.argv[2] === 'decide') {
   if (process.env.GITHUB_OUTPUT) {
     appendFileSync(process.env.GITHUB_OUTPUT, `post=${post}\n`);
     appendFileSync(process.env.GITHUB_OUTPUT, `reason=${reason.replace(/\n/g, ' ')}\n`);
+    // The contexts travel as an output rather than being imported by the
+    // posting step: dynamic `import()` inside actions/github-script's
+    // `new AsyncFunction(...)` body has no reliable module referrer, so this
+    // module stays the single source of truth WITHOUT an ESM-in-vm dependency.
+    appendFileSync(process.env.GITHUB_OUTPUT, `contexts=${JSON.stringify(REQUIRED_CONTEXTS)}\n`);
   }
   if (post) {
     console.log(`\nwill post: ${REQUIRED_CONTEXTS.map((c) => `"${c}"`).join(', ')}`);
