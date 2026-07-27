@@ -75,16 +75,24 @@ jobs:
         id: files
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          FILES=$(gh api "repos/${{ github.repository }}/pulls/${PR}/files" \
+          FILES=$(gh api "repos/${REPO}/pulls/${PR}/files" \
             --paginate --jq '.[].filename')
           echo "resolved $(printf '%s' "$FILES" | grep -c . || true) changed file(s)"
+          # Random heredoc delimiter (GitHub's documented practice): a git path
+          # may legally contain a newline, and a fixed delimiter appearing inside
+          # the payload would TRUNCATE the file list — which, if it dropped the
+          # source file from a mixed PR, is the one truncation that could turn a
+          # code change into an apparently docs-only one. G2 would still refuse,
+          # but do not rely on the second guard for something this cheap to fix.
+          DELIM="CHANGED_FILES_EOF_$(openssl rand -hex 16)"
           {
-            echo 'files<<CHANGED_FILES_EOF'
+            echo "files<<${DELIM}"
             printf '%s\n' "$FILES"
-            echo 'CHANGED_FILES_EOF'
+            echo "${DELIM}"
           } >> "$GITHUB_OUTPUT"
 
       # ---------------------------------------------------------------------
@@ -101,13 +109,15 @@ jobs:
         id: cirun
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           EXISTS=false
-          for attempt in $(seq 1 12); do
+          ATTEMPTS=12
+          for attempt in $(seq 1 "$ATTEMPTS"); do
             COUNT=$(gh api \
-              "repos/${{ github.repository }}/actions/workflows/ci.yml/runs?head_sha=${HEAD_SHA}&per_page=1" \
+              "repos/${REPO}/actions/workflows/ci.yml/runs?head_sha=${HEAD_SHA}&per_page=1" \
               --jq '.total_count' 2>/dev/null || echo "unknown")
             if [ "$COUNT" = "unknown" ]; then
               echo "::warning::could not query ci.yml runs (attempt ${attempt}) — treating as PRESENT (fail safe)"
@@ -119,8 +129,10 @@ jobs:
               EXISTS=true
               break
             fi
-            echo "attempt ${attempt}/12: no ci.yml run for ${HEAD_SHA} yet"
-            [ "$attempt" -lt 12 ] && sleep 5
+            echo "attempt ${attempt}/${ATTEMPTS}: no ci.yml run for ${HEAD_SHA} yet"
+            if [ "$attempt" -lt "$ATTEMPTS" ]; then
+              sleep 5
+            fi
           done
           echo "ci_run_exists=${EXISTS}" >> "$GITHUB_OUTPUT"
 
@@ -138,8 +150,14 @@ jobs:
 
       - name: Real CI is authoritative — no bypass
         if: steps.decide.outputs.post != 'true'
+        env:
+          # Via env, never `${{ }}` inside the script body: the reason embeds
+          # FILENAMES from the PR diff, which are attacker-controllable (a branch
+          # can carry a file whose name contains quotes or backticks) and would
+          # otherwise be spliced into the shell before it runs.
+          REASON: ${{ steps.decide.outputs.reason }}
         run: |
-          echo "::notice::No docs-only bypass. ${{ steps.decide.outputs.reason }}"
+          echo "::notice::No docs-only bypass. ${REASON}"
 
       # ---------------------------------------------------------------------
       # The ONLY place a required context is ever produced by this workflow.

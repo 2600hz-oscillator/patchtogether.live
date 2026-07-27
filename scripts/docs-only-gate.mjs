@@ -234,7 +234,10 @@ if (isMain && process.argv[2] === 'decide') {
 
   if (process.env.GITHUB_OUTPUT) {
     appendFileSync(process.env.GITHUB_OUTPUT, `post=${post}\n`);
-    appendFileSync(process.env.GITHUB_OUTPUT, `reason=${reason.replace(/\n/g, ' ')}\n`);
+    // `reason` embeds FILENAMES from the PR diff, and a git path may legally
+    // contain CR/LF — which would inject an extra `key=value` line into
+    // $GITHUB_OUTPUT and let a crafted branch forge `post=true`. Flatten first.
+    appendFileSync(process.env.GITHUB_OUTPUT, `reason=${reason.replace(/[\r\n]+/g, ' ')}\n`);
     // The contexts travel as an output rather than being imported by the
     // posting step: dynamic `import()` inside actions/github-script's
     // `new AsyncFunction(...)` body has no reliable module referrer, so this

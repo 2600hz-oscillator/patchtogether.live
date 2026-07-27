@@ -236,6 +236,57 @@ describe('docs-only bypass: the `decide` CLI writes the outputs the workflow rea
     expect(o.post).toBe('false');
     expect(o.reason).toContain('G2 FAILED');
   });
+
+  it('a filename carrying CRLF cannot forge a second `post=true` output line', () => {
+    // git paths may legally contain CR/LF. The reason string embeds filenames,
+    // so an unflattened reason would inject an extra key=value line into
+    // $GITHUB_OUTPUT — and the LAST value wins, letting a crafted branch flip
+    // the guarded posting step on. The filename is a source file, so the real
+    // decision is (and must stay) post=false.
+    const evil = 'packages/dsp/src/cube.ts\npost=true\r\npost=true';
+    const o = runDecide({
+      CHANGED_FILES: `.myrobots/a.md\n${evil.replace(/\n/g, '')}`,
+      CI_RUN_EXISTS: 'false',
+      SAME_REPO: 'true',
+    });
+    expect(o.post).toBe('false');
+    // ...and directly at the seam: the reason is single-line, always.
+    const d = decideBypass({ changedFiles: [evil], ciRunExists: false, sameRepo: true });
+    expect(d.post).toBe(false);
+    expect(d.reason.replace(/[\r\n]+/g, ' ')).not.toMatch(/[\r\n]/);
+  });
+});
+
+describe('docs-only bypass: the workflow never splices untrusted text into a shell', () => {
+  it('no `${{ steps.* }}` interpolation inside a run: body', () => {
+    // The decision reason embeds attacker-controllable FILENAMES; interpolating
+    // it into `run:` would splice them into the shell before it executes. Every
+    // step output reaches the shell via `env:` instead.
+    const runBodies = BYPASS_YML.split(/^ {6}- name: /m)
+      .filter((s) => /^ {8}run: /m.test(s))
+      .map((s) => s.slice(s.search(/^ {8}run: /m)));
+    // Every `run:` step in the file, block-scalar or single-line.
+    expect(runBodies).toHaveLength(4);
+    for (const body of runBodies) {
+      expect(body).not.toMatch(/\$\{\{\s*steps\./);
+      expect(body).not.toMatch(/\$\{\{\s*github\.event\./);
+    }
+  });
+
+  it('the github-script body interpolates nothing either', () => {
+    // Same hazard, JS instead of shell: `${{ }}` inside `script:` is spliced in
+    // before Node parses it. The contexts arrive via process.env.CONTEXTS.
+    const script = BYPASS_YML.slice(BYPASS_YML.indexOf('script: |'));
+    expect(script).not.toMatch(/\$\{\{/);
+    expect(script).toContain('JSON.parse(process.env.CONTEXTS)');
+  });
+
+  it('the changed-file heredoc delimiter is randomised', () => {
+    // A fixed delimiter appearing inside the payload (a path may contain a
+    // newline) would truncate the file list — the one truncation that could
+    // make a mixed PR look docs-only to G1.
+    expect(BYPASS_YML).toMatch(/DELIM="CHANGED_FILES_EOF_\$\(openssl rand -hex 16\)"/);
+  });
 });
 
 // ---------------------------------------------------------------------------
