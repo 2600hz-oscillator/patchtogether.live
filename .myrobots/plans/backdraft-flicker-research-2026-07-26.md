@@ -9,6 +9,14 @@ display flicker as seen by our virtual camera.
 of light build up and fade away with zero or extremely subtle variations in camera
 position, orientation, etc."*
 
+> **UPDATE 2026-07-27 — v2 (`feat/backdraft-flicker-v2`).** v1 (PR #1181) shipped
+> the model in §5 and **strobed**. §0–§6 below are preserved as the v1 record —
+> in particular **§5.7's numbers are v1's and are no longer current** (the
+> shutter moved 0.5 → 0.25, and two camera-side terms were added). **§7 is the
+> v1 → v2 accounting**: why it strobed, every mechanism considered, which were
+> adopted and which were rejected and why, the per-position character notes, and
+> the genlock decisions for the two new positions. Read §7 for what ships today.
+
 ---
 
 ## 0. TL;DR — the mechanism, and why we don't have it today
@@ -460,7 +468,249 @@ pulse train. 50 Hz is therefore the acceptance-test setting.
 
 ---
 
-## 7. Sources
+## 7. v1 → v2: why v1 strobed, and what fixed it
+
+**Date:** 2026-07-27 · **Branch:** `feat/backdraft-flicker-v2` · v1 = PR #1181.
+
+### 7.1 The symptom, measured
+
+v1 implemented §5 exactly and applied `g(t, v)` as a **linear, full-depth
+multiplier on the whole feedback tap**. On the row-aware loop mirror that
+`backdraft.test.ts` runs as a negative control (identity transform, uniform
+source = 0.06, `FEEDBACK = 1.0`, 32 rows, settled tail), v1's **full-field
+frame-to-frame luminance step** was:
+
+| position | v1 max frame step | v1 full-field peak-to-peak |
+|---|---|---|
+| 6 Hz *(hypothetical — v1 had no 6 position)* | **0.469** | 0.908 |
+| 24 | **0.463** | 0.719 |
+| 50 | **0.312** | 0.566 |
+| 60 (59.94) | 0.002 | 0.698 |
+
+WCAG 2.3.1's *general flash threshold* treats a pair of opposing changes of
+**≥ 0.10 relative luminance** (darker state below 0.80) as a flash, and more than
+three per second as a seizure risk. v1's fast positions ran **3–5× over that
+bound, at 10–24 flashes per second**. That is a photic strobe, not video
+feedback — and it is why the owner's read of v1 was "too strobey".
+
+The mistake was **not** the emission physics; §2 and §5 are right about how a
+pulsed display is captured. The mistake is that v1 modelled
+emission → exposure → sampling faithfully and then **modelled nothing downstream
+of the sensor**. In a real rig, everything downstream of the sensor is what makes
+the loop *breathe* rather than flash.
+
+### 7.2 Mechanisms considered
+
+Six were evaluated against the primary source and against the loop sim. **Two new
+model terms were adopted, one existing parameter was retuned, and three were
+rejected on evidence.**
+
+| # | mechanism | verdict | why |
+|---|---|---|---|
+| 1 | **Camera multi-frame STORAGE** — the sensor's own charge storage/integration, as a one-pole IIR on the beat | **ADOPTED** | This is *the* mechanism Crutchfield names as setting the loop's temporal character, and v1 deleted it. See §7.3. |
+| 2 | **Capture SHOULDER** — the sensor/monitor saturating response | **ADOPTED** | Makes the response level-dependent, so a gain modulation stops acting where the image is already hot: full-field flash becomes contour shimmer. It is also the loop's only true amplitude limiter. See §7.4. |
+| 3 | **Spatial diffusion** — blur the fed-back tap, on the theory that a diffusive term damps the pulse | **REJECTED** | The eigenvalue argument, §7.5. Verbatim: *the Laplacian has eigenvalue zero on the uniform mode, so blur cannot damp a full-field pulse at all* — the sim confirmed it changes the metric by **< 0.0005**. |
+| 4 | **AGC servo** — an auto-exposure/auto-gain feedback loop that pulls the frame mean back toward a target | **REJECTED** | Absent from the primary source, and *its sensitivity function passes exactly the fast beats that need taming*: a servo slow enough to be physical (AGC time constants are ~0.3–1 s) has a high-pass sensitivity, so it attenuates the 0.06 Hz swell we want to keep and passes the 6–24 Hz beat we need to kill. It would invert the intended ordering. It also adds per-frame state, which the freeze/DRS pins forbid. |
+| 5 | **Shutter angle 180° → 90°** (`SHUTTER 0.5 → 0.25`) | **ADOPTED (parameter)** | v1's `T_e = 0.5/60` is *exactly one period* of 120 Hz, so `sinc(f·T_e) = sinc(1) = 0` and a 120 position would be **perfectly dead**. A shorter shutter is also what a real camera picks pointed at a bright screen. 0.25 leaves every position alive. |
+| 6 | **A safety clamp on the modulation depth** | **REJECTED** | An arbitrary magic number that hides the physics and would have to be re-tuned for every future position. Every term in v2 is a documented physical mechanism; the bound falls out of them. This was the explicit design constraint. |
+
+Net effect of 1 + 2 + 5, same harness, same operating point:
+
+| position | beat vs 60 fps camera | \|H\| (storage) | v1 step | **v2 step** | improvement | v2 full-field range |
+|---|---|---|---|---|---|---|
+| **6** | 6.00 Hz | 0.160 | 0.469 | **0.066** | **7.1×** | 0.690 … 0.886 |
+| **24** | 24.00 Hz | 0.053 | 0.463 | **0.024** | **19.3×** | 0.789 … 0.815 |
+| **50** | 10.00 Hz | 0.100 | 0.312 | **0.030** | **10.3×** | 0.758 … 0.828 |
+| **60** | 0.06 Hz | 0.998 | 0.002 | **0.002** | 1.0× (untouched) | 0.230 … 0.984 |
+| **120** | 0.12 Hz | 0.992 | 0.000 † | **0.000** | – (pure band) | 0.606 … 0.608 |
+
+† v1 had no 6 or 120 position; those two v1 columns are the v1 model *evaluated
+at* those rates. At 120 the v1 number is 0.000 for the wrong reason — v1's 180°
+shutter puts `sinc(f·T_e) = sinc(1) = 0`, i.e. the position would have been
+**dead**, not soft (mechanism #5 above).
+
+Every position is now **well inside** the 0.10 flash threshold — the worst (6 Hz)
+sits at 0.066 — while the slow positions keep their **full** breathing swing
+(the 60 position still travels 0.23 → 0.98). That asymmetry is not a compromise;
+it is the *point*: the storage term is a low-pass **on the beat**, so it removes
+exactly the fast full-field flashing and leaves the slow swell alone. The bound
+also holds across the whole FEEDBACK range (0.5 / 0.8 / 1.0 / 1.2 all tested).
+
+Verified on the **real GL path** too, not just the CPU mirror: the DRS e2e
+measures 50 → max step 7.0/255 (0.027) and 6 → 14.7/255 (0.058), matching the
+mirror's 0.030 / 0.066 to within the readback quantisation, and bit-identical
+between a real GPU and SwiftShader.
+
+### 7.3 STORAGE — the term v1 read and drew the opposite conclusion from
+
+Crutchfield, Appendix A (p. 244):
+
+> *"the charge storage and integration during each raster time places an upper
+> limit on the temporal frequency response of the system. In fact, this storage
+> time τ_s can be quite a bit longer than the raster time τ_r … A rough
+> approximation to this would be τ_s ~ 10 τ_r ~ 1/3 second. Thus the system's
+> frequency response should always be slower than 3 Hz. And this is what is
+> observed experimentally."*
+
+His eq. (4) carries it as `(I_n)_τ = Σ_i I_{n−i} · L^i`. **A real loop physically
+cannot strobe** — the camera itself is a few-Hz low-pass.
+
+v1 read this same passage (§1.4) and concluded the *opposite*: that a modern CMOS
+sensor has no such storage, so the flicker term Crutchfield dropped is the one
+that dominates today. **Both halves of that are true, and together they are the
+bug.** Deleting the integrator is precisely *why* naive digital feedback reads
+harsh; the fix is to put the integrator **back**, not to add a full-depth gain
+LFO on top of its absence. v1 added the LFO and kept the integrator deleted,
+which is the worst of both.
+
+Implemented in **closed form** rather than with an accumulator. Normalised to
+unit DC gain, the geometric sum is a one-pole IIR with per-frame retention
+`L = exp(−1/τ_frames)`, whose response is
+
+```
+H(ω) = (1 − L) / (1 − L·e^{−iω}),      ω = 2π·f_beat / f_cam
+```
+
+and the gain we ship is a pure sinusoid **at the beat frequency**, so the
+steady-state response is *exact*. We get a 10-frame integrator's physics with **no
+per-frame state** — no threat to determinism, to `freeze`, or to the DRS pins.
+`τ = 10` frames is Crutchfield's own figure.
+
+The shape is the whole point: it is a low-pass **on the beat**, so it cuts the
+fast beats (which are the strobe) and passes the slow ones (which are the
+breathing). That one fact is what separates 6/24/50 from 60/120 in v2.
+
+### 7.4 SHOULDER — the loop's only real amplitude limiter
+
+Crutchfield, Appendix A: the vidicon photoconductor *"response function saturates
+above some intensity threshold I_sat"*, and *"within the monitor there are
+saturating nonlinearities in its response to large intensity signals and high
+brightness or high contrast settings"*. He lists these among the errors excluded
+*"for simplicities sake"* — but in a **loop**, that saturation is the only thing
+limiting amplitude, and a bare `clamp()` is not it: a clamp is perfectly linear
+right up until it pins.
+
+```
+shoulder(x) = x                                        for x ≤ k
+            = k + (1−k)·(1 − exp(−(x−k)/(1−k)))        for x > k        (k = 0.55)
+```
+
+Identity below the knee; above it an exponential roll-off toward 1.0 with **unit
+slope at the knee**, so it is C¹ and never adds a visible crease. `k → 1` is the
+exact identity, which is how OFF stays bit-identical.
+
+Because the incremental response falls to ~0 as a region approaches white, a gain
+modulation **stops acting where the image is already hot** and keeps acting in the
+midtones — the beat reads as **contour shimmer** instead of a full-field flash.
+A bare gamma/power law would **not** do this: a power law is scale-free, so
+`d(log out)/d(log in)` is identical at every brightness.
+
+### 7.5 REJECTED: spatial diffusion — the eigenvalue-zero argument
+
+The sharpest finding of the v2 round, stated verbatim:
+
+> **The Laplacian has eigenvalue zero on the uniform mode, so blur cannot damp a
+> full-field pulse at all** — the sim confirmed it changes the metric by
+> **< 0.0005**.
+
+The reasoning: a diffusion/blur term contributes `∇²` to the update. Decompose the
+frame into spatial eigenmodes of the Laplacian; the **uniform (DC) mode** — a
+field that is equally bright everywhere — has eigenvalue **0**, so the diffusion
+term contributes **exactly nothing** to it. But "full-field flash" *is* the DC
+mode. Blur can smooth spatial structure as much as you like and the whole-field
+luminance pulse passes through completely untouched. It is not that blur is a weak
+fix; it is that blur is **provably the wrong operator** for this quantity. The
+0-D/2-D sim was run as a check and confirmed it: `< 0.0005` change in the metric.
+
+This is worth keeping on the record because "just blur the feedback a bit" is the
+first thing anyone reaches for, and it cannot work here for a structural reason.
+
+### 7.6 REJECTED: an AGC servo
+
+An auto-gain/auto-exposure servo that measures the frame mean and pulls it back
+toward a target is superficially attractive — real cameras have one. Rejected on
+three grounds:
+
+1. **Not in the primary source.** Crutchfield's rig has manual gain; the paper's
+   temporal ceiling comes from storage, not from a servo.
+2. **Its sensitivity function passes exactly the fast beats that need taming.** A
+   servo with a physical time constant (~0.3–1 s) has a **high-pass** sensitivity:
+   it suppresses what is slow and passes what is fast. That is precisely backwards
+   — it would flatten the 0.06 Hz swell we want to keep and leave the 6–24 Hz
+   flashing untouched.
+3. **State.** A servo is an integrator with per-frame memory in the render path,
+   which conflicts with `freeze`, the DRS pins and bit-reproducibility.
+
+### 7.7 The six positions — character and beat arithmetic
+
+Beat = `|f − round(f/60)·60|` against the fixed 60 fps virtual camera.
+`|H|` = the storage low-pass at that beat. `bands` = `f·T_ro` = how many full
+light/dark cycles fit down the frame (`T_ro = 0.5/60`).
+
+| pos | f (Hz) | beat | frames/cycle | \|H\| | bands | character |
+|---|---|---|---|---|---|---|
+| **OFF** | – | – | – | – | – | The exact no-op. Constant loop gain; the shader branch is skipped; output bit-identical to pre-FLICKER BACKDRAFT. |
+| **6** | 6.000 | 6 Hz | 10 | 0.160 | 0.05 | **Sub-refresh** — no display refreshes this slowly, so this position models a slow **strobe / BFI / dimmer**. It is *below* the camera rate, so there is **no aliasing**: the camera sees the pulsing directly. Spatially near-uniform (0.05 of a band), so its whole character is a **full-field breathe** — the largest swing of any position (0.69 → 0.89) and therefore the one the photosensitivity bound is really about. |
+| **24** | 24.000 | 24 Hz | 2.5 | 0.053 | 0.20 | **Cinema.** 2.5 camera frames per cycle is too fast for the loop to travel far before reversing, so it dithers rather than pulses: a **fine, fast texture** rather than a throb. The storage term cuts it hardest of all (|H| = 0.05), which is correct — it is the fastest beat. |
+| **50** | 50.000 | 10 Hz | 6 | 0.100 | 0.42 | **PAL/SECAM field rate + 50 Hz mains.** The classic *filming a European monitor with an NTSC camera* roll. 6 frames per cycle is long enough to genuinely integrate up and drain back down, and 0.42 of a band down the frame gives a **strong crawling bar** at the same time. The best all-round build-and-fade, and the position the DRS e2e asserts the band on. |
+| **60** | 59.940 | 0.06 Hz | ~1000 | 0.998 | 0.50 | **True NTSC field rate.** A **16.7-second slow swell** — the very slowly crawling hum bar off a television. Storage passes it essentially untouched (0.998), so this position keeps its **full** dynamic range (0.23 → 0.98) while being far too slow to flash. Half a band down the frame. |
+| **120** | 119.880 | 0.12 Hz | ~500 | 0.992 | 1.00 | **A 120 Hz panel** (or double-strobed 60). `f·T_ro ≈ 1.000`, so the rolling shutter fits **exactly one full band cycle** down the frame and the row-average sinc **cancels the whole-frame pulse almost completely** — the full-field range collapses to 0.606 … 0.608. What is left is a **pure crawling band** with a flat global level: the most "broadcast artefact" of the set, and the only position whose life is entirely spatial. |
+
+**Ordering sanity check** (asserted in the e2e): the 6 position must swing *more*
+in full-field terms than the 50 position. Two independent reasons, both pointing
+the same way — the storage low-pass passes a 6 Hz beat (0.160) better than a
+10 Hz one (0.100), *and* 6 Hz spreads only 0.05 of a band down the frame so the
+rolling shutter barely washes its whole-frame pulse out (0.42 bands at 50 washes
+out noticeably more). Measured 22.0% vs 6.6% on the real GL path. That ordering
+is the observable signature of the camera-side terms actually being in the signal
+path — delete them and it breaks.
+
+### 7.8 Genlock: 59.94 not 60.000, and 119.88 not 120.000
+
+Both new/kept high positions use the **NTSC** rates, and this is load-bearing
+rather than pedantic.
+
+- The virtual camera is pinned at exactly **60.000 fps** (§5.4 — that pin is what
+  makes the beat frame-rate independent and therefore deterministic).
+- If the 60 position were **60.000 Hz** it would be **genlocked** to the camera:
+  `beat = |60 − 1·60| = 0`. The camera would sample the identical emission phase
+  forever, `g` would be a **constant**, and the position would degrade to a dumb
+  attenuator with **no motion at all**.
+- Identically, a **120.000 Hz** position gives `beat = |120 − 2·60| = 0` — dead.
+- The real numbers are `60000/1001 = 59.9401 Hz` and `2 × 60000/1001 =
+  119.8801 Hz`, giving beats of **0.0599 Hz** and **0.1199 Hz**: ~16.7 s and
+  ~8.3 s cycles. So the NTSC rates are simultaneously **more correct** and the
+  **only** ones that move.
+- This also means the two are *not* redundant: 120 is not "60 twice as fast". Its
+  beat is twice as fast (8.3 s vs 16.7 s), but far more importantly its
+  `f·T_ro = 1.000` puts it exactly on the rolling-shutter null, which converts it
+  from a full-field swell into a pure band. Same family, opposite character.
+- The 120 position is *also* the reason the shutter had to move to 90°: at
+  `T_e = 0.5/60`, `sinc(119.88 · 0.5/60) ≈ sinc(0.999) ≈ 0` would have killed it
+  outright (mechanism #5 above).
+
+### 7.9 What holds the line
+
+- **Unit** (`backdraft.test.ts`, pure, zero added CI wall-time): the storage
+  response is a monotone low-pass that passes DC and lags; the shoulder is the
+  exact identity below the knee, C¹ at it, monotone and never reaching the
+  ceiling; `knee ≥ 1` is the exact identity (how OFF stays bit-identical); OFF
+  returns `gain 1 / depth 0 / knee 1` with no float slop; every ON position has
+  real row modulation and never negative gain; the geometric mean of the frame
+  gain stays 1; and a **row-aware loop mirror** enforces the **swing bound at
+  every position across the whole FEEDBACK range**, with **v1 reconstructed as a
+  negative control that must FAIL the bound** so it cannot go vacuous.
+- **E2E** (`backdraft-render-smoke.spec.ts`, real GL, pinned clock): OFF
+  saturates and stays; 50 builds, fades, and moves a rolling-shutter band; 6
+  swings more than 50 (the storage ordering); and **neither flashes** on the real
+  shader path.
+- **Docs**: the co-located `docs.controls.flicker` prose and the card tooltips
+  are generated from the same constants, and the param range is pinned by
+  `contract-lock.txt`.
+
+---
+
+## 8. Sources
 
 - Crutchfield, J.P., "Space-time dynamics in video feedback", *Physica D* **10** (1984)
   229–245 — <https://csc.ucdavis.edu/~cmg/papers/Crutchfield.PhysicaD1984.pdf>
