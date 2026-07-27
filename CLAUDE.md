@@ -319,6 +319,32 @@ a just-started green run; it broke main CI and spawned #699/#701/#702 the same
 day. See also `feedback_never_merge_on_red_collab_is_doom_gate` and
 `feedback_no_flake_tolerance`.)
 
+## Docs-only PRs: the path lists in ci.yml and docs-only-gate.yml move TOGETHER
+
+`ci.yml` skips a prose-only change (`paths-ignore: ['**/*.md', '.myrobots/**',
+'LICENSE']`) so a typo fix doesn't burn ~25 min. But ruleset 16042163 REQUIRES
+`typecheck + unit + ART + E2E` and `vrt-strict (visual regression — strict
+subset)`, and a path-skipped workflow reports NOTHING — GitHub treats a
+never-reported required check as pending FOREVER, so the PR sits `BLOCKED` with
+zero failures and can never auto-merge (#1184).
+
+`.github/workflows/docs-only-gate.yml` breaks that: it fires on the **exact
+inverse** filter (`paths:` with the SAME list) and posts those two contexts as
+commit statuses — but only when **both** guards agree: every changed file is a
+doc **and** GitHub started no `ci.yml` run for that head SHA. A PR touching docs
+**and** code fires both workflows; the bypass posts nothing and the real suite
+gates it.
+
+- **Editing `ci.yml`'s `paths-ignore` means editing `docs-only-gate.yml`'s
+  `paths` in the SAME commit** — the complement is the whole safety argument.
+  `scripts/docs-only-gate.test.ts` (unit lane) fails on drift, on a context
+  rename, and on any changeset containing a source file.
+- **Never** satisfy a required context by naming a job after it: a job-level
+  `if:` skip reports as SUCCESS to branch protection, which would green-light
+  the mixed docs+code case. Statuses are posted by an explicit guarded call.
+- Renaming the `ci` or `vrt-strict` job still needs a coordinated ruleset PUT —
+  now plus `REQUIRED_CONTEXTS` in `scripts/docs-only-gate.mjs`.
+
 ## Poly/MIDI modules: e2e the REAL source chain
 
 Any **poly or MIDI module** must ship an e2e that **wires the REAL default-mode
