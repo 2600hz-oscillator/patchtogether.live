@@ -18,8 +18,8 @@ source tree, so they cannot go stale. Prose + roadmap: `docs/testing/README.md`.
 
 Required status-check **contexts** (2 — branch ruleset 16042163; not in-repo,
 see `.claude/skills/pr-workflow.md`):
-- `typecheck + unit + ART + E2E`  (ci.yml:2076)
-- `vrt-strict (visual regression — strict subset)`  (ci.yml:2504)
+- `typecheck + unit + ART + E2E`  (ci.yml:2109)
+- `vrt-strict (visual regression — strict subset)`  (ci.yml:2537)
 
 Jobs gated THROUGH the `ci` umbrella (a failure of any blocks merge) — 11:
 - `actionlint`, `art`, `behavioral-smoke`, `build`, `build-web`, `dsp-build`, `e2e`, `typecheck`, `unit`, `webgl-attest`, `webgl-smoke`
@@ -614,9 +614,9 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 Jobs that RUN on a PR but never block merge. Red here is a signal to inspect,
 not a merge blocker.
 
-- `behavioral-coverage`  (ci.yml:1123) — continue-on-error: true
-- `collab`  (ci.yml:898) — umbrella aggregate step labels it informational
-- `collab-attest`  (ci.yml:1893) — in umbrella needs+env but absent from the failing `if` (waited-on, non-blocking)
-- `grand-attest`  (ci.yml:1950) — in umbrella needs+env but absent from the failing `if` (waited-on, non-blocking)
-- `vrt`  (ci.yml:2239) — continue-on-error: true
+- `behavioral-coverage`  (ci.yml:1156) — continue-on-error: true
+- `collab`  (ci.yml:931) — umbrella aggregate step labels it informational
+- `collab-attest`  (ci.yml:1926) — in umbrella needs+env but absent from the failing `if` (waited-on, non-blocking)
+- `grand-attest`  (ci.yml:1983) — in umbrella needs+env but absent from the failing `if` (waited-on, non-blocking)
+- `vrt`  (ci.yml:2272) — continue-on-error: true
 

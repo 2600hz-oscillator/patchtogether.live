@@ -14,6 +14,14 @@
 
 /** The uint8 shape + scalar features + human labels for one ART baseline. */
 export interface Fingerprint {
+	/**
+	 * sha256 of the exact `.f32` bytes this entry was computed from — the
+	 * PROVENANCE BINDING between the LFS-tracked baseline and this manifest.
+	 * Equals the file's git-LFS oid (LFS oids are sha256-of-content), so it is
+	 * verifiable even on an `lfs: false` checkout where the `.f32` is only a
+	 * pointer stub. Enforced by fingerprints.consistency.test.ts check (d).
+	 */
+	sourceSha256: string;
 	/** `columnCount` log-spaced, per-baseline peak-normalized magnitude columns (0..255). */
 	spectrum: number[];
 	features: { crest: number; zcr: number; centroid: number };

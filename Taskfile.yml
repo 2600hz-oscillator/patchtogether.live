@@ -379,10 +379,20 @@ tasks:
       - npm test -w {{.ART}}
 
   art:update:
-    desc: Regenerate ART baselines (.f32 + .sha)
+    desc: |
+      Regenerate ART baselines (.f32 + .sha) AND re-pin the fingerprint manifest.
+      The two are ONE truth in two artifacts: re-pinning baselines without
+      re-pinning packages/web/src/lib/art/fingerprints.generated.json leaves the
+      manifest stale (#1174 did exactly that — green CI, red on every fresh local
+      checkout). So the re-pin is chained here and CANNOT be forgotten. Review
+      BOTH diffs before committing: a labels-only fingerprint move is a level
+      change, a spectrum/features move is a timbral change.
     deps: [dsp:build]
     cmds:
       - npm run art:update -w {{.ART}}
+      # Chained on purpose — see the desc above. Read-only over the .f32 set
+      # (numpy, no render, ~0.2 s), so this is nearly free.
+      - task: art:fingerprints:accept
 
   art:one:
     desc: |
