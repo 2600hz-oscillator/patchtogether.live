@@ -645,7 +645,8 @@ Estimated diff: ~250 lines in `backdraft.ts` (mostly new pure functions + the sh
 3. Two-pole / power-law phosphor tail ("the ghost that won't quite go") via 4 ring taps at `head−1,−2,−4,−8` — zero new state, the ring already holds them.
 4. Hoist the legacy composite into an `else` if profiling shows the two `uTvOn` guards are not enough.
 
-### PR 3 — CRITICAL mode (only if the owner says yes to Q1)
+### ~~PR 3~~ — CRITICAL mode — **PULLED INTO PR 1 (owner, 2026-07-27; see Q1)**
+**This is no longer a separate PR.** The owner will not preview a PURE TV without the time half: *"needing to ride the edge of white out and sort of drive it is an expected condition."* Build it inside PR 1, with the contraction contract lifted in CRITICAL only, recoverability (not stability) as the proven safety property, real control resolution across Λ ∈ [0.95, 1.05], and a CRITICAL assertion that a static-nest-plus-noise frame would FAIL. Original text kept below for the design detail:
 The **time** half. A second discrete position on the same gate: gain ceiling raised to ≈1.02–1.05, always-on shoulder (already there from PR 1), plus Crutchfield's ~1 % noise floor. `Λ ≈ 1` is where the plates live — nucleating annuli at the centre, symmetry-locked rosettes, bursts. It is *by construction* not a contraction, so it needs its own stability story (the shoulder + the bounded room are the limiters) and its own e2e (assert the frame is **not** static — the exact inverse of PURE TV's assertion). Ship separately so PURE TV's guarantees are never weakened.
 
 ### PR 4 — research, on request only
@@ -658,9 +659,22 @@ The **time** half. A second discrete position on the same gate: gain ceiling rai
 
 ## 9. OPEN QUESTIONS FOR THE OWNER
 
-**Q1 — do you want the TIME half, and are you willing to give up the stability guarantee for it?**
-PURE TV as specified is a strict contraction: it converges to a static nest and holds it. Motion cascades inward and phosphor smears it, which is "delay cascading through" — but there are no self-generated waves, bursts, or precession. Those require loop gain ≈ 1, which is inherently on the edge of instability and can white-out with the wrong knob combination.
-**Recommendation: ship PR 1 first, look at it, then decide.** The static Droste is what the screenshot shows and what your sentence describes geometrically; CRITICAL mode (PR 3) is a separate, clearly-labelled position so it can never destabilise PURE TV.
+**Q1 — do you want the TIME half, and are you willing to give up the stability guarantee for it?** — **ANSWERED 2026-07-27: YES. CRITICAL MODE SHIPS IN PR 1.**
+
+> *"this needs to be included, i don't want to review it otherwise. needing to ride the edge of white out and sort of drive it is an expected condition."* — owner
+
+The recommendation below (ship PR 1, look, then decide) was **rejected**, and the reasoning behind the rejection reframes the whole feature: **instability is the instrument, not a defect.** The owner expects to ride the edge of white-out and drive it. A mode that converges to a static nest and holds it is not what was asked for, and they will not preview one.
+
+Consequences, all folded into PR 1:
+
+1. **The §1.5 operator-norm contraction contract stays the law for PURE TV and is LIFTED in CRITICAL.** The always-on shoulder and the bounded room remain as **soft** limiters — what makes a white-out *recoverable* rather than terminal — but no hard contraction guarantee is re-imposed. A mode that cannot go unstable is not this mode.
+2. **Recoverability is the real safety property, and it is testable.** Driving to full white must never wedge the module, force a reload, or persist a broken state into the Y.Doc; backing the gain off must bring it back. That replaces "cannot go unstable" as the thing PR 1 proves.
+3. **"Sort of drive it" is a RESOLUTION requirement.** §8's original *"a second discrete position on the same gate"* is insufficient — a binary cannot ride an edge. The interesting region is roughly Λ ∈ [0.95, 1.05] and behaviour changes fast across it; a control whose useful range is 5 % of its travel is unplayable. The near-unity region needs real resolution and a musical CV response.
+4. **The CRITICAL e2e assertion is UNSOUND as originally written.** "The frame is not static" passes for the wrong reason: Crutchfield's ~1 % noise floor alone makes consecutive frames differ, so a static nest plus noise passes it. Assert **evolving structure** — decaying frame-to-frame correlation, a migrating band, the nucleating annulus — and negative-control it: with the noise on but the gain back in the contraction regime, the CRITICAL assertion must go RED. Same failure shape as the dx7 "still audible" trap (see the dx7 program plan §3.6).
+5. **Cost improves.** One PR = one GPU re-attest instead of two, one contract-lock re-pin, one preview.
+6. **Renderer risk rises.** A non-contraction on CI's SwiftShader can diverge from a real GPU; CRITICAL assertions must be renderer-tolerant, capability-gated, and confirmed green ON CI.
+
+~~**Recommendation: ship PR 1 first, look at it, then decide.** The static Droste is what the screenshot shows and what your sentence describes geometrically; CRITICAL mode (PR 3) is a separate, clearly-labelled position so it can never destabilise PURE TV.~~ — superseded above. PURE TV's own contraction guarantee at its own settings must still survive; if folding CRITICAL in breaks *that*, stop and escalate.
 
 **Q2 — widen ROTATE beyond ±30°?**
 Every symmetry lock Crutchfield photographs (n = 3/4/5/9 at 120°/90°/72°/40°) is outside the current range; inside it, only n ≥ 12 is reachable and those are the narrowest, least stable windows. Widening to ±180° unlocks the rosettes but remaps `rotate` CV response for every existing patch.
