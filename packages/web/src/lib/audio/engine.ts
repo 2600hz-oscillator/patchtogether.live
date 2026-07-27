@@ -13,6 +13,15 @@ import { getModuleDef, type AudioModuleDef } from './module-registry';
 import { POLY_CHANNELS, resolveConnection } from './poly';
 import { attachCvScale } from './cv-scale';
 import { holdParamAtSeam, HOLD_NOW_EPS_S } from './hold-param';
+import { createEdgeCounter } from './edge-detect';
+import { GATE_HI } from './gate-trigger';
+import { getSchedulerClock } from './scheduler-clock';
+// PURE registry read (a Map lookup — see video/module-registry.ts). Imported
+// for its TYPE metadata only: we need the target input's `cvScale` hint to tell
+// a gate-style cv target (raw passthrough, module edge-detects) from a
+// continuous one. No WebGL is touched, and the import does not modify any file
+// in the WebGL attest basis.
+import { getVideoModuleDef } from '$lib/video/module-registry';
 
 /**
  * What a per-domain factory hands back: the connectable surface for one module
@@ -852,6 +861,18 @@ export class PatchEngine {
   private audioBridgeEdgeIds = new Set<string>();
   /** Per-edge teardown for video→audio bridges. */
   private audioBridgeTeardowns = new Map<string, () => void>();
+  /** nodeId → module type, for VIDEO nodes only. Populated in addNode (the
+   *  `ModuleNode` carries `type`), cleared in removeNode. Lets
+   *  addCrossDomainCvBridge resolve the TARGET input's PortDef — specifically
+   *  its `cvScale` hint — without reaching into VideoEngine internals. */
+  private videoNodeTypes = new Map<string, string>();
+  /** Per-edge teardown for the frame-independent GATE dispatcher installed by
+   *  addCrossDomainCvBridge (unsubscribes the scheduler-clock tick + drops the
+   *  analyser tap). Keyed by edge id, symmetric with cvBridgeEdgeIds. */
+  private gateDispatchTeardowns = new Map<string, () => void>();
+  /** The Edge for each installed gate dispatcher, so removeNode can find the
+   *  dispatchers whose endpoints are being deleted. */
+  private gateDispatchEdges = new Map<string, Edge>();
   /** Edges that became cross-domain AUDIO → video AUDIO-INPUT bridges
    *  (RECORDERBOX's audio_l/audio_r soundtrack capture). The inverse of
    *  audioBridgeEdgeIds: an audio source connects straight into an
@@ -1003,6 +1024,7 @@ export class PatchEngine {
 
   async addNode(node: ModuleNode): Promise<void> {
     const engine = this.getDomain(node.domain);
+    if (node.domain === 'video') this.videoNodeTypes.set(node.id, String(node.type));
     await engine.addNode(node);
     // Drain any pending cross-domain bridges that were waiting for this
     // node's endpoint(s) to materialize. Without this, edges patched into
@@ -1012,7 +1034,20 @@ export class PatchEngine {
 
   removeNode(node: ModuleNode): void {
     const engine = this.getDomain(node.domain);
+    this.videoNodeTypes.delete(node.id);
     engine.removeNode(node.id);
+    // A gate dispatcher holds a LIVE scheduler-clock subscription, so a node
+    // deleted without its edges being removed first would leak a tick callback
+    // forever. Evict any dispatcher touching this node. (The teardown is
+    // idempotent — removeEdge running later just finds nothing.)
+    for (const [edgeId, teardown] of this.gateDispatchTeardowns) {
+      const e = this.gateDispatchEdges.get(edgeId);
+      if (!e || (e.source.nodeId !== node.id && e.target.nodeId !== node.id)) continue;
+      try { teardown(); } catch { /* */ }
+      this.gateDispatchTeardowns.delete(edgeId);
+      this.gateDispatchEdges.delete(edgeId);
+      this.cvBridgeEdgeIds.delete(edgeId);
+    }
     // Evict any pending bridges that referenced this node — they have
     // no chance of resolving until the user re-spawns + re-cables.
     for (const [edgeId, entry] of this.pendingBridges) {
@@ -1347,6 +1382,11 @@ export class PatchEngine {
       this.pendingBridges.set(edge.id, { edge, kind: 'cv', sourceDomain, targetDomain });
       return;
     }
+    // A GATE source into a GATE-STYLE cv target takes a completely different
+    // path — see installGateDispatch for why the per-frame analyser sampler
+    // structurally cannot carry a pulse train. Everything else keeps the
+    // legacy per-frame bridge unchanged.
+    if (this.installGateDispatch(edge, ae, ve, src)) return;
     const analyser = ae.ctx.createAnalyser();
     // An AUDIO source is envelope-followed (RMS over the window) by the bridge,
     // so it needs a wider window than the 32-sample cv tail read. A cv/gate
@@ -1364,8 +1404,143 @@ export class PatchEngine {
     this.pendingBridges.delete(edge.id);
   }
 
+  /**
+   * FRAME-INDEPENDENT GATE DISPATCH for a cross-domain audio → video edge whose
+   * source is a `gate` cable and whose target is a GATE-STYLE cv input (one with
+   * no `cvScale` hint — the module edge-detects the raw value itself).
+   *
+   * WHY THIS EXISTS (the SHAPEGEN clock flake, #232):
+   * `VideoEngine.tickCvBridges` samples ONE analyser sample per VIDEO FRAME and
+   * writes it to the target's setParam. That is a SAMPLER, and a gate pulse is
+   * an IMPULSE: the sequencer's clock-out is HIGH for 10 ms (sequencer.ts
+   * `setValueAtTime(1, t)` / `setValueAtTime(0, t + 0.01)`), and a trigger is
+   * TRIGGER_PULSE_S = 5 ms. A frame-rate sampler therefore observes a given
+   * pulse with probability ≈ pulseWidth / framePeriod:
+   *
+   *     120 fps ( 8.4 ms)  →  pulse is WIDER than the frame gap → ~100 %
+   *      60 fps (16.7 ms)  →  ~60 %
+   *      30 fps (33.3 ms)  →  ~30 %
+   *      19 fps (52.6 ms)  →  ~19 %   (measured on a loaded CI-class runner)
+   *
+   * Worse than the average loss, the two clocks BEAT against each other: the
+   * pulse train is exactly periodic and so is rAF, so a phase that drops the
+   * pulse into the gap between two frame samples KEEPS it there for many
+   * consecutive periods. Measured locally under CPU throttling: the counter sat
+   * still for 6.7 SECONDS while 13 clock pulses fired. That is the "no further
+   * edge in 10 s" CI failure, and no timeout budget can fix it because the stall
+   * length is unbounded.
+   *
+   * THE FIX: stop sampling, start COUNTING. We tap the source with our own
+   * analyser and run the repo's mandated main-thread edge seam
+   * (`$lib/audio/edge-detect createEdgeCounter`, which windows to only the
+   * samples that arrived since the last poll, so it neither drops nor
+   * double-counts) from the SCHEDULER CLOCK — a Web Worker tick that, unlike
+   * rAF, is immune to main-thread/render starvation. Every rising edge the
+   * audio graph produced is then replayed into the target's setParam as a
+   * discrete low→high transition, so the consumer's own hysteresis detector
+   * fires exactly once per real edge regardless of frame rate.
+   *
+   * This mirrors the `subscribePulse` discrete-dispatch path that
+   * addSameDomainVideoCvBridge already installs for video→video gates ("so a
+   * 10ms pulse can't be missed by 60fps polling") — the cross-domain audio→video
+   * direction simply never got the equivalent treatment.
+   *
+   * SCOPE — deliberately narrow, so nothing else changes behaviour:
+   *  - source cable must be `gate` (a cv/audio source is a LEVEL, correctly
+   *    served by tail-sampling; only pulse trains alias);
+   *  - the target input must POSITIVELY resolve to a def with NO `cvScale`
+   *    hint. A hinted (continuous) target sweeps its param range across the
+   *    incoming value and keeps the legacy per-frame bridge untouched. If the
+   *    def cannot be resolved we also fall through — fail-safe to legacy.
+   *
+   * Returns true iff it took ownership of the edge.
+   */
+  private installGateDispatch(
+    edge: Edge,
+    ae: AudioEngine,
+    ve: DomainEngine & {
+      getNodeHandle?: (nodeId: string) => unknown;
+      resolveTargetParamId?: (nodeId: string, portId: string) => string;
+    },
+    src: { node: AudioNode; output: number },
+  ): boolean {
+    if (edge.sourceType !== 'gate') return false;
+    if (typeof ve.getNodeHandle !== 'function' || typeof ve.resolveTargetParamId !== 'function') {
+      return false;
+    }
+    // Resolve the target input's PortDef. Fail-safe: no def → legacy bridge.
+    const targetType = this.videoNodeTypes.get(edge.target.nodeId);
+    const def = targetType ? getVideoModuleDef(targetType) : undefined;
+    const input = def?.inputs?.find((p) => p.id === edge.target.portId);
+    if (!input) return false;
+    // A `cvScale` hint means CONTINUOUS: the bridge maps the value across the
+    // param's natural range. Those keep the per-frame sampler (a level, not a
+    // pulse train). Only raw-passthrough targets are gate-style.
+    if (input.cvScale && input.cvScale.mode !== 'passthrough') return false;
+
+    const targetParamId = ve.resolveTargetParamId(edge.target.nodeId, edge.target.portId);
+    const analyser = ae.ctx.createAnalyser();
+    // 4096 samples ≈ 85 ms @ 48 kHz. `createEdgeCounter` scans only the samples
+    // that arrived since the previous poll, so the window must COMFORTABLY
+    // exceed the poll interval or old samples fall out of the ring before we
+    // look at them. The scheduler tick is 25 ms, giving >3× headroom even when
+    // a loaded main thread delays the tick callback.
+    analyser.fftSize = 4096;
+    analyser.smoothingTimeConstant = 0;
+    src.node.connect(analyser, src.output);
+
+    const counter = createEdgeCounter({ ctx: ae.ctx, analyser });
+    const buf = new Float32Array(analyser.fftSize) as Float32Array<ArrayBuffer>;
+    const setParam = (v: number): void => {
+      const handle = ve.getNodeHandle!(edge.target.nodeId) as
+        | { setParam?: (paramId: string, value: number) => void }
+        | null;
+      try { handle?.setParam?.(targetParamId, v); } catch { /* */ }
+    };
+
+    const unsub = getSchedulerClock().subscribe(() => {
+      const edges = counter.poll(ae.ctx.currentTime);
+      analyser.getFloatTimeDomainData(buf);
+      const level = (buf[buf.length - 1] ?? 0) >= GATE_HI ? 1 : 0;
+      // Replay each counted rising edge as an explicit low→high pair. Writing
+      // the 0 first makes the transition unconditional: if the consumer's
+      // hysteresis state is already HIGH (a gate that re-triggered between
+      // ticks) it falls before rising, so N counted edges deliver exactly N
+      // rising edges — never N-1, never 2N.
+      for (let i = 0; i < edges; i++) {
+        setParam(0);
+        setParam(1);
+      }
+      // Settle on the CURRENT level so a HELD gate stays high for
+      // level-sensitive consumers (a DOOM key-down, a freezeframe hold) rather
+      // than being reduced to a blip. Written unconditionally (not just on
+      // change) because a module detects "this input is patched" from the fact
+      // that setParam is called for it at all — SHAPEGEN's `clockPatched` flag
+      // is exactly that, and it gates the whole sample-and-hold contract.
+      setParam(level);
+    });
+
+    this.gateDispatchTeardowns.set(edge.id, () => {
+      try { unsub(); } catch { /* */ }
+      try { src.node.disconnect(analyser, src.output); } catch { /* */ }
+      try { analyser.disconnect(); } catch { /* */ }
+    });
+    this.gateDispatchEdges.set(edge.id, edge);
+    this.cvBridgeEdgeIds.add(edge.id);
+    this.pendingBridges.delete(edge.id);
+    return true;
+  }
+
   private removeCrossDomainCvBridge(edge: Edge): void {
     this.cvBridgeEdgeIds.delete(edge.id);
+    // Frame-independent gate dispatcher (if this edge got one instead of a
+    // per-frame bridge): unsubscribe the scheduler tick + drop the tap.
+    const gateTeardown = this.gateDispatchTeardowns.get(edge.id);
+    if (gateTeardown) {
+      try { gateTeardown(); } catch { /* */ }
+      this.gateDispatchTeardowns.delete(edge.id);
+      this.gateDispatchEdges.delete(edge.id);
+    }
     for (const eng of this.domains.values()) {
       const ve = eng as DomainEngine & { removeCvBridge?: (id: string) => void };
       if (typeof ve.removeCvBridge === 'function') {
@@ -1901,6 +2076,12 @@ export class PatchEngine {
       try { teardown(); } catch { /* */ }
     }
     this.sameDomainPulseSubTeardowns.clear();
+    for (const teardown of this.gateDispatchTeardowns.values()) {
+      try { teardown(); } catch { /* */ }
+    }
+    this.gateDispatchTeardowns.clear();
+    this.gateDispatchEdges.clear();
+    this.videoNodeTypes.clear();
     for (const e of this.domains.values()) e.dispose();
     this.domains.clear();
   }
