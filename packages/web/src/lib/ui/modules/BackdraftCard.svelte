@@ -47,6 +47,8 @@
     BACKDRAFT_SHAPES,
     BACKDRAFT_FLICKER_OPTIONS,
     BACKDRAFT_FLICKER_HZ,
+    backdraftBeatHz,
+    backdraftStorageResponse,
     backdraftNextShape,
   } from '$lib/video/modules/backdraft';
   import type { VideoEngine } from '$lib/video/engine';
@@ -104,25 +106,34 @@
     setNodeParam(id, 'pureGeo', pureGeoOn ? 0 : 1);
   }
 
-  // ---- FLICKER (4-position discrete: OFF / 24 / 50 / 60 Hz) ----
-  // A labelled button row rather than a detent Fader, so all four positions
+  // ---- FLICKER (6-position discrete: OFF / 6 / 24 / 50 / 60 / 120 Hz) ----
+  // A labelled button row rather than a detent Fader, so all six positions
   // read at a glance (the FrametableCard MODE idiom, reusing this card's
   // existing .mirror-row/.mirror-btn styling). The shell's separate
   // unlabelled-detent gap for discrete params is a known batch-4 item and is
   // deliberately NOT addressed here.
-  const FLICKERS = BACKDRAFT_FLICKER_OPTIONS.map((key, v) => ({
-    v,
-    key,
-    label: key === 'off' ? 'OFF' : key,
-    // Tooltip carries the physics: what beats against the 60fps virtual camera.
-    title:
-      key === 'off'
-        ? 'FLICKER OFF — constant loop gain (feedback saturates to white and stays there). The exact pre-FLICKER behaviour.'
-        : `FLICKER ${key}Hz — the display emits pulses at ${(BACKDRAFT_FLICKER_HZ[v] ?? 0).toFixed(2)}Hz; ` +
-          `beating against the 60fps virtual camera at ` +
-          `${Math.abs((BACKDRAFT_FLICKER_HZ[v] ?? 0) - Math.round((BACKDRAFT_FLICKER_HZ[v] ?? 0) / 60) * 60).toFixed(2)}Hz, ` +
-          `so the loop gain cycles above and below unity and pulses of light build up and fade away.`,
-  }));
+  const FLICKERS = BACKDRAFT_FLICKER_OPTIONS.map((key, v) => {
+    const hz = BACKDRAFT_FLICKER_HZ[v] ?? 0;
+    const beat = backdraftBeatHz(hz);
+    const store = backdraftStorageResponse(beat);
+    // Fast beats are cut hard by the camera's storage integrator (soft
+    // shimmer); slow ones pass essentially untouched (full breathing swing).
+    const character = store.mag < 0.35 ? 'a soft shimmer' : 'a slow breathing swell';
+    return {
+      v,
+      key,
+      label: key === 'off' ? 'OFF' : key,
+      // Tooltip carries the physics: what beats against the 60fps virtual
+      // camera, and what the camera's own storage does to that beat.
+      title:
+        key === 'off'
+          ? 'FLICKER OFF — constant loop gain (feedback saturates to white and stays there). The exact pre-FLICKER behaviour.'
+          : `FLICKER ${key}Hz — the display emits pulses at ${hz.toFixed(2)}Hz, ` +
+            `beating against the 60fps virtual camera at ${beat.toFixed(2)}Hz. ` +
+            `The camera's multi-frame storage passes ${(store.mag * 100).toFixed(0)}% of that beat, ` +
+            `so it reads as ${character}.`,
+    };
+  });
   let flickerIdx = $derived(
     Math.max(0, Math.min(FLICKERS.length - 1, Math.round(p('flicker')))),
   );
@@ -714,7 +725,7 @@
     border-color: var(--accent, #6884d7);
   }
   .mirror-btn:hover { border-color: var(--accent-dim); }
-  /* FLICKER row: a small leading label + 4 equal-width position buttons. */
+  /* FLICKER row: a small leading label + 6 equal-width position buttons. */
   .row-label {
     flex: 0 0 auto;
     align-self: center;
@@ -723,7 +734,14 @@
     letter-spacing: 0.09em;
     font-family: ui-monospace, monospace;
   }
-  .mirror-btn.seg { padding: 4px 2px; font-size: 0.58rem; letter-spacing: 0.04em; }
+  /* 6 positions in the width that used to hold 4 — tighten the padding and let
+     the buttons shrink below their content width so the row never wraps. */
+  .mirror-btn.seg {
+    padding: 4px 1px;
+    font-size: 0.54rem;
+    letter-spacing: 0.01em;
+    min-width: 0;
+  }
   .delay-cell {
     position: relative;
     display: flex;

@@ -350,7 +350,8 @@ test.describe('BACKDRAFT — deterministic render smoke', () => {
   // ── FLICKER acceptance ────────────────────────────────────────────────
   // The owner's bar, verbatim: "it is possible to find settings where pulses of
   // light build up and fade away with zero or extremely subtle variations in
-  // camera position, orientation, etc."
+  // camera position, orientation, etc." — and the v2 bar on top of it: it must
+  // do that WITHOUT strobing.
   //
   // So: IDENTITY spatial transform (zoom 1, rotate 0, offset 0 — literally zero
   // camera movement), a flat uniform source, high feedback.
@@ -358,16 +359,35 @@ test.describe('BACKDRAFT — deterministic render smoke', () => {
   //   CONTROL  FLICKER OFF -> the loop is a monotone positive map, so it can
   //            only climb to the clip ceiling and STAY there. That is today's
   //            behaviour and this test pins it as intentional.
-  //   FEATURE  FLICKER 50Hz -> the emission beats against the 60fps virtual
+  //   FEATURE  FLICKER 50 -> the emission beats against the 60fps virtual
   //            camera at 10Hz (6 frames/cycle), the per-frame gain crosses
-  //            unity in both directions, and light builds AND fades.
+  //            unity in both directions, light builds AND fades, and the
+  //            rolling-shutter band (0.42 of a cycle down the frame here) moves.
+  //   SAFETY   FLICKER 6  -> the position with the LARGEST full-field swing and
+  //            the one whose rate sits in the photic-sensitivity band. Its
+  //            frame-to-frame full-field luminance step must stay under WCAG
+  //            2.3.1's general flash threshold on the REAL GL path, which is
+  //            what proves the CPU mirror in backdraft.test.ts is not lying.
   //
   // Everything is asserted RELATIVE to the run's own measured levels (ratios,
-  // never absolute pixel values), so SwiftShader and a real GPU both clear it.
-  test('FLICKER: 50Hz makes light build up and fade away with a static camera; OFF saturates and stays', async ({ page }) => {
-    // 2 phases x (settle + measure) synchronous steps, each measure step doing a
+  // never absolute pixel values) except the flash bound, which is an ABSOLUTE
+  // fraction-of-full-scale by definition — so SwiftShader and a real GPU both
+  // clear it.
+  //
+  // Index into BACKDRAFT_FLICKER_OPTIONS (packages/web/src/lib/video/modules/
+  // backdraft.ts) = ['off','6','24','50','60','120']; that list is pinned by
+  // backdraft.test.ts ("the option list, the Hz table and the count agree") and
+  // the param's max by contract-lock.txt, so these indices cannot drift silently.
+  const FLICKER_50 = 3;
+  const FLICKER_6 = 1;
+  // WCAG 2.3.1 general flash threshold: a pair of opposing changes of >= 0.10
+  // relative luminance. Expressed here in 0..255 readPixels units.
+  const FLASH_STEP_255 = 0.1 * 255;
+
+  test('FLICKER: light builds up and fades away with a static camera, and never flashes; OFF saturates and stays', async ({ page }) => {
+    // 3 phases x (settle + measure) synchronous steps, each measure step doing a
     // sub-rect readPixels. Budget generously for the CI software renderer.
-    test.setTimeout(180_000);
+    test.setTimeout(240_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -375,7 +395,17 @@ test.describe('BACKDRAFT — deterministic render smoke', () => {
     const T0 = 2.0;
     const FPS = 60;          // the virtual camera rate (BACKDRAFT_FPS)
     const SETTLE = 60;       // enough for the OFF loop to climb to the ceiling
-    const MEASURE = 72;      // 12 full beat cycles at 50Hz (6 frames each)
+    const MEASURE = 72;      // 12 full beat cycles at 50 (6 frames each)
+    const RESETTLE = 30;     // 3 beat cycles at 6Hz — enough to leave the switch
+    const MEASURE_6 = 60;    // 6 full beat cycles at the 6 position (10 fr each)
+
+    /** Largest frame-to-frame step in a luma series — the quantity WCAG's
+     *  flash threshold is stated over. */
+    const maxFrameStep = (s: number[]): number => {
+      let m = 0;
+      for (let i = 1; i < s.length; i++) m = Math.max(m, Math.abs(s[i]! - s[i - 1]!));
+      return m;
+    };
 
     await installRenderSmokeHooks(page, T0);
     await page.goto('/rack');
@@ -429,9 +459,8 @@ test.describe('BACKDRAFT — deterministic render smoke', () => {
       `OFF must stay pinned — no pulsing (hi ${offHi.toFixed(1)} lo ${offLo.toFixed(1)})`,
     ).toBeLessThan(0.02);
 
-    // ── FEATURE: FLICKER 50Hz, everything else identical ────────────────
-    await setNodeParams(page, 'm', { flicker: 2 });
-    const RESETTLE = 30;
+    // ── FEATURE: FLICKER 50, everything else identical ──────────────────
+    await setNodeParams(page, 'm', { flicker: FLICKER_50 });
     await stepLumaSeries(page, {
       nodeId: 'm', steps: RESETTLE, startTimeSec: T0 + (SETTLE + MEASURE) / FPS, fps: FPS,
     });
@@ -452,11 +481,16 @@ test.describe('BACKDRAFT — deterministic render smoke', () => {
 
     // (a) PULSES BUILD — the level reaches a real peak.
     expect(onHi, `ON must still reach bright peaks (peak ${onHi.toFixed(1)}/255)`).toBeGreaterThan(120);
-    // (b) PULSES FADE — and it comes back DOWN, well below its own peak.
+    // (b) PULSES FADE — and it comes back DOWN, below its own peak. The v2
+    // margin is deliberately MUCH smaller than v1's: the camera's storage
+    // low-pass cuts the 10Hz beat to ~10% and the shoulder compresses what is
+    // left, which is exactly the softening this rework exists to add. What must
+    // survive is that the swing is real and one-order-of-magnitude above the
+    // pinned OFF control — not that it is violent.
     expect(
       onLo / onHi,
       `ON must fade back down (lo ${onLo.toFixed(1)} vs hi ${onHi.toFixed(1)})`,
-    ).toBeLessThan(0.75);
+    ).toBeLessThan(0.95);
     // (c) NOT PINNED for the whole window — the excursion is a real pulse train,
     // not a clipped line with a wobble.
     const nearCeiling = on.mean.filter((v) => v >= offHi * 0.98).length / on.mean.length;
@@ -465,19 +499,21 @@ test.describe('BACKDRAFT — deterministic render smoke', () => {
       `ON must not sit at the ceiling for the whole window (${(nearCeiling * 100).toFixed(0)}% of frames did)`,
     ).toBeLessThan(0.9);
 
-    // (d) The DIFFERENCE from the control is unambiguous: the ON swing is at
-    // least an order of magnitude larger than the OFF swing.
+    // (d) The DIFFERENCE from the control is unambiguous: the ON swing is still
+    // several times the OFF control's residual (which is a flat line).
     const onSwing = (onHi - onLo) / onHi;
     const offSwing = (offHi - offLo) / offHi;
     expect(
       onSwing,
       `ON swing ${(onSwing * 100).toFixed(1)}% must dwarf OFF swing ${(offSwing * 100).toFixed(1)}%`,
-    ).toBeGreaterThan(Math.max(0.2, offSwing * 10));
+    ).toBeGreaterThan(Math.max(0.04, offSwing * 3));
 
     // (e) ROLLING SHUTTER — with a perfectly uniform source and no camera
     // movement, OFF leaves the frame spatially flat (top third == bottom third
     // forever). ON spreads the flicker phase down the frame, so the top/bottom
-    // split becomes a band that MOVES. Compare the ranges of that split.
+    // split becomes a band that MOVES. Compare the ranges of that split. (The
+    // 50 position is the right one to assert this on: f*T_ro = 0.42 of a cycle
+    // top-to-bottom. The 6 position is nearly spatially uniform by comparison.)
     const splitRange = (s: { top: number[]; bottom: number[] }): number => {
       const d = s.top.map((v, i) => v - s.bottom[i]!);
       return Math.max(...d) - Math.min(...d);
@@ -488,6 +524,54 @@ test.describe('BACKDRAFT — deterministic render smoke', () => {
       onSplit,
       `ON must show a MOVING rolling-shutter band (range ${onSplit.toFixed(2)}) vs a flat OFF frame (range ${offSplit.toFixed(2)})`,
     ).toBeGreaterThan(offSplit + 2);
+
+    // (f) AND IT DOES NOT FLASH — on the real GL path, not just in the CPU
+    // mirror. Every frame-to-frame full-field step stays under WCAG 2.3.1's
+    // general flash threshold.
+    const onStep = maxFrameStep(on.mean);
+    expect(
+      onStep,
+      `FLICKER 50 must not flash (max full-field step ${onStep.toFixed(1)}/255 = ${(onStep / 255).toFixed(3)} rel. luminance)`,
+    ).toBeLessThan(FLASH_STEP_255);
+
+    // ── SAFETY: FLICKER 6 — the biggest swing, and the photic-band rate ──
+    // 6 Hz is BELOW the camera rate so there is no aliasing: the camera sees the
+    // emission directly at 10 frames per cycle, the storage low-pass passes more
+    // of it than at any other ON position that aliases (|H| = 0.16 vs 0.05 at
+    // 24), and 6 full-field flashes per second is squarely in the photic-
+    // sensitivity band. If any position can strobe, it is this one.
+    const t6 = T0 + (SETTLE + MEASURE + RESETTLE + MEASURE) / FPS;
+    await setNodeParams(page, 'm', { flicker: FLICKER_6 });
+    await stepLumaSeries(page, { nodeId: 'm', steps: RESETTLE, startTimeSec: t6, fps: FPS });
+    const on6 = await stepLumaSeries(page, {
+      nodeId: 'm', steps: MEASURE_6, startTimeSec: t6 + RESETTLE / FPS, fps: FPS,
+    });
+    expect(on6.framesDelta, '6Hz measure burst advanced the exact frame count').toBe(MEASURE_6);
+    expect(on6.glErrors, `GL errors (6Hz): [${on6.glErrors.join(',')}]`).toEqual([]);
+
+    const hi6 = Math.max(...on6.mean);
+    const lo6 = Math.min(...on6.mean);
+    const swing6 = (hi6 - lo6) / hi6;
+    if (process.env.FLICKER_DEBUG === '1') {
+      console.log('6Hz mean:', on6.mean.slice(0, 30).map((v) => v.toFixed(1)).join(' '));
+    }
+
+    // (g) it BUILDS AND FADES — and more than the 50 position does, because the
+    // storage low-pass passes a 6Hz beat far better than a 10Hz one. That
+    // ORDERING is the observable signature of the storage term being real.
+    expect(lo6 / hi6, `6Hz must fade back down (lo ${lo6.toFixed(1)} hi ${hi6.toFixed(1)})`)
+      .toBeLessThan(0.9);
+    expect(
+      swing6,
+      `6Hz swing ${(swing6 * 100).toFixed(1)}% must exceed the 50 position's ${(onSwing * 100).toFixed(1)}% (storage is a LOW-PASS on the beat)`,
+    ).toBeGreaterThan(onSwing * 1.3);
+
+    // (h) THE ACCEPTANCE BOUND. Even the worst position never flashes.
+    const step6 = maxFrameStep(on6.mean);
+    expect(
+      step6,
+      `FLICKER 6 must not flash (max full-field step ${step6.toFixed(1)}/255 = ${(step6 / 255).toFixed(3)} rel. luminance)`,
+    ).toBeLessThan(FLASH_STEP_255);
 
     expect(errors, 'no console / page errors during render').toEqual([]);
   });
