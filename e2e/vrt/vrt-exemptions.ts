@@ -1015,9 +1015,9 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/rear-dx7',
   'linux/rear-sixstrum',
   //
-  // PF-8 DOCK LANE-RAIL REMOVAL (2026-07-27, deliberate darwin-first). The
-  // migrated shell no longer paints the lane jack rail at view='dock-full' —
-  // it was a DUPLICATE patch surface under the faceplate's real one (the
+  // PF-8 DOCK LANE-RAIL REMOVAL (2026-07-27) was DRAINED here, NOT parked.
+  // The migrated shell no longer paints the lane jack rail at view='dock-full'
+  // — it was a DUPLICATE patch surface under the faceplate's real one (the
   // RearCard on TAB) with its EXPAND button already suppressed, and it cost
   // ~23 px of the dock's fold budget.
   //
@@ -1030,22 +1030,21 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // karplus 106, shimmershine 58, filter/lfo/qbrt 18 — all still capped, all
   // pixel-identical (verified: 12 of 17 dock scenes PASS unchanged on darwin).
   // The five UNCAPPED faces do move: adsr 379→354, delay/mixer/reverb
-  // 421→398, vca 331→306. Their darwin baselines are RE-CAPTURED in this
-  // commit; the five linux ones are parked here.
+  // 421→398, vca 331→306.
   //
-  // Only these five need parking, on BOTH platforms, because the committed
-  // darwin and linux baselines are height-identical for every dock scene
-  // (adsr 379/379, delay 421/421, vca 331/331, …) — the scenes pin fonts, so
-  // the two platforms lay out to the same content height and the cap lands in
-  // the same place. ONE `vrt-update.yml -f platform=linux` dispatch on this
-  // branch drains all five and brings the vrt-meta ceiling 124 → 119. The
-  // COMPACT lane tiles are deliberately NOT listed: the rail change is
+  // Both platforms' baselines for those five are RE-CAPTURED on this branch:
+  // darwin locally, linux via a `vrt-update.yml -f platform=linux` dispatch.
+  // They are deliberately NOT listed as EXEMPT_BASELINE_PAIRS. Parking them
+  // would have RAISED the vrt-meta linux-deficit ratchet 119 → 124, and that
+  // ratchet only ever shrinks — a scene whose linux baseline we can regenerate
+  // in one dispatch is not a platform deficit, it is a re-capture, and letting
+  // it inflate the ceiling is exactly how these ceilings rot. Drain first,
+  // dispatch second (CLAUDE.md): the pairs had to be absent from this Set
+  // BEFORE the dispatch, because an exempt scene is test.skip()-ed
+  // unconditionally and --update-snapshots writes nothing for it.
+  //
+  // The COMPACT lane tiles are deliberately untouched: the rail change is
   // dock-only and all 17 compact baselines were verified unchanged locally.
-  'linux/face-adsr-dock',
-  'linux/face-delay-dock',
-  'linux/face-mixer-dock',
-  'linux/face-reverb-dock',
-  'linux/face-vca-dock',
   //
   // P1 BATCH 3 (2026-07-26) was DRAINED here: the 10 CURATED FACE scenes for
   // the five newly-migrated modules (compact lane tile + dock full-view
