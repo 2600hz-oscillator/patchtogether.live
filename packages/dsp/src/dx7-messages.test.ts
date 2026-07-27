@@ -34,9 +34,21 @@
 // NEGATIVE CONTROL (how to prove these assertions bite): give applyOpParam the
 // destructive tail applyPatch has -- deactivate every voice and zero
 // `lastGate` -- i.e. make an operator edit behave exactly like a whole-patch
-// re-send. Three tests then fail, including "opParam does not disturb ANY live
+// re-send. Two tests then fail, including "opParam does not disturb ANY live
 // voice state ... or lastGate" on lastGate[0] 1 -> 0 and every voice field.
 // Verified before this file was committed; the diff + output are in the PR body.
+//
+// WHY THE COARSE ASSERTION IS NOT ENOUGH -- read this before "simplifying" any
+// test below. "a held note keeps SOUNDING across an opParam edit" PASSES under
+// that negative control, because the destructive path RETRIGGERS the note and
+// a retriggered note is still audible. An assertion that cannot distinguish
+// "the note continued" from "the note was destroyed and immediately restarted"
+// is unsound, not merely weak -- it would have gone green over the exact bug
+// this file exists to prevent. `startSample` is the discriminator: a fresh
+// noteOn stamps a new one, a continuing note does not. That is why the
+// non-destructive tests assert `startSample` is UNCHANGED and the destructive
+// ones assert it ADVANCED, and why the whole-voice snapshot is compared for
+// deep equality rather than spot-checked.
 //
 // The worklet entry never top-level-exports its Processor class (that would
 // break the ART harness's classic-script eval), so we capture it via a
@@ -339,6 +351,11 @@ describe('dx7 incremental messages do not disturb live voices', () => {
     expect(snapshotVoices(p)).toEqual(before);
   });
 
+  // DELIBERATELY COARSE, and NOT sufficient on its own: this one PASSES under
+  // the negative control described in the header, because a destroyed-then-
+  // retriggered note is still audible. It is kept only as a sanity floor —
+  // the `startSample` assertions above and below are what actually discriminate
+  // "continued" from "destroyed and restarted". Never let it stand alone.
   it('a held note keeps SOUNDING across an opParam edit (no re-gate needed)', () => {
     const p = bootWithHeldNote();
     send(p, { type: 'opParam', op: 1, field: 'level', value: 0 }); // mute one modulator

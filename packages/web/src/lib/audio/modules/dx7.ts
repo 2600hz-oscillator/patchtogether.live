@@ -186,7 +186,20 @@ export const dx7Def: AudioModuleDef = {
       out: "Mono audio: every active voice's carrier operators summed, each voice scaled by its own master ADSR, then the whole bus scaled by LEVEL and by a fixed headroom trim of 0.4 so five voices sounding at once stay clear of clipping. Patch it into a VCA, filter, mixer, or straight to the output.",
     },
     controls: {
-      algorithm: "Which of the 32 DX7 algorithms wires the six operators together (1–32) — each one fixes the carrier/modulator routing, from the deep single-carrier stacks (16–18) through the classic 3-carrier electric-piano layouts (5) to the fully parallel additive organ (32, where all six operators are carriers). It is the biggest single shaper of a patch's character. Loading a preset adopts that voice's own stored algorithm and the readout follows it; turning the knob overrides it.",
+      // ⚠ THE LAST SENTENCE OF `algorithm` DESCRIBES THE HOST PATH, NOT THE
+      // ENGINE'S CAPABILITY, AND PR 5 OF THE DX7 OPERATOR-VIEW PROGRAM MUST
+      // RE-AUTHOR IT IN THAT SAME PR. The worklet already accepts a
+      // non-destructive `{type:'algorithm'}` message (added in PR 1, see the
+      // protocol block in packages/dsp/src/dx7.ts), but `setParam('algorithm')`
+      // below still calls sendPatch() — a whole-patch re-send that resets every
+      // voice. When PR 5 routes the knob onto the incremental message, "turning
+      // it re-sends the whole patch … a note you are holding is retriggered"
+      // becomes FALSE and the sentence must change with the code.
+      //
+      // The audible consequence is a RETRIGGER, not silence: applyPatch zeroes
+      // `lastGate`, so the still-high gate reads as a fresh rising edge on the
+      // very next block. Measured, not assumed — see dx7-messages.test.ts.
+      algorithm: "Which of the 32 DX7 algorithms wires the six operators together (1–32) — each one fixes the carrier/modulator routing, from the deep single-carrier stacks (16–18) through the classic 3-carrier electric-piano layouts (5) to the fully parallel additive organ (32, where all six operators are carriers). It is the biggest single shaper of a patch's character. Loading a preset adopts that voice's own stored algorithm and the readout follows it; turning the knob overrides it. Changing it re-sends the whole patch to the engine, which resets every voice: a note you are holding does not morph into the new routing but is RETRIGGERED — you hear a click and a fresh attack — and a note already ringing out its release is cut short. Treat it as a between-notes control.",
       voiceCount: "How many of the POLY cable's lanes are read, 1 to 5 — the cable itself carries 16, but DX7 has five voice slots and never looks past lane 5. Lanes above the setting are ignored, so 1 gives a strictly monophonic instrument (the same first lane the mono PITCH CV + GATE pair drives) and 5 lets full chords through. Five voice slots exist either way; a note arriving while all of them are still busy steals the oldest.",
       level: "Master output gain for the whole synth, 0 to 2 (0.7 default); it scales the summed voice bus feeding OUT. The fixed 0.4 headroom trim is applied on top of it either way, so LEVEL 1 is the knob's own unity rather than unity gain end to end.",
       transpose: "Global pitch offset in semitones (-24 to +24) added to every voice on top of the loaded patch's own stored transpose (BASS 1, for instance, already sits an octave down). It is continuous rather than stepped, so fractional settings detune the whole instrument. It is re-applied while a gate is held — turning it retunes sounding notes live — but a note already released keeps the pitch it ended on.",
