@@ -45,19 +45,23 @@ export function captureFlowStore(): CardFlowStore | null {
  * card can never drift out of sync with the contract (ids, cable types and
  * declared order all come from the def).
  *
- * `labels` carries the card's DISPLAY overrides only — ports omitted from the
- * map fall through to the shared verbose-label derivation in
- * patch-panel-labels (which is what an omitted `label` always meant).
+ * THREE label tiers, most specific first:
+ *   1. `labels[p.id]` — the CARD's display override (a per-card rename);
+ *   2. `PortDef.label` — the DEF's co-located label, so a port's human name can
+ *      be authored once beside the port instead of restated by every surface
+ *      that draws it (the shell passes no overrides map at all, so this is the
+ *      only way a migrated module's jack gets an authored name);
+ *   3. neither — fall through to the shared verbose-label derivation in
+ *      patch-panel-labels (which is what an omitted `label` always meant).
  */
 export function portsFromDef(
   ports: readonly PortDef[],
   labels: Record<string, string> = {},
 ): PortDescriptor[] {
-  return ports.map((p) =>
-    labels[p.id] !== undefined
-      ? { id: p.id, label: labels[p.id], cable: p.type }
-      : { id: p.id, cable: p.type },
-  );
+  return ports.map((p) => {
+    const label = labels[p.id] ?? p.label;
+    return label !== undefined ? { id: p.id, label, cable: p.type } : { id: p.id, cable: p.type };
+  });
 }
 
 export interface CardParamHelpers {

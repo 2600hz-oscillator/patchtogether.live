@@ -1015,6 +1015,31 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/rear-dx7',
   'linux/rear-sixstrum',
   //
+  // PF-8 DOCK LANE-RAIL REMOVAL (2026-07-27, deliberate darwin-first). The
+  // migrated shell no longer paints the lane jack rail at view='dock-full' —
+  // it was a DUPLICATE patch surface under the faceplate's real one (the
+  // RearCard on TAB) with its EXPAND button already suppressed, and it cost
+  // ~23px of the dock's fold budget. That moves EVERY `face-<type>-dock`
+  // baseline on BOTH platforms. The darwin ones are re-captured in this
+  // commit; the ELEVEN linux dock baselines that already existed (batch 1 +
+  // batch 3 — the batch-2 six are still pending above) are listed here so CI
+  // does not diff a render we knowingly changed. They come straight back out
+  // via ONE `vrt-update.yml -f platform=linux` dispatch on this branch, which
+  // also drops the vrt-meta ceiling 130 → 119. The COMPACT lane tiles are
+  // deliberately NOT listed: the rail change is dock-only and the lane
+  // baselines were verified byte-identical locally.
+  'linux/face-adsr-dock',
+  'linux/face-cloudseed-dock',
+  'linux/face-delay-dock',
+  'linux/face-filter-dock',
+  'linux/face-karplus-dock',
+  'linux/face-kickdrum-dock',
+  'linux/face-lfo-dock',
+  'linux/face-mixer-dock',
+  'linux/face-reverb-dock',
+  'linux/face-tidyVco-dock',
+  'linux/face-vca-dock',
+  //
   // P1 BATCH 3 (2026-07-26) was DRAINED here: the 10 CURATED FACE scenes for
   // the five newly-migrated modules (compact lane tile + dock full-view
   // faceplate per module, workflow-shell-faces.spec.ts — karplus, filter,

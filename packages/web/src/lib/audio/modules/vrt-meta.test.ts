@@ -425,7 +425,17 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // this back to 118. (The pre-existing linux/workflow-dock-patch pair is
       // unchanged — that scene's darwin baseline was RE-captured in place
       // because `c` now opens the clip player as a pane, not a drawer.)
-    ).toBeLessThanOrEqual(119);
+      // 119→130 for PF-8, the DOCK LANE-RAIL REMOVAL (2026-07-27, deliberate
+      // darwin-first): the migrated shell stopped painting a duplicate jack
+      // rail inside the dock faceplate, which moves every `face-<type>-dock`
+      // baseline on both platforms. The 17 darwin dock baselines (+ the
+      // workflow-dock-clip-split scene) are RE-CAPTURED in the same commit;
+      // the ELEVEN linux dock baselines that already existed are parked here
+      // rather than left to diff a render we knowingly changed. ONE
+      // `vrt-update.yml -f platform=linux` dispatch on this branch drains all
+      // eleven and brings this straight back to 119 — it is a re-capture of
+      // existing scenes, not new darwin-only coverage.
+    ).toBeLessThanOrEqual(130);
   });
 });
 

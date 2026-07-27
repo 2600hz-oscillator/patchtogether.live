@@ -14,6 +14,11 @@
 // This module owns the PARAM half of the answer (pure, node-testable); the
 // FAMILY/STATIC half needs live state + actions and lives in shell-cells.ts.
 //
+// A third case joined them: a plain 0/1 LATCHING switch (kickdrum/snaredrum
+// HARD) rendered as a KnobConic reading "0.00" — technically operable, but a
+// two-state control asking for a 200px drag and printing a float. It now paints
+// the same <Toggle> `.switch` the legacy cards use.
+//
 // WHY momentary is DECLARED, not sniffed: a press-pad and a latching switch
 // have the IDENTICAL ParamDef shape (`0..1 discrete default 0` — tomtom
 // `strike` vs kickdrum/snaredrum `hard`, tidyVco `hold`). Only the module knows
@@ -25,7 +30,7 @@ import { looksLikeToggle } from '$lib/graph/group-controls';
 import type { ParamDef } from '$lib/graph/types';
 
 /** The primitive a PARAM cell renders as. */
-export type ParamCellKind = 'knob' | 'momentary';
+export type ParamCellKind = 'knob' | 'momentary' | 'toggle';
 
 /**
  * Does this param have the PRESS-PARAM SHAPE — a 0/1 switch resting at 0?
@@ -44,11 +49,28 @@ export function momentaryParamIds(def: { face?: { momentary?: readonly string[] 
 }
 
 /**
- * Which primitive a param cell renders as: a momentary <Button> for a DECLARED
- * press-pad, else the KnobConic every other param keeps. Pure.
+ * Which primitive a param cell renders as. Takes the whole ParamDef (not just
+ * the id) because the answer now depends on the param's SHAPE as well as the
+ * def's declaration:
+ *
+ *   momentary — a DECLARED press-pad (`face.momentary`) → a momentary <Button>.
+ *               The declaration WINS over the shape: a press-pad and a latching
+ *               switch are the identical 0..1-discrete-at-0 ParamDef.
+ *   toggle    — an undeclared 0..1 discrete switch → <Toggle>, the same
+ *               `.switch` primitive the legacy cards paint for it (kickdrum /
+ *               snaredrum HARD read `0.00` on a rotary and took a 200 px drag
+ *               to flip a two-state control).
+ *   knob      — everything else, the KnobConic every other param keeps.
+ *
+ * NOTE the render kind is INDEPENDENT of the momentary/latching CLASSIFICATION
+ * gate in module-face-lint: a switch that renders as a Toggle here still has to
+ * be classified there (face.momentary or ACKNOWLEDGED_LATCHING). One answers
+ * "which primitive", the other "does releasing it write REST back". Pure.
  */
-export function paramCellKind(paramId: string, momentary: ReadonlySet<string>): ParamCellKind {
-  return momentary.has(paramId) ? 'momentary' : 'knob';
+export function paramCellKind(p: ParamDef, momentary: ReadonlySet<string>): ParamCellKind {
+  if (momentary.has(p.id)) return 'momentary';
+  if (looksLikeToggle(p)) return 'toggle';
+  return 'knob';
 }
 
 /** The value a momentary pad writes on press / release. The pad is the same
