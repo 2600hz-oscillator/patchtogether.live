@@ -425,17 +425,19 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // this back to 118. (The pre-existing linux/workflow-dock-patch pair is
       // unchanged — that scene's darwin baseline was RE-captured in place
       // because `c` now opens the clip player as a pane, not a drawer.)
-      // 119→130 for PF-8, the DOCK LANE-RAIL REMOVAL (2026-07-27, deliberate
+      // 119→124 for PF-8, the DOCK LANE-RAIL REMOVAL (2026-07-27, deliberate
       // darwin-first): the migrated shell stopped painting a duplicate jack
-      // rail inside the dock faceplate, which moves every `face-<type>-dock`
-      // baseline on both platforms. The 17 darwin dock baselines (+ the
-      // workflow-dock-clip-split scene) are RE-CAPTURED in the same commit;
-      // the ELEVEN linux dock baselines that already existed are parked here
-      // rather than left to diff a render we knowingly changed. ONE
-      // `vrt-update.yml -f platform=linux` dispatch on this branch drains all
-      // eleven and brings this straight back to 119 — it is a re-capture of
-      // existing scenes, not new darwin-only coverage.
-    ).toBeLessThanOrEqual(130);
+      // rail inside the dock faceplate. It moves FIVE dock scenes — the ones
+      // whose content does NOT overflow the 425px faceplate cap, so the rail
+      // was actually inside the element screenshot (adsr, delay, mixer,
+      // reverb, vca); the other twelve render it below the fold and are
+      // pixel-identical (measured overflow + a full darwin VRT run, see
+      // vrt-exemptions.ts). The five darwin baselines are RE-CAPTURED in this
+      // same commit; the five linux ones are parked rather than left to diff a
+      // render we knowingly changed. ONE `vrt-update.yml -f platform=linux`
+      // dispatch on this branch drains all five and brings this back to 119 —
+      // it is a re-capture of existing scenes, not new darwin-only coverage.
+    ).toBeLessThanOrEqual(124);
   });
 });
 

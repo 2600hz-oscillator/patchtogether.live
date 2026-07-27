@@ -1019,25 +1019,32 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // migrated shell no longer paints the lane jack rail at view='dock-full' —
   // it was a DUPLICATE patch surface under the faceplate's real one (the
   // RearCard on TAB) with its EXPAND button already suppressed, and it cost
-  // ~23px of the dock's fold budget. That moves EVERY `face-<type>-dock`
-  // baseline on BOTH platforms. The darwin ones are re-captured in this
-  // commit; the ELEVEN linux dock baselines that already existed (batch 1 +
-  // batch 3 — the batch-2 six are still pending above) are listed here so CI
-  // does not diff a render we knowingly changed. They come straight back out
-  // via ONE `vrt-update.yml -f platform=linux` dispatch on this branch, which
-  // also drops the vrt-meta ceiling 130 → 119. The COMPACT lane tiles are
-  // deliberately NOT listed: the rail change is dock-only and the lane
-  // baselines were verified byte-identical locally.
+  // ~23 px of the dock's fold budget.
+  //
+  // It moves FIVE of the seventeen dock scenes, not all of them, and the
+  // reason is MEASURED rather than assumed: `.dock-faceplate` caps at
+  // `min(60vh, 680px)` = 425 px in the VRT viewport, so a face whose content
+  // OVERFLOWS that cap renders the rail below the fold, where the element
+  // screenshot never saw it. Post-change overflow, measured: cloudseed 498,
+  // kickdrum/sixstrum 370, snaredrum/tidyVco 282, tomtom 194, dx7 166,
+  // karplus 106, shimmershine 58, filter/lfo/qbrt 18 — all still capped, all
+  // pixel-identical (verified: 12 of 17 dock scenes PASS unchanged on darwin).
+  // The five UNCAPPED faces do move: adsr 379→354, delay/mixer/reverb
+  // 421→398, vca 331→306. Their darwin baselines are RE-CAPTURED in this
+  // commit; the five linux ones are parked here.
+  //
+  // Only these five need parking, on BOTH platforms, because the committed
+  // darwin and linux baselines are height-identical for every dock scene
+  // (adsr 379/379, delay 421/421, vca 331/331, …) — the scenes pin fonts, so
+  // the two platforms lay out to the same content height and the cap lands in
+  // the same place. ONE `vrt-update.yml -f platform=linux` dispatch on this
+  // branch drains all five and brings the vrt-meta ceiling 124 → 119. The
+  // COMPACT lane tiles are deliberately NOT listed: the rail change is
+  // dock-only and all 17 compact baselines were verified unchanged locally.
   'linux/face-adsr-dock',
-  'linux/face-cloudseed-dock',
   'linux/face-delay-dock',
-  'linux/face-filter-dock',
-  'linux/face-karplus-dock',
-  'linux/face-kickdrum-dock',
-  'linux/face-lfo-dock',
   'linux/face-mixer-dock',
   'linux/face-reverb-dock',
-  'linux/face-tidyVco-dock',
   'linux/face-vca-dock',
   //
   // P1 BATCH 3 (2026-07-26) was DRAINED here: the 10 CURATED FACE scenes for
