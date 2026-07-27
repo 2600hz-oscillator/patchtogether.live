@@ -596,3 +596,139 @@ NEW OWNER ITEM: **the dx7 face looks nothing like its mock**, and the mock was p
 process — needs revisiting. Known gap: the mock's OP1-6 pages need ~78 new params, i.e. a MODULE REWORK
 rather than a face. The mocks themselves were lost in the crash (they lived in a wiped scratchpad), so
 regenerate/recover them first. Remember `.myrobots/` is GITIGNORED — nothing there is backed up.
+
+### clipplayer flake family — 4th member FIXED (#1180), 5th + 6th diagnosed
+- **#1180 (auto-merging): `clipplayer-queue-boundary` was UNSOUND, not under-budgeted.** The load sweep
+  is the proof pattern to reuse: throttle 1x-16x pass, **20x/24x FAIL, 28x/32x PASS again, 40x FAIL** —
+  non-monotone in LOAD means the verdict tracks a phase variable (launch φ within the 2.000 s bar), not
+  correctness. A correct engine failed for φ in the last third of the bar. Fix = in-page 10 ms recorder
+  armed at a KNOWN phase + 3 layered assertions incl. a new one the old test never made (drop-in lands
+  on the LONGEST clip's wrap — the Deluge quantize rule). Negative controls discriminate independently.
+  −1.0 s per green run.
+- **5th member, different shape:** `clip-automation.spec.ts` "module-assign + per-lane arm" (now :464)
+  is a DURATION overrun, not a race — ~4.2 s of fixed `sweepCc(…, 3500)` under a flat test budget. Right
+  fix: the stop-signal pattern #1173 already added to that same file, and/or per-test setTimeout. Not
+  reproducible locally → left undone rather than shipped unverified.
+- **6th, latent, same file:** `sampleSpread(count=14, intervalMs=70)` asserts spread over a ~1 s clip
+  loop with fixed 70 ms sampling. Under load per-sample CDP cost approaches the loop period → samples
+  ALIAS to one envelope phase → spread collapses to ~0. Used by ~6 tests. Needs its own pass (in-page
+  sampling, same recorder pattern).
+
+## 2026-07-26 late — FLICKER v1 SHIPPED; v2 (soften + 6/120 Hz) commissioned
+
+Everything from the owner-request round is now MERGED and green on main (`aa883ca9`), dev deployed:
+#1176 sixstrum presets · #1177 dock rear-view P0 · #1178 right-click unpatch · #1179 clip-player pane ·
+#1180 queue-boundary flake · #1175 the .myrobots corpus · **#1181 backdraft FLICKER v1**.
+
+**FLICKER v1** (owner-approved with critique): models pulsed display emission x exposure-boxcar (sinc)
+x 60 fps virtual-camera beat + rolling-shutter band; gain geometric-mean-normalized so FEEDBACK keeps
+its meaning; formal root cause recorded — the un-flickered loop is a MONOTONE POSITIVE MAP (only
+fixed-point attractors ⇒ pins white; delay cannot create oscillation in one). WebGL attest legitimately
+moved `243287d6…` → `ed455781…` (shader+def in basis). Research doc committed:
+`.myrobots/plans/backdraft-flicker-research-2026-07-26.md`.
+
+**OWNER CRITIQUE driving v2 (in flight, `feat/backdraft-flicker-v2`, PREVIEW/no-auto-merge):** v1 is
+"very strobey — interpreted very literally"; real camera+screen loops are softer and more controllable.
+v2 = dig into Crutchfield properly; hypotheses: S-curve transfer (gamma x saturation, per pass) is
+central; spatial diffusion turns the beat into traveling waves; slow AGC self-regulates toward
+criticality; exponential phosphor (not boxcar) overstates depth; flicker = detuning on near-critical
+dynamics, not the amplitude driver. Plus owner wants **6 Hz and 120 Hz positions** (param 0..5). The
+"not strobey" bar becomes an executable frame-to-frame luminance swing bound — doubling as the
+photosensitivity guard 6 Hz needs.
+
+Infra note: an API outage stalled 3 agents simultaneously (600s watchdog); all state survived, v2
+resumed from transcript. v1's leftover: Hocuspocus relay on 1235 still up (standard dev relay, left
+deliberately).
+
+---
+
+# 2026-07-26/27 — shell-UI round complete, FLICKER v1+v2, flake family, fingerprints
+
+**LESSON FIRST — `.myrobots/` IS TRACKED NOW (since #1175).** An earlier version of these notes was
+appended to the working tree and NEVER COMMITTED; a branch switch reset the file and the notes were
+lost. That is the second time planning content vanished (the dx7 mocks were the first, pre-tracking).
+**Append AND commit in the same breath.**
+
+## Shipped to main (all green, dev deployed)
+#1176 sixstrum PRESET recall · #1177 dock rear-view P0 · #1178 right-click UNPATCH · #1179 clip-player
+as dock pane (`c` = expand) · #1180 queue-boundary flake · #1175 the .myrobots corpus (117→40 files) ·
+#1181 backdraft FLICKER v1 · **#1182 FLICKER v2** (main `50427551`). #1183 (fingerprints) auto-merging.
+
+## !! CORRECTION: the "depolarizer 3.01 dB drift" NEVER EXISTED !!
+Multiple agents across two days independently reported `depolarizer/out` drifting by exactly 3.01 dB,
+and it was relayed to the owner three times as a real mystery. **It was a misread of vitest's diff
+output**: `depolarizer/out` is merely the NEXT KEY PRINTED AS CONTEXT after the changed entry (the
+changed entry `delay/audio` ends at manifest line 2930; `depolarizer/out` starts at 2931). The
+depolarizer fingerprint is byte-identical committed-vs-regenerated and its baselines are untouched
+since #1029.
+
+The REAL entry was **`delay/audio`**, and the √2 instinct was right — just attached to the wrong
+module. Verified from the bytes, not the commit message: new `.f32` = old x √2 EXACTLY (ratio
+1.414213419–1.414213657, residual 2.2e-08) = +3.0103 dB, precisely linear→equal-power at the
+scenario's mix=0.5. Root cause: **#1174 re-pinned `art/baselines/delay/` (legitimately — it carried
+delay's equal-power dry/wet fix) without re-running `task art:fingerprints:accept`.**
+**DEBUGGING LESSON: when a diff names a key, confirm the key is the CHANGED one and not a context
+line. Three agents propagated the same misattribution because each trusted the previous report.**
+
+## The fingerprints gate was DECORATION, not a gate (fixed in #1183)
+It self-skipped on CI — the `unit` lane checks out `lfs: false`, so the `.f32` baselines are pointer
+stubs and the test skipped itself; `task art` never ran it either. So it could only ever break LOCAL
+runs, and drift accumulated invisibly. Fix: run the byte-exact gate in the `art` job (the only lane
+with materialized LFS bytes) under `ART_FINGERPRINTS_REQUIRED=1` so it FAILS rather than skip-passes,
+plus a `sourceSha256` provenance check that needs no python/numpy/LFS (LFS oids ARE sha256-of-content),
+which runs even in the stub lane. Proven by negative control: replaying #1174 exactly turns it red.
+`task art:update` now chains `art:fingerprints:accept` so the two artifacts can't drift apart. +13 s CI.
+
+## BACKDRAFT FLICKER — v1 shipped, v2 softened it
+**The formal root cause of the white-out**: the un-flickered composite is a MONOTONE POSITIVE MAP,
+which has only fixed-point attractors — delay cannot create oscillation in one. That is why feedback
+always pinned at white no matter the delay.
+
+v1 modelled pulsed emission x exposure-boxcar (sinc) x 60 fps camera beat + rolling shutter. Owner
+verdict: "very strobey — interpreted very literally". **He was measurably right**: v1 ran 3–5x over
+WCAG 2.3.1's 0.10 general-flash threshold at 10–24 flashes/sec (peak-to-peak up to 0.91).
+
+v2 per-position max full-field frame-to-frame luminance step (bound 0.10):
+
+| pos | beat | v1 | v2 | |
+|---|---|---|---|---|
+| 6 | 6.00 Hz | 0.469 ✗ | **0.066** ✓ | 7.1x |
+| 24 | 24.00 Hz | 0.463 ✗ | **0.024** ✓ | 19.3x |
+| 50 | 10.00 Hz | 0.312 ✗ | **0.030** ✓ | 10.3x |
+| 60 | 0.06 Hz | 0.002 | 0.002 | untouched |
+| 120 | 0.12 Hz | — | 0.000 | pure band |
+
+Slow positions deliberately NOT damped — 60 still travels 0.23→0.98. Storage is a low-pass ON THE
+BEAT, so it kills fast flashing without flattening the breathing.
+**ADOPTED**: camera multi-frame STORAGE (closed-form one-pole at the beat — no per-frame state),
+capture SHOULDER (S-curve, knee 0.55, identity below / C1 roll-off above), shutter 180°→90° (v1's 0.5
+shutter put `sinc(1)=0`, which would have made the new 120 position DEAD).
+**REJECTED with proof**: spatial diffusion — the Laplacian has eigenvalue ZERO on the uniform mode, so
+blur provably cannot damp a full-field pulse (<0.0005 metric change); AGC servo — its sensitivity
+function passes exactly the fast beats needing taming; a safety clamp — arbitrary magic number.
+Also found: the v2 e2e was **silently broken and had never been run** — it passed `flicker: 2` labelled
+"50 Hz", but index 2 is 24 Hz in the 6-position layout.
+
+## clipplayer e2e flake family — 4 of 6 members resolved
+- **#1180 `clipplayer-queue-boundary` was UNSOUND, not under-budgeted.** Proof pattern worth reusing:
+  the LOAD sweep was NON-MONOTONE (1-16x pass, 20x/24x FAIL, 28x/32x PASS, 40x FAIL) — non-monotone in
+  load means the verdict tracks a PHASE variable (launch φ in the 2.000 s bar), not correctness. A
+  correct engine failed for φ in the last third of the bar. New assertion also checks something the old
+  one never did: the drop-in lands on the LONGEST clip's wrap (the Deluge quantize rule).
+- **5th member** `clip-automation.spec.ts` "module-assign + per-lane arm" (~:464) — a DURATION overrun,
+  not a race: ~4.2 s of fixed `sweepCc(…, 3500)` under a flat budget. Fix = the stop-signal pattern
+  #1173 already added to that same file. Not reproducible locally; left undone rather than unverified.
+- **6th, latent** `sampleSpread(count=14, intervalMs=70)` asserts spread over a ~1 s clip loop with
+  fixed 70 ms CDP sampling; under load per-sample cost approaches the loop period → samples ALIAS to
+  one envelope phase → spread collapses to ~0. ~6 tests depend on it. Needs in-page sampling.
+
+## Other durable findings
+- **A VRT baseline was silently stale**: `workflow-dock-patch` passed INSIDE its 5% maxDiffPixelRatio
+  while still rendering v1.2.0-era chrome. Re-pinned. A loose tolerance can hide real drift for months
+  — a sweep of other >0 tolerances is worth doing.
+- **`controlFamilies` DOES project into contract-signature** (`contract-signature.ts` ~:124). The
+  "families are UI-only / out of contract" assumption is WRONG — adding one is a contract change.
+- **Lane wiring is managed ALL-OR-NOTHING**: unpatching POLY on a lane instrument stands down the whole
+  clip→instrument link (pitch AND gate) as a unit. That is what makes it go properly silent.
+- A raw edge delete on a managed lane edge SNAPS BACK on the next reconcile pass — #1178 writes the
+  delete + a detach-suppression marker in ONE transact so it stays gone and undoes as one unit.
