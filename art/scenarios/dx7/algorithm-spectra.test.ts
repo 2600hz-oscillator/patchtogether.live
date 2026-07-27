@@ -18,6 +18,13 @@
 //   3. The renderer's `algorithmOverride` path actually overrides the
 //      patch's stored algorithm — i.e. asking for algo N produces what
 //      algo N would, not what the patch's baked-in algo would.
+//   4. ALL 32 algorithms render mutually distinct audio. The original sweep
+//      only compared 1 / 5 / 16 / 32 — four algorithms that happen to be
+//      exactly the ones the routing-table bug did NOT touch, so it stayed
+//      green while 11 sibling groups (1/2, 3/4, 5/6, 7/8/9, 10/11, 12/13,
+//      14/15, 16/17, 24/25, 26/27) rendered BYTE-IDENTICAL audio. The unit
+//      golden (`dx7-algorithms.test.ts`) pins the table; this is the ART-tier
+//      proof that the corrected table actually reaches the audio.
 
 import { describe, it, expect } from 'vitest';
 import {
@@ -63,7 +70,7 @@ function harmonicRichness(buf: Float32Array, fund: number, threshold = 0.001): n
  *  rich additive spectrum); in algo 1 only ops 1 + 3 are carriers (ratios
  *  1 + 3) and the rest become modulators producing FM sidebands. The two
  *  spectra are unmistakably different. */
-function makeAllOpsActivePatch(): DX7Voice {
+function makeAllOpsActivePatch(feedback = 0): DX7Voice {
   const op = (ratio: number) => ({
     r: [99, 50, 50, 60] as [number, number, number, number],
     l: [99, 90, 80, 0] as [number, number, number, number],
@@ -77,7 +84,7 @@ function makeAllOpsActivePatch(): DX7Voice {
   return {
     name: 'TEST_ALL_ACTIVE',
     algorithm: 1,
-    feedback: 0,
+    feedback,
     operators: [op(1), op(2), op(3), op(4), op(5), op(6)],
     pitchEg: { r: [99, 99, 99, 99], l: [50, 50, 50, 50] },
     lfo: { speed: 0, delay: 0, pmd: 0, amd: 0, sync: false, waveform: 0, pitchModSens: 0 },
@@ -160,5 +167,58 @@ describe('DX7 ART: algorithm switching changes the rendered audio', () => {
     });
     const d = l1Distance(baseline, override);
     expect(d, 'E.PIANO 1 algo 5 vs 32 differ').toBeGreaterThan(0.001);
+  });
+});
+
+describe('DX7 ART: all 32 algorithms are audibly distinct instruments', () => {
+  // Feedback depth 7 (maximum) so the loop is audible: on the real DX7 ten
+  // sibling groups share their carrier/modulator routing and differ ONLY in
+  // where the feedback loop sits, so at depth 0 they are genuinely identical
+  // by design. Depth 7 is the setting under which "32 algorithms" must mean
+  // 32 different instruments.
+  const patch = makeAllOpsActivePatch(7);
+  const render = (algorithmOverride: number) =>
+    renderDx7Note(patch, {
+      midi: 60, durationS: DURATION_S, sampleRate: SAMPLE_RATE, holdGate: true,
+      algorithmOverride,
+    });
+
+  it('no two of the 32 algorithms render the same buffer', () => {
+    const renders = Array.from({ length: 32 }, (_, i) => render(i + 1));
+    const identical: string[] = [];
+    for (let i = 0; i < 32; i++) {
+      for (let j = i + 1; j < 32; j++) {
+        if (l1Distance(renders[i]!, renders[j]!) === 0) identical.push(`${i + 1}≡${j + 1}`);
+      }
+    }
+    // Before the routing-table fix this listed 11 pairs/groups; on the real
+    // DX7 chart there are none.
+    expect(identical, `byte-identical algorithm pairs: ${identical.join(' ')}`).toEqual([]);
+    for (let i = 0; i < 32; i++) {
+      expect(rms(renders[i]!), `algo ${i + 1} non-silent`).toBeGreaterThan(0.001);
+      expect(renders[i]!.findIndex((v) => !Number.isFinite(v)), `algo ${i + 1} non-finite`).toBe(-1);
+    }
+  });
+
+  it.each([
+    [1, 2], [3, 4], [5, 6], [7, 8], [8, 9], [10, 11],
+    [12, 13], [14, 15], [16, 17], [24, 25], [26, 27],
+  ])(
+    'sibling algorithms %i and %i differ by more than numerical noise',
+    (a, b) => {
+      // These pairs share carriers+routing and are separated ONLY by feedback
+      // placement (alg 4 and 6 additionally by a multi-operator loop). Each
+      // was byte-identical to its sibling before the fix.
+      const d = l1Distance(render(a), render(b));
+      expect(d, `algo ${a} vs ${b} L1 distance`).toBeGreaterThan(1e-4);
+    },
+  );
+
+  it('the multi-operator feedback loops (algorithms 4 and 6) are not self-loops', () => {
+    // Alg 4's loop is op4 → op6 and alg 6's is op5 → op6, wrapping a whole
+    // stack. A scalar "feedback op" cannot express them, so if they ever
+    // regress to an op6 self-loop they become identical to algs 3 and 5.
+    expect(l1Distance(render(4), render(3)), 'alg 4 vs its sibling 3').toBeGreaterThan(1e-4);
+    expect(l1Distance(render(6), render(5)), 'alg 6 vs its sibling 5').toBeGreaterThan(1e-4);
   });
 });
