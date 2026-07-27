@@ -341,9 +341,27 @@ uses. In the **dock hero** (214 px cap, `DOCK_HERO_GLYPH_W`) render the map at 1
 | `fixedMode` | 0/1 | boolean |
 
 **Operator MUTE routes through `opParam field:'level' value:0`**, never through the whole-patch message —
-the stored level stays in `node.data.voice`, so unmute re-sends it. Muting via `{type:'patch'}` would kill
-every sounding note (`applyPatch` zeroes `lastGate`, so a still-high gate is not re-detected as a rising
-edge until it falls).
+the stored level stays in `node.data.voice`, so unmute re-sends it.
+
+⚠ **MECHANISM CORRECTION (measured while building PR 1, 2026-07-27 — this paragraph originally had it
+backwards).** The draft said a `{type:'patch'}` during a held note leaves the note dead because "a still-high
+gate is not re-detected as a rising edge until it falls". The opposite is what happens. `applyPatch` zeroes
+`lastGate`, so `wasGate` goes **false while the gate is still high**, and `process()`'s `isGate && !wasGate`
+fires a **fresh note-on on the very next block**. Probed on the real code:
+
+```
+BEFORE reset: active true  lastGate0 1  env0 0.765943  startSample 0
+AFTER  reset: active false lastGate0 0
+AFTER  1 block, gate STILL high: active true  env0 0.166002  startSample 1024
+```
+
+So a held note **hard-retriggers** — a click and a fresh attack mid-chord, not silence. (A lane already
+*releasing* is a separate case: it is killed outright, with no future edge to revive it.) The conclusion
+stands and is in fact stronger; only the mechanism was wrong.
+
+**This has a testing consequence — heed it in PR 5.** A coarse "still audible after the edit" assertion
+**passes under the negative control**, because the retrigger makes noise. Assert on `startSample` (or
+`envValue` continuity), not on audibility.
 
 ### 3.7 The PRs — dependency order
 
@@ -428,7 +446,17 @@ Depends on: nothing (parallel with 0 / 0b).
   no ART movement.
 - DSP unit test: `opParam` mutates `this.patch.operators[n]` with the correct transform applied, and leaves
   every voice's `phase/envValue/envSeg/releasing/fbMem/opOut/laneOwner/ampEnv` **and `lastGate`** untouched.
-- Delete the now-misleading `docs.controls.algorithm` sentence "it also RESETS the voices".
+- ~~Delete the now-misleading `docs.controls.algorithm` sentence "it also RESETS the voices".~~
+  **SUPERSEDED — this instruction was premature by one PR, caught while building PR 1.** At PR 1's commit
+  that sentence is still *operative*: the host's `setParam('algorithm')` still calls `sendPatch()`, a
+  whole-patch re-send. The host rewiring onto the incremental `algorithm` message is **PR 5**.
+  **RULING (2026-07-27): docs never run ahead of behaviour.** That is the premise of the living-docs
+  contract gate, and this repo has already caught ~25 authored doc claims that were wrong against the real
+  DSP — a doc promising "an algorithm change no longer disturbs voices" would be one more.
+  Do NOT plain-revert either: the original wording is *also* wrong. "RESETS the voices" implies silence;
+  the measured behaviour is a hard **retrigger** (see the mechanism correction in §3.6).
+  **So PR 1 authors a sentence accurate AT PR 1** — the host still re-sends the whole patch, so a held note
+  re-attacks — and **PR 5 rewrites it** when the rewiring lands. PR 5 owns that edit; it is in its checklist.
 - **CI delta: ~0.**
 
 #### **PR 2 — `feat(ui): param cell kinds + the panel shell cell`**
@@ -529,6 +557,14 @@ Depends on: **PR 1**.
   makes the select match no `<option>`. Add a separate `dx7PresetChipLabel()`; leave `dx7PresetName` pure.
 - Testable without UI: a unit test that a stamp writes 3 data keys + 2 params in ONE undo step; an e2e that
   a preset change survives reload and reaches a peer.
+- **INHERITED FROM PR 1 (do not drop):** PR 5 rewires the host's `setParam('algorithm')` off `sendPatch()`
+  and onto the incremental `algorithm` message — **so PR 5 owns the `docs.controls.algorithm` rewrite.**
+  PR 1 deliberately left an accurate-at-PR-1 sentence there (host still re-sends the whole patch, so a held
+  note re-attacks) rather than shipping a doc that described PR 5's behaviour. Update it in the SAME PR as
+  the rewiring. ⚠ **Assert on `startSample`/`envValue` continuity, NOT on audibility** — a whole-patch
+  re-send hard-RETRIGGERS a held note, so a coarse "still audible" check passes even when the bug is
+  present (measured; see §3.6's mechanism correction). This also rewrites six assertions in
+  `modules/dx7.test.ts`, which is why it was kept out of PR 1.
 - **CI delta ~+0.8 s** (10 → 11 cells).
 
 #### **PR 6 — `feat(dx7): the operator map + detail panel`**
