@@ -45,6 +45,14 @@
     BACKDRAFT_OFFSET_MIN,
     BACKDRAFT_OFFSET_MAX,
     BACKDRAFT_SHAPES,
+    BACKDRAFT_TV_MODE_LABELS,
+    BACKDRAFT_TV_MODE_COUNT,
+    backdraftNextTvMode,
+    backdraftTvFill,
+    backdraftTvDepth,
+    backdraftTvGain,
+    backdraftTvOpNorm,
+    backdraftTvAgcRate,
     BACKDRAFT_FLICKER_OPTIONS,
     BACKDRAFT_FLICKER_HZ,
     backdraftBeatHz,
@@ -99,6 +107,35 @@
   );
   let shapeName = $derived(BACKDRAFT_SHAPES[shapeIdx] ?? 'square');
   let pureGeoOn = $derived(p('pureGeo') >= 0.5);
+
+  // ---- TV MODE (3-position cycle: OFF / PURE TV / CRITICAL) ----
+  // The button cycles; a rising edge on tv_gate cycles the same param in the
+  // engine, and the reconcile effect below mirrors that back into the store.
+  let tvModeIdx = $derived(
+    Math.max(0, Math.min(BACKDRAFT_TV_MODE_COUNT - 1, Math.round(p('tvMode')))),
+  );
+  let tvOn = $derived(tvModeIdx > 0);
+  let tvCritical = $derived(tvModeIdx === 2);
+  function cycleTvMode(): void {
+    setNodeParam(id, 'tvMode', backdraftNextTvMode(p('tvMode')));
+  }
+  // Readouts. The band count is the HONEST one — the level at which the bezel
+  // band (the only thing separating level k from k+1) goes sub-pixel, which is
+  // the binding constraint, not the amplitude or resolution ceiling.
+  let tvFill = $derived(backdraftTvFill(p('zoom')));
+  let tvDepth = $derived(backdraftTvDepth({
+    fill: tvFill,
+    gain: backdraftTvGain(
+      backdraftTvOpNorm({ r: p('r'), g: p('g'), b: p('b'), luma: p('luma'), chroma: p('chroma') }),
+      p('feedback'), 1,
+    ),
+    widthPx: 1024,
+  }));
+  // CRITICAL's servo rate, and which side of the bifurcation it is on. DRIVE
+  // 0.5 is the measured Hopf point: below it the nest is dead still, above it
+  // it breathes.
+  let tvRate = $derived(backdraftTvAgcRate(p('drive')));
+  let tvRiding = $derived(p('drive') >= 0.5);
   function cycleShape() {
     setNodeParam(id, 'shape', backdraftNextShape(p('shape')));
   }
@@ -167,7 +204,12 @@
   // rounded to whole-u (180px) tiles so the card lands on the rack grid out of
   // the box (#759) and so the rack CSS doesn't clamp the corner-resize.
   const DEFAULT_WIDTH = 720;
-  const DEFAULT_HEIGHT = 540;
+  // 4u tall, not 3u. PURE TV adds a TV MODE row and four faders
+  // (Room/Bez/Phos/Drive); at 540 the controls column ran 55px past the card's
+  // bottom edge (caught by card-control-overflow). Whole-u tiles are
+  // load-bearing here — the rack grid snaps to 180px, and a non-tile height
+  // makes the rack CSS clamp the corner-resize (#759).
+  const DEFAULT_HEIGHT = 720;
   const MIN_WIDTH = 540;
   const MIN_HEIGHT = 360;
 
@@ -350,6 +392,15 @@
         if (target) target.params[k] = live >= 0.5 ? 1 : 0; // guard:allow-raw-write — per-frame engine→store reflect, must NOT pollute undo
       }
     }
+    // Discrete TV mode index: gate-cycled in the engine, same as shape.
+    const liveTv = e.readParam(n, 'tvMode');
+    if (typeof liveTv === 'number' && Number.isFinite(liveTv)) {
+      const storedTv = Math.round(patch.nodes[id]?.params.tvMode ?? 0);
+      if (Math.round(liveTv) !== storedTv) {
+        const target = patch.nodes[id];
+        if (target) target.params.tvMode = Math.round(liveTv); // guard:allow-raw-write — per-frame engine→store reflect, must NOT pollute undo
+      }
+    }
     // Discrete shape index: compare on the rounded value.
     const liveShape = e.readParam(n, 'shape');
     if (typeof liveShape === 'number') {
@@ -430,6 +481,13 @@
     { id: 'mirror_y_gate', label: 'MIRROR Y', cable: 'gate' },
     { id: 'shape_gate',    label: 'SHAPE',    cable: 'gate' },
     { id: 'pure_geo_gate', label: 'PURE GEO', cable: 'gate' },
+    { id: 'tv_gate',       label: 'TV MODE',  cable: 'gate' },
+    // PURE TV / CRITICAL continuous CV. ROOM is Crutchfield's flashlight (his
+    // rig needs external light to restart a dark screen); DRIVE rides the edge
+    // of white-out and is the one worth a slow LFO.
+    { id: 'room',        label: 'ROOM',      cable: 'cv' },
+    { id: 'phosphor',    label: 'PHOSPHOR',  cable: 'cv' },
+    { id: 'drive',       label: 'DRIVE',     cable: 'cv' },
   ];
   const outputs = portsFromDef(backdraftDef.outputs);
 </script>
@@ -505,9 +563,13 @@
           <button
             type="button"
             class="mirror-btn nodrag"
-            class:on={pureGeoOn}
+            class:on={pureGeoOn && !tvOn}
+            class:inert={tvOn}
+            disabled={tvOn}
             data-testid="backdraft-pure-geo"
-            title="PURE GEO — masking space. ON: fixed shape in screen space (cuts content outside at all zooms). OFF: shape in the zoomed feedback space (scales with Zoom, spills through the tunnel)."
+            title={tvOn
+              ? 'PURE GEO is ignored in PURE TV / CRITICAL — SHAPE means exactly one thing there: the screen’s outline.'
+              : 'PURE GEO — masking space. ON: fixed shape in screen space (cuts content outside at all zooms). OFF: shape in the zoomed feedback space (scales with Zoom, spills through the tunnel).'}
             onclick={togglePureGeo}
           >PURE GEO</button>
         </div>
@@ -524,6 +586,27 @@
               onclick={() => pickFlicker(f.v)}
             >{f.label}</button>
           {/each}
+        </div>
+
+        <div class="mirror-row" data-testid="backdraft-tv-row">
+          <button
+            type="button"
+            class="mirror-btn nodrag"
+            class:on={tvOn}
+            data-testid="backdraft-tv-mode"
+            title={tvModeIdx === 0
+              ? 'TV MODE OFF — the classic infinite-plane feedback composite. The exact pre-PURE-TV behaviour.'
+              : tvModeIdx === 1
+                ? 'PURE TV — a bounded SCREEN instead of an infinite plane. The previous frame is drawn whole inside a bezelled TV; OUTSIDE it is your live input, so IN THIS MODE YOUR INPUT IS THE ROOM, NOT THE PICTURE. The view nests one level per pass and converges to a STILL image.'
+                : 'CRITICAL — PURE TV plus the camera’s AUTO-EXPOSURE servo. The servo integrates, so it overshoots: past DRIVE 0.5 the picture blooms toward white, gets hauled back, and each correction rides inward through the nest one level per DELAY. This is the mode for riding the edge of white-out; back DRIVE off and it always recovers.'}
+            onclick={cycleTvMode}
+          >TV: {BACKDRAFT_TV_MODE_LABELS[tvModeIdx]}</button>
+          {#if tvOn}
+            <span class="tv-readout" data-testid="backdraft-tv-readout">
+              fill {(tvFill * 100).toFixed(0)}% · ≈{tvDepth.resolved} bands
+              {#if tvCritical} · Λ-servo {tvRate.toFixed(1)}/f {tvRiding ? '· RIDING' : '· steady'}{/if}
+            </span>
+          {/if}
         </div>
 
         <div class="fader-grid" data-testid="backdraft-controls">
@@ -545,6 +628,10 @@
           <Fader value={p('rotate')}   min={BACKDRAFT_ROTATE_MIN} max={BACKDRAFT_ROTATE_MAX} units="°" defaultValue={pdef('rotate')} label="Rot"  curve="linear" onchange={setParam('rotate')}  moduleId={id} paramId="rotate" />
           <Fader value={p('offsetX')}  min={BACKDRAFT_OFFSET_MIN} max={BACKDRAFT_OFFSET_MAX} defaultValue={pdef('offsetX')} label="OffX" curve="linear" onchange={setParam('offsetX')} moduleId={id} paramId="offsetX" />
           <Fader value={p('offsetY')}  min={BACKDRAFT_OFFSET_MIN} max={BACKDRAFT_OFFSET_MAX} defaultValue={pdef('offsetY')} label="OffY" curve="linear" onchange={setParam('offsetY')} moduleId={id} paramId="offsetY" />
+          <Fader value={p('room')}     min={0} max={1} defaultValue={pdef('room')}     label="Room" curve="linear" onchange={setParam('room')}     moduleId={id} paramId="room" />
+          <Fader value={p('bezel')}    min={0} max={1} defaultValue={pdef('bezel')}    label="Bez"  curve="linear" onchange={setParam('bezel')}    moduleId={id} paramId="bezel" />
+          <Fader value={p('phosphor')} min={0} max={1} defaultValue={pdef('phosphor')} label="Phos" curve="linear" onchange={setParam('phosphor')} moduleId={id} paramId="phosphor" />
+          <Fader value={p('drive')}    min={0} max={1} defaultValue={pdef('drive')}    label="Drive" curve="linear" onchange={setParam('drive')}   moduleId={id} paramId="drive" />
         </div>
       </div>
     </div>
@@ -725,6 +812,24 @@
     border-color: var(--accent, #6884d7);
   }
   .mirror-btn:hover { border-color: var(--accent-dim); }
+  /* PURE GEO is IGNORED in PURE TV / CRITICAL (SHAPE means exactly one thing
+     there: the screen's outline), so the button is greyed rather than hidden —
+     the state stays legible instead of the control silently vanishing. */
+  .mirror-btn.inert {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  /* TV MODE readout: fill %, the HONEST resolved band count, and in CRITICAL
+     the servo rate plus which side of the bifurcation DRIVE is on. */
+  .tv-readout {
+    font-size: 9px;
+    letter-spacing: 0.02em;
+    opacity: 0.75;
+    white-space: nowrap;
+    align-self: center;
+  }
+
   /* FLICKER row: a small leading label + 6 equal-width position buttons. */
   .row-label {
     flex: 0 0 auto;
