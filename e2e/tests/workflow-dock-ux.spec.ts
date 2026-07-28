@@ -21,10 +21,15 @@
 //  3. The PATCH drill-down opens ADJACENT to the invoking tile — the
 //     lane-rail variant anchors beside the tile (right side, flipping left at
 //     the screen edge) instead of the legacy edge-align model, and the anchor
-//     resolves the `.rl-tile` itself (pre-fix the dock full-view's migrated
-//     shell had no .svelte-flow__node/[data-dock-card-frame] ancestor → a
-//     0×0 rect at the origin → the menu opened at the viewport TOP-LEFT
-//     CORNER, disconnected from the tile).
+//     resolves the `.rl-tile` itself.
+//     NOTE (2026-07-27, PF-8): the DOCK half of this fix is superseded. The
+//     migrated shell no longer renders the lane rail at view='dock-full' — it
+//     was a DUPLICATE patch surface (dot-only, its EXPAND button already
+//     suppressed) sitting under the faceplate's real one, the RearCard on TAB,
+//     and it cost ~23px of the dock's fold budget. The old "anchors to the
+//     faceplate, not the origin" test is replaced by the no-duplicate-rail
+//     gate at the bottom of this file, which also re-proves the rear card
+//     still carries every declared hole.
 //
 // Runs on /rack?mode=workflow&shell=1 (no DB/relay) — same lane as
 // workflow-shell.spec.ts. All fixed behavior is ?shell=1-gated.
@@ -227,16 +232,19 @@ test.describe('P1 dock/expand UX fixes (?shell=1)', () => {
     await page.keyboard.press('Escape');
   });
 
-  // FIX 3 (dock seam) — the drill-down from the dock full-view's MIGRATED
-  // shell used to open at the viewport ORIGIN (no .svelte-flow__node /
-  // [data-dock-card-frame] ancestor → 0×0 anchor rect). The `.rl-tile`
-  // anchor resolves there too: the menu now opens ON the faceplate tile,
-  // never at the corner.
-  test('drill-down from the dock full-view shell anchors to the faceplate, not the origin', async ({ page }) => {
+  // FIX 3 (dock seam), SUPERSEDED — see the header note. The dock full-view's
+  // migrated shell no longer renders a lane rail at all, so there is no
+  // drill-down to anchor there. This is the replacement gate: the DUPLICATE
+  // patch surface is gone, and the dock's REAL one (the RearCard on TAB) still
+  // carries every declared hole — i.e. the removal cost the user nothing.
+  test('the dock full-view shell renders NO lane rail; TAB is its patch surface', async ({ page }) => {
     await gotoWorkflow(page);
     await spawnPatch(page, [{ id: 'm1', type: 'vca', position: { x: 30, y: 40 } }]);
     const tile = page.locator('.svelte-flow__node[data-id="m1"] [data-testid="module-shell"]');
     await expect(tile).toBeVisible();
+    // The LANE tile keeps its rail — that is where the drill-down belongs.
+    await expect(tile.getByTestId('lane-jack-rail'), 'lane tile keeps its rail').toBeVisible();
+
     await panTileTo(page, 'm1', { top: 90 });
     await tile.getByTestId('shell-open-dock').click();
 
@@ -245,15 +253,21 @@ test.describe('P1 dock/expand UX fixes (?shell=1)', () => {
     const dockShell = faceplate.locator('[data-testid="module-shell"][data-shell-tier="dock"]');
     await expect(dockShell).toBeVisible();
 
-    await dockShell.getByTestId('patch-trigger').click();
-    const menu = page.getByTestId('patch-panel');
-    await expect(menu).toBeVisible();
-    const shellBox = (await dockShell.boundingBox())!;
-    const menuBox = (await menu.boundingBox())!;
-    // Anchored to the dock shell tile (full-width → the clamp keeps it inside,
-    // top-aligned) — NOT the pre-fix top-left corner.
-    expect(Math.abs(menuBox.y - shellBox.y), 'menu top-aligns with the dock tile').toBeLessThanOrEqual(8);
-    expect(menuBox.y, 'menu is nowhere near the viewport origin').toBeGreaterThan(80);
-    await page.keyboard.press('Escape');
+    // NO duplicate rail on the faceplate: no jack dots, no second drill-down
+    // trigger, and no "▶ out" flow label the title bar already prints.
+    await expect(dockShell.getByTestId('lane-jack-rail'), 'no duplicate rail in the dock').toHaveCount(0);
+    await expect(dockShell.getByTestId('patch-trigger'), 'no duplicate drill-down trigger').toHaveCount(0);
+
+    // …because the dock's patch surface is the REAR CARD. TAB flips to it and
+    // it carries EVERY declared port (vca: audio + cv in, audio + audio_inv
+    // out), so nothing patchable was lost with the rail.
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.keyboard.press('Tab');
+    await expect(faceplate).toHaveAttribute('data-flipped', 'true');
+    const rear = faceplate.getByTestId('rear-card');
+    await expect(rear).toBeVisible();
+    await expect(rear.locator('[data-testid="back-jack"]'), 'every declared vca port is a hole').toHaveCount(4);
+    await page.keyboard.press('Tab');
+    await expect(faceplate).toHaveAttribute('data-flipped', 'false');
   });
 });
