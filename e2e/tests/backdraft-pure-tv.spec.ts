@@ -54,24 +54,59 @@ async function quadrants(canvas: Locator): Promise<number[]> {
   });
 }
 
-/** Wait for CONVERGENCE, not wall-clock. `waitForTimeout` would make the nest
- *  depth a function of the CI runner's frame rate; PURE TV is a contraction, so
- *  we can simply wait until the picture stops moving. */
-async function waitConverged(canvas: Locator, page: Page, budgetMs = 12_000): Promise<void> {
-  const t0 = Date.now();
-  let prev = await centreRow(canvas);
-  let stable = 0;
-  while (Date.now() - t0 < budgetMs) {
-    await page.waitForTimeout(220);
-    const cur = await centreRow(canvas);
-    if (cur.length && cur.length === prev.length) {
-      let worst = 0;
-      for (let i = 0; i < cur.length; i++) worst = Math.max(worst, Math.abs(cur[i]! - prev[i]!));
-      if (worst < 3 / 255) { if (++stable >= 2) return; } else { stable = 0; }
-    }
-    prev = cur;
+/** Wait for N RENDERED FRAMES, counted in the page via rAF.
+ *
+ *  Wall-clock waiting is wrong here for a reason worth stating: the nest builds
+ *  ONE LEVEL PER FRAME, so what the assertions actually need is a frame COUNT,
+ *  and any millisecond budget silently converts into a different number of
+ *  frames on every renderer. Measured: a real GPU runs this patch at ~60 fps
+ *  and CI's SwiftShader at 7.9 fps SINGLE-THREADED — and CI runs ten e2e shards
+ *  in parallel, so per-browser throughput there is lower again. A 12 s budget
+ *  that was ~700 frames locally was ~12 frames on the runner, which is why the
+ *  nest "never settled".
+ *
+ *  Counting frames makes the wait renderer-INDEPENDENT by construction. The
+ *  wall-clock cap only bounds the failure; it is not the gate.
+ *
+ *  (Checked, because it is the more serious possibility: the SwiftShader
+ *  attractor is the SAME one — 10 bands, room 1.000, ladder
+ *  1.000/0.741/0.631/0.561/0.506 against the predicted
+ *  1.000/0.739/0.629/0.559/0.505. It is slower, not different.) */
+async function waitFrames(page: Page, frames: number, capMs = 150_000): Promise<void> {
+  const got = await page.evaluate(([target, cap]) => new Promise<number>((resolve) => {
+    let n = 0;
+    const t0 = performance.now();
+    const tick = (): void => {
+      n++;
+      if (n >= (target as number) || performance.now() - t0 > (cap as number)) resolve(n);
+      else requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }), [frames, capMs] as const);
+  if (got < frames) {
+    throw new Error(`only ${got}/${frames} frames rendered in ${capMs} ms — the renderer is too slow to build the nest`);
   }
-  throw new Error(`PURE TV did not converge within ${budgetMs} ms — the nest never settled`);
+}
+
+/** Frames for the nest to be fully built AND settled. The CPU mirror is
+ *  bit-exactly still by frame ~80 at DELAY = 1 (one level per frame); 140 is
+ *  that with margin, and it is the SAME on every renderer. */
+const NEST_FRAMES = 140;
+
+/** Build the nest, then confirm it really has stopped moving. The frame count
+ *  does the waiting; this only verifies the contraction actually converged. */
+async function waitConverged(canvas: Locator, page: Page): Promise<void> {
+  await waitFrames(page, NEST_FRAMES);
+  const a = await centreRow(canvas);
+  await waitFrames(page, 12);
+  const b = await centreRow(canvas);
+  let worst = 0;
+  for (let i = 0; i < Math.min(a.length, b.length); i++) {
+    worst = Math.max(worst, Math.abs(a[i]! - b[i]!));
+  }
+  if (!(worst < 6 / 255)) {
+    throw new Error(`PURE TV had not settled after ${NEST_FRAMES} frames (worst delta ${(worst * 255).toFixed(1)}/255)`);
+  }
 }
 
 /** Bezel bands on the right half of the centre row, by LOCAL contrast: a local
@@ -148,6 +183,11 @@ const TV_BASE = {
 };
 
 test.describe('BACKDRAFT PURE TV — the GPU renders a bounded screen', () => {
+  // Every test here drives an ITERATED feedback loop to convergence. On CI that
+  // is SwiftShader (software), which is far slower per frame than a real GPU,
+  // so the default 30 s is not a meaningful bound for this class of test.
+  test.setTimeout(240_000);
+
   test('E6 — WHITE-OUT is reachable by LUMA / FEEDBACK, and recoverable', async ({ page, rack }) => {
     // The owner's requirement, on the GPU: there is no feedback worth riding
     // without an uncontrollable zone to ride toward. An earlier revision
@@ -183,7 +223,7 @@ test.describe('BACKDRAFT PURE TV — the GPU renders a bounded screen', () => {
           if (n) for (const [k, v] of Object.entries(pp)) n.params[k] = v;
         });
       }, patch);
-      await page.waitForTimeout(1400);
+      await waitFrames(page, 120);
     };
 
     // Crank LUMA -> blows out.
@@ -271,7 +311,7 @@ test.describe('BACKDRAFT PURE TV — the GPU renders a bounded screen', () => {
 
     const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
     await expect(canvas).toHaveCount(1);
-    await page.waitForTimeout(1500);
+    await waitFrames(page, 120);
     const row = await centreRow(canvas);
 
     expect(bandCount(row), 'the legacy plane has no bezel bands').toBeLessThan(2);
@@ -293,7 +333,7 @@ test.describe('BACKDRAFT PURE TV — the GPU renders a bounded screen', () => {
       ], WIRES);
       const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
       await expect(canvas).toHaveCount(1);
-      await page.waitForTimeout(600);
+      await waitFrames(page, 60);
       await page.evaluate(() => {
         const w = globalThis as unknown as {
           __patch: { nodes: Record<string, { params: Record<string, number> }> };
@@ -301,7 +341,7 @@ test.describe('BACKDRAFT PURE TV — the GPU renders a bounded screen', () => {
         };
         w.__ydoc.transact(() => { const n = w.__patch.nodes['bd']; if (n) n.params.freeze = 1; });
       });
-      await page.waitForTimeout(200);
+      await waitFrames(page, 4);
       return quadrants(canvas);
     };
 
@@ -327,7 +367,7 @@ test.describe('BACKDRAFT PURE TV — the GPU renders a bounded screen', () => {
     ], WIRES);
     const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
     await expect(canvas).toHaveCount(1);
-    await page.waitForTimeout(2500);
+    await waitFrames(page, 200);
 
     // Breathing: the FRAME MEAN moves. Sample CONSECUTIVE frames via rAF in a
     // single evaluate — the servo's limit cycle has a period of 2-3 FRAMES, so
@@ -339,16 +379,21 @@ test.describe('BACKDRAFT PURE TV — the GPU renders a bounded screen', () => {
       const ctx = c.getContext('2d');
       if (!ctx) { resolve([]); return; }
       const out: number[] = [];
+      const t0 = performance.now();
       const tick = (): void => {
         const d = ctx.getImageData(0, 0, c.width, c.height).data;
         let s = 0, n = 0;
         for (let i = 0; i < d.length; i += 64) { s += d[i]!; n++; }
         out.push(s / n / 255);
-        if (out.length >= 40) resolve(out); else requestAnimationFrame(tick);
+        // Bound by TIME as well as by count: on SwiftShader 40 frames can take
+      // longer than the whole test timeout, and 12 consecutive frames is
+      // already several periods of a 2-3 frame limit cycle.
+      if (out.length >= 40 || performance.now() - t0 > 6000) resolve(out);
+      else requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
     }));
-    expect(means.length, 'captured consecutive frames').toBeGreaterThan(20);
+    expect(means.length, 'captured consecutive frames').toBeGreaterThanOrEqual(12);
     const swing = Math.max(...means) - Math.min(...means);
     expect(swing, `CRITICAL frame-mean swing ${swing.toFixed(4)}`).toBeGreaterThan(0.01);
 

@@ -204,7 +204,12 @@
   // rounded to whole-u (180px) tiles so the card lands on the rack grid out of
   // the box (#759) and so the rack CSS doesn't clamp the corner-resize.
   const DEFAULT_WIDTH = 720;
-  const DEFAULT_HEIGHT = 540;
+  // 4u tall, not 3u. PURE TV adds a TV MODE row and four faders
+  // (Room/Bez/Phos/Drive); at 540 the controls column ran 55px past the card's
+  // bottom edge (caught by card-control-overflow). Whole-u tiles are
+  // load-bearing here — the rack grid snaps to 180px, and a non-tile height
+  // makes the rack CSS clamp the corner-resize (#759).
+  const DEFAULT_HEIGHT = 720;
   const MIN_WIDTH = 540;
   const MIN_HEIGHT = 360;
 
