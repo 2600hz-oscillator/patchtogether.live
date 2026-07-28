@@ -323,19 +323,22 @@ describe('ModuleShell tier-swap contract (fixture — no real module is faced ye
     return curatedFace(fixture, laneFaceTier(lodTier))?.controls.length ?? -1;
   }
 
-  it('swaps CONTENT across LOD tiers: mini=1 / compact=2 (glyph face) / full=8', () => {
+  it('swaps CONTENT across LOD tiers: mini=1 / compact=2 (glyph face) / full=6', () => {
     expect(laneControlCount('mini')).toBe(1);
     // The fixture declares glyph 'scope', so compact is the fit-reconciled
     // two cells + glyph (faceTierCap) — the SAME number laneBodyPlan renders.
     expect(laneControlCount('compact')).toBe(2);
     expect(laneBodyPlan(laneControlCount('compact'), true, 'compact').cellCount).toBe(2);
-    expect(laneControlCount('full')).toBe(8);
+    // 'full' is likewise fit-reconciled: the 3×2 plate paints SIX whole cells,
+    // so selecting 8 only ever handed the shell two it had to throw away.
+    expect(laneControlCount('full')).toBe(6);
+    expect(laneBodyPlan(laneControlCount('full'), true, 'full').cellCount).toBe(6);
   });
 
-  it("the richest LOD band 'dock' still renders the FULL-in-lane face (8), not all", () => {
+  it("the richest LOD band 'dock' still renders the FULL-in-lane face (6), not all", () => {
     // In the lane, 'dock' collapses to 'full' — the true all-controls faceplate
     // is the separate dock VIEW (curatedFace(def,'dock')), never the lane.
-    expect(laneControlCount('dock')).toBe(8);
+    expect(laneControlCount('dock')).toBe(6);
     expect(curatedFace(fixture, 'dock')?.controls.length).toBe(10); // the dock view = ALL
   });
 

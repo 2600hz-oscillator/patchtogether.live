@@ -26,7 +26,7 @@ import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { listMetaModuleDefs } from '$lib/meta/module-registry';
 import type { ModuleFace } from '$lib/graph/types';
 import { STRICT_FACES } from './strict-faces';
-import { dockFacePlan, type FaceDefLike } from './curated-face';
+import { dockFacePlan, dockPlanControls, type FaceDefLike } from './curated-face';
 import { shellCellFor, shellCellKeys, typesWithShellCells } from './shell-cells';
 
 interface CellDef extends FaceDefLike {
@@ -49,16 +49,17 @@ describe('shell cells — COVERAGE (no inert cell can render on a promoted face)
       if (!STRICT_FACES.has(def.type)) continue;
       // dockFacePlan is the shell's ACTUAL dock render plan — using it (rather
       // than face.order) means this gate covers exactly what gets painted.
-      for (const band of dockFacePlan(def) ?? []) {
-        for (const ctl of band.controls) {
-          if (ctl.kind === 'param') continue;
-          if (!shellCellFor(def.type, ctl)) {
-            inert.push(
-              `${def.type}: '${ctl.key}' (${ctl.kind}) has no shell-cell spec — it would render ` +
-                `as a DEAD LABEL. Register it in shell-cells.ts (prefer the generic ` +
-                `selector/action/file/toggle kinds) or drop the key from the face.`,
-            );
-          }
+      // dockPlanControls flattens BOTH halves of a band (un-clustered cells +
+      // ModuleFacePage.clusters sub-groups), so moving a control into a cluster
+      // never drops it out of this coverage sweep.
+      for (const ctl of dockPlanControls(dockFacePlan(def) ?? [])) {
+        if (ctl.kind === 'param') continue;
+        if (!shellCellFor(def.type, ctl)) {
+          inert.push(
+            `${def.type}: '${ctl.key}' (${ctl.kind}) has no shell-cell spec — it would render ` +
+              `as a DEAD LABEL. Register it in shell-cells.ts (prefer the generic ` +
+              `selector/action/file/toggle kinds) or drop the key from the face.`,
+          );
         }
       }
     }
@@ -68,11 +69,9 @@ describe('shell cells — COVERAGE (no inert cell can render on a promoted face)
   it('a param control never routes to the family/static registry', () => {
     for (const def of allDefs()) {
       if (!STRICT_FACES.has(def.type)) continue;
-      for (const band of dockFacePlan(def) ?? []) {
-        for (const ctl of band.controls) {
-          if (ctl.kind !== 'param') continue;
-          expect(shellCellFor(def.type, ctl), `${def.type}: ${ctl.key}`).toBeNull();
-        }
+      for (const ctl of dockPlanControls(dockFacePlan(def) ?? [])) {
+        if (ctl.kind !== 'param') continue;
+        expect(shellCellFor(def.type, ctl), `${def.type}: ${ctl.key}`).toBeNull();
       }
     }
   });

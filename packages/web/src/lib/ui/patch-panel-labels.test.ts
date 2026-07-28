@@ -89,6 +89,58 @@ describe('resolveVerboseLabel', () => {
     );
   });
 
+  it('drops the redundant `_in` / `_out` DIRECTION suffix', () => {
+    // Every surface that prints a jack label already states direction
+    // structurally — the drill-down splits INPUTS from OUTPUTS, the rear card
+    // draws a `←`/`→` glyph per hole in an `in`/`out` column — so `TRIGGER IN`
+    // beside a `←` said it twice and spent label width doing it.
+    expect(resolveVerboseLabel({ id: 'trigger_in' })).toBe('TRIGGER');
+    expect(resolveVerboseLabel({ id: 'gate_in' })).toBe('GATE');
+    expect(resolveVerboseLabel({ id: 'accent_in' })).toBe('ACCENT');
+    expect(resolveVerboseLabel({ id: 'choke_in' })).toBe('CHOKE');
+    expect(resolveVerboseLabel({ id: 'audio_out' })).toBe('AUDIO');
+    expect(resolveVerboseLabel({ id: 'video_out' })).toBe('VIDEO');
+    expect(resolveVerboseLabel({ id: 'scope_out' })).toBe('SCOPE');
+    // …and it composes with the multi-segment ids + the prefix table.
+    expect(resolveVerboseLabel({ id: 'yiq_y_in' })).toBe('YIQ Y');
+    expect(resolveVerboseLabel({ id: 'audio_l_in' })).toBe('AUDIO L');
+    expect(resolveVerboseLabel({ id: 'v1_audio_in' })).toBe('V1 AUDIO');
+  });
+
+  it('never strips a suffix that is not a WHOLE trailing segment', () => {
+    // The bug this forecloses: a naive endsWith('in') eats the tail of any word
+    // ending in -in / -out. Only a `_`-delimited final segment is a direction.
+    expect(resolveVerboseLabel({ id: 'gain' })).toBe('GAIN');
+    expect(resolveVerboseLabel({ id: 'sustain' })).toBe('SUSTAIN');
+    expect(resolveVerboseLabel({ id: 'audio_inv' })).toBe('AUDIO INV');
+    expect(resolveVerboseLabel({ id: 'env_inv' })).toBe('ENV INV');
+    // A port named for the direction ITSELF keeps its name (never blank).
+    expect(resolveVerboseLabel({ id: 'out' })).toBe('OUT');
+    expect(resolveVerboseLabel({ id: '_in' })).toBe('IN');
+  });
+
+  it('reads remaining UNDERSCORES as spaces (the lane drill-down fix)', () => {
+    // The rear card ran its own `tidyLabel` de-underscore pass, but the lane
+    // drill-down + the back panel call resolveVerboseLabel RAW — so they were
+    // printing `SUB_DECAY` / `OUT_L` straight at the user. One rule, in the
+    // shared helper, fixes every surface.
+    expect(resolveVerboseLabel({ id: 'sub_decay' })).toBe('SUB DECAY');
+    expect(resolveVerboseLabel({ id: 'out_l' })).toBe('OUT L');
+    expect(resolveVerboseLabel({ id: 'body_shape' })).toBe('BODY SHAPE');
+    expect(resolveVerboseLabel({ id: 'roll_speed' })).toBe('ROLL SPEED');
+  });
+
+  it('the DIRECTION collision is disambiguated by rail, not by text (stated policy)', () => {
+    // SAMPLE-HOLD declares BOTH `cv_in` and `cv_out`: after stripping they read
+    // the same, on purpose. They are the same signal named once, and the
+    // surfaces separate them by RAIL + glyph before any text is drawn. Pinned
+    // so the collapse is a DECISION in the record, not a surprise later.
+    expect(resolveVerboseLabel({ id: 'cv_in' })).toBe('CV');
+    expect(resolveVerboseLabel({ id: 'cv_out' })).toBe('CV');
+    // …and an explicit label always wins when a module does need them split.
+    expect(resolveVerboseLabel({ id: 'cv_out', label: 'cv thru' })).toBe('CV THRU');
+  });
+
   it('respects an explicit label override', () => {
     expect(resolveVerboseLabel({ id: 'whatever', label: 'my custom label' })).toBe(
       'MY CUSTOM LABEL',

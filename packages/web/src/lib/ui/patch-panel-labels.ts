@@ -3,10 +3,13 @@
 // Helpers that convert a module's port list into the panel's
 // verbose-labeled, grouped row list. Two responsibilities:
 //
-//  1. Turn a port id into the verbose UI label. Default: upper-case the id.
-//     A small abbreviation table expands hardware-conventional shorthand
-//     like 'sus' → 'SUSTAIN', 'rv_size' → 'REVERB SIZE'. Cards may pass an
-//     explicit `label` to override entirely.
+//  1. Turn a port id into the verbose UI label. Default: upper-case the id,
+//     drop the redundant `_in`/`_out` direction suffix (every surface that
+//     prints a label already shows direction structurally — see
+//     DIRECTION_SUFFIX) and read remaining underscores as spaces. A small
+//     abbreviation table expands hardware-conventional shorthand like
+//     'sus' → 'SUSTAIN', 'rv_size' → 'REVERB SIZE'. Cards may pass an explicit
+//     `label` — or the def may declare `PortDef.label` — to override entirely.
 //
 //  2. Bucket ports by cable type for the auto-grouping panel layout
 //     (Gates → Pitches → CV → Audio → Poly).
@@ -142,12 +145,40 @@ const PREFIX_TO_VERBOSE: Array<{ pattern: RegExp; expand: (m: RegExpMatchArray) 
   { pattern: /^returnB$/i, expand: () => 'RETURN B' },
 ];
 
+/**
+ * A trailing DIRECTION suffix on a port id (`trigger_in`, `audio_out`).
+ *
+ * It is REDUNDANT on every surface that prints a jack label: each one already
+ * states the direction structurally — the drill-down splits INPUTS from
+ * OUTPUTS, the rear card has an `in` column and an `out` column plus a `←`/`→`
+ * glyph per hole, and the back panel heads its two columns `in` / `out`. So
+ * `TRIGGER IN` next to a `←` says it twice and spends label width doing it.
+ *
+ * COLLISION POLICY (deliberate, stated because it is the obvious objection):
+ * stripping makes some pairs read the same — SAMPLE-HOLD declares `cv_in` AND
+ * `cv_out`, so both become `CV`. That is CORRECT here: the two are the same
+ * signal, named once, and they are never ambiguous IN PLACE because the
+ * surfaces above separate them by RAIL POSITION and GLYPH before a single
+ * character of label is drawn. A label only has to disambiguate WITHIN its own
+ * rail — and no module declares two same-stem ports on the SAME side.
+ * (Anything that ever does should author an explicit `PortDef.label`.)
+ */
+const DIRECTION_SUFFIX = /_(?:in|out)$/;
+
 function expandStem(stem: string): string {
-  const lower = stem.toLowerCase();
+  // Strip the redundant direction suffix FIRST — but never down to nothing
+  // (a port literally called `_in` keeps its stem rather than losing its name).
+  const stripped = stem.replace(DIRECTION_SUFFIX, '');
+  const base = stripped.length > 0 ? stripped : stem;
+
+  const lower = base.toLowerCase();
   if (ABBREV_TO_VERBOSE[lower]) return ABBREV_TO_VERBOSE[lower];
-  // wavePos -> WAVE POSITION style: split on lower→upper, then upper-case.
-  const split = stem.replace(/([a-z])([A-Z])/g, '$1 $2');
-  return split.toUpperCase();
+  // wavePos -> WAVE POS style: split on lower→upper, then upper-case. Remaining
+  // UNDERSCORES become spaces: they are id syntax, not part of the word, and
+  // the lane drill-down (which calls resolveVerboseLabel raw, unlike the rear
+  // card's tidyLabel) was printing `YIQ_Y` / `AUDIO_L` at the user.
+  const split = base.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_+/g, ' ');
+  return split.trim().toUpperCase();
 }
 
 /**

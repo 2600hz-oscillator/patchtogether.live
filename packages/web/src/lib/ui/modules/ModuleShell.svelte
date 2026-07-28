@@ -360,7 +360,8 @@
     {#if ctl.kind === 'param'}
       {@const pd = paramDef(ctl.paramId ?? ctl.key)}
       {#if pd}
-        {#if paramCellKind(pd.id, momentary) === 'momentary'}
+        {@const cellKind = paramCellKind(pd, momentary)}
+        {#if cellKind === 'momentary'}
           <!-- MOMENTARY press-pad (declared on face.momentary): fires on the
                press edge and RETURNS TO REST on release. It must never be a
                rotary — dragging a latching knob to 1 held the pad down, masked
@@ -372,6 +373,22 @@
               variant={view === 'dock-full' ? 'accent' : 'sm'}
               title={`${pd.label}: hold to fire (the press edge is the hit)`}
               onGate={(high) => firePressParam(pd, high)}
+              moduleId={id}
+              paramId={pd.id}
+            />
+          </div>
+        {:else if cellKind === 'toggle'}
+          <!-- LATCHING 0/1 SWITCH → the shared <Toggle> `.switch`, the same
+               primitive the legacy card paints for it. As a KnobConic it read
+               "0.00" and needed a full-arc drag to change one of two states.
+               Toggle emits role="switch" + `control-<paramId>`, so the param
+               multiset + MIDI-learn are unchanged; only the primitive moves. -->
+          <div class="kcol ms-cell-act" data-cell-kind="param" data-cell-control="toggle" data-cell-key={ctl.key}>
+            <Toggle
+              value={params.paramVal(pd.id)}
+              label={pd.label}
+              onchange={params.set(pd.id)}
+              readLive={params.live(pd.id)}
               moduleId={id}
               paramId={pd.id}
             />
@@ -581,11 +598,28 @@
           {#if band.label}
             <h4 class="page-label">{band.label}</h4>
           {/if}
-          <div class="page-controls">
-            {#each band.controls as ctl (ctl.key)}
-              {@render controlCell(ctl)}
-            {/each}
-          </div>
+          {#if band.controls.length}
+            <div class="page-controls">
+              {#each band.controls as ctl (ctl.key)}
+                {@render controlCell(ctl)}
+              {/each}
+            </div>
+          {/if}
+          <!-- CLUSTER SUB-HEADERS (ModuleFacePage.clusters — the front-side
+               mirror of the rear card's): two same-idea groups inside ONE band
+               (a filter EG beside an amp EG) for a ~14px caption instead of the
+               ~81px a second page band costs. Membership still lives in
+               page.controls; curated-face just pulls these cells aside. -->
+          {#each band.clusters as cluster (cluster.label)}
+            <div class="page-cluster" data-testid="face-cluster" data-face-cluster={cluster.label}>
+              <h5 class="cluster-label">{cluster.label}</h5>
+              <div class="page-controls">
+                {#each cluster.controls as ctl (ctl.key)}
+                  {@render controlCell(ctl)}
+                {/each}
+              </div>
+            </div>
+          {/each}
         </section>
       {/each}
     </div>
@@ -615,16 +649,24 @@
   {/if}
 
   <!-- Jack rail = PatchPanel (lane-rail variant): domain jack dots open the
-       drill-down; the "⤢" more-affordance opens the dock full-view. -->
-  <PatchPanel
-    nodeId={id}
-    inputs={ports.inputs}
-    outputs={ports.outputs}
-    variant="lane-rail"
-    {flowLabel}
-    onExpand={view === 'lane' ? expand : undefined}
-    expanded={view === 'lane' && isExpanded}
-  />
+       drill-down; the "⤢" more-affordance opens the dock full-view.
+       LANE ONLY. The dock full-view has its OWN, better patch surface — the
+       RearCard jack field on the TAB flip (DockFullView.svelte) — so down here
+       the rail was a duplicate: a second, dot-only patch affordance with its
+       EXPAND button already suppressed (onExpand is undefined at view
+       'dock-full'), eating ~23px off the faceplate's fold budget and printing a
+       "▶ out" flow label the title bar already says. -->
+  {#if view === 'lane'}
+    <PatchPanel
+      nodeId={id}
+      inputs={ports.inputs}
+      outputs={ports.outputs}
+      variant="lane-rail"
+      {flowLabel}
+      onExpand={expand}
+      expanded={isExpanded}
+    />
+  {/if}
 </div>
 
 <style>
@@ -747,5 +789,43 @@
     flex-wrap: wrap;
     align-items: flex-start;
     gap: 8px 10px;
+  }
+
+  /* CLUSTER inside a band (ModuleFacePage.clusters): a quieter, SMALLER
+     caption than .page-label and NO top rule — the point of a cluster is that
+     it costs a caption (~14px) rather than a whole band (~81px: rule + header +
+     row + the .dock-pages gap). Two clusters in one band read as "the same
+     idea, twice"; two bands read as "two different ideas". */
+  .page-cluster + .page-cluster,
+  .page-controls + .page-cluster {
+    margin-top: 6px;
+  }
+  .cluster-label {
+    margin: 0 0 3px;
+    font-size: 0.55rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--text-dim, #9aa3ad);
+    opacity: 0.8;
+  }
+
+  /* A TOGGLE cell in the LANE. The shared `.switch` is 52px wide but a lane
+     knob column is capped at 46px (--kcol-max), so it scales to the column
+     instead of clipping — the no-clip rule laneBodyPlan exists to guarantee.
+     Every faced module ranks its switches dock-only today (kickdrum `hard` is
+     rank 19, snaredrum's 22), so this paints nothing yet; it keeps the
+     guarantee true the day a face promotes one into the lane. */
+  .rl-tile:not(.dock-full) [data-cell-control='toggle'] :global(.switch) {
+    width: 40px;
+    height: 20px;
+    padding: 2px;
+  }
+  .rl-tile:not(.dock-full) [data-cell-control='toggle'] :global(.thumb) {
+    width: 14px;
+    height: 14px;
+  }
+  .rl-tile:not(.dock-full) [data-cell-control='toggle'] :global(.switch.on .thumb) {
+    margin-left: 20px;
   }
 </style>

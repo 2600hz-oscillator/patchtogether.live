@@ -34,7 +34,7 @@ import { listMetaModuleDefs } from '$lib/meta/module-registry';
 import type { ControlFamily, ModuleFace, ParamDef } from '$lib/graph/types';
 import { staticKey, type LegendEntry } from '$lib/docs/control-doc-resolver';
 import { STRICT_FACES } from './strict-faces';
-import { curatedFace, dockFacePlan } from './curated-face';
+import { curatedFace, dockFacePlan, dockPlanControls } from './curated-face';
 import { laneBodyPlan } from './module-shell-model';
 import { looksLikeSwitch } from './shell-control-kind';
 
@@ -45,6 +45,9 @@ interface FaceDef {
   params?: readonly ParamDef[];
   controlFamilies?: readonly ControlFamily[];
   face?: ModuleFace;
+  /** The co-located AUTHORED prose — cross-examined against the momentary /
+   *  latching classification (see the ACKNOWLEDGED_LATCHING cross-check). */
+  docs?: { controls?: Record<string, string> };
 }
 
 /** Committed numbered-face legends (e2e/vrt/__annotated__/<type>.legend.json) —
@@ -142,6 +145,48 @@ describe('module-face lint — consistency (all faced modules)', () => {
     expect(orphans.join('\n'), 'orphaned face keys — a rename/remove drifted the curation; fix the keys').toBe('');
   });
 
+  it('every face.pages cluster names controls that page actually claims, once', () => {
+    // ModuleFacePage.clusters is a GROUPING HINT over keys the page already
+    // lists — never a second membership list. curated-face silently ignores a
+    // cluster key the page does not claim (so an authoring slip can never
+    // smuggle an unranked control into the dock, and never double-render one),
+    // which means the slip would be INVISIBLE without this gate: the author
+    // writes a sub-header and the control quietly renders in the flat row
+    // instead. Fail it loudly here.
+    const problems: string[] = [];
+    for (const def of allDefs()) {
+      for (const page of def.face?.pages ?? []) {
+        const claims = new Set(page.controls);
+        const seen = new Set<string>();
+        for (const cluster of page.clusters ?? []) {
+          if (!cluster.label.trim()) {
+            problems.push(`${def.type}: face.pages['${page.id}'] has a cluster with a blank label`);
+          }
+          if (cluster.controls.length === 0) {
+            problems.push(
+              `${def.type}: face.pages['${page.id}'] cluster '${cluster.label}' lists no controls`,
+            );
+          }
+          for (const key of cluster.controls) {
+            if (!claims.has(key)) {
+              problems.push(
+                `${def.type}: face.pages['${page.id}'] cluster '${cluster.label}' names '${key}', ` +
+                  `which is not in that page's controls (a cluster groups, it does not add)`,
+              );
+            }
+            if (seen.has(key)) {
+              problems.push(
+                `${def.type}: face.pages['${page.id}'] control '${key}' is claimed by two clusters`,
+              );
+            }
+            seen.add(key);
+          }
+        }
+      }
+    }
+    expect(problems.join('\n'), 'face.pages cluster drift — a sub-header would silently do nothing').toBe('');
+  });
+
   it('every face has a valid glyph kind and a duplicate-free order', () => {
     const problems: string[] = [];
     for (const def of allDefs()) {
@@ -218,7 +263,11 @@ describe('module-face lint — DOCK RENDER-PLAN parity (STRICT_FACES set)', () =
         problems.push(`${def.type}: in STRICT_FACES but dockFacePlan() is null (no face)`);
         continue;
       }
-      const flat = plan.flatMap((band) => band.controls);
+      // BOTH halves of every band — un-clustered cells AND the cells a
+      // ModuleFacePage.clusters sub-header pulled aside. Flattening only
+      // `band.controls` would read a clustered control as DROPPED FROM THE
+      // DOCK, which is the exact false positive this gate must not produce.
+      const flat = dockPlanControls(plan);
 
       // Param parity: exactly-once, and resolved as an INTERACTIVE param cell.
       const paramCounts = new Map<string, number>();
@@ -287,8 +336,54 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
   const ACKNOWLEDGED_LATCHING = new Set<string>([
     'kickdrum:hard',   // hard-clip mode switch — a bus state you leave engaged
     'snaredrum:hard',  // same clipper switch, the KICK sibling's precedent
-    'tidyVco:hold',    // sample-and-hold ENGAGE — held on while you want it
+    // REMOVED 2026-07-27 — 'tidyVco:hold'. The acknowledgement was WRONG (it
+    // claimed "sample-and-hold ENGAGE"): the card drives it pointerdown/
+    // pointerup, the worklet ORs it into the mono gate like tomtom's `strike`,
+    // and the def's own doc says "released = note-off (no latch)". It is now
+    // declared on `face.momentary`. The cross-check below is what stops that
+    // mistake from being made silently again.
   ]);
+
+  it('no ACKNOWLEDGED_LATCHING param is DOCUMENTED as momentary (the cross-check)', () => {
+    // THE GUARD ON THE GUARD. `ACKNOWLEDGED_LATCHING` is a hand-written escape
+    // hatch from the classification ratchet, and a WRONG entry is invisible:
+    // the gate goes green while the shell paints a press-pad as a latching
+    // rotary — the stuck-value-in-the-Y.Doc bug the field exists to prevent
+    // (tidyVco `hold` sat here for two batches saying "sample-and-hold ENGAGE"
+    // while its own authored doc said "released = note-off (no latch)").
+    //
+    // So: the def's AUTHORED prose is cross-examined against the
+    // acknowledgement. Momentary vocabulary in `docs.controls[<id>]` and a
+    // latching acknowledgement cannot both be true — one of them is a bug, and
+    // this test refuses to let the author pick silently.
+    const MOMENTARY_VOCAB: readonly RegExp[] = [
+      /\bmomentar/i,          // "momentary", "momentarily"
+      /\bno[- ]latch/i,       // "no latch", "no-latch"
+      /\bpress(?:ed|es|ing)?\b/i, // "press"/"pressed" — NOT "compress"/"expression"
+    ];
+    const contradictions: string[] = [];
+    for (const def of allDefs()) {
+      const docs = def.docs;
+      for (const p of def.params ?? []) {
+        if (!ACKNOWLEDGED_LATCHING.has(`${def.type}:${p.id}`)) continue;
+        const prose = docs?.controls?.[p.id];
+        if (!prose) continue;
+        const hit = MOMENTARY_VOCAB.find((re) => re.test(prose));
+        if (hit) {
+          contradictions.push(
+            `${def.type}: param '${p.id}' is in ACKNOWLEDGED_LATCHING, but its authored doc ` +
+              `reads as MOMENTARY (matched ${hit}). A press-pad belongs on face.momentary — ` +
+              `acknowledging it as latching makes the shell paint a LATCHING ROTARY that ` +
+              `persists a stuck value into the Y.Doc. Fix the classification, or fix the doc.`,
+          );
+        }
+      }
+    }
+    expect(
+      contradictions.join('\n'),
+      'a latching ACKNOWLEDGEMENT contradicts the module’s own authored documentation',
+    ).toBe('');
+  });
 
   it('every declared momentary id is a real param with the press-pad shape', () => {
     const problems: string[] = [];
@@ -341,27 +436,37 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
   });
 });
 
-describe('module-face lint — compact cap ↔ lane fit plan (authored intent === render)', () => {
-  // The mismatch this closes: FACE_TIER_CAPS.compact promised 3 while
-  // laneBodyPlan rendered 2 next to a glyph, so six faces documented a
-  // 3-control compact tile the shell could never paint. faceTierCap now
-  // follows the plan; this pins them together over the LIVE registry.
-  it('every faced module SELECTS exactly the cells the compact tile RENDERS', () => {
+describe('module-face lint — LANE tier caps ↔ lane fit plan (authored intent === render)', () => {
+  // The mismatch this closes, in BOTH lane tiers:
+  //   * FACE_TIER_CAPS.compact promised 3 while laneBodyPlan rendered 2 next to
+  //     a glyph, so six faces documented a 3-control compact tile the shell
+  //     could never paint;
+  //   * FACE_TIER_CAPS.full promised 8 while laneBodyPlan's 3×2 plate renders
+  //     at most 6, so EVERY face's ranks 7 and 8 were authored as "in the lane"
+  //     and silently truncated. Ranks 7+ are DOCK-ONLY — a fact a face author
+  //     must be able to read off the cap.
+  // faceTierCap now follows the plan at both; this pins them together over the
+  // LIVE registry, for every LANE tier (the 'dock' faceplate wraps freely and
+  // never reaches laneBodyPlan).
+  const LANE_TIERS = ['mini', 'compact', 'full'] as const;
+  it('every faced module SELECTS exactly the cells each LANE tier RENDERS', () => {
     const drift: string[] = [];
     for (const def of allDefs()) {
       if (!def.face) continue;
-      const face = curatedFace(def, 'compact');
-      if (!face) continue;
-      const hasGlyph = face.glyph !== 'none';
-      const rendered = laneBodyPlan(face.controls.length, hasGlyph, 'compact').cellCount;
-      if (rendered !== face.controls.length) {
-        drift.push(
-          `${def.type}: compact selects ${face.controls.length} control(s) but the tile ` +
-            `renders ${rendered} (glyph=${face.glyph}) — the cap and the fit plan disagree`,
-        );
+      for (const tier of LANE_TIERS) {
+        const face = curatedFace(def, tier);
+        if (!face) continue;
+        const hasGlyph = face.glyph !== 'none';
+        const rendered = laneBodyPlan(face.controls.length, hasGlyph, tier).cellCount;
+        if (rendered !== face.controls.length) {
+          drift.push(
+            `${def.type}: ${tier} selects ${face.controls.length} control(s) but the tile ` +
+              `renders ${rendered} (glyph=${face.glyph}) — the cap and the fit plan disagree`,
+          );
+        }
       }
     }
-    expect(drift.join('\n'), 'compact cap ↔ fit-plan drift — reconcile faceTierCap/laneBodyPlan').toBe('');
+    expect(drift.join('\n'), 'lane cap ↔ fit-plan drift — reconcile faceTierCap/laneBodyPlan').toBe('');
   });
 });
 
