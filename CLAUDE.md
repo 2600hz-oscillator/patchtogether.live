@@ -251,6 +251,40 @@ the merge just created on those files, and rebase them** before they rot into
 it silently drops the PR's additions when auto-merge picks main's version of a
 conflict, with no marker. Always `git merge origin/main` locally and diff.
 
+## VALIDATE THE INSTRUMENT — a wrong metric reads exactly like a finding
+
+The unifying failure of the 2026-07-28 backdraft session. **Four separate times
+the measurement was wrong and its output looked authoritative.** None of them
+announced themselves; each produced a confident, plausible, false conclusion.
+
+- **Pearson correlation is invariant to global brightness**, and the sampled lags
+  were *even* — so a genuine period-2 limit cycle read as `corr = 1.0` and the
+  conclusion was "the servo doesn't oscillate". It did.
+- **`getBoundingClientRect()` under xyflow's zoom transform** reported a 310 px
+  overflow as 230 px. Sizing from it would have under-provisioned by ~25 %.
+- **A wall-clock budget** is a different number of frames on every renderer, so
+  "12 s" was ~700 frames locally and ~12 on CI (see the frame-count rule above).
+- **A gate that reads only the def** cannot see a card contradicting it (below).
+
+**Before believing a measurement, ask what it is invariant to.** A metric blind
+to the very dimension under test will happily return a clean number. Cheap
+defences, in rough order of value:
+
+1. **Negative-control the instrument, not just the code** — perturb the thing it
+   claims to measure and confirm the number moves. If it doesn't, the metric is
+   wrong regardless of what the code does.
+2. **Sample at co-prime / irregular offsets** when probing anything periodic; an
+   even lag against a period-2 signal aliases to a constant.
+3. **State the units in the assertion message** (`CSS px` vs `screen px`,
+   `frames` vs `ms`). Half these bugs were unit confusions that a printed label
+   would have exposed immediately.
+4. **Reproduce under the environment that actually failed** before theorising —
+   `E2E_SWIFTSHADER=1` settled two of these.
+
+⚠ And the meta-tell: **"the result is genuinely different here" and "the
+instrument reads differently here" look identical from the output alone.**
+Establish which before acting; they need opposite fixes.
+
 ## A CARD can silently disagree with its DEF — every def-reading gate is blind to it
 
 **Ask of any new gate: what is it structurally unable to see?** Two holes of this
