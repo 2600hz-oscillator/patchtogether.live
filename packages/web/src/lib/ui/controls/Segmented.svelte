@@ -7,7 +7,7 @@
   import { onDestroy, onMount, untrack } from 'svelte';
   import ControlContextMenu from './ControlContextMenu.svelte';
   import { makeMidiAssignable } from './midi-assignable.svelte';
-  import { activeSegmentIndex, type Segment } from './segmented-model';
+  import { activeSegmentIndex, nearestSegmentValue, type Segment } from './segmented-model';
   import { numericOptionRange } from './selector-model';
 
   type Val = number | string;
@@ -21,23 +21,38 @@
     readLive?: () => number | undefined;
     moduleId?: string;
     paramId?: string;
+    /**
+     * Light the NEAREST segment when the value sits off-detent, instead of
+     * lighting none (the `activeSegmentIndex` default).
+     *
+     * OFF for a free-standing roster, where "no exact match" is real
+     * information. ON for a PARAM-backed roster (PF-1), where it is not: a
+     * param always HAS a value, so a dock faceplate showing no selected mode
+     * at all is strictly worse than showing the one it is nearest. Saved racks
+     * predate their param's `options`, and a CV-motorized read lands between
+     * steps by construction — cloudseed `late_mode` is the known case.
+     */
+    snapActive?: boolean;
   }
 
-  let { value, segments, onchange, label, readLive, moduleId, paramId }: Props = $props();
+  let {
+    value,
+    segments,
+    onchange,
+    label,
+    readLive,
+    moduleId,
+    paramId,
+    snapActive = false,
+  }: Props = $props();
 
   let midiRange = $derived(numericOptionRange(segments));
   let midiEnabled = $derived(!!(moduleId && paramId && midiRange));
 
-  function nearestSegmentValue(v: number): Val {
-    let best: Val = segments[0]?.value ?? v;
-    let bestD = Infinity;
-    for (const s of segments) {
-      if (typeof s.value !== 'number') continue;
-      const d = Math.abs(s.value - v);
-      if (d < bestD) { bestD = d; best = s.value; }
-    }
-    return best;
-  }
+  /** Snap to the nearest segment — the SHARED resolver (segmented-model), so
+   *  the dock's segment row and the lane's dial readout can never disagree
+   *  about which state an off-detent value is in. */
+  const snap = (v: number): Val => nearestSegmentValue(v, segments);
 
   const midi = makeMidiAssignable({
     kind: 'cc',
@@ -45,8 +60,8 @@
     get paramId() { return paramId; },
     get min() { return midiRange?.min ?? 0; },
     get max() { return midiRange?.max ?? 1; },
-    get onchange() { return (v: number) => onchange(nearestSegmentValue(v)); },
-    onTransient: (v) => { liveValue = nearestSegmentValue(v); },
+    get onchange() { return (v: number) => onchange(snap(v)); },
+    onTransient: (v) => { liveValue = snap(v); },
   });
 
   let liveValue = $state<Val>(untrack(() => value));
@@ -66,7 +81,12 @@
   });
   $effect(() => { if (!readLive && !midi.ccActive) liveValue = currentValue; });
 
-  let activeIdx = $derived(activeSegmentIndex(liveValue, segments));
+  let activeIdx = $derived(
+    activeSegmentIndex(
+      snapActive && typeof liveValue === 'number' ? snap(liveValue) : liveValue,
+      segments,
+    ),
+  );
 
   onMount(() => { if (midiEnabled) midi.register(); });
   onDestroy(() => { if (raf !== null) cancelAnimationFrame(raf); midi.unregister(); });

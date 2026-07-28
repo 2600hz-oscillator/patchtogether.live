@@ -93,7 +93,28 @@ export const filterDef: AudioModuleDef = {
   params: [
     { id: 'cutoff',        label: 'Cutoff',    defaultValue: 1000, min: 20,   max: 20000, curve: 'log',      units: 'Hz' },
     { id: 'resonance',     label: 'Res',       defaultValue: 0.1,  min: 0,    max: 0.99,  curve: 'linear' },
-    { id: 'mode',          label: 'Mode',      defaultValue: 0,    min: 0,    max: 2,     curve: 'discrete' },
+    // `options` NAMES the three states (PF-1). The legacy FilterCard painted
+    // them as three labelled buttons in its own markup, which the migrated
+    // shell could not see — so the one control that decides whether CUTOFF
+    // makes the sound DARK, THIN or NARROW arrived on the faceplate as a
+    // rotary printing "0.00", and the player had to know that 2 meant
+    // bandpass. UI vocabulary only: `contract-signature.ts` projects
+    // id/min/max/curve/default/units and nothing else, so naming a value moves
+    // no contract line (same class as the `label` note above). The DSP mapping
+    // is unchanged and still pinned by `min`/`max`/`curve`.
+    //
+    // `options`, NOT `landmarks`: these are three PARALLEL two-pole sections
+    // and the mode control picks which one you hear — switching is
+    // instantaneous and un-crossfaded, so there is genuinely nothing between
+    // LP and HP. (Contrast lfo `shape` / qbrt `mode`, both `curve: 'linear'`
+    // over a range whose in-between values are real blends: those are
+    // `landmarks`. The vocabulary gate enforces the split off `curve`.)
+    { id: 'mode',          label: 'Mode',      defaultValue: 0,    min: 0,    max: 2,     curve: 'discrete',
+      options: [
+        { value: 0, label: 'LP', title: 'Lowpass — keeps the lows, rolls off above cutoff (12 dB/oct)' },
+        { value: 1, label: 'HP', title: 'Highpass — keeps the highs, rolls off below cutoff (12 dB/oct)' },
+        { value: 2, label: 'BP', title: 'Bandpass — keeps only a slice around cutoff (12 dB/oct)' },
+      ] },
     { id: 'cutoff_cv_amt', label: 'Cutoff CV', defaultValue: 1,    min: -1,   max: 1,     curve: 'linear' },
     { id: 'res_cv_amt',    label: 'Res CV',    defaultValue: 1,    min: -1,   max: 1,     curve: 'linear' },
   ],
