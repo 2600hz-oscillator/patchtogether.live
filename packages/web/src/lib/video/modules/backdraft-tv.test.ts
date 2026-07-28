@@ -26,6 +26,10 @@ import {
   BACKDRAFT_TV_BEZEL_MAX,
   BACKDRAFT_TV_MODE_COUNT,
   BACKDRAFT_TEXTURE_UNITS,
+  BACKDRAFT_FPS,
+  BACKDRAFT_TV_BEAM_SOFT,
+  backdraftTvBeam,
+  backdraftTvRefreshMix,
   BACKDRAFT_TV_AGC_MIN,
   BACKDRAFT_TV_AGC_MAX,
   BACKDRAFT_TV_AGC_RATE_MIN,
@@ -448,6 +452,123 @@ describe('BACKDRAFT PURE TV — the contraction contract', () => {
   }, 30_000);
 });
 
+describe('BACKDRAFT — the VIRTUAL REFRESH (the seam that cascades)', () => {
+  it('R1 — FLICKER OFF is the exact no-op: no beam, no seam, nothing changes', () => {
+    // The refresh must be gated as hard as FLICKER itself. At OFF the shader
+    // skips the branch entirely and the tap is bit-identical.
+    expect(backdraftTvBeam(0, 0)).toBe(1);
+    expect(backdraftTvRefreshMix(0.5, 1)).toBe(1);   // every row is the new field
+    const a = simulateBackdraftTv({ size: 96, frames: 60, flicker: 0 });
+    const b = simulateBackdraftTv({ size: 96, frames: 60 });
+    for (let i = 0; i < a.frame.length; i++) expect(a.frame[i]).toBe(b.frame[i]);
+  }, 30_000);
+
+  it('R2 — the beam SWEEPS, and its crawl rate is FLICKER\'s beat', () => {
+    // The beam position is the fractional part of the emission phase, so it
+    // inherits the beat for free: 59.94 Hz creeps (the classic slow hum bar),
+    // 6 Hz races down the frame several times a second.
+    for (let f = 1; f < BACKDRAFT_FLICKER_COUNT; f++) {
+      const seen = new Set<string>();
+      for (let n = 0; n < 60; n++) {
+        const b = backdraftTvBeam(f, n / BACKDRAFT_FPS);
+        expect(b).toBeGreaterThanOrEqual(0);
+        expect(b).toBeLessThan(1.0000001);
+        seen.add(b.toFixed(3));
+      }
+      // It must actually MOVE — a static beam is a static seam, which is the
+      // whole defect this replaces.
+      expect(seen.size, `FLICKER position ${f} beam must sweep`).toBeGreaterThan(3);
+    }
+    // The 60 position is the NTSC field rate, so its beam crawls far more
+    // slowly than the 6 Hz one over the same window.
+    const spread = (f: number): number => {
+      const v: number[] = [];
+      for (let n = 0; n < 30; n++) v.push(backdraftTvBeam(f, n / BACKDRAFT_FPS));
+      let d = 0;
+      for (let i = 1; i < v.length; i++) d += Math.abs(v[i]! - v[i - 1]!);
+      return d;
+    };
+    expect(spread(4)).toBeLessThan(spread(1));
+  });
+
+  it('R3 — the row mix is a real SEAM: new above the beam, old below', () => {
+    const beam = 0.5;
+    expect(backdraftTvRefreshMix(0.1, beam)).toBeGreaterThan(0.99);   // above → new
+    expect(backdraftTvRefreshMix(0.9, beam)).toBeLessThan(0.01);      // below → old
+    expect(backdraftTvRefreshMix(beam, beam)).toBeCloseTo(0.5, 3);    // on the beam
+    // Monotone, and soft over a few lines rather than a hard cut.
+    let prev = 2;
+    for (let y = 0; y <= 1; y += 0.01) {
+      const m = backdraftTvRefreshMix(y, beam);
+      expect(m).toBeLessThanOrEqual(prev + 1e-9);
+      prev = m;
+    }
+    expect(backdraftTvRefreshMix(beam - 2 * BACKDRAFT_TV_BEAM_SOFT, beam)).toBeGreaterThan(0.99);
+    expect(backdraftTvRefreshMix(beam + 2 * BACKDRAFT_TV_BEAM_SOFT, beam)).toBeLessThan(0.01);
+  });
+
+  it('R4 — the refresh makes rows carry DIFFERENT AGES, not just different gain', () => {
+    // THE distinction from FLICKER. Flicker scales a row's BRIGHTNESS; the
+    // refresh makes the row come from a different FRAME. Isolated with the
+    // `refresh` control so flicker's gain band is identical on both sides —
+    // comparing flicker-on against flicker-off could attribute nothing, because
+    // flicker changes brightness everywhere.
+    //
+    // Causal test: drive a MOVING room, so successive frames genuinely differ.
+    // With the seam, rows below the beam show an OLDER field, so the output
+    // differs from the no-seam run in a ROW-DEPENDENT way.
+    const moving = (u: number, v: number): [number, number, number] => {
+      const t = v > 0.5 ? 0.9 : 0.2;
+      return [t, t, t];
+    };
+    const on = simulateBackdraftTv({ size: 96, frames: 45, flicker: 1, refresh: true, source: moving });
+    const off = simulateBackdraftTv({ size: 96, frames: 45, flicker: 1, refresh: false, source: moving });
+    const { width: W, height: H } = on;
+    const rowDiff = (y: number): number => {
+      let d = 0;
+      for (let x = 0; x < W; x++) d += Math.abs(on.frame[(y * W + x) * 3]! - off.frame[(y * W + x) * 3]!);
+      return d / W;
+    };
+    const per: number[] = [];
+    for (let y = 2; y < H - 2; y++) per.push(rowDiff(y));
+    // The refresh must actually change the picture…
+    expect(Math.max(...per)).toBeGreaterThan(0.01);
+    // …and it must do so UNEVENLY down the frame — that unevenness IS the seam.
+    // A gain band would scale rows smoothly; a seam concentrates the change.
+    const mean = per.reduce((a, b) => a + b, 0) / per.length;
+    expect(Math.max(...per)).toBeGreaterThan(3 * mean);
+  }, 60_000);
+
+  it('R5 — the seam CASCADES: the change lands in SEVERAL bands, not one cut', () => {
+    // The reason the seam is positioned in the MONITOR's raster and not in
+    // screen space. A screen-space seam is ONE straight line across the whole
+    // frame; a raster-space seam is re-imaged by every pass, so level k inherits
+    // the seams of every shallower level at s^k spacing and the nest fills with
+    // them.
+    //
+    // Isolate the refresh, then count DISJOINT BANDS of change down the centre
+    // column. One band = a single cut (no cascade). Several = the cascade.
+    const opts = { size: 192, frames: 70, flicker: 1, room: 1 } as const;
+    const on = simulateBackdraftTv({ ...opts, refresh: true });
+    const off = simulateBackdraftTv({ ...opts, refresh: false });
+    const { width: W, height: H } = on;
+    const col = Math.floor(W / 2);
+    const d: number[] = [];
+    for (let y = 0; y < H; y++) {
+      d.push(Math.abs(on.frame[(y * W + col) * 3]! - off.frame[(y * W + col) * 3]!));
+    }
+    const thresh = Math.max(...d) * 0.25;
+    expect(Math.max(...d)).toBeGreaterThan(0.01);
+    let bands = 0, inBand = false;
+    for (const v of d) {
+      if (v > thresh && !inBand) { bands++; inBand = true; }
+      else if (v <= thresh) inBand = false;
+    }
+    expect(bands, `disjoint seam bands down the centre column (got ${bands})`)
+      .toBeGreaterThanOrEqual(2);
+  }, 60_000);
+});
+
 describe('BACKDRAFT — GL resource discipline', () => {
   it('N11 — the texture-unit map is DISJOINT (a collision here is silent)', () => {
     // The servo's two passes run in the MIDDLE of the main composite's draw,
@@ -469,6 +590,7 @@ describe('BACKDRAFT — GL resource discipline', () => {
       BACKDRAFT_TEXTURE_UNITS.a, BACKDRAFT_TEXTURE_UNITS.b, BACKDRAFT_TEXTURE_UNITS.fb,
       BACKDRAFT_TEXTURE_UNITS.lighten, BACKDRAFT_TEXTURE_UNITS.darken,
       BACKDRAFT_TEXTURE_UNITS.persist, BACKDRAFT_TEXTURE_UNITS.agcState,
+      BACKDRAFT_TEXTURE_UNITS.fbPrev,
     );
     expect(BACKDRAFT_TEXTURE_UNITS.agcReduceSrc).toBeGreaterThan(mainMax);
     expect(BACKDRAFT_TEXTURE_UNITS.agcPrevState).toBeGreaterThan(mainMax);

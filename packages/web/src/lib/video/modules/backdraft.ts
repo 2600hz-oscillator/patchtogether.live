@@ -438,9 +438,12 @@ export const BACKDRAFT_FLICKER_KNEE = 0.55;
  */
 export const BACKDRAFT_TEXTURE_UNITS = {
   /** main composite */
-  a: 0, b: 1, fb: 2, lighten: 3, darken: 4, persist: 5, agcState: 6,
+  a: 0, b: 1, fb: 2, lighten: 3, darken: 4, persist: 5,
+  /** the VIRTUAL REFRESH's older field (frame n-d-1) */
+  fbPrev: 6,
+  agcState: 7,
   /** auto-exposure servo passes — deliberately ABOVE the main program's range */
-  agcReduceSrc: 7, agcPrevState: 8,
+  agcReduceSrc: 8, agcPrevState: 9,
 } as const;
 
 /** TV MODE positions: 0 = OFF (the legacy composite), 1 = PURE TV (the
@@ -522,6 +525,71 @@ export const BACKDRAFT_TV_WHITE = [1.0, 0.99, 0.975] as const;
 export const BACKDRAFT_TV_PHOSPHOR_MAX = 0.9;
 /** Per-channel persistence tint — red decays slowest, as on a real tube. */
 export const BACKDRAFT_TV_PHOSPHOR_RGB = [1.0, 0.94, 0.88] as const;
+
+/**
+ * THE VIRTUAL REFRESH — the seam the camera catches mid-redraw.
+ *
+ * A real monitor is redrawn LINE BY LINE, so at any instant its face is not one
+ * coherent frame: it is a SEAM between two successive fields, new above the
+ * beam and previous below it. A camera pointed at it catches that seam, and —
+ * this is the part that matters — each nesting level re-photographs a screen
+ * that ALREADY has one, so level k carries k seams at k different ages. That is
+ * the refresh cascading through the network.
+ *
+ * BACKDRAFT has never had this. FLICKER modulates the row GAIN
+ * (`gain + depth*cos(phase + v*rowPhase)`), which is a brightness band: every
+ * row still comes from the SAME frame in time, so there is no seam and nothing
+ * to cascade. Gain acts on the range; the refresh is a property of TIME.
+ *
+ * The seam is positioned in the MONITOR'S OWN RASTER coordinates (the tap's
+ * `tapUv.y`), NOT in screen space, and that distinction is the whole effect: a
+ * screen-space seam would cut one straight line across every level at once,
+ * whereas a raster-space seam is re-imaged by every pass, so the level-k seam
+ * lands at s^k of the level-0 one and the nest fills with them.
+ *
+ * The camera's own ROLLING SHUTTER stays in SCREEN space (the existing
+ * `vUv.y * uFlickerRow` gain band) because the shutter scans the sensor, not
+ * the scene. Both effects are real and they are not the same effect.
+ */
+/** Softness of the beam edge, in raster units — a real beam plus the phosphor's
+ *  decay smears the seam over a few lines rather than leaving a hard cut. */
+export const BACKDRAFT_TV_BEAM_SOFT = 0.012;
+
+/**
+ * Where the display's raster beam has reached at capture time, in [0,1).
+ *
+ * `phase` is already `2*pi*f*(t + T_exposure/2)`, so the beam's position within
+ * the current refresh cycle is just its fractional part. This inherits FLICKER's
+ * BEAT structure for free: between two camera frames the beam advances by f/60
+ * cycles, so 59.94 Hz leaves it creeping (the classic slow hum bar) while 6 Hz
+ * races it down the frame several times a second.
+ */
+export function backdraftTvBeam(
+  flicker: number,
+  timeSec: number,
+  fps: number = BACKDRAFT_FPS,
+): number {
+  const t = backdraftFlickerTerms(flicker, timeSec, fps);
+  if (!t.enabled) return 1;
+  const b = (t.phase / (2 * Math.PI)) % 1;
+  return b < 0 ? b + 1 : b;
+}
+
+/**
+ * How much of THIS raster row is the NEW field: 1 above the beam (already
+ * redrawn), 0 below it (still showing the previous field). `rasterY` is the row
+ * in the MONITOR's own image space, i.e. the tap coordinate.
+ */
+export function backdraftTvRefreshMix(
+  rasterY: number,
+  beam: number,
+  soft: number = BACKDRAFT_TV_BEAM_SOFT,
+): number {
+  const e0 = beam - soft, e1 = beam + soft;
+  if (!(e1 > e0)) return rasterY < beam ? 1 : 0;
+  const t = Math.max(0, Math.min(1, (rasterY - e0) / (e1 - e0)));
+  return 1 - t * t * (3 - 2 * t);
+}
 
 /** ROTATE is read through this scale in PURE TV ONLY. The knob's +-30 deg range
  *  excludes EVERY symmetry lock Crutchfield photographs (n = 3/4/5/9 at
@@ -804,6 +872,13 @@ uniform float uTvSin;        // sin(phi)
 uniform vec3  uTvPhos;       // per-channel ONE-FRAME residual (0,0,0 = off)
 uniform sampler2D uPersist;  // ring[head-1] — the previous OUTPUT, untransformed
 uniform float uHasPersist;
+// VIRTUAL REFRESH — the display is redrawn line by line, so its face is a SEAM
+// between two fields. uFbPrev is the OLDER one (frame n-d-1); uTvBeam is where
+// the beam has reached, in the MONITOR's raster coordinates.
+uniform sampler2D uFbPrev;
+uniform float uHasFbPrev;
+uniform float uTvRefresh;    // 0 = no seam (FLICKER off) — the exact no-op
+uniform float uTvBeam;
 // CRITICAL. uTvGainScale/uTvGainCeil carry BOTH modes with no extra branch:
 // PURE TV passes (FEEDBACK, TV_GAIN_MAX/opNorm) so the operator-norm
 // contraction ceiling bites; CRITICAL passes (CRIT_GAIN*agc/opNorm, +inf) so
@@ -819,6 +894,7 @@ const float BD_PI = 3.14159265359;
 const float TV_GLASS    = ${BACKDRAFT_TV_GLASS.toFixed(4)};
 const float TV_AMBIENT  = ${BACKDRAFT_TV_AMBIENT.toFixed(4)};
 const float TV_KNEE     = ${BACKDRAFT_FLICKER_KNEE.toFixed(4)};
+const float TV_BEAM_SOFT = ${BACKDRAFT_TV_BEAM_SOFT.toFixed(4)};
 ${AGC_DECODE_GLSL}
 const vec3  TV_BEZEL_RGB = vec3(${BACKDRAFT_TV_BEZEL_RGB.map((c) => c.toFixed(4)).join(', ')});
 const vec3  TV_WHITE     = vec3(${BACKDRAFT_TV_WHITE.map((c) => c.toFixed(4)).join(', ')});
@@ -1108,6 +1184,18 @@ void main() {
     // SCREEN vUv.y — the rolling shutter scans the sensor, not the scene.
     float flick = uFlickerGain + uFlickerDepth * cos(uFlickerPhase + vUv.y * uFlickerRow);
     vec3 tap = uHasFb > 0.5 ? texture(uFb, tapUv).rgb : vec3(0.0);
+    // THE VIRTUAL REFRESH. The set is mid-redraw: rows the beam has already
+    // passed show the NEW field, rows below it still show the PREVIOUS one. The
+    // seam sits in the MONITOR's raster (tapUv.y), not in screen space, so each
+    // pass RE-IMAGES the seam it photographed and adds its own -- level k ends
+    // up carrying k seams at s^k spacing. A screen-space seam would instead cut
+    // one straight line across every level at once and cascade nothing.
+    // Gated: at FLICKER OFF this is skipped entirely and the tap is unchanged.
+    if (uTvRefresh > 0.5) {
+      vec3 tapOld = uHasFbPrev > 0.5 ? texture(uFbPrev, tapUv).rgb : tap;
+      float newness = 1.0 - smoothstep(uTvBeam - TV_BEAM_SOFT, uTvBeam + TV_BEAM_SOFT, tapUv.y);
+      tap = mix(tapOld, tap, newness);
+    }
     // Crutchfield's measured sensor noise (Appendix A, "about 1 % fluctuation"),
     // MULTIPLICATIVE so it is a real SNR — it cannot seed anything in a dark
     // region, which is exactly why his rig needs a flashlight to restart a dark
@@ -2521,6 +2609,12 @@ export interface BackdraftTvSimOptions {
   /** Tube magnification m (see BackdraftTvGeo.magnify). Defaults to the DRIVE
    *  law's own magnification in CRITICAL, and to exactly 1 in PURE TV. */
   magnify?: number;
+  /** Force the VIRTUAL REFRESH on/off independently of FLICKER. Defaults to
+   *  "on whenever FLICKER is on", which is the shipped coupling; setting it
+   *  false ISOLATES the refresh from flicker's gain band, which is what makes a
+   *  clean control possible (flicker changes brightness everywhere, so
+   *  flicker-on vs flicker-off cannot attribute anything to the seam). */
+  refresh?: boolean;
   /** Override the auto-exposure servo rate (defaults to the DRIVE law). */
   agcRate?: number;
   /** Override the auto-exposure set point. */
@@ -2600,7 +2694,8 @@ export function simulateBackdraftTv(o: BackdraftTvSimOptions = {}): BackdraftTvS
     })();
 
   const N = W * H * 3;
-  const ringSize = d + 1;
+  // d + 2, not d + 1: the VIRTUAL REFRESH needs frame n-d-1 as well as n-d.
+  const ringSize = d + 2;
   const ring: Float32Array[] = [];
   for (let i = 0; i < ringSize; i++) {
     const f = new Float32Array(N);
@@ -2642,6 +2737,7 @@ export function simulateBackdraftTv(o: BackdraftTvSimOptions = {}): BackdraftTvS
   };
 
   const tapRgb: [number, number, number] = [0, 0, 0];
+  const tapOldRgb: [number, number, number] = [0, 0, 0];
   const persistRgb: [number, number, number] = [0, 0, 0];
   const srcPix: [number, number, number] = [0, 0, 0];
   let head = 0;
@@ -2650,6 +2746,9 @@ export function simulateBackdraftTv(o: BackdraftTvSimOptions = {}): BackdraftTvS
 
   for (let n = 0; n < frames; n++) {
     const prev = ring[(head - d + ringSize) % ringSize]!;
+    const prevOlder = ring[(head - d - 1 + ringSize) % ringSize]!;
+    const beam = backdraftTvBeam(o.flicker ?? 0, n * dt);
+    const refreshOn = o.refresh ?? ((o.flicker ?? 0) > 0);
     const dst = ring[head]!;
     const timeSec = n * dt;
     let delta = 0;
@@ -2665,6 +2764,15 @@ export function simulateBackdraftTv(o: BackdraftTvSimOptions = {}): BackdraftTvS
       for (let x = 0; x < W; x++) {
         const i = y * W + x;
         sample(prev, tapU[i]!, tapV[i]!, tapRgb);
+        if (refreshOn) {
+          // The seam sits in the MONITOR's raster (the tap row), so each pass
+          // re-images the seam it photographed and adds its own.
+          sample(prevOlder, tapU[i]!, tapV[i]!, tapOldRgb);
+          const newness = backdraftTvRefreshMix(tapV[i]!, beam);
+          for (let c = 0; c < 3; c++) {
+            tapRgb[c] = tapOldRgb[c]! + (tapRgb[c]! - tapOldRgb[c]!) * newness;
+          }
+        }
         persistRgb[0] = persist[i * 3]!; persistRgb[1] = persist[i * 3 + 1]!; persistRgb[2] = persist[i * 3 + 2]!;
         srcPix[0] = srcRgb[i * 3]!; srcPix[1] = srcRgb[i * 3 + 1]!; srcPix[2] = srcRgb[i * 3 + 2]!;
         const px = backdraftTvComposite({
@@ -2874,8 +2982,8 @@ export const backdraftDef: VideoModuleDef = {
       pureGeo: "Pure Geo (0/1, default 0 = off): the SHAPE masking SPACE. ON masks the FINAL OUTPUT in screen space (a fixed shape that cuts content outside it at all zooms); OFF masks the SOURCE in the zoomed feedback space, so the shape scales with Zoom and its content spills out through the feedback tunnel. The PURE GEO button toggles it; pure_geo_gate toggles it on a rising edge.",
       shapeGate: "Shape Gate (0..1, default 0): hidden synthetic param the shape_gate CV bridge writes (raw gate swing). No card knob; a rising edge cycles Shape.",
       pureGeoGate: "PureGeo Gate (0..1, default 0): hidden synthetic param the pure_geo_gate CV bridge writes (raw gate swing). No card knob; a rising edge toggles Pure Geo.",
-      flicker: "Flicker (discrete OFF / 6 / 24 / 50 / 60 / 120, default OFF): models a real display emitting light in PULSES rather than continuously, the camera integrating over an exposure window shorter than the pulse period, and the camera sampling at its own frame rate. The two rates BEAT, so the per-frame loop gain cycles above and below its own average instead of being constant — which is what lets pulses of light build up over several frames and then fade away rather than saturating to white and staying there. OFF is the exact no-op (the shader branch is skipped, output is bit-identical). The virtual camera runs at a fixed 60 fps, so the beat is: 6 Hz at the 6 position (below the camera rate, so no aliasing — the camera sees the pulsing DIRECTLY at 10 frames per cycle, the slowest and most obvious breathing); 24 Hz at 24 (2.5 frames per cycle, a fine fast texture); 10 Hz at 50 (6 frames per cycle — the classic look of filming a PAL monitor with an NTSC camera, and the best all-round build-and-fade); 0.06 Hz at 60 (the true NTSC field rate 60000/1001 = 59.94 Hz, a ~16.7-second slow swell — the slowly crawling hum bar you see filming a television); and 0.12 Hz at 120 (119.88 Hz, 2x NTSC — the rolling shutter fits almost exactly one full band cycle down the frame here, which cancels the whole-frame pulsing and leaves a PURE crawling band). Exact multiples of 60 would genlock to a constant gain and not move at all, which is why the 60 and 120 positions use the NTSC rates. A 90-degree shutter (1/240 s) sets how much of each pulse is caught, and the rolling shutter spreads the flicker phase down the frame so a soft light/dark band crawls vertically at the beat rate and feeds back through the loop. Two camera-side terms keep it watchable rather than strobing: the sensor's multi-frame charge storage is a LOW-PASS ON THE BEAT (it cuts 6/24/50 hard and passes 60/120 essentially untouched, so the fast positions shimmer and the slow ones breathe), and a saturating capture shoulder makes the response level-dependent so the modulation acts on midtone contours instead of flashing the whole field. The loop's average gain is held constant as you switch positions, so the FB control keeps meaning the same thing.",
-      tvMode: "TV Mode (discrete OFF / PURE TV / CRITICAL, default OFF): switches BACKDRAFT from an infinite feedback PLANE to a bounded SCREEN. OFF is the exact no-op — the shader branch is skipped and the classic composite is untouched. PURE TV builds the thing a camera pointed at a television actually sees: the previous frame is drawn, whole, inside a bezelled screen rectangle that fills 75% of the frame (set by ZOOM), and OUTSIDE that screen is the live input — so IN PURE TV YOUR INPUT IS THE ROOM, NOT THE PICTURE, and the picture is the feedback. Because each pass places the entire previous view (room, bezel and picture) inside the next screen, the image NESTS: about 11 resolved frames-within-frames, each 3/4 the size of the last and each dimmer, converging on a milky core at 20% of the room level. That nesting is forced by the geometry rather than tuned, which is why no combination of the old FEEDBACK/ZOOM controls could ever produce it — the old map adds the live input to EVERY pixel and clamps the previous frame across the whole plane, so there is no 'outside the TV' left to re-image. PURE TV is a strict contraction: it converges to a STILL nest, and motion in the room cascades inward one level per DELAY. CRITICAL keeps that geometry and adds the camera's AUTOMATIC EXPOSURE — a servo with memory that meters the frame it just captured and pushes its gain the other way. Because it integrates, it overshoots, and past the DRIVE midpoint the overshoot becomes a self-sustaining limit cycle: the picture blooms toward white, the servo hauls it back, and the correction propagates inward through the nest one level per DELAY as a travelling annulus. That is the mode for riding the edge of white-out. The TV button cycles the mode; tv_gate cycles it on a rising edge.",
+      flicker: "Flicker (discrete OFF / 6 / 24 / 50 / 60 / 120, default OFF): in PURE TV / CRITICAL this ALSO drives the virtual refresh — the line-by-line redraw seam that cascades through the nest (see TV Mode). Models a real display emitting light in PULSES rather than continuously, the camera integrating over an exposure window shorter than the pulse period, and the camera sampling at its own frame rate. The two rates BEAT, so the per-frame loop gain cycles above and below its own average instead of being constant — which is what lets pulses of light build up over several frames and then fade away rather than saturating to white and staying there. OFF is the exact no-op (the shader branch is skipped, output is bit-identical). The virtual camera runs at a fixed 60 fps, so the beat is: 6 Hz at the 6 position (below the camera rate, so no aliasing — the camera sees the pulsing DIRECTLY at 10 frames per cycle, the slowest and most obvious breathing); 24 Hz at 24 (2.5 frames per cycle, a fine fast texture); 10 Hz at 50 (6 frames per cycle — the classic look of filming a PAL monitor with an NTSC camera, and the best all-round build-and-fade); 0.06 Hz at 60 (the true NTSC field rate 60000/1001 = 59.94 Hz, a ~16.7-second slow swell — the slowly crawling hum bar you see filming a television); and 0.12 Hz at 120 (119.88 Hz, 2x NTSC — the rolling shutter fits almost exactly one full band cycle down the frame here, which cancels the whole-frame pulsing and leaves a PURE crawling band). Exact multiples of 60 would genlock to a constant gain and not move at all, which is why the 60 and 120 positions use the NTSC rates. A 90-degree shutter (1/240 s) sets how much of each pulse is caught, and the rolling shutter spreads the flicker phase down the frame so a soft light/dark band crawls vertically at the beat rate and feeds back through the loop. Two camera-side terms keep it watchable rather than strobing: the sensor's multi-frame charge storage is a LOW-PASS ON THE BEAT (it cuts 6/24/50 hard and passes 60/120 essentially untouched, so the fast positions shimmer and the slow ones breathe), and a saturating capture shoulder makes the response level-dependent so the modulation acts on midtone contours instead of flashing the whole field. The loop's average gain is held constant as you switch positions, so the FB control keeps meaning the same thing.",
+      tvMode: "TV Mode (discrete OFF / PURE TV / CRITICAL, default OFF): switches BACKDRAFT from an infinite feedback PLANE to a bounded SCREEN. OFF is the exact no-op — the shader branch is skipped and the classic composite is untouched. PURE TV builds the thing a camera pointed at a television actually sees: the previous frame is drawn, whole, inside a bezelled screen rectangle that fills 75% of the frame (set by ZOOM), and OUTSIDE that screen is the live input — so IN PURE TV YOUR INPUT IS THE ROOM, NOT THE PICTURE, and the picture is the feedback. Because each pass places the entire previous view (room, bezel and picture) inside the next screen, the image NESTS: about 11 resolved frames-within-frames, each 3/4 the size of the last and each dimmer, converging on a milky core at 20% of the room level. That nesting is forced by the geometry rather than tuned, which is why no combination of the old FEEDBACK/ZOOM controls could ever produce it — the old map adds the live input to EVERY pixel and clamps the previous frame across the whole plane, so there is no 'outside the TV' left to re-image. PURE TV is a strict contraction: it converges to a STILL nest, and motion in the room cascades inward one level per DELAY. CRITICAL keeps that geometry and adds the camera's AUTOMATIC EXPOSURE — a servo with memory that meters the frame it just captured and pushes its gain the other way. Because it integrates, it overshoots, and past the DRIVE midpoint the overshoot becomes a self-sustaining limit cycle: the picture blooms toward white, the servo hauls it back, and the correction propagates inward through the nest one level per DELAY as a travelling annulus. That is the mode for riding the edge of white-out. In BOTH TV modes the FLICKER control additionally drives a VIRTUAL REFRESH: a real set is redrawn line by line, so its face at any instant is a SEAM between two successive fields — new above the beam, previous below it — and a camera pointed at it catches that seam. Because the seam sits in the MONITOR's own raster rather than in the camera's frame, every nesting level re-photographs a screen that already has one, so level k carries k seams at k different ages and the refresh cascades inward through the whole nest. FLICKER's rate sets how fast the beam sweeps: the 60 position (the true NTSC field rate) leaves it creeping, which is the classic slow hum bar you see filming a television, while the 6 position races it down the frame several times a second. FLICKER OFF is the exact no-op — no beam, no seam, and the tap is unchanged. This is a different effect from FLICKER's rolling-shutter brightness band, which stays in SCREEN space because the shutter scans the sensor and not the scene: one changes a row's BRIGHTNESS, the other changes which FRAME the row came from. The TV button cycles the mode; tv_gate cycles it on a rising edge.",
       tvGate: "TV Gate (0..1, default 0): hidden synthetic param the tv_gate CV bridge writes (raw gate swing). No card knob; a rising edge cycles TV MODE.",
       room: "Room (0..1, default 1.0): the light level OUTSIDE the screen in PURE TV / CRITICAL — the live input at full strength plus a 5% ambient floor. The ambient floor is range-preserving, so even with nothing patched the mode still lights its own room and demonstrates its geometry. Turning ROOM down dims the set and the whole nest with it (the brightness cascade stays correctly ordered at every room level, rather than flattening or inverting as an absolute lift would). Inert while TV MODE is off.",
       bezel: "Bezel (0..1, default 0.4): the width of the screen's frame, in screen-local units, so a level-k bezel automatically lands 3/4-scaled — deeper bezels shrink because they are IMAGES of the real one. The bezel is not decoration: it is the only high-contrast boundary between one nesting level and the next, and without it the nest reads as a smooth zoom rather than as frames within frames. Floored at a non-zero minimum for exactly that reason — a fader whose bottom end deletes the feature would be a bug. Inert while TV MODE is off.",
@@ -2942,6 +3050,10 @@ export const backdraftDef: VideoModuleDef = {
     const uTvFrame = u('uTvFrame');
     const uTvAgc = u('uTvAgc');
     const uHasTvAgc = u('uHasTvAgc');
+    const uFbPrev = u('uFbPrev');
+    const uHasFbPrev = u('uHasFbPrev');
+    const uTvRefresh = u('uTvRefresh');
+    const uTvBeam = u('uTvBeam');
 
     // ── CRITICAL's auto-exposure servo ────────────────────────────────
     // Two tiny passes: REDUCE the previous output to an 8x8 grid of local
@@ -3276,6 +3388,20 @@ export const backdraftDef: VideoModuleDef = {
         g.bindTexture(g.TEXTURE_2D, persistTex);
         g.uniform1i(uPersist, BACKDRAFT_TEXTURE_UNITS.persist);
         g.uniform1f(uHasPersist, tvOn && framesElapsed >= 1 ? 1.0 : 0.0);
+
+        // VIRTUAL REFRESH — the OLDER field (frame n-d-1). The set is mid-redraw,
+        // so rows below the beam still show this one. Only meaningful in a TV
+        // mode with FLICKER on; at FLICKER OFF uTvRefresh is 0 and the shader
+        // skips the whole branch, leaving the tap bit-identical.
+        const refreshOn = tvOn && flick.enabled;
+        const prevIdx = backdraftTapIndex(head, delayFrames + 1, BACKDRAFT_BUFFER_FRAMES);
+        const hasPrev = refreshOn && framesElapsed >= delayFrames + 1;
+        g.activeTexture(g.TEXTURE0 + BACKDRAFT_TEXTURE_UNITS.fbPrev);
+        g.bindTexture(g.TEXTURE_2D, hasPrev ? ring[prevIdx]!.texture : emptyTex);
+        g.uniform1i(uFbPrev, BACKDRAFT_TEXTURE_UNITS.fbPrev);
+        g.uniform1f(uHasFbPrev, hasPrev ? 1.0 : 0.0);
+        g.uniform1f(uTvRefresh, refreshOn ? 1.0 : 0.0);
+        g.uniform1f(uTvBeam, backdraftTvBeam(params.flicker, frame.time));
 
         ctx.drawFullscreenQuad();
         g.bindFramebuffer(g.FRAMEBUFFER, null);

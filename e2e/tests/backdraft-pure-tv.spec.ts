@@ -2,111 +2,134 @@
 //
 // BACKDRAFT PURE TV / CRITICAL — proves the GPU really renders the bounded
 // screen. The GEOMETRY itself is proven in the GL-free CPU mirror
-// (backdraft-tv.test.ts, N1-N10 + N-INV); this spec only has to show that the
+// (backdraft-tv.test.ts, N/C/R series); this spec only has to show that the
 // shader agrees with it, plus that TV MODE = OFF leaves the legacy path alone.
+//
+// FRAMES ARE DRIVEN MANUALLY, never waited for. BACKDRAFT is an ITERATED
+// feedback loop: the nest builds one level per frame, so what these assertions
+// need is a frame COUNT. Waiting in milliseconds silently converts to a
+// different number of frames on every renderer — measured, a real GPU runs this
+// patch at ~60 fps, CI's SwiftShader at 7.9 fps single-threaded, and CI runs TEN
+// e2e shards in parallel, which drove per-browser rAF to ~0.5-2 fps and timed
+// the spec out. Pausing the rAF loop (`__videoEnginePause`) and calling `step()`
+// ourselves with a PINNED clock makes the frame count exact and the wall-clock
+// cost the renderer's true fill rate and nothing else. Established pattern —
+// backdraft-render-smoke.spec.ts drives frames the same way.
 //
 // RENDERER TOLERANCE is deliberate throughout: every assertion is a ratio, a
 // count, or a monotonicity over large-scale geometry — never a pixel value and
 // never a filtering-sensitive quantity. The tap minifies by 1/s = 1.333 with
-// LINEAR and no mipmaps, so SwiftShader (CI) and a real GPU diverge more with
-// every one of the ~11 compounded resamples. No pixel-value assertion at depth.
-//
-// The room is PIXELATE = 1, which collapses the source to a single flat colour.
-// That is a legitimate patch setting and it makes the room a uniform bright
-// field, so the bezel bands are pure geometry rather than geometry plus source
-// texture — the most renderer-stable form of the same claim.
+// LINEAR and no mipmaps, so SwiftShader and a real GPU diverge more with every
+// one of the ~11 compounded resamples. No pixel-value assertion at depth.
 
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
-import type { Page, Locator } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
-/** Read the canvas centre row (one value per pixel, luma-ish on the red ch). */
-async function centreRow(canvas: Locator): Promise<number[]> {
-  return canvas.evaluate((el) => {
-    const c = el as HTMLCanvasElement;
-    const ctx = c.getContext('2d');
-    if (!ctx) return [];
-    const y = Math.floor(c.height / 2);
-    const d = ctx.getImageData(0, y, c.width, 1).data;
-    const out: number[] = [];
-    for (let x = 0; x < c.width; x++) out.push(d[x * 4]! / 255);
-    return out;
-  });
+test.setTimeout(180_000);
+
+interface Read {
+  row: number[];      // centre row, 0..1
+  quads: number[];    // 4 quadrant means, 0..1
+  blown: number;      // fraction of samples >= 0.9
+  means: number[];    // frame mean per captured frame (last N steps)
 }
 
-/** Mean of each screen quadrant, 0..1 — the renderer-tolerant OFF-path probe. */
-async function quadrants(canvas: Locator): Promise<number[]> {
-  return canvas.evaluate((el) => {
-    const c = el as HTMLCanvasElement;
-    const ctx = c.getContext('2d');
-    if (!ctx) return [];
-    const d = ctx.getImageData(0, 0, c.width, c.height).data;
-    const q = [0, 0, 0, 0], n = [0, 0, 0, 0];
-    for (let y = 0; y < c.height; y++) {
-      for (let x = 0; x < c.width; x++) {
-        const i = ((y * c.width + x) * 4);
-        const k = (y < c.height / 2 ? 0 : 2) + (x < c.width / 2 ? 0 : 1);
-        q[k]! += (d[i]! + d[i + 1]! + d[i + 2]!) / 3;
-        n[k]! += 1;
+/** Step the video engine `steps` frames with a pinned clock, then read the
+ *  BACKDRAFT node's own output texture. `capture` records the frame mean on
+ *  each of the last N steps — used for the CRITICAL limit cycle, where the
+ *  frames must be CONSECUTIVE. */
+async function stepRead(
+  page: Page,
+  o: { steps: number; capture?: number; startTimeSec?: number },
+): Promise<Read> {
+  return page.evaluate(({ steps, capture, startTimeSec }) => {
+    const w = globalThis as unknown as {
+      __videoEnginePause?: boolean;
+      __videoEngineFreezeTime?: number;
+      __engine: () => {
+        getDomain: (d: string) => {
+          gl: WebGL2RenderingContext;
+          step: () => void;
+          outputTexture: (id: string, port?: string) => WebGLTexture | null;
+          res: { width: number; height: number };
+        };
+      };
+    };
+    w.__videoEnginePause = true;
+    const vid = w.__engine().getDomain('video');
+    const gl = vid.gl;
+    const { width: W, height: H } = vid.res;
+    const fb = gl.createFramebuffer()!;
+    const bind = (): boolean => {
+      const tex = vid.outputTexture('bd') as WebGLTexture | null;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+      return gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    };
+    // A narrow column is enough for a frame MEAN and is far cheaper than a full
+    // readback on every captured frame.
+    const cw = Math.max(8, Math.floor(W * 0.15));
+    const cx = Math.floor((W - cw) / 2);
+    const colPx = new Uint8Array(cw * H * 4);
+    const means: number[] = [];
+    const capN = capture ?? 0;
+
+    for (let n = 0; n < steps; n++) {
+      w.__videoEngineFreezeTime = (startTimeSec ?? 0) + (n + 0.5) / 60;
+      vid.step();
+      if (capN > 0 && n >= steps - capN && bind()) {
+        colPx.fill(0);
+        gl.readPixels(cx, 0, cw, H, gl.RGBA, gl.UNSIGNED_BYTE, colPx);
+        let s = 0, c = 0;
+        for (let i = 0; i < colPx.length; i += 4) { s += colPx[i]!; c++; }
+        means.push(s / c / 255);
       }
     }
-    return q.map((s, i) => s / Math.max(1, n[i]!) / 255);
-  });
-}
 
-/** Wait for N RENDERED FRAMES, counted in the page via rAF.
- *
- *  Wall-clock waiting is wrong here for a reason worth stating: the nest builds
- *  ONE LEVEL PER FRAME, so what the assertions actually need is a frame COUNT,
- *  and any millisecond budget silently converts into a different number of
- *  frames on every renderer. Measured: a real GPU runs this patch at ~60 fps
- *  and CI's SwiftShader at 7.9 fps SINGLE-THREADED — and CI runs ten e2e shards
- *  in parallel, so per-browser throughput there is lower again. A 12 s budget
- *  that was ~700 frames locally was ~12 frames on the runner, which is why the
- *  nest "never settled".
- *
- *  Counting frames makes the wait renderer-INDEPENDENT by construction. The
- *  wall-clock cap only bounds the failure; it is not the gate.
- *
- *  (Checked, because it is the more serious possibility: the SwiftShader
- *  attractor is the SAME one — 10 bands, room 1.000, ladder
- *  1.000/0.741/0.631/0.561/0.506 against the predicted
- *  1.000/0.739/0.629/0.559/0.505. It is slower, not different.) */
-async function waitFrames(page: Page, frames: number, capMs = 150_000): Promise<void> {
-  const got = await page.evaluate(([target, cap]) => new Promise<number>((resolve) => {
-    let n = 0;
-    const t0 = performance.now();
-    const tick = (): void => {
-      n++;
-      if (n >= (target as number) || performance.now() - t0 > (cap as number)) resolve(n);
-      else requestAnimationFrame(tick);
+    const row: number[] = [];
+    const quads = [0, 0, 0, 0];
+    const qn = [0, 0, 0, 0];
+    let blownHot = 0, blownN = 0;
+    if (bind()) {
+      const rowPx = new Uint8Array(W * 4);
+      gl.readPixels(0, Math.floor(H / 2), W, 1, gl.RGBA, gl.UNSIGNED_BYTE, rowPx);
+      for (let x = 0; x < W; x++) row.push(rowPx[x * 4]! / 255);
+      const all = new Uint8Array(W * H * 4);
+      gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, all);
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          const i = (y * W + x) * 4;
+          const k = (y < H / 2 ? 0 : 2) + (x < W / 2 ? 0 : 1);
+          quads[k]! += (all[i]! + all[i + 1]! + all[i + 2]!) / 3;
+          qn[k]! += 1;
+          if (all[i]! >= 230) blownHot++;
+          blownN++;
+        }
+      }
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(fb);
+    return {
+      row,
+      quads: quads.map((v, i) => v / Math.max(1, qn[i]!) / 255),
+      blown: blownHot / Math.max(1, blownN),
+      means,
     };
-    requestAnimationFrame(tick);
-  }), [frames, capMs] as const);
-  if (got < frames) {
-    throw new Error(`only ${got}/${frames} frames rendered in ${capMs} ms — the renderer is too slow to build the nest`);
-  }
+  }, { steps: o.steps, capture: o.capture ?? 0, startTimeSec: o.startTimeSec ?? 0 });
 }
 
-/** Frames for the nest to be fully built AND settled. The CPU mirror is
- *  bit-exactly still by frame ~80 at DELAY = 1 (one level per frame); 140 is
- *  that with margin, and it is the SAME on every renderer. */
-const NEST_FRAMES = 140;
-
-/** Build the nest, then confirm it really has stopped moving. The frame count
- *  does the waiting; this only verifies the contraction actually converged. */
-async function waitConverged(canvas: Locator, page: Page): Promise<void> {
-  await waitFrames(page, NEST_FRAMES);
-  const a = await centreRow(canvas);
-  await waitFrames(page, 12);
-  const b = await centreRow(canvas);
-  let worst = 0;
-  for (let i = 0; i < Math.min(a.length, b.length); i++) {
-    worst = Math.max(worst, Math.abs(a[i]! - b[i]!));
-  }
-  if (!(worst < 6 / 255)) {
-    throw new Error(`PURE TV had not settled after ${NEST_FRAMES} frames (worst delta ${(worst * 255).toFixed(1)}/255)`);
-  }
+async function setParams(page: Page, patch: Record<string, number>): Promise<void> {
+  await page.evaluate((pp) => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { params: Record<string, number> }> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const n = w.__patch.nodes['bd'];
+      if (n) for (const [k, v] of Object.entries(pp)) n.params[k] = v;
+    });
+  }, patch);
 }
 
 /** Bezel bands on the right half of the centre row, by LOCAL contrast: a local
@@ -130,21 +153,16 @@ function bandCount(row: number[]): number {
  *  at ln(aspect) that coincides with ln(1/s) by arithmetic accident at s=0.75),
  *  with the step DERIVED FROM THE FILL so the expected lag is exactly 12 at
  *  every fill, and DETRENDED so the g^k brightness ramp cannot survive
- *  normalisation and swamp the periodicity. Returns { lag, corr }; lag = -1
- *  means "no interior local maximum", which is a DEFINED failure, never a
- *  sentinel to compare numerically. */
+ *  normalisation and swamp the periodicity. `lag = -1` means "no interior local
+ *  maximum" — a DEFINED failure, never a sentinel to compare numerically. */
 function logRadialPeak(row: number[], fill: number): { lag: number; corr: number } {
   const N = 96, D = Math.log(1 / fill) / 12;
   const cx = row.length / 2;
   const prof: number[] = [];
   for (let j = 0; j < N; j++) {
-    // r = (half-width) * exp(-j*D): walk INWARD from the frame edge in equal
-    // log steps, so one nesting level is exactly 12 samples.
     const r = (row.length / 2 - 1) * Math.exp(-j * D);
-    const x = Math.min(row.length - 1, Math.max(0, Math.round(cx + r)));
-    prof.push(row[x]!);
+    prof.push(row[Math.min(row.length - 1, Math.max(0, Math.round(cx + r)))]!);
   }
-  // Least-squares detrend (remove the linear-in-j component).
   let sx = 0, sy = 0, sxx = 0, sxy = 0;
   for (let j = 0; j < N; j++) { sx += j; sy += prof[j]!; sxx += j * j; sxy += j * prof[j]!; }
   const slope = (N * sxy - sx * sy) / Math.max(1e-9, N * sxx - sx * sx);
@@ -162,11 +180,9 @@ function logRadialPeak(row: number[], fill: number): { lag: number; corr: number
   return { lag, corr: lag > 0 ? best : 0 };
 }
 
-// SHAPES, not a plasma: it is STATIC, so "converged" means converged rather
-// than "the animated room happened to hold still", and it gives a room annulus
-// of 1.000 with metres of headroom over E1's derived 0.35 precondition.
-// (acidwarp measures 0.459 flat-averaged but ANIMATES, so the room brightness —
-// and therefore the whole cascade — drifts under the assertions. A real flake.)
+// SHAPES, not a plasma: it is STATIC, so the nest converges to a real fixed
+// point rather than chasing an animated room, and it gives a room annulus of
+// 1.000 with metres of headroom over E1's derived 0.35 precondition.
 const ROOM_SRC = {
   id: 'src', type: 'shapes', position: { x: 40, y: 40 }, domain: 'video' as const,
   params: { shape: 0, zoom: 1.6 },
@@ -176,119 +192,56 @@ const WIRES = [
   { id: 'e_a', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'bd', portId: 'in_a' }, sourceType: 'mono-video', targetType: 'video' },
   { id: 'e_o', from: { nodeId: 'bd', portId: 'out' }, to: { nodeId: 'v-out', portId: 'in' }, sourceType: 'video', targetType: 'video' },
 ];
-
 const TV_BASE = {
   tvMode: 1, feedback: 0.85, delay: 16, room: 1, bezel: 0.4, phosphor: 0,
   zoom: 1, rotate: 0, flicker: 0, pixelate: 1, mix: 0,
 };
 
+/** The CPU mirror is bit-exactly still by frame ~80 at DELAY = 1 (one level per
+ *  frame). 100 is that with margin, and it is the SAME on every renderer
+ *  because we drive the steps ourselves. */
+const NEST_FRAMES = 100;
+
+async function spawn(page: Page, params: Record<string, number>): Promise<void> {
+  await spawnPatch(page, [
+    ROOM_SRC,
+    { id: 'bd', type: 'backdraft', position: { x: 460, y: 80 }, domain: 'video', params },
+    OUT,
+  ], WIRES);
+  await expect(page.locator('.svelte-flow__node-backdraft')).toBeVisible();
+}
+
 test.describe('BACKDRAFT PURE TV — the GPU renders a bounded screen', () => {
-  // Every test here drives an ITERATED feedback loop to convergence. On CI that
-  // is SwiftShader (software), which is far slower per frame than a real GPU,
-  // so the default 30 s is not a meaningful bound for this class of test.
-  test.setTimeout(240_000);
-
-  test('E6 — WHITE-OUT is reachable by LUMA / FEEDBACK, and recoverable', async ({ page, rack }) => {
-    // The owner's requirement, on the GPU: there is no feedback worth riding
-    // without an uncontrollable zone to ride toward. An earlier revision
-    // clamped the operator norm so this was impossible — that clamp is gone.
-    const blownFraction = async (): Promise<number> => canvas.evaluate((el) => {
-      const c = el as HTMLCanvasElement;
-      const ctx = c.getContext('2d');
-      if (!ctx) return 0;
-      const d = ctx.getImageData(0, 0, c.width, c.height).data;
-      let hot = 0, n = 0;
-      for (let i = 0; i < d.length; i += 16) { if (d[i]! >= 230) hot++; n++; }
-      return hot / n;
-    });
-
-    await spawnPatch(page, [
-      ROOM_SRC,
-      { id: 'bd', type: 'backdraft', position: { x: 460, y: 80 }, domain: 'video', params: TV_BASE },
-      OUT,
-    ], WIRES);
-    const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
-    await expect(canvas).toHaveCount(1);
-    await waitConverged(canvas, page);
-    const calm = await blownFraction();
-
-    const set = async (patch: Record<string, number>): Promise<void> => {
-      await page.evaluate((pp) => {
-        const w = globalThis as unknown as {
-          __patch: { nodes: Record<string, { params: Record<string, number> }> };
-          __ydoc: { transact: (fn: () => void) => void };
-        };
-        w.__ydoc.transact(() => {
-          const n = w.__patch.nodes['bd'];
-          if (n) for (const [k, v] of Object.entries(pp)) n.params[k] = v;
-        });
-      }, patch);
-      await waitFrames(page, 120);
-    };
-
-    // Crank LUMA -> blows out.
-    await set({ luma: 2 });
-    const hotLuma = await blownFraction();
-    expect(hotLuma, `LUMA 2 blows out (calm ${calm.toFixed(3)} -> ${hotLuma.toFixed(3)})`)
-      .toBeGreaterThan(calm + 0.15);
-
-    // FEEDBACK to max with LUMA positive -> blows out.
-    await set({ luma: 1, feedback: 2 });
-    const hotFb = await blownFraction();
-    expect(hotFb, `FEEDBACK max blows out (${hotFb.toFixed(3)})`).toBeGreaterThan(calm + 0.15);
-
-    // RECOVERABLE: back both off and the nest returns — not a wedge.
-    await set({ luma: 1, feedback: 0.85 });
-    await waitConverged(canvas, page);
-    const recovered = await blownFraction();
-    expect(Math.abs(recovered - calm), 'the nest comes back after the over-drive')
-      .toBeLessThan(0.1);
-    expect(bandCount(await centreRow(canvas)), 'bands are back').toBeGreaterThanOrEqual(3);
-  });
-
   test('E1/E2/E3 — the nest is periodic in log-radius, banded, and monotone', async ({ page, rack, errorWatch }) => {
-    await spawnPatch(page, [
-      ROOM_SRC,
-      { id: 'bd', type: 'backdraft', position: { x: 460, y: 80 }, domain: 'video', params: TV_BASE },
-      OUT,
-    ], WIRES);
-
-    const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
-    await expect(canvas).toHaveCount(1);
-    await waitConverged(canvas, page);
-    const row = await centreRow(canvas);
-    expect(row.length).toBeGreaterThan(64);
+    await spawn(page, TV_BASE);
+    const r = await stepRead(page, { steps: NEST_FRAMES });
+    expect(r.row.length).toBeGreaterThan(64);
 
     // PRECONDITION, derived not guessed: with the room-proportional plateau the
     // k-th brightness step is 0.0626*R, so R >= 0.125 is the hard floor for
-    // E3's 2/255. Assert the ROOM annulus actually clears 0.35 — if the chosen
-    // source is too dim, E3 fails for a reason that has nothing to do with the
-    // feature and this says so out loud.
-    const edge = row.slice(Math.floor(row.length * 0.94));
+    // E3's 2/255. Assert the ROOM annulus clears 0.35 — if the chosen source is
+    // too dim, E3 fails for a reason unrelated to the feature and this says so.
+    const edge = r.row.slice(Math.floor(r.row.length * 0.94));
     const roomMean = edge.reduce((a, b) => a + b, 0) / edge.length;
-    expect(roomMean, 'room annulus is bright enough for the cascade to resolve').toBeGreaterThan(0.35);
+    expect(roomMean, 'room annulus bright enough for the cascade to resolve').toBeGreaterThan(0.35);
 
     // E2 — bezel bands, by LOCAL contrast.
-    expect(bandCount(row), 'resolved bezel bands on the centre row').toBeGreaterThanOrEqual(5);
+    expect(bandCount(r.row), 'resolved bezel bands on the centre row').toBeGreaterThanOrEqual(5);
 
     // E1 — log-radial periodicity at exactly one nesting level per 12 samples.
-    const { lag, corr } = logRadialPeak(row, 0.75);
+    const { lag, corr } = logRadialPeak(r.row, 0.75);
     expect(lag, 'a log-radial period exists (lag = -1 means no interior peak)').toBeGreaterThan(0);
     expect(Math.abs(lag - 12), `log-radial lag ${lag} should be 12 +/- 1`).toBeLessThanOrEqual(1);
     expect(corr, `log-radial autocorrelation ${corr.toFixed(3)}`).toBeGreaterThan(0.4);
 
     // E3 — brightness falls monotonically inward, by at least 2/255 a level.
-    const cx = row.length / 2;
+    const cx = r.row.length / 2;
     const levels: number[] = [];
     for (let k = 0; k < 5; k++) {
-      // Sample mid-annulus between the level-k and level-(k+1) picture edges.
-      const rOuter = (cx - 1) * Math.pow(0.75, k);
-      const rInner = (cx - 1) * Math.pow(0.75, k + 1);
-      const r = (rOuter + rInner) / 2;
+      const rad = ((cx - 1) * Math.pow(0.75, k) + (cx - 1) * Math.pow(0.75, k + 1)) / 2;
       let s = 0, n = 0;
       for (let d = -2; d <= 2; d++) {
-        const x = Math.min(row.length - 1, Math.max(0, Math.round(cx + r + d)));
-        s += row[x]!; n++;
+        s += r.row[Math.min(r.row.length - 1, Math.max(0, Math.round(cx + rad + d)))]!; n++;
       }
       levels.push(s / n);
     }
@@ -302,116 +255,91 @@ test.describe('BACKDRAFT PURE TV — the GPU renders a bounded screen', () => {
     // zoom 0.8 so hasTransform is TRUE — the original zoom:1/rotate:0 control
     // makes the legacy path a pure additive clip, on which the peak-finder is
     // undefined and the assertion would pass by accident rather than on merit.
-    await spawnPatch(page, [
-      ROOM_SRC,
-      { id: 'bd', type: 'backdraft', position: { x: 460, y: 80 }, domain: 'video',
-        params: { ...TV_BASE, tvMode: 0, zoom: 0.8 } },
-      OUT,
-    ], WIRES);
-
-    const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
-    await expect(canvas).toHaveCount(1);
-    await waitFrames(page, 120);
-    const row = await centreRow(canvas);
-
-    expect(bandCount(row), 'the legacy plane has no bezel bands').toBeLessThan(2);
-    const { lag, corr } = logRadialPeak(row, 0.75);
-    // Either there is no interior peak at all, or it is far too weak to be a nest.
+    await spawn(page, { ...TV_BASE, tvMode: 0, zoom: 0.8 });
+    const r = await stepRead(page, { steps: NEST_FRAMES });
+    expect(bandCount(r.row), 'the legacy plane has no bezel bands').toBeLessThan(2);
+    const { lag, corr } = logRadialPeak(r.row, 0.75);
     expect(lag === -1 || corr < 0.35, `legacy lag=${lag} corr=${corr.toFixed(3)}`).toBe(true);
   });
 
   test('E5 — OFF is inert: the new params change NOTHING while TV MODE is off', async ({ page, rack }) => {
     // The design deliberately does NOT claim byte-identity to main (backdraft
     // has no pixel gate anywhere, so it is not provable here). What IS provable,
-    // and is the realistic failure, is that the five new params are completely
-    // inert while the mode is off — i.e. nothing leaked out of the branch.
-    const read = async (params: Record<string, number>): Promise<number[]> => {
-      await spawnPatch(page, [
-        ROOM_SRC,
-        { id: 'bd', type: 'backdraft', position: { x: 460, y: 80 }, domain: 'video', params },
-        OUT,
-      ], WIRES);
-      const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
-      await expect(canvas).toHaveCount(1);
-      await waitFrames(page, 60);
-      await page.evaluate(() => {
-        const w = globalThis as unknown as {
-          __patch: { nodes: Record<string, { params: Record<string, number> }> };
-          __ydoc: { transact: (fn: () => void) => void };
-        };
-        w.__ydoc.transact(() => { const n = w.__patch.nodes['bd']; if (n) n.params.freeze = 1; });
-      });
-      await waitFrames(page, 4);
-      return quadrants(canvas);
-    };
-
+    // and is the realistic failure, is that the new params are completely inert
+    // while the mode is off — i.e. nothing leaked out of the branch.
     const off = { ...TV_BASE, tvMode: 0, zoom: 0.8, pixelate: 0 };
-    const a = await read(off);
-    // Wildly different values for every new param — all must be ignored.
-    const b = await read({ ...off, room: 0.05, bezel: 1, phosphor: 1, drive: 1 });
-    expect(a.length).toBe(4);
+    await spawn(page, off);
+    const a = await stepRead(page, { steps: 60 });
+    await setParams(page, { room: 0.05, bezel: 1, phosphor: 1, drive: 1 });
+    const b = await stepRead(page, { steps: 60 });
+    expect(a.quads.length).toBe(4);
     for (let i = 0; i < 4; i++) {
-      expect(Math.abs(a[i]! - b[i]!), `quadrant ${i} unchanged by the TV params while OFF`)
+      expect(Math.abs(a.quads[i]! - b.quads[i]!), `quadrant ${i} unchanged by the TV params while OFF`)
         .toBeLessThan(2 / 255);
     }
+  });
+
+  test('E6 — WHITE-OUT is reachable by LUMA / FEEDBACK, and recoverable', async ({ page, rack }) => {
+    // There is no feedback worth riding without an uncontrollable zone to ride
+    // toward. An earlier revision clamped the operator norm so this was
+    // impossible; that clamp is gone.
+    await spawn(page, TV_BASE);
+    const calm = (await stepRead(page, { steps: NEST_FRAMES })).blown;
+
+    await setParams(page, { luma: 2 });
+    const hotLuma = (await stepRead(page, { steps: 60 })).blown;
+    expect(hotLuma, `LUMA 2 blows out (calm ${calm.toFixed(3)} -> ${hotLuma.toFixed(3)})`)
+      .toBeGreaterThan(calm + 0.15);
+
+    await setParams(page, { luma: 1, feedback: 2 });
+    const hotFb = (await stepRead(page, { steps: 60 })).blown;
+    expect(hotFb, `FEEDBACK max blows out (${hotFb.toFixed(3)})`).toBeGreaterThan(calm + 0.15);
+
+    // RECOVERABLE: back both off and the nest returns — not a wedge.
+    await setParams(page, { luma: 1, feedback: 0.85 });
+    const back = await stepRead(page, { steps: NEST_FRAMES });
+    expect(Math.abs(back.blown - calm), 'the nest comes back after the over-drive').toBeLessThan(0.1);
+    expect(bandCount(back.row), 'bands are back').toBeGreaterThanOrEqual(3);
+  });
+
+  test('E7 — the VIRTUAL REFRESH: FLICKER cuts a seam the nest re-images', async ({ page, rack }) => {
+    // The display is redrawn line by line, so the camera catches a SEAM between
+    // two fields — and each nesting level re-photographs a screen that already
+    // has one. FLICKER OFF must be the exact no-op; FLICKER ON must change the
+    // picture without destroying the nest.
+    await spawn(page, TV_BASE);
+    const off = await stepRead(page, { steps: NEST_FRAMES });
+
+    await setParams(page, { flicker: 1 });
+    const on = await stepRead(page, { steps: NEST_FRAMES });
+
+    const rowDelta = off.row.map((v, i) => Math.abs(v - (on.row[i] ?? v)));
+    expect(Math.max(...rowDelta), 'the refresh changes the picture').toBeGreaterThan(2 / 255);
+    expect(on.quads.every((q) => q > 0.01 && q < 0.995), 'still a real picture').toBe(true);
+    expect(bandCount(on.row), 'the nest survives the refresh').toBeGreaterThanOrEqual(3);
   });
 
   test('CRITICAL — it breathes at high DRIVE, is still at low DRIVE, and recovers', async ({ page, rack }) => {
     // The CPU mirror proves the limit cycle with the noise floor OFF (C1/C2);
     // this only has to show the GPU servo is alive and, crucially, RECOVERABLE.
-    await spawnPatch(page, [
-      ROOM_SRC,
-      { id: 'bd', type: 'backdraft', position: { x: 460, y: 80 }, domain: 'video',
-        params: { ...TV_BASE, tvMode: 2, drive: 0.85 } },
-      OUT,
-    ], WIRES);
-    const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
-    await expect(canvas).toHaveCount(1);
-    await waitFrames(page, 200);
-
-    // Breathing: the FRAME MEAN moves. Sample CONSECUTIVE frames via rAF in a
-    // single evaluate — the servo's limit cycle has a period of 2-3 FRAMES, so
-    // polling from the test side every ~120 ms (7+ frames) ALIASES and can land
-    // on the same phase every time, reading a swing of 0 on a picture that is
-    // visibly pumping. That aliasing was a real 1-in-3 flake here.
-    const means = await canvas.evaluate((el) => new Promise<number[]>((resolve) => {
-      const c = el as HTMLCanvasElement;
-      const ctx = c.getContext('2d');
-      if (!ctx) { resolve([]); return; }
-      const out: number[] = [];
-      const t0 = performance.now();
-      const tick = (): void => {
-        const d = ctx.getImageData(0, 0, c.width, c.height).data;
-        let s = 0, n = 0;
-        for (let i = 0; i < d.length; i += 64) { s += d[i]!; n++; }
-        out.push(s / n / 255);
-        // Bound by TIME as well as by count: on SwiftShader 40 frames can take
-      // longer than the whole test timeout, and 12 consecutive frames is
-      // already several periods of a 2-3 frame limit cycle.
-      if (out.length >= 40 || performance.now() - t0 > 6000) resolve(out);
-      else requestAnimationFrame(tick);
-      };
-      requestAnimationFrame(tick);
-    }));
-    expect(means.length, 'captured consecutive frames').toBeGreaterThanOrEqual(12);
-    const swing = Math.max(...means) - Math.min(...means);
+    await spawn(page, { ...TV_BASE, tvMode: 2, drive: 0.85 });
+    // Frames are CONSECUTIVE by construction here, and that matters: the servo's
+    // limit cycle has a period of 2-3 FRAMES, so any sampling that skips frames
+    // aliases and can read the same phase every time — a swing of 0 on a
+    // visibly pumping picture. That was a real 1-in-3 flake before the spec
+    // drove its own steps.
+    const hot = await stepRead(page, { steps: 220, capture: 40 });
+    expect(hot.means.length, 'captured consecutive frames').toBeGreaterThanOrEqual(30);
+    const swing = Math.max(...hot.means) - Math.min(...hot.means);
     expect(swing, `CRITICAL frame-mean swing ${swing.toFixed(4)}`).toBeGreaterThan(0.01);
 
     // RECOVERABILITY — the safety property that replaces stability. Back DRIVE
     // off and the picture must settle again, with no wedge and no reload.
-    await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { params: Record<string, number> }> };
-        __ydoc: { transact: (fn: () => void) => void };
-      };
-      w.__ydoc.transact(() => { const n = w.__patch.nodes['bd']; if (n) n.params.drive = 0; });
-    });
-    await waitConverged(canvas, page);
-    const settled = await centreRow(canvas);
-    expect(settled.length).toBeGreaterThan(64);
-    // …and it is a real nest again, not a white-out it never came back from.
-    const mean = settled.reduce((a, b) => a + b, 0) / settled.length;
-    expect(mean, 'recovered from the drive, not pinned at white').toBeLessThan(0.98);
-    expect(bandCount(settled), 'the nest is back after backing DRIVE off').toBeGreaterThanOrEqual(3);
+    await setParams(page, { drive: 0 });
+    const settled = await stepRead(page, { steps: 160, capture: 12 });
+    const calmSwing = Math.max(...settled.means) - Math.min(...settled.means);
+    expect(calmSwing, `settled swing ${calmSwing.toFixed(4)}`).toBeLessThan(swing / 2);
+    expect(settled.quads.every((q) => q < 0.995), 'recovered, not pinned at white').toBe(true);
+    expect(bandCount(settled.row), 'the nest is back after backing DRIVE off').toBeGreaterThanOrEqual(3);
   });
 });
