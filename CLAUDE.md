@@ -253,6 +253,12 @@ conflict, with no marker. Always `git merge origin/main` locally and diff.
 
 ## VALIDATE THE INSTRUMENT — a wrong metric reads exactly like a finding
 
+> **Deeper treatment lives in the `blind-gates` skill** (`.claude/skills/`), with
+> the negative-control discipline worked through case by case; the renderer/frame
+> material is in `iterated-render-e2e`. **This section is the always-loaded
+> summary — when the two disagree, the skill is the detail and this is the rule.**
+> Keep the measured numbers in ONE place (the skill) so they can't drift.
+
 The unifying failure of the 2026-07-28 backdraft session. **Four separate times
 the measurement was wrong and its output looked authoritative.** None of them
 announced themselves; each produced a confident, plausible, false conclusion.
