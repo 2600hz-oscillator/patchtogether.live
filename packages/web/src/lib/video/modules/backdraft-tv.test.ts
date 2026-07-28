@@ -30,6 +30,8 @@ import {
   BACKDRAFT_FPS,
   BACKDRAFT_TV_BEAM_SOFT,
   BACKDRAFT_CAM_TILT_MAX_DEG,
+  BACKDRAFT_CAM_TILT_RANGE,
+  BACKDRAFT_CAM_POS_RANGE,
   BACKDRAFT_CAM_DIST_MIN,
   BACKDRAFT_CAM_DIST_MAX,
   backdraftCamDistance,
@@ -447,14 +449,27 @@ describe('BACKDRAFT PURE TV — the contraction contract', () => {
     }
   });
 
-  it('N-BEZEL — the BEZEL fader is FLOORED so its minimum cannot delete the nest', () => {
-    expect(backdraftTvBezel(0)).toBe(BACKDRAFT_TV_BEZEL_MIN);
+  it('N-BEZEL — the border fader reaches 0 px, with the shipped look mid-travel', () => {
+    // The set's border is a real thickness control: exactly 0 at the bottom (a
+    // borderless screen) and the shipped appearance at the CENTRE of travel, so
+    // it opens both thinner and thicker than the default.
+    expect(backdraftTvBezel(0)).toBe(0);
     expect(backdraftTvBezel(1)).toBeCloseTo(BACKDRAFT_TV_BEZEL_MAX, 9);
-    expect(BACKDRAFT_TV_BEZEL_MIN).toBeGreaterThan(0);
-    // A fader whose minimum deletes the feature would be a bug: bezel = 0 must
-    // still resolve a real nest rather than collapsing to one band.
-    const r = simulateBackdraftTv({ size: 320, frames: 80, bezel: 0 });
-    expect(tvBands(r).length).toBeGreaterThanOrEqual(4);
+    expect(BACKDRAFT_TV_BEZEL_MIN).toBe(0);
+    const mid = backdraftTvBezel(0.5);
+    expect(mid).toBeGreaterThan(backdraftTvBezel(0.25));
+    expect(mid).toBeLessThan(backdraftTvBezel(0.75));
+    // The default sits at that centre.
+    expect(backdraftDef.params.find((p) => p.id === 'bezel')?.defaultValue).toBe(0.5);
+
+    // And state the TRADE rather than hiding it: the bezel is the only
+    // high-contrast boundary between level k and level k+1, so at 0 the nest
+    // stops reading as frames-within-frames and becomes a smooth zoom. That is
+    // now reachable ON PURPOSE, so it is asserted rather than prevented.
+    const bare = simulateBackdraftTv({ size: 320, frames: 80, bezel: 0 });
+    const framed = simulateBackdraftTv({ size: 320, frames: 80, bezel: 0.5 });
+    expect(tvBands(bare).length).toBeLessThan(tvBands(framed).length);
+    expect(tvBands(framed).length).toBeGreaterThanOrEqual(5);
   }, 30_000);
 });
 
@@ -609,7 +624,7 @@ describe('BACKDRAFT — VIRTUAL CAMERA ORIENTATION', () => {
   it('V2 — tilt KEYSTONES: a rectangle images as a trapezoid', () => {
     // Off-axis, the two vertical edges of the screen subtend different heights.
     // That difference IS the keystone, and it is what makes the nest curl.
-    const H = backdraftCamInverseHomography({ tiltX: 0.8, dist: 0.2 }, 0.75, 0);
+    const H = backdraftCamInverseHomography({ tiltX: BACKDRAFT_CAM_TILT_RANGE, dist: 0 }, 0.75, 0);
     // Walk the left and right thirds of the frame and compare how much screen
     // plane each unit of camera frame covers.
     const spanAt = (qx: number): number =>
@@ -627,7 +642,7 @@ describe('BACKDRAFT — VIRTUAL CAMERA ORIENTATION', () => {
     // The fader's whole job. Short distance = wide angle = violent keystone;
     // long = telephoto = gentle. Same tilt on both sides.
     const asym = (dist: number): number => {
-      const H = backdraftCamInverseHomography({ tiltX: 0.7, dist }, 0.75, 0);
+      const H = backdraftCamInverseHomography({ tiltX: BACKDRAFT_CAM_TILT_RANGE, dist }, 0.75, 0);
       const span = (qx: number): number => Math.abs(apply(H, qx, 0.4).y - apply(H, qx, -0.4).y);
       const l = span(-0.4), r = span(0.4);
       return Math.abs(l - r) / Math.max(l, r);
@@ -638,7 +653,7 @@ describe('BACKDRAFT — VIRTUAL CAMERA ORIENTATION', () => {
   it('V4 — camera POSITION moves the view without bending it', () => {
     // Translation alone is a shift, not a keystone — the bend comes from TILT.
     // Combining them is how you look at the set from above and off to one side.
-    const H = backdraftCamInverseHomography({ posX: 0.6, posY: -0.4, dist: 0.5 }, 0.75, 0);
+    const H = backdraftCamInverseHomography({ posX: BACKDRAFT_CAM_POS_RANGE, posY: -BACKDRAFT_CAM_POS_RANGE, dist: 0.5 }, 0.75, 0);
     const centre = apply(H, 0, 0);
     expect(Math.hypot(centre.x, centre.y)).toBeGreaterThan(0.1);
     const span = (qx: number): number => Math.abs(apply(H, qx, 0.4).y - apply(H, qx, -0.4).y);
@@ -724,9 +739,9 @@ describe('BACKDRAFT — VIRTUAL CAMERA ORIENTATION', () => {
     expect(Math.hypot(centre.x, centre.y)).toBeLessThan(1e-6);
 
     // Re-aiming moves it — that is the re-composition.
-    const tilted = vanishing({ tiltX: 0.6, dist: 0.15 });
+    const tilted = vanishing({ tiltX: BACKDRAFT_CAM_TILT_RANGE, dist: 0 });
     expect(Math.hypot(tilted.x - centre.x, tilted.y - centre.y)).toBeGreaterThan(0.05);
-    const shifted = vanishing({ posX: 0.7, posY: -0.5 });
+    const shifted = vanishing({ posX: BACKDRAFT_CAM_POS_RANGE, posY: -BACKDRAFT_CAM_POS_RANGE });
     expect(Math.hypot(shifted.x - centre.x, shifted.y - centre.y)).toBeGreaterThan(0.05);
 
     // …and it TRACKS the control: every tilt gives its own framing, so a CV
@@ -735,7 +750,9 @@ describe('BACKDRAFT — VIRTUAL CAMERA ORIENTATION', () => {
     // vanishing point starts far off-frame and comes CLOSER as tilt grows,
     // which is correct and was worth measuring rather than assuming.
     const seen: { x: number; y: number }[] = [];
-    for (const t of [0.15, 0.3, 0.45, 0.6, 0.75]) {
+    // Inside the joystick's own (constrained) travel — beyond +-0.2 the model
+    // clamps, so sampling past it would compare identical framings.
+    for (const t of [0.04, 0.08, 0.12, 0.16, 0.2]) {
       seen.push(vanishing({ tiltX: t, dist: 0.5 }));
     }
     for (let i = 1; i < seen.length; i++) {
@@ -746,9 +763,16 @@ describe('BACKDRAFT — VIRTUAL CAMERA ORIENTATION', () => {
 
   it('V7 — the contract: 5 params + 5 CV ports, all neutral by default', () => {
     const p = (id: string) => backdraftDef.params.find((q) => q.id === id);
-    for (const id of ['camTiltX', 'camTiltY', 'camPosX', 'camPosY']) {
-      expect(p(id)?.min).toBe(-1);
-      expect(p(id)?.max).toBe(1);
+    // Constrained travel: the keystone compounds, so the joysticks stop where
+    // the nest is still readable.
+    for (const id of ['camTiltX', 'camTiltY']) {
+      expect(p(id)?.min).toBe(-BACKDRAFT_CAM_TILT_RANGE);
+      expect(p(id)?.max).toBe(BACKDRAFT_CAM_TILT_RANGE);
+      expect(p(id)?.defaultValue, `${id} is neutral by default`).toBe(0);
+    }
+    for (const id of ['camPosX', 'camPosY']) {
+      expect(p(id)?.min).toBe(-BACKDRAFT_CAM_POS_RANGE);
+      expect(p(id)?.max).toBe(BACKDRAFT_CAM_POS_RANGE);
       expect(p(id)?.defaultValue, `${id} is neutral by default`).toBe(0);
     }
     expect(p('camDist')?.defaultValue).toBe(0.5);

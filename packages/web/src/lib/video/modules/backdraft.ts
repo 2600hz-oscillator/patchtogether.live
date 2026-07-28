@@ -494,7 +494,15 @@ export function backdraftNextTvMode(mode: number): number {
 // which is what off-axis video feedback looks like. It does mean deep levels go
 // illegible faster than dead-on, so the readable-depth readout accounts for it.
 
-/** Maximum camera tilt, degrees, at the joystick's extreme. Beyond ~60 deg the
+/** The joysticks' own travel. Constrained deliberately: at full swing the
+ *  keystone compounds so hard that the nest is unreadable within a couple of
+ *  levels, so the controls stop where the picture is still worth looking at.
+ *  Tilt reaches +-0.2 * 60 = +-12 deg, position +-0.5 * 1.5 = +-0.75 frame
+ *  half-widths — still enough to sit outside the screen's edge. */
+export const BACKDRAFT_CAM_TILT_RANGE = 0.2;
+export const BACKDRAFT_CAM_POS_RANGE = 0.5;
+
+/** Maximum camera tilt, degrees, at a FULL-SCALE (+-1) joystick value. Beyond ~60 deg the
  *  screen's far edge approaches the horizon and the nest degenerates into a
  *  sliver, so the range stops where the image is still worth looking at. */
 export const BACKDRAFT_CAM_TILT_MAX_DEG = 60;
@@ -570,10 +578,11 @@ export function backdraftCamInverseHomography(
   const s = Math.max(1e-4, fill);
   const th = (rotateDeg * Math.PI) / 180;
   const cs = Math.cos(th), sn = Math.sin(th);
-  const tx = (Math.max(-1, Math.min(1, o.tiltX ?? 0)) * BACKDRAFT_CAM_TILT_MAX_DEG * Math.PI) / 180;
-  const ty = (Math.max(-1, Math.min(1, o.tiltY ?? 0)) * BACKDRAFT_CAM_TILT_MAX_DEG * Math.PI) / 180;
-  const cx = Math.max(-1, Math.min(1, o.posX ?? 0)) * BACKDRAFT_CAM_POS_MAX;
-  const cy = Math.max(-1, Math.min(1, o.posY ?? 0)) * BACKDRAFT_CAM_POS_MAX;
+  const R = BACKDRAFT_CAM_TILT_RANGE, P = BACKDRAFT_CAM_POS_RANGE;
+  const tx = (Math.max(-R, Math.min(R, o.tiltX ?? 0)) * BACKDRAFT_CAM_TILT_MAX_DEG * Math.PI) / 180;
+  const ty = (Math.max(-R, Math.min(R, o.tiltY ?? 0)) * BACKDRAFT_CAM_TILT_MAX_DEG * Math.PI) / 180;
+  const cx = Math.max(-P, Math.min(P, o.posX ?? 0)) * BACKDRAFT_CAM_POS_MAX;
+  const cy = Math.max(-P, Math.min(P, o.posY ?? 0)) * BACKDRAFT_CAM_POS_MAX;
   const D = backdraftCamDistance(o.dist ?? 0.5);
 
   // A: (p,1) -> (W - C), with the screen's own scale + roll folded in.
@@ -587,8 +596,8 @@ export function backdraftCamInverseHomography(
   const cy1 = Math.cos(ty), sy1 = Math.sin(ty);
   const Ry = [cx1, 0, sx1, 0, 1, 0, -sx1, 0, cx1];
   const Rx = [1, 0, 0, 0, cy1, -sy1, 0, sy1, cy1];
-  const R = mat3Mul(Ry, Rx);
-  const Rt = [R[0]!, R[3]!, R[6]!, R[1]!, R[4]!, R[7]!, R[2]!, R[5]!, R[8]!];
+  const Rm = mat3Mul(Ry, Rx);
+  const Rt = [Rm[0]!, Rm[3]!, Rm[6]!, Rm[1]!, Rm[4]!, Rm[7]!, Rm[2]!, Rm[5]!, Rm[8]!];
   // Project: q_h = diag(D,D,1) * R^T * A * (p,1)
   const K = [D, 0, 0, 0, D, 0, 0, 0, 1];
   const H = mat3Mul(K, mat3Mul(Rt, A));
@@ -644,10 +653,16 @@ export const BACKDRAFT_TV_GLASS = 0.2;
 export const BACKDRAFT_TV_AMBIENT = 0.05;
 
 /** Bezel half-width in SCREEN-LOCAL units, at BEZEL = 0 and BEZEL = 1.
- *  FLOORED at 0.02: the bezel is the only high-contrast boundary between level
- *  k and level k+1, and a bezel of exactly 0 collapses the nest to ONE band (a
- *  smooth zoom). A fader whose minimum deletes the feature is a bug. */
-export const BACKDRAFT_TV_BEZEL_MIN = 0.02;
+ *  The fader reaches EXACTLY 0 — a borderless set — and the shipped look sits
+ *  at the CENTRE of its travel, so the control opens both thinner and thicker
+ *  than the default.
+ *
+ *  Note what 0 costs, because it is a real trade rather than a free option: the
+ *  bezel is the only high-contrast boundary between level k and level k+1, so
+ *  at 0 the nest stops reading as frames-within-frames and becomes a smooth
+ *  zoom. That is a legitimate look and it is now reachable on purpose; it is
+ *  simply not the one the mode is named for. */
+export const BACKDRAFT_TV_BEZEL_MIN = 0;
 export const BACKDRAFT_TV_BEZEL_MAX = 0.12;
 /** The set's frame — dark plastic, multiplied by the room so a dark room
  *  darkens the set. */
@@ -1510,7 +1525,9 @@ const DEFAULTS: BackdraftParams = {
   tvMode: 0,
   tvGate: 0,
   room: 1.0,
-  bezel: 0.4,
+  // Centre of travel — the shipped bezel, with room to go thinner (0 px) or
+  // thicker from there.
+  bezel: 0.5,
   phosphor: 0,
   // DRIVE 0.5 sits exactly ON the measured Hopf point, so CRITICAL opens at the
   // edge itself — back it off for a still nest, push it up to make it breathe.
@@ -3097,10 +3114,10 @@ export const backdraftDef: VideoModuleDef = {
     { id: 'phosphor', label: 'Phos',     defaultValue: DEFAULTS.phosphor, min: 0,  max: 1,                     curve: 'linear' },
     { id: 'drive',    label: 'Drive',    defaultValue: DEFAULTS.drive,    min: 0,  max: 1,                     curve: 'linear' },
     // VIRTUAL CAMERA ORIENTATION — bipolar joysticks, unipolar distance fader.
-    { id: 'camTiltX', label: 'Tilt X',   defaultValue: DEFAULTS.camTiltX, min: -1, max: 1,                     curve: 'linear' },
-    { id: 'camTiltY', label: 'Tilt Y',   defaultValue: DEFAULTS.camTiltY, min: -1, max: 1,                     curve: 'linear' },
-    { id: 'camPosX',  label: 'Cam X',    defaultValue: DEFAULTS.camPosX,  min: -1, max: 1,                     curve: 'linear' },
-    { id: 'camPosY',  label: 'Cam Y',    defaultValue: DEFAULTS.camPosY,  min: -1, max: 1,                     curve: 'linear' },
+    { id: 'camTiltX', label: 'Tilt X',   defaultValue: DEFAULTS.camTiltX, min: -BACKDRAFT_CAM_TILT_RANGE, max: BACKDRAFT_CAM_TILT_RANGE, curve: 'linear' },
+    { id: 'camTiltY', label: 'Tilt Y',   defaultValue: DEFAULTS.camTiltY, min: -BACKDRAFT_CAM_TILT_RANGE, max: BACKDRAFT_CAM_TILT_RANGE, curve: 'linear' },
+    { id: 'camPosX',  label: 'Cam X',    defaultValue: DEFAULTS.camPosX,  min: -BACKDRAFT_CAM_POS_RANGE,  max: BACKDRAFT_CAM_POS_RANGE,  curve: 'linear' },
+    { id: 'camPosY',  label: 'Cam Y',    defaultValue: DEFAULTS.camPosY,  min: -BACKDRAFT_CAM_POS_RANGE,  max: BACKDRAFT_CAM_POS_RANGE,  curve: 'linear' },
     { id: 'camDist',  label: 'Dist',     defaultValue: DEFAULTS.camDist,  min: 0,  max: 1,                     curve: 'linear' },
     // freeze is a hidden VRT/determinism toggle — no card control.
     { id: 'freeze',   label: 'Freeze',   defaultValue: DEFAULTS.freeze,   min: 0,  max: 1,                     curve: 'linear' },
@@ -3176,7 +3193,7 @@ export const backdraftDef: VideoModuleDef = {
       tvMode: "TV Mode (discrete OFF / PURE TV / CRITICAL, default OFF): switches BACKDRAFT from an infinite feedback PLANE to a bounded SCREEN. OFF is the exact no-op — the shader branch is skipped and the classic composite is untouched. PURE TV builds the thing a camera pointed at a television actually sees: the previous frame is drawn, whole, inside a bezelled screen rectangle that fills 75% of the frame (set by ZOOM), and OUTSIDE that screen is the live input — so IN PURE TV YOUR INPUT IS THE ROOM, NOT THE PICTURE, and the picture is the feedback. Because each pass places the entire previous view (room, bezel and picture) inside the next screen, the image NESTS: about 11 resolved frames-within-frames, each 3/4 the size of the last and each dimmer, converging on a milky core at 20% of the room level. That nesting is forced by the geometry rather than tuned, which is why no combination of the old FEEDBACK/ZOOM controls could ever produce it — the old map adds the live input to EVERY pixel and clamps the previous frame across the whole plane, so there is no 'outside the TV' left to re-image. PURE TV is a strict contraction: it converges to a STILL nest, and motion in the room cascades inward one level per DELAY. CRITICAL keeps that geometry and adds the camera's AUTOMATIC EXPOSURE — a servo with memory that meters the frame it just captured and pushes its gain the other way. Because it integrates, it overshoots, and past the DRIVE midpoint the overshoot becomes a self-sustaining limit cycle: the picture blooms toward white, the servo hauls it back, and the correction propagates inward through the nest one level per DELAY as a travelling annulus. That is the mode for riding the edge of white-out. In BOTH TV modes the FLICKER control additionally drives a VIRTUAL REFRESH: a real set is redrawn line by line, so its face at any instant is a SEAM between two successive fields — new above the beam, previous below it — and a camera pointed at it catches that seam. Because the seam sits in the MONITOR's own raster rather than in the camera's frame, every nesting level re-photographs a screen that already has one, so level k carries k seams at k different ages and the refresh cascades inward through the whole nest. FLICKER's rate sets how fast the beam sweeps: the 60 position (the true NTSC field rate) leaves it creeping, which is the classic slow hum bar you see filming a television, while the 6 position races it down the frame several times a second. FLICKER OFF is the exact no-op — no beam, no seam, and the tap is unchanged. This is a different effect from FLICKER's rolling-shutter brightness band, which stays in SCREEN space because the shutter scans the sensor and not the scene: one changes a row's BRIGHTNESS, the other changes which FRAME the row came from. The TV button cycles the mode; tv_gate cycles it on a rising edge.",
       tvGate: "TV Gate (0..1, default 0): hidden synthetic param the tv_gate CV bridge writes (raw gate swing). No card knob; a rising edge cycles TV MODE.",
       room: "Room (0..1, default 1.0): the light level OUTSIDE the screen in PURE TV / CRITICAL — the live input at full strength plus a 5% ambient floor. The ambient floor is range-preserving, so even with nothing patched the mode still lights its own room and demonstrates its geometry. Turning ROOM down dims the set and the whole nest with it (the brightness cascade stays correctly ordered at every room level, rather than flattening or inverting as an absolute lift would). Inert while TV MODE is off.",
-      bezel: "Bezel (0..1, default 0.4): the width of the screen's frame, in screen-local units, so a level-k bezel automatically lands 3/4-scaled — deeper bezels shrink because they are IMAGES of the real one. The bezel is not decoration: it is the only high-contrast boundary between one nesting level and the next, and without it the nest reads as a smooth zoom rather than as frames within frames. Floored at a non-zero minimum for exactly that reason — a fader whose bottom end deletes the feature would be a bug. Inert while TV MODE is off.",
+      bezel: "Bezel (0..1, default 0.5 = the shipped look, mid-travel): the THICKNESS of the set's border, in screen-local units, so a level-k bezel automatically lands 3/4-scaled — deeper borders shrink because they are IMAGES of the real one. The fader reaches EXACTLY 0 (a borderless screen) at the bottom and opens thicker than the default at the top. Worth knowing what 0 costs, because it is a real trade rather than a free option: the border is the only high-contrast boundary between one nesting level and the next, so at 0 the nest stops reading as frames-within-frames and becomes a smooth zoom. That is a legitimate look, it is simply not the one the mode is named for. Inert while TV MODE is off.",
       phosphor: "Phos / Phosphor (0..1, default 0): one-frame image retention, applied IN PLACE (no transform) — the term that makes delay smear rather than step. Despite the name this is NOT phosphor: a colour TV's P22 phosphor retains about 4e-73 of a frame, which is nothing, and Crutchfield says so himself. The real integrator in a camera-at-a-TV rig is the CAMERA's charge storage, roughly 10 frames, and that is what this models. Level k has been through the filter k times, so deeper levels are older in proportion to k and blurrier in time in proportion to the square root of k. Unit DC gain, so it changes only the temporal smear and never the converged image. Tube ladder: 0 = colour TV (no inter-frame tail exists, and the honest default), 0.13 = P4 mono TV, 0.16 = P1 scope green, 0.86 = P39 radar, 1.0 = P7 dual-layer radar. Inert while TV MODE is off.",
       drive: "Drive (0..1, default 0.5): CRITICAL's auto-exposure servo RATE — how hard the mode rides the edge of white-out. This is a time constant, not a gain, and the fader is geometric (equal steps are equal FACTORS, from 1 to 49 per frame) because a servo speed is scale-free; that also makes a linear CV ramp read as a smooth accelerando into instability rather than a cliff. The default 0.5 sits exactly ON the measured bifurcation. Below it the servo is a well-behaved regulator and the nest is dead still; above it the servo overshoots into a sustained limit cycle and the picture breathes — blooming toward white, being hauled back, and sending each correction inward through the nest one level per DELAY. The swing deepens monotonically with the knob. The exposure state is hard-clamped, which is what makes a white-out always recoverable: back DRIVE off and the nest returns. Ignored outside CRITICAL.",
       camTiltX: "Tilt X (-1..+1, default 0 = dead-on): VIRTUAL CAMERA ORIENTATION. Swings the camera left or right of the screen's normal while it keeps pointing the same way, so the set images as a TRAPEZOID rather than a rectangle — the far edge shorter than the near one. Because every pass re-photographs the pass before it, the keystone COMPOUNDS: the nest curls away toward the vanishing point instead of shrinking straight into the middle. Deep levels therefore go illegible sooner than they do dead-on; that is what an angled camera really does, not a defect. Re-aiming the camera also MOVES THE VANISHING POINT — the accumulation point of the frame-in-frame-in-frame is the fixed point of the map, so tilting re-composes the whole nest rather than just sliding the picture across the frame. And because the map is ITERATED, that re-composition RECURSES THROUGH THE FEEDBACK NETWORK: the move reaches level k only after k*DELAY frames, so a camera gesture travels inward through the nest exactly the way motion in the room and the refresh seam do. 0 is the exact dead-on default, where the map is the plain affine one and this control costs nothing.",

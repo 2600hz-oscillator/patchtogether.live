@@ -198,12 +198,12 @@ backdraft in tv_gate cv param=tvGate
 backdraft in zoom cv param=zoom cvScale=linear
 backdraft out out video
 backdraft param b -1..2 linear default=1
-backdraft param bezel 0..1 linear default=0.4
+backdraft param bezel 0..1 linear default=0.5
 backdraft param camDist 0..1 linear default=0.5
-backdraft param camPosX -1..1 linear default=0
-backdraft param camPosY -1..1 linear default=0
-backdraft param camTiltX -1..1 linear default=0
-backdraft param camTiltY -1..1 linear default=0
+backdraft param camPosX -0.5..0.5 linear default=0
+backdraft param camPosY -0.5..0.5 linear default=0
+backdraft param camTiltX -0.2..0.2 linear default=0
+backdraft param camTiltY -0.2..0.2 linear default=0
 backdraft param chroma -1..2 linear default=1
 backdraft param darken 0..1 linear default=1
 backdraft param delay 0..500 linear default=16
