@@ -101,15 +101,13 @@ export function renderDx7Note(voice: DX7Voice, opts: RenderOptions): Float32Arra
       let modIn = 0;
       const srcs = algo.modSrcs[opIdx]!;
       for (let s = 0; s < srcs.length; s++) {
-        const src = srcs[s]!;
-        if (src === opIdx) {
-          modIn += fbMem * fbAmount;
-        } else {
-          modIn += opOut[src]!;
-        }
+        modIn += opOut[srcs[s]!]!;
       }
-      // Op6 self-feedback (when not already in srcs).
-      if (opIdx === 5 && srcs.indexOf(opIdx) < 0 && fbAmount > 0) {
+      // The feedback path, which is PER-ALGORITHM: inject the loop memory into
+      // the op the DX7 chart wires it to (op6 in most algorithms, but
+      // op2/op3/op4/op5 in others; algorithms 4 and 6 are multi-operator loops
+      // whose memory is sourced from op4 / op5 respectively).
+      if (opIdx === algo.feedback.to && fbAmount > 0) {
         modIn += fbMem * fbAmount;
       }
 
@@ -119,7 +117,7 @@ export function renderDx7Note(voice: DX7Voice, opts: RenderOptions): Float32Arra
       const sample = Math.sin(ph) * envValue[opIdx]! * op.outputAmp;
       opOut[opIdx] = sample;
     }
-    fbMem = (fbMem + opOut[5]!) * 0.5;
+    fbMem = (fbMem + opOut[algo.feedback.from]!) * 0.5;
 
     // Sum carriers.
     let voiceOut = 0;
