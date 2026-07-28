@@ -16,6 +16,11 @@ import { holdParamAtSeam, HOLD_NOW_EPS_S } from './hold-param';
 import { createEdgeCounter } from './edge-detect';
 import { GATE_HI } from './gate-trigger';
 import { getSchedulerClock } from './scheduler-clock';
+import {
+  ensureGateEdgeWorklet,
+  GATE_EDGE_PROCESSOR,
+  type GateEdgeMessage,
+} from './gate-edge-worklet';
 // PURE registry read (a Map lookup — see video/module-registry.ts). Imported
 // for its TYPE metadata only: we need the target input's `cvScale` hint to tell
 // a gate-style cv target (raw passthrough, module edge-detects) from a
@@ -1430,20 +1435,39 @@ export class PatchEngine {
    * edge in 10 s" CI failure, and no timeout budget can fix it because the stall
    * length is unbounded.
    *
-   * THE FIX: stop sampling, start COUNTING. We tap the source with our own
-   * analyser and run the repo's mandated main-thread edge seam
-   * (`$lib/audio/edge-detect createEdgeCounter`, which windows to only the
-   * samples that arrived since the last poll, so it neither drops nor
-   * double-counts) from the SCHEDULER CLOCK — a Web Worker tick that, unlike
-   * rAF, is immune to main-thread/render starvation. Every rising edge the
-   * audio graph produced is then replayed into the target's setParam as a
-   * discrete low→high transition, so the consumer's own hysteresis detector
-   * fires exactly once per real edge regardless of frame rate.
+   * THE FIX: stop sampling, start COUNTING — in the AUDIO THREAD. The source is
+   * tapped by a tiny AudioWorklet (`gate-edge-worklet.ts`) that does per-sample
+   * rising-edge detection and keeps a MONOTONIC total, posting it on every
+   * transition. The scheduler clock (a Web Worker tick, immune to rAF
+   * starvation) then replays the DELTA into the target's setParam as discrete
+   * low→high transitions, so the consumer's own hysteresis detector fires
+   * exactly once per real edge regardless of frame rate.
+   *
+   * WHY THE COUNT MUST LIVE IN THE AUDIO THREAD (the CI-only second half of the
+   * bug): a main-thread reader over an `AnalyserNode` is only lossless while the
+   * gap between two polls is under `fftSize / sampleRate`. On a loaded CI runner
+   * the main thread is preempted for hundreds of ms at a stretch — instrumented
+   * max poll gap on a faithful local repro was **1626 ms**, against an
+   * AnalyserNode MAXIMUM window of 683 ms (fftSize 32768 @ 48 kHz). Older signal
+   * is gone from the ring at ANY fftSize, which is why the first, main-thread-only
+   * version of this fix still dropped ~35-40 % of edges on CI while measuring
+   * 24/24 locally. The worklet total is accumulated BEHIND the stall, so an
+   * arbitrarily long gap now costs latency only, never an edge.
+   *
+   * The main-thread `createEdgeCounter` path is RETAINED as a fail-safe: if the
+   * worklet can't be registered (CSP forbidding blob: worklets, a stubbed test
+   * context, an old browser) the bridge degrades to the windowed analyser
+   * counter rather than losing the gate entirely.
    *
    * This mirrors the `subscribePulse` discrete-dispatch path that
    * addSameDomainVideoCvBridge already installs for video→video gates ("so a
    * 10ms pulse can't be missed by 60fps polling") — the cross-domain audio→video
    * direction simply never got the equivalent treatment.
+   *
+   * TIMING NOTE (accepted, deliberate): edges now land on the SCHEDULER TICK
+   * (~25 ms) rather than on the video frame (~16.7 ms at 60 Hz), so cross-domain
+   * trigger delivery moves by up to ~25 ms. That is the price of never dropping
+   * one, and it is bounded — unlike the pre-fix stalls, which were unbounded.
    *
    * SCOPE — deliberately narrow, so nothing else changes behaviour:
    *  - source cable must be `gate` (a cv/audio source is a LEVEL, correctly
@@ -1498,10 +1522,72 @@ export class PatchEngine {
       try { handle?.setParam?.(targetParamId, v); } catch { /* */ }
     };
 
+    // ---- AUDIO-THREAD accumulator (the authoritative edge count) ----
+    // `wlTotal` is monotonic and updated from the worklet's port messages;
+    // `wlReplayed` is how much of it we have already delivered. A main-thread
+    // stall of ANY length just leaves messages queued — when we next run, the
+    // delta is still exact. `wlLive` gates the handoff: until the worklet is
+    // registered + connected we keep using the windowed analyser counter, so a
+    // context that cannot host a worklet still gets edges (fail-safe).
+    let wlLive = false;
+    let wlTotal = 0;
+    let wlReplayed = 0;
+    let wlLevel = 0;
+    let workletNode: AudioWorkletNode | null = null;
+    let keepAlive: GainNode | null = null;
+    let disposed = false;
+
+    void ensureGateEdgeWorklet(ae.ctx).then((ok) => {
+      if (!ok || disposed) return;
+      try {
+        const wn = new AudioWorkletNode(ae.ctx, GATE_EDGE_PROCESSOR, {
+          numberOfInputs: 1,
+          numberOfOutputs: 1,
+          outputChannelCount: [1],
+          channelCount: 1,
+          channelCountMode: 'explicit',
+        });
+        wn.port.onmessage = (ev: MessageEvent) => {
+          const m = ev.data as GateEdgeMessage | undefined;
+          if (!m || typeof m.count !== 'number') return;
+          wlTotal = m.count;
+          wlLevel = m.level >= 1 ? 1 : 0;
+        };
+        src.node.connect(wn, src.output);
+        // Keep-alive: an AudioWorkletNode with no path to the destination is an
+        // orphan subgraph Chromium won't pull → process() never runs. gain(0)
+        // preserves the tap-only/inaudible contract (recorderbox precedent).
+        keepAlive = ae.ctx.createGain();
+        keepAlive.gain.value = 0;
+        wn.connect(keepAlive);
+        if (ae.ctx.destination) keepAlive.connect(ae.ctx.destination);
+        workletNode = wn;
+        // Hand off cleanly: everything the worklet counted before this instant
+        // was also seen by the analyser counter, so start the delta at the
+        // current total rather than replaying a backlog.
+        wlReplayed = wlTotal;
+        wlLive = true;
+      } catch {
+        // Construction failed → stay on the analyser counter.
+      }
+    });
+
     const unsub = getSchedulerClock().subscribe(() => {
-      const edges = counter.poll(ae.ctx.currentTime);
-      analyser.getFloatTimeDomainData(buf);
-      const level = (buf[buf.length - 1] ?? 0) >= GATE_HI ? 1 : 0;
+      let edges: number;
+      let level: number;
+      if (wlLive) {
+        // Audio-thread truth. Immune to how long we were away.
+        edges = Math.max(0, wlTotal - wlReplayed);
+        wlReplayed = wlTotal;
+        level = wlLevel;
+        // Keep the fallback counter's window anchored to NOW so a later
+        // downgrade (shouldn't happen, but cheap) can't replay stale history.
+        counter.poll(ae.ctx.currentTime);
+      } else {
+        edges = counter.poll(ae.ctx.currentTime);
+        analyser.getFloatTimeDomainData(buf);
+        level = (buf[buf.length - 1] ?? 0) >= GATE_HI ? 1 : 0;
+      }
       // Replay each counted rising edge as an explicit low→high pair. Writing
       // the 0 first makes the transition unconditional: if the consumer's
       // hysteresis state is already HIGH (a gate that re-triggered between
@@ -1521,9 +1607,21 @@ export class PatchEngine {
     });
 
     this.gateDispatchTeardowns.set(edge.id, () => {
+      disposed = true;
       try { unsub(); } catch { /* */ }
       try { src.node.disconnect(analyser, src.output); } catch { /* */ }
       try { analyser.disconnect(); } catch { /* */ }
+      if (workletNode) {
+        try { workletNode.port.onmessage = null; } catch { /* */ }
+        try { workletNode.port.close(); } catch { /* */ }
+        try { src.node.disconnect(workletNode, src.output); } catch { /* */ }
+        try { workletNode.disconnect(); } catch { /* */ }
+        workletNode = null;
+      }
+      if (keepAlive) {
+        try { keepAlive.disconnect(); } catch { /* */ }
+        keepAlive = null;
+      }
     });
     this.gateDispatchEdges.set(edge.id, edge);
     this.cvBridgeEdgeIds.add(edge.id);

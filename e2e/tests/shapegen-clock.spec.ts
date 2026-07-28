@@ -51,17 +51,33 @@
 //                             loop were BOTH provably healthy.
 //
 // The fix (PatchEngine.installGateDispatch) stops sampling and starts
-// COUNTING: a gate source into a gate-style video cv input now runs the
-// repo's mandated `$lib/audio/edge-detect createEdgeCounter` seam off the
-// SCHEDULER CLOCK (a Web Worker tick, immune to rAF starvation) and
-// replays every rising edge into the target's setParam. Post-fix the same
-// sweep gives 24/24, 23/24, 22/23 at 119 / 19 / 11.6 fps.
+// COUNTING — in the AUDIO THREAD. A gate source into a gate-style video cv
+// input is tapped by a tiny AudioWorklet (`gate-edge-worklet.ts`) that does
+// per-sample rising-edge detection and keeps a MONOTONIC total; the scheduler
+// clock replays the DELTA into the target's setParam.
 //
-// Hence assertion 0 below — regen must track the sequencer's OWN step
-// counter roughly 1:1. That is the canary that actually catches this bug
-// class; a "did it move at all" assertion does not. There is deliberately
-// NO retries override on this describe: a dropped-edge regression must go
-// red, not be absorbed.
+// WHY NOT A MAIN-THREAD COUNTER (the CI-only second half — this spec's first
+// fix shipped red because of it). Reading edges off an AnalyserNode on the main
+// thread is lossless only while the gap between polls stays under
+// `fftSize / sampleRate`. On a loaded CI runner the main thread is preempted
+// for hundreds of ms at a time. Instrumented on a FAITHFUL local repro
+// (E2E_SWIFTSHADER=1 + injected 250 ms main-thread stalls — CPU throttling
+// alone does NOT reproduce it, which is why the first fix measured 24/24
+// locally and 7/11 on CI), the max poll gap was 1626 ms against an
+// AnalyserNode MAXIMUM window of 683 ms (fftSize 32768 @ 48 kHz). Delivery
+// under that repro: 13/24 edges at fftSize 4096, 20/24 at the 32768 maximum,
+// and EXACT once the count moved into the audio thread.
+//
+// Hence assertion 0 below — regen must track the pulses the sequencer ACTUALLY
+// EMITTED, ~1:1. Note the reference quantity: `totalAdvances - lateStepsDropped`,
+// NOT raw `totalAdvances`. The sequencer's own #229 catch-up guard deliberately
+// SKIPS the clock pulse for a past-due step (drop, don't pile up) while still
+// advancing `totalAdvances`, so raw `totalAdvances` demands edges that were
+// never in the signal — which is precisely what reddened CI run 30279173414
+// (steps +11 / regen +7, of which 4 were guard-dropped). That is the canary
+// that actually catches this bug class; a "did it move at all" assertion does
+// not. There is deliberately NO retries override on this describe: a
+// dropped-edge regression must go red, not be absorbed.
 //
 // We also assert the [CLOCKED] badge becomes visible when an edge is
 // patched into clock_in (UI hint that the hold behaviour is active).
@@ -106,18 +122,34 @@ async function waitForRegen(
   return { ok: false, last };
 }
 
-/** Read the sequencer's monotonic step counter — the number of clock pulses
- *  the AUDIO graph has actually emitted. Pairing this with regenCount is what
- *  makes a dropped-edge regression visible (see the header). */
-async function readSteps(page: Page, nodeId: string): Promise<number> {
+/** Read the number of clock pulses the sequencer ACTUALLY PUT INTO THE SIGNAL.
+ *
+ *  This is deliberately NOT `totalAdvances` alone. `totalAdvances` counts steps
+ *  the sequencer ADVANCED THROUGH, which is a strictly larger quantity than the
+ *  pulses it emitted: the #229 catch-up guard (`sequencer.ts`) intentionally
+ *  SKIPS `emitClockPulse` for any step whose scheduled time already fell into
+ *  the past — "drop, don't pile up", so a stalled main thread resumes in-tempo
+ *  instead of bunching a backlog into an audible double-hit — while still
+ *  advancing `stepIndex` and `totalAdvances`. Those skipped pulses are counted
+ *  in `lateStepsDropped`.
+ *
+ *  Comparing regen against raw `totalAdvances` therefore demands edges that were
+ *  never in the audio graph at all, and goes red on a loaded runner even with a
+ *  perfect bridge. That is exactly what happened on CI run 30279173414 (steps
+ *  +11 / regen +7). `totalAdvances - lateStepsDropped` is the honest reference:
+ *  every pulse that really existed must arrive. */
+async function readEmittedPulses(page: Page, nodeId: string): Promise<number> {
   return await page.evaluate((nodeId) => {
     const w = globalThis as unknown as {
       __engine?: () => {
         getDomain?: (d: string) => { read?: (n: string, k: string) => unknown } | null;
       } | null;
     };
-    const v = w.__engine?.()?.getDomain?.('audio')?.read?.(nodeId, 'totalAdvances');
-    return typeof v === 'number' ? v : Number.NaN;
+    const rd = (k: string): number => {
+      const v = w.__engine?.()?.getDomain?.('audio')?.read?.(nodeId, k);
+      return typeof v === 'number' ? v : Number.NaN;
+    };
+    return rd('totalAdvances') - rd('lateStepsDropped');
   }, nodeId);
 }
 
@@ -183,28 +215,29 @@ test.describe('SHAPEGEN — CLOCK gate sample-and-hold', () => {
     //         graph) and SHAPEGEN's `regenCount` (pulses actually received
     //         through the cross-domain bridge).
     //
-    //         Tolerance of 3 covers only ordering/boundary effects: a regen
-    //         lands on the first video FRAME after its edge, so the last edge
-    //         in the window can fall just outside it. It does NOT cover the
-    //         bug — the pre-fix bridge dropped 60-80 % of edges under load
-    //         (5 of 24), which blows past any small tolerance.
-    const steps0 = await readSteps(page, 'clkSeq');
+    //         Tolerance of 2 covers only ordering/boundary effects: a regen
+    //         lands on the first video FRAME after its edge, so an edge near
+    //         either end of the window can fall just outside it. It does NOT
+    //         cover the bug — the pre-fix bridge dropped 60-80 % of edges under
+    //         load (5 of 24), which blows past any small tolerance.
+    const emitted0 = await readEmittedPulses(page, 'clkSeq');
     const regen0 = await readRegenCount(page, 'sg');
     await page.waitForTimeout(4000); // ~8 clock pulses at 30 BPM (500 ms period)
-    const steps1 = await readSteps(page, 'clkSeq');
+    const emitted1 = await readEmittedPulses(page, 'clkSeq');
     const regen1 = await readRegenCount(page, 'sg');
-    const dSteps = steps1 - steps0;
+    const dEmitted = emitted1 - emitted0;
     const dRegen = regen1 - regen0;
     expect(
-      dSteps,
-      `the sequencer actually emitted clock pulses in the window (steps ${steps0}→${steps1})`,
+      dEmitted,
+      `the sequencer actually emitted clock pulses in the window (emitted ${emitted0}→${emitted1})`,
     ).toBeGreaterThanOrEqual(4);
     expect(
       dRegen,
-      `every clock pulse regenerates: the cross-domain gate bridge must not DROP `
-      + `edges (steps +${dSteps}, regen +${dRegen} — a big shortfall means the `
-      + `bridge is back to per-frame sampling; see the header)`,
-    ).toBeGreaterThanOrEqual(dSteps - 3);
+      `every EMITTED clock pulse regenerates: the cross-domain gate bridge must `
+      + `not DROP edges (emitted +${dEmitted}, regen +${dRegen} — a big shortfall `
+      + `means the bridge is back to sampling instead of counting in the audio `
+      + `thread; see the header)`,
+    ).toBeGreaterThanOrEqual(dEmitted - 2);
 
     // ---- 2. Within-hold window: ANCHOR to a fresh regen so we KNOW we
     //         are at the start of a hold period (not somewhere random in
