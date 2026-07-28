@@ -14,9 +14,13 @@
 //     out       — mono audio.
 //
 // Params:
-//   algorithm   — 1..32 (DX7 algorithm; quantized; editable at any time, but
-//                 applying it re-sends the patch, which RESETS every voice —
-//                 notes sounding at that moment stop. Same for a preset change).
+//   algorithm   — 1..32 (DX7 algorithm; quantized; editable at any time. The
+//                 host still applies it by re-sending the WHOLE patch, which
+//                 resets every voice — a held note hard-retriggers and a
+//                 releasing tail is cut. Same for a preset change. The worklet
+//                 now also accepts a non-destructive `{type:'algorithm'}`
+//                 message; routing this knob onto it is the host half of the
+//                 operator-view work and is NOT done here yet.)
 //                 NOT an AudioParam on the worklet — host bridge sends a
 //                 fresh patch message via port.postMessage when the knob
 //                 moves. The setParam handler MUST check this branch
@@ -35,7 +39,11 @@
 //                           .myrobots/plans/rackspace-persistence.md.
 //
 // On preset change, the host sends a `{type:'patch', voice}` message to the
-// worklet which rebuilds its internal patch state.
+// worklet which rebuilds its internal patch state. That message is the
+// DESTRUCTIVE one and is correct for a preset LOAD; the worklet also speaks
+// `voice` / `opParam` / `algorithm` / `feedback`, which mutate the patch in
+// place without touching a sounding voice (see the protocol block in
+// packages/dsp/src/dx7.ts). Live operator editing rides those.
 //
 // Inputs:
 //   poly (polyPitchGate): polyphonic pitch+gate (preferred — the cable carries
@@ -168,7 +176,7 @@ export const dx7Def: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A 6-operator FM synthesizer modeled on the Yamaha DX7. Each of its six operators is a sine oscillator with its own frequency ratio (or a fixed frequency) and its own 4-rate/4-level DX7 envelope; instead of filtering a rich waveform, operators modulate each other's phase — one of 32 fixed ALGORITHM wiring diagrams decides which operators are CARRIERS (summed to the output) and which are MODULATORS bending a carrier faster than you can hear, which is what sculpts FM's metallic, bell-like and electric-piano timbres. Operator 6 also feeds back into itself, at the depth stored in the patch. This is a PATCH-DRIVEN instrument: the ratios, levels, envelopes, feedback and stored transpose all come from the loaded voice — nine built-in patches written to evoke the classic factory sounds (E.PIANO 1, TUB BELLS, BRASS 1 …; they are original patches, not Yamaha's data), plus every voice of any .syx cartridge you import. The panel's live controls are therefore which voice is loaded, which algorithm wires it, how it plays (polyphony, transpose, level) and a per-voice master ADSR layered over the patch's own operator envelopes. It plays up to 5 voices from the POLY bus — the first VOICES of that cable's 16 lanes — or monophonically from the PITCH CV + GATE pair. What a cartridge actually drives here: each operator's four envelope rates and levels, its frequency ratio (or fixed-frequency mode), its detune and its output level, plus the voice's algorithm, feedback depth and stored transpose. What it does NOT: the LFO and the pitch envelope are unpacked into the parsed voice but never sent to the engine, per-operator velocity sensitivity is sent and then ignored (nothing upstream carries velocity — the poly cable is pitch and gate only), and keyboard level scaling, rate scaling, amp-mod sensitivity and oscillator sync are not unpacked from the cartridge bytes at all.",
+      "A 6-operator FM synthesizer modeled on the Yamaha DX7. Each of its six operators is a sine oscillator with its own frequency ratio (or a fixed frequency) and its own 4-rate/4-level DX7 envelope; instead of filtering a rich waveform, operators modulate each other's phase — one of 32 fixed ALGORITHM wiring diagrams decides which operators are CARRIERS (summed to the output) and which are MODULATORS bending a carrier faster than you can hear, which is what sculpts FM's metallic, bell-like and electric-piano timbres. Every algorithm also carries exactly ONE feedback loop, at the depth stored in the patch, and WHERE that loop sits is part of the algorithm: it is operator 6 feeding back into itself in most of them, but operator 2, 3, 4 or 5 in others, and in algorithms 4 and 6 it is a loop wrapping a whole stack (operator 4 back into 6, operator 5 back into 6) rather than a self-loop. That placement is often the only difference between two otherwise identically-wired algorithms — 1 and 2, or 26 and 27, route the same and sound different for exactly this reason. This is a PATCH-DRIVEN instrument: the ratios, levels, envelopes, feedback and stored transpose all come from the loaded voice — nine built-in patches written to evoke the classic factory sounds (E.PIANO 1, TUB BELLS, BRASS 1 …; they are original patches, not Yamaha's data), plus every voice of any .syx cartridge you import. The panel's live controls are therefore which voice is loaded, which algorithm wires it, how it plays (polyphony, transpose, level) and a per-voice master ADSR layered over the patch's own operator envelopes. It plays up to 5 voices from the POLY bus — the first VOICES of that cable's 16 lanes — or monophonically from the PITCH CV + GATE pair. What a cartridge actually drives here: each operator's four envelope rates and levels, its frequency ratio (or fixed-frequency mode), its detune and its output level, plus the voice's algorithm, feedback depth and stored transpose. What it does NOT: the LFO and the pitch envelope are unpacked into the parsed voice but never sent to the engine, per-operator velocity sensitivity is sent and then ignored (nothing upstream carries velocity — the poly cable is pitch and gate only), and keyboard level scaling, rate scaling, amp-mod sensitivity and oscillator sync are not unpacked from the cartridge bytes at all.",
     inputs: {
       poly: "The polyphonic note source and the preferred way to play this synth: the 16-lane polyPitchGate cable (32 channels — a pitch and a gate per lane; patch POLYSEQZ, MIDI LANE, or another poly source here). DX7 has five voice slots, so only the first VOICES lanes are read and anything on lanes 6-16 is ignored. A rising gate on a lane triggers a fresh note-on at that lane's pitch, the falling gate releases it, and while a lane's gate stays high its pitch keeps being tracked so the note glides. A lane keeps its own voice for as long as its note lasts; when every voice slot is still busy a new note steals the oldest. Pitch and gate are sampled once per render block, so block-quantized sequencer writes land exactly.",
       pitch_cv: "Mono V/oct pitch for single-voice playing — read only when nothing is patched into POLY, and only for the first lane, so this route is monophonic. 0 V is middle C (C4) and 1 V is an octave; TRANSPOSE and the loaded patch's own stored transpose add on top.",
@@ -178,7 +186,26 @@ export const dx7Def: AudioModuleDef = {
       out: "Mono audio: every active voice's carrier operators summed, each voice scaled by its own master ADSR, then the whole bus scaled by LEVEL and by a fixed headroom trim of 0.4 so five voices sounding at once stay clear of clipping. Patch it into a VCA, filter, mixer, or straight to the output.",
     },
     controls: {
-      algorithm: "Which of the 32 DX7 algorithms wires the six operators together (1–32) — each one fixes the carrier/modulator routing, from the deep single-carrier stacks (16–18) through the classic 3-carrier electric-piano layouts (5) to the fully parallel additive organ (32, where all six operators are carriers). It is the biggest single shaper of a patch's character. Loading a preset adopts that voice's own stored algorithm and the readout follows it; turning the knob overrides it. Because a change is applied by re-sending the whole patch to the engine, it also RESETS the voices — anything sounding at that moment stops, so treat it as a between-notes control.",
+      // ⚠ THE LAST SENTENCE OF `algorithm` DESCRIBES THE HOST PATH, NOT THE
+      // ENGINE'S CAPABILITY, AND PR 5 OF THE DX7 OPERATOR-VIEW PROGRAM MUST
+      // RE-AUTHOR IT IN THAT SAME PR. The worklet already accepts a
+      // non-destructive `{type:'algorithm'}` message (added in PR 1, see the
+      // protocol block in packages/dsp/src/dx7.ts), but `setParam('algorithm')`
+      // below still calls sendPatch() — a whole-patch re-send that resets every
+      // voice. When PR 5 routes the knob onto the incremental message, "turning
+      // it re-sends the whole patch … a note you are holding is retriggered"
+      // becomes FALSE and the sentence must change with the code.
+      //
+      // The audible consequence is a RETRIGGER, not silence: applyPatch zeroes
+      // `lastGate`, so the still-high gate reads as a fresh rising edge on the
+      // very next block. Measured, not assumed — see dx7-messages.test.ts.
+      //
+      // MERGE NOTE (PR 0 ← main): the "AND which operator carries the feedback
+      // loop" clause is PR 0's, and it is now TRUE — the corrected table gives
+      // each algorithm its own feedback operator instead of hardcoding op6. The
+      // retrigger wording and this comment are PR 1's. Both are kept; neither
+      // side's correction is dropped.
+      algorithm: "Which of the 32 DX7 algorithms wires the six operators together (1–32) — each one fixes both the carrier/modulator routing AND which operator carries the feedback loop, from the deep single-carrier stacks (16–18) through the classic 3-carrier electric-piano layouts (5) to the fully parallel additive organ (32, where all six operators are carriers). It is the biggest single shaper of a patch's character. Loading a preset adopts that voice's own stored algorithm and the readout follows it; turning the knob overrides it. Changing it re-sends the whole patch to the engine, which resets every voice: a note you are holding does not morph into the new routing but is RETRIGGERED — you hear a click and a fresh attack — and a note already ringing out its release is cut short. Treat it as a between-notes control.",
       voiceCount: "How many of the POLY cable's lanes are read, 1 to 5 — the cable itself carries 16, but DX7 has five voice slots and never looks past lane 5. Lanes above the setting are ignored, so 1 gives a strictly monophonic instrument (the same first lane the mono PITCH CV + GATE pair drives) and 5 lets full chords through. Five voice slots exist either way; a note arriving while all of them are still busy steals the oldest.",
       level: "Master output gain for the whole synth, 0 to 2 (0.7 default); it scales the summed voice bus feeding OUT. The fixed 0.4 headroom trim is applied on top of it either way, so LEVEL 1 is the knob's own unity rather than unity gain end to end.",
       transpose: "Global pitch offset in semitones (-24 to +24) added to every voice on top of the loaded patch's own stored transpose (BASS 1, for instance, already sits an octave down). It is continuous rather than stepped, so fractional settings detune the whole instrument. It is re-applied while a gate is held — turning it retunes sounding notes live — but a note already released keeps the pitch it ended on.",
@@ -188,7 +215,7 @@ export const dx7Def: AudioModuleDef = {
       release: "Master-VCA release after the gate falls: an exponential fade with this time constant. It acts as a CEILING on the patch's own tail — at the 0.005 s default the master VCA closes in well under a tenth of a second, cutting the long releases stored in bell and pad voices, so raise it (a second or more) when you want those tails to ring. The voice slot is freed only once both this envelope and the operator envelopes have faded out.",
       // Card controls with no param/family of their own — each declared as a
       // single-member control family below and keyed here as `<familyId>-{n}`.
-      "dx7-preset-select-{n}": "The voice selector, and the single control that defines the sound: pick one of the nine built-in patches (E.PIANO 1, BASS 1, HARMONICA, STRINGS 1, MARIMBA, TUB BELLS, BRASS 1, CALLIOPE, WIRE LEAD) or, once you have imported a cartridge, any voice from it. Choosing a voice loads its six operators, their envelopes, its feedback depth, its stored transpose and its stored algorithm — so the ALGORITHM readout jumps to the patch's own value. Like an algorithm change it re-sends the patch and resets the voices, so notes sounding at that moment stop.",
+      "dx7-preset-select-{n}": "The voice selector, and the single control that defines the sound: pick one of the nine built-in patches (E.PIANO 1, BASS 1, HARMONICA, STRINGS 1, MARIMBA, TUB BELLS, BRASS 1, CALLIOPE, WIRE LEAD) or, once you have imported a cartridge, any voice from it. Choosing a voice loads its six operators, their envelopes, its feedback depth, its stored transpose and its stored algorithm — so the ALGORITHM readout jumps to the patch's own value. Loading a voice re-sends the whole patch to the engine, which resets every voice: a note you are holding re-attacks from the start of its envelope, and a note already ringing out its release is cut short. Treat it as a between-notes control.",
       "dx7-syx-input-{n}": "Load .syx bank — import a real Yamaha DX7 cartridge dump. It accepts the standard 4104-byte 32-voice SysEx bank, a bare 4096-byte payload, or a single 128-byte packed voice; a bank's 32 voices are APPENDED to the selector (never replacing what is already there, so several cartridges can be stacked) and the first voice of the new bank is selected for you. A status line reports how many voices loaded plus a count of any warnings — a bad header byte or a checksum mismatch is warned about, not rejected; only a file whose SIZE matches none of the three shapes is refused outright. Imported voices ride in the module's data, so they are saved with the rack and reach everyone in the rackspace.",
     },
   },

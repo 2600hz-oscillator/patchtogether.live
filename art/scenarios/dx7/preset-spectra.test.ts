@@ -114,8 +114,10 @@ describe('DX7 ART: HARMONICA — reedy odd harmonics', () => {
     const fund = a.probeAt(a.fund);
     const noise = a.noiseAt(a.fund);
     expect(fund / noise).toBeGreaterThan(3);
-    // Harmonica voicing has 3 carriers at ratios 1, 1, 1 (octave pair) and a
-    // ratio-2 modulator — expect 2nd harmonic to be prominent.
+    // Algorithm 19: carriers op1 (ratio 1), op4 (ratio 4) and op5 (ratio 1),
+    // with op3 (ratio 2) → op2 (ratio ~1.05) → op1 and op6 (ratio 5) fanning
+    // into BOTH op4 and op5. The ratio-2 modulator reaching op1 through the
+    // op3→op2 stack is what puts energy on the 2nd harmonic.
     const h2 = a.probeAt(a.fund * 2);
     const noise2 = a.noiseAt(a.fund * 2);
     expect(h2 / noise2).toBeGreaterThan(2);
