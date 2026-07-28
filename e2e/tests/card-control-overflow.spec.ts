@@ -354,8 +354,22 @@ test.describe('per-module: card controls fit within card bounds', () => {
 // (data-tv-mode on the card root) AND that mode-conditional chrome is mounted
 // (the TV readout). Without that a param that silently failed to land would
 // leave this measuring the OFF layout again and proving nothing.
+//
+// ALL THREE modes are measured, including the default OFF — and the OFF case
+// carries an extra job. BACKDRAFT's rule is that a control which is inert in
+// the MODEL is DIMMED, never `disabled` and never `{#if}`-ed away, because both
+// of those make it unreachable while the gate CV path keeps writing the param.
+// The OFF case is where that rule is observable: the TV SCREEN faders are inert
+// there, so it asserts they are still VISIBLE and still ENABLED. That is also
+// what keeps the card's height mode-INVARIANT, which is the property the three
+// measurements below jointly pin.
+//
+// (The label list is the REAL mode vocabulary — BACKDRAFT_TV_MODE_LABELS in
+// backdraft.ts is ['OFF','PURE TV','CRITICAL']. Mode 1 was long mislabelled
+// 'VIRTUAL CAMERA' here, so every failure message named a mode that does not
+// exist.)
 test.describe('backdraft: controls fit in EVERY TV MODE, not just the default', () => {
-  for (const [label, tvMode] of [['VIRTUAL CAMERA', 1], ['CRITICAL', 2]] as const) {
+  for (const [label, tvMode] of [['OFF', 0], ['PURE TV', 1], ['CRITICAL', 2]] as const) {
     test(`backdraft: controls fit within the card in TV MODE = ${label}`, async ({ page }) => {
       // Video card → freeze the per-frame GL draw + take the SwiftShader budget,
       // same levers as the sweep above.
@@ -381,12 +395,35 @@ test.describe('backdraft: controls fit in EVERY TV MODE, not just the default', 
         page.locator('[data-testid="backdraft-card"]'),
         `backdraft card is in TV MODE ${label}`,
       ).toHaveAttribute('data-tv-mode', String(tvMode));
-      // (2) …and the mode-CONDITIONAL chrome is mounted. If this is missing we
-      //     are measuring the OFF layout and the test proves nothing.
-      await expect(
-        page.locator('[data-testid="backdraft-tv-readout"]'),
-        `TV-mode-only chrome is mounted in ${label}`,
-      ).toBeVisible();
+      // (2) …and the mode-CONDITIONAL chrome agrees with the mode. If this is
+      //     missing we are measuring some other layout and proving nothing.
+      if (tvMode === 0) {
+        // OFF: the readout is the ONLY mode-conditional chrome, and it is gone.
+        await expect(
+          page.locator('[data-testid="backdraft-tv-readout"]'),
+          'the TV readout is absent in OFF',
+        ).toHaveCount(0);
+        // ALL CONTROLS REMAIN USABLE. The TV SCREEN faders do nothing in OFF —
+        // they are dimmed, and that is ALL they are. Still rendered (so the
+        // card's height does not move with the mode) and still enabled (so drag
+        // / dbl-click-reset / wheel / right-click MIDI-Learn all keep working,
+        // and the UI cannot disagree with what the gate CV path is writing).
+        const tvFaders = page.locator('.tv-bank [data-testid="backdraft-tv-screen-hint"], .tv-bank .bank-faders');
+        await expect(
+          page.locator('.tv-bank .bank-faders'),
+          'TV SCREEN faders stay MOUNTED + VISIBLE while inert (dimmed, not hidden)',
+        ).toBeVisible();
+        await expect(tvFaders.first()).toBeVisible();
+        const lockedOut = await page.locator('[data-testid="backdraft-card"]')
+          .locator('button[disabled], input[disabled]')
+          .count();
+        expect(lockedOut, 'NO control on the card is disabled in the default mode').toBe(0);
+      } else {
+        await expect(
+          page.locator('[data-testid="backdraft-tv-readout"]'),
+          `TV-mode-only chrome is mounted in ${label}`,
+        ).toBeVisible();
+      }
 
       await settleLayout(page);
 

@@ -129,3 +129,51 @@ describe('BACKDRAFT card size agrees with its rack tier', () => {
     expect(src).not.toContain('startCornerResize');
   });
 });
+
+describe('BACKDRAFT — every control stays REACHABLE', () => {
+  // The card's rule: a control that is inert IN THE MODEL is DIMMED (opacity)
+  // and explains itself in a `title`. It is never `disabled` and never
+  // `{#if}`-ed away.
+  //
+  // This is not styling pedantry. Both of those make a control unreachable
+  // WHILE THE GATE CV PATH KEEPS WRITING THE SAME PARAM — a real UI/CV
+  // disagreement, and one that actually shipped: PURE GEO carried
+  // `disabled={tvOn}` while `pure_geo_gate` went on flipping `pureGeo` from a
+  // cable, so the engine's value moved under a button that refused the click.
+  // Dimming keeps drag, dbl-click reset, wheel and right-click MIDI-Learn all
+  // working, and it keeps the control's BOX — which is what makes the card's
+  // height identical in all three TV modes, the property the three
+  // card-control-overflow measurements jointly pin.
+  //
+  // Deterministic, pure-source, ~0ms — the cheapest possible encoding of "all
+  // controls must be usable".
+  it('no control on the card is `disabled`', () => {
+    const src = cardSource('BackdraftCard.svelte');
+    const offences = [...src.matchAll(/\bdisabled=\{/g)].map(
+      (m) => `line ${src.slice(0, m.index).split('\n').length}`,
+    );
+    expect(
+      offences,
+      'BackdraftCard disables a control (' + offences.join(', ') + '). ' +
+        'Dim it with an opacity class + an explanatory title instead: a disabled ' +
+        'control is unreachable while its gate CV input keeps writing the param.',
+    ).toEqual([]);
+  });
+
+  it('the TV SCREEN bank is DIMMED, not unmounted, when TV MODE is OFF', () => {
+    const src = cardSource('BackdraftCard.svelte');
+    // The dim is a class toggle on an always-rendered bank…
+    expect(
+      /class:dim=\{!tvOn\}/.test(src),
+      'the TV SCREEN bank must carry class:dim={!tvOn}',
+    ).toBe(true);
+    // …and the faders must NOT sit behind a mode conditional. `{#if tvOn}` is
+    // legal for pure READOUT chrome (the fill/bands text), but never for a
+    // control: an unmounted fader cannot be dragged, MIDI-learned, or reset,
+    // and unmounting it would also make the card's height mode-dependent.
+    expect(
+      /\{#if tvOn\}[\s\S]{0,400}?<Fader/.test(src),
+      'a Fader must never be mounted behind {#if tvOn} — dim it instead',
+    ).toBe(false);
+  });
+});
