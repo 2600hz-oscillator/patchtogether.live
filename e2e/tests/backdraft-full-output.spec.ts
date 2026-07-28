@@ -1,12 +1,31 @@
 // e2e/tests/backdraft-full-output.spec.ts
 //
-// BACKDRAFT "full output capabilities" — the same resize + Full Frame / Full
-// Screen / Present-on-other-display surface VIDEO OUT + BENTBOX ship, now wired
-// onto the BACKDRAFT card via the shared helpers (card-resize / use-fullscreen /
+// BACKDRAFT "full output capabilities" — Full Frame / Full Screen /
+// Present-on-other-display, the same surface VIDEO OUT + BENTBOX ship, wired
+// onto the BACKDRAFT card via the shared helpers (use-fullscreen /
 // use-full-frame / use-present / VideoCanvasContextMenu).
 //
+// ── WHAT CHANGED WHEN THE PREVIEW WAS REMOVED ───────────────────────────────
+// BACKDRAFT's card is now a control surface with no in-rack video thumbnail.
+// These features did NOT go with it — they are performance features, not
+// preview decoration — but two things about this spec did:
+//
+//   * ENTRY POINT: the menu used to open on a RIGHT-CLICK on the preview. With
+//     no preview to right-click it opens from an explicit OUTPUT button
+//     ([data-testid="backdraft-output-menu"]). Every case below drives that.
+//   * CORNER-RESIZE: RETIRED, not ported. The corner-drag existed to scale the
+//     preview canvas; with the preview gone the card is a fixed 5hp×3u rack
+//     tier (rack-sizes.ts) and there is nothing to drag. The resize helper
+//     itself (card-resize.ts) is still covered by bentbox.spec.ts + the
+//     videoOut resize case in workflow-shell-video.spec.ts.
+//
+// The output <canvas> is still in the DOM but INERT in the rack (1px,
+// invisible, not drawn); it becomes the live surface in each expanded mode.
+// So these cases assert COMPONENT STATE + the surface's expanded classes, not
+// in-rack pixels.
+//
 // Mirrors video-fullscreen.spec.ts + video-full-frame.spec.ts + present-second-
-// display.spec.ts + bentbox.spec.ts's resize test, scoped to BACKDRAFT.
+// display.spec.ts, scoped to BACKDRAFT.
 //
 // Assertion strategy notes (carried from the sibling specs):
 //   * Fullscreen: requestFullscreen() needs a user-gesture; the menu click IS
@@ -34,7 +53,8 @@ async function setup(page: Page): Promise<string[]> {
   return errors;
 }
 
-/** Spawn SHAPES -> BACKDRAFT so the preview canvas has live content. */
+/** Spawn SHAPES -> BACKDRAFT so the output surface has live content once it
+ *  is expanded. */
 async function spawnBackdraft(page: Page): Promise<void> {
   await spawnPatch(
     page,
@@ -47,6 +67,15 @@ async function spawnBackdraft(page: Page): Promise<void> {
   await expect(page.locator('[data-testid="backdraft-card"]')).toHaveCount(1);
 }
 
+/** Open the card's OUTPUT menu — the entry point that replaced right-clicking
+ *  the (now removed) preview. Waits for the button rather than the surface,
+ *  because the surface is invisible until an expanded mode is entered. */
+async function openOutputMenu(page: Page): Promise<void> {
+  const btn = page.locator('[data-testid="backdraft-output-menu"]');
+  await expect(btn, 'OUTPUT button present on the card').toBeVisible();
+  await btn.click();
+}
+
 /** Read node.data.fullFrame off the dev-mode __patch global. */
 async function readFullFrame(page: Page, nodeId: string): Promise<unknown> {
   return page.evaluate((id) => {
@@ -54,17 +83,6 @@ async function readFullFrame(page: Page, nodeId: string): Promise<unknown> {
       __patch: { nodes: Record<string, { data?: { fullFrame?: unknown } }> };
     };
     return w.__patch.nodes[id]?.data?.fullFrame;
-  }, nodeId);
-}
-
-/** Read node.data.width/height off the dev-mode __patch global. */
-async function readSize(page: Page, nodeId: string): Promise<{ width?: unknown; height?: unknown }> {
-  return page.evaluate((id) => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: { width?: unknown; height?: unknown } }> };
-    };
-    const d = w.__patch.nodes[id]?.data;
-    return { width: d?.width, height: d?.height };
   }, nodeId);
 }
 
@@ -103,19 +121,19 @@ test.describe('BACKDRAFT — full output capabilities', () => {
   // the slow-runner tail (the documented video-on-SwiftShader mitigation).
   test.describe.configure({ timeout: 60_000 });
 
-  test('right-click the preview opens the menu with Full Frame + Full Screen (Present hidden on single screen)', async ({ page }) => {
+  test('the OUTPUT button opens the menu with Full Frame + Full Screen (Present hidden on single screen)', async ({ page }) => {
     const errors = await setup(page);
     await spawnBackdraft(page);
 
+    // The output surface exists but is INERT in the rack — present in the DOM
+    // (requestFullscreen needs a real element to target) and not visible.
     const canvas = page.locator('canvas[data-testid="backdraft-canvas"]');
-    await expect(canvas, 'preview canvas present').toHaveCount(1);
-    // Let the rAF blit tick so the preview has live content.
-    await page.waitForTimeout(300);
+    await expect(canvas, 'output surface present in the DOM').toHaveCount(1);
+    await expect(canvas, 'output surface is NOT an in-rack preview').toBeHidden();
 
-    // Right-click the preview surface -> the canvas context menu (NOT the node menu).
-    await canvas.click({ button: 'right' });
+    await openOutputMenu(page);
     const menu = page.locator('[data-testid="video-canvas-context-menu"]');
-    await expect(menu, 'canvas context menu opened').toBeVisible();
+    await expect(menu, 'output menu opened').toBeVisible();
 
     // Full Screen + Full Frame are always offered.
     await expect(page.locator('[data-testid="ctx-fullscreen"]'), 'Full Screen item present').toBeVisible();
@@ -125,8 +143,7 @@ test.describe('BACKDRAFT — full output capabilities', () => {
     // (the CI default) there is NO "Present on …" entry.
     await expect(page.locator('[data-testid^="ctx-present-"]'), 'no Present entry on single screen').toHaveCount(0);
 
-    // The canvas right-click is CLAIMED — the SvelteFlow node menu must NOT also
-    // open (same contract as VIDEO OUT).
+    // The button click is CLAIMED — the SvelteFlow node menu must NOT also open.
     const nodeMenu = page.locator('[role="menu"][aria-label="Module actions"]');
     await expect(nodeMenu, 'node menu did not also open').toHaveCount(0);
 
@@ -140,10 +157,9 @@ test.describe('BACKDRAFT — full output capabilities', () => {
     const card = page.locator('[data-testid="backdraft-card"]');
     const canvas = page.locator('canvas[data-testid="backdraft-canvas"]');
     const wrap = page.locator('[data-testid="backdraft-fs-wrap"]');
-    await page.waitForTimeout(300);
 
-    // Enter Full Frame via the menu.
-    await canvas.click({ button: 'right' });
+    // Enter Full Frame via the OUTPUT menu.
+    await openOutputMenu(page);
     await expect(page.locator('[data-testid="video-canvas-context-menu"]')).toBeVisible();
     await page.locator('[data-testid="ctx-full-frame"]').click();
 
@@ -152,6 +168,14 @@ test.describe('BACKDRAFT — full output capabilities', () => {
     await expect(card).toHaveAttribute('data-full-frame', 'true');
     await expect(wrap, 'wrap gained full-frame').toHaveClass(/full-frame/);
     expect(await readFullFrame(page, 'bd'), 'fullFrame persisted true').toBe(true);
+
+    // The point of full-frame: the CONTROLS are gone and the video surface —
+    // inert a moment ago — is now the visible card.
+    await expect(canvas, 'output surface is now showing').toBeVisible();
+    await expect(
+      card.locator('[data-testid="backdraft-controls"]'),
+      'controls hidden while full-frame',
+    ).toBeHidden();
 
     // The card's own Svelte Flow handles are visually hidden but still in the
     // DOM (cables stay connected — we hide, not remove).
@@ -174,18 +198,20 @@ test.describe('BACKDRAFT — full output capabilities', () => {
     await spawnBackdraft(page);
 
     const card = page.locator('[data-testid="backdraft-card"]');
-    const canvas = page.locator('canvas[data-testid="backdraft-canvas"]');
     const wrap = page.locator('[data-testid="backdraft-fs-wrap"]');
-    await page.waitForTimeout(300);
 
     // Enter Full Frame first (in-rack, menu reachable).
-    await canvas.click({ button: 'right' });
+    await openOutputMenu(page);
     await page.locator('[data-testid="ctx-full-frame"]').click();
     await expect(card, 'entered full-frame').toHaveClass(/full-frame/);
 
     // Now enter Full Screen — the card must clear full-frame first (mutual
-    // exclusion), leaving a single clean .fullscreen state.
-    await canvas.click({ button: 'right' });
+    // exclusion), leaving a single clean .fullscreen state. The OUTPUT button
+    // is hidden while full-frame (the chrome is gone), so exit via the
+    // documented double-click first, exactly as a user would.
+    await card.dblclick();
+    await expect(card, 'exited full-frame').not.toHaveClass(/full-frame/);
+    await openOutputMenu(page);
     await page.locator('[data-testid="ctx-fullscreen"]').click();
     await expect(wrap, 'wrap entered fullscreen state').toHaveClass(/fullscreen/);
     await expect(card, 'full-frame cleared on fullscreen enter').not.toHaveClass(/full-frame/);
@@ -211,10 +237,8 @@ test.describe('BACKDRAFT — full output capabilities', () => {
     ]);
     const errors = await setup(page);
     await spawnBackdraft(page);
-    await page.waitForTimeout(300);
 
-    const canvas = page.locator('canvas[data-testid="backdraft-canvas"]');
-    await canvas.click({ button: 'right' });
+    await openOutputMenu(page);
     await expect(page.locator('[data-testid="video-canvas-context-menu"]')).toBeVisible();
 
     // "Present on …" appears only for the NON-current (secondary) display.
@@ -227,59 +251,12 @@ test.describe('BACKDRAFT — full output capabilities', () => {
     expect(errors).toEqual([]);
   });
 
-  test('corner-resize grows the card + persists node.data.width/height', async ({ page }) => {
-    // Spawn BACKDRAFT ALONE (like the bentbox resize test) so spawnPatch's
-    // fit-view doesn't zoom the card down — keeping a 1:1 screen drag and
-    // making the measured growth assertion robust.
-    const errors = await setup(page);
-    await spawnPatch(page, [
-      { id: 'bd', type: 'backdraft', position: { x: 200, y: 100 }, domain: 'video' },
-    ]);
-    await expect(page.locator('[data-testid="backdraft-card"]')).toHaveCount(1);
-
-    const card = page.locator('[data-testid="backdraft-card"]');
-    const handle = page.locator('[data-testid="backdraft-resize-handle"]');
-    await expect(handle, 'resize handle present').toHaveCount(1);
-
-    // node.data has NO width/height before the first resize (the card uses its
-    // DEFAULT constants until the user drags).
-    const sizeBefore = await readSize(page, 'bd');
-    expect(sizeBefore.width, 'no persisted width before resize').toBeUndefined();
-
-    const initial = await card.evaluate((el) => (el as HTMLElement).getBoundingClientRect());
-    const box = await handle.boundingBox();
-    expect(box).not.toBeNull();
-    if (!box) return;
-
-    const sx = box.x + box.width / 2;
-    const sy = box.y + box.height / 2;
-    await page.mouse.move(sx, sy);
-    await page.mouse.down();
-    await page.mouse.move(sx + 120, sy + 100, { steps: 5 });
-    await page.mouse.move(sx + 240, sy + 200, { steps: 5 });
-    await page.mouse.up();
-
-    // The style width/height is driven by node.data.width/height after onMove
-    // writes through — poll the measured width until the resize commits.
-    await expect.poll(
-      () => card.evaluate((el) => (el as HTMLElement).getBoundingClientRect().width),
-      'card width grew after the resize drag',
-    ).toBeGreaterThan(initial.width + 20);
-
-    const after = await card.evaluate((el) => (el as HTMLElement).getBoundingClientRect());
-    expect(after.width, `card grew horizontally (${initial.width} -> ${after.width})`)
-      .toBeGreaterThan(initial.width + 20);
-    expect(after.height, `card grew vertically (${initial.height} -> ${after.height})`)
-      .toBeGreaterThan(initial.height + 20);
-
-    // The new size is persisted on node.data (Y.Doc-synced) + grew past the
-    // 720×540 default.
-    const size = await readSize(page, 'bd');
-    expect(typeof size.width, 'node.data.width persisted').toBe('number');
-    expect(typeof size.height, 'node.data.height persisted').toBe('number');
-    expect(size.width as number, 'persisted width grew past the default').toBeGreaterThan(720);
-    expect(size.height as number, 'persisted height grew past the default').toBeGreaterThan(540);
-
-    expect(errors).toEqual([]);
-  });
+  // RETIRED: 'corner-resize grows the card + persists node.data.width/height'.
+  // The corner-drag existed to scale the in-card preview canvas. With the
+  // preview removed the card is a FIXED 5hp×3u rack tier (rack-sizes.ts) and
+  // there is no handle to drag and no node.data.width/height to persist —
+  // rack-sizing.test.ts pins the tier and card-control-ranges.test.ts pins that
+  // the card no longer reads a persisted size. card-resize.ts itself keeps its
+  // coverage on the cards that still use it (bentbox.spec.ts, and the videoOut
+  // resize case in workflow-shell-video.spec.ts).
 });

@@ -56,14 +56,11 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   foxy: { size: '4u', hp: 4 }, // 575×720px
   // NOTE: user-resizable cards (clockedRunner, livecode, wavesculpt, b3ntb0x,
   // bentbox, monoglitch, reshaper, ruttetra, toybox, videobox, videoOut,
-  // backdraft, archivist) are intentionally ABSENT from this map — they are
-  // sized by their own corner-resize (snapped to whole-u via card-resize.ts),
-  // not a fixed tier, so the rack CSS must NOT clamp them. They live in
+  // archivist) are intentionally ABSENT from this map — they are sized by their
+  // own corner-resize (snapped to whole-u via card-resize.ts), not a fixed
+  // tier, so the rack CSS must NOT clamp them. They live in
   // rack-sizing.test.ts DYNAMIC_SIZED. Their DEFAULT/MIN constants are rounded
-  // to 180-multiples so they still land on-grid out of the box. (backdraft was
-  // briefly a FIXED 3u/hp4 tier in #767, then re-made corner-resizable when it
-  // gained full output capabilities — resize + full-frame/fullscreen/present —
-  // so a fixed tier would now CAP its resize.)
+  // to 180-multiples so they still land on-grid out of the box.
   frogger: { size: '2u', hp: 2 }, // 380×260px
   gamepad: { size: '2u', hp: 2 }, // 267×280px
   gatemaiden: { size: '1u', hp: 1 }, // 199×200px
@@ -156,6 +153,15 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   // ── video domain ──
   '4plexvid': { size: '3u', hp: 2 }, // 463×280px
   acidwarp: { size: '3u', hp: 2 }, // 407×380px
+  // BACKDRAFT — 900×540. Back to a FIXED tier: the in-card video preview (and
+  // with it the corner-resize whose only job was to scale that preview) came
+  // OFF the card, so nothing left on it is size-driven and a tier can no longer
+  // "cap the resize". The picture lives on VIDEO OUT, one cable away. 5hp buys
+  // the width the ~20 faders + four mode rows + the virtual-camera section
+  // need laid out as labelled banks instead of a 280px column.
+  // Was a fixed 3u/hp4 in #767 → DYNAMIC_SIZED when it gained the preview's
+  // full output capabilities → fixed again now they are gone.
+  backdraft: { size: '3u', hp: 5 },
   cameraInput: { size: '3u', hp: 2 }, // 370×280px  [LOCKED]
   cellshade: { size: '3u', hp: 2 }, // 369×~490px — rebuild added the SOFT/SMOOTH/INK fader row (2u overflowed the INK row)
   chroma: { size: '2u', hp: 2 }, // 360×260px

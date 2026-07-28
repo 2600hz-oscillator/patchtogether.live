@@ -18,7 +18,7 @@
 //      thumbnail's blit DRIVES the real chain (engine draw counters advance)
 //      and its pixels actually change.
 //   3. The dock full-view shows LIVE video for expanded video legacy cards
-//      (backdraft via the tile's EXPAND button; videoOut via the dev seam —
+//      (feedback via the tile's EXPAND button; videoOut via the dev seam —
 //      a NON_SHELL legacy lane card has no tile), holding a hard render lease
 //      while open.
 //   4. Preview OFF stays a strict no-op: no tiles, no thumbs, videoOut's card
@@ -352,7 +352,7 @@ test.describe('?shell=1 video visibility', () => {
     await expectCanvasChanges(page, thumbSel, first, 'b1 tile thumbnail');
   });
 
-  test('dock full-view renders LIVE video for expanded video legacy cards (backdraft via EXPAND; videoOut via the dev seam) with a render lease', async ({ page }) => {
+  test('dock full-view renders LIVE video for expanded video legacy cards (feedback via EXPAND; videoOut via the dev seam) with a render lease', async ({ page }) => {
     // Software-renderer scale (see SLOW_RENDER): TWO sequential dock full-views
     // with pixel-change polls + lease polls starved the flat 30s budget on CI
     // shard 10 (run 30179147114, both attempts) while every step completed.
@@ -365,33 +365,44 @@ test.describe('?shell=1 video visibility', () => {
     await gotoShell(page);
     await expect(videoOutCard(page)).toBeVisible({ timeout: 15_000 });
 
-    // LINES feeds BOTH cards under test so their pictures animate: → backdraft
-    // in_a, and → the seeded videoOut's in (its idle pattern is static).
+    // LINES feeds BOTH cards under test so their pictures animate: → FEEDBACK
+    // in, and → the seeded videoOut's in (its idle pattern is static).
+    //
+    // WHY FEEDBACK AND NOT BACKDRAFT (which this case used to expand): the
+    // EXPAND half of this test needs a shell-lane video card that owns a LIVE
+    // PREVIEW CANVAS, and BACKDRAFT no longer has one — it was made a pure
+    // control surface (its picture is watched on VIDEO OUT). FEEDBACK is the
+    // same shape: video-domain, shell-lane (so it gets a tile + EXPAND), one
+    // video in / one video out, and a blitOutputToDrawingBuffer preview. The
+    // ORIGINAL regression this case guards — a legacy card whose bare
+    // useStore() threw outside the SvelteFlow provider and mounted DEAD in the
+    // dock — is the videoOut half below (videoOut is the card it was found on
+    // and still calls into the flow store); the `providerErrors` sink covers
+    // both halves regardless.
     await injectPatch(
       page,
       [
         { id: 'l1', type: 'lines', position: { x: -1200, y: 4500 } },
-        { id: 'b1', type: 'backdraft', position: { x: -700, y: 4500 } },
+        { id: 'b1', type: 'feedback', position: { x: -700, y: 4500 } },
       ],
       [
-        { id: 'e-lb', from: { nodeId: 'l1', portId: 'out' }, to: { nodeId: 'b1', portId: 'in_a' }, sourceType: 'mono-video', targetType: 'video' },
+        { id: 'e-lb', from: { nodeId: 'l1', portId: 'out' }, to: { nodeId: 'b1', portId: 'in' }, sourceType: 'mono-video', targetType: 'video' },
         { id: 'e-lo', from: { nodeId: 'l1', portId: 'out' }, to: { nodeId: VIDEO_OUT, portId: 'in' }, sourceType: 'mono-video', targetType: 'video' },
       ],
     );
 
-    // (a) BACKDRAFT via the tile's EXPAND affordance — the user path. Pre-fix
-    // its card DIED at init in the dock (bare useStore() outside the provider).
+    // (a) FEEDBACK via the tile's EXPAND affordance — the user path.
     await centerOnNode(page, 'b1', 0.9);
     const b1Tile = page.locator(`.svelte-flow__node[data-id="b1"] [data-testid="module-shell-placeholder"]`);
     await expect(b1Tile).toBeVisible();
     await b1Tile.getByTestId('shell-open-dock').click();
     const faceplate = page.getByTestId('dock-full-view');
     await expect(faceplate).toBeVisible();
-    const dockBackdraft = faceplate.locator('[data-dock-card="b1"] [data-testid="backdraft-canvas"]');
-    await expect(dockBackdraft, 'backdraft video surface mounts in the dock').toBeVisible();
-    const bFirst = await canvasData(page, '[data-dock-card="b1"] [data-testid="backdraft-canvas"]');
+    const dockPreview = faceplate.locator('[data-dock-card="b1"] [data-testid="feedback-canvas"]');
+    await expect(dockPreview, 'feedback video surface mounts in the dock').toBeVisible();
+    const bFirst = await canvasData(page, '[data-dock-card="b1"] [data-testid="feedback-canvas"]');
     expect(bFirst).not.toBe('');
-    await expectCanvasChanges(page, '[data-dock-card="b1"] [data-testid="backdraft-canvas"]', bFirst, 'docked backdraft');
+    await expectCanvasChanges(page, '[data-dock-card="b1"] [data-testid="feedback-canvas"]', bFirst, 'docked feedback');
     // Plain-mount contract holds: no xyflow handles/nodes inside the faceplate.
     await expect(faceplate.locator('.svelte-flow__handle')).toHaveCount(0);
     await page.keyboard.press('Escape');

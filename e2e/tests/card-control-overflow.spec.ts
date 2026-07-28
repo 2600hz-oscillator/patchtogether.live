@@ -144,21 +144,26 @@ async function spawnSolo(page: Page, mod: RegistryModule): Promise<void> {
 // Resolves the card root and returns the worst right/bottom control overflow +
 // the card's own horizontal content overflow, plus a short descriptor of the
 // worst offender so a failure message names it. Runs ENTIRELY in the browser.
+//
+// ⚠ EVERY REPORTED LENGTH IS IN **CSS PIXELS** — see `scale` below. Do NOT
+//   "simplify" that normalisation away.
 interface OverflowReport {
   found: boolean;
-  cardW: number;
-  cardH: number;
-  horizontalOverflow: number; // scrollWidth - clientWidth (card root)
-  worstRight: number; // max (control.right - card.right)
+  cardW: number; // CSS px
+  cardH: number; // CSS px
+  /** Effective screen-px-per-CSS-px of the card (xyflow viewport zoom). */
+  scale: number;
+  horizontalOverflow: number; // scrollWidth - clientWidth (card root) — already CSS px
+  worstRight: number; // max (control.right - card.right), CSS px
   worstRightSel: string;
-  worstBottom: number; // max (control.bottom - card.bottom)
+  worstBottom: number; // max (control.bottom - card.bottom), CSS px
   worstBottomSel: string;
 }
 
 async function measureOverflow(page: Page, nodeType: string): Promise<OverflowReport> {
   return await page.evaluate((type) => {
     const empty: OverflowReport = {
-      found: false, cardW: 0, cardH: 0, horizontalOverflow: 0,
+      found: false, cardW: 0, cardH: 0, scale: 1, horizontalOverflow: 0,
       worstRight: 0, worstRightSel: '', worstBottom: 0, worstBottomSel: '',
     };
     const flowNode =
@@ -169,6 +174,33 @@ async function measureOverflow(page: Page, nodeType: string): Promise<OverflowRe
       (flowNode.querySelector('.mod-card, .card, .moog-panel') as HTMLElement | null) ?? flowNode;
     const cardRect = card.getBoundingClientRect();
     if (cardRect.width === 0 || cardRect.height === 0) return empty;
+
+    // ── SCALE: report CSS px, NEVER viewport-scaled screen px ──────────────
+    // xyflow applies a CSS `transform: scale(zoom)` to the flow pane for
+    // viewport zoom, so every getBoundingClientRect() below comes back in
+    // SCREEN pixels — i.e. multiplied by whatever zoom fit-view happened to
+    // settle on for that spawn.
+    //
+    // PASS/FAIL is unaffected (an overflow of 0 is 0 at any scale, and the
+    // tolerance is a hair either way), but every MAGNITUDE this gate PRINTS is
+    // wrong by 1/zoom, and this gate's diagnostics are how people SIZE cards.
+    // Concretely: BACKDRAFT requests 720px and reported "cardW 530" at zoom
+    // 0.736, so a real ~310px overflow read as ~230px — size the card against
+    // that number and you under-provision by ~80px and ship a second near-miss.
+    // It also makes figures INCOMPARABLE ACROSS RUNS: two spawns of the same
+    // card reported 707 vs 530 purely because fit-view settled differently.
+    //
+    // `offsetWidth` is LAYOUT (CSS) px and is immune to ancestor transforms,
+    // while `getBoundingClientRect().width` includes them — so their ratio IS
+    // the effective scale, with no dependency on xyflow internals (and it keeps
+    // working for a card plain-mounted outside the flow pane, e.g. the dock).
+    // Everything derived from a client rect is divided by it below.
+    //
+    // NOTE: `scrollWidth`/`clientWidth` are ALREADY layout px — the horizontal
+    // content-overflow figure must NOT be divided.
+    const scale =
+      card.offsetWidth > 0 ? cardRect.width / card.offsetWidth : 1;
+    const toCss = (px: number): number => (scale > 0 ? px / scale : px);
 
     // Short human descriptor for the offending element (testid > id > tag.class).
     const describe = (el: Element): string => {
@@ -194,6 +226,7 @@ async function measureOverflow(page: Page, nodeType: string): Promise<OverflowRe
       if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') continue;
       const r = el.getBoundingClientRect();
       if (r.width === 0 || r.height === 0) continue;
+      // Screen px here; normalised to CSS px in the return below.
       const ro = r.right - cardRect.right;
       const bo = r.bottom - cardRect.bottom;
       if (ro > worstRight) { worstRight = ro; worstRightSel = describe(el); }
@@ -202,15 +235,27 @@ async function measureOverflow(page: Page, nodeType: string): Promise<OverflowRe
 
     return {
       found: true,
-      cardW: Math.round(cardRect.width),
-      cardH: Math.round(cardRect.height),
+      cardW: Math.round(toCss(cardRect.width)),
+      cardH: Math.round(toCss(cardRect.height)),
+      scale: Math.round(scale * 1000) / 1000,
+      // scrollWidth/clientWidth are layout px already — NOT scaled.
       horizontalOverflow: Math.round((card.scrollWidth - card.clientWidth) * 10) / 10,
-      worstRight: Math.round(worstRight * 10) / 10,
+      worstRight: Math.round(toCss(worstRight) * 10) / 10,
       worstRightSel,
-      worstBottom: Math.round(worstBottom * 10) / 10,
+      worstBottom: Math.round(toCss(worstBottom) * 10) / 10,
       worstBottomSel,
     };
   }, nodeType);
+}
+
+/** One-line, explicitly CSS-px-labelled summary used in every failure message. */
+function describeReport(r: OverflowReport): string {
+  return (
+    `card ${r.cardW}×${r.cardH} CSS px (viewport zoom ${r.scale}×) · ` +
+    `worst RIGHT overflow ${r.worstRight} CSS px (${r.worstRightSel || 'none'}) · ` +
+    `worst BOTTOM overflow ${r.worstBottom} CSS px (${r.worstBottomSel || 'none'}) · ` +
+    `horizontal content overflow ${r.horizontalOverflow}px`
+  );
 }
 
 // Settle: fonts affect label widths (a late-loading font can change a control's
@@ -271,11 +316,10 @@ test.describe('per-module: card controls fit within card bounds', () => {
       const r = await measureOverflow(page, mod.type);
       expect(r.found, `${mod.type}: card root element resolved for measurement`).toBe(true);
 
-      const detail =
-        `card ${r.cardW}×${r.cardH}px · ` +
-        `worst RIGHT overflow ${r.worstRight}px (${r.worstRightSel || 'none'}) · ` +
-        `worst BOTTOM overflow ${r.worstBottom}px (${r.worstBottomSel || 'none'}) · ` +
-        `horizontal content overflow ${r.horizontalOverflow}px`;
+      // All figures in CSS px (see the `scale` note in measureOverflow) — these
+      // are the numbers you SIZE the card against, so they must be the card's
+      // own coordinate system, not the zoomed screen's.
+      const detail = describeReport(r);
 
       expect(
         r.worstRight,
@@ -289,6 +333,73 @@ test.describe('per-module: card controls fit within card bounds', () => {
         r.horizontalOverflow,
         `${mod.type}: the card has ${r.horizontalOverflow}px of horizontal content overflow — ${detail}`,
       ).toBeLessThanOrEqual(OVERFLOW_TOL_PX);
+    });
+  }
+});
+
+// ─── BACKDRAFT TV MODES — controls that only EXIST in a non-default mode ─────
+//
+// The sweep above spawns every module at its DEFAULT params, which for BACKDRAFT
+// means TV MODE = OFF — and a chunk of the card's chrome (the TV readout today;
+// the VIRTUAL CAMERA ORIENTATION row on the branch that follows) only mounts
+// when the mode is ON. So the sweep structurally CANNOT see those controls: it
+// reports a clean card while the newest controls go unmeasured.
+//
+// That is not hypothetical. A ~310 CSS px bottom overflow sat on this card for
+// hours precisely because the gate only ever ran it with TV MODE off. A gate
+// with a real catch that cannot see the newest controls is a hole, so the modes
+// are measured EXPLICITLY here.
+//
+// THE GUARD IS THE POINT: each case asserts the mode actually APPLIED
+// (data-tv-mode on the card root) AND that mode-conditional chrome is mounted
+// (the TV readout). Without that a param that silently failed to land would
+// leave this measuring the OFF layout again and proving nothing.
+test.describe('backdraft: controls fit in EVERY TV MODE, not just the default', () => {
+  for (const [label, tvMode] of [['VIRTUAL CAMERA', 1], ['CRITICAL', 2]] as const) {
+    test(`backdraft: controls fit within the card in TV MODE = ${label}`, async ({ page }) => {
+      // Video card → freeze the per-frame GL draw + take the SwiftShader budget,
+      // same levers as the sweep above.
+      await freezeVideoRender(page);
+      test.setTimeout(60_000);
+
+      await page.goto('/rack');
+      await page.waitForLoadState('networkidle');
+      await spawnPatch(
+        page,
+        [{
+          id: 'sut', type: 'backdraft', position: { x: 400, y: 60 },
+          domain: 'video', params: { tvMode },
+        }],
+        [],
+      );
+
+      const card = page.locator('.svelte-flow__node-backdraft');
+      await expect(card, 'backdraft card visible').toBeVisible();
+
+      // (1) the mode actually landed on the card…
+      await expect(
+        page.locator('[data-testid="backdraft-card"]'),
+        `backdraft card is in TV MODE ${label}`,
+      ).toHaveAttribute('data-tv-mode', String(tvMode));
+      // (2) …and the mode-CONDITIONAL chrome is mounted. If this is missing we
+      //     are measuring the OFF layout and the test proves nothing.
+      await expect(
+        page.locator('[data-testid="backdraft-tv-readout"]'),
+        `TV-mode-only chrome is mounted in ${label}`,
+      ).toBeVisible();
+
+      await settleLayout(page);
+
+      const r = await measureOverflow(page, 'backdraft');
+      expect(r.found, 'backdraft: card root resolved for measurement').toBe(true);
+      const detail = `TV MODE ${label} · ${describeReport(r)}`;
+
+      expect(r.worstRight, `backdraft RIGHT overflow — ${detail}`)
+        .toBeLessThanOrEqual(OVERFLOW_TOL_PX);
+      expect(r.worstBottom, `backdraft BOTTOM overflow — ${detail}`)
+        .toBeLessThanOrEqual(OVERFLOW_TOL_PX);
+      expect(r.horizontalOverflow, `backdraft horizontal content overflow — ${detail}`)
+        .toBeLessThanOrEqual(OVERFLOW_TOL_PX);
     });
   }
 });

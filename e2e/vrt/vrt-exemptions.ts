@@ -250,14 +250,13 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // handle rows) is the regression gate. The morph DSP is covered by
   // analog-vco-morph.test.ts; the scope-window logic by analog-vco-scope.test.ts.
   analogVco: [{ selector: 'canvas' }],
-  // BACKDRAFT — video feedback generator, now USER-RESIZABLE with full output
-  // capabilities (Full Frame / Full Screen / Present). The live feedback preview
-  // canvas is non-deterministic (and variable-size), so mask it; the
-  // deterministic frozen capture lives in VRT_SCENES.backdraft (the scene
-  // auto-overrides this mask: `mod.type in VRT_SCENES ? [] : masks`). Currently
-  // in EXEMPT_FROM_VRT below pending a fresh darwin/linux baseline after the
-  // resizable redesign; this mask covers the live preview when re-promoted.
-  backdraft: [{ selector: 'canvas' }],
+  // (BACKDRAFT had a `canvas` mask here for its live feedback PREVIEW. The
+  // preview — and the corner-resize that made the card variable-size — were
+  // removed when the card became a pure control surface, so there is no canvas
+  // left to mask and nothing non-deterministic on it. The mask entry is GONE
+  // rather than left dormant: a mask over an element that doesn't exist reads
+  // as "this card has a live region" to the next person. See the EXEMPT_FROM_VRT
+  // note below — the card is now a re-promotion candidate.)
   // MILKDROP — butterchurn music visualizer. The card carries a live preview
   // canvas (blitOutputToDrawingBuffer off the engine clock + an async-loaded
   // preset that animates continuously), so the canvas region is non-deterministic
@@ -812,21 +811,23 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // + per-module-per-port provide functional coverage. Promote + capture baselines
   // once darwin + linux PNGs are captured via vrt-update.yml workflow_dispatch.
   twotracks: 'VRT baseline pending — 2-reel tape-loop emulator P1. Waveform canvas masked in MODULES. Unit (transport) + e2e (record→play→SCOPE RMS) + per-module-per-port cover function. Promote once darwin + linux baselines captured via vrt-update.yml.',
-  // BACKDRAFT (video feedback generator) — given FULL OUTPUT CAPABILITIES in
-  // this PR (corner-resize + Full Frame / Full Screen / Present on other
-  // display, mirroring videoOut/bentbox). The card is now USER-RESIZABLE, so the
-  // preview canvas has a variable size + the chrome (resize handle, 2-col
-  // layout, default 720×540 footprint) changed — the prior frozen-feedback
-  // darwin baseline is stale, and like the other resizable video cards
-  // (ruttetra/videoOut/toybox) the live feedback preview is non-deterministic
-  // (it's MASKED in VRT_MODULE_MASKS above; the deterministic frozen capture
-  // lives in VRT_SCENES.backdraft for a future re-promotion). Functional
-  // coverage: backdraft.test.ts (PCU) + e2e/tests/backdraft.spec.ts (feedback
-  // render / freeze / spatial-transform / pixelate / mirror / clk-override /
-  // faders) + e2e/tests/backdraft-full-output.spec.ts (resize + Full Frame /
-  // Full Screen / Present menu). Promote back into MODULES (canvas masked) +
-  // capture fresh darwin/linux baselines via vrt-update.yml in a follow-up PR.
-  backdraft: 'given full output capabilities (corner-resize + Full Frame/Full Screen/Present) so the preview is now variable-size + non-deterministic (live feedback), like ruttetra/videoOut/toybox — masked in VRT_MODULE_MASKS, deterministic capture in VRT_SCENES.backdraft. Unit (backdraft.test.ts) + e2e (backdraft.spec.ts + backdraft-full-output.spec.ts) provide coverage. Re-capture darwin/linux baselines via vrt-update.yml in a follow-up.',
+  // BACKDRAFT (video feedback generator) — EXEMPT ONLY FOR MISSING BASELINES
+  // NOW; the reason it was exempt is GONE. It was exempted for being
+  // user-resizable with a live, non-deterministic feedback preview (like
+  // ruttetra/videoOut/toybox). The preview and the corner-resize were removed
+  // when the card became a pure CONTROL SURFACE: it is now a fixed 5hp×3u tier
+  // (rack-sizes.ts) with no canvas and no live region, i.e. exactly the
+  // deterministic chrome the VRT lane wants. What still blocks promotion is
+  // purely mechanical — there are no darwin/linux PNGs, and capturing them is
+  // the vrt-update.yml drain-then-dispatch dance on two platforms, which is a
+  // separate PR's CI budget, not this one's. Functional coverage meanwhile:
+  // backdraft.test.ts + backdraft-tv.test.ts (PCU/model) + backdraft.spec.ts
+  // (feedback render / freeze / spatial transform / pixelate / mirror /
+  // clk-override / faders) + backdraft-pure-tv.spec.ts + the TV-mode cases in
+  // card-control-overflow.spec.ts (card layout in every mode).
+  // FOLLOW-UP: promote into MODULES (no mask needed) + capture darwin/linux
+  // baselines via vrt-update.yml.
+  backdraft: 'baselines pending only — the ORIGINAL reason (user-resizable card with a live non-deterministic feedback preview) no longer applies: the preview + corner-resize were removed, so the card is fixed-size deterministic chrome with no canvas. Coverage: backdraft.test.ts + backdraft-tv.test.ts + backdraft.spec.ts + backdraft-pure-tv.spec.ts + the TV-mode card-control-overflow cases. Promote + capture darwin/linux baselines via vrt-update.yml in a follow-up.',
   // SPIROGRAPHS is intentionally NOT exempt: its live drifting/bouncing OUT
   // preview canvas is MASKED in VRT_MODULE_MASKS above, and the deterministic
   // card chrome (COUNT fader + 1/2/3 spiro selector + IN/OUT toggle + chroma
