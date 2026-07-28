@@ -545,121 +545,121 @@
            the display is genuinely centred on the card no matter how the
            switch labels grow (SHAPE: PENTAGON, TV: CRITICAL). -->
       <div class="top-band">
-      <div class="switch-col left">
-        <div class="btn-group" data-testid="backdraft-mirror-row">
-          <button
-            type="button"
-            class="mirror-btn nodrag"
-            class:on={mirrorXOn}
-            data-testid="backdraft-mirror-x"
-            title="MIRROR X — fold the left half over the right (kaleidoscope)"
-            onclick={toggleMirror('mirrorX')}
-          >MIRROR X</button>
-          <button
-            type="button"
-            class="mirror-btn nodrag"
-            class:on={mirrorYOn}
-            data-testid="backdraft-mirror-y"
-            title="MIRROR Y — fold the top half over the bottom (kaleidoscope)"
-            onclick={toggleMirror('mirrorY')}
-          >MIRROR Y</button>
-        </div>
-
-        <div class="btn-group" data-testid="backdraft-shape-row">
-          <button
-            type="button"
-            class="mirror-btn nodrag wide"
-            class:on={shapeIdx > 0}
-            data-testid="backdraft-shape"
-            title="SHAPE — cycle the geometry mask (square = full frame, then circle / pentagon / triangle / octagon)"
-            onclick={cycleShape}
-          >SHAPE: {shapeName.toUpperCase()}</button>
-          <button
-            type="button"
-            class="mirror-btn nodrag"
-            class:on={pureGeoOn && !tvOn}
-            class:inert={tvOn}
-            data-testid="backdraft-pure-geo"
-            title={tvOn
-              ? 'PURE GEO is ignored in PURE TV / CRITICAL — SHAPE means exactly one thing there: the screen’s outline. Still live: set it here and it takes effect the moment TV MODE cycles back to OFF.'
-              : 'PURE GEO — masking space. ON: fixed shape in screen space (cuts content outside at all zooms). OFF: shape in the zoomed feedback space (scales with Zoom, spills through the tunnel).'}
-            onclick={togglePureGeo}
-          >PURE GEO</button>
-        </div>
-      </div>
-
-      <!-- ── THE DISPLAY ─────────────────────────────────────────────────────
-           320×240, centred in the band, directly under the title. The SAME
-           element is the full-frame / fullscreen / Present surface — see the
-           .canvas-wrap rules for how it changes position in each mode.
-           Right-click opens the OUTPUT menu at the pointer. -->
-      <div
-        bind:this={wrapEl}
-        class="canvas-wrap"
-        class:fullscreen={fs.isFullscreen}
-        class:full-frame={fullFrame}
-        data-testid="backdraft-fs-wrap"
-        oncontextmenu={openOutputMenuAt}
-        role="presentation"
-      >
-        <canvas
-          bind:this={canvasEl}
-          width={bufferDims.width}
-          height={bufferDims.height}
-          style="aspect-ratio: {bufferDims.aspectRatio};"
-          data-testid="backdraft-canvas"
-          data-node-id={id}
-        ></canvas>
-      </div>
-
-      <div class="switch-col right">
-        <div class="btn-group tv-group" data-testid="backdraft-tv-row">
-          <button
-            type="button"
-            class="mirror-btn nodrag wide"
-            class:on={tvOn}
-            data-testid="backdraft-tv-mode"
-            title={tvModeIdx === 0
-              ? 'TV MODE OFF — the classic infinite-plane feedback composite. The exact pre-PURE-TV behaviour.'
-              : tvModeIdx === 1
-                ? 'PURE TV — a bounded SCREEN instead of an infinite plane. The previous frame is drawn whole inside a bezelled TV; OUTSIDE it is your live input, so IN THIS MODE YOUR INPUT IS THE ROOM, NOT THE PICTURE. The view nests one level per pass and converges to a STILL image.'
-                : 'CRITICAL — PURE TV plus the camera’s AUTO-EXPOSURE servo. The servo integrates, so it overshoots: past DRIVE 0.5 the picture blooms toward white, gets hauled back, and each correction rides inward through the nest one level per DELAY. This is the mode for riding the edge of white-out; back DRIVE off and it always recovers.'}
-            onclick={cycleTvMode}
-          >TV: {BACKDRAFT_TV_MODE_LABELS[tvModeIdx]}</button>
-          {#if tvOn}
-            <span class="tv-readout" data-testid="backdraft-tv-readout">
-              fill {(tvFill * 100).toFixed(0)}% · ≈{tvDepth.resolved} bands
-              {#if tvCritical} · Λ-servo {tvRate.toFixed(1)}/f {tvRiding ? '· RIDING' : '· steady'}{/if}
-            </span>
-          {/if}
-        </div>
-
-        <div class="btn-group" data-testid="backdraft-flicker-row">
-          <span class="row-label">FLICKER</span>
-          {#each FLICKERS as f (f.v)}
+        <div class="switch-col left">
+          <div class="btn-group" data-testid="backdraft-mirror-row">
             <button
               type="button"
-              class="mirror-btn nodrag seg"
-              class:on={flickerIdx === f.v}
-              data-testid={`backdraft-flicker-${f.key}`}
-              title={f.title}
-              onclick={() => pickFlicker(f.v)}
-            >{f.label}</button>
-          {/each}
+              class="mirror-btn nodrag"
+              class:on={mirrorXOn}
+              data-testid="backdraft-mirror-x"
+              title="MIRROR X — fold the left half over the right (kaleidoscope)"
+              onclick={toggleMirror('mirrorX')}
+            >MIRROR X</button>
+            <button
+              type="button"
+              class="mirror-btn nodrag"
+              class:on={mirrorYOn}
+              data-testid="backdraft-mirror-y"
+              title="MIRROR Y — fold the top half over the bottom (kaleidoscope)"
+              onclick={toggleMirror('mirrorY')}
+            >MIRROR Y</button>
+          </div>
+
+          <div class="btn-group" data-testid="backdraft-shape-row">
+            <button
+              type="button"
+              class="mirror-btn nodrag wide"
+              class:on={shapeIdx > 0}
+              data-testid="backdraft-shape"
+              title="SHAPE — cycle the geometry mask (square = full frame, then circle / pentagon / triangle / octagon)"
+              onclick={cycleShape}
+            >SHAPE: {shapeName.toUpperCase()}</button>
+            <button
+              type="button"
+              class="mirror-btn nodrag"
+              class:on={pureGeoOn && !tvOn}
+              class:inert={tvOn}
+              data-testid="backdraft-pure-geo"
+              title={tvOn
+                ? 'PURE GEO is ignored in PURE TV / CRITICAL — SHAPE means exactly one thing there: the screen’s outline. Still live: set it here and it takes effect the moment TV MODE cycles back to OFF.'
+                : 'PURE GEO — masking space. ON: fixed shape in screen space (cuts content outside at all zooms). OFF: shape in the zoomed feedback space (scales with Zoom, spills through the tunnel).'}
+              onclick={togglePureGeo}
+            >PURE GEO</button>
+          </div>
         </div>
 
-        <!-- OUTPUT — BIGGER than the in-band display. The discoverable twin of
-             right-clicking the display: Full Frame (the card becomes a video
-             panel in the rack), Full Screen, and Present on another display. -->
-        <button
-          type="button"
-          class="mirror-btn nodrag out-btn"
-          class:on={expanded}
-          data-testid="backdraft-output-menu"
-          title="OUTPUT — show BACKDRAFT's picture bigger than the card display: Full Frame (the card becomes a video panel in the rack), Full Screen, or Present on another display. Right-clicking the display opens this same menu. For an arbitrarily-sized monitor, patch OUT into VIDEO OUT."
-          onclick={openOutputMenu}
-        >⛶ OUTPUT</button>
-      </div>
+        <!-- ── THE DISPLAY ─────────────────────────────────────────────────────
+             320×240, centred in the band, directly under the title. The SAME
+             element is the full-frame / fullscreen / Present surface — see the
+             .canvas-wrap rules for how it changes position in each mode.
+             Right-click opens the OUTPUT menu at the pointer. -->
+        <div
+          bind:this={wrapEl}
+          class="canvas-wrap"
+          class:fullscreen={fs.isFullscreen}
+          class:full-frame={fullFrame}
+          data-testid="backdraft-fs-wrap"
+          oncontextmenu={openOutputMenuAt}
+          role="presentation"
+        >
+          <canvas
+            bind:this={canvasEl}
+            width={bufferDims.width}
+            height={bufferDims.height}
+            style="aspect-ratio: {bufferDims.aspectRatio};"
+            data-testid="backdraft-canvas"
+            data-node-id={id}
+          ></canvas>
+        </div>
+
+        <div class="switch-col right">
+          <div class="btn-group tv-group" data-testid="backdraft-tv-row">
+            <button
+              type="button"
+              class="mirror-btn nodrag wide"
+              class:on={tvOn}
+              data-testid="backdraft-tv-mode"
+              title={tvModeIdx === 0
+                ? 'TV MODE OFF — the classic infinite-plane feedback composite. The exact pre-PURE-TV behaviour.'
+                : tvModeIdx === 1
+                  ? 'PURE TV — a bounded SCREEN instead of an infinite plane. The previous frame is drawn whole inside a bezelled TV; OUTSIDE it is your live input, so IN THIS MODE YOUR INPUT IS THE ROOM, NOT THE PICTURE. The view nests one level per pass and converges to a STILL image.'
+                  : 'CRITICAL — PURE TV plus the camera’s AUTO-EXPOSURE servo. The servo integrates, so it overshoots: past DRIVE 0.5 the picture blooms toward white, gets hauled back, and each correction rides inward through the nest one level per DELAY. This is the mode for riding the edge of white-out; back DRIVE off and it always recovers.'}
+              onclick={cycleTvMode}
+            >TV: {BACKDRAFT_TV_MODE_LABELS[tvModeIdx]}</button>
+            {#if tvOn}
+              <span class="tv-readout" data-testid="backdraft-tv-readout">
+                fill {(tvFill * 100).toFixed(0)}% · ≈{tvDepth.resolved} bands
+                {#if tvCritical} · Λ-servo {tvRate.toFixed(1)}/f {tvRiding ? '· RIDING' : '· steady'}{/if}
+              </span>
+            {/if}
+          </div>
+
+          <div class="btn-group" data-testid="backdraft-flicker-row">
+            <span class="row-label">FLICKER</span>
+            {#each FLICKERS as f (f.v)}
+              <button
+                type="button"
+                class="mirror-btn nodrag seg"
+                class:on={flickerIdx === f.v}
+                data-testid={`backdraft-flicker-${f.key}`}
+                title={f.title}
+                onclick={() => pickFlicker(f.v)}
+              >{f.label}</button>
+            {/each}
+          </div>
+
+          <!-- OUTPUT — BIGGER than the in-band display. The discoverable twin of
+               right-clicking the display: Full Frame (the card becomes a video
+               panel in the rack), Full Screen, and Present on another display. -->
+          <button
+            type="button"
+            class="mirror-btn nodrag out-btn"
+            class:on={expanded}
+            data-testid="backdraft-output-menu"
+            title="OUTPUT — show BACKDRAFT's picture bigger than the card display: Full Frame (the card becomes a video panel in the rack), Full Screen, or Present on another display. Right-clicking the display opens this same menu. For an arbitrarily-sized monitor, patch OUT into VIDEO OUT."
+            onclick={openOutputMenu}
+          >⛶ OUTPUT</button>
+        </div>
       </div>
 
       <!-- ── FADER BANKS ────────────────────────────────────────────────────
