@@ -477,6 +477,12 @@
     { id: 'shape_gate',    label: 'SHAPE',    cable: 'gate' },
     { id: 'pure_geo_gate', label: 'PURE GEO', cable: 'gate' },
     { id: 'tv_gate',       label: 'TV MODE',  cable: 'gate' },
+    // PURE TV / CRITICAL continuous CV. ROOM is Crutchfield's flashlight (his
+    // rig needs external light to restart a dark screen); DRIVE rides the edge
+    // of white-out and is the one worth a slow LFO.
+    { id: 'room',        label: 'ROOM',      cable: 'cv' },
+    { id: 'phosphor',    label: 'PHOSPHOR',  cable: 'cv' },
+    { id: 'drive',       label: 'DRIVE',     cable: 'cv' },
   ];
   const outputs = portsFromDef(backdraftDef.outputs);
 </script>
