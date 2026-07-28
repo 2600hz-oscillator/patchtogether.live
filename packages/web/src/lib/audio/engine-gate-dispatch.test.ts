@@ -24,15 +24,34 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { AudioEngine, PatchEngine, type DomainEngine } from './engine';
 import { registerModule, type AudioModuleDef } from './module-registry';
-import { registerVideoModule } from '$lib/video/module-registry';
 import {
   getSchedulerClock,
   __resetSchedulerClockForTests,
   SCHEDULER_TICK_MS,
 } from './scheduler-clock';
+import { GATE_EDGE_WORKLET_SOURCE } from './gate-edge-worklet';
 import type { Edge, ModuleNode } from '$lib/graph/types';
 
+// LEAK-PROOFING: this file needs a synthetic VIDEO module def visible to
+// `engine.ts`'s `getVideoModuleDef` lookup. Registering it into the REAL
+// registry would mutate process-wide state that registry-SWEEPING tests
+// (contract-lock, module-docs-lint, the card-map gate) enumerate — safe today
+// only because vitest isolates files, i.e. safe by accident. Instead we overlay
+// the lookup for THIS FILE'S module graph only: the real registry is never
+// written, so the def cannot leak even if file isolation were disabled.
+const SYNTHETIC_VIDEO_DEFS = new Map<string, unknown>();
+vi.mock('$lib/video/module-registry', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$lib/video/module-registry')>();
+  return {
+    ...actual,
+    getVideoModuleDef: (type: string) =>
+      SYNTHETIC_VIDEO_DEFS.get(type) ?? actual.getVideoModuleDef(type as never),
+  };
+});
+
 const SAMPLE_RATE = 48000;
+/** Render-quantum size — the block the worklet processor is fed. */
+const RENDER_QUANTUM = 128;
 
 // ---------------------------------------------------------------------------
 // A fake AudioContext whose analyser reconstructs a controllable gate timeline.
@@ -44,20 +63,56 @@ interface FakeClock {
   pulse(startSec: number, widthSec: number): void;
   /** Advance BOTH the audio clock and the JS timers by `ms`. */
   advance(ms: number): void;
+  /**
+   * Advance ONLY the audio thread: the render quanta are produced and the
+   * worklet keeps counting, but the MAIN THREAD is frozen — no scheduler
+   * ticks run and no port messages are delivered. This is the CI pathology
+   * (a renderer preempted for hundreds of ms) reproduced deterministically.
+   */
+  stallMainThread(ms: number): void;
   nowSec(): number;
+  /** Install the fake AudioWorkletNode global bound to THIS clock. */
+  enableWorklet(): void;
 }
 
 function makeFakeClock(): FakeClock {
   let now = 0;
+  let fedUntil = 0;
   const pulses: Array<[number, number]> = [];
   const high = (t: number): number =>
     pulses.some(([s, e]) => t >= s && t < e) ? 1 : 0;
 
   const node = () => ({ connect() { /* */ }, disconnect() { /* */ } });
 
+  /** Live worklet taps: each gets every render quantum. */
+  const taps: Array<(block: Float32Array) => void> = [];
+  /** Messages produced by the audio thread, awaiting main-thread delivery. */
+  let pendingDeliveries: Array<() => void> = [];
+
+  /** Produce whole render quanta up to `now` and feed every worklet tap. */
+  function pumpAudio(): void {
+    const quantumSec = RENDER_QUANTUM / SAMPLE_RATE;
+    while (taps.length > 0 && fedUntil + quantumSec <= now) {
+      const ch = new Float32Array(RENDER_QUANTUM);
+      for (let i = 0; i < RENDER_QUANTUM; i++) ch[i] = high(fedUntil + i / SAMPLE_RATE);
+      for (const t of taps) t(ch);
+      fedUntil += quantumSec;
+    }
+    if (taps.length === 0) fedUntil = now;
+  }
+
+  /** Main thread runs: hand every queued port message to its listener. */
+  function deliverMessages(): void {
+    const q = pendingDeliveries;
+    pendingDeliveries = [];
+    for (const d of q) d();
+  }
+
   const ctx = {
     get currentTime() { return now; },
     sampleRate: SAMPLE_RATE,
+    destination: { } as unknown as AudioDestinationNode,
+    audioWorklet: { addModule: async () => { /* the fake node is the module */ } },
     createGain() { return { ...node(), gain: { value: 1 } }; },
     createConstantSource() {
       return { ...node(), offset: { value: 0 }, start() { /* */ }, stop() { /* */ } };
@@ -80,11 +135,74 @@ function makeFakeClock(): FakeClock {
     },
   } as unknown as AudioContext;
 
+  /** Instantiate the REAL shipped worklet source as an audio-thread processor. */
+  function spawnProcessor(post: (m: unknown) => void): (block: Float32Array) => void {
+    let Ctor: (new () => { process(inputs: Float32Array[][]): boolean }) | undefined;
+    const g = globalThis as unknown as Record<string, unknown>;
+    const prevBase = g.AudioWorkletProcessor;
+    const prevReg = g.registerProcessor;
+    g.AudioWorkletProcessor = class { port = { postMessage: post }; };
+    g.registerProcessor = (_n: string, c: unknown) => {
+      Ctor = c as new () => { process(inputs: Float32Array[][]): boolean };
+    };
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
+      new Function(GATE_EDGE_WORKLET_SOURCE)();
+    } finally {
+      g.AudioWorkletProcessor = prevBase;
+      g.registerProcessor = prevReg;
+    }
+    const proc = new Ctor!();
+    return (block) => { proc.process([[block]]); };
+  }
+
   return {
     ctx,
     pulse(startSec, widthSec) { pulses.push([startSec, startSec + widthSec]); },
-    advance(ms) { now += ms / 1000; vi.advanceTimersByTime(ms); },
+    advance(ms) {
+      now += ms / 1000;
+      pumpAudio();
+      deliverMessages();
+      vi.advanceTimersByTime(ms);
+    },
+    stallMainThread(ms) {
+      // Audio thread keeps rendering; main thread does NOT run.
+      now += ms / 1000;
+      pumpAudio();
+    },
     nowSec() { return now; },
+    enableWorklet() {
+      const g = globalThis as unknown as Record<string, unknown>;
+      // `ensureGateEdgeWorklet` builds a blob: URL; node's URL has no
+      // createObjectURL, so shim just enough for the registration path.
+      const u = g.URL as { createObjectURL?: unknown; revokeObjectURL?: unknown };
+      if (typeof u.createObjectURL !== 'function') {
+        u.createObjectURL = () => 'blob:gate-edge-test';
+        u.revokeObjectURL = () => { /* */ };
+      }
+      g.AudioWorkletNode = class {
+        port: { onmessage: ((e: MessageEvent) => void) | null; close(): void } = {
+          onmessage: null,
+          close: () => { /* */ },
+        };
+        private tap: (block: Float32Array) => void;
+        constructor() {
+          // Messages are QUEUED, not delivered inline — they only reach the
+          // main thread when the main thread actually runs (advance()).
+          this.tap = spawnProcessor((m) => {
+            pendingDeliveries.push(() => {
+              this.port.onmessage?.({ data: m } as MessageEvent);
+            });
+          });
+          taps.push(this.tap);
+        }
+        connect() { /* */ }
+        disconnect() {
+          const i = taps.indexOf(this.tap);
+          if (i >= 0) taps.splice(i, 1);
+        }
+      };
+    },
   };
 }
 
@@ -118,7 +236,9 @@ const GATE_SOURCE_DEF: AudioModuleDef = {
 // → the per-frame bridge maps it across the param range).
 const VIDEO_TARGET_TYPE = 'gateDispatchTestTarget';
 function registerVideoTarget(): void {
-  registerVideoModule({
+  // Into the FILE-LOCAL overlay (see the vi.mock above) — never the real
+  // registry, so registry-sweeping tests cannot see this synthetic def.
+  SYNTHETIC_VIDEO_DEFS.set(VIDEO_TARGET_TYPE, {
     type: VIDEO_TARGET_TYPE,
     domain: 'video',
     label: 'GateTarget',
@@ -132,8 +252,8 @@ function registerVideoTarget(): void {
       { id: 'cv_clock', label: 'clk', min: 0, max: 1, defaultValue: 0 },
       { id: 'speed', label: 'speed', min: 0, max: 4, defaultValue: 1 },
     ],
-    factory: (() => { throw new Error('not instantiated in this test'); }) as never,
-  } as never);
+    factory: () => { throw new Error('not instantiated in this test'); },
+  });
 }
 
 class VideoEngineStub implements DomainEngine {
@@ -188,13 +308,14 @@ function countRisingEdges(
 }
 
 let registered = false;
-async function setup(targetPortId: string) {
+async function setup(targetPortId: string, opts: { worklet?: boolean } = {}) {
   if (!registered) {
     registerModule(GATE_SOURCE_DEF);
     registerVideoTarget();
     registered = true;
   }
   const clock = makeFakeClock();
+  if (opts.worklet) clock.enableWorklet();
   const ae = new AudioEngine(clock.ctx);
   const ve = new VideoEngineStub();
   const pe = new PatchEngine();
@@ -220,6 +341,11 @@ async function setup(targetPortId: string) {
     targetType: 'cv',
   };
   pe.addEdge(edge, 'audio', 'video');
+  // `installGateDispatch` registers + constructs the worklet across a few
+  // microtasks (addModule is async). Drain them so the dispatcher is live
+  // before the test drives the clock. Microtasks are NOT faked by
+  // vi.useFakeTimers, so this is deterministic.
+  for (let i = 0; i < 8; i++) await Promise.resolve();
   return { pe, ve, clock, edge };
 }
 
@@ -347,6 +473,184 @@ describe('PatchEngine — frame-independent gate dispatch (audio → video)', ()
     clock.pulse(clock.nowSec() + 0.005, 0.010);
     clock.advance(SCHEDULER_TICK_MS * 4);
     expect(ve.writes, 'node removal must not leak a scheduler subscription').toEqual([]);
+    pe.dispose();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The AUDIO-THREAD path — what actually ships when a worklet is available.
+// ---------------------------------------------------------------------------
+//
+// The suite above drives the main-thread AnalyserNode FAIL-SAFE (the fake ctx
+// there has no audioWorklet, so `ensureGateEdgeWorklet` declines and the bridge
+// degrades to `createEdgeCounter`). These tests enable a fake AudioWorkletNode
+// that runs the REAL shipped worklet source over the same analytic signal, and
+// pin the property the fail-safe CANNOT provide: survival across a main-thread
+// stall longer than any possible AnalyserNode window.
+
+describe('PatchEngine — gate dispatch on the AUDIO-THREAD counter', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    __resetSchedulerClockForTests();
+  });
+  afterEach(() => {
+    __resetSchedulerClockForTests();
+    vi.useRealTimers();
+    delete (globalThis as unknown as Record<string, unknown>).AudioWorkletNode;
+  });
+
+  it('takes the worklet path when the context can host one', async () => {
+    const { pe, ve, clock } = await setup('clock_in', { worklet: true });
+    clock.advance(SCHEDULER_TICK_MS);
+    ve.writes.length = 0;
+    clock.pulse(clock.nowSec() + 0.005, 0.010);
+    clock.advance(SCHEDULER_TICK_MS * 2);
+    expect(countRisingEdges(ve.writes, 'cv_clock'), 'one pulse → one edge').toBe(1);
+    pe.dispose();
+  });
+
+  // ---- THE CI REGRESSION ------------------------------------------------
+  it('THE CI BUG: edges that fire during a 2 s MAIN-THREAD STALL are ALL delivered on resume', async () => {
+    const { pe, ve, clock } = await setup('clock_in', { worklet: true });
+    clock.advance(SCHEDULER_TICK_MS);
+    ve.writes.length = 0;
+
+    // Four 10 ms pulses spread over a 2 SECOND window in which the main thread
+    // never runs — no scheduler tick, no port delivery. The audio thread keeps
+    // rendering throughout.
+    //
+    // 2 s is 2.9x the LARGEST window an AnalyserNode can hold (fftSize 32768 =
+    // 683 ms @ 48 kHz), so a main-thread reader physically cannot recover these
+    // — the samples are gone from the ring. Measured max poll gap on the real
+    // CI-faithful repro was 1626 ms, which is why the analyser-based first fix
+    // shipped red. The audio-thread total is accumulated BEHIND the stall.
+    const t = clock.nowSec();
+    for (let i = 0; i < 4; i++) clock.pulse(t + 0.2 + i * 0.45, 0.010);
+    clock.stallMainThread(2000);
+
+    expect(ve.writes, 'main thread was frozen — nothing can have been written yet').toEqual([]);
+
+    // Main thread resumes.
+    clock.advance(SCHEDULER_TICK_MS);
+    expect(
+      countRisingEdges(ve.writes, 'cv_clock'),
+      'every edge accumulated during the stall must arrive — none dropped',
+    ).toBe(4);
+    pe.dispose();
+  });
+
+  it('a stall spanning MANY pulses still delivers exactly one edge per pulse', async () => {
+    const { pe, ve, clock } = await setup('clock_in', { worklet: true });
+    clock.advance(SCHEDULER_TICK_MS);
+    ve.writes.length = 0;
+
+    const t = clock.nowSec();
+    for (let i = 0; i < 12; i++) clock.pulse(t + 0.1 + i * 0.25, 0.010);
+    clock.stallMainThread(3200);
+    clock.advance(SCHEDULER_TICK_MS);
+
+    expect(countRisingEdges(ve.writes, 'cv_clock'), 'exact, not approximate').toBe(12);
+    pe.dispose();
+  });
+
+  // ---- PROOF 2: no double-counting --------------------------------------
+  it('PROOF 2: a known pulse train over a known interval counts EXACTLY, tick after tick', async () => {
+    const { pe, ve, clock } = await setup('clock_in', { worklet: true });
+    clock.advance(SCHEDULER_TICK_MS);
+    ve.writes.length = 0;
+
+    // 20 pulses at a 130 ms period — deliberately NOT a multiple of the 25 ms
+    // tick, so pulses land at every phase relative to the tick. An
+    // off-by-one-per-tick defect (the NUMPAD+/HYDROGEN/ATLANTIS-CATALYST bug
+    // class: re-scanning the overlap region) would report far more than 20.
+    const t0 = clock.nowSec() + 0.05;
+    for (let i = 0; i < 20; i++) clock.pulse(t0 + i * 0.130, 0.010);
+    for (let i = 0; i < 130; i++) clock.advance(SCHEDULER_TICK_MS);
+
+    expect(
+      countRisingEdges(ve.writes, 'cv_clock'),
+      'exactly 20 — never 19 (a drop), never 21+ (a re-count)',
+    ).toBe(20);
+    pe.dispose();
+  });
+
+  it('PROOF 2: many ticks with NO pulse produce ZERO edges', async () => {
+    const { pe, ve, clock } = await setup('clock_in', { worklet: true });
+    clock.advance(SCHEDULER_TICK_MS);
+    ve.writes.length = 0;
+    for (let i = 0; i < 200; i++) clock.advance(SCHEDULER_TICK_MS);
+    expect(
+      countRisingEdges(ve.writes, 'cv_clock'),
+      'a quiet gate must not manufacture edges (per-tick off-by-one control)',
+    ).toBe(0);
+    pe.dispose();
+  });
+
+  // ---- PROOF 1: held gates survive --------------------------------------
+  it('PROOF 1: a gate held across MANY ticks reads HIGH CONTINUOUSLY — every write, not just the last', async () => {
+    const { pe, ve, clock } = await setup('clock_in', { worklet: true });
+    clock.advance(SCHEDULER_TICK_MS);
+    ve.writes.length = 0;
+
+    // A 1 s held gate — an ADSR sustain / VCA hold / DOOM key-down, NOT a
+    // trigger. The repo standard: "Do NOT convert a gate consumer to
+    // edge-only." Level-sensitive consumers read the LEVEL.
+    const t = clock.nowSec();
+    clock.pulse(t + 0.010, 1.000);
+    clock.advance(SCHEDULER_TICK_MS * 2); // get inside the gate
+
+    const insideStart = ve.writes.length;
+    // ~30 ticks (750 ms) strictly INSIDE the held window.
+    for (let i = 0; i < 30; i++) clock.advance(SCHEDULER_TICK_MS);
+    const insideWrites = ve.writes.slice(insideStart).filter((w) => w.paramId === 'cv_clock');
+
+    expect(insideWrites.length, 'the bridge must keep writing while held').toBeGreaterThanOrEqual(25);
+    expect(
+      insideWrites.every((w) => w.value === 1),
+      `EVERY write inside the hold must be HIGH — no blip, no chatter `
+      + `(saw ${JSON.stringify(insideWrites.slice(0, 12).map((w) => w.value))})`,
+    ).toBe(true);
+    expect(
+      countRisingEdges(ve.writes, 'cv_clock'),
+      'a held gate is ONE edge, not one per tick',
+    ).toBe(1);
+
+    // ---- release must land ----
+    for (let i = 0; i < 20; i++) clock.advance(SCHEDULER_TICK_MS);
+    const afterRelease = ve.writes.filter((w) => w.paramId === 'cv_clock').slice(-10);
+    expect(
+      afterRelease.every((w) => w.value === 0),
+      'after release every write must read LOW',
+    ).toBe(true);
+    expect(countRisingEdges(ve.writes, 'cv_clock'), 'release adds no rising edge').toBe(1);
+    pe.dispose();
+  });
+
+  it('PROOF 1: a gate still held when the main thread resumes from a stall reads HIGH', async () => {
+    const { pe, ve, clock } = await setup('clock_in', { worklet: true });
+    clock.advance(SCHEDULER_TICK_MS);
+    ve.writes.length = 0;
+
+    clock.pulse(clock.nowSec() + 0.100, 3.000); // long hold
+    clock.stallMainThread(1500);                // stall STARTS before, ENDS inside
+    clock.advance(SCHEDULER_TICK_MS);
+
+    expect(countRisingEdges(ve.writes, 'cv_clock'), 'the rise still arrives').toBe(1);
+    expect(
+      ve.writes.filter((w) => w.paramId === 'cv_clock').at(-1)?.value,
+      'still inside the hold → must settle HIGH, not LOW',
+    ).toBe(1);
+    pe.dispose();
+  });
+
+  it('teardown removes the worklet tap (silent after removeEdge)', async () => {
+    const { pe, ve, clock, edge } = await setup('clock_in', { worklet: true });
+    clock.advance(SCHEDULER_TICK_MS);
+    pe.removeEdge(edge, 'audio');
+    ve.writes.length = 0;
+    clock.pulse(clock.nowSec() + 0.005, 0.010);
+    clock.advance(SCHEDULER_TICK_MS * 4);
+    expect(ve.writes, 'a torn-down worklet dispatcher must be silent').toEqual([]);
     pe.dispose();
   });
 });
