@@ -16,10 +16,25 @@
   // portal drops the param out of faces-parity's dock multiset and reads as a
   // LOST control), and that picking commits + closes. `param-grid.spec.ts`
   // asserts all three here; PR 4 inherits a primitive that already works.
+  import { onMount } from 'svelte';
   import ParamGrid from '$lib/ui/controls/ParamGrid.svelte';
   import { testHooksEnabled } from '$lib/dev/test-hooks';
 
   const isDev = testHooksEnabled();
+
+  // HYDRATION SIGNAL. This route is server-rendered, so the chip is PAINTED
+  // (and `toBeVisible()`-able) a beat before Svelte hydrates it and attaches
+  // its click handler. A click that lands in that window is silently swallowed
+  // — which showed up as a real flake under `--repeat-each=3`: the first, cold
+  // pass was slow enough to hydrate before the click, the warm repeats were
+  // not, and the popover simply never opened. `onMount` fires after this
+  // component and its children have mounted, so waiting on this attribute
+  // makes "the host is visible" imply "the chip is live" BY CONSTRUCTION —
+  // no wall-clock budget to tune per machine.
+  let hydrated = $state(false);
+  onMount(() => {
+    hydrated = true;
+  });
 
   // A 32-step discrete range with a declared formatter — the DX7 algorithm
   // shape, without the DX7.
@@ -42,7 +57,7 @@
 {#if !isDev}
   <p class="notice">This showcase is available in development builds only.</p>
 {:else}
-  <main>
+  <main data-testid="param-grid-page" data-hydrated={hydrated}>
     <h1>ParamGrid</h1>
 
     <!-- The `overflow: hidden` box is the POINT: it reproduces the RACKLINE

@@ -28,6 +28,14 @@ import { test, expect, type Page } from '@playwright/test';
 
 async function gotoShowcase(page: Page): Promise<void> {
   await page.goto('/dev/param-grid');
+  // WAIT ON HYDRATION, NOT ON PAINT. The route is server-rendered, so the chip
+  // is visible a beat before Svelte attaches its click handler; a click in that
+  // window is silently swallowed and the popover never opens. That was a REAL
+  // flake — `--repeat-each=3` went 8/8 on the cold first pass and lost a
+  // different test on each warm repeat. `data-hydrated` is set from the page's
+  // `onMount`, which runs after its children have mounted, so this is a
+  // by-construction signal rather than a wall-clock budget.
+  await expect(page.locator('[data-testid="param-grid-page"][data-hydrated="true"]')).toBeVisible();
   await expect(page.getByTestId('grid-host')).toBeVisible();
 }
 
