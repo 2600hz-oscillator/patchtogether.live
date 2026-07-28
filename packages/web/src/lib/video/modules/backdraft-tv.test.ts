@@ -681,6 +681,69 @@ describe('BACKDRAFT — VIRTUAL CAMERA ORIENTATION', () => {
     expect(BACKDRAFT_CAM_TILT_MAX_DEG).toBeLessThan(90);
   });
 
+  it('V9 — moving the camera MOVES the nest\'s vanishing point', () => {
+    // The accumulation point of the frame-in-frame-in-frame IS the fixed point
+    // of the map, so re-aiming the camera re-composes the whole nest rather
+    // than just sliding the picture — and because the map is ITERATED, that
+    // move then recurses through the network one level per DELAY, exactly as
+    // room motion and the refresh seam do.
+    //
+    // Fixed points of a projective map are its eigenvectors; power-iterating
+    // the inverse homography converges to the dominant one, which is the point
+    // the nest accumulates on.
+    const vanishing = (o: Parameters<typeof backdraftCamInverseHomography>[0]): { x: number; y: number } => {
+      // Hi is the INVERSE map, which EXPANDS away from the accumulation point,
+      // so power-iterating it converges to the vanishing DIRECTION (z -> 0)
+      // rather than the point we want. Invert it to get the forward map, which
+      // contracts onto the accumulation point, and iterate that instead.
+      const M = backdraftCamInverseHomography(o, 0.75, 0);
+      const [a, b, c, d, e, f, g, h, i2] = M as unknown as number[];
+      const A = e! * i2! - f! * h!, B = -(d! * i2! - f! * g!), C = d! * h! - e! * g!;
+      const det = a! * A + b! * B + c! * C;
+      const iv = 1 / det;
+      const H = [
+        A * iv, (c! * h! - b! * i2!) * iv, (b! * f! - c! * e!) * iv,
+        B * iv, (a! * i2! - c! * g!) * iv, (c! * d! - a! * f!) * iv,
+        C * iv, (b! * g! - a! * h!) * iv, (a! * e! - b! * d!) * iv,
+      ];
+      let v = [0.37, 0.21, 1];
+      for (let i = 0; i < 400; i++) {
+        const n = [
+          H[0]! * v[0]! + H[1]! * v[1]! + H[2]! * v[2]!,
+          H[3]! * v[0]! + H[4]! * v[1]! + H[5]! * v[2]!,
+          H[6]! * v[0]! + H[7]! * v[1]! + H[8]! * v[2]!,
+        ];
+        const m = Math.hypot(n[0]!, n[1]!, n[2]!) || 1;
+        v = [n[0]! / m, n[1]! / m, n[2]! / m];
+      }
+      return { x: v[0]! / v[2]!, y: v[1]! / v[2]! };
+    };
+
+    // Dead-on, the nest accumulates dead centre.
+    const centre = vanishing({});
+    expect(Math.hypot(centre.x, centre.y)).toBeLessThan(1e-6);
+
+    // Re-aiming moves it — that is the re-composition.
+    const tilted = vanishing({ tiltX: 0.6, dist: 0.15 });
+    expect(Math.hypot(tilted.x - centre.x, tilted.y - centre.y)).toBeGreaterThan(0.05);
+    const shifted = vanishing({ posX: 0.7, posY: -0.5 });
+    expect(Math.hypot(shifted.x - centre.x, shifted.y - centre.y)).toBeGreaterThan(0.05);
+
+    // …and it TRACKS the control: every tilt gives its own framing, so a CV
+    // ramp sweeps the composition instead of snapping between a few of them.
+    // NOT asserted as monotone in distance — at short camera distances the
+    // vanishing point starts far off-frame and comes CLOSER as tilt grows,
+    // which is correct and was worth measuring rather than assuming.
+    const seen: { x: number; y: number }[] = [];
+    for (const t of [0.15, 0.3, 0.45, 0.6, 0.75]) {
+      seen.push(vanishing({ tiltX: t, dist: 0.5 }));
+    }
+    for (let i = 1; i < seen.length; i++) {
+      const d = Math.hypot(seen[i]!.x - seen[i - 1]!.x, seen[i]!.y - seen[i - 1]!.y);
+      expect(d, `tilt step ${i} re-composes the nest`).toBeGreaterThan(1e-3);
+    }
+  });
+
   it('V7 — the contract: 5 params + 5 CV ports, all neutral by default', () => {
     const p = (id: string) => backdraftDef.params.find((q) => q.id === id);
     for (const id of ['camTiltX', 'camTiltY', 'camPosX', 'camPosY']) {
