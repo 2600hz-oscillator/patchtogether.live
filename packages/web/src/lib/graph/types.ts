@@ -336,6 +336,54 @@ export interface PortDef {
 
 export type KnobCurve = 'linear' | 'log' | 'exp' | 'discrete';
 
+/**
+ * ONE NAMED DETENT of a DISCRETE param (PF-1) — the `mode 0/1/2` → `LP/HP/BP`
+ * mapping the legacy cards hardcoded in their own markup and the migrated
+ * shell had no way to see, so a filter's type read as a rotary printing
+ * "0.00".
+ *
+ * UI VOCABULARY, NOT CONTRACT — exactly like `ParamDef.label` (see the
+ * precedent stated verbatim on `delay.ts`'s params). `contract-signature.ts`'s
+ * whitelisted projection reads only `id/min/max/curve/defaultValue/units`, so
+ * naming a value cannot move `contract-lock.txt`: the value→meaning mapping is
+ * DSP, and it is already pinned by `min`/`max`/`curve`. Renaming `LP` → `Lowpass`
+ * is the same class of edit as renaming a label.
+ *
+ * DISTINCT FROM `landmarks` — see ParamLandmark. `options` says the param has
+ * N states and NOTHING in between; `landmarks` says the param is continuous and
+ * these are the named waypoints. Enforced, not merely documented:
+ * param-vocabulary.test.ts requires `curve: 'discrete'` for a param with
+ * `options` and rejects a def carrying both.
+ */
+export interface ParamOption {
+  /** The param value this detent selects. Must lie within [min,max]. */
+  value: number;
+  /** Short shown text (a Segmented button caption / a Selector row). */
+  label: string;
+  /** Optional long-form hover title explaining what the state DOES. */
+  title?: string;
+}
+
+/**
+ * A NAMED WAYPOINT on a CONTINUOUS param (PF-10) — a tick mark plus a
+ * nearest-landmark readout, for a param that MORPHS through its range rather
+ * than switching between states (qbrt `mode`, lfo `shape`: both `curve:
+ * 'linear'` over a 0..N span whose integers name recognisable shapes, with
+ * genuinely useful blends in between).
+ *
+ * NEVER interchangeable with `options`: rendering a morph as a Segmented would
+ * LIE by hiding the in-between blends, and rendering a discrete switch as a
+ * landmarked knob would ask for a 200 px drag to change one of three states.
+ * The `curve` field is what tells them apart, and the vocabulary gate enforces
+ * it. Cosmetic in the same sense as `options` — never in the contract.
+ */
+export interface ParamLandmark {
+  /** Where the tick sits, in param units. Must lie within [min,max]. */
+  value: number;
+  /** Short shown text for the readout when the value is nearest this tick. */
+  label: string;
+}
+
 export interface ParamDef {
   id: string;
   label: string;
@@ -344,6 +392,22 @@ export interface ParamDef {
   max: number;
   curve: KnobCurve;
   units?: string;
+  /** PF-1 — named detents of a DISCRETE param. Cosmetic (see ParamOption). */
+  options?: readonly ParamOption[];
+  /** PF-10 — named waypoints of a CONTINUOUS param. Cosmetic (see ParamLandmark). */
+  landmarks?: readonly ParamLandmark[];
+  /**
+   * PF-3 — a bespoke value formatter for the knob's readout, when neither the
+   * raw number nor `units` says what the value MEANS (a 0..1 that is really a
+   * ratio, a normalized index that is really a note name). PURE and total: it
+   * is called on every animation frame while a value moves, so it must not
+   * allocate heavily or throw.
+   *
+   * Cosmetic like the rest of this vocabulary. It is a FUNCTION, so it is
+   * structurally unserializable — which is the second, independent reason it
+   * can never reach the contract projection (that projection emits text).
+   */
+  format?: (v: number) => string;
 }
 
 export type ParamSchema = Readonly<ParamDef[]>;

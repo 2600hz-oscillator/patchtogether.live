@@ -7,13 +7,14 @@
   // readLive, MIDI-Learn + ControlContextMenu, clip-automation touch-suspend —
   // so a card swaps Knob → KnobConic with no plumbing change. The existing
   // Knob.svelte is untouched (its ~79 importers keep the flat dial).
-  import type { KnobCurve } from '$lib/graph/types';
+  import type { KnobCurve, ParamLandmark, ParamOption } from '$lib/graph/types';
   import { onDestroy, onMount, untrack } from 'svelte';
   import { createDragCommit } from './drag-commit';
   import ControlContextMenu from './ControlContextMenu.svelte';
   import { makeMidiAssignable } from './midi-assignable.svelte';
   import { notifyAutomationTouch, notifyAutomationRelease } from '$lib/audio/automation-touch';
   import { knobValueToFrac, knobFracToValue, knobPointerAngle } from './knob-conic-model';
+  import { knobMarks, knobReadout } from './knob-vocabulary-model';
 
   interface Props {
     value: number;
@@ -34,6 +35,21 @@
     size?: 'sm' | 'md' | 'lg' | 'xl';
     /** Override the arc/pointer accent (defaults to the domain colour). */
     accent?: string;
+    /**
+     * PARAM VOCABULARY (PF-1 / PF-3 / PF-10) — what this dial's numbers MEAN.
+     * Supplying ANY of the three earns a PERSISTENT readout under the dial;
+     * supplying none keeps the classic bare knob whose value shows on
+     * hover/drag. That gate is load-bearing: an ungated persistent readout
+     * would add a text row to every knob on ~17 dock faceplates and move all
+     * of their baselines to print what hovering already printed.
+     *
+     * `options` (discrete states) and `landmarks` (continuous waypoints) also
+     * paint detent TICKS around the arc. They are never interchangeable — see
+     * ParamOption / ParamLandmark; the vocabulary gate enforces the split.
+     */
+    options?: readonly ParamOption[];
+    landmarks?: readonly ParamLandmark[];
+    format?: (v: number) => string;
   }
 
   let {
@@ -50,6 +66,9 @@
     paramId,
     size = 'md',
     accent,
+    options,
+    landmarks,
+    format: formatValue,
   }: Props = $props();
 
   // ---- MIDI-Learn (shared factory, kind:'cc') — getters so the factory reads
@@ -137,6 +156,13 @@
   let frac = $derived(knobValueToFrac(liveValue, min, max, curve));
   let ptrAngle = $derived(knobPointerAngle(frac));
 
+  // ── PARAM VOCABULARY (PF-1 / PF-3 / PF-10), resolved in the pure layer ──
+  let vocab = $derived({ options, landmarks, format: formatValue });
+  /** The persistent readout text — `null` (⇒ NOT RENDERED) for a plain param. */
+  let readout = $derived(knobReadout(liveValue, vocab));
+  /** Detent ticks around the arc. Empty unless options/landmarks were declared. */
+  let marks = $derived(knobMarks(vocab, min, max, curve));
+
   let startY = 0;
   let startFrac = 0;
   let mod: 'none' | 'shift' | 'fine' = 'none';
@@ -223,6 +249,7 @@
     aria-valuemin={min}
     aria-valuemax={max}
     aria-valuenow={liveValue}
+    aria-valuetext={readout ?? undefined}
     style:--v={frac}
     style:--ka={accent ?? undefined}
     oncontextmenu={openContextMenu}
@@ -235,8 +262,26 @@
   >
     <span class="cap"></span>
     <span class="ptr" style:transform="translate(-50%, -100%) rotate({ptrAngle}deg)"></span>
+    <!-- DETENT TICKS (PF-1 options / PF-10 landmarks). Positioned on the SAME
+         270° arc as the pointer, so a tick sits exactly where the pointer
+         rests at that value under this curve. Decorative: the value is
+         reported by aria-valuenow/valuetext, and the ticks are not hit
+         targets (the drag gesture owns the whole dial). -->
+    {#each marks as m (m.value)}
+      <span
+        class="tick"
+        class:at={readout !== null && m.label !== '' && m.label === readout}
+        style:transform="translate(-50%, -100%) rotate({knobPointerAngle(m.frac)}deg)"
+      ></span>
+    {/each}
   </div>
   <div class="label">{label}</div>
+  <!-- PERSISTENT READOUT — rendered ONLY when the param declared a vocabulary
+       (knobReadout returns null otherwise). See the `options` prop note: this
+       gate is why PF-3 does not move ~17 dock baselines. -->
+  {#if readout !== null}
+    <div class="readout" data-testid={paramId ? `readout-${paramId}` : undefined}>{readout}</div>
+  {/if}
   {#if midi.binding}
     <div class="midi-badge" title={`Bound to MIDI ${midi.bindingLabel}`}>
       {midi.badge}
@@ -328,12 +373,49 @@
     box-shadow: 0 0 5px var(--_ka);
     pointer-events: none;
   }
+  /* DETENT TICK (PF-1 options / PF-10 landmarks): a short spoke on the SAME
+     270° arc + origin as `.ptr`, drawn OUTSIDE the cap so it reads as a panel
+     marking rather than a second pointer. `.at` lights the landmark the
+     readout is currently naming. */
+  .tick {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 1px;
+    height: calc(var(--kb) / 2 + 3px);
+    background: var(--border, #2c3037);
+    border-radius: 1px;
+    transform-origin: 50% 100%;
+    /* transform set inline (rotation) — origin/translate here */
+    pointer-events: none;
+  }
+  .tick.at {
+    background: var(--_ka);
+    opacity: 0.75;
+  }
   .label {
     font-family: var(--mono, ui-monospace, monospace);
     font-size: 9px;
     letter-spacing: 0.07em;
     text-transform: uppercase;
     color: var(--text-dim);
+    pointer-events: none;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: center;
+  }
+  /* PERSISTENT READOUT — the option/landmark NAME (or a bespoke format), shown
+     under the label. Only rendered for a param that declared a vocabulary. */
+  .readout {
+    font-family: var(--mono, ui-monospace, monospace);
+    font-size: 9px;
+    line-height: 1;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--_ka);
     pointer-events: none;
     max-width: 100%;
     overflow: hidden;

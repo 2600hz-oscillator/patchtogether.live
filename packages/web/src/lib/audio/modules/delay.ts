@@ -94,6 +94,19 @@ export const delayDef: AudioModuleDef = {
     { id: 'mix',      label: 'Mix',      defaultValue: 0.35, min: 0,     max: 1,            curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start  -- UI metadata is hash-transparent to the ART audio-profile source pin
+  // PF-11. `face` is CURATION — ranking, band labels, the glyph choice, rear
+  // grouping — and it reaches no audio code: this module's sound is the
+  // `factory` below plus its params, and both stay inside the pin. Without
+  // these markers a pure re-ranking moved `art/baselines/delay/audio.sha`, so
+  // every face edit dragged an audio re-pin behind it and the `.sha` stopped
+  // meaning "the audio changed". That is the owner's "docs must not change
+  // attest hashes" directive applied to docs' UI-metadata sibling; it costs
+  // ONE re-pin here, and face edits are free afterwards.
+  // (`art/scenarios/delay/profile.test.ts` pins `docsStrippedRepoSourceSha` of
+  // this file; pattern-3-face-pin.test.ts fails any pinned def that grows an
+  // unwrapped `face:` block.)
+  //
   // RACKLINE FACE (workflow-mode `?shell=1`). A delay has exactly one
   // canonical control trio and every pedal, rack unit and eurorack module
   // ships it in the same order, because it is the order of decreasing
@@ -138,6 +151,7 @@ export const delayDef: AudioModuleDef = {
       audioRate: ['time'],
     },
   },
+  // docs-hash-ignore:end
 
   // docs-hash-ignore:start  -- docs prose is hash-transparent to the ART audio-profile source pin
   docs: {
