@@ -26,6 +26,42 @@ export function activeSegmentIndex<T extends number | string>(
   return -1;
 }
 
+/**
+ * The segment NEAREST `value` — the read-side companion to the exact-match
+ * `activeSegmentIndex` above.
+ *
+ * WHY BOTH EXIST. Exact match is right for HIGHLIGHTING (an off-detent value
+ * lighting a segment would claim the module is in a state it is not), but it
+ * is wrong for ANSWERING "which state is this". A saved value can legitimately
+ * sit off-detent — a rack saved before the param grew its `options`, a
+ * CV-motorized read between steps, a param whose range was widened — and a
+ * caller that only has the exact matcher must render nothing for it.
+ *
+ * Hoisted out of Segmented.svelte (where it was a private MIDI-snapping
+ * helper) because the LANE tier answers the same question through
+ * `knobReadout`, and the dock and the lane must not disagree about which state
+ * a module is in. Non-numeric segments are skipped (a preset-key roster has no
+ * distance); an empty/all-string roster falls back to the first segment's
+ * value, else `value` unchanged. Ties resolve EARLIER, matching
+ * `nearestByValue`. Pure.
+ */
+export function nearestSegmentValue<T extends number | string>(
+  value: number,
+  segments: readonly Segment<T>[],
+): T | number {
+  let best: T | number = segments[0]?.value ?? value;
+  let bestD = Infinity;
+  for (const s of segments) {
+    if (typeof s.value !== 'number') continue;
+    const d = Math.abs(s.value - value);
+    if (d < bestD) {
+      bestD = d;
+      best = s.value;
+    }
+  }
+  return best;
+}
+
 /** The value emitted when the segment at `index` is pressed (undefined if OOB). */
 export function segmentValueAt<T extends number | string>(
   segments: readonly Segment<T>[],
