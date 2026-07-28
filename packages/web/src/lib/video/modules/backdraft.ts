@@ -504,6 +504,65 @@ export const BACKDRAFT_TV_DRIVE_MAX = 1.08;
  *  doubles a feature's radius in 7 passes, and larger values sweep structure
  *  off-frame faster than it can nucleate. */
 export const BACKDRAFT_TV_EXPAND_MAX = 1.1;
+// ── CRITICAL — the TIME half, via the camera's AUTO-EXPOSURE servo ──────
+//
+// PURE TV is a strict contraction and converges to a static nest. The design
+// plan proposed recovering Crutchfield's dynamics by raising the gain ceiling
+// to Lambda ~ 1.02-1.05 and adding his 1 % noise floor. MEASURED, that does
+// not work, and it cannot: the always-on saturating shoulder is 1-Lipschitz
+// and its derivative at the elevated operating point falls below 1/Lambda, so
+// the per-pass operator remains a sup-norm CONTRACTION at its own fixed point
+// however large Lambda is. A positive monotone map on a spatially contracting
+// domain has a unique globally attracting fixed point. Four mechanisms were
+// built and swept (raised ceiling; expanding spatial map; lagged local gain
+// droop; off-diagonal hue rotation) and with the noise floor OFF every single
+// one converged BIT-EXACTLY. The plan's §1.5 (always-on shoulder, so a
+// white-out is recoverable) and its §1.10 (dynamics from raising the ceiling)
+// are mutually exclusive.
+//
+// What breaks the contraction WITHOUT touching the shoulder is a second STATE
+// VARIABLE with its own dynamics. The camera has exactly one, and it is the
+// reason every real camera-pointed-at-a-TV rig breathes: AUTOMATIC EXPOSURE.
+// The servo meters the frame it just captured and pushes its gain the other
+// way, but it is an INTEGRATOR, so it always overshoots. Fast activator (the
+// loop, which runs to white) against a lagged integrating inhibitor (the
+// servo, which hauls it back) is a relaxation oscillator — and because the
+// servo's correction reaches level k of the nest only after k*d frames, its
+// oscillation propagates INWARD as a travelling annulus. That is Crutchfield's
+// plate, and it is also literally "delay cascading through it".
+//
+// Linearising the two-state loop about the servo's set point gives
+//   trace = J + 1,  det = J + G/tau
+// with J < 1 the (contractive) per-pass slope and G the servo's authority, so
+// the roots go COMPLEX and leave the unit circle once G/tau > 1 - J. The
+// bifurcation is controlled by the servo's RATE, not by the loop gain — which
+// is why DRIVE is the servo's time constant here.
+
+/** CRITICAL's base loop gain. Fixed and comfortably above 1: the servo is what
+ *  regulates the level, so this only has to guarantee the loop is always
+ *  PUSHING toward white and the servo always has something to fight. */
+export const BACKDRAFT_TV_CRIT_GAIN = 1.15;
+/** The auto-exposure set point, as a fraction of the ROOM level — the frame
+ *  mean the servo steers toward.
+ *
+ *  RELATIVE to the room, not absolute, and that is load-bearing: a real
+ *  auto-exposure meters the scene it is in. With an absolute set point the
+ *  servo cannot reach target in a dim room, rails at AGC_MAX and goes STATIC —
+ *  measured, room 0.4 killed the limit cycle stone dead. Scaling the set point
+ *  with the room keeps the servo in authority, and therefore keeps CRITICAL
+ *  alive, at every room brightness. */
+export const BACKDRAFT_TV_AGC_TARGET = 0.8;
+/** Servo authority bounds. HARD-CLAMPED, and this is the recoverability
+ *  guarantee: the exposure state can never wind up to a value it cannot come
+ *  back from, so backing DRIVE off always returns a normal nest. */
+export const BACKDRAFT_TV_AGC_MIN = 0.05;
+export const BACKDRAFT_TV_AGC_MAX = 4.0;
+/** DRIVE 0 / DRIVE 1 -> the servo's per-frame integral rate. Geometric between
+ *  the two, so DRIVE is a musical (constant-ratio) control and CV across it
+ *  sweeps decades of servo speed evenly. */
+export const BACKDRAFT_TV_AGC_RATE_MIN = 1.0;
+export const BACKDRAFT_TV_AGC_RATE_MAX = 49.0;
+
 /** CRITICAL's LOCAL GAIN DROOP at DRIVE = 1 — the vidicon's charge depletion
  *  (`gain / (1 + kappa * prevOut)`), the lagged local inhibitor that turns the
  *  loop into a relaxation oscillator. */
@@ -1767,6 +1826,78 @@ export function backdraftTvDriveGain(drive: number): number {
 }
 
 /**
+ * CRITICAL's DRIVE law: the knob -> the auto-exposure servo's per-frame
+ * integral RATE. GEOMETRIC (constant-ratio) between the two endpoints:
+ *
+ *   rate(d) = RATE_MIN * (RATE_MAX / RATE_MIN)^d
+ *
+ * Geometric rather than linear because the servo's behaviour is scale-free in
+ * its rate — what matters is the RATIO between the servo's time constant and
+ * the loop's own rise time, so equal knob steps must be equal FACTORS. A
+ * linear law would spend 90 % of its travel in the over-damped mud and cross
+ * the whole interesting region in the last few percent, which is exactly the
+ * unplayable control the owner rejected. Over the fader:
+ *
+ *   DRIVE  0.00  0.25  0.50  0.75  1.00
+ *   rate   1.00  2.65  7.00  18.5  49.0      (tau = 1/rate frames)
+ *
+ * The endpoints are chosen so that DRIVE 0.5 lands ON the measured HOPF POINT
+ * (rate ~ 5): below it the servo regulates to a dead-still nest, above it it
+ * overshoots into a sustained limit cycle. Measured swing of the frame mean
+ * over a late window, with the noise floor OFF:
+ *
+ *   rate    1..6  8       12      20      30      49
+ *   swing   0.000 0.090   0.159   0.171   0.238   0.34
+ *   period  --    3       3       3       2       2
+ *
+ * so the BOTTOM half of the fader is the well-behaved regulator and the TOP
+ * half is the limit cycle, deepening monotonically — and DRIVE 0.5 is the edge
+ * itself.
+ *
+ * The Hopf point (where the servo starts to overshoot and the picture begins
+ * to breathe) sits near the middle of the travel, and BOTH sides of it are
+ * reachable with fine resolution — below it the exposure is a smooth,
+ * well-behaved regulator; above it the servo hunts, the picture blooms toward
+ * white and is hauled back, and the correction propagates inward through the
+ * nest one level per DELAY as a travelling annulus. "Riding the edge of white
+ * out" is riding DRIVE across that point.
+ *
+ * Because the mapping is a pure ratio law it is also the right shape for CV: a
+ * linear CV ramp sweeps the servo speed by a constant factor per unit, so a
+ * slow LFO on DRIVE reads as a smooth accelerando into instability rather than
+ * a cliff.
+ */
+export function backdraftTvAgcRate(drive: number): number {
+  const d = clamp01(drive);
+  return BACKDRAFT_TV_AGC_RATE_MIN
+    * Math.pow(BACKDRAFT_TV_AGC_RATE_MAX / BACKDRAFT_TV_AGC_RATE_MIN, d);
+}
+
+/**
+ * One step of the auto-exposure servo — a LOG-DOMAIN INTEGRATOR, hard-clamped.
+ *
+ *   a' = clamp( a * exp( rate * (ln target - ln mean) ), AGC_MIN, AGC_MAX )
+ *
+ * Log domain so the servo is scale-free (it corrects by a RATIO, like a real
+ * iris in stops, so it behaves the same at any room brightness). Integrating
+ * so it has memory — which is what makes it overshoot, and the overshoot is
+ * the whole instrument. Hard-clamped because that clamp IS the recoverability
+ * guarantee: the exposure state is bounded, so it can never wind up somewhere
+ * it cannot come back from.
+ */
+export function backdraftTvAgcStep(
+  agc: number,
+  frameMean: number,
+  rate: number,
+  target: number = BACKDRAFT_TV_AGC_TARGET,
+): number {
+  const m = Math.max(1e-4, frameMean);
+  const next = agc * Math.exp(rate * (Math.log(Math.max(1e-4, target)) - Math.log(m)));
+  if (!Number.isFinite(next)) return 1;
+  return Math.min(BACKDRAFT_TV_AGC_MAX, Math.max(BACKDRAFT_TV_AGC_MIN, next));
+}
+
+/**
  * CRITICAL's DRIVE law, GEOMETRIC half: the knob -> the per-pass SPATIAL map
  * `sm = s*m`, where `s` is the screen's size in frame and `m` is the tube's own
  * magnification of the signal it displays (monitor overscan).
@@ -2220,6 +2351,10 @@ export interface BackdraftTvSimOptions {
   /** Tube magnification m (see BackdraftTvGeo.magnify). Defaults to the DRIVE
    *  law's own magnification in CRITICAL, and to exactly 1 in PURE TV. */
   magnify?: number;
+  /** Override the auto-exposure servo rate (defaults to the DRIVE law). */
+  agcRate?: number;
+  /** Override the auto-exposure set point. */
+  agcTarget?: number;
   /** Local gain droop kappa (see BackdraftTvCompositeArgs.droop). */
   droop?: number;
   /** Per-pass hue rotation in radians (see BackdraftTvCompositeArgs.hue). */
@@ -2243,6 +2378,8 @@ export interface BackdraftTvSimResult {
   plateau: number;
   /** Mean |Δ| between the last two frames — how converged the run is. */
   lastDelta: number;
+  /** Final auto-exposure servo state (1 when the servo is off). */
+  agc: number;
 }
 
 /**
@@ -2270,13 +2407,18 @@ export function simulateBackdraftTv(o: BackdraftTvSimOptions = {}): BackdraftTvS
   const phos = backdraftTvPhosphorRgb(o.phosphor ?? 0);
   const opNorm = backdraftTvOpNorm({ ...colour, white });
   const critical = o.critical === true;
-  const gain = critical
-    ? backdraftTvCriticalGain(opNorm, o.drive ?? 0.5, o.effectScale ?? 1)
+  // PURE TV: the operator-norm contraction ceiling. CRITICAL: a fixed base loop
+  // gain above 1, REGULATED each frame by the auto-exposure servo below.
+  const baseGain = critical
+    ? (BACKDRAFT_TV_CRIT_GAIN * Math.max(0, o.effectScale ?? 1)) / Math.max(opNorm, 1e-4)
     : backdraftTvGain(opNorm, o.feedback ?? 0.85, o.effectScale ?? 1);
+  const agcRate = critical ? (o.agcRate ?? backdraftTvAgcRate(o.drive ?? 0.5)) : 0;
+  const agcTarget = o.agcTarget ?? BACKDRAFT_TV_AGC_TARGET * Math.max(0.05, room);
+  let agc = 1;
   const noise = o.noise ?? (critical ? BACKDRAFT_TV_NOISE : 0);
   const droop = o.droop ?? 0;
   const hue = o.hue ?? 0;
-  const magnify = o.magnify ?? (critical ? backdraftTvDriveMagnify(o.drive ?? 0.5, fill) : 1);
+  const magnify = o.magnify ?? 1;
   const geo: BackdraftTvGeo = { aspect, fill, rotateDeg, offX: o.offX ?? 0, offY: o.offY ?? 0, bezelTb, shape: o.shape ?? 0, magnify };
 
   const srcFn = typeof o.source === 'function'
@@ -2334,12 +2476,19 @@ export function simulateBackdraftTv(o: BackdraftTvSimOptions = {}): BackdraftTvS
   const srcPix: [number, number, number] = [0, 0, 0];
   let head = 0;
   let lastDelta = 0;
+  let lastGain = baseGain;
 
   for (let n = 0; n < frames; n++) {
     const prev = ring[(head - d + ringSize) % ringSize]!;
     const dst = ring[head]!;
     const timeSec = n * dt;
     let delta = 0;
+    // The exposure the camera is using THIS frame — metered off the frame it
+    // captured LAST frame, which is what makes the servo a lagged integrator
+    // rather than an instantaneous divider.
+    const gain = baseGain * agc;
+    lastGain = gain;
+    let frameSum = 0;
     for (let y = 0; y < H; y++) {
       const v = (y + 0.5) / H;
       const flick = backdraftTvFlickerMult(o.flicker ?? 0, timeSec, v);
@@ -2357,10 +2506,12 @@ export function simulateBackdraftTv(o: BackdraftTvSimOptions = {}): BackdraftTvS
           const q = o.quantize ? Math.round(px[c]! * 255) / 255 : px[c]!;
           delta += Math.abs(q - dst[i * 3 + c]!);
           dst[i * 3 + c] = q;
+          frameSum += q;
         }
       }
     }
     lastDelta = delta / N;
+    if (agcRate > 0) agc = backdraftTvAgcStep(agc, frameSum / N, agcRate, agcTarget);
     persist = dst.slice();
     head = (head + 1) % ringSize;
     if (o.onFrame) o.onFrame(n, dst);
@@ -2368,7 +2519,7 @@ export function simulateBackdraftTv(o: BackdraftTvSimOptions = {}): BackdraftTvS
 
   return {
     frame: ring[(head - 1 + ringSize) % ringSize]!,
-    width: W, height: H, aspect, fill, bezelTb, gain,
+    width: W, height: H, aspect, fill, bezelTb, gain: lastGain, agc,
     plateau: BACKDRAFT_TV_GLASS * room, lastDelta,
   };
 }
