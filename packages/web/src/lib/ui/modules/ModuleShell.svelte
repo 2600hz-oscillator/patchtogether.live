@@ -817,10 +817,13 @@
   }
 
   /* BESPOKE PANEL cell (PF-14). It carries its OWN design floor (`minWidth` on
-     the spec → `--panel-min-w`) rather than the shared knob-column width, and
-     opts out of the `--kcol-max` cap entirely: a panel is a picture you edit,
-     not a control column. It is dock-only by face-lint rule, so it never has
-     to negotiate with the lane's 46px columns. */
+     the spec → `--panel-min-w`) rather than the shared knob-column width: a
+     panel is a picture you edit, not a control column.
+     It never negotiates with the lane's 46px cap, for two independent reasons —
+     the cap is scoped to `.rl-tile .tile-body .kcol` (the LANE body; a dock band
+     is `.page-controls`), AND the face-lint rule keeps a panel from ever being
+     SELECTED at a lane tier. `max-width` still yields to the band so a 560px
+     panel wraps inside the faceplate instead of overflowing it. */
   .ms-cell-panel {
     min-width: var(--panel-min-w, 240px);
     max-width: 100%;

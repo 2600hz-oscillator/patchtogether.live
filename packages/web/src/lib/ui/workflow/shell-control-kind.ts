@@ -61,6 +61,9 @@ export function momentaryParamIds(def: { face?: { momentary?: readonly string[] 
   return new Set(def?.face?.momentary ?? []);
 }
 
+/** Shared empty set so the common (undeclared) case allocates nothing. */
+const EMPTY_IDS: ReadonlySet<string> = new Set<string>();
+
 /**
  * The param ids a def DECLARES as `'grid'` cells (`face.paramCells`) — empty
  * when none. The only declared render primitive: every other kind is derived
@@ -73,9 +76,6 @@ export function gridParamIds(
   if (!decl) return EMPTY_IDS;
   return new Set(Object.keys(decl).filter((k) => decl[k] === 'grid'));
 }
-
-/** Shared empty set so the common (undeclared) case allocates nothing. */
-const EMPTY_IDS: ReadonlySet<string> = new Set<string>();
 
 /**
  * Which primitive a param cell renders as. Takes the whole ParamDef (not just
