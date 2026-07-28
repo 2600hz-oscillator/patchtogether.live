@@ -425,6 +425,21 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // this back to 118. (The pre-existing linux/workflow-dock-patch pair is
       // unchanged — that scene's darwin baseline was RE-captured in place
       // because `c` now opens the clip player as a pane, not a drawer.)
+      // PF-8, the DOCK LANE-RAIL REMOVAL (2026-07-27), holds this at 119 — it
+      // does NOT move the ceiling in either direction. The migrated shell
+      // stopped painting a duplicate jack rail inside the dock faceplate,
+      // which moves FIVE dock scenes: the ones whose content does NOT overflow
+      // the 425px faceplate cap, so the rail was actually inside the element
+      // screenshot (adsr, delay, mixer, reverb, vca). The other twelve render
+      // it below the fold and are pixel-identical (measured overflow + a full
+      // darwin VRT run, see vrt-exemptions.ts).
+      //
+      // BOTH platforms' baselines for those five are re-captured on this
+      // branch — darwin locally, linux via one vrt-update.yml dispatch — so
+      // none of them is parked. Parking them would have pushed this ceiling
+      // 119→124, and THIS RATCHET ONLY SHRINKS. A scene whose linux baseline
+      // one dispatch regenerates is a re-capture, not a platform deficit;
+      // letting a re-capture inflate the ceiling is how these ceilings rot.
     ).toBeLessThanOrEqual(119);
   });
 });

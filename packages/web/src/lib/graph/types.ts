@@ -246,6 +246,26 @@ export interface CvScaleHint {
 export interface PortDef {
   id: string;
   type: CableType;
+  /**
+   * Optional DISPLAY label for this jack — the ONE place a port's human name is
+   * authored, co-located with the port like `face`/`docs` are co-located with
+   * the def. Both label consumers already honour it: the front/rear PatchPanel
+   * via `resolveVerboseLabel` ($lib/ui/patch-panel-labels — an explicit label is
+   * used verbatim, uppercased) and the rear card via `rearHoleLabel`
+   * ($lib/ui/workflow/rear-card-model). Omitted = derive from the id, which is
+   * what every port does today.
+   *
+   * COSMETIC, exactly like `ParamDef.label`: `portLine` (contract-signature.ts)
+   * has no label branch, so declaring one is CONTRACT-TRANSPARENT — it moves no
+   * line in contract-lock.txt. Use it when id-derivation reads wrong (a stem
+   * that is not a word, a jack whose function differs from its id), NOT to
+   * restate what the derivation already produces.
+   *
+   * ⚠ HASH-TRANSPARENCY: a VIDEO def's ports live in the WebGL attest basis, so
+   * adding labels there must sit inside `// docs-hash-ignore:start … :end`
+   * markers (the rule the co-located `docs`/`face` blocks already follow).
+   */
+  label?: string;
   // Whether the input is an audio-rate node connection or a CV → AudioParam routing.
   // Outputs are always nodes; this hint lives on inputs only.
   paramTarget?: string; // when set, CV connections route to this AudioParam
@@ -397,6 +417,26 @@ export interface ModuleFacePage {
   /** Control keys on this page, in display order — a subset of `order`. Keys
    *  use the same unified control-key space as `order` (see ModuleFace). */
   controls: readonly string[];
+  /**
+   * Optional SUB-HEADERS inside the band — the exact mirror of
+   * `ModuleFaceRear.clusters`, on the front. Each cluster names a SUBSET of
+   * this page's own `controls`; the shell PULLS those cells out of the band's
+   * flat control row into a labeled sub-group, in declaration order, leaving
+   * the un-clustered cells to render first.
+   *
+   * WHY THIS AND NOT ANOTHER PAGE: a page costs a ~81 px band (its own top
+   * rule + header + row), so splitting a group of related knobs off "just to
+   * label them" is a real vertical-space purchase on a dock that folds at
+   * 720p. A cluster costs a ~14 px sub-header. Reach for a PAGE when the
+   * controls are a different IDEA; reach for a CLUSTER when they are the same
+   * idea, twice (a filter EG next to an amp EG).
+   *
+   * MEMBERSHIP STAYS IN `controls`: a cluster is a grouping HINT over keys the
+   * page already claims, never a second place to add controls. That is what
+   * keeps `face.order` completeness + the dock render-plan parity gate
+   * (module-face-lint) reading exactly one membership list.
+   */
+  clusters?: readonly { label: string; controls: readonly string[] }[];
 }
 
 /**

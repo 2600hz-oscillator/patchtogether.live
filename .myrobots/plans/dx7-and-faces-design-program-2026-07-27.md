@@ -421,7 +421,7 @@ this worklet plays.** Verified:
 | idles at **L4** | note-on sets `envValue=0, envSeg=0` (`dsp/src/dx7.ts:393-394`) |
 | **HOLDS at L3** while the gate is high | `if (seg < 3)` auto-advances on 1 % proximity (`:659-666`) — it keeps falling to L4 with the gate still high |
 | L4 is start **and** end | L4 is only the end |
-| linear-in-dB rate law, rate 0 ≈ **317 s** | `tau = 8·exp(-0.09·r)`, τ ∈ [1.1 ms, 8 s] (`:614-617`) |
+| linear-in-dB rate law, rate 0 ≈ ~~90 s~~ **317.487 s** (see correction 1 below) | `tau = 8·exp(-0.09·r)`, τ ∈ [1.1 ms, 8 s] (`:614-617`) |
 | FIXED = `10^((coarse&3)+fine/100)` Hz | `ratio * C4_HZ` (`:562`) |
 
 Shipping the editor over this engine is the same failure the program declares blocking for the algorithm
@@ -435,26 +435,38 @@ table, on a surface visible for **all 32 algorithms × 6 operators**. Fix the en
   (the worklet correctly uses `transpose − 24`).
 - ART: re-author `envelope` and re-check `preset-spectra` / `spectral-audit`.
 
-⚠ **CORRECTION (measured while building PR 0b, 2026-07-28).** The table above originally said
-"rate 0 ≈ 90 s". The real figure is **317.487 s** (≈ 5.3 minutes) — hexter's
-`dx7_voice_eg_rate_decay_duration[0]`, measured off real DX7/TX7 hardware. The 90 almost certainly came
-from msfa's internal EG span, which is ~90 **dB**, not 90 seconds. The law shipped in 0b is calibrated on
-the measured 317.487 s and reproduces hexter's entire decay table to <1.2 % for rates 0..90 from that
-single anchor.
+⚠ **TWO CORRECTIONS TO THIS SECTION, found while building 0b (2026-07-28, PR #1210).** Both were verified
+by fetching hexter's `dx7_voice_data.c` and Dexed's `env.cc` and decoding them programmatically — not taken
+on trust. Two independent strengths worth recording: anchoring msfa's closed form on hexter's rate-0 entry
+*alone* reproduces the measured table to **≤0.05 % for rates 0–65** across a 20 000:1 range, and hexter's
+`rise_percent[]` is `1e-5` for indices **0–31** exactly, independently confirming msfa's level-31 jump.
 
-⚠ **A SECOND MECHANISM NOTE.** "hold at seg 2 until note-off" (above) describes the *musical* behaviour
-correctly but not the state machine. In msfa — and in the shipped implementation — segments 0..2 run to
-completion and the envelope then sits in **segment 3 with the gate still high, frozen**; `keydown(false)`
-does not change the index, it just unfreezes it. So the hold is "parked in seg 3, not advancing", and the
-released envelope resumes from exactly there. Anything drawing the EG (§3.3 Row B) should render the hold
-as *the L3 plateau before the release segment*, not as a fourth segment of its own.
+1. **"rate 0 ≈ 90 s" is WRONG — it is 317.487 s** (~5.3 minutes), `decay_duration[0]` in hexter. The 90 is
+   almost certainly msfa's internal EG span, which is ~90 **dB**, not seconds. A units confusion.
+2. **"hold at seg 2" describes the music but not the machine.** The envelope parks in **segment 3,
+   FROZEN**, and note-off *unfreezes* it rather than changing the segment index.
+   **⇒ THIS CHANGES §3.3 Row B.** The EG editor must draw the hold as the **L3 plateau preceding the
+   release segment**, not as a distinct fourth segment. Author the editor against the frozen-seg-3 model.
 
-**PR 0b also had to repair a silent merge defect against PR 1** — see the `fix(dx7): repair the PR 1 x
-PR 0b merge defect` commit. PR 1's `applyOpParam` and PR 0b's OpPatch field rename merged with zero
-conflicts and produced non-running code, because **`packages/dsp` has no `typecheck` script** and
-`npm run typecheck --workspaces --if-present` therefore skips every worklet. Giving the dsp workspace a
-real typecheck is worth its own platform PR (33 pre-existing errors today, mostly per-file worklet globals
-colliding when the whole tree is checked as one program).
+Also measured in 0b: the audible headline is the **SUSTAIN**, not the level — **BASS 1 +10.7 dB** and
+**TUB BELLS +8.4 dB** in the tail of a held note (they previously decayed away *under a held gate*, which
+is the bug). **STRINGS 1 is the biggest mover at −12.6 dB** released; its R1=25 attack is authentically
+2.48 s. `preset-spectra` and `spectral-audit` passed **unchanged**, so the re-authoring this section
+budgeted for them was not needed — only `envelope` (5→14 tests) and one envelope-dependent threshold in
+`algorithm-spectra`.
+
+⚠ **INFRA HOLE FOUND AND FIXED:** `packages/dsp` had **no `typecheck` script**, so
+`npm run typecheck --workspaces --if-present` silently skipped every worklet. A clean textual merge of
+PR 1's `applyOpParam` against 0b's `OpPatch` field rename produced code that could not run (10 dsp-lane
+failures, `ReferenceError: rateToCoef is not defined`) and **no gate caught it**. 0b adds the script plus a
+structural gate asserting every field `applyOpParam` writes exists on `OpPatch`. It also found a
+**vacuously-passing** assertion — `expect(o.rateCoefs).toEqual(...)` comparing `undefined` to `undefined`
+after the rename.
+
+**FOLLOW-UP, sized while building 0b:** giving the `packages/dsp` workspace a *real* typecheck is
+worth its own platform PR rather than a drive-by — there are **33 pre-existing errors** today, mostly
+per-file worklet globals colliding when the whole tree is checked as one program. 0b adds the script and
+the structural mirror gate; the full clean-up is deliberately NOT in it.
 
 **If the owner rejects 0b:** re-author §3.3 Row B and `dx7-eg-curve.ts` to draw *this* engine's shape
 (start 0, no hold, τ-based times), delete the msfa seconds readout, and move FIXED mode to phase 2. Do not

@@ -234,6 +234,17 @@ export const tidyVcoDef: AudioModuleDef = {
       { id: 'output', label: 'output', controls: ['width', 'level', 'hold'] },
     ],
     glyph: 'waveform',
+    // MOMENTARY: `hold` is a PRESS-PAD, not a latching switch. Everything that
+    // touches it agrees and always has — the legacy card drives it with
+    // pointerdown/pointerup (TidyVcoCard `hold-pad`), the worklet ORs it into
+    // the mono gate exactly like tomtom's declared-momentary `strike`
+    // (packages/dsp/src/tidy-vco.ts: `monoGate = max(gateIn, hold)`), and the
+    // authored doc below says "released = note-off (no latch)". Only the shell
+    // disagreed: with no declaration it painted a LATCHING KnobConic, so
+    // dragging it to 1 held the voice open forever AND persisted a stuck 1 into
+    // the Y.Doc for every rack-mate. Same class as the tomtom STRIKE bug this
+    // field was added for.
+    momentary: ['hold'],
     // REAR CARD curation (rear-card-model). Only the exceptions: pwm_cv's
     // stem ('pwm') doesn't match its param id ('pw'), so the oscillator band
     // is pinned explicitly; the envelopes band splits into the two EG
