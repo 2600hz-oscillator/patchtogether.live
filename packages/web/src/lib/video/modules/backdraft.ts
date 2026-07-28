@@ -499,6 +499,15 @@ export const BACKDRAFT_TV_DRIVE_MIN = 0.9;
  *  parks around 0.83 rather than pinning at 1.0, so a white-out is SOFT and
  *  recoverable rather than terminal. */
 export const BACKDRAFT_TV_DRIVE_MAX = 1.08;
+/** The per-pass SPATIAL map `s*m` at DRIVE = 1 — the hard end of the expanding
+ *  regime. Kept modest on purpose: `s*m` compounds every pass, so 1.10 already
+ *  doubles a feature's radius in 7 passes, and larger values sweep structure
+ *  off-frame faster than it can nucleate. */
+export const BACKDRAFT_TV_EXPAND_MAX = 1.1;
+/** CRITICAL's LOCAL GAIN DROOP at DRIVE = 1 — the vidicon's charge depletion
+ *  (`gain / (1 + kappa * prevOut)`), the lagged local inhibitor that turns the
+ *  loop into a relaxation oscillator. */
+export const BACKDRAFT_TV_DROOP_MAX = 1.0;
 /** Crutchfield's measured noise floor, Appendix A: "a signal to noise ratio of
  *  about 40 db… about 1 % fluctuation". Multiplicative (signal-proportional,
  *  i.e. a real SNR) and deterministic — a frame-indexed hash, so FREEZE and the
@@ -1758,6 +1767,48 @@ export function backdraftTvDriveGain(drive: number): number {
 }
 
 /**
+ * CRITICAL's DRIVE law, GEOMETRIC half: the knob -> the per-pass SPATIAL map
+ * `sm = s*m`, where `s` is the screen's size in frame and `m` is the tube's own
+ * magnification of the signal it displays (monitor overscan).
+ *
+ * THIS IS THE HALF THAT CARRIES THE TIME, and the design plan got it wrong.
+ * The plan's §1.10 says the route to Crutchfield's dynamics is "raise the gain
+ * ceiling to ~1.02-1.05, keep the shoulder, add the noise floor". MEASURED, it
+ * is not: at every reachable setting that recipe converges to a static image
+ * and stays there, bit-exactly with the noise off. The reason is structural,
+ * not a tuning miss — the per-pass operator is a POSITIVE MONOTONE map on a
+ * SPATIALLY CONTRACTING domain (`sm < 1`), so it has a unique globally
+ * attracting fixed point for ANY linear gain. Raising Lambda past 1 only moves
+ * that fixed point up the shoulder; it cannot make one appear where the
+ * geometry drags every perturbation into the centre and deletes it.
+ *
+ * What DOES carry time is the sign of `sm - 1`:
+ *
+ *   sm < 1   the fixed point ATTRACTS. Structure is transported INWARD, shrinks
+ *            geometrically, and is absorbed. The nest is static (PURE TV).
+ *   sm > 1   the fixed point REPELS. Structure is transported OUTWARD, GROWS,
+ *            and new structure continuously nucleates at the centre. This is
+ *            the regime every Crutchfield plate is photographed in ("center",
+ *            Plates 2/3/5/7), and it is why ZOOM is HIS bifurcation parameter.
+ *
+ * So DRIVE moves both halves together, and the two critical points coincide at
+ * the SAME midpoint: `Lambda = 1` exactly when `sm = 1` exactly, at DRIVE 0.5.
+ * Below it the mode is a stable nest that merely brightens; above it the nest
+ * opens out into travelling structure that eventually whites out. "Riding the
+ * edge" is riding DRIVE across 0.5, which is what the odd `t*|t|` law puts the
+ * resolution under.
+ *
+ * At DRIVE 0 the magnification is exactly 1 — PURE TV's own geometry — so the
+ * bottom of the fader is always a safe, familiar nest to fall back to.
+ */
+export function backdraftTvDriveMagnify(drive: number, fill: number): number {
+  const s = Math.min(0.999999, Math.max(1e-4, fill));
+  const t = 2 * clamp01(drive) - 1;
+  const span = t < 0 ? 1 - s : BACKDRAFT_TV_EXPAND_MAX - 1;
+  return (1 + t * Math.abs(t) * span) / s;
+}
+
+/**
  * CRITICAL's effective per-pass screen gain. Unlike PURE TV this is NOT clamped
  * to a contraction — that is the point of the mode. DRIVE sets the LOOP gain
  * (the operator norm is divided out), so the edge stays at DRIVE = 0.5 whatever
@@ -1876,6 +1927,22 @@ export interface BackdraftTvGeo {
   bezelTb: number;
   shape: number;
   radius?: number;
+  /**
+   * m — the TUBE's own MAGNIFICATION of the signal it is showing (monitor
+   * overscan). 1 = the set displays the incoming frame edge-to-edge, which is
+   * PURE TV. Above 1 the tube shows only the middle `1/m` of the signal, blown
+   * up to fill the same glass.
+   *
+   * This is the SECOND geometric degree of freedom, and it is the one that
+   * decides whether the mode has TIME in it. The screen's SIZE is `s`; the
+   * per-pass spatial map is `s*m`. At `s*m < 1` the map contracts to its fixed
+   * point, so every perturbation is dragged to the centre and dies — which is
+   * why raising the amplitude gain alone can NEVER animate this geometry (see
+   * backdraftTvCriticalGain). At `s*m > 1` the fixed point REPELS: structure
+   * is transported OUTWARD and continuously re-nucleates at the centre, which
+   * is exactly what Crutchfield photographs.
+   */
+  magnify?: number;
 }
 
 export type BackdraftTvRegion = 'screen' | 'bezel' | 'room';
@@ -1916,9 +1983,14 @@ export function backdraftTvTap(
   const px = (dx * c + dy * sn) / s;
   const py = (-dx * sn + dy * c) / s;
   const d = backdraftTvScreenSdf(px, py, o.shape, a, o.radius);
+  // The SDF (the glass) uses `p`; the TAP additionally divides by the tube's
+  // own magnification, so the set's SIZE and what it MAGNIFIES are independent.
+  // m >= 1 shrinks |tapUv - 0.5|, so the boundary invariant `d < 0 => tapUv in
+  // [0,1]^2` is only ever made TIGHTER by magnification (N-INV covers both).
+  const m = Math.max(1e-4, o.magnify ?? 1);
   return {
-    tapU: px / a + 0.5,
-    tapV: py + 0.5,
+    tapU: px / (a * m) + 0.5,
+    tapV: py / m + 0.5,
     d,
     region: d < 0 ? 'screen' : d < o.bezelTb ? 'bezel' : 'room',
   };
@@ -1955,6 +2027,12 @@ export interface BackdraftTvCompositeArgs {
   aa?: number;
   /** Multiplicative sensor-noise fraction (CRITICAL only; 0 in PURE TV). */
   noise?: number;
+  /** Per-pass HUE ROTATION in radians about the luma axis (CRITICAL). */
+  hue?: number;
+  /** CRITICAL's LOCAL GAIN DROOP (kappa) — the vidicon's charge depletion: a
+   *  patch that was bright LAST frame reads back with less gain THIS frame.
+   *  0 = off (PURE TV). See BACKDRAFT_TV_DROOP_MAX. */
+  droop?: number;
   /** The noise sample for this pixel/frame, in [0,1) (backdraftTvNoise). */
   noiseSample?: number;
 }
@@ -1992,9 +2070,37 @@ export function backdraftTvComposite(args: BackdraftTvCompositeArgs): [number, n
     + BACKDRAFT_LUMA_WEIGHTS[2]! * tint[2]!;
   const picture: [number, number, number] = [0, 0, 0];
   const liftF = Math.max(1 - g, 1 - BACKDRAFT_TV_GAIN_MAX);
+  // LOCAL GAIN DROOP — the vidicon's charge depletion, and the ONE ingredient
+  // that gives this geometry a time axis. Every other lever (raising the gain
+  // ceiling, expanding the spatial map) leaves a POSITIVE MONOTONE per-pass
+  // operator, which has a unique globally attracting fixed point no matter how
+  // large the gain is; measured, all of them converge bit-exactly. Droop makes
+  // the loop TWO-dimensional per pixel — a fast activator (the tap) against a
+  // slow, LAGGED inhibitor (the previous output at the same x, smoothed by
+  // PHOSPHOR) — which is a relaxation oscillator, and spatially coupled by the
+  // screen map it is an excitable medium. That is Crutchfield's regime.
+  const droop = args.droop ?? 0;
+  const hue = args.hue ?? 0;
+  const tc: [number, number, number] = [0, 0, 0];
+  for (let i = 0; i < 3; i++) tc[i] = l + (tint[i]! - l) * chroma;
+  if (hue !== 0) {
+    // Off-diagonal colour coupling (Crutchfield eq. 5, p.236: "their
+    // off-diagonal elements the coupling of the color signals"): rotate the
+    // chroma vector about the luma axis by `hue` radians per pass.
+    const ca = Math.cos(hue), sa = Math.sin(hue);
+    const lm = BACKDRAFT_LUMA_WEIGHTS[0]! * tc[0]! + BACKDRAFT_LUMA_WEIGHTS[1]! * tc[1]! + BACKDRAFT_LUMA_WEIGHTS[2]! * tc[2]!;
+    const c0 = tc[0]! - lm, c1 = tc[1]! - lm, c2 = tc[2]! - lm;
+    const k = 1 / Math.sqrt(3);
+    // Rodrigues rotation about (1,1,1)/sqrt(3).
+    const dot = k * (c0 + c1 + c2);
+    const cx0 = k * (c1 - c2), cx1 = k * (c2 - c0), cx2 = k * (c0 - c1);
+    tc[0] = lm + c0 * ca + cx0 * sa + k * dot * (1 - ca);
+    tc[1] = lm + c1 * ca + cx1 * sa + k * dot * (1 - ca);
+    tc[2] = lm + c2 * ca + cx2 * sa + k * dot * (1 - ca);
+  }
   for (let i = 0; i < 3; i++) {
-    const tinted = l + (tint[i]! - l) * chroma;
-    picture[i] = tinted * g + BACKDRAFT_TV_GLASS * room[i]! * liftF;
+    const gLocal = droop > 0 ? g / (1 + droop * Math.max(0, args.persist[i]!)) : g;
+    picture[i] = tc[i]! * gLocal + BACKDRAFT_TV_GLASS * room[i]! * liftF;
   }
 
   // Three regions, resolved with the same two smoothsteps the shader uses (the
@@ -2111,6 +2217,13 @@ export interface BackdraftTvSimOptions {
   /** CRITICAL: replace the contraction ceiling with the DRIVE law + noise. */
   critical?: boolean;
   drive?: number;
+  /** Tube magnification m (see BackdraftTvGeo.magnify). Defaults to the DRIVE
+   *  law's own magnification in CRITICAL, and to exactly 1 in PURE TV. */
+  magnify?: number;
+  /** Local gain droop kappa (see BackdraftTvCompositeArgs.droop). */
+  droop?: number;
+  /** Per-pass hue rotation in radians (see BackdraftTvCompositeArgs.hue). */
+  hue?: number;
   /** Override the noise fraction (defaults to BACKDRAFT_TV_NOISE in CRITICAL,
    *  0 in PURE TV). Set explicitly to build the noise-only negative control. */
   noise?: number;
@@ -2161,7 +2274,10 @@ export function simulateBackdraftTv(o: BackdraftTvSimOptions = {}): BackdraftTvS
     ? backdraftTvCriticalGain(opNorm, o.drive ?? 0.5, o.effectScale ?? 1)
     : backdraftTvGain(opNorm, o.feedback ?? 0.85, o.effectScale ?? 1);
   const noise = o.noise ?? (critical ? BACKDRAFT_TV_NOISE : 0);
-  const geo: BackdraftTvGeo = { aspect, fill, rotateDeg, offX: o.offX ?? 0, offY: o.offY ?? 0, bezelTb, shape: o.shape ?? 0 };
+  const droop = o.droop ?? 0;
+  const hue = o.hue ?? 0;
+  const magnify = o.magnify ?? (critical ? backdraftTvDriveMagnify(o.drive ?? 0.5, fill) : 1);
+  const geo: BackdraftTvGeo = { aspect, fill, rotateDeg, offX: o.offX ?? 0, offY: o.offY ?? 0, bezelTb, shape: o.shape ?? 0, magnify };
 
   const srcFn = typeof o.source === 'function'
     ? o.source
@@ -2234,7 +2350,7 @@ export function simulateBackdraftTv(o: BackdraftTvSimOptions = {}): BackdraftTvS
         srcPix[0] = srcRgb[i * 3]!; srcPix[1] = srcRgb[i * 3 + 1]!; srcPix[2] = srcRgb[i * 3 + 2]!;
         const px = backdraftTvComposite({
           tap: tapRgb, persist: persistRgb, src: srcPix, d: dist[i]!, bezelTb,
-          room, gain, flick, colour, white, phos, knee, noise,
+          room, gain, flick, colour, white, phos, knee, noise, droop, hue,
           noiseSample: noise > 0 ? backdraftTvNoise(x, y, n) : 0.5,
         });
         for (let c = 0; c < 3; c++) {
