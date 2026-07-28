@@ -47,6 +47,8 @@
     BACKDRAFT_OFFSET_MAX,
     BACKDRAFT_SHAPES,
     BACKDRAFT_TV_MODE_LABELS,
+    BACKDRAFT_CAM_TILT_RANGE,
+    BACKDRAFT_CAM_POS_RANGE,
     BACKDRAFT_TV_MODE_COUNT,
     backdraftNextTvMode,
     backdraftTvFill,
@@ -621,7 +623,8 @@
             <span class="cam-title">VIRTUAL CAMERA ORIENTATION</span>
             <XyPad
               xValue={p('camTiltX')} yValue={p('camTiltY')}
-              xMin={-1} xMax={1} yMin={-1} yMax={1}
+              xMin={-BACKDRAFT_CAM_TILT_RANGE} xMax={BACKDRAFT_CAM_TILT_RANGE}
+              yMin={-BACKDRAFT_CAM_TILT_RANGE} yMax={BACKDRAFT_CAM_TILT_RANGE}
               xLabel="Tilt X" yLabel="Tilt Y"
               xDefault={pdef('camTiltX')} yDefault={pdef('camTiltY')}
               onXChange={setParam('camTiltX')} onYChange={setParam('camTiltY')}
@@ -632,7 +635,8 @@
             />
             <XyPad
               xValue={p('camPosX')} yValue={p('camPosY')}
-              xMin={-1} xMax={1} yMin={-1} yMax={1}
+              xMin={-BACKDRAFT_CAM_POS_RANGE} xMax={BACKDRAFT_CAM_POS_RANGE}
+              yMin={-BACKDRAFT_CAM_POS_RANGE} yMax={BACKDRAFT_CAM_POS_RANGE}
               xLabel="Cam X" yLabel="Cam Y"
               xDefault={pdef('camPosX')} yDefault={pdef('camPosY')}
               onXChange={setParam('camPosX')} onYChange={setParam('camPosY')}
