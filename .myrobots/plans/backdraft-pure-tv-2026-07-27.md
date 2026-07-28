@@ -277,7 +277,20 @@ Ceilings: `k_res = ln(2px/W)/ln(s) = 21.7`, `k_amp = ln(1/255)/ln(g) = 34.1`. Th
 
 > **Call it ~11 resolved bands plus 3–4 merged ones, not "~15 distinct".** The card readout must say "≈11 resolved".
 
-**What you will see:** a rectangular dark-framed TV centred in the frame at 75 % of it, the live input visible as the room around it. Inside the TV, that entire view at 3/4 scale; inside that, another; ~11 nested dark frames converging on centre, each ~15 % dimmer (1.00, 0.88, 0.78, 0.69, 0.62, 0.55…), the innermost flattening onto a 20 %-of-room milky core. Wave a hand in front of the camera and it sweeps inward one level per frame.
+**What you will see:** a rectangular dark-framed TV centred in the frame at 75 % of it, the live input visible as the room around it. Inside the TV, that entire view at 3/4 scale; inside that, another; ~11 nested dark frames converging on centre, each dimmer than the last, the innermost flattening onto a 20 %-of-room milky core. Wave a hand in front of the camera and it sweeps inward one level per frame.
+
+⚠ **CORRECTION 2026-07-28 — the brightness ladder above is the UNSHOULDERED one, and §1.5 mandates a
+shoulder.** The published `1.000 / 0.880 / 0.778 / 0.691 / 0.618 / 0.555` is `gᵏ` with no saturating
+shoulder in the loop. With the always-on shoulder §1.5 requires, the real ladder is
+
+```
+1.000 / 0.739 / 0.629 / 0.559 / 0.505 / 0.459
+```
+
+**Both adversarial review passes missed this.** `backdraftTvLevelBrightness(k, g, P, room, knee)` already
+models it correctly — the error is in this prose, not the code. **The card readout, the docs and any test
+that quotes brightness must use the SHOULDERED numbers.** (The geometry above — band count, radius ratios,
+the 1.333 measurement — is unaffected; the shoulder acts on the range, not the domain.)
 
 ### 1.10 What this map does NOT do — stated up front
 
@@ -290,7 +303,34 @@ It converges to a **bit-exactly static image by frame ~80 and never moves again*
 Consequences, applied:
 - **The "δ ≠ 0 → the pattern precesses" card readout is removed.** It describes a limit cycle this map does not have. What survives is the descriptive `n-fold rosette` label from `n = round(360/|φ|)`.
 - The rotate range is `±30°`, so every symmetry lock Crutchfield actually photographs (n = 3/4/5/9 at 120°/90°/72°/40°, 1988 photos 27–31) is **out of range**; the reachable locks (n ≥ 12) are by his own Arnold-tongue statement the *narrowest* windows. → **owner question Q2**.
-- The path to real dynamics is known and cheap: raise the gain ceiling to ≈1.02–1.05 (`Λ ≈ 1`), keep the always-on shoulder, add Crutchfield's ~1 % noise floor (Appendix A: *"a signal to noise ratio of about 40 db… about 1 % fluctuation"*). That is **CRITICAL mode**, §8 phase 3, **owner question Q1**.
+- ~~The path to real dynamics is known and cheap: raise the gain ceiling to ≈1.02–1.05 (`Λ ≈ 1`), keep the always-on shoulder, add Crutchfield's ~1 % noise floor (Appendix A: *"a signal to noise ratio of about 40 db… about 1 % fluctuation"*). That is **CRITICAL mode**, §8 phase 3, **owner question Q1**.~~
+
+  ⛔ **FALSIFIED 2026-07-28, during the build. This recipe cannot work, structurally — not by mistuning.**
+  Four mechanisms were built and swept in the CPU mirror (96 px, 1000 frames, 4×4-blurred frame-to-frame
+  correlation at lags 40/100, sampled early/mid/late): (1) the raised gain ceiling above, Λ 0.90–1.08;
+  (2) an expanding spatial map `s·m > 1` — Crutchfield's *own* bifurcation parameter; (3) lagged local gain
+  droop (vidicon charge depletion), κ 1–4; (4) off-diagonal colour coupling / per-pass hue rotation
+  (eq. 5). **Every one converges. With the noise floor OFF, every one converges bit-exactly — `1 − corr =
+  0.00e+0` at every lag, at every late time.** With noise ON they sit at 5e-8…7e-6, which *is* the noise
+  floor — the "measuring noise, proves nothing" trap.
+
+  **Root cause:** the always-on saturating shoulder is **1-Lipschitz**, and its derivative at the elevated
+  operating point falls below `1/Λ`, so the per-pass operator remains a sup-norm contraction at its own
+  fixed point *no matter how large Λ is*. A positive monotone map on a spatially contracting domain has a
+  unique globally attracting fixed point. **§1.5 (always-on shoulder ⇒ recoverable white-out) and this
+  bullet (dynamics from raising the ceiling) are MUTUALLY EXCLUSIVE.** No tuning reconciles them.
+
+  ⚠ One measurement looked alive and was not: fill 0.95 + 8-frame delay gave `1 − corr = 2e-2` at frames
+  200–300, decaying to 1.2e-5 by frame 600. That is the nest still **BUILDING**, not evolving. Any
+  dynamics assertion must sample late enough to tell those apart.
+
+  **RESOLUTION (2026-07-28): option B — a slow lagged global AGC servo off the frame mean.** It blooms, the
+  servo hauls it back, it blooms again — the breathing of a real camera-at-TV rig, and it **preserves the
+  white-out**, which is what the owner asked to ride. Rejected: a non-monotone **folding** response (~5
+  shader lines, physically a CRT beam-current limiter) — it does produce dynamics, but it *removes* the
+  white-out, folding to dark and boiling instead, which is a different instrument from the one specified.
+  Carry the *intent* of the Λ ∈ [0.95, 1.05] resolution requirement across to the servo's time constant;
+  the literal range belonged to the falsified mechanism.
 
 Edge-nucleation, for the record: the working hypothesis said structure nucleates at the screen edge. In a centred zoom+rotate rig it nucleates at the **CENTRE** — the map's fixed point / phase singularity (1984 Plates 2, 3, 5, 7 all say "center"). Edge nucleation is the *translation* regime — `OFFSET ≠ 0, zoom ≈ 1`, 1988 §VIII "waterfall" — which BACKDRAFT's OFF X/Y already reach. Different mode; document, don't design for it here.
 
