@@ -269,6 +269,94 @@ describe('dx7 envelope law — the packages/dsp/src/dx7.ts worklet MIRROR', () =
     expect(render).not.toMatch(/envSeg\[opIdx\]\s*=\s*seg\s*\+\s*1/);
   });
 
+  // ---------------------------------------------------------------
+  // Layer 4 exists because of a REAL defect this PR had to fix.
+  //
+  // PR 1 added the incremental `opParam` path; PR 0b (this one) renamed the
+  // OpPatch envelope fields (`rateCoefs`/`levels` → `ratesDbPerSec`/`levelsDb`)
+  // and DELETED `rateToCoef`. The two landed in different regions of the same
+  // file, so git merged them with ZERO conflicts — and produced an
+  // `applyOpParam` that assigned to properties which no longer existed and
+  // called a function which no longer existed. Nothing caught it:
+  // `packages/dsp` has no `typecheck` script, so `npm run typecheck
+  // --workspaces --if-present` skips the worklet entirely, and the web unit
+  // lane never imports it. Only the dsp lane's own behavioural test did — at
+  // runtime, with a ReferenceError.
+  //
+  // So: a STRUCTURAL gate, not another behavioural one. Every property
+  // `applyOpParam` writes must exist on `OpPatch`, and every helper it calls
+  // must be defined in the file. That catches the whole class of rename, not
+  // just the two names that happened to break this time.
+  // ---------------------------------------------------------------
+  describe('layer 4 — the worklet opParam path addresses fields that EXIST', () => {
+    const worklet = readFileSync(WORKLET, 'utf8');
+
+    /** Property names declared on the `OpPatch` interface. */
+    function opPatchFields(src: string): Set<string> {
+      const m = /interface OpPatch \{([\s\S]*?)\n\}/.exec(src);
+      expect(m, 'the OpPatch interface must be findable').not.toBeNull();
+      const fields = new Set<string>();
+      for (const line of m![1]!.split('\n')) {
+        const f = /^\s*(\w+)\??\s*:/.exec(line);
+        if (f) fields.add(f[1]!);
+      }
+      return fields;
+    }
+
+    /** Body of the applyOpParam method. */
+    function applyOpParamBody(src: string): string {
+      const i = src.indexOf('private applyOpParam(');
+      expect(i, 'applyOpParam must be findable').toBeGreaterThan(-1);
+      const j = src.indexOf('\n  }', i);
+      return src.slice(i, j);
+    }
+
+    it('every `o.<field>` it writes is declared on OpPatch', () => {
+      const fields = opPatchFields(worklet);
+      const body = applyOpParamBody(worklet);
+      const used = [...body.matchAll(/\bo\.(\w+)/g)].map((m) => m[1]!);
+      expect(used.length, 'the parse found no field accesses at all').toBeGreaterThan(8);
+      for (const u of new Set(used)) {
+        expect(fields, `applyOpParam writes o.${u}, which OpPatch does not declare`)
+          .toContain(u);
+      }
+    });
+
+    it('every helper it calls is defined in the worklet', () => {
+      const body = applyOpParamBody(worklet);
+      const called = [...body.matchAll(/=\s*(\w+)\(/g)].map((m) => m[1]!);
+      expect(called.length, 'the parse found no helper calls at all').toBeGreaterThan(2);
+      for (const fn of new Set(called)) {
+        expect(
+          worklet.includes(`function ${fn}(`) || worklet.includes(`const ${fn} =`),
+          `applyOpParam calls ${fn}(), which is not defined in the worklet`,
+        ).toBe(true);
+      }
+    });
+
+    it('NEGATIVE CONTROL — both checks fail on the exact defect that shipped', () => {
+      // Reinstate the post-merge code verbatim.
+      const broken = worklet
+        .replace(
+          "case 'r0': o.ratesDbPerSec[0] = dx7RateToDbPerSec(value); break;",
+          "case 'r0': o.rateCoefs[0] = rateToCoef(value); break;",
+        );
+      expect(broken, 'the perturbation must actually apply').not.toEqual(worklet);
+
+      const fields = opPatchFields(broken);
+      const body = applyOpParamBody(broken);
+      const used = new Set([...body.matchAll(/\bo\.(\w+)/g)].map((m) => m[1]!));
+      expect(used, 'the stale field name is present').toContain('rateCoefs');
+      expect(fields, 'and OpPatch does not declare it').not.toContain('rateCoefs');
+
+      const called = new Set([...body.matchAll(/=\s*(\w+)\(/g)].map((m) => m[1]!));
+      expect(called).toContain('rateToCoef');
+      expect(
+        broken.includes('function rateToCoef(') || broken.includes('const rateToCoef ='),
+      ).toBe(false);
+    });
+  });
+
   it('layer 3 — the superseded laws are gone from BOTH engines', () => {
     const worklet = readFileSync(WORKLET, 'utf8');
     const render = readFileSync(RENDER, 'utf8');

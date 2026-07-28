@@ -404,12 +404,16 @@ interface PatchMessage {
 //      held note and chop every tail on EVERY click.
 //
 // VALUE DOMAIN — get this wrong and you have a ~1000x envelope error. This
-// worklet stores DERIVED values (rateCoefs = rateToCoef(rate), levels and
-// outputAmp = levelToAmp(level)), not the raw DX7 bytes. The host therefore
-// sends the RAW 0..99 byte for r0..r3 / l0..l3 / level and applyOpParam runs
-// the SAME transform applyPatch runs; it sends the already-resolved FLOAT for
-// ratio (host dx7Ratio(coarse,fine)) and detuneFactor (host dx7DetuneFactor),
-// which are stored verbatim.
+// worklet stores DERIVED values, not the raw DX7 bytes:
+//   ratesDbPerSec = dx7RateToDbPerSec(rate)   (dB per second)
+//   levelsDb      = dx7LevelToDb(level)       (dB, 0 dB = unity)
+//   outputAmp     = levelToAmp(level)         (LINEAR amplitude — the operator
+//                                              output level is not an EG level)
+// The host therefore sends the RAW 0..99 byte for r0..r3 / l0..l3 / level and
+// applyOpParam runs the SAME transform applyPatch runs; it sends the
+// already-resolved FLOAT for ratio (host dx7Ratio(coarse,fine)), detuneFactor
+// (host dx7DetuneFactor) and fixedHz (host dx7FixedHz(coarse,fine)), which are
+// stored verbatim.
 // --------------------------------------------------------------
 
 /** The operator fields an `opParam` message may address. */
@@ -419,7 +423,8 @@ type Dx7OpField =
   | 'level'                        // operator output level, RAW 0..99
   | 'ratio'                        // resolved float (host dx7Ratio)
   | 'detuneFactor'                 // resolved float (host dx7DetuneFactor)
-  | 'fixedMode';                   // 0 | 1
+  | 'fixedMode'                    // 0 | 1
+  | 'fixedHz';                     // resolved float (host dx7FixedHz), > 0
 
 interface VoiceMessage {
   type: 'voice';
@@ -597,20 +602,24 @@ class Dx7Processor extends AudioWorkletProcessor {
     const o = this.patch.operators[idx];
     if (!o) return;
     switch (field) {
-      case 'r0': o.rateCoefs[0] = rateToCoef(value); break;
-      case 'r1': o.rateCoefs[1] = rateToCoef(value); break;
-      case 'r2': o.rateCoefs[2] = rateToCoef(value); break;
-      case 'r3': o.rateCoefs[3] = rateToCoef(value); break;
-      case 'l0': o.levels[0] = levelToAmp(value); break;
-      case 'l1': o.levels[1] = levelToAmp(value); break;
-      case 'l2': o.levels[2] = levelToAmp(value); break;
-      case 'l3': o.levels[3] = levelToAmp(value); break;
+      case 'r0': o.ratesDbPerSec[0] = dx7RateToDbPerSec(value); break;
+      case 'r1': o.ratesDbPerSec[1] = dx7RateToDbPerSec(value); break;
+      case 'r2': o.ratesDbPerSec[2] = dx7RateToDbPerSec(value); break;
+      case 'r3': o.ratesDbPerSec[3] = dx7RateToDbPerSec(value); break;
+      case 'l0': o.levelsDb[0] = dx7LevelToDb(value); break;
+      case 'l1': o.levelsDb[1] = dx7LevelToDb(value); break;
+      case 'l2': o.levelsDb[2] = dx7LevelToDb(value); break;
+      case 'l3': o.levelsDb[3] = dx7LevelToDb(value); break;
       // Operator MUTE is exactly this message with value 0 — see the protocol
       // comment above for why it must never be a whole-patch re-send.
       case 'level': o.outputAmp = levelToAmp(value); break;
       case 'ratio': o.ratio = value; break;
       case 'detuneFactor': o.detuneFactor = value; break;
       case 'fixedMode': o.fixedMode = value !== 0; break;
+      // FIXED-mode frequency, in Hz, already resolved by the host's
+      // dx7FixedHz(coarse, fine). Guarded because a non-positive value would
+      // silence a fixed operator outright rather than mistune it.
+      case 'fixedHz': if (value > 0) o.fixedHz = value; break;
       default: break;
     }
   }

@@ -65,11 +65,16 @@ const NUM_VOICES = 5;
 // ---- the private shapes we reach into (TS `private` is compile-time only) ----
 
 interface OpPatchView {
-  rateCoefs: [number, number, number, number];
-  levels: [number, number, number, number];
+  // The envelope is stored in the DX7's dB domain (PR 0b's authentic law):
+  // rates are dB/second and levels are dB, NOT 1/tau coefficients and linear
+  // amplitudes. `outputAmp` stays linear — the operator OUTPUT level is not an
+  // envelope level.
+  ratesDbPerSec: [number, number, number, number];
+  levelsDb: [number, number, number, number];
   ratio: number;
   detuneFactor: number;
   fixedMode: boolean;
+  fixedHz: number;
   outputAmp: number;
 }
 interface VoiceStateView {
@@ -219,24 +224,28 @@ describe('dx7 opParam: value domain matches the whole-patch transform', () => {
   const RAW = [0, 1, 37, 50, 99] as const;
 
   for (const seg of [0, 1, 2, 3] as const) {
-    it(`r${seg} stores rateToCoef(raw), not the raw byte`, () => {
+    it(`r${seg} stores dx7RateToDbPerSec(raw), not the raw byte`, () => {
       for (const raw of RAW) {
         const p = bootWithHeldNote();
         send(p, { type: 'opParam', op: 0, field: `r${seg}`, value: raw });
-        const expected = viaWholePatch((v) => { v.operators[0]!.r[seg] = raw; }).rateCoefs[seg];
-        expect(p.patch.operators[0]!.rateCoefs[seg]).toBe(expected);
+        const expected = viaWholePatch((v) => { v.operators[0]!.r[seg] = raw; }).ratesDbPerSec[seg];
+        expect(p.patch.operators[0]!.ratesDbPerSec[seg]).toBe(expected);
         // and it is emphatically NOT the raw byte (the ~1000x error)
-        if (raw > 0) expect(p.patch.operators[0]!.rateCoefs[seg]).not.toBe(raw);
+        if (raw > 0) expect(p.patch.operators[0]!.ratesDbPerSec[seg]).not.toBe(raw);
       }
     });
 
-    it(`l${seg} stores levelToAmp(raw), not the raw byte`, () => {
+    it(`l${seg} stores dx7LevelToDb(raw), not the raw byte`, () => {
       for (const raw of RAW) {
         const p = bootWithHeldNote();
         send(p, { type: 'opParam', op: 0, field: `l${seg}`, value: raw });
-        const expected = viaWholePatch((v) => { v.operators[0]!.l[seg] = raw; }).levels[seg];
-        expect(p.patch.operators[0]!.levels[seg]).toBe(expected);
-        expect(p.patch.operators[0]!.levels[seg]).toBeLessThanOrEqual(1);
+        const expected = viaWholePatch((v) => { v.operators[0]!.l[seg] = raw; }).levelsDb[seg];
+        expect(p.patch.operators[0]!.levelsDb[seg]).toBe(expected);
+        // Levels are dB at or below unity (0 dB), never the raw 0..99 byte and
+        // never a linear amplitude: raw 99 lands exactly 0, raw 0 the floor.
+        expect(p.patch.operators[0]!.levelsDb[seg]).toBeLessThanOrEqual(0);
+        expect(p.patch.operators[0]!.levelsDb[seg]).toBeGreaterThanOrEqual(-74.25);
+        if (raw > 0 && raw < 99) expect(p.patch.operators[0]!.levelsDb[seg]).not.toBe(raw);
       }
     });
   }
@@ -275,6 +284,21 @@ describe('dx7 opParam: value domain matches the whole-patch transform', () => {
     expect(p.patch.operators[1]!.fixedMode).toBe(true);
     send(p, { type: 'opParam', op: 1, field: 'fixedMode', value: 0 });
     expect(p.patch.operators[1]!.fixedMode).toBe(false);
+  });
+
+  it('fixedHz is stored VERBATIM, and a non-positive value is ignored', () => {
+    // PR 0b made FIXED mode a real independent frequency
+    // (10^((coarse & 3) + fine/100) Hz) rather than `ratio * C4`, so the
+    // incremental protocol has to be able to MOVE it — otherwise an operator
+    // view could toggle fixedMode and never set the pitch it selects.
+    const p = bootWithHeldNote();
+    send(p, { type: 'opParam', op: 1, field: 'fixedHz', value: 100 });
+    expect(p.patch.operators[1]!.fixedHz).toBe(100);
+    // Guarded: 0 or a negative would silence the operator, not mistune it.
+    send(p, { type: 'opParam', op: 1, field: 'fixedHz', value: 0 });
+    expect(p.patch.operators[1]!.fixedHz).toBe(100);
+    send(p, { type: 'opParam', op: 1, field: 'fixedHz', value: -5 });
+    expect(p.patch.operators[1]!.fixedHz).toBe(100);
   });
 
   it('edits the ADDRESSED operator only', () => {
@@ -402,6 +426,10 @@ describe('dx7 patch message remains the destructive preset-LOAD path', () => {
       expect(v.fbMem).toBe(0);
       expect(v.ampEnv.value).toBe(0);
       for (let i = 0; i < NUM_OPS; i++) {
+        // A reset parks the envelope at its IDLE level, which the DX7 defines
+        // as L4 — not at silence. `makeVoice()` has L4 = 0, so for THIS patch
+        // the idle level is zero; a patch with L4 > 0 would reset to an
+        // already-sounding operator (covered in the ART envelope scenario).
         expect(v.envValue[i]).toBe(0);
         expect(v.envSeg[i]).toBe(0);
         expect(v.phase[i]).toBe(0);
@@ -445,17 +473,36 @@ describe('dx7 patch message remains the destructive preset-LOAD path', () => {
   });
 
   it('...and `voice` / `opParam` do NEITHER of those things to the same held note', () => {
+    // Asserted against an UNDISTURBED CONTROL rather than against "the
+    // envelope kept rising". Under the authentic envelope (PR 0b) an operator
+    // that has finished its attack is DECAYING toward L3, so "rising" is not
+    // an invariant of a note that was left alone — it was only ever true of
+    // the old 1-pole attack, and asserting it would quietly re-pin the wrong
+    // engine. What "not disturbed" really means is: byte-for-byte the same
+    // trajectory a processor that got no message at all would have taken.
     const p = bootWithHeldNote();
+    const control = bootWithHeldNote();
     const startBefore = p.voices[0]!.startSample;
-    const envBefore = p.voices[0]!.envValue[0]!;
+    const envAtBoot = Array.from(control.voices[0]!.envValue);
+
     send(p, { type: 'opParam', op: 2, field: 'level', value: 0 }); // MUTE op 3
-    send(p, { type: 'voice', voice: makeVoice() });
+    send(p, { type: 'voice', voice: makeVoice() });                // same patch
     render(p, 1, 1);
+    render(control, 1, 1); // identical block, no messages
+
     const after = p.voices[0]!;
     expect(after.active).toBe(true);
     expect(after.startSample, 'no fresh note-on was fired').toBe(startBefore);
-    expect(after.envValue[0]!, 'the envelope kept RISING, it did not re-attack')
-      .toBeGreaterThan(envBefore);
+    expect(after.startSample).toBe(control.voices[0]!.startSample);
+    // The envelope continued exactly where it was headed — not re-attacked,
+    // not frozen, not nudged.
+    expect(Array.from(after.envValue), 'the envelope followed its undisturbed trajectory')
+      .toEqual(Array.from(control.voices[0]!.envValue));
+    expect(Array.from(after.envSeg), 'still in the same envelope segments')
+      .toEqual(Array.from(control.voices[0]!.envSeg));
+    // And the control genuinely MOVED across that block, so an all-frozen
+    // engine could not pass this by accident.
+    expect(Array.from(control.voices[0]!.envValue)).not.toEqual(envAtBoot);
   });
 });
 
