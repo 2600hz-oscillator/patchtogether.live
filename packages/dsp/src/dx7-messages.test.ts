@@ -8,14 +8,15 @@
 //
 // The two things this file exists to pin:
 //
-//   1. VALUE DOMAIN. The worklet stores DERIVED values (rateCoefs =
-//      rateToCoef(raw), levels/outputAmp = levelToAmp(raw)), not the raw DX7
-//      0..99 bytes. If `opParam` ever stored the raw byte you would get a
-//      ~1000x envelope error. Rather than duplicating the transforms here
-//      (a mirror can drift), every rate/level assertion is an EQUIVALENCE
-//      against the trusted whole-patch path: `opParam r0=99` must land the
-//      byte-identical coefficient that a full `{type:'patch'}` carrying
-//      `r[0]=99` lands.
+//   1. VALUE DOMAIN. The worklet stores DERIVED values, not the raw DX7 0..99
+//      bytes: `ratesDbPerSec = dx7RateToDbPerSec(raw)` (dB per second),
+//      `levelsDb = dx7LevelToDb(raw)` (dB), and `outputAmp = levelToAmp(raw)`
+//      (LINEAR — an operator OUTPUT level is not an envelope level). If
+//      `opParam` ever stored the raw byte you would get a ~1000x envelope
+//      error. Rather than duplicating the transforms here (a mirror can
+//      drift), every rate/level assertion is an EQUIVALENCE against the
+//      trusted whole-patch path: `opParam r0=99` must land the byte-identical
+//      value that a full `{type:'patch'}` carrying `r[0]=99` lands.
 //
 //   2. NON-DESTRUCTIVENESS, including `lastGate`. `lastGate` is the
 //      load-bearing one, and the failure it causes is NOT "the note goes
@@ -322,7 +323,14 @@ describe('dx7 opParam: value domain matches the whole-patch transform', () => {
     p.patch.operators.forEach((o, i) => {
       expect(o.ratio).toBe(before[i]!.ratio);
       expect(o.outputAmp).toBe(before[i]!.outputAmp);
-      expect(o.rateCoefs).toEqual(before[i]!.rateCoefs);
+      // Named explicitly, and asserted non-empty first: this line used to read
+      // `o.rateCoefs`, which after the dB-domain rename is `undefined` on BOTH
+      // sides — `expect(undefined).toEqual(undefined)` passes while checking
+      // nothing at all.
+      expect(o.ratesDbPerSec, 'the rate array must actually exist').toHaveLength(4);
+      expect(o.ratesDbPerSec).toEqual(before[i]!.ratesDbPerSec);
+      expect(o.levelsDb, 'the level array must actually exist').toHaveLength(4);
+      expect(o.levelsDb).toEqual(before[i]!.levelsDb);
     });
   });
 });

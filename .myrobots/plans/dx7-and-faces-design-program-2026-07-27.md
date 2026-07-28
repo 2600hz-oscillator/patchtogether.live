@@ -421,7 +421,7 @@ this worklet plays.** Verified:
 | idles at **L4** | note-on sets `envValue=0, envSeg=0` (`dsp/src/dx7.ts:393-394`) |
 | **HOLDS at L3** while the gate is high | `if (seg < 3)` auto-advances on 1 % proximity (`:659-666`) — it keeps falling to L4 with the gate still high |
 | L4 is start **and** end | L4 is only the end |
-| linear-in-dB rate law, rate 0 ≈ 90 s | `tau = 8·exp(-0.09·r)`, τ ∈ [1.1 ms, 8 s] (`:614-617`) |
+| linear-in-dB rate law, rate 0 ≈ **317 s** | `tau = 8·exp(-0.09·r)`, τ ∈ [1.1 ms, 8 s] (`:614-617`) |
 | FIXED = `10^((coarse&3)+fine/100)` Hz | `ratio * C4_HZ` (`:562`) |
 
 Shipping the editor over this engine is the same failure the program declares blocking for the algorithm
@@ -434,6 +434,27 @@ table, on a surface visible for **all 32 algorithms × 6 operators**. Fix the en
 - fix the `dx7-syx.ts` header comment: transpose "12 = middle C" is wrong on lines 45 and 92 — it is **24**
   (the worklet correctly uses `transpose − 24`).
 - ART: re-author `envelope` and re-check `preset-spectra` / `spectral-audit`.
+
+⚠ **CORRECTION (measured while building PR 0b, 2026-07-28).** The table above originally said
+"rate 0 ≈ 90 s". The real figure is **317.487 s** (≈ 5.3 minutes) — hexter's
+`dx7_voice_eg_rate_decay_duration[0]`, measured off real DX7/TX7 hardware. The 90 almost certainly came
+from msfa's internal EG span, which is ~90 **dB**, not 90 seconds. The law shipped in 0b is calibrated on
+the measured 317.487 s and reproduces hexter's entire decay table to <1.2 % for rates 0..90 from that
+single anchor.
+
+⚠ **A SECOND MECHANISM NOTE.** "hold at seg 2 until note-off" (above) describes the *musical* behaviour
+correctly but not the state machine. In msfa — and in the shipped implementation — segments 0..2 run to
+completion and the envelope then sits in **segment 3 with the gate still high, frozen**; `keydown(false)`
+does not change the index, it just unfreezes it. So the hold is "parked in seg 3, not advancing", and the
+released envelope resumes from exactly there. Anything drawing the EG (§3.3 Row B) should render the hold
+as *the L3 plateau before the release segment*, not as a fourth segment of its own.
+
+**PR 0b also had to repair a silent merge defect against PR 1** — see the `fix(dx7): repair the PR 1 x
+PR 0b merge defect` commit. PR 1's `applyOpParam` and PR 0b's OpPatch field rename merged with zero
+conflicts and produced non-running code, because **`packages/dsp` has no `typecheck` script** and
+`npm run typecheck --workspaces --if-present` therefore skips every worklet. Giving the dsp workspace a
+real typecheck is worth its own platform PR (33 pre-existing errors today, mostly per-file worklet globals
+colliding when the whole tree is checked as one program).
 
 **If the owner rejects 0b:** re-author §3.3 Row B and `dx7-eg-curve.ts` to draw *this* engine's shape
 (start 0, no hold, τ-based times), delete the msfa seconds readout, and move FIXED mode to phase 2. Do not
