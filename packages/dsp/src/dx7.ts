@@ -16,7 +16,9 @@
 //   - Each voice has 6 operators (sine + envelope + level + ratio + detune).
 //   - 32 DX7 algorithms encoded as a small per-algorithm routing table; each
 //     entry says "for op N, what modulator inputs feed its phase, where does
-//     its output route (carriers list), and is op6 feedback wired in?"
+//     its output route (carriers list), and where is THIS algorithm's single
+//     feedback loop wired?" (the feedback operator varies per algorithm — see
+//     FEEDBACK_TABLE below).
 //   - 4-rate / 4-level envelopes per operator (the DX7's signature scheme;
 //     "rates" go 0..99 where 99 is fastest).
 //   - Voice allocator: round-robin with steal-oldest when all voices busy.
@@ -31,6 +33,12 @@
 // per-op level / etc. are baked from the patch on receipt; the worklet
 // doesn't read AudioParams for these — only `algorithm`, `voiceCount`, and
 // the global level knob act as live controls.
+//
+// `{type:'patch'}` is DESTRUCTIVE (it resets every voice) and is reserved for
+// a preset LOAD. Live editing uses the incremental, NON-destructive messages
+// `voice` / `opParam` / `algorithm` / `feedback` — see the message-protocol
+// block above the Dx7Message union below for the full contract and the value
+// domain each field carries.
 //
 // Sample rate: works at any rate (44.1k or 48k); pitch is internally
 // converted to Hz before phase accumulation.
@@ -64,49 +72,55 @@ const C4_HZ = 261.625565;
 //   carriers  : indices of operators that mix to the audio output.
 //   modSrcs   : per-op array; modSrcs[i] = list of operator indices whose
 //               output feeds op i's phase modulation. (For DX7 modulation
-//               sums add — Web Audio + Plaits semantics.)
-//   feedback  : index of the operator with the self-feedback path (or -1).
+//               sums add — Web Audio + Plaits semantics.) The feedback path
+//               is NOT listed here; an op never appears in its own list.
+//   feedback  : {from, to} — the algorithm's single feedback loop. The
+//               1-sample memory is fed from op `from` and modulates op `to`.
+//               `from === to` is the usual self-loop.
 //
 // Operator indexing: 0 = op1, 1 = op2, ..., 5 = op6. (Musical convention,
 // matching the dx7-syx.ts parser output.)
 //
-// The 32-algorithm chart this is faithful to:
-//   https://gist.github.com/bryc/e997954473940ad97a825da4e7a496fa
-//   (also Reverb Machine — Exploring the DX7 §3)
+// FEEDBACK IS PER-ALGORITHM. It is NOT always op6 — the DX7 moves the loop to
+// a different operator per algorithm, and that placement is exactly what
+// distinguishes otherwise-identical routings (1 vs 2, 3 vs 4, 5 vs 6, 7/8/9,
+// 10 vs 11, 12 vs 13, 14 vs 15, 16 vs 17, 26 vs 27). Two algorithms (4 and 6)
+// use a MULTI-OPERATOR loop (op4 → op6 and op5 → op6 respectively) rather than
+// a self-loop, which is why `feedback` is a pair and not a single index.
+//
+// PROVENANCE — the tables below were DERIVED, not hand-typed, by decoding two
+// independent authoritative sources and asserting they agree on all 32 rows
+// (they do, exactly):
+//   (a) the real DX7 OPS-chip ALGORITHM ROM dump — Ken Shirriff, "Yamaha DX7
+//       chip reverse-engineering, part 4: how algorithms are implemented"
+//       (righto.com, 2021-12), footnote 5. Words are "SEL / FREN MREN / COM";
+//       column N is latched while op N is at the output, so it selects op
+//       N-1's modulation (column 1 wraps to op6). FREN=1 latches the feedback
+//       register FROM op N; SEL=5 is the averaged ("anti-hunting") feedback
+//       path INTO op N-1.
+//   (b) `FmCore::algorithms` in Dexed / Google's music-synthesizer-for-android
+//       (`Source/msfa/fm_core.cc`) — 6 bytes per algorithm, ordered op6..op1,
+//       encoding in/out bus plus FB_IN (receives feedback) / FB_OUT (sources
+//       it).
 //
 // Validation: every entry has exactly 6 modSrcs lists; carriers are a
-// non-empty subset of [0..5]; feedback is an op index in [0..5] or -1.
+// non-empty subset of [0..5]; feedback.from / feedback.to are in [0..5]. The
+// authoritative golden lives in the web mirror's
+// `dx7-algorithms.test.ts`, which also asserts all 32 rows are DISTINCT.
 // --------------------------------------------------------------
+
+interface Feedback {
+  /** Operator index (0..5) whose output feeds the loop's 1-sample memory. */
+  from: number;
+  /** Operator index (0..5) whose phase that memory modulates. */
+  to: number;
+}
 
 interface Algorithm {
   carriers: number[];
   modSrcs: number[][];
-  feedback: number;
+  feedback: Feedback;
 }
-
-// Each algo encoded as (alg-num, carriers, [op1..op6 modSrcs], feedback-op).
-// Source-of-truth: the DX7 algorithm chart. Op index 0..5 = op1..op6.
-//
-// Note: feedback always lives on op6 in the original DX7 (it's the "highest
-// numbered" operator in every algorithm's feedback loop).
-//
-// Rather than hand-encode 32 routing graphs (error-prone), we use a compact
-// declarative form below. The chart is:
-//
-//  Alg  | Description                           | Carriers (1-indexed)
-//  -----+---------------------------------------+--------------------
-//   1   | 6→5→4→3, 2→1                          | 1, 3
-//   2   | 6→5→4→3, 2→1, op2 fb                  | 1, 3
-//   3   | 6→5→4, 3→2→1                          | 1, 4
-//   4   | 6→5→4, 3→2→1, op4 fb                  | 1, 4
-//   5   | 6→5, 4→3, 2→1                         | 1, 3, 5
-//   6   | 6→5, 4→3, 2→1, op5 fb                 | 1, 3, 5
-//   7   | 6→5, 4 + 3→2→1 (ops 4 & 3 stack into 2)| 1, 5  (op4+op3→1,2 routing)
-//   ... (full table inlined in CARRIER_TABLE / MOD_TABLE below)
-//
-// This implementation faithfully reproduces the topology for all 32
-// algorithms, sourced from cross-referencing bryc's chart + the Yamaha DX7
-// service manual (algorithm diagrams, p. 34).
 
 const CARRIER_TABLE: number[][] = [
   /*  1 */ [0, 2],
@@ -155,43 +169,53 @@ const MOD_TABLE: number[][][] = [
   /*  7 */ [[1], [], [3, 4], [], [5], []],
   /*  8 */ [[1], [], [3, 4], [], [5], []],
   /*  9 */ [[1], [], [3, 4], [], [5], []],
-  /* 10 */ [[1, 2], [], [], [4], [5], []],
-  /* 11 */ [[1, 2], [], [], [4], [5], []],
+  /* 10 */ [[1], [2], [], [4, 5], [], []],
+  /* 11 */ [[1], [2], [], [4, 5], [], []],
   /* 12 */ [[1], [], [3, 4, 5], [], [], []],
   /* 13 */ [[1], [], [3, 4, 5], [], [], []],
   /* 14 */ [[1], [], [3], [4, 5], [], []],
   /* 15 */ [[1], [], [3], [4, 5], [], []],
   /* 16 */ [[1, 2, 4], [], [3], [], [5], []],
   /* 17 */ [[1, 2, 4], [], [3], [], [5], []],
-  /* 18 */ [[1, 2, 3], [], [], [4, 5], [], []],
-  /* 19 */ [[1, 2], [], [], [], [5], []],
-  /* 20 */ [[2], [2], [3, 4], [], [5], []],
-  /* 21 */ [[2], [2], [3, 4], [4], [5], []],
+  /* 18 */ [[1, 2, 3], [], [], [4], [5], []],
+  /* 19 */ [[1], [2], [], [5], [5], []],
+  /* 20 */ [[2], [2], [], [4, 5], [], []],
+  /* 21 */ [[2], [2], [], [5], [5], []],
   /* 22 */ [[1], [], [5], [5], [5], []],
-  /* 23 */ [[1], [], [3], [4], [5], []],
-  /* 24 */ [[1, 2], [2], [4, 5], [], [], []],
-  /* 25 */ [[1, 2], [2], [4, 5], [], [], []],
-  /* 26 */ [[1], [3, 4], [], [4], [5], []],
-  /* 27 */ [[1], [3, 4], [], [4], [5], []],
+  /* 23 */ [[], [2], [], [5], [5], []],
+  /* 24 */ [[], [], [5], [5], [5], []],
+  /* 25 */ [[], [], [], [5], [5], []],
+  /* 26 */ [[], [2], [], [4, 5], [], []],
+  /* 27 */ [[], [2], [], [4, 5], [], []],
   /* 28 */ [[1], [], [3], [4], [], []],
-  /* 29 */ [[2], [], [3], [4, 5], [], []],
-  /* 30 */ [[1], [], [3, 4], [], [], []],
-  /* 31 */ [[1], [], [], [], [5], []],
-  /* 32 */ [[], [], [], [], [], [5]], // op6 is the only modulator (self-feedback only)
+  /* 29 */ [[], [], [3], [], [5], []],
+  /* 30 */ [[], [], [3], [4], [], []],
+  /* 31 */ [[], [], [], [], [5], []],
+  /* 32 */ [[], [], [], [], [], []], // six independent carriers; op6 self-feeds
 ];
 
-// Op6 feedback exists in every algorithm (the original chart shows feedback
-// path on op6 → op6 in all 32 — only the depth varies via the patch's
-// "feedback" param). We expose feedback always-on, scaled by patch.feedback.
-const FEEDBACK_OP_DEFAULT = 5; // op6
+// Per-algorithm feedback loop, as [from, to] operator indices. `from === to`
+// is a self-loop; algorithms 4 (op4 → op6) and 6 (op5 → op6) are the two
+// multi-operator loops on the real DX7. Depth is the patch's `feedback` param.
+const FEEDBACK_TABLE: [number, number][] = [
+  /*  1 */ [5, 5], /*  2 */ [1, 1], /*  3 */ [5, 5], /*  4 */ [3, 5],
+  /*  5 */ [5, 5], /*  6 */ [4, 5], /*  7 */ [5, 5], /*  8 */ [3, 3],
+  /*  9 */ [1, 1], /* 10 */ [2, 2], /* 11 */ [5, 5], /* 12 */ [1, 1],
+  /* 13 */ [5, 5], /* 14 */ [5, 5], /* 15 */ [1, 1], /* 16 */ [5, 5],
+  /* 17 */ [1, 1], /* 18 */ [2, 2], /* 19 */ [5, 5], /* 20 */ [2, 2],
+  /* 21 */ [2, 2], /* 22 */ [5, 5], /* 23 */ [5, 5], /* 24 */ [5, 5],
+  /* 25 */ [5, 5], /* 26 */ [5, 5], /* 27 */ [2, 2], /* 28 */ [4, 4],
+  /* 29 */ [5, 5], /* 30 */ [4, 4], /* 31 */ [5, 5], /* 32 */ [5, 5],
+];
 
 function buildAlgorithms(): Algorithm[] {
   const algos: Algorithm[] = [];
   for (let i = 0; i < 32; i++) {
+    const [from, to] = FEEDBACK_TABLE[i]!;
     algos.push({
       carriers: CARRIER_TABLE[i]!,
       modSrcs: MOD_TABLE[i]!,
-      feedback: FEEDBACK_OP_DEFAULT,
+      feedback: { from, to },
     });
   }
   return algos;
@@ -259,7 +283,7 @@ interface Voice {
   envSeg: Int32Array;
   /** Whether the voice is in release (gate-off). */
   releasing: boolean;
-  /** Op6 feedback memory (1-sample delay). */
+  /** Feedback-loop memory (1-sample delay); which op feeds it is per-algorithm. */
   fbMem: number;
   /** Last per-op output sample (for routing into modulators). */
   opOut: Float32Array;
@@ -307,6 +331,91 @@ interface PatchMessage {
   };
 }
 
+// --------------------------------------------------------------
+// INCREMENTAL, NON-DESTRUCTIVE MESSAGES
+//
+// `{type:'patch'}` is a preset LOAD: it rebuilds the whole patch AND resets
+// every voice (see applyPatch). That is correct for "the player picked a
+// different voice", and WRONG for "the player nudged one operator" — an edit
+// gesture must not kill the notes that are sounding while you make it.
+//
+// So the port speaks five messages, mirroring the setParam / separate-
+// clearBuffers split in packages/dsp/src/cloudseed.ts:
+//
+//   patch     — full voice, RESETS voices        (preset LOAD only)
+//   voice     — full voice, does NOT reset       (a REMOTE voiceRev bump: a
+//                                                 rack-mate's edit must not
+//                                                 stop YOUR notes)
+//   opParam   — one operator field, no reset
+//   algorithm — 1..32, no reset (process() re-reads this.patch.algorithm at
+//               the top of every block, so the routing graph re-binds itself
+//               on the next block with no voice state disturbed)
+//   feedback  — 0..7, no reset (stored normalized; the worklet divides by 7)
+//
+// OPERATOR MUTE ROUTES THROUGH `opParam { field:'level', value:0 }`, never
+// through `{type:'patch'}`. Two reasons, and they are the whole reason this
+// split exists:
+//   1. the host keeps the operator's real level in node.data.voice, so UNmute
+//      is just another opParam re-sending the stored value; and
+//   2. `{type:'patch'}` is HOSTILE to anything sounding — in two distinct
+//      ways, both pinned by dx7-messages.test.ts, and NEITHER of them is the
+//      benign "the note just stops":
+//        * a lane whose gate is still HIGH gets HARD-RETRIGGERED. applyPatch
+//          zeroes `lastGate`, so on the very next block the block-rate edge
+//          detector in process() reads `isGate && !wasGate` and fires a fresh
+//          noteOn — envelopes back to segment 0, phases back to 0, the master
+//          VCA soft-retriggered. The held note re-articulates: a click and a
+//          new attack in the middle of the chord you are holding.
+//        * a lane whose gate has already FALLEN (the note is ringing out its
+//          release tail) is killed outright and never comes back — there is
+//          no future rising edge to revive it.
+//      So a mute button wired to the whole-patch message would re-attack every
+//      held note and chop every tail on EVERY click.
+//
+// VALUE DOMAIN — get this wrong and you have a ~1000x envelope error. This
+// worklet stores DERIVED values (rateCoefs = rateToCoef(rate), levels and
+// outputAmp = levelToAmp(level)), not the raw DX7 bytes. The host therefore
+// sends the RAW 0..99 byte for r0..r3 / l0..l3 / level and applyOpParam runs
+// the SAME transform applyPatch runs; it sends the already-resolved FLOAT for
+// ratio (host dx7Ratio(coarse,fine)) and detuneFactor (host dx7DetuneFactor),
+// which are stored verbatim.
+// --------------------------------------------------------------
+
+/** The operator fields an `opParam` message may address. */
+type Dx7OpField =
+  | 'r0' | 'r1' | 'r2' | 'r3'      // envelope rates,  RAW 0..99
+  | 'l0' | 'l1' | 'l2' | 'l3'      // envelope levels, RAW 0..99
+  | 'level'                        // operator output level, RAW 0..99
+  | 'ratio'                        // resolved float (host dx7Ratio)
+  | 'detuneFactor'                 // resolved float (host dx7DetuneFactor)
+  | 'fixedMode';                   // 0 | 1
+
+interface VoiceMessage {
+  type: 'voice';
+  voice: PatchMessage['voice'];
+}
+interface OpParamMessage {
+  type: 'opParam';
+  op: number;          // 0..5
+  field: Dx7OpField;
+  value: number;
+}
+interface AlgorithmMessage {
+  type: 'algorithm';
+  value: number;       // 1..32
+}
+interface FeedbackMessage {
+  type: 'feedback';
+  value: number;       // 0..7
+}
+
+type Dx7Message =
+  | PatchMessage
+  | VoiceMessage
+  | OpParamMessage
+  | AlgorithmMessage
+  | FeedbackMessage;
+
 class Dx7Processor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
@@ -339,14 +448,45 @@ class Dx7Processor extends AudioWorkletProcessor {
   constructor(options?: { processorOptions?: unknown }) {
     super(options);
     this.port.onmessage = (e: MessageEvent) => {
-      const m = e.data as PatchMessage;
-      if (m?.type === 'patch') {
-        this.applyPatch(m.voice);
+      const m = e.data as Dx7Message | null | undefined;
+      if (!m) return;
+      switch (m.type) {
+        case 'patch':
+          // Preset LOAD — the whole sound changes, so stale voice state would
+          // sound wrong. This is the ONLY message that resets.
+          this.applyPatch(m.voice, true);
+          break;
+        case 'voice':
+          // Same payload, NON-destructive: a remote voiceRev bump.
+          this.applyPatch(m.voice, false);
+          break;
+        case 'opParam':
+          this.applyOpParam(m.op, m.field, m.value);
+          break;
+        case 'algorithm':
+          this.setAlgorithm(m.value);
+          break;
+        case 'feedback':
+          this.setFeedback(m.value);
+          break;
+        default:
+          break;
       }
     };
   }
 
-  private applyPatch(v: PatchMessage['voice']): void {
+  /**
+   * Rebuild the whole patch from a serialized voice.
+   *
+   * @param reset when true (a preset LOAD) every voice is silenced and
+   *        `lastGate` is zeroed. Pass FALSE for a non-destructive re-send.
+   *        Zeroing `lastGate` is what makes a reset hostile to a held note:
+   *        process()'s edge detector sees the still-high gate as a fresh
+   *        RISING edge on the next block and hard-retriggers the note (and a
+   *        note already in release is killed with no edge left to revive it).
+   *        See the message-protocol block above the Dx7Message union.
+   */
+  private applyPatch(v: PatchMessage['voice'], reset: boolean): void {
     const ops: OpPatch[] = [];
     for (let i = 0; i < 6; i++) {
       const op = v.operators[i] ?? v.operators[0]!;
@@ -380,6 +520,7 @@ class Dx7Processor extends AudioWorkletProcessor {
       operators: ops,
       transpose: ((v.transpose ?? 24) - 24), // SYX: 24 = no transpose
     };
+    if (!reset) return;
     // Reset all voices when patch changes — the operator levels & ratios
     // shift and stale envelope state would sound wrong.
     for (const voice of this.voices) {
@@ -397,6 +538,55 @@ class Dx7Processor extends AudioWorkletProcessor {
       }
     }
     for (let i = 0; i < this.lastGate.length; i++) this.lastGate[i] = 0;
+  }
+
+  /**
+   * Apply ONE operator field in place. Touches `this.patch.operators[op]` and
+   * NOTHING else — no voice state, no `lastGate` — so a live held note keeps
+   * playing (and simply renders with the new value from the very next sample).
+   *
+   * The transforms MUST match applyPatch's: the host sends the RAW 0..99 DX7
+   * byte for rates/levels and this converts, because the worklet's hot path
+   * reads coefficients and amplitudes, never bytes. `ratio` / `detuneFactor`
+   * arrive already resolved by the host helpers and are stored verbatim.
+   */
+  private applyOpParam(op: number, field: Dx7OpField, value: number): void {
+    const idx = Math.round(op);
+    if (!Number.isFinite(idx) || idx < 0 || idx >= NUM_OPS) return;
+    if (!Number.isFinite(value)) return;
+    const o = this.patch.operators[idx];
+    if (!o) return;
+    switch (field) {
+      case 'r0': o.rateCoefs[0] = rateToCoef(value); break;
+      case 'r1': o.rateCoefs[1] = rateToCoef(value); break;
+      case 'r2': o.rateCoefs[2] = rateToCoef(value); break;
+      case 'r3': o.rateCoefs[3] = rateToCoef(value); break;
+      case 'l0': o.levels[0] = levelToAmp(value); break;
+      case 'l1': o.levels[1] = levelToAmp(value); break;
+      case 'l2': o.levels[2] = levelToAmp(value); break;
+      case 'l3': o.levels[3] = levelToAmp(value); break;
+      // Operator MUTE is exactly this message with value 0 — see the protocol
+      // comment above for why it must never be a whole-patch re-send.
+      case 'level': o.outputAmp = levelToAmp(value); break;
+      case 'ratio': o.ratio = value; break;
+      case 'detuneFactor': o.detuneFactor = value; break;
+      case 'fixedMode': o.fixedMode = value !== 0; break;
+      default: break;
+    }
+  }
+
+  /** Live algorithm change, no reset: process() re-reads this.patch.algorithm
+   *  at the top of every block, so the routing graph re-binds on the next one. */
+  private setAlgorithm(value: number): void {
+    if (!Number.isFinite(value)) return;
+    this.patch.algorithm = Math.max(1, Math.min(32, Math.round(value)));
+  }
+
+  /** Live feedback-depth change, no reset. Stored NORMALIZED (0..1) — the
+   *  divide-by-7 lives here, exactly as in applyPatch. */
+  private setFeedback(value: number): void {
+    if (!Number.isFinite(value)) return;
+    this.patch.feedback = Math.max(0, Math.min(7, Math.round(value))) / 7;
   }
 
   /** Find a voice slot for a new note. If `laneOwner` already owns a voice
@@ -528,8 +718,10 @@ class Dx7Processor extends AudioWorkletProcessor {
         // Per-op render in fixed forward order (op1..op6). Modulator outputs
         // for any op whose modSrcs reference an op > current op are taken
         // from the previous sample (1-sample delay) — this is faithful to
-        // the original DX7's render order in nearly every case (op6 only
-        // self-feeds), and simplifies the algorithm graph.
+        // the original DX7's render order in nearly every case, and
+        // simplifies the algorithm graph. The feedback loop is always a
+        // 1-sample delay by construction (v.fbMem is committed after the
+        // whole op sweep, below).
         for (let opIdx = 0; opIdx < NUM_OPS; opIdx++) {
           const op = ops[opIdx]!;
           // Update envelope (4-segment).
@@ -541,18 +733,12 @@ class Dx7Processor extends AudioWorkletProcessor {
           let modIn = 0;
           const srcs = algo.modSrcs[opIdx]!;
           for (let s = 0; s < srcs.length; s++) {
-            const src = srcs[s]!;
-            if (src === opIdx) {
-              // Self-feedback (only op6 in the original DX7 chart).
-              modIn += v.fbMem * fbAmount;
-            } else {
-              modIn += v.opOut[src]!;
-            }
+            modIn += v.opOut[srcs[s]!]!;
           }
-          // Op6 self-feedback path: when feedback is wired to op6 and op6
-          // doesn't appear in modSrcs[opIdx=5] explicitly (most algos don't
-          // list it), still apply at op6.
-          if (opIdx === algo.feedback && srcs.indexOf(opIdx) < 0 && fbAmount > 0) {
+          // The feedback path, which is PER-ALGORITHM: inject the loop memory
+          // into the op the chart wires it to (op6 in most algorithms, but
+          // op2/op3/op4/op5 in others — see FEEDBACK_TABLE).
+          if (opIdx === algo.feedback.to && fbAmount > 0) {
             modIn += v.fbMem * fbAmount;
           }
 
@@ -570,8 +756,9 @@ class Dx7Processor extends AudioWorkletProcessor {
           const sample = s * v.envValue[opIdx]! * op.outputAmp;
           v.opOut[opIdx] = sample;
         }
-        // Op6 feedback memory (averaged over 2 samples like the original).
-        v.fbMem = (v.fbMem + v.opOut[5]!) * 0.5;
+        // Feedback memory, sourced from THIS algorithm's feedback operator
+        // (averaged over 2 samples like the original's anti-hunting filter).
+        v.fbMem = (v.fbMem + v.opOut[algo.feedback.from]!) * 0.5;
 
         // Sum carriers.
         let voiceOut = 0;
