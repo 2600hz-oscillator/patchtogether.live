@@ -62,7 +62,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `attenumix` — VRT baseline pending
 - `audioIn` — card state depends on getUserMedia permission + audioinput presence (varies across CI runners)
 - `b3ntb0x` — animated NTSC composite simulation (per-line sync drift + frame persistence) defeats deterministic capture
-- `backdraft` — live non-deterministic feedback display (the card blits its own recursive output into a 320×240 screen, so the region…
+- `backdraft` — baselines pending only — the ORIGINAL reason (user-resizable card with a live non-deterministic feedback preview) no…
 - `bentbox` — animated CRT simulation (feedback + per-line time drift) defeats deterministic capture
 - `blood` — live game-loop framebuffer + user-supplied non-redistributable data (no frame on CI) defeats deterministic capture
 - `bluebox` — VRT baseline pending — deterministic keypad card (12 static buttons, no canvas/animation)

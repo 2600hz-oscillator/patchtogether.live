@@ -5,23 +5,24 @@
 // onto the BACKDRAFT card via the shared helpers (use-fullscreen /
 // use-full-frame / use-present / VideoCanvasContextMenu).
 //
-// ── THE CARD'S SHAPE, AND WHAT THAT MEANS HERE ──────────────────────────────
-// BACKDRAFT is a 7hp × 3u card (1260×540) with a 320×240 DISPLAY centred in a
-// top band, the discrete switches in the flanks either side, and every fader
-// bank on one row beneath. ONE <canvas> serves all four presentations — the
-// in-band display, Full Frame, Full Screen and Present — so:
+// ── WHAT CHANGED WHEN THE PREVIEW WAS REMOVED ───────────────────────────────
+// BACKDRAFT's card is now a control surface with no in-rack video thumbnail.
+// These features did NOT go with it — they are performance features, not
+// preview decoration — but two things about this spec did:
 //
-//   * ENTRY POINTS: TWO. The ⛶ OUTPUT button
-//     ([data-testid="backdraft-output-menu"]) is the discoverable affordance;
-//     right-clicking the display is the fast one. Both are covered below.
-//   * CORNER-RESIZE: RETIRED, not ported. 3u = 540 is the rack tier
-//     (rack-sizes.ts) and a resize handle would fight the hard max-height pin
-//     in _module-card.css. The resize helper itself (card-resize.ts) is still
-//     covered by bentbox.spec.ts + the videoOut resize case in
-//     workflow-shell-video.spec.ts.
+//   * ENTRY POINT: the menu used to open on a RIGHT-CLICK on the preview. With
+//     no preview to right-click it opens from an explicit OUTPUT button
+//     ([data-testid="backdraft-output-menu"]). Every case below drives that.
+//   * CORNER-RESIZE: RETIRED, not ported. The corner-drag existed to scale the
+//     preview canvas; with the preview gone the card is a fixed 5hp×2u rack
+//     tier (rack-sizes.ts) and there is nothing to drag. The resize helper
+//     itself (card-resize.ts) is still covered by bentbox.spec.ts + the
+//     videoOut resize case in workflow-shell-video.spec.ts.
 //
-// These cases assert COMPONENT STATE + GEOMETRY (classes, persisted node.data,
-// menu items, bounding boxes) — deliberately NOT pixels. See the COST note.
+// The output <canvas> is still in the DOM but INERT in the rack (1px,
+// invisible, not drawn); it becomes the live surface in each expanded mode.
+// So these cases assert COMPONENT STATE + the surface's expanded classes, not
+// in-rack pixels.
 //
 // Mirrors video-fullscreen.spec.ts + video-full-frame.spec.ts + present-second-
 // display.spec.ts, scoped to BACKDRAFT.
@@ -39,25 +40,13 @@ import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 // ── COST ────────────────────────────────────────────────────────────────────
-// Every case here asserts the COMPONENT STATE MACHINE + GEOMETRY (classes,
-// persisted node.data, menu items, bounding boxes) — not a single pixel. So
-// this spec does no GL work at all: it freezes the per-frame video draw (the
-// same __videoEngineFreezeRender lever card-control-overflow uses) and spawns
-// BACKDRAFT SOLO with no upstream source. An older version fed it from SHAPES
-// and slept 300ms per case purely so the in-card display had live content to
-// look at — and nothing ever looked. On CI's SwiftShader renderer that source
-// + those sleeps were the whole cost (13.5s → 8.5s when they went).
-//
-// The card honours __videoEngineFreezeRender for its OWN blit too (see
-// harnessFrozen() in BackdraftCard.svelte), so the restored in-rack display
-// costs this spec nothing: a frozen engine has no new frame to present.
-//
-// ⚠ DO NOT add a "the display shows live content" PIXEL assertion here. It
-// would require restoring the SHAPES chain and the sleeps and put this spec
-// back at ~13.5s on shard 1 — the shard that has historically timed out on
-// BACKDRAFT. Live-content coverage belongs in backdraft.spec.ts, which already
-// runs a live engine. The size assertion below is a boundingBox() — layout,
-// not pixels.
+// Every case here asserts the COMPONENT STATE MACHINE (classes, persisted
+// node.data, menu items) — not a single pixel. So this spec does no GL work at
+// all: it freezes the per-frame video draw (the same __videoEngineFreezeRender
+// lever card-control-overflow uses) and spawns BACKDRAFT SOLO with no upstream
+// source. The old version fed it from SHAPES and slept 300ms per case purely
+// so the in-card PREVIEW had live content to look at — and nothing ever looked.
+// On CI's SwiftShader renderer that source + those sleeps were the whole cost.
 async function freezeVideoRender(page: Page): Promise<void> {
   await page.addInitScript(() => {
     (globalThis as unknown as { __videoEngineFreezeRender?: boolean })
@@ -133,41 +122,24 @@ async function injectScreens(
 
 test.describe('BACKDRAFT — full output capabilities', () => {
   // The 60s ceiling is a BOUNDED-FAILURE cap, not a budget these cases use.
-  // It was added when this spec was a heavy-WebGL one: the live display canvas
+  // It was added when this spec was a heavy-WebGL one: the live preview canvas
   // plus the requestFullscreen / full-frame transitions spiked past the default
   // 30s under SwiftShader, and the "Full Frame ↔ Full Screen" case became a
-  // chronic shard-1 TIMEOUT. The draw is frozen now (see the COST note above),
-  // so there is no per-frame GL work left to contend for the runner. Kept
-  // generous anyway — a timeout should report a hang, not a slow runner.
+  // chronic shard-1 TIMEOUT. The preview is gone and the draw is frozen (see
+  // the COST note above), so there is no per-frame GL work left to contend for
+  // the runner. Kept generous anyway — a timeout should report a hang, not a
+  // slow runner.
   test.describe.configure({ timeout: 60_000 });
 
   test('the OUTPUT button opens the menu with Full Frame + Full Screen (Present hidden on single screen)', async ({ page }) => {
     const errors = await setup(page);
     await spawnBackdraft(page);
 
-    // The display is a REAL, VISIBLE 320×240 box in the rack — and it is
-    // SMALLER than the card by a wide margin (a quarter of a 1260px card),
-    // which is the whole requirement. Visibility alone would not encode that,
-    // so assert the BOX: a regression that re-inflates the display to half the
-    // card, or collapses it back to a 1px ghost, must fail here.
+    // The output surface exists but is INERT in the rack — present in the DOM
+    // (requestFullscreen needs a real element to target) and not visible.
     const canvas = page.locator('canvas[data-testid="backdraft-canvas"]');
-    await expect(canvas, 'display present in the DOM').toHaveCount(1);
-    await expect(canvas, 'display is visible in the rack').toBeVisible();
-    const wrapBox = await page
-      .locator('[data-testid="backdraft-fs-wrap"]')
-      .boundingBox();
-    expect(wrapBox, 'display has a layout box').not.toBeNull();
-    // The flow pane applies a fit-view transform, so normalise by the card's
-    // own scale before comparing to CSS px (same trick card-control-overflow
-    // uses — offsetWidth is layout px and immune to ancestor transforms).
-    const scale = await page.locator('[data-testid="backdraft-card"]').evaluate((el) => {
-      const c = el as HTMLElement;
-      return c.offsetWidth > 0 ? c.getBoundingClientRect().width / c.offsetWidth : 1;
-    });
-    expect(Math.round(wrapBox!.width / scale), 'display is 320 CSS px wide').toBeGreaterThan(316);
-    expect(Math.round(wrapBox!.width / scale), 'display is 320 CSS px wide').toBeLessThan(324);
-    expect(Math.round(wrapBox!.height / scale), 'display is 240 CSS px tall').toBeGreaterThan(236);
-    expect(Math.round(wrapBox!.height / scale), 'display is 240 CSS px tall').toBeLessThan(244);
+    await expect(canvas, 'output surface present in the DOM').toHaveCount(1);
+    await expect(canvas, 'output surface is NOT an in-rack preview').toBeHidden();
 
     await openOutputMenu(page);
     const menu = page.locator('[data-testid="video-canvas-context-menu"]');
@@ -188,30 +160,6 @@ test.describe('BACKDRAFT — full output capabilities', () => {
     expect(errors).toEqual([]);
   });
 
-  // The SECOND entry point. This gesture only exists because there is a display
-  // to right-click; it is the idiom every other video card ships, and it is
-  // strictly additional — the OUTPUT button above stays the discoverable one.
-  test('right-clicking the display opens the SAME output menu, and claims the event', async ({ page }) => {
-    const errors = await setup(page);
-    await spawnBackdraft(page);
-
-    await page.locator('[data-testid="backdraft-fs-wrap"]').click({ button: 'right' });
-
-    const menu = page.locator('[data-testid="video-canvas-context-menu"]');
-    await expect(menu, 'output menu opened from the display').toBeVisible();
-    await expect(page.locator('[data-testid="ctx-fullscreen"]'), 'Full Screen item present').toBeVisible();
-    await expect(page.locator('[data-testid="ctx-full-frame"]'), 'Full Frame item present').toBeVisible();
-
-    // stopPropagation is load-bearing: without it SvelteFlow's own node menu
-    // opens on top of this one.
-    await expect(
-      page.locator('[role="menu"][aria-label="Module actions"]'),
-      'the SvelteFlow node menu did NOT also open',
-    ).toHaveCount(0);
-
-    expect(errors).toEqual([]);
-  });
-
   test('Full Frame toggles node.data.fullFrame + hides chrome; double-click exits', async ({ page }) => {
     const errors = await setup(page);
     await spawnBackdraft(page);
@@ -219,10 +167,6 @@ test.describe('BACKDRAFT — full output capabilities', () => {
     const card = page.locator('[data-testid="backdraft-card"]');
     const canvas = page.locator('canvas[data-testid="backdraft-canvas"]');
     const wrap = page.locator('[data-testid="backdraft-fs-wrap"]');
-
-    // Baseline: the in-band display, before it is promoted.
-    const boxBefore = await wrap.boundingBox();
-    expect(boxBefore, 'display has a box before full-frame').not.toBeNull();
 
     // Enter Full Frame via the OUTPUT menu.
     await openOutputMenu(page);
@@ -235,31 +179,9 @@ test.describe('BACKDRAFT — full output capabilities', () => {
     await expect(wrap, 'wrap gained full-frame').toHaveClass(/full-frame/);
     expect(await readFullFrame(page, 'bd'), 'fullFrame persisted true').toBe(true);
 
-    // The point of full-frame: the CONTROLS are gone and the display GROWS to
-    // consume the whole card.
-    //
-    // ⚠ `toBeVisible()` alone is VACUOUS here now — the display is already
-    // visible in the rack, so it would pass with full-frame completely broken.
-    // Assert the GROWTH, and specifically that the wrap now covers the card:
-    // this is the assertion that guards the structural fact that .canvas-wrap
-    // lives inside .bd-body (a display:contents PatchPanel host generates no
-    // box) yet still resolves `position:absolute; inset:0` against .vcard. If
-    // that ever stops holding, the wrap collapses to its in-band 320×240 here.
-    await expect(canvas, 'display is showing').toBeVisible();
-    await expect
-      .poll(async () => {
-        const b = await wrap.boundingBox();
-        return b ? Math.round(b.width) : 0;
-      }, { message: 'display grew past its in-band width' })
-      .toBeGreaterThan(Math.round(boxBefore!.width) + 100);
-
-    const cardBox = await card.boundingBox();
-    const ffBox = await wrap.boundingBox();
-    expect(ffBox, 'display has a box while full-frame').not.toBeNull();
-    // Covers the card's padding box: inset by the 1px border on each edge.
-    expect(Math.abs(ffBox!.width - cardBox!.width), 'display spans the card width').toBeLessThan(6);
-    expect(Math.abs(ffBox!.height - cardBox!.height), 'display spans the card height').toBeLessThan(6);
-
+    // The point of full-frame: the CONTROLS are gone and the video surface —
+    // inert a moment ago — is now the visible card.
+    await expect(canvas, 'output surface is now showing').toBeVisible();
     await expect(
       card.locator('[data-testid="backdraft-controls"]'),
       'controls hidden while full-frame',
@@ -341,7 +263,7 @@ test.describe('BACKDRAFT — full output capabilities', () => {
 
   // RETIRED: 'corner-resize grows the card + persists node.data.width/height'.
   // The corner-drag existed to scale the in-card preview canvas. With the
-  // preview removed the card is a FIXED 5hp×3u rack tier (rack-sizes.ts) and
+  // preview removed the card is a FIXED 5hp×2u rack tier (rack-sizes.ts) and
   // there is no handle to drag and no node.data.width/height to persist —
   // rack-sizing.test.ts pins the tier and card-control-ranges.test.ts pins that
   // the card no longer reads a persisted size. card-resize.ts itself keeps its

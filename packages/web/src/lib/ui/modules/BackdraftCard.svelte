@@ -1,68 +1,39 @@
 <script lang="ts">
   // BackdraftCard — UI for BACKDRAFT (video feedback generator).
   //
-  // 7hp × 3u (1260 × 540). A CENTRED DISPLAY flanked by the switch columns,
-  // with every fader bank on ONE row underneath.
+  // A CONTROL SURFACE with an ON-DEMAND output screen.
   //
-  // ── The layout, and why it is this shape ─────────────────────────────────
-  // BACKDRAFT is a video PROCESSOR with 19 faders, six discrete switches and
-  // (with the virtual camera) a joystick section — AND it is a module whose
-  // whole point is a picture, so it needs to show one. The original card did
-  // both badly: a big thumbnail ate more than half the width and the controls
-  // were crushed into a fixed 280px column, which overflowed the card's bottom
-  // edge the moment a mode-conditional row was added.
+  // ── What changed and why ─────────────────────────────────────────────────
+  // BACKDRAFT is a video PROCESSOR with ~20 faders, mode rows and (with the
+  // virtual camera) a joystick section. The old card spent more than half its
+  // width on an always-on live thumbnail of its own output and squeezed every
+  // control into a fixed 280px column — which is what made it "a mess", and
+  // what made it overflow its own bottom edge the moment a mode-conditional
+  // row was added. So the IN-RACK PREVIEW is gone and the full card width goes
+  // to the controls, grouped into labelled banks.
   //
-  // The fix is not "drop the picture", it is WIDTH. At 7hp the card has 1230px
-  // of inner width, which is enough for a 320×240 display centred in a top
-  // band with the switch rows in equal-width flanks either side (`flex: 1 1 0`
-  // on both, so the display is centred BY CONSTRUCTION regardless of what the
-  // flanks contain), and all six fader banks on a single row beneath it.
+  // ── What did NOT go with it ──────────────────────────────────────────────
+  // Full Frame / Full Screen / Present-on-another-display are PERFORMANCE
+  // features, not preview decoration, so they stay — they simply no longer
+  // hang off a thumbnail. The output <canvas> is still here; it is just INERT
+  // (1px, invisible, not drawn) until the card is in one of those expanded
+  // modes, and it is reached from an explicit OUTPUT button instead of a
+  // right-click on a preview that no longer exists. Net effect in the rack:
+  // the card stops doing a per-frame GL readback it was only doing to paint a
+  // thumbnail, so it is CHEAPER than before, and every presentation route the
+  // old card had still works.
   //
-  // Vertical budget (sums against the hard 540 tier):
-  //     1 border + 18 .vcard pad-top + 16 title + 8 title margin + 6 body pad
-  //   + 240 top band + 10 body gap + 1 banks border + 10 banks pad
-  //   + 112 tallest fader bank + 10 body pad-bottom + 14 .vcard pad-bottom
-  //   + 1 border  =  447 of 540  →  93px slack (75px once the VIRTUAL CAMERA
-  //   bank lands — it is 18px taller than a fader bank, and it is a BANK ON
-  //   THIS ROW, not a row of its own).
+  // What genuinely went away is the CORNER-DRAG RESIZE (its whole job was
+  // scaling that thumbnail) and with it the persisted node.data.width/height.
+  // The card is a fixed 5hp × 3u rack tier (rack-sizes.ts); stale width/height
+  // on an already-saved patch are ignored rather than half-honoured. A
+  // full-framed BACKDRAFT is therefore a fixed-size video panel — for an
+  // arbitrarily-sized one, patch OUT into VIDEO OUT, which is still resizable.
   //
-  // The bank row stays `flex-wrap: wrap`: wrapping is the graceful-degradation
-  // path (never a horizontal spill past the card edge) and the height blow-up
-  // it causes is caught loudly by card-control-overflow. That is the correct
-  // failure mode — do not convert it to a fixed grid.
-  //
-  // ── ALL CONTROLS STAY REACHABLE ──────────────────────────────────────────
-  // A control that is inert IN THE MODEL is DIMMED (opacity) and explains
-  // itself in a `title` — it is never `disabled` and never `{#if}`-ed away.
-  // Both of those make the control unreachable while the gate CV path keeps
-  // writing the param, which is a real UI/CV disagreement: pure_geo_gate
-  // flips `pureGeo` under a button that refuses the click. Dimming keeps drag,
-  // dbl-click-reset, wheel and right-click MIDI-Learn all working, and it keeps
-  // the box — which is why the card's height is IDENTICAL in all three TV
-  // modes, the property card-control-overflow depends on. A dimmed bank also
-  // carries its own cure: its title hint is a button that turns TV MODE on.
-  //
-  // ── Output surface ───────────────────────────────────────────────────────
-  // ONE <canvas> serves all four presentations. In the rack it is the 320×240
-  // in-band display; Full Frame absolutely-positions the same wrap over the
-  // whole card; Full Screen makes it the fullscreen element; Present blits it
-  // to a popup on another display. Reached from the ⛶ OUTPUT button (the
-  // discoverable affordance) OR a right-click on the display itself.
-  //
-  // The card is a fixed 7hp × 3u rack tier (rack-sizes.ts) — NOT corner
-  // resizable; stale node.data.width/height on an already-saved patch are
-  // ignored rather than half-honoured. For an arbitrarily-sized panel, patch
-  // OUT into VIDEO OUT, which is still resizable.
-  //
-  // ── Cost ─────────────────────────────────────────────────────────────────
-  // The rAF loop always reflects gate-driven param changes (mirror / shape /
-  // pure-geo / TV mode flipped by a rising edge INSIDE the engine) back into
-  // the patch store so the buttons show live state — pure param reads, no GL.
-  // The BLIT is the expensive half, so in the rack it runs at 1-in-3 rAF
-  // (~20fps into a 320×240 backing store) and NOT AT ALL when the e2e harness
-  // has frozen/paused the engine or the tab is hidden — a paused engine has no
-  // new frame to present, so drawing one is pure waste. Expanded (full frame /
-  // fullscreen / presenting) it runs every frame at engine resolution.
+  // A rAF loop runs always, but in the rack it ONLY reflects gate-driven param
+  // changes (mirror / shape / pure-geo / TV mode toggled by a rising edge
+  // INSIDE the engine) back into the patch store so the buttons show live
+  // state. The blit runs only while expanded.
   //
   // Every port (2 video + 2 KEY masks + CV/gate inputs + the `out` video
   // output) lives in the yellow PatchPanel drill-down. Every Fader carries
@@ -140,6 +111,30 @@
   function setParam(paramId: string) {
     return (v: number) => setNodeParam(id, paramId, v);
   }
+
+  // ── FADER LENGTH IS DERIVED FROM THE TIER, NOT PICKED ────────────────────
+  // The rack pins this card to EXACTLY 2u = 360px (min AND max height), so any
+  // height the content does not use is dead grey on every instance. Everything
+  // above the fader banks is fixed:
+  //
+  //   49  chrome    (border 1 + .vcard pad-top 18 + title 16 + margin 8 + 6)
+  //   64  switches  (two 22px mode rows + two 10px gaps)
+  //   11  banks     (border-top 1 + padding-top 10)
+  //   25  footer    (.bd-body pad-bottom 10 + .vcard pad-bottom 14 + border 1)
+  //  ───
+  //  149  →  211px left for a bank, and a bank is
+  //          title 10 + gap 4 + [track H + 2px border + 4 gap + ~12 label]
+  //          = H + 32, so H = 179 fills the tier exactly.
+  //
+  // 176 leaves a 3px cushion for sub-pixel label metrics. The card-control-
+  // overflow gate is what actually holds this honest — if a future control row
+  // pushes past the tier it goes red rather than silently clipping.
+  //
+  // The long throw is a genuine control win too, not just space-filling: 176px
+  // spreads each param over 2.2× the pixels an 80px fader gives, which matters
+  // on a feedback module where FB and ZOOM are usably adjustable only near
+  // their top end.
+  const FADER_H = 176;
 
   // ---- MIRROR X / MIRROR Y kaleidoscope toggles ----
   // Each button flips a boolean param (mirrorX / mirrorY). A rising edge on
@@ -249,21 +244,14 @@
   });
   let edgesUnobserve: (() => void) | null = null;
 
-  // ---------------- Output surface (display + Full Frame/Screen/Present) -----
-  // ONE <canvas> is all four presentations: the in-band 320×240 display, the
-  // full-frame panel, the fullscreen surface and the Present source.
+  // ---------------- Output surface (Full Frame / Full Screen / Present) ------
+  // The <canvas> below is NOT an in-rack preview. It is INERT — 1px, invisible,
+  // never drawn — until the card enters an expanded output mode, at which point
+  // it becomes the live surface those modes present. That is the whole reason
+  // the preview could be removed WITHOUT losing the performance features that
+  // used to hang off it.
   const ENGINE_W = VIDEO_RES.width;
   const ENGINE_H = VIDEO_RES.height;
-
-  // The in-rack display box. 4:3 to match VIDEO_RES (1024×768) so the common
-  // case needs no letterbox at all; fitRect still bars a 16:9 OUTPUT correctly.
-  // Deliberately a QUARTER of the card's width — the pre-declutter preview was
-  // ~380px on a 720px card (over half of it), which is what crushed the
-  // controls. The backing store is DPR-1: the readback cost of this blit scales
-  // with it, and 640×480 would quadruple the per-frame cost for sharpness on a
-  // 2× display only.
-  const DISPLAY_W = 320;
-  const DISPLAY_H = 240;
 
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let wrapEl: HTMLDivElement | null = $state(null);
@@ -306,40 +294,29 @@
 
   // Drawing-buffer dims. Expanded: the live ENGINE dims, so fitRect fills the
   // buffer edge-to-edge and object-fit:contain height-fills the screen (side
-  // pillarbox only) — see fullscreen-canvas-dims.ts. In the rack: exactly the
-  // display's CSS box, so the per-frame drawImage readback is ~10× cheaper than
-  // an engine-resolution one.
+  // pillarbox only) — see fullscreen-canvas-dims.ts. Idle: the smallest legal
+  // buffer, because nothing is drawn into it.
   let bufferDims = $derived(
     fullscreenCanvasDims(
       expanded,
       { canvas: { width: engineW, height: engineH } },
-      { width: DISPLAY_W, height: DISPLAY_H },
+      { width: 2, height: 2 },
     ),
   );
 
-  // The output menu (Full Frame / Full Screen / Present). TWO entry points, on
-  // purpose: the ⛶ OUTPUT button is the DISCOVERABLE one (the old right-click-
-  // the-thumbnail gesture was undiscoverable), and now that there is a display
-  // again, right-clicking it is the fast one every other video card offers.
+  // The output menu (Full Frame / Full Screen / Present), opened from the
+  // OUTPUT button. The old card opened this by right-clicking the preview;
+  // with no preview to right-click it needs an explicit affordance, and a
+  // button is also discoverable in a way the hidden right-click never was.
   let ctxOpen = $state(false);
   let ctxX = $state(0);
   let ctxY = $state(0);
-  /** From the OUTPUT button — anchor the menu under the button. */
   function openOutputMenu(e: MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     ctxX = r.left;
     ctxY = r.bottom + 2;
-    ctxOpen = true;
-  }
-  /** From a right-click on the display — anchor at the pointer. stopPropagation
-   *  is load-bearing: without it SvelteFlow's own node menu opens as well. */
-  function openOutputMenuAt(e: MouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    ctxX = e.clientX;
-    ctxY = e.clientY;
     ctxOpen = true;
   }
 
@@ -357,40 +334,15 @@
     return { x: 0, y: Math.round((ch - h) / 2), w, h };
   }
 
-  // ---------------- rAF: gate reflection always, blit rate-limited -----------
+  // ---------------- rAF: gate reflection always, blit only when expanded -----
   // A rising edge on a mirror / shape / pure-geo / tv gate flips the param
   // INSIDE the engine instance. Mirror that live value back into the patch
   // store so the toggle persists + syncs to collaborators + the button shows
   // it. That runs every frame and is pure param reads — no GL readback.
   //
-  // The BLIT is the expensive half (a GL pass into the engine's drawing buffer
-  // plus a drawImage readback), so it is metered:
-  //   * EXPANDED (full frame / fullscreen / presenting) — every frame, engine
-  //     resolution. This is the performance path; it must not stutter.
-  //   * IN THE RACK — 1-in-3 frames (~20fps) into the 320×240 store. A preview
-  //     does not need 60Hz, and this card can appear many times in a rack.
-  //   * FROZEN OR HIDDEN — not at all.
+  // The blit (which IS a readback, and which used to run unconditionally to
+  // paint the in-rack thumbnail) now runs ONLY while the card is expanded.
   let rafId: number | null = null;
-  let blitPhase = 0;
-  /** In-rack blit divisor. 3 → ~20fps, which reads as smooth for a preview. */
-  const RACK_BLIT_EVERY = 3;
-
-  /** True while the e2e harness owns the frame clock (`__videoEnginePause`, set
-   *  by the step-driven specs) or has suppressed drawing entirely
-   *  (`__videoEngineFreezeRender`, set by the per-port + overflow sweeps).
-   *
-   *  Presenting a frame the engine did not produce is waste, not coverage —
-   *  under SwiftShader (~7.9fps on this module) a 60Hz readback on top of a
-   *  paused engine is pure shard contention. Same predicate the render worker
-   *  bridge already uses (worker-bridge.ts). Default-undefined → zero
-   *  production effect. */
-  function harnessFrozen(): boolean {
-    const g = globalThis as unknown as {
-      __videoEngineFreezeRender?: unknown;
-      __videoEnginePause?: unknown;
-    };
-    return g.__videoEngineFreezeRender === true || g.__videoEnginePause === true;
-  }
 
   function tick() {
     rafId = null;
@@ -406,11 +358,7 @@
       const eh = videoEngine.canvas.height || ENGINE_H;
       if (ew !== engineW) engineW = ew;
       if (eh !== engineH) engineH = eh;
-      blitPhase = (blitPhase + 1) % RACK_BLIT_EVERY;
-      const shouldBlit = expanded
-        ? true
-        : blitPhase === 0 && !harnessFrozen() && !document.hidden;
-      if (shouldBlit) drawOutput(videoEngine);
+      if (expanded) drawOutput(videoEngine);
     }
     try { syncFromEngine(e, node); } catch { /* defensive — never kill the loop */ }
     rafId = requestAnimationFrame(tick);
@@ -540,126 +488,98 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={300}>
     <div class="bd-body">
-      <!-- ── TOP BAND: display centred, switch columns flanking ─────────────
-           Both flanks are `flex: 1 1 0`, so they are EQUAL by construction and
-           the display is genuinely centred on the card no matter how the
-           switch labels grow (SHAPE: PENTAGON, TV: CRITICAL). -->
-      <div class="top-band">
-        <div class="switch-col left">
-          <div class="btn-group" data-testid="backdraft-mirror-row">
-            <button
-              type="button"
-              class="mirror-btn nodrag"
-              class:on={mirrorXOn}
-              data-testid="backdraft-mirror-x"
-              title="MIRROR X — fold the left half over the right (kaleidoscope)"
-              onclick={toggleMirror('mirrorX')}
-            >MIRROR X</button>
-            <button
-              type="button"
-              class="mirror-btn nodrag"
-              class:on={mirrorYOn}
-              data-testid="backdraft-mirror-y"
-              title="MIRROR Y — fold the top half over the bottom (kaleidoscope)"
-              onclick={toggleMirror('mirrorY')}
-            >MIRROR Y</button>
-          </div>
-
-          <div class="btn-group" data-testid="backdraft-shape-row">
-            <button
-              type="button"
-              class="mirror-btn nodrag wide"
-              class:on={shapeIdx > 0}
-              data-testid="backdraft-shape"
-              title="SHAPE — cycle the geometry mask (square = full frame, then circle / pentagon / triangle / octagon)"
-              onclick={cycleShape}
-            >SHAPE: {shapeName.toUpperCase()}</button>
-            <button
-              type="button"
-              class="mirror-btn nodrag"
-              class:on={pureGeoOn && !tvOn}
-              class:inert={tvOn}
-              data-testid="backdraft-pure-geo"
-              title={tvOn
-                ? 'PURE GEO is ignored in PURE TV / CRITICAL — SHAPE means exactly one thing there: the screen’s outline. Still live: set it here and it takes effect the moment TV MODE cycles back to OFF.'
-                : 'PURE GEO — masking space. ON: fixed shape in screen space (cuts content outside at all zooms). OFF: shape in the zoomed feedback space (scales with Zoom, spills through the tunnel).'}
-              onclick={togglePureGeo}
-            >PURE GEO</button>
-          </div>
-        </div>
-
-        <!-- ── THE DISPLAY ─────────────────────────────────────────────────────
-             320×240, centred in the band, directly under the title. The SAME
-             element is the full-frame / fullscreen / Present surface — see the
-             .canvas-wrap rules for how it changes position in each mode.
-             Right-click opens the OUTPUT menu at the pointer. -->
-        <div
-          bind:this={wrapEl}
-          class="canvas-wrap"
-          class:fullscreen={fs.isFullscreen}
-          class:full-frame={fullFrame}
-          data-testid="backdraft-fs-wrap"
-          oncontextmenu={openOutputMenuAt}
-          role="presentation"
-        >
-          <canvas
-            bind:this={canvasEl}
-            width={bufferDims.width}
-            height={bufferDims.height}
-            style="aspect-ratio: {bufferDims.aspectRatio};"
-            data-testid="backdraft-canvas"
-            data-node-id={id}
-          ></canvas>
-        </div>
-
-        <div class="switch-col right">
-          <div class="btn-group tv-group" data-testid="backdraft-tv-row">
-            <button
-              type="button"
-              class="mirror-btn nodrag wide"
-              class:on={tvOn}
-              data-testid="backdraft-tv-mode"
-              title={tvModeIdx === 0
-                ? 'TV MODE OFF — the classic infinite-plane feedback composite. The exact pre-PURE-TV behaviour.'
-                : tvModeIdx === 1
-                  ? 'PURE TV — a bounded SCREEN instead of an infinite plane. The previous frame is drawn whole inside a bezelled TV; OUTSIDE it is your live input, so IN THIS MODE YOUR INPUT IS THE ROOM, NOT THE PICTURE. The view nests one level per pass and converges to a STILL image.'
-                  : 'CRITICAL — PURE TV plus the camera’s AUTO-EXPOSURE servo. The servo integrates, so it overshoots: past DRIVE 0.5 the picture blooms toward white, gets hauled back, and each correction rides inward through the nest one level per DELAY. This is the mode for riding the edge of white-out; back DRIVE off and it always recovers.'}
-              onclick={cycleTvMode}
-            >TV: {BACKDRAFT_TV_MODE_LABELS[tvModeIdx]}</button>
-            {#if tvOn}
-              <span class="tv-readout" data-testid="backdraft-tv-readout">
-                fill {(tvFill * 100).toFixed(0)}% · ≈{tvDepth.resolved} bands
-                {#if tvCritical} · Λ-servo {tvRate.toFixed(1)}/f {tvRiding ? '· RIDING' : '· steady'}{/if}
-              </span>
-            {/if}
-          </div>
-
-          <div class="btn-group" data-testid="backdraft-flicker-row">
-            <span class="row-label">FLICKER</span>
-            {#each FLICKERS as f (f.v)}
-              <button
-                type="button"
-                class="mirror-btn nodrag seg"
-                class:on={flickerIdx === f.v}
-                data-testid={`backdraft-flicker-${f.key}`}
-                title={f.title}
-                onclick={() => pickFlicker(f.v)}
-              >{f.label}</button>
-            {/each}
-          </div>
-
-          <!-- OUTPUT — BIGGER than the in-band display. The discoverable twin of
-               right-clicking the display: Full Frame (the card becomes a video
-               panel in the rack), Full Screen, and Present on another display. -->
+      <!-- ── MODE rows: the discrete switches, across the top ────────────── -->
+      <div class="mode-row">
+        <div class="btn-group" data-testid="backdraft-mirror-row">
           <button
             type="button"
-            class="mirror-btn nodrag out-btn"
-            class:on={expanded}
-            data-testid="backdraft-output-menu"
-            title="OUTPUT — show BACKDRAFT's picture bigger than the card display: Full Frame (the card becomes a video panel in the rack), Full Screen, or Present on another display. Right-clicking the display opens this same menu. For an arbitrarily-sized monitor, patch OUT into VIDEO OUT."
-            onclick={openOutputMenu}
-          >⛶ OUTPUT</button>
+            class="mirror-btn nodrag"
+            class:on={mirrorXOn}
+            data-testid="backdraft-mirror-x"
+            title="MIRROR X — fold the left half over the right (kaleidoscope)"
+            onclick={toggleMirror('mirrorX')}
+          >MIRROR X</button>
+          <button
+            type="button"
+            class="mirror-btn nodrag"
+            class:on={mirrorYOn}
+            data-testid="backdraft-mirror-y"
+            title="MIRROR Y — fold the top half over the bottom (kaleidoscope)"
+            onclick={toggleMirror('mirrorY')}
+          >MIRROR Y</button>
         </div>
+
+        <div class="btn-group" data-testid="backdraft-shape-row">
+          <button
+            type="button"
+            class="mirror-btn nodrag wide"
+            class:on={shapeIdx > 0}
+            data-testid="backdraft-shape"
+            title="SHAPE — cycle the geometry mask (square = full frame, then circle / pentagon / triangle / octagon)"
+            onclick={cycleShape}
+          >SHAPE: {shapeName.toUpperCase()}</button>
+          <button
+            type="button"
+            class="mirror-btn nodrag"
+            class:on={pureGeoOn && !tvOn}
+            class:inert={tvOn}
+            data-testid="backdraft-pure-geo"
+            title={tvOn
+              ? 'PURE GEO is ignored in PURE TV / CRITICAL — SHAPE means exactly one thing there: the screen’s outline. Still live: set it here and it takes effect the moment TV MODE cycles back to OFF.'
+              : 'PURE GEO — masking space. ON: fixed shape in screen space (cuts content outside at all zooms). OFF: shape in the zoomed feedback space (scales with Zoom, spills through the tunnel).'}
+            onclick={togglePureGeo}
+          >PURE GEO</button>
+        </div>
+
+        <div class="btn-group tv-group" data-testid="backdraft-tv-row">
+          <button
+            type="button"
+            class="mirror-btn nodrag wide"
+            class:on={tvOn}
+            data-testid="backdraft-tv-mode"
+            title={tvModeIdx === 0
+              ? 'TV MODE OFF — the classic infinite-plane feedback composite. The exact pre-PURE-TV behaviour.'
+              : tvModeIdx === 1
+                ? 'PURE TV — a bounded SCREEN instead of an infinite plane. The previous frame is drawn whole inside a bezelled TV; OUTSIDE it is your live input, so IN THIS MODE YOUR INPUT IS THE ROOM, NOT THE PICTURE. The view nests one level per pass and converges to a STILL image.'
+                : 'CRITICAL — PURE TV plus the camera’s AUTO-EXPOSURE servo. The servo integrates, so it overshoots: past DRIVE 0.5 the picture blooms toward white, gets hauled back, and each correction rides inward through the nest one level per DELAY. This is the mode for riding the edge of white-out; back DRIVE off and it always recovers.'}
+            onclick={cycleTvMode}
+          >TV: {BACKDRAFT_TV_MODE_LABELS[tvModeIdx]}</button>
+          {#if tvOn}
+            <span class="tv-readout" data-testid="backdraft-tv-readout">
+              fill {(tvFill * 100).toFixed(0)}% · ≈{tvDepth.resolved} bands
+              {#if tvCritical} · Λ-servo {tvRate.toFixed(1)}/f {tvRiding ? '· RIDING' : '· steady'}{/if}
+            </span>
+          {/if}
+        </div>
+      </div>
+
+      <div class="mode-row">
+        <div class="btn-group" data-testid="backdraft-flicker-row">
+          <span class="row-label">FLICKER</span>
+          {#each FLICKERS as f (f.v)}
+            <button
+              type="button"
+              class="mirror-btn nodrag seg"
+              class:on={flickerIdx === f.v}
+              data-testid={`backdraft-flicker-${f.key}`}
+              title={f.title}
+              onclick={() => pickFlicker(f.v)}
+            >{f.label}</button>
+          {/each}
+        </div>
+
+        <!-- OUTPUT — the presentation surface. Opens the same menu the old
+             card hid behind a right-click on its preview thumbnail: Full Frame
+             (card becomes a video panel in the rack), Full Screen, and Present
+             on another display. -->
+        <button
+          type="button"
+          class="mirror-btn nodrag out-btn"
+          class:on={expanded}
+          data-testid="backdraft-output-menu"
+          title="OUTPUT — show BACKDRAFT's picture: Full Frame (the card becomes a video panel in the rack), Full Screen, or Present on another display. For an arbitrarily-sized monitor, patch OUT into VIDEO OUT."
+          onclick={openOutputMenu}
+        >⛶ OUTPUT</button>
       </div>
 
       <!-- ── FADER BANKS ────────────────────────────────────────────────────
@@ -675,10 +595,10 @@
           <section class="bank">
             <h4 class="bank-title">LOOP</h4>
             <div class="bank-faders">
-              <Fader value={p('mix')}      min={pmin('mix')}      max={pmax('mix')}      defaultValue={pdef('mix')}      label="Mix" curve="linear" onchange={setParam('mix')}      moduleId={id} paramId="mix" />
-              <Fader value={p('feedback')} min={pmin('feedback')} max={pmax('feedback')} defaultValue={pdef('feedback')} label="FB"  curve="linear" onchange={setParam('feedback')} moduleId={id} paramId="feedback" />
+              <Fader value={p('mix')}      min={pmin('mix')}      max={pmax('mix')}      defaultValue={pdef('mix')}      label="Mix" curve="linear" onchange={setParam('mix')}      moduleId={id} paramId="mix" trackHeight={FADER_H} />
+              <Fader value={p('feedback')} min={pmin('feedback')} max={pmax('feedback')} defaultValue={pdef('feedback')} label="FB"  curve="linear" onchange={setParam('feedback')} moduleId={id} paramId="feedback" trackHeight={FADER_H} />
               <div class="delay-cell" class:clk-driven={clockPatched}>
-                <Fader value={p('delay')} min={pmin('delay')} max={pmax('delay')} units="ms" defaultValue={pdef('delay')} label={clockPatched ? 'Dly·CLK' : 'Delay'} curve="linear" onchange={setParam('delay')} moduleId={id} paramId="delay" />
+                <Fader value={p('delay')} min={pmin('delay')} max={pmax('delay')} units="ms" defaultValue={pdef('delay')} label={clockPatched ? 'Dly·CLK' : 'Delay'} curve="linear" onchange={setParam('delay')} moduleId={id} paramId="delay" trackHeight={FADER_H} />
                 {#if clockPatched}<span class="clk-badge" data-testid="backdraft-clk-badge" title="DELAY CLOCK is driving the feedback delay (knob overridden)">CLK</span>{/if}
               </div>
             </div>
@@ -687,40 +607,37 @@
           <section class="bank">
             <h4 class="bank-title">COLOUR</h4>
             <div class="bank-faders">
-              <Fader value={p('luma')}   min={pmin('luma')}   max={pmax('luma')}   defaultValue={pdef('luma')}   label="Luma" curve="linear" onchange={setParam('luma')}   moduleId={id} paramId="luma" />
-              <Fader value={p('chroma')} min={pmin('chroma')} max={pmax('chroma')} defaultValue={pdef('chroma')} label="Chr"  curve="linear" onchange={setParam('chroma')} moduleId={id} paramId="chroma" />
-              <Fader value={p('r')}      min={pmin('r')}      max={pmax('r')}      defaultValue={pdef('r')}      label="R"    curve="linear" onchange={setParam('r')}      moduleId={id} paramId="r" />
-              <Fader value={p('g')}      min={pmin('g')}      max={pmax('g')}      defaultValue={pdef('g')}      label="G"    curve="linear" onchange={setParam('g')}      moduleId={id} paramId="g" />
-              <Fader value={p('b')}      min={pmin('b')}      max={pmax('b')}      defaultValue={pdef('b')}      label="B"    curve="linear" onchange={setParam('b')}      moduleId={id} paramId="b" />
+              <Fader value={p('luma')}   min={pmin('luma')}   max={pmax('luma')}   defaultValue={pdef('luma')}   label="Luma" curve="linear" onchange={setParam('luma')}   moduleId={id} paramId="luma" trackHeight={FADER_H} />
+              <Fader value={p('chroma')} min={pmin('chroma')} max={pmax('chroma')} defaultValue={pdef('chroma')} label="Chr"  curve="linear" onchange={setParam('chroma')} moduleId={id} paramId="chroma" trackHeight={FADER_H} />
+              <Fader value={p('r')}      min={pmin('r')}      max={pmax('r')}      defaultValue={pdef('r')}      label="R"    curve="linear" onchange={setParam('r')}      moduleId={id} paramId="r" trackHeight={FADER_H} />
+              <Fader value={p('g')}      min={pmin('g')}      max={pmax('g')}      defaultValue={pdef('g')}      label="G"    curve="linear" onchange={setParam('g')}      moduleId={id} paramId="g" trackHeight={FADER_H} />
+              <Fader value={p('b')}      min={pmin('b')}      max={pmax('b')}      defaultValue={pdef('b')}      label="B"    curve="linear" onchange={setParam('b')}      moduleId={id} paramId="b" trackHeight={FADER_H} />
             </div>
           </section>
 
           <section class="bank">
             <h4 class="bank-title">KEY</h4>
             <div class="bank-faders">
-              <Fader value={p('lighten')} min={pmin('lighten')} max={pmax('lighten')} defaultValue={pdef('lighten')} label="Lgt" curve="linear" onchange={setParam('lighten')} moduleId={id} paramId="lighten" />
-              <Fader value={p('darken')}  min={pmin('darken')}  max={pmax('darken')}  defaultValue={pdef('darken')}  label="Drk" curve="linear" onchange={setParam('darken')}  moduleId={id} paramId="darken" />
+              <Fader value={p('lighten')} min={pmin('lighten')} max={pmax('lighten')} defaultValue={pdef('lighten')} label="Lgt" curve="linear" onchange={setParam('lighten')} moduleId={id} paramId="lighten" trackHeight={FADER_H} />
+              <Fader value={p('darken')}  min={pmin('darken')}  max={pmax('darken')}  defaultValue={pdef('darken')}  label="Drk" curve="linear" onchange={setParam('darken')}  moduleId={id} paramId="darken" trackHeight={FADER_H} />
             </div>
           </section>
 
           <section class="bank">
             <h4 class="bank-title">GEOMETRY</h4>
             <div class="bank-faders">
-              <Fader value={p('zoom')}     min={pmin('zoom')}     max={pmax('zoom')}     defaultValue={pdef('zoom')}     label="Zoom" curve="linear" onchange={setParam('zoom')}     moduleId={id} paramId="zoom" />
-              <Fader value={p('rotate')}   min={pmin('rotate')}   max={pmax('rotate')}   units="°" defaultValue={pdef('rotate')} label="Rot" curve="linear" onchange={setParam('rotate')} moduleId={id} paramId="rotate" />
-              <Fader value={p('offsetX')}  min={pmin('offsetX')}  max={pmax('offsetX')}  defaultValue={pdef('offsetX')}  label="OffX" curve="linear" onchange={setParam('offsetX')}  moduleId={id} paramId="offsetX" />
-              <Fader value={p('offsetY')}  min={pmin('offsetY')}  max={pmax('offsetY')}  defaultValue={pdef('offsetY')}  label="OffY" curve="linear" onchange={setParam('offsetY')}  moduleId={id} paramId="offsetY" />
-              <Fader value={p('pixelate')} min={pmin('pixelate')} max={pmax('pixelate')} defaultValue={pdef('pixelate')} label="Pix"  curve="linear" onchange={setParam('pixelate')} moduleId={id} paramId="pixelate" />
+              <Fader value={p('zoom')}     min={pmin('zoom')}     max={pmax('zoom')}     defaultValue={pdef('zoom')}     label="Zoom" curve="linear" onchange={setParam('zoom')}     moduleId={id} paramId="zoom" trackHeight={FADER_H} />
+              <Fader value={p('rotate')}   min={pmin('rotate')}   max={pmax('rotate')}   units="°" defaultValue={pdef('rotate')} label="Rot" curve="linear" onchange={setParam('rotate')} moduleId={id} paramId="rotate" trackHeight={FADER_H} />
+              <Fader value={p('offsetX')}  min={pmin('offsetX')}  max={pmax('offsetX')}  defaultValue={pdef('offsetX')}  label="OffX" curve="linear" onchange={setParam('offsetX')}  moduleId={id} paramId="offsetX" trackHeight={FADER_H} />
+              <Fader value={p('offsetY')}  min={pmin('offsetY')}  max={pmax('offsetY')}  defaultValue={pdef('offsetY')}  label="OffY" curve="linear" onchange={setParam('offsetY')}  moduleId={id} paramId="offsetY" trackHeight={FADER_H} />
+              <Fader value={p('pixelate')} min={pmin('pixelate')} max={pmax('pixelate')} defaultValue={pdef('pixelate')} label="Pix"  curve="linear" onchange={setParam('pixelate')} moduleId={id} paramId="pixelate" trackHeight={FADER_H} />
             </div>
           </section>
 
           <!-- The bounded-SCREEN model. These four only DO anything in PURE TV
                / CRITICAL, so the bank dims when TV MODE is OFF — the same
-               "grey it, don't hide it" rule PURE GEO already follows. The
-               faders stay fully interactive (draggable, dbl-click-resettable,
-               MIDI-learnable) and keep their box, which is what makes the
-               card's height identical in all three modes. When it IS dimmed the
-               title hint becomes the cure: a button that turns TV MODE on. -->
+               "grey it, don't hide it" rule PURE GEO already follows, and it
+               keeps the card's height identical in all three modes. -->
           <section class="bank tv-bank" class:dim={!tvOn}>
             <h4 class="bank-title">
               TV SCREEN
@@ -742,16 +659,37 @@
                 ? 'The bounded-screen model: ROOM is the light in the room the TV stands in, BEZEL the screen’s border width, PHOSPHOR the display’s glow/persistence, DRIVE the auto-exposure servo (CRITICAL).'
                 : 'ROOM / BEZEL / PHOSPHOR / DRIVE only act in PURE TV or CRITICAL — cycle TV MODE to bring the bounded screen in.'}
             >
-              <Fader value={p('room')}     min={pmin('room')}     max={pmax('room')}     defaultValue={pdef('room')}     label="Room"  curve="linear" onchange={setParam('room')}     moduleId={id} paramId="room" />
-              <Fader value={p('bezel')}    min={pmin('bezel')}    max={pmax('bezel')}    defaultValue={pdef('bezel')}    label="Bez"   curve="linear" onchange={setParam('bezel')}    moduleId={id} paramId="bezel" />
-              <Fader value={p('phosphor')} min={pmin('phosphor')} max={pmax('phosphor')} defaultValue={pdef('phosphor')} label="Phos"  curve="linear" onchange={setParam('phosphor')} moduleId={id} paramId="phosphor" />
-              <Fader value={p('drive')}    min={pmin('drive')}    max={pmax('drive')}    defaultValue={pdef('drive')}    label="Drive" curve="linear" onchange={setParam('drive')}    moduleId={id} paramId="drive" />
+              <Fader value={p('room')}     min={pmin('room')}     max={pmax('room')}     defaultValue={pdef('room')}     label="Room"  curve="linear" onchange={setParam('room')}     moduleId={id} paramId="room" trackHeight={FADER_H} />
+              <Fader value={p('bezel')}    min={pmin('bezel')}    max={pmax('bezel')}    defaultValue={pdef('bezel')}    label="Bez"   curve="linear" onchange={setParam('bezel')}    moduleId={id} paramId="bezel" trackHeight={FADER_H} />
+              <Fader value={p('phosphor')} min={pmin('phosphor')} max={pmax('phosphor')} defaultValue={pdef('phosphor')} label="Phos"  curve="linear" onchange={setParam('phosphor')} moduleId={id} paramId="phosphor" trackHeight={FADER_H} />
+              <Fader value={p('drive')}    min={pmin('drive')}    max={pmax('drive')}    defaultValue={pdef('drive')}    label="Drive" curve="linear" onchange={setParam('drive')}    moduleId={id} paramId="drive" trackHeight={FADER_H} />
             </div>
           </section>
         </div>
       </div>
     </div>
   </PatchPanel>
+
+  <!-- OUTPUT SURFACE — inert in the rack (1px, invisible, not drawn), the live
+       picture in Full Frame / Full Screen / Present. Kept OUTSIDE the
+       PatchPanel slot so full-frame can simply cover the card with it, with no
+       display:contents gymnastics on the panel host. -->
+  <div
+    bind:this={wrapEl}
+    class="canvas-wrap"
+    class:fullscreen={fs.isFullscreen}
+    class:full-frame={fullFrame}
+    data-testid="backdraft-fs-wrap"
+  >
+    <canvas
+      bind:this={canvasEl}
+      width={bufferDims.width}
+      height={bufferDims.height}
+      style="aspect-ratio: {bufferDims.aspectRatio};"
+      data-testid="backdraft-canvas"
+      data-node-id={id}
+    ></canvas>
+  </div>
 </div>
 
 <VideoCanvasContextMenu
@@ -772,51 +710,60 @@
 />
 
 <style>
-  /* FIXED 7hp × 3u (1260×540). The rack/dock wrappers pin the exact tier
+  /* FIXED 5hp × 2u (900×360). The rack/dock wrappers pin the exact tier
    * (rack-sizes.ts → --rack-hp/--rack-u, specificity 0,3,0); this scoped rule
-   * (0,2,0) is the fallback for a bare plain-mount. The card is NOT corner-
-   * resizable: 3u = 540 is the tier, and a resize handle would fight the hard
-   * max-height in _module-card.css and resurrect node.data.width/height as a
-   * competing source of truth. */
+   * (0,2,0) is the fallback for a bare plain-mount. The card is NO LONGER
+   * corner-resizable — the resize existed to scale the preview canvas that no
+   * longer exists.
+   *
+   * WHY 2u AND NOT 3u: the rack pins height to EXACTLY u × 180 (min AND max),
+   * so any tier taller than the content is DEAD GREY SPACE on every instance of
+   * the card. The content measures ~261 px — two switch rows over one bank row,
+   * plus chrome — which does not fit 1u (180) and leaves ~280 px empty at 3u.
+   * 2u is the smallest tier it fits. That is the whole reason this card is 2u:
+   * pick the tier from the MEASURED content, never round up "for headroom",
+   * because headroom in a pinned tier is not headroom, it is a hole. */
   .card {
-    width: 1260px;
-    min-height: 540px;
+    width: 900px;
+    min-height: 360px;
     overflow: hidden;
+    /* Flex column so .bd-body can CLAIM the leftover tier height (below).
+     * .stripe is absolute and the patch-triggers are absolute, so the only
+     * flex items are the title and .bd-body. */
+    display: flex;
+    flex-direction: column;
   }
+  /* The content measures ~237px against a 360px tier, and the tier is quantized
+   * to 180px steps — 1u cannot hold it (the floor is ~197 with the switch rows),
+   * so ~120px of slack is STRUCTURAL, not a layout mistake. Rather than pool it
+   * in one dead grey block under the faders, .bd-body claims the full height and
+   * distributes it: switches pinned to the top, fader banks pinned to the
+   * BOTTOM edge, and the slack becomes the gap across the .banks divider — which
+   * is exactly the switch-section / fader-section split a hardware panel has.
+   * `flex: 1` + `margin-top: auto` does it with NO magic number, so it stays
+   * correct if the tier or the control set changes. */
   .bd-body {
     padding: 6px 14px 10px;
     display: flex;
     flex-direction: column;
     gap: 10px;
+    flex: 1;
+    min-height: 0;
   }
 
-  /* ── Top band: [switches] [DISPLAY] [switches] ──────────────────────────
-   * `flex: 1 1 0` on BOTH flanks makes them equal-width by construction, so
-   * the display is centred on the card regardless of the switch label lengths.
-   * The band's height is the display's (240) — the flanks are shorter. */
-  .top-band {
+  /* ── Mode rows ── */
+  .mode-row {
     display: flex;
-    align-items: flex-start;
-    gap: 24px;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 14px;
   }
-  .switch-col {
-    flex: 1 1 0;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .switch-col.left { align-items: flex-start; }
-  /* Right-align the right flank so the band reads symmetric about the display. */
-  .switch-col.right { align-items: flex-end; }
   .btn-group {
     display: flex;
     gap: 6px;
     align-items: center;
     min-width: 0;
-    flex-wrap: wrap;
   }
-  .switch-col.right .btn-group { justify-content: flex-end; }
   .mirror-btn {
     flex: 0 0 auto;
     background: var(--module-bg);
@@ -840,11 +787,8 @@
   }
   .mirror-btn:hover { border-color: var(--accent-dim); }
   /* PURE GEO is IGNORED in PURE TV / CRITICAL (SHAPE means exactly one thing
-     there: the screen's outline), so the button is greyed rather than hidden or
-     disabled — the state stays legible AND the control stays clickable, so you
-     can pre-set it before cycling TV MODE back to OFF. (It was `disabled` once:
-     that made the button refuse a click while pure_geo_gate went on flipping
-     the very same param from a cable — a UI/CV disagreement.) */
+     there: the screen's outline), so the button is greyed rather than hidden —
+     the state stays legible instead of the control silently vanishing. */
   .mirror-btn.inert {
     opacity: 0.35;
   }
@@ -865,10 +809,10 @@
     letter-spacing: 0.09em;
     font-family: ui-monospace, monospace;
   }
-  /* OUTPUT sits at the bottom of the right flank, away from the parameter
-     switches — it changes how the card is DISPLAYED, not what it does to the
-     signal. Video-cable border so it reads as an output affordance. */
+  /* OUTPUT sits at the far end of its row, away from the parameter switches —
+     it changes how the card is DISPLAYED, not what it does to the signal. */
   .out-btn {
+    margin-left: auto;
     border-color: var(--cable-video);
     color: var(--text);
   }
@@ -889,23 +833,13 @@
     border-top: 1px solid var(--border);
     padding-top: 10px;
   }
-  /* All the banks sit on ONE line: 722px measured of the 1230px inner width at
-   * 7hp, so there is ~508px of slack (still ~280px once the VIRTUAL CAMERA bank
-   * lands at ~198 + a 30 gap). CENTRED, to sit under the centred display rather
-   * than clustering in the left third of a 1260px card.
-   *
-   * It is flex-WRAP, not a fixed grid, on purpose: a narrower host reflows the
-   * banks onto a second line instead of running them off the card edge. That is
-   * the graceful-degradation path, and the height blow-up it would cause is
-   * caught loudly by card-control-overflow — the correct failure mode.
-   *
-   * `align-items: flex-start` top-aligns the fader banks against the taller
-   * VIRTUAL CAMERA bank (XyPad wrap is 18px taller than a fader). */
+  /* All five banks sit on ONE line at the 5hp tier (~830px of the 872px inner
+   * width). It is flex-WRAP, not a fixed grid, so a narrower host reflows the
+   * banks onto a second line instead of running them off the card edge. */
   .bank-row {
     display: flex;
     flex-wrap: wrap;
     align-items: flex-start;
-    justify-content: center;
     gap: 14px 30px;
   }
   .bank {
@@ -980,24 +914,27 @@
   }
 
   /* ── Output surface ─────────────────────────────────────────────────────
-   * IN THE RACK: the DISPLAY — a real 320×240 in-flow box in the top band.
-   * `position: relative` (NOT absolute) is load-bearing twice over: it keeps
-   * the box in normal flow so the band centres it, and card-control-overflow
-   * SKIPS absolutely-positioned elements when it measures, so an absolute
-   * display would be invisible to the gate that guards the card's edges.
-   * `flex: 0 0 auto` so the flanks flex around it and it never shrinks. */
+   * IDLE (the rack default): 1px, transparent, non-interactive, and NOT drawn
+   * into (the rAF blit is gated on `expanded`). It stays in the DOM rather
+   * than behind an {#if} because requestFullscreen() needs a real element to
+   * target at the moment the menu item is clicked, and `display: none` cannot
+   * be fullscreened. 1px + opacity 0 keeps it costless and invisible while
+   * remaining a legal fullscreen target. */
   .canvas-wrap {
-    position: relative;
-    flex: 0 0 auto;
-    width: 320px;
-    height: 240px;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1px;
+    height: 1px;
+    /* visibility (not just opacity) so it is genuinely hidden — an opacity-0
+     * box still counts as VISIBLE to assertions and to hit-testing, which
+     * would let "no in-rack preview" pass while a preview was still there. */
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
     overflow: hidden;
     line-height: 0;
     background: #050608;
-    border: 1px solid var(--border);
-    border-radius: 2px;
-    box-sizing: border-box;
-    cursor: context-menu;
   }
   .canvas-wrap canvas {
     display: block;
@@ -1008,23 +945,14 @@
   }
   /* FULL FRAME (in-app): the surface consumes the whole card — a video panel
    * in the rack ("wall of TVs"). The card keeps its position + tier; the
-   * chrome is hidden and a double-click exits.
-   *
-   * `position: absolute` is REQUIRED here now that the base rule is `relative`.
-   * It resolves against `.vcard` (the only positioned ancestor): the wrap sits
-   * inside `.top-band` → `.bd-body` → `.patch-panel-host`, and all three are
-   * unpositioned — the host is `display: contents`, so it generates no box and
-   * cannot be a containing block at all. (PatchPanel's own `.patch-trigger` is
-   * absolutely positioned from inside that same host and anchors to the card
-   * corners, which is this rule's live proof.) `inset: 0` therefore covers the
-   * card's padding box, edge to edge. */
+   * chrome is hidden and a double-click exits. */
   .canvas-wrap.full-frame {
-    position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
-    border: none;
-    border-radius: 0;
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
     background: #000;
     cursor: pointer;
     z-index: 4;
@@ -1038,8 +966,9 @@
     inset: 0;
     width: 100%;
     height: 100%;
-    border: none;
-    border-radius: 0;
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
     background: #000;
     z-index: 4;
   }
@@ -1050,25 +979,11 @@
     object-fit: contain;
     cursor: pointer;
   }
-  /* Card chrome while full-frame: hide everything but the video.
-   *
-   * NOTE the shape of this rule. `.bd-body` can NO LONGER be hidden wholesale —
-   * the display lives inside it now, so `display: none` on the body would take
-   * the video with it and full-frame would render an empty black card. Hide the
-   * body's CONTENTS instead (the switch flanks + the bank row) and collapse its
-   * own padding/gap to zero, leaving the absolutely-positioned .canvas-wrap as
-   * the only thing left. `.banks` is what backdraft-full-output asserts hidden
-   * (data-testid="backdraft-controls"). */
+  /* Card chrome while full-frame: hide everything but the video. */
   .card.full-frame :global(.title),
   .card.full-frame .stripe,
-  .card.full-frame .banks,
-  .card.full-frame .switch-col {
+  .card.full-frame .bd-body {
     display: none;
-  }
-  .card.full-frame .bd-body,
-  .card.full-frame .top-band {
-    padding: 0;
-    gap: 0;
   }
   /* Hide the card's OWN Svelte Flow jacks + patch-panel triggers while
    * full-frame — keep the handles in the DOM (opacity/pointer-events, NOT

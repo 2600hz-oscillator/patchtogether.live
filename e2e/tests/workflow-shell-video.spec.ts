@@ -368,15 +368,12 @@ test.describe('?shell=1 video visibility', () => {
     // LINES feeds BOTH cards under test so their pictures animate: → FEEDBACK
     // in, and → the seeded videoOut's in (its idle pattern is static).
     //
-    // WHY FEEDBACK AND NOT BACKDRAFT (which this case used to expand): purely
-    // that FEEDBACK is the SMALLER, simpler subject for the same assertion —
-    // NOT because BACKDRAFT lacks a preview. It has one again: a 320×240
-    // display centred in its top band, blitting via the same
-    // blitOutputToDrawingBuffer seam. But BACKDRAFT is a 7hp×3u card (1260px)
-    // that scrolls horizontally in the dock's 50/50 split pane, and this case
-    // is about the EXPAND/lease plumbing, not about BACKDRAFT. FEEDBACK is the
-    // same shape at a fraction of the size: video-domain, shell-lane (so it
-    // gets a tile + EXPAND), one video in / one video out, live preview. The
+    // WHY FEEDBACK AND NOT BACKDRAFT (which this case used to expand): the
+    // EXPAND half of this test needs a shell-lane video card that owns a LIVE
+    // PREVIEW CANVAS, and BACKDRAFT no longer has one — it was made a pure
+    // control surface (its picture is watched on VIDEO OUT). FEEDBACK is the
+    // same shape: video-domain, shell-lane (so it gets a tile + EXPAND), one
+    // video in / one video out, and a blitOutputToDrawingBuffer preview. The
     // ORIGINAL regression this case guards — a legacy card whose bare
     // useStore() threw outside the SvelteFlow provider and mounted DEAD in the
     // dock — is the videoOut half below (videoOut is the card it was found on
