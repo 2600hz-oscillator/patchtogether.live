@@ -1,0 +1,137 @@
+// packages/web/src/lib/ui/controls/knob-vocabulary-model.test.ts
+//
+// The PF-1 / PF-3 / PF-10 readout + detent resolvers. The interesting cases are
+// all "what does the dial say when the value is NOT where the roster expected
+// it" — an off-detent save, a value exactly between two waypoints, an empty
+// roster — because those are the ones a live rack actually produces.
+
+import { describe, expect, it } from 'vitest';
+import { knobMarks, knobReadout, nearestByValue } from './knob-vocabulary-model';
+import { knobValueToFrac } from './knob-conic-model';
+
+const MODES = [
+  { value: 0, label: 'LP' },
+  { value: 1, label: 'HP' },
+  { value: 2, label: 'BP' },
+] as const;
+
+const SHAPES = [
+  { value: 0, label: 'TRI' },
+  { value: 1, label: 'SAW' },
+  { value: 2, label: 'SQR' },
+] as const;
+
+describe('nearestByValue', () => {
+  it('finds the exact entry', () => {
+    expect(nearestByValue(1, MODES)?.label).toBe('HP');
+  });
+
+  it('finds the nearest entry for an off-detent value', () => {
+    expect(nearestByValue(0.6, MODES)?.label).toBe('HP');
+    expect(nearestByValue(1.9, MODES)?.label).toBe('BP');
+    expect(nearestByValue(-4, MODES)?.label).toBe('LP');
+    expect(nearestByValue(99, MODES)?.label).toBe('BP');
+  });
+
+  it('resolves a TIE to the EARLIER entry, deterministically', () => {
+    // A motorized/CV-driven value sweeping through the midpoint must not make
+    // the readout flicker between two equally-near names.
+    expect(nearestByValue(0.5, MODES)?.label).toBe('LP');
+    expect(nearestByValue(1.5, MODES)?.label).toBe('HP');
+  });
+
+  it('is undefined for an empty roster', () => {
+    expect(nearestByValue(0, [])).toBeUndefined();
+  });
+});
+
+describe('knobReadout — the PF-3 gate', () => {
+  it('returns null when the param declared NO vocabulary', () => {
+    // This is the whole reason PF-3 is cheap: a plain knob renders no
+    // persistent readout, so ~17 dock faceplates keep their baselines.
+    expect(knobReadout(0.42, {})).toBeNull();
+    expect(knobReadout(0.42, { options: [], landmarks: [] })).toBeNull();
+  });
+
+  it('names the current OPTION', () => {
+    expect(knobReadout(2, { options: MODES })).toBe('BP');
+  });
+
+  it('names the NEAREST option for an off-detent value', () => {
+    // A rack saved before the param grew `options`, or a CV-motorized read.
+    // An exact-match lookup would print nothing here — strictly worse than the
+    // bare number the readout replaced.
+    expect(knobReadout(1.8, { options: MODES })).toBe('BP');
+  });
+
+  it('names the NEAREST landmark for a continuous morph', () => {
+    expect(knobReadout(0, { landmarks: SHAPES })).toBe('TRI');
+    expect(knobReadout(0.9, { landmarks: SHAPES })).toBe('SAW');
+    expect(knobReadout(1.7, { landmarks: SHAPES })).toBe('SQR');
+  });
+
+  it('prefers `format` over both rosters (most specific wins)', () => {
+    const format = (v: number) => `${(v * 100).toFixed(0)}%`;
+    expect(knobReadout(0.5, { format, options: MODES, landmarks: SHAPES })).toBe('50%');
+  });
+
+  it('prefers `options` over `landmarks` when both are somehow present', () => {
+    // The vocabulary gate forbids this pairing on a real def; the resolver is
+    // still total, so a malformed input degrades instead of throwing.
+    expect(knobReadout(1, { options: MODES, landmarks: SHAPES })).toBe('HP');
+  });
+});
+
+describe('knobMarks — detent ticks', () => {
+  it('is empty without a vocabulary (no ticks on a plain dial)', () => {
+    expect(knobMarks({}, 0, 1)).toEqual([]);
+    expect(knobMarks({ format: (v) => String(v) }, 0, 1)).toEqual([]);
+  });
+
+  it('places an OPTION tick at every state, unlabeled', () => {
+    const marks = knobMarks({ options: MODES }, 0, 2, 'discrete');
+    expect(marks.map((m) => m.value)).toEqual([0, 1, 2]);
+    expect(marks.map((m) => m.frac)).toEqual([0, 0.5, 1]);
+    // The Segmented/Selector alongside already names every state, and the
+    // readout names the current one — a third copy would just be noise.
+    expect(marks.every((m) => m.label === '')).toBe(true);
+  });
+
+  it('places a LANDMARK tick at every waypoint, WITH its name', () => {
+    const marks = knobMarks({ landmarks: SHAPES }, 0, 2, 'linear');
+    expect(marks.map((m) => m.label)).toEqual(['TRI', 'SAW', 'SQR']);
+  });
+
+  it('positions a tick under the param CURVE, not a linear fraction', () => {
+    // A log param's midpoint value is nowhere near the arc midpoint; a tick
+    // that ignored the curve would sit where the pointer never rests.
+    const marks = knobMarks({ landmarks: [{ value: 1000, label: '1k' }] }, 20, 20000, 'log');
+    expect(marks[0]!.frac).toBeCloseTo(knobValueToFrac(1000, 20, 20000, 'log'), 12);
+    expect(marks[0]!.frac).not.toBeCloseTo((1000 - 20) / (20000 - 20), 3);
+  });
+
+  it('drops out-of-range detents and de-duplicates values', () => {
+    const marks = knobMarks(
+      { landmarks: [{ value: -1, label: 'LO' }, { value: 0, label: 'A' }, { value: 0, label: 'DUP' }, { value: 9, label: 'HI' }] },
+      0,
+      2,
+      'linear',
+    );
+    expect(marks.map((m) => m.label)).toEqual(['A']);
+  });
+
+  it('sorts marks by value regardless of authoring order', () => {
+    const marks = knobMarks(
+      { landmarks: [{ value: 2, label: 'C' }, { value: 0, label: 'A' }, { value: 1, label: 'B' }] },
+      0,
+      2,
+      'linear',
+    );
+    expect(marks.map((m) => m.label)).toEqual(['A', 'B', 'C']);
+  });
+
+  it('landmarks win the tick source when both rosters are present', () => {
+    const marks = knobMarks({ options: MODES, landmarks: [{ value: 1, label: 'MID' }] }, 0, 2, 'linear');
+    expect(marks.map((m) => m.label)).toEqual(['MID']);
+  });
+});

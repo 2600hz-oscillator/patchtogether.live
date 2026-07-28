@@ -112,7 +112,15 @@ interface SpecShape {
 }
 
 /** The shell's per-cell interaction contract (`data-cell-control`). */
-type CellControl = 'knob' | 'momentary' | 'toggle' | 'selector' | 'action' | 'file' | 'inert';
+type CellControl =
+  | 'knob'
+  | 'momentary'
+  | 'toggle'
+  | 'segmented'
+  | 'selector'
+  | 'action'
+  | 'file'
+  | 'inert';
 
 interface RenderedCell {
   control: CellControl;
@@ -292,6 +300,40 @@ async function driveCell(
     return;
   }
 
+  if (cell.control === 'segmented') {
+    // A NAMED-STATE row (PF-1 `ParamDef.options`). Operating it means picking
+    // a DIFFERENT state and seeing that state land in the graph — the same bar
+    // the knob branch meets, not merely "a button was clickable".
+    const pid = cell.key;
+    const group = host.locator(`[data-testid="control-${pid}"]`);
+    await expect(group, `${where}: a real radiogroup`).toHaveAttribute('role', 'radiogroup');
+    const segs = group.locator('[role="radio"]');
+    const n = await segs.count();
+    expect(n, `${where}: the row offers more than one state`).toBeGreaterThan(1);
+
+    // Pick a segment that is NOT the active one. `aria-checked` is authored
+    // off the nearest-segment snap, so this works for an off-detent value too.
+    let target = -1;
+    for (let i = 0; i < n; i++) {
+      if ((await segs.nth(i).getAttribute('aria-checked')) !== 'true') { target = i; break; }
+    }
+    expect(target, `${where}: some state other than the current one is offered`).toBeGreaterThanOrEqual(0);
+
+    const before = await readParam(page, nodeId, pid);
+    await segs.nth(target).scrollIntoViewIfNeeded();
+    await segs.nth(target).click();
+    await expect
+      .poll(() => readParam(page, nodeId, pid), {
+        message: `${where}: choosing a state commits it into the graph`,
+      })
+      .not.toBe(before);
+    await expect(segs.nth(target), `${where}: the chosen state lights up`).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+    return;
+  }
+
   if (cell.control === 'selector') {
     // Open the roster and choose a DIFFERENT option; the chip's displayed
     // value must follow (proving the selection was actually committed).
@@ -436,6 +478,78 @@ test.describe('tidyVco tune-cluster regression (the owner control-loss report)',
     const oscBand = dockShell.locator('[data-face-page="oscillator"]');
     await expect(oscBand.locator('[data-testid="control-detune"]'), 'dock oscillator band: detune').toBeVisible();
     await expect(oscBand.locator('[data-testid="control-oct2"]'), 'dock oscillator band: oct2').toBeVisible();
+  });
+});
+
+test.describe('param vocabulary: a NAMED discrete param reads as its name at BOTH tiers', () => {
+  // PF-1's two halves are different primitives answering the SAME question, so
+  // the only assertion worth making spans both: the dock lays the states out
+  // as a row, the lane keeps the dial (a 46 px knob column cannot hold a row)
+  // and earns a persistent readout instead — and they must NAME THE SAME
+  // STATE. A per-tier test would pass while the two disagreed, which is the
+  // failure a player actually notices when they zoom out.
+  //
+  // filter.mode is the case: three parallel two-pole sections, `curve:
+  // 'discrete'`, and the one control that decides whether CUTOFF sounds dark,
+  // thin or narrow. Pre-PF-1 it rendered as a rotary printing "0.00".
+  test('filter.mode: Segmented in the dock, dial + persistent readout in the lane, same state', async ({ page }) => {
+    test.setTimeout(FACE_FIXED_MS);
+    await gotoShell(page);
+    await spawnPatch(page, [{ id: 'f', type: 'filter', position: { x: 460, y: 240 } }]);
+
+    // ── LANE (the spawn reveal parks zoom at 0.6 = LOD 'full', the richest
+    //    in-lane face; filter's 5 ranked controls all fit the 6-cell plate). ──
+    const shell = page.locator('.svelte-flow__node[data-id="f"] [data-testid="module-shell"]');
+    await expect(shell).toBeVisible();
+    await expect(shell).toHaveAttribute('data-shell-tier', 'full');
+    const laneCell = shell.locator('[data-cell-key="mode"]');
+    await expect(laneCell, 'lane: mode keeps the DIAL — a lane column has no room for a row')
+      .toHaveAttribute('data-cell-control', 'knob');
+    const laneReadout = laneCell.locator('[data-testid="readout-mode"]');
+    await expect(laneReadout, 'lane: the dial earns a PERSISTENT readout naming the state').toBeVisible();
+    await expect(laneReadout).toHaveText('LP');
+    // DETENT TICKS: a declared roster also marks the arc, so the dial SHOWS it
+    // has three resting positions rather than reading as a continuous sweep.
+    // This is the same renderer PF-10's landmarks use, so exercising it here
+    // keeps that path out of the "unreached until Batch B" bucket.
+    await expect(
+      laneCell.locator('[data-testid="control-mode"] .tick'),
+      'lane: one detent tick per declared state',
+    ).toHaveCount(3);
+
+    // A knob with NO declared vocabulary must stay exactly as it was — no
+    // readout, no ticks. This is PF-3's gate asserted in the DOM, and it is
+    // the reason ~17 dock faceplates did not move.
+    const cutoffCell = shell.locator('[data-cell-key="cutoff"]');
+    await expect(cutoffCell, 'a plain param is still a dial').toHaveAttribute('data-cell-control', 'knob');
+    await expect(
+      cutoffCell.locator('[data-testid="readout-cutoff"]'),
+      'a param with no declared vocabulary renders NO persistent readout',
+    ).toHaveCount(0);
+    await expect(
+      cutoffCell.locator('.tick'),
+      'a param with no declared vocabulary renders NO detent ticks',
+    ).toHaveCount(0);
+
+    // ── DOCK: the same param, laid out as its three named states. ──
+    const dockShell = await openDock(page, 'f');
+    const dockCell = dockShell.locator('[data-cell-key="mode"]');
+    await expect(dockCell, 'dock: mode becomes a named-state ROW').toHaveAttribute(
+      'data-cell-control',
+      'segmented',
+    );
+    const segs = dockCell.locator('[data-testid="control-mode"] [role="radio"]');
+    await expect(segs, 'dock: one button per declared option').toHaveCount(3);
+    await expect(segs, 'dock: the states are NAMED, not numbered').toHaveText(['LP', 'HP', 'BP']);
+    await expect(segs.nth(0), 'dock: the default state is lit').toHaveAttribute('aria-checked', 'true');
+
+    // ── AGREEMENT: pick BP in the dock; the lane dial must say BP too. ──
+    await segs.nth(2).click();
+    await expect
+      .poll(() => readParam(page, 'f', 'mode'), { message: 'picking BP commits mode=2' })
+      .toBe(2);
+    await expect(segs.nth(2), 'dock: BP is now the lit state').toHaveAttribute('aria-checked', 'true');
+    await expect(laneReadout, 'lane: the dial readout follows the dock selection').toHaveText('BP');
   });
 });
 

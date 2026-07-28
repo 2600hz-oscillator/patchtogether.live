@@ -35,7 +35,7 @@
   import { cardParams, portsFromDef } from './card-kit';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import VideoTileThumb from './VideoTileThumb.svelte';
-  import { Button, KnobConic, ScopeScreen, Selector, Toggle, VuMeter } from '$lib/ui/controls';
+  import { Button, KnobConic, ScopeScreen, Segmented, Selector, Toggle, VuMeter } from '$lib/ui/controls';
   import { curatedFace, dockFacePlan, type FaceControl, type FaceTier } from '$lib/ui/workflow/curated-face';
   import { shellCellFor } from '$lib/ui/workflow/shell-cells';
   import { momentaryParamIds, momentaryValue, paramCellKind } from '$lib/ui/workflow/shell-control-kind';
@@ -360,7 +360,7 @@
     {#if ctl.kind === 'param'}
       {@const pd = paramDef(ctl.paramId ?? ctl.key)}
       {#if pd}
-        {@const cellKind = paramCellKind(pd, momentary)}
+        {@const cellKind = paramCellKind(pd, momentary, view === 'dock-full' ? 'dock' : 'lane')}
         {#if cellKind === 'momentary'}
           <!-- MOMENTARY press-pad (declared on face.momentary): fires on the
                press edge and RETURNS TO REST on release. It must never be a
@@ -393,6 +393,44 @@
               paramId={pd.id}
             />
           </div>
+        {:else if cellKind === 'segmented'}
+          <!-- NAMED DISCRETE STATES at the DOCK (PF-1 `ParamDef.options`, ≤6):
+               the inline `.seg` button row. The states a module HAS are the
+               thing a faceplate should say out loud — the legacy cards said it
+               with hardcoded markup the migrated shell could not see, so a
+               filter's LP/HP/BP arrived here as a rotary printing "0.00".
+               Segmented emits `control-<paramId>` on its radiogroup and is
+               MIDI-assignable, so the param multiset + MIDI-learn are
+               unchanged; only the primitive moves. `snapActive` because a
+               PARAM always has a value (see the prop's note). -->
+          <div class="kcol ms-cell-sel" data-cell-kind="param" data-cell-control="segmented" data-cell-key={ctl.key}>
+            <Segmented
+              value={params.paramVal(pd.id)}
+              segments={pd.options ?? []}
+              label={pd.label}
+              onchange={(v) => params.set(pd.id)(Number(v))}
+              readLive={params.live(pd.id)}
+              moduleId={id}
+              paramId={pd.id}
+              snapActive
+            />
+          </div>
+        {:else if cellKind === 'selector'}
+          <!-- The SAME roster past the button-row budget (≥7 states): a
+               portaled, viewport-clamped dropdown. Selector derives
+               `control-<paramId>` itself when no explicit testid is given. -->
+          <div class="kcol ms-cell-sel" data-cell-kind="param" data-cell-control="selector" data-cell-key={ctl.key}>
+            <Selector
+              value={params.paramVal(pd.id)}
+              options={pd.options ?? []}
+              label={pd.label}
+              onchange={(v) => params.set(pd.id)(Number(v))}
+              readLive={params.live(pd.id)}
+              moduleId={id}
+              paramId={pd.id}
+              hero={view === 'dock-full'}
+            />
+          </div>
         {:else}
           <div class="kcol" data-cell-kind="param" data-cell-control="knob" data-cell-key={ctl.key}>
             <KnobConic
@@ -409,6 +447,9 @@
               paramId={pd.id}
               size={effTier === 'mini' ? 'lg' : knobSize}
               accent={spine}
+              options={pd.options}
+              landmarks={pd.landmarks}
+              format={pd.format}
             />
           </div>
         {/if}

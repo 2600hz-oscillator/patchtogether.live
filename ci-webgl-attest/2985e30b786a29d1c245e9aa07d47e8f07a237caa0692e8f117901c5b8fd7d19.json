@@ -1,9 +1,16 @@
 {
   "schemaVersion": 1,
+<<<<<<<< HEAD:ci-webgl-attest/2985e30b786a29d1c245e9aa07d47e8f07a237caa0692e8f117901c5b8fd7d19.json
   "webglContentHash": "2985e30b786a29d1c245e9aa07d47e8f07a237caa0692e8f117901c5b8fd7d19",
   "attestedAt": "2026-07-28T18:36:49.569Z",
   "attestedBy": "tmayshark@gmail.com",
   "gitHeadAtAttest": "e88da119f9c2d2f74d36c639bcdead79bb99e485",
+========
+  "webglContentHash": "f9c7aa5e124c6b1f8d951bb85106855ddf31a2a4ad90db51e098c3188fef62a9",
+  "attestedAt": "2026-07-28T17:28:00.128Z",
+  "attestedBy": "tmayshark@gmail.com",
+  "gitHeadAtAttest": "8d6eb33cbd3aef5c31f9677c73963687300883cf",
+>>>>>>>> origin/main:ci-webgl-attest/f9c7aa5e124c6b1f8d951bb85106855ddf31a2a4ad90db51e098c3188fef62a9.json
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "host": "2600hzs-MacBook-Pro.local",
@@ -43,5 +50,9 @@
       "flakyDetails": []
     }
   },
+<<<<<<<< HEAD:ci-webgl-attest/2985e30b786a29d1c245e9aa07d47e8f07a237caa0692e8f117901c5b8fd7d19.json
   "durationSec": 454
+========
+  "durationSec": 198
+>>>>>>>> origin/main:ci-webgl-attest/f9c7aa5e124c6b1f8d951bb85106855ddf31a2a4ad90db51e098c3188fef62a9.json
 }
