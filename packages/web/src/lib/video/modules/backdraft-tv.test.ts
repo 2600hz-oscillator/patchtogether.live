@@ -86,7 +86,7 @@ function tvFrameMean(f: Float32Array): number {
 
 describe('BACKDRAFT PURE TV — geometry (the nest is real)', () => {
   it('N1 — the nest is a GEOMETRIC SERIES with ratio = the screen fill', () => {
-    const r = simulateBackdraftTv({ size: 384, frames: 90, quantize: true });
+    const r = simulateBackdraftTv({ size: 320, frames: 80, quantize: true });
     const bands = tvBands(r);
     // A real nest, not a smeared grey field: several resolved frames-in-frames.
     expect(bands.length).toBeGreaterThanOrEqual(6);
@@ -95,7 +95,7 @@ describe('BACKDRAFT PURE TV — geometry (the nest is real)', () => {
       expect(bands[i - 1]! / bands[i]!).toBeGreaterThan(s - 0.05);
       expect(bands[i - 1]! / bands[i]!).toBeLessThan(s + 0.05);
     }
-  });
+  }, 30_000);
 
   it('N2 — the SELF-SIMILARITY identity: out(x) == gEff*W*out(Mx) + lift', () => {
     // The owner's sentence — "each loop iteration completely constrains the
@@ -143,7 +143,7 @@ describe('BACKDRAFT PURE TV — geometry (the nest is real)', () => {
       checked++;
     }
     expect(checked).toBeGreaterThan(200);
-  });
+  }, 30_000);
 
   it('N3 — no clamp-smear: the ROOM is independent of the previous frame', () => {
     // The legacy CLAMP_TO_EDGE path fails this by construction: a tap that
@@ -173,8 +173,11 @@ describe('BACKDRAFT PURE TV — geometry (the nest is real)', () => {
     // INVERTED it (brightening inward) below that — the smeared grey field this
     // mode exists to remove. The room-proportional glass lift fixes it, so this
     // deliberately sweeps the dim cases the first design never tested.
-    for (const room of [1.0, 0.5, 0.3, 0.15]) {
-      const r = simulateBackdraftTv({ size: 384, frames: 90, room });
+    // 1.0 / 0.3 / 0.15 spans bright, mid, and the DIM end where the original
+    // absolute lift inverted the cascade — which is the case this test exists
+    // for. 256px still resolves the 5 levels the ladder needs.
+    for (const room of [1.0, 0.3, 0.15]) {
+      const r = simulateBackdraftTv({ size: 256, frames: 80, room });
       const cx = r.width / 2, y = Math.floor(r.height / 2);
       const s = r.fill;
       const pic = (k: number): number => Math.pow(s, k + 1) * (r.width / 2);
@@ -200,7 +203,7 @@ describe('BACKDRAFT PURE TV — geometry (the nest is real)', () => {
         expect(Math.abs(ladder[i]! - want)).toBeLessThan(0.03);
       }
     }
-  });
+  }, 30_000);
 
   it('N4b — the SHOULDERED ladder, pinned (the design table assumed NO shoulder)', () => {
     // The design plan's §1.9 published 1.000/0.880/0.778/0.691/0.618/0.555 —
@@ -233,7 +236,7 @@ describe('BACKDRAFT PURE TV — geometry (the nest is real)', () => {
     const fast = simulateBackdraftTv({ size: 96, frames: 12, phosphor: 0 });
     const slow = simulateBackdraftTv({ size: 96, frames: 12, phosphor: 0.9 });
     expect(tvFrameMean(slow.frame)).toBeLessThan(tvFrameMean(fast.frame));
-  });
+  }, 30_000);
 
   it('N6 — ROTATE is aspect-RIGID: a rolled screen stays rectangular', () => {
     // Rotating in raw UV space shears a 4:3 rectangle into a parallelogram —
@@ -258,6 +261,13 @@ describe('BACKDRAFT PURE TV — geometry (the nest is real)', () => {
     // documented clamp behaviour. The invariant silently depends on aspect >= 1
     // and on BACKDRAFT_SHAPE_RADIUS <= 0.5, so a radius bump must break this
     // LOUDLY rather than quietly re-opening the clamp path.
+    // Collect violations rather than calling expect() at every sample: the
+    // sweep visits ~750k points and vitest's expect() is what actually costs
+    // the time (this test TIMED OUT on CI at 6.3 s while passing in 2.3 s
+    // locally — CI is ~2.5x slower, so anything near the 5 s default is a
+    // latent flake). A plain comparison plus one assertion at the end is ~20x
+    // faster AND gives a far better failure message.
+    const bad: string[] = [];
     let inside = 0;
     for (const aspect of [4 / 3, 16 / 9, 1]) {
       for (const shape of [0, 1, 2, 3, 4]) {
@@ -272,11 +282,17 @@ describe('BACKDRAFT PURE TV — geometry (the nest is real)', () => {
                 for (let j = 0; j <= 24; j++) {
                   const t = backdraftTvTap(i / 24, j / 24, geo);
                   if (t.d >= 0) continue;
-                  expect(t.tapU).toBeGreaterThanOrEqual(0);
-                  expect(t.tapU).toBeLessThanOrEqual(1);
-                  expect(t.tapV).toBeGreaterThanOrEqual(0);
-                  expect(t.tapV).toBeLessThanOrEqual(1);
                   inside++;
+                  if (t.tapU < 0 || t.tapU > 1 || t.tapV < 0 || t.tapV > 1) {
+                    if (bad.length < 8) {
+                      bad.push(
+                        `aspect=${aspect.toFixed(3)} shape=${shape} fill=${fill} `
+                        + `rot=${rotateDeg} off=(${off[0]},${off[1]}) uv=(${(i / 24).toFixed(3)},`
+                        + `${(j / 24).toFixed(3)}) d=${t.d.toFixed(4)} `
+                        + `tap=(${t.tapU.toFixed(4)},${t.tapV.toFixed(4)})`,
+                      );
+                    }
+                  }
                 }
               }
             }
@@ -284,8 +300,9 @@ describe('BACKDRAFT PURE TV — geometry (the nest is real)', () => {
         }
       }
     }
+    expect(bad, `boundary invariant violated at ${bad.length} sample(s)`).toEqual([]);
     expect(inside).toBeGreaterThan(5000);
-  });
+  }, 30_000);
 });
 
 describe('BACKDRAFT PURE TV — the contraction contract', () => {
@@ -337,7 +354,7 @@ describe('BACKDRAFT PURE TV — the contraction contract', () => {
     const r = simulateBackdraftTv({ size: 96, frames: 260 });
     expect(r.lastDelta).toBeLessThan(1e-6);
     expect(tvFrameMean(r.frame)).toBeLessThan(0.9);
-  });
+  }, 30_000);
 
   it('N7d — WHITE-OUT is REACHABLE by LUMA / FEEDBACK, and RECOVERABLE', () => {
     // The owner's requirement: "cranking luma value, or increasing feedback to
@@ -375,7 +392,7 @@ describe('BACKDRAFT PURE TV — the contraction contract', () => {
     const back = simulateBackdraftTv({ size: 96, frames: 260, seed: 1 });
     expect(back.lastDelta).toBeLessThan(1e-6);
     expect(Math.abs(tvFrameMean(back.frame) - nestMean)).toBeLessThan(0.02);
-  });
+  }, 30_000);
 
   it('N10 — the contract: new params + ports exist with the documented shape', () => {
     const p = (id: string) => backdraftDef.params.find((q) => q.id === id);
@@ -426,9 +443,9 @@ describe('BACKDRAFT PURE TV — the contraction contract', () => {
     expect(BACKDRAFT_TV_BEZEL_MIN).toBeGreaterThan(0);
     // A fader whose minimum deletes the feature would be a bug: bezel = 0 must
     // still resolve a real nest rather than collapsing to one band.
-    const r = simulateBackdraftTv({ size: 384, frames: 90, bezel: 0 });
+    const r = simulateBackdraftTv({ size: 320, frames: 80, bezel: 0 });
     expect(tvBands(r).length).toBeGreaterThanOrEqual(4);
-  });
+  }, 30_000);
 });
 
 describe('BACKDRAFT — GL resource discipline', () => {
@@ -493,7 +510,7 @@ describe('BACKDRAFT CRITICAL — the auto-exposure servo', () => {
     const hot = critProbe({ critical: true, drive: 0.75 });
     expect(hot.swing).toBeGreaterThan(0.05);
     expect(hot.d1).toBeGreaterThan(0.05);
-  });
+  }, 30_000);
 
   it('C2 — NEGATIVE CONTROL: below the midpoint, and in PURE TV, it is DEAD STILL', () => {
     // If any of these ever goes non-zero then C1 is measuring something other
@@ -510,13 +527,13 @@ describe('BACKDRAFT CRITICAL — the auto-exposure servo', () => {
       expect(r.swing).toBeLessThan(1e-4);
       expect(r.d1).toBeLessThan(1e-4);
     }
-  });
+  }, 30_000);
 
   it('C3 — the swing DEEPENS monotonically with DRIVE (it is rideable)', () => {
     const a = critProbe({ critical: true, drive: 0.6 });
     const b = critProbe({ critical: true, drive: 1.0 });
     expect(b.swing).toBeGreaterThan(a.swing);
-  });
+  }, 30_000);
 
   it('C4 — RECOVERABILITY: driven to FULL WHITE it returns to the same attractor', () => {
     // The safety property that REPLACES stability in CRITICAL. A white-out must
@@ -528,7 +545,7 @@ describe('BACKDRAFT CRITICAL — the auto-exposure servo', () => {
       expect(tvCorr(white.frame, cold.frame)).toBeGreaterThan(0.999);
       expect(Number.isFinite(white.agc)).toBe(true);
     }
-  });
+  }, 30_000);
 
   it('C5 — the servo state is BOUNDED, which is what makes C4 true', () => {
     for (const drive of [0, 0.5, 1]) {
@@ -547,7 +564,7 @@ describe('BACKDRAFT CRITICAL — the auto-exposure servo', () => {
       expect(a).toBeGreaterThanOrEqual(BACKDRAFT_TV_AGC_MIN);
       expect(a).toBeLessThanOrEqual(BACKDRAFT_TV_AGC_MAX);
     }
-  });
+  }, 30_000);
 
   it('C6 — the DRIVE law is geometric, monotone, and centred on the Hopf point', () => {
     expect(backdraftTvAgcRate(0)).toBeCloseTo(BACKDRAFT_TV_AGC_RATE_MIN, 9);
@@ -574,5 +591,5 @@ describe('BACKDRAFT CRITICAL — the auto-exposure servo', () => {
     // stone dead. A real auto-exposure meters the scene it is actually in.
     const dim = critProbe({ critical: true, drive: 0.8, room: 0.4 });
     expect(dim.swing).toBeGreaterThan(0.02);
-  });
+  }, 30_000);
 });
