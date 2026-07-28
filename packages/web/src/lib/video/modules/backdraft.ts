@@ -421,6 +421,18 @@ export const BACKDRAFT_FLICKER_KNEE = 0.55;
 //
 // Design + adversarial review: .myrobots/plans/backdraft-pure-tv-2026-07-27.md.
 
+/** TV MODE positions: 0 = OFF (the legacy composite), 1 = PURE TV (the
+ *  bounded-screen nest, a strict contraction), 2 = CRITICAL (the same geometry
+ *  with the auto-exposure servo, which is where the time lives). */
+export const BACKDRAFT_TV_MODE_COUNT = 3;
+export const BACKDRAFT_TV_MODE_LABELS = ['OFF', 'PURE TV', 'CRITICAL'] as const;
+
+/** Cycle the TV MODE — the card button and a tv_gate rising edge share this. */
+export function backdraftNextTvMode(mode: number): number {
+  const m = Math.round(mode);
+  return !Number.isFinite(m) || m < 0 ? 1 : (m + 1) % BACKDRAFT_TV_MODE_COUNT;
+}
+
 /** Screen fill (the TV's width as a fraction of the frame) at ZOOM's minimum. */
 export const BACKDRAFT_TV_FILL_MIN = 0.35;
 /** Screen fill at ZOOM = 1.0 (the default) — the chunky ~12-band tunnel. */
@@ -582,6 +594,87 @@ export const BACKDRAFT_TV_NOISE = 0.01;
  *  backdraftTvChromaNorm.) */
 export const BACKDRAFT_LUMA_WEIGHTS = [0.299, 0.587, 0.114] as const;
 
+/** The auto-exposure REDUCE target is BACKDRAFT_TV_AGC_TILES square, and each
+ *  of its fragments averages the same number of taps — so the servo meters
+ *  TILES^4 = 4096 samples of the previous frame for 64 fragments of work.
+ *  A stochastic estimate of the frame mean at ~0.005 % of the main pass's
+ *  fragment count; a full log-reduction pyramid would be strictly more
+ *  expensive for no measurable gain in a control loop this slow. */
+export const BACKDRAFT_TV_AGC_TILES = 8;
+
+/** The servo state is stored LOG-ENCODED into [0,1]; both the servo pass and
+ *  the main pass need to decode it, so the GLSL is shared verbatim. */
+const AGC_DECODE_GLSL = `
+const float AGC_MIN = ${BACKDRAFT_TV_AGC_MIN.toFixed(5)};
+const float AGC_MAX = ${BACKDRAFT_TV_AGC_MAX.toFixed(5)};
+float decodeAgc(float e) { return exp(mix(log(AGC_MIN), log(AGC_MAX), clamp(e, 0.0, 1.0))); }
+`;
+
+/** Auto-exposure REDUCE pass: previous output -> an 8x8 grid of local means. */
+const AGC_REDUCE_SRC = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outColor;
+uniform sampler2D uSrc;
+const int TILES = ${BACKDRAFT_TV_AGC_TILES};
+void main() {
+  // This fragment owns one tile of the frame; average a TILES x TILES grid of
+  // taps inside it. Sample centres are offset by half a step so the grid is
+  // symmetric within the tile and no sample lands exactly on a tile seam.
+  vec2 tile = vec2(1.0) / float(TILES);
+  vec2 base = floor(vUv * float(TILES)) * tile;
+  vec3 acc = vec3(0.0);
+  for (int y = 0; y < TILES; y++) {
+    for (int x = 0; x < TILES; x++) {
+      vec2 o = (vec2(float(x), float(y)) + 0.5) * tile / float(TILES);
+      acc += texture(uSrc, base + o).rgb;
+    }
+  }
+  acc /= float(TILES * TILES);
+  outColor = vec4(acc, 1.0);
+}`;
+
+/** Auto-exposure SERVO pass: one log-domain integrator step, into a 1x1 FBO.
+ *  The state lives in a TEXTURE rather than in JS so nothing has to read
+ *  pixels back — a readPixels here would sync the pipeline every frame. */
+const AGC_SERVO_SRC = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outColor;
+uniform sampler2D uReduce;     // the 8x8 grid of local means
+uniform sampler2D uPrevAgc;    // 1x1, previous servo state (log-encoded)
+uniform float uHasPrevAgc;
+uniform float uRate;           // servo integral rate (0 = servo disabled)
+uniform float uTarget;         // set point, already scaled by ROOM
+const int TILES = ${BACKDRAFT_TV_AGC_TILES};
+${AGC_DECODE_GLSL}
+// The state is stored LOG-ENCODED into [0,1]. Two reasons: the integrator is
+// itself log-domain so this is its natural variable, and if the engine has to
+// degrade the float FBO to RGBA8 the 8-bit quantisation then lands on the GAIN
+// RATIO (~1.7 % per code) instead of on an absolute gain, which keeps the
+// servo usable rather than sticking.
+float encodeAgc(float a) {
+  float lg = log(clamp(a, AGC_MIN, AGC_MAX));
+  return clamp((lg - log(AGC_MIN)) / (log(AGC_MAX) - log(AGC_MIN)), 0.0, 1.0);
+}
+void main() {
+  vec3 sum = vec3(0.0);
+  for (int y = 0; y < TILES; y++) {
+    for (int x = 0; x < TILES; x++) {
+      sum += texelFetch(uReduce, ivec2(x, y), 0).rgb;
+    }
+  }
+  float mean = dot(sum / float(TILES * TILES), vec3(0.299, 0.587, 0.114));
+  float agc = uHasPrevAgc > 0.5 ? decodeAgc(texelFetch(uPrevAgc, ivec2(0, 0), 0).r) : 1.0;
+  if (uRate > 0.0) {
+    // a' = a * exp(rate * (ln target - ln mean)), hard-clamped by encodeAgc.
+    // The clamp IS the recoverability guarantee: the exposure state is bounded,
+    // so it can never wind up somewhere it cannot come back from.
+    agc = agc * exp(uRate * (log(max(uTarget, 1e-4)) - log(max(mean, 1e-4))));
+  }
+  outColor = vec4(encodeAgc(agc), 0.0, 0.0, 1.0);
+}`;
+
 const FRAG_SRC = `#version 300 es
 precision highp float;
 
@@ -669,6 +762,16 @@ uniform float uTvSin;        // sin(phi)
 uniform vec3  uTvPhos;       // per-channel ONE-FRAME residual (0,0,0 = off)
 uniform sampler2D uPersist;  // ring[head-1] — the previous OUTPUT, untransformed
 uniform float uHasPersist;
+// CRITICAL. uTvGainScale/uTvGainCeil carry BOTH modes with no extra branch:
+// PURE TV passes (FEEDBACK, TV_GAIN_MAX/opNorm) so the operator-norm
+// contraction ceiling bites; CRITICAL passes (CRIT_GAIN*agc/opNorm, +inf) so
+// the auto-exposure servo -- not a clamp -- regulates the level.
+uniform float uTvGainScale;
+uniform float uTvGainCeil;
+uniform float uTvNoise;      // Crutchfield's ~1% sensor noise (0 in PURE TV)
+uniform float uTvFrame;      // frame index, for the deterministic noise hash
+uniform sampler2D uTvAgc;    // 1x1 auto-exposure servo state (log-encoded)
+uniform float uHasTvAgc;     // 0 until the servo has run at least once
 
 const float MAX_EFFECT_SCALE = ${BACKDRAFT_MAX_EFFECT_SCALE.toFixed(1)};
 const float BD_PI = 3.14159265359;
@@ -676,6 +779,7 @@ const float TV_GAIN_MAX = ${BACKDRAFT_TV_GAIN_MAX.toFixed(4)};
 const float TV_GLASS    = ${BACKDRAFT_TV_GLASS.toFixed(4)};
 const float TV_AMBIENT  = ${BACKDRAFT_TV_AMBIENT.toFixed(4)};
 const float TV_KNEE     = ${BACKDRAFT_FLICKER_KNEE.toFixed(4)};
+${AGC_DECODE_GLSL}
 const vec3  TV_BEZEL_RGB = vec3(${BACKDRAFT_TV_BEZEL_RGB.map((c) => c.toFixed(4)).join(', ')});
 const vec3  TV_WHITE     = vec3(${BACKDRAFT_TV_WHITE.map((c) => c.toFixed(4)).join(', ')});
 
@@ -945,11 +1049,18 @@ void main() {
     // demonstrates its own geometry with nothing patched.
     vec3 roomRgb = uTvRoom * (srcRaw * (1.0 - TV_AMBIENT) + vec3(TV_AMBIENT));
 
-    // THE CONTRACTION CONTRACT: clamp the OPERATOR norm, not the gain. The
-    // colour chain multiplies the tap before the gain and every one of its
-    // knobs reaches 2.0, so clamping g alone lets LUMA >= 1.18 pin the interior
-    // to white and delete the nest.
-    float gEff = min(uFeedback * effectScale, TV_GAIN_MAX / max(uTvOpNorm, 1e-4));
+    // PURE TV — THE CONTRACTION CONTRACT: clamp the OPERATOR norm, not the
+    // gain. The colour chain multiplies the tap before the gain and every one
+    // of its knobs reaches 2.0, so clamping g alone lets LUMA >= 1.18 pin the
+    // interior to white and delete the nest.
+    // CRITICAL — the ceiling is +inf and uTvGainScale already carries the
+    // auto-exposure servo's state, so the LEVEL is regulated by a servo with
+    // memory instead of by a clamp. That servo is the whole reason CRITICAL
+    // has time in it: raising a clamped ceiling cannot destabilise a positive
+    // monotone map, but an INTEGRATING inhibitor overshoots, and past DRIVE
+    // 0.5 the overshoot becomes a sustained limit cycle.
+    float agc = uHasTvAgc > 0.5 ? decodeAgc(texelFetch(uTvAgc, ivec2(0, 0), 0).r) : 1.0;
+    float gEff = min(uTvGainScale * agc * effectScale, uTvGainCeil);
 
     // FLICKER, PEAK-normalised on the CPU (uFlickerGain/uFlickerDepth are
     // pre-divided by their peak when tvMode = 1), so flick <= 1 always: a
@@ -957,6 +1068,17 @@ void main() {
     // SCREEN vUv.y — the rolling shutter scans the sensor, not the scene.
     float flick = uFlickerGain + uFlickerDepth * cos(uFlickerPhase + vUv.y * uFlickerRow);
     vec3 tap = uHasFb > 0.5 ? texture(uFb, tapUv).rgb : vec3(0.0);
+    // Crutchfield's measured sensor noise (Appendix A, "about 1 % fluctuation"),
+    // MULTIPLICATIVE so it is a real SNR — it cannot seed anything in a dark
+    // region, which is exactly why his rig needs a flashlight to restart a dark
+    // screen. Deterministic (a frame-indexed hash), so FREEZE and the VRT pins
+    // stay bit-stable. It is TEXTURE here, not the mechanism: CRITICAL's limit
+    // cycle is measured with this term switched OFF.
+    if (uTvNoise > 0.0) {
+      float nz = fract(sin(gl_FragCoord.x * 12.9898 + gl_FragCoord.y * 78.233
+                           + uTvFrame * 37.719) * 43758.5453);
+      tap *= 1.0 + uTvNoise * (2.0 * nz - 1.0);
+    }
     tap = tvShoulder(tap * flick);
     tap *= vec3(uR, uG, uBlue) * uLuma * TV_WHITE;
     float tl = luma(tap);
@@ -1039,11 +1161,14 @@ export interface BackdraftParams {
   // PURE TV — the bounded-screen (Crutchfield) mode. tvMode 0 is the exact-zero
   // no-op (the shader branch is skipped entirely). `tvGate` is the synthetic
   // raw-gate param the tv_gate CV bridge writes; a rising edge TOGGLES tvMode.
-  tvMode: number;    // 0/1
+  // 0 = OFF, 1 = PURE TV, 2 = CRITICAL. Discrete; the card button and the
+  // tv_gate rising edge both CYCLE it.
+  tvMode: number;    // 0/1/2
   tvGate: number;    // 0..1 raw gate sample
   room: number;      // 0..1 — room/ambient light level OUTSIDE the screen
   bezel: number;     // 0..1 — screen-frame width (mapped to tb, floored)
   phosphor: number;  // 0..1 — one-frame residual (camera storage), 0 = off
+  drive: number;     // 0..1 — CRITICAL only: the auto-exposure servo's rate
   freeze: number;    // 0/1 (VRT determinism)
 }
 
@@ -1091,6 +1216,9 @@ const DEFAULTS: BackdraftParams = {
   room: 1.0,
   bezel: 0.4,
   phosphor: 0,
+  // DRIVE 0.5 sits exactly ON the measured Hopf point, so CRITICAL opens at the
+  // edge itself — back it off for a still nest, push it up to make it breathe.
+  drive: 0.5,
   freeze: 0,
 };
 
@@ -2577,6 +2705,7 @@ export const backdraftDef: VideoModuleDef = {
     { id: 'tv_gate',       type: 'cv', paramTarget: 'tvGate' },
     { id: 'room',          type: 'cv', paramTarget: 'room',     cvScale: { mode: 'linear' } },
     { id: 'phosphor',      type: 'cv', paramTarget: 'phosphor', cvScale: { mode: 'linear' } },
+    { id: 'drive',         type: 'cv', paramTarget: 'drive',    cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'out', type: 'video' },
@@ -2626,6 +2755,18 @@ export const backdraftDef: VideoModuleDef = {
     // virtual camera captures it, and what the camera's own storage + shoulder
     // then do to it. 0 = OFF is the bit-identical no-op default.
     { id: 'flicker', label: 'Flicker', defaultValue: DEFAULTS.flicker, min: 0, max: BACKDRAFT_FLICKER_COUNT - 1, curve: 'discrete' },
+    // PURE TV — the bounded-screen (Crutchfield) mode. `tvMode` is a DISCRETE
+    // 3-position index (0=off, 1=PURE TV, 2=CRITICAL); the TV button and the
+    // tv_gate rising edge both cycle it. 0 is the exact-zero no-op: the shader
+    // branch is skipped entirely and the legacy composite is untouched.
+    { id: 'tvMode',   label: 'TV Mode',  defaultValue: DEFAULTS.tvMode,   min: 0, max: BACKDRAFT_TV_MODE_COUNT - 1, curve: 'discrete' },
+    // Synthetic gate param the tv_gate CV bridge writes — hidden (no card
+    // knob); the module edge-detects a rising edge to CYCLE the mode.
+    { id: 'tvGate',   label: 'TV Gate',  defaultValue: DEFAULTS.tvGate,   min: 0,  max: 1,                     curve: 'linear' },
+    { id: 'room',     label: 'Room',     defaultValue: DEFAULTS.room,     min: 0,  max: 1,                     curve: 'linear' },
+    { id: 'bezel',    label: 'Bezel',    defaultValue: DEFAULTS.bezel,    min: 0,  max: 1,                     curve: 'linear' },
+    { id: 'phosphor', label: 'Phos',     defaultValue: DEFAULTS.phosphor, min: 0,  max: 1,                     curve: 'linear' },
+    { id: 'drive',    label: 'Drive',    defaultValue: DEFAULTS.drive,    min: 0,  max: 1,                     curve: 'linear' },
     // freeze is a hidden VRT/determinism toggle — no card control.
     { id: 'freeze',   label: 'Freeze',   defaultValue: DEFAULTS.freeze,   min: 0,  max: 1,                     curve: 'linear' },
   ],
@@ -2658,6 +2799,10 @@ export const backdraftDef: VideoModuleDef = {
       mirror_y_gate: "Gate/clock input (raw passthrough, edge-detected). A RISING edge TOGGLES (flips) the Mirror Y kaleidoscope fold. Edge-triggered, not a held level.",
       shape_gate: "Gate/clock input (raw passthrough, edge-detected). A RISING edge CYCLES the Shape mask to the next geometry (square → circle → pentagon → triangle → octagon → square). Edge-triggered, not a held level.",
       pure_geo_gate: "Gate/clock input (raw passthrough, edge-detected). A RISING edge TOGGLES the Pure Geo masking space (screen-space crop ↔ zoomed-source crop). Edge-triggered, not a held level.",
+      tv_gate: "Gate/clock input (raw passthrough, edge-detected). A RISING edge CYCLES TV MODE (off → PURE TV → CRITICAL → off), so a clock can flip the module between the infinite-plane tunnel and the bounded-screen television. Edge-triggered, not a held level.",
+      room: "CV (linear) that modulates the Room control — the light level OUTSIDE the TV screen in PURE TV / CRITICAL. A slow LFO here is Crutchfield's flashlight gesture (his rig needs external light to restart a dark screen). No effect while TV MODE is off.",
+      phosphor: "CV (linear) that modulates the Phos control, the one-frame image retention (camera charge storage) applied in place. No effect while TV MODE is off.",
+      drive: "CV (linear) that modulates the Drive control — CRITICAL's auto-exposure servo rate, i.e. how hard the mode sits on the edge of white-out. Below the midpoint the picture is a still nest; above it, it breathes. No effect outside CRITICAL.",
     },
     outputs: {
       out: "The feedback-rendered video output: the crossfaded source composited with the processed, delayed, spatially-warped, mask-scaled copy of the previous output.",
@@ -2688,6 +2833,12 @@ export const backdraftDef: VideoModuleDef = {
       shapeGate: "Shape Gate (0..1, default 0): hidden synthetic param the shape_gate CV bridge writes (raw gate swing). No card knob; a rising edge cycles Shape.",
       pureGeoGate: "PureGeo Gate (0..1, default 0): hidden synthetic param the pure_geo_gate CV bridge writes (raw gate swing). No card knob; a rising edge toggles Pure Geo.",
       flicker: "Flicker (discrete OFF / 6 / 24 / 50 / 60 / 120, default OFF): models a real display emitting light in PULSES rather than continuously, the camera integrating over an exposure window shorter than the pulse period, and the camera sampling at its own frame rate. The two rates BEAT, so the per-frame loop gain cycles above and below its own average instead of being constant — which is what lets pulses of light build up over several frames and then fade away rather than saturating to white and staying there. OFF is the exact no-op (the shader branch is skipped, output is bit-identical). The virtual camera runs at a fixed 60 fps, so the beat is: 6 Hz at the 6 position (below the camera rate, so no aliasing — the camera sees the pulsing DIRECTLY at 10 frames per cycle, the slowest and most obvious breathing); 24 Hz at 24 (2.5 frames per cycle, a fine fast texture); 10 Hz at 50 (6 frames per cycle — the classic look of filming a PAL monitor with an NTSC camera, and the best all-round build-and-fade); 0.06 Hz at 60 (the true NTSC field rate 60000/1001 = 59.94 Hz, a ~16.7-second slow swell — the slowly crawling hum bar you see filming a television); and 0.12 Hz at 120 (119.88 Hz, 2x NTSC — the rolling shutter fits almost exactly one full band cycle down the frame here, which cancels the whole-frame pulsing and leaves a PURE crawling band). Exact multiples of 60 would genlock to a constant gain and not move at all, which is why the 60 and 120 positions use the NTSC rates. A 90-degree shutter (1/240 s) sets how much of each pulse is caught, and the rolling shutter spreads the flicker phase down the frame so a soft light/dark band crawls vertically at the beat rate and feeds back through the loop. Two camera-side terms keep it watchable rather than strobing: the sensor's multi-frame charge storage is a LOW-PASS ON THE BEAT (it cuts 6/24/50 hard and passes 60/120 essentially untouched, so the fast positions shimmer and the slow ones breathe), and a saturating capture shoulder makes the response level-dependent so the modulation acts on midtone contours instead of flashing the whole field. The loop's average gain is held constant as you switch positions, so the FB control keeps meaning the same thing.",
+      tvMode: "TV Mode (discrete OFF / PURE TV / CRITICAL, default OFF): switches BACKDRAFT from an infinite feedback PLANE to a bounded SCREEN. OFF is the exact no-op — the shader branch is skipped and the classic composite is untouched. PURE TV builds the thing a camera pointed at a television actually sees: the previous frame is drawn, whole, inside a bezelled screen rectangle that fills 75% of the frame (set by ZOOM), and OUTSIDE that screen is the live input — so IN PURE TV YOUR INPUT IS THE ROOM, NOT THE PICTURE, and the picture is the feedback. Because each pass places the entire previous view (room, bezel and picture) inside the next screen, the image NESTS: about 11 resolved frames-within-frames, each 3/4 the size of the last and each dimmer, converging on a milky core at 20% of the room level. That nesting is forced by the geometry rather than tuned, which is why no combination of the old FEEDBACK/ZOOM controls could ever produce it — the old map adds the live input to EVERY pixel and clamps the previous frame across the whole plane, so there is no 'outside the TV' left to re-image. PURE TV is a strict contraction: it converges to a STILL nest, and motion in the room cascades inward one level per DELAY. CRITICAL keeps that geometry and adds the camera's AUTOMATIC EXPOSURE — a servo with memory that meters the frame it just captured and pushes its gain the other way. Because it integrates, it overshoots, and past the DRIVE midpoint the overshoot becomes a self-sustaining limit cycle: the picture blooms toward white, the servo hauls it back, and the correction propagates inward through the nest one level per DELAY as a travelling annulus. That is the mode for riding the edge of white-out. The TV button cycles the mode; tv_gate cycles it on a rising edge.",
+      tvGate: "TV Gate (0..1, default 0): hidden synthetic param the tv_gate CV bridge writes (raw gate swing). No card knob; a rising edge cycles TV MODE.",
+      room: "Room (0..1, default 1.0): the light level OUTSIDE the screen in PURE TV / CRITICAL — the live input at full strength plus a 5% ambient floor. The ambient floor is range-preserving, so even with nothing patched the mode still lights its own room and demonstrates its geometry. Turning ROOM down dims the set and the whole nest with it (the brightness cascade stays correctly ordered at every room level, rather than flattening or inverting as an absolute lift would). Inert while TV MODE is off.",
+      bezel: "Bezel (0..1, default 0.4): the width of the screen's frame, in screen-local units, so a level-k bezel automatically lands 3/4-scaled — deeper bezels shrink because they are IMAGES of the real one. The bezel is not decoration: it is the only high-contrast boundary between one nesting level and the next, and without it the nest reads as a smooth zoom rather than as frames within frames. Floored at a non-zero minimum for exactly that reason — a fader whose bottom end deletes the feature would be a bug. Inert while TV MODE is off.",
+      phosphor: "Phos / Phosphor (0..1, default 0): one-frame image retention, applied IN PLACE (no transform) — the term that makes delay smear rather than step. Despite the name this is NOT phosphor: a colour TV's P22 phosphor retains about 4e-73 of a frame, which is nothing, and Crutchfield says so himself. The real integrator in a camera-at-a-TV rig is the CAMERA's charge storage, roughly 10 frames, and that is what this models. Level k has been through the filter k times, so deeper levels are older in proportion to k and blurrier in time in proportion to the square root of k. Unit DC gain, so it changes only the temporal smear and never the converged image. Tube ladder: 0 = colour TV (no inter-frame tail exists, and the honest default), 0.13 = P4 mono TV, 0.16 = P1 scope green, 0.86 = P39 radar, 1.0 = P7 dual-layer radar. Inert while TV MODE is off.",
+      drive: "Drive (0..1, default 0.5): CRITICAL's auto-exposure servo RATE — how hard the mode rides the edge of white-out. This is a time constant, not a gain, and the fader is geometric (equal steps are equal FACTORS, from 1 to 49 per frame) because a servo speed is scale-free; that also makes a linear CV ramp read as a smooth accelerando into instability rather than a cliff. The default 0.5 sits exactly ON the measured bifurcation. Below it the servo is a well-behaved regulator and the nest is dead still; above it the servo overshoots into a sustained limit cycle and the picture breathes — blooming toward white, being hauled back, and sending each correction inward through the nest one level per DELAY. The swing deepens monotonically with the knob. The exposure state is hard-clamped, which is what makes a white-out always recoverable: back DRIVE off and the nest returns. Ignored outside CRITICAL.",
       freeze: "Freeze (0/1, default 0): hidden determinism toggle. At ≥0.5 draw() is a no-op so the ring + output hold their last frame for deterministic VRT capture. No card control.",
     },
   },
@@ -2734,6 +2885,55 @@ export const backdraftDef: VideoModuleDef = {
     const uFlickerPhase = u('uFlickerPhase');
     const uFlickerRow = u('uFlickerRow');
     const uFlickerKnee = u('uFlickerKnee');
+    const uTvOn = u('uTvOn');
+    const uTvFill = u('uTvFill');
+    const uTvBezel = u('uTvBezel');
+    const uTvRoom = u('uTvRoom');
+    const uTvOpNorm = u('uTvOpNorm');
+    const uTvCos = u('uTvCos');
+    const uTvSin = u('uTvSin');
+    const uTvPhos = u('uTvPhos');
+    const uPersist = u('uPersist');
+    const uHasPersist = u('uHasPersist');
+    const uTvGainScale = u('uTvGainScale');
+    const uTvGainCeil = u('uTvGainCeil');
+    const uTvNoise = u('uTvNoise');
+    const uTvFrame = u('uTvFrame');
+    const uTvAgc = u('uTvAgc');
+    const uHasTvAgc = u('uHasTvAgc');
+
+    // ── CRITICAL's auto-exposure servo ────────────────────────────────
+    // Two tiny passes: REDUCE the previous output to an 8x8 grid of local
+    // means, then integrate one servo step into a 1x1 state texture. The state
+    // lives in a TEXTURE, ping-ponged, so nothing reads pixels back — a
+    // readPixels here would sync the GL pipeline every single frame. Both are
+    // allocated lazily on the first CRITICAL frame, so a rack that never
+    // touches CRITICAL pays nothing.
+    const agcProgReduce = ctx.compileFragment(AGC_REDUCE_SRC);
+    const agcProgServo = ctx.compileFragment(AGC_SERVO_SRC);
+    const uRedSrc = gl.getUniformLocation(agcProgReduce, 'uSrc');
+    const uSrvReduce = gl.getUniformLocation(agcProgServo, 'uReduce');
+    const uSrvPrev = gl.getUniformLocation(agcProgServo, 'uPrevAgc');
+    const uSrvHasPrev = gl.getUniformLocation(agcProgServo, 'uHasPrevAgc');
+    const uSrvRate = gl.getUniformLocation(agcProgServo, 'uRate');
+    const uSrvTarget = gl.getUniformLocation(agcProgServo, 'uTarget');
+    type Rt = { fbo: WebGLFramebuffer; texture: WebGLTexture };
+    let agcReduce: Rt | null = null;
+    let agcState: [Rt, Rt] | null = null;
+    let agcCur = 0;
+    let agcPrimed = false;
+    const ensureAgc = (): boolean => {
+      if (agcReduce && agcState) return true;
+      if (!ctx.createFloatFbo) return false;
+      const T = BACKDRAFT_TV_AGC_TILES;
+      agcReduce = ctx.createFloatFbo(T, T, { filter: 'nearest' });
+      agcState = [
+        ctx.createFloatFbo(1, 1, { filter: 'nearest', precision: 'full' }),
+        ctx.createFloatFbo(1, 1, { filter: 'nearest', precision: 'full' }),
+      ];
+      agcPrimed = false;
+      return true;
+    };
 
     // Ring buffer of OUTPUT frames + a dedicated current-output FBO. We
     // render the composite into ring[head] (which IS this frame's output),
@@ -2785,6 +2985,8 @@ export const backdraftDef: VideoModuleDef = {
     // writes while patched, so an unpatched gate never spuriously fires.
     const shapeGate = makeEdgeState();
     const pureGeoGate = makeEdgeState();
+    // TV MODE gate: a rising edge CYCLES OFF -> PURE TV -> CRITICAL -> OFF.
+    const tvGate = makeEdgeState();
 
     const surface: VideoNodeSurface = {
       fbo: ring[0]!.fbo,
@@ -2825,6 +3027,13 @@ export const backdraftDef: VideoModuleDef = {
         }
         if (detectEdge(pureGeoGate, params.pureGeoGate)?.pressed) {
           params.pureGeo = params.pureGeo >= 0.5 ? 0 : 1;
+        }
+        // TV MODE gate: a rising edge CYCLES the mode. Same convention as the
+        // shape gate; the bridge only writes while patched, so an unpatched
+        // gate never spuriously fires, and the card button reflects the
+        // resulting state because we mutate the shared `params`.
+        if (detectEdge(tvGate, params.tvGate)?.pressed) {
+          params.tvMode = backdraftNextTvMode(params.tvMode);
         }
 
         // Effective delay (ms): the DELAY knob, OR — when a DELAY CLOCK is
@@ -2929,6 +3138,101 @@ export const backdraftDef: VideoModuleDef = {
         g.uniform1f(uFlickerRow, flick.rowPhase);
         g.uniform1f(uFlickerKnee, flick.knee);
 
+        // ── PURE TV / CRITICAL ────────────────────────────────────────
+        const tvMode = Math.max(0, Math.min(BACKDRAFT_TV_MODE_COUNT - 1, Math.round(params.tvMode)));
+        const tvOn = tvMode > 0;
+        const critical = tvMode === 2;
+        const room = Math.max(0, Math.min(1, params.room));
+        // The colour chain's operator norm — the quantity the PURE TV ceiling
+        // divides by, and the reason LUMA 1.2 or R 1.3 can no longer pin the
+        // interior to white.
+        const opNorm = Math.max(1e-4, backdraftTvOpNorm({
+          r: params.r, g: params.g, b: params.b, luma: params.luma, chroma: params.chroma,
+        }));
+
+        // The servo runs BEFORE the main pass and meters ring[head-1] — the
+        // previous output — so there is no read-write hazard with `dst`.
+        let agcTex: WebGLTexture | null = null;
+        if (critical && framesElapsed >= 1 && ensureAgc() && agcReduce && agcState) {
+          const prevOut = ring[(head - 1 + BACKDRAFT_BUFFER_FRAMES) % BACKDRAFT_BUFFER_FRAMES]!;
+          const T = BACKDRAFT_TV_AGC_TILES;
+          g.bindFramebuffer(g.FRAMEBUFFER, agcReduce.fbo);
+          g.viewport(0, 0, T, T);
+          g.useProgram(agcProgReduce);
+          g.activeTexture(g.TEXTURE0);
+          g.bindTexture(g.TEXTURE_2D, prevOut.texture);
+          g.uniform1i(uRedSrc, 0);
+          ctx.drawFullscreenQuad();
+
+          const nextIdx = agcCur ^ 1;
+          const srvDst = agcState[nextIdx]!;
+          const srvSrc = agcState[agcCur]!;
+          g.bindFramebuffer(g.FRAMEBUFFER, srvDst.fbo);
+          g.viewport(0, 0, 1, 1);
+          g.useProgram(agcProgServo);
+          g.activeTexture(g.TEXTURE0);
+          g.bindTexture(g.TEXTURE_2D, agcReduce.texture);
+          g.uniform1i(uSrvReduce, 0);
+          g.activeTexture(g.TEXTURE1);
+          g.bindTexture(g.TEXTURE_2D, srvSrc.texture);
+          g.uniform1i(uSrvPrev, 1);
+          g.uniform1f(uSrvHasPrev, agcPrimed ? 1.0 : 0.0);
+          g.uniform1f(uSrvRate, backdraftTvAgcRate(params.drive));
+          // Set point RELATIVE to the room: an absolute one rails the servo in
+          // a dim room and the limit cycle dies.
+          g.uniform1f(uSrvTarget, BACKDRAFT_TV_AGC_TARGET * Math.max(0.05, room));
+          ctx.drawFullscreenQuad();
+
+          agcCur = nextIdx;
+          agcPrimed = true;
+          agcTex = srvDst.texture;
+          // Restore the main render target the rest of draw() expects.
+          g.bindFramebuffer(g.FRAMEBUFFER, dst.fbo);
+          g.viewport(0, 0, ctx.res.width, ctx.res.height);
+          g.useProgram(program);
+        }
+
+        g.uniform1f(uTvOn, tvOn ? 1.0 : 0.0);
+        g.uniform1f(uTvFill, backdraftTvFill(zoom));
+        g.uniform1f(uTvBezel, backdraftTvBezel(params.bezel));
+        g.uniform1f(uTvRoom, room);
+        g.uniform1f(uTvOpNorm, opNorm);
+        // ROTATE x6 inside PURE TV only, so every Crutchfield symmetry lock
+        // (n = 3/4/5/9) is reachable without remapping `rotate` CV anywhere else.
+        const tvTheta = (backdraftTvRotationDeg(rot) * Math.PI) / 180;
+        g.uniform1f(uTvCos, Math.cos(tvTheta));
+        g.uniform1f(uTvSin, Math.sin(tvTheta));
+        const phos = backdraftTvPhosphorRgb(params.phosphor);
+        g.uniform3f(uTvPhos, phos[0], phos[1], phos[2]);
+        g.uniform1f(uTvNoise, critical ? BACKDRAFT_TV_NOISE : 0);
+        g.uniform1f(uTvFrame, framesElapsed % 4096);
+        // The servo state is a TEXTURE, sampled by the main pass — never read
+        // back to the CPU, so the pipeline never syncs.
+        g.activeTexture(g.TEXTURE6);
+        g.bindTexture(g.TEXTURE_2D, agcTex ?? emptyTex);
+        g.uniform1i(uTvAgc, 6);
+        g.uniform1f(uHasTvAgc, agcTex ? 1.0 : 0.0);
+        if (critical) {
+          // The servo regulates the level, so there is NO ceiling here. The
+          // always-on shoulder and the bounded room stay as SOFT limiters, which
+          // is what makes a white-out recoverable rather than terminal.
+          g.uniform1f(uTvGainScale, BACKDRAFT_TV_CRIT_GAIN / opNorm);
+          g.uniform1f(uTvGainCeil, 1e9);
+        } else {
+          g.uniform1f(uTvGainScale, Math.max(0, Math.min(BACKDRAFT_MAX_FEEDBACK, params.feedback)));
+          g.uniform1f(uTvGainCeil, BACKDRAFT_TV_GAIN_MAX / opNorm);
+        }
+
+        // PHOSPHOR's in-place tap: the previous OUTPUT at the SAME x. Bound
+        // even when tvMode = 0 (the sentinel) so the sampler is never stale.
+        g.activeTexture(g.TEXTURE5);
+        const persistTex = tvOn && framesElapsed >= 1
+          ? ring[(head - 1 + BACKDRAFT_BUFFER_FRAMES) % BACKDRAFT_BUFFER_FRAMES]!.texture
+          : emptyTex;
+        g.bindTexture(g.TEXTURE_2D, persistTex);
+        g.uniform1i(uPersist, 5);
+        g.uniform1f(uHasPersist, tvOn && framesElapsed >= 1 ? 1.0 : 0.0);
+
         ctx.drawFullscreenQuad();
         g.bindFramebuffer(g.FRAMEBUFFER, null);
 
@@ -2943,8 +3247,18 @@ export const backdraftDef: VideoModuleDef = {
           gl.deleteFramebuffer(r.fbo);
           gl.deleteTexture(r.texture);
         }
+        if (agcReduce) {
+          gl.deleteFramebuffer(agcReduce.fbo);
+          gl.deleteTexture(agcReduce.texture);
+        }
+        for (const r of agcState ?? []) {
+          gl.deleteFramebuffer(r.fbo);
+          gl.deleteTexture(r.texture);
+        }
         gl.deleteTexture(emptyTex);
         gl.deleteProgram(program);
+        gl.deleteProgram(agcProgReduce);
+        gl.deleteProgram(agcProgServo);
       },
     };
 
