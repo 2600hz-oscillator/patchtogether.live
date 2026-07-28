@@ -181,7 +181,11 @@ export const swolevcoDef: AudioModuleDef = {
   ],
   outputs: [
     { id: 'out',     type: 'audio' },
-    { id: 'mod_out', type: 'audio' },
+    // Explicit jack label (PortDef.label — cosmetic, contract-transparent):
+    // this is the MODULATOR oscillator's sine tap, and the shared abbreviation
+    // table reads a bare `mod` stem as 'MODE' (the mode/mod_… family every
+    // other module uses it for). Name it rather than let the derivation guess.
+    { id: 'mod_out', type: 'audio', label: 'modulator' },
     { id: 'sum_out', type: 'audio' },
     { id: 'scope',   type: 'mono-video' },
   ],

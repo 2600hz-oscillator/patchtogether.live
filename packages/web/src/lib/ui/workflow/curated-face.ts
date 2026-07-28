@@ -8,7 +8,7 @@
 //   mini    → 1   (the hero control + live glyph)
 //   compact → 2 with a glyph / 3 without  (the design-point lane tile — the
 //                 cap RECONCILED with laneBodyPlan's fit, see faceTierCap)
-//   full    → 8   (the full-in-lane face)
+//   full    → 6   (the full-in-lane 3×2 plate — likewise reconciled)
 //   dock    → ALL (the sectioned dock faceplate — order + pages)
 //
 // PURE + browser-safe (no fs, no registry import): it reads ONLY the passed
@@ -23,7 +23,12 @@
 // an unrecognized key as a humanized static control so it stays pure.
 
 import type { ModuleFace, ModuleFacePage } from '$lib/graph/types';
-import { LANE_ROW_MAX_CELLS, LANE_ROW_MAX_CELLS_WITH_GLYPH } from './module-shell-model';
+import {
+  LANE_ROW_MAX_CELLS,
+  LANE_ROW_MAX_CELLS_WITH_GLYPH,
+  PLATE_COLS,
+  PLATE_MAX_ROWS,
+} from './module-shell-model';
 
 /** The curation LADDER — the tiers a face is sliced into. Distinct from the
  *  LOD zoom tiers (mini/compact/full/native in lod.ts): 'dock' is the sectioned
@@ -32,29 +37,41 @@ import { LANE_ROW_MAX_CELLS, LANE_ROW_MAX_CELLS_WITH_GLYPH } from './module-shel
 export type FaceTier = 'mini' | 'compact' | 'full' | 'dock';
 
 /**
+ * The 'full' (full-in-lane) ceiling: laneBodyPlan's PLATE grid is 3 columns ×
+ * 2 whole rows inside the fixed 192×180 tile, so SIX cells is every control the
+ * lane can ever paint at this tier. Ranks 7+ are DOCK-ONLY — which is a design
+ * fact every face author needs while ranking, not a truncation to discover
+ * afterwards.
+ */
+export const LANE_PLATE_MAX_CELLS = PLATE_COLS * PLATE_MAX_ROWS;
+
+/**
  * How many controls each tier surfaces. `dock` = every ranked control.
  *
- * `compact` is the GLYPH-LESS ceiling. The compact tile is the one tier whose
- * cap is decided by GEOMETRY rather than by the curation ladder: the fixed
- * 192×180 lane tile fits three whole md knob columns, or TWO plus the glyph
- * (laneBodyPlan's LANE_ROW_MAX_CELLS / LANE_ROW_MAX_CELLS_WITH_GLYPH). Use
- * `faceTierCap(tier, hasGlyph)` — never `FACE_TIER_CAPS.compact` directly — so
+ * BOTH lane tiers are decided by GEOMETRY, not by an authored ladder — the tile
+ * is a fixed 192×180 box, so its whole-cell fit is a design-time constant:
+ *   compact → three md knob columns, or TWO plus the glyph
+ *             (laneBodyPlan's LANE_ROW_MAX_CELLS / LANE_ROW_MAX_CELLS_WITH_GLYPH);
+ *   full    → the 3×2 plate grid = SIX cells (LANE_PLATE_MAX_CELLS).
+ * Use `faceTierCap(tier, hasGlyph)` — never a raw FACE_TIER_CAPS lookup — so
  * the SELECTED count and the RENDERED count are the same number by
- * construction (the authored-intent mismatch: faces documented a 3-control
- * compact tile the shell then truncated to 2, silently).
+ * construction (the authored-intent mismatch this reconciles: faces documented
+ * a 3-control compact tile the shell truncated to 2, and an 8-control full face
+ * the plate truncated to 6 — both silently).
  */
 export const FACE_TIER_CAPS: Record<FaceTier, number> = {
   mini: 1,
   compact: LANE_ROW_MAX_CELLS,
-  full: 8,
+  full: LANE_PLATE_MAX_CELLS,
   dock: Infinity,
 };
 
 /**
- * The EFFECTIVE cap for a tier — the ladder, reconciled with the lane fit plan
- * at 'compact': a glyph-bearing face surfaces two cells there (the glyph takes
- * the third column's room), a glyph-less face three. Every other tier is the
- * plain ladder value. Pure.
+ * The EFFECTIVE cap for a tier — the ladder, reconciled with the lane fit plan.
+ * At 'compact' a glyph-bearing face surfaces two cells (the glyph takes the
+ * third column's room) and a glyph-less face three; at 'full' the plate holds
+ * six either way (ranked controls outrank the glyph, which simply drops when
+ * the cells need both rows). Every other tier is the plain ladder value. Pure.
  */
 export function faceTierCap(tier: FaceTier, hasGlyph: boolean): number {
   if (tier === 'compact') return hasGlyph ? LANE_ROW_MAX_CELLS_WITH_GLYPH : LANE_ROW_MAX_CELLS;
@@ -78,11 +95,22 @@ export interface FaceControl {
   label: string;
 }
 
-/** One resolved dock page — its control keys turned into descriptors. */
+/** A resolved cluster sub-header inside a page/band (the front-side mirror of
+ *  RearCluster): a label + the cells PULLED OUT of the band's flat row. */
+export interface FaceCluster {
+  label: string;
+  controls: FaceControl[];
+}
+
+/** One resolved dock page — its control keys turned into descriptors.
+ *  `controls` holds the UN-clustered cells (they render first); `clusters`
+ *  holds the labeled sub-groups, in declaration order. Together they are the
+ *  page's full membership, exactly once each. */
 export interface ResolvedFacePage {
   id: string;
   label: string;
   controls: FaceControl[];
+  clusters: FaceCluster[];
 }
 
 /** The selector's result. `pages` is present only for the 'dock' tier (and only
@@ -145,11 +173,40 @@ export function resolveFaceControl(key: string, def: FaceDefLike): FaceControl {
   return { key, kind: 'static', label: humanize(key) };
 }
 
+/**
+ * Resolve one page, PULLING its declared clusters out of the flat control row
+ * — the exact shape rearFieldPlan uses for `face.rear.clusters` (band.holes
+ * keeps the un-clustered holes; band.clusters carries the rest). Membership
+ * comes from `page.controls` alone, so a cluster naming a key the page does not
+ * claim contributes NOTHING (it cannot smuggle an unranked control into the
+ * dock); module-face-lint fails that authoring mistake loudly.
+ */
 function resolvePage(page: ModuleFacePage, def: FaceDefLike): ResolvedFacePage {
+  const all = page.controls.map((k) => resolveFaceControl(k, def));
+  const declared = page.clusters ?? [];
+  if (!declared.length) {
+    return { id: page.id, label: page.label, controls: all, clusters: [] };
+  }
+  const byKey = new Map(all.map((c) => [c.key, c]));
+  const claimed = new Set<string>();
+  const clusters: FaceCluster[] = [];
+  for (const c of declared) {
+    const controls: FaceControl[] = [];
+    for (const key of c.controls) {
+      const ctl = byKey.get(key);
+      // Not on this page, or already claimed by an earlier cluster → skip.
+      // Exactly-once is the invariant the dock parity gate reads.
+      if (!ctl || claimed.has(key)) continue;
+      claimed.add(key);
+      controls.push(ctl);
+    }
+    if (controls.length) clusters.push({ label: c.label, controls });
+  }
   return {
     id: page.id,
     label: page.label,
-    controls: page.controls.map((k) => resolveFaceControl(k, def)),
+    controls: all.filter((c) => !claimed.has(c.key)),
+    clusters,
   };
 }
 
@@ -197,11 +254,22 @@ export const DOCK_UNPAGED_BAND_ID = '__unpaged';
 export const DOCK_ALL_BAND_ID = '__all';
 
 /** One dock section band: a declared face page, the '__unpaged' tail, or the
- *  page-less '__all' roster. `label` may be '' (rendered without a header). */
+ *  page-less '__all' roster. `label` may be '' (rendered without a header).
+ *  `controls` = the un-clustered cells (rendered first); `clusters` = the
+ *  labeled sub-groups (ModuleFacePage.clusters). A consumer that walks the plan
+ *  MUST read both — `dockPlanControls()` does it for you. */
 export interface DockFaceBand {
   id: string;
   label: string;
   controls: FaceControl[];
+  clusters: FaceCluster[];
+}
+
+/** EVERY cell a dock plan paints, band order, un-clustered before clustered.
+ *  The one flattening the parity gates + the shell-cell coverage gate use, so a
+ *  control moved into a cluster can never read as "dropped from the dock". */
+export function dockPlanControls(bands: readonly DockFaceBand[]): FaceControl[] {
+  return bands.flatMap((b) => [...b.controls, ...b.clusters.flatMap((c) => c.controls)]);
 }
 
 /**
@@ -218,14 +286,23 @@ export function dockFacePlan(def: FaceDefLike): DockFaceBand[] | null {
 
   const pages = dock.pages ?? [];
   if (!pages.length) {
-    return [{ id: DOCK_ALL_BAND_ID, label: '', controls: dock.controls }];
+    return [{ id: DOCK_ALL_BAND_ID, label: '', controls: dock.controls, clusters: [] }];
   }
 
-  const bands: DockFaceBand[] = pages.map((p) => ({ id: p.id, label: p.label, controls: p.controls }));
-  const claimed = new Set(pages.flatMap((p) => p.controls.map((c) => c.key)));
+  const bands: DockFaceBand[] = pages.map((p) => ({
+    id: p.id,
+    label: p.label,
+    controls: p.controls,
+    clusters: p.clusters,
+  }));
+  // A clustered cell is still CLAIMED by its page — the tail must sweep only
+  // what no page mentions at all, never a cell a cluster pulled aside.
+  const claimed = new Set(
+    pages.flatMap((p) => [...p.controls, ...p.clusters.flatMap((c) => c.controls)]).map((c) => c.key),
+  );
   const unpaged = dock.controls.filter((c) => !claimed.has(c.key));
   if (unpaged.length) {
-    bands.push({ id: DOCK_UNPAGED_BAND_ID, label: 'more', controls: unpaged });
+    bands.push({ id: DOCK_UNPAGED_BAND_ID, label: 'more', controls: unpaged, clusters: [] });
   }
   return bands;
 }

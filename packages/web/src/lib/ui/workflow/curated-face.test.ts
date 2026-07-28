@@ -6,13 +6,16 @@
 import { describe, it, expect } from 'vitest';
 import {
   curatedFace,
+  dockFacePlan,
+  dockPlanControls,
   faceTierCap,
   resolveFaceControl,
   FACE_TIER_CAPS,
+  LANE_PLATE_MAX_CELLS,
   type FaceDefLike,
   type FaceTier,
 } from './curated-face';
-import { laneBodyPlan } from './module-shell-model';
+import { laneBodyPlan, PLATE_COLS, PLATE_MAX_ROWS } from './module-shell-model';
 
 // A def with 10 ranked controls: a mix of params, one family template, and one
 // static button — enough to prove the top-N slice at every tier.
@@ -64,11 +67,14 @@ describe('curatedFace — top-N per tier', () => {
     ]);
   });
 
-  it('full returns the first 8', () => {
+  it('full returns the first 6 — the 3×2 plate, laneBodyPlan’s no-clip cap', () => {
+    // Ranks 7+ are DOCK-ONLY: the full-in-lane plate is 3 columns × 2 whole
+    // rows inside the fixed 192×180 tile, so the 8 the ladder used to promise
+    // was two cells the shell truncated without telling the face author.
     const f = curatedFace(DEF, 'full')!;
-    expect(f.controls).toHaveLength(8);
+    expect(f.controls).toHaveLength(6);
     expect(f.controls.map((c) => c.key)).toEqual([
-      'pitch', 'wave', 'cutoff', 'res', 'attack', 'decay', 'sustain', 'release',
+      'pitch', 'wave', 'cutoff', 'res', 'attack', 'decay',
     ]);
   });
 
@@ -153,6 +159,70 @@ describe('curatedFace — key resolution + glyph', () => {
   });
 });
 
+describe('ModuleFacePage.clusters — the front-side mirror of the rear card’s', () => {
+  // A cluster costs a ~14px sub-header where a second page band costs ~81px
+  // (rule + header + row + the .dock-pages gap). It GROUPS keys the page
+  // already claims — membership never moves out of page.controls, which is
+  // what keeps face.order completeness + the dock parity gate reading one list.
+  const CLUSTERED: FaceDefLike = {
+    params: [
+      { id: 'fatk', label: 'F.A' }, { id: 'fdec', label: 'F.D' },
+      { id: 'atk', label: 'A' }, { id: 'dec', label: 'D' },
+      { id: 'level', label: 'Level' },
+    ],
+    face: {
+      order: ['fatk', 'fdec', 'atk', 'dec', 'level'],
+      pages: [
+        {
+          id: 'envelopes',
+          label: 'envelopes',
+          controls: ['level', 'fatk', 'fdec', 'atk', 'dec'],
+          clusters: [
+            { label: 'filter eg', controls: ['fatk', 'fdec'] },
+            { label: 'amp eg', controls: ['atk', 'dec'] },
+          ],
+        },
+      ],
+    },
+  };
+
+  it('PULLS the clustered cells out of the flat row, leaving the rest first', () => {
+    const page = curatedFace(CLUSTERED, 'dock')!.pages![0];
+    expect(page.controls.map((c) => c.key), 'un-clustered cells render first').toEqual(['level']);
+    expect(page.clusters.map((c) => c.label)).toEqual(['filter eg', 'amp eg']);
+    expect(page.clusters[0].controls.map((c) => c.key)).toEqual(['fatk', 'fdec']);
+    expect(page.clusters[1].controls.map((c) => c.key)).toEqual(['atk', 'dec']);
+  });
+
+  it('dockPlanControls still yields EVERY control exactly once', () => {
+    // The invariant the render-parity gate reads: clustering is a layout move,
+    // never a membership change. A flattening that forgot band.clusters would
+    // report `fatk` as dropped from the dock.
+    const flat = dockPlanControls(dockFacePlan(CLUSTERED)!).map((c) => c.key);
+    expect(flat.slice().sort()).toEqual(['atk', 'dec', 'fatk', 'fdec', 'level']);
+    expect(new Set(flat).size).toBe(flat.length);
+  });
+
+  it('ignores a cluster key the page does not claim (it cannot ADD a control)', () => {
+    const bad: FaceDefLike = {
+      params: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }],
+      face: {
+        order: ['a', 'b'],
+        pages: [{ id: 'p', label: 'P', controls: ['a'], clusters: [{ label: 'x', controls: ['a', 'b'] }] }],
+      },
+    };
+    const band = dockFacePlan(bad)!.find((x) => x.id === 'p')!;
+    expect(band.clusters[0].controls.map((c) => c.key), 'only the claimed key').toEqual(['a']);
+    // `b` is ranked but unpaged, so the defensive tail still sweeps it up.
+    expect(dockPlanControls(dockFacePlan(bad)!).map((c) => c.key).sort()).toEqual(['a', 'b']);
+  });
+
+  it('a page-less / cluster-less face keeps an empty clusters array (no undefined)', () => {
+    const plain = dockFacePlan(DEF)!;
+    for (const band of plain) expect(band.clusters).toEqual([]);
+  });
+});
+
 describe('curatedFace — un-faced module', () => {
   it('returns null when the def has no face (un-migrated → placeholder)', () => {
     expect(curatedFace({ params: [{ id: 'x', label: 'X' }] }, 'compact')).toBeNull();
@@ -160,35 +230,51 @@ describe('curatedFace — un-faced module', () => {
 });
 
 describe('FACE_TIER_CAPS ladder', () => {
-  it('is mini=1 / compact=3 (the glyph-less ceiling) / full=8 / dock=all', () => {
+  it('is mini=1 / compact=3 (the glyph-less ceiling) / full=6 (the plate) / dock=all', () => {
     expect(FACE_TIER_CAPS.mini).toBe(1);
     expect(FACE_TIER_CAPS.compact).toBe(3);
-    expect(FACE_TIER_CAPS.full).toBe(8);
+    expect(FACE_TIER_CAPS.full).toBe(6);
     expect(FACE_TIER_CAPS.dock).toBe(Infinity);
+  });
+
+  it('full is DERIVED from the plate geometry, never a hand-typed number', () => {
+    // If PLATE_COLS/PLATE_MAX_ROWS ever move, the cap must move with them —
+    // that is the whole point of reconciling the ladder with the fit plan.
+    expect(LANE_PLATE_MAX_CELLS).toBe(PLATE_COLS * PLATE_MAX_ROWS);
+    expect(FACE_TIER_CAPS.full).toBe(LANE_PLATE_MAX_CELLS);
   });
 });
 
 describe('faceTierCap — the cap RECONCILED with the lane fit plan', () => {
-  // The authored-intent mismatch this closes: FACE_TIER_CAPS.compact = 3 while
-  // laneBodyPlan renders only 2 next to a glyph, so six faces documented a
-  // 3-control compact tile the shell could never render. The cap now FOLLOWS
-  // the plan, and this test pins them together.
-  it('compact = 2 with a glyph, 3 without; every other tier is the plain ladder', () => {
+  // The authored-intent mismatch this closes, in both lane tiers:
+  // FACE_TIER_CAPS.compact = 3 while laneBodyPlan renders only 2 next to a
+  // glyph (six faces documented a 3-control compact tile the shell could never
+  // render), and FACE_TIER_CAPS.full = 8 while the 3×2 plate renders 6 (every
+  // face's ranks 7-8 were authored as in-lane and silently truncated). The caps
+  // now FOLLOW the plan, and this test pins them together.
+  it('compact = 2 with a glyph, 3 without; full = 6 either way; others are the ladder', () => {
     expect(faceTierCap('compact', true)).toBe(2);
     expect(faceTierCap('compact', false)).toBe(3);
+    expect(faceTierCap('full', true)).toBe(6);
+    expect(faceTierCap('full', false)).toBe(6);
     for (const t of ['mini', 'full', 'dock'] as FaceTier[]) {
       for (const g of [true, false]) expect(faceTierCap(t, g)).toBe(FACE_TIER_CAPS[t]);
     }
   });
 
-  it('SELECTED count === RENDERED count at compact, for both glyph cases', () => {
+  it('SELECTED count === RENDERED count at EVERY lane tier, for both glyph cases', () => {
     for (const hasGlyph of [true, false]) {
       const def: FaceDefLike = {
         ...DEF,
         face: { ...DEF.face!, glyph: hasGlyph ? 'scope' : 'none' },
       };
-      const selected = curatedFace(def, 'compact')!.controls.length;
-      expect(laneBodyPlan(selected, hasGlyph, 'compact').cellCount).toBe(selected);
+      for (const tier of ['mini', 'compact', 'full'] as FaceTier[]) {
+        const selected = curatedFace(def, tier)!.controls.length;
+        expect(
+          laneBodyPlan(selected, hasGlyph, tier).cellCount,
+          `${tier} (glyph=${hasGlyph}): selected ${selected}`,
+        ).toBe(selected);
+      }
     }
   });
 });
