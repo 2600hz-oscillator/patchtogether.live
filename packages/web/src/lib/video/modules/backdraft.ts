@@ -421,6 +421,28 @@ export const BACKDRAFT_FLICKER_KNEE = 0.55;
 //
 // Design + adversarial review: .myrobots/plans/backdraft-pure-tv-2026-07-27.md.
 
+/**
+ * THE TEXTURE-UNIT MAP, as data, because a collision here is SILENT.
+ *
+ * The main composite binds units 0-6 and its `uniform1i` sampler bindings stay
+ * live across the whole of draw(). The auto-exposure servo's two passes run in
+ * the MIDDLE of that, between the main program's texture setup and its
+ * drawFullscreenQuad — so any unit they touch that the main program is also
+ * using is silently swapped out from under it. That really happened: the servo
+ * originally used units 0 and 1 and quietly replaced the live IN A / IN B
+ * source with the reduce input, which shows up as a wrong-looking room rather
+ * than as an error.
+ *
+ * Any new pass MUST take a unit from the free end and be added here;
+ * `backdraft-tv.test.ts` asserts the map stays disjoint.
+ */
+export const BACKDRAFT_TEXTURE_UNITS = {
+  /** main composite */
+  a: 0, b: 1, fb: 2, lighten: 3, darken: 4, persist: 5, agcState: 6,
+  /** auto-exposure servo passes — deliberately ABOVE the main program's range */
+  agcReduceSrc: 7, agcPrevState: 8,
+} as const;
+
 /** TV MODE positions: 0 = OFF (the legacy composite), 1 = PURE TV (the
  *  bounded-screen nest, a strict contraction), 2 = CRITICAL (the same geometry
  *  with the auto-exposure servo, which is where the time lives). */
@@ -3077,29 +3099,29 @@ export const backdraftDef: VideoModuleDef = {
         g.viewport(0, 0, ctx.res.width, ctx.res.height);
         g.useProgram(program);
 
-        g.activeTexture(g.TEXTURE0);
+        g.activeTexture(g.TEXTURE0 + BACKDRAFT_TEXTURE_UNITS.a);
         g.bindTexture(g.TEXTURE_2D, aTex ?? emptyTex);
-        g.uniform1i(uA, 0);
+        g.uniform1i(uA, BACKDRAFT_TEXTURE_UNITS.a);
         g.uniform1f(uHasA, aTex ? 1.0 : 0.0);
 
-        g.activeTexture(g.TEXTURE1);
+        g.activeTexture(g.TEXTURE0 + BACKDRAFT_TEXTURE_UNITS.b);
         g.bindTexture(g.TEXTURE_2D, bTex ?? emptyTex);
-        g.uniform1i(uB, 1);
+        g.uniform1i(uB, BACKDRAFT_TEXTURE_UNITS.b);
         g.uniform1f(uHasB, bTex ? 1.0 : 0.0);
 
-        g.activeTexture(g.TEXTURE2);
+        g.activeTexture(g.TEXTURE0 + BACKDRAFT_TEXTURE_UNITS.fb);
         g.bindTexture(g.TEXTURE_2D, fbTex);
-        g.uniform1i(uFb, 2);
+        g.uniform1i(uFb, BACKDRAFT_TEXTURE_UNITS.fb);
         g.uniform1f(uHasFb, framesElapsed >= delayFrames ? 1.0 : 0.0);
 
-        g.activeTexture(g.TEXTURE3);
+        g.activeTexture(g.TEXTURE0 + BACKDRAFT_TEXTURE_UNITS.lighten);
         g.bindTexture(g.TEXTURE_2D, lightenTex ?? emptyTex);
-        g.uniform1i(uLighten, 3);
+        g.uniform1i(uLighten, BACKDRAFT_TEXTURE_UNITS.lighten);
         g.uniform1f(uHasLighten, lightenTex ? 1.0 : 0.0);
 
-        g.activeTexture(g.TEXTURE4);
+        g.activeTexture(g.TEXTURE0 + BACKDRAFT_TEXTURE_UNITS.darken);
         g.bindTexture(g.TEXTURE_2D, darkenTex ?? emptyTex);
-        g.uniform1i(uDarken, 4);
+        g.uniform1i(uDarken, BACKDRAFT_TEXTURE_UNITS.darken);
         g.uniform1f(uHasDarken, darkenTex ? 1.0 : 0.0);
 
         g.uniform1f(uMix,         Math.max(0, Math.min(1, params.mix)));
@@ -3181,9 +3203,9 @@ export const backdraftDef: VideoModuleDef = {
           // TEXTURE7/8, NOT 0/1: the main program's uA/uB/uFb bindings are
           // already live on units 0-5 at this point, and rebinding those units
           // here would silently swap the live SOURCE for the reduce input.
-          g.activeTexture(g.TEXTURE7);
+          g.activeTexture(g.TEXTURE0 + BACKDRAFT_TEXTURE_UNITS.agcReduceSrc);
           g.bindTexture(g.TEXTURE_2D, prevOut.texture);
-          g.uniform1i(uRedSrc, 7);
+          g.uniform1i(uRedSrc, BACKDRAFT_TEXTURE_UNITS.agcReduceSrc);
           ctx.drawFullscreenQuad();
 
           const nextIdx = agcCur ^ 1;
@@ -3192,12 +3214,12 @@ export const backdraftDef: VideoModuleDef = {
           g.bindFramebuffer(g.FRAMEBUFFER, srvDst.fbo);
           g.viewport(0, 0, 1, 1);
           g.useProgram(agcProgServo);
-          g.activeTexture(g.TEXTURE7);
+          g.activeTexture(g.TEXTURE0 + BACKDRAFT_TEXTURE_UNITS.agcReduceSrc);
           g.bindTexture(g.TEXTURE_2D, agcReduce.texture);
-          g.uniform1i(uSrvReduce, 7);
-          g.activeTexture(g.TEXTURE8);
+          g.uniform1i(uSrvReduce, BACKDRAFT_TEXTURE_UNITS.agcReduceSrc);
+          g.activeTexture(g.TEXTURE0 + BACKDRAFT_TEXTURE_UNITS.agcPrevState);
           g.bindTexture(g.TEXTURE_2D, srvSrc.texture);
-          g.uniform1i(uSrvPrev, 8);
+          g.uniform1i(uSrvPrev, BACKDRAFT_TEXTURE_UNITS.agcPrevState);
           g.uniform1f(uSrvHasPrev, agcPrimed ? 1.0 : 0.0);
           g.uniform1f(uSrvRate, backdraftTvAgcRate(params.drive));
           // Set point RELATIVE to the room: an absolute one rails the servo in
@@ -3230,9 +3252,9 @@ export const backdraftDef: VideoModuleDef = {
         g.uniform1f(uTvFrame, framesElapsed % 4096);
         // The servo state is a TEXTURE, sampled by the main pass — never read
         // back to the CPU, so the pipeline never syncs.
-        g.activeTexture(g.TEXTURE6);
+        g.activeTexture(g.TEXTURE0 + BACKDRAFT_TEXTURE_UNITS.agcState);
         g.bindTexture(g.TEXTURE_2D, agcTex ?? emptyTex);
-        g.uniform1i(uTvAgc, 6);
+        g.uniform1i(uTvAgc, BACKDRAFT_TEXTURE_UNITS.agcState);
         g.uniform1f(uHasTvAgc, agcTex ? 1.0 : 0.0);
         if (critical) {
           // The servo regulates the level, so there is NO ceiling here. The
@@ -3247,12 +3269,12 @@ export const backdraftDef: VideoModuleDef = {
 
         // PHOSPHOR's in-place tap: the previous OUTPUT at the SAME x. Bound
         // even when tvMode = 0 (the sentinel) so the sampler is never stale.
-        g.activeTexture(g.TEXTURE5);
+        g.activeTexture(g.TEXTURE0 + BACKDRAFT_TEXTURE_UNITS.persist);
         const persistTex = tvOn && framesElapsed >= 1
           ? ring[(head - 1 + BACKDRAFT_BUFFER_FRAMES) % BACKDRAFT_BUFFER_FRAMES]!.texture
           : emptyTex;
         g.bindTexture(g.TEXTURE_2D, persistTex);
-        g.uniform1i(uPersist, 5);
+        g.uniform1i(uPersist, BACKDRAFT_TEXTURE_UNITS.persist);
         g.uniform1f(uHasPersist, tvOn && framesElapsed >= 1 ? 1.0 : 0.0);
 
         ctx.drawFullscreenQuad();

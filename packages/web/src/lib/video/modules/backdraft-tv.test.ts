@@ -25,6 +25,7 @@ import {
   BACKDRAFT_TV_BEZEL_MIN,
   BACKDRAFT_TV_BEZEL_MAX,
   BACKDRAFT_TV_MODE_COUNT,
+  BACKDRAFT_TEXTURE_UNITS,
   BACKDRAFT_TV_AGC_MIN,
   BACKDRAFT_TV_AGC_MAX,
   BACKDRAFT_TV_AGC_RATE_MIN,
@@ -427,6 +428,33 @@ describe('BACKDRAFT PURE TV — the contraction contract', () => {
     // still resolve a real nest rather than collapsing to one band.
     const r = simulateBackdraftTv({ size: 384, frames: 90, bezel: 0 });
     expect(tvBands(r).length).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe('BACKDRAFT — GL resource discipline', () => {
+  it('N11 — the texture-unit map is DISJOINT (a collision here is silent)', () => {
+    // The servo's two passes run in the MIDDLE of the main composite's draw,
+    // after its sampler uniforms are bound and before its drawFullscreenQuad.
+    // Any unit they share with the main program is silently swapped out from
+    // under it — which really happened: the servo first used units 0/1 and
+    // quietly replaced the live IN A / IN B source with the reduce input. That
+    // presents as a wrong-looking ROOM, never as an error, so it needs a gate.
+    const units = Object.values(BACKDRAFT_TEXTURE_UNITS);
+    expect(new Set(units).size, 'every texture unit is used exactly once').toBe(units.length);
+    for (const u of units) {
+      expect(Number.isInteger(u)).toBe(true);
+      // WebGL2 guarantees at least 16 combined units; stay well inside that.
+      expect(u).toBeGreaterThanOrEqual(0);
+      expect(u).toBeLessThan(16);
+    }
+    // The servo passes must sit ABOVE everything the main composite binds.
+    const mainMax = Math.max(
+      BACKDRAFT_TEXTURE_UNITS.a, BACKDRAFT_TEXTURE_UNITS.b, BACKDRAFT_TEXTURE_UNITS.fb,
+      BACKDRAFT_TEXTURE_UNITS.lighten, BACKDRAFT_TEXTURE_UNITS.darken,
+      BACKDRAFT_TEXTURE_UNITS.persist, BACKDRAFT_TEXTURE_UNITS.agcState,
+    );
+    expect(BACKDRAFT_TEXTURE_UNITS.agcReduceSrc).toBeGreaterThan(mainMax);
+    expect(BACKDRAFT_TEXTURE_UNITS.agcPrevState).toBeGreaterThan(mainMax);
   });
 });
 
