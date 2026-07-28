@@ -30,7 +30,7 @@ import { looksLikeToggle } from '$lib/graph/group-controls';
 import type { ParamDef } from '$lib/graph/types';
 
 /** The primitive a PARAM cell renders as. */
-export type ParamCellKind = 'knob' | 'momentary' | 'toggle' | 'segmented' | 'selector';
+export type ParamCellKind = 'knob' | 'momentary' | 'toggle' | 'segmented' | 'selector' | 'grid';
 
 /**
  * How many named states still fit as an inline button row before the dock
@@ -62,6 +62,22 @@ export function momentaryParamIds(def: { face?: { momentary?: readonly string[] 
 }
 
 /**
+ * The param ids a def DECLARES as `'grid'` cells (`face.paramCells`) — empty
+ * when none. The only declared render primitive: every other kind is derived
+ * from the param's own shape or vocabulary (see paramCellKind). Pure.
+ */
+export function gridParamIds(
+  def: { face?: { paramCells?: Readonly<Record<string, 'grid'>> } } | undefined,
+): ReadonlySet<string> {
+  const decl = def?.face?.paramCells;
+  if (!decl) return EMPTY_IDS;
+  return new Set(Object.keys(decl).filter((k) => decl[k] === 'grid'));
+}
+
+/** Shared empty set so the common (undeclared) case allocates nothing. */
+const EMPTY_IDS: ReadonlySet<string> = new Set<string>();
+
+/**
  * Which primitive a param cell renders as. Takes the whole ParamDef (not just
  * the id) because the answer depends on the param's SHAPE and its DECLARED
  * vocabulary as well as the def's momentary list — and on the TIER, because a
@@ -70,6 +86,13 @@ export function momentaryParamIds(def: { face?: { momentary?: readonly string[] 
  *   momentary — a DECLARED press-pad (`face.momentary`) → a momentary <Button>.
  *               The declaration WINS over the shape: a press-pad and a latching
  *               switch are the identical 0..1-discrete-at-0 ParamDef.
+ *   grid      — a DECLARED `face.paramCells` entry (PF-15) → <ParamGrid>: a
+ *               chip plus a PORTALED, viewport-clamped grid popover. Unlike
+ *               every other kind this is TIER-INDEPENDENT — the grid does not
+ *               live in the cell's column, so a 32-cell diagram chart is just
+ *               as reachable from a 46 px lane knob column as from the dock.
+ *               Declared rather than inferred because "these states are
+ *               PICTURES" is knowledge only the module has.
  *   segmented — a DECLARED `options` roster (PF-1) at the DOCK, ≤ 6 states →
  *               <Segmented>, the inline `.seg` button row. Every state is
  *               visible and one click away, which is what a named mode wants.
@@ -89,7 +112,10 @@ export function momentaryParamIds(def: { face?: { momentary?: readonly string[] 
  * param that DECLARED names for its states wants those names painted on two
  * captioned buttons, not an anonymous switch; declaration beating sniffed
  * shape is the same rule `momentary` already establishes above. `momentary`
- * still outranks everything: a press-pad is not a state.
+ * still outranks everything: a press-pad is not a state. `grid` sits directly
+ * under it — the two are mutually exclusive by face-lint rule, so the ordering
+ * is unobservable in a valid face and is fixed here only so an invalid one
+ * fails toward the SAFE render (a press-pad that never latches).
  *
  * NOTE the render kind is INDEPENDENT of the momentary/latching CLASSIFICATION
  * gate in module-face-lint: a switch that renders as a Toggle here still has to
@@ -100,8 +126,10 @@ export function paramCellKind(
   p: ParamDef,
   momentary: ReadonlySet<string>,
   tier: ParamCellTier = 'lane',
+  grid: ReadonlySet<string> = EMPTY_IDS,
 ): ParamCellKind {
   if (momentary.has(p.id)) return 'momentary';
+  if (grid.has(p.id)) return 'grid';
   if (p.options?.length) {
     if (tier !== 'dock') return 'knob';
     return p.options.length <= SEGMENTED_MAX_OPTIONS ? 'segmented' : 'selector';

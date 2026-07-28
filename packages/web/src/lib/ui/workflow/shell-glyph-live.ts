@@ -67,6 +67,17 @@ export type GlyphBinding =
   | { kind: 'dual'; portId: string; wave: DualWaveSpec }
   | { kind: 'env-params'; attack: string; decay: string; sustain: string; release: string }
   | { kind: 'wave-morph'; shapeParamId: string; depthParamId?: string }
+  /**
+   * TOPOLOGY (PF-15): the glyph draws the module's own SIGNAL ROUTING, derived
+   * from a discrete param — no analyser, no gate, always live.
+   *
+   * ⚠ NOT YET A GENERAL PRECEDENT. `paramId` is hard-wired to the `'algorithm'`
+   * glyph literal's one meaning. When a SECOND topology-bearing module arrives,
+   * do NOT add a third glyph literal: widen THIS branch to carry a layout-source
+   * id (which pure layout function feeds the picture) so the shell resolves the
+   * renderer from data instead of enumerating modules.
+   */
+  | { kind: 'algorithm'; paramId: string }
   | { kind: 'static' }
   | { kind: 'none' };
 
@@ -80,6 +91,7 @@ export function primaryAudioOutPortId(def: GlyphDefLike | undefined): string | n
  * Resolve the LIVE binding for a def's face glyph. Rules (pure, in order):
  *   - no face / glyph 'none'                 → none
  *   - glyph 'envelope' + real A/D/S/R params → env-params
+ *   - glyph 'algorithm' + an `algorithm` param → algorithm (topology)
  *   - glyph 'waveform' + a primary AUDIO output + the saw↔pulse morph param
  *     set (a 0..1 `shape1` + `pw` + `mix` — the tidyVco osc law)
  *                                            → DUAL (param-wave + live trace)
@@ -100,6 +112,15 @@ export function glyphBinding(def: GlyphDefLike | undefined): GlyphBinding {
       return { kind: 'env-params', attack: 'attack', decay: 'decay', sustain: 'sustain', release: 'release' };
     }
     return { kind: 'static' };
+  }
+
+  // TOPOLOGY (PF-15) — resolved BEFORE the audio-out short-circuit BY DESIGN.
+  // Every topology-bearing module is a sound SOURCE and therefore has a primary
+  // audio output, so `if (audioOut) return live-audio` below would swallow this
+  // branch entirely and silently paint the trace it exists to replace. Order is
+  // the whole mechanism here; do not "tidy" it down with the other kinds.
+  if (glyph === 'algorithm') {
+    return has('algorithm') ? { kind: 'algorithm', paramId: 'algorithm' } : { kind: 'static' };
   }
 
   const audioOut = primaryAudioOutPortId(def);

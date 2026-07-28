@@ -1,3 +1,16 @@
+<script lang="ts" module>
+  // THE SHELL LAYER's test-hook publish (PF-14). The panel operability probes
+  // are SHELL metadata — how the shell renders + how to poke a bespoke panel —
+  // so they ride their own `window.__shellPanelProbes` global rather than
+  // `__moduleSpecs`: `$lib/dev/module-specs` projects the MODULE REGISTRY and
+  // is imported by the registration barrels, so publishing from there would
+  // create a live cycle (audio/modules/index → dev/module-specs →
+  // workflow/shell-cells → ui/modules/dx7-patch-actions → audio/modules/dx7).
+  // Module scope: runs ONCE, when the shell itself is first imported.
+  import { exposeShellPanelProbesForTests } from '$lib/ui/workflow/shell-cells';
+  exposeShellPanelProbesForTests();
+</script>
+
 <script lang="ts">
   // ModuleShell — the RACKLINE shared skeleton (P0.3b re-spec). ONE frame every
   // MIGRATED module fills, built from the SHARED `.rl-tile` vocabulary
@@ -35,10 +48,10 @@
   import { cardParams, portsFromDef } from './card-kit';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import VideoTileThumb from './VideoTileThumb.svelte';
-  import { Button, KnobConic, ScopeScreen, Segmented, Selector, Toggle, VuMeter } from '$lib/ui/controls';
+  import { Button, KnobConic, ParamGrid, ScopeScreen, Segmented, Selector, Toggle, VuMeter } from '$lib/ui/controls';
   import { curatedFace, dockFacePlan, type FaceControl, type FaceTier } from '$lib/ui/workflow/curated-face';
   import { shellCellFor } from '$lib/ui/workflow/shell-cells';
-  import { momentaryParamIds, momentaryValue, paramCellKind } from '$lib/ui/workflow/shell-control-kind';
+  import { gridParamIds, momentaryParamIds, momentaryValue, paramCellKind } from '$lib/ui/workflow/shell-control-kind';
   import {
     spineCableVar,
     laneFaceTier,
@@ -227,6 +240,21 @@
     return null;
   });
 
+  // TOPOLOGY glyph caption (PF-15): the bound param's CURRENT state, read
+  // through the same live/transient seam the motorized knobs use so it tracks a
+  // gesture rather than waiting for the durable commit. Named by the def's own
+  // vocabulary when it declares one (`format` / `options`), else the raw step.
+  let topologyLabel = $derived.by(() => {
+    const b = binding;
+    if (b.kind !== 'algorithm') return '';
+    void nodeVersion(id);
+    const pd = paramDef(b.paramId);
+    const v = liveParam(b.paramId);
+    if (pd?.format) return pd.format(v);
+    const named = pd?.options?.find((o) => o.value === v)?.label;
+    return named ?? String(Math.round(v));
+  });
+
   // Header row 2 — the ROLE line for a migrated face (the def's own concise
   // category metadata), not a repeat of the type the name row already shows.
   let roleLine = $derived(roleLineForDef(def) ?? node.type);
@@ -254,6 +282,11 @@
 
   /** Declared momentary (press-pad) params — see ModuleFace.momentary. */
   let momentary = $derived(momentaryParamIds(def as { face?: { momentary?: readonly string[] } } | undefined));
+
+  /** Declared `'grid'` param cells — see ModuleFace.paramCells (PF-15). */
+  let gridCells = $derived(
+    gridParamIds(def as { face?: { paramCells?: Readonly<Record<string, 'grid'>> } } | undefined),
+  );
 
   /**
    * The LIVE node (the Y.Doc entry, not the flow-node snapshot) + its version
@@ -360,7 +393,7 @@
     {#if ctl.kind === 'param'}
       {@const pd = paramDef(ctl.paramId ?? ctl.key)}
       {#if pd}
-        {@const cellKind = paramCellKind(pd, momentary, view === 'dock-full' ? 'dock' : 'lane')}
+        {@const cellKind = paramCellKind(pd, momentary, view === 'dock-full' ? 'dock' : 'lane', gridCells)}
         {#if cellKind === 'momentary'}
           <!-- MOMENTARY press-pad (declared on face.momentary): fires on the
                press edge and RETURNS TO REST on release. It must never be a
@@ -413,6 +446,31 @@
               moduleId={id}
               paramId={pd.id}
               snapActive
+            />
+          </div>
+        {:else if cellKind === 'grid'}
+          <!-- DECLARED PICTURE-STATES (PF-15 `face.paramCells`): a chip plus a
+               PORTALED, viewport-clamped grid popover. The one param primitive
+               that is TIER-INDEPENDENT — the grid does not live in this cell's
+               column, so a 32-cell diagram chart is as reachable from a 46px
+               lane knob column as from the dock faceplate. The CHIP carries
+               `control-<paramId>` (the portaled grid is outside the dock shell,
+               so a testid there would drop the param out of faces-parity's
+               multiset and read as a LOST control). -->
+          <div class="kcol ms-cell-sel" data-cell-kind="param" data-cell-control="grid" data-cell-key={ctl.key}>
+            <ParamGrid
+              value={params.paramVal(pd.id)}
+              min={pd.min}
+              max={pd.max}
+              options={pd.options}
+              label={pd.label}
+              format={pd.format}
+              onchange={params.set(pd.id)}
+              readLive={params.live(pd.id)}
+              moduleId={id}
+              paramId={pd.id}
+              hero={view === 'dock-full'}
+              compact={view !== 'dock-full'}
             />
           </div>
         {:else if cellKind === 'selector'}
@@ -510,6 +568,28 @@
             >{cellStatus[ctl.key]?.error ?? cellStatus[ctl.key]?.status}</span>
           {/if}
         </div>
+      {:else if cell?.kind === 'panel'}
+        <!-- BESPOKE PANEL (PF-14): the module's own component — a live SVG
+             map, a draggable envelope editor — for a control that is not one
+             of the shared primitives. It edits `node.data`, so it emits NO
+             `control-<paramId>` testid (that would read as an unbacked extra
+             control and fail faces-parity's exact param multiset), and it
+             declares an operability PROBE instead of relying on a natural
+             interaction the sweep could guess.
+             DOCK-ONLY, held by a face-lint rule rather than by this render:
+             a 280px panel selected into a 46px lane knob column is an
+             authoring bug, and the lint says so by name. -->
+        {@const Panel = cell.component}
+        <div
+          class="kcol ms-cell-panel"
+          data-cell-kind={ctl.kind}
+          data-cell-control="panel"
+          data-cell-key={ctl.key}
+          style={`--panel-min-w:${cell.minWidth}px`}
+        >
+          <Panel nodeId={id} />
+          {#if view === 'dock-full'}<span class="cell-cap">{cell.label}</span>{/if}
+        </div>
       {:else}
         <!-- NO registered cell spec → an explicitly INERT cell. Both gates
              (module-face-lint's shell-cell coverage + the faces-parity e2e)
@@ -596,6 +676,18 @@
               />
             </div>
           {/if}
+        </div>
+      {:else if binding.kind === 'algorithm'}
+        <!-- TOPOLOGY glyph (PF-15): DATA-DERIVED, so it is always live — an FM
+             synth's 64px scope trace looks the same for every patch and
+             flatlines whenever nothing is gated, which is most of the time you
+             are looking at a rack. PR 4 replaces this plate's BODY with the
+             derived routing diagram (one pure layout function shared with the
+             picker, the operator map and the tiles); the binding, the slot and
+             this DOM contract are what PR 2 pins.
+             ⚠ NOT A GENERAL PRECEDENT — see GlyphBinding's 'algorithm' note. -->
+        <div class="topo-glyph" data-testid="shell-glyph-topology" data-topology-param={binding.paramId}>
+          <span class="topo-val">{topologyLabel}</span>
         </div>
       {:else if binding.kind === 'live-audio'}
         <ScopeScreen
@@ -722,6 +814,36 @@
     justify-content: center;
     border: 1px dashed var(--border, #2c3037);
     border-radius: 4px;
+  }
+
+  /* BESPOKE PANEL cell (PF-14). It carries its OWN design floor (`minWidth` on
+     the spec → `--panel-min-w`) rather than the shared knob-column width, and
+     opts out of the `--kcol-max` cap entirely: a panel is a picture you edit,
+     not a control column. It is dock-only by face-lint rule, so it never has
+     to negotiate with the lane's 46px columns. */
+  .ms-cell-panel {
+    min-width: var(--panel-min-w, 240px);
+    max-width: 100%;
+    align-items: stretch;
+    gap: 4px;
+  }
+
+  /* TOPOLOGY glyph plate (PF-15) — a data-derived glyph, so it needs no canvas
+     and no analyser. PR 4 fills the body with the routing diagram. */
+  .topo-glyph {
+    display: grid;
+    place-items: center;
+    min-height: 40px;
+    width: 100%;
+    border: 1px solid var(--border, #2c3037);
+    border-radius: 4px;
+    background: var(--module-bg-deep, #0a0c0f);
+  }
+  .topo-val {
+    font-family: var(--mono, ui-monospace, monospace);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    color: var(--domain, var(--accent));
   }
 
   /* SELECTOR + ACTION cells: the shared .kcol column, but sized to the control
