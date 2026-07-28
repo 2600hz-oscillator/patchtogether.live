@@ -39,8 +39,20 @@
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
-// A small structured source so the preview has live, non-black content.
-const SRC_PARAMS = { shape: 0, tile: 0, zoom: 0.6 };
+// ── COST ────────────────────────────────────────────────────────────────────
+// Every case here asserts the COMPONENT STATE MACHINE (classes, persisted
+// node.data, menu items) — not a single pixel. So this spec does no GL work at
+// all: it freezes the per-frame video draw (the same __videoEngineFreezeRender
+// lever card-control-overflow uses) and spawns BACKDRAFT SOLO with no upstream
+// source. The old version fed it from SHAPES and slept 300ms per case purely
+// so the in-card PREVIEW had live content to look at — and nothing ever looked.
+// On CI's SwiftShader renderer that source + those sleeps were the whole cost.
+async function freezeVideoRender(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    (globalThis as unknown as { __videoEngineFreezeRender?: boolean })
+      .__videoEngineFreezeRender = true;
+  });
+}
 
 async function setup(page: Page): Promise<string[]> {
   const errors: string[] = [];
@@ -48,21 +60,18 @@ async function setup(page: Page): Promise<string[]> {
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(m.text());
   });
+  await freezeVideoRender(page);
   await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   return errors;
 }
 
-/** Spawn SHAPES -> BACKDRAFT so the output surface has live content once it
- *  is expanded. */
+/** Spawn BACKDRAFT solo — no source needed (see the COST note above). */
 async function spawnBackdraft(page: Page): Promise<void> {
   await spawnPatch(
     page,
-    [
-      { id: 'src', type: 'shapes', position: { x: 40, y: 40 }, domain: 'video', params: SRC_PARAMS },
-      { id: 'bd', type: 'backdraft', position: { x: 460, y: 40 }, domain: 'video', params: { feedback: 1.0, delay: 16 } },
-    ],
-    [{ id: 'e1', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'bd', portId: 'in_a' }, sourceType: 'mono-video', targetType: 'video' }],
+    [{ id: 'bd', type: 'backdraft', position: { x: 200, y: 60 }, domain: 'video' }],
+    [],
   );
   await expect(page.locator('[data-testid="backdraft-card"]')).toHaveCount(1);
 }
@@ -112,13 +121,14 @@ async function injectScreens(
 }
 
 test.describe('BACKDRAFT — full output capabilities', () => {
-  // Heavy WebGL + fullscreen video spec: the BACKDRAFT preview canvas plus the
-  // requestFullscreen / full-frame transitions run slowly under CI's SwiftShader
-  // software renderer and occasionally spike past the default 30s — a chronic
-  // shard-1 TIMEOUT flake (notably the "Full Frame ↔ Full Screen mutually
-  // exclusive" case). Give the whole spec headroom; it still completes in
-  // ~15-25s on a real GPU, so this adds ~0 typical wall-time and only un-caps
-  // the slow-runner tail (the documented video-on-SwiftShader mitigation).
+  // The 60s ceiling is a BOUNDED-FAILURE cap, not a budget these cases use.
+  // It was added when this spec was a heavy-WebGL one: the live preview canvas
+  // plus the requestFullscreen / full-frame transitions spiked past the default
+  // 30s under SwiftShader, and the "Full Frame ↔ Full Screen" case became a
+  // chronic shard-1 TIMEOUT. The preview is gone and the draw is frozen (see
+  // the COST note above), so there is no per-frame GL work left to contend for
+  // the runner. Kept generous anyway — a timeout should report a hang, not a
+  // slow runner.
   test.describe.configure({ timeout: 60_000 });
 
   test('the OUTPUT button opens the menu with Full Frame + Full Screen (Present hidden on single screen)', async ({ page }) => {
