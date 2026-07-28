@@ -111,16 +111,31 @@ interface SpecShape {
   strictFace?: boolean;
 }
 
-/** The shell's per-cell interaction contract (`data-cell-control`). */
+/** The shell's per-cell interaction contract (`data-cell-control`).
+ *
+ *  ⚠ EVERY value needs a `driveCell` branch. The final `throw` is deliberate —
+ *  an unrecognised control kills the WHOLE spec rather than skipping one row —
+ *  so a new primitive lands its branch HERE, in the platform PR, before any
+ *  face adopts it. */
 type CellControl =
   | 'knob'
   | 'momentary'
   | 'toggle'
   | 'segmented'
   | 'selector'
+  | 'grid'
   | 'action'
   | 'file'
+  | 'panel'
   | 'inert';
+
+/** A panel's DECLARED operability probe (PF-14 — shell-cells.ts ShellPanelProbe).
+ *  Published from the SHELL layer, not `__moduleSpecs`. */
+interface PanelProbe {
+  testid: string;
+  action: 'click' | 'drag';
+  effect: { kind: 'data'; key: string; expect: 'changed' } | { kind: 'data-rev'; key: string };
+}
 
 interface RenderedCell {
   control: CellControl;
@@ -175,6 +190,50 @@ function readParam(page: Page, nodeId: string, pid: string): Promise<number | nu
       return w.__patch.nodes[nodeId]?.params?.[pid] ?? null;
     },
     { nodeId, pid },
+  );
+}
+
+/**
+ * Read a value out of the live `node.data` by PATH — the `readParam` twin for
+ * the half of a module's state that is NOT params.
+ *
+ * A bespoke panel (PF-14) edits `node.data` on purpose: the DX7's 78 operator
+ * values are patch DESIGN, not performance, so they ride the Y.Doc as plain
+ * data instead of buying 78 ParamDefs' worth of MIDI-learn/automation/CV. That
+ * is exactly why a panel needs a declared probe — nothing about `node.data` is
+ * visible to the param-shaped assertions above.
+ *
+ * `path` supports dotted keys and numeric indices: `voiceRev`, `opOn[1]`,
+ * `voice.operators[0].outputLevel`. Returns null for a missing node/segment, so
+ * "unset" and "absent" read the same way `readParam` makes them.
+ */
+function readData(page: Page, nodeId: string, path: string): Promise<unknown> {
+  return page.evaluate(
+    ({ nodeId, path }) => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: unknown } | undefined> };
+      };
+      let cur: unknown = w.__patch.nodes[nodeId]?.data;
+      for (const seg of path.split(/[.[\]]+/).filter(Boolean)) {
+        if (cur === null || cur === undefined) return null;
+        cur = (cur as Record<string, unknown>)[seg];
+      }
+      return cur ?? null;
+    },
+    { nodeId, path },
+  );
+}
+
+/** The panel probes the SHELL published (`window.__shellPanelProbes`). */
+function readPanelProbe(page: Page, type: string, key: string): Promise<PanelProbe | null> {
+  return page.evaluate(
+    ({ type, key }) => {
+      const w = globalThis as unknown as {
+        __shellPanelProbes?: Record<string, Record<string, PanelProbe>>;
+      };
+      return w.__shellPanelProbes?.[type]?.[key] ?? null;
+    },
+    { type, key },
   );
 }
 
@@ -331,6 +390,96 @@ async function driveCell(
       'aria-checked',
       'true',
     );
+    return;
+  }
+
+  if (cell.control === 'grid') {
+    // A CHART of states (PF-15 `face.paramCells`). Two halves, and the split is
+    // the thing worth asserting: the CHIP lives in the cell (it is the param's
+    // one `control-<paramId>` element, which is why the multiset assert above
+    // still balances), while the grid itself is PORTALED to <body> — so it is
+    // located off `page`, never off `dockShell`. Operating it means committing
+    // a DIFFERENT state into the graph, the same bar the knob branch meets.
+    const pid = cell.key;
+    const chip = host.locator(`[data-testid="control-${pid}"]`);
+    await expect(chip, `${where}: the chip opens a picker`).toHaveAttribute(
+      'aria-haspopup',
+      'dialog',
+    );
+    const before = await readParam(page, nodeId, pid);
+    await chip.scrollIntoViewIfNeeded();
+    await chip.click();
+
+    const grid = page.locator(`[role="radiogroup"][data-grid-param="${pid}"]`);
+    await expect(grid, `${where}: the portaled grid opens`).toBeVisible();
+    const gcells = grid.locator('[role="radio"]');
+    const n = await gcells.count();
+    expect(n, `${where}: the chart offers more than one state`).toBeGreaterThan(1);
+
+    let target = -1;
+    for (let i = 0; i < n; i++) {
+      if ((await gcells.nth(i).getAttribute('aria-checked')) !== 'true') { target = i; break; }
+    }
+    expect(target, `${where}: some state other than the current one is offered`).toBeGreaterThanOrEqual(0);
+    await gcells.nth(target).scrollIntoViewIfNeeded();
+    await gcells.nth(target).click();
+
+    await expect
+      .poll(() => readParam(page, nodeId, pid), {
+        message: `${where}: picking a cell commits it into the graph`,
+      })
+      .not.toBe(before);
+    await expect(grid, `${where}: committing closes the picker`).toHaveCount(0);
+    return;
+  }
+
+  if (cell.control === 'panel') {
+    // A BESPOKE PANEL (PF-14) has no interaction this sweep could guess, so the
+    // module DECLARES one — and the declaration is what keeps the sweep
+    // REGISTRY-DRIVEN off STRICT_FACES instead of growing a per-module branch
+    // here. A panel with no probe fails: an undrivable cell is indistinguishable
+    // from a dead one, which is the whole class this gate exists to catch.
+    const probe = await readPanelProbe(page, spec.type, cell.key);
+    expect(
+      probe,
+      `${where}: declares an operability probe. Add one to its shell-cell spec ` +
+        `(packages/web/src/lib/ui/workflow/shell-cells.ts) — the sweep will not ` +
+        `special-case a module.`,
+    ).toBeTruthy();
+    const target = host.locator(`[data-testid="${probe!.testid}"]`);
+    await expect(target, `${where}: the probe's target renders`).toBeVisible();
+
+    // A panel edits node.data, so the effect is read there, not in params.
+    const key = probe!.effect.key;
+    const snap = async () => JSON.stringify(await readData(page, nodeId, key));
+    const beforeRaw = await readData(page, nodeId, key);
+    const before = JSON.stringify(beforeRaw);
+
+    await target.scrollIntoViewIfNeeded();
+    if (probe!.action === 'drag') {
+      const box = (await target.boundingBox())!;
+      const cx = box.x + box.width / 2;
+      const cy = box.y + box.height / 2;
+      await page.mouse.move(cx, cy);
+      await page.mouse.down();
+      await page.mouse.move(cx, cy - 24, { steps: 8 });
+      await page.mouse.up();
+    } else {
+      await target.click();
+    }
+
+    if (probe!.effect.kind === 'data-rev') {
+      // A monotonic revision counter must ADVANCE.
+      await expect
+        .poll(async () => Number(await readData(page, nodeId, key)) || 0, {
+          message: `${where}: the probe advances '${key}'`,
+        })
+        .toBeGreaterThan(Number(beforeRaw) || 0);
+    } else {
+      await expect
+        .poll(snap, { message: `${where}: the probe CHANGES node.data['${key}']` })
+        .not.toBe(before);
+    }
     return;
   }
 
@@ -570,10 +719,11 @@ test.describe('dx7 hero controls are REACHABLE in the shell (the inert-cell P0)'
     await expect(preset, 'the preset cell renders').toBeVisible();
     await expect(preset, 'and is NOT the old dead label').toHaveAttribute('data-cell-control', 'selector');
 
-    const before = await page.evaluate(() => {
-      const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: Record<string, unknown> } | undefined> } };
-      return (w.__patch.nodes['dx']?.data?.preset as string | undefined) ?? null;
-    });
+    // Read through the shared `readData` helper (the `readParam` twin the panel
+    // branch uses) rather than a hand-rolled evaluate: node.data is where every
+    // non-param control's state lives, and one reader keeps the path semantics
+    // identical across the file.
+    const before = await readData(page, 'dx', 'preset');
 
     await preset.locator('[role="button"][aria-haspopup="listbox"]').click();
     const options = page.locator('[role="listbox"] [role="option"]');
@@ -583,14 +733,9 @@ test.describe('dx7 hero controls are REACHABLE in the shell (the inert-cell P0)'
     await options.last().click();
 
     await expect
-      .poll(
-        () =>
-          page.evaluate(() => {
-            const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: Record<string, unknown> } | undefined> } };
-            return (w.__patch.nodes['dx']?.data?.preset as string | undefined) ?? null;
-          }),
-        { message: 'choosing a voice writes node.data.preset (the factory polls it)' },
-      )
+      .poll(() => readData(page, 'dx', 'preset'), {
+        message: 'choosing a voice writes node.data.preset (the factory polls it)',
+      })
       .toBe(want);
     expect(want, 'and it is a DIFFERENT voice than before').not.toBe(before);
   });
