@@ -508,6 +508,28 @@ test.describe('param vocabulary: a NAMED discrete param reads as its name at BOT
     const laneReadout = laneCell.locator('[data-testid="readout-mode"]');
     await expect(laneReadout, 'lane: the dial earns a PERSISTENT readout naming the state').toBeVisible();
     await expect(laneReadout).toHaveText('LP');
+    // DETENT TICKS: a declared roster also marks the arc, so the dial SHOWS it
+    // has three resting positions rather than reading as a continuous sweep.
+    // This is the same renderer PF-10's landmarks use, so exercising it here
+    // keeps that path out of the "unreached until Batch B" bucket.
+    await expect(
+      laneCell.locator('[data-testid="control-mode"] .tick'),
+      'lane: one detent tick per declared state',
+    ).toHaveCount(3);
+
+    // A knob with NO declared vocabulary must stay exactly as it was — no
+    // readout, no ticks. This is PF-3's gate asserted in the DOM, and it is
+    // the reason ~17 dock faceplates did not move.
+    const cutoffCell = shell.locator('[data-cell-key="cutoff"]');
+    await expect(cutoffCell, 'a plain param is still a dial').toHaveAttribute('data-cell-control', 'knob');
+    await expect(
+      cutoffCell.locator('[data-testid="readout-cutoff"]'),
+      'a param with no declared vocabulary renders NO persistent readout',
+    ).toHaveCount(0);
+    await expect(
+      cutoffCell.locator('.tick'),
+      'a param with no declared vocabulary renders NO detent ticks',
+    ).toHaveCount(0);
 
     // ── DOCK: the same param, laid out as its three named states. ──
     const dockShell = await openDock(page, 'f');
