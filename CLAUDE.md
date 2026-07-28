@@ -135,7 +135,7 @@ dispatch second:**
    `pull_request` run re-validates them (a GITHUB_TOKEN push doesn't fire CI,
    and a `workflow_dispatch` run doesn't count toward required checks).
 
-Two dispatch gotchas, both confirmed on real runs:
+Three dispatch gotchas, all confirmed on real runs:
 
 - **Never pass `-f grep=…`.** The run dies as `startup_failure` before any job
   starts. Dispatch **unscoped** — the full-scene capture is the fast path, and
@@ -143,6 +143,19 @@ Two dispatch gotchas, both confirmed on real runs:
 - The bot's push lands the follow-on runs in **`action_required`** (awaiting
   manual approval), not `queued`. Check `gh run list` and approve rather than
   assuming CI is merely slow.
+- **`--update-snapshots` CANNOT regenerate a PASSING-but-stale baseline** — and
+  this is a hole in the drain-first rule above, not an instance of it. Playwright
+  only rewrites a snapshot when the comparison **FAILS**. So a scene that is
+  never exempt, never skipped, and genuinely out of date still comes back with
+  **nothing committed** if its diff lands *under* the tolerance
+  (`DOCK_MAX_DIFF`, 1500 px). Found on A2 (#1213): swapping filter's MODE from a
+  bare detented knob to a labelled Segmented moved the dock face by **865 px** —
+  a whole primitive swap — and the dispatch committed zero files, twice.
+  **Fix: `git rm` the stale baseline first, then dispatch.** Playwright always
+  writes a *missing* snapshot. ⚠ The same arithmetic means the ordinary VRT gate
+  would not have flagged that swap either; a sub-tolerance render change is
+  invisible to both the gate and the regen. Treat a "green dispatch that
+  committed nothing" as a RED FLAG to investigate, never as "nothing to do".
 
 ## Worktrees: hard cap of 10
 
