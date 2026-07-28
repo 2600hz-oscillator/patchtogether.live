@@ -251,6 +251,44 @@ the merge just created on those files, and rebase them** before they rot into
 it silently drops the PR's additions when auto-merge picks main's version of a
 conflict, with no marker. Always `git merge origin/main` locally and diff.
 
+## A CARD can silently disagree with its DEF — every def-reading gate is blind to it
+
+**Ask of any new gate: what is it structurally unable to see?** Two holes of this
+exact shape were found on one card in one day.
+
+**The bug (backdraft, 2026-07-28).** The def constrained `camTiltX/Y` to ±0.2 and
+`camPosX/Y` to ±0.5. `BackdraftCard.svelte` passed literal `xMin={-1} xMax={1}`
+to both `XyPad`s. That is **not** a display bug — the pads *wrote values the
+contract forbids*, the model silently clamped them, and most of the stick's
+travel did nothing. The control lied about its own range.
+
+**Why nothing caught it:** `contract-lock`, `module-docs-lint` and the range
+assertions **all read the DEF**. The e2e never touches the pad. So a card
+disagreeing with its own def is invisible to the entire gate set, and the work
+was honestly reported as "ranges constrained ✓" while the UI was still ±1.
+
+- **A control's range must come from ONE place.** Export the range from the def
+  module and have the card import it — never re-type the numbers in the card.
+- **Guard it at the SOURCE level**, since no runtime gate sees it: grep the card
+  for hardcoded ranges on any control whose def declares them. Precedent already
+  in the repo: the `controlFamilies` → card-testid grep in
+  `module-docs-lint.test.ts`, which exists for this same divergence class.
+- The general rule: **a gate that reads only one side of a two-sided contract
+  proves nothing about the other side.**
+
+**The sibling hole, same card, same day.** `card-control-overflow` only ever
+spawned the module in its DEFAULT state, so controls revealed by a mode switch
+were never measured — it missed a ~310 px overflow for hours. When a module has
+modes, the sweep must enter them, and **assert the mode's controls are actually
+mounted** so it cannot silently re-measure the default layout.
+
+⚠ **That spec reports VIEWPORT-SCALED pixels, not CSS pixels** —
+`measureOverflow` uses `getBoundingClientRect()` and xyflow applies a CSS
+transform for viewport zoom. Pass/fail is scale-invariant (0 is 0), but every
+*magnitude* is scaled: a 720 px card reads as ~530 at 0.736 zoom, and a ~310 px
+CSS overflow prints as ~230. **Never size a card from the printed number**, and
+never compare overflow figures across spawns unless the zoom matches.
+
 ## Living docs: the contract gate + the document-on-touch ratchet
 
 Module documentation is PINNED to the I/O CONTRACT — like ART pins audio to a
