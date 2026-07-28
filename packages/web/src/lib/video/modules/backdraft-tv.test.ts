@@ -25,9 +25,15 @@ import {
   BACKDRAFT_TV_BEZEL_MIN,
   BACKDRAFT_TV_BEZEL_MAX,
   BACKDRAFT_TV_MODE_COUNT,
+  BACKDRAFT_TV_MODE_LABELS,
   BACKDRAFT_TEXTURE_UNITS,
   BACKDRAFT_FPS,
   BACKDRAFT_TV_BEAM_SOFT,
+  BACKDRAFT_CAM_TILT_MAX_DEG,
+  BACKDRAFT_CAM_DIST_MIN,
+  BACKDRAFT_CAM_DIST_MAX,
+  backdraftCamDistance,
+  backdraftCamInverseHomography,
   backdraftTvBeam,
   backdraftTvRefreshMix,
   BACKDRAFT_TV_AGC_MIN,
@@ -567,6 +573,135 @@ describe('BACKDRAFT — the VIRTUAL REFRESH (the seam that cascades)', () => {
     expect(bands, `disjoint seam bands down the centre column (got ${bands})`)
       .toBeGreaterThanOrEqual(2);
   }, 60_000);
+});
+
+describe('BACKDRAFT — VIRTUAL CAMERA ORIENTATION', () => {
+  /** Apply a row-major inverse homography to a camera-frame point. */
+  function apply(H: number[], qx: number, qy: number): { x: number; y: number; z: number } {
+    const z = H[6]! * qx + H[7]! * qy + H[8]!;
+    return { x: (H[0]! * qx + H[1]! * qy + H[2]!) / z, y: (H[3]! * qx + H[4]! * qy + H[5]!) / z, z };
+  }
+
+  it('V1 — DEAD-ON is EXACTLY the old affine map, at every distance', () => {
+    // The whole default path depends on this: if the homography does not
+    // degenerate algebraically, every N-series assertion about the shipped look
+    // is quietly measuring a different map. Distance must drop out entirely
+    // when the camera is square-on.
+    for (const fill of [0.35, 0.75, 0.95]) {
+      for (const rotateDeg of [0, 25, -140]) {
+        for (const dist of [0, 0.5, 1]) {
+          const H = backdraftCamInverseHomography({ dist }, fill, rotateDeg);
+          const th = (rotateDeg * Math.PI) / 180;
+          const cs = Math.cos(th), sn = Math.sin(th);
+          for (const [qx, qy] of [[0, 0], [0.3, -0.2], [-0.45, 0.5], [0.6, 0.6]]) {
+            const got = apply(H, qx!, qy!);
+            // The old inverse: p = R(-phi) * q / s
+            const wantX = (qx! * cs + qy! * sn) / fill;
+            const wantY = (-qx! * sn + qy! * cs) / fill;
+            expect(got.x).toBeCloseTo(wantX, 9);
+            expect(got.y).toBeCloseTo(wantY, 9);
+          }
+        }
+      }
+    }
+  });
+
+  it('V2 — tilt KEYSTONES: a rectangle images as a trapezoid', () => {
+    // Off-axis, the two vertical edges of the screen subtend different heights.
+    // That difference IS the keystone, and it is what makes the nest curl.
+    const H = backdraftCamInverseHomography({ tiltX: 0.8, dist: 0.2 }, 0.75, 0);
+    // Walk the left and right thirds of the frame and compare how much screen
+    // plane each unit of camera frame covers.
+    const spanAt = (qx: number): number =>
+      Math.abs(apply(H, qx, 0.4).y - apply(H, qx, -0.4).y);
+    const left = spanAt(-0.4), right = spanAt(0.4);
+    expect(Math.abs(left - right) / Math.max(left, right)).toBeGreaterThan(0.05);
+    // …and with NO tilt the same measurement is symmetric.
+    const flat = backdraftCamInverseHomography({ dist: 0.2 }, 0.75, 0);
+    const fl = Math.abs(apply(flat, -0.4, 0.4).y - apply(flat, -0.4, -0.4).y);
+    const fr = Math.abs(apply(flat, 0.4, 0.4).y - apply(flat, 0.4, -0.4).y);
+    expect(Math.abs(fl - fr)).toBeLessThan(1e-9);
+  });
+
+  it('V3 — DIST sets how hard a given tilt keystones', () => {
+    // The fader's whole job. Short distance = wide angle = violent keystone;
+    // long = telephoto = gentle. Same tilt on both sides.
+    const asym = (dist: number): number => {
+      const H = backdraftCamInverseHomography({ tiltX: 0.7, dist }, 0.75, 0);
+      const span = (qx: number): number => Math.abs(apply(H, qx, 0.4).y - apply(H, qx, -0.4).y);
+      const l = span(-0.4), r = span(0.4);
+      return Math.abs(l - r) / Math.max(l, r);
+    };
+    expect(asym(0)).toBeGreaterThan(asym(1));
+  });
+
+  it('V4 — camera POSITION moves the view without bending it', () => {
+    // Translation alone is a shift, not a keystone — the bend comes from TILT.
+    // Combining them is how you look at the set from above and off to one side.
+    const H = backdraftCamInverseHomography({ posX: 0.6, posY: -0.4, dist: 0.5 }, 0.75, 0);
+    const centre = apply(H, 0, 0);
+    expect(Math.hypot(centre.x, centre.y)).toBeGreaterThan(0.1);
+    const span = (qx: number): number => Math.abs(apply(H, qx, 0.4).y - apply(H, qx, -0.4).y);
+    expect(Math.abs(span(-0.4) - span(0.4))).toBeLessThan(1e-9);
+  });
+
+  it('V5 — the DIST law is geometric and monotone', () => {
+    expect(backdraftCamDistance(0)).toBeCloseTo(BACKDRAFT_CAM_DIST_MIN, 9);
+    expect(backdraftCamDistance(1)).toBeCloseTo(BACKDRAFT_CAM_DIST_MAX, 9);
+    expect(backdraftCamDistance(0.5))
+      .toBeCloseTo(Math.sqrt(BACKDRAFT_CAM_DIST_MIN * BACKDRAFT_CAM_DIST_MAX), 9);
+    let prev = -1;
+    for (let d = 0; d <= 1 + 1e-9; d += 0.02) {
+      const v = backdraftCamDistance(d);
+      expect(v).toBeGreaterThan(prev);
+      prev = v;
+    }
+  });
+
+  it('V6 — never returns a non-finite map, over the whole reachable product', () => {
+    // Edge-on is singular; the model must fall back to the dead-on affine
+    // inverse rather than emitting NaNs into the shader.
+    for (const tiltX of [-1, -0.5, 0, 0.5, 1]) {
+      for (const tiltY of [-1, 0, 1]) {
+        for (const posX of [-1, 0, 1]) {
+          for (const posY of [-1, 1]) {
+            for (const dist of [0, 1]) {
+              for (const fill of [0.35, 0.95]) {
+                const H = backdraftCamInverseHomography(
+                  { tiltX, tiltY, posX, posY, dist }, fill, 0,
+                );
+                expect(H).toHaveLength(9);
+                for (const v of H) expect(Number.isFinite(v)).toBe(true);
+              }
+            }
+          }
+        }
+      }
+    }
+    expect(BACKDRAFT_CAM_TILT_MAX_DEG).toBeLessThan(90);
+  });
+
+  it('V7 — the contract: 5 params + 5 CV ports, all neutral by default', () => {
+    const p = (id: string) => backdraftDef.params.find((q) => q.id === id);
+    for (const id of ['camTiltX', 'camTiltY', 'camPosX', 'camPosY']) {
+      expect(p(id)?.min).toBe(-1);
+      expect(p(id)?.max).toBe(1);
+      expect(p(id)?.defaultValue, `${id} is neutral by default`).toBe(0);
+    }
+    expect(p('camDist')?.defaultValue).toBe(0.5);
+    for (const id of ['cam_tilt_x', 'cam_tilt_y', 'cam_pos_x', 'cam_pos_y', 'cam_dist']) {
+      const i = backdraftDef.inputs.find((q) => q.id === id);
+      expect(i?.cvScale?.mode, `${id} is CV-able`).toBe('linear');
+      expect(backdraftDef.docs?.inputs?.[id]).toBeTruthy();
+    }
+    for (const id of ['camTiltX', 'camTiltY', 'camPosX', 'camPosY', 'camDist']) {
+      expect(backdraftDef.docs?.controls?.[id]).toBeTruthy();
+    }
+  });
+
+  it('V8 — the faceplate calls mode 1 VIRTUAL CAMERA', () => {
+    expect(BACKDRAFT_TV_MODE_LABELS[1]).toBe('VIRTUAL CAMERA');
+  });
 });
 
 describe('BACKDRAFT — GL resource discipline', () => {

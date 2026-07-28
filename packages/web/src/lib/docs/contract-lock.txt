@@ -164,6 +164,11 @@ b3ntb0x param tbc 0..1 linear default=1
 b3ntb0x param tube_bloom 0..1 linear default=0.35
 backdraft meta domain=video
 backdraft in b cv param=b cvScale=linear
+backdraft in cam_dist cv param=camDist cvScale=linear
+backdraft in cam_pos_x cv param=camPosX cvScale=linear
+backdraft in cam_pos_y cv param=camPosY cvScale=linear
+backdraft in cam_tilt_x cv param=camTiltX cvScale=linear
+backdraft in cam_tilt_y cv param=camTiltY cvScale=linear
 backdraft in chroma cv param=chroma cvScale=linear
 backdraft in darken video
 backdraft in darken_cv cv param=darken cvScale=linear
@@ -194,6 +199,11 @@ backdraft in zoom cv param=zoom cvScale=linear
 backdraft out out video
 backdraft param b -1..2 linear default=1
 backdraft param bezel 0..1 linear default=0.4
+backdraft param camDist 0..1 linear default=0.5
+backdraft param camPosX -1..1 linear default=0
+backdraft param camPosY -1..1 linear default=0
+backdraft param camTiltX -1..1 linear default=0
+backdraft param camTiltY -1..1 linear default=0
 backdraft param chroma -1..2 linear default=1
 backdraft param darken 0..1 linear default=1
 backdraft param delay 0..500 linear default=16

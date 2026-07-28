@@ -21,6 +21,7 @@
 
   import { onMount, onDestroy } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';
+  import XyPad from '$lib/ui/controls/XyPad.svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
@@ -488,6 +489,12 @@
     { id: 'room',        label: 'ROOM',      cable: 'cv' },
     { id: 'phosphor',    label: 'PHOSPHOR',  cable: 'cv' },
     { id: 'drive',       label: 'DRIVE',     cable: 'cv' },
+    // VIRTUAL CAMERA ORIENTATION — two joysticks + a fader, all CV-able.
+    { id: 'cam_tilt_x',  label: 'TILT X',    cable: 'cv' },
+    { id: 'cam_tilt_y',  label: 'TILT Y',    cable: 'cv' },
+    { id: 'cam_pos_x',   label: 'CAM X',     cable: 'cv' },
+    { id: 'cam_pos_y',   label: 'CAM Y',     cable: 'cv' },
+    { id: 'cam_dist',    label: 'DIST',      cable: 'cv' },
   ];
   const outputs = portsFromDef(backdraftDef.outputs);
 </script>
@@ -608,6 +615,35 @@
             </span>
           {/if}
         </div>
+
+        {#if tvOn}
+          <div class="cam-row" data-testid="backdraft-cam-row">
+            <span class="cam-title">VIRTUAL CAMERA ORIENTATION</span>
+            <XyPad
+              xValue={p('camTiltX')} yValue={p('camTiltY')}
+              xMin={-1} xMax={1} yMin={-1} yMax={1}
+              xLabel="Tilt X" yLabel="Tilt Y"
+              xDefault={pdef('camTiltX')} yDefault={pdef('camTiltY')}
+              onXChange={setParam('camTiltX')} onYChange={setParam('camTiltY')}
+              size={72}
+              title="TILT — swing the camera off the screen's normal. The set images as a trapezoid, and because every pass re-photographs the one before it the keystone COMPOUNDS: the nest curls toward the vanishing point instead of shrinking straight in. Centre = dead-on."
+              testid="backdraft-cam-tilt"
+              moduleId={id} xParamId="camTiltX" yParamId="camTiltY"
+            />
+            <XyPad
+              xValue={p('camPosX')} yValue={p('camPosY')}
+              xMin={-1} xMax={1} yMin={-1} yMax={1}
+              xLabel="Cam X" yLabel="Cam Y"
+              xDefault={pdef('camPosX')} yDefault={pdef('camPosY')}
+              onXChange={setParam('camPosX')} onYChange={setParam('camPosY')}
+              size={72}
+              title="POSITION — slide the camera in its own plane, from dead centre out past the screen's borders. Position SHIFTS the view; TILT bends it. Together they are how you look at the set from above and off to one side: raise Cam Y, then tilt down to bring the screen back into frame."
+              testid="backdraft-cam-pos"
+              moduleId={id} xParamId="camPosX" yParamId="camPosY"
+            />
+            <Fader value={p('camDist')} min={0} max={1} defaultValue={pdef('camDist')} label="Dist" curve="linear" onchange={setParam('camDist')} moduleId={id} paramId="camDist" />
+          </div>
+        {/if}
 
         <div class="fader-grid" data-testid="backdraft-controls">
           <Fader value={p('mix')}      min={0}  max={1}                     defaultValue={pdef('mix')}      label="Mix"  curve="linear" onchange={setParam('mix')}      moduleId={id} paramId="mix" />
@@ -828,6 +864,23 @@
     opacity: 0.75;
     white-space: nowrap;
     align-self: center;
+  }
+
+  /* VIRTUAL CAMERA ORIENTATION — only shown in a TV mode, since the camera
+     model does not exist on the legacy infinite-plane path. */
+  .cam-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+  }
+  .cam-title {
+    font-size: 9px;
+    letter-spacing: 0.06em;
+    opacity: 0.7;
+    align-self: center;
+    white-space: nowrap;
   }
 
   /* FLICKER row: a small leading label + 6 equal-width position buttons. */
