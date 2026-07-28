@@ -18,7 +18,7 @@ import {
   BACKDRAFT_ZOOM_MAX,
   BACKDRAFT_TV_GLASS,
   BACKDRAFT_TV_WHITE,
-  BACKDRAFT_TV_GAIN_MAX,
+  BACKDRAFT_TV_GAIN_MARGINAL,
   BACKDRAFT_TV_FILL_MIN,
   BACKDRAFT_TV_FILL_DEFAULT,
   BACKDRAFT_TV_FILL_MAX,
@@ -288,23 +288,33 @@ describe('BACKDRAFT PURE TV — geometry (the nest is real)', () => {
 });
 
 describe('BACKDRAFT PURE TV — the contraction contract', () => {
-  it('N7 — opNorm * gEff never exceeds the ceiling, over the FULL knob product', () => {
-    // The colour chain multiplies the tap BEFORE the gain and every one of its
-    // knobs reaches 2.0, so clamping g alone lets LUMA >= 1.18 pin the interior
-    // to white and delete the nest. Clamping the OPERATOR NORM is what makes
-    // the map a strict contraction for every reachable combination.
-    for (const luma of [-1, 0, 1, 1.2, 2]) {
-      for (const ch of [-1, 1, 1.3, 2]) {
-        for (const chroma of [-1, 0, 1, 2]) {
-          for (const feedback of [0, 0.85, 2]) {
-            for (const effectScale of [0, 1, BACKDRAFT_MAX_EFFECT_SCALE]) {
-              const opNorm = backdraftTvOpNorm({ r: ch, g: ch, b: ch, luma, chroma });
-              const gEff = backdraftTvGain(opNorm, feedback, effectScale);
-              expect(opNorm * gEff).toBeLessThanOrEqual(BACKDRAFT_TV_GAIN_MAX + 1e-6);
-            }
-          }
-        }
-      }
+  it('N7 — the DEFAULTS are contractive, but the knobs REACH past marginal', () => {
+    // There is deliberately no operator-norm ceiling. At the defaults the loop
+    // is comfortably contractive (so the shipped look is a stable nest), and
+    // the colour chain rides ON TOP of FEEDBACK so that cranking LUMA, or
+    // pushing FEEDBACK to max with LUMA positive, crosses 1 and reaches
+    // white-out. A loop that cannot be over-driven is not an instrument.
+    const unity = backdraftTvOpNorm({ r: 1, g: 1, b: 1, luma: 1, chroma: 1 });
+    const atDefault = unity * backdraftTvGain(unity, 0.85, 1);
+    expect(atDefault).toBeLessThan(BACKDRAFT_TV_GAIN_MARGINAL);
+
+    // Each of these ALONE must be able to push the per-pass gain past marginal.
+    const overdriven: [string, number][] = [
+      ['LUMA 2 at default FEEDBACK', (() => {
+        const o = backdraftTvOpNorm({ r: 1, g: 1, b: 1, luma: 2, chroma: 1 });
+        return o * backdraftTvGain(o, 0.85, 1);
+      })()],
+      ['FEEDBACK max, LUMA 1', (() => {
+        const o = backdraftTvOpNorm({ r: 1, g: 1, b: 1, luma: 1, chroma: 1 });
+        return o * backdraftTvGain(o, BACKDRAFT_MAX_FEEDBACK, 1);
+      })()],
+      ['FEEDBACK max, LUMA 2', (() => {
+        const o = backdraftTvOpNorm({ r: 1, g: 1, b: 1, luma: 2, chroma: 1 });
+        return o * backdraftTvGain(o, BACKDRAFT_MAX_FEEDBACK, 1);
+      })()],
+    ];
+    for (const [label, gain] of overdriven) {
+      expect(gain, `${label} must reach past marginal`).toBeGreaterThan(BACKDRAFT_TV_GAIN_MARGINAL);
     }
   });
 
@@ -322,12 +332,48 @@ describe('BACKDRAFT PURE TV — the contraction contract', () => {
     }
   });
 
-  it('N7c — PURE TV converges to a STILL image even at maximum FEEDBACK', () => {
-    const r = simulateBackdraftTv({
-      size: 96, frames: 260, feedback: BACKDRAFT_MAX_FEEDBACK, luma: 2, chroma: 2,
-    });
+  it('N7c — at the DEFAULTS PURE TV converges to a still, un-pinned nest', () => {
+    const r = simulateBackdraftTv({ size: 96, frames: 260 });
     expect(r.lastDelta).toBeLessThan(1e-6);
-    expect(tvFrameMean(r.frame)).toBeLessThan(0.99);   // and does not pin white
+    expect(tvFrameMean(r.frame)).toBeLessThan(0.9);
+  });
+
+  it('N7d — WHITE-OUT is REACHABLE by LUMA / FEEDBACK, and RECOVERABLE', () => {
+    // The owner's requirement: "cranking luma value, or increasing feedback to
+    // max while luma is positive, should eventually create whiteout" — you
+    // cannot have feedback worth riding without an uncontrollable zone to ride
+    // toward. What must NOT happen is that the white-out is terminal.
+    // Measure the BLOWN-OUT FRACTION, not the frame mean: the dark bezel bands
+    // survive a white-out (they are drawn, not fed back) and drag the mean down
+    // to ~0.83 even when every scrap of PICTURE is pinned at 1.0.
+    const whiteFrac = (f: Float32Array): number => {
+      let hot = 0, n = 0;
+      for (let i = 0; i < f.length; i += 3) { if (f[i]! >= 0.9) hot++; n++; }
+      return hot / n;
+    };
+    const nest = simulateBackdraftTv({ size: 96, frames: 200 });
+    const nestMean = tvFrameMean(nest.frame);
+    const nestWhite = whiteFrac(nest.frame);
+    // At the defaults most of the picture is NOT blown out.
+    expect(nestWhite).toBeLessThan(0.55);
+
+    for (const hot of [
+      { luma: 2 },
+      { feedback: BACKDRAFT_MAX_FEEDBACK },
+      { feedback: BACKDRAFT_MAX_FEEDBACK, luma: 2 },
+    ]) {
+      const r = simulateBackdraftTv({ size: 96, frames: 200, ...hot });
+      expect(whiteFrac(r.frame), `${JSON.stringify(hot)} whites out`)
+        .toBeGreaterThan(0.7);
+      expect(tvFrameMean(r.frame)).toBeGreaterThan(nestMean);
+    }
+
+    // RECOVERABLE: starting from a fully white frame, the DEFAULT settings
+    // return to the ordinary nest — the shoulder + bounded room mean an
+    // over-drive is a place you can come back from, not a wedge.
+    const back = simulateBackdraftTv({ size: 96, frames: 260, seed: 1 });
+    expect(back.lastDelta).toBeLessThan(1e-6);
+    expect(Math.abs(tvFrameMean(back.frame) - nestMean)).toBeLessThan(0.02);
   });
 
   it('N10 — the contract: new params + ports exist with the documented shape', () => {
@@ -430,7 +476,7 @@ describe('BACKDRAFT CRITICAL — the auto-exposure servo', () => {
       { critical: true, drive: 0.25 },                        // servo present, under the Hopf point
       { critical: true, drive: 0.0 },
       { critical: false },                                    // servo absent entirely
-      { critical: false, feedback: BACKDRAFT_MAX_FEEDBACK },  // contraction holds at max FB
+      { critical: false },
     ]) {
       const r = critProbe(o);
       expect(r.swing).toBeLessThan(1e-4);

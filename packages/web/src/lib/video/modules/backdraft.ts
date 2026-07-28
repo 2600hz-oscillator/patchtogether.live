@@ -440,13 +440,24 @@ export const BACKDRAFT_TV_FILL_DEFAULT = 0.75;
 /** Screen fill at ZOOM's maximum — a dense, thin-ringed tunnel. */
 export const BACKDRAFT_TV_FILL_MAX = 0.95;
 
-/** THE CONTRACTION CEILING. The per-pass operator is not the gain alone: the
- *  colour chain (R/G/B, LUMA, CHROMA) multiplies the tap BEFORE the gain and
- *  every one of those knobs reaches 2.0, so clamping `g` alone lets LUMA >= 1.18
- *  drive the interior to white and delete the nest. We clamp the OPERATOR NORM
- *  instead — `opNorm * gEff <= BACKDRAFT_TV_GAIN_MAX < 1` — which makes the map
- *  a strict contraction (Banach) for EVERY reachable parameter combination. */
-export const BACKDRAFT_TV_GAIN_MAX = 0.95;
+/** The per-pass loop gain at which PURE TV is exactly marginal — a REFERENCE
+ *  value for the card readout and the docs, deliberately NOT a clamp.
+ *
+ *  An earlier revision clamped the OPERATOR NORM here (`opNorm * gEff <= 0.95`)
+ *  so the map was a strict contraction for EVERY reachable knob combination and
+ *  LUMA 2 / FEEDBACK 2 could never pin the interior white. That is more
+ *  constrained than the instrument wants. Cranking LUMA, or pushing FEEDBACK to
+ *  maximum with LUMA positive, SHOULD reach white-out: you cannot get feedback
+ *  worth riding without a zone of uncontrollable feedback to ride toward, and a
+ *  loop that cannot be over-driven is not an instrument.
+ *
+ *  So there is no ceiling and the loop gain is what the knobs say it is. What
+ *  remains is the ALWAYS-ON capture shoulder and the bounded room — SOFT
+ *  limiters that make a white-out roll off smoothly and, crucially, make it
+ *  RECOVERABLE: back the knob down and the nest returns rather than the module
+ *  wedging in a pinned state. RECOVERABILITY, not unconditional stability, is
+ *  the property that is proven (N7d). */
+export const BACKDRAFT_TV_GAIN_MARGINAL = 1.0;
 
 /** The faceplate's reflection of the room, as a fraction. This is the depth
  *  PLATEAU the nest converges onto: `P(x) = GLASS * roomRgb(x)`.
@@ -562,8 +573,17 @@ export const BACKDRAFT_TV_CRIT_GAIN = 1.15;
  *  servo cannot reach target in a dim room, rails at AGC_MAX and goes STATIC —
  *  measured, room 0.4 killed the limit cycle stone dead. Scaling the set point
  *  with the room keeps the servo in authority, and therefore keeps CRITICAL
- *  alive, at every room brightness. */
-export const BACKDRAFT_TV_AGC_TARGET = 0.8;
+ *  alive, at every room brightness.
+ *
+ *  The FRACTION has to leave headroom at the top too. At 0.8 the servo railed
+ *  at AGC_MAX in a FULL-BRIGHTNESS room (the shoulder caps the achievable frame
+ *  mean around 0.62, so an 0.8 set point is simply unreachable) and CRITICAL
+ *  went dead at ROOM = 1.0 — which is the DEFAULT, so the mode was inert out of
+ *  the box. Same bug class as a BEZEL fader whose minimum deletes the nest.
+ *  0.5 is reachable from both sides at every room level, and it sits lower on
+ *  the shoulder, which RAISES the loop's sensitivity to the gain and so widens
+ *  the oscillating region rather than narrowing it. */
+export const BACKDRAFT_TV_AGC_TARGET = 0.5;
 /** Servo authority bounds. HARD-CLAMPED, and this is the recoverability
  *  guarantee: the exposure state can never wind up to a value it cannot come
  *  back from, so backing DRIVE off always returns a normal nest. */
@@ -572,8 +592,8 @@ export const BACKDRAFT_TV_AGC_MAX = 4.0;
 /** DRIVE 0 / DRIVE 1 -> the servo's per-frame integral rate. Geometric between
  *  the two, so DRIVE is a musical (constant-ratio) control and CV across it
  *  sweeps decades of servo speed evenly. */
-export const BACKDRAFT_TV_AGC_RATE_MIN = 1.0;
-export const BACKDRAFT_TV_AGC_RATE_MAX = 49.0;
+export const BACKDRAFT_TV_AGC_RATE_MIN = 6.0;
+export const BACKDRAFT_TV_AGC_RATE_MAX = 130.0;
 
 /** CRITICAL's LOCAL GAIN DROOP at DRIVE = 1 — the vidicon's charge depletion
  *  (`gain / (1 + kappa * prevOut)`), the lagged local inhibitor that turns the
@@ -767,7 +787,6 @@ uniform float uHasPersist;
 // contraction ceiling bites; CRITICAL passes (CRIT_GAIN*agc/opNorm, +inf) so
 // the auto-exposure servo -- not a clamp -- regulates the level.
 uniform float uTvGainScale;
-uniform float uTvGainCeil;
 uniform float uTvNoise;      // Crutchfield's ~1% sensor noise (0 in PURE TV)
 uniform float uTvFrame;      // frame index, for the deterministic noise hash
 uniform sampler2D uTvAgc;    // 1x1 auto-exposure servo state (log-encoded)
@@ -775,7 +794,6 @@ uniform float uHasTvAgc;     // 0 until the servo has run at least once
 
 const float MAX_EFFECT_SCALE = ${BACKDRAFT_MAX_EFFECT_SCALE.toFixed(1)};
 const float BD_PI = 3.14159265359;
-const float TV_GAIN_MAX = ${BACKDRAFT_TV_GAIN_MAX.toFixed(4)};
 const float TV_GLASS    = ${BACKDRAFT_TV_GLASS.toFixed(4)};
 const float TV_AMBIENT  = ${BACKDRAFT_TV_AMBIENT.toFixed(4)};
 const float TV_KNEE     = ${BACKDRAFT_FLICKER_KNEE.toFixed(4)};
@@ -1060,7 +1078,7 @@ void main() {
     // monotone map, but an INTEGRATING inhibitor overshoots, and past DRIVE
     // 0.5 the overshoot becomes a sustained limit cycle.
     float agc = uHasTvAgc > 0.5 ? decodeAgc(texelFetch(uTvAgc, ivec2(0, 0), 0).r) : 1.0;
-    float gEff = min(uTvGainScale * agc * effectScale, uTvGainCeil);
+    float gEff = uTvGainScale * agc * effectScale;
 
     // FLICKER, PEAK-normalised on the CPU (uFlickerGain/uFlickerDepth are
     // pre-divided by their peak when tvMode = 1), so flick <= 1 always: a
@@ -1087,7 +1105,7 @@ void main() {
     // P = GLASS * room. An ABSOLUTE lift here flattens the cascade at room 0.20
     // and INVERTS it (brightening inward) below that — the exact smeared grey
     // field this mode exists to remove.
-    vec3 pictureRgb = tap * gEff + TV_GLASS * roomRgb * (1.0 - gEff);
+    vec3 pictureRgb = tap * gEff + TV_GLASS * roomRgb * max(0.0, 1.0 - gEff);
 
     // Three exhaustive, disjoint regions. The bezel is NOT decoration: it is
     // the only high-contrast boundary between level k and level k+1, and
@@ -1914,19 +1932,18 @@ export function backdraftTvOpNorm(p: {
  * The EFFECTIVE per-pass screen gain — the exact CPU mirror of the shader's
  *   gEff = min(FEEDBACK * effectScale, TV_GAIN_MAX / max(opNorm, 1e-4))
  *
- * Because the capture shoulder is 1-Lipschitz and the flicker multiplier is
- * peak-normalised to <= 1, the whole per-pass operator's norm is
- * `opNorm * gEff <= BACKDRAFT_TV_GAIN_MAX = 0.95 < 1`. Strict contraction, for
- * every reachable parameter combination — that is the stability contract.
+ * NO CEILING. The loop gain is exactly what the knobs say, so the colour chain
+ * rides on top of FEEDBACK and driving LUMA or FEEDBACK up reaches white-out —
+ * which is the point: there is no feedback worth riding without an
+ * uncontrollable zone to ride toward. The capture shoulder and the bounded room
+ * are SOFT limiters, so the white-out rolls off and is recoverable.
  */
 export function backdraftTvGain(
-  opNorm: number,
+  _opNorm: number,
   feedback: number,
   effectScale: number,
-  gainMax: number = BACKDRAFT_TV_GAIN_MAX,
 ): number {
-  const raw = Math.max(0, feedback) * Math.max(0, effectScale);
-  return Math.min(raw, gainMax / Math.max(Math.abs(opNorm), 1e-4));
+  return Math.max(0, feedback) * Math.max(0, effectScale);
 }
 
 /**
@@ -1967,20 +1984,20 @@ export function backdraftTvDriveGain(drive: number): number {
  * unplayable control the owner rejected. Over the fader:
  *
  *   DRIVE  0.00  0.25  0.50  0.75  1.00
- *   rate   1.00  2.65  7.00  18.5  49.0      (tau = 1/rate frames)
+ *   rate   6.0   12.9  27.9  60.2  130.0     (tau = 1/rate frames)
  *
  * The endpoints are chosen so that DRIVE 0.5 lands ON the measured HOPF POINT
  * (rate ~ 5): below it the servo regulates to a dead-still nest, above it it
  * overshoots into a sustained limit cycle. Measured swing of the frame mean
  * over a late window, with the noise floor OFF:
  *
- *   rate    1..6  8       12      20      30      49
- *   swing   0.000 0.090   0.159   0.171   0.238   0.34
- *   period  --    3       3       3       2       2
+ *   rate    2..20   40      80+
+ *   swing   0.000   0.260   0.390
  *
- * so the BOTTOM half of the fader is the well-behaved regulator and the TOP
- * half is the limit cycle, deepening monotonically — and DRIVE 0.5 is the edge
- * itself.
+ * measured identically at ROOM 1.0 / 0.7 / 0.4, so the edge does not move as
+ * the room changes. The BOTTOM half of the fader is the well-behaved regulator
+ * and the TOP half is the limit cycle, deepening monotonically — and DRIVE 0.5
+ * is the edge itself.
  *
  * The Hopf point (where the servo starts to overshoot and the picture begins
  * to breathe) sits near the middle of the travel, and BOTH sides of it are
@@ -2328,7 +2345,10 @@ export function backdraftTvComposite(args: BackdraftTvCompositeArgs): [number, n
     + BACKDRAFT_LUMA_WEIGHTS[1]! * tint[1]!
     + BACKDRAFT_LUMA_WEIGHTS[2]! * tint[2]!;
   const picture: [number, number, number] = [0, 0, 0];
-  const liftF = Math.max(1 - g, 1 - BACKDRAFT_TV_GAIN_MAX);
+  // The glass plateau vanishes as the loop gain reaches 1 and must not go
+  // NEGATIVE once the user drives PAST it: an over-driven loop has no plateau
+  // left, it is all picture.
+  const liftF = Math.max(0, 1 - g);
   // LOCAL GAIN DROOP — the vidicon's charge depletion, and the ONE ingredient
   // that gives this geometry a time axis. Every other lever (raising the gain
   // ceiling, expanding the spatial map) leaves a POSITIVE MONOTONE per-pass
@@ -2896,7 +2916,6 @@ export const backdraftDef: VideoModuleDef = {
     const uPersist = u('uPersist');
     const uHasPersist = u('uHasPersist');
     const uTvGainScale = u('uTvGainScale');
-    const uTvGainCeil = u('uTvGainCeil');
     const uTvNoise = u('uTvNoise');
     const uTvFrame = u('uTvFrame');
     const uTvAgc = u('uTvAgc');
@@ -3159,9 +3178,12 @@ export const backdraftDef: VideoModuleDef = {
           g.bindFramebuffer(g.FRAMEBUFFER, agcReduce.fbo);
           g.viewport(0, 0, T, T);
           g.useProgram(agcProgReduce);
-          g.activeTexture(g.TEXTURE0);
+          // TEXTURE7/8, NOT 0/1: the main program's uA/uB/uFb bindings are
+          // already live on units 0-5 at this point, and rebinding those units
+          // here would silently swap the live SOURCE for the reduce input.
+          g.activeTexture(g.TEXTURE7);
           g.bindTexture(g.TEXTURE_2D, prevOut.texture);
-          g.uniform1i(uRedSrc, 0);
+          g.uniform1i(uRedSrc, 7);
           ctx.drawFullscreenQuad();
 
           const nextIdx = agcCur ^ 1;
@@ -3170,12 +3192,12 @@ export const backdraftDef: VideoModuleDef = {
           g.bindFramebuffer(g.FRAMEBUFFER, srvDst.fbo);
           g.viewport(0, 0, 1, 1);
           g.useProgram(agcProgServo);
-          g.activeTexture(g.TEXTURE0);
+          g.activeTexture(g.TEXTURE7);
           g.bindTexture(g.TEXTURE_2D, agcReduce.texture);
-          g.uniform1i(uSrvReduce, 0);
-          g.activeTexture(g.TEXTURE1);
+          g.uniform1i(uSrvReduce, 7);
+          g.activeTexture(g.TEXTURE8);
           g.bindTexture(g.TEXTURE_2D, srvSrc.texture);
-          g.uniform1i(uSrvPrev, 1);
+          g.uniform1i(uSrvPrev, 8);
           g.uniform1f(uSrvHasPrev, agcPrimed ? 1.0 : 0.0);
           g.uniform1f(uSrvRate, backdraftTvAgcRate(params.drive));
           // Set point RELATIVE to the room: an absolute one rails the servo in
@@ -3217,10 +3239,10 @@ export const backdraftDef: VideoModuleDef = {
           // always-on shoulder and the bounded room stay as SOFT limiters, which
           // is what makes a white-out recoverable rather than terminal.
           g.uniform1f(uTvGainScale, BACKDRAFT_TV_CRIT_GAIN / opNorm);
-          g.uniform1f(uTvGainCeil, 1e9);
         } else {
+          // No ceiling: FEEDBACK straight through, so the colour chain's own
+          // gain rides on top of it and over-driving to white is reachable.
           g.uniform1f(uTvGainScale, Math.max(0, Math.min(BACKDRAFT_MAX_FEEDBACK, params.feedback)));
-          g.uniform1f(uTvGainCeil, BACKDRAFT_TV_GAIN_MAX / opNorm);
         }
 
         // PHOSPHOR's in-place tap: the previous OUTPUT at the SAME x. Bound
