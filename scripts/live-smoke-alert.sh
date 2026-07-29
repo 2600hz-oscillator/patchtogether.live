@@ -15,7 +15,9 @@
 #
 # Stdout contract: one machine-readable JSON object on the last line of
 # normal output, surrounded by `<<SMOKE_RESULT>>` markers so the workflow
-# can pluck it without parsing arbitrary log noise.
+# can pluck it without parsing arbitrary log noise. It carries a `checks`
+# array of `{ id, detail }` — `id` is the stable per-check identifier the
+# issue reconciler dedups on (see the comment above the emit, below).
 
 set -uo pipefail
 
@@ -129,11 +131,34 @@ if [[ ${#failures[@]} -gt 0 ]]; then
   combined_reason=$(IFS='; '; echo "${reasons[*]}")
 fi
 
+# Per-CHECK breakdown. `id` is the STABLE alert-dedup key component: it is a
+# literal from the branches above and contains nothing derived from an upstream
+# response body, so it is byte-identical across runs of the same failure. The
+# reconciler (scripts/alert-issues.mjs) keys one reusable GitHub issue per id;
+# its KNOWN_CHECK_IDS list is PINNED to the `failures+=(...)` literals in this
+# file by scripts/alert-issues.test.ts, so adding a branch below without adding
+# the id there fails the `unit` lane.
+#
+# Do NOT key anything off `detail` — it embeds the upstream error text (e.g. the
+# Neon `{"message":...}` HTTP 402 body), which varies run to run and would
+# defeat the dedup entirely. That is exactly how the 45-duplicate flood happened.
+checks_json='[]'
+if [[ ${#failures[@]} -gt 0 ]]; then
+  for i in "${!failures[@]}"; do
+    checks_json=$(jq -n \
+      --argjson acc "$checks_json" \
+      --arg id "${failures[$i]}" \
+      --arg detail "${reasons[$i]}" \
+      '$acc + [{ id: $id, detail: $detail }]')
+  done
+fi
+
 # Emit machine-readable summary for the workflow to pick up.
 echo "<<SMOKE_RESULT>>"
 jq -n \
   --argjson healthy "$healthy" \
   --arg reason "$combined_reason" \
+  --argjson checks "$checks_json" \
   --arg web_status "$web_status" \
   --arg relay_status "$relay_status" \
   --arg metrics_status "$metrics_status" \
@@ -142,6 +167,7 @@ jq -n \
   '{
     healthy: $healthy,
     reason: $reason,
+    checks: $checks,
     probes: {
       web_status: $web_status,
       relay_status: $relay_status,
