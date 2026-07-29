@@ -161,7 +161,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   // need laid out as labelled banks instead of a 280px column.
   // Was a fixed 3u/hp4 in #767 → DYNAMIC_SIZED when it gained the preview's
   // full output capabilities → fixed again now they are gone.
-  backdraft: { size: '3u', hp: 3 }, // 540×540 — 3 switch rows over 2 bank rows; fader length derived to fill the tier
+  backdraft: { size: '3u', hp: 6 }, // 540×1080 — 320×240 display centred in a top band flanked by the switch columns, over ONE bank row (measured 722px of 1050); fader length derived to fill the tier
   cameraInput: { size: '3u', hp: 2 }, // 370×280px  [LOCKED]
   cellshade: { size: '3u', hp: 2 }, // 369×~490px — rebuild added the SOFT/SMOOTH/INK fader row (2u overflowed the INK row)
   chroma: { size: '2u', hp: 2 }, // 360×260px

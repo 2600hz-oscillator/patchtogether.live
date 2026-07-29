@@ -112,30 +112,64 @@
     return (v: number) => setNodeParam(id, paramId, v);
   }
 
+  // ── THE DISPLAY ──────────────────────────────────────────────────────────
+  // A small in-card picture, CENTRED in a band across the top of the card with
+  // the discrete switches flanking it left and right. 320×240 is 4:3 — the
+  // engine's own aspect (VIDEO_RES 1024×768) — so fitRect fills it edge to edge
+  // with no letterbox, and a 16:9 OUTPUT letterboxes inside it as usual.
+  //
+  // "SMALLER" is the requirement and it is met on every axis: the card's
+  // pre-declutter preview was ~380×285 on a 720px-wide card — over half the
+  // card's width. 320×240 is smaller in BOTH axes (−16% linear, −29% area) and
+  // is under a third of this card's 1080px width.
+  //
+  // The backing store is 320×240 too (not the 1024×768 engine size) while the
+  // card sits in the rack — the per-frame drawImage readback scales with the
+  // buffer, so this is ~10× cheaper than blitting at engine resolution. The
+  // expanded modes (Full Frame / Full Screen / Present) promote it to the live
+  // engine dims; see bufferDims below.
+  const DISPLAY_W = 320;
+  const DISPLAY_H = 240;
+
   // ── FADER LENGTH IS DERIVED FROM THE TIER, NOT PICKED ────────────────────
   // The rack pins this card to EXACTLY 3u = 540px (min AND max height), so any
   // height the content does not use is dead grey on EVERY instance of the card.
-  // The fader length is therefore the free variable that makes the content
-  // meet the tier — solve for it, never guess it:
+  // The fader length is the free variable that makes the content meet the tier —
+  // solve for it, never guess it. Cumulative from the card's top border, every
+  // figure MEASURED in the browser at this layout (not estimated):
   //
-  //    49  chrome     (border 1 + .vcard pad-top 18 + title 16 + margin 8 + 6)
-  //    66  switches   (three 22px mode rows)
-  //    48  body gaps  (three 16px gaps between the four .bd-body children)
-  //    19  banks      (border-top 1 + padding-top 18)
-  //    28  row gap    (between the two bank rows)
-  //    25  footer     (.bd-body pad-bottom 10 + .vcard pad-bottom 14 + border 1)
-  //   ───
-  //   235  fixed  →  305px for TWO bank rows, and a bank is
-  //                  title 10 + gap 4 + [track H + 2 border + 4 gap + ~12 label]
-  //                  = H + 32, so 2(H + 32) = 305  →  H = 120.
+  //     1    card top border                                  →   1
+  //    18    .vcard padding-top                               →  19
+  //    16.8  ModuleTitle text (0.85rem)                       →  35.8
+  //     8    ModuleTitle margin-bottom                        →  43.8
+  //     6    .bd-body padding-top                             →  49.8
+  //   245.2  TOP BAND — the 240px display plus the 5.2px      → 295
+  //          residual, which `flex: 1` parks here as breathing
+  //          room AROUND the picture rather than as a hole at
+  //          the bottom edge (see .top-band)
+  //    20    .bd-body gap                                     → 315
+  //     1    .banks border-top                                → 316
+  //    20    .banks padding-top                               → 336
+  //   H+26   the ONE bank row (title + gap + fader column)     → 362 + H
+  //    10    .bd-body padding-bottom                          → 372 + H
+  //    14    .vcard padding-bottom                            → 386 + H
+  //     1    card bottom border                               → 387 + H
+  //   ─────
+  //   387 + H = 540  →  H = 153, and the bank row measures 179. ✓
   //
-  // Two rows is what keeps the faders SHORT: one row would need H ≈ 273 to fill
-  // the same tier. Splitting the banks buys back the length, which is why the
-  // layout and the fader size are one decision, not two.
+  // WIDTH is what bought this. At 3hp the five banks needed TWO rows, which cost
+  // a second (H + 26) plus a 28px row gap and left no room for a picture at all.
+  // At 6hp the five banks sit on ONE row — MEASURED at 602.3px of banks + 4×30px
+  // gaps = 722.3 of the 1050px inner width — and the row that collapsing bought
+  // is exactly what the 240px display band spends.
   //
-  // card-control-overflow is what holds this honest: if a future control row
-  // pushes past the tier it goes red rather than silently clipping.
-  const FADER_H = 120;
+  // 153 is DERIVED, not carried over: 120 was the two-bank-row answer and 176
+  // was the no-display answer. Neither constraint holds here.
+  //
+  // card-control-overflow is what holds this honest: it measures this card in
+  // ALL THREE TV modes, so if a future control pushes past the tier it goes red
+  // rather than silently clipping under `.card { overflow: hidden }`.
+  const FADER_H = 153;
 
   // ---- MIRROR X / MIRROR Y kaleidoscope toggles ----
   // Each button flips a boolean param (mirrorX / mirrorY). A rising edge on
@@ -295,20 +329,24 @@
 
   // Drawing-buffer dims. Expanded: the live ENGINE dims, so fitRect fills the
   // buffer edge-to-edge and object-fit:contain height-fills the screen (side
-  // pillarbox only) — see fullscreen-canvas-dims.ts. Idle: the smallest legal
-  // buffer, because nothing is drawn into it.
+  // pillarbox only) — see fullscreen-canvas-dims.ts. In the rack: the DISPLAY's
+  // own CSS box, so the per-frame readback is sized to what is actually shown
+  // and not to the 1024×768 engine surface.
   let bufferDims = $derived(
     fullscreenCanvasDims(
       expanded,
       { canvas: { width: engineW, height: engineH } },
-      { width: 2, height: 2 },
+      { width: DISPLAY_W, height: DISPLAY_H },
     ),
   );
 
-  // The output menu (Full Frame / Full Screen / Present), opened from the
-  // OUTPUT button. The old card opened this by right-clicking the preview;
-  // with no preview to right-click it needs an explicit affordance, and a
-  // button is also discoverable in a way the hidden right-click never was.
+  // The output menu (Full Frame / Full Screen / Present). TWO entry points, and
+  // they are not redundant:
+  //   * the ⛶ OUTPUT button — DISCOVERABLE. The pre-declutter card only had the
+  //     right-click, which nobody finds; the button is what the e2e cases drive.
+  //   * right-click on the DISPLAY — the idiom every other video card uses
+  //     (VIDEO OUT, BENTBOX). It was unavailable while there was no picture to
+  //     right-click; with the display back it costs nothing to honour.
   let ctxOpen = $state(false);
   let ctxX = $state(0);
   let ctxY = $state(0);
@@ -318,6 +356,14 @@
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     ctxX = r.left;
     ctxY = r.bottom + 2;
+    ctxOpen = true;
+  }
+  /** Right-click the display. stopPropagation keeps the SvelteFlow node menu shut. */
+  function openOutputMenuAt(e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    ctxX = e.clientX;
+    ctxY = e.clientY;
     ctxOpen = true;
   }
 
@@ -335,18 +381,42 @@
     return { x: 0, y: Math.round((ch - h) / 2), w, h };
   }
 
-  // ---------------- rAF: gate reflection always, blit only when expanded -----
+  // ---------------- rAF: gate reflection always, blit when there is a frame ---
   // A rising edge on a mirror / shape / pure-geo / tv gate flips the param
   // INSIDE the engine instance. Mirror that live value back into the patch
   // store so the toggle persists + syncs to collaborators + the button shows
   // it. That runs every frame and is pure param reads — no GL readback.
   //
-  // The blit (which IS a readback, and which used to run unconditionally to
-  // paint the in-rack thumbnail) now runs ONLY while the card is expanded.
+  // The blit IS a GL readback, so it is spent only where it buys something:
+  //
+  //   * EXPANDED (Full Frame / Full Screen / Present) — every frame, at engine
+  //     resolution. That is the picture the user is actually watching.
+  //   * IN THE RACK — every 3rd frame (~20fps) into the 320×240 display. A
+  //     thumbnail does not need 60Hz, and a rack can hold many of these cards.
+  //   * NEVER when the tab is hidden, and never when a TEST HARNESS has frozen
+  //     or paused the video engine.
+  //
+  // The harness gate is not a test hack, it is the honest condition: when
+  // `__videoEnginePause` is set the specs drive `vid.step()` themselves, and
+  // when `__videoEngineFreezeRender` is set nothing renders at all — either
+  // way there is no NEW frame to present, so a blit would burn a SwiftShader
+  // readback to re-present a frame the card already has. (Off-screen cards are
+  // handled centrally by video-card-visibility.ts → engine.setCardVisibility.)
+  const IN_RACK_BLIT_EVERY = 3;
   let rafId: number | null = null;
+  let frameCount = 0;
+
+  function harnessFrozen(): boolean {
+    const g = globalThis as {
+      __videoEngineFreezeRender?: boolean;
+      __videoEnginePause?: boolean;
+    };
+    return g.__videoEngineFreezeRender === true || g.__videoEnginePause === true;
+  }
 
   function tick() {
     rafId = null;
+    frameCount++;
     const e = engineCtx.get();
     let videoEngine: VideoEngine | undefined;
     if (e) {
@@ -359,7 +429,15 @@
       const eh = videoEngine.canvas.height || ENGINE_H;
       if (ew !== engineW) engineW = ew;
       if (eh !== engineH) engineH = eh;
-      if (expanded) drawOutput(videoEngine);
+      if (expanded) {
+        drawOutput(videoEngine);
+      } else if (
+        !harnessFrozen() &&
+        !document.hidden &&
+        frameCount % IN_RACK_BLIT_EVERY === 0
+      ) {
+        drawOutput(videoEngine);
+      }
     }
     try { syncFromEngine(e, node); } catch { /* defensive — never kill the loop */ }
     rafId = requestAnimationFrame(tick);
@@ -489,7 +567,16 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={300}>
     <div class="bd-body">
-      <!-- ── MODE rows: the discrete switches, across the top ────────────── -->
+      <!-- ── TOP BAND ────────────────────────────────────────────────────────
+           The DISPLAY, centred across the card, with the discrete switches
+           flanking it. Both flanks are `flex: 1 1 0`, so they are equal BY
+           CONSTRUCTION whatever they contain — that is what makes the display
+           genuinely centred on the card rather than centred-ish. The flanks are
+           shorter than the display, so they distribute their rows across its
+           height (space-between) and bracket it instead of pooling the
+           difference as one dead block. -->
+      <div class="top-band">
+      <div class="switch-col left">
       <div class="mode-row">
         <div class="btn-group" data-testid="backdraft-mirror-row">
           <button
@@ -509,7 +596,9 @@
             onclick={toggleMirror('mirrorY')}
           >MIRROR Y</button>
         </div>
+      </div>
 
+      <div class="mode-row">
         <div class="btn-group" data-testid="backdraft-shape-row">
           <button
             type="button"
@@ -534,29 +623,6 @@
       </div>
 
       <div class="mode-row">
-        <div class="btn-group tv-group" data-testid="backdraft-tv-row">
-          <button
-            type="button"
-            class="mirror-btn nodrag wide"
-            class:on={tvOn}
-            data-testid="backdraft-tv-mode"
-            title={tvModeIdx === 0
-              ? 'TV MODE OFF — the classic infinite-plane feedback composite. The exact pre-PURE-TV behaviour.'
-              : tvModeIdx === 1
-                ? 'PURE TV — a bounded SCREEN instead of an infinite plane. The previous frame is drawn whole inside a bezelled TV; OUTSIDE it is your live input, so IN THIS MODE YOUR INPUT IS THE ROOM, NOT THE PICTURE. The view nests one level per pass and converges to a STILL image.'
-                : 'CRITICAL — PURE TV plus the camera’s AUTO-EXPOSURE servo. The servo integrates, so it overshoots: past DRIVE 0.5 the picture blooms toward white, gets hauled back, and each correction rides inward through the nest one level per DELAY. This is the mode for riding the edge of white-out; back DRIVE off and it always recovers.'}
-            onclick={cycleTvMode}
-          >TV: {BACKDRAFT_TV_MODE_LABELS[tvModeIdx]}</button>
-          {#if tvOn}
-            <span class="tv-readout" data-testid="backdraft-tv-readout">
-              fill {(tvFill * 100).toFixed(0)}% · ≈{tvDepth.resolved} bands
-              {#if tvCritical} · Λ-servo {tvRate.toFixed(1)}/f {tvRiding ? '· RIDING' : '· steady'}{/if}
-            </span>
-          {/if}
-        </div>
-      </div>
-
-      <div class="mode-row">
         <div class="btn-group" data-testid="backdraft-flicker-row">
           <span class="row-label">FLICKER</span>
           {#each FLICKERS as f (f.v)}
@@ -570,33 +636,92 @@
             >{f.label}</button>
           {/each}
         </div>
+      </div>
+      </div>
 
-        <!-- OUTPUT — the presentation surface. Opens the same menu the old
-             card hid behind a right-click on its preview thumbnail: Full Frame
-             (card becomes a video panel in the rack), Full Screen, and Present
-             on another display. -->
-        <button
-          type="button"
-          class="mirror-btn nodrag out-btn"
-          class:on={expanded}
-          data-testid="backdraft-output-menu"
-          title="OUTPUT — show BACKDRAFT's picture: Full Frame (the card becomes a video panel in the rack), Full Screen, or Present on another display. For an arbitrarily-sized monitor, patch OUT into VIDEO OUT."
-          onclick={openOutputMenu}
-        >⛶ OUTPUT</button>
+      <!-- THE DISPLAY. Also the OUTPUT SURFACE: the same <canvas> that Full
+           Frame / Full Screen / Present hand to the user, shown small and in
+           place while the card sits in the rack. One surface, four sizes — so
+           the picture you are patching IS the picture you present. -->
+      <div
+        bind:this={wrapEl}
+        class="canvas-wrap"
+        class:fullscreen={fs.isFullscreen}
+        class:full-frame={fullFrame}
+        data-testid="backdraft-fs-wrap"
+        oncontextmenu={openOutputMenuAt}
+        role="presentation"
+      >
+        <canvas
+          bind:this={canvasEl}
+          width={bufferDims.width}
+          height={bufferDims.height}
+          style="aspect-ratio: {bufferDims.aspectRatio};"
+          data-testid="backdraft-canvas"
+          data-node-id={id}
+        ></canvas>
+      </div>
+
+      <div class="switch-col right">
+        <div class="mode-row">
+          <div class="btn-group tv-group" data-testid="backdraft-tv-row">
+            <button
+              type="button"
+              class="mirror-btn nodrag wide"
+              class:on={tvOn}
+              data-testid="backdraft-tv-mode"
+              title={tvModeIdx === 0
+                ? 'TV MODE OFF — the classic infinite-plane feedback composite. The exact pre-PURE-TV behaviour.'
+                : tvModeIdx === 1
+                  ? 'PURE TV — a bounded SCREEN instead of an infinite plane. The previous frame is drawn whole inside a bezelled TV; OUTSIDE it is your live input, so IN THIS MODE YOUR INPUT IS THE ROOM, NOT THE PICTURE. The view nests one level per pass and converges to a STILL image.'
+                  : 'CRITICAL — PURE TV plus the camera’s AUTO-EXPOSURE servo. The servo integrates, so it overshoots: past DRIVE 0.5 the picture blooms toward white, gets hauled back, and each correction rides inward through the nest one level per DELAY. This is the mode for riding the edge of white-out; back DRIVE off and it always recovers.'}
+              onclick={cycleTvMode}
+            >TV: {BACKDRAFT_TV_MODE_LABELS[tvModeIdx]}</button>
+          </div>
+        </div>
+
+        {#if tvOn}
+          <div class="mode-row">
+            <span class="tv-readout" data-testid="backdraft-tv-readout">
+              fill {(tvFill * 100).toFixed(0)}% · ≈{tvDepth.resolved} bands
+              {#if tvCritical} · Λ-servo {tvRate.toFixed(1)}/f {tvRiding ? '· RIDING' : '· steady'}{/if}
+            </span>
+          </div>
+        {/if}
+
+        <!-- OUTPUT — the presentation surface, sitting right beside the picture
+             it presents. Right-clicking the display opens the SAME menu; the
+             button is the DISCOVERABLE half of that pair. -->
+        <div class="mode-row">
+          <button
+            type="button"
+            class="mirror-btn nodrag out-btn"
+            class:on={expanded}
+            data-testid="backdraft-output-menu"
+            title="OUTPUT — show BACKDRAFT's picture bigger: Full Frame (the card becomes a video panel in the rack), Full Screen, or Present on another display. Right-clicking the display opens this same menu. For an arbitrarily-sized monitor, patch OUT into VIDEO OUT."
+            onclick={openOutputMenu}
+          >⛶ OUTPUT</button>
+        </div>
+      </div>
       </div>
 
       <!-- ── FADER BANKS ────────────────────────────────────────────────────
-           Grouped by what the control DOES to the loop, in signal order:
-           LOOP (how much comes back) → COLOUR (what happens on the way round)
-           → KEY (where it happens) → GEOMETRY (where the frame goes next pass)
-           → TV SCREEN (the bounded-screen model). An undifferentiated 5×4 grid
-           of 19 unlabelled faders was the single least readable thing on the
-           old card. The row WRAPS (it is flex-wrap), so a narrower host or a
-           longer bank reflows instead of spilling past the card edge. -->
+           All 19 faders on ONE row, grouped by what the control DOES to the
+           loop, in signal order: LOOP (how much comes back) → COLOUR (what
+           happens on the way round) → KEY (where it happens) → GEOMETRY (where
+           the frame goes next pass) → TV SCREEN (the bounded-screen model). An
+           undifferentiated 5×4 grid of 19 unlabelled faders was the single
+           least readable thing on the old card.
+           ONE row is what the 6hp width buys, and it is the whole reason there
+           is room for a display: the five banks MEASURE 635.8px worst case
+           (TV OFF) + 4×24px gaps = 731.8 of the 1050px inner width, leaving
+           ~318px of slack — enough that #1223's VIRTUAL CAMERA bank (~198px +
+           one more gap) joins this row rather than forcing a second one, with
+           ~96px still spare. The row still WRAPS (flex-wrap), so a narrower host
+           reflows instead of spilling past the card edge — and the resulting
+           height blow-up is loudly caught by card-control-overflow, which is
+           the correct failure mode. -->
       <div class="banks" data-testid="backdraft-controls">
-        <!-- TWO ROWS, split by what the control DOES to the loop.
-             ROW 1 — the SIGNAL half: how much comes back, and what happens to
-             its colour on the way round, and where that is keyed. -->
         <div class="bank-row">
           <section class="bank">
             <h4 class="bank-title">LOOP</h4>
@@ -628,11 +753,7 @@
               <Fader value={p('darken')}  min={pmin('darken')}  max={pmax('darken')}  defaultValue={pdef('darken')}  label="Drk" curve="linear" onchange={setParam('darken')}  moduleId={id} paramId="darken" trackHeight={FADER_H} />
             </div>
           </section>
-        </div>
 
-        <!-- ROW 2 — the SPATIAL half: where the frame goes next pass, and the
-             bounded-screen model that frames it. -->
-        <div class="bank-row">
           <section class="bank">
             <h4 class="bank-title">GEOMETRY</h4>
             <div class="bank-faders">
@@ -679,27 +800,6 @@
       </div>
     </div>
   </PatchPanel>
-
-  <!-- OUTPUT SURFACE — inert in the rack (1px, invisible, not drawn), the live
-       picture in Full Frame / Full Screen / Present. Kept OUTSIDE the
-       PatchPanel slot so full-frame can simply cover the card with it, with no
-       display:contents gymnastics on the panel host. -->
-  <div
-    bind:this={wrapEl}
-    class="canvas-wrap"
-    class:fullscreen={fs.isFullscreen}
-    class:full-frame={fullFrame}
-    data-testid="backdraft-fs-wrap"
-  >
-    <canvas
-      bind:this={canvasEl}
-      width={bufferDims.width}
-      height={bufferDims.height}
-      style="aspect-ratio: {bufferDims.aspectRatio};"
-      data-testid="backdraft-canvas"
-      data-node-id={id}
-    ></canvas>
-  </div>
 </div>
 
 <VideoCanvasContextMenu
@@ -720,21 +820,43 @@
 />
 
 <style>
-  /* FIXED 5hp × 2u (900×360). The rack/dock wrappers pin the exact tier
+  /* FIXED 6hp × 3u (1080×540). The rack/dock wrappers pin the exact tier
    * (rack-sizes.ts → --rack-hp/--rack-u, specificity 0,3,0); this scoped rule
-   * (0,2,0) is the fallback for a bare plain-mount. The card is NO LONGER
-   * corner-resizable — the resize existed to scale the preview canvas that no
-   * longer exists.
+   * (0,2,0) is the fallback for a bare plain-mount. The card is NOT
+   * corner-resizable: 3u is a hard tier, and a resize handle would fight the
+   * `max-height` pin in _module-card.css and resurrect node.data.width/height
+   * as a competing truth. card-control-ranges.test.ts pins BOTH numbers here
+   * against RACK_SIZE_DEFAULTS, so this rule and the tier move together.
    *
-   * WHY 2u AND NOT 3u: the rack pins height to EXACTLY u × 180 (min AND max),
-   * so any tier taller than the content is DEAD GREY SPACE on every instance of
-   * the card. The content measures ~261 px — two switch rows over one bank row,
-   * plus chrome — which does not fit 1u (180) and leaves ~280 px empty at 3u.
-   * 2u is the smallest tier it fits. That is the whole reason this card is 2u:
-   * pick the tier from the MEASURED content, never round up "for headroom",
-   * because headroom in a pinned tier is not headroom, it is a hole. */
+   * WHY 6hp: WIDTH is the free variable that made a display possible. At 3hp the
+   * five fader banks needed TWO rows, which spent the whole tier on faders and
+   * left nothing for a picture. 6hp is the SMALLEST width that holds them on one
+   * row with real headroom, and the numbers are MEASURED, not estimated:
+   *
+   *   inner width           1080 − 2 borders − 28 .bd-body padding  = 1050
+   *   five banks + 4 gaps   635.8 (worst case, TV OFF) + 4×24       =  731.8
+   *   + #1223 VIRTUAL CAM   + 24 gap + ~198 bank                    =  953.8
+   *   flank width           (1050 − 320 display − 2×20 gap) / 2     =  345
+   *   widest flank row      FLICKER (label + 6 segments)            =  325.2
+   *
+   * So #1223's camera bank joins the SAME row with ~96px still spare — it costs
+   * ~18px of height, not a second row — and the widest switch row clears its
+   * flank. (That ~198px assumes #1223 lands its short xLabel/yLabel fix; the
+   * long-caption form measures ~281px and would wrap here. An earlier ESTIMATE
+   * of 830px for the banks put 6hp out of reach and argued for 7hp; the direct
+   * measurement says otherwise, and 6hp is markedly denser — at 7hp the same
+   * content leaves ~157px of gap between every pair of banks.)
+   * Nothing caps hp; RACKLINE lane tiles are hp-invariant (SHELL_TILE_W = 192)
+   * so the lane is unaffected, and the dock full-view pane (min-width 900px)
+   * scrolls horizontally at this width — as it already does for pentemelodica,
+   * the 7hp card that is still the widest in the rack.
+   *
+   * WHY 3u AND NOT 4u: the rack pins height to EXACTLY u × 180 (min AND max),
+   * so a tier taller than the content is DEAD GREY on every instance of the
+   * card. The content is solved to 540 (see FADER_H) — and 540 + chrome also
+   * clears the dock full-view's 680px height ceiling, which 4u would not. */
   .card {
-    width: 540px;
+    width: 1080px;
     min-height: 540px;
     overflow: hidden;
     /* Flex column so .bd-body can CLAIM the full tier height (below). .stripe
@@ -743,26 +865,53 @@
     display: flex;
     flex-direction: column;
   }
-  /* The content measures ~237px against a 360px tier, and the tier is quantized
-   * to 180px steps — 1u cannot hold it (the floor is ~197 with the switch rows),
-   * so ~120px of slack is STRUCTURAL, not a layout mistake. Rather than pool it
-   * in one dead grey block under the faders, .bd-body claims the full height and
-   * distributes it: switches pinned to the top, fader banks pinned to the
-   * BOTTOM edge, and the slack becomes the gap across the .banks divider — which
-   * is exactly the switch-section / fader-section split a hardware panel has.
-   * `flex: 1` + `margin-top: auto` does it with NO magic number, so it stays
-   * correct if the tier or the control set changes. */
-  /* The 16px gap is part of the tier arithmetic next to FADER_H — the leftover
-   * height goes into BREATHING ROOM between the rows rather than into longer
-   * faders or a dead block at the bottom. */
+  /* .bd-body CLAIMS the full tier height (flex: 1). The 20px gap and the
+   * .banks padding-top below are both terms in the FADER_H arithmetic — see the
+   * derivation next to that constant. */
   .bd-body {
     padding: 6px 14px 10px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 20px;
     flex: 1;
     min-height: 0;
   }
+
+  /* ── TOP BAND: switches | DISPLAY | switches ──────────────────────────────
+   * The band is `flex: 1`, so it — not a dead block under the faders — is where
+   * any residual height lands, and `align-items: center` keeps the display
+   * optically centred in whatever the band ends up being. The arithmetic is
+   * solved so that residual is ~0; this is belt-and-braces so a future font or
+   * chrome nudge shows up as breathing room around the picture rather than as a
+   * grey hole at the bottom edge.
+   *
+   * `flex: 1 1 0` on BOTH flanks (not `flex: 1` on one, not auto) is what makes
+   * the display genuinely centred: the flanks are equal by construction no
+   * matter what they contain, so cycling SHAPE or TV MODE cannot shove the
+   * picture sideways. Flank width = (1050 − 320 − 2×20) / 2 = 345px each, and
+   * the widest row either flank carries is FLICKER at 325.2px. */
+  .top-band {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex: 1;
+    min-height: 0;
+  }
+  /* The flanks are SHORTER than the 240px display, so they space their rows
+   * EVENLY down its full height — switches running down the sides of a screen,
+   * the way a monitor's side panel reads — rather than clustering at the top
+   * and leaving the difference as one void beside the picture. */
+  .switch-col {
+    flex: 1 1 0;
+    min-width: 0;
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 14px;
+  }
+  .switch-col.left { align-items: flex-start; }
+  .switch-col.right { align-items: flex-end; }
 
   /* ── Mode rows ── */
   .mode-row {
@@ -771,8 +920,12 @@
     align-items: center;
     gap: 8px 14px;
   }
+  /* flex-WRAP so a wider-than-expected font (the FLICKER strip is the widest
+   * row in either flank) reflows inside the flank instead of spilling past the
+   * card edge — the same graceful-degradation rule .bank-row follows. */
   .btn-group {
     display: flex;
+    flex-wrap: wrap;
     gap: 6px;
     align-items: center;
     min-width: 0;
@@ -839,28 +992,31 @@
   }
 
   /* ── Fader banks ── */
+  /* padding-top is a term in the FADER_H arithmetic — see that derivation. */
   .banks {
-    display: flex;
-    flex-direction: column;
-    gap: 28px;
     border-top: 1px solid var(--border);
-    padding-top: 18px;
+    padding-top: 20px;
   }
-  /* All five banks sit on ONE line at the 5hp tier (~830px of the 872px inner
-   * width). It is flex-WRAP, not a fixed grid, so a narrower host reflows the
-   * banks onto a second line instead of running them off the card edge. */
-  /* The two rows carry almost the same total control width (303px of faders on
-   * row 1, 299px on row 2), so space-between makes them span the card edge to
-   * edge and align with each other — the width is USED instead of pooling as a
-   * right-hand margin. `flex-wrap` stays as the graceful-degradation path: a
-   * narrower host reflows rather than spilling, and card-control-overflow
-   * catches the height blow-up that would cause. */
+  /* All five banks on ONE line. MEASURED bank widths total 602.3px with TV MODE
+   * on and 635.8px in OFF (the "turn on" hint widens the TV SCREEN title), so
+   * the worst case is 635.8 + 4×24 = 731.8 of the 1050px inner width.
+   *
+   * `space-between` is what sets the VISIBLE spacing — it spreads the banks edge
+   * to edge so the width is USED rather than pooling as a right-hand margin. The
+   * `gap` is therefore only the WRAP THRESHOLD, which is why it is 24 and not
+   * 30: it costs nothing visually and buys headroom for #1223's VIRTUAL CAMERA
+   * bank (~198px + one more gap → 953.8 of 1050, ~96px spare) so that lands on
+   * THIS row rather than forcing a second one.
+   *
+   * It is flex-WRAP, not a fixed grid, so a narrower host reflows onto a second
+   * line instead of running off the card edge — card-control-overflow catches
+   * the height blow-up that would cause, which is the correct failure mode. */
   .bank-row {
     display: flex;
     flex-wrap: wrap;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 14px 30px;
+    gap: 14px 24px;
   }
   .bank {
     display: flex;
@@ -933,28 +1089,29 @@
     pointer-events: none;
   }
 
-  /* ── Output surface ─────────────────────────────────────────────────────
-   * IDLE (the rack default): 1px, transparent, non-interactive, and NOT drawn
-   * into (the rAF blit is gated on `expanded`). It stays in the DOM rather
-   * than behind an {#if} because requestFullscreen() needs a real element to
-   * target at the moment the menu item is clicked, and `display: none` cannot
-   * be fullscreened. 1px + opacity 0 keeps it costless and invisible while
-   * remaining a legal fullscreen target. */
+  /* ── THE DISPLAY / output surface ────────────────────────────────────────
+   * ONE element serves all four sizes: 320×240 in the rack, the whole card in
+   * Full Frame, the physical screen in Full Screen, and the popup's source in
+   * Present. `flex: 0 0 auto` keeps it at its exact box while the flanks take
+   * the remaining width, which is what centres it.
+   *
+   * It stays in the DOM at all times (never behind an {#if}) because
+   * requestFullscreen() needs a real element to target at the moment the menu
+   * item is clicked, and `display: none` cannot be fullscreened. */
   .canvas-wrap {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 1px;
-    height: 1px;
-    /* visibility (not just opacity) so it is genuinely hidden — an opacity-0
-     * box still counts as VISIBLE to assertions and to hit-testing, which
-     * would let "no in-rack preview" pass while a preview was still there. */
-    visibility: hidden;
-    opacity: 0;
-    pointer-events: none;
+    position: relative;
+    flex: 0 0 auto;
+    width: 320px;
+    height: 240px;
     overflow: hidden;
     line-height: 0;
     background: #050608;
+    border-radius: 2px;
+    /* An INSET ring, not a border: it reads as a screen bezel while adding
+     * exactly 0px to the box, so the display stays a clean 320×240 and the
+     * canvas fills it with no sub-pixel squash. */
+    box-shadow: inset 0 0 0 1px var(--border);
+    cursor: context-menu;
   }
   .canvas-wrap canvas {
     display: block;
@@ -967,13 +1124,17 @@
    * in the rack ("wall of TVs"). The card keeps its position + tier; the
    * chrome is hidden and a double-click exits. */
   .canvas-wrap.full-frame {
+    /* The in-rack display is `position: relative`, so full-frame must state
+     * `absolute` itself. It resolves against .vcard — the nearest positioned
+     * ancestor — because .bd-body / .top-band are static and the PatchPanel
+     * host is `display: contents`. */
+    position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
-    visibility: visible;
-    opacity: 1;
-    pointer-events: auto;
     background: #000;
+    box-shadow: none;
+    border-radius: 0;
     cursor: pointer;
     z-index: 4;
   }
@@ -986,10 +1147,9 @@
     inset: 0;
     width: 100%;
     height: 100%;
-    visibility: visible;
-    opacity: 1;
-    pointer-events: auto;
     background: #000;
+    box-shadow: none;
+    border-radius: 0;
     z-index: 4;
   }
   .canvas-wrap.fullscreen canvas,
@@ -999,11 +1159,25 @@
     object-fit: contain;
     cursor: pointer;
   }
-  /* Card chrome while full-frame: hide everything but the video. */
+  /* Card chrome while full-frame: hide everything but the video.
+   * The display now lives INSIDE .bd-body, so this list can no longer hide
+   * .bd-body itself — that would hide the surface full-frame exists to show.
+   * Hide its SIBLINGS instead and flatten the body's own spacing to nothing;
+   * .canvas-wrap.full-frame goes `position: absolute; inset: 0` and resolves
+   * against .vcard (the PatchPanel host is `display: contents`, so it generates
+   * no box and cannot be a containing block, and .bd-body/.top-band are static).
+   * backdraft-full-output.spec.ts asserts [data-testid="backdraft-controls"]
+   * (= .banks) is hidden here, which this keeps true. */
   .card.full-frame :global(.title),
   .card.full-frame .stripe,
-  .card.full-frame .bd-body {
+  .card.full-frame .banks,
+  .card.full-frame .switch-col {
     display: none;
+  }
+  .card.full-frame .bd-body,
+  .card.full-frame .top-band {
+    padding: 0;
+    gap: 0;
   }
   /* Hide the card's OWN Svelte Flow jacks + patch-panel triggers while
    * full-frame — keep the handles in the DOM (opacity/pointer-events, NOT
