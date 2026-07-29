@@ -29,7 +29,6 @@
 // frame-driven pattern), or resurrect a lane that actually runs what you
 // exclude.
 // docs-hash-ignore:end
-//
 // This list was inlined in playwright.config.ts (a non-exported `const`). It is
 // now an exported module so BOTH consumers read the SAME literal:
 //   1. e2e/playwright.config.ts  — partitions the sharded `e2e` matrix
