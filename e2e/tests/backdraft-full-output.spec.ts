@@ -5,29 +5,32 @@
 // onto the BACKDRAFT card via the shared helpers (use-fullscreen /
 // use-full-frame / use-present / VideoCanvasContextMenu).
 //
-// ── ONE SURFACE, FOUR SIZES ─────────────────────────────────────────────────
-// BACKDRAFT's card carries a SMALL 320×240 display, centred in a band across
-// the top of a 6hp×3u card. That display is not decoration bolted next to the
-// output features — it IS the output surface, at its in-rack size:
+// ── NO DISPLAY IN THE RACK — ONE SURFACE, THREE EXPANDED SIZES ──────────────
+// BACKDRAFT's in-card display is GONE (owner call). The card still owns the
+// <canvas> those output modes present, but only as a SURFACE: in the rack it is
+// a 0×0 absolutely-positioned box that is never painted, and each expanded mode
+// gives it its size back.
 //
-//     in the rack   320×240, centred under the title
+//     in the rack   0×0, invisible — the card is controls only
 //     Full Frame    the whole card (chrome hidden, dbl-click exits)
 //     Full Screen   the physical screen (requestFullscreen on the wrap)
 //     Present       blitted into a popup on a second display
 //
-// So the picture you patch is the picture you present, and there is no second
-// canvas that could drift from the first.
+// It must stay MOUNTED for any of that to work: requestFullscreen() cannot be
+// handed a `display: none` element, and the Present popup blits FROM this
+// canvas. So "the canvas exists but is not visible" is the invariant, and both
+// halves are asserted below — a card that dropped the element would still pass
+// a visibility-only check, and a card that showed it again would still pass a
+// presence-only check.
 //
-// TWO ENTRY POINTS to the menu, and they are not redundant:
+// ── THE ⛶ OUTPUT BUTTON IS NOW THE SOLE ENTRY POINT ─────────────────────────
+// There were two: the button and a right-click on the display. With no display
+// there is nothing to right-click, so the button
+// ([data-testid="backdraft-output-menu"]) carries the whole feature. Every case
+// here drives it, and the first case pins that it is present, visible, enabled
+// and claims its click (SvelteFlow's node menu must not also open).
 //
-//   * ⛶ OUTPUT button ([data-testid="backdraft-output-menu"]) — DISCOVERABLE.
-//     The pre-declutter card only had the right-click, which nobody finds.
-//   * RIGHT-CLICK on the display — the idiom VIDEO OUT and BENTBOX use. It was
-//     unavailable while the card had no picture to right-click; it is back, and
-//     it has its own case below (including that it does NOT also open
-//     SvelteFlow's node menu).
-//
-// CORNER-RESIZE stays RETIRED. The card is a fixed 6hp×3u rack tier
+// CORNER-RESIZE stays RETIRED. The card is a fixed 4hp×3u rack tier
 // (rack-sizes.ts); 3u is pinned min AND max in _module-card.css, so a resize
 // handle would fight the tier and resurrect node.data.width/height as a
 // competing truth. The resize helper itself (card-resize.ts) is still covered
@@ -51,6 +54,17 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+// The card's tier, read from the ONE place that owns it. Hard-coding 720x540
+// here would make this a THIRD copy of that truth (card CSS, RACK_SIZE_DEFAULTS,
+// spec) and the copies could drift silently in either direction;
+// card-control-ranges.test.ts already pins the CSS against this map, so
+// importing it makes the pair CSS<->map<->rendered-box transitive.
+import { RACK_SIZE_DEFAULTS } from '../../packages/web/src/lib/ui/rack-sizes';
+
+const RACK_UNIT = 180;
+const TIER = RACK_SIZE_DEFAULTS.backdraft!;
+const TIER_W = TIER.hp * RACK_UNIT;
+const TIER_H = Number(TIER.size.replace('u', '')) * RACK_UNIT;
 
 // ── COST: this spec asserts STATE, never PIXELS ──────────────────────────────
 // Every case here reads the component state machine (classes, persisted
@@ -113,15 +127,13 @@ import { spawnPatch } from './_helpers';
 // and if you do, expect the timeouts back. Pixels are asserted where a live
 // source already exists: backdraft.spec.ts and backdraft-pure-tv.spec.ts.
 //
-// THE CARD'S DISPLAY DOES NOT CHANGE ANY OF THIS. BACKDRAFT now carries a
-// 320×240 in-rack display, i.e. exactly the per-frame GL readback this note is
-// about — but the card's in-rack blit is itself gated on
-// __videoEngineFreezeRender / __videoEnginePause. A frozen engine has no new
-// frame to present, so the card presents nothing and this spec pays what it
-// paid with no display at all. The card ALSO rations that blit to ~8fps
-// wall-clock and skips it entirely when engine.framesDrawnFor() has not
-// advanced, which attacks the same rAF-interval tax measured above at the
-// SOURCE rather than per-spec — see the tick() note in BackdraftCard.svelte.
+// THE DISPLAY'S REMOVAL ATTACKS THE SAME TAX AT ITS SOURCE. With no in-rack
+// picture there is nothing to blit into, so the card performs NO GL readback
+// while it sits in the rack (see the tick() note in BackdraftCard.svelte) —
+// the per-frame cost this note is about is now zero for this card, freeze or
+// no freeze. The freeze stays because the ENGINE still renders the node (the
+// card marks it watched so the feedback nest keeps advancing), and that is the
+// half that competes with the input queue.
 async function freezeVideoRender(page: Page): Promise<void> {
   await page.addInitScript(() => {
     (globalThis as unknown as { __videoEngineFreezeRender?: boolean })
@@ -151,12 +163,13 @@ async function spawnBackdraft(page: Page): Promise<void> {
   await expect(page.locator('[data-testid="backdraft-card"]')).toHaveCount(1);
 }
 
-/** Open the card's OUTPUT menu — the entry point that replaced right-clicking
- *  the (now removed) preview. Waits for the button rather than the surface,
+/** Open the card's OUTPUT menu — the SOLE entry point now that there is no
+ *  display to right-click. Waits for the button rather than the surface,
  *  because the surface is invisible until an expanded mode is entered. */
 async function openOutputMenu(page: Page): Promise<void> {
   const btn = page.locator('[data-testid="backdraft-output-menu"]');
   await expect(btn, 'OUTPUT button present on the card').toBeVisible();
+  await expect(btn, 'OUTPUT button is enabled').toBeEnabled();
   await btn.click();
 }
 
@@ -210,37 +223,37 @@ test.describe('BACKDRAFT — full output capabilities', () => {
     const errors = await setup(page);
     await spawnBackdraft(page);
 
-    // THE DISPLAY. One surface, four sizes — in the rack it is a SMALL, centred
-    // 320×240 picture. Visibility alone would be a weak assertion here: the
-    // requirement is a display that is *smaller* than the pre-declutter preview
-    // (~380×285 on a 720px card), so assert the BOX, not just that something is
-    // on screen. This is a layout read, not a pixel read — no GL work.
+    // THE SURFACE IS MOUNTED BUT NOT SHOWN. Both halves matter and neither
+    // implies the other: dropping the element entirely would still satisfy
+    // "not visible" (and would silently break requestFullscreen + Present),
+    // while showing a picture again would still satisfy "in the DOM". This is a
+    // layout read, not a pixel read — no GL work.
     const canvas = page.locator('canvas[data-testid="backdraft-canvas"]');
-    await expect(canvas, 'the display is present in the DOM').toHaveCount(1);
-    await expect(canvas, 'the display is SHOWING in the rack').toBeVisible();
+    await expect(canvas, 'the output surface is present in the DOM').toHaveCount(1);
+    await expect(canvas, 'the output surface is NOT shown in the rack').toBeHidden();
     const wrapBox = await page.locator('[data-testid="backdraft-fs-wrap"]').boundingBox();
-    expect(wrapBox, 'display box measurable').not.toBeNull();
-    // The node is under xyflow's zoom transform, so normalise to CSS px the way
-    // card-control-overflow does — offsetWidth is layout px and immune to
-    // ancestor transforms, so their ratio IS the effective scale.
-    const scale = await page.locator('[data-testid="backdraft-card"]').evaluate(
-      (el) => (el as HTMLElement).getBoundingClientRect().width / (el as HTMLElement).offsetWidth,
-    );
-    const cssW = wrapBox!.width / scale;
-    const cssH = wrapBox!.height / scale;
-    expect(cssW, `display width ${cssW.toFixed(1)} CSS px (want 320)`).toBeGreaterThan(316);
-    expect(cssW, `display width ${cssW.toFixed(1)} CSS px (want 320)`).toBeLessThan(324);
-    expect(cssH, `display height ${cssH.toFixed(1)} CSS px (want 240)`).toBeGreaterThan(236);
-    expect(cssH, `display height ${cssH.toFixed(1)} CSS px (want 240)`).toBeLessThan(244);
-    // …and CENTRED on the card. The flanks are `flex: 1 1 0`, so this is true by
-    // construction — which is exactly why it is cheap to pin.
-    const cardBox = await page.locator('[data-testid="backdraft-card"]').boundingBox();
-    const cardMid = cardBox!.x + cardBox!.width / 2;
-    const dispMid = wrapBox!.x + wrapBox!.width / 2;
+    // A 0x0 box: Playwright returns null for a zero-area element, and if it ever
+    // returns a box it must still be empty. Either way the card shows no picture.
     expect(
-      Math.abs(dispMid - cardMid) / scale,
-      `display is centred on the card (card mid ${cardMid.toFixed(1)}, display mid ${dispMid.toFixed(1)})`,
-    ).toBeLessThan(2);
+      wrapBox === null || (wrapBox.width === 0 && wrapBox.height === 0),
+      `in-rack output surface occupies no space (got ${JSON.stringify(wrapBox)})`,
+    ).toBe(true);
+
+    // THE CARD IS ITS TIER, EXACTLY (4hp x 3u = 720x540 today, read from
+    // RACK_SIZE_DEFAULTS above). The point of removing the display was a
+    // SMALLER card with no dead space, and the height is pinned min AND max, so
+    // any part of the tier the layout does not use is permanent grey on every
+    // instance of the card — and any part the layout EXCEEDS is silently
+    // clipped by `.card { overflow: hidden }`.
+    // offsetWidth/offsetHeight are LAYOUT (CSS) px and immune to xyflow's zoom
+    // transform, unlike boundingBox() — see the units note in
+    // card-control-overflow.spec.ts.
+    const size = await page.locator('[data-testid="backdraft-card"]').evaluate((el) => ({
+      w: (el as HTMLElement).offsetWidth,
+      h: (el as HTMLElement).offsetHeight,
+    }));
+    expect(size.w, `card width ${size.w} CSS px (want ${TIER.hp}hp = ${TIER_W})`).toBe(TIER_W);
+    expect(size.h, `card height ${size.h} CSS px (want ${TIER.size} = ${TIER_H})`).toBe(TIER_H);
 
     await openOutputMenu(page);
     const menu = page.locator('[data-testid="video-canvas-context-menu"]');
@@ -261,29 +274,30 @@ test.describe('BACKDRAFT — full output capabilities', () => {
     expect(errors).toEqual([]);
   });
 
-  test('right-clicking the display opens the SAME output menu', async ({ page }) => {
+  test('there is no in-rack picture to right-click — the node menu answers instead', async ({ page }) => {
     const errors = await setup(page);
     await spawnBackdraft(page);
 
-    // The SECOND entry point, restored with the display: right-click the
-    // picture — the idiom VIDEO OUT and BENTBOX already use. It was unavailable
-    // while the card had no picture to right-click; the ⛶ OUTPUT button remains
-    // the discoverable half of the pair.
-    await page.locator('[data-testid="backdraft-fs-wrap"]').click({ button: 'right' });
+    // The card used to have TWO entry points to the output menu: the button and
+    // a right-click on the 320x240 display. The display is gone, so the second
+    // one is gone with it and the BUTTON now carries the whole feature.
+    //
+    // This case pins the consequence rather than mourning it. The output
+    // surface is still IN the card (0x0, absolutely positioned), so the failure
+    // mode worth guarding is that it silently swallows pointer events over the
+    // faceplate: it is `pointer-events: none` in the rack precisely so it
+    // cannot. Right-clicking the card must therefore reach SvelteFlow's own
+    // node menu (Docs / Duplicate / Delete) exactly as it does on any other
+    // card, and must NOT open the output menu.
+    await page.locator('[data-testid="backdraft-gates"]').click({ button: 'right' });
 
-    await expect(
-      page.locator('[data-testid="video-canvas-context-menu"]'),
-      'right-click on the display opened the output menu',
-    ).toBeVisible();
-    await expect(page.locator('[data-testid="ctx-full-frame"]'), 'Full Frame item present').toBeVisible();
-    await expect(page.locator('[data-testid="ctx-fullscreen"]'), 'Full Screen item present').toBeVisible();
-
-    // The gesture is CLAIMED (preventDefault + stopPropagation), so SvelteFlow's
-    // own node menu must NOT also open. Without the stopPropagation both menus
-    // stack, which is the bug this assertion exists to catch.
     await expect(
       page.locator('[role="menu"][aria-label="Module actions"]'),
-      'the SvelteFlow node menu did NOT also open',
+      'right-click on the faceplate opens the SvelteFlow node menu',
+    ).toBeVisible();
+    await expect(
+      page.locator('[data-testid="video-canvas-context-menu"]'),
+      'right-click does NOT open the output menu (no display to claim it)',
     ).toHaveCount(0);
 
     expect(errors).toEqual([]);
@@ -297,11 +311,12 @@ test.describe('BACKDRAFT — full output capabilities', () => {
     const canvas = page.locator('canvas[data-testid="backdraft-canvas"]');
     const wrap = page.locator('[data-testid="backdraft-fs-wrap"]');
 
-    // Measure the IN-RACK display first, so the transition below can be
-    // asserted as GROWTH. "is visible" is vacuous now that the display is
-    // always visible — it would pass with full-frame completely broken.
+    // Baseline: in the rack the surface occupies NOTHING, so the transition
+    // below is asserted as real GROWTH from zero to the whole card. (Playwright
+    // returns null for a zero-area box, hence the ?? 0.)
     const beforeBox = await wrap.boundingBox();
-    expect(beforeBox, 'in-rack display measurable').not.toBeNull();
+    const beforeW = beforeBox?.width ?? 0;
+    expect(beforeW, 'in-rack output surface has no width').toBe(0);
 
     // Enter Full Frame via the OUTPUT menu.
     await openOutputMenu(page);
@@ -314,8 +329,10 @@ test.describe('BACKDRAFT — full output capabilities', () => {
     await expect(wrap, 'wrap gained full-frame').toHaveClass(/full-frame/);
     expect(await readFullFrame(page, 'bd'), 'fullFrame persisted true').toBe(true);
 
-    // The point of full-frame: the CONTROLS are gone and the display — a small
-    // centred picture a moment ago — has GROWN to consume the whole card.
+    // The point of full-frame: the CONTROLS are gone and the surface — which
+    // occupied no space at all a moment ago — has GROWN to consume the whole
+    // card. This is the case that proves the 0x0 in-rack surface is genuinely
+    // the SAME element every expanded mode presents, not a dead stub.
     await expect(canvas, 'output surface is showing').toBeVisible();
     await expect(
       card.locator('[data-testid="backdraft-controls"]'),
@@ -325,12 +342,16 @@ test.describe('BACKDRAFT — full output capabilities', () => {
     expect(afterBox, 'full-frame display measurable').not.toBeNull();
     expect(
       afterBox!.width,
-      `display GREW into full-frame (${beforeBox!.width.toFixed(0)} → ${afterBox!.width.toFixed(0)})`,
-    ).toBeGreaterThan(beforeBox!.width * 2);
+      `surface GREW into full-frame (${beforeW.toFixed(0)} -> ${afterBox!.width.toFixed(0)})`,
+    ).toBeGreaterThan(100);
     const cardBoxFF = await card.boundingBox();
     expect(
       Math.abs(afterBox!.width - cardBoxFF!.width),
       'full-frame display spans the whole card width',
+    ).toBeLessThan(4);
+    expect(
+      Math.abs(afterBox!.height - cardBoxFF!.height),
+      'full-frame display spans the whole card height (card padding dropped)',
     ).toBeLessThan(4);
 
     // The card's own Svelte Flow handles are visually hidden but still in the
@@ -409,7 +430,7 @@ test.describe('BACKDRAFT — full output capabilities', () => {
 
   // RETIRED: 'corner-resize grows the card + persists node.data.width/height'.
   // The corner-drag existed to scale the in-card preview canvas. With the
-  // preview removed the card is a FIXED 5hp×2u rack tier (rack-sizes.ts) and
+  // preview removed the card is a FIXED 4hp×3u rack tier (rack-sizes.ts) and
   // there is no handle to drag and no node.data.width/height to persist —
   // rack-sizing.test.ts pins the tier and card-control-ranges.test.ts pins that
   // the card no longer reads a persisted size. card-resize.ts itself keeps its
