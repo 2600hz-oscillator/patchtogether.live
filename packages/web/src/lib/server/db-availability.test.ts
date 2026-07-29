@@ -55,6 +55,17 @@ describe('isDbUnavailableError — degrades genuine unreachability', () => {
     expect(isDbUnavailableError(new Error(message))).toBe(true);
   });
 
+  // CAPTURED FROM THE REAL DRIVER: @neondatabase/serverless against an
+  // unresolvable host throws NeonDbError with `code: undefined` and this exact
+  // wrapped message (verified by probing the real package, not guessed).
+  it('classifies the REAL NeonDbError connect failure as unavailable', () => {
+    const err = Object.assign(
+      new Error('Error connecting to database: TypeError: fetch failed'),
+      { name: 'NeonDbError', code: undefined },
+    );
+    expect(isDbUnavailableError(err)).toBe(true);
+  });
+
   it('honours an explicit neon:retryable flag even without a known status', () => {
     expect(
       isDbUnavailableError(new Error('Server error: {"neon:retryable":true}')),
@@ -112,6 +123,20 @@ describe('isDbUnavailableError — PRESERVES THE CANARY (negative control)', () 
         `HTTP ${status} must not degrade`,
       ).toBe(false);
     }
+  });
+
+  // CAPTURED FROM THE REAL DRIVER: Neon answers a bad-credential connection
+  // string with `NeonDbError { code: "", message: "password authentication
+  // failed for user '…'" }`. The gateway ANSWERED — the credentials are wrong,
+  // which is a MISCONFIGURATION and must stay a loud 500 rather than look like
+  // a transient outage. Note `code` is the EMPTY STRING here, not a SQLSTATE,
+  // so this is caught by the safe default rather than the SQLSTATE branch.
+  it('does NOT degrade a real Neon authentication failure', () => {
+    const err = Object.assign(new Error("password authentication failed for user 'u'"), {
+      name: 'NeonDbError',
+      code: '',
+    });
+    expect(isDbUnavailableError(err)).toBe(false);
   });
 
   it('does NOT degrade an unrecognised error (safe default)', () => {
