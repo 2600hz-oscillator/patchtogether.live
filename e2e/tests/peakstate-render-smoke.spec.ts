@@ -133,4 +133,112 @@ test.describe('PEAKSTATE — deterministic render smoke', () => {
     expect(Math.abs(b.variance - a.variance), 'frozen output variance is frame-stable').toBeLessThan(1.0);
 
   });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PER-PORT RENDER GATE — the REAL engine, not a mock.
+  //
+  // PEAKSTATE rasterizes ~57,600 stroked segments per frame across its three
+  // outputs and almost every patch consumes ONE, so `mono_out` / `out_3d` now
+  // render only while the engine reports them CONSUMED
+  // (VideoFrameContext.connectedOutputPorts). The unit suite
+  // (peakstate.test.ts) pins the decision itself against a fake canvas; this
+  // proves it end-to-end through the real VideoEngine + real GL, in BOTH
+  // directions, in ONE page:
+  //
+  //   (1) NEGATIVE CONTROL — with only rgb_out patched, the mono/3D FBOs must
+  //       stay BLACK. Nothing ever blitted into them, so the "optimisation did
+  //       nothing" outcome is distinguishable from the "optimisation worked"
+  //       outcome rather than assumed.
+  //   (2) POSITIVE — patch mono_out and out_3d for real and both must light up
+  //       to the SAME non-black/structured floors rgb_out clears. This is the
+  //       whole risk of the change ("the output goes black when someone
+  //       actually uses it"), asserted rather than trusted.
+  //
+  // Deterministic: same seed + frozen clock + paused loop as the smoke above,
+  // no waitForTimeout, no animation-diff. One extra page nav on top of the
+  // existing spec.
+  // ─────────────────────────────────────────────────────────────────────────
+  test('per-port gate: unconsumed outputs stay dark, patched outputs render', async ({ page }) => {
+    test.setTimeout(60_000);
+
+    await installRenderSmokeHooks(page);
+    await page.addInitScript(() => {
+      (globalThis as unknown as { __peakstateVrtSeed?: boolean }).__peakstateVrtSeed = true;
+    });
+    await page.goto('/rack');
+    await page.waitForLoadState('networkidle');
+
+    // Spawn all three sinks up front but wire ONLY rgb_out, so phase 2 is a
+    // pure edge addition (no re-mount, no second page nav).
+    await spawnPatch(
+      page,
+      [
+        { id: 'm',    type: 'peakstate', position: { x: 100, y: 100 }, domain: 'video' },
+        { id: 'out',  type: 'videoOut',  position: { x: 540, y: 100 }, domain: 'video' },
+        { id: 'out2', type: 'videoOut',  position: { x: 540, y: 340 }, domain: 'video' },
+        { id: 'out3', type: 'videoOut',  position: { x: 540, y: 580 }, domain: 'video' },
+      ],
+      [
+        { id: 'e', from: { nodeId: 'm', portId: 'rgb_out' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'video', targetType: 'video' },
+      ],
+    );
+
+    // ---- (1) NEGATIVE CONTROL: only rgb_out is consumed ----
+    const rgbGated = await stepAndReadStats(page, { nodeId: 'm', portId: 'rgb_out', steps: WARMUP_STEPS + FIXED_STEPS });
+    assertRenderStats(rgbGated, WARMUP_STEPS + FIXED_STEPS, { minNonZeroFrac: 0.001 });
+
+    const monoGated = await stepAndReadStats(page, { nodeId: 'm', portId: 'mono_out', steps: FIXED_STEPS });
+    const tubeGated = await stepAndReadStats(page, { nodeId: 'm', portId: 'out_3d', steps: FIXED_STEPS });
+    // An FBO that was never blitted into is still its zero-initialised texture.
+    // (`outputTexture()` marks the NODE watched but does not register a per-port
+    // preview request, so reading it cannot itself un-gate the port.)
+    expect(monoGated.fbComplete, 'mono_out FBO is still readable while gated off').toBe(true);
+    expect(tubeGated.fbComplete, 'out_3d FBO is still readable while gated off').toBe(true);
+    expect(monoGated.nonZeroFrac, `unpatched mono_out is not rasterized (nonZeroFrac ${monoGated.nonZeroFrac})`).toBe(0);
+    expect(tubeGated.nonZeroFrac, `unpatched out_3d is not rasterized (nonZeroFrac ${tubeGated.nonZeroFrac})`).toBe(0);
+    expect(monoGated.glErrors, 'no GL errors while gated').toEqual([]);
+    expect(tubeGated.glErrors, 'no GL errors while gated').toEqual([]);
+
+    // ---- (2) POSITIVE: patch mono_out + out_3d for real ----
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { edges: Record<string, unknown> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        w.__patch.edges['e_mono'] = {
+          id: 'e_mono',
+          source: { nodeId: 'm', portId: 'mono_out' },
+          target: { nodeId: 'out2', portId: 'in' },
+          sourceType: 'mono-video', targetType: 'video',
+        };
+        w.__patch.edges['e_3d'] = {
+          id: 'e_3d',
+          source: { nodeId: 'm', portId: 'out_3d' },
+          target: { nodeId: 'out3', portId: 'in' },
+          sourceType: 'video', targetType: 'video',
+        };
+      });
+    });
+    // The graph→engine reconciler runs off the store, so wait for the two new
+    // cables to actually MATERIALIZE (the rendered edge is the observable both
+    // the UI and the engine reconcile from) before stepping. A state predicate,
+    // not a wall-clock budget.
+    await expect(page.locator('.svelte-flow__edge[data-id="e_mono"]')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__edge[data-id="e_3d"]')).toHaveCount(1);
+
+    const monoOn = await stepAndReadStats(page, { nodeId: 'm', portId: 'mono_out', steps: WARMUP_STEPS + FIXED_STEPS });
+    const tubeOn = await stepAndReadStats(page, { nodeId: 'm', portId: 'out_3d', steps: FIXED_STEPS });
+
+    assertRenderStats(monoOn, WARMUP_STEPS + FIXED_STEPS, { minNonZeroFrac: 0.001 });
+    assertRenderStats(tubeOn, FIXED_STEPS, { minNonZeroFrac: 0.001 });
+
+    // The instrument moved in the direction under test: the SAME read on the
+    // SAME port went from exactly-zero lit pixels to a structured frame.
+    expect(monoOn.nonZeroFrac, 'patching mono_out turns it on').toBeGreaterThan(monoGated.nonZeroFrac);
+    expect(tubeOn.nonZeroFrac, 'patching out_3d turns it on').toBeGreaterThan(tubeGated.nonZeroFrac);
+    // …and rgb_out — never gated — is unaffected by any of it.
+    const rgbAfter = await stepAndReadStats(page, { nodeId: 'm', portId: 'rgb_out', steps: FIXED_STEPS });
+    assertRenderStats(rgbAfter, FIXED_STEPS, { minNonZeroFrac: 0.001 });
+  });
 });

@@ -2240,7 +2240,42 @@ function pickOutputSink(outputType: string): SinkSpec | null {
 // vacuously. Look for these well-known mix port names first.
 const MIX_OUTPUT_HINTS = ['mix', 'sum', 'main', 'master'];
 
+// ────────── Observed-output overrides ──────────
+//
+// The generic pick below falls back to "the FIRST video-ish output in def
+// order", which is only right when every input can perturb that one port. A
+// multi-output module whose outputs are DIFFERENT VIEWS of the same state
+// breaks that assumption: an input that drives one view is provably a no-op on
+// another, and the sweep then asserts something structurally impossible.
+//
+// That is an UNSOUND gate, not a flaky one — and it fails the "why are the
+// GREEN runs green?" test: it passed only when incidental animation phase
+// between the control and patched spawns happened to clear the delta floor
+// (measured 1-in-3 red locally on main, Δμvar 3.59 vs 12.11 for a real hit).
+//
+// Name the port the module's inputs actually drive. Keep the reason inline —
+// this list is a claim about the module's semantics, so it has to be checkable.
+const BEHAVIORAL_OBSERVED_OUTPUT: Record<string, string> = {
+  // PEAKSTATE emits three views of ONE pen ring. `mono_out` (first in def
+  // order, so the generic pick) is stroked at a FIXED #eee — the Color control
+  // has zero effect on it BY DESIGN (documented on the def: hue cycling is the
+  // RGB/3D outputs only). So color_speed_cv → mono_out can never show a delta.
+  // rgb_out is the module's primary surface and is driven by ALL three CV
+  // inputs (speed + complexity move the pen/arms, color moves the hue).
+  peakstate: 'rgb_out',
+};
+
 function pickObservedOutput(mod: RegistryModule, driver: ModuleDriver): ObservedOutput | null {
+  // Explicit per-module override first — a curated claim beats every heuristic.
+  const forced = BEHAVIORAL_OBSERVED_OUTPUT[mod.type];
+  if (forced) {
+    const port = mod.outputs.find((p) => p.id === forced);
+    if (!port) throw new Error(`BEHAVIORAL_OBSERVED_OUTPUT['${mod.type}'] names '${forced}', which is not a declared output`);
+    const sink = pickOutputSink(port.type);
+    if (!sink) throw new Error(`BEHAVIORAL_OBSERVED_OUTPUT['${mod.type}'] → '${forced}' (type ${port.type}) has no sink`);
+    return { outPort: port.id, outType: port.type, sink };
+  }
+
   // Prefer a known "mix"-style output port (catches multi-channel
   // mixers' summed output — attenumix.mix, mixer.audio, etc.).
   for (const hint of MIX_OUTPUT_HINTS) {
