@@ -20,8 +20,75 @@
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
-// A small structured source so the preview has live, non-black content.
+// A small structured source so the feedback graph is a realistic 2-node patch.
 const SRC_PARAMS = { shape: 0, tile: 0, zoom: 0.6 };
+
+// ── COST: this spec asserts STATE, never PIXELS ──────────────────────────────
+// Every case here reads the component state machine (classes, persisted
+// node.data, menu entries) or layout geometry. Not one reads a pixel. So the
+// live BACKDRAFT feedback render — a full software-rasterised feedback loop on
+// CI's SwiftShader — was pure cost with no assertion behind it.
+//
+// It is not a small cost, and it is not paid where you would guess. It is paid
+// PER PLAYWRIGHT ROUND TRIP: a pointer action is several main-thread round
+// trips (actionability → the 2-frame stability check → hit test → dispatch),
+// and each one queues behind the engine's rAF draw.
+//
+// MEASURED (dev server, E2E_SWIFTSHADER=1, idle 10-core box) with a BACKDRAFT
+// card mounted — the negative control is the same page with the draw frozen:
+//
+//   live render    rAF interval 24.3 ms  (41 fps)  ← ~8 ms/frame of main thread
+//   frozen render  rAF interval 16.0 ms  (62 fps)  ← pure vsync, no GL work
+//
+// On CI that tax dominates. From the shard-1 TRACE of run 30423306408 — the
+// timeout this note exists for — every action in this test cost ~8 s and every
+// page.evaluate ~2 s, UNIFORMLY, with no single wedge anywhere:
+//
+//   click canvas 7.9s │ click ctx-full-frame 9.2s │ click canvas 7.5s
+//   click ctx-fullscreen 8.4s │ dblclick wrap 7.9s   = 41 s of a 60 s budget
+//
+// ⚠ The failing case was never slower for any reason OF ITS OWN. It has FIVE
+// pointer actions; its siblings have three and landed at 55.7 s / 55.8 s — also
+// at the edge. It simply had the most round trips to pay for, so it tipped
+// first. Raising the ceiling would only move which case tips.
+//
+// AND IT IS NOT THE RUNNER. Median duration of a click STEP, per spec file, in
+// that same shard-1 run — i.e. same runner, same 4 workers, same minute:
+//
+//   backdraft-full-output.spec.ts   7946 ms   ← this file
+//   blood-keyboard.spec.ts           471 ms
+//   cable-drag-section-expand.spec.ts 213 ms
+//   aut-patch-panel.spec.ts          141 ms
+//
+// A 17-56x outlier against healthy neighbours. So "shard 1 is over budget" is
+// the WRONG diagnosis — the shard is fine and every other spec on it clicks in
+// milliseconds. What is slow is this PAGE, and specifically its rAF interval:
+// Playwright paces actionability on rAF (the stability check wants two
+// consecutive frames with an unchanged box), so a page rendering at ~1 fps
+// makes every phase of every action cost ~1 s. The trace's internal log shows
+// exactly that shape — ~1.5-1.9 s to go from "waiting for element to be
+// visible, enabled and stable" to "element is visible, enabled and stable",
+// which is two frames at ~0.8 s each.
+//
+// So: freeze the per-frame draw. `__videoEngineFreezeRender` is the existing
+// lever the per-module-per-port sweeps use for exactly this — engine.ts
+// documents it as "keep the graph fully consistent … but SKIP the expensive
+// per-frame work", and it was introduced for this same timeout class on heavy
+// cards (b3ntb0x, mandelbulb). The graph still builds, shaders still compile,
+// FBOs still allocate, edges still reconcile, the canvas is still laid out and
+// clickable — every assertion in this file observes exactly what it observed
+// before. There is just no longer a software-rendered feedback loop competing
+// with the input queue.
+//
+// ⚠ Do NOT add a pixel assertion to this spec without removing the freeze —
+// and if you do, expect the timeouts back. Pixels are asserted where a live
+// source already exists: backdraft.spec.ts and backdraft-pure-tv.spec.ts.
+async function freezeVideoRender(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    (globalThis as unknown as { __videoEngineFreezeRender?: boolean })
+      .__videoEngineFreezeRender = true;
+  });
+}
 
 async function setup(page: Page): Promise<string[]> {
   const errors: string[] = [];
@@ -29,12 +96,16 @@ async function setup(page: Page): Promise<string[]> {
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(m.text());
   });
+  // BEFORE goto: the flag has to be set before the app boots.
+  await freezeVideoRender(page);
   await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   return errors;
 }
 
-/** Spawn SHAPES -> BACKDRAFT so the preview canvas has live content. */
+/** Spawn SHAPES -> BACKDRAFT. The source makes this a realistic feedback patch;
+ *  it costs nothing per frame with the draw frozen (measured: 16.0 ms rAF with
+ *  the source vs 16.3 ms without — identical, both pure vsync). */
 async function spawnBackdraft(page: Page): Promise<void> {
   await spawnPatch(
     page,
@@ -94,13 +165,14 @@ async function injectScreens(
 }
 
 test.describe('BACKDRAFT — full output capabilities', () => {
-  // Heavy WebGL + fullscreen video spec: the BACKDRAFT preview canvas plus the
-  // requestFullscreen / full-frame transitions run slowly under CI's SwiftShader
-  // software renderer and occasionally spike past the default 30s — a chronic
-  // shard-1 TIMEOUT flake (notably the "Full Frame ↔ Full Screen mutually
-  // exclusive" case). Give the whole spec headroom; it still completes in
-  // ~15-25s on a real GPU, so this adds ~0 typical wall-time and only un-caps
-  // the slow-runner tail (the documented video-on-SwiftShader mitigation).
+  // A BOUNDED-FAILURE cap, not a budget these cases spend. It was raised to 60s
+  // while this spec still rendered a live feedback loop per frame, and that did
+  // NOT fix the "Full Frame ↔ Full Screen" timeout — the case simply came back
+  // at 64.8s instead of 34.8s, because a uniform per-round-trip tax scales with
+  // the ceiling rather than fitting under it. The draw is frozen now (see the
+  // COST note above), so there is no per-frame GL work left to contend for the
+  // runner. Kept generous anyway: a timeout here should report a HANG, not a
+  // slow runner.
   test.describe.configure({ timeout: 60_000 });
 
   test('right-click the preview opens the menu with Full Frame + Full Screen (Present hidden on single screen)', async ({ page }) => {
@@ -109,8 +181,6 @@ test.describe('BACKDRAFT — full output capabilities', () => {
 
     const canvas = page.locator('canvas[data-testid="backdraft-canvas"]');
     await expect(canvas, 'preview canvas present').toHaveCount(1);
-    // Let the rAF blit tick so the preview has live content.
-    await page.waitForTimeout(300);
 
     // Right-click the preview surface -> the canvas context menu (NOT the node menu).
     await canvas.click({ button: 'right' });
@@ -140,7 +210,6 @@ test.describe('BACKDRAFT — full output capabilities', () => {
     const card = page.locator('[data-testid="backdraft-card"]');
     const canvas = page.locator('canvas[data-testid="backdraft-canvas"]');
     const wrap = page.locator('[data-testid="backdraft-fs-wrap"]');
-    await page.waitForTimeout(300);
 
     // Enter Full Frame via the menu.
     await canvas.click({ button: 'right' });
@@ -176,7 +245,6 @@ test.describe('BACKDRAFT — full output capabilities', () => {
     const card = page.locator('[data-testid="backdraft-card"]');
     const canvas = page.locator('canvas[data-testid="backdraft-canvas"]');
     const wrap = page.locator('[data-testid="backdraft-fs-wrap"]');
-    await page.waitForTimeout(300);
 
     // Enter Full Frame first (in-rack, menu reachable).
     await canvas.click({ button: 'right' });
@@ -211,7 +279,6 @@ test.describe('BACKDRAFT — full output capabilities', () => {
     ]);
     const errors = await setup(page);
     await spawnBackdraft(page);
-    await page.waitForTimeout(300);
 
     const canvas = page.locator('canvas[data-testid="backdraft-canvas"]');
     await canvas.click({ button: 'right' });
