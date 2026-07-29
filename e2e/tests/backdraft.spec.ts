@@ -20,6 +20,7 @@
 
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
+import { installRenderSmokeHooks } from './_render-smoke';
 
 test.describe('BACKDRAFT — video feedback generator', () => {
   test('SHAPES/LINES masks + SHAPES sources -> BACKDRAFT -> OUTPUT renders a live feedback frame', async ({ page, rack, errorWatch }) => {
@@ -129,18 +130,71 @@ test.describe('BACKDRAFT — video feedback generator', () => {
     expect(b).toEqual(a);
   });
 
-  test('SPATIAL TRANSFORM (zoom+rotate) changes the feedback geometry vs identity', async ({ page, rack }) => {
+  test('SPATIAL TRANSFORM (zoom+rotate) changes the feedback geometry vs identity', async ({ page }) => {
+    // FRAME-COUNTED, NOT WALL-CLOCKED. BACKDRAFT is an ITERATED feedback loop —
+    // the tunnel compounds one level per RENDERED FRAME — so "settled enough to
+    // compare" is a frame COUNT and never a duration.
+    //
+    // This capture used to `waitForTimeout(1200)`. MEASURED, that one duration
+    // buys wildly different numbers of frames (engine frame-counter delta over
+    // the 1200 ms window, dev server, 1 worker):
+    //
+    //   renderer            identity capture     tunnel capture
+    //   real GPU (Metal)    146 frames           145 frames
+    //   SwiftShader         0 frames (!)         32 frames
+    //
+    // The identity capture NEVER GOT PAST ENGINE FRAME 4 on the software
+    // renderer: BACKDRAFT's first-spawn shader compile eats the whole window on
+    // the main thread and the rAF loop does not tick once. So on CI this test
+    // (a) spent its entire budget waiting on background rendering, which is what
+    // blew the DEFAULT 30 s timeout on main (7abf607c, e2e shard 1/10), and
+    // (b) was comparing an UNSETTLED identity frame against a settled tunnel —
+    // a wall-clock budget is not one assertion, it is a different assertion per
+    // machine.
+    //
+    // It is SLOWNESS, not a different result: with both captures settled, the
+    // two renderers agree to <0.5% (meanDiff 160.4 SwiftShader vs 159.7 real
+    // GPU, changedFrac 0.869 on both).
+    //
+    // Fix: pause the engine rAF loop + pin the sim clock (installRenderSmokeHooks)
+    // and drive an EXACT step count ourselves, then read BACKDRAFT's own output
+    // texture. The capture is now exactly SETTLE_STEPS frames on EVERY renderer,
+    // nothing renders that the assertion doesn't need, and the freeze/settle
+    // sleeps are gone (a paused loop is already frame-stable). Same pattern as
+    // backdraft-render-smoke.spec.ts / backdraft-pure-tv.spec.ts.
+    //
+    // NEGATIVE-CONTROLLED (the instrument, not just the code): re-running with
+    // BOTH captures at identity gives meanDiff 0.000 / changedFrac 0.00000 —
+    // byte-identical frames, and the test correctly FAILS. So the metric moves
+    // with the transform and nothing else, and the paused-loop drive is
+    // bit-reproducible rather than merely stable.
+    //
+    // The budget is explicit because the test is COMPUTE-bound: 2 x 30 frames
+    // plus two first-spawn shader compiles on a software renderer is real time,
+    // and a simulation-bound test should not inherit a default tuned for
+    // pure-function assertions.
+    test.setTimeout(90_000);
+
+    // Frames of UNFROZEN feedback per capture. delay=0 taps the most recent
+    // frame, so the transform compounds every step; 30 matches the settle the
+    // DRS uses (the ring is BACKDRAFT_BUFFER_FRAMES = 31 deep).
+    const SETTLE_STEPS = 30;
+
+    // Pause the rAF loop + pin the clock BEFORE the app boots.
+    await installRenderSmokeHooks(page);
+
     // Two runs of the SAME feedback scene: one at identity (zoom=1,
     // rotate=0 → 1:1 tap, the original behaviour) and one with a tunnel
     // transform (zoom>1 + rotate). The transformed run must produce a
     // MEANINGFULLY DIFFERENT frame — proving the transform actually moves
     // where the feedback tap samples (tunnels/spirals), not just brightness.
-    async function captureFrame(transform: { zoom: number; rotate: number }): Promise<number[]> {
+    async function captureFrame(
+      transform: { zoom: number; rotate: number },
+    ): Promise<{ framesDelta: number; fbComplete: boolean; samples: number[] }> {
       // FRESH RACK PER CAPTURE (restored from pre-fixture main): both
-      // captures spawn the SAME node ids, and capture 1 leaves 'bd' with
-      // freeze=1 — re-spawning onto the live doc reads the frozen scene
-      // (identical frames, diff exactly 0 — the shard-1 failure on #1036).
-      // The `rack` fixture only navigates once per test, so re-navigate here.
+      // captures spawn the SAME node ids, so re-spawning onto the live doc
+      // would read capture 1's already-settled feedback ring (identical
+      // frames, diff exactly 0 — the shard-1 failure on #1036).
       await page.goto('/rack');
       await page.waitForLoadState('networkidle');
       await spawnPatch(
@@ -156,35 +210,68 @@ test.describe('BACKDRAFT — video feedback generator', () => {
           { id: 'e_out', from: { nodeId: 'bd',    portId: 'out' }, to: { nodeId: 'v-out', portId: 'in'   }, sourceType: 'video',      targetType: 'video' },
         ],
       );
-      const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
-      await expect(canvas).toHaveCount(1);
-      // Let the feedback loop compound the transform over many frames.
-      await page.waitForTimeout(1200);
-      // Freeze so the read is stable.
-      await page.evaluate(() => {
+      // Drive the feedback loop a FIXED number of frames inside ONE evaluate
+      // (no await between steps, so nothing can interleave), then read the
+      // BACKDRAFT node's own output FBO. No freeze needed: with the rAF loop
+      // paused the texture holds the last drawn frame by construction.
+      return page.evaluate(({ steps }) => {
         const w = globalThis as unknown as {
-          __patch: { nodes: Record<string, { params: Record<string, number> }> };
-          __ydoc: { transact: (fn: () => void) => void };
+          __videoEngineFreezeTime?: number;
+          __engine: () => {
+            getDomain: (d: string) => {
+              gl: WebGL2RenderingContext;
+              step: () => void;
+              markWatched: (id: string) => void;
+              currentFrameCount: () => number;
+              outputTexture: (id: string, port?: string) => WebGLTexture | null;
+              res: { width: number; height: number };
+            };
+          };
         };
-        w.__ydoc.transact(() => {
-          const n = w.__patch.nodes['bd'];
-          if (n) n.params.freeze = 1;
-        });
-      });
-      await page.waitForTimeout(120);
-      return canvas.evaluate((el) => {
-        const c = el as HTMLCanvasElement;
-        const ctx = c.getContext('2d');
-        if (!ctx) return [];
-        const d = ctx.getImageData(0, 0, c.width, c.height).data;
-        const out: number[] = [];
-        for (let i = 0; i < d.length; i += 4 * 32) out.push(d[i]!);
-        return out;
-      });
+        const vid = w.__engine().getDomain('video');
+        const gl = vid.gl;
+        const before = vid.currentFrameCount();
+        for (let n = 0; n < steps; n++) {
+          // Advance the PINNED sim clock by exactly one virtual camera frame,
+          // so the source is bit-reproducible at any render speed.
+          w.__videoEngineFreezeTime = 2 + (n + 0.5) / 60;
+          // Keep the chain a pull-eval root for the whole burst: the watch mark
+          // is wall-clock TTL'd (1500 ms) and a 30-frame software-renderer
+          // burst outlives that, which would silently stop drawing 'bd'.
+          vid.markWatched('bd');
+          vid.step();
+        }
+        const framesDelta = vid.currentFrameCount() - before;
+
+        const tex = vid.outputTexture('bd') as WebGLTexture | null;
+        const { width: W, height: H } = vid.res;
+        const fb = gl.createFramebuffer()!;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+        const fbComplete = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+        const px = new Uint8Array(W * H * 4);
+        if (fbComplete) gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.deleteFramebuffer(fb);
+        while (gl.getError() !== gl.NO_ERROR) { /* drain */ }
+
+        const samples: number[] = [];
+        for (let i = 0; i < px.length; i += 4 * 32) samples.push(px[i]!);
+        return { framesDelta, fbComplete, samples };
+      }, { steps: SETTLE_STEPS });
     }
 
-    const identity = await captureFrame({ zoom: 1, rotate: 0 });
-    const tunnel = await captureFrame({ zoom: 1.12, rotate: 14 });
+    const idCap = await captureFrame({ zoom: 1, rotate: 0 });
+    const tunCap = await captureFrame({ zoom: 1.12, rotate: 14 });
+    const identity = idCap.samples;
+    const tunnel = tunCap.samples;
+
+    // The frame COUNT is the renderer-independent contract this test rests on:
+    // both captures drove exactly SETTLE_STEPS frames, on any renderer. (Also
+    // catches a loop that wasn't paused, or a node pull-eval skipped.)
+    expect(idCap.framesDelta, 'identity capture drove the exact frame count (loop paused)').toBe(SETTLE_STEPS);
+    expect(tunCap.framesDelta, 'tunnel capture drove the exact frame count (loop paused)').toBe(SETTLE_STEPS);
+    expect(idCap.fbComplete && tunCap.fbComplete, 'BACKDRAFT output FBO readable in both captures').toBe(true);
 
     expect(identity.length).toBeGreaterThan(0);
     expect(tunnel.length).toBe(identity.length);
@@ -200,8 +287,11 @@ test.describe('BACKDRAFT — video feedback generator', () => {
     }
     const meanDiff = diff / identity.length;
     const changedFrac = changed / identity.length;
-    expect(meanDiff, 'transform shifts pixel values vs identity').toBeGreaterThan(4);
-    expect(changedFrac, 'a real fraction of pixels move (tunnel geometry)').toBeGreaterThan(0.05);
+    // Measured at SETTLE_STEPS=30 over 24576 samples: meanDiff 160.4 /
+    // changedFrac 0.869 on SwiftShader vs 159.7 / 0.869 on a real GPU — the two
+    // renderers now agree to <0.5% because they run the IDENTICAL frame count.
+    expect(meanDiff, `transform shifts pixel values vs identity (meanDiff ${meanDiff.toFixed(2)}/255, floor 4)`).toBeGreaterThan(4);
+    expect(changedFrac, `a real fraction of pixels move (tunnel geometry) (changedFrac ${changedFrac.toFixed(4)}, floor 0.05)`).toBeGreaterThan(0.05);
   });
 
   test('PIXELATE reduces the source resolution (1.0 → flat frame; 0 → unchanged)', async ({ page, rack }) => {
