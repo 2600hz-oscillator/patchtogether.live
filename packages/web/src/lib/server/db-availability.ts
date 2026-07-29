@@ -13,8 +13,8 @@
 // 10-minute alert cron opened a CRIT issue every cycle.
 //
 // A database outage is a *service* problem, not a crash. The honest answer is
-// 503 + Retry-After: retryable, cacheable-as-not, and it renders the friendly
-// error page instead of "Internal Error".
+// 503 Service Unavailable: it tells the caller "retryable, come back", and it
+// renders the friendly error page instead of an opaque "Internal Error".
 //
 // ── The rule: DID POSTGRES ANSWER? ─────────────────────────────────────────
 // This is the whole classification, and it is deliberately narrow:
@@ -41,9 +41,6 @@ import { error } from '@sveltejs/kit';
 export const DB_UNAVAILABLE_MESSAGE =
   'Rackspace storage is temporarily unavailable. This is a service issue on our ' +
   'side, not a problem with your link — please try again in a few minutes.';
-
-/** Seconds to advertise in Retry-After when we degrade. */
-export const DB_UNAVAILABLE_RETRY_AFTER_S = 30;
 
 /**
  * A real Postgres SQLSTATE: five chars, digits + uppercase letters (e.g.
