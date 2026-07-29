@@ -10,7 +10,8 @@
 //
 // The spec asks for LINES + SHAPES as the lighten/darken key masks and a
 // couple of video sources into in_a / in_b. We assert:
-//   1. all cards spawn + the BACKDRAFT card + preview canvas mount,
+//   1. all cards spawn + the BACKDRAFT card mounts (its output-surface canvas
+//      is mounted but hidden — the in-rack display was removed),
 //   2. the wired-up output renders a non-trivial (moving feedback) frame,
 //   3. params route through the patch store (MIDI-Learn-wired faders path),
 //   4. no console / page errors.
@@ -148,7 +149,17 @@ test.describe('BACKDRAFT — video feedback generator', () => {
     await expect(page.locator('.svelte-flow__node-backdraft'), 'BACKDRAFT visible').toBeVisible();
     await expect(page.locator('.svelte-flow__node-videoOut'),  'OUTPUT visible').toBeVisible();
     await expect(page.locator('[data-testid="backdraft-card"]')).toHaveCount(1);
+    // The card carries no in-rack picture any more (owner call). The <canvas>
+    // is still MOUNTED because it is the surface Full Frame / Full Screen /
+    // Present hand to the user, but it is 0x0 and unpainted while the card sits
+    // in the rack — so assert BOTH, or "present" and "hidden" each pass on
+    // their own for the wrong reason. The output pixels this spec reads come
+    // from the downstream VIDEO OUT, which is unaffected.
     await expect(page.locator('[data-testid="backdraft-canvas"]')).toHaveCount(1);
+    await expect(
+      page.locator('[data-testid="backdraft-canvas"]'),
+      'the output surface is not shown in the rack',
+    ).toBeHidden();
 
     const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
     await expect(canvas, 'video-out canvas in DOM').toHaveCount(1);

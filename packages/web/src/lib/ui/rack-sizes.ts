@@ -153,15 +153,15 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   // ── video domain ──
   '4plexvid': { size: '3u', hp: 2 }, // 463×280px
   acidwarp: { size: '3u', hp: 2 }, // 407×380px
-  // BACKDRAFT — 900×540. Back to a FIXED tier: the in-card video preview (and
-  // with it the corner-resize whose only job was to scale that preview) came
-  // OFF the card, so nothing left on it is size-driven and a tier can no longer
-  // "cap the resize". The picture lives on VIDEO OUT, one cable away. 5hp buys
-  // the width the ~20 faders + four mode rows + the virtual-camera section
-  // need laid out as labelled banks instead of a 280px column.
+  // BACKDRAFT — 900×540. A FIXED tier: the in-card display (and with it the
+  // corner-resize whose only job was to scale it) is OFF the card, so nothing
+  // left on it is size-driven and a tier can no longer "cap the resize". The
+  // picture lives on VIDEO OUT one cable away, or on the card's own ⛶ OUTPUT
+  // (Full Frame / Full Screen / Present).
   // Was a fixed 3u/hp4 in #767 → DYNAMIC_SIZED when it gained the preview's
-  // full output capabilities → fixed again now they are gone.
-  backdraft: { size: '3u', hp: 6 }, // 540×1080 — 320×240 display centred in a top band flanked by the switch columns, over ONE bank row (measured 722px of 1050); fader length derived to fill the tier
+  // full output capabilities → 6hp when the display came back (#1231) → 5hp
+  // now the display is gone for good.
+  backdraft: { size: '3u', hp: 4 }, // 540×720 — 2 bank rows: GATES·LOOP·COLOUR·KEY over GEOMETRY·TV SCREEN·VIRTUAL CAMERA. MEASURED: the upper row is the binding one at 633.3px of the 690px inner width; fader length derived to fill the 3u tier
   cameraInput: { size: '3u', hp: 2 }, // 370×280px  [LOCKED]
   cellshade: { size: '3u', hp: 2 }, // 369×~490px — rebuild added the SOFT/SMOOTH/INK fader row (2u overflowed the INK row)
   chroma: { size: '2u', hp: 2 }, // 360×260px

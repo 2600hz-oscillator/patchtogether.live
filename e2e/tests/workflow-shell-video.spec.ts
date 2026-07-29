@@ -370,13 +370,13 @@ test.describe('?shell=1 video visibility', () => {
     //
     // WHY FEEDBACK AND NOT BACKDRAFT (which this case used to expand): the
     // EXPAND half of this test needs a shell-lane video card that owns a LIVE
-    // PREVIEW CANVAS. BACKDRAFT has one again — a 320×240 display centred in
-    // its top band — so it would be a valid subject once more, but there is no
-    // reason to churn a working probe: FEEDBACK is the same shape (video-domain,
-    // shell-lane so it gets a tile + EXPAND, one video in / one video out, and a
-    // blitOutputToDrawingBuffer preview) and is the CHEAPER subject — BACKDRAFT
-    // is a 6hp card whose dock full-view would scroll horizontally in the 50/50
-    // split. Do not re-read this as "BACKDRAFT has no preview"; it does. The
+    // PREVIEW CANVAS, and BACKDRAFT no longer has one. Its in-card display was
+    // removed for good; the card keeps a <canvas> only as the OUTPUT SURFACE
+    // for Full Frame / Full Screen / Present, and that surface is 0×0 and
+    // unpainted while the card sits in the rack — so a dock full-view of
+    // BACKDRAFT would show controls, not a picture. FEEDBACK is the same shape
+    // (video-domain, shell-lane so it gets a tile + EXPAND, one video in / one
+    // video out) and DOES own a blitOutputToDrawingBuffer preview. The
     // ORIGINAL regression this case guards — a legacy card whose bare
     // useStore() threw outside the SvelteFlow provider and mounted DEAD in the
     // dock — is the videoOut half below (videoOut is the card it was found on
