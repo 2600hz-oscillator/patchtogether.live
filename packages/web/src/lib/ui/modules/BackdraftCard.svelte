@@ -789,11 +789,24 @@
             <div
               class="bank-faders"
               title={tvOn
-                ? 'The bounded-screen model: ROOM is the light in the room the TV stands in, BEZEL the screen’s border width, PHOSPHOR the display’s glow/persistence, DRIVE the auto-exposure servo (CRITICAL).'
-                : 'ROOM / BEZEL / PHOSPHOR / DRIVE only act in PURE TV or CRITICAL — cycle TV MODE to bring the bounded screen in.'}
+                ? 'The bounded-screen model: ROOM is the light in the room the TV stands in, BORDER the screen frame’s thickness (the “bezel” — the only high-contrast edge between one nesting level and the next), PHOSPHOR the display’s glow/persistence, DRIVE the auto-exposure servo (CRITICAL).'
+                : 'ROOM / BORDER (bezel thickness) / PHOSPHOR / DRIVE only act in PURE TV or CRITICAL — cycle TV MODE to bring the bounded screen in.'}
             >
               <Fader value={p('room')}     min={pmin('room')}     max={pmax('room')}     defaultValue={pdef('room')}     label="Room"  curve="linear" onchange={setParam('room')}     moduleId={id} paramId="room" trackHeight={FADER_H} />
-              <Fader value={p('bezel')}    min={pmin('bezel')}    max={pmax('bezel')}    defaultValue={pdef('bezel')}    label="Bez"   curve="linear" onchange={setParam('bezel')}    moduleId={id} paramId="bezel" trackHeight={FADER_H} />
+              <!-- BORDER, not "Bez". This is the screen-frame WIDTH control —
+                   the thing a user hunts for as "border thickness" — and it was
+                   reported as MISSING from this card. It never was: it is
+                   rendered, enabled, CV-less but MIDI-learnable, and the branch
+                   gates prove it is reachable. It was UNFINDABLE, for two
+                   reasons that stacked. (1) the card abbreviated the def's
+                   "Bezel" to a three-letter "Bez", which reads as nothing at
+                   all; (2) it lives in the TV SCREEN bank, which DIMS in TV
+                   MODE OFF — the default — so the one control being looked for
+                   was greyed AND cryptic in the only mode being looked at. The
+                   dim now carries its own cure (the bank title is a "turn on"
+                   button), and the label now says the word. Card-side only: the
+                   def keeps `label: 'Bezel'`, so no contract and no re-attest. -->
+              <Fader value={p('bezel')}    min={pmin('bezel')}    max={pmax('bezel')}    defaultValue={pdef('bezel')}    label="Border" curve="linear" onchange={setParam('bezel')}   moduleId={id} paramId="bezel" trackHeight={FADER_H} />
               <Fader value={p('phosphor')} min={pmin('phosphor')} max={pmax('phosphor')} defaultValue={pdef('phosphor')} label="Phos"  curve="linear" onchange={setParam('phosphor')} moduleId={id} paramId="phosphor" trackHeight={FADER_H} />
               <Fader value={p('drive')}    min={pmin('drive')}    max={pmax('drive')}    defaultValue={pdef('drive')}    label="Drive" curve="linear" onchange={setParam('drive')}    moduleId={id} paramId="drive" trackHeight={FADER_H} />
             </div>
