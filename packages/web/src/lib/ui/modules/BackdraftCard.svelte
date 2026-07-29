@@ -1,39 +1,62 @@
 <script lang="ts">
   // BackdraftCard — UI for BACKDRAFT (video feedback generator).
   //
-  // A CONTROL SURFACE with an ON-DEMAND output screen.
+  // A SMALL CENTRED DISPLAY over a single row of labelled control banks.
   //
-  // ── What changed and why ─────────────────────────────────────────────────
-  // BACKDRAFT is a video PROCESSOR with ~20 faders, mode rows and (with the
-  // virtual camera) a joystick section. The old card spent more than half its
-  // width on an always-on live thumbnail of its own output and squeezed every
-  // control into a fixed 280px column — which is what made it "a mess", and
-  // what made it overflow its own bottom edge the moment a mode-conditional
-  // row was added. So the IN-RACK PREVIEW is gone and the full card width goes
-  // to the controls, grouped into labelled banks.
+  // ── The shape of the card, and why ───────────────────────────────────────
+  // BACKDRAFT is a video PROCESSOR with ~19 faders, six discrete switches and
+  // (with #1223) a joystick section — AND it is a module you steer by watching,
+  // because feedback has no meaningful state you can read off a knob. So it
+  // needs both a picture and a lot of controls, and the earlier attempts each
+  // sacrificed one for the other: a preview eating half a narrow card and
+  // squeezing the controls into a 280px column, then no preview at all.
   //
-  // ── What did NOT go with it ──────────────────────────────────────────────
-  // Full Frame / Full Screen / Present-on-another-display are PERFORMANCE
-  // features, not preview decoration, so they stay — they simply no longer
-  // hang off a thumbnail. The output <canvas> is still here; it is just INERT
-  // (1px, invisible, not drawn) until the card is in one of those expanded
-  // modes, and it is reached from an explicit OUTPUT button instead of a
-  // right-click on a preview that no longer exists. Net effect in the rack:
-  // the card stops doing a per-frame GL readback it was only doing to paint a
-  // thumbnail, so it is CHEAPER than before, and every presentation route the
-  // old card had still works.
+  // WIDTH is what resolves it. At 3hp the five fader banks need TWO rows, which
+  // spends the whole 3u tier on faders. At 6hp they fit on ONE row, and the row
+  // that collapsing buys is what the display band spends:
   //
-  // What genuinely went away is the CORNER-DRAG RESIZE (its whole job was
-  // scaling that thumbnail) and with it the persisted node.data.width/height.
-  // The card is a fixed 5hp × 3u rack tier (rack-sizes.ts); stale width/height
-  // on an already-saved patch are ignored rather than half-honoured. A
-  // full-framed BACKDRAFT is therefore a fixed-size video panel — for an
-  // arbitrarily-sized one, patch OUT into VIDEO OUT, which is still resizable.
+  //     +---------------- 1080 ----------------+
+  //     | MIRROR X/Y                TV: <MODE> |
+  //     | SHAPE·GEO  [320×240 DISPLAY]  readout|
+  //     | FLICKER×6                  ⛶ OUTPUT |
+  //     +--------------------------------------+
+  //       LOOP  COLOUR  KEY  GEOMETRY  TV SCREEN
   //
-  // A rAF loop runs always, but in the rack it ONLY reflects gate-driven param
-  // changes (mirror / shape / pure-geo / TV mode toggled by a rising edge
-  // INSIDE the engine) back into the patch store so the buttons show live
-  // state. The blit runs only while expanded.
+  // Both flanks are `flex: 1 1 0`, so the display is centred BY CONSTRUCTION,
+  // not by a magic margin — cycling SHAPE or TV MODE cannot shove it sideways.
+  //
+  // ── ONE SURFACE, FOUR SIZES ──────────────────────────────────────────────
+  // The display IS the output surface, not a copy of it. The same <canvas> is
+  // 320×240 in the rack, the whole card in Full Frame, the physical screen in
+  // Full Screen, and the popup's source in Present — so the picture you patch
+  // is the picture you present, and there is no second canvas to drift. Two
+  // entry points to that menu: the ⛶ OUTPUT button (discoverable) and a
+  // right-click on the display (the idiom every other video card uses).
+  //
+  // The CORNER-DRAG RESIZE stays retired, and with it the persisted
+  // node.data.width/height. The card is a fixed 6hp × 3u rack tier
+  // (rack-sizes.ts) with 3u pinned min AND max; stale width/height on an
+  // already-saved patch are ignored rather than half-honoured. For an
+  // arbitrarily-sized panel, patch OUT into VIDEO OUT, which is still
+  // resizable.
+  //
+  // ── Cost ─────────────────────────────────────────────────────────────────
+  // A rAF loop runs always and reflects gate-driven param changes (mirror /
+  // shape / pure-geo / TV mode toggled by a rising edge INSIDE the engine) back
+  // into the patch store so the buttons show live state — pure param reads, no
+  // GL. The BLIT is a readback, so it is rationed: every frame while expanded,
+  // every 3rd frame in the rack, and never while the tab is hidden or a test
+  // harness has frozen/paused the engine (a paused engine has no new frame to
+  // present). See tick().
+  //
+  // ── All controls usable ──────────────────────────────────────────────────
+  // A control that is inert IN THE MODEL is DIMMED — never `disabled`, never
+  // `{#if}`-ed away. Both of those make a control unreachable WHILE ITS GATE CV
+  // INPUT KEEPS WRITING THE SAME PARAM, and both make the card's height depend
+  // on the mode. Dimming keeps drag, dbl-click reset, wheel and MIDI-Learn, and
+  // a dimmed bank carries its own cure (its title is a "turn on" button).
+  // card-control-ranges.test.ts pins the no-`disabled` rule on the source;
+  // card-control-overflow.spec.ts measures the card in ALL THREE TV modes.
   //
   // Every port (2 video + 2 KEY masks + CV/gate inputs + the `out` video
   // output) lives in the yellow PatchPanel drill-down. Every Fader carries
@@ -279,12 +302,12 @@
   });
   let edgesUnobserve: (() => void) | null = null;
 
-  // ---------------- Output surface (Full Frame / Full Screen / Present) ------
-  // The <canvas> below is NOT an in-rack preview. It is INERT — 1px, invisible,
-  // never drawn — until the card enters an expanded output mode, at which point
-  // it becomes the live surface those modes present. That is the whole reason
-  // the preview could be removed WITHOUT losing the performance features that
-  // used to hang off it.
+  // ---------------- Output surface (the display + Full Frame / Screen / Present)
+  // The <canvas> below is BOTH the in-rack display and the surface every
+  // expanded output mode presents — one element, four sizes (see the header).
+  // It is never unmounted and never behind an {#if}, because requestFullscreen()
+  // needs a real element to target at the moment the menu item is clicked, and
+  // `display: none` cannot be fullscreened.
   const ENGINE_W = VIDEO_RES.width;
   const ENGINE_H = VIDEO_RES.height;
 
