@@ -25,6 +25,32 @@
 //     directly to keep this self-contained).
 //   - 3D rotation derives from `speed` exactly as the spec dictates:
 //     omega = speed * 0.3 rad/s, so 1× speed = ~17°/s, ~20 s/revolution.
+//
+// PER-PORT RENDER GATE (perf):
+//   The mandala rasterization is by far this module's cost — at the default
+//   complexity 12 with a full 600-sample ring it strokes 2×arms×len = 14,400
+//   segments per plain output and TWICE that for the 3D tube (two passes),
+//   i.e. ~57,600 segments/frame across the three outputs, each followed by a
+//   360×360 texSubImage2D + a fullscreen blit. Almost every real patch
+//   consumes ONE of the three, so ~3/4 of that was drawing frames nobody
+//   looks at. `mono_out` and `out_3d` now rasterize+upload only when the
+//   engine reports them CONSUMED (VideoFrameContext.connectedOutputPorts —
+//   the same per-port seam COLOUR OF MAGIC / VIDEOCUBE / LUSHGARDEN use).
+//
+//   `rgb_out` is deliberately NEVER gated: it is the canonical
+//   `surface.texture` AND the OffscreenCanvas handed to the card through
+//   `read('previewCanvas')`, and a card poll is invisible to the port seam —
+//   gating it would black out the on-card preview of an unpatched module (the
+//   most common state of all). Node-level pull evaluation already zeroes the
+//   whole module when nothing observes it, so the idle rack still pays ~0.
+//
+//   COHERENCE — the three outputs share ONE pen ring, so the STATE ADVANCE
+//   (advancePen + rotation3d + the orbit centre) stays UNCONDITIONAL. Only
+//   the rasterize/upload/blit is skipped. Patching a gated output mid-
+//   performance therefore resumes at the correct phase with the whole trail
+//   already in the ring — no jump. On that resume we clear the output's
+//   canvas to opaque black first, so the accumulating comet-trail residue
+//   restarts from a known base instead of ghosting a stale frame for ~1s.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface, VideoEngineContext } from '$lib/video/engine';
@@ -213,6 +239,24 @@ export const peakstateDef: VideoModuleDef = {
       return !!(globalThis as unknown as { __peakstateVrtSeed?: boolean }).__peakstateVrtSeed;
     }
 
+    /** Per-port render gate bookkeeping: did each GATED output rasterize on
+     *  the previous frame? A false→true transition primes that output's
+     *  canvas (see primeCanvas) so its accumulating trail restarts from a
+     *  known base rather than ghosting the frame it was gated off at.
+     *  Starts `false` so the very first rendered frame is primed too. */
+    let drewMonoLast = false;
+    let drew3dLast = false;
+
+    /** Clear one output canvas to FULL-OPAQUE black. Used by the VRT-seed
+     *  determinism prime and by the per-port gate's off→on transition. */
+    function primeCanvas(cv: { ctx2d: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D }): void {
+      cv.ctx2d.save();
+      cv.ctx2d.globalAlpha = 1;
+      cv.ctx2d.fillStyle = 'rgb(0, 0, 0)';
+      cv.ctx2d.fillRect(0, 0, INTERNAL_DIM, INTERNAL_DIM);
+      cv.ctx2d.restore();
+    }
+
     // Pitch (camera tilt) is fixed at 15° per the spec. Lifted into a
     // const so the 3D output reads the same pitch every frame.
     const PITCH_RAD = (15 * Math.PI) / 180;
@@ -290,13 +334,7 @@ export const peakstateDef: VideoModuleDef = {
             // residue then settles from an IDENTICAL start on every run /
             // renderer, so a short warmup converges it — the render-smoke no
             // longer needs a 48-step warmup to wash out boot garbage.
-            for (const cv of [cvMono, cvRgb, cv3d]) {
-              cv.ctx2d.save();
-              cv.ctx2d.globalAlpha = 1;
-              cv.ctx2d.fillStyle = 'rgb(0, 0, 0)';
-              cv.ctx2d.fillRect(0, 0, INTERNAL_DIM, INTERNAL_DIM);
-              cv.ctx2d.restore();
-            }
+            for (const cv of [cvMono, cvRgb, cv3d]) primeCanvas(cv);
             vrtSeeded = true;
           }
           // No further pen / rotation advance — the frame is frozen.
@@ -320,16 +358,38 @@ export const peakstateDef: VideoModuleDef = {
           pen.t, baseCx, baseCy, move, oblong, speed, INTERNAL_DIM, INTERNAL_DIM,
         );
 
+        // --- PER-PORT RENDER GATE ---
+        // Ask the ENGINE which of our outputs actually drive a consumer this
+        // frame. `connectedOutputPorts` is the real seam (intra-domain edges
+        // + cross-domain video→texture/audio bridges + the TTL'd inline
+        // card-preview requests), not a parallel notion of connectedness.
+        // When the engine can't report it (older build / a test mock that
+        // omits the optional hook) we render EVERYTHING, so no consumer can
+        // ever go dark because connectivity was unknown.
+        const connected = frame.connectedOutputPorts?.(node.id);
+        const drawMono = connected ? connected.has('mono_out') : true;
+        const draw3d = connected ? connected.has('out_3d') : true;
+        // NOTE: rgb_out is intentionally absent from this gate — see the
+        // header. It is the primary surface + the card's preview canvas.
+
         // --- mono_out: white pen on black, no colour cycling. ---
-        const monoOpts: RenderOpts = {
-          complexity,
-          color: { r: 238, g: 238, b: 238 }, // #eee from the spec
-          decayAlpha: 0.05,
-          centerX: cx,
-          centerY: cy,
-        };
-        drawMandalaFrame(cvMono.ctx2d as unknown as Parameters<typeof drawMandalaFrame>[0], INTERNAL_DIM, INTERNAL_DIM, pen.ring, monoOpts);
-        uploadAndBlit(cvMono.canvas, texMono, fboMono.fbo);
+        if (drawMono) {
+          // Resuming after a gated-off stretch: the canvas still holds the
+          // frame we stopped at, and the pen has moved on since. Start from
+          // opaque black so the trail rebuilds from a known base instead of
+          // cross-fading a stale mandala over the live one.
+          if (!drewMonoLast) primeCanvas(cvMono);
+          const monoOpts: RenderOpts = {
+            complexity,
+            color: { r: 238, g: 238, b: 238 }, // #eee from the spec
+            decayAlpha: 0.05,
+            centerX: cx,
+            centerY: cy,
+          };
+          drawMandalaFrame(cvMono.ctx2d as unknown as Parameters<typeof drawMandalaFrame>[0], INTERNAL_DIM, INTERNAL_DIM, pen.ring, monoOpts);
+          uploadAndBlit(cvMono.canvas, texMono, fboMono.fbo);
+        }
+        drewMonoLast = drawMono;
 
         // --- rgb_out: HSL hue cycling. ---
         const hue = hueAtTime(pen.t, colorSpeed);
@@ -345,27 +405,32 @@ export const peakstateDef: VideoModuleDef = {
         uploadAndBlit(cvRgb.canvas, texRgb, fboRgb.fbo);
 
         // --- out_3d: tilted + rotating + bowl-twin. Slightly desaturated
-        // colour so the "depth" reads. ---
-        const hue3d = hueAtTime(pen.t, colorSpeed);
-        const rgb3d = hslToRgb(hue3d, 0.5, 0.55);
-        const tubeOpts: RenderOpts = {
-          complexity,
-          color: rgb3d,
-          decayAlpha: 0.08, // slightly faster decay so the rotating
-                            // sculpture doesn't smear into a blur
-          centerX: cx,
-          centerY: cy,
-        };
-        drawMandalaTubeFrame(
-          cv3d.ctx2d as unknown as Parameters<typeof drawMandalaTubeFrame>[0],
-          INTERNAL_DIM,
-          INTERNAL_DIM,
-          pen.ring,
-          tubeOpts,
-          PITCH_RAD,
-          rotation3d,
-        );
-        uploadAndBlit(cv3d.canvas, tex3d, fbo3d.fbo);
+        // colour so the "depth" reads. TWO rasterization passes, so this is
+        // the single most expensive output — and the one most often unused.
+        if (draw3d) {
+          if (!drew3dLast) primeCanvas(cv3d);
+          const hue3d = hueAtTime(pen.t, colorSpeed);
+          const rgb3d = hslToRgb(hue3d, 0.5, 0.55);
+          const tubeOpts: RenderOpts = {
+            complexity,
+            color: rgb3d,
+            decayAlpha: 0.08, // slightly faster decay so the rotating
+                              // sculpture doesn't smear into a blur
+            centerX: cx,
+            centerY: cy,
+          };
+          drawMandalaTubeFrame(
+            cv3d.ctx2d as unknown as Parameters<typeof drawMandalaTubeFrame>[0],
+            INTERNAL_DIM,
+            INTERNAL_DIM,
+            pen.ring,
+            tubeOpts,
+            PITCH_RAD,
+            rotation3d,
+          );
+          uploadAndBlit(cv3d.canvas, tex3d, fbo3d.fbo);
+        }
+        drew3dLast = draw3d;
       },
       dispose() {
         gl.deleteFramebuffer(fboMono.fbo);
