@@ -21,8 +21,36 @@
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
+// ── TIMEOUT BUDGETS SCALE WITH CAPTURE COUNT, NEVER FLAT ────────────────────
+// Three tests below compare TWO independently-captured frames, and each capture
+// is a FULL page load + networkidle + spawnPatch + a settle wait while the
+// feedback nest compounds. So they do roughly double the work of their
+// siblings — and two of them were nevertheless left on Playwright's flat 30s
+// default while the third (MIRROR) carried an explicit 90s.
+//
+// That asymmetry is what went red: on CI, `SPATIAL TRANSFORM` timed out at 30s
+// across every retry on two consecutive runs, and `PIXELATE` flaked — while
+// both complete in ~6s locally under the SAME SwiftShader renderer. The work is
+// bounded and correct; the BUDGET was wrong. CI runs the software renderer on a
+// 4-vCPU runner with ten shards in flight, where two page loads plus two GL
+// settles legitimately exceed 30s.
+//
+// So the budget is DERIVED from the number of captures rather than picked, and
+// scaled for the software renderer — the same shape faces-parity.spec.ts and
+// videovarispeed-switch.spec.ts already use, and far tighter than
+// backdraft-pure-tv.spec.ts's file-wide 180s. It is a BOUNDED-FAILURE ceiling,
+// not a budget these tests spend: a timeout here should report a hang, not a
+// slow runner.
+const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
+const PER_CAPTURE_MS = SLOW_RENDER ? 25_000 : 10_000;
+const captureBudget = (captures: number): number => 10_000 + captures * PER_CAPTURE_MS;
+
 test.describe('BACKDRAFT — video feedback generator', () => {
   test('SHAPES/LINES masks + SHAPES sources -> BACKDRAFT -> OUTPUT renders a live feedback frame', async ({ page, rack, errorWatch }) => {
+    // ONE capture, but the heaviest spawn in the file — six nodes (four
+    // generators + BACKDRAFT + OUTPUT) all rendering before the read. It flaked
+    // on CI under the flat default; same rule, budget the work.
+    test.setTimeout(captureBudget(1));
     await spawnPatch(
       page,
       [
@@ -130,6 +158,7 @@ test.describe('BACKDRAFT — video feedback generator', () => {
   });
 
   test('SPATIAL TRANSFORM (zoom+rotate) changes the feedback geometry vs identity', async ({ page, rack }) => {
+    test.setTimeout(captureBudget(2)); // TWO full captures — see the note up top.
     // Two runs of the SAME feedback scene: one at identity (zoom=1,
     // rotate=0 → 1:1 tap, the original behaviour) and one with a tunnel
     // transform (zoom>1 + rotate). The transformed run must produce a
@@ -205,6 +234,7 @@ test.describe('BACKDRAFT — video feedback generator', () => {
   });
 
   test('PIXELATE reduces the source resolution (1.0 → flat frame; 0 → unchanged)', async ({ page, rack }) => {
+    test.setTimeout(captureBudget(2)); // TWO full captures — see the note up top.
     // Drive BACKDRAFT with a structured source and NO feedback, so the output
     // ≈ the (pixelated) source. At pixelate=1 the whole frame collapses to one
     // representative colour → near-zero spatial variance (a flat block). At
