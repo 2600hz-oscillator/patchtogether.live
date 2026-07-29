@@ -16,6 +16,22 @@
 
 import { test, expect } from '@playwright/test';
 
+/**
+ * True when this run targets a DEPLOYED tier (the live smoke) rather than a
+ * local dev/preview server.
+ *
+ * Why it's needed: the CI e2e lane sets DATABASE_URL to a LOCAL Postgres
+ * service container, but `$lib/server/db.ts` always drives the Neon **HTTP**
+ * driver — which cannot speak to a raw local Postgres socket. So on CI the
+ * health probe legitimately reports the database as unreachable. Gating on a
+ * live target keeps the assertion below out of the REQUIRED
+ * `typecheck + unit + ART + E2E` lane entirely, where it would otherwise go
+ * red for a reason that says nothing about the deploy.
+ */
+const IS_LIVE_TARGET = /^https?:\/\/(?!localhost|127\.0\.0\.1)/.test(
+  process.env.E2E_BASE_URL ?? '',
+);
+
 test.describe('auth-route shape', () => {
   test('GET /api/health returns 200 with auth state @smoke', async ({ request }) => {
     const r = await request.get('/api/health');
@@ -60,6 +76,41 @@ test.describe('auth-route shape', () => {
         body.deps.database.schema,
       );
     }
+  });
+
+  // A DEPLOYED tier that HAS a database configured must be able to REACH it.
+  //
+  // Why this exists: `/r/[id]` used to answer an unreachable database with an
+  // opaque 500, so the "must not 500" specs below doubled as the outage alarm.
+  // Now that the loader correctly degrades to a 503 (see
+  // $lib/server/db-availability), those specs would go GREEN during a total
+  // database outage — the deploy gate would have stopped reporting the very
+  // condition that took every rackspace URL down on 2026-07-28 (Neon compute
+  // quota exhausted → HTTP 402 on autotest, dev AND prod for ~24h).
+  //
+  // So the outage assertion moves here, where it belongs: it names the real
+  // condition instead of inferring it from a crash.
+  //
+  // Scope notes:
+  //   • LIVE targets only — see IS_LIVE_TARGET above (CI's local Postgres is
+  //     unreachable over the Neon HTTP driver by construction).
+  //   • `db: 'missing'` (no DATABASE_URL — prod before launch, a DB-less
+  //     preview) is exempt: an absent database is a valid configuration, an
+  //     unreachable one is not.
+  test('deployed tier can REACH its configured database @smoke', async ({ request }) => {
+    test.skip(!IS_LIVE_TARGET, 'live-deploy only (E2E_BASE_URL must be a remote host)');
+
+    const body = await (await request.get('/api/health')).json();
+    test.skip(body.db === 'missing', 'tier has no DATABASE_URL configured — nothing to reach');
+
+    expect(
+      body.deps.database.ok,
+      `Deployed tier reports a configured database it CANNOT REACH — every ` +
+        `rackspace URL on this tier is degraded (503). This is an ` +
+        `INFRASTRUCTURE/BILLING condition, not a code regression: check the ` +
+        `Neon project quota + status first. Probe error: ` +
+        `${body.deps.database.error ?? 'none reported'}`,
+    ).toBe(true);
   });
 
   test('responses carry an x-request-id correlation header @smoke', async ({ request }) => {
