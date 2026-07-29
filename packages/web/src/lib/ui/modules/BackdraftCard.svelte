@@ -44,10 +44,16 @@
   // A rAF loop runs always and reflects gate-driven param changes (mirror /
   // shape / pure-geo / TV mode toggled by a rising edge INSIDE the engine) back
   // into the patch store so the buttons show live state — pure param reads, no
-  // GL. The BLIT is a readback, so it is rationed: every frame while expanded,
-  // every 3rd frame in the rack, and never while the tab is hidden or a test
-  // harness has frozen/paused the engine (a paused engine has no new frame to
-  // present). See tick().
+  // GL. The BLIT is a GL readback, so it is rationed. Every frame while
+  // expanded; in the rack, only when ALL of these hold:
+  //   * the tab is visible, and no test harness has frozen/paused the engine
+  //     (a paused engine has no new frame to present);
+  //   * at least 125ms (~8fps) has passed since the last present — a WALL-CLOCK
+  //     cap, not "every Nth rAF", because an rAF-relative divisor is meaningless
+  //     when rAF is itself being slowed by the contention you are relieving;
+  //   * the engine has actually drawn a NEW frame for this node.
+  // The node is marked watched every rAF regardless, so skipping a present
+  // never demotes it out of pull-evaluation. See tick().
   //
   // ── All controls usable ──────────────────────────────────────────────────
   // A control that is inert IN THE MODEL is DIMMED — never `disabled`, never
@@ -425,9 +431,15 @@
   // way there is no NEW frame to present, so a blit would burn a SwiftShader
   // readback to re-present a frame the card already has. (Off-screen cards are
   // handled centrally by video-card-visibility.ts → engine.setCardVisibility.)
-  const IN_RACK_BLIT_EVERY = 3;
+  // ~8fps in the rack. A THUMBNAIL of a feedback nest does not read differently
+  // at 60fps, and this is a WALL-CLOCK cap rather than "every Nth rAF" on
+  // purpose: an rAF-relative divisor is meaningless when rAF is ITSELF being
+  // slowed by the contention you are trying to relieve, whereas a time cap
+  // spends the same absolute budget on a fast GPU and a software renderer.
+  const IN_RACK_BLIT_MS = 125;
   let rafId: number | null = null;
-  let frameCount = 0;
+  let lastBlitMs = 0;
+  let lastFramesDrawn = -1;
 
   function harnessFrozen(): boolean {
     const g = globalThis as {
@@ -437,9 +449,20 @@
     return g.__videoEngineFreezeRender === true || g.__videoEnginePause === true;
   }
 
+  /** Has the engine actually produced a NEW frame for this node since our last
+   *  present? Re-blitting a frame the card already shows is pure GL cost for
+   *  zero pixels changed. Cheap Map lookup; returns true if the engine cannot
+   *  tell us, so an engine without the counter behaves exactly as before. */
+  function hasNewFrame(videoEngine: VideoEngine): boolean {
+    const f = videoEngine.framesDrawnFor?.(id);
+    if (typeof f !== 'number') return true;
+    if (f === lastFramesDrawn) return false;
+    lastFramesDrawn = f;
+    return true;
+  }
+
   function tick() {
     rafId = null;
-    frameCount++;
     const e = engineCtx.get();
     let videoEngine: VideoEngine | undefined;
     if (e) {
@@ -454,12 +477,18 @@
       if (eh !== engineH) engineH = eh;
       if (expanded) {
         drawOutput(videoEngine);
-      } else if (
-        !harnessFrozen() &&
-        !document.hidden &&
-        frameCount % IN_RACK_BLIT_EVERY === 0
-      ) {
-        drawOutput(videoEngine);
+      } else if (!harnessFrozen() && !document.hidden) {
+        // Keep the node a PULL ROOT even on frames we choose not to present.
+        // blitOutputToDrawingBuffer() is what normally marks it watched, so
+        // skipping the blit without this would stop the engine rendering the
+        // node, which would stop framesDrawnFor advancing — a deadlock where
+        // the display goes permanently black. markWatched is a Map write.
+        videoEngine.markWatched?.(id);
+        const now = performance.now();
+        if (now - lastBlitMs >= IN_RACK_BLIT_MS && hasNewFrame(videoEngine)) {
+          lastBlitMs = now;
+          drawOutput(videoEngine);
+        }
       }
     }
     try { syncFromEngine(e, node); } catch { /* defensive — never kill the loop */ }
