@@ -262,8 +262,40 @@ test.describe('BACKDRAFT PURE TV — the GPU renders a bounded screen', () => {
     // zoom 0.8 so hasTransform is TRUE — the original zoom:1/rotate:0 control
     // makes the legacy path a pure additive clip, on which the peak-finder is
     // undefined and the assertion would pass by accident rather than on merit.
+    //
+    // ⚠ THAT REMEDY DOES NOT ACTUALLY WORK, and the honest thing is to say so.
+    // MEASURED at zoom 0.8 (SwiftShader, 45 frames): the legacy frame is
+    // FULLY CLIPPED — mean 1.000, blown 1.000, centre-row variance 0.00000,
+    // bands 0, lag -1. It is still a pure additive clip; the transform did not
+    // rescue it. Sweeping FEEDBACK 0.85 → 0 does not change it either (mean
+    // stays 1.000 at every value), because the room source itself
+    // (shapes, zoom 1.6) is already a near-full-white field.
+    //
+    // So BOTH of this test's assertions are satisfied by a FLAT frame — and a
+    // BLACK frame is flat too. As written it could not tell "the legacy path
+    // does not nest" from "nothing rendered at all". The floor below closes
+    // that specific hole: a dead render scores mean 0 and fails.
+    //
+    // What it deliberately does NOT do is assert STRUCTURE. There is none to
+    // assert: a flat clipped field is the genuine legacy result for this scene.
+    // The real contrast is with E1, which runs the IDENTICAL scene and source
+    // at the same frame count and requires >= 5 resolved bands — the pair is
+    // the control, not this test alone. ⚠ A stronger E4 would capture TV ON and
+    // TV OFF in the same test and assert the difference directly; that costs a
+    // second 45-frame render (~40 s of CI on the software renderer), which is
+    // why it is called out here rather than done silently.
     await spawn(page, { ...TV_BASE, tvMode: 0, zoom: 0.8 });
     const r = await stepRead(page, { steps: NEST_FRAMES });
+
+    // ANTI-VACUITY: the legacy path RENDERED something. Without this, a dead
+    // render (all-black: no bands, no periodicity) passes this negative control.
+    // Measured off the centre ROW, which bandCount/logRadialPeak already read —
+    // so this costs no extra readback.
+    const lit = r.row.reduce((a, b) => a + b, 0) / r.row.length;
+    expect(lit, `the legacy composite rendered a frame (mean luma ${lit.toFixed(3)}) — ` +
+      'a black frame has no bands and no periodicity either, and would pass vacuously')
+      .toBeGreaterThan(0.02);
+
     expect(bandCount(r.row), 'the legacy plane has no bezel bands').toBeLessThan(2);
     const { lag, corr } = logRadialPeak(r.row, 0.75);
     expect(lag === -1 || corr < 0.35, `legacy lag=${lag} corr=${corr.toFixed(3)}`).toBe(true);
@@ -280,6 +312,19 @@ test.describe('BACKDRAFT PURE TV — the GPU renders a bounded screen', () => {
     await setParams(page, { room: 0.05, bezel: 1, phosphor: 1, drive: 1 });
     const b = await stepRead(page, { steps: 40 });
     expect(a.quads.length).toBe(4);
+
+    // ⚠ ANTI-VACUITY. Every assertion below is "these two frames are EQUAL",
+    // and two BLACK frames are perfectly equal — so with the render dead this
+    // test passed while proving nothing. Pin that there is a picture to be
+    // inert ABOUT. (Measured for this scene: quadrant means ~0.98, a clipped
+    // near-white field — so this is a floor against a dead render, not a
+    // structure claim; see the E4 note for why structure is not assertable on
+    // the legacy path with this source.)
+    const litA = a.quads.reduce((x, y) => x + y, 0) / a.quads.length;
+    expect(litA, `there IS a picture for the TV params to be inert about (mean luma ${litA.toFixed(3)}) — ` +
+      'two black frames are equal, so without this the inertness claim is vacuous')
+      .toBeGreaterThan(0.02);
+
     for (let i = 0; i < 4; i++) {
       expect(Math.abs(a.quads[i]! - b.quads[i]!), `quadrant ${i} unchanged by the TV params while OFF`)
         .toBeLessThan(2 / 255);
