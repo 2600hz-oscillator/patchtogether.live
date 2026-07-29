@@ -24,7 +24,7 @@
 // `flox activate -- task art` and inspect the new ART scenario's spectrum.
 
 import type { DX7Voice, DX7OpData } from './dx7-syx';
-import { dx7DetuneFactor } from './dx7-syx';
+import { dx7DetuneFactor, dx7FixedHz } from './dx7-syx';
 
 /**
  * Helper to build a DX7OpData. `r` and `l` are 0..99 envelope shorthand;
@@ -54,6 +54,9 @@ function op(args: {
     detuneFactor: dx7DetuneFactor(detune),
     velocitySens: args.velSens ?? 0,
     fixedMode: args.fixed ?? false,
+    // Only meaningful when `fixed` — but computed unconditionally so the field
+    // is never absent on a built-in and the legacy ratio fallback never fires.
+    fixedHz: dx7FixedHz(c, fine),
   };
 }
 

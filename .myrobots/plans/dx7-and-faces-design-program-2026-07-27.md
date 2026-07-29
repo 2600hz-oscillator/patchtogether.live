@@ -463,6 +463,11 @@ structural gate asserting every field `applyOpParam` writes exists on `OpPatch`.
 **vacuously-passing** assertion — `expect(o.rateCoefs).toEqual(...)` comparing `undefined` to `undefined`
 after the rename.
 
+**FOLLOW-UP, sized while building 0b:** giving the `packages/dsp` workspace a *real* typecheck is
+worth its own platform PR rather than a drive-by — there are **33 pre-existing errors** today, mostly
+per-file worklet globals colliding when the whole tree is checked as one program. 0b adds the script and
+the structural mirror gate; the full clean-up is deliberately NOT in it.
+
 **If the owner rejects 0b:** re-author §3.3 Row B and `dx7-eg-curve.ts` to draw *this* engine's shape
 (start 0, no hold, τ-based times), delete the msfa seconds readout, and move FIXED mode to phase 2. Do not
 ship the DX7-authentic curve over the non-authentic engine.
