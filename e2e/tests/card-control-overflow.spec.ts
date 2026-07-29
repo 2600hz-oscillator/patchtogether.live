@@ -414,6 +414,25 @@ test.describe('backdraft: controls fit in EVERY TV MODE, not just the default', 
           'TV SCREEN faders stay MOUNTED + VISIBLE while inert (dimmed, not hidden)',
         ).toBeVisible();
         await expect(tvFaders.first()).toBeVisible();
+        // The VIRTUAL CAMERA bank is the SAME rule, and it is the one that got
+        // it wrong first: it originally shipped behind `{#if tvOn}`, which is
+        // precisely the unmount this sweep cannot see — the sweep spawns at
+        // DEFAULT params (tvMode 0), so a control that only mounts in a non-
+        // default mode goes unmeasured, which is how a ~310 CSS px overflow sat
+        // on this card for hours. Asserting it VISIBLE here is what proves the
+        // camera controls are reachable in the mode the sweep actually runs.
+        await expect(
+          page.locator('[data-testid="backdraft-cam-row"]'),
+          'VIRTUAL CAMERA controls stay MOUNTED + VISIBLE in OFF (dimmed, never {#if}-ed away)',
+        ).toBeVisible();
+        await expect(
+          page.locator('[data-testid="backdraft-cam-tilt-pad"]'),
+          'the TILT joystick is reachable in the default mode',
+        ).toBeVisible();
+        await expect(
+          page.locator('[data-testid="backdraft-cam-pos-pad"]'),
+          'the POSITION joystick is reachable in the default mode',
+        ).toBeVisible();
         const lockedOut = await page.locator('[data-testid="backdraft-card"]')
           .locator('button[disabled], input[disabled]')
           .count();

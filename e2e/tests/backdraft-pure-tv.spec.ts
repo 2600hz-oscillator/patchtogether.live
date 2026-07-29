@@ -193,7 +193,12 @@ const WIRES = [
   { id: 'e_o', from: { nodeId: 'bd', portId: 'out' }, to: { nodeId: 'v-out', portId: 'in' }, sourceType: 'video', targetType: 'video' },
 ];
 const TV_BASE = {
-  tvMode: 1, feedback: 0.85, delay: 16, room: 1, bezel: 0.4, phosphor: 0,
+  // bezel 0.5 = the module's own default = mid-travel of the border fader. NOT
+  // 0.4: the border remap (0 px at the bottom, shipped look re-centred) changed
+  // what 0.4 MEANS -- tb went 0.06 -> 0.048, a thinner border, which resolves
+  // fewer bands and dropped the recovery assertion to 2. Pin the default, not a
+  // number that used to equal it.
+  tvMode: 1, feedback: 0.85, delay: 16, room: 1, bezel: 0.5, phosphor: 0,
   zoom: 1, rotate: 0, flicker: 0, pixelate: 1, mix: 0,
 };
 

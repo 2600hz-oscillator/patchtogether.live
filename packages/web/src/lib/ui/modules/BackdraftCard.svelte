@@ -70,6 +70,7 @@
 
   import { onMount, onDestroy } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';
+  import XyPad from '$lib/ui/controls/XyPad.svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
@@ -88,6 +89,8 @@
     backdraftDef,
     BACKDRAFT_SHAPES,
     BACKDRAFT_TV_MODE_LABELS,
+    BACKDRAFT_CAM_TILT_RANGE,
+    BACKDRAFT_CAM_POS_RANGE,
     BACKDRAFT_TV_MODE_COUNT,
     backdraftNextTvMode,
     backdraftTvFill,
@@ -601,6 +604,12 @@
     { id: 'room',        label: 'ROOM',      cable: 'cv' },
     { id: 'phosphor',    label: 'PHOSPHOR',  cable: 'cv' },
     { id: 'drive',       label: 'DRIVE',     cable: 'cv' },
+    // VIRTUAL CAMERA ORIENTATION — two joysticks + a fader, all CV-able.
+    { id: 'cam_tilt_x',  label: 'TILT X',    cable: 'cv' },
+    { id: 'cam_tilt_y',  label: 'TILT Y',    cable: 'cv' },
+    { id: 'cam_pos_x',   label: 'CAM X',     cable: 'cv' },
+    { id: 'cam_pos_y',   label: 'CAM Y',     cable: 'cv' },
+    { id: 'cam_dist',    label: 'DIST',      cable: 'cv' },
   ];
   const outputs = portsFromDef(backdraftDef.outputs);
 </script>
@@ -861,6 +870,91 @@
               <Fader value={p('bezel')}    min={pmin('bezel')}    max={pmax('bezel')}    defaultValue={pdef('bezel')}    label="Border" curve="linear" onchange={setParam('bezel')}   moduleId={id} paramId="bezel" trackHeight={FADER_H} />
               <Fader value={p('phosphor')} min={pmin('phosphor')} max={pmax('phosphor')} defaultValue={pdef('phosphor')} label="Phos"  curve="linear" onchange={setParam('phosphor')} moduleId={id} paramId="phosphor" trackHeight={FADER_H} />
               <Fader value={p('drive')}    min={pmin('drive')}    max={pmax('drive')}    defaultValue={pdef('drive')}    label="Drive" curve="linear" onchange={setParam('drive')}    moduleId={id} paramId="drive" trackHeight={FADER_H} />
+            </div>
+          </section>
+
+          <!-- VIRTUAL CAMERA — a BANK on this row, not a row of its own.
+               That distinction is the whole reason the card went 6hp: as a
+               sixth bank it costs ~198px of the row's ~318px of spare width and
+               ZERO height (an XyPad cluster is ~130px tall, shorter than a
+               153px-fader bank at 179px), where a dedicated row would have cost
+               a second (H + 26) and put the card back over its 3u tier.
+               Measured, not assumed — see the note by FADER_H. -->
+          <section class="bank cam-bank" class:dim={!tvOn}>
+            <h4 class="bank-title">
+              VIRTUAL CAMERA
+              {#if tvOn}
+                <span class="bank-hint">{BACKDRAFT_TV_MODE_LABELS[tvModeIdx]}</span>
+              {:else}
+                <button
+                  type="button"
+                  class="bank-hint hint-btn nodrag"
+                  data-testid="backdraft-cam-hint"
+                  title="The camera model only exists on the bounded-screen path. Click to turn TV MODE on (PURE TV)."
+                  onclick={cycleTvMode}
+                >TV MODE OFF ▸ turn on</button>
+              {/if}
+            </h4>
+            <!-- DIMMED, never {#if}-ed. Unmounting these would make them
+                 unreachable while cam_tilt_* / cam_pos_* / cam_dist keep writing
+                 the same params from a cable, and would make the card's height
+                 depend on the mode — the two things this card's rule exists to
+                 prevent. Same treatment the TV SCREEN bank already gets. -->
+            <div class="bank-faders" data-testid="backdraft-cam-row">
+              <!-- The long prose lives on THESE wrappers as a native tooltip,
+                   and in docs.controls. It must NOT go to XyPad's `title` prop:
+                   that renders as a VISIBLE caption div (.xy-title, 0.5rem
+                   uppercase, centred, no clamp), so a paragraph there becomes a
+                   wall of tiny text in the middle of the faceplate. Short
+                   captions are the design — VIDEOCUBE, the only other XyPad
+                   caller, passes "ROT X / Y". Short xLabel/yLabel also pin the
+                   pad's wrap to the pad width, which is what keeps this bank at
+                   ~198px instead of ~281px. -->
+              <div
+                class="cam-cell"
+                title="TILT — swing the camera off the screen's normal. The set images as a trapezoid, and because every pass re-photographs the one before it the keystone COMPOUNDS: the nest curls toward the vanishing point instead of shrinking straight in. Centre = dead-on."
+              >
+                <XyPad
+                  xValue={p('camTiltX')} yValue={p('camTiltY')}
+                  xMin={-BACKDRAFT_CAM_TILT_RANGE} xMax={BACKDRAFT_CAM_TILT_RANGE}
+                  yMin={-BACKDRAFT_CAM_TILT_RANGE} yMax={BACKDRAFT_CAM_TILT_RANGE}
+                  xLabel="X" yLabel="Y"
+                  xDefault={pdef('camTiltX')} yDefault={pdef('camTiltY')}
+                  onXChange={setParam('camTiltX')} onYChange={setParam('camTiltY')}
+                  size={84}
+                  title="TILT"
+                  testid="backdraft-cam-tilt"
+                  moduleId={id} xParamId="camTiltX" yParamId="camTiltY"
+                />
+              </div>
+              <div
+                class="cam-cell"
+                title="POSITION — slide the camera in its own plane, from dead centre out past the screen's borders. Position SHIFTS the view; TILT bends it. Together they are how you look at the set from above and off to one side: raise Cam Y, then tilt down to bring the screen back into frame."
+              >
+                <XyPad
+                  xValue={p('camPosX')} yValue={p('camPosY')}
+                  xMin={-BACKDRAFT_CAM_POS_RANGE} xMax={BACKDRAFT_CAM_POS_RANGE}
+                  yMin={-BACKDRAFT_CAM_POS_RANGE} yMax={BACKDRAFT_CAM_POS_RANGE}
+                  xLabel="X" yLabel="Y"
+                  xDefault={pdef('camPosX')} yDefault={pdef('camPosY')}
+                  onXChange={setParam('camPosX')} onYChange={setParam('camPosY')}
+                  size={84}
+                  title="POS"
+                  testid="backdraft-cam-pos"
+                  moduleId={id} xParamId="camPosX" yParamId="camPosY"
+                />
+              </div>
+              <!-- Ranges READ FROM THE DEF like every other control on this
+                   card. #1223 shipped bare numeric literals in this Fader's
+                   range props (its joysticks were already correct, importing
+                   the exported range constants) — card-control-ranges.test.ts
+                   rejects a numeric-literal range prop on this file, so those
+                   would have gone red the moment the fold landed.
+                   NB that gate greps the SOURCE, so it cannot tell code from
+                   comment: do not spell the literal form out here, or the
+                   comment itself trips it. It caught exactly that while this
+                   was being written, which is the gate working as intended. -->
+              <Fader value={p('camDist')} min={pmin('camDist')} max={pmax('camDist')} defaultValue={pdef('camDist')} label="Dist" curve="linear" onchange={setParam('camDist')} moduleId={id} paramId="camDist" trackHeight={FADER_H} />
             </div>
           </section>
         </div>
@@ -1140,9 +1234,20 @@
     align-items: flex-start;
     gap: 10px;
   }
-  /* TV SCREEN with TV MODE OFF: dimmed but still interactive + still occupying
-     its space, so the card's height never changes with the mode. */
-  .tv-bank.dim { opacity: 0.45; }
+  /* TV SCREEN / VIRTUAL CAMERA with TV MODE OFF: dimmed but still interactive
+     + still occupying their space, so the card's height never changes with the
+     mode — the property the three card-control-overflow measurements pin. */
+  .tv-bank.dim,
+  .cam-bank.dim { opacity: 0.45; }
+
+  /* The camera cluster is SHORTER than a 153px-fader bank (an XyPad wrap is
+     ~130px), so centre it against the Dist fader rather than letting it hang
+     from the top with a gap underneath. This costs no height: the bank's height
+     is still set by the tallest child, which is the fader. */
+  .cam-bank .bank-faders { align-items: center; }
+  /* The wrapper exists to carry the long explanatory `title` as a real tooltip.
+     It must generate a box for hover hit-testing, so NOT display:contents. */
+  .cam-cell { display: flex; }
 
   .delay-cell {
     position: relative;
