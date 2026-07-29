@@ -22,8 +22,109 @@ import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 import { installRenderSmokeHooks, stepAndReadStats, type RenderStats } from './_render-smoke';
 
+// ── SHARED DRIVE HELPERS ────────────────────────────────────────────────────
+// Every capture in this file is frame-driven, never wall-clocked. See the
+// per-test notes; the rules they all follow are:
+//
+//   * PAUSE the engine rAF loop (installRenderSmokeHooks) so the test owns the
+//     frame count, then call step() a fixed number of times.
+//   * WAIT ON A CONDITION for graph readiness, never a duration — the Y.Doc →
+//     engine reconcile lands between event-loop turns and how many turns it
+//     takes is a RACE (see the PIXELATE note below for the measurements).
+//   * Reading the video-out CANVAS (rather than a node's FBO) additionally
+//     needs the CARD's own rAF blit to land. That loop is independent of the
+//     engine loop and is NOT paused, so wait TWO animation frames — frames, not
+//     milliseconds. With the engine paused those rAFs carry no GL work, so this
+//     is cheap on every renderer.
+
+/** One event-loop turn per poll, driving one engine frame each, until `nodeId`
+ *  is emitting light. Graph-construction readiness — a precondition, not the
+ *  thing under test.
+ *
+ *  ⚠ Scans the WHOLE frame with a stride, never a fixed sample point. A
+ *  centre-block probe silently becomes a 20 s hang the moment a source's
+ *  content sits somewhere else (measured: MIRROR's small off-centre triangle
+ *  misses quarter-point blocks entirely). The readback runs at most a couple of
+ *  times — the poll exits as soon as the graph is up — so full-frame is the
+ *  cheap option here, not the expensive one. */
+async function waitForNodeLit(page: Page, nodeId: string, timeout = 20_000): Promise<void> {
+  await page.waitForFunction((id) => {
+    const w = globalThis as unknown as {
+      __engine?: () => {
+        getDomain: (d: string) => {
+          gl: WebGL2RenderingContext;
+          step: () => void;
+          outputTexture: (n: string) => WebGLTexture | null;
+          res: { width: number; height: number };
+        };
+      };
+    };
+    if (!w.__engine) return false;
+    const vid = w.__engine().getDomain('video');
+    vid.step();
+    const tex = vid.outputTexture(id);
+    if (!tex) return false;
+    const gl = vid.gl;
+    const fb = gl.createFramebuffer()!;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    let lit = false;
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE) {
+      const W = vid.res.width, H = vid.res.height;
+      const px = new Uint8Array(W * H * 4);
+      gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      for (let i = 0; i < px.length; i += 4 * 16) {
+        if (px[i]! > 8 || px[i + 1]! > 8 || px[i + 2]! > 8) { lit = true; break; }
+      }
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(fb);
+    while (gl.getError() !== gl.NO_ERROR) { /* drain */ }
+    return lit;
+  }, nodeId, { timeout });
+}
+
+/** Drive the PAUSED engine exactly `steps` frames, synchronously (one evaluate,
+ *  so nothing can interleave), then let the card's own rAF blit land. Returns
+ *  the exact engine frame delta so the caller can assert the loop really was
+ *  paused. */
+async function driveFrames(page: Page, steps: number): Promise<number> {
+  const delta = await page.evaluate((n) => {
+    const w = globalThis as unknown as {
+      __engine: () => { getDomain: (d: string) => { step: () => void; currentFrameCount: () => number } };
+    };
+    const vid = w.__engine().getDomain('video');
+    const before = vid.currentFrameCount();
+    for (let i = 0; i < n; i++) vid.step();
+    return vid.currentFrameCount() - before;
+  }, steps);
+  // TWO animation frames for the card blit — frames, not milliseconds.
+  await page.evaluate(
+    () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))),
+  );
+  return delta;
+}
+
 test.describe('BACKDRAFT — video feedback generator', () => {
-  test('SHAPES/LINES masks + SHAPES sources -> BACKDRAFT -> OUTPUT renders a live feedback frame', async ({ page, rack, errorWatch }) => {
+  test('SHAPES/LINES masks + SHAPES sources -> BACKDRAFT -> OUTPUT renders a live feedback frame', async ({ page, errorWatch }) => {
+    // FRAME-DRIVEN. This test timed out at the DEFAULT 30 s on CI (#1256 run
+    // 30444817370, and twice before that) — it cost 34.8 s there against a 30 s
+    // budget it never declared. Its only settle was `waitForTimeout(800)`,
+    // which is a different number of frames on every renderer and was the whole
+    // overrun: CI's SwiftShader runs this 6-node patch at well under 10 fps.
+    // Now the loop is paused and the frames are counted, so the cost is the
+    // renderer's true fill rate for FRAMES frames and nothing else.
+    //
+    // The `rack` fixture is dropped deliberately: it navigates, and the pause
+    // hook has to be installed BEFORE the app boots, so this test owns its own
+    // navigation. (Same reason SPATIAL TRANSFORM and PIXELATE below dropped it.)
+    await installRenderSmokeHooks(page);
+    await page.goto('/rack');
+    await page.waitForLoadState('networkidle');
+    // Enough frames for the feedback trails to build and the two masks to bite;
+    // the assertions below are floors on structure, not on trail depth.
+    const FRAMES = 12;
+
     await spawnPatch(
       page,
       [
@@ -52,8 +153,13 @@ test.describe('BACKDRAFT — video feedback generator', () => {
     const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
     await expect(canvas, 'video-out canvas in DOM').toHaveCount(1);
 
-    // Let the feedback loop run a bunch of frames.
-    await page.waitForTimeout(800);
+    // Graph readiness (a condition, not a duration), then an EXACT frame count.
+    // The read below is of the video-out CANVAS on purpose — this test's claim
+    // is that the whole chain reaches OUTPUT, so it must not be shortened to a
+    // read of BACKDRAFT's own FBO. driveFrames() lets the card's blit land.
+    await waitForNodeLit(page, 'bd');
+    const delta = await driveFrames(page, FRAMES);
+    expect(delta, 'drove the exact frame count (engine loop paused)').toBe(FRAMES);
 
     // The output should be non-trivial (feedback trails + masks). Assert a
     // spread of pixel values (variance) rather than pixel-exact — that's
@@ -79,7 +185,29 @@ test.describe('BACKDRAFT — video feedback generator', () => {
 
   });
 
-  test('FREEZE holds the output still (deterministic capture hook)', async ({ page, rack }) => {
+  test('FREEZE holds the output still (deterministic capture hook)', async ({ page }) => {
+    // ⚠ THIS TEST WAS VACUOUS. It asserted only `expect(b).toEqual(a)` on two
+    // samples 200 ms apart — and a BLACK canvas satisfies that perfectly. It
+    // could not tell "FREEZE held the picture still" from "there was never a
+    // picture", so it would have passed with the render dead. Same defect class
+    // as PIXELATE below, found by the same question: why are the green runs
+    // green?
+    //
+    // It now (a) asserts the frozen frame is a REAL picture, and (b) carries
+    // its own NEGATIVE CONTROL — the UNFROZEN loop must first be shown to
+    // CHANGE between samples, so we know the comparison can detect motion at
+    // all before we assert its absence. Without that, "identical" proves
+    // nothing about FREEZE.
+    //
+    // Also frame-driven now: the three wall-clock settles (500/150/200 ms) were
+    // renderer-dependent, and the 200 ms "many rAFs" gap was the load-bearing
+    // one — on a slow renderer it could be ZERO engine frames, which would make
+    // the stillness assertion trivially true for a second reason.
+    await installRenderSmokeHooks(page);
+    await page.goto('/rack');
+    await page.waitForLoadState('networkidle');
+    const FRAMES = 8;
+
     await spawnPatch(
       page,
       [
@@ -95,20 +223,7 @@ test.describe('BACKDRAFT — video feedback generator', () => {
 
     const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
     await expect(canvas).toHaveCount(1);
-    await page.waitForTimeout(500);
-
-    // Freeze BACKDRAFT.
-    await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { params: Record<string, number> }> };
-        __ydoc: { transact: (fn: () => void) => void };
-      };
-      w.__ydoc.transact(() => {
-        const n = w.__patch.nodes['bd'];
-        if (n) n.params.freeze = 1;
-      });
-    });
-    await page.waitForTimeout(150);
+    await waitForNodeLit(page, 'bd');
 
     const sample = (): Promise<number[]> =>
       canvas.evaluate((el) => {
@@ -121,13 +236,49 @@ test.describe('BACKDRAFT — video feedback generator', () => {
         return out;
       });
 
-    const a = await sample();
-    await page.waitForTimeout(200);
-    const b = await sample();
+    const setFreeze = (v: number) =>
+      page.evaluate((fv) => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { params: Record<string, number> }> };
+          __ydoc: { transact: (fn: () => void) => void };
+        };
+        w.__ydoc.transact(() => {
+          const n = w.__patch.nodes['bd'];
+          if (n) n.params.freeze = fv;
+        });
+      }, v);
 
-    // Frozen: the two samples (200ms apart, many rAFs) should be identical.
-    expect(a.length).toBeGreaterThan(0);
-    expect(b).toEqual(a);
+    // ── NEGATIVE CONTROL: the loop is LIVE and the comparison can see it ──
+    // Drive frames with FREEZE OFF; the feedback ring is still filling, so the
+    // output must MOVE. If this fails, the stillness assertion below would have
+    // been meaningless — nothing was ever changing.
+    await driveFrames(page, FRAMES);
+    const live0 = await sample();
+    await driveFrames(page, FRAMES);
+    const live1 = await sample();
+    expect(live0.length, 'canvas readable').toBeGreaterThan(0);
+    const moved = live1.reduce((n, v, i) => n + (v === live0[i] ? 0 : 1), 0);
+    expect(
+      moved,
+      `UNFROZEN the output moves between samples (${moved}/${live0.length} samples changed) — ` +
+      'the control that makes the stillness assertion below meaningful',
+    ).toBeGreaterThan(0);
+
+    // ── AND IT IS A REAL PICTURE, not a black frame ──────────────────────
+    // The old test asserted only equality, which black satisfies.
+    const lit = live1.filter((v) => v > 8).length;
+    expect(
+      lit / live1.length,
+      `the frame under test is LIT, not black (${lit}/${live1.length} samples above 8/255)`,
+    ).toBeGreaterThan(0.02);
+
+    // ── THE ASSERTION: FREEZE holds it still ─────────────────────────────
+    await setFreeze(1);
+    await driveFrames(page, FRAMES);
+    const a = await sample();
+    await driveFrames(page, FRAMES);
+    const b = await sample();
+    expect(b, `FROZEN the output is identical across ${FRAMES} driven frames`).toEqual(a);
   });
 
   test('SPATIAL TRANSFORM (zoom+rotate) changes the feedback geometry vs identity', async ({ page }) => {
@@ -531,7 +682,8 @@ test.describe('BACKDRAFT — video feedback generator', () => {
           if (n) { n.params.mirrorX = mx; n.params.mirrorY = my; n.params.freeze = 0; }
         });
       }, [mx, my]);
-      await page.waitForTimeout(120);
+      // Frames, not milliseconds: drive the fold through the (paused) engine.
+      await driveFrames(page, 4);
       // Freeze for a stable read.
       await page.evaluate(() => {
         const w = globalThis as unknown as {
@@ -540,7 +692,7 @@ test.describe('BACKDRAFT — video feedback generator', () => {
         };
         w.__ydoc.transact(() => { const n = w.__patch.nodes['bd']; if (n) n.params.freeze = 1; });
       });
-      await page.waitForTimeout(120);
+      await driveFrames(page, 2);
     }
 
     // Sample a small grid of luma values + the canvas dims so we can compare
@@ -571,6 +723,7 @@ test.describe('BACKDRAFT — video feedback generator', () => {
       });
     }
 
+    await installRenderSmokeHooks(page);
     await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
@@ -592,13 +745,31 @@ test.describe('BACKDRAFT — video feedback generator', () => {
       ],
     );
     await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(1);
-    await page.waitForTimeout(400);
+    await waitForNodeLit(page, 'bd');
 
     // Baseline: UNFOLDED frame (both mirrors off). Used to identify which
     // half each fold KEEPS (the half that equals the unfolded source).
     await setMirror(0, 0);
     const gUnfolded = await readGrid();
     expect(gUnfolded).not.toBeNull();
+
+    // ⚠ ANTI-VACUITY PRECONDITION. Every symmetry assertion below is of the
+    // form `meanAbsDiff < 12`, and a BLACK frame scores 0 — so all three would
+    // pass with the render dead. (Only the top-vs-bottom KEPT-half assertion,
+    // which is a strict >, could ever have caught that.) Pin here, once, that
+    // there is a real asymmetric picture to fold: it must be LIT, and it must
+    // have STRUCTURE — a uniform fill is trivially symmetric under every fold.
+    {
+      const vs = gUnfolded!.pts.map((p) => p.v);
+      const litFrac = vs.filter((v) => v > 8).length / vs.length;
+      const mean = vs.reduce((a, b) => a + b, 0) / vs.length;
+      const variance = vs.reduce((a, b) => a + (b - mean) ** 2, 0) / vs.length;
+      expect(litFrac, `the unfolded frame is LIT (${(litFrac * 100).toFixed(1)}% of grid samples above 8/255)`)
+        .toBeGreaterThan(0.02);
+      expect(variance, `the unfolded frame has STRUCTURE to fold (variance ${variance.toFixed(1)}) — ` +
+        'a flat frame is symmetric under every mirror and would pass vacuously')
+        .toBeGreaterThan(20);
+    }
 
     // Helper: mean-abs difference between each point and its mirror partner.
     const lumaMap = (g: NonNullable<Awaited<ReturnType<typeof readGrid>>>) => {
@@ -715,21 +886,25 @@ test.describe('BACKDRAFT — video feedback generator', () => {
       };
       w.__ydoc.transact(() => { const n = w.__patch.nodes['bd']; if (n) { n.params.mirrorX = 0; n.params.mirrorXGate = 0; n.params.freeze = 0; } });
     });
-    await page.waitForTimeout(120);
+    // The edge is detected inside engine.step(), and the card's own rAF then
+    // reflects the engine's live value back into the store — so BOTH have to be
+    // driven. driveFrames() does exactly that (N steps, then two animation
+    // frames for the card). With the loop paused an `expect.poll` would spin
+    // forever: polling advances no frames.
+    await driveFrames(page, 2);
+    expect(await readMirrorX(), 'mirrorX starts low').toBeLessThan(0.5);
 
     // First rising edge → mirrorX flips 0 → 1.
     await setGate(1);
-    await expect
-      .poll(readMirrorX, { timeout: 3000, message: 'rising edge on mirror_x_gate flips mirrorX 0→1' })
-      .toBeGreaterThanOrEqual(0.5);
+    await driveFrames(page, 4);
+    expect(await readMirrorX(), 'rising edge on mirror_x_gate flips mirrorX 0→1').toBeGreaterThanOrEqual(0.5);
 
     // Fall, then a SECOND rising edge → mirrorX flips back 1 → 0 (toggle-on-edge).
     await setGate(0);
-    await page.waitForTimeout(120);
+    await driveFrames(page, 2);
     await setGate(1);
-    await expect
-      .poll(readMirrorX, { timeout: 3000, message: 'second rising edge flips mirrorX 1→0' })
-      .toBeLessThan(0.5);
+    await driveFrames(page, 4);
+    expect(await readMirrorX(), 'second rising edge flips mirrorX 1→0').toBeLessThan(0.5);
   });
 
   test('faders route through the patch store', async ({ page, rack }) => {
