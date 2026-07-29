@@ -50,7 +50,11 @@ const VIDEO_PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // mirrorYGate / shapeGate / pureGeoGate params the module edge-detects (clock →
   // delay period; rising edge → flip mirror axis / cycle shape / toggle pure
   // geo). Every CONTINUOUS backdraft input already carries cvScale.
-  backdraft: ['delay_clock', 'mirror_x_gate', 'mirror_y_gate', 'shape_gate', 'pure_geo_gate'],
+  // tv_gate: a GATE onto the synthetic tvGate param the module edge-detects to
+  // CYCLE TV MODE (off -> PURE TV -> CRITICAL). Raw passthrough by design, same
+  // as the mirror/shape gates. The three CONTINUOUS PURE TV inputs (room,
+  // phosphor, drive) all correctly carry cvScale.
+  backdraft: ['delay_clock', 'mirror_x_gate', 'mirror_y_gate', 'shape_gate', 'pure_geo_gate', 'tv_gate'],
   // B3NTB0X mirror_x_gate / mirror_y_gate: GATE inputs onto synthetic
   // mirrorXGate/mirrorYGate params; a rising edge toggles the mirror axis. All
   // continuous *_cv inputs already carry cvScale.

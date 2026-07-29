@@ -91,6 +91,21 @@
      *  silently skip the feature. */
     moduleId?: string;
     paramId?: string;
+    /**
+     * Track length in px. DEFAULT 80 — every existing caller renders exactly
+     * as before, so this is additive.
+     *
+     * Why it is a prop and not just CSS: the thumb offset, the glyph rail and
+     * the tick rail are all positioned from this number in JS/markup, so a
+     * CSS-only `height` override would stretch the track while leaving the
+     * thumb travelling the original 80px — a silently broken control. One
+     * number drives all four.
+     *
+     * A longer track is also a finer control (the same param range spread over
+     * more pixels), which is why a dense card with many continuous params may
+     * want it.
+     */
+    trackHeight?: number;
   }
 
   let {
@@ -108,6 +123,7 @@
     formatValue,
     moduleId,
     paramId,
+    trackHeight = 80,
   }: Props = $props();
 
   // ---------------- MIDI Learn integration (shared factory) ----------------
@@ -344,8 +360,11 @@
     return u ? `${s} ${u}` : s;
   }
 
-  // Track height in pixels (set in CSS). We compute thumb position from frac.
-  const TRACK_HEIGHT = 80;
+  // Track height in pixels. Drives the thumb offset AND the glyph/tick rails,
+  // and is applied to the track element inline — see the `trackHeight` prop for
+  // why all four must come from ONE number. (Drag math reads the live
+  // getBoundingClientRect instead, so it is correct at any height.)
+  let TRACK_HEIGHT = $derived(trackHeight);
   const THUMB_HEIGHT = 14;
   let thumbY = $derived((1 - displayFrac) * (TRACK_HEIGHT - THUMB_HEIGHT));
 
@@ -414,6 +433,7 @@
   <div class="fader-row-inner">
     <div
       class="track"
+      style:height="{trackHeight}px"
       role="slider"
       tabindex="0"
       data-testid={paramId ? `control-${paramId}` : undefined}
@@ -449,7 +469,7 @@
       {/if}
     </div>
     {#if glyphs && glyphs.length > 0}
-      <div class="glyph-rail" aria-hidden="true">
+      <div class="glyph-rail" style:height="{trackHeight}px" aria-hidden="true">
         {#each glyphs as g, i (i)}
           <div
             class="glyph-anchor"
@@ -461,7 +481,7 @@
       </div>
     {/if}
     {#if ticks && ticks.length > 0}
-      <div class="tick-rail" aria-hidden="true">
+      <div class="tick-rail" style:height="{trackHeight}px" aria-hidden="true">
         {#each ticks as t, i (i)}
           <div
             class="tick-anchor"

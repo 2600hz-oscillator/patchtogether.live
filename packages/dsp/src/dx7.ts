@@ -6,8 +6,9 @@
 // worklet's render loop for ART tests (which can't load AudioWorklets in
 // node). Any change to the render math here MUST be ported to dx7-render.ts
 // — otherwise the ART spectral tests will silently start passing on stale
-// expectations. The host-side helpers dx7RateToCoef / dx7LevelToAmp /
-// dx7-algorithms.ts also mirror constants embedded below; keep them aligned.
+// expectations. The algorithm tables and the whole operator-envelope /
+// fixed-frequency law are duplicated inline below and gated by
+// dx7-algorithms.test.ts + dx7-envelope-mirror.test.ts; keep them aligned.
 //
 // Architecture summary (see .myrobots/plans/dx7-and-polyphony.md §7 — Path C
 // pure-TS implementation):
@@ -20,7 +21,12 @@
 //     feedback loop wired?" (the feedback operator varies per algorithm — see
 //     FEEDBACK_TABLE below).
 //   - 4-rate / 4-level envelopes per operator (the DX7's signature scheme;
-//     "rates" go 0..99 where 99 is fastest).
+//     "rates" go 0..99 where 99 is fastest). The envelope runs in the dB
+//     domain: it IDLES AND ENDS AT L4, rises to L1, falls to L2 then L3, and
+//     HOLDS AT L3 for as long as the gate is high; note-off jumps to the
+//     release segment, which targets L4. Decays are linear in dB; the attack
+//     is msfa's asymptotic log-domain law. See the mirrored law block at the
+//     bottom of this file (and dx7-syx.ts) for the sources.
 //   - Voice allocator: round-robin with steal-oldest when all voices busy.
 //   - Input: 10-channel polyPitchGate (5 lanes of pitch + gate). Each lane
 //     drives one voice; if a lane re-gates we trigger a new note (steal the
@@ -226,12 +232,15 @@ function buildAlgorithms(): Algorithm[] {
 // --------------------------------------------------------------
 
 interface OpPatch {
-  // Envelope: rates 0..99 → per-second coefficients; levels 0..99 → 0..1 amp.
-  rateCoefs: [number, number, number, number]; // 1/τ for each segment
-  levels: [number, number, number, number];    // target amplitudes 0..1
+  // Envelope, in the DX7's own dB domain: rates 0..99 → dB per second (linear
+  // in dB); levels 0..99 → target dB (0 dB = unity, DX7_EG_FLOOR_DB = silence).
+  ratesDbPerSec: [number, number, number, number];
+  levelsDb: [number, number, number, number];
   ratio: number;
   detuneFactor: number;
   fixedMode: boolean;
+  /** FIXED-mode frequency in Hz. Meaningless unless `fixedMode`. */
+  fixedHz: number;
   outputAmp: number;  // op level → linear amplitude
 }
 
@@ -243,16 +252,30 @@ interface VoicePatch {
 }
 
 // Default patch: all ops as quiet sines, algorithm 1. Replaced by host on
-// patch load.
+// patch load (the module's factory sends a real patch immediately), so this
+// only ever sounds in tests and in the window before the first patch message.
+//
+// The rate slots are DX7 RATE BYTES (0..99) now, not the raw 1/τ coefficients
+// they held before the authentic-envelope PR. R4 = 80 is chosen so the release
+// still takes ~30 ms, matching the old placeholder — `dx7-ampenv.test.ts`'s
+// deactivate guard drives THIS patch and asserts a voice frees inside ~0.5 s
+// of release, which a slow R4 would break.
 function defaultPatch(): VoicePatch {
   const ops: OpPatch[] = [];
   for (let i = 0; i < 6; i++) {
     ops.push({
-      rateCoefs: [60, 30, 10, 30],
-      levels: [1, 0.7, 0.5, 0],
+      ratesDbPerSec: [
+        dx7RateToDbPerSec(99), dx7RateToDbPerSec(50),
+        dx7RateToDbPerSec(30), dx7RateToDbPerSec(80),
+      ],
+      levelsDb: [
+        dx7LevelToDb(99), dx7LevelToDb(70),
+        dx7LevelToDb(50), dx7LevelToDb(0),
+      ],
       ratio: 1,
       detuneFactor: 1,
       fixedMode: false,
+      fixedHz: C4_HZ,
       outputAmp: i === 0 ? 1 : 0, // only op1 audible
     });
   }
@@ -277,9 +300,14 @@ interface Voice {
   startSample: number;
   /** Per-op phase 0..1. */
   phase: Float64Array;
-  /** Per-op envelope value (linear amplitude 0..1). */
+  /** Per-op envelope value in dB — the authoritative EG state. Float64: at
+   *  rate 0 the per-sample step is ~5e-6 dB, under float32 epsilon here. */
+  envDb: Float64Array;
+  /** Per-op envelope value (linear amplitude 0..1), derived from `envDb`. */
   envValue: Float32Array;
-  /** Per-op envelope segment index 0..3 (attack-segment-active). */
+  /** Per-op envelope segment index: 0..2 run while the gate is high, 3 is the
+   *  release (entered on note-off only — reaching it with the gate still high
+   *  is the L3 HOLD), 4 means finished. */
   envSeg: Int32Array;
   /** Whether the voice is in release (gate-off). */
   releasing: boolean;
@@ -303,6 +331,7 @@ function makeVoice(): Voice {
     hz: C4_HZ,
     startSample: -1,
     phase: new Float64Array(NUM_OPS),
+    envDb: new Float64Array(NUM_OPS),
     envValue: new Float32Array(NUM_OPS),
     envSeg: new Int32Array(NUM_OPS),
     releasing: false,
@@ -326,6 +355,8 @@ interface PatchMessage {
     operators: Array<{
       r: number[]; l: number[]; ratio: number; detune: number;
       detuneFactor: number; level: number; fixedMode: boolean; velocitySens: number;
+      /** Optional — absent on patches saved before the fixed-frequency fix. */
+      fixedHz?: number;
     }>;
     transpose: number;
   };
@@ -373,12 +404,16 @@ interface PatchMessage {
 //      held note and chop every tail on EVERY click.
 //
 // VALUE DOMAIN — get this wrong and you have a ~1000x envelope error. This
-// worklet stores DERIVED values (rateCoefs = rateToCoef(rate), levels and
-// outputAmp = levelToAmp(level)), not the raw DX7 bytes. The host therefore
-// sends the RAW 0..99 byte for r0..r3 / l0..l3 / level and applyOpParam runs
-// the SAME transform applyPatch runs; it sends the already-resolved FLOAT for
-// ratio (host dx7Ratio(coarse,fine)) and detuneFactor (host dx7DetuneFactor),
-// which are stored verbatim.
+// worklet stores DERIVED values, not the raw DX7 bytes:
+//   ratesDbPerSec = dx7RateToDbPerSec(rate)   (dB per second)
+//   levelsDb      = dx7LevelToDb(level)       (dB, 0 dB = unity)
+//   outputAmp     = levelToAmp(level)         (LINEAR amplitude — the operator
+//                                              output level is not an EG level)
+// The host therefore sends the RAW 0..99 byte for r0..r3 / l0..l3 / level and
+// applyOpParam runs the SAME transform applyPatch runs; it sends the
+// already-resolved FLOAT for ratio (host dx7Ratio(coarse,fine)), detuneFactor
+// (host dx7DetuneFactor) and fixedHz (host dx7FixedHz(coarse,fine)), which are
+// stored verbatim.
 // --------------------------------------------------------------
 
 /** The operator fields an `opParam` message may address. */
@@ -388,7 +423,8 @@ type Dx7OpField =
   | 'level'                        // operator output level, RAW 0..99
   | 'ratio'                        // resolved float (host dx7Ratio)
   | 'detuneFactor'                 // resolved float (host dx7DetuneFactor)
-  | 'fixedMode';                   // 0 | 1
+  | 'fixedMode'                    // 0 | 1
+  | 'fixedHz';                     // resolved float (host dx7FixedHz), > 0
 
 interface VoiceMessage {
   type: 'voice';
@@ -490,27 +526,33 @@ class Dx7Processor extends AudioWorkletProcessor {
     const ops: OpPatch[] = [];
     for (let i = 0; i < 6; i++) {
       const op = v.operators[i] ?? v.operators[0]!;
-      // r/l 0..99 → coefs/amps. The DX7 envelope semantics: levels go from
-      // segment to segment (l[0] is the peak after attack, l[3] is the
-      // sustain level pre-release). Rates control time-constants.
-      const rates: [number, number, number, number] = [
-        rateToCoef(op.r[0] ?? 99),
-        rateToCoef(op.r[1] ?? 50),
-        rateToCoef(op.r[2] ?? 30),
-        rateToCoef(op.r[3] ?? 50),
+      // r/l 0..99 → dB-domain rates/levels. DX7 envelope semantics: the four
+      // levels are the segment TARGETS — L1 is the post-attack peak, L3 is the
+      // level held while the gate is high, and L4 is BOTH the idle/start level
+      // and the release target.
+      const ratesDbPerSec: [number, number, number, number] = [
+        dx7RateToDbPerSec(op.r[0] ?? 99),
+        dx7RateToDbPerSec(op.r[1] ?? 50),
+        dx7RateToDbPerSec(op.r[2] ?? 30),
+        dx7RateToDbPerSec(op.r[3] ?? 50),
       ];
-      const levels: [number, number, number, number] = [
-        levelToAmp(op.l[0] ?? 99),
-        levelToAmp(op.l[1] ?? 70),
-        levelToAmp(op.l[2] ?? 50),
-        levelToAmp(op.l[3] ?? 0),
+      const levelsDb: [number, number, number, number] = [
+        dx7LevelToDb(op.l[0] ?? 99),
+        dx7LevelToDb(op.l[1] ?? 70),
+        dx7LevelToDb(op.l[2] ?? 50),
+        dx7LevelToDb(op.l[3] ?? 0),
       ];
       ops.push({
-        rateCoefs: rates,
-        levels,
+        ratesDbPerSec,
+        levelsDb,
         ratio: op.ratio,
         detuneFactor: op.detuneFactor,
         fixedMode: op.fixedMode,
+        // Patches saved before `fixedHz` existed carry only the derived ratio.
+        fixedHz:
+          typeof op.fixedHz === 'number' && Number.isFinite(op.fixedHz) && op.fixedHz > 0
+            ? op.fixedHz
+            : dx7FixedHzFromRatio(op.ratio),
         outputAmp: levelToAmp(op.level),
       });
     }
@@ -522,7 +564,9 @@ class Dx7Processor extends AudioWorkletProcessor {
     };
     if (!reset) return;
     // Reset all voices when patch changes — the operator levels & ratios
-    // shift and stale envelope state would sound wrong.
+    // shift and stale envelope state would sound wrong. The DX7 envelope IDLES
+    // AT L4 (which is also where the release lands), so that is the reset
+    // value, not zero.
     for (const voice of this.voices) {
       voice.active = false;
       voice.releasing = false;
@@ -531,7 +575,8 @@ class Dx7Processor extends AudioWorkletProcessor {
       voice.ampEnv.state = 0; // EnvState.Idle
       voice.ampEnv.value = 0;
       for (let i = 0; i < NUM_OPS; i++) {
-        voice.envValue[i] = 0;
+        voice.envDb[i] = ops[i]!.levelsDb[3];
+        voice.envValue[i] = dx7EgAmpFromDb(voice.envDb[i]!);
         voice.envSeg[i] = 0;
         voice.phase[i] = 0;
         voice.opOut[i] = 0;
@@ -557,20 +602,24 @@ class Dx7Processor extends AudioWorkletProcessor {
     const o = this.patch.operators[idx];
     if (!o) return;
     switch (field) {
-      case 'r0': o.rateCoefs[0] = rateToCoef(value); break;
-      case 'r1': o.rateCoefs[1] = rateToCoef(value); break;
-      case 'r2': o.rateCoefs[2] = rateToCoef(value); break;
-      case 'r3': o.rateCoefs[3] = rateToCoef(value); break;
-      case 'l0': o.levels[0] = levelToAmp(value); break;
-      case 'l1': o.levels[1] = levelToAmp(value); break;
-      case 'l2': o.levels[2] = levelToAmp(value); break;
-      case 'l3': o.levels[3] = levelToAmp(value); break;
+      case 'r0': o.ratesDbPerSec[0] = dx7RateToDbPerSec(value); break;
+      case 'r1': o.ratesDbPerSec[1] = dx7RateToDbPerSec(value); break;
+      case 'r2': o.ratesDbPerSec[2] = dx7RateToDbPerSec(value); break;
+      case 'r3': o.ratesDbPerSec[3] = dx7RateToDbPerSec(value); break;
+      case 'l0': o.levelsDb[0] = dx7LevelToDb(value); break;
+      case 'l1': o.levelsDb[1] = dx7LevelToDb(value); break;
+      case 'l2': o.levelsDb[2] = dx7LevelToDb(value); break;
+      case 'l3': o.levelsDb[3] = dx7LevelToDb(value); break;
       // Operator MUTE is exactly this message with value 0 — see the protocol
       // comment above for why it must never be a whole-patch re-send.
       case 'level': o.outputAmp = levelToAmp(value); break;
       case 'ratio': o.ratio = value; break;
       case 'detuneFactor': o.detuneFactor = value; break;
       case 'fixedMode': o.fixedMode = value !== 0; break;
+      // FIXED-mode frequency, in Hz, already resolved by the host's
+      // dx7FixedHz(coarse, fine). Guarded because a non-positive value would
+      // silence a fixed operator outright rather than mistune it.
+      case 'fixedHz': if (value > 0) o.fixedHz = value; break;
       default: break;
     }
   }
@@ -619,7 +668,11 @@ class Dx7Processor extends AudioWorkletProcessor {
     voice.laneOwner = laneOwner;
     for (let i = 0; i < NUM_OPS; i++) {
       voice.phase[i] = 0;
-      voice.envValue[i] = 0;
+      // The DX7 envelope STARTS at L4 — the same level it ends on — not at
+      // silence. For the (very common) L4 = 0 patch that is the floor anyway;
+      // for a patch with L4 > 0 the operator is already sounding at note-on.
+      voice.envDb[i] = this.patch.operators[i]!.levelsDb[3];
+      voice.envValue[i] = dx7EgAmpFromDb(voice.envDb[i]!);
       voice.envSeg[i] = 0; // start in attack
       voice.opOut[i] = 0;
     }
@@ -631,7 +684,9 @@ class Dx7Processor extends AudioWorkletProcessor {
   private noteOff(voice: Voice): void {
     voice.releasing = true;
     for (let i = 0; i < NUM_OPS; i++) {
-      voice.envSeg[i] = 3; // jump to release segment
+      // msfa's `keydown(false)` → `advance(3)`: the release is entered from
+      // WHEREVER the envelope had got to, including mid-attack.
+      voice.envSeg[i] = 3;
     }
     voice.ampEnv.triggerSoft(false);
   }
@@ -724,8 +779,12 @@ class Dx7Processor extends AudioWorkletProcessor {
         // whole op sweep, below).
         for (let opIdx = 0; opIdx < NUM_OPS; opIdx++) {
           const op = ops[opIdx]!;
-          // Update envelope (4-segment).
-          updateEnvelope(v, opIdx, op, this.isr);
+          // Update envelope (4-segment, dB domain; holds at L3 until note-off).
+          dx7EgTick(
+            v.envDb, v.envSeg, opIdx,
+            op.levelsDb, op.ratesDbPerSec, v.releasing, this.isr,
+          );
+          v.envValue[opIdx] = dx7EgAmpFromDb(v.envDb[opIdx]!);
 
           // Phase modulator: sum modulator op outputs (use this-block's
           // computed values for any op < current; previous-sample for any
@@ -745,7 +804,8 @@ class Dx7Processor extends AudioWorkletProcessor {
           // Phase advance.
           const ratio = op.ratio;
           const detune = op.detuneFactor;
-          const opHz = op.fixedMode ? ratio * C4_HZ : v.hz * ratio * detune;
+          // FIXED mode ignores the note pitch, the ratio table AND detune.
+          const opHz = op.fixedMode ? op.fixedHz : v.hz * ratio * detune;
           v.phase[opIdx] = (v.phase[opIdx]! + opHz * this.isr) % 1;
 
           // Sine + phase modulation. Modulation index scaled so that PM~3
@@ -794,15 +854,9 @@ class Dx7Processor extends AudioWorkletProcessor {
 }
 
 // --------------------------------------------------------------
-// Helpers (must match dx7-syx.ts dx7RateToCoef / dx7LevelToAmp; duplicated
-// inline because the worklet bundle can't import from packages/web).
+// Helpers (must match dx7-syx.ts dx7LevelToAmp; duplicated inline because the
+// worklet bundle can't import from packages/web).
 // --------------------------------------------------------------
-
-function rateToCoef(rate: number): number {
-  const r = clampInt(rate, 0, 99);
-  const tau = 8 * Math.exp(-0.09 * r);
-  return 1 / Math.max(tau, 0.0005);
-}
 
 function levelToAmp(level: number): number {
   const l = clampInt(level, 0, 99);
@@ -818,39 +872,152 @@ function clampInt(v: number, lo: number, hi: number): number {
   return i;
 }
 
-/**
- * 4-segment envelope update for one operator. Uses 1-pole exponential
- * approach toward the segment's target level; advances to the next segment
- * when "close enough" (within 1% of target) — matches the DX7's behaviour
- * of jumping past segments whose target is below the current value (the
- * "direct jump" quirk).
- *
- * Segments:
- *   0: attack (target = l[0] = peak post-attack amplitude)
- *   1: decay 1 (target = l[1])
- *   2: decay 2 / sustain (target = l[2])
- *   3: release (target = l[3]; voice envSeg latched here on note-off)
- */
-function updateEnvelope(v: Voice, opIdx: number, op: OpPatch, dt: number): void {
-  const seg = v.envSeg[opIdx]!;
-  const target = op.levels[seg]!;
-  const coef = op.rateCoefs[seg]!;
-  const cur = v.envValue[opIdx]!;
-  // Single-pole approach. The factor (1 - exp(-coef * dt)) collapses to
-  // ≈ coef * dt for small steps; we use the exact form for accuracy at
-  // small rates.
-  const k = 1 - Math.exp(-coef * dt);
-  const next = cur + (target - cur) * k;
-  v.envValue[opIdx] = next;
+// ==============================================================
+// THE OPERATOR ENVELOPE + FIXED-FREQUENCY LAW.
+//
+// MIRRORED VERBATIM from `packages/web/src/lib/audio/dx7-syx.ts`, which
+// carries the full derivation and its two authoritative sources (Dexed/msfa
+// `env.cc` + hexter's hardware-measured EG tables). The region between the two
+// `dx7-envelope-mirror` markers must be TEXTUALLY IDENTICAL on both sides
+// modulo the `export ` keyword — `dx7-envelope-mirror.test.ts` extracts both
+// blocks, normalises them, requires equality, AND evaluates this copy to
+// cross-check it numerically against the web one. Do NOT edit this block
+// alone; edit the pair. Do NOT paraphrase the comments either — they are part
+// of the compared text.
+// ==============================================================
 
-  // Advance segment when within 1% of target (and not at release stage).
-  if (seg < 3) {
-    const diff = Math.abs(target - next);
-    const range = Math.max(1e-6, Math.max(target, cur));
-    if (diff / range < 0.01) {
-      v.envSeg[opIdx] = seg + 1;
+// dx7-envelope-mirror:start
+
+/** 20·log10(2) — one octave of amplitude, in dB. */
+const DX7_DB_PER_OCTAVE = 6.020599913279624;
+
+/** dB per unit of the 0..99 operator LEVEL scale; level 99 = 0 dB = unity. */
+const DX7_EG_LEVEL_DB_PER_STEP = 0.75;
+
+/** Level 0 — the envelope's silence floor, in dB. Reaching it means zero. */
+const DX7_EG_FLOOR_DB = (0 - 99) * DX7_EG_LEVEL_DB_PER_STEP;
+
+/** The attack-compensation floor: a rising segment starting below this snaps
+ *  up to it first. msfa's `jumptarget = 1716` back-converts to EG level 31,
+ *  which is exactly hexter's "rise quickly to 31, then continue normally"
+ *  (and why hexter's `rise_percent[0..31]` are all 1e-5 — levels below 31
+ *  cost no time). */
+const DX7_EG_ATTACK_JUMP_DB = (31 - 99) * DX7_EG_LEVEL_DB_PER_STEP;
+
+/** hexter's MEASURED ratio of full-scale decay time to full-scale attack time
+ *  at the SAME rate byte: `decay_duration[r] / rise_duration[r]`, a flat 8.01
+ *  across rates 0..70 (it drifts only where the measurement resolution runs
+ *  out). This is the attack's one calibration constant. */
+const DX7_EG_ATTACK_SPEEDUP = 8.01;
+
+/** The rising asymptote. msfa's rising law is
+ *  `level_ += (((17 << 24) - level_) >> 24) * inc_` — the increment scales
+ *  with the distance to a ceiling — but WHERE that ceiling lands on OUR level
+ *  scale is ambiguous, because ours spans 74.25 dB and msfa's ~90: pinning our
+ *  level 99 to msfa's unity-gain reference (`14 << 24`) gives 18.06 dB, and
+ *  pinning it to msfa's maximum EG output gives 12.04 dB. So we take the form
+ *  from msfa and the CALIBRATION from hexter's hardware measurement, solving
+ *    -FLOOR / (DB_PER_OCTAVE · ln(1 - JUMP/CEIL)) = ATTACK_SPEEDUP
+ *  for the ceiling. The answer, 13.92 dB, sits inside the msfa bracket — which
+ *  is the cross-check that the two sources describe the same curve. */
+const DX7_EG_ATTACK_CEIL_DB =
+  -DX7_EG_ATTACK_JUMP_DB /
+  (Math.exp(-DX7_EG_FLOOR_DB / (DX7_DB_PER_OCTAVE * DX7_EG_ATTACK_SPEEDUP)) - 1);
+
+/** hexter's MEASURED seconds for a full-scale decay at rate 0
+ *  (`dx7_voice_eg_rate_decay_duration[0]`). The rate law's one calibration
+ *  constant; the shape of the curve is msfa's closed form. */
+const DX7_EG_RATE0_FULL_SCALE_S = 317.487;
+
+/** dB/s contributed by one unit of the quantised rate's mantissa. */
+const DX7_EG_RATE_UNIT_DB_PER_S =
+  -DX7_EG_FLOOR_DB / DX7_EG_RATE0_FULL_SCALE_S / 4;
+
+/** Envelope LEVEL byte (0..99) → dB, on the same scale `dx7LevelToAmp` uses. */
+function dx7LevelToDb(level: number): number {
+  return (clampInt(level, 0, 99) - 99) * DX7_EG_LEVEL_DB_PER_STEP;
+}
+
+/** Envelope RATE byte (0..99) → dB per second, LINEAR IN dB (msfa's
+ *  `inc_ = (4 + (qrate & 3)) << (2 + LG_N + (qrate >> 2))`). Quantised: the
+ *  99 rate bytes collapse onto 64 distinct speeds, exactly as on the hardware. */
+function dx7RateToDbPerSec(rate: number): number {
+  const q = Math.min(63, (clampInt(rate, 0, 99) * 41) >> 6);
+  return (4 + (q & 3)) * Math.pow(2, q >> 2) * DX7_EG_RATE_UNIT_DB_PER_S;
+}
+
+/** Envelope dB → linear amplitude. The floor is hard zero, so a segment that
+ *  lands on level 0 is truly silent and the voice allocator can free the slot. */
+function dx7EgAmpFromDb(db: number): number {
+  return db <= DX7_EG_FLOOR_DB ? 0 : Math.pow(10, db / 20);
+}
+
+/**
+ * Advance ONE operator's envelope by `dt` seconds, in place.
+ *
+ * `envSeg[i]` is the DX7 segment index: 0..2 run while the gate is high, 3 is
+ * the release (entered only on note-off), 4 means finished. Reaching 3 with
+ * the gate still high is the SUSTAIN — the envelope holds at L3 and this
+ * function is a no-op until `releasing` goes true.
+ *
+ * `envDb` must be a Float64Array: at rate 0 the per-sample step is ~5e-6 dB,
+ * which is below float32 epsilon at these magnitudes and would stall.
+ */
+function dx7EgTick(
+  envDb: Float64Array,
+  envSeg: Int32Array,
+  i: number,
+  levelsDb: readonly number[],
+  ratesDbPerSec: readonly number[],
+  releasing: boolean,
+  dt: number,
+): void {
+  let seg = envSeg[i]!;
+  if (seg >= 4) return;                  // finished
+  if (seg === 3 && !releasing) return;   // HOLD at L3 while the gate is high
+  let db = envDb[i]!;
+  const target = levelsDb[seg]!;
+  const rate = ratesDbPerSec[seg]!;
+  if (db < target) {
+    // RISING — msfa's asymptotic log-domain attack, after the level-31 jump.
+    if (db < DX7_EG_ATTACK_JUMP_DB) db = DX7_EG_ATTACK_JUMP_DB;
+    db += rate * ((DX7_EG_ATTACK_CEIL_DB - db) / DX7_DB_PER_OCTAVE) * dt;
+    if (db >= target) {
+      db = target;
+      seg += 1;
+    }
+  } else {
+    // FALLING (and the degenerate already-at-target case) — linear in dB.
+    db -= rate * dt;
+    if (db <= target) {
+      db = target;
+      seg += 1;
     }
   }
+  envDb[i] = db;
+  envSeg[i] = seg;
 }
+
+/** FIXED-frequency operator pitch in Hz: `10^((coarse & 3) + fine/100)`, so
+ *  1 Hz .. 9.772 kHz. msfa: `logfreq = (4458616 * ((coarse & 3) * 100 + fine))
+ *  >> 3` in Q24 log2 — 4458616/8 = 557327 ≈ (1<<24)·log2(10)/100. The note
+ *  pitch, the ratio table and detune are ALL ignored in this mode. */
+function dx7FixedHz(coarse: number, fine: number): number {
+  return Math.pow(10, (coarse & 3) + clampInt(fine, 0, 99) / 100);
+}
+
+/** Legacy fallback for patches saved before `fixedHz` existed, which stored
+ *  only `dx7Ratio(coarse, fine) = base · (1 + fine/100)`. Exact whenever
+ *  fine = 0 (the overwhelmingly common cartridge case) and for coarse 0/1;
+ *  genuinely ambiguous above that (ratio 3.0 is both coarse 3 / fine 0 and
+ *  coarse 2 / fine 50), where we take the largest integer base ≤ ratio. */
+function dx7FixedHzFromRatio(ratio: number): number {
+  const r = Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
+  const base = r < 1 ? 0 : Math.min(31, Math.floor(r));
+  const fine = clampInt((r / (base === 0 ? 0.5 : base) - 1) * 100, 0, 99);
+  return dx7FixedHz(base, fine);
+}
+
+// dx7-envelope-mirror:end
 
 registerProcessor('dx7', Dx7Processor);

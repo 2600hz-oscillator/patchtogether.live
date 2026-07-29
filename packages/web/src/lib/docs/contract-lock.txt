@@ -164,11 +164,17 @@ b3ntb0x param tbc 0..1 linear default=1
 b3ntb0x param tube_bloom 0..1 linear default=0.35
 backdraft meta domain=video
 backdraft in b cv param=b cvScale=linear
+backdraft in cam_dist cv param=camDist cvScale=linear
+backdraft in cam_pos_x cv param=camPosX cvScale=linear
+backdraft in cam_pos_y cv param=camPosY cvScale=linear
+backdraft in cam_tilt_x cv param=camTiltX cvScale=linear
+backdraft in cam_tilt_y cv param=camTiltY cvScale=linear
 backdraft in chroma cv param=chroma cvScale=linear
 backdraft in darken video
 backdraft in darken_cv cv param=darken cvScale=linear
 backdraft in delay cv param=delay cvScale=linear
 backdraft in delay_clock cv param=delayClock
+backdraft in drive cv param=drive cvScale=linear
 backdraft in feedback cv param=feedback cvScale=linear
 backdraft in g cv param=g cvScale=linear
 backdraft in in_a video
@@ -181,18 +187,28 @@ backdraft in mirror_y_gate cv param=mirrorYGate
 backdraft in mix cv param=mix cvScale=linear
 backdraft in offsetx cv param=offsetX cvScale=linear
 backdraft in offsety cv param=offsetY cvScale=linear
+backdraft in phosphor cv param=phosphor cvScale=linear
 backdraft in pixelate cv param=pixelate cvScale=linear
 backdraft in pure_geo_gate cv param=pureGeoGate
 backdraft in r cv param=r cvScale=linear
+backdraft in room cv param=room cvScale=linear
 backdraft in rotate cv param=rotate cvScale=linear
 backdraft in shape_gate cv param=shapeGate
+backdraft in tv_gate cv param=tvGate
 backdraft in zoom cv param=zoom cvScale=linear
 backdraft out out video
 backdraft param b -1..2 linear default=1
+backdraft param bezel 0..1 linear default=0.5
+backdraft param camDist 0..1 linear default=0.5
+backdraft param camPosX -0.5..0.5 linear default=0
+backdraft param camPosY -0.5..0.5 linear default=0
+backdraft param camTiltX -0.2..0.2 linear default=0
+backdraft param camTiltY -0.2..0.2 linear default=0
 backdraft param chroma -1..2 linear default=1
 backdraft param darken 0..1 linear default=1
 backdraft param delay 0..500 linear default=16
 backdraft param delayClock 0..1 linear default=0
+backdraft param drive 0..1 linear default=0.5
 backdraft param feedback 0..2 linear default=0.85
 backdraft param flicker 0..5 discrete default=0
 backdraft param freeze 0..1 linear default=0
@@ -206,13 +222,17 @@ backdraft param mirrorYGate 0..1 linear default=0
 backdraft param mix 0..1 linear default=0.5
 backdraft param offsetX -0.1..0.1 linear default=0
 backdraft param offsetY -0.1..0.1 linear default=0
+backdraft param phosphor 0..1 linear default=0
 backdraft param pixelate 0..1 linear default=0
 backdraft param pureGeo 0..1 linear default=0
 backdraft param pureGeoGate 0..1 linear default=0
 backdraft param r -1..2 linear default=1
+backdraft param room 0..1 linear default=1
 backdraft param rotate -30..30 linear default=0
 backdraft param shape 0..4 discrete default=0
 backdraft param shapeGate 0..1 linear default=0
+backdraft param tvGate 0..1 linear default=0
+backdraft param tvMode 0..2 discrete default=0
 backdraft param zoom 0.4..1.6 linear default=1
 bentbox meta domain=video
 bentbox in bloom_cv cv param=bloom cvScale=linear

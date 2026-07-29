@@ -13,7 +13,14 @@
 
 import type { DX7Voice } from './dx7-syx';
 import { DX7_ALGORITHMS } from './dx7-algorithms';
-import { dx7RateToCoef, dx7LevelToAmp } from './dx7-syx';
+import {
+  dx7LevelToAmp,
+  dx7LevelToDb,
+  dx7RateToDbPerSec,
+  dx7EgAmpFromDb,
+  dx7EgTick,
+  dx7FixedHzFromRatio,
+} from './dx7-syx';
 
 const TWO_PI = Math.PI * 2;
 const C4_HZ = 261.625565;
@@ -42,32 +49,44 @@ export function renderDx7Note(voice: DX7Voice, opts: RenderOptions): Float32Arra
 
   const algo = DX7_ALGORITHMS[Math.max(0, Math.min(31, (opts.algorithmOverride ?? voice.algorithm) - 1))]!;
 
-  // Per-op patch state.
+  // Per-op patch state. MIRRORS the worklet's `applyPatch` exactly.
   const ops = voice.operators.map((op) => ({
-    rateCoefs: [
-      dx7RateToCoef(op.r[0]), dx7RateToCoef(op.r[1]),
-      dx7RateToCoef(op.r[2]), dx7RateToCoef(op.r[3]),
+    ratesDbPerSec: [
+      dx7RateToDbPerSec(op.r[0]), dx7RateToDbPerSec(op.r[1]),
+      dx7RateToDbPerSec(op.r[2]), dx7RateToDbPerSec(op.r[3]),
     ] as [number, number, number, number],
-    levels: [
-      dx7LevelToAmp(op.l[0]), dx7LevelToAmp(op.l[1]),
-      dx7LevelToAmp(op.l[2]), dx7LevelToAmp(op.l[3]),
+    levelsDb: [
+      dx7LevelToDb(op.l[0]), dx7LevelToDb(op.l[1]),
+      dx7LevelToDb(op.l[2]), dx7LevelToDb(op.l[3]),
     ] as [number, number, number, number],
     ratio: op.ratio,
     detuneFactor: op.detuneFactor,
     fixedMode: op.fixedMode,
+    fixedHz:
+      typeof op.fixedHz === 'number' && Number.isFinite(op.fixedHz) && op.fixedHz > 0
+        ? op.fixedHz
+        : dx7FixedHzFromRatio(op.ratio),
     outputAmp: dx7LevelToAmp(op.level),
   }));
 
   const fbAmount = voice.feedback / 7;
   const hz = C4_HZ * Math.pow(2, (opts.midi - 60) / 12);
 
-  // Per-op state.
+  // Per-op state. `envDb` is the authoritative envelope state (Float64 —
+  // see dx7EgTick); `envValue` is the derived linear amplitude.
   const phase = new Float64Array(6);
+  const envDb = new Float64Array(6);
   const envValue = new Float32Array(6);
   const envSeg = new Int32Array(6);
   const opOut = new Float32Array(6);
   let fbMem = 0;
   let releasing = false;
+
+  // The DX7 envelope IDLES at L4 — the same level the release lands on.
+  for (let k = 0; k < 6; k++) {
+    envDb[k] = ops[k]!.levelsDb[3];
+    envValue[k] = dx7EgAmpFromDb(envDb[k]!);
+  }
 
   const releaseAtSample = opts.holdGate === false ? Math.floor(totalSamples / 2) : totalSamples + 1;
 
@@ -77,21 +96,12 @@ export function renderDx7Note(voice: DX7Voice, opts: RenderOptions): Float32Arra
       for (let k = 0; k < 6; k++) envSeg[k] = 3;
     }
 
-    // Update envelopes.
+    // Update envelopes. Segments 0..2 run while the gate is high; reaching 3
+    // with the gate still high HOLDS at L3 until `releasing`.
     for (let opIdx = 0; opIdx < 6; opIdx++) {
       const op = ops[opIdx]!;
-      const seg = envSeg[opIdx]!;
-      const target = op.levels[seg]!;
-      const coef = op.rateCoefs[seg]!;
-      const cur = envValue[opIdx]!;
-      const k = 1 - Math.exp(-coef * dt);
-      const next = cur + (target - cur) * k;
-      envValue[opIdx] = next;
-      if (seg < 3) {
-        const diff = Math.abs(target - next);
-        const range = Math.max(1e-6, Math.max(target, cur));
-        if (diff / range < 0.01) envSeg[opIdx] = seg + 1;
-      }
+      dx7EgTick(envDb, envSeg, opIdx, op.levelsDb, op.ratesDbPerSec, releasing, dt);
+      envValue[opIdx] = dx7EgAmpFromDb(envDb[opIdx]!);
     }
 
     // Render ops in op1..op6 order. Modulators sourced from this-block (for
@@ -111,7 +121,8 @@ export function renderDx7Note(voice: DX7Voice, opts: RenderOptions): Float32Arra
         modIn += fbMem * fbAmount;
       }
 
-      const opHz = op.fixedMode ? op.ratio * C4_HZ : hz * op.ratio * op.detuneFactor;
+      // FIXED mode ignores the note pitch, the ratio table AND detune.
+      const opHz = op.fixedMode ? op.fixedHz : hz * op.ratio * op.detuneFactor;
       phase[opIdx] = (phase[opIdx]! + opHz * dt) % 1;
       const ph = phase[opIdx]! * TWO_PI + modIn * Math.PI;
       const sample = Math.sin(ph) * envValue[opIdx]! * op.outputAmp;
