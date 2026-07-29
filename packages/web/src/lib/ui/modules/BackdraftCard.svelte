@@ -715,9 +715,11 @@
            ONE row is what the 6hp width buys, and it is the whole reason there
            is room for a display: the five banks MEASURE 635.8px worst case
            (TV OFF) + 4×24px gaps = 731.8 of the 1050px inner width, leaving
-           ~318px of slack — enough that #1223's VIRTUAL CAMERA bank (~198px +
-           one more gap) joins this row rather than forcing a second one, with
-           ~96px still spare. The row still WRAPS (flex-wrap), so a narrower host
+           ~318px of slack — enough that #1223's VIRTUAL CAMERA bank joins this
+           row rather than forcing a second one. That was verified by injecting
+           the bank and measuring, not by arithmetic: one line and zero added
+           height at 198px AND at 281px.
+           The row still WRAPS (flex-wrap), so a narrower host
            reflows instead of spilling past the card edge — and the resulting
            height blow-up is loudly caught by card-control-overflow, which is
            the correct failure mode. -->
@@ -839,13 +841,26 @@
    *   flank width           (1050 − 320 display − 2×20 gap) / 2     =  345
    *   widest flank row      FLICKER (label + 6 segments)            =  325.2
    *
-   * So #1223's camera bank joins the SAME row with ~96px still spare — it costs
-   * ~18px of height, not a second row — and the widest switch row clears its
-   * flank. (That ~198px assumes #1223 lands its short xLabel/yLabel fix; the
-   * long-caption form measures ~281px and would wrap here. An earlier ESTIMATE
-   * of 830px for the banks put 6hp out of reach and argued for 7hp; the direct
-   * measurement says otherwise, and 6hp is markedly denser — at 7hp the same
-   * content leaves ~157px of gap between every pair of banks.)
+   * #1223's VIRTUAL CAMERA bank was then injected into the live row and
+   * MEASURED, rather than trusted to that sum. It joins the SAME line, and it
+   * costs NOTHING in height:
+   *
+   *   198px wide (short xLabel form)  →  1 line, row 180px, 0 overflow
+   *   281px wide (long-caption form)  →  1 line, row 180px, 0 overflow
+   *   198px AND 18px taller           →  1 line, row 198px, 0 overflow
+   *
+   * The height result is worth stating plainly, because the published estimate
+   * for that bank was "+18px": that figure assumed the DEFAULT 80px faders, and
+   * at 80px a fader bank (112px) really is shorter than an XyPad cluster
+   * (~130px). Here the faders are 153px, so a fader bank is 179-180px and the
+   * camera cluster fits INSIDE it with room to spare. #1223 rebases onto this
+   * card with no restructure at either width — and even the pessimistic
+   * taller-bank case does not overflow, because .top-band is `flex: 1` and
+   * gives the height back.
+   *
+   * (An earlier ESTIMATE of 830px for the banks put 6hp out of reach and argued
+   * for 7hp; the direct measurement says 602-636, and 6hp is markedly denser —
+   * at 7hp the same content leaves ~157px of gap between every pair of banks.)
    * Nothing caps hp; RACKLINE lane tiles are hp-invariant (SHELL_TILE_W = 192)
    * so the lane is unaffected, and the dock full-view pane (min-width 900px)
    * scrolls horizontally at this width — as it already does for pentemelodica,
@@ -1005,8 +1020,9 @@
    * to edge so the width is USED rather than pooling as a right-hand margin. The
    * `gap` is therefore only the WRAP THRESHOLD, which is why it is 24 and not
    * 30: it costs nothing visually and buys headroom for #1223's VIRTUAL CAMERA
-   * bank (~198px + one more gap → 953.8 of 1050, ~96px spare) so that lands on
-   * THIS row rather than forcing a second one.
+   * bank. That bank was injected into this row and measured — it joins the same
+   * line at 198px AND at 281px, with zero added height and zero overflow (see
+   * the .card note above for why "+18px" does not apply at a 153px fader).
    *
    * It is flex-WRAP, not a fixed grid, so a narrower host reflows onto a second
    * line instead of running off the card edge — card-control-overflow catches
