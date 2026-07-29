@@ -113,28 +113,29 @@
   }
 
   // ── FADER LENGTH IS DERIVED FROM THE TIER, NOT PICKED ────────────────────
-  // The rack pins this card to EXACTLY 2u = 360px (min AND max height), so any
-  // height the content does not use is dead grey on every instance. Everything
-  // above the fader banks is fixed:
+  // The rack pins this card to EXACTLY 3u = 540px (min AND max height), so any
+  // height the content does not use is dead grey on EVERY instance of the card.
+  // The fader length is therefore the free variable that makes the content
+  // meet the tier — solve for it, never guess it:
   //
-  //   49  chrome    (border 1 + .vcard pad-top 18 + title 16 + margin 8 + 6)
-  //   64  switches  (two 22px mode rows + two 10px gaps)
-  //   11  banks     (border-top 1 + padding-top 10)
-  //   25  footer    (.bd-body pad-bottom 10 + .vcard pad-bottom 14 + border 1)
-  //  ───
-  //  149  →  211px left for a bank, and a bank is
-  //          title 10 + gap 4 + [track H + 2px border + 4 gap + ~12 label]
-  //          = H + 32, so H = 179 fills the tier exactly.
+  //    49  chrome     (border 1 + .vcard pad-top 18 + title 16 + margin 8 + 6)
+  //    66  switches   (three 22px mode rows)
+  //    48  body gaps  (three 16px gaps between the four .bd-body children)
+  //    19  banks      (border-top 1 + padding-top 18)
+  //    28  row gap    (between the two bank rows)
+  //    25  footer     (.bd-body pad-bottom 10 + .vcard pad-bottom 14 + border 1)
+  //   ───
+  //   235  fixed  →  305px for TWO bank rows, and a bank is
+  //                  title 10 + gap 4 + [track H + 2 border + 4 gap + ~12 label]
+  //                  = H + 32, so 2(H + 32) = 305  →  H = 120.
   //
-  // 176 leaves a 3px cushion for sub-pixel label metrics. The card-control-
-  // overflow gate is what actually holds this honest — if a future control row
+  // Two rows is what keeps the faders SHORT: one row would need H ≈ 273 to fill
+  // the same tier. Splitting the banks buys back the length, which is why the
+  // layout and the fader size are one decision, not two.
+  //
+  // card-control-overflow is what holds this honest: if a future control row
   // pushes past the tier it goes red rather than silently clipping.
-  //
-  // The long throw is a genuine control win too, not just space-filling: 176px
-  // spreads each param over 2.2× the pixels an 80px fader gives, which matters
-  // on a feedback module where FB and ZOOM are usably adjustable only near
-  // their top end.
-  const FADER_H = 176;
+  const FADER_H = 120;
 
   // ---- MIRROR X / MIRROR Y kaleidoscope toggles ----
   // Each button flips a boolean param (mirrorX / mirrorY). A rising edge on
@@ -530,7 +531,9 @@
             onclick={togglePureGeo}
           >PURE GEO</button>
         </div>
+      </div>
 
+      <div class="mode-row">
         <div class="btn-group tv-group" data-testid="backdraft-tv-row">
           <button
             type="button"
@@ -591,6 +594,9 @@
            old card. The row WRAPS (it is flex-wrap), so a narrower host or a
            longer bank reflows instead of spilling past the card edge. -->
       <div class="banks" data-testid="backdraft-controls">
+        <!-- TWO ROWS, split by what the control DOES to the loop.
+             ROW 1 — the SIGNAL half: how much comes back, and what happens to
+             its colour on the way round, and where that is keyed. -->
         <div class="bank-row">
           <section class="bank">
             <h4 class="bank-title">LOOP</h4>
@@ -622,7 +628,11 @@
               <Fader value={p('darken')}  min={pmin('darken')}  max={pmax('darken')}  defaultValue={pdef('darken')}  label="Drk" curve="linear" onchange={setParam('darken')}  moduleId={id} paramId="darken" trackHeight={FADER_H} />
             </div>
           </section>
+        </div>
 
+        <!-- ROW 2 — the SPATIAL half: where the frame goes next pass, and the
+             bounded-screen model that frames it. -->
+        <div class="bank-row">
           <section class="bank">
             <h4 class="bank-title">GEOMETRY</h4>
             <div class="bank-faders">
@@ -724,12 +734,12 @@
    * pick the tier from the MEASURED content, never round up "for headroom",
    * because headroom in a pinned tier is not headroom, it is a hole. */
   .card {
-    width: 900px;
-    min-height: 360px;
+    width: 540px;
+    min-height: 540px;
     overflow: hidden;
-    /* Flex column so .bd-body can CLAIM the leftover tier height (below).
-     * .stripe is absolute and the patch-triggers are absolute, so the only
-     * flex items are the title and .bd-body. */
+    /* Flex column so .bd-body can CLAIM the full tier height (below). .stripe
+     * and the patch-triggers are absolute, so the only flex items are the
+     * title and .bd-body. */
     display: flex;
     flex-direction: column;
   }
@@ -742,11 +752,14 @@
    * is exactly the switch-section / fader-section split a hardware panel has.
    * `flex: 1` + `margin-top: auto` does it with NO magic number, so it stays
    * correct if the tier or the control set changes. */
+  /* The 16px gap is part of the tier arithmetic next to FADER_H — the leftover
+   * height goes into BREATHING ROOM between the rows rather than into longer
+   * faders or a dead block at the bottom. */
   .bd-body {
     padding: 6px 14px 10px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 16px;
     flex: 1;
     min-height: 0;
   }
@@ -829,17 +842,24 @@
   .banks {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 28px;
     border-top: 1px solid var(--border);
-    padding-top: 10px;
+    padding-top: 18px;
   }
   /* All five banks sit on ONE line at the 5hp tier (~830px of the 872px inner
    * width). It is flex-WRAP, not a fixed grid, so a narrower host reflows the
    * banks onto a second line instead of running them off the card edge. */
+  /* The two rows carry almost the same total control width (303px of faders on
+   * row 1, 299px on row 2), so space-between makes them span the card edge to
+   * edge and align with each other — the width is USED instead of pooling as a
+   * right-hand margin. `flex-wrap` stays as the graceful-degradation path: a
+   * narrower host reflows rather than spilling, and card-control-overflow
+   * catches the height blow-up that would cause. */
   .bank-row {
     display: flex;
     flex-wrap: wrap;
     align-items: flex-start;
+    justify-content: space-between;
     gap: 14px 30px;
   }
   .bank {
