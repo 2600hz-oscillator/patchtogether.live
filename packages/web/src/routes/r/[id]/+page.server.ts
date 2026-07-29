@@ -14,10 +14,18 @@ import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { getRackspace, isMember, RACKSPACE_MAX_MEMBERS } from '$lib/server/rackspaces';
 import { getInviteCode, verifyInviteCode } from '$lib/server/invites';
+import { dbRead } from '$lib/server/db-availability';
 
 export const load: PageServerLoad = async ({ locals, params, url, request }) => {
   const { userId } = locals.auth();
-  const rackspace = await getRackspace(params.id);
+  // Every DB call below goes through dbRead: an UNREACHABLE database degrades
+  // to a 503 ("try again shortly") instead of an opaque 500, while a SQLSTATE
+  // error (bad query / missing column) still bubbles to a 500 so the live-smoke
+  // canary keeps catching schema bugs. See $lib/server/db-availability.
+  //
+  // Incident: 2026-07-28, Neon compute-quota exhaustion returned HTTP 402 on
+  // every tier — including prod — and every rackspace URL served a 500 for ~24h.
+  const rackspace = await dbRead('getRackspace', () => getRackspace(params.id));
 
   // Diagnostic — one JSON line per /r/[id] load so we can grep CF Pages tail.
   // Tracks invite presence + verify outcome + authed-ness. Deliberately NOT
@@ -74,7 +82,7 @@ export const load: PageServerLoad = async ({ locals, params, url, request }) => 
     };
   }
 
-  const member = await isMember(rackspace.id, userId);
+  const member = await dbRead('isMember', () => isMember(rackspace.id, userId));
   logLoad('skipped', member ? 'member' : 'non-member');
   // We surface ONLY the current user's own Clerk userId (`currentUserId`),
   // never another user's. The per-user layout system (Stage B PR B-b)
@@ -96,6 +104,8 @@ export const load: PageServerLoad = async ({ locals, params, url, request }) => 
     currentUserId: userId,
     // Members get the invite code so they can share an anon-access URL.
     // Non-members shouldn't (they don't yet have a relationship to the rack).
+    // NOT wrapped in dbRead: invite codes are HMAC-derived from the rackspace
+    // id (lib/server/invites.ts) with no datastore behind them.
     inviteCode: member ? await getInviteCode(rackspace.id) : null,
   };
 };
