@@ -8,6 +8,7 @@
 // e2e only has to show that the GPU renders the same thing.
 // `toybox-feedback.ts` (tunnelTap / simulateTunnel) is the precedent.
 
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import {
   BACKDRAFT_FLICKER_COUNT,
@@ -25,9 +26,17 @@ import {
   BACKDRAFT_TV_BEZEL_MIN,
   BACKDRAFT_TV_BEZEL_MAX,
   BACKDRAFT_TV_MODE_COUNT,
+  BACKDRAFT_TV_MODE_LABELS,
   BACKDRAFT_TEXTURE_UNITS,
   BACKDRAFT_FPS,
   BACKDRAFT_TV_BEAM_SOFT,
+  BACKDRAFT_CAM_TILT_MAX_DEG,
+  BACKDRAFT_CAM_TILT_RANGE,
+  BACKDRAFT_CAM_POS_RANGE,
+  BACKDRAFT_CAM_DIST_MIN,
+  BACKDRAFT_CAM_DIST_MAX,
+  backdraftCamDistance,
+  backdraftCamInverseHomography,
   backdraftTvBeam,
   backdraftTvRefreshMix,
   BACKDRAFT_TV_AGC_MIN,
@@ -441,14 +450,27 @@ describe('BACKDRAFT PURE TV — the contraction contract', () => {
     }
   });
 
-  it('N-BEZEL — the BEZEL fader is FLOORED so its minimum cannot delete the nest', () => {
-    expect(backdraftTvBezel(0)).toBe(BACKDRAFT_TV_BEZEL_MIN);
+  it('N-BEZEL — the border fader reaches 0 px, with the shipped look mid-travel', () => {
+    // The set's border is a real thickness control: exactly 0 at the bottom (a
+    // borderless screen) and the shipped appearance at the CENTRE of travel, so
+    // it opens both thinner and thicker than the default.
+    expect(backdraftTvBezel(0)).toBe(0);
     expect(backdraftTvBezel(1)).toBeCloseTo(BACKDRAFT_TV_BEZEL_MAX, 9);
-    expect(BACKDRAFT_TV_BEZEL_MIN).toBeGreaterThan(0);
-    // A fader whose minimum deletes the feature would be a bug: bezel = 0 must
-    // still resolve a real nest rather than collapsing to one band.
-    const r = simulateBackdraftTv({ size: 320, frames: 80, bezel: 0 });
-    expect(tvBands(r).length).toBeGreaterThanOrEqual(4);
+    expect(BACKDRAFT_TV_BEZEL_MIN).toBe(0);
+    const mid = backdraftTvBezel(0.5);
+    expect(mid).toBeGreaterThan(backdraftTvBezel(0.25));
+    expect(mid).toBeLessThan(backdraftTvBezel(0.75));
+    // The default sits at that centre.
+    expect(backdraftDef.params.find((p) => p.id === 'bezel')?.defaultValue).toBe(0.5);
+
+    // And state the TRADE rather than hiding it: the bezel is the only
+    // high-contrast boundary between level k and level k+1, so at 0 the nest
+    // stops reading as frames-within-frames and becomes a smooth zoom. That is
+    // now reachable ON PURPOSE, so it is asserted rather than prevented.
+    const bare = simulateBackdraftTv({ size: 320, frames: 80, bezel: 0 });
+    const framed = simulateBackdraftTv({ size: 320, frames: 80, bezel: 0.5 });
+    expect(tvBands(bare).length).toBeLessThan(tvBands(framed).length);
+    expect(tvBands(framed).length).toBeGreaterThanOrEqual(5);
   }, 30_000);
 });
 
@@ -567,6 +589,226 @@ describe('BACKDRAFT — the VIRTUAL REFRESH (the seam that cascades)', () => {
     expect(bands, `disjoint seam bands down the centre column (got ${bands})`)
       .toBeGreaterThanOrEqual(2);
   }, 60_000);
+});
+
+describe('BACKDRAFT — VIRTUAL CAMERA ORIENTATION', () => {
+  /** Apply a row-major inverse homography to a camera-frame point. */
+  function apply(H: number[], qx: number, qy: number): { x: number; y: number; z: number } {
+    const z = H[6]! * qx + H[7]! * qy + H[8]!;
+    return { x: (H[0]! * qx + H[1]! * qy + H[2]!) / z, y: (H[3]! * qx + H[4]! * qy + H[5]!) / z, z };
+  }
+
+  it('V1 — DEAD-ON is EXACTLY the old affine map, at every distance', () => {
+    // The whole default path depends on this: if the homography does not
+    // degenerate algebraically, every N-series assertion about the shipped look
+    // is quietly measuring a different map. Distance must drop out entirely
+    // when the camera is square-on.
+    for (const fill of [0.35, 0.75, 0.95]) {
+      for (const rotateDeg of [0, 25, -140]) {
+        for (const dist of [0, 0.5, 1]) {
+          const H = backdraftCamInverseHomography({ dist }, fill, rotateDeg);
+          const th = (rotateDeg * Math.PI) / 180;
+          const cs = Math.cos(th), sn = Math.sin(th);
+          for (const [qx, qy] of [[0, 0], [0.3, -0.2], [-0.45, 0.5], [0.6, 0.6]]) {
+            const got = apply(H, qx!, qy!);
+            // The old inverse: p = R(-phi) * q / s
+            const wantX = (qx! * cs + qy! * sn) / fill;
+            const wantY = (-qx! * sn + qy! * cs) / fill;
+            expect(got.x).toBeCloseTo(wantX, 9);
+            expect(got.y).toBeCloseTo(wantY, 9);
+          }
+        }
+      }
+    }
+  });
+
+  it('V2 — tilt KEYSTONES: a rectangle images as a trapezoid', () => {
+    // Off-axis, the two vertical edges of the screen subtend different heights.
+    // That difference IS the keystone, and it is what makes the nest curl.
+    const H = backdraftCamInverseHomography({ tiltX: BACKDRAFT_CAM_TILT_RANGE, dist: 0 }, 0.75, 0);
+    // Walk the left and right thirds of the frame and compare how much screen
+    // plane each unit of camera frame covers.
+    const spanAt = (qx: number): number =>
+      Math.abs(apply(H, qx, 0.4).y - apply(H, qx, -0.4).y);
+    const left = spanAt(-0.4), right = spanAt(0.4);
+    expect(Math.abs(left - right) / Math.max(left, right)).toBeGreaterThan(0.05);
+    // …and with NO tilt the same measurement is symmetric.
+    const flat = backdraftCamInverseHomography({ dist: 0.2 }, 0.75, 0);
+    const fl = Math.abs(apply(flat, -0.4, 0.4).y - apply(flat, -0.4, -0.4).y);
+    const fr = Math.abs(apply(flat, 0.4, 0.4).y - apply(flat, 0.4, -0.4).y);
+    expect(Math.abs(fl - fr)).toBeLessThan(1e-9);
+  });
+
+  it('V3 — DIST sets how hard a given tilt keystones', () => {
+    // The fader's whole job. Short distance = wide angle = violent keystone;
+    // long = telephoto = gentle. Same tilt on both sides.
+    const asym = (dist: number): number => {
+      const H = backdraftCamInverseHomography({ tiltX: BACKDRAFT_CAM_TILT_RANGE, dist }, 0.75, 0);
+      const span = (qx: number): number => Math.abs(apply(H, qx, 0.4).y - apply(H, qx, -0.4).y);
+      const l = span(-0.4), r = span(0.4);
+      return Math.abs(l - r) / Math.max(l, r);
+    };
+    expect(asym(0)).toBeGreaterThan(asym(1));
+  });
+
+  it('V4 — camera POSITION moves the view without bending it', () => {
+    // Translation alone is a shift, not a keystone — the bend comes from TILT.
+    // Combining them is how you look at the set from above and off to one side.
+    const H = backdraftCamInverseHomography({ posX: BACKDRAFT_CAM_POS_RANGE, posY: -BACKDRAFT_CAM_POS_RANGE, dist: 0.5 }, 0.75, 0);
+    const centre = apply(H, 0, 0);
+    expect(Math.hypot(centre.x, centre.y)).toBeGreaterThan(0.1);
+    const span = (qx: number): number => Math.abs(apply(H, qx, 0.4).y - apply(H, qx, -0.4).y);
+    expect(Math.abs(span(-0.4) - span(0.4))).toBeLessThan(1e-9);
+  });
+
+  it('V5 — the DIST law is geometric and monotone', () => {
+    expect(backdraftCamDistance(0)).toBeCloseTo(BACKDRAFT_CAM_DIST_MIN, 9);
+    expect(backdraftCamDistance(1)).toBeCloseTo(BACKDRAFT_CAM_DIST_MAX, 9);
+    expect(backdraftCamDistance(0.5))
+      .toBeCloseTo(Math.sqrt(BACKDRAFT_CAM_DIST_MIN * BACKDRAFT_CAM_DIST_MAX), 9);
+    let prev = -1;
+    for (let d = 0; d <= 1 + 1e-9; d += 0.02) {
+      const v = backdraftCamDistance(d);
+      expect(v).toBeGreaterThan(prev);
+      prev = v;
+    }
+  });
+
+  it('V6 — never returns a non-finite map, over the whole reachable product', () => {
+    // Edge-on is singular; the model must fall back to the dead-on affine
+    // inverse rather than emitting NaNs into the shader.
+    for (const tiltX of [-1, -0.5, 0, 0.5, 1]) {
+      for (const tiltY of [-1, 0, 1]) {
+        for (const posX of [-1, 0, 1]) {
+          for (const posY of [-1, 1]) {
+            for (const dist of [0, 1]) {
+              for (const fill of [0.35, 0.95]) {
+                const H = backdraftCamInverseHomography(
+                  { tiltX, tiltY, posX, posY, dist }, fill, 0,
+                );
+                expect(H).toHaveLength(9);
+                for (const v of H) expect(Number.isFinite(v)).toBe(true);
+              }
+            }
+          }
+        }
+      }
+    }
+    expect(BACKDRAFT_CAM_TILT_MAX_DEG).toBeLessThan(90);
+  });
+
+  it('V9 — moving the camera MOVES the nest\'s vanishing point', () => {
+    // The accumulation point of the frame-in-frame-in-frame IS the fixed point
+    // of the map, so re-aiming the camera re-composes the whole nest rather
+    // than just sliding the picture — and because the map is ITERATED, that
+    // move then recurses through the network one level per DELAY, exactly as
+    // room motion and the refresh seam do.
+    //
+    // Fixed points of a projective map are its eigenvectors; power-iterating
+    // the inverse homography converges to the dominant one, which is the point
+    // the nest accumulates on.
+    const vanishing = (o: Parameters<typeof backdraftCamInverseHomography>[0]): { x: number; y: number } => {
+      // Hi is the INVERSE map, which EXPANDS away from the accumulation point,
+      // so power-iterating it converges to the vanishing DIRECTION (z -> 0)
+      // rather than the point we want. Invert it to get the forward map, which
+      // contracts onto the accumulation point, and iterate that instead.
+      const M = backdraftCamInverseHomography(o, 0.75, 0);
+      const [a, b, c, d, e, f, g, h, i2] = M as unknown as number[];
+      const A = e! * i2! - f! * h!, B = -(d! * i2! - f! * g!), C = d! * h! - e! * g!;
+      const det = a! * A + b! * B + c! * C;
+      const iv = 1 / det;
+      const H = [
+        A * iv, (c! * h! - b! * i2!) * iv, (b! * f! - c! * e!) * iv,
+        B * iv, (a! * i2! - c! * g!) * iv, (c! * d! - a! * f!) * iv,
+        C * iv, (b! * g! - a! * h!) * iv, (a! * e! - b! * d!) * iv,
+      ];
+      let v = [0.37, 0.21, 1];
+      for (let i = 0; i < 400; i++) {
+        const n = [
+          H[0]! * v[0]! + H[1]! * v[1]! + H[2]! * v[2]!,
+          H[3]! * v[0]! + H[4]! * v[1]! + H[5]! * v[2]!,
+          H[6]! * v[0]! + H[7]! * v[1]! + H[8]! * v[2]!,
+        ];
+        const m = Math.hypot(n[0]!, n[1]!, n[2]!) || 1;
+        v = [n[0]! / m, n[1]! / m, n[2]! / m];
+      }
+      return { x: v[0]! / v[2]!, y: v[1]! / v[2]! };
+    };
+
+    // Dead-on, the nest accumulates dead centre.
+    const centre = vanishing({});
+    expect(Math.hypot(centre.x, centre.y)).toBeLessThan(1e-6);
+
+    // Re-aiming moves it — that is the re-composition.
+    const tilted = vanishing({ tiltX: BACKDRAFT_CAM_TILT_RANGE, dist: 0 });
+    expect(Math.hypot(tilted.x - centre.x, tilted.y - centre.y)).toBeGreaterThan(0.05);
+    const shifted = vanishing({ posX: BACKDRAFT_CAM_POS_RANGE, posY: -BACKDRAFT_CAM_POS_RANGE });
+    expect(Math.hypot(shifted.x - centre.x, shifted.y - centre.y)).toBeGreaterThan(0.05);
+
+    // …and it TRACKS the control: every tilt gives its own framing, so a CV
+    // ramp sweeps the composition instead of snapping between a few of them.
+    // NOT asserted as monotone in distance — at short camera distances the
+    // vanishing point starts far off-frame and comes CLOSER as tilt grows,
+    // which is correct and was worth measuring rather than assuming.
+    const seen: { x: number; y: number }[] = [];
+    // Inside the joystick's own (constrained) travel — beyond +-0.2 the model
+    // clamps, so sampling past it would compare identical framings.
+    for (const t of [0.04, 0.08, 0.12, 0.16, 0.2]) {
+      seen.push(vanishing({ tiltX: t, dist: 0.5 }));
+    }
+    for (let i = 1; i < seen.length; i++) {
+      const d = Math.hypot(seen[i]!.x - seen[i - 1]!.x, seen[i]!.y - seen[i - 1]!.y);
+      expect(d, `tilt step ${i} re-composes the nest`).toBeGreaterThan(1e-3);
+    }
+  });
+
+  it('V7 — the contract: 5 params + 5 CV ports, all neutral by default', () => {
+    const p = (id: string) => backdraftDef.params.find((q) => q.id === id);
+    // Constrained travel: the keystone compounds, so the joysticks stop where
+    // the nest is still readable.
+    for (const id of ['camTiltX', 'camTiltY']) {
+      expect(p(id)?.min).toBe(-BACKDRAFT_CAM_TILT_RANGE);
+      expect(p(id)?.max).toBe(BACKDRAFT_CAM_TILT_RANGE);
+      expect(p(id)?.defaultValue, `${id} is neutral by default`).toBe(0);
+    }
+    for (const id of ['camPosX', 'camPosY']) {
+      expect(p(id)?.min).toBe(-BACKDRAFT_CAM_POS_RANGE);
+      expect(p(id)?.max).toBe(BACKDRAFT_CAM_POS_RANGE);
+      expect(p(id)?.defaultValue, `${id} is neutral by default`).toBe(0);
+    }
+    expect(p('camDist')?.defaultValue).toBe(0.5);
+    for (const id of ['cam_tilt_x', 'cam_tilt_y', 'cam_pos_x', 'cam_pos_y', 'cam_dist']) {
+      const i = backdraftDef.inputs.find((q) => q.id === id);
+      expect(i?.cvScale?.mode, `${id} is CV-able`).toBe('linear');
+      expect(backdraftDef.docs?.inputs?.[id]).toBeTruthy();
+    }
+    for (const id of ['camTiltX', 'camTiltY', 'camPosX', 'camPosY', 'camDist']) {
+      expect(backdraftDef.docs?.controls?.[id]).toBeTruthy();
+    }
+  });
+
+  it('V10 — the CARD\'s joystick ranges match the DEF (no hardcoded +-1)', () => {
+    // This is a real bug that shipped past every other gate: the def was
+    // constrained to +-0.2 / +-0.5 while the card still passed xMin={-1}
+    // xMax={1} to both XyPads, so the UI showed -- and WROTE -- values the
+    // contract forbids. Nothing caught it, because the def tests read the def
+    // and the e2e never touched the pads. Pin the card source instead.
+    const card = readFileSync(
+      new URL('../../ui/modules/BackdraftCard.svelte', import.meta.url), 'utf8',
+    );
+    // The pads must be driven by the exported constants, not by literals.
+    expect(card).toContain('xMin={-BACKDRAFT_CAM_TILT_RANGE}');
+    expect(card).toContain('yMax={BACKDRAFT_CAM_TILT_RANGE}');
+    expect(card).toContain('xMin={-BACKDRAFT_CAM_POS_RANGE}');
+    expect(card).toContain('yMax={BACKDRAFT_CAM_POS_RANGE}');
+    // …and no XyPad may carry a hardcoded unit range.
+    expect(card).not.toContain('xMin={-1}');
+    expect(card).not.toContain('yMin={-1}');
+  });
+
+  it('V8 — the faceplate calls mode 1 VIRTUAL CAMERA', () => {
+    expect(BACKDRAFT_TV_MODE_LABELS[1]).toBe('VIRTUAL CAMERA');
+  });
 });
 
 describe('BACKDRAFT — GL resource discipline', () => {
