@@ -27,7 +27,14 @@ import { listMetaModuleDefs } from '$lib/meta/module-registry';
 import type { ModuleFace } from '$lib/graph/types';
 import { STRICT_FACES } from './strict-faces';
 import { dockFacePlan, dockPlanControls, type FaceDefLike } from './curated-face';
-import { shellCellFor, shellCellKeys, typesWithShellCells } from './shell-cells';
+import {
+  panelCellKeys,
+  shellCellFor,
+  shellCellKeys,
+  shellPanelProbes,
+  typesWithShellCells,
+  type ShellPanelProbe,
+} from './shell-cells';
 
 interface CellDef extends FaceDefLike {
   type: string;
@@ -74,6 +81,82 @@ describe('shell cells — COVERAGE (no inert cell can render on a promoted face)
         expect(shellCellFor(def.type, ctl), `${def.type}: ${ctl.key}`).toBeNull();
       }
     }
+  });
+});
+
+describe('shell cells — PANEL probes (PF-14: the parity sweep stays registry-driven)', () => {
+  // A bespoke panel has no natural interaction the faces-parity sweep could
+  // guess, and the alternative to declaring one is special-casing the module
+  // inside the e2e — which forfeits the property that makes the whole gate
+  // work: STRICT_FACES enumerates itself, so every future face auto-enrols with
+  // zero test edits. So the panel DECLARES how to poke it and what must change.
+  //
+  // These are BROWSER-FREE integrity checks on that declaration. The DOM twin
+  // is faces-parity's `panel` driveCell branch, which reads the SAME projection
+  // off `window.__shellPanelProbes`.
+
+  /** The pure clauses a probe must satisfy, driven over the live registry AND
+   *  over synthetic probes below (no module declares a panel until dx7 PR 6, so
+   *  the live sweep is vacuous today and would stay green on a `return []`). */
+  function probeProblems(where: string, probe: ShellPanelProbe | undefined): string[] {
+    const problems: string[] = [];
+    if (!probe) return [`${where}: panel cell declares no operability probe`];
+    if (!probe.testid.trim()) problems.push(`${where}: probe has a blank testid`);
+    // THE HARD RULE. faces-parity asserts EXACT MULTISET EQUALITY between the
+    // dock's `control-*` testids and the def's param ids, so a `control-` testid
+    // inside a panel is an unbacked EXTRA control that fails the whole face.
+    if (probe.testid.startsWith('control-')) {
+      problems.push(
+        `${where}: probe targets '${probe.testid}' — a panel must NEVER emit a ` +
+          `'control-<paramId>' testid. faces-parity asserts exact multiset equality ` +
+          `against the def's params, so that reads as an extra control with no def backing.`,
+      );
+    }
+    if (!probe.effect.key.trim()) problems.push(`${where}: probe effect names no node.data key`);
+    return problems;
+  }
+
+  it('every registered PANEL cell declares a usable probe', () => {
+    const problems: string[] = [];
+    for (const type of typesWithShellCells()) {
+      for (const key of panelCellKeys(type)) {
+        const probe = shellPanelProbes()[type]?.[key];
+        problems.push(...probeProblems(`${type}:${key}`, probe));
+      }
+    }
+    expect(problems.join('\n'), 'panel probe drift — faces-parity could not drive the panel').toBe('');
+  });
+
+  it('shellPanelProbes() projects EXACTLY the registered panel cells', () => {
+    const projected = shellPanelProbes();
+    for (const type of typesWithShellCells()) {
+      const keys = panelCellKeys(type);
+      expect(Object.keys(projected[type] ?? {}).sort(), type).toEqual(keys);
+      // …and a non-panel cell never leaks into the probe map.
+      for (const key of shellCellKeys(type)) {
+        if (keys.includes(key)) continue;
+        expect(projected[type]?.[key], `${type}:${key} is not a panel`).toBeUndefined();
+      }
+    }
+  });
+
+  it('NEGATIVE CONTROL: the probe clauses actually fail on a malformed probe', () => {
+    const ok: ShellPanelProbe = {
+      testid: 'dx7-op-onoff-2',
+      action: 'click',
+      effect: { kind: 'data', key: 'opOn[1]', expect: 'changed' },
+    };
+    expect(probeProblems('x:y', ok)).toEqual([]);
+
+    expect(probeProblems('x:y', undefined)).toHaveLength(1);
+    expect(probeProblems('x:y', { ...ok, testid: '  ' })).toHaveLength(1);
+    // The hard rule, proven to bite.
+    const leaked = probeProblems('x:y', { ...ok, testid: 'control-algorithm' });
+    expect(leaked).toHaveLength(1);
+    expect(leaked[0]).toContain('must NEVER emit');
+    expect(
+      probeProblems('x:y', { ...ok, effect: { kind: 'data-rev', key: '' } }),
+    ).toHaveLength(1);
   });
 });
 

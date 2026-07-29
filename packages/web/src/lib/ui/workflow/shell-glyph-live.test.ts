@@ -33,7 +33,11 @@ import { cloudseedDef } from '$lib/audio/modules/cloudseed';
 
 // ── 1. binding rules ─────────────────────────────────────────────────────────
 
-function faceDef(partial: Partial<GlyphDefLike> & { glyph: 'scope' | 'meter' | 'envelope' | 'waveform' | 'none' }): GlyphDefLike {
+function faceDef(
+  partial: Partial<GlyphDefLike> & {
+    glyph: 'scope' | 'meter' | 'envelope' | 'waveform' | 'algorithm' | 'none';
+  },
+): GlyphDefLike {
   return {
     face: { order: [], glyph: partial.glyph },
     outputs: partial.outputs ?? [],
@@ -196,6 +200,37 @@ describe('glyphBinding — pure live-source resolution', () => {
       release: 'release',
     });
     expect(glyphBinding(lfoDef)).toEqual({ kind: 'wave-morph', shapeParamId: 'shape', depthParamId: 'depth' });
+  });
+
+  it('algorithm glyph + an algorithm param → TOPOLOGY, BEATING the audio-out short-circuit', () => {
+    // THE ORDERING IS THE MECHANISM (PF-15). Every topology-bearing module is a
+    // sound SOURCE, so it always has a primary audio output — resolve the
+    // `if (audioOut) return live-audio` short-circuit first and this branch is
+    // dead code that silently paints the very trace it exists to replace: at
+    // 64 px an FM trace looks the same for every patch AND flatlines whenever
+    // nothing is gated, which is most of the time you are looking at a rack.
+    const def = faceDef({
+      glyph: 'algorithm',
+      outputs: [{ id: 'out_l', type: 'audio' }, { id: 'out_r', type: 'audio' }],
+      params: [{ id: 'algorithm', min: 1, max: 32 }, { id: 'feedback', min: 0, max: 7 }],
+    });
+    expect(glyphBinding(def)).toEqual({ kind: 'algorithm', paramId: 'algorithm' });
+
+    // Sanity: the SAME def with any other glyph does take the audio short-circuit,
+    // so the assertion above is about the branch order and nothing else.
+    expect(glyphBinding({ ...def, face: { order: [], glyph: 'scope' } })).toEqual({
+      kind: 'live-audio',
+      portId: 'out_l',
+    });
+  });
+
+  it('algorithm glyph WITHOUT an algorithm param falls back to static, never to a trace', () => {
+    const def = faceDef({
+      glyph: 'algorithm',
+      outputs: [{ id: 'out_l', type: 'audio' }],
+      params: [{ id: 'level', min: 0, max: 1 }],
+    });
+    expect(glyphBinding(def)).toEqual({ kind: 'static' });
   });
 
   it('primaryAudioOutPortId picks the first AUDIO output, skipping CV', () => {

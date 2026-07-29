@@ -34,9 +34,11 @@ import { listMetaModuleDefs } from '$lib/meta/module-registry';
 import type { ControlFamily, ModuleFace, ParamDef } from '$lib/graph/types';
 import { staticKey, type LegendEntry } from '$lib/docs/control-doc-resolver';
 import { STRICT_FACES } from './strict-faces';
-import { curatedFace, dockFacePlan, dockPlanControls } from './curated-face';
+import { curatedFace, dockFacePlan, dockPlanControls, type FaceDefLike } from './curated-face';
 import { laneBodyPlan } from './module-shell-model';
 import { looksLikeSwitch } from './shell-control-kind';
+import { panelCellKeys } from './shell-cells';
+import { GRID_MAX_CELLS } from '$lib/ui/controls/param-grid-model';
 
 interface FaceDef {
   type: string;
@@ -82,7 +84,8 @@ function allDefs(): FaceDef[] {
 }
 
 const FAMILY_KEY = /^(.+)-\{n\}$/;
-const VALID_GLYPHS = new Set(['scope', 'meter', 'envelope', 'waveform', 'none']);
+// 'algorithm' (PF-15) is the DATA-DERIVED topology glyph — see ModuleFace.glyph.
+const VALID_GLYPHS = new Set(['scope', 'meter', 'envelope', 'waveform', 'algorithm', 'none']);
 
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -433,6 +436,228 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
       unclassified.join('\n'),
       'unclassified switch-shaped param(s) — a momentary pad would render as a latching rotary',
     ).toBe('');
+  });
+});
+
+describe('module-face lint — DECLARED param cells (face.paramCells) + PANEL tier', () => {
+  // PF-15 / PF-14. `face.paramCells` is the ONE render primitive a module has
+  // to declare — `'toggle'` is derived from the 0/1 switch shape and
+  // `'segmented'`/`'selector'` from a declared `options` roster, but "these
+  // states are PICTURES, chart them" is knowledge only the module has. A
+  // declaration nobody validates is a silent no-op, so every clause below is a
+  // pure predicate driven BOTH over the live registry and over synthetic defs
+  // (the negative controls at the end), because a lint rule that has never been
+  // seen to fail is not a gate.
+
+  interface CellFaceDef extends FaceDefLike {
+    type: string;
+    params?: readonly ParamDef[];
+    face?: ModuleFace;
+  }
+
+  /**
+   * Every problem with one def's `face.paramCells`. FOUR clauses:
+   *   (a) the key names a DECLARED param — a typo'd/renamed key would silently
+   *       paint the old primitive with nobody noticing;
+   *   (b) the key is RANKED in `face.order` — an unranked param never reaches
+   *       `curatedFace`, so declaring its primitive is a no-op that reads like
+   *       a shipped decision (the same trap `face.momentary` already gates);
+   *   (c) the param is NOT also on `face.momentary` — a press-pad is not a
+   *       state, and the two declarations paint incompatible primitives (a
+   *       Button that returns to rest vs. a picker that commits a value), so
+   *       one of them is a bug and the author must say which;
+   *   (d) the param is DISCRETE with a sane step count — the grid derives one
+   *       cell per integer step, so `'grid'` on a 20..20000 Hz cutoff is a
+   *       twenty-thousand-cell popover. `paramGridCells` caps the damage at
+   *       GRID_MAX_CELLS; this is where the author finds out.
+   * Pure.
+   */
+  function paramCellProblems(def: CellFaceDef): string[] {
+    const problems: string[] = [];
+    const decl = def.face?.paramCells;
+    if (!decl) return problems;
+    const byId = new Map((def.params ?? []).map((p) => [p.id, p]));
+    const ranked = new Set(def.face?.order ?? []);
+    const momentary = new Set(def.face?.momentary ?? []);
+
+    for (const [key, kind] of Object.entries(decl)) {
+      const p = byId.get(key);
+      if (!p) {
+        problems.push(
+          `${def.type}: face.paramCells['${key}'] is not a declared param — a renamed/typo'd ` +
+            `key silently keeps the DEFAULT primitive, which looks like a shipped decision`,
+        );
+        continue;
+      }
+      if (!ranked.has(key)) {
+        problems.push(
+          `${def.type}: face.paramCells['${key}'] is not ranked in face.order, so the cell is ` +
+            `never selected and the declaration does NOTHING`,
+        );
+      }
+      if (momentary.has(key)) {
+        problems.push(
+          `${def.type}: param '${key}' is BOTH face.momentary and face.paramCells['${kind}'] — ` +
+            `a press-pad is not a state. Pick one: a momentary <Button> that returns to rest, ` +
+            `or a picker that commits a value.`,
+        );
+      }
+      const steps = Math.floor(p.max) - Math.ceil(p.min) + 1;
+      if (p.curve !== 'discrete' || steps < 2 || steps > GRID_MAX_CELLS) {
+        problems.push(
+          `${def.type}: face.paramCells['${key}'] = 'grid' but the param is ${p.min}..${p.max} ` +
+            `${p.curve} (${steps} step(s)) — a grid needs a DISCRETE param with 2..${GRID_MAX_CELLS} ` +
+            `steps, or it paints one cell per integer across the whole range`,
+        );
+      }
+    }
+    return problems;
+  }
+
+  /**
+   * Every LANE tier at which a PANEL cell would be SELECTED. A panel carries its
+   * own design floor (a 280 px operator map); a 46 px `--kcol-max` knob column
+   * cannot hold one, so a panel is DOCK-ONLY.
+   *
+   * ⚠ Do NOT delegate this to `PLATE_COLS * PLATE_MAX_ROWS = 6` truncating a
+   * low-ranked panel out of the lane. That is a COINCIDENCE OF THE CURRENT
+   * NUMBERS, not a guarantee: bump the plate cap and a 280 px SVG lands in a
+   * 46 px column with no gate saying a word. Pure (`panelKeys` is injected so
+   * the negative control can supply its own).
+   */
+  function panelTierProblems(def: CellFaceDef, panelKeys: ReadonlySet<string>): string[] {
+    if (!panelKeys.size) return [];
+    const problems: string[] = [];
+    for (const tier of ['mini', 'compact', 'full'] as const) {
+      const face = curatedFace(def, tier);
+      if (!face) continue;
+      for (const ctl of face.controls) {
+        if (!panelKeys.has(ctl.key)) continue;
+        problems.push(
+          `${def.type}: panel cell '${ctl.key}' is SELECTED at lane tier '${tier}' — a panel ` +
+            `declares its own minWidth and cannot fit a 46px knob column. Rank it below the ` +
+            `lane caps (ranks 7+ are dock-only) or drop the panel.`,
+        );
+      }
+    }
+    return problems;
+  }
+
+  it('every face.paramCells key is a ranked, non-momentary, DISCRETE param', () => {
+    const problems: string[] = [];
+    for (const def of allDefs()) {
+      problems.push(...paramCellProblems(def as unknown as CellFaceDef));
+    }
+    expect(problems.join('\n'), 'face.paramCells drift — a declared primitive that is a no-op or a contradiction').toBe('');
+  });
+
+  it('no PANEL cell is selected at a LANE tier (panels are dock-only)', () => {
+    const problems: string[] = [];
+    for (const def of allDefs()) {
+      if (!def.face) continue;
+      problems.push(
+        ...panelTierProblems(def as unknown as CellFaceDef, new Set(panelCellKeys(def.type))),
+      );
+    }
+    expect(problems.join('\n'), 'a bespoke panel would render inside a lane knob column').toBe('');
+  });
+
+  // ── NEGATIVE CONTROLS ──────────────────────────────────────────────────────
+  // Each clause driven against a def built to violate exactly it. Without these
+  // the four rules above are green forever — no shipped module declares a
+  // paramCell or a panel yet (dx7 adopts both in PRs 4 and 6), so the live
+  // sweeps are VACUOUSLY green today and would stay green if the predicates
+  // were `return []`.
+
+  const GRID_PARAM: ParamDef = {
+    id: 'algorithm',
+    label: 'algorithm',
+    min: 1,
+    max: 32,
+    defaultValue: 1,
+    curve: 'discrete',
+  };
+
+  function synthetic(over: Partial<CellFaceDef> = {}): CellFaceDef {
+    return {
+      type: 'synthetic',
+      params: [GRID_PARAM],
+      face: { order: ['algorithm'], paramCells: { algorithm: 'grid' } },
+      ...over,
+    };
+  }
+
+  it('NEGATIVE CONTROL: a well-formed declaration passes every clause', () => {
+    expect(paramCellProblems(synthetic())).toEqual([]);
+  });
+
+  it('NEGATIVE CONTROL (a): a paramCells key that is not a declared param FAILS', () => {
+    const problems = paramCellProblems(synthetic({ params: [] }));
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('is not a declared param');
+  });
+
+  it('NEGATIVE CONTROL (b): a paramCells key missing from face.order FAILS', () => {
+    const problems = paramCellProblems(
+      synthetic({ face: { order: [], paramCells: { algorithm: 'grid' } } }),
+    );
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('is not ranked in face.order');
+  });
+
+  it('NEGATIVE CONTROL (c): a param that is BOTH momentary and a paramCell FAILS', () => {
+    const problems = paramCellProblems(
+      synthetic({
+        face: { order: ['algorithm'], momentary: ['algorithm'], paramCells: { algorithm: 'grid' } },
+      }),
+    );
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('a press-pad is not a state');
+  });
+
+  it('NEGATIVE CONTROL (d): a grid on a CONTINUOUS / unbounded param FAILS', () => {
+    const continuous = paramCellProblems(
+      synthetic({ params: [{ ...GRID_PARAM, curve: 'linear' }] }),
+    );
+    expect(continuous).toHaveLength(1);
+    expect(continuous[0]).toContain(`2..${GRID_MAX_CELLS} steps`);
+
+    const huge = paramCellProblems(
+      synthetic({ params: [{ ...GRID_PARAM, min: 20, max: 20000 }] }),
+    );
+    expect(huge).toHaveLength(1);
+    expect(huge[0]).toContain(`2..${GRID_MAX_CELLS} steps`);
+
+    // …and a one-state "grid" is a label, not a picker.
+    const single = paramCellProblems(synthetic({ params: [{ ...GRID_PARAM, min: 1, max: 1 }] }));
+    expect(single).toHaveLength(1);
+  });
+
+  it('NEGATIVE CONTROL: a PANEL ranked into the lane FAILS at every lane tier it reaches', () => {
+    const panelKey = 'synthetic-panel-{n}';
+    const panelKeys = new Set([panelKey]);
+    const inLane = synthetic({
+      face: { order: [panelKey, 'algorithm'], paramCells: { algorithm: 'grid' } },
+      controlFamilies: [{ id: 'synthetic-panel', label: 'panel' }],
+    });
+    const problems = panelTierProblems(inLane, panelKeys);
+    // rank 1 → selected at mini (cap 1), compact and full alike.
+    expect(problems).toHaveLength(3);
+    expect(problems[0]).toContain("SELECTED at lane tier 'mini'");
+
+    // Ranked BELOW the lane caps (7+ is dock-only) → clean.
+    const dockOnly = synthetic({
+      face: {
+        order: ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', panelKey],
+        paramCells: {},
+      },
+      controlFamilies: [{ id: 'synthetic-panel', label: 'panel' }],
+    });
+    expect(panelTierProblems(dockOnly, panelKeys)).toEqual([]);
+
+    // And the rule is INERT for a module with no panels at all — proving the
+    // live sweep above is not passing by accidentally flagging nothing.
+    expect(panelTierProblems(inLane, new Set())).toEqual([]);
   });
 });
 

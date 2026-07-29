@@ -13,6 +13,7 @@
 import { describe, it, expect } from 'vitest';
 import type { ParamDef } from '$lib/graph/types';
 import {
+  gridParamIds,
   looksLikeSwitch,
   momentaryParamIds,
   momentaryValue,
@@ -63,6 +64,64 @@ describe('paramCellKind — which primitive a param cell paints', () => {
     const hold = param({ id: 'hold' });
     expect(paramCellKind(hold, NONE), 'undeclared → toggle').toBe('toggle');
     expect(paramCellKind(hold, new Set(['hold'])), 'declared → momentary').toBe('momentary');
+  });
+});
+
+describe('paramCellKind — the DECLARED grid cell (PF-15)', () => {
+  const alg = param({ id: 'algorithm', min: 1, max: 32 });
+  const GRID: ReadonlySet<string> = new Set(['algorithm']);
+
+  it('a declared paramCells entry paints a grid where the shape alone says knob', () => {
+    expect(paramCellKind(alg, NONE), 'undeclared → a stepped knob').toBe('knob');
+    expect(paramCellKind(alg, NONE, 'lane', GRID)).toBe('grid');
+  });
+
+  it('is TIER-INDEPENDENT — the popover is portaled, so the lane can hold it too', () => {
+    // The property that distinguishes it from `segmented`/`selector`, which
+    // fall back to a dial in a 46px lane column. A grid does not live in the
+    // column at all, so a 32-cell chart is as reachable from a mini tile as
+    // from the dock faceplate.
+    for (const tier of ['lane', 'dock'] as const) {
+      expect(paramCellKind(alg, NONE, tier, GRID), tier).toBe('grid');
+    }
+  });
+
+  it('grid BEATS a declared options roster at the dock (a chart is not a button row)', () => {
+    const withOptions = param({
+      id: 'algorithm',
+      min: 1,
+      max: 3,
+      options: [
+        { value: 1, label: 'one' },
+        { value: 2, label: 'two' },
+        { value: 3, label: 'three' },
+      ],
+    });
+    expect(paramCellKind(withOptions, NONE, 'dock'), 'options alone → segmented').toBe('segmented');
+    expect(paramCellKind(withOptions, NONE, 'dock', GRID)).toBe('grid');
+  });
+
+  it('momentary still outranks grid — an invalid face fails toward the SAFE render', () => {
+    // module-face-lint forbids declaring both, so this ordering is unobservable
+    // in a valid face; it is pinned so a broken one paints the pad that RETURNS
+    // TO REST rather than a picker that commits a latched value.
+    expect(paramCellKind(alg, new Set(['algorithm']), 'dock', GRID)).toBe('momentary');
+  });
+
+  it('an undeclared param is untouched by another param’s grid declaration', () => {
+    expect(paramCellKind(param({ id: 'level', curve: 'linear', max: 2 }), NONE, 'dock', GRID)).toBe('knob');
+  });
+});
+
+describe('gridParamIds — the declared set', () => {
+  it('reads face.paramCells, empty for an un-faced or un-declaring def', () => {
+    expect([...gridParamIds({ face: { paramCells: { algorithm: 'grid' } } })]).toEqual(['algorithm']);
+    expect(gridParamIds({ face: {} }).size).toBe(0);
+    expect(gridParamIds(undefined).size).toBe(0);
+  });
+
+  it('the default argument means an undeclared def never reaches the grid branch', () => {
+    expect(paramCellKind(param({ id: 'algorithm', min: 1, max: 32 }), NONE, 'dock')).toBe('knob');
   });
 });
 

@@ -28,8 +28,10 @@
 // `nodeVersion(id)`); writes take the nodeId and mutate the graph store, so the
 // specs stay declarative and the shell stays generic.
 
+import type { Component } from 'svelte';
 import type { ModuleNode } from '$lib/graph/types';
 import type { SelectorOption } from '$lib/ui/controls';
+import { testHooksEnabled } from '$lib/dev/test-hooks';
 import type { FaceControl } from './curated-face';
 import {
   DX7_SYX_ACCEPT,
@@ -81,7 +83,71 @@ export interface ShellToggleCell {
   onchange: (nodeId: string, on: boolean) => void;
 }
 
-export type ShellCell = ShellSelectorCell | ShellActionCell | ShellFileCell | ShellToggleCell;
+// ── PANEL cells (PF-14) ─────────────────────────────────────────────────────
+//
+// The escape hatch for a control that IS NOT one of the shared primitives: a
+// live SVG operator map, a draggable envelope editor — a bespoke component
+// with its own internal affordances. The generic kinds above cover "a roster",
+// "a button", "a file", "a switch"; a panel covers "a picture you edit".
+//
+// TWO HARD RULES, both learned from what the faces gates actually assert:
+//
+//  1. **A panel must NEVER emit `data-testid="control-<paramId>"`.**
+//     faces-parity asserts EXACT MULTISET EQUALITY between the dock's
+//     `control-*` testids and the def's param ids. A panel edits `node.data`,
+//     not params, so any `control-` testid inside it reads as an EXTRA control
+//     with no def backing and fails the whole face. Panel internals use their
+//     own testid namespace.
+//
+//  2. **A panel declares an OPERABILITY PROBE.** Every other cell kind has a
+//     natural interaction the parity sweep already knows how to drive (drag
+//     the knob, click the switch, pick from the roster). A bespoke panel does
+//     not, and the alternative to declaring one is special-casing the module
+//     inside the e2e — which is exactly the registry-driven property
+//     (STRICT_FACES enumerates itself) that makes every future face auto-enrol
+//     with zero test edits. So the module DECLARES how to poke it and what
+//     must change, and the sweep stays generic.
+
+/** How faces-parity DRIVES a panel, and what it asserts actually moved. */
+export interface ShellPanelProbe {
+  /** A testid INSIDE the panel (never a `control-<paramId>` — see rule 1). */
+  testid: string;
+  /** The natural interaction for that element. */
+  action: 'click' | 'drag';
+  /**
+   * The observable effect. `data` names a path into `node.data` that must
+   * CHANGE (`opOn[1]`); `data-rev` names a monotonic revision counter that must
+   * ADVANCE.
+   *
+   * ⚠ Prefer `data` where you can. A revision-only probe passes on a DEAD
+   * button that bumps the counter without editing anything — the exact
+   * green-but-broken class the whole gate exists to catch.
+   */
+  effect:
+    | { kind: 'data'; key: string; expect: 'changed' }
+    | { kind: 'data-rev'; key: string };
+}
+
+/** A BESPOKE panel: the module's own component, rendered inside a shell cell. */
+export interface ShellPanelCell {
+  kind: 'panel';
+  /** Caption under the panel in the dock faceplate. */
+  label: string;
+  /** The component. Receives the nodeId and owns its own state + writes. */
+  component: Component<{ nodeId: string }>;
+  /** Minimum painted width in px — the panel's own design floor (a 280 px
+   *  operator map cannot usefully shrink). Emitted as `--panel-min-w`. */
+  minWidth: number;
+  /** How the parity sweep proves the panel is alive (see rule 2). */
+  probe: ShellPanelProbe;
+}
+
+export type ShellCell =
+  | ShellSelectorCell
+  | ShellActionCell
+  | ShellFileCell
+  | ShellToggleCell
+  | ShellPanelCell;
 
 /**
  * Per-module cell specs, keyed by module type then by the EXACT `face.order`
@@ -149,4 +215,51 @@ export function typesWithShellCells(): string[] {
 /** The registered face keys for one module type (gate helper). */
 export function shellCellKeys(moduleType: string): string[] {
   return Object.keys(SHELL_CELLS[moduleType] ?? {}).sort();
+}
+
+/**
+ * The face keys one module registers as PANEL cells. Used by the face-lint
+ * rule that keeps a panel DOCK-ONLY: a 280 px SVG has no business being
+ * SELECTED into a 46 px lane knob column, and relying on
+ * `PLATE_COLS * PLATE_MAX_ROWS` to truncate it is not a guard — it is a
+ * coincidence that a future cap bump silently removes. Pure.
+ */
+export function panelCellKeys(moduleType: string): string[] {
+  const specs = SHELL_CELLS[moduleType] ?? {};
+  return Object.keys(specs)
+    .filter((k) => specs[k]?.kind === 'panel')
+    .sort();
+}
+
+/**
+ * Every declared panel PROBE, `moduleType → faceKey → probe`. Pure projection.
+ *
+ * ⚠ PUBLISHED FROM THE SHELL LAYER, NOT FROM `__moduleSpecs`.
+ * `$lib/dev/module-specs` projects the MODULE REGISTRY and is imported by the
+ * registration barrels (`audio/modules/index.ts`), so teaching it about
+ * shell-cells would create a live import cycle:
+ *   audio/modules/index → dev/module-specs → workflow/shell-cells
+ *     → ui/modules/dx7-patch-actions → audio/modules/dx7 → …
+ * The probes are shell metadata anyway — they describe how the SHELL renders a
+ * control, not what the module IS — so they ride their own window global,
+ * exposed when ModuleShell (the only consumer of this registry) is imported.
+ */
+export function shellPanelProbes(): Record<string, Record<string, ShellPanelProbe>> {
+  const out: Record<string, Record<string, ShellPanelProbe>> = {};
+  for (const [type, specs] of Object.entries(SHELL_CELLS)) {
+    for (const [key, spec] of Object.entries(specs)) {
+      if (spec.kind !== 'panel') continue;
+      (out[type] ??= {})[key] = spec.probe;
+    }
+  }
+  return out;
+}
+
+/** Expose the probe map on `window` for the faces-parity e2e (dev/autotest
+ *  builds only — the same `testHooksEnabled()` gate `__moduleSpecs` uses). */
+export function exposeShellPanelProbesForTests(): void {
+  if (!testHooksEnabled()) return;
+  if (typeof window === 'undefined') return;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (window as any).__shellPanelProbes = shellPanelProbes();
 }

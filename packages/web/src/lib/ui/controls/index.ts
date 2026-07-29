@@ -22,6 +22,7 @@ export { default as WaveformGlyph } from './WaveformGlyph.svelte';
 export { default as KnobConic } from './KnobConic.svelte';
 export { default as Selector } from './Selector.svelte';
 export { default as Segmented } from './Segmented.svelte';
+export { default as ParamGrid } from './ParamGrid.svelte';
 export { default as Toggle } from './Toggle.svelte';
 export { default as Button } from './Button.svelte';
 export { default as Readout } from './Readout.svelte';
@@ -39,7 +40,16 @@ export {
   numericOptionRange,
   type SelectorOption,
 } from './selector-model';
-export { activeSegmentIndex, type Segment } from './segmented-model';
+export { activeSegmentIndex, nearestSegmentValue, type Segment } from './segmented-model';
+export {
+  GRID_MAX_CELLS,
+  gridChipLabel,
+  gridColumns,
+  gridNavIndex,
+  nearestGridIndex,
+  paramGridCells,
+  type GridCell,
+} from './param-grid-model';
 export { looksLikeToggle, isToggleOn, toggledValue } from './toggle-model';
 export { buttonPointerFire, buttonGateFire, type ButtonFire } from './button-model';
 export { formatReadout, type ReadoutFormatOptions } from './readout-model';

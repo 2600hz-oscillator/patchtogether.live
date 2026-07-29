@@ -546,9 +546,40 @@ export interface ModuleFace {
   /** Optional DOCK sections/tabs for a big instrument's full faceplate. Each
    *  page's `controls` must be a subset of `order`. Omitted = single-page dock. */
   pages?: readonly ModuleFacePage[];
-  /** The compact live-glyph kind the shell renders in the tile's glyph slot.
-   *  Omitted / 'none' = no glyph. */
-  glyph?: 'scope' | 'meter' | 'envelope' | 'waveform' | 'none';
+  /**
+   * The compact live-glyph kind the shell renders in the tile's glyph slot.
+   * Omitted / 'none' = no glyph.
+   *
+   * `'algorithm'` (PF-15) is the DATA-DERIVED odd one out: the other kinds bind
+   * to an analyser tap or a param-reactive curve, while this one draws the
+   * module's own SIGNAL TOPOLOGY from a discrete param. It exists because an FM
+   * synth's 64 px scope trace is a wobbly line that looks identical for every
+   * patch and FLATLINES whenever nothing is gated — which is most of the time
+   * you are looking at a rack — whereas the topology is always live.
+   *
+   * ⚠ NOT YET A GENERAL PRECEDENT. It is one literal for one module's one
+   * concept. When a SECOND topology-bearing module arrives, do NOT add a third
+   * literal: widen the binding to carry a LAYOUT-SOURCE id (which pure layout
+   * function feeds the picture) so the shell stops enumerating modules.
+   */
+  glyph?: 'scope' | 'meter' | 'envelope' | 'waveform' | 'algorithm' | 'none';
+  /**
+   * DECLARED render primitive for a param cell, keyed by param id.
+   *
+   * Only `'grid'` — the chip + portaled diagram-grid popover (PF-15). It is
+   * the one primitive that CANNOT be inferred: `'toggle'` is derived from the
+   * param's 0/1 switch shape (`looksLikeToggle`) and `'segmented'`/`'selector'`
+   * from a declared `ParamDef.options` roster, so neither needs declaring, but
+   * "this param's states are PICTURES, lay them out as a chart" is knowledge
+   * only the module has.
+   *
+   * UI metadata like the rest of `face`: OUT of contract-signature /
+   * contract-lock (choosing a primitive is not an I/O change), linted by
+   * module-face-lint.test.ts — every key must be a declared DISCRETE param that
+   * is also ranked in `order`, and must not also be on `momentary` (a press-pad
+   * is not a state).
+   */
+  paramCells?: Readonly<Record<string, 'grid'>>;
   /**
    * Param ids that are MOMENTARY PADS, not values — the "press-param" pattern
    * (tomtom/clap `strike`): the worklet ORs the param with its trigger input
