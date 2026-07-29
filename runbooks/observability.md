@@ -78,18 +78,48 @@ flox activate -- flyctl logs -a patchtogether-server-dev | grep '\[relay-alarm\]
 ## Live-smoke-alert workflow
 
 `.github/workflows/live-smoke-alert.yml` runs on a cron (~every 10 min) and probes
-the dev web `/api/health` + relay `/health` and `/metrics`. It opens a GitHub
-issue on a health transition or sustained unhealth, and tracks state in an
-artifact to avoid alert spam (a transition to "unhealthy" requires two consecutive
-unhealthy probes, so a single transient hiccup doesn't fire).
+the dev web `/api/health` + relay `/health` and `/metrics`. It keeps **exactly one
+open GitHub issue per distinct alert**, reconciled on every run by
+`scripts/alert-issues.mjs`:
+
+| probe says | open issue for the key? | action |
+| --- | --- | --- |
+| check failing | no | **open** an issue (emails watchers) |
+| check failing | yes | **edit** its stats block — last-seen + consecutive count. No notification. |
+| check passing | yes | **comment** "recovered" + **close** |
+
+The dedup key is `live-smoke/<web-url-host>/<check-id>` — e.g.
+`live-smoke/dev.patchtogether.live/web-db-unreachable`. It is built only from the
+environment and the probe's own branch identifier, never from the error text
+(which embeds upstream HTTP bodies that vary per run), and it is carried in an
+HTML-comment marker in the issue body so a human can retitle the issue freely.
+
+Three properties worth knowing before you touch it, all unit-tested in
+`scripts/alert-issues.test.ts`:
+
+- **Dedup, not suppression.** There is no cooldown/backoff anywhere. A different
+  check failing is a different key, so a genuinely new outage opens its own issue
+  and notifies immediately, even in the middle of an existing incident.
+- **An issue with no key marker is never touched** — human-filed issues cannot be
+  edited, commented on, or auto-closed by the workflow.
+- **A probe that produced no usable result closes nothing** and raises its own
+  `probe-harness` alert. A monitor that cannot measure never reads as green.
+
+Alert state lives in the issues themselves (first-seen / last-seen / consecutive
+count), not in an artifact — artifacts expire and silently reset the state machine.
 
 ```sh
-# Force the alert path for testing (bypasses state):
-flox activate -- gh workflow run live-smoke-alert.yml -f force_fire=true
+# Print the reconcile plan without writing any issue:
+flox activate -- gh workflow run live-smoke-alert.yml -f dry_run=true
 
-# Inspect the persisted alert state:
-flox activate -- gh run download <run-id> --name live-smoke-state --dir /tmp
+# Same, locally, against a captured probe log:
+flox activate -- bash scripts/live-smoke-alert.sh > /tmp/smoke.out 2>&1
+SMOKE_LOG=/tmp/smoke.out ALERT_DRY_RUN=1 flox activate -- node scripts/alert-issues.mjs reconcile
 ```
+
+Adding a probe branch to `scripts/live-smoke-alert.sh` means adding its
+`failures+=("id")` literal to `KNOWN_CHECK_IDS` (and a `CHECK_TITLES` phrase) in
+`scripts/alert-issues.mjs` — the `unit` lane pins the two lists to each other.
 
 Local dry-run (no GH issue):
 
