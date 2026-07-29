@@ -49,6 +49,14 @@ function l1Distance(a: Float32Array, b: Float32Array): number {
   return s / a.length;
 }
 
+/** Mean |sample| — the scale a distance is normalized against, so a
+ *  distinctness assertion doesn't secretly pin the envelope's level. */
+function meanAbs(a: Float32Array): number {
+  let s = 0;
+  for (let i = 0; i < a.length; i++) s += Math.abs(a[i]!);
+  return s / a.length;
+}
+
 /** Sweep harmonics 1..16 of `fund` and return the count whose Goertzel
  *  energy exceeds `threshold * fundamentalEnergy`. Higher count == richer
  *  spectrum. */
@@ -106,11 +114,17 @@ describe('DX7 ART: algorithm switching changes the rendered audio', () => {
       algorithmOverride: 32,
     });
     expect(a1.length).toBe(a32.length);
-    const d = l1Distance(a1, a32);
-    // For the additive vs FM-stack pair the per-sample L1 distance is
-    // dominated by their differing waveform shape; the threshold here is
-    // generous (well above any numerical noise floor).
-    expect(d, 'algo 1 vs 32 mean |a1[i]-a32[i]|').toBeGreaterThan(0.05);
+    // RELATIVE distance, re-authored for the authentic envelope (PR 0b). The
+    // old absolute 0.05 floor was implicitly a claim about the SUSTAIN LEVEL,
+    // not about algorithm distinctness: this patch holds a gate for the whole
+    // 0.5 s, and the pre-0b envelope auto-advanced past L3 and decayed to
+    // silence, so most of the window was a loud transient. With the L3 hold
+    // the window is a steady 0.19-amplitude tone and the same two spectra
+    // differ by a smaller ABSOLUTE amount while being no less distinct. Divide
+    // by the louder buffer's own mean level and the metric stops depending on
+    // the envelope at all.
+    const rel = l1Distance(a1, a32) / Math.max(meanAbs(a1), meanAbs(a32));
+    expect(rel, 'algo 1 vs 32 relative L1 distance').toBeGreaterThan(0.5);
   });
 
   it('algo 32 (six carriers) is spectrally richer than algo 1 (one stack)', () => {

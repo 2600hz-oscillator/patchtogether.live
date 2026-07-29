@@ -52,24 +52,76 @@
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
-// ── COST ────────────────────────────────────────────────────────────────────
-// Every case here asserts the COMPONENT STATE MACHINE (classes, persisted
-// node.data, menu items) and LAYOUT (boundingBox) — not a single pixel. So this
-// spec does no GL work at all: it freezes the per-frame video draw (the same
-// __videoEngineFreezeRender lever card-control-overflow uses) and spawns
-// BACKDRAFT SOLO with no upstream source. An older version fed it from SHAPES
-// and slept 300ms per case purely so the in-card picture had live content to
-// look at — and nothing ever looked. On CI's SwiftShader renderer that source +
-// those sleeps were the whole cost (13.5s → 8.5s when they came out).
+// ── COST: this spec asserts STATE, never PIXELS ──────────────────────────────
+// Every case here reads the component state machine (classes, persisted
+// node.data, menu entries) or layout geometry. Not one reads a pixel. So the
+// live BACKDRAFT feedback render — a full software-rasterised feedback loop on
+// CI's SwiftShader — was pure cost with no assertion behind it.
 //
-// THE DISPLAY DOES NOT CHANGE THAT, by construction: the card's in-rack blit is
-// gated on __videoEngineFreezeRender / __videoEnginePause, so a frozen engine
-// means the card presents nothing and this spec pays exactly what it paid with
-// no display at all. ⚠ Do NOT add a "the display shows live content" PIXEL
-// assertion here — that would need the SHAPES chain and the sleeps back, and
-// puts this spec back at ~13.5s on a shard that has been over budget before.
-// Geometry is what belongs here; live content is verified where a source
-// already exists (backdraft.spec.ts).
+// It is not a small cost, and it is not paid where you would guess. It is paid
+// PER PLAYWRIGHT ROUND TRIP: a pointer action is several main-thread round
+// trips (actionability → the 2-frame stability check → hit test → dispatch),
+// and each one queues behind the engine's rAF draw.
+//
+// MEASURED (dev server, E2E_SWIFTSHADER=1, idle 10-core box) with a BACKDRAFT
+// card mounted — the negative control is the same page with the draw frozen:
+//
+//   live render    rAF interval 24.3 ms  (41 fps)  ← ~8 ms/frame of main thread
+//   frozen render  rAF interval 16.0 ms  (62 fps)  ← pure vsync, no GL work
+//
+// On CI that tax dominates. From the shard-1 TRACE of run 30423306408 — the
+// timeout this note exists for — every action in this test cost ~8 s and every
+// page.evaluate ~2 s, UNIFORMLY, with no single wedge anywhere:
+//
+//   click canvas 7.9s │ click ctx-full-frame 9.2s │ click canvas 7.5s
+//   click ctx-fullscreen 8.4s │ dblclick wrap 7.9s   = 41 s of a 60 s budget
+//
+// ⚠ The failing case was never slower for any reason OF ITS OWN. It has FIVE
+// pointer actions; its siblings have three and landed at 55.7 s / 55.8 s — also
+// at the edge. It simply had the most round trips to pay for, so it tipped
+// first. Raising the ceiling would only move which case tips.
+//
+// AND IT IS NOT THE RUNNER. Median duration of a click STEP, per spec file, in
+// that same shard-1 run — i.e. same runner, same 4 workers, same minute:
+//
+//   backdraft-full-output.spec.ts   7946 ms   ← this file
+//   blood-keyboard.spec.ts           471 ms
+//   cable-drag-section-expand.spec.ts 213 ms
+//   aut-patch-panel.spec.ts          141 ms
+//
+// A 17-56x outlier against healthy neighbours. So "shard 1 is over budget" is
+// the WRONG diagnosis — the shard is fine and every other spec on it clicks in
+// milliseconds. What is slow is this PAGE, and specifically its rAF interval:
+// Playwright paces actionability on rAF (the stability check wants two
+// consecutive frames with an unchanged box), so a page rendering at ~1 fps
+// makes every phase of every action cost ~1 s. The trace's internal log shows
+// exactly that shape — ~1.5-1.9 s to go from "waiting for element to be
+// visible, enabled and stable" to "element is visible, enabled and stable",
+// which is two frames at ~0.8 s each.
+//
+// So: freeze the per-frame draw. `__videoEngineFreezeRender` is the existing
+// lever the per-module-per-port sweeps use for exactly this — engine.ts
+// documents it as "keep the graph fully consistent … but SKIP the expensive
+// per-frame work", and it was introduced for this same timeout class on heavy
+// cards (b3ntb0x, mandelbulb). The graph still builds, shaders still compile,
+// FBOs still allocate, edges still reconcile, the canvas is still laid out and
+// clickable — every assertion in this file observes exactly what it observed
+// before. There is just no longer a software-rendered feedback loop competing
+// with the input queue.
+//
+// ⚠ Do NOT add a pixel assertion to this spec without removing the freeze —
+// and if you do, expect the timeouts back. Pixels are asserted where a live
+// source already exists: backdraft.spec.ts and backdraft-pure-tv.spec.ts.
+//
+// THE CARD'S DISPLAY DOES NOT CHANGE ANY OF THIS. BACKDRAFT now carries a
+// 320×240 in-rack display, i.e. exactly the per-frame GL readback this note is
+// about — but the card's in-rack blit is itself gated on
+// __videoEngineFreezeRender / __videoEnginePause. A frozen engine has no new
+// frame to present, so the card presents nothing and this spec pays what it
+// paid with no display at all. The card ALSO rations that blit to ~8fps
+// wall-clock and skips it entirely when engine.framesDrawnFor() has not
+// advanced, which attacks the same rAF-interval tax measured above at the
+// SOURCE rather than per-spec — see the tick() note in BackdraftCard.svelte.
 async function freezeVideoRender(page: Page): Promise<void> {
   await page.addInitScript(() => {
     (globalThis as unknown as { __videoEngineFreezeRender?: boolean })
