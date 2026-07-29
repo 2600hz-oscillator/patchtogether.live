@@ -779,10 +779,19 @@ const BEHAVIORAL_PARAMS: Record<string, Record<string, number>> = {
   //   • release=0.2 s > the 125 ms gate-off window so the release tail is CUT
   //     (sampled mid-fall) → the CV changes how much tail survives each off-window.
   //     The RELEASE test ALSO carries a per-port BEHAVIORAL_PORT_PARAMS override
-  //     (sustain:0.6) so the tail starts TALLER and the swing is robust
-  //     (Δμrms≈0.033-0.054); see BEHAVIORAL_PORT_PARAMS['adsr.release'].
-  // Both clear with a stable margin; verified 4×. All values stay inside the
-  // params' native ranges (decay/release 0.001-10 s, sustain 0-1).
+  //     (sustain:0.6) so the tail starts TALLER; see
+  //     BEHAVIORAL_PORT_PARAMS['adsr.release'].
+  // All values stay inside the params' native ranges (decay/release 0.001-10 s,
+  // sustain 0-1).
+  //
+  // ⚠ The "Δμrms≈0.033-0.054, verified 4×" claim that used to sit here was a
+  // small sample of a distribution that actually spans 0.001-0.098 (measured
+  // over ~35 main runs). `release` no longer relies on it — it is driven by a
+  // deterministic −1 V source (BEHAVIORAL_PORT_TEST_SOURCE['adsr.release']).
+  // `decay` still rides the generic BUGGLES walk; it clears mainly on the RMS
+  // RANGE metric (Δr 0.08-0.24 vs a 0.02 floor, i.e. 4-12×) rather than on the
+  // mean, which is why it has not flaked — but it is the same class, and the
+  // same remedy applies if it ever does.
   adsr: { decay: 0.1, release: 0.2, sustain: 0.2 },
   // analogVco: fmAmount/pmAmount = 0 by default → fm/pm audio inputs
   // produce no audible change. Boost both to 0.5 so both audio inputs
@@ -1679,6 +1688,71 @@ function pickInputSource(inputType: string, idPrefix: string): InputSource | nul
 //     deterministic silent-vs-pulsing delta. (trig2 → out2 only, which the
 //     first-output sink can't see → per-port exempt; see BEHAVIORAL_SWEEP_EXEMPT.)
 const BEHAVIORAL_PORT_TEST_SOURCE: Record<string, InputSource> = {
+  // ADSR release — a TIME CV on a GATE consumer, and the generic BUGGLES walk
+  // cannot expose it. Two facts about ADSR make this port structurally
+  // different from a plain CV scaler:
+  //
+  //  1. `release` is observable ONLY during the gate-OFF window. ADSR is a
+  //     level-sensitive gate consumer: while the ctx-gate (240 BPM = 4 Hz,
+  //     gateLength 0.5) is HIGH the envelope is running attack→decay→sustain
+  //     and the release time is not in the signal path at all. So the CV can
+  //     only move ~half the cycle, and only in the tail.
+  //  2. The scope sink observes a 50 ms window (`timeMs: 50` → 2048 samples)
+  //     of a 250 ms gate cycle, 5× at 150 ms. Each snapshot sees ONE phase of
+  //     the envelope, and the phase it lands on is scheduling-dependent.
+  //
+  // On top of that, BUGGLES.smooth is a CORRELATED random walk starting from
+  // 0V: `nextStepped` moves at most ±0.2 per woggle at chaos 0.3 and is scaled
+  // by the default level=0.7, so over an 800 ms window it wanders only
+  // ±~0.15 V (the same figure measured for tomtom.bend_cv below). Its PRNG is
+  // seeded from the node id, so the value SEQUENCE is deterministic — but the
+  // woggle scheduler runs off setTimeout, so WHICH values are in effect during
+  // the 5 reads is pure timing. Net effect: the release time moves by ×1.4 at
+  // best, in a random direction, at a random phase.
+  //
+  // MEASURED (local, 8 snapshots each, sustain 0.6 / release 0.2 s):
+  //   control (unpatched)  mean rms 0.858
+  //   BUGGLES              mean rms 0.857  → Δμrms 0.004   ← BELOW the 0.010 floor
+  //   this LFO source      mean rms 0.616  → Δμrms 0.242   ← 24× the floor
+  // and on CI the BUGGLES-driven Δμrms sampled a 0.001–0.098 distribution
+  // STRADDLING the floor across ~35 main runs — i.e. a coin flip, which is
+  // exactly how main went red on 43e092f2 (run 30408249284).
+  //
+  // The fix is a DETERMINISTIC full-scale CV, the same remedy the tomtom /
+  // clap TIME-CV entries below already use. A SQUARE LFO at the rate floor
+  // (0.01 Hz = a 100 s period) is constant for its first HALF cycle — 50 s,
+  // versus the ~5 s from node creation to the last read — so it is a steady DC
+  // for the whole observation, with no phase lottery and no PRNG.
+  //   * `phase180` (not phase0) picks the NEGATIVE half: measured phase0 =
+  //     +1 V and phase180 = −1 V at t=0. Sign matters and is not cosmetic —
+  //     release is LOG-scaled (knob × 100^(cv/2)), and the two directions are
+  //     wildly asymmetric against a 125 ms gate-off window. +1 V stretches
+  //     release 0.2 s → 2 s, but a tail that was only falling to 0.225 now
+  //     barely falls at all: Δμrms ≈ 0.02, still at the floor. −1 V collapses
+  //     it 0.2 s → 0.02 s, so the envelope reaches TRUE ZERO ~20 ms into every
+  //     gate-off window and holds there — every snapshot's min goes 0.004 →
+  //     0.000 and rms drops hard. One-directional, so nothing cancels in the
+  //     mean.
+  //   * `depth: 0.5` is unity per lfo.ts (0.5 → ±1 swing), i.e. exactly the
+  //     ±1 V the port documents. depth 1 (±2 V) measured WEAKER (Δμrms 0.246
+  //     vs 0.284) because the log LUT clamps past ±1 — canonical amplitude is
+  //     also the strongest one.
+  //   * `shape: 2` = pure square per lfo.ts's morph().
+  // Three independent metrics now clear together (rms mean, rms range, crest
+  // mean), each by 10×+. Negative control: depth 0 (a wired, emitting, but
+  // INFORMATION-FREE source) returns the delta to ~0 and the assertion fails —
+  // see the PR body.
+  'adsr.release': {
+    node: {
+      id: 'up-release-lfosq',
+      type: 'lfo',
+      position: { x: 60, y: 60 },
+      domain: 'audio',
+      params: { rate: 0.01, shape: 2, depth: 0.5 },
+    },
+    outPort: 'phase180',
+    sourceType: 'cv',
+  },
   'moog911a.trig1': {
     node: {
       id: 'up-trig1-lfosq',
@@ -1926,14 +2000,17 @@ const BEHAVIORAL_PORT_PARAMS: Record<string, Record<string, number>> = {
   'sequencer.play_cv': { isPlaying: 1 },
   // adsr.release — the module-wide BEHAVIORAL_PARAMS keeps sustain LOW (0.2) to
   // give the DECAY scaler a big 1→0.2 excursion, but that leaves the RELEASE tail
-  // (which starts FROM the sustain level) only 0.2 tall, so the release-time CV's
-  // effect on the 125 ms gate-off window's energy was thin (Δμrms dipped to
-  // ~1.2× the floor across a 3× check → near-threshold). RAISE sustain to 0.6 for
-  // the release test ONLY: the release tail now starts from 0.6 (3× taller), so
-  // the log-scaled release-time CV (knob × 100^(cv/2)) swings how much of that
-  // taller tail survives each off-window — a robust mean+range RMS delta. (decay's
-  // test keeps the module-wide sustain=0.2; this per-port override touches release
-  // alone.) Verified 3× stable with margin.
+  // (which starts FROM the sustain level) only 0.2 tall. RAISE sustain to 0.6 for
+  // the release test ONLY: the tail now starts from 0.6 (3× taller), so there is
+  // 3× more level for the release-time CV to collapse. (decay's test keeps the
+  // module-wide sustain=0.2; this per-port override touches release alone.)
+  //
+  // NOTE this knob is the SECOND half of the fix, not the whole one. It was
+  // originally added on its own to lift a BUGGLES-driven delta off the floor,
+  // and that never worked: the drive was a small random walk, so a taller tail
+  // just scaled a random number. The delta is now carried by the DETERMINISTIC
+  // −1 V source in BEHAVIORAL_PORT_TEST_SOURCE['adsr.release']; sustain 0.6
+  // remains because a taller tail still makes the collapse-to-zero bigger.
   'adsr.release': { sustain: 0.6 },
   // outlines.collide — the COLLIDE gate is a LIVE inter-shape ELASTIC-bounce
   // mode: HIGH → shapes knock each other around, LOW → they pass through. For
