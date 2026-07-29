@@ -5,24 +5,37 @@
 // onto the BACKDRAFT card via the shared helpers (use-fullscreen /
 // use-full-frame / use-present / VideoCanvasContextMenu).
 //
-// ── WHAT CHANGED WHEN THE PREVIEW WAS REMOVED ───────────────────────────────
-// BACKDRAFT's card is now a control surface with no in-rack video thumbnail.
-// These features did NOT go with it — they are performance features, not
-// preview decoration — but two things about this spec did:
+// ── ONE SURFACE, FOUR SIZES ─────────────────────────────────────────────────
+// BACKDRAFT's card carries a SMALL 320×240 display, centred in a band across
+// the top of a 6hp×3u card. That display is not decoration bolted next to the
+// output features — it IS the output surface, at its in-rack size:
 //
-//   * ENTRY POINT: the menu used to open on a RIGHT-CLICK on the preview. With
-//     no preview to right-click it opens from an explicit OUTPUT button
-//     ([data-testid="backdraft-output-menu"]). Every case below drives that.
-//   * CORNER-RESIZE: RETIRED, not ported. The corner-drag existed to scale the
-//     preview canvas; with the preview gone the card is a fixed 5hp×2u rack
-//     tier (rack-sizes.ts) and there is nothing to drag. The resize helper
-//     itself (card-resize.ts) is still covered by bentbox.spec.ts + the
-//     videoOut resize case in workflow-shell-video.spec.ts.
+//     in the rack   320×240, centred under the title
+//     Full Frame    the whole card (chrome hidden, dbl-click exits)
+//     Full Screen   the physical screen (requestFullscreen on the wrap)
+//     Present       blitted into a popup on a second display
 //
-// The output <canvas> is still in the DOM but INERT in the rack (1px,
-// invisible, not drawn); it becomes the live surface in each expanded mode.
-// So these cases assert COMPONENT STATE + the surface's expanded classes, not
-// in-rack pixels.
+// So the picture you patch is the picture you present, and there is no second
+// canvas that could drift from the first.
+//
+// TWO ENTRY POINTS to the menu, and they are not redundant:
+//
+//   * ⛶ OUTPUT button ([data-testid="backdraft-output-menu"]) — DISCOVERABLE.
+//     The pre-declutter card only had the right-click, which nobody finds.
+//   * RIGHT-CLICK on the display — the idiom VIDEO OUT and BENTBOX use. It was
+//     unavailable while the card had no picture to right-click; it is back, and
+//     it has its own case below (including that it does NOT also open
+//     SvelteFlow's node menu).
+//
+// CORNER-RESIZE stays RETIRED. The card is a fixed 6hp×3u rack tier
+// (rack-sizes.ts); 3u is pinned min AND max in _module-card.css, so a resize
+// handle would fight the tier and resurrect node.data.width/height as a
+// competing truth. The resize helper itself (card-resize.ts) is still covered
+// by bentbox.spec.ts + the videoOut resize case in workflow-shell-video.spec.ts.
+//
+// These cases assert COMPONENT STATE + LAYOUT GEOMETRY (boundingBox), never
+// in-rack pixels — see the COST note below for why that distinction is load-
+// bearing on the SwiftShader shard.
 //
 // Mirrors video-fullscreen.spec.ts + video-full-frame.spec.ts + present-second-
 // display.spec.ts, scoped to BACKDRAFT.
@@ -41,12 +54,22 @@ import { spawnPatch } from './_helpers';
 
 // ── COST ────────────────────────────────────────────────────────────────────
 // Every case here asserts the COMPONENT STATE MACHINE (classes, persisted
-// node.data, menu items) — not a single pixel. So this spec does no GL work at
-// all: it freezes the per-frame video draw (the same __videoEngineFreezeRender
-// lever card-control-overflow uses) and spawns BACKDRAFT SOLO with no upstream
-// source. The old version fed it from SHAPES and slept 300ms per case purely
-// so the in-card PREVIEW had live content to look at — and nothing ever looked.
-// On CI's SwiftShader renderer that source + those sleeps were the whole cost.
+// node.data, menu items) and LAYOUT (boundingBox) — not a single pixel. So this
+// spec does no GL work at all: it freezes the per-frame video draw (the same
+// __videoEngineFreezeRender lever card-control-overflow uses) and spawns
+// BACKDRAFT SOLO with no upstream source. An older version fed it from SHAPES
+// and slept 300ms per case purely so the in-card picture had live content to
+// look at — and nothing ever looked. On CI's SwiftShader renderer that source +
+// those sleeps were the whole cost (13.5s → 8.5s when they came out).
+//
+// THE DISPLAY DOES NOT CHANGE THAT, by construction: the card's in-rack blit is
+// gated on __videoEngineFreezeRender / __videoEnginePause, so a frozen engine
+// means the card presents nothing and this spec pays exactly what it paid with
+// no display at all. ⚠ Do NOT add a "the display shows live content" PIXEL
+// assertion here — that would need the SHAPES chain and the sleeps back, and
+// puts this spec back at ~13.5s on a shard that has been over budget before.
+// Geometry is what belongs here; live content is verified where a source
+// already exists (backdraft.spec.ts).
 async function freezeVideoRender(page: Page): Promise<void> {
   await page.addInitScript(() => {
     (globalThis as unknown as { __videoEngineFreezeRender?: boolean })
@@ -135,11 +158,37 @@ test.describe('BACKDRAFT — full output capabilities', () => {
     const errors = await setup(page);
     await spawnBackdraft(page);
 
-    // The output surface exists but is INERT in the rack — present in the DOM
-    // (requestFullscreen needs a real element to target) and not visible.
+    // THE DISPLAY. One surface, four sizes — in the rack it is a SMALL, centred
+    // 320×240 picture. Visibility alone would be a weak assertion here: the
+    // requirement is a display that is *smaller* than the pre-declutter preview
+    // (~380×285 on a 720px card), so assert the BOX, not just that something is
+    // on screen. This is a layout read, not a pixel read — no GL work.
     const canvas = page.locator('canvas[data-testid="backdraft-canvas"]');
-    await expect(canvas, 'output surface present in the DOM').toHaveCount(1);
-    await expect(canvas, 'output surface is NOT an in-rack preview').toBeHidden();
+    await expect(canvas, 'the display is present in the DOM').toHaveCount(1);
+    await expect(canvas, 'the display is SHOWING in the rack').toBeVisible();
+    const wrapBox = await page.locator('[data-testid="backdraft-fs-wrap"]').boundingBox();
+    expect(wrapBox, 'display box measurable').not.toBeNull();
+    // The node is under xyflow's zoom transform, so normalise to CSS px the way
+    // card-control-overflow does — offsetWidth is layout px and immune to
+    // ancestor transforms, so their ratio IS the effective scale.
+    const scale = await page.locator('[data-testid="backdraft-card"]').evaluate(
+      (el) => (el as HTMLElement).getBoundingClientRect().width / (el as HTMLElement).offsetWidth,
+    );
+    const cssW = wrapBox!.width / scale;
+    const cssH = wrapBox!.height / scale;
+    expect(cssW, `display width ${cssW.toFixed(1)} CSS px (want 320)`).toBeGreaterThan(316);
+    expect(cssW, `display width ${cssW.toFixed(1)} CSS px (want 320)`).toBeLessThan(324);
+    expect(cssH, `display height ${cssH.toFixed(1)} CSS px (want 240)`).toBeGreaterThan(236);
+    expect(cssH, `display height ${cssH.toFixed(1)} CSS px (want 240)`).toBeLessThan(244);
+    // …and CENTRED on the card. The flanks are `flex: 1 1 0`, so this is true by
+    // construction — which is exactly why it is cheap to pin.
+    const cardBox = await page.locator('[data-testid="backdraft-card"]').boundingBox();
+    const cardMid = cardBox!.x + cardBox!.width / 2;
+    const dispMid = wrapBox!.x + wrapBox!.width / 2;
+    expect(
+      Math.abs(dispMid - cardMid) / scale,
+      `display is centred on the card (card mid ${cardMid.toFixed(1)}, display mid ${dispMid.toFixed(1)})`,
+    ).toBeLessThan(2);
 
     await openOutputMenu(page);
     const menu = page.locator('[data-testid="video-canvas-context-menu"]');
@@ -160,6 +209,34 @@ test.describe('BACKDRAFT — full output capabilities', () => {
     expect(errors).toEqual([]);
   });
 
+  test('right-clicking the display opens the SAME output menu', async ({ page }) => {
+    const errors = await setup(page);
+    await spawnBackdraft(page);
+
+    // The SECOND entry point, restored with the display: right-click the
+    // picture — the idiom VIDEO OUT and BENTBOX already use. It was unavailable
+    // while the card had no picture to right-click; the ⛶ OUTPUT button remains
+    // the discoverable half of the pair.
+    await page.locator('[data-testid="backdraft-fs-wrap"]').click({ button: 'right' });
+
+    await expect(
+      page.locator('[data-testid="video-canvas-context-menu"]'),
+      'right-click on the display opened the output menu',
+    ).toBeVisible();
+    await expect(page.locator('[data-testid="ctx-full-frame"]'), 'Full Frame item present').toBeVisible();
+    await expect(page.locator('[data-testid="ctx-fullscreen"]'), 'Full Screen item present').toBeVisible();
+
+    // The gesture is CLAIMED (preventDefault + stopPropagation), so SvelteFlow's
+    // own node menu must NOT also open. Without the stopPropagation both menus
+    // stack, which is the bug this assertion exists to catch.
+    await expect(
+      page.locator('[role="menu"][aria-label="Module actions"]'),
+      'the SvelteFlow node menu did NOT also open',
+    ).toHaveCount(0);
+
+    expect(errors).toEqual([]);
+  });
+
   test('Full Frame toggles node.data.fullFrame + hides chrome; double-click exits', async ({ page }) => {
     const errors = await setup(page);
     await spawnBackdraft(page);
@@ -167,6 +244,12 @@ test.describe('BACKDRAFT — full output capabilities', () => {
     const card = page.locator('[data-testid="backdraft-card"]');
     const canvas = page.locator('canvas[data-testid="backdraft-canvas"]');
     const wrap = page.locator('[data-testid="backdraft-fs-wrap"]');
+
+    // Measure the IN-RACK display first, so the transition below can be
+    // asserted as GROWTH. "is visible" is vacuous now that the display is
+    // always visible — it would pass with full-frame completely broken.
+    const beforeBox = await wrap.boundingBox();
+    expect(beforeBox, 'in-rack display measurable').not.toBeNull();
 
     // Enter Full Frame via the OUTPUT menu.
     await openOutputMenu(page);
@@ -179,13 +262,24 @@ test.describe('BACKDRAFT — full output capabilities', () => {
     await expect(wrap, 'wrap gained full-frame').toHaveClass(/full-frame/);
     expect(await readFullFrame(page, 'bd'), 'fullFrame persisted true').toBe(true);
 
-    // The point of full-frame: the CONTROLS are gone and the video surface —
-    // inert a moment ago — is now the visible card.
-    await expect(canvas, 'output surface is now showing').toBeVisible();
+    // The point of full-frame: the CONTROLS are gone and the display — a small
+    // centred picture a moment ago — has GROWN to consume the whole card.
+    await expect(canvas, 'output surface is showing').toBeVisible();
     await expect(
       card.locator('[data-testid="backdraft-controls"]'),
       'controls hidden while full-frame',
     ).toBeHidden();
+    const afterBox = await wrap.boundingBox();
+    expect(afterBox, 'full-frame display measurable').not.toBeNull();
+    expect(
+      afterBox!.width,
+      `display GREW into full-frame (${beforeBox!.width.toFixed(0)} → ${afterBox!.width.toFixed(0)})`,
+    ).toBeGreaterThan(beforeBox!.width * 2);
+    const cardBoxFF = await card.boundingBox();
+    expect(
+      Math.abs(afterBox!.width - cardBoxFF!.width),
+      'full-frame display spans the whole card width',
+    ).toBeLessThan(4);
 
     // The card's own Svelte Flow handles are visually hidden but still in the
     // DOM (cables stay connected — we hide, not remove).
