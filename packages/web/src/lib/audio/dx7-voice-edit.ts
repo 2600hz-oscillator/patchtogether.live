@@ -192,6 +192,17 @@ export function resolveOpCoarseFine(op: Partial<DX7OpData> | null | undefined): 
     if (typeof hz === 'number' && Number.isFinite(hz) && hz > 0) {
       return fixedHzToCoarseFine(hz, ratio);
     }
+    // NO STORED `fixedHz`, AND THIS MUST NOT FALL THROUGH. Reaching the ratio
+    // inverse below would do exactly what this file's header forbids: in fixed
+    // mode the coarse byte is a DECADE, not a multiplier, so inverting the
+    // ratio mislabels the frequency by up to three and a half decades. A voice
+    // in this shape is not hypothetical — `fixedMode` predates `fixedHz` on the
+    // type, so every rack saved before it has one.
+    //
+    // Instead derive the frequency the way the RENDERER derives it, then invert
+    // that: `dx7FixedHzFromRatio` is the same mapping `dx7-render.ts` applies,
+    // so the bytes we hand back describe the pitch the engine actually plays.
+    return fixedHzToCoarseFine(dx7FixedHzFromRatio(ratio), ratio);
   }
   return ratioToCoarseFine(ratio);
 }

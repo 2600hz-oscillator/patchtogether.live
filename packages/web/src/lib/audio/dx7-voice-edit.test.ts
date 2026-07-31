@@ -32,6 +32,7 @@ import {
   computeChecksum,
   dx7DetuneFactor,
   dx7FixedHz,
+  dx7FixedHzFromRatio,
   dx7Ratio,
   parseSyxBank,
   type DX7OpData,
@@ -353,10 +354,31 @@ describe('FIXED mode — the trap the ratio inverse must never spring', () => {
     expect(dx7FixedHz(got.coarse, got.fine)).not.toBeCloseTo(wrongHz, 3);
   });
 
-  it('a fixed-mode op with NO stored fixedHz still resolves rather than coming up empty', () => {
-    const got = resolveOpCoarseFine({ ratio: 4.5, fixedMode: true });
-    expect(Number.isInteger(got.coarse)).toBe(true);
-    expect(Number.isInteger(got.fine)).toBe(true);
+  it('a fixed-mode op with NO stored fixedHz resolves to the pitch the RENDERER plays', () => {
+    // `fixedMode` predates `fixedHz` on DX7OpData, so this shape is on disk in
+    // every rack saved before the field existed — not a hypothetical.
+    //
+    // ⚠ THE ASSERTION THIS REPLACED WAS VACUOUS. It checked only that both
+    // bytes were integers, which `ratioToCoarseFine` also satisfies — so it
+    // passed while the function took the forbidden ratio path, and NO wrong
+    // answer could have failed it. Ask of any assertion: what would have to
+    // break for this to go red?
+    const ratio = 4.5;
+    const got = resolveOpCoarseFine({ ratio, fixedMode: true });
+
+    // The truth: what dx7-render.ts actually feeds the oscillator for this op.
+    const played = dx7FixedHzFromRatio(ratio);
+    expect(dx7FixedHz(got.coarse & 3, got.fine)).toBeCloseTo(played, 6);
+
+    // NEGATIVE CONTROL — the bug this test exists for. The ratio inverse gives
+    // (coarse 4, fine 13); in fixed mode coarse is a DECADE, so that reads as
+    // 10^(0+0.13) = 1.35 Hz against a played pitch of 10^3.5 ≈ 3162 Hz.
+    // Assert we are NOT that, or the test cannot distinguish the fix from the
+    // bug.
+    const viaRatio = ratioToCoarseFine(ratio);
+    const wrongHz = dx7FixedHz(viaRatio.coarse & 3, viaRatio.fine);
+    expect(Math.abs(Math.log10(wrongHz / played))).toBeGreaterThan(0.5);
+    expect(dx7FixedHz(got.coarse & 3, got.fine)).not.toBeCloseTo(wrongHz, 3);
   });
 });
 
