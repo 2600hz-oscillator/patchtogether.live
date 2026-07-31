@@ -113,13 +113,30 @@ export default defineConfig({
       // need to absorb cross-platform AA drift here — but small
       // intra-platform drift on text-heavy cards still does occur.
       //
-      // 0.2 = a pixel must differ by >20% per channel before it counts.
-      // maxDiffPixelRatio = 0.05 = up to 5% of pixels can be "different"
-      // under that per-channel threshold. Now that platform drift is
-      // factored out by the path template, this can be tightened toward
-      // 0.01 once baselines settle on each platform.
-      threshold: 0.2,
-      maxDiffPixelRatio: 0.05,
+      // 0.1 = a pixel must differ by >10% per channel before it counts.
+      // maxDiffPixelRatio = 0.01 = up to 1% of pixels may differ under that
+      // per-channel threshold.
+      //
+      // TIGHTENED 2026-07-31 from threshold 0.2 / ratio 0.05. The old comment
+      // said this "can be tightened toward 0.01 once baselines settle on each
+      // platform" — the per-platform `snapshotPathTemplate` above IS that
+      // settling, and it landed long ago; the tightening never followed.
+      //
+      // WHY IT MATTERS, measured, not theorised: at 5% a 320x240 card could
+      // change 3,840 pixels — a ~62x62 block, a whole knob — and stay green.
+      // The documented case is A2/#1213: swapping filter's MODE from a bare
+      // detented knob to a LABELLED SEGMENTED control, an entire primitive
+      // swap, moved the dock face by 865 px. Under the old budget the gate
+      // passed AND `--update-snapshots` refused to regenerate (Playwright only
+      // rewrites a snapshot when the comparison FAILS), so the change was both
+      // invisible and unfixable. `workflow-dock-patch` likewise sat inside its
+      // budget for months while still rendering v1.2.0-era chrome.
+      //
+      // The per-channel `threshold` compounds it: a pixel shifting up to 20%
+      // per channel was not counted as different AT ALL, so a colour or
+      // contrast change under that bar was invisible at ANY ratio.
+      threshold: 0.1,
+      maxDiffPixelRatio: 0.01,
       // Per-screenshot settle/capture timeout. Playwright's default is
       // 5000ms, which the heavy WebGL/animated cards (MANDLEBLOT,
       // MANDELBULB, WAVESCULPT-BLINK, …) intermittently blow on the CI

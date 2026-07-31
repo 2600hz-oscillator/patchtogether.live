@@ -38,10 +38,18 @@ export default defineConfig({
 
   expect: {
     toHaveScreenshot: {
-      // The annotated face is a doc asset, not a regression target — generous
-      // tolerance so a sub-pixel AA difference never fails the generation run.
-      threshold: 0.2,
-      maxDiffPixelRatio: 0.1,
+      // The annotated face is a doc asset the build copies into
+      // static/docs/module-faces/, so this tolerance decides whether the
+      // GENERATION run aborts — it is not gating a regression. Still tightened
+      // 2026-07-31 from threshold 0.2 / ratio 0.1: a 10% budget on a doc asset
+      // meant the published image could drift a tenth of its area from the
+      // face it claims to document, and nothing would say so.
+      //
+      // ⚠ "not a regression target" is an assumption worth revisiting — these
+      // images are what the docs SHOW users, so a silent drift here is a
+      // documentation lie even if no gate is meant to catch it.
+      threshold: 0.15,
+      maxDiffPixelRatio: 0.02,
       timeout: 15_000,
       animations: 'disabled',
     },
