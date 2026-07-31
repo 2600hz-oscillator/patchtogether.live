@@ -985,6 +985,7 @@ dx7 out out audio
 dx7 param algorithm 1..32 discrete default=5
 dx7 param attack 0.001..5 log default=0.001 unit=s
 dx7 param decay 0.001..5 log default=0.1 unit=s
+dx7 param feedback 0..7 discrete default=4
 dx7 param level 0..2 linear default=0.7
 dx7 param release 0.001..5 log default=0.005 unit=s
 dx7 param sustain 0..1 linear default=1

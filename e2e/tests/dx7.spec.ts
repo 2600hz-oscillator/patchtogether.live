@@ -285,3 +285,178 @@ test('dx7: changing preset updates the dropdown value', async ({ page, rack }) =
   });
   expect(stored).toBe('BASS 1');
 });
+
+// ---------------------------------------------------------------------------
+// THE PRESET STAMP — five writes, one transaction, and it has to come BACK
+// ---------------------------------------------------------------------------
+//
+// Loading a voice is no longer `data.preset = name`. It stamps the whole edit
+// buffer (`voice`, `opOn`, `voiceRev`) plus the two authoritative params
+// (`algorithm`, `feedback`) in ONE mutateNode transaction. The unit suite
+// (packages/web/src/lib/ui/modules/dx7-patch-actions.test.ts) pins the
+// atomicity against the real UndoManager; what only a browser can prove is
+// that all five actually PERSIST — the buffer is the one payload here that is
+// a nested object graph rather than a scalar, and a Yjs write that looked fine
+// in memory could still fail to encode.
+//
+// ⚠ PEER PROPAGATION IS *NOT* COVERED HERE, DELIBERATELY. A two-context test
+// needs the `@collab` tag, and every `@collab`-tagged spec file is resolved
+// INTO the collab attest basis by scripts/collab-attest-lib.ts, so adding one
+// would force a relay re-attest for a synth change. The dx7 program's plan
+// declares attest movement NIL. What this test does cover is the same encoded
+// Y.Doc update a peer receives: the IndexedDB scratch replica round-trips the
+// stamp through exactly that binary.
+
+/**
+ * Update rows in the dawless scratch replica, WITHOUT creating the DB (an
+ * unconditional `indexedDB.open` would seed an empty shell and race the
+ * replica). A RISING count is the deterministic flush signal — the stamp has
+ * reached IndexedDB — which is what makes the reload below an assertion rather
+ * than a race. Mirrors scratch-persist.spec.ts's `replicaRowCount`.
+ */
+async function replicaRows(page: Page): Promise<number> {
+  return page.evaluate(async () => {
+    const id = window.localStorage.getItem('pt:local-scratch-id:dawless');
+    if (!id) return 0;
+    const name = `pt-rack-v1-${id}`;
+    const list =
+      (await (indexedDB as unknown as { databases?: () => Promise<{ name?: string }[]> })
+        .databases?.()) ?? [];
+    if (!list.some((d) => d.name === name)) return 0;
+    return new Promise<number>((resolve) => {
+      const req = indexedDB.open(name); // no version → open current, no upgrade
+      req.onerror = () => resolve(0);
+      req.onsuccess = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains('updates')) { db.close(); resolve(0); return; }
+        const keys = db.transaction('updates', 'readonly').objectStore('updates').getAllKeys();
+        keys.onsuccess = () => { db.close(); resolve((keys.result as unknown[]).length); };
+        keys.onerror = () => { db.close(); resolve(0); };
+      };
+    });
+  });
+}
+
+/** The five values the stamp writes, read straight off the live graph. */
+async function readStamp(page: Page, nodeId: string) {
+  return page.evaluate((id) => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { params?: Record<string, number>; data?: Record<string, unknown> } | undefined> };
+    };
+    const n = w.__patch.nodes[id];
+    const d = (n?.data ?? {}) as Record<string, unknown>;
+    const voice = d.voice as { name?: string; operators?: unknown[] } | undefined;
+    return {
+      preset: d.preset as string | undefined,
+      voiceName: voice?.name,
+      opCount: Array.isArray(voice?.operators) ? voice!.operators!.length : 0,
+      opOn: d.opOn as boolean[] | undefined,
+      voiceRev: d.voiceRev as number | undefined,
+      algorithm: n?.params?.algorithm,
+      feedback: n?.params?.feedback,
+    };
+  }, nodeId);
+}
+
+test.describe('dx7 preset stamp — persistence', () => {
+  // Opt IN to the IndexedDB scratch replica (see scratch-persist.spec.ts):
+  // /rack disables it under the e2e harness by default, and it is what makes a
+  // real `page.reload()` a meaningful assertion instead of a fresh empty doc.
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      (window as unknown as { __ptScratchReplica?: boolean }).__ptScratchReplica = true;
+    });
+  });
+
+  test('a preset change stamps 5 values and survives a real browser reload', async ({ page }) => {
+    await page.goto('/rack');
+    await page.waitForLoadState('networkidle');
+
+    const idbOk = await page.evaluate(() => typeof indexedDB !== 'undefined' && indexedDB !== null);
+    test.skip(!idbOk, 'IndexedDB unavailable — the scratch replica cannot persist');
+
+    await spawnPatch(page, [{ id: 'dx-stamp', type: 'dx7', position: { x: 180, y: 160 } }]);
+    await expect(page.locator('.svelte-flow__node[data-id="dx-stamp"]')).toBeVisible();
+
+    const presetSel = page.locator('[data-testid="dx7-preset-select"]');
+    await expect(presetSel).toHaveValue('E.PIANO 1');
+    // Row count BEFORE the stamp, so the flush wait below is a real delta and
+    // not "the DB exists" (which the spawn alone already satisfies).
+    const rowsBefore = await replicaRows(page);
+
+    // THE GESTURE — the real <select>, i.e. the shared action the shell cell
+    // calls too. WIRE LEAD is the deliberate choice: it is the one built-in
+    // that differs from E.PIANO 1 (alg 5 / fb 4) in BOTH stamped params
+    // (alg 1 / fb 7), AND its feedback differs from the def's own default of
+    // 4 — so neither param assertion can pass on a value that was already
+    // there. TUB BELLS would have been a trap: its feedback IS 4.
+    await presetSel.selectOption('WIRE LEAD');
+    await expect(presetSel).toHaveValue('WIRE LEAD');
+
+    const before = await readStamp(page, 'dx-stamp');
+    expect(before.preset).toBe('WIRE LEAD');
+    expect(before.voiceName, 'the edit buffer was stamped, not just the label').toBe('WIRE LEAD');
+    expect(before.opCount, 'all six operators crossed into node.data').toBe(6);
+    expect(before.opOn).toEqual([true, true, true, true, true, true]);
+    expect(before.voiceRev).toBeGreaterThan(0);
+    expect(before.algorithm, 'params.algorithm adopted the voice').toBe(1);
+    expect(before.feedback, 'params.feedback adopted the voice').toBe(7);
+
+    // Block until the STAMP itself has flushed — a strictly higher row count
+    // than before the gesture — then take the real reload (a new JS context
+    // and a fresh empty doc, re-seeded only from IndexedDB). Polling a delta
+    // rather than sleeping is what keeps this deterministic on a loaded CI box.
+    await expect
+      .poll(() => replicaRows(page), { timeout: 15_000 })
+      .toBeGreaterThan(rowsBefore);
+    await page.reload();
+    await page.waitForLoadState('networkidle');
+
+    await expect(page.locator('.svelte-flow__node[data-id="dx-stamp"]')).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('[data-testid="dx7-preset-select"]')).toHaveValue('WIRE LEAD');
+
+    const after = await readStamp(page, 'dx-stamp');
+    expect(after, 'every stamped value came back byte-for-byte').toEqual(before);
+  });
+
+  test('the stamp round-trips through the SAME encoded Y.Doc update a peer receives', async ({ page, rack }) => {
+    // `__persistence.save()` serializes the doc with Y.encodeStateAsUpdate —
+    // the identical binary Hocuspocus ships to a rack-mate on sync. Wiping the
+    // live graph and loading it back therefore exercises the peer-side
+    // encode/decode of the stamped buffer, which is the half of "reaches a
+    // peer" that does not need a second browser context or a relay.
+    await spawnPatch(page, [{ id: 'dx-wire', type: 'dx7' }]);
+    const presetSel = page.locator('[data-testid="dx7-preset-select"]');
+    await presetSel.selectOption('BRASS 1');
+    await expect(presetSel).toHaveValue('BRASS 1');
+    const before = await readStamp(page, 'dx-wire');
+    expect(before.voiceName).toBe('BRASS 1');
+
+    const env = await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __persistence: { save: () => unknown };
+        __patch: { nodes: Record<string, unknown>; edges: Record<string, unknown> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      const envelope = w.__persistence.save();
+      w.__ydoc.transact(() => {
+        for (const id of Object.keys(w.__patch.edges)) delete w.__patch.edges[id];
+        for (const id of Object.keys(w.__patch.nodes)) delete w.__patch.nodes[id];
+      });
+      return envelope;
+    });
+
+    // Verify the wipe really happened, or the reload assertion below is
+    // vacuous (it would be reading the values that never left).
+    const wiped = await readStamp(page, 'dx-wire');
+    expect(wiped.preset, 'the graph really was cleared').toBeUndefined();
+
+    await page.evaluate((envIn) => {
+      const w = globalThis as unknown as { __persistence: { load: (env: unknown) => unknown } };
+      w.__persistence.load(envIn);
+    }, env);
+
+    const after = await readStamp(page, 'dx-wire');
+    expect(after).toEqual(before);
+  });
+});
