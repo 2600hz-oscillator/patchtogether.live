@@ -43,7 +43,7 @@ test.describe.configure({ mode: 'default' });
 const FACES = [
   // batch 1
   { type: 'tidyVco', pages: 5 },
-  { type: 'kickdrum', pages: 6 },
+  { type: 'kickdrum', pages: 5 },
   { type: 'adsr', pages: 1 },
   { type: 'vca', pages: 1 },
   { type: 'lfo', pages: 2 },

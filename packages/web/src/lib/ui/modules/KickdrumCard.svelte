@@ -23,6 +23,7 @@
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import { cardParams } from './card-kit';
+  import { fireKickdrumStrike } from './kickdrum-strike-actions';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -59,6 +60,21 @@
 
   let hardOn = $derived(hard >= 0.5);
   function toggleHard(): void { set('hard')(hardOn ? 0 : 1); }
+
+  // Manual STRIKE — the audition hit (momentary visual flash on the button).
+  // Same ONE seam the RACKLINE shell's `kickdrum-strike` action cell calls
+  // (kickdrum-strike-actions → the engine handle's `manualTrigger` read key →
+  // a host-side ConstantSource summed into trigger_in), so the two surfaces
+  // cannot drift. It sits with the SUB group because that is what a kick's
+  // strike makes — the same reading the shell face's leading 'strike · the
+  // pulse' band gives it. The flash follows the RETURNED truth, not the click:
+  // with no engine booted nothing fires and nothing flashes.
+  let strikePulse = $state(false);
+  function strike(): void {
+    if (!fireKickdrumStrike(id)) return;
+    strikePulse = true;
+    setTimeout(() => { strikePulse = false; }, 120);
+  }
 
   // Rear PatchPanel — sectioned to MIRROR the on-card control-group headers:
   // every per-control CV jack sits under the same header as its knob, and the
@@ -147,6 +163,15 @@
             <Fader value={subDecay} min={50} max={800} defaultValue={defaultFor('sub_decay')} label="Dec"  units="ms" curve="log"    onchange={set('sub_decay')} moduleId={id} paramId="sub_decay" readLive={live('sub_decay')} />
             <Fader value={subLevel} min={0}  max={1}   defaultValue={defaultFor('sub_level')} label="Sub"             curve="linear" onchange={set('sub_level')} moduleId={id} paramId="sub_level" readLive={live('sub_level')} />
           </div>
+          <!-- The `kickdrum-strike` control family (one member): the AUDITION.
+               An unpatched kick is otherwise silent while you dial it in. -->
+          <button
+            class="strike"
+            class:pulse={strikePulse}
+            onclick={strike}
+            data-testid={`kickdrum-strike-${id}-1`}
+            title="Audition: hit the drum once (identical to a trigger_in rising edge)"
+          >● STRIKE</button>
         </div>
         <div class="group wide">
           <header>BODY</header>
@@ -287,5 +312,25 @@
     color: #ff8f3f;
     border-color: #ff8f3f;
     background: #1c1610;
+  }
+  .kickdrum-card .strike {
+    display: block;
+    font-family: var(--font-mono, monospace);
+    font-size: 0.6rem;
+    letter-spacing: 1px;
+    padding: 6px 12px;
+    margin: 2px 2px 6px;
+    background: #14151a;
+    color: #ff8f3f;
+    border: 1px solid #2a2d36;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .kickdrum-card .strike:active,
+  .kickdrum-card .strike.pulse {
+    color: #0e1013;
+    background: #ff8f3f;
+    border-color: #ff8f3f;
   }
 </style>
