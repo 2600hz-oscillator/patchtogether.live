@@ -222,7 +222,19 @@ export const dx7Def: AudioModuleDef = {
       { id: 'performance', label: 'performance', controls: ['voiceCount', 'transpose', 'level'] },
       { id: 'ampenv', label: 'master adsr', controls: ['attack', 'decay', 'sustain', 'release'] },
     ],
-    glyph: 'scope',
+    // The face glyph is the ALGORITHM DIAGRAM, not a scope trace (dx7 PR 4).
+    // A 40px trace of an FM patch looks the same for every voice and flatlines
+    // whenever nothing is gated — which is most of the time you are looking at
+    // a rack — whereas the routing shape identifies the patch at a glance and
+    // is the only thing that shows which operators are carriers.
+    glyph: 'algorithm',
+    // ALGORITHM is a PICTURE-STATE param (PF-15): 32 wiring topologies whose
+    // only readable presentation is the chart itself. `'grid'` gives it the
+    // chip + portaled diagram picker, which is TIER-INDEPENDENT — the grid is
+    // portaled out of the tile, so the full 32-cell chart is as reachable from
+    // a 46px lane column as from the dock faceplate. No new param and no new
+    // control family, so contract-lock does not move.
+    paramCells: { algorithm: 'grid' },
     // REAR CARD curation (rear-card-model). This module has NO per-param CV
     // jacks — its three inputs are all note sources — so the derivation would
     // give one generic 'voice' band. The curation names that band by FUNCTION

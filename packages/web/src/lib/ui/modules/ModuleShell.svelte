@@ -48,6 +48,12 @@
   import { cardParams, portsFromDef } from './card-kit';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import VideoTileThumb from './VideoTileThumb.svelte';
+  // The one module-specific import in the shell, and it rides the seam that
+  // already declares itself special: `glyphBinding`'s 'algorithm' kind is
+  // hard-wired to the `algorithm` param (see its ⚠ note). A second topology
+  // module would generalise BOTH at once — until then a registry indirection
+  // here would be one indirection serving one caller.
+  import Dx7AlgorithmGlyph from './dx7/Dx7AlgorithmGlyph.svelte';
   import { Button, KnobConic, ParamGrid, ScopeScreen, Segmented, Selector, Toggle, VuMeter } from '$lib/ui/controls';
   import { curatedFace, dockFacePlan, type FaceControl, type FaceTier } from '$lib/ui/workflow/curated-face';
   import { shellCellFor } from '$lib/ui/workflow/shell-cells';
@@ -244,12 +250,39 @@
   // through the same live/transient seam the motorized knobs use so it tracks a
   // gesture rather than waiting for the durable commit. Named by the def's own
   // vocabulary when it declares one (`format` / `options`), else the raw step.
+  // The topology glyph's VALUE — the ONE reader the diagram and its caption
+  // both go through, so they cannot drift apart.
+  //
+  // ⚠ READS THE DURABLE PARAM, **NOT** `liveParam`, and that is a FIX, not an
+  // oversight. `liveParam` is `params.live(id)() ?? params.paramVal(id)`, and
+  // `params.live` asks the ENGINE. For dx7, `algorithm` is not an AudioParam,
+  // so `readParam` hands back the host's `currentAlgo` shadow — which only
+  // moves once an audio engine is actually running. With no engine started the
+  // shadow sits at its construction value forever, the `??` fallback never
+  // fires because a number is not nullish, and the plate renders a topology
+  // the patch abandoned. Measured: the picker committed algorithm 22, the chip
+  // read "ALGORITHM 22", and BOTH the diagram and the caption still said 5.
+  //
+  // That was a PRE-EXISTING defect in the caption (shipped in PR 2, which had
+  // no test opening the control); PR 4 only made it visible by giving the
+  // plate a second, bigger thing to render wrong. Reading durable state is
+  // also simply correct here: `algorithm` is discrete, has no CV input on this
+  // module, and MIDI-learn commits through `setNodeParam` like everything
+  // else — so there is no live-only value for the engine to know about.
+  // Regression-locked by dx7-algorithm-picker.spec.ts.
+  let topologyValue = $derived.by(() => {
+    const b = binding;
+    if (b.kind !== 'algorithm') return 0;
+    void nodeVersion(id);
+    return params.paramVal(b.paramId);
+  });
+
   let topologyLabel = $derived.by(() => {
     const b = binding;
     if (b.kind !== 'algorithm') return '';
     void nodeVersion(id);
     const pd = paramDef(b.paramId);
-    const v = liveParam(b.paramId);
+    const v = topologyValue;
     if (pd?.format) return pd.format(v);
     const named = pd?.options?.find((o) => o.value === v)?.label;
     return named ?? String(Math.round(v));
@@ -471,6 +504,9 @@
               paramId={pd.id}
               hero={view === 'dock-full'}
               compact={view !== 'dock-full'}
+              cell={binding.kind === 'algorithm' && pd.id === binding.paramId
+                ? algorithmCell
+                : undefined}
             />
           </div>
         {:else if cellKind === 'selector'}
@@ -681,12 +717,27 @@
         <!-- TOPOLOGY glyph (PF-15): DATA-DERIVED, so it is always live — an FM
              synth's 64px scope trace looks the same for every patch and
              flatlines whenever nothing is gated, which is most of the time you
-             are looking at a rack. PR 4 replaces this plate's BODY with the
-             derived routing diagram (one pure layout function shared with the
-             picker, the operator map and the tiles); the binding, the slot and
-             this DOM contract are what PR 2 pins.
+             are looking at a rack. PR 4 (here) fills the body with the derived
+             routing diagram; the binding, the slot and this DOM contract are
+             what PR 2 pinned for it.
+             The DIAGRAM is the glyph and the number is its caption — an FM
+             patch is identified by its shape long before anyone reads "ALG 5",
+             and the shape is the only part that says which operators are
+             carriers. Both render: the caption stays the accessible, greppable
+             value, and it is what a motorized/CV-driven sweep visibly tracks.
              ⚠ NOT A GENERAL PRECEDENT — see GlyphBinding's 'algorithm' note. -->
         <div class="topo-glyph" data-testid="shell-glyph-topology" data-topology-param={binding.paramId}>
+          <!-- SAME height contract as every other glyph in this slot (see the
+               ScopeScreen branches: dock 64 / lane 40). Without an explicit
+               height the SVG's `height: 100%` resolves against a `1fr` row and
+               the plate grows to ~180px, swallowing the faceplate. -->
+          <div
+            class="topo-diagram"
+            style:color={spine}
+            style:height="{view === 'dock-full' ? 64 : 40}px"
+          >
+            <Dx7AlgorithmGlyph num={topologyValue} testid="shell-glyph-algorithm" />
+          </div>
           <span class="topo-val">{topologyLabel}</span>
         </div>
       {:else if binding.kind === 'live-audio'}
@@ -802,6 +853,18 @@
   {/if}
 </div>
 
+<!-- The 32-entry algorithm picker's per-cell picture. ParamGrid exists because
+     this roster's entries ARE diagrams — rendering them as the numbers 1..32
+     would make the grid a worse Selector. Operator numbers are suppressed at
+     this size: a cell is ~26px, so the digits would be sub-2px mush.
+     Only reachable when the shell already resolved an 'algorithm' binding. -->
+{#snippet algorithmCell(c: { value: number; label: string; selected: boolean })}
+  <span class="grid-alg" class:selected={c.selected}>
+    <Dx7AlgorithmGlyph num={c.value} numbers={false} />
+    <span class="grid-alg-num">{c.label}</span>
+  </span>
+{/snippet}
+
 <style>
   /* INERT family/static cell — a family/static face key with NO registered
      shell-cell spec (shell-cells.ts). It is a LOUD FAILURE MARKER, not a
@@ -832,15 +895,51 @@
   }
 
   /* TOPOLOGY glyph plate (PF-15) — a data-derived glyph, so it needs no canvas
-     and no analyser. PR 4 fills the body with the routing diagram. */
+     and no analyser. PR 4 filled the body with the routing diagram.
+     The diagram takes the free space and the caption sits under it on its own
+     row, so the plate keeps working at the 40px lane height (where the diagram
+     is a few px tall and reads as a silhouette) and at the dock's 64px. */
   .topo-glyph {
     display: grid;
+    grid-template-rows: 1fr auto;
     place-items: center;
+    gap: 2px;
+    padding: 3px 2px 2px;
     min-height: 40px;
     width: 100%;
     border: 1px solid var(--border, #2c3037);
     border-radius: 4px;
     background: var(--module-bg-deep, #0a0c0f);
+  }
+  .topo-diagram {
+    display: block;
+    width: 100%;
+    min-height: 0; /* let the 1fr row actually shrink the SVG */
+    height: 100%;
+  }
+
+  /* One algorithm-picker cell: the diagram takes the room, the number labels
+     it. Colour flows to the SVG's `currentColor`, so selection re-tints the
+     whole picture rather than just the caption. */
+  .grid-alg {
+    display: grid;
+    grid-template-rows: 1fr auto;
+    align-items: center;
+    justify-items: center;
+    gap: 1px;
+    width: 100%;
+    height: 100%;
+    min-height: 26px;
+    color: var(--text-dim, #8a9099);
+  }
+  .grid-alg.selected {
+    color: var(--accent, #6cf);
+  }
+  .grid-alg-num {
+    font-family: var(--mono, ui-monospace, monospace);
+    font-size: 8px;
+    line-height: 1;
+    opacity: 0.85;
   }
   .topo-val {
     font-family: var(--mono, ui-monospace, monospace);
