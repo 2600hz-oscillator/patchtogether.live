@@ -147,6 +147,41 @@
 // asserts both that the region's ink collapses AND that the companion rejects
 // the measurement. An assertion you cannot make fail is not evidence.
 //
+// ─────────────────────────────────────────────────────────────────────────
+// LINUX BASELINES ARE NOT DONE. READ THIS BEFORE DISPATCHING vrt-update.yml.
+//
+// Everything above was captured and verified on DARWIN. The linux baselines
+// still need a `vrt-update.yml` dispatch, and two of them will NOT regenerate
+// on their own:
+//
+//   `snh-seq-scope-on` and `snh-seq-scope-off` will very likely PASS-BUT-BE-
+//   STALE on linux. Their linux PNGs were captured when the scene still had the
+//   ch2 VCO cable AND when `freezeAudio` was a silent no-op (see B above). Both
+//   of those changed; the resulting linux render is different, but a held-DC
+//   scope trace moves few enough pixels that the diff can land UNDER the
+//   tolerance. `--update-snapshots` only REWRITES a snapshot when the
+//   comparison FAILS, so a sub-tolerance-stale baseline comes back with NOTHING
+//   COMMITTED and the dispatch reports green. This is the documented A2/#1213
+//   hole, and CLAUDE.md's rule applies verbatim:
+//
+//     git rm e2e/vrt/__screenshots__/vrt-composite.spec.ts/linux/snh-seq-scope-on.png \
+//            e2e/vrt/__screenshots__/vrt-composite.spec.ts/linux/snh-seq-scope-off.png
+//
+//   FIRST, then dispatch — Playwright always writes a MISSING snapshot.
+//
+// Also note for that dispatch:
+//   * `vco-scope-audio-trace` is `darwinOnly` on purpose (its determinism
+//     argument is keyed to the capture machine's sampleRate/128 = 375 Hz), so
+//     it needs no linux baseline and will be skipped.
+//   * `toybox` and `warrenspectrum` now have VRT_SCENES entries, so their linux
+//     baselines are stale by construction (the scene changes what is rendered,
+//     not just how stable it is) and WILL fail loudly rather than silently.
+//   * `timelorde`'s mask moved from the canvas to the wrap, so its linux
+//     baseline is stale too — that one also fails loudly (the magenta rect
+//     changes size).
+//   * Dispatch UNSCOPED. `-f grep=…` kills the run as `startup_failure` before
+//     any job starts.
+//
 // ⚠ Read each `rationale`'s force-killed row carefully before copying a floor:
 // `opacity: 0` reveals the CARD FACE, which is NOT black. Measured backdrops
 // here range from ink 0.0000 / stdDev 0.00 (timelorde) to ink 0.0181 /
