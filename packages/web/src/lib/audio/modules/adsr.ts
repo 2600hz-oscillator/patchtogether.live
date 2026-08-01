@@ -14,7 +14,10 @@
 // (1 - env) makes ducking / sidechain-style modulation a one-cable patch.
 //
 // Inputs:
-//   gate (gate): triggers the envelope. Rising edge = attack; falling edge = release.
+//   gate (gate, edge='gate'): drives the envelope. Rising edge = attack; the
+//     level is HELD at sustain while the gate stays high; falling edge =
+//     release. Level-sensitive on both edges — the textbook `gate` consumer
+//     (see $lib/audio/gate-trigger), never an edge-only trigger.
 //   attack (cv, log, paramTarget=attack): scales the attack-time param symmetrically.
 //   decay (cv, log, paramTarget=decay): scales the decay-time param symmetrically.
 //   sustain (cv, linear, paramTarget=sustain): displaces the sustain level (0..1).
@@ -24,13 +27,15 @@
 //   env (cv): the envelope, 0..1.
 //   env_inv (cv): 1 - env — the inverted envelope for ducking / sidechain use.
 //
-// Params:
+// Params (each carries a `format` so the dial shows the unit the value is
+// actually in — 5 ms, 220 ms, 1.20 s; see $lib/audio/adsr-stage-format):
 //   attack (log 0.001..10s, default 0.005): attack time in seconds.
 //   decay (log 0.001..10s, default 0.1): decay time in seconds.
 //   sustain (linear 0..1, default 0.7): held level after decay.
 //   release (log 0.001..10s, default 0.3): release time in seconds.
 
 import { instantiateFaustModule } from '$lib/audio/faust-runtime';
+import { formatStageTime, formatSustainLevel } from '$lib/audio/adsr-stage-format';
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import wasmUrl from '@patchtogether.live/dsp/dist/adsr.wasm?url';
@@ -46,7 +51,13 @@ export const adsrDef: AudioModuleDef = {
   label: 'adsr',
   category: 'modulation',
   inputs: [
-    { id: 'gate',    type: 'gate' },
+    // edge: 'gate' — DECLARED, not inferred. This port is LEVEL-SENSITIVE on
+    // both edges (rising = attack, held = sustain hold, falling = release), the
+    // textbook `gate` consumer of $lib/audio/gate-trigger's vocabulary, and its
+    // own doc has said so in prose since day one. Without the declaration the
+    // rear card renders no ▬ glyph and no edge legend on this module's ONLY
+    // input band — the one hole a patcher has to get right.
+    { id: 'gate',    type: 'gate', edge: 'gate' },
     // CV inputs route to the corresponding AudioParam, with engine-level
     // scaling (cvScale) so a -1..+1 LFO sweeps each param's full natural
     // range centered on the user's knob position. See
@@ -71,40 +82,85 @@ export const adsrDef: AudioModuleDef = {
     // Implemented as ConstantSource(+1) + GainNode(-1)·env, summed.
     { id: 'env_inv', type: 'cv' },
   ],
+  // `format` (PF-3) earns each dial a PERSISTENT readout, which is what the
+  // dock mock's stage strip shows (8 ms / 220 ms / 0.62 / 480 ms). It is not
+  // decoration: KnobConic's fallback formatter bottoms out at two decimals, so
+  // a LOG 0.001..10 s time prints its own DEFAULT (0.005) as "0.01 s" and
+  // collapses the entire 1–9 ms decade — the difference between a click and a
+  // pluck, and a third of the dial's travel — onto "0.00 s"/"0.01 s". The law
+  // lives in ONE pure place ($lib/audio/adsr-stage-format), unit-tested there.
+  // Cosmetic exactly like `label`: `format` is a FUNCTION, so it is
+  // structurally unserializable and can never reach the contract projection.
   params: [
-    { id: 'attack',  label: 'A', defaultValue: 0.005, min: 0.001, max: 10, curve: 'log', units: 's' },
-    { id: 'decay',   label: 'D', defaultValue: 0.1,   min: 0.001, max: 10, curve: 'log', units: 's' },
-    { id: 'sustain', label: 'S', defaultValue: 0.7,   min: 0,     max: 1,  curve: 'linear' },
-    { id: 'release', label: 'R', defaultValue: 0.3,   min: 0.001, max: 10, curve: 'log', units: 's' },
+    { id: 'attack',  label: 'A', defaultValue: 0.005, min: 0.001, max: 10, curve: 'log', units: 's', format: formatStageTime },
+    { id: 'decay',   label: 'D', defaultValue: 0.1,   min: 0.001, max: 10, curve: 'log', units: 's', format: formatStageTime },
+    { id: 'sustain', label: 'S', defaultValue: 0.7,   min: 0,     max: 1,  curve: 'linear',          format: formatSustainLevel },
+    { id: 'release', label: 'R', defaultValue: 0.3,   min: 0.001, max: 10, curve: 'log', units: 's', format: formatStageTime },
   ],
 
   // UI CURATION (RACKLINE face) — a DESIGNED rework, not a transcription of the
-  // old card (the dock spec is fullcard-mocks/adsr.html: the live envelope
-  // contour IS the hero, four stage controls beneath, deliberately minimal —
-  // no tabs, no sidebar). The 'envelope' glyph carries the module's identity at
-  // every tier, so the RANKING orders the stage controls by how often a player
-  // actually grabs them, not by canonical A-D-S-R reading order:
-  //   attack  — pluck ↔ swell; the single most-played envelope control
-  //   release — the note's tail; the other temporal edge a player rides live
-  //   sustain — the held body level
-  //   decay   — the sculptor's control; inaudible whenever sustain sits at 1.0
-  // So mini = attack + contour glyph; compact adds release (a glyph-bearing
-  // face fits TWO whole knob columns beside the contour — faceTierCap); the
-  // full-in-lane face shows all four. The dock mirrors the mock's single
-  // 'stages' band, in canonical A/D/S/R order beneath the big contour.
+  // old card. Dock spec: the gallery mock's `adsr` faceplate — one big live
+  // contour over four stage controls, no tab rail, no sidebar ("the deliberate
+  // minimal end of the kit; one clear job"). The 'envelope' glyph carries the
+  // module's identity at every tier that has room for it.
+  //
+  // `order` IS A PRIORITY RANKING; `pages` IS FUNCTION ORDER. They answer
+  // different questions and are ALLOWED to disagree — do not "fix" one to match
+  // the other. `order` decides what the tiers showing a SUBSET show (mini 1 /
+  // compact 2 beside a glyph / plate up to 6); `pages` decides the reading
+  // order of the tier that shows EVERYTHING.
+  //
+  // WHY RELEASE OUTRANKS ATTACK — the one non-obvious call, and it is
+  // structural rather than a preference:
+  //   * RELEASE is the ONLY stage that applies unconditionally. Its own doc
+  //     says so: "it applies even when the gate drops mid-attack". Every other
+  //     stage can be skipped outright by the gate that drives it.
+  //   * Under the rack's CANONICAL TRIGGER the attack is already over.
+  //     TRIGGER_PULSE_S ($lib/audio/gate-trigger) is 0.005 s — EXACTLY this
+  //     module's attack default — so a trigger-driven note peaks at the instant
+  //     the gate falls, decay never runs, and the whole audible envelope IS the
+  //     release.
+  //   * DECAY ranks LAST because it is the most conditional of the four:
+  //     `sustain` defaults to 0.7, so decay travels only 0.3 of the range, and
+  //     at sustain 1.0 it does nothing at all.
+  //   ⚠ TASTE CALL. The counter — "attack is the most-played envelope control"
+  //     — is real for a swell-oriented amp EG driven by HELD gates, and it is
+  //     what this face shipped with. The revert is ONE line: swap 'release' and
+  //     'attack' in `order`. Nothing else in the file moves.
+  //
+  // The tier ladder, read back as a sentence: mini = RELEASE + the contour;
+  // compact = RELEASE + ATTACK + the contour; the full-in-lane tier shows all
+  // four stages and NO glyph (4 cells ⇒ 2 plate rows ⇒ laneBodyPlan's
+  // `glyph = hasGlyph && rows <= 1` drops it in-lane — priced in; the dock hero
+  // still carries it); the dock shows everything.
   face: {
-    order: ['attack', 'release', 'sustain', 'decay'],
+    order: ['release', 'attack', 'sustain', 'decay'],
     pages: [
-      { id: 'stages', label: 'stages', controls: ['attack', 'decay', 'sustain', 'release'] },
+      // ONE page — the mock's single stage strip. Controls stay in canonical
+      // A/D/S/R order, DELIBERATELY not `face.order`: a page shows all four at
+      // once, and the only sane order for all four is the order they run in.
+      // The LABEL carries what the mock put in a sub-tag the shell has no slot
+      // for — that a gate DRIVES these four, in this sequence. The old label
+      // ('stages') only restated the page id.
+      {
+        id: 'stages',
+        label: 'gate → attack · decay · sustain · release',
+        controls: ['attack', 'decay', 'sustain', 'release'],
+      },
     ],
     glyph: 'envelope',
     // REAR CARD curation (rear-card-model) — the flip-side jack field.
     //  * The leading band is this module's DRIVE input, and an envelope is not
     //    a voice: it is labeled 'gate' so the field reads gate → stages →
     //    outputs, which is exactly the signal path.
-    //  * The 'stages' band mirrors the dock's single stages page (same four
-    //    holes, canonical A/D/S/R order), but splits into two clusters by CV
-    //    LAW — the one thing the rear can teach that the front cannot. The
+    //  * The 'stages' band is PINNED (a curated group whose id matches the page
+    //    id claims that page's slot, and its label wins) for one reason: the
+    //    band label otherwise INHERITS the dock page label, and "gate → attack ·
+    //    decay · sustain · release" is right on the front — where the gate is a
+    //    real input — and wrong on the rear, where it would head a band that
+    //    holds four CV holes and no gate. Same four holes, canonical A/D/S/R
+    //    order, split into two clusters by CV LAW — the one thing the rear can
+    //    teach that the front cannot. The
     //    param labels are single letters (A/D/S/R), so the cluster headers are
     //    also what tells you WHICH of the four holes is a level: ATTACK/DECAY/
     //    RELEASE are log-scaled TIME jacks (±1 V = ×100 / ÷100 of the knob
@@ -113,7 +169,10 @@ export const adsrDef: AudioModuleDef = {
     //    four CVs land on smoothed AudioParams — nothing here is an audio-rate
     //    modulation destination (contrast tidyVco's per-sample filter CVs).
     rear: {
-      groups: [{ id: 'voice', label: 'gate', ports: ['gate'] }],
+      groups: [
+        { id: 'voice', label: 'gate', ports: ['gate'] },
+        { id: 'stages', label: 'stage cv', ports: ['attack', 'decay', 'sustain', 'release'] },
+      ],
       clusters: [
         { group: 'stages', label: 'times', ports: ['attack', 'decay', 'release'] },
         { group: 'stages', label: 'level', ports: ['sustain'] },

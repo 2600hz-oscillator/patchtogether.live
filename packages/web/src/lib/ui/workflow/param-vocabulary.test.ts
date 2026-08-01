@@ -133,6 +133,43 @@ describe('ParamDef vocabulary — options (PF-1) vs landmarks (PF-10)', () => {
     expect(bad, 'every reachable state of a discrete param must be named').toEqual([]);
   });
 
+  it('a declared `format` (PF-3) is TOTAL — never throws, never returns empty', () => {
+    // `format` runs on EVERY animation frame while a value moves (KnobConic's
+    // readLive tick) and its output is ALSO the dial's aria-valuetext. A throw
+    // kills the frame; an empty string renders an invisible readout that reads
+    // exactly like "this param declared no vocabulary". Probe the declared
+    // range AND the values a live/engine read can legitimately hand back
+    // before the node has booted (undefined→NaN, an unclamped CV sum).
+    const bad: string[] = [];
+    for (const { type, p } of allParams()) {
+      if (!p.format) continue;
+      const probes = [
+        p.min,
+        p.max,
+        p.defaultValue,
+        (p.min + p.max) / 2,
+        p.min - 1,
+        p.max + 1,
+        0,
+        NaN,
+        Infinity,
+        -Infinity,
+      ];
+      for (const v of probes) {
+        let out: string;
+        try {
+          out = p.format(v);
+        } catch (e) {
+          bad.push(`${type}.${p.id}.format(${v}) THREW: ${String(e)}`);
+          continue;
+        }
+        if (typeof out !== 'string') bad.push(`${type}.${p.id}.format(${v}) → ${typeof out}, not a string`);
+        else if (out.length === 0) bad.push(`${type}.${p.id}.format(${v}) → '' (an invisible readout)`);
+      }
+    }
+    expect(bad.join('\n'), 'a param formatter must be pure and TOTAL').toBe('');
+  });
+
   it('`defaultValue` resolves to a real option when a roster is declared', () => {
     const bad = allParams()
       .filter(({ p }) => p.options?.length && !p.options.some((o) => o.value === p.defaultValue))
