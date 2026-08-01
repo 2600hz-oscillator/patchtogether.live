@@ -6,9 +6,12 @@
 // screen and strokes these points (per the design guidance: canvas for
 // generative graphics, not hand-authored SVG). Three modes:
 //   - envelope: an ADSR curve from attack/decay/sustain/release params.
-//   - wave:     one cycle of the oscillator's wave shape (a saw↔pulse morph
-//               like TIDY VCO's shape law, or an explicit single-cycle buffer).
+//   - wave:     one cycle of the oscillator's wave shape (TIDY VCO's
+//               sine→triangle→square morph, drawn from the DSP core's OWN
+//               morph function, or an explicit single-cycle buffer).
 //   - waveform: a live time-domain trace (samples straight from an analyser).
+
+import { tidyMixGains, tidyOscSample } from '../../../../../dsp/src/lib/tidy-vco-dsp';
 
 export interface ScreenPoint {
   x: number;
@@ -87,22 +90,49 @@ export function valueToY(value: number, height: number): number {
 }
 
 // ---- WAVE mode -------------------------------------------------------------
+//
+// ⚠ THE DISPLAY MUST NOT LIE. TIDY VCO's morph law lives in exactly ONE place
+// — `tidyOscSample` in the DSP core the worklet bundles — and the two screens
+// that draw it (the card's WAVE screen and the shell face's DUAL glyph) call
+// that same function with `dt = 0`, which switches the band-limiting
+// corrections off and yields the IDEAL waveform. Re-typing the law here is
+// what lets a card silently disagree with its def (CLAUDE.md), so: don't.
 
 /**
- * One sample (−1..1) of a saw↔pulse morph at phase `phase01` (0..1). morph 0 =
- * sawtooth ramp, morph 1 = pulse (duty `pw`), linear crossfade between — TIDY
- * VCO's shape law (def: "0 = saw, 1 = pulse, continuous crossfade"). Pure so
- * the wave-mode geometry is testable at known phases.
+ * One sample of TIDY VCO's SHAPE morph at phase `phase01` — the DSP's own
+ * `tidyOscSample` at dt = 0 (the ideal, unwindowed waveform): morph 0 = sine,
+ * 0.5 = triangle, 1 = square of duty `pw`, linear crossfades between adjacent
+ * anchors. Amplitude is the DSP's RMS calibration (sine 0.816, triangle 1.0,
+ * square 0.577 peak) — the point/buffer builders below peak-normalize for the
+ * screen, so this stays the literal played waveform.
+ *
+ * Phase is CLAMPED to one display cycle [0, 1] (not wrapped) — the same
+ * edge-to-edge convention as `triMorphWaveSample`, so the square's second
+ * half runs to the right edge instead of snapping back up to phase 0.
  */
 export function morphWaveSample(phase01: number, morph: number, pw = 0.5): number {
-  const ph = phase01 - Math.floor(phase01); // wrap to [0,1)
-  const saw = 2 * ph - 1;
-  const square = ph < pw ? 1 : -1;
-  const m = clamp01(morph);
-  return (1 - m) * saw + m * square;
+  const ph = phase01 < 0 ? 0 : phase01 > 1 ? 1 : phase01;
+  return tidyOscSample(Math.min(ph, 1 - 1e-9), 0, morph, pw);
 }
 
-/** One cycle of the morph wave as canvas points across `width`×`height`. */
+/** Scale a cycle to unit peak IN PLACE — the screens are SHAPE displays (the
+ *  morph is RMS-calibrated, so a square would otherwise draw at 58 % height
+ *  and read as "quieter" rather than "different"). A silent cycle is left
+ *  alone. */
+function normalizePeak(out: Float32Array): Float32Array {
+  let peak = 0;
+  for (let i = 0; i < out.length; i++) {
+    const a = Math.abs(out[i]!);
+    if (a > peak) peak = a;
+  }
+  if (peak > 1e-9) {
+    for (let i = 0; i < out.length; i++) out[i] = out[i]! / peak;
+  }
+  return out;
+}
+
+/** One cycle of the morph wave as canvas points across `width`×`height`,
+ *  normalized to full screen height (see `normalizePeak`). */
 export function morphWavePoints(
   morph: number,
   width: number,
@@ -111,11 +141,13 @@ export function morphWavePoints(
   pw = 0.5,
 ): ScreenPoint[] {
   if (width <= 0 || height <= 0 || samples < 2) return [];
+  const n = Math.floor(samples);
+  const buf = new Float32Array(n);
+  for (let i = 0; i < n; i++) buf[i] = morphWaveSample(i / (n - 1), morph, pw);
+  normalizePeak(buf);
   const pts: ScreenPoint[] = [];
-  for (let i = 0; i < samples; i++) {
-    const ph = i / (samples - 1);
-    const v = morphWaveSample(ph, morph, pw);
-    pts.push({ x: ph * width, y: bipolarToY(v, height) });
+  for (let i = 0; i < n; i++) {
+    pts.push({ x: (i / (n - 1)) * width, y: bipolarToY(buf[i]!, height) });
   }
   return pts;
 }
@@ -124,15 +156,15 @@ export function morphWavePoints(
  * One cycle of TIDY VCO's CORE WAVEFORM as a sample buffer (−1..1) for
  * ScopeScreen's explicit-buffer `wave` mode — the PARAM-DERIVED half of the
  * dual glyph (owner spec: the oscillator's ASSIGNED shape, always visible
- * regardless of gate). Mirrors the voice's osc section: OSC1 and OSC2 are
- * each a saw↔pulse morph (`morphWaveSample` — the def's "0 = saw, 1 = pulse"
- * law) sharing one PW, crossfaded by the equal-power MIX law (0 = OSC1 only,
- * 1 = OSC2 only). The mixed cycle is peak-normalized (display identity — the
- * screen shows the SHAPE at full scale, not the mix's level sag). Pure +
- * deterministic so the derivation is unit-testable and the ungated VRT scenes
- * stay pixel-stable.
+ * regardless of gate). Mirrors the voice's osc section: OSC1 and OSC2 are each
+ * a sine→triangle→square morph (`morphWaveSample` → the DSP's `tidyOscSample`)
+ * sharing one PW, crossfaded by the DSP's own equal-power MIX gains
+ * (`tidyMixGains`: 0 = OSC1 only, 1 = OSC2 only). The mixed cycle is
+ * peak-normalized (display identity — the screen shows the SHAPE at full
+ * scale, not the mix's level sag). Pure + deterministic so the derivation is
+ * unit-testable and the ungated VRT scenes stay pixel-stable.
  */
-export function sawPulseMixWaveSamples(
+export function sineTriSquareMixWaveSamples(
   shape1: number,
   shape2 = 0,
   pw = 0.5,
@@ -140,29 +172,13 @@ export function sawPulseMixWaveSamples(
   samples = 128,
 ): Float32Array {
   const n = Math.max(2, Math.floor(samples));
-  const m = clamp01(mix);
-  // Equal-power crossfade gains (the def's documented MIX law).
-  const g1 = Math.cos((m * Math.PI) / 2);
-  const g2 = Math.sin((m * Math.PI) / 2);
+  const { g1, g2 } = tidyMixGains(mix);
   const out = new Float32Array(n);
-  let peak = 0;
   for (let i = 0; i < n; i++) {
-    // Clamped to ONE display cycle [0,1] (no wrap) — same edge-to-edge
-    // convention as triMorphWaveSamples, so the saw keeps its full ramp.
     const ph = i / (n - 1);
-    const v =
-      g1 * morphWaveSample(Math.min(ph, 1 - 1e-9), shape1, pw) +
-      g2 * morphWaveSample(Math.min(ph, 1 - 1e-9), shape2, pw);
-    out[i] = v;
-    const a = Math.abs(v);
-    if (a > peak) peak = a;
+    out[i] = g1 * morphWaveSample(ph, shape1, pw) + g2 * morphWaveSample(ph, shape2, pw);
   }
-  // Peak-normalize DOWN only (a correlated equal-power sum can exceed 1);
-  // a sub-unity cycle keeps its true amplitude.
-  if (peak > 1) {
-    for (let i = 0; i < n; i++) out[i] = out[i]! / peak;
-  }
-  return out;
+  return normalizePeak(out);
 }
 
 /**

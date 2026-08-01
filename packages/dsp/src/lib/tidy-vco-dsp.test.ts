@@ -7,6 +7,12 @@
 //     pin), bounded CLEAN self-oscillation (near-pure sine), resonance
 //     onset placement, passband-compensation window (the documented
 //     "how much do the lows thin at high res" decision), alias floor.
+//   • THE OSCILLATOR MORPH (sine → triangle → square): the three anchors
+//     land on the REAL waveform, the crossfades are continuous in both
+//     level and harmonic content, the anchors are RMS-matched, and the
+//     result is BAND-LIMITED at the top of the keyboard — proved against a
+//     naive (correction-free) negative control, which is the only way to
+//     know the alias metric can move at all.
 //   • RC-punch ADSR: attack terminates at the knob time, CONVEX punch
 //     (the CEM3310 overshoot-target curve), −60 dB decay/release
 //     convention, live sustain tracking, analog attack-from-current
@@ -45,11 +51,21 @@ import {
   tidyFoldGain,
   tidyFoldSpread,
   tidyFreqHz,
+  tidyMixGains,
+  tidyOscSample,
   tidyOtaVca,
+  tidyPolyBlamp,
+  tidyPolyBlep,
+  tidyPulse,
   tidyPwEff,
   tidyResToK,
+  tidyTriangle,
+  tidyTriangleNaive,
   triFold,
   triFoldInt,
+  OSC_SINE_GAIN,
+  OSC_SQUARE_GAIN,
+  OSC_TRI_GAIN,
   type TidyVcoBus,
   type TidyVcoParams,
 } from './tidy-vco-dsp';
@@ -125,7 +141,8 @@ function renderVoice(
   return { l, r };
 }
 
-/** A neutral single-osc probe patch: saw, no detune/sub, filter open-ish. */
+/** A neutral single-osc probe patch: SHAPE 0 (sine), no detune/sub, filter
+ *  open-ish. */
 function probePatch(over: Partial<TidyVcoParams> = {}): TidyVcoParams {
   return {
     ...TIDY_VCO_DEFAULTS,
@@ -181,6 +198,287 @@ function measureSelfOsc(fcKnob: number, sr: number): { freq: number; peak: numbe
   for (let i = 0; i < meas; i++) peak = Math.max(peak, Math.abs(buf[i]!));
   return { freq, peak };
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// THE OSCILLATOR — the SINE → TRIANGLE → SQUARE morph
+//
+// ⚠ VALIDATE THE INSTRUMENT. The alias gates below run the SAME oscillator
+// with dt = 0, which switches every polyBLEP/polyBLAMP correction off and
+// leaves the naive waveform. That is the NEGATIVE CONTROL: it proves the
+// alias metric can move at all before we believe the number it prints for
+// the real path. (dt = 0 is also literally what the card + shell wave
+// displays draw, so this doubles as the display's ground truth.)
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Free-run the bare oscillator at f0. `bandLimited = false` passes dt = 0,
+ *  i.e. the correction-free (naive) waveform — the negative control. */
+function renderOsc(f0: number, n: number, shape: number, pw = 0.5, bandLimited = true): Float32Array {
+  const dt = f0 / SR;
+  let t = 0;
+  const buf = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    buf[i] = tidyOscSample(t, bandLimited ? dt : 0, shape, pw);
+    t += dt;
+    if (t >= 1) t -= 1;
+  }
+  return buf;
+}
+
+/** Every alias image that folds BELOW the fundamental, at least `guardHz`
+ *  clear of DC and of f0 itself. The guard matters: an image a few Hz from
+ *  f0 reads as the FUNDAMENTAL's window leakage, not as aliasing — the
+ *  un-guarded version of this probe reported a clean −76 dBc for a signal
+ *  with a −27 dBc alias in it. */
+function belowF0Aliases(f0: number, guardHz = 60, kMax = 600): number[] {
+  const out: number[] = [];
+  for (let k = 2; k <= kMax; k++) {
+    const f = k * f0;
+    if (f <= SR / 2) continue;
+    let g = f % SR;
+    if (g > SR / 2) g = SR - g;
+    if (g > guardHz && g < f0 - guardHz) out.push(g);
+  }
+  return out;
+}
+
+/** Worst below-f0 alias image, in dB relative to the fundamental. */
+function worstAliasDbc(buf: Float32Array, f0: number): number {
+  const h1 = goertzel(buf, SR, f0, 0, buf.length);
+  let worst = -300;
+  for (const f of belowF0Aliases(f0)) {
+    const v = db(goertzel(buf, SR, f, 0, buf.length) / h1);
+    if (v > worst) worst = v;
+  }
+  return worst;
+}
+
+/** Amplitudes of the first `k` harmonics — the morph's spectral signature. */
+function harmonicVector(buf: Float32Array, f0: number, k = 24): number[] {
+  const out: number[] = [];
+  for (let h = 1; h <= k; h++) out.push(goertzel(buf, SR, h * f0, 0, buf.length));
+  return out;
+}
+
+function rmsAll(buf: Float32Array): number {
+  return rms(buf, 0, buf.length);
+}
+
+describe('oscillator morph — the three anchors are the REAL waveform', () => {
+  const F0 = 55; // A1: dt = 0.00115, so the correction windows are hairline
+  const DT = F0 / SR;
+
+  it('SHAPE 0 is EXACTLY a sine (alias-free by construction — zero correction)', () => {
+    for (let i = 0; i < 997; i++) {
+      const t = i / 997;
+      expect(tidyOscSample(t, DT, 0, 0.5)).toBeCloseTo(OSC_SINE_GAIN * Math.sin(2 * Math.PI * t), 12);
+      // …at ANY pitch: a sine needs no band-limiting, so dt cannot matter.
+      expect(tidyOscSample(t, 0.2, 0, 0.5)).toBeCloseTo(OSC_SINE_GAIN * Math.sin(2 * Math.PI * t), 12);
+    }
+  });
+
+  it('SHAPE 0.5 is EXACTLY a triangle away from its two corners', () => {
+    let checked = 0;
+    for (let i = 0; i < 997; i++) {
+      const t = i / 997;
+      const nearCorner = Math.min(Math.abs(t - 0.25), Math.abs(t - 0.75)) < 2 * DT;
+      if (nearCorner) continue;
+      expect(tidyOscSample(t, DT, 0.5, 0.5)).toBeCloseTo(OSC_TRI_GAIN * tidyTriangleNaive(t), 12);
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(900);
+    // The corners are ROUNDED, not moved: the peak still lands at ±1 (times
+    // the anchor gain) and the wave still crosses zero at 0 and ½.
+    expect(tidyOscSample(0.25, DT, 0.5, 0.5)).toBeCloseTo(OSC_TRI_GAIN, 2);
+    expect(tidyOscSample(0.75, DT, 0.5, 0.5)).toBeCloseTo(-OSC_TRI_GAIN, 2);
+    expect(tidyOscSample(0, DT, 0.5, 0.5)).toBeCloseTo(0, 6);
+    expect(tidyOscSample(0.5, DT, 0.5, 0.5)).toBeCloseTo(0, 6);
+  });
+
+  it('SHAPE 1 is EXACTLY a square at the default PW, and a real pulse below it', () => {
+    let checked = 0;
+    for (let i = 0; i < 997; i++) {
+      const t = i / 997;
+      if (Math.min(t, Math.abs(t - 0.5), 1 - t) < 2 * DT) continue; // the two edges
+      expect(tidyOscSample(t, DT, 1, 0.5)).toBeCloseTo(OSC_SQUARE_GAIN * (t < 0.5 ? 1 : -1), 12);
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(900);
+    // PW is the SQUARE LEG's duty: 0.2 keeps the wave high for exactly 20 %.
+    let high = 0;
+    for (let i = 0; i < 10000; i++) if (tidyOscSample(i / 10000, DT, 1, 0.2) > 0) high++;
+    expect(high / 10000).toBeCloseTo(0.2, 2);
+  });
+
+  it('all three anchors put their FUNDAMENTAL in phase (no crossfade cancellation)', () => {
+    // Each anchor's fundamental must be +sin(2π t): correlate one cycle
+    // against sin and against cos. A negative (or quadrature) fundamental is
+    // what makes a morph notch out mid-sweep.
+    for (const shape of [0, 0.5, 1]) {
+      let cs = 0;
+      let cc = 0;
+      const n = 20000;
+      for (let i = 0; i < n; i++) {
+        const t = i / n;
+        const v = tidyOscSample(t, 1 / n, shape, 0.5);
+        cs += v * Math.sin(2 * Math.PI * t);
+        cc += v * Math.cos(2 * Math.PI * t);
+      }
+      expect(cs / n, `shape ${shape} fundamental is +sin`).toBeGreaterThan(0.2);
+      expect(Math.abs(cc / n), `shape ${shape} fundamental has no cos part`).toBeLessThan(1e-3);
+    }
+  });
+
+  it('polyBLAMP is the exact INTEGRAL of the polyBLEP (the corner-vs-step derivation)', () => {
+    // d/dt blamp(t, dt) · dt  ==  blep(t, dt) / 2  (the unit-STEP residual).
+    // If this drifts, the triangle's corners are being corrected by the
+    // wrong kernel and the band-limiting silently degrades to naive.
+    const dt = 0.01;
+    const h = 1e-6;
+    for (const t of [0.0005, 0.002, 0.005, 0.009, 0.9915, 0.995, 0.998, 0.9995]) {
+      const d = (tidyPolyBlamp(t + h, dt) - tidyPolyBlamp(t - h, dt)) / (2 * h);
+      expect(d * dt, `blamp' at ${t}`).toBeCloseTo(tidyPolyBlep(t, dt) / 2, 6);
+    }
+    // …and it is 0 outside the 2-sample window (both kernels are local).
+    expect(tidyPolyBlamp(0.5, dt)).toBe(0);
+    expect(tidyPolyBlamp(0.3, 0)).toBe(0);
+  });
+
+  it('tidyMixGains is the equal-power OSC1↔OSC2 law the render loop uses', () => {
+    expect(tidyMixGains(0)).toEqual({ g1: 1, g2: 0 });
+    const half = tidyMixGains(0.5);
+    expect(half.g1).toBeCloseTo(Math.SQRT1_2, 12);
+    expect(half.g2).toBeCloseTo(Math.SQRT1_2, 12);
+    for (const m of [0, 0.2, 0.5, 0.8, 1]) {
+      const { g1, g2 } = tidyMixGains(m);
+      expect(g1 * g1 + g2 * g2, `equal power at mix ${m}`).toBeCloseTo(1, 12);
+    }
+  });
+});
+
+describe('oscillator morph — BAND-LIMITING (proved against a naive control)', () => {
+  const C7 = 2093.005;
+  const N = 2 * SR;
+
+  it('a naive oscillator DOES alias at C7 — the metric can move (negative control)', () => {
+    // Without this, a band-limited reading of "−100 dBc" proves nothing: a
+    // probe that looks in the wrong place returns a clean number for a filthy
+    // signal. A naive square's 23rd harmonic folds to 139 Hz at −27 dBc.
+    expect(worstAliasDbc(renderOsc(C7, N, 1, 0.5, false), C7)).toBeGreaterThan(-32);
+    expect(worstAliasDbc(renderOsc(C7, N, 0.5, 0.5, false), C7)).toBeGreaterThan(-60);
+  });
+
+  it('every morph position is band-limited at C7 (worst below-f0 image < −85 dBc)', () => {
+    for (const shape of [0, 0.25, 0.5, 0.75, 1]) {
+      const bl = worstAliasDbc(renderOsc(C7, N, shape, 0.5, true), C7);
+      expect(bl, `shape ${shape} worst below-f0 alias`).toBeLessThan(-85);
+    }
+  });
+
+  it('the corrections buy ≥ 45 dB over naive wherever there is anything to fix', () => {
+    for (const shape of [0.25, 0.5, 0.75, 1]) {
+      const bl = worstAliasDbc(renderOsc(C7, N, shape, 0.5, true), C7);
+      const naive = worstAliasDbc(renderOsc(C7, N, shape, 0.5, false), C7);
+      expect(naive - bl, `shape ${shape}: naive ${naive.toFixed(1)} vs BL ${bl.toFixed(1)} dBc`).toBeGreaterThan(45);
+    }
+    // SHAPE 0 is the exception BY CONSTRUCTION: a sine has nothing to correct,
+    // so band-limited and naive are the same buffer and both are clean.
+    const sineBl = worstAliasDbc(renderOsc(C7, N, 0, 0.5, true), C7);
+    const sineNaive = worstAliasDbc(renderOsc(C7, N, 0, 0.5, false), C7);
+    expect(sineBl).toBeCloseTo(sineNaive, 6);
+    expect(sineBl).toBeLessThan(-120);
+  });
+
+  it('a thin PULSE at C7 stays band-limited too (PW is not a hole in the gate)', () => {
+    // NARROW DUTY IS THE WEAKEST CASE, and it is pre-existing polyBLEP
+    // behaviour, not new: at C7 a 10 % duty is ~2.3 samples wide, so the two
+    // 2-sample BLEP windows nearly touch and the correction has less room.
+    // Measured worst below-f0 image: −101.7 dBc at duty 0.5, −80.3 at 0.3,
+    // −76.1 at 0.1, −75.8 at 0.05 (naive: −27.2 / −25.4 / −18.9 / −18.0).
+    for (const pw of [0.3, 0.2, 0.1, 0.05]) {
+      const bl = worstAliasDbc(renderOsc(C7, N, 1, pw, true), C7);
+      const naive = worstAliasDbc(renderOsc(C7, N, 1, pw, false), C7);
+      expect(bl, `duty ${pw} worst below-f0 alias`).toBeLessThan(-70);
+      expect(naive - bl, `duty ${pw} improvement over naive`).toBeGreaterThan(45);
+    }
+  });
+});
+
+describe('oscillator morph — LEVEL + CONTINUITY across the sweep', () => {
+  const F0 = 220;
+  const N = SR;
+
+  it('the three anchors are RMS-MATCHED (SHAPE is a timbre knob, not a volume knob)', () => {
+    const target = 1 / Math.sqrt(3); // a unit-peak triangle's RMS — the reference
+    for (const shape of [0, 0.5, 1]) {
+      // In dB, because loudness is what this calibration is ABOUT. (The
+      // square lands 0.037 dB under the ideal at A3: band-limiting really
+      // does remove its above-Nyquist harmonics — correct physics, and the
+      // deficit grows with pitch as fewer harmonics fit.)
+      const err = db(rmsAll(renderOsc(F0, N, shape))) - db(target);
+      expect(Math.abs(err), `shape ${shape} level error ${err.toFixed(3)} dB`).toBeLessThan(0.1);
+    }
+    // A peak-matched morph would swing 4.8 dB here; that is the defect this
+    // calibration exists to remove.
+    expect(db(1) - db(1 / Math.sqrt(3))).toBeCloseTo(4.77, 1);
+  });
+
+  it('level is continuous and near-flat across the WHOLE sweep (≤ 0.5 dB)', () => {
+    const levels: number[] = [];
+    for (let i = 0; i <= 40; i++) levels.push(db(rmsAll(renderOsc(F0, N, i / 40))));
+    const spread = Math.max(...levels) - Math.min(...levels);
+    expect(spread, `RMS spread across the morph: ${spread.toFixed(3)} dB`).toBeLessThan(0.5);
+    // No STEP anywhere (a discontinuous knob would click): the biggest
+    // adjacent move is a small multiple of the average one.
+    const steps = levels.slice(1).map((v, i) => Math.abs(v - levels[i]!));
+    const mean = steps.reduce((a, b) => a + b, 0) / steps.length;
+    expect(Math.max(...steps)).toBeLessThan(Math.max(4 * mean, 0.05));
+  });
+
+  it('harmonic content moves CONTINUOUSLY — no jump at either crossfade seam', () => {
+    // Spectral distance between ADJACENT morph positions (Δ = 0.01). A seam
+    // discontinuity (e.g. anchors whose fundamentals disagree in phase, or a
+    // branch that skips a leg) shows up as one step towering over the rest.
+    const step = 0.01;
+    const dists: number[] = [];
+    let prev = harmonicVector(renderOsc(F0, N, 0), F0);
+    for (let i = 1; i <= 100; i++) {
+      const cur = harmonicVector(renderOsc(F0, N, i * step), F0);
+      let d = 0;
+      for (let k = 0; k < cur.length; k++) d += (cur[k]! - prev[k]!) ** 2;
+      dists.push(Math.sqrt(d));
+      prev = cur;
+    }
+    const mean = dists.reduce((a, b) => a + b, 0) / dists.length;
+    const worst = Math.max(...dists);
+    expect(worst / mean, `worst/mean adjacent spectral step = ${(worst / mean).toFixed(2)}`).toBeLessThan(4);
+    // …and the sweep really does traverse a lot of ground (a flat/dead knob
+    // would also have a tiny worst/mean ratio — the negative control for THIS
+    // metric).
+    let total = 0;
+    const ends = harmonicVector(renderOsc(F0, N, 1), F0);
+    const start = harmonicVector(renderOsc(F0, N, 0), F0);
+    for (let k = 0; k < ends.length; k++) total += (ends[k]! - start[k]!) ** 2;
+    expect(Math.sqrt(total) / mean).toBeGreaterThan(20);
+  });
+
+  it('the morph passes exactly THROUGH the triangle at 0.5 (both branches agree)', () => {
+    for (let i = 0; i < 200; i++) {
+      const t = i / 200;
+      const lo = tidyOscSample(t, 0.001, 0.5, 0.5);
+      const hi = tidyOscSample(t, 0.001, 0.5 + 1e-9, 0.5);
+      expect(hi).toBeCloseTo(lo, 8);
+      expect(lo).toBeCloseTo(OSC_TRI_GAIN * tidyTriangle(t, 0.001), 12);
+    }
+  });
+
+  it('SHAPE is clamped, and out-of-range values pin to the end waveforms', () => {
+    for (let i = 0; i < 64; i++) {
+      const t = i / 64;
+      expect(tidyOscSample(t, 0.001, -3, 0.5)).toBe(tidyOscSample(t, 0.001, 0, 0.5));
+      expect(tidyOscSample(t, 0.001, 4, 0.5)).toBe(tidyOscSample(t, 0.001, 1, 0.5));
+    }
+  });
+});
 
 // ─────────────────────────────────────────────────────────────────────────
 // Diode ladder
@@ -631,21 +929,24 @@ describe('voice render', () => {
     expect(w1.corr, 'true stereo, not dual-mono').toBeLessThan(0.5);
   });
 
-  it('keytrack: TRACK carries the brightness up the keyboard (H4/H1 at C6)', () => {
+  it('keytrack: TRACK carries the brightness up the keyboard (H3/H1 at C6)', () => {
     // (The whistle-position half of keytracking is proven by composition:
     // the ladder tuning gate pins whistle = fc, and the cutoff-law test
     // pins fc = knob·2^(track·voct). At the VOICE level a hot osc bus
     // chokes the whistle through the feedback limiter — authentic diode
     // behavior — so here we gate the audible half: harmonic rolloff.)
     const f0 = 1046.5; // C6 (voct = 2)
+    // A SQUARE probe + H3: probePatch's default SHAPE 0 is a bare sine, so an
+    // H4/H1 reading there would be measuring the ladder's own nonlinearity
+    // rather than keytracked brightness — and H4 is EVEN, which a square nulls.
     const at = (track: number): number => {
-      const { l } = renderVoice(probePatch({ cutoff: 1200, track }), lane0Bus(2), 1);
-      return db(goertzel(l, SR, 4 * f0, SR / 2, SR) / goertzel(l, SR, f0, SR / 2, SR));
+      const { l } = renderVoice(probePatch({ cutoff: 1200, track, shape1: 1 }), lane0Bus(2), 1);
+      return db(goertzel(l, SR, 3 * f0, SR / 2, SR) / goertzel(l, SR, f0, SR / 2, SR));
     };
-    const dark = at(0); // fc stays 1200 Hz → H4 (4186 Hz) buried
-    const bright = at(1); // fc rides to 4800 Hz → H4 opens up
-    expect(bright - dark, 'H4/H1 keytrack swing').toBeGreaterThan(15);
-    expect(dark).toBeLessThan(-38);
+    const dark = at(0); // fc stays 1200 Hz → H3 (3140 Hz) buried
+    const bright = at(1); // fc rides to 4800 Hz → H3 opens up
+    expect(bright - dark, 'H3/H1 keytrack swing').toBeGreaterThan(15);
+    expect(dark, 'untracked: H3 stays buried under the 1200 Hz knee').toBeLessThan(-32); // measured −34.5
   });
 
   it('keeps the 2×-oversampled drive alias-free (worst inharmonic probe < −60 dBc)', () => {
@@ -715,12 +1016,17 @@ describe('voice render', () => {
 
   it('FOLD = 0 is a BIT-EXACT bypass of the pre-wavefolder voice (regression anchor)', () => {
     // The wavefolder must be inaudible at FOLD 0 so every existing TIDY VCO
-    // patch sounds UNCHANGED. These FNV-1a fingerprints were captured from
-    // the pre-change (no-wavefolder) core; the stereo fold path, fed FOLD 0,
-    // must reproduce them byte-for-byte (the folder gates to identity + both
-    // channels stay identical). If this flips, the wavefolder leaked into the
-    // default sound — a bug, not an accepted change. (128-block driven to
-    // mirror the worklet granularity.)
+    // patch sounds UNCHANGED: the folder gates to identity, both channels
+    // stay identical, and EVERY per-knob CV law is an exact no-op at cv = 0
+    // (silentBus omits the optional fields). If this flips with no OTHER
+    // intentional core change in the diff, the wavefolder (or a CV law)
+    // leaked into the default sound — a bug, not an accepted change.
+    // (128-block driven to mirror the worklet granularity.)
+    //
+    // RE-PINNED once, at the SINE→TRIANGLE→SQUARE oscillator morph: the
+    // fingerprints cover the whole voice, so replacing the saw↔pulse osc law
+    // necessarily moved them. That change is what `art:update` re-pinned the
+    // tidy-vco ART baselines for; nothing about the folder's bypass moved.
     const render = (p: TidyVcoParams, bus: TidyVcoBus): { l: Float32Array; r: Float32Array } => {
       const n = Math.round(0.5 * SR);
       const l = new Float32Array(n);
@@ -731,8 +1037,8 @@ describe('voice render', () => {
     };
     // Buffer A — mono gate, shipping defaults.
     const A = render({ ...TIDY_VCO_DEFAULTS }, { ...silentBus(), monoGate: 1 });
-    expect(fnv1a(A.l), 'mono L bit-identical to pre-wavefolder core').toBe('3490905a');
-    expect(fnv1a(A.r), 'mono R bit-identical to pre-wavefolder core').toBe('de484e56');
+    expect(fnv1a(A.l), 'mono L bit-identical to pre-wavefolder core').toBe('666dd1f1');
+    expect(fnv1a(A.r), 'mono R bit-identical to pre-wavefolder core').toBe('ee1974e0');
     // Buffer B — poly C4/E4/G4 chord, res + drive + width engaged.
     const polyB = new Float32Array(10);
     polyB[0] = 0; polyB[1] = 1;
@@ -742,8 +1048,8 @@ describe('voice render', () => {
       { ...TIDY_VCO_DEFAULTS, res: 0.6, drive: 0.5, cutoff: 1200, width: 0.7, env: 0.5 },
       { ...silentBus(), poly: polyB },
     );
-    expect(fnv1a(B.l), 'poly L bit-identical to pre-wavefolder core').toBe('e7ee903b');
-    expect(fnv1a(B.r), 'poly R bit-identical to pre-wavefolder core').toBe('8d82875e');
+    expect(fnv1a(B.l), 'poly L bit-identical to pre-wavefolder core').toBe('9020f9a3');
+    expect(fnv1a(B.r), 'poly R bit-identical to pre-wavefolder core').toBe('1509e2a2');
   });
 });
 
@@ -770,14 +1076,31 @@ describe('tidy-vco: new per-knob CVs are consumed', () => {
     expect(fnv1a(a.l)).toBe(fnv1a(b.l));
   });
 
-  it('shape1Cv sweeps OSC1 saw→pulse: +1 V drains the even (2nd) harmonic', () => {
+  it('shape1Cv sweeps OSC1 sine→square: +1 V fills in the odd-harmonic series', () => {
+    // ⚠ The OLD form of this gate measured the EVEN (2nd) harmonic across the
+    // saw→pulse morph. Under the sine→square law BOTH endpoints are odd-only,
+    // so that metric compares two noise floors and passes no matter what the
+    // CV does — a gate that cannot fail. The honest metric for THIS morph is
+    // the ODD content above the fundamental: a sine has none, a square has
+    // the full 1/n series.
     const p = probePatch({ shape1: 0, cutoff: 12000, res: 0.1 });
-    const saw = renderVoice(p, lane0Bus(0), 0.4); // C4 saw
-    const pulsed = renderVoice(p, { ...lane0Bus(0), shape1Cv: 1 }, 0.4); // → square
     const s = Math.round(0.1 * SR);
     const e = Math.round(0.35 * SR);
-    const h2saw = goertzel(saw.l, SR, 2 * TIDY_C4_HZ, s, e);
-    const h2pulse = goertzel(pulsed.l, SR, 2 * TIDY_C4_HZ, s, e);
-    expect(h2saw).toBeGreaterThan(h2pulse * 2); // square nulls even harmonics
+    const oddRatio = (buf: Float32Array): number => {
+      const h1 = goertzel(buf, SR, TIDY_C4_HZ, s, e);
+      let up = 0;
+      for (const k of [3, 5, 7, 9]) up += goertzel(buf, SR, k * TIDY_C4_HZ, s, e) ** 2;
+      return db(Math.sqrt(up) / h1);
+    };
+    const sine = oddRatio(renderVoice(p, lane0Bus(0), 0.4).l); // C4 sine
+    const square = oddRatio(renderVoice(p, { ...lane0Bus(0), shape1Cv: 1 }, 0.4).l); // → square
+    // ~24 dB measured: the sine end is not a true floor (the ladder's stage
+    // saturator + the OTA VCA's own knee put a little odd content there).
+    expect(square - sine, 'odd harmonics above the fundamental').toBeGreaterThan(20);
+    // …and the CV really is a full-swing sweep, not an on/off: half a volt
+    // lands strictly between the two ends.
+    const mid = oddRatio(renderVoice(p, { ...lane0Bus(0), shape1Cv: 0.5 }, 0.4).l);
+    expect(mid).toBeGreaterThan(sine + 5);
+    expect(mid).toBeLessThan(square - 2);
   });
 });

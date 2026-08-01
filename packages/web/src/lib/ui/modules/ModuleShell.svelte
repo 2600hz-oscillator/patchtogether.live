@@ -71,7 +71,7 @@
     sineWaveSamples,
     burstWaveSamples,
     triMorphWaveSamples,
-    sawPulseMixWaveSamples,
+    sineTriSquareMixWaveSamples,
   } from '$lib/ui/controls/scope-screen-model';
   import type { ModuleNode, ParamDef, PortDef } from '$lib/graph/types';
   import type { Tier } from '$lib/ui/canvas/lod';
@@ -224,7 +224,7 @@
           w.pw ? liveParam(w.pw) : 0.5,
           w.mix ? liveParam(w.mix) : 0,
         ],
-        (v) => sawPulseMixWaveSamples(v[0] ?? 0, v[1], v[2], v[3]),
+        (v) => sineTriSquareMixWaveSamples(v[0] ?? 0, v[1], v[2], v[3]),
       );
     }
     if (b.kind === 'wave-morph') {

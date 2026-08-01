@@ -47,10 +47,11 @@ export interface GlyphDefLike {
 /** The PARAM-DERIVED core-waveform law behind a 'dual' binding: which pure
  *  scope-screen-model derivation draws the module's ASSIGNED shape, and which
  *  param ids feed it (read through the LIVE/transient seam — see
- *  createLiveWaveSource). 'saw-pulse-mix' = tidyVco's two-osc law
- *  (sawPulseMixWaveSamples: shape1/shape2 morphs + shared PW, equal-power MIX). */
+ *  createLiveWaveSource). 'sine-tri-square-mix' = tidyVco's two-osc law
+ *  (sineTriSquareMixWaveSamples: shape1/shape2 sine→triangle→square morphs +
+ *  shared PW on the square leg, equal-power MIX). */
 export type DualWaveSpec = {
-  law: 'saw-pulse-mix';
+  law: 'sine-tri-square-mix';
   shape1: string;
   shape2?: string;
   pw?: string;
@@ -92,8 +93,8 @@ export function primaryAudioOutPortId(def: GlyphDefLike | undefined): string | n
  *   - no face / glyph 'none'                 → none
  *   - glyph 'envelope' + real A/D/S/R params → env-params
  *   - glyph 'algorithm' + an `algorithm` param → algorithm (topology)
- *   - glyph 'waveform' + a primary AUDIO output + the saw↔pulse morph param
- *     set (a 0..1 `shape1` + `pw` + `mix` — the tidyVco osc law)
+ *   - glyph 'waveform' + a primary AUDIO output + the sine→triangle→square
+ *     morph param set (a 0..1 `shape1` + `pw` + `mix` — the tidyVco osc law)
  *                                            → DUAL (param-wave + live trace)
  *   - any glyph + a primary AUDIO output     → live-audio (trace or RMS)
  *   - glyph 'waveform' + a 0..2 `shape` morph param (the lfo law)
@@ -126,7 +127,7 @@ export function glyphBinding(def: GlyphDefLike | undefined): GlyphBinding {
   const audioOut = primaryAudioOutPortId(def);
   if (audioOut && glyph === 'waveform') {
     // The DUAL-display capability: the module's identity is an ASSIGNED wave
-    // shape (a 0..1 saw↔pulse morph + shared PW + osc mix), so the face shows
+    // shape (a 0..1 sine→triangle→square morph + shared PW + osc mix), so the face shows
     // the param-derived core waveform ALWAYS (the live trace alone flatlines
     // when ungated) next to the live output trace.
     const shape1 = params.find((p) => p.id === 'shape1' && p.min === 0 && p.max === 1);
@@ -135,7 +136,7 @@ export function glyphBinding(def: GlyphDefLike | undefined): GlyphBinding {
         kind: 'dual',
         portId: audioOut,
         wave: {
-          law: 'saw-pulse-mix',
+          law: 'sine-tri-square-mix',
           shape1: 'shape1',
           shape2: has('shape2') ? 'shape2' : undefined,
           pw: 'pw',

@@ -39,7 +39,11 @@
 // string. Both batch-2 voices therefore sequence at BPM 60 (a note per second);
 // it tightened dx7's inter-quartile spread from ~35¢ to 0¢ and moved
 // sixstrum's median from a transient-dragged −7.8¢ onto its true −3.56¢.
-// tidyVco is a sustained oscillator and keeps the original 240.
+// tidyVco kept the original 240 while its default SHAPE was a SAWTOOTH — a
+// harmonically dense waveform pins YIN's period through the AM. It moved to
+// 60 with the sine→triangle→square morph (SHAPE 0 is now a near-pure sine, and
+// a sine + 4 Hz AM is exactly the case the sidebands swamp): all three voices
+// now sequence at a note per second.
 //
 // TWO NOTES per voice: C4 (MIDI 60 = 0 V) is the reality anchor — but 0 V
 // is indistinguishable from an unpatched pitch input, so C5 (MIDI 72 = 1 V)
@@ -126,7 +130,16 @@ interface PitchedVoice {
 
 /** ── THE REGISTRY — every pitched voice enrolls here ─────────────────── */
 const PITCHED_VOICES: PitchedVoice[] = [
-  { type: 'tidyVco', wiring: { kind: 'mono', pitchPort: 'pitch', gatePort: 'gate' }, outs: ['out_l', 'out_r'] },
+  // tidyVco sequences at BPM 60 like the other two — see the NOTE-ON CADENCE
+  // note above. It ran at the default 240 while its default SHAPE was a
+  // sawtooth: a harmonically dense waveform gives YIN an unambiguous period
+  // even with the 4 Hz re-gate AM riding on it. Under the sine→triangle→square
+  // morph the default SHAPE 0 is a near-pure SINE, and the AM sidebands
+  // (±26 ¢ at C4) started dominating single-window reads — the CENTER did not
+  // move (pure core: 4.23 ¢ before, 4.18 ¢ after) but the SPREAD blew through
+  // the 2 ¢ of estimator margin the 6 ¢ bound allows, ~1 run in 6. Same fix,
+  // same file, third voice.
+  { type: 'tidyVco', wiring: { kind: 'mono', pitchPort: 'pitch', gatePort: 'gate' }, outs: ['out_l', 'out_r'], seqBpm: 60 },
   // P1 batch 2 — the two pitched voices promoted with their faces.
   // dx7: the mono PITCH CV + GATE pair (POLY left unpatched, which is what
   // makes the worklet read it). Its shipped default preset carries the

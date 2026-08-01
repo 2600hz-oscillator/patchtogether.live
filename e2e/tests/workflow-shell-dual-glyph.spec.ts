@@ -108,7 +108,7 @@ test.describe('tidyVco DUAL-display glyph (?shell=1)', () => {
     await expect(trace).toHaveAttribute('data-mode', 'waveform');
 
     // The STATIC morph is NON-FLAT with no gate and no audio: the default
-    // assignment (shape1 0 → saw) draws a full-scale cycle. The live trace,
+    // assignment (shape1 0 → SINE) draws a full-scale cycle. The live trace,
     // by contrast, is flat — exactly the complaint the dual display fixes.
     expect(peakOf(await wave.getAttribute('data-wave-peak')), 'morph display non-flat ungated').toBeGreaterThan(0.9);
     expect(peakOf(await trace.getAttribute('data-trace-peak')), 'live trace flat ungated').toBeLessThan(0.005);

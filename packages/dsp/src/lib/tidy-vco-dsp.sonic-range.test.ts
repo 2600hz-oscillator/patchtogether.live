@@ -1,5 +1,20 @@
 // packages/dsp/src/lib/tidy-vco-dsp.sonic-range.test.ts
 //
+// ⚠ EVERY PROBE HERE DEPENDS ON ITS SOURCE, and the sine→triangle→square
+// morph changed what the source IS. The rules the file now follows, stated
+// once so the next edit does not have to rediscover them:
+//   • BRIGHTNESS metrics (centroid, harmonic ratios, filter-EG timing) need a
+//     harmonically RICH source ⇒ SHAPE 1 (square). SHAPE 0 is a bare sine and
+//     every one of them reads a dead filter with it.
+//   • The WAVEFOLDER needs a source that SWEEPS through the fold rails ⇒
+//     SHAPE 0.5 (triangle). A square is piecewise-constant and folds to a
+//     constant, so L/R never decorrelate.
+//   • AMPLITUDE-envelope timing needs a source that does NOT push the output
+//     tanh into compression ⇒ SHAPE 0 (sine).
+//   • RESONANCE needs partials NEAR the cutoff ⇒ a deliberately dense stack
+//     (two squares an octave apart + detune + sub), because one square's
+//     odd-only comb straddles the resonance too coarsely.
+//
 // TIDY VCO sonic-range proofs — the drum-wave bar: EVERY control is
 // sonically dynamic across its whole travel, gated as 5-point (3-point for
 // the discrete OCT switch) STRICT-MONOTONE metrics on rendered audio. No
@@ -84,11 +99,20 @@ function lane0Bus(voct: number, gate = 1): TidyVcoBus {
   return { poly, monoPitch: 0, monoGate: 0, resCv: 0, driveCv: 0 };
 }
 
+/** ⚠ THE PROBE SOURCE MUST BE HARMONICALLY RICH. Every brightness metric in
+ *  this file (centroid, H3/H1, filter-EG timing) measures what the FILTER does
+ *  to the oscillator's harmonics — so it can only see anything if there ARE
+ *  harmonics. Under the sine→triangle→square morph the rich anchor is SHAPE 1
+ *  (a square, the full 1/n odd series); SHAPE 0 is a bare sine and every one
+ *  of these gates reads a dead filter with it. (That is not hypothetical: it
+ *  is exactly what happened when the morph law changed under the old
+ *  `shape1: 0` probe — 11 of these tests went red at once, all of them
+ *  reporting a flat metric rather than a broken filter.) */
 function probePatch(over: Partial<TidyVcoParams> = {}): TidyVcoParams {
   return {
     ...TIDY_VCO_DEFAULTS,
-    shape1: 0,
-    shape2: 0,
+    shape1: 1,
+    shape2: 1,
     detune: 0,
     oct2: 0,
     mix: 0,
@@ -141,8 +165,20 @@ describe('sonic range — filter', () => {
   });
 
   it('RES adds resonant energy monotonically from clean to the whistle (5-point)', () => {
+    // ⚠ THE SOURCE HAS TO BE SPECTRALLY DENSE. A resonant peak can only lift
+    // partials that are actually NEAR the cutoff, and a single square's comb
+    // (odd harmonics only, 740 Hz apart at this note) straddles a 900 Hz
+    // resonance far too coarsely — the emphasis then plateaus over the top of
+    // the travel and this gate reads "RES stops working" when nothing is
+    // wrong. So the probe stacks OSC1 + OSC2 an octave apart (which fills in
+    // the even harmonics), detunes them, and adds the sub. Measured:
+    // 0.128 → 0.198 → 0.231 → 0.304 → 0.373 (ratio 2.9).
     const values = [0, 0.25, 0.5, 0.75, 1].map((res) => {
-      const l = renderL(probePatch({ cutoff: 900, res }), lane0Bus(0.5), 1);
+      const l = renderL(
+        probePatch({ cutoff: 900, res, mix: 0.5, oct2: 1, sub: 0.6, detune: 40 }),
+        lane0Bus(0.5),
+        1,
+      );
       return rms(l, SR / 2, l.length);
     });
     assertStrictlyIncreasing(values, 'RMS vs res');
@@ -180,13 +216,16 @@ describe('sonic range — filter', () => {
     expect(values[4]!).toBeGreaterThan(0); // positive EG opens the attack
   });
 
-  it('TRACK carries brightness up the keyboard monotonically (5-point, H4/H1 at C6)', () => {
+  it('TRACK carries brightness up the keyboard monotonically (5-point, H3/H1 at C6)', () => {
+    // H3, not H4: the probe source is a SQUARE, whose even harmonics are
+    // nulled by symmetry — an H4 metric here would be reading the ladder's
+    // own nonlinearity, not the keytracked brightness it claims to measure.
     const f0 = 1046.5;
     const values = [0, 0.25, 0.5, 0.75, 1].map((track) => {
       const l = renderL(probePatch({ cutoff: 1200, track }), lane0Bus(2), 1);
-      return db(goertzel(l, SR, 4 * f0, SR / 2, l.length) / goertzel(l, SR, f0, SR / 2, l.length));
+      return db(goertzel(l, SR, 3 * f0, SR / 2, l.length) / goertzel(l, SR, f0, SR / 2, l.length));
     });
-    assertStrictlyIncreasing(values, 'H4/H1 vs track', 1);
+    assertStrictlyIncreasing(values, 'H3/H1 vs track', 1);
     expect(values[4]! - values[0]!).toBeGreaterThan(18);
   });
 });
@@ -196,30 +235,38 @@ describe('sonic range — filter', () => {
 // ─────────────────────────────────────────────────────────────────────────
 
 describe('sonic range — oscillators', () => {
-  it('SHAPE1 morphs saw→pulse: even harmonics drain monotonically (5-point)', () => {
+  /** Odd-harmonic energy above the fundamental, in dB — the identity of the
+   *  sine→triangle→square morph. Sine has NONE, triangle a soft 1/n² series,
+   *  square the full 1/n one, so this climbs monotonically across the sweep.
+   *
+   *  ⚠ H2/H1 (what the old saw↔pulse law used) is the WRONG instrument here:
+   *  all three anchors are odd-only, so it compares noise floors and returns
+   *  a confident number that has nothing to do with the knob. */
+  function oddContentDb(l: Float32Array, f0: number): number {
+    const h1 = goertzel(l, SR, f0, SR / 2, l.length);
+    let up = 0;
+    for (const k of [3, 5, 7, 9, 11]) up += goertzel(l, SR, k * f0, SR / 2, l.length) ** 2;
+    return db(Math.sqrt(up) / h1);
+  }
+
+  it('SHAPE1 morphs sine→triangle→square: odd harmonics fill in monotonically (5-point)', () => {
     const f0 = TIDY_C4_HZ;
-    const values = [0, 0.25, 0.5, 0.75, 1].map((shape1) => {
-      const l = renderL(probePatch({ shape1, pw: 0.5 }), lane0Bus(0), 1);
-      return db(goertzel(l, SR, 2 * f0, SR / 2, l.length) / goertzel(l, SR, f0, SR / 2, l.length));
-    });
-    for (let i = 1; i < values.length; i++) {
-      expect(values[i]!, `H2/H1 falls: ${values.map((v) => v.toFixed(1)).join(', ')}`).toBeLessThan(
-        values[i - 1]! - 1,
-      );
-    }
-    expect(values[4]!, 'square end: even harmonics gone').toBeLessThan(-30);
+    const values = [0, 0.25, 0.5, 0.75, 1].map((shape1) =>
+      oddContentDb(renderL(probePatch({ shape1, pw: 0.5, cutoff: 12000 }), lane0Bus(0), 1), f0),
+    );
+    assertStrictlyIncreasing(values, 'odd content vs shape1', 1);
+    expect(values[0]!, 'sine end: essentially no harmonics').toBeLessThan(-30);
+    expect(values[4]! - values[0]!, 'a real full-range timbre sweep').toBeGreaterThan(25);
   });
 
   it('SHAPE2 morphs OSC2 the same way (5-point, mix = 1)', () => {
     const f0 = TIDY_C4_HZ;
-    const values = [0, 0.25, 0.5, 0.75, 1].map((shape2) => {
-      const l = renderL(probePatch({ shape2, mix: 1, pw: 0.5 }), lane0Bus(0), 1);
-      return db(goertzel(l, SR, 2 * f0, SR / 2, l.length) / goertzel(l, SR, f0, SR / 2, l.length));
-    });
-    for (let i = 1; i < values.length; i++) {
-      expect(values[i]!).toBeLessThan(values[i - 1]! - 1);
-    }
-    expect(values[4]!).toBeLessThan(-30);
+    const values = [0, 0.25, 0.5, 0.75, 1].map((shape2) =>
+      oddContentDb(renderL(probePatch({ shape2, mix: 1, pw: 0.5, cutoff: 12000 }), lane0Bus(0), 1), f0),
+    );
+    assertStrictlyIncreasing(values, 'odd content vs shape2', 1);
+    expect(values[0]!).toBeLessThan(-30);
+    expect(values[4]! - values[0]!).toBeGreaterThan(25);
   });
 
   it('PW thins the pulse: H2/H1 rises as duty leaves square (5-point)', () => {
@@ -253,7 +300,14 @@ describe('sonic range — oscillators', () => {
       for (let lag = minLag; lag <= maxLag; lag++) {
         let acc = 0;
         for (let i = 0; i + lag < e.length; i++) acc += e[i]! * e[i + lag]!;
-        acc /= e.length - lag;
+        // BIASED normalization (÷ N, not ÷ N−lag). The unbiased form divides
+        // by an ever-smaller overlap, which INFLATES long lags: on this
+        // 2 s envelope the global max landed on 3× the beat period, so the
+        // "first peak ≥ 90 % of max" rule skipped the real one (0.525 s sat
+        // at 0.88 of it) and the test reported HALF the beat rate. The
+        // biased estimator tapers with lag by construction and puts the
+        // fundamental period back on top.
+        acc /= e.length;
         ac[lag] = acc;
         if (acc > best) best = acc;
       }
@@ -397,7 +451,16 @@ describe('sonic range — wavefolder', () => {
       poly[0] = 0;
       poly[1] = 1;
       renderTidyVco(
-        { ...TIDY_VCO_DEFAULTS, width: 0.6, fold, sus: 1, detune: 0, cutoff: 9000, res: 0.2, shape1: 0, sub: 0, mix: 0 },
+        // SHAPE 0.5 (TRIANGLE) — and this one is the opposite of probePatch's
+        // rule. A wavefolder reflects a signal off ±1 rails, so it decorrelates
+        // L/R only where the input is SWEEPING through those rails. A square is
+        // piecewise-CONSTANT: both channels fold their two constant levels to
+        // two other constant levels and stay perfectly correlated (measured:
+        // corr 1.00 → 1.00 → 1.00 → 0.97 → −0.93, i.e. no decorrelation at
+        // all until it flips sign). The triangle's linear ramps are the
+        // folder's natural probe — it is also the closest thing the new morph
+        // has to the ramp the old law used here.
+        { ...TIDY_VCO_DEFAULTS, width: 0.6, fold, sus: 1, detune: 0, cutoff: 9000, res: 0.2, shape1: 0.5, sub: 0, mix: 0 },
         { poly, monoPitch: 0, monoGate: 0, resCv: 0, driveCv: 0 },
         l,
         r,
@@ -433,8 +496,13 @@ describe('sonic range — wavefolder', () => {
 
 describe('sonic range — envelopes', () => {
   it('ATK sets the audible rise time across its travel (5-point)', () => {
+    // SHAPE 0 (sine) here, deliberately: this is an AMPLITUDE-envelope timing
+    // metric, not a brightness one, and a hot square drives the voice's output
+    // tanh into compression — which flattens the top of the envelope and makes
+    // the two fastest attacks both cross the 90 %-of-peak line inside the same
+    // 4 ms block. A clean sine keeps the rise linear-in-level and legible.
     const values = [0.001, 0.008, 0.04, 0.2, 0.8].map((atk) => {
-      const p = probePatch({ atk, dec: 1, sus: 1 });
+      const p = probePatch({ atk, dec: 1, sus: 1, shape1: 0 });
       const l = renderL(p, lane0Bus(0), atk * 1.5 + 0.35);
       const block = Math.round(0.004 * SR);
       let peak = 0;
@@ -505,16 +573,20 @@ describe('sonic range — envelopes', () => {
   });
 
   it('FDEC holds the brightness longer across its travel (5-point, centroid fall time)', () => {
+    // C3, not C4: the probe source is a SQUARE, whose partials sit 2 f0 apart
+    // (odd only). At C4 the 3rd is already at 785 Hz, so the centroid slams
+    // down to the fundamental as soon as the EG closes past it and the two
+    // fastest decays land in the same 5 ms block. An octave lower the odd
+    // comb is twice as dense and the centroid falls gradually, which is what
+    // this timing metric needs to resolve.
+    const BRIGHT_GONE_HZ = 172; // 1.3× the C3 square's settled 132 Hz centroid
     const values = [0.05, 0.2, 0.6, 1.8, 4].map((fdec) => {
       const p = probePatch({ cutoff: 300, env: 1, fatk: 0.001, fdec, fsus: 0 });
       const seconds = Math.min(0.9 * fdec + 0.3, 2.7);
-      const l = renderL(p, lane0Bus(0), seconds);
+      const l = renderL(p, lane0Bus(-1), seconds);
       const block = Math.round(0.005 * SR);
-      // Fall time: first block (past the attack) whose centroid is back
-      // within 30 % of the closed-filter floor (~264 Hz for this patch).
-      const floor = 264;
       for (let s = Math.round(0.02 * SR); s + block < l.length; s += block) {
-        if (centroidHz(l, s, s + block) < floor * 1.3) return s / SR;
+        if (centroidHz(l, s, s + block) < BRIGHT_GONE_HZ) return s / SR;
       }
       return seconds; // still bright at the end (slowest settings)
     });
@@ -534,14 +606,14 @@ describe('sonic range — envelopes', () => {
   });
 
   it('FREL lets the filter fall at its own rate after note-off (5-point, fall time)', () => {
+    const BRIGHT_GONE_HZ = 172; // as FDEC above — C3 so the comb is dense enough
     const values = [0.03, 0.15, 0.5, 1.5, 3].map((frel) => {
       const p = probePatch({ cutoff: 300, env: 1, fatk: 0.001, fdec: 3, fsus: 1, frel, rel: 2.5 });
       const post = Math.min(0.8 * frel + 0.25, 2.1);
-      const l = renderGateOff(p, 0, 0.3, 0.3 + post);
+      const l = renderGateOff(p, -1, 0.3, 0.3 + post);
       const block = Math.round(0.005 * SR);
-      const floor = 264;
       for (let s = Math.round(0.305 * SR); s + block < l.length; s += block) {
-        if (centroidHz(l, s, s + block) < floor * 1.3) return s / SR - 0.3;
+        if (centroidHz(l, s, s + block) < BRIGHT_GONE_HZ) return s / SR - 0.3;
       }
       return post; // still bright at the end (slowest settings)
     });

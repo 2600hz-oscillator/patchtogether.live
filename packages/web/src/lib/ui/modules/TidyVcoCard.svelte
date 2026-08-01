@@ -166,7 +166,8 @@
       <div class="groups">
         <div class="group osc">
           <header>OSC</header>
-          <!-- WAVE-screen glyph: OSC1's live saw↔pulse shape morph (shape1). -->
+          <!-- WAVE-screen glyph: OSC1's live sine→triangle→square morph
+               (shape1 + the square leg's PW), drawn from the DSP's own law. -->
           <div class="wave-screen">
             <ScopeScreen
               mode="wave"
@@ -175,7 +176,7 @@
               width={132}
               height={40}
               testid="tidyvco-wave-screen"
-              ariaLabel="OSC1 wave shape"
+              ariaLabel="OSC1 wave shape: sine to triangle to square"
             />
           </div>
           <div class="fader-row">

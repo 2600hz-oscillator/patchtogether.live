@@ -2,7 +2,7 @@
 //   1. glyphBinding rules (pure): the six P1 batch-1 face shapes resolve to
 //      the right live source (audio tap / env params / wave morph), and the
 //      DUAL capability (param-wave + live trace) for shape-identity
-//      oscillators (tidyVco's saw↔pulse morph set).
+//      oscillators (tidyVco's sine→triangle→square morph set).
 //   2. createShellGlyphTap lifecycle: VISIBLE (reads happening) → the tap
 //      attaches a passive analyser to the module's output; HIDDEN (no reads
 //      for the idle window) → the tap RELEASES itself; a later read
@@ -23,7 +23,7 @@ import {
   type GlyphDefLike,
   type GlyphTapEngineLike,
 } from './shell-glyph-live';
-import { sawPulseMixWaveSamples } from '$lib/ui/controls/scope-screen-model';
+import { sineTriSquareMixWaveSamples } from '$lib/ui/controls/scope-screen-model';
 import { tidyVcoDef } from '$lib/audio/modules/tidy-vco';
 import { kickdrumDef } from '$lib/audio/modules/kickdrum';
 import { adsrDef } from '$lib/audio/modules/adsr';
@@ -47,7 +47,7 @@ function faceDef(
 
 describe('glyphBinding — pure live-source resolution', () => {
   it('waveform glyph + audio output WITHOUT the full morph set → live-audio on the PRIMARY audio port', () => {
-    // shape1 alone (no pw/mix) is not a saw↔pulse osc identity — plain trace.
+    // shape1 alone (no pw/mix) is not the tidyVco osc identity — plain trace.
     const def = faceDef({
       glyph: 'waveform',
       outputs: [
@@ -59,7 +59,7 @@ describe('glyphBinding — pure live-source resolution', () => {
     expect(glyphBinding(def)).toEqual({ kind: 'live-audio', portId: 'out_l' });
   });
 
-  it('waveform glyph + audio output + the saw↔pulse morph set → DUAL (param-wave + live trace)', () => {
+  it('waveform glyph + audio output + the sine→tri→square morph set → DUAL (param-wave + live trace)', () => {
     const def = faceDef({
       glyph: 'waveform',
       outputs: [
@@ -76,7 +76,7 @@ describe('glyphBinding — pure live-source resolution', () => {
     expect(glyphBinding(def)).toEqual({
       kind: 'dual',
       portId: 'out_l',
-      wave: { law: 'saw-pulse-mix', shape1: 'shape1', shape2: 'shape2', pw: 'pw', mix: 'mix' },
+      wave: { law: 'sine-tri-square-mix', shape1: 'shape1', shape2: 'shape2', pw: 'pw', mix: 'mix' },
     });
     // shape2 is optional (a single-osc morph voice still gets the dual face)…
     const singleOsc = faceDef({
@@ -91,9 +91,9 @@ describe('glyphBinding — pure live-source resolution', () => {
     expect(glyphBinding(singleOsc)).toEqual({
       kind: 'dual',
       portId: 'out',
-      wave: { law: 'saw-pulse-mix', shape1: 'shape1', shape2: undefined, pw: 'pw', mix: 'mix' },
+      wave: { law: 'sine-tri-square-mix', shape1: 'shape1', shape2: undefined, pw: 'pw', mix: 'mix' },
     });
-    // …but a non-0..1 shape1 (not the saw↔pulse law) stays a plain live trace.
+    // …but a non-0..1 shape1 (not the tidyVco morph law) stays a plain live trace.
     const wrongLaw = faceDef({
       glyph: 'waveform',
       outputs: [{ id: 'out', type: 'audio' }],
@@ -187,7 +187,7 @@ describe('glyphBinding — pure live-source resolution', () => {
     expect(glyphBinding(tidyVcoDef)).toEqual({
       kind: 'dual',
       portId: 'out_l',
-      wave: { law: 'saw-pulse-mix', shape1: 'shape1', shape2: 'shape2', pw: 'pw', mix: 'mix' },
+      wave: { law: 'sine-tri-square-mix', shape1: 'shape1', shape2: 'shape2', pw: 'pw', mix: 'mix' },
     });
     expect(glyphBinding(kickdrumDef)).toEqual({ kind: 'live-audio', portId: 'audio_l' });
     expect(glyphBinding(vcaDef)).toEqual({ kind: 'live-audio', portId: 'audio' });
@@ -402,12 +402,12 @@ describe('createLiveWaveSource — the dual glyph’s TRANSIENT-READ binding', (
     const live = { shape1: 0, shape2: 0, pw: 0.5, mix: 0 };
     const get = createLiveWaveSource(
       () => [live.shape1, live.shape2, live.pw, live.mix],
-      (v) => sawPulseMixWaveSamples(v[0] ?? 0, v[1], v[2], v[3]),
+      (v) => sineTriSquareMixWaveSamples(v[0] ?? 0, v[1], v[2], v[3]),
     );
 
     const before = get();
     expect(Array.from(before)).toEqual(
-      Array.from(sawPulseMixWaveSamples(0, 0, 0.5, 0)),
+      Array.from(sineTriSquareMixWaveSamples(0, 0, 0.5, 0)),
     );
 
     live.shape1 = 0.8; // transient twist — no commit anywhere
@@ -415,13 +415,13 @@ describe('createLiveWaveSource — the dual glyph’s TRANSIENT-READ binding', (
     expect(during).not.toBe(before);
     expect(Array.from(during)).not.toEqual(Array.from(before));
     expect(Array.from(during)).toEqual(
-      Array.from(sawPulseMixWaveSamples(0.8, 0, 0.5, 0)),
+      Array.from(sineTriSquareMixWaveSamples(0.8, 0, 0.5, 0)),
     );
   });
 
   it('an unchanged tuple returns the SAME buffer identity (the repaint gate)', () => {
     const live = { shape1: 0.3, depth: 0.5 };
-    const compute = vi.fn((v: readonly number[]) => sawPulseMixWaveSamples(v[0] ?? 0));
+    const compute = vi.fn((v: readonly number[]) => sineTriSquareMixWaveSamples(v[0] ?? 0));
     const get = createLiveWaveSource(() => [live.shape1, live.depth], compute);
 
     const a = get();

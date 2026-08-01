@@ -11,8 +11,9 @@
       renderer over the existing tap, NOT a new analyser). WAVE-screen look.
     • envelope — an ADSR curve computed from attack/decay/sustain/release, redrawn
       on param change. DECAY-screen look.
-    • wave — one cycle of the oscillator's wave shape: a saw↔pulse `morph` (TIDY
-      VCO's shape law) or an explicit single-cycle `waveform` buffer.
+    • wave — one cycle of the oscillator's wave shape: a `morph` position on TIDY
+      VCO's sine→triangle→square shape law (drawn from the DSP core's OWN morph
+      function) or an explicit single-cycle `waveform` buffer.
 
   The canvas re-sizes to its box (DPR-aware) and cleans up its frame subscription
   on unmount. For the LIVE waveform mode the current frame's peak amplitude is
@@ -55,9 +56,9 @@
     sustain?: number;
     release?: number;
     // ── wave mode ──
-    /** Saw↔pulse morph 0..1 (TIDY VCO shape law). */
+    /** TIDY VCO shape morph 0..1: 0 = sine, 0.5 = triangle, 1 = square. */
     morph?: number;
-    /** Pulse duty for the morph (0..1). */
+    /** Duty of the morph's SQUARE leg (0..1). */
     pw?: number;
     /** Explicit single-cycle buffer (overrides `morph` when present). */
     waveform?: ArrayLike<number>;

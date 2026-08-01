@@ -127,9 +127,12 @@
 //   modulation-hungry) and SYMMETRY feed the stage per sample.
 //
 // ── Voice architecture ───────────────────────────────────────────────────
-//   Per voice: OSC1 + OSC2, each a clean-room polyBLEP saw↔pulse MORPH
-//   (SHAPE 0 = saw, 1 = pulse; Välimäki & Huovilainen, "Antialiasing
-//   Oscillators in Subtractive Synthesis", IEEE SP Mag 2007) with shared
+//   Per voice: OSC1 + OSC2, each a clean-room SINE → TRIANGLE → SQUARE
+//   MORPH (SHAPE 0 = sine, 0.5 = triangle, 1 = square/pulse — see the
+//   oscillator section below for the full law, its band-limiting and its
+//   level calibration; Välimäki & Huovilainen, "Antialiasing Oscillators in
+//   Subtractive Synthesis", IEEE SP Mag 2007, plus Esqueda/Välimäki/Bilbao,
+//   "Rounding corners with BLAMP", DAFx-16) with shared
 //   PW + PWM CV; OSC2 gets OCT (−1/0/+1) + DETUNE (±50 ¢); equal-power MIX;
 //   a polyBLEP SUB square one octave under OSC1. The osc bus feeds the
 //   stereo WAVEFOLDER, then the diode ladder (per-voice cutoff = CUTOFF ·
@@ -285,9 +288,9 @@ const SUB_GAIN = 0.9;
 // ─────────────────────────────────────────────────────────────────────────
 
 export interface TidyVcoParams {
-  shape1: number; // OSC1 saw→pulse morph (0..1)
-  shape2: number; // OSC2 saw→pulse morph (0..1)
-  pw: number; // shared pulse width (0.05..0.5; PWM CV extends to 0.95)
+  shape1: number; // OSC1 sine→triangle→square morph (0 / 0.5 / 1)
+  shape2: number; // OSC2 sine→triangle→square morph (0 / 0.5 / 1)
+  pw: number; // duty of the SQUARE leg (0.05..0.5; PWM CV extends to 0.95)
   detune: number; // OSC2 detune (cents, −50..+50)
   oct2: number; // OSC2 octave (−1/0/+1, discrete)
   mix: number; // OSC1↔OSC2 equal-power mix (0..1)
@@ -415,10 +418,68 @@ export function tidyFoldSpread(foldEff: number, width: number): number {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// polyBLEP oscillator (clean-room; Välimäki/Huovilainen 2-sample residual)
+// THE OSCILLATOR — a band-limited SINE → TRIANGLE → SQUARE morph
+// (clean-room; Välimäki/Huovilainen polyBLEP + Esqueda/Välimäki/Bilbao
+// polyBLAMP)
 // ─────────────────────────────────────────────────────────────────────────
+//
+// THE MORPH LAW (the whole contract, in one place — the def's docs and the
+// card/shell displays are all derived from THIS function, never re-typed):
+//
+//     SHAPE 0.0 → SINE        SHAPE 0.5 → TRIANGLE        SHAPE 1.0 → SQUARE
+//
+// with two LINEAR crossfades between the adjacent anchors (the same 3-anchor
+// shape law the LFO uses, so the two morph knobs in the rack read alike):
+//     shape ≤ 0.5:  m = 2·shape      → (1−m)·sine + m·triangle
+//     shape >  0.5:  m = 2·shape − 1 → (1−m)·triangle + m·square
+// Every anchor is the REAL waveform, not an approximation of it: at 0 the
+// oscillator is literally Math.sin, at 0.5 it is the exact ±1 triangle, at 1
+// it is the exact ±1 pulse of duty PW (a true square at PW's 0.5 default).
+//
+// PHASE ALIGNMENT — all three anchors put their FUNDAMENTAL in phase with
+// sin(2π·t): the triangle rises through zero at t = 0 and peaks at t = ¼;
+// the pulse is high on [0, PW). A crossfade therefore never partially
+// cancels the fundamental (the failure the old saw↔pulse law had to dodge by
+// flipping the saw's ramp; pinned by the level gate in the tests).
+//
+// BAND-LIMITING (not optional — a naive square/triangle aliases badly up the
+// keyboard, and an oscillator that "sounds fine at C4" is the classic miss):
+//   • SINE     is trivially alias-free — no correction, exact by construction.
+//   • SQUARE   has a discontinuous VALUE at both edges → 2-sample polyBLEP on
+//              EACH edge (tidyPulse, unchanged — the SUB square shares it).
+//   • TRIANGLE has a continuous value but a discontinuous SLOPE at t = ¼ and
+//              t = ¾ → a step correction is the wrong tool; it needs
+//              polyBLAMP, the INTEGRAL of the polyBLEP residual, scaled by
+//              the slope change (∓8 per unit phase) × dt.
+//   Measured at C7 (2093 Hz, 48 kHz), worst alias image landing BELOW the
+//   fundamental, relative to it: triangle −134.7 dBc band-limited vs
+//   −54.5 dBc naive; square −101.7 dBc vs −27.2 dBc. Pinned (with a naive
+//   negative control) by the alias gate in tidy-vco-dsp.test.ts.
+//
+// LEVEL CALIBRATION — sine, triangle and square have very different RMS at
+// the same peak (0.707 / 0.577 / 1.000), so a peak-matched morph would swing
+// ~4.8 dB of loudness across the knob. Each anchor is therefore scaled to a
+// COMMON RMS: that of a unit-peak triangle, 1/√3. The triangle (the knob's
+// midpoint) keeps unit peak, so the osc bus's peak headroom is exactly what
+// the old saw↔pulse law had, and SHAPE stops being a volume control. Across
+// the whole sweep the rendered RMS spans 0.312 dB (measured; gated).
+// Duty is NOT level-compensated: narrowing PW thins the square leg's energy
+// the way a real pulse does (2√(d(1−d)) — the classic PWM level taper), so
+// the calibration is stated at the 0.5 duty the knob defaults to.
+//
+// (The old law morphed saw → pulse; `tidySaw` went with it — nothing else in
+// the voice used a ramp.)
 
-/** 2-sample polyBLEP residual at phase t (0..1), increment dt. */
+const TWO_PI = 2 * Math.PI;
+
+/** Anchor gains that put all three waveforms at the RMS of a unit-peak
+ *  TRIANGLE (1/√3 ≈ 0.5774) — see the LEVEL CALIBRATION note above. */
+export const OSC_SINE_GAIN = Math.sqrt(2 / 3); // sine RMS 1/√2 → 1/√3
+export const OSC_TRI_GAIN = 1; // the reference (unit peak, RMS 1/√3)
+export const OSC_SQUARE_GAIN = 1 / Math.sqrt(3); // square RMS 1 → 1/√3
+
+/** 2-sample polyBLEP residual at phase t (0..1), increment dt. Scaled for a
+ *  step of amplitude 2: ADD it for a +2 jump, SUBTRACT it for a −2 jump. */
 export function tidyPolyBlep(t: number, dt: number): number {
   if (dt <= 0) return 0;
   if (t < dt) {
@@ -432,12 +493,45 @@ export function tidyPolyBlep(t: number, dt: number): number {
   return 0;
 }
 
-/** Band-limited sawtooth at phase t — FALLING ramp, so its fundamental is
- *  IN PHASE with tidyPulse's. (With the rising ramp, the SHAPE morph's
- *  crossfade cancels the fundamental near 25 % — an audible thin notch;
- *  caught by the sonic-range monotonicity gate.) */
-export function tidySaw(t: number, dt: number): number {
-  return 1 - 2 * t + tidyPolyBlep(t, dt);
+/**
+ * 2-sample polyBLAMP residual at phase t (0..1), increment dt — the exact
+ * INTEGRAL of `tidyPolyBlep`/2 (the unit-step residual), i.e. the correction
+ * a SLOPE discontinuity needs where a step needs a BLEP.
+ *
+ * Derivation (so the constants aren't magic): with τ the sample-relative
+ * distance from the corner, the unit-step residual is (τ+1)²/2 on [−1, 0)
+ * and −(τ−1)²/2 on [0, 1); integrating gives (τ+1)³/6 and −(τ−1)³/6. The
+ * correction for a slope change Δs (per unit PHASE) is `Δs · dt · blamp`.
+ */
+export function tidyPolyBlamp(t: number, dt: number): number {
+  if (dt <= 0) return 0;
+  if (t < dt) {
+    const x = t / dt - 1; // τ − 1, τ ∈ [0, 1)
+    return -(x * x * x) / 6;
+  }
+  if (t > 1 - dt) {
+    const x = (t - 1) / dt + 1; // τ + 1, τ ∈ [−1, 0)
+    return (x * x * x) / 6;
+  }
+  return 0;
+}
+
+/** The naive (pre-band-limiting) ±1 triangle at phase t: 0 at t = 0, +1 at
+ *  ¼, 0 at ½, −1 at ¾ — fundamental in phase with sin(2π·t). Exported for
+ *  the tests' negative control. */
+export function tidyTriangleNaive(t: number): number {
+  return t < 0.25 ? 4 * t : t < 0.75 ? 2 - 4 * t : 4 * t - 4;
+}
+
+/** Band-limited ±1 triangle at phase t. Its VALUE is continuous, so polyBLEP
+ *  has nothing to fix; its SLOPE jumps by −8 (per unit phase) at t = ¼ and
+ *  +8 at t = ¾, and each corner is rounded by `Δs · dt · polyBLAMP`. */
+export function tidyTriangle(t: number, dt: number): number {
+  return (
+    tidyTriangleNaive(t) -
+    8 * dt * tidyPolyBlamp((t - 0.25 + 1) % 1, dt) +
+    8 * dt * tidyPolyBlamp((t + 0.25) % 1, dt)
+  );
 }
 
 /** Band-limited pulse at phase t, duty pw, DC-centered. */
@@ -448,13 +542,32 @@ export function tidyPulse(t: number, dt: number, pw: number): number {
   return v - (2 * pw - 1); // remove the static duty DC
 }
 
-/** SHAPE morph: 0 = saw, 1 = pulse (linear crossfade — both legs are
- *  full-scale bipolar so the midpoint stays hot). */
+/**
+ * SHAPE morph: 0 = sine, 0.5 = triangle, 1 = square (duty PW). Two linear
+ * crossfades between adjacent anchors, every anchor RMS-calibrated to 1/√3 —
+ * see THE MORPH LAW above. `dt = f/sr`; pass dt = 0 for the IDEAL (unwindowed)
+ * waveform, which is exactly what the card/shell wave displays draw.
+ */
 export function tidyOscSample(t: number, dt: number, shape: number, pw: number): number {
   const s = clamp(shape, 0, 1);
-  const saw = s < 1 ? tidySaw(t, dt) : 0;
-  const pul = s > 0 ? tidyPulse(t, dt, pw) : 0;
-  return (1 - s) * saw + s * pul;
+  if (s <= 0.5) {
+    const m = 2 * s; // 0 → sine, 1 → triangle
+    const sine = m < 1 ? OSC_SINE_GAIN * Math.sin(TWO_PI * t) : 0;
+    const tri = m > 0 ? OSC_TRI_GAIN * tidyTriangle(t, dt) : 0;
+    return (1 - m) * sine + m * tri;
+  }
+  const m = 2 * s - 1; // 0 → triangle, 1 → square
+  const tri = m < 1 ? OSC_TRI_GAIN * tidyTriangle(t, dt) : 0;
+  const sqr = m > 0 ? OSC_SQUARE_GAIN * tidyPulse(t, dt, pw) : 0;
+  return (1 - m) * tri + m * sqr;
+}
+
+/** Equal-power OSC1↔OSC2 mix gains (0 = OSC1 only, 1 = OSC2 only). Shared by
+ *  the render loop AND the card/shell wave displays, so the drawn mix can't
+ *  drift from the played one. */
+export function tidyMixGains(mix: number): { g1: number; g2: number } {
+  const m = clamp(mix, 0, 1);
+  return { g1: Math.cos((m * Math.PI) / 2), g2: Math.sin((m * Math.PI) / 2) };
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -936,8 +1049,7 @@ export function renderTidyVco(
   const shape1Eff = clamp(clamp(p.shape1, 0, 1) + clamp(bus.shape1Cv ?? 0, -2, 2), 0, 1);
   const shape2Eff = clamp(clamp(p.shape2, 0, 1) + clamp(bus.shape2Cv ?? 0, -2, 2), 0, 1);
   const mixEff = clamp(clamp(p.mix, 0, 1) + clamp(bus.mixCv ?? 0, -2, 2), 0, 1);
-  const mixA = Math.cos((mixEff * Math.PI) / 2);
-  const mixB = Math.sin((mixEff * Math.PI) / 2);
+  const { g1: mixA, g2: mixB } = tidyMixGains(mixEff);
   const subLvl = clamp(clamp(p.sub, 0, 1) + clamp(bus.subCv ?? 0, -2, 2), 0, 1) * SUB_GAIN;
   const oct2 = Math.round(clamp(clamp(p.oct2, -1, 1) + OCT2_CV_STEP * clamp(bus.oct2Cv ?? 0, -2, 2), -1, 1));
   const detuneEff = clamp(clamp(p.detune, -50, 50) + DETUNE_CV_CENTS * clamp(bus.detuneCv ?? 0, -2, 2), -50, 50);
