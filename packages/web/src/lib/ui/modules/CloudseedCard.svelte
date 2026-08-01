@@ -21,103 +21,45 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
-  import { setNodeParam, mutateNode } from '$lib/graph/mutate';
+  import { setNodeParam } from '$lib/graph/mutate';
   import {
     cloudseedDef,
     CLOUDSEED_PRESETS,
     formatParameter,
     CloudseedParam,
   } from '$lib/audio/modules/cloudseed';
+  import {
+    applyCloudseedPreset,
+    clearCloudseedTail,
+  } from '$lib/ui/modules/cloudseed-preset-actions';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const { paramVal, set, live } = cardParams(cloudseedDef, () => id, () => node);
+  const { paramVal, set, live, engineCtx } = cardParams(cloudseedDef, () => id, () => node);
 
   function toggle(k: string): void {
     setNodeParam(id, k, paramVal(k) >= 0.5 ? 0 : 1);
   }
 
-  // Preset footer plumbing — applyPreset writes all preset values into the
-  // patch graph (engine factory pushes them through to the worklet via
-  // setParam). The preset_index param is the one piece of multiplayer
-  // state that drives the footer's selected-slot rendering.
+  // Preset footer plumbing. The recall itself lives in
+  // `cloudseed-preset-actions` so THIS card and the curated face's PRESET cell
+  // run the identical stamp — the card used to carry its own 45-case cppId
+  // switch, and the shell's `preset_index` write used to push the preset into
+  // the worklet WITHOUT touching the store (the sound changed, the saved rack
+  // did not). The preset_index param is the one piece of multiplayer state
+  // that drives the footer's selected-slot rendering.
   let presetIndex = $derived(Math.round(paramVal('preset_index')) | 0);
   function applyPreset(slot: number): void {
-    const idx = Math.max(0, Math.min(CLOUDSEED_PRESETS.length - 1, slot));
-    const preset = CLOUDSEED_PRESETS[idx];
-    if (!preset) return;
-    // Apply the whole preset as ONE undoable transaction (multi-field user edit).
-    mutateNode(id, (live) => {
-      // Map C++ cppId → our string id, then write into the live node params.
-      for (const [cppIdStr, v] of Object.entries(preset.values)) {
-        const cppId = Number(cppIdStr);
-        const def = cloudseedDef.params.find((p) => {
-          // Find the param whose default index matches the cppId, by name.
-          // Macro AudioParams use string names that don't directly include
-          // the cppId; the message-port params do (see CLOUDSEED_MESSAGE_PARAMS).
-          // For correctness we look up by name → cppId mapping table.
-          return cppIdToParamId(cppId) === p.id;
-        });
-        if (!def) continue;
-        live.params[def.id] = v; // guard:allow-raw-write — in-place write on the live node INSIDE mutateNode's origin-tagged transact (the sanctioned multi-field seam), not a bare store write
-      }
-      live.params.preset_index = idx;
-    });
+    applyCloudseedPreset(id, Math.max(0, Math.min(CLOUDSEED_PRESETS.length - 1, slot)));
   }
 
-  // C++ cppId → string-id mapping. Macros first, then message-port params.
-  function cppIdToParamId(cppId: number): string | null {
-    switch (cppId) {
-      case CloudseedParam.DryOut:    return 'dry_out';
-      case CloudseedParam.EarlyOut:  return 'early_out';
-      case CloudseedParam.LateOut:   return 'late_out';
-      case CloudseedParam.InputMix:  return 'input_mix';
-      case CloudseedParam.LowCut:    return 'low_cut';
-      case CloudseedParam.HighCut:   return 'high_cut';
-      case CloudseedParam.EqCrossSeed: return 'cross_seed';
-      case CloudseedParam.Interpolation:         return 'interpolation';
-      case CloudseedParam.LowCutEnabled:         return 'low_cut_enabled';
-      case CloudseedParam.HighCutEnabled:        return 'high_cut_enabled';
-      case CloudseedParam.TapEnabled:            return 'tap_enabled';
-      case CloudseedParam.TapCount:              return 'tap_count';
-      case CloudseedParam.TapDecay:              return 'tap_decay';
-      case CloudseedParam.TapPredelay:           return 'tap_predelay';
-      case CloudseedParam.TapLength:             return 'tap_length';
-      case CloudseedParam.EarlyDiffuseEnabled:   return 'early_diffuse_enabled';
-      case CloudseedParam.EarlyDiffuseCount:     return 'early_diffuse_count';
-      case CloudseedParam.EarlyDiffuseDelay:     return 'early_diffuse_delay';
-      case CloudseedParam.EarlyDiffuseModAmount: return 'early_diffuse_mod_amt';
-      case CloudseedParam.EarlyDiffuseFeedback:  return 'early_diffuse_feedback';
-      case CloudseedParam.EarlyDiffuseModRate:   return 'early_diffuse_mod_rate';
-      case CloudseedParam.LateMode:              return 'late_mode';
-      case CloudseedParam.LateLineCount:         return 'late_line_count';
-      case CloudseedParam.LateDiffuseEnabled:    return 'late_diffuse_enabled';
-      case CloudseedParam.LateDiffuseCount:      return 'late_diffuse_count';
-      case CloudseedParam.LateLineSize:          return 'late_line_size';
-      case CloudseedParam.LateLineModAmount:     return 'late_line_mod_amt';
-      case CloudseedParam.LateDiffuseDelay:      return 'late_diffuse_delay';
-      case CloudseedParam.LateDiffuseModAmount:  return 'late_diffuse_mod_amt';
-      case CloudseedParam.LateLineDecay:         return 'late_line_decay';
-      case CloudseedParam.LateLineModRate:       return 'late_line_mod_rate';
-      case CloudseedParam.LateDiffuseFeedback:   return 'late_diffuse_feedback';
-      case CloudseedParam.LateDiffuseModRate:    return 'late_diffuse_mod_rate';
-      case CloudseedParam.EqLowShelfEnabled:     return 'eq_low_shelf_enabled';
-      case CloudseedParam.EqHighShelfEnabled:    return 'eq_high_shelf_enabled';
-      case CloudseedParam.EqLowpassEnabled:      return 'eq_lowpass_enabled';
-      case CloudseedParam.EqLowFreq:             return 'eq_low_freq';
-      case CloudseedParam.EqHighFreq:            return 'eq_high_freq';
-      case CloudseedParam.EqCutoff:              return 'eq_cutoff';
-      case CloudseedParam.EqLowGain:             return 'eq_low_gain';
-      case CloudseedParam.EqHighGain:            return 'eq_high_gain';
-      case CloudseedParam.SeedTap:               return 'seed_tap';
-      case CloudseedParam.SeedDiffusion:         return 'seed_diffusion';
-      case CloudseedParam.SeedDelay:             return 'seed_delay';
-      case CloudseedParam.SeedPostDiffusion:     return 'seed_post_diffusion';
-    }
-    return null;
+  /** CLEAR TAIL — flush the tank. Not a param: nothing is stored, and there is
+   *  nothing to undo. No-op before the audio engine boots. */
+  function clearTail(): void {
+    clearCloudseedTail({ engine: engineCtx.get(), node });
   }
 
   // Live DECAY readout in the footer — driven by LateLineDecay.
@@ -266,6 +208,16 @@
         <span class="preset-name" data-testid="cs-preset-name">{CLOUDSEED_PRESETS[presetIndex]?.name ?? '—'}</span>
         <button type="button" class="arrow" data-testid="cs-preset-next" onclick={nextPreset}>›</button>
         <span class="decay-readout" data-testid="cs-decay-readout">{decayLabel}</span>
+        <!-- CLEAR TAIL (controlFamily 'cloudseed-clear'): flushes every delay
+             line / diffuser / shelf / lowpass in the tank. The worklet has
+             always handled `clearBuffers`; nothing had ever sent it. -->
+        <button
+          type="button"
+          class="pill clear"
+          data-testid={`cs-clear-tail-${id}`}
+          title="Clear tail — flush the reverb tank (nothing is stored; not undoable)"
+          onclick={clearTail}
+        >CLEAR</button>
       </footer>
     </div>
   </PatchPanel>
@@ -414,5 +366,9 @@
   .decay-readout {
     color: var(--accent, #5da9d6);
     font-weight: 600;
+  }
+  .pill.clear {
+    margin-left: 6px;
+    flex: none;
   }
 </style>

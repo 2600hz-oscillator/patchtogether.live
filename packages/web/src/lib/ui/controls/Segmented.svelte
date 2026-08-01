@@ -125,7 +125,7 @@
         aria-checked={i === activeIdx}
         title={seg.title}
         onclick={() => pick(seg.value)}
-      >{seg.label}</button>
+      ><span class="seg-text">{seg.label}</span></button>
     {/each}
   </div>
   {#if midi.binding}
@@ -183,6 +183,21 @@
     text-transform: uppercase;
     color: var(--text-dim);
     cursor: pointer;
+    white-space: nowrap;
+    /* The track must be allowed to shrink below its content, or the caption
+       below can never ellipsize (a grid item's implicit `min-width: auto`
+       floors it at min-content). */
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* A long state name ELLIPSIZES rather than running out of its button. Two-
+     to-four-letter modes (filter LP/HP/BP) never reach this and render
+     byte-identically; a preset roster ('divine inspiration') does, and a hard
+     clip mid-glyph reads as a rendering bug where an ellipsis reads as "there
+     is more name here". */
+  .seg-text {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
   }
   .seg:hover { border-color: var(--domain, var(--accent)); color: var(--text); }

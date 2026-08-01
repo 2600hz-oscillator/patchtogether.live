@@ -38,9 +38,18 @@
 //   low_cut (linear 0..1, default 0.64): wet-path input HPF (mapped to CloudSeed's frequency curve).
 //   high_cut (linear 0..1, default 0.29): wet-path input LPF.
 //   cross_seed (linear 0..1, default 0): L/R random-layout convergence (0 = independent layouts = widest).
-//   preset_index (discrete 0..CLOUDSEED_PRESETS.length, default 0): preset bank picker.
+//   preset_index (discrete 0..CLOUDSEED_PRESETS.length-1, default 0): preset bank
+//     picker. STORE-ONLY — recall is a graph stamp of all 46 values, never an
+//     engine push (see the factory's setParam note + cloudseed-preset-actions).
 //   38 message-port params (toggles / integer counts / seeds / per-EQ-band freq + gain /
 //     modulation knobs) — mutated via port.postMessage; see the worklet header.
+//     TEN of them are `discrete 0..1` because the worklet hard-thresholds them
+//     at 0.5 (scaleParam's `val < 0.5 ? 0 : 1` arm): the eight stage ENABLES,
+//     `interpolation`, and `late_mode`. The last names its states (PRE/POST)
+//     rather than reading as an on/off switch.
+//
+// Engine WRITE keys (handle.write, not params):
+//   clearTail — flush the reverb tank (the worklet's `clearBuffers`).
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -48,6 +57,12 @@ import workletUrl from '@patchtogether.live/dsp/dist/cloudseed.js?url';
 
 const PROCESSOR_NAME = 'cloudseed';
 const loadedContexts = new WeakSet<BaseAudioContext>();
+
+/** The engine-handle `write()` key that flushes the reverb tank. Declared on
+ *  the def (not on the UI action) because the HANDLE is what implements it —
+ *  the key is part of this module's engine surface, and the card + the shell
+ *  cell both address it through `$lib/ui/modules/cloudseed-preset-actions`. */
+export const CLOUDSEED_CLEAR_TAIL_KEY = 'clearTail';
 
 // ============================================================================
 // Parameter enum (1:1 from CloudSeedCore/Parameters.h)
@@ -376,28 +391,67 @@ export function presetDecaySeconds(preset: CloudseedPreset): number {
 // postMessage channel via the `non-AudioParam params helper` below.
 // ============================================================================
 
+/** Macro-AudioParam IDs → C++ Parameter enum, for the preset stamp + the
+ *  per-knob readout formatter. Declared ABOVE the def because `cloudseedDef`'s
+ *  param array reads it while the object literal is being evaluated (a
+ *  `const` below the def would be in its temporal dead zone). */
+export const CLOUDSEED_MACRO_CPP_MAP: Readonly<Record<string, number>> = {
+  dry_out: CloudseedParam.DryOut,
+  early_out: CloudseedParam.EarlyOut,
+  late_out: CloudseedParam.LateOut,
+  input_mix: CloudseedParam.InputMix,
+  low_cut: CloudseedParam.LowCut,
+  high_cut: CloudseedParam.HighCut,
+  cross_seed: CloudseedParam.EqCrossSeed,
+};
+
 /** Non-AudioParam parameters mutated via postMessage to the worklet. `label` is
- *  the RACKLINE face display name (cosmetic — NOT in the contract golden):
- *  mock vocabulary, kept globally self-locating because the shell's dock
- *  currently renders the roster flat (no section bands to disambiguate). */
-export const CLOUDSEED_MESSAGE_PARAMS: ReadonlyArray<{ id: string; label: string; cppId: number; defaultValue: number }> = [
-  { id: 'interpolation',           label: 'Interp',         cppId: CloudseedParam.Interpolation,         defaultValue: 1 },
-  { id: 'low_cut_enabled',         label: 'Low Cut On',     cppId: CloudseedParam.LowCutEnabled,         defaultValue: 1 },
-  { id: 'high_cut_enabled',        label: 'High Cut On',    cppId: CloudseedParam.HighCutEnabled,        defaultValue: 0 },
-  { id: 'tap_enabled',             label: 'Taps On',        cppId: CloudseedParam.TapEnabled,            defaultValue: 0 },
+ *  the RACKLINE face display name (cosmetic — NOT in the contract golden).
+ *
+ *  `curve` OVERRIDES the default `'linear'`. Ten entries declare `'discrete'`
+ *  and the flip is a CORRECTION, not a UI preference: the worklet
+ *  hard-thresholds all ten at 0.5 (`scaleParam`, the `val < 0.5 ? 0 : 1` arm),
+ *  so they have exactly two reachable states and `'linear'` was always a lie
+ *  about the value space. It also made them invisible to the shell — nine of
+ *  them painted as CONTINUOUS ROTARIES reading `0.00` where the legacy card
+ *  drew ON/OFF pills, and `looksLikeToggle` (which requires `discrete`) could
+ *  not see any of them, so even the unclassified-switch gate was blind.
+ *
+ *  `options` names the states of a param whose two positions are not on/off
+ *  (`late_mode` is PRE vs POST — a Toggle labelled "Late Mode" has no
+ *  meaningful on-state). Per the PF-1/PF-10 vocabulary gate, `options` implies
+ *  `curve: 'discrete'`. */
+export const CLOUDSEED_MESSAGE_PARAMS: ReadonlyArray<{
+  id: string;
+  label: string;
+  cppId: number;
+  defaultValue: number;
+  curve?: 'discrete';
+  options?: readonly { value: number; label: string; title?: string }[];
+}> = [
+  { id: 'interpolation',           label: 'Interp',         cppId: CloudseedParam.Interpolation,         defaultValue: 1, curve: 'discrete' },
+  { id: 'low_cut_enabled',         label: 'Low Cut On',     cppId: CloudseedParam.LowCutEnabled,         defaultValue: 1, curve: 'discrete' },
+  { id: 'high_cut_enabled',        label: 'High Cut On',    cppId: CloudseedParam.HighCutEnabled,        defaultValue: 0, curve: 'discrete' },
+  { id: 'tap_enabled',             label: 'Taps On',        cppId: CloudseedParam.TapEnabled,            defaultValue: 0, curve: 'discrete' },
   { id: 'tap_count',               label: 'Tap Count',      cppId: CloudseedParam.TapCount,              defaultValue: 0.2 },
   { id: 'tap_decay',               label: 'Tap Decay',      cppId: CloudseedParam.TapDecay,              defaultValue: 1 },
   { id: 'tap_predelay',            label: 'Pre-Delay',      cppId: CloudseedParam.TapPredelay,           defaultValue: 0 },
   { id: 'tap_length',              label: 'Tap Length',     cppId: CloudseedParam.TapLength,             defaultValue: 0.98 },
-  { id: 'early_diffuse_enabled',   label: 'Early Diff On',  cppId: CloudseedParam.EarlyDiffuseEnabled,   defaultValue: 0 },
+  { id: 'early_diffuse_enabled',   label: 'Early Diff On',  cppId: CloudseedParam.EarlyDiffuseEnabled,   defaultValue: 0, curve: 'discrete' },
   { id: 'early_diffuse_count',     label: 'Early Stages',   cppId: CloudseedParam.EarlyDiffuseCount,     defaultValue: 0.3 },
   { id: 'early_diffuse_delay',     label: 'Early Delay',    cppId: CloudseedParam.EarlyDiffuseDelay,     defaultValue: 0.3 },
   { id: 'early_diffuse_mod_amt',   label: 'Early Mod Amt',  cppId: CloudseedParam.EarlyDiffuseModAmount, defaultValue: 0.14 },
   { id: 'early_diffuse_feedback',  label: 'Early Feedback', cppId: CloudseedParam.EarlyDiffuseFeedback,  defaultValue: 0.77 },
   { id: 'early_diffuse_mod_rate',  label: 'Early Mod Rate', cppId: CloudseedParam.EarlyDiffuseModRate,   defaultValue: 0.25 },
-  { id: 'late_mode',               label: 'Late Mode',      cppId: CloudseedParam.LateMode,              defaultValue: 1 },
+  {
+    id: 'late_mode', label: 'Late Mode', cppId: CloudseedParam.LateMode, defaultValue: 1, curve: 'discrete',
+    options: [
+      { value: 0, label: 'pre',  title: 'PRE — each tank line is tapped straight off the delay; its diffuser + EQ shape only the recirculating feedback' },
+      { value: 1, label: 'post', title: 'POST — each tank line is tapped after its diffuser + EQ, so you hear them directly on every echo' },
+    ],
+  },
   { id: 'late_line_count',         label: 'Lines',          cppId: CloudseedParam.LateLineCount,         defaultValue: 1 },
-  { id: 'late_diffuse_enabled',    label: 'Late Diff On',   cppId: CloudseedParam.LateDiffuseEnabled,    defaultValue: 1 },
+  { id: 'late_diffuse_enabled',    label: 'Late Diff On',   cppId: CloudseedParam.LateDiffuseEnabled,    defaultValue: 1, curve: 'discrete' },
   { id: 'late_diffuse_count',      label: 'Diff Count',     cppId: CloudseedParam.LateDiffuseCount,      defaultValue: 0.49 },
   { id: 'late_line_size',          label: 'Size',           cppId: CloudseedParam.LateLineSize,          defaultValue: 0.47 },
   { id: 'late_line_mod_amt',       label: 'Line Mod Amt',   cppId: CloudseedParam.LateLineModAmount,    defaultValue: 0.27 },
@@ -407,9 +461,9 @@ export const CLOUDSEED_MESSAGE_PARAMS: ReadonlyArray<{ id: string; label: string
   { id: 'late_line_mod_rate',      label: 'Line Mod Rate',  cppId: CloudseedParam.LateLineModRate,       defaultValue: 0.23 },
   { id: 'late_diffuse_feedback',   label: 'Diff Feedback',  cppId: CloudseedParam.LateDiffuseFeedback,   defaultValue: 0.85 },
   { id: 'late_diffuse_mod_rate',   label: 'Diff Mod Rate',  cppId: CloudseedParam.LateDiffuseModRate,    defaultValue: 0.17 },
-  { id: 'eq_low_shelf_enabled',    label: 'Low Shelf On',   cppId: CloudseedParam.EqLowShelfEnabled,     defaultValue: 0 },
-  { id: 'eq_high_shelf_enabled',   label: 'High Shelf On',  cppId: CloudseedParam.EqHighShelfEnabled,    defaultValue: 1 },
-  { id: 'eq_lowpass_enabled',      label: 'EQ LP On',       cppId: CloudseedParam.EqLowpassEnabled,      defaultValue: 0 },
+  { id: 'eq_low_shelf_enabled',    label: 'Low Shelf On',   cppId: CloudseedParam.EqLowShelfEnabled,     defaultValue: 0, curve: 'discrete' },
+  { id: 'eq_high_shelf_enabled',   label: 'High Shelf On',  cppId: CloudseedParam.EqHighShelfEnabled,    defaultValue: 1, curve: 'discrete' },
+  { id: 'eq_lowpass_enabled',      label: 'EQ LP On',       cppId: CloudseedParam.EqLowpassEnabled,      defaultValue: 0, curve: 'discrete' },
   { id: 'eq_low_freq',             label: 'Lo Freq',        cppId: CloudseedParam.EqLowFreq,             defaultValue: 0.39 },
   { id: 'eq_high_freq',            label: 'Hi Freq',        cppId: CloudseedParam.EqHighFreq,            defaultValue: 0.51 },
   { id: 'eq_cutoff',               label: 'EQ Cutoff',      cppId: CloudseedParam.EqCutoff,              defaultValue: 0.97 },
@@ -420,6 +474,17 @@ export const CLOUDSEED_MESSAGE_PARAMS: ReadonlyArray<{ id: string; label: string
   { id: 'seed_delay',              label: 'Delay Seed',     cppId: CloudseedParam.SeedDelay,             defaultValue: 0.22 },
   { id: 'seed_post_diffusion',     label: 'Post Seed',      cppId: CloudseedParam.SeedPostDiffusion,     defaultValue: 0.37 },
 ];
+
+/** The PRESET roster the face paints (PF-1 `ParamDef.options`). Derived from
+ *  the bank so a preset added to `CLOUDSEED_PRESETS` cannot go un-named — the
+ *  vocabulary gate requires one option per discrete step of `preset_index`,
+ *  whose `max` is derived from the same array. The stored `preset.name` is NOT
+ *  touched: the ART impulse-response scenario matches on `.includes('SHORT')`. */
+const CLOUDSEED_PRESET_OPTIONS = CLOUDSEED_PRESETS.map((p, i) => ({
+  value: i,
+  label: p.name.replace(/^\[FX\]\s*/, '').toLowerCase(),
+  title: `${p.name} — recalls all 46 values as ONE undoable edit`,
+}));
 
 export const cloudseedDef: AudioModuleDef = {
   type: 'cloudseed',
@@ -448,15 +513,29 @@ export const cloudseedDef: AudioModuleDef = {
     { id: 'out_l', type: 'audio' },
     { id: 'out_r', type: 'audio' },
   ],
+  // ── PF-3 READOUTS ─────────────────────────────────────────────────────────
+  // Every knob on this module carries `format` = the module's OWN
+  // `formatParameter` (the 1:1 mirror of CloudSeed's FormatParameter). The
+  // normalized 0..1 a ParamDef stores is meaningless on a reverb whose knobs
+  // mean SECONDS, HERTZ, DECIBELS and COUNTS: the legacy card printed
+  // `2.34 sec` / `4300 Hz` / `12` and the migrated shell printed `0.63`. One
+  // `format` per param restores every one of those 45 readouts from a single
+  // formatter instead of 45 re-typed unit strings — the range/meaning of a knob
+  // must come from ONE place, and here that place is the C++ port.
+  //
+  // `preset_index` and `late_mode` are the two exceptions: they declare
+  // `options` instead, so the dial prints the STATE NAME and the dock paints a
+  // real picker. (`knobReadout` ranks `format` above `options`, so declaring
+  // both would silently mute the roster's own labels.)
   params: [
     // The 7 AudioParam macros. Defaults match DarkPlate's output mix.
-    { id: 'dry_out',    label: 'Dry',        defaultValue: 0.87, min: 0, max: 1, curve: 'linear' },
-    { id: 'early_out',  label: 'Early',      defaultValue: 0,    min: 0, max: 1, curve: 'linear' },
-    { id: 'late_out',   label: 'Late',       defaultValue: 0.66, min: 0, max: 1, curve: 'linear' },
-    { id: 'input_mix',  label: 'Input Mix',  defaultValue: 0.23, min: 0, max: 1, curve: 'linear' },
-    { id: 'low_cut',    label: 'Low Cut',    defaultValue: 0.64, min: 0, max: 1, curve: 'linear' },
-    { id: 'high_cut',   label: 'High Cut',   defaultValue: 0.29, min: 0, max: 1, curve: 'linear' },
-    { id: 'cross_seed', label: 'Cross Seed', defaultValue: 0,    min: 0, max: 1, curve: 'linear' },
+    { id: 'dry_out',    label: 'Dry',        defaultValue: 0.87, min: 0, max: 1, curve: 'linear', format: (v: number) => formatParameter(v, CLOUDSEED_MACRO_CPP_MAP.dry_out!) },
+    { id: 'early_out',  label: 'Early',      defaultValue: 0,    min: 0, max: 1, curve: 'linear', format: (v: number) => formatParameter(v, CLOUDSEED_MACRO_CPP_MAP.early_out!) },
+    { id: 'late_out',   label: 'Late',       defaultValue: 0.66, min: 0, max: 1, curve: 'linear', format: (v: number) => formatParameter(v, CLOUDSEED_MACRO_CPP_MAP.late_out!) },
+    { id: 'input_mix',  label: 'Input Mix',  defaultValue: 0.23, min: 0, max: 1, curve: 'linear', format: (v: number) => formatParameter(v, CLOUDSEED_MACRO_CPP_MAP.input_mix!) },
+    { id: 'low_cut',    label: 'Low Cut',    defaultValue: 0.64, min: 0, max: 1, curve: 'linear', format: (v: number) => formatParameter(v, CLOUDSEED_MACRO_CPP_MAP.low_cut!) },
+    { id: 'high_cut',   label: 'High Cut',   defaultValue: 0.29, min: 0, max: 1, curve: 'linear', format: (v: number) => formatParameter(v, CLOUDSEED_MACRO_CPP_MAP.high_cut!) },
+    { id: 'cross_seed', label: 'Cross Seed', defaultValue: 0,    min: 0, max: 1, curve: 'linear', format: (v: number) => formatParameter(v, CLOUDSEED_MACRO_CPP_MAP.cross_seed!) },
     // The 38 message-port params. We declare them on the def so the
     // multiplayer-sync / persist / preset-load paths all see the full
     // parameter inventory; defaults pulled from DarkPlate where set.
@@ -466,11 +545,29 @@ export const cloudseedDef: AudioModuleDef = {
       defaultValue: p.defaultValue,
       min: 0,
       max: 1,
-      curve: 'linear' as const,
+      curve: p.curve ?? ('linear' as const),
+      ...(p.options
+        ? { options: p.options }
+        : { format: (v: number) => formatParameter(v, p.cppId) }),
     })),
-    // Preset slot index — UI footer click-through; stored as a param so
-    // collaborators see the active slot in real time.
-    { id: 'preset_index', label: 'Preset', defaultValue: 0, min: 0, max: CLOUDSEED_PRESETS.length - 1, curve: 'discrete' },
+    // Preset slot index — the whole-space recall. `options` NAMES the four
+    // bundled spaces so the dock paints them as a segment row instead of a
+    // rotary printing `0.00`, and the lane dial prints the space's name.
+    {
+      id: 'preset_index', label: 'Preset', defaultValue: 0,
+      min: 0, max: CLOUDSEED_PRESETS.length - 1, curve: 'discrete',
+      options: CLOUDSEED_PRESET_OPTIONS,
+    },
+  ],
+
+  // CLEAR TAIL — a one-shot action, not a param (there is no state to persist:
+  // it flushes every delay line / diffuser / shelf / lowpass in the tank).
+  // The worklet has ALWAYS handled `clearBuffers`
+  // (packages/dsp/src/cloudseed.ts) and the host had never sent it; on a preset
+  // whose tail runs ~30 s, "make it stop" is a real gesture with a real
+  // implementation and, until now, no button.
+  controlFamilies: [
+    { id: 'cloudseed-clear', label: 'Clear tail', kind: 'other', testidPrefix: 'cs-clear-tail' },
   ],
 
   docs: {
@@ -502,7 +599,9 @@ export const cloudseedDef: AudioModuleDef = {
         high_cut: 'HIGH CUT — the wet-path input low-pass corner (~400 Hz–20 kHz); darkens everything entering the reverb (the dry path is untouched). In circuit only while HIGH CUT ENABLE is on. CV via the HI CUT input.',
         cross_seed: 'CROSS SEED — L/R layout convergence: at 0 each channel rolls a fully independent seeded layout (the widest, most de-correlated tail); raising it blends both channels toward one shared layout until at 100% the L and R tanks are identical (a centered, mono-correlated wet). CV via the X-SEED input.',
         // Preset.
-        preset_index: 'The active preset slot in the bundled bank (DIVINE INSPIRATION / SHORT ROOM / BRIGHT HALL / INFINITE PAD). Selecting a slot writes that whole preset (every macro + message-port value) into the module as one undoable edit, so all collaborators see the same space.',
+        preset_index: 'The active preset slot in the bundled bank (DIVINE INSPIRATION / SHORT ROOM / BRIGHT HALL / INFINITE PAD). Selecting a slot writes that whole preset — every macro AND every message-port value — into the module as ONE undoable edit, so the sound, the saved rack and every collaborator agree. Because the recall is a graph edit rather than a hidden push to the reverb, a rack-mate sees all 46 knobs move.',
+        // CLEAR TAIL (control family) — an ACTION, not a stored value.
+        'cloudseed-clear-{n}': 'CLEAR TAIL — flushes the reverb instantly: every tap, early-diffusion all-pass and late-tank delay line (and their in-loop shelves and lowpass) is zeroed, so whatever is still ringing stops on the spot. It changes no setting and is not undoable — the space is unchanged, only its current contents are dropped. The gesture DECAY makes necessary: at the long end the tail runs ~60 seconds, and INFINITE PAD parks near it.',
       };
       // 38 message-port params — described by function. Grouped: input stage /
       // TAPS / EARLY DIFFUSION / LATE tank / EQ / SEEDS.
@@ -551,86 +650,126 @@ export const cloudseedDef: AudioModuleDef = {
   },
 
   // RACKLINE face — the FX-archetype rework (fullcard-mocks/cloudseed.html):
-  // wet/dry blend center-stage, RT60 as the hero stat, everything else
-  // re-grouped by signal flow (input → taps → early → late → EQ → output).
+  // the recall + the blend center-stage, DECAY as the hero stat, everything
+  // else re-grouped by the SIGNAL PATH the docs describe rather than by the
+  // C++ Parameter enum's grouping.
   //
-  //   mini (1):    LATE — the one knob that IS "how much reverb".
-  //   compact (2 cells + glyph): LATE / DRY — the output blend, the mock's
-  //                hero band distilled. (A glyph-bearing face fits TWO whole
-  //                knob columns beside the meter — faceTierCap; DECAY joins at
-  //                the full tier.)
-  //   full (8):    + EARLY (completing the 3-fader blend), SIZE (the space's
-  //                other defining dimension), HIGH CUT + LOW CUT (the wet
-  //                tone trims), PRESET (jump between bundled spaces).
-  //   dock:        every control, paged by the mock's section bands.
+  // `order` is a PRIORITY ranking for tiers that show a SUBSET; `pages` is
+  // FUNCTION order for the tier that shows EVERYTHING. They answer different
+  // questions and they disagree here on purpose — do not "fix" one to match
+  // the other.
+  //
+  //   mini    (1) PRESET. On a 46-parameter CONSTRUCTIVE reverb the first
+  //               decision is never a fader: every other control on this
+  //               module is a trim on a space you have already chosen, and the
+  //               four bundled spaces are ~30 s apart in tail length.
+  //               ⚠ Priced: the lane knob column caps at 46px, so mini paints
+  //               a dial whose readout ELLIPSES ('divine inspirati…'). The
+  //               ranking still stands — a truncated name still says which of
+  //               four spaces you are in; a LATE fader says nothing about it.
+  //   compact (2 + glyph) + LATE — "how much reverb", the one control a player
+  //               rides. The VU glyph says whether signal is arriving.
+  //   full    (6 — laneBodyPlan's no-clip cap; ranks 7+ are DOCK-ONLY) adds
+  //               DECAY, DRY, SIZE and PRE-DELAY. That is a complete playable
+  //               reverb: which room, how much, how long, how much dry, how
+  //               big, how far back. ⚠ 6 cells ⇒ TWO plate rows ⇒ the full
+  //               tier renders NO in-lane glyph (laneBodyPlan: glyph = hasGlyph
+  //               && rows <= 1). Priced deliberately: the meter survives at
+  //               mini, compact and the dock hero, and a sixth control beats a
+  //               level meter on a module whose level meter is the dock's.
+  //   dock:       every control, in eight tabbed pages (PF-16).
+  //
+  // ⚠ THE BIGGEST RE-RANK, and the clearest illustration of what a curated
+  // face is FOR: `tap_predelay` 15 → 6. It is buried in the tap group only
+  // because the C++ enum put it there (`CloudseedParam.TapPredelay = 12`),
+  // while the module's own docs say it is "a 0..500 ms gap ahead of the ENTIRE
+  // wet path" — taps, early AND late. Pre-delay is on the front panel of every
+  // reverb ever made, and it is the control that moves a space behind the
+  // source without changing the space.
   //
   // glyph 'meter': an FX processor reads I/O level, not a waveform.
   face: {
     order: [
-      // hero ranks (mini→compact→full)
-      'late_out',
-      'dry_out',
-      'late_line_decay',
-      'early_out',
-      'late_line_size',
-      'high_cut',
-      'low_cut',
-      'preset_index',
-      // input stage
-      'input_mix',
-      'low_cut_enabled',
-      'interpolation',
-      // taps
-      'tap_enabled',
-      'tap_count',
-      'tap_decay',
-      'tap_predelay',
-      'tap_length',
-      // early diffusion
-      'early_diffuse_enabled',
-      'early_diffuse_count',
-      'early_diffuse_delay',
-      'early_diffuse_feedback',
-      'early_diffuse_mod_amt',
-      'early_diffuse_mod_rate',
-      // late reflections — delay lines, then in-line diffusion
-      'late_mode',
-      'late_line_count',
-      'late_line_mod_amt',
-      'late_line_mod_rate',
-      'late_diffuse_enabled',
-      'late_diffuse_count',
-      'late_diffuse_delay',
-      'late_diffuse_feedback',
-      'late_diffuse_mod_amt',
-      'late_diffuse_mod_rate',
-      // EQ (in-loop, late tail only)
-      'eq_low_shelf_enabled',
-      'eq_low_freq',
-      'eq_low_gain',
-      'eq_high_shelf_enabled',
-      'eq_high_freq',
-      'eq_high_gain',
-      'eq_lowpass_enabled',
-      'eq_cutoff',
-      // output stage
-      'high_cut_enabled',
-      'cross_seed',
-      // seeds
-      'seed_tap',
-      'seed_diffusion',
-      'seed_delay',
-      'seed_post_diffusion',
+      // ── the lane budget: ranks 1-6 are everything mini/compact/full can show
+      'preset_index',       // 1  mini
+      'late_out',           // 2  compact
+      'late_line_decay',    // 3
+      'dry_out',            // 4
+      'late_line_size',     // 5
+      'tap_predelay',       // 6  ← the lane budget ends HERE
+      // ── dock-only from here down
+      'early_out',          // 7  the third fader; 0 by default, so it ranks below
+      'high_cut',           // 8  the wet-path tone trims, brightest-first
+      'low_cut',            // 9
+      'input_mix',          // 10
+      'low_cut_enabled',    // 11
+      'high_cut_enabled',   // 12
+      // the late tank — the delay lines that ARE the reverb
+      'late_line_count',    // 13
+      'late_mode',          // 14
+      'late_line_mod_amt',  // 15
+      'late_line_mod_rate', // 16
+      // the diffusers INSIDE the tank's feedback loop
+      'late_diffuse_enabled',  // 17
+      'late_diffuse_count',    // 18
+      'late_diffuse_feedback', // 19
+      'late_diffuse_delay',    // 20
+      'late_diffuse_mod_amt',  // 21
+      'late_diffuse_mod_rate', // 22
+      'interpolation',         // 23
+      // taps — off by default, so the whole stage ranks below the tank
+      'tap_enabled',   // 24
+      'tap_count',     // 25
+      'tap_length',    // 26
+      'tap_decay',     // 27
+      // early diffusion — likewise off by default
+      'early_diffuse_enabled',  // 28
+      'early_diffuse_count',    // 29
+      'early_diffuse_feedback', // 30
+      'early_diffuse_delay',    // 31
+      'early_diffuse_mod_amt',  // 32
+      'early_diffuse_mod_rate', // 33
+      // in-loop EQ — the high shelf is on by default and is the dark-tail move
+      'eq_high_shelf_enabled', // 34
+      'eq_high_gain',          // 35
+      'eq_high_freq',          // 36
+      'eq_low_shelf_enabled',  // 37
+      'eq_low_gain',           // 38
+      'eq_low_freq',           // 39
+      'eq_lowpass_enabled',    // 40
+      'eq_cutoff',             // 41
+      // stereo width + the seeds that roll every layout
+      'cross_seed',          // 42
+      'seed_delay',          // 43  the tank's modal structure — the audible one
+      'seed_tap',            // 44
+      'seed_diffusion',      // 45
+      'seed_post_diffusion', // 46
+      // last on purpose: a panic button is not a performance control, and
+      // spending one of six lane cells on it would be.
+      'cloudseed-clear-{n}', // 47
     ],
+    // EIGHT pages, in SIGNAL order. Three things worth naming:
+    //  * the old `late` page was a 12-control dumping ground holding two
+    //    different engines. The def's own order comment already knew the
+    //    split (delay lines vs. in-loop diffusion); the page never took it.
+    //  * `low_cut` sat on `input stage` and `high_cut` on `output stage`,
+    //    yet the docs describe BOTH as wet-path INPUT filters — a plain
+    //    paging bug. Fixing it also un-splits the rear (see `rear` below).
+    //  * the LABELS are short because on this face they are TAB CAPTIONS
+    //    (PF-16), and eight of them share one 1220px rail. Descriptive band
+    //    headers ('late tank · delay lines', 'tail eq · inside the loop')
+    //    pushed the eighth tab off the end into the rail's overflow scroll —
+    //    measured, in the regenerated baseline. The page's own contents say
+    //    the rest.
     pages: [
-      { id: 'blend', label: 'output blend', controls: ['dry_out', 'early_out', 'late_out', 'preset_index'] },
-      { id: 'input', label: 'input stage', controls: ['input_mix', 'low_cut', 'low_cut_enabled', 'interpolation'] },
-      { id: 'taps', label: 'taps', controls: ['tap_enabled', 'tap_count', 'tap_decay', 'tap_predelay', 'tap_length'] },
-      { id: 'early', label: 'early diffusion', controls: ['early_diffuse_enabled', 'early_diffuse_count', 'early_diffuse_delay', 'early_diffuse_feedback', 'early_diffuse_mod_amt', 'early_diffuse_mod_rate'] },
-      { id: 'late', label: 'late reflections', controls: ['late_mode', 'late_line_size', 'late_line_count', 'late_line_decay', 'late_line_mod_amt', 'late_line_mod_rate', 'late_diffuse_enabled', 'late_diffuse_count', 'late_diffuse_delay', 'late_diffuse_feedback', 'late_diffuse_mod_amt', 'late_diffuse_mod_rate'] },
-      { id: 'eq', label: 'equalisation', controls: ['eq_low_shelf_enabled', 'eq_low_freq', 'eq_low_gain', 'eq_high_shelf_enabled', 'eq_high_freq', 'eq_high_gain', 'eq_lowpass_enabled', 'eq_cutoff'] },
-      { id: 'output', label: 'output stage', controls: ['high_cut_enabled', 'high_cut', 'cross_seed'] },
-      { id: 'seeds', label: 'seeds', controls: ['seed_tap', 'seed_diffusion', 'seed_delay', 'seed_post_diffusion'] },
+      { id: 'space',    label: 'space · blend',     controls: ['preset_index', 'late_out', 'late_line_decay', 'dry_out', 'early_out', 'late_line_size', 'cloudseed-clear-{n}'] },
+      { id: 'input',    label: 'input · pre-delay', controls: ['input_mix', 'tap_predelay', 'low_cut_enabled', 'low_cut', 'high_cut_enabled', 'high_cut'] },
+      { id: 'taps',     label: 'taps',              controls: ['tap_enabled', 'tap_count', 'tap_length', 'tap_decay'] },
+      { id: 'early',    label: 'early diffusion',   controls: ['early_diffuse_enabled', 'early_diffuse_count', 'early_diffuse_delay', 'early_diffuse_feedback', 'early_diffuse_mod_amt', 'early_diffuse_mod_rate'] },
+      { id: 'lines',    label: 'late tank',         controls: ['late_mode', 'late_line_count', 'late_line_mod_amt', 'late_line_mod_rate'] },
+      { id: 'latediff', label: 'late diffusion',    controls: ['late_diffuse_enabled', 'late_diffuse_count', 'late_diffuse_delay', 'late_diffuse_feedback', 'late_diffuse_mod_amt', 'late_diffuse_mod_rate', 'interpolation'] },
+      { id: 'eq',       label: 'tail eq',           controls: ['eq_low_shelf_enabled', 'eq_low_freq', 'eq_low_gain', 'eq_high_shelf_enabled', 'eq_high_freq', 'eq_high_gain', 'eq_lowpass_enabled', 'eq_cutoff'] },
+      { id: 'seeds',    label: 'stereo · seeds',    controls: ['cross_seed', 'seed_tap', 'seed_diffusion', 'seed_delay', 'seed_post_diffusion'] },
     ],
     glyph: 'meter',
     // REAR CARD curation (rear-card-model) — the flip-side jack field.
@@ -639,18 +778,25 @@ export const cloudseedDef: AudioModuleDef = {
     //    pair (see `stereoPairs`), and the rear only draws the pair tie on the
     //    OUTPUT rail, so the band header is where that has to be said. Pinning
     //    them also keeps a future non-audio input out of the insert band.
-    //  * The CV bands mirror the dock pages 1:1 and in page order — 'output
-    //    blend' (the three faders), 'input stage' (IN MIX + LO CUT), 'output
-    //    stage' (HI CUT + X-SEED). Five of the eight pages render NO band on
-    //    purpose: taps / early diffusion / late reflections / equalisation /
-    //    seeds are message-port params with no CV inputs, and the rear card's
-    //    job is to show what you can PATCH — an empty band would advertise
-    //    holes this reverb does not have.
+    //    ⚠ The group id 'signal' must never collide with a `pages` id — a
+    //    curated group whose id matches a page claims the page slot TOO and
+    //    the band renders TWICE (dx7 hit exactly this).
+    //  * The CV bands DERIVE from the pages: 'space' (the three faders),
+    //    'input' (IN MIX + both cut corners, now that the re-paging put them
+    //    together) and 'seeds' (X-SEED). Five of the eight pages render NO
+    //    band on purpose: taps / early diffusion / late tank / late diffusion /
+    //    tail eq are message-port params with no CV inputs, and the rear
+    //    card's job is to show what you can PATCH — an empty band would
+    //    advertise holes this reverb does not have.
+    //  * The 'wet tone cuts' cluster is a ~14px sub-header, not a ninth band:
+    //    LO CUT and HI CUT are one idea (the filters at the mouth of the wet
+    //    path) sitting inside the input band beside IN MIX, which is not.
     //  * No `~` ticks: the seven macros are smoothed AudioParams read by the
     //    reverb per block, not audio-rate modulation destinations, and the two
     //    audio inputs are the signal itself (the tick would be noise).
     rear: {
       groups: [{ id: 'signal', label: 'stereo in', ports: ['in_l', 'in_r'] }],
+      clusters: [{ group: 'input', label: 'wet tone cuts', ports: ['low_cut_cv', 'high_cut_cv'] }],
     },
   },
 
@@ -696,30 +842,18 @@ export const cloudseedDef: AudioModuleDef = {
         ['out_l', { node: worklet, output: 0 }],
         ['out_r', { node: worklet, output: 1 }],
       ]),
+      // ⚠ THERE IS DELIBERATELY NO `preset_index` BRANCH HERE.
+      //
+      // It used to push the whole preset into the WORKLET and explicitly leave
+      // the store alone — so turning the dock's PRESET control changed the
+      // SOUND while the persisted Y.Doc kept the old 45 values, and the next
+      // knob move, save/reload or peer join silently reverted it. Preset recall
+      // is a GRAPH edit ($lib/ui/modules/cloudseed-preset-actions): one
+      // `mutateNode` writing all 46 values, which the reconciler then diffs and
+      // replays through `setParam` per changed key — arriving here as ordinary
+      // param writes. `preset_index` itself is store-only state (the active
+      // slot every collaborator sees); the engine has nothing to do with it.
       setParam(paramId, value) {
-        if (paramId === 'preset_index') {
-          // Preset apply: write all values into the worklet + into the
-          // patch graph so the change persists. The card handles its own
-          // patch.nodes[id].params mutation; here we just push every
-          // preset value through to the worklet.
-          const preset = CLOUDSEED_PRESETS[Math.max(0, Math.min(CLOUDSEED_PRESETS.length - 1, value | 0))];
-          if (!preset) return;
-          for (const [cppIdStr, v] of Object.entries(preset.values)) {
-            const cppId = Number(cppIdStr);
-            // If it's a macro AudioParam, find its name and set it via AudioParam.
-            const macro = cloudseedDef.params.find((p) => {
-              if (!params.has(p.id)) return false;
-              const mp = CLOUDSEED_MACRO_CPP_MAP[p.id];
-              return mp === cppId;
-            });
-            if (macro) {
-              params.get(macro.id)?.setValueAtTime(v, ctx.currentTime);
-            } else {
-              worklet.port.postMessage({ type: 'setParam', id: cppId, value: v });
-            }
-          }
-          return;
-        }
         if (params.has(paramId)) {
           params.get(paramId)?.setValueAtTime(value, ctx.currentTime);
           return;
@@ -732,22 +866,18 @@ export const cloudseedDef: AudioModuleDef = {
         if (params.has(paramId)) return params.get(paramId)?.value;
         return undefined;
       },
+      // CLEAR TAIL — the one non-param engine gesture this module has. The
+      // worklet has handled `clearBuffers` since it shipped (it fans out to
+      // every delay line, diffuser, shelf and lowpass in the tank via
+      // ReverbController); nothing had ever sent it.
+      write(key) {
+        if (key === CLOUDSEED_CLEAR_TAIL_KEY) worklet.port.postMessage({ type: 'clearBuffers' });
+      },
       dispose() {
         try { worklet.disconnect(); } catch { /* */ }
       },
     };
   },
-};
-
-/** Macro-AudioParam IDs → C++ Parameter enum, for the preset-load fast-path. */
-export const CLOUDSEED_MACRO_CPP_MAP: Readonly<Record<string, number>> = {
-  dry_out: CloudseedParam.DryOut,
-  early_out: CloudseedParam.EarlyOut,
-  late_out: CloudseedParam.LateOut,
-  input_mix: CloudseedParam.InputMix,
-  low_cut: CloudseedParam.LowCut,
-  high_cut: CloudseedParam.HighCut,
-  cross_seed: CloudseedParam.EqCrossSeed,
 };
 
 // ============================================================================

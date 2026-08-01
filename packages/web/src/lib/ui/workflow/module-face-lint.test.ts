@@ -339,6 +339,18 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
   const ACKNOWLEDGED_LATCHING = new Set<string>([
     'kickdrum:hard',   // hard-clip mode switch — a bus state you leave engaged
     'snaredrum:hard',  // same clipper switch, the KICK sibling's precedent
+    // CLOUDSEED, 2026-08-01. The five stage ENABLES that rest at 0. They only
+    // became visible to this gate when their `curve` was corrected
+    // `linear` → `discrete` (the worklet hard-thresholds all of them at 0.5,
+    // so `linear` was always a lie) — before that `looksLikeSwitch` could not
+    // see them at all and the shell painted them as continuous rotaries.
+    // Every one is a STAGE you switch into the wet path and leave there; none
+    // fires on an edge, and the module has no press-pad of any kind.
+    'cloudseed:high_cut_enabled',       // the wet-path input LPF, in or out
+    'cloudseed:tap_enabled',            // the multitap early-echo stage
+    'cloudseed:early_diffuse_enabled',  // the early all-pass network
+    'cloudseed:eq_low_shelf_enabled',   // in-loop low shelf
+    'cloudseed:eq_lowpass_enabled',     // in-loop lowpass
     // REMOVED 2026-07-27 — 'tidyVco:hold'. The acknowledgement was WRONG (it
     // claimed "sample-and-hold ENGAGE"): the card drives it pointerdown/
     // pointerup, the worklet ORs it into the mono gate like tomtom's `strike`,
