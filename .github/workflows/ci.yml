@@ -2599,6 +2599,29 @@ jobs:
       # No DB needed for the strict subset (it's pure card-render baselines).
       # No DOOM WASM needed either — DOOM is in EXEMPT_FROM_VRT.
 
+      # ---------------------------------------------------------------------
+      # CABLE-STRIPE PALETTE GATE — pure vitest, no browser, but it needs the
+      # REAL baseline PNG bytes, so it runs HERE rather than in `unit`. The
+      # `unit` lane checks out lfs:false, where every baseline is a pointer
+      # stub and the gate would self-skip into decoration (the exact way the
+      # ART fingerprint drift gate ran nowhere until #1174 exposed it). This
+      # job already does `git lfs pull --include "e2e/vrt/__screenshots__/**"`
+      # above, and it is REQUIRED, so this is the one lane that both CAN and
+      # MUST run it. VRT_STRIPE_PALETTE_REQUIRED=1 makes it FAIL rather than
+      # skip-pass if this job ever loses those bytes.
+      #
+      # Why it can't just be the VRT comparison below: a card's 2px `.stripe`
+      # is ~0.38 % of the card, under `maxDiffPixelRatio` (1 %), so a whole
+      # cable-palette generation goes stale with the screenshot gate green —
+      # and `--update-snapshots` won't repair it either, because Playwright
+      # only rewrites a snapshot when the comparison FAILS.
+      # Cost: ~1 s (vitest boot + 191 PNG header reads).
+      # ---------------------------------------------------------------------
+      - name: Cable-stripe palette gate (committed baselines vs --cable-* tokens)
+        env:
+          VRT_STRIPE_PALETTE_REQUIRED: '1'
+        run: flox activate -- npm exec -w packages/web -- vitest run --config vitest.config.ts vrt-cable-stripe
+
       - name: Run VRT (strict subset)
         run: flox activate -- task vrt:strict
 
