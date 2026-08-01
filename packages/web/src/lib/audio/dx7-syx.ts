@@ -69,7 +69,31 @@ export interface DX7OpData {
   /** 0..3 = attack/decay envelope rates; 4..7 = ascending levels. */
   r: [number, number, number, number];
   l: [number, number, number, number];
-  /** Frequency ratio relative to note pitch (operator carrier or modulator). */
+  /**
+   * RAW FREQUENCY COARSE 0..31 — the byte the operator panel's PITCH row
+   * edits, and the source `ratio` and `fixedHz` are DERIVED from.
+   *
+   * OPTIONAL, and it must stay optional. `ratio` was the only thing stored
+   * until this field existed, so **every rack saved before it has
+   * `node.data.userPatches[i].operators[j]` with no `coarse`/`fine` at all**.
+   * Typing them as required would make TypeScript promise a value the runtime
+   * does not have and the pitch row would render `undefined` — the exact
+   * empty-pitch-row failure this field was added to prevent. Read them through
+   * `resolveOpCoarseFine()` in dx7-voice-edit.ts, which falls back to the
+   * documented `ratio -> (coarse, fine)` inverse, and never touch `op.coarse`
+   * directly. Same shape and same reason as `fixedHz` below.
+   */
+  coarse?: number;
+  /** RAW FREQUENCY FINE 0..99. Optional for the same migration reason as
+   *  `coarse` — the two are always written together or not at all. */
+  fine?: number;
+  /**
+   * Frequency ratio relative to note pitch (operator carrier or modulator).
+   * DERIVED: `dx7Ratio(coarse, fine)`. Still the field the engine and the ART
+   * renderer read, and still authoritative for a legacy voice that has no
+   * coarse/fine — so an editor that writes coarse/fine MUST recompute this in
+   * the same breath (`setOpField` does).
+   */
   ratio: number;
   /** Operator output level 0..99 (the famous DX7 op-level scale). */
   level: number;
@@ -210,6 +234,11 @@ function parsePackedVoice(buf: Uint8Array, off: number): DX7Voice {
     ops.push({
       r: [r0, r1, r2, r3],
       l: [l0, l1, l2, l3],
+      // Keep the RAW bytes. Before this, the parser read coarse and fine and
+      // then threw them away, so the pitch row had nothing to edit and an
+      // imported cartridge could only ever show a derived ratio.
+      coarse,
+      fine,
       ratio: dx7Ratio(coarse, fine),
       level,
       detune,

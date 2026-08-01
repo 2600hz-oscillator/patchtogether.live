@@ -48,6 +48,12 @@ function op(args: {
   return {
     r: args.r,
     l: args.l,
+    // Keep the RAW bytes alongside the derived ratio — the operator panel's
+    // PITCH row edits coarse/fine, and a built-in that dropped them would open
+    // with an empty pitch row (or, worse, one back-derived through the lossy
+    // ratio inverse) while an imported cartridge showed the real values.
+    coarse: c,
+    fine,
     ratio,
     level: args.level,
     detune,

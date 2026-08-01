@@ -5,6 +5,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { DX7_BUILTIN_BANK, findBuiltinPatch } from './dx7-banks';
+import { dx7FixedHz, dx7Ratio } from './dx7-syx';
 
 describe('DX7_BUILTIN_BANK', () => {
   it('ships at least the 9 documented patches', () => {
@@ -62,6 +63,28 @@ describe('DX7_BUILTIN_BANK', () => {
         expect(op.ratio, `${p.name}.op${i + 1}.ratio`).toBeGreaterThan(0);
         expect(op.level, `${p.name}.op${i + 1}.level`).toBeGreaterThanOrEqual(0);
         expect(op.level, `${p.name}.op${i + 1}.level`).toBeLessThanOrEqual(99);
+      }
+    }
+  });
+
+  it('every operator carries the RAW coarse/fine bytes, consistent with its ratio', () => {
+    // The built-ins are the reference voices the operator panel's PITCH row
+    // opens on. Before these bytes existed the helper computed the ratio and
+    // discarded them, so the row had nothing to edit. Assert they are present
+    // AND that they agree with the derived values — a coarse byte that
+    // disagreed with the ratio would be a control lying about its own value.
+    for (const p of DX7_BUILTIN_BANK) {
+      for (let i = 0; i < 6; i++) {
+        const op = p.operators[i]!;
+        const where = `${p.name}.op${i + 1}`;
+        expect(typeof op.coarse, `${where}.coarse`).toBe('number');
+        expect(typeof op.fine, `${where}.fine`).toBe('number');
+        expect(op.coarse, `${where}.coarse`).toBeGreaterThanOrEqual(0);
+        expect(op.coarse, `${where}.coarse`).toBeLessThanOrEqual(31);
+        expect(op.fine, `${where}.fine`).toBeGreaterThanOrEqual(0);
+        expect(op.fine, `${where}.fine`).toBeLessThanOrEqual(99);
+        expect(dx7Ratio(op.coarse!, op.fine!), `${where} ratio`).toBeCloseTo(op.ratio, 12);
+        expect(dx7FixedHz(op.coarse!, op.fine!), `${where} fixedHz`).toBeCloseTo(op.fixedHz!, 12);
       }
     }
   });
