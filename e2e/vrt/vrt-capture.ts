@@ -36,22 +36,26 @@ import {
 } from './vrt-surface-stats';
 import { liveSurfacesFor, type LiveSurface } from './vrt-live-surfaces';
 
-/** Options accepted by `expect(...).toHaveScreenshot(...)` that a caller may
- *  still need (fullPage, clip, a longer timeout). `mask` and `maskColor` are
- *  deliberately NOT here — masks come from the registry or not at all. */
+/** The `toHaveScreenshot` options a caller may still legitimately need.
+ *
+ *  `mask` and `maskColor` are deliberately ABSENT: masks come from the
+ *  registry or not at all, and the anti-vacuity guard greps the specs to keep
+ *  it that way. The tolerance knobs (`threshold` / `maxDiffPixelRatio` /
+ *  `maxDiffPixels`) are absent for the same reason — a per-scene budget is a
+ *  mask with extra steps, and it belongs in one reviewed place, not scattered
+ *  across capture sites. */
 export interface VrtScreenshotOptions {
   fullPage?: boolean;
   timeout?: number;
-  /** Extra CSS to hide before the capture. Chrome-hiding only — anything
-   *  non-deterministic belongs in the registry with a companion. */
-  omitBackground?: boolean;
 }
 
+/** Resolve a registered surface against the right root. 'target' (default)
+ *  scopes the selector INSIDE the element being screenshotted; 'page' scopes
+ *  it to the document, for page-level composite captures where the live region
+ *  sits outside the card (a footer readout, a floating picker). */
 function resolve(surface: LiveSurface, page: Page, target: Locator | Page): Locator {
   const root = surface.scope === 'page' ? page : target;
-  return 'locator' in root
-    ? (root as Locator | Page).locator(surface.selector)
-    : page.locator(surface.selector);
+  return root.locator(surface.selector);
 }
 
 /** One line per surface, greppable out of a run log:
