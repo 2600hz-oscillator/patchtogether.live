@@ -69,9 +69,21 @@ const FULL_MATCH = [
   'landing.spec.ts',
 ];
 
+// `VRT_PROBE=1` swaps the whole suite for the MEASUREMENT tool
+// (vrt-surface-probe.spec.ts): it prints the region statistics a live surface
+// scores, live vs force-killed, so a companion's floors can be DERIVED from a
+// measurement instead of guessed. It asserts nothing and never runs in CI —
+// it is not in FULL_MATCH, so no lane picks it up by accident.
+const PROBE_MATCH = ['vrt-surface-probe.spec.ts'];
+
+function testMatch(): string[] {
+  if (process.env.VRT_PROBE === '1') return PROBE_MATCH;
+  return process.env.VRT_STRICT === '1' ? STRICT_MATCH : FULL_MATCH;
+}
+
 export default defineConfig({
   testDir: '.',
-  testMatch: process.env.VRT_STRICT === '1' ? STRICT_MATCH : FULL_MATCH,
+  testMatch: testMatch(),
   // Single-worker by design. VRT screenshots care about exact pixel
   // output; running multiple workers in parallel against the same dev
   // server creates GPU contention + paint-timing variability that
