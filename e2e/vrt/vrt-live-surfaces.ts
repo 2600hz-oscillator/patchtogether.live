@@ -1,95 +1,130 @@
 // e2e/vrt/vrt-live-surfaces.ts
 //
-// THE LIVE-SURFACE REGISTRY — one data structure, one place, naming every
-// region of every VRT scene that is NOT deterministic, WHY it isn't, and the
-// COMPANION assertion that replaces the pixel coverage the mask deletes.
+// THE LIVE-SURFACE REGISTRY — one data structure naming every region of every
+// VRT scene that is masked out of the pixel diff, WHY, and the COMPANION
+// assertion that replaces the coverage the mask deletes.
 //
 // ─────────────────────────────────────────────────────────────────────────
-// WHAT WAS ACTUALLY WRONG, AND WHAT THE INSTRUMENT IS
+// EVERY ENTRY BELOW IS DERIVED FROM THE GATE ITSELF. NOTHING ELSE COUNTS.
 //
-// The 101 failures that motivated this registry were NOT flake and NOT live
-// surfaces. They were ONE intended change never re-pinned: #1159 (e6b3814d)
-// "design tokens + colour-only theme system" recoloured every card's jack
-// glyphs (amber→cyan) and the CV stripe (teal→green) AFTER the baselines were
-// captured. At the old `threshold: 0.2` a colour shift that size did not count
-// as a differing pixel AT ALL, so the gate never saw a repo-wide palette
-// change. Tightening to 0.1 made it visible; re-pinning made it go away.
-// 116 darwin baselines moved, 0 added, 0 deleted.
+// This list has been wrong three times, and each time for the SAME reason: it
+// was derived from something other than the gate it is supposed to serve.
 //
-// So the FIRST rule of this file is: a stale baseline is not a live surface.
-// An earlier revision of this registry masked nine surfaces on that mistaken
-// reading — including `dockscope`, whose mask blinded 53.2 % of its card — with
-// `why` prose that read plausibly and was false. Five of those nine are gone
-// now, deleted after measurement.
+//   ROUND 1  Nine surfaces asserted from READING THE CODE. An adversarial
+//            verify proved four of the nine `why` statements outright false
+//            (byte-identical across five cold loads).
+//   ROUND 2  Five derived from three full sweeps, then expanded to seven with
+//            a new `vrt-frame-stability` probe measuring 200 ms-apart deltas
+//            at a hard 12/255 threshold. The GATE measures `maxDiffPixels` at
+//            `threshold: 0.1` after screenshotting until two consecutive
+//            captures agree. Different instrument, different question,
+//            different answer — and it cost 130 224 px of real coverage:
+//            analogVco (27.6 % of its card) and warrenspectrum (28.5 %) were
+//            masked on its say-so and BOTH pass STRICT + UNMASKED 10/10.
+//   ROUND 3  (this one) Every entry is the output of running THE REAL GATE,
+//            real config, real tolerance, ten times, against a FRESH UNMASKED
+//            baseline. The failure count and the diff pixels/ratio are quoted.
+//
+// ⚠ THE CIRCULARITY TRAP, because it is what makes this easy to get wrong:
+// the committed baselines have the magenta mask BAKED IN. Remove a mask,
+// re-run, and the live capture is compared against a magenta baseline — it
+// differs BY CONSTRUCTION and "proves" the mask was needed. Any honest
+// derivation MUST regenerate a fresh unmasked baseline first. `VRT_UNMASKED=1`
+// (e2e/vrt/vrt-capture.ts) exists to make that one command:
+//
+//     # 1. fresh unmasked baselines — git rm first: Playwright only REWRITES
+//     #    a snapshot when the comparison fails, but always WRITES a missing one
+//     VRT_UNMASKED=1 npx playwright test --config=vrt/vrt.config.ts \
+//       --update-snapshots --grep '<scene>'
+//     # 2. the real gate, ten times
+//     VRT_UNMASKED=1 npx playwright test --config=vrt/vrt.config.ts \
+//       --repeat-each=10 --grep '<scene>'
+//
+// `vrt-frame-stability.spec.ts` is RETIRED AS A SOURCE OF TRUTH. It is kept as
+// a diagnostic (its bounding box still names WHICH element moves, which is
+// useful), but no entry here may cite it as justification. Its predictions
+// disagreed with the gate on 2 of 7 cards — a probe that disagrees with the
+// gate is worse than no probe, because its output looks authoritative.
 //
 // ─────────────────────────────────────────────────────────────────────────
-// THE INSTRUMENT: INTER-FRAME STABILITY, not cold-load determinism
+// THE 2026-08-01 DERIVATION, IN FULL. darwin, real gate, fresh unmasked
+// baselines, 10 runs each. "cannot baseline" means `--update-snapshots` itself
+// could not produce an expected image — the card never reached two consecutive
+// agreeing captures — which is a STRONGER result than any n/10 rate.
 //
-// This is the subtle part, and getting it wrong is what produced the bad
-// registry. `toHaveScreenshot` does not simply screenshot and compare. It
-// screenshots REPEATEDLY until TWO CONSECUTIVE captures agree, and only then
-// compares the settled image to the baseline. A card that repaints different
-// pixels every frame therefore fails with
+//   scene                          unmasked gate result             verdict
+//   ─────────────────────────────  ───────────────────────────────  ─────────
+//   analogVco                      10/10 PASS                       NO MASK ✂
+//   warrenspectrum (after fix ↓)   10/10 PASS                       NO MASK ✂
+//   toybox         (after fix ↓)   10/10 PASS                       NO MASK ✂
+//   dockscope                      10/10 PASS                       no mask
+//   cube                           10/10 PASS                       no mask
+//   hypercube                      10/10 PASS                       no mask
+//   reshaper                       10/10 PASS                       no mask
+//   scope                          10/10 PASS                       no mask
+//   snh-seq-scope-on               10/10 PASS                       no mask
+//   snh-seq-scope-off              10/10 PASS                       no mask
+//   vco-scope-audio-trace (NEW)    10/10 PASS                       no mask
+//   timelorde  (canvas mask)       1/10 pass, 9 FAIL                MASK ↓
+//   timelorde  (WRAP mask, final)  10/10 PASS                       MASK ↓
+//   mandelbulb                     cannot baseline                  MASK ↓
+//   wavesculpt-blink-ribbons       cannot baseline                  MASK ↓
+//   wavesculpt-blink-gate-elec.    cannot baseline                  MASK ↓
 //
-//     "Failed to take two consecutive stable screenshots"
+// THREE MASKS DELETED (registry 7 → 4). Two of them by FIXING THE CARD rather
+// than hiding it, which is always the better trade and is what `scope` did
+// with `__scopeVrtSeed`:
 //
-// having never reached the comparison at all — which is exactly how `scope`
-// failed here (7085 px differing between consecutive attempts, retried to the
-// 5 s timeout, while its `-actual.png` was byte-identical to the baseline).
+//   * warrenspectrum — the acidwarp hue is `snap.frame * (0.5 + viznoise*7.5)`
+//     and `snap.frame` increments once per `readSnapshot()`, i.e. once per card
+//     rAF ON THE MAIN THREAD. Suspending audio cannot stop it, which is why
+//     the usual scene treatment failed and it got masked instead. Unmasked it
+//     measured 9/10 pass, 1 fail at 3 024 px / ratio 0.02 (budget 0.01) — a
+//     10 % flake rate that had cost 79 056 px (28.5 % of the card) of deleted
+//     coverage. A `__warrenspectrumVrtSeed` frame pin (the `__scopeVrtSeed`
+//     pattern) makes it 10/10 with the whole visualiser in the diff.
+//   * toybox — `__toyboxFreeze(time, seed)` ALREADY EXISTED and
+//     vrt-toybox.spec.ts had been using it since the card landed; the per-card
+//     scene simply never called it. Exactly the `scope` bug. Unmasked without
+//     it the gate could not even write a baseline (9 settle attempts,
+//     5 237-6 783 px, then Timeout 15000 ms); with the scene calling it,
+//     10/10 with the shader preview AND the six mini scopes in the diff.
 //
-// ⚠ A "byte-identical across N cold loads" check CANNOT SEE THIS. An animation
-// that always reaches the same phase at the same point of a fixed settle
-// sequence is perfectly reproducible cold-load-to-cold-load AND changes on
-// every frame. The two metrics answer different questions, and the one the
-// gate actually asks is the second. (CLAUDE.md: "before believing a
-// measurement, ask what it is invariant to.")
+// ─────────────────────────────────────────────────────────────────────────
+// TWO INSTRUMENT BUGS FOUND WHILE DERIVING THIS, both of which had been
+// silently corrupting every previous round's numbers:
 //
-// So every entry below is justified by the SAME measurement: spawn the card
-// the way its spec does, take 6 element screenshots 200 ms apart, and report
-// the bounding box of the pixels that change between consecutive frames. A
-// card that comes back IDENTICAL ×5 gets no mask. The numbers in each `why`
-// are that measurement.
+//   A. `expect.toHaveScreenshot.timeout` IS NOT A PLAYWRIGHT OPTION. The VRT
+//      config carried `timeout: 15_000` inside that object under a 14-line
+//      comment explaining it existed to stop heavy WebGL cards blowing the
+//      5000 ms default. Playwright accepts exactly threshold / maxDiffPixels /
+//      maxDiffPixelRatio / animations / caret / scale / stylePath /
+//      pathTemplate — there is no `timeout` — so the setting was dropped and
+//      the real budget stayed 5000 ms. Every "this card cannot settle" reading
+//      was taken under a third of the documented budget. Moved to
+//      `expect.timeout` (where Playwright reads it) and guarded by
+//      packages/web/src/lib/ui/vrt-config-budget.test.ts. Nothing type-checks
+//      e2e/** — that workspace has no `typecheck` script and no tsconfig — so
+//      the excess property was never rejected.
 //
-// MEASURED 2026-07-31, darwin, against the freshly re-pinned baselines:
-//
-//   card             consecutive-frame delta          verdict
-//   ───────────────  ───────────────────────────────  ─────────────────────
-//   dockscope        IDENTICAL ×5                     NO MASK (deleted)
-//   cube             IDENTICAL ×5                     NO MASK (deleted)
-//   hypercube        IDENTICAL ×5                     NO MASK (deleted)
-//   reshaper         IDENTICAL ×5                     NO MASK (deleted)
-//   scope            16 233 px, bbox = the canvas     FIXED, not masked ↓
-//   snh-seq-scope-on ch2 sine phase only              FIXED, not masked ↓
-//   analogVco         1 957 px, bbox = the scope       masked below
-//   warrenspectrum   10 487 px, bbox = the visualiser masked below
-//   mandelbulb        8 794-20 268 px, bbox = preview  masked below
-//   toybox           13 140 px, bbox = layer-0 preview masked below
-//   timelorde        23 056 px, bbox = the display     masked below
-//   blink ribbons    arc heads moved (see entry)      masked below
-//
-// TWO WERE FIXED AT THE ROOT INSTEAD OF MASKED — always prefer this:
-//   * `scope` — ScopeCard already implements a `__scopeVrtSeed` determinism
-//     hook (the same pattern DOCKSCOPE uses, which is WHY dockscope measures
-//     identical). The scope VRT scene simply never set it. Setting it makes
-//     the card IDENTICAL ×5 with the canvas still fully in the pixel diff —
-//     strictly more coverage than any mask. See e2e/vrt/vrt-scenes.ts.
-//   * `snh-seq-scope-on` — the diff was measured to be the ch2 VCO sine's
-//     analyser-window PHASE; the ch1 S&H hold line, which is the entire point
-//     of the scene, was pixel-identical. Dropping the decorative ch2 cable
-//     removes the nondeterminism without touching what the scene asserts.
-//     See e2e/vrt/vrt-composite-scenes.ts.
-//
-// What this file does NOT address: GLOBAL TEXT/AA RASTERIZATION. `mixer` has
-// no visualizer at all. If its glyph edges ever drift, that is a property of
-// the machine, and masking it would mean masking the thing VRT is for.
+//   B. THE VRT AUDIO FREEZE WAS A SILENT NO-OP, EVERYWHERE, ALWAYS. Nineteen
+//      files did `w.__engine?.()?.ctx.suspend()` inside a
+//      `catch { /* already suspended */ }`. The AudioContext is not on the root
+//      engine; it is on `getDomain('audio').ctx`. Every call threw and every
+//      throw was swallowed. Measured: `state=running` after the "freeze"
+//      (e2e/vrt/vrt-sr-probe.spec.ts). See e2e/vrt/vrt-audio-freeze.ts — the
+//      fix asserts the suspend actually landed instead of assuming it. This
+//      retro-explains the scope saga: `scope` needed a synthetic-buffer seed
+//      because the freeze meant to stabilise it never ran.
 //
 // ─────────────────────────────────────────────────────────────────────────
 // THE RULES (enforced by packages/web/src/lib/ui/vrt-live-surfaces.test.ts —
 // the anti-vacuity guard; that guard is the most important file in this PR)
 //
 //   * EVERY surface states WHY it is non-deterministic, naming WHAT DRIVES IT
-//     (the rAF loop, the analyser, the engine clock, the wall clock). An entry
-//     without a stated reason is not allowed and the guard fails the build.
+//     (the rAF loop, the analyser, the engine clock, the wall clock) AND the
+//     gate result that justifies it. An entry without a stated reason is not
+//     allowed and the guard fails the build.
 //
 //   * EVERY surface carries a COMPANION — the coverage the mask just deleted,
 //     restated as floors on region statistics (see vrt-surface-stats.ts).
@@ -114,9 +149,9 @@
 //
 // ⚠ Read each `rationale`'s force-killed row carefully before copying a floor:
 // `opacity: 0` reveals the CARD FACE, which is NOT black. Measured backdrops
-// here range from ink 0.0000 / stdDev 0.00 (timelorde) to ink 0.0242 /
-// stdDev 9.59 (toybox — 61 % of that card's LIVE stdDev). A floor has to clear
-// the real backdrop, not a notional zero, or it is decoration.
+// here range from ink 0.0000 / stdDev 0.00 (timelorde) to ink 0.0181 /
+// stdDev 5.02 (wavesculpt). A floor has to clear the real backdrop, not a
+// notional zero, or it is decoration.
 
 import type { SurfaceCompanion } from './vrt-surface-stats';
 
@@ -177,73 +212,6 @@ export interface LiveSurfaceScene {
 export const VRT_LIVE_SURFACES: Record<string, LiveSurfaceScene> = {
   // ───────────────────────── vrt.spec.ts — per-module cards ──────────────
 
-  analogVco: {
-    spec: 'vrt.spec.ts',
-    surfaces: [
-      {
-        selector: '[data-testid="analog-vco-scope"]',
-        expectCount: 1,
-        why:
-          'The single-cycle waveform scope is repainted every frame from an AnalyserNode ' +
-          'on the morph output by the card rAF loop, and a solo-spawned VCO free-runs — ' +
-          'nothing suspends it. MEASURED: 6 element captures 200 ms apart change 1 957 / ' +
-          '17 / 1 961 / 1 955 / 1 993 px, and the changing bounding box is exactly the ' +
-          '311x151 CSS-px scope. The one near-still frame (17 px) is the trace at a beat ' +
-          'in its own cycle, not stability — four of five deltas are ~2 000 px.',
-        companion: {
-          minInkFraction: 0.015,
-          minLumaStdDev: 5.5,
-          minDistinctLumaBuckets: 4,
-          rationale:
-            'MASKS 27.6 % of the card (51 168 magenta px of 352x527, counted on the baseline). ' +
-            'MEASURED on the 312x165 CSS-px scope through the REAL vrt.spec.ts capture path, ' +
-            '3 consecutive runs: ink 0.0378 / 0.0377 / 0.0378, stdDev 16.68 x3, buckets 9 / 8 / ' +
-            '9. Force-killed (opacity:0, so this row is the CARD FACE behind the canvas, not a ' +
-            'notional black): ink 0.0062, stdDev 2.31, buckets 2, chroma 7.03. Floors sit ' +
-            'between the two: ink 0.015 is 2.4x the dead value and 2.5x below the live one, ' +
-            'stdDev 5.5 is 2.4x dead and 3.0x below live, buckets 4 is above dead 2 and below ' +
-            'the observed minimum 8. NO chroma floor: the dead backdrop already scores 7.03 ' +
-            'against live 9.56, so chroma does not separate them here and a floor on it would ' +
-            'be decoration. The bucket floor is 4 and not 8 because the count MOVED run to run ' +
-            '(9 -> 8 -> 9) — a floor pinned to an observed value is a flake waiting to happen.',
-        },
-      },
-    ],
-  },
-
-  warrenspectrum: {
-    spec: 'vrt.spec.ts',
-    surfaces: [
-      {
-        selector: '[data-testid="warrenspectrum-viz"]',
-        expectCount: 1,
-        why:
-          'The acidwarp visualiser cycles its palette every frame off the engine clock via ' +
-          'the card rAF loop. MEASURED: 6 element captures 200 ms apart change 10 486 / ' +
-          '10 487 / 10 488 / 10 487 / 10 487 px — a near-constant repaint rate — and the ' +
-          'changing bounding box is exactly the 486x78 CSS-px visualiser. Nothing else on ' +
-          'the card moves.',
-        companion: {
-          minInkFraction: 0.09,
-          minLumaStdDev: 15,
-          minDistinctLumaBuckets: 5,
-          minMeanChroma: 12,
-          rationale:
-            'MASKS 28.5 % of the card (79 056 magenta px of 526x527). ' +
-            'MEASURED on the 488x163 CSS-px visualiser through the REAL capture path, 3 runs: ' +
-            'ink 0.2767 x3, stdDev 46.73 / 47.01 / 47.01, buckets 13 / 14 / 14, chroma 24.00 / ' +
-            '24.01 / 24.01. Force-killed: ink 0.0061, stdDev 1.30, buckets 2, chroma 8.02. ' +
-            'Floors at roughly a third of live and comfortably above dead (ink 15x dead, ' +
-            'stdDev 11x dead, buckets 2.5x dead). The chroma floor of 12 is the load-bearing ' +
-            'one and is set at 1.5x the dead backdrop rather than a third of live: this is a ' +
-            'PALETTE-CYCLING visualiser, and a render that lost its colour and came back ' +
-            'greyscale is a real regression that ink and luminance alone would pass. Buckets ' +
-            'floored at 5, not 13, because the count moved 13 -> 14 across runs.',
-        },
-      },
-    ],
-  },
-
   mandelbulb: {
     spec: 'vrt.spec.ts',
     surfaces: [
@@ -251,12 +219,18 @@ export const VRT_LIVE_SURFACES: Record<string, LiveSurfaceScene> = {
         selector: '[data-testid="mandelbulb-canvas"]',
         expectCount: 1,
         why:
-          'The preview ray-marches a 3D fractal in a WebGL fragment shader every frame with ' +
-          'auto-spin driven by the engine clock, so the camera azimuth advances between ' +
-          'captures. MEASURED: 6 element captures 200 ms apart change 20 268 / 13 228 / ' +
-          '9 375 / 8 840 / 8 794 px, bounding box exactly the 290x217 CSS-px preview. Note ' +
-          'the SECOND canvas on this card (mandelbulb-slice-readout) measured stable and is ' +
-          'deliberately NOT masked — the old `selector: canvas` entry masked both.',
+          'The preview ray-marches a 3D fractal in a WebGL fragment shader every frame of ' +
+          'the card rAF loop, with auto-spin advancing the camera azimuth off the engine ' +
+          'clock. GATE RESULT (2026-08-01, darwin, real config, real tolerance, UNMASKED): ' +
+          '`--update-snapshots` COULD NOT WRITE A BASELINE AT ALL — 8 consecutive settle ' +
+          'attempts differing 3 970 / 4 060 / 3 919 / 5 952 / 11 304 / 20 117 / 24 952 / ' +
+          '27 636 px (ratio 0.02 rising to 0.10), then "Failed to take two consecutive ' +
+          'stable screenshots. Timeout 15000ms exceeded". That is stronger than an n/10 ' +
+          'failure rate: the gate cannot produce an expected image, so there is nothing to ' +
+          'compare against. Note the deltas GROW monotonically — the spin accelerates away ' +
+          'from every candidate settle. Note also the SECOND canvas on this card ' +
+          '(mandelbulb-slice-readout) is deliberately NOT masked; it is stable and stays ' +
+          'in the diff.',
         companion: {
           minInkFraction: 0.056,
           minLumaStdDev: 12,
@@ -268,48 +242,13 @@ export const VRT_LIVE_SURFACES: Record<string, LiveSurfaceScene> = {
             'MEASURED on the 290x217 CSS-px preview through the REAL capture path, 3 runs: ink ' +
             '0.1707 / 0.1738 / 0.1747, stdDev 28.98 / 29.43 / 29.49, buckets 11 x3, chroma ' +
             '17.98 / 18.00 / 18.01 — the ~2 % spread is the auto-spin advancing between runs. ' +
-            'Force-killed: ink 0.0160, stdDev 6.59, buckets 4, chroma 3.76. Floors: ink 0.056 ' +
-            'is a third of the SMALLEST live value and 3.5x dead; stdDev 12 is 1.8x dead and ' +
-            '2.4x below live (deliberately NOT a third — a third would be 9.7, only 1.5x above ' +
-            'the dead backdrop, too close to prove anything); buckets 6 sits between dead 4 and ' +
-            'live 11; chroma 6 is 1.6x dead and 3x below live, and catches a DE march that ' +
-            'collapsed to a flat silhouette.',
-        },
-      },
-    ],
-  },
-
-  toybox: {
-    spec: 'vrt.spec.ts',
-    surfaces: [
-      {
-        selector: '[data-testid="toybox-canvas"]',
-        expectCount: 1,
-        why:
-          'The layer-0 preview runs a swappable fragment shader redrawn every frame with ' +
-          'iTime taken from the engine clock, so the animation phase differs per capture. ' +
-          'MEASURED: 6 element captures 200 ms apart change 12 953 / 13 464 / 13 270 / ' +
-          '13 303 / 13 140 px, bounding box exactly the 150x113 CSS-px preview. The SIX ' +
-          'per-CV mini scopes measured stable and are deliberately NOT masked — the old ' +
-          '`selector: canvas, expectCount: 7` entry masked all seven while companioning one. ' +
-          'DETERMINISTIC shader coverage lives in vrt-toybox.spec.ts, which pins iTime via ' +
-          '__toyboxFreeze and keeps the canvas in the diff.',
-        companion: {
-          minInkFraction: 0.11,
-          minMeanChroma: 20,
-          rationale:
-            'MASKS 4.6 % of the card (16 800 magenta px of 684x536) — the six STABLE mini scopes ' +
-            'stay in the diff. ' +
-            'MEASURED on the 151x113 CSS-px layer-0 preview through the REAL capture path, 3 ' +
-            'runs: ink 0.3307 / 0.3339 / 0.3404, chroma 61.70 / 61.59 / 61.63, stdDev 15.59 / ' +
-            '15.65 / 15.75, buckets 6 x3. Force-killed: ink 0.0242, chroma 4.37, stdDev 9.59, ' +
-            'buckets 5. NOTE WHAT THAT DEAD ROW SAYS: the card face behind this canvas scores ' +
-            '61 % of the live stdDev and 5 of the live 6 buckets, so NEITHER of those ' +
-            'statistics separates a live shader from a dead one HERE — floors on them would ' +
-            'read as strict and prove nothing. Only ink (13.7x) and chroma (14.1x) separate, ' +
-            'so those are the only two floors, each set ~3x below live and ~4.5x above dead. ' +
-            'Chroma is the load-bearing one: the default preset is a saturated shader, and a ' +
-            'shader that failed to compile falls back to a flat or greyscale surface.',
+            'Force-killed (opacity:0, so this row is the CARD FACE behind the canvas): ink ' +
+            '0.0160, stdDev 6.59, buckets 4, chroma 3.76. Floors: ink 0.056 is a third of the ' +
+            'SMALLEST live value and 3.5x dead; stdDev 12 is 1.8x dead and 2.4x below live ' +
+            '(deliberately NOT a third — a third would be 9.7, only 1.5x above the dead ' +
+            'backdrop, too close to prove anything); buckets 6 sits between dead 4 and live 11; ' +
+            'chroma 6 is 1.6x dead and 3x below live, and catches a DE march that collapsed to ' +
+            'a flat silhouette.',
         },
       },
     ],
@@ -319,35 +258,71 @@ export const VRT_LIVE_SURFACES: Record<string, LiveSurfaceScene> = {
     spec: 'vrt.spec.ts',
     surfaces: [
       {
-        selector: '[data-testid^="timelorde-display-"]',
+        selector: '[data-testid^="timelorde-wizard-wrap-"]',
         expectCount: 1,
         why:
-          'The big display canvas is repainted AND re-pushed to the node for video_out ' +
-          'passthrough on every frame of the card rAF loop (renderDisplay → drawOwl → ' +
-          'pushDisplayFrame). MEASURED: 6 element captures 200 ms apart change 23 447 / ' +
-          '23 056 / 23 056 / 23 169 / 23 169 px — 44 % of the 230x230 CSS-px canvas — and ' +
-          'the changing bounding box is exactly that canvas. ⚠ The REPEATED delta values ' +
-          '(23 056 twice, then 23 169 twice) are a PERIOD-2 alternation between two ' +
-          'renders, one soft and one crisp, not drift; that looks like a real card bug in ' +
-          'the display/passthrough loop and is filed as a follow-up. The beat pulse is NOT ' +
-          'the cause — it is pinned to 0 under reducedMotion.',
+          'TWO INDEPENDENT DEFECTS, and the mask only ever addressed one of them. ' +
+          '(1) THE RENDER. The 220x220 display canvas blits the owl painting SCALED ' +
+          '(drawImage with imageSmoothingEnabled), and under reducedMotion the card paints ' +
+          'exactly ONE frame and stops — so whichever raster state Chromium had at that ' +
+          'instant is latched. GATE RESULT (2026-08-01, darwin, real config, real tolerance, ' +
+          'UNMASKED, 10 runs): 1 PASSED, 9 FAILED. The failures settle at a REPEATING EXACT ' +
+          'pixel count — 13 224 px (ratio 0.08) on three separate repeats, 5 212 px (ratio ' +
+          '0.03) on a fourth — and the actual PNGs of those three repeats are BYTE-IDENTICAL ' +
+          'to each other. An exact count recurring across independent runs is the signature ' +
+          'of a DISCRETE alternative render, not of drift or phase: the card has at least ' +
+          'three stable states and picks one per load. Cropping expected vs actual shows the ' +
+          'OWL BODY essentially unchanged and the BLUE BORDER/ear highlights alternating ' +
+          'between crisp+saturated and washed+ragged — two different downscale resamples of ' +
+          'one source image. The beat pulse is NOT the cause: it is pinned to 0 under ' +
+          'reducedMotion and applyBeatBoost early-returns at pulse<=0. ' +
+          '(2) THE MASK MISSED THE GLOW — this is why the previous round measured timelorde ' +
+          'FAILING WITH ITS MASK IN PLACE. `.display` carries ' +
+          '`box-shadow: 0 0 calc(2px + 10px * --wiz-pulse)`, and a box-shadow paints OUTSIDE ' +
+          'the border box, i.e. outside the rect Playwright fills for a mask on that element. ' +
+          'MEASURED by locating the magenta rect in the baseline and splitting the diff ' +
+          'across it: with the CANVAS masked there were 0 above-threshold differing pixels ' +
+          'INSIDE the 214x214 magenta rect and 6 270 OUTSIDE it, in a ring (62,38)-(289,266). ' +
+          'The mask was doing its job perfectly on everything it covered, and the test failed ' +
+          'anyway. Moving the mask to the WRAP (which contains the canvas and the area its ' +
+          'glow paints into) takes the scene from 1/10 to 10/10. ' +
+          'TWO ROOT FIXES FOR (1) WERE TRIED AND BOTH MEASURED AS NOT WORKING: (a) awaiting ' +
+          'img.decode() before owlReady instead of img.onload — the states stopped being ' +
+          'byte-identical and became continuous (15 088 / 15 354 / 15 237 / 9 599 px), i.e. ' +
+          'different, not better; (b) additionally pre-scaling the painting once into an ' +
+          'OffscreenCanvas at imageSmoothingQuality high and blitting 1:1 — also continuous ' +
+          '(14 398 / 10 742 / 10 504 / 3 023 px). Both were REVERTED rather than shipped, ' +
+          'because a change that alters the failure mode without removing it is not a fix and ' +
+          'shipping it would only make the next reader believe the problem was handled. The ' +
+          'remaining candidate is nearest-neighbour (imageSmoothingEnabled=false), which is ' +
+          'deterministic by construction but visibly degrades the artwork — a look-affecting ' +
+          'product change that needs owner review, not a VRT PR.',
         companion: {
-          minInkFraction: 0.19,
-          minLumaStdDev: 19,
+          minInkFraction: 0.13,
+          minLumaStdDev: 17,
           minDistinctLumaBuckets: 5,
-          minMeanChroma: 20,
+          minMeanChroma: 13,
           rationale:
-            'MASKS 25.6 % of the card (47 524 magenta px of 352x527); the title, transport, BPM/ ' +
-            'SWING/SRC knobs, tempo readout, wizard thumbnail and every jack stay strict. ' +
-            'MEASURED on the 216x216 CSS-px display through the REAL vrt.spec.ts capture path, ' +
-            '3 runs: ink 0.5873, stdDev 57.21, buckets 14, chroma 59.60 — BIT-IDENTICAL all ' +
-            'three times, which is itself the point: this surface is perfectly reproducible ' +
-            'COLD-LOAD to cold-load and still unusable, because it changes every FRAME. ' +
-            'Force-killed: ink 0.0000, stdDev 0.00, buckets 1, chroma 8.00 (the card face here ' +
-            'really is flat). Every floor sits at ~a third of live, far above a dead render. ' +
-            'The chroma floor of 20 against a live 59.6 pins that the OWL PAINTING itself is ' +
-            'drawn: the fallback this canvas paints before the artwork decodes is a near-black ' +
-            'flat ground, which clears no chroma floor at all.',
+            'MASKS 41.3 % of the card (76 650 magenta px of 352x527) — UP FROM 25.6 % when it ' +
+            'masked the canvas alone, and that increase is the price of a mask that actually ' +
+            'works. It is stated rather than buried: the extra 15.7 % is the wrap band around ' +
+            'the display, which carries the box-shadow glow the canvas mask could not reach ' +
+            '(0 in-mask vs 6 270 out-of-mask differing pixels, measured) plus the small owl ' +
+            'thumbnail toggle. The card title, transport, BPM/SWING/SRC knobs, tempo readout ' +
+            'and every jack stay strict. ' +
+            'MEASURED on the 350x219 CSS-px wrap through the REAL vrt.spec.ts capture path, ' +
+            '10 consecutive gate runs: ink 0.3904-0.3939, stdDev 50.60-51.00, buckets 14 x10, ' +
+            'chroma 39.58-39.78 — a spread under 1 % on every statistic, which is what makes ' +
+            'floors at a third of live safe. Force-killed (opacity:0 — the card face behind ' +
+            'the wrap): ink 0.0000, stdDev 0.67, buckets 2, chroma 8.01. Floors: ink 0.13 is a ' +
+            'third of live against a dead value of exactly zero; stdDev 17 is a third of live ' +
+            'and 25x dead; buckets 5 sits between dead 2 and live 14. The chroma floor of 13 ' +
+            'is the weakest of the four at only 1.6x the dead 8.01 (the card face is not ' +
+            'colourless), and it is kept anyway because it is the one statistic that pins the ' +
+            'OWL PAINTING rather than merely "something is drawn": the fallback this canvas ' +
+            'paints before the artwork decodes is a near-black flat ground, and — given the ' +
+            'decode race documented in `why` — that fallback is a state this card can really ' +
+            'reach.',
         },
       },
     ],
@@ -355,7 +330,10 @@ export const VRT_LIVE_SURFACES: Record<string, LiveSurfaceScene> = {
 
   // ──────────── vrt-wavesculpt-blink.spec.ts — the two RIBBON modes ───────
   //
-  // ONE ROOT CAUSE, NAMED AND LOCATED, deliberately not fixed here.
+  // ONE ROOT CAUSE, NAMED, LOCATED, THE FIX WRITTEN AND MEASURED TO WORK, AND
+  // THEN DELIBERATELY NOT SHIPPED. The evidence for every clause of that
+  // sentence is below, because the previous round asserted the same conclusion
+  // without it.
   //
   // WavesculptCard advances THREE time-derived phases per frame, side by side:
   //
@@ -366,26 +344,53 @@ export const VRT_LIVE_SURFACES: Record<string, LiveSurfaceScene> = {
   // `boltPhase` feeds `uBoltPhase`, which positions the three travelling arc
   // heads and seeds the crackle hash in RIBBON_FS — whose own comment asserts
   // the crackle is "frozen-stable under the VRT freeze hook since ph is pinned
-  // there". It is not pinned. The card contradicts its own comment, and the
-  // consequence is visible: comparing expected vs actual for `ribbons`, the
-  // ribbon GEOMETRY is identical and the bright arc bands have MOVED along it.
+  // there". It is not pinned. The card contradicts its own comment.
   //
-  // The blast radius is exactly RIBBON_FS, i.e. blink_mode 0 — and the two
-  // failing cases are precisely the two blink_mode-0 cases while every mode-1
-  // and mode-2 case passes. That correspondence is the strongest evidence in
-  // this file, because it was predicted from the code and then confirmed by
-  // which baselines the re-pin had to rewrite (`ribbons` and
-  // `gate-electricity`, and no others).
+  // GATE RESULT (2026-08-01, darwin, real config, real tolerance, UNMASKED):
+  // `--update-snapshots` could not write a baseline for EITHER blink_mode-0
+  // scene. `ribbons` took 13 consecutive settle attempts differing 19 165 /
+  // 11 812 / 24 677 / 22 396 / 22 204 / 21 431 / 21 988 / 19 435 / 23 058 /
+  // 20 755 / 22 484 / 21 069 / 23 186 px (ratio 0.03-0.06) before "Failed to
+  // take two consecutive stable screenshots. Timeout 15000ms exceeded";
+  // `gate-electricity` behaved identically. Every blink_mode-1 and mode-2 case
+  // — which do not run RIBBON_FS — settled on the FIRST attempt. That
+  // correspondence is the strongest evidence here: it was predicted from the
+  // code and then confirmed by which scenes the gate refuses to baseline.
   //
-  // WHY IT IS MASKED RATHER THAN FIXED: the one-line fix
-  // (`boltPhase[i] = vrtFrozen() ? VRT_FIXED_BOLT_PHASE : …`) lands in
-  // WavesculptCard.svelte, which `resolveWebglBasis()` includes in the WebGL
-  // ATTEST BASIS (verified: it creates a WebGL context). Editing it moves the
-  // attest hash and forces a GPU re-attest on a trusted machine — out of scope
-  // here, and currently blocked besides. Masking with a live companion keeps
-  // the card chrome gated and keeps "the render is alive" asserted; a
-  // quarantine would keep nothing. Follow-up: pin boltPhase + re-attest.
-
+  // THE FIX WORKS. Applying the one line
+  //
+  //     boltPhase[i] = vrtFrozen() ? VRT_FIXED_BOLT_PHASE : (…);
+  //
+  // (VRT_FIXED_BOLT_PHASE = 0.35, exactly parallel to wavePhase and
+  // scopeWigglePhase two lines below it) took both scenes from "13 failed
+  // settle attempts, cannot baseline" to writing fresh UNMASKED baselines and
+  // passing, in 9.1 s for the pair. That was measured on this branch, not
+  // reasoned about.
+  //
+  // WHY IT IS NOT SHIPPED HERE — the blocker, verified rather than assumed:
+  //   1. `WavesculptCard.svelte` creates a WebGL context, so
+  //      `resolveWebglBasis()` includes it. CONFIRMED by running the resolver:
+  //      `npx tsx scripts/webgl-attest-hash.ts --list` lists exactly three
+  //      cards — CubeCard, HypercubeCard, WavesculptCard.
+  //   2. With the fix applied the content hash moves from
+  //      ac6d86f107da73ec54397fecf9c2b9b69c372c7975e58ac093981fa1da0a985b to
+  //      4aaf024247a05b7d058246b61f905364f9d429762765d963a72be19a80c6867d, and
+  //      `ci-webgl-attest/` holds exactly one attestation, for the former.
+  //      `scripts/webgl-attest-verify.sh` EXITS 1 on a miss, so the CI
+  //      `webgl-attest` job goes RED without a real-GPU re-attest.
+  //   3. The re-attest cannot be produced here. `scripts/webgl-attest.ts` runs
+  //      four passes and writes only on a fully-green run. Pass C is
+  //      `camera-input.spec.ts`, and it FAILS on this machine independently of
+  //      any change on this branch: "CAMERA → OUTPUT (deterministic render
+  //      smoke) › injected frame renders through the camera pass to a
+  //      non-black, frame-stable FBO" (camera-input.spec.ts:42). That is the
+  //      pre-existing blocker already recorded in the project's memory
+  //      (`webgl-attest-video-orientation-camera-fail`).
+  //
+  // So the correct sequencing is: unblock the camera pass → re-attest → apply
+  // the one-line pin → DELETE BOTH ENTRIES BELOW and re-pin two unmasked
+  // baselines. Until then these two masks are the honest cost, and they are
+  // justified by the gate rather than by a probe.
   'wavesculpt-blink-ribbons': {
     spec: 'vrt-wavesculpt-blink.spec.ts',
     surfaces: [
@@ -396,9 +401,12 @@ export const VRT_LIVE_SURFACES: Record<string, LiveSurfaceScene> = {
           'RIBBON mode (blink_mode 0). The WebGL render advances `boltPhase` every frame of ' +
           'the card rAF loop and __wavesculptVrtFreeze does not pin it, so the three ' +
           'travelling electric arc heads sit at a different point along the ribbon on every ' +
-          'capture. MEASURED against the freshly re-pinned baseline: 16 796 px differ ' +
-          '(3.7 % of the card), bounding box 299x385 = the render canvas, and cropping both ' +
-          'images shows identical ribbon geometry with the bright arc bands displaced.',
+          'capture. GATE RESULT (UNMASKED, 2026-08-01): `--update-snapshots` could not write ' +
+          'a baseline — 13 consecutive settle attempts differing 11 812-24 677 px (ratio ' +
+          '0.03-0.06), then "Failed to take two consecutive stable screenshots. Timeout ' +
+          '15000ms exceeded". Pinning boltPhase takes the same scene to a first-attempt ' +
+          'settle; see the block comment above for the measured before/after and for why the ' +
+          'pin is blocked on a real-GPU re-attest.',
         companion: {
           minInkFraction: 0.07,
           minLumaStdDev: 29,
@@ -406,10 +414,11 @@ export const VRT_LIVE_SURFACES: Record<string, LiveSurfaceScene> = {
           rationale:
             'MASKS 84.8 % OF THE CARD (382 130 magenta px of 849x531) — by far the most ' +
             'expensive mask here, because this card IS its viewport. That cost is stated ' +
-            'plainly rather than buried: it buys back a scene that would otherwise be ' +
-            'skipped outright, and the alternative (quarantine, like the three blink_mode-1 ' +
+            'plainly rather than buried: it buys back a scene the gate cannot otherwise ' +
+            'baseline at all, and the alternative (quarantine, like the three blink_mode-1 ' +
             'cases already sitting in EXEMPT_BASELINE_PAIRS) deletes 100 % and asserts ' +
-            'nothing. Revert it the moment boltPhase is pinned. ' +
+            'nothing. Revert it the moment boltPhase is pinned — the fix is written and ' +
+            'measured, only the attest blocks it. ' +
             'MEASURED on the 721x541 CSS-px render through the REAL blink capture path, 3 ' +
             'runs: ink 0.2097 / 0.2099 / 0.2098, stdDev 88.86 / 88.47 / 88.67, buckets 11 / 11 ' +
             '/ 10, chroma 5.73 / 6.04 / 5.92. Force-killed: ink 0.0181, stdDev 5.02, buckets 3, ' +
@@ -432,10 +441,12 @@ export const VRT_LIVE_SURFACES: Record<string, LiveSurfaceScene> = {
         why:
           'The same unpinned `boltPhase` in the same RIBBON mode (blink_mode 0), and this ' +
           'scene exists specifically to show the gate electricity, so it is the case the ' +
-          'defect hits hardest. MEASURED: it is one of exactly two baselines the re-pin had ' +
-          'to rewrite in this spec — the other being `ribbons`, the only other blink_mode-0 ' +
-          'case — while every blink_mode 1 and 2 case matched unchanged. The arc heads are ' +
-          'driven by the card rAF loop, so their position varies per capture.',
+          'defect hits hardest — the arc heads ARE the subject. GATE RESULT (UNMASKED, ' +
+          '2026-08-01): identical to `ribbons` — `--update-snapshots` could not write a ' +
+          'baseline, repeated settle attempts at ratio 0.02-0.04, then Timeout 15000ms. It is ' +
+          'one of exactly two scenes in this spec that behave this way, and they are exactly ' +
+          'the two blink_mode-0 cases; every mode-1 and mode-2 case settles first try. The ' +
+          'arc heads are driven by the card rAF loop, so their position varies per capture.',
         companion: {
           minInkFraction: 0.07,
           minLumaStdDev: 27,
@@ -444,8 +455,8 @@ export const VRT_LIVE_SURFACES: Record<string, LiveSurfaceScene> = {
           rationale:
             'MASKS 84.8 % OF THE CARD (382 130 magenta px of 849x531) — by far the most ' +
             'expensive mask here, because this card IS its viewport. That cost is stated ' +
-            'plainly rather than buried: it buys back a scene that would otherwise be ' +
-            'skipped outright, and the alternative (quarantine, like the three blink_mode-1 ' +
+            'plainly rather than buried: it buys back a scene the gate cannot otherwise ' +
+            'baseline at all, and the alternative (quarantine, like the three blink_mode-1 ' +
             'cases already sitting in EXEMPT_BASELINE_PAIRS) deletes 100 % and asserts ' +
             'nothing. Revert it the moment boltPhase is pinned. ' +
             'MEASURED on the 721x541 CSS-px render through the REAL blink capture path, 3 ' +

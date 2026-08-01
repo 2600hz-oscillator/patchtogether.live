@@ -894,6 +894,46 @@ test.describe('VRT: TOYBOX Phase-4 combine graph', () => {
         const n = w.__patch.nodes['tb'];
         if (!n) return;
         if (!n.data) n.data = {};
+        // ── PIN THE PANEL HEIGHT, OR THIS BASELINE'S DIMENSIONS ARE A RACE ──
+        //
+        // `.graph-wrap` carries an inline `height: ${combineViewH}px` fed by
+        // `node.data.combineView.h`, AND a ResizeObserver (persistResize) that
+        // writes the OBSERVED height back into that same field after a 200 ms
+        // debounce. Layout → state → layout is a closed loop, and its gain is
+        // below 1: the wrap RENDERS shorter than it REQUESTS (the section
+        // clamps it), so each cycle shrinks it. MEASURED 2026-08-01 by sampling
+        // the wrap from card birth (e2e/vrt/vrt-geom-probe.spec.ts):
+        //
+        //     0 ms  style=230px rect=175  persisted=unset
+        //   263 ms  style=175px rect=133  persisted=175
+        //   582 ms  style=133px rect=101  persisted=133
+        //   907 ms  style=120px rect=91   persisted=120   ← min-height floor
+        //
+        // The panel COLLAPSES from 230 px to the 120 px floor in ~0.9 s, one
+        // rung per debounce, with no user input. The capture lands on whichever
+        // rung it happens to reach — which is why the committed PNG's HEIGHT has
+        // oscillated for months across commits that never touched this card:
+        //   138 → 185 → 150 → 150 → 121 → 119 → 148 → 119 → 148 → 119 → 134 →
+        //   119 → 134  (decoded from every revision of the baseline; the card's
+        //   source is byte-identical from #790, 2026-06-14, to today).
+        // A design change does not oscillate. Every "re-pin" of this file has
+        // been laundering a race into a baseline — six times.
+        //
+        // ⚠ `git diff --name-status` CANNOT SEE THIS. A same-name PNG that
+        // changed SIZE is an "M", indistinguishable from a recolour, so the
+        // previous round's "0 added / 0 deleted, so nothing structural" check
+        // was invariant to the very thing it claimed to rule out. Decoding the
+        // IHDR is the instrument that sees it: scripts/vrt-geom-audit.sh.
+        //
+        // Writing combineView.h explicitly wins the loop — the observed height
+        // then equals the requested one, so persistResize has nothing to
+        // correct (verified: pinned to 200, the wrap held 200 px for 1.5 s,
+        // well past the 200 ms debounce). The PRODUCT bug — a node-editor panel
+        // that silently collapses to its minimum on every fresh spawn, for
+        // users, not just for screenshots — is real and is NOT fixed here; it
+        // needs a persistResize that distinguishes a user drag from a layout
+        // clamp, which is a card behaviour change wanting its own review.
+        (n.data as { combineView?: { h: number } }).combineView = { h: 230 };
         n.data.combine = {
           nodes: [
             { id: 'src0', kind: 'source', layer: 0, x: 14, y: 14 },

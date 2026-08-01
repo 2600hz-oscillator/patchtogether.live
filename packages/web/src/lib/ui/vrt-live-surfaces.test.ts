@@ -90,6 +90,43 @@ const LEGACY_INLINE_MASK_SPECS = new Set<string>([
 // Pinned at the measured value on the branch that introduced this guard.
 // It may only go DOWN — migrate an entry into VRT_LIVE_SURFACES (with a
 // companion) and lower this number in the same commit.
+//
+// ⚠ A COUNT IS NOT A SIZE, and this ratchet only ever knew the count. Twelve
+// entries could have been twelve 3 % slivers or twelve half-cards and the
+// number would read the same. MEASURED 2026-08-01 by spawning each card the
+// way vrt.spec.ts spawns it and computing masked-element area ÷ card area
+// (e2e/vrt/vrt-legacy-mask-audit.spec.ts, `VRT_PROBE=1`; re-derive with one
+// command). Sorted by cost:
+//
+//   module        card      masked region   area of card   companion?
+//   ────────────  ────────  ──────────────  ────────────   ──────────
+//   monoglitch    387x526   339x191            31.8 %      NONE
+//   feedback      351x526   316x178            30.4 %      NONE
+//   recorderbox   526x526   292x219 + 1x1      23.1 %      NONE
+//   freezeframe   351x526   222x167            20.1 %      NONE
+//   mandleblot    526x526   289x161            16.8 %      NONE
+//   tiler         526x526   234x175            14.8 %      NONE
+//   posterbox     526x526   234x175            14.8 %      NONE
+//   outlines      351x526   164x164            14.5 %      NONE
+//   samsloop      351x526   257x97             13.6 %      NONE
+//   textmarquee   351x526   164x123            10.9 %      NONE
+//   spirographs   351x526   156x117             9.9 %      NONE
+//   cellshade     351x526   156x117             9.9 %      NONE
+//
+// For scale: the two masks the live-surface registry argues hardest to justify
+// are timelorde at 25.6 % and mandelbulb at 22.6 %. FOUR entries in this
+// uncompanioned pile are LARGER than mandelbulb's, and two are larger than
+// timelorde's — with no `why`, no companion, no negative control and no
+// measurement of any kind behind them. `recorderbox` additionally masks TWO
+// elements from one selector (the second is the 1x1 off-screen capture
+// canvas), which is exactly the one-selector-many-regions shape the registry's
+// `expectCount: 1` rule exists to forbid.
+//
+// They are listed rather than fixed here deliberately: migrating one means
+// building a driven scene for it (several render BLACK when solo-spawned and
+// unpatched, so no ink/variance companion can separate "working" from "dead" —
+// the posterbox note in RATCHET 1 above is the worked example). The point of
+// this table is that the size of the debt is now visible instead of implied.
 const LEGACY_UNCOMPANIONED_MASK_CEILING = 12;
 
 /** The subset of VRT_MODULE_MASKS that vrt.spec.ts actually applies. */

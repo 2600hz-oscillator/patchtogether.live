@@ -49,6 +49,47 @@ export interface VrtScreenshotOptions {
   timeout?: number;
 }
 
+/**
+ * `VRT_UNMASKED=1` — THE DERIVATION SWITCH.
+ *
+ * Every mask in this repo has been wrong at least once, and each time for the
+ * same reason: the list was derived from something OTHER THAN THE GATE. Round 1
+ * derived it from reading the code (4 of 9 `why` statements were false). Round 2
+ * derived it from `vrt-frame-stability`, which measures 200 ms-apart deltas at a
+ * hard 12/255 threshold while the GATE measures `maxDiffPixels` at
+ * `threshold: 0.1` — a different instrument answering a different question, and
+ * it over-masked `analogVco` (27.6 % of the card) and `warrenspectrum` (28.5 %),
+ * both of which pass STRICT and UNMASKED 10 runs out of 10.
+ *
+ * ⚠ AND THE CIRCULARITY TRAP THAT MAKES THIS EASY TO GET WRONG: the committed
+ * baselines have the magenta mask BAKED IN. Removing a mask and re-running
+ * compares a live capture against a magenta baseline, so it differs BY
+ * CONSTRUCTION and "proves" the mask was needed. Any honest derivation MUST
+ * regenerate a fresh UNMASKED baseline first.
+ *
+ * This flag is the seam that makes both halves of that one command:
+ *
+ *     # 1. fresh unmasked baselines (git rm them first — Playwright only
+ *     #    rewrites a snapshot when the comparison FAILS, but it ALWAYS
+ *     #    writes a MISSING one)
+ *     VRT_UNMASKED=1 npx playwright test --config=vrt/vrt.config.ts \
+ *       --update-snapshots --grep '<scene>'
+ *     # 2. the REAL gate, real config, real tolerance, N times
+ *     VRT_UNMASKED=1 npx playwright test --config=vrt/vrt.config.ts \
+ *       --repeat-each=10 --grep '<scene>'
+ *
+ * A scene that passes 10/10 there gets NO mask, whatever any probe says. A
+ * scene that fails gets a mask justified by the FAILURE COUNT and the DIFF
+ * PIXELS/RATIO of those failures — numbers produced by the gate itself.
+ *
+ * Companions and the negative control still run under the flag: they are
+ * assertions about the region's CONTENT and are orthogonal to whether the
+ * region is in the pixel diff.
+ */
+function vrtUnmasked(): boolean {
+  return process.env.VRT_UNMASKED === '1';
+}
+
 /** Resolve a registered surface against the right root. 'target' (default)
  *  scopes the selector INSIDE the element being screenshotted; 'page' scopes
  *  it to the document, for page-level composite captures where the live region
@@ -196,10 +237,12 @@ export async function expectVrtSceneScreenshot(args: {
   }
 
   const targetLocator = target as Locator;
-  const mask = [
-    ...surfaces.map((s) => resolve(s, page, target)),
-    ...(args.legacyMaskSelectors ?? []).map((sel) => targetLocator.locator(sel)),
-  ];
+  const mask = vrtUnmasked()
+    ? []
+    : [
+        ...surfaces.map((s) => resolve(s, page, target)),
+        ...(args.legacyMaskSelectors ?? []).map((sel) => targetLocator.locator(sel)),
+      ];
   await expect(targetLocator).toHaveScreenshot(`${sceneId}.png`, {
     mask,
     maskColor: '#ff00ff',

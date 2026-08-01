@@ -34,6 +34,7 @@
 
 import type { Page } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
+import { freezeAudioContext } from './vrt-audio-freeze';
 
 // NIBBLES_MAX_LENGTH (= 119) lives in
 // `packages/web/src/lib/video/modules/nibbles.ts`. We don't import it from
@@ -306,6 +307,108 @@ const SNH_SEQ_SCOPE_CARDS = [
   '.svelte-flow__node-sequencer',
   '.svelte-flow__node-analogVco',
   '.svelte-flow__node-scope',
+];
+
+// ---- VCO → SCOPE : an OSCILLATING trace from the REAL analyser ------------
+//
+// RESTORES THE COVERAGE THE `snh` ch2 CABLE USED TO CARRY.
+//
+// After the ch2 drop and the `__scopeVrtSeed` pin, the repo's scope coverage
+// looked like this — and the two "root-cause fixes" cited EACH OTHER for the
+// piece neither of them had:
+//
+//   vrt.spec.ts `scope`        analyser output REPLACED by seededSnapshot()
+//                              → drawScope is exercised, eng.read('snapshot')
+//                                is NOT. Same for `dockscope`.
+//   snh-seq-scope-on/off       REAL eng.read('snapshot'), but a HELD CV — a
+//                              flat DC line, no time-domain phase.
+//   adsr-sustain-high/low      REAL eng.read('snapshot') in AUDIO display
+//                              mode, but again a DC sustain level.
+//
+// So the analyser→snapshot→drawScope chain was still pinned (twice), but NOT
+// ONE baseline drew an OSCILLATING audio waveform through it. That is the gap
+// this scene closes.
+//
+// WHY IT CAN BE DETERMINISTIC AT ALL — the argument, not a hope:
+// `getFloatTimeDomainData` returns the most recent `fftSize` samples, and the
+// window's end always sits on a 128-sample RENDER QUANTUM boundary. The phase
+// at the window end is therefore `f · (n·128 / sampleRate)` for whichever
+// quantum `n` the capture lands on. If `f` divides `sampleRate / 128` — i.e.
+// the wave completes a WHOLE number of cycles per render quantum — that phase
+// is the SAME for every n, and the window is byte-identical no matter which
+// buffer was last posted. That is exactly the nondeterminism the ch2 cable
+// had (measured then at 21 042 px, all of it the ch2 sine's window phase),
+// removed by construction rather than by masking or by replacing the data.
+//
+// At 48 kHz, sampleRate/128 = 375 Hz. The VCO's tune/fine sliders step in
+// whole semitones/cents, so the closest reachable pitch is tune 6 + fine 24 →
+// 261.626 · 2^(6.24/12) ≈ 375.19 Hz, 0.19 Hz (0.05 %) high. Residual drift per
+// quantum of capture jitter is 0.19 · 128/48000 = 5.1e-4 cycles; the trace
+// draws ~16 cycles across ~288 px, so even 20 quanta (53 ms) of jitter moves
+// it by 0.2 px. The 10-run gate result below is the check on that arithmetic.
+//
+// `darwinOnly` because the argument is keyed to the capture machine's actual
+// `sampleRate` (the app never pins it — it takes whatever the device gives),
+// and a linux CI runner at a different rate would land at a different
+// submultiple. That is a REAL limitation and it is stated, not hidden: on a
+// machine where sampleRate/128 ≠ 375 Hz this scene would flake, which is
+// precisely why it is not enrolled on a platform whose rate is unverified.
+const VCO_SCOPE_AUDIO_SCENES: CompositeVrtScene[] = [
+  {
+    id: 'vco-scope-audio-trace',
+    label: 'VCO→SCOPE: a real 375 Hz sine through the real analyser',
+    blurb:
+      'analogVco sine (tune 6 / fine 24 ≈ 375.19 Hz — a whole number of cycles ' +
+      'per 128-sample render quantum) → SCOPE ch1 in AUDIO mode. NO ' +
+      '__scopeVrtSeed: the trace is drawn from eng.read(node, "snapshot"), the ' +
+      'live AnalyserNode buffer. The one baseline pinning an OSCILLATING ' +
+      'waveform through the real analyser path.',
+    cardSelectors: ['.svelte-flow__node-analogVco', '.svelte-flow__node-scope'],
+    darwinOnly: true,
+    setup: async (page: Page) => {
+      await spawnPatch(
+        page,
+        [
+          {
+            id: 'vco',
+            type: 'analogVco',
+            position: { x: 60, y: 70 },
+            domain: 'audio',
+            // 261.626 · 2^((6 + 24/100)/12) ≈ 375.19 Hz.
+            params: { tune: 6, fine: 24 },
+          },
+          {
+            id: 'sc',
+            type: 'scope',
+            position: { x: 520, y: 70 },
+            domain: 'audio',
+            // ch1Range 0 = AUDIO display (±1 fills the half-height) — the
+            // right axis for a raw waveform.
+            params: { ch1Range: 0 },
+          },
+        ],
+        [
+          {
+            id: 'e_vco_scope',
+            from: { nodeId: 'vco', portId: 'sine' },
+            to: { nodeId: 'sc', portId: 'ch1' },
+            sourceType: 'audio',
+            targetType: 'audio',
+          },
+        ],
+      );
+      // Deliberately NOT setting __scopeVrtSeed. The whole point of this scene
+      // is that the pixels come from the live analyser.
+      await page.waitForTimeout(600);
+      // Through the SELF-VERIFYING freeze: this scene is the one place where a
+      // silently-inert suspend would be fatal rather than merely lucky, since
+      // the observable IS a time-domain waveform. See vrt-audio-freeze.ts.
+      await freezeAudioContext(page, 'vco-scope-audio-trace');
+      await page.evaluate(
+        () => new Promise<void>((r) => requestAnimationFrame(() => r())),
+      );
+    },
+  },
 ];
 
 const SNH_COMPOSITE_SCENES: CompositeVrtScene[] = [
@@ -977,6 +1080,7 @@ export const COMPOSITE_VRT_SCENES: CompositeVrtScene[] = [
     blurb: 'NIBBLES.length_cv = +1.00 → SCOPE ch1 trace at its highest Y.',
     setup: setupAt(119),
   },
+  ...VCO_SCOPE_AUDIO_SCENES,
   ...SNH_COMPOSITE_SCENES,
   ...ADSR_SUSTAIN_SCENES,
   ...DEPOLARIZER_COMPOSITE_SCENES,
