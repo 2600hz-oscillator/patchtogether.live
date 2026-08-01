@@ -1219,7 +1219,7 @@ frametable param waveShapeX 0..1 linear default=0
 frametable param waveShapeY 0..1 linear default=0
 frametable param weightShape 0..1 linear default=0
 freezeframe meta domain=video
-freezeframe in gate_in gate param=gateLevel
+freezeframe in gate_in gate param=gateLevel edge=gate
 freezeframe in video_in video
 freezeframe out b_out video
 freezeframe out g_out video

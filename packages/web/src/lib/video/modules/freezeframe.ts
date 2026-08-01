@@ -4,26 +4,81 @@
 //
 // Two behaviours fused into one module:
 //
-//   1. SAMPLE & HOLD (the "freeze frame"):
-//      - When NOTHING is patched to `gate_in`, the input video passes
-//        through CONTINUOUSLY (live). This mirrors the audio S&H
-//        convention where an unpatched gate means "track" / passthrough.
-//      - When SOMETHING IS patched to `gate_in`, the module captures the
-//        CURRENT input frame into a hold buffer ONLY WHILE the gate is
-//        HIGH, and FREEZES the last-captured frame whenever the gate is
-//        LOW. So:
-//          * a continuously-high gate  → continuous update (looks live);
-//          * an LFO square on the gate → plays while the gate is open,
-//            freezes the instant it drops.
-//        This is "capture-on-open-gate" sample & hold for video.
+//   1. SAMPLE & HOLD (the "freeze frame"). `gate_in` honours BOTH readings
+//      of the unified gate cable — a HELD GATE and a TRIGGER PULSE:
 //
-//      How we know whether `gate_in` is PATCHED: the cross-domain CV
-//      bridge writes the gate level into our `gateLevel` param via
-//      setParam EVERY FRAME while an edge exists (see VideoEngine.
-//      tickCvBridges). When nothing is patched, setParam('gateLevel') is
-//      never called. We record the engine frame index on each gate write
-//      and compare it to the current draw frame: if the gate was written
-//      within the last GATE_PATCH_GRACE frames we treat it as patched.
+//        gate UNPATCHED     → live passthrough (mirrors the audio S&H
+//                             convention where an unpatched gate = "track").
+//        patched, level LOW → FROZEN. The hold buffer is not written, so the
+//                             last captured frame persists.
+//        RISING EDGE        → EXACTLY ONE frame update, then still again.
+//        level HELD HIGH    → continuous update (live) for as long as it is high.
+//
+//      ── THE SEMANTICS RULE (how a HELD GATE is told apart from a TRIGGER) ──
+//      We never measure pulse WIDTH at the source. Two independent conditions:
+//
+//        (i)  ONE-SHOT LATCH. Every rising edge of the value stream (hysteresis
+//             detector, `$lib/doom/cv-gate-edge`) sets `triggerArmed`. The next
+//             draw captures one frame and CLEARS it. The latch is a BOOLEAN,
+//             not a counter, so N edges inside one frame interval still produce
+//             exactly ONE captured frame (there is only one frame to capture),
+//             and a pulse SHORTER THAN A FRAME can never be missed — the edge
+//             is detected in setParam, off the draw clock entirely.
+//        (ii) QUALIFIED LEVEL. A draw ALSO captures if the level it observes is
+//             >= GATE_HI **and that level has stood since at least
+//             HOLD_QUALIFY_MS after the rising edge that raised it**.
+//
+//      In one line: **HELD = "the level is STILL high one bridge write after
+//      the edge that raised it"; TRIGGER = "an edge happened, and by the time
+//      the level could next be re-reported it was low again".**
+//
+//      WHY (ii) NEEDS THE QUALIFY WINDOW — and why no faster rule exists. The
+//      bridge does not hand us the waveform. It hands us a STAIRCASE of tail
+//      samples, one per ~25 ms scheduler tick, and we hold that sample until
+//      the next one. A 5 ms trigger whose pulse happens to straddle a tick
+//      instant is therefore reported as level-HIGH for a WHOLE TICK PERIOD, and
+//      over that window it is bit-for-bit INDISTINGUISHABLE from a gate that
+//      just opened — both arrive as `0, 1, 1`. The first discriminating
+//      information is the NEXT write (trigger → 0, hold → 1), so one tick is
+//      the information-theoretic floor for this decision, not an implementation
+//      shortcut. Measured before the qualify window existed: 6 triggers
+//      produced 36 captures at 240 fps (6 spurious frames each, once per
+//      pulse-straddles-tick). HOLD_QUALIFY_MS is 2 ticks, so the spurious high
+//      has always been overwritten before it can qualify.
+//      Cost: a genuinely held gate updates its one-shot frame immediately and
+//      then goes continuous ~50 ms later. There is no gap in coverage — the
+//      latch already refreshed the image at the edge.
+//
+//      WHY (i) CANNOT BE A LEVEL TEST (the bug this fixes — owner report
+//      2026-07-31, "triggers do nothing"): the cross-domain gate bridge
+//      (PatchEngine.installGateDispatch) does not stream the waveform. It
+//      COUNTS rising edges in the audio thread and REPLAYS them on the ~25 ms
+//      scheduler tick as `setParam(0); setParam(1)` per edge followed by
+//      `setParam(currentLevel)`. Measured on the real chain, one trigger
+//      arrives as three writes inside the SAME MILLISECOND:
+//          3221:0  3221:1  3221:0
+//      so `params.gateLevel` is 0 at every draw and a level-only consumer sees
+//      NOTHING — 0 of 23 rendered frames updated across 6 triggers. When the
+//      tick's tail sample happened to land inside the 5–10 ms pulse the level
+//      stuck at 1 until the next tick and 1–2 whole frames were captured, i.e.
+//      the classic nondeterministic zero-one-or-two. Edge detection in
+//      setParam is the only mechanism that can deliver EXACTLY ONE. (Same
+//      shape as SHAPEGEN's clock_in and MILKDROP's nextTrig, both of which
+//      edge-detect inside setParam for this reason.)
+//
+//      How we know whether `gate_in` is PATCHED: the CV bridge writes the gate
+//      level into our `gateLevel` param via setParam while an edge exists —
+//      EVERY VIDEO FRAME on the per-frame `cv` path (VideoEngine.tickCvBridges)
+//      or EVERY ~25 ms SCHEDULER TICK on the `gate` path (installGateDispatch).
+//      When nothing is patched, setParam('gateLevel') is never called. So
+//      "patched" = "written recently". ⚠ THE UNIT MATTERS: the write cadence is
+//      WALL-CLOCK (a Worker timer), the draw cadence is FRAMES, and
+//      frames-between-writes = 0.025 × fps — 1.5 at 60 fps but 3.0 at 120 and
+//      4.1 at 165. A pure FRAME-count grace of 3 (what this module shipped
+//      with) therefore reads "unpatched" on a 120 Hz display and leaks live
+//      frames into a frozen image. The grace is primarily in MILLISECONDS
+//      (GATE_PATCH_GRACE_MS, 20× the tick), OR'd with the frame count as the
+//      floor for very low frame rates (SwiftShader at ~8 fps).
 //      This is the video-domain analogue of the "fall back to a default
 //      when the input is unpatched" pattern (SKIFREE's mouse fallback for
 //      an unpatched X/Y — here the fallback is "live passthrough").
@@ -51,7 +106,10 @@
 //
 // Inputs:
 //   video_in (video) : the source frame.
-//   gate_in (gate)   : sample-&-hold gate. Unpatched = live passthrough.
+//   gate_in (gate)   : sample-&-hold gate, declared `edge: 'gate'` because the
+//     LEVEL is what it primarily reads (held high = live). It additionally
+//     one-shots on a rising edge so a trigger works — the same principled
+//     dual-reading exception GATEMAIDEN's `in` port documents.
 //
 // Params:
 //   quant_r / quant_g / quant_b / quant_luma (linear 0..1): per-channel
@@ -61,6 +119,8 @@
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
+import { GATE_HI } from '$lib/audio/gate-trigger';
+import { detectEdge, makeEdgeState, type EdgeState } from '$lib/doom/cv-gate-edge';
 
 // ----------------------------------------------------------------------
 // Pure math — exported for unit tests (no GL).
@@ -131,28 +191,97 @@ export function lumaOf(r: number, g: number, b: number): number {
   return LUMA_WEIGHTS.r * r + LUMA_WEIGHTS.g * g + LUMA_WEIGHTS.b * b;
 }
 
-/** Gate threshold for "open" (capture) vs "closed" (freeze). */
-export const GATE_HIGH_THRESHOLD = 0.5;
+/** Gate threshold for "open" (capture) vs "closed" (freeze). The canonical
+ *  repo-wide HIGH threshold — NOT re-derived here (see `$lib/audio/gate-trigger`). */
+export const GATE_HIGH_THRESHOLD = GATE_HI;
+
+/** Inputs to the per-draw sample-&-hold decision. Named fields (not positional)
+ *  because the two capture reasons — a HELD level and a latched EDGE — are
+ *  independent and must not be confusable at a call site. */
+export interface CaptureInputs {
+  /** Is something wired to gate_in? (See gateIsPatched.) */
+  gatePatched: boolean;
+  /** The gate LEVEL this draw observes. */
+  gateLevel: number;
+  /** Has the hold buffer ever been written with real content? */
+  holdSeeded: boolean;
+  /** A rising edge arrived since the previous draw — the ONE-SHOT latch. */
+  triggerArmed: boolean;
+  /** Has the level stood high long enough to be a HELD gate rather than the
+   *  one-tick staircase echo of a trigger pulse? (See holdQualified.) */
+  levelQualified: boolean;
+}
 
 /**
  * Pure sample-&-hold decision: should THIS frame capture the live input
  * into the hold buffer (true) or freeze the last-held frame (false)?
  *
- *   - gate UNPATCHED → always capture (live passthrough);
- *   - gate PATCHED   → capture only while the gate is HIGH (level >= 0.5);
- *   - first frame    → always capture so the hold buffer seeds with real
- *     content (a frozen-on-spawn gate would otherwise show black).
+ *   - first frame     → always capture so the hold buffer seeds with real
+ *     content (a frozen-on-spawn gate would otherwise show black);
+ *   - gate UNPATCHED  → always capture (live passthrough);
+ *   - TRIGGER ARMED   → capture ONCE (the caller clears the latch after the
+ *     draw, so a short pulse yields exactly one updated frame);
+ *   - gate HELD HIGH  → capture (continuous update while the level is high),
+ *     but only once the high has QUALIFIED as a hold (see the header: an
+ *     unqualified high is the one-tick staircase echo of a trigger);
+ *   - otherwise       → freeze.
+ *
+ * The trigger and level tests are deliberately SEPARATE: a level test alone
+ * cannot deliver "exactly one" for a pulse shorter than the frame interval,
+ * and an edge test alone would swallow the continuous held-gate case.
  *
  * Exported so the freeze logic is unit-testable without a GL context.
  */
-export function shouldCapture(
-  gatePatched: boolean,
-  gateLevel: number,
-  holdSeeded: boolean,
-): boolean {
-  if (!holdSeeded) return true;       // seed the buffer on the first frame
-  if (!gatePatched) return true;      // unpatched = live passthrough
-  return gateLevel >= GATE_HIGH_THRESHOLD; // patched = capture while high
+export function shouldCapture(i: CaptureInputs): boolean {
+  if (!i.holdSeeded) return true;      // seed the buffer on the first frame
+  if (!i.gatePatched) return true;     // unpatched = live passthrough
+  if (i.triggerArmed) return true;     // rising edge = exactly one frame
+  return i.levelQualified && i.gateLevel >= GATE_HIGH_THRESHOLD; // held = continuous
+}
+
+/**
+ * Has the current HIGH level stood long enough to be a real HELD GATE rather
+ * than the staircase echo of a trigger pulse? See the header for why one
+ * scheduler tick is the information-theoretic floor here.
+ *
+ * `lastRiseMs` is the wall clock of the rising edge that raised the current
+ * level. `-Infinity` (never observed a rise — the gate was already high when we
+ * were patched, or a test hook forced the level) qualifies immediately: there
+ * is no candidate trigger to confuse it with.
+ */
+export function holdQualified(nowMs: number, lastRiseMs: number): boolean {
+  return (nowMs - lastRiseMs) >= HOLD_QUALIFY_MS;
+}
+
+/**
+ * Pure "is gate_in patched?" decision — i.e. "did the CV bridge write our
+ * gateLevel recently enough". See the header for why the primary unit is
+ * MILLISECONDS: the bridge's write cadence is wall-clock (a ~25 ms Worker
+ * tick, or one write per video frame on the per-frame `cv` path) while the
+ * draw cadence is frames, so a pure frame-count grace silently means a
+ * different thing on every display refresh rate (3 frames is 50 ms at 60 Hz
+ * but only 18 ms at 165 Hz — shorter than one scheduler tick).
+ *
+ * The frame count is retained OR'd in as the floor for the opposite extreme:
+ * CI's SwiftShader renderer draws at ~8 fps, where 3 frames is ~375 ms.
+ */
+/** Monotonic wall clock in ms. Isolated so the freshness test has ONE source
+ *  of time and the unit is visible at every call site. (Deliberately NOT the
+ *  engine's `frame.time`: that is PINNED by the render-smoke determinism hook,
+ *  and the quantity being measured here — how stale the bridge's last write is
+ *  — is a real wall-clock cadence, not a render clock.) */
+function nowMs(): number {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
+
+export function gateIsPatched(a: {
+  nowMs: number;
+  lastWriteMs: number;
+  frame: number;
+  lastWriteFrame: number;
+}): boolean {
+  return (a.nowMs - a.lastWriteMs) <= GATE_PATCH_GRACE_MS
+    || (a.frame - a.lastWriteFrame) <= GATE_PATCH_GRACE;
 }
 
 // ----------------------------------------------------------------------
@@ -262,10 +391,37 @@ const DEFAULTS: FreezeframeParams = {
   gateLevel: 0,
 };
 
-/** How many engine frames a gate write stays "fresh" before we decide the
- *  gate input is unpatched again. 1 would be enough (the bridge writes
- *  every frame while patched) but a tiny grace absorbs a single dropped
- *  rAF tick so passthrough doesn't flicker on a momentary stall. */
+/** How long (WALL CLOCK, ms) a gate write stays "fresh" before we decide the
+ *  gate input is unpatched again. THE PRIMARY UNIT — the bridge's write cadence
+ *  is wall-clock, not frames: the `gate` path replays on the ~25 ms scheduler
+ *  tick (SCHEDULER_TICK_MS) and the per-frame `cv` path writes once per video
+ *  frame. 500 ms is 20× the tick, so no plausible jitter or stall reads as
+ *  "unpatched", and an actually-unpatched cable returns to live passthrough
+ *  within half a second. */
+export const GATE_PATCH_GRACE_MS = 500;
+
+/** How long (WALL CLOCK, ms) a HIGH level must stand before it counts as a HELD
+ *  GATE rather than the staircase echo of a TRIGGER pulse.
+ *
+ *  = 2 × the cross-domain gate bridge's replay cadence (`SCHEDULER_TICK_MS`,
+ *  25 ms — see PatchEngine.installGateDispatch). The bridge re-reports the
+ *  level once per tick and we hold the last report in between, so a 5 ms
+ *  trigger that straddles a tick instant reads HIGH for up to ONE tick period.
+ *  Two ticks means such an echo is always overwritten with 0 before it can
+ *  qualify, with a full tick of margin for a late callback. It CANNOT be
+ *  shorter than one tick and still be correct: until the next bridge write,
+ *  a trigger and a just-opened gate are the same bytes.
+ *
+ *  NOT imported from `$lib/audio/scheduler-clock` on purpose — that module owns
+ *  a Worker singleton and this def is loaded by the render-worker realm too.
+ *  `freezeframe.test.ts` pins the relationship instead. */
+export const HOLD_QUALIFY_MS = 50;
+
+/** Frame-count floor, OR'd with the ms grace. Covers the opposite extreme from
+ *  the one the ms grace covers: a renderer so slow that half a second passes
+ *  between draws (CI's SwiftShader measures ~8 fps, i.e. 125 ms/frame, and a
+ *  loaded 10-shard runner is slower still). NOT sufficient on its own — see
+ *  gateIsPatched for why a pure frame grace breaks above 100 fps. */
 export const GATE_PATCH_GRACE = 3;
 
 export const freezeframeDef: VideoModuleDef = {
@@ -277,9 +433,17 @@ export const freezeframeDef: VideoModuleDef = {
   inputs: [
     { id: 'video_in', type: 'video' },
     // Gate input. paramTarget routes the gate CV through the cross-domain
-    // bridge into setParam('gateLevel') every frame while patched — that
-    // per-frame write is ALSO how we detect the gate is connected at all.
-    { id: 'gate_in', type: 'gate', paramTarget: 'gateLevel' },
+    // bridge into setParam('gateLevel') while patched — that write is ALSO
+    // how we detect the gate is connected at all.
+    //
+    // `edge: 'gate'` because the LEVEL is the primary reading (held high =
+    // live passthrough, low = frozen; it reacts to BOTH edges). The module
+    // ADDITIONALLY one-shots on each rising edge so a short trigger updates
+    // exactly one frame — the same principled dual-reading exception
+    // GATEMAIDEN's `in` port documents ("READS the input level ... while
+    // internally also edge-detecting"). Declaring 'trigger' here would be
+    // wrong: it would promise the hold is ignored, and it is not.
+    { id: 'gate_in', type: 'gate', edge: 'gate', paramTarget: 'gateLevel' },
   ],
   outputs: [
     { id: 'video_out', type: 'video' },
@@ -299,10 +463,10 @@ export const freezeframeDef: VideoModuleDef = {
 
   // docs-hash-ignore:start
   docs: {
-    explanation: "FREEZEFRAME fuses two video effects in one card. First, a SAMPLE & HOLD \"freeze\": with nothing patched to GATE the source passes through live; patch a gate and the module captures the current frame only while the gate is HIGH (level >= 0.5) and FREEZES the last-captured frame whenever it drops low — so an LFO square plays while open and stutter-freezes the instant it closes (a continuously-high gate looks live). The first frame always captures so the buffer seeds with real content instead of black. Second, a PER-CHANNEL POSTERIZE: four QUANT knobs each reduce one channel's colour depth, mapping the sweep geometrically in log2 from 256 levels (full depth) at min, through 32 at midway, to 2 (on/off) at max — crank all four for a hard few-bit posterized look. The shader posterizes each channel with floor(c*levels)/(levels-1); the combined output also applies the QUANT-luma reduction as a hue-preserving luma ratio so that knob still shapes the main out. Five outputs let you tap the recombined image, each isolated channel as a grey intensity image, or the Rec.601 luma. Usage hint: drive GATE from an LFO or clock to strobe/freeze a video feed, then dial the QUANT knobs for VHS/8-bit colour crushing; fan the R/G/B/LUMA taps into separate processors for channel-split effects.",
+    explanation: "FREEZEFRAME fuses two video effects in one card. First, a SAMPLE & HOLD \"freeze\": with nothing patched to GATE the source passes through live; patch a gate and the image FREEZES, and the GATE jack then honours both readings of the gate cable at once. Hold the gate HIGH (level >= 0.5) and it updates CONTINUOUSLY for as long as it stays high (so it looks live, and an LFO square plays while open then stutter-freezes the instant it closes); send a TRIGGER at it and each rising edge updates EXACTLY ONE frame, after which it is still again. Short pulses cannot be missed or double-counted — the rising edge is detected as the gate value arrives rather than sampled once per rendered frame, and the one-shot is a latch a single frame consumes. The first frame always captures so the buffer seeds with real content instead of black. Second, a PER-CHANNEL POSTERIZE: four QUANT knobs each reduce one channel's colour depth, mapping the sweep geometrically in log2 from 256 levels (full depth) at min, through 32 at midway, to 2 (on/off) at max — crank all four for a hard few-bit posterized look. The shader posterizes each channel with floor(c*levels)/(levels-1); the combined output also applies the QUANT-luma reduction as a hue-preserving luma ratio so that knob still shapes the main out. Five outputs let you tap the recombined image, each isolated channel as a grey intensity image, or the Rec.601 luma. Usage hint: drive GATE from an LFO or clock to strobe/freeze a video feed, then dial the QUANT knobs for VHS/8-bit colour crushing; fan the R/G/B/LUMA taps into separate processors for channel-split effects.",
     inputs: {
       video_in: "The source video frame fed into the sample-and-hold buffer and posterizer.",
-      gate_in: "Sample-and-hold gate. Unpatched = continuous live passthrough; patched = captures a fresh frame only while the gate is HIGH (>= 0.5) and freezes the held frame while it is LOW. Reads on both edges as a gate, not a one-shot trigger.",
+      gate_in: "Sample-and-hold gate. Unpatched = continuous live passthrough. Patched, the image is FROZEN while the level is LOW; it updates CONTINUOUSLY for as long as the level is HELD HIGH (>= 0.5), reacting to both edges as a gate; and each RISING EDGE additionally updates EXACTLY ONE frame, so a short trigger pulse re-samples once and then holds still. Both readings come from this one jack — patch a held gate for live-while-open, or a clock/trigger for one frame per tick.",
     },
     outputs: {
       video_out: "The recombined R/G/B image with each channel's posterize applied, plus the QUANT-LUMA reduction as a hue-preserving luma ratio. The card's on-screen preview shows this output.",
@@ -316,7 +480,7 @@ export const freezeframeDef: VideoModuleDef = {
       quant_g: "QUANT G — posterize amount for the green channel, 256 levels at min down to 2 at max. Affects video_out and g_out.",
       quant_b: "QUANT B — posterize amount for the blue channel, 256 levels at min down to 2 at max. Affects video_out and b_out.",
       quant_luma: "QUANT LUMA — posterize amount for the Rec.601 luma, 256 levels at min down to 2 at max. Drives luma_out and applies an overall luma-depth reduction to video_out as a hue-preserving ratio.",
-      gateLevel: "GATE — hidden synthetic param the cross-domain CV bridge writes from gate_in every frame; it carries the live gate level into the sample-and-hold decision (and its per-frame write is how the module detects the gate is patched). Exposed only as the gate cv jack, not as a knob.",
+      gateLevel: "GATE — hidden synthetic param the cross-domain CV bridge writes from gate_in; it carries the live gate level into the sample-and-hold decision, is rising-edge detected on arrival for the one-shot trigger, and the fact that it is written at all is how the module detects the gate is patched. Exposed only as the gate cv jack, not as a knob.",
     },
   },
   // docs-hash-ignore:end
@@ -363,16 +527,39 @@ export const freezeframeDef: VideoModuleDef = {
 
     const params: FreezeframeParams = { ...DEFAULTS, ...(node.params as Partial<FreezeframeParams>) };
 
-    // Gate connection + level tracking.
-    //   gateWriteFrame : the draw-frame index at which setParam('gateLevel')
-    //                    last fired. Compared against the current frame in
-    //                    draw() to decide "is gate_in patched?".
+    // Gate connection + level/edge tracking.
+    //   gateWriteMs    : performance.now() at the last setParam('gateLevel').
+    //                    THE PRIMARY freshness clock — see gateIsPatched.
+    //   gateWriteFrame : the draw-frame index at the last gate write (the
+    //                    low-frame-rate floor of the same test).
     //   currentFrame   : last frame index seen in draw() (so setParam,
     //                    which runs OUTSIDE draw, can stamp gateWriteFrame
     //                    with the right frame).
+    //   gateEdgeState  : hysteresis rising-edge detector over the VALUE STREAM
+    //                    arriving at setParam. NOT an AnalyserNode rescan —
+    //                    there is no buffer here, values arrive one at a time,
+    //                    so per-value `prev<TH && cur>=TH` (which is what
+    //                    detectEdge is) is correct by construction and cannot
+    //                    double-count the way a whole-buffer rescan does.
+    //   triggerArmed   : the ONE-SHOT latch. Set by a rising edge, consumed
+    //                    (cleared) by the next draw. Boolean, not a counter:
+    //                    several edges inside one frame interval still update
+    //                    exactly one frame.
+    //   gateRiseMs     : wall clock of the rising edge that raised the CURRENT
+    //                    level. -Infinity = "no rise ever observed", which
+    //                    qualifies a high level immediately (nothing to confuse
+    //                    it with). Feeds holdQualified().
+    let gateWriteMs = Number.NEGATIVE_INFINITY;
+    let gateRiseMs = Number.NEGATIVE_INFINITY;
     let gateWriteFrame = -1_000_000;
     let currentFrame = -1;
     let holdSeeded = false; // has the hold buffer ever been captured?
+    const gateEdgeState: EdgeState = makeEdgeState();
+    let triggerArmed = false;
+    /** Monotonic count of frames actually captured into the hold buffer.
+     *  Diagnostic only (read('captureCount')) — the shipped assertions count
+     *  CHANGED RENDERED FRAMES, this is the cross-check. */
+    let captureCount = 0;
 
     function levelsFor(knob: number): number {
       return quantLevels(knob);
@@ -416,19 +603,34 @@ export const freezeframeDef: VideoModuleDef = {
           ? forced
           : null;
 
-        // Is the gate patched? The CV bridge writes gateLevel every frame
-        // while an edge exists; if we've seen a write within the grace
-        // window, the gate is connected. The forced-gate hook also counts
-        // as patched.
+        // Is the gate patched? The CV bridge writes gateLevel while an edge
+        // exists; if we've seen a write within the grace window, the gate is
+        // connected. The forced-gate hook also counts as patched.
+        const drawMs = nowMs();
         const gatePatched = forcedGate !== null
-          || (currentFrame - gateWriteFrame) <= GATE_PATCH_GRACE;
-        // Capture decision:
+          || gateIsPatched({
+            nowMs: drawMs,
+            lastWriteMs: gateWriteMs,
+            frame: currentFrame,
+            lastWriteFrame: gateWriteFrame,
+          });
+        // Capture decision (see shouldCapture + the header's semantics rule):
         //   unpatched gate → always capture (live passthrough);
-        //   patched gate   → capture only while HIGH (level >= 0.5).
+        //   rising edge    → capture EXACTLY ONE frame (the latch);
+        //   level HIGH     → capture (continuous while held);
+        //   otherwise      → freeze.
         //   Always capture the very first frame so a frozen-on-spawn gate
         //   still has SOMETHING in the hold buffer (else black).
         const gateLevel = forcedGate !== null ? forcedGate : params.gateLevel;
-        const capture = shouldCapture(gatePatched, gateLevel, holdSeeded);
+        // A forced test level is a DIRECT level assertion, not a bridge report,
+        // so there is no staircase echo to disambiguate — it qualifies at once.
+        const levelQualified = forcedGate !== null || holdQualified(drawMs, gateRiseMs);
+        const capture = shouldCapture({ gatePatched, gateLevel, holdSeeded, triggerArmed, levelQualified });
+        // CONSUME the one-shot latch unconditionally: a draw has happened, so
+        // any edge banked before it has now had its frame. Clearing it only on
+        // `capture` would let a stale arm fire a spurious update later (e.g.
+        // after the cable is pulled).
+        triggerArmed = false;
 
         // ---- HOLD pass: copy input → hold buffer (only when capturing) ----
         if (capture) {
@@ -440,7 +642,7 @@ export const freezeframeDef: VideoModuleDef = {
           gl.uniform1i(cTex, 0);
           gl.uniform1f(cHas, hasInput ? 1.0 : 0.0);
           ctx.drawFullscreenQuad();
-          if (hasInput) holdSeeded = true;
+          if (hasInput) { holdSeeded = true; captureCount++; }
         }
 
         // ---- OUTPUT passes: read hold buffer, posterize per mode ----
@@ -473,8 +675,25 @@ export const freezeframeDef: VideoModuleDef = {
       setParam(paramId, value) {
         if (paramId === 'gateLevel') {
           params.gateLevel = value;
-          // Stamp the current frame so draw() can detect "patched".
+          // Stamp both freshness clocks so draw() can detect "patched".
           gateWriteFrame = currentFrame;
+          gateWriteMs = nowMs();
+          // RISING-EDGE ONE-SHOT. This runs on the BRIDGE's clock, not the
+          // draw clock, which is the whole point: installGateDispatch replays
+          // a counted trigger as `setParam(0); setParam(1); setParam(level)`
+          // inside ONE scheduler tick, so the HIGH is gone long before the
+          // next draw. Latching here is the only way a 5 ms pulse can produce
+          // exactly one frame update. detectEdge's hysteresis (rise 0.6 /
+          // fall 0.4) also stops a noisy CV hovering at the threshold from
+          // machine-gunning the latch — deliberately WIDER than the 0.5 level
+          // test used for the held case, which is the chatter-suppression
+          // convention the repo's other CV-gate consumers use.
+          if (detectEdge(gateEdgeState, value)?.pressed === true) {
+            triggerArmed = true;
+            // Restart the hold-qualification clock: this high is a CANDIDATE
+            // trigger until it survives another bridge write.
+            gateRiseMs = gateWriteMs;
+          }
           return;
         }
         if (paramId in params) {
@@ -495,8 +714,19 @@ export const freezeframeDef: VideoModuleDef = {
         if (key === 'outputTexture:b_out')     return fboB.texture;
         if (key === 'outputTexture:luma_out')  return fboLuma.texture;
         // Test/diagnostic reads.
-        if (key === 'gatePatched') return (currentFrame - gateWriteFrame) <= GATE_PATCH_GRACE;
-        if (key === 'holdSeeded')  return holdSeeded;
+        if (key === 'gatePatched') {
+          return gateIsPatched({
+            nowMs: nowMs(),
+            lastWriteMs: gateWriteMs,
+            frame: currentFrame,
+            lastWriteFrame: gateWriteFrame,
+          });
+        }
+        if (key === 'holdSeeded')   return holdSeeded;
+        // Monotonic count of frames written into the hold buffer. Cross-check
+        // for the pixel-level "exactly N updates for N triggers" assertion.
+        if (key === 'captureCount') return captureCount;
+        if (key === 'triggerArmed') return triggerArmed;
         return undefined;
       },
       dispose() { surface.dispose(); },

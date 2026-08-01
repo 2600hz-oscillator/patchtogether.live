@@ -130,6 +130,160 @@ async function setVideoParam(page: Page, nodeId: string, paramId: string, value:
   }, { nodeId, paramId, value });
 }
 
+// ---------------------------------------------------------------------------
+// (e) THE GATE SEMANTICS, read off REAL RENDERED FRAMES.
+//
+// This is the regression test for the owner report of 2026-07-31 ("with the
+// gate patched, the image should be frozen and it should update once on a
+// trigger, or continuously on a held gate") — measured, before the fix, as
+// ZERO of 23 rendered frames updating across 6 triggers.
+//
+// WHAT IT DRIVES. Not `__freezeframeForceGate` (that pins a LEVEL, which is the
+// one thing a trigger never presents at draw time and therefore exactly the
+// wrong instrument for this bug). It drives FREEZEFRAME's real handle with the
+// literal write sequence `PatchEngine.installGateDispatch` emits on a scheduler
+// tick — `setParam(gateLevel,0); setParam(gateLevel,1)` per counted rising
+// edge, then `setParam(gateLevel, currentLevel)`. That sequence was verified
+// byte-for-byte against the live audio→video bridge (SEQUENCER.clock →
+// FREEZEFRAME.gate_in), which logs one trigger as three writes in the SAME
+// millisecond: `3221:0 3221:1 3221:0`.
+//
+// WHY NOT WIRE A LIVE SEQUENCER HERE. The real bridge delivers on a ~25 ms
+// Worker tick that is unsynchronised with the render loop, so a live-source
+// version of this test could only assert "roughly N" — and "roughly" is what
+// let the bug ship. Driving the exact sequence keeps "EXACTLY N" assertable.
+// The live chain is covered by shapegen-clock.spec.ts (the dropped-edge canary
+// on the same bridge) and by the freezeframe.test.ts fps×phase sweep.
+//
+// ⚠ THE VACUOUS-ASSERTION TRAP. "the frame did not change" is satisfied by two
+// black frames. So every phase below first proves the instrument: the source is
+// re-scened EVERY frame (a scene swap rebuilds ACIDWARP's pattern texture, so
+// consecutive frames provably differ even with the engine clock pinned), the
+// UNGATED phase must show a change on EVERY frame, and every fingerprint must
+// be non-black. If the ungated phase does not change, the freeze assertions
+// below it mean nothing and the test says so.
+//
+// Frames are counted via engine.step() — a fixed, renderer-independent count,
+// never a wall-clock budget. The ONE quantity read in milliseconds is the
+// deliberate hold-qualification window (HOLD_QUALIFY_MS), which is a wall-clock
+// property of the bridge's replay cadence by construction; the per-frame
+// timestamps are returned so the assertion can locate that window exactly
+// instead of guessing a frame count for it.
+// ---------------------------------------------------------------------------
+
+/** Mirror of freezeframe.ts's HOLD_QUALIFY_MS. A HIGH level counts as a HELD
+ *  gate only after standing this long, because for one bridge tick a trigger
+ *  pulse and a just-opened gate are the same bytes. */
+const HOLD_QUALIFY_MS = 50;
+
+/** ACIDWARP scene count. 41 is PRIME, so any stride below is automatically
+ *  co-prime to it and to the trigger period — captured frames cannot alias onto
+ *  the same scene and read as "unchanged" when they really were re-captured. */
+const SCENE_COUNT = 41;
+
+interface GateFrame {
+  /** Rising edges the bridge counted for this tick; -1 = no tick this frame
+   *  (the 60 fps case, where frames are faster than the 25 ms tick). */
+  edges: number;
+  /** The level the tick reports after replaying its edges. */
+  level: number;
+}
+
+interface FramePrint { h: string; t: number; nz: number; }
+
+/** Drive FREEZEFRAME frame by frame with an explicit bridge-write plan, reading
+ *  its OWN video_out FBO after each engine step. ONE page.evaluate — no await
+ *  inside, so rAF / decode / blit cannot interleave with the sequence. */
+async function driveGateFrames(
+  page: Page,
+  plan: GateFrame[],
+  sceneStride: number,
+): Promise<{ prints: FramePrint[]; captureCount: number; gatePatched: unknown }> {
+  return page.evaluate(({ plan, sceneStride, SCENE_COUNT }) => {
+    const w = globalThis as unknown as {
+      __engine: () => { getDomain: (d: string) => {
+        gl: WebGL2RenderingContext;
+        step: () => void;
+        setParam: (id: string, p: string, v: number) => void;
+        getNodeHandle: (id: string) => { setParam: (p: string, v: number) => void } | null;
+        read: (id: string, k: string) => unknown;
+        outputTexture: (id: string, port?: string) => WebGLTexture | null;
+        res: { width: number; height: number };
+      } };
+    };
+    const vid = w.__engine().getDomain('video');
+    const gl = vid.gl;
+    const handle = vid.getNodeHandle('v-ff')!;
+
+    // A 128×128 centre crop is enough to fingerprint a full-frame plasma and
+    // keeps the per-frame readback affordable on CI's software renderer.
+    const RW = 128, RH = 128;
+    const px = new Uint8Array(RW * RH * 4);
+    const fb = gl.createFramebuffer()!;
+
+    interface FramePrintLocal { h: string; t: number; nz: number }
+
+    function fingerprint(): FramePrintLocal {
+      const tex = vid.outputTexture('v-ff', 'video_out') as WebGLTexture | null;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+      px.fill(0);
+      if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE) {
+        gl.readPixels((vid.res.width - RW) >> 1, (vid.res.height - RH) >> 1, RW, RH,
+          gl.RGBA, gl.UNSIGNED_BYTE, px);
+      }
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      let hash = 2166136261 >>> 0;
+      let n = 0, nz = 0;
+      for (let i = 0; i < px.length; i += 4) {
+        hash = (((hash ^ px[i]!) >>> 0) * 16777619) >>> 0;
+        hash = (((hash ^ px[i + 1]!) >>> 0) * 16777619) >>> 0;
+        hash = (((hash ^ px[i + 2]!) >>> 0) * 16777619) >>> 0;
+        n++;
+        if ((px[i]! + px[i + 1]! + px[i + 2]!) / 3 > 8) nz++;
+      }
+      return { h: hash.toString(16), t: performance.now(), nz: n ? nz / n : 0 };
+    }
+
+    /** ONE scheduler tick, exactly as installGateDispatch replays it. */
+    function schedulerTick(edges: number, level: number): void {
+      for (let i = 0; i < edges; i++) {
+        handle.setParam('gateLevel', 0);
+        handle.setParam('gateLevel', 1);
+      }
+      handle.setParam('gateLevel', level);
+    }
+
+    const prints: FramePrintLocal[] = [];
+    let scene = 0;
+    for (const f of plan) {
+      // The source's frozen frame CHANGES every single frame — the instrument
+      // check the freeze assertions depend on.
+      scene = (scene + sceneStride) % SCENE_COUNT;
+      vid.setParam('v-src', 'scene', scene);
+      if (f.edges >= 0) schedulerTick(f.edges, f.level);
+      vid.step();
+      prints.push(fingerprint());
+    }
+    gl.deleteFramebuffer(fb);
+    return {
+      prints,
+      captureCount: vid.read('v-ff', 'captureCount') as number,
+      gatePatched: vid.read('v-ff', 'gatePatched'),
+    };
+  }, { plan, sceneStride, SCENE_COUNT });
+}
+
+/** Number of frames whose fingerprint differs from the frame before it. */
+function changedFrames(prints: FramePrint[]): number {
+  let n = 0;
+  for (let i = 1; i < prints.length; i++) if (prints[i]!.h !== prints[i - 1]!.h) n++;
+  return n;
+}
+
+const bits = (prints: FramePrint[]): string =>
+  prints.map((p, i) => (i > 0 && p.h !== prints[i - 1]!.h ? '1' : '0')).join('');
+
 test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
   test('(a) ungated = live passthrough; (b/c) gate high updates / gate low freezes', async ({ page }) => {
     test.setTimeout(60_000);
@@ -250,6 +404,139 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
     await page.evaluate(() => {
       (globalThis as unknown as { __freezeframeForceGate?: number | undefined }).__freezeframeForceGate = undefined;
     });
+
+    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
+  });
+
+  test('(e) gate: frozen when low, EXACTLY ONE update per trigger, continuous while held', async ({ page }) => {
+    test.setTimeout(120_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await installRenderSmokeHooks(page);
+    await page.goto('/rack');
+    await page.waitForLoadState('networkidle');
+    await page.evaluate(() => {
+      (globalThis as unknown as { __freezeframeForceGate?: number | undefined }).__freezeframeForceGate = undefined;
+    });
+
+    await spawnPatch(
+      page,
+      [
+        { id: 'v-src', type: 'acidwarp',    position: { x: 40,  y: 40 }, domain: 'video', params: { speed: 0.5, scene: 0 } },
+        { id: 'v-ff',  type: 'freezeframe', position: { x: 380, y: 40 }, domain: 'video' },
+        { id: 'v-out', type: 'videoOut',    position: { x: 720, y: 40 }, domain: 'video' },
+      ],
+      [
+        { id: 'e-src-ff', from: { nodeId: 'v-src', portId: 'out' },       to: { nodeId: 'v-ff',  portId: 'video_in' }, sourceType: 'video', targetType: 'video' },
+        { id: 'e-ff-out', from: { nodeId: 'v-ff',  portId: 'video_out' }, to: { nodeId: 'v-out', portId: 'in' },       sourceType: 'video', targetType: 'video' },
+      ],
+    );
+    await expect(page.locator('.svelte-flow__node-freezeframe'), 'FREEZEFRAME visible').toBeVisible();
+
+    const STRIDE = 7; // co-prime to SCENE_COUNT(41) and to TRIGGER_EVERY(3)
+
+    // ---- INSTRUMENT CHECK: ungated, the output must change on EVERY frame ----
+    // Nothing is written to gateLevel, so the gate reads UNPATCHED and the
+    // module is on the live-passthrough path. If this does not change every
+    // frame, the source is not moving and every freeze assertion below would
+    // be satisfied by two identical dead frames. This is the negative control
+    // for the whole test.
+    const live = await driveGateFrames(page, Array.from({ length: 12 }, () => ({ edges: -1, level: 0 })), STRIDE);
+    expect(live.gatePatched, 'no gate writes → gate reads UNPATCHED').toBe(false);
+    expect(
+      Math.min(...live.prints.map((p) => p.nz)),
+      'INSTRUMENT: every ungated frame is non-black (a freeze test on black passes vacuously)',
+    ).toBeGreaterThan(0.05);
+    expect(
+      changedFrames(live.prints),
+      `INSTRUMENT: ungated passthrough changes on EVERY frame — if it does not, the freeze assertions below are meaningless (pattern ${bits(live.prints)})`,
+    ).toBe(live.prints.length - 1);
+
+    // ---- (1) GATE PATCHED, LEVEL LOW → FROZEN ----
+    // The bridge ticks every frame writing 0 (a patched cable whose gate is
+    // low). The source keeps re-scening underneath; the output must not move.
+    const frozen = await driveGateFrames(page, Array.from({ length: 14 }, () => ({ edges: 0, level: 0 })), STRIDE);
+    expect(frozen.gatePatched, 'gate writes arriving → gate reads PATCHED').toBe(true);
+    // The FIRST frame of this phase may still capture (the transition out of
+    // live passthrough), so the freeze is asserted from frame 1 on.
+    const frozenTail = frozen.prints.slice(1);
+    expect(
+      changedFrames(frozenTail),
+      `gate LOW: successive frames are IDENTICAL while the source changes underneath (pattern ${bits(frozenTail)})`,
+    ).toBe(0);
+    expect(
+      Math.min(...frozenTail.map((p) => p.nz)),
+      'the FROZEN frame is a real held image, not black',
+    ).toBeGreaterThan(0.05);
+
+    // ---- (2) TRIGGER TRAIN → EXACTLY ONE UPDATE EACH ----
+    // 8 triggers, one bridge tick per frame, a trigger every 3rd frame. Each
+    // trigger's HIGH is gone by the tick's level report (the measured real
+    // behaviour: `0, 1, 0` in one millisecond), so ONLY the rising-edge latch
+    // can produce an update. "At least one" would not catch the double-fire
+    // this bug class produces — the assertion is EXACTLY N.
+    // The plan opens with two QUIET frames so the phase carries its own frozen
+    // baseline — otherwise the first trigger's update lands on frame 0 and a
+    // within-phase transition count silently reads N-1 (caught by this test's
+    // own first run: pattern 000100100… = 7 changes for 8 triggers).
+    const TRIGGERS = 8, TRIGGER_EVERY = 3;
+    const trigPlan: GateFrame[] = [{ edges: 0, level: 0 }, { edges: 0, level: 0 }];
+    for (let i = 0; i < TRIGGERS; i++) {
+      trigPlan.push({ edges: 1, level: 0 });
+      for (let k = 1; k < TRIGGER_EVERY; k++) trigPlan.push({ edges: 0, level: 0 });
+    }
+    const capBeforeTrig = frozen.captureCount;
+    const trig = await driveGateFrames(page, trigPlan, STRIDE);
+    expect(
+      changedFrames(trig.prints),
+      `EXACTLY ${TRIGGERS} updates for ${TRIGGERS} triggers — one per rising edge, still otherwise (pattern ${bits(trig.prints)})`,
+    ).toBe(TRIGGERS);
+    // Cross-check against the module's own capture counter: the pixel count and
+    // the decision count must agree, or one of the two instruments is lying.
+    expect(
+      trig.captureCount - capBeforeTrig,
+      'the module captured exactly one frame per trigger (capture-counter cross-check)',
+    ).toBe(TRIGGERS);
+    expect(
+      Math.min(...trig.prints.map((p) => p.nz)),
+      'triggered output is real content, not black',
+    ).toBeGreaterThan(0.05);
+
+    // ---- (3) HELD GATE → CONTINUOUS ----
+    // One rising edge, then the level stays HIGH and is RE-REPORTED by every
+    // subsequent tick — which is what makes it a HOLD rather than a trigger.
+    const HELD_FRAMES = 24;
+    const heldPlan: GateFrame[] = Array.from({ length: HELD_FRAMES }, (_, i) => ({
+      edges: i === 0 ? 1 : 0, level: 1,
+    }));
+    const held = await driveGateFrames(page, heldPlan, STRIDE);
+    // The rising edge updates a frame immediately (the one-shot), so there is
+    // no visible gap while the hold qualifies.
+    expect(held.prints[0]!.h, 'the rising edge updated the very first held frame')
+      .not.toBe(frozen.prints[frozen.prints.length - 1]!.h);
+    // A HIGH level is only trusted as a HOLD once it has stood HOLD_QUALIFY_MS
+    // (below that it is indistinguishable from a trigger's one-tick staircase
+    // echo — see freezeframe.ts). Locate that boundary from the per-frame
+    // timestamps rather than guessing a frame count for a wall-clock window.
+    const riseMs = held.prints[0]!.t;
+    const qualifyIdx = held.prints.findIndex((p) => p.t - riseMs >= HOLD_QUALIFY_MS);
+    expect(qualifyIdx, `the ${HELD_FRAMES}-frame held burst spans the ${HOLD_QUALIFY_MS} ms qualify window`)
+      .toBeGreaterThanOrEqual(0);
+    const heldTail = held.prints.slice(qualifyIdx);
+    expect(heldTail.length, 'the qualified tail is long enough to assert on (instrument check)').toBeGreaterThan(4);
+    expect(
+      changedFrames(heldTail),
+      `HELD gate updates CONTINUOUSLY — every qualified frame changes (pattern ${bits(heldTail)}, qualifyIdx=${qualifyIdx})`,
+    ).toBe(heldTail.length - 1);
+
+    // ---- (4) BACK TO LOW → FROZEN AGAIN (the hold did not latch on) ----
+    const refrozen = await driveGateFrames(page, Array.from({ length: 10 }, () => ({ edges: 0, level: 0 })), STRIDE);
+    expect(
+      changedFrames(refrozen.prints.slice(1)),
+      `releasing the held gate freezes again (pattern ${bits(refrozen.prints)})`,
+    ).toBe(0);
 
     expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
