@@ -32,6 +32,8 @@ import type { Component } from 'svelte';
 import type { ModuleNode } from '$lib/graph/types';
 import type { SelectorOption } from '$lib/ui/controls';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
+import Dx7OperatorMap from '$lib/ui/modules/dx7/Dx7OperatorMap.svelte';
+import Dx7OpDetail from '$lib/ui/modules/dx7/Dx7OpDetail.svelte';
 import type { FaceControl } from './curated-face';
 import {
   DX7_SYX_ACCEPT,
@@ -176,6 +178,39 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       title: 'Import a Yamaha DX7 cartridge dump (voices are APPENDED to the roster)',
       accept: DX7_SYX_ACCEPT,
       onFile: (nodeId, file) => loadDx7SyxFile(nodeId, file),
+    },
+    // THE OPERATOR VIEW (dx7 PR 6). The algorithm diagram IS the operator
+    // view — one live map plus one detail panel, rather than six Dexed strips
+    // or six `OP n` pages (which would re-create the hardware's OPERATOR
+    // SELECT, the affordance this design exists to kill).
+    'dx7-operator-map-{n}': {
+      kind: 'panel',
+      label: 'operators',
+      component: Dx7OperatorMap,
+      minWidth: 280,
+      // ⚠ Asserts `opOn[1]` CHANGED, not merely that `voiceRev` advanced. A
+      // revision-only probe passes on a DEAD mute button that bumps the
+      // counter without muting anything — exactly the green-but-broken class
+      // the parity gate exists to catch.
+      probe: {
+        testid: 'dx7-op-onoff-2',
+        action: 'click',
+        effect: { kind: 'data', key: 'opOn[1]', expect: 'changed' },
+      },
+    },
+    'dx7-op-detail-{n}': {
+      kind: 'panel',
+      label: 'operator detail',
+      component: Dx7OpDetail,
+      minWidth: 560,
+      // Dragging an envelope handle has no single `node.data` key to name —
+      // it rewrites a rate AND a level inside `data.voice` — so this one is
+      // legitimately a `data-rev` probe.
+      probe: {
+        testid: 'dx7-eg-point-2',
+        action: 'drag',
+        effect: { kind: 'data-rev', key: 'voiceRev' },
+      },
     },
   },
   sixstrum: {
